@@ -68,13 +68,16 @@ export const AVATAR_PRESETS: AvatarPreset[] = [
 ];
 
 const VOICE_DEFAULTS: Record<AvatarGender, string> = {
-	female: "Kore",
-	male: "Puck",
+	female: "sunhi",
+	male: "hyunsu",
 };
 
 const TTS_VOICE_DEFAULTS: Record<string, Record<AvatarGender, string>> = {
 	edge: { female: "ko-KR-SunHiNeural", male: "ko-KR-InJoonNeural" },
-	google: { female: "ko-KR-Neural2-A", male: "ko-KR-Neural2-C" },
+	nextain: {
+		female: "ko-KR-SunHi:DragonHDLatestNeural",
+		male: "ko-KR-Hyunsu:DragonHDLatestNeural",
+	},
 };
 
 /** Resolves the VRM avatar's gender from its path (matches by filename). */

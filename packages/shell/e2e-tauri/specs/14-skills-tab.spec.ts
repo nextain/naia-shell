@@ -3,28 +3,24 @@ import {
 	clickBySelector,
 	ensureAppReady,
 	navigateToSettings,
-	setNativeValue,
 } from "../helpers/settings.js";
 
 /**
- * 14 — Skills Tab E2E
+ * 14 — Skills Tab E2E (#605 checkbox model)
  *
  * Verifies the Skills management UI:
  * - Tab navigation works
- * - Skills are listed (at least 20 built-in)
- * - Search filters work
- * - Toggle disable/enable works for custom skills
- * - Built-in skills cannot be toggled
+ * - CLI section + gesture section render
+ * - Detected CLI cards use checkboxes
+ * - No gateway install / agent-tool list surface
  */
 describe("14 — skills tab", () => {
 	before(async () => {
-		// 스킬 화면은 설정 안에 있다 — 옛 메타 탭(`NaiaMetaArea`)은 지금 제품 어디에도
-		// 렌더되지 않는다. 설정을 먼저 열어야 그 탭 버튼이 존재한다.
 		await ensureAppReady();
 		await navigateToSettings();
 	});
 
-	it("should navigate to Skills tab and show skills list", async () => {
+	it("should navigate to Skills tab", async () => {
 		const skillsTabBtn = await $(S.skillsTab);
 		await skillsTabBtn.waitForDisplayed({ timeout: 10_000 });
 		await clickBySelector(S.skillsTab);
@@ -33,66 +29,37 @@ describe("14 — skills tab", () => {
 		await skillsApp.waitForDisplayed({ timeout: 5_000 });
 	});
 
-	it("should display at least 20 built-in skills", async () => {
-		// Wait for skills to render (may load from Gateway)
+	it("should show CLI and gesture sections", async () => {
 		await browser.waitUntil(
 			async () => {
-				const c = await $$(S.skillsCard);
-				return c.length >= 20;
+				const cli = await $('[data-testid="skills-cli-section"]');
+				const gesture = await $('[data-testid="skills-gesture-section"]');
+				return (await cli.isExisting()) && (await gesture.isExisting());
 			},
 			{
-				timeout: 10_000,
-				interval: 500,
-				timeoutMsg: "Skills cards did not reach 20 within 10s",
+				timeout: 15_000,
+				timeoutMsg: "CLI/gesture sections did not appear",
 			},
 		);
-		const cards = await $$(S.skillsCard);
-		expect(cards.length).toBeGreaterThanOrEqual(20);
-
-		// Verify built-in section title exists
-		const sectionTitles = await $$(S.skillsSectionTitle);
-		expect(sectionTitles.length).toBeGreaterThanOrEqual(1);
-		const firstSectionText = await sectionTitles[0].getText();
-		expect(firstSectionText).toMatch(/기본 스킬|Built-in/i);
+		const cliText = await $('[data-testid="skills-cli-section"]').getText();
+		expect(cliText).toMatch(/CLI|감지/i);
+		const gestureText = await $(
+			'[data-testid="skills-gesture-section"]',
+		).getText();
+		expect(gestureText).toMatch(/gesture|몸짓|YouTube|유튜브/i);
 	});
 
-	it("should show skills count in header", async () => {
-		const countEl = await $(S.skillsCount);
-		await countEl.waitForDisplayed({ timeout: 3_000 });
-		const text = await countEl.getText();
-		// Format: enabled/total e.g. "55/55"
-		expect(text).toMatch(/\d+\/\d+/);
+	it("should show youtube gesture checkbox", async () => {
+		const toggle = await $('[data-testid="gesture-enable-youtube"]');
+		await toggle.waitForExist({ timeout: 5_000 });
+		expect(await toggle.isExisting()).toBe(true);
 	});
 
-	it("should filter skills by search query", async () => {
-		const searchInput = await $(S.skillsSearch);
-		await searchInput.waitForDisplayed({ timeout: 3_000 });
-
-		const cardsBefore = await $$(S.skillsCard);
-		const countBefore = cardsBefore.length;
-
-		// Search for "time" — use JS native setter (WebDriver setValue unreliable in WebKitGTK)
-		await setNativeValue(S.skillsSearch, "time");
-		await browser.pause(300);
-
-		const cardsAfter = await $$(S.skillsCard);
-		expect(cardsAfter.length).toBeLessThan(countBefore);
-		expect(cardsAfter.length).toBeGreaterThanOrEqual(1);
-
-		// Clear search
-		await setNativeValue(S.skillsSearch, "");
-		await browser.pause(300);
-	});
-
-	it("should not show toggle for built-in skills", async () => {
-		// Built-in skills are listed first, they should not have toggle inputs
-		const firstCard = await $$(S.skillsCard);
-		if (firstCard.length === 0) return;
-
-		// The first card should be a built-in skill (no toggle)
-		const toggleInFirstCard = await firstCard[0].$(S.skillsToggle);
-		const exists = await toggleInFirstCard.isExisting();
-		expect(exists).toBe(false);
+	it("should not show gateway install buttons", async () => {
+		const installCount = await browser.execute(
+			() => document.querySelectorAll('[data-testid="skills-install-btn"]').length,
+		);
+		expect(installCount).toBe(0);
 	});
 
 	it("should navigate back to chat tab", async () => {

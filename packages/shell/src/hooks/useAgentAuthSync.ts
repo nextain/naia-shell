@@ -1,7 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
-import { syncLinkedChannels } from "../lib/channel-sync";
 import {
 	sendAuthUpdate,
 	sendCredsUpdate,
@@ -29,23 +27,6 @@ export function useAgentAuthSync(
 	showOnboarding: boolean,
 	configHydrated: boolean,
 ): void {
-	useEffect(() => {
-		const unlisten = listen<{ naiaKey?: string }>(
-			"naia_auth_complete",
-			() => {
-				// The mounted login owner (SettingsTab, OnboardingWizard, or
-				// AdkSetupScreen) captures the ADK that opened the browser flow.
-				// This app-wide listener must not replay a callback against whatever
-				// ADK is selected now: a late A callback arriving after an A→B
-				// switch would otherwise be sent to B.
-				void syncLinkedChannels();
-			},
-		);
-		return () => {
-			void unlisten.then((fn) => fn());
-		};
-	}, []);
-
 	useEffect(() => {
 		if (showAdkSetup || showOnboarding || !configHydrated) return;
 		const preMigrate = loadConfig();
@@ -114,11 +95,7 @@ export function useAgentAuthSync(
 
 			const notifyPayload = {
 				slackWebhookUrl: cfg.slackWebhookUrl,
-				discordWebhookUrl: cfg.discordWebhookUrl,
 				googleChatWebhookUrl: cfg.googleChatWebhookUrl,
-				discordDefaultUserId: cfg.discordDefaultUserId,
-				discordDefaultTarget: cfg.discordDefaultTarget,
-				discordDmChannelId: cfg.discordDmChannelId,
 			};
 			await invoke("store_startup_message", {
 				adkPath: sourceAdkPath,
@@ -128,16 +105,12 @@ export function useAgentAuthSync(
 				await sendNotifyConfig(notifyPayload, sourceAdkPath).catch(() => {});
 			if (!active) return;
 
-			const ttsKeys: Record<string, string> = {};
-			if (cfg.googleApiKey) ttsKeys.google = cfg.googleApiKey;
-			if (cfg.openaiTtsApiKey) ttsKeys.openai = cfg.openaiTtsApiKey;
-			if (cfg.elevenlabsApiKey) ttsKeys.elevenlabs = cfg.elevenlabsApiKey;
 			const credsPayload = {
 				keys:
 					cfg.apiKey && cfg.provider && cfg.provider !== "nextain"
 						? { [cfg.provider]: cfg.apiKey }
 						: {},
-				...(Object.keys(ttsKeys).length > 0 && { ttsKeys }),
+				ttsKeys: {},
 				...(cfg.gatewayToken !== undefined && {
 					gatewayToken: cfg.gatewayToken,
 				}),

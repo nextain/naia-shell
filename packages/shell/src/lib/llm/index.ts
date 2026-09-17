@@ -15,11 +15,12 @@ export {
 	applyCapabilityOverrides,
 	applyNaiaModelMetadata,
 	fetchOllamaModels,
-	fetchOpenAIModels,
 	fetchVllmModels,
 	formatModelLabel,
 	getModelPriceScore,
 	sortModels,
+	selectableConversationModels,
+	shouldHideModelPicker,
 } from "./registry";
 export type {
 	LlmProviderMeta,

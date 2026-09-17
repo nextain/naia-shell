@@ -149,13 +149,13 @@ describe("ADK-backed credential persistence", () => {
 		await saveConfigSecure({
 			...baseConfig(),
 			apiKey: "api-a",
-			openaiTtsApiKey: "tts-a",
+			qdrantApiKey: "qdrant-a",
 			memoryEmbeddingApiKey: "embedding-a",
 		});
 
 		const a = mockState.stateFor(adkStorePath("/adk-a"));
 		expect(a.get("apiKey")).toBe("api-a");
-		expect(a.get("openaiTtsApiKey")).toBe("tts-a");
+		expect(a.get("qdrantApiKey")).toBe("qdrant-a");
 		expect(a.get("memoryEmbeddingApiKey")).toBe("embedding-a");
 		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}")).not.toHaveProperty(
 			"apiKey",
@@ -166,7 +166,7 @@ describe("ADK-backed credential persistence", () => {
 		localStorage.setItem("naia-adk-path", "/adk-a");
 		await expect(loadConfigWithSecrets()).resolves.toMatchObject({
 			apiKey: "api-a",
-			openaiTtsApiKey: "tts-a",
+			qdrantApiKey: "qdrant-a",
 			memoryEmbeddingApiKey: "embedding-a",
 		});
 	});

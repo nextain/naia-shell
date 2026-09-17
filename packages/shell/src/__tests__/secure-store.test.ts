@@ -82,12 +82,12 @@ describe("secure-store", () => {
 
 	it("SECRET_KEYS includes expected keys", () => {
 		expect(SECRET_KEYS).toContain("apiKey");
-		expect(SECRET_KEYS).toContain("googleApiKey");
-		expect(SECRET_KEYS).toContain("openaiTtsApiKey");
-		expect(SECRET_KEYS).toContain("elevenlabsApiKey");
 		expect(SECRET_KEYS).toContain("naiaKey");
+		expect(SECRET_KEYS).not.toContain("googleApiKey");
+		expect(SECRET_KEYS).not.toContain("openaiTtsApiKey");
+		expect(SECRET_KEYS).not.toContain("elevenlabsApiKey");
+		expect(SECRET_KEYS).not.toContain("openaiRealtimeApiKey");
 		expect(SECRET_KEYS).toContain("gatewayToken");
-		expect(SECRET_KEYS).toContain("openaiRealtimeApiKey");
 		expect(SECRET_KEYS).toContain("subLlmApiKey");
 		expect(SECRET_KEYS).toContain("memoryLlmApiKey");
 		expect(SECRET_KEYS).toContain("memoryEmbeddingApiKey");

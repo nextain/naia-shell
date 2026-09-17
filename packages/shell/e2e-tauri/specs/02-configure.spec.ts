@@ -86,7 +86,6 @@ describe("02 — Configure Settings", () => {
 				"skill_system_status",
 				"skill_memo",
 				"skill_weather",
-				"skill_skill_manager",
 				"execute_command",
 				"write_file",
 				"read_file",

@@ -55,11 +55,9 @@ import {
 	reconcileExplicitLocalProfile,
 	saveConfig,
 } from "./lib/config";
-import { persistDiscordDefaults } from "./lib/discord-auth";
 import {
 	ENVIRONMENT_APP_ID,
-	SKILL_ENVIRONMENT,
-	noteEnvironmentToolAck,
+	noteEnvironmentClear,
 	refreshEnvironment,
 } from "./lib/environment-skill";
 import { BROWSER_HOST_APP_ID, browserHostTools } from "./lib/browser-host-skill";
@@ -434,35 +432,23 @@ export function App() {
 			.catch((err) =>
 				Logger.warn("App", "startup bgm skill failed", { error: String(err) }),
 			);
-		// #502 실배선 (FR-ENV-LIVE.3): 작업 표면은 화면 앱이 아니라 상시 환경이라
-		// descriptor.tools 경로가 없다 — BGM 과 같은 전용 등록.
-		// 실행은 ChatArea dispatchAppToolCall 의 환경 분기.
-		//
-		// 사용자가 인지를 꺼 두었으면 도구를 등록하지 않는다 (FR-ENV-ATTENTION.4). 등록만 하고
-		// 안에서 거절하면 도구 목록이 매 요청 토큰을 먹으면서 아무 일도 못 한다 — 껐다는 말은
-		// 값도 안 든다는 뜻이어야 한다.
+		// #611: skill_environment is not model-facing. Clear any stale registration
+		// from older shells; observation still hydrates for `always` awareness.
+		sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
+			.then((ok) => {
+				noteEnvironmentClear(ok);
+				if (!ok) {
+					Logger.warn("App", "startup environment skill clear not delivered", {
+						appId: ENVIRONMENT_APP_ID,
+					});
+				}
+			})
+			.catch((err) =>
+				Logger.warn("App", "startup environment skill clear failed", {
+					error: String(err),
+				}),
+			);
 		if ((loadConfig()?.environmentAwareness ?? "auto") !== "off") {
-			sendAppSkills(ENVIRONMENT_APP_ID, [SKILL_ENVIRONMENT], { awaitAck: true })
-				.then((ok) => {
-					noteEnvironmentToolAck(ok);
-					return ok;
-				})
-				.then((ok) =>
-					// 반환값을 확인한다. 보내지 못했는데 "등록됨"이라고 적으면 로그가 거짓이 된다.
-					// 실제 복구는 대화 턴마다 다시 등록하는 쪽이 한다 (FR-ENV-ATTENTION.16).
-					ok
-						? Logger.info("App", "startup environment skill registered", {
-								tool: SKILL_ENVIRONMENT.name,
-							})
-						: Logger.warn("App", "startup environment skill not delivered", {
-								tool: SKILL_ENVIRONMENT.name,
-							}),
-				)
-				.catch((err) =>
-					Logger.warn("App", "startup environment skill failed", {
-						error: String(err),
-					}),
-				);
 			// 첫 관측을 미리 받아 둔다 — 사용자의 첫 물음에 되묻지 않기 위해서다 (FR-ENV-LIVE.1).
 			// Herdr 이 안 돌고 있으면 조용히 아무것도 모르는 상태로 남는다.
 			refreshEnvironment().catch(() => {});
@@ -664,6 +650,13 @@ export function App() {
 	useEffect(() => {
 		addAllowedTool("skill_app");
 		addAllowedTool("skill_youtube_bgm");
+	}, []);
+
+	// #605 — refresh CLI detection into config on app start (Skills tab also refreshes on enter).
+	useEffect(() => {
+		void import("./lib/cli-detection").then(({ refreshCliDetectionOnBoot }) =>
+			refreshCliDetectionOnBoot(),
+		);
 	}, []);
 
 	useEffect(() => {
@@ -942,19 +935,6 @@ export function App() {
 				setAppInstallRequest(event.payload);
 			},
 		);
-		return () => {
-			unlisten.then((fn) => fn());
-		};
-	}, []);
-
-	useEffect(() => {
-		const unlisten = listen<{
-			discordUserId?: string | null;
-			discordChannelId?: string | null;
-			discordTarget?: string | null;
-		}>("discord_auth_complete", (event) => {
-			persistDiscordDefaults(event.payload);
-		});
 		return () => {
 			unlisten.then((fn) => fn());
 		};

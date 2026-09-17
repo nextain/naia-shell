@@ -148,15 +148,6 @@ function makePlayer() {
 	const canvas = document.createElement("canvas");
 	canvas.width = 400;
 	canvas.height = 700;
-	vi.spyOn(canvas, "getContext").mockReturnValue({
-		clearRect: vi.fn(),
-		drawImage: vi.fn(),
-		save: vi.fn(),
-		restore: vi.fn(),
-		beginPath: vi.fn(),
-		rect: vi.fn(),
-		clip: vi.fn(),
-	} as unknown as CanvasRenderingContext2D);
 	return new NvaLayeredPlayer(canvas, MANIFEST, {
 		resolveClip: (clip) => `blob:${clip}`,
 	});

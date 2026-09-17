@@ -46,11 +46,3 @@ export async function importMemoryBackup(
 	return invoke("memory_import_backup", { blob: Array.from(blob), password });
 }
 
-// === Onboarding: API key validation ===
-
-export async function validateApiKey(
-	provider: string,
-	apiKey: string,
-): Promise<boolean> {
-	return invoke("validate_api_key", { provider, apiKey });
-}

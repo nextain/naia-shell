@@ -4,6 +4,8 @@ import type { Locale } from "./i18n";
 import { Logger } from "./logger";
 import {
 	SECRET_KEYS,
+	RETIRED_VOICE_SECRET_KEYS,
+	deleteLegacySecretKey,
 	deleteSecretKeyAtPath,
 	getLegacySecretEntries,
 	getSecretKey,
@@ -16,10 +18,121 @@ import {
 } from "./secure-store";
 import { NAIA_SLOT_DEFAULTS } from "./slots/model";
 import type { ProviderId } from "./types";
-// LiveProviderId kept for migration only — will be removed after migration period
-import type { LiveProviderId } from "./voice/types";
 
 const STORAGE_KEY = "naia-config";
+
+const RETIRED_VOICE_CONFIG_KEYS = [
+	"googleApiKey",
+	"openaiTtsApiKey",
+	"elevenlabsApiKey",
+	"openaiRealtimeApiKey",
+	"naiaCloudSttBackend",
+	"naiaCloudTtsBackend",
+	"liveProvider",
+	"liveVoice",
+	"liveModel",
+	"openaiRealtimeVoice",
+] as const;
+
+const RETIRED_TTS_PROVIDERS = new Set(["google", "openai", "elevenlabs"]);
+const RETIRED_STT_PROVIDERS = new Set(["google", "elevenlabs", "nextain"]);
+const RETIRED_LIVE_PROVIDERS = new Set([
+	"naia",
+	"gemini-live",
+	"openai-realtime",
+]);
+const RETIRED_LIVE_MODELS = new Set([
+	"gemini-2.5-flash-live",
+	"gemini-live-2.5-flash-native-audio",
+	"gemini-2.5-flash-native-audio-preview-12-2025",
+	"gpt-4o-realtime",
+	"gpt-4o-mini-realtime-preview",
+]);
+
+function legacyVoiceIsMale(voice: unknown): boolean {
+	return (
+		typeof voice === "string" &&
+		/hyun|puck|charon|fenrir|orus|cedar|echo|guy/i.test(voice)
+	);
+}
+
+function azureVoiceForLegacy(voice: unknown): "sunhi" | "hyunsu" {
+	return legacyVoiceIsMale(voice) ? "hyunsu" : "sunhi";
+}
+
+/** Remove #603 voice providers at the config boundary. */
+export function normalizeRetiredVoiceConfig(config: AppConfig): {
+	config: AppConfig;
+	changed: boolean;
+} {
+	const raw = config as unknown as Record<string, unknown>;
+	let changed = false;
+	const remove = (key: string) => {
+		if (Object.prototype.hasOwnProperty.call(raw, key)) {
+			delete raw[key];
+			changed = true;
+		}
+	};
+
+	const ttsProvider = raw.ttsProvider;
+	if (typeof ttsProvider === "string" && RETIRED_TTS_PROVIDERS.has(ttsProvider)) {
+		raw.ttsProvider = "edge";
+		remove("ttsVoice");
+		changed = true;
+	}
+	if (
+		typeof raw.sttProvider === "string" &&
+		RETIRED_STT_PROVIDERS.has(raw.sttProvider)
+	) {
+		const isLinux =
+			typeof navigator !== "undefined" &&
+			navigator.userAgent.includes("Linux");
+		raw.sttProvider = isLinux ? "vosk" : "web-speech";
+		changed = true;
+	}
+	if (raw.ttsEngine === "google") {
+		if (!raw.ttsProvider) raw.ttsProvider = "edge";
+		remove("ttsEngine");
+	}
+	if (
+		raw.ttsProvider === "nextain" &&
+		typeof raw.ttsVoice === "string" &&
+		/Neural2|Wavenet|Chirp3|Chirp-3/i.test(raw.ttsVoice)
+	) {
+		raw.ttsVoice = `ko-KR-${
+			legacyVoiceIsMale(raw.ttsVoice) ? "Hyunsu" : "SunHi"
+		}:DragonHDLatestNeural`;
+		changed = true;
+	}
+
+	const legacyLiveProvider = raw.liveProvider;
+	const legacyLiveVoice = raw.liveVoice ?? raw.voice;
+	if (typeof legacyLiveProvider === "string") {
+		if (RETIRED_LIVE_PROVIDERS.has(legacyLiveProvider)) {
+			raw.provider = "nextain";
+			raw.model = "azure-realtime";
+			raw.voice = azureVoiceForLegacy(legacyLiveVoice);
+		} else if (legacyLiveProvider === "edge-tts") {
+			raw.ttsProvider = raw.ttsProvider || "edge";
+		} else if (legacyLiveProvider !== "naia-omni") {
+			raw.provider = "nextain";
+			raw.model = "azure-realtime";
+			raw.voice = azureVoiceForLegacy(legacyLiveVoice);
+		}
+		changed = true;
+	}
+
+	if (typeof raw.model === "string" && RETIRED_LIVE_MODELS.has(raw.model)) {
+		raw.provider = "nextain";
+		raw.model = "azure-realtime";
+		raw.voice = azureVoiceForLegacy(raw.voice);
+		changed = true;
+	}
+
+	for (const key of RETIRED_VOICE_CONFIG_KEYS) remove(key);
+	return { config, changed };
+}
+
 export const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
 /** Default address for the Naia Local container (omni-24g realtime WS).
  *  Use 127.0.0.1, not "localhost": localhost resolves to IPv6 ::1 first in many
@@ -71,10 +184,11 @@ export type SttProviderId =
 	| "vosk"
 	| "whisper"
 	| "web-speech"
-	| "google"
-	| "elevenlabs"
+	| "vllm"
+	/** @deprecated #603 */
 	| "nextain"
-	| "vllm";
+	| "google"
+	| "elevenlabs";
 
 /** Map app locale to Vosk STT language code. */
 const LOCALE_TO_STT: Record<string, string> = {
@@ -100,13 +214,15 @@ export function localeToSttLanguage(locale: string): string {
 }
 
 export type TtsProviderId =
-	| "google"
+	| "browser"
 	| "edge"
-	| "openai"
-	| "elevenlabs"
 	| "nextain"
 	| "vllm"
-	| "naia-local-voice";
+	| "naia-local-voice"
+	/** @deprecated #603 tombstone — stripped on load, not registered */
+	| "google"
+	| "openai"
+	| "elevenlabs";
 
 export type AppPosition = "left" | "right" | "bottom";
 
@@ -175,15 +291,10 @@ export interface AppConfig {
 	customBgs?: string[];
 	sttProvider?: SttProviderId;
 	sttModel?: string;
-	/** Naia Cloud STT backend engine (e.g. "google-cloud-stt"). */
-	naiaCloudSttBackend?: string;
 	ttsEnabled?: boolean;
 	ttsVoice?: string;
-	googleApiKey?: string;
 	ttsProvider?: TtsProviderId;
-	/** Naia Cloud TTS backend engine (e.g. "google-chirp3-hd"). */
-	naiaCloudTtsBackend?: string;
-	ttsEngine?: "auto" | "gateway" | "google";
+	ttsEngine?: "auto" | "gateway";
 	/**
 	 * Active voice-reference preset sample URL for realtime voice (omni). Set
 	 * when the user applies a preset in Settings; sent verbatim as
@@ -210,9 +321,6 @@ export interface AppConfig {
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	chatRouting?: "gateway" | "direct" | "auto";
-	discordDefaultUserId?: string;
-	discordDefaultTarget?: string;
-	discordDmChannelId?: string;
 	allowedTools?: string[];
 	userName?: string;
 	agentName?: string;
@@ -220,6 +328,24 @@ export interface AppConfig {
 	speechStyle?: string;
 	onboardingComplete?: boolean;
 	naiaKey?: string;
+	/** @deprecated #603 */
+	googleApiKey?: string;
+	/** @deprecated #603 */
+	openaiTtsApiKey?: string;
+	/** @deprecated #603 */
+	elevenlabsApiKey?: string;
+	/** @deprecated #603 */
+	openaiRealtimeApiKey?: string;
+	/** @deprecated #603 */
+	naiaCloudTtsBackend?: string;
+	/** @deprecated #603 */
+	naiaCloudSttBackend?: string;
+	/** @deprecated #603 */
+	liveProvider?: string;
+	/** @deprecated #603 */
+	liveVoice?: string;
+	/** @deprecated #603 */
+	liveModel?: string;
 	naiaUserId?: string;
 	/** Naia Local: ws:// address of the user's own omni-24g container.
 	 *  Shown/edited when the `naia-local` model is selected; the logged-in naiaKey
@@ -227,26 +353,49 @@ export interface AppConfig {
 	 *  be wss:// (cross-review). Default DEFAULT_NAIA_LOCAL_URL. */
 	naiaLocalUrl?: string;
 	disabledSkills?: string[];
+	/**
+	 * CLI names the user enabled on the Skills tab (#605).
+	 * Only installed CLIs appear as checkboxes; enabled names are passed to the
+	 * agent so it can mention them in workspace context.
+	 */
+	enabledClis?: string[];
+	/**
+	 * Last CLI detection snapshot from Rust `cli_detect_refresh` (#605).
+	 * Refreshed on app start and Skills tab enter. Never stores CLI stdout.
+	 */
+	cliDetection?: {
+		refreshedAt: string;
+		results: Array<{
+			id: string;
+			displayName: string;
+			installed: boolean;
+			path?: string;
+			version?: string;
+			status:
+				| "ready"
+				| "not-installed"
+				| "login-required"
+				| "waiting-input"
+				| "error";
+		}>;
+	};
+	/**
+	 * Shell gesture ids the user disabled on the Skills tab (#605).
+	 * Known gestures today: `youtube` (skill_youtube_bgm + Radio DJ card).
+	 */
+	disabledGestures?: string[];
 	slackWebhookUrl?: string;
-	discordWebhookUrl?: string;
 	googleChatWebhookUrl?: string;
-	openaiTtsApiKey?: string;
-	elevenlabsApiKey?: string;
 	gatewayTtsAuto?: string;
 	gatewayTtsMode?: string;
 	appPosition?: AppPosition;
 	appVisible?: boolean;
 	appSize?: number;
-	discordSessionMigrated?: boolean;
-	discordRelayUrl?: string;
-	lastProcessedDiscordMessageId?: string;
 	ollamaHost?: string;
 	/** Per-request Ollama GPU layers. `0` keeps the model on CPU/NPU so the
 	 * laptop 4060 profile reserves VRAM for Ditto and VoxCPM2. */
 	ollamaNumGpu?: number;
 	vllmHost?: string;
-	/** Optional OpenAI-compatible API root. Empty uses api.openai.com/v1. */
-	openaiBaseUrl?: string;
 	/** vLLM endpoint for STT/ASR (e.g. Qwen3-ASR). */
 	vllmSttHost?: string;
 	/**
@@ -294,12 +443,7 @@ export interface AppConfig {
 	/** Selected speaker/output device ID for TTS output (from enumerateDevices). */
 	ttsOutputDeviceId?: string;
 	voiceConversation?: boolean;
-	liveProvider?: LiveProviderId;
-	liveVoice?: string;
-	liveModel?: string;
-	openaiRealtimeApiKey?: string;
-	openaiRealtimeVoice?: string;
-	/** Unified voice selection (replaces liveVoice/openaiRealtimeVoice after migration) */
+	/** Unified voice selection for a retained live/local voice route. */
 	voice?: string;
 	/** App IDs that the user has explicitly deleted (build-time apps only). */
 	deletedApps?: string[];
@@ -493,9 +637,14 @@ export function loadConfig(): AppConfig | null {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
 		if (!raw) return null;
-		const config = reconcileExplicitLocalProfile(
+		const runtimeConfig = reconcileExplicitLocalProfile(
 			normalizeLocalRuntimeConfig(JSON.parse(raw) as AppConfig),
 		);
+		const normalized = normalizeRetiredVoiceConfig(runtimeConfig);
+		const config = normalized.config;
+		if (normalized.changed) {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+		}
 		// Default STT provider: web-speech on Windows/macOS (Chromium WebView),
 		// vosk on Linux (WebKitGTK doesn't support Web Speech API)
 		if (!config.sttProvider) {
@@ -512,9 +661,12 @@ export function loadConfig(): AppConfig | null {
 }
 
 export function saveConfig(config: AppConfig): void {
+	const normalized = normalizeRetiredVoiceConfig(
+		normalizeLocalRuntimeConfig(config),
+	).config;
 	localStorage.setItem(
 		STORAGE_KEY,
-		JSON.stringify(normalizeLocalRuntimeConfig(config)),
+		JSON.stringify(normalized),
 	);
 	if (typeof window !== "undefined") {
 		window.dispatchEvent(new CustomEvent("naia-config-changed"));
@@ -697,6 +849,19 @@ export async function saveConfigSecure(config: AppConfig): Promise<void> {
 
 let secretMigrationPromise: Promise<void> | null = null;
 
+async function purgeRetiredVoiceSecrets(
+	securePath: string | null,
+): Promise<void> {
+	if (securePath) {
+		for (const key of RETIRED_VOICE_SECRET_KEYS) {
+			await deleteSecretKeyAtPath(key, securePath);
+		}
+	}
+	for (const key of RETIRED_VOICE_SECRET_KEYS) {
+		await deleteLegacySecretKey(key);
+	}
+}
+
 function isMigratableLegacyKey(key: string): boolean {
 	return isSecretKey(key) || key === "labKey" || key.startsWith("app:");
 }
@@ -704,7 +869,11 @@ function isMigratableLegacyKey(key: string): boolean {
 function clearLocalSecretFields(config: AppConfig): boolean {
 	const raw = config as unknown as Record<string, unknown>;
 	let changed = false;
-	for (const key of [...SECRET_KEYS, "labKey"] as const) {
+	for (const key of [
+		...SECRET_KEYS,
+		...RETIRED_VOICE_SECRET_KEYS,
+		"labKey",
+	] as const) {
 		if (raw[key] !== undefined) {
 			raw[key] = undefined;
 			changed = true;
@@ -842,6 +1011,12 @@ export async function migrateLabKeyToNaiaKey(): Promise<void> {
 	} catch {
 		// Leave the marker unset so the migration remains retryable on startup.
 	}
+	try {
+		// #603: retired voice keys are never migrated to the new ADK store.
+		await purgeRetiredVoiceSecrets(securePath);
+	} catch {
+		// Keep startup retryable if a store is temporarily unavailable.
+	}
 
 	// 1. Secure store: labKey → naiaKey (skip if Tauri not available). The
 	// captured path prevents an ADK switch during the await chain from writing
@@ -902,63 +1077,15 @@ export function migrateSpeechStyleValues(): void {
 	}
 }
 
-// ── Live provider → unified model migration ──
+// ── Retired live/provider migration ──
 
-/**
- * Migrate legacy liveProvider settings to unified model selection.
- * Call once on app startup after other migrations. Idempotent.
- *
- * liveProvider: "naia" → provider: "nextain", model: "gemini-2.5-flash-live"
- * liveProvider: "gemini-live" → provider: "gemini", model: "gemini-2.5-flash-live"
- * liveProvider: "openai-realtime" → provider: "openai", model: "gpt-4o-realtime"
- * liveProvider: "edge-tts" → ttsProvider: "edge" (pipeline TTS)
- * liveProvider: "naia-omni" → preserved in config (backlog #33), UI hidden
- */
+/** Normalize legacy live/provider values after a config cache is available (#603). */
 export function migrateLiveProviderToUnifiedModel(): void {
 	const config = loadConfig();
 	if (!config) return;
-	const raw = config as any;
-
-	// Skip if already migrated (no liveProvider field)
-	if (!raw.liveProvider) return;
-
-	let changed = false;
-
-	switch (raw.liveProvider) {
-		case "naia":
-			raw.voice = raw.liveVoice;
-			raw.provider = "nextain";
-			raw.model = "gemini-2.5-flash-live";
-			changed = true;
-			break;
-		case "gemini-live":
-			raw.voice = raw.liveVoice;
-			raw.provider = "gemini";
-			raw.model = "gemini-2.5-flash-live";
-			changed = true;
-			break;
-		case "openai-realtime":
-			raw.voice = raw.openaiRealtimeVoice;
-			raw.provider = "openai";
-			raw.model = "gpt-4o-realtime";
-			changed = true;
-			break;
-		case "edge-tts":
-			// Edge TTS moves to pipeline TTS provider
-			if (!raw.ttsProvider) raw.ttsProvider = "edge";
-			changed = true;
-			break;
-		case "naia-omni":
-			// naia-omni uses vllmHost/ws — clear legacy liveProvider
-			changed = true;
-			break;
-	}
-
-	if (changed) {
-		raw.liveProvider = undefined;
-		raw.liveVoice = undefined;
-		raw.liveModel = undefined;
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+	const normalized = normalizeRetiredVoiceConfig(config);
+	if (normalized.changed) {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized.config));
 	}
 }
 

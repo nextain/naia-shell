@@ -1,106 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-	parseKnowledgeResult,
-	classifySourceUri,
-	toFilePath,
-	isKnowledgeTool,
-	parseKnowledgeGraph,
-	isKnowledgeGraphTool,
 	communityColor,
-	graphFromKbJson,
 	entitySourcesFromKbJson,
+	graphFromKbJson,
 	MAX_GRAPH_NODES,
 } from "../lib/knowledge-result";
 
-describe("knowledge-result — parseKnowledgeResult (지식 tool-result JSON 파싱)", () => {
-	it("ask: {abstained, answer, sources} 파싱 + sourceUris 보존", () => {
-		const out = JSON.stringify({ abstained: false, answer: "신분증", sources: [{ title: "전입신고", sourceUris: ["file:///ws/x.md"] }] });
-		const p = parseKnowledgeResult("skill_knowledge_ask", out);
-		expect(p).not.toBeNull();
-		expect(p?.kind).toBe("ask");
-		if (p?.kind === "ask") {
-			expect(p.abstained).toBe(false);
-			expect(p.answer).toBe("신분증");
-			expect(p.sources[0].sourceUris).toContain("file:///ws/x.md");
-		}
-	});
-
-	it("ask: 기권(abstained=true, sources=[])", () => {
-		const out = JSON.stringify({ abstained: true, answer: "관련 근거를 찾지 못했습니다.", sources: [] });
-		const p = parseKnowledgeResult("skill_knowledge_ask", out);
-		expect(p?.kind === "ask" && p.abstained).toBe(true);
-	});
-
-	it("search: {hits:[{title,snippet,score,sourceUris}]} 파싱", () => {
-		const out = JSON.stringify({ hits: [{ title: "여권", snippet: "수수료 53000원", score: 0.8, sourceUris: ["https://gov.kr/passport"] }] });
-		const p = parseKnowledgeResult("skill_knowledge_search", out);
-		expect(p?.kind).toBe("search");
-		if (p?.kind === "search") {
-			expect(p.hits[0].title).toBe("여권");
-			expect(p.hits[0].sourceUris[0]).toBe("https://gov.kr/passport");
-		}
-	});
-
-	it("비지식 도구/빈 output/잘못된 JSON/형태불일치 → null(기본 렌더 폴백)", () => {
-		expect(parseKnowledgeResult("read_file", "{}")).toBeNull();
-		expect(parseKnowledgeResult("skill_knowledge_ask", undefined)).toBeNull();
-		expect(parseKnowledgeResult("skill_knowledge_ask", "not json")).toBeNull();
-		expect(parseKnowledgeResult("skill_knowledge_ask", JSON.stringify({ answer: "x" }))).toBeNull(); // abstained/sources 누락
-		expect(parseKnowledgeResult("skill_knowledge_search", JSON.stringify({ hits: [{ title: "x" }] }))).toBeNull(); // 필드 누락
-	});
-
-	it("isKnowledgeTool", () => {
-		expect(isKnowledgeTool("skill_knowledge_ask")).toBe(true);
-		expect(isKnowledgeTool("skill_knowledge_search")).toBe(true);
-		expect(isKnowledgeTool("read_file")).toBe(false);
-	});
-});
-
-describe("knowledge-result — 출처 분류(근거→원문 라우팅)", () => {
-	it("classifySourceUri: http(s)=url, 그 외=file", () => {
-		expect(classifySourceUri("https://gov.kr/x")).toBe("url");
-		expect(classifySourceUri("http://x.com")).toBe("url");
-		expect(classifySourceUri("/ws/doc.md")).toBe("file");
-		expect(classifySourceUri("file:///ws/doc.md")).toBe("file");
-	});
-	it("toFilePath: file:// 접두 제거", () => {
-		expect(toFilePath("file:///ws/doc.md")).toBe("/ws/doc.md");
-		expect(toFilePath("/ws/doc.md")).toBe("/ws/doc.md");
-	});
-});
-
-describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", () => {
-	it("정상 그래프 파싱(nodes/edges/communityCount)", () => {
-		const out = JSON.stringify({
-			nodes: [{ id: "a", label: "전입신고", type: "Service", deg: 1, community: 0 }],
-			edges: [{ from: "a", to: "b", type: "handled_by", weight: 2 }],
-			communityCount: 1,
-		});
-		const g = parseKnowledgeGraph("skill_knowledge_graph", out);
-		expect(g).not.toBeNull();
-		expect(g?.nodes[0].label).toBe("전입신고");
-		expect(g?.edges[0].weight).toBe(2);
-		expect(g?.communityCount).toBe(1);
-	});
-
-	it("비그래프 도구/잘못된 JSON/형태불일치 → null", () => {
-		expect(parseKnowledgeGraph("skill_knowledge_ask", "{}")).toBeNull();
-		expect(parseKnowledgeGraph("skill_knowledge_graph", "not json")).toBeNull();
-		expect(parseKnowledgeGraph("skill_knowledge_graph", JSON.stringify({ nodes: "x" }))).toBeNull();
-	});
-
-	it("isKnowledgeGraphTool", () => {
-		expect(isKnowledgeGraphTool("skill_knowledge_graph")).toBe(true);
-		expect(isKnowledgeGraphTool("skill_knowledge_ask")).toBe(false);
-	});
-
+describe("knowledge-result — 설정 KB 그래프 데이터", () => {
 	it("communityColor: 결정론·순환(음수/초과 안전)", () => {
 		expect(communityColor(0)).toBe(communityColor(0));
 		expect(typeof communityColor(99)).toBe("string");
 		expect(typeof communityColor(-3)).toBe("string");
 	});
 
-	// ── K4: kb.json → 그래프(설정 지식 탭 직접 렌더용, 엔진 toGraphData 포팅) ──
 	describe("graphFromKbJson (kb.json envelope → 2D/3D 그래프 데이터)", () => {
 		const kbJson = (kb: unknown) => JSON.stringify({ version: 1, kb });
 
@@ -124,9 +36,12 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 			);
 			expect(g).not.toBeNull();
 			if (!g) return;
-			expect(g.nodes.map((n) => n.label).sort()).toEqual(["신분증", "외딴섬", "전입신고"]);
+			expect(g.nodes.map((n) => n.label).sort()).toEqual([
+				"신분증",
+				"외딴섬",
+				"전입신고",
+			]);
 			expect(g.edges).toHaveLength(1);
-			// degree: e1·e2=1, e3=0
 			const deg = Object.fromEntries(g.nodes.map((n) => [n.id, n.deg]));
 			expect(deg.e1).toBe(1);
 			expect(deg.e2).toBe(1);
@@ -141,11 +56,11 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 					relations: [{ from: "e1", to: "ghost", type: "x" }],
 				}),
 			);
-			expect(g?.edges).toHaveLength(0); // ghost 미존재 → 엣지 제외
+			expect(g?.edges).toHaveLength(0);
 		});
 	});
 
-	describe("entitySourcesFromKbJson (노드 → 출처 문서, 근거→원문)", () => {
+	describe("entitySourcesFromKbJson (노드 → 출처 문서)", () => {
 		const kbJson = (kb: unknown) => JSON.stringify({ version: 1, kb });
 
 		it("Topic 엔티티(name=카드 title) → 카드 sourceUris 직접", () => {
@@ -170,7 +85,7 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 					relations: [{ from: "e1", to: "e2", type: "mentions" }],
 				}),
 			);
-			expect(src.e2).toEqual(["file:///ws/a.md"]); // 전파됨
+			expect(src.e2).toEqual(["file:///ws/a.md"]);
 		});
 
 		it("출처 없는 엔티티 → 키 부재", () => {
@@ -189,8 +104,7 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 			expect(entitySourcesFromKbJson("{bad")).toEqual({});
 		});
 
-		// ── 적대리뷰 회귀 잠금 ──
-		it("mentions/references 외 관계(co_occurs)는 출처 전파 안 함(틀린 근거 방지)", () => {
+		it("mentions/references 외 관계는 출처를 전파하지 않음", () => {
 			const src = entitySourcesFromKbJson(
 				kbJson({
 					cards: [{ title: "A", sourceUris: ["file:///a.md"] }],
@@ -202,10 +116,10 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 				}),
 			);
 			expect(src.e1).toEqual(["file:///a.md"]);
-			expect(src.e2).toBeUndefined(); // co_occurs 는 출처 상속 안 함
+			expect(src.e2).toBeUndefined();
 		});
 
-		it("깊은 체인(depth 4) — 관계 배열 역순서여도 fixpoint 로 말단까지 전파", () => {
+		it("깊은 체인도 관계 배열 순서와 무관하게 말단까지 전파", () => {
 			const src = entitySourcesFromKbJson(
 				kbJson({
 					cards: [{ title: "T", sourceUris: ["file:///t.md"] }],
@@ -215,7 +129,6 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 						{ id: "c2", name: "C2" },
 						{ id: "c3", name: "C3" },
 					],
-					// 역순 배열(고정 3패스면 c3 누락, fixpoint 면 도달)
 					relations: [
 						{ from: "c2", to: "c3", type: "mentions" },
 						{ from: "c1", to: "c2", type: "mentions" },
@@ -226,7 +139,7 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 			expect(src.c3).toEqual(["file:///t.md"]);
 		});
 
-		it("id=__proto__ 엔티티 출처 보존(소실/오염 없음)", () => {
+		it("id=__proto__ 엔티티 출처 보존", () => {
 			const src = entitySourcesFromKbJson(
 				kbJson({
 					cards: [{ title: "P", sourceUris: ["file:///p.md"] }],
@@ -239,15 +152,14 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 		});
 	});
 
-	describe("graphFromKbJson — 노드 상한(적대리뷰 회귀 잠금)", () => {
+	describe("graphFromKbJson — 노드 상한", () => {
 		const kbJson = (kb: unknown) => JSON.stringify({ version: 1, kb });
-		it("노드 상한 초과 → degree 상위 MAX_GRAPH_NODES 만 유지(허브 보존·엣지 정합)", () => {
+		it("노드 상한 초과 → degree 상위 MAX_GRAPH_NODES 만 유지", () => {
 			const N = MAX_GRAPH_NODES + 50;
 			const entities = Array.from({ length: N }, (_, i) => ({
 				id: `e${i}`,
 				name: `n${i}`,
 			}));
-			// e0 = 허브(다수 연결) → degree 상위라 반드시 유지
 			const relations = Array.from({ length: 40 }, (_, i) => ({
 				from: "e0",
 				to: `e${i + 1}`,

@@ -69,20 +69,12 @@ import {
 } from "../lib/browser-host-skill";
 import {
 	ENVIRONMENT_APP_ID,
-	SKILL_ENVIRONMENT,
 	environmentClearNeeded,
 	environmentSession,
-	environmentToolRegistered,
-	executeEnvironmentSkill,
-	liveEnvironmentDeps,
 	noteEnvironmentClear,
-	noteEnvironmentToolAck,
 	refreshEnvironment,
 } from "../lib/environment-skill";
-import {
-	discoverAndPersistDiscordDmChannel,
-	resetGatewaySession,
-} from "../lib/gateway-sessions";
+import { resetGatewaySession } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
 import { markNaiaKeyUnauthorized } from "../lib/lab-balance";
 import {
@@ -95,6 +87,11 @@ import {
 import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
+import {
+	MODEL_FACING_TOOL_KEEP_LIST,
+	filterModelFacingTools,
+	isModelFacingToolAllowed,
+} from "../lib/model-facing-tools";
 import { buildSystemPrompt } from "../lib/persona";
 import { effectiveMainRole } from "../lib/slots/model";
 import {
@@ -194,9 +191,6 @@ const AtMentionPopover = lazy(() =>
 		default: AtMentionPopover,
 	})),
 );
-const ChannelsTab = lazy(() =>
-	import("./ChannelsTab").then(({ ChannelsTab }) => ({ default: ChannelsTab })),
-);
 const CostDashboard = lazy(() =>
 	import("./CostDashboard").then(({ CostDashboard }) => ({
 		default: CostDashboard,
@@ -254,7 +248,6 @@ type TabId =
 	| "chat"
 	| "progress"
 	| "skills"
-	| "channels"
 	| "agents"
 	| "diagnostics"
 	| "settings"
@@ -263,7 +256,6 @@ type TabId =
 const TAB_ICONS: Record<TabId, string> = {
 	chat: "💬",
 	history: "🕘",
-	channels: "🌐",
 	progress: "📊",
 	skills: "🧩",
 	agents: "🤖",
@@ -280,28 +272,7 @@ const ttsChunkerOptions = {
 
 // Built-in skills are always available in UI (non-toggle). Prevent hidden config drift
 // from disabling them via chat-originated config_update events.
-const BUILTIN_SKILLS = new Set([
-	"skill_time",
-	"skill_system_status",
-	"skill_memo",
-	"skill_weather",
-	"skill_notify_slack",
-	"skill_notify_discord",
-	"skill_notify_google_chat",
-	"skill_naia_discord",
-	"skill_skill_manager",
-	"skill_agents",
-	"skill_approvals",
-	"skill_botmadang",
-	"skill_channels",
-	"skill_config",
-	"skill_cron",
-	"skill_device",
-	"skill_diagnostics",
-	"skill_sessions",
-	"skill_tts",
-	"skill_voicewake",
-]);
+const BUILTIN_SKILLS = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
 
 function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 	if (!disabled || disabled.length === 0) return undefined;
@@ -311,6 +282,28 @@ function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 
 function generateRequestId(): string {
 	return `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+let removedModelToolsCache: string[] = [];
+let removedModelToolsRefresh: Promise<void> | null = null;
+
+/** Refresh the deny list without delaying the user's chat request. */
+function refreshRemovedModelTools(): void {
+	if (removedModelToolsRefresh) return;
+	removedModelToolsRefresh = fetchAgentSkills({ includeDisallowed: true })
+		.then((tools) => {
+			removedModelToolsCache = tools
+				.filter((tool) => !isModelFacingToolAllowed(tool.name))
+				.map((tool) => tool.name);
+		})
+		.catch((error) => {
+			Logger.warn("ChatArea", "Model tool boundary refresh failed", {
+				error: String(error),
+			});
+		})
+		.finally(() => {
+			removedModelToolsRefresh = null;
+		});
 }
 
 function formatCost(cost: number): string {
@@ -324,14 +317,6 @@ function formatCost(cost: number): string {
  *  전달한다. (2026-07-15 루크 실증: 하드코딩 "default" 가 프리셋 선택을 façade 에 전달하지
  *  않아 음색이 팔레트 기본으로 고정되던 버그 — 남성 음색을 골라도 여성으로 나옴.)
  *  비팔레트 형식(녹음/업로드 data·로컬경로)은 façade 가 400 fail-closed 라 기본 음색 폴백. */
-export function isDiscordConnectionIntent(text: string): boolean {
-	const normalized = text.trim().toLocaleLowerCase();
-	if (!/(discord|디스코드)/i.test(normalized)) return false;
-	return /(connect|connection|setup|configure|configuration|bot\s*token|연결|연동|설정|구성|봇\s*토큰|토큰\s*(입력|등록|설정))/i.test(
-		normalized,
-	);
-}
-
 /**
  * 답을 만들지 못한 턴 (#572).
  *
@@ -446,8 +431,6 @@ export function ChatArea({
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
 	const [showNoAuthModal, setShowNoAuthModal] = useState(false);
-	const [showDiscordConnectionGuide, setShowDiscordConnectionGuide] =
-		useState(false);
 	// Single source of truth for voice UI state (naia-omni RunPod on-demand +
 	// every other provider). Drives the status banner (cold-start / sold-out /
 	// credit failures) and the voice button — `voiceMode` is derived, not stored,
@@ -670,31 +653,9 @@ export function ChatArea({
 		const loadSession = async () => {
 			const store = useChatStore.getState();
 			store.setSessionId("agent:main:main");
-
-			const config = loadConfig();
-			if (!config?.discordSessionMigrated) {
-				// One-time migration: reset the contaminated main session (Discord DMs mixed in).
-				// (restartGateway 제거됨 2026-06-12 — gateway 없음(#201). resetGatewaySession=agent skill_sessions 유지.)
-				await resetGatewaySession("agent:main:main");
-				// Config hydration can complete while the async reset is in flight.
-				// Re-read the cache after the await so a pre-hydration snapshot can
-				// never erase freshly restored avatar/voice/profile settings.
-				const currentConfig = loadConfig();
-				if (currentConfig) {
-					saveConfig({
-						...currentConfig,
-						discordSessionMigrated: true,
-					});
-				}
-				Logger.info(
-					"ChatArea",
-					"One-time reset: cleared Discord-contaminated main session",
-				);
-			} else {
-				Logger.info("ChatArea", "Skipped legacy Gateway history hydration", {
-					reason: "agent-local-transcript-is-authoritative",
-				});
-			}
+			Logger.info("ChatArea", "Skipped legacy Gateway history hydration", {
+				reason: "agent-local-transcript-is-authoritative",
+			});
 		};
 
 		loadSession().catch((err) => {
@@ -702,12 +663,6 @@ export function ChatArea({
 				error: String(err),
 			});
 		});
-
-		// Auto-discover Discord DM channel ID from Gateway sessions
-		// (skip on migration run — no new sessions exist yet)
-		if (loadConfig()?.discordSessionMigrated) {
-			discoverAndPersistDiscordDmChannel().catch(() => {});
-		}
 
 		// (startup gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config=naia-settings.)
 	}, []);
@@ -900,8 +855,6 @@ export function ChatArea({
 		});
 	}, []);
 
-	// Discord messages are now shown in the dedicated Channels tab (ChannelsTab)
-	// via direct Discord REST API, so no polling into main chat.
 
 	// Auto-send queued messages when streaming ends
 	useEffect(() => {
@@ -1229,14 +1182,7 @@ export function ChatArea({
 			voice: resolveTtsVoiceId(config),
 			ttsProvider: config.ttsProvider || "edge",
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
-			ttsApiKey:
-				config.ttsProvider === "google"
-					? config.googleApiKey || config.apiKey
-					: config.ttsProvider === "openai"
-						? config.openaiTtsApiKey
-						: config.ttsProvider === "elevenlabs"
-							? config.elevenlabsApiKey
-							: undefined,
+			ttsApiKey: undefined,
 			naiaKey: config.naiaKey,
 			gatewayUrl: LAB_GATEWAY_URL,
 			vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
@@ -1605,15 +1551,6 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
-		if (isDiscordConnectionIntent(text)) {
-			setInput("");
-			useChatStore.getState().addMessage({
-				role: "assistant",
-				content: t("chat.discordConnectionSecretGuide"),
-			});
-			setShowDiscordConnectionGuide(true);
-			return;
-		}
 		if (await handleSpeechProfilePhrase(text)) return;
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
@@ -1848,44 +1785,27 @@ export function ChatArea({
 			// 환경 도구도 턴마다 다시 등록한다. 부팅 등록은 agent 기동과 경쟁하고, agent 가
 			// 재시작하면 조용히 사라진다 — BGM 이 같은 이유로 매 턴 재등록한다.
 			// 다만 여기서는 실패해도 대화를 막지 않는다. 환경은 대화의 조건이 아니다.
-			let environmentToolReady = false;
-			if ((loadConfig()?.environmentAwareness ?? "auto") === "off") {
-				// 꺼져 있으면 등록 경로를 타지 않으므로, 실패한 해제는 스스로 낫지 않는다.
-				// 도구 선언이 뇌에 남아 요청 비용이 계속 붙는다 — 다음 턴에 한 번 더 시도한다
-				// (FR-ENV-ATTENTION.17). 기다리지 않으므로 대화는 지연되지 않는다.
-				if (environmentClearNeeded()) {
-					void sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
-						.then((ok) => noteEnvironmentClear(ok))
-						.catch(() => noteEnvironmentClear(false));
-				}
-			} else {
-				// 등록을 쏘되 기다리지 않는다. 기다리면 확인이 오지 않을 때 사용자의 모든
-				// 대화가 시간초과만큼 멈춘다 — 실제로 그렇게 만들어 12건이 깨졌다(2026-08-28).
-				// 확인이 돌아오면 상태가 바뀌고, 이 턴은 마지막으로 확인된 상태를 쓴다.
-				void sendAppSkills(ENVIRONMENT_APP_ID, [SKILL_ENVIRONMENT], {
-					awaitAck: true,
-				})
-					.then((ok) => noteEnvironmentToolAck(ok))
-					.catch(() => noteEnvironmentToolAck(false));
-				// 도구가 꺼져 있으면 나이아는 observe/watch 를 부를 수 없다. 그런데도 개수를
-				// 실으면 안내가 "필요하면 도구를 불러라"라고 말한다 — 닫힌 길을 가리키는 셈이다
-				// (2026-08-28 19차 적대리뷰 지적). 등록 확인과 도구 활성화를 함께 본다.
-				environmentToolReady =
-					environmentToolRegistered() && config.enableTools === true;
-				if (!environmentToolReady) {
-					Logger.warn(
-						"ChatArea",
-						"environment skill not confirmed — skipping surfaces",
-						{
-							requestId,
-						},
-					);
-				}
+			// #611: skill_environment is not model-facing. Clear stale registrations
+			// and only inject surfaces for explicit `always` awareness (no tool).
+			const environmentToolReady = false;
+			if (
+				(loadConfig()?.environmentAwareness ?? "auto") === "off"
+					? environmentClearNeeded()
+					: true
+			) {
+				void sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
+					.then((ok) => noteEnvironmentClear(ok))
+					.catch(() => noteEnvironmentClear(false));
+			}
+			if ((loadConfig()?.environmentAwareness ?? "auto") !== "off") {
 				await refreshEnvironment().catch(() => null);
 			}
 			// 지켜보기 예산을 한 턴 쓴다 (FR-ENV-ATTENTION.7). 음성 경로와 같은 헬퍼를 쓴다 —
 			// 여기만 따로 쓰다가 always 규칙이 이 경로에만 빠졌다(13차 적대리뷰 지적).
 			noteEnvironmentTurn();
+			if (config.enableTools === true) {
+				refreshRemovedModelTools();
+			}
 			await sendChatMessage({
 				message: text,
 				provider: {
@@ -1899,8 +1819,6 @@ export function ChatArea({
 					ollamaNumGpu:
 						activeProvider === "ollama" ? config.ollamaNumGpu : undefined,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,
-					openaiBaseUrl:
-						activeProvider === "openai" ? config.openaiBaseUrl : undefined,
 				},
 				history: history.slice(0, -1),
 				onChunk: (chunk) => handleChunk(chunk, activeProvider),
@@ -1933,9 +1851,19 @@ export function ChatArea({
 				enableTools: config.enableTools,
 				enableThinking: config.enableThinking,
 				gatewayUrl,
-				disabledSkills: config.enableTools
-					? [...(sanitizeDisabledSkills(config.disabledSkills) ?? [])]
-					: undefined,
+				disabledSkills:
+					config.enableTools === true
+						? [
+								...new Set([
+									...(sanitizeDisabledSkills(config.disabledSkills) ?? []),
+									...removedModelToolsCache,
+									...((config.disabledGestures ?? []).includes("youtube")
+										? ["skill_youtube_bgm"]
+										: []),
+								]),
+							]
+						: undefined,
+				enabledClis: [...(config.enabledClis ?? [])],
 				routeViaGateway:
 					!!gatewayUrl &&
 					config.enableTools &&
@@ -2124,12 +2052,25 @@ export function ChatArea({
 		 * 음성은 연결 시점의 지시문 하나로 이야기하므로 요청마다 표면 세그먼트를 싣지 않는다.
 		 * 그 사실을 나이아에게 그대로 알려야 "지켜본다"가 거짓말이 되지 않는다.
 		 */
-		origin: {
+		_origin: {
 			readonly assemblesChatRequests?: boolean;
 			/** 이 호출이 켜는 지켜보기의 주인. 통화만 준다 — 자기가 켠 것만 끄기 위해서다. */
 			readonly watchOwner?: string;
 		} = {},
 	) {
+		if (!isModelFacingToolAllowed(req.toolName)) {
+			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
+				tool: req.toolName,
+			});
+			void sendAppToolResult(
+				req.requestId,
+				req.toolCallId,
+				`Tool is not available: ${req.toolName}`,
+				false,
+				req.activityId,
+			);
+			return;
+		}
 		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 appRegistry 소유자
 		// 탐색으로 못 찾는다 — 전용 분기. executeBgmSkill 이 위젯이 이미 듣는
 		// bgm_youtube_* 이벤트를 발사(위젯 무변경). 음성 경로도 이 dispatch 공유.
@@ -2166,45 +2107,6 @@ export function ChatArea({
 					useChatStore
 						.getState()
 						.updateStreamingToolResult(req.toolCallId, false, String(err));
-					return sendAppToolResult(
-						req.requestId,
-						req.toolCallId,
-						String(err),
-						false,
-						req.activityId,
-					);
-				});
-			return;
-		}
-		if (req.toolName === SKILL_ENVIRONMENT.name) {
-			executeEnvironmentSkill(
-				req.args,
-				liveEnvironmentDeps(
-					loadConfig()?.environmentTerminalInput === true,
-					loadConfig()?.environmentAwareness ?? "auto",
-					origin.assemblesChatRequests === true,
-					origin.watchOwner,
-				),
-			)
-				.then((result) => {
-					Logger.info("ChatArea", "environment skill result", {
-						result: result.text,
-					});
-					return sendAppToolResult(
-						req.requestId,
-						req.toolCallId,
-						result.text,
-						// 거절·오류는 성공으로 바꾸지 않는다 — 뇌가 실패를 성공으로 말하는 경로를 막는다.
-						// 판정은 실행기가 낸다. 문자열 접두사로 되짚으면 새 사유가 생길 때마다
-						// 조용히 성공으로 새어 나간다 (2026-08-27 11차 적대리뷰에서 실제로 그랬다).
-						result.ok,
-						req.activityId,
-					);
-				})
-				.catch((err) => {
-					Logger.warn("ChatArea", "environment skill error", {
-						error: String(err),
-					});
 					return sendAppToolResult(
 						req.requestId,
 						req.toolCallId,
@@ -2542,10 +2444,6 @@ export function ChatArea({
 			case "processing_disclosure":
 				store.appendStreamChunk(formatStructuredAgentChunk(chunk));
 				break;
-			case "discord_message":
-				// Discord DM messages are shown in the dedicated Channels tab.
-				// Ignore them here to keep the main chat clean.
-				break;
 			case "error":
 				Logger.warn("ChatArea", "Agent error chunk", {
 					message: chunk.message,
@@ -2655,28 +2553,24 @@ export function ChatArea({
 			minutes < 1
 				? `${Math.round(elapsed)}s`
 				: `${Math.floor(minutes)}m ${Math.round(elapsed % 60)}s`;
-		// Per-minute providers (Gemini/OpenAI) bill by tokens — estimate for the
-		// breakdown. Hourly session models (naia-omni) do NOT bill by tokens, so
-		// don't fabricate token counts for them (showed up as inflated usage).
-		const isOpenAI = info.provider === "openai-realtime";
-		const inputTokens = perHour
-			? 0
-			: Math.round(elapsed * (isOpenAI ? 10 : 32));
-		const outputTokens = perHour
-			? 0
-			: Math.round(elapsed * (isOpenAI ? 20 : 32));
-		// Map provider to ProviderId-compatible string
+		const inputTokens = perHour ? 0 : Math.round(elapsed * 32);
+		const outputTokens = perHour ? 0 : Math.round(elapsed * 32);
 		const providerMap: Record<string, string> = {
-			naia: "nextain",
-			"gemini-live": "gemini",
-			"openai-realtime": "openai",
+			"azure-voice-live": "nextain",
+			"naia-omni": "nextain",
+			"vllm-omni": "vllm",
 		};
 		useChatStore.getState().addMessage({
 			role: "assistant",
 			content: `🎙️ ${durationStr} · ~$${totalCost.toFixed(3)} (${hint.note})`,
 			cost: {
 				provider: (providerMap[info.provider] ?? info.provider) as any,
-				model: isOpenAI ? "gpt-realtime" : "gemini-live",
+				model:
+					info.provider === "azure-voice-live"
+						? "azure-realtime"
+						: info.provider === "vllm-omni"
+							? "vllm-omni"
+							: "naia-omni",
 				inputTokens,
 				outputTokens,
 				cost: totalCost,
@@ -2906,14 +2800,7 @@ export function ChatArea({
 				pipelineVoiceConfigRef.current = {
 					voice: resolveTtsVoiceId(config) ?? config.voice,
 					ttsProvider: config.ttsProvider || "edge",
-					ttsApiKey:
-						config.ttsProvider === "google"
-							? config.googleApiKey || config.apiKey
-							: config.ttsProvider === "openai"
-								? config.openaiTtsApiKey
-								: config.ttsProvider === "elevenlabs"
-									? config.elevenlabsApiKey
-									: undefined,
+					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
 					naiaKey: config.naiaKey,
 					gatewayUrl: LAB_GATEWAY_URL,
@@ -3008,38 +2895,15 @@ export function ChatArea({
 					};
 
 					if (isApiBased) {
-						// API-based STT — browser MediaStream + cloud API
-						const apiKey = sttMeta?.requiresNaiaKey
-							? config.naiaKey
-							: sttMeta?.apiKeyConfigField === "googleApiKey"
-								? config.googleApiKey
-								: sttMeta?.apiKeyConfigField === "elevenlabsApiKey"
-									? config.elevenlabsApiKey
-									: "";
-						if (!apiKey && !isAsrModel) {
-							Logger.warn("ChatArea", "API STT requires API key", {
+						// Local vLLM ASR only (#603 removed cloud STT adapters).
+						const apiKey = "";
+						if (!isAsrModel && sttEngine !== "vllm") {
+							Logger.warn("ChatArea", "Unsupported API STT provider", {
 								provider: sttEngine,
 							});
 							setSttState("idle");
 							pipelineActiveRef.current = false;
 							setVoiceStatus({ phase: "idle" });
-							if (
-								globalThis.confirm(
-									"STT API key is required.\n\nGo to Settings?",
-								)
-							) {
-								useAppStore.getState().setActiveApp("settings");
-								window.dispatchEvent(
-									new CustomEvent("naia-open-settings", {
-										detail: { tab: "voice" },
-									}),
-								);
-								window.setTimeout(() => {
-									document
-										.querySelector<HTMLButtonElement>('[data-settings-tab="voice"]')
-										?.click();
-								}, 0);
-							}
 							return;
 						}
 						const endpointUrl = isAsrModel
@@ -3057,11 +2921,7 @@ export function ChatArea({
 										: config.vllmSttModel) || undefined
 								: undefined;
 						const session = createApiSttSession({
-							provider: sttEngine as
-								| "google"
-								| "elevenlabs"
-								| "nextain"
-								| "vllm",
+							provider: "vllm",
 							apiKey: apiKey ?? "",
 							language: sttLang,
 							endpointUrl,
@@ -3217,11 +3077,7 @@ export function ChatArea({
 				return;
 			}
 
-			// Determine the live provider from the current model/provider.
-			// Naia omni (naia-*-omni-*, e.g. naia-0.9-omni-24g) routes to OpenAI
-			// Realtime (/v1/realtime via gateway). Gemini live (gemini-*-live)
-			// routes to Gemini Live (/v1/live) under "naia". Both are isOmni,
-			// so branch on the model id prefix first.
+			// Determine the live provider from the current model/provider (#603).
 			const liveProvider = resolveLiveProvider({
 				isOmni,
 				provider: config.provider,
@@ -3234,49 +3090,19 @@ export function ChatArea({
 				model: config.model,
 				liveProvider,
 				hasNaiaKey: !!naiaKey,
-				hasGoogleApiKey: !!config.googleApiKey,
-				hasOpenaiKey: !!(config.openaiRealtimeApiKey ?? config.apiKey),
 			});
 
-			// Validate credentials per provider
-			if (liveProvider === "naia" && !naiaKey) {
-				Logger.warn("ChatArea", "Naia OS voice requires Naia key");
+			if (
+				(liveProvider === "azure-voice-live" || liveProvider === "naia-omni") &&
+				!naiaKey
+			) {
+				Logger.warn("ChatArea", "Live voice requires Naia key");
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: t("chat.voiceNeedLabKey"),
 				});
 				setVoiceStatus({ phase: "idle" });
 				return;
-			}
-			if (liveProvider === "gemini-live" && !naiaKey && !config.googleApiKey) {
-				Logger.warn("ChatArea", "Gemini Live requires Google API key");
-				useChatStore.getState().addMessage({
-					role: "assistant",
-					content: "Gemini Live를 사용하려면 Google API Key를 입력하세요.",
-				});
-				setVoiceStatus({ phase: "idle" });
-				return;
-			}
-			if (liveProvider === "azure-voice-live" && !naiaKey) {
-				Logger.warn("ChatArea", "Azure Voice Live requires Naia key");
-				useChatStore.getState().addMessage({
-					role: "assistant",
-					content: t("chat.voiceNeedLabKey"),
-				});
-				setVoiceStatus({ phase: "idle" });
-				return;
-			}
-			if (liveProvider === "openai-realtime") {
-				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
-				if (!openaiKey) {
-					Logger.warn("ChatArea", "OpenAI Realtime requires API key");
-					useChatStore.getState().addMessage({
-						role: "assistant",
-						content: "OpenAI Realtime을 사용하려면 API Key를 입력하세요.",
-					});
-					setVoiceStatus({ phase: "idle" });
-					return;
-				}
 			}
 
 			const memoryCtx = await buildMemoryContext();
@@ -3289,7 +3115,7 @@ export function ChatArea({
 			// Collect active app tools to pass to the voice session
 			const activeAppId = useAppStore.getState().activeApp;
 			const appTools = activeAppId
-				? (appRegistry.get(activeAppId)?.tools ?? [])
+				? filterModelFacingTools(appRegistry.get(activeAppId)?.tools ?? [])
 				: [];
 			const appToolDefs = appTools.map((tool) => ({
 				name: tool.name,
@@ -3336,17 +3162,12 @@ export function ChatArea({
 					: systemPrompt;
 
 			// Create voice session via provider factory
-			// Gemini Direct uses Rust proxy (WebKitGTK can't connect to Google's WS)
-			const useDirectMode =
-				liveProvider === "gemini-live" && !!config.googleApiKey;
 			// 이 통화의 식별자. 통화가 켠 지켜보기에만 이 표가 붙고, 통화가 끝날 때 그 표가
 			// 붙은 것만 끈다. 시작 시점의 참/거짓으로는 통화 중에 다른 경로가 켠 것과
 			// 구별할 수 없고, 늦게 도착한 옛 세션의 종료가 새 세션의 것을 지운다
 			// (2026-08-27 12차 적대리뷰 지적).
 			const voiceSessionKey = nextVoiceSessionKey();
-			const session = createVoiceSession(liveProvider, {
-				useProxy: useDirectMode,
-			});
+			const session = createVoiceSession(liveProvider);
 			voiceSessionRef.current = session;
 			const abortIfSpeechActivityOwnsVoice = () => {
 				if (
@@ -3472,6 +3293,16 @@ export function ChatArea({
 				noteEnvironmentTurn();
 			};
 			session.onToolCall = async (callId, toolName, args) => {
+				if (!isModelFacingToolAllowed(toolName)) {
+					Logger.warn("ChatArea", "blocked non-model-facing voice tool", {
+						tool: toolName,
+					});
+					session.sendToolResponse(
+						callId,
+						`Tool is not available: ${toolName}`,
+					);
+					return;
+				}
 				try {
 					const result = await directToolCall({
 						toolName,
@@ -3639,22 +3470,9 @@ export function ChatArea({
 					locale: getLocale(),
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
-			} else if (liveProvider === "openai-realtime") {
-				// Pure OpenAI Realtime (user's own key). Naia voice routes via the
-				// "naia-omni" provider branch above (/v1/realtime gateway), never here.
-				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
-				await session.connect({
-					provider: "openai-realtime",
-					apiKey: openaiKey!,
-					model: config.model,
-					voice: selectedVoice,
-					locale: getLocale(),
-					systemInstruction: voiceSystemPrompt,
-					tools: voiceTools.length ? voiceTools : undefined,
-				});
 			} else if (liveProvider === "azure-voice-live") {
 				const azureVoice =
-					selectedVoice === "Kore" || !selectedVoice ? "sunhi" : selectedVoice;
+					!selectedVoice || selectedVoice === "Kore" ? "sunhi" : selectedVoice;
 				await session.connect({
 					provider: "azure-voice-live",
 					gatewayUrl: LAB_GATEWAY_URL,
@@ -3666,17 +3484,7 @@ export function ChatArea({
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else {
-				// Gemini Live: naia (gateway) or gemini-live (direct via Rust proxy)
-				await session.connect({
-					provider: "gemini-live",
-					gatewayUrl: useDirectMode ? undefined : LAB_GATEWAY_URL,
-					naiaKey: useDirectMode ? undefined : naiaKey,
-					googleApiKey: useDirectMode ? config.googleApiKey : undefined,
-					voice: selectedVoice,
-					locale: getLocale(),
-					systemInstruction: voiceSystemPrompt,
-					tools: voiceTools.length ? voiceTools : undefined,
-				});
+				throw new Error(`Unsupported live provider: ${liveProvider}`);
 			}
 			// The activity may have started while session.connect() awaited a
 			// provider/cold start. Recheck before any microphone can start.
@@ -3823,13 +3631,6 @@ export function ChatArea({
 				});
 		}
 	}
-
-	useEffect(() => {
-		const openDiscordInbox = () => setActiveTab("channels");
-		window.addEventListener("naia-open-discord-inbox", openDiscordInbox);
-		return () =>
-			window.removeEventListener("naia-open-discord-inbox", openDiscordInbox);
-	}, []);
 
 	// ── @ mention: track input changes ──────────────────────────────────
 	const handleInputChange = useCallback(
@@ -4009,19 +3810,6 @@ export function ChatArea({
 								{TAB_ICONS.history}
 							</span>
 						</button>
-						<button
-							type="button"
-							className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
-							data-chat-tab="channels"
-							onClick={() => handleTabChange("channels")}
-							title={t("channels.tabChannels")}
-							aria-label={t("channels.tabChannels")}
-							data-tooltip={t("channels.tabChannels")}
-						>
-							<span className="chat-tab-icon" aria-hidden="true">
-								{TAB_ICONS.channels}
-							</span>
-						</button>
 					</div>
 					<div className="chat-header-right">
 						{totalSessionCost > 0 &&
@@ -4073,9 +3861,6 @@ export function ChatArea({
 					{activeTab === "diagnostics" && <DiagnosticsTab />}
 
 					{/* Settings tab */}
-
-					{/* Channels tab */}
-					{activeTab === "channels" && <ChannelsTab />}
 
 					{/* History tab */}
 					{activeTab === "history" && (
@@ -4396,48 +4181,7 @@ export function ChatArea({
 					</div>
 				</div>
 			)}
-			{showDiscordConnectionGuide && (
-				<div className="sync-dialog-overlay">
-					<div
-						className="sync-dialog-card"
-						role="dialog"
-						aria-modal="true"
-						style={{ maxWidth: 420 }}
-					>
-						<p style={{ marginBottom: 8, lineHeight: 1.6 }}>
-							{t("chat.discordConnectionSecretGuide")}
-						</p>
-						<p style={{ marginBottom: 16, lineHeight: 1.6 }}>
-							{t("settings.connectionsSetupHelp")}
-						</p>
-						<div className="sync-dialog-actions">
-							<button
-								type="button"
-								className="onboarding-next-btn"
-								onClick={() => {
-									setShowDiscordConnectionGuide(false);
-									useAppStore.getState().setActiveApp("settings");
-									window.dispatchEvent(
-										new CustomEvent("naia-open-settings", {
-											detail: { tab: "connections" },
-										}),
-									);
-									window.setTimeout(() => {
-										document
-											.querySelector<HTMLButtonElement>(
-												'[data-settings-tab="connections"]',
-											)
-											?.click();
-									}, 0);
-								}}
-							>
-								{t("settings.tabConnections")} ·{" "}
-								{t("settings.connectionsDiscord")}
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
+			
 		</>
 	);
 }

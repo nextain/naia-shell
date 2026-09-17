@@ -15,6 +15,7 @@ function DeferredHerdrWorkspaceCenterArea(props: AppCenterProps) {
 	);
 }
 
+/** Model-facing workspace tools — read surfaces only (#611). */
 export const WORKSPACE_TOOLS: NaiaTool[] = [
 	{
 		name: "skill_workspace_get_sessions",
@@ -46,136 +47,6 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 			"현재 에디터에 열려 있는 파일의 경로와 내용을 반환한다. 파일이 없으면 { open: false }를 반환한다.",
 		parameters: { type: "object", properties: {}, required: [] },
 		tier: 0, // auto (read-only)
-	},
-	{
-		name: "skill_workspace_edit_open_file",
-		description:
-			"현재 에디터에 열려 있는 파일의 내용을 replaceAll로 치환한다. search와 replace를 제공하면 파일 내용에서 해당 텍스트를 모두 바꾼다. 전체 교체는 content 인자를 사용한다.",
-		parameters: {
-			type: "object",
-			properties: {
-				search: {
-					type: "string",
-					description: "찾을 텍스트",
-				},
-				replace: {
-					type: "string",
-					description: "바꿀 텍스트",
-				},
-				content: {
-					type: "string",
-					description: "파일 전체 내용으로 교체 (search/replace보다 우선)",
-				},
-			},
-			required: [],
-		},
-		tier: 2, // confirm (file write)
-	},
-	{
-		name: "skill_workspace_focus_session",
-		description:
-			"워크스페이스 앱을 활성화하고 지정한 Herdr Space와 그 터미널로 포커스를 이동한다.",
-		parameters: {
-			type: "object",
-			properties: {
-				dir: {
-					type: "string",
-					description:
-						"세션의 dir 식별자 (skill_workspace_get_sessions 반환값의 sessions[].dir 필드)",
-				},
-			},
-			required: ["dir"],
-		},
-		tier: 1, // notify
-	},
-	{
-		name: "skill_workspace_new_session",
-		description: "지정한 디렉토리에 새 Herdr Space를 만들고 포커스한다.",
-		parameters: {
-			type: "object",
-			properties: {
-				dir: {
-					type: "string",
-					description:
-						"터미널을 열 디렉토리 절대 경로 (e.g. /path/to/workspace/naia-os)",
-				},
-			},
-			required: ["dir"],
-		},
-		tier: 2, // confirm (process spawn)
-	},
-	{
-		name: "skill_workspace_send_to_session",
-		description:
-			"지정한 Herdr Space의 포커스된 에이전트에게 프롬프트를 전달한다.",
-		parameters: {
-			type: "object",
-			properties: {
-				dir: {
-					type: "string",
-					description:
-						"세션의 dir 식별자 (skill_workspace_get_sessions 반환값의 sessions[].dir 필드)",
-				},
-				text: {
-					type: "string",
-					description: "PTY stdin에 전송할 텍스트 (\\n 포함 시 Enter 입력)",
-				},
-			},
-			required: ["dir", "text"],
-		},
-		tier: 2, // confirm (PTY 입력)
-	},
-	{
-		name: "skill_workspace_execute",
-		description:
-			"지정한 디렉토리에서 셸 명령을 실행하고 출력을 캡처하여 반환한다. 새 임시 PTY에서 실행되며, 명령 완료 후 자동 정리된다. 기존 터미널 세션에 영향 없음. 반환값: { success, output, exit_code }",
-		parameters: {
-			type: "object",
-			properties: {
-				command: {
-					type: "string",
-					description: "실행할 셸 명령",
-				},
-				dir: {
-					type: "string",
-					description:
-						"명령을 실행할 디렉토리. 절대 경로(e.g. /path/to/workspace/naia-os) 또는 skill_workspace_get_sessions 반환값의 sessions[].dir 식별자(폴더 이름, e.g. 'naia-os')를 받는다. 식별자는 해당 세션의 절대 경로로 자동 해석된다. 생략 시 워크스페이스 루트.",
-				},
-				timeout_secs: {
-					type: "number",
-					description: "명령 실행 타임아웃 (초, 기본값: 60)",
-				},
-			},
-			required: ["command"],
-		},
-		tier: 2, // confirm (command execution)
-	},
-	{
-		name: "skill_workspace_classify_dirs",
-		description:
-			"워크스페이스 루트의 하위 폴더를 분류(project/worktree/reference/docs/other)한다. 인자 없이 호출하면 추천 결과를 반환하고, confirmed 배열을 넘기면 분류를 적용한다.",
-		parameters: {
-			type: "object",
-			properties: {
-				confirmed: {
-					type: "array",
-					description: "사용자가 확인한 분류 결과 배열",
-					items: {
-						type: "object",
-						properties: {
-							name: { type: "string" },
-							path: { type: "string" },
-							category: {
-								type: "string",
-								enum: ["project", "worktree", "reference", "docs", "other"],
-							},
-						},
-					},
-				},
-			},
-			required: [],
-		},
-		tier: 0,
 	},
 ];
 

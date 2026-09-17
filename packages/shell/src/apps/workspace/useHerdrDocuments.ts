@@ -10,7 +10,6 @@ import type { AppCenterProps } from "../../lib/app-registry";
 import { Logger } from "../../lib/logger";
 import {
 	UI_PREFERENCE_KEYS,
-	patchUiPreferences,
 	useUiPreference,
 } from "../../lib/ui-preferences";
 import { useAppStore } from "../../stores/app";
@@ -28,41 +27,15 @@ interface DocumentsOptions {
 	terminalRef: RefObject<TerminalHandle>;
 }
 
-function useClassifyDirs(naia: {
-	onToolCall: (
-		name: string,
-		handler: (args: Record<string, unknown>) => Promise<string>,
-		) => () => void;
-}) {
-	const classifiedDirs = useUiPreference<ClassifiedDir[] | null>(
+function useClassifyDirs() {
+	return useUiPreference<ClassifiedDir[] | null>(
 		UI_PREFERENCE_KEYS.classifiedDirs,
 		null,
 	);
-	useEffect(
-		() =>
-			naia.onToolCall("skill_workspace_classify_dirs", async (args) => {
-				if (Array.isArray(args.confirmed)) {
-					const next = args.confirmed as ClassifiedDir[];
-					void patchUiPreferences({
-						[UI_PREFERENCE_KEYS.classifiedDirs]: next,
-					});
-					return `Classification applied: ${next.length} directories`;
-				}
-				try {
-					return JSON.stringify(
-						await invoke<ClassifiedDir[]>("workspace_classify_dirs"),
-					);
-				} catch (error) {
-					return `Error: ${String(error)}`;
-				}
-			}),
-		[naia],
-	);
-	return classifiedDirs;
 }
 
 export function useHerdrDocuments({
-	naia,
+	naia: _naia,
 	locationGenerationRef,
 	snapshotRef,
 	setSurface,
@@ -74,7 +47,7 @@ export function useHerdrDocuments({
 	const [quickOpenVisible, setQuickOpenVisible] = useState(false);
 	const editorRef = useRef<EditorHandle>(null);
 	const fileTreeRegionRef = useRef<HTMLDivElement>(null);
-	const classifiedDirs = useClassifyDirs(naia);
+	const classifiedDirs = useClassifyDirs();
 	const resolveFile = useCallback(
 		(path: string) => {
 			const snapshot = snapshotRef.current;

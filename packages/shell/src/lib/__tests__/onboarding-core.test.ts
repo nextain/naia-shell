@@ -37,10 +37,14 @@ describe("UC12 graft seam — completeOnboardingNewCore (실 core 경유)", () =
 		localStore = null;
 	});
 
-	it("flat(apiKey+naiaKey) → write_naia_config 는 agent-only(secret strip) + write_agent_key 키체인 + markComplete", async () => {
+	it("flat(잔존 apiKey + naiaKey) → 나이아 계정 키만 키체인, 타사 직결 키 경로는 흔적 없이 배제(#602)", async () => {
 		await completeOnboardingNewCore({
-			provider: "openai",
-			model: "gpt-4o",
+			// #602: 타사 직결 클라우드 LLM 공급자(openai/anthropic/gemini/xai/zai)는
+			// 제거됐다 — 남는 로그인 경로는 나이아 계정(nextain)뿐이다. 레거시 설정에
+			// 잔존할 수 있는 BYO apiKey 를 함께 넘겨, 그 키가 어떤 타사 env 로도 키체인에
+			// 쓰이지 않음을(=직결 경로 부활 불가) 회귀 가드한다.
+			provider: "nextain",
+			model: "deepseek-v4-flash",
 			agentName: "나이아",
 			apiKey: "SK",
 			naiaKey: "NK",
@@ -54,12 +58,30 @@ describe("UC12 graft seam — completeOnboardingNewCore (실 core 경유)", () =
 		const json = String((cfgWrite?.[1] as { json: string }).json);
 		expect(json).not.toContain("SK"); // apiKey 누출 금지
 		expect(json).not.toContain("NK"); // naiaKey 누출 금지
-		expect(json).toContain("openai"); // agent 필드는 포함
+		expect(json).toContain("nextain"); // agent 필드는 포함
 
-		// write_agent_key = 키체인 envKey 매핑(openai→OPENAI_API_KEY, naiaKey→NAIA_ANYLLM_API_KEY)
-		const keyCalls = mockInvoke.mock.calls.filter((c) => c[0] === "write_agent_key").map((c) => c[1]);
-		expect(keyCalls).toContainEqual({ adkPath: "/adk", envKey: "OPENAI_API_KEY", value: "SK" });
-		expect(keyCalls).toContainEqual({ adkPath: "/adk", envKey: "NAIA_ANYLLM_API_KEY", value: "NK" });
+		// write_agent_key = 키체인 envKey 매핑. 나이아 계정 키만 쓰인다(naiaKey→NAIA_ANYLLM_API_KEY).
+		const keyCalls = mockInvoke.mock.calls
+			.filter((c) => c[0] === "write_agent_key")
+			.map((c) => c[1] as { adkPath: string; envKey: string; value: string });
+		expect(keyCalls).toContainEqual({
+			adkPath: "/adk",
+			envKey: "NAIA_ANYLLM_API_KEY",
+			value: "NK",
+		});
+		// #602: 제거된 타사 직결 키 env 는 어떤 경우에도 쓰이지 않고, 잔존 apiKey 도
+		// 어떤 키체인 항목으로도 새지 않는다(직결 경로 부활 불가).
+		const REMOVED_ENV_KEYS = [
+			"OPENAI_API_KEY",
+			"ANTHROPIC_API_KEY",
+			"GEMINI_API_KEY",
+			"XAI_API_KEY",
+			"GLM_API_KEY",
+		];
+		for (const call of keyCalls) {
+			expect(REMOVED_ENV_KEYS).not.toContain(call.envKey);
+			expect(call.value).not.toBe("SK");
+		}
 
 		// 로컬(saveConfig) 엔 secret 미포함
 		const localCalls = mockSaveConfig.mock.calls.map((c) => c[0]);
@@ -134,10 +156,12 @@ describe("UC12 step-flow graft seam — makeOnboardingSession (실 core 경유)"
 		expect(done.step).toBe("complete");
 	});
 
-	it("비-naia provider(apiKey 직결) submit = 게이트 무관 전이(provider→complete)", async () => {
+	it("비-naia provider submit = 게이트 무관 전이(provider→complete)", async () => {
 		const s = makeOnboardingSession();
 		await toProvider(s);
-		const done = await s.submit({ step: "provider", provider: "glm", apiKey: "K" });
+		// #602: 타사 직결(glm 등)은 제거됐다 — 게이트는 미로그인 nextain 만 막으므로,
+		// 남는 비-나이아 공급자(CLI codex)로 게이트 무관 전이를 검증한다.
+		const done = await s.submit({ step: "provider", provider: "codex" });
 		expect(done.step).toBe("complete");
 	});
 
@@ -149,18 +173,18 @@ describe("UC12 step-flow graft seam — makeOnboardingSession (실 core 경유)"
 		await toProvider(s); // draft 누적(agentName='나이아' 등)
 		const blocked = await s.submit({ step: "provider", provider: "nextain" }); // 게이트 차단 → draft.provider=nextain, step 유지
 		expect(blocked.step).toBe("provider");
-		// 전혀 다른 값의 셸 snapshot 으로 완료
+		// 전혀 다른 값의 셸 snapshot 으로 완료 (#602: glm 등 타사 직결은 제거됐으므로
+		// 남는 비-나이아 공급자 codex 를 snapshot 공급자로 쓴다).
 		await s.completeWith({
-			provider: "glm",
-			model: "glm-4.6",
+			provider: "codex",
+			model: "gpt-5.6-sol",
 			agentName: "스냅샷이름",
-			apiKey: "K",
 			workspaceRoot: "/adk",
 			onboardingComplete: true,
 		});
 		const cfgWrite = mockInvoke.mock.calls.find((c) => c[0] === "write_naia_config");
 		const json = String((cfgWrite?.[1] as { json: string }).json);
-		expect(json).toContain("glm"); // snapshot provider 반영
+		expect(json).toContain("codex"); // snapshot provider 반영
 		expect(json).toContain("스냅샷이름"); // snapshot agentName 반영
 		expect(json).not.toContain("나이아"); // core draft agentName 미반영(draft 미사용 입증)
 		expect(json).not.toContain("nextain"); // core draft provider 미반영

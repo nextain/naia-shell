@@ -1,5 +1,5 @@
 import { directToolCall } from "./chat-service";
-import { loadConfig, resolveConfiguredGatewayUrl, saveConfig } from "./config";
+import { loadConfig, resolveConfiguredGatewayUrl } from "./config";
 import { Logger } from "./logger";
 import type { ChatMessage } from "./types";
 
@@ -162,55 +162,6 @@ export async function patchGatewaySession(
 		});
 		return false;
 	}
-}
-
-/**
- * Discover Discord DM channel ID from Gateway sessions and persist to config.
- * Call on app init — if config already has discordDmChannelId, skips discovery.
- * Returns the discovered channel ID or null.
- */
-export async function discoverAndPersistDiscordDmChannel(): Promise<
-	string | null
-> {
-	const config = loadConfig();
-	if (config?.discordDmChannelId) return config.discordDmChannelId;
-
-	let sessions: GatewaySession[];
-	try {
-		sessions = await listGatewaySessions(100);
-	} catch {
-		return null;
-	}
-	for (const s of sessions) {
-		// Legacy format: discord:dm:<channelId> — extract channel ID directly
-		const match = s.key.match(/^discord:(?:dm|channel):(\d{10,})$/);
-		if (match) {
-			const channelId = match[1];
-			if (config) {
-				saveConfig({ ...config, discordDmChannelId: channelId });
-			}
-			Logger.info(
-				"gateway-sessions",
-				"Discovered Discord DM channel ID from sessions",
-				{ channelId },
-			);
-			return channelId;
-		}
-		// per-channel-peer format: agent:main:discord:direct:<peerId>
-		// peerId is a USER ID, not channel ID — save as discordDefaultUserId
-		// and let ChannelsTab.resolveChannel() convert via openDmChannel()
-		const peerMatch = s.key.match(/^agent:[^:]+:discord:direct:(\d{10,})$/);
-		if (peerMatch && config && !config.discordDefaultUserId) {
-			const userId = peerMatch[1];
-			saveConfig({ ...config, discordDefaultUserId: userId });
-			Logger.info(
-				"gateway-sessions",
-				"Discovered Discord user ID from session",
-				{ userId },
-			);
-		}
-	}
-	return null;
 }
 
 /** Reset the current Gateway session (for new conversation) */

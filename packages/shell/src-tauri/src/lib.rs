@@ -7,10 +7,10 @@ mod audit;
 mod browser;
 mod browser_webview;
 mod capture;
+mod cli_detect;
 pub mod data_home;
 mod ego_host;
 mod ego_host_bridge;
-mod gemini_live;
 mod herdr;
 mod memory;
 mod platform;
@@ -1408,7 +1408,6 @@ struct AppState {
     /// Random state token for OAuth deep link CSRF protection.
     oauth_state: Arc<Mutex<Option<String>>>,
     /// Active Gemini Live WebSocket proxy session.
-    gemini_live: gemini_live::SharedHandle,
     /// Last agent-core restart timestamp ??debounce to prevent restart storms (#226).
     last_agent_restart: Mutex<Option<std::time::Instant>>,
     /// Startup IPC messages (auth_update / notify_config / creds_update) ??replayed
@@ -5237,16 +5236,8 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
             "Send a notification message to Slack via webhook",
         ),
         (
-            "skill_notify_discord",
-            "Send a notification message to Discord via webhook",
-        ),
-        (
             "skill_notify_google_chat",
             "Send a notification message to Google Chat via webhook",
-        ),
-        (
-            "skill_skill_manager",
-            "Manage skills: list, search, enable, disable",
         ),
         ("skill_agents", "Manage Gateway agents"),
         ("skill_approvals", "Manage Gateway approval rules"),
@@ -5256,10 +5247,8 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
         ),
         ("skill_channels", "Manage messaging channels"),
         ("skill_config", "Manage Gateway configuration"),
-        ("skill_cron", "Manage scheduled tasks"),
         ("skill_device", "Manage Gateway nodes and device pairings"),
         ("skill_diagnostics", "Gateway diagnostics and health checks"),
-        ("skill_naia_discord", "Send and receive Discord messages"),
         ("skill_sessions", "Manage Gateway sub-agent sessions"),
         ("skill_tts", "Manage Gateway TTS (Text-to-Speech)"),
         ("skill_voicewake", "Manage voice wake triggers"),
@@ -5646,48 +5635,6 @@ async fn memory_import_backup(
             memory::unregister_pending(&request_id);
             Err("Memory import timed out (30s)".to_string())
         }
-    }
-}
-
-/// Validate an API key by making a test request to the provider
-#[tauri::command]
-async fn validate_api_key(provider: String, api_key: String) -> Result<bool, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
-
-    let result = match provider.as_str() {
-        "gemini" => {
-            // Use header instead of query parameter to avoid leaking API key
-            // in logs, proxy caches, and Referer headers (CWE-598).
-            client
-                .get("https://generativelanguage.googleapis.com/v1beta/models")
-                .header("x-goog-api-key", &api_key)
-                .send()
-                .await
-        }
-        "xai" => {
-            client
-                .get("https://api.x.ai/v1/models")
-                .header("Authorization", format!("Bearer {}", api_key))
-                .send()
-                .await
-        }
-        "anthropic" => {
-            client
-                .get("https://api.anthropic.com/v1/models")
-                .header("x-api-key", &api_key)
-                .header("anthropic-version", "2023-06-01")
-                .send()
-                .await
-        }
-        _ => return Err(format!("Unknown provider: {}", provider)),
-    };
-
-    match result {
-        Ok(res) => Ok(res.status().is_success()),
-        Err(_) => Ok(false),
     }
 }
 
@@ -8294,143 +8241,6 @@ async fn gateway_health(state: tauri::State<'_, AppState>) -> Result<bool, Strin
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CodexPreflightResult {
-    status: &'static str,
-}
-
-fn classify_codex_preflight(exit_success: bool, output: &str) -> &'static str {
-    let normalized = output.to_ascii_lowercase();
-    if exit_success && normalized.contains("logged in") {
-        "ready"
-    } else if normalized.contains("not logged in")
-        || normalized.contains("login required")
-        || normalized.contains("unauthorized")
-    {
-        "login-required"
-    } else if normalized.contains("not recognized")
-        || normalized.contains("command not found")
-        || normalized.contains("no such file")
-    {
-        "not-installed"
-    } else {
-        "error"
-    }
-}
-
-fn codex_login_status_command() -> Command {
-    #[cfg(windows)]
-    let mut command = {
-        let comspec = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
-        let mut cmd = Command::new(comspec);
-        cmd.args(["/d", "/s", "/c", "codex.cmd login status"]);
-        cmd
-    };
-    #[cfg(not(windows))]
-    let mut command = {
-        let mut cmd = Command::new("codex");
-        cmd.args(["login", "status"]);
-        cmd
-    };
-    platform::hide_console(&mut command);
-    command
-}
-
-/// Returns only a safe Codex readiness code. CLI output is intentionally never
-/// exposed because it can contain account identifiers or diagnostic details.
-#[tauri::command]
-async fn codex_preflight() -> Result<CodexPreflightResult, String> {
-    let result = tokio::task::spawn_blocking(|| codex_login_status_command().output())
-        .await
-        .map_err(|_| "codex_preflight_task_failed".to_string())?;
-    let status = match result {
-        Ok(output) => {
-            let text = format!(
-                "{}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            classify_codex_preflight(output.status.success(), &text)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "not-installed",
-        Err(_) => "error",
-    };
-    Ok(CodexPreflightResult { status })
-}
-
-fn classify_grok_preflight(exit_success: bool, output: &str) -> &'static str {
-    let normalized = output.to_ascii_lowercase();
-    // 신형 독립 CLI 는 미인증이어도 exit 0 으로 모델 목록을 찍고
-    // "You are not authenticated." 한 줄만 앞에 붙인다 — 인증 거부 판정이
-    // 준비 판정보다 먼저 와야 한다.
-    let auth_denied = normalized.contains("not logged in")
-        || normalized.contains("login required")
-        || normalized.contains("unauthorized")
-        || normalized.contains("unauthenticated")
-        || normalized.contains("not authenticated")
-        || normalized.contains("please log in")
-        || normalized.contains("please sign in");
-    if auth_denied {
-        "login-required"
-    } else if exit_success
-        && (normalized.contains("logged in")
-            || normalized.contains("available models")
-            || normalized.contains("default model"))
-    {
-        "ready"
-    } else if normalized.contains("not recognized")
-        || normalized.contains("command not found")
-        || normalized.contains("no such file")
-    {
-        "not-installed"
-    } else {
-        "error"
-    }
-}
-
-fn grok_models_command() -> Command {
-    #[cfg(windows)]
-    let mut command = {
-        let comspec = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
-        let mut cmd = Command::new(comspec);
-        // 셰임 이름을 박지 않는다 — npm 설치는 grok.cmd, 독립 설치는 grok.exe 로
-        // 오는데 cmd 가 PATHEXT 로 양쪽을 모두 해석한다.
-        cmd.args(["/d", "/s", "/c", "grok models"]);
-        cmd
-    };
-    #[cfg(not(windows))]
-    let mut command = {
-        let mut cmd = Command::new("grok");
-        cmd.args(["models"]);
-        cmd
-    };
-    platform::hide_console(&mut command);
-    command
-}
-
-/// Returns only a safe Grok readiness code. CLI output is intentionally never
-/// exposed because it can contain account identifiers or diagnostic details.
-#[tauri::command]
-async fn grok_preflight() -> Result<CodexPreflightResult, String> {
-    let result = tokio::task::spawn_blocking(|| grok_models_command().output())
-        .await
-        .map_err(|_| "grok_preflight_task_failed".to_string())?;
-    let status = match result {
-        Ok(output) => {
-            let text = format!(
-                "{}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            classify_grok_preflight(output.status.success(), &text)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "not-installed",
-        Err(_) => "error",
-    };
-    Ok(CodexPreflightResult { status })
-}
-
 /// Returns the path to the Naia log file (~/.naia/logs/naia.log).
 #[tauri::command]
 fn get_gateway_log_path() -> String {
@@ -8517,13 +8327,9 @@ const SECURE_STORE_FILE: &str = "secure-keys.dat";
 const SECURE_STORE_TEMP_DIR: &str = ".secure-keys-tmp";
 const SECURE_STORE_KEYS: &[&str] = &[
     "apiKey",
-    "googleApiKey",
-    "openaiTtsApiKey",
-    "elevenlabsApiKey",
-    "naiaKey",
+                "naiaKey",
     "gatewayToken",
-    "openaiRealtimeApiKey",
-    "subLlmApiKey",
+        "subLlmApiKey",
     "memoryLlmApiKey",
     "memoryEmbeddingApiKey",
     "qdrantApiKey",
@@ -10896,45 +10702,10 @@ async fn fetch_linked_channels(naia_key: String, user_id: String) -> Result<Stri
 // WebKitGTK cannot directly connect to wss://generativelanguage.googleapis.com
 // (silent hang). These commands proxy the WebSocket through Rust.
 
-#[tauri::command]
-async fn gemini_live_connect(
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-    params: gemini_live::GeminiLiveConnectParams,
-) -> Result<(), String> {
-    gemini_live::connect(app, state.gemini_live.clone(), params).await
-}
 
-#[tauri::command]
-async fn gemini_live_send_audio(
-    state: tauri::State<'_, AppState>,
-    pcm_base64: String,
-) -> Result<(), String> {
-    gemini_live::send_audio(&state.gemini_live, pcm_base64).await
-}
 
-#[tauri::command]
-async fn gemini_live_send_text(
-    state: tauri::State<'_, AppState>,
-    text: String,
-) -> Result<(), String> {
-    gemini_live::send_text(&state.gemini_live, text).await
-}
 
-#[tauri::command]
-async fn gemini_live_send_tool_response(
-    state: tauri::State<'_, AppState>,
-    call_id: String,
-    result: serde_json::Value,
-) -> Result<(), String> {
-    gemini_live::send_tool_response(&state.gemini_live, call_id, result).await
-}
 
-#[tauri::command]
-async fn gemini_live_disconnect(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    gemini_live::disconnect(state.gemini_live.clone()).await;
-    Ok(())
-}
 
 // ?? naia-settings asset commands ?????????????????????????????????????????????
 
@@ -13026,7 +12797,6 @@ pub fn run() {
             gateway: Mutex::new(None),
             health_monitor_shutdown: Mutex::new(None),
             oauth_state: Arc::new(Mutex::new(None)),
-            gemini_live: gemini_live::new_shared_handle(),
             last_agent_restart: Mutex::new(None),
             startup_messages: Mutex::new(StartupMessageCache::default()),
         })
@@ -13059,8 +12829,9 @@ pub fn run() {
             cancel_stream,
             reset_window_state,
             gateway_health,
-            codex_preflight,
-            grok_preflight,
+            cli_detect::cli_detect_refresh,
+            cli_detect::cli_detect_one,
+            cli_detect::cli_open_login,
             get_gateway_log_path,
             get_log_dir,
             open_log_in_editor,
@@ -13070,7 +12841,6 @@ pub fn run() {
             memory_delete_fact,
             memory_export_backup,
             memory_import_backup,
-            validate_api_key,
             fetch_naia_balance,
             list_audio_output_devices,
             detect_gpu_vram,
@@ -13093,11 +12863,6 @@ pub fn run() {
             discord_mark_inbox_read,
             discord_open_dm_channel,
             fetch_linked_channels,
-            gemini_live_connect,
-            gemini_live_send_audio,
-            gemini_live_send_text,
-            gemini_live_send_tool_response,
-            gemini_live_disconnect,
             // naia-settings asset commands
             list_naia_assets,
             upload_nva_bundle,
@@ -14608,61 +14373,6 @@ mod tests {
         // Should return a bool without panicking, regardless of gateway state
         let _healthy = check_gateway_health_sync();
         // Result is environment-dependent: true if gateway running, false if not
-    }
-
-    #[test]
-    fn codex_preflight_classifies_only_safe_readiness_states() {
-        assert_eq!(
-            classify_codex_preflight(true, "Logged in using ChatGPT"),
-            "ready"
-        );
-        assert_eq!(
-            classify_codex_preflight(false, "Not logged in. Run codex login."),
-            "login-required"
-        );
-        assert_eq!(
-            classify_codex_preflight(false, "'codex.cmd' is not recognized"),
-            "not-installed"
-        );
-        assert_eq!(
-            classify_codex_preflight(false, "unexpected failure"),
-            "error"
-        );
-    }
-
-    #[test]
-    fn grok_preflight_classifies_only_safe_readiness_states() {
-        assert_eq!(
-            classify_grok_preflight(true, "You are logged in with grok.com."),
-            "ready"
-        );
-        assert_eq!(
-            classify_grok_preflight(false, "Not logged in. Run grok login."),
-            "login-required"
-        );
-        assert_eq!(
-            classify_grok_preflight(false, "'grok' is not recognized"),
-            "not-installed"
-        );
-        // 신형 독립 CLI: 미인증이어도 exit 0 + 모델 목록 (2026-09-03 win32 실측)
-        assert_eq!(
-            classify_grok_preflight(
-                true,
-                "You are not authenticated.\n\nDefault model: grok-4.6\n\nAvailable models:\n  * grok-4.6 (default)"
-            ),
-            "login-required"
-        );
-        assert_eq!(
-            classify_grok_preflight(
-                true,
-                "Default model: grok-4.6\n\nAvailable models:\n  * grok-4.6 (default)\n  - grok-4.5"
-            ),
-            "ready"
-        );
-        assert_eq!(
-            classify_grok_preflight(false, "unexpected failure"),
-            "error"
-        );
     }
 
     #[test]

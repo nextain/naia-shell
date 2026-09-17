@@ -18,7 +18,6 @@ import {
 	buildNaiaConfigEnv,
 	getAdkPath,
 	listNaiaAssets,
-	readNaiaConfig,
 	resetAdkPathBinding,
 	resetNaiaPersistedSettings,
 	toLocalBlobUrl,
@@ -49,12 +48,10 @@ import {
 	resolveLocalCapabilities,
 	tierProvidedCapabilities,
 } from "../lib/capabilities/vram-tiers";
-import { syncLinkedChannels } from "../lib/channel-sync";
 import {
 	activateNaiaLlm,
 	configureSpeechProfile,
 	reloadAgentSettings,
-	sendAppSkills,
 	sendAppSkillsClear,
 	sendAuthUpdateStrict,
 	sendCredsUpdate,
@@ -89,10 +86,8 @@ import {
 } from "../lib/db";
 import {
 	ENVIRONMENT_APP_ID,
-	SKILL_ENVIRONMENT,
 	environmentSession,
 	noteEnvironmentClear,
-	noteEnvironmentToolAck,
 } from "../lib/environment-skill";
 import { resetGatewaySession } from "../lib/gateway-sessions";
 import {
@@ -118,7 +113,6 @@ import {
 	fetchNaiaModelMetadata,
 	fetchNaiaPricing,
 	fetchOllamaModels,
-	fetchOpenAIModels,
 	fetchVllmModels,
 	formatModelLabel,
 	getDefaultLlmModel,
@@ -127,9 +121,9 @@ import {
 	isApiKeyOptional,
 	isOmniModel,
 	listLlmProviders,
+	shouldHideModelPicker,
 	sortModels,
 } from "../lib/llm";
-import { providerSupportsRole } from "../lib/llm/registry";
 import {
 	keepsProviderWhenLoggedOut,
 	resolveLoggedOutLlm,
@@ -175,7 +169,6 @@ import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
 import { clearSavedCamera } from "./AvatarCanvas";
-import { ConnectionsSettingsTab } from "./ConnectionsSettingsTab";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import {
 	ProactiveSpeechSettingsSection,
@@ -217,6 +210,15 @@ const GROK_PREFLIGHT_LABELS: Record<CodexPreflightStatus, TranslationKey> = {
 	"not-installed": "settings.grokReadinessNotInstalled",
 	"login-required": "settings.grokReadinessLoginRequired",
 	error: "settings.grokReadinessError",
+};
+
+const CLAUDE_PREFLIGHT_LABELS: Record<CodexPreflightStatus, TranslationKey> = {
+	idle: "settings.claudeReadinessIdle",
+	checking: "settings.claudeReadinessChecking",
+	ready: "settings.claudeReadinessReady",
+	"not-installed": "settings.claudeReadinessNotInstalled",
+	"login-required": "settings.claudeReadinessLoginRequired",
+	error: "settings.claudeReadinessError",
 };
 
 type VoxCpm2InstallationStatus = {
@@ -625,7 +627,6 @@ export function SettingsTab() {
 		| "memory"
 		| "knowledge"
 		| "skills"
-		| "connections"
 		| "general"
 	>("profile");
 	// 통합 "AI 모델" 탭의 backend 축(main/small/embedding 공통): naia 계정 / 외부 API / 로컬(embedding=임베드).
@@ -639,6 +640,8 @@ export function SettingsTab() {
 	const [codexPreflightStatus, setCodexPreflightStatus] =
 		useState<CodexPreflightStatus>("idle");
 	const [grokPreflightStatus, setGrokPreflightStatus] =
+		useState<CodexPreflightStatus>("idle");
+	const [claudePreflightStatus, setClaudePreflightStatus] =
 		useState<CodexPreflightStatus>("idle");
 	const existing = loadConfig();
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
@@ -737,9 +740,6 @@ export function SettingsTab() {
 	const [ttsVoice, setTtsVoice] = useState(
 		existing?.ttsVoice ?? defaultVoiceForProvider,
 	);
-	const [googleApiKey, setGoogleApiKey] = useState(
-		existing?.googleApiKey ?? "",
-	);
 	// 기본값은 `effectiveTtsProvider` 한 곳에서 정한다 — 프로파일 카드도 같은 함수를
 	// 읽는다. 여기에만 두면 카드가 "미설정" 이라 적는 동안 이 드롭다운은 Edge 를
 	// 보여 준다(#575).
@@ -824,9 +824,6 @@ export function SettingsTab() {
 	const [voice, setVoice] = useState(
 		existing?.voice ?? getDefaultVoiceForAvatar(existing?.vrmModel),
 	);
-	const [openaiRealtimeApiKey, setOpenaiRealtimeApiKey] = useState(
-		existing?.openaiRealtimeApiKey ?? "",
-	);
 	const [dynamicModels, setDynamicModels] = useState<
 		Record<string, LlmModelMeta[]>
 	>(getStaticModelsRecord);
@@ -841,10 +838,6 @@ export function SettingsTab() {
 	const [vllmHost, setVllmHost] = useState(
 		existing?.vllmHost ?? DEFAULT_VLLM_HOST,
 	);
-	const [openaiBaseUrl, setOpenaiBaseUrl] = useState(
-		existing?.openaiBaseUrl ?? "",
-	);
-	const [openaiConnected, setOpenaiConnected] = useState(false);
 	// Naia Local: ws:// address of the user's own omni-24g container (shown when
 	// the `naia-local` model is selected). Reuses the logged-in key — no key input.
 	const [naiaLocalUrl, setNaiaLocalUrl] = useState(
@@ -1557,15 +1550,6 @@ export function SettingsTab() {
 	const micTestCleanupRef = useRef<(() => void) | null>(null);
 	const [gatewayUrl] = useState(existing?.gatewayUrl ?? "");
 	const [gatewayToken] = useState(existing?.gatewayToken ?? "");
-	const [discordDefaultUserId, setDiscordDefaultUserId] = useState(
-		existing?.discordDefaultUserId ?? "",
-	);
-	const [discordDefaultTarget, setDiscordDefaultTarget] = useState(
-		existing?.discordDefaultTarget ?? "",
-	);
-	const [discordDmChannelId, setDiscordDmChannelId] = useState(
-		existing?.discordDmChannelId ?? "",
-	);
 	const [error, setError] = useState("");
 	const [saved, setSaved] = useState(false);
 	const [isPreviewing, setIsPreviewing] = useState(false);
@@ -1605,55 +1589,10 @@ export function SettingsTab() {
 	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
 		existing?.memoryEmbeddingModel ?? "",
 	);
-	const initialLlmRoles = readConfiguredLlmRoles(
-		existing ?? {
-			provider: "gemini",
-			model: getDefaultLlmModel("gemini"),
-			apiKey: "",
-		},
-	);
-	const [expertLlmRole, setExpertLlmRole] = useState<LlmRoleConfig>(
-		initialLlmRoles.expert ?? { inherit: "main" },
-	);
-	const [subLlmRole, setSubLlmRole] = useState<LlmRoleConfig>(
-		initialLlmRoles.sub ?? { inherit: "main" },
-	);
-	const [memoryLlmRole, setMemoryLlmRole] = useState<LlmRoleConfig>(
-		initialLlmRoles.memory ?? { inherit: "sub" },
-	);
-	// The roles have their own staged controls. Rehydrate them alongside the
-	// main brain after a workspace switch or WebView restart; otherwise the
-	// persisted explicit sub-brain is rendered as the initial inherit default.
-	useEffect(() => {
-		const syncLlmRolesFromConfig = () => {
-			const cfg = loadConfig();
-			if (!cfg) return;
-			const roles = readConfiguredLlmRoles(cfg);
-			setSubLlmRole(roles.sub ?? { inherit: "main" });
-			setExpertLlmRole(roles.expert ?? { inherit: "main" });
-			setMemoryLlmRole(roles.memory ?? { inherit: "sub" });
-		};
-		syncLlmRolesFromConfig();
-		// The workspace files are the config SoT.  Settings can be mounted after
-		// the boot hydration event (or while WebView restart effects race), so an
-		// event-only subscription leaves its staged role controls at defaults.
-		// Read the file once on mount as the deterministic fallback.
-		void readNaiaConfig().then((fileConfig) => {
-			if (!fileConfig) return;
-			const roles = readConfiguredLlmRoles({
-				provider: existing?.provider ?? "gemini",
-				model: existing?.model ?? getDefaultLlmModel("gemini"),
-				apiKey: existing?.apiKey ?? "",
-				...fileConfig,
-			});
-			setSubLlmRole(roles.sub ?? { inherit: "main" });
-			setExpertLlmRole(roles.expert ?? { inherit: "main" });
-			setMemoryLlmRole(roles.memory ?? { inherit: "sub" });
-		});
-		window.addEventListener("naia-config-changed", syncLlmRolesFromConfig);
-		return () =>
-			window.removeEventListener("naia-config-changed", syncLlmRolesFromConfig);
-	}, []);
+	// 보조·전문가·기억 LLM 역할 편집기 제거 (에픽 #589 할 일 2·3, #598): 나이아 로그인은
+	// 모델 하나만 알고, 두뇌 화면에는 역할 편집기를 그리지 않는다. main 역할만 정본으로 남는다.
+	// 옛 config 의 sub/expert/memory 역할 필드는 roles.ts 가 무손실로 읽어 두므로(에이전트
+	// 호환) 여기서 다시 쓰지 않는다 — 저장 시 main 만 갱신한다.
 	const [backupPassword, setBackupPassword] = useState("");
 	const [backupStatus, setBackupStatus] = useState<
 		"idle" | "exporting" | "importing" | "done" | "error"
@@ -1764,21 +1703,15 @@ export function SettingsTab() {
 	}, []);
 
 	useEffect(() => {
+		// #602: 타사 직결 클라우드 LLM 공급자(gemini/openai/anthropic/xai/zai)는 제거했다.
+		// 게이트웨이는 자기 경로를 azure/vertexai/upstage/clova prefix 로 내주며 이는 아래
+		// NAIA_ROUTE_PREFIXES 에서 nextain 으로 묶인다. 남는 alias 는 나이아 계정·CLI·로컬뿐.
 		const modelPrefixPattern =
-			/^(nextain|claude-code-cli|claude-code|gemini|google|openai|anthropic|claude|xai|grok|zai|glm|ollama)[:/](.+)$/i;
+			/^(nextain|claude-code-cli|claude-code|ollama)[:/](.+)$/i;
 		const providerAlias: Record<string, ProviderId> = {
 			nextain: "nextain",
 			"claude-code-cli": "claude-code-cli",
 			"claude-code": "claude-code-cli",
-			gemini: "gemini",
-			google: "gemini",
-			openai: "openai",
-			anthropic: "anthropic",
-			claude: "anthropic",
-			xai: "xai",
-			grok: "xai",
-			zai: "zai",
-			glm: "zai",
 			ollama: "ollama",
 		};
 
@@ -1821,7 +1754,9 @@ export function SettingsTab() {
 						const label = `${m.name || modelId}${priceStr}`;
 
 						const pushModel = (key: string) => {
-							if (!grouped[key]?.some((x) => x.id === modelId)) {
+							// #602: 제거된 공급자로 매핑되면 grouped[key] 가 없으므로 건너뛴다.
+							if (!grouped[key]) return;
+							if (!grouped[key].some((x) => x.id === modelId)) {
 								grouped[key].push({
 									id: modelId,
 									label,
@@ -1847,27 +1782,6 @@ export function SettingsTab() {
 							? "nextain"
 							: resolveProvider(m.provider) || resolveProviderFromId(m.id);
 						if (mappedProvider) pushModel(mappedProvider);
-						// Claude Code CLI uses subscription — add models without pricing
-						if (mappedProvider === "anthropic") {
-							const nameOnly = m.name || modelId;
-							if (!grouped["claude-code-cli"]?.some((x) => x.id === modelId)) {
-								grouped["claude-code-cli"].push({
-									id: modelId,
-									label: nameOnly,
-									capabilities: ["llm"] as const,
-								});
-							}
-						}
-						// Naia only supports curated Gemini models (from registry)
-						if (mappedProvider === "gemini") {
-							const nextainModelIds =
-								getLlmProvider("nextain")
-									?.models.filter((nm) => !nm.capabilities.includes("omni"))
-									.map((nm) => nm.id) ?? [];
-							if (nextainModelIds.includes(modelId)) {
-								pushModel("nextain");
-							}
-						}
 					}
 
 					setDynamicModels(grouped);
@@ -1909,25 +1823,6 @@ export function SettingsTab() {
 			}
 		});
 	}, [provider, vllmHost]);
-
-	useEffect(() => {
-		if (provider !== "openai") return;
-		let cancelled = false;
-		fetchOpenAIModels(openaiBaseUrl, apiKey).then(({ models, connected }) => {
-			if (cancelled) return;
-			setOpenaiConnected(connected);
-			if (models.length === 0) return;
-			setDynamicModels((previous) => ({ ...previous, openai: models }));
-			setModel((current) =>
-				models.some((candidate) => candidate.id === current)
-					? current
-					: models[0].id,
-			);
-		});
-		return () => {
-			cancelled = true;
-		};
-	}, [provider, openaiBaseUrl, apiKey]);
 
 	// Fetch live Naia pricing from gateway (DB = SoT).
 	// Runs when provider switches to "nextain" so the displayed price always
@@ -2153,19 +2048,9 @@ export function SettingsTab() {
 				)
 					return;
 				setApiKey(cfg.apiKey ?? "");
-				setGoogleApiKey(cfg.googleApiKey ?? "");
-				setOpenaiRealtimeApiKey(cfg.openaiRealtimeApiKey ?? "");
-				setMemoryEmbeddingApiKey(cfg.memoryEmbeddingApiKey ?? "");
+						setMemoryEmbeddingApiKey(cfg.memoryEmbeddingApiKey ?? "");
 				setQdrantApiKey(cfg.qdrantApiKey ?? "");
-				const restoredTtsKey =
-					cfg.ttsProvider === "openai"
-						? cfg.openaiTtsApiKey
-						: cfg.ttsProvider === "elevenlabs"
-							? cfg.elevenlabsApiKey
-							: cfg.ttsProvider === "google"
-								? cfg.googleApiKey
-								: undefined;
-				setGatewayTtsApiKey(restoredTtsKey ?? "");
+				setGatewayTtsApiKey("");
 				if (!cfg.naiaKey) return;
 				setNaiaKeyState(cfg.naiaKey);
 				setSecureNaiaCredentialReady(true);
@@ -2246,20 +2131,9 @@ export function SettingsTab() {
 		}
 	};
 
-	// Gateway TTS state
-	// gatewayTtsApiKey: shared state for TTS API key input (used by multiple providers)
-	const [gatewayTtsApiKey, setGatewayTtsApiKey] = useState(() => {
-		const p = existing?.ttsProvider ?? "edge";
-		if (p === "openai") return existing?.openaiTtsApiKey ?? "";
-		if (p === "elevenlabs") return existing?.elevenlabsApiKey ?? "";
-		if (p === "google") return existing?.googleApiKey ?? "";
-		return "";
-	});
+	const [, setGatewayTtsApiKey] = useState("");
 
 	// Voice wake state removed (UI + handlers deleted)
-	// Discord integration — unverified, hidden until stabilized
-	// const [discordBotConnected, setDiscordBotConnected] = useState(false);
-	// const [discordBotLoading, setDiscordBotLoading] = useState(false);
 
 	// In-app confirmation state (replaces window.confirm to avoid WebKitGTK double-dialog)
 	const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -2267,8 +2141,6 @@ export function SettingsTab() {
 	const [showLabDisconnect, setShowLabDisconnect] = useState(false);
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
-	// Discord integration — unverified, hidden until stabilized
-	// const fetchDiscordBotStatus = useCallback(async () => { ... }, [gatewayUrl, gatewayToken]);
 
 	useEffect(() => {
 		getAllAgentFacts()
@@ -2428,8 +2300,6 @@ export function SettingsTab() {
 
 					// (gateway sync 제거됨 2026-06-12 — gateway.json 은 아무도 안 읽는 죽은 경로. config 영속=naia-settings, naiaKey=키체인.)
 
-					void syncLinkedChannels();
-
 					if (nextNaiaUserId) {
 						const onlineConfig = await fetchLabConfig(
 							nextNaiaKey,
@@ -2458,25 +2328,6 @@ export function SettingsTab() {
 				}
 			},
 		);
-		return () => {
-			unlisten.then((fn) => fn());
-		};
-	}, []);
-
-	// Listen for Discord auth deep-link callback — UI state only (App.tsx handles persist)
-	useEffect(() => {
-		const unlisten = listen<{
-			discordUserId?: string | null;
-			discordChannelId?: string | null;
-			discordTarget?: string | null;
-		}>("discord_auth_complete", (event) => {
-			const { discordUserId, discordChannelId, discordTarget } = event.payload;
-			if (discordUserId) setDiscordDefaultUserId(discordUserId);
-			if (discordTarget) setDiscordDefaultTarget(discordTarget);
-			else if (discordUserId) setDiscordDefaultTarget(`user:${discordUserId}`);
-			if (discordChannelId) setDiscordDmChannelId(discordChannelId);
-			// setDiscordBotConnected(true); // Discord unverified
-		});
 		return () => {
 			unlisten.then((fn) => fn());
 		};
@@ -2607,19 +2458,6 @@ export function SettingsTab() {
 		} as unknown as Record<string, unknown>);
 	}
 
-	function persistLlmRole(
-		role: "expert" | "sub" | "memory",
-		value: LlmRoleConfig,
-	) {
-		const cfg = loadConfig();
-		if (!cfg) return;
-		const next = writeConfiguredLlmRole(cfg, role, value);
-		saveConfig(next);
-		void writeNaiaConfig({
-			...next,
-			...(naiaKey ? { naiaKey } : {}),
-		} as unknown as Record<string, unknown>);
-	}
 
 	function persistVideoAvatarSelection(nextNva?: string) {
 		const selectedNva = nextNva || nvaModel || DEFAULT_NVA_MODEL;
@@ -2633,9 +2471,10 @@ export function SettingsTab() {
 
 	function handleProviderChange(id: ProviderId) {
 		setProvider(id);
-		if (id !== "codex") {
-			setCodexPreflightStatus("idle");
-		}
+		// Provider switch resets all CLI readiness state (#605 defect fix).
+		setCodexPreflightStatus("idle");
+		setGrokPreflightStatus("idle");
+		setClaudePreflightStatus("idle");
 		if (id !== "ollama") {
 			setModel(getDefaultLlmModel(id));
 		}
@@ -2665,40 +2504,41 @@ export function SettingsTab() {
 		void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
 	}
 
-	async function checkCodexReadiness() {
-		setCodexPreflightStatus("checking");
+	async function checkCliReadiness(
+		id: "codex" | "grok" | "claude",
+		setStatus: (s: CodexPreflightStatus) => void,
+	) {
+		setStatus("checking");
 		try {
-			const result = await invoke<{ status: CodexPreflightStatus }>(
-				"codex_preflight",
-			);
-			setCodexPreflightStatus(
-				result.status === "ready" ||
-					result.status === "not-installed" ||
-					result.status === "login-required"
-					? result.status
+			const result = await invoke<{ status: string }>("cli_detect_one", {
+				id: id === "claude" ? "claude" : id,
+			});
+			const status = result.status;
+			setStatus(
+				status === "ready" ||
+					status === "not-installed" ||
+					status === "login-required" ||
+					status === "waiting-input"
+					? status === "waiting-input"
+						? "error"
+						: status
 					: "error",
 			);
 		} catch {
-			setCodexPreflightStatus("error");
+			setStatus("error");
 		}
 	}
 
+	async function checkCodexReadiness() {
+		await checkCliReadiness("codex", setCodexPreflightStatus);
+	}
+
 	async function checkGrokReadiness() {
-		setGrokPreflightStatus("checking");
-		try {
-			const result = await invoke<{ status: CodexPreflightStatus }>(
-				"grok_preflight",
-			);
-			setGrokPreflightStatus(
-				result.status === "ready" ||
-					result.status === "not-installed" ||
-					result.status === "login-required"
-					? result.status
-					: "error",
-			);
-		} catch {
-			setGrokPreflightStatus("error");
-		}
+		await checkCliReadiness("grok", setGrokPreflightStatus);
+	}
+
+	async function checkClaudeReadiness() {
+		await checkCliReadiness("claude", setClaudePreflightStatus);
 	}
 
 	async function handleLocaleChange(id: Locale) {
@@ -2802,28 +2642,17 @@ export function SettingsTab() {
 			// synthesizer, so preview routes through the same path as live voice.
 			let synthProvider: TtsProviderId;
 			let synthVoice: string | undefined;
-			let synthApiKey: string | undefined;
 
-			if (isOmni && (provider === "nextain" || provider === "gemini")) {
-				// Omni avatar voice → Naia Cloud (gateway Chirp 3 HD).
+			if (isOmni && provider === "nextain") {
 				const voiceName = voice || getDefaultVoiceForAvatar(existing?.vrmModel);
 				synthProvider = "nextain";
-				synthVoice = `ko-KR-Chirp3-HD-${voiceName}`;
-			} else if (isOmni && provider === "openai") {
-				synthProvider = "openai";
-				synthVoice = voice || "alloy";
-				synthApiKey =
-					openaiRealtimeApiKey.trim() || existing?.openaiTtsApiKey || undefined;
+				synthVoice =
+					voiceName === "hyunsu"
+						? "ko-KR-Hyunsu:DragonHDLatestNeural"
+						: "ko-KR-SunHi:DragonHDLatestNeural";
 			} else {
 				synthProvider = (ttsProvider || "edge") as TtsProviderId;
 				synthVoice = ttsVoice;
-				if (
-					synthProvider === "google" ||
-					synthProvider === "openai" ||
-					synthProvider === "elevenlabs"
-				) {
-					synthApiKey = gatewayTtsApiKey || undefined;
-				}
 			}
 
 			if (synthProvider === "nextain" && !naiaKey) {
@@ -2835,7 +2664,6 @@ export function SettingsTab() {
 				text: getPreviewText(synthVoice),
 				voice: synthVoice,
 				provider: synthProvider,
-				apiKey: synthApiKey,
 				naiaKey: naiaKey || undefined,
 				gatewayUrl: LAB_GATEWAY_URL,
 				vllmHost: existing?.vllmHost,
@@ -2991,9 +2819,6 @@ export function SettingsTab() {
 			return;
 		}
 		const defaultVrm = DEFAULT_AVATAR_MODEL;
-		// Derive ttsEngine from ttsProvider for agent compatibility
-		// Only "google" uses direct Google TTS; all others (including nextain) use Gateway
-		const derivedTtsEngine = ttsProvider === "google" ? "google" : "gateway";
 		const savedAvatarProvider: AppConfig["avatarProvider"] = avatarProvider;
 		let newConfig: AppConfig = {
 			...existing,
@@ -3021,19 +2846,6 @@ export function SettingsTab() {
 			ttsEnabled,
 			ttsVoice,
 			ttsProvider,
-			ttsEngine: derivedTtsEngine as "google" | "gateway",
-			googleApiKey:
-				ttsProvider === "google" && gatewayTtsApiKey.trim()
-					? gatewayTtsApiKey.trim()
-					: googleApiKey.trim() || existing?.googleApiKey || undefined,
-			openaiTtsApiKey:
-				ttsProvider === "openai" && gatewayTtsApiKey.trim()
-					? gatewayTtsApiKey.trim()
-					: existing?.openaiTtsApiKey || undefined,
-			elevenlabsApiKey:
-				ttsProvider === "elevenlabs" && gatewayTtsApiKey.trim()
-					? gatewayTtsApiKey.trim()
-					: existing?.elevenlabsApiKey || undefined,
 			persona:
 				persona.trim() !== DEFAULT_PERSONA.trim() ? persona.trim() : undefined,
 			userName: userName.trim() || undefined,
@@ -3049,22 +2861,14 @@ export function SettingsTab() {
 					? gatewayUrl.trim()
 					: undefined,
 			gatewayToken: gatewayToken.trim() || undefined,
-			discordDefaultUserId: discordDefaultUserId.trim() || undefined,
-			discordDefaultTarget: discordDefaultTarget.trim() || undefined,
-			discordDmChannelId: discordDmChannelId.trim() || undefined,
 			ollamaHost:
 				provider === "ollama"
 					? ollamaHost.trim() || undefined
 					: existing?.ollamaHost,
 			vllmHost:
 				provider === "vllm" ? vllmHost.trim() || undefined : existing?.vllmHost,
-			openaiBaseUrl:
-				provider === "openai"
-					? openaiBaseUrl.trim() || undefined
-					: existing?.openaiBaseUrl,
 			naiaLocalUrl: naiaLocalUrl.trim() || undefined,
 			voice: isOmniModel(provider, model) ? voice : existing?.voice,
-			openaiRealtimeApiKey: openaiRealtimeApiKey.trim() || undefined,
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
 			// Memory settings
@@ -3111,10 +2915,9 @@ export function SettingsTab() {
 				? { baseUrl: persistedMainRole.baseUrl }
 				: {}),
 		};
+		// 저장은 main 역할만 정본으로 갱신한다. 보조·전문가·기억 역할 편집기는
+		// 제거됐고(에픽 #589), 옛 config 의 해당 역할 필드는 roles.ts 가 무손실로 보존한다.
 		newConfig = writeConfiguredLlmRole(newConfig, "main", mainRole);
-		newConfig = writeConfiguredLlmRole(newConfig, "sub", subLlmRole);
-		newConfig = writeConfiguredLlmRole(newConfig, "expert", expertLlmRole);
-		newConfig = writeConfiguredLlmRole(newConfig, "memory", memoryLlmRole);
 		try {
 			await saveConfigSecure(newConfig);
 			// Agent reload resolves credentials from its OS-backed store. Commit all
@@ -3187,24 +2990,16 @@ export function SettingsTab() {
 		// update so credentials don't appear in every stdio frame.
 		void sendNotifyConfig({
 			slackWebhookUrl: newConfig.slackWebhookUrl,
-			discordWebhookUrl: newConfig.discordWebhookUrl,
 			googleChatWebhookUrl: newConfig.googleChatWebhookUrl,
-			discordDefaultUserId: newConfig.discordDefaultUserId,
-			discordDefaultTarget: newConfig.discordDefaultTarget,
-			discordDmChannelId: newConfig.discordDmChannelId,
 		}, applyAdkPath);
 		// Push all per-session credentials (#260 follow-up). Empty strings
 		// clear the corresponding cached entry on the agent — keeps the cache
 		// in sync with what the user just saved.
-		const ttsKeys: Record<string, string> = {};
-		ttsKeys.google = newConfig.googleApiKey ?? "";
-		ttsKeys.openai = newConfig.openaiTtsApiKey ?? "";
-		ttsKeys.elevenlabs = newConfig.elevenlabsApiKey ?? "";
 		void sendCredsUpdate({
 			keys: newConfig.provider
 				? { [newConfig.provider]: newConfig.apiKey ?? "" }
 				: {},
-			ttsKeys,
+			ttsKeys: {},
 			gatewayToken: newConfig.gatewayToken ?? "",
 		}, applyAdkPath);
 		await setLocale(locale);
@@ -3237,98 +3032,16 @@ export function SettingsTab() {
 				: availableProviderModels,
 		[provider, availableProviderModels, modelSortMode],
 	);
-	const renderLlmRoleEditor = (
-		role: "expert" | "sub" | "memory",
-		labelKey: TranslationKey,
-		roleConfig: LlmRoleConfig,
-		setRoleConfig: (value: LlmRoleConfig) => void,
-		inheritTargets: readonly ("expert" | "main" | "sub")[],
-	) => {
-		const compatibleProviders = LLM_PROVIDERS.filter((candidate) =>
-			providerSupportsRole(candidate.id, role),
-		);
-		const mode = roleConfig.inherit
-			? `inherit:${roleConfig.inherit}`
-			: "explicit";
-		const updateRole = (next: LlmRoleConfig) => {
-			setRoleConfig(next);
-			persistLlmRole(role, next);
-		};
-		return (
-			<div className="settings-field" data-testid={`${role}-llm-role`}>
-				<label htmlFor={`${role}-llm-mode`}>{t(labelKey)}</label>
-				<select
-					id={`${role}-llm-mode`}
-					data-testid={`${role}-llm-mode`}
-					value={mode}
-					onChange={(event) => {
-						if (event.target.value.startsWith("inherit:")) {
-							updateRole({
-								inherit: event.target.value.slice("inherit:".length) as
-									| "expert"
-									| "main"
-									| "sub",
-							});
-							return;
-						}
-						const selectedProvider =
-							compatibleProviders.find(
-								(candidate) => candidate.id === provider,
-							) ?? compatibleProviders[0];
-						if (!selectedProvider) return;
-						updateRole({
-							provider: selectedProvider.id,
-							model: getDefaultLlmModel(selectedProvider.id),
-						});
-					}}
-				>
-					{inheritTargets.map((target) => (
-						<option key={target} value={`inherit:${target}`}>
-							{target === "main"
-								? t("settings.roleInheritMain")
-								: t("settings.roleInheritSub")}
-						</option>
-					))}
-					<option value="explicit">{t("settings.roleExplicit")}</option>
-				</select>
-				{!roleConfig.inherit && (
-					<div className="settings-field" style={{ marginTop: "8px" }}>
-						<label htmlFor={`${role}-llm-provider`}>
-							{t("settings.provider")}
-						</label>
-						<select
-							id={`${role}-llm-provider`}
-							data-testid={`${role}-llm-provider`}
-							value={roleConfig.provider ?? ""}
-							onChange={(event) =>
-								updateRole({
-									provider: event.target.value as ProviderId,
-									model: getDefaultLlmModel(event.target.value),
-								})
-							}
-						>
-							{compatibleProviders.map((candidate) => (
-								<option key={candidate.id} value={candidate.id}>
-									{candidate.name}
-								</option>
-							))}
-						</select>
-						<label htmlFor={`${role}-llm-model`}>{t("settings.model")}</label>
-						<input
-							id={`${role}-llm-model`}
-							data-testid={`${role}-llm-model`}
-							type="text"
-							value={roleConfig.model ?? ""}
-							onChange={(event) =>
-								updateRole({ ...roleConfig, model: event.target.value })
-							}
-							placeholder={getDefaultLlmModel(roleConfig.provider ?? "")}
-						/>
-					</div>
-				)}
-			</div>
-		);
-	};
+	// 선택기 숨김 규칙 (에픽 #589 할 일 2): 고를 수 있는 대화 모델이 하나뿐이면 모델
+	// 선택기를 그리지 않는다. 판정은 등록부(표시용 모델 목록)로 한다. ollama 는 동적
+	// datalist 라 별도 처리하므로 제외한다. 나이아가 게이트웨이에서 단일 모델로 줄면
+	// 이 규칙이 자동으로 선택기를 숨기고 그 하나만 정적 텍스트로 보여 준다.
+	const selectableProviderModels = displayedProviderModels.filter(
+		(candidate) => !candidate.capabilities.includes("asr"),
+	);
+	const hideModelPicker =
+		provider !== "ollama" && shouldHideModelPicker(displayedProviderModels);
+	const singleProviderModel = selectableProviderModels[0];
 	const selectedModelMeta = availableProviderModels.find((m) => m.id === model);
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const shouldReplaceUnavailableSelectedModel =
@@ -3496,9 +3209,7 @@ export function SettingsTab() {
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 		setProvider(next.provider);
 		setModel(next.model);
-		const nextRoles = readConfiguredLlmRoles(next);
-		setSubLlmRole(nextRoles.sub ?? { inherit: "main" });
-		setMemoryLlmRole(nextRoles.memory ?? { inherit: "sub" });
+		// 보조·기억 역할 편집기는 제거됨(에픽 #589) — main 슬롯만 스테이징에 반영한다.
 		if (next.memoryEmbeddingProvider)
 			setMemoryEmbeddingProvider(next.memoryEmbeddingProvider);
 	}
@@ -3524,8 +3235,6 @@ export function SettingsTab() {
 		ttsProvider === "naia-local-voice";
 	const manualUrl = `${getNaiaWebBaseUrl()}/${locale}/manual`;
 
-	// Discord integration — unverified, hidden until stabilized
-	// async function handleDiscordBotConnect() { ... }
 	const proactiveSpeechSettings: ProactiveSpeechSettings = {
 		profile: existing?.proactiveSpeechProfile ?? "disabled",
 		timezone:
@@ -3654,14 +3363,6 @@ export function SettingsTab() {
 					onClick={() => setActiveSettingsTab("skills")}
 				>
 					{t("settings.tabSkills")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="connections"
-					className={`settings-tab-btn${activeSettingsTab === "connections" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("connections")}
-				>
-					{t("settings.tabConnections")}
 				</button>
 				<button
 					type="button"
@@ -4278,9 +3979,6 @@ export function SettingsTab() {
 														if (getAdkPath() !== sourceAdkPath) return;
 														setProvider(loggedOutLlm.provider);
 														setModel(loggedOutLlm.model);
-														setDiscordDefaultUserId("");
-														setDiscordDmChannelId("");
-														setDiscordDefaultTarget("");
 														setShowLabDisconnect(false);
 														if (sourceSecureStorePath)
 															await deleteSecretKeyAtPath(
@@ -4304,10 +4002,7 @@ export function SettingsTab() {
 																		: current.sttProvider,
 																naiaKey: undefined,
 																naiaUserId: undefined,
-																discordDefaultUserId: undefined,
-																discordDmChannelId: undefined,
-																discordDefaultTarget: undefined,
-															};
+																																																						};
 															const loggedOutConfig = writeConfiguredLlmRole(
 																loggedOutBase,
 																"main",
@@ -4754,6 +4449,29 @@ export function SettingsTab() {
 						</div>
 					)}
 
+					{provider === "claude-code-cli" && (
+						<div className="settings-field" data-testid="claude-readiness">
+							<span>{t("settings.claudeReadiness")}</span>
+							<div className="settings-hint">
+								{t("settings.claudeReadinessHint")}
+							</div>
+							<div className="settings-row claude-readiness-actions">
+								<span aria-live="polite" data-testid="claude-readiness-status">
+									{t(CLAUDE_PREFLIGHT_LABELS[claudePreflightStatus])}
+								</span>
+								<button
+									type="button"
+									className="btn-secondary"
+									data-testid="claude-readiness-check"
+									disabled={claudePreflightStatus === "checking"}
+									onClick={() => void checkClaudeReadiness()}
+								>
+									{t("settings.claudeReadinessCheck")}
+								</button>
+							</div>
+						</div>
+					)}
+
 					{provider !== "nextain" &&
 						(!isApiKeyOptional(provider) || provider === "ollama") && (
 							<div className="settings-field">
@@ -4772,12 +4490,6 @@ export function SettingsTab() {
 											: "sk-..."
 									}
 								/>
-								{provider === "zai" && (
-									<div className="settings-hint">
-										Z.AI <strong>Coding Plan</strong> 구독 후 발급된 API Key를
-										입력하세요.
-									</div>
-								)}
 							</div>
 						)}
 
@@ -4815,32 +4527,9 @@ export function SettingsTab() {
 							</div>
 						</div>
 					)}
-					{provider === "openai" && (
-						<div className="settings-field">
-							<label htmlFor="openai-base-url">OpenAI Host / Base URL</label>
-							<input
-								id="openai-base-url"
-								type="url"
-								value={openaiBaseUrl}
-								onChange={(event) => setOpenaiBaseUrl(event.target.value)}
-								onBlur={(event) =>
-									persistConfig({
-										openaiBaseUrl: event.target.value.trim() || undefined,
-									})
-								}
-								placeholder="https://api.openai.com/v1"
-							/>
-							<div className="settings-hint">
-								{openaiConnected ? "연결됨" : "연결을 확인하세요"} — 비워 두면
-								OpenAI 공식 endpoint를 사용합니다. OpenAI 호환 서버는
-								http://host:port/v1 형식으로 입력하세요.
-							</div>
-						</div>
-					)}
-
 					<div className="settings-field">
 						<label htmlFor="model-select">{t("settings.model")}</label>
-						{provider === "nextain" ? (
+						{provider === "nextain" && !hideModelPicker ? (
 							<>
 								<label htmlFor="model-sort-mode">
 									{t("settings.modelSort")}
@@ -4895,6 +4584,13 @@ export function SettingsTab() {
 										))}
 								</datalist>
 							</>
+						) : hideModelPicker ? (
+							// 모델이 하나뿐 → 선택기 대신 그 모델을 정적 텍스트로만 보여 준다.
+							<div id="model-select" data-testid="model-single">
+								{singleProviderModel
+									? formatModelLabel(singleProviderModel)
+									: (selectedModelMeta?.label ?? model)}
+							</div>
 						) : (
 							<select
 								key={`model-select-${modelSortMode}-${displayedProviderModels.map((candidate) => candidate.id).join(":")}`}
@@ -5037,44 +4733,6 @@ export function SettingsTab() {
 						</div>
 					)}
 
-					{/* Omni model: Gemini Direct mode needs Google API Key */}
-					{isSelectedOmni && provider === "gemini" && (
-						<div className="settings-field">
-							<label htmlFor="google-apikey-input">Google API Key</label>
-							<input
-								id="google-apikey-input"
-								type="password"
-								value={googleApiKey}
-								onChange={(e) => {
-									setGoogleApiKey(e.target.value);
-									if (existing)
-										saveConfig({ ...existing, googleApiKey: e.target.value });
-								}}
-								placeholder="AIza..."
-							/>
-						</div>
-					)}
-
-					{/* Omni model: OpenAI Realtime needs API Key */}
-					{isSelectedOmni && provider === "openai" && (
-						<div className="settings-field">
-							<label>OpenAI API Key</label>
-							<input
-								type="password"
-								value={openaiRealtimeApiKey}
-								onChange={(e) => {
-									setOpenaiRealtimeApiKey(e.target.value);
-									if (existing)
-										saveConfig({
-											...existing,
-											openaiRealtimeApiKey: e.target.value,
-										});
-								}}
-								placeholder="sk-..."
-							/>
-						</div>
-					)}
-
 					{/* Naia Local: address of the user's own omni-24g container.
 			    Reuses the logged-in key (no key input); voice starts on the voice
 			    button (lazy connect). Loopback may be ws://; remote must be wss://. */}
@@ -5173,19 +4831,19 @@ export function SettingsTab() {
 										})
 										.catch(() => noteEnvironmentClear(false));
 								} else {
-									sendAppSkills(ENVIRONMENT_APP_ID, [SKILL_ENVIRONMENT], {
-										awaitAck: true,
-									})
+									// #611: keep observation for always/auto, but never advertise
+									// skill_environment to the model.
+									sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
 										.then((ok) => {
-											noteEnvironmentToolAck(ok);
+											noteEnvironmentClear(ok);
 											if (!ok)
 												Logger.warn(
 													"SettingsTab",
-													"environment skill register not delivered",
+													"environment skill clear not delivered",
 													{},
 												);
 										})
-										.catch(() => noteEnvironmentToolAck(false));
+										.catch(() => noteEnvironmentClear(false));
 								}
 							}}
 						>
@@ -5218,34 +4876,6 @@ export function SettingsTab() {
 							}}
 						/>
 					</div>
-
-					<div className="settings-section-divider">
-						<span>{t("settings.brainExpertSection")}</span>
-					</div>
-					{renderLlmRoleEditor(
-						"expert",
-						"settings.brainExpertSection",
-						expertLlmRole,
-						setExpertLlmRole,
-						["main"],
-					)}
-					<div className="settings-section-divider">
-						<span>{t("settings.brainSubSection")}</span>
-					</div>
-					{renderLlmRoleEditor(
-						"sub",
-						"settings.brainSubSection",
-						subLlmRole,
-						setSubLlmRole,
-						["main"],
-					)}
-					{renderLlmRoleEditor(
-						"memory",
-						"settings.memoryLlm",
-						memoryLlmRole,
-						setMemoryLlmRole,
-						["main", "sub"],
-					)}
 
 					<div className="settings-actions">
 						<button
@@ -5361,67 +4991,6 @@ export function SettingsTab() {
 									))}
 								</select>
 							</div>
-							{/* Naia Cloud STT — backend engine selector */}
-							{sttProvider === "nextain" && naiaKey && (
-								<div className="settings-field">
-									<label>{t("settings.naiaCloudBackend")}</label>
-									<select
-										value={existing?.naiaCloudSttBackend ?? "google-cloud-stt"}
-										onChange={(e) => {
-											if (existing)
-												saveConfig({
-													...existing,
-													naiaCloudSttBackend: e.target.value,
-												});
-										}}
-									>
-										<option value="google-cloud-stt">Google Cloud STT</option>
-									</select>
-								</div>
-							)}
-							{/* STT API key — shown for API-based providers */}
-							{(() => {
-								const sttMeta = listSttProviders().find(
-									(p) => p.id === sttProvider,
-								);
-								if (sttMeta?.requiresNaiaKey && !naiaKey) {
-									return (
-										<div className="settings-field">
-											<span className="settings-hint">
-												{t("settings.ttsNaiaRequired")}
-											</span>
-										</div>
-									);
-								}
-								if (sttMeta?.requiresApiKey) {
-									const currentKey =
-										sttMeta.apiKeyConfigField === "googleApiKey"
-											? (existing?.googleApiKey ?? "")
-											: sttMeta.apiKeyConfigField === "elevenlabsApiKey"
-												? (existing?.elevenlabsApiKey ?? "")
-												: "";
-									return (
-										<div className="settings-field">
-											<label htmlFor="stt-api-key">
-												{t("settings.sttApiKey")}
-											</label>
-											<input
-												id="stt-api-key"
-												type="password"
-												defaultValue={currentKey}
-												onChange={(e) => {
-													if (sttMeta.apiKeyConfigField === "googleApiKey") {
-														setGatewayTtsApiKey(e.target.value);
-													}
-												}}
-												placeholder={`${sttMeta.name} API Key`}
-											/>
-										</div>
-									);
-								}
-								return null;
-							})()}
-
 							{/* STT Model — current selection + manage button (offline engines only) */}
 							{/* vLLM ASR: endpoint URL + ASR model picker */}
 							{sttProvider === "vllm" && (
@@ -5525,14 +5094,7 @@ export function SettingsTab() {
 								setTtsProvider(next);
 								setDynamicTtsVoices([]);
 								persistConfig({ ttsProvider: next });
-								// Load API key for the selected provider
-								if (next === "openai")
-									setGatewayTtsApiKey(existing?.openaiTtsApiKey ?? "");
-								else if (next === "elevenlabs")
-									setGatewayTtsApiKey(existing?.elevenlabsApiKey ?? "");
-								else if (next === "google")
-									setGatewayTtsApiKey(existing?.googleApiKey ?? "");
-								else setGatewayTtsApiKey("");
+								setGatewayTtsApiKey("");
 								// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
 								// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
 								// Reset voice to provider default
@@ -5546,25 +5108,6 @@ export function SettingsTab() {
 									// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
 									// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
 									persistTtsVoice("default");
-								}
-								// Fetch dynamic voices — use saved key or current input
-								const savedKey =
-									next === "openai"
-										? (existing?.openaiTtsApiKey ?? "")
-										: next === "elevenlabs"
-											? (existing?.elevenlabsApiKey ?? "")
-											: next === "google"
-												? (existing?.googleApiKey ?? "")
-												: "";
-								const effectiveKey = savedKey || gatewayTtsApiKey;
-								if (meta?.fetchVoices && effectiveKey) {
-									meta.fetchVoices(effectiveKey).then((voices) => {
-										if (voices && voices.length > 0) {
-											setDynamicTtsVoices(voices);
-											if (voices[0] && !meta.voices?.length)
-												persistTtsVoice(voices[0].id);
-										}
-									});
 								}
 							}}
 						>
@@ -5596,81 +5139,6 @@ export function SettingsTab() {
 							</div>
 						)}
 					</div>
-					{/* Naia Cloud TTS — backend engine selector */}
-					{ttsProvider === "nextain" && naiaKey && (
-						<div className="settings-field">
-							<label>{t("settings.naiaCloudBackend")}</label>
-							<select
-								value={existing?.naiaCloudTtsBackend ?? "google-chirp3-hd"}
-								onChange={(e) => {
-									if (existing)
-										saveConfig({
-											...existing,
-											naiaCloudTtsBackend: e.target.value,
-										});
-								}}
-							>
-								<option value="google-chirp3-hd">Google Chirp 3 HD</option>
-							</select>
-						</div>
-					)}
-					{/* TTS API key input — shown when provider requires it */}
-					{(() => {
-						const providerMeta = listTtsProviderMetas().find(
-							(p) => p.id === ttsProvider,
-						);
-						if (providerMeta?.requiresApiKey) {
-							return (
-								<div className="settings-field">
-									<label htmlFor="tts-api-key">{t("settings.ttsApiKey")}</label>
-									<input
-										id="tts-api-key"
-										type="password"
-										value={gatewayTtsApiKey}
-										onChange={(e) => {
-											const val = e.target.value;
-											setGatewayTtsApiKey(val);
-											const meta = listTtsProviderMetas().find(
-												(p) => p.id === ttsProvider,
-											);
-											if (meta?.fetchVoices && val.length > 10) {
-												meta.fetchVoices(val).then((voices) => {
-													if (voices && voices.length > 0)
-														setDynamicTtsVoices(voices);
-												});
-											}
-										}}
-										onPaste={(e) => {
-											// Handle paste — onChange may not fire in WebKitGTK
-											setTimeout(() => {
-												const val = (e.target as HTMLInputElement).value;
-												if (val.length > 10) {
-													const meta = listTtsProviderMetas().find(
-														(p) => p.id === ttsProvider,
-													);
-													meta?.fetchVoices?.(val).then((voices) => {
-														if (voices && voices.length > 0)
-															setDynamicTtsVoices(voices);
-													});
-												}
-											}, 100);
-										}}
-										placeholder={`${providerMeta.name} API Key`}
-									/>
-								</div>
-							);
-						}
-						if (providerMeta?.requiresNaiaKey && !naiaKey) {
-							return (
-								<div className="settings-field">
-									<span className="settings-hint">
-										{t("settings.ttsNaiaRequired")}
-									</span>
-								</div>
-							);
-						}
-						return null;
-					})()}
 					{voxcpm2InstallError && (
 						<div
 							className="settings-field voxcpm2-install-error"
@@ -6221,8 +5689,7 @@ export function SettingsTab() {
 				</>
 			)}
 			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
-			{activeSettingsTab === "connections" && <ConnectionsSettingsTab />}
-			{activeSettingsTab === "skills" && (
+						{activeSettingsTab === "skills" && (
 				<Suspense fallback={null}>
 					<SkillsTab>
 						<RadioDjSettingsCard

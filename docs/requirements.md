@@ -70,9 +70,9 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
 | **FR-TTS.1** | 파이프라인·프리뷰 TTS 를 셸이 직접 합성(`lib/tts/synthesize.ts`) — agent 우회. browser(isClientSide)는 기존 speechSynthesis 유지 | S-TTS·UC2 | `synthesize.test.ts`(provider 분기) · 셸 vitest |
-| **FR-TTS.2** | provider 분기: nextain(gateway `POST /v1/audio/speech`, `X-AnyLLM-Key: Bearer`)·google·openai·elevenlabs(bytes)·vllm(OpenAI-compat)·edge(MS WS). **nextain creds(naiaKey/gatewayUrl)를 pipelineVoiceConfig 두 구성 지점에 탑재** = 무음 직접원인 해소 | S-TTS | `synthesize.test.ts` |
+| **FR-TTS.2** | provider 분기: nextain(gateway `POST /v1/audio/speech`, `X-AnyLLM-Key: Bearer`)·vllm(OpenAI-compat)·edge(MS WS)·browser(speechSynthesis). **nextain creds(naiaKey/gatewayUrl)를 pipelineVoiceConfig 두 구성 지점에 탑재** = 무음 직접원인 해소. 사용자 키를 받는 Google/OpenAI/ElevenLabs TTS는 존재하지 않는다 | S-TTS | `synthesize.test.ts` · `third-party-cloud-voice-absent.test.ts` |
 | **FR-TTS.3** | edge WS 실패 시 browser speechSynthesis 폴백(`onstart/onend/onerror`로 avatar speaking 상태 누수 방지) → 기본값 무음 금지. 합성 실패 = `audioQueue.skipOrdered(seq)` 로 ordered 슬롯 해제(후속 오디오 stall 방지) | S-TTS | `edge-tts.test.ts` · audio-queue |
-| **FR-TTS.4** ([#585](https://github.com/nextain/naia-shell/issues/585)) | Naia Cloud TTS(`nextain`) 기본 목소리는 Azure Neural HD `ko-KR-SunHi:DragonHDLatestNeural` / `Hyunsu`. 게이트웨이 `cost_usd`는 API×1.1이며 셸은 서버 금액을 다시 곱하지 않는다. 피커 순서: edge → naia-local-voice → nextain → BYO API | S-TTS · UC-VOICE-TTS-HD | `registry.test.ts` · `sentence-pipeline.test.ts` |
+| **FR-TTS.4** ([#585](https://github.com/nextain/naia-shell/issues/585)) | Naia Cloud TTS(`nextain`) 기본 목소리는 Azure Neural HD `ko-KR-SunHi:DragonHDLatestNeural` / `Hyunsu`. 게이트웨이 `cost_usd`는 API×1.1이며 셸은 서버 금액을 다시 곱하지 않는다. 피커 순서: edge → naia-local-voice → nextain. BYO API TTS는 제거한다 | S-TTS · UC-VOICE-TTS-HD | `registry.test.ts` · `sentence-pipeline.test.ts` |
 
 ### Azure omni live (#585, 2026-09-10)
 
@@ -80,6 +80,14 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 |----|---------|-----------|------|
 | **FR-VOICE-AZURE.1** | `azure-realtime`은 nextain omni. 선택 시 외부 STT/TTS 슬롯 잠금(FR-CAP.2). 목소리는 sunhi/hyunsu | UC-VOICE-LIVE-AZURE | `registry.test.ts` · `slots.test.ts` |
 | **FR-VOICE-AZURE.2** | 음성 연결은 게이트웨이 `/v1/voice-live`로만 간다. Gemini `/v1/live`로 보내지 않는다. `gpt-4o-mini` live는 제품에 없다 | UC-VOICE-LIVE-AZURE | `resolve-live-provider.test.ts` |
+
+### Third-party cloud voice removal (#603, epic #589)
+
+| FR | 요구사항 | UC/시나리오 | 검증(P02) |
+|----|---------|-----------|------|
+| **FR-VOICE-CLOUD-OFF.1** | Shell voice 설정과 런타임에는 Google/OpenAI/ElevenLabs TTS·STT, Gemini Live, OpenAI Realtime, 또는 Naia의 Google-backed Live 경로가 없다. 남는 음성 경로는 Azure Neural HD/Voice Live, Naia local GPU/VoxCPM2, vLLM, browser Web Speech, Edge TTS, Vosk/Whisper다 | S-VOICE-CLOUD-OFF · UC2 | `third-party-cloud-voice-absent.test.ts` · focused TTS/STT/live unit tests |
+| **FR-VOICE-CLOUD-OFF.2** | 기존 설정의 제거된 provider/backend/voice 값은 부팅 시 Edge 또는 Azure retained route로 정규화되고, 제거된 voice API credentials는 local cache와 selected ADK secure store에서 다시 읽거나 agent로 전송하지 않는다 | S-VOICE-CLOUD-OFF · UC2 | `config.test.ts` · `config-secrets.test.ts` · `secure-store.test.ts` · `useAgentAuthSync.test.ts` |
+| **FR-VOICE-CLOUD-OFF.3** | direct cloud voice endpoints, direct Gemini Live Rust commands, direct voice API key inputs, and obsolete voice E2E cases are deleted rather than hidden behind a runtime flag | S-VOICE-CLOUD-OFF | `src-tauri` cargo check · Settings/ChatArea tests · provider absence proof |
 
 > NFR: NFR-isolation(합성 실패가 턴 안 깸·슬롯 누수 0) · NFR-efferent-async(audioQueue 순서·interrupt 정합). ⚠️ 라이브 네트워크/edge-WS 왕복 = 실 앱(naiaKey) 검증 천장.
 
@@ -336,26 +344,13 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 
 > NFR: **NFR-voiceprint(불변)** — Naia가 VoxCPM2를 쓸 때 **음성지문(ref voiceprint)은 필수**이며 무지문 합성을 허용하지 않는다. 이 원칙은 Windows 8GB 로컬 VoxCPM2 W8A16 + TensorRT LocDiT에도 적용된다. · NFR-honesty(백엔드·VRAM 강등 위장 금지) · F1(measurement-gated, 측정 없이 실시간·개선 단정 금지) · NFR-no-conversation-cache(대화형 Shell/cascade의 완성 A/V 응답 캐시 금지; 반복 콘텐츠 TalkingKiosk와 분리). ⚠️ in-shell WSL cascade 부트스트랩은 구 gateway-in-WSL 아키텍처의 레거시다.
 
-## 기능 요구사항 (FR) — 지식 근거→원문 칩 + 그래프 뷰어 (kb-compiler 통합 K2·K3, 셸 feature — 2026-06-30)
-
-> 범위: naia-agent 지식 풀 도구(`skill_knowledge_ask`/`search`) tool-result(JSON)를 셸이 **답변 + 출처 칩**으로 렌더하고, 칩 클릭 시 **근거→원문**(URL=브라우저 앱 navigate / 파일=워크스페이스 openFile)으로 연다. 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K2). 백엔드(에이전트↔kb-compiler 배선·계약) = naia-agent UC-KNOWLEDGE(별 레포, live).
->
-> **상태: Done (P04, 2026-06-30)** — 검증: `knowledge-result.test.ts`(파싱·출처분류·**그래프 파싱** 단위)·`knowledge-tool-result.test.tsx`(RTL 렌더+칩 dispatch)·`e2e/chat-tools.spec.ts` "지식 도구(K2)"·"**지식 그래프(K3)**"(Playwright 실 UI — 답변+칩+칩클릭→브라우저 앱 / 그래프 캔버스 렌더+2D/3D 토글). tsc0·셸 컴포넌트(src/main 밖→file-anchor 무대상).
-
-| FR | 요구사항 | UC/시나리오 | 검증(P02) |
-|----|---------|-----------|------|
-| **FR-KB-OS.1** | 지식 도구 tool-result(JSON) 파싱 — `ask`={abstained,answer,sources[{title,sourceUris}]}·`search`={hits[...]}. 형태불일치/비지식도구 = 기본 ToolActivity 렌더 폴백(무회귀) | UC-KNOWLEDGE(agent) | `knowledge-result.test.ts` |
-| **FR-KB-OS.2** | 답변 + 출처 칩 렌더 — `ToolActivity` 가 지식 도구 분기 → `KnowledgeToolResult`(answer + sourceUris 칩). 기권 시 답변만(칩 0). 출처 sourceUris 보존(근거→원문 키) | UC-KNOWLEDGE | `knowledge-tool-result.test.tsx` |
-| **FR-KB-OS.3** | 근거→원문 — 칩 클릭: URL=브라우저 앱 `navigate`+activate / 파일=워크스페이스 `openFile`(file:// 제거)+앱 전환. 기존 app api 재사용(신규 앱 불요) | UC-KNOWLEDGE | `knowledge-tool-result.test.tsx`·`e2e/chat-tools.spec.ts`(지식 도구 K2) |
-| **FR-KB-OS.4** (K3) | 지식 그래프 2D/3D 시각화 — `ToolActivity` 가 `skill_knowledge_graph` tool-result(nodes/edges+deg+군집) 분기 → `KnowledgeGraphView`(캔버스 force, 군집색·degree 크기, **2D↔3D 토글**, 원근+자동회전). 의존성 0(엔진 examples/cms 포팅). 파싱 실패=폴백 | UC-KNOWLEDGE(graph) | `knowledge-result.test.ts`(parseKnowledgeGraph)·`e2e/chat-tools.spec.ts`(지식 그래프 K3 — 캔버스 렌더+2D/3D 토글 실 UI) |
-
-> NFR: NFR-isolation(지식 렌더 분기가 기존 도구 렌더 무회귀 — 파싱 실패 시 폴백)·NFR-reuse(브라우저/워크스페이스 앱 api 재사용·그래프 의존성 0 캔버스). 전용 그래프 앱(on-demand fetch) = post-MVP. 설정 지식 탭(관리 compile/소스) = 아래 K4.
-
 ## 기능 요구사항 (FR) — 지식 소스 관리 설정 탭 (kb-compiler 통합 K4, 셸 — 2026-06-30)
 
-> 범위: 설정>지식 탭이 **"준비 중" placeholder 를 대체**해, 사용자가 **지식 소스(다중 폴더)·스코프**를 관리하고 **컴파일**을 트리거하는 관리면. 설정 정본 = `naia-settings/knowledge.json`(**셸만 쓰기, AI 에이전트 읽기전용** — config-write 도구 없음 = 신뢰경계 자가확장 차단). 컴파일 실행(폴더→kb.json)·답변(읽기)은 **naia-agent**(별 레포 — `CompileKnowledge` RPC·`openWorkspaceKnowledge`). 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K4).
+> 모델-facing 지식 질의·그래프 도구는 #611에서 제거한다. 아래 요구사항은 사람이 설정에서 자료 소스와 스코프를 관리하고, 컴파일된 결과를 설정 화면에서 확인하는 K4 관리 표면만 다룬다.
+
+> 범위: 설정>지식 탭이 **"준비 중" placeholder 를 대체**해, 사용자가 **지식 소스(다중 폴더)·스코프**를 관리하고 **컴파일**을 트리거하는 관리면. 설정 정본 = `naia-settings/knowledge.json`(**셸만 쓰기, AI 에이전트 읽기전용** — config-write 도구 없음 = 신뢰경계 자가확장 차단). 컴파일 결과는 설정 화면의 상태·그래프에서만 소비한다. 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K4).
 >
-> **상태: 진행 중 (P03→P04, 2026-06-30)** — 검증: `knowledge-config.test.ts`(config CRUD·kb 통계 파싱 단위)·`KnowledgeSettingsTab.test.tsx`(RTL 폴더 add/remove·상태 렌더)·`e2e/settings-knowledge.spec.ts`(Playwright 실 UI: 설정 지식 탭 폴더 추가/제거/상태). 컴파일 트리거(FR-KB-OS.8)는 에이전트 `CompileKnowledge` 배선에 의존.
+> **상태: 진행 중 (P03→P04, 2026-06-30)** — 검증: `knowledge-config.test.ts`(config CRUD·kb 통계 파싱 단위)·`KnowledgeSettingsTab.test.tsx`(RTL 폴더 add/remove·상태 렌더)·`e2e/settings-knowledge.spec.ts`(Playwright 실 UI: 설정 지식 탭 폴더 추가/제거/상태).
 
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
@@ -597,6 +592,14 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-COURSE-CODEX.1** | 사용자가 설정의 두뇌에서 Codex를 main provider로 선택했을 때, Shell은 `Codex 연결 확인`으로 해당 PC의 Codex CLI 설치와 로그인 상태를 확인하고 `준비됨`·`설치 필요`·`로그인 필요`·`확인 실패`을 구분해 표시한다. | Rust 명령 계약 테스트에서 Windows와 비-Windows 실행 경로·상태 분류를 확인하고, Settings 단위 테스트에서 상태 표시와 재시도를 확인한다. 로그인된 실제 Shell은 `e2e-tauri/specs/96-codex-readiness.spec.ts`에서 `준비됨`까지 검증한다. |
 | **FR-COURSE-CODEX.2** | Codex 준비 확인은 인증 토큰·계정 식별자·CLI 출력 원문을 UI·설정·agent 요청·로그에 저장하거나 표시하지 않으며, provider·모델·워크스페이스 설정을 변경하지 않는다. | 실패 상태 단위 테스트와 IPC 결과 직렬화 검사에서 안전한 상태 코드만 노출되는지 확인한다. |
 | **FR-COURSE-CODEX.3** | Codex가 아닌 provider를 선택하면 Codex 준비 확인 UI를 노출하지 않는다. Codex 선택으로 돌아오면 사용자가 명시적으로 다시 확인할 수 있다. | Settings FE 테스트에서 provider 전환과 재시도 동작을 확인한다. |
+
+## Skills tab CLI detection (#605 / epic #589 L6)
+
+| ID | Requirement | Verification |
+|----|-------------|--------------|
+| **FR-SKILLS-CLI.1** | Skills tab shows only two groups: detected coding CLI checkboxes (installed only) and shell gesture toggles (YouTube / Radio DJ). Agent tool lists and `skill_skill_manager` gateway install UI are removed. | SkillsTab vitest + e2e-tauri 14/19/28/59 |
+| **FR-SKILLS-CLI.2** | Shell Rust `cli_detect` reads durable CLI descriptors (Claude·Codex·Grok; Gemini CLI/OpenCode excluded per D6). Detection uses OS-specific executable candidates, exit codes/structured output, per-check timeouts, and Claude JSON readiness — not English install-string matching. Results persist in config and refresh on app start and Skills tab enter. | `cli_detect` cargo unit tests + Settings/Skills readiness checks |
+| **FR-SKILLS-CLI.3** | Enabled CLI names are passed to the agent on chat turns (`enabledClis`). Agent workspace-context one-liner consumption is paired naia-agent follow-up. | chat-service / shell-compat field wiring |
 
 ## Grok 구독 CLI provider (2026-09-02, #529)
 
@@ -1105,31 +1108,31 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 |---|---|---|---|---|
 | **FR-ENV-LIVE.1** | 살아 있는 Herdr 스냅샷이 있으면 셸이 `environmentSurfaces` 세그먼트를 대화 요청에 실어 올린다. 사용자가 도구를 요청할 필요가 없다. | UC-ENV-LIVE-OBSERVE | `environment-live-wiring.contract.test.ts` | Done |
 | **FR-ENV-LIVE.2** | 스냅샷이 없거나 표면이 하나도 없으면 세그먼트를 만들지 않는다. 빈 목록을 올려 "아무것도 없다"고 단언하지 않는다. | UC-ENV-LIVE-OBSERVE | 같음 | Done |
-| **FR-ENV-LIVE.3** | 뇌가 표면을 조작하는 경로는 앱 도구(`skill_environment`)다. 셸이 도구를 등록하고, 호출을 받아 의도로 받아들이고, 번역해 전달한다. | UC-ENV-LIVE-ACT | `environment-skill.test.ts` | Done |
+| **FR-ENV-LIVE.3** | 모델-facing 환경 조작 도구는 #611에서 제거한다. 셸은 Herdr 상태를 관측해 명시적 `always` 인지 세그먼트로만 전달하고, 모델 호출을 실행하지 않는다. | UC-ENV-LIVE-ACT | `model-facing-tools.contract.test.ts` · `environment-live-wiring.contract.test.ts` | Done |
 | **FR-ENV-LIVE.4** | 터미널 입력 전달은 사용자가 명시로 켠 경우에만 나간다. 기본값은 꺼짐이며, 꺼져 있으면 거절 사유가 그대로 뇌에 올라간다. | UC-ENV-LIVE-ACT | 같음 | Done |
 | **FR-ENV-LIVE.5** | 환경이 거절하거나 오류를 던지면 그대로 올린다. 성공으로 바꾸거나 삼키지 않는다. | UC-ENV-LIVE-ACT | 같음 | Done |
 | **FR-ENV-STICKY.1** | 손잡이는 표면 하나에 고정된다. 한 번 발행한 손잡이를 다른 표면에 재배정하지 않는다. | UC-ENV-STICKY | `environment-live-wiring.contract.test.ts` | Done |
 | **FR-ENV-STICKY.2** | 표면이 사라지면 그 손잡이는 무효가 된다. 이후 그 손잡이로 온 의도는 `unknown-surface` 로 거절한다. | UC-ENV-STICKY | 같음 | Done |
 | **FR-ENV-STICKY.3** | 목록 순서가 바뀌어도 손잡이는 바뀌지 않는다. 순서는 손잡이의 근거가 아니다. | UC-ENV-STICKY | 같음 | Done |
 | **FR-ENV-LIVE.6** | 셸 UI 의 `EnvironmentSegment` 사본도 코어 union 과 같은 kind 를 갖는다. 세 번째 사본이 조용히 갈라지지 않는다. | UC-WIRE-UNION-DRIFT | `wire-union-drift.contract.test.ts` | Done |
-| **FR-ENV-ATTENTION.1** | 나이아가 `watch` 로 지켜보기를 켜면, 그다음 대화 요청부터 표면 목록이 세그먼트에 실린다. 켜는 판단은 나이아가 한다 — 사용자가 시킬 필요가 없다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts`, `environment-skill.test.ts`, `environment-skill.spec.ts` | Done |
+| **FR-ENV-ATTENTION.1** | 셸은 모델-facing 환경 제어 도구 없이 사용자 정책에 따라 관측 세그먼트를 만든다. `always` 정책은 도구 호출 없이 목록을 전달하고, `auto`는 관측 상태만 유지한다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
 | **FR-ENV-ATTENTION.2** | 나이아가 `unwatch` 로 끄면 그다음 요청부터 목록이 빠진다. 기본 상태는 꺼짐이며, 앱을 다시 켜면 꺼진 상태로 시작한다. | UC-ENV-ATTENTION | 같음 | Done |
 | **FR-ENV-ATTENTION.3** | 지켜보지 않는 동안에는 표면 개수만 올린다. 이름도 손잡이도 올리지 않는다. 개수는 상한 때문에 못 실은 것까지 더한 값이다. | UC-ENV-ATTENTION | 같음 | Done |
-| **FR-ENV-ATTENTION.5** | 대화 요청에 싣기 직전에 관측을 갱신한다. 부팅 시점 스냅샷을 계속 싣지 않는다. 꺼져 있으면 갱신하지 않는다. | UC-ENV-ATTENTION | `environment-skill.spec.ts` | Done |
+| **FR-ENV-ATTENTION.5** | 대화 요청에 싣기 직전에 관측을 갱신한다. 부팅 시점 스냅샷을 계속 싣지 않는다. 꺼져 있으면 갱신하지 않는다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
 | **FR-ENV-ATTENTION.6** | 관측이 실패하면 마지막 보고를 폐기하고 아무것도 모르는 상태로 되돌린다. 그때까지 발행한 손잡이도 무효가 된다. 마지막으로 본 목록을 계속 싣지 않는다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts`, `environment-skill.test.ts`, `environment-skill.spec.ts` | Done |
 | **FR-ENV-ATTENTION.7** | 지켜보기는 `WATCH_TURN_BUDGET` 턴이 지나면 저절로 풀린다. `always` 인 동안에는 턴을 세지 않는다 — 출력만이 아니라 상태도 예산과 무관해야, 사용자가 `auto` 로 되돌릴 때 나이아가 끈 적 없는 지켜보기가 사라지지 않는다. 나이아가 `unwatch` 를 부르지 않아도 목록이 무한히 실리지 않는다. 턴은 정상 종료·중단 어느 쪽으로 끝나든 턴이며, 실시간 음성 턴도 센다. 통화가 끊기면 지켜보기도 끝난다. 사용자가 정한 `always` 는 예산과 무관하다. | UC-ENV-ATTENTION | 같음 | Done |
-| **FR-ENV-ATTENTION.11** | 도구 결과의 성공 여부는 실행기가 낸다. 호출부가 결과 문자열의 접두사로 되짚지 않는다 — 새 사유가 생길 때마다 조용히 성공으로 새어 나가기 때문이다. `무시됨`(설정이 이겨 상태가 안 바뀜)과 `관측 불가`도 실패다. | UC-ENV-ATTENTION | `environment-skill.test.ts` | Done |
-| **FR-ENV-ATTENTION.12** | 경로가 대화 요청을 조립하는지는 호출부가 명시로 켠다. 기본값은 꺼짐이다 — 모르는 경로가 생기면 겸손한 쪽으로 틀려야 한다. 실시간 음성과 능동 발화는 조립하지 않는다. | UC-ENV-ATTENTION | 같음 + `env-attention-voice.spec.ts` | Done |
-| **FR-ENV-ATTENTION.13** | 지켜보기에는 켠 주인의 표가 붙고, 그 표가 붙은 것만 그 주인이 끈다. 통화 시작 시점의 참·거짓으로 소유를 판정하지 않는다 — 통화 도중 다른 경로가 켠 것과 구별되지 않고, 늦게 도착한 옛 세션의 종료가 새 세션의 것을 지운다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts`, `env-attention-voice.spec.ts` | Done |
-| **FR-ENV-ATTENTION.19** | 전역 도구 사용이 꺼져 있으면 **개수만 보내는 안내**를 하지 않는다. 그 안내는 "필요하면 도구를 불러라"라고 말하는데 나이아가 부를 수 없는 길이다. | UC-ENV-ATTENTION | `environment-skill.spec.ts` | Done |
-| **FR-ENV-ATTENTION.20** | 두 규칙이 충돌하는 조합(`always` + 전역 도구 꺼짐)에서는 **사용자 정책이 이긴다** — 목록을 그대로 보낸다. 막아야 할 것은 닫힌 길을 가리키는 안내이지 목록 자체가 아니다. 목록은 도구 없이도 쓸모가 있다(나이아가 무엇이 돌고 있는지 말해 줄 수 있다). FR-ENV-ATTENTION.4 와 .19 의 우선순위를 여기서 정한다. | UC-ENV-ATTENTION | `environment-skill.spec.ts` | Done |
-| **FR-ENV-ATTENTION.17** | 설정 전환의 등록·해제 결과는 로그가 아니라 상태에 반영한다. 껐으면 등록되어 있다고 주장하지 않는다 — 다시 켤 때 낡은 참으로 첫 턴에 표면을 실어 버린다. 해제가 실패하면 뇌에 선언이 남으므로, 꺼져 있는 동안의 대화 턴에서 한 번 더 시도한다(기다리지 않으므로 대화는 지연되지 않는다). | UC-ENV-ATTENTION | `environment-skill.spec.ts` | Done |
+| **FR-ENV-ATTENTION.11** | 모델-facing 환경 실행 도구를 제거했으므로 셸은 모델 도구 결과의 성공 여부를 판정하지 않는다. 관측 불가는 관측 세그먼트 부재로 남긴다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.12** | 경로가 대화 요청을 조립하는지는 호출부가 명시로 켠다. 기본값은 꺼짐이다 — 모르는 경로가 생기면 겸손한 쪽으로 틀려야 한다. 실시간 음성은 모델-facing 환경 제어 도구를 받지 않는다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.13** | 지켜보기 상태는 셸 소유 세션의 관측 상태로만 유지하며, 모델-facing 음성 도구 호출로 상태를 바꾸지 않는다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.19** | 전역 도구 사용이 꺼져 있으면 모델-facing 환경 도구를 안내하지 않는다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.20** | 두 규칙이 충돌하는 조합(`always` + 전역 도구 꺼짐)에서는 **사용자 정책이 이긴다** — 목록은 도구 없이도 그대로 보낸다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.17** | 설정 전환에서 오래된 모델-facing 환경 선언을 해제하고, 실패하면 다음 대화에서 해제를 재시도한다. | UC-ENV-ATTENTION | `model-facing-tools.contract.test.ts` · `environment-live-wiring.contract.test.ts` | Done |
 | **FR-ENV-ATTENTION.16** | 환경 도구는 대화 턴마다 다시 등록하고, **뇌가 실제로 등록했다는 응답**(`app_skills_result`)을 기다린다. 셸→Rust 는 채널로 큐잉만 하므로 명령 성공은 "예약됨"에 불과하다 — 그것을 전달로 읽으면 도구가 없는데 있다고 판단한다. Rust 는 등록·해제를 디스패처에서 그 자리에서 수행해 뒤이은 대화 요청보다 먼저 끝나게 하고, 결과를 돌려준다. 응답이 시간 안에 오지 않으면 실패로 본다. **확인을 기다리지는 않는다** — 기다리면 확인이 없을 때 사용자의 모든 대화가 시간초과만큼 멈춘다. 대신 마지막으로 확인된 상태를 들고 그것으로 판정한다. 따라서 뇌가 방금 죽은 경우 한 턴 정도는 등록되어 있다고 믿을 수 있다. 그 한 턴은 알고 감수한 한계다. 확인되지 않은 동안에는 표면을 싣지 않되 대화는 막지 않는다. **네이티브로 검증된 것은 fail-closed 방향뿐이다** — 뇌가 없으면 확인이 오지 않거나 명령이 거절되고, 셸은 등록됐다고 주장하지 않는다(`environment-dispatch.spec.ts`). 그 테스트는 `agent_response` 를 실제로 구독하고, 합성 이벤트로 **관측 통로가 살아 있음을 스스로 증명한 뒤** 판정한다 — 통로 없이 "안 왔다"고 말하면 그것은 측정이 아니다. 성공 경로(gRPC 왕복 후 ok:true)는 e2e 픽스처가 에이전트를 막아(`agent_lease_live_blocked`) 네이티브로 잴 수 없고, 브라우저 하네스가 Tauri 를 모의해 셸 쪽 계약만 덮는다. 이 한계는 알고 남긴 것이다. | UC-ENV-ATTENTION | `environment-skill.spec.ts`, `environment-dispatch.spec.ts`(실 Rust — fail-closed 방향만) | Done |
-| **FR-ENV-ATTENTION.18** | 이 기능이 요청마다 새로 얹는 고정 비용(도구 선언 약 1420바이트)도 잰다. 세그먼트만 보면 93.5% 감소지만, 도구 선언까지 넣으면 2607→1497바이트로 **42.6%** 감소다. 둘 다 사실이므로 둘 다 적는다 — 유리한 경계만 골라 말하지 않는다. 도구 선언 크기도 위아래로 묶어, 조용히 부풀거나 설명을 깎아 수치만 좋게 만드는 것을 막는다. | UC-ENV-ATTENTION | `environment-skill.test.ts` | Done |
-| **FR-ENV-ATTENTION.15** | 줄어든 양을 직접 잰다. 고정 표본(표면 12개) 기준 표면 세그먼트가 요청당 1187→77바이트(93.5% 감소), 40턴 총량은 최악의 경우(켜 놓고 잊음)에도 47480→13070바이트(72.5% 감소). **이 수치는 표면 세그먼트만의 것이다** — 기능 전체 비용은 FR-ENV-ATTENTION.18 을 함께 봐야 한다. 계약 테스트가 **네 수치 모두**를 ±8% 안에서 위아래로 묶는다 — 위는 부풀기를, 아래는 세그먼트를 없애거나 예산을 줄여 수치만 좋게 만드는 것을 막는다. 감소율 자체도 따로 확인해, 두 값이 같이 움직여 비율만 유지되는 경우를 막는다. 같은 절감을 **실제로 나간 chat_request** 에서도 잰다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts`, `environment-skill.spec.ts` | Done |
-| **FR-ENV-ATTENTION.14** | `watch` 는 관측이 먼저다. 환경이 응답하지 않으면 지켜보기를 켜지 않는다 — 실패를 보고하면서 노출 상태만 바꿔 두지 않는다. | UC-ENV-ATTENTION | `environment-skill.test.ts` | Done |
-| **FR-ENV-ATTENTION.10** | 요청마다 표면 세그먼트를 싣지 않는 경로(실시간 음성)에서는 `watch` 가 "다음 요청부터 목록이 실린다"고 답하지 않는다. 그 경로가 목록을 싣지 않는다는 사실과 `observe` 를 그때그때 부르라는 안내를 대신 올린다. 못 하는 것을 한다고 말하지 않는다. | UC-ENV-ATTENTION | `environment-skill.test.ts`, `env-attention-voice.spec.ts` | Done |
-| **FR-ENV-ATTENTION.9** | 실시간 음성 턴도 지켜보기 예산을 소비한다. 다만 음성 세션은 연결 시점의 도구 목록을 쓰므로, 통화 중 `off` 로 바꾸면 선언은 그 세션에 남고 실행만 거절된다 — 선언을 걷으려면 재연결이 필요하다. 이 한계는 알고 남긴 것이다. | UC-ENV-ATTENTION | `env-attention-voice.spec.ts` | Done |
+| **FR-ENV-ATTENTION.18** | 모델-facing 환경 도구 선언 비용은 제거되어 0이다. 관측 세그먼트 비용은 별도 wiring 계약으로 측정한다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.15** | 관측 세그먼트의 전송량을 직접 잰다. 모델-facing 환경 도구 선언은 포함되지 않는다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.14** | 관측이 먼저다. 환경이 응답하지 않으면 관측 세그먼트를 만들지 않는다. | UC-ENV-ATTENTION | `environment-live-wiring.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.10** | 실시간 음성은 모델-facing 환경 제어 도구를 받지 않는다. 지원하지 않는 조작을 안내하지 않는다. | UC-ENV-ATTENTION | `model-facing-tools.contract.test.ts` | Done |
+| **FR-ENV-ATTENTION.9** | 실시간 음성 세션도 동일한 model-facing keep-list 경계를 사용하며, 제거된 환경 조작 도구 호출은 실행 전에 거절한다. | UC-ENV-ATTENTION | `model-facing-tools.contract.test.ts` · `naia-omni-voice-tools.spec.ts` | Done |
 | **FR-ENV-ATTENTION.8** | 일부러 싣지 않은 목록과 상한 때문에 잘린 목록을 `listWithheld` 로 구별해 보내되 숨김일 때만 그 키를 싣고(목록을 싣는 요청에 쓸모없는 바이트를 더하지 않는다), 뇌 쪽이 서로 다른 문구로 읽는다. 숨긴 경우에는 걷는 방법을 함께 알린다. | UC-ENV-ATTENTION | 같음 (받는 쪽은 naia-agent 저장소가 소유) | Done |
 | **FR-ENV-ATTENTION.4** | 사용자의 `environmentAwareness` 설정이 나이아의 선택을 이긴다. `off` 면 도구를 등록하지 않고 세그먼트도 만들지 않으며 도구 호출도 거절한다. `always` 면 나이아가 끌 수 없다. 기본값은 `auto`. | UC-ENV-ATTENTION | 같음 | Done |
 
@@ -1239,3 +1242,11 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-ACTIVE-RECALL.1** | 기념일·시간 앵커에 연결된 능동 회상 이벤트를 관찰할 수 있어야 한다. 미배선이나 이벤트 부재를 성공으로 간주하지 않는다. | UC4, S42; docs/user-scenarios.md | 통제된 시간 앵커의 이벤트·중복 확인 |
 | **FR-CRON-JOB.1** | 일회 예약 작업의 생성과 트리거 실행을 연결해 확인할 수 있어야 한다. 생성만 되고 실행되지 않거나 미배선인 경우를 구분한다. | S43; docs/user-scenarios.md | 소유 시험 작업의 ID·예약 시각·실행 이벤트 |
 | **FR-MEMORY-BACKUP-UI.1** | 현행 메모리 Backup UI는 비활성/ComingSoon 상태를 명확히 보여 주고 실제 백업·복원이 완료된 것처럼 표시하지 않는다. 기능이 활성화되었다면 별도 암호화 round-trip 검증 없이 백업 가능으로 판정하지 않는다. | UC3, S52b; docs/user-scenarios.md | disabled·안내·클릭 무효·파일 미생성 |
+
+## 기능 요구사항 (FR) — model-facing 도구 경계 (#611)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억은 자동 recall/save 경로로 유지하고 별도 모델 도구를 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
+| **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 도구, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
+| **FR-TOOLS-SURFACE.3** | 도구 목록 로딩 실패는 빈 성공 목록으로 가장하지 않으며, 목록을 사용하는 UI는 로딩·빈 목록·성공·오류·좁은 폭에서 기존 접근 가능한 상태 표현과 재시도 경계를 유지한다. | UC-TOOLS-SURFACE-611 | `SkillsTab.test.tsx`; `packages/shell/e2e/naia-omni-voice-tools.spec.ts` | Done |

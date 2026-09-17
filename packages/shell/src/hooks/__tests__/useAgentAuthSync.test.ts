@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
 		Promise.resolve(null),
 	),
 	saveConfig: vi.fn(),
-	syncLinkedChannels: vi.fn(() => Promise.resolve()),
 	sendAuthUpdate: vi.fn(() => Promise.resolve()),
 	sendCredsUpdate: vi.fn(() => Promise.resolve()),
 	sendNotifyConfig: vi.fn(() => Promise.resolve()),
@@ -27,10 +26,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
-vi.mock("../../lib/channel-sync", () => ({
-	syncLinkedChannels: mocks.syncLinkedChannels,
-}));
 vi.mock("../../lib/chat-service", () => ({
 	sendAuthUpdate: mocks.sendAuthUpdate,
 	sendCredsUpdate: mocks.sendCredsUpdate,
@@ -91,10 +86,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			model: "test-model",
 			apiKey: "direct-key",
 			naiaKey: "naia-key",
-			googleApiKey: "google-tts-key",
-			openaiTtsApiKey: "openai-tts-key",
-			elevenlabsApiKey: "elevenlabs-tts-key",
-			gatewayToken: "gateway-token",
+												gatewayToken: "gateway-token",
 		});
 
 		renderHook(() => useAgentAuthSync(false, false, true));
@@ -107,9 +99,6 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			{
 				keys: {},
 				ttsKeys: {
-					google: "google-tts-key",
-					openai: "openai-tts-key",
-					elevenlabs: "elevenlabs-tts-key",
 				},
 				gatewayToken: "gateway-token",
 			},
@@ -127,9 +116,6 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			type: "creds_update",
 			keys: {},
 			ttsKeys: {
-				google: "google-tts-key",
-				openai: "openai-tts-key",
-				elevenlabs: "elevenlabs-tts-key",
 			},
 			gatewayToken: "gateway-token",
 		});
@@ -140,10 +126,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			provider: "openai",
 			model: "test-model",
 			apiKey: "direct-key",
-			googleApiKey: "google-tts-key",
-			openaiTtsApiKey: "openai-tts-key",
-			elevenlabsApiKey: "elevenlabs-tts-key",
-		});
+											});
 
 		renderHook(() => useAgentAuthSync(false, false, true));
 
@@ -154,9 +137,6 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			{
 				keys: { openai: "direct-key" },
 				ttsKeys: {
-					google: "google-tts-key",
-					openai: "openai-tts-key",
-					elevenlabs: "elevenlabs-tts-key",
 				},
 			},
 			null,

@@ -66,10 +66,11 @@ describe("Shell expert/main/sub + memory role settings", () => {
 	});
 
 	it("main-only legacy configuration defaults expert/sub from main and memory from sub", () => {
-		const config: AppConfig = { provider: "openai", model: "gpt-5.4", apiKey: "key" };
+		// #602: 타사 직결 공급자는 제거됐다 — 모든 역할을 지원하는 로컬(ollama)로 검증한다.
+		const config: AppConfig = { provider: "ollama", model: "qwen3:8b", apiKey: "" };
 		expect(readConfiguredLlmRoles(config)).toEqual({
 			expert: { inherit: "main" },
-			main: { provider: "openai", model: "gpt-5.4" },
+			main: { provider: "ollama", model: "qwen3:8b" },
 			sub: { inherit: "main" },
 			memory: { inherit: "sub" },
 		});
@@ -77,10 +78,10 @@ describe("Shell expert/main/sub + memory role settings", () => {
 		expect(resolved.ok).toBe(true);
 		if (!resolved.ok) return;
 		expect(resolved.roles.map((role) => [role.role, role.provider, role.provenance, role.inheritedFromRole])).toEqual([
-			["expert", "openai", "inherit", "main"],
-			["main", "openai", "explicit", undefined],
-			["sub", "openai", "inherit", "main"],
-			["memory", "openai", "inherit", "sub"],
+			["expert", "ollama", "inherit", "main"],
+			["main", "ollama", "explicit", undefined],
+			["sub", "ollama", "inherit", "main"],
+			["memory", "ollama", "inherit", "sub"],
 		]);
 	});
 });

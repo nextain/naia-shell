@@ -79,12 +79,6 @@ describe("ToolActivity", () => {
 		expect(body.textContent?.length).toBeLessThanOrEqual(504); // 500 + "…" + possible whitespace
 	});
 
-	it("maps execute_command tool name", () => {
-		const tool = { ...baseTool, toolName: "execute_command" };
-		render(<ToolActivity tool={tool} />);
-		expect(screen.getByText(/명령 실행|Execute Command/)).toBeDefined();
-	});
-
 	it("maps unknown tool name to fallback", () => {
 		const tool = { ...baseTool, toolName: "some_new_tool" };
 		render(<ToolActivity tool={tool} />);
@@ -97,7 +91,7 @@ describe("ToolActivity", () => {
 		expect(screen.getByText(/\/test\.txt/)).toBeDefined();
 	});
 
-	it("loads the graph viewer only for a successful graph result", async () => {
+	it("renders removed knowledge tools as ordinary tool activity", () => {
 		const tool: ToolCall = {
 			...baseTool,
 			toolName: "skill_knowledge_graph",
@@ -110,9 +104,8 @@ describe("ToolActivity", () => {
 		};
 
 		const { container } = render(<ToolActivity tool={tool} />);
-
-		expect(screen.getByText(/Loading|로딩/)).toBeDefined();
-		expect(await screen.findByTestId("knowledge-graph")).toBeDefined();
-		expect(container.querySelector("canvas")).not.toBeNull();
+		expect(container.querySelector(".tool-knowledge-graph")).toBeNull();
+		expect(screen.queryByTestId("knowledge-graph")).toBeNull();
+		expect(screen.getByText(/도구 실행|Tool Execution|skill_knowledge_graph/)).toBeDefined();
 	});
 });

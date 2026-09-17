@@ -54,7 +54,7 @@ const GROK_TAURI_MOCK = `
 		if (cmd === "read_naia_config") {
 			return window.__E2E_CONFIG__ ? JSON.stringify(window.__E2E_CONFIG__) : null;
 		}
-		if (cmd === "grok_preflight") {
+		if (cmd === "cli_detect_one") {
 			return window.__GROK_PREFLIGHT__ || {
 				status: "ready",
 				output: "You are logged in as private@example.com",
@@ -121,7 +121,7 @@ async function grokPreflightCount(page: import("@playwright/test").Page) {
 				window as unknown as {
 					__GROK_INVOKES__: Array<{ cmd: string }>;
 				}
-			).__GROK_INVOKES__.filter((call) => call.cmd === "grok_preflight")
+			).__GROK_INVOKES__.filter((call) => call.cmd === "cli_detect_one")
 				.length,
 	);
 }

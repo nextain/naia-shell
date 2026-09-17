@@ -38,6 +38,7 @@ export interface PipelineVoiceConfig {
 	ttsProvider?: string;
 	/** #512 — 로컬 엔진 활성 여부(정체성 데스싱크 관측용). */
 	localVoiceEnabled?: boolean;
+	/** @deprecated #603 */
 	ttsApiKey?: string;
 	/** nextain provider: gateway credit key. */
 	naiaKey?: string;
@@ -327,7 +328,6 @@ export function createSentenceTtsPipeline(
 				text: clean,
 				voice: voiceCfg?.voice,
 				provider: ttsProviderForCost as TtsProviderId,
-				apiKey: voiceCfg?.ttsApiKey,
 				naiaKey: voiceCfg?.naiaKey,
 				gatewayUrl: voiceCfg?.gatewayUrl,
 				vllmHost: voiceCfg?.vllmHost,

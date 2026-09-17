@@ -176,92 +176,15 @@ describe("synthesizeTts — nextain (gateway)", () => {
 	});
 });
 
-describe("synthesizeTts — google", () => {
-	it("POSTs to the Google REST endpoint with the api key in the query", async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValue(jsonResponse({ audioContent: "R09PRA==" }));
-		vi.stubGlobal("fetch", fetchMock);
-		const res = await synthesizeTts({
-			text: "hi",
-			voice: "ko-KR-Neural2-A",
-			provider: "google",
-			apiKey: "g-key",
-		});
-		expect(res.audioBase64).toBe("R09PRA==");
-		const [url, init] = fetchMock.mock.calls[0];
-		expect(url).toContain("texttospeech.googleapis.com");
-		expect(url).toContain("key=g-key");
-		const body = JSON.parse(init.body as string);
-		expect(body.voice).toEqual({
-			languageCode: "ko-KR",
-			name: "ko-KR-Neural2-A",
-		});
-	});
-
-	it("throws without an api key", async () => {
-		await expect(
-			synthesizeTts({ text: "x", provider: "google" }),
-		).rejects.toThrow(/Google API/);
-	});
-});
-
-describe("synthesizeTts — openai", () => {
-	it("returns base64 of the raw audio bytes and picks tts-1 for standard voices", async () => {
-		const bytes = new Uint8Array([10, 20, 30]);
-		const fetchMock = vi.fn().mockResolvedValue(bytesResponse(bytes));
-		vi.stubGlobal("fetch", fetchMock);
-		const res = await synthesizeTts({
-			text: "hi",
-			voice: "alloy",
-			provider: "openai",
-			apiKey: "sk-x",
-		});
-		expect(atob(res.audioBase64)).toBe(String.fromCharCode(10, 20, 30));
-		const [url, init] = fetchMock.mock.calls[0];
-		expect(url).toBe("https://api.openai.com/v1/audio/speech");
-		expect((init.headers as Record<string, string>).Authorization).toBe(
-			"Bearer sk-x",
-		);
-		expect(JSON.parse(init.body as string).model).toBe("tts-1");
-	});
-
-	it("uses gpt-4o-mini-tts for the 4o-only voices", async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValue(bytesResponse(new Uint8Array([1])));
-		vi.stubGlobal("fetch", fetchMock);
-		await synthesizeTts({
-			text: "hi",
-			voice: "marin",
-			provider: "openai",
-			apiKey: "sk-x",
-		});
-		expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).model).toBe(
-			"gpt-4o-mini-tts",
-		);
-	});
-});
-
-describe("synthesizeTts — elevenlabs", () => {
-	it("POSTs to the voice endpoint with the xi-api-key header", async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValue(bytesResponse(new Uint8Array([7, 8])));
-		vi.stubGlobal("fetch", fetchMock);
-		const res = await synthesizeTts({
-			text: "hi",
-			voice: "voiceXYZ",
-			provider: "elevenlabs",
-			apiKey: "el-key",
-		});
-		expect(atob(res.audioBase64)).toBe(String.fromCharCode(7, 8));
-		const [url, init] = fetchMock.mock.calls[0];
-		expect(url).toContain("api.elevenlabs.io/v1/text-to-speech/voiceXYZ");
-		expect((init.headers as Record<string, string>)["xi-api-key"]).toBe(
-			"el-key",
-		);
-	});
+describe("synthesizeTts — retired third-party cloud (#603)", () => {
+	it.each(["google", "openai", "elevenlabs"] as const)(
+		"rejects removed provider %s",
+		async (provider) => {
+			await expect(synthesizeTts({ text: "x", provider })).rejects.toThrow(
+				/지원하지 않는 TTS provider/,
+			);
+		},
+	);
 });
 
 describe("synthesizeTts — vllm", () => {

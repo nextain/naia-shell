@@ -6,6 +6,8 @@
 
 > 추적: 1단계 `STRUCTURE.md` v5 → 2단계 P01. **상태: 완전성 수렴(13R, 3연속 NONE). foundation tranche 순서 = 아이디어 수준 잠정안(F0→…→V2, 실행 시 재검토). G1 게이트 아님.**
 > 완전성 추이: 초안 46 → 누락 발견·추가 R1~R10(ADK부트스트랩·비용·업데이트·공지·비전캡처·@멘션·Issues·AppBar·botmadang·ref오디오·Lab동기화·deeplink·**default-skills 60+ 컬렉션**·메모리백업) → R11~R13 3연속 NONE. 앱 표면 ≈ S01~S71(+S52b) + 브라우저/워크스페이스/default-skills 그룹. 분포/OS(S68/69)=범위 밖.
+
+| **S-SKILLS-CLI** (#605) | 사용자가 설정 → 스킬 탭을 열면 설치된 코딩 CLI만 체크박스로 보이고, 유튜브 등 셸 몸짓 토글이 둘째 묶음으로 보인다. 로그인·다시 확인 버튼으로 준비 상태를 고친다. 켠 CLI 이름은 채팅 턴에 에이전트로 전달된다. | FR-SKILLS-CLI.1–3 | SkillsTab vitest · e2e-tauri 14/19/28/59 · 96-readiness |
 > 원칙: 시나리오는 *발명*이 아니라 old-naia-os **실제 기능**에서 도출(built-in skills 25·앱 6개·멀티채널). 각 UC = 인지흐름 경로 + 관통 슬라이스/포트.
 > 용어 = `glossary.md`.
 
@@ -73,9 +75,8 @@ UC15 제품 수용 확장(#84):
 | S12 | approvals(승인 게이트) | UC13 | ApprovalPort | 측정 |
 | S13 | 텍스트 대화(ChatApp) | UC1 | ChatPort·llm·ExpressionPort | 측정 |
 | S14 | omni 음성(naia-omni realtime) | UC2 | voice provider·ws | 측정(키/서버) |
-| S15 | gemini-live 음성 | UC2 | voice provider·ws | 측정 |
-| S16 | openai-realtime 음성 | UC2 | voice provider·ws | 측정 |
 | S17 | tts | UC2 | ExpressionPort(speech) | 측정 |
+| S17a | **타사 클라우드 음성 제거·설정 복구** — 기존 Google/OpenAI/ElevenLabs/Gemini Live/OpenAI Realtime 선택이 Edge 또는 Azure retained route로 복구되고, 음성 API 키가 다시 노출·전송되지 않음 | UC2 | voice provider·config migration·secure store | `third-party-cloud-voice-absent.test.ts` · `config.test.ts` · `config-secrets.test.ts` · `useAgentAuthSync.test.ts` |
 | S18 | **voicewake(이름 불러 활성화)** | UC2 | SensoryPort·wake | ✓루크확인: OpenClaw 잔재·미검증(개발검증 X) |
 | S19 | avatar 표현(VRM, AvatarCanvas) | UC2 | ExpressionPort | 측정 |
 | S19a | VRM/WebGL 초기화 실패·아바타 변경 재초기화 | UC2 | ExpressionPort·fault surface | 측정 — blank canvas/crash 없이 기존 현지화 오류 안내를 표시하고 ready 상태를 거짓으로 표시하지 않으며, 부분 초기화 자원을 정리한다. 다른 아바타 선택으로 `modelPath`가 바뀌면 다시 초기화하고 chat/settings는 계속 사용 가능 |
@@ -165,7 +166,8 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 
 | 시나리오 | 사용자 경험 | 인지/레이어 | 검증(P02) |
 |---|---|---|---|
-| **S-TTS** (#363) | omni 아닌 모델로 음성 대화 시 **소리가 난다**(edge/google/nextain/openai/elevenlabs). 기본 edge 가 무음이면 browser 폴백 | 표현(speech) — 셸이 합성(agent 우회) | `synthesize.test.ts`·`edge-tts.test.ts`·셸 vitest. ⚠️ 라이브 합성=실 앱(naiaKey) |
+| **S-TTS** (#363) | omni 아닌 모델로 음성 대화 시 **소리가 난다**(browser/edge/nextain/local). 기본 edge 가 무음이면 browser 폴백 | 표현(speech) — 셸이 합성(agent 우회) | `synthesize.test.ts`·`edge-tts.test.ts`·셸 vitest. ⚠️ 라이브 합성=실 앱(naiaKey) |
+| **S-VOICE-CLOUD-OFF** (#603, epic #589) | 사용자는 음성 설정에서 타사 Google/OpenAI/ElevenLabs TTS·STT와 Gemini Live/OpenAI Realtime을 볼 수 없고, Azure Neural HD·Azure Voice Live·로컬 GPU/vLLM·browser/Edge/Vosk/Whisper만 쓴다. 이전 설정은 안전한 retained route로 이동하며 제거된 키는 저장·agent wire에 남지 않는다 | 설정 제어면 + 표현/감각 | `third-party-cloud-voice-absent.test.ts` · `config.test.ts` · `config-secrets.test.ts` · Settings/ChatArea focused tests · `cargo check` |
 | **S-CAP** (#365) | 모델을 고르면 그 모델 **능력에 맞춰 설정이 전개**(omni→STT/TTS 슬롯 숨김, 텍스트→노출). gateway 가 능력 선언 | 제어면(설정) — capability manifest 도출 | `test_models.py`·`capability-fetch.test.ts`·`slots.test.ts`. ⚠️ 라이브 /v1/models=게이트웨이 배포 |
 | **S-VRAM** (#2) | 내 GPU VRAM 을 감지해 **로컬에서 돌릴 수 있는 tier**(아바타·음성)를 보여주고 선택. opt-in 시 외부 슬롯 대신 로컬 | 제어면(설정) — VRAM→capability 브리지 | `vram-tiers.test.ts`. ⚠️ 실 VRAM 감지=실 GPU, 로컬 serving=windows-manager 로더(DEFER) |
 | **S-SLOT** (#gate-slots, 신규 — 2026-06-28) | 설정이 **naia 계정 게이트 → 6 클라우드 슬롯(LLM main·LLM sub·embedding·STT·TTS·video avatar) 각각 독립 설정** 순서로 전개. naia 계정 시 Gemini 기본값 자동 적용. 구 engine/ai/models/memory 분산을 통합해 "설정 헷갈림" 해소. **Naia는 provider가 아닌 접근 유형(게이트)**. local 런타임(cascade)은 별도 "naia-omni local setting" 영역(wm 연동, **DEFER**). legacy 고정 VRAM tier는 R2-3으로 폐기 → capability 토글+VRAM 예산(설계 P1.4) | 제어면(설정) — 게이트+슬롯 모델 | `settings-slots.contract.test.ts`(신규)·`settings-tab.test.ts`·`onboarding-fresh.spec.ts` + Playwright E2E(게이트→클라우드 슬롯 흐름). ⚠️ 로컬 설정 영역(1.2b)·통합 VRAM(1.4)=wm 언블록 후 |
@@ -542,17 +544,16 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 - Foundation tranche 순서 F0→…→V2 = **아이디어 수준 잠정**(루크: 우선 적어둔 것, 실행 시 재검토 — 못 박은 결정 아님). G1 = 게이트로 두지 않음.
 - botmadang(S65) = **rejected**(이식 제외, 명확 결정).
 
-## 셸 feature 시나리오 — 지식 근거→원문 + 그래프 (K2·K3, kb-compiler 통합 — 2026-06-30)
+## 셸 feature 시나리오 — 지식 소스 관리 설정 탭 (K4)
 
-도구·환경 tranche(UC5 도구·UC6 브라우저·UC7 워크스페이스)의 셸측 슬라이스. 사용자가 워크스페이스 지식을 물으면, 에이전트가 `skill_knowledge_ask`/`search`(naia-agent **UC-KNOWLEDGE**, kb-compiler backend — 별 레포 live)로 **근거 있는 답변**을 내고, 셸이 그 tool-result(JSON)를 **답변 + 출처 칩**으로 렌더한다(K2). 출처 칩 클릭 시 **근거→원문**: URL=브라우저 앱(UC6), 워크스페이스 파일=파일뷰어(UC7)로 원문이 열린다. 근거 없으면 **기권**(칩 없음). 또한 `skill_knowledge_graph` 결과는 셸이 **2D/3D 캔버스 그래프**(엔티티·관계·군집색·degree 크기, 2D↔3D 토글)로 시각화한다(K3).
+모델-facing 지식 질의·그래프 도구는 #611에서 제거한다. 사용자가 설정에서 자료 폴더와 스코프를 관리하고 컴파일 상태를 확인하는 K4 설정 표면은 유지한다. 컴파일 결과는 셸 설정 화면의 상태·그래프에만 사용하며 대화 도구 목록으로 재등록하지 않는다.
 
-- **인지흐름**: (사고)지식 질의 → (표현)근거 답변+출처·지식 그래프 → (행위)칩 클릭→원문 앱 전환. 백엔드 배선·계약 = naia-agent(별 레포), 셸 렌더·dispatch·뷰어 = 본 feature(기존 브라우저/워크스페이스 앱 api 재사용·그래프 의존성 0 캔버스, 신규 사이드카 0).
-- **검증(P02)**: requirements.md **FR-KB-OS.1~4** 매핑 — `knowledge-result.test.ts`(파싱·분류·그래프 파싱 단위)·`knowledge-tool-result.test.tsx`(RTL 렌더+칩 dispatch)·`e2e/chat-tools.spec.ts` "지식 도구(K2)"·"지식 그래프(K3)"(Playwright 실 UI: 답변+칩+칩클릭→브라우저 앱 / 그래프 캔버스 렌더+2D/3D 토글). tsc0.
-- 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`. 전용 그래프 앱(on-demand fetch) = post-MVP. 설정 지식 탭(관리 compile/소스) = 아래 UC-KB-MANAGE.
+- **인지흐름**: (관리)사람이 자료 폴더·스코프를 선택 → (환경)컴파일 결과를 저장 → (표현)설정 화면에 상태·그래프 표시. AI가 설정이나 파일 쓰기 권한을 얻는 경로는 없다.
+- **검증(P02)**: `knowledge-config.test.ts`·`KnowledgeSettingsTab.test.tsx`·`settings-knowledge.spec.ts`는 설정 저장·상태·실패를 검증하고, model-facing keep-list 계약은 `model-facing-tools.contract.test.ts`가 담당한다.
 
 ## UC-KB-MANAGE — 지식 소스 관리 설정 탭 (K4, kb-compiler 통합 — 2026-06-30)
 
-사용자가 설정>지식 탭에서 **자기 워크스페이스의 지식 소스(자료 폴더)를 직접 관리**한다. "준비 중" 자리를 실제 관리면이 대체한다: ①여러 자료 폴더를 추가/제거(폴더 선택 다이얼로그)하고, ②현재 **지식 스코프(프로젝트)** 와 **컴파일 상태**(카드·엔티티·관계 수, 또는 "미컴파일")를 보고, ③"지금 컴파일"로 등록 폴더 → 구조화 지식(kb.json)을 빌드한다. 빌드된 지식은 채팅에서 근거 답변(UC-KNOWLEDGE)으로 소비된다.
+사용자가 설정>지식 탭에서 **자기 워크스페이스의 지식 소스(자료 폴더)를 직접 관리**한다. "준비 중" 자리를 실제 관리면이 대체한다: ①여러 자료 폴더를 추가/제거(폴더 선택 다이얼로그)하고, ②현재 **지식 스코프(프로젝트)** 와 **컴파일 상태**(카드·엔티티·관계 수, 또는 "미컴파일")를 보고, ③"지금 컴파일"로 등록 폴더 → 구조화 지식(kb.json)을 빌드한다. 빌드된 지식은 설정 화면의 상태·그래프에서만 확인한다.
 
 - **소유 경계(핵심)**: 이 설정(소스·스코프)은 **사람이 셸 UI 로만** 바꾼다 → `naia-settings/knowledge.json`(셸 전용 write). **AI 에이전트는 읽기만** 하고 설정을 못 바꾼다(config-write 도구 부재 = 신뢰경계 자가확장 차단). 사람=설정, 엔진=컴파일 산출(kb.json) 분리.
 - **인지흐름/역할**: (관리)셸 UI 폴더 등록·스코프 → (지능)에이전트가 `CompileKnowledge`(naia-agent, 별 레포)로 폴더 → kb-compiler `compile()` → `naia-settings/knowledge/<scope>/kb.json` 저장 → (소비)채팅 근거 답변. 셸 = 관리 UI·상태 표시·트리거(직접 `invoke`, AI 미경유)이며 저장 위치를 주입하지 않는다. 컴파일/답변 지능과 저장 경계 = 에이전트.
@@ -1582,15 +1583,12 @@ Test Coverage Map (P02):
 | UC | 검증 수단 | 대상 |
 |---|---|---|
 | UC-ENV-LIVE-OBSERVE | vitest `src/test/environment-live-wiring.contract.test.ts` | 스냅샷→세그먼트 조립, Herdr 부재 시 미전송, 손잡이만 상승 |
-| UC-ENV-LIVE-OBSERVE | vitest `packages/shell/src/lib/__tests__/environment-skill.test.ts` | 도구 호출이 실제 스냅샷 경로를 탄다, 빈 결과 공허 통과 차단 |
-| UC-ENV-LIVE-ACT | vitest `packages/shell/src/lib/__tests__/environment-skill.test.ts` | focus/run/interrupt 전달, 권한 없을 때 거절, 환경 오류 그대로 상승 |
+| UC-ENV-LIVE-OBSERVE | vitest `src/test/environment-live-wiring.contract.test.ts` | 셸의 모델-facing 제어 도구 없이 스냅샷→세그먼트 조립, Herdr 부재 시 미전송 |
 | UC-ENV-LIVE-ACT | e2e-tauri `packages/shell/e2e-tauri/specs/environment-dispatch.spec.ts` | 실 Rust 명령 경계 |
 | UC-ENV-STICKY | vitest `src/test/environment-live-wiring.contract.test.ts` | 표면 사라져도 재배정 없음, 순서 바뀌어도 손잡이 불변, 죽은 손잡이는 거절 |
 | UC-ENV-ATTENTION | vitest `src/test/environment-live-wiring.contract.test.ts` | 기본 미관찰, 미관찰 중 이름·손잡이 미전송, 개수는 상한 포함, off/always 우선 |
-| UC-ENV-ATTENTION | vitest `packages/shell/src/lib/__tests__/environment-skill.test.ts` | watch/unwatch 실행, watch 가 목록 동반, off 전면 거절, always 에서 나이아 무력 |
-| UC-ENV-ATTENTION | Playwright `packages/shell/e2e/environment-skill.spec.ts` | 실 UI 에서 기본 개수만 전송, watch 후 목록 전송, unwatch 복귀, off 시 도구 미등록, 매 턴 관측 갱신 |
+| UC-ENV-ATTENTION | vitest `src/test/environment-live-wiring.contract.test.ts` | 모델-facing 환경 제어 도구 제거 후에도 기본/off/always 정책과 세그먼트 경계 유지 |
 | UC-ENV-ATTENTION | vitest `src/test/environment-live-herdr.contract.test.ts` | 살아 있는 Herdr 의 실제 터미널 이름·손잡이가 미관찰 중 전송되지 않음 |
-| UC-ENV-ATTENTION | Playwright `packages/shell/e2e/env-attention-voice.spec.ts` | 실시간 음성 턴도 예산을 소비, 음성 중 off 전환 시 거절 |
 | UC-ENV-ATTENTION | e2e-tauri `packages/shell/e2e-tauri/specs/environment-dispatch.spec.ts` | 실 Rust — 뇌가 없을 때 등록이 "확인됨"으로 새지 않음(fail-closed 방향만) |
 
 > 받는 쪽(naia-agent) 검증은 그 저장소의 `src/test/uc-environment-segments.contract.test.ts`
@@ -1837,3 +1835,24 @@ Test Coverage Map (P02)
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/tts/__tests__/local-voice-scheduler.test.ts`: 첫 PCM 청크가 워밍업 홀드를 푸는지(1초 이내면 엔진 웜으로 인정), 느린 첫 청크는 홀드를 유지하는지, 지난 턴의 청크가 새 턴을 풀지 않는지 | — | 첫 청크가 곧 enqueue 신호다 — 이것이 없으면 스트리밍을 해도 홀드가 문장 완성까지 안 풀려 지연이 그대로 남는다 |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: 실사용 아바타 렌더러가 클립마다 `<video>` 를 하나씩 두어 왕복에서 `src` 재대입이 없는지, 활성 요소만 재생하고 떠난 요소는 멈추는지, 만든 형제 요소를 정지 때 거두는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | VideoAvatarCanvas 가 등록하는 렌더러가 이쪽이다 — layered 플레이어만 고치면 실제 경로는 그대로 멈춘다(2026-09-11 3/3) |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/nva-layered-player.test.ts`: idle↔talk 왕복에서 같은 클립을 다시 로드하지 않고(버퍼당 `src` 대입 1회) 매번 교체는 일어나는지, 재사용 클립을 되감는지, 로드가 취소된 클립은 다시 로드하는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | 낭독이 아바타를 idle↔talk 로 계속 왕복시켜 WebKitGTK 미디어 파이프라인 해체 교착을 밟았다(gdb 2/2). 재생 계약과 같은 슬라이스에 둔다 |
+
+## UC-TOOLS-SURFACE-611 — model-facing tool boundary
+
+Naia가 대화나 음성 세션을 시작할 때 모델에 전달되는 도구는 제품에 남긴 관찰·표현 표면만 포함한다: 시간, 날씨, 메모, 워크스페이스 파일 읽기, YouTube BGM, 인앱 브라우저. 기억은 별도 자동 회상·저장 경로로 남기며 모델 도구 이름으로 만들지 않는다. 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 풀, ADK `SKILL.md` 로더, 알림 및 그 밖의 작업 도구는 모델 목록에서 사라진다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 도구 목록을 열면 남긴 도구만 표시되고 작업 도구는 표시되지 않는다. |
+| 빈 목록 | Agent 목록을 읽지 못하면 빈 상태와 재시도 가능한 오류를 구분한다. |
+| 진행 | 목록을 읽는 동안 로딩 상태를 표시하고 중복 요청을 만들지 않는다. |
+| 성공 | 모델-facing 목록과 음성 목록이 같은 keep list를 사용한다. |
+| 오류 | 등록 실패가 도구가 있는 것처럼 표시되지 않고 대화는 오류 원인을 숨기지 않는다. |
+| 좁은 폭 | 도구 카드와 목록 상태가 좁은 셸 폭에서도 잘리지 않고 다음 행동을 유지한다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: keep list exactness, removed-name filtering, app/voice list parity | `packages/shell/src/components/__tests__/SkillsTab.test.tsx`: loading, empty, error, filtered success and disabled-state rendering; `packages/shell/e2e/naia-omni-voice-tools.spec.ts`: voice skill-list wiring |
+
+P04 must preserve the existing browser and YouTube UI paths while proving that removed work tools are absent from the model-facing list. The contract test is the authoritative exact-list check; UI evidence covers loading, empty, success, error, keyboard-visible cards and the narrow layout already owned by SkillsTab.

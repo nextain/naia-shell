@@ -63,7 +63,6 @@ const MOCK_SKILLS = [
 		source: "built-in",
 	},
 	{
-		name: "skill_skill_manager",
 		description: "스킬 관리 (검색/활성화/비활성화)",
 		type: "built-in",
 		tier: 1,

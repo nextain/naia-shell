@@ -31,4 +31,13 @@ describe("Grok readiness through the real Tauri Shell", () => {
 		);
 		expect(await status.getText()).toMatch(/준비됨|Ready/);
 	});
+
+	it("lists Grok on the Skills tab when the descriptor detects it", async () => {
+		await clickElement("[data-settings-tab='skills']", 30_000);
+		const section = await $('[data-testid="skills-cli-section"]');
+		await section.waitForDisplayed({ timeout: 30_000 });
+		const card = await $('[data-testid="cli-skill-card"][data-cli-id="grok"]');
+		await card.waitForExist({ timeout: 30_000 });
+		expect(await card.isExisting()).toBe(true);
+	});
 });
