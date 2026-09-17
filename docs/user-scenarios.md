@@ -1856,3 +1856,22 @@ Test Coverage Map (P02)
 | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: keep list exactness, removed-name filtering, app/voice list parity | `packages/shell/src/components/__tests__/SkillsTab.test.tsx`: loading, empty, error, filtered success and disabled-state rendering; `packages/shell/e2e/naia-omni-voice-tools.spec.ts`: voice skill-list wiring |
 
 P04 must preserve the existing browser and YouTube UI paths while proving that removed work tools are absent from the model-facing list. The contract test is the authoritative exact-list check; UI evidence covers loading, empty, success, error, keyboard-visible cards and the narrow layout already owned by SkillsTab.
+
+## UC-DEV-GATEWAY-638 — tauri:dev chat and credit use the same api-dev host
+
+`pnpm run tauri:dev` logs into `https://dev.naia.land` and talks to `https://api-dev.naia.land`. Credit fetch (`GET /v1/profile/balance`) and Naia-account chat (`POST /v1/chat/completions`) use that API host with `X-AnyLLM-Key`. A parent-shell prod URL must not send chat to a different gateway than credit.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | tauri:dev 잔액과 채팅이 모두 api-dev.naia.land 이다. |
+| 빈 목록 | 개발 게이트웨이 env가 비어도 prod API로 떨어지지 않는다. |
+| 진행 | 로그인 대기 중에도 호스트가 바뀌지 않는다. |
+| 성공 | 로그인 키로 잔액이 보이면 채팅도 같은 호스트·같은 헤더를 쓴다. |
+| 오류 | 채팅 403은 게이트웨이 거절 본문을 숨기지 않는다. |
+| 좁은 폭 | 로그인 화면 링크가 잘리지 않는다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-DEV-GATEWAY-638 | `naia-instance-urls.test.ts`; `launch-env.test.mjs`; `adk-store.test.ts` LAB_GATEWAY_URL parity; Rust `naia_balance_endpoint` api-dev allowlist | existing onboarding login specs keep redirect_uri/source=desktop |

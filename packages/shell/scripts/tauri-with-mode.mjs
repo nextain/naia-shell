@@ -31,9 +31,10 @@ import {
 	resolvePairedAgent,
 } from "./agent-pairing.mjs";
 import { developmentInstanceEnv } from "./dev-instance.mjs";
-import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
+import { applyNaiaInstanceEnv } from "./naia-instance-urls.mjs";
 import { runProjectPnpm } from "./package-manager.mjs";
+import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
 
 // `build` produces the release installer (`tauri build`, production config).
 // It shares prod env resolution but does not launch a dev window.
@@ -297,22 +298,10 @@ if (platform() === "linux") {
 	env.WEBKIT_DISABLE_DMABUF_RENDERER = env.WEBKIT_DISABLE_DMABUF_RENDERER ?? "1";
 }
 
-// ── 모드가 웹·게이트웨이를 소유한다 (#523, #333) ──
-// `tauri:prod`도 vite dev 서버라 import.meta.env.DEV 폴백만 믿으면 로그인이
-// 스테이징으로 샌다. `tauri:dev`는 스테이징 웹 + api-dev 게이트웨이.
-// `tauri:prod` / installer 는 운영 웹 + api.nextain.io.
-if (mode === "prod") {
-	delete env.VITE_NAIA_USE_DEV_GATEWAY;
-	delete env.VITE_NAIA_DEV_GATEWAY_URL;
-	env.VITE_NAIA_WEB_BASE_URL =
-		env.VITE_NAIA_WEB_BASE_URL ?? "https://www.naia.land";
-} else {
-	env.VITE_NAIA_USE_DEV_GATEWAY = env.VITE_NAIA_USE_DEV_GATEWAY ?? "1";
-	env.VITE_NAIA_DEV_GATEWAY_URL =
-		env.VITE_NAIA_DEV_GATEWAY_URL ?? "https://api-dev.naia.land";
-	env.VITE_NAIA_WEB_BASE_URL =
-		env.VITE_NAIA_WEB_BASE_URL ?? "https://dev.naia.land";
-}
+// Instance hosts are owned by naia-instance-urls (#638). `tauri:prod` still
+// uses the Vite dev server, so import.meta.env.DEV is not the instance.
+// Agent NAIA_ANYLLM_BASE_URL is forced to the same API credit fetch uses.
+Object.assign(env, applyNaiaInstanceEnv(env, mode));
 
 /** 최소 KEY=VALUE env 파일 파서(주석·빈줄 skip, 따옴표 제거). */
 function loadEnvFile(path) {
@@ -352,7 +341,10 @@ if (existsSync(envPath)) {
 
 // A developer .env file must not be able to re-introduce native E2E ownership
 // after the inherited environment was scrubbed above.
-const postFileEnv = interactiveLaunchEnv(env, mode);
+const postFileEnv = applyNaiaInstanceEnv(
+	interactiveLaunchEnv(env, mode),
+	mode,
+);
 for (const key of Object.keys(env)) delete env[key];
 Object.assign(env, postFileEnv);
 

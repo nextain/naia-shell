@@ -1250,3 +1250,9 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억은 자동 recall/save 경로로 유지하고 별도 모델 도구를 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
 | **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 도구, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
 | **FR-TOOLS-SURFACE.3** | 도구 목록 로딩 실패는 빈 성공 목록으로 가장하지 않으며, 목록을 사용하는 UI는 로딩·빈 목록·성공·오류·좁은 폭에서 기존 접근 가능한 상태 표현과 재시도 경계를 유지한다. | UC-TOOLS-SURFACE-611 | `SkillsTab.test.tsx`; `packages/shell/e2e/naia-omni-voice-tools.spec.ts` | Done |
+
+## 기능 요구사항 (FR) — tauri:dev 게이트웨이 일치 (#638)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-DEV-GATEWAY.1** | `tauri:dev`의 웹은 `https://dev.naia.land`, API는 `https://api-dev.naia.land`다. 잔액 조회와 Agent `NAIA_ANYLLM_BASE_URL`은 같은 API 호스트를 쓰고, 개발 게이트웨이 URL이 비어도 prod로 떨어지지 않는다. | UC-DEV-GATEWAY-638 | `naia-instance-urls.test.ts`; `launch-env.test.mjs`; `adk-store.test.ts` | Done |

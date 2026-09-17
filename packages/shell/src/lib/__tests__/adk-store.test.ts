@@ -51,6 +51,7 @@ import {
 	writeNaiaConfigAtPath,
 	writeNaiaUiConfig,
 } from "../adk-store";
+import { LAB_GATEWAY_URL } from "../config";
 
 // ── UC-MODEL-SELECT cross-seam contract ─────────────────────────────────────────
 // Regression guard for 2026-06-17: UI model selection MUST become the agent's
@@ -452,6 +453,12 @@ describe("readNaiaConfig", () => {
 });
 
 describe("writeNaiaConfig", () => {
+	it("#638: nextain Agent base URL is the same LAB_GATEWAY_URL credit fetch uses", () => {
+		expect(
+			buildNaiaConfigEnv({ provider: "nextain" }).NAIA_ANYLLM_BASE_URL,
+		).toBe(LAB_GATEWAY_URL);
+	});
+
 	it("#602: no longer scopes OPENAI_BASE_URL to a direct openai provider", () => {
 		// 타사 직결 openai 공급자는 제거됐다 — 로컬 ollama/vllm 만 OPENAI_BASE_URL 을 낸다.
 		expect(

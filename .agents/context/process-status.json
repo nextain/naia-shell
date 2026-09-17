@@ -19,6 +19,22 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_638_dev_gateway_chat": {
+      "issue": 638,
+      "title": "tauri:dev chat completions and credit fetch share api-dev.naia.land",
+      "requirements": "docs/requirements.md FR-DEV-GATEWAY.1",
+      "scenario": "docs/user-scenarios.md UC-DEV-GATEWAY-638",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "ready_to_merge",
+      "p04_note": "vitest naia-instance-urls + launch-env + adk-store 77 passed. Live 403 against api-dev with a valid key is gateway-owned (naia-anyllm validate_user_credit / budget), not a missing desktop header.",
+      "last_updated": "2026-09-18T01:20:00+09:00"
+    },
     "issue_611_remove_direct_work_tools": {
       "issue": 611,
       "title": "Remove direct work tools from the model-facing registry",

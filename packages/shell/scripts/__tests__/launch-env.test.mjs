@@ -2,10 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { expect, test } from "vitest";
 import { loadEnv } from "vite";
+import { expect, test } from "vitest";
 
 import { interactiveLaunchEnv } from "../launch-env.mjs";
+import { applyNaiaInstanceEnv } from "../naia-instance-urls.mjs";
 
 function withViteProcessEnv(next, callback) {
 	const previous = Object.fromEntries(
@@ -127,4 +128,40 @@ test("prod finalization wins Vite file values while dev keeps its gateway", () =
 	} finally {
 		rmSync(envDir, { recursive: true, force: true });
 	}
+});
+
+test("tauri:dev aligns Agent env with api-dev even if the parent shell had prod URLs", () => {
+	const resolved = applyNaiaInstanceEnv(
+		interactiveLaunchEnv(
+			{
+				NAIA_ANYLLM_BASE_URL: "https://api.nextain.io",
+				NAIA_GATEWAY_URL: "https://api.nextain.io",
+				VITE_NAIA_DEV_GATEWAY_URL: "",
+			},
+			"dev",
+		),
+		"dev",
+	);
+	expect(resolved.VITE_NAIA_USE_DEV_GATEWAY).toBe("1");
+	expect(resolved.VITE_NAIA_DEV_GATEWAY_URL).toBe("https://api-dev.naia.land");
+	expect(resolved.NAIA_ANYLLM_BASE_URL).toBe("https://api-dev.naia.land");
+	expect(resolved.NAIA_GATEWAY_URL).toBe("https://api-dev.naia.land");
+});
+
+test("tauri:prod strips a stale dev gateway after .env.prod is applied", () => {
+	const resolved = applyNaiaInstanceEnv(
+		interactiveLaunchEnv(
+			{
+				VITE_NAIA_USE_DEV_GATEWAY: "1",
+				VITE_NAIA_DEV_GATEWAY_URL: "https://api-dev.naia.land",
+				NAIA_ANYLLM_BASE_URL: "https://api-dev.naia.land",
+			},
+			"prod",
+		),
+		"prod",
+	);
+	expect(resolved.VITE_NAIA_USE_DEV_GATEWAY).toBe("0");
+	expect(resolved.VITE_NAIA_DEV_GATEWAY_URL).toBe("");
+	expect(resolved.NAIA_ANYLLM_BASE_URL).toBe("https://api.nextain.io");
+	expect(resolved.NAIA_GATEWAY_URL).toBe("https://api.nextain.io");
 });
