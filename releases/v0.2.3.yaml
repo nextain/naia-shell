@@ -1,54 +1,66 @@
 version: "0.2.3"
-date: "2026-09-01"
+date: "2026-09-17"
 summary:
-  en: "The Naia app store arrives. Buy Naia Slides on the web, install it into the shell through a signed deep link, and present a PDF deck while Naia narrates it. Also fixes BGM, spoken replies, the custom OpenAI host, and voice runtime upgrades."
-  ko: "나이아 앱스토어가 나왔습니다. 웹에서 나이아 슬라이드를 구매하고 서명된 딥링크로 셸에 설치한 뒤, PDF 덱을 띄워 나이아가 발표하게 할 수 있습니다. BGM, 음성으로 읽은 답변, OpenAI 커스텀 호스트, 음성 런타임 갱신 문제도 함께 고쳤습니다."
+  en: "Character-core shrink for Windows: drop third-party cloud LLM/voice and Discord/cron work tools, keep Naia account + local + Azure routes, and fix RTF>1 local-voice silence. Also ships the app store/Slides baseline already staged for 0.2.3."
+  ko: "윈도우 캐릭터 코어 축소본입니다. 타사 클라우드 LLM·음성·Discord/cron 직접 일 도구를 제거하고, 나이아 계정·로컬·Azure 경로만 남기며, RTF>1 로컬 음성 무음을 고칩니다. 앱스토어/슬라이드 기반도 포함합니다."
 changes:
   - type: feature
     scope: apps
     issue: 471
     description:
-      en: "Buy an app on naia.land and install it into the shell through a signed deep link, with purchased apps listed in the app bar and a single install confirmation."
-      ko: "naia.land 에서 앱을 구매하고 서명된 딥링크로 셸에 설치합니다. 보유한 앱은 앱 바에 표시되고 설치 확인은 한 번만 뜹니다."
+      en: "Buy an app on naia.land and install it into the shell through a signed deep link."
+      ko: "naia.land 에서 앱을 구매하고 서명된 딥링크로 셸에 설치합니다."
   - type: feature
     scope: apps
     issue: 467
     description:
-      en: "Present a PDF deck with Naia Slides: open the deck, follow a presentation script, and let Naia narrate each slide aloud."
-      ko: "나이아 슬라이드로 PDF 덱을 발표합니다. 덱을 열고 발표 스크립트를 따라가면 나이아가 장마다 소리 내어 설명합니다."
-  - type: fix
-    scope: apps
-    issue: 472
+      en: "Present a PDF deck with Naia Slides while Naia narrates each slide."
+      ko: "나이아 슬라이드로 PDF 덱을 발표하고 장마다 나이아가 읽어 줍니다."
+  - type: refactor
+    scope: llm
+    issue: 598
     description:
-      en: "Install, list and remove an app under one canonical directory so installed apps stop disappearing, and refuse symlinked app directories."
-      ko: "설치·목록·삭제가 같은 정본 디렉터리를 쓰게 해 설치한 앱이 사라지지 않게 하고, 심링크로 걸린 앱 디렉터리는 거부합니다."
-  - type: fix
-    scope: bgm
-    issue: 517
+      en: "Use one Naia-account LLM path instead of auxiliary/expert cloud roles."
+      ko: "보조·전문가 클라우드 LLM 구조 대신 나이아 계정 LLM 경로 하나로 둡니다."
+  - type: refactor
+    scope: llm
+    issue: 602
     description:
-      en: "Reclaim the port an orphaned sidecar was holding so background music stops failing permanently after a crash."
-      ko: "고아 sidecar 가 붙들고 있던 포트를 회수해, 한 번 죽은 뒤 배경 음악이 영영 안 나오던 문제를 끊습니다."
-  - type: fix
-    scope: chat
-    issue: 513
+      en: "Remove direct third-party cloud LLM providers without a feature flag."
+      ko: "타사 클라우드 LLM 직결 공급자를 플래그 없이 삭제합니다."
+  - type: refactor
+    scope: voice
+    issue: 603
     description:
-      en: "Keep a reply on screen after it is spoken instead of letting it vanish."
-      ko: "음성으로 읽은 답변이 화면에서 사라지지 않게 합니다."
-  - type: fix
-    scope: settings
-    issue: 515
-    description:
-      en: "Carry a custom OpenAI-compatible host into the main model role instead of dropping it."
-      ko: "OpenAI 호환 커스텀 호스트를 메인 모델 역할까지 전달합니다."
+      en: "Remove Google/OpenAI/ElevenLabs voice and Gemini Live/OpenAI Realtime; keep Azure, local GPU, browser/Edge."
+      ko: "Google/OpenAI/ElevenLabs 음성과 Gemini Live/OpenAI Realtime 을 제거하고 Azure·로컬 GPU·browser/Edge 만 남깁니다."
   - type: fix
     scope: voice
-    issue: 518
+    issue: 621
     description:
-      en: "Let a runtime-only upgrade reach an already installed voice payload."
-      ko: "런타임만 갱신할 때도 이미 설치된 음성 payload 까지 반영되게 합니다."
+      en: "On RTF>1 hardware, open the warming hold from a slow first streaming chunk so playback can start."
+      ko: "RTF>1 하드웨어에서 느린 스트리밍 첫 청크가 warming-hold 를 열어 재생이 시작되게 합니다."
   - type: refactor
     scope: shell
-    issue: 497
+    issue: 610
     description:
-      en: "Rename panel to app across the interface, the wire protocol and the Rust bridge so one word means one thing."
-      ko: "인터페이스와 통신 규약, Rust 브리지에서 panel 을 app 으로 통일해 한 단어가 한 가지를 뜻하게 합니다."
+      en: "Remove Discord channels/connections UI and related shell surfaces."
+      ko: "Discord 채널·연결 UI 와 관련 셸 표면을 제거합니다."
+  - type: refactor
+    scope: agent
+    issue: 611
+    description:
+      en: "Stop exposing direct work tools to the model; keep time/weather/memo/youtube/browser/memory/read tools."
+      ko: "모델에 직접 일 도구를 노출하지 않고 시간·날씨·메모·유튜브·브라우저·기억·읽기 도구만 남깁니다."
+  - type: feature
+    scope: skills
+    issue: 605
+    description:
+      en: "Replace the skills store list with CLI detection checkboxes and shared CLI descriptors."
+      ko: "스킬 저장소 목록을 CLI 감지 체크박스와 공통 CLI 기술서로 바꿉니다."
+  - type: fix
+    scope: e2e
+    issue: 590
+    description:
+      en: "Fix isolated ADK hydration that failed when adkPath was omitted."
+      ko: "adkPath 가 빠지면 실패하던 격리 ADK 하이드레이션을 고칩니다."
