@@ -50,7 +50,7 @@ function buildMockScript() {
 		return JSON.stringify({
 			version: 1,
 			kb: {
-				cards: [{ id: "c1", status: "accepted" }, { id: "c2", status: "draft" }],
+				cards: [{ id: "c1", status: "draft" }, { id: "c2", status: "draft" }],
 				entities: [{ id: "e1" }, { id: "e2" }, { id: "e3" }],
 				relations: [{ from: "e1", type: "x", to: "e2" }],
 			},
@@ -195,10 +195,18 @@ test.describe("설정 지식 탭 관리 (K4)", () => {
 			{},
 			{ timeout: 5_000 },
 		);
-		// 컴파일 후 = 통계(카드 2 · 엔티티 3 · 관계 1 · 수락 1) 표시.
+		// 제품 컴파일 산출은 draft. 검색 가능과 검증(accepted)을 구분한다.
 		await expect(page.getByTestId("knowledge-status")).toContainText("카드 2");
 		await expect(page.getByTestId("knowledge-status")).toContainText(
 			"엔티티 3",
+		);
+		await expect(page.getByTestId("knowledge-status")).toHaveAttribute(
+			"data-serve-ready",
+			"2",
+		);
+		await expect(page.getByTestId("knowledge-status")).toHaveAttribute(
+			"data-accepted",
+			"0",
 		);
 
 		// 컴파일 후 = '그래프 보기' 버튼(평소엔 오버레이 미렌더 = 부하 0).
