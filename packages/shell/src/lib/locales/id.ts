@@ -311,7 +311,6 @@ export default {
 	"settings.liveVoice": "Suara Langsung",
 	"tool.execute_command": "Jalankan Perintah",
 	"tool.read_file": "Baca Berkas",
-	"tool.write_file": "Tulis Berkas",
 	"tool.search_files": "Cari File",
 	"tool.web_search": "Pencarian Web",
 	"tool.apply_diff": "Terapkan Perbedaan",

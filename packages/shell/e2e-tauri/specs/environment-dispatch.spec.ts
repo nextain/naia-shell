@@ -229,11 +229,11 @@ describe("환경 호출 전달 — Rust 명령 경계 (#502) [UC-ENV-LIVE-ACT FR
 				.then(() => {
 					const message = JSON.stringify({
 						type: "app_skills",
-						appId: "environment",
+						appId: "bgm-widget",
 						requestId: realId,
 						tools: [
 							{
-								name: "skill_environment",
+								name: "skill_youtube_bgm",
 								description: "probe",
 								parameters: { type: "object", properties: {} },
 							},
@@ -241,7 +241,7 @@ describe("환경 호출 전달 — Rust 명령 경계 (#502) [UC-ENV-LIVE-ACT FR
 					});
 					const unroutable = JSON.stringify({
 						type: "app_skills_unroutable_probe",
-						appId: "environment",
+						appId: "bgm-widget",
 						requestId: bogusId,
 					});
 					return invoke("send_to_agent_command", { message })

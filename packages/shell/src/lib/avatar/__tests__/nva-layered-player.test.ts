@@ -149,7 +149,6 @@ function makePlayer() {
 	canvas.width = 400;
 	canvas.height = 700;
 	// HTMLCanvasElement.getContext overloads include "webgpu" → GPUCanvasContext.
-	// A CanvasRenderingContext2D mock is not assignable to that union under tsc -b.
 	vi.spyOn(canvas, "getContext").mockImplementation((() =>
 		({
 			clearRect: vi.fn(),

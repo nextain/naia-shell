@@ -10,7 +10,6 @@ import {
 import { forwardRef, useEffect, useImperativeHandle } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	ActiveAppBridge,
 	type NaiaContextBridge,
 	type ToolHandler,
 } from "../../../lib/app-registry";
@@ -277,7 +276,7 @@ describe("HerdrWorkspaceCenterArea", () => {
 		);
 	});
 
-	it("routes Naia workspace tools through the active Herdr space and agent", async () => {
+	it("routes Naia workspace read tools through the active Herdr space", async () => {
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "herdr_pty_create") return { pty_id: "pty-7", pid: 7 };
 			if (command === "herdr_snapshot") return snapshot;
@@ -305,28 +304,16 @@ describe("HerdrWorkspaceCenterArea", () => {
 		expect(screen.getByTestId("file-tree-selection")).toHaveTextContent(
 			"/work/naia/src/App.tsx",
 		);
-
-		const focusResult = await toolHandlers.get(
+		for (const removed of [
+			"skill_workspace_edit_open_file",
+			"skill_workspace_execute",
 			"skill_workspace_focus_session",
-		)?.({
-			dir: "/work/naia",
-		});
-		expect(focusResult).toBe("Focused: Naia");
-		expect(mockInvoke).toHaveBeenCalledWith("herdr_focus_workspace", {
-			workspaceId: "w1",
-		});
-
-		const sendResult = await toolHandlers.get(
 			"skill_workspace_send_to_session",
-		)?.({
-			dir: "/work/naia",
-			text: "inspect the failing test",
-		});
-		expect(sendResult).toBe("Prompted: /work/naia");
-		expect(mockInvoke).toHaveBeenCalledWith("herdr_prompt_agent", {
-			paneId: "w1:p1",
-			text: "inspect the failing test",
-		});
+			"skill_workspace_new_session",
+			"skill_workspace_classify_dirs",
+		]) {
+			expect(toolHandlers.has(removed)).toBe(false);
+		}
 	});
 
 	it("recovers from launch failure and PTY exit without duplicating a live client", async () => {
@@ -361,7 +348,7 @@ describe("HerdrWorkspaceCenterArea", () => {
 		expect(launches).toBe(3);
 	});
 
-	it("covers all Naia bridge controls, errors, and unmount cleanup", async () => {
+	it("covers read bridge controls, errors, and unmount cleanup", async () => {
 		mockInvoke.mockImplementation(
 			async (command: string, args?: Record<string, unknown>) => {
 				if (command === "herdr_pty_create") return { pty_id: "pty-7", pid: 7 };
@@ -370,13 +357,6 @@ describe("HerdrWorkspaceCenterArea", () => {
 				if (command === "workspace_resolve_file_location")
 					return "/work/naia/src/App.tsx";
 				if (command === "workspace_read_file") return "before before";
-				if (command === "pty_execute_sync")
-					return { success: true, output: "ok", exit_code: 0 };
-				if (
-					command === "workspace_write_file" ||
-					command === "herdr_create_workspace"
-				)
-					return null;
 				return args ?? null;
 			},
 		);
@@ -384,7 +364,7 @@ describe("HerdrWorkspaceCenterArea", () => {
 			"../HerdrWorkspaceCenterArea"
 		);
 		const view = render(<HerdrWorkspaceCenterArea naia={bridge} />);
-		await waitFor(() => expect(toolHandlers.size).toBeGreaterThanOrEqual(8));
+		await waitFor(() => expect(toolHandlers.size).toBe(3));
 
 		const sessions = JSON.parse(
 			String(await toolHandlers.get("skill_workspace_get_sessions")?.({})),
@@ -403,51 +383,19 @@ describe("HerdrWorkspaceCenterArea", () => {
 				),
 			).toMatchObject({ open: true, path: "/work/naia/src/App.tsx" }),
 		);
-		expect(
-			await toolHandlers.get("skill_workspace_edit_open_file")?.({
-				search: "before",
-				replace: "after",
-			}),
-		).toBe("Edited: /work/naia/src/App.tsx");
-		expect(mockInvoke).toHaveBeenCalledWith("workspace_write_file", {
-			path: "/work/naia/src/App.tsx",
-			content: "after after",
-		});
-		expect(editorReloadFile).toHaveBeenCalled();
-		expect(
-			await toolHandlers.get("skill_workspace_new_session")?.({
-				dir: "/work/new",
-			}),
-		).toBe("Started Herdr space: /work/new");
-		expect(mockInvoke).toHaveBeenCalledWith("herdr_create_workspace", {
-			cwd: "/work/new",
-			label: null,
-		});
-		const execute = JSON.parse(
-			String(
-				await toolHandlers.get("skill_workspace_execute")?.({
-					dir: "Naia",
-					command: "pnpm test",
-				}),
-			),
-		);
-		expect(execute).toEqual({ success: true, output: "ok", exit_code: 0 });
-		expect(mockInvoke).toHaveBeenCalledWith("pty_execute_sync", {
-			dir: "/work/naia",
-			command: "pnpm test",
-			timeout_secs: undefined,
-		});
 		expect(await toolHandlers.get("skill_workspace_open_file")?.({})).toBe(
 			"Error: path is required",
 		);
-		expect(
-			await toolHandlers.get("skill_workspace_focus_session")?.({
-				dir: "/missing",
-			}),
-		).toBe("Error: Herdr space not found: /missing");
-		await expect(
-			toolHandlers.get("skill_workspace_execute")?.({ command: " " }),
-		).rejects.toThrow("Error: command is required");
+		for (const removed of [
+			"skill_workspace_edit_open_file",
+			"skill_workspace_execute",
+			"skill_workspace_focus_session",
+			"skill_workspace_new_session",
+			"skill_workspace_send_to_session",
+			"skill_workspace_classify_dirs",
+		]) {
+			expect(toolHandlers.has(removed)).toBe(false);
+		}
 
 		view.unmount();
 		expect(toolHandlers.size).toBe(0);
@@ -589,19 +537,6 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		);
 	});
 
-	it("registers skill_workspace_classify_dirs handler on mount", async () => {
-		respondWith(snapshot);
-		await renderHerdr();
-		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_classify_dirs")).toBe(true),
-		);
-		expect(
-			JSON.parse(
-				String(await toolHandlers.get("skill_workspace_classify_dirs")?.({})),
-			),
-		).toEqual([{ name: "naia", path: "/work/naia", category: "project" }]);
-	});
-
 	it("skill_workspace_get_sessions returns JSON session list", async () => {
 		respondWith(emptySnapshot);
 		await renderHerdr();
@@ -651,78 +586,6 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		});
 	});
 
-	it("skill_workspace_execute resolves a session basename dir to its absolute path", async () => {
-		// 회귀: get_sessions 는 sessions[].dir 을 이름으로 준다("naia-os"). 실행은
-		// 절대 경로를 요구하므로, 그 이름을 그대로 넘기면 백엔드가 거절했다.
-		respondWith(statusSnapshot);
-		await renderHerdr();
-		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_execute")).toBe(true),
-		);
-
-		await waitFor(async () => {
-			await toolHandlers.get("skill_workspace_execute")?.({
-				command: "ls -F",
-				dir: "naia-os",
-			});
-			expect(mockInvoke).toHaveBeenCalledWith("pty_execute_sync", {
-				dir: "/dev/naia-os",
-				command: "ls -F",
-				timeout_secs: undefined,
-			});
-		});
-	});
-
-	it("rejects failed PTY execution with output and exit code preserved", async () => {
-		mockInvoke.mockImplementation(async (command: string) => {
-			if (command === "herdr_pty_create") return { pty_id: "pty-7", pid: 7 };
-			if (command === "herdr_snapshot") return snapshot;
-			if (command === "workspace_set_root") return "/work/naia";
-			if (command === "pty_execute_sync") {
-				return {
-					success: false,
-					output: "rg: no matches\n",
-					exit_code: 1,
-				};
-			}
-			return null;
-		});
-		const appBridge = new ActiveAppBridge("workspace");
-		await renderHerdr(appBridge);
-		await expect(
-			appBridge.callTool("skill_workspace_execute", {
-				command: 'rg -l "missing" .',
-				dir: "/work/naia",
-			}),
-		).rejects.toThrow(
-			JSON.stringify({
-				success: false,
-				output: "rg: no matches\n",
-				exit_code: 1,
-			}),
-		);
-	});
-
-	it("propagates PTY invoke rejection through the app bridge", async () => {
-		mockInvoke.mockImplementation(async (command: string) => {
-			if (command === "herdr_pty_create") return { pty_id: "pty-8", pid: 8 };
-			if (command === "herdr_snapshot") return snapshot;
-			if (command === "workspace_set_root") return "/work/naia";
-			if (command === "pty_execute_sync") {
-				throw new Error("PTY unavailable");
-			}
-			return null;
-		});
-		const appBridge = new ActiveAppBridge("workspace");
-		await renderHerdr(appBridge);
-		await expect(
-			appBridge.callTool("skill_workspace_execute", {
-				command: "pwd",
-				dir: "/work/naia",
-			}),
-		).rejects.toThrow("PTY unavailable");
-	});
-
 	it("App API: getApi returns WorkspaceAppApi after mount, undefined after unmount", async () => {
 		respondWith(snapshot);
 		// 워크스페이스 앱이 레지스트리에 등록돼 있어야 updateApi 가 붙는다.
@@ -741,60 +604,17 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		expect(appRegistry.getApi("workspace")).toBeUndefined();
 	});
 
-	it("registers skill_workspace_focus_session handler on mount", async () => {
+	it("does not register removed direct-work workspace tools", async () => {
 		respondWith(snapshot);
 		await renderHerdr();
 		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_focus_session")).toBe(true),
+			expect(toolHandlers.has("skill_workspace_get_sessions")).toBe(true),
 		);
-	});
-
-	it("skill_workspace_focus_session returns error when dir is missing", async () => {
-		respondWith(snapshot);
-		await renderHerdr();
-		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_focus_session")).toBe(true),
-		);
-
-		const result = String(
-			await toolHandlers.get("skill_workspace_focus_session")?.({}),
-		);
-		expect(result).toContain("Error");
-	});
-
-	it("skill_workspace_focus_session returns error when session not found", async () => {
-		respondWith(snapshot);
-		await renderHerdr();
-		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_focus_session")).toBe(true),
-		);
-
-		const result = String(
-			await toolHandlers.get("skill_workspace_focus_session")?.({
-				dir: "nonexistent",
-			}),
-		);
-		expect(result).toContain("Error");
-		expect(result).toContain("nonexistent");
-	});
-
-	it("skill_workspace_focus_session returns Focused for the matching space", async () => {
-		respondWith(statusSnapshot);
-		await renderHerdr();
-		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_focus_session")).toBe(true),
-		);
-
-		await waitFor(async () => {
-			expect(
-				await toolHandlers.get("skill_workspace_focus_session")?.({
-					dir: "naia-os",
-				}),
-			).toBe("Focused: naia-os");
-		});
-		expect(mockInvoke).toHaveBeenCalledWith("herdr_focus_workspace", {
-			workspaceId: "w1",
-		});
+		expect([...toolHandlers.keys()].sort()).toEqual([
+			"skill_workspace_get_open_file",
+			"skill_workspace_get_sessions",
+			"skill_workspace_open_file",
+		].sort());
 	});
 
 	it("skill_workspace_open_file updates editor filepath", async () => {
@@ -818,41 +638,5 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		);
 	});
 
-	it("registers skill_workspace_send_to_session handler on mount", async () => {
-		respondWith(snapshot);
-		await renderHerdr();
-		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_send_to_session")).toBe(true),
-		);
-	});
 
-	it("skill_workspace_send_to_session returns error when dir or text is missing", async () => {
-		respondWith(snapshot);
-		await renderHerdr();
-		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_send_to_session")).toBe(true),
-		);
-
-		const send = toolHandlers.get("skill_workspace_send_to_session");
-		expect(String(await send?.({}))).toContain("Error");
-		expect(String(await send?.({ dir: "/work/naia" }))).toContain("Error");
-		expect(String(await send?.({ text: "hello\n" }))).toContain("Error");
-	});
-
-	it("skill_workspace_send_to_session returns error when no session is found", async () => {
-		respondWith(snapshot);
-		await renderHerdr();
-		await waitFor(() =>
-			expect(toolHandlers.has("skill_workspace_send_to_session")).toBe(true),
-		);
-
-		const result = String(
-			await toolHandlers.get("skill_workspace_send_to_session")?.({
-				dir: "/dev/nonexistent",
-				text: "hello",
-			}),
-		);
-		expect(result).toContain("Error");
-		expect(result).toContain("nonexistent");
-	});
 });

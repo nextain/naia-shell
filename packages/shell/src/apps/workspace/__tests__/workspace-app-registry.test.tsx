@@ -9,6 +9,7 @@
  * 등록 자체와 도구 서술자는 Herdr 통합 뒤에도 그대로다.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MODEL_FACING_TOOL_KEEP_LIST } from "../../../lib/model-facing-tools";
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn(async () => null),
@@ -27,6 +28,28 @@ describe("Workspace app registry", () => {
 		expect(app).toBeDefined();
 		expect(app?.builtIn).toBe(true);
 		expect(app?.id).toBe("workspace");
+	});
+
+	it("workspace app exposes only model-facing read tools", async () => {
+		const { WORKSPACE_TOOLS } = await import("../index");
+		const keep = new Set(
+			MODEL_FACING_TOOL_KEEP_LIST.filter((name) =>
+				name.startsWith("skill_workspace_"),
+			),
+		);
+		expect(WORKSPACE_TOOLS.map((t) => t.name).sort()).toEqual(
+			[...keep].sort(),
+		);
+		for (const removed of [
+			"skill_workspace_edit_open_file",
+			"skill_workspace_execute",
+			"skill_workspace_focus_session",
+			"skill_workspace_new_session",
+			"skill_workspace_send_to_session",
+			"skill_workspace_classify_dirs",
+		]) {
+			expect(WORKSPACE_TOOLS.some((t) => t.name === removed)).toBe(false);
+		}
 	});
 
 	it("workspace app has skill_workspace_get_sessions tool", async () => {
@@ -49,35 +72,11 @@ describe("Workspace app registry", () => {
 		expect(tool?.tier).toBe(1);
 	});
 
-	it("workspace app has skill_workspace_focus_session tool", async () => {
-		const { appRegistry } = await import("../../../lib/app-registry");
-		const tool = appRegistry
-			.get("workspace")
-			?.tools?.find((t) => t.name === "skill_workspace_focus_session");
-
-		expect(tool).toBeDefined();
-		expect(tool?.tier).toBe(1);
-	});
-
 	it("workspace app has onActivate and onDeactivate hooks", async () => {
 		const { appRegistry } = await import("../../../lib/app-registry");
 		const app = appRegistry.get("workspace");
 
 		expect(typeof app?.onActivate).toBe("function");
 		expect(typeof app?.onDeactivate).toBe("function");
-	});
-
-	it("skill_workspace_send_to_session is registered in index.tsx tool descriptor list", async () => {
-		const { WORKSPACE_TOOLS } = await import("../index");
-		const descriptor = WORKSPACE_TOOLS.find(
-			(t) => t.name === "skill_workspace_send_to_session",
-		);
-		expect(descriptor).toBeDefined();
-		// biome-ignore lint/style/noNonNullAssertion: asserted above
-		const params = descriptor!.parameters!;
-		expect(params.properties).toHaveProperty("dir");
-		expect(params.properties).toHaveProperty("text");
-		expect(params.required).toContain("dir");
-		expect(params.required).toContain("text");
 	});
 });

@@ -36,7 +36,7 @@ describe("PermissionModal", () => {
 	it("shows tier 1 badge as notice", () => {
 		render(
 			<PermissionModal
-				pending={{ ...basePending, tier: 1, toolName: "write_file" }}
+		pending={{ ...basePending, tier: 1, toolName: "memo_save" }}
 				onDecision={vi.fn()}
 			/>,
 		);

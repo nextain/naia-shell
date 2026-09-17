@@ -196,7 +196,7 @@ describe("useChatStore", () => {
 
 	it("updateStreamingToolResult sets error status on failure", () => {
 		const store = useChatStore.getState();
-		store.addStreamingToolUse("tc-1", "write_file", { path: "/b" });
+		store.addStreamingToolUse("tc-1", "read_file", { path: "/b" });
 		store.updateStreamingToolResult("tc-1", false, "permission denied");
 		const calls = useChatStore.getState().streamingToolCalls;
 		expect(calls[0].status).toBe("error");
@@ -268,10 +268,10 @@ describe("useChatStore", () => {
 		store.setPendingApproval({
 			requestId: "req-1",
 			toolCallId: "tc-1",
-			toolName: "write_file",
-			args: { path: "/tmp/x" },
+			toolName: "memo_save",
+			args: { title: "x", content: "y" },
 			tier: 1,
-			description: "파일 쓰기: /tmp/x",
+			description: "메모 저장",
 		});
 		store.clearPendingApproval();
 		expect(useChatStore.getState().pendingApproval).toBeNull();
@@ -283,7 +283,7 @@ describe("useChatStore", () => {
 		store.setPendingApproval({
 			requestId: "req-1",
 			toolCallId: "tc-1",
-			toolName: "write_file",
+			toolName: "memo_save",
 			args: {},
 			tier: 1,
 			description: "test",

@@ -1,25 +1,11 @@
-import { Suspense, lazy, useState } from "react";
+import { useState } from "react";
 import { t } from "../lib/i18n";
-import {
-	isKnowledgeGraphTool,
-	isKnowledgeTool,
-	parseKnowledgeGraph,
-	parseKnowledgeResult,
-} from "../lib/knowledge-result";
 import type { ToolCall } from "../lib/types";
 import { BrowserHostResult, browserHostCardFor } from "./BrowserHostResult";
-import { KnowledgeToolResult } from "./KnowledgeToolResult";
-
-const KnowledgeGraphView = lazy(() =>
-	import("./KnowledgeGraphView").then((module) => ({
-		default: module.KnowledgeGraphView,
-	})),
-);
 
 const TOOL_NAME_KEYS: Record<string, string> = {
 	execute_command: "tool.execute_command",
 	read_file: "tool.read_file",
-	write_file: "tool.write_file",
 	search_files: "tool.search_files",
 	web_search: "tool.web_search",
 };
@@ -70,42 +56,6 @@ export function ToolActivity({ tool }: Props) {
 				<BrowserHostResult card={browserHost} status={tool.status} />
 			</div>
 		);
-	}
-
-	// 지식 도구(skill_knowledge_ask/search) = 답변 + 출처 칩 렌더(K2). 파싱 실패 시 기본 렌더로 폴백.
-	if (isKnowledgeTool(tool.toolName) && tool.status === "success") {
-		const parsed = parseKnowledgeResult(tool.toolName, tool.output);
-		if (parsed) {
-			return (
-				<div
-					className={`tool-activity tool-${tool.status} tool-knowledge`}
-					data-tool-name={tool.toolName}
-				>
-					<KnowledgeToolResult data={parsed} />
-				</div>
-			);
-		}
-	}
-
-	// 지식 그래프(skill_knowledge_graph) = 2D/3D 캔버스 뷰어(K3). 파싱 실패 시 기본 렌더로 폴백.
-	if (isKnowledgeGraphTool(tool.toolName) && tool.status === "success") {
-		const g = parseKnowledgeGraph(tool.toolName, tool.output);
-		if (g) {
-			return (
-				<div
-					className={`tool-activity tool-${tool.status} tool-knowledge-graph`}
-					data-tool-name={tool.toolName}
-				>
-					<Suspense
-						fallback={
-							<output aria-live="polite">{t("progress.loading")}</output>
-						}
-					>
-						<KnowledgeGraphView graph={g} />
-					</Suspense>
-				</div>
-			);
-		}
 	}
 
 	return (

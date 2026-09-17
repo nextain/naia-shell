@@ -69,14 +69,9 @@ import {
 } from "../lib/browser-host-skill";
 import {
 	ENVIRONMENT_APP_ID,
-	SKILL_ENVIRONMENT,
 	environmentClearNeeded,
 	environmentSession,
-	environmentToolRegistered,
-	executeEnvironmentSkill,
-	liveEnvironmentDeps,
 	noteEnvironmentClear,
-	noteEnvironmentToolAck,
 	refreshEnvironment,
 } from "../lib/environment-skill";
 import { resetGatewaySession } from "../lib/gateway-sessions";
@@ -92,6 +87,11 @@ import {
 import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
+import {
+	MODEL_FACING_TOOL_KEEP_LIST,
+	filterModelFacingTools,
+	isModelFacingToolAllowed,
+} from "../lib/model-facing-tools";
 import { buildSystemPrompt } from "../lib/persona";
 import { effectiveMainRole } from "../lib/slots/model";
 import {
@@ -272,24 +272,7 @@ const ttsChunkerOptions = {
 
 // Built-in skills are always available in UI (non-toggle). Prevent hidden config drift
 // from disabling them via chat-originated config_update events.
-const BUILTIN_SKILLS = new Set([
-	"skill_time",
-	"skill_system_status",
-	"skill_memo",
-	"skill_weather",
-	"skill_notify_slack",
-	"skill_notify_google_chat",
-	"skill_skill_manager",
-	"skill_agents",
-	"skill_approvals",
-	"skill_botmadang",
-	"skill_config",
-	"skill_device",
-	"skill_diagnostics",
-	"skill_sessions",
-	"skill_tts",
-	"skill_voicewake",
-]);
+const BUILTIN_SKILLS = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
 
 function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 	if (!disabled || disabled.length === 0) return undefined;
@@ -299,6 +282,28 @@ function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 
 function generateRequestId(): string {
 	return `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+let removedModelToolsCache: string[] = [];
+let removedModelToolsRefresh: Promise<void> | null = null;
+
+/** Refresh the deny list without delaying the user's chat request. */
+function refreshRemovedModelTools(): void {
+	if (removedModelToolsRefresh) return;
+	removedModelToolsRefresh = fetchAgentSkills({ includeDisallowed: true })
+		.then((tools) => {
+			removedModelToolsCache = tools
+				.filter((tool) => !isModelFacingToolAllowed(tool.name))
+				.map((tool) => tool.name);
+		})
+		.catch((error) => {
+			Logger.warn("ChatArea", "Model tool boundary refresh failed", {
+				error: String(error),
+			});
+		})
+		.finally(() => {
+			removedModelToolsRefresh = null;
+		});
 }
 
 function formatCost(cost: number): string {
@@ -1780,44 +1785,27 @@ export function ChatArea({
 			// 환경 도구도 턴마다 다시 등록한다. 부팅 등록은 agent 기동과 경쟁하고, agent 가
 			// 재시작하면 조용히 사라진다 — BGM 이 같은 이유로 매 턴 재등록한다.
 			// 다만 여기서는 실패해도 대화를 막지 않는다. 환경은 대화의 조건이 아니다.
-			let environmentToolReady = false;
-			if ((loadConfig()?.environmentAwareness ?? "auto") === "off") {
-				// 꺼져 있으면 등록 경로를 타지 않으므로, 실패한 해제는 스스로 낫지 않는다.
-				// 도구 선언이 뇌에 남아 요청 비용이 계속 붙는다 — 다음 턴에 한 번 더 시도한다
-				// (FR-ENV-ATTENTION.17). 기다리지 않으므로 대화는 지연되지 않는다.
-				if (environmentClearNeeded()) {
-					void sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
-						.then((ok) => noteEnvironmentClear(ok))
-						.catch(() => noteEnvironmentClear(false));
-				}
-			} else {
-				// 등록을 쏘되 기다리지 않는다. 기다리면 확인이 오지 않을 때 사용자의 모든
-				// 대화가 시간초과만큼 멈춘다 — 실제로 그렇게 만들어 12건이 깨졌다(2026-08-28).
-				// 확인이 돌아오면 상태가 바뀌고, 이 턴은 마지막으로 확인된 상태를 쓴다.
-				void sendAppSkills(ENVIRONMENT_APP_ID, [SKILL_ENVIRONMENT], {
-					awaitAck: true,
-				})
-					.then((ok) => noteEnvironmentToolAck(ok))
-					.catch(() => noteEnvironmentToolAck(false));
-				// 도구가 꺼져 있으면 나이아는 observe/watch 를 부를 수 없다. 그런데도 개수를
-				// 실으면 안내가 "필요하면 도구를 불러라"라고 말한다 — 닫힌 길을 가리키는 셈이다
-				// (2026-08-28 19차 적대리뷰 지적). 등록 확인과 도구 활성화를 함께 본다.
-				environmentToolReady =
-					environmentToolRegistered() && config.enableTools === true;
-				if (!environmentToolReady) {
-					Logger.warn(
-						"ChatArea",
-						"environment skill not confirmed — skipping surfaces",
-						{
-							requestId,
-						},
-					);
-				}
+			// #611: skill_environment is not model-facing. Clear stale registrations
+			// and only inject surfaces for explicit `always` awareness (no tool).
+			const environmentToolReady = false;
+			if (
+				(loadConfig()?.environmentAwareness ?? "auto") === "off"
+					? environmentClearNeeded()
+					: true
+			) {
+				void sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
+					.then((ok) => noteEnvironmentClear(ok))
+					.catch(() => noteEnvironmentClear(false));
+			}
+			if ((loadConfig()?.environmentAwareness ?? "auto") !== "off") {
 				await refreshEnvironment().catch(() => null);
 			}
 			// 지켜보기 예산을 한 턴 쓴다 (FR-ENV-ATTENTION.7). 음성 경로와 같은 헬퍼를 쓴다 —
 			// 여기만 따로 쓰다가 always 규칙이 이 경로에만 빠졌다(13차 적대리뷰 지적).
 			noteEnvironmentTurn();
+			if (config.enableTools === true) {
+				refreshRemovedModelTools();
+			}
 			await sendChatMessage({
 				message: text,
 				provider: {
@@ -1863,9 +1851,15 @@ export function ChatArea({
 				enableTools: config.enableTools,
 				enableThinking: config.enableThinking,
 				gatewayUrl,
-				disabledSkills: config.enableTools
-					? [...(sanitizeDisabledSkills(config.disabledSkills) ?? [])]
-					: undefined,
+				disabledSkills:
+					config.enableTools === true
+						? [
+								...new Set([
+									...(sanitizeDisabledSkills(config.disabledSkills) ?? []),
+									...removedModelToolsCache,
+								]),
+							]
+						: undefined,
 				routeViaGateway:
 					!!gatewayUrl &&
 					config.enableTools &&
@@ -2054,12 +2048,25 @@ export function ChatArea({
 		 * 음성은 연결 시점의 지시문 하나로 이야기하므로 요청마다 표면 세그먼트를 싣지 않는다.
 		 * 그 사실을 나이아에게 그대로 알려야 "지켜본다"가 거짓말이 되지 않는다.
 		 */
-		origin: {
+		_origin: {
 			readonly assemblesChatRequests?: boolean;
 			/** 이 호출이 켜는 지켜보기의 주인. 통화만 준다 — 자기가 켠 것만 끄기 위해서다. */
 			readonly watchOwner?: string;
 		} = {},
 	) {
+		if (!isModelFacingToolAllowed(req.toolName)) {
+			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
+				tool: req.toolName,
+			});
+			void sendAppToolResult(
+				req.requestId,
+				req.toolCallId,
+				`Tool is not available: ${req.toolName}`,
+				false,
+				req.activityId,
+			);
+			return;
+		}
 		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 appRegistry 소유자
 		// 탐색으로 못 찾는다 — 전용 분기. executeBgmSkill 이 위젯이 이미 듣는
 		// bgm_youtube_* 이벤트를 발사(위젯 무변경). 음성 경로도 이 dispatch 공유.
@@ -2096,45 +2103,6 @@ export function ChatArea({
 					useChatStore
 						.getState()
 						.updateStreamingToolResult(req.toolCallId, false, String(err));
-					return sendAppToolResult(
-						req.requestId,
-						req.toolCallId,
-						String(err),
-						false,
-						req.activityId,
-					);
-				});
-			return;
-		}
-		if (req.toolName === SKILL_ENVIRONMENT.name) {
-			executeEnvironmentSkill(
-				req.args,
-				liveEnvironmentDeps(
-					loadConfig()?.environmentTerminalInput === true,
-					loadConfig()?.environmentAwareness ?? "auto",
-					origin.assemblesChatRequests === true,
-					origin.watchOwner,
-				),
-			)
-				.then((result) => {
-					Logger.info("ChatArea", "environment skill result", {
-						result: result.text,
-					});
-					return sendAppToolResult(
-						req.requestId,
-						req.toolCallId,
-						result.text,
-						// 거절·오류는 성공으로 바꾸지 않는다 — 뇌가 실패를 성공으로 말하는 경로를 막는다.
-						// 판정은 실행기가 낸다. 문자열 접두사로 되짚으면 새 사유가 생길 때마다
-						// 조용히 성공으로 새어 나간다 (2026-08-27 11차 적대리뷰에서 실제로 그랬다).
-						result.ok,
-						req.activityId,
-					);
-				})
-				.catch((err) => {
-					Logger.warn("ChatArea", "environment skill error", {
-						error: String(err),
-					});
 					return sendAppToolResult(
 						req.requestId,
 						req.toolCallId,
@@ -3143,7 +3111,7 @@ export function ChatArea({
 			// Collect active app tools to pass to the voice session
 			const activeAppId = useAppStore.getState().activeApp;
 			const appTools = activeAppId
-				? (appRegistry.get(activeAppId)?.tools ?? [])
+				? filterModelFacingTools(appRegistry.get(activeAppId)?.tools ?? [])
 				: [];
 			const appToolDefs = appTools.map((tool) => ({
 				name: tool.name,
@@ -3321,6 +3289,16 @@ export function ChatArea({
 				noteEnvironmentTurn();
 			};
 			session.onToolCall = async (callId, toolName, args) => {
+				if (!isModelFacingToolAllowed(toolName)) {
+					Logger.warn("ChatArea", "blocked non-model-facing voice tool", {
+						tool: toolName,
+					});
+					session.sendToolResponse(
+						callId,
+						`Tool is not available: ${toolName}`,
+					);
+					return;
+				}
 				try {
 					const result = await directToolCall({
 						toolName,

@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { NaiaTool } from "./app-registry";
 import { Logger } from "./logger";
+import { filterModelFacingTools } from "./model-facing-tools";
 import type {
 	AgentResponseChunk,
 	EnvironmentSegment,
@@ -743,7 +744,9 @@ export async function directToolCall(opts: {
 
 /** Fetch all registered skill tool definitions from the Agent.
  *  Used by Omni voice mode to include built-in skills in the voice session. */
-export async function fetchAgentSkills(): Promise<
+export async function fetchAgentSkills(
+	opts: { includeDisallowed?: boolean } = {},
+): Promise<
 	{ name: string; description: string; parameters: Record<string, unknown> }[]
 > {
 	const requestId = `skill-list-${Date.now()}`;
@@ -776,7 +779,11 @@ export async function fetchAgentSkills(): Promise<
 			if (chunk.type === "skill_list_response") {
 				clearTimeout(timeoutId);
 				unlisten();
-				resolvePromise(chunk.tools);
+				resolvePromise(
+					opts.includeDisallowed
+						? chunk.tools
+						: filterModelFacingTools(chunk.tools),
+				);
 			} else if (chunk.type === "error") {
 				clearTimeout(timeoutId);
 				unlisten();
@@ -863,11 +870,22 @@ export async function sendAppSkills(
 	tools: NaiaTool[],
 	opts: { awaitAck?: boolean; timeoutMs?: number } = {},
 ): Promise<boolean> {
+	const modelFacingTools = filterModelFacingTools(tools);
+	if (modelFacingTools.length === 0) {
+		// Clear stale registrations from older Agent processes instead of
+		// advertising a descriptor that the model is not allowed to see.
+		return sendAppSkillsMessage(
+			{ type: "app_skills_clear", appId },
+			"sendAppSkillsClear",
+			opts.awaitAck === true,
+			opts.timeoutMs ?? 5_000,
+		);
+	}
 	return sendAppSkillsMessage(
 		{
 			type: "app_skills",
 			appId,
-			tools: tools.map((t) => ({
+			tools: modelFacingTools.map((t) => ({
 				name: t.name,
 				description: t.description,
 				parameters: t.parameters ?? { type: "object", properties: {} },

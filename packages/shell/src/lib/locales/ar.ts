@@ -311,7 +311,6 @@ export default {
 	"settings.liveVoice": "صوت مباشر",
 	"tool.execute_command": "تنفيذ الأمر",
 	"tool.read_file": "قراءة الملف",
-	"tool.write_file": "كتابة الملف",
 	"tool.search_files": "البحث في الملفات",
 	"tool.web_search": "بحث الويب",
 	"tool.apply_diff": "تطبيق الفرق",

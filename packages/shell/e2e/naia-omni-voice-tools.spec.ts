@@ -103,11 +103,13 @@ const NAIA_OMNI_VOICE_MOCK = `
 		if (cmd === "send_to_agent_command") {
 			var req = JSON.parse(args.message);
 			if (req.type === "skill_list") {
-				// Voice startup queries agent skills — answer immediately (empty)
+				// Voice startup queries agent skills — return one keep-list tool
 				// so fetchAgentSkills doesn't 10s-timeout and stall the connect.
 				var slid = req.requestId;
 				setTimeout(function() {
-					emitEvent("agent_response", JSON.stringify({ type: "skill_list_response", requestId: slid, tools: [] }));
+					emitEvent("agent_response", JSON.stringify({ type: "skill_list_response", requestId: slid, tools: [
+					{ name: "get_weather", description: "get the weather", parameters: { type: "object", properties: {} } }
+				] }));
 				}, 20);
 				return;
 			}
@@ -204,12 +206,12 @@ test.describe("naia-omni Voice Tool E2E", () => {
 	}) => {
 		await startVoice(page);
 
-		// Server emits a tool call (the model wants to run a skill).
+		// Server emits an allowed keep-list tool call.
 		await emitRealtime(page, {
 			type: "response.function_call_arguments.done",
 			call_id: "tc_1",
-			name: "skill_agent_browser",
-			arguments: JSON.stringify({ query: "오늘 뉴스" }),
+			name: "get_weather",
+			arguments: JSON.stringify({ location: "Seoul" }),
 		});
 
 		// onToolCall → directToolCall (mock tool_result + finish) → sendToolResponse.
@@ -231,7 +233,7 @@ test.describe("naia-omni Voice Tool E2E", () => {
 			() => (window as any).__NAIA_E2E__.toolRequests,
 		);
 		expect(toolReqs.map((t: { toolName: string }) => t.toolName)).toContain(
-			"skill_agent_browser",
+			"get_weather",
 		);
 
 		// Server resumes with the spoken reply transcript.
@@ -268,8 +270,8 @@ test.describe("naia-omni Voice Tool E2E", () => {
 			await emitRealtime(page, {
 				type: "response.function_call_arguments.done",
 				call_id: `tc_${turn}`,
-				name: "skill_agent_browser",
-				arguments: JSON.stringify({ query: `질문 ${turn}` }),
+				name: "get_weather",
+				arguments: JSON.stringify({ location: `Seoul ${turn}` }),
 			});
 
 			await expect
@@ -307,5 +309,50 @@ test.describe("naia-omni Voice Tool E2E", () => {
 			() => (window as any).__NAIA_E2E__.toolRequests,
 		);
 		expect(toolReqs.length).toBeGreaterThanOrEqual(2);
+	});
+
+	test("removed direct-work tool calls are rejected before reaching the agent", async ({
+		page,
+	}) => {
+		await startVoice(page);
+		await emitRealtime(page, {
+			type: "response.function_call_arguments.done",
+			call_id: "tc-removed",
+			name: "skill_agent_browser",
+			arguments: JSON.stringify({ query: "오늘 뉴스" }),
+		});
+
+		await expect
+			.poll(
+				async () =>
+					(await realtimeSent(page)).some(
+						(m) =>
+							m.type === "conversation.item.create" &&
+							(m.item as { type?: string; call_id?: string } | undefined)?.type ===
+								"function_call_output" &&
+							(m.item as { call_id?: string } | undefined)?.call_id === "tc-removed",
+					),
+				{ timeout: 10_000 },
+			)
+			.toBe(true);
+
+		const toolReqs = await page.evaluate(
+			() => (window as any).__NAIA_E2E__.toolRequests,
+		);
+		expect(toolReqs.map((t: { toolName: string }) => t.toolName)).not.toContain(
+			"skill_agent_browser",
+		);
+		const outputs = await realtimeSent(page);
+		const rejected = outputs.find(
+			(m) =>
+				m.type === "conversation.item.create" &&
+				(m.item as { type?: string; call_id?: string } | undefined)?.type ===
+					"function_call_output" &&
+				(m.item as { call_id?: string; output?: string } | undefined)?.call_id ===
+					"tc-removed",
+		);
+		expect((rejected?.item as { output?: string } | undefined)?.output).toContain(
+			"Tool is not available",
+		);
 	});
 });

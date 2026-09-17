@@ -311,7 +311,6 @@ export default {
 	"settings.liveVoice": "Liveボイス",
 	"tool.execute_command": "コマンドの実行",
 	"tool.read_file": "ファイルの読み取り",
-	"tool.write_file": "ファイルの書き込み",
 	"tool.search_files": "ファイルの検索",
 	"tool.web_search": "ウェブ検索",
 	"tool.apply_diff": "差分を適用",

@@ -311,7 +311,6 @@ export default {
 	"settings.liveVoice": "লাইভ ভয়েস",
 	"tool.execute_command": "কমান্ড চালান",
 	"tool.read_file": "ফাইল পড়ুন",
-	"tool.write_file": "ফাইল লিখুন",
 	"tool.search_files": "অনুসন্ধান ফাইল",
 	"tool.web_search": "ওয়েব অনুসন্ধান",
 	"tool.apply_diff": "ডিফ প্রয়োগ করুন",
