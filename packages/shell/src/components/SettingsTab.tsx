@@ -212,6 +212,15 @@ const GROK_PREFLIGHT_LABELS: Record<CodexPreflightStatus, TranslationKey> = {
 	error: "settings.grokReadinessError",
 };
 
+const CLAUDE_PREFLIGHT_LABELS: Record<CodexPreflightStatus, TranslationKey> = {
+	idle: "settings.claudeReadinessIdle",
+	checking: "settings.claudeReadinessChecking",
+	ready: "settings.claudeReadinessReady",
+	"not-installed": "settings.claudeReadinessNotInstalled",
+	"login-required": "settings.claudeReadinessLoginRequired",
+	error: "settings.claudeReadinessError",
+};
+
 type VoxCpm2InstallationStatus = {
 	phase: "ready" | "ready-to-start" | "requires-action" | "blocked";
 	ready: boolean;
@@ -631,6 +640,8 @@ export function SettingsTab() {
 	const [codexPreflightStatus, setCodexPreflightStatus] =
 		useState<CodexPreflightStatus>("idle");
 	const [grokPreflightStatus, setGrokPreflightStatus] =
+		useState<CodexPreflightStatus>("idle");
+	const [claudePreflightStatus, setClaudePreflightStatus] =
 		useState<CodexPreflightStatus>("idle");
 	const existing = loadConfig();
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
@@ -2460,9 +2471,10 @@ export function SettingsTab() {
 
 	function handleProviderChange(id: ProviderId) {
 		setProvider(id);
-		if (id !== "codex") {
-			setCodexPreflightStatus("idle");
-		}
+		// Provider switch resets all CLI readiness state (#605 defect fix).
+		setCodexPreflightStatus("idle");
+		setGrokPreflightStatus("idle");
+		setClaudePreflightStatus("idle");
 		if (id !== "ollama") {
 			setModel(getDefaultLlmModel(id));
 		}
@@ -2492,40 +2504,41 @@ export function SettingsTab() {
 		void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
 	}
 
-	async function checkCodexReadiness() {
-		setCodexPreflightStatus("checking");
+	async function checkCliReadiness(
+		id: "codex" | "grok" | "claude",
+		setStatus: (s: CodexPreflightStatus) => void,
+	) {
+		setStatus("checking");
 		try {
-			const result = await invoke<{ status: CodexPreflightStatus }>(
-				"codex_preflight",
-			);
-			setCodexPreflightStatus(
-				result.status === "ready" ||
-					result.status === "not-installed" ||
-					result.status === "login-required"
-					? result.status
+			const result = await invoke<{ status: string }>("cli_detect_one", {
+				id: id === "claude" ? "claude" : id,
+			});
+			const status = result.status;
+			setStatus(
+				status === "ready" ||
+					status === "not-installed" ||
+					status === "login-required" ||
+					status === "waiting-input"
+					? status === "waiting-input"
+						? "error"
+						: status
 					: "error",
 			);
 		} catch {
-			setCodexPreflightStatus("error");
+			setStatus("error");
 		}
 	}
 
+	async function checkCodexReadiness() {
+		await checkCliReadiness("codex", setCodexPreflightStatus);
+	}
+
 	async function checkGrokReadiness() {
-		setGrokPreflightStatus("checking");
-		try {
-			const result = await invoke<{ status: CodexPreflightStatus }>(
-				"grok_preflight",
-			);
-			setGrokPreflightStatus(
-				result.status === "ready" ||
-					result.status === "not-installed" ||
-					result.status === "login-required"
-					? result.status
-					: "error",
-			);
-		} catch {
-			setGrokPreflightStatus("error");
-		}
+		await checkCliReadiness("grok", setGrokPreflightStatus);
+	}
+
+	async function checkClaudeReadiness() {
+		await checkCliReadiness("claude", setClaudePreflightStatus);
 	}
 
 	async function handleLocaleChange(id: Locale) {
@@ -4436,7 +4449,31 @@ export function SettingsTab() {
 						</div>
 					)}
 
-					{provider === "ollama" && (
+					{provider === "claude-code-cli" && (
+						<div className="settings-field" data-testid="claude-readiness">
+							<span>{t("settings.claudeReadiness")}</span>
+							<div className="settings-hint">
+								{t("settings.claudeReadinessHint")}
+							</div>
+							<div className="settings-row claude-readiness-actions">
+								<span aria-live="polite" data-testid="claude-readiness-status">
+									{t(CLAUDE_PREFLIGHT_LABELS[claudePreflightStatus])}
+								</span>
+								<button
+									type="button"
+									className="btn-secondary"
+									data-testid="claude-readiness-check"
+									disabled={claudePreflightStatus === "checking"}
+									onClick={() => void checkClaudeReadiness()}
+								>
+									{t("settings.claudeReadinessCheck")}
+								</button>
+							</div>
+						</div>
+					)}
+
+					{provider !== "nextain" &&
+						(!isApiKeyOptional(provider) || provider === "ollama") && (
 							<div className="settings-field">
 								<label htmlFor="apikey-input">{t("settings.apiKey")}</label>
 								<input

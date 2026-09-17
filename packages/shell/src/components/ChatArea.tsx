@@ -1857,9 +1857,13 @@ export function ChatArea({
 								...new Set([
 									...(sanitizeDisabledSkills(config.disabledSkills) ?? []),
 									...removedModelToolsCache,
+									...((config.disabledGestures ?? []).includes("youtube")
+										? ["skill_youtube_bgm"]
+										: []),
 								]),
 							]
 						: undefined,
+				enabledClis: [...(config.enabledClis ?? [])],
 				routeViaGateway:
 					!!gatewayUrl &&
 					config.enableTools &&

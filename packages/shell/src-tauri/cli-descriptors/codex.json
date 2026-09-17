@@ -1,0 +1,28 @@
+{
+  "id": "codex",
+  "displayName": "Codex",
+  "executables": {
+    "linux": ["codex"],
+    "macos": ["codex"],
+    "windows": ["codex.exe", "codex.cmd", "codex"]
+  },
+  "version": {
+    "args": ["--version"],
+    "timeoutMs": 5000,
+    "parse": { "kind": "stdoutFirstLine" }
+  },
+  "readiness": {
+    "args": ["login", "status"],
+    "timeoutMs": 5000,
+    "classify": [
+      { "when": { "spawnError": "notFound" }, "status": "not-installed" },
+      { "when": { "timedOut": true }, "status": "waiting-input" },
+      { "when": { "exitCode": 0 }, "status": "ready" },
+      { "when": { "exitCodeNonZero": true }, "status": "login-required" }
+    ]
+  },
+  "login": {
+    "args": ["login"],
+    "openInTerminal": true
+  }
+}

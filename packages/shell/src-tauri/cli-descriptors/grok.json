@@ -1,0 +1,29 @@
+{
+  "id": "grok",
+  "displayName": "Grok",
+  "executables": {
+    "linux": ["grok"],
+    "macos": ["grok"],
+    "windows": ["grok.exe", "grok.cmd", "grok"]
+  },
+  "version": {
+    "args": ["--version"],
+    "timeoutMs": 5000,
+    "parse": { "kind": "stdoutFirstLine" }
+  },
+  "readiness": {
+    "args": ["models"],
+    "timeoutMs": 5000,
+    "classify": [
+      { "when": { "spawnError": "notFound" }, "status": "not-installed" },
+      { "when": { "timedOut": true }, "status": "waiting-input" },
+      { "when": { "authFileNonEmpty": "~/.grok/auth.json" }, "status": "ready" },
+      { "when": { "exitCode": 0 }, "status": "login-required" },
+      { "when": { "exitCodeNonZero": true }, "status": "login-required" }
+    ]
+  },
+  "login": {
+    "args": ["login"],
+    "openInTerminal": true
+  }
+}

@@ -96,12 +96,12 @@ describe("TerminalTab badge rendering", () => {
 			dir: "/home/user/naia-os",
 			pid: 100,
 			issueId: 278,
-			agent: "opencode" as AgentType,
+			agent: "grok" as AgentType,
 		};
 		render(<TabLabel tab={tab} />);
 
 		expect(screen.getByText("#278")).toBeInTheDocument();
-		expect(screen.getByText("opencode")).toBeInTheDocument();
+		expect(screen.getByText("grok")).toBeInTheDocument();
 		expect(screen.getByText("naia-os")).toBeInTheDocument();
 	});
 
@@ -134,7 +134,7 @@ describe("TerminalTab badge rendering", () => {
 	});
 
 	it("all AgentType values render as badge text", () => {
-		const agents: AgentType[] = ["claude", "opencode", "codex", "gemini"];
+		const agents: AgentType[] = ["claude", "codex", "grok", "zai"];
 		for (const agent of agents) {
 			const { unmount } = render(
 				<TabLabel

@@ -1,551 +1,268 @@
 import {
-	Fragment,
 	type ReactNode,
 	useCallback,
 	useEffect,
-	useRef,
 	useState,
 } from "react";
-import { directToolCall, fetchAgentSkills } from "../lib/chat-service";
 import {
-	getDisabledSkills,
-	isSkillDisabled,
-	loadConfig,
-	resolveConfiguredGatewayUrl,
-	saveConfig,
-	toggleSkill,
-} from "../lib/config";
+	type CliDetectionResult,
+	type CliReadinessStatus,
+	SHELL_GESTURES,
+	getEnabledClis,
+	isGestureDisabled,
+	openCliLogin,
+	refreshCliDetection,
+	refreshCliDetectionOne,
+	setCliEnabled,
+	setGestureEnabled,
+} from "../lib/cli-detection";
+import { loadConfig } from "../lib/config";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
-import type { SkillManifestInfo } from "../lib/types";
 import { useSkillsStore } from "../stores/skills";
 
-interface GatewayInstallOption {
-	id: string;
-	kind: string;
-	label?: string;
-}
+const STATUS_LABEL: Record<CliReadinessStatus, string> = {
+	ready: "skills.cliStatusReady",
+	"not-installed": "skills.cliStatusNotInstalled",
+	"login-required": "skills.cliStatusLoginRequired",
+	"waiting-input": "skills.cliStatusWaitingInput",
+	error: "skills.cliStatusError",
+};
 
-interface GatewaySkillStatus {
-	name: string;
-	description?: string;
-	eligible: boolean;
-	missing: string[];
-	install?: GatewayInstallOption[];
-}
-
-function tierLabel(tier: number): string {
-	return `T${tier}`;
-}
-
-function toAgentSkillInfo(
-	skill: Awaited<ReturnType<typeof fetchAgentSkills>>[number],
-): SkillManifestInfo {
-	return {
-		name: skill.name,
-		description: skill.description,
-		type: "agent",
-	};
+function statusLabelKey(status: string): string {
+	return STATUS_LABEL[status as CliReadinessStatus] ?? STATUS_LABEL.error;
 }
 
 export function SkillsTab({
-	onAskAI,
+	onAskAI: _onAskAI,
 	children,
 }: {
 	onAskAI?: (message: string) => void;
 	children?: ReactNode;
 }) {
-	const skills = useSkillsStore((s) => s.skills);
-	const isLoading = useSkillsStore((s) => s.isLoading);
-	const searchQuery = useSkillsStore((s) => s.searchQuery);
 	useSkillsStore((s) => s.configVersion);
+	const [results, setResults] = useState<CliDetectionResult[]>(() => {
+		return loadConfig()?.cliDetection?.results ?? [];
+	});
+	const [loading, setLoading] = useState(true);
+	const [checkingId, setCheckingId] = useState<string | null>(null);
+	const [loadError, setLoadError] = useState(false);
 
-	const [gatewaySkills, setGatewaySkills] = useState<GatewaySkillStatus[]>([]);
-	const [gatewayLoading, setGatewayLoading] = useState(false);
-	const [installingSkills, setInstallingSkills] = useState<Set<string>>(
-		() => new Set(),
-	);
-	const [installResults, setInstallResults] = useState<
-		Map<string, { success: boolean; message: string }>
-	>(() => new Map());
-	const [skillsLoadError, setSkillsLoadError] = useState(false);
-	const skillsLoadEpoch = useRef(0);
-
-	const fetchGatewayStatus = useCallback(async () => {
-		const config = loadConfig();
-		const gatewayUrl = resolveConfiguredGatewayUrl(config);
-		if (!gatewayUrl) return;
-
-		setGatewayLoading(true);
+	const refresh = useCallback(async () => {
+		setLoading(true);
+		setLoadError(false);
 		try {
-			const res = await directToolCall({
-				toolName: "skill_skill_manager",
-				args: { action: "gateway_status" },
-				requestId: `gw-skills-${Date.now()}`,
-				gatewayUrl,
-			});
-			if (res.success && res.output) {
-				const parsed = JSON.parse(res.output);
-				setGatewaySkills(parsed.skills || []);
-			}
+			const snapshot = await refreshCliDetection();
+			setResults(snapshot.results);
+			useSkillsStore.getState().bumpConfigVersion();
 		} catch (err) {
-			Logger.warn("SkillsTab", "Failed to fetch gateway skills", {
+			setLoadError(true);
+			Logger.warn("SkillsTab", "CLI detection refresh failed", {
 				error: String(err),
 			});
 		} finally {
-			setGatewayLoading(false);
+			setLoading(false);
 		}
 	}, []);
 
-	const handleInstallSkill = useCallback(
-		async (name: string) => {
-			const config = loadConfig();
-			const gatewayUrl = resolveConfiguredGatewayUrl(config);
-			if (!gatewayUrl) return;
-
-			setInstallingSkills((prev) => new Set(prev).add(name));
-			setInstallResults((prev) => {
-				const next = new Map(prev);
-				next.delete(name);
-				return next;
-			});
-			try {
-				// Resolve installId from gateway skill status
-				const gs = gatewaySkills.find((s) => s.name === name);
-				const installId = gs?.install?.[0]?.id;
-				if (!installId) {
-					setInstallResults((prev) =>
-						new Map(prev).set(name, {
-							success: false,
-							message: t("skills.installFailed"),
-						}),
-					);
-					setInstallingSkills((prev) => {
-						const next = new Set(prev);
-						next.delete(name);
-						return next;
-					});
-					return;
-				}
-
-				const res = await directToolCall({
-					toolName: "skill_skill_manager",
-					args: { action: "install", skillName: name, installId },
-					requestId: `gw-install-${Date.now()}`,
-					gatewayUrl,
-				});
-				if (res.success) {
-					setInstallResults((prev) =>
-						new Map(prev).set(name, {
-							success: true,
-							message: t("skills.installSuccess"),
-						}),
-					);
-				} else {
-					setInstallResults((prev) =>
-						new Map(prev).set(name, {
-							success: false,
-							message: res.output || t("skills.installFailed"),
-						}),
-					);
-				}
-				await fetchGatewayStatus();
-			} catch (err) {
-				Logger.warn("SkillsTab", "Failed to install skill", {
-					error: String(err),
-				});
-				setInstallResults((prev) =>
-					new Map(prev).set(name, {
-						success: false,
-						message: String(err),
-					}),
-				);
-			} finally {
-				setInstallingSkills((prev) => {
-					const next = new Set(prev);
-					next.delete(name);
-					return next;
-				});
-			}
-		},
-		[fetchGatewayStatus, gatewaySkills],
-	);
-
 	useEffect(() => {
-		const epoch = ++skillsLoadEpoch.current;
-		let active = true;
-		const isCurrent = () => active && skillsLoadEpoch.current === epoch;
+		void refresh();
+	}, [refresh]);
 
-		void loadSkills(isCurrent);
-		void fetchGatewayStatus();
+	const installed = results.filter((r) => r.installed);
+	const enabled = new Set(getEnabledClis());
 
-		return () => {
-			active = false;
-		};
-	}, [fetchGatewayStatus]);
-
-	async function loadSkills(isCurrent: () => boolean) {
-		const store = useSkillsStore.getState();
-		if (!isCurrent()) return;
-		store.setLoading(true);
-		store.setSkills([]);
-		setSkillsLoadError(false);
+	async function handleRecheck(id: string) {
+		setCheckingId(id);
 		try {
-			const result = await fetchAgentSkills();
-			if (!isCurrent()) return;
-			store.setSkills(result.map(toAgentSkillInfo));
+			const next = await refreshCliDetectionOne(id);
+			setResults((prev) => {
+				const others = prev.filter((r) => r.id !== id);
+				return [...others, next];
+			});
+			useSkillsStore.getState().bumpConfigVersion();
 		} catch (err) {
-			if (!isCurrent()) return;
-			store.setSkills([]);
-			setSkillsLoadError(true);
-			Logger.warn("SkillsTab", "Failed to load skills", {
+			Logger.warn("SkillsTab", "CLI recheck failed", {
+				id,
 				error: String(err),
 			});
 		} finally {
-			if (isCurrent()) {
-				store.setLoading(false);
-			}
+			setCheckingId(null);
 		}
 	}
 
-	function handleToggle(skillName: string) {
-		toggleSkill(skillName);
+	async function handleLogin(id: string) {
+		try {
+			await openCliLogin(id);
+		} catch (err) {
+			Logger.warn("SkillsTab", "CLI login open failed", {
+				id,
+				error: String(err),
+			});
+		}
+	}
+
+	function handleToggleCli(id: string, checked: boolean) {
+		setCliEnabled(id, checked);
 		useSkillsStore.getState().bumpConfigVersion();
 	}
 
-	function handleEnableAll() {
-		const config = loadConfig();
-		if (!config) return;
-		saveConfig({ ...config, disabledSkills: [] });
+	function handleToggleGesture(id: (typeof SHELL_GESTURES)[number]["id"], checked: boolean) {
+		setGestureEnabled(id, checked);
 		useSkillsStore.getState().bumpConfigVersion();
 	}
 
-	function handleDisableAll() {
-		const config = loadConfig();
-		if (!config) return;
-		const enabledSkillNames = skills
-			.filter((s) => s.type !== "built-in")
-			.map((s) => s.name);
-		saveConfig({ ...config, disabledSkills: enabledSkillNames });
-		useSkillsStore.getState().bumpConfigVersion();
-	}
-
-	const query = searchQuery.toLowerCase();
-	const filtered = query
-		? skills.filter(
-				(s) =>
-					s.name.toLowerCase().includes(query) ||
-					s.description.toLowerCase().includes(query),
-			)
-		: skills;
-
-	const builtInSkills = filtered.filter((s) => s.type === "built-in");
-	const agentSkills = filtered.filter((s) => s.type === "agent");
-	const customSkills = filtered.filter(
-		(s) => s.type === "gateway" || s.type === "command",
-	);
-	const hasVisibleMemoSkill = builtInSkills.some(
-		(skill) => skill.name === "skill_memo",
-	);
-
-	const disabledSkills = getDisabledSkills();
-	const disabledSet = new Set(disabledSkills);
-	const enabledCount = skills.filter((s) => !disabledSet.has(s.name)).length;
-
-	if (isLoading) {
+	if (loading && results.length === 0) {
 		return (
-			<div className="skills-tab">
+			<div className="skills-tab" data-testid="skills-tab">
 				<div className="skills-loading">{t("skills.loading")}</div>
 			</div>
 		);
 	}
 
-	if (skills.length === 0 && !children) {
-		return (
-			<div className="skills-tab">
-				<div
-					className={skillsLoadError ? "skills-error" : "skills-empty"}
-					data-testid={skillsLoadError ? "skills-load-error" : "skills-empty"}
-				>
-					{skillsLoadError ? t("skills.loadError") : t("skills.empty")}
-				</div>
-			</div>
-		);
-	}
-
 	return (
-		<div className="skills-tab">
-			{/* Header */}
+		<div className="skills-tab" data-testid="skills-tab">
 			<div className="skills-header">
-				<input
-					type="text"
-					className="skills-search"
-					placeholder={t("skills.search")}
-					value={searchQuery}
-					onChange={(e) =>
-						useSkillsStore.getState().setSearchQuery(e.target.value)
-					}
-				/>
 				<div className="skills-header-actions">
-					<span className="skills-count">
-						{enabledCount}/{skills.length}
-					</span>
 					<button
 						type="button"
 						className="skills-action-btn"
-						onClick={handleEnableAll}
+						data-testid="skills-cli-refresh"
+						onClick={() => void refresh()}
+						disabled={loading || checkingId !== null}
 					>
-						{t("skills.enableAll")}
-					</button>
-					<button
-						type="button"
-						className="skills-action-btn"
-						onClick={handleDisableAll}
-					>
-						{t("skills.disableAll")}
+						{t("skills.refresh")}
 					</button>
 				</div>
 			</div>
 
-			{/* Skill list */}
 			<div className="skills-list">
-				{skillsLoadError && (
+				{loadError && (
 					<div className="skills-error" data-testid="skills-load-error">
-						{t("skills.loadError")}
+						{t("skills.cliDetectError")}
 					</div>
 				)}
-				{builtInSkills.length > 0 && (
-					<>
-						<div className="skills-section-title">
-							{t("skills.builtInSection")} ({builtInSkills.length})
-						</div>
-						{builtInSkills.map((skill) => (
-							<Fragment key={skill.name}>
-								{skill.name === "skill_memo" && children}
-								<SkillCard
-									skill={skill}
-									disabled={false}
-									onToggle={handleToggle}
-									onAskAI={onAskAI}
-								/>
-							</Fragment>
-						))}
-					</>
-				)}
 
-				{!hasVisibleMemoSkill && children}
-
-				{agentSkills.length > 0 && (
-					<>
-						<div className="skills-section-title">
-							{t("skills.agentSection")} ({agentSkills.length})
-						</div>
-						{agentSkills.map((skill) => (
-							<SkillCard
-								key={skill.name}
-								skill={skill}
-								disabled={isSkillDisabled(skill.name)}
-								onToggle={handleToggle}
-								onAskAI={onAskAI}
-							/>
-						))}
-					</>
-				)}
-
-				{customSkills.length > 0 && (
-					<>
-						<div className="skills-section-title">
-							{t("skills.customSection")} ({customSkills.length})
-						</div>
-						{customSkills.map((skill) => (
-							<SkillCard
-								key={skill.name}
-								skill={skill}
-								disabled={isSkillDisabled(skill.name)}
-								onToggle={handleToggle}
-								onAskAI={onAskAI}
-							/>
-						))}
-					</>
-				)}
-
-				{/* Gateway Skills Status */}
-				{gatewaySkills.length > 0 && (
-					<>
-						<div className="skills-section-title">
-							{t("skills.gatewayStatusSection")} ({gatewaySkills.length})
-						</div>
-						{gatewaySkills
-							.filter(
-								(gs) =>
-									!query ||
-									gs.name.toLowerCase().includes(query) ||
-									(gs.description?.toLowerCase().includes(query) ?? false),
-							)
-							.map((gs) => (
-								<div
-									key={gs.name}
-									className={`skill-card gateway-status${gs.eligible ? " eligible" : " ineligible"}`}
-									data-testid="gateway-skill-card"
-								>
-									<div className="skill-card-header">
-										<div className="skill-card-info">
-											<div className="skill-card-name">{gs.name}</div>
-											{gs.description && (
-												<div className="skill-card-desc-short">
-													{gs.description}
-												</div>
-											)}
-										</div>
-										<div className="skill-card-actions">
-											{gs.eligible ? (
-												<span className="skill-badge eligible">
-													{t("skills.eligible")}
-												</span>
-											) : (
-												<button
-													type="button"
-													className="skills-install-btn"
-													data-testid="skills-install-btn"
-													disabled={installingSkills.has(gs.name)}
-													onClick={() => handleInstallSkill(gs.name)}
-												>
-													{installingSkills.has(gs.name)
-														? t("skills.installing")
-														: t("skills.install")}
-												</button>
-											)}
-										</div>
+				<div className="skills-section-title" data-testid="skills-cli-section">
+					{t("skills.cliSection")} ({installed.length})
+				</div>
+				{installed.length === 0 ? (
+					<div className="skills-empty" data-testid="skills-cli-empty">
+						{t("skills.cliEmpty")}
+					</div>
+				) : (
+					installed.map((cli) => (
+						<div
+							key={cli.id}
+							className="skill-card"
+							data-testid="cli-skill-card"
+							data-cli-id={cli.id}
+						>
+							<div className="skill-card-header">
+								<div className="skill-card-info">
+									<div className="skill-card-name">{cli.displayName}</div>
+									<div className="skill-card-desc-short">
+										{t(statusLabelKey(cli.status) as Parameters<typeof t>[0])}
+										{cli.version ? ` · ${cli.version}` : ""}
 									</div>
-									{installResults.has(gs.name) && (
-										<div
-											className={`skill-install-result ${installResults.get(gs.name)?.success ? "success" : "error"}`}
+								</div>
+								<div className="skill-card-actions">
+									<label
+										className="skill-toggle"
+										onClick={(e) => e.stopPropagation()}
+									>
+										<input
+											type="checkbox"
+											data-testid={`cli-enable-${cli.id}`}
+											checked={enabled.has(cli.id)}
+											onChange={(e) =>
+												handleToggleCli(cli.id, e.target.checked)
+											}
+										/>
+									</label>
+								</div>
+							</div>
+							<div className="skill-card-detail" style={{ display: "block" }}>
+								<div className="skills-header-actions">
+									<span
+										aria-live="polite"
+										data-testid={`cli-status-${cli.id}`}
+									>
+										{t(statusLabelKey(cli.status) as Parameters<typeof t>[0])}
+									</span>
+									<button
+										type="button"
+										className="skills-action-btn"
+										data-testid={`cli-recheck-${cli.id}`}
+										disabled={checkingId === cli.id}
+										onClick={() => void handleRecheck(cli.id)}
+									>
+										{checkingId === cli.id
+											? t("skills.cliChecking")
+											: t("skills.cliRecheck")}
+									</button>
+									{(cli.status === "login-required" ||
+										cli.status === "waiting-input") && (
+										<button
+											type="button"
+											className="skills-action-btn"
+											data-testid={`cli-login-${cli.id}`}
+											onClick={() => void handleLogin(cli.id)}
 										>
-											{installResults.get(gs.name)?.message}
-										</div>
-									)}
-									{gs.missing.length > 0 && (
-										<div className="skill-card-missing">
-											{t("skills.missing")}: {gs.missing.join(", ")}
-										</div>
+											{t("skills.cliLogin")}
+										</button>
 									)}
 								</div>
-							))}
-					</>
+							</div>
+						</div>
+					))
 				)}
 
-				{gatewayLoading && (
-					<div className="skills-gateway-loading">
-						{t("skills.gatewayLoading")}
-					</div>
-				)}
-
-				<ClawHubBanner />
-			</div>
-		</div>
-	);
-}
-
-function ClawHubBanner() {
-	return (
-		<div className="clawhub-banner">
-			<div className="clawhub-banner-icon">🐙</div>
-			<div className="clawhub-banner-content">
-				<div className="clawhub-banner-title">{t("skills.clawHubTitle")}</div>
-				<div className="clawhub-banner-desc">{t("skills.clawHubDesc")}</div>
-			</div>
-			<a
-				className="clawhub-banner-link"
-				href="https://clawhub.com"
-				target="_blank"
-				rel="noopener noreferrer"
-			>
-				{t("skills.clawHubVisit")}
-			</a>
-		</div>
-	);
-}
-
-function SkillCard({
-	skill,
-	disabled,
-	onToggle,
-	onAskAI,
-}: {
-	skill: SkillManifestInfo;
-	disabled: boolean;
-	onToggle: (name: string) => void;
-	onAskAI?: (message: string) => void;
-}) {
-	const [expanded, setExpanded] = useState(false);
-	const isBuiltIn = skill.type === "built-in";
-
-	return (
-		<div
-			className={`skill-card${disabled ? " disabled" : ""}${expanded ? " expanded" : ""}`}
-		>
-			<div className="skill-card-header" onClick={() => setExpanded(!expanded)}>
-				<div className="skill-card-info">
-					<div className="skill-card-name">{skill.name}</div>
-					<div className="skill-card-desc-short">{skill.description}</div>
+				<div
+					className="skills-section-title"
+					data-testid="skills-gesture-section"
+				>
+					{t("skills.gestureSection")} ({SHELL_GESTURES.length})
 				</div>
-				<div className="skill-card-actions">
-					{onAskAI && (
-						<button
-							type="button"
-							className="skill-help-btn"
-							title={t("skills.askAI")}
-							onClick={(e) => {
-								e.stopPropagation();
-								onAskAI(
-									`"${skill.name}" 스킬에 대해 자세히 설명해줘. 어떤 기능인지, 어떻게 사용하는지, 예시도 알려줘.`,
-								);
-							}}
+				{SHELL_GESTURES.map((gesture) => {
+					const disabled = isGestureDisabled(gesture.id);
+					return (
+						<div
+							key={gesture.id}
+							className={`skill-card${disabled ? " disabled" : ""}`}
+							data-testid="gesture-skill-card"
+							data-gesture-id={gesture.id}
 						>
-							?
-						</button>
-					)}
-					{!isBuiltIn && (
-						<label
-							className="skill-toggle"
-							onClick={(e) => e.stopPropagation()}
-						>
-							<input
-								type="checkbox"
-								checked={!disabled}
-								onChange={() => onToggle(skill.name)}
-							/>
-						</label>
-					)}
-				</div>
+							<div className="skill-card-header">
+								<div className="skill-card-info">
+									<div className="skill-card-name">
+										{t(gesture.labelKey)}
+									</div>
+									<div className="skill-card-desc-short">
+										{t(gesture.hintKey)}
+									</div>
+								</div>
+								<div className="skill-card-actions">
+									<label
+										className="skill-toggle"
+										onClick={(e) => e.stopPropagation()}
+									>
+										<input
+											type="checkbox"
+											data-testid={`gesture-enable-${gesture.id}`}
+											checked={!disabled}
+											onChange={(e) =>
+												handleToggleGesture(gesture.id, e.target.checked)
+											}
+										/>
+									</label>
+								</div>
+							</div>
+							{gesture.id === "youtube" && children}
+						</div>
+					);
+				})}
 			</div>
-			{expanded && (
-				<div className="skill-card-detail">
-					<div className="skill-card-desc-full">{skill.description}</div>
-					<div className="skill-card-badges">
-						{isBuiltIn && (
-							<span className="skill-badge built-in">
-								{t("skills.builtIn")}
-							</span>
-						)}
-						{!isBuiltIn && (
-							<span className={`skill-badge ${skill.type}`}>
-								{skill.type === "agent"
-									? t("skills.agentTool")
-									: skill.type === "gateway"
-										? t("skills.gateway")
-										: t("skills.command")}
-							</span>
-						)}
-						{skill.tier !== undefined && (
-							<span className="skill-badge tier">{tierLabel(skill.tier)}</span>
-						)}
-						{skill.source && (
-							<span className="skill-badge source">{skill.source}</span>
-						)}
-					</div>
-				</div>
-			)}
 		</div>
 	);
 }

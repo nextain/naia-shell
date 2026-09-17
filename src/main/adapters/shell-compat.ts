@@ -25,6 +25,8 @@ export interface ShellSendOptions {
   enableThinking?: boolean;
   gatewayUrl?: string;
   disabledSkills?: readonly string[];
+  /** Enabled coding CLI names from Skills tab (#605). */
+  enabledClis?: readonly string[];
   channel?: ChatRequest["channel"];
   grounding?: ChatRequest["grounding"];
   providerSession?: ChatRequest["providerSession"];
@@ -111,6 +113,7 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         ...(opts.enableThinking !== undefined ? { enableThinking: opts.enableThinking } : {}),
         ...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
         ...(opts.disabledSkills !== undefined ? { disabledSkills: opts.disabledSkills } : {}),
+        ...(opts.enabledClis !== undefined ? { enabledClis: opts.enabledClis } : {}),
         ...(opts.channel !== undefined ? { channel: opts.channel } : {}),
         ...(opts.grounding !== undefined ? { grounding: opts.grounding } : {}),
         ...(opts.providerSession !== undefined ? { providerSession: opts.providerSession } : {}),

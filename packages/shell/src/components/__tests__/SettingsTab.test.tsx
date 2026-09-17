@@ -1058,7 +1058,7 @@ describe("SettingsTab", () => {
 			}),
 		);
 		mockInvoke.mockImplementation((command: string) => {
-			if (command === "codex_preflight") {
+			if (command === "cli_detect_one") {
 				return Promise.resolve({
 					status: "ready",
 					output: "Logged in as private@example.com",
@@ -1078,7 +1078,7 @@ describe("SettingsTab", () => {
 				screen.getByTestId("codex-readiness-status").textContent,
 			).toContain("Ready");
 		});
-		expect(mockInvoke).toHaveBeenCalledWith("codex_preflight");
+		expect(mockInvoke).toHaveBeenCalledWith("cli_detect_one", { id: "codex" });
 		expect(screen.queryByText("private@example.com")).toBeNull();
 		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").apiKey).toBe(
 			"",
@@ -1119,7 +1119,7 @@ describe("SettingsTab", () => {
 			}),
 		);
 		mockInvoke.mockImplementation((command: string) => {
-			if (command === "grok_preflight") {
+			if (command === "cli_detect_one") {
 				return Promise.resolve({
 					status: "ready",
 					output: "You are logged in as private@example.com",
@@ -1139,7 +1139,7 @@ describe("SettingsTab", () => {
 				"Ready",
 			);
 		});
-		expect(mockInvoke).toHaveBeenCalledWith("grok_preflight");
+		expect(mockInvoke).toHaveBeenCalledWith("cli_detect_one", { id: "grok" });
 		expect(screen.queryByText("private@example.com")).toBeNull();
 		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").apiKey).toBe(
 			"",
@@ -1354,7 +1354,7 @@ describe("SettingsTab", () => {
 		);
 		mockInvoke.mockImplementation((command: string) =>
 			Promise.resolve(
-				command === "codex_preflight" ? { status: "login-required" } : [],
+				command === "cli_detect_one" ? { status: "login-required" } : [],
 			),
 		);
 

@@ -353,6 +353,37 @@ export interface AppConfig {
 	 *  be wss:// (cross-review). Default DEFAULT_NAIA_LOCAL_URL. */
 	naiaLocalUrl?: string;
 	disabledSkills?: string[];
+	/**
+	 * CLI names the user enabled on the Skills tab (#605).
+	 * Only installed CLIs appear as checkboxes; enabled names are passed to the
+	 * agent so it can mention them in workspace context.
+	 */
+	enabledClis?: string[];
+	/**
+	 * Last CLI detection snapshot from Rust `cli_detect_refresh` (#605).
+	 * Refreshed on app start and Skills tab enter. Never stores CLI stdout.
+	 */
+	cliDetection?: {
+		refreshedAt: string;
+		results: Array<{
+			id: string;
+			displayName: string;
+			installed: boolean;
+			path?: string;
+			version?: string;
+			status:
+				| "ready"
+				| "not-installed"
+				| "login-required"
+				| "waiting-input"
+				| "error";
+		}>;
+	};
+	/**
+	 * Shell gesture ids the user disabled on the Skills tab (#605).
+	 * Known gestures today: `youtube` (skill_youtube_bgm + Radio DJ card).
+	 */
+	disabledGestures?: string[];
 	slackWebhookUrl?: string;
 	googleChatWebhookUrl?: string;
 	gatewayTtsAuto?: string;

@@ -113,6 +113,8 @@ export interface ChatRequest {
   /** ⚠️ **top-level**(agent 가 req.enableThinking 를 읽어 providerConfig 에 주입 — provider 안에만 두면 무효화). */
   readonly enableThinking?: boolean;
   readonly disabledSkills?: readonly string[];
+  /** Enabled coding CLI names from the Skills tab (#605). Agent should render one workspace-context line. */
+  readonly enabledClis?: readonly string[];
   readonly channel?: ChannelContext;
   readonly grounding?: GroundingRequest;
   readonly providerSession?: ProviderSessionRequest;

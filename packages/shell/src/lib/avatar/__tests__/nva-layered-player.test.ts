@@ -148,17 +148,6 @@ function makePlayer() {
 	const canvas = document.createElement("canvas");
 	canvas.width = 400;
 	canvas.height = 700;
-	// HTMLCanvasElement.getContext overloads include "webgpu" → GPUCanvasContext.
-	vi.spyOn(canvas, "getContext").mockImplementation((() =>
-		({
-			clearRect: vi.fn(),
-			drawImage: vi.fn(),
-			save: vi.fn(),
-			restore: vi.fn(),
-			beginPath: vi.fn(),
-			rect: vi.fn(),
-			clip: vi.fn(),
-		})) as unknown as typeof canvas.getContext);
 	return new NvaLayeredPlayer(canvas, MANIFEST, {
 		resolveClip: (clip) => `blob:${clip}`,
 	});
