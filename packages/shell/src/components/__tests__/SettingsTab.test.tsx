@@ -812,7 +812,7 @@ describe("SettingsTab", () => {
 			JSON.stringify({
 				onboardingComplete: true,
 				provider: "codex",
-				model: "gpt-5.4",
+				model: "gpt-5.5",
 				apiKey: "",
 				llmRoles: {
 					sub: { provider: "gemini", model: "gemini-3.1-flash-lite" },
@@ -828,7 +828,7 @@ describe("SettingsTab", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.llmRoles.main).toMatchObject({
 			provider: "codex",
-			model: "gpt-5.4",
+			model: "gpt-5.5",
 		});
 		// 옛 sub/expert 역할 필드는 그대로 남는다.
 		expect(saved.llmRoles.sub).toMatchObject({
@@ -1036,14 +1036,14 @@ describe("SettingsTab", () => {
 		const modelSelect = document.getElementById(
 			"model-select",
 		) as HTMLSelectElement;
-		// 2026-08 lineup: gpt-5.6 sol/terra/luna + previous-gen 5.5, retiring 5.4.
+		// #641: gpt-5.4 removed — ChatGPT-account Codex rejects it. Lineup is
+		// now gpt-5.6 sol/terra/luna + previous-gen 5.5.
 		expect(modelSelect.value).toBe("gpt-5.6-sol");
 		expect([...modelSelect.options].map((option) => option.value)).toEqual([
 			"gpt-5.6-sol",
 			"gpt-5.6-terra",
 			"gpt-5.6-luna",
 			"gpt-5.5",
-			"gpt-5.4",
 		]);
 	});
 
@@ -1170,7 +1170,7 @@ describe("SettingsTab", () => {
 					llmRoles: {
 						main: {
 							provider: "codex",
-							model: "gpt-5.4",
+							model: "gpt-5.5",
 							credentialRef: "codex-cred",
 							baseUrl: "https://proxy.example/v1",
 						},
@@ -1188,7 +1188,7 @@ describe("SettingsTab", () => {
 				).toBe("codex");
 				expect(
 					(document.getElementById("model-select") as HTMLSelectElement).value,
-				).toBe("gpt-5.4");
+				).toBe("gpt-5.5");
 			});
 
 			fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -1197,7 +1197,7 @@ describe("SettingsTab", () => {
 				expect(saved.llmRoles?.main).toEqual(
 					expect.objectContaining({
 						provider: "codex",
-						model: "gpt-5.4",
+						model: "gpt-5.5",
 						credentialRef: "codex-cred",
 						baseUrl: "https://proxy.example/v1",
 					}),
@@ -1297,7 +1297,7 @@ describe("SettingsTab", () => {
 			JSON.stringify({
 				onboardingComplete: true,
 				provider: "codex",
-				model: "gpt-5.4",
+				model: "gpt-5.5",
 				apiKey: "",
 			}),
 		);
@@ -1309,7 +1309,7 @@ describe("SettingsTab", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.llmRoles).toEqual(
 			expect.objectContaining({
-				main: expect.objectContaining({ provider: "codex", model: "gpt-5.4" }),
+				main: expect.objectContaining({ provider: "codex", model: "gpt-5.5" }),
 			}),
 		);
 	});

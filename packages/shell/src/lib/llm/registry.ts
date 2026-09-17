@@ -717,7 +717,7 @@ registerLlmProvider({
 	requiresApiKey: false,
 	supportedRoles: ["expert", "main", "sub"],
 	// Codex CLI 지원 라인업(2026-08): gpt-5.6 sol/terra/luna + 이전 세대 gpt-5.5.
-	// gpt-5.4 는 2026-08-31 retire 예고 — 저장 설정 해석용으로만 잔존(마지막 배치).
+	// #641: gpt-5.4 제거 — ChatGPT 계정 Codex가 gpt-5.4 요청을 거부함.
 	defaultModel: "gpt-5.6-sol",
 	models: [
 		{ id: "gpt-5.6-sol", label: "GPT-5.6 Sol (Codex)", capabilities: ["llm"] },
@@ -732,7 +732,6 @@ registerLlmProvider({
 			capabilities: ["llm"],
 		},
 		{ id: "gpt-5.5", label: "GPT-5.5 (Codex)", capabilities: ["llm"] },
-		{ id: "gpt-5.4", label: "GPT-5.4 (Codex)", capabilities: ["llm"] },
 	],
 });
 
