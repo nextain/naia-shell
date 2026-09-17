@@ -1,5 +1,6 @@
 /** TTS provider metadata for settings UI auto-discovery. */
 export interface TtsProviderMeta {
+	fetchVoices?: (apiKey: string) => Promise<TtsVoiceMeta[] | null>;
 	/** Unique identifier matching agent-side TtsProviderId. */
 	id: string;
 	/** Human-readable name. */
@@ -8,8 +9,6 @@ export interface TtsProviderMeta {
 	description: string;
 	/** Whether this provider requires an API key. */
 	requiresApiKey: boolean;
-	/** Config key for the API key (e.g. "openaiTtsApiKey", "elevenlabsApiKey"). */
-	apiKeyConfigField?: string;
 	/** Whether this provider requires a Naia Lab key. */
 	requiresNaiaKey?: boolean;
 	/** Whether the provider is free to use. */
@@ -22,8 +21,6 @@ export interface TtsProviderMeta {
 	pricing?: string;
 	/** Static voice list (fallback when API unavailable). */
 	voices?: TtsVoiceMeta[];
-	/** Fetch voices dynamically from API. Returns null if not supported or API key missing. */
-	fetchVoices?: (apiKey: string) => Promise<TtsVoiceMeta[] | null>;
 }
 
 /** TTS voice metadata. */

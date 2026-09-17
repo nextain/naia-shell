@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT (추후 지원)",
 	"settings.sttElevenlabs": "ElevenLabs (추후 지원)",
 	"settings.sttLanguageUnsupported": "현재 언어의 STT 모델을 사용할 수 없습니다",
-	"settings.googleApiKey": "Google API 키 (TTS용)",
-	"settings.googleApiKeyGeminiFallback": "비워두면 대화용 키 사용",
 	"settings.personaSection": "페르소나",
 	"settings.personaDisabled": "페르소나 사용 안 함",
 	"settings.personaDisabledHint": "파인튜닝으로 성격을 모델에 넣었다면 켜십시오. 이름과 호칭과 말투와 성격을 프롬프트로 보내지 않습니다. 두 정의가 부딪히면 답이 무너집니다.",

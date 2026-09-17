@@ -1229,14 +1229,7 @@ export function ChatArea({
 			voice: resolveTtsVoiceId(config),
 			ttsProvider: config.ttsProvider || "edge",
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
-			ttsApiKey:
-				config.ttsProvider === "google"
-					? config.googleApiKey || config.apiKey
-					: config.ttsProvider === "openai"
-						? config.openaiTtsApiKey
-						: config.ttsProvider === "elevenlabs"
-							? config.elevenlabsApiKey
-							: undefined,
+			ttsApiKey: undefined,
 			naiaKey: config.naiaKey,
 			gatewayUrl: LAB_GATEWAY_URL,
 			vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
@@ -2653,28 +2646,24 @@ export function ChatArea({
 			minutes < 1
 				? `${Math.round(elapsed)}s`
 				: `${Math.floor(minutes)}m ${Math.round(elapsed % 60)}s`;
-		// Per-minute providers (Gemini/OpenAI) bill by tokens — estimate for the
-		// breakdown. Hourly session models (naia-omni) do NOT bill by tokens, so
-		// don't fabricate token counts for them (showed up as inflated usage).
-		const isOpenAI = info.provider === "openai-realtime";
-		const inputTokens = perHour
-			? 0
-			: Math.round(elapsed * (isOpenAI ? 10 : 32));
-		const outputTokens = perHour
-			? 0
-			: Math.round(elapsed * (isOpenAI ? 20 : 32));
-		// Map provider to ProviderId-compatible string
+		const inputTokens = perHour ? 0 : Math.round(elapsed * 32);
+		const outputTokens = perHour ? 0 : Math.round(elapsed * 32);
 		const providerMap: Record<string, string> = {
-			naia: "nextain",
-			"gemini-live": "gemini",
-			"openai-realtime": "openai",
+			"azure-voice-live": "nextain",
+			"naia-omni": "nextain",
+			"vllm-omni": "vllm",
 		};
 		useChatStore.getState().addMessage({
 			role: "assistant",
 			content: `🎙️ ${durationStr} · ~$${totalCost.toFixed(3)} (${hint.note})`,
 			cost: {
 				provider: (providerMap[info.provider] ?? info.provider) as any,
-				model: isOpenAI ? "gpt-realtime" : "gemini-live",
+				model:
+					info.provider === "azure-voice-live"
+						? "azure-realtime"
+						: info.provider === "vllm-omni"
+							? "vllm-omni"
+							: "naia-omni",
 				inputTokens,
 				outputTokens,
 				cost: totalCost,
@@ -2904,14 +2893,7 @@ export function ChatArea({
 				pipelineVoiceConfigRef.current = {
 					voice: resolveTtsVoiceId(config) ?? config.voice,
 					ttsProvider: config.ttsProvider || "edge",
-					ttsApiKey:
-						config.ttsProvider === "google"
-							? config.googleApiKey || config.apiKey
-							: config.ttsProvider === "openai"
-								? config.openaiTtsApiKey
-								: config.ttsProvider === "elevenlabs"
-									? config.elevenlabsApiKey
-									: undefined,
+					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
 					naiaKey: config.naiaKey,
 					gatewayUrl: LAB_GATEWAY_URL,
@@ -3006,38 +2988,15 @@ export function ChatArea({
 					};
 
 					if (isApiBased) {
-						// API-based STT — browser MediaStream + cloud API
-						const apiKey = sttMeta?.requiresNaiaKey
-							? config.naiaKey
-							: sttMeta?.apiKeyConfigField === "googleApiKey"
-								? config.googleApiKey
-								: sttMeta?.apiKeyConfigField === "elevenlabsApiKey"
-									? config.elevenlabsApiKey
-									: "";
-						if (!apiKey && !isAsrModel) {
-							Logger.warn("ChatArea", "API STT requires API key", {
+						// Local vLLM ASR only (#603 removed cloud STT adapters).
+						const apiKey = "";
+						if (!isAsrModel && sttEngine !== "vllm") {
+							Logger.warn("ChatArea", "Unsupported API STT provider", {
 								provider: sttEngine,
 							});
 							setSttState("idle");
 							pipelineActiveRef.current = false;
 							setVoiceStatus({ phase: "idle" });
-							if (
-								globalThis.confirm(
-									"STT API key is required.\n\nGo to Settings?",
-								)
-							) {
-								useAppStore.getState().setActiveApp("settings");
-								window.dispatchEvent(
-									new CustomEvent("naia-open-settings", {
-										detail: { tab: "voice" },
-									}),
-								);
-								window.setTimeout(() => {
-									document
-										.querySelector<HTMLButtonElement>('[data-settings-tab="voice"]')
-										?.click();
-								}, 0);
-							}
 							return;
 						}
 						const endpointUrl = isAsrModel
@@ -3055,11 +3014,7 @@ export function ChatArea({
 										: config.vllmSttModel) || undefined
 								: undefined;
 						const session = createApiSttSession({
-							provider: sttEngine as
-								| "google"
-								| "elevenlabs"
-								| "nextain"
-								| "vllm",
+							provider: "vllm",
 							apiKey: apiKey ?? "",
 							language: sttLang,
 							endpointUrl,
@@ -3215,11 +3170,7 @@ export function ChatArea({
 				return;
 			}
 
-			// Determine the live provider from the current model/provider.
-			// Naia omni (naia-*-omni-*, e.g. naia-0.9-omni-24g) routes to OpenAI
-			// Realtime (/v1/realtime via gateway). Gemini live (gemini-*-live)
-			// routes to Gemini Live (/v1/live) under "naia". Both are isOmni,
-			// so branch on the model id prefix first.
+			// Determine the live provider from the current model/provider (#603).
 			const liveProvider = resolveLiveProvider({
 				isOmni,
 				provider: config.provider,
@@ -3232,49 +3183,19 @@ export function ChatArea({
 				model: config.model,
 				liveProvider,
 				hasNaiaKey: !!naiaKey,
-				hasGoogleApiKey: !!config.googleApiKey,
-				hasOpenaiKey: !!(config.openaiRealtimeApiKey ?? config.apiKey),
 			});
 
-			// Validate credentials per provider
-			if (liveProvider === "naia" && !naiaKey) {
-				Logger.warn("ChatArea", "Naia OS voice requires Naia key");
+			if (
+				(liveProvider === "azure-voice-live" || liveProvider === "naia-omni") &&
+				!naiaKey
+			) {
+				Logger.warn("ChatArea", "Live voice requires Naia key");
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: t("chat.voiceNeedLabKey"),
 				});
 				setVoiceStatus({ phase: "idle" });
 				return;
-			}
-			if (liveProvider === "gemini-live" && !naiaKey && !config.googleApiKey) {
-				Logger.warn("ChatArea", "Gemini Live requires Google API key");
-				useChatStore.getState().addMessage({
-					role: "assistant",
-					content: "Gemini Live를 사용하려면 Google API Key를 입력하세요.",
-				});
-				setVoiceStatus({ phase: "idle" });
-				return;
-			}
-			if (liveProvider === "azure-voice-live" && !naiaKey) {
-				Logger.warn("ChatArea", "Azure Voice Live requires Naia key");
-				useChatStore.getState().addMessage({
-					role: "assistant",
-					content: t("chat.voiceNeedLabKey"),
-				});
-				setVoiceStatus({ phase: "idle" });
-				return;
-			}
-			if (liveProvider === "openai-realtime") {
-				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
-				if (!openaiKey) {
-					Logger.warn("ChatArea", "OpenAI Realtime requires API key");
-					useChatStore.getState().addMessage({
-						role: "assistant",
-						content: "OpenAI Realtime을 사용하려면 API Key를 입력하세요.",
-					});
-					setVoiceStatus({ phase: "idle" });
-					return;
-				}
 			}
 
 			const memoryCtx = await buildMemoryContext();
@@ -3334,17 +3255,12 @@ export function ChatArea({
 					: systemPrompt;
 
 			// Create voice session via provider factory
-			// Gemini Direct uses Rust proxy (WebKitGTK can't connect to Google's WS)
-			const useDirectMode =
-				liveProvider === "gemini-live" && !!config.googleApiKey;
 			// 이 통화의 식별자. 통화가 켠 지켜보기에만 이 표가 붙고, 통화가 끝날 때 그 표가
 			// 붙은 것만 끈다. 시작 시점의 참/거짓으로는 통화 중에 다른 경로가 켠 것과
 			// 구별할 수 없고, 늦게 도착한 옛 세션의 종료가 새 세션의 것을 지운다
 			// (2026-08-27 12차 적대리뷰 지적).
 			const voiceSessionKey = nextVoiceSessionKey();
-			const session = createVoiceSession(liveProvider, {
-				useProxy: useDirectMode,
-			});
+			const session = createVoiceSession(liveProvider);
 			voiceSessionRef.current = session;
 			const abortIfSpeechActivityOwnsVoice = () => {
 				if (
@@ -3637,22 +3553,9 @@ export function ChatArea({
 					locale: getLocale(),
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
-			} else if (liveProvider === "openai-realtime") {
-				// Pure OpenAI Realtime (user's own key). Naia voice routes via the
-				// "naia-omni" provider branch above (/v1/realtime gateway), never here.
-				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
-				await session.connect({
-					provider: "openai-realtime",
-					apiKey: openaiKey!,
-					model: config.model,
-					voice: selectedVoice,
-					locale: getLocale(),
-					systemInstruction: voiceSystemPrompt,
-					tools: voiceTools.length ? voiceTools : undefined,
-				});
 			} else if (liveProvider === "azure-voice-live") {
 				const azureVoice =
-					selectedVoice === "Kore" || !selectedVoice ? "sunhi" : selectedVoice;
+					!selectedVoice || selectedVoice === "Kore" ? "sunhi" : selectedVoice;
 				await session.connect({
 					provider: "azure-voice-live",
 					gatewayUrl: LAB_GATEWAY_URL,
@@ -3664,17 +3567,7 @@ export function ChatArea({
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else {
-				// Gemini Live: naia (gateway) or gemini-live (direct via Rust proxy)
-				await session.connect({
-					provider: "gemini-live",
-					gatewayUrl: useDirectMode ? undefined : LAB_GATEWAY_URL,
-					naiaKey: useDirectMode ? undefined : naiaKey,
-					googleApiKey: useDirectMode ? config.googleApiKey : undefined,
-					voice: selectedVoice,
-					locale: getLocale(),
-					systemInstruction: voiceSystemPrompt,
-					tools: voiceTools.length ? voiceTools : undefined,
-				});
+				throw new Error(`Unsupported live provider: ${liveProvider}`);
 			}
 			// The activity may have started while session.connect() awaited a
 			// provider/cold start. Recheck before any microphone can start.

@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT (Sắp ra mắt)",
 	"settings.sttElevenlabs": "ElevenLabs (Sắp ra mắt)",
 	"settings.sttLanguageUnsupported": "Mô hình STT không khả dụng cho ngôn ngữ hiện tại",
-	"settings.googleApiKey": "Khóa API của Google (dành cho TTS)",
-	"settings.googleApiKeyGeminiFallback": "Để trống để sử dụng phím trò chuyện",
 	"settings.personaSection": "nhân cách",
 	"settings.personaDisabled": "Không dùng persona",
 	"settings.personaDisabledHint": "Bật khi tính cách đã nằm trong trọng số mô hình. Tên, cách xưng hô, lối nói và mô tả persona sẽ không được gửi.",

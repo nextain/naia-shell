@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT（近日公開）",
 	"settings.sttElevenlabs": "ElevenLabs（近日公開）",
 	"settings.sttLanguageUnsupported": "現在の言語のSTTモデルは利用できません",
-	"settings.googleApiKey": "Google APIキー（TTS用）",
-	"settings.googleApiKeyGeminiFallback": "チャットキーを使用するには空のままにしてください",
 	"settings.personaSection": "ペルソナ",
 	"settings.personaDisabled": "ペルソナを使用しない",
 	"settings.personaDisabledHint": "性格をモデルに学習済みの場合はオンにします。名前・呼称・話し方・性格をプロンプトで送りません。定義が二重になると応答が崩れます。",

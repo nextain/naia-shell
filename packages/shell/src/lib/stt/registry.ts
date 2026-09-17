@@ -97,64 +97,6 @@ registerSttProvider({
 	],
 });
 
-// ── Naia Cloud (free with Naia account) ──
-
-registerSttProvider({
-	id: "nextain",
-	name: "Naia Cloud STT",
-	description:
-		"Cloud STT without API key. Currently Google Cloud STT, more providers coming.",
-	engineType: "api",
-	isOffline: false,
-	requiresNaiaKey: true,
-	pricing: "Naia credit",
-	supportedLanguages: [
-		"ko-KR",
-		"en-US",
-		"zh-CN",
-		"ja-JP",
-		"es-ES",
-		"fr-FR",
-		"de-DE",
-		"ru-RU",
-		"pt-BR",
-		"it-IT",
-		"vi-VN",
-		"hi-IN",
-	],
-});
-
-// ── API-based providers (paid, API key required) ──
-
-registerSttProvider({
-	id: "google",
-	name: "Google Cloud STT",
-	description:
-		"Google Cloud Speech-to-Text API. High accuracy, streaming support.",
-	engineType: "api",
-	isOffline: false,
-	requiresApiKey: true,
-	apiKeyConfigField: "googleApiKey",
-	pricing: "$0.024/분",
-	supportedLanguages: [
-		"ko-KR",
-		"en-US",
-		"zh-CN",
-		"ja-JP",
-		"es-ES",
-		"fr-FR",
-		"de-DE",
-		"ru-RU",
-		"pt-BR",
-		"it-IT",
-		"vi-VN",
-		"hi-IN",
-		"ar-SA",
-		"bn-IN",
-		"id-ID",
-	],
-});
-
 // ── Local vLLM providers (no API key, user-managed server) ──
 
 registerSttProvider({
@@ -203,23 +145,3 @@ registerSttProvider({
 	],
 });
 
-registerSttProvider({
-	id: "elevenlabs",
-	name: "ElevenLabs STT",
-	description: "ElevenLabs speech-to-text. Requires ElevenLabs API key.",
-	engineType: "api",
-	isOffline: false,
-	requiresApiKey: true,
-	apiKeyConfigField: "elevenlabsApiKey",
-	pricing: "$0.007/분",
-	supportedLanguages: [
-		"ko-KR",
-		"en-US",
-		"zh-CN",
-		"ja-JP",
-		"es-ES",
-		"fr-FR",
-		"de-DE",
-		"ru-RU",
-	],
-});

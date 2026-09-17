@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT (Segera)",
 	"settings.sttElevenlabs": "ElevenLabs (Segera)",
 	"settings.sttLanguageUnsupported": "Model STT tidak tersedia untuk bahasa saat ini",
-	"settings.googleApiKey": "Kunci Google API (untuk TTS)",
-	"settings.googleApiKeyGeminiFallback": "Biarkan kosong untuk menggunakan kunci obrolan",
 	"settings.personaSection": "kepribadian",
 	"settings.personaDisabled": "Jangan gunakan persona",
 	"settings.personaDisabledHint": "Aktifkan bila karakter sudah ada di bobot model. Nama, sapaan, gaya bicara, dan teks persona tidak dikirim.",

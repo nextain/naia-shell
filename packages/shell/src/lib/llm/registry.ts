@@ -476,7 +476,6 @@ const NAIA_GENERAL_CHAT_RECOMMENDATION: Readonly<Record<string, number>> = {
 	"HCX-DASH-002": 3,
 	"gemini-3.5-flash-lite": 3,
 	"gemini-3.1-flash-lite": 3,
-	"gemini-2.5-flash-live": 4,
 	"azure-realtime": 4,
 	"naia-0.9-omni-24g": 5,
 	"claude-opus-5": 5,
@@ -547,16 +546,6 @@ export const AZURE_REALTIME_VOICES: LlmVoiceMeta[] = [
 	{ id: "hyunsu", label: "Hyunsu (남성)" },
 ];
 
-export const GEMINI_LIVE_VOICES: LlmVoiceMeta[] = [
-	{ id: "Kore", label: "Kore (여성, 부드러움)" },
-	{ id: "Puck", label: "Puck (남성, 익살)" },
-	{ id: "Charon", label: "Charon (남성)" },
-	{ id: "Aoede", label: "Aoede (여성)" },
-	{ id: "Fenrir", label: "Fenrir (남성)" },
-	{ id: "Leda", label: "Leda (여성)" },
-	{ id: "Orus", label: "Orus (남성)" },
-	{ id: "Zephyr", label: "Zephyr (중성)" },
-];
 
 // ─── Provider registrations ─────────────────────────────────────────────────
 
@@ -672,15 +661,6 @@ registerLlmProvider({
 			label: "Gemini 3.5 Flash",
 			capabilities: ["llm"],
 			supportsTools: true,
-		},
-		{
-			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live",
-			capabilities: ["llm", "omni"],
-			supportsTools: true,
-			voiceSelectable: true,
-			voices: [...GEMINI_LIVE_VOICES],
-			transcriptProvided: true,
 		},
 		{
 			id: "azure-realtime",

@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT (Скоро)",
 	"settings.sttElevenlabs": "ElevenLabs (Скоро)",
 	"settings.sttLanguageUnsupported": "Модель STT недоступна для текущего языка",
-	"settings.googleApiKey": "Ключ API Google (для TTS)",
-	"settings.googleApiKeyGeminiFallback": "Оставьте пустым, чтобы использовать клавишу чата",
 	"settings.personaSection": "Персона",
 	"settings.personaDisabled": "Не использовать персону",
 	"settings.personaDisabledHint": "Включите, если характер уже в весах модели. Имя, обращение, стиль речи и текст персоны не отправляются.",

@@ -1,5 +1,6 @@
 import type { LiveProviderId } from "./types";
 
+/** Resolve live VoiceSession adapter. Removed (#603): gemini-live / openai-realtime / naia. */
 export function resolveLiveProvider(opts: {
 	isOmni: boolean;
 	provider?: string;
@@ -7,7 +8,10 @@ export function resolveLiveProvider(opts: {
 	hasNaiaKey: boolean;
 }): LiveProviderId {
 	const model = opts.model ?? "";
-	if (opts.isOmni && (model === "azure-realtime" || model.startsWith("azure-realtime"))) {
+	if (
+		opts.isOmni &&
+		(model === "azure-realtime" || model.startsWith("azure-realtime"))
+	) {
 		return "azure-voice-live";
 	}
 	if (opts.isOmni && model.startsWith("naia-")) {
@@ -19,11 +23,10 @@ export function resolveLiveProvider(opts: {
 	if (opts.provider === "vllm") {
 		return "vllm-omni";
 	}
-	if (opts.provider === "openai") {
-		return "openai-realtime";
+	if (opts.isOmni && opts.hasNaiaKey) {
+		return "azure-voice-live";
 	}
-	if (opts.hasNaiaKey) {
-		return "naia";
-	}
-	return "gemini-live";
+	throw new Error(
+		`No live voice provider for model=${model || "(none)"} provider=${opts.provider ?? "(none)"}`,
+	);
 }

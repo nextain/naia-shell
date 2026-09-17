@@ -14,12 +14,10 @@ export const LAB_SYNC_FIELDS = [
 	"vrmModel",
 	"sttProvider",
 	"sttModel",
-	"naiaCloudSttBackend",
 	"ttsEnabled",
 	"ttsVoice",
 	"ttsProvider",
 	"ttsEngine",
-	"naiaCloudTtsBackend",
 	"persona",
 	"userName",
 	"agentName",
@@ -36,9 +34,6 @@ export const LAB_SYNC_FIELDS = [
 	"googleChatWebhookUrl",
 	"appPosition",
 	"appVisible",
-	"liveProvider",
-	"liveVoice",
-	"liveModel",
 	"voiceConversation",
 ] as const;
 

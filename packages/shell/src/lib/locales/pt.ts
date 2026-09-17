@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT (Em breve)",
 	"settings.sttElevenlabs": "ElevenLabs (Em breve)",
 	"settings.sttLanguageUnsupported": "Modelo STT não disponível para o idioma atual",
-	"settings.googleApiKey": "Chave de API do Google (para TTS)",
-	"settings.googleApiKeyGeminiFallback": "Deixe em branco para usar a tecla de bate-papo",
 	"settings.personaSection": "Pessoa",
 	"settings.personaDisabled": "Não usar persona",
 	"settings.personaDisabledHint": "Ative se o caráter já estiver nos pesos do modelo. Nome, tratamento, estilo e texto de persona não são enviados.",

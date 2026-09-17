@@ -10,7 +10,6 @@ mod capture;
 pub mod data_home;
 mod ego_host;
 mod ego_host_bridge;
-mod gemini_live;
 mod herdr;
 mod memory;
 mod platform;
@@ -1408,7 +1407,6 @@ struct AppState {
     /// Random state token for OAuth deep link CSRF protection.
     oauth_state: Arc<Mutex<Option<String>>>,
     /// Active Gemini Live WebSocket proxy session.
-    gemini_live: gemini_live::SharedHandle,
     /// Last agent-core restart timestamp ??debounce to prevent restart storms (#226).
     last_agent_restart: Mutex<Option<std::time::Instant>>,
     /// Startup IPC messages (auth_update / notify_config / creds_update) ??replayed
@@ -8475,13 +8473,9 @@ const SECURE_STORE_FILE: &str = "secure-keys.dat";
 const SECURE_STORE_TEMP_DIR: &str = ".secure-keys-tmp";
 const SECURE_STORE_KEYS: &[&str] = &[
     "apiKey",
-    "googleApiKey",
-    "openaiTtsApiKey",
-    "elevenlabsApiKey",
-    "naiaKey",
+                "naiaKey",
     "gatewayToken",
-    "openaiRealtimeApiKey",
-    "subLlmApiKey",
+        "subLlmApiKey",
     "memoryLlmApiKey",
     "memoryEmbeddingApiKey",
     "qdrantApiKey",
@@ -10854,45 +10848,10 @@ async fn fetch_linked_channels(naia_key: String, user_id: String) -> Result<Stri
 // WebKitGTK cannot directly connect to wss://generativelanguage.googleapis.com
 // (silent hang). These commands proxy the WebSocket through Rust.
 
-#[tauri::command]
-async fn gemini_live_connect(
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-    params: gemini_live::GeminiLiveConnectParams,
-) -> Result<(), String> {
-    gemini_live::connect(app, state.gemini_live.clone(), params).await
-}
 
-#[tauri::command]
-async fn gemini_live_send_audio(
-    state: tauri::State<'_, AppState>,
-    pcm_base64: String,
-) -> Result<(), String> {
-    gemini_live::send_audio(&state.gemini_live, pcm_base64).await
-}
 
-#[tauri::command]
-async fn gemini_live_send_text(
-    state: tauri::State<'_, AppState>,
-    text: String,
-) -> Result<(), String> {
-    gemini_live::send_text(&state.gemini_live, text).await
-}
 
-#[tauri::command]
-async fn gemini_live_send_tool_response(
-    state: tauri::State<'_, AppState>,
-    call_id: String,
-    result: serde_json::Value,
-) -> Result<(), String> {
-    gemini_live::send_tool_response(&state.gemini_live, call_id, result).await
-}
 
-#[tauri::command]
-async fn gemini_live_disconnect(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    gemini_live::disconnect(state.gemini_live.clone()).await;
-    Ok(())
-}
 
 // ?? naia-settings asset commands ?????????????????????????????????????????????
 
@@ -12984,7 +12943,6 @@ pub fn run() {
             gateway: Mutex::new(None),
             health_monitor_shutdown: Mutex::new(None),
             oauth_state: Arc::new(Mutex::new(None)),
-            gemini_live: gemini_live::new_shared_handle(),
             last_agent_restart: Mutex::new(None),
             startup_messages: Mutex::new(StartupMessageCache::default()),
         })
@@ -13050,11 +13008,6 @@ pub fn run() {
             discord_mark_inbox_read,
             discord_open_dm_channel,
             fetch_linked_channels,
-            gemini_live_connect,
-            gemini_live_send_audio,
-            gemini_live_send_text,
-            gemini_live_send_tool_response,
-            gemini_live_disconnect,
             // naia-settings asset commands
             list_naia_assets,
             upload_nva_bundle,

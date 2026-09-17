@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT（即将推出）",
 	"settings.sttElevenlabs": "ElevenLabs（即将推出）",
 	"settings.sttLanguageUnsupported": "当前语言的STT模型不可用",
-	"settings.googleApiKey": "Google API 密钥（用于 TTS）",
-	"settings.googleApiKeyGeminiFallback": "留空以使用聊天键",
 	"settings.personaSection": "人格面具",
 	"settings.personaDisabled": "不使用人格设定",
 	"settings.personaDisabledHint": "若性格已写入模型权重请开启。名称、称呼、语气与人格描述不会作为提示发送。两套定义冲突会导致回答混乱。",
