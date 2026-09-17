@@ -19,6 +19,21 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_640_647_dual_canonicals": {
+      "issue": "640,641,645,646,647",
+      "title": "Structural dual-source / boundary holes in packages/shell",
+      "requirements": "docs/requirements.md FR-VOICE-DEV-STAGING.1, Herdr protocol 19..=22 note",
+      "scenario": "docs/user-scenarios.md UC-SETTINGS-ALLOWED-TOOLS, UC-SETTINGS-OPEN-LOG",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "completed",
+      "last_updated": "2026-09-18T00:35:00+09:00"
+    },
     "issue_611_remove_direct_work_tools": {
       "issue": 611,
       "title": "Remove direct work tools from the model-facing registry",

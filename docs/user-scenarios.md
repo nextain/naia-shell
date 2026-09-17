@@ -867,6 +867,8 @@ Test Coverage Map
 | UC | 단위·계약 | 실기 | 비고 |
 |---|---|---|---|
 | UC-SETTINGS-ROUNDTRIP | `src/lib/__tests__/config-boot-merge.test.ts`: 부팅 병합에서 파일이 캐시를 이긴다 / `src/lib/__tests__/adk-store.test.ts`: 작업 공간 포인터 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 설정 저장이 파일에 남고 다시 읽힌다 | 실기 스펙은 아직 CI 에서 돌지 않는다(#550) |
+| UC-SETTINGS-ALLOWED-TOOLS (#647) | `SettingsTab.test.tsx` 이름 목록·개별 해제 / `config.test.ts` `removeAllowedTool` | — | `config.allowedTools` 가 카운트만이 아니라 이름과 개별 해제를 보여 준다 |
+| UC-SETTINGS-OPEN-LOG (#646) | `SettingsTab.test.tsx` `open_log_dir` / `scripts/__tests__/opener-log-scope.test.ts` 양쪽 인스턴스 홈 | — | 로그 열기는 `log_dir()`(NAIA_HOME) 한 입구. opener glob 은 `.naia` 와 `.naia-dev` 폴더 자체 |
 
 
 ## UC-ONBOARDING-APPEARANCE-VOICE: 외모와 음성을 독립적으로 시작하기

@@ -1127,6 +1127,16 @@ export function addAllowedTool(toolName: string): void {
 	saveConfig({ ...config, allowedTools: tools });
 }
 
+export function removeAllowedTool(toolName: string): void {
+	const config = loadConfig();
+	if (!config) return;
+	const next = (config.allowedTools ?? []).filter((name) => name !== toolName);
+	saveConfig({
+		...config,
+		allowedTools: next.length > 0 ? next : undefined,
+	});
+}
+
 export function clearAllowedTools(): void {
 	const config = loadConfig();
 	if (!config) return;

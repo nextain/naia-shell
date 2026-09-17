@@ -67,6 +67,13 @@ describe("registry — Codex app-server provider", () => {
 		expect(providerSupportsRole("codex", "main")).toBe(true);
 		expect(providerSupportsRole("codex", "sub")).toBe(true);
 		expect(providerSupportsRole("codex", "memory")).toBe(false);
+		expect(provider?.models.map((model) => model.id)).toEqual([
+			"gpt-5.6-sol",
+			"gpt-5.6-terra",
+			"gpt-5.6-luna",
+			"gpt-5.5",
+		]);
+		expect(getLlmModel("codex", "gpt-5.4")).toBeUndefined();
 	});
 
 	it("Grok CLI는 API key가 필요 없고 expert/main/sub 역할을 지원한다", () => {

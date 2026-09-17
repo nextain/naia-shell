@@ -2,7 +2,26 @@ use tauri::AppHandle;
 
 use super::config::{herdr_command, set_herdr_theme, validate_herdr, write_embedded_herdr_config};
 
-pub(super) const HERDR_PROTOCOL: u64 = 19;
+/// Snapshot protocol range this shell accepts from PATH or bundled Herdr.
+///
+/// Canonical pin: this module. Frontend `src/apps/workspace/herdr.ts` keeps the
+/// same range. Bundled/dev `herdr 0.8.0–0.8.2` speak 19; PATH `herdr 0.9.1`
+/// speaks 22. The shell does not vendor a second protocol number against PATH
+/// (#645).
+pub(super) const HERDR_PROTOCOL_MIN: u64 = 19;
+pub(super) const HERDR_PROTOCOL_MAX: u64 = 22;
+pub(super) const HERDR_SUPPORTED_VERSIONS: &str = "0.8.0–0.9.1";
+
+pub(super) fn herdr_protocol_supported(protocol: u64) -> bool {
+    (HERDR_PROTOCOL_MIN..=HERDR_PROTOCOL_MAX).contains(&protocol)
+}
+
+pub(super) fn unsupported_herdr_protocol(protocol: u64) -> String {
+    format!(
+        "Unsupported Herdr protocol {protocol}; expected {HERDR_PROTOCOL_MIN}..={HERDR_PROTOCOL_MAX} (herdr {HERDR_SUPPORTED_VERSIONS})"
+    )
+}
+
 // Herdr currently transports prompts as process arguments. Stay below the
 // Windows CreateProcess command-line ceiling after executable/flag overhead.
 const HERDR_PROMPT_MAX_BYTES: usize = 12 * 1024;
@@ -49,10 +68,8 @@ pub async fn herdr_snapshot(app: AppHandle) -> Result<serde_json::Value, String>
             .get("protocol")
             .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| "Herdr snapshot protocol missing".to_string())?;
-        if protocol != HERDR_PROTOCOL {
-            return Err(format!(
-                "Unsupported Herdr protocol {protocol}; expected {HERDR_PROTOCOL}"
-            ));
+        if !herdr_protocol_supported(protocol) {
+            return Err(unsupported_herdr_protocol(protocol));
         }
         Ok(snapshot)
     })
@@ -216,7 +233,11 @@ fn validated_keys(keys: &[String]) -> Result<(), String> {
 /// `pane run` 은 텍스트와 Enter 를 함께 보낸다. 사용자가 직접 타이핑한 것과 동등한 권한이며,
 /// 능력 게이팅은 core 의 의도 계층이 수행한다(FR-ENV-DISPATCH.7).
 #[tauri::command]
-pub async fn herdr_run_pane(app: AppHandle, pane_id: String, command: String) -> Result<(), String> {
+pub async fn herdr_run_pane(
+    app: AppHandle,
+    pane_id: String,
+    command: String,
+) -> Result<(), String> {
     if !valid_herdr_id(&pane_id, 'p') {
         return Err("Invalid Herdr pane id".to_string());
     }
@@ -286,7 +307,9 @@ mod tests {
         assert!(validated_terminal_body("pnpm test", "command").is_ok());
         assert!(validated_terminal_body("   ", "command").is_err());
         assert!(validated_terminal_body("", "command").is_err());
-        assert!(validated_terminal_body(&"a".repeat(HERDR_PROMPT_MAX_BYTES + 1), "command").is_err());
+        assert!(
+            validated_terminal_body(&"a".repeat(HERDR_PROMPT_MAX_BYTES + 1), "command").is_err()
+        );
     }
 
     #[test]
@@ -301,5 +324,17 @@ mod tests {
         assert!(validated_keys(&["a".repeat(HERDR_KEY_MAX_BYTES + 1)]).is_err());
         let too_many: Vec<String> = (0..HERDR_KEYS_MAX + 1).map(|_| "esc".to_string()).collect();
         assert!(validated_keys(&too_many).is_err());
+    }
+
+    #[test]
+    fn accepts_herdr_protocol_range_19_through_22() {
+        assert!(herdr_protocol_supported(19));
+        assert!(herdr_protocol_supported(22));
+        assert!(!herdr_protocol_supported(18));
+        assert!(!herdr_protocol_supported(23));
+        let err = unsupported_herdr_protocol(22);
+        assert!(err.contains("22"));
+        assert!(err.contains("19..=22"));
+        assert!(err.contains(HERDR_SUPPORTED_VERSIONS));
     }
 }

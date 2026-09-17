@@ -8268,6 +8268,25 @@ fn open_log_in_editor(path: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to open log file: {}", e))
 }
 
+/// Open the instance log directory in the OS file manager.
+///
+/// Canonical path is [`log_dir`] (`NAIA_HOME` / DataHomeChild::Logs), so
+/// the isolated dev instance and production share one helper instead of a
+/// second opener glob (#646).
+#[tauri::command]
+fn open_log_dir() -> Result<(), String> {
+    let dir = log_dir();
+    #[cfg(windows)]
+    let result = std::process::Command::new("explorer").arg(&dir).spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(&dir).spawn();
+    #[cfg(target_os = "linux")]
+    let result = std::process::Command::new("xdg-open").arg(&dir).spawn();
+    result
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open log directory: {}", e))
+}
+
 /// Generate a random state token for OAuth deep link CSRF protection.
 /// Frontend calls this before opening the OAuth URL and passes state as query param.
 #[tauri::command]
@@ -12836,6 +12855,7 @@ pub fn run() {
             get_gateway_log_path,
             get_log_dir,
             open_log_in_editor,
+            open_log_dir,
             get_audit_log,
             get_audit_stats,
             memory_get_all_facts,

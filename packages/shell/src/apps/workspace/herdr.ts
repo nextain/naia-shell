@@ -1,4 +1,18 @@
-export const HERDR_PROTOCOL = 19;
+/** Snapshot protocol range. Canonical pin is `src-tauri/src/herdr/api.rs`. */
+export const HERDR_PROTOCOL_MIN = 19;
+export const HERDR_PROTOCOL_MAX = 22;
+/** herdr 0.8.0–0.8.2 speak 19; PATH herdr 0.9.1 speaks 22 (#645). */
+export const HERDR_SUPPORTED_VERSIONS = "0.8.0–0.9.1";
+
+export function herdrProtocolSupported(protocol: unknown): protocol is number {
+	return (
+		typeof protocol === "number" &&
+		Number.isInteger(protocol) &&
+		protocol >= HERDR_PROTOCOL_MIN &&
+		protocol <= HERDR_PROTOCOL_MAX
+	);
+}
+
 export const HERDR_SNAPSHOT_INTERVAL_MS = 750;
 export const HERDR_STARTUP_TIMEOUT_MS = 8_000;
 export const HERDR_STARTUP_RETRY_MS = 250;
@@ -99,7 +113,7 @@ export function assertHerdrSnapshot(value: unknown): HerdrSnapshot {
 	}
 	const snapshot = value as Partial<HerdrSnapshot>;
 	if (
-		snapshot.protocol !== HERDR_PROTOCOL ||
+		!herdrProtocolSupported(snapshot.protocol) ||
 		typeof snapshot.version !== "string" ||
 		(snapshot.focused_workspace_id !== undefined &&
 			typeof snapshot.focused_workspace_id !== "string") ||

@@ -5,6 +5,7 @@ import {
 	activeHerdrRoot,
 	assertHerdrSnapshot,
 	focusedHerdrAgent,
+	herdrProtocolSupported,
 	waitForHerdrReady,
 } from "../herdr";
 
@@ -57,6 +58,14 @@ describe("Herdr workspace boundary", () => {
 		expect(activeHerdrRoot(snapshot)).toBe("/work/naia");
 		expect(focusedHerdrAgent(snapshot)?.pane_id).toBe("w1:p2");
 		expect(() => assertHerdrSnapshot({ ...snapshot, protocol: 18 })).toThrow(
+			"Unsupported Herdr snapshot protocol",
+		);
+		expect(herdrProtocolSupported(19)).toBe(true);
+		expect(herdrProtocolSupported(22)).toBe(true);
+		expect(assertHerdrSnapshot({ ...snapshot, protocol: 22 })).toMatchObject({
+			protocol: 22,
+		});
+		expect(() => assertHerdrSnapshot({ ...snapshot, protocol: 23 })).toThrow(
 			"Unsupported Herdr snapshot protocol",
 		);
 	});

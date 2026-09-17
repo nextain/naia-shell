@@ -1,6 +1,7 @@
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager};
 
+/// Minimum PATH/bundled herdr. Protocol 19..=22 covers 0.8.0–0.9.1 (#645).
 const HERDR_MIN_VERSION: (u32, u32, u32) = (0, 8, 0);
 static HERDR_CONFIG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static HERDR_CONFIG_PATH: OnceLock<std::path::PathBuf> = OnceLock::new();

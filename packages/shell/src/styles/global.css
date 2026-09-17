@@ -2931,6 +2931,25 @@ body.resizing-row {
 	margin-bottom: 12px;
 }
 
+.allowed-tools-list {
+	list-style: none;
+	margin: 6px 0;
+	padding: 0;
+}
+
+.allowed-tools-list li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 4px;
+}
+
+.allowed-tools-list code {
+	font-size: 12px;
+	word-break: break-all;
+}
+
 .connection-setup-steps {
 	margin: 8px 0 0;
 	padding-left: 22px;

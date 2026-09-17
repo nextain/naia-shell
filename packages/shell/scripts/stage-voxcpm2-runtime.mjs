@@ -68,6 +68,52 @@ export function voxCpm2Profile(platform = process.platform) {
 	return row;
 }
 
+/** Checked-in pin. `src-tauri/voxcpm2-runtime/download-manifest.json` is generated. */
+export const VOXCPM2_DOWNLOAD_MANIFEST_REL =
+	"scripts/voxcpm2-download-manifest.json";
+
+export function canonicalVoxCpm2DownloadManifestPath(shellDir = DEFAULT_SHELL) {
+	return resolve(shellDir, VOXCPM2_DOWNLOAD_MANIFEST_REL);
+}
+
+function voxCpm2DownloadManifestProfile(path) {
+	try {
+		return JSON.parse(readFileSync(path, "utf8")).profile;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Dev/e2e download-manifest: the scripts pin when its profile matches this
+ * host, else the gitignored staged copy after `stage-voxcpm2-runtime`.
+ * Never prefer a stale src-tauri copy over the checked-in pin (#640).
+ */
+export function resolveVoxCpm2DownloadManifestPath(
+	shellDir = DEFAULT_SHELL,
+	platform = process.platform,
+) {
+	const hostProfile = voxCpm2Profile(platform).profile;
+	const generated = resolve(
+		shellDir,
+		"src-tauri",
+		"voxcpm2-runtime",
+		"download-manifest.json",
+	);
+	for (const candidate of [
+		canonicalVoxCpm2DownloadManifestPath(shellDir),
+		generated,
+	]) {
+		if (
+			existsSync(candidate) &&
+			voxCpm2DownloadManifestProfile(candidate) === hostProfile
+		) {
+			return candidate;
+		}
+	}
+	return undefined;
+}
+
 export const DEFAULT_VOXCPM2_TRT_DOWNLOAD_URL =
 	VOXCPM2_PROFILES.win32.defaultDownloadUrl;
 const ACTIVATION_CONTRACT_PATH = resolve(

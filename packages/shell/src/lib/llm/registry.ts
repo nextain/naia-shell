@@ -98,6 +98,21 @@ export function shouldMigrateNextainModel(
 	return { migrate: true, to: provider.defaultModel };
 }
 
+const CODEX_RETIRED_MODELS: Record<string, string> = {
+	"gpt-5.4": "gpt-5.5",
+};
+
+/** Remap a saved Codex model that is no longer in the ChatGPT picker (#641). */
+export function shouldMigrateCodexModel(
+	providerId: string,
+	modelId: string,
+): { migrate: false } | { migrate: true; to: string } {
+	if (providerId !== "codex") return { migrate: false };
+	const to = CODEX_RETIRED_MODELS[modelId];
+	if (!to) return { migrate: false };
+	return { migrate: true, to };
+}
+
 /** Check if a provider does not require either a provider key or a Naia key. */
 export function isApiKeyOptional(providerId: string): boolean {
 	const p = providers.get(providerId);
@@ -716,8 +731,9 @@ registerLlmProvider({
 	descKey: "provider.codex.desc",
 	requiresApiKey: false,
 	supportedRoles: ["expert", "main", "sub"],
-	// Codex CLI 지원 라인업(2026-08): gpt-5.6 sol/terra/luna + 이전 세대 gpt-5.5.
-	// gpt-5.4 는 2026-08-31 retire 예고 — 저장 설정 해석용으로만 잔존(마지막 배치).
+	// Codex ChatGPT lineup: gpt-5.6 sol/terra/luna + previous-gen gpt-5.5.
+	// gpt-5.4 is retired from the picker; saved settings remap via
+	// shouldMigrateCodexModel (#641).
 	defaultModel: "gpt-5.6-sol",
 	models: [
 		{ id: "gpt-5.6-sol", label: "GPT-5.6 Sol (Codex)", capabilities: ["llm"] },
@@ -732,7 +748,6 @@ registerLlmProvider({
 			capabilities: ["llm"],
 		},
 		{ id: "gpt-5.5", label: "GPT-5.5 (Codex)", capabilities: ["llm"] },
-		{ id: "gpt-5.4", label: "GPT-5.4 (Codex)", capabilities: ["llm"] },
 	],
 });
 

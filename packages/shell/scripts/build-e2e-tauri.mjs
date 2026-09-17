@@ -12,7 +12,10 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
-import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
+import {
+	resolveVoxCpm2DownloadManifestPath,
+	voxCpm2Profile,
+} from "./stage-voxcpm2-runtime.mjs";
 import {
 	parseGitWorktreePaths,
 	REQUIRED_AGENT_COMMIT,
@@ -268,12 +271,9 @@ copyFileSync(
 	resolve(shellDir, "src-tauri", "voxcpm2-activation-contract.json"),
 	resolve(e2eVoxCpm2Bundle, "voxcpm2-activation-contract.json"),
 );
-// A staged bundle is this build's real manifest; the checked-in one is the
-// Windows fallback for a tree that has not staged yet.
-const e2eVoxCpm2DownloadManifest = [
-	resolve(shellDir, "src-tauri", "voxcpm2-runtime", "download-manifest.json"),
-	resolve(shellDir, "scripts", "voxcpm2-download-manifest.json"),
-].find((candidate) => existsSync(candidate));
+// Canonical pin is scripts/voxcpm2-download-manifest.json (#640). Prefer it
+// when the host profile matches; otherwise use a generated src-tauri copy.
+const e2eVoxCpm2DownloadManifest = resolveVoxCpm2DownloadManifestPath(shellDir);
 if (e2eVoxCpm2DownloadManifest) {
 	copyFileSync(
 		e2eVoxCpm2DownloadManifest,

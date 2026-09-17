@@ -67,6 +67,31 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(mocks.saveConfig).not.toHaveBeenCalled();
 	});
 
+	it("remaps saved Codex gpt-5.4 even with a structured main (#641)", () => {
+		mocks.loadConfig.mockReturnValue({
+			provider: "codex",
+			model: "gpt-5.4",
+			llmRoles: {
+				main: {
+					provider: "codex",
+					model: "gpt-5.4",
+					inherit: false,
+				},
+			},
+		});
+
+		renderHook(() => useAgentAuthSync(false, false, true));
+
+		expect(mocks.saveConfig).toHaveBeenCalledWith(
+			expect.objectContaining({
+				model: "gpt-5.5",
+				llmRoles: expect.objectContaining({
+					main: expect.objectContaining({ model: "gpt-5.5" }),
+				}),
+			}),
+		);
+	});
+
 	it("still migrates a genuinely retired flat model", () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",

@@ -7,7 +7,10 @@ import {
 } from "../lib/chat-service";
 import { getAdkPath } from "../lib/adk-store";
 import { loadConfig, loadConfigWithSecrets, saveConfig } from "../lib/config";
-import { shouldMigrateNextainModel } from "../lib/llm/registry";
+import {
+	shouldMigrateCodexModel,
+	shouldMigrateNextainModel,
+} from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
 
 let startupAuthReadyNotified = false;
@@ -41,19 +44,50 @@ export function useAgentAuthSync(
 					structuredMain.provider &&
 					structuredMain.model,
 			);
-			const decision = hasExplicitStructuredMainModel
+			let next = preMigrate;
+			let changed = false;
+			const nextain = hasExplicitStructuredMainModel
 				? { migrate: false as const }
 				: shouldMigrateNextainModel(
 						preMigrate.provider,
 						preMigrate.model,
 					);
-			if (decision.migrate) {
+			if (nextain.migrate) {
 				Logger.warn("App", "#248 model migration", {
 					from: preMigrate.model,
-					to: decision.to,
+					to: nextain.to,
 				});
-				saveConfig({ ...preMigrate, model: decision.to });
+				next = { ...next, model: nextain.to };
+				changed = true;
 			}
+			const codexFlat = shouldMigrateCodexModel(next.provider, next.model);
+			if (codexFlat.migrate) {
+				Logger.warn("App", "#641 Codex model migration", {
+					from: next.model,
+					to: codexFlat.to,
+				});
+				next = { ...next, model: codexFlat.to };
+				changed = true;
+			}
+			const main = next.llmRoles?.main;
+			if (main && !main.inherit && main.provider && main.model) {
+				const codexMain = shouldMigrateCodexModel(main.provider, main.model);
+				if (codexMain.migrate) {
+					Logger.warn("App", "#641 Codex main-role migration", {
+						from: main.model,
+						to: codexMain.to,
+					});
+					next = {
+						...next,
+						llmRoles: {
+							...next.llmRoles,
+							main: { ...main, model: codexMain.to },
+						},
+					};
+					changed = true;
+				}
+			}
+			if (changed) saveConfig(next);
 		}
 
 		let active = true;

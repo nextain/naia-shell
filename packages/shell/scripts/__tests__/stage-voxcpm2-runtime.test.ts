@@ -15,7 +15,9 @@ import {
 } from "../package-voxcpm2-runtime.mjs";
 import {
 	DEFAULT_VOXCPM2_TRT_DOWNLOAD_URL,
+	canonicalVoxCpm2DownloadManifestPath,
 	readVoxCpm2ActivationContract,
+	resolveVoxCpm2DownloadManifestPath,
 	stageVoxCpm2Runtime,
 	voxCpm2Profile,
 	verifyVoxCpm2ArchiveActivationContract,
@@ -245,6 +247,10 @@ describe("stageVoxCpm2Runtime", () => {
 			"env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? devVoxCpm2DownloadManifest",
 		);
 		expect(devLauncher).toContain("NAIA_VOXCPM2_DOWNLOAD_MANIFEST");
+		expect(devLauncher).toContain("resolveVoxCpm2DownloadManifestPath(SHELL)");
+		expect(devLauncher).toContain(
+			'resolve(devVoxCpm2Bundle, "download-manifest.json")',
+		);
 		const devManifest = JSON.parse(
 			readFileSync(
 				resolve(process.cwd(), "scripts/voxcpm2-download-manifest.json"),
@@ -288,6 +294,54 @@ describe("stageVoxCpm2Runtime", () => {
 		);
 		expect(e2eBuilder).toContain(
 			'resolve(e2eVoxCpm2Bundle, "download-manifest.json")',
+		);
+		expect(e2eBuilder).toContain("resolveVoxCpm2DownloadManifestPath(shellDir)");
+	});
+
+	it("uses the scripts pin over a stale src-tauri download-manifest (#640)", () => {
+		const pin = canonicalVoxCpm2DownloadManifestPath(process.cwd());
+		expect(pin.endsWith("scripts/voxcpm2-download-manifest.json")).toBe(true);
+		const root = mkdtempSync(resolve(tmpdir(), "naia-voxcpm2-pin-"));
+		roots.push(root);
+		const fakeShell = resolve(root, "shell");
+		mkdirSync(resolve(fakeShell, "scripts"), { recursive: true });
+		mkdirSync(resolve(fakeShell, "src-tauri/voxcpm2-runtime"), {
+			recursive: true,
+		});
+		const windowsPin = {
+			schemaVersion: 1,
+			profile: "windows_trt_6g",
+			artifactManifestSha256: "a".repeat(64),
+			archive: {
+				url: "https://example.test/canonical.zip",
+				sha256: "b".repeat(64),
+				bytes: 2496064260,
+				unpackedBytes: 1,
+				files: 1,
+			},
+		};
+		const stale = {
+			...windowsPin,
+			archive: {
+				...windowsPin.archive,
+				url: "https://example.test/stale.zip",
+				bytes: 2494187310,
+			},
+		};
+		writeFileSync(
+			resolve(fakeShell, "scripts/voxcpm2-download-manifest.json"),
+			JSON.stringify(windowsPin),
+		);
+		writeFileSync(
+			resolve(fakeShell, "src-tauri/voxcpm2-runtime/download-manifest.json"),
+			JSON.stringify(stale),
+		);
+		const resolved = resolveVoxCpm2DownloadManifestPath(fakeShell, "win32");
+		expect(resolved).toBe(
+			resolve(fakeShell, "scripts/voxcpm2-download-manifest.json"),
+		);
+		expect(JSON.parse(readFileSync(resolved, "utf8")).archive.bytes).toBe(
+			2496064260,
 		);
 	});
 
@@ -569,9 +623,9 @@ describe("설치 스크립트 이름의 단일 출처 (#537)", () => {
 		);
 		// 매니페스트에는 어느 아카이브를 받을지가 적혀 있다. 저장소에 든 것은
 		// Windows 폴백이라, 프로파일을 보지 않고 놓으면 리눅스가 Windows 아카이브를
-		// 받으러 간다.
-		expect(devLauncher).toContain("hostVoxCpm2Profile.profile");
-		expect(devLauncher).toContain(
+		// 받으러 간다. 프로파일 대조는 resolveVoxCpm2DownloadManifestPath 한 곳.
+		expect(devLauncher).toContain("resolveVoxCpm2DownloadManifestPath(SHELL)");
+		expect(devLauncher).not.toContain(
 			'resolve(SHELL, "src-tauri", "voxcpm2-runtime", "download-manifest.json")',
 		);
 	});

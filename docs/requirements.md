@@ -917,7 +917,7 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-TTS-GLOBAL-OFF.1** | local QA | 상단 TTS를 끄면 현재 재생, 대기 문장, 진행 중 합성 및 브라우저 발화를 즉시 중단하며 이후 응답을 합성하지 않는다. | AiControlBar→ChatArea 통합 테스트 + 브라우저 E2E |
 | **FR-VOICE-DEV-MANIFEST.1** | local QA | Windows 개발 실행도 검증된 v0.2.2 Host 다운로드 manifest를 명시적으로 전달하며 누락된 패키지로 위장하지 않는다. | dev launcher 계약 테스트 + 동일 debug 바이너리 설치 상태 확인 |
 | **FR-VOICE-SELECT.1** | #507 | 설치된 Host 음성을 설정에서 선택하면 엔진을 자동 시작하고 진행을 표시한다. 시작 실패나 차단으로 선택을 되돌릴 때는 사유와 되돌림 안내를 프로필·음성 화면 모두에 표시하며 무언 revert 를 하지 않는다. | SettingsTab 단위 테스트(자동 시작·revert 사유 표기) + settings-slots 브라우저 E2E |
-| **FR-VOICE-DEV-STAGING.1** | #508 | dev(`tauri-with-mode`)와 e2e(`build-e2e-tauri`) 실행은 installer 리소스 3종(prepare-voxcpm2-model.ps1, voxcpm2-activation-contract.json, download-manifest.json)을 Rust 가 읽는 resource_dir(`<target>/debug/voxcpm2-runtime/`)에 멱등 스테이징한다. 설치 완료된 payload 가 개발 실행에서 미설치로 위장되지 않는다. | `scripts/__tests__/stage-voxcpm2-runtime.test.ts` debug 스테이징 계약 |
+| **FR-VOICE-DEV-STAGING.1** | #508 #640 | Canonical download pin is `packages/shell/scripts/voxcpm2-download-manifest.json`. `tauri:dev` (`tauri-with-mode`) and e2e (`build-e2e-tauri`) copy that pin (when the host profile matches) into Rust `resource_dir` (`<target>/debug/voxcpm2-runtime/`) and the gitignored `src-tauri/voxcpm2-runtime/` staging copy. A stale src-tauri copy must not win over the scripts pin. | `scripts/__tests__/stage-voxcpm2-runtime.test.ts` debug staging + canonical-over-stale |
 ## 기능 요구사항 (FR) — 워크스페이스 컨텍스트 해석 (#501, 에픽 #497)
 
 > 계약: `docs/progress/issue-497-universal-agent.md`. 출처 시나리오: `user-scenarios.md`의
@@ -954,9 +954,12 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-HERDR-CONTROL.9** | 재접속과 서버 재시작 복구에 상한을 둔다. 재접속 후에는 상태를 재확인한 뒤에만 판단하며, 상한에 닿으면 실패를 정직하게 보고한다. 재접속 자체가 완료·중단 판정의 근거가 되지 않는다. | UC-HERDR-CONTROL-RECONNECT | `src/test/herdr-control-reconnect-bounds.contract.test.ts` 상한·정직 실패 | Done |
 | **FR-HERDR-CONTROL.10** | Herdr가 space, tab, pane, 터미널, 작업자 생명주기의 유일한 실행 정본으로 남는다. Shell은 경쟁하는 생명주기 소유자를 유지하지 않으며, 컨텍스트 전달에서 비밀값과 범위 밖 데이터를 제외한다. | UC-HERDR-CONTROL-OBSERVE·MUTATE (#434 승계) | 중복 surface/tool 정적 검사 + `packages/shell/e2e-tauri/specs/herdr-control.spec.ts` | Done |
 
-> **프로토콜 19 실측 대조 (2026-08-26).** 위 요구사항은 우리가 원하는 것이고 Herdr 가 내주는 것은 별개다.
-> 설치된 `herdr 0.8.0` 의 `api schema --json` 축약본이 `src/test/fixtures/herdr-protocol-19.json` 이고,
-> 판정은 `src/main/domain/herdr-protocol.ts` 가 그 사실에서 계산한다(표를 손으로 적지 않는다).
+> **프로토콜 19..=22 (2026-09-18 #645).** 셸은 Herdr 를 PATH/번들에서 쓰며 프로토콜 상수를 따로 벤더하지 않는다.
+> 스냅샷 프로토콜 정본은 `packages/shell/src-tauri/src/herdr/api.rs` (`HERDR_PROTOCOL_MIN..=MAX`).
+> 프론트 `packages/shell/src/apps/workspace/herdr.ts` 가 같은 범위를 따른다.
+> 지원 바이너리: bundled `herdr 0.8.0–0.8.2` = protocol 19, PATH `herdr 0.9.1` = protocol 22.
+> 스키마 축약본 `src/test/fixtures/herdr-protocol-19.json` 은 0.8.x 대조용이며,
+> 판정은 `src/main/domain/herdr-protocol.ts` 가 그 사실에서 계산한다.
 > 판정 — 지원 `.1 .5 .10` / 부분 `.2 .3 .7 .8` / 미지원 `.4 .6 .9`.
 > 셸이 메우는 것 `.2 .4 .6 .7 .8 .9` — 전부 셸 재시작으로 사라지는 보장이다.
 > 요구사항 자체를 고쳐야 했던 것 `.3`(위 정정). Herdr 가 메서드·이벤트·필드를 바꾸면

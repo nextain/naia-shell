@@ -2,7 +2,7 @@ import type { EnvironmentAwareness } from "@nextain/naia-os-core/composition";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
 	Suspense,
 	lazy,
@@ -74,6 +74,7 @@ import {
 	clearAllowedTools,
 	loadConfig,
 	loadConfigWithSecrets,
+	removeAllowedTool,
 	saveConfig,
 	saveConfigSecure,
 } from "../lib/config";
@@ -1600,8 +1601,8 @@ export function SettingsTab() {
 	>("idle");
 	const [backupError, setBackupError] = useState("");
 
-	const [allowedToolsCount, setAllowedToolsCount] = useState(
-		existing?.allowedTools?.length ?? 0,
+	const [allowedTools, setAllowedTools] = useState<string[]>(
+		existing?.allowedTools ?? [],
 	);
 	const [naiaKey, setNaiaKeyState] = useState(existing?.naiaKey ?? "");
 	const [secureNaiaCredentialReady, setSecureNaiaCredentialReady] =
@@ -5987,17 +5988,38 @@ export function SettingsTab() {
 						</div>
 					</div>
 
-					{allowedToolsCount > 0 && (
-						<div className="settings-field">
+					{allowedTools.length > 0 && (
+						<div className="settings-field" data-testid="allowed-tools-section">
 							<label>
-								{t("settings.allowedTools")} ({allowedToolsCount})
+								{t("settings.allowedTools")} ({allowedTools.length})
 							</label>
+							<ul className="allowed-tools-list" data-testid="allowed-tools-list">
+								{allowedTools.map((name) => (
+									<li key={name} data-testid={`allowed-tool-${name}`}>
+										<code>{name}</code>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid={`revoke-allowed-tool-${name}`}
+											onClick={() => {
+												removeAllowedTool(name);
+												setAllowedTools((prev) =>
+													prev.filter((tool) => tool !== name),
+												);
+											}}
+										>
+											{t("settings.revokeAllowedTool")}
+										</button>
+									</li>
+								))}
+							</ul>
 							<button
 								type="button"
 								className="voice-preview-btn"
+								data-testid="clear-allowed-tools-btn"
 								onClick={() => {
 									clearAllowedTools();
-									setAllowedToolsCount(0);
+									setAllowedTools([]);
 								}}
 							>
 								{t("settings.clearAllowedTools")}
@@ -6042,12 +6064,12 @@ export function SettingsTab() {
 								data-testid="log-viewer-btn"
 								onClick={async () => {
 									try {
-										const logDir = await invoke<string>("get_log_dir");
-										await openPath(logDir);
+										await invoke("open_log_dir");
 									} catch (e) {
 										Logger.warn("SettingsTab", "[log-viewer] open failed", {
 											error: String(e),
 										});
+										setError(t("settings.logViewerOpenFailed"));
 									}
 								}}
 							>

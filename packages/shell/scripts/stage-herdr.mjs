@@ -32,7 +32,8 @@ const SHELL = resolve(HERE, "..");
 const RESOURCES = resolve(SHELL, "src-tauri", "resources");
 const DEST = resolve(RESOURCES, "herdr");
 
-/** Pinned Herdr version bundled with the app. Bump deliberately (nextain#445). */
+/** Bundled herdr for packaged Windows installs (protocol 19). Dev PATH may be
+    0.9.1 (protocol 22). Snapshot pin is `src-tauri/src/herdr/api.rs` 19..=22. */
 export const HERDR_VERSION = "0.8.2";
 /** SHA256 of the pinned herdr.exe — a supply-chain gate so a tampered or
     wrong-version local Herdr install cannot be silently bundled. Bump with the

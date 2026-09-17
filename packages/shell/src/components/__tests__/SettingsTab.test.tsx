@@ -1036,14 +1036,13 @@ describe("SettingsTab", () => {
 		const modelSelect = document.getElementById(
 			"model-select",
 		) as HTMLSelectElement;
-		// 2026-08 lineup: gpt-5.6 sol/terra/luna + previous-gen 5.5, retiring 5.4.
+		// ChatGPT Codex picker: gpt-5.6 sol/terra/luna + previous-gen 5.5 (#641).
 		expect(modelSelect.value).toBe("gpt-5.6-sol");
 		expect([...modelSelect.options].map((option) => option.value)).toEqual([
 			"gpt-5.6-sol",
 			"gpt-5.6-terra",
 			"gpt-5.6-luna",
 			"gpt-5.5",
-			"gpt-5.4",
 		]);
 	});
 
@@ -3292,15 +3291,6 @@ describe("SettingsTab — agent health check (#296)", () => {
 
 // ── #297: Log viewer button ───────────────────────────────────────────────────
 
-const mockOpenPath = vi.fn();
-vi.mock("@tauri-apps/plugin-opener", async (importOriginal) => {
-	const original = (await importOriginal()) as Record<string, unknown>;
-	return {
-		...original,
-		openPath: (...args: unknown[]) => mockOpenPath(...args),
-	};
-});
-
 describe("SettingsTab — log viewer (#297)", () => {
 	afterEach(() => {
 		cleanup();
@@ -3331,13 +3321,11 @@ describe("SettingsTab — log viewer (#297)", () => {
 		expect(document.querySelector("[data-testid='log-viewer-btn']")).toBeNull();
 	});
 
-	it("clicking log viewer button calls get_log_dir then openPath", async () => {
-		const logDir = "/home/user/.naia/logs";
+	it("clicking log viewer button calls open_log_dir", async () => {
 		mockInvoke.mockImplementation(async (cmd: string) => {
-			if (cmd === "get_log_dir") return logDir;
+			if (cmd === "open_log_dir") return undefined;
 			return [];
 		});
-		mockOpenPath.mockResolvedValue(undefined);
 
 		render(<SettingsTab />);
 		gotoSettingsTab("general");
@@ -3347,15 +3335,73 @@ describe("SettingsTab — log viewer (#297)", () => {
 		fireEvent.click(btn);
 
 		await vi.waitFor(() => {
-			const logDirCalls = (mockInvoke as any).mock.calls.filter(
-				([cmd]: [string]) => cmd === "get_log_dir",
+			const openCalls = (mockInvoke as any).mock.calls.filter(
+				([cmd]: [string]) => cmd === "open_log_dir",
 			);
-			expect(logDirCalls.length).toBeGreaterThanOrEqual(1);
+			expect(openCalls.length).toBeGreaterThanOrEqual(1);
+		});
+	});
+
+	it("shows an error when open_log_dir fails", async () => {
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "open_log_dir") throw new Error("denied");
+			return [];
 		});
 
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		fireEvent.click(
+			document.querySelector(
+				"[data-testid='log-viewer-btn']",
+			) as HTMLButtonElement,
+		);
+
 		await vi.waitFor(() => {
-			expect(mockOpenPath).toHaveBeenCalledWith(logDir);
+			expect(
+				document.querySelector(".settings-error[role='alert']")?.textContent,
+			).toBeTruthy();
 		});
+	});
+});
+
+describe("SettingsTab — allowed tools list (#647)", () => {
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("lists allowed tool names and revokes one", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "codex",
+				model: "gpt-5.6-sol",
+				allowedTools: ["skill_tab_screenshot", "execute_command"],
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		expect(document.querySelector("[data-testid='allowed-tools-list']")).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='allowed-tool-skill_tab_screenshot']")
+				?.textContent,
+		).toContain("skill_tab_screenshot");
+		fireEvent.click(
+			document.querySelector(
+				"[data-testid='revoke-allowed-tool-skill_tab_screenshot']",
+			) as HTMLButtonElement,
+		);
+		await vi.waitFor(() => {
+			expect(
+				document.querySelector(
+					"[data-testid='allowed-tool-skill_tab_screenshot']",
+				),
+			).toBeNull();
+		});
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.allowedTools).toEqual(["execute_command"]);
 	});
 });
 

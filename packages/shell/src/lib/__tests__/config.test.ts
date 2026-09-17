@@ -4,6 +4,7 @@ import {
 	DEFAULT_VOICE_REF_URL,
 	addAllowedTool,
 	clearAllowedTools,
+	removeAllowedTool,
 	hasApiKey,
 	isToolAllowed,
 	loadConfig,
@@ -291,6 +292,16 @@ describe("allowedTools", () => {
 		addAllowedTool("memo_save");
 		const config = loadConfig()!;
 		expect(config.allowedTools).toEqual(["memo_save"]);
+	});
+
+	it("removeAllowedTool revokes one name", () => {
+		saveConfig({ provider: "gemini", model: "m", apiKey: "k" });
+		addAllowedTool("memo_save");
+		addAllowedTool("memo_list");
+		removeAllowedTool("memo_save");
+		expect(isToolAllowed("memo_save")).toBe(false);
+		expect(isToolAllowed("memo_list")).toBe(true);
+		expect(loadConfig()?.allowedTools).toEqual(["memo_list"]);
 	});
 
 	it("clearAllowedTools removes all", () => {

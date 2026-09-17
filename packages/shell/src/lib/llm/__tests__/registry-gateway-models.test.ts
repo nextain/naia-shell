@@ -146,3 +146,19 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		expect(shouldMigrateNextainModel("nonexistent", "any").migrate).toBe(false);
 	});
 });
+
+describe("shouldMigrateCodexModel (#641)", () => {
+	it("remaps retired gpt-5.4 to gpt-5.5", async () => {
+		const { shouldMigrateCodexModel } = await import("../registry.js");
+		const d = shouldMigrateCodexModel("codex", "gpt-5.4");
+		expect(d.migrate).toBe(true);
+		if (d.migrate) expect(d.to).toBe("gpt-5.5");
+	});
+
+	it("does not remap living Codex models", async () => {
+		const { shouldMigrateCodexModel } = await import("../registry.js");
+		expect(shouldMigrateCodexModel("codex", "gpt-5.5").migrate).toBe(false);
+		expect(shouldMigrateCodexModel("codex", "gpt-5.6-sol").migrate).toBe(false);
+		expect(shouldMigrateCodexModel("nextain", "gpt-5.4").migrate).toBe(false);
+	});
+});
