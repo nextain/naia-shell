@@ -950,6 +950,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 	function goNext() {
 		if (transitioning.current) return;
+		if (
+			step === "character" &&
+			((avatarProvider === "vrm" && !selectedVrm) ||
+				(avatarProvider === "nva" && !selectedNva))
+		) {
+			return;
+		}
 		const next = STEPS[stepIndex + 1];
 		if (!next) return;
 		// core forward mirror(비차단): 떠나는 현재 step 의 input 을 컨트롤러에 제출(draft·순서·게이트 행사).
@@ -1804,7 +1811,12 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						className="onboarding-step__next-btn"
 						data-testid="onboarding-next"
 						onClick={isCompleteStep ? handleComplete : goNext}
-						disabled={isCompleteStep && completing}
+						disabled={
+							(isCompleteStep && completing) ||
+							(step === "character" &&
+								((avatarProvider === "vrm" && !selectedVrm) ||
+									(avatarProvider === "nva" && !selectedNva)))
+						}
 					>
 						{isCompleteStep && completing
 							? t("onboard.applyingSettings")
