@@ -52,6 +52,10 @@ export function applyNaiaInstanceEnv(
 	const urls = resolveNaiaInstance(mode);
 	const next = { ...env };
 	next.VITE_NAIA_WEB_BASE_URL = env.VITE_NAIA_WEB_BASE_URL ?? urls.web;
+	// Agent chat must use the same API host as credit fetch. A parent-shell
+	// NAIA_ANYLLM_BASE_URL=https://api.nextain.io must not leak into tauri:dev (#638).
+	next.NAIA_ANYLLM_BASE_URL = urls.api;
+	next.NAIA_GATEWAY_URL = urls.api;
 	if (mode === "prod") {
 		delete next.VITE_NAIA_USE_DEV_GATEWAY;
 		delete next.VITE_NAIA_DEV_GATEWAY_URL;
