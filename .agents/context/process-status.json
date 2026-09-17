@@ -21,17 +21,6 @@
   },
 
   "current_work": {
-    "issue_605_skills_tab_cli": {
-      "issue": 605,
-      "title": "스킬 탭을 CLI 감지 체크박스와 통합 기술서로 전환",
-      "branch": "refactor/605-skills-tab-cli",
-      "scenario": "docs/user-scenarios.md S-SKILLS-CLI",
-      "requirements": "docs/requirements.md FR-SKILLS-CLI.1~3",
-      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending" },
-      "status": "in_progress",
-      "p04_note": "Focused SkillsTab/CLI persistence Vitest, TypeScript, Biome, rustfmt, core wire contracts, Rust cli_detect 8/8, and Playwright e2e/skills-cli.spec.ts pass. Native Tauri Skills UI was attempted with the paired Agent build but stopped in shared ensureAppReady: the isolated ADK lacked hydrated llmRoles.main, so the spec did not reach its assertions.",
-      "last_updated": "2026-09-17T03:22:00Z"
-    },
     "slides_narration_streaming_tts": {
       "issue": null,
       "title": "슬라이드 낭독 스트리밍 TTS — 문장 분할 + audio/pcm 청크 재생 (이슈 번호 없음)",

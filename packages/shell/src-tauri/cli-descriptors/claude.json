@@ -19,6 +19,7 @@
       { "when": { "timedOut": true }, "status": "waiting-input" },
       { "when": { "jsonBoolPath": "loggedIn", "equals": true }, "status": "ready" },
       { "when": { "jsonBoolPath": "loggedIn", "equals": false }, "status": "login-required" },
+      { "when": { "exitCode": 0 }, "status": "ready" },
       { "when": { "exitCodeNonZero": true }, "status": "login-required" }
     ]
   },

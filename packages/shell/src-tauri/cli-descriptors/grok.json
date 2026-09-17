@@ -17,7 +17,7 @@
     "classify": [
       { "when": { "spawnError": "notFound" }, "status": "not-installed" },
       { "when": { "timedOut": true }, "status": "waiting-input" },
-      { "when": { "exitCode": 0, "authFileNonEmpty": "~/.grok/auth.json" }, "status": "ready" },
+      { "when": { "authFileNonEmpty": "~/.grok/auth.json" }, "status": "ready" },
       { "when": { "exitCode": 0 }, "status": "login-required" },
       { "when": { "exitCodeNonZero": true }, "status": "login-required" }
     ]

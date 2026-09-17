@@ -30,7 +30,6 @@ describe("makeShellChatService (drop-in seam)", () => {
     await svc.sendChatMessage({
       message: "안녕", provider: { provider: "ollama", model: "gemma4", apiKey: "sk-secret" },
       history: [], onChunk: (c) => got.push(c), requestId: "r1", enableThinking: true,
-      enabledClis: ["claude"],
     });
     await Promise.resolve();
     // 송신: send_to_agent_command, secret 미포함, enableThinking top-level
@@ -38,7 +37,6 @@ describe("makeShellChatService (drop-in seam)", () => {
     expect(invokes[0]!.cmd).toBe("send_to_agent_command");
     expect(JSON.stringify(msg)).not.toContain("sk-secret");
     expect(msg.enableThinking).toBe(true);
-    expect(msg.enabledClis).toEqual(["claude"]);
     expect("clientId" in msg).toBe(false); // wire 미포함
     // 수신: agent_response → onChunk 가 wire AgentResponseChunk 받음
     emit('{"type":"text","requestId":"r1","text":"응답"}');

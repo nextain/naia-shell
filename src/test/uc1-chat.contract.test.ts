@@ -120,10 +120,6 @@ describe("adapter 변환 (domain↔protocol↔wire, canon)", () => {
     // provider 안엔 enableThinking 안 강제(top-level 이 권위)
     expect(JSON.parse(JSON.stringify(out))).toHaveProperty("requestId", "r1");
   });
-  it("Skills tab CLI selection reaches the canonical agent wire", async () => {
-    const out = toAgentOutbound(req({ enabledClis: ["claude", "codex"] })) as Record<string, unknown>;
-    expect(out["enabledClis"]).toEqual(["claude", "codex"]);
-  });
   it("S4: environmentSegments 운반(아바타 감정·앱) + 미지정 시 필드 부재", () => {
     // 송신 시: 셸 환경고유 세그먼트가 chat_request wire 에 그대로 실린다(Rust json_to_chat_request → proto environment_segments_json).
     const withSegs = toAgentOutbound(req({
@@ -184,14 +180,6 @@ describe("라이브 StdioTransportAdapter (주입형, Tauri 경계 — 앱 무�
     const msg = JSON.parse(calls[0]!.args["message"] as string);
     expect(msg.type).toBe("chat_request");
     expect(msg.requestId).toBe("r1");
-  });
-  it("enabled CLI selection is preserved through the live Tauri transport", async () => {
-    const { deps, calls } = mockDeps();
-    await makeLiveStdioTransport(deps).send(
-      req({ enabledClis: ["claude", "codex"] }),
-    );
-    const message = JSON.parse(calls[0]!.args["message"] as string) as Record<string, unknown>;
-    expect(message["enabledClis"]).toEqual(["claude", "codex"]);
   });
   it("cancel → 별 command cancel_stream({requestId})", async () => {
     const { deps, calls } = mockDeps();

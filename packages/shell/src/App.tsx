@@ -668,11 +668,10 @@ export function App() {
 
 	// #605 — refresh CLI detection into config on app start (Skills tab also refreshes on enter).
 	useEffect(() => {
-		if (showAdkSetup || !configHydrated) return;
 		void import("./lib/cli-detection").then(({ refreshCliDetectionOnBoot }) =>
 			refreshCliDetectionOnBoot(),
 		);
-	}, [configHydrated, showAdkSetup]);
+	}, []);
 
 	useEffect(() => {
 		migrateLegacyDna3OllamaModel();
