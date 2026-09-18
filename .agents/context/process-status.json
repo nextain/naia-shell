@@ -19,6 +19,21 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_671_bgm_observe": {
+      "issue": 671,
+      "title": "BGM: local tracks skip on AI next/prev; status timeout so AI cannot name current song",
+      "requirements": "docs/requirements.md FR-BGM.17 FR-BGM.18",
+      "scenario": "docs/user-scenarios.md UC-BGM-AI-LOCAL-NEXT UC-BGM-TAURI-OBSERVE",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "last_updated": "2026-09-18T14:10:00+09:00"
+    },
     "issue_664_dual_memory_clone": {
       "issue": 664,
       "title": "Agent spawn NAIA_ADK_PATH follows adk-path, never leftover ~/naia-adk clone",

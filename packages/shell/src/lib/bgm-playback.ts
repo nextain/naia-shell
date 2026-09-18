@@ -219,7 +219,9 @@ export function toBgmPlayToolResult(snapshot: BgmPlaybackSnapshot) {
 			? { currentTrack: snapshot.selected }
 			: {}),
 		instruction:
-			"The internal Naia BGM request was accepted but playback is not confirmed. Do not say music is playing, do not name a pending track, and do not open YouTube in the browser as a fallback. Check action=status until status=playing and announceTrack=true.",
+			snapshot.status === "playing"
+				? "Playback is confirmed. Name this track to the user. Do not read this JSON aloud."
+				: "The internal Naia BGM request was accepted but playback is not confirmed. Do not say music is playing, do not name a pending track, and do not open YouTube in the browser as a fallback. Check action=status until status=playing and announceTrack=true.",
 	};
 }
 
@@ -250,8 +252,8 @@ export function toBgmObservedContext(
 ) {
 	if (!snapshot)
 		return { playback: null, currentTrack: null, announceTrack: false };
-	const isFreshPlaying =
-		snapshot.status === "playing" && snapshot.freshUntil >= now;
+	const canAnnounce = snapshot.status === "playing";
+	void now;
 	return {
 		playback: {
 			playbackId: snapshot.playbackId,
@@ -268,8 +270,8 @@ export function toBgmObservedContext(
 				: {}),
 			...(snapshot.reason ? { reason: snapshot.reason } : {}),
 		},
-		currentTrack: isFreshPlaying ? snapshot.selected : null,
-		announceTrack: isFreshPlaying,
+		currentTrack: canAnnounce ? snapshot.selected : null,
+		announceTrack: canAnnounce,
 		queue: queue.map((item) => ({
 			queueId: item.queueId,
 			position: item.position,

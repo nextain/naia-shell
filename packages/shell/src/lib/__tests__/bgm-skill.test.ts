@@ -16,6 +16,7 @@ import {
 	recordBgmPlayedTrack,
 	recoverRadioDjPlayback,
 	shouldActivateRadioDj,
+	waitForBgmObservedPlayback,
 } from "../bgm-skill";
 
 function mkDeps(results: BgmSearchResult[] = []) {
@@ -601,11 +602,22 @@ describe("executeBgmSkill", () => {
 	});
 
 	it("stop/pause/resume/next/prev → 위젯 리스너 타입 1:1 이벤트", async () => {
-		for (const action of ["stop", "pause", "resume", "next", "prev"] as const) {
+		for (const action of ["stop", "pause", "resume"] as const) {
 			const { deps, emitted } = mkDeps();
 			const out = await executeBgmSkill({ action }, deps);
 			expect(emitted).toEqual([{ type: `bgm_youtube_${action}` }]);
 			expect(JSON.parse(out)).toEqual({ ok: true, action });
+		}
+		for (const action of ["next", "prev"] as const) {
+			const { deps, emitted } = mkDeps();
+			const out = JSON.parse(await executeBgmSkill({ action }, deps));
+			expect(emitted).toEqual([{ type: `bgm_youtube_${action}` }]);
+			expect(out).toMatchObject({
+				ok: true,
+				action,
+				announceTrack: false,
+				currentTrack: null,
+			});
 		}
 	});
 
@@ -614,9 +626,68 @@ describe("executeBgmSkill", () => {
 			const { deps, emitted } = mkDeps();
 			deps.favoriteCount = () => 0;
 			const out = JSON.parse(await executeBgmSkill({ action }, deps));
-			expect(out).toEqual({ ok: true, action });
+			expect(out).toMatchObject({ ok: true, action, announceTrack: false });
 			expect(emitted).toEqual([{ type: `bgm_youtube_${action}` }]);
 		}
+	});
+
+	it("next returns the newly observed track when waitForNavigateAck confirms playing", async () => {
+		const { deps, emitted } = mkDeps();
+		await executeBgmSkill(
+			{ action: "play", videoId: "first", title: "First" },
+			deps,
+		);
+		const previousId = deps.playback.current()?.playbackId;
+		deps.waitForNavigateAck = async () => {
+			const next = deps.playback.request({
+				videoId: "local:/music/two.mp3",
+				title: "Two",
+			});
+			return (
+				deps.playback.observe({
+					playbackId: next.playbackId,
+					sequence: 2,
+					status: "playing",
+				}) ?? next
+			);
+		};
+		const out = JSON.parse(await executeBgmSkill({ action: "next" }, deps));
+		expect(emitted.at(-1)).toEqual({ type: "bgm_youtube_next" });
+		expect(out).toMatchObject({
+			ok: true,
+			action: "next",
+			announceTrack: true,
+			currentTrack: { videoId: "local:/music/two.mp3", title: "Two" },
+		});
+		expect(out.playback.playbackId).not.toBe(previousId);
+	});
+
+	it("waitForBgmObservedPlayback ignores loading and waits for playing", async () => {
+		const playback = createBgmPlaybackPort();
+		const requested = playback.request({ videoId: "a", title: "A" });
+		playback.observe({
+			playbackId: requested.playbackId,
+			sequence: 2,
+			status: "loading",
+		});
+		let t = 0;
+		const pending = waitForBgmObservedPlayback(playback, {
+			playbackId: requested.playbackId,
+			timeoutMs: 1_000,
+			pollMs: 200,
+			now: () => t,
+			sleep: async (ms) => {
+				t += ms;
+				if (t >= 200) {
+					playback.observe({
+						playbackId: requested.playbackId,
+						sequence: 3,
+						status: "playing",
+					});
+				}
+			},
+		});
+		expect((await pending)?.status).toBe("playing");
 	});
 
 	it("keeps likes and playlist operations as distinct actions", async () => {

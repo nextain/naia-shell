@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	type BgmObservationCounters,
+	decideIframeMessageSource,
 	diagnoseBgmObservationFailure,
 	emptyBgmObservationCounters,
 } from "../bgm-observation-diagnosis";
@@ -69,5 +70,69 @@ describe("diagnoseBgmObservationFailure", () => {
 			stateChangeSeen: false,
 			infoDeliverySeen: false,
 		});
+	});
+});
+
+describe("decideIframeMessageSource (#671 / #557)", () => {
+	const active = {} as Window;
+
+	it("keeps a matching window", () => {
+		expect(
+			decideIframeMessageSource({
+				eventSource: active as unknown as MessageEventSource,
+				activeContentWindow: active,
+				event: "onStateChange",
+				info: 1,
+			}),
+		).toBe("accept");
+	});
+
+	it("drops a different window", () => {
+		expect(
+			decideIframeMessageSource({
+				eventSource: {} as MessageEventSource,
+				activeContentWindow: active,
+				event: "onStateChange",
+				info: 1,
+			}),
+		).toBe("drop_foreign_window");
+	});
+
+	it("accepts Tauri null-source playing and progress events", () => {
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onStateChange",
+				info: 1,
+			}),
+		).toBe("accept");
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "infoDelivery",
+				info: { currentTime: 2 },
+			}),
+		).toBe("accept");
+	});
+
+	it("drops null-source error and ended so a detached track cannot fail the next one", () => {
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onError",
+				info: 150,
+			}),
+		).toBe("drop_null_terminal");
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onStateChange",
+				info: 0,
+			}),
+		).toBe("drop_null_terminal");
 	});
 });

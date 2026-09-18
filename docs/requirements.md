@@ -697,7 +697,8 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-BGM.14** | sidecar는 `EADDRINUSE`에서 재시도 없이 즉시 exit(1)한다. 실패한 채 살아남아 낡은 nonce로 포트를 승계하는 좀비를 만들지 않는다. | Done | vitest: 점유 포트에서 `startYoutubeServer()` → exit(1) 호출·재시도 타이머 부재 |
 | **FR-BGM.15** | 셸 teardown은 `state.bgm_server`가 비어 있어도 PID 파일에 살아 있는 sidecar가 있으면 component 검증 후 종료하고 나서 파일을 제거한다. 기록만 삭제해 고아를 추적 불가로 만들지 않는다. | Done | Rust teardown 헬퍼 단위 + FR-BGM.13 백스톱이 최종 방어선 |
 | **FR-BGM.16** | 선호 포트(운영 18791 / dev 18891)가 남의 프로세스에 점유되면 빈 포트를 골라 sidecar를 띄우고 실제 포트를 UI에 알린다. 기동에 실패하면 조용히 BGM 없이 진행하지 않고 사용자에게 실패를 보여 준다. | In review | Rust allocate 단위 + bgm-sidecar-url + ChatArea 배너 |
-| **FR-BGM.17** | play 도구는 iframe이 관측될 때까지 기다렸다가 `requested`를 떠나 playing/error/timeout을 돌려준다. 도구 JSON은 사용자 채팅 본문에 보이지 않는다. | In review | bgm-skill waitForAck 단위 + visible-chat-text 단위 |
+| **FR-BGM.17** | play 도구는 iframe이 **playing**(또는 실제 error/ended)으로 관측될 때까지 기다린다. `loading`만으로는 확인이 아니다. 확인되면 currentTrack을 주고 제목을 말해도 된다고 지시한다. 도구 JSON은 사용자 채팅 본문에 보이지 않는다. | In review | bgm-skill waitForAck 단위 + visible-chat-text 단위 |
+| **FR-BGM.18** | AI next/prev는 UI 버튼과 같은 최신 플레이리스트 경로를 쓴다. 유튜브·로컬 혼합 목록에서 로컬 파일을 건너뛰지 않고, 로컬이 실제로 재생되면 status/next 결과가 playing+제목이 된다. Tauri WebView가 YouTube postMessage `source`를 null로 줘도 playing/infoDelivery는 관측한다. 떨어져 나간 프레임의 null-source error/ended는 다음 곡을 덮어쓰지 않는다. | In review | BgmPlayer 로컬 next·null-source 단위 + decideIframeMessageSource 단위 |
 
 ## Onboarding appearance and voice ownership (2026-08-06)
 

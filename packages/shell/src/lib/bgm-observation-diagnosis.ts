@@ -85,3 +85,38 @@ export function emptyBgmObservationCounters(): BgmObservationCounters {
 		infoDeliverySeen: false,
 	};
 }
+
+export type IframeMessageSourceDecision =
+	| "accept"
+	| "drop_foreign_window"
+	| "drop_null_terminal";
+
+/**
+ * Tauri WebView often delivers YouTube postMessage with `source=null`.
+ * Dropping every null-source event makes audible playback look like
+ * `iframe_playing_not_observed` (#671). Still drop a *different* window
+ * (#557), and drop null-source error/ended so a detached track A cannot
+ * fail track B.
+ */
+export function decideIframeMessageSource(input: {
+	eventSource: MessageEventSource | null | undefined;
+	activeContentWindow: Window | null;
+	event?: string;
+	info?: unknown;
+}): IframeMessageSourceDecision {
+	if (
+		input.eventSource &&
+		input.activeContentWindow &&
+		input.eventSource !== input.activeContentWindow
+	) {
+		return "drop_foreign_window";
+	}
+	if (!input.eventSource) {
+		const event = String(input.event ?? "");
+		if (event === "onError") return "drop_null_terminal";
+		if (event === "onStateChange" && Number(input.info) === 0) {
+			return "drop_null_terminal";
+		}
+	}
+	return "accept";
+}
