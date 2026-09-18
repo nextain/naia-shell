@@ -20,6 +20,15 @@ describe("UC-WIRE-V1 stable error code i18n", () => {
 	it("알 수 없는 legacy error는 기존 message와 호환된다", () => {
 		expect(wireErrorMessage(undefined, "legacy error")).toBe("legacy error");
 	});
+
+	it("게이트웨이 403 detail 이 안정 code 없이 오면 Insufficient credits 를 그대로 보여 준다", () => {
+		expect(
+			wireErrorMessage(
+				undefined,
+				"provider error: OpenAI-compat https://api-dev.naia.land/v1 failed: 403 Forbidden: Insufficient credits",
+			),
+		).toContain("Insufficient credits");
+	});
 });
 
 describe("isNaiaAuthWireError (#402)", () => {
