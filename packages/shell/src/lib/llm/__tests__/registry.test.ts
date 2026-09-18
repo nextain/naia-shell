@@ -47,14 +47,17 @@ describe("registry — provider registration", () => {
 	});
 
 	it("Naia offline fallbacks keep every selectable model skill-capable without claiming live provenance", () => {
-		expect(getLlmModel("nextain", "gemini-3.1-flash-lite")).toMatchObject({ supportsTools: true });
-		expect(getLlmModel("nextain", "grok-4.3")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
-		expect(getLlmModel("nextain", "deepseek-v4-pro")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		expect(getLlmModel("nextain", "deepseek-v4-flash")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
-		expect(getLlmModel("nextain", "gpt-5.6-sol")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown" });
-		expect(getLlmModel("nextain", "gpt-5.6-luna")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown" });
-		expect(getLlmModel("nextain", "claude-opus-5")).toMatchObject({ protocol: "anthropic_messages", operationalStatus: "quota_blocked", comingSoon: true });
+		expect(getLlmModel("nextain", "solar-pro4")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
+		expect(getLlmModel("nextain", "solar-mini")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
+		expect(getLlmModel("nextain", "gpt-5.6-luna")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		const selectable = getLlmProvider("nextain")!.models.filter((model) => !model.comingSoon);
+		expect(selectable.map((model) => model.id)).toEqual([
+			"deepseek-v4-flash",
+			"solar-pro4",
+			"solar-mini",
+			"gpt-5.6-luna",
+		]);
 		expect(selectable.every((model) => model.supportsTools === true)).toBe(true);
 	});
 });
@@ -96,7 +99,7 @@ describe("registry — Codex app-server provider", () => {
 
 describe("registry — Naia (nextain) provider models", () => {
 	it("models have no static pricing (fetched from gateway at startup)", () => {
-		const model = getLlmModel("nextain", "gemini-3.5-flash");
+		const model = getLlmModel("nextain", "solar-pro4");
 		expect(model).toBeDefined();
 		expect(model?.pricing).toBeUndefined();
 	});
@@ -105,17 +108,9 @@ describe("registry — Naia (nextain) provider models", () => {
 		expect(getLlmModel("nextain", "gemini-2.5-flash-live")).toBeUndefined();
 	});
 
-	it("azure-realtime remains the Naia live omni route", () => {
-		const model = getLlmModel("nextain", "azure-realtime");
-		expect(model).toBeDefined();
+	it("azure-realtime is not a Naia-account picker model (#670)", () => {
+		expect(getLlmModel("nextain", "azure-realtime")).toBeUndefined();
 		expect(isOmniModel("nextain", "azure-realtime")).toBe(true);
-	});
-
-	it("azure-realtime is omni and hides pipeline STT/TTS", () => {
-		const model = getLlmModel("nextain", "azure-realtime");
-		expect(model?.capabilities).toEqual(["llm", "omni"]);
-		expect(isOmniModel("nextain", "azure-realtime")).toBe(true);
-		expect(model?.voices?.map((voice) => voice.id)).toEqual(["sunhi", "hyunsu"]);
 	});
 
 	it("does not offer gpt-4o-mini live on the Naia catalog", () => {
@@ -244,10 +239,9 @@ describe("registry — fetchNaiaPricing", () => {
 
 	it("uses final customer pricing from the gateway without double markup", async () => {
 		const gatewayResponse = [
-			{ model_key: "vertexai:gemini-3.1-flash-lite", input_price_per_million: 0.15, output_price_per_million: 0.6, cached_price_per_million: 0.04 },
-			{ model_key: "vertexai:gemini-3.5-flash", input_price_per_million: 1.25, output_price_per_million: 10.0, cached_price_per_million: null },
+			{ model_key: "azure:deepseek-v4-flash", input_price_per_million: 0.209, output_price_per_million: 0.561, cached_price_per_million: 0.0308 },
+			{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 1.10, output_price_per_million: 6.60, cached_price_per_million: 0.11, cache_write_price_per_million: 1.375 },
 			{ model_key: "openai:gpt-4o", input_price_per_million: 2.5, output_price_per_million: 10.0, cached_price_per_million: null },
-			{ model_key: "azure:grok-4.3", input_price_per_million: 0.4, output_price_per_million: 1.2, cached_price_per_million: 0.08, cache_write_price_per_million: 0.5 },
 		];
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(JSON.stringify(gatewayResponse), { status: 200 }),
@@ -255,18 +249,17 @@ describe("registry — fetchNaiaPricing", () => {
 		const models = await fetchNaiaPricing("https://example.com");
 		expect(models).not.toBeNull();
 
-		const flashLite = models!.find((m) => m.id === "gemini-3.1-flash-lite");
-		expect(flashLite?.pricing).toEqual([0.15, 0.6]);
-
-		const flash = models!.find((m) => m.id === "gemini-3.5-flash");
-		expect(flash?.pricing).toEqual([1.25, 10.0]);
+		expect(models!.find((m) => m.id === "deepseek-v4-flash")).toMatchObject({
+			pricing: [0.209, 0.561],
+			cachePricing: { read: 0.0308, write: null },
+		});
+		expect(models!.find((m) => m.id === "gpt-5.6-luna")).toMatchObject({
+			pricing: [1.10, 6.60],
+			cachePricing: { read: 0.11, write: 1.375 },
+		});
 
 		const gpt4o = models!.find((m) => m.id === "gpt-4o");
 		expect(gpt4o).toBeUndefined();
-		expect(models!.find((m) => m.id === "grok-4.3")).toMatchObject({
-			pricing: [0.4, 1.2],
-			cachePricing: { read: 0.08, write: 0.5 },
-		});
 
 		vi.restoreAllMocks();
 	});
@@ -290,11 +283,10 @@ describe("registry — fetchNaiaPricing", () => {
 			pricing: [0.33, 1.32],
 			cachePricing: { read: 0.066, write: null },
 		});
-		// CLOVA ids are uppercase and carry no cache price.
-		const hcx = models!.find((m) => m.id === "HCX-007");
-		expect(hcx?.pricing).toEqual([0.97, 3.88]);
-		expect(hcx?.cachePricing).toBeUndefined();
-		expect(models!.find((m) => m.id === "HCX-DASH-002")?.pricing).toEqual([0.388, 1.552]);
+		expect(models!.find((m) => m.id === "solar-mini")).toMatchObject({
+			pricing: [0.165, 0.165],
+		});
+		expect(models!.find((m) => m.id === "HCX-007")).toBeUndefined();
 
 		vi.restoreAllMocks();
 	});
@@ -308,24 +300,24 @@ describe("registry — fetchNaiaPricing", () => {
 		const models = await fetchNaiaPricing("https://example.com");
 		expect(models).not.toBeNull();
 
-		const flash = models!.find((m) => m.id === "gemini-3.5-flash");
-		expect(flash?.pricing).toBeUndefined();
+		const luna = models!.find((m) => m.id === "gpt-5.6-luna");
+		expect(luna?.pricing).toBeUndefined();
 
 		vi.restoreAllMocks();
 	});
 
 	it("does not mutate original provider models (returns new objects)", async () => {
-		const staticFlashBefore = getLlmModel("nextain", "gemini-3.5-flash");
+		const staticSolarBefore = getLlmModel("nextain", "solar-pro4");
 
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(JSON.stringify([
-				{ model_key: "vertexai:gemini-3.5-flash", input_price_per_million: 99.0, output_price_per_million: 99.0, cached_price_per_million: null },
+				{ model_key: "upstage:solar-pro4", input_price_per_million: 99.0, output_price_per_million: 99.0, cached_price_per_million: null },
 			]), { status: 200 }),
 		);
 		await fetchNaiaPricing("https://example.com");
 
-		const staticFlashAfter = getLlmModel("nextain", "gemini-3.5-flash");
-		expect(staticFlashAfter?.pricing).toEqual(staticFlashBefore?.pricing);
+		const staticSolarAfter = getLlmModel("nextain", "solar-pro4");
+		expect(staticSolarAfter?.pricing).toEqual(staticSolarBefore?.pricing);
 
 		vi.restoreAllMocks();
 	});
@@ -334,33 +326,29 @@ describe("registry — fetchNaiaPricing", () => {
 describe("registry — Naia Azure model metadata", () => {
 	it("maps gateway provenance/tool policy without overriding verified DeepSeek support", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify([
-			{ model_key: "grok-4.3", capabilities: ["llm"], supports_tools: true, upstream_provider: "azure", lifecycle: "preview" },
-			{ model_key: "deepseek-v4-pro", capabilities: ["llm"], supports_tools: true, upstream_provider: "wrong", lifecycle: "ga" },
 			{ model_key: "deepseek-v4-flash", capabilities: ["llm"], supports_tools: true, upstream_provider: "azure", lifecycle: "preview" },
-			{ model_key: "gpt-5.6-sol", capabilities: ["llm"], supports_tools: true, upstream_provider: "azure", lifecycle: "ga", protocol: "openai_chat_completions", operational_status: "live" },
-			{ model_key: "claude-opus-5", capabilities: ["llm"], supports_tools: true, upstream_provider: "azure", lifecycle: "ga", protocol: "anthropic_messages", operational_status: "quota_blocked" },
+			{ model_key: "solar-pro4", capabilities: ["llm"], supports_tools: true, upstream_provider: "upstage", lifecycle: "ga" },
+			{ model_key: "gpt-5.6-luna", capabilities: ["llm"], supports_tools: true, upstream_provider: "azure", lifecycle: "ga", protocol: "openai_chat_completions", operational_status: "live" },
 		]), { status: 200 }));
 		const metadata = await fetchNaiaModelMetadata("https://example.com");
 		const models = applyNaiaModelMetadata(getLlmProvider("nextain")!.models, metadata);
-		expect(models.find((m) => m.id === "grok-4.3")).toMatchObject({ supportsTools: true, upstreamProvider: "azure" });
-		expect(models.find((m) => m.id === "deepseek-v4-pro")).toMatchObject({ supportsTools: true, upstreamProvider: "wrong" });
 		expect(models.find((m) => m.id === "deepseek-v4-flash")).toMatchObject({ supportsTools: true, upstreamProvider: "azure" });
-		expect(models.find((m) => m.id === "gpt-5.6-sol")).toMatchObject({ protocol: "openai_chat_completions", operationalStatus: "live", comingSoon: false });
-		expect(models.find((m) => m.id === "claude-opus-5")).toMatchObject({ protocol: "anthropic_messages", operationalStatus: "quota_blocked", comingSoon: true });
+		expect(models.find((m) => m.id === "solar-pro4")).toMatchObject({ supportsTools: true, upstreamProvider: "upstage" });
+		expect(models.find((m) => m.id === "gpt-5.6-luna")).toMatchObject({ protocol: "openai_chat_completions", operationalStatus: "live", comingSoon: false });
 		vi.restoreAllMocks();
 	});
 
 	it("keeps a network fallback but fails closed when a successful catalog omits a model", () => {
 		const base = getLlmProvider("nextain")!.models;
 		const fallback = applyNaiaModelMetadata(base, null);
-		expect(fallback.find((m) => m.id === "grok-4.3")?.comingSoon).toBeUndefined();
+		expect(fallback.find((m) => m.id === "deepseek-v4-flash")?.comingSoon).toBeUndefined();
 
 		const omitted = applyNaiaModelMetadata(base, new Map());
-		expect(omitted.find((m) => m.id === "grok-4.3")).toMatchObject({
+		expect(omitted.find((m) => m.id === "deepseek-v4-flash")).toMatchObject({
 			operationalStatus: "catalog_missing",
 			comingSoon: true,
 		});
-		expect(omitted.find((m) => m.id === "deepseek-v4-pro")).toMatchObject({
+		expect(omitted.find((m) => m.id === "solar-pro4")).toMatchObject({
 			supportsTools: true,
 			comingSoon: true,
 		});
@@ -369,9 +357,9 @@ describe("registry — Naia Azure model metadata", () => {
 
 describe("registry — formatModelLabel", () => {
 	it("returns base label when no pricing", () => {
-		const model = getLlmModel("nextain", "gemini-3.5-flash")!;
+		const model = getLlmModel("nextain", "gpt-5.6-luna")!;
 		const label = formatModelLabel(model);
-		expect(label).toBe("Gemini 3.5 Flash");
+		expect(label).toBe("Naia Luna");
 	});
 
 	it("formats label with pricing when provided", () => {
@@ -413,19 +401,11 @@ describe("registry — sortModels", () => {
 	it("uses the dated Naia recommendation while keeping unavailable routes last", () => {
 		const naia = getLlmProvider("nextain")!.models;
 		const sorted = sortModels(naia, "performance").map((model) => model.id);
-		expect(sorted.slice(0, 8)).toEqual([
-			"gpt-5.6-sol",
-			"grok-4.3",
-			"deepseek-v4-pro",
+		expect(sorted).toEqual([
 			"deepseek-v4-flash",
 			"solar-pro4",
-			"HCX-007",
-			"gemini-3.5-flash",
-			"gemini-3.1-flash-lite",
-		]);
-		expect(sorted.slice(-2)).toEqual([
-			"claude-opus-5",
-			"naia-0.9-omni-24g",
+			"solar-mini",
+			"gpt-5.6-luna",
 		]);
 	});
 });

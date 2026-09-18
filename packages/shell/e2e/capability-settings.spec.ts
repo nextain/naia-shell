@@ -74,7 +74,7 @@ async function gotoModelSettings(
 		(configJson: string) => localStorage.setItem("naia-config", configJson),
 		JSON.stringify({
 			provider: loggedIn ? "nextain" : "gemini",
-			model: opts.model ?? "gemini-3.5-flash",
+			model: opts.model ?? "deepseek-v4-flash",
 			...(loggedIn ? { naiaKey: API_KEY } : {}),
 			enableTools: false,
 			ttsEnabled: opts.ttsEnabled ?? true,
@@ -104,9 +104,12 @@ async function gotoModelSettings(
 	await page.goto("/");
 	await expect(page.locator(".chat-app")).toBeVisible({ timeout: 10_000 });
 	await page.getByRole("button", { name: /^(설정|Settings)$/ }).click();
-	// model-select lives in the brain tab; use stable tab ids instead of copy.
 	await page.locator('[data-settings-tab="brain"]').click();
-	await expect(page.locator("#model-select")).toBeVisible({ timeout: 10_000 });
+	if (loggedIn) {
+		await expect(
+			page.locator("select#model-select, [data-testid='model-single']").first(),
+		).toBeVisible({ timeout: 10_000 });
+	}
 }
 
 test.describe("Capability-driven settings (#365)", () => {
@@ -114,12 +117,12 @@ test.describe("Capability-driven settings (#365)", () => {
 		page,
 	}) => {
 		await gotoModelSettings(page, {
-			model: "grok-4.3",
+			model: "solar-mini",
 			pricing: [
 				{
-					model_key: "azure:grok-4.3",
-					input_price_per_million: 0.4,
-					output_price_per_million: 1.2,
+					model_key: "upstage:solar-mini",
+					input_price_per_million: 0.165,
+					output_price_per_million: 0.165,
 					cached_price_per_million: null,
 				},
 			],
@@ -132,25 +135,42 @@ test.describe("Capability-driven settings (#365)", () => {
 		await expect(
 			page.locator('[data-testid="model-price-sort-basis"]'),
 		).toContainText(/3\s*:\s*.*1/);
-		await expect(modelSelect.locator('option[value="grok-4.3"]')).toHaveText(
-			/Grok 4\.3 \((?:Pricing:|Price per 1M tokens: Input) \$0\.400 \/ (?:Output )?\$1\.200\)/,
+		await expect(modelSelect.locator('option[value="solar-mini"]')).toHaveText(
+			/Solar Mini \((?:Pricing:|Price per 1M tokens: Input) \$0\.165 \/ (?:Output )?\$0\.165\)/,
 		);
+		await expect(modelSelect.locator("option")).toHaveCount(4);
+		await expect(
+			modelSelect.locator('option[value="deepseek-v4-flash"]'),
+		).toHaveCount(1);
+		await expect(
+			modelSelect.locator('option[value="solar-pro4"]'),
+		).toHaveCount(1);
+		await expect(
+			modelSelect.locator('option[value="gpt-5.6-luna"]'),
+		).toHaveCount(1);
 		await expect(
 			modelSelect.locator('option[value="claude-opus-5"]'),
 		).toHaveCount(0);
 		await expect(
 			modelSelect.locator('option[value="naia-0.9-omni-24g"]'),
 		).toHaveCount(0);
+		await expect(
+			modelSelect.locator('option[value="grok-4.3"]'),
+		).toHaveCount(0);
+		await expect(
+			modelSelect.locator('option[value="gpt-5.6-sol"]'),
+		).toHaveCount(0);
 		const priceOrder = await modelSelect
 			.locator("option")
 			.evaluateAll((options) =>
 				options.map((option) => (option as HTMLOptionElement).value),
 			);
-		await expect(modelSelect).toHaveValue("grok-4.3");
+		expect(priceOrder[0]).toBe("solar-mini");
+		await expect(modelSelect).toHaveValue("solar-mini");
 		await sortSelect.selectOption("performance");
 		await expect(modelSelect.locator("option").first()).toHaveAttribute(
 			"value",
-			"gpt-5.6-sol",
+			"deepseek-v4-flash",
 		);
 		const performanceOrder = await modelSelect
 			.locator("option")
@@ -158,13 +178,13 @@ test.describe("Capability-driven settings (#365)", () => {
 				options.map((option) => (option as HTMLOptionElement).value),
 			);
 		expect(performanceOrder).not.toEqual(priceOrder);
-		await expect(modelSelect).toHaveValue("grok-4.3");
+		await expect(modelSelect).toHaveValue("solar-mini");
 		await expect(modelSelect.locator('option[value="naia-local"]')).toHaveCount(
 			0,
 		);
 		await expect(
 			page.locator(".settings-hint").filter({ hasText: "100만 토큰당 가격" }),
-		).toContainText("입력 $0.400 · 출력 $1.200");
+		).toContainText("입력 $0.165 · 출력 $0.165");
 
 		const proactiveButton = page.locator("button[data-proactive-state]");
 		await expect(proactiveButton).toHaveAttribute(
@@ -185,7 +205,7 @@ test.describe("Capability-driven settings (#365)", () => {
 		// 사용자 결정 2026-07-02: omni 내장 모델이어도 외부/로컬 STT를 옵션으로 열어둔다
 		// (로컬 Whisper 등이 무료 STT 대비 정확도·프라이버시 이점). capability는 이제
 		// STT를 '숨김'이 아니라 omni일 때 '선택' 안내로만 반영.
-		await gotoModelSettings(page, { model: "gemini-3.5-flash" });
+		await gotoModelSettings(page, { model: "deepseek-v4-flash" });
 
 		// text model → STT section shown, no "optional" hint (external STT needed).
 		await page.locator('[data-settings-tab="voice"]').click();
@@ -200,41 +220,20 @@ test.describe("Capability-driven settings (#365)", () => {
 		await expect(
 			page.locator('[data-testid="voice-status-summary"]'),
 		).toBeVisible();
-
-		// omni model → STT section STILL shown (option) + "optional" hint appears.
-		await page.locator('[data-settings-tab="brain"]').click();
-		await page.locator("#model-select").selectOption("gemini-2.5-flash-live");
-		await page.locator('[data-settings-tab="voice"]').click();
-		await expect(
-			page.locator('[data-testid="stt-provider-section"]'),
-		).toBeVisible({ timeout: 5_000 });
-		await expect(
-			page.locator('[data-testid="stt-omni-optional-hint"]'),
-		).toBeVisible();
-		// H1 regression guard: omni + no STT picked → the "STT setup required" status
-		// ladder must NOT show (it would contradict the "optional" hint above).
-		await expect(
-			page.locator('[data-testid="voice-status-summary"]'),
-		).toHaveCount(0);
-
-		// Back to a text model → hint disappears again (driven by capabilities).
-		await page.locator('[data-settings-tab="brain"]').click();
-		await page.locator("#model-select").selectOption("gemini-3.5-flash");
-		await page.locator('[data-settings-tab="voice"]').click();
-		await expect(
-			page.locator('[data-testid="stt-omni-optional-hint"]'),
-		).toHaveCount(0);
 	});
 
 	test("gateway /v1/models capability overrides static (gateway = SoT)", async ({
 		page,
 	}) => {
-		// Statically gemini-3.5-flash is ["llm"] (no hint). The gateway declares it
+		// Statically deepseek-v4-flash is ["llm"] (no hint). The gateway declares it
 		// omni → the UI must follow: STT stays available but shows the 'optional' hint.
 		await gotoModelSettings(page, {
-			model: "gemini-3.5-flash",
+			model: "deepseek-v4-flash",
 			catalog: [
-				{ model_key: "gemini-3.5-flash", capabilities: ["llm", "omni"] },
+				{ model_key: "deepseek-v4-flash", capabilities: ["llm", "omni"] },
+				{ model_key: "solar-pro4", capabilities: ["llm"] },
+				{ model_key: "solar-mini", capabilities: ["llm"] },
+				{ model_key: "gpt-5.6-luna", capabilities: ["llm"] },
 			],
 		});
 
@@ -252,7 +251,7 @@ test.describe("Retired local GPU profile surface", () => {
 	test("GPU detection does not expose the retired profile selector", async ({
 		page,
 	}) => {
-		await gotoModelSettings(page, { vramGb: 24, model: "gemini-3.5-flash" });
+		await gotoModelSettings(page, { vramGb: 24, model: "deepseek-v4-flash" });
 		await page.locator('[data-settings-tab="profile"]').click();
 
 		await expect(page.locator("#local-gpu-tier")).toHaveCount(0);
@@ -266,7 +265,7 @@ test.describe("Pre-baked NVA settings", () => {
 	test("video avatar is enabled without login or GPU", async ({ page }) => {
 		await gotoModelSettings(page, {
 			vramGb: null,
-			model: "gemini-3.5-flash",
+			model: "deepseek-v4-flash",
 			loggedIn: false,
 		});
 		await page.locator('[data-settings-tab="avatar"]').click();
@@ -287,7 +286,7 @@ test.describe("Pre-baked NVA settings", () => {
 	}) => {
 		await gotoModelSettings(page, {
 			vramGb: null,
-			model: "gemini-3.5-flash",
+			model: "deepseek-v4-flash",
 			loggedIn: false,
 			config: {
 				avatarProvider: "naia-video-avatar",

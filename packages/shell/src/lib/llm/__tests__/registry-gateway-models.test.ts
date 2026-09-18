@@ -1,83 +1,64 @@
 /**
- * Test: Naia gateway provider model list excludes gemini-3.x (#248).
+ * Test: Naia-account (nextain) picker lineup (#670).
  *
- * The any-llm Cloud Run gateway's GCP project does not have Vertex AI
- * Publisher Model access for gemini-3.x — streaming returns 0-byte SSE,
- * non-streaming returns 404 NOT_FOUND. Until the gateway project gets
- * access, these models must NOT appear in the Naia provider's model list
- * (the user-visible dropdown). gemini-2.5-* family is verified working.
- *
- * #602: 타사 직결 "gemini" 공급자(GEMINI_API_KEY → Google AI Studio)는 제거됐다 —
- * Naia 계정(nextain) 게이트웨이 경로만 남는다.
+ * The Naia-account / nextain provider picker keeps only the four cheap chat
+ * models. Codex ChatGPT models stay on the codex provider. This trim does not
+ * change gateway 403 behavior.
  *
  * Run:
  *   pnpm exec vitest run src/lib/llm/__tests__/registry-gateway-models.test.ts
  */
 import { describe, expect, it } from "vitest";
 
-describe("LLM registry — gateway model exclusion (#248)", () => {
-	// 2026-05-29: nextain provider trimmed to the user-confirmed 4-model lineup.
-	// 2026-06-03: naia-0.9-omni-24g not yet live → comingSoon flag, moved LAST.
-	// 2026-09-12: #585 added azure-realtime (Azure 실시간 음성) — omni, listed
-	// right after gemini-2.5-flash-live and before the comingSoon entry.
-	it("Naia (gateway) provider exposes the confirmed model lineup in order", async () => {
+const NEXTAIN_ACCOUNT_PICKER_IDS = [
+	"deepseek-v4-flash",
+	"solar-pro4",
+	"solar-mini",
+	"gpt-5.6-luna",
+] as const;
+
+describe("LLM registry — Naia-account picker (#670)", () => {
+	it("Naia (gateway) provider exposes only the four cheap chat models in order", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
 		expect(naia).toBeTruthy();
 		const ids = naia!.models.map((m) => m.id);
-		expect(ids).toEqual([
+		expect(ids).toEqual([...NEXTAIN_ACCOUNT_PICKER_IDS]);
+		expect(naia!.models.map((m) => m.label)).toEqual([
+			"DeepSeek V4 Flash",
+			"Solar Pro 4",
+			"Solar Mini",
+			"Naia Luna",
+		]);
+	});
+
+	it("does not list the dropped Naia-account models", async () => {
+		const { getLlmProvider } = await import("../registry.js");
+		const ids = getLlmProvider("nextain")!.models.map((m) => m.id);
+		for (const dropped of [
 			"gemini-3.1-flash-lite",
 			"grok-4.3",
 			"deepseek-v4-pro",
-			"deepseek-v4-flash",
-			"solar-pro4",
-			"solar-mini",
 			"HCX-007",
 			"HCX-DASH-002",
 			"gpt-5.6-sol",
-			"gpt-5.6-luna",
 			"claude-opus-5",
 			"gemini-3.5-flash",
 			"gemini-2.5-flash-live",
 			"azure-realtime",
 			"naia-0.9-omni-24g",
-		]);
-		expect(naia!.models.map((m) => m.label)).toEqual([
-			"Gemini 3.1 Flash Lite",
-			"Grok 4.3",
-			"DeepSeek V4 Pro",
-			"DeepSeek V4 Flash",
-			"Solar Pro 4",
-			"Solar Mini",
-			"HyperCLOVA X HCX-007",
-			"HyperCLOVA X DASH",
-			"GPT-5.6 Sol",
-			"GPT-5.6 Luna",
-			"Claude Opus 5",
-			"Gemini 3.5 Flash",
-			"Gemini 2.5 Flash Live",
-			"Azure Realtime (SunHi)",
-			"Naia 0.9 Omni 24G",
-		]);
+		]) {
+			expect(ids).not.toContain(dropped);
+		}
 	});
 
-	it("Naia provider includes the realtime-voice models (omni)", async () => {
+	it("Naia-account picker has no omni or comingSoon entries", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
-		const omni = naia!.models.filter((m) => m.capabilities.includes("omni"));
-		expect(omni.map((m) => m.id)).toEqual([
-			"gemini-2.5-flash-live",
-			"azure-realtime",
-			"naia-0.9-omni-24g",
-		]);
-	});
-
-	it("naia-0.9-omni-24g is flagged comingSoon and listed last", async () => {
-		const { getLlmProvider } = await import("../registry.js");
-		const naia = getLlmProvider("nextain")!;
-		const last = naia.models[naia.models.length - 1];
-		expect(last.id).toBe("naia-0.9-omni-24g");
-		expect(last.comingSoon).toBe(true);
+		expect(naia!.models.filter((m) => m.capabilities.includes("omni"))).toEqual(
+			[],
+		);
+		expect(naia!.models.filter((m) => m.comingSoon)).toEqual([]);
 	});
 
 	it("formatModelLabel appends a tag for comingSoon models (language-agnostic)", async () => {
@@ -93,7 +74,6 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 			capabilities: ["llm"],
 			comingSoon: true,
 		});
-		// A tag is appended regardless of the active UI language.
 		expect(tagged).not.toBe(base);
 		expect(tagged.startsWith(base)).toBe(true);
 		expect(tagged.length).toBeGreaterThan(base.length);
@@ -109,6 +89,17 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 		const naia = getLlmProvider("nextain");
 		expect(naia!.defaultModel).toBe("deepseek-v4-flash");
 	});
+
+	it("does not remove Codex ChatGPT models", async () => {
+		const { getLlmProvider } = await import("../registry.js");
+		const codex = getLlmProvider("codex");
+		expect(codex!.models.map((m) => m.id)).toEqual([
+			"gpt-5.6-sol",
+			"gpt-5.6-terra",
+			"gpt-5.6-luna",
+			"gpt-5.5",
+		]);
+	});
 });
 
 describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
@@ -119,15 +110,25 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		if (d.migrate) expect(d.to).toBe("deepseek-v4-flash");
 	});
 
-	it("does NOT migrate valid models on nextain provider", async () => {
+	it("does NOT migrate the four remaining Naia-account models", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
-		for (const valid of [
-			"gemini-3.1-flash-lite",
-			"naia-0.9-omni-24g",
-			"gemini-3.5-flash",
-			"gemini-2.5-flash-live",
-		]) {
+		for (const valid of NEXTAIN_ACCOUNT_PICKER_IDS) {
 			expect(shouldMigrateNextainModel("nextain", valid).migrate).toBe(false);
+		}
+	});
+
+	it("migrates dropped Naia-account models to the default", async () => {
+		const { shouldMigrateNextainModel } = await import("../registry.js");
+		for (const dropped of [
+			"gemini-3.1-flash-lite",
+			"grok-4.3",
+			"gpt-5.6-sol",
+			"azure-realtime",
+			"naia-0.9-omni-24g",
+		]) {
+			const d = shouldMigrateNextainModel("nextain", dropped);
+			expect(d.migrate).toBe(true);
+			if (d.migrate) expect(d.to).toBe("deepseek-v4-flash");
 		}
 	});
 

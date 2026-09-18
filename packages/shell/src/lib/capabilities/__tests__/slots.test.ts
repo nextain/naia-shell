@@ -22,13 +22,12 @@ describe("deriveSettingsSlots", () => {
 		expect(plan.showVoiceSection).toBe(false);
 	});
 
-	it("azure-realtime omni locks external STT/TTS slots", () => {
-		const model = getLlmModel("nextain", "azure-realtime");
-		expect(model?.capabilities).toEqual(["llm", "omni"]);
-		const plan = deriveSettingsSlots(model!.capabilities);
+	it("omni capabilities still lock external STT/TTS slots without a picker model", () => {
+		const plan = deriveSettingsSlots(["llm", "omni"]);
 		expect(plan.needsExternalStt).toBe(false);
 		expect(plan.needsExternalTts).toBe(false);
 		expect(plan.showVoiceSection).toBe(false);
+		expect(getLlmModel("nextain", "azure-realtime")).toBeUndefined();
 	});
 
 	it("asr model covers voice input only — still needs external TTS", () => {

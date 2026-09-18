@@ -19,6 +19,23 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_670_naia_account_picker": {
+      "issue": 670,
+      "title": "Trim Naia-account picker to four cheap chat models",
+      "scope": "nextain picker only: deepseek-v4-flash, solar-pro4, solar-mini, gpt-5.6-luna. Codex ChatGPT models unchanged. Does not fix api-dev 403.",
+      "requirements": "docs/requirements.md FR-NAIA-AZURE.1, FR-LLM-DEFAULT.1",
+      "scenario": "docs/user-scenarios.md UC-NAIA-AZURE-MODELS, UC-LLM-DEFAULT-DEEPSEEK-FLASH",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "verification": "vitest registry 42, registry-gateway-models 12, model-picker-rule 8, slots 8, SettingsTab picker cases 8; Playwright e2e/capability-settings.spec.ts 6/6. Codex lineup unchanged. Does not fix api-dev 403.",
+      "status": "implemented",
+      "last_updated": "2026-09-18T14:16:00+09:00"
+    },
     "issue_664_dual_memory_clone": {
       "issue": 664,
       "title": "Agent spawn NAIA_ADK_PATH follows adk-path, never leftover ~/naia-adk clone",

@@ -100,7 +100,7 @@ async function openSlotSettings(
 		(configJson: string) => localStorage.setItem("naia-config", configJson),
 		JSON.stringify({
 			provider: "nextain",
-			model: "gemini-3.5-flash",
+			model: "deepseek-v4-flash",
 			enableTools: false,
 			ttsEnabled: true,
 			locale: "en",
@@ -257,7 +257,7 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 			config: {
 				naiaKey: "e2e-naia-key",
 				provider: "nextain",
-				model: "gemini-3.5-flash",
+				model: "deepseek-v4-flash",
 			},
 		});
 
@@ -269,7 +269,7 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 			return JSON.parse(raw) as Record<string, unknown>;
 		});
 		expect(saved.provider).toBe("nextain"); // 보존
-		expect(saved.model).toBe("gemini-3.5-flash"); // 보존(비파괴)
+		expect(saved.model).toBe("deepseek-v4-flash"); // 보존(비파괴)
 		expect(saved.subLlmProvider).toBe("naia");
 		expect(saved.subLlmModel).toBe("gemini-3.1-flash-lite");
 		expect(saved.memoryLlmProvider).toBeUndefined();
@@ -401,7 +401,7 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		});
 		expect(saved.localGpuTier).toBeUndefined();
 		expect(saved.provider).toBe("nextain");
-		expect(saved.model).toBe("gemini-3.5-flash");
+		expect(saved.model).toBe("deepseek-v4-flash");
 		expect(saved.ttsProvider).toBe("naia-local-voice"); // 음성 → 로컬
 		expect(saved.ttsEnabled).toBe(true);
 		expect(saved.vllmTtsHost).toBe("http://127.0.0.1:8910"); // 원격 잔재 → 로컬 façade 교정
