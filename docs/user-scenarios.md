@@ -820,6 +820,27 @@ successful until the player reports an observed `playing` transition.
 실패하면 채팅에 실패를 보여 준다. play 결과는 `requested`에 머물지 않고 관측된
 playing/error/timeout을 돌려주며, 그 JSON은 사용자 채팅 본문에 보이지 않는다.
 
+## UC-BGM-AI-LOCAL-NEXT — AI 다음곡은 UI와 같이 로컬 파일도 재생한다 (#671)
+
+유튜브와 로컬 파일이 섞인 플레이리스트에서 사용자가 "다음곡"이라고 하면
+인덱스가 로컬 항목으로 옮겨지고 **그 파일이 실제로 재생**된다. 플레이어의
+다음/이전 버튼과 같은 곡이 나와야 한다. 재생이 확인되면 도구 결과와 status가
+playing과 곡 제목을 돌려 주어 나이아가 곡 이름을 말할 수 있다.
+
+## UC-BGM-TAURI-OBSERVE — 소리가 나면 에이전트도 재생 중으로 안다 (#671)
+
+검색 재생이나 "지금 무슨 곡"에서, 플레이어에서 소리가 나는데도
+`iframe_playing_not_observed` timeout으로 제목을 숨기지 않는다. Tauri WebView가
+YouTube 메시지의 `source`를 비워 보내도 playing/진행 신호는 관측한다. play 확인은
+loading이 아니라 playing이다.
+
+Test Coverage Map
+
+| UC | 단위·계약 | 비고 |
+|---|---|---|
+| UC-BGM-AI-LOCAL-NEXT | `packages/shell/src/components/__tests__/BgmPlayer.test.tsx` AI next가 로컬 파일을 재생하고 playing 제목을 남긴다 | UI 다음 버튼과 같은 최신 playNext 경로 |
+| UC-BGM-TAURI-OBSERVE | `packages/shell/src/lib/__tests__/bgm-observation-diagnosis.test.ts` null-source playing 수락, `packages/shell/src/lib/__tests__/bgm-skill.test.ts` loading은 play ack가 아님 | 소리가 나면 status가 제목을 숨기지 않는다 |
+
 ## UC-BGM-ORPHAN-PORT-RECOVERY — 고아 sidecar가 BGM 포트를 선점해도 다음 실행이 회복한다 (#517)
 
 설치본 사용자가 유튜브 뮤직플레이어를 켰는데 "BGM server failed its owned
@@ -951,6 +972,8 @@ Those older sections are historical evidence only.
 | **UC-DISCORD-TAB-LIVE** | 대화창 하단 🌐 Channels 탭을 열면 실제 연결 상태·서버·채널 목록·대화 스레드가 보인다("안정화 작업 중" 정적 문구가 아니다). | NaiaMetaArea + ChannelsTab 컴포넌트 테스트 |
 | **UC-BGM-NO-FALSE-SKIP** | YouTube 곡이 실제로 재생 중이면, iframe의 "재생 중" 신호 메시지가 유실되더라도(WebView2 핸드셰이크 이슈) 12초 워치독이 다른 곡으로 강제 전환하지 않는다. 진행률(`infoDelivery`) 신호가 독립적으로 재생을 확인한다. | `components/__tests__/BgmPlayer.test.tsx`(신규) + `e2e/bgm-skill.spec.ts` 실 브라우저 재작성(대기열 보존·상태 diagnostic 확인) |
 | **UC-BGM-ENDED-NOTIFY** | 곡이 실제로 끝나면(타이머 아님, 진짜 ended 이벤트) Shell이 트랙 시작 때와 동일한 방식으로 에이전트에게 즉시 통지한다. 에이전트가 다음 곡을 고르거나 멘트를 하는 결정은 naia-agent 소관(이 저장소 범위 밖)이라 이 시나리오는 "통지가 나가는지"까지만 다룬다. | `components/__tests__/BgmPlayer.test.tsx`(신규, music_ended 발신 검증) |
+| **UC-BGM-AI-LOCAL-NEXT** | 유튜브·로컬 혼합 플레이리스트에서 AI next/prev가 UI 버튼과 같이 로컬 파일을 재생하고, 확인되면 제목을 돌려 준다. | `BgmPlayer.test.tsx` AI next 로컬 재생 + `bgm-skill.test.ts` navigate ack |
+| **UC-BGM-TAURI-OBSERVE** | Tauri가 YouTube `source=null`로 메시지를 보내도 playing/infoDelivery를 관측하고, play 확인은 loading이 아니라 playing이다. | `decideIframeMessageSource` 단위 + BgmPlayer null-source playing + `waitForBgmObservedPlayback` |
 | **UC-VOICE-ONBOARDING** | 로그인 이후 온보딩에 음성 단계가 있다: 무료 Web TTS on/off + 시스템 보이스 미리듣기, 그리고 VRAM 6GB+ 감지 시 실제로 로컬 VoxCPM2를 켜고 끌 수 있는 버튼(안내 링크가 아니라 진짜 `start_cascade`/`stop_cascade` 호출). | OnboardingWizard 컴포넌트 테스트(음성 단계 내비게이션 + 실제 invoke 호출 + 저장된 config 필드 검증) + `e2e/onboarding-fresh.spec.ts` 실 브라우저 3/3 통과 |
 
 이번 세션에 실제로 실행한 것: Playwright chromium 신규 설치 후 실 dev server로 `e2e/onboarding-fresh.spec.ts`(3/3) + `e2e/bgm-skill.spec.ts`(12/12, 1건은 옛 강제스킵 동작을 검증하던 낡은 테스트라 새 계약에 맞게 재작성 후 통과) 실행. 여전히 미완료: `e2e-tauri`(네이티브 Tauri/WebDriver) 스위트 미실행. UC-NVA-COMPOSITE의 실제 크로마키 정확도는 headless chromium이 WebView2 특유 경로를 타지 않아 여전히 Windows 실기 미검증.

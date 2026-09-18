@@ -1,5 +1,12 @@
 <!-- src-sha: 63f78353c50a3cfd -->
 
+## BGM AI next/status observe — 2026-09-18 (#671)
+
+- AI 다음곡은 UI와 같은 최신 플레이리스트 경로를 써서 로컬 파일도 재생한다.
+- Tauri가 YouTube `source=null`로 메시지를 보내도 playing/infoDelivery를 관측한다.
+- play 확인은 loading이 아니라 playing이며, 확인되면 곡 제목을 말해도 된다.
+- 검증: BgmPlayer/bgm-skill/bgm-playback/observation 단위 77 통과. 4060 QA는 하지 않음(루크가 tauri:dev에서 증명).
+
 ## Slides #581 — 2026-09-10 메인 통합
 
 - PPTX 로컬 변환·노트 가져오기, 대본 편집·다운로드, 설치 앱의 언어·테마·녹화 연결을 구현했다.

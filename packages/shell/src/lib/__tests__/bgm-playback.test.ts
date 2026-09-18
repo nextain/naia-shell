@@ -51,6 +51,34 @@ describe("BGM playback observation contract", () => {
 			currentTrack: { videoId: "track-a", title: "Track A" },
 			announceTrack: true,
 		});
+		expect(toBgmPlayToolResult(playing!).instruction).toContain(
+			"Playback is confirmed",
+		);
+		expect(toBgmPlayToolResult(playing!).instruction).not.toContain(
+			"not confirmed",
+		);
+	});
+
+	it("still names a playing track after the freshness window", () => {
+		let clock = 1_000;
+		const playback = createBgmPlaybackPort(() => clock);
+		const requested = playback.request({
+			videoId: "track-a",
+			title: "Track A",
+		});
+		clock += 100;
+		playback.observe({
+			playbackId: requested.playbackId,
+			sequence: 2,
+			status: "playing",
+		});
+		clock += 30_000;
+		expect(
+			toBgmObservedContext(playback.current(), clock),
+		).toMatchObject({
+			currentTrack: { videoId: "track-a", title: "Track A" },
+			announceTrack: true,
+		});
 	});
 
 	it("refreshes a long playback with observed position and duration", () => {

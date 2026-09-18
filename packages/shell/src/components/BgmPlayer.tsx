@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import {
+	decideIframeMessageSource,
 	diagnoseBgmObservationFailure,
 	emptyBgmObservationCounters,
 } from "../lib/bgm-observation-diagnosis";
@@ -320,7 +321,14 @@ export function BgmPlayer({ naia }: Props) {
 	const [localPaths, setLocalPaths] = useState<string[]>([]);
 	const [localNames, setLocalNames] = useState<string[]>([]);
 	const localPathsRef = useRef<string[]>([]);
+	const localTracksRef = useRef<string[]>([]);
+	const localNamesRef = useRef<string[]>([]);
 	const [localIndex, setLocalIndex] = useState(0);
+	const playNextRef = useRef<() => boolean>(() => false);
+	const playPrevRef = useRef<() => void>(() => {});
+	const playLibraryTrackRef = useRef<
+		(track: BgmLibraryTrack, index: number, playlistId: string) => void
+	>(() => {});
 
 	useEffect(() => {
 		listNaiaAssets("bgm-musics").then(async (paths) => {
@@ -333,6 +341,8 @@ export function BgmPlayer({ naia }: Props) {
 						?.replace(/\.[^.]+$/, "") ?? p,
 			);
 			localPathsRef.current = paths;
+			localTracksRef.current = urls;
+			localNamesRef.current = names;
 			setLocalPaths(paths);
 			setLocalTracks(urls);
 			setLocalNames(names);
@@ -696,22 +706,6 @@ export function BgmPlayer({ naia }: Props) {
 				".app-bg-iframe",
 			) as HTMLIFrameElement | null;
 			if (!activeIframe) return;
-			// 화면에 붙어 있는 iframe 이 보낸 것만 받는다. 보낸 창을 특정할 수
-			// 없으면 그 이벤트를 어느 playbackId 에 결속할지도 알 수 없고
-			// (FR-RADIO-DJ.2), 아래에서 eventPlaybackId 를 "지금 붙어 있는"
-			// iframe 의 URL 에서 읽으므로 곧 남의 이벤트를 현재 곡에 붙이게 된다.
-			//
-			// 예전에는 `e.source &&` 로 출처 없는 메시지를 그냥 통과시켰다. 그런데
-			// WebKitGTK 는 이미 떨어져 나간 프레임이 보낸 메시지의 `source` 를
-			// null 로 준다 — 곡 A 의 늦은 오류가 곡 B 를 `error` 로 덮어쓰는,
-			// S-RADIO-DJ-1 이 금지하는 바로 그 경로였다(#557).
-			if (
-				activeIframe.contentWindow &&
-				e.source !== activeIframe.contentWindow
-			) {
-				observationCountersRef.current.filteredOut++; // #521
-				return;
-			}
 			const allowedOrigin = (() => {
 				if (!e.origin) return true;
 				// same-origin = E2E 픽스처 iframe 과 자기 브리지 — 항상 신뢰.
@@ -739,6 +733,16 @@ export function BgmPlayer({ naia }: Props) {
 				const msg = (typeof e.data === "string"
 					? JSON.parse(e.data)
 					: e.data) as Record<string, unknown>;
+				const sourceDecision = decideIframeMessageSource({
+					eventSource: e.source,
+					activeContentWindow: activeIframe.contentWindow,
+					event: String(msg.event ?? ""),
+					info: msg.info ?? msg.data,
+				});
+				if (sourceDecision !== "accept") {
+					observationCountersRef.current.filteredOut++; // #521
+					return;
+				}
 				observationCountersRef.current.received++; // #521
 				const eventPlaybackId = activeIframe
 					? (new URL(activeIframe.src, window.location.href).searchParams.get(
@@ -814,7 +818,8 @@ export function BgmPlayer({ naia }: Props) {
 							playbackId: eventPlaybackId,
 						});
 						if (!ended) return;
-						const continued = startNextQueuedTrack("ended") || playNext();
+						const continued =
+							startNextQueuedTrack("ended") || playNextRef.current();
 						// Notify the agent the moment a track genuinely ends (not on a
 						// timer — this is the real onStateChange ENDED event), the same
 						// way a new track start already does via "music_changed". Without
@@ -1086,9 +1091,9 @@ export function BgmPlayer({ naia }: Props) {
 						);
 					}
 				} else if (msg.type === "bgm_youtube_next") {
-					playNext();
+					playNextRef.current();
 				} else if (msg.type === "bgm_youtube_prev") {
-					playPrev();
+					playPrevRef.current();
 				} else if (msg.type === "bgm_playlist_create") {
 					updateLibrary((state) => createPlaylist(state, String(msg.name ?? "")));
 				} else if (msg.type === "bgm_playlist_shuffle") {
@@ -1105,7 +1110,12 @@ export function BgmPlayer({ naia }: Props) {
 				} else if (msg.type === "bgm_playlist_play") {
 					const playlist = libraryRef.current.playlists.find((item) => item.id === msg.playlistId);
 					const index = Math.max(0, Math.trunc(Number(msg.index) || 0));
-					if (playlist?.tracks[index]) playLibraryTrack(playlist.tracks[index], index, playlist.id);
+					if (playlist?.tracks[index])
+						playLibraryTrackRef.current(
+							playlist.tracks[index],
+							index,
+							playlist.id,
+						);
 				} else if (msg.type === "bgm_library_like_add" || msg.type === "bgm_library_like_remove") {
 					const video = currentYtRef.current;
 					if (!video) return;
@@ -1448,11 +1458,25 @@ export function BgmPlayer({ naia }: Props) {
 		}
 	}
 
-	function playLocalAt(idx: number) {
-		if (localTracks.length === 0) return;
+	function playLocalAt(idx: number, titleOverride?: string) {
+		const tracks = localTracksRef.current;
+		const names = localNamesRef.current;
+		const paths = localPathsRef.current;
+		if (tracks.length === 0 || !tracks[idx]) return;
 		cancelRadioDjRecovery();
+		const title =
+			titleOverride ||
+			names[idx] ||
+			paths[idx]?.split(/[\\/]/).pop() ||
+			"local";
+		const identity = paths[idx] ? `local:${paths[idx]}` : tracks[idx];
+		const snapshot = bgmPlayback.request({
+			videoId: identity,
+			title,
+		});
+		setPlaybackSnapshot(snapshot);
 		setSource("local");
-		setBgmTrackUrl(localTracks[idx]);
+		setBgmTrackUrl(tracks[idx]);
 		setLocalIndex(idx);
 		// Restore YT background when switching to local
 		if (useAvatarStore.getState().backgroundMediaType === "iframe") {
@@ -1464,15 +1488,30 @@ export function BgmPlayer({ naia }: Props) {
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_changed",
-			summary: `BGM: ${t("bgm.localBgm")} "${localNames[idx]}"`,
+			summary: `BGM: ${t("bgm.localBgm")} "${title}"`,
 		});
 		const audio = audioRef.current;
-		if (!audio) return;
-		audio.src = localTracks[idx];
-		audio
+		if (!audio) {
+			observePlayback("error", {
+				playbackId: snapshot.playbackId,
+				reason: "local_audio_element_missing",
+			});
+			return;
+		}
+		audio.src = tracks[idx];
+		void audio
 			.play()
-			.then(() => setPlaying(true))
-			.catch(() => {});
+			.then(() => {
+				setPlaying(true);
+				observePlayback("playing", { playbackId: snapshot.playbackId });
+			})
+			.catch(() => {
+				setPlaying(false);
+				observePlayback("error", {
+					playbackId: snapshot.playbackId,
+					reason: "local_play_failed",
+				});
+			});
 	}
 
 	function playLibraryTrack(track: BgmLibraryTrack, index: number, playlistId: string) {
@@ -1487,12 +1526,12 @@ export function BgmPlayer({ naia }: Props) {
 		const fileName = track.path?.split(/[\\/]/).pop()?.toLocaleLowerCase();
 		const fallback = exact >= 0 ? exact : paths.findIndex((path) => path.split(/[\\/]/).pop()?.toLocaleLowerCase() === fileName);
 		if (fallback >= 0) {
-			playLocalAt(fallback);
+			playLocalAt(fallback, track.title);
 			return;
 		}
 		// Restored metadata may outlive a local file. Keep the player usable by
 		// connecting to the first bundled/default naia-settings BGM when present.
-		if (paths.length > 0) playLocalAt(0);
+		if (paths.length > 0) playLocalAt(0, track.title);
 	}
 
 	function playNext(): boolean {
@@ -1516,6 +1555,10 @@ export function BgmPlayer({ naia }: Props) {
 		const playlist = state.playlists.find((item) => item.id === state.activePlaylistId);
 		if (playlist && prevIndex >= 0) playLibraryTrack(playlist.tracks[prevIndex], prevIndex, playlist.id);
 	}
+
+	playNextRef.current = playNext;
+	playPrevRef.current = playPrev;
+	playLibraryTrackRef.current = playLibraryTrack;
 
 	// ── Search ────────────────────────────────────────────────────────────────
 
@@ -1613,6 +1656,7 @@ export function BgmPlayer({ naia }: Props) {
 			className="bgm-player"
 			ref={playerRef}
 			data-bgm-playback-status={playbackSnapshot?.status ?? "idle"}
+			data-bgm-local-count={localTracks.length}
 			data-bgm-current-title={playbackSnapshot?.selected.title ?? ""}
 			data-bgm-announced-title={announceableTitle}
 			data-bgm-queue-length={bgmPlayback.queue().length}
