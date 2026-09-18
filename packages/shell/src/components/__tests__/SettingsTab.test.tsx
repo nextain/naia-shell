@@ -2645,6 +2645,138 @@ describe("SettingsTab — memory tab (#298)", () => {
 		).not.toThrow();
 	});
 
+	it("clears leftover 40% install progress and shows a runtime-exit reason instead of hanging (#672)", async () => {
+		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				ttsProvider: "edge",
+				ttsEnabled: true,
+				localVoiceEnabled: false,
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(false);
+			if (command === "read_naia_ui_config") return Promise.resolve("{}");
+			if (command === "write_naia_ui_config") return Promise.resolve();
+			if (command === "write_naia_config") return Promise.resolve();
+			if (command === "write_slots_manifest") return Promise.resolve();
+			if (command === "fetch_naia_balance")
+				return Promise.resolve({ balance: 1 });
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: "ready-to-start",
+					ready: false,
+					canStart: true,
+					summary: "Local runtime files are ready.",
+					steps: [],
+				});
+			if (command === "start_voxcpm2")
+				return Promise.reject(
+					new Error(
+						"Naia Host TensorRT runtime exited before readiness (still running, or the exit status could not be read). See C:/naia-test-home/logs/voxcpm2-stderr.log Windows Defender Application Control blocked a GPU runtime library (WDAC / os error 4551).\n[WinError 4551] Could not load voxcpm2_tensorrt.activation DLL",
+					),
+				);
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+		const selector = screen.getByTestId("profile-tts-provider");
+		await vi.waitFor(() =>
+			expect(
+				(selector as HTMLSelectElement).querySelector(
+					'option[value="naia-local-voice"]',
+				),
+			).not.toBeDisabled(),
+		);
+		await vi.waitFor(() =>
+			expect(eventListeners.has("voxcpm2_install_progress")).toBe(true),
+		);
+		act(() => {
+			eventListeners.get("voxcpm2_install_progress")?.({
+				payload: {
+					phase: "install",
+					step: "reference-voice",
+					label: "Host voice palette ready",
+					percent: 40,
+				},
+			});
+		});
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+		await vi.waitFor(() => {
+			expect(screen.queryByTestId("voxcpm2-install-progress")).toBeNull();
+			const status = screen.getByTestId("profile-voice-status");
+			expect(status.textContent).toMatch(/WDAC|4551|activation DLL/i);
+			expect(status.textContent).not.toMatch(/\(None\)/);
+		});
+	});
+
+	it("clears install progress when Rust emits a failed phase (#672)", async () => {
+		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				ttsProvider: "naia-local-voice",
+				ttsEnabled: false,
+				localVoiceEnabled: false,
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(false);
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: "ready-to-start",
+					ready: false,
+					canStart: true,
+					summary: "Local runtime files are ready.",
+					steps: [],
+				});
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		await screen.findByTestId("local-voice-toggle");
+		await vi.waitFor(() =>
+			expect(eventListeners.has("voxcpm2_install_progress")).toBe(true),
+		);
+		act(() => {
+			eventListeners.get("voxcpm2_install_progress")?.({
+				payload: {
+					phase: "install",
+					step: "reference-voice",
+					label: "Host voice palette ready",
+					percent: 40,
+				},
+			});
+		});
+		expect(screen.getByTestId("voxcpm2-install-progress")).toBeTruthy();
+		act(() => {
+			eventListeners.get("voxcpm2_install_progress")?.({
+				payload: {
+					phase: "failed",
+					step: "failed",
+					label: "Naia Host TensorRT runtime exited before readiness (exit code 1). See C:/naia-test-home/logs/voxcpm2-stderr.log",
+					percent: 0,
+				},
+			});
+		});
+		expect(screen.queryByTestId("voxcpm2-install-progress")).toBeNull();
+		expect(
+			screen.getByText(/exited before readiness \(exit code 1\)/),
+		).toBeTruthy();
+	});
+
 	it("restores an explicitly enabled Naia Local runtime for preset playback", async () => {
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
 		localStorage.setItem(

@@ -7287,13 +7287,26 @@ async fn install_voxcpm2_runtime(
             let status = child
                 .wait()
                 .map_err(|error| format!("Naia Host installer wait failed: {error}"))?;
-            status.success().then_some(()).ok_or_else(|| {
-                format!(
-                    "Naia Host installation failed (exit={:?}). See {}",
-                    status.code(),
+            if status.success() {
+                Ok(())
+            } else {
+                let tail = read_log_file_tail(&log_path, 12);
+                let reason = format_child_exit_status(Some(status));
+                let mut message = format!(
+                    "Naia Host installation failed ({reason}). See {}",
                     log_path.display()
-                )
-            })
+                );
+                if let Some(hint) = describe_runtime_stderr(&tail) {
+                    message.push(' ');
+                    message.push_str(&hint);
+                }
+                if !tail.is_empty() {
+                    message.push('\n');
+                    message.push_str(&tail);
+                }
+                emit_voxcpm2_progress_failed(&app, &message);
+                Err(message)
+            }
         }
     })
     .await
@@ -7313,9 +7326,11 @@ async fn install_voxcpm2_runtime(
             .filter_map(|step| step.failure.as_ref().map(|failure| failure.code))
             .collect::<Vec<_>>()
             .join(", ");
-        Err(format!(
+        let message = format!(
             "Naia Host installer exited successfully but runtime verification is incomplete: {failures}"
-        ))
+        );
+        emit_voxcpm2_progress_failed(&app, &message);
+        Err(message)
     }
 }
 
@@ -7428,6 +7443,120 @@ fn map_voxcpm2_startup_error(code: &str) -> String {
     .to_string()
 }
 
+fn read_log_file_tail(path: &std::path::Path, max_lines: usize) -> String {
+    match std::fs::read_to_string(path) {
+        Ok(contents) => contents
+            .lines()
+            .rev()
+            .take(max_lines)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string(),
+        Err(_) => String::new(),
+    }
+}
+
+fn format_child_exit_status(status: Option<std::process::ExitStatus>) -> String {
+    match status {
+        Some(status) => match status.code() {
+            Some(code) => format!("exit code {code}"),
+            None => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    if let Some(signal) = status.signal() {
+                        return format!("killed by signal {signal}");
+                    }
+                }
+                "terminated without an exit code".to_string()
+            }
+        },
+        None => "still running, or the exit status could not be read".to_string(),
+    }
+}
+
+fn describe_runtime_stderr(tail: &str) -> Option<String> {
+    let lower = tail.to_ascii_lowercase();
+    if lower.contains("4551")
+        || lower.contains("wdac")
+        || lower.contains("code integrity")
+        || lower.contains("application control")
+        || (lower.contains("windows defender") && lower.contains("blocked"))
+    {
+        return Some(
+            "Windows Defender Application Control blocked a GPU runtime library (WDAC / os error 4551)."
+                .to_string(),
+        );
+    }
+    if lower.contains("voxcpm2_tensorrt.activation")
+        || (lower.contains(".dll")
+            && (lower.contains("load")
+                || lower.contains("error loading")
+                || lower.contains("cannot")))
+    {
+        return Some("a required GPU runtime DLL failed to load.".to_string());
+    }
+    None
+}
+
+fn format_voxcpm2_runtime_exit(
+    status: Option<std::process::ExitStatus>,
+    log_path: &std::path::Path,
+    stderr_tail: &str,
+) -> String {
+    let reason = format_child_exit_status(status);
+    let mut message = format!(
+        "Naia Host TensorRT runtime exited before readiness ({reason}). See {}",
+        log_path.display()
+    );
+    if let Some(hint) = describe_runtime_stderr(stderr_tail) {
+        message.push(' ');
+        message.push_str(&hint);
+    }
+    let tail = stderr_tail.trim();
+    if !tail.is_empty() {
+        message.push('\n');
+        message.push_str(tail);
+    }
+    message
+}
+
+fn emit_voxcpm2_progress_failed(app: &tauri::AppHandle, label: &str) {
+    let _ = app.emit(
+        "voxcpm2_install_progress",
+        serde_json::json!({
+            "phase": "failed",
+            "step": "failed",
+            "label": label,
+            "percent": 0,
+        }),
+    );
+}
+
+fn wait_for_child_exit(
+    child: &mut Child,
+    timeout: std::time::Duration,
+) -> Option<std::process::ExitStatus> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                return child.wait().ok();
+            }
+            Err(_) => return child.wait().ok(),
+        }
+    }
+}
+
 /// 로컬 음성 런타임을 띄운다.
 ///
 /// 운영체제별 사본을 두지 않는다. 다른 것은 파일이 놓인 자리와 가속기 이름
@@ -7481,6 +7610,7 @@ fn spawn_voxcpm2(
     .env("VOXCPM_TRT_ENGINE_DIR", &engine_dir)
     .env("VOXCPM_INT8", "1")
     .env("VOXCPM_CPU_QUANTIZE", "1")
+    .env_remove("VOXCPM_DEVICE")
     // (2026-08-18 실측) the progress loop is the AR decode, NOT the diffusion
     // steps — lowering VOXCPM_TIMESTEPS did not change it/s, so keep the
     // quality default. The real cold-cost is the per-voice prompt cache: the
@@ -7520,14 +7650,22 @@ fn spawn_voxcpm2(
         library_dir.is_dir().then_some(library_dir.as_path()),
         &std::env::var(library_path_var).unwrap_or_default(),
     );
+    let mut gpu_selected = false;
     for (key, value) in &accelerator_env {
         cmd.env(key, value);
         if key == profile.hardware.visible_devices_var {
+            gpu_selected = true;
             log_both(&format!(
                 "[Naia] 로컬 음성을 {value}번 카드에 올립니다 ({key}={value}, 카드 {}장)",
                 gpus.len()
             ));
         }
+    }
+    if let Some(device) = voice_runtime::resolve_torch_device(
+        gpu_selected,
+        std::env::var("VOXCPM_DEVICE").ok().as_deref(),
+    ) {
+        cmd.env("VOXCPM_DEVICE", device);
     }
 
     platform::hide_console(&mut cmd);
@@ -7587,26 +7725,25 @@ fn spawn_voxcpm2(
                 return Err(map_voxcpm2_startup_error(&code));
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                let status = child.try_wait().ok().flatten();
-                return Err(format!(
-                    "Naia Host TensorRT runtime exited before readiness ({status:?}). See {}",
-                    log_path.display()
-                ));
+                let status =
+                    wait_for_child_exit(&mut child, std::time::Duration::from_millis(1500));
+                let tail = read_log_file_tail(&log_path, 12);
+                return Err(format_voxcpm2_runtime_exit(status, &log_path, &tail));
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if let Ok(Some(status)) = child.try_wait() {
-                    return Err(format!(
-                        "Naia Host TensorRT runtime exited (code={:?}). See {}",
-                        status.code(),
-                        log_path.display()
+                    let tail = read_log_file_tail(&log_path, 12);
+                    return Err(format_voxcpm2_runtime_exit(
+                        Some(status),
+                        &log_path,
+                        &tail,
                     ));
                 }
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
-                    return Err(format!(
-                        "Naia Host TensorRT readiness timed out. See {}",
-                        log_path.display()
-                    ));
+                    let status = child.wait().ok();
+                    let tail = read_log_file_tail(&log_path, 12);
+                    return Err(format_voxcpm2_runtime_exit(status, &log_path, &tail));
                 }
             }
         }
@@ -7965,7 +8102,11 @@ async fn start_voxcpm2(
             spawn_voxcpm2(&bundle_root, naia_key.as_str(), resolved, gpu_index)
         })
             .await
-            .map_err(|error| format!("task error: {error}"))??;
+            .map_err(|error| format!("task error: {error}"))?
+            .map_err(|error| {
+                emit_voxcpm2_progress_failed(&app, &error);
+                error
+            })?;
     let ready = process.ready.clone();
     *lock_or_recover(&state.voxcpm2, "voxcpm2") = Some(process);
     Ok(ready)
@@ -16453,6 +16594,41 @@ mod tests {
             map_voxcpm2_startup_error("unexpected"),
             "voxcpm2_activation_error_invalid"
         );
+    }
+
+    #[test]
+    fn voxcpm2_runtime_exit_never_shows_debug_none_as_the_only_status() {
+        let log = std::path::Path::new("C:/naia-test-home/.naia-dev/logs/voxcpm2-stderr.log");
+        let message = format_voxcpm2_runtime_exit(None, log, "");
+        assert!(
+            !message.contains("(None)"),
+            "debug Option::None leaked into the user error: {message}"
+        );
+        assert!(
+            message.contains("still running") || message.contains("could not be read"),
+            "{message}"
+        );
+        assert!(message.contains("voxcpm2-stderr.log"), "{message}");
+    }
+
+    #[test]
+    fn voxcpm2_runtime_exit_includes_wdac_stderr_tail() {
+        let log = std::path::Path::new("C:/naia-test-home/logs/voxcpm2-stderr.log");
+        let tail = "[WinError 4551] Code Integrity policy\nCould not load voxcpm2_tensorrt.activation DLL";
+        let message = format_voxcpm2_runtime_exit(None, log, tail);
+        assert!(!message.contains("(None)"), "{message}");
+        assert!(message.contains("WDAC"), "{message}");
+        assert!(message.contains("4551"), "{message}");
+        assert!(message.contains("voxcpm2_tensorrt.activation"), "{message}");
+    }
+
+    #[test]
+    fn voxcpm2_log_tail_returns_last_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stderr.log");
+        std::fs::write(&path, "a\nb\nc\nd\ne\n").unwrap();
+        assert_eq!(read_log_file_tail(&path, 3), "c\nd\ne");
+        assert_eq!(read_log_file_tail(&path.join("missing"), 3), "");
     }
 
     // NAIA_HOME 우선순위 테스트는 자리를 만드는 모듈이 갖는다

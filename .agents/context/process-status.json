@@ -19,6 +19,22 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_672_host_voice_exit": {
+      "issue": 672,
+      "title": "Host TensorRT voice: stuck ~40% then runtime exited before readiness (None)",
+      "requirements": "docs/requirements.md FR-VOICE.21",
+      "scenario": "docs/user-scenarios.md UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "pending"
+      },
+      "status": "implemented",
+      "verification": "cargo test --lib voxcpm2_runtime_exit/voxcpm2_log_tail/상속된_cpu 4 passed; SettingsTab #672 2 passed; platform-matrix spawn+installer 2 passed. 4060 field QA out of scope.",
+      "last_updated": "2026-09-18T15:50:00+09:00"
+    },
     "issue_671_bgm_observe": {
       "issue": 671,
       "title": "BGM: local tracks skip on AI next/prev; status timeout so AI cannot name current song",

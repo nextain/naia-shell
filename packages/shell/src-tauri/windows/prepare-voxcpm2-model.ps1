@@ -147,6 +147,8 @@ for ($VoiceIndex = 0; $VoiceIndex -lt $ReferenceVoices.Count; $VoiceIndex++) {
 }
 Write-InstallProgress "reference-voice" "Host voice palette ready" 40
 
+Write-InstallProgress "nvidia" "Acquiring pinned NVIDIA TensorRT and CUDA packages" 42
+
 # TensorRT's Python/runtime distributions are acquired automatically from the
 # NVIDIA-controlled index during this explicit online installer transaction.
 # They are staged outside the immutable product artifact, verified by exact
@@ -209,15 +211,19 @@ if (-not $NvidiaReady) {
   }
   if (Test-Path -LiteralPath $NvidiaBackup) { Remove-Item -LiteralPath $NvidiaBackup -Recurse -Force }
 }
+Write-InstallProgress "nvidia" "NVIDIA TensorRT and CUDA packages ready" 50
 $env:PYTHONPATH = $NvidiaRoot
 Invoke-Runtime @("-B", "-s", "-c", "import torch,voxcpm,soundfile,tensorrt,onnx; import voxcpm2_tensorrt.http_server; assert torch.cuda.is_available()") "Bundled VoxCPM2 TensorRT runtime verification failed"
 
 $ModelDir = Join-Path $RuntimeRoot "models\VoxCPM2"
 $ModelArgs = @("-B", "-s", "-c", "from voxcpm2_tensorrt.materialize_voxcpm2_model import main; main()", "--repo", [string]$Manifest.model.id, "--revision", [string]$Manifest.model.revision, "--model-dir", $ModelDir)
+Write-InstallProgress "model" "Preparing the voice model" 55
 if (-not (Test-Runtime @($ModelArgs + "--verify-only"))) {
   Write-Output "VOXCPM2_MODEL_PREPARE_REQUIRED"
+  Write-InstallProgress "model" "Downloading the voice model" 56
   Invoke-Runtime $ModelArgs "Pinned VoxCPM2 model materialization failed"
 }
+Write-InstallProgress "model" "Voice model ready" 70
 
 $Checkpoints = Join-Path $RuntimeRoot "checkpoints"
 $Engine = Join-Path $Checkpoints "voxcpm2_trt"
@@ -230,6 +236,7 @@ $env:NAIA_VOXCPM2_MODEL_REVISION = [string]$Manifest.model.revision
 $VerifyEngine = "import os; from pathlib import Path; from voxcpm2_tensorrt.model_contract import MODEL_RECEIPT_NAME,sha256_file; from voxcpm2_tensorrt.voxcpm2_trt import TensorRTLocDiT,load_engine_manifest; m=load_engine_manifest(os.environ['NAIA_VOXCPM2_ENGINE_DIR'],model_id=os.environ['NAIA_VOXCPM2_MODEL_ID']); assert m.data['model_revision']==os.environ['NAIA_VOXCPM2_MODEL_REVISION'].lower(); assert m.data['model_receipt_sha256']==sha256_file(Path(os.environ['NAIA_VOXCPM2_MODEL_DIR'])/MODEL_RECEIPT_NAME); TensorRTLocDiT(m)"
 if (-not (Test-Runtime @("-B", "-s", "-c", $VerifyEngine))) {
   Write-Output "VOXCPM2_ENGINE_PREPARE_REQUIRED"
+  Write-InstallProgress "engine" "Building the GPU engine" 75
   if (Test-Path -LiteralPath $Pending) { Remove-Item -LiteralPath $Pending -Recurse -Force }
   New-Item -ItemType Directory -Force -Path $Pending | Out-Null
   Invoke-Runtime @("-B", "-s", "-c", "from voxcpm2_tensorrt.build_voxcpm2_trt import main; main()", "--model", [string]$Manifest.model.id, "--revision", [string]$Manifest.model.revision, "--model-dir", $ModelDir, "--output-dir", $Pending, "--workspace-gib", "1.0") "VoxCPM2 TensorRT engine preparation failed"
@@ -244,6 +251,7 @@ if (-not (Test-Runtime @("-B", "-s", "-c", $VerifyEngine))) {
   if (Test-Path -LiteralPath $Backup) { Remove-Item -LiteralPath $Backup -Recurse -Force }
   Invoke-Runtime @("-B", "-s", "-c", $VerifyEngine) "Prepared VoxCPM2 TensorRT engine verification failed"
 }
+Write-InstallProgress "engine" "GPU engine ready" 95
 
 $Ready = [ordered]@{
   schemaVersion = 1
@@ -264,4 +272,5 @@ $ReadyPath = Join-Path $RuntimeRoot "voxcpm2-runtime-ready.json"
 $ReadyPending = "$ReadyPath.pending"
 [IO.File]::WriteAllText($ReadyPending, (($Ready | ConvertTo-Json -Depth 8) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
 Move-Item -LiteralPath $ReadyPending -Destination $ReadyPath -Force
+Write-InstallProgress "done" "Local voice runtime ready" 100
 Write-Output "VOXCPM2_MODEL_READY"

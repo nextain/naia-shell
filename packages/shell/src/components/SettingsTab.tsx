@@ -881,6 +881,12 @@ export function SettingsTab() {
 			label?: string;
 			step?: string;
 		}>("voxcpm2_install_progress", (event) => {
+			if (event.payload.phase === "failed") {
+				setVoxcpm2Progress(null);
+				if (event.payload.label)
+					setVoxcpm2InstallError(String(event.payload.label));
+				return;
+			}
 			setVoxcpm2Progress(event.payload);
 		});
 		return () => {
@@ -1029,34 +1035,41 @@ export function SettingsTab() {
 		ready: string | null;
 		message?: string;
 	}> => {
-		let installation = await refreshVoxCpm2Installation();
-		if (!installation?.canStart) {
-			setCascadeMsg(t("voice.hostEngineInstalling"));
-			const installed = await invoke<unknown>("install_voxcpm2_runtime");
-			if (isVoxCpm2InstallationStatus(installed))
-				setVoxCpm2Installation(installed);
-			installation = await refreshVoxCpm2Installation();
+		try {
+			let installation = await refreshVoxCpm2Installation();
+			if (!installation?.canStart) {
+				setCascadeMsg(t("voice.hostEngineInstalling"));
+				const installed = await invoke<unknown>("install_voxcpm2_runtime");
+				if (isVoxCpm2InstallationStatus(installed))
+					setVoxCpm2Installation(installed);
+				installation = await refreshVoxCpm2Installation();
+				if (!installation?.canStart)
+					return {
+						ready: null,
+						message: installation?.summary ?? t("settings.cascadeError"),
+					};
+			}
+			// Do not keep the last install percent (often 40% on Windows) while
+			// the runtime is starting or after it has already exited.
 			setVoxcpm2Progress(null);
-			if (!installation?.canStart)
-				return {
-					ready: null,
-					message: installation?.summary ?? t("settings.cascadeError"),
-				};
+			// CASCADE_READY now exposes only the local voice facade URL.
+			// Pre-baked NVA playback remains independent from this voice runtime.
+			const ready = await invoke<string>("start_voxcpm2", {
+				expectedLoaderProfile,
+				// 사람이 고른 카드가 있으면 그것으로 (#537).
+				gpuIndex: existing?.localVoiceGpuIndex ?? null,
+			});
+			const afterStart = await refreshVoxCpm2Installation();
+			return afterStart?.ready
+				? { ready }
+				: {
+						ready: null,
+						message: afterStart?.summary,
+					};
+		} catch (error) {
+			setVoxcpm2Progress(null);
+			throw error;
 		}
-		// CASCADE_READY now exposes only the local voice facade URL.
-		// Pre-baked NVA playback remains independent from this voice runtime.
-		const ready = await invoke<string>("start_voxcpm2", {
-			expectedLoaderProfile,
-			// 사람이 고른 카드가 있으면 그것으로 (#537).
-			gpuIndex: existing?.localVoiceGpuIndex ?? null,
-		});
-		const afterStart = await refreshVoxCpm2Installation();
-		return afterStart?.ready
-			? { ready }
-			: {
-					ready: null,
-					message: afterStart?.summary,
-				};
 	};
 	const rollbackLocalVoiceSelection = async (
 		cfg: AppConfig,
@@ -1271,6 +1284,7 @@ export function SettingsTab() {
 			setVoxcpm2InstallError(null);
 			return true;
 		} catch (e) {
+			setVoxcpm2Progress(null);
 			const errorCode = e instanceof Error ? e.message.trim() : String(e).trim();
 			const loginRequired =
 				errorCode === "voxcpm2_naia_member_login_required";
@@ -1304,6 +1318,7 @@ export function SettingsTab() {
 		} finally {
 			localVoiceTransactionRef.current = false;
 			setCascadeBusy(false);
+			setVoxcpm2Progress(null);
 		}
 	};
 	const handleToggleCascade = async () => {

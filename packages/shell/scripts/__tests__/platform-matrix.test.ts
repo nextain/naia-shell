@@ -281,6 +281,12 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(rust).toContain('.env("PYTHONUTF8", "1")');
 		expect(rust).toContain('.env("PYTHONIOENCODING", "utf-8")');
 		expect(rust).toContain('.env("PYTHONDONTWRITEBYTECODE", "1")');
+		expect(rust).toContain('.env_remove("VOXCPM_DEVICE")');
+		expect(rust).toContain("resolve_torch_device");
+		expect(rust).toContain("format_voxcpm2_runtime_exit");
+		expect(rust).not.toContain(
+			"Naia Host TensorRT runtime exited before readiness ({status:?})",
+		);
 		expect(rust).toContain("spawn_voxcpm2(&bundle_root, naia_key.as_str()");
 		expect(
 			rust.match(/platform::kill_stale_voxcpm2\(\);/g)?.length ?? 0,
@@ -318,6 +324,12 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(provisioner).toContain('"--model-dir", $ModelDir');
 		expect(provisioner).toContain(
 			"Move-Item -LiteralPath $Backup -Destination $Engine",
+		);
+		expect(provisioner).toContain(
+			'Write-InstallProgress "nvidia" "Acquiring pinned NVIDIA TensorRT and CUDA packages" 42',
+		);
+		expect(provisioner).toContain(
+			'Write-InstallProgress "done" "Local voice runtime ready" 100',
 		);
 	});
 
