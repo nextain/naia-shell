@@ -308,6 +308,23 @@ pub fn accelerator_env(
     out
 }
 
+/// Torch/AudioVAE device for the child process.
+///
+/// `Command` inherits the parent environment. A leftover `VOXCPM_DEVICE=cpu`
+/// would silently keep AudioVAE on CPU after the user selected a GPU. When a
+/// GPU was chosen, the child always gets `cuda`. Inherited CPU offload is
+/// ignored, not preserved.
+pub fn resolve_torch_device(
+    gpu_selected: bool,
+    _inherited_device: Option<&str>,
+) -> Option<&'static str> {
+    if gpu_selected {
+        Some("cuda")
+    } else {
+        None
+    }
+}
+
 /// 이 기계의 가속기를 찾는다.
 ///
 /// NVIDIA 는 `nvidia-smi`, AMD 는 `rocm-smi` 로 묻는다. 둘 다 없으면 `None` —
@@ -649,6 +666,15 @@ mod tests {
             "",
         );
         assert!(env.is_empty());
+    }
+
+    #[test]
+    fn gpu를_고르면_상속된_cpu_장치를_cuda로_덮는다() {
+        assert_eq!(resolve_torch_device(true, Some("cpu")), Some("cuda"));
+        assert_eq!(resolve_torch_device(true, Some("CUDA")), Some("cuda"));
+        assert_eq!(resolve_torch_device(true, None), Some("cuda"));
+        assert_eq!(resolve_torch_device(false, Some("cpu")), None);
+        assert_eq!(resolve_torch_device(false, None), None);
     }
 
     /// 세운 환경 변수가 실제로 그 카드에 올리는가.

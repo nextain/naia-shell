@@ -1030,6 +1030,13 @@ P02 release-state matrix: build preparation, missing required runtime, successfu
 | **UC-V017-VOXCPM2-PAYLOAD-UPGRADE** (#465) | A member upgrading from a release whose cached payload installs only the default voice does not see a false success followed by `VOXCPM2_REFERENCE_VOICE_MISSING`. Shell compares the installed control files with its packaged installer and activation contract, reuses the verified local runtime ZIP to atomically refresh a stale payload, installs the complete current voice palette, and reaches ready without another runtime archive download. | default-only stale-payload mutation + control-file digest regression + cached-ZIP upgrade/install smoke |
 | **UC-V017-VOXCPM2-RUNTIME-PIN-UPGRADE** (#518) | 셸 업그레이드가 런타임 아카이브만 갱신한 경우(제어 파일 동일 — 예: v0.2.2 r2의 발화 째짐 수정), 기존 설치자의 구 payload 가 조용히 재사용되지 않는다. 셸은 번들 download-manifest 의 `artifactManifestSha256` 핀을 설치 payload 의 artifact-manifest 해시와 대조해, 불일치면 재사용을 거부하고 기존 취득 플로우로 재스테이징을 유도한다. 사용자는 업그레이드 후 실제로 수정된 엔진으로 발화를 듣는다. | Rust reuse-gate 핀 일치/불일치/manifest 부재 단위 + 실 payload 해시 대조 |
 | **UC-V017-VOXCPM2-ENTITLEMENT-RECOVERY** (#470) | A signed-in member whose stored Naia credential is rejected with HTTP 401/403 starts local VoxCPM2 and sees a localized login-required recovery instead of an installed-but-not-ready generic failure. Shell clears only the rejected credential and keeps the local runtime installed. FREE/inactive membership and unavailable gateway failures remain distinct, fail closed, and preserve the credential for retry. No credential, account identifier, response body, or endpoint appears in stdout, logs, or IPC errors. | runtime BASIC/PRO/FREE/401/403/5xx/transport pytest + bounded startup envelope tests + Rust pre-readiness parser/mapping + Settings rejected/unavailable component tests |
+| **UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS** (#672) | 호스트 음성을 켜면 설치 진행이 40% 근처에서 멈추더라도, 런타임이 이미 죽었으면 바가 그 자리에 남지 않는다. 사용자는 `(None)` 한 줄이 아니라 종료 이유와 `voxcpm2-stderr.log` 끝줄(WDAC / os error 4551 / activation DLL)을 보고 이전 음성으로 돌아간다. GPU 를 고른 뒤에는 AudioVAE 가 부모 환경의 CPU 장치로 조용히 내려가지 않는다. | Rust runtime-exit/stderr/device 단위 + Settings 40% 해제·failed phase + Windows 설치기가 40% 이후에도 진행 줄을 냄 |
+
+Test Coverage Map (P02) — #672
+
+| S | 단위·계약 | 실기 | 비고 |
+|---|---|---|---|
+| UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS | `lib.rs` `format_voxcpm2_runtime_exit` / `describe_runtime_stderr` / `read_log_file_tail`; `voice_runtime.rs` `resolve_torch_device`; `SettingsTab.test.tsx` 40% 해제와 failed phase; `platform-matrix.test.ts` Windows 설치 진행 40% 이후 | 4060 실기 QA 는 이 패치 범위 밖 | 오류 문자열에 `(None)` 만 있으면 단위가 붉다 |
 
 ### 2026-08-14 v0.1.7 launch QA (#447)
 
