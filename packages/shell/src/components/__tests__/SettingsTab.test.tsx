@@ -605,24 +605,23 @@ describe("SettingsTab", () => {
 			"naia-config",
 			JSON.stringify({
 				provider: "nextain",
-				model: "grok-4.3",
+				model: "solar-mini",
 				apiKey: "",
 			}),
 		);
 		mockInvoke.mockResolvedValue([]);
 		stubPricingFetch([
 			{
-				model_key: "azure:grok-4.3",
-				input_price_per_million: 0.4,
-				output_price_per_million: 1.2,
-				cached_price_per_million: 0.08,
-				cache_write_price_per_million: 0.5,
+				model_key: "upstage:solar-mini",
+				input_price_per_million: 0.165,
+				output_price_per_million: 0.165,
+				cached_price_per_million: null,
 			},
 			{
-				model_key: "vertexai:gemini-3.1-flash-lite",
-				input_price_per_million: 0.1,
-				output_price_per_million: 5,
-				cached_price_per_million: 0.01,
+				model_key: "azure:deepseek-v4-flash",
+				input_price_per_million: 0.209,
+				output_price_per_million: 0.561,
+				cached_price_per_million: 0.0308,
 			},
 		]);
 
@@ -630,17 +629,23 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 
 		await screen.findByText(
-			/Price per 1M tokens: Input \$0\.400 · Output \$1\.200 · Cache read \$0\.080 · Cache write \$0\.500/,
+			/Price per 1M tokens: Input \$0\.165 · Output \$0\.165/,
 		);
 		let modelSelect = document.getElementById(
 			"model-select",
 		) as HTMLSelectElement;
 		const labels = [...modelSelect.options].map((option) => option.text);
 		expect(labels).toContain(
-			"Grok 4.3 (Price per 1M tokens: Input $0.400 / Output $1.200)",
+			"Solar Mini (Price per 1M tokens: Input $0.165 / Output $0.165)",
 		);
 		expect(labels.some((label) => label.includes("(Naia)"))).toBe(false);
 		expect(labels.some((label) => label.includes("Analysis only"))).toBe(false);
+		expect([...modelSelect.options].map((option) => option.value)).toEqual([
+			"solar-mini",
+			"deepseek-v4-flash",
+			"solar-pro4",
+			"gpt-5.6-luna",
+		]);
 		expect(
 			[...modelSelect.options].map((option) => option.value),
 		).not.toContain("naia-local");
@@ -650,6 +655,12 @@ describe("SettingsTab", () => {
 		expect(
 			[...modelSelect.options].map((option) => option.value),
 		).not.toContain("naia-0.9-omni-24g");
+		expect(
+			[...modelSelect.options].map((option) => option.value),
+		).not.toContain("grok-4.3");
+		expect(
+			[...modelSelect.options].map((option) => option.value),
+		).not.toContain("gpt-5.6-sol");
 
 		const sortSelect = screen.getByTestId(
 			"model-sort-mode",
@@ -665,8 +676,8 @@ describe("SettingsTab", () => {
 		const pricedOptions = [...modelSelect.options].map(
 			(option) => option.value,
 		);
-		expect(pricedOptions[0]).toBe("grok-4.3");
-		expect(modelSelect.value).toBe("grok-4.3");
+		expect(pricedOptions[0]).toBe("solar-mini");
+		expect(modelSelect.value).toBe("solar-mini");
 
 		fireEvent.change(sortSelect, { target: { value: "performance" } });
 		expect(
@@ -676,9 +687,9 @@ describe("SettingsTab", () => {
 		const performanceOptions = [...modelSelect.options].map(
 			(option) => option.value,
 		);
-		expect(performanceOptions[0]).toBe("gpt-5.6-sol");
+		expect(performanceOptions[0]).toBe("deepseek-v4-flash");
 		expect(performanceOptions).not.toEqual(pricedOptions);
-		expect(modelSelect.value).toBe("grok-4.3");
+		expect(modelSelect.value).toBe("solar-mini");
 		expect(
 			JSON.parse(localStorage.getItem("naia-config") ?? "{}").modelSortMode,
 		).toBe("performance");
@@ -691,19 +702,21 @@ describe("SettingsTab", () => {
 		).toBe("performance");
 	});
 
-	it("shows Korean domestic models (Upstage/CLOVA) under Naia with live pricing", async () => {
-		// Regression: upstage:/clova: prices were dropped, so domestic models showed
-		// no price. They must group under the nextain provider and carry pricing.
+	it("shows Korean domestic Solar models under Naia with live pricing", async () => {
 		localStorage.setItem(
 			"naia-config",
-			JSON.stringify({ provider: "nextain", model: "grok-4.3", apiKey: "" }),
+			JSON.stringify({
+				provider: "nextain",
+				model: "deepseek-v4-flash",
+				apiKey: "",
+			}),
 		);
 		mockInvoke.mockResolvedValue([]);
 		stubPricingFetch([
 			{
-				model_key: "azure:grok-4.3",
-				input_price_per_million: 0.4,
-				output_price_per_million: 1.2,
+				model_key: "azure:deepseek-v4-flash",
+				input_price_per_million: 0.209,
+				output_price_per_million: 0.561,
 				cached_price_per_million: null,
 			},
 			{
@@ -713,9 +726,9 @@ describe("SettingsTab", () => {
 				cached_price_per_million: 0.066,
 			},
 			{
-				model_key: "clova:HCX-007",
-				input_price_per_million: 0.97,
-				output_price_per_million: 3.88,
+				model_key: "upstage:solar-mini",
+				input_price_per_million: 0.165,
+				output_price_per_million: 0.165,
 				cached_price_per_million: null,
 			},
 		]);
@@ -739,13 +752,16 @@ describe("SettingsTab", () => {
 		expect(
 			labels.some(
 				(l) =>
-					l.includes("HCX-007") && l.includes("$0.970") && l.includes("$3.880"),
+					l.includes("Solar Mini") &&
+					l.includes("$0.165") &&
+					l.includes("$0.165"),
 			),
 		).toBe(true);
-		// Both group under nextain — selectable by their canonical ids.
+		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);
 		const values = [...modelSelect.options].map((o) => o.value);
 		expect(values).toContain("solar-pro4");
-		expect(values).toContain("HCX-007");
+		expect(values).toContain("solar-mini");
+		expect(values).not.toContain("HCX-007");
 	});
 
 	it("replaces a stale unavailable Naia selection with the first usable priced model", async () => {
@@ -761,9 +777,9 @@ describe("SettingsTab", () => {
 		mockInvoke.mockResolvedValue([]);
 		stubPricingFetch([
 			{
-				model_key: "azure:grok-4.3",
-				input_price_per_million: 0.4,
-				output_price_per_million: 1.2,
+				model_key: "azure:deepseek-v4-flash",
+				input_price_per_million: 0.209,
+				output_price_per_million: 0.561,
 				cached_price_per_million: null,
 			},
 		]);
@@ -775,13 +791,10 @@ describe("SettingsTab", () => {
 			const modelSelect = document.getElementById(
 				"model-select",
 			) as HTMLSelectElement;
-			expect(modelSelect.value).toBe("grok-4.3");
+			expect(modelSelect.value).toBe("deepseek-v4-flash");
 			expect(
 				[...modelSelect.options].map((option) => option.value),
 			).not.toContain("claude-opus-5");
-			expect(
-				JSON.parse(localStorage.getItem("naia-config") || "{}").model,
-			).toBe("grok-4.3");
 		});
 	});
 
@@ -1312,8 +1325,8 @@ describe("SettingsTab", () => {
 		);
 	});
 
-	it.each(["grok-4.3", "deepseek-v4-pro", "gpt-5.6-sol", "gpt-5.6-luna"])(
-		"keeps the live Naia Azure model %s selectable and persisted",
+	it.each(["deepseek-v4-flash", "solar-pro4", "solar-mini", "gpt-5.6-luna"])(
+		"keeps the live Naia-account model %s selectable and persisted",
 		async (modelId) => {
 			localStorage.setItem(
 				"naia-config",

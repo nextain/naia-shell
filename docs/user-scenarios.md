@@ -329,13 +329,14 @@ Before starting the Agent, the instructor opens **Coding Workers**, enables Jeon
 
 Success means the visible confirmation identifies the saved target and fixed boundary without exposing a token or raw Git output. A failed save keeps the prior target unchanged and gives only the folder-readiness guidance.
 
-## UC-NAIA-AZURE-MODELS — Naia 계정으로 Azure 모델을 일반 대화에 사용한다
+## UC-NAIA-AZURE-MODELS — Naia 계정으로 저가 채팅 모델을 일반 대화에 사용한다
 
-Naia 계정으로 로그인한 사용자는 설정의 Naia 모델 목록에서 `grok-4.3`,
-`deepseek-v4-pro`, `gpt-5.6-sol`, `gpt-5.6-luna`를 선택하고 저장할 수 있다.
+Naia 계정으로 로그인한 사용자는 설정의 Naia 모델 목록에서
+`deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`(Naia Luna)만
+선택하고 저장할 수 있다. Codex ChatGPT 모델은 Codex 공급자에 그대로 남는다.
 
 선택 가능한 모든 Naia 채팅 모델은 동일한 Shell 스킬 목록을 전달받아 호출할 수 있다. 도구 호출이 검증되지 않았거나 운영 catalog에서 사용할 수 없는 모델은 선택 가능한 모델로 취급하지 않는다.
-`claude-opus-5`는 Azure quota가 열리기 전까지 준비중으로 보이며 적용되지 않는다.
+목록에서 빠진 이전 Naia 모델 id는 기본값 `deepseek-v4-flash`로 옮긴다.
 재시작 후 선택이 복원되며 일반 채팅은
 기존 Shell→Agent provider pipeline과 같은 Naia 키를 통해 선택한 정확한 모델로 전달된다.
 Gateway가 제공한 Azure provenance와 tool 지원 여부는 정직하게 반영하고, gateway가
@@ -360,7 +361,7 @@ Gateway의 가격은 이미 10%가 반영된 고객가이므로 Shell은 다시 
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 실제 Shell 설정 화면에서 역할 설정 저장과 재시작 복원 |
-| UC-NAIA-AZURE-MODELS | `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: Naia 모델 목록이 가격 가중 순서로 서고, 쓸 수 없는 모델은 숨으며, Azure provenance 와 도구 지원 여부가 gateway 응답대로 반영되는지 / `packages/shell/src/lib/__tests__/config.test.ts`: 선택이 재시작 뒤 복원되는지 | 실제 대화가 그 모델로 가는지는 사람이 받는다 — 자동으로 재는 자리는 아직 없다 |
+| UC-NAIA-AZURE-MODELS | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts` · `registry.test.ts`: 나이아 계정 선택기가 `deepseek-v4-flash` · `solar-pro4` · `solar-mini` · `gpt-5.6-luna` 네 개만 노출하고 Codex 목록은 그대로인지. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 가격 순·성능 순과 빠진 모델 숨김. `e2e/capability-settings.spec.ts`: 실 UI 선택기 네 개. | 실 대화 403은 게이트웨이 소유 — 선택기 축소가 고치지 않는다 |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
 1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.
@@ -982,7 +983,7 @@ Those older sections are historical evidence only.
 
 | Scenario | User-observable outcome | Coverage |
 |---|---|---|
-| **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 모델 선택기에도 `DeepSeek V4 Flash`가 `DeepSeek V4 Pro` 옆에 나타나고, "Naia 기본값 적용"을 눌러도 같은 값이 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `lib/slots/__tests__/settings-slots.contract.test.ts`, `components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_E2E_NAIA_KEY 필요) |
+| **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 Naia 선택기에는 `deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`만 나타나고, "Naia 기본값 적용"을 눌러도 메인은 Flash로 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `lib/slots/__tests__/settings-slots.contract.test.ts`, `components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_E2E_NAIA_KEY 필요) |
 
 ### 2026-09-13 로그인하지 않고 쓰기 (#591, 에픽 #589)
 

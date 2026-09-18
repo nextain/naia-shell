@@ -78,7 +78,7 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
-| **FR-VOICE-AZURE.1** | `azure-realtime`은 nextain omni. 선택 시 외부 STT/TTS 슬롯 잠금(FR-CAP.2). 목소리는 sunhi/hyunsu | UC-VOICE-LIVE-AZURE | `registry.test.ts` · `slots.test.ts` |
+| **FR-VOICE-AZURE.1** | `azure-realtime`은 nextain omni 경로 id. #670 이후 Naia-account 채팅 선택기에는 없다. 저장된 live 설정은 id 패턴으로 계속 omni로 본다. 목소리는 sunhi/hyunsu | UC-VOICE-LIVE-AZURE | `registry.test.ts` · `slots.test.ts` |
 | **FR-VOICE-AZURE.2** | 음성 연결은 게이트웨이 `/v1/voice-live`로만 간다. Gemini `/v1/live`로 보내지 않는다. `gpt-4o-mini` live는 제품에 없다 | UC-VOICE-LIVE-AZURE | `resolve-live-provider.test.ts` |
 
 ### Third-party cloud voice removal (#603, epic #589)
@@ -107,7 +107,7 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 
 | ID | Requirement | Verification |
 |---|---|---|
-| **FR-NAIA-AZURE.1** | Naia provider는 `grok-4.3`, `deepseek-v4-pro`, `gpt-5.6-sol`, `gpt-5.6-luna`, `claude-opus-5`를 정적 fallback과 gateway catalog에서 노출한다. Opus는 quota가 열릴 때까지 준비중으로 표시한다. | registry/catalog unit |
+| **FR-NAIA-AZURE.1** | Naia-account (`nextain`) picker는 `deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`만 정적 fallback과 gateway catalog에서 노출한다. Codex ChatGPT 모델은 `codex` provider에 남긴다. 빠진 nextain id는 기본값 `deepseek-v4-flash`로 옮긴다. (#670) | registry/catalog unit |
 | **FR-NAIA-AZURE.2** | 선택은 기존 `naia-settings/config.json` SoT에 저장되고 재시작 후 복원된다. | config roundtrip + Settings FE |
 | **FR-NAIA-AZURE.3** | 일반 chat은 기존 Shell→Agent provider pipeline과 Naia key를 사용해 정확한 model ID를 보낸다. DeepSeek 요청은 tools/tool_choice를 보내지 않고 Grok은 기존 tool policy를 유지한다. 별도 Azure/direct-provider transport를 만들지 않는다. | request-body capture + controlled integration |
 | **FR-NAIA-AZURE.4** | gateway의 `supports_tools`와 `upstream_provider=azure`를 반영하며, gateway 실패 시 다른 provider/model로 silent fallback하지 않는다. | positive/negative catalog tests |
@@ -773,7 +773,7 @@ Verified this session with a real Chromium + dev server: `e2e/onboarding-fresh.s
 
 | ID | Normative requirement | Verification |
 |---|---|---|
-| **FR-LLM-DEFAULT.1** | The `nextain` (Naia) provider's model catalog includes `deepseek-v4-flash` (DeepSeek V4 Flash, GA 0731 release) alongside `deepseek-v4-pro`. The gateway (`project-any-llm`) already routes and prices this model (`docker/config.naia.yml`, `model_catalog.py`) with its own passing test suite (78 tests) — this row only makes it selectable in the shell. | `lib/llm/__tests__/registry.test.ts`, `registry-gateway-models.test.ts` (model lineup, labels, sort order) |
+| **FR-LLM-DEFAULT.1** | The `nextain` (Naia) provider's model catalog includes `deepseek-v4-flash` (DeepSeek V4 Flash, GA 0731 release) as the default of the four-model Naia-account picker (`solar-pro4`, `solar-mini`, `gpt-5.6-luna`). The gateway (`project-any-llm`) already routes and prices these models (`docker/config.naia.yml`, `model_catalog.py`). | `lib/llm/__tests__/registry.test.ts`, `registry-gateway-models.test.ts` (model lineup, labels, sort order) |
 | **FR-LLM-DEFAULT.2** | The Naia provider's default model (`registry.ts` `defaultModel`) and the login/onboarding auto-fill default (`NAIA_SLOT_DEFAULTS.main.model`) are both `deepseek-v4-flash`, replacing the prior `gemini-3.1-flash-lite`/`gemini-3.5-flash` split defaults. | `registry.test.ts`, `registry-gateway-models.test.ts`, `slots/__tests__/settings-slots.contract.test.ts` |
 | **FR-LLM-DEFAULT.3** | `deepseek-v4-flash` is tiered in `NAIA_GENERAL_CHAT_RECOMMENDATION` (product model-sort priority) at the same tier as `deepseek-v4-pro`, sourced from its official Azure Foundry model card and Artificial Analysis Intelligence Index (52, #3/101 open-weight models) rather than a fabricated score — see the citation comment above the table in `registry.ts`. | `registry.test.ts` sort-order test |
 | **FR-LLM-DEFAULT.4** | Every selectable Naia chat model supports Shell skill/tool calling. The offline registry and live gateway metadata must not downgrade a verified tool-capable model, and a model that cannot call tools is unavailable rather than selectable. | full selectable-model capability invariant + DeepSeek live-metadata/offline-fallback tests + Agent request-body contract |
