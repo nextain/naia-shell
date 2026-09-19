@@ -22,7 +22,6 @@ const deferredModules = [
 	"src/components/AtMentionPopover.tsx",
 	"src/components/ChatArea.tsx",
 	"src/components/ChatMarkdown.tsx",
-	"src/components/KnowledgeGraphView.tsx",
 	"src/components/OnboardingWizard.tsx",
 	"src/components/PermissionModal.tsx",
 	"src/components/SettingsTab.tsx",

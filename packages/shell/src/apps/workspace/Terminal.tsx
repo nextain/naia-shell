@@ -8,6 +8,7 @@ import {
 	useEffect,
 	useImperativeHandle,
 	useRef,
+	useState,
 } from "react";
 import { t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
@@ -194,6 +195,17 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 		const onReadyRef = useRef(onReady);
 		onReadyRef.current = onReady;
 
+		const [toastMessage, setToastMessage] = useState<string | null>(null);
+		const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+		const showToast = useCallback((msg: string) => {
+			if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+			setToastMessage(msg);
+			toastTimerRef.current = setTimeout(() => {
+				setToastMessage(null);
+			}, 3000);
+		}, []);
+
 		useImperativeHandle(
 			ref,
 			() => ({
@@ -274,7 +286,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 									end: { x: endCol, y: lineNum },
 								},
 								text: match[0],
-								activate(e, linkText) {
+								async activate(e, linkText) {
 									// Preserve xterm's normal click/drag selection. File links
 									// activate only with the platform primary modifier.
 									if (!shouldOpenTerminalFileLink(e)) return;
@@ -287,10 +299,24 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 									// opens the document viewer.
 									if (e.altKey && onAskAiRef.current) {
 										onAskAiRef.current(location.path);
-									} else {
-										onFileLocationRef.current?.(location);
-										onFileSelectRef.current?.(location.path);
+										return;
 									}
+									try {
+										const exists = await invoke<boolean>("fs_exists", {
+											path: location.path,
+											cwd: workingDirRef.current,
+										});
+										if (!exists) {
+											showToast(`파일을 찾을 수 없습니다: ${location.path}`);
+											return;
+										}
+									} catch (err) {
+										Logger.warn("Terminal", "fs_exists error", {
+											error: String(err),
+										});
+									}
+									onFileLocationRef.current?.(location);
+									onFileSelectRef.current?.(location.path);
 								},
 								leave() {},
 								hover() {},
@@ -330,6 +356,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 					Logger.warn("Terminal", "pty_write error", { error: String(e) });
 				});
 			});
+			const onBinaryDisposer =
+				typeof term.onBinary === "function"
+					? term.onBinary((data) => {
+							writePty(pty_id, data).catch((e) => {
+								Logger.warn("Terminal", "pty_write binary error", {
+									error: String(e),
+								});
+							});
+						})
+					: { dispose: () => {} };
 
 			// A PTY can emit its first frame before this component mounts (notably when
 			// the embedded Herdr client is reused). Register both listeners first, then
@@ -363,11 +399,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 				observer?.disconnect();
 				for (const fn of pendingUnlistens) fn();
 				onDataDisposer.dispose();
+				onBinaryDisposer.dispose();
 				termRef.current = null;
 				fitRef.current = null;
 				term.dispose();
 			};
-		}, [pty_id, forceRedraw]);
+		}, [pty_id, forceRedraw, showToast]);
 
 		useEffect(() => {
 			if (!active) return;
@@ -412,7 +449,17 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 				// own right-click menu instead.
 				onContextMenu={(e) => e.preventDefault()}
 				style={active ? undefined : { opacity: 0, pointerEvents: "none" }}
-			/>
+			>
+				{toastMessage && (
+					<div
+						className="workspace-app__idle-toast"
+						role="alert"
+						onClick={() => setToastMessage(null)}
+					>
+						{toastMessage}
+					</div>
+				)}
+			</div>
 		);
 	},
 );

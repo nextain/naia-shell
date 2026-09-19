@@ -1061,6 +1061,75 @@ pub fn workspace_get_git_info(path: String) -> Result<GitInfo, String> {
     })
 }
 
+const RECURSIVE_IGNORE_DIRS: &[&str] = &[
+    "node_modules",
+    ".git",
+    ".next",
+    "dist",
+    "build",
+    ".pnpm",
+    ".turbo",
+    "__pycache__",
+    ".venv",
+    "target",
+    ".flatpak-builder",
+    "flatpak-repo",
+];
+
+#[tauri::command]
+pub fn workspace_list_files_recursive(parent: String) -> Result<Vec<String>, String> {
+    let safe_path = validate_in_workspace(&parent)?;
+    let mut results = Vec::new();
+    let mut dirs_to_visit = vec![(safe_path, 0usize)];
+
+    while let Some((dir, depth)) = dirs_to_visit.pop() {
+        if depth > 15 {
+            continue;
+        }
+        if results.len() >= 20000 {
+            break;
+        }
+        if let Ok(read) = std::fs::read_dir(&dir) {
+            for entry in read.flatten() {
+                let p = entry.path();
+                let name = p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if name.starts_with('.') {
+                    continue;
+                }
+                if p.is_dir() {
+                    if !RECURSIVE_IGNORE_DIRS.contains(&name) {
+                        dirs_to_visit.push((p, depth + 1));
+                    }
+                } else if p.is_file() {
+                    results.push(p.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    results.sort();
+    Ok(results)
+}
+
+#[tauri::command]
+pub fn fs_exists(path: String, cwd: Option<String>) -> bool {
+    let target = if let Some(rel) = path.strip_prefix("~/") {
+        crate::data_home::user_home_path().map(|h| h.join(rel))
+    } else {
+        let p = std::path::PathBuf::from(&path);
+        if p.is_absolute() {
+            Some(p)
+        } else if let Some(cwd_str) = cwd {
+            Some(std::path::PathBuf::from(cwd_str).join(p))
+        } else {
+            Some(p)
+        }
+    };
+    target.map(|p| p.exists()).unwrap_or(false)
+}
+
 #[cfg(test)]
 mod open_grant_tests {
     use super::*;
@@ -1088,5 +1157,31 @@ mod open_grant_tests {
 
         let fresh = dir.path().join("아직없음.md");
         assert!(validate_write_path(&fresh.to_string_lossy()).is_err());
+    }
+
+    #[test]
+    fn fs_exists_checks_relative_and_absolute_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "hello").unwrap();
+
+        // Absolute path exists
+        assert!(fs_exists(file.to_string_lossy().to_string(), None));
+
+        // Relative path with cwd exists
+        assert!(fs_exists(
+            "test.txt".to_string(),
+            Some(dir.path().to_string_lossy().to_string())
+        ));
+
+        // Non-existent path returns false
+        assert!(!fs_exists(
+            "nonexistent.txt".to_string(),
+            Some(dir.path().to_string_lossy().to_string())
+        ));
+        assert!(!fs_exists(
+            dir.path().join("missing.txt").to_string_lossy().to_string(),
+            None
+        ));
     }
 }

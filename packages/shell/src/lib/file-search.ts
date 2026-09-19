@@ -63,26 +63,33 @@ export async function collectFiles(
 /** Collect only file paths (no folders). Used by QuickOpen. */
 export async function collectFilesOnly(
 	root: string,
-	depth: number,
+	depth = 0,
 ): Promise<string[]> {
-	if (depth > MAX_DEPTH) return [];
+	if (!root) return [];
 	try {
-		const entries = await invoke<DirEntry[]>("workspace_list_dirs", {
+		return await invoke<string[]>("workspace_list_files_recursive", {
 			parent: root,
 		});
-		const results: string[] = [];
-		for (const entry of entries) {
-			if (entry.is_dir) {
-				if (IGNORE_DIRS.has(entry.name)) continue;
-				const children = await collectFilesOnly(entry.path, depth + 1);
-				results.push(...children);
-			} else {
-				results.push(entry.path);
-			}
-		}
-		return results;
 	} catch {
-		return [];
+		if (depth > MAX_DEPTH) return [];
+		try {
+			const entries = await invoke<DirEntry[]>("workspace_list_dirs", {
+				parent: root,
+			});
+			const results: string[] = [];
+			for (const entry of entries) {
+				if (entry.is_dir) {
+					if (IGNORE_DIRS.has(entry.name)) continue;
+					const children = await collectFilesOnly(entry.path, depth + 1);
+					results.push(...children);
+				} else {
+					results.push(entry.path);
+				}
+			}
+			return results;
+		} catch {
+			return [];
+		}
 	}
 }
 

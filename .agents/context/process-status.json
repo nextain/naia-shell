@@ -19,6 +19,19 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_670_chat_403_detail": {
+      "issue": 670,
+      "title": "Naia account chat 403 must show Insufficient credits, not a bare Forbidden",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "last_updated": "2026-09-18T12:00:00+09:00"
+    },
     "issue_611_remove_direct_work_tools": {
       "issue": 611,
       "title": "Remove direct work tools from the model-facing registry",

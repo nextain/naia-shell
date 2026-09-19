@@ -55,6 +55,16 @@ export function HerdrWorkspaceRail(props: RailProps) {
 			>
 				<header className="herdr-workspace__section-title">
 					<span>{t("workspace.herdrFileTree")}</span>
+					{props.openFilePath ? (
+						<button
+							type="button"
+							className="herdr-workspace__toggle-btn"
+							onClick={props.onShowHerdr}
+							title={t("workspace.herdrBackLabel")}
+						>
+							Herdr 화면으로
+						</button>
+					) : null}
 					{props.workspaceRoot && (
 						<span
 							className="herdr-workspace__root"

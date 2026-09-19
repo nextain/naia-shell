@@ -23,7 +23,7 @@ export default {
 	"apps.missingEntryHint": "앱 디렉터리에 index.html을 추가하면 즉시 표시됩니다.",
 	"workspace.terminalProcessExited": "프로세스 종료",
 	"workspace.herdrFileTree": "파일 트리",
-	"workspace.contextTitle": "워크스페이스 컨텍스트",
+	"workspace.contextTitle": "AI 참조 컨텍스트",
 	"workspace.contextRefresh": "다시 읽기",
 	"workspace.contextLoading": "진입점을 읽는 중",
 	"workspace.contextScopeRoot": "루트",

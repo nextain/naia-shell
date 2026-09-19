@@ -114,29 +114,9 @@ export function useHerdrDocuments({
 		[locationGenerationRef, resolveFile, setSurface],
 	);
 
-	useEffect(() => {
-		const handler = (event: KeyboardEvent) => {
-			if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "p")
-				return;
-			if (useAppStore.getState().activeApp !== "workspace") return;
-			event.preventDefault();
-			setQuickOpenVisible((visible) => !visible);
-		};
-		window.addEventListener("keydown", handler);
-		return () => window.removeEventListener("keydown", handler);
-	}, []);
+	const openFilePathRef = useRef(openFilePath);
+	openFilePathRef.current = openFilePath;
 
-	const openFromTree = useCallback(
-		(path: string) => {
-			setOpenDocs((docs) => (docs.includes(path) ? docs : [...docs, path]));
-			setOpenFilePath(path);
-			setSurface("viewer");
-		},
-		[setSurface],
-	);
-	const sendToNaia = useCallback((path: string) => {
-		window.dispatchEvent(new CustomEvent("naia:ask-ai", { detail: path }));
-	}, []);
 	const closeDoc = useCallback(
 		(path: string) => {
 			setOpenDocs((docs) => {
@@ -156,6 +136,40 @@ export function useHerdrDocuments({
 		},
 		[showHerdr, terminalRef],
 	);
+
+	const closeDocRef = useRef(closeDoc);
+	closeDocRef.current = closeDoc;
+
+	useEffect(() => {
+		const handler = (event: KeyboardEvent) => {
+			if (!(event.ctrlKey || event.metaKey)) return;
+			const key = event.key.toLowerCase();
+			if (key === "p") {
+				if (useAppStore.getState().activeApp !== "workspace") return;
+				event.preventDefault();
+				setQuickOpenVisible((visible) => !visible);
+			} else if (key === "w") {
+				if (useAppStore.getState().activeApp !== "workspace") return;
+				if (!openFilePathRef.current) return;
+				event.preventDefault();
+				closeDocRef.current(openFilePathRef.current);
+			}
+		};
+		window.addEventListener("keydown", handler);
+		return () => window.removeEventListener("keydown", handler);
+	}, []);
+
+	const openFromTree = useCallback(
+		(path: string) => {
+			setOpenDocs((docs) => (docs.includes(path) ? docs : [...docs, path]));
+			setOpenFilePath(path);
+			setSurface("viewer");
+		},
+		[setSurface],
+	);
+	const sendToNaia = useCallback((path: string) => {
+		window.dispatchEvent(new CustomEvent("naia:ask-ai", { detail: path }));
+	}, []);
 
 	return {
 		openDocs,

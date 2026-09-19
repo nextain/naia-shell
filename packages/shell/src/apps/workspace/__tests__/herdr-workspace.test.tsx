@@ -638,5 +638,56 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		);
 	});
 
+	it("shows Herdr toggle button in rail when document is open and returns to Herdr", async () => {
+		respondWith(snapshot);
+		await renderHerdr();
+		await waitFor(() =>
+			expect(toolHandlers.has("skill_workspace_open_file")).toBe(true),
+		);
 
+		// Initially without open file, toggle button is not present
+		expect(screen.queryByRole("button", { name: "Herdr 화면으로" })).toBeNull();
+
+		// Open file
+		await toolHandlers.get("skill_workspace_open_file")?.({
+			path: "src/App.tsx",
+		});
+
+		await waitFor(() =>
+			expect(
+				screen.getByRole("button", { name: "Herdr 화면으로" }),
+			).toBeInTheDocument(),
+		);
+
+		// Clicking Herdr 화면으로 switches surface back to herdr
+		fireEvent.click(screen.getByRole("button", { name: "Herdr 화면으로" }));
+		await waitFor(() => {
+			expect(screen.getByTestId("embedded-herdr-terminal")).toBeInTheDocument();
+		});
+	});
+
+	it("closes current open tab on Ctrl+W shortcut", async () => {
+		respondWith(snapshot);
+		await renderHerdr();
+		await waitFor(() =>
+			expect(toolHandlers.has("skill_workspace_open_file")).toBe(true),
+		);
+
+		await toolHandlers.get("skill_workspace_open_file")?.({
+			path: "src/App.tsx",
+		});
+
+		await waitFor(() =>
+			expect(screen.getByTestId("workspace-viewer")).toBeInTheDocument(),
+		);
+
+		// Fire Ctrl+W keydown event
+		fireEvent.keyDown(window, { key: "w", ctrlKey: true });
+
+		// Document is closed, surface returns to herdr
+		await waitFor(() => {
+			expect(screen.queryByTestId("workspace-viewer")).toBeNull();
+			expect(screen.getByTestId("embedded-herdr-terminal")).toBeInTheDocument();
+		});
+	});
 });

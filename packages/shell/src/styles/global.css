@@ -8846,6 +8846,25 @@ body.resizing-row {
 	white-space: nowrap;
 }
 
+.herdr-workspace__toggle-btn {
+	background: var(--surface-2, #333);
+	border: 1px solid var(--border-color, #444);
+	border-radius: 4px;
+	color: var(--text-primary, #eee);
+	cursor: pointer;
+	font-size: 11px;
+	padding: 2px 6px;
+	white-space: nowrap;
+	flex-shrink: 0;
+	transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.herdr-workspace__toggle-btn:hover {
+	background: var(--hover-bg, rgba(255, 255, 255, 0.1));
+	border-color: var(--accent, #7ca0ff);
+	color: var(--accent, #7ca0ff);
+}
+
 .herdr-workspace__tabs {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
@@ -10779,7 +10798,8 @@ body.resizing-col * {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	max-width: 200px;
+	flex: 1;
+	min-width: 0;
 }
 
 .workspace-editor__badge {
@@ -10819,6 +10839,7 @@ body.resizing-col * {
 	color: var(--text-secondary, #888);
 	padding: 2px 8px;
 	margin-left: 4px;
+	flex-shrink: 0;
 }
 
 .workspace-editor__view-btn:first-of-type {

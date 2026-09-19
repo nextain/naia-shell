@@ -740,7 +740,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 		return (
 			<div className="workspace-editor workspace-editor--error">
 				<div className="workspace-editor__header">
-					<span className="workspace-editor__filename">{shortName}</span>
+					<span className="workspace-editor__filename" title={filePath}>{filePath}</span>
 					<button
 						type="button"
 						className="workspace-editor__view-btn workspace-editor__copy-path-btn"
@@ -772,7 +772,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 		>
 			{/* Header bar */}
 			<div className="workspace-editor__header">
-				<span className="workspace-editor__filename">{shortName}</span>
+				<span className="workspace-editor__filename" title={filePath}>{filePath}</span>
 				<button
 					type="button"
 					className="workspace-editor__view-btn workspace-editor__copy-path-btn"

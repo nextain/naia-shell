@@ -29,7 +29,7 @@ vi.mock("../../lib/cli-detection", async () => {
 		setCliEnabled: (...args: unknown[]) => mockSetCliEnabled(...args),
 		setGestureEnabled: (...args: unknown[]) => mockSetGestureEnabled(...args),
 		getEnabledClis: () => mockGetEnabledClis(),
-		isGestureDisabled: (...args: unknown[]) => mockIsGestureDisabled(...args),
+		isGestureDisabled: () => mockIsGestureDisabled(),
 	};
 });
 
