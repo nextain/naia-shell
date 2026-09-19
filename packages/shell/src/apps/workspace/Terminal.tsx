@@ -448,6 +448,16 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 				// right-click reaches xterm's mouse reporting and Herdr shows its
 				// own right-click menu instead.
 				onContextMenu={(e) => e.preventDefault()}
+				onDragOverCapture={(e) => {
+					if (e.dataTransfer.types.includes("Files")) {
+						e.stopPropagation();
+					}
+				}}
+				onDropCapture={(e) => {
+					if (e.dataTransfer.types.includes("Files")) {
+						e.stopPropagation();
+					}
+				}}
 				style={active ? undefined : { opacity: 0, pointerEvents: "none" }}
 			>
 				{toastMessage && (

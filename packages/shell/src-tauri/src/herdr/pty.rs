@@ -227,7 +227,15 @@ pub async fn herdr_pty_create(
             command.arg(session);
         }
         command.cwd(&dir_path);
-        command.env("HERDR_CONFIG_PATH", config_path);
+        command.env("HERDR_CONFIG_PATH", &config_path);
+
+        // Inject `naia` CLI interceptor to open files in the GUI viewer
+        let wrapper_dir = ensure_naia_wrapper_dir(&config_path);
+        if let Ok(old_path) = std::env::var("PATH") {
+            command.env("PATH", format!("{}:{}", wrapper_dir.display(), old_path));
+        } else {
+            command.env("PATH", wrapper_dir.display().to_string());
+        }
         let child = pair
             .slave
             .spawn_command(command)
@@ -361,6 +369,73 @@ pub async fn herdr_pty_create(
     .map_err(|e| format!("Herdr spawn task failed: {e}"))?
 }
 
+/// Ensure the `naia` CLI interceptor wrapper directory exists and contains
+/// the shim script that forwards single-file arguments to the GUI shell.
+pub(super) fn ensure_naia_wrapper_dir(config_path: &std::path::Path) -> std::path::PathBuf {
+    let wrapper_dir = config_path
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("bin");
+    let _ = std::fs::create_dir_all(&wrapper_dir);
+    let wrapper_script = wrapper_dir.join("naia");
+
+    let current_exe = std::env::current_exe()
+        .unwrap_or_else(|_| std::path::PathBuf::from("naia-shell"));
+
+    let script_content = format!(
+        r#"#!/bin/bash
+if [ "$#" -eq 1 ] && [ -f "$1" ]; then
+    exec "{}" "$1"
+else
+    # Find the next naia in PATH and execute it
+    NEXT_NAIA=$(which -a naia 2>/dev/null | grep -v "{}" | head -n 1)
+    if [ -n "$NEXT_NAIA" ]; then
+        exec "$NEXT_NAIA" "$@"
+    else
+        echo "naia: command not found"
+        exit 127
+    fi
+fi
+"#,
+        current_exe.display(),
+        wrapper_script.display()
+    );
+    let _ = std::fs::write(&wrapper_script, script_content);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = std::fs::metadata(&wrapper_script) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o755);
+            let _ = std::fs::set_permissions(&wrapper_script, perms);
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let cmd_script = wrapper_dir.join("naia.cmd");
+        let cmd_content = format!(
+            "@echo off\r\n\
+if not \"%~1\"==\"\" if \"%~2\"==\"\" if exist \"%~1\" (\r\n\
+    \"{}\" \"%~1\"\r\n\
+    exit /b %ERRORLEVEL%\r\n\
+)\r\n\
+for /f \"delims=\" %%%%i in ('where naia 2^>nul ^| findstr /v /i \"{}\"') do (\r\n\
+    \"%%%%i\" %*\r\n\
+    exit /b %ERRORLEVEL%\r\n\
+)\r\n\
+echo naia: command not found 1>&2\r\n\
+exit /b 127\r\n",
+            current_exe.display(),
+            wrapper_dir.display()
+        );
+        let _ = std::fs::write(&cmd_script, cmd_content);
+    }
+
+    wrapper_dir
+}
+
 #[cfg(test)]
 mod tests {
     use super::{drain_pty_output, existing_herdr_id, server_start_failure};
@@ -417,5 +492,25 @@ mod tests {
         pending.push(0xac);
         assert_eq!(drain_pty_output(&mut pending, false).as_deref(), Some("€"));
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn naia_wrapper_generates_executable_interceptor() {
+        let root = std::env::temp_dir().join(format!("naia-wrapper-test-{}", std::process::id()));
+        let config = root.join("config.toml");
+        let wrapper_dir = super::ensure_naia_wrapper_dir(&config);
+        assert_eq!(wrapper_dir, root.join("bin"));
+        let script = wrapper_dir.join("naia");
+        assert!(script.is_file());
+        let content = std::fs::read_to_string(&script).unwrap();
+        assert!(content.contains("#!/bin/bash"));
+        assert!(content.contains(r#"[ "$#" -eq 1 ] && [ -f "$1" ]"#));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&script).unwrap().permissions().mode();
+            assert_ne!(mode & 0o111, 0, "wrapper script must be executable");
+        }
+        let _ = std::fs::remove_dir_all(root);
     }
 }
