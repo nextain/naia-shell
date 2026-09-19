@@ -1,4 +1,17 @@
-export const HERDR_PROTOCOL = 19;
+/// PATH Herdr 0.9.1 speaks snapshot protocol 22. Older 0.8.x fixtures
+/// still speak 19. Accept the range; do not pin a single stale constant
+/// as the only check (#645).
+export const HERDR_PROTOCOL_MIN = 19;
+export const HERDR_PROTOCOL_MAX = 22;
+
+export function herdrProtocolSupported(protocol: unknown): protocol is number {
+	return (
+		typeof protocol === "number" &&
+		Number.isInteger(protocol) &&
+		protocol >= HERDR_PROTOCOL_MIN &&
+		protocol <= HERDR_PROTOCOL_MAX
+	);
+}
 export const HERDR_SNAPSHOT_INTERVAL_MS = 750;
 export const HERDR_STARTUP_TIMEOUT_MS = 8_000;
 export const HERDR_STARTUP_RETRY_MS = 250;
@@ -99,7 +112,7 @@ export function assertHerdrSnapshot(value: unknown): HerdrSnapshot {
 	}
 	const snapshot = value as Partial<HerdrSnapshot>;
 	if (
-		snapshot.protocol !== HERDR_PROTOCOL ||
+		!herdrProtocolSupported(snapshot.protocol) ||
 		typeof snapshot.version !== "string" ||
 		(snapshot.focused_workspace_id !== undefined &&
 			typeof snapshot.focused_workspace_id !== "string") ||

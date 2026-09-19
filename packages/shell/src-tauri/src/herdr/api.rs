@@ -2,7 +2,21 @@ use tauri::AppHandle;
 
 use super::config::{herdr_command, set_herdr_theme, validate_herdr, write_embedded_herdr_config};
 
-pub(super) const HERDR_PROTOCOL: u64 = 19;
+/// PATH Herdr 0.9.1 speaks snapshot protocol 22. Older fixtures and
+/// staged 0.8.x still speak 19. Accept the range; do not pin a single
+/// stale constant as the only check (#645).
+pub(super) const HERDR_PROTOCOL_MIN: u64 = 19;
+pub(super) const HERDR_PROTOCOL_MAX: u64 = 22;
+
+pub(super) fn herdr_protocol_supported(protocol: u64) -> bool {
+    (HERDR_PROTOCOL_MIN..=HERDR_PROTOCOL_MAX).contains(&protocol)
+}
+
+pub(super) fn unsupported_herdr_protocol(protocol: u64) -> String {
+    format!(
+        "Unsupported Herdr protocol {protocol}; expected {HERDR_PROTOCOL_MIN}..={HERDR_PROTOCOL_MAX}"
+    )
+}
 // Herdr currently transports prompts as process arguments. Stay below the
 // Windows CreateProcess command-line ceiling after executable/flag overhead.
 const HERDR_PROMPT_MAX_BYTES: usize = 12 * 1024;
@@ -49,10 +63,8 @@ pub async fn herdr_snapshot(app: AppHandle) -> Result<serde_json::Value, String>
             .get("protocol")
             .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| "Herdr snapshot protocol missing".to_string())?;
-        if protocol != HERDR_PROTOCOL {
-            return Err(format!(
-                "Unsupported Herdr protocol {protocol}; expected {HERDR_PROTOCOL}"
-            ));
+        if !herdr_protocol_supported(protocol) {
+            return Err(unsupported_herdr_protocol(protocol));
         }
         Ok(snapshot)
     })
@@ -216,7 +228,11 @@ fn validated_keys(keys: &[String]) -> Result<(), String> {
 /// `pane run` 은 텍스트와 Enter 를 함께 보낸다. 사용자가 직접 타이핑한 것과 동등한 권한이며,
 /// 능력 게이팅은 core 의 의도 계층이 수행한다(FR-ENV-DISPATCH.7).
 #[tauri::command]
-pub async fn herdr_run_pane(app: AppHandle, pane_id: String, command: String) -> Result<(), String> {
+pub async fn herdr_run_pane(
+    app: AppHandle,
+    pane_id: String,
+    command: String,
+) -> Result<(), String> {
     if !valid_herdr_id(&pane_id, 'p') {
         return Err("Invalid Herdr pane id".to_string());
     }
@@ -257,9 +273,24 @@ pub async fn herdr_send_keys(
 #[cfg(test)]
 mod tests {
     use super::{
-        normalized_label, valid_herdr_id, validated_keys, validated_terminal_body, HERDR_KEYS_MAX,
-        HERDR_KEY_MAX_BYTES, HERDR_PROMPT_MAX_BYTES,
+        herdr_protocol_supported, normalized_label, unsupported_herdr_protocol, valid_herdr_id,
+        validated_keys, validated_terminal_body, HERDR_KEYS_MAX, HERDR_KEY_MAX_BYTES,
+        HERDR_PROMPT_MAX_BYTES, HERDR_PROTOCOL_MAX, HERDR_PROTOCOL_MIN,
     };
+
+    #[test]
+    fn accepts_snapshot_protocol_19_through_22() {
+        assert!(herdr_protocol_supported(HERDR_PROTOCOL_MIN));
+        assert!(herdr_protocol_supported(22));
+        assert!(herdr_protocol_supported(HERDR_PROTOCOL_MAX));
+        assert!(!herdr_protocol_supported(18));
+        assert!(!herdr_protocol_supported(23));
+        assert!(
+            unsupported_herdr_protocol(22).contains("19..=22"),
+            "error must name the accepted range, not a single stale pin"
+        );
+        assert!(!unsupported_herdr_protocol(22).ends_with("expected 19"));
+    }
 
     #[test]
     fn validates_public_ids() {
@@ -286,7 +317,9 @@ mod tests {
         assert!(validated_terminal_body("pnpm test", "command").is_ok());
         assert!(validated_terminal_body("   ", "command").is_err());
         assert!(validated_terminal_body("", "command").is_err());
-        assert!(validated_terminal_body(&"a".repeat(HERDR_PROMPT_MAX_BYTES + 1), "command").is_err());
+        assert!(
+            validated_terminal_body(&"a".repeat(HERDR_PROMPT_MAX_BYTES + 1), "command").is_err()
+        );
     }
 
     #[test]

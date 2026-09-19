@@ -20,7 +20,7 @@
  * and never reaches here.
  */
 
-import { BGM_SIDECAR_BASE_URL } from "../bgm-sidecar-url";
+import { bgmSidecarBaseUrl, ensureBgmSidecar } from "../bgm-sidecar-url";
 import { DEFAULT_LOCAL_VOICE_HOST, type TtsProviderId } from "../config";
 import { Logger } from "../logger";
 import {
@@ -34,7 +34,10 @@ import { resolveEdgeVoice } from "./edge-tts";
 // Edge neural TTS runs in the bgm/media sidecar (node msedge-tts) — the in-app
 // webview can't do the MS WebSocket handshake (it can't set the required
 // headers/Origin → 400). The shell fetches the sidecar's /edge-tts (#363).
-const EDGE_TTS_SIDECAR_URL = `${BGM_SIDECAR_BASE_URL}/edge-tts`;
+async function edgeTtsSidecarUrl(): Promise<string> {
+	const base = (await ensureBgmSidecar()) || bgmSidecarBaseUrl();
+	return `${base}/edge-tts`;
+}
 // A sentence must be able to wait out the PREVIOUS sentence's synthesis on the
 // single GPU slot — measured up to ~60s per sentence on the 4060 — so the busy
 // budget must exceed that, or every follow-up sentence dies with 429 and the
@@ -313,7 +316,7 @@ async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 async function synthEdge(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	const voice = resolveEdgeVoice(opts.voice, deriveLanguageCode(opts.voice));
 	const resp = await fetch(
-		`${EDGE_TTS_SIDECAR_URL}?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(opts.text)}`,
+		`${await edgeTtsSidecarUrl()}?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(opts.text)}`,
 		{ signal: opts.signal },
 	);
 	if (!resp.ok) {

@@ -59,7 +59,14 @@ const FAKE_UTILS_FILES = [
 
 describe("QuickOpen", () => {
 	it("renders input and file list", async () => {
-		mockInvoke.mockImplementation((_cmd: string, args: { parent: string }) => {
+		mockInvoke.mockImplementation((cmd: string, args: { parent: string }) => {
+			if (cmd === "workspace_list_files_recursive") {
+				return Promise.resolve(
+					[...FAKE_FILES, ...FAKE_UTILS_FILES]
+						.filter((f) => !f.is_dir)
+						.map((f) => f.path)
+				);
+			}
 			if (args.parent === "/dev/project") return Promise.resolve(FAKE_FILES);
 			if (args.parent === "/dev/project/src/utils")
 				return Promise.resolve(FAKE_UTILS_FILES);
@@ -86,7 +93,14 @@ describe("QuickOpen", () => {
 	});
 
 	it("filters files by query", async () => {
-		mockInvoke.mockImplementation((_cmd: string, args: { parent: string }) => {
+		mockInvoke.mockImplementation((cmd: string, args: { parent: string }) => {
+			if (cmd === "workspace_list_files_recursive") {
+				return Promise.resolve(
+					[...FAKE_FILES, ...FAKE_UTILS_FILES]
+						.filter((f) => !f.is_dir)
+						.map((f) => f.path)
+				);
+			}
 			if (args.parent === "/dev/project") return Promise.resolve(FAKE_FILES);
 			if (args.parent === "/dev/project/src/utils")
 				return Promise.resolve(FAKE_UTILS_FILES);
@@ -113,7 +127,7 @@ describe("QuickOpen", () => {
 	});
 
 	it("calls onSelect and onClose when Enter is pressed", async () => {
-		mockInvoke.mockResolvedValue(FAKE_FILES.filter((f) => !f.is_dir));
+		mockInvoke.mockResolvedValue(FAKE_FILES.filter((f) => !f.is_dir).map(f => f.path));
 
 		const onSelect = vi.fn();
 		const onClose = vi.fn();
@@ -154,7 +168,7 @@ describe("QuickOpen", () => {
 	});
 
 	it("navigates with ArrowDown/ArrowUp", async () => {
-		mockInvoke.mockResolvedValue(FAKE_FILES.filter((f) => !f.is_dir));
+		mockInvoke.mockResolvedValue(FAKE_FILES.filter((f) => !f.is_dir).map(f => f.path));
 
 		render(
 			<QuickOpen
@@ -188,7 +202,7 @@ describe("QuickOpen", () => {
 	});
 
 	it("shows empty message when no matches", async () => {
-		mockInvoke.mockResolvedValue(FAKE_FILES.filter((f) => !f.is_dir));
+		mockInvoke.mockResolvedValue(FAKE_FILES.filter((f) => !f.is_dir).map(f => f.path));
 
 		render(
 			<QuickOpen

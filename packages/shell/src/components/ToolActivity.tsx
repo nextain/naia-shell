@@ -74,10 +74,14 @@ export function ToolActivity({ tool }: Props) {
 			</button>
 			{expanded && (
 				<div className="tool-activity-body">
-					<div className="tool-args">{JSON.stringify(tool.args, null, 2)}</div>
+					{tool.args && Object.keys(tool.args).length > 0 ? (
+						<div className="tool-args">{JSON.stringify(tool.args, null, 2)}</div>
+					) : null}
 					{tool.output && (
 						<div className="tool-output">
-							{truncate(tool.output, MAX_OUTPUT_LENGTH)}
+							{tool.output.trim() === "{}"
+								? "No results"
+								: truncate(tool.output, MAX_OUTPUT_LENGTH)}
 						</div>
 					)}
 				</div>

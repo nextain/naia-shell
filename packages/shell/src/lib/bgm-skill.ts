@@ -25,18 +25,22 @@ import {
 import { bgmLibraryCache, persistBgmLibrary } from "./bgm-library-store";
 import {
 	type BgmPlaybackPort,
+	type BgmPlaybackSnapshot,
 	bgmPlayback,
 	toBgmObservedContext,
 	toBgmPlayToolResult,
 	toBgmQueuedToolResult,
 } from "./bgm-playback";
-import { BGM_SIDECAR_BASE_URL, ensureBgmSidecar } from "./bgm-sidecar-url";
+import { bgmSidecarBaseUrl, ensureBgmSidecar } from "./bgm-sidecar-url";
 import { loadConfig } from "./config";
 
 /** appExec 등록용 앱 id — 위젯 전용(앱 아님), app_skills_clear 대상 아님(항상 유지). */
 export const BGM_APP_ID = "bgm-widget";
 
-const YT_BASE = BGM_SIDECAR_BASE_URL;
+/** Outlast the 12s iframe diagnostic so a late playing event can still ack. */
+const PLAY_ACK_TIMEOUT_MS = 16_000;
+const PLAY_ACK_POLL_MS = 200;
+const OBSERVED_PLAY_STATUSES = new Set(["playing", "error", "ended"]);
 
 export const BGM_ACTIONS = [
 	"play",
@@ -64,7 +68,7 @@ export type BgmAction = (typeof BGM_ACTIONS)[number];
 export const SKILL_YOUTUBE_BGM: NaiaTool = {
 	name: "skill_youtube_bgm",
 	description:
-		"Naia 음악 플레이어 제어. 좋아요는 선호 표시일 뿐 재생 목록이 아니다. next/prev는 활성 플레이리스트와 실행 큐를 사용한다. playlist_list/create/add_current/play, like_add/remove, shuffle, repeat(off/all/one)를 구분해서 사용한다. 도구 결과가 requested이면 재생 성공이라고 말하지 말고 observed playing만 실제 재생으로 표현한다.",
+		"Naia 음악 플레이어 제어. 좋아요는 선호 표시일 뿐 재생 목록이 아니다. next/prev는 활성 플레이리스트(유튜브·로컬 파일 혼합 포함)와 실행 큐를 사용한다. playlist_list/create/add_current/play, like_add/remove, shuffle, repeat(off/all/one)를 구분해서 사용한다. announceTrack=true 이고 currentTrack이 있으면 그 제목을 말해도 된다. requested/loading/timeout이면 재생 중이라고 말하지 말고 JSON을 읽지 않는다.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -272,6 +276,12 @@ export interface BgmSkillDeps {
 	/** 위젯(BgmPlayer)이 Shell 전용 bgm_command 이벤트로 받는 payload를 발사. */
 	emitBgm: (payload: Record<string, unknown>) => Promise<void>;
 	playback: BgmPlaybackPort;
+	/** Wait until this playbackId is playing/error/ended. Tests omit this. */
+	waitForAck?: (playbackId: string) => Promise<BgmPlaybackSnapshot | null>;
+	/** Wait until playbackId changes and the new track is observed. */
+	waitForNavigateAck?: (
+		previousPlaybackId: string | undefined,
+	) => Promise<BgmPlaybackSnapshot | null>;
 	/** Number of YouTube favorites available to next/prev navigation. */
 	favoriteCount?: () => number;
 	favoriteTracks?: () => BgmSearchResult[];
@@ -326,10 +336,56 @@ function persistedMusicLibrary(): BgmLibraryState {
 }
 
 /** 사이드카 검색 — BgmPlayer.ytSearch 동형 표면(GET /yt/search?q=&max=). */
+function shouldWaitForPlayAck(): boolean {
+	return typeof window === "undefined" || !("__E2E_OUTBOUND__" in window);
+}
+
+function isObservedPlayback(
+	current: BgmPlaybackSnapshot,
+	opts: { playbackId?: string; previousPlaybackId?: string },
+): boolean {
+	if (!OBSERVED_PLAY_STATUSES.has(current.status)) return false;
+	if (opts.playbackId && current.playbackId !== opts.playbackId) return false;
+	if (
+		opts.previousPlaybackId !== undefined &&
+		current.playbackId === opts.previousPlaybackId
+	) {
+		return false;
+	}
+	return true;
+}
+
+/** Wait for confirmed playing (or a hard error/ended). Loading is not enough. */
+export async function waitForBgmObservedPlayback(
+	playback: BgmPlaybackPort,
+	opts: {
+		playbackId?: string;
+		previousPlaybackId?: string;
+		timeoutMs?: number;
+		pollMs?: number;
+		now?: () => number;
+		sleep?: (ms: number) => Promise<void>;
+	} = {},
+): Promise<BgmPlaybackSnapshot | null> {
+	const timeoutMs = opts.timeoutMs ?? PLAY_ACK_TIMEOUT_MS;
+	const pollMs = opts.pollMs ?? PLAY_ACK_POLL_MS;
+	const now = opts.now ?? Date.now;
+	const sleep =
+		opts.sleep ??
+		((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+	const deadline = now() + timeoutMs;
+	while (now() < deadline) {
+		const current = playback.current();
+		if (current && isObservedPlayback(current, opts)) return current;
+		await sleep(pollMs);
+	}
+	return playback.current();
+}
+
 async function sidecarSearch(query: string): Promise<BgmSearchResult[]> {
-	await ensureBgmSidecar();
+	const base = (await ensureBgmSidecar()) || bgmSidecarBaseUrl();
 	const res = await fetch(
-		`${YT_BASE}/yt/search?q=${encodeURIComponent(query)}&max=5`,
+		`${base}/yt/search?q=${encodeURIComponent(query)}&max=5`,
 	);
 	if (!res.ok) {
 		const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -347,6 +403,14 @@ const defaultDeps: BgmSkillDeps = {
 	// queue operation as an unknown Agent variant.
 	emitBgm: (payload) => emit("bgm_command", JSON.stringify(payload)),
 	playback: bgmPlayback,
+	waitForAck: (playbackId) =>
+		shouldWaitForPlayAck()
+			? waitForBgmObservedPlayback(bgmPlayback, { playbackId })
+			: Promise.resolve(bgmPlayback.current()),
+	waitForNavigateAck: (previousPlaybackId) =>
+		shouldWaitForPlayAck()
+			? waitForBgmObservedPlayback(bgmPlayback, { previousPlaybackId })
+			: Promise.resolve(bgmPlayback.current()),
 	favoriteCount: persistedFavoriteCount,
 	favoriteTracks: persistedFavoriteTracks,
 	library: persistedMusicLibrary,
@@ -574,7 +638,9 @@ export async function executeBgmSkill(
 				title: track.title,
 				...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
 			});
-			return JSON.stringify(toBgmPlayToolResult(playback));
+			const observed =
+				(await deps.waitForAck?.(playback.playbackId)) ?? playback;
+			return JSON.stringify(toBgmPlayToolResult(observed));
 		}
 		const result = deps.playback.enqueue({
 			videoId: track.id,
@@ -588,7 +654,10 @@ export async function executeBgmSkill(
 				title: track.title,
 				...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
 			});
-			return JSON.stringify(toBgmPlayToolResult(result.playback));
+			const observed =
+				(await deps.waitForAck?.(result.playback.playbackId)) ??
+				result.playback;
+			return JSON.stringify(toBgmPlayToolResult(observed));
 		}
 		await deps.emitBgm({
 			type: "bgm_youtube_enqueue",
@@ -781,6 +850,22 @@ export async function executeBgmSkill(
 	// stop / pause / resume / next / prev — 위젯 리스너 타입 1:1
 	if (act === "stop" || act === "next" || act === "prev") {
 		cancelRadioDjRecovery();
+	}
+	if (act === "next" || act === "prev") {
+		const previousPlaybackId = deps.playback.current()?.playbackId;
+		await deps.emitBgm({ type: `bgm_youtube_${act}` });
+		const observed =
+			(await deps.waitForNavigateAck?.(previousPlaybackId)) ??
+			deps.playback.current();
+		return JSON.stringify({
+			ok: true,
+			action: act,
+			...toBgmObservedContext(
+				observed,
+				deps.now?.() ?? Date.now(),
+				deps.playback.queue(),
+			),
+		});
 	}
 	const eventType = `bgm_youtube_${act}`;
 	await deps.emitBgm({ type: eventType });

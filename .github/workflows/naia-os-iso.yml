@@ -16,9 +16,9 @@ on:
         required: false
         default: nvidia
         type: choice
-        options: [nvidia, amd]
+        options: [nvidia, amd, amd-server]
       image_ref:
-        description: "nextain/naia-os ref to take the ISO hook and version from"
+        description: "nextain/naia-os ref to take the ISO hook and version from. amd-server is on build/bc250-install-20260908 until merged to main."
         required: false
         default: "main"
 
@@ -57,8 +57,9 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ inputs.variant || 'nvidia' }}" in
-            nvidia) echo "image=naia-os"     >> "$GITHUB_OUTPUT" ;;
-            amd)    echo "image=naia-os-amd" >> "$GITHUB_OUTPUT" ;;
+            nvidia) echo "image=naia-os"            >> "$GITHUB_OUTPUT" ;;
+            amd)    echo "image=naia-os-amd"        >> "$GITHUB_OUTPUT" ;;
+            amd-server) echo "image=naia-os-amd-server" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::unknown variant '${{ inputs.variant }}'"; exit 1 ;;
           esac
 

@@ -3,7 +3,6 @@ import type {
 	LlmModelMeta,
 	LlmProviderMeta,
 	LlmRoleId,
-	LlmVoiceMeta,
 	ModelSortMode,
 } from "./types";
 
@@ -539,14 +538,6 @@ export function shouldHideModelPicker(
 	return selectableConversationModels(models).length <= 1;
 }
 
-// ─── Shared voice lists ──────────────────────────────────────────────────────
-
-export const AZURE_REALTIME_VOICES: LlmVoiceMeta[] = [
-	{ id: "sunhi", label: "SunHi (여성)" },
-	{ id: "hyunsu", label: "Hyunsu (남성)" },
-];
-
-
 // ─── Provider registrations ─────────────────────────────────────────────────
 
 registerLlmProvider({
@@ -557,31 +548,10 @@ registerLlmProvider({
 	requiresApiKey: false,
 	requiresNaiaKey: true,
 	defaultModel: "deepseek-v4-flash",
-	// Model names stay canonical; availability and capability status belong in
-	// metadata and localized UI hints, not in the model label.
+	// #670: Naia-account / nextain picker is the four cheap chat models.
+	// Codex ChatGPT models stay on the codex provider below. Saved ids that
+	// leave this list migrate via shouldMigrateNextainModel.
 	models: [
-		{
-			id: "gemini-3.1-flash-lite",
-			label: "Gemini 3.1 Flash Lite",
-			capabilities: ["llm"],
-			supportsTools: true,
-		},
-		{
-			id: "grok-4.3",
-			label: "Grok 4.3",
-			capabilities: ["llm"],
-			supportsTools: true,
-			upstreamProvider: "unknown",
-			lifecycle: "unknown",
-		},
-		{
-			id: "deepseek-v4-pro",
-			label: "DeepSeek V4 Pro",
-			capabilities: ["llm"],
-			supportsTools: true,
-			upstreamProvider: "unknown",
-			lifecycle: "unknown",
-		},
 		{
 			// Gateway routes/prices this model and advertises verified tool calling.
 			// Keep the offline fallback aligned so a transient catalog outage cannot
@@ -612,74 +582,12 @@ registerLlmProvider({
 			lifecycle: "unknown",
 		},
 		{
-			// Korean domestic. Naver HyperCLOVA X via the gateway CLOVA route,
-			// billed in KRW with weekly FX-adjusted USD pricing (naia-anyllm#65,#66).
-			id: "HCX-007",
-			label: "HyperCLOVA X HCX-007",
-			capabilities: ["llm"],
-			supportsTools: true,
-			upstreamProvider: "unknown",
-			lifecycle: "unknown",
-		},
-		{
-			id: "HCX-DASH-002",
-			label: "HyperCLOVA X DASH",
-			capabilities: ["llm"],
-			supportsTools: true,
-			upstreamProvider: "unknown",
-			lifecycle: "unknown",
-		},
-		{
-			id: "gpt-5.6-sol",
-			label: "GPT-5.6 Sol",
-			capabilities: ["llm"],
-			supportsTools: true,
-			upstreamProvider: "unknown",
-			lifecycle: "unknown",
-		},
-		{
 			id: "gpt-5.6-luna",
-			label: "GPT-5.6 Luna",
+			label: "Naia Luna",
 			capabilities: ["llm"],
 			supportsTools: true,
 			upstreamProvider: "unknown",
 			lifecycle: "unknown",
-		},
-		{
-			id: "claude-opus-5",
-			label: "Claude Opus 5",
-			capabilities: ["llm"],
-			supportsTools: true,
-			upstreamProvider: "unknown",
-			lifecycle: "unknown",
-			protocol: "anthropic_messages",
-			operationalStatus: "quota_blocked",
-			comingSoon: true,
-		},
-		{
-			id: "gemini-3.5-flash",
-			label: "Gemini 3.5 Flash",
-			capabilities: ["llm"],
-			supportsTools: true,
-		},
-		{
-			id: "azure-realtime",
-			label: "Azure Realtime (SunHi)",
-			capabilities: ["llm", "omni"],
-			supportsTools: true,
-			voiceSelectable: true,
-			voices: [...AZURE_REALTIME_VOICES],
-			transcriptProvided: true,
-		},
-		{
-			// Not yet live. Kept registered so saved configs still resolve, but
-			// flagged comingSoon → rendered LAST with a "(준비중)" tag and the
-			// Apply (save) button is blocked while it is the selected model.
-			id: "naia-0.9-omni-24g",
-			label: "Naia 0.9 Omni 24G",
-			capabilities: ["llm", "omni"],
-			transcriptProvided: true,
-			comingSoon: true,
 		},
 	],
 });
@@ -716,8 +624,8 @@ registerLlmProvider({
 	descKey: "provider.codex.desc",
 	requiresApiKey: false,
 	supportedRoles: ["expert", "main", "sub"],
-	// Codex CLI 지원 라인업(2026-08): gpt-5.6 sol/terra/luna + 이전 세대 gpt-5.5.
-	// gpt-5.4 는 2026-08-31 retire 예고 — 저장 설정 해석용으로만 잔존(마지막 배치).
+	// Codex CLI + ChatGPT 계정 라인업: gpt-5.6 sol/terra/luna + gpt-5.5.
+	// gpt-5.4 는 ChatGPT 연동 Codex가 거절한다(invalid_request_error).
 	defaultModel: "gpt-5.6-sol",
 	models: [
 		{ id: "gpt-5.6-sol", label: "GPT-5.6 Sol (Codex)", capabilities: ["llm"] },
@@ -732,7 +640,6 @@ registerLlmProvider({
 			capabilities: ["llm"],
 		},
 		{ id: "gpt-5.5", label: "GPT-5.5 (Codex)", capabilities: ["llm"] },
-		{ id: "gpt-5.4", label: "GPT-5.4 (Codex)", capabilities: ["llm"] },
 	],
 });
 

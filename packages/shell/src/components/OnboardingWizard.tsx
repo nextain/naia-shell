@@ -46,6 +46,7 @@ import {
 	parseNvaManifest,
 	resolveNvaAssetPath,
 } from "../lib/nva";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import {
 	type OnboardingSession,
@@ -950,6 +951,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 	function goNext() {
 		if (transitioning.current) return;
+		if (step === "character" && avatarProvider === "vrm" && !selectedVrm) {
+			return;
+		}
 		const next = STEPS[stepIndex + 1];
 		if (!next) return;
 		// core forward mirror(비차단): 떠나는 현재 step 의 input 을 컨트롤러에 제출(draft·순서·게이트 행사).
@@ -1361,7 +1365,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								className="onboarding-welcome__github-btn"
 								onClick={() =>
 									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-										openUrl("https://www.naia.land/donation"),
+										openUrl(naiaWebUrl("donation", NAIA_WEB_BASE_URL)),
 									)
 								}
 							>
@@ -1804,7 +1808,12 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						className="onboarding-step__next-btn"
 						data-testid="onboarding-next"
 						onClick={isCompleteStep ? handleComplete : goNext}
-						disabled={isCompleteStep && completing}
+						disabled={
+							(isCompleteStep && completing) ||
+							(step === "character" &&
+								avatarProvider === "vrm" &&
+								!selectedVrm)
+						}
 					>
 						{isCompleteStep && completing
 							? t("onboard.applyingSettings")

@@ -146,6 +146,12 @@ vi.mock("../../lib/chat-service", () => ({
 	isNewCore: vi.fn(() => false),
 }));
 
+vi.mock("../../lib/bgm-sidecar-url", () => ({
+	ensureBgmSidecar: vi.fn().mockResolvedValue("http://localhost:18791"),
+	bgmSidecarBaseUrl: () => "http://localhost:18791",
+	BGM_SIDECAR_BASE_URL: "http://localhost:18791",
+}));
+
 // Mock Tauri APIs (needed by approval flow)
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/api/core", () => ({

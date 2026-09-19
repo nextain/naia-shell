@@ -26,6 +26,7 @@ import { appRegistry } from "../lib/app-registry";
 import { writeAppSandboxFile } from "../lib/app-sandbox";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
+import { ensureBgmSidecar } from "../lib/bgm-sidecar-url";
 import {
 	BGM_APP_ID,
 	SKILL_YOUTUBE_BGM,
@@ -85,6 +86,7 @@ import {
 	isOmniModel,
 } from "../lib/llm";
 import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
+import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import {
@@ -595,6 +597,25 @@ export function ChatArea({
 	const [sttState, setSttState] = useState<
 		"idle" | "initializing" | "listening"
 	>("idle");
+	const [bgmSidecarError, setBgmSidecarError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		void ensureBgmSidecar()
+			.then(() => {
+				if (!cancelled) setBgmSidecarError(null);
+			})
+			.catch((error: unknown) => {
+				if (!cancelled) {
+					setBgmSidecarError(
+						error instanceof Error ? error.message : String(error),
+					);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	const messages = useChatStore((s) => s.messages);
 	const isStreaming = useChatStore((s) => s.isStreaming);
@@ -2209,10 +2230,11 @@ export function ChatArea({
 	}
 
 	function appendVisibleResponseText(visibleText: string): void {
-		if (!visibleText) return;
-		useChatStore.getState().appendStreamChunk(visibleText);
+		const visible = filterUserVisibleAssistantText(visibleText);
+		if (!visible) return;
+		useChatStore.getState().appendStreamChunk(visible);
 		if (ttsTextSyncRef.current.active) {
-			ttsTextSyncRef.current.canonical += visibleText;
+			ttsTextSyncRef.current.canonical += visible;
 		}
 		// Parse emotion from accumulated text (tag may span multiple chunks)
 		const accumulated = useChatStore.getState().streamingContent;
@@ -2222,7 +2244,7 @@ export function ChatArea({
 		}
 		// Sentence-level TTS — same path for both pipeline and chat mode
 		if (sentenceChunkerRef.current) {
-			const sentences = sentenceChunkerRef.current.feed(visibleText);
+			const sentences = sentenceChunkerRef.current.feed(visible);
 			if (sentences.length > 0) {
 				Logger.info("ChatArea", "SentenceChunker produced sentences", {
 					count: sentences.length,
@@ -3876,6 +3898,14 @@ export function ChatArea({
 					)}
 				</Suspense>
 
+				{bgmSidecarError && activeTab === "chat" && (
+					<div
+						className="chat-compaction-notice"
+						data-testid="bgm-sidecar-error"
+					>
+						<span>BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.</span>
+					</div>
+				)}
 				{compactionNotice !== null && activeTab === "chat" && (
 					<div
 						className="chat-compaction-notice"

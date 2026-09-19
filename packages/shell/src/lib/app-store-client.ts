@@ -14,8 +14,8 @@ function httpGatewayUrl(raw: string): string {
 
 export function getStoreGatewayUrl(): string {
 	// The app store is an any-llm gateway concern (/v1/apps/*), so it must use
-	// LAB_GATEWAY_URL (prod https://api.nextain.io, or the dev gateway in dev
-	// mode) — the same gateway the web storefront purchases against. The earlier
+	// LAB_GATEWAY_URL (canonical instance API from naia-instance-urls) — the
+	// same gateway the web storefront purchases against. The earlier
 	// fallback to config.gatewayUrl / DEFAULT_GATEWAY_URL pointed at the REMOVED
 	// legacy chat WebSocket gateway (ws://localhost:18789), so install hit a dead
 	// localhost port ("error sending request for url http://localhost:18789/...",

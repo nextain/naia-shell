@@ -3,9 +3,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	LAB_GATEWAY_URL,
+	NAIA_WEB_BASE_URL,
 	getNaiaKeySecure,
 	hasNaiaKeySecure,
 } from "../lib/config";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { getLocale, t } from "../lib/i18n";
 import {
 	clearCachedLabCredits,
@@ -226,7 +228,7 @@ function LabBalanceSection() {
 				type="button"
 				className="lab-charge-btn"
 				onClick={() =>
-					openUrl(`https://www.naia.land/${getLocale()}/billing`).catch(
+					openUrl(naiaWebUrl(`${getLocale()}/billing`, NAIA_WEB_BASE_URL)).catch(
 						() => {},
 					)
 				}

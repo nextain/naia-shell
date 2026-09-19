@@ -2820,6 +2820,52 @@ fn spawn_adk_path_snapshot() -> Option<String> {
     })
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct AgentAdkSpawnEnv {
+    naia_adk_path: Option<String>,
+    naia_settings_dir: Option<std::path::PathBuf>,
+    remove_inherited_adk_env: bool,
+}
+
+/// Bind the agent child to the Shell adk-path snapshot. When the snapshot is
+/// missing, strip inherited leftover `NAIA_ADK_PATH` so a second clone such as
+/// `~/naia-adk` cannot become the product memory root.
+fn agent_adk_spawn_env(adk_path: Option<&str>) -> AgentAdkSpawnEnv {
+    match adk_path.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(path) => {
+            let path = path.to_string();
+            AgentAdkSpawnEnv {
+                naia_settings_dir: Some(std::path::PathBuf::from(&path).join("naia-settings")),
+                naia_adk_path: Some(path),
+                remove_inherited_adk_env: false,
+            }
+        }
+        None => AgentAdkSpawnEnv {
+            naia_adk_path: None,
+            naia_settings_dir: None,
+            remove_inherited_adk_env: true,
+        },
+    }
+}
+
+fn apply_agent_adk_spawn_env(cmd: &mut std::process::Command, adk_path: Option<&str>) {
+    let env = agent_adk_spawn_env(adk_path);
+    if let Some(path) = env.naia_adk_path.as_deref() {
+        cmd.env("NAIA_ADK_PATH", path);
+        cmd.env("NAIA_WORKSPACE_ROOT", path);
+        if let Some(settings) = env.naia_settings_dir.as_ref() {
+            cmd.env("NAIA_SETTINGS_DIR", settings.as_os_str());
+        }
+        if std::path::Path::new(path).is_dir() {
+            let _ = cmd.current_dir(path);
+        }
+    } else if env.remove_inherited_adk_env {
+        cmd.env_remove("NAIA_ADK_PATH");
+        cmd.env_remove("NAIA_SETTINGS_DIR");
+        cmd.env_remove("NAIA_WORKSPACE_ROOT");
+    }
+}
+
 fn ensure_no_pending_discord_reaper(
     pending_reapers: &std::sync::atomic::AtomicUsize,
     _discord_repair_bypass: bool,
@@ -2927,6 +2973,7 @@ fn spawn_agent_core(
     let mut discord_token_frame: Option<zeroize::Zeroizing<Vec<u8>>> = None;
     let mut discord_runtime_cleanup: Option<std::path::PathBuf> = None;
     let spawn_adk_path = spawn_adk_path_snapshot();
+    apply_agent_adk_spawn_env(&mut cmd, spawn_adk_path.as_deref());
 
     // Pass naia-settings directory to the agent via env var so it can resolve
     // all user-data paths (sessions, memory, identity) without reading files
@@ -2934,8 +2981,6 @@ fn spawn_agent_core(
     // update cannot mix settings, Discord runtime, and dispatcher workspaces.
     if let Some(adk_path_str) = spawn_adk_path.as_deref() {
         let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
-        cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
-        cmd.env("NAIA_ADK_PATH", adk_path_str);
         let bindings_path = settings_dir.join("discord-bindings.json");
         let runtime_dir = settings_dir.join("discord-runtime");
         if discord_runtime_activation_allowed(
@@ -3080,6 +3125,8 @@ fn spawn_agent_core(
             adk_path_str,
             settings_dir.display()
         ));
+    } else {
+        log_verbose("[Naia] agent NAIA_ADK_PATH unset; stripped inherited leftover clone env");
     }
 
     #[cfg(windows)]
@@ -3878,6 +3925,27 @@ fn bgm_server_port() -> u16 {
     18791
 }
 
+/// Prefer the instance port. If a foreign process still holds it after reclaim,
+/// bind an ephemeral port instead of running without a BGM server (#637).
+fn allocate_bgm_port(preferred: u16) -> Result<u16, String> {
+    reclaim_bgm_port(preferred);
+    if !bgm_port_accepts_connection(preferred) {
+        return Ok(preferred);
+    }
+    log_both(&format!(
+        "[Naia] BGM preferred port {} is occupied; selecting a free port",
+        preferred
+    ));
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to allocate a free BGM port: {e}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to read allocated BGM port: {e}"))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
 // A cold Windows install can spend more than ten seconds loading the bundled
 // Node tree while Defender scans it. Keep the owned nonce health check, but
 // allow enough time for that first launch instead of killing a healthy child.
@@ -4123,8 +4191,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
             .map_err(|e| format!("Failed to create BGM health nonce: {e}"))?
             .as_nanos()
     );
-    let bgm_port = bgm_server_port();
-    reclaim_bgm_port(bgm_port);
+    let bgm_port = allocate_bgm_port(bgm_server_port())?;
     cmd.env("NAIA_BGM_HEALTH_NONCE", &health_nonce);
     cmd.env("NAIA_BGM_PORT", bgm_port.to_string());
 
@@ -4189,7 +4256,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
 async fn ensure_bgm_server(
     app_handle: AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<bool, String> {
+) -> Result<serde_json::Value, String> {
     let _start_guard = state.bgm_start.lock().await;
     let existing = {
         let mut guard = lock_or_recover(&state.bgm_server, "state.bgm_server(ensure_take)");
@@ -4224,9 +4291,10 @@ async fn ensure_bgm_server(
             }
         };
         if healthy {
+            let port = process.port;
             let mut guard = lock_or_recover(&state.bgm_server, "state.bgm_server(ensure_put)");
             *guard = Some(process);
-            return Ok(true);
+            return Ok(serde_json::json!({ "ready": true, "port": port }));
         }
         // Drop owns kill + wait + PID cleanup, including status/probe failures.
         drop(process);
@@ -4239,9 +4307,10 @@ async fn ensure_bgm_server(
         tauri::async_runtime::spawn_blocking(move || spawn_youtube_bgm_server(&app_handle))
             .await
             .map_err(|error| format!("BGM server start task failed: {error}"))??;
+    let port = process.port;
     let mut guard = lock_or_recover(&state.bgm_server, "state.bgm_server(ensure_store)");
     *guard = Some(process);
-    Ok(true)
+    Ok(serde_json::json!({ "ready": true, "port": port }))
 }
 
 fn should_teardown_for_window(label: &str) -> bool {
@@ -5643,15 +5712,14 @@ async fn memory_import_backup(
 /// staging is `api-dev.naia.land` (and `api.naia.land`). Loopback is
 /// handled separately by the caller. Suffix spoofing (`naia.land.evil`)
 /// must stay rejected.
-fn is_trusted_naia_https_host(scheme: &str, host: &str) -> bool {
+pub(crate) fn is_trusted_naia_https_host(scheme: &str, host: &str) -> bool {
     if scheme != "https" {
         return false;
     }
-    let host = host.to_ascii_lowercase();
-    if host == "nextain.io" || host.ends_with(".nextain.io") {
-        return true;
-    }
-    host == "api.naia.land" || host == "api-dev.naia.land"
+    host.eq_ignore_ascii_case("nextain.io")
+        || host.ends_with(".nextain.io")
+        || host.eq_ignore_ascii_case("api.naia.land")
+        || host.eq_ignore_ascii_case("api-dev.naia.land")
 }
 
 fn naia_balance_endpoint(gateway_url: &str) -> Result<url::Url, String> {
@@ -5664,9 +5732,7 @@ fn naia_balance_endpoint(gateway_url: &str) -> Result<url::Url, String> {
         host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1";
     let is_trusted_https = is_trusted_naia_https_host(base.scheme(), host);
     if !is_trusted_https && !(is_loopback && matches!(base.scheme(), "http" | "https")) {
-        return Err(
-            "Naia balance requests require HTTPS on nextain.io or api-dev.naia.land".to_string(),
-        );
+        return Err("Naia balance requests require HTTPS on nextain.io or api-dev.naia.land".to_string());
     }
     base.join("/v1/profile/balance")
         .map_err(|_| "Invalid Naia balance endpoint".to_string())
@@ -6035,21 +6101,31 @@ fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+fn voxcpm2_scripts_download_manifest_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../scripts/voxcpm2-download-manifest.json")
+}
+
 fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    let development = if cfg!(debug_assertions) {
-        std::env::var_os("NAIA_VOXCPM2_DOWNLOAD_MANIFEST")
-            .filter(|value| !value.is_empty())
-            .map(std::path::PathBuf::from)
-    } else {
-        None
-    };
-    development.or_else(|| {
-        app.path()
-            .resource_dir()
-            .ok()
-            .map(|root| root.join("voxcpm2-runtime").join("download-manifest.json"))
-            .filter(|path| path.is_file())
-    })
+    let from_env = std::env::var_os("NAIA_VOXCPM2_DOWNLOAD_MANIFEST")
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_file());
+    if from_env.is_some() {
+        return from_env;
+    }
+    // tauri:dev without the wrapper still must not prefer a stale staged copy.
+    if cfg!(debug_assertions) {
+        let scripts_pin = voxcpm2_scripts_download_manifest_path();
+        if scripts_pin.is_file() {
+            return Some(scripts_pin);
+        }
+    }
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|root| root.join("voxcpm2-runtime").join("download-manifest.json"))
+        .filter(|path| path.is_file())
 }
 
 fn read_voxcpm2_download_manifest(
@@ -7210,13 +7286,26 @@ async fn install_voxcpm2_runtime(
             let status = child
                 .wait()
                 .map_err(|error| format!("Naia Host installer wait failed: {error}"))?;
-            status.success().then_some(()).ok_or_else(|| {
-                format!(
-                    "Naia Host installation failed (exit={:?}). See {}",
-                    status.code(),
+            if status.success() {
+                Ok(())
+            } else {
+                let tail = read_log_file_tail(&log_path, 12);
+                let reason = format_child_exit_status(Some(status));
+                let mut message = format!(
+                    "Naia Host installation failed ({reason}). See {}",
                     log_path.display()
-                )
-            })
+                );
+                if let Some(hint) = describe_runtime_stderr(&tail) {
+                    message.push(' ');
+                    message.push_str(&hint);
+                }
+                if !tail.is_empty() {
+                    message.push('\n');
+                    message.push_str(&tail);
+                }
+                emit_voxcpm2_progress_failed(&app, &message);
+                Err(message)
+            }
         }
     })
     .await
@@ -7236,9 +7325,11 @@ async fn install_voxcpm2_runtime(
             .filter_map(|step| step.failure.as_ref().map(|failure| failure.code))
             .collect::<Vec<_>>()
             .join(", ");
-        Err(format!(
+        let message = format!(
             "Naia Host installer exited successfully but runtime verification is incomplete: {failures}"
-        ))
+        );
+        emit_voxcpm2_progress_failed(&app, &message);
+        Err(message)
     }
 }
 
@@ -7351,6 +7442,120 @@ fn map_voxcpm2_startup_error(code: &str) -> String {
     .to_string()
 }
 
+fn read_log_file_tail(path: &std::path::Path, max_lines: usize) -> String {
+    match std::fs::read_to_string(path) {
+        Ok(contents) => contents
+            .lines()
+            .rev()
+            .take(max_lines)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string(),
+        Err(_) => String::new(),
+    }
+}
+
+fn format_child_exit_status(status: Option<std::process::ExitStatus>) -> String {
+    match status {
+        Some(status) => match status.code() {
+            Some(code) => format!("exit code {code}"),
+            None => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    if let Some(signal) = status.signal() {
+                        return format!("killed by signal {signal}");
+                    }
+                }
+                "terminated without an exit code".to_string()
+            }
+        },
+        None => "still running, or the exit status could not be read".to_string(),
+    }
+}
+
+fn describe_runtime_stderr(tail: &str) -> Option<String> {
+    let lower = tail.to_ascii_lowercase();
+    if lower.contains("4551")
+        || lower.contains("wdac")
+        || lower.contains("code integrity")
+        || lower.contains("application control")
+        || (lower.contains("windows defender") && lower.contains("blocked"))
+    {
+        return Some(
+            "Windows Defender Application Control blocked a GPU runtime library (WDAC / os error 4551)."
+                .to_string(),
+        );
+    }
+    if lower.contains("voxcpm2_tensorrt.activation")
+        || (lower.contains(".dll")
+            && (lower.contains("load")
+                || lower.contains("error loading")
+                || lower.contains("cannot")))
+    {
+        return Some("a required GPU runtime DLL failed to load.".to_string());
+    }
+    None
+}
+
+fn format_voxcpm2_runtime_exit(
+    status: Option<std::process::ExitStatus>,
+    log_path: &std::path::Path,
+    stderr_tail: &str,
+) -> String {
+    let reason = format_child_exit_status(status);
+    let mut message = format!(
+        "Naia Host TensorRT runtime exited before readiness ({reason}). See {}",
+        log_path.display()
+    );
+    if let Some(hint) = describe_runtime_stderr(stderr_tail) {
+        message.push(' ');
+        message.push_str(&hint);
+    }
+    let tail = stderr_tail.trim();
+    if !tail.is_empty() {
+        message.push('\n');
+        message.push_str(tail);
+    }
+    message
+}
+
+fn emit_voxcpm2_progress_failed(app: &tauri::AppHandle, label: &str) {
+    let _ = app.emit(
+        "voxcpm2_install_progress",
+        serde_json::json!({
+            "phase": "failed",
+            "step": "failed",
+            "label": label,
+            "percent": 0,
+        }),
+    );
+}
+
+fn wait_for_child_exit(
+    child: &mut Child,
+    timeout: std::time::Duration,
+) -> Option<std::process::ExitStatus> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                return child.wait().ok();
+            }
+            Err(_) => return child.wait().ok(),
+        }
+    }
+}
+
 /// 로컬 음성 런타임을 띄운다.
 ///
 /// 운영체제별 사본을 두지 않는다. 다른 것은 파일이 놓인 자리와 가속기 이름
@@ -7404,6 +7609,7 @@ fn spawn_voxcpm2(
     .env("VOXCPM_TRT_ENGINE_DIR", &engine_dir)
     .env("VOXCPM_INT8", "1")
     .env("VOXCPM_CPU_QUANTIZE", "1")
+    .env_remove("VOXCPM_DEVICE")
     // (2026-08-18 실측) the progress loop is the AR decode, NOT the diffusion
     // steps — lowering VOXCPM_TIMESTEPS did not change it/s, so keep the
     // quality default. The real cold-cost is the per-voice prompt cache: the
@@ -7443,14 +7649,22 @@ fn spawn_voxcpm2(
         library_dir.is_dir().then_some(library_dir.as_path()),
         &std::env::var(library_path_var).unwrap_or_default(),
     );
+    let mut gpu_selected = false;
     for (key, value) in &accelerator_env {
         cmd.env(key, value);
         if key == profile.hardware.visible_devices_var {
+            gpu_selected = true;
             log_both(&format!(
                 "[Naia] 로컬 음성을 {value}번 카드에 올립니다 ({key}={value}, 카드 {}장)",
                 gpus.len()
             ));
         }
+    }
+    if let Some(device) = voice_runtime::resolve_torch_device(
+        gpu_selected,
+        std::env::var("VOXCPM_DEVICE").ok().as_deref(),
+    ) {
+        cmd.env("VOXCPM_DEVICE", device);
     }
 
     platform::hide_console(&mut cmd);
@@ -7510,26 +7724,25 @@ fn spawn_voxcpm2(
                 return Err(map_voxcpm2_startup_error(&code));
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                let status = child.try_wait().ok().flatten();
-                return Err(format!(
-                    "Naia Host TensorRT runtime exited before readiness ({status:?}). See {}",
-                    log_path.display()
-                ));
+                let status =
+                    wait_for_child_exit(&mut child, std::time::Duration::from_millis(1500));
+                let tail = read_log_file_tail(&log_path, 12);
+                return Err(format_voxcpm2_runtime_exit(status, &log_path, &tail));
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if let Ok(Some(status)) = child.try_wait() {
-                    return Err(format!(
-                        "Naia Host TensorRT runtime exited (code={:?}). See {}",
-                        status.code(),
-                        log_path.display()
+                    let tail = read_log_file_tail(&log_path, 12);
+                    return Err(format_voxcpm2_runtime_exit(
+                        Some(status),
+                        &log_path,
+                        &tail,
                     ));
                 }
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
-                    return Err(format!(
-                        "Naia Host TensorRT readiness timed out. See {}",
-                        log_path.display()
-                    ));
+                    let status = child.wait().ok();
+                    let tail = read_log_file_tail(&log_path, 12);
+                    return Err(format_voxcpm2_runtime_exit(status, &log_path, &tail));
                 }
             }
         }
@@ -7888,7 +8101,11 @@ async fn start_voxcpm2(
             spawn_voxcpm2(&bundle_root, naia_key.as_str(), resolved, gpu_index)
         })
             .await
-            .map_err(|error| format!("task error: {error}"))??;
+            .map_err(|error| format!("task error: {error}"))?
+            .map_err(|error| {
+                emit_voxcpm2_progress_failed(&app, &error);
+                error
+            })?;
     let ready = process.ready.clone();
     *lock_or_recover(&state.voxcpm2, "voxcpm2") = Some(process);
     Ok(ready)
@@ -13323,16 +13540,24 @@ pub fn run() {
             // Standalone sidecar because the preferred standalone naia-agent
             // submodule (lib.rs:912-928) lacks startYoutubeServer(), so the
             // shell BGM player would otherwise get connection-refused on 18791.
-            // Non-fatal: BGM is an optional feature; failure only logs.
+            // Prefer a free port over silently running without BGM (#637).
             match spawn_youtube_bgm_server(&app_handle) {
                 Ok(process) => {
+                    let port = process.port;
                     let mut guard =
                         lock_or_recover(&state.bgm_server, "state.bgm_server(setup)");
                     *guard = Some(process);
+                    let _ = app_handle.emit(
+                        "bgm_server_status",
+                        serde_json::json!({ "ready": true, "port": port }),
+                    );
                 }
                 Err(e) => {
                     log_both(&format!("[Naia] BGM server not available: {}", e));
-                    log_both("[Naia] Running without BGM server (port 18791 will be empty)");
+                    let _ = app_handle.emit(
+                        "bgm_server_status",
+                        serde_json::json!({ "ready": false, "error": e }),
+                    );
                 }
             }
 
@@ -13469,6 +13694,20 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_scripts_pin_is_the_live_voxcpm2_archive_size() {
+        let path = voxcpm2_scripts_download_manifest_path();
+        assert!(
+            path.is_file(),
+            "canonical download-manifest missing: {}",
+            path.display()
+        );
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(manifest["archive"]["bytes"].as_u64(), Some(2496064260));
+        assert_ne!(manifest["archive"]["bytes"].as_u64(), Some(2494187310));
+    }
 
     #[test]
     fn relaunch_guard_rejects_overlap_and_can_be_released() {
@@ -14929,6 +15168,24 @@ mod tests {
     }
 
     #[test]
+    fn allocate_bgm_port_keeps_a_free_preferred_port() {
+        let preferred = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        assert_eq!(allocate_bgm_port(preferred).unwrap(), preferred);
+    }
+
+    #[test]
+    fn allocate_bgm_port_picks_another_port_when_preferred_is_occupied() {
+        let holder = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let occupied = holder.local_addr().unwrap().port();
+        let got = allocate_bgm_port(occupied).unwrap();
+        assert_ne!(got, occupied);
+        assert!(!bgm_port_accepts_connection(got));
+    }
+
+    #[test]
     fn bgm_port_reclaim_kills_only_proven_sidecar_holder() {
         use std::cell::Cell;
         let killed = Cell::new(0u32);
@@ -16209,6 +16466,34 @@ mod tests {
     }
 
     #[test]
+    fn agent_spawn_env_uses_adk_path_not_leftover_home_clone() {
+        let leftover = r"C:\Users\LukeYang\naia-adk";
+        let selected = r"D:\alpha-adk";
+        let env = agent_adk_spawn_env(Some(selected));
+        assert_eq!(env.naia_adk_path.as_deref(), Some(selected));
+        assert_ne!(env.naia_adk_path.as_deref(), Some(leftover));
+        assert_eq!(
+            env.naia_settings_dir,
+            Some(std::path::PathBuf::from(selected).join("naia-settings"))
+        );
+        assert!(!env.remove_inherited_adk_env);
+        let selected_path = env.naia_adk_path.expect("selected adk-path");
+        assert!(
+            !selected_path.contains(r"Users\LukeYang\naia-adk"),
+            "second clone path must not be used when adk-path is set: {selected_path}"
+        );
+    }
+
+    #[test]
+    fn agent_spawn_env_strips_inherited_leftover_when_adk_path_missing() {
+        let env = agent_adk_spawn_env(Some("   "));
+        assert_eq!(env.naia_adk_path, None);
+        assert_eq!(env.naia_settings_dir, None);
+        assert!(env.remove_inherited_adk_env);
+        assert_eq!(agent_adk_spawn_env(None).remove_inherited_adk_env, true);
+    }
+
+    #[test]
     fn native_e2e_overrides_require_an_explicit_mode_sentinel() {
         assert!(!debug_e2e_flags_enabled(Some("1"), None));
         assert!(!debug_e2e_flags_enabled(None, Some("1")));
@@ -16310,6 +16595,41 @@ mod tests {
             map_voxcpm2_startup_error("unexpected"),
             "voxcpm2_activation_error_invalid"
         );
+    }
+
+    #[test]
+    fn voxcpm2_runtime_exit_never_shows_debug_none_as_the_only_status() {
+        let log = std::path::Path::new("C:/naia-test-home/.naia-dev/logs/voxcpm2-stderr.log");
+        let message = format_voxcpm2_runtime_exit(None, log, "");
+        assert!(
+            !message.contains("(None)"),
+            "debug Option::None leaked into the user error: {message}"
+        );
+        assert!(
+            message.contains("still running") || message.contains("could not be read"),
+            "{message}"
+        );
+        assert!(message.contains("voxcpm2-stderr.log"), "{message}");
+    }
+
+    #[test]
+    fn voxcpm2_runtime_exit_includes_wdac_stderr_tail() {
+        let log = std::path::Path::new("C:/naia-test-home/logs/voxcpm2-stderr.log");
+        let tail = "[WinError 4551] Code Integrity policy\nCould not load voxcpm2_tensorrt.activation DLL";
+        let message = format_voxcpm2_runtime_exit(None, log, tail);
+        assert!(!message.contains("(None)"), "{message}");
+        assert!(message.contains("WDAC"), "{message}");
+        assert!(message.contains("4551"), "{message}");
+        assert!(message.contains("voxcpm2_tensorrt.activation"), "{message}");
+    }
+
+    #[test]
+    fn voxcpm2_log_tail_returns_last_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stderr.log");
+        std::fs::write(&path, "a\nb\nc\nd\ne\n").unwrap();
+        assert_eq!(read_log_file_tail(&path, 3), "c\nd\ne");
+        assert_eq!(read_log_file_tail(&path.join("missing"), 3), "");
     }
 
     // NAIA_HOME 우선순위 테스트는 자리를 만드는 모듈이 갖는다

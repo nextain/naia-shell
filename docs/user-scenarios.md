@@ -177,6 +177,7 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 | **S-VOICE-MIGRATION** (#419, FR-VOICE.13 — 2026-08-13) | 과거 버전의 로컬 GPU 프로파일 설정(`localGpuTier`)이 남은 채 업그레이드하면 안전 마이그레이션이 로컬 음성 권한을 끄는데, 사용자는 **왜 꺼졌는지 설정 Voice 카드에서 사유를 보고** 같은 자리의 복구 버튼 한 번으로 로컬 음성을 다시 켠다. 사유 없는 침묵 비활성은 없다 — "고장"과 "정당한 꺼짐"이 화면에서 구분된다. | 제어면(설정 Voice 카드) — 마이그레이션 정직화 | `config.test.ts`(마이그레이션→notice 기록·재활성→notice 해제) + `SettingsTab.test.tsx`(notice 표시+복구 버튼) + `e2e/settings-slots.spec.ts`(폐기 필드 시드→사유 실 UI 노출) |
 | **S-VOICE-READY** (#418, FR-VOICE.14~15 — 2026-08-13) | 로컬 음성이 선택된 상태에서 사용자는 "포트가 열렸다"가 아니라 **음성 엔진의 준비 신호(façade `/health` 의 TTS ready)** 를 기준으로 상태를 본다: 엔진 미실행이면 Voice Reference 영역이 침묵 대기·일반 네트워크 오류 대신 "엔진 실행 필요"를 명시하고 그 자리에서 시작할 수 있으며, 엔진이 떠 있지만 TTS 미가용이면 준비 중임을 안내한다. e2e/하니스 시드는 제품 config 스키마의 시드 빌더(`config-seed.ts`)에서 생성되어 폐기 필드가 하니스로 재유입되지 않는다(2026-08-11 voice-6g 하니스 사고 재발 방지). | 표현(설정 Voice Reference) + e2e 하니스 | `local-runtime.test.ts`(health 파싱·미도달 null) + `RefAudioSection.test.tsx`(엔진 미실행 명시 상태+시작 액션) + `config-seed.test.ts`(폐기 키 런타임 거부·마이그레이션 폐기 목록 일치) + Tauri 94 실측 `/health` |
 | **S-SHELL-ISO** (#425, FR-SHELL-ISO.1 — 2026-08-13) | 개발자는 운영 설치본(Naia)을 켜 둔 채 개발 인스턴스(**Naia Dev**)를 동시에 실행한다. 두 앱은 설정·로그인·로컬 데이터를 서로 침범하지 않으며(별도 identifier + `~/.naia-dev`), 단일 GPU 음성 런타임(VoxCPM2 :8910)은 **공유**한다 — 나중에 뜬 인스턴스가 건강한 엔진을 죽이고 재스폰하는 대신 입양해 그대로 쓴다(상대 인스턴스의 발화 절단·GPU 이중 적재 방지). 뇌(naia-agent)는 인스턴스별 자식 프로세스로 비공유. | 개발 워크플로 + Windows lifecycle + 공유 GPU 표현 | Rust 단위 2건(홈 오버라이드·입양 계약) + `local-runtime.test.ts` 입양 페이로드 핀 + 실기 동시 실행 스모크(운영 발화 중 dev 기동 → 발화 무절단, 수동 1회) |
+| **S-ADK-PATH-ONE-ROOT** (#664, FR-ADK-PATH.1 — 2026-09-18) | Shell Dev adk-path 가 `D:\alpha-adk` 이면 agent spawn env 와 SetWorkspace 도 그 루트다. leftover `C:\Users\LukeYang\naia-adk` clone 의 memory store 를 쓰지 않는다. | 제어면(workspace) + agent spawn | Rust `agent_spawn_env_uses_adk_path_not_leftover_home_clone` |
 | **S-VOICE-AVATAR** (FR-VOICE.5 — #397 갱신) | Windows 8GB 프로파일은 LLM을 외부(Naia 계정·원격 Ollama·외부 API)에 유지한다. 로컬 표현은 VoxCPM2 W8A16 + TensorRT LocDiT 음성을 재생하고 **같은 WAV를 Ditto TensorRT-native `/stream`에 직렬 전달**해 립싱크한다. 음성 서버 미가용이면 NVA idle을 유지하고 1회 알림+무음 원칙을 따른다. | 표현(speech+avatar) — 외부 두뇌와 GPU 표현의 half-duplex 결합점 | `synthesize.test.ts` · `cascade-renderer.test.ts` · 실제 :8910→:8901/:8902 façade probe · Tauri 94 NVA 출력/발화 |
 | **UC-WIN-NVA-8G** (#397·#413, FR-CASCADE.9~14 — 2026-08-02) | Windows의 **지원되는 NVIDIA GPU, VRAM 8GB 이상** PC에서 Naia 계정의 외부 LLM(원격 Ollama 또는 외부 API)을 그대로 사용하면서 로컬 음성과 NVA 비디오 아바타를 실행한다. 프로파일 UI는 CUDA·INT8·TensorRT·VoxCPM2·Ditto 같은 구현명을 노출하지 않는다. 프로파일은 LLM provider/model/host를 바꾸거나 로컬 Ollama·NPU를 설치/기동하지 않는다. 보안 저장소의 Naia 로그인은 재시작 뒤 NVA 렌더와 회원 manifest에 복원되며, 일반 설정 동기화가 이를 로그아웃으로 덮지 않는다. 8GB 미만 또는 VRAM 미확인 상태에서는 NVA 선택·자동기동·재시작 복원을 모두 막고 VRM으로 안전하게 복귀한다. 초기화가 느리거나 실패해도 NVA Player는 idle 화면을 먼저 표시한다. 실시간 속도는 지원 조건이 아니다. | 제어면(온보딩·프로파일·두뇌·아바타) + 표현(NVA Player) + Windows lifecycle | secure-store App 회귀 · `adk-store.test.ts` manifest 재덮기 회귀 · `VideoAvatarCanvas.test.tsx` · `vram-tiers.test.ts` · `nva-gate.test.ts` · `SettingsTab.test.tsx` · 실제 `tauri:dev` manifest/8910 health/NVA 캡처 |
 | **UC-WIN-VOICE-6G** (#406, FR-CASCADE.20~22 — 2026-08-01) | 등록 후 Naia에 로그인한 사용자는 Windows NVIDIA RTX VRAM 6GB 이상 PC에서 기존 Naia 계정 LLM·원격 Ollama·외부 API 설정을 유지하면서 로컬 VoxCPM2 W8A16 + TensorRT LocDiT 음성을 사용한다. Shell은 3D VRM을 유지하며 Ditto/NVA/로컬 LLM/Ollama/NPU/STT를 시작하지 않는다. 로그아웃 또는 VRAM 미달이면 profile/manifest/IPC가 모두 fail-closed다. 첫 기동이 느려도 기능 대상이지만 실시간 속도와 실제 6GB cold boot는 측정 전 보장하지 않는다. 실제 화면 검증 자산은 `naia-settings/vrm-files/01-OL_Woman.vrm`이며 SHA-256으로 동일성을 고정한다. | 설정 프로파일 + 외부 대화 + 로컬 TTS + VRM + Windows lifecycle | `vram-tiers` · `tier-slots` · `config` · `slots-manifest` · Settings Playwright · Rust account/VRAM/install tests · manager profile/manifest/launch tests · labs CPU-quantization tests · 실제 Tauri Shell voice/VRM probe |
@@ -328,13 +329,14 @@ Before starting the Agent, the instructor opens **Coding Workers**, enables Jeon
 
 Success means the visible confirmation identifies the saved target and fixed boundary without exposing a token or raw Git output. A failed save keeps the prior target unchanged and gives only the folder-readiness guidance.
 
-## UC-NAIA-AZURE-MODELS — Naia 계정으로 Azure 모델을 일반 대화에 사용한다
+## UC-NAIA-AZURE-MODELS — Naia 계정으로 저가 채팅 모델을 일반 대화에 사용한다
 
-Naia 계정으로 로그인한 사용자는 설정의 Naia 모델 목록에서 `grok-4.3`,
-`deepseek-v4-pro`, `gpt-5.6-sol`, `gpt-5.6-luna`를 선택하고 저장할 수 있다.
+Naia 계정으로 로그인한 사용자는 설정의 Naia 모델 목록에서
+`deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`(Naia Luna)만
+선택하고 저장할 수 있다. Codex ChatGPT 모델은 Codex 공급자에 그대로 남는다.
 
 선택 가능한 모든 Naia 채팅 모델은 동일한 Shell 스킬 목록을 전달받아 호출할 수 있다. 도구 호출이 검증되지 않았거나 운영 catalog에서 사용할 수 없는 모델은 선택 가능한 모델로 취급하지 않는다.
-`claude-opus-5`는 Azure quota가 열리기 전까지 준비중으로 보이며 적용되지 않는다.
+목록에서 빠진 이전 Naia 모델 id는 기본값 `deepseek-v4-flash`로 옮긴다.
 재시작 후 선택이 복원되며 일반 채팅은
 기존 Shell→Agent provider pipeline과 같은 Naia 키를 통해 선택한 정확한 모델로 전달된다.
 Gateway가 제공한 Azure provenance와 tool 지원 여부는 정직하게 반영하고, gateway가
@@ -359,7 +361,7 @@ Gateway의 가격은 이미 10%가 반영된 고객가이므로 Shell은 다시 
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 실제 Shell 설정 화면에서 역할 설정 저장과 재시작 복원 |
-| UC-NAIA-AZURE-MODELS | `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: Naia 모델 목록이 가격 가중 순서로 서고, 쓸 수 없는 모델은 숨으며, Azure provenance 와 도구 지원 여부가 gateway 응답대로 반영되는지 / `packages/shell/src/lib/__tests__/config.test.ts`: 선택이 재시작 뒤 복원되는지 | 실제 대화가 그 모델로 가는지는 사람이 받는다 — 자동으로 재는 자리는 아직 없다 |
+| UC-NAIA-AZURE-MODELS | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts` · `registry.test.ts`: 나이아 계정 선택기가 `deepseek-v4-flash` · `solar-pro4` · `solar-mini` · `gpt-5.6-luna` 네 개만 노출하고 Codex 목록은 그대로인지. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 가격 순·성능 순과 빠진 모델 숨김. `e2e/capability-settings.spec.ts`: 실 UI 선택기 네 개. | 실 대화 403은 게이트웨이 소유 — 선택기 축소가 고치지 않는다 |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
 1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.
@@ -812,6 +814,34 @@ successful until the player reports an observed `playing` transition.
 | sidecar exits or auxiliary window closes | Rust lifecycle tests | native Tauri sidecar restart/health check |
 | one settings owner and durable consent | Settings component rerender test | `settings-slots.spec.ts` Skills ownership, General absence, Save/reload |
 
+## UC-BGM-FOREIGN-PORT-FALLBACK — 남의 프로세스가 BGM 포트를 점유하면 빈 포트를 쓰거나 실패를 보여 준다 (#637)
+
+개발 인스턴스(:18891)에서 다른 node 프로세스가 포트를 훔치면 health check가 실패하고
+앱이 BGM 없이 조용히 떠서는 안 된다. 셸은 빈 포트를 골라 sidecar를 띄우거나, 그것도
+실패하면 채팅에 실패를 보여 준다. play 결과는 `requested`에 머물지 않고 관측된
+playing/error/timeout을 돌려주며, 그 JSON은 사용자 채팅 본문에 보이지 않는다.
+
+## UC-BGM-AI-LOCAL-NEXT — AI 다음곡은 UI와 같이 로컬 파일도 재생한다 (#671)
+
+유튜브와 로컬 파일이 섞인 플레이리스트에서 사용자가 "다음곡"이라고 하면
+인덱스가 로컬 항목으로 옮겨지고 **그 파일이 실제로 재생**된다. 플레이어의
+다음/이전 버튼과 같은 곡이 나와야 한다. 재생이 확인되면 도구 결과와 status가
+playing과 곡 제목을 돌려 주어 나이아가 곡 이름을 말할 수 있다.
+
+## UC-BGM-TAURI-OBSERVE — 소리가 나면 에이전트도 재생 중으로 안다 (#671)
+
+검색 재생이나 "지금 무슨 곡"에서, 플레이어에서 소리가 나는데도
+`iframe_playing_not_observed` timeout으로 제목을 숨기지 않는다. Tauri WebView가
+YouTube 메시지의 `source`를 비워 보내도 playing/진행 신호는 관측한다. play 확인은
+loading이 아니라 playing이다.
+
+Test Coverage Map
+
+| UC | 단위·계약 | 비고 |
+|---|---|---|
+| UC-BGM-AI-LOCAL-NEXT | `packages/shell/src/components/__tests__/BgmPlayer.test.tsx` AI next가 로컬 파일을 재생하고 playing 제목을 남긴다 | UI 다음 버튼과 같은 최신 playNext 경로 |
+| UC-BGM-TAURI-OBSERVE | `packages/shell/src/lib/__tests__/bgm-observation-diagnosis.test.ts` null-source playing 수락, `packages/shell/src/lib/__tests__/bgm-skill.test.ts` loading은 play ack가 아님 | 소리가 나면 status가 제목을 숨기지 않는다 |
+
 ## UC-BGM-ORPHAN-PORT-RECOVERY — 고아 sidecar가 BGM 포트를 선점해도 다음 실행이 회복한다 (#517)
 
 설치본 사용자가 유튜브 뮤직플레이어를 켰는데 "BGM server failed its owned
@@ -862,11 +892,25 @@ localStorage 는 캐시이므로, 부팅 병합에서 파일 값이 캐시를 �
 - 열려 있던 터미널 세션은 다시 켠 뒤에도 복원되고, 복원에 실패한 항목이 있어도
   앱이 죽지 않는다.
 
+허용된 도구(#647): 채팅에서 「항상 허용」한 이름은 설정에 목록으로 보이고,
+하나만 해제하거나 목록을 통째로 지울 수 있다. 개수만 보이면 안 된다.
+
+로그 열기(#646): 운영 `~/.naia/logs` 와 개발 `~/.naia-dev/logs` 모두 탐색기에서
+연다. 폴더 자체와 그 안 파일이 opener 범위에 들어 있다. 실패하면 화면에 오류가
+남는다.
+
+naia-adk 경로 재설정(#642): 패키지 빌드에서는 앱이 다시 뜬다. `tauri:dev` 처럼
+cargo/vite 가 부모인 실행에서는 창을 죽이지 않고 「다시 시작해야 합니다」를
+막아서 보여 준다.
+
 Test Coverage Map
 
 | UC | 단위·계약 | 실기 | 비고 |
 |---|---|---|---|
 | UC-SETTINGS-ROUNDTRIP | `src/lib/__tests__/config-boot-merge.test.ts`: 부팅 병합에서 파일이 캐시를 이긴다 / `src/lib/__tests__/adk-store.test.ts`: 작업 공간 포인터 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 설정 저장이 파일에 남고 다시 읽힌다 | 실기 스펙은 아직 CI 에서 돌지 않는다(#550) |
+| UC-SETTINGS-ALLOWED-TOOLS | `src/lib/__tests__/config.test.ts` removeAllowedTool + `SettingsTab.test.tsx` 이름 목록·개별 해제 | — | #647 |
+| UC-SETTINGS-OPEN-LOG | `scripts/__tests__/instance-home.test.mjs` opener 범위 + `SettingsTab.test.tsx` 실패 오류 | — | #646 `~/.naia` 와 `~/.naia-dev` 로그 폴더 |
+| UC-SETTINGS-ADK-RESET | `src/lib/__tests__/adk-path-reset.test.ts` 패키지 재시작 vs 개발 창 유지 + `SettingsTab.test.tsx` 재시작 필요 안내 | — | #642 `tauri:dev` 는 relaunch 로 창만 죽이지 않는다 |
 
 
 ## UC-ONBOARDING-APPEARANCE-VOICE: 외모와 음성을 독립적으로 시작하기
@@ -929,6 +973,8 @@ Those older sections are historical evidence only.
 | **UC-DISCORD-TAB-LIVE** | 대화창 하단 🌐 Channels 탭을 열면 실제 연결 상태·서버·채널 목록·대화 스레드가 보인다("안정화 작업 중" 정적 문구가 아니다). | NaiaMetaArea + ChannelsTab 컴포넌트 테스트 |
 | **UC-BGM-NO-FALSE-SKIP** | YouTube 곡이 실제로 재생 중이면, iframe의 "재생 중" 신호 메시지가 유실되더라도(WebView2 핸드셰이크 이슈) 12초 워치독이 다른 곡으로 강제 전환하지 않는다. 진행률(`infoDelivery`) 신호가 독립적으로 재생을 확인한다. | `components/__tests__/BgmPlayer.test.tsx`(신규) + `e2e/bgm-skill.spec.ts` 실 브라우저 재작성(대기열 보존·상태 diagnostic 확인) |
 | **UC-BGM-ENDED-NOTIFY** | 곡이 실제로 끝나면(타이머 아님, 진짜 ended 이벤트) Shell이 트랙 시작 때와 동일한 방식으로 에이전트에게 즉시 통지한다. 에이전트가 다음 곡을 고르거나 멘트를 하는 결정은 naia-agent 소관(이 저장소 범위 밖)이라 이 시나리오는 "통지가 나가는지"까지만 다룬다. | `components/__tests__/BgmPlayer.test.tsx`(신규, music_ended 발신 검증) |
+| **UC-BGM-AI-LOCAL-NEXT** | 유튜브·로컬 혼합 플레이리스트에서 AI next/prev가 UI 버튼과 같이 로컬 파일을 재생하고, 확인되면 제목을 돌려 준다. | `BgmPlayer.test.tsx` AI next 로컬 재생 + `bgm-skill.test.ts` navigate ack |
+| **UC-BGM-TAURI-OBSERVE** | Tauri가 YouTube `source=null`로 메시지를 보내도 playing/infoDelivery를 관측하고, play 확인은 loading이 아니라 playing이다. | `decideIframeMessageSource` 단위 + BgmPlayer null-source playing + `waitForBgmObservedPlayback` |
 | **UC-VOICE-ONBOARDING** | 로그인 이후 온보딩에 음성 단계가 있다: 무료 Web TTS on/off + 시스템 보이스 미리듣기, 그리고 VRAM 6GB+ 감지 시 실제로 로컬 VoxCPM2를 켜고 끌 수 있는 버튼(안내 링크가 아니라 진짜 `start_cascade`/`stop_cascade` 호출). | OnboardingWizard 컴포넌트 테스트(음성 단계 내비게이션 + 실제 invoke 호출 + 저장된 config 필드 검증) + `e2e/onboarding-fresh.spec.ts` 실 브라우저 3/3 통과 |
 
 이번 세션에 실제로 실행한 것: Playwright chromium 신규 설치 후 실 dev server로 `e2e/onboarding-fresh.spec.ts`(3/3) + `e2e/bgm-skill.spec.ts`(12/12, 1건은 옛 강제스킵 동작을 검증하던 낡은 테스트라 새 계약에 맞게 재작성 후 통과) 실행. 여전히 미완료: `e2e-tauri`(네이티브 Tauri/WebDriver) 스위트 미실행. UC-NVA-COMPOSITE의 실제 크로마키 정확도는 headless chromium이 WebView2 특유 경로를 타지 않아 여전히 Windows 실기 미검증.
@@ -937,7 +983,7 @@ Those older sections are historical evidence only.
 
 | Scenario | User-observable outcome | Coverage |
 |---|---|---|
-| **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 모델 선택기에도 `DeepSeek V4 Flash`가 `DeepSeek V4 Pro` 옆에 나타나고, "Naia 기본값 적용"을 눌러도 같은 값이 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `lib/slots/__tests__/settings-slots.contract.test.ts`, `components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_E2E_NAIA_KEY 필요) |
+| **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 Naia 선택기에는 `deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`만 나타나고, "Naia 기본값 적용"을 눌러도 메인은 Flash로 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `lib/slots/__tests__/settings-slots.contract.test.ts`, `components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_E2E_NAIA_KEY 필요) |
 
 ### 2026-09-13 로그인하지 않고 쓰기 (#591, 에픽 #589)
 
@@ -984,6 +1030,13 @@ P02 release-state matrix: build preparation, missing required runtime, successfu
 | **UC-V017-VOXCPM2-PAYLOAD-UPGRADE** (#465) | A member upgrading from a release whose cached payload installs only the default voice does not see a false success followed by `VOXCPM2_REFERENCE_VOICE_MISSING`. Shell compares the installed control files with its packaged installer and activation contract, reuses the verified local runtime ZIP to atomically refresh a stale payload, installs the complete current voice palette, and reaches ready without another runtime archive download. | default-only stale-payload mutation + control-file digest regression + cached-ZIP upgrade/install smoke |
 | **UC-V017-VOXCPM2-RUNTIME-PIN-UPGRADE** (#518) | 셸 업그레이드가 런타임 아카이브만 갱신한 경우(제어 파일 동일 — 예: v0.2.2 r2의 발화 째짐 수정), 기존 설치자의 구 payload 가 조용히 재사용되지 않는다. 셸은 번들 download-manifest 의 `artifactManifestSha256` 핀을 설치 payload 의 artifact-manifest 해시와 대조해, 불일치면 재사용을 거부하고 기존 취득 플로우로 재스테이징을 유도한다. 사용자는 업그레이드 후 실제로 수정된 엔진으로 발화를 듣는다. | Rust reuse-gate 핀 일치/불일치/manifest 부재 단위 + 실 payload 해시 대조 |
 | **UC-V017-VOXCPM2-ENTITLEMENT-RECOVERY** (#470) | A signed-in member whose stored Naia credential is rejected with HTTP 401/403 starts local VoxCPM2 and sees a localized login-required recovery instead of an installed-but-not-ready generic failure. Shell clears only the rejected credential and keeps the local runtime installed. FREE/inactive membership and unavailable gateway failures remain distinct, fail closed, and preserve the credential for retry. No credential, account identifier, response body, or endpoint appears in stdout, logs, or IPC errors. | runtime BASIC/PRO/FREE/401/403/5xx/transport pytest + bounded startup envelope tests + Rust pre-readiness parser/mapping + Settings rejected/unavailable component tests |
+| **UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS** (#672) | 호스트 음성을 켜면 설치 진행이 40% 근처에서 멈추더라도, 런타임이 이미 죽었으면 바가 그 자리에 남지 않는다. 사용자는 `(None)` 한 줄이 아니라 종료 이유와 `voxcpm2-stderr.log` 끝줄(WDAC / os error 4551 / activation DLL)을 보고 이전 음성으로 돌아간다. GPU 를 고른 뒤에는 AudioVAE 가 부모 환경의 CPU 장치로 조용히 내려가지 않는다. | Rust runtime-exit/stderr/device 단위 + Settings 40% 해제·failed phase + Windows 설치기가 40% 이후에도 진행 줄을 냄 |
+
+Test Coverage Map (P02) — #672
+
+| S | 단위·계약 | 실기 | 비고 |
+|---|---|---|---|
+| UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS | `lib.rs` `format_voxcpm2_runtime_exit` / `describe_runtime_stderr` / `read_log_file_tail`; `voice_runtime.rs` `resolve_torch_device`; `SettingsTab.test.tsx` 40% 해제와 failed phase; `platform-matrix.test.ts` Windows 설치 진행 40% 이후 | 4060 실기 QA 는 이 패치 범위 밖 | 오류 문자열에 `(None)` 만 있으면 단위가 붉다 |
 
 ### 2026-08-14 v0.1.7 launch QA (#447)
 
@@ -1191,6 +1244,7 @@ Test Coverage Map (P02):
 | UC-HERDR-CONTROL-RECONNECT | vitest `src/test/herdr-control-outcome-taxonomy.contract.test.ts` | 끊김·타임아웃·종료·취소·부분완료 구별 |
 | UC-HERDR-CONTROL-RECONNECT | vitest `src/test/herdr-control-reconnect-bounds.contract.test.ts` | 재접속 상한, 상한 도달 시 정직 실패 |
 | 전체 | vitest `src/test/herdr-protocol-conformance.contract.test.ts` | 설치된 herdr 의 `api schema` 와 우리 계약을 대조하고 요구사항별 실현 가능성을 사실에서 계산 |
+| UC-HERDR-CONTROL-OBSERVE | vitest `packages/shell/src/apps/workspace/__tests__/herdr.test.ts` + Rust `herdr::api` | 스냅샷 protocol 19..=22 수락, 18·23 거절. 오류는 범위만 말하고 낡은 단일 핀을 유일한 기대로 두지 않는다 (#645) |
 | 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/herdr-control.spec.ts` | 실제 Herdr 상대 관측·변경·충돌·재시작 복구 왕복 |
 
 상태 매트릭스: 기본(Herdr 정상), 빈 목록(space 0개), 진행(작업자 실행 중), 성공(변경 반영),
@@ -1856,3 +1910,41 @@ Test Coverage Map (P02)
 | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: keep list exactness, removed-name filtering, app/voice list parity | `packages/shell/src/components/__tests__/SkillsTab.test.tsx`: loading, empty, error, filtered success and disabled-state rendering; `packages/shell/e2e/naia-omni-voice-tools.spec.ts`: voice skill-list wiring |
 
 P04 must preserve the existing browser and YouTube UI paths while proving that removed work tools are absent from the model-facing list. The contract test is the authoritative exact-list check; UI evidence covers loading, empty, success, error, keyboard-visible cards and the narrow layout already owned by SkillsTab.
+
+## UC-INSTANCE-URLS-653 — debug desktop uses the dev land and API hosts
+
+`pnpm run tauri:dev` logs into `https://dev.naia.land` and talks to `https://api-dev.naia.land`. `pnpm run tauri:prod` keeps production hosts. Login, announcements, lab sync, billing, and download links use one instance helper instead of hardcoded `www.naia.land`.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | tauri:dev 로그인·콜백이 dev.naia.land 이고 API 는 api-dev.naia.land 이다. |
+| 빈 목록 | 개발 게이트웨이 env가 비어도 prod API로 떨어지지 않는다. |
+| 진행 | 로그인 대기 중에도 호스트가 바뀌지 않는다. |
+| 성공 | 로그인·잔액·공지가 같은 인스턴스 호스트를 쓴다. |
+| 오류 | prod 콜백 불일치가 개발 실행에서 나지 않는다. |
+| 좁은 폭 | 로그인 화면 링크가 잘리지 않는다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-INSTANCE-URLS-653 | `packages/shell/src/lib/__tests__/naia-instance-urls.test.ts`; `packages/shell/scripts/__tests__/launch-env.test.mjs` | existing onboarding login specs keep redirect_uri/source=desktop |
+
+## UC-WORKSPACE-BIND-651 — Codex and fs-tools use the shell workspace root
+
+The workspace UI `set_root` canonical path is the Codex app-server cwd and the fs-tools allow-root. OS temp is not a second sandbox. Turning on 「터미널에 직접 입력 허용」 raises Codex sandbox to workspace-write on that same root. Naia write/github tools stay removed.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 워크스페이스가 D:\\alpha-adk 이면 Codex가 그 트리를 읽는다. |
+| 빈 목록 | 워크스페이스가 없으면 Codex는 temp+read-only로 남는다. |
+| 진행 | 터미널 허용을 켜면 다음 턴부터 그 루트에서 쓸 수 있다. |
+| 성공 | 파일 읽기·터미널이 셸이 정한 루트에서 동작한다. |
+| 오류 | temp 제한이나 허용 뒤에도 막힌 터미널이 사용자에게 거짓으로 성공하지 않는다. |
+| 좁은 폭 | 워크스페이스 설정과 터미널 허용 토글이 잘리지 않는다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-WORKSPACE-BIND-651 | naia-agent `workspace-bind.contract.test.ts` + `codex-app-server-provider.contract.test.ts` | shell spawn cwd follows ADK path (Rust `current_dir`) |

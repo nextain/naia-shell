@@ -20,9 +20,9 @@ on:
         required: false
         default: nvidia
         type: choice
-        options: [nvidia, amd]
+        options: [nvidia, amd, amd-server]
       image_ref:
-        description: "nextain/naia-os ref to build (branch, tag or SHA)"
+        description: "nextain/naia-os ref to build (branch, tag or SHA). amd-server is on build/bc250-install-20260908 until merged to main."
         required: false
         default: "main"
 
@@ -60,10 +60,12 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ inputs.variant || 'nvidia' }}" in
-            nvidia) echo "recipe=recipe.yml"     >> "$GITHUB_OUTPUT"
-                    echo "image=naia-os"         >> "$GITHUB_OUTPUT" ;;
-            amd)    echo "recipe=recipe-amd.yml" >> "$GITHUB_OUTPUT"
-                    echo "image=naia-os-amd"     >> "$GITHUB_OUTPUT" ;;
+            nvidia) echo "recipe=recipe.yml"            >> "$GITHUB_OUTPUT"
+                    echo "image=naia-os"                >> "$GITHUB_OUTPUT" ;;
+            amd)    echo "recipe=recipe-amd.yml"        >> "$GITHUB_OUTPUT"
+                    echo "image=naia-os-amd"            >> "$GITHUB_OUTPUT" ;;
+            amd-server) echo "recipe=recipe-amd-server.yml" >> "$GITHUB_OUTPUT"
+                    echo "image=naia-os-amd-server"     >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::unknown variant '${{ inputs.variant }}'"; exit 1 ;;
           esac
 

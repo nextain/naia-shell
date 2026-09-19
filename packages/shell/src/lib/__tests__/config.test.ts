@@ -9,6 +9,7 @@ import {
 	loadConfig,
 	migrateLegacyDna3OllamaModel,
 	reconcileExplicitLocalProfile,
+	removeAllowedTool,
 	resolveConfiguredGatewayUrl,
 	resolveGatewayUrl,
 	saveConfig,
@@ -305,6 +306,23 @@ describe("allowedTools", () => {
 	it("clearAllowedTools works when no config", () => {
 		clearAllowedTools(); // no throw
 		expect(isToolAllowed("memo_save")).toBe(false);
+	});
+
+	it("removeAllowedTool revokes one name and keeps the rest (#647)", () => {
+		saveConfig({ provider: "gemini", model: "m", apiKey: "k" });
+		addAllowedTool("skill_tab_screenshot");
+		addAllowedTool("memo_save");
+		removeAllowedTool("skill_tab_screenshot");
+		expect(isToolAllowed("skill_tab_screenshot")).toBe(false);
+		expect(isToolAllowed("memo_save")).toBe(true);
+		expect(loadConfig()?.allowedTools).toEqual(["memo_save"]);
+	});
+
+	it("removeAllowedTool clears the list when the last name is revoked", () => {
+		saveConfig({ provider: "gemini", model: "m", apiKey: "k" });
+		addAllowedTool("memo_save");
+		removeAllowedTool("memo_save");
+		expect(loadConfig()?.allowedTools).toBeUndefined();
 	});
 });
 

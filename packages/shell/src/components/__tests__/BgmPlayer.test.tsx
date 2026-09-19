@@ -5,8 +5,10 @@ import {
 	fireEvent,
 	render,
 	screen,
+	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { listNaiaAssets, toLocalBlobUrl } from "../../lib/adk-store";
 import { onAiInterferenceEvent } from "../../lib/ai-interference";
 import { bgmPlayback } from "../../lib/bgm-playback";
 import { loadBgmLibraryFromSandbox, resetBgmLibraryCache } from "../../lib/bgm-library-store";
@@ -29,7 +31,8 @@ vi.mock("../../lib/adk-store", () => ({
 	toLocalBlobUrl: vi.fn().mockResolvedValue("blob:mock"),
 }));
 vi.mock("../../lib/bgm-sidecar-url", () => ({
-	ensureBgmSidecar: vi.fn().mockResolvedValue(undefined),
+	ensureBgmSidecar: vi.fn().mockResolvedValue("http://localhost:18791"),
+	bgmSidecarBaseUrl: () => "http://localhost:18791",
 	BGM_SIDECAR_BASE_URL: "http://localhost:18791",
 }));
 
@@ -510,11 +513,17 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		});
 		fireEvent.submit(screen.getByPlaceholderText("New playlist name").closest("form")!);
 
-		const cfg = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
-		expect(cfg.bgmLibrary.playlists).toEqual(
-			expect.arrayContaining([expect.objectContaining({ name: "Focus", tracks: [] })]),
-		);
-		expect(screen.getByRole("option", { name: "Focus" })).toBeInTheDocument();
+		await waitFor(() => {
+			expect(screen.getByRole("option", { name: "Focus" })).toBeInTheDocument();
+		});
+		await waitFor(() => {
+			const cfg = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(cfg.bgmLibrary.playlists).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({ name: "Focus", tracks: [] }),
+				]),
+			);
+		});
 	});
 
 	it("plays next from the active playlist instead of the likes collection", async () => {
@@ -724,5 +733,126 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		});
 
 		expect(diagnosisCall(warn)).toBeUndefined();
+	});
+
+	it("treats Tauri null-source playing as observed playback (#671)", async () => {
+		const { container } = render(<BgmPlayer />);
+		await startTrack("v1", "Audible Song");
+		attachIframeForCurrentPlayback();
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 1 }),
+					source: null,
+				}),
+			);
+		});
+		expect(container.querySelector(".bgm-player")).toHaveAttribute(
+			"data-bgm-playback-status",
+			"playing",
+		);
+	});
+
+	it("ignores a null-source error so a detached frame cannot fail the active track (#557)", async () => {
+		render(<BgmPlayer />);
+		await startTrack("v1", "Protected Song");
+		attachIframeForCurrentPlayback();
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onError", info: 150 }),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.status).toBe("requested");
+	});
+});
+
+describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
+	beforeEach(() => {
+		bgmPlayback.reset();
+		useAppStore.setState({ aiInterferenceEnabled: true });
+		vi.mocked(listNaiaAssets).mockResolvedValue(["/music/local-two.mp3"]);
+		vi.mocked(toLocalBlobUrl).mockResolvedValue("blob:local-two");
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.useRealTimers();
+		vi.clearAllMocks();
+		listeners.clear();
+		bgmPlayback.reset();
+		useAppStore.setState(useAppStore.getInitialState());
+		useAvatarStore.setState(useAvatarStore.getInitialState());
+		for (const iframe of document.querySelectorAll(".app-bg-iframe"))
+			iframe.remove();
+		localStorage.clear();
+	});
+
+	it("plays the local file and confirms playing when AI next advances the playlist", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				locale: "en",
+				bgmLibrary: {
+					schemaVersion: 1,
+					likes: [],
+					playlists: [
+						{
+							id: "mix",
+							name: "Mix",
+							createdAt: 1,
+							updatedAt: 1,
+							tracks: [
+								{
+									id: "youtube:first",
+									source: "youtube",
+									youtubeId: "first",
+									title: "YouTube One",
+								},
+								{
+									id: "local:/music/local-two.mp3",
+									source: "local",
+									path: "/music/local-two.mp3",
+									title: "Local Two",
+								},
+							],
+						},
+					],
+					activePlaylistId: "mix",
+					currentIndex: 0,
+					shuffle: false,
+					repeat: "off",
+					queue: [],
+					history: [],
+				},
+			}),
+		);
+		const { container } = render(<BgmPlayer />);
+		await waitFor(() =>
+			expect(container.querySelector(".bgm-player")).toHaveAttribute(
+				"data-bgm-local-count",
+				"1",
+			),
+		);
+		await startTrack("first", "YouTube One");
+		bgmCommandHandler()({
+			payload: JSON.stringify({ type: "bgm_youtube_next" }),
+		});
+		await waitFor(() => {
+			expect(bgmPlayback.current()?.selected.title).toBe("Local Two");
+			expect(bgmPlayback.current()?.status).toBe("playing");
+		});
+		expect(container.querySelector(".bgm-player")).toHaveAttribute(
+			"data-bgm-playback-status",
+			"playing",
+		);
+		expect(container.querySelector(".bgm-player")).toHaveAttribute(
+			"data-bgm-announced-title",
+			"Local Two",
+		);
 	});
 });

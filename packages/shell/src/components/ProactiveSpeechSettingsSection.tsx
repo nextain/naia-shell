@@ -128,78 +128,86 @@ export function ProactiveSpeechSettingsSection(props: {
 					onChange={(event) => update({ timezone: event.target.value })}
 				/>
 			</label>
-			<label>
-				{t("settings.proactiveIdle")}
-				<input
-					data-testid="proactive-idle-ms"
-					type="number"
-					value={draft.idleMs ?? ""}
-					onChange={(event) => update({ idleMs: Number(event.target.value) })}
-				/>
-			</label>
-			<label>
-				{t("settings.proactiveInterval")}
-				<input
-					data-testid="proactive-interval-ms"
-					type="number"
-					value={draft.intervalMs ?? ""}
-					onChange={(event) =>
-						update({ intervalMs: Number(event.target.value) })
-					}
-				/>
-			</label>
 			{props.mode !== "exhibition" && (
-				<label>
-					<input
-						data-testid="proactive-bgm-autoplay"
-						type="checkbox"
-						checked={draft.bgmAutoPlay === true}
-						onChange={(event) => update({ bgmAutoPlay: event.target.checked })}
-					/>
-					{t("settings.proactiveBgm")}
-				</label>
+				// #643: idle/interval are elapsed-time timers (quiet-before-first-remark,
+				// then a fixed gap between remarks) — not tied to the YouTube iframe's
+				// `ended` event, which BGM recovery handles separately. They only mean
+				// anything for the DJ session, so General (exhibition) never shows them.
+				<>
+					<label>
+						{t("settings.proactiveIdle")}
+						<input
+							data-testid="proactive-idle-ms"
+							type="number"
+							value={draft.idleMs ?? ""}
+							onChange={(event) =>
+								update({ idleMs: Number(event.target.value) })
+							}
+						/>
+					</label>
+					<label>
+						{t("settings.proactiveInterval")}
+						<input
+							data-testid="proactive-interval-ms"
+							type="number"
+							value={draft.intervalMs ?? ""}
+							onChange={(event) =>
+								update({ intervalMs: Number(event.target.value) })
+							}
+						/>
+					</label>
+					<label>
+						<input
+							data-testid="proactive-bgm-autoplay"
+							type="checkbox"
+							checked={draft.bgmAutoPlay === true}
+							onChange={(event) => update({ bgmAutoPlay: event.target.checked })}
+						/>
+						{t("settings.proactiveBgm")}
+					</label>
+					<label>
+						<input
+							data-testid="proactive-weather-consent"
+							type="checkbox"
+							checked={draft.weatherConsented === true}
+							onChange={(event) =>
+								update({
+									weatherConsented: event.target.checked,
+									...(!event.target.checked
+										? {
+												weatherLatitude: undefined,
+												weatherLongitude: undefined,
+											}
+										: {}),
+								})
+							}
+						/>
+						{t("settings.proactiveWeather")}
+					</label>
+					<label>
+						{t("settings.proactiveLatitude")}
+						<input
+							data-testid="proactive-weather-latitude"
+							type="number"
+							value={draft.weatherLatitude ?? ""}
+							onChange={(event) =>
+								update({ weatherLatitude: Number(event.target.value) })
+							}
+						/>
+					</label>
+					<label>
+						{t("settings.proactiveLongitude")}
+						<input
+							data-testid="proactive-weather-longitude"
+							type="number"
+							value={draft.weatherLongitude ?? ""}
+							onChange={(event) =>
+								update({ weatherLongitude: Number(event.target.value) })
+							}
+						/>
+					</label>
+				</>
 			)}
-			<label>
-				<input
-					data-testid="proactive-weather-consent"
-					type="checkbox"
-					checked={draft.weatherConsented === true}
-					onChange={(event) =>
-						update({
-							weatherConsented: event.target.checked,
-							...(!event.target.checked
-								? {
-										weatherLatitude: undefined,
-										weatherLongitude: undefined,
-									}
-								: {}),
-						})
-					}
-				/>
-				{t("settings.proactiveWeather")}
-			</label>
-			<label>
-				{t("settings.proactiveLatitude")}
-				<input
-					data-testid="proactive-weather-latitude"
-					type="number"
-					value={draft.weatherLatitude ?? ""}
-					onChange={(event) =>
-						update({ weatherLatitude: Number(event.target.value) })
-					}
-				/>
-			</label>
-			<label>
-				{t("settings.proactiveLongitude")}
-				<input
-					data-testid="proactive-weather-longitude"
-					type="number"
-					value={draft.weatherLongitude ?? ""}
-					onChange={(event) =>
-						update({ weatherLongitude: Number(event.target.value) })
-					}
-				/>
-			</label>
 			{props.mode !== "dj" && (
 				<label>
 					{t("settings.proactiveScope")}

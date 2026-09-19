@@ -138,6 +138,7 @@ export function KnowledgeSettingsTab() {
 
 	const statusText = stats
 		? t("settings.knowledgeStatsFormat")
+				.replace("%s", String(stats.serveReady))
 				.replace("%c", String(stats.cards))
 				.replace("%e", String(stats.entities))
 				.replace("%r", String(stats.relations))
@@ -209,7 +210,13 @@ export function KnowledgeSettingsTab() {
 			{/* 컴파일 상태 + 트리거 */}
 			<div className="settings-field">
 				<label>{t("settings.knowledgeStatusLabel")}</label>
-				<div className="knowledge-status" data-testid="knowledge-status">
+				<div
+					className="knowledge-status"
+					data-testid="knowledge-status"
+					data-cards={stats ? String(stats.cards) : ""}
+					data-serve-ready={stats ? String(stats.serveReady) : ""}
+					data-accepted={stats ? String(stats.accepted) : ""}
+				>
 					{statusText}
 				</div>
 				<div

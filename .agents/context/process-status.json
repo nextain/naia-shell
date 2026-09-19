@@ -19,9 +19,65 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
-    "issue_670_chat_403_detail": {
-      "issue": 670,
-      "title": "Naia account chat 403 must show Insufficient credits, not a bare Forbidden",
+    "issue_672_host_voice_exit": {
+      "issue": 672,
+      "title": "Host TensorRT voice: stuck ~40% then runtime exited before readiness (None)",
+      "requirements": "docs/requirements.md FR-VOICE.21",
+      "scenario": "docs/user-scenarios.md UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "pending"
+      },
+      "status": "implemented",
+      "verification": "cargo test --lib voxcpm2_runtime_exit/voxcpm2_log_tail/상속된_cpu 4 passed; SettingsTab #672 2 passed; platform-matrix spawn+installer 2 passed. 4060 field QA out of scope.",
+      "last_updated": "2026-09-18T15:50:00+09:00"
+    },
+    "issue_671_bgm_observe": {
+      "issue": 671,
+      "title": "BGM: local tracks skip on AI next/prev; status timeout so AI cannot name current song",
+      "requirements": "docs/requirements.md FR-BGM.17 FR-BGM.18",
+      "scenario": "docs/user-scenarios.md UC-BGM-AI-LOCAL-NEXT UC-BGM-TAURI-OBSERVE",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "last_updated": "2026-09-18T14:10:00+09:00"
+    },
+    "issue_664_dual_memory_clone": {
+      "issue": 664,
+      "title": "Agent spawn NAIA_ADK_PATH follows adk-path, never leftover ~/naia-adk clone",
+      "requirements": "docs/requirements.md FR-ADK-PATH.1",
+      "scenario": "docs/user-scenarios.md S-ADK-PATH-ONE-ROOT",
+      "status": "in_progress",
+      "last_updated": "2026-09-18T00:00:00+09:00"
+    },
+    "issue_4060_settings_canonicals": {
+      "issue": [645, 646, 647, 642, 640],
+      "title": "win-rtx4060 settings/canonical FAIL items",
+      "requirements": "docs/requirements.md FR-HERDR-CONTROL.11 FR-SETTINGS.16~18 FR-VOICE-DEV-STAGING.1",
+      "scenario": "docs/user-scenarios.md UC-SETTINGS-ROUNDTRIP + UC-HERDR-CONTROL-OBSERVE",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "in_progress",
+      "last_updated": "2026-09-18T12:00:00+09:00"
+    },
+    "issue_651_653_workspace_dev_urls": {
+      "issue": [651, 653],
+      "title": "Bind Codex/fs-tools to shell workspace root; tauri:dev uses dev.naia.land + api-dev.naia.land",
+      "requirements": "docs/requirements.md FR-INSTANCE-URL.1~2 FR-WORKSPACE-BIND.1",
+      "scenario": "docs/user-scenarios.md UC-INSTANCE-URLS-653 UC-WORKSPACE-BIND-651",
       "gates": {
         "P01": "done",
         "P02": "done",

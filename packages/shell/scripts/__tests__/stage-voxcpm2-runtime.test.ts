@@ -242,9 +242,16 @@ describe("stageVoxCpm2Runtime", () => {
 			'resolve(devVoxCpm2Bundle, "voxcpm2-activation-contract.json")',
 		);
 		expect(devLauncher).toContain(
-			"env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? devVoxCpm2DownloadManifest",
+			"env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? canonicalVoxCpm2DownloadManifest",
 		);
 		expect(devLauncher).toContain("NAIA_VOXCPM2_DOWNLOAD_MANIFEST");
+		expect(devLauncher).toContain("canonicalVoxCpm2DownloadManifest");
+		const orderBlock = devLauncher.slice(
+			devLauncher.indexOf("const devVoxCpm2DownloadManifest"),
+		);
+		expect(orderBlock.indexOf("canonicalVoxCpm2DownloadManifest")).toBeLessThan(
+			orderBlock.indexOf("src-tauri\", \"voxcpm2-runtime\", \"download-manifest.json"),
+		);
 		const devManifest = JSON.parse(
 			readFileSync(
 				resolve(process.cwd(), "scripts/voxcpm2-download-manifest.json"),
@@ -253,6 +260,23 @@ describe("stageVoxCpm2Runtime", () => {
 		);
 		expect(devManifest.profile).toBe("windows_trt_6g");
 		expect(devManifest.archive.url).toContain("/releases/0.2.2/");
+		expect(devManifest.archive.bytes).toBe(2496064260);
+		expect(devManifest.archive.bytes).not.toBe(2494187310);
+		const rustResolver = readFileSync(
+			resolve(process.cwd(), "src-tauri/src/lib.rs"),
+			"utf8",
+		);
+		const fnStart = rustResolver.indexOf(
+			"fn voxcpm2_download_manifest_path",
+		);
+		expect(fnStart).toBeGreaterThan(-1);
+		const fnBody = rustResolver.slice(fnStart, fnStart + 1200);
+		expect(fnBody.indexOf("voxcpm2_scripts_download_manifest_path")).toBeGreaterThan(
+			fnBody.indexOf("cfg!(debug_assertions)"),
+		);
+		expect(fnBody.indexOf("voxcpm2_scripts_download_manifest_path")).toBeLessThan(
+			fnBody.indexOf("resource_dir"),
+		);
 	});
 
 	it("stages the dev/e2e installer resources into the cargo debug resource_dir (#508)", () => {

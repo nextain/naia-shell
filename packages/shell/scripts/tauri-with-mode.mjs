@@ -23,7 +23,7 @@ import {
 	readFileSync,
 	statSync,
 } from "node:fs";
-import { homedir, platform } from "node:os";
+import { platform } from "node:os";
 import { dirname, resolve } from "node:path";
 import {
 	REQUIRED_AGENT_COMMIT,
@@ -31,9 +31,11 @@ import {
 	resolvePairedAgent,
 } from "./agent-pairing.mjs";
 import { developmentInstanceEnv } from "./dev-instance.mjs";
-import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
+import { developmentInstanceHome } from "./instance-home.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
+import { applyNaiaInstanceEnv } from "./naia-instance-urls.mjs";
 import { runProjectPnpm } from "./package-manager.mjs";
+import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
 
 // `build` produces the release installer (`tauri build`, production config).
 // It shares prod env resolution but does not launch a dev window.
@@ -103,15 +105,15 @@ const env = interactiveLaunchEnv(process.env);
 // in release builds.
 const devVoxCpm2Bundle = resolve(SHELL, "src-tauri", "voxcpm2-runtime");
 const hostVoxCpm2Profile = voxCpm2Profile();
-// 내려받기 매니페스트도 운영체제 사실을 담는다 — 어느 아카이브를 받을지가 거기
-// 적혀 있다. 스테이징이 만든 것이 이 빌드의 진짜 매니페스트이고, 저장소에 든
-// 것은 아직 스테이징하지 않은 트리를 위한 Windows 폴백이다(build-e2e-tauri 와
-// 같은 규칙). 폴백을 리눅스에 그대로 놓으면 셸이 Windows 아카이브를 받으러
-// 가므로, 프로파일이 이 기계와 맞을 때만 쓴다.
-const devVoxCpm2DownloadManifest = [
-	resolve(SHELL, "src-tauri", "voxcpm2-runtime", "download-manifest.json"),
-	resolve(SHELL, "scripts", "voxcpm2-download-manifest.json"),
-].find((candidate) => {
+// Canonical pin is scripts/voxcpm2-download-manifest.json (git). The copy under
+// src-tauri/voxcpm2-runtime is a staging artifact and was preferred first, so
+// tauri:dev rejected the live zip (#640 luke-victus: 2494187310 vs 2496064260).
+const canonicalVoxCpm2DownloadManifest = resolve(
+	SHELL,
+	"scripts",
+	"voxcpm2-download-manifest.json",
+);
+function voxCpm2ManifestMatchesHost(candidate) {
 	if (!existsSync(candidate)) return false;
 	try {
 		return (
@@ -121,7 +123,11 @@ const devVoxCpm2DownloadManifest = [
 	} catch {
 		return false;
 	}
-});
+}
+const devVoxCpm2DownloadManifest = [
+	canonicalVoxCpm2DownloadManifest,
+	resolve(SHELL, "src-tauri", "voxcpm2-runtime", "download-manifest.json"),
+].find(voxCpm2ManifestMatchesHost);
 if (mode === "dev") {
 	// Thin-runtime dev builds reuse the staged download manifest, but its ignored
 	// control files can predate the checkout. Refresh the small trusted installer
@@ -139,9 +145,15 @@ if (mode === "dev") {
 		resolve(SHELL, "src-tauri/voxcpm2-activation-contract.json"),
 		resolve(devVoxCpm2Bundle, "voxcpm2-activation-contract.json"),
 	);
+	if (voxCpm2ManifestMatchesHost(canonicalVoxCpm2DownloadManifest)) {
+		copyFileSync(
+			canonicalVoxCpm2DownloadManifest,
+			resolve(devVoxCpm2Bundle, "download-manifest.json"),
+		);
+	}
 	if (devVoxCpm2DownloadManifest) {
 		env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST =
-			env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? devVoxCpm2DownloadManifest;
+			env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? canonicalVoxCpm2DownloadManifest;
 	}
 	// #508: Rust resolves the installer resources from resource_dir, which for
 	// a `tauri dev` debug binary is the cargo debug directory — NOT the
@@ -193,7 +205,7 @@ env.NAIA_REPOS_ADK = env.NAIA_REPOS_ADK ?? WORKSPACE_ROOT;
 // and a separate data home (~/.naia-dev via NAIA_HOME) so concurrent dev and
 // production runs can never clobber each other's config. The single-GPU
 // cascade runtime stays SHARED by design (adopt-if-healthy in Rust).
-env.NAIA_HOME = env.NAIA_HOME ?? resolve(homedir(), ".naia-dev");
+env.NAIA_HOME = env.NAIA_HOME ?? developmentInstanceHome();
 // 8/6 dual-instance 설계 수확: BGM(:18891)/OAuth(:18892) dev 전용 포트 +
 // Rust dev 게이트 플래그(NAIA_DEV_INSTANCE — debug 빌드에서만 인정).
 Object.assign(env, developmentInstanceEnv(env));
@@ -287,20 +299,17 @@ if (platform() === "linux") {
 	env.WEBKIT_DISABLE_DMABUF_RENDERER = env.WEBKIT_DISABLE_DMABUF_RENDERER ?? "1";
 }
 
-// ── prod: dev-gateway 변수 강제 제거 ──
+// Instance hosts are owned by naia-instance-urls.ts. `tauri:prod` still uses
+// the Vite dev server, so import.meta.env.DEV is not the instance.
 if (mode === "prod") {
 	delete env.VITE_NAIA_USE_DEV_GATEWAY;
 	delete env.VITE_NAIA_DEV_GATEWAY_URL;
 }
-
-// 웹 베이스 URL은 모드가 소유한다 (#523). `tauri:prod`도 vite dev 서버로 뜨므로
-// config.ts 의 `import.meta.env.DEV` 폴백은 항상 dev.naia.land 를 고른다 —
-// `.env.prod` 파일이 없는 머신에서 prod 실행의 앱스토어/로그인이 dev 로 새던
-// 실측 결함(2026-08-31, 시연 리허설). 아래 기본값은 뒤에 로드되는 `.env.{mode}`
-// 파일이 있으면 그 값으로 덮인다(명시 파일 > 모드 기본값).
-env.VITE_NAIA_WEB_BASE_URL =
-	env.VITE_NAIA_WEB_BASE_URL ??
-	(mode === "prod" ? "https://www.naia.land" : "https://dev.naia.land");
+Object.assign(env, applyNaiaInstanceEnv(env, mode));
+if (mode === "prod") {
+	delete env.VITE_NAIA_USE_DEV_GATEWAY;
+	delete env.VITE_NAIA_DEV_GATEWAY_URL;
+}
 
 /** 최소 KEY=VALUE env 파일 파서(주석·빈줄 skip, 따옴표 제거). */
 function loadEnvFile(path) {

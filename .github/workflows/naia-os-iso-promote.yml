@@ -15,7 +15,7 @@ on:
         required: true
         default: nvidia
         type: choice
-        options: [nvidia, amd]
+        options: [nvidia, amd, amd-server]
       prefix:
         description: "Build prefix to promote, e.g. builds/nvidia/0.2.2.20260831T044236Z"
         required: true
@@ -39,6 +39,7 @@ env:
   BUILD_KEY: naia-os-live-amd64.iso
   PUBLIC_KEY_NVIDIA: naia-os-live-amd64.iso
   PUBLIC_KEY_AMD: naia-os-amd-live-amd64.iso
+  PUBLIC_KEY_AMD_SERVER: naia-os-amd-server-live-amd64.iso
 
 jobs:
   promote:
@@ -55,6 +56,7 @@ jobs:
           case "${{ inputs.variant }}" in
             nvidia) echo "key=${PUBLIC_KEY_NVIDIA}" >> "$GITHUB_OUTPUT" ;;
             amd)    echo "key=${PUBLIC_KEY_AMD}"    >> "$GITHUB_OUTPUT" ;;
+            amd-server) echo "key=${PUBLIC_KEY_AMD_SERVER}" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::unknown variant"; exit 1 ;;
           esac
           case "${{ inputs.prefix }}" in
