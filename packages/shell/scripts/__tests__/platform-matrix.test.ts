@@ -930,7 +930,7 @@ describe("installer workflow integration contracts", () => {
 	const workflow = readFileSync(
 		resolve(REPO_ROOT, ".github/workflows/build-installers.yml"),
 		"utf8",
-	);
+	).replace(/\r\n/g, "\n");
 
 	it("clones the exact Agent revision declared by the pairing manifest", () => {
 		const pairing = readJson("agent-pairing.json") as {

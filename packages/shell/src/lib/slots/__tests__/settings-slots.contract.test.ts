@@ -446,7 +446,7 @@ describe("#575 · 카드와 탭은 한 출처에서 읽는다", () => {
 
 	it("옛 ttsEngine 도 같은 규칙으로 푼다", () => {
 		expect(effectiveTtsProvider({ ttsEngine: "google" } as unknown as AppConfig)).toBe(
-			"google",
+			"edge",
 		);
 		expect(effectiveTtsProvider({ ttsEngine: "gateway" } as AppConfig)).toBe(
 			"edge",

@@ -55,6 +55,11 @@ describe("페어링 핀이 두 곳에서 갈라지지 않는다", () => {
     expect(pairing.memoryVersion).toMatch(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
   });
 
+  it("self-trust CI also checks out the paired agent", () => {
+    const workflow = readFileSync(resolve(ROOT, ".github", "workflows", "self-trust-gates.yml"), "utf8");
+    expect(workflow).toContain(`git -C ../naia-agent fetch --depth 1 origin ${pairing.agentCommit}`);
+  });
+
   it("memory 핀이 staging의 commit·clean·package gate에 연결된다", () => {
     const stage = readFileSync(
       resolve(ROOT, "packages", "shell", "scripts", "stage-agent.mjs"),

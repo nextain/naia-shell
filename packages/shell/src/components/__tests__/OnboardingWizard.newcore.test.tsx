@@ -157,6 +157,7 @@ describe("OnboardingWizard — newCore 배선(step-flow graft step2)", () => {
 	});
 
 	it("naia_auth_complete → core.onNaiaAuthCallback(naiaKey) 호출(게이트 해제 mirror)", async () => {
+		localStorage.setItem("naia-adk-path", "/tmp/onboarding-newcore-adk");
 		render(<OnboardingWizard onComplete={onComplete} />);
 		// The handler is async now (#449: login also activates credits before
 		// advancing to the voice step) — await its promise chain before asserting.
@@ -165,7 +166,7 @@ describe("OnboardingWizard — newCore 배선(step-flow graft step2)", () => {
 				payload: { naiaKey: "gw-key", naiaUserId: "u1" },
 			});
 		});
-		expect(session.onNaiaAuthCallback).toHaveBeenCalledWith("gw-key");
+		expect(session.onNaiaAuthCallback).toHaveBeenCalledWith("gw-key", "/tmp/onboarding-newcore-adk");
 	});
 
 	it("complete → core.completeWith(snapshot) 으로 영속", async () => {

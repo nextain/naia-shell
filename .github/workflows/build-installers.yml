@@ -70,7 +70,7 @@ jobs:
         run: |
           git init ../naia-agent
           git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
-          git -C ../naia-agent fetch --depth 1 origin cb4c8d71ae24bb7ff042e275026fae3905a91a00
+          git -C ../naia-agent fetch --depth 1 origin 924682259b34ab2829b294bf63d1d02f0819329b
           git -C ../naia-agent checkout --detach FETCH_HEAD
           git init ../naia-kb-compiler
           git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
@@ -78,7 +78,7 @@ jobs:
           git -C ../naia-kb-compiler checkout --detach FETCH_HEAD
           git init ../naia-memory
           git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
-          git -C ../naia-memory fetch --depth 1 origin 630a0d2f19b559e3f0101bb141048485167fb959
+          git -C ../naia-memory fetch --depth 1 origin 5e041eaef1c0072713ee779c1e51a264b070f709
           git -C ../naia-memory checkout --detach FETCH_HEAD
 
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4

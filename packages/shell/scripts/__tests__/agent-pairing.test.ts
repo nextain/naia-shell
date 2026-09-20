@@ -13,6 +13,7 @@ import {
 	REQUIRED_AGENT_COMMIT,
 	REQUIRED_PROTO_SHA256,
 	resolvePairedAgent,
+	ensurePairedAgentCheckout,
 } from "../agent-pairing.mjs";
 
 describe("parseGitWorktreePaths", () => {
@@ -231,3 +232,38 @@ describe("paired-agent resolver integration", () => {
 		}
 	});
 });
+
+describe("ensurePairedAgentCheckout", () => {
+	it("returns existing valid checkout directly without auto-prep", () => {
+		const fixtureRoot = mkdtempSync(join(process.cwd(), ".agent-pairing-ensure-"));
+		const validCheckout = join(fixtureRoot, "valid-agent");
+		mkdirSync(join(validCheckout, "scripts", "builds"), { recursive: true });
+		mkdirSync(join(validCheckout, "src", "main", "adapters", "grpc"), { recursive: true });
+		writeFileSync(join(validCheckout, "scripts", "builds", "agent-stdio-entry.mjs"), "// entry\n");
+		writeFileSync(join(validCheckout, "src", "main", "adapters", "grpc", "naia_agent.proto"), "syntax = \"proto3\";\n");
+
+		try {
+			const resolved = ensurePairedAgentCheckout({
+				candidates: [validCheckout],
+				gitOutput: (_dir: string, args: string[]) => {
+					if (args[0] === "rev-parse") return REQUIRED_AGENT_COMMIT;
+					if (args[0] === "status") return "";
+					return null;
+				},
+				hashProto: () => REQUIRED_PROTO_SHA256,
+			});
+			expect(resolved.pairedAgent).toBe(validCheckout);
+		} finally {
+			rmSync(fixtureRoot, { recursive: true, force: true });
+		}
+	});
+
+	it("preserves explicit NAIA_E2E_AGENT_ROOT and does not auto-prepare", () => {
+		expect(() =>
+			ensurePairedAgentCheckout({
+				explicit: "non-existent-agent-dir",
+			}),
+		).toThrow(/No clean paired naia-agent checkout/);
+	});
+});
+

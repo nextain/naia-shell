@@ -7,7 +7,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
 import { isNewCore } from "../../lib/chat-service";
 import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
@@ -155,7 +155,15 @@ vi.mock("../../lib/bgm-sidecar-url", () => ({
 // Mock Tauri APIs (needed by approval flow)
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: (...args: unknown[]) => mockInvoke(...args),
+	invoke: (command: string, args?: { name?: string }) => {
+		// These component fixtures describe credentials separately from native I/O.
+		// The real secure-store isolation contract is exercised in its own suite.
+		if (command === "secure_store_get") {
+			const fixture = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			return Promise.resolve(fixture[args?.name ?? ""] ?? null);
+		}
+		return mockInvoke(command, args);
+	},
 }));
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: vi.fn().mockResolvedValue(() => {}),
@@ -199,6 +207,10 @@ class FakeSpeechRecognition {
 }
 
 describe("ChatArea", () => {
+	beforeEach(() => {
+		localStorage.setItem("naia-adk-path", "/tmp/chat-area-test-adk");
+		mockSendAppSkills.mockReset().mockResolvedValue(true);
+	});
 	afterEach(() => {
 		cleanup();
 		Reflect.deleteProperty(window, "SpeechRecognition");
@@ -207,6 +219,7 @@ describe("ChatArea", () => {
 		capturedOnChunk = null;
 		capturedRequests.length = 0;
 		vi.clearAllMocks();
+		vi.restoreAllMocks();
 		vi.mocked(isNewCore).mockReturnValue(false);
 		mockInvoke.mockResolvedValue(undefined);
 		useChatStore.setState(useChatStore.getInitialState());
@@ -263,7 +276,8 @@ describe("ChatArea", () => {
 				"Voice connection failed: not-allowed: Permission denied",
 			);
 		});
-		expect(FakeSpeechRecognition.latest?.stop).toHaveBeenCalledTimes(1);
+		expect(FakeSpeechRecognition.latest?.abort).toHaveBeenCalledTimes(1);
+		expect(FakeSpeechRecognition.latest?.onerror).toBeNull();
 		expect(document.querySelector(".chat-voice-btn")?.className).not.toContain(
 			"active",
 		);
@@ -1171,6 +1185,10 @@ describe("ChatArea", () => {
 	});
 
 	it("serializes 6GB local sentence synthesis while playback queues independently", async () => {
+		// A resolved test promise can take <1ms. Control elapsed synthesis time
+		// so the intended cold-engine RTF>1 condition does not depend on CPU load.
+		let elapsed = 0;
+		vi.spyOn(performance, "now").mockImplementation(() => (elapsed += 100));
 		const firstTts = deferred<{ audioBase64: string; costUsd: number }>();
 		const secondTts = deferred<{ audioBase64: string; costUsd: number }>();
 		ttsSyncMocks.streamsAvatarPcm.mockReturnValue(false);

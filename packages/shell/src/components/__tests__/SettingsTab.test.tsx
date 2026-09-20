@@ -52,8 +52,30 @@ vi.mock("@tauri-apps/plugin-store", () => {
 });
 
 const mockInvoke = vi.fn();
+const nativeSecrets = new Map<string, string>();
+beforeEach(() => nativeSecrets.clear());
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: (...args: unknown[]) => mockInvoke(...args),
+	invoke: async (...call: [string, ...unknown[]]) => {
+		const command = call[0];
+		const args = call[1] as { name?: string; value?: string } | undefined;
+		if (command === "secure_store_get") return (await secureStoreMock.get(args?.name)) ?? nativeSecrets.get(args?.name ?? "") ?? null;
+		if (command === "secure_store_set") {
+			nativeSecrets.set(args!.name!, args!.value!);
+			return secureStoreMock.set(args?.name, args?.value);
+		}
+		if (command === "secure_store_delete") {
+			nativeSecrets.delete(args!.name!);
+			return secureStoreMock.delete(args?.name);
+		}
+		const result = await mockInvoke(...call);
+		// Older fixtures use [] as their catch-all. Native config reads return
+		// JSON text; CLI discovery returns a snapshot, never a bare array.
+		if (Array.isArray(result) && result.length === 0) {
+			if (command === "read_naia_ui_config" || command === "read_naia_config") return "";
+			if (command === "cli_detect_refresh") return { results: [], detectedAt: Date.now() };
+		}
+		return result;
+	},
 	convertFileSrc: vi.fn((path: string) => `file://${path}`),
 }));
 
@@ -399,10 +421,8 @@ describe("SettingsTab", () => {
 		).toBeInTheDocument();
 	});
 
-	// ef3dc42c 이후 Connections 는 브라우저 미리보기에서도 열린다. 자리는 그대로
-	// Skills 와 General 사이이고, 봇 토큰이 없는 기계에서도 탭이 열려 안내 화면을
-	// 보여 준다. 토큰 입력란을 WebView 로 내리지 않는다는 제약은 그대로다.
-	it("opens Connections between Skills and General", async () => {
+	// #610 (dbcbb89f): Discord surfaces were intentionally removed from Shell.
+	it("keeps the nine retained settings tabs without retired Connections", async () => {
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "discord_bot_token_available")
 				return Promise.resolve(false);
@@ -421,25 +441,20 @@ describe("SettingsTab", () => {
 			"memory",
 			"knowledge",
 			"skills",
-			"connections",
 			"general",
 		]);
 		const connections = document.querySelector(
 			'[data-settings-tab="connections"]',
-		) as HTMLButtonElement;
-		expect(connections.disabled).toBe(false);
-		// 열기 전에는 패널이 없다 — 클릭이 실제로 무언가를 여는지 재기 위해서다.
+		);
+		expect(connections).toBeNull();
 		expect(screen.queryByTestId("discord-connections")).toBeNull();
 
 		await act(async () => {
-			gotoSettingsTab("connections");
+			gotoSettingsTab("general");
 		});
 
-		expect(connections.className).toContain("settings-tab-btn--active");
-		await waitFor(() => {
-			expect(screen.getByTestId("discord-connections")).toBeTruthy();
-		});
-		// 토큰은 네이티브가 갖는다. 패널을 열어도 WebView 에는 입력란이 없다.
+		expect(document.querySelector('[data-settings-tab="general"]')?.className).toContain("settings-tab-btn--active");
+		// Retired Discord credentials must not reappear in the WebView.
 		expect(document.querySelector('input[type="password"]')).toBeNull();
 	});
 
@@ -841,7 +856,7 @@ describe("SettingsTab", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.llmRoles.main).toMatchObject({
 			provider: "codex",
-			model: "gpt-5.4",
+			model: "gpt-5.6-sol",
 		});
 		// 옛 sub/expert 역할 필드는 그대로 남는다.
 		expect(saved.llmRoles.sub).toMatchObject({
@@ -900,6 +915,7 @@ describe("SettingsTab", () => {
 		);
 		expect(chatServiceMocks.sendAuthUpdateStrict).toHaveBeenCalledWith(
 			"gw-test-key",
+			"C:\\Users\\Public\\naia-adk",
 		);
 		expect(chatServiceMocks.activateNaiaLlm).toHaveBeenCalledWith(
 			"gw-test-key",
@@ -1170,6 +1186,7 @@ describe("SettingsTab", () => {
 	])(
 		"hydrates the authoritative main role and preserves metadata on save ($name)",
 		async ({ legacy }) => {
+			localStorage.setItem("naia-adk-path", "/tmp/settings-role-test-adk");
 			localStorage.setItem(
 				"naia-config",
 				JSON.stringify({
@@ -1199,7 +1216,7 @@ describe("SettingsTab", () => {
 				).toBe("codex");
 				expect(
 					(document.getElementById("model-select") as HTMLSelectElement).value,
-				).toBe("gpt-5.4");
+				).toBe("gpt-5.6-sol");
 			});
 
 			fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -1208,7 +1225,7 @@ describe("SettingsTab", () => {
 				expect(saved.llmRoles?.main).toEqual(
 					expect.objectContaining({
 						provider: "codex",
-						model: "gpt-5.4",
+						model: "gpt-5.6-sol",
 						credentialRef: "codex-cred",
 						baseUrl: "https://proxy.example/v1",
 					}),
@@ -1320,7 +1337,7 @@ describe("SettingsTab", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.llmRoles).toEqual(
 			expect.objectContaining({
-				main: expect.objectContaining({ provider: "codex", model: "gpt-5.4" }),
+				main: expect.objectContaining({ provider: "codex", model: "gpt-5.6-sol" }),
 			}),
 		);
 	});
@@ -1610,14 +1627,14 @@ describe("SettingsTab — memory tab (#298)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("renders settings tab bar with six tab buttons", () => {
+	it("renders the nine retained settings tabs", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		const tabBar = document.querySelector(".settings-tab-bar");
 		expect(tabBar).toBeTruthy();
-		// 10 tabs: profile|brain|voice|avatar|persona|memory|knowledge|skills|connections|general
+		// #610 removed Connections; the other nine tabs remain reachable.
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		expect(tabBtns.length).toBe(10);
+		expect(tabBtns.length).toBe(9);
 	});
 
 	it("keeps memory backup controls disabled until native support exists", () => {

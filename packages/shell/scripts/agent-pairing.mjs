@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runProjectPnpm } from "./package-manager.mjs";
 
 const shellDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifestPath = resolve(shellDir, "agent-pairing.json");
@@ -171,6 +172,126 @@ export function resolvePairedAgent(options = {}) {
 			(explicit ? ` under ${explicit}` : ` under ${worktreeRoots.join(", ")}`),
 	);
 }
+
+/**
+ * 개발 환경에서 핀된 커밋의 naia-agent 실행용 체크아웃이 없거나 더러운 경우,
+ * 전용 워크트리를 자동으로 준비한다 (#679 / #539).
+ *
+ * 불변식:
+ * 1. 명시적 Agent 지정(NAIA_E2E_AGENT_ROOT, explicit)이 있으면 자동 준비하지 않고 strict 검증에 맡긴다.
+ * 2. 기존 clean paired 체크아웃이 이미 있으면 재사용한다 (0 오버헤드).
+ * 3. 사용자 작업 트리가 dirty여도 리셋하거나 덮어쓰지 않고 보존한다.
+ * 4. 인접 의존성(../naia-memory, ../naia-kb-compiler) 링크를 연결한다.
+ * 5. 상위 workspace 전체를 오선택하지 않도록 --ignore-workspace 로 설치하고 빌드한다.
+ * 6. 준비 후에도 resolvePairedAgent 의 strict commit/clean/proto 계약 검증을 거친다.
+ */
+export function ensurePairedAgentCheckout(options = {}) {
+	const sourceEnv = options.env ?? process.env;
+	const explicit = options.explicit ?? sourceEnv.NAIA_E2E_AGENT_ROOT;
+	if (explicit) {
+		return resolvePairedAgent(options);
+	}
+
+	// 1. 이미 유효한 체크아웃이 있는지 확인 (있으면 즉시 반환)
+	try {
+		return resolvePairedAgent(options);
+	} catch {
+		// 유효한 체크아웃이 없으면 아래에서 자동 준비 진행
+	}
+
+	const primaryRoots = options.primaryRoots ?? [
+		resolve(shellDir, "..", "..", "..", "naia-agent"),
+		resolve(shellDir, "..", "..", "..", "..", "naia-agent"),
+	];
+
+	const primary = primaryRoots.find((p) => existsSync(p) && existsSync(resolve(p, ".git")));
+	if (!primary) {
+		throw new Error(
+			`Cannot auto-prepare paired naia-agent: primary repository not found in ${primaryRoots.join(", ")}`,
+		);
+	}
+
+	const worktreeRoots = options.worktreeRoots ?? [
+		sourceEnv.NAIA_AGENT_WORKTREES_DIR,
+		resolve(shellDir, "..", "..", "..", "naia-agent-worktrees"),
+		resolve(shellDir, "..", "..", "naia-agent-worktrees"),
+		resolve(shellDir, "..", "..", "..", "..", "naia-agent-worktrees"),
+	].filter(Boolean);
+
+	const worktreeRoot = worktreeRoots.find((r) => existsSync(r)) ?? resolve(primary, "..", "naia-agent-worktrees");
+	if (!existsSync(worktreeRoot)) {
+		mkdirSync(worktreeRoot, { recursive: true });
+	}
+
+	// 인접 의존성(naia-memory, naia-kb-compiler) 링크/정션 확보
+	const parentProjectsDir = resolve(primary, "..");
+	for (const depName of ["naia-memory", "naia-kb-compiler"]) {
+		const targetDep = resolve(parentProjectsDir, depName);
+		const linkPath = resolve(worktreeRoot, depName);
+		if (existsSync(targetDep) && !existsSync(linkPath)) {
+			try {
+				symlinkSync(targetDep, linkPath, process.platform === "win32" ? "junction" : "dir");
+			} catch {
+				// 이미 존재하거나 권한 예외 시 무시
+			}
+		}
+	}
+
+	const shortSha = REQUIRED_AGENT_COMMIT.slice(0, 8);
+	const targetWorktree = resolve(worktreeRoot, `paired-${shortSha}`);
+
+	// 2. targetWorktree가 아직 없으면 git worktree add
+	if (!existsSync(targetWorktree)) {
+		// primary에서 해당 커밋이 있는지 검사하고 없으면 fetch
+		const hasCommit = spawnSync("git", ["-C", primary, "rev-parse", "--verify", `${REQUIRED_AGENT_COMMIT}^{commit}`], {
+			encoding: "utf8",
+			shell: false,
+		}).status === 0;
+
+		if (!hasCommit) {
+			const fetchResult = spawnSync("git", ["-C", primary, "fetch", "origin", REQUIRED_AGENT_COMMIT], {
+				encoding: "utf8",
+				shell: false,
+			});
+			if (fetchResult.status !== 0) {
+				spawnSync("git", ["-C", primary, "fetch", "origin"], { encoding: "utf8", shell: false });
+			}
+		}
+
+		console.log(`[agent-pairing] 전용 페어링 워크트리 자동 생성: ${targetWorktree} (${shortSha})`);
+		const addResult = spawnSync(
+			"git",
+			["-C", primary, "worktree", "add", targetWorktree, REQUIRED_AGENT_COMMIT, "--detach"],
+			{ encoding: "utf8", shell: false },
+		);
+		if (addResult.status !== 0) {
+			throw new Error(`Failed to create paired worktree at ${targetWorktree}: ${addResult.stderr || addResult.stdout}`);
+		}
+	}
+
+	// 3. 의존성 설치 및 빌드
+	const runPnpm = options.runProjectPnpm ?? runProjectPnpm;
+	const nodeModulesDir = resolve(targetWorktree, "node_modules");
+	const compositionFile = resolve(targetWorktree, "dist/main/composition/index.js");
+
+	if (!existsSync(nodeModulesDir)) {
+		console.log(`[agent-pairing] 워크트리 의존성 설치 (--ignore-workspace): ${targetWorktree}`);
+		try {
+			runPnpm(["--ignore-workspace", "install", "--frozen-lockfile"], targetWorktree, sourceEnv);
+		} catch {
+			runPnpm(["--ignore-workspace", "install"], targetWorktree, sourceEnv);
+		}
+	}
+
+	if (!existsSync(compositionFile)) {
+		console.log(`[agent-pairing] 워크트리 빌드: ${targetWorktree}`);
+		runPnpm(["run", "build"], targetWorktree, sourceEnv);
+	}
+
+	// 4. 엄격한 pairing 검증을 거쳐 반환
+	return resolvePairedAgent(options);
+}
+
 
 /**
  * e2e 전용 빌드 산출 자리.

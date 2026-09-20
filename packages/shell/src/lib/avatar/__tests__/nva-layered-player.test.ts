@@ -146,6 +146,11 @@ function installMediaDoubles(): () => void {
 
 function makePlayer() {
 	const canvas = document.createElement("canvas");
+	// jsdom has no raster canvas; these tests exercise media buffer ownership.
+	// Keep the double on this canvas so other rendering tests remain unaffected.
+	Object.defineProperty(canvas, "getContext", {
+		value: () => ({ clearRect: vi.fn(), drawImage: vi.fn() }),
+	});
 	canvas.width = 400;
 	canvas.height = 700;
 	return new NvaLayeredPlayer(canvas, MANIFEST, {

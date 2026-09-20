@@ -310,7 +310,7 @@ describe("Editor — file type helpers (via render behaviour)", () => {
 		mockInvoke.mockResolvedValue("");
 		render(<Editor filePath="/some/dir/photo.png" />);
 		await waitFor(() => expect(screen.getByRole("img")).toBeInTheDocument());
-		expect(screen.getByText("photo.png")).toBeInTheDocument();
+		expect(screen.getByText("/some/dir/photo.png")).toBeInTheDocument();
 	});
 
 	it("resets sort when file changes", async () => {
@@ -516,7 +516,9 @@ describe("Editor — header and empty state", () => {
 
 		render(<Editor filePath="/home/user/dev/naia-os/AGENTS.md" />);
 
-		expect(screen.getByText("AGENTS.md")).toBeDefined();
+		expect(
+			screen.getByText("/home/user/dev/naia-os/AGENTS.md"),
+		).toBeDefined();
 	});
 
 	it("shows badge when provided", () => {

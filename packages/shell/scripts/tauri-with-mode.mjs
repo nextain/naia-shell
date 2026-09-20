@@ -28,6 +28,7 @@ import { dirname, resolve } from "node:path";
 import {
 	REQUIRED_AGENT_COMMIT,
 	REQUIRED_PROTO_SHA256,
+	ensurePairedAgentCheckout,
 	resolvePairedAgent,
 } from "./agent-pairing.mjs";
 import { developmentInstanceEnv } from "./dev-instance.mjs";
@@ -272,9 +273,10 @@ function applyPairedAgentEnv(targetEnv) {
 		return gitDirForPath(explicitScript);
 	}
 
-	const { pairedAgent, agentScript, agentProtoDir } = resolvePairedAgent({
-		env: targetEnv,
-	});
+	const { pairedAgent, agentScript, agentProtoDir } =
+		mode === "dev"
+			? ensurePairedAgentCheckout({ env: targetEnv })
+			: resolvePairedAgent({ env: targetEnv });
 	targetEnv.NAIA_AGENT_SCRIPT = agentScript;
 	targetEnv.NAIA_AGENT_PROTO_DIR = agentProtoDir;
 	return pairedAgent;

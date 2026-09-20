@@ -66,6 +66,7 @@ const TAURI_MOCK_SCRIPT = `
 	window.__NAIA_E2E__ = { emitEvent: emitEvent };
 
 	var tcCounter = 0;
+	var secrets = new Map();
 
 	function buildTextResponse(requestId, text) {
 		return [
@@ -125,6 +126,11 @@ const TAURI_MOCK_SCRIPT = `
 
 	// Main invoke handler
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
+		// Model the current ADK-native credential store, including migration writes.
+		if (cmd === "secure_store_get") return secrets.get(args.expectedStorePath + ":" + args.name) || null;
+		if (cmd === "secure_store_set") { secrets.set(args.expectedStorePath + ":" + args.name, args.value); return null; }
+		if (cmd === "secure_store_delete") { secrets.delete(args.expectedStorePath + ":" + args.name); return null; }
+		if (cmd === "plugin:store|entries") return [];
 		// Event system
 		if (cmd === "plugin:event|listen") {
 			if (!eventListeners.has(args.event)) eventListeners.set(args.event, []);
@@ -283,7 +289,7 @@ test.describe("Chat + Tool E2E", () => {
 			".chat-message.assistant .message-content",
 		);
 		await expect(assistantMsg.first()).toBeVisible();
-		await expect(assistantMsg.first()).not.toBeEmpty();
+		await expect(assistantMsg.first()).toContainText("안녕하세요! 무엇을 도와드릴까요?");
 	});
 
 
@@ -364,7 +370,7 @@ test.describe("Claude Code CLI provider E2E", () => {
 	test("claude-code-cli — 도구 실행 후 응답", async ({ page }) => {
 		watchPermissions(page);
 
-		await sendMessage(page, "현재 디렉토리에서 ls 해줘");
+		await sendMessage(page, "~/test-e2e.txt 읽어줘");
 
 		const toolActivity = page.locator(".tool-activity");
 		await expect(toolActivity.first()).toBeVisible({ timeout: 5_000 });
@@ -376,7 +382,7 @@ test.describe("Claude Code CLI provider E2E", () => {
 		const assistantMsg = page
 			.locator(".chat-message.assistant .message-content")
 			.last();
-		await expect(assistantMsg).not.toBeEmpty();
+		await expect(assistantMsg).toContainText("playwright-ok");
 	});
 
 	test("claude-code-cli — thinking 블록 표시", async ({ page }) => {

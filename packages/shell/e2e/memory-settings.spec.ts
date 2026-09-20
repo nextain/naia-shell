@@ -402,6 +402,7 @@ test.describe("Memory Settings UI", () => {
 		);
 
 		// Click first delete button
+		page.once("dialog", (dialog) => dialog.accept());
 		await page.locator(".fact-delete-btn").first().click();
 
 		// IPC should have been called
@@ -423,33 +424,21 @@ test.describe("Memory Settings UI", () => {
 		await expect(page.getByText("User prefers TypeScript")).not.toBeVisible();
 	});
 
-	test("export backup invokes memory_export_backup IPC", async ({ page }) => {
+	test("canceling fact deletion preserves the fact and sends no delete IPC", async ({ page }) => {
 		await gotoSettings(page);
+		await expect(page.getByText("User prefers TypeScript")).toBeVisible();
+		page.once("dialog", (dialog) => dialog.dismiss());
+		await page.locator(".fact-delete-btn").first().click();
+		await expect(page.getByText("User prefers TypeScript")).toBeVisible();
+		expect(await page.evaluate(() => (window as any).__MEMORY_SETTINGS_E2E__?.deletedFacts)).toBe(0);
+	});
 
-		// Find backup password input and fill it
-		const pwInput = page
-			.locator(
-				'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="비밀번호"]',
-			)
-			.last();
-		await pwInput.fill("test-password");
-
-		// Click Export
-		await page.getByRole("button", { name: /export|내보내기/i }).click();
-
-		// Verify IPC was called
-		await page.waitForFunction(
-			() => (window as any).__MEMORY_SETTINGS_E2E__?.exportCalls > 0,
-			{},
-			{ timeout: 5_000 },
-		);
-		const result = await page.evaluate(() => ({
-			exportCalls: (window as any).__MEMORY_SETTINGS_E2E__?.exportCalls,
-			lastExportPassword: (window as any).__MEMORY_SETTINGS_E2E__
-				?.lastExportPassword,
-		}));
-		expect(result.exportCalls).toBe(1);
-		expect(result.lastExportPassword).toBe("test-password");
+	test("backup remains disabled until the supported export path is available", async ({ page }) => {
+		await gotoSettings(page);
+		await expect(page.getByTestId("memory-backup-password")).toBeDisabled();
+		await expect(page.getByTestId("memory-backup-export")).toBeDisabled();
+		await expect(page.getByRole("button", { name: /import|가져오기/i })).toBeDisabled();
+		expect(await page.evaluate(() => (window as any).__MEMORY_SETTINGS_E2E__?.exportCalls)).toBe(0);
 	});
 
 	test.fixme("save persists memory fields to config.json (write_naia_config)", async ({

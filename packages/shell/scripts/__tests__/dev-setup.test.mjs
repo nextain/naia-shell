@@ -2,10 +2,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
-import { requiredTscBuild, tscBuild } from "../dev-setup.mjs";
 
 const sourcePath = fileURLToPath(new URL("../dev-setup.mjs", import.meta.url));
+// Load the actual Node CLI module natively. Vite SSR moves imports ahead of a
+// CRLF hashbang on Windows, producing invalid JS although Node accepts it.
+const { requiredTscBuild, tscBuild } = createRequire(import.meta.url)(sourcePath);
 const temporaryRoots = [];
 
 afterEach(() => {

@@ -1,10 +1,14 @@
 // KnowledgeGraphOverlay — 작업영역을 거의 채우는 지식 그래프 오버레이(닫으면 복귀).
 // lazy: 호출부가 열릴 때만 마운트 → 닫히면 unmount = 시뮬 정지(평소 부하 0).
 // 노드 클릭 → 그 엔티티의 출처 문서 → "원문 열기"(URL=브라우저 / 파일=워크스페이스, 기존 앱 api 재사용).
-import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentType, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { classifySourceUri, type KnowledgeGraph, type KnowledgeGraphNode, entitySourcesFromKbJson } from "../lib/knowledge-result";
 import { openKnowledgeSource } from "../lib/knowledge-source-open";
-import { KnowledgeGraphView } from "./KnowledgeGraphView";
+const KnowledgeGraphView = lazy(() =>
+	import("./KnowledgeGraphView").then((module) => ({
+		default: module.KnowledgeGraphView,
+	})),
+);
 
 export function KnowledgeGraphOverlay({
 	graph,
@@ -17,13 +21,13 @@ export function KnowledgeGraphOverlay({
 	kbJson: string;
 	onClose: () => void;
 	/** 그래프 뷰 컴포넌트 주입(테스트 대체 가능). 기본 = KnowledgeGraphView. */
-	GraphView?: (p: {
+	GraphView?: ComponentType<{
 		graph: KnowledgeGraph;
 		width?: number;
 		height?: number;
 		onNodeClick?: (n: KnowledgeGraphNode) => void;
 		selectedId?: string;
-	}) => ReactElement;
+	}>;
 }) {
 	const [selected, setSelected] = useState<KnowledgeGraphNode | null>(null);
 	const graphAreaRef = useRef<HTMLDivElement | null>(null);
@@ -142,13 +146,15 @@ export function KnowledgeGraphOverlay({
 						style={{ flex: 1, minWidth: 0, padding: 10, display: "flex" }}
 					>
 						<div style={{ flex: 1, minWidth: 0 }}>
-							<GraphView
-								graph={graph}
-								width={dims.w - 36}
-								height={dims.h - 60}
-								onNodeClick={(n) => setSelected(n)}
-								selectedId={selected?.id}
-							/>
+							<Suspense fallback={null}>
+								<GraphView
+									graph={graph}
+									width={dims.w - 36}
+									height={dims.h - 60}
+									onNodeClick={(n) => setSelected(n)}
+									selectedId={selected?.id}
+								/>
+							</Suspense>
 						</div>
 					</div>
 
