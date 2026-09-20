@@ -664,6 +664,19 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		await waitFor(() => {
 			expect(screen.getByTestId("embedded-herdr-terminal")).toBeInTheDocument();
 		});
+
+		// Now on Herdr surface, rail offers to switch back to viewer ("파일 뷰어로")
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "파일 뷰어로" }),
+			).toBeInTheDocument();
+		});
+
+		// Clicking "파일 뷰어로" switches back to viewer
+		fireEvent.click(screen.getByRole("button", { name: "파일 뷰어로" }));
+		await waitFor(() => {
+			expect(screen.getByTestId("workspace-viewer")).toBeInTheDocument();
+		});
 	});
 
 	it("closes current open tab on Ctrl+W shortcut", async () => {

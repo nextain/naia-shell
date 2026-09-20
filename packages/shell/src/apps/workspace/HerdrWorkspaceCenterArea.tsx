@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect } from "react";
 import type { AppCenterProps } from "../../lib/app-registry";
 import { HerdrWorkspaceRail } from "./HerdrWorkspaceRail";
 import { HerdrWorkspaceSurface } from "./HerdrWorkspaceSurface";
@@ -18,6 +19,32 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 		showHerdr: runtime.showHerdr,
 		terminalRef: runtime.terminalRef,
 	});
+
+	const handleShowViewer = useCallback(async () => {
+		if (documents.openFilePath) {
+			runtime.setSurface("viewer");
+			return;
+		}
+		if (documents.openDocs.length > 0) {
+			documents.setOpenFilePath(documents.openDocs[documents.openDocs.length - 1]);
+			runtime.setSurface("viewer");
+			return;
+		}
+		if (runtime.workspaceRoot) {
+			try {
+				const files = await invoke<string[]>("workspace_list_files_recursive", {
+					parent: runtime.workspaceRoot,
+				});
+				if (files.length > 0) {
+					const readme = files.find((f) => /readme\.md$/i.test(f));
+					const target = readme ?? files[0];
+					void documents.openResolvedFile(target);
+					return;
+				}
+			} catch {}
+		}
+		runtime.setSurface("viewer");
+	}, [documents, runtime]);
 
 	useEffect(() => {
 		if (!runtime.snapshot) return;
@@ -63,13 +90,16 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 		<div className="herdr-workspace" data-testid="herdr-workspace">
 			<HerdrWorkspaceRail
 				workspaceRoot={runtime.workspaceRoot}
+				surface={runtime.surface}
 				openFilePath={documents.openFilePath}
+				openDocs={documents.openDocs}
 				classifiedDirs={documents.classifiedDirs}
 				fileTreeRegionRef={documents.fileTreeRegionRef}
 				snapshot={runtime.snapshot}
 				onFileSelect={documents.openFromTree}
 				onSendToNaia={documents.sendToNaia}
 				onShowHerdr={runtime.showHerdr}
+				onShowViewer={handleShowViewer}
 				onFocusWorkspace={runtime.focusWorkspace}
 				onFocusAgent={runtime.focusAgent}
 			/>

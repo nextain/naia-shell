@@ -7,13 +7,16 @@ import type { ClassifiedDir } from "./types";
 
 interface RailProps {
 	workspaceRoot: string;
+	surface?: "herdr" | "viewer";
 	openFilePath: string;
+	openDocs?: string[];
 	classifiedDirs: ClassifiedDir[] | null;
 	fileTreeRegionRef: RefObject<HTMLDivElement>;
 	snapshot: HerdrSnapshot | null;
 	onFileSelect: (path: string) => void;
 	onSendToNaia: (path: string) => void;
 	onShowHerdr: () => void;
+	onShowViewer?: () => void;
 	onFocusWorkspace: (workspaceId: string) => Promise<void>;
 	onFocusAgent: (paneId: string) => Promise<void>;
 }
@@ -55,16 +58,6 @@ export function HerdrWorkspaceRail(props: RailProps) {
 			>
 				<header className="herdr-workspace__section-title">
 					<span>{t("workspace.herdrFileTree")}</span>
-					{props.openFilePath ? (
-						<button
-							type="button"
-							className="herdr-workspace__toggle-btn"
-							onClick={props.onShowHerdr}
-							title={t("workspace.herdrBackLabel")}
-						>
-							Herdr 화면으로
-						</button>
-					) : null}
 					{props.workspaceRoot && (
 						<span
 							className="herdr-workspace__root"
@@ -74,6 +67,34 @@ export function HerdrWorkspaceRail(props: RailProps) {
 							{workspaceName}
 						</span>
 					)}
+					{props.surface === "viewer" ? (
+						<button
+							type="button"
+							className="herdr-workspace__toggle-btn"
+							onClick={props.onShowHerdr}
+							title={t("workspace.herdrBackLabel")}
+						>
+							Herdr 화면으로
+						</button>
+					) : props.onShowViewer && (props.openFilePath || (props.openDocs && props.openDocs.length > 0)) ? (
+						<button
+							type="button"
+							className="herdr-workspace__toggle-btn"
+							onClick={props.onShowViewer}
+							title="파일 뷰어 보기"
+						>
+							파일 뷰어로
+						</button>
+					) : props.onShowViewer ? (
+						<button
+							type="button"
+							className="herdr-workspace__toggle-btn"
+							onClick={props.onShowViewer}
+							title="파일 뷰어 보기"
+						>
+							뷰어 보기
+						</button>
+					) : null}
 				</header>
 				{props.workspaceRoot ? (
 					<FileTree

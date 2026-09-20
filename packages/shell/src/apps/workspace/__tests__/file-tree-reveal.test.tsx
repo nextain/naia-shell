@@ -121,4 +121,34 @@ describe("FileTree open-file reveal", () => {
 		expect(await screen.findByText("alpha-adk")).toBeInTheDocument();
 		expect(screen.queryByText("${backup_dir}")).not.toBeInTheDocument();
 	});
+
+	it("displays external file indicator when open file is outside workspaceRoot and does not auto-expand internal tree", async () => {
+		mockInvoke.mockResolvedValue([
+			{ name: "src", path: "/work/naia/src", is_dir: true },
+		]);
+
+		const onSelect = vi.fn();
+		render(
+			<FileTree
+				workspaceRoot="/work/naia"
+				openFilePath="/var/external/outside.md"
+				onFileSelect={onSelect}
+			/>,
+		);
+
+		expect(
+			await screen.findByTestId("workspace-tree-external-file"),
+		).toBeInTheDocument();
+		expect(screen.getByText("외부 파일")).toBeInTheDocument();
+		expect(screen.getByText("outside.md")).toBeInTheDocument();
+
+		// Clicking the external file triggers onFileSelect
+		screen.getByText("outside.md").click();
+		expect(onSelect).toHaveBeenCalledWith("/var/external/outside.md");
+
+		// Does not attempt to recursively list internal directories for external path
+		expect(mockInvoke).not.toHaveBeenCalledWith("workspace_list_dirs", {
+			parent: "/work/naia/src",
+		});
+	});
 });

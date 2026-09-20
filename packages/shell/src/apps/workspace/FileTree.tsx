@@ -63,6 +63,17 @@ function normPath(p: string): string {
 	return p.replace(/\/$/, "");
 }
 
+function canonicalPath(p: string): string {
+	return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+export function isOutsideWorkspace(filePath?: string, root?: string): boolean {
+	if (!filePath || !root) return false;
+	const cRoot = canonicalPath(root) + "/";
+	const cPath = canonicalPath(filePath);
+	return !cPath.startsWith(cRoot) && cPath !== canonicalPath(root);
+}
+
 export function isUnresolvedTemplateEntry(name: string): boolean {
 	return /^\$\{[A-Za-z0-9_]+\}$/.test(name);
 }
@@ -262,6 +273,31 @@ export function FileTree({
 	// overwriting a fresher result when multiple loadEntries calls are in-flight.
 	const fetchIdRef = useRef(0);
 
+	const isExternal = isOutsideWorkspace(openFilePath, workspaceRoot);
+	const externalFileName = openFilePath
+		? openFilePath.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || openFilePath
+		: "";
+
+	const externalFileItem = isExternal && openFilePath ? (
+		<div
+			className="workspace-tree__external-file"
+			data-testid="workspace-tree-external-file"
+		>
+			<span className="workspace-tree__external-badge">외부 파일</span>
+			<button
+				type="button"
+				className="workspace-tree__external-path"
+				title={openFilePath}
+				onClick={() => onFileSelect(openFilePath)}
+			>
+				<span className="workspace-tree__external-icon">📄</span>
+				<span className="workspace-tree__external-name">
+					{externalFileName}
+				</span>
+			</button>
+		</div>
+	) : null;
+
 	// ── Context menu state ───────────────────────────────────────────────
 	const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
 	const ctxMenuRef = useRef<HTMLDivElement>(null);
@@ -455,6 +491,7 @@ export function FileTree({
 		if (!hasAnyMatch) {
 			return (
 				<div className="workspace-tree workspace-tree--empty">
+					{externalFileItem}
 					<div className="workspace-tree__empty-hint">
 						{t("fileTree.noClassifiedDirs")}
 					</div>
@@ -464,6 +501,7 @@ export function FileTree({
 
 		return (
 			<div className="workspace-tree">
+				{externalFileItem}
 				{Object.entries(sections).map(([cat, dirs]) => {
 					if (dirs.length === 0) return null;
 					const classifiedEntries = entries.filter((e) =>
@@ -499,6 +537,7 @@ export function FileTree({
 	if (entries.length === 0) {
 		return (
 			<div className="workspace-tree workspace-tree--empty">
+				{externalFileItem}
 				<div className="workspace-tree__empty-hint">
 					{t("fileTree.empty")}
 				</div>
@@ -509,6 +548,7 @@ export function FileTree({
 
 	return (
 		<div className="workspace-tree">
+			{externalFileItem}
 			{entries.map((entry) => (
 				<TreeNode
 					key={entry.path}
