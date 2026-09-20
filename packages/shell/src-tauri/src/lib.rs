@@ -49,6 +49,21 @@ fn resolve_cli_file(args: &[String], cwd: &std::path::Path) -> Option<String> {
         })
 }
 
+fn find_cli_file_candidate(args: &[String], cwd: &std::path::Path) -> Option<String> {
+    args.iter()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-') && !arg.starts_with("naia://"))
+        .find_map(|arg| {
+            let candidate = std::path::PathBuf::from(arg);
+            let candidate = if candidate.is_absolute() {
+                candidate
+            } else {
+                cwd.join(candidate)
+            };
+            Some(candidate.to_string_lossy().to_string())
+        })
+}
+
 #[tauri::command]
 fn get_startup_open_file() -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
@@ -12964,6 +12979,8 @@ pub fn run() {
             if let Some(path) = resolve_cli_file(&args, std::path::Path::new(&_cwd)) {
                 let _ = workspace::grant_open_file(&path);
                 let _ = app.emit(WORKSPACE_OPEN_FILE_EVENT, path);
+            } else if let Some(candidate) = find_cli_file_candidate(&args, std::path::Path::new(&_cwd)) {
+                let _ = app.emit("workspace-file-not-found", candidate);
             }
         }))
         .plugin(tauri_plugin_opener::init())

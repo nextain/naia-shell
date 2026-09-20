@@ -393,6 +393,9 @@ pub(super) fn ensure_naia_wrapper_dir(config_path: &std::path::Path) -> std::pat
         r#"#!/bin/bash
 if [ "$#" -eq 1 ] && [ -f "$1" ]; then
     exec "{}" "$1"
+elif [ "$#" -eq 1 ] && [[ "$1" != -* ]] && [ ! -e "$1" ]; then
+    echo "naia: '$1': 파일을 찾을 수 없습니다." >&2
+    exit 1
 else
     # Find the next naia in PATH and execute it
     NEXT_NAIA=$(which -a naia 2>/dev/null | grep -v "{}" | head -n 1)
@@ -427,6 +430,10 @@ fi
 if not \"%~1\"==\"\" if \"%~2\"==\"\" if exist \"%~1\" (\r\n\
     \"{}\" \"%~1\"\r\n\
     exit /b %ERRORLEVEL%\r\n\
+)\r\n\
+if not \"%~1\"==\"\" if \"%~2\"==\"\" if not exist \"%~1\" (\r\n\
+    echo naia: '%~1': 파일을 찾을 수 없습니다. 1>&2\r\n\
+    exit /b 1\r\n\
 )\r\n\
 for /f \"delims=\" %%%%i in ('where naia 2^>nul ^| findstr /v /i \"{}\"') do (\r\n\
     \"%%%%i\" %*\r\n\

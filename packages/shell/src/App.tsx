@@ -179,6 +179,13 @@ export function App() {
 	);
 	// #484 CLI + #543 드래그앤드롭 — 열 파일 경로 큐 (앞에서부터 하나씩 연다).
 	const [pendingOpenFiles, setPendingOpenFiles] = useState<string[]>([]);
+	const [globalToast, setGlobalToast] = useState<string | null>(null);
+	const toastTimerRef = useRef<number | undefined>();
+	const showGlobalToast = useCallback((msg: string) => {
+		if (toastTimerRef.current !== undefined) window.clearTimeout(toastTimerRef.current);
+		setGlobalToast(msg);
+		toastTimerRef.current = window.setTimeout(() => setGlobalToast(null), 4000);
+	}, []);
 	const [showAdkSetup, setShowAdkSetup] = useState(
 		() => e2eAdkNeedsBinding || !isAdkInitialized(),
 	);
@@ -950,6 +957,12 @@ export function App() {
 		const unlisten = listen<string>("workspace-open-file-request", (event) => {
 			queueFile(event.payload);
 		});
+		const notFoundUnlisten = listen<string>("workspace-file-not-found", (event) => {
+			if (useAppStore.getState().activeApp !== "workspace") {
+				useAppStore.getState().setActiveApp("workspace");
+			}
+			showGlobalToast(`파일을 찾을 수 없습니다: ${event.payload}`);
+		});
 		void invoke<string | null>("get_startup_open_file")
 			.then(queueFile)
 			.catch(() => {});
@@ -958,31 +971,33 @@ export function App() {
 		let dragUnlisten: Promise<() => void> = Promise.resolve(() => {});
 		try {
 			dragUnlisten = getCurrentWebview().onDragDropEvent((event) => {
-			if (event.payload.type !== "drop") return;
-			Logger.info("App", "file drag-drop received (#543)", {
-				count: event.payload.paths.length,
-			});
-			for (const dropped of event.payload.paths) {
-				void invoke<string>("workspace_register_open_file", { path: dropped })
-					.then((granted) => {
-						Logger.info("App", "open-grant registered (#543)", { granted });
-						queueFile(granted);
-					})
-					.catch((error) => {
-						Logger.warn("App", "open-grant register failed (#543)", {
-							error: String(error),
+				if (event.payload.type !== "drop") return;
+				Logger.info("App", "file drag-drop received (#543)", {
+					count: event.payload.paths.length,
+				});
+				for (const dropped of event.payload.paths) {
+					void invoke<string>("workspace_register_open_file", { path: dropped })
+						.then((granted) => {
+							Logger.info("App", "open-grant registered (#543)", { granted });
+							queueFile(granted);
+						})
+						.catch((error) => {
+							Logger.warn("App", "open-grant register failed (#543)", {
+								error: String(error),
+							});
+							showGlobalToast(`파일을 열 수 없습니다: ${dropped}`);
 						});
-					});
-			}
-		});
+				}
+			});
 		} catch (error) {
 			Logger.warn("App", "drag-drop subscribe failed (#543)", { error: String(error) });
 		}
 		return () => {
 			unlisten.then((fn) => fn());
+			notFoundUnlisten.then((fn) => fn());
 			dragUnlisten.then((fn) => fn());
 		};
-	}, []);
+	}, [showGlobalToast]);
 
 	useEffect(() => {
 		const next = pendingOpenFiles[0];
@@ -1013,61 +1028,79 @@ export function App() {
 			? "setup"
 			: chatModeOverride;
 	return (
-		<AppShellFrame
-			appReady={appReady}
-			bootComplete={appReady && installedAppsReady}
-			backgroundFallback={backgroundFallback}
-			backgroundMediaType={backgroundMediaType}
-			backgroundVideoUrl={backgroundVideoUrl}
-			onSplashDone={onSplashDone}
-			setNaiaWidth={setNaiaWidth}
-			mainContent={{
-				activeApp,
-				announcements,
-				appInstallRequest,
-				appTitle,
-				avatarProvider,
-				chatModeOverride,
-				chatDragRef,
-				chatHeight,
-				chatVisible,
-				configSaveError,
-				naiaVisible,
-				naiaWidth,
-				nvaModel,
-				onAdkSetupComplete: () => {
-					setShowSplash(true);
-					setLocaleHydrated(false);
-					configHydratedRef.current = false;
-					setConfigHydrated(false);
-					setShowAdkSetup(false);
-				},
-				onOnboardingComplete: () => {
-					const completedConfig = loadConfig();
-					if (completedConfig?.ttsEnabled !== undefined)
-						setTtsEnabled(completedConfig.ttsEnabled);
-					Logger.info("App", "Onboarding complete — mounting main app apps");
-					setShowOnboarding(false);
-				},
-				railCollapsed,
-				setAnnouncements,
-				setAppInstallRequest,
-				setChatHeight,
-				setChatMode,
-				setChatVisible,
-				setShowAppInstall,
-				setShowUpdatePrompt,
-				setUpdateInfo,
-				showAdkSetup,
-				showAppInstall,
-				showOnboarding,
-				showSplash,
-				showUpdatePrompt,
-				toggleNaia,
-				toggleRailCollapsed,
-				uiMode,
-				updateInfo,
-			}}
-		/>
+		<>
+			<AppShellFrame
+				appReady={appReady}
+				bootComplete={appReady && installedAppsReady}
+				backgroundFallback={backgroundFallback}
+				backgroundMediaType={backgroundMediaType}
+				backgroundVideoUrl={backgroundVideoUrl}
+				onSplashDone={onSplashDone}
+				setNaiaWidth={setNaiaWidth}
+				mainContent={{
+					activeApp,
+					announcements,
+					appInstallRequest,
+					appTitle,
+					avatarProvider,
+					chatModeOverride,
+					chatDragRef,
+					chatHeight,
+					chatVisible,
+					configSaveError,
+					naiaVisible,
+					naiaWidth,
+					nvaModel,
+					onAdkSetupComplete: () => {
+						setShowSplash(true);
+						setLocaleHydrated(false);
+						configHydratedRef.current = false;
+						setConfigHydrated(false);
+						setShowAdkSetup(false);
+					},
+					onOnboardingComplete: () => {
+						const completedConfig = loadConfig();
+						if (completedConfig?.ttsEnabled !== undefined)
+							setTtsEnabled(completedConfig.ttsEnabled);
+						Logger.info("App", "Onboarding complete — mounting main app apps");
+						setShowOnboarding(false);
+					},
+					railCollapsed,
+					setAnnouncements,
+					setAppInstallRequest,
+					setChatHeight,
+					setChatMode,
+					setChatVisible,
+					setShowAppInstall,
+					setShowUpdatePrompt,
+					setUpdateInfo,
+					showAdkSetup,
+					showAppInstall,
+					showOnboarding,
+					showSplash,
+					showUpdatePrompt,
+					toggleNaia,
+					toggleRailCollapsed,
+					uiMode,
+					updateInfo,
+				}}
+			/>
+			{globalToast && (
+				<div
+					className="workspace-app__idle-toast"
+					style={{
+						position: "fixed",
+						top: "24px",
+						left: "50%",
+						transform: "translateX(-50%)",
+						zIndex: 99999,
+					}}
+					role="alert"
+					onClick={() => setGlobalToast(null)}
+				>
+					{globalToast}
+				</div>
+			)}
+		</>
 	);
 }
