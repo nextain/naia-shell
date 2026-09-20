@@ -32,6 +32,9 @@
     ${If} $3 == "REM managed by naia-adk manage-discord-sessions$\r$\n"
       Delete "$0\naia.cmd"
     ${EndIf}
+    ${If} $3 == "REM managed by Naia Shell installer$\r$\n"
+      Delete "$0\naia.cmd"
+    ${EndIf}
   ${EndIf}
 
   ${IfNot} ${FileExists} "$0\naia.cmd"
