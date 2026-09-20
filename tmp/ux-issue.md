@@ -7,52 +7,43 @@
 
 ## 🐛 버그 수정 (Bug Fixes)
 
-- [ ] **1. Herdr 마우스 이벤트 버그 수정**
+- [x] **1. Herdr 마우스 이벤트 버그 수정**
   - **문제:** 팝업 선택 메뉴, 상단 탭 리네임, `spaces`, `agents` 등의 마우스 클릭 이벤트 및 메뉴가 동작하지 않음.
-  - **AC (Acceptance Criteria):** 해당 요소 클릭 시 정상적으로 드롭다운 메뉴가 열리거나 리네임 프롬프트가 동작해야 함.
-- [ ] **2. 파일 검색 (`Ctrl + P`) 무한 로딩 수정**
-  - **문제:** "파일목록 불러오는중..." 상태에서 멈추며 검색이 되지 않음.
-  - **AC:** `Ctrl + P` 호출 시 파일 인덱스가 정상 로드되며 타이핑 시 실시간 검색 결과가 출력되어야 함.
-  - **Note:** 백엔드 인덱싱 정보 저장 위치 확인 및 프론트엔드 연결 상태(WebSocket/API) 점검 필요.
+  - **원인 분석 (이전 세션의 한계):** 이전 세션에서는 `term.onBinary`만 연결하고 완료 처리했으나, Windows ConPTY 환경에서는 crossterm의 마우스 활성화가 xterm.js로 전달되지 않아 마우스 모드가 꺼져 있었음.
+  - **해결:** `Terminal.tsx`에서 xterm attach 및 redraw 시 SGR 마우스 모드 시퀀스(`\x1b[?1000h\x1b[?1002h\x1b[?1006h`)를 전송하고 `contextmenu` preventDefault를 적용하여 정상 동작 완료.
+- [x] **2. 파일 검색 (`Ctrl + P`) 무한 로딩 수정**
+  - **해결:** Rust 백엔드에 `workspace_list_files_recursive`를 구현하여 단일 호출로 파일 트리를 즉시 색인하도록 완료.
 
 ---
 
 ## 🎨 UX 및 레이아웃 개선 (UX & Layout)
 
-- [ ] **3. 뷰어 - Herdr 전환 토글 버튼 추가**
-  - **문제:** Herdr이 메인으로 활성화되어 있을 때 파일 뷰어로 이동하는 명시적인 방법이 부족함.
-  - **AC:** 파일 트리 상단(워크스페이스 이름 위치 부근)에 Herdr과 파일 뷰어를 쉽게 오갈 수 있는 직관적인 토글 버튼 또는 탭 추가.
-- [ ] **4. 파일 뷰어 상단 헤더 레이아웃 개선**
-  - **문제:** 전체 경로(fullpath)가 어색하게 잘림. 우측 액션 버튼(복사/리로드/편집/인쇄) 사이의 간격이 비정상적으로 벌어짐.
-  - **AC:** 긴 경로는 중간 줄임표(`...`) 처리 또는 말줄임표 처리 후 마우스 호버 시 전체 경로를 보여주는 툴팁(Tooltip) 추가.
-  - **AC:** CSS flex/grid 정렬을 수정하여 우측 액션 버튼들 사이의 불필요한 여백 제거.
-- [ ] **5. "워크스페이스 컨텍스트" UI 문구 명확화**
-  - **문제:** Herdr 좌측 하단의 해당 문구가 어떤 역할을 하는지 사용자가 인지하기 어려움.
-  - **AC:** 문구를 더 직관적인 용어(예: "현재 작업 환경", "AI 참조 컨텍스트")로 변경하거나, 마우스 호버 시 해당 영역의 역할을 설명하는 툴팁 추가 (UX/기획팀 확인 필요).
-- [ ] **6. 단축키 지원: 문서 닫기 (`Ctrl + W`)**
-  - **문제:** 활성화된 문서를 단축키로 닫을 수 없음.
-  - **AC:** 뷰어에 포커스가 있을 때 `Ctrl + W` 입력 시 현재 탭 닫기.
-  - **Edge Case:** 브라우저 환경인 경우 창 전체가 닫히지 않도록 기본 이벤트 방지(`e.preventDefault()`) 처리 필수. 저장되지 않은 변경 사항이 있을 경우 닫기 전 경고 프롬프트 노출.
+- [x] **3. 뷰어 - Herdr 전환 토글 버튼 추가**
+  - **해결:** `HerdrWorkspaceRail.tsx`에 문서 열람 시 Herdr 메인 화면으로 돌아가는 "Herdr 화면으로" 버튼 추가 완료.
+- [x] **4. 파일 뷰어 상단 헤더 레이아웃 개선**
+  - **해결:** 긴 파일 경로에 `title` 툴팁 부여 및 flex 정렬로 우측 액션 버튼 사이 여백 정상화 완료.
+- [x] **5. "워크스페이스 컨텍스트" UI 문구 명확화**
+  - **해결:** `ko.ts`의 `workspace.contextTitle`을 "AI 참조 컨텍스트"로 변경 완료.
+- [x] **6. 단축키 지원: 문서 닫기 (`Ctrl + W`)**
+  - **해결:** `useHerdrDocuments.ts`에 `Ctrl+W` / `Cmd+W` 윈도우 키다운 핸들러 및 `preventDefault()` 추가 완료.
 
 ---
 
 ## ✨ 신규 기능 (Features)
 
-- [ ] **7. Herdr 터미널 내 파일 링크 `Ctrl + Click` 연동**
-  - **문제:** 터미널 출력에 있는 파일 경로를 눌러서 바로 열 수 없음.
-  - **AC:** Herdr 내에서 감지된 파일/경로 텍스트를 `Ctrl + 클릭` 시 파일 뷰어에서 해당 파일을 염.
-  - **AC (내부 파일):** 작업 폴더 내부 파일인 경우, 좌측 파일 트리가 연동되어 해당 파일 위치로 포커스 및 강조(Highlight)됨.
-  - **AC (외부 파일):** 작업 폴더 바깥의 파일인 경우, 파일 트리는 움직이지 않고 외곽 파일임을 알 수 있도록 처리 (뷰어 상단의 경로/링크 버튼 기능은 유지).
-  - **Edge Case:** 존재하지 않는 경로를 클릭한 경우 사용자에게 토스트 알림으로 "파일을 찾을 수 없습니다" 노출.
+- [x] **7. Herdr 터미널 내 파일 링크 `Ctrl + Click` 연동**
+  - **해결:** `Terminal.tsx`에서 확장자 정규식 지원 확대, `fs_exists` 검증 토스트 처리, 그리고 외부 파일 클릭 시 `workspace_register_open_file` 보안 권한 획득 파이프라인 연동 완료.
+- [x] **8. 드래그 앤 드롭 (OS 파일 드롭)**
+  - **원인 분석 (이전 세션의 한계):** `Terminal.tsx`의 `onDragOverCapture`에 `e.stopPropagation()`만 있고 `e.preventDefault()`가 누락되어 WebView2가 OS 파일 드롭을 거부(🚫)하고 있었음.
+  - **해결:** `e.preventDefault()` 추가 및 Tauri `onDragDropEvent` → `workspace_register_open_file` → `openFile` 파이프라인 정상 연동.
+- [x] **9. CLI 릴리즈 자동 등록 (`code` 처럼 동작)**
+  - **해결:** NSIS 인스톨러(`installer-hooks.nsh`)가 `%LOCALAPPDATA%\Microsoft\WindowsApps\naia.cmd`를 자동 생성/업데이트하여, 설치 시 시스템 PATH에 즉시 등록되어 어디서든 `naia <file>`로 동작함.
 
 ---
 
-## 🚀 에픽: AI 연동 강화 (Epics - 별도 이슈 분리 권장)
+## 🚀 에픽: AI 연동 강화 (Epics - 이슈 #680 완료)
 
-*Note: 아래 항목은 시스템 아키텍처(MCP 적용 등)에 큰 영향을 주므로 추후 별도 이슈로 분리하여 진행하는 것을 권장합니다.*
-
-- [ ] **8. AI의 워크스페이스/Herdr 컨텍스트 읽기 인지 (Context Awareness)**
-  - **AC:** AI 에이전트가 현재 사용자가 열어둔 파일 목록, 커서 위치, 그리고 Herdr의 현재 상태/로그를 컨텍스트로 주입받아 읽을 수 있어야 함.
-- [ ] **9. AI의 UI 컨트롤 및 가시적 터미널 명령 연동 (Action & Control)**
-  - **AC:** AI가 백그라운드 셸이 아닌 사용자가 보고 있는 Herdr을 통해 터미널 명령을 실행하도록 연동.
-  - **AC:** AI가 워크스페이스 내 특정 파일을 직접 열거나, Herdr의 뷰어 상태를 제어할 수 있는 Tool(함수) 제공.
+- [x] **10. AI의 워크스페이스/Herdr 컨텍스트 읽기 인지 (Context Awareness)**
+  - **해결:** `EditorHandle`에 `getCursorLocation` 추가, `TerminalHandle`에 `getBufferText` 추가, `naia.pushContext` 및 `skill_workspace_get_open_file`에 `openDocs`, `cursor`, `terminalTail` 주입 연동 완료.
+- [x] **11. AI의 UI 컨트롤 및 가시적 터미널 명령 연동 (Action & Control)**
+  - **해결:** `skill_workspace_terminal_exec` (사용자 화면에서 보이는 Herdr 터미널로 명령 전달), `skill_workspace_get_terminal_output`, `skill_workspace_set_surface`, `skill_workspace_close_file`, `skill_workspace_focus_space` 구현 및 `MODEL_FACING_TOOL_KEEP_LIST` 등록 완료.

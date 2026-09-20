@@ -48,7 +48,10 @@ vi.mock("../Terminal", () => ({
 			onReady?: () => void;
 		}
 	>(function MockTerminal({ pty_id, onExit, onFileLocation, onReady }, ref) {
-		useImperativeHandle(ref, () => ({ focus: terminalFocus }));
+		useImperativeHandle(ref, () => ({
+			focus: terminalFocus,
+			getBufferText: vi.fn(() => "workspace terminal output"),
+		}));
 		useEffect(() => onReady?.(), [pty_id]);
 		return (
 			<div data-testid="embedded-herdr-terminal" data-pty-id={pty_id}>
@@ -109,6 +112,7 @@ vi.mock("../Editor", () => ({
 		useImperativeHandle(ref, () => ({
 			reloadFile: editorReloadFile,
 			revealLocation: editorRevealLocation,
+			getCursorLocation: vi.fn(() => ({ line: 12, column: 4, selectedText: "" })),
 		}));
 		return <div data-testid="file-viewer">{filePath}</div>;
 	}),
@@ -364,15 +368,17 @@ describe("HerdrWorkspaceCenterArea", () => {
 			"../HerdrWorkspaceCenterArea"
 		);
 		const view = render(<HerdrWorkspaceCenterArea naia={bridge} />);
-		await waitFor(() => expect(toolHandlers.size).toBe(3));
+		await waitFor(() => expect(toolHandlers.size).toBe(8));
 
 		const sessions = JSON.parse(
 			String(await toolHandlers.get("skill_workspace_get_sessions")?.({})),
 		);
 		expect(sessions.sessions).toHaveLength(1);
-		expect(await toolHandlers.get("skill_workspace_get_open_file")?.({})).toBe(
-			JSON.stringify({ open: false }),
-		);
+		expect(
+			JSON.parse(
+				String(await toolHandlers.get("skill_workspace_get_open_file")?.({})),
+			),
+		).toMatchObject({ open: false });
 		await toolHandlers.get("skill_workspace_open_file")?.({
 			path: "src/App.tsx",
 		});
@@ -611,9 +617,14 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 			expect(toolHandlers.has("skill_workspace_get_sessions")).toBe(true),
 		);
 		expect([...toolHandlers.keys()].sort()).toEqual([
+			"skill_workspace_close_file",
+			"skill_workspace_focus_space",
 			"skill_workspace_get_open_file",
 			"skill_workspace_get_sessions",
+			"skill_workspace_get_terminal_output",
 			"skill_workspace_open_file",
+			"skill_workspace_set_surface",
+			"skill_workspace_terminal_exec",
 		].sort());
 	});
 

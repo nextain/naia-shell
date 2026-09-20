@@ -69,10 +69,17 @@ interface EditorProps {
 	onOpenFile?: (path: string) => void;
 }
 
+export interface CursorLocation {
+	line: number;
+	column: number;
+	selectedText?: string;
+}
+
 /** Methods exposed to parent via ref */
 export interface EditorHandle {
 	reloadFile: () => void;
 	revealLocation: (line: number, column?: number, filePath?: string) => void;
+	getCursorLocation: () => CursorLocation | null;
 }
 
 function getLanguageExtension(filePath: string) {
@@ -532,10 +539,24 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 		[],
 	);
 
-	useImperativeHandle(ref, () => ({ reloadFile, revealLocation }), [
-		reloadFile,
-		revealLocation,
-	]);
+	const getCursorLocation = useCallback((): CursorLocation | null => {
+		const view = viewRef.current;
+		if (!view) return null;
+		const sel = view.state.selection.main;
+		const line = view.state.doc.lineAt(sel.head);
+		const selectedText = sel.empty ? "" : view.state.sliceDoc(sel.from, sel.to);
+		return {
+			line: line.number,
+			column: sel.head - line.from + 1,
+			selectedText,
+		};
+	}, []);
+
+	useImperativeHandle(
+		ref,
+		() => ({ reloadFile, revealLocation, getCursorLocation }),
+		[reloadFile, revealLocation, getCursorLocation],
+	);
 
 	// ── Ctrl+Scroll zoom ─────────────────────────────────────────────────
 	const wrapperRef = useRef<HTMLDivElement>(null);

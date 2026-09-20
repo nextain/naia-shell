@@ -55,6 +55,11 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 				surface: runtime.surface,
 				workspaceRoot: runtime.workspaceRoot,
 				openFilePath: documents.openFilePath || null,
+				openDocs: documents.openDocs,
+				cursor:
+					typeof documents.editorRef.current?.getCursorLocation === "function"
+						? documents.editorRef.current.getCursorLocation()
+						: null,
 				herdr: {
 					version: runtime.snapshot.version,
 					workspaceId: runtime.snapshot.focused_workspace_id ?? null,
@@ -62,14 +67,21 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 					agent: focused?.agent ?? null,
 					agentStatus: focused?.agent_status ?? null,
 					cwd: focused?.foreground_cwd ?? focused?.cwd ?? null,
+					terminalTail:
+						typeof runtime.terminalRef.current?.getBufferText === "function"
+							? runtime.terminalRef.current.getBufferText(20) || null
+							: null,
 				},
 			},
 		});
 	}, [
+		documents.editorRef,
+		documents.openDocs,
 		documents.openFilePath,
 		naia,
 		runtime.snapshot,
 		runtime.surface,
+		runtime.terminalRef,
 		runtime.workspaceRoot,
 	]);
 
@@ -77,13 +89,18 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 		naia,
 		snapshotRef: runtime.snapshotRef,
 		editorRef: documents.editorRef,
+		terminalRef: runtime.terminalRef,
 		workspaceRoot: runtime.workspaceRoot,
 		openFilePath: documents.openFilePath,
+		openDocs: documents.openDocs,
+		pty: runtime.pty,
 		findWorkspace: runtime.findWorkspace,
 		focusWorkspace: runtime.focusWorkspace,
 		openResolvedFile: documents.openResolvedFile,
+		closeDoc: documents.closeDoc,
 		refreshSnapshot: runtime.refreshSnapshot,
 		showHerdr: runtime.showHerdr,
+		setSurface: runtime.setSurface,
 	});
 
 	return (

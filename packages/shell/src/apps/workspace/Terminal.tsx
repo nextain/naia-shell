@@ -41,6 +41,7 @@ export interface FileLocation {
 
 export interface TerminalHandle {
 	focus: () => void;
+	getBufferText: (maxLines?: number) => string;
 }
 
 export function shouldOpenTerminalFileLink(
@@ -206,12 +207,34 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 			}, 3000);
 		}, []);
 
+		const getBufferText = useCallback((maxLines?: number): string => {
+			const term = termRef.current;
+			if (!term) return "";
+			const buffer = term.buffer.active;
+			const totalLines = buffer.length;
+			const limit =
+				typeof maxLines === "number" && maxLines > 0
+					? Math.min(maxLines, totalLines)
+					: totalLines;
+			const start = Math.max(0, totalLines - limit);
+			const lines: string[] = [];
+			for (let i = start; i < totalLines; i++) {
+				const line = buffer.getLine(i);
+				if (line) lines.push(line.translateToString(true));
+			}
+			while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+				lines.pop();
+			}
+			return lines.join("\n");
+		}, []);
+
 		useImperativeHandle(
 			ref,
 			() => ({
 				focus: () => termRef.current?.focus(),
+				getBufferText,
 			}),
-			[],
+			[getBufferText],
 		);
 
 		// A full-screen TUI (the embedded Herdr client) only repaints on a real

@@ -1267,3 +1267,11 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-INSTANCE-URL.1** | `tauri:dev`의 웹 베이스는 `https://dev.naia.land`, API는 `https://api-dev.naia.land`다. 호스트 문자열은 `naia-instance-urls` 한곳이다. | UC-INSTANCE-URLS-653 | `naia-instance-urls.test.ts`; `launch-env.test.mjs` | Done |
 | **FR-INSTANCE-URL.2** | 공지·lab-sync·결제·다운로드·기부 링크는 인스턴스 웹 베이스를 따른다. `www.naia.land`를 컴포넌트에 직접 쓰지 않는다. | UC-INSTANCE-URLS-653 | same | Done |
 | **FR-WORKSPACE-BIND.1** | 셸 `set_root` canonical / ADK 경로는 Codex app-server cwd와 fs-tools allow-root와 같다. OS temp는 워크스페이스가 있을 때 cwd가 아니다. | UC-WORKSPACE-BIND-651 | naia-agent workspace-bind + Codex contract tests | Done |
+
+## 기능 요구사항 (FR) — 워크스페이스 AI 컨텍스트 인지 및 터미널·UI 제어 (#680)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-WORKSPACE-AI-CONTEXT.1** | AI 에이전트는 사용자가 열어둔 파일 목록(`openDocs`), 현재 활성 문서(`openFilePath`), 커서 위치(`line`, `column`, `selectedText`), 및 Herdr 터미널 최근 출력(`terminalTail`)을 `pushContext`와 도구(`skill_workspace_get_open_file`, `skill_workspace_get_terminal_output`)를 통해 인지한다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `Terminal.tsx`, `Editor.tsx` | Done |
+| **FR-WORKSPACE-AI-CONTROL.1** | AI 에이전트는 사용자가 보고 있는 Herdr 터미널로 가시적 명령을 실행(`skill_workspace_terminal_exec`)하고, 화면 전환(`skill_workspace_set_surface`), 문서 닫기(`skill_workspace_close_file`), 스페이스 포커스(`skill_workspace_focus_space`)를 제어할 수 있다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `model-facing-tools.contract.test.ts` | Done |
+

@@ -1948,3 +1948,23 @@ Test Coverage Map (P02)
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
 | UC-WORKSPACE-BIND-651 | naia-agent `workspace-bind.contract.test.ts` + `codex-app-server-provider.contract.test.ts` | shell spawn cwd follows ADK path (Rust `current_dir`) |
+
+## UC-WORKSPACE-AI-CONTEXT-AND-CONTROL (#680) — AI workspace/Herdr context awareness and terminal/UI control
+
+AI 에이전트가 사용자가 열어둔 파일 목록(`openDocs`), 현재 활성 문서(`openFilePath`), 커서 위치(`line`, `column`, `selectedText`), 그리고 Herdr 터미널의 최근 출력(`terminalTail`)을 컨텍스트로 인지하고, 필요 시 도구를 통해 버퍼를 조회(`skill_workspace_get_terminal_output`)할 수 있다. 또한 사용자가 보고 있는 Herdr 터미널로 가시적 명령을 실행(`skill_workspace_terminal_exec`)하고, 화면 전환(`skill_workspace_set_surface`), 문서 닫기(`skill_workspace_close_file`), 스페이스 포커스(`skill_workspace_focus_space`)를 제어할 수 있다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 워크스페이스 문서가 열려 있거나 Herdr가 실행 중일 때 AI가 열린 파일, 커서 위치, 터미널 출력을 컨텍스트로 전달받는다. |
+| 빈 목록 | 열린 문서가 없고 Herdr 터미널 출력이 없을 때 빈 목록/null로 안정적으로 표현되며 오류를 일으키지 않는다. |
+| 진행 | 터미널 명령 실행이나 버퍼 조회 중 UI가 멈추지 않고 실시간으로 반영된다. |
+| 성공 | AI가 가시적 터미널에 명령을 보내면 Herdr 화면이 포커스되고 PTY에 명령이 전송되어 실행 결과가 화면에 나타난다. 뷰어/Herdr 전환 및 탭 닫기가 즉시 반영된다. |
+| 오류 | 유효하지 않은 파일 경로, PTY 미초기화, 존재하지 않는 스페이스 ID 지정 시 적절한 오류 메시지를 반환하고 크래시되지 않는다. |
+| 좁은 폭 | 좁은 폭에서도 워크스페이스 도구 및 화면 전환 버튼, 탭 닫기가 레이아웃 깨짐 없이 동작한다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` |
+

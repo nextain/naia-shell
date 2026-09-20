@@ -27,6 +27,11 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"skill_workspace_get_sessions",
 	"skill_workspace_open_file",
 	"skill_workspace_get_open_file",
+	"skill_workspace_close_file",
+	"skill_workspace_set_surface",
+	"skill_workspace_focus_space",
+	"skill_workspace_terminal_exec",
+	"skill_workspace_get_terminal_output",
 ] as const;
 
 const MODEL_FACING_TOOL_KEEP_SET = new Set<string>(

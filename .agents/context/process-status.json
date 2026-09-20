@@ -19,6 +19,22 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_680_ai_workspace_context_control": {
+      "issue": 680,
+      "title": "AI의 워크스페이스/Herdr 컨텍스트 인지 및 터미널·UI 제어 연동 (#678 Epics 8 & 9)",
+      "requirements": "docs/requirements.md FR-WORKSPACE-AI-CONTEXT.1 FR-WORKSPACE-AI-CONTROL.1",
+      "scenario": "docs/user-scenarios.md UC-WORKSPACE-AI-CONTEXT-AND-CONTROL",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Vitest 81/81 passed across 16 workspace test files (including herdr-workspace-bridge.test.tsx, herdr-workspace.test.tsx, model-facing-tools.contract.test.ts); production bundle passed all budget limits.",
+      "last_updated": "2026-09-20T18:41:00+09:00"
+    },
     "issue_672_host_voice_exit": {
       "issue": 672,
       "title": "Host TensorRT voice: stuck ~40% then runtime exited before readiness (None)",
