@@ -1010,7 +1010,7 @@ export function App() {
 			}
 			const workspace = appRegistry.getApi<WorkspaceAppApi>("workspace");
 			if (!workspace) {
-				if (++attempts < 40) retryTimer = window.setTimeout(openWhenReady, 50);
+				if (++attempts < 100) retryTimer = window.setTimeout(openWhenReady, 50);
 				return;
 			}
 			Logger.info("App", "opening queued file in workspace (#543)", { next });

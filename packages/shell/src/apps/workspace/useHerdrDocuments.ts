@@ -80,6 +80,19 @@ export function useHerdrDocuments({
 			if (generation !== locationGenerationRef.current) {
 				throw new Error("Workspace changed while resolving file location");
 			}
+			try {
+				const granted = await invoke<string>("workspace_register_open_file", {
+					path: resolved,
+				});
+				if (typeof granted === "string" && granted) {
+					resolved = granted;
+				}
+			} catch (grantErr) {
+				Logger.info("HerdrWorkspace", "open-grant fallback for resolved file", {
+					path: resolved,
+					error: String(grantErr),
+				});
+			}
 			setOpenDocs((docs) =>
 				docs.includes(resolved) ? docs : [...docs, resolved],
 			);
@@ -104,6 +117,19 @@ export function useHerdrDocuments({
 					// Fallback to direct path for valid external or unmapped files
 				}
 				if (generation !== locationGenerationRef.current) return;
+				try {
+					const granted = await invoke<string>("workspace_register_open_file", {
+						path,
+					});
+					if (typeof granted === "string" && granted) {
+						path = granted;
+					}
+				} catch (grantErr) {
+					Logger.info("HerdrWorkspace", "open-grant fallback for terminal location", {
+						path,
+						error: String(grantErr),
+					});
+				}
 				setOpenDocs((docs) => (docs.includes(path) ? docs : [...docs, path]));
 				setOpenFilePath(path);
 				setSurface("viewer");
