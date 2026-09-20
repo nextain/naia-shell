@@ -77,8 +77,10 @@ describe("Terminal — Drag and Drop capture (#679)", () => {
 			value: { types: ["Files"] },
 		});
 		const stopPropagationSpyOver = vi.spyOn(dragOverEvent, "stopPropagation");
+		const preventDefaultSpyOver = vi.spyOn(dragOverEvent, "preventDefault");
 		terminalDiv?.dispatchEvent(dragOverEvent);
 		expect(stopPropagationSpyOver).toHaveBeenCalled();
+		expect(preventDefaultSpyOver).toHaveBeenCalled();
 
 		// Drop with Files
 		const dropEvent = new Event("drop", {
@@ -89,8 +91,10 @@ describe("Terminal — Drag and Drop capture (#679)", () => {
 			value: { types: ["Files"] },
 		});
 		const stopPropagationSpyDrop = vi.spyOn(dropEvent, "stopPropagation");
+		const preventDefaultSpyDrop = vi.spyOn(dropEvent, "preventDefault");
 		terminalDiv?.dispatchEvent(dropEvent);
 		expect(stopPropagationSpyDrop).toHaveBeenCalled();
+		expect(preventDefaultSpyDrop).toHaveBeenCalled();
 	});
 
 	it("does not stop propagation when non-file items are dragged", () => {

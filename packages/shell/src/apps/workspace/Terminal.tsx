@@ -392,6 +392,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 				// the Herdr surface blank. Ongoing user-driven resizes go through
 				// fitAndResize (real size changes already trigger a repaint).
 				forceRedraw();
+				term.write("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
 			});
 
 			return () => {
@@ -410,7 +411,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 			if (!active) return;
 			// Switching back to the Herdr surface reattaches the same client; force a
 			// redraw so a no-op resize cannot leave the restored surface blank.
-			const id = setTimeout(forceRedraw, 50);
+			const id = setTimeout(() => {
+				forceRedraw();
+				termRef.current?.write("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+			}, 50);
 			return () => clearTimeout(id);
 		}, [active, forceRedraw]);
 
@@ -450,11 +454,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 				onContextMenu={(e) => e.preventDefault()}
 				onDragOverCapture={(e) => {
 					if (e.dataTransfer.types.includes("Files")) {
+						e.preventDefault();
 						e.stopPropagation();
 					}
 				}}
 				onDropCapture={(e) => {
 					if (e.dataTransfer.types.includes("Files")) {
+						e.preventDefault();
 						e.stopPropagation();
 					}
 				}}
