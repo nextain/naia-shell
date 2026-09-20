@@ -13,7 +13,7 @@
  * 플랫폼 env(GDK_BACKEND 등)는 spawn 시점이라 tauri-with-mode.mjs 가 주입.
  */
 import { execSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,10 +71,39 @@ function cleanRustCache() {
 	console.log("[dev-setup] Rust 증분캐시 삭제 완료.");
 }
 
+// ─── 3. 개발용 naia CLI 별칭 보장 ──────────────────────────────────────────
+export function ensureDevCliAlias() {
+	if (process.platform === "win32") {
+		const targetDirs = [
+			process.env.LOCALAPPDATA && resolve(process.env.LOCALAPPDATA, "Microsoft", "WindowsApps"),
+			process.env.USERPROFILE && resolve(process.env.USERPROFILE, ".cargo", "bin"),
+			process.env.USERPROFILE && resolve(process.env.USERPROFILE, ".local", "bin"),
+		].filter((d) => d && existsSync(d));
+
+		const devExe = resolve(SHELL, "src-tauri", "target", "debug", "naia-shell.exe");
+		const prodExe = process.env.LOCALAPPDATA ? resolve(process.env.LOCALAPPDATA, "Naia", "naia-shell.exe") : "";
+
+		const cmdScript = `@echo off\r\nset "DEV_EXE=${devExe}"\r\nset "PROD_EXE=${prodExe}"\r\n\r\ntasklist /FI "IMAGENAME eq naia-shell.exe" 2>NUL | find /I /N "naia-shell.exe">NUL\r\nif "%ERRORLEVEL%"=="0" (\r\n    if exist "%DEV_EXE%" (\r\n        "%DEV_EXE%" %*\r\n        exit /b %ERRORLEVEL%\r\n    )\r\n    if exist "%PROD_EXE%" (\r\n        "%PROD_EXE%" %*\r\n        exit /b %ERRORLEVEL%\r\n    )\r\n)\r\nif exist "%DEV_EXE%" (\r\n    "%DEV_EXE%" %*\r\n    exit /b %ERRORLEVEL%\r\n)\r\nif exist "%PROD_EXE%" (\r\n    "%PROD_EXE%" %*\r\n    exit /b %ERRORLEVEL%\r\n)\r\necho naia: naia-shell.exe not found. 1>&2\r\nexit /b 1\r\n`;
+
+		const psScript = `[CmdletBinding()]\r\nparam(\r\n    [Parameter(ValueFromRemainingArguments = $true)]\r\n    [string[]]$Arguments\r\n)\r\n$devExe = "${devExe.replace(/\\/g, "\\\\")}"\r\n$prodExe = "${prodExe.replace(/\\/g, "\\\\")}"\r\n$running = (Get-Process naia-shell -ErrorAction SilentlyContinue | Select-Object -First 1).Path\r\nif ($running -and (Test-Path $running)) {\r\n    & $running @Arguments\r\n    exit $LASTEXITCODE\r\n}\r\nif (Test-Path $devExe) {\r\n    & $devExe @Arguments\r\n    exit $LASTEXITCODE\r\n}\r\nif ($prodExe -and (Test-Path $prodExe)) {\r\n    & $prodExe @Arguments\r\n    exit $LASTEXITCODE\r\n}\r\nWrite-Error "naia: naia-shell.exe not found"\r\nexit 1\r\n`;
+
+		const bashScript = `#!/usr/bin/env bash\r\nDEV_EXE="${devExe.replace(/\\/g, "/")}"\r\nPROD_EXE="${prodExe.replace(/\\/g, "/")}"\r\nif [ -f "$DEV_EXE" ]; then\r\n    "$DEV_EXE" "$@"\r\nelif [ -f "$PROD_EXE" ]; then\r\n    "$PROD_EXE" "$@"\r\nelse\r\n    echo "naia: naia-shell.exe not found" >&2\r\n    exit 1\r\nfi\r\n`;
+
+		for (const dir of targetDirs) {
+			try {
+				writeFileSync(resolve(dir, "naia.cmd"), cmdScript, "utf8");
+				writeFileSync(resolve(dir, "naia.ps1"), psScript, "utf8");
+				writeFileSync(resolve(dir, "naia"), bashScript, "utf8");
+			} catch {}
+		}
+	}
+}
+
 // ─── 실행 ────────────────────────────────────────────────────────────────────
 export function main() {
 	if (cleanMode) cleanRustCache();
 	reportProcessOwnershipBoundary();
+	ensureDevCliAlias();
 	requiredTscBuild(OS_ROOT, "core(new-naia-os)");
 	// paired naia-agent는 여기서 sibling checkout을 빌드하지 않는다.
 	// tauri-with-mode가 commit/proto/dirty 상태를 검증한 뒤 paired checkout을 빌드한다.

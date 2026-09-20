@@ -218,14 +218,24 @@ fn setup_vosk() {
         for name in &runtime_files {
             let source = vosk_dir.join(name);
             let bin_dest = bin_dir.join(name);
-            std::fs::copy(&source, &bin_dest)
-                .unwrap_or_else(|e| panic!("Failed to copy {name} to {}: {e}", bin_dest.display()));
-            eprintln!("cargo:warning=Copied {} to {}", name, bin_dest.display());
+            if let Err(e) = std::fs::copy(&source, &bin_dest) {
+                if !bin_dest.exists() {
+                    panic!("Failed to copy {name} to {}: {e}", bin_dest.display());
+                }
+                eprintln!("cargo:warning=Reusing existing {} (destination locked: {e})", bin_dest.display());
+            } else {
+                eprintln!("cargo:warning=Copied {} to {}", name, bin_dest.display());
+            }
 
             let res_dest = resources_dir.join(name);
-            std::fs::copy(&source, &res_dest)
-                .unwrap_or_else(|e| panic!("Failed to copy {name} to {}: {e}", res_dest.display()));
-            eprintln!("cargo:warning=Copied {} to resources/", name);
+            if let Err(e) = std::fs::copy(&source, &res_dest) {
+                if !res_dest.exists() {
+                    panic!("Failed to copy {name} to {}: {e}", res_dest.display());
+                }
+                eprintln!("cargo:warning=Reusing existing {} (destination locked: {e})", res_dest.display());
+            } else {
+                eprintln!("cargo:warning=Copied {} to resources/", name);
+            }
         }
     }
 }

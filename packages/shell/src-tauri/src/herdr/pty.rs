@@ -228,14 +228,21 @@ pub async fn herdr_pty_create(
         }
         command.cwd(&dir_path);
         command.env("HERDR_CONFIG_PATH", &config_path);
+        command.env("TERM", "xterm-256color");
+        command.env("COLORTERM", "truecolor");
 
         // Inject `naia` CLI interceptor to open files in the GUI viewer
         let wrapper_dir = ensure_naia_wrapper_dir(&config_path);
-        if let Ok(old_path) = std::env::var("PATH") {
-            command.env("PATH", format!("{}:{}", wrapper_dir.display(), old_path));
+        let new_path = if let Ok(old_path) = std::env::var("PATH") {
+            let mut paths = vec![wrapper_dir];
+            paths.extend(std::env::split_paths(&old_path));
+            std::env::join_paths(paths)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| old_path)
         } else {
-            command.env("PATH", wrapper_dir.display().to_string());
-        }
+            wrapper_dir.to_string_lossy().to_string()
+        };
+        command.env("PATH", new_path);
         let child = pair
             .slave
             .spawn_command(command)

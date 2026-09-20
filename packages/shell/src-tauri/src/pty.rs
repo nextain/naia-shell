@@ -148,6 +148,8 @@ pub async fn pty_create(
 
         let mut cmd = CommandBuilder::new(&command);
         cmd.cwd(&dir);
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
 
         let child = pair
             .slave

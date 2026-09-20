@@ -990,12 +990,14 @@ export function App() {
 		let attempts = 0;
 		let retryTimer: number | undefined;
 		const openWhenReady = () => {
+			if (useAppStore.getState().activeApp !== "workspace") {
+				useAppStore.getState().setActiveApp("workspace");
+			}
 			const workspace = appRegistry.getApi<WorkspaceAppApi>("workspace");
 			if (!workspace) {
 				if (++attempts < 40) retryTimer = window.setTimeout(openWhenReady, 50);
 				return;
 			}
-			useAppStore.getState().setActiveApp("workspace");
 			Logger.info("App", "opening queued file in workspace (#543)", { next });
 			workspace.openFile(next);
 			setPendingOpenFiles((queue) => (queue[0] === next ? queue.slice(1) : queue));

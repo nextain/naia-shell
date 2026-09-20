@@ -68,7 +68,15 @@ export function useHerdrDocuments({
 	const openResolvedFile = useCallback(
 		async (path: string) => {
 			const generation = locationGenerationRef.current;
-			const resolved = await resolveFile(path);
+			let resolved = path;
+			try {
+				resolved = await resolveFile(path);
+			} catch (error) {
+				Logger.info("HerdrWorkspace", "resolveFile fallback to direct path", {
+					path,
+					error: String(error),
+				});
+			}
 			if (generation !== locationGenerationRef.current) {
 				throw new Error("Workspace changed while resolving file location");
 			}
@@ -89,7 +97,12 @@ export function useHerdrDocuments({
 		async (location: FileLocation) => {
 			const generation = locationGenerationRef.current;
 			try {
-				const path = await resolveFile(location.path);
+				let path = location.path;
+				try {
+					path = await resolveFile(location.path);
+				} catch {
+					// Fallback to direct path for valid external or unmapped files
+				}
 				if (generation !== locationGenerationRef.current) return;
 				setOpenDocs((docs) => (docs.includes(path) ? docs : [...docs, path]));
 				setOpenFilePath(path);

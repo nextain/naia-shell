@@ -51,7 +51,7 @@ export function shouldOpenTerminalFileLink(
 }
 
 const FILE_PATH_RE =
-	/(?:(?:[A-Za-z]:[\\/]|~\/|\.?\.?\/)[\w./\\-]*[\w-]+\.[\w]{1,10}|(?:src|lib|test|tests|dist|build|projects|packages|modules|node_modules|components|apps|scripts|agent|gateway|shell)[\\/][\w./\\-]*[\w-]+\.[\w]{1,10})(?::\d+){0,2}/g;
+	/(?:(?:[A-Za-z]:[\\/]|~\/|\.?\.?\/)[\w./\\-]*[\w-]+\.[\w]{1,10}|(?:src|lib|test|tests|dist|build|projects|packages|modules|node_modules|components|apps|scripts|agent|gateway|shell)[\\/][\w./\\-]*[\w-]+\.[\w]{1,10}|\b[\w.-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|yaml|yml|toml|xml|csv|md|txt|log|env|rs|go|py|rb|java|kt|swift|c|cpp|h|hpp|css|scss|less|html|svg|sh|bash|zsh|fish|ps1|bat|cmd|sql|graphql|proto|wasm|lock)\b)(?::\d+){0,2}/g;
 
 const FILE_EXTENSIONS = new Set([
 	"ts",
