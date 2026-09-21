@@ -46,6 +46,7 @@ vi.mock("@xterm/xterm", () => ({
 		focus = vi.fn();
 		dispose = vi.fn();
 		registerLinkProvider = vi.fn();
+		attachCustomKeyEventHandler = vi.fn();
 		onData = vi.fn(() => ({ dispose: vi.fn() }));
 		onBinary = vi.fn(() => ({ dispose: vi.fn() }));
 		buffer = { active: { getLine: () => null } };

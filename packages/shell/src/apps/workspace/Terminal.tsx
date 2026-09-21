@@ -121,8 +121,21 @@ export function parseFileLocation(
 		if (cwd) filePath = `${cwd}/${filePath}`;
 		else return null;
 	}
+	
+	let normalizedPath = filePath.replace(/\\/g, "/");
+	if (
+		typeof navigator !== "undefined" &&
+		navigator.platform &&
+		navigator.platform.toLowerCase().includes("linux")
+	) {
+		const winMatch = normalizedPath.match(/^([A-Za-z]):\/(.*)$/);
+		if (winMatch) {
+			normalizedPath = `/mnt/${winMatch[1].toLowerCase()}/${winMatch[2]}`;
+		}
+	}
+
 	return {
-		path: filePath.replace(/\\/g, "/"),
+		path: normalizedPath,
 		line: match[2] ? Number(match[2]) : undefined,
 		column: match[3] ? Number(match[3]) : undefined,
 	};
@@ -253,6 +266,21 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 			term.loadAddon(fit);
 			term.open(container);
 			fit.fit();
+
+			term.attachCustomKeyEventHandler((arg) => {
+				if (
+					arg.type === "keydown" &&
+					arg.code === "KeyC" &&
+					hasPrimaryModifier(arg)
+				) {
+					if (term.hasSelection()) {
+						navigator.clipboard.writeText(term.getSelection());
+						term.clearSelection();
+						return false;
+					}
+				}
+				return true;
+			});
 
 			termRef.current = term;
 			fitRef.current = fit;

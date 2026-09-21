@@ -50,6 +50,7 @@ vi.mock("@xterm/xterm", () => ({
 		write = vi.fn();
 		focus = vi.fn();
 		dispose = vi.fn();
+		attachCustomKeyEventHandler = vi.fn();
 		registerLinkProvider = vi.fn((provider) => {
 			capturedLinkProvider = provider;
 		});

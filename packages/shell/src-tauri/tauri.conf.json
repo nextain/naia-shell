@@ -47,6 +47,7 @@
 	"bundle": {
 		"active": true,
 		"resources": {
+			"../../bgm-sidecar/dist/": "bgm-sidecar/dist/",
 			"../../ego-host/package.json": "ego-host/package.json",
 			"../../ego-host/bin/": "ego-host/bin/",
 			"../../ego-host/src/": "ego-host/src/",
