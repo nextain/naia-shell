@@ -30,7 +30,7 @@ env:
   CANDIDATE_TAG: ${{ inputs.candidate_tag }}
   CANDIDATE_DIGEST: ${{ inputs.candidate_digest }}
   IMAGE_LAYER_REF: ${{ inputs.image_layer_ref }}
-  EXPECTED_IMAGE_LAYER_REF: 53f25077f26c09e8ff146a7d04ea0f5821b0cb83
+  EXPECTED_IMAGE_LAYER_REF: 589104609e5db184d5efb4fc87ce1b16dc8f16b5
   EXPECTED_TAG: candidate-bc250-0.2.3-13980895-support9
   NAIA_VERSION: "0.2.3"
   SOURCE_BUILD: 0.2.3+13980895
