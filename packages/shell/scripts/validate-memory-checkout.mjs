@@ -13,19 +13,20 @@ function git(dir, args) {
 	}
 }
 
-export function validateMemoryCheckout(path, expectedCommit, expectedVersion) {
+export function validateMemoryCheckout(path, expectedCommit, expectedVersion, options = {}) {
 	const root = resolve(path);
 	if (!existsSync(resolve(root, "package.json"))) {
 		return "required local dependency missing";
 	}
-	const gitRoot = git(root, ["rev-parse", "--show-toplevel"]);
+	const readGit = options.gitOutput ?? git;
+	const gitRoot = readGit(root, ["rev-parse", "--show-toplevel"]);
 	if (gitRoot == null || normalize(gitRoot) !== normalize(root)) {
 		return "path must be its repository root";
 	}
-	if (git(root, ["rev-parse", "HEAD"]) !== expectedCommit) {
+	if (readGit(root, ["rev-parse", "HEAD"]) !== expectedCommit) {
 		return "checkout commit mismatch";
 	}
-	if (git(root, ["status", "--porcelain"]) !== "") {
+	if (readGit(root, ["status", "--porcelain"]) !== "") {
 		return "checkout must be clean";
 	}
 	const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));

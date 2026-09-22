@@ -701,6 +701,7 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-BGM.16** | 선호 포트(운영 18791 / dev 18891)가 남의 프로세스에 점유되면 빈 포트를 골라 sidecar를 띄우고 실제 포트를 UI에 알린다. 기동에 실패하면 조용히 BGM 없이 진행하지 않고 사용자에게 실패를 보여 준다. | In review | Rust allocate 단위 + bgm-sidecar-url + ChatArea 배너 |
 | **FR-BGM.17** | play 도구는 iframe이 **playing**(또는 실제 error/ended)으로 관측될 때까지 기다린다. `loading`만으로는 확인이 아니다. 확인되면 currentTrack을 주고 제목을 말해도 된다고 지시한다. 도구 JSON은 사용자 채팅 본문에 보이지 않는다. | In review | bgm-skill waitForAck 단위 + visible-chat-text 단위 |
 | **FR-BGM.18** | AI next/prev는 UI 버튼과 같은 최신 플레이리스트 경로를 쓴다. 유튜브·로컬 혼합 목록에서 로컬 파일을 건너뛰지 않고, 로컬이 실제로 재생되면 status/next 결과가 playing+제목이 된다. Tauri WebView가 YouTube postMessage `source`를 null로 줘도 playing/infoDelivery는 관측한다. 떨어져 나간 프레임의 null-source error/ended는 다음 곡을 덮어쓰지 않는다. | In review | BgmPlayer 로컬 next·null-source 단위 + decideIframeMessageSource 단위 |
+| **FR-BGM.19** | 셸의 프로세스 소유 기록 판정에서 이미 종료된 프로세스는 살아 있는 신원을 갖지 않는다. Windows에서 종료된 셸의 프로세스 객체가 다른 핸들로 남아 생성 시각이 기록과 같아도 소유자를 살아 있다고 보지 않으며, 새 셸은 그 BGM 기록을 교체하고 새 sidecar를 채택한다. 종료 코드를 읽지 못하는 소유자와 실제로 살아 있는 다른 셸의 기록은 보호한다 (#684). | Done | windows.rs `process_identity_tests` + lib.rs `exited_owner_with_open_handle_is_not_live`(실 Windows 프로세스) |
 
 ## Onboarding appearance and voice ownership (2026-08-06)
 
@@ -1153,6 +1154,10 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-MEMORY-PAIRING.1** | pairing manifest는 agent/proto와 함께 naia-memory의 정확한 40자 commit과 package version을 선언한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts` | Done |
 | **FR-MEMORY-PAIRING.2** | production staging은 선언된 memory 저장소 root·HEAD·clean 상태·package 이름·버전을 빌드 전에 fail-closed로 검증한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts` | Done |
 | **FR-MEMORY-PAIRING.3** | installer CI가 checkout하는 memory commit은 pairing manifest와 일치한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts`, `platform-matrix.test.ts` | Done |
+| **FR-MEMORY-PAIRING.4** | (nextain/naia-shell#681) Pairing moves to naia-agent cc139fb / naia-memory 8c608a8 so the shell gets (a) automatic recovery from a truncated offline embedding model cache on the next start and (b) routing of company/workspace questions to the knowledge tools; the agent no longer waits for memory preparation before reporting readiness (FR-MEM-20). | UC-V023-MEMORY-PAIRING | `agent-pairing.json`, `build.rs`, workflows; attended dev-shell E2E 2026-09-22 recorded on nextain/naia-shell#681 | Done |
+| **FR-MEMORY-PAIRING.5** | `tauri:dev`, `tauri:prod`, `tauri-with-mode build` 는 같은 페어링 준비(`ensurePairedAgentCheckout`)를 쓰고, 엄격 해석기는 실패 시 `agent:prepare` 명령을 안내한다. | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts` | Done |
+| **FR-MEMORY-PAIRING.6** | 준비는 형제 naia-memory 를 memoryCommit 으로 옮기되 수정 파일이 있거나 브랜치에 있으면 정확한 git 명령과 함께 실패하고, 이동 후 root·HEAD·clean·package 를 검증·빌드하며 에이전트에 설치된 `dist/memory` 가 형제 빌드와 같은지 대조한다(다르면 frozen 강제 재설치 후에도 다르면 실패). | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts`, `validate-memory-checkout.test.ts` | Done |
+| **FR-MEMORY-PAIRING.7** | 준비의 모든 설치는 `--frozen-lockfile` 이고 비-frozen 대체가 없으며, 설치 후 추적 파일이 바뀌면 파일과 복구 명령을 알리고 실패한다. | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts` | Done |
 
 ## 기능 요구사항 (FR) — 초기 번들 예산 (#431)
 
@@ -1276,3 +1281,8 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-WORKSPACE-AI-CONTEXT.1** | AI 에이전트는 사용자가 열어둔 파일 목록(`openDocs`), 현재 활성 문서(`openFilePath`), 커서 위치(`line`, `column`, `selectedText`), 및 Herdr 터미널 최근 출력(`terminalTail`)을 `pushContext`와 도구(`skill_workspace_get_open_file`, `skill_workspace_get_terminal_output`)를 통해 인지한다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `Terminal.tsx`, `Editor.tsx` | Done |
 | **FR-WORKSPACE-AI-CONTROL.1** | AI 에이전트는 사용자가 보고 있는 Herdr 터미널로 가시적 명령을 실행(`skill_workspace_terminal_exec`)하고, 화면 전환(`skill_workspace_set_surface`), 문서 닫기(`skill_workspace_close_file`), 스페이스 포커스(`skill_workspace_focus_space`)를 제어할 수 있다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `model-facing-tools.contract.test.ts` | Done |
 
+## 기능 요구사항 (FR) — 채팅 마크다운 원문 보존 (#683)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-CHAT-MARKDOWN.4** | 감정 태그·무대 지시 정리는 채팅 본문 마크다운을 바꾸지 않는다. 괄호·별표 구간은 한 줄 안의 영어 단어만으로 이루어지고 알려진 동작 단어를 포함할 때만 무대 지시로 지우며, `**굵게**`, 따옴표, 괄호 내용, 목록 항목, 줄 앞 들여쓰기와 줄바꿈은 보존한다. | UC-CHAT-MARKDOWN-FIDELITY-683 | `expression.test.ts`, `ChatMarkdown.test.tsx`, `e2e/chat-tools.spec.ts` | Done |
