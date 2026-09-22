@@ -1,9 +1,18 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	realpathSync,
+	statSync,
+	symlinkSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runProjectPnpm } from "./package-manager.mjs";
+import { validateMemoryCheckout } from "./validate-memory-checkout.mjs";
 
 const shellDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifestPath = resolve(shellDir, "agent-pairing.json");
@@ -26,6 +35,7 @@ export const REQUIRED_AGENT_COMMIT = manifest.agentCommit;
 export const REQUIRED_PROTO_SHA256 = manifest.protoSha256;
 export const REQUIRED_MEMORY_COMMIT = manifest.memoryCommit;
 export const REQUIRED_MEMORY_VERSION = manifest.memoryVersion;
+export const PREPARE_PAIRED_AGENT_COMMAND = "pnpm -C packages/shell run agent:prepare";
 
 /** Parse the paths emitted by `git worktree list --porcelain`. */
 export function parseGitWorktreePaths(porcelain) {
@@ -43,6 +53,11 @@ function gitOutput(directory, args) {
 		shell: false,
 	});
 	return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function runGitCommand(directory, args) {
+	const result = spawnSync("git", ["-C", directory, ...args], { encoding: "utf8", shell: false });
+	return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
 /**
@@ -167,23 +182,113 @@ export function resolvePairedAgent(options = {}) {
 		if (hashProto(proto) !== REQUIRED_PROTO_SHA256) continue;
 		return { pairedAgent, agentScript, agentProtoDir };
 	}
+	const where = explicit ? ` under ${explicit}` : ` under ${worktreeRoots.join(", ")}`;
 	throw new Error(
-		`No clean paired naia-agent checkout contains ${REQUIRED_AGENT_COMMIT}` +
-			(explicit ? ` under ${explicit}` : ` under ${worktreeRoots.join(", ")}`),
+		`No clean paired naia-agent checkout contains ${REQUIRED_AGENT_COMMIT}${where}\n  Prepare it with: ${PREPARE_PAIRED_AGENT_COMMAND}`,
 	);
 }
 
+export function alignPairedMemoryCheckout(memoryDir, options = {}) {
+	const readGit = options.gitOutput ?? gitOutput;
+	const runGit = options.runGit ?? runGitCommand;
+	if (!existsSync(resolve(memoryDir, "package.json"))) {
+		throw new Error(`Paired naia-memory checkout missing: ${memoryDir}`);
+	}
+	const head = readGit(memoryDir, ["rev-parse", "HEAD"]);
+	if (head === null) {
+		throw new Error(`Paired naia-memory is not a git checkout: ${memoryDir}`);
+	}
+	if (head === REQUIRED_MEMORY_COMMIT) return { moved: false };
+	const porcelain = readGit(memoryDir, ["status", "--porcelain"]);
+	if (porcelain !== "") {
+		throw new Error(
+			`Paired naia-memory checkout has local changes; refusing to move it to ${REQUIRED_MEMORY_COMMIT}: ${memoryDir}\n` +
+				`  Commit or stash them, then run: git -C "${memoryDir}" checkout --detach ${REQUIRED_MEMORY_COMMIT}`,
+		);
+	}
+	const branch = readGit(memoryDir, ["symbolic-ref", "-q", "HEAD"]);
+	if (typeof branch === "string" && branch.trim() !== "") {
+		throw new Error(
+			`Paired naia-memory checkout is on branch ${branch}; only a detached checkout is moved automatically: ${memoryDir}\n` +
+				`  Run: git -C "${memoryDir}" checkout --detach ${REQUIRED_MEMORY_COMMIT}`,
+		);
+	}
+	if (readGit(memoryDir, ["cat-file", "-e", `${REQUIRED_MEMORY_COMMIT}^{commit}`]) === null) {
+		const fetchResult = runGit(memoryDir, ["fetch", "origin", REQUIRED_MEMORY_COMMIT]);
+		if (fetchResult.status !== 0) {
+			throw new Error(`Cannot fetch naia-memory ${REQUIRED_MEMORY_COMMIT}: ${fetchResult.stderr || fetchResult.stdout}`);
+		}
+	}
+	console.log(`[agent-pairing] naia-memory ${String(head).slice(0, 8)} → ${REQUIRED_MEMORY_COMMIT.slice(0, 8)}: ${memoryDir}`);
+	const checkoutResult = runGit(memoryDir, ["checkout", "--detach", REQUIRED_MEMORY_COMMIT]);
+	if (checkoutResult.status !== 0) {
+		throw new Error(`Failed to move naia-memory to ${REQUIRED_MEMORY_COMMIT}: ${checkoutResult.stderr || checkoutResult.stdout}`);
+	}
+	return { moved: true };
+}
+
+export function memoryDistDigest(packageRoot) {
+	const distDir = resolve(packageRoot, "dist", "memory");
+	if (!existsSync(distDir) || !statSync(distDir).isDirectory()) return null;
+
+	const entries = [];
+	function walk(dir) {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			const fullPath = resolve(dir, entry.name);
+			if (entry.isDirectory()) {
+				walk(fullPath);
+			} else {
+				const relPath = relative(distDir, fullPath).replaceAll("\\", "/");
+				entries.push({ relPath, fullPath });
+			}
+		}
+	}
+	walk(distDir);
+
+	entries.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
+	const hash = createHash("sha256");
+	for (const { relPath, fullPath } of entries) {
+		hash.update(relPath);
+		hash.update("\0");
+		hash.update(readFileSync(fullPath));
+		hash.update("\0");
+	}
+	return hash.digest("hex");
+}
+
+export function assertNoTrackedChanges(directory, stage, options = {}) {
+	const readGit = options.gitOutput ?? gitOutput;
+	const porcelain = readGit(directory, ["status", "--porcelain", "--untracked-files=no"]);
+	if (porcelain == null) {
+		throw new Error(`Cannot read git status of ${directory} (${stage})`);
+	}
+	const lines = porcelain
+		.split(/\r?\n/)
+		.map((line) => line.trimEnd())
+		.filter((line) => line.trim() !== "")
+		.filter(
+			(line) =>
+				!/\.agents[\\/]session-contracts[\\/]\.recovery[\\/]/.test(line),
+		);
+	if (lines.length > 0) {
+		const formatted = lines.map((line) => `  ${line}`).join("\n");
+		throw new Error(
+			`${stage} modified tracked files in ${directory}; installs must use the committed lockfile:\n${formatted}\n  Changes to pnpm-lock.yaml are typically caused by a different pnpm version.\n  Restore with: git -C "${directory}" checkout -- <file>`,
+		);
+	}
+}
+
 /**
- * 개발 환경에서 핀된 커밋의 naia-agent 실행용 체크아웃이 없거나 더러운 경우,
- * 전용 워크트리를 자동으로 준비한다 (#679 / #539).
+ * 페어링된 naia-agent 체크아웃과 naia-memory 형제를 준비한다 (#685).
+ * dev, prod, build가 공유하는 단일 준비 경로다.
  *
  * 불변식:
- * 1. 명시적 Agent 지정(NAIA_E2E_AGENT_ROOT, explicit)이 있으면 자동 준비하지 않고 strict 검증에 맡긴다.
- * 2. 기존 clean paired 체크아웃이 이미 있으면 재사용한다 (0 오버헤드).
- * 3. 사용자 작업 트리가 dirty여도 리셋하거나 덮어쓰지 않고 보존한다.
- * 4. 인접 의존성(../naia-memory, ../naia-kb-compiler) 링크를 연결한다.
- * 5. 상위 workspace 전체를 오선택하지 않도록 --ignore-workspace 로 설치하고 빌드한다.
- * 6. 준비 후에도 resolvePairedAgent 의 strict commit/clean/proto 계약 검증을 거친다.
+ * 1. 명시적 루트(NAIA_E2E_AGENT_ROOT, explicit)는 자동 준비하지 않고 strict 검증에 맡긴다.
+ * 2. 형제 naia-memory는 깨끗하고 분리된(detached) HEAD일 때만 핀 커밋으로 이동한다.
+ * 3. 모든 의존성 설치는 --frozen-lockfile만 쓰며 비-frozen 대체가 없다.
+ * 4. 에이전트에 설치된 naia-memory 복사본이 형제 빌드 산출물과 일치하는지 검증한다.
+ * 5. 설치/빌드 후 에이전트 및 메모리 체크아웃에 변경된 추적 파일이 없어야 한다.
+ * 6. 준비 완료 후 항상 resolvePairedAgent의 엄격한 계약 검증을 거친다.
  */
 export function ensurePairedAgentCheckout(options = {}) {
 	const sourceEnv = options.env ?? process.env;
@@ -192,103 +297,131 @@ export function ensurePairedAgentCheckout(options = {}) {
 		return resolvePairedAgent(options);
 	}
 
-	// 1. 이미 유효한 체크아웃이 있는지 확인 (있으면 즉시 반환)
+	let agentRoot = null;
 	try {
-		return resolvePairedAgent(options);
+		agentRoot = resolvePairedAgent(options).pairedAgent;
 	} catch {
-		// 유효한 체크아웃이 없으면 아래에서 자동 준비 진행
+		/* prepare below */
 	}
 
-	const primaryRoots = options.primaryRoots ?? [
-		resolve(shellDir, "..", "..", "..", "naia-agent"),
-		resolve(shellDir, "..", "..", "..", "..", "naia-agent"),
-	];
+	if (agentRoot === null) {
+		const primaryRoots = options.primaryRoots ?? [
+			resolve(shellDir, "..", "..", "..", "naia-agent"),
+			resolve(shellDir, "..", "..", "..", "..", "naia-agent"),
+		];
 
-	const primary = primaryRoots.find((p) => existsSync(p) && existsSync(resolve(p, ".git")));
-	if (!primary) {
-		throw new Error(
-			`Cannot auto-prepare paired naia-agent: primary repository not found in ${primaryRoots.join(", ")}`,
-		);
-	}
+		const primary = primaryRoots.find((p) => existsSync(p) && existsSync(resolve(p, ".git")));
+		if (!primary) {
+			throw new Error(
+				`Cannot auto-prepare paired naia-agent: primary repository not found in ${primaryRoots.join(", ")}`,
+			);
+		}
 
-	const worktreeRoots = options.worktreeRoots ?? [
-		sourceEnv.NAIA_AGENT_WORKTREES_DIR,
-		resolve(shellDir, "..", "..", "..", "naia-agent-worktrees"),
-		resolve(shellDir, "..", "..", "naia-agent-worktrees"),
-		resolve(shellDir, "..", "..", "..", "..", "naia-agent-worktrees"),
-	].filter(Boolean);
+		const worktreeRoots = options.worktreeRoots ?? [
+			sourceEnv.NAIA_AGENT_WORKTREES_DIR,
+			resolve(shellDir, "..", "..", "..", "naia-agent-worktrees"),
+			resolve(shellDir, "..", "..", "naia-agent-worktrees"),
+			resolve(shellDir, "..", "..", "..", "..", "naia-agent-worktrees"),
+		].filter(Boolean);
 
-	const worktreeRoot = worktreeRoots.find((r) => existsSync(r)) ?? resolve(primary, "..", "naia-agent-worktrees");
-	if (!existsSync(worktreeRoot)) {
-		mkdirSync(worktreeRoot, { recursive: true });
-	}
+		const worktreeRoot = worktreeRoots.find((r) => existsSync(r)) ?? resolve(primary, "..", "naia-agent-worktrees");
+		if (!existsSync(worktreeRoot)) {
+			mkdirSync(worktreeRoot, { recursive: true });
+		}
 
-	// 인접 의존성(naia-memory, naia-kb-compiler) 링크/정션 확보
-	const parentProjectsDir = resolve(primary, "..");
-	for (const depName of ["naia-memory", "naia-kb-compiler"]) {
-		const targetDep = resolve(parentProjectsDir, depName);
-		const linkPath = resolve(worktreeRoot, depName);
-		if (existsSync(targetDep) && !existsSync(linkPath)) {
-			try {
-				symlinkSync(targetDep, linkPath, process.platform === "win32" ? "junction" : "dir");
-			} catch {
-				// 이미 존재하거나 권한 예외 시 무시
+		// 인접 의존성(naia-memory, naia-kb-compiler) 링크/정션 확보
+		const parentProjectsDir = resolve(primary, "..");
+		for (const depName of ["naia-memory", "naia-kb-compiler"]) {
+			const targetDep = resolve(parentProjectsDir, depName);
+			const linkPath = resolve(worktreeRoot, depName);
+			if (existsSync(targetDep) && !existsSync(linkPath)) {
+				try {
+					symlinkSync(targetDep, linkPath, process.platform === "win32" ? "junction" : "dir");
+				} catch {
+					// 이미 존재하거나 권한 예외 시 무시
+				}
 			}
 		}
-	}
 
-	const shortSha = REQUIRED_AGENT_COMMIT.slice(0, 8);
-	const targetWorktree = resolve(worktreeRoot, `paired-${shortSha}`);
+		const shortSha = REQUIRED_AGENT_COMMIT.slice(0, 8);
+		const targetWorktree = resolve(worktreeRoot, `paired-${shortSha}`);
 
-	// 2. targetWorktree가 아직 없으면 git worktree add
-	if (!existsSync(targetWorktree)) {
-		// primary에서 해당 커밋이 있는지 검사하고 없으면 fetch
-		const hasCommit = spawnSync("git", ["-C", primary, "rev-parse", "--verify", `${REQUIRED_AGENT_COMMIT}^{commit}`], {
-			encoding: "utf8",
-			shell: false,
-		}).status === 0;
-
-		if (!hasCommit) {
-			const fetchResult = spawnSync("git", ["-C", primary, "fetch", "origin", REQUIRED_AGENT_COMMIT], {
+		// 2. targetWorktree가 아직 없으면 git worktree add
+		if (!existsSync(targetWorktree)) {
+			// primary에서 해당 커밋이 있는지 검사하고 없으면 fetch
+			const hasCommit = spawnSync("git", ["-C", primary, "rev-parse", "--verify", `${REQUIRED_AGENT_COMMIT}^{commit}`], {
 				encoding: "utf8",
 				shell: false,
-			});
-			if (fetchResult.status !== 0) {
-				spawnSync("git", ["-C", primary, "fetch", "origin"], { encoding: "utf8", shell: false });
+			}).status === 0;
+
+			if (!hasCommit) {
+				const fetchResult = spawnSync("git", ["-C", primary, "fetch", "origin", REQUIRED_AGENT_COMMIT], {
+					encoding: "utf8",
+					shell: false,
+				});
+				if (fetchResult.status !== 0) {
+					spawnSync("git", ["-C", primary, "fetch", "origin"], { encoding: "utf8", shell: false });
+				}
+			}
+
+			console.log(`[agent-pairing] 전용 페어링 워크트리 자동 생성: ${targetWorktree} (${shortSha})`);
+			const addResult = spawnSync(
+				"git",
+				["-C", primary, "worktree", "add", targetWorktree, REQUIRED_AGENT_COMMIT, "--detach"],
+				{ encoding: "utf8", shell: false },
+			);
+			if (addResult.status !== 0) {
+				throw new Error(`Failed to create paired worktree at ${targetWorktree}: ${addResult.stderr || addResult.stdout}`);
 			}
 		}
 
-		console.log(`[agent-pairing] 전용 페어링 워크트리 자동 생성: ${targetWorktree} (${shortSha})`);
-		const addResult = spawnSync(
-			"git",
-			["-C", primary, "worktree", "add", targetWorktree, REQUIRED_AGENT_COMMIT, "--detach"],
-			{ encoding: "utf8", shell: false },
-		);
-		if (addResult.status !== 0) {
-			throw new Error(`Failed to create paired worktree at ${targetWorktree}: ${addResult.stderr || addResult.stdout}`);
-		}
+		agentRoot = targetWorktree;
 	}
 
-	// 3. 의존성 설치 및 빌드
 	const runPnpm = options.runProjectPnpm ?? runProjectPnpm;
-	const nodeModulesDir = resolve(targetWorktree, "node_modules");
-	const compositionFile = resolve(targetWorktree, "dist/main/composition/index.js");
 
-	if (!existsSync(nodeModulesDir)) {
-		console.log(`[agent-pairing] 워크트리 의존성 설치 (--ignore-workspace): ${targetWorktree}`);
-		try {
-			runPnpm(["--ignore-workspace", "install", "--frozen-lockfile"], targetWorktree, sourceEnv);
-		} catch {
-			runPnpm(["--ignore-workspace", "install"], targetWorktree, sourceEnv);
+	const memoryLink = resolve(agentRoot, "..", "naia-memory");
+	const memoryDir = existsSync(memoryLink) ? realpathSync(memoryLink) : memoryLink;
+	const { moved } = alignPairedMemoryCheckout(memoryDir, options);
+	const assertMemory = (stage) => {
+		const problem = validateMemoryCheckout(memoryDir, REQUIRED_MEMORY_COMMIT, REQUIRED_MEMORY_VERSION, { gitOutput: options.gitOutput });
+		if (problem) throw new Error(`Paired naia-memory ${problem} (${stage}): ${memoryDir}`);
+	};
+	assertMemory("before build");
+	if (moved || !existsSync(resolve(memoryDir, "node_modules"))) {
+		runPnpm(["--ignore-workspace", "install", "--frozen-lockfile"], memoryDir, sourceEnv);
+	}
+	// dist is untracked build output; HEAD alone cannot prove it matches, so rebuild each time like the agent build.
+	runPnpm(["--ignore-workspace", "run", "build"], memoryDir, sourceEnv);
+	assertMemory("after install/build");
+
+	if (!existsSync(resolve(agentRoot, "node_modules"))) {
+		runPnpm(["--ignore-workspace", "install", "--frozen-lockfile"], agentRoot, sourceEnv);
+	}
+
+	const digest = options.memoryDigest ?? memoryDistDigest;
+	const installedMemory = resolve(agentRoot, "node_modules", "@nextain", "naia-memory");
+	const installedMatches = () => {
+		const expected = digest(memoryDir);
+		return expected !== null && digest(installedMemory) === expected;
+	};
+	if (!installedMatches()) {
+		console.log(`[agent-pairing] installed naia-memory differs from ${REQUIRED_MEMORY_COMMIT.slice(0, 8)}; reinstalling: ${agentRoot}`);
+		runPnpm(["--ignore-workspace", "install", "--frozen-lockfile", "--force"], agentRoot, sourceEnv);
+		if (!installedMatches()) {
+			throw new Error(`Installed naia-memory does not match ${memoryDir} (${REQUIRED_MEMORY_COMMIT}) after reinstall: ${installedMemory}`);
 		}
 	}
 
+	const compositionFile = resolve(agentRoot, "dist/main/composition/index.js");
 	if (!existsSync(compositionFile)) {
-		console.log(`[agent-pairing] 워크트리 빌드: ${targetWorktree}`);
-		runPnpm(["run", "build"], targetWorktree, sourceEnv);
+		console.log(`[agent-pairing] 워크트리 빌드: ${agentRoot}`);
+		runPnpm(["run", "build"], agentRoot, sourceEnv);
 	}
 
-	// 4. 엄격한 pairing 검증을 거쳐 반환
+	assertNoTrackedChanges(agentRoot, "paired naia-agent install", options);
+	assertNoTrackedChanges(memoryDir, "paired naia-memory install", options);
+
 	return resolvePairedAgent(options);
 }
 

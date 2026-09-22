@@ -13,6 +13,7 @@
     "tauri:dev": "node scripts/dev-setup.mjs && node scripts/tauri-with-mode.mjs dev",
     "tauri:prod": "node scripts/dev-setup.mjs && node scripts/tauri-with-mode.mjs prod",
     "tauri:dev:clean": "node scripts/dev-setup.mjs --clean && node scripts/tauri-with-mode.mjs dev",
+    "agent:prepare": "node scripts/prepare-paired-agent.mjs",
     "tauri:build:bundle": "node scripts/stage-runtime.mjs",
     "tauri:installer": "node scripts/dev-setup.mjs && node scripts/stage-runtime.mjs",
     "check": "biome check --write .",

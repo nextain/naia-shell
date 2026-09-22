@@ -101,7 +101,6 @@ describe("UC-WIRE-V1 paired proto build", () => {
 		//    둘이 갈라질 수 있으므로 사본이 없다는 것까지 못 박는다.
 		for (const source of [TAURI_WITH_MODE, STAGE_RUNTIME]) {
 			expect(source).toContain('from "./agent-pairing.mjs"');
-			expect(source).toContain("resolvePairedAgent({");
 			expect(source).not.toContain("AGENT_WORKTREE_ROOTS");
 			expect(source).not.toContain("function agentCandidates");
 			expect(source).not.toContain("function firstPairedAgentCheckout");
@@ -109,6 +108,17 @@ describe("UC-WIRE-V1 paired proto build", () => {
 			expect(source).not.toContain("merge-base");
 			expect(source).not.toContain("--is-ancestor");
 		}
+
+		// #685: the launcher prepares through the shared entry, which ends in the
+		// same resolver; staging resolves strictly. Both reach resolvePairedAgent.
+		expect(TAURI_WITH_MODE).toContain("ensurePairedAgentCheckout({ env: targetEnv })");
+		expect(STAGE_RUNTIME).toContain("resolvePairedAgent({");
+		expect(AGENT_PAIRING).toContain("export function ensurePairedAgentCheckout");
+		const ensureSlice = AGENT_PAIRING.slice(
+			AGENT_PAIRING.indexOf("export function ensurePairedAgentCheckout"),
+			AGENT_PAIRING.indexOf("export function e2eTargetDir"),
+		);
+		expect(ensureSlice).toContain("return resolvePairedAgent(options);");
 
 		// ② 해석기가 후보를 모은다. 옛 하드코딩 자리(.agents/work/naia-agent-issue-388-proto)
 		//    대신 워크트리 모음 디렉터리와 주 저장소에 **등록된** 워크트리 목록을 본다.
@@ -178,8 +188,9 @@ describe("UC-WIRE-V1 paired proto build", () => {
 		// 두 호출이 모두 있어야 순서를 따질 수 있다. indexOf 만 비교하면 호출이
 		// 통째로 사라진 경우 -1 이 앞선 것으로 읽혀 조용히 통과한다.
 		expect(applyBody).toContain("validateAgentEnvPair(explicitScript, explicitProtoDir)");
+		expect(applyBody).toContain("ensurePairedAgentCheckout({");
 		expect(applyBody.indexOf("validateAgentEnvPair(explicitScript, explicitProtoDir)")).toBeLessThan(
-			applyBody.indexOf("resolvePairedAgent({"),
+			applyBody.indexOf("ensurePairedAgentCheckout({"),
 		);
 		expect(applyBody).toContain("targetEnv.NAIA_AGENT_SCRIPT = agentScript");
 		expect(applyBody).toContain("targetEnv.NAIA_AGENT_PROTO_DIR = agentProtoDir");
