@@ -61,6 +61,76 @@ describe("extractExpression (robust avatar cue extraction)", () => {
 	});
 });
 
+describe("extractExpression keeps chat markdown intact (#683)", () => {
+	it("preserves bold span with parentheses and emotion tag", () => {
+		const input =
+			"\n\n[HAPPY] 네, 마스터 루크. **넥스테인(Nextain)** 은 AI를 활용하는 기술 회사입니다.";
+		expect(extractExpression(input)).toEqual({
+			emotion: "happy",
+			cleanText:
+				"네, 마스터 루크. **넥스테인(Nextain)** 은 AI를 활용하는 기술 회사입니다.",
+		});
+	});
+
+	it("preserves numbered list with bold spans containing quotes and parentheses", () => {
+		const body =
+			'네, 마스터 루크. 지난 대화에서 다음과 같은 내용이 있었습니다:\n\n1. **"흠.. 기억을 못하네."** — 이렇게 말씀하신 적이 있습니다.\n2. **"다음에 내가 앱바에 설치하다 실패했던건 메모앱이라고 기억하고 있어"** — 앱바에 메모앱을 설치하려다 실패하셨다고 말씀하셨습니다.\n3. **"흠.. 내가 뭐라했는지 기억해 ?"** — 이 질문을 하신 적도 있습니다.\n4. **"안녕"** — 인사도 나누었습니다.\n5. **"넥스테인이 뭐하는 회사 인줄 알아 ?"** — 넥스테인에 대해 물어보셨습니다.';
+		const input = `\n\n[HAPPY] ${body}`;
+		const expectedCleanText =
+			'네, 마스터 루크. 지난 대화에서 다음과 같은 내용이 있었습니다:\n\n1. **"흠.. 기억을 못하네."** — 이렇게 말씀하신 적이 있습니다.\n2. **"다음에 내가 앱바에 설치하다 실패했던건 메모앱이라고 기억하고 있어"** — 앱바에 메모앱을 설치하려다 실패하셨다고 말씀하셨습니다.\n3. **"흠.. 내가 뭐라했는지 기억해?"** — 이 질문을 하신 적도 있습니다.\n4. **"안녕"** — 인사도 나누었습니다.\n5. **"넥스테인이 뭐하는 회사 인줄 알아?"** — 넥스테인에 대해 물어보셨습니다.';
+		const result = extractExpression(input);
+		expect(result.emotion).toBe("happy");
+		expect(result.cleanText).toBe(expectedCleanText);
+	});
+
+	it("preserves bold span in editor status message", () => {
+		const input =
+			"[HAPPY] 네, 마스터 루크. 지금 에디터에 **열려 있는 파일이 없는 상태**입니다. 😅";
+		const result = extractExpression(input);
+		expect(result.cleanText).toBe(
+			"네, 마스터 루크. 지금 에디터에 **열려 있는 파일이 없는 상태**입니다. 😅",
+		);
+	});
+
+	it("treats plain parenthetical as content", () => {
+		const input = "넥스테인(Nextain)에 대해 확인해 보겠습니다";
+		expect(extractExpression(input)).toEqual({
+			emotion: null,
+			cleanText: "넥스테인(Nextain)에 대해 확인해 보겠습니다",
+		});
+	});
+
+	it("preserves italic text that is not an action word", () => {
+		const input = "이건 *정말* 중요해요";
+		expect(extractExpression(input)).toEqual({
+			emotion: null,
+			cleanText: "이건 *정말* 중요해요",
+		});
+	});
+
+	it("still strips real stage directions", () => {
+		expect(extractExpression("(smiles softly) 안녕하세요")).toEqual({
+			emotion: "happy",
+			cleanText: "안녕하세요",
+		});
+		expect(extractExpression("*sighs* 그렇군요")).toEqual({
+			emotion: "sad",
+			cleanText: "그렇군요",
+		});
+	});
+
+	it("preserves nested list indentation", () => {
+		const input = "- 상위\n  - 하위 항목\n    - 더 하위";
+		expect(extractExpression(input).cleanText).toBe(input);
+	});
+
+	it("collapses spaces after mid-line removal", () => {
+		expect(extractExpression("좋아요 (smiles) 그럼 시작해요").cleanText).toBe(
+			"좋아요 그럼 시작해요",
+		);
+	});
+});
+
 describe("mapServerEmotion (naia-omni emotion.updated → avatar)", () => {
 	it("maps each known emotion (case/bracket-insensitive)", () => {
 		expect(mapServerEmotion("happy")).toBe("happy");

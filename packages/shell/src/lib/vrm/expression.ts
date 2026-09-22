@@ -220,7 +220,24 @@ const ACTION_TO_EMOTION: Readonly<Record<string, EmotionName>> = {
 	ponders: "think",
 };
 
-const STAGE_DIRECTION_RE = /\(([^)]{1,40})\)|\*([^*]{1,40})\*/g;
+/** `(smiles)` — a parenthetical on one line, no nested parentheses. */
+const PAREN_DIRECTION_RE = /\(([^()\n]{1,40})\)/g;
+/** `*sighs*` — a single-asterisk span on one line; never part of `**bold**`. */
+const STAR_DIRECTION_RE = /(?<![*\w])\*([^*\n]{1,40})\*(?![*\w])/g;
+
+/**
+ * A span is a stage direction only when it is plain English words (letters,
+ * spaces, `,.'-`) and at least one word is a known action word. Anything else
+ * — `(Nextain)`, `*중요*`, `("quote")` — is content and must stay visible.
+ */
+function stageDirectionEmotion(inner: string): EmotionName | null {
+	const text = inner.trim().toLowerCase();
+	if (!/^[a-z][a-z\s,.'-]*$/.test(text)) return null;
+	for (const word of text.split(/[^a-z]+/)) {
+		if (word && ACTION_TO_EMOTION[word]) return ACTION_TO_EMOTION[word];
+	}
+	return null;
+}
 
 /**
  * Robustly extract an avatar emotion + clean display text from one assistant
@@ -229,6 +246,8 @@ const STAGE_DIRECTION_RE = /\(([^)]{1,40})\)|\*([^*]{1,40})\*/g;
  *   - uppercase emotion tag   [HAPPY]            → direct
  *   - lowercase prosody tag    [laughing]/[sigh] → mapped (server prosody vocab)
  *   - stage direction          (smiles) / *sigh* → action-word mapped + stripped
+ *     (only single-line, letters-only spans containing a known action word;
+ *     every other parenthesis, asterisk and markdown span is preserved)
  *
  * Returns `emotion: null` when nothing matches so the caller leaves the current
  * expression unchanged — it NEVER forces neutral (LLM output is imperfect; a
@@ -266,23 +285,26 @@ export function extractExpression(text: string): {
 		return "";
 	});
 	// 3) leaked stage direction (forbidden by server, but tolerate + strip)
-	clean = clean.replace(
-		STAGE_DIRECTION_RE,
-		(_m, paren?: string, star?: string) => {
-			const inner = (paren ?? star ?? "").toLowerCase();
-			for (const word of inner.split(/[^a-z]+/)) {
-				if (word && ACTION_TO_EMOTION[word]) {
-					take(ACTION_TO_EMOTION[word]);
-					break;
-				}
-			}
+	clean = clean.replace(PAREN_DIRECTION_RE, (match, inner: string) => {
+		const cue = stageDirectionEmotion(inner);
+		if (cue) {
+			take(cue);
 			return "";
-		},
-	);
+		}
+		return match;
+	});
+	clean = clean.replace(STAR_DIRECTION_RE, (match, inner: string) => {
+		const cue = stageDirectionEmotion(inner);
+		if (cue) {
+			take(cue);
+			return "";
+		}
+		return match;
+	});
 
 	clean = clean
-		.replace(/[ \t]{2,}/g, " ")
-		.replace(/\s+([.,!?。、！？])/g, "$1")
+		.replace(/(?<=\S)[ \t]{2,}(?=\S)/g, " ")
+		.replace(/[ \t]+([.,!?。、！？])/g, "$1")
 		.trim();
 	clean = clean.replace(
 		/\u0000NAIA_CODE_(\d+)\u0000/g,
