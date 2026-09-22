@@ -1990,3 +1990,21 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` |
 
+## UC-CHAT-MARKDOWN-FIDELITY-683 — 채팅 본문이 원문 마크다운 그대로 보인다 (#683)
+
+assistant 응답의 굵은 글씨·괄호·따옴표·목록 항목이 감정 태그 정리 뒤에도 원문 그대로 표시되고, 영어 무대 지시 `(smiles)`·`*sighs*`만 지워지며 아바타 표정에 쓰인다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | assistant 응답의 굵은 글씨, 괄호, 따옴표, 목록 항목이 원문 마크다운 그대로 표시된다. |
+| 빈 목록 | 태그만 있는 응답은 빈 본문으로 표시된다. |
+| 진행 | 스트리밍 중 닫히지 않은 `**`·괄호도 지우지 않고 보존한다. |
+| 성공 | 영어 무대 지시만 지워져 아바타 표정에 쓰이고, 본문 마크다운은 온전히 렌더링된다. |
+| 오류 | 무대 지시로 오인할 수 있는 비영어·괄호 내용은 지우지 않고 보존한다. |
+| 좁은 폭 | 굵은 글씨·목록이 줄바꿈되어도 잘리지 않고 온전하게 표시된다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-CHAT-MARKDOWN-FIDELITY-683 | `packages/shell/src/lib/vrm/__tests__/expression.test.ts`: 굵은 글씨·괄호·따옴표·목록·들여쓰기 보존, 영어 무대 지시만 제거; `packages/shell/src/components/__tests__/ChatMarkdown.test.tsx`: 정리 뒤 strong·목록 항목 렌더링 | `packages/shell/e2e/chat-tools.spec.ts`: 실 채팅 UI에서 굵은 글씨와 목록 세 항목 표시, `**` 노출 없음 |

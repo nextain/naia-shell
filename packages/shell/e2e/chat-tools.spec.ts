@@ -95,6 +95,7 @@ const TAURI_MOCK_SCRIPT = `
 
 	function matchScenario(userMessage) {
 		var msg = (userMessage || "").toLowerCase();
+		if (msg.indexOf("markdown-bold-e2e") !== -1) return "markdown_bold";
 		if (msg.indexOf("formatting-e2e") !== -1) return "formatting";
 		if (msg.indexOf("읽어줘") !== -1 || msg.indexOf("read") !== -1) return "read_file";
 		if (msg.indexOf("생각") !== -1 || msg.indexOf("think") !== -1) return "thinking";
@@ -103,6 +104,9 @@ const TAURI_MOCK_SCRIPT = `
 
 	function getResponseChunks(requestId, scenario) {
 		switch (scenario) {
+			case "markdown_bold":
+				return buildTextResponse(requestId,
+					'[HAPPY] 네, 마스터 루크. **넥스테인(Nextain)** 은 기술 회사입니다.\\n\\n1. **"흠.. 기억을 못하네."** — 첫째.\\n2. **"안녕"** — 둘째.\\n3. **"넥스테인이 뭐하는 회사 인줄 알아?"** — 셋째.');
 			case "formatting":
 				var fence = String.fromCharCode(96).repeat(3);
 				return [
@@ -329,6 +333,24 @@ test.describe("Chat + Tool E2E", () => {
 		await expect(page.locator(".workspace-editor__mermaid svg").last()).toBeVisible({
 			timeout: 10_000,
 		});
+	});
+
+	test("bold spans with quotes/parentheses and all list items render (#683)", async ({
+		page,
+	}) => {
+		await sendMessage(page, "markdown-bold-e2e");
+
+		const content = page
+			.locator(".chat-message.assistant .message-content")
+			.last();
+		await expect(
+			content.locator("strong", { hasText: "넥스테인(Nextain)" }),
+		).toBeVisible();
+		await expect(content.locator("ol > li")).toHaveCount(3);
+		await expect(content.locator("strong").nth(1)).toHaveText(
+			'"흠.. 기억을 못하네."',
+		);
+		await expect(content).not.toContainText("**");
 	});
 });
 

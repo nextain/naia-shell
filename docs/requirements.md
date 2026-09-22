@@ -1277,3 +1277,8 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-WORKSPACE-AI-CONTEXT.1** | AI 에이전트는 사용자가 열어둔 파일 목록(`openDocs`), 현재 활성 문서(`openFilePath`), 커서 위치(`line`, `column`, `selectedText`), 및 Herdr 터미널 최근 출력(`terminalTail`)을 `pushContext`와 도구(`skill_workspace_get_open_file`, `skill_workspace_get_terminal_output`)를 통해 인지한다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `Terminal.tsx`, `Editor.tsx` | Done |
 | **FR-WORKSPACE-AI-CONTROL.1** | AI 에이전트는 사용자가 보고 있는 Herdr 터미널로 가시적 명령을 실행(`skill_workspace_terminal_exec`)하고, 화면 전환(`skill_workspace_set_surface`), 문서 닫기(`skill_workspace_close_file`), 스페이스 포커스(`skill_workspace_focus_space`)를 제어할 수 있다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `model-facing-tools.contract.test.ts` | Done |
 
+## 기능 요구사항 (FR) — 채팅 마크다운 원문 보존 (#683)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-CHAT-MARKDOWN.4** | 감정 태그·무대 지시 정리는 채팅 본문 마크다운을 바꾸지 않는다. 괄호·별표 구간은 한 줄 안의 영어 단어만으로 이루어지고 알려진 동작 단어를 포함할 때만 무대 지시로 지우며, `**굵게**`, 따옴표, 괄호 내용, 목록 항목, 줄 앞 들여쓰기와 줄바꿈은 보존한다. | UC-CHAT-MARKDOWN-FIDELITY-683 | `expression.test.ts`, `ChatMarkdown.test.tsx`, `e2e/chat-tools.spec.ts` | Done |
