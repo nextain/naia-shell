@@ -28,13 +28,33 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
     alive
 }
 
+/// STILL_ACTIVE exit code reported by GetExitCodeProcess for a running process.
+const STILL_ACTIVE_EXIT_CODE: u32 = 259;
+
+/// Identity of a process only while it is still running (#684).  An exited
+/// process whose kernel object is kept alive by another handle still reports
+/// its original creation time; treating that as a live identity made a dead
+/// Shell's ownership record look live forever.  A failed exit-code query
+/// (`None`) keeps the identity so an uninspectable owner stays protected.
+fn running_process_identity(
+    creation_high: u32,
+    creation_low: u32,
+    exit_code: Option<u32>,
+) -> Option<String> {
+    match exit_code {
+        Some(code) if code != STILL_ACTIVE_EXIT_CODE => None,
+        _ => Some(format!("{creation_high}:{creation_low}")),
+    }
+}
+
 /// Windows process start identity from the creation FILETIME.
+/// Returns `None` for an exited process (#684).
 pub(crate) fn process_identity(pid: u32) -> Option<String> {
     if pid == 0 {
         return None;
     }
     use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
-    use windows_sys::Win32::System::Threading::{GetProcessTimes, OpenProcess};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, GetProcessTimes, OpenProcess};
 
     let handle = unsafe { OpenProcess(0x1000, 0, pid) }; // PROCESS_QUERY_LIMITED_INFORMATION
     if handle.is_null() {
@@ -65,8 +85,14 @@ pub(crate) fn process_identity(pid: u32) -> Option<String> {
             &mut user,
         ) != 0
     };
+    let mut code: u32 = 0;
+    let query_ok = ok && unsafe { GetExitCodeProcess(handle, &mut code) != 0 };
+    let exit_code = if query_ok { Some(code) } else { None };
     unsafe { CloseHandle(handle) };
-    ok.then(|| format!("{}:{}", creation.dwHighDateTime, creation.dwLowDateTime))
+    if !ok {
+        return None;
+    }
+    running_process_identity(creation.dwHighDateTime, creation.dwLowDateTime, exit_code)
 }
 
 /// Replace a same-directory temporary file without exposing a partially
@@ -1327,5 +1353,32 @@ impl PlatformWindowManager for Win32WindowManager {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod process_identity_tests {
+    use super::*;
+
+    #[test]
+    fn running_process_keeps_creation_identity() {
+        assert_eq!(
+            running_process_identity(7, 9, Some(259)),
+            Some("7:9".to_string())
+        );
+    }
+
+    #[test]
+    fn exited_process_has_no_identity() {
+        assert_eq!(running_process_identity(7, 9, Some(0)), None);
+        assert_eq!(running_process_identity(7, 9, Some(1)), None);
+    }
+
+    #[test]
+    fn unqueryable_exit_code_keeps_identity_conservatively() {
+        assert_eq!(
+            running_process_identity(7, 9, None),
+            Some("7:9".to_string())
+        );
     }
 }

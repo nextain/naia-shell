@@ -2295,6 +2295,51 @@ mod process_record_tests {
         };
         assert!(process_record_write_allowed(&existing, &candidate, true));
     }
+
+    /// #684 regression on a real Windows process: a Shell that exited while
+    /// another process still holds its handle must not keep its record "live".
+    #[cfg(windows)]
+    #[test]
+    fn exited_owner_with_open_handle_is_not_live() {
+        use std::process::{Command, Stdio};
+        // `cmd` with a piped stdin waits for input, so it stays running until killed.
+        let mut child = Command::new("cmd")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn cmd");
+        let pid = child.id();
+        let identity = platform::process_identity(pid).expect("running process has an identity");
+        let stale = ProcessRecord {
+            version: PROCESS_RECORD_VERSION,
+            child_pid: pid,
+            child_identity: identity.clone(),
+            owner_pid: pid,
+            owner_identity: identity,
+        };
+        assert!(process_record_owner_is_live(&stale));
+
+        child.kill().expect("kill cmd");
+        child.wait().expect("reap cmd");
+        // `child` still owns its process handle here, exactly like the external
+        // handle holder that kept the dead Shell's process object alive.
+        assert_eq!(platform::process_identity(pid), None);
+        assert!(!platform::is_pid_alive(pid));
+        assert!(!process_record_owner_is_live(&stale));
+        assert!(process_record_owner_is_dead(&stale));
+        // A dead child is never kill-eligible.
+        assert!(!process_record_child_is_exact(&stale));
+
+        let candidate = current_process_record(std::process::id())
+            .expect("current Shell has an identity");
+        assert!(process_record_write_allowed(
+            &stale,
+            &candidate,
+            process_record_owner_is_live(&stale),
+        ));
+        drop(child);
+    }
 }
 
 // Note: is_pid_alive, kill_pid, and cleanup_orphan_processes live in the
