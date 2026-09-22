@@ -330,6 +330,7 @@ jobs:
         env:
           R2_PREFIX: ${{ steps.publish.outputs.prefix }}
           EXPECTED_SHA256: ${{ steps.checksum.outputs.sha256 }}
+          EXPECTED_BYTES: ${{ steps.checksum.outputs.bytes }}
         run: |
           set -euo pipefail
           base="${R2_PUBLIC}/${R2_PREFIX}"
@@ -339,11 +340,17 @@ jobs:
             echo "::error::served checksum file does not match the built ISO"
             exit 1
           }
-          body_sum="$(curl -sfL --retry 3 "${base}/${ISO_NAME}?v=${GITHUB_RUN_ID}" | sha256sum | awk '{print $1}')"
-          test "$body_sum" = "$EXPECTED_SHA256" || {
-            echo "::error::served ISO body does not match the built ISO"
+          served_bytes="$(curl -sfIL "${base}/${ISO_NAME}?v=${GITHUB_RUN_ID}" | awk 'tolower($1) == "content-length:" {gsub(/\r/, ""); print $2}' | tail -n1)"
+          test "$served_bytes" = "$EXPECTED_BYTES" || {
+            echo "::error::served ISO size mismatch: expected $EXPECTED_BYTES, got $served_bytes"
             exit 1
           }
+          curl -sfL -r 0-1048575 "${base}/${ISO_NAME}?v=${GITHUB_RUN_ID}" -o /tmp/served-head.iso
+          test -s /tmp/served-head.iso
+          file /tmp/served-head.iso | grep -Eq 'ISO 9660|bootable'
+          curl -sfL "${base}/build-receipt.json?v=${GITHUB_RUN_ID}" -o /tmp/served-receipt.json
+          test "$(jq -r .iso_sha256 < /tmp/served-receipt.json)" = "$EXPECTED_SHA256"
+          test "$(jq -r .iso_bytes < /tmp/served-receipt.json)" = "$EXPECTED_BYTES"
           echo "ISO: ${base}/${ISO_NAME}"
           echo "CHECKSUM: ${base}/${ISO_NAME}-CHECKSUM"
           echo "RECEIPT: ${base}/build-receipt.json"
