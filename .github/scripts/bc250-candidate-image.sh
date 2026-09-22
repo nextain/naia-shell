@@ -208,7 +208,7 @@ RUN bash /tmp/naia-bc250-support/install-bc250.sh && \
     ln -sfn ../naia-default-hostname.service \
       /usr/lib/systemd/system/sysinit.target.wants/naia-default-hostname.service && \
     bash /tmp/naia-defaults/install-naia-toolchain.sh && \
-    rm -rf /tmp/naia-bc250-support /tmp/naia-defaults
+    rm -rf /tmp/naia-bc250-support /tmp/naia-defaults /node-compile-cache /tmp/node* /var/tmp/node* /root/.cache/node* /var/roothome/.cache/node*
 RUN /usr/libexec/naia-verify-image
 CONTAINERFILE
 
