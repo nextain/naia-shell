@@ -1038,6 +1038,18 @@ Test Coverage Map (P02) — #672
 |---|---|---|---|
 | UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS | `lib.rs` `format_voxcpm2_runtime_exit` / `describe_runtime_stderr` / `read_log_file_tail`; `voice_runtime.rs` `resolve_torch_device`; `SettingsTab.test.tsx` 40% 해제와 failed phase; `platform-matrix.test.ts` Windows 설치 진행 40% 이후 | 4060 실기 QA 는 이 패치 범위 밖 | 오류 문자열에 `(None)` 만 있으면 단위가 붉다 |
 
+### 2026-09-22 느린 로컬 음성 호스트의 전체 WAV 재생과 진행 표시 해제 (#688)
+
+| Scenario | User-observable outcome | Coverage |
+|---|---|---|
+| **UC-WIN-VOICE-SLOW-HOST** (#688) | 실시간보다 느리고 전체 WAV로 응답하는 로컬 VoxCPM2 호스트에서도 합성된 모든 문장이 순서대로 들린다. "음성 처리 중…" 칩은 턴의 발화가 끝나거나 실패하면 닫히며 답변이 정돈된 뒤에 남아 있지 않는다. Busy(429)는 대기하여 재시도한다. 90초 동안 응답이 없는 요청이나 소진된 busy 예산은 단일 로컬 음성 실패 안내가 된다. 새 메시지는 이전 발화를 취소한다. 워밍업 홀드 정책(완성 후 재생, FR-VOICE.19/#621)은 변경되지 않으며, 지속적 RTF>1 하드웨어에서 "문장이 준비되는 대로 재생"할지 여부는 루크의 결정 대기 상태로 남긴다. | `audio-queue.test.ts`, `sentence-pipeline.test.ts`, `reveal-guard.test.ts`, `synthesize.test.ts` |
+
+Test Coverage Map (P02) — #688
+
+| S | 단위·계약 | 실기 | 비고 |
+|---|---|---|---|
+| UC-WIN-VOICE-SLOW-HOST | `audio-queue.test.ts` ("#688: a stream slot that ends with whole audio plays that audio in its own order", "#688: whole audio on a paused queue plays after resumePlayback"); `sentence-pipeline.test.ts` ("#688: a non-streaming local host is audible through the real AudioQueue", "#688: a serial job that starts after its sentence was revealed does not re-raise the tts stage", "FR-VOICE.20: a host that sends no chunks still releases through the enqueue path"); `reveal-guard.test.ts` ("acceptPipelineOutputStage (#688)"); `synthesize.test.ts` ("#688: a local request with no response within LOCAL_VOICE_REQUEST_TIMEOUT_MS fails with LocalVoiceTimeoutError and is not retried", "#688: caller abort still rejects as abort, not timeout", "#688: busy budget exhausted surfaces as a failure", "#688: an OK response does not dispatch preparing=false when nothing announced preparing", "#688: caller abort after the response arrives still aborts the request signal", "#688: request timeout timer does not fire after success") | attended real-shell E2E on the 4060: **pending (Luke)** | 상태: default (one sentence), in progress (serial queue), success (two sentences in order), error (timeout, 429 exhausted, interrupt). 좁은 폭: layout change 없음 |
+
 ### 2026-08-14 v0.1.7 launch QA (#447)
 
 | Scenario | User-observable outcome | Coverage |

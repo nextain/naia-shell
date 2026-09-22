@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	acceptPipelineOutputStage,
 	decideVoiceTailRelease,
 	type VoiceTailReleaseInput,
 } from "../reveal-guard";
@@ -47,3 +48,17 @@ describe("음성 진행 표시 해제 판정", () => {
 		});
 	});
 });
+
+describe("acceptPipelineOutputStage (#688)", () => {
+	it("accepts a pipeline output stage only while active and pending > 0", () => {
+		expect(acceptPipelineOutputStage({ active: true, pending: 1 })).toBe(true);
+		expect(acceptPipelineOutputStage({ active: true, pending: 2 })).toBe(true);
+	});
+
+	it("rejects a stage when sync is inactive or pending is 0", () => {
+		expect(acceptPipelineOutputStage({ active: false, pending: 1 })).toBe(false);
+		expect(acceptPipelineOutputStage({ active: true, pending: 0 })).toBe(false);
+		expect(acceptPipelineOutputStage({ active: false, pending: 0 })).toBe(false);
+	});
+});
+
