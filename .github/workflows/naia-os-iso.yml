@@ -192,8 +192,15 @@ jobs:
           NAIA_LIVE_CHECK
           chmod 0755 /usr/libexec/naia-check-live-session
           printf '%s\n' 'bc250-0.2.3-13980895-support9' > /usr/share/naia/live-iso-revision
+          if [ -d /app/work/rootfs/tmp ]; then
+              echo "[naia] cleaning underlying rootfs /tmp via /app mount"
+              rm -rf /app/work/rootfs/tmp/* /app/work/rootfs/tmp/.[!.]* /app/work/rootfs/tmp/..?* 2>/dev/null || true
+              ls -la /app/work/rootfs/tmp 2>/dev/null || true
+          fi
+          if [ -d /app ]; then
+              find /app -name "*node-compile-cache*" -exec rm -rf {} + 2>/dev/null || true
+          fi
           rm -rf /node-compile-cache /tmp/node-compile-cache /var/tmp/node-compile-cache /root/.cache/node* /var/roothome/.cache/node*
-          find / -maxdepth 2 -name "node-compile-cache" -exec rm -rf {} + 2>/dev/null || true
           CHECK_FOOTER
           bash -n "$CANDIDATE_HOOK"
           grep -Eq 'NAIA_CANDIDATE_(IMAGE|TAG|DIGEST)|embedded candidate|ostreecontainer --url|container-image-reference' \
