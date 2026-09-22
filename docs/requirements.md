@@ -139,7 +139,7 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 |----|---------|-----------|------|
 | **FR-SLOT.1** | **naia 계정 게이트**(binary, naiaKey 파생)가 최상위 분기. 계정=크레딧 접근 권한. **GPU·로컬 옵션은 게이트 무관**(R1-3 — `detectGpuVramGb>0` 또는 host 입력으로 계정·비계정 모두 로컬 엔드포인트 노출) | S-SLOT·UC12 | `settings-slots.contract.test.ts`(게이트 파생·로컬 무관) |
 | **FR-SLOT.2** | 6 슬롯 **각각 독립 설정**: LLM main · LLM sub(범용·기억전용 아님) · embedding · STT · TTS · video avatar. 3 그룹(Brain·Voice·Avatar) UI | S-SLOT | `settings-slots.contract.test.ts`·`settings-tab.test.ts` |
-| **FR-SLOT.3** | naia 계정 시 **Naia 기본값 자동 적용**(현재 main=gemini-flash·sub=gemini-flash-lite·embed=cpu offline·tts=Gemini TTS·stt=free). UI는 특정 공급자 이름이 아닌 Naia 관리 기본값으로 표기하며 사용자 개별 override를 허용한다. | S-SLOT | `settings-tab.test.ts`(기본값 적용) |
+| **FR-SLOT.3** | naia 계정 시 **Naia 기본값 자동 적용**(현재 main=gemini-flash·sub=gemini-flash-lite·embed=cpu offline·tts=Gemini TTS·stt=free). UI는 특정 공급자 이름이 아닌 Naia 관리 기본값으로 표기하며 사용자 개별 override를 허용한다. memory 역할 기본값 = Naia gpt-5.4-nano(#692, 직접 고른 memory 역할은 유지) | S-SLOT | `settings-tab.test.ts`(기본값 적용) |
 | **FR-SLOT.4** | 설정 탭·온보딩 모두 **게이트→슬롯 순서**. 구 engine/ai/models/memory 탭 중복 통합·재배열(회귀 无) | S-SLOT·UC12 | `onboarding-fresh.spec.ts` + Playwright E2E(게이트→클라우드 슬롯 흐름) |
 | **FR-SLOT.5** | sub-LLM은 `memoryLlmProvider` 필드명 유지(R1-1), **역할 범용화**(기억+압축+adk 배치용). rename→`subLlm*`은 Slice C dual-write | S-SLOT | `settings-slots.contract.test.ts`(필드명·역할) |
 | **FR-SLOT.6** (2026-07-15) | embedding 슬롯 offline(CPU) 모델에 **다국어(한국어) 2종** 노출 — `multilingual-e5-large`(1024d, 고정확) · `paraphrase-multilingual-MiniLM-L12-v2`(384d, 경량·빠름). all-MiniLM/all-mpnet 은 **영어 전용**이라 한국어 회상 품질 낮음(실측 2/5). **UI 라벨에 언어 명시**(`[영어 전용]`/`[한국어·다국어]`)로 유저가 구분 가능(핵심 요구). 배선 3-repo: naia-memory OfflineEmbeddingProvider(모델 allowlist·e5 q8 dtype·프리픽스) + naia-agent(검증 allowlist·dims 계약) + shell(union·드롭다운·i18n). 각 경계·SDLC 준수. 기본값(NAIA_SLOT_DEFAULTS) 무변경 | S-EMBKO·S-SLOT | `settings-slots.contract.test.ts`(offline union·다국어 2종 roundtrip) + naia-memory `embeddings.test.ts`(dims) + naia-agent `memory-adapter-embedding.contract.test.ts`(dims·allowlist) |
@@ -1285,3 +1285,17 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
 | **FR-CHAT-MARKDOWN.4** | 감정 태그·무대 지시 정리는 채팅 본문 마크다운을 바꾸지 않는다. 괄호·별표 구간은 한 줄 안의 영어 단어만으로 이루어지고 알려진 동작 단어를 포함할 때만 무대 지시로 지우며, `**굵게**`, 따옴표, 괄호 내용, 목록 항목, 줄 앞 들여쓰기와 줄바꿈은 보존한다. | UC-CHAT-MARKDOWN-FIDELITY-683 | `expression.test.ts`, `ChatMarkdown.test.tsx`, `e2e/chat-tools.spec.ts` | Done |
+
+## 기능 요구사항 (FR) — 작은 LLM 떠오름 설정 (#692)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-SURFACING.1** | 설정의 기억(Memory) 탭에 작은 LLM(surfacing · fact extraction) 섹션을 제공하고, 네 가지 선택(Naia 계정 gpt-5.4-nano 기본값, 로컬 Ollama, 로컬 vLLM, 떠오름 끄기)을 라디오 버튼으로 표시한다. | UC-MEMORY-SURFACING-692 | `SmallLlmSection.test.tsx`, `memory-settings.spec.ts` | Done |
+| **FR-SURFACING.2** | 상태 안내 줄은 에이전트의 실제 동작 적격성을 그대로 반영한다. 사용자의 명시적 선택 없이 과금 경로가 무단 활성화되지 않으며, 상속된 유료 provider/model인 경우 자동으로 끔 상태로 전환해 설명한다. | UC-MEMORY-SURFACING-692 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
+| **FR-SURFACING.3** | Naia 로그인 시 미설정 슬롯의 memory 역할 기본값으로 `nextain`/`gpt-5.4-nano`를 자동 적용하되, 사용자가 직접 선택한 memory 역할은 비파괴적으로 유지한다. | UC-MEMORY-SURFACING-692 | `settings-slots.contract.test.ts`, `src/components/__tests__/SettingsTab.test.tsx` (Naia defaults) | Done |
+| **FR-SURFACING.4** | Naia 게이트웨이 카탈로그를 확인하여 모델 미배포 시 준비 대기 상태를 안내하고, 카탈로그 조회 실패는 미확인 상태로 취급하여 차단 없이 기본 동작을 유지한다. | UC-MEMORY-SURFACING-692 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
+| **FR-SURFACING.5** | 로컬 OpenAI 호환 주소(Ollama/vLLM)는 입력 시 끝에 `/v1` 경로가 붙도록 정규화하여 저장하고 검증한다. | UC-MEMORY-SURFACING-692 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
+
+P04(2026-09-22): Vitest 단위·컴포넌트·계약 통과, 전체 Shell Vitest 신규 실패 0. 게이트웨이 카탈로그에 gpt-5.4-nano 없음(배포 전) → "준비 대기" 안내 확인. 실 셸 E2E 는 루크 확인 대기.
+
+

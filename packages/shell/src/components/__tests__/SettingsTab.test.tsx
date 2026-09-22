@@ -3238,7 +3238,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 			provider: "naia",
 			model: "gemini-3.1-flash-lite",
 		});
-		expect(saved.memoryLlmProvider).toBeUndefined();
+		expect(saved.memoryLlmProvider).toBe("nextain");
+		expect(saved.llmRoles?.memory).toMatchObject({ provider: "nextain", model: "gpt-5.4-nano" }); // #692
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
