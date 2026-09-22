@@ -429,7 +429,7 @@ export function createSentenceTtsPipeline(
 							duration: verdict.durationSeconds
 								? Number(verdict.durationSeconds.toFixed(2))
 								: null,
-							warmingHold: verdict.warmingHold,
+							graceMs: verdict.graceMs,
 						});
 					}
 				}
