@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: nextain/naia-os
-          ref: 02713380f091d614ff897376155f1f787329bcdd
+          ref: 53f25077f26c09e8ff146a7d04ea0f5821b0cb83
           path: image
 
       - name: Verify BC250 hardware guard tests

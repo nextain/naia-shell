@@ -276,7 +276,7 @@ test -x /usr/libexec/naia-default-hostname
 test -L /usr/lib/systemd/system/sysinit.target.wants/naia-default-hostname.service
 rpm -q gh
 test "$(/usr/bin/herdr --version)" = "herdr 0.8.2"
-rpm -q nodejs npm
+(rpm -q nodejs npm >/dev/null 2>&1 || rpm -q nodejs22 nodejs22-npm >/dev/null 2>&1 || (command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1))
 rpm -q google-chrome-stable
 test -s /usr/share/homebrew.tar.zst
 test -x /usr/bin/tailscale

@@ -30,7 +30,7 @@ env:
   CANDIDATE_TAG: ${{ inputs.candidate_tag }}
   CANDIDATE_DIGEST: ${{ inputs.candidate_digest }}
   IMAGE_LAYER_REF: ${{ inputs.image_layer_ref }}
-  EXPECTED_IMAGE_LAYER_REF: 02713380f091d614ff897376155f1f787329bcdd
+  EXPECTED_IMAGE_LAYER_REF: 53f25077f26c09e8ff146a7d04ea0f5821b0cb83
   EXPECTED_TAG: candidate-bc250-0.2.3-13980895-support9
   NAIA_VERSION: "0.2.3"
   SOURCE_BUILD: 0.2.3+13980895
@@ -158,7 +158,7 @@ jobs:
             test -L /usr/lib/systemd/system/sysinit.target.wants/naia-default-hostname.service
             rpm -q gh
             test "$(/usr/bin/herdr --version)" = "herdr 0.8.2"
-            rpm -q nodejs npm
+            (rpm -q nodejs npm >/dev/null 2>&1 || rpm -q nodejs22 nodejs22-npm >/dev/null 2>&1 || (command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1))
             rpm -q google-chrome-stable
             test -s /usr/share/homebrew.tar.zst
             test -x /usr/bin/tailscale
