@@ -1678,6 +1678,8 @@ Test Coverage Map (P02):
 - 같은 shell/agent 커밋으로 빌드하면 어느 개발 머신과 CI에서도 같은 naia-memory가 포함된다.
 - memory checkout의 HEAD가 다르거나 수정 파일이 있거나 package 이름·버전이 다르면 설치본을 만들기 전에 실패한다.
 - 최신 검증본의 제한된 다국어 correction/deletion 진단 표본에서 한국어 현재 사실 회상은 20/24에서 24/24로 +4건(+16.7%p, 상대 +20%) 개선됐다. 현재 사실 회상은 영어·일본어·한국어 모두 24/24이고 stale/deleted 노출은 언어별 각각 0/12다. 이는 해당 진단 workload 결과이며 보편적 성능 우위를 뜻하지 않는다.
+- 개발(`tauri:dev`)·PROD(`tauri:prod`)·설치본 빌드는 같은 준비 경로를 쓴다. 준비는 형제 naia-memory 를 memoryCommit 으로 옮기고(깨끗하고 분리된 HEAD 일 때만, 아니면 정확한 git 명령과 함께 실패) 빌드한 뒤, 에이전트에 설치된 사본이 그 결과와 같은지 확인한다. 엄격 검사만 하는 경로는 `pnpm -C packages/shell run agent:prepare` 를 안내한다. (#685)
+- 의존성 설치는 `--frozen-lockfile` 만 쓰며 추적 파일(예: `pnpm-lock.yaml`)을 바꾸면 파일 이름과 복구 명령을 알리고 실패한다. (#685)
 
 Test Coverage Map (P02):
 
@@ -1685,6 +1687,7 @@ Test Coverage Map (P02):
 |---|---|---|
 | UC-V023-MEMORY-PAIRING | vitest `src/test/agent-pairing-drift.contract.test.ts` | manifest 형식, CI checkout SHA, staging commit·clean·package gate 결선 |
 | UC-V023-MEMORY-PAIRING | vitest `packages/shell/scripts/__tests__/platform-matrix.test.ts` | installer workflow의 agent·memory 정확한 revision checkout |
+| UC-V023-MEMORY-PAIRING | vitest `packages/shell/scripts/__tests__/agent-pairing.test.ts` | 준비 경로 공유(dev·PROD), 형제 memory 이동·거부, 설치본 대조, frozen 설치, 추적 파일 변경 거부 |
 
 ### UC-PERF-BUNDLE-BUDGET — 선택 기능은 필요할 때 내려받는다 (#431)
 

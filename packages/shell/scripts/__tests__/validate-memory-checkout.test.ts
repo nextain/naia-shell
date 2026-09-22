@@ -58,4 +58,30 @@ describe("validateMemoryCheckout", () => {
 			"package identity mismatch",
 		);
 	});
+
+	it("uses options.gitOutput when provided", () => {
+		const repository = mkdtempSync(join(tmpdir(), "naia-memory-plain-"));
+		temporaryRepositories.push(repository);
+		writeFileSync(
+			join(repository, "package.json"),
+			`${JSON.stringify({ name: "@nextain/naia-memory", version: "0.1.4" })}\n`,
+		);
+		const commit = "a".repeat(40);
+		let status = "";
+		const gitOutput = (_dir: string, args: string[]) => {
+			if (args[0] === "rev-parse" && args.includes("--show-toplevel")) return repository;
+			if (args[0] === "rev-parse" && args.includes("HEAD")) return commit;
+			if (args[0] === "status") return status;
+			return null;
+		};
+
+		expect(
+			validateMemoryCheckout(repository, commit, "0.1.4", { gitOutput }),
+		).toBeNull();
+
+		status = " M x";
+		expect(
+			validateMemoryCheckout(repository, commit, "0.1.4", { gitOutput }),
+		).toBe("checkout must be clean");
+	});
 });
