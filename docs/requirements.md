@@ -1152,9 +1152,9 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-MEMORY-PAIRING.1** | pairing manifest는 agent/proto와 함께 naia-memory의 정확한 40자 commit과 package version을 선언한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts` | Done |
 | **FR-MEMORY-PAIRING.2** | production staging은 선언된 memory 저장소 root·HEAD·clean 상태·package 이름·버전을 빌드 전에 fail-closed로 검증한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts` | Done |
 | **FR-MEMORY-PAIRING.3** | installer CI가 checkout하는 memory commit은 pairing manifest와 일치한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts`, `platform-matrix.test.ts` | Done |
-| **FR-MEMORY-PAIRING.4** | `tauri:dev`, `tauri:prod`, `tauri-with-mode build` 는 같은 페어링 준비(`ensurePairedAgentCheckout`)를 쓰고, 엄격 해석기는 실패 시 `agent:prepare` 명령을 안내한다. | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts` | Done |
-| **FR-MEMORY-PAIRING.5** | 준비는 형제 naia-memory 를 memoryCommit 으로 옮기되 수정 파일이 있거나 브랜치에 있으면 정확한 git 명령과 함께 실패하고, 이동 후 root·HEAD·clean·package 를 검증·빌드하며 에이전트에 설치된 `dist/memory` 가 형제 빌드와 같은지 대조한다(다르면 frozen 강제 재설치 후에도 다르면 실패). | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts`, `validate-memory-checkout.test.ts` | Done |
-| **FR-MEMORY-PAIRING.6** | 준비의 모든 설치는 `--frozen-lockfile` 이고 비-frozen 대체가 없으며, 설치 후 추적 파일이 바뀌면 파일과 복구 명령을 알리고 실패한다. | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts` | Done |
+| **FR-MEMORY-PAIRING.5** | `tauri:dev`, `tauri:prod`, `tauri-with-mode build` 는 같은 페어링 준비(`ensurePairedAgentCheckout`)를 쓰고, 엄격 해석기는 실패 시 `agent:prepare` 명령을 안내한다. | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts` | Done |
+| **FR-MEMORY-PAIRING.6** | 준비는 형제 naia-memory 를 memoryCommit 으로 옮기되 수정 파일이 있거나 브랜치에 있으면 정확한 git 명령과 함께 실패하고, 이동 후 root·HEAD·clean·package 를 검증·빌드하며 에이전트에 설치된 `dist/memory` 가 형제 빌드와 같은지 대조한다(다르면 frozen 강제 재설치 후에도 다르면 실패). | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts`, `validate-memory-checkout.test.ts` | Done |
+| **FR-MEMORY-PAIRING.7** | 준비의 모든 설치는 `--frozen-lockfile` 이고 비-frozen 대체가 없으며, 설치 후 추적 파일이 바뀌면 파일과 복구 명령을 알리고 실패한다. | UC-V023-MEMORY-PAIRING | `agent-pairing.test.ts` | Done |
 
 ## 기능 요구사항 (FR) — 초기 번들 예산 (#431)
 
