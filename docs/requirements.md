@@ -700,6 +700,7 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-BGM.16** | 선호 포트(운영 18791 / dev 18891)가 남의 프로세스에 점유되면 빈 포트를 골라 sidecar를 띄우고 실제 포트를 UI에 알린다. 기동에 실패하면 조용히 BGM 없이 진행하지 않고 사용자에게 실패를 보여 준다. | In review | Rust allocate 단위 + bgm-sidecar-url + ChatArea 배너 |
 | **FR-BGM.17** | play 도구는 iframe이 **playing**(또는 실제 error/ended)으로 관측될 때까지 기다린다. `loading`만으로는 확인이 아니다. 확인되면 currentTrack을 주고 제목을 말해도 된다고 지시한다. 도구 JSON은 사용자 채팅 본문에 보이지 않는다. | In review | bgm-skill waitForAck 단위 + visible-chat-text 단위 |
 | **FR-BGM.18** | AI next/prev는 UI 버튼과 같은 최신 플레이리스트 경로를 쓴다. 유튜브·로컬 혼합 목록에서 로컬 파일을 건너뛰지 않고, 로컬이 실제로 재생되면 status/next 결과가 playing+제목이 된다. Tauri WebView가 YouTube postMessage `source`를 null로 줘도 playing/infoDelivery는 관측한다. 떨어져 나간 프레임의 null-source error/ended는 다음 곡을 덮어쓰지 않는다. | In review | BgmPlayer 로컬 next·null-source 단위 + decideIframeMessageSource 단위 |
+| **FR-BGM.19** | 셸의 프로세스 소유 기록 판정에서 이미 종료된 프로세스는 살아 있는 신원을 갖지 않는다. Windows에서 종료된 셸의 프로세스 객체가 다른 핸들로 남아 생성 시각이 기록과 같아도 소유자를 살아 있다고 보지 않으며, 새 셸은 그 BGM 기록을 교체하고 새 sidecar를 채택한다. 종료 코드를 읽지 못하는 소유자와 실제로 살아 있는 다른 셸의 기록은 보호한다 (#684). | Done | windows.rs `process_identity_tests` + lib.rs `exited_owner_with_open_handle_is_not_live`(실 Windows 프로세스) |
 
 ## Onboarding appearance and voice ownership (2026-08-06)
 

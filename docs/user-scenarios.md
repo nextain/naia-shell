@@ -868,6 +868,27 @@ Test Coverage Map
 |---|---|---|
 | UC-BGM-ORPHAN-PORT-RECOVERY | `src-tauri/src/lib.rs:13661` `bgm_port_reclaim_terminates_real_stale_sidecar_listener`: 실제 node 리스너를 포트에 앉히고 회수 후 해제까지 실측 / `:13612` `bgm_port_reclaim_kills_only_proven_sidecar_holder`: 남의 프로세스를 죽이지 않는지 | 재시작 회복·포트 경합·사용자에게 보이는 실패 문구를 한 UC 가 함께 덮는다 |
 
+## UC-BGM-STALE-OWNER-ADOPT — 죽은 셸의 BGM 소유 기록이 새 셸을 막지 않는다 (#684)
+
+개발 셸을 켰더니 "BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다." 배너가 뜬다.
+로그에는 새 sidecar를 띄운 직후 "Preserving live bgm-server record owned by another Shell"이
+반복된다. 원인은 앞 세션 셸이 정리 없이 끝나며 남긴 소유 기록이다. Windows에서는 끝난
+프로세스라도 다른 프로세스가 핸들을 쥐고 있으면 생성 시각을 그대로 돌려주므로, 기록의
+소유자 신원과 같아 보여 "살아 있는 다른 셸"로 오판했다.
+
+- 끝난 프로세스에는 살아 있는 신원이 없다. 종료 코드가 STILL_ACTIVE가 아니면 신원 없음으로
+  보고, 소유자 생존 판정은 기존 `is_pid_alive`로 넘어가 죽은 소유자로 판정한다.
+- 소유자가 죽었으면 새 셸이 기록을 자기 것으로 바꾸고 방금 띄운 sidecar를 채택한다.
+  음악 검색이 동작한다.
+- 실제로 살아 있는 다른 셸의 기록은 그대로 보호한다. 종료 코드를 읽지 못하면 살아 있는
+  것으로 본다. 죽은 자식 프로세스는 종료 대상이 되지 않는다.
+
+Test Coverage Map
+
+| UC | 단위·계약 | 비고 |
+|---|---|---|
+| UC-BGM-STALE-OWNER-ADOPT | `src-tauri/src/platform/windows.rs` `process_identity_tests`: 실행 중 신원 유지·종료 코드 0/1 신원 없음·조회 실패 보수 유지 / `src-tauri/src/lib.rs` `exited_owner_with_open_handle_is_not_live`: 실제 Windows 프로세스를 종료하고 핸들을 쥔 채 소유자 비생존·기록 교체 허용·자식 종료 비대상 확인 | 실제 셸에서 배너가 사라지고 음악 검색이 되는지는 사람 E2E(대기) |
+
 ### Test Coverage Map
 
 | Scenario | Unit / contract | UI / integration |
