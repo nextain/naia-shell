@@ -15,7 +15,7 @@ function DeferredHerdrWorkspaceCenterArea(props: AppCenterProps) {
 	);
 }
 
-/** Model-facing workspace tools — read surfaces only (#611). */
+/** Model-facing workspace tools (#611 keep list + #687 open-file edit exception). */
 export const WORKSPACE_TOOLS: NaiaTool[] = [
 	{
 		name: "skill_workspace_get_sessions",
@@ -44,9 +44,38 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 	{
 		name: "skill_workspace_get_open_file",
 		description:
-			"현재 에디터에 열려 있는 파일의 경로와 내용을 반환한다. 파일이 없으면 { open: false }를 반환한다.",
+			"현재 에디터에 열려 있는 파일의 경로·내용·sha256 을 반환한다. 파일이 없으면 { open: false }. 민감 경로나 1MB 초과 파일은 내용 없이 error 를 돌려준다.",
 		parameters: { type: "object", properties: {}, required: [] },
 		tier: 0, // auto (read-only)
+	},
+	{
+		name: "skill_workspace_edit_open_file",
+		description:
+			"현재 에디터에 열려 있는 파일 한 개만 수정한다. 사용자가 에디터의 변경 미리보기를 보고 승인해야만 저장된다. path 는 skill_workspace_get_open_file 이 돌려준 path 와 같아야 한다. oldText(파일 안에서 정확히 한 번 나오는 원문)와 newText 로 부분 수정하거나, content 로 전체를 바꾼다. 결과 status: applied | rejected | stale | denied | invalid | error. rejected 면 저장되지 않았다. 편집기 안 승인 창이 유일한 승인 단계다(50초 안에 답이 없으면 저장하지 않는다).",
+		parameters: {
+			type: "object",
+			properties: {
+				path: { type: "string", description: "현재 열린 파일의 절대 경로" },
+				oldText: {
+					type: "string",
+					description: "바꿀 원문(파일에서 정확히 한 번 나와야 함)",
+				},
+				newText: {
+					type: "string",
+					description: "oldText 를 대체할 새 텍스트",
+				},
+				content: {
+					type: "string",
+					description: "파일 전체를 바꿀 새 내용(oldText/newText 대신)",
+				},
+			},
+			required: ["path"],
+		},
+		// tier 0 = no generic agent approval prompt. naia-agent main a1fb92d:
+		// grpc-server.ts:489 maps tier>0 to "ask" and 0/unset to none; chat-turn-handler.ts:436 tierOf()
+		// and :635 emit approvalRequest only for gated tools. The real, non-bypassable gate is the
+		// in-editor diff review (every write needs its explicit Approve; there is no "always allow").
+		tier: 0,
 	},
 	{
 		name: "skill_workspace_close_file",

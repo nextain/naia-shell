@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import { forwardRef, useEffect, useImperativeHandle } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type NaiaContextBridge,
@@ -28,14 +29,35 @@ vi.mock("../../../lib/adk-store", () => ({
 	getAdkPath: () => "/work/naia",
 }));
 
+let mockActiveApp: string | null = "workspace";
+const appStoreListeners = new Set<() => void>();
+
+function getAppStoreState() {
+	return {
+		activeApp: mockActiveApp,
+		setActiveApp: (app: string | null) => {
+			mockActiveApp = app;
+			appStoreListeners.forEach((l) => l());
+		},
+		setActiveAppContext: vi.fn(),
+	};
+}
+
+const useAppStoreMock: any = (selector?: (state: any) => any) => {
+	const [state, setState] = useState(() => getAppStoreState());
+	useEffect(() => {
+		const listener = () => setState(getAppStoreState());
+		appStoreListeners.add(listener);
+		return () => {
+			appStoreListeners.delete(listener);
+		};
+	}, []);
+	return typeof selector === "function" ? selector(state) : state;
+};
+useAppStoreMock.getState = () => getAppStoreState();
+
 vi.mock("../../../stores/app", () => ({
-	useAppStore: {
-		getState: () => ({
-			activeApp: "workspace",
-			setActiveApp: vi.fn(),
-			setActiveAppContext: vi.fn(),
-		}),
-	},
+	useAppStore: useAppStoreMock,
 }));
 
 vi.mock("../Terminal", () => ({
@@ -174,6 +196,8 @@ describe("HerdrWorkspaceCenterArea", () => {
 		editorRevealLocation.mockReset();
 		editorReloadFile.mockReset();
 		toolHandlers.clear();
+		useAppStoreMock.getState().setActiveApp("workspace");
+		vi.mocked(bridge.pushContext).mockClear();
 	});
 
 	it("places File Tree above Spaces and keeps Herdr mounted behind the viewer", async () => {
@@ -308,8 +332,8 @@ describe("HerdrWorkspaceCenterArea", () => {
 		expect(screen.getByTestId("file-tree-selection")).toHaveTextContent(
 			"/work/naia/src/App.tsx",
 		);
+		expect(toolHandlers.has("skill_workspace_edit_open_file")).toBe(true);
 		for (const removed of [
-			"skill_workspace_edit_open_file",
 			"skill_workspace_execute",
 			"skill_workspace_focus_session",
 			"skill_workspace_send_to_session",
@@ -360,7 +384,13 @@ describe("HerdrWorkspaceCenterArea", () => {
 				if (command === "workspace_set_root") return "/work/naia";
 				if (command === "workspace_resolve_file_location")
 					return "/work/naia/src/App.tsx";
-				if (command === "workspace_read_file") return "before before";
+				if (command === "workspace_agent_read_open_file")
+					return {
+						path: "/work/naia/src/App.tsx",
+						content: "before before",
+						sha256: "sha-before",
+						size: 13,
+					};
 				return args ?? null;
 			},
 		);
@@ -368,7 +398,7 @@ describe("HerdrWorkspaceCenterArea", () => {
 			"../HerdrWorkspaceCenterArea"
 		);
 		const view = render(<HerdrWorkspaceCenterArea naia={bridge} />);
-		await waitFor(() => expect(toolHandlers.size).toBe(8));
+		await waitFor(() => expect(toolHandlers.size).toBe(9));
 
 		const sessions = JSON.parse(
 			String(await toolHandlers.get("skill_workspace_get_sessions")?.({})),
@@ -393,7 +423,6 @@ describe("HerdrWorkspaceCenterArea", () => {
 			"Error: path is required",
 		);
 		for (const removed of [
-			"skill_workspace_edit_open_file",
 			"skill_workspace_execute",
 			"skill_workspace_focus_session",
 			"skill_workspace_new_session",
@@ -525,6 +554,8 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		editorRevealLocation.mockReset();
 		editorReloadFile.mockReset();
 		toolHandlers.clear();
+		useAppStoreMock.getState().setActiveApp("workspace");
+		vi.mocked(bridge.pushContext).mockClear();
 	});
 
 	it("registers skill_workspace_get_sessions handler on mount", async () => {
@@ -618,6 +649,7 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		);
 		expect([...toolHandlers.keys()].sort()).toEqual([
 			"skill_workspace_close_file",
+			"skill_workspace_edit_open_file",
 			"skill_workspace_focus_space",
 			"skill_workspace_get_open_file",
 			"skill_workspace_get_sessions",
@@ -712,6 +744,51 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		await waitFor(() => {
 			expect(screen.queryByTestId("workspace-viewer")).toBeNull();
 			expect(screen.getByTestId("embedded-herdr-terminal")).toBeInTheDocument();
+		});
+	});
+
+	it("pushes context with herdr: null when herdr_snapshot fails/rejects (D1)", async () => {
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "herdr_pty_create") return { pty_id: "pty-7", pid: 7 };
+			if (command === "herdr_snapshot") throw new Error("snapshot failed");
+			return null;
+		});
+		await renderHerdr();
+		await waitFor(() => {
+			expect(bridge.pushContext).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "workspace",
+					data: expect.objectContaining({ herdr: null }),
+				}),
+			);
+		});
+	});
+
+	it("does not push workspace context while activeApp is not workspace, pushes after setActiveApp('workspace') (D3)", async () => {
+		respondWith(snapshot);
+		act(() => {
+			useAppStoreMock.getState().setActiveApp("browser");
+		});
+		vi.mocked(bridge.pushContext).mockClear();
+		await renderHerdr();
+
+		// Should not push while activeApp !== "workspace"
+		expect(bridge.pushContext).not.toHaveBeenCalled();
+
+		// Switch activeApp to workspace
+		act(() => {
+			useAppStoreMock.getState().setActiveApp("workspace");
+		});
+
+		await waitFor(() => {
+			expect(bridge.pushContext).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "workspace",
+					data: expect.objectContaining({
+						herdr: expect.anything(),
+					}),
+				}),
+			);
 		});
 	});
 });

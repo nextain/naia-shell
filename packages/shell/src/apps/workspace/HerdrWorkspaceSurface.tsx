@@ -3,6 +3,8 @@ import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { t } from "../../lib/i18n";
 import { DocTabBar } from "./DocTabBar";
 import type { EditorHandle } from "./Editor";
+import { OpenFileEditReview } from "./OpenFileEditReview";
+import type { OpenFileEditProposal } from "./open-file-edit";
 import type {
 	FileLocation,
 	TerminalHandle,
@@ -41,6 +43,9 @@ interface SurfaceProps {
 	closeDoc: (path: string) => void;
 	sendToNaia: (path: string) => void;
 	editorLoader?: typeof loadEditor;
+	editProposal?: OpenFileEditProposal | null;
+	onApproveEdit?: (id: string) => void;
+	onRejectEdit?: (id: string) => void;
 }
 
 export function HerdrWorkspaceSurface(props: SurfaceProps) {
@@ -152,6 +157,13 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 							onAskAi={props.sendToNaia}
 						/>
 					</div>
+					{props.editProposal && props.onApproveEdit && props.onRejectEdit && (
+						<OpenFileEditReview
+							proposal={props.editProposal}
+							onApprove={props.onApproveEdit}
+							onReject={props.onRejectEdit}
+						/>
+					)}
 					<div className="herdr-workspace__editor">
 						<ErrorBoundary
 							key={editorLoadAttempt}

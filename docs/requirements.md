@@ -1261,9 +1261,10 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
-| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억은 자동 recall/save 경로로 유지하고 별도 모델 도구를 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
-| **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 도구, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
+| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억은 자동 recall/save 경로로 유지하고 별도 모델 도구를 추가하지 않는다. 단, #687 예외로 `skill_workspace_edit_open_file`(열린 파일 한정·승인 필수)을 포함한다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
+| **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 도구, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다. 예외: FR-TOOLS-SURFACE.4. `write_file`·셸 명령 등 일반 쓰기 도구는 계속 노출하지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
 | **FR-TOOLS-SURFACE.3** | 도구 목록 로딩 실패는 빈 성공 목록으로 가장하지 않으며, 목록을 사용하는 UI는 로딩·빈 목록·성공·오류·좁은 폭에서 기존 접근 가능한 상태 표현과 재시도 경계를 유지한다. | UC-TOOLS-SURFACE-611 | `SkillsTab.test.tsx`; `packages/shell/e2e/naia-omni-voice-tools.spec.ts` | Done |
+| **FR-TOOLS-SURFACE.4** | #687 좁은 예외 — 출처: 루크 2026-09-22 「쓰기 가능하게 해줘」. 모델은 워크스페이스 에디터에 현재 열린 파일 한 개에만 `skill_workspace_edit_open_file` 로 수정을 제안할 수 있다. 에디터 안 변경 미리보기에서 사용자가 매번 승인해야 저장되고, 거절·시간초과(50초, 에이전트 60초 한도 미만)·열린 파일 전환 시 아무것도 쓰지 않고 rejected 를 돌려준다. 미리보기 뒤 디스크(sha256)나 에디터 내용이 바뀌면 stale 로 거부한다. 민감 경로·naia-settings 쓰기·1MB 초과는 denied. tier 0(에이전트 일반 승인 없음 — naia-agent grpc-server.ts:489, chat-turn-handler.ts:436·635). 유일한 승인은 편집기 diff 승인이며 '항상 허용'이 없고, 남은 시간을 표시한다. | UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, Rust `agent_open_file_tests`, `e2e/687-open-file-edit.spec.ts`; attended E2E in the real shell pending | Done |
 
 ## 기능 요구사항 (FR) — 개발 인스턴스 URL과 워크스페이스 바인드 (#651 / #653)
 
@@ -1279,6 +1280,14 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 |---|---|---|---|---|
 | **FR-WORKSPACE-AI-CONTEXT.1** | AI 에이전트는 사용자가 열어둔 파일 목록(`openDocs`), 현재 활성 문서(`openFilePath`), 커서 위치(`line`, `column`, `selectedText`), 및 Herdr 터미널 최근 출력(`terminalTail`)을 `pushContext`와 도구(`skill_workspace_get_open_file`, `skill_workspace_get_terminal_output`)를 통해 인지한다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `Terminal.tsx`, `Editor.tsx` | Done |
 | **FR-WORKSPACE-AI-CONTROL.1** | AI 에이전트는 사용자가 보고 있는 Herdr 터미널로 가시적 명령을 실행(`skill_workspace_terminal_exec`)하고, 화면 전환(`skill_workspace_set_surface`), 문서 닫기(`skill_workspace_close_file`), 스페이스 포커스(`skill_workspace_focus_space`)를 제어할 수 있다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `model-facing-tools.contract.test.ts` | Done |
+
+## 기능 요구사항 (FR) — 열린 파일 읽기 경계·컨텍스트 (#687)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-WORKSPACE-OPEN-FILE.1** | 에이전트용 열린 파일 읽기·쓰기(`workspace_agent_read_open_file`/`workspace_agent_write_open_file`)는 naia-agent `fs-sandbox.ts` 민감 경로 목록과 1MB 상한을 그대로 적용한다(사용자 에디터 자체의 열기·저장은 바뀌지 않는다). | UC-WORKSPACE-OPEN-FILE-EDIT-687 | Rust `agent_open_file_tests`, bridge test | Done |
+| **FR-WORKSPACE-OPEN-FILE.2** | 열린 파일 컨텍스트는 Herdr 스냅샷이 없어도 전달된다(herdr=null). | UC-WORKSPACE-OPEN-FILE-EDIT-687 | `herdr-workspace.test.tsx` | Done |
+| **FR-WORKSPACE-OPEN-FILE.3** | 워크스페이스 앱은 활성일 때만 컨텍스트를 올리고, 활성화 즉시 다시 올린다. 다른 앱이 활성일 때 그 앱의 컨텍스트를 덮어쓰지 않는다. | UC-WORKSPACE-OPEN-FILE-EDIT-687 | `herdr-workspace.test.tsx` | Done |
 
 ## 기능 요구사항 (FR) — 채팅 마크다운 원문 보존 (#683)
 

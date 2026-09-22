@@ -13254,6 +13254,8 @@ pub fn run() {
             workspace::workspace_read_file_bytes,
             workspace::workspace_file_size,
             workspace::workspace_write_file,
+            workspace::workspace_agent_read_open_file,
+            workspace::workspace_agent_write_open_file,
             workspace::workspace_get_git_info,
             workspace::workspace_get_sessions,
             workspace::workspace_get_progress,

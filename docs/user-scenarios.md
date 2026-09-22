@@ -1918,6 +1918,7 @@ Test Coverage Map (P02)
 ## UC-TOOLS-SURFACE-611 — model-facing tool boundary
 
 Naia가 대화나 음성 세션을 시작할 때 모델에 전달되는 도구는 제품에 남긴 관찰·표현 표면만 포함한다: 시간, 날씨, 메모, 워크스페이스 파일 읽기, YouTube BGM, 인앱 브라우저. 기억은 별도 자동 회상·저장 경로로 남기며 모델 도구 이름으로 만들지 않는다. 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 풀, ADK `SKILL.md` 로더, 알림 및 그 밖의 작업 도구는 모델 목록에서 사라진다.
+Exception #687: `skill_workspace_edit_open_file` (open editor file only, per-edit approval) — see UC-WORKSPACE-OPEN-FILE-EDIT-687.
 
 | 상태 | 사용자 기대 |
 |---|---|
@@ -1992,6 +1993,39 @@ Test Coverage Map (P02)
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
 | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` |
+
+## UC-WORKSPACE-OPEN-FILE-EDIT-687 — AI edits the open editor file with per-edit approval
+
+- **Actor**: 사용자, AI 에이전트(Naia)
+- **Preconditions**: 워크스페이스 앱이 활성화되어 있고 편집기에 파일이 하나 열려 있음.
+- **Main Flow**:
+  1. 사용자가 워크스페이스 편집기에 파일을 열고 Naia에게 내용 수정을 요청한다.
+  2. Naia가 `skill_workspace_edit_open_file`을 호출한다.
+  3. 편집기 상단에 변경 diff 미리보기 패널(OpenFileEditReview)과 카운트다운 타이머(50초)가 나타난다.
+  4. 사용자가 변경 내용을 확인하고 '승인' 버튼을 누른다.
+  5. 파일이 디스크에 저장되고 편집기 버퍼가 갱신되며, 에이전트에게 applied 결과가 반환된다.
+- **Alternates**:
+  - **거절(Reject)**: 사용자가 '거절' 버튼을 누르거나 Escape 키를 누르면 아무것도 저장하지 않고 rejected 반환.
+  - **시간초과(Timeout)**: 50초 동안 응답이 없으면 패널이 닫히고 저장 없이 rejected 반환.
+  - **파일 전환(Switched)**: 승인 대기 중 다른 탭으로 전환하거나 문서를 닫으면 저장 없이 rejected 반환.
+  - **불일치(Stale)**: 미리보기 생성 후 디스크나 편집기 내용이 바뀌면(sha256 불일치) 저장하지 않고 stale 반환.
+  - **거부(Denied)**: 민감 경로(`.env`, `id_rsa`, `data-private` 등)나 naia-settings, 또는 1MB 초과 파일은 검토 창 없이 denied 반환.
+  - **Herdr 비활성(Herdr down)**: Herdr 터미널 스냅샷이 없어도 열린 파일 컨텍스트는 정상 전달된다(herdr=null).
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 워크스페이스 편집기에 열린 파일에 대해 수정을 요청하기 전까지는 편집기 상태가 유지된다. |
+| 빈 목록 | 열린 파일이 없으면 도구 호출 시 아무것도 수정할 수 없으며 명확한 안내를 반환한다. |
+| 진행 | diff 미리보기 패널이 표시되고 남은 시간 카운트다운(초)이 1초 간격으로 갱신되며, 승인 전까지 디스크 쓰기는 발생하지 않는다. |
+| 성공 | 사용자가 승인하면 변경사항이 디스크에 기록되고 편집기 내용이 갱신되며 applied 상태를 수신한다. |
+| 오류 | 파일이 stale 상태이거나 민감 경로/1MB 초과로 거부(denied)되면 오류 안내를 표시하고 디스크를 변경하지 않는다. |
+| 좁은 폭 | 좁은 창(900px)에서 편집기 영역 안에 승인/거절 버튼과 카운트다운, diff 영역이 잘리지 않고 온전히 표시된다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, `workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` |
 
 ## UC-CHAT-MARKDOWN-FIDELITY-683 — 채팅 본문이 원문 마크다운 그대로 보인다 (#683)
 

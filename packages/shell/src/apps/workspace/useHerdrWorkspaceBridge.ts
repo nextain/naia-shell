@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject, useCallback, useEffect, useRef } from "react";
 import { type AppCenterProps, appRegistry } from "../../lib/app-registry";
 import { useAppStore } from "../../stores/app";
 import type { EditorHandle } from "./Editor";
@@ -10,8 +10,23 @@ import {
 	type HerdrWorkspace,
 	snapshotSessions,
 } from "./herdr";
+import {
+	OPEN_FILE_EDIT_APPROVAL_TIMEOUT_MS,
+	type OpenFileEditArgs,
+	type OpenFileEditProposal,
+	applyOpenFileEdit,
+	diffLines,
+	editResult,
+} from "./open-file-edit";
 import { writePty } from "./pty-ipc";
 import type { PtyCreated } from "./useHerdrRuntime";
+
+interface AgentOpenFile {
+	path: string;
+	content: string;
+	sha256: string;
+	size: number;
+}
 
 interface HerdrWorkspaceBridgeOptions {
 	naia: AppCenterProps["naia"];
@@ -29,6 +44,7 @@ interface HerdrWorkspaceBridgeOptions {
 	refreshSnapshot: () => Promise<void>;
 	showHerdr: () => void;
 	setSurface?: (surface: "herdr" | "viewer") => void;
+	setEditProposal?: (proposal: OpenFileEditProposal | null) => void;
 }
 
 export function useHerdrWorkspaceBridge({
@@ -47,6 +63,7 @@ export function useHerdrWorkspaceBridge({
 	refreshSnapshot: _refreshSnapshot,
 	showHerdr,
 	setSurface,
+	setEditProposal,
 }: HerdrWorkspaceBridgeOptions) {
 	const openFilePathRef = useRef(openFilePath);
 	openFilePathRef.current = openFilePath;
@@ -58,12 +75,47 @@ export function useHerdrWorkspaceBridge({
 	showHerdrRef.current = showHerdr;
 	const setSurfaceRef = useRef(setSurface);
 	setSurfaceRef.current = setSurface;
+	const setEditProposalRef = useRef(setEditProposal);
+	setEditProposalRef.current = setEditProposal;
 	const findWorkspaceRef = useRef(findWorkspace);
 	findWorkspaceRef.current = findWorkspace;
 	const focusWorkspaceRef = useRef(focusWorkspace);
 	focusWorkspaceRef.current = focusWorkspace;
 	const ptyRef = useRef(pty);
 	ptyRef.current = pty;
+
+	const pendingRef = useRef<{
+		id: string;
+		path: string;
+		resolve: (decision: "approve" | "reject" | "timeout" | "superseded") => void;
+	} | null>(null);
+	const busyRef = useRef(false);
+
+	const approveEdit = useCallback((id: string) => {
+		if (pendingRef.current && pendingRef.current.id === id) {
+			pendingRef.current.resolve("approve");
+		}
+	}, []);
+
+	const rejectEdit = useCallback((id: string) => {
+		if (pendingRef.current && pendingRef.current.id === id) {
+			pendingRef.current.resolve("reject");
+		}
+	}, []);
+
+	useEffect(() => {
+		if (pendingRef.current && openFilePath !== pendingRef.current.path) {
+			pendingRef.current.resolve("superseded");
+		}
+	}, [openFilePath]);
+
+	useEffect(() => {
+		return () => {
+			if (pendingRef.current) {
+				pendingRef.current.resolve("superseded");
+			}
+		};
+	}, []);
 
 	useEffect(() => {
 		appRegistry.updateApi("workspace", {
@@ -113,15 +165,22 @@ export function useHerdrWorkspaceBridge({
 				}
 				const cursor = editorRef.current?.getCursorLocation() ?? null;
 				try {
-					const content = await invoke<string>("workspace_read_file", {
-						path: currentPath,
-					});
+					const file = await invoke<AgentOpenFile>(
+						"workspace_agent_read_open_file",
+						{ path: currentPath },
+					);
+					const editorText = editorRef.current?.getText() ?? null;
+					const unsavedEditorChanges =
+						editorText !== null && editorText !== file.content;
 					return JSON.stringify({
 						open: true,
 						path: currentPath,
 						openDocs: docs,
 						cursor,
-						content,
+						content: file.content,
+						sha256: file.sha256,
+						size: file.size,
+						unsavedEditorChanges,
 					});
 				} catch (error) {
 					return JSON.stringify({
@@ -131,6 +190,219 @@ export function useHerdrWorkspaceBridge({
 						cursor,
 						error: String(error),
 					});
+				}
+			}),
+			naia.onToolCall("skill_workspace_edit_open_file", async (args) => {
+				const path = String(args.path ?? "").trim();
+				const current = openFilePathRef.current;
+				if (!current) {
+					return editResult("invalid", {
+						reason: "no file is open in the editor",
+					});
+				}
+				if (path !== current) {
+					return editResult("invalid", {
+						reason: "path is not the file open in the editor",
+						openFilePath: current,
+					});
+				}
+				if (busyRef.current) {
+					return editResult("invalid", {
+						reason: "another edit is waiting for approval",
+					});
+				}
+				busyRef.current = true;
+				try {
+					if (pendingRef.current) {
+						return editResult("invalid", {
+							reason: "another edit is waiting for approval",
+						});
+					}
+					let editor = editorRef.current;
+					const isEditorReady = (ed: typeof editor) =>
+						Boolean(ed && ed.getFilePath() === path);
+
+					if (!isEditorReady(editor)) {
+						const pollIntervalMs = 100;
+						const maxWaitMs = 3000;
+						let waitedMs = 0;
+						while (waitedMs < maxWaitMs) {
+							await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+							waitedMs += pollIntervalMs;
+							editor = editorRef.current;
+							if (isEditorReady(editor)) {
+								break;
+							}
+						}
+					}
+
+					if (!editor || editor.getFilePath() !== path) {
+						return editResult("error", {
+							reason: "editor is not showing the open file",
+						});
+					}
+					if (editor.flushPendingSave()) {
+						return editResult("stale", {
+							reason:
+								"the user has unsaved edits in this file; ask again after it saves",
+						});
+					}
+					let base: AgentOpenFile;
+					try {
+						base = await invoke<AgentOpenFile>(
+							"workspace_agent_read_open_file",
+							{ path },
+						);
+					} catch (error) {
+						const msg = (
+							error instanceof Error ? error.message : String(error)
+						).replace(/^Error:\s*/, "");
+						return editResult("denied", { reason: msg });
+					}
+					let text = editor.getText();
+					if (text !== null && text !== base.content) {
+						const pollIntervalMs = 100;
+						const maxWaitMs = 1500;
+						let waitedMs = 0;
+						while (waitedMs < maxWaitMs) {
+							await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+							waitedMs += pollIntervalMs;
+							const currentEditor = editorRef.current;
+							if (currentEditor && currentEditor.getFilePath() === path) {
+								editor = currentEditor;
+								text = currentEditor.getText();
+								if (text === null || text === base.content) {
+									break;
+								}
+							}
+						}
+						if (text !== null && text !== base.content) {
+							return editResult("stale", {
+								reason: "the editor content differs from disk",
+							});
+						}
+					}
+					const editArgs: OpenFileEditArgs = {
+						path,
+						oldText:
+							typeof args.oldText === "string" ? args.oldText : undefined,
+						newText:
+							typeof args.newText === "string" ? args.newText : undefined,
+						content:
+							typeof args.content === "string" ? args.content : undefined,
+					};
+					const applied = applyOpenFileEdit(base.content, editArgs);
+					if (!applied.ok) {
+						return editResult("invalid", { reason: applied.error });
+					}
+					const next = applied.next;
+					const diff = diffLines(base.content, next);
+					const id =
+						typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+							? crypto.randomUUID()
+							: String(Date.now());
+					const timeoutMs = OPEN_FILE_EDIT_APPROVAL_TIMEOUT_MS;
+					const expiresAt = Date.now() + timeoutMs;
+					setSurfaceRef.current?.("viewer");
+					setEditProposalRef.current?.({
+						id,
+						path,
+						expiresAt,
+						timeoutMs,
+						...diff,
+					});
+
+					let decision: "approve" | "reject" | "timeout" | "superseded";
+					let timer: ReturnType<typeof setTimeout> | undefined;
+					try {
+						decision = await new Promise<
+							"approve" | "reject" | "timeout" | "superseded"
+						>((resolve) => {
+							timer = setTimeout(() => {
+								resolve("timeout");
+							}, OPEN_FILE_EDIT_APPROVAL_TIMEOUT_MS);
+							pendingRef.current = {
+								id,
+								path,
+								resolve: (val) => {
+									if (timer) clearTimeout(timer);
+									resolve(val);
+								},
+							};
+						});
+					} finally {
+						if (timer) clearTimeout(timer);
+						pendingRef.current = null;
+						setEditProposalRef.current?.(null);
+					}
+
+					if (decision === "reject") {
+						return editResult("rejected", {
+							reason: "the user rejected the edit; nothing was written",
+						});
+					}
+					if (decision === "timeout") {
+						return editResult("rejected", {
+							reason: `no approval within ${OPEN_FILE_EDIT_APPROVAL_TIMEOUT_MS / 1000} s; nothing was written`,
+						});
+					}
+					if (decision === "superseded") {
+						return editResult("rejected", {
+							reason: "the open file changed before approval; nothing was written",
+						});
+					}
+
+					// approve
+					if (
+						openFilePathRef.current !== path ||
+						editorRef.current?.getFilePath() !== path
+					) {
+						return editResult("stale", {
+							reason: "the open file switched before approval; nothing was written",
+						});
+					}
+					const currentEditor = editorRef.current;
+					const currentText = currentEditor?.getText() ?? null;
+					if (
+						(currentText !== null && currentText !== base.content) ||
+						currentEditor?.flushPendingSave() === true
+					) {
+						return editResult("stale", {
+							reason:
+								"the file was edited in the editor after the preview; nothing was written",
+						});
+					}
+
+					try {
+						const written = await invoke<AgentOpenFile>(
+							"workspace_agent_write_open_file",
+							{
+								path,
+								content: next,
+								expectedSha256: base.sha256,
+							},
+						);
+						editorRef.current?.reloadFile();
+						return editResult("applied", {
+							path,
+							sha256: written.sha256,
+							added: diff.added,
+							removed: diff.removed,
+						});
+					} catch (error) {
+						const msg = (
+							error instanceof Error ? error.message : String(error)
+						).replace(/^Error:\s*/, "");
+						if (msg.startsWith("stale")) {
+							return editResult("stale", { reason: msg });
+						}
+						if (msg.startsWith("denied")) {
+							return editResult("denied", { reason: msg });
+						}
+						return editResult("error", { reason: msg });
+					}
+				} finally {
+					busyRef.current = false;
 				}
 			}),
 			naia.onToolCall("skill_workspace_close_file", async (args) => {
@@ -205,4 +477,6 @@ export function useHerdrWorkspaceBridge({
 			for (const unsubscribe of unsubscribers) unsubscribe();
 		};
 	}, [editorRef, naia, openResolvedFile, snapshotRef, terminalRef]);
+
+	return { approveEdit, rejectEdit };
 }
