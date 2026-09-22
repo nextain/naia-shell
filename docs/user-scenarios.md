@@ -1678,7 +1678,7 @@ Test Coverage Map (P02):
 - 같은 shell/agent 커밋으로 빌드하면 어느 개발 머신과 CI에서도 같은 naia-memory가 포함된다.
 - memory checkout의 HEAD가 다르거나 수정 파일이 있거나 package 이름·버전이 다르면 설치본을 만들기 전에 실패한다.
 - 최신 검증본의 제한된 다국어 correction/deletion 진단 표본에서 한국어 현재 사실 회상은 20/24에서 24/24로 +4건(+16.7%p, 상대 +20%) 개선됐다. 현재 사실 회상은 영어·일본어·한국어 모두 24/24이고 stale/deleted 노출은 언어별 각각 0/12다. 이는 해당 진단 workload 결과이며 보편적 성능 우위를 뜻하지 않는다.
-- (nextain/naia-shell#681, In review) Pairing moves to naia-agent 98f2e17 / naia-memory 8c608a8 so the shell gets (a) automatic recovery from a truncated offline embedding model cache on the next start and (b) routing of company/workspace questions to the knowledge tools.
+- (nextain/naia-shell#681, In review) Pairing moves to naia-agent cc139fb / naia-memory 8c608a8 so the shell gets (a) automatic recovery from a truncated offline embedding model cache on the next start and (b) routing of company/workspace questions to the knowledge tools; the agent no longer waits for memory preparation before reporting readiness (FR-MEM-20).
 
 Test Coverage Map (P02):
 

@@ -1152,7 +1152,7 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-MEMORY-PAIRING.1** | pairing manifest는 agent/proto와 함께 naia-memory의 정확한 40자 commit과 package version을 선언한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts` | Done |
 | **FR-MEMORY-PAIRING.2** | production staging은 선언된 memory 저장소 root·HEAD·clean 상태·package 이름·버전을 빌드 전에 fail-closed로 검증한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts` | Done |
 | **FR-MEMORY-PAIRING.3** | installer CI가 checkout하는 memory commit은 pairing manifest와 일치한다. | UC-V023-MEMORY-PAIRING | `agent-pairing-drift.contract.test.ts`, `platform-matrix.test.ts` | Done |
-| **FR-MEMORY-PAIRING.4** | (nextain/naia-shell#681) Pairing moves to naia-agent 98f2e17 / naia-memory 8c608a8 so the shell gets (a) automatic recovery from a truncated offline embedding model cache on the next start and (b) routing of company/workspace questions to the knowledge tools. | UC-V023-MEMORY-PAIRING | `agent-pairing.json`, `build.rs`, workflows | In review |
+| **FR-MEMORY-PAIRING.4** | (nextain/naia-shell#681) Pairing moves to naia-agent cc139fb / naia-memory 8c608a8 so the shell gets (a) automatic recovery from a truncated offline embedding model cache on the next start and (b) routing of company/workspace questions to the knowledge tools; the agent no longer waits for memory preparation before reporting readiness (FR-MEM-20). | UC-V023-MEMORY-PAIRING | `agent-pairing.json`, `build.rs`, workflows | In review |
 
 ## 기능 요구사항 (FR) — 초기 번들 예산 (#431)
 
