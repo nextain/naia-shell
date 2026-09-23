@@ -1130,6 +1130,234 @@ pub fn fs_exists(path: String, cwd: Option<String>) -> bool {
     target.map(|p| p.exists()).unwrap_or(false)
 }
 
+// Mirrors naia-agent src/main/domain/fs-sandbox.ts (main a1fb92d) DENY_* lists lines 29-97,
+// isSensitivePath 154-165, isSettingsWriteFenced 139-151, and fs-tools.ts MAX_FILE/MAX_WRITE 44/46.
+// Keep in sync.
+
+pub const AGENT_DENY_SEGMENTS: &[&str] = &[
+    ".keys",
+    ".ssh",
+    ".git",
+    "data-private",
+    "data-business",
+    ".env",
+    "secret",
+    "secrets",
+    ".gnupg",
+    ".password-store",
+];
+
+pub const AGENT_DENY_FILENAMES: &[&str] = &[
+    ".env",
+    ".npmrc",
+    ".netrc",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "id_dsa",
+    ".pgpass",
+    "credentials",
+    "authorized_keys",
+    "known_hosts",
+    "service-account.json",
+    ".git-credentials",
+    "gha-creds",
+    "wif-config.json",
+];
+
+pub const AGENT_DENY_SUFFIXES: &[&str] = &[
+    ".dpapi",
+    ".pem",
+    ".key",
+    ".p12",
+    ".pfx",
+    ".keystore",
+    ".jks",
+    ".age",
+    ".gpg",
+    ".asc",
+];
+
+pub const AGENT_DENY_FILENAME_PREFIXES: &[&str] = &[
+    ".env.",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "id_dsa",
+];
+
+pub const AGENT_DENY_SUBSTRINGS: &[&str] = &[
+    "/naia-settings/memory",
+    "/naia-settings/knowledge/",
+    "/login data",
+    "/cookies",
+    "/.config/gcloud",
+    "/.aws/",
+    "/.docker/config",
+    "/.kube/config",
+    "/serviceaccount",
+    "-key.json",
+    "service-account",
+];
+
+pub const AGENT_OPEN_FILE_MAX_BYTES: u64 = 1024 * 1024;
+
+fn agent_posix_lower(path: &Path) -> String {
+    let lossy = path.to_string_lossy().replace('\\', "/");
+    let mut collapsed = String::with_capacity(lossy.len());
+    let mut prev_slash = false;
+    for c in lossy.chars() {
+        if c == '/' {
+            if !prev_slash {
+                collapsed.push(c);
+                prev_slash = true;
+            }
+        } else {
+            collapsed.push(c);
+            prev_slash = false;
+        }
+    }
+    let trimmed = collapsed.trim_end_matches('/');
+    trimmed.to_lowercase()
+}
+
+pub fn is_agent_sensitive_path(path: &Path) -> bool {
+    let lowered = agent_posix_lower(path);
+    let segments: Vec<&str> = lowered.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.is_empty() {
+        return false;
+    }
+    for seg in &segments {
+        if AGENT_DENY_SEGMENTS.contains(seg) {
+            return true;
+        }
+    }
+    if let Some(&filename) = segments.last() {
+        if AGENT_DENY_FILENAMES.contains(&filename) {
+            return true;
+        }
+        for suffix in AGENT_DENY_SUFFIXES {
+            if filename.ends_with(suffix) {
+                return true;
+            }
+        }
+        for prefix in AGENT_DENY_FILENAME_PREFIXES {
+            if filename.starts_with(prefix) {
+                return true;
+            }
+        }
+    }
+    for substr in AGENT_DENY_SUBSTRINGS {
+        if lowered.contains(substr) {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_agent_settings_write_fenced(path: &Path, root: &Path) -> bool {
+    let lowered_path = agent_posix_lower(path);
+    let fence = format!("{}/naia-settings", agent_posix_lower(root));
+    let fence_slash = format!("{fence}/");
+    lowered_path == fence || lowered_path.starts_with(&fence_slash)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentOpenFile {
+    pub path: String,
+    pub content: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let result = hasher.finalize();
+    let mut s = String::with_capacity(64);
+    for byte in result {
+        use std::fmt::Write;
+        let _ = write!(s, "{:02x}", byte);
+    }
+    s
+}
+
+fn agent_read_open_file_at(canonical: &Path) -> Result<AgentOpenFile, String> {
+    if !canonical.is_file() {
+        return Err("denied: not a file".to_string());
+    }
+    if is_agent_sensitive_path(canonical) {
+        return Err("denied: path is sensitive (denylisted)".to_string());
+    }
+    let meta = std::fs::metadata(canonical).map_err(|e| e.to_string())?;
+    if meta.len() > AGENT_OPEN_FILE_MAX_BYTES {
+        return Err("denied: file too large (>1MB)".to_string());
+    }
+    let bytes = std::fs::read(canonical).map_err(|e| e.to_string())?;
+    let content = String::from_utf8(bytes).map_err(|_| "denied: not a UTF-8 text file".to_string())?;
+    let sha256 = sha256_hex(content.as_bytes());
+    let size = content.len() as u64;
+    Ok(AgentOpenFile {
+        path: canonical.to_string_lossy().to_string(),
+        content,
+        sha256,
+        size,
+    })
+}
+
+fn agent_write_open_file_at(
+    canonical: &Path,
+    root: Option<&Path>,
+    content: &str,
+    expected_sha256: &str,
+) -> Result<AgentOpenFile, String> {
+    if !canonical.is_file() {
+        return Err("denied: not a file".to_string());
+    }
+    if is_agent_sensitive_path(canonical) {
+        return Err("denied: path is sensitive (denylisted)".to_string());
+    }
+    if let Some(r) = root {
+        if is_agent_settings_write_fenced(canonical, r) {
+            return Err("denied: naia-settings is shell-owned (write fenced)".to_string());
+        }
+    }
+    if content.len() as u64 > AGENT_OPEN_FILE_MAX_BYTES {
+        return Err("denied: content too large (>1MB)".to_string());
+    }
+    let current_bytes = std::fs::read(canonical).map_err(|e| e.to_string())?;
+    if sha256_hex(&current_bytes) != expected_sha256.trim().to_lowercase() {
+        return Err("stale: the file changed on disk after the preview".to_string());
+    }
+    std::fs::write(canonical, content).map_err(|e| e.to_string())?;
+    let content_bytes = content.as_bytes();
+    Ok(AgentOpenFile {
+        path: canonical.to_string_lossy().to_string(),
+        content: content.to_string(),
+        sha256: sha256_hex(content_bytes),
+        size: content_bytes.len() as u64,
+    })
+}
+
+#[tauri::command]
+pub fn workspace_agent_read_open_file(path: String) -> Result<AgentOpenFile, String> {
+    let canonical = validate_in_workspace(&path)?;
+    agent_read_open_file_at(&canonical)
+}
+
+#[tauri::command]
+pub fn workspace_agent_write_open_file(
+    path: String,
+    content: String,
+    expected_sha256: String,
+) -> Result<AgentOpenFile, String> {
+    let canonical = validate_in_workspace(&path)?; // existing files only — never creates
+    let root = canonical_workspace_root().ok();
+    agent_write_open_file_at(&canonical, root.as_deref(), &content, &expected_sha256)
+}
+
 #[cfg(test)]
 mod open_grant_tests {
     use super::*;
@@ -1183,5 +1411,143 @@ mod open_grant_tests {
             dir.path().join("missing.txt").to_string_lossy().to_string(),
             None
         ));
+    }
+}
+
+#[cfg(test)]
+mod agent_open_file_tests {
+    use super::*;
+
+    #[test]
+    fn sensitive_path_detection() {
+        assert!(is_agent_sensitive_path(Path::new("D:/alpha-adk/data-private/persona.md")));
+        assert!(is_agent_sensitive_path(Path::new("/home/u/.ssh/id_rsa")));
+        assert!(is_agent_sensitive_path(Path::new("/w/.env.local")));
+        assert!(is_agent_sensitive_path(Path::new("/w/naia-settings/.keys/x.dpapi")));
+        assert!(is_agent_sensitive_path(Path::new("/w/naia-settings/memory/store.json")));
+        assert!(is_agent_sensitive_path(Path::new("/w/certs/server.PEM")));
+
+        assert!(!is_agent_sensitive_path(Path::new("/w/docs/readme.md")));
+        assert!(!is_agent_sensitive_path(Path::new("/w/naia-settings/config.json")));
+        assert!(!is_agent_sensitive_path(Path::new("/w/src/secretary.ts")));
+    }
+
+    #[test]
+    fn settings_write_fenced_detection() {
+        let root = Path::new("/workspace");
+        assert!(is_agent_settings_write_fenced(
+            Path::new("/workspace/naia-settings/config.json"),
+            root
+        ));
+        assert!(!is_agent_settings_write_fenced(
+            Path::new("/workspace/docs/a.md"),
+            root
+        ));
+        assert!(!is_agent_settings_write_fenced(
+            Path::new("/workspace/naia-settings-old/a.md"),
+            root
+        ));
+    }
+
+    #[test]
+    fn agent_read_open_file_cases() {
+        let dir = tempfile::tempdir().unwrap();
+        let ok_file = dir.path().join("normal.txt");
+        std::fs::write(&ok_file, "hello world").unwrap();
+
+        let res = agent_read_open_file_at(&ok_file).expect("read ok");
+        assert_eq!(res.content, "hello world");
+        assert_eq!(res.sha256.len(), 64);
+        assert_eq!(res.size, 11);
+
+        // Large file (>1MB)
+        let large_file = dir.path().join("large.bin");
+        let big_data = vec![b'a'; (AGENT_OPEN_FILE_MAX_BYTES + 1) as usize];
+        std::fs::write(&large_file, big_data).unwrap();
+        let err = agent_read_open_file_at(&large_file).unwrap_err();
+        assert!(err.contains("too large"));
+
+        // Sensitive path inside tempdir (data-private)
+        let private_dir = dir.path().join("data-private");
+        std::fs::create_dir(&private_dir).unwrap();
+        let priv_file = private_dir.join("secret.txt");
+        std::fs::write(&priv_file, "secret").unwrap();
+        let err = agent_read_open_file_at(&priv_file).unwrap_err();
+        assert!(err.contains("sensitive"));
+
+        // Non-UTF8 bytes
+        let non_utf8_file = dir.path().join("invalid_utf8.bin");
+        std::fs::write(&non_utf8_file, &[0xff, 0xfe, 0xfd]).unwrap();
+        let err = agent_read_open_file_at(&non_utf8_file).unwrap_err();
+        assert!(err.contains("not a UTF-8"));
+    }
+
+    #[test]
+    fn agent_write_open_file_cases() {
+        let dir = tempfile::tempdir().unwrap();
+        let target_file = dir.path().join("doc.txt");
+        std::fs::write(&target_file, "initial").unwrap();
+        let initial_sha = sha256_hex(b"initial");
+
+        // Success write
+        let write_res = agent_write_open_file_at(
+            &target_file,
+            Some(dir.path()),
+            "updated content",
+            &initial_sha,
+        ).expect("write ok");
+        assert_eq!(write_res.content, "updated content");
+        assert_eq!(write_res.sha256, sha256_hex(b"updated content"));
+        assert_eq!(std::fs::read_to_string(&target_file).unwrap(), "updated content");
+
+        // Stale sha
+        let err = agent_write_open_file_at(
+            &target_file,
+            Some(dir.path()),
+            "another update",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        ).unwrap_err();
+        assert!(err.starts_with("stale:"));
+        assert_eq!(std::fs::read_to_string(&target_file).unwrap(), "updated content");
+
+        // Content over cap
+        let curr_sha = sha256_hex(b"updated content");
+        let big_content = "a".repeat((AGENT_OPEN_FILE_MAX_BYTES + 1) as usize);
+        let err = agent_write_open_file_at(
+            &target_file,
+            Some(dir.path()),
+            &big_content,
+            &curr_sha,
+        ).unwrap_err();
+        assert!(err.contains("too large"));
+        assert_eq!(std::fs::read_to_string(&target_file).unwrap(), "updated content");
+
+        // Sensitive file unchanged
+        let priv_dir = dir.path().join("data-private");
+        std::fs::create_dir_all(&priv_dir).unwrap();
+        let priv_file = priv_dir.join("secret.txt");
+        std::fs::write(&priv_file, "original secret").unwrap();
+        let err = agent_write_open_file_at(
+            &priv_file,
+            Some(dir.path()),
+            "new secret",
+            &sha256_hex(b"original secret"),
+        ).unwrap_err();
+        assert!(err.contains("sensitive"));
+        assert_eq!(std::fs::read_to_string(&priv_file).unwrap(), "original secret");
+
+        // Fenced naia-settings unchanged
+        let settings_dir = dir.path().join("naia-settings");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_file = settings_dir.join("shell_owned.json");
+        std::fs::write(&settings_file, "original settings").unwrap();
+        let err = agent_write_open_file_at(
+            &settings_file,
+            Some(dir.path()),
+            "new settings",
+            &sha256_hex(b"original settings"),
+        ).unwrap_err();
+        assert!(err.contains("write fenced"));
+        assert_eq!(std::fs::read_to_string(&settings_file).unwrap(), "original settings");
     }
 }

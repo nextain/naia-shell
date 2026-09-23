@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AudioQueue } from "../../voice/audio-queue";
 import { LocalVoiceScheduler } from "../local-voice-scheduler";
 import {
 	type SentenceTtsPipelineDeps,
@@ -342,13 +343,10 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		await flush();
 		const stream = queue.enqueueOrderedStream.mock.calls[0][1];
 		expect(stream.chunks).toHaveLength(0);
-		// The reserved stream slot is released, and the sentence still plays.
-		expect(stream.failed).toBe(true);
-		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
-			0,
-			"QUJD",
-			expect.any(Object),
-		);
+		// #688: the whole WAV plays in the reserved slot directly.
+		expect(stream.wholeAudioBase64).toBe("QUJD");
+		expect(stream.ended).toBe(true);
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
 	});
 
 	it("releases a failed stream slot so the next sentence is not stalled", async () => {
@@ -415,12 +413,108 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		const { deps, queue } = makeStreamingDeps(scheduler);
 		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
 		await flush();
-		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
-			0,
-			"QUJD",
-			expect.any(Object),
-		);
+		const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+		expect(stream.wholeAudioBase64).toBe("QUJD");
+		expect(stream.ended).toBe(true);
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
 		expect(resumePlayback).toHaveBeenCalledTimes(1);
+	});
+
+	it("#688: a non-streaming local host is audible through the real AudioQueue", async () => {
+		// Under the old code, enqueueOrderedStream advanced the flush cursor, so
+		// re-enqueueing the whole WAV via deps.getQueue()?.enqueueOrdered(seq, audioBase64)
+		// left it stuck in pendingOrdered forever and no Audio was ever created.
+		const createdAudio: FakeAudio[] = [];
+		class FakeAudio {
+			src: string;
+			onplay: (() => void) | null = null;
+			onended: (() => void) | null = null;
+			onerror: ((event: Event) => void) | null = null;
+			pause = vi.fn();
+			play = vi.fn(async () => {
+				this.onplay?.();
+			});
+			constructor(src: string) {
+				this.src = src;
+				createdAudio.push(this);
+			}
+		}
+		class FakeAudioContext {
+			state = "running";
+			destination = {};
+			resume = vi.fn(async () => {});
+			createBuffer = vi.fn();
+			createBufferSource = vi.fn();
+		}
+		vi.stubGlobal("Audio", FakeAudio);
+		vi.stubGlobal("AudioContext", FakeAudioContext);
+
+		const queue = new AudioQueue();
+		const { deps } = makeDeps({
+			getQueue: () => queue,
+			getVoiceConfig: () => ({ ttsProvider: "naia-local-voice" }),
+		});
+
+		synthesizeMock
+			.mockResolvedValueOnce({ audioBase64: "UklGRkFBQQ==" })
+			.mockResolvedValueOnce({ audioBase64: "UklGRkJCQg==" });
+
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("첫 문장.");
+		pipeline.sendSentence("둘째 문장.");
+
+		await flush();
+		await flush();
+
+		expect(createdAudio).toHaveLength(1);
+		expect(createdAudio[0].src).toContain("UklGRkFBQQ==");
+
+		createdAudio[0].onended?.();
+		await flush();
+
+		expect(createdAudio).toHaveLength(2);
+		expect(createdAudio[1].src).toContain("UklGRkJCQg==");
+	});
+
+	it("#688: a serial job that starts after its sentence was revealed does not re-raise the tts stage", async () => {
+		vi.useFakeTimers();
+		try {
+			const pausePlayback = vi.fn();
+			const resumePlayback = vi.fn();
+			const scheduler = new LocalVoiceScheduler({ pausePlayback, resumePlayback });
+			let resolveFirst!: (val: { audioBase64: string }) => void;
+			const firstPromise = new Promise<{ audioBase64: string }>((resolve) => {
+				resolveFirst = resolve;
+			});
+			synthesizeMock
+				.mockImplementationOnce(() => firstPromise)
+				.mockResolvedValueOnce({ audioBase64: "QUJD" });
+
+			const { deps } = makeStreamingDeps(scheduler);
+			const pipeline = createSentenceTtsPipeline(deps);
+			pipeline.sendSentence("첫 문장.");
+			pipeline.sendSentence("둘째 문장.");
+
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(deps.setOutputStage).toHaveBeenCalledWith("tts");
+			expect(deps.setOutputStage).toHaveBeenCalledTimes(1);
+
+			// Advance 5 s so sentence 2's reveal cap fires while sentence 2 is still queued
+			vi.advanceTimersByTime(5_000);
+
+			// Finish sentence 1
+			resolveFirst({ audioBase64: "QUJD" });
+			await vi.advanceTimersByTimeAsync(0);
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Sentence 2's job starts now, but since sentence 2 was already revealed,
+			// setOutputStage("tts") must NOT be called again.
+			expect(synthesizeMock).toHaveBeenCalledTimes(2);
+			expect(deps.setOutputStage).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 });

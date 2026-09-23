@@ -63,6 +63,17 @@ const LOCAL_VOICE_STARTUP_RETRY_DELAYS_MS = [
 ];
 const LOCAL_VOICE_BUSY_MAX_RETRY_DELAY_MS = 3_500;
 
+// #688 — one local synthesis on the RTX 4060 takes 3-17 s (runaway observed 50 s, cold first voice up to ~60 s).
+// A request that has produced no response after this long is treated as failed so the turn is never stuck.
+export const LOCAL_VOICE_REQUEST_TIMEOUT_MS = 90_000;
+
+export class LocalVoiceTimeoutError extends Error {
+	constructor(ms: number) {
+		super(`호스트 음성 합성 시간 초과 (${Math.round(ms / 1000)}s)`);
+		this.name = "LocalVoiceTimeoutError";
+	}
+}
+
 function retryAfterMs(response: Response, fallbackMs: number): number {
 	const raw = response.headers?.get?.("Retry-After")?.trim();
 	if (!raw) return fallbackMs;
@@ -341,6 +352,7 @@ async function synthNaiaLocalVoice(
 		/\/$/,
 		"",
 	);
+	let announcedPreparing = false;
 	const defaultVoice = "naia-default";
 	const selectedVoice =
 		!opts.voice || opts.voice === "default" ? defaultVoice : opts.voice;
@@ -380,29 +392,57 @@ async function synthNaiaLocalVoice(
 			effectiveVoice = defaultVoice;
 		}
 	}
-	const request = (voice: string) =>
-		fetch(`${base}/v1/audio/speech`, {
-			method: "POST",
-			headers: {
-				// The per-launch bearer authenticates the app's OWN loopback engine
-				// ONLY — sending it to a user-configured remote host would exfiltrate
-				// the local credential to that server (adversarial review finding).
-				...(isOwnLoopbackEngine ? localVoiceAuthHeaders() : {}),
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				model: "voxcpm2",
-				input: opts.text,
-				// RefAudioSection stores a preset URL in voiceRefUrl. ChatArea resolves
-				// it to this facade palette id; keep it intact all the way to :8910.
-				voice: runtimeVoice(voice),
-				// 2026-09-11: streaming contract — a host that supports it answers
-				// `audio/pcm;rate=24000` in chunks; older hosts answer a whole WAV.
-				response_format: opts.streamPcm ? "pcm16" : "wav",
-				stream: !!opts.streamPcm,
-			}),
-			signal: opts.signal,
-		});
+	const request = async (voice: string) => {
+		const attemptController = new AbortController();
+		let timedOut = false;
+		const onCallerAbort = () => {
+			attemptController.abort(opts.signal?.reason);
+		};
+		if (opts.signal?.aborted) {
+			attemptController.abort(opts.signal.reason);
+		} else {
+			opts.signal?.addEventListener("abort", onCallerAbort, { once: true });
+		}
+		const timer = setTimeout(() => {
+			timedOut = true;
+			attemptController.abort();
+		}, LOCAL_VOICE_REQUEST_TIMEOUT_MS);
+		try {
+			return await fetch(`${base}/v1/audio/speech`, {
+				method: "POST",
+				headers: {
+					// The per-launch bearer authenticates the app's OWN loopback engine
+					// ONLY — sending it to a user-configured remote host would exfiltrate
+					// the local credential to that server (adversarial review finding).
+					...(isOwnLoopbackEngine ? localVoiceAuthHeaders() : {}),
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model: "voxcpm2",
+					input: opts.text,
+					// RefAudioSection stores a preset URL in voiceRefUrl. ChatArea resolves
+					// it to this facade palette id; keep it intact all the way to :8910.
+					voice: runtimeVoice(voice),
+					// 2026-09-11: streaming contract — a host that supports it answers
+					// `audio/pcm;rate=24000` in chunks; older hosts answer a whole WAV.
+					response_format: opts.streamPcm ? "pcm16" : "wav",
+					stream: !!opts.streamPcm,
+				}),
+				signal: attemptController.signal,
+			});
+		} catch (err) {
+			opts.signal?.removeEventListener("abort", onCallerAbort);
+			if (timedOut && !opts.signal?.aborted) {
+				throw new LocalVoiceTimeoutError(LOCAL_VOICE_REQUEST_TIMEOUT_MS);
+			}
+			throw err;
+		} finally {
+			clearTimeout(timer);
+			// #688 review: on success, the caller-abort listener stays attached ({ once: true })
+			// so that a later caller abort (e.g. user barge-in / cancel) aborts attemptController
+			// and cancels the response body read (resp.arrayBuffer() or stream reader).
+		}
+	};
 	const waitForRetry = (delayMs: number) =>
 		new Promise<void>((resolve, reject) => {
 			if (opts.signal?.aborted) {
@@ -428,6 +468,7 @@ async function synthNaiaLocalVoice(
 			try {
 				response = await request(voice);
 			} catch (err) {
+				if (err instanceof LocalVoiceTimeoutError) throw err;
 				// Direct connection refused (fetch TypeError): the engine is still
 				// starting — the DIRECT runtime has no facade to return the 502/10061
 				// shape the legacy retry keyed on, so without this branch the FIRST
@@ -443,10 +484,12 @@ async function synthNaiaLocalVoice(
 				const delayMs = LOCAL_VOICE_STARTUP_RETRY_DELAYS_MS[retry];
 				// Tell the chat surface the wait is the VOICE MODEL booting, not the
 				// LLM thinking — the output-stage chip switches its label on this.
-				if (isOwnLoopbackEngine && typeof window !== "undefined")
+				if (isOwnLoopbackEngine && typeof window !== "undefined") {
+					announcedPreparing = true;
 					window.dispatchEvent(
 						new CustomEvent("naia:voice-model-preparing", { detail: true }),
 					);
+				}
 				Logger.info("tts-synthesize", "Local voice unreachable; retrying", {
 					retry: retry + 1,
 					delayMs,
@@ -457,10 +500,13 @@ async function synthNaiaLocalVoice(
 				continue;
 			}
 			if (response.ok) {
-				if (typeof window !== "undefined")
-					window.dispatchEvent(
-						new CustomEvent("naia:voice-model-preparing", { detail: false }),
-					);
+				if (announcedPreparing) {
+					announcedPreparing = false;
+					if (typeof window !== "undefined")
+						window.dispatchEvent(
+							new CustomEvent("naia:voice-model-preparing", { detail: false }),
+						);
+				}
 				Logger.debug("tts-synthesize", "local synth response ok", {
 					voice,
 					retry,

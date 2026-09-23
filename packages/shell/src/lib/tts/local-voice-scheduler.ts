@@ -2,51 +2,58 @@
  * FR-VOICE.16 Phase 2a (#420): the 6GB local-voice scheduling concern,
  * extracted from ChatArea so unrelated component work can no longer regress it.
  *
- * Owns three tightly coupled pieces (FR-VOICE.11/12 behavior preserved):
+ * Owns three tightly coupled pieces:
  *  - Half-duplex admission: VoxCPM2 owns one TensorRT execution context, so
  *    local sentence synthesis is single-flight. The tail releases as soon as a
  *    WAV is ready, letting the next sentence synthesize while the AudioQueue
  *    plays the previous one (low first-sentence latency without 429 storms).
- *  - Warming hold (FR-VOICE.19 #519): when synthesis is slower than realtime
- *    (RTF>1 — engine cold after boot/reinstall), playback stays held behind
- *    the "음성 모델 준비 중…" indicator instead of starting a starved stream.
- *    No fallback voice and no arbitrary timer cap (both by explicit decision,
- *    2026-08-31): the hold releases only when the engine proves realtime
- *    (some sentence lands with RTF<1), when the whole turn is synthesized
- *    (complete-then-play — every WAV ready, zero gaps by construction), or on
- *    a sentence failure (deadlock guard). The previous 5-second cap released
- *    a starved queue mid-warmup and produced the pause-then-crack underruns.
- *  - Generation fencing: a barge-in/new turn supersedes hold state, but the
- *    GPU admission tail is deliberately NOT reset — aborting the WebView fetch
- *    does not prove VoxCPM2 released its execution context.
+ *  - Playback-window release (#688, Luke 2026-09-22):
+ *    Supersedes FR-VOICE.19 (b) / #621 complete-then-play.
+ *    Luke's decision (2026-09-22): 「음성은 문장 준비되는대로 바로 들려주게 해.
+ *    재생은 문장 단위인가 ? 라이브 데모는 원래 단어 단위로해서 시간을 줄였거든.
+ *    생성후 1초정도만 여유주고 플레이 하는건 어떨까 싶네.」
+ *    Playback is held behind pausePlayback() at seq 0 and released when the
+ *    first ready audio arrives:
+ *    - On RTF>1 hardware (slower than realtime), a 1 s grace
+ *      (LOCAL_VOICE_PLAYBACK_GRACE_MS = 1_000 ms) gives the next sentence a head
+ *      start, so the gap between sentences shrinks.
+ *    - On a realtime engine (RTF<=1 or first chunk <= 1 s), the grace would
+ *      only add latency, so playback releases immediately.
+ *    - Later sentences play back-to-back as soon as ready without extra hold.
+ *    - Sentence failure releases immediately and clears any pending grace timer.
+ *  - Generation fencing: a barge-in/new turn supersedes hold state, clears
+ *    pending grace timers, and resets turn state. The GPU admission tail is
+ *    deliberately NOT reset — aborting the WebView fetch does not prove VoxCPM2
+ *    released its execution context.
  */
+
+export const LOCAL_VOICE_PLAYBACK_GRACE_MS = 1_000;
 
 export interface LocalVoiceSchedulerDeps {
 	/** Hold AudioQueue playback while the prebuffer/warming window is open. */
 	pausePlayback: () => void;
 	/** Release AudioQueue playback when the window closes. */
 	resumePlayback: () => void;
-	/** FR-VOICE.19: drive the "음성 모델 준비 중…" indicator for warming holds. */
+	/** Drive the "음성 모델 준비 중…" indicator. Kept for backwards compatibility and cleared on interrupt/release. */
 	setWarmingVisible?: (visible: boolean) => void;
 }
 
 export interface SentenceResultVerdict {
 	rtf: number;
 	durationSeconds: number | null;
-	/** True while playback is held behind engine warmup (FR-VOICE.19). */
-	warmingHold: boolean;
+	/** Grace delay armed for this sentence if it was slower than realtime (#688). */
+	graceMs: number;
 }
 
 export class LocalVoiceScheduler {
 	private tail: Promise<void> = Promise.resolve();
+	private graceTimer: ReturnType<typeof setTimeout> | null = null;
 	private state = {
 		generation: 0,
 		sentenceCount: 0,
-		enqueuedCount: 0,
 		streamFinished: false,
-		holdActive: false,
-		warmed: false,
-		firstResultSeen: false,
+		released: false,
+		lastRtf: 0,
 	};
 
 	constructor(private readonly deps: LocalVoiceSchedulerDeps) {}
@@ -57,18 +64,18 @@ export class LocalVoiceScheduler {
 	}
 
 	/**
-	 * Barge-in / new turn: supersede the hold state and clear the indicator.
+	 * Barge-in / new turn: clear pending grace timer, bump generation,
+	 * reset turn state, and clear the indicator.
 	 * The admission tail is kept on purpose (see module doc).
 	 */
 	interrupt(): void {
+		this.clearGraceTimer();
 		this.state = {
 			generation: this.state.generation + 1,
 			sentenceCount: 0,
-			enqueuedCount: 0,
 			streamFinished: false,
-			holdActive: false,
-			warmed: false,
-			firstResultSeen: false,
+			released: false,
+			lastRtf: 0,
 		};
 		this.deps.setWarmingVisible?.(false);
 	}
@@ -76,8 +83,11 @@ export class LocalVoiceScheduler {
 	/** seq 0 opens the playback window (pauses playback); later seqs count up. */
 	noteSentence(seq: number): void {
 		if (seq === 0) {
+			this.clearGraceTimer();
 			this.state.sentenceCount = 1;
-			this.state.enqueuedCount = 0;
+			this.state.streamFinished = false;
+			this.state.released = false;
+			this.state.lastRtf = 0;
 			this.deps.pausePlayback();
 		} else {
 			this.state.sentenceCount++;
@@ -97,9 +107,9 @@ export class LocalVoiceScheduler {
 	}
 
 	/**
-	 * Per-sentence RTF verdict (FR-VOICE.19: every local sentence, not only the
-	 * first). RTF>1 on the first measurable result opens the warming hold;
-	 * any later RTF<1 proves the engine warmed and releases it.
+	 * Per-sentence RTF verdict (#688): measures RTF for every sentence.
+	 * graceMs is LOCAL_VOICE_PLAYBACK_GRACE_MS when this result arms or would
+	 * arm the grace (RTF>1 and not yet released), else 0.
 	 */
 	onSentenceResult(
 		generation: number,
@@ -111,75 +121,44 @@ export class LocalVoiceScheduler {
 			durationSeconds && durationSeconds > 0
 				? elapsedSeconds / durationSeconds
 				: 0;
-		const firstResult = !this.state.firstResultSeen;
-		this.state.firstResultSeen = true;
-		if (rtf > 0 && rtf <= 1) {
-			// Realtime synthesis observed — the engine is warm. Streaming is safe
-			// for this and every following sentence of the turn.
-			this.state.warmed = true;
-			if (this.state.holdActive) this.release(generation);
-		} else if (
-			rtf > 1 &&
-			!this.state.warmed &&
-			firstResult &&
-			(!this.state.streamFinished || this.state.sentenceCount > 1)
-		) {
-			// Cold engine with more speech coming: hold playback behind the
-			// preparing indicator. A finished one-sentence answer never holds —
-			// its single complete WAV plays gaplessly via finishStream().
-			this.state.holdActive = true;
-			this.deps.setWarmingVisible?.(true);
-		}
-		return { rtf, durationSeconds, warmingHold: this.state.holdActive };
+		this.state.lastRtf = rtf;
+		const willArmGrace =
+			rtf > 1 && !this.state.released && this.graceTimer === null;
+		const graceMs = willArmGrace ? LOCAL_VOICE_PLAYBACK_GRACE_MS : 0;
+		return { rtf, durationSeconds, graceMs };
 	}
 
 	/**
-	 * After enqueue. Outside a hold, the first sentence releases playback
-	 * immediately (FR-VOICE.11 low-latency path). Inside a warming hold, only
-	 * "every noted sentence is synthesized after stream end" releases —
-	 * complete-then-play (FR-VOICE.19 release condition b).
+	 * Whole-WAV host: onEnqueued releases playback when the first WAV lands.
+	 * If the turn's last measured RTF > 1, release after 1 s grace; otherwise immediately.
+	 * Later sentences do not re-hold.
 	 */
 	onEnqueued(generation: number, _seq: number): void {
 		if (generation !== this.state.generation) return;
-		this.state.enqueuedCount++;
-		if (!this.state.holdActive) {
+		if (this.state.released || this.graceTimer !== null) return;
+		if (this.state.lastRtf > 1) {
+			this.armGrace(generation);
+		} else {
 			this.release(generation);
-			return;
 		}
-		this.maybeReleaseCompletedTurn();
 	}
 
 	/**
-	 * Streaming host (2026-09-11): the first PCM chunk of a sentence is the
-	 * enqueue signal — audio exists, so playback may start now instead of after
-	 * the whole WAV. A first chunk that lands within a second proves the engine
-	 * realtime (release condition a) without waiting for the sentence's RTF.
-	 *
-	 * A slow first chunk (elapsed>1) on a still-cold engine must OPEN the
-	 * warming hold when more speech is coming — never resume a starved queue.
-	 * onFirstChunk can fire before onSentenceResult's RTF verdict (#621); the
-	 * previous `!holdActive → release` path made complete-then-play unreachable
-	 * on RTF>1 hardware (e.g. windows_trt_6g on RTX 4060 8GB).
+	 * Streaming host: the first PCM chunk lands before the full WAV.
+	 * elapsedSeconds <= 1 releases immediately; slower lands after 1 s grace.
+	 * Later chunks/sentences do not re-hold.
 	 */
 	onFirstChunk(generation: number, elapsedSeconds: number): void {
 		if (generation !== this.state.generation) return;
+		if (this.state.released || this.graceTimer !== null) return;
 		if (elapsedSeconds <= 1) {
-			this.state.warmed = true;
-			this.state.firstResultSeen = true;
-		} else if (
-			!this.state.warmed &&
-			(!this.state.streamFinished || this.state.sentenceCount > 1)
-		) {
-			// Cold engine, more speech coming: arm the hold (mirrors the RTF>1
-			// branch of onSentenceResult). Do not fall through to resume.
-			this.state.holdActive = true;
-			this.state.firstResultSeen = true;
-			this.deps.setWarmingVisible?.(true);
+			this.release(generation);
+		} else {
+			this.armGrace(generation);
 		}
-		if (!this.state.holdActive || this.state.warmed) this.release(generation);
 	}
 
-	/** A failed sentence must never leave playback paused (release condition c). */
+	/** A failed sentence must never leave playback paused. */
 	releaseOnFailure(generation: number): void {
 		if (generation !== this.state.generation) return;
 		this.release(generation);
@@ -188,28 +167,38 @@ export class LocalVoiceScheduler {
 	/** Close the playback window and resume (generation-guarded). */
 	release(generation: number): void {
 		if (generation !== this.state.generation) return;
-		this.state.holdActive = false;
+		if (this.state.released) return;
+		this.clearGraceTimer();
+		this.state.released = true;
 		this.deps.setWarmingVisible?.(false);
 		this.deps.resumePlayback();
 	}
 
-	/** Stream ended: a one-sentence answer (or a fully synthesized turn) plays. */
+	/**
+	 * Stream ended: no longer gates release (#688).
+	 * Releases only if the window is still paused while nothing was noted (sentenceCount === 0).
+	 */
 	finishStream(): void {
 		this.state.streamFinished = true;
-		if (this.state.sentenceCount <= 1 && !this.state.holdActive) {
+		if (this.state.sentenceCount === 0 && !this.state.released) {
 			this.release(this.state.generation);
-			return;
 		}
-		this.maybeReleaseCompletedTurn();
 	}
 
-	private maybeReleaseCompletedTurn(): void {
-		if (
-			this.state.holdActive &&
-			this.state.streamFinished &&
-			this.state.enqueuedCount >= this.state.sentenceCount
-		) {
-			this.release(this.state.generation);
+	private armGrace(generation: number): void {
+		this.clearGraceTimer();
+		this.graceTimer = setTimeout(() => {
+			this.graceTimer = null;
+			if (generation === this.state.generation && !this.state.released) {
+				this.release(generation);
+			}
+		}, LOCAL_VOICE_PLAYBACK_GRACE_MS);
+	}
+
+	private clearGraceTimer(): void {
+		if (this.graceTimer !== null) {
+			clearTimeout(this.graceTimer);
+			this.graceTimer = null;
 		}
 	}
 }

@@ -55,3 +55,9 @@ export function decideVoiceTailRelease(
 	if (input.warmingHold) return { action: "rearm" };
 	return { action: "release" };
 }
+
+/** #688 — a pipeline stage ("tts"/"render") is shown only while this turn still has unspoken sentences whose reveal will clear it. */
+export function acceptPipelineOutputStage(sync: { active: boolean; pending: number }): boolean {
+	return sync.active && sync.pending > 0;
+}
+

@@ -123,7 +123,10 @@ import {
 } from "../lib/stt";
 import { estimateSttCost } from "../lib/tts/cost";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
-import { decideVoiceTailRelease } from "../lib/tts/reveal-guard";
+import {
+	acceptPipelineOutputStage,
+	decideVoiceTailRelease,
+} from "../lib/tts/reveal-guard";
 import {
 	type PipelineVoiceConfig,
 	type SentenceTtsPipeline,
@@ -548,7 +551,9 @@ export function ChatArea({
 			},
 			getRenderer: () => useCascadeAvatarStore.getState().renderer,
 			beginCascadeJob: () => beginCascadeTtsJob(),
-			setOutputStage: (stage) => setOutputStage(stage),
+			setOutputStage: (stage) => {
+				if (acceptPipelineOutputStage(ttsTextSyncRef.current)) setOutputStage(stage);
+			},
 			getQueue: () => audioQueueRef.current,
 			getVoiceConfig: () => pipelineVoiceConfigRef.current,
 			getScheduler: () => localVoiceSchedulerRef.current,
