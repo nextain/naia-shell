@@ -841,6 +841,7 @@ Test Coverage Map
 |---|---|---|
 | UC-BGM-AI-LOCAL-NEXT | `packages/shell/src/components/__tests__/BgmPlayer.test.tsx` AI next가 로컬 파일을 재생하고 playing 제목을 남긴다 | UI 다음 버튼과 같은 최신 playNext 경로 |
 | UC-BGM-TAURI-OBSERVE | `packages/shell/src/lib/__tests__/bgm-observation-diagnosis.test.ts` null-source playing 수락, `packages/shell/src/lib/__tests__/bgm-skill.test.ts` loading은 play ack가 아님 | 소리가 나면 status가 제목을 숨기지 않는다 |
+| UC-BGM-FOREIGN-PORT-FALLBACK | `packages/shell/src/lib/__tests__/bgm-sidecar-url.test.ts` 점유된 포트 대신 고른 포트로 sidecar URL을 만든다, `packages/shell/src/lib/__tests__/bgm-skill.test.ts` play 결과가 requested에 머물지 않는다, `packages/shell/src/lib/__tests__/visible-chat-text.test.ts` 도구 JSON이 채팅 본문에 보이지 않는다 | 포트를 뺏겨도 BGM이 조용히 빠지지 않는다 |
 
 ## UC-BGM-ORPHAN-PORT-RECOVERY — 고아 sidecar가 BGM 포트를 선점해도 다음 실행이 회복한다 (#517)
 
@@ -1985,7 +1986,7 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
-| UC-WORKSPACE-BIND-651 | naia-agent `workspace-bind.contract.test.ts` + `codex-app-server-provider.contract.test.ts` | shell spawn cwd follows ADK path (Rust `current_dir`) |
+| UC-WORKSPACE-BIND-651 | naia-agent `workspace-bind.contract.test.ts` + `codex-app-server-provider.contract.test.ts` | shell spawn cwd follows ADK path (Rust `current_dir`) | Codex와 fs 도구가 셸이 정한 작업 공간 루트에서 실행된다 |
 
 ## UC-WORKSPACE-AI-CONTEXT-AND-CONTROL (#680) — AI workspace/Herdr context awareness and terminal/UI control
 
@@ -2004,7 +2005,7 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
-| UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` |
+| UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` | AI가 작업 공간·Herdr 상태를 알고 터미널과 화면을 제어한다 |
 
 ## UC-WORKSPACE-OPEN-FILE-EDIT-687 — AI edits the open editor file with per-edit approval
 
@@ -2035,9 +2036,9 @@ Test Coverage Map (P02)
 
 Test Coverage Map (P02)
 
-| UC | 단위·계약 | 실 UI |
-|---|---|---|
-| UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, `workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` |
+| UC | 단위·계약 | 실 UI | 확인하는 것 |
+|---|---|---|---|
+| UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, `workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` | 열린 파일만 편집 대상이 되고, 편집마다 승인/거절·시간 초과가 지켜지며, 승인된 편집만 디스크와 편집기에 반영된다 |
 
 ## UC-VOICE-INSTALL-PRECHECK-700 — 준비되지 않은 음성 엔진 설치는 즉시 이유를 알려 준다 (#700)
 
