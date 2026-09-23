@@ -1993,6 +1993,25 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` |
 
+## UC-VOICE-INSTALL-PRECHECK-700 — 준비되지 않은 음성 엔진 설치는 즉시 이유를 알려 준다 (#700)
+
+로컬 음성 런타임 설치 프로세스 실행이나 대용량 아카이브 다운로드 전에 필수 파일(런타임 패키지 폴더, 설치 스크립트, 활성화 계약)의 존재를 사전 검사하여, 누락 시 즉시 명확한 오류 경로와 스테이징 명령 안내를 제공한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 파일이 다 있으면 설치가 이전과 같이 진행된다. |
+| 빈 목록 | 런타임 패키지 폴더가 없으면 즉시 폴더 경로와 스테이징 방법을 표시한다. |
+| 진행 | 확인은 프로세스·내려받기 전에 끝나 진행 표시가 멈춘 채 남지 않는다. |
+| 성공 | 확인 통과 뒤 설치 로그와 진행 이벤트가 기존대로 동작한다. |
+| 오류 | 스크립트·계약 없음, E2E 명시 번들 불완전 → 없는 경로·부족 항목·해결 방법이 설정 화면과 naia.log 에 같은 문구로 표시된다. |
+| 좁은 폭 | 긴 경로가 들어간 오류 문구도 설정 카드 안에서 줄바꿈되어 전부 읽힌다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-VOICE-INSTALL-PRECHECK-700 | packages/shell/src-tauri/src/lib.rs `voxcpm2_installer_precheck_tests` | 해당 없음 — 음성 런타임을 띄우지 않는 Rust 경로; 실 설치 E2E(e2e-tauri voice-6g)는 수동·대기 |
+
 ## UC-CHAT-MARKDOWN-FIDELITY-683 — 채팅 본문이 원문 마크다운 그대로 보인다 (#683)
 
 assistant 응답의 굵은 글씨·괄호·따옴표·목록 항목이 감정 태그 정리 뒤에도 원문 그대로 표시되고, 영어 무대 지시 `(smiles)`·`*sighs*`만 지워지며 아바타 표정에 쓰인다.
