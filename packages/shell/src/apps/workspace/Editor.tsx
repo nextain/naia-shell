@@ -80,6 +80,9 @@ export interface EditorHandle {
 	reloadFile: () => void;
 	revealLocation: (line: number, column?: number, filePath?: string) => void;
 	getCursorLocation: () => CursorLocation | null;
+	getText: () => string | null;
+	getFilePath: () => string;
+	flushPendingSave: () => boolean;
 }
 
 function getLanguageExtension(filePath: string) {
@@ -552,10 +555,38 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 		};
 	}, []);
 
+	const getText = useCallback((): string | null => {
+		const view = viewRef.current;
+		if (!view) return null;
+		return view.state.doc.toString();
+	}, []);
+
+	const getFilePath = useCallback((): string => {
+		return filePathRef.current;
+	}, []);
+
+	const flushPendingSave = useCallback((): boolean => {
+		return autosaveTimerRef.current !== null;
+	}, []);
+
 	useImperativeHandle(
 		ref,
-		() => ({ reloadFile, revealLocation, getCursorLocation }),
-		[reloadFile, revealLocation, getCursorLocation],
+		() => ({
+			reloadFile,
+			revealLocation,
+			getCursorLocation,
+			getText,
+			getFilePath,
+			flushPendingSave,
+		}),
+		[
+			reloadFile,
+			revealLocation,
+			getCursorLocation,
+			getText,
+			getFilePath,
+			flushPendingSave,
+		],
 	);
 
 	// ── Ctrl+Scroll zoom ─────────────────────────────────────────────────

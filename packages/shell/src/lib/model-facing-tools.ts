@@ -35,6 +35,8 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"skill_workspace_get_sessions",
 	"skill_workspace_open_file",
 	"skill_workspace_get_open_file",
+	// #687 narrowed write exception (Luke 2026-09-22 「쓰기 가능하게 해줘」): open editor file only, per-edit diff approval
+	"skill_workspace_edit_open_file",
 	"skill_workspace_close_file",
 	"skill_workspace_set_surface",
 	"skill_workspace_focus_space",

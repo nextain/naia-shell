@@ -1250,6 +1250,13 @@ describe("ChatArea", () => {
 		);
 		expect(ttsSyncMocks.pauseBeforePlayback).toHaveBeenCalledTimes(1);
 		expect(ttsSyncMocks.resumePlayback).not.toHaveBeenCalled();
+		// #688 (Luke 2026-09-22): supersedes FR-VOICE.19 complete-then-play.
+		// Playback window releases after a 1 s grace for the first sentence
+		// when RTF>1, without waiting for the whole turn or finishStream.
+		await waitFor(
+			() => expect(ttsSyncMocks.resumePlayback).toHaveBeenCalledTimes(1),
+			{ timeout: 3000 },
+		);
 		await waitFor(() =>
 			expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(2),
 		);
@@ -1264,15 +1271,10 @@ describe("ChatArea", () => {
 				expect.any(Object),
 			),
 		);
-		// FR-VOICE.19 (#519): with RTF>1 (cold engine) a later sentence no
-		// longer releases playback — the warming hold survives until the whole
-		// turn is synthesized after stream end (complete-then-play), so a
-		// starved queue can never start mid-warmup.
-		expect(ttsSyncMocks.resumePlayback).not.toHaveBeenCalled();
+		// Later sentences never re-hold playback; resumePlayback is still 1.
+		expect(ttsSyncMocks.resumePlayback).toHaveBeenCalledTimes(1);
 		request.onChunk({ type: "finish", requestId: request.requestId });
-		await waitFor(() =>
-			expect(ttsSyncMocks.resumePlayback).toHaveBeenCalledTimes(1),
-		);
+		expect(ttsSyncMocks.resumePlayback).toHaveBeenCalledTimes(1);
 		localStorage.removeItem("naia-config");
 	});
 

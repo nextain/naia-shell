@@ -7,6 +7,8 @@ import { resetBgmSidecarBaseUrl } from "../../bgm-sidecar-url";
 import {
 	arrayBufferToBase64,
 	deriveLanguageCode,
+	LOCAL_VOICE_REQUEST_TIMEOUT_MS,
+	LocalVoiceTimeoutError,
 	synthesizeTts,
 	warmLocalVoice,
 } from "../synthesize";
@@ -613,6 +615,145 @@ describe("synthesizeTts — naia-local-voice (/v1/audio/speech Runtime contract)
 		await expect(
 			synthesizeTts({ text: "x", provider: "naia-local-voice" }),
 		).rejects.toThrow(/호스트 음성 합성 실패/);
+	});
+
+	it("#688: a local request with no response within LOCAL_VOICE_REQUEST_TIMEOUT_MS fails with LocalVoiceTimeoutError and is not retried", async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+			return new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () => {
+					reject(new DOMException("The user aborted a request.", "AbortError"));
+				});
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const promise = synthesizeTts({
+			text: "timeout test",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+		});
+
+		let caughtErr: unknown = null;
+		promise.catch((err) => {
+			caughtErr = err;
+		});
+
+		await vi.advanceTimersByTimeAsync(LOCAL_VOICE_REQUEST_TIMEOUT_MS);
+
+		await expect(promise).rejects.toBeInstanceOf(LocalVoiceTimeoutError);
+		expect(caughtErr).toBeInstanceOf(LocalVoiceTimeoutError);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("#688: caller abort still rejects as abort, not timeout", async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+			return new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () => {
+					reject(new DOMException("The user aborted a request.", "AbortError"));
+				});
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const abort = new AbortController();
+		const promise = synthesizeTts({
+			text: "abort test",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+			signal: abort.signal,
+		});
+
+		vi.advanceTimersByTime(1_000);
+		abort.abort();
+
+		await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+		await expect(promise).rejects.not.toBeInstanceOf(LocalVoiceTimeoutError);
+	});
+
+	it("#688: busy budget exhausted surfaces as a failure", async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn().mockResolvedValue(busyResponse("0.5"));
+		vi.stubGlobal("fetch", fetchMock);
+
+		const promise = synthesizeTts({
+			text: "busy exhaustion test",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+		});
+
+		const assertion = expect(promise).rejects.toThrow(/\(429\)/);
+		await vi.runAllTimersAsync();
+		await assertion;
+	});
+
+	it("#688: an OK response does not dispatch preparing=false when nothing announced preparing", async () => {
+		const dispatchSpy = vi.fn();
+		vi.stubGlobal("window", { dispatchEvent: dispatchSpy });
+		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
+		vi.stubGlobal("fetch", fetchMock);
+
+		await synthesizeTts({
+			text: "clean ok",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+		});
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const preparingCalls = dispatchSpy.mock.calls.filter(
+			(call: unknown[]) => (call[0] as Event | undefined)?.type === "naia:voice-model-preparing",
+		);
+		expect(preparingCalls).toHaveLength(0);
+	});
+
+	it("#688: caller abort after the response arrives still aborts the request signal", async () => {
+		let capturedSignal: AbortSignal | undefined;
+		const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+			capturedSignal = init?.signal as AbortSignal;
+			return Promise.resolve(wavResponse());
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const abort = new AbortController();
+		await synthesizeTts({
+			text: "abort after response",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+			signal: abort.signal,
+		});
+
+		expect(capturedSignal).toBeDefined();
+		expect(capturedSignal!.aborted).toBe(false);
+
+		abort.abort();
+		expect(capturedSignal!.aborted).toBe(true);
+	});
+
+	it("#688: request timeout timer does not fire after success", async () => {
+		vi.useFakeTimers();
+		try {
+			let capturedSignal: AbortSignal | undefined;
+			const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+				capturedSignal = init?.signal as AbortSignal;
+				return Promise.resolve(wavResponse());
+			});
+			vi.stubGlobal("fetch", fetchMock);
+
+			await synthesizeTts({
+				text: "timer cleared on success",
+				provider: "naia-local-voice",
+				vllmTtsHost: "http://localhost:8910",
+			});
+
+			expect(capturedSignal).toBeDefined();
+			expect(capturedSignal!.aborted).toBe(false);
+
+			await vi.advanceTimersByTimeAsync(LOCAL_VOICE_REQUEST_TIMEOUT_MS);
+			expect(capturedSignal!.aborted).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 
