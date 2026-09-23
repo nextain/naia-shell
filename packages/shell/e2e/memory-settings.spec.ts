@@ -341,7 +341,10 @@ test.describe("Memory Settings UI", () => {
 
 		// No naiaKey in config, so should show "required" hint
 		await expect(
-			page.getByText(/Naia account required|Naia 계정 필요/i),
+			page
+				.locator(".settings-field")
+				.filter({ has: page.locator('input[name="memory-embedding"]') })
+				.getByText(/Naia account required|Naia 계정 필요/i),
 		).toBeVisible();
 	});
 
@@ -612,4 +615,54 @@ test.describe("Memory Settings UI", () => {
 		// 비밀은 키체인 account 로(config.json 엔 strip). agent loadMemoryConfig 가 같은 account 로 읽는다(계약).
 		expect(keys?.["NAIA_MEMORY_EMBED_API_KEY"]).toBe("emb-secret-123");
 	});
+
+	test("small LLM section shows state and persists a local model", async ({
+		page,
+	}) => {
+		await page.route("**/v1/models", async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify([]),
+			});
+		});
+
+		await gotoSettings(page);
+
+		const section = page.locator('[data-testid="small-llm-section"]');
+		await expect(section).toBeVisible();
+
+		const stateEl = page.locator('[data-testid="small-llm-state"]');
+		await expect(stateEl).toBeVisible();
+		await expect(stateEl).not.toBeEmpty();
+
+		await page.locator('[data-testid="small-llm-choice-ollama"]').click();
+		const modelInput = page.locator('[data-testid="small-llm-model"]');
+		await modelInput.fill("qwen3:4b");
+		await modelInput.blur();
+
+		await page.waitForFunction(
+			() => {
+				const raw = localStorage.getItem("naia-config");
+				if (!raw) return false;
+				const c = JSON.parse(raw);
+				return c?.llmRoles?.memory?.provider === "ollama";
+			},
+			{},
+			{ timeout: 5_000 },
+		);
+		const saved = await page.evaluate(() => {
+			const raw = localStorage.getItem("naia-config");
+			return raw ? JSON.parse(raw) : null;
+		});
+		expect(saved?.memorySurfacing).toBe("on");
+		expect(saved?.llmRoles?.memory?.provider).toBe("ollama");
+		expect(saved?.llmRoles?.memory?.model).toBe("qwen3:4b");
+		expect(saved?.llmRoles?.memory?.baseUrl).toBe(
+			"http://localhost:11434/v1",
+		);
+
+		await expect(stateEl).toContainText("qwen3:4b");
+	});
 });
+

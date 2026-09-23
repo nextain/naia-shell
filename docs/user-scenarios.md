@@ -2077,3 +2077,23 @@ Test Coverage Map (P02)
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
 | UC-CHAT-MARKDOWN-FIDELITY-683 | `packages/shell/src/lib/vrm/__tests__/expression.test.ts`: 굵은 글씨·괄호·따옴표·목록·들여쓰기 보존, 영어 무대 지시만 제거; `packages/shell/src/components/__tests__/ChatMarkdown.test.tsx`: 정리 뒤 strong·목록 항목 렌더링 | `packages/shell/e2e/chat-tools.spec.ts`: 실 채팅 UI에서 굵은 글씨와 목록 세 항목 표시, `**` 노출 없음 |
+
+## UC-MEMORY-SURFACING-692 — 작은 LLM이 관련 기억·지식을 떠올린다 (#692)
+
+사용자는 설정의 기억(Memory) 탭에서 작은 LLM(small LLM) 설정을 확인하고 선택할 수 있다. 기본값은 Naia 계정의 `gpt-5.4-nano`이며, 음성 엔진을 쓰지 않아 GPU 여유가 있을 때 로컬 Ollama 또는 vLLM을 선택하거나, 떠오름 기능을 끌 수 있다. 상태 안내 줄은 켜짐(Naia 계정 과금 / 로컬 / 자체 호스트), 작은 LLM 없음, 상속된 과금 제공자로 인한 자동 끔, Naia 게이트웨이 미준비(pending gateway) 상태를 명확히 설명한다. 사용자의 명시적 선택이나 Naia 로그인 없이는 어떠한 과금도 발생하지 않는다. 에이전트는 백그라운드에서 다음 답변 턴을 위해 관련 기억과 지식을 떠올리고 사실을 추출한다. 로그인하지 않은 상태의 로컬 폴백 설계는 #693에서 다루며, 음성/GPU 자동 전환은 후속 과제다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | Naia 로그인 시 작은 LLM 기본값으로 Naia `gpt-5.4-nano`가 설정되며 상태 안내에 켜짐과 과금 계정이 명시된다. |
+| 빈 목록 | 모델이 지정되지 않았거나 로그인되지 않은 경우 "작은 LLM 없음: 떠오름 꺼짐"으로 정직하게 안내되고 과금되지 않는다. |
+| 진행 | 로컬 주소와 모델명을 입력하거나 라디오를 전환하는 즉시 설정이 반영되며 UI가 멈추지 않는다. |
+| 성공 | 로컬 Ollama/vLLM 또는 Naia 모델 선택이 `llmRoles.memory`와 `memorySurfacing`에 정상 영속되고 상태 줄에 반영된다. |
+| 오류 | 게이트웨이에 모델이 아직 없거나 네트워크 단절 시에도 전체 앱이 멈추지 않고 적절한 상태(준비 대기 또는 켜짐)로 동작한다. |
+| 좁은 폭 | 좁은 설정 창에서도 작은 LLM 선택 라디오, 입력 필드, 상태 안내가 잘리지 않고 접근 가능하다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-MEMORY-SURFACING-692 | `packages/shell/src/lib/llm/__tests__/surfacing.test.ts`: LLM 선택 판정·주소 정규화·설정 쓰기·상태 라인; `packages/shell/src/lib/slots/__tests__/settings-slots.contract.test.ts`: Naia 로그인 기본값 및 명시 역할 유지 계약; `packages/shell/src/components/__tests__/SmallLlmSection.test.tsx`: 6개 렌더링/상태/영속 시나리오 (a~f) | `packages/shell/e2e/memory-settings.spec.ts`: 실 UI 설정 탭 작은 LLM 섹션 및 Ollama 모델 영속; E2E(실 셸): 루크 수동 확인 대기 |
+

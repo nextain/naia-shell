@@ -535,6 +535,8 @@ export interface AppConfig {
 	memoryLlmApiKey?: string;
 	/** Model name for LLM fact extraction. */
 	memoryLlmModel?: string;
+	/** #692 background surfacing by the memory LLM. "off" disables it; absent/"on" = on when a small LLM is available. */
+	memorySurfacing?: "on" | "off";
 	/** Qdrant vector DB URL (adapter = 'qdrant'). */
 	qdrantUrl?: string;
 	/** Qdrant API key. */
