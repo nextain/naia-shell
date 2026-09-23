@@ -6537,11 +6537,10 @@ fn powershell_compatible_path(path: &std::path::Path) -> std::path::PathBuf {
     path.to_path_buf()
 }
 
-fn voxcpm2_installer_script_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    // 설치 트랜잭션이 읽는 자원은 셋이다 — 다운로드 매니페스트, 설치 스크립트,
-    // 활성화 계약. 매니페스트에는 개발용 우회가 있었는데 스크립트에는 없어서,
-    // 설치본이 아닌 빌드에서는 내려받기 경로 자체를 잴 수 없었다(#537). 우회는
-    // 디버그 빌드에서만 산다 — 릴리스는 언제나 자기 리소스만 읽는다.
+/// #700: the path the installer script would have, whether or not it exists.
+/// `voxcpm2_installer_script_path` filters missing files away, which left the
+/// error unable to say *where* the script was expected.
+fn voxcpm2_installer_script_candidate(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     let development = if cfg!(debug_assertions) {
         std::env::var_os("NAIA_VOXCPM2_INSTALLER_DIR")
             .filter(|value| !value.is_empty())
@@ -6557,12 +6556,134 @@ fn voxcpm2_installer_script_path(app: &tauri::AppHandle) -> Option<std::path::Pa
                 .ok()
                 .map(|root| root.join("voxcpm2-runtime").join(host_prepare_script()))
         })
-        .filter(|path| {
-            path.is_file()
-                && path
-                    .with_file_name("voxcpm2-activation-contract.json")
-                    .is_file()
-        })
+}
+
+fn voxcpm2_installer_script_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    // 설치 트랜잭션이 읽는 자원은 셋이다 — 다운로드 매니페스트, 설치 스크립트,
+    // 활성화 계약. 매니페스트에는 개발용 우회가 있었는데 스크립트에는 없어서,
+    // 설치본이 아닌 빌드에서는 내려받기 경로 자체를 잴 수 없었다(#537). 우회는
+    // 디버그 빌드에서만 산다 — 릴리스는 언제나 자기 리소스만 읽는다.
+    voxcpm2_installer_script_candidate(app).filter(|path| {
+        path.is_file()
+            && path
+                .with_file_name("voxcpm2-activation-contract.json")
+                .is_file()
+    })
+}
+
+/// #700: the hint every "not staged" error carries. One place, so the UI, the log
+/// and the tests all say the same thing.
+const VOXCPM2_STAGE_HINT: &str =
+    "Stage the Naia Host runtime package first: node packages/shell/scripts/stage-voxcpm2-runtime.mjs";
+
+/// #700: verify, before any PowerShell/bash process starts, that the staged
+/// bundle folder, its prepare script and its activation contract exist.
+/// Pure path checks only — cheap, no process, no network.
+fn voxcpm2_installer_precheck(
+    bundle_root: &std::path::Path,
+    installer: &std::path::Path,
+) -> Result<(), String> {
+    if !bundle_root.is_dir() {
+        return Err(format!(
+            "Naia Host runtime package folder is missing: {}. {VOXCPM2_STAGE_HINT}",
+            bundle_root.display()
+        ));
+    }
+    if !installer.is_file() {
+        return Err(format!(
+            "Naia Host installer script is missing: {}. {VOXCPM2_STAGE_HINT}",
+            installer.display()
+        ));
+    }
+    let contract = bundle_root.join("voxcpm2-activation-contract.json");
+    if !contract.is_file() {
+        return Err(format!(
+            "Naia Host activation contract is missing: {}. {VOXCPM2_STAGE_HINT}",
+            contract.display()
+        ));
+    }
+    Ok(())
+}
+
+/// #700: the download fallback needs the packaged installer script and contract
+/// after extraction. Check them before a multi-GB download, not after.
+fn voxcpm2_download_precheck(
+    installer_candidate: Option<&std::path::Path>,
+) -> Result<std::path::PathBuf, String> {
+    let p = installer_candidate.ok_or_else(|| {
+        format!("Naia Host installer script location is unknown (no resource directory). {VOXCPM2_STAGE_HINT}")
+    })?;
+    if !p.is_file() {
+        return Err(format!(
+            "Naia Host installer script is missing: {}. {VOXCPM2_STAGE_HINT}",
+            p.display()
+        ));
+    }
+    let contract = p.with_file_name("voxcpm2-activation-contract.json");
+    if !contract.is_file() {
+        return Err(format!(
+            "Naia Host activation contract is missing: {}. {VOXCPM2_STAGE_HINT}",
+            contract.display()
+        ));
+    }
+    Ok(p.to_path_buf())
+}
+
+/// #700: in E2E mode the bundle root is always explicit (NAIA_E2E_VOXCPM2_BUNDLE_ROOT
+/// or resource_dir/voxcpm2-runtime). If that staged bundle is absent or invalid,
+/// falling back to a multi-GB download hides the real problem behind a timeout.
+/// Returns the explicit root that was requested, or None when no explicit root applies.
+fn voxcpm2_explicit_bundle_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    if !debug_e2e_enabled() {
+        return None;
+    }
+    if cfg!(debug_assertions) {
+        if let Some(dev_root) = std::env::var_os("NAIA_VOXCPM2_DEV_BUNDLE_ROOT")
+            .filter(|value| !value.is_empty())
+            .map(std::path::PathBuf::from)
+        {
+            return Some(dev_root);
+        }
+    }
+    Some(
+        std::env::var_os("NAIA_E2E_VOXCPM2_BUNDLE_ROOT")
+            .filter(|value| !value.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                app.path()
+                    .resource_dir()
+                    .unwrap_or_default()
+                    .join("voxcpm2-runtime")
+            }),
+    )
+}
+
+/// #700: message for an explicit (E2E) bundle root that is missing or invalid.
+fn voxcpm2_explicit_bundle_error(root: &std::path::Path) -> String {
+    if !root.is_dir() {
+        format!(
+            "Naia Host runtime package folder is missing: {}. {VOXCPM2_STAGE_HINT}",
+            root.display()
+        )
+    } else {
+        let all_failures = voxcpm2_payload_validation_failures(root, None);
+        let first_five = all_failures
+            .iter()
+            .take(5)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("; ");
+        let failures = if all_failures.len() > 5 {
+            let extra = all_failures.len() - 5;
+            format!("{first_five} (+{extra} more)")
+        } else {
+            first_five
+        };
+        format!(
+            "Naia Host runtime package at {} is incomplete: {failures}. {VOXCPM2_STAGE_HINT}",
+            root.display()
+        )
+    }
 }
 
 fn download_voxcpm2_archive(
@@ -7272,11 +7393,22 @@ async fn install_voxcpm2_runtime(
                 .to_string()
         })?;
     voice_runtime::validate_vram(host_profile, vram)?;
+    let fail = |message: String| {
+        log_both(&format!("[Naia] voxcpm2 install precheck failed: {message}"));
+        emit_voxcpm2_progress_failed(&app, &message);
+        message
+    };
     let bundle_root = if let Some(root) = voxcpm2_bundle_root(&app) {
         root
+    } else if let Some(explicit) = voxcpm2_explicit_bundle_root(&app) {
+        return Err(fail(voxcpm2_explicit_bundle_error(&explicit)));
     } else {
         let manifest_path = voxcpm2_download_manifest_path(&app)
-            .ok_or_else(|| "Naia Host download manifest is not packaged.".to_string())?;
+            .ok_or_else(|| fail(format!("Naia Host download manifest is not packaged. {VOXCPM2_STAGE_HINT}")))?;
+        // #700: the packaged installer script and contract are needed after
+        // extraction; check them before a multi-GB download, not after it.
+        voxcpm2_download_precheck(voxcpm2_installer_script_candidate(&app).as_deref())
+            .map_err(fail)?;
         let app_for_download = app.clone();
         tokio::task::spawn_blocking(move || {
             install_voxcpm2_payload(&app_for_download, &manifest_path)
@@ -7286,6 +7418,7 @@ async fn install_voxcpm2_runtime(
     };
     let runtime_root = voxcpm2_runtime_root();
     let installer = bundle_root.join(host_prepare_script());
+    voxcpm2_installer_precheck(&bundle_root, &installer).map_err(fail)?;
     let log_path = runtime_root.join("voxcpm2-install.log");
     let install_result = tokio::task::spawn_blocking({
         let bundle_root = bundle_root.clone();
@@ -8136,8 +8269,21 @@ async fn start_voxcpm2(
         .await
         .map_err(|error| format!("VRAM detection task failed: {error}"))?;
     voice_runtime::validate_vram(resolved, vram)?;
-    let bundle_root = voxcpm2_bundle_root(&app)
-        .ok_or_else(|| "Naia Host TensorRT runtime payload is not packaged".to_string())?;
+    let bundle_root = match voxcpm2_bundle_root(&app) {
+        Some(root) => root,
+        None => {
+            let message = if let Some(root) = voxcpm2_explicit_bundle_root(&app) {
+                voxcpm2_explicit_bundle_error(&root)
+            } else {
+                format!(
+                    "Naia Host TensorRT runtime payload is not installed or staged. Install the local voice from Settings, or for a development build: {VOXCPM2_STAGE_HINT}"
+                )
+            };
+            log_both(&format!("[Naia] voxcpm2 start precheck failed: {message}"));
+            emit_voxcpm2_progress_failed(&app, &message);
+            return Err(message);
+        }
+    };
     let install_probe = tokio::task::spawn_blocking({
         let bundle_root = bundle_root.clone();
         move || probe_voxcpm2_installation(Some(&bundle_root))
@@ -17907,3 +18053,130 @@ mod tests {
 
 #[cfg(test)]
 mod shutdown_lifecycle_tests;
+
+#[cfg(test)]
+mod voxcpm2_installer_precheck_tests {
+    use super::*;
+
+    #[test]
+    fn precheck_rejects_missing_bundle_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("voxcpm2-runtime");
+        let installer = root.join("prepare-host.ps1");
+        let err = voxcpm2_installer_precheck(&root, &installer).unwrap_err();
+        assert!(err.contains("package folder is missing"), "actual: {err}");
+        assert!(err.contains(&root.display().to_string()), "actual: {err}");
+        assert!(err.contains("stage-voxcpm2-runtime.mjs"), "actual: {err}");
+    }
+
+    #[test]
+    fn precheck_rejects_missing_installer_script() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("voxcpm2-runtime");
+        std::fs::create_dir_all(&root).unwrap();
+        let installer = root.join("prepare-host.ps1");
+        let err = voxcpm2_installer_precheck(&root, &installer).unwrap_err();
+        assert!(err.contains("installer script is missing"), "actual: {err}");
+        assert!(err.contains(&installer.display().to_string()), "actual: {err}");
+        assert!(err.contains(VOXCPM2_STAGE_HINT), "actual: {err}");
+    }
+
+    #[test]
+    fn precheck_rejects_missing_activation_contract() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("voxcpm2-runtime");
+        std::fs::create_dir_all(&root).unwrap();
+        let installer = root.join("prepare-host.ps1");
+        std::fs::write(&installer, "#!/bin/sh\n").unwrap();
+        let err = voxcpm2_installer_precheck(&root, &installer).unwrap_err();
+        assert!(err.contains("activation contract is missing"), "actual: {err}");
+        assert!(err.contains(VOXCPM2_STAGE_HINT), "actual: {err}");
+    }
+
+    #[test]
+    fn precheck_accepts_complete_bundle() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("voxcpm2-runtime");
+        std::fs::create_dir_all(&root).unwrap();
+        let installer = root.join(host_prepare_script());
+        std::fs::write(&installer, "#!/bin/sh\n").unwrap();
+        let contract = root.join("voxcpm2-activation-contract.json");
+        std::fs::write(&contract, "{}\n").unwrap();
+        assert!(voxcpm2_installer_precheck(&root, &installer).is_ok());
+    }
+
+    #[test]
+    fn download_precheck_requires_script_and_contract() {
+        let err_none = voxcpm2_download_precheck(None).unwrap_err();
+        assert!(err_none.contains("location is unknown"), "actual: {err_none}");
+        assert!(err_none.contains(VOXCPM2_STAGE_HINT), "actual: {err_none}");
+
+        let temp = tempfile::tempdir().unwrap();
+        let installer = temp.path().join("prepare-host.ps1");
+        let err_script = voxcpm2_download_precheck(Some(&installer)).unwrap_err();
+        assert!(err_script.contains("installer script is missing"), "actual: {err_script}");
+        assert!(err_script.contains(VOXCPM2_STAGE_HINT), "actual: {err_script}");
+
+        std::fs::write(&installer, "#!/bin/sh\n").unwrap();
+        let err_contract = voxcpm2_download_precheck(Some(&installer)).unwrap_err();
+        assert!(err_contract.contains("activation contract is missing"), "actual: {err_contract}");
+        assert!(err_contract.contains(VOXCPM2_STAGE_HINT), "actual: {err_contract}");
+
+        let contract = installer.with_file_name("voxcpm2-activation-contract.json");
+        std::fs::write(&contract, "{}\n").unwrap();
+        let ok_path = voxcpm2_download_precheck(Some(&installer)).unwrap();
+        assert_eq!(ok_path, installer);
+    }
+
+    #[test]
+    fn explicit_bundle_error_names_missing_folder_and_failures() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing_dir = temp.path().join("nonexistent");
+        let err_missing = voxcpm2_explicit_bundle_error(&missing_dir);
+        assert!(err_missing.contains("package folder is missing"), "actual: {err_missing}");
+        assert!(err_missing.contains(VOXCPM2_STAGE_HINT), "actual: {err_missing}");
+
+        let empty_dir = temp.path().join("empty");
+        std::fs::create_dir_all(&empty_dir).unwrap();
+        let err_empty = voxcpm2_explicit_bundle_error(&empty_dir);
+        assert!(err_empty.contains("is incomplete"), "actual: {err_empty}");
+        assert!(err_empty.contains("missing artifact file: artifact-manifest.json"), "actual: {err_empty}");
+        assert!(err_empty.contains(VOXCPM2_STAGE_HINT), "actual: {err_empty}");
+        assert!(err_empty.contains("(+") && err_empty.contains("more)"), "actual: {err_empty}");
+    }
+
+    #[test]
+    fn installer_precheck_runs_before_spawn() {
+        let src = include_str!("lib.rs");
+        let fn_start = src
+            .find("async fn install_voxcpm2_runtime(")
+            .expect("install_voxcpm2_runtime definition");
+        let rest = &src[fn_start..];
+        let fn_end = rest
+            .find("#[tauri::command]")
+            .expect("next tauri command after install_voxcpm2_runtime");
+        let body = &rest[..fn_end];
+
+        let precheck_idx = body
+            .find("voxcpm2_installer_precheck(&bundle_root, &installer)")
+            .expect("voxcpm2_installer_precheck in install_voxcpm2_runtime");
+        let command_idx = body
+            .find("voxcpm2_installer_command(")
+            .expect("voxcpm2_installer_command in install_voxcpm2_runtime");
+        assert!(
+            precheck_idx < command_idx,
+            "precheck should run before installer command spawn"
+        );
+
+        let dl_precheck_idx = body
+            .find("voxcpm2_download_precheck(")
+            .expect("voxcpm2_download_precheck in install_voxcpm2_runtime");
+        let dl_payload_idx = body
+            .find("install_voxcpm2_payload(&app_for_download")
+            .expect("install_voxcpm2_payload(&app_for_download in install_voxcpm2_runtime");
+        assert!(
+            dl_precheck_idx < dl_payload_idx,
+            "download precheck should run before downloading payload"
+        );
+    }
+}

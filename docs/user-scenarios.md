@@ -183,7 +183,7 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 | **UC-WIN-VOICE-6G** (#406, FR-CASCADE.20~22 — 2026-08-01) | 등록 후 Naia에 로그인한 사용자는 Windows NVIDIA RTX VRAM 6GB 이상 PC에서 기존 Naia 계정 LLM·원격 Ollama·외부 API 설정을 유지하면서 로컬 VoxCPM2 W8A16 + TensorRT LocDiT 음성을 사용한다. Shell은 3D VRM을 유지하며 Ditto/NVA/로컬 LLM/Ollama/NPU/STT를 시작하지 않는다. 로그아웃 또는 VRAM 미달이면 profile/manifest/IPC가 모두 fail-closed다. 첫 기동이 느려도 기능 대상이지만 실시간 속도와 실제 6GB cold boot는 측정 전 보장하지 않는다. 실제 화면 검증 자산은 `naia-settings/vrm-files/01-OL_Woman.vrm`이며 SHA-256으로 동일성을 고정한다. | 설정 프로파일 + 외부 대화 + 로컬 TTS + VRM + Windows lifecycle | `vram-tiers` · `tier-slots` · `config` · `slots-manifest` · Settings Playwright · Rust account/VRAM/install tests · manager profile/manifest/launch tests · labs CPU-quantization tests · 실제 Tauri Shell voice/VRM probe |
 | **UC-SHELL-RECOVERY** (#406, FR-RUNTIME.1/FR-VOICE.10/FR-SETTINGS.1 — 2026-08-01) | 통합테스트 뒤 일반 `pnpm run tauri:dev`를 실행해도 Shell은 실제 ADK와 Naia 계정의 외부 LLM을 로드해 대답한다. 로컬 음성 목록은 파일명 대신 사람이 읽을 수 있는 이름을 보이며, 준비되지 않은 Connections 설정에는 들어갈 수 없다. 일반 dev/build와 release staging은 `agent-pairing.json`의 exact Agent commit·proto SHA, 필수 entrypoint/proto, clean checkout을 함께 만족하는 같은 paired-agent resolver 결과를 사용하며, 잘못된 sibling을 조용히 선택하지 않는다. | 일반 개발 실행 + 외부 LLM + 로컬 음성 설정 | 환경 scrub·E2E sentinel·path-cache 격리 단위, paired-agent resolver targeted coverage(candidate order, exact commit/proto/clean rejection, dev/build same selected root), Settings/RefAudio FE, 실제 Tauri `SetWorkspace loaded=true`와 채팅 응답 |
 | **UC-WIN-VOICE-CONTINUOUS** (FR-VOICE.11~12 — 2026-08-01) | 여러 문장 답변에서 첫 문장만 들리고 나머지가 `429 busy`로 사라지지 않는다. 첫 문장을 생성한 뒤 다음 문장을 한 개씩 준비하며, 생성이 재생보다 느릴 때는 한 문장을 더 버퍼링해 문장 사이의 무음을 줄인다. 사용자가 음성으로 끼어들어 앞 발화를 끊었을 때도 서버에 남은 이전 GPU 작업이 끝날 때까지 새 첫 문장을 제한적으로 재시도해 무음 응답으로 버리지 않는다. | Windows 6GB VoxCPM2 + Shell VRM 연속 발화 | ChatArea/AudioQueue 단위 + synthesize busy retry/abort + 실제 façade 연속·겹침 로그에서 최종 200 |
-| **UC-WIN-VOICE-WARMUP** (#519, FR-VOICE.19 — 2026-08-31) | 로컬 음성 엔진이 기동/재설치 직후라 합성이 실시간보다 느린 동안(RTF>1), 사용자는 "쉬었다 째지는" 언더런 발화 대신 기존 "음성 모델 준비 중…" 표시를 본다. 폴백 음성으로 바꾸지 않는다(루크 결정 2026-08-31). 재생은 ① 엔진이 실시간 속도를 회복하거나(RTF<1) ② 답변 전 문장이 WAV로 완성된 뒤(complete-then-play, 갭 0) 시작한다. 임의 시간 캡으로 굶주린 큐를 강제 재생하지 않는다. | Windows 로컬 음성 워밍업 + 재생 게이트 | `local-voice-scheduler.test.ts` warming hold 3해제조건 + `sentence-pipeline.test.ts` 전 문장 RTF 측정·preparing 이벤트 |
+| **UC-WIN-VOICE-WARMUP** (#519, FR-VOICE.19 — 2026-08-31) | #688 로 개정: 엔진이 실시간보다 느려도 답 전체를 기다리지 않는다. 첫 문장은 준비 후 약 1초 뒤에, 이후 문장은 준비되는 대로 들린다 (루크 2026-09-22). 로컬 음성 엔진이 기동/재설치 직후라 합성이 실시간보다 느린 동안(RTF>1), 사용자는 "쉬었다 째지는" 언더런 발화 대신 기존 "음성 모델 준비 중…" 표시를 본다. 폴백 음성으로 바꾸지 않는다(루크 결정 2026-08-31). 재생은 ① 엔진이 실시간 속도를 회복하거나(RTF<1) ② 답변 전 문장이 WAV로 완성된 뒤(complete-then-play, 갭 0) 시작한다. 임의 시간 캡으로 굶주린 큐를 강제 재생하지 않는다. | Windows 로컬 음성 워밍업 + 재생 게이트 | `local-voice-scheduler.test.ts` warming hold 3해제조건 + `sentence-pipeline.test.ts` 전 문장 RTF 측정·preparing 이벤트 |
 | **UC-WIN-NVA-LATENCY** ([alpha-adk #14](https://github.com/nextain/alpha-adk/issues/14), REQ-051, FR-CASCADE.15~19 — 2026-07-31) | 같은 외부 LLM 대화 경로에서 사용자는 요청이 겹쳐도 숨은 GPU 대기열 때문에 앞선 발화까지 느려지지 않는다. 사용자가 발화를 중단하면 Shell의 미디어 요청과 Ditto 작업이 종료되고 NVA idle로 돌아간다. 성능 판정은 같은 텍스트·음성지문·NVA·warm 상태에서 요청→첫 오디오, 첫 미디어 바이트, 첫 Shell 발화 프레임, 전체 완료, A/V 종료차, 취소 회수 시간을 전후 비교한다. 완성 A/V 응답 캐시는 사용하지 않는다. | Shell MSE/취소 + cascade 스트림 수명 + Ditto TRT 역압력 + manager 실행 환경 | P02: labs `test_render_admission.py`(첫 요청·동시 429·해제), manager `test_service_plan.py`(렌더 크기), Shell `cascade-renderer` 단위/FE(AbortSignal·MSE 조기 재생), cascade adapter 취소 테스트, Tauri 94 실제 NVA 계측 |
 | **UC-WIN-NVA-TTS-SYNC** (FR-VOICE.8~9 — 2026-08-01) | TTS를 켠 사용자가 메시지를 보내면 Shell은 `생각 중 → 음성 처리 중 → 렌더 중`을 현재 언어로 보여 준다. 답 텍스트는 음성 상태와 무관하게 도착하는 대로 화면에 나타난다(2026-09-07 #571 로 개정 — 그전에는 재생 시작까지 가렸고, 음성이 느린 기계에서 그 가림이 본문을 무기한 붙잡았다). Ditto video가 `playing`에 들어가면 음소거가 풀리고 진행 표시가 사라지며, ESC·새 발화·합성 실패에서도 이전 답변이나 상태가 늦게 되살아나지 않는다. 느린 처리 중에도 화면이 멈춘 것처럼 보이지 않아야 한다. | ChatArea 즉시 렌더 + AudioQueue/Cascade playback callback + 14-locale i18n + GPU single-flight | `ChatArea.test.tsx` 느린 합성 중 본문·비용 배지 노출/CJK/실패/ESC · `i18n-output-stage.test.ts` · Tauri 94 실제 4060 |
 | **UC-VRM-EXPRESSION** ([#361](https://github.com/nextain/naia-shell/issues/361)·[#422](https://github.com/nextain/naia-shell/issues/422), FR-AVATAR.1) | Naia 전용 VRM 1.0을 선택한 사용자가 TTS 응답을 들으면 텍스처 전환형 `aa/ih/ou/ee/oh` 입모양이 한 번에 하나씩 모두 나타나고, 발화 종료·중단 시 입이 즉시 닫힌다. 생각 신호에는 외주 모델의 custom `think` 표정을 사용한다. 이 경로는 실제 음소 동기화가 아닌 발화 상태 기반 5모음 시뮬레이션이며, 전신 동작은 별도 VRMA 클립이 제공된 경우에만 가능하다. | UC2/S19 ExpressionPort(VRM) | `mouth.test.ts` 5모음·binary/continuous·VRM 0.0·정지, `expression.test.ts` think 우선·fallback, 외주 VRM 메타데이터 실측 |
@@ -1058,6 +1058,18 @@ Test Coverage Map (P02) — #672
 | S | 단위·계약 | 실기 | 비고 |
 |---|---|---|---|
 | UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS | `lib.rs` `format_voxcpm2_runtime_exit` / `describe_runtime_stderr` / `read_log_file_tail`; `voice_runtime.rs` `resolve_torch_device`; `SettingsTab.test.tsx` 40% 해제와 failed phase; `platform-matrix.test.ts` Windows 설치 진행 40% 이후 | 4060 실기 QA 는 이 패치 범위 밖 | 오류 문자열에 `(None)` 만 있으면 단위가 붉다 |
+
+### 2026-09-22 느린 로컬 음성 호스트의 전체 WAV 재생과 진행 표시 해제 (#688)
+
+| Scenario | User-observable outcome | Coverage |
+|---|---|---|
+| **UC-WIN-VOICE-SLOW-HOST** (#688) | 실시간보다 느리고 전체 WAV로 응답하는 로컬 VoxCPM2 호스트에서도 합성된 모든 문장이 순서대로 들린다. "음성 처리 중…" 칩은 턴의 발화가 끝나거나 실패하면 닫히며 답변이 정돈된 뒤에 남아 있지 않는다. Busy(429)는 대기하여 재시도한다. 90초 동안 응답이 없는 요청이나 소진된 busy 예산은 단일 로컬 음성 실패 안내가 된다. 새 메시지는 이전 발화를 취소한다. 워밍업 홀드(완성 후 재생)는 루크의 결정(2026-09-22, 「음성은 문장 준비되는대로 바로 들려주게 해. 재생은 문장 단위인가 ? 라이브 데모는 원래 단어 단위로해서 시간을 줄였거든. 생성후 1초정도만 여유주고 플레이 하는건 어떨까 싶네.」)으로 개정되어, 실시간보다 느린 경우(RTF>1) 첫 오디오 준비 후 1초 여유 뒤 재생을 시작하고 이후 문장은 준비되는 대로 바로 이어서 재생한다. | `audio-queue.test.ts`, `sentence-pipeline.test.ts`, `reveal-guard.test.ts`, `synthesize.test.ts`, `local-voice-scheduler.test.ts`, `ChatArea.test.tsx` |
+
+Test Coverage Map (P02) — #688
+
+| S | 단위·계약 | 실기 | 비고 |
+|---|---|---|---|
+| UC-WIN-VOICE-SLOW-HOST | `audio-queue.test.ts` ("#688: a stream slot that ends with whole audio plays that audio in its own order", "#688: whole audio on a paused queue plays after resumePlayback"); `sentence-pipeline.test.ts` ("#688: a non-streaming local host is audible through the real AudioQueue", "#688: a serial job that starts after its sentence was revealed does not re-raise the tts stage", "FR-VOICE.20: a host that sends no chunks still releases through the enqueue path"); `reveal-guard.test.ts` ("acceptPipelineOutputStage (#688)"); `synthesize.test.ts` ("#688: a local request with no response within LOCAL_VOICE_REQUEST_TIMEOUT_MS fails with LocalVoiceTimeoutError and is not retried", "#688: caller abort still rejects as abort, not timeout", "#688: busy budget exhausted surfaces as a failure", "#688: an OK response does not dispatch preparing=false when nothing announced preparing", "#688: caller abort after the response arrives still aborts the request signal", "#688: request timeout timer does not fire after success"); `local-voice-scheduler.test.ts` ("#688: slower-than-realtime first sentence starts after a 1 s grace", "#688: realtime synthesis starts immediately", "#688: later sentences never re-hold", "#688: the issue RTF series plays from the first sentence, not after the whole turn", "#688: streaming slow first chunk arms the grace; fast first chunk releases now", "#688: a failure during the grace releases immediately and the grace timer does not resume twice", "#688: interrupt during the grace cancels it", "#688: finishStream alone does not release a turn whose sentences are still synthesizing"); `ChatArea.test.tsx` ("serializes 6GB local sentence synthesis while playback queues independently") | `e2e-tauri/specs/94-voice-6g-shell.spec.ts` (`test:e2e:tauri:voice-6g`) 4060 실기 통과 2026-09-23 (1:50, main=nextain/deepseek-v4-flash via api.nextain.io, 설치 런타임 격리 복사본 + CC0 테스트 음색; 첫 문장 RTF 1.55 → 1초 여유 후 재생, 둘째 문장 추가 대기 없음). 루크 실 셸 확인: **pending (Luke)** | 상태: default (one sentence), in progress (serial queue), success (two sentences in order), error (timeout, 429 exhausted, interrupt). 좁은 폭: layout change 없음 |
 
 ### 2026-08-14 v0.1.7 launch QA (#447)
 
@@ -2026,6 +2038,25 @@ Test Coverage Map (P02)
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
 | UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, `workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` |
+
+## UC-VOICE-INSTALL-PRECHECK-700 — 준비되지 않은 음성 엔진 설치는 즉시 이유를 알려 준다 (#700)
+
+로컬 음성 런타임 설치 프로세스 실행이나 대용량 아카이브 다운로드 전에 필수 파일(런타임 패키지 폴더, 설치 스크립트, 활성화 계약)의 존재를 사전 검사하여, 누락 시 즉시 명확한 오류 경로와 스테이징 명령 안내를 제공한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 파일이 다 있으면 설치가 이전과 같이 진행된다. |
+| 빈 목록 | 런타임 패키지 폴더가 없으면 즉시 폴더 경로와 스테이징 방법을 표시한다. |
+| 진행 | 확인은 프로세스·내려받기 전에 끝나 진행 표시가 멈춘 채 남지 않는다. |
+| 성공 | 확인 통과 뒤 설치 로그와 진행 이벤트가 기존대로 동작한다. |
+| 오류 | 스크립트·계약 없음, E2E 명시 번들 불완전 → 없는 경로·부족 항목·해결 방법이 설정 화면과 naia.log 에 같은 문구로 표시된다. |
+| 좁은 폭 | 긴 경로가 들어간 오류 문구도 설정 카드 안에서 줄바꿈되어 전부 읽힌다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-VOICE-INSTALL-PRECHECK-700 | packages/shell/src-tauri/src/lib.rs `voxcpm2_installer_precheck_tests` | 해당 없음 — 음성 런타임을 띄우지 않는 Rust 경로; 실 설치 E2E(e2e-tauri voice-6g)는 수동·대기 |
 
 ## UC-CHAT-MARKDOWN-FIDELITY-683 — 채팅 본문이 원문 마크다운 그대로 보인다 (#683)
 

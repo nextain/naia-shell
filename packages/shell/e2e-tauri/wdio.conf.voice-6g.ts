@@ -16,6 +16,10 @@ import {
 	stopOwnedViteServer,
 } from "./codex-e2e-environment.js";
 
+// Same override as codex-e2e-environment.ts — the default stays Codex.
+const MAIN_PROVIDER = process.env.NAIA_E2E_MAIN_PROVIDER ?? "codex";
+const MAIN_MODEL = process.env.NAIA_E2E_MAIN_MODEL ?? "gpt-5.4";
+
 const EXE = process.platform === "win32" ? ".exe" : "";
 const TAURI_BINARY =
 	process.env.TAURI_BINARY ??
@@ -24,7 +28,7 @@ const VOICE_MANIFEST = {
 	version: 1,
 	gate: { naiaAccount: true, mode: "naia" },
 	slots: {
-		main: { provider: "codex", model: "gpt-5.4" },
+		main: { provider: MAIN_PROVIDER, model: MAIN_MODEL },
 		sub: { provider: "none" },
 		embedding: { provider: "none" },
 		stt: {},
@@ -109,27 +113,32 @@ export const config = {
 		// AvatarStore reads the local cache synchronously before file hydration.
 		// Seed the same isolated file-backed identity into the fresh WebView and
 		// reload once so this acceptance exercises a real VRM, not an empty model.
-		await browser.execute((settingsRoot: string) => {
-			localStorage.setItem(
-				"naia-adk-path",
-				settingsRoot.replace(/[\\/]naia-settings$/, ""),
-			);
-			localStorage.setItem(
-				"naia-config",
-				JSON.stringify({
-					provider: "codex",
-					model: "gpt-5.4",
-					onboardingComplete: true,
-					workspaceRoot: settingsRoot.replace(/[\\/]naia-settings$/, ""),
-					localVoiceEnabled: true,
-					ttsProvider: "naia-local-voice",
-					ttsEnabled: true,
-					vllmTtsHost: "http://127.0.0.1:8910",
-					avatarProvider: "vrm",
-					vrmModel: `${settingsRoot}\\vrm-files\\01-OL_Woman.vrm`,
-				}),
-			);
-		}, E2E_SETTINGS);
+		await browser.execute(
+			(settingsRoot: string, MAIN_PROVIDER: string, MAIN_MODEL: string) => {
+				localStorage.setItem(
+					"naia-adk-path",
+					settingsRoot.replace(/[\\/]naia-settings$/, ""),
+				);
+				localStorage.setItem(
+					"naia-config",
+					JSON.stringify({
+						provider: MAIN_PROVIDER,
+						model: MAIN_MODEL,
+						onboardingComplete: true,
+						workspaceRoot: settingsRoot.replace(/[\\/]naia-settings$/, ""),
+						localVoiceEnabled: true,
+						ttsProvider: "naia-local-voice",
+						ttsEnabled: true,
+						vllmTtsHost: "http://127.0.0.1:8910",
+						avatarProvider: "vrm",
+						vrmModel: `${settingsRoot}\\vrm-files\\01-OL_Woman.vrm`,
+					}),
+				);
+			},
+			E2E_SETTINGS,
+			MAIN_PROVIDER,
+			MAIN_MODEL,
+		);
 		await browser.refresh();
 		await browser.waitUntil(
 			() => browser.execute(() => document.querySelector(".app-root") !== null),
