@@ -1,7 +1,7 @@
 /**
  * The only tools the model may see from the Shell boundary.
- * Memory remains an automatic Agent recall/save path and therefore has no
- * model-facing tool name here.
+ * Memory save stays automatic; the only memory tool the model sees is the
+ * read-only skill_memory_recall (nextain/naia-shell#693, Luke 2026-09-23).
  */
 export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"get_time",
@@ -9,6 +9,7 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"memo_list",
 	"memo_get",
 	"memo_save",
+	"skill_memory_recall",
 	"list_dir",
 	"read_file",
 	"skill_youtube_bgm",

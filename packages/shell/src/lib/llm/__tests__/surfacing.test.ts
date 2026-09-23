@@ -2,16 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../../config";
 import {
 	NAIA_SMALL_LLM_DEFAULT,
+	SURFACING_LEVEL_THRESHOLDS,
 	describeSurfacingState,
 	normalizeOpenAiCompatBaseUrl,
 	readSmallLlmSelection,
+	readSurfacingLevel,
 	writeSmallLlmSelection,
+	writeSurfacingLevel,
 } from "../surfacing";
 
 const baseConfig = (): AppConfig => ({
 	provider: "nextain",
 	model: "deepseek-v4-flash",
 	apiKey: "",
+	memoryEmbeddingProvider: "offline",
 });
 
 describe("readSmallLlmSelection", () => {
@@ -158,6 +162,7 @@ describe("writeSmallLlmSelection", () => {
 		expect(updated.memoryLlmProvider).toBe("nextain");
 		expect(updated.memoryLlmModel).toBe(NAIA_SMALL_LLM_DEFAULT.model);
 		expect(updated.memorySurfacing).toBe("on");
+		expect(updated.memorySurfacingJudge).toBe("llm");
 		// input not mutated
 		expect(original.llmRoles?.memory).toBeUndefined();
 	});
@@ -179,6 +184,48 @@ describe("writeSmallLlmSelection", () => {
 		expect(updated.memoryLlmModel).toBe("qwen3:4b");
 		expect(updated.memoryLlmBaseUrl).toBe("http://localhost:11434/v1");
 		expect(updated.memorySurfacing).toBe("on");
+		expect(updated.memorySurfacingJudge).toBe("llm");
+	});
+
+	it("writes vllm choice and sets memorySurfacingJudge to llm", () => {
+		const original = baseConfig();
+		const updated = writeSmallLlmSelection(original, {
+			choice: "vllm",
+			baseUrl: "http://localhost:8000/",
+			model: "  qwen3:4b  ",
+		});
+
+		expect(updated.llmRoles?.memory).toEqual({
+			provider: "vllm",
+			model: "qwen3:4b",
+			baseUrl: "http://localhost:8000/v1",
+		});
+		expect(updated.memoryLlmProvider).toBe("vllm");
+		expect(updated.memoryLlmModel).toBe("qwen3:4b");
+		expect(updated.memoryLlmBaseUrl).toBe("http://localhost:8000/v1");
+		expect(updated.memorySurfacing).toBe("on");
+		expect(updated.memorySurfacingJudge).toBe("llm");
+	});
+
+	it("threshold choice leaves llmRoles.memory unchanged and sets both memorySurfacing and memorySurfacingJudge", () => {
+		const original: AppConfig = {
+			...baseConfig(),
+			llmRoles: {
+				memory: { provider: "ollama", model: "qwen3:4b" },
+			},
+			memoryLlmProvider: "ollama",
+			memoryLlmModel: "qwen3:4b",
+		};
+		const updated = writeSmallLlmSelection(original, { choice: "threshold" });
+
+		expect(updated.llmRoles?.memory).toEqual({
+			provider: "ollama",
+			model: "qwen3:4b",
+		});
+		expect(updated.memoryLlmProvider).toBe("ollama");
+		expect(updated.memorySurfacing).toBe("on");
+		expect(updated.memorySurfacingJudge).toBe("threshold");
+		expect(original.memorySurfacingJudge).toBeUndefined();
 	});
 
 	it("off keeps the memory role and sets memorySurfacing to off", () => {
@@ -202,6 +249,49 @@ describe("writeSmallLlmSelection", () => {
 	});
 });
 
+describe("readSurfacingLevel", () => {
+	it("returns normal by default when memorySurfacingLevel is absent", () => {
+		const config = baseConfig();
+		expect(readSurfacingLevel(config)).toBe("normal");
+		expect(SURFACING_LEVEL_THRESHOLDS[readSurfacingLevel(config)]).toBe(0.86);
+	});
+
+	it("returns less or more when explicitly set", () => {
+		expect(
+			readSurfacingLevel({ ...baseConfig(), memorySurfacingLevel: "less" }),
+		).toBe("less");
+		expect(
+			readSurfacingLevel({ ...baseConfig(), memorySurfacingLevel: "more" }),
+		).toBe("more");
+	});
+
+	it("returns normal for garbage or missing config", () => {
+		expect(
+			readSurfacingLevel({
+				...baseConfig(),
+				memorySurfacingLevel: "garbage" as any,
+			}),
+		).toBe("normal");
+		expect(readSurfacingLevel(null)).toBe("normal");
+		expect(readSurfacingLevel(undefined)).toBe("normal");
+	});
+});
+
+describe("writeSurfacingLevel", () => {
+	it("sets memorySurfacingLevel immutably", () => {
+		const original = baseConfig();
+		const updated = writeSurfacingLevel(original, "more");
+		expect(updated.memorySurfacingLevel).toBe("more");
+		expect(original.memorySurfacingLevel).toBeUndefined();
+	});
+
+	it("falls back to normal when given an invalid level", () => {
+		const original = baseConfig();
+		const updated = writeSurfacingLevel(original, "garbage" as any);
+		expect(updated.memorySurfacingLevel).toBe("normal");
+	});
+});
+
 describe("describeSurfacingState", () => {
 	it("returns off-disabled when surfacingOff is true", () => {
 		const config: AppConfig = {
@@ -215,7 +305,103 @@ describe("describeSurfacingState", () => {
 		expect(state).toEqual({ kind: "off-disabled" });
 	});
 
-	it("returns off-no-small-llm when choice is none", () => {
+	it("off beats embedding: returns off-disabled even if memoryEmbeddingProvider is missing or none", () => {
+		const configNone: AppConfig = {
+			...baseConfig(),
+			memorySurfacing: "off",
+			memoryEmbeddingProvider: "none",
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		};
+		expect(describeSurfacingState(configNone, { naiaKeyPresent: true })).toEqual({
+			kind: "off-disabled",
+		});
+
+		const configMissing: AppConfig = {
+			...baseConfig(),
+			memorySurfacing: "off",
+			memoryEmbeddingProvider: undefined,
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		};
+		expect(
+			describeSurfacingState(configMissing, { naiaKeyPresent: true }),
+		).toEqual({
+			kind: "off-disabled",
+		});
+	});
+
+	it("returns off-no-embedding when memoryEmbeddingProvider is none or missing, even when small LLM is configured", () => {
+		const configNone: AppConfig = {
+			...baseConfig(),
+			memoryEmbeddingProvider: "none",
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		};
+		expect(describeSurfacingState(configNone, { naiaKeyPresent: true })).toEqual({
+			kind: "off-no-embedding",
+		});
+
+		const configMissing: AppConfig = {
+			...baseConfig(),
+			memoryEmbeddingProvider: undefined,
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		};
+		expect(
+			describeSurfacingState(configMissing, { naiaKeyPresent: true }),
+		).toEqual({
+			kind: "off-no-embedding",
+		});
+	});
+
+	it("returns on-threshold/user-choice when memorySurfacingJudge is threshold with Naia role and key", () => {
+		const config: AppConfig = {
+			...baseConfig(),
+			memorySurfacingJudge: "threshold",
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		};
+		const state = describeSurfacingState(config, { naiaKeyPresent: true });
+		expect(state).toEqual({
+			kind: "on-threshold",
+			reason: "user-choice",
+			threshold: 0.86,
+		});
+	});
+
+	it("returns off-disabled when judge is threshold but memorySurfacing is off", () => {
+		const config: AppConfig = {
+			...baseConfig(),
+			memorySurfacing: "off",
+			memorySurfacingJudge: "threshold",
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		};
+		const state = describeSurfacingState(config, { naiaKeyPresent: true });
+		expect(state).toEqual({ kind: "off-disabled" });
+	});
+
+	it("returns off-no-embedding when judge is threshold but memoryEmbeddingProvider is none", () => {
+		const config: AppConfig = {
+			...baseConfig(),
+			memoryEmbeddingProvider: "none",
+			memorySurfacingJudge: "threshold",
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		};
+		const state = describeSurfacingState(config, { naiaKeyPresent: true });
+		expect(state).toEqual({ kind: "off-no-embedding" });
+	});
+
+	it("returns on-threshold/no-small-llm when choice is none", () => {
 		const config: AppConfig = {
 			...baseConfig(),
 			llmRoles: {
@@ -223,10 +409,14 @@ describe("describeSurfacingState", () => {
 			},
 		};
 		const state = describeSurfacingState(config, { naiaKeyPresent: true });
-		expect(state).toEqual({ kind: "off-no-small-llm" });
+		expect(state).toEqual({
+			kind: "on-threshold",
+			reason: "no-small-llm",
+			threshold: 0.86,
+		});
 	});
 
-	it("returns off-no-small-llm when naia chosen but no naiaKeyPresent", () => {
+	it("returns on-threshold/no-small-llm when naia chosen but no naiaKeyPresent", () => {
 		const config: AppConfig = {
 			...baseConfig(),
 			llmRoles: {
@@ -234,10 +424,51 @@ describe("describeSurfacingState", () => {
 			},
 		};
 		const state = describeSurfacingState(config, { naiaKeyPresent: false });
-		expect(state).toEqual({ kind: "off-no-small-llm" });
+		expect(state).toEqual({
+			kind: "on-threshold",
+			reason: "no-small-llm",
+			threshold: 0.86,
+		});
 	});
 
-	it("returns pending-gateway when catalog is a Set lacking the model", () => {
+	it("on-threshold carries threshold according to memorySurfacingLevel", () => {
+		const configLess: AppConfig = {
+			...baseConfig(),
+			memorySurfacingLevel: "less",
+			llmRoles: { memory: { provider: "nextain" } },
+		};
+		expect(describeSurfacingState(configLess, { naiaKeyPresent: true })).toEqual({
+			kind: "on-threshold",
+			reason: "no-small-llm",
+			threshold: 0.88,
+		});
+
+		const configMore: AppConfig = {
+			...baseConfig(),
+			memorySurfacingLevel: "more",
+			llmRoles: { memory: { provider: "nextain" } },
+		};
+		expect(describeSurfacingState(configMore, { naiaKeyPresent: true })).toEqual({
+			kind: "on-threshold",
+			reason: "no-small-llm",
+			threshold: 0.84,
+		});
+
+		const configGarbage: AppConfig = {
+			...baseConfig(),
+			memorySurfacingLevel: "garbage" as any,
+			llmRoles: { memory: { provider: "nextain" } },
+		};
+		expect(
+			describeSurfacingState(configGarbage, { naiaKeyPresent: true }),
+		).toEqual({
+			kind: "on-threshold",
+			reason: "no-small-llm",
+			threshold: 0.86,
+		});
+	});
+
+	it("returns on-threshold/pending-gateway when catalog is a Set lacking the model", () => {
 		const config: AppConfig = {
 			...baseConfig(),
 			llmRoles: {
@@ -248,7 +479,12 @@ describe("describeSurfacingState", () => {
 			naiaKeyPresent: true,
 			gatewayModels: new Set(["deepseek-v4-flash", "solar-mini"]),
 		});
-		expect(state).toEqual({ kind: "pending-gateway", model: "gpt-5.4-nano" });
+		expect(state).toEqual({
+			kind: "on-threshold",
+			reason: "pending-gateway",
+			threshold: 0.86,
+			model: "gpt-5.4-nano",
+		});
 	});
 
 	it("returns on/naia when catalog contains the model", () => {
@@ -305,7 +541,7 @@ describe("describeSurfacingState", () => {
 		});
 	});
 
-	it("returns off-inherited-billed for other provider reached via inherit", () => {
+	it("returns on-threshold/inherited-billed for other provider reached via inherit", () => {
 		const config: AppConfig = {
 			...baseConfig(),
 			llmRoles: {
@@ -316,7 +552,9 @@ describe("describeSurfacingState", () => {
 		};
 		const state = describeSurfacingState(config, { naiaKeyPresent: true });
 		expect(state).toEqual({
-			kind: "off-inherited-billed",
+			kind: "on-threshold",
+			reason: "inherited-billed",
+			threshold: 0.86,
 			provider: "openai",
 			model: "gpt-4o",
 		});

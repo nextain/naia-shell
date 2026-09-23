@@ -3317,6 +3317,46 @@ describe("SettingsTab — memory tab (#298)", () => {
 		);
 		expect(hasMemoryDivider).toBe(false);
 	});
+
+	it("clicking small-llm-choice-threshold stores memorySurfacingJudge and memorySurfacing on, and surfacing-level-less stores memorySurfacingLevel less", async () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "deepseek-v4-flash",
+				memoryEmbeddingProvider: "offline",
+				llmRoles: {
+					memory: {
+						provider: "ollama",
+						model: "llama3",
+						baseUrl: "http://localhost:11434/v1",
+					},
+				},
+			}),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("memory");
+
+		const thresholdRadio = await screen.findByTestId(
+			"small-llm-choice-threshold",
+		);
+		fireEvent.click(thresholdRadio);
+
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.memorySurfacingJudge).toBe("threshold");
+			expect(saved.memorySurfacing).toBe("on");
+		});
+
+		const levelLess = await screen.findByTestId("surfacing-level-less");
+		fireEvent.click(levelLess);
+
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.memorySurfacingLevel).toBe("less");
+		});
+	});
 });
 
 // ── #296: Agent health check app ───────────────────────────────────────────

@@ -205,6 +205,7 @@ test.describe("Memory Settings UI", () => {
 				agentName: "Naia",
 				onboardingComplete: true,
 				discordSessionMigrated: true,
+				memoryEmbeddingProvider: "offline",
 			}),
 		);
 	});
@@ -663,6 +664,92 @@ test.describe("Memory Settings UI", () => {
 		);
 
 		await expect(stateEl).toContainText("qwen3:4b");
+	});
+
+	test("threshold surfacing state, sensitivity and off text", async ({
+		page,
+	}) => {
+		await page.route("**/v1/models", async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify([]),
+			});
+		});
+
+		await gotoSettings(page);
+
+		const stateEl = page.locator('[data-testid="small-llm-state"]');
+		await expect(stateEl).toBeVisible();
+		await expect(stateEl).toHaveText(/점수 문턱|score threshold/i);
+
+		const levelMoreRadio = page.locator(
+			'[data-testid="surfacing-level-more"]',
+		);
+		await expect(levelMoreRadio).toBeVisible();
+		await levelMoreRadio.click();
+
+		await page.waitForFunction(
+			() => {
+				const raw = localStorage.getItem("naia-config");
+				if (!raw) return false;
+				const c = JSON.parse(raw);
+				return c?.memorySurfacingLevel === "more";
+			},
+			{},
+			{ timeout: 5_000 },
+		);
+
+		const saved = await page.evaluate(() => {
+			const raw = localStorage.getItem("naia-config");
+			return raw ? JSON.parse(raw) : null;
+		});
+		expect(saved?.memorySurfacingLevel).toBe("more");
+
+		const offRadio = page.locator('[data-testid="small-llm-choice-off"]');
+		await offRadio.click();
+
+		await expect(
+			page.locator('[data-testid="surfacing-level"]'),
+		).not.toBeVisible();
+
+		await expect(stateEl).toHaveText(
+			/알아서 떠오르지 않습니다|nothing is recalled automatically/i,
+		);
+
+		await expect(
+			page.locator('[data-testid="surfacing-memory-tool-note"]'),
+		).toBeVisible();
+
+		const thresholdRadio = page.locator(
+			'[data-testid="small-llm-choice-threshold"]',
+		);
+		await thresholdRadio.click();
+
+		await page.waitForFunction(
+			() => {
+				const raw = localStorage.getItem("naia-config");
+				if (!raw) return false;
+				const c = JSON.parse(raw);
+				return (
+					c?.memorySurfacing === "on" &&
+					c?.memorySurfacingJudge === "threshold"
+				);
+			},
+			{},
+			{ timeout: 5_000 },
+		);
+
+		const turnedOn = await page.evaluate(() => {
+			const raw = localStorage.getItem("naia-config");
+			return raw ? JSON.parse(raw) : null;
+		});
+		expect(turnedOn?.memorySurfacing).toBe("on");
+		expect(turnedOn?.memorySurfacingJudge).toBe("threshold");
+
+		await expect(
+			page.locator('[data-testid="surfacing-level"]'),
+		).toBeVisible();
 	});
 });
 

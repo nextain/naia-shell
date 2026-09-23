@@ -4,9 +4,12 @@ import { t } from "../lib/i18n";
 import { fetchNaiaModelCapabilities } from "../lib/llm/registry";
 import {
 	type SmallLlmChoice,
+	type SurfacingLevel,
 	describeSurfacingState,
 	readSmallLlmSelection,
+	readSurfacingLevel,
 	writeSmallLlmSelection,
+	writeSurfacingLevel,
 } from "../lib/llm/surfacing";
 
 export interface SmallLlmSectionProps {
@@ -28,10 +31,32 @@ export function SmallLlmSection({
 }: SmallLlmSectionProps) {
 	const selection = readSmallLlmSelection(config);
 	const [selectedChoice, setSelectedChoice] = useState<
-		SmallLlmChoice | "off" | null
+		SmallLlmChoice | "off" | "threshold" | null
 	>(null);
-	const activeChoice =
-		selectedChoice ?? (selection.surfacingOff ? "off" : selection.choice);
+	const defaultChoice: SmallLlmChoice | "off" | "threshold" =
+		selection.surfacingOff
+			? "off"
+			: config?.memorySurfacingJudge === "threshold"
+				? "threshold"
+				: selection.choice === "ollama" || selection.choice === "vllm"
+					? selection.choice
+					: selection.choice === "naia" && naiaKeyPresent
+						? "naia"
+						: "threshold";
+	const activeChoice = selectedChoice ?? defaultChoice;
+
+	const [selectedLevel, setSelectedLevel] = useState<SurfacingLevel | null>(null);
+	const activeLevel = selectedLevel ?? readSurfacingLevel(config);
+
+	useEffect(() => {
+		setSelectedLevel(null);
+	}, [config?.memorySurfacingLevel]);
+
+	const handleSelectLevel = (level: SurfacingLevel) => {
+		if (!config) return;
+		setSelectedLevel(level);
+		onPersist(writeSurfacingLevel(config, level));
+	};
 
 	const [baseUrl, setBaseUrl] = useState<string>(
 		selection.choice === "ollama"
@@ -84,6 +109,11 @@ export function SmallLlmSection({
 	const handleSelectOff = () => {
 		setSelectedChoice("off");
 		onPersist(writeSmallLlmSelection(config, { choice: "off" }));
+	};
+
+	const handleSelectThreshold = () => {
+		setSelectedChoice("threshold");
+		onPersist(writeSmallLlmSelection(config, { choice: "threshold" }));
 	};
 
 	const handleSelectLocal = (choice: "ollama" | "vllm") => {
@@ -149,20 +179,33 @@ export function SmallLlmSection({
 				});
 			}
 			break;
+		case "on-threshold":
+			if (state.reason === "user-choice") {
+				stateText = t("settings.surfacingThresholdChosen", {
+					threshold: state.threshold.toFixed(2),
+				});
+			} else if (state.reason === "no-small-llm") {
+				stateText = t("settings.surfacingOnThreshold", {
+					threshold: state.threshold.toFixed(2),
+				});
+			} else if (state.reason === "inherited-billed") {
+				stateText = t("settings.surfacingThresholdInherited", {
+					provider: state.provider ?? "",
+					model: state.model ?? "",
+					threshold: state.threshold.toFixed(2),
+				});
+			} else {
+				stateText = t("settings.surfacingThresholdPendingGateway", {
+					model: state.model ?? "",
+					threshold: state.threshold.toFixed(2),
+				});
+			}
+			break;
 		case "off-disabled":
 			stateText = t("settings.surfacingOffDisabled");
 			break;
-		case "off-no-small-llm":
-			stateText = t("settings.surfacingOffNoLlm");
-			break;
-		case "off-inherited-billed":
-			stateText = t("settings.surfacingOffInherited", {
-				provider: state.provider,
-				model: state.model,
-			});
-			break;
-		case "pending-gateway":
-			stateText = t("settings.surfacingPendingGateway", { model: state.model });
+		case "off-no-embedding":
+			stateText = t("settings.surfacingOffNoEmbedding");
 			break;
 	}
 
@@ -224,6 +267,17 @@ export function SmallLlmSection({
 						<input
 							type="radio"
 							name="small-llm"
+							value="threshold"
+							data-testid="small-llm-choice-threshold"
+							checked={activeChoice === "threshold"}
+							onChange={handleSelectThreshold}
+						/>
+						{t("settings.smallLlmThreshold")}
+					</label>
+					<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+						<input
+							type="radio"
+							name="small-llm"
 							value="off"
 							data-testid="small-llm-choice-off"
 							checked={activeChoice === "off"}
@@ -232,6 +286,58 @@ export function SmallLlmSection({
 						{t("settings.smallLlmOff")}
 					</label>
 				</div>
+				{activeChoice !== "off" &&
+					(state.kind === "on" || state.kind === "on-threshold") && (
+					<div
+						role="radiogroup"
+						aria-label={t("settings.surfacingLevel")}
+						data-testid="surfacing-level"
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: "6px",
+							marginTop: "8px",
+							flexWrap: "wrap",
+						}}
+					>
+						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+							<input
+								type="radio"
+								name="surfacing-level"
+								value="less"
+								data-testid="surfacing-level-less"
+								checked={activeLevel === "less"}
+								onChange={() => handleSelectLevel("less")}
+							/>
+							{t("settings.surfacingLevelLess")}
+						</label>
+						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+							<input
+								type="radio"
+								name="surfacing-level"
+								value="normal"
+								data-testid="surfacing-level-normal"
+								checked={activeLevel === "normal"}
+								onChange={() => handleSelectLevel("normal")}
+							/>
+							{t("settings.surfacingLevelNormal")}
+						</label>
+						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+							<input
+								type="radio"
+								name="surfacing-level"
+								value="more"
+								data-testid="surfacing-level-more"
+								checked={activeLevel === "more"}
+								onChange={() => handleSelectLevel("more")}
+							/>
+							{t("settings.surfacingLevelMore")}
+						</label>
+						<div className="settings-hint">
+							{t("settings.surfacingLevelHint")}
+						</div>
+					</div>
+				)}
 				{(activeChoice === "ollama" || activeChoice === "vllm") && (
 					<div
 						style={{
@@ -279,6 +385,13 @@ export function SmallLlmSection({
 					{stateText}
 				</div>
 				<div className="settings-hint">{t("settings.surfacingApplyHint")}</div>
+				<div
+					className="settings-hint"
+					data-testid="surfacing-memory-tool-note"
+					style={{ marginTop: "4px" }}
+				>
+					{t("settings.surfacingMemoryToolNote")}
+				</div>
 			</div>
 		</>
 	);

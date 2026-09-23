@@ -2097,3 +2097,23 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-MEMORY-SURFACING-692 | `packages/shell/src/lib/llm/__tests__/surfacing.test.ts`: LLM 선택 판정·주소 정규화·설정 쓰기·상태 라인; `packages/shell/src/lib/slots/__tests__/settings-slots.contract.test.ts`: Naia 로그인 기본값 및 명시 역할 유지 계약; `packages/shell/src/components/__tests__/SmallLlmSection.test.tsx`: 6개 렌더링/상태/영속 시나리오 (a~f) | `packages/shell/e2e/memory-settings.spec.ts`: 실 UI 설정 탭 작은 LLM 섹션 및 Ollama 모델 영속; E2E(실 셸): 루크 수동 확인 대기 |
 
+## UC-MEMORY-THRESHOLD-693 — 작은 LLM 없이도 관련 기억만 떠오르고, 기억 도구는 늘 있다 (#693)
+
+사용자는 로그인 여부나 작은 LLM 설정과 무관하게 "점수 문턱만 쓰기"(`memorySurfacingJudge: "threshold"`)를 직접 선택할 수 있으며, 이때 떠오름에 작은 LLM을 부르지 않아 비용이 발생하지 않는다. 기억 사실 추출 모델(`llmRoles.memory`)은 재설정되거나 변경되지 않고 그대로 유지된다. 작은 LLM이 없거나 로그인하지 않은 상태에서도 점수 문턱(threshold) 방식으로 관련 기억이 떠오르는 상태를 확인하고, 떠오름 민감도(3단계: 덜 자주 0.88 · 보통 0.86 · 더 자주 0.84, `memorySurfacingLevel`)를 조절할 수 있다. 임베딩이 없거나 꺼진 경우(`memoryEmbeddingProvider: "none"`)에는 관련도를 잴 수 없어 떠오름이 꺼지지만, AI가 필요할 때 기억 도구로 찾을 수 있음을 명확히 안내한다. 떠오름을 끈 상태(`memorySurfacing: "off"`)에서도 자동 회상만 일어나지 않을 뿐 기억 도구(`skill_memory_recall`)는 항상 AI에게 노출되어 직접 조회가 가능하다 (루크 2026-09-23 원칙: 기억 도구 유지, 기억 저장은 자동 유지). 모델 노출 도구 유지 목록(keep-list)에는 읽기 전용인 `skill_memory_recall`이 추가되어 사용자가 떠오름을 끄더라도 기억 기능은 온전히 활용된다. 떠오름을 끈 뒤에도 작은 LLM 없이 다시 켤 수 있다(점수 문턱 선택지).
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 작은 LLM이 없거나 미로그인 시, 또는 사용자가 "점수 문턱만 쓰기"를 선택한 경우 점수 문턱 방식(기본 문턱 0.86)으로 떠오름이 켜지고, 상태 줄에 문턱과 비용 없음(또는 선택 문구)이 표시된다. 사실 추출 모델은 변경되지 않는다. |
+| 빈 목록 | 임베딩이 없는 경우(키워드 검색만 가능) "임베딩이 없어 관련도를 잴 수 없습니다"로 정직하게 안내되고 기억 도구 안내가 표시된다. |
+| 진행 | 민감도 라디오(덜 자주 / 보통 / 더 자주) 선택 시 즉시 로컬 상태가 전환되고 `memorySurfacingLevel` 설정이 영속된다. |
+| 성공 | 떠오름을 끄면 상태 줄에 "알아서 떠오르지 않습니다"와 함께 기억 도구 사용 가능 안내가 표시되며, 민감도 그룹은 숨겨진다. 기억 도구 안내는 모든 상태에서 상시 노출된다. |
+| 오류 | 유효하지 않은 민감도 값이나 설정 누락 시에도 기본값("normal", 0.86)으로 안전하게 폴백 동작한다. |
+| 좁은 폭 | 좁은 화면에서도 작은 LLM 라디오, 민감도 라디오 그룹, 상태 줄, 기억 도구 안내 힌트가 줄바꿈되어 잘림 없이 접근 가능하다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-MEMORY-THRESHOLD-693 | `packages/shell/src/lib/llm/__tests__/surfacing.test.ts`: 새 상태(on-threshold user-choice/off-no-embedding/off-disabled), 판정자(judge) 선택 및 사실 추출 역할 불변성, 민감도 3단계 문턱 읽기·쓰기; `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: `skill_memory_recall` keep-list 포함 및 허용 계약; `packages/shell/src/components/__tests__/SmallLlmSection.test.tsx`: 점수 문턱 상시 노출 및 선택 영속, 선택 상태 텍스트, 민감도 라디오, 꺼짐 시 숨김, 상시 기억 도구 힌트 렌더링 | `packages/shell/e2e/memory-settings.spec.ts`: 실 UI 설정 기억 탭 점수 문턱 상태 표시, 민감도 선택 영속, 꺼짐 전환 및 도구 힌트 노출, memorySurfacingJudge 영속; E2E(실 셸): 루크 확인 대기 |
+
+

@@ -16,6 +16,7 @@ function makeConfig(partial: Partial<AppConfig> = {}): AppConfig {
 		provider: "nextain",
 		model: "deepseek-v4-flash",
 		apiKey: "",
+		memoryEmbeddingProvider: "offline",
 		...partial,
 	} as AppConfig;
 }
@@ -31,7 +32,7 @@ describe("SmallLlmSection", () => {
 		await setLocale("en");
 	});
 
-	it("(a) renders off_no_llm state when not logged in with naia role and disables naia radio", async () => {
+	it("(a) renders on-threshold state when not logged in with naia role and disables naia radio", async () => {
 		const config = makeConfig({
 			llmRoles: {
 				memory: { provider: "nextain", model: "gpt-5.4-nano" },
@@ -49,7 +50,9 @@ describe("SmallLlmSection", () => {
 		);
 
 		const stateEl = screen.getByTestId("small-llm-state");
-		expect(stateEl.textContent).toBe(t("settings.surfacingOffNoLlm"));
+		expect(stateEl.textContent).toBe(
+			t("settings.surfacingOnThreshold", { threshold: "0.86" }),
+		);
 
 		const naiaRadio = screen.getByTestId("small-llm-choice-naia");
 		expect(naiaRadio).toBeDisabled();
@@ -78,7 +81,10 @@ describe("SmallLlmSection", () => {
 		const stateEl = screen.getByTestId("small-llm-state");
 		await waitFor(() => {
 			expect(stateEl.textContent).toBe(
-				t("settings.surfacingPendingGateway", { model: "gpt-5.4-nano" }),
+				t("settings.surfacingThresholdPendingGateway", {
+					model: "gpt-5.4-nano",
+					threshold: "0.86",
+				}),
 			);
 		});
 	});
@@ -246,5 +252,259 @@ describe("SmallLlmSection", () => {
 		const modelInputAfter = screen.getByTestId("small-llm-model") as HTMLInputElement;
 		expect(ollamaRadioAfter).toBeChecked();
 		expect(modelInputAfter.value).toBe("qwen");
+	});
+
+	it("renders off-disabled text, hides level radiogroup, and shows memory tool note when off is selected", async () => {
+		const config = makeConfig({
+			memorySurfacing: "off",
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		});
+		render(
+			<SmallLlmSection
+				config={config}
+				naiaKeyPresent={true}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={vi.fn()}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+
+		const stateEl = screen.getByTestId("small-llm-state");
+		expect(stateEl.textContent).toBe(t("settings.surfacingOffDisabled"));
+		expect(screen.queryByTestId("surfacing-level")).toBeNull();
+		expect(screen.getByTestId("surfacing-memory-tool-note")).toBeVisible();
+	});
+
+	it("renders level radios with normal checked by default and calls onPersist when clicking more", async () => {
+		const config = makeConfig();
+		const onPersist = vi.fn();
+		render(
+			<SmallLlmSection
+				config={config}
+				naiaKeyPresent={false}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={onPersist}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+
+		const normalRadio = screen.getByTestId("surfacing-level-normal");
+		expect(normalRadio).toBeChecked();
+
+		const moreRadio = screen.getByTestId("surfacing-level-more");
+		expect(moreRadio).not.toBeChecked();
+		fireEvent.click(moreRadio);
+
+		expect(onPersist).toHaveBeenCalledWith(
+			expect.objectContaining({
+				memorySurfacingLevel: "more",
+			}),
+		);
+	});
+
+	it("renders off-no-embedding text when memoryEmbeddingProvider is none", async () => {
+		const config = makeConfig({
+			memoryEmbeddingProvider: "none",
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		});
+		render(
+			<SmallLlmSection
+				config={config}
+				naiaKeyPresent={true}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={vi.fn()}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+
+		const stateEl = screen.getByTestId("small-llm-state");
+		expect(stateEl.textContent).toBe(t("settings.surfacingOffNoEmbedding"));
+	});
+
+	it("renders memory tool note in every state", async () => {
+		const onPersist = vi.fn();
+		const { rerender } = render(
+			<SmallLlmSection
+				config={makeConfig({ memoryEmbeddingProvider: "none" })}
+				naiaKeyPresent={false}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={onPersist}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+		expect(screen.getByTestId("surfacing-memory-tool-note")).toBeVisible();
+
+		rerender(
+			<SmallLlmSection
+				config={makeConfig({ memorySurfacing: "off" })}
+				naiaKeyPresent={false}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={onPersist}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+		expect(screen.getByTestId("surfacing-memory-tool-note")).toBeVisible();
+
+		rerender(
+			<SmallLlmSection
+				config={makeConfig()}
+				naiaKeyPresent={false}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={onPersist}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+		expect(screen.getByTestId("surfacing-memory-tool-note")).toBeVisible();
+	});
+
+	it("not logged in + memorySurfacing: 'off' -> click small-llm-choice-threshold -> onPersist called with memorySurfacing: 'on' and memory role unchanged", async () => {
+		const initialMemoryRole = { provider: "nextain", model: "gpt-5.4-nano" };
+		const config = makeConfig({
+			memorySurfacing: "off",
+			llmRoles: {
+				memory: initialMemoryRole,
+			},
+		});
+		const onPersist = vi.fn();
+		render(
+			<SmallLlmSection
+				config={config}
+				naiaKeyPresent={false}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={onPersist}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+
+		const thresholdRadio = screen.getByTestId("small-llm-choice-threshold");
+		fireEvent.click(thresholdRadio);
+
+		expect(onPersist).toHaveBeenCalledTimes(1);
+		const persisted = onPersist.mock.calls[0][0];
+		expect(persisted.memorySurfacing).toBe("on");
+		expect(persisted.memorySurfacingJudge).toBe("threshold");
+		expect(persisted.llmRoles?.memory).toEqual(initialMemoryRole);
+	});
+
+	it("local ollama role configured -> clicking threshold -> memory role unchanged, memorySurfacingJudge: 'threshold'", async () => {
+		const memoryRole = {
+			provider: "ollama",
+			model: "llama3",
+			baseUrl: "http://localhost:11434/v1",
+		};
+		const config = makeConfig({
+			llmRoles: {
+				memory: memoryRole,
+			},
+		});
+		const onPersist = vi.fn();
+		render(
+			<SmallLlmSection
+				config={config}
+				naiaKeyPresent={false}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={onPersist}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+
+		const thresholdRadio = screen.getByTestId("small-llm-choice-threshold");
+		fireEvent.click(thresholdRadio);
+
+		expect(onPersist).toHaveBeenCalledWith(
+			expect.objectContaining({
+				memorySurfacing: "on",
+				memorySurfacingJudge: "threshold",
+				llmRoles: expect.objectContaining({
+					memory: memoryRole,
+				}),
+			}),
+		);
+	});
+
+	it("logged in with Naia role -> the threshold radio is rendered, clicking it calls onPersist with judge threshold, and state text is chosen text after re-render", async () => {
+		const config = makeConfig({
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		});
+		const onPersist = vi.fn();
+		const { rerender } = render(
+			<SmallLlmSection
+				config={config}
+				naiaKeyPresent={true}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={onPersist}
+				fetchCatalog={vi.fn().mockResolvedValue(new Map([["gpt-5.4-nano", {}]]))}
+			/>,
+		);
+
+		const thresholdRadio = screen.getByTestId("small-llm-choice-threshold");
+		expect(thresholdRadio).toBeInTheDocument();
+		fireEvent.click(thresholdRadio);
+
+		expect(onPersist).toHaveBeenCalledWith(
+			expect.objectContaining({
+				memorySurfacing: "on",
+				memorySurfacingJudge: "threshold",
+			}),
+		);
+
+		rerender(
+			<SmallLlmSection
+				config={{
+					...config,
+					memorySurfacing: "on",
+					memorySurfacingJudge: "threshold",
+				}}
+				naiaKeyPresent={true}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={onPersist}
+				fetchCatalog={vi.fn().mockResolvedValue(new Map([["gpt-5.4-nano", {}]]))}
+			/>,
+		);
+
+		const stateEl = screen.getByTestId("small-llm-state");
+		expect(stateEl.textContent).toBe(
+			t("settings.surfacingThresholdChosen", { threshold: "0.86" }),
+		);
+	});
+
+	it("memoryEmbeddingProvider: 'none' -> level group not rendered", async () => {
+		const config = makeConfig({
+			memoryEmbeddingProvider: "none",
+			llmRoles: {
+				memory: { provider: "nextain", model: "gpt-5.4-nano" },
+			},
+		});
+		render(
+			<SmallLlmSection
+				config={config}
+				naiaKeyPresent={true}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={vi.fn()}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+
+		expect(screen.queryByTestId("surfacing-level")).toBeNull();
+	});
+
+	it("config={null} renders nothing and does not throw", () => {
+		const { container } = render(
+			<SmallLlmSection
+				config={null}
+				naiaKeyPresent={false}
+				gatewayHttpUrl="http://localhost:1420"
+				onPersist={vi.fn()}
+				fetchCatalog={vi.fn().mockResolvedValue(null)}
+			/>,
+		);
+
+		expect(container.firstChild).toBeNull();
 	});
 });

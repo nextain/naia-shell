@@ -16,6 +16,7 @@ describe("model-facing tool contract", () => {
 			"memo_list",
 			"memo_get",
 			"memo_save",
+			"skill_memory_recall",
 			"list_dir",
 			"read_file",
 			"skill_youtube_bgm",
@@ -76,6 +77,9 @@ describe("model-facing tool contract", () => {
 			false,
 		);
 		expect(isModelFacingToolAllowed("skill_knowledge_search")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_memory_recall")).toBe(true);
+		expect(isModelFacingToolAllowed("memory_save")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_memory_delete")).toBe(false);
 	});
 
 	it("workspace app tools stay inside the keep list", async () => {
