@@ -927,6 +927,7 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-VOICE-DEV-MANIFEST.1** | local QA | Windows 개발 실행도 검증된 v0.2.2 Host 다운로드 manifest를 명시적으로 전달하며 누락된 패키지로 위장하지 않는다. | dev launcher 계약 테스트 + 동일 debug 바이너리 설치 상태 확인 |
 | **FR-VOICE-SELECT.1** | #507 | 설치된 Host 음성을 설정에서 선택하면 엔진을 자동 시작하고 진행을 표시한다. 시작 실패나 차단으로 선택을 되돌릴 때는 사유와 되돌림 안내를 프로필·음성 화면 모두에 표시하며 무언 revert 를 하지 않는다. | SettingsTab 단위 테스트(자동 시작·revert 사유 표기) + settings-slots 브라우저 E2E |
 | **FR-VOICE-DEV-STAGING.1** | #508 | dev(`tauri-with-mode`)와 e2e(`build-e2e-tauri`) 실행은 installer 리소스 3종(prepare-voxcpm2-model.ps1, voxcpm2-activation-contract.json, download-manifest.json)을 Rust 가 읽는 resource_dir(`<target>/debug/voxcpm2-runtime/`)에 멱등 스테이징한다. 설치 완료된 payload 가 개발 실행에서 미설치로 위장되지 않는다. | `scripts/__tests__/stage-voxcpm2-runtime.test.ts` debug 스테이징 계약 |
+| **FR-VOICE-INSTALL-PRECHECK.1** | #700 | 로컬 음성 설치는 설치 프로세스(PowerShell/bash)를 띄우거나 대용량 패키지를 내려받기 전에 런타임 패키지 폴더·설치 스크립트·활성화 계약의 존재를 확인한다. 없으면 즉시 없는 경로와 해결 방법(`scripts/stage-voxcpm2-runtime.mjs` 로 스테이징)을 담은 오류를 돌려주고, 같은 문구를 설정·온보딩 진행 표시(voxcpm2_install_progress failed)와 naia.log 에 남긴다. E2E 모드에서 명시한 번들 폴더가 없거나 불완전하면 내려받기로 넘어가지 않고 부족한 항목을 나열해 실패한다. 파일이 모두 있으면 동작은 이전과 같다. 기동(start_voxcpm2)의 번들 없음 오류도 같은 형식이다. | Rust `voxcpm2_installer_precheck_tests` (폴더 없음·스크립트 없음·계약 없음·정상·다운로드 전 검사·E2E 명시 번들 오류·기동 전 순서) |
 ## 기능 요구사항 (FR) — 워크스페이스 컨텍스트 해석 (#501, 에픽 #497)
 
 > 계약: `docs/progress/issue-497-universal-agent.md`. 출처 시나리오: `user-scenarios.md`의
