@@ -7649,6 +7649,7 @@ async fn install_voxcpm2_runtime(
     let state_root_has_legacy = state_root.join("payload").exists()
         || state_root.join("python-packages").exists()
         || state_root.join("models").exists();
+    let mut migrated_now = false;
     if !ctx.slot_dir.exists() && state_root_has_legacy {
         let legacy_root = state_root.clone();
         let slot_dir = ctx.slot_dir.clone();
@@ -7656,6 +7657,7 @@ async fn install_voxcpm2_runtime(
         let downloads_dir = ctx.cache.downloads_dir();
         let expected_sha = sha.clone();
         let palette_ids = voxcpm2_palette_ids();
+        let import_payload = staged.is_none();
         let migration_outcome = tokio::task::spawn_blocking(move || {
             let input = voice_cache::MigrationPlanInput {
                 legacy_root: &legacy_root,
@@ -7664,6 +7666,7 @@ async fn install_voxcpm2_runtime(
                 downloads_dir: &downloads_dir,
                 expected_artifact_sha: &expected_sha,
                 palette_ids: &palette_ids,
+                import_payload,
             };
             voice_cache::migrate_legacy_runtime(&input, &voice_cache::available_space)
         })
@@ -7671,6 +7674,7 @@ async fn install_voxcpm2_runtime(
         .map_err(|e| format!("migration task failed: {e}"))?;
         match migration_outcome {
             Ok(voice_cache::MigrationOutcome::Migrated(r)) => {
+                migrated_now = true;
                 if let Ok(p) = ctx.receipt_path() {
                     let _ = voice_cache::write_migration_receipt(&p, &r);
                 }
@@ -7728,6 +7732,43 @@ async fn install_voxcpm2_runtime(
         )));
     }
 
+    if migrated_now {
+        let legacy_root = state_root.clone();
+        let slot_dir = ctx.slot_dir.clone();
+        let artifact_root = bundle_root.join("artifact");
+        let engine_dir = ctx.engine_dir.clone();
+        let engine = ctx.engine.clone();
+        let record = ctx.record.clone();
+        let os = ctx.os;
+        let adopt_res = tokio::task::spawn_blocking(move || {
+            let input = voice_cache::AdoptMigratedInput {
+                legacy_root: &legacy_root,
+                slot_dir: &slot_dir,
+                artifact_root: &artifact_root,
+                engine_dir: engine_dir.as_deref(),
+                engine: engine.as_ref(),
+                record: &record,
+                os,
+            };
+            voice_cache::adopt_migrated_slot(&input)
+        })
+        .await;
+        match adopt_res {
+            Ok(Ok(r)) => {
+                log_both(&format!(
+                    "[Naia] voxcpm2 adopt migrated slot: slot_record={}, native_hashes={}, ready_json={}, engine_stamp={}",
+                    r.slot_record, r.native_hashes, r.ready_json, r.engine_stamp
+                ));
+            }
+            Ok(Err(e)) => {
+                log_both(&format!("[Naia] voxcpm2 adopt migrated slot error (ignored): {e}"));
+            }
+            Err(e) => {
+                log_both(&format!("[Naia] voxcpm2 adopt migrated slot task failed (ignored): {e}"));
+            }
+        }
+    }
+
     let bundle_root_for_readiness = bundle_root.clone();
     let ctx_for_readiness = ctx.clone();
     let initial_facts = tokio::task::spawn_blocking(move || {
@@ -7736,6 +7777,15 @@ async fn install_voxcpm2_runtime(
     .await
     .map_err(|error| format!("readiness check failed: {error}"))?;
     if voice_cache::evaluate_readiness(&initial_facts) == voice_cache::Readiness::Ready {
+        if let Ok(p) = ctx.receipt_path() {
+            if let Some(mut r) = voice_cache::read_migration_receipt(&p) {
+                if !r.verified_install {
+                    r.verified_install = true;
+                    let _ = voice_cache::write_migration_receipt(&p, &r);
+                }
+            }
+        }
+        let _ = voice_cache::sync_palette_to_state(&ctx.slot_voices(), &ctx.state_voices());
         let (active, prev) = voice_cache::set_active_slot(&ctx.cache, &ctx.profile, &ctx.record.slot_key)?;
         voice_cache::prune_slots(&ctx.cache, &ctx.profile, &active, prev.as_deref());
         let probe = probe_voxcpm2_installation(Some(&bundle_root), Some(&ctx));

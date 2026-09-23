@@ -84,8 +84,24 @@ pub fn resolve_cache_root() -> Option<PathBuf> {
 
 // ─── 2. Path segment allowlist and keys ───────────────────────────────────────
 
+pub const DIR_KEY_LEN: usize = 16;
+
 pub fn is_hex64(s: &str) -> bool {
     s.len() == 64 && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+}
+
+pub fn is_hex16(s: &str) -> bool {
+    s.len() == DIR_KEY_LEN && s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+}
+
+pub fn dir_key(key: &str) -> Result<String, String> {
+    if is_hex64(key) {
+        Ok(key[..DIR_KEY_LEN].to_string())
+    } else if is_hex16(key) {
+        Ok(key.to_string())
+    } else {
+        Err(format!("invalid cache path segment: {}", key))
+    }
 }
 
 pub fn is_safe_profile_id(s: &str) -> bool {
@@ -202,38 +218,30 @@ impl CacheLayout {
         if !is_safe_profile_id(profile) {
             return Err(format!("invalid cache path segment: {}", profile));
         }
-        if !is_hex64(slot) {
-            return Err(format!("invalid cache path segment: {}", slot));
-        }
-        Ok(self.root.join("slots").join(profile).join(slot))
+        let dk = dir_key(slot)?;
+        Ok(self.root.join("slots").join(profile).join(dk))
     }
 
     pub fn engine_dir(&self, profile: &str, slot: &str, stamp: &str) -> Result<PathBuf, String> {
         let slot_dir = self.slot_dir(profile, slot)?;
-        if !is_hex64(stamp) {
-            return Err(format!("invalid cache path segment: {}", stamp));
-        }
-        Ok(slot_dir.join("engines").join(stamp))
+        let stamp_dk = dir_key(stamp)?;
+        Ok(slot_dir.join("engines").join(stamp_dk))
     }
 
     pub fn lock_path(&self, profile: &str, slot: &str) -> Result<PathBuf, String> {
         if !is_safe_profile_id(profile) {
             return Err(format!("invalid cache path segment: {}", profile));
         }
-        if !is_hex64(slot) {
-            return Err(format!("invalid cache path segment: {}", slot));
-        }
-        Ok(self.root.join("locks").join(format!("{}-{}.lock", profile, slot)))
+        let dk = dir_key(slot)?;
+        Ok(self.root.join("locks").join(format!("{}-{}.lock", profile, dk)))
     }
 
     pub fn migration_receipt(&self, profile: &str, slot: &str) -> Result<PathBuf, String> {
         if !is_safe_profile_id(profile) {
             return Err(format!("invalid cache path segment: {}", profile));
         }
-        if !is_hex64(slot) {
-            return Err(format!("invalid cache path segment: {}", slot));
-        }
-        Ok(self.root.join("migration").join(format!("{}-{}.receipt.json", profile, slot)))
+        let dk = dir_key(slot)?;
+        Ok(self.root.join("migration").join(format!("{}-{}.receipt.json", profile, dk)))
     }
 }
 
@@ -500,7 +508,11 @@ pub fn migration_excluded(relative: &Path) -> bool {
         if MIGRATION_EXCLUDED_NAMES.iter().any(|&name| s == name) {
             return true;
         }
-        if s.ends_with(".pending") || s.ends_with(".backup") {
+        if s.ends_with(".pending")
+            || s.ends_with(".backup")
+            || s.ends_with(".pending-migration")
+            || s.ends_with(".mig")
+        {
             return true;
         }
     }
@@ -731,11 +743,13 @@ fn copy_single_file(
 // ─── 6. Retention ────────────────────────────────────────────────────────────
 
 pub fn slots_to_prune(existing: &[String], active: &str, previous: Option<&str>) -> Vec<String> {
+    let active_dk = dir_key(active).ok();
+    let previous_dk = previous.and_then(|p| dir_key(p).ok());
     let mut to_prune = Vec::new();
     for name in existing {
-        if is_hex64(name) {
-            let is_active = name == active;
-            let is_previous = previous.map_or(false, |prev| name == prev);
+        if is_hex16(name) {
+            let is_active = active_dk.as_ref().map_or(false, |a| name == a);
+            let is_previous = previous_dk.as_ref().map_or(false, |p| name == p);
             if !is_active && !is_previous {
                 to_prune.push(name.clone());
             }
@@ -1521,6 +1535,7 @@ pub struct MigrationPlanInput<'a> {
     pub downloads_dir: &'a Path,
     pub expected_artifact_sha: &'a str,
     pub palette_ids: &'a [String],
+    pub import_payload: bool,
 }
 
 fn find_first_probe_file(path: &Path, excluded: &dyn Fn(&Path) -> bool) -> Option<PathBuf> {
@@ -1572,7 +1587,7 @@ pub fn migrate_legacy_runtime_with(
     let payload_artifact = input.legacy_root.join("payload").join("artifact");
     let mut payload_importable = false;
     let mut payload_mismatched = false;
-    if payload_artifact.exists() && !is_reparse_or_symlink(&payload_artifact) {
+    if input.import_payload && payload_artifact.exists() && !is_reparse_or_symlink(&payload_artifact) {
         let manifest_path = payload_artifact.join("artifact-manifest.json");
         if manifest_path.is_file() && !is_reparse_or_symlink(&manifest_path) {
             if let Ok(manifest_bytes) = std::fs::read(&manifest_path) {
@@ -1712,8 +1727,12 @@ pub fn migrate_legacy_runtime_with(
         });
     }
 
-    // Staging into <slot_dir>.pending-migration
-    let pending_slot = PathBuf::from(format!("{}.pending-migration", input.slot_dir.display()));
+    // Staging into <slot_dir>.mig (short suffix to avoid MAX_PATH overflow)
+    let old_pending_slot = PathBuf::from(format!("{}.pending-migration", input.slot_dir.display()));
+    if old_pending_slot.exists() && !is_reparse_or_symlink(&old_pending_slot) {
+        let _ = std::fs::remove_dir_all(&old_pending_slot);
+    }
+    let pending_slot = PathBuf::from(format!("{}.mig", input.slot_dir.display()));
     if pending_slot.exists() {
         if is_reparse_or_symlink(&pending_slot) {
             return Err(format!(
@@ -1895,6 +1914,241 @@ pub fn write_migration_receipt(path: &Path, receipt: &MigrationReceipt) -> Resul
 pub fn read_migration_receipt(path: &Path) -> Option<MigrationReceipt> {
     let bytes = std::fs::read(path).ok()?;
     serde_json::from_slice(&bytes).ok()
+}
+
+#[derive(Debug, Clone)]
+pub struct AdoptMigratedInput<'a> {
+    pub legacy_root: &'a Path,
+    pub slot_dir: &'a Path,
+    pub artifact_root: &'a Path,
+    pub engine_dir: Option<&'a Path>,
+    pub engine: Option<&'a EngineStampRecord>,
+    pub record: &'a SlotRecord,
+    pub os: CacheOs,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AdoptReport {
+    pub slot_record: bool,
+    pub native_hashes: bool,
+    pub ready_json: bool,
+    pub engine_stamp: bool,
+}
+
+pub fn adopt_migrated_slot(input: &AdoptMigratedInput) -> Result<AdoptReport, String> {
+    let mut report = AdoptReport::default();
+
+    if !input.slot_dir.exists() || is_reparse_or_symlink(input.slot_dir) {
+        return Ok(report);
+    }
+
+    // 1. Artifact identity check
+    let manifest_path = input.artifact_root.join("artifact-manifest.json");
+    if is_reparse_or_symlink(&manifest_path) || !manifest_path.is_file() {
+        return Ok(report);
+    }
+    let manifest_bytes = std::fs::read(&manifest_path)
+        .map_err(|e| format!("failed to read artifact-manifest.json: {}", e))?;
+    let actual_manifest_sha = sha256_hex(&manifest_bytes);
+    if !actual_manifest_sha.eq_ignore_ascii_case(&input.record.artifact_manifest_sha256) {
+        return Ok(report);
+    }
+
+    // 2. Slot record
+    write_slot_record(input.slot_dir, input.record)?;
+    report.slot_record = true;
+
+    // 3. Native hashes check & record
+    let manifest_val: Option<serde_json::Value> = serde_json::from_slice(&manifest_bytes).ok();
+    let mut manifest_files = std::collections::HashMap::new();
+    if let Some(val) = &manifest_val {
+        if let Some(files_arr) = val.get("files").and_then(|f| f.as_array()) {
+            for entry in files_arr {
+                if let (Some(p), Some(s)) = (
+                    entry.get("path").or_else(|| entry.get("name")).and_then(|v| v.as_str()),
+                    entry.get("sha256").and_then(|v| v.as_str()),
+                ) {
+                    manifest_files.insert(p.replace('\\', "/"), s.to_string());
+                }
+            }
+        } else if let Some(files_obj) = val.get("files").and_then(|f| f.as_object()) {
+            for (k, v) in files_obj {
+                if let Some(s) = v.as_str() {
+                    manifest_files.insert(k.replace('\\', "/"), s.to_string());
+                }
+            }
+        }
+    }
+
+    let native_paths = native_module_paths(input.artifact_root, input.os);
+    let mut native_verified = !native_paths.is_empty() && !manifest_files.is_empty();
+    if native_verified {
+        for np in &native_paths {
+            if is_reparse_or_symlink(np) || !np.is_file() {
+                native_verified = false;
+                break;
+            }
+            let rel = match np.strip_prefix(input.artifact_root) {
+                Ok(r) => r.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"),
+                Err(_) => {
+                    native_verified = false;
+                    break;
+                }
+            };
+            match manifest_files.get(&rel) {
+                Some(expected_sha) => {
+                    let actual_sha = match sha256_streaming(np) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            native_verified = false;
+                            break;
+                        }
+                    };
+                    if !actual_sha.eq_ignore_ascii_case(expected_sha) {
+                        native_verified = false;
+                        break;
+                    }
+                }
+                None => {
+                    native_verified = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if native_verified {
+        record_native_hashes(input.slot_dir, input.artifact_root, input.os)?;
+        report.native_hashes = true;
+    }
+
+    // 4. Ready marker adoption
+    let expected_model_rev = {
+        let rmanifest_path = input.artifact_root.join("runtime-manifest.json");
+        std::fs::read(&rmanifest_path).ok().and_then(|bytes| {
+            let val: Option<serde_json::Value> = serde_json::from_slice(&bytes).ok();
+            val.as_ref()
+                .and_then(|v| v.pointer("/model/revision"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+    };
+
+    let legacy_ready_path = input.legacy_root.join("voxcpm2-runtime-ready.json");
+    if legacy_ready_path.is_file() && !is_reparse_or_symlink(&legacy_ready_path) {
+        if let Ok(ready_bytes) = std::fs::read(&legacy_ready_path) {
+            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&ready_bytes) {
+                let art_sha = val.get("artifactManifestSha256").and_then(|v| v.as_str());
+                let mod_rev = val
+                    .pointer("/model/revision")
+                    .or_else(|| val.get("model_revision"))
+                    .or_else(|| val.get("modelRevision"))
+                    .and_then(|v| v.as_str());
+
+                let sha_ok = art_sha
+                    .map(|s| s.eq_ignore_ascii_case(&input.record.artifact_manifest_sha256))
+                    .unwrap_or(false);
+                let rev_ok = match (&expected_model_rev, mod_rev) {
+                    (Some(exp), Some(act)) => exp.eq_ignore_ascii_case(act),
+                    _ => false,
+                };
+
+                if sha_ok && rev_ok {
+                    let dest = input.slot_dir.join("voxcpm2-runtime-ready.json");
+                    let tmp = input.slot_dir.join("voxcpm2-runtime-ready.json.tmp");
+                    if std::fs::write(&tmp, &ready_bytes).is_ok() {
+                        if std::fs::rename(&tmp, &dest).is_err() {
+                            let _ = std::fs::remove_file(&dest);
+                            let _ = std::fs::rename(&tmp, &dest);
+                        }
+                        report.ready_json = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Engine stamp adoption
+    if let (Some(ed), Some(eng)) = (input.engine_dir, input.engine) {
+        let engine_manifest_path = ed.join("manifest.json");
+        if engine_manifest_path.is_file() && !is_reparse_or_symlink(&engine_manifest_path) {
+            if let Ok(mbytes) = std::fs::read(&engine_manifest_path) {
+                if let Ok(mval) = serde_json::from_slice::<serde_json::Value>(&mbytes) {
+                    let gpu_name = mval.get("gpu_name").or_else(|| mval.get("gpuName")).and_then(|v| v.as_str());
+                    let cc = mval
+                        .get("compute_capability")
+                        .or_else(|| mval.get("computeCapability"))
+                        .or_else(|| mval.get("compute_cap"))
+                        .or_else(|| mval.get("computeCap"))
+                        .and_then(|v| v.as_str());
+                    let trt = mval
+                        .get("tensorrt_version")
+                        .or_else(|| mval.get("tensorrtVersion"))
+                        .and_then(|v| v.as_str());
+                    let rev = mval
+                        .get("model_revision")
+                        .or_else(|| mval.get("modelRevision"))
+                        .and_then(|v| v.as_str());
+
+                    let gpu_ok = matches!((gpu_name, cc), (Some(g), Some(c)) if eng.gpu_name.eq_ignore_ascii_case(g) && eng.compute_cap == c);
+                    let trt_ok = match trt {
+                        Some(t) => eng.tensorrt_version == t,
+                        None => false,
+                    };
+                    let rev_ok = match (&expected_model_rev, rev) {
+                        (Some(exp), Some(act)) => exp.eq_ignore_ascii_case(act),
+                        _ => false,
+                    };
+
+                    let engine_name = mval.get("engine").and_then(|v| v.as_str());
+                    let valid_engine_name = match engine_name {
+                        Some(name)
+                            if !name.is_empty()
+                                && !name.contains('/')
+                                && !name.contains('\\')
+                                && !name.contains("..")
+                                && !name.contains(':')
+                                && ed.join(name).parent() == Some(ed) =>
+                        {
+                            Some(name)
+                        }
+                        _ => None,
+                    };
+
+                    let (file_ok, sha_ok) = match valid_engine_name {
+                        Some(name) => {
+                            let engine_file = ed.join(name);
+                            let f_ok = engine_file.is_file()
+                                && !is_reparse_or_symlink(&engine_file)
+                                && std::fs::metadata(&engine_file).map(|m| m.len() > 0).unwrap_or(false);
+                            let s_ok = match mval
+                                .get("engine_sha256")
+                                .or_else(|| mval.get("engineSha256"))
+                                .and_then(|v| v.as_str())
+                            {
+                                Some(exp_sha) if !exp_sha.is_empty() => {
+                                    sha256_streaming(&engine_file)
+                                        .map(|s| s.eq_ignore_ascii_case(exp_sha))
+                                        .unwrap_or(false)
+                                }
+                                _ => false,
+                            };
+                            (f_ok, s_ok)
+                        }
+                        None => (false, false),
+                    };
+
+                    if gpu_ok && trt_ok && rev_ok && file_ok && sha_ok {
+                        // Driver version is not recorded in the legacy engine manifest; a TensorRT engine built for the same GPU and TensorRT version is accepted.
+                        write_engine_stamp(ed, eng)?;
+                        report.engine_stamp = true;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(report)
 }
 
 // ─── 15. Legacy cleanup after one verified start ─────────────────────────────
@@ -2528,6 +2782,7 @@ mod tests {
         assert_eq!(layout.downloads_dir(), root.join("voxcpm2").join("downloads"));
 
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let dk = &hex[..16];
         assert_eq!(
             layout.download_zip(hex).unwrap(),
             root.join("voxcpm2").join("downloads").join(format!("{}.zip", hex))
@@ -2538,19 +2793,35 @@ mod tests {
         );
         assert_eq!(
             layout.slot_dir("windows_trt_6g", hex).unwrap(),
-            root.join("voxcpm2").join("slots").join("windows_trt_6g").join(hex)
+            root.join("voxcpm2").join("slots").join("windows_trt_6g").join(dk)
+        );
+        assert_eq!(
+            layout.slot_dir("windows_trt_6g", dk).unwrap(),
+            root.join("voxcpm2").join("slots").join("windows_trt_6g").join(dk)
         );
         assert_eq!(
             layout.engine_dir("windows_trt_6g", hex, hex).unwrap(),
-            root.join("voxcpm2").join("slots").join("windows_trt_6g").join(hex).join("engines").join(hex)
+            root.join("voxcpm2").join("slots").join("windows_trt_6g").join(dk).join("engines").join(dk)
+        );
+        assert_eq!(
+            layout.engine_dir("windows_trt_6g", dk, dk).unwrap(),
+            root.join("voxcpm2").join("slots").join("windows_trt_6g").join(dk).join("engines").join(dk)
         );
         assert_eq!(
             layout.lock_path("windows_trt_6g", hex).unwrap(),
-            root.join("voxcpm2").join("locks").join(format!("windows_trt_6g-{}.lock", hex))
+            root.join("voxcpm2").join("locks").join(format!("windows_trt_6g-{}.lock", dk))
+        );
+        assert_eq!(
+            layout.lock_path("windows_trt_6g", dk).unwrap(),
+            root.join("voxcpm2").join("locks").join(format!("windows_trt_6g-{}.lock", dk))
         );
         assert_eq!(
             layout.migration_receipt("windows_trt_6g", hex).unwrap(),
-            root.join("voxcpm2").join("migration").join(format!("windows_trt_6g-{}.receipt.json", hex))
+            root.join("voxcpm2").join("migration").join(format!("windows_trt_6g-{}.receipt.json", dk))
+        );
+        assert_eq!(
+            layout.migration_receipt("windows_trt_6g", dk).unwrap(),
+            root.join("voxcpm2").join("migration").join(format!("windows_trt_6g-{}.receipt.json", dk))
         );
 
         // Rejects ../x
@@ -2562,9 +2833,10 @@ mod tests {
         let upper_hex = hex.to_ascii_uppercase();
         assert!(layout.slot_dir("windows_trt_6g", &upper_hex).is_err());
 
-        // Rejects 63-hex stamp
-        let stamp_63 = &hex[..63];
-        assert!(layout.engine_dir("windows_trt_6g", hex, stamp_63).is_err());
+        // Rejects 15-hex, 17-hex, and 63-hex stamps
+        assert!(layout.engine_dir("windows_trt_6g", hex, &hex[..15]).is_err());
+        assert!(layout.engine_dir("windows_trt_6g", hex, &hex[..17]).is_err());
+        assert!(layout.engine_dir("windows_trt_6g", hex, &hex[..63]).is_err());
     }
 
     #[test]
@@ -2697,6 +2969,10 @@ mod tests {
         assert!(migration_excluded(Path::new(r"python-packages.backup\y")));
         assert!(migration_excluded(Path::new("checkpoints/voxcpm2_trt.pending/z")));
         assert!(migration_excluded(Path::new(r"checkpoints\voxcpm2_trt.pending\z")));
+        assert!(migration_excluded(Path::new("slot.pending-migration/x")));
+        assert!(migration_excluded(Path::new(r"slot.pending-migration\x")));
+        assert!(migration_excluded(Path::new("slot.mig/x")));
+        assert!(migration_excluded(Path::new(r"slot.mig\x")));
         assert!(migration_excluded(Path::new("voices/a.wav")));
         assert!(migration_excluded(Path::new(r"voices\a.wav")));
 
@@ -2755,25 +3031,31 @@ mod tests {
     fn test_slots_to_prune() {
         let active = "1111111111111111111111111111111111111111111111111111111111111111";
         let prev = "2222222222222222222222222222222222222222222222222222222222222222";
-        let slot_a = "3333333333333333333333333333333333333333333333333333333333333333";
-        let slot_b = "4444444444444444444444444444444444444444444444444444444444444444";
+        let dir_active = &active[..16];
+        let dir_prev = &prev[..16];
+        let dir_a = "3333333333333333";
+        let dir_b = "4444444444444444";
         let non_hex = "not_a_hex_slot";
-        let short_hex = "1234567890abcdef";
+        let hex64 = "5555555555555555555555555555555555555555555555555555555555555555";
 
         let existing = vec![
-            slot_b.to_string(),
-            active.to_string(),
-            prev.to_string(),
+            dir_b.to_string(),
+            dir_active.to_string(),
+            dir_prev.to_string(),
             non_hex.to_string(),
-            slot_a.to_string(),
-            short_hex.to_string(),
+            dir_a.to_string(),
+            hex64.to_string(),
         ];
 
         let pruned = slots_to_prune(&existing, active, Some(prev));
-        assert_eq!(pruned, vec![slot_a.to_string(), slot_b.to_string()]);
+        assert_eq!(pruned, vec![dir_a.to_string(), dir_b.to_string()]);
 
         let pruned_no_prev = slots_to_prune(&existing, active, None);
-        assert_eq!(pruned_no_prev, vec![prev.to_string(), slot_a.to_string(), slot_b.to_string()]);
+        assert_eq!(pruned_no_prev, vec![dir_prev.to_string(), dir_a.to_string(), dir_b.to_string()]);
+
+        // Also works when active and previous are already 16-hex
+        let pruned_short = slots_to_prune(&existing, dir_active, Some(dir_prev));
+        assert_eq!(pruned_short, vec![dir_a.to_string(), dir_b.to_string()]);
     }
 
     #[test]
@@ -3245,9 +3527,10 @@ mod tests {
 
         let temp_cache = tempfile::tempdir().unwrap();
         let slot_key = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let slot_dir = temp_cache.path().join("slots").join("windows_trt_6g").join(slot_key);
+        let layout = CacheLayout::new(temp_cache.path());
+        let slot_dir = layout.slot_dir("windows_trt_6g", slot_key).unwrap();
         let stamp = "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321";
-        let engine_dir = slot_dir.join("engines").join(stamp);
+        let engine_dir = layout.engine_dir("windows_trt_6g", slot_key, stamp).unwrap();
         let downloads_dir = temp_cache.path().join("downloads");
 
         let palette_ids = vec!["default.wav".to_string()];
@@ -3258,13 +3541,14 @@ mod tests {
             downloads_dir: &downloads_dir,
             expected_artifact_sha: &expected_artifact_sha,
             palette_ids: &palette_ids,
+            import_payload: true,
         };
 
         let outcome = migrate_legacy_runtime(&input, &|_| Some(1024 * 1024 * 1024)).unwrap();
         match outcome {
             MigrationOutcome::Migrated(receipt) => {
                 assert_eq!(receipt.schema_version, 1);
-                assert_eq!(receipt.slot_key, slot_key);
+                assert_eq!(receipt.slot_key, slot_dir.file_name().unwrap().to_str().unwrap());
                 assert!(!receipt.verified_install);
                 assert!(!receipt.verified_start);
                 assert!(receipt.imported.contains(&"payload/artifact".to_string()));
@@ -3288,7 +3572,7 @@ mod tests {
         assert!(slot_dir.join("payload").join("artifact").join("python.exe").is_file());
         assert!(slot_dir.join("python-packages").join("x.dll").is_file());
         assert!(slot_dir.join("models").join("VoxCPM2").join("config.json").is_file());
-        assert!(slot_dir.join("engines").join(stamp).join("manifest.json").is_file());
+        assert!(engine_dir.join("manifest.json").is_file());
         assert!(slot_dir.join("voices").join("default.wav").is_file());
 
         // Negative slot checks
@@ -3302,7 +3586,7 @@ mod tests {
         assert_eq!(std::fs::read(downloads_dir.join(format!("{}.zip", hex_zip))).unwrap(), b"zip content");
 
         // Pending migration dir does not remain
-        let pending_dir = PathBuf::from(format!("{}.pending-migration", slot_dir.display()));
+        let pending_dir = PathBuf::from(format!("{}.mig", slot_dir.display()));
         assert!(!pending_dir.exists());
 
         // Legacy tree has every original file with identical bytes
@@ -3346,6 +3630,7 @@ mod tests {
             downloads_dir: &downloads_dir,
             expected_artifact_sha: "0000000000000000000000000000000000000000000000000000000000000000",
             palette_ids: &[],
+            import_payload: true,
         };
 
         // 1. SkippedSlotExists when slot dir exists
@@ -3386,6 +3671,7 @@ mod tests {
             downloads_dir: &downloads_dir,
             expected_artifact_sha: "0000000000000000000000000000000000000000000000000000000000000000",
             palette_ids: &[],
+            import_payload: true,
         };
 
         let outcome = migrate_legacy_runtime_with(
@@ -3422,7 +3708,7 @@ mod tests {
         let stamp = "2222222222222222222222222222222222222222222222222222222222222222";
         let engine_dir = slot_dir.join("engines").join(stamp);
         let downloads_dir = temp_cache.path().join("downloads");
-        let pending_dir = PathBuf::from(format!("{}.pending-migration", slot_dir.display()));
+        let pending_dir = PathBuf::from(format!("{}.mig", slot_dir.display()));
 
         let input = MigrationPlanInput {
             legacy_root: &legacy_root,
@@ -3431,6 +3717,7 @@ mod tests {
             downloads_dir: &downloads_dir,
             expected_artifact_sha: "0000000000000000000000000000000000000000000000000000000000000000",
             palette_ids: &[],
+            import_payload: true,
         };
 
         let err = migrate_legacy_runtime_with(
@@ -3472,6 +3759,7 @@ mod tests {
             downloads_dir: &downloads_dir,
             expected_artifact_sha: "0000000000000000000000000000000000000000000000000000000000000000",
             palette_ids: &[],
+            import_payload: true,
         };
 
         let outcome = migrate_legacy_runtime(&input, &|_| Some(1024 * 1024 * 1024)).unwrap();
@@ -3592,6 +3880,7 @@ mod tests {
         let hex_active = "1111111111111111111111111111111111111111111111111111111111111111";
         let hex_prev = "2222222222222222222222222222222222222222222222222222222222222222";
         let hex_third = "3333333333333333333333333333333333333333333333333333333333333333";
+        let dk_third = &hex_third[..16];
 
         let active_dir = layout.slot_dir(profile, hex_active).unwrap();
         let prev_dir = layout.slot_dir(profile, hex_prev).unwrap();
@@ -3605,7 +3894,7 @@ mod tests {
 
         // Third dir is pruned, active/prev and non-hex kept
         let pruned = prune_slots(&layout, profile, hex_active, Some(hex_prev));
-        assert_eq!(pruned, vec![hex_third.to_string()]);
+        assert_eq!(pruned, vec![dk_third.to_string()]);
         assert!(!third_dir.exists());
         assert!(active_dir.exists());
         assert!(prev_dir.exists());
@@ -3623,7 +3912,7 @@ mod tests {
 
         // After dropping shared lock, prune succeeds
         let pruned3 = prune_slots(&layout, profile, hex_active, Some(hex_prev));
-        assert_eq!(pruned3, vec![hex_third.to_string()]);
+        assert_eq!(pruned3, vec![dk_third.to_string()]);
         assert!(!third_dir.exists());
     }
 
@@ -4113,6 +4402,578 @@ mod tests {
         });
         let receipt2: MigrationReceipt = serde_json::from_value(json_with_cleaned).unwrap();
         assert_eq!(receipt2.cleaned, true);
+    }
+
+    #[test]
+    fn slot_paths_stay_under_max_path_for_long_user_names() {
+        let user = "VeryLongUsernameHere"; // 20 characters
+        assert_eq!(user.len(), 20);
+        let slot_key = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+        let stamp = "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321";
+        let dk = dir_key(slot_key).unwrap();
+        let sk = dir_key(stamp).unwrap();
+        let release_slot = format!(r"C:\Users\{user}\AppData\Local\NaiaRuntimeCache\voxcpm2\slots\windows_trt_6g\{dk}");
+        let e2e_slot = format!(r"C:\Users\{user}\AppData\Local\Temp\naia-shell-e2e-codex-4450\runtime\runtime-cache\voxcpm2\slots\windows_trt_6g\{dk}");
+        // Deepest known files of the pinned windows_trt_6g artifact and packages (measured 2026-09-24).
+        let both: Vec<String> = vec![
+            r"\python-packages.pending\nvidia\cuda_runtime\include\cooperative_groups\details\coalesced_reduce.h".to_string(),
+            r".mig\python-packages\nvidia\cuda_runtime\include\cooperative_groups\details\coalesced_reduce.h".to_string(),
+            r"\models\VoxCPM2\.cache\huggingface\download\tokenization_voxcpm2.py.metadata".to_string(),
+            format!(r"\engines\{sk}.pending\locdit_fp16.engine"),
+        ];
+        // The slot payload is only used on the release download path (E2E/dev keep the payload outside).
+        let release_only = [
+            r"\payload.pending\artifact\python\Lib\site-packages\transformers\models\audio_spectrogram_transformer\feature_extraction_audio_spectrogram_transformer.py",
+            r".mig\payload\artifact\python\Lib\site-packages\transformers\models\audio_spectrogram_transformer\feature_extraction_audio_spectrogram_transformer.py",
+        ];
+        for tail in &both {
+            for slot in [&release_slot, &e2e_slot] {
+                let p = format!("{slot}{tail}");
+                assert!(p.len() < 260, "{} chars: {}", p.len(), p);
+            }
+        }
+        for tail in release_only {
+            let p = format!("{release_slot}{tail}");
+            assert!(p.len() < 260, "{} chars: {}", p.len(), p);
+        }
+        // The old 64-hex layout would have exceeded MAX_PATH for the NVIDIA header on the E2E root.
+        let old = format!(r"C:\Users\{user}\AppData\Local\Temp\naia-shell-e2e-codex-4450\runtime\runtime-cache\voxcpm2\slots\windows_trt_6g\{slot_key}\python-packages.pending\nvidia\cuda_runtime\include\cooperative_groups\details\coalesced_reduce.h");
+        assert!(old.len() >= 260);
+
+        let temp = tempfile::tempdir().unwrap();
+        let layout = CacheLayout::new(temp.path());
+        let slot_dir = layout.slot_dir("windows_trt_6g", slot_key).unwrap();
+        assert_eq!(slot_dir.file_name().unwrap(), dk.as_str());
+        assert!(slot_dir.ends_with(&dk));
+        let engine_dir = layout.engine_dir("windows_trt_6g", slot_key, stamp).unwrap();
+        assert_eq!(engine_dir.file_name().unwrap(), sk.as_str());
+        assert!(engine_dir.ends_with(&sk));
+    }
+
+    #[test]
+    fn dir_key_accepts_full_and_short_keys_and_collision_is_mismatch() {
+        let full = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let short = &full[..16];
+        assert_eq!(dir_key(full).unwrap(), short);
+        assert_eq!(dir_key(short).unwrap(), short);
+
+        assert!(dir_key(&full.to_ascii_uppercase()).is_err());
+        assert!(dir_key("not_a_hex_key!!").is_err());
+        assert!(dir_key(&full[..15]).is_err());
+        assert!(dir_key(&full[..17]).is_err());
+        assert!(dir_key(&full[..32]).is_err());
+        assert!(dir_key(&full[..63]).is_err());
+        assert!(dir_key(&format!("{}a", full)).is_err());
+
+        // Collision simulation: two full keys that share the first 16 chars
+        let key_a = format!("{}111111111111111111111111111111111111111111111111", short);
+        let key_b = format!("{}222222222222222222222222222222222222222222222222", short);
+        assert_eq!(dir_key(&key_a).unwrap(), dir_key(&key_b).unwrap());
+
+        let temp = tempfile::tempdir().unwrap();
+        let slot_dir = temp.path().join("slot");
+        let rec_a = SlotRecord {
+            schema_version: 1,
+            profile: "windows_trt_6g".to_string(),
+            artifact_manifest_sha256: "aaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccdddd".to_string(),
+            prepare_script_sha256: "1111222233334444111122223333444411112222333344441111222233334444".to_string(),
+            activation_contract_sha256: "5555666677778888555566667777888855556666777788885555666677778888".to_string(),
+            slot_key: key_a,
+        };
+        write_slot_record(&slot_dir, &rec_a).unwrap();
+
+        let mut rec_b = rec_a.clone();
+        rec_b.slot_key = key_b;
+
+        // Reading slot record expecting B fails even though directory key is identical
+        assert_eq!(read_slot_record(&slot_dir), Some(rec_a));
+        assert_ne!(read_slot_record(&slot_dir), Some(rec_b));
+    }
+
+    #[test]
+    fn restore_of_pre_703_legacy_install_becomes_ready_without_installer() {
+        let temp_legacy = tempfile::tempdir().unwrap();
+        let legacy_root = temp_legacy.path().join("legacy");
+
+        let art_dir = legacy_root.join("payload").join("artifact");
+        std::fs::create_dir_all(&art_dir).unwrap();
+        let fake_python_content = b"python exe for test";
+        std::fs::write(art_dir.join("python.exe"), fake_python_content).unwrap();
+        let fake_python_sha = sha256_hex(fake_python_content);
+        let manifest_json = serde_json::json!({
+            "files": [
+                {
+                    "path": "python.exe",
+                    "sha256": fake_python_sha
+                }
+            ]
+        });
+        let manifest_bytes = serde_json::to_vec(&manifest_json).unwrap();
+        std::fs::write(art_dir.join("artifact-manifest.json"), &manifest_bytes).unwrap();
+        let expected_artifact_sha = sha256_hex(&manifest_bytes);
+
+        std::fs::write(
+            art_dir.join("runtime-manifest.json"),
+            br#"{"model":{"revision":"rev-703"}}"#,
+        )
+        .unwrap();
+
+        let fake_lock = br#"{"packages":{"tensorrt-cu12":"10.0.1"}}"#;
+        std::fs::write(art_dir.join("installer-package-lock.json"), fake_lock).unwrap();
+        let fake_lock_sha = sha256_hex(fake_lock);
+
+        let py_pkgs = legacy_root.join("python-packages");
+        std::fs::create_dir_all(&py_pkgs).unwrap();
+        let receipt_json = serde_json::json!({
+            "installerPackageLockSha256": fake_lock_sha,
+        });
+        std::fs::write(
+            py_pkgs.join("naia-nvidia-package-receipt.json"),
+            serde_json::to_vec(&receipt_json).unwrap(),
+        )
+        .unwrap();
+
+        let models_dir = legacy_root.join("models").join("VoxCPM2");
+        std::fs::create_dir_all(&models_dir).unwrap();
+        std::fs::write(models_dir.join("config.json"), b"{}").unwrap();
+        std::fs::write(models_dir.join("model.safetensors"), b"weight bytes").unwrap();
+        std::fs::write(models_dir.join("voxcpm2-model-receipt.json"), b"{}").unwrap();
+
+        let trt_dir = legacy_root.join("checkpoints").join("voxcpm2_trt");
+        std::fs::create_dir_all(&trt_dir).unwrap();
+        let engine_bytes = b"serialized tensorrt engine bytes";
+        std::fs::write(trt_dir.join("model.engine"), engine_bytes).unwrap();
+        let engine_sha = sha256_hex(engine_bytes);
+        let engine_manifest_json = serde_json::json!({
+            "gpu_name": "RTX 4090",
+            "compute_capability": "8.9",
+            "tensorrt_version": "10.0.1",
+            "model_revision": "rev-703",
+            "engine": "model.engine",
+            "engine_sha256": engine_sha
+        });
+        std::fs::write(
+            trt_dir.join("manifest.json"),
+            serde_json::to_vec(&engine_manifest_json).unwrap(),
+        )
+        .unwrap();
+
+        let fake_wav = b"RIFFfakeWAVEdefaultbody";
+        let fake_palette = vec![(
+            "default.wav".to_string(),
+            sha256_hex(fake_wav),
+            fake_wav.len() as u64,
+        )];
+        let voices_dir = legacy_root.join("voices");
+        std::fs::create_dir_all(&voices_dir).unwrap();
+        std::fs::write(voices_dir.join("default.wav"), fake_wav).unwrap();
+
+        let ready_json = serde_json::json!({
+            "artifactManifestSha256": expected_artifact_sha,
+            "model": {
+                "revision": "rev-703"
+            }
+        });
+        std::fs::write(
+            legacy_root.join("voxcpm2-runtime-ready.json"),
+            serde_json::to_vec(&ready_json).unwrap(),
+        )
+        .unwrap();
+
+        let temp_cache = tempfile::tempdir().unwrap();
+        let layout = CacheLayout::new(temp_cache.path());
+        let profile = "windows_trt_6g";
+        let gpu = GpuIdentity {
+            index: 0,
+            name: "RTX 4090".to_string(),
+            compute_cap: "8.9".to_string(),
+            driver_version: "550.54".to_string(),
+        };
+        let eng_rec = engine_stamp_record(&gpu, "10.0.1").unwrap();
+
+        let record = slot_record_for(profile, &expected_artifact_sha, CacheOs::Windows).unwrap();
+        let slot_dir = layout.slot_dir(profile, &record.slot_key).unwrap();
+        let engine_dir = layout.engine_dir(profile, &record.slot_key, &eng_rec.stamp).unwrap();
+        let downloads_dir = layout.downloads_dir();
+
+        let palette_ids = vec!["default.wav".to_string()];
+        let plan = MigrationPlanInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            engine_dir: Some(&engine_dir),
+            downloads_dir: &downloads_dir,
+            expected_artifact_sha: &expected_artifact_sha,
+            palette_ids: &palette_ids,
+            import_payload: true,
+        };
+
+        // 1. Migrate legacy tree
+        let outcome = migrate_legacy_runtime(&plan, &|_| Some(1024 * 1024 * 1024)).unwrap();
+        assert!(matches!(outcome, MigrationOutcome::Migrated(_)));
+
+        // 2. Adopt migrated slot
+        let staged_artifact = slot_dir.join("payload").join("artifact");
+        let adopt_input = AdoptMigratedInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            artifact_root: &staged_artifact,
+            engine_dir: Some(&engine_dir),
+            engine: Some(&eng_rec),
+            record: &record,
+            os: CacheOs::Windows,
+        };
+        let report = adopt_migrated_slot(&adopt_input).unwrap();
+        assert!(report.slot_record);
+        assert!(report.native_hashes);
+        assert!(report.ready_json);
+        assert!(report.engine_stamp);
+
+        // 3. Readiness facts without running installer
+        let readiness_inputs = ReadinessInputs {
+            slot_dir: &slot_dir,
+            artifact_root: &staged_artifact,
+            engine_dir: &engine_dir,
+            expected: &record,
+            engine_stamp: &eng_rec.stamp,
+            os: CacheOs::Windows,
+        };
+        let mut facts = gather_file_facts_with_palette(&readiness_inputs, &fake_palette);
+        assert!(facts.slot_record_matches);
+        assert!(facts.native_hashes_match);
+        assert!(facts.nvidia_receipt_matches);
+        assert!(facts.model_present);
+        assert!(facts.palette_matches);
+        assert!(facts.ready_json_matches);
+        assert!(facts.engine_matches);
+
+        // When python runtime passes, full readiness is Ready
+        facts.python_runtime = true;
+        assert_eq!(evaluate_readiness(&facts), Readiness::Ready);
+    }
+
+    #[test]
+    fn adopt_refuses_mismatches() {
+        let temp = tempfile::tempdir().unwrap();
+        let slot_dir = temp.path().join("slot");
+        std::fs::create_dir_all(&slot_dir).unwrap();
+        let legacy_root = temp.path().join("legacy");
+        std::fs::create_dir_all(&legacy_root).unwrap();
+        let artifact_root = temp.path().join("artifact");
+        std::fs::create_dir_all(&artifact_root).unwrap();
+
+        let manifest_bytes = br#"{"files":[{"path":"python.exe","sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]}"#;
+        std::fs::write(artifact_root.join("artifact-manifest.json"), manifest_bytes).unwrap();
+        std::fs::write(artifact_root.join("python.exe"), b"corrupted python exe").unwrap();
+        let manifest_sha = sha256_hex(manifest_bytes);
+
+        let mut record = slot_record_for("windows_trt_6g", &manifest_sha, CacheOs::Windows).unwrap();
+
+        // 1. Refuses if artifact manifest sha does not match record
+        record.artifact_manifest_sha256 = "1111111111111111111111111111111111111111111111111111111111111111".to_string();
+        let input_bad_sha = AdoptMigratedInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            artifact_root: &artifact_root,
+            engine_dir: None,
+            engine: None,
+            record: &record,
+            os: CacheOs::Windows,
+        };
+        let report_bad_sha = adopt_migrated_slot(&input_bad_sha).unwrap();
+        assert_eq!(report_bad_sha, AdoptReport::default());
+        record.artifact_manifest_sha256 = manifest_sha.clone();
+
+        // 2. Refuses native hashes if file hash does not match manifest
+        let input_bad_hash = AdoptMigratedInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            artifact_root: &artifact_root,
+            engine_dir: None,
+            engine: None,
+            record: &record,
+            os: CacheOs::Windows,
+        };
+        let report_bad_hash = adopt_migrated_slot(&input_bad_hash).unwrap();
+        assert!(report_bad_hash.slot_record);
+        assert!(!report_bad_hash.native_hashes);
+
+        // 2a. Refuses native hashes if artifact manifest has no files table
+        let no_files_manifest = br#"{}"#;
+        let no_files_sha = sha256_hex(no_files_manifest);
+        std::fs::write(artifact_root.join("artifact-manifest.json"), no_files_manifest).unwrap();
+        let mut rec_no_files = record.clone();
+        rec_no_files.artifact_manifest_sha256 = no_files_sha;
+        let input_no_files = AdoptMigratedInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            artifact_root: &artifact_root,
+            engine_dir: None,
+            engine: None,
+            record: &rec_no_files,
+            os: CacheOs::Windows,
+        };
+        let report_no_files = adopt_migrated_slot(&input_no_files).unwrap();
+        assert!(report_no_files.slot_record);
+        assert!(!report_no_files.native_hashes);
+
+        // Fix python.exe hash and manifest files table
+        let valid_python_bytes = b"real python bytes";
+        let valid_python_sha = sha256_hex(valid_python_bytes);
+        let manifest_bytes_valid = format!(
+            r#"{{"files":[{{"path":"python.exe","sha256":"{}"}}]}}"#,
+            valid_python_sha
+        );
+        std::fs::write(artifact_root.join("artifact-manifest.json"), manifest_bytes_valid.as_bytes()).unwrap();
+        std::fs::write(artifact_root.join("python.exe"), valid_python_bytes).unwrap();
+        let valid_manifest_sha = sha256_hex(manifest_bytes_valid.as_bytes());
+        record.artifact_manifest_sha256 = valid_manifest_sha;
+
+        // 3a. Refuses ready.json if runtime-manifest has no model revision
+        std::fs::write(
+            artifact_root.join("runtime-manifest.json"),
+            br#"{}"#,
+        )
+        .unwrap();
+        let ready_valid_rev = serde_json::json!({
+            "artifactManifestSha256": record.artifact_manifest_sha256,
+            "model": {"revision": "rev-A"}
+        });
+        std::fs::write(
+            legacy_root.join("voxcpm2-runtime-ready.json"),
+            serde_json::to_vec(&ready_valid_rev).unwrap(),
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(slot_dir.join("voxcpm2-runtime-ready.json"));
+        let input_no_rev = AdoptMigratedInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            artifact_root: &artifact_root,
+            engine_dir: None,
+            engine: None,
+            record: &record,
+            os: CacheOs::Windows,
+        };
+        let report_no_rev = adopt_migrated_slot(&input_no_rev).unwrap();
+        assert!(report_no_rev.slot_record);
+        assert!(report_no_rev.native_hashes);
+        assert!(!report_no_rev.ready_json);
+        assert!(!slot_dir.join("voxcpm2-runtime-ready.json").exists());
+
+        // 3b. Refuses ready.json if model revision mismatches
+        std::fs::write(
+            artifact_root.join("runtime-manifest.json"),
+            br#"{"model":{"revision":"rev-A"}}"#,
+        )
+        .unwrap();
+        let ready_mismatch_rev = serde_json::json!({
+            "artifactManifestSha256": record.artifact_manifest_sha256,
+            "model": {"revision": "rev-B"}
+        });
+        std::fs::write(
+            legacy_root.join("voxcpm2-runtime-ready.json"),
+            serde_json::to_vec(&ready_mismatch_rev).unwrap(),
+        )
+        .unwrap();
+
+        let engine_dir = slot_dir.join("engines").join("eng");
+        std::fs::create_dir_all(&engine_dir).unwrap();
+        let gpu = GpuIdentity {
+            index: 0,
+            name: "RTX 4090".to_string(),
+            compute_cap: "8.9".to_string(),
+            driver_version: "550.54".to_string(),
+        };
+        let eng_rec = engine_stamp_record(&gpu, "10.0.1").unwrap();
+
+        let engine_bytes = b"engine bytes";
+        std::fs::write(engine_dir.join("model.engine"), engine_bytes).unwrap();
+        let engine_sha = sha256_hex(engine_bytes);
+
+        // 4a. Refuses engine stamp if engine manifest has no engine_sha256
+        let engine_no_sha_json = serde_json::json!({
+            "gpu_name": "RTX 4090",
+            "compute_capability": "8.9",
+            "tensorrt_version": "10.0.1",
+            "model_revision": "rev-A",
+            "engine": "model.engine"
+        });
+        std::fs::write(
+            engine_dir.join("manifest.json"),
+            serde_json::to_vec(&engine_no_sha_json).unwrap(),
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(engine_dir.join("stamp.json"));
+        let input_no_engine_sha = AdoptMigratedInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            artifact_root: &artifact_root,
+            engine_dir: Some(&engine_dir),
+            engine: Some(&eng_rec),
+            record: &record,
+            os: CacheOs::Windows,
+        };
+        let report_no_engine_sha = adopt_migrated_slot(&input_no_engine_sha).unwrap();
+        assert!(report_no_engine_sha.slot_record);
+        assert!(report_no_engine_sha.native_hashes);
+        assert!(!report_no_engine_sha.engine_stamp);
+        assert!(!engine_dir.join("stamp.json").exists());
+
+        // 4b. Refuses engine stamp if GPU compute cap mismatches (with valid engine_sha256)
+        let engine_bad_cc_json = serde_json::json!({
+            "gpu_name": "RTX 4090",
+            "compute_capability": "7.5",
+            "tensorrt_version": "10.0.1",
+            "model_revision": "rev-A",
+            "engine": "model.engine",
+            "engine_sha256": engine_sha
+        });
+        std::fs::write(
+            engine_dir.join("manifest.json"),
+            serde_json::to_vec(&engine_bad_cc_json).unwrap(),
+        )
+        .unwrap();
+
+        let input_mismatches = AdoptMigratedInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            artifact_root: &artifact_root,
+            engine_dir: Some(&engine_dir),
+            engine: Some(&eng_rec),
+            record: &record,
+            os: CacheOs::Windows,
+        };
+        let report_mismatches = adopt_migrated_slot(&input_mismatches).unwrap();
+        assert!(report_mismatches.slot_record);
+        assert!(report_mismatches.native_hashes);
+        assert!(!report_mismatches.ready_json);
+        assert!(!report_mismatches.engine_stamp);
+
+        // 4d. Refuses engine stamp if engine manifest has no gpu_name
+        let engine_no_gpu_json = serde_json::json!({
+            "compute_capability": "8.9",
+            "tensorrt_version": "10.0.1",
+            "model_revision": "rev-A",
+            "engine": "model.engine",
+            "engine_sha256": engine_sha
+        });
+        std::fs::write(
+            engine_dir.join("manifest.json"),
+            serde_json::to_vec(&engine_no_gpu_json).unwrap(),
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(engine_dir.join("stamp.json"));
+        let report_no_gpu = adopt_migrated_slot(&input_mismatches).unwrap();
+        assert!(report_no_gpu.slot_record);
+        assert!(report_no_gpu.native_hashes);
+        assert!(!report_no_gpu.engine_stamp);
+        assert!(!engine_dir.join("stamp.json").exists());
+
+        // 4e. Refuses engine stamp if engine manifest has no tensorrt_version
+        let engine_no_trt_json = serde_json::json!({
+            "gpu_name": "RTX 4090",
+            "compute_capability": "8.9",
+            "model_revision": "rev-A",
+            "engine": "model.engine",
+            "engine_sha256": engine_sha
+        });
+        std::fs::write(
+            engine_dir.join("manifest.json"),
+            serde_json::to_vec(&engine_no_trt_json).unwrap(),
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(engine_dir.join("stamp.json"));
+        let report_no_trt = adopt_migrated_slot(&input_mismatches).unwrap();
+        assert!(report_no_trt.slot_record);
+        assert!(report_no_trt.native_hashes);
+        assert!(!report_no_trt.engine_stamp);
+        assert!(!engine_dir.join("stamp.json").exists());
+
+        // 4f-1. Refuses engine stamp if engine field contains path traversal ("..\\model.engine")
+        let engine_traversal_json = serde_json::json!({
+            "gpu_name": "RTX 4090",
+            "compute_capability": "8.9",
+            "tensorrt_version": "10.0.1",
+            "model_revision": "rev-A",
+            "engine": "..\\model.engine",
+            "engine_sha256": engine_sha
+        });
+        std::fs::write(
+            engine_dir.join("manifest.json"),
+            serde_json::to_vec(&engine_traversal_json).unwrap(),
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(engine_dir.join("stamp.json"));
+        let report_traversal = adopt_migrated_slot(&input_mismatches).unwrap();
+        assert!(report_traversal.slot_record);
+        assert!(report_traversal.native_hashes);
+        assert!(!report_traversal.engine_stamp);
+        assert!(!engine_dir.join("stamp.json").exists());
+
+        // 4f-2. Refuses engine stamp if engine field is missing
+        let engine_missing_json = serde_json::json!({
+            "gpu_name": "RTX 4090",
+            "compute_capability": "8.9",
+            "tensorrt_version": "10.0.1",
+            "model_revision": "rev-A",
+            "engine_sha256": engine_sha
+        });
+        std::fs::write(
+            engine_dir.join("manifest.json"),
+            serde_json::to_vec(&engine_missing_json).unwrap(),
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(engine_dir.join("stamp.json"));
+        let report_missing_engine = adopt_migrated_slot(&input_mismatches).unwrap();
+        assert!(report_missing_engine.slot_record);
+        assert!(report_missing_engine.native_hashes);
+        assert!(!report_missing_engine.engine_stamp);
+        assert!(!engine_dir.join("stamp.json").exists());
+    }
+
+    #[test]
+    fn migration_skips_payload_for_staged_bundle() {
+        let temp_legacy = tempfile::tempdir().unwrap();
+        let legacy_root = temp_legacy.path().join("legacy");
+
+        let art_dir = legacy_root.join("payload").join("artifact");
+        std::fs::create_dir_all(&art_dir).unwrap();
+        std::fs::write(art_dir.join("artifact-manifest.json"), b"mismatched artifact manifest").unwrap();
+
+        let py_pkgs = legacy_root.join("python-packages");
+        std::fs::create_dir_all(&py_pkgs).unwrap();
+        std::fs::write(py_pkgs.join("x.dll"), b"x dll bytes").unwrap();
+
+        let models_dir = legacy_root.join("models").join("VoxCPM2");
+        std::fs::create_dir_all(&models_dir).unwrap();
+        std::fs::write(models_dir.join("config.json"), b"cfg").unwrap();
+
+        let temp_cache = tempfile::tempdir().unwrap();
+        let layout = CacheLayout::new(temp_cache.path());
+        let slot_dir = layout.slot_dir("windows_trt_6g", "1111111111111111111111111111111111111111111111111111111111111111").unwrap();
+        let downloads_dir = layout.downloads_dir();
+
+        let plan = MigrationPlanInput {
+            legacy_root: &legacy_root,
+            slot_dir: &slot_dir,
+            engine_dir: None,
+            downloads_dir: &downloads_dir,
+            expected_artifact_sha: "0000000000000000000000000000000000000000000000000000000000000000",
+            palette_ids: &[],
+            import_payload: false, // Staged bundle exists; skip payload import
+        };
+
+        let outcome = migrate_legacy_runtime(&plan, &|_| Some(1024 * 1024 * 1024)).unwrap();
+        match outcome {
+            MigrationOutcome::Migrated(receipt) => {
+                assert!(!receipt.imported.contains(&"payload/artifact".to_string()));
+                assert!(receipt.imported.contains(&"python-packages".to_string()));
+                assert!(receipt.imported.contains(&"models".to_string()));
+                assert!(!slot_dir.join("payload").exists());
+                assert!(slot_dir.join("python-packages").join("x.dll").is_file());
+                assert!(slot_dir.join("models").join("VoxCPM2").join("config.json").is_file());
+            }
+            other => panic!("expected Migrated, got {:?}", other),
+        }
     }
 }
 
