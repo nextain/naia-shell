@@ -81,19 +81,93 @@ export function getDefaultLlmModel(providerId: string): string {
 }
 
 /**
+ * Naia-account ids that were deliberately retired from the `nextain` provider.
+ * They move to the default even when the gateway still serves them:
+ * #670 trimmed the picker to four cheap models (FR-NAIA-AZURE.1), and #603
+ * removed the Naia Google live path.
+ */
+export const RETIRED_NEXTAIN_MODEL_IDS: ReadonlySet<string> = new Set([
+	"gemini-3.1-flash-lite",
+	"grok-4.3",
+	"deepseek-v4-pro",
+	"HCX-007",
+	"HCX-DASH-002",
+	"gpt-5.6-sol",
+	"claude-opus-5",
+	"gemini-3.5-flash",
+	"azure-realtime",
+	"naia-0.9-omni-24g",
+	"gemini-2.5-flash-live",
+]);
+
+/**
+ * Bare ids the Naia gateway currently serves, from `fetchNaiaModelMetadata`.
+ * An entry counts when it has no operational status or its status is "live"
+ * (e.g. `quota_blocked` does not count). `null` in → `null` out (catalog unknown).
+ */
+export function gatewayServedModelIds(
+	metadata: ReadonlyMap<string, NaiaModelCatalogMetadata> | null,
+): ReadonlySet<string> | null {
+	if (metadata === null) return null;
+	const served = new Set<string>();
+	for (const [id, meta] of metadata.entries()) {
+		if (
+			meta.operationalStatus === undefined ||
+			meta.operationalStatus === "live"
+		) {
+			served.add(id);
+		}
+	}
+	return served;
+}
+
+export type NextainModelMigrationDecision =
+	| { migrate: false; needsCatalog?: false }
+	| { migrate: false; needsCatalog: true }
+	| { migrate: true; to: string };
+
+/**
  * Migrate a saved config model that is no longer registered on the Naia provider.
  *
  * Scoped intentionally to the "nextain" provider; other providers may accept
  * dynamic or provider-side model IDs that are not present in this UI catalogue.
+ *
+ * Rules (#248, #670, #707):
+ * 1. providerId !== "nextain" → { migrate: false }
+ * 2. provider not registered → { migrate: false }
+ * 3. modelId is in the static nextain model list → { migrate: false }
+ * 4. modelId is in RETIRED_NEXTAIN_MODEL_IDS →
+ *    { migrate: true, to: provider.defaultModel }
+ *    (regardless of gatewayServed)
+ * 5. gatewayServed === undefined
+ *    (caller has not looked at the gateway yet) →
+ *    { migrate: false, needsCatalog: true }
+ * 6. gatewayServed === null (catalog fetch failed) → { migrate: false }
+ *    (never rewrite a user choice on missing information)
+ * 7. gatewayServed.has(modelId) → { migrate: false }
+ * 8. otherwise → { migrate: true, to: provider.defaultModel }
  */
 export function shouldMigrateNextainModel(
 	providerId: string,
 	modelId: string,
-): { migrate: false } | { migrate: true; to: string } {
+	gatewayServed?: ReadonlySet<string> | null,
+): NextainModelMigrationDecision {
 	if (providerId !== "nextain") return { migrate: false };
 	const provider = providers.get(providerId);
 	if (!provider) return { migrate: false };
 	if (provider.models.some((m) => m.id === modelId)) return { migrate: false };
+	if (RETIRED_NEXTAIN_MODEL_IDS.has(modelId)) {
+		return { migrate: true, to: provider.defaultModel };
+	}
+	if (gatewayServed === undefined) {
+		return { migrate: false, needsCatalog: true };
+	}
+	if (gatewayServed === null) {
+		return { migrate: false };
+	}
+	if (gatewayServed.has(modelId)) {
+		return { migrate: false };
+	}
 	return { migrate: true, to: provider.defaultModel };
 }
 
@@ -549,8 +623,9 @@ registerLlmProvider({
 	requiresNaiaKey: true,
 	defaultModel: "deepseek-v4-flash",
 	// #670: Naia-account / nextain picker is the four cheap chat models.
-	// Codex ChatGPT models stay on the codex provider below. Saved ids that
-	// leave this list migrate via shouldMigrateNextainModel.
+	// Codex ChatGPT models stay on the codex provider below. Retired ids
+	// migrate via shouldMigrateNextainModel and other gateway-served ids are
+	// kept (#707).
 	models: [
 		{
 			// Gateway routes/prices this model and advertises verified tool calling.

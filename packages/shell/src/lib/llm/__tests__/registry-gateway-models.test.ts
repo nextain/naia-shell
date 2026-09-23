@@ -103,33 +103,83 @@ describe("LLM registry — Naia-account picker (#670)", () => {
 });
 
 describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
-	it("migrates unknown models on nextain provider to default", async () => {
+	it("unknown id with no catalog argument yields needsCatalog", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
 		const d = shouldMigrateNextainModel("nextain", "some-deprecated-model");
-		expect(d.migrate).toBe(true);
-		if (d.migrate) expect(d.to).toBe("deepseek-v4-flash");
+		expect(d).toEqual({ migrate: false, needsCatalog: true });
+	});
+
+	it("unknown id with catalog set not containing it migrates to default", async () => {
+		const { shouldMigrateNextainModel } = await import("../registry.js");
+		const d = shouldMigrateNextainModel(
+			"nextain",
+			"some-deprecated-model",
+			new Set(["gpt-5.4-nano"]),
+		);
+		expect(d).toEqual({ migrate: true, to: "deepseek-v4-flash" });
+	});
+
+	it("gpt-5.4-nano with catalog set containing it does not migrate (#707)", async () => {
+		const { shouldMigrateNextainModel } = await import("../registry.js");
+		const d = shouldMigrateNextainModel(
+			"nextain",
+			"gpt-5.4-nano",
+			new Set(["gpt-5.4-nano"]),
+		);
+		expect(d).toEqual({ migrate: false });
+	});
+
+	it("unknown id with catalog null does not migrate and needsCatalog is not true", async () => {
+		const { shouldMigrateNextainModel } = await import("../registry.js");
+		const d = shouldMigrateNextainModel(
+			"nextain",
+			"some-deprecated-model",
+			null,
+		);
+		expect(d).toEqual({ migrate: false });
 	});
 
 	it("does NOT migrate the four remaining Naia-account models", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
 		for (const valid of NEXTAIN_ACCOUNT_PICKER_IDS) {
 			expect(shouldMigrateNextainModel("nextain", valid).migrate).toBe(false);
+			expect(
+				shouldMigrateNextainModel(
+					"nextain",
+					valid,
+					new Set<string>(),
+				).migrate,
+			).toBe(false);
+			expect(
+				shouldMigrateNextainModel(
+					"nextain",
+					valid,
+					new Set<string>([valid]),
+				).migrate,
+			).toBe(false);
+			expect(
+				shouldMigrateNextainModel("nextain", valid, null).migrate,
+			).toBe(false);
 		}
 	});
 
 	it("migrates dropped Naia-account models to the default", async () => {
-		const { shouldMigrateNextainModel } = await import("../registry.js");
-		for (const dropped of [
-			"gemini-3.1-flash-lite",
-			"grok-4.3",
-			"gpt-5.6-sol",
-			"azure-realtime",
-			"naia-0.9-omni-24g",
-		]) {
+		const { shouldMigrateNextainModel, RETIRED_NEXTAIN_MODEL_IDS } =
+			await import("../registry.js");
+		for (const dropped of RETIRED_NEXTAIN_MODEL_IDS) {
 			const d = shouldMigrateNextainModel("nextain", dropped);
 			expect(d.migrate).toBe(true);
 			if (d.migrate) expect(d.to).toBe("deepseek-v4-flash");
 		}
+		const grokWithCatalog = shouldMigrateNextainModel(
+			"nextain",
+			"grok-4.3",
+			new Set(["grok-4.3"]),
+		);
+		expect(grokWithCatalog).toEqual({
+			migrate: true,
+			to: "deepseek-v4-flash",
+		});
 	});
 
 	it("does NOT migrate non-nextain providers (scoped to nextain only)", async () => {
@@ -145,5 +195,44 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 	it("does NOT migrate unknown providers", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
 		expect(shouldMigrateNextainModel("nonexistent", "any").migrate).toBe(false);
+	});
+});
+
+describe("gatewayServedModelIds (#707)", () => {
+	it("returns null when metadata is null", async () => {
+		const { gatewayServedModelIds } = await import("../registry.js");
+		expect(gatewayServedModelIds(null)).toBeNull();
+	});
+
+	it("includes models with live status or no operational status, and excludes blocked ones", async () => {
+		const { gatewayServedModelIds } = await import("../registry.js");
+		const metadata = new Map([
+			[
+				"gpt-5.4-nano",
+				{
+					capabilities: ["llm" as const],
+					operationalStatus: "live",
+				},
+			],
+			[
+				"solar-pro4",
+				{
+					capabilities: ["llm" as const],
+				},
+			],
+			[
+				"claude-opus-5",
+				{
+					capabilities: ["llm" as const],
+					operationalStatus: "quota_blocked",
+				},
+			],
+		]);
+		const served = gatewayServedModelIds(metadata);
+		expect(served).toBeTruthy();
+		expect(served!.has("gpt-5.4-nano")).toBe(true);
+		expect(served!.has("solar-pro4")).toBe(true);
+		expect(served!.has("claude-opus-5")).toBe(false);
+		expect(served!.size).toBe(2);
 	});
 });
