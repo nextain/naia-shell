@@ -17,6 +17,10 @@ describe("model-facing tool contract", () => {
 			"memo_get",
 			"memo_save",
 			"skill_memory_recall",
+			"skill_knowledge_ask",
+			"skill_knowledge_search",
+			"skill_knowledge_graph",
+			"skill_knowledge_scope",
 			"list_dir",
 			"read_file",
 			"skill_youtube_bgm",
@@ -54,9 +58,6 @@ describe("model-facing tool contract", () => {
 			{ name: "obsidian_list_notes" },
 			{ name: "obsidian_read_note" },
 			{ name: "obsidian_search" },
-			{ name: "skill_knowledge_search" },
-			{ name: "skill_knowledge_ask" },
-			{ name: "skill_knowledge_graph" },
 			{ name: "skill_example_from_adk" },
 			{ name: "notify" },
 			{ name: "mcp__server__tool" },
@@ -76,9 +77,12 @@ describe("model-facing tool contract", () => {
 		expect(isModelFacingToolAllowed("skill_browser_delete_everything")).toBe(
 			false,
 		);
-		expect(isModelFacingToolAllowed("skill_knowledge_search")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_knowledge_search")).toBe(true);
+		expect(isModelFacingToolAllowed("skill_knowledge_delete")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_knowledge_compile")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_memory_recall")).toBe(true);
 		expect(isModelFacingToolAllowed("memory_save")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_memory_save")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_memory_delete")).toBe(false);
 	});
 

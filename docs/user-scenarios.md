@@ -1933,6 +1933,8 @@ Test Coverage Map (P02)
 Naia가 대화나 음성 세션을 시작할 때 모델에 전달되는 도구는 제품에 남긴 관찰·표현 표면만 포함한다: 시간, 날씨, 메모, 워크스페이스 파일 읽기, YouTube BGM, 인앱 브라우저. 기억은 별도 자동 회상·저장 경로로 남기며 모델 도구 이름으로 만들지 않는다. 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 풀, ADK `SKILL.md` 로더, 알림 및 그 밖의 작업 도구는 모델 목록에서 사라진다.
 Exception #687: `skill_workspace_edit_open_file` (open editor file only, per-edit approval) — see UC-WORKSPACE-OPEN-FILE-EDIT-687.
 
+#699 (2026-09-23 루크 「다 고쳐」): 회사 질문은 세션의 몇 번째 턴이든 지식 도구로 답할 수 있다. 첫 턴에도 제외 목록이 온전히 적용되어 미허용 작업 도구가 노출되는 첫 턴 갭이 제거된다. 받지 못하면(시간 초과·실패) 그 턴은 도구 없이 보낸다. 이전 목록을 재사용하지 않는다(새로 등록된 도구가 열리는 것을 막기 위해). 음성 경로 실기 확인: `e2e-tauri/specs/94-voice-6g-shell.spec.ts`(`test:e2e:tauri:voice-6g`) win-rtx4060 통과 2026-09-23 18:31 KST (1:55, main=nextain/deepseek-v4-flash via api.nextain.io, 설치 런타임 격리 복사본 + CC0 테스트 음색; 하네스 provider 전환은 #704 의 599d9475 를 커밋 없이 적용).
+
 | 상태 | 사용자 기대 |
 |---|---|
 | 기본 | 도구 목록을 열면 남긴 도구만 표시되고 작업 도구는 표시되지 않는다. |
@@ -1946,7 +1948,7 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
-| UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: keep list exactness, removed-name filtering, app/voice list parity | `packages/shell/src/components/__tests__/SkillsTab.test.tsx`: loading, empty, error, filtered success and disabled-state rendering; `packages/shell/e2e/naia-omni-voice-tools.spec.ts`: voice skill-list wiring |
+| UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: keep list exactness, removed-name filtering, app/voice list parity; `packages/shell/src/lib/__tests__/model-tool-boundary.test.ts`: boundary cache, race/timeout, turn parity, fail-closed; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: turn 1 & turn 2 parity, rejected fetch fail-closed | `packages/shell/src/components/__tests__/SkillsTab.test.tsx`: loading, empty, error, filtered success and disabled-state rendering; `packages/shell/e2e/naia-omni-voice-tools.spec.ts`: voice skill-list wiring; `packages/shell/e2e/chat-tools.spec.ts`: turn 1 and turn 2 offer the same tools, knowledge stays available; Real-shell E2E (도구 이름 기록) pending for Luke |
 
 P04 must preserve the existing browser and YouTube UI paths while proving that removed work tools are absent from the model-facing list. The contract test is the authoritative exact-list check; UI evidence covers loading, empty, success, error, keyboard-visible cards and the narrow layout already owned by SkillsTab.
 
