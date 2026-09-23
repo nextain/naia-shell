@@ -37,11 +37,18 @@ interface AudioQueueItem extends AudioQueueItemCallbacks {
  */
 export class PcmStreamSource {
 	readonly chunks: Int16Array[] = [];
+	wholeAudioBase64: string | null = null;
 	ended = false;
 	failed = false;
 	private onChunk: ((chunk: Int16Array) => void) | null = null;
 	private onEnd: (() => void) | null = null;
 	constructor(public sampleRate = 24000) {}
+	/** Host answered one whole WAV/MP3 instead of PCM chunks: close the stream and let the queue play this audio in the SAME ordered slot. */
+	endWithAudio(audioBase64: string): void {
+		if (this.ended) return;
+		this.wholeAudioBase64 = audioBase64;
+		this.end();
+	}
 	push(chunk: Int16Array): void {
 		if (this.ended || chunk.length === 0) return;
 		this.chunks.push(chunk);
@@ -304,6 +311,20 @@ export class AudioQueue {
 					started,
 				});
 				if (!started) {
+					if (stream.wholeAudioBase64) {
+						if (!isCurrent() || advanced) return;
+						advanced = true;
+						stream.unsubscribe();
+						this.currentStream = null;
+						this.queue.unshift({
+							audioBase64: stream.wholeAudioBase64,
+							onPlaybackStart: item.onPlaybackStart,
+							onPlaybackUnavailable: item.onPlaybackUnavailable,
+						});
+						this.playing = wasPlaying;
+						this.playNext();
+						return;
+					}
 					// Nothing arrived (failed/empty synthesis): release the slot.
 					item.onPlaybackUnavailable?.();
 					advance();
