@@ -17,6 +17,7 @@ mod memory;
 mod platform;
 mod pty;
 mod voice_runtime;
+mod voice_cache;
 mod stt_models;
 mod workspace;
 
@@ -1295,6 +1296,9 @@ fn local_voxcpm2_is_healthy() -> bool {
 struct VoxCpm2Process {
     child: Child,
     ready: String,
+    // The shared lock lives exactly as long as the server process record;
+    // Drop kills the child first, then the lock field is released.
+    cache_lock: Option<voice_cache::RuntimeLock>,
 }
 impl Drop for VoxCpm2Process {
     fn drop(&mut self) {
@@ -6064,12 +6068,183 @@ struct VoxCpm2InstallationProbe {
     facade_healthy: bool,
 }
 
-fn voxcpm2_runtime_root() -> std::path::PathBuf {
-    std::env::var_os("NAIA_VOXCPM2_RUNTIME_ROOT")
-        .filter(|value| !value.is_empty())
-        .map(std::path::PathBuf::from)
+fn voxcpm2_runtime_root_with(
+    debug: bool,
+    r#override: Option<std::ffi::OsString>,
+    fallback: Option<std::path::PathBuf>,
+) -> std::path::PathBuf {
+    if debug {
+        if let Some(value) = r#override.filter(|value| !value.is_empty()) {
+            return std::path::PathBuf::from(value);
+        }
+    }
+    fallback
         .or_else(|| data_home::child_from_dirs_home(DataHomeChild::Voxcpm2Runtime))
         .unwrap_or_else(|| std::path::PathBuf::from("voxcpm2-runtime"))
+}
+
+/// #703: the per-mode STATE root (state/, numba, hf-cache scratch, per-mode voices, install log). Shared package bytes live in the voice cache (voice_cache.rs).
+fn voxcpm2_runtime_root() -> std::path::PathBuf {
+    voxcpm2_runtime_root_with(
+        cfg!(debug_assertions),
+        std::env::var_os("NAIA_VOXCPM2_RUNTIME_ROOT"),
+        None,
+    )
+}
+
+fn voxcpm2_cache_os() -> voice_cache::CacheOs {
+    if cfg!(windows) {
+        voice_cache::CacheOs::Windows
+    } else {
+        voice_cache::CacheOs::Linux
+    }
+}
+
+/// (cache root, read_only). E2E read-only opt-in first, else the per-user cache.
+fn voxcpm2_cache_root() -> Result<(std::path::PathBuf, bool), String> {
+    if let Some(p) = voice_cache::e2e_user_cache_root_with(
+        cfg!(debug_assertions),
+        debug_e2e_enabled(),
+        std::env::var_os(voice_cache::E2E_USER_CACHE_ENV),
+        std::env::var_os(voice_cache::E2E_USER_CACHE_ROOT_ENV),
+    ) {
+        return Ok((p, true));
+    }
+    let root = voice_cache::resolve_cache_root()
+        .ok_or_else(|| "Could not resolve the per-user local voice cache folder".to_string())?;
+    voice_cache::ensure_private_dir(&root)?;
+    if voice_cache::is_reparse_or_symlink(&root) {
+        return Err(format!("refusing reparse point/symlink: {}", root.display()));
+    }
+    Ok((root, false))
+}
+
+fn voxcpm2_host_profile_id() -> Result<&'static str, String> {
+    let os = voice_runtime::host_os();
+    let accelerator = voice_runtime::detect_accelerator();
+    let host_profile = os
+        .zip(accelerator)
+        .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator))
+        .ok_or_else(|| {
+            "이 기계에 맞는 로컬 음성 프로파일이 없습니다 (운영체제·가속기 조합 미지원)".to_string()
+        })?;
+    Ok(host_profile.id)
+}
+
+pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
+    "Another local voice runtime already owns port 8910 — most likely the other Naia instance. Stop its local voice first.";
+
+/// #703: the single GPU the engine is keyed for, built on and loaded on.
+/// Explicit choice > the mode's recorded choice > the lowest-index NVIDIA card.
+fn voxcpm2_effective_gpu(gpu_index: Option<u32>) -> Option<u32> {
+    gpu_index
+        .or_else(|| voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root()))
+        .or_else(|| voice_cache::query_nvidia_identities().iter().map(|g| g.index).min())
+}
+
+fn voxcpm2_voice_context(
+    artifact_sha: &str,
+    artifact_root: Option<&std::path::Path>,
+    gpu_index: Option<u32>,
+) -> Result<voice_cache::VoiceContext, String> {
+    let (cache_root, read_only) = voxcpm2_cache_root()?;
+    let state_root = voxcpm2_runtime_root();
+    let profile = voxcpm2_host_profile_id()?;
+    let os = voxcpm2_cache_os();
+    let gpu_choice = voxcpm2_effective_gpu(gpu_index);
+    let nvidias = if artifact_root.is_some() {
+        voice_cache::query_nvidia_identities()
+    } else {
+        Vec::new()
+    };
+    let gpu = voice_cache::select_identity(&nvidias, gpu_choice);
+    let tensorrt = artifact_root.and_then(|a| {
+        voice_cache::tensorrt_version_from_lock(&a.join("installer-package-lock.json"))
+    });
+    voice_cache::build_voice_context(
+        &cache_root,
+        &state_root,
+        profile,
+        artifact_sha,
+        os,
+        gpu.as_ref(),
+        tensorrt.as_deref(),
+        read_only,
+    )
+}
+
+/// Context for a concrete bundle: artifact sha and TensorRT version both come from the bundle itself.
+fn voxcpm2_context_for_bundle(
+    bundle_root: &std::path::Path,
+    gpu_index: Option<u32>,
+) -> Result<voice_cache::VoiceContext, String> {
+    voxcpm2_voice_context(
+        &voxcpm2_artifact_sha(bundle_root)?,
+        Some(&bundle_root.join("artifact")),
+        gpu_index,
+    )
+}
+
+fn voxcpm2_artifact_sha(bundle_root: &std::path::Path) -> Result<String, String> {
+    let manifest_path = bundle_root.join("artifact").join("artifact-manifest.json");
+    let sha = sha256_file_hex(&manifest_path)?;
+    Ok(sha.to_ascii_lowercase())
+}
+
+fn voxcpm2_palette_ids() -> Vec<String> {
+    read_voxcpm2_activation_contract()
+        .map(|contract| {
+            contract
+                .runtime
+                .reference_voices
+                .into_iter()
+                .map(|v| v.id)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn cleanup_legacy_locked(ctx: &voice_cache::VoiceContext) {
+    if let Ok(receipt_path) = ctx.receipt_path() {
+        if let Some(mut receipt) = voice_cache::read_migration_receipt(&receipt_path) {
+            if receipt.verified_install && receipt.verified_start && !receipt.cleaned {
+                match voice_cache::cleanup_migrated_legacy(&ctx.state_root, &receipt) {
+                    Ok(deleted) => {
+                        receipt.cleaned = true;
+                        if let Err(err) = voice_cache::write_migration_receipt(&receipt_path, &receipt) {
+                            log_both(&format!("[Naia] failed to update migration receipt after cleanup: {err}"));
+                        }
+                        log_both(&format!(
+                            "[Naia] cleaned up {} migrated legacy files: {:?}",
+                            deleted.len(),
+                            deleted
+                        ));
+                    }
+                    Err(err) => {
+                        log_both(&format!(
+                            "[Naia] failed to clean up migrated legacy files: {err}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn try_cleanup_migrated_legacy(ctx: &voice_cache::VoiceContext) {
+    if let Ok(receipt_path) = ctx.receipt_path() {
+        if let Some(receipt) = voice_cache::read_migration_receipt(&receipt_path) {
+            if receipt.verified_install && receipt.verified_start && !receipt.cleaned {
+                if let Ok(_lock) = voice_cache::RuntimeLock::try_acquire(
+                    &ctx.lock_path,
+                    voice_cache::LockMode::Exclusive,
+                    "legacy cleanup",
+                ) {
+                    cleanup_legacy_locked(ctx);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -6219,8 +6394,10 @@ fn read_voxcpm2_download_manifest(
     Ok(manifest)
 }
 
-fn voxcpm2_installed_payload_root() -> std::path::PathBuf {
-    voxcpm2_runtime_root().join("payload")
+fn voxcpm2_installed_payload_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    let sha = voxcpm2_expected_artifact_sha256(app)?;
+    let ctx = voxcpm2_voice_context(&sha, None, None).ok()?;
+    Some(ctx.slot_dir.join("payload"))
 }
 
 fn cascade_runtime_root() -> std::path::PathBuf {
@@ -6238,32 +6415,25 @@ fn voxcpm2_payload_is_valid(
     voxcpm2_payload_validation_failures(root, expected_artifact_sha256).is_empty()
 }
 
-fn voxcpm2_payload_control_files_match(
-    root: &std::path::Path,
-    current_installer: &std::path::Path,
-) -> bool {
-    [
-        (
-            // 준비 스크립트의 이름은 운영체제가 정한다 (#537).
-            root.join(host_prepare_script()),
-            current_installer.to_path_buf(),
-        ),
-        (
-            root.join("voxcpm2-activation-contract.json"),
-            current_installer.with_file_name("voxcpm2-activation-contract.json"),
-        ),
-    ]
-    .into_iter()
-    .all(|(installed, current)| {
-        installed.is_file()
-            && current.is_file()
-            && sha256_file_hex(&installed)
-                .ok()
-                .zip(sha256_file_hex(&current).ok())
-                .is_some_and(|(installed_hash, current_hash)| {
-                    installed_hash.eq_ignore_ascii_case(&current_hash)
-                })
-    })
+fn voxcpm2_payload_control_files_match(root: &std::path::Path) -> bool {
+    let os = voxcpm2_cache_os();
+    let (script_name, script_bytes) = voice_cache::embedded_prepare_script(os);
+    let contract_bytes = voice_cache::ACTIVATION_CONTRACT;
+
+    let script_path = root.join(script_name);
+    let contract_path = root.join("voxcpm2-activation-contract.json");
+
+    let script_match = script_path.is_file()
+        && sha256_file_hex(&script_path)
+            .ok()
+            .is_some_and(|actual| actual.eq_ignore_ascii_case(&voice_cache::sha256_hex(script_bytes)));
+
+    let contract_match = contract_path.is_file()
+        && sha256_file_hex(&contract_path)
+            .ok()
+            .is_some_and(|actual| actual.eq_ignore_ascii_case(&voice_cache::sha256_hex(contract_bytes)));
+
+    script_match && contract_match
 }
 
 /// FR-V017.38 (#518): control-file equality alone cannot see a runtime-only
@@ -6273,12 +6443,10 @@ fn voxcpm2_payload_control_files_match(
 /// is the actual runtime version pin; reuse must also match it.
 fn voxcpm2_installed_payload_is_reusable(
     root: &std::path::Path,
-    current_installer: Option<&std::path::Path>,
     expected_artifact_sha256: Option<&str>,
 ) -> bool {
     voxcpm2_payload_is_valid(root, expected_artifact_sha256)
-        && current_installer
-            .is_some_and(|installer| voxcpm2_payload_control_files_match(root, installer))
+        && voxcpm2_payload_control_files_match(root)
 }
 
 /// Runtime version pin from the Shell-bundled download manifest (None when the
@@ -6345,32 +6513,6 @@ fn read_voxcpm2_activation_contract() -> Result<VoxCpm2ResolvedContract, String>
         }
     }
     Ok(contract)
-}
-
-fn voxcpm2_reference_voice_matches(
-    runtime_root: &std::path::Path,
-    voice: &VoxCpm2ReferenceVoiceContract,
-) -> bool {
-    let path = runtime_root.join("voices").join(&voice.id);
-    path.is_file()
-        && std::fs::metadata(&path).is_ok_and(|metadata| metadata.len() == voice.bytes)
-        && sha256_file_hex(&path).is_ok_and(|actual| actual.eq_ignore_ascii_case(&voice.sha256))
-}
-
-fn voxcpm2_reference_voices_match(
-    runtime_root: &std::path::Path,
-    voices: &[VoxCpm2ReferenceVoiceContract],
-) -> bool {
-    !voices.is_empty()
-        && voices
-            .iter()
-            .all(|voice| voxcpm2_reference_voice_matches(runtime_root, voice))
-}
-
-fn voxcpm2_reference_voice_is_ready(runtime_root: &std::path::Path) -> bool {
-    read_voxcpm2_activation_contract().is_ok_and(|contract| {
-        voxcpm2_reference_voices_match(runtime_root, &contract.runtime.reference_voices)
-    })
 }
 
 fn prepare_voxcpm2_payload_structure(root: &std::path::Path) -> Result<(), String> {
@@ -6464,14 +6606,15 @@ fn voxcpm2_bundle_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
                 }),
         )
     } else {
-        let installed = voxcpm2_installed_payload_root();
+        let installed = voxcpm2_installed_payload_root(app);
         // FR-V017.38 (#518): reuse requires the bundled runtime pin to match.
-        voxcpm2_installed_payload_is_reusable(
-            &installed,
-            voxcpm2_installer_script_path(app).as_deref(),
-            voxcpm2_expected_artifact_sha256(app).as_deref(),
-        )
-        .then_some(installed)
+        installed.and_then(|root| {
+            voxcpm2_installed_payload_is_reusable(
+                &root,
+                voxcpm2_expected_artifact_sha256(app).as_deref(),
+            )
+            .then_some(root)
+        })
     };
     // dev/e2e bundle roots stay outside the pin check — their staged payloads
     // are validated structurally only (scope: installed-payload reuse).
@@ -6493,7 +6636,9 @@ fn cascade_bundle_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 fn voxcpm2_installer_command(
     installer: &std::path::Path,
     bundle_root: &std::path::Path,
-    runtime_root: &std::path::Path,
+    asset_root: &std::path::Path,
+    engine_dir: &std::path::Path,
+    state_root: &std::path::Path,
 ) -> Command {
     let mut command = if cfg!(windows) {
         let mut command = Command::new("powershell.exe");
@@ -6506,20 +6651,28 @@ fn voxcpm2_installer_command(
                 "Bypass",
                 "-File",
             ])
-            .arg(installer)
+            .arg(powershell_compatible_path(installer))
             .arg("-BundleRoot")
-            .arg(bundle_root)
-            .arg("-RuntimeRoot")
-            .arg(runtime_root);
+            .arg(powershell_compatible_path(bundle_root))
+            .arg("-AssetRoot")
+            .arg(powershell_compatible_path(asset_root))
+            .arg("-EngineDir")
+            .arg(powershell_compatible_path(engine_dir))
+            .arg("-StateRoot")
+            .arg(powershell_compatible_path(state_root));
         command
     } else {
         let mut command = Command::new("bash");
         command
-            .arg(installer)
+            .arg(powershell_compatible_path(installer))
             .arg("--bundle-root")
-            .arg(bundle_root)
-            .arg("--runtime-root")
-            .arg(runtime_root);
+            .arg(powershell_compatible_path(bundle_root))
+            .arg("--asset-root")
+            .arg(powershell_compatible_path(asset_root))
+            .arg("--engine-dir")
+            .arg(powershell_compatible_path(engine_dir))
+            .arg("--state-root")
+            .arg(powershell_compatible_path(state_root));
         command
     };
     command.env("PYTHONUTF8", "1");
@@ -6535,40 +6688,6 @@ fn powershell_compatible_path(path: &std::path::Path) -> std::path::PathBuf {
         return std::path::PathBuf::from(rest);
     }
     path.to_path_buf()
-}
-
-/// #700: the path the installer script would have, whether or not it exists.
-/// `voxcpm2_installer_script_path` filters missing files away, which left the
-/// error unable to say *where* the script was expected.
-fn voxcpm2_installer_script_candidate(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    let development = if cfg!(debug_assertions) {
-        std::env::var_os("NAIA_VOXCPM2_INSTALLER_DIR")
-            .filter(|value| !value.is_empty())
-            .map(std::path::PathBuf::from)
-    } else {
-        None
-    };
-    development
-        .map(|root| root.join(host_prepare_script()))
-        .or_else(|| {
-            app.path()
-                .resource_dir()
-                .ok()
-                .map(|root| root.join("voxcpm2-runtime").join(host_prepare_script()))
-        })
-}
-
-fn voxcpm2_installer_script_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    // 설치 트랜잭션이 읽는 자원은 셋이다 — 다운로드 매니페스트, 설치 스크립트,
-    // 활성화 계약. 매니페스트에는 개발용 우회가 있었는데 스크립트에는 없어서,
-    // 설치본이 아닌 빌드에서는 내려받기 경로 자체를 잴 수 없었다(#537). 우회는
-    // 디버그 빌드에서만 산다 — 릴리스는 언제나 자기 리소스만 읽는다.
-    voxcpm2_installer_script_candidate(app).filter(|path| {
-        path.is_file()
-            && path
-                .with_file_name("voxcpm2-activation-contract.json")
-                .is_file()
-    })
 }
 
 /// #700: the hint every "not staged" error carries. One place, so the UI, the log
@@ -6836,18 +6955,36 @@ fn extract_voxcpm2_archive(
 fn install_voxcpm2_payload(
     app: &tauri::AppHandle,
     manifest_path: &std::path::Path,
+    ctx: &voice_cache::VoiceContext,
 ) -> Result<std::path::PathBuf, String> {
     let manifest = read_voxcpm2_download_manifest(manifest_path)?;
-    let runtime_root = voxcpm2_runtime_root();
-    let downloads = runtime_root.join("downloads");
-    let archive = downloads.join(format!(
-        "{}.zip",
-        manifest.archive.sha256.to_ascii_lowercase()
-    ));
-    let archive_pending = downloads.join(format!(
-        "{}.zip.pending",
-        manifest.archive.sha256.to_ascii_lowercase()
-    ));
+    let payload = ctx.slot_dir.join("payload");
+
+    if payload.is_dir() {
+        let existing_manifest = payload.join("artifact").join("artifact-manifest.json");
+        if sha256_file_hex(&existing_manifest)
+            .ok()
+            .is_some_and(|actual| actual.eq_ignore_ascii_case(&manifest.artifact_manifest_sha256))
+        {
+            voice_cache::write_control_files(&payload, ctx.os)?;
+            prepare_voxcpm2_payload_structure(&payload)?;
+            if voxcpm2_payload_validation_failures(
+                &payload,
+                Some(&manifest.artifact_manifest_sha256),
+            )
+            .is_empty()
+            {
+                return Ok(payload);
+            }
+        }
+    }
+
+    let downloads = ctx.cache.downloads_dir();
+    voice_cache::ensure_private_dir(&downloads)?;
+    let archive_name = manifest.archive.sha256.to_ascii_lowercase();
+    let archive = ctx.cache.download_zip(&archive_name)?;
+    let archive_pending = downloads.join(format!("{archive_name}.zip.pending"));
+
     let archive_ready = archive.is_file()
         && std::fs::metadata(&archive)
             .is_ok_and(|metadata| metadata.len() == manifest.archive.bytes)
@@ -6860,23 +6997,14 @@ fn install_voxcpm2_payload(
             .map_err(|error| format!("Could not commit Naia Host package download: {error}"))?;
     }
 
-    let payload = voxcpm2_installed_payload_root();
-    let pending = runtime_root.join("payload.pending");
-    let backup = runtime_root.join("payload.backup");
+    let pending = ctx.slot_dir.join("payload.pending");
+    let backup = ctx.slot_dir.join("payload.backup");
     if pending.exists() {
         std::fs::remove_dir_all(&pending)
             .map_err(|error| format!("Could not clear incomplete Naia Host payload: {error}"))?;
     }
     extract_voxcpm2_archive(&archive, &pending.join("artifact"), &manifest)?;
-    let installer = voxcpm2_installer_script_path(app)
-        .ok_or_else(|| "Naia Host installer script is not packaged".to_string())?;
-    std::fs::copy(&installer, pending.join(host_prepare_script()))
-        .map_err(|error| format!("Could not stage Naia Host installer script: {error}"))?;
-    std::fs::copy(
-        installer.with_file_name("voxcpm2-activation-contract.json"),
-        pending.join("voxcpm2-activation-contract.json"),
-    )
-    .map_err(|error| format!("Could not stage Naia Host activation contract: {error}"))?;
+    voice_cache::write_control_files(&pending, ctx.os)?;
     prepare_voxcpm2_payload_structure(&pending)?;
     let validation_failures =
         voxcpm2_payload_validation_failures(&pending, Some(&manifest.artifact_manifest_sha256));
@@ -7166,7 +7294,7 @@ fn voxcpm2_python_runtime_is_ready(python: &str, service_dir: &str) -> bool {
 fn standalone_voxcpm2_python_is_ready(
     python: &str,
     artifact_root: &std::path::Path,
-    runtime_root: &std::path::Path,
+    python_packages_dir: &std::path::Path,
 ) -> bool {
     let mut command = Command::new(python);
     command
@@ -7177,7 +7305,7 @@ fn standalone_voxcpm2_python_is_ready(
             "import torch,voxcpm,soundfile,tensorrt,onnx,voxcpm2_tensorrt; assert torch.cuda.is_available()",
         ])
         .current_dir(artifact_root)
-        .env("PYTHONPATH", runtime_root.join("python-packages"))
+        .env("PYTHONPATH", python_packages_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -7185,42 +7313,75 @@ fn standalone_voxcpm2_python_is_ready(
     command.status().is_ok_and(|status| status.success())
 }
 
-fn probe_voxcpm2_installation(bundle_root: Option<&std::path::Path>) -> VoxCpm2InstallationProbe {
-    let runtime_root = voxcpm2_runtime_root();
-    let artifact_root = bundle_root.map(|root| root.join("artifact"));
-    let bundled_python = bundle_root.map(voxcpm2_bundled_python);
-    let python = std::env::var("NAIA_VOXCPM2_PYTHON").ok().or_else(|| {
-        bundled_python
-            .as_ref()
-            .map(|path| path_to_string(path.clone()))
+/// #703 (Grok 2): the ONLY readiness predicate. Install's skip decision, the status command and start all use it.
+fn voxcpm2_readiness(
+    ctx: &voice_cache::VoiceContext,
+    bundle_root: &std::path::Path,
+) -> voice_cache::ReadinessFacts {
+    let artifact_root = bundle_root.join("artifact");
+    let mut facts = ctx
+        .readiness_inputs(&artifact_root)
+        .map(|i| voice_cache::gather_file_facts(&i))
+        .unwrap_or_default();
+    let bundled_python = voxcpm2_bundled_python(bundle_root);
+    let python = if cfg!(debug_assertions) {
+        std::env::var("NAIA_VOXCPM2_PYTHON").ok()
+    } else {
+        None
+    }
+    .or_else(|| (bundled_python.is_file()).then(|| path_to_string(bundled_python)));
+    facts.python_runtime = python.as_ref().is_some_and(|py| {
+        standalone_voxcpm2_python_is_ready(py, &artifact_root, &ctx.python_packages())
     });
-    let voxcpm2_model = voxcpm2_model_is_cached(&runtime_root);
-    VoxCpm2InstallationProbe {
-        runtime_entrypoint: bundle_root.is_some_and(|root| {
-            directory_has_compiled_module(
-                &host_site_packages(&root.join("artifact")).join("voxcpm2_tensorrt"),
-                "http_server",
-                host_compiled_module_extension(),
-            )
-        }),
-        installer_available: bundle_root
-            .is_some_and(|root| root.join(host_prepare_script()).is_file()),
-        python_runtime: bundled_python.is_some_and(|path| path.is_file())
-            && python.as_ref().is_some_and(|python| {
-                artifact_root.as_ref().is_some_and(|root| {
-                    standalone_voxcpm2_python_is_ready(python, root, &runtime_root)
-                })
-            }),
-        trt_service_bundle: artifact_root.is_some_and(|root| {
-            let package = host_site_packages(&root).join("voxcpm2_tensorrt");
+    facts
+}
+
+/// Probe the VoxCPM2 installation against facts gathered in VoiceContext.
+/// `can_start` from this probe is true exactly when `voice_cache::evaluate_readiness(&facts)`
+/// is `Ready` plus the two artifact presence checks (runtime_entrypoint compiled http_server
+/// and trt_service_bundle).
+fn probe_voxcpm2_installation(
+    bundle_root: Option<&std::path::Path>,
+    ctx: Option<&voice_cache::VoiceContext>,
+) -> VoxCpm2InstallationProbe {
+    if let (Some(root), Some(ctx)) = (bundle_root, ctx) {
+        let facts = voxcpm2_readiness(ctx, root);
+        let artifact_root = root.join("artifact");
+        let compiled_http_server = directory_has_compiled_module(
+            &host_site_packages(&artifact_root).join("voxcpm2_tensorrt"),
+            "http_server",
+            host_compiled_module_extension(),
+        );
+        let trt_service_bundle = {
+            let package = host_site_packages(&artifact_root).join("voxcpm2_tensorrt");
             let extension = host_compiled_module_extension();
             directory_has_compiled_module(&package, "tts_server", extension)
                 && directory_has_compiled_module(&package, "voxcpm2_trt", extension)
                 && directory_has_compiled_module(&package, "artifact", extension)
-        }),
-        voxcpm2_model: voxcpm2_model && voxcpm2_runtime_matches_bundle(&runtime_root, bundle_root),
-        reference_voice: voxcpm2_reference_voice_is_ready(&runtime_root),
-        facade_healthy: false,
+        };
+        VoxCpm2InstallationProbe {
+            runtime_entrypoint: compiled_http_server && facts.native_hashes_match,
+            installer_available: bundle_root.is_some(),
+            python_runtime: facts.python_runtime,
+            trt_service_bundle,
+            voxcpm2_model: facts.slot_record_matches
+                && facts.nvidia_receipt_matches
+                && facts.model_present
+                && facts.ready_json_matches
+                && facts.engine_matches,
+            reference_voice: facts.palette_matches,
+            facade_healthy: false,
+        }
+    } else {
+        VoxCpm2InstallationProbe {
+            runtime_entrypoint: false,
+            installer_available: bundle_root.is_some(),
+            python_runtime: false,
+            trt_service_bundle: false,
+            voxcpm2_model: false,
+            reference_voice: false,
+            facade_healthy: false,
+        }
     }
 }
 
@@ -7373,6 +7534,7 @@ fn legacy_cascade_prerequisites_are_ready(
 async fn install_voxcpm2_runtime(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    gpu_index: Option<u32>,
 ) -> Result<VoxCpm2InstallationStatus, String> {
     let _install_guard = state.voxcpm2_start.lock().await;
     if read_secure_naia_credential(&app).is_none() {
@@ -7398,36 +7560,210 @@ async fn install_voxcpm2_runtime(
         emit_voxcpm2_progress_failed(&app, &message);
         message
     };
-    let bundle_root = if let Some(root) = voxcpm2_bundle_root(&app) {
-        root
-    } else if let Some(explicit) = voxcpm2_explicit_bundle_root(&app) {
-        return Err(fail(voxcpm2_explicit_bundle_error(&explicit)));
-    } else {
-        let manifest_path = voxcpm2_download_manifest_path(&app)
-            .ok_or_else(|| fail(format!("Naia Host download manifest is not packaged. {VOXCPM2_STAGE_HINT}")))?;
-        // #700: the packaged installer script and contract are needed after
-        // extraction; check them before a multi-GB download, not after it.
-        voxcpm2_download_precheck(voxcpm2_installer_script_candidate(&app).as_deref())
-            .map_err(fail)?;
-        let app_for_download = app.clone();
-        tokio::task::spawn_blocking(move || {
-            install_voxcpm2_payload(&app_for_download, &manifest_path)
+
+    let state_root = voxcpm2_runtime_root();
+    if gpu_index.is_some() {
+        let _ = voice_cache::record_gpu_choice(&state_root, gpu_index);
+    }
+    let gpu_choice = voxcpm2_effective_gpu(gpu_index);
+
+    let staged = voxcpm2_bundle_root(&app);
+    if staged.is_none() {
+        if let Some(explicit) = voxcpm2_explicit_bundle_root(&app) {
+            return Err(fail(voxcpm2_explicit_bundle_error(&explicit)));
+        }
+    }
+
+    let (sha, manifest_path) = match staged.as_deref() {
+        Some(root) => (voxcpm2_artifact_sha(root).map_err(&fail)?, None),
+        None => {
+            let path = voxcpm2_download_manifest_path(&app)
+                .ok_or_else(|| fail(format!("Naia Host download manifest is not packaged. {VOXCPM2_STAGE_HINT}")))?;
+            let manifest = read_voxcpm2_download_manifest(&path).map_err(&fail)?;
+            (manifest.artifact_manifest_sha256, Some(path))
+        }
+    };
+
+    let pre_artifact_root = match staged.as_ref() {
+        Some(root) => Some(root.join("artifact")),
+        None => {
+            let legacy_art = state_root.join("payload").join("artifact");
+            let legacy_manifest = legacy_art.join("artifact-manifest.json");
+            if legacy_manifest.is_file() {
+                if let Ok(m_sha) = sha256_file_hex(&legacy_manifest) {
+                    if m_sha.eq_ignore_ascii_case(&sha) {
+                        Some(legacy_art)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    };
+
+    let ctx = voxcpm2_voice_context(
+        &sha,
+        pre_artifact_root.as_deref(),
+        gpu_choice,
+    )
+    .map_err(&fail)?;
+
+    if ctx.read_only {
+        let staged_bundle = staged
+            .ok_or_else(|| fail("read-only E2E cache has no staged bundle".to_string()))?;
+        let ctx_clone = ctx.clone();
+        let staged_bundle_clone = staged_bundle.clone();
+        let facts = tokio::task::spawn_blocking(move || {
+            voxcpm2_readiness(&ctx_clone, &staged_bundle_clone)
         })
         .await
-        .map_err(|error| format!("Naia Host payload task failed: {error}"))??
+        .map_err(|error| format!("readiness check failed: {error}"))?;
+        match voice_cache::evaluate_readiness(&facts) {
+            voice_cache::Readiness::Ready => {
+                let probe = probe_voxcpm2_installation(Some(&staged_bundle), Some(&ctx));
+                return Ok(classify_voxcpm2_installation(probe));
+            }
+            voice_cache::Readiness::NeedsInstall(codes) => {
+                return Err(fail(format!(
+                    "The read-only user voice cache is not ready ({}). Install the local voice outside E2E first.",
+                    codes.join(", ")
+                )));
+            }
+        }
+    }
+
+    let lock_label = if cfg!(debug_assertions) { "dev install" } else { "install" };
+    let _cache_lock = voice_cache::RuntimeLock::try_acquire(
+        &ctx.lock_path,
+        voice_cache::LockMode::Exclusive,
+        lock_label,
+    )
+    .map_err(|busy| fail(voice_cache::lock_busy_message(&busy)))?;
+
+    cleanup_legacy_locked(&ctx);
+
+    let state_root_has_legacy = state_root.join("payload").exists()
+        || state_root.join("python-packages").exists()
+        || state_root.join("models").exists();
+    if !ctx.slot_dir.exists() && state_root_has_legacy {
+        let legacy_root = state_root.clone();
+        let slot_dir = ctx.slot_dir.clone();
+        let engine_dir = ctx.engine_dir.clone();
+        let downloads_dir = ctx.cache.downloads_dir();
+        let expected_sha = sha.clone();
+        let palette_ids = voxcpm2_palette_ids();
+        let migration_outcome = tokio::task::spawn_blocking(move || {
+            let input = voice_cache::MigrationPlanInput {
+                legacy_root: &legacy_root,
+                slot_dir: &slot_dir,
+                engine_dir: engine_dir.as_deref(),
+                downloads_dir: &downloads_dir,
+                expected_artifact_sha: &expected_sha,
+                palette_ids: &palette_ids,
+            };
+            voice_cache::migrate_legacy_runtime(&input, &voice_cache::available_space)
+        })
+        .await
+        .map_err(|e| format!("migration task failed: {e}"))?;
+        match migration_outcome {
+            Ok(voice_cache::MigrationOutcome::Migrated(r)) => {
+                if let Ok(p) = ctx.receipt_path() {
+                    let _ = voice_cache::write_migration_receipt(&p, &r);
+                }
+                log_both(&format!(
+                    "[Naia] voxcpm2 migrated {} files ({} hardlinked, {} copied) from {} into the shared voice cache",
+                    r.files, r.hardlinked, r.copied, r.source
+                ));
+            }
+            Ok(voice_cache::MigrationOutcome::SkippedNoSpace { needed, available }) => {
+                log_both(&format!(
+                    "[Naia] Not enough free space to move legacy voice runtime (needed {needed}, available {available:?})"
+                ));
+                let _ = app.emit(
+                    "voxcpm2_install_progress",
+                    serde_json::json!({
+                        "phase": "install",
+                        "step": "migrate",
+                        "label": format!("Not enough free space to move the existing voice runtime into the shared cache ({needed} bytes needed). Continuing with a fresh install."),
+                        "percent": 1,
+                    }),
+                );
+            }
+            Err(err) => {
+                log_both(&format!("[Naia] voxcpm2 legacy migration error (ignored): {err}"));
+            }
+            _ => {}
+        }
+    }
+
+    let bundle_root = match staged {
+        Some(root) => root,
+        None => {
+            let manifest_path = manifest_path.expect("manifest path resolved");
+            voice_cache::ensure_private_dir(&ctx.slot_dir).map_err(&fail)?;
+            let script_path = voice_cache::write_control_files(&ctx.slot_dir, ctx.os).map_err(&fail)?;
+            voxcpm2_download_precheck(Some(&script_path)).map_err(&fail)?;
+            let app_for_download = app.clone();
+            let manifest_path_clone = manifest_path.clone();
+            let ctx_clone = ctx.clone();
+            tokio::task::spawn_blocking(move || {
+                install_voxcpm2_payload(&app_for_download, &manifest_path_clone, &ctx_clone)
+            })
+            .await
+            .map_err(|error| format!("Naia Host payload task failed: {error}"))??
+        }
     };
-    let runtime_root = voxcpm2_runtime_root();
-    let installer = bundle_root.join(host_prepare_script());
+
+    let pre_slot_dir = ctx.slot_dir.clone();
+    let ctx = voxcpm2_context_for_bundle(&bundle_root, gpu_choice).map_err(&fail)?;
+    if ctx.slot_dir != pre_slot_dir {
+        return Err(fail(format!(
+            "Resolved bundle slot dir {} does not match pre-download slot dir {}",
+            ctx.slot_dir.display(),
+            pre_slot_dir.display()
+        )));
+    }
+
+    let bundle_root_for_readiness = bundle_root.clone();
+    let ctx_for_readiness = ctx.clone();
+    let initial_facts = tokio::task::spawn_blocking(move || {
+        voxcpm2_readiness(&ctx_for_readiness, &bundle_root_for_readiness)
+    })
+    .await
+    .map_err(|error| format!("readiness check failed: {error}"))?;
+    if voice_cache::evaluate_readiness(&initial_facts) == voice_cache::Readiness::Ready {
+        let (active, prev) = voice_cache::set_active_slot(&ctx.cache, &ctx.profile, &ctx.record.slot_key)?;
+        voice_cache::prune_slots(&ctx.cache, &ctx.profile, &active, prev.as_deref());
+        let probe = probe_voxcpm2_installation(Some(&bundle_root), Some(&ctx));
+        return Ok(classify_voxcpm2_installation(probe));
+    }
+
+    voice_cache::ensure_private_dir(&ctx.slot_dir).map_err(&fail)?;
+    let installer = voice_cache::write_control_files(&ctx.slot_dir, voxcpm2_cache_os()).map_err(&fail)?;
     voxcpm2_installer_precheck(&bundle_root, &installer).map_err(fail)?;
-    let log_path = runtime_root.join("voxcpm2-install.log");
+
+    let engine_dir = ctx.engine_dir.as_deref().ok_or_else(|| {
+        fail("Could not identify the GPU (nvidia-smi) or the TensorRT version needed to key the engine.".to_string())
+    })?;
+    let log_path = ctx.install_log();
+    let host_profile_val = *host_profile;
     let install_result = tokio::task::spawn_blocking({
         let bundle_root = bundle_root.clone();
-        let runtime_root = runtime_root.clone();
+        let slot_dir = ctx.slot_dir.clone();
+        let engine_dir = engine_dir.to_path_buf();
+        let state_root = ctx.state_root.clone();
         let app = app.clone();
+        let installer = installer.clone();
+        let log_path = log_path.clone();
         move || -> Result<(), String> {
             use std::io::{BufRead, BufReader, Write};
-            std::fs::create_dir_all(&runtime_root)
-                .map_err(|error| format!("Could not create runtime directory: {error}"))?;
+            if let Some(parent) = log_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
             let mut log = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -7435,11 +7771,27 @@ async fn install_voxcpm2_runtime(
                 .map_err(|error| format!("Could not open install log: {error}"))?;
             let installer = powershell_compatible_path(&installer);
             let bundle_root = powershell_compatible_path(&bundle_root);
-            let runtime_root = powershell_compatible_path(&runtime_root);
-            // 설치 스크립트는 운영체제 축의 일부다: Windows 는 PowerShell,
-            // Linux 는 bash. 인자 이름만 다르고 뜻(번들 루트, 런타임 루트)과
-            // 진행 이벤트 형식은 같다.
-            let mut command = voxcpm2_installer_command(&installer, &bundle_root, &runtime_root);
+            let asset_root = powershell_compatible_path(&slot_dir);
+            let engine_dir = powershell_compatible_path(&engine_dir);
+            let state_root = powershell_compatible_path(&state_root);
+            let mut command = voxcpm2_installer_command(
+                &installer,
+                &bundle_root,
+                &asset_root,
+                &engine_dir,
+                &state_root,
+            );
+            let gpus = voice_runtime::query_gpus(host_profile_val.hardware.accelerator);
+            let accelerator_env = voice_runtime::accelerator_env(
+                &host_profile_val,
+                &gpus,
+                gpu_choice,
+                None,
+                "",
+            );
+            for (key, val) in accelerator_env {
+                command.env(key, val);
+            }
             command
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
@@ -7448,8 +7800,6 @@ async fn install_voxcpm2_runtime(
             let mut child = command
                 .spawn()
                 .map_err(|error| format!("Could not start Naia Host installer: {error}"))?;
-            // Drain stderr on its own thread so a full pipe buffer cannot
-            // deadlock the stdout progress reader below.
             let stderr_thread = child.stderr.take().map(|err| {
                 let mut log_err = log.try_clone().ok();
                 std::thread::spawn(move || {
@@ -7460,9 +7810,6 @@ async fn install_voxcpm2_runtime(
                     }
                 })
             });
-            // #453: forward each `VOXCPM2_PROGRESS {json}` line from the installer
-            // as a `voxcpm2_install_progress` event so the Shell shows live
-            // model-download / engine-build progress, not a frozen status line.
             if let Some(out) = child.stdout.take() {
                 for line in BufReader::new(out).lines().map_while(Result::ok) {
                     let _ = writeln!(log, "{line}");
@@ -7505,9 +7852,32 @@ async fn install_voxcpm2_runtime(
     .map_err(|error| format!("Naia Host install task failed: {error}"))?;
     install_result?;
 
-    let probe = tokio::task::spawn_blocking(move || probe_voxcpm2_installation(Some(&bundle_root)))
-        .await
-        .map_err(|error| format!("Naia Host post-install verification failed: {error}"))?;
+    let artifact_path = bundle_root.join("artifact");
+    if let Some(eng) = ctx.engine.as_ref() {
+        voice_cache::write_engine_stamp(engine_dir, eng)?;
+    }
+    voice_cache::record_native_hashes(&ctx.slot_dir, &artifact_path, ctx.os)?;
+    voice_cache::write_slot_record(&ctx.slot_dir, &ctx.record)?;
+    if let Ok(receipt_path) = ctx.receipt_path() {
+        if let Some(mut receipt) = voice_cache::read_migration_receipt(&receipt_path) {
+            receipt.verified_install = true;
+            let _ = voice_cache::write_migration_receipt(&receipt_path, &receipt);
+        }
+    }
+    let (active_slot, prev_slot) = voice_cache::set_active_slot(&ctx.cache, &ctx.profile, &ctx.record.slot_key)?;
+    let _ = voice_cache::sync_palette_to_state(&ctx.slot_voices(), &ctx.state_voices());
+    let pruned = voice_cache::prune_slots(&ctx.cache, &ctx.profile, &active_slot, prev_slot.as_deref());
+    if !pruned.is_empty() {
+        log_both(&format!("[Naia] voxcpm2 pruned older slot(s): {}", pruned.join(", ")));
+    }
+
+    let bundle_root_for_probe = bundle_root.clone();
+    let ctx_for_probe = ctx.clone();
+    let probe = tokio::task::spawn_blocking(move || {
+        probe_voxcpm2_installation(Some(&bundle_root_for_probe), Some(&ctx_for_probe))
+    })
+    .await
+    .map_err(|error| format!("Naia Host post-install verification failed: {error}"))?;
     let status = classify_voxcpm2_installation(probe);
     if status.can_start {
         Ok(status)
@@ -7544,12 +7914,16 @@ async fn voxcpm2_installation_status(
     let bundle_root = voxcpm2_bundle_root(&app);
     let installer_available = bundle_root.is_some()
         || (voxcpm2_download_manifest_path(&app)
-            .is_some_and(|path| read_voxcpm2_download_manifest(&path).is_ok())
-            && voxcpm2_installer_script_path(&app).is_some());
+            .is_some_and(|path| read_voxcpm2_download_manifest(&path).is_ok()));
+    let ctx = bundle_root
+        .as_deref()
+        .and_then(|root| voxcpm2_context_for_bundle(root, None).ok());
     let mut probe =
-        tokio::task::spawn_blocking(move || probe_voxcpm2_installation(bundle_root.as_deref()))
-            .await
-            .map_err(|error| format!("Naia Host installation status task failed: {error}"))?;
+        tokio::task::spawn_blocking(move || {
+            probe_voxcpm2_installation(bundle_root.as_deref(), ctx.as_ref())
+        })
+        .await
+        .map_err(|error| format!("Naia Host installation status task failed: {error}"))?;
     probe.installer_available = installer_available;
     probe.facade_healthy = voxcpm2_status(state).await.unwrap_or(false);
     Ok(classify_voxcpm2_installation_for_profile(
@@ -7755,15 +8129,22 @@ fn wait_for_child_exit(
 /// 뿐이고, 그 둘은 `voice_runtime` 의 두 축이 답한다.
 fn spawn_voxcpm2(
     bundle_root: &std::path::Path,
+    ctx: &voice_cache::VoiceContext,
     naia_key: &str,
     profile: &voice_runtime::VoiceProfile,
     configured_gpu: Option<u32>,
 ) -> Result<VoxCpm2Process, String> {
-    let runtime_root = voxcpm2_runtime_root();
-    let python = std::env::var("NAIA_VOXCPM2_PYTHON")
-        .unwrap_or_else(|_| path_to_string(profile.bundled_python(bundle_root)));
+    let python = if cfg!(debug_assertions) {
+        std::env::var("NAIA_VOXCPM2_PYTHON")
+            .unwrap_or_else(|_| path_to_string(profile.bundled_python(bundle_root)))
+    } else {
+        path_to_string(profile.bundled_python(bundle_root))
+    };
     let artifact_root = bundle_root.join("artifact");
-    let engine_dir = runtime_root.join("checkpoints").join("voxcpm2_trt");
+    let engine_dir = ctx
+        .engine_dir
+        .as_ref()
+        .ok_or_else(|| "engine directory not resolved for voice runtime".to_string())?;
     let log_path = log_dir().join("voxcpm2-stderr.log");
     // Generate the launch bearer before spawning so an RNG failure cannot
     // leave an unauthenticated child behind.
@@ -7786,20 +8167,20 @@ fn spawn_voxcpm2(
     .env("PYTHONUTF8", "1")
     .env("PYTHONIOENCODING", "utf-8")
     .env("PYTHONDONTWRITEBYTECODE", "1")
-    .env("PYTHONPATH", runtime_root.join("python-packages"))
+    .env("PYTHONPATH", ctx.python_packages())
     .env(
         "NUMBA_CACHE_DIR",
-        runtime_root.join("state").join("cache").join("numba"),
+        ctx.numba_cache(),
     )
-    .env("HF_HOME", runtime_root.join("hf-cache"))
+    .env("HF_HOME", ctx.hf_home())
     .env("HF_HUB_DISABLE_XET", "1")
     .env("VOXCPM_MODEL", "openbmb/VoxCPM2")
     .env(
         "VOXCPM_MODEL_DIR",
-        runtime_root.join("models").join("VoxCPM2"),
+        ctx.model_dir(),
     )
     .env("VOXCPM_BACKEND", profile.hardware.backend)
-    .env("VOXCPM_TRT_ENGINE_DIR", &engine_dir)
+    .env("VOXCPM_TRT_ENGINE_DIR", engine_dir)
     .env("VOXCPM_INT8", "1")
     .env("VOXCPM_CPU_QUANTIZE", "1")
     .env_remove("VOXCPM_DEVICE")
@@ -7814,13 +8195,10 @@ fn spawn_voxcpm2(
         "VOXCPM2_DEBUG",
         if cfg!(debug_assertions) { "1" } else { "0" },
     )
-    .env("VOXCPM2_STATE_DIR", runtime_root.join("state"))
-    // Reference voices live in the user-writable runtime root, not the shipped
-    // bundle: the runtime release contract (verify_release_payload.py) forbids any
-    // voice inside the artifact, and the install step self-generates the default
-    // voice here (prepare-voxcpm2-model.ps1). Serving from artifact/voices left
-    // this dir empty → resolve_voice("default") raised no_reference_voice → silence.
-    .env("VOXCPM2_VOICE_DIR", runtime_root.join("voices"))
+    .env("VOXCPM2_STATE_DIR", ctx.state_dir())
+    // #703: per-mode voice dir; the palette is copied from the slot; PUT /voice
+    // writes here, never into the shared slot.
+    .env("VOXCPM2_VOICE_DIR", ctx.state_voices())
     .env(
         "VOXCPM2_ALLOWED_ORIGINS",
         voxcpm2_allowed_origins(debug_e2e_enabled()),
@@ -7955,7 +8333,11 @@ fn spawn_voxcpm2(
     // The readiness payload contains a per-launch loopback bearer used by the
     // WebView. Never write that credential to logs.
     log_both("[Naia] Windows Naia Host TensorRT ready on loopback");
-    Ok(VoxCpm2Process { child, ready })
+    Ok(VoxCpm2Process {
+        child,
+        ready,
+        cache_lock: None,
+    })
 }
 
 fn voxcpm2_bundled_python(bundle_root: &std::path::Path) -> std::path::PathBuf {
@@ -8206,15 +8588,18 @@ async fn cascade_facade_is_healthy(ready: &str) -> bool {
     }
 }
 
-/// R2.2b: ?ㅼ젙?먯꽌 "濡쒖뺄 ?뚯꽦/cascade ?쒖옉". manifest(R2.2a 媛 write) + 媛먯? VRAM(total)?쇰줈
-/// loader supervisor 瑜??꾩슫?? ?대? 媛??以묒씠硫?湲곗〈 ready 諛섑솚(硫깅벑).
+/// R2.2b: 설정에서 "로컬 음성/cascade 시작". manifest(R2.2a 가 write) + 감지 VRAM(total)으로
+/// loader supervisor 를 띄운다. 이미 가동 중이면 기존 ready 반환(멱등).
+///
+/// #703: with no configured card, the runtime now always uses the lowest-index NVIDIA card
+/// (the one its engine was built for) instead of the card with the most free memory at that moment.
 #[tauri::command]
 async fn start_voxcpm2(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     expected_loader_profile: Option<String>,
-    // gpu_index: 사람이 설정에서 고른 카드 번호. 없으면 여유가 가장 많은
-    // 카드를 쓴다. 카드가 한 장뿐인 기계에서는 설정 자체가 보이지 않는다.
+    // gpu_index: 사람이 설정에서 고른 카드 번호. 없으면 최저 인덱스 NVIDIA
+    // 카드를 쓴다(엔진 빌드 카드와 일치). 카드가 한 장뿐인 기계에서는 설정 자체가 보이지 않는다.
     gpu_index: Option<u32>,
 ) -> Result<String, String> {
     let _start_guard = state.voxcpm2_start.lock().await;
@@ -8284,36 +8669,125 @@ async fn start_voxcpm2(
             return Err(message);
         }
     };
+    let state_root = voxcpm2_runtime_root();
+    if gpu_index.is_some() {
+        let _ = voice_cache::record_gpu_choice(&state_root, gpu_index);
+    }
+    let effective_gpu = voxcpm2_effective_gpu(gpu_index);
+
+    let ctx = match voxcpm2_context_for_bundle(&bundle_root, effective_gpu) {
+        Ok(c) => c,
+        Err(error) => {
+            log_both(&format!("[Naia] voxcpm2 context build failed: {error}"));
+            emit_voxcpm2_progress_failed(&app, &error);
+            return Err(error);
+        }
+    };
+
     let install_probe = tokio::task::spawn_blocking({
         let bundle_root = bundle_root.clone();
-        move || probe_voxcpm2_installation(Some(&bundle_root))
+        let ctx = ctx.clone();
+        move || probe_voxcpm2_installation(Some(&bundle_root), Some(&ctx))
     })
     .await
     .map_err(|error| format!("Naia Host installation check task failed: {error}"))?;
     let installation = classify_voxcpm2_installation_for_profile(install_probe, Some(expected));
     if !installation.can_start {
-        return Err(installation.summary);
+        let message = installation.summary;
+        log_both(&format!("[Naia] voxcpm2 start precheck failed: {message}"));
+        emit_voxcpm2_progress_failed(&app, &message);
+        return Err(message);
+    }
+
+    let ctx_for_cleanup = ctx.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        try_cleanup_migrated_legacy(&ctx_for_cleanup);
+    })
+    .await;
+
+    let cache_lock = match voice_cache::RuntimeLock::try_acquire(
+        &ctx.lock_path,
+        voice_cache::LockMode::Shared,
+        if cfg!(debug_assertions) { "dev voice" } else { "voice" },
+    )
+    .map_err(|busy| voice_cache::lock_busy_message(&busy))
+    {
+        Ok(lock) => lock,
+        Err(err) => {
+            log_both(&format!("[Naia] voxcpm2 lock acquisition failed: {err}"));
+            emit_voxcpm2_progress_failed(&app, &err);
+            return Err(err);
+        }
+    };
+
+    platform::kill_stale_voxcpm2();
+    if voice_cache::loopback_port_in_use(8910) {
+        let message = VOXCPM2_PORT_IN_USE_MESSAGE.to_string();
+        log_both(&format!("[Naia] {message}"));
+        emit_voxcpm2_progress_failed(&app, &message);
+        return Err(message);
+    }
+
+    if let Err(err) = voice_cache::verify_native_hashes(&ctx.slot_dir, &bundle_root.join("artifact"), ctx.os) {
+        let message = format!("Native code verification failed: {err}");
+        log_both(&format!("[Naia] {message}"));
+        emit_voxcpm2_progress_failed(&app, &message);
+        return Err(message);
+    }
+    if voice_cache::path_has_reparse_component(&voxcpm2_bundled_python(&bundle_root), &bundle_root) {
+        let message = format!(
+            "Refusing to spawn voice runtime because bundled python contains a reparse point/symlink: {}",
+            voxcpm2_bundled_python(&bundle_root).display()
+        );
+        log_both(&format!("[Naia] {message}"));
+        emit_voxcpm2_progress_failed(&app, &message);
+        return Err(message);
+    }
+
+    if let Err(err) = voice_cache::sync_palette_to_state(&ctx.slot_voices(), &ctx.state_voices()) {
+        let message = format!("Failed to sync voice palette: {err}");
+        log_both(&format!("[Naia] {message}"));
+        emit_voxcpm2_progress_failed(&app, &message);
+        return Err(message);
     }
 
     let naia_key = zeroize::Zeroizing::new(
         read_secure_naia_credential(&app)
             .ok_or_else(|| "voxcpm2_naia_member_login_required".to_string())?,
     );
-    // A direct TRT process carries a per-launch access token. It cannot be
-    // adopted safely from a different Shell process.
-    platform::kill_stale_voxcpm2();
-    let process =
-        tokio::task::spawn_blocking(move || {
-            spawn_voxcpm2(&bundle_root, naia_key.as_str(), resolved, gpu_index)
-        })
-            .await
-            .map_err(|error| format!("task error: {error}"))?
-            .map_err(|error| {
-                emit_voxcpm2_progress_failed(&app, &error);
-                error
-            })?;
+
+    let bundle_root_for_spawn = bundle_root.clone();
+    let ctx_for_spawn = ctx.clone();
+    let mut process = tokio::task::spawn_blocking(move || {
+        spawn_voxcpm2(
+            &bundle_root_for_spawn,
+            &ctx_for_spawn,
+            naia_key.as_str(),
+            resolved,
+            effective_gpu,
+        )
+    })
+    .await
+    .map_err(|error| format!("task error: {error}"))?
+    .map_err(|error| {
+        emit_voxcpm2_progress_failed(&app, &error);
+        error
+    })?;
+    process.cache_lock = Some(cache_lock);
     let ready = process.ready.clone();
     *lock_or_recover(&state.voxcpm2, "voxcpm2") = Some(process);
+
+    if let Ok(receipt_path) = ctx.receipt_path() {
+        if let Some(mut receipt) = voice_cache::read_migration_receipt(&receipt_path) {
+            if receipt.verified_install && !receipt.verified_start {
+                receipt.verified_start = true;
+                if let Err(err) = voice_cache::write_migration_receipt(&receipt_path, &receipt) {
+                    log_both(&format!("[Naia] failed to update migration receipt: {err}"));
+                }
+            }
+        }
+    }
+
     Ok(ready)
 }
 
@@ -14214,7 +14688,6 @@ mod tests {
     #[test]
     fn voxcpm2_upgrade_rejects_default_only_payload_control_files() {
         let runtime = tempfile::tempdir().unwrap();
-        let current = tempfile::tempdir().unwrap();
         let root = runtime.path();
         let artifact = root.join("artifact");
         build_payload_from_contract(root);
@@ -14231,27 +14704,15 @@ mod tests {
         )
         .unwrap();
 
-        let current_script = current.path().join(prepare_script);
-        let current_contract = current.path().join("voxcpm2-activation-contract.json");
-        std::fs::write(&current_script, "install complete eight-voice palette").unwrap();
-        std::fs::write(
-            &current_contract,
-            r#"{"runtime":{"referenceVoices":[1,2,3,4,5,6,7,8]}}"#,
-        )
-        .unwrap();
-
         assert!(voxcpm2_payload_is_valid(root, None));
         assert!(!voxcpm2_installed_payload_is_reusable(
             root,
-            Some(&current_script),
             None
         ));
 
-        std::fs::copy(&current_script, &installed_script).unwrap();
-        std::fs::copy(&current_contract, &installed_contract).unwrap();
+        voice_cache::write_control_files(root, voxcpm2_cache_os()).unwrap();
         assert!(voxcpm2_installed_payload_is_reusable(
             root,
-            Some(&current_script),
             None
         ));
 
@@ -14262,13 +14723,11 @@ mod tests {
             sha256_file_hex(&artifact.join("artifact-manifest.json")).unwrap();
         assert!(voxcpm2_installed_payload_is_reusable(
             root,
-            Some(&current_script),
             Some(&payload_artifact_sha)
         ));
         let moved_on_pin = "0000000000000000000000000000000000000000000000000000000000000000";
         assert!(!voxcpm2_installed_payload_is_reusable(
             root,
-            Some(&current_script),
             Some(moved_on_pin)
         ));
     }
@@ -15012,64 +15471,16 @@ mod tests {
         assert!(status.can_start);
     }
 
-    #[test]
-    fn voxcpm2_reference_voice_requires_the_pinned_digest_and_size() {
-        let runtime = tempfile::tempdir().unwrap();
-        let voices = runtime.path().join("voices");
-        std::fs::create_dir_all(&voices).unwrap();
-        let path = voices.join("test-default.wav");
-        let wav = b"RIFF\x04\x00\x00\x00WAVE";
-        std::fs::write(&path, wav).unwrap();
-        let voice = VoxCpm2ReferenceVoiceContract {
-            id: "test-default.wav".to_string(),
-            url: "https://example.invalid/test-default.wav".to_string(),
-            sha256: sha256_file_hex(&path).unwrap(),
-            bytes: wav.len() as u64,
-            is_default: true,
-        };
-
-        assert!(voxcpm2_reference_voice_matches(runtime.path(), &voice));
-        std::fs::write(&path, b"RIFFcorruptWAVE").unwrap();
-        assert!(!voxcpm2_reference_voice_matches(runtime.path(), &voice));
-        std::fs::remove_file(&path).unwrap();
-        assert!(!voxcpm2_reference_voice_matches(runtime.path(), &voice));
-    }
+    // Note: voxcpm2 reference voice / palette verification checks now live in
+    // voice_cache::gather_file_facts (palette) and are covered by
+    // voice_cache::tests::test_gather_file_facts.
 
     #[test]
-    fn voxcpm2_reference_voice_readiness_requires_the_complete_palette() {
-        let runtime = tempfile::tempdir().unwrap();
-        let voices_dir = runtime.path().join("voices");
-        std::fs::create_dir_all(&voices_dir).unwrap();
-        let female_wav = b"RIFFfemaleWAVE";
-        let male_wav = b"RIFFmaleWAVE";
-        let female_path = voices_dir.join("female.wav");
-        let male_path = voices_dir.join("male.wav");
-        std::fs::write(&female_path, female_wav).unwrap();
-        std::fs::write(&male_path, male_wav).unwrap();
-        let male_sha256 = sha256_file_hex(&male_path).unwrap();
-        std::fs::remove_file(&male_path).unwrap();
-        let voices = vec![
-            VoxCpm2ReferenceVoiceContract {
-                id: "female.wav".to_string(),
-                url: "https://example.invalid/female.wav".to_string(),
-                sha256: sha256_file_hex(&female_path).unwrap(),
-                bytes: female_wav.len() as u64,
-                is_default: true,
-            },
-            VoxCpm2ReferenceVoiceContract {
-                id: "male.wav".to_string(),
-                url: "https://example.invalid/male.wav".to_string(),
-                sha256: male_sha256,
-                bytes: male_wav.len() as u64,
-                is_default: false,
-            },
-        ];
-
-        assert!(!voxcpm2_reference_voices_match(runtime.path(), &voices));
-        std::fs::write(&male_path, male_wav).unwrap();
-        assert!(voxcpm2_reference_voices_match(runtime.path(), &voices));
-        std::fs::write(&male_path, b"RIFFwrongWAVE").unwrap();
-        assert!(!voxcpm2_reference_voices_match(runtime.path(), &voices));
+    fn voxcpm2_port_in_use_message_is_consistent() {
+        assert_eq!(
+            VOXCPM2_PORT_IN_USE_MESSAGE,
+            "Another local voice runtime already owns port 8910 — most likely the other Naia instance. Stop its local voice first."
+        );
     }
 
     #[test]
@@ -18176,5 +18587,62 @@ mod voxcpm2_installer_precheck_tests {
             dl_precheck_idx < dl_payload_idx,
             "download precheck should run before downloading payload"
         );
+    }
+
+    #[test]
+    fn voxcpm2_installer_command_passes_asset_engine_state_roots() {
+        let installer = std::path::Path::new("install.ps1");
+        let bundle = std::path::Path::new("bundle");
+        let asset = std::path::Path::new("asset");
+        let engine = std::path::Path::new("engine");
+        let state = std::path::Path::new("state");
+
+        let cmd = voxcpm2_installer_command(installer, bundle, asset, engine, state);
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+
+        if cfg!(windows) {
+            let bundle_pos = args.iter().position(|a| a == "-BundleRoot").unwrap();
+            let asset_pos = args.iter().position(|a| a == "-AssetRoot").unwrap();
+            let engine_pos = args.iter().position(|a| a == "-EngineDir").unwrap();
+            let state_pos = args.iter().position(|a| a == "-StateRoot").unwrap();
+            assert!(bundle_pos < asset_pos);
+            assert!(asset_pos < engine_pos);
+            assert!(engine_pos < state_pos);
+            assert_eq!(args[bundle_pos + 1], powershell_compatible_path(bundle).to_string_lossy());
+            assert_eq!(args[asset_pos + 1], powershell_compatible_path(asset).to_string_lossy());
+            assert_eq!(args[engine_pos + 1], powershell_compatible_path(engine).to_string_lossy());
+            assert_eq!(args[state_pos + 1], powershell_compatible_path(state).to_string_lossy());
+        } else {
+            let bundle_pos = args.iter().position(|a| a == "--bundle-root").unwrap();
+            let asset_pos = args.iter().position(|a| a == "--asset-root").unwrap();
+            let engine_pos = args.iter().position(|a| a == "--engine-dir").unwrap();
+            let state_pos = args.iter().position(|a| a == "--state-root").unwrap();
+            assert!(bundle_pos < asset_pos);
+            assert!(asset_pos < engine_pos);
+            assert!(engine_pos < state_pos);
+            assert_eq!(args[bundle_pos + 1], powershell_compatible_path(bundle).to_string_lossy());
+            assert_eq!(args[asset_pos + 1], powershell_compatible_path(asset).to_string_lossy());
+            assert_eq!(args[engine_pos + 1], powershell_compatible_path(engine).to_string_lossy());
+            assert_eq!(args[state_pos + 1], powershell_compatible_path(state).to_string_lossy());
+        }
+    }
+
+    #[test]
+    fn voxcpm2_runtime_root_ignores_override_in_release_semantics() {
+        let fallback = std::path::PathBuf::from("expected-fallback");
+        let result = voxcpm2_runtime_root_with(
+            false,
+            Some(std::ffi::OsString::from("custom-override")),
+            Some(fallback.clone()),
+        );
+        assert_eq!(result, fallback);
+    }
+
+    #[test]
+    fn voxcpm2_effective_gpu_prefers_explicit_choice() {
+        assert_eq!(voxcpm2_effective_gpu(Some(3)), Some(3));
     }
 }

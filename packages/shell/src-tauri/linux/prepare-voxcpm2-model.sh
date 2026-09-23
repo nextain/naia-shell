@@ -7,10 +7,10 @@
 #
 #   1. verify the bundled artifact against its own manifest;
 #   2. materialize the reference-voice palette declared by the activation
-#      contract into the user-writable runtime root;
+#      contract into the cache slot asset root;
 #   3. acquire the pinned NVIDIA packages (TensorRT and, on Linux, the CUDA
 #      library wheels PyTorch loads) from NVIDIA-controlled distribution into
-#      <runtime-root>/python-packages, outside the immutable artifact;
+#      <asset-root>/python-packages, outside the immutable artifact;
 #   4. download the pinned VoxCPM2 model revision (receipt-verified);
 #   5. build and verify the GPU-local TensorRT LocDiT engine;
 #   6. write the ready receipt the Shell's post-install probe reads.
@@ -18,19 +18,23 @@
 # Every phase prints one `VOXCPM2_PROGRESS {json}` line for the Shell's live
 # progress UX. Only the pip and model phases touch the network.
 #
-#   prepare-voxcpm2-model.sh --bundle-root DIR --runtime-root DIR
+#   prepare-voxcpm2-model.sh --bundle-root DIR --asset-root DIR --engine-dir DIR --state-root DIR
 set -euo pipefail
 
 BUNDLE_ROOT=""
-RUNTIME_ROOT=""
+ASSET_ROOT=""
+ENGINE_DIR=""
+STATE_ROOT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --bundle-root) BUNDLE_ROOT="$2"; shift 2 ;;
-    --runtime-root) RUNTIME_ROOT="$2"; shift 2 ;;
+    --asset-root) ASSET_ROOT="$2"; shift 2 ;;
+    --engine-dir) ENGINE_DIR="$2"; shift 2 ;;
+    --state-root) STATE_ROOT="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$BUNDLE_ROOT" ] && [ -n "$RUNTIME_ROOT" ] || { echo "--bundle-root and --runtime-root are required" >&2; exit 2; }
+[ -n "$BUNDLE_ROOT" ] && [ -n "$ASSET_ROOT" ] && [ -n "$ENGINE_DIR" ] && [ -n "$STATE_ROOT" ] || { echo "--bundle-root, --asset-root, --engine-dir, and --state-root are required" >&2; exit 2; }
 
 progress() {
   # $1 step, $2 label, $3 percent
@@ -59,25 +63,32 @@ MODEL_ID="$(jget "$MANIFEST_PATH" "['model']['id']")"
 MODEL_REVISION="$(jget "$MANIFEST_PATH" "['model']['revision']")"
 WORKSPACE_GIB="$(jget "$MANIFEST_PATH" "['engine']['workspaceGiB']")"
 
-mkdir -p "$RUNTIME_ROOT"
-RUNTIME_ROOT="$(cd "$RUNTIME_ROOT" && pwd -P)"
-export HF_HOME="$RUNTIME_ROOT/hf-cache"
+mkdir -p "$ASSET_ROOT"
+ASSET_ROOT="$(cd "$ASSET_ROOT" && pwd -P)"
+mkdir -p "$STATE_ROOT"
+STATE_ROOT="$(cd "$STATE_ROOT" && pwd -P)"
+ENGINE_PARENT="$(dirname "$ENGINE_DIR")"
+mkdir -p "$ENGINE_PARENT"
+ENGINE_PARENT="$(cd "$ENGINE_PARENT" && pwd -P)"
+ENGINE_DIR="$ENGINE_PARENT/$(basename "$ENGINE_DIR")"
+
+export HF_HOME="$STATE_ROOT/hf-cache"
 export HF_HUB_DISABLE_XET=1
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
 export PYTHONDONTWRITEBYTECODE=1
-export NUMBA_CACHE_DIR="$RUNTIME_ROOT/state/cache/numba"
+export NUMBA_CACHE_DIR="$STATE_ROOT/state/cache/numba"
 mkdir -p "$NUMBA_CACHE_DIR"
 
-# Fail closed early if the runtime volume lacks room: a fresh install needs the
+# Fail closed early if the asset volume lacks room: a fresh install needs the
 # model (~4.7 GiB), the NVIDIA packages (~3 GiB on Linux) and the engine.
-MODEL_DIR="$RUNTIME_ROOT/models/VoxCPM2"
+MODEL_DIR="$ASSET_ROOT/models/VoxCPM2"
 REQUIRED_GIB=9
 [ -f "$MODEL_DIR/model.safetensors" ] && REQUIRED_GIB=4
-FREE_GIB="$(df -Pk "$RUNTIME_ROOT" | awk 'NR==2 {printf "%d", $4/1048576}')"
+FREE_GIB="$(df -Pk "$ASSET_ROOT" | awk 'NR==2 {printf "%d", $4/1048576}')"
 if [ "$FREE_GIB" -lt "$REQUIRED_GIB" ]; then
   progress "disk" "Not enough free disk space" 0
-  echo "insufficient_disk_space: $RUNTIME_ROOT has ${FREE_GIB} GiB free but >= ${REQUIRED_GIB} GiB is required. Free space or set NAIA_VOXCPM2_RUNTIME_ROOT to a volume with more room." >&2
+  echo "insufficient_disk_space: $ASSET_ROOT has ${FREE_GIB} GiB free but >= ${REQUIRED_GIB} GiB is required. Free space on that volume and try again." >&2
   exit 1
 fi
 progress "disk" "Disk space OK (${FREE_GIB} GiB free)" 3
@@ -96,7 +107,7 @@ NAIA_VOXCPM2_ARTIFACT_ROOT="$ARTIFACT_ROOT" run_python "Bundled VoxCPM2 artifact
 # (id, HTTPS url, sha256, bytes, default). Materialize every entry into the
 # user-writable runtime so each preview choice is resolvable by synthesis.
 progress "reference-voice" "Preparing the host voice palette" 35
-VOICES_ROOT="$RUNTIME_ROOT/voices"
+VOICES_ROOT="$ASSET_ROOT/voices"
 mkdir -p "$VOICES_ROOT"
 VOICE_TABLE="$("$PYTHON" -B -I - "$ACTIVATION_CONTRACT_PATH" <<'PY'
 import json, sys, os
@@ -148,9 +159,9 @@ progress "reference-voice" "Host voice palette ready" 40
 # cu121 wheel loads at import. Acquired from NVIDIA-controlled distribution
 # during this explicit online transaction, staged outside the immutable
 # artifact, verified by exact version, and recorded with pip's reports.
-NVIDIA_ROOT="$RUNTIME_ROOT/python-packages"
-NVIDIA_PENDING="$RUNTIME_ROOT/python-packages.pending"
-NVIDIA_BACKUP="$RUNTIME_ROOT/python-packages.backup"
+NVIDIA_ROOT="$ASSET_ROOT/python-packages"
+NVIDIA_PENDING="$ASSET_ROOT/python-packages.pending"
+NVIDIA_BACKUP="$ASSET_ROOT/python-packages.backup"
 NVIDIA_RECEIPT="$NVIDIA_ROOT/naia-nvidia-package-receipt.json"
 INSTALLER_LOCK_SHA="$(sha256sum "$INSTALLER_LOCK_PATH" | cut -d' ' -f1)"
 VERIFY_NVIDIA="$("$PYTHON" -B -I - "$INSTALLER_LOCK_PATH" <<'PY'
@@ -230,13 +241,10 @@ if ! try_python "${MODEL_ARGS[@]}" --verify-only; then
 fi
 progress "model" "Voice model ready" 70
 
-# GPU-local engine: built into a pending directory and swapped in atomically,
-# with the previous engine kept as a backup until the new one verifies.
-CHECKPOINTS="$RUNTIME_ROOT/checkpoints"
-ENGINE="$CHECKPOINTS/voxcpm2_trt"
-ENGINE_PENDING="$CHECKPOINTS/voxcpm2_trt.pending"
-ENGINE_BACKUP="$CHECKPOINTS/voxcpm2_trt.backup"
-export NAIA_VOXCPM2_ENGINE_DIR="$ENGINE"
+# The Shell holds the cache slot's exclusive lock for the whole run of this script, and every running voice server holds the shared lock for its lifetime, so no process has EngineDir mapped while this runs. A different GPU, driver or TensorRT version is a different EngineDir (a new generation); an existing generation of another stamp is never touched.
+ENGINE_PENDING="$ENGINE_DIR.pending"
+ENGINE_BACKUP="$ENGINE_DIR.backup"
+export NAIA_VOXCPM2_ENGINE_DIR="$ENGINE_DIR"
 export NAIA_VOXCPM2_MODEL_DIR="$MODEL_DIR"
 export NAIA_VOXCPM2_MODEL_ID="$MODEL_ID"
 export NAIA_VOXCPM2_MODEL_REVISION="$MODEL_REVISION"
@@ -250,9 +258,9 @@ if ! try_python -B -s -c "$VERIFY_ENGINE"; then
     --model "$MODEL_ID" --revision "$MODEL_REVISION" --model-dir "$MODEL_DIR" \
     --output-dir "$ENGINE_PENDING" --workspace-gib "$WORKSPACE_GIB"
   rm -rf "$ENGINE_BACKUP"
-  [ -d "$ENGINE" ] && mv "$ENGINE" "$ENGINE_BACKUP"
-  if ! mv "$ENGINE_PENDING" "$ENGINE"; then
-    [ -d "$ENGINE" ] || { [ -d "$ENGINE_BACKUP" ] && mv "$ENGINE_BACKUP" "$ENGINE"; }
+  [ -d "$ENGINE_DIR" ] && mv "$ENGINE_DIR" "$ENGINE_BACKUP"
+  if ! mv "$ENGINE_PENDING" "$ENGINE_DIR"; then
+    [ -d "$ENGINE_DIR" ] || { [ -d "$ENGINE_BACKUP" ] && mv "$ENGINE_BACKUP" "$ENGINE_DIR"; }
     echo "Could not activate the prepared engine" >&2; exit 1
   fi
   rm -rf "$ENGINE_BACKUP"
@@ -262,7 +270,7 @@ progress "engine" "GPU engine ready" 95
 
 # Ready receipt: the Shell's post-install probe compares the model revision
 # and the artifact manifest digest against the shipped bundle.
-READY_PATH="$RUNTIME_ROOT/voxcpm2-runtime-ready.json"
+READY_PATH="$ASSET_ROOT/voxcpm2-runtime-ready.json"
 "$PYTHON" -B -I - "$ARTIFACT_MANIFEST_PATH" "$MANIFEST_PATH" "$ACTIVATION_CONTRACT_PATH" "$READY_PATH.pending" <<'PY'
 import hashlib, json, sys
 artifact = json.load(open(sys.argv[1]))

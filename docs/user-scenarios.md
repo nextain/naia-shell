@@ -1993,6 +1993,25 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` |
 
+## UC-VOICE-SHARED-CACHE-703 — 개발·운영 인스턴스가 같은 음성 런타임을 한 번만 내려받는다 (#703)
+
+개발 인스턴스와 운영 인스턴스가 고정 패키지 바이트(다운로드 zip, payload, NVIDIA 패키지, 모델, 기본 음성 팔레트, GPU별 엔진)를 사용자별 공유 캐시에 내용 주소로 한 벌만 두고 재사용하며, 사용자 음성·상태·로그는 각자의 모드별 데이터 홈에 격리한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 한쪽이 설치하면 다른 쪽은 스크립트 없이 "설치됨"으로 준비된다. |
+| 빈 목록 | 캐시가 비어 있으면 처음 설치가 슬롯을 만든다. |
+| 진행 | 한쪽이 설치 중이면 다른 쪽은 즉시 "다른 Naia 인스턴스가 사용 중" 안내를 받는다. |
+| 성공 | 두 인스턴스가 각자의 목소리·상태를 쓰며 같은 슬롯에서 기동한다. |
+| 오류 | 공간 부족 이전 건너뜀 안내, 잠금 충돌, :8910 점유, 네이티브 해시 불일치를 분명한 문구로 표시한다. |
+| 좁은 폭 | 긴 경로가 든 안내도 설정 카드 안에서 줄바꿈되어 온전하게 읽힌다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-VOICE-SHARED-CACHE-703 | `packages/shell/src-tauri/src/voice_cache.rs` tests (keys, lock, readiness, migration, retention, two-home integration) + `e2e-safe-remove.test.ts` | voice-6g E2E(e2e-tauri) — 별도 실행, 대기 |
+
 ## UC-VOICE-INSTALL-PRECHECK-700 — 준비되지 않은 음성 엔진 설치는 즉시 이유를 알려 준다 (#700)
 
 로컬 음성 런타임 설치 프로세스 실행이나 대용량 아카이브 다운로드 전에 필수 파일(런타임 패키지 폴더, 설치 스크립트, 활성화 계약)의 존재를 사전 검사하여, 누락 시 즉시 명확한 오류 경로와 스테이징 명령 안내를 제공한다.

@@ -2128,7 +2128,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
 
 		await vi.waitFor(() => {
-			expect(mockInvoke).toHaveBeenCalledWith("install_voxcpm2_runtime");
+			expect(mockInvoke).toHaveBeenCalledWith("install_voxcpm2_runtime", {
+				gpuIndex: null,
+			});
 			expect(mockInvoke).toHaveBeenCalledWith("start_voxcpm2", {
 				expectedLoaderProfile: "windows_trt_6g",
 				// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).

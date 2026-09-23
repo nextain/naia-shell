@@ -1039,7 +1039,10 @@ export function SettingsTab() {
 			let installation = await refreshVoxCpm2Installation();
 			if (!installation?.canStart) {
 				setCascadeMsg(t("voice.hostEngineInstalling"));
-				const installed = await invoke<unknown>("install_voxcpm2_runtime");
+				const installed = await invoke<unknown>(
+					"install_voxcpm2_runtime",
+					{ gpuIndex: existing?.localVoiceGpuIndex ?? null },
+				);
 				if (isVoxCpm2InstallationStatus(installed))
 					setVoxCpm2Installation(installed);
 				installation = await refreshVoxCpm2Installation();
