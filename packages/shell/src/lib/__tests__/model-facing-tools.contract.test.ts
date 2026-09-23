@@ -34,6 +34,7 @@ describe("model-facing tool contract", () => {
 			"skill_workspace_get_sessions",
 			"skill_workspace_open_file",
 			"skill_workspace_get_open_file",
+			"skill_workspace_edit_open_file",
 			"skill_workspace_close_file",
 			"skill_workspace_set_surface",
 			"skill_workspace_focus_space",
@@ -61,7 +62,7 @@ describe("model-facing tool contract", () => {
 			{ name: "skill_environment" },
 			{ name: "env_browser_navigate" },
 			{ name: "skill_workspace_execute" },
-			{ name: "skill_workspace_edit_open_file" },
+			{ name: "skill_workspace_write_file" },
 		];
 
 		expect(filterModelFacingTools(incoming).map((tool) => tool.name)).toEqual(
