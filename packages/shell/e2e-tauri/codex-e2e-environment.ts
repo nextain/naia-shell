@@ -12,7 +12,8 @@ import {
 import { connect } from "node:net";
 import { applyHarnessXdg } from "./e2e-xdg.mjs";
 import { stopHarnessHerdrSession } from "./herdr-session.mjs";
-import { tmpdir } from "node:os";
+import { removeTreeNoFollow } from "./safe-remove.mjs";
+import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, dirname, resolve } from "node:path";
 import { execPath } from "node:process";
 // FR-VOICE.15 (#418): harness seeds come from the product config schema — a
@@ -172,10 +173,15 @@ export function configureCodexE2eEnvironment(): void {
 	// `~/.config/com.naia.shell.e2e/` 에, herdr 세션이 `~/.config/herdr/sessions/` 에
 	// 남는다(2026-09-06 실측).
 	applyHarnessXdg();
+	// #703: The per-mode state root stays NAIA_VOXCPM2_RUNTIME_ROOT under the
+	// E2E root, so a test's PUT /voice, numba cache and install log never reach
+	// the user's files.
 	process.env.NAIA_VOXCPM2_RUNTIME_ROOT = resolve(
 		process.env.NAIA_E2E_VOXCPM2_RUNTIME_ROOT ??
 			resolve(E2E_RUNTIME, "voxcpm2-runtime"),
 	);
+	// Default private cache: lives under the owned E2E root and is removed with it.
+	process.env.NAIA_RUNTIME_CACHE_ROOT = resolve(E2E_RUNTIME, "runtime-cache");
 	process.env.NAIA_E2E_VOXCPM2_BUNDLE_ROOT ??= resolve(
 		SHELL_DIR,
 		"src-tauri",
@@ -187,6 +193,32 @@ export function configureCodexE2eEnvironment(): void {
 		"secure-keys.dat",
 	);
 	process.env.WEBVIEW2_USER_DATA_FOLDER = E2E_WEBVIEW2_DATA;
+
+	// #703: reading the user's shared voice cache is an explicit, read-only opt-in.
+	// Capture its path before LOCALAPPDATA is redirected below; the Rust resolver reads LOCALAPPDATA first.
+	if (process.env.NAIA_E2E_VOXCPM2_USER_CACHE === "read-only") {
+		if (process.platform === "win32") {
+			const realLocal = process.env.LOCALAPPDATA;
+			if (!realLocal)
+				throw new Error(
+					"NAIA_E2E_VOXCPM2_USER_CACHE=read-only needs LOCALAPPDATA",
+				);
+			process.env.NAIA_E2E_VOXCPM2_USER_CACHE_ROOT ??= resolve(
+				realLocal,
+				"NaiaRuntimeCache",
+			);
+		} else {
+			const base =
+				process.env.XDG_DATA_HOME ?? resolve(homedir(), ".local", "share");
+			process.env.NAIA_E2E_VOXCPM2_USER_CACHE_ROOT ??= resolve(
+				base,
+				"naia-runtime-cache",
+			);
+		}
+	} else {
+		delete process.env.NAIA_E2E_VOXCPM2_USER_CACHE_ROOT;
+	}
+
 	process.env.APPDATA = resolve(E2E_APPDATA, "roaming");
 	process.env.LOCALAPPDATA = resolve(E2E_APPDATA, "local");
 	process.env.NAIA_E2E_DISCORD_CAPTURE = "cancel";
@@ -213,12 +245,7 @@ export function resetCodexE2eRoot(): void {
 	// WebView2 may release its user-data files a few seconds after the app exits.
 	// This is an owned E2E directory, so bounded retry is safe and avoids leaving
 	// a failed run's profile locked for the next isolated run.
-	rmSync(E2E_ROOT, {
-		recursive: true,
-		force: true,
-		maxRetries: 20,
-		retryDelay: 250,
-	});
+	removeTreeNoFollow(E2E_ROOT);
 	mkdirSync(E2E_SETTINGS, { recursive: true });
 	mkdirSync(E2E_WEBVIEW2_DATA, { recursive: true });
 	mkdirSync(E2E_APPDATA, { recursive: true });

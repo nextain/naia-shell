@@ -1,6 +1,8 @@
 param(
   [Parameter(Mandatory=$true)][string]$BundleRoot,
-  [Parameter(Mandatory=$true)][string]$RuntimeRoot
+  [Parameter(Mandatory=$true)][string]$AssetRoot,
+  [Parameter(Mandatory=$true)][string]$EngineDir,
+  [Parameter(Mandatory=$true)][string]$StateRoot
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,7 +54,9 @@ function Test-ReferenceVoice([string]$Path, [object]$Contract) {
 }
 
 $BundleRoot = ConvertFrom-VerbatimPath $BundleRoot
-$RuntimeRoot = ConvertFrom-VerbatimPath $RuntimeRoot
+$AssetRoot = ConvertFrom-VerbatimPath $AssetRoot
+$EngineDir = ConvertFrom-VerbatimPath $EngineDir
+$StateRoot = ConvertFrom-VerbatimPath $StateRoot
 $ArtifactRoot = Join-Path $BundleRoot "artifact"
 $ManifestPath = Join-Path $ArtifactRoot "runtime-manifest.json"
 $ArtifactManifestPath = Join-Path $ArtifactRoot "artifact-manifest.json"
@@ -98,15 +102,31 @@ foreach ($Voice in $ReferenceVoices) {
   if (-not ($VoiceSha256 -match '^[a-fA-F0-9]{64}$') -or $VoiceBytes -le 0) { throw "Naia Host reference voice digest contract is invalid" }
 }
 
-New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
-$env:HF_HOME = Join-Path $RuntimeRoot "hf-cache"
+New-Item -ItemType Directory -Force -Path $AssetRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $StateRoot | Out-Null
+$EngineParent = Split-Path -Parent $EngineDir
+if ($EngineParent) {
+  New-Item -ItemType Directory -Force -Path $EngineParent | Out-Null
+}
+$env:HF_HOME = Join-Path $StateRoot "hf-cache"
 $env:HF_HUB_DISABLE_XET = "1"
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONDONTWRITEBYTECODE = "1"
-$env:NUMBA_CACHE_DIR = Join-Path $RuntimeRoot "state\cache\numba"
+$env:NUMBA_CACHE_DIR = Join-Path $StateRoot "state\cache\numba"
 New-Item -ItemType Directory -Force -Path $env:NUMBA_CACHE_DIR | Out-Null
 $env:NAIA_VOXCPM2_ARTIFACT_ROOT = $ArtifactRoot
+
+$ModelDir = Join-Path $AssetRoot "models\VoxCPM2"
+$RequiredGiB = 9
+if (Test-Path -LiteralPath (Join-Path $ModelDir "model.safetensors") -PathType Leaf) { $RequiredGiB = 4 }
+$Drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot((Resolve-Path -LiteralPath $AssetRoot).ProviderPath))
+$FreeGiB = [math]::Floor($Drive.AvailableFreeSpace / 1GB)
+if ($FreeGiB -lt $RequiredGiB) {
+  Write-InstallProgress "disk" "Not enough free disk space" 0
+  throw "insufficient_disk_space: $AssetRoot has $FreeGiB GiB free but >= $RequiredGiB GiB is required. Free space on that drive and try again."
+}
+Write-InstallProgress "disk" "Disk space OK ($FreeGiB GiB free)" 3
 
 Invoke-Runtime @("-B", "-I", "-c", "import os; from voxcpm2_tensorrt.artifact import verify_artifact; verify_artifact(os.environ['NAIA_VOXCPM2_ARTIFACT_ROOT'])") "Bundled VoxCPM2 artifact verification failed"
 
@@ -116,7 +136,7 @@ Invoke-Runtime @("-B", "-I", "-c", "import os; from voxcpm2_tensorrt.artifact im
 # synthesis. Missing non-default voices must fail the install instead of being
 # hidden by the synthesis layer's safety fallback to the default voice.
 Write-InstallProgress "reference-voice" "Preparing the host voice palette" 35
-$VoicesRoot = Join-Path $RuntimeRoot "voices"
+$VoicesRoot = Join-Path $AssetRoot "voices"
 New-Item -ItemType Directory -Force -Path $VoicesRoot | Out-Null
 for ($VoiceIndex = 0; $VoiceIndex -lt $ReferenceVoices.Count; $VoiceIndex++) {
   $Voice = $ReferenceVoices[$VoiceIndex]
@@ -153,9 +173,9 @@ Write-InstallProgress "nvidia" "Acquiring pinned NVIDIA TensorRT and CUDA packag
 # NVIDIA-controlled index during this explicit online installer transaction.
 # They are staged outside the immutable product artifact, verified by exact
 # version, and recorded with pip's URL/archive-hash reports.
-$NvidiaRoot = Join-Path $RuntimeRoot "python-packages"
-$NvidiaPending = Join-Path $RuntimeRoot "python-packages.pending"
-$NvidiaBackup = Join-Path $RuntimeRoot "python-packages.backup"
+$NvidiaRoot = Join-Path $AssetRoot "python-packages"
+$NvidiaPending = Join-Path $AssetRoot "python-packages.pending"
+$NvidiaBackup = Join-Path $AssetRoot "python-packages.backup"
 $NvidiaReceipt = Join-Path $NvidiaRoot "naia-nvidia-package-receipt.json"
 $InstallerLockSha256 = (Get-FileHash -LiteralPath $InstallerPackageLockPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $VerifyNvidia = "import importlib.metadata as m, tensorrt; assert m.version('tensorrt-cu12') == '$($InstallerPackageLock.packages.'tensorrt-cu12')'; assert m.version('tensorrt-cu12-bindings') == '$($InstallerPackageLock.packages.'tensorrt-cu12-bindings')'; assert m.version('tensorrt-cu12-libs') == '$($InstallerPackageLock.packages.'tensorrt-cu12-libs')'; assert m.version('nvidia-cuda-runtime-cu12') == '$($InstallerPackageLock.packages.'nvidia-cuda-runtime-cu12')'"
@@ -215,7 +235,6 @@ Write-InstallProgress "nvidia" "NVIDIA TensorRT and CUDA packages ready" 50
 $env:PYTHONPATH = $NvidiaRoot
 Invoke-Runtime @("-B", "-s", "-c", "import torch,voxcpm,soundfile,tensorrt,onnx; import voxcpm2_tensorrt.http_server; assert torch.cuda.is_available()") "Bundled VoxCPM2 TensorRT runtime verification failed"
 
-$ModelDir = Join-Path $RuntimeRoot "models\VoxCPM2"
 $ModelArgs = @("-B", "-s", "-c", "from voxcpm2_tensorrt.materialize_voxcpm2_model import main; main()", "--repo", [string]$Manifest.model.id, "--revision", [string]$Manifest.model.revision, "--model-dir", $ModelDir)
 Write-InstallProgress "model" "Preparing the voice model" 55
 if (-not (Test-Runtime @($ModelArgs + "--verify-only"))) {
@@ -225,11 +244,10 @@ if (-not (Test-Runtime @($ModelArgs + "--verify-only"))) {
 }
 Write-InstallProgress "model" "Voice model ready" 70
 
-$Checkpoints = Join-Path $RuntimeRoot "checkpoints"
-$Engine = Join-Path $Checkpoints "voxcpm2_trt"
-$Pending = Join-Path $Checkpoints "voxcpm2_trt.pending"
-$Backup = Join-Path $Checkpoints "voxcpm2_trt.backup"
-$env:NAIA_VOXCPM2_ENGINE_DIR = $Engine
+# The Shell holds the cache slot's exclusive lock for the whole run of this script, and every running voice server holds the shared lock for its lifetime, so no process has EngineDir mapped while this runs. A different GPU, driver or TensorRT version is a different EngineDir (a new generation); an existing generation of another stamp is never touched.
+$Pending = "$EngineDir.pending"
+$Backup = "$EngineDir.backup"
+$env:NAIA_VOXCPM2_ENGINE_DIR = $EngineDir
 $env:NAIA_VOXCPM2_MODEL_DIR = $ModelDir
 $env:NAIA_VOXCPM2_MODEL_ID = [string]$Manifest.model.id
 $env:NAIA_VOXCPM2_MODEL_REVISION = [string]$Manifest.model.revision
@@ -241,11 +259,11 @@ if (-not (Test-Runtime @("-B", "-s", "-c", $VerifyEngine))) {
   New-Item -ItemType Directory -Force -Path $Pending | Out-Null
   Invoke-Runtime @("-B", "-s", "-c", "from voxcpm2_tensorrt.build_voxcpm2_trt import main; main()", "--model", [string]$Manifest.model.id, "--revision", [string]$Manifest.model.revision, "--model-dir", $ModelDir, "--output-dir", $Pending, "--workspace-gib", "1.0") "VoxCPM2 TensorRT engine preparation failed"
   if (Test-Path -LiteralPath $Backup) { Remove-Item -LiteralPath $Backup -Recurse -Force }
-  if (Test-Path -LiteralPath $Engine) { Move-Item -LiteralPath $Engine -Destination $Backup }
+  if (Test-Path -LiteralPath $EngineDir) { Move-Item -LiteralPath $EngineDir -Destination $Backup }
   try {
-    Move-Item -LiteralPath $Pending -Destination $Engine
+    Move-Item -LiteralPath $Pending -Destination $EngineDir
   } catch {
-    if ((-not (Test-Path -LiteralPath $Engine)) -and (Test-Path -LiteralPath $Backup)) { Move-Item -LiteralPath $Backup -Destination $Engine }
+    if ((-not (Test-Path -LiteralPath $EngineDir)) -and (Test-Path -LiteralPath $Backup)) { Move-Item -LiteralPath $Backup -Destination $EngineDir }
     throw
   }
   if (Test-Path -LiteralPath $Backup) { Remove-Item -LiteralPath $Backup -Recurse -Force }
@@ -268,7 +286,7 @@ $Ready = [ordered]@{
     }
   })
 }
-$ReadyPath = Join-Path $RuntimeRoot "voxcpm2-runtime-ready.json"
+$ReadyPath = Join-Path $AssetRoot "voxcpm2-runtime-ready.json"
 $ReadyPending = "$ReadyPath.pending"
 [IO.File]::WriteAllText($ReadyPending, (($Ready | ConvertTo-Json -Depth 8) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
 Move-Item -LiteralPath $ReadyPending -Destination $ReadyPath -Force

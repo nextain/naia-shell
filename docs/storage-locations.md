@@ -161,7 +161,7 @@ TypeScript 쪽에서는 `src/lib/app-sandbox` 를 부르는 곳만 있고 그 �
 | `logs` | `lib.rs:log_dir` | |
 | `run` | `lib.rs:run_dir` | |
 | `skills` | `lib.rs` (스킬 스캔) | |
-| `voxcpm2-runtime` | `lib.rs:voxcpm2_runtime_root` | 음성 서비스가 지금 쓰고 있다 — 사람이 중단 창을 잡아야 한다 |
+| `voxcpm2-runtime` | `lib.rs:voxcpm2_runtime_root` | 음성 서비스가 지금 쓰고 있다 — 사람이 중단 창을 잡아야 한다 (#703 이후 이 자리는 모드별 상태(state·hf-cache·목소리·설치 로그)만 남고, 고정 패키지는 사용자별 캐시 `NaiaRuntimeCache` 로 이전된다) |
 | `apps` | `app.rs:apps_root` | |
 | `panels` | `app.rs:legacy_apps_root` | #472 이전의 앱 자리 |
 | `agent-child-lease.json` | `lib.rs:agent_child_lease_path` | |
@@ -182,6 +182,33 @@ TypeScript 쪽에서는 `src/lib/app-sandbox` 를 부르는 곳만 있고 그 �
 검사기는 옮기는 일을 대신하지 않는다. **새로 늘어나는 것을 막는다.** 자리마다
 사유를 적어 두었고, 옮기고 나면 그 항목을 지우면 된다. 목록이 낡으면(옮겼는데
 남아 있으면) 그것도 붉어진다. 양쪽 다 결함을 심어 확인했다.
+
+### 사용자별 음성 런타임 캐시 (#703)
+
+개발 인스턴스와 운영 인스턴스가 대용량 고정 패키지를 중복 다운로드하지 않고 한 번만 내려받아 안전하게 공유하는 사용자별 캐시 디렉터리다.
+
+- **OS별 경로**:
+  - Windows: `%LOCALAPPDATA%\NaiaRuntimeCache` (dirs의 known-folder가 아닌 `LOCALAPPDATA` 환경 변수를 우선 읽어 E2E harness 리다이렉트를 따름)
+  - Linux: `$XDG_DATA_HOME/naia-runtime-cache` (기본값 `~/.local/share/naia-runtime-cache`)
+- **포함되는 자산 (고정 패키지 바이트)**:
+  - 다운로드 아카이브 ZIP (`downloads/<sha256>.zip`)
+  - 추출된 payload 아티팩트 (`payload/artifact/`)
+  - 사전 빌드/설치된 NVIDIA 패키지 (`python-packages/`)
+  - 모델 리비전 가중치 (`models/VoxCPM2/`)
+  - 기본 참조 음성 팔레트 (`voices/<id>`)
+  - GPU·드라이버·TensorRT 버전별 컴파일 엔진 세대 (`engines/<stamp>/`)
+  - 슬롯 식별 레코드 (`slot.json`) 및 네이티브 모듈 해시 검증 장부 (`native-hashes.json`)
+- **포함되지 않는 자산 (모드별 데이터 홈에만 보존)**:
+  - 사용자 맞춤 음색 (`PUT /voice` 대상, `naia-current.wav` 등)은 공유 슬롯이 아닌 모드별 `state/voices/`에 독립 보존
+  - 모드별 임시 스크래치 및 numba 캐시 (`state/cache/numba/`, `hf-cache/`)
+  - 설치 로그 (`voxcpm2-install.log`)
+  - 런타임 PID 및 lock owner stamp
+- **제거 시 보존 (Uninstall does not delete)**:
+  - Windows NSIS 언인스톨러(`windows/installer-hooks.nsh:72`)는 `$INSTDIR`인 `%LOCALAPPDATA%\Naia`만 삭제하므로, 별도 형제 폴더인 `%LOCALAPPDATA%\NaiaRuntimeCache`는 앱 제거 시 삭제되지 않고 보존된다.
+- **Flatpak/샌드박스 빌드**:
+  - Flatpak 등 샌드박스 배포판은 자체 격리된 XDG 데이터 디렉터리를 사용하므로 독립된 캐시 사본을 보게 된다.
+- **보존 정책 (Retention)**:
+  - 프로파일별로 현재 활성(active) 슬롯과 직전(previous) 슬롯만 유지(`active.json`)하며, 그 외 오래된 슬롯 중 실행 중인 서버 프로세스의 공유 잠금(`Shared`)이 걸려 있지 않은 슬롯만 안전하게 프루닝한다.
 
 ### 두 기계 실측 (2026-09-05)
 

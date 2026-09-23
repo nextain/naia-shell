@@ -287,7 +287,9 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(rust).not.toContain(
 			"Naia Host TensorRT runtime exited before readiness ({status:?})",
 		);
-		expect(rust).toContain("spawn_voxcpm2(&bundle_root, naia_key.as_str()");
+		expect(rust).toMatch(
+			/spawn_voxcpm2\(\s*&bundle_root_for_spawn,\s*&ctx_for_spawn,\s*naia_key\.as_str\(\)/,
+		);
 		expect(
 			rust.match(/platform::kill_stale_voxcpm2\(\);/g)?.length ?? 0,
 		).toBeGreaterThanOrEqual(3);
@@ -315,8 +317,13 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(provisioner).toContain("voxcpm2_tensorrt.materialize_voxcpm2_model");
 		expect(provisioner).toContain("voxcpm2_tensorrt.build_voxcpm2_trt");
 		expect(provisioner).toContain("MODEL_RECEIPT_NAME");
-		expect(provisioner).toContain("voxcpm2_trt.pending");
-		expect(provisioner).toContain("voxcpm2_trt.backup");
+		expect(provisioner).toContain('"$EngineDir.pending"');
+		expect(provisioner).toContain('"$EngineDir.backup"');
+		expect(provisioner).toContain("$AssetRoot");
+		expect(provisioner).toContain("$EngineDir");
+		expect(provisioner).toContain("$StateRoot");
+		expect(provisioner).not.toContain("RuntimeRoot");
+		expect(provisioner).toContain("insufficient_disk_space");
 		expect(provisioner).toContain("PYTHONDONTWRITEBYTECODE");
 		expect(provisioner).toContain('@("-B", "-I"');
 		expect(provisioner).toContain("VOXCPM2_MODEL_PREPARE_REQUIRED");
@@ -347,13 +354,17 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(provisioner).toContain("voxcpm2_tensorrt.materialize_voxcpm2_model");
 		expect(provisioner).toContain("voxcpm2_tensorrt.build_voxcpm2_trt");
 		expect(provisioner).toContain("MODEL_RECEIPT_NAME");
-		expect(provisioner).toContain("voxcpm2_trt.pending");
-		expect(provisioner).toContain("voxcpm2_trt.backup");
+		expect(provisioner).toContain('"$ENGINE_DIR.pending"');
+		expect(provisioner).toContain('"$ENGINE_DIR.backup"');
+		expect(provisioner).toContain("--asset-root");
+		expect(provisioner).toContain("--engine-dir");
+		expect(provisioner).toContain("--state-root");
+		expect(provisioner).not.toContain("--runtime-root");
 		expect(provisioner).toContain("PYTHONDONTWRITEBYTECODE");
 		expect(provisioner).toContain("VOXCPM2_MODEL_PREPARE_REQUIRED");
 		expect(provisioner).toContain("VOXCPM2_ENGINE_PREPARE_REQUIRED");
 		expect(provisioner).toContain("VOXCPM2_MODEL_READY");
-		expect(provisioner).toContain('mv "$ENGINE_BACKUP" "$ENGINE"');
+		expect(provisioner).toContain('mv "$ENGINE_BACKUP" "$ENGINE_DIR"');
 		expect(provisioner).toContain("naia-nvidia-package-receipt.json");
 		expect(provisioner).toContain("voxcpm2-runtime-ready.json");
 		// The Rust side chooses the interpreter by operating system, not by
