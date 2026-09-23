@@ -6,11 +6,38 @@ import {
 	sendNotifyConfig,
 } from "../lib/chat-service";
 import { getAdkPath } from "../lib/adk-store";
-import { loadConfig, loadConfigWithSecrets, saveConfig } from "../lib/config";
-import { shouldMigrateNextainModel } from "../lib/llm/registry";
+import {
+	LAB_GATEWAY_URL,
+	loadConfig,
+	loadConfigWithSecrets,
+	saveConfig,
+	type AppConfig,
+} from "../lib/config";
+import {
+	fetchNaiaModelMetadata,
+	gatewayServedModelIds,
+	shouldMigrateNextainModel,
+} from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
 
 let startupAuthReadyNotified = false;
+
+/**
+ * A structured main role is the canonical persisted selection.
+ * Gateway models are loaded dynamically and may not exist in the
+ * static registry when startup migration runs.
+ */
+function hasExplicitStructuredMainModel(
+	config: AppConfig | null | undefined,
+): boolean {
+	const structuredMain = config?.llmRoles?.main;
+	return Boolean(
+		structuredMain &&
+			!structuredMain.inherit &&
+			structuredMain.provider &&
+			structuredMain.model,
+	);
+}
 
 function notifyNaiaAuthReady(source: "startup" | "auth-complete"): void {
 	if (source === "startup") {
@@ -31,17 +58,7 @@ export function useAgentAuthSync(
 		if (showAdkSetup || showOnboarding || !configHydrated) return;
 		const preMigrate = loadConfig();
 		if (preMigrate) {
-			// A structured main role is the canonical persisted selection.
-			// Gateway models are loaded dynamically and may not exist in the
-			// static registry when startup migration runs.
-			const structuredMain = preMigrate.llmRoles?.main;
-			const hasExplicitStructuredMainModel = Boolean(
-				structuredMain &&
-					!structuredMain.inherit &&
-					structuredMain.provider &&
-					structuredMain.model,
-			);
-			const decision = hasExplicitStructuredMainModel
+			const decision = hasExplicitStructuredMainModel(preMigrate)
 				? { migrate: false as const }
 				: shouldMigrateNextainModel(
 						preMigrate.provider,
@@ -53,6 +70,36 @@ export function useAgentAuthSync(
 					to: decision.to,
 				});
 				saveConfig({ ...preMigrate, model: decision.to });
+			} else if (decision.needsCatalog) {
+				void (async () => {
+					const sourceAdkPath = getAdkPath();
+					// A failed or thrown catalog fetch is "unknown": keep the choice.
+					const metadata = await fetchNaiaModelMetadata(LAB_GATEWAY_URL).catch(
+						() => null,
+					);
+					if (getAdkPath() !== sourceAdkPath) return;
+					const current = loadConfig();
+					if (
+						!current ||
+						current.provider !== preMigrate.provider ||
+						current.model !== preMigrate.model ||
+						hasExplicitStructuredMainModel(current)
+					) {
+						return;
+					}
+					const deferredDecision = shouldMigrateNextainModel(
+						current.provider,
+						current.model,
+						gatewayServedModelIds(metadata),
+					);
+					if (deferredDecision.migrate) {
+						Logger.warn("App", "#248 model migration", {
+							from: current.model,
+							to: deferredDecision.to,
+						});
+						saveConfig({ ...current, model: deferredDecision.to });
+					}
+				})();
 			}
 		}
 

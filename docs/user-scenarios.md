@@ -346,6 +346,17 @@ Gateway의 가격은 이미 10%가 반영된 고객가이므로 Shell은 다시 
 이번 UC는 Coding Workers·Pi 작업 시작/취소/재개를 포함하지 않는다. 상세 계약은
 `docs/progress/99.dev-comm/naia-account-model-connection-2026-07-30.md`이다.
 
+## UC-NAIA-LEGACY-MAIN-MODEL — 예전 설정의 Naia 대화 모델을 기동할 때 지킨다 (#707)
+
+구조화된 `llmRoles.main` 없이 예전 평면 `model` 필드로만 메인 모델을 설정해 둔 사용자가 앱을 기동한다.
+해당 모델이 Naia 선택기에 이미 포함되어 있다면 아무런 변경 없이 유지된다.
+Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 경우 이전과 같이 기본값인 `deepseek-v4-flash`로 즉시 마이그레이션된다.
+그 외의 id는 게이트웨이 카탈로그(`GET /v1/models`) 조회를 통해 확인한다:
+게이트웨이가 제공 중인 모델(예: `gpt-5.4-nano`)이면 사용자의 선택을 그대로 유지하고, 게이트웨이 목록에 없으면 `deepseek-v4-flash`로 옮긴다.
+카탈로그 조회가 실패하면 설정을 임의로 고쳐 쓰지 않으며 다음 앱 기동 시 다시 확인한다.
+확인 비동기 처리 도중 사용자가 설정 화면에서 새로 저장한 설정은 덮어쓰지 않는다.
+본 시나리오는 유지된 모델을 선택기 목록에 추가하지 않는다(도구 미지원 모델은 선택기 제외 유지, FR-LLM-DEFAULT.4).
+
 ## Test Coverage Map (P02)
 
 **UC-JEONJU-COURSE-WORKER** 의 화면은 지금 없다. 코딩 작업자 패널이 2026-09-05 에 없어졌고(#554, Herdr 창의 agents 탭과 IDE 뷰어가 그 자리를 대신한다), 그 패널을 그려서 재던 단위 테스트와 실기 수용 스펙을 함께 지웠다 — 97-course-worker-guidance 는 2026-09-05 에(6eeb1433), coding-workers 단위 테스트와 91-jeonju-course-worker 스펙은 같은 날 그 뒤에 지웠다. 남은 것은 화면이 아닌 계약이다: `apps/workspace/__tests__/coding-workers-tauri.test.ts` 가 작업자 어댑터의 Tauri 경계를, `src-tauri/src/lib.rs` 가 생성·취소·재개의 네이티브 계약을 재다. 화면을 되살릴지는 #554 에서 정한다. The proposal worker may inherit a read-only parent sandbox, because it no longer writes the course repository: Naia performs the constrained apply and post-apply verification.
@@ -362,6 +373,7 @@ Gateway의 가격은 이미 10%가 반영된 고객가이므로 Shell은 다시 
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 실제 Shell 설정 화면에서 역할 설정 저장과 재시작 복원 |
 | UC-NAIA-AZURE-MODELS | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts` · `registry.test.ts`: 나이아 계정 선택기가 `deepseek-v4-flash` · `solar-pro4` · `solar-mini` · `gpt-5.6-luna` 네 개만 노출하고 Codex 목록은 그대로인지. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 가격 순·성능 순과 빠진 모델 숨김. `e2e/capability-settings.spec.ts`: 실 UI 선택기 네 개. | 실 대화 403은 게이트웨이 소유 — 선택기 축소가 고치지 않는다 |
+| UC-NAIA-LEGACY-MAIN-MODEL | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts`: 선택기 모델 유지, 퇴역 id(#670·#603)는 게이트웨이가 제공해도 기본값으로, 그 밖의 id는 게이트웨이 목록에 있으면 유지(`gpt-5.4-nano`)·없으면 기본값·목록을 못 읽으면 그대로, `gatewayServedModelIds` 가 live·상태 없음만 센다. `packages/shell/src/hooks/__tests__/useAgentAuthSync.test.ts`: 기동 훅이 게이트웨이 제공 모델을 저장하지 않고, 퇴역 id는 즉시 옮기고, 목록 실패 시 건드리지 않고, 확인 중 바뀐 설정을 덮지 않는다. | 실 Shell 기동 확인은 대기 — 화면 변화 없음(설정 값만) |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
 1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.
