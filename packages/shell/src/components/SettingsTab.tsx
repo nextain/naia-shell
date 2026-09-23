@@ -5722,6 +5722,8 @@ export function SettingsTab() {
 								memoryLlmBaseUrl: next.memoryLlmBaseUrl,
 								memoryLlmCredentialRef: next.memoryLlmCredentialRef,
 								memorySurfacing: next.memorySurfacing,
+								memorySurfacingLevel: next.memorySurfacingLevel,
+								memorySurfacingJudge: next.memorySurfacingJudge,
 							});
 							setSmallLlmRev((n) => n + 1);
 						}}

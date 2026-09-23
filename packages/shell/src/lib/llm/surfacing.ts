@@ -105,6 +105,7 @@ export type SmallLlmWrite =
 			readonly baseUrl: string;
 			readonly model: string;
 	  }
+	| { readonly choice: "threshold" }
 	| { readonly choice: "off" };
 
 export function writeSmallLlmSelection(
@@ -116,7 +117,7 @@ export function writeSmallLlmSelection(
 			provider: "nextain",
 			model: NAIA_SMALL_LLM_DEFAULT.model,
 		});
-		return { ...next, memorySurfacing: "on" };
+		return { ...next, memorySurfacing: "on", memorySurfacingJudge: "llm" };
 	}
 	if (write.choice === "ollama" || write.choice === "vllm") {
 		const next = writeConfiguredLlmRole(config, "memory", {
@@ -124,12 +125,49 @@ export function writeSmallLlmSelection(
 			model: write.model.trim(),
 			baseUrl: normalizeOpenAiCompatBaseUrl(write.baseUrl),
 		});
-		return { ...next, memorySurfacing: "on" };
+		return { ...next, memorySurfacing: "on", memorySurfacingJudge: "llm" };
+	}
+	if (write.choice === "threshold") {
+		return {
+			...config,
+			memorySurfacing: "on",
+			memorySurfacingJudge: "threshold",
+		};
 	}
 	if (write.choice === "off") {
 		return { ...config, memorySurfacing: "off" };
 	}
 	return { ...config };
+}
+
+export const SURFACING_LEVELS = ["less", "normal", "more"] as const;
+export type SurfacingLevel = (typeof SURFACING_LEVELS)[number];
+
+export const SURFACING_LEVEL_THRESHOLDS: Record<SurfacingLevel, number> = {
+	less: 0.88,
+	normal: 0.86,
+	more: 0.84,
+};
+
+export function readSurfacingLevel(
+	config: AppConfig | null | undefined,
+): SurfacingLevel {
+	const level = config?.memorySurfacingLevel;
+	if (level === "less" || level === "more" || level === "normal") {
+		return level;
+	}
+	return "normal";
+}
+
+export function writeSurfacingLevel(
+	config: AppConfig,
+	level: unknown,
+): AppConfig {
+	const validLevel: SurfacingLevel =
+		level === "less" || level === "more" || level === "normal"
+			? (level as SurfacingLevel)
+			: "normal";
+	return { ...config, memorySurfacingLevel: validLevel };
 }
 
 export type SurfacingState =
@@ -139,14 +177,19 @@ export type SurfacingState =
 			readonly provider: string;
 			readonly model: string;
 	  }
-	| { readonly kind: "off-disabled" }
-	| { readonly kind: "off-no-small-llm" }
 	| {
-			readonly kind: "off-inherited-billed";
-			readonly provider: string;
-			readonly model: string;
+			readonly kind: "on-threshold";
+			readonly reason:
+				| "no-small-llm"
+				| "inherited-billed"
+				| "pending-gateway"
+				| "user-choice";
+			readonly threshold: number;
+			readonly provider?: string;
+			readonly model?: string;
 	  }
-	| { readonly kind: "pending-gateway"; readonly model: string };
+	| { readonly kind: "off-disabled" }
+	| { readonly kind: "off-no-embedding" };
 
 export function describeSurfacingState(
 	config: AppConfig | null | undefined,
@@ -159,12 +202,22 @@ export function describeSurfacingState(
 	if (sel.surfacingOff) {
 		return { kind: "off-disabled" };
 	}
+	if (!config?.memoryEmbeddingProvider || config.memoryEmbeddingProvider === "none") {
+		return { kind: "off-no-embedding" };
+	}
+
+	const threshold = SURFACING_LEVEL_THRESHOLDS[readSurfacingLevel(config)];
+
+	if (config?.memorySurfacingJudge === "threshold") {
+		return { kind: "on-threshold", reason: "user-choice", threshold };
+	}
+
 	if (sel.choice === "none") {
-		return { kind: "off-no-small-llm" };
+		return { kind: "on-threshold", reason: "no-small-llm", threshold };
 	}
 	if (sel.choice === "naia") {
 		if (!opts.naiaKeyPresent) {
-			return { kind: "off-no-small-llm" };
+			return { kind: "on-threshold", reason: "no-small-llm", threshold };
 		}
 		if (
 			opts.gatewayModels &&
@@ -172,7 +225,12 @@ export function describeSurfacingState(
 			sel.model &&
 			!opts.gatewayModels.has(sel.model)
 		) {
-			return { kind: "pending-gateway", model: sel.model };
+			return {
+				kind: "on-threshold",
+				reason: "pending-gateway",
+				threshold,
+				model: sel.model,
+			};
 		}
 		return {
 			kind: "on",
@@ -192,7 +250,9 @@ export function describeSurfacingState(
 	if (sel.choice === "other") {
 		if (sel.inherited) {
 			return {
-				kind: "off-inherited-billed",
+				kind: "on-threshold",
+				reason: "inherited-billed",
+				threshold,
 				provider: sel.provider!,
 				model: sel.model!,
 			};
@@ -204,5 +264,5 @@ export function describeSurfacingState(
 			model: sel.model!,
 		};
 	}
-	return { kind: "off-no-small-llm" };
+	return { kind: "on-threshold", reason: "no-small-llm", threshold };
 }

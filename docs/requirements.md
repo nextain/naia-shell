@@ -1261,7 +1261,7 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
-| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억은 자동 recall/save 경로로 유지하고 별도 모델 도구를 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
+| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·기억 회상(읽기 전용 `skill_memory_recall` 포함, nextain/naia-shell#693, Luke 2026-09-23)·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억 저장은 자동 경로로 유지하고 기억 저장·수정·삭제 도구는 모델에 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
 | **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 도구, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
 | **FR-TOOLS-SURFACE.3** | 도구 목록 로딩 실패는 빈 성공 목록으로 가장하지 않으며, 목록을 사용하는 UI는 로딩·빈 목록·성공·오류·좁은 폭에서 기존 접근 가능한 상태 표현과 재시도 경계를 유지한다. | UC-TOOLS-SURFACE-611 | `SkillsTab.test.tsx`; `packages/shell/e2e/naia-omni-voice-tools.spec.ts` | Done |
 
@@ -1297,5 +1297,17 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-SURFACING.5** | 로컬 OpenAI 호환 주소(Ollama/vLLM)는 입력 시 끝에 `/v1` 경로가 붙도록 정규화하여 저장하고 검증한다. | UC-MEMORY-SURFACING-692 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
 
 P04(2026-09-22): Vitest 단위·컴포넌트·계약 통과, 전체 Shell Vitest 신규 실패 0. 게이트웨이 카탈로그에 gpt-5.4-nano 없음(배포 전) → "준비 대기" 안내 확인. 실 셸 E2E 는 루크 확인 대기.
+
+## 기능 요구사항 (FR) — 문턱 떠오름·기억 도구 (#693)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-SURFACING.6** | 상태 안내 줄은 실제 에이전트 동작 모드(on-llm / on-threshold / off)와 세부 사유(작은 LLM 없음, 상속 과금 회피, 게이트웨이 미배포, 임베딩 부재, 명시적 꺼짐)를 정직하게 반영하고, 문턱 방식일 때는 적용 문턱 수치를 소수점 둘째 자리까지 함께 안내한다. | UC-MEMORY-THRESHOLD-693 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
+| **FR-SURFACING.7** | 작은 LLM이 없거나 비활성일 때 쓰는 떠오름 민감도를 3단계(덜 자주 0.88 · 보통 0.86 · 더 자주 0.84)로 제공하며, 선택 즉시 `memorySurfacingLevel` 설정으로 영속된다. 작은 LLM이 활성화된 경우에도 자동 회상은 이 문턱 이상의 기억만 포함한다. | UC-MEMORY-THRESHOLD-693 | `surfacing.test.ts`, `SmallLlmSection.test.tsx`, `memory-settings.spec.ts` | Done |
+| **FR-SURFACING.8** | 떠오름을 끈 상태(`memorySurfacing: "off"`)의 안내 문구는 기억 기능 자체가 꺼진 것이 아니라 자동 회상만 일어나지 않는 것이며 AI가 필요할 때 기억 도구로 직접 찾는다는 점을 명시하고, 모든 상태에서 기억 도구 사용 가능 안내 힌트를 상시 노출한다. 떠오름을 끈 뒤에도 작은 LLM 없이 다시 켤 수 있다(점수 문턱 선택지). | UC-MEMORY-THRESHOLD-693 | `SmallLlmSection.test.tsx`, `memory-settings.spec.ts` | Done |
+| **FR-SURFACING.9** | 사용자는 로그인 여부와 무관하게 "점수 문턱만 쓰기"(`memorySurfacingJudge:"threshold"`)를 고를 수 있고, 이때 떠오름에 작은 LLM을 부르지 않아 비용이 없다. 사실 추출 모델은 바뀌지 않는다. | UC-MEMORY-THRESHOLD-693 | `surfacing.test.ts`, `SmallLlmSection.test.tsx`, `memory-settings.spec.ts` | Done |
+
+P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-settings.spec.ts 13 통과(문턱 상태·민감도 저장·끄기 문구·점수 문턱만 쓰기 저장). 실 셸 E2E 는 루크 확인 대기.
+
 
 
