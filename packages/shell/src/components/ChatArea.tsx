@@ -93,6 +93,7 @@ import {
 	MODEL_FACING_TOOL_KEEP_LIST,
 	filterModelFacingTools,
 	isModelFacingToolAllowed,
+	makeModelToolBoundary,
 } from "../lib/model-facing-tools";
 import { buildSystemPrompt } from "../lib/persona";
 import { effectiveMainRole } from "../lib/slots/model";
@@ -286,27 +287,10 @@ function generateRequestId(): string {
 	return `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-let removedModelToolsCache: string[] = [];
-let removedModelToolsRefresh: Promise<void> | null = null;
-
-/** Refresh the deny list without delaying the user's chat request. */
-function refreshRemovedModelTools(): void {
-	if (removedModelToolsRefresh) return;
-	removedModelToolsRefresh = fetchAgentSkills({ includeDisallowed: true })
-		.then((tools) => {
-			removedModelToolsCache = tools
-				.filter((tool) => !isModelFacingToolAllowed(tool.name))
-				.map((tool) => tool.name);
-		})
-		.catch((error) => {
-			Logger.warn("ChatArea", "Model tool boundary refresh failed", {
-				error: String(error),
-			});
-		})
-		.finally(() => {
-			removedModelToolsRefresh = null;
-		});
-}
+export const modelToolBoundary = makeModelToolBoundary({
+	fetchTools: () => fetchAgentSkills({ includeDisallowed: true }),
+	warn: (m, c) => Logger.warn("ChatArea", m, c),
+});
 
 function formatCost(cost: number): string {
 	if (cost < 0.001) return `$${cost.toFixed(6)}`;
@@ -404,6 +388,11 @@ export function ChatArea({
 		window.addEventListener("naia:voice-model-preparing", onPreparing);
 		return () =>
 			window.removeEventListener("naia:voice-model-preparing", onPreparing);
+	}, []);
+	useEffect(() => {
+		if (loadConfig()?.enableTools === true) {
+			modelToolBoundary.prefetch();
+		}
 	}, []);
 	// #571 — 답 텍스트는 음성과 무관하게 도착하는 대로 그린다.
 	//
@@ -1824,9 +1813,10 @@ export function ChatArea({
 			// 지켜보기 예산을 한 턴 쓴다 (FR-ENV-ATTENTION.7). 음성 경로와 같은 헬퍼를 쓴다 —
 			// 여기만 따로 쓰다가 always 규칙이 이 경로에만 빠졌다(13차 적대리뷰 지적).
 			noteEnvironmentTurn();
-			if (config.enableTools === true) {
-				refreshRemovedModelTools();
-			}
+			const boundary =
+				config.enableTools === true
+					? await modelToolBoundary.resolve()
+					: undefined;
 			await sendChatMessage({
 				message: text,
 				provider: {
@@ -1869,7 +1859,10 @@ export function ChatArea({
 					pipelineActiveRef.current ? "brief" : "normal",
 					environmentToolReady,
 				),
-				enableTools: config.enableTools,
+				enableTools:
+					config.enableTools === true
+						? boundary!.toolsAllowed
+						: config.enableTools,
 				enableThinking: config.enableThinking,
 				gatewayUrl,
 				disabledSkills:
@@ -1877,7 +1870,7 @@ export function ChatArea({
 						? [
 								...new Set([
 									...(sanitizeDisabledSkills(config.disabledSkills) ?? []),
-									...removedModelToolsCache,
+									...boundary!.disabledSkills,
 									...((config.disabledGestures ?? []).includes("youtube")
 										? ["skill_youtube_bgm"]
 										: []),

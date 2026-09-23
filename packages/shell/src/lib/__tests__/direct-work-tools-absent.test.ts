@@ -69,7 +69,7 @@ describe("#611 direct-work model tools absent", () => {
 		const removed = [
 			"shell_exec",
 			"write_file",
-			"skill_knowledge_ask",
+			"skill_knowledge_delete",
 			"skill_environment",
 			"skill_workspace_execute",
 			"notify",
@@ -81,5 +81,6 @@ describe("#611 direct-work model tools absent", () => {
 			),
 		).toEqual([]);
 		expect(MODEL_FACING_TOOL_KEEP_LIST).not.toContain("skill_environment");
+		expect(MODEL_FACING_TOOL_KEEP_LIST).toContain("skill_knowledge_ask");
 	});
 });

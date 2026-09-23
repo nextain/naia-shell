@@ -9,14 +9,14 @@ import {
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
-import { isNewCore } from "../../lib/chat-service";
+import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
 import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
 import type { AgentResponseChunk } from "../../lib/types";
 import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { useChatStore } from "../../stores/chat";
-import { ChatArea } from "../ChatArea";
+import { ChatArea, modelToolBoundary } from "../ChatArea";
 
 const ttsSyncMocks = vi.hoisted(() => ({
 	synthesizeTts: vi.fn().mockResolvedValue({
@@ -116,6 +116,8 @@ const capturedRequests: {
 	history: { role: "user" | "assistant"; content: string }[];
 	requestId: string;
 	onChunk: (chunk: AgentResponseChunk) => void;
+	disabledSkills?: string[];
+	enableTools?: boolean;
 }[] = [];
 vi.mock("../../lib/chat-service", () => ({
 	sendChatMessage: vi.fn().mockImplementation(
@@ -124,6 +126,8 @@ vi.mock("../../lib/chat-service", () => ({
 			history: { role: "user" | "assistant"; content: string }[];
 			requestId: string;
 			onChunk: (chunk: AgentResponseChunk) => void;
+			disabledSkills?: string[];
+			enableTools?: boolean;
 		}) => {
 			capturedOnChunk = opts.onChunk;
 			capturedRequests.push(opts);
@@ -210,6 +214,8 @@ describe("ChatArea", () => {
 	beforeEach(() => {
 		localStorage.setItem("naia-adk-path", "/tmp/chat-area-test-adk");
 		mockSendAppSkills.mockReset().mockResolvedValue(true);
+		vi.mocked(fetchAgentSkills).mockResolvedValue([]);
+		modelToolBoundary.reset();
 	});
 	afterEach(() => {
 		cleanup();
@@ -220,6 +226,7 @@ describe("ChatArea", () => {
 		capturedRequests.length = 0;
 		vi.clearAllMocks();
 		vi.restoreAllMocks();
+		modelToolBoundary.reset();
 		vi.mocked(isNewCore).mockReturnValue(false);
 		mockInvoke.mockResolvedValue(undefined);
 		useChatStore.setState(useChatStore.getInitialState());
@@ -2105,6 +2112,86 @@ describe("ChatArea", () => {
 				(call: any[]) => call[0].text,
 			),
 		).toEqual(["첫 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."]);
+		localStorage.removeItem("naia-config");
+	});
+
+	it("offers knowledge tools and filters non-model tools on both turn 1 and turn 2", async () => {
+		vi.mocked(fetchAgentSkills).mockResolvedValue([
+			{ name: "skill_knowledge_ask", description: "ask", parameters: {} },
+			{ name: "skill_memory_recall", description: "recall", parameters: {} },
+			{ name: "shell_exec", description: "exec", parameters: {} },
+		]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				enableTools: true,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+
+		fireEvent.change(input, { target: { value: "Turn 1 message" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		capturedRequests[0].onChunk({
+			type: "finish",
+			requestId: capturedRequests[0].requestId,
+		});
+
+		fireEvent.change(input, { target: { value: "Turn 2 message" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(capturedRequests).toHaveLength(2));
+		capturedRequests[1].onChunk({
+			type: "finish",
+			requestId: capturedRequests[1].requestId,
+		});
+
+		expect(capturedRequests[0].enableTools).toBe(true);
+		expect(capturedRequests[0].disabledSkills).toContain("shell_exec");
+		expect(capturedRequests[0].disabledSkills).not.toContain(
+			"skill_knowledge_ask",
+		);
+
+		expect(capturedRequests[1].enableTools).toBe(true);
+		expect(capturedRequests[1].disabledSkills).toContain("shell_exec");
+		expect(capturedRequests[1].disabledSkills).not.toContain(
+			"skill_knowledge_ask",
+		);
+
+		localStorage.removeItem("naia-config");
+	});
+
+	it("disables tools on first send when fetchAgentSkills rejects", async () => {
+		vi.mocked(fetchAgentSkills).mockRejectedValue(
+			new Error("Agent offline"),
+		);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				enableTools: true,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+
+		fireEvent.change(input, { target: { value: "Hello" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		expect(capturedRequests[0].enableTools).toBe(false);
+
+		capturedRequests[0].onChunk({
+			type: "finish",
+			requestId: capturedRequests[0].requestId,
+		});
 		localStorage.removeItem("naia-config");
 	});
 

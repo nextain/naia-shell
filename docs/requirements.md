@@ -1261,9 +1261,10 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
-| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·기억 회상(읽기 전용 `skill_memory_recall` 포함, nextain/naia-shell#693, Luke 2026-09-23)·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억 저장은 자동 경로로 유지하고 기억 저장·수정·삭제 도구는 모델에 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
-| **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 도구, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
+| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·기억 회상(읽기 전용 `skill_memory_recall` 포함, nextain/naia-shell#693, Luke 2026-09-23)·읽기 전용 지식 도구 4종(`skill_knowledge_ask`, `skill_knowledge_search`, `skill_knowledge_graph`, `skill_knowledge_scope`, nextain/naia-shell#699, Luke 2026-09-23 「다 고쳐」)·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억 저장은 자동 경로로 유지하고 기억 저장·수정·삭제 도구는 모델에 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
+| **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다(지식 읽기 도구는 #699 에서 허용으로 바뀜; 컴파일·쓰기 지식 도구는 여전히 제외). | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
 | **FR-TOOLS-SURFACE.3** | 도구 목록 로딩 실패는 빈 성공 목록으로 가장하지 않으며, 목록을 사용하는 UI는 로딩·빈 목록·성공·오류·좁은 폭에서 기존 접근 가능한 상태 표현과 재시도 경계를 유지한다. | UC-TOOLS-SURFACE-611 | `SkillsTab.test.tsx`; `packages/shell/e2e/naia-omni-voice-tools.spec.ts` | Done |
+| **FR-TOOLS-SURFACE.4** | 텍스트 채팅은 도구가 켜진 모든 전송 전에 에이전트 도구 목록으로 제외 목록을 새로 받아(최대 1.5초) 첫 턴과 이후 턴의 도구 목록이 같다. 받지 못하면(시간 초과·실패) 그 턴은 도구 없이 보낸다. 이전 목록을 재사용하지 않는다(새로 등록된 도구가 열리는 것을 막기 위해). | UC-TOOLS-SURFACE-611 | `model-tool-boundary.test.ts`, `ChatArea.test.tsx`, `e2e/chat-tools.spec.ts` P04(2026-09-23): Vitest 전체 통과(실패 0), Playwright e2e/chat-tools.spec.ts 11 통과(1·2턴 도구 목록 동일, 지식 도구 유지). 실 셸 E2E(도구 이름 기록)는 루크 확인 대기. | Done |
 
 ## 기능 요구사항 (FR) — 개발 인스턴스 URL과 워크스페이스 바인드 (#651 / #653)
 
