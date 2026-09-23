@@ -273,4 +273,52 @@ describe("AudioQueue streamed PCM playback", () => {
 		expect(FakeAudioContext.sources).toHaveLength(1);
 		expect(started).toHaveBeenCalledTimes(1);
 	});
+
+	it("#688: a stream slot that ends with whole audio plays that audio in its own order", () => {
+		const queuePlaybackStart = vi.fn();
+		const queue = new AudioQueue({ onPlaybackStart: queuePlaybackStart });
+		const a0 = vi.fn();
+		const a1 = vi.fn();
+		const s0 = new PcmStreamSource(24_000);
+		const s1 = new PcmStreamSource(24_000);
+		const seq0 = queue.reserveSeq();
+		const seq1 = queue.reserveSeq();
+		expect(seq0).toBe(0);
+		expect(seq1).toBe(1);
+		queue.enqueueOrderedStream(0, s0, { onPlaybackStart: a0 });
+		queue.enqueueOrderedStream(1, s1, { onPlaybackStart: a1 });
+		s0.endWithAudio("UklGRAAA");
+		s1.endWithAudio("UklGRBBB");
+		expect(FakeAudio.instances).toHaveLength(1);
+		expect(FakeAudio.instances[0].src).toContain("UklGRAAA");
+		FakeAudio.instances[0].onplay?.();
+		expect(a0).toHaveBeenCalledTimes(1);
+		expect(queuePlaybackStart).toHaveBeenCalledTimes(1);
+		FakeAudio.instances[0].onended?.();
+		expect(FakeAudio.instances).toHaveLength(2);
+		expect(FakeAudio.instances[1].src).toContain("UklGRBBB");
+	});
+
+	it("#688: whole audio on a paused queue plays after resumePlayback", () => {
+		const queue = new AudioQueue();
+		queue.pauseBeforePlayback();
+		const stream = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, stream);
+		stream.endWithAudio("UklGR_PAUSED");
+		expect(FakeAudio.instances).toHaveLength(0);
+		queue.resumePlayback();
+		expect(FakeAudio.instances).toHaveLength(1);
+		expect(FakeAudio.instances[0].src).toContain("UklGR_PAUSED");
+	});
+
+	it("treats a failed stream without whole audio as unavailable", () => {
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		const unavailable = vi.fn();
+		queue.enqueueOrderedStream(0, stream, {
+			onPlaybackUnavailable: unavailable,
+		});
+		stream.fail();
+		expect(unavailable).toHaveBeenCalledTimes(1);
+	});
 });

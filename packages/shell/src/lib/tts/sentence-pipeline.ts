@@ -162,7 +162,12 @@ export function createSentenceTtsPipeline(
 					: undefined),
 		);
 		if (!clean) return;
-		const revealText = deps.reserveReveal(sentence);
+		const reserved = deps.reserveReveal(sentence);
+		let revealed = false;
+		const revealText = () => {
+			revealed = true;
+			reserved();
+		};
 
 		const cascadeAvatar = deps.getRenderer();
 
@@ -322,7 +327,9 @@ export function createSentenceTtsPipeline(
 					new DOMException("TTS request superseded", "AbortError"),
 				);
 			}
-			deps.setOutputStage("tts");
+			// #688: a serial local job that starts after its sentence already settled
+			// must not re-raise the chip, because nothing would clear it.
+			if (!revealed) deps.setOutputStage("tts");
 			synthesisStartedAt = performance.now();
 			return synthesizeTts({
 				text: clean,
@@ -422,19 +429,16 @@ export function createSentenceTtsPipeline(
 							duration: verdict.durationSeconds
 								? Number(verdict.durationSeconds.toFixed(2))
 								: null,
-							warmingHold: verdict.warmingHold,
+							graceMs: verdict.graceMs,
 						});
 					}
 				}
 				activeRequests.delete(reqId);
 				if (pcmStream) {
 					if (pcmStream.chunks.length === 0) {
-						// Host answered a whole WAV (no streaming support): play it whole.
-						pcmStream.fail();
-						deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
-							onPlaybackStart: revealText,
-							onPlaybackUnavailable: revealText,
-						});
+						// #688: the whole WAV plays in the reserved slot, because
+						// re-enqueueing by seq is impossible once the stream slot has been flushed.
+						pcmStream.endWithAudio(audioBase64);
 					} else {
 						pcmStream.end();
 					}
