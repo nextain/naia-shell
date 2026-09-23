@@ -139,7 +139,7 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 |----|---------|-----------|------|
 | **FR-SLOT.1** | **naia 계정 게이트**(binary, naiaKey 파생)가 최상위 분기. 계정=크레딧 접근 권한. **GPU·로컬 옵션은 게이트 무관**(R1-3 — `detectGpuVramGb>0` 또는 host 입력으로 계정·비계정 모두 로컬 엔드포인트 노출) | S-SLOT·UC12 | `settings-slots.contract.test.ts`(게이트 파생·로컬 무관) |
 | **FR-SLOT.2** | 6 슬롯 **각각 독립 설정**: LLM main · LLM sub(범용·기억전용 아님) · embedding · STT · TTS · video avatar. 3 그룹(Brain·Voice·Avatar) UI | S-SLOT | `settings-slots.contract.test.ts`·`settings-tab.test.ts` |
-| **FR-SLOT.3** | naia 계정 시 **Naia 기본값 자동 적용**(현재 main=gemini-flash·sub=gemini-flash-lite·embed=cpu offline·tts=Gemini TTS·stt=free). UI는 특정 공급자 이름이 아닌 Naia 관리 기본값으로 표기하며 사용자 개별 override를 허용한다. | S-SLOT | `settings-tab.test.ts`(기본값 적용) |
+| **FR-SLOT.3** | naia 계정 시 **Naia 기본값 자동 적용**(현재 main=gemini-flash·sub=gemini-flash-lite·embed=cpu offline·tts=Gemini TTS·stt=free). UI는 특정 공급자 이름이 아닌 Naia 관리 기본값으로 표기하며 사용자 개별 override를 허용한다. memory 역할 기본값 = Naia gpt-5.4-nano(#692, 직접 고른 memory 역할은 유지) | S-SLOT | `settings-tab.test.ts`(기본값 적용) |
 | **FR-SLOT.4** | 설정 탭·온보딩 모두 **게이트→슬롯 순서**. 구 engine/ai/models/memory 탭 중복 통합·재배열(회귀 无) | S-SLOT·UC12 | `onboarding-fresh.spec.ts` + Playwright E2E(게이트→클라우드 슬롯 흐름) |
 | **FR-SLOT.5** | sub-LLM은 `memoryLlmProvider` 필드명 유지(R1-1), **역할 범용화**(기억+압축+adk 배치용). rename→`subLlm*`은 Slice C dual-write | S-SLOT | `settings-slots.contract.test.ts`(필드명·역할) |
 | **FR-SLOT.6** (2026-07-15) | embedding 슬롯 offline(CPU) 모델에 **다국어(한국어) 2종** 노출 — `multilingual-e5-large`(1024d, 고정확) · `paraphrase-multilingual-MiniLM-L12-v2`(384d, 경량·빠름). all-MiniLM/all-mpnet 은 **영어 전용**이라 한국어 회상 품질 낮음(실측 2/5). **UI 라벨에 언어 명시**(`[영어 전용]`/`[한국어·다국어]`)로 유저가 구분 가능(핵심 요구). 배선 3-repo: naia-memory OfflineEmbeddingProvider(모델 allowlist·e5 q8 dtype·프리픽스) + naia-agent(검증 allowlist·dims 계약) + shell(union·드롭다운·i18n). 각 경계·SDLC 준수. 기본값(NAIA_SLOT_DEFAULTS) 무변경 | S-EMBKO·S-SLOT | `settings-slots.contract.test.ts`(offline union·다국어 2종 roundtrip) + naia-memory `embeddings.test.ts`(dims) + naia-agent `memory-adapter-embedding.contract.test.ts`(dims·allowlist) |
@@ -1271,9 +1271,11 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
-| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억은 자동 recall/save 경로로 유지하고 별도 모델 도구를 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
-| **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 도구, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
+| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·기억 회상(읽기 전용 `skill_memory_recall` 포함, nextain/naia-shell#693, Luke 2026-09-23)·읽기 전용 지식 도구 4종(`skill_knowledge_ask`, `skill_knowledge_search`, `skill_knowledge_graph`, `skill_knowledge_scope`, nextain/naia-shell#699, Luke 2026-09-23 「다 고쳐」)·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억 저장은 자동 경로로 유지하고 기억 저장·수정·삭제 도구는 모델에 추가하지 않는다. 단, #687 예외로 `skill_workspace_edit_open_file`(열린 파일 한정·승인 필수)을 포함한다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
+| **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다(지식 읽기 도구는 #699 에서 허용으로 바뀜; 컴파일·쓰기 지식 도구는 여전히 제외). 예외: FR-TOOLS-SURFACE.4. `write_file`·셸 명령 등 일반 쓰기 도구는 계속 노출하지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
 | **FR-TOOLS-SURFACE.3** | 도구 목록 로딩 실패는 빈 성공 목록으로 가장하지 않으며, 목록을 사용하는 UI는 로딩·빈 목록·성공·오류·좁은 폭에서 기존 접근 가능한 상태 표현과 재시도 경계를 유지한다. | UC-TOOLS-SURFACE-611 | `SkillsTab.test.tsx`; `packages/shell/e2e/naia-omni-voice-tools.spec.ts` | Done |
+| **FR-TOOLS-SURFACE.4** | #687 좁은 예외 — 출처: 루크 2026-09-22 「쓰기 가능하게 해줘」. 모델은 워크스페이스 에디터에 현재 열린 파일 한 개에만 `skill_workspace_edit_open_file` 로 수정을 제안할 수 있다. 에디터 안 변경 미리보기에서 사용자가 매번 승인해야 저장되고, 거절·시간초과(50초, 에이전트 60초 한도 미만)·열린 파일 전환 시 아무것도 쓰지 않고 rejected 를 돌려준다. 미리보기 뒤 디스크(sha256)나 에디터 내용이 바뀌면 stale 로 거부한다. 민감 경로·naia-settings 쓰기·1MB 초과는 denied. tier 0(에이전트 일반 승인 없음 — naia-agent grpc-server.ts:489, chat-turn-handler.ts:436·635). 유일한 승인은 편집기 diff 승인이며 '항상 허용'이 없고, 남은 시간을 표시한다. | UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, Rust `agent_open_file_tests`, `e2e/687-open-file-edit.spec.ts`; attended E2E in the real shell pending | Done |
+| **FR-TOOLS-SURFACE.5** | 텍스트 채팅은 도구가 켜진 모든 전송 전에 에이전트 도구 목록으로 제외 목록을 새로 받아(최대 1.5초) 첫 턴과 이후 턴의 도구 목록이 같다. 받지 못하면(시간 초과·실패) 그 턴은 도구 없이 보낸다. 이전 목록을 재사용하지 않는다(새로 등록된 도구가 열리는 것을 막기 위해). | UC-TOOLS-SURFACE-611 | `model-tool-boundary.test.ts`, `ChatArea.test.tsx`, `e2e/chat-tools.spec.ts` P04(2026-09-23): Vitest 전체 통과(실패 0), Playwright e2e/chat-tools.spec.ts 11 통과(1·2턴 도구 목록 동일, 지식 도구 유지). 실 셸 E2E(도구 이름 기록)는 루크 확인 대기. | Done |
 
 ## 기능 요구사항 (FR) — 개발 인스턴스 URL과 워크스페이스 바인드 (#651 / #653)
 
@@ -1290,8 +1292,42 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-WORKSPACE-AI-CONTEXT.1** | AI 에이전트는 사용자가 열어둔 파일 목록(`openDocs`), 현재 활성 문서(`openFilePath`), 커서 위치(`line`, `column`, `selectedText`), 및 Herdr 터미널 최근 출력(`terminalTail`)을 `pushContext`와 도구(`skill_workspace_get_open_file`, `skill_workspace_get_terminal_output`)를 통해 인지한다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `Terminal.tsx`, `Editor.tsx` | Done |
 | **FR-WORKSPACE-AI-CONTROL.1** | AI 에이전트는 사용자가 보고 있는 Herdr 터미널로 가시적 명령을 실행(`skill_workspace_terminal_exec`)하고, 화면 전환(`skill_workspace_set_surface`), 문서 닫기(`skill_workspace_close_file`), 스페이스 포커스(`skill_workspace_focus_space`)를 제어할 수 있다. | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `herdr-workspace-bridge.test.tsx`, `model-facing-tools.contract.test.ts` | Done |
 
+## 기능 요구사항 (FR) — 열린 파일 읽기 경계·컨텍스트 (#687)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-WORKSPACE-OPEN-FILE.1** | 에이전트용 열린 파일 읽기·쓰기(`workspace_agent_read_open_file`/`workspace_agent_write_open_file`)는 naia-agent `fs-sandbox.ts` 민감 경로 목록과 1MB 상한을 그대로 적용한다(사용자 에디터 자체의 열기·저장은 바뀌지 않는다). | UC-WORKSPACE-OPEN-FILE-EDIT-687 | Rust `agent_open_file_tests`, bridge test | Done |
+| **FR-WORKSPACE-OPEN-FILE.2** | 열린 파일 컨텍스트는 Herdr 스냅샷이 없어도 전달된다(herdr=null). | UC-WORKSPACE-OPEN-FILE-EDIT-687 | `herdr-workspace.test.tsx` | Done |
+| **FR-WORKSPACE-OPEN-FILE.3** | 워크스페이스 앱은 활성일 때만 컨텍스트를 올리고, 활성화 즉시 다시 올린다. 다른 앱이 활성일 때 그 앱의 컨텍스트를 덮어쓰지 않는다. | UC-WORKSPACE-OPEN-FILE-EDIT-687 | `herdr-workspace.test.tsx` | Done |
+
 ## 기능 요구사항 (FR) — 채팅 마크다운 원문 보존 (#683)
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
 | **FR-CHAT-MARKDOWN.4** | 감정 태그·무대 지시 정리는 채팅 본문 마크다운을 바꾸지 않는다. 괄호·별표 구간은 한 줄 안의 영어 단어만으로 이루어지고 알려진 동작 단어를 포함할 때만 무대 지시로 지우며, `**굵게**`, 따옴표, 괄호 내용, 목록 항목, 줄 앞 들여쓰기와 줄바꿈은 보존한다. | UC-CHAT-MARKDOWN-FIDELITY-683 | `expression.test.ts`, `ChatMarkdown.test.tsx`, `e2e/chat-tools.spec.ts` | Done |
+
+## 기능 요구사항 (FR) — 작은 LLM 떠오름 설정 (#692)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-SURFACING.1** | 설정의 기억(Memory) 탭에 작은 LLM(surfacing · fact extraction) 섹션을 제공하고, 네 가지 선택(Naia 계정 gpt-5.4-nano 기본값, 로컬 Ollama, 로컬 vLLM, 떠오름 끄기)을 라디오 버튼으로 표시한다. | UC-MEMORY-SURFACING-692 | `SmallLlmSection.test.tsx`, `memory-settings.spec.ts` | Done |
+| **FR-SURFACING.2** | 상태 안내 줄은 에이전트의 실제 동작 적격성을 그대로 반영한다. 사용자의 명시적 선택 없이 과금 경로가 무단 활성화되지 않으며, 상속된 유료 provider/model인 경우 자동으로 끔 상태로 전환해 설명한다. | UC-MEMORY-SURFACING-692 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
+| **FR-SURFACING.3** | Naia 로그인 시 미설정 슬롯의 memory 역할 기본값으로 `nextain`/`gpt-5.4-nano`를 자동 적용하되, 사용자가 직접 선택한 memory 역할은 비파괴적으로 유지한다. | UC-MEMORY-SURFACING-692 | `settings-slots.contract.test.ts`, `src/components/__tests__/SettingsTab.test.tsx` (Naia defaults) | Done |
+| **FR-SURFACING.4** | Naia 게이트웨이 카탈로그를 확인하여 모델 미배포 시 준비 대기 상태를 안내하고, 카탈로그 조회 실패는 미확인 상태로 취급하여 차단 없이 기본 동작을 유지한다. | UC-MEMORY-SURFACING-692 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
+| **FR-SURFACING.5** | 로컬 OpenAI 호환 주소(Ollama/vLLM)는 입력 시 끝에 `/v1` 경로가 붙도록 정규화하여 저장하고 검증한다. | UC-MEMORY-SURFACING-692 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
+
+P04(2026-09-22): Vitest 단위·컴포넌트·계약 통과, 전체 Shell Vitest 신규 실패 0. 게이트웨이 카탈로그에 gpt-5.4-nano 없음(배포 전) → "준비 대기" 안내 확인. 실 셸 E2E 는 루크 확인 대기.
+
+## 기능 요구사항 (FR) — 문턱 떠오름·기억 도구 (#693)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-SURFACING.6** | 상태 안내 줄은 실제 에이전트 동작 모드(on-llm / on-threshold / off)와 세부 사유(작은 LLM 없음, 상속 과금 회피, 게이트웨이 미배포, 임베딩 부재, 명시적 꺼짐)를 정직하게 반영하고, 문턱 방식일 때는 적용 문턱 수치를 소수점 둘째 자리까지 함께 안내한다. | UC-MEMORY-THRESHOLD-693 | `surfacing.test.ts`, `SmallLlmSection.test.tsx` | Done |
+| **FR-SURFACING.7** | 작은 LLM이 없거나 비활성일 때 쓰는 떠오름 민감도를 3단계(덜 자주 0.88 · 보통 0.86 · 더 자주 0.84)로 제공하며, 선택 즉시 `memorySurfacingLevel` 설정으로 영속된다. 작은 LLM이 활성화된 경우에도 자동 회상은 이 문턱 이상의 기억만 포함한다. | UC-MEMORY-THRESHOLD-693 | `surfacing.test.ts`, `SmallLlmSection.test.tsx`, `memory-settings.spec.ts` | Done |
+| **FR-SURFACING.8** | 떠오름을 끈 상태(`memorySurfacing: "off"`)의 안내 문구는 기억 기능 자체가 꺼진 것이 아니라 자동 회상만 일어나지 않는 것이며 AI가 필요할 때 기억 도구로 직접 찾는다는 점을 명시하고, 모든 상태에서 기억 도구 사용 가능 안내 힌트를 상시 노출한다. 떠오름을 끈 뒤에도 작은 LLM 없이 다시 켤 수 있다(점수 문턱 선택지). | UC-MEMORY-THRESHOLD-693 | `SmallLlmSection.test.tsx`, `memory-settings.spec.ts` | Done |
+| **FR-SURFACING.9** | 사용자는 로그인 여부와 무관하게 "점수 문턱만 쓰기"(`memorySurfacingJudge:"threshold"`)를 고를 수 있고, 이때 떠오름에 작은 LLM을 부르지 않아 비용이 없다. 사실 추출 모델은 바뀌지 않는다. | UC-MEMORY-THRESHOLD-693 | `surfacing.test.ts`, `SmallLlmSection.test.tsx`, `memory-settings.spec.ts` | Done |
+
+P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-settings.spec.ts 13 통과(문턱 상태·민감도 저장·끄기 문구·점수 문턱만 쓰기 저장). 실 셸 E2E 는 루크 확인 대기.
+
+
+

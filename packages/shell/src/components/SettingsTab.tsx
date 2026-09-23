@@ -100,6 +100,7 @@ import {
 	t,
 } from "../lib/i18n";
 import { DevicePairingSection } from "./DevicePairingSection";
+import { SmallLlmSection } from "./SmallLlmSection";
 import {
 	fetchLabBalancePayload,
 	isLabBalanceUnauthorized,
@@ -1608,6 +1609,7 @@ export function SettingsTab() {
 	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
 		existing?.memoryEmbeddingModel ?? "",
 	);
+	const [smallLlmRev, setSmallLlmRev] = useState(0);
 	// 보조·전문가·기억 LLM 역할 편집기 제거 (에픽 #589 할 일 2·3, #598): 나이아 로그인은
 	// 모델 하나만 알고, 두뇌 화면에는 역할 편집기를 그리지 않는다. main 역할만 정본으로 남는다.
 	// 옛 config 의 sub/expert/memory 역할 필드는 roles.ts 가 무손실로 읽어 두므로(에이전트
@@ -5709,6 +5711,26 @@ export function SettingsTab() {
 							</div>
 						)}
 					</div>
+
+					<SmallLlmSection
+						key={smallLlmRev}
+						config={loadConfig()}
+						naiaKeyPresent={!!naiaKey}
+						gatewayHttpUrl={LAB_GATEWAY_URL}
+						onPersist={(next) => {
+							persistConfig({
+								llmRoles: next.llmRoles,
+								memoryLlmProvider: next.memoryLlmProvider,
+								memoryLlmModel: next.memoryLlmModel,
+								memoryLlmBaseUrl: next.memoryLlmBaseUrl,
+								memoryLlmCredentialRef: next.memoryLlmCredentialRef,
+								memorySurfacing: next.memorySurfacing,
+								memorySurfacingLevel: next.memorySurfacingLevel,
+								memorySurfacingJudge: next.memorySurfacingJudge,
+							});
+							setSmallLlmRev((n) => n + 1);
+						}}
+					/>
 
 					<div className="settings-actions">
 						<button

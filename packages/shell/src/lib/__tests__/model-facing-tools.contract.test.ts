@@ -16,6 +16,11 @@ describe("model-facing tool contract", () => {
 			"memo_list",
 			"memo_get",
 			"memo_save",
+			"skill_memory_recall",
+			"skill_knowledge_ask",
+			"skill_knowledge_search",
+			"skill_knowledge_graph",
+			"skill_knowledge_scope",
 			"list_dir",
 			"read_file",
 			"skill_youtube_bgm",
@@ -34,6 +39,7 @@ describe("model-facing tool contract", () => {
 			"skill_workspace_get_sessions",
 			"skill_workspace_open_file",
 			"skill_workspace_get_open_file",
+			"skill_workspace_edit_open_file",
 			"skill_workspace_close_file",
 			"skill_workspace_set_surface",
 			"skill_workspace_focus_space",
@@ -52,16 +58,13 @@ describe("model-facing tool contract", () => {
 			{ name: "obsidian_list_notes" },
 			{ name: "obsidian_read_note" },
 			{ name: "obsidian_search" },
-			{ name: "skill_knowledge_search" },
-			{ name: "skill_knowledge_ask" },
-			{ name: "skill_knowledge_graph" },
 			{ name: "skill_example_from_adk" },
 			{ name: "notify" },
 			{ name: "mcp__server__tool" },
 			{ name: "skill_environment" },
 			{ name: "env_browser_navigate" },
 			{ name: "skill_workspace_execute" },
-			{ name: "skill_workspace_edit_open_file" },
+			{ name: "skill_workspace_write_file" },
 		];
 
 		expect(filterModelFacingTools(incoming).map((tool) => tool.name)).toEqual(
@@ -74,7 +77,13 @@ describe("model-facing tool contract", () => {
 		expect(isModelFacingToolAllowed("skill_browser_delete_everything")).toBe(
 			false,
 		);
-		expect(isModelFacingToolAllowed("skill_knowledge_search")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_knowledge_search")).toBe(true);
+		expect(isModelFacingToolAllowed("skill_knowledge_delete")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_knowledge_compile")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_memory_recall")).toBe(true);
+		expect(isModelFacingToolAllowed("memory_save")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_memory_save")).toBe(false);
+		expect(isModelFacingToolAllowed("skill_memory_delete")).toBe(false);
 	});
 
 	it("workspace app tools stay inside the keep list", async () => {

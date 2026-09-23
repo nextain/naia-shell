@@ -64,6 +64,7 @@ const TAURI_MOCK_SCRIPT = `
 
 	// ---- Simulated response scenarios ----
 	window.__NAIA_E2E__ = { emitEvent: emitEvent };
+	window.__CHAT_REQUESTS__ = [];
 
 	var tcCounter = 0;
 	var secrets = new Map();
@@ -150,6 +151,9 @@ const TAURI_MOCK_SCRIPT = `
 		// Agent communication
 		if (cmd === "send_to_agent_command") {
 			var request = JSON.parse(args.message);
+			if (request.messages) {
+				window.__CHAT_REQUESTS__.push(request);
+			}
 			if (request.type === "app_skills" || request.type === "app_skills_clear") {
 				if (request.requestId) {
 					setTimeout(function() {
@@ -170,6 +174,9 @@ const TAURI_MOCK_SCRIPT = `
 						tools: [
 							{ name: "read_file", description: "Read a file", parameters: { type: "object", properties: {} } },
 							{ name: "shell_exec", description: "Run a shell command", parameters: { type: "object", properties: {} } },
+							{ name: "skill_knowledge_ask", description: "Ask knowledge", parameters: { type: "object", properties: {} } },
+							{ name: "skill_knowledge_search", description: "Search knowledge", parameters: { type: "object", properties: {} } },
+							{ name: "skill_memory_recall", description: "Recall memory", parameters: { type: "object", properties: {} } },
 						],
 					}));
 				}, 10);
@@ -351,6 +358,38 @@ test.describe("Chat + Tool E2E", () => {
 			'"흠.. 기억을 못하네."',
 		);
 		await expect(content).not.toContainText("**");
+	});
+
+	test("turn 1 and turn 2 offer the same tools; knowledge stays available", async ({
+		page,
+	}) => {
+		await sendMessage(page, "안녕");
+		await sendMessage(page, "회사 주력 제품이 뭐야?");
+
+		await expect
+			.poll(async () => {
+				return page.evaluate(
+					() => (window as any).__CHAT_REQUESTS__?.length ?? 0,
+				);
+			})
+			.toBe(2);
+
+		const requests = await page.evaluate(
+			() => (window as any).__CHAT_REQUESTS__,
+		);
+		expect(requests).toHaveLength(2);
+
+		for (const req of requests) {
+			const disabled: string[] = req.disabledSkills ?? [];
+			expect(disabled).toContain("shell_exec");
+			expect(disabled).not.toContain("skill_knowledge_ask");
+			expect(disabled).not.toContain("skill_knowledge_search");
+			expect(disabled).not.toContain("skill_memory_recall");
+		}
+
+		const set1 = new Set(requests[0].disabledSkills ?? []);
+		const set2 = new Set(requests[1].disabledSkills ?? []);
+		expect(set1).toEqual(set2);
 	});
 });
 

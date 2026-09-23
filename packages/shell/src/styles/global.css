@@ -12191,3 +12191,146 @@ body.resizing-col * {
 	cursor: grab;
 	user-select: none;
 }
+
+/* ── Open File Edit Review (#687) ────────────────────────── */
+.open-file-edit-review {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px 16px;
+	background: var(--surface, #202124);
+	border-bottom: 1px solid var(--border-color, #333);
+	color: var(--text-primary, #e8eaed);
+	outline: none;
+	min-width: 0;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.open-file-edit-review__header {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.open-file-edit-review__meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	min-width: 0;
+}
+
+.open-file-edit-review__title {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-primary, #e8eaed);
+}
+
+.open-file-edit-review__filename {
+	font-family: var(--mono, monospace);
+	font-size: 12px;
+	color: var(--accent, #8ab4f8);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 100%;
+	min-width: 0;
+}
+
+.open-file-edit-review__counts {
+	font-family: var(--mono, monospace);
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-secondary, #9aa0a6);
+}
+
+.open-file-edit-review__summary {
+	font-size: 12px;
+	color: var(--text-secondary, #9aa0a6);
+}
+
+.open-file-edit-review__diff {
+	margin: 0;
+	max-height: 40vh;
+	overflow: auto;
+	padding: 8px 12px;
+	background: var(--bg-base, #17181a);
+	border: 1px solid var(--border-color, #333);
+	border-radius: 4px;
+	font-family: var(--mono, monospace);
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: pre;
+	min-width: 0;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.open-file-edit-review__line {
+	display: block;
+}
+
+.open-file-edit-review__line--add {
+	background: rgba(46, 204, 113, 0.18);
+	color: var(--sage, #81c995);
+}
+
+.open-file-edit-review__line--del {
+	background: rgba(239, 68, 68, 0.18);
+	color: var(--error, #f28b82);
+}
+
+.open-file-edit-review__line--context {
+	color: var(--text-secondary, #9aa0a6);
+}
+
+.open-file-edit-review__truncated {
+	font-size: 11px;
+	color: var(--amber, #fdd663);
+	font-style: italic;
+}
+
+.open-file-edit-review__countdown {
+	font-size: 11px;
+	color: var(--amber, #fdd663);
+}
+
+.open-file-edit-review__actions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	min-width: 0;
+}
+
+.open-file-edit-review__btn {
+	padding: 6px 14px;
+	border-radius: 4px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	border: 1px solid transparent;
+	transition: background 0.15s, opacity 0.15s;
+	max-width: 100%;
+}
+
+.open-file-edit-review__btn--approve {
+	background: var(--sage, #10b981);
+	color: #ffffff;
+}
+
+.open-file-edit-review__btn--approve:hover {
+	filter: brightness(1.1);
+}
+
+.open-file-edit-review__btn--reject {
+	background: transparent;
+	border-color: var(--border-color, #555);
+	color: var(--text-primary, #e8eaed);
+}
+
+.open-file-edit-review__btn--reject:hover {
+	background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+}
+

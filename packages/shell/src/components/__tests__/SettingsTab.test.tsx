@@ -3240,7 +3240,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 			provider: "naia",
 			model: "gemini-3.1-flash-lite",
 		});
-		expect(saved.memoryLlmProvider).toBeUndefined();
+		expect(saved.memoryLlmProvider).toBe("nextain");
+		expect(saved.llmRoles?.memory).toMatchObject({ provider: "nextain", model: "gpt-5.4-nano" }); // #692
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
@@ -3317,6 +3318,46 @@ describe("SettingsTab — memory tab (#298)", () => {
 			(t) => t === "Memory" || t === "기억",
 		);
 		expect(hasMemoryDivider).toBe(false);
+	});
+
+	it("clicking small-llm-choice-threshold stores memorySurfacingJudge and memorySurfacing on, and surfacing-level-less stores memorySurfacingLevel less", async () => {
+		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "deepseek-v4-flash",
+				memoryEmbeddingProvider: "offline",
+				llmRoles: {
+					memory: {
+						provider: "ollama",
+						model: "llama3",
+						baseUrl: "http://localhost:11434/v1",
+					},
+				},
+			}),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("memory");
+
+		const thresholdRadio = await screen.findByTestId(
+			"small-llm-choice-threshold",
+		);
+		fireEvent.click(thresholdRadio);
+
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.memorySurfacingJudge).toBe("threshold");
+			expect(saved.memorySurfacing).toBe("on");
+		});
+
+		const levelLess = await screen.findByTestId("surfacing-level-less");
+		fireEvent.click(levelLess);
+
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.memorySurfacingLevel).toBe("less");
+		});
 	});
 });
 

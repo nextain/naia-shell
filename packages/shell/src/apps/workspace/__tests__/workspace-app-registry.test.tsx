@@ -30,7 +30,7 @@ describe("Workspace app registry", () => {
 		expect(app?.id).toBe("workspace");
 	});
 
-	it("workspace app exposes only model-facing read tools", async () => {
+	it("workspace app exposes only keep-list tools (#611 + #687 exception)", async () => {
 		const { WORKSPACE_TOOLS } = await import("../index");
 		const keep = new Set(
 			MODEL_FACING_TOOL_KEEP_LIST.filter((name) =>
@@ -41,7 +41,6 @@ describe("Workspace app registry", () => {
 			[...keep].sort(),
 		);
 		for (const removed of [
-			"skill_workspace_edit_open_file",
 			"skill_workspace_execute",
 			"skill_workspace_focus_session",
 			"skill_workspace_new_session",
@@ -50,6 +49,11 @@ describe("Workspace app registry", () => {
 		]) {
 			expect(WORKSPACE_TOOLS.some((t) => t.name === removed)).toBe(false);
 		}
+		const editTool = WORKSPACE_TOOLS.find(
+			(t) => t.name === "skill_workspace_edit_open_file",
+		);
+		expect(editTool).toBeDefined();
+		expect(editTool?.tier).toBe(0);
 	});
 
 	it("workspace app has skill_workspace_get_sessions tool", async () => {

@@ -260,12 +260,60 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 			provider: "naia",
 			model: "gemini-3.1-flash-lite",
 		});
-		expect(filled.memoryLlmProvider).toBeUndefined();
+		expect(filled.memoryLlmProvider).toBe("nextain");
+		expect(filled.llmRoles?.memory).toMatchObject({
+			provider: "nextain",
+			model: "gpt-5.4-nano",
+		});
 		expect(filled.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(filled.memoryOfflineModel).toBe("multilingual-e5-large");
 		expect(filled.sttProvider).toBe(NAIA_SLOT_DEFAULTS.stt.provider);
 		expect(filled.ttsProvider).toBe("nextain");
+	});
+
+	it("applyNaiaSlotDefaults on a config without a memory role sets memory nextain/gpt-5.4-nano", () => {
+		const after = applyNaiaSlotDefaults({} as AppConfig);
+		expect(after.llmRoles?.memory).toEqual({
+			provider: "nextain",
+			model: "gpt-5.4-nano",
+		});
+		expect(after.memoryLlmProvider).toBe("nextain");
+		expect(after.memoryLlmModel).toBe("gpt-5.4-nano");
+	});
+
+	it("applyNaiaSlotDefaults with llmRoles.memory = { inherit: 'sub' } sets memory nextain/gpt-5.4-nano", () => {
+		const after = applyNaiaSlotDefaults({
+			llmRoles: { memory: { inherit: "sub" } },
+		} as AppConfig);
+		expect(after.llmRoles?.memory).toEqual({
+			provider: "nextain",
+			model: "gpt-5.4-nano",
+		});
+		expect(after.memoryLlmProvider).toBe("nextain");
+		expect(after.memoryLlmModel).toBe("gpt-5.4-nano");
+	});
+
+	it("applyNaiaSlotDefaults with an explicit memory role keeps it", () => {
+		const after = applyNaiaSlotDefaults({
+			llmRoles: {
+				memory: { provider: "ollama", model: "qwen3:4b" },
+			},
+		} as AppConfig);
+		expect(after.llmRoles?.memory).toEqual({
+			provider: "ollama",
+			model: "qwen3:4b",
+		});
+	});
+
+	it("applyNaiaSlotDefaults with legacy memoryLlmProvider = 'vllm' keeps it", () => {
+		const after = applyNaiaSlotDefaults({
+			memoryLlmProvider: "vllm",
+			memoryLlmModel: "vllm-model",
+		} as AppConfig);
+		expect(after.memoryLlmProvider).toBe("vllm");
+		expect(after.memoryLlmModel).toBe("vllm-model");
+		expect(after.llmRoles?.memory?.provider).not.toBe("nextain");
 	});
 
 	it("applyNaiaSlotDefaults 는 사용자가 이미 설정한 슬롯을 덮어쓰지 않음 (idempotent·비파괴)", () => {

@@ -535,6 +535,12 @@ export interface AppConfig {
 	memoryLlmApiKey?: string;
 	/** Model name for LLM fact extraction. */
 	memoryLlmModel?: string;
+	/** #692 background surfacing by the memory LLM. "off" disables it; absent/"on" = on when a small LLM is available. */
+	memorySurfacing?: "on" | "off";
+	/** #693 threshold surfacing sensitivity: less 0.88 / normal 0.86 (default) / more 0.84. */
+	memorySurfacingLevel?: "less" | "normal" | "more";
+	/** #693 who decides what surfaces: "llm" (small LLM when available, default) or "threshold" (score threshold only, no cost). */
+	memorySurfacingJudge?: "llm" | "threshold";
 	/** Qdrant vector DB URL (adapter = 'qdrant'). */
 	qdrantUrl?: string;
 	/** Qdrant API key. */

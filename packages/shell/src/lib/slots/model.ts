@@ -9,6 +9,7 @@ import {
 	resolveEffectiveLlmRoles,
 	writeConfiguredLlmRole,
 } from "../llm/roles";
+import { NAIA_SMALL_LLM_DEFAULT } from "../llm/surfacing";
 import type { ProviderId } from "../types";
 
 // ── FR-SLOT.2: 6 슬롯 (순서 권위) ──
@@ -280,6 +281,7 @@ export type NaiaDefaultSlots = Pick<
 	SlotSnapshot,
 	"main" | "sub" | "embedding" | "stt" | "tts"
 >;
+/** memory role default = Naia gpt-5.4-nano (#692); a directly chosen memory role is kept. */
 export const NAIA_SLOT_DEFAULTS: NaiaDefaultSlots = {
 	main: { provider: "nextain", model: "deepseek-v4-flash" },
 	sub: { provider: "naia", model: "gemini-3.1-flash-lite" },
@@ -332,6 +334,15 @@ export function applyNaiaSlotDefaults(config: AppConfig): AppConfig {
 	}
 	if (!isSubSet(next)) {
 		next = writeSlot(next, "sub", NAIA_SLOT_DEFAULTS.sub);
+	}
+	if (
+		(!config.llmRoles?.memory || !!config.llmRoles.memory.inherit) &&
+		(!config.memoryLlmProvider || config.memoryLlmProvider === "none")
+	) {
+		next = writeConfiguredLlmRole(next, "memory", {
+			provider: "nextain",
+			model: NAIA_SMALL_LLM_DEFAULT.model,
+		});
 	}
 	if (!isEmbeddingSet(next)) {
 		next = writeSlot(next, "embedding", NAIA_SLOT_DEFAULTS.embedding);

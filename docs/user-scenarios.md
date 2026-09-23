@@ -841,6 +841,7 @@ Test Coverage Map
 |---|---|---|
 | UC-BGM-AI-LOCAL-NEXT | `packages/shell/src/components/__tests__/BgmPlayer.test.tsx` AI next가 로컬 파일을 재생하고 playing 제목을 남긴다 | UI 다음 버튼과 같은 최신 playNext 경로 |
 | UC-BGM-TAURI-OBSERVE | `packages/shell/src/lib/__tests__/bgm-observation-diagnosis.test.ts` null-source playing 수락, `packages/shell/src/lib/__tests__/bgm-skill.test.ts` loading은 play ack가 아님 | 소리가 나면 status가 제목을 숨기지 않는다 |
+| UC-BGM-FOREIGN-PORT-FALLBACK | `packages/shell/src/lib/__tests__/bgm-sidecar-url.test.ts` 점유된 포트 대신 고른 포트로 sidecar URL을 만든다, `packages/shell/src/lib/__tests__/bgm-skill.test.ts` play 결과가 requested에 머물지 않는다, `packages/shell/src/lib/__tests__/visible-chat-text.test.ts` 도구 JSON이 채팅 본문에 보이지 않는다 | 포트를 뺏겨도 BGM이 조용히 빠지지 않는다 |
 
 ## UC-BGM-ORPHAN-PORT-RECOVERY — 고아 sidecar가 BGM 포트를 선점해도 다음 실행이 회복한다 (#517)
 
@@ -1930,6 +1931,9 @@ Test Coverage Map (P02)
 ## UC-TOOLS-SURFACE-611 — model-facing tool boundary
 
 Naia가 대화나 음성 세션을 시작할 때 모델에 전달되는 도구는 제품에 남긴 관찰·표현 표면만 포함한다: 시간, 날씨, 메모, 워크스페이스 파일 읽기, YouTube BGM, 인앱 브라우저. 기억은 별도 자동 회상·저장 경로로 남기며 모델 도구 이름으로 만들지 않는다. 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 풀, ADK `SKILL.md` 로더, 알림 및 그 밖의 작업 도구는 모델 목록에서 사라진다.
+Exception #687: `skill_workspace_edit_open_file` (open editor file only, per-edit approval) — see UC-WORKSPACE-OPEN-FILE-EDIT-687.
+
+#699 (2026-09-23 루크 「다 고쳐」): 회사 질문은 세션의 몇 번째 턴이든 지식 도구로 답할 수 있다. 첫 턴에도 제외 목록이 온전히 적용되어 미허용 작업 도구가 노출되는 첫 턴 갭이 제거된다. 받지 못하면(시간 초과·실패) 그 턴은 도구 없이 보낸다. 이전 목록을 재사용하지 않는다(새로 등록된 도구가 열리는 것을 막기 위해). 음성 경로 실기 확인: `e2e-tauri/specs/94-voice-6g-shell.spec.ts`(`test:e2e:tauri:voice-6g`) win-rtx4060 통과 2026-09-23 18:31 KST (1:55, main=nextain/deepseek-v4-flash via api.nextain.io, 설치 런타임 격리 복사본 + CC0 테스트 음색; 하네스 provider 전환은 #704 의 599d9475 를 커밋 없이 적용).
 
 | 상태 | 사용자 기대 |
 |---|---|
@@ -1944,7 +1948,7 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
-| UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: keep list exactness, removed-name filtering, app/voice list parity | `packages/shell/src/components/__tests__/SkillsTab.test.tsx`: loading, empty, error, filtered success and disabled-state rendering; `packages/shell/e2e/naia-omni-voice-tools.spec.ts`: voice skill-list wiring |
+| UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: keep list exactness, removed-name filtering, app/voice list parity; `packages/shell/src/lib/__tests__/model-tool-boundary.test.ts`: boundary cache, race/timeout, turn parity, fail-closed; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: turn 1 & turn 2 parity, rejected fetch fail-closed | `packages/shell/src/components/__tests__/SkillsTab.test.tsx`: loading, empty, error, filtered success and disabled-state rendering; `packages/shell/e2e/naia-omni-voice-tools.spec.ts`: voice skill-list wiring; `packages/shell/e2e/chat-tools.spec.ts`: turn 1 and turn 2 offer the same tools, knowledge stays available; Real-shell E2E (도구 이름 기록) pending for Luke |
 
 P04 must preserve the existing browser and YouTube UI paths while proving that removed work tools are absent from the model-facing list. The contract test is the authoritative exact-list check; UI evidence covers loading, empty, success, error, keyboard-visible cards and the narrow layout already owned by SkillsTab.
 
@@ -1984,7 +1988,7 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
-| UC-WORKSPACE-BIND-651 | naia-agent `workspace-bind.contract.test.ts` + `codex-app-server-provider.contract.test.ts` | shell spawn cwd follows ADK path (Rust `current_dir`) |
+| UC-WORKSPACE-BIND-651 | naia-agent `workspace-bind.contract.test.ts` + `codex-app-server-provider.contract.test.ts` | shell spawn cwd follows ADK path (Rust `current_dir`) | Codex와 fs 도구가 셸이 정한 작업 공간 루트에서 실행된다 |
 
 ## UC-WORKSPACE-AI-CONTEXT-AND-CONTROL (#680) — AI workspace/Herdr context awareness and terminal/UI control
 
@@ -2003,7 +2007,40 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
-| UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` |
+| UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` | AI가 작업 공간·Herdr 상태를 알고 터미널과 화면을 제어한다 |
+
+## UC-WORKSPACE-OPEN-FILE-EDIT-687 — AI edits the open editor file with per-edit approval
+
+- **Actor**: 사용자, AI 에이전트(Naia)
+- **Preconditions**: 워크스페이스 앱이 활성화되어 있고 편집기에 파일이 하나 열려 있음.
+- **Main Flow**:
+  1. 사용자가 워크스페이스 편집기에 파일을 열고 Naia에게 내용 수정을 요청한다.
+  2. Naia가 `skill_workspace_edit_open_file`을 호출한다.
+  3. 편집기 상단에 변경 diff 미리보기 패널(OpenFileEditReview)과 카운트다운 타이머(50초)가 나타난다.
+  4. 사용자가 변경 내용을 확인하고 '승인' 버튼을 누른다.
+  5. 파일이 디스크에 저장되고 편집기 버퍼가 갱신되며, 에이전트에게 applied 결과가 반환된다.
+- **Alternates**:
+  - **거절(Reject)**: 사용자가 '거절' 버튼을 누르거나 Escape 키를 누르면 아무것도 저장하지 않고 rejected 반환.
+  - **시간초과(Timeout)**: 50초 동안 응답이 없으면 패널이 닫히고 저장 없이 rejected 반환.
+  - **파일 전환(Switched)**: 승인 대기 중 다른 탭으로 전환하거나 문서를 닫으면 저장 없이 rejected 반환.
+  - **불일치(Stale)**: 미리보기 생성 후 디스크나 편집기 내용이 바뀌면(sha256 불일치) 저장하지 않고 stale 반환.
+  - **거부(Denied)**: 민감 경로(`.env`, `id_rsa`, `data-private` 등)나 naia-settings, 또는 1MB 초과 파일은 검토 창 없이 denied 반환.
+  - **Herdr 비활성(Herdr down)**: Herdr 터미널 스냅샷이 없어도 열린 파일 컨텍스트는 정상 전달된다(herdr=null).
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 워크스페이스 편집기에 열린 파일에 대해 수정을 요청하기 전까지는 편집기 상태가 유지된다. |
+| 빈 목록 | 열린 파일이 없으면 도구 호출 시 아무것도 수정할 수 없으며 명확한 안내를 반환한다. |
+| 진행 | diff 미리보기 패널이 표시되고 남은 시간 카운트다운(초)이 1초 간격으로 갱신되며, 승인 전까지 디스크 쓰기는 발생하지 않는다. |
+| 성공 | 사용자가 승인하면 변경사항이 디스크에 기록되고 편집기 내용이 갱신되며 applied 상태를 수신한다. |
+| 오류 | 파일이 stale 상태이거나 민감 경로/1MB 초과로 거부(denied)되면 오류 안내를 표시하고 디스크를 변경하지 않는다. |
+| 좁은 폭 | 좁은 창(900px)에서 편집기 영역 안에 승인/거절 버튼과 카운트다운, diff 영역이 잘리지 않고 온전히 표시된다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI | 확인하는 것 |
+|---|---|---|---|
+| UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, `workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` | 열린 파일만 편집 대상이 되고, 편집마다 승인/거절·시간 초과가 지켜지며, 승인된 편집만 디스크와 편집기에 반영된다 |
 
 ## UC-VOICE-SHARED-CACHE-703 — 개발·운영 인스턴스가 같은 음성 런타임을 한 번만 내려받는다 (#703)
 
@@ -2061,3 +2098,43 @@ Test Coverage Map (P02)
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
 | UC-CHAT-MARKDOWN-FIDELITY-683 | `packages/shell/src/lib/vrm/__tests__/expression.test.ts`: 굵은 글씨·괄호·따옴표·목록·들여쓰기 보존, 영어 무대 지시만 제거; `packages/shell/src/components/__tests__/ChatMarkdown.test.tsx`: 정리 뒤 strong·목록 항목 렌더링 | `packages/shell/e2e/chat-tools.spec.ts`: 실 채팅 UI에서 굵은 글씨와 목록 세 항목 표시, `**` 노출 없음 |
+
+## UC-MEMORY-SURFACING-692 — 작은 LLM이 관련 기억·지식을 떠올린다 (#692)
+
+사용자는 설정의 기억(Memory) 탭에서 작은 LLM(small LLM) 설정을 확인하고 선택할 수 있다. 기본값은 Naia 계정의 `gpt-5.4-nano`이며, 음성 엔진을 쓰지 않아 GPU 여유가 있을 때 로컬 Ollama 또는 vLLM을 선택하거나, 떠오름 기능을 끌 수 있다. 상태 안내 줄은 켜짐(Naia 계정 과금 / 로컬 / 자체 호스트), 작은 LLM 없음, 상속된 과금 제공자로 인한 자동 끔, Naia 게이트웨이 미준비(pending gateway) 상태를 명확히 설명한다. 사용자의 명시적 선택이나 Naia 로그인 없이는 어떠한 과금도 발생하지 않는다. 에이전트는 백그라운드에서 다음 답변 턴을 위해 관련 기억과 지식을 떠올리고 사실을 추출한다. 로그인하지 않은 상태의 로컬 폴백 설계는 #693에서 다루며, 음성/GPU 자동 전환은 후속 과제다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | Naia 로그인 시 작은 LLM 기본값으로 Naia `gpt-5.4-nano`가 설정되며 상태 안내에 켜짐과 과금 계정이 명시된다. |
+| 빈 목록 | 모델이 지정되지 않았거나 로그인되지 않은 경우 "작은 LLM 없음: 떠오름 꺼짐"으로 정직하게 안내되고 과금되지 않는다. |
+| 진행 | 로컬 주소와 모델명을 입력하거나 라디오를 전환하는 즉시 설정이 반영되며 UI가 멈추지 않는다. |
+| 성공 | 로컬 Ollama/vLLM 또는 Naia 모델 선택이 `llmRoles.memory`와 `memorySurfacing`에 정상 영속되고 상태 줄에 반영된다. |
+| 오류 | 게이트웨이에 모델이 아직 없거나 네트워크 단절 시에도 전체 앱이 멈추지 않고 적절한 상태(준비 대기 또는 켜짐)로 동작한다. |
+| 좁은 폭 | 좁은 설정 창에서도 작은 LLM 선택 라디오, 입력 필드, 상태 안내가 잘리지 않고 접근 가능하다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-MEMORY-SURFACING-692 | `packages/shell/src/lib/llm/__tests__/surfacing.test.ts`: LLM 선택 판정·주소 정규화·설정 쓰기·상태 라인; `packages/shell/src/lib/slots/__tests__/settings-slots.contract.test.ts`: Naia 로그인 기본값 및 명시 역할 유지 계약; `packages/shell/src/components/__tests__/SmallLlmSection.test.tsx`: 6개 렌더링/상태/영속 시나리오 (a~f) | `packages/shell/e2e/memory-settings.spec.ts`: 실 UI 설정 탭 작은 LLM 섹션 및 Ollama 모델 영속; E2E(실 셸): 루크 수동 확인 대기 |
+
+## UC-MEMORY-THRESHOLD-693 — 작은 LLM 없이도 관련 기억만 떠오르고, 기억 도구는 늘 있다 (#693)
+
+사용자는 로그인 여부나 작은 LLM 설정과 무관하게 "점수 문턱만 쓰기"(`memorySurfacingJudge: "threshold"`)를 직접 선택할 수 있으며, 이때 떠오름에 작은 LLM을 부르지 않아 비용이 발생하지 않는다. 기억 사실 추출 모델(`llmRoles.memory`)은 재설정되거나 변경되지 않고 그대로 유지된다. 작은 LLM이 없거나 로그인하지 않은 상태에서도 점수 문턱(threshold) 방식으로 관련 기억이 떠오르는 상태를 확인하고, 떠오름 민감도(3단계: 덜 자주 0.88 · 보통 0.86 · 더 자주 0.84, `memorySurfacingLevel`)를 조절할 수 있다. 임베딩이 없거나 꺼진 경우(`memoryEmbeddingProvider: "none"`)에는 관련도를 잴 수 없어 떠오름이 꺼지지만, AI가 필요할 때 기억 도구로 찾을 수 있음을 명확히 안내한다. 떠오름을 끈 상태(`memorySurfacing: "off"`)에서도 자동 회상만 일어나지 않을 뿐 기억 도구(`skill_memory_recall`)는 항상 AI에게 노출되어 직접 조회가 가능하다 (루크 2026-09-23 원칙: 기억 도구 유지, 기억 저장은 자동 유지). 모델 노출 도구 유지 목록(keep-list)에는 읽기 전용인 `skill_memory_recall`이 추가되어 사용자가 떠오름을 끄더라도 기억 기능은 온전히 활용된다. 떠오름을 끈 뒤에도 작은 LLM 없이 다시 켤 수 있다(점수 문턱 선택지).
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 작은 LLM이 없거나 미로그인 시, 또는 사용자가 "점수 문턱만 쓰기"를 선택한 경우 점수 문턱 방식(기본 문턱 0.86)으로 떠오름이 켜지고, 상태 줄에 문턱과 비용 없음(또는 선택 문구)이 표시된다. 사실 추출 모델은 변경되지 않는다. |
+| 빈 목록 | 임베딩이 없는 경우(키워드 검색만 가능) "임베딩이 없어 관련도를 잴 수 없습니다"로 정직하게 안내되고 기억 도구 안내가 표시된다. |
+| 진행 | 민감도 라디오(덜 자주 / 보통 / 더 자주) 선택 시 즉시 로컬 상태가 전환되고 `memorySurfacingLevel` 설정이 영속된다. |
+| 성공 | 떠오름을 끄면 상태 줄에 "알아서 떠오르지 않습니다"와 함께 기억 도구 사용 가능 안내가 표시되며, 민감도 그룹은 숨겨진다. 기억 도구 안내는 모든 상태에서 상시 노출된다. |
+| 오류 | 유효하지 않은 민감도 값이나 설정 누락 시에도 기본값("normal", 0.86)으로 안전하게 폴백 동작한다. |
+| 좁은 폭 | 좁은 화면에서도 작은 LLM 라디오, 민감도 라디오 그룹, 상태 줄, 기억 도구 안내 힌트가 줄바꿈되어 잘림 없이 접근 가능하다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-MEMORY-THRESHOLD-693 | `packages/shell/src/lib/llm/__tests__/surfacing.test.ts`: 새 상태(on-threshold user-choice/off-no-embedding/off-disabled), 판정자(judge) 선택 및 사실 추출 역할 불변성, 민감도 3단계 문턱 읽기·쓰기; `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: `skill_memory_recall` keep-list 포함 및 허용 계약; `packages/shell/src/components/__tests__/SmallLlmSection.test.tsx`: 점수 문턱 상시 노출 및 선택 영속, 선택 상태 텍스트, 민감도 라디오, 꺼짐 시 숨김, 상시 기억 도구 힌트 렌더링 | `packages/shell/e2e/memory-settings.spec.ts`: 실 UI 설정 기억 탭 점수 문턱 상태 표시, 민감도 선택 영속, 꺼짐 전환 및 도구 힌트 노출, memorySurfacingJudge 영속; E2E(실 셸): 루크 확인 대기 |
+
+
