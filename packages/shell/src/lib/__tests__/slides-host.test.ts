@@ -4,6 +4,8 @@ import {
 	isNativeSlidesHost,
 	isTrustedSlidesEntry,
 	isTrustedSlidesFrame,
+	RECORDING_ERROR_DETAIL_LIMIT,
+	recordingFailure,
 	sanitizeSlidesThemeTokens,
 	SLIDES_HOST,
 	SLIDES_HOST_ACTIONS,
@@ -156,5 +158,39 @@ describe("Slides host client contract", () => {
 			});
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe("recordingFailure", () => {
+	it("keeps the code first and appends the host error", () => {
+		expect(
+			recordingFailure(
+				"recording_failed",
+				new Error("current webview is not a WebviewWindow"),
+			),
+		).toBe("recording_failed: current webview is not a WebviewWindow");
+		expect(recordingFailure("recording_failed", "x11 missing")).toBe(
+			"recording_failed: x11 missing",
+		);
+	});
+
+	it("falls back to the bare code for an empty or identical error", () => {
+		expect(recordingFailure("recording_failed", "")).toBe("recording_failed");
+		expect(recordingFailure("recording_failed", "recording_failed")).toBe(
+			"recording_failed",
+		);
+	});
+
+	it("strips control characters and bounds the detail length", () => {
+		const result = recordingFailure(
+			"recording_failed",
+			`line1\nline2\u0007${"x".repeat(1000)}`,
+		);
+		expect(result.startsWith("recording_failed: line1 line2 ")).toBe(true);
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: the test asserts control characters are gone
+		expect(result).not.toMatch(/[\u0000-\u001f]/);
+		expect(result.length).toBe(
+			"recording_failed: ".length + RECORDING_ERROR_DETAIL_LIMIT,
+		);
 	});
 });

@@ -697,6 +697,10 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			// A failed stop retains native ownership, so keep Stop available to
 			// retry — unless the host reports the recording as lost.
 			if (recording && isRecordingLost(error)) setRecording(false);
+			Logger.warn(TAG, "recording toggle failed", {
+				stage: recording ? "stop" : "start",
+				error: String(error),
+			});
 			setRecordingError(
 				`${t("slides.recordingFailed")} (${String(error).replace(/^Error: /, "")})`,
 			);
@@ -826,32 +830,39 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				) : null}
 			</div>
 
-			<SlidesControls
-				state={state}
-				fullscreen={fullscreen}
-				recording={recording}
-				editing={scriptEditorOpen}
-				onAction={runAction}
-				onRangeChange={(start, end) => {
-					cancelSpeech();
-					dispatch({ type: "set-range", start, end });
-				}}
-				onGoto={gotoPage}
-				onToggleRepeat={() => {
-					dispatch({ type: "toggle-repeat" });
-					Logger.info(TAG, "presentation repeat toggled", {
-						enabled: !state.repeat,
-					});
-				}}
-				onToggleFullscreen={() => void toggleFullscreen()}
-				onToggleRecording={() => void toggleRecording()}
-			/>
-			<SlidesErrorNotice
-				speechError={Boolean(state.error)}
-				recordingError={recordingError}
-				fullscreenError={fullscreenError}
-				fileError={fileError}
-			/>
+			<div className="slides-app__dock">
+				<SlidesControls
+					state={state}
+					fullscreen={fullscreen}
+					recording={recording}
+					editing={scriptEditorOpen}
+					onAction={runAction}
+					onRangeChange={(start, end) => {
+						cancelSpeech();
+						dispatch({ type: "set-range", start, end });
+					}}
+					onGoto={gotoPage}
+					onToggleRepeat={() => {
+						dispatch({ type: "toggle-repeat" });
+						Logger.info(TAG, "presentation repeat toggled", {
+							enabled: !state.repeat,
+						});
+					}}
+					onToggleFullscreen={() => void toggleFullscreen()}
+					onToggleRecording={() => void toggleRecording()}
+				/>
+				{/* Notices float above the controls instead of joining the column:
+				    an in-flow error line shrank the viewer and moved the buttons
+				    up, so a click aimed at "Start presenting" landed elsewhere. */}
+				<div className="slides-app__notices" data-testid="slides-notices">
+					<SlidesErrorNotice
+						speechError={Boolean(state.error)}
+						recordingError={recordingError}
+						fullscreenError={fullscreenError}
+						fileError={fileError}
+					/>
+				</div>
+			</div>
 		</section>
 	);
 }

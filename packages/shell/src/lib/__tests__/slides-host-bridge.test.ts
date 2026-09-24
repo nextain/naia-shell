@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Logger } from "../logger";
 import {
 	SLIDES_HOST,
 	SLIDES_HOST_ACTIONS,
@@ -234,6 +235,84 @@ describe("installed Slides host bridge", () => {
 			),
 		);
 		expect(host.reply.mock.calls.at(-1)?.[0]).not.toHaveProperty("capability");
+	});
+
+	it("passes the host's start error to the frame and the log instead of a bare code", async () => {
+		// 2026-09-24 recording shell: the Rust command failed before it ran
+		// ("current webview is not a WebviewWindow") and the frame only ever saw
+		// `recording_failed`, with nothing in the log.
+		const start = vi
+			.fn<() => Promise<void>>()
+			.mockRejectedValueOnce(
+				new Error("current webview is not a WebviewWindow"),
+			)
+			.mockResolvedValue(undefined);
+		const stop = vi
+			.fn<() => Promise<string>>()
+			.mockResolvedValue("video/a.mp4");
+		const host = setup({ start, stop });
+		host.send(SLIDES_HOST_ACTIONS.hello, "hello-fail");
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "start-fail");
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({
+					id: "start-fail",
+					ok: false,
+					error: "recording_failed: current webview is not a WebviewWindow",
+				}),
+				ORIGIN,
+			),
+		);
+		expect(Logger.warn).toHaveBeenCalledWith(
+			"SlidesHostBridge",
+			"Slides recording start failed",
+			{ error: "Error: current webview is not a WebviewWindow" },
+		);
+		// The failed start releases ownership, so the frame can try again.
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "start-retry");
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({ id: "start-retry", ok: true }),
+				ORIGIN,
+			),
+		);
+		host.send(SLIDES_HOST_ACTIONS.recordingStop, "stop-after-retry");
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({ id: "stop-after-retry", ok: true }),
+				ORIGIN,
+			),
+		);
+	});
+
+	it("passes the host's stop error to the frame and keeps the recording owned", async () => {
+		const start = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+		const stop = vi
+			.fn<() => Promise<string>>()
+			.mockRejectedValueOnce("recording lock poisoned")
+			.mockResolvedValue("video/ok.mp4");
+		const host = setup({ start, stop });
+		host.send(SLIDES_HOST_ACTIONS.hello, "hello-stopfail");
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "start-stopfail");
+		await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+		host.send(SLIDES_HOST_ACTIONS.recordingStop, "stop-fail");
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({
+					id: "stop-fail",
+					ok: false,
+					error: "recording_failed: recording lock poisoned",
+				}),
+				ORIGIN,
+			),
+		);
+		host.send(SLIDES_HOST_ACTIONS.recordingStop, "stop-retry");
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({ id: "stop-retry", ok: true }),
+				ORIGIN,
+			),
+		);
 	});
 
 	it("releases ownership and reports recording_lost when the host recording is gone", async () => {

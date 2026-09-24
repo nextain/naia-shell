@@ -142,11 +142,17 @@ pub fn app_sandbox_open_in_workspace(app: AppHandle, adk_path: String, app_id: S
 }
 /// The shell's own toplevel on Linux: its X11 XID and display, or `NotX11`
 /// when GTK runs as a native Wayland client. Read on the GTK main thread.
+///
+/// Takes the calling `Webview`, not a `WebviewWindow`: once the browser app's
+/// child webview is attached to the main window, Tauri no longer treats that
+/// window as a WebviewWindow (`Window::is_webview_window` requires every
+/// webview to share the window label), so a `WebviewWindow` command argument
+/// fails with "current webview is not a WebviewWindow" before the command runs.
 #[cfg(target_os = "linux")]
-fn linux_shell_window(window: &tauri::WebviewWindow) -> Result<crate::slides_recording::LinuxWindow, String> {
+fn linux_shell_window(webview: &tauri::Webview) -> Result<crate::slides_recording::LinuxWindow, String> {
     use crate::slides_recording::LinuxWindow;
     let (sender, receiver) = std::sync::mpsc::channel();
-    window
+    webview
         .with_webview(move |platform| {
             use gtk::prelude::*;
             let found = platform
@@ -170,16 +176,24 @@ fn linux_shell_window(window: &tauri::WebviewWindow) -> Result<crate::slides_rec
 }
 
 #[tauri::command]
-pub async fn slides_recording_start(window: tauri::WebviewWindow, adk_path: String) -> Result<(), String> {
+pub async fn slides_recording_start(webview: tauri::Webview, adk_path: String) -> Result<(), String> {
+    let result = slides_recording_start_inner(webview, adk_path).await;
+    if let Err(error) = &result {
+        crate::log_both(&format!("[slides-recording] start failed: {error}"));
+    }
+    result
+}
+
+async fn slides_recording_start_inner(webview: tauri::Webview, adk_path: String) -> Result<(), String> {
     use crate::slides_recording::{audio_input, capture_target, ffmpeg_args, Platform, Recorder, AUDIO_SOURCE_ENV, STARTUP_PROBE};
     let recording = RECORDING.get_or_init(|| Mutex::new(None));
     if recording.lock().map_err(|_| "recording lock poisoned")?.is_some() {
         return Err("recording already active".into());
     }
     #[cfg(target_os = "linux")]
-    let linux = Some(linux_shell_window(&window)?);
+    let linux = Some(linux_shell_window(&webview)?);
     #[cfg(not(target_os = "linux"))]
-    let linux = { let _ = &window; None };
+    let linux = { let _ = &webview; None };
     let platform = Platform::current();
     let target = capture_target(platform, linux, std::env::var("DISPLAY").ok())?;
     let audio = audio_input(platform, std::env::var(AUDIO_SOURCE_ENV).ok().as_deref());
@@ -202,6 +216,14 @@ pub async fn slides_recording_start(window: tauri::WebviewWindow, adk_path: Stri
 }
 #[tauri::command]
 pub async fn slides_recording_stop() -> Result<String, String> {
+    let result = slides_recording_stop_inner().await;
+    if let Err(error) = &result {
+        crate::log_both(&format!("[slides-recording] stop failed: {error}"));
+    }
+    result
+}
+
+async fn slides_recording_stop_inner() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let recording = RECORDING.get_or_init(|| Mutex::new(None));
         let recorder = recording.lock().map_err(|_| "recording lock poisoned")?.take().ok_or("recording is not active")?;
@@ -438,5 +460,55 @@ mod app_sandbox_escape_tests {
                 "여러 스레드의 내용이 한 파일에 섞였다"
             );
         }
+    }
+}
+
+/// A `WebviewWindow` command argument only resolves while every webview in
+/// the window shares its label (tauri `Window::is_webview_window`). The main
+/// window gains the browser app's child webview at startup, after which such a
+/// command fails with "current webview is not a WebviewWindow" before its body
+/// runs — the 2026-09-24 MP4 recording failure. Commands take `Webview` or
+/// `Window` instead.
+#[cfg(test)]
+mod command_argument_tests {
+    fn command_signatures(source: &str) -> Vec<String> {
+        let mut signatures = Vec::new();
+        let mut rest = source;
+        while let Some(at) = rest.find("#[tauri::command]") {
+            rest = &rest[at + "#[tauri::command]".len()..];
+            let Some(fn_at) = rest.find("fn ") else { break };
+            let signature_end = rest[fn_at..].find('{').map(|end| fn_at + end).unwrap_or(rest.len());
+            signatures.push(rest[fn_at..signature_end].to_string());
+        }
+        signatures
+    }
+
+    #[test]
+    fn no_command_takes_a_webview_window_argument() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders = Vec::new();
+        let mut commands = 0;
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).unwrap();
+            for signature in command_signatures(&source) {
+                commands += 1;
+                if signature.contains("WebviewWindow") {
+                    offenders.push(format!("{}: {}", path.display(), signature.lines().next().unwrap_or("")));
+                }
+            }
+        }
+        assert!(commands > 50, "command scan found only {commands} commands");
+        assert!(offenders.is_empty(), "commands taking WebviewWindow: {offenders:#?}");
+    }
+
+    #[test]
+    fn signature_scan_sees_a_webview_window_argument() {
+        // Split so this fixture is not itself a command in the scanned source.
+        let source = concat!("#[tauri::", "command]\npub async fn f(window: tauri::Webview", "Window, a: String) -> Result<(), String> {\n}");
+        assert!(command_signatures(source)[0].contains("WebviewWindow"));
     }
 }

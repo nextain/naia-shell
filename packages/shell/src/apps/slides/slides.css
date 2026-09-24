@@ -374,10 +374,38 @@
 	color: var(--text-primary);
 }
 
+/* The dock holds the controls; notices are positioned against it so that an
+   error appearing never changes the height of any in-flow box (a new error
+   line used to push the button bar up under the pointer). */
+.slides-app__dock {
+	position: relative;
+	flex: none;
+}
+
+.slides-app__notices {
+	position: absolute;
+	right: 22px;
+	bottom: 100%;
+	left: 22px;
+	z-index: 3;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	padding-bottom: 6px;
+	pointer-events: none;
+}
+
 .slides-app__error {
-	padding: 0 22px 12px;
+	max-width: 100%;
+	padding: 6px 12px;
+	border: 1px solid rgb(239 91 104 / 45%);
+	border-radius: 8px;
+	background: var(--bg-primary);
 	font-size: 12px;
 	text-align: center;
+	overflow-wrap: anywhere;
+	pointer-events: auto;
 }
 
 @container (max-width: 760px) {

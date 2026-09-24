@@ -8,6 +8,7 @@ import {
 	isRecordingLost,
 	isTrustedSlidesFrame,
 	readSlidesThemeTokens,
+	recordingFailure,
 	startSlidesRecording,
 	stopSlidesRecording,
 } from "./slides-host";
@@ -386,7 +387,10 @@ export function installSlidesHostBridge(
 						);
 						return;
 					}
-					errorReply(requestId, "recording_failed");
+					Logger.warn("SlidesHostBridge", "Slides recording start failed", {
+						error: String(error),
+					});
+					errorReply(requestId, recordingFailure("recording_failed", error));
 				});
 			return;
 		}
@@ -465,7 +469,10 @@ export function installSlidesHostBridge(
 					);
 					return;
 				}
-				errorReply(requestId, "recording_failed");
+				Logger.warn("SlidesHostBridge", "Slides recording stop failed", {
+					error: String(error),
+				});
+				errorReply(requestId, recordingFailure("recording_failed", error));
 			});
 	};
 

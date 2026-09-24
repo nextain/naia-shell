@@ -499,6 +499,25 @@ export async function stopSlidesRecording(): Promise<string> {
  */
 export const SLIDES_RECORDING_LOST = "recording_lost";
 
+/** Longest host error text passed on to the app frame and shown to the user. */
+export const RECORDING_ERROR_DETAIL_LIMIT = 240;
+
+/**
+ * `code: <host error>` for a failed recording operation. The code stays first
+ * so callers that look for it keep working; the host's own error follows so
+ * the presenter and the log see why (before this, every host failure reached
+ * the app as a bare `recording_failed`).
+ */
+export function recordingFailure(code: string, error: unknown): string {
+	const detail = String(error)
+		.replace(/^Error: /, "")
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: strip control characters from host text
+		.replace(/[\u0000-\u001f\u007f]+/g, " ")
+		.trim()
+		.slice(0, RECORDING_ERROR_DETAIL_LIMIT);
+	return detail && detail !== code ? `${code}: ${detail}` : code;
+}
+
 export function isRecordingLost(error: unknown): boolean {
 	return String(error).includes(SLIDES_RECORDING_LOST);
 }
