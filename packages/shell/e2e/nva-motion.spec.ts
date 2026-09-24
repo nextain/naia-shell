@@ -11,8 +11,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLIP_B64 = readFileSync(
 	join(__dirname, "fixtures", "base-alpha-200.webm"),
 ).toString("base64");
-const CAPTURES_DIR =
-	"/var/home/luke/alpha-adk/.agents/work/naia-res/nva-live2d/captures";
 
 const NVA_MOTION_MOCK = `
 (function () {
@@ -78,7 +76,7 @@ function countPixelDiffs(p1: number[], p2: number[], threshold = 15): number {
 test.describe("UC-NVA-MOTION — Live2D motion and head follow (P04)", () => {
 	test("verifies motion at 1.5s interval, reducedMotion zero-diff, and narrow viewport responsiveness", async ({
 		page,
-	}) => {
+	}, testInfo) => {
 		test.setTimeout(60_000);
 
 		await page.addInitScript(NVA_MOTION_MOCK);
@@ -128,90 +126,48 @@ test.describe("UC-NVA-MOTION — Live2D motion and head follow (P04)", () => {
 		});
 		await page.waitForTimeout(300);
 
-		// (a) 기본값에서 약 1.5초 간격 두 캡처의 머리 영역 픽셀이 다르다.
-		await canvas.screenshot({
-			path: `${CAPTURES_DIR}/motion-t0.png`,
-		});
-
-		const headPixelsT0 = await page.evaluate(() => {
-			const c = document.querySelector<HTMLCanvasElement>(
-				"[data-video-avatar-prebaked]",
-			);
-			if (!c) return null;
-			const ctx = c.getContext("2d");
-			if (!ctx) return null;
-			// 머리/상체 영역 (200x200 중 x: 30..170, y: 40..120)
-			return Array.from(ctx.getImageData(30, 40, 140, 80).data);
-		});
-		expect(headPixelsT0).not.toBeNull();
-		const t0Max = Math.max(...headPixelsT0!);
-		console.log("t0Max:", t0Max);
-
-		await page.waitForTimeout(1500);
-
-		await canvas.screenshot({
-			path: `${CAPTURES_DIR}/motion-t1500.png`,
-		});
-
-		const headPixelsT1500 = await page.evaluate(() => {
-			const c = document.querySelector<HTMLCanvasElement>(
-				"[data-video-avatar-prebaked]",
-			);
-			if (!c) return null;
-			const ctx = c.getContext("2d");
-			if (!ctx) return null;
-			return Array.from(ctx.getImageData(30, 40, 140, 80).data);
-		});
-		expect(headPixelsT1500).not.toBeNull();
-
-		const motionDiffs = countPixelDiffs(headPixelsT0!, headPixelsT1500!);
-		// 움직임(숨쉬기+흔들림)으로 인해 머리 경계 픽셀에 유의미한 차이가 존재해야 함
-		expect(motionDiffs).toBeGreaterThan(30);
-
-		// (b) page.emulateMedia({ reducedMotion: 'reduce' })이면 움직임에 의한 차이가 없다.
-		// 클립 자체의 영상 압축 노이즈/반복 재생 영향을 분리하기 위해 비디오를 정지하여 순수 절차적 움직임 효과만 격리.
-		await page.emulateMedia({ reducedMotion: "reduce" });
+		// 클립 자체의 재생·압축 변화를 빼기 위해 영상을 멈춘다. 이후 화면 변화는 절차적 움직임뿐이다.
 		await page.evaluate(() => {
-			const v = document.querySelector("video");
-			if (v) v.pause();
+			for (const v of document.querySelectorAll("video")) v.pause();
 		});
-		await page.waitForTimeout(400);
+		await page.waitForTimeout(300);
 
-		await canvas.screenshot({
-			path: `${CAPTURES_DIR}/reduced-motion-t0.png`,
-		});
+		const readHead = () =>
+			page.evaluate(() => {
+				const c = document.querySelector<HTMLCanvasElement>(
+					"[data-video-avatar-prebaked]",
+				);
+				const ctx = c?.getContext("2d");
+				if (!ctx) return null;
+				// 머리/상체 영역 (200x200 중 x: 30..170, y: 40..120)
+				return Array.from(ctx.getImageData(30, 40, 140, 80).data);
+			});
 
-		const redPixelsT0 = await page.evaluate(() => {
-			const c = document.querySelector<HTMLCanvasElement>(
-				"[data-video-avatar-prebaked]",
-			);
-			if (!c) return null;
-			const ctx = c.getContext("2d");
-			if (!ctx) return null;
-			return Array.from(ctx.getImageData(30, 40, 140, 80).data);
-		});
-		expect(redPixelsT0).not.toBeNull();
-
+		// (a) 기본값에서 약 1.5초 간격 두 캡처의 머리 영역 픽셀이 다르다.
+		await canvas.screenshot({ path: testInfo.outputPath("motion-t0.png") });
+		const motionT0 = await readHead();
 		await page.waitForTimeout(1500);
+		await canvas.screenshot({ path: testInfo.outputPath("motion-t1500.png") });
+		const motionT1500 = await readHead();
+		expect(motionT0).not.toBeNull();
+		expect(motionT1500).not.toBeNull();
+		expect(countPixelDiffs(motionT0!, motionT1500!)).toBeGreaterThan(30);
 
+		// (b) 움직임 줄이기면 같은 정지 영상에서 1.5초 뒤에도 픽셀이 같다.
+		await page.emulateMedia({ reducedMotion: "reduce" });
+		await page.waitForTimeout(400);
 		await canvas.screenshot({
-			path: `${CAPTURES_DIR}/reduced-motion-t1500.png`,
+			path: testInfo.outputPath("reduced-motion-t0.png"),
 		});
-
-		const redPixelsT1500 = await page.evaluate(() => {
-			const c = document.querySelector<HTMLCanvasElement>(
-				"[data-video-avatar-prebaked]",
-			);
-			if (!c) return null;
-			const ctx = c.getContext("2d");
-			if (!ctx) return null;
-			return Array.from(ctx.getImageData(30, 40, 140, 80).data);
+		const reducedT0 = await readHead();
+		await page.waitForTimeout(1500);
+		await canvas.screenshot({
+			path: testInfo.outputPath("reduced-motion-t1500.png"),
 		});
-		expect(redPixelsT1500).not.toBeNull();
-
-		const reducedDiffs = countPixelDiffs(redPixelsT0!, redPixelsT1500!);
-		// 정지 클립에서 움직임 줄이기 적용 시 1.5초 간격에도 픽셀 차이가 0이어야 함
-		expect(reducedDiffs).toBe(0);
+		const reducedT1500 = await readHead();
+		expect(reducedT0).not.toBeNull();
+		expect(reducedT1500).not.toBeNull();
+		expect(countPixelDiffs(reducedT0!, reducedT1500!)).toBe(0);
 
 		// (c) 좁은 창에서도 캐릭터가 잘리지 않는다.
 		await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -219,10 +175,10 @@ test.describe("UC-NVA-MOTION — Live2D motion and head follow (P04)", () => {
 		await page.waitForTimeout(400);
 
 		await page.screenshot({
-			path: `${CAPTURES_DIR}/narrow-window.png`,
+			path: testInfo.outputPath("narrow-window.png"),
 		});
 		await canvas.screenshot({
-			path: `${CAPTURES_DIR}/narrow-avatar.png`,
+			path: testInfo.outputPath("narrow-avatar.png"),
 		});
 
 		const box = await canvas.boundingBox();

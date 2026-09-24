@@ -340,6 +340,15 @@ describe("nva-procedural-motion", () => {
 					}),
 				).toBeNull();
 			});
+
+			it("returns null if any frame scale is zero or negative", () => {
+				expect(
+					parseHeadTrack({ head_track: { fps: 25, frames: [[0, 0, 0, 0]] } }),
+				).toBeNull();
+				expect(
+					parseHeadTrack({ head_track: { fps: 25, frames: [[0, 0, 0, -1]] } }),
+				).toBeNull();
+			});
 		});
 
 		describe("headTrackFrameAt", () => {

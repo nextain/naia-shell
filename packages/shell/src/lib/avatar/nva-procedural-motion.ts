@@ -340,7 +340,8 @@ export function parseHeadTrack(anim: unknown): HeadTrackSpec | null {
 			typeof f[2] !== "number" ||
 			!Number.isFinite(f[2]) ||
 			typeof f[3] !== "number" ||
-			!Number.isFinite(f[3])
+			!Number.isFinite(f[3]) ||
+			f[3] <= 0
 		) {
 			return null;
 		}
