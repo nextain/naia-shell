@@ -231,6 +231,26 @@ export type TtsProviderId =
 
 export type AppPosition = "left" | "right" | "bottom";
 
+export type ThinkingLevel = "off" | "low" | "high";
+
+/**
+ * 생각 세기 마이그레이션 및 정규화 (#709 / FR-CHAT-THINKING.4)
+ * - thinkingLevel이 유효한 값이면 그대로 사용
+ * - 부재/무효 시 enableThinking === true 이면 "low", 그 밖에는 "off"
+ */
+export function resolveThinkingLevel(
+	config?: Partial<Pick<AppConfig, "thinkingLevel" | "enableThinking">> | null,
+): ThinkingLevel {
+	if (
+		config?.thinkingLevel === "off" ||
+		config?.thinkingLevel === "low" ||
+		config?.thinkingLevel === "high"
+	) {
+		return config.thinkingLevel;
+	}
+	return config?.enableThinking === true ? "low" : "off";
+}
+
 /** Development tiers are expert/main/sub; memory remains orthogonal. */
 export type LlmRoleId = "expert" | "main" | "sub" | "memory";
 export interface LlmRoleConfig {
@@ -323,6 +343,7 @@ export interface AppConfig {
 	personaDisabled?: boolean;
 	enableTools?: boolean;
 	enableThinking?: boolean;
+	thinkingLevel?: ThinkingLevel;
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	chatRouting?: "gateway" | "direct" | "auto";

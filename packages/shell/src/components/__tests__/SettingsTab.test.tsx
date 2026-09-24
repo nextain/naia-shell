@@ -67,6 +67,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 			nativeSecrets.delete(args!.name!);
 			return secureStoreMock.delete(args?.name);
 		}
+		if (command === "device_list" || command === "device_list_requests") return [];
 		const result = await mockInvoke(...call);
 		// Older fixtures use [] as their catch-all. Native config reads return
 		// JSON text; CLI discovery returns a snapshot, never a bare array.
@@ -3812,3 +3813,153 @@ describe("SettingsTab — 로컬 음성 카드 선택 (#537)", () => {
 		});
 	});
 });
+
+describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THINKING.3)", () => {
+	beforeEach(() => {
+		localStorage.clear();
+	});
+
+	it("renders segmented radiogroup with off by default and checks aria attributes", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+			}),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		const radiogroup = await screen.findByRole("radiogroup", {
+			name: /생각 세기|Thinking Level/i,
+		});
+		expect(radiogroup).toBeTruthy();
+
+		const offRadio = screen.getByTestId("thinking-level-off");
+		const lowRadio = screen.getByTestId("thinking-level-low");
+		const highRadio = screen.getByTestId("thinking-level-high");
+
+		expect(offRadio.getAttribute("role")).toBe("radio");
+		expect(lowRadio.getAttribute("role")).toBe("radio");
+		expect(highRadio.getAttribute("role")).toBe("radio");
+
+		expect(offRadio.getAttribute("aria-checked")).toBe("true");
+		expect(lowRadio.getAttribute("aria-checked")).toBe("false");
+		expect(highRadio.getAttribute("aria-checked")).toBe("false");
+	});
+
+	it("persists thinkingLevel and enableThinking immediately on radio button click", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+			}),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		const lowRadio = await screen.findByTestId("thinking-level-low");
+		fireEvent.click(lowRadio);
+
+		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.thinkingLevel).toBe("low");
+			expect(saved.enableThinking).toBe(true);
+		});
+
+		const highRadio = screen.getByTestId("thinking-level-high");
+		fireEvent.click(highRadio);
+
+		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.thinkingLevel).toBe("high");
+			expect(saved.enableThinking).toBe(true);
+		});
+
+		const offRadio = screen.getByTestId("thinking-level-off");
+		fireEvent.click(offRadio);
+
+		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.thinkingLevel).toBe("off");
+			expect(saved.enableThinking).toBe(false);
+		});
+	});
+
+	it("supports keyboard arrow navigation between radio buttons", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+			}),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		const offRadio = await screen.findByTestId("thinking-level-off");
+		expect(offRadio.getAttribute("aria-checked")).toBe("true");
+
+		// ArrowRight from off -> low
+		fireEvent.keyDown(offRadio, { key: "ArrowRight" });
+		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.thinkingLevel).toBe("low");
+			expect(saved.enableThinking).toBe(true);
+		});
+
+		const lowRadio = screen.getByTestId("thinking-level-low");
+		expect(lowRadio.getAttribute("aria-checked")).toBe("true");
+
+		// ArrowRight from low -> high
+		fireEvent.keyDown(lowRadio, { key: "ArrowRight" });
+		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.thinkingLevel).toBe("high");
+			expect(saved.enableThinking).toBe(true);
+		});
+
+		const highRadio = screen.getByTestId("thinking-level-high");
+		// ArrowLeft from high -> low
+		fireEvent.keyDown(highRadio, { key: "ArrowLeft" });
+		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.thinkingLevel).toBe("low");
+			expect(saved.enableThinking).toBe(true);
+		});
+	});
+
+	it("retains thinkingLevel and enableThinking during full handleSave()", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+			}),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		const highRadio = await screen.findByTestId("thinking-level-high");
+		fireEvent.click(highRadio);
+
+		// Click Save button
+		const saveBtn = document.querySelector(
+			".settings-save-btn",
+		) as HTMLButtonElement;
+		expect(saveBtn).toBeTruthy();
+		fireEvent.click(saveBtn);
+
+		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.thinkingLevel).toBe("high");
+			expect(saved.enableThinking).toBe(true);
+		});
+	});
+});
+

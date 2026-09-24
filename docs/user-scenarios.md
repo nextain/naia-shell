@@ -2171,3 +2171,24 @@ Test Coverage Map (P02)
 
 
 
+## UC-THINKING-LEVEL-709 — 생각 세기 설정(끔/낮음/높음) (#709)
+
+사용자는 설정에서 생각 세기(끔/낮음/높음, 기본값 "끔")를 선택할 수 있다. 생각 세기는 세 개의 라디오 분절 버튼(`role="radiogroup"`)으로 제공되며, 키보드 좌우 화살표 키로 이동 및 선택할 수 있다. 선택 즉시 설정이 영속되고, 설정 탭 전체 저장(`handleSave`) 시에도 `thinkingLevel`과 `enableThinking`이 보존된다. 채팅 전송 시 선택된 세기와 불리언 플래그가 에이전트에 명시적으로 전달되며(끔인 경우에도 명시 전달), 생각을 켠 상태에서는 답변 생성 중 생각(Reasoning) 아코디언이 접힌 상태로 스트리밍 및 표시된다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 기본값은 끔("off")이며 생각(추론) 단계 없이 빠르게 답변한다. |
+| 빈 목록 | 해당 없음 — 세 가지 선택지(끔/낮음/높음)가 고정 제공된다. |
+| 진행 | 라디오 버튼을 선택하는 즉시 반영되며, 생각을 켠 상태로 대화 시 답변 생성 중 생각(Reasoning) 아코디언이 접힌 상태로 표시된다. |
+| 성공 | 라디오 선택 즉시 설정이 영속되고 전체 저장 시에도 두 필드가 유지된다. 채팅 전송 시 `thinking.level`과 `enableThinking`이 에이전트로 명시적 전달된다. |
+| 오류 | 선택은 다른 설정과 같은 저장 경로(로컬 설정 + 설정 파일)를 쓰며, 이번 변경은 저장 실패 알림을 따로 두지 않는다(기존 체크박스와 같음). 잘못되었거나 없는 값은 읽을 때 "off"(옛 `enableThinking: true` 는 "low")로 정규화된다. |
+| 좁은 폭 | 360px 등 좁은 화면에서도 3개 라디오 분절 버튼이 줄바꿈되거나 잘리지 않고 온전하게 접근 가능하다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
+
+
+

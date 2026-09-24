@@ -146,6 +146,8 @@ export interface AgentRequest {
 	ttsApiKey?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
 	enableTools?: boolean;
+	enableThinking?: boolean;
+	thinking?: { level: "off" | "low" | "high" };
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	disabledSkills?: string[];

@@ -99,6 +99,7 @@ interface SendChatOptions {
 	enableTools?: boolean;
 	/** Enable thinking/reasoning output from models that support it. */
 	enableThinking?: boolean;
+	thinking?: { level: "off" | "low" | "high" };
 	gatewayUrl?: string;
 	disabledSkills?: string[];
 	/** Enabled coding CLI names from the Skills tab (#605). */
@@ -259,6 +260,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 			...(opts.enableThinking !== undefined
 				? { enableThinking: opts.enableThinking }
 				: {}),
+			...(opts.thinking !== undefined ? { thinking: opts.thinking } : {}),
 			...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
 			...(opts.disabledSkills !== undefined
 				? { disabledSkills: opts.disabledSkills }
@@ -292,6 +294,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		environmentSegments,
 		enableTools,
 		enableThinking,
+		thinking,
 		gatewayUrl,
 		disabledSkills,
 		enabledClis,
@@ -327,6 +330,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 			environmentSegments.length > 0 && { environmentSegments }),
 		...(enableTools != null && { enableTools }),
 		...(enableThinking != null && { enableThinking }),
+		...(thinking && { thinking }),
 		...(gatewayUrl && { gatewayUrl }),
 		...(disabledSkills && disabledSkills.length > 0 && { disabledSkills }),
 		...(enabledClis && enabledClis.length > 0 && { enabledClis }),

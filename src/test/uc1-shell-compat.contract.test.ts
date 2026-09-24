@@ -109,4 +109,35 @@ describe("makeShellChatService (drop-in seam)", () => {
     expect(msg.apiKey).toBe("sk-x");
     expect(msg.adkPath).toBeUndefined();
   });
+  it("thinking: level 유효값(off/low/high) 전달 및 무효값 필터링 (#709)", async () => {
+    const { live, invokes } = mockTauri();
+    const svc = makeShellChatService({ live });
+    await svc.sendChatMessage({
+      message: "hi", provider: { provider: "gemini", model: "flash" },
+      history: [], onChunk: () => {}, requestId: "r-high",
+      thinking: { level: "high" },
+      enableThinking: true,
+    });
+    const msgHigh = JSON.parse(invokes[0]!.args["message"] as string);
+    expect(msgHigh.thinking).toEqual({ level: "high" });
+    expect(msgHigh.enableThinking).toBe(true);
+
+    await svc.sendChatMessage({
+      message: "hi", provider: { provider: "gemini", model: "flash" },
+      history: [], onChunk: () => {}, requestId: "r-off",
+      thinking: { level: "off" },
+      enableThinking: false,
+    });
+    const msgOff = JSON.parse(invokes[1]!.args["message"] as string);
+    expect(msgOff.thinking).toEqual({ level: "off" });
+    expect(msgOff.enableThinking).toBe(false);
+
+    await svc.sendChatMessage({
+      message: "hi", provider: { provider: "gemini", model: "flash" },
+      history: [], onChunk: () => {}, requestId: "r-invalid",
+      thinking: { level: "unknown" as any },
+    });
+    const msgInvalid = JSON.parse(invokes[2]!.args["message"] as string);
+    expect("thinking" in msgInvalid).toBe(false);
+  });
 });

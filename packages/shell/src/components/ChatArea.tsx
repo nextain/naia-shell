@@ -61,6 +61,7 @@ import {
 	loadConfigWithSecrets,
 	localeToSttLanguage,
 	resolveConfiguredGatewayUrl,
+	resolveThinkingLevel,
 	saveConfig,
 } from "../lib/config";
 import {
@@ -1868,7 +1869,8 @@ export function ChatArea({
 					config.enableTools === true
 						? boundary!.toolsAllowed
 						: config.enableTools,
-				enableThinking: config.enableThinking,
+				enableThinking: resolveThinkingLevel(config) !== "off",
+				thinking: { level: resolveThinkingLevel(config) },
 				gatewayUrl,
 				disabledSkills:
 					config.enableTools === true

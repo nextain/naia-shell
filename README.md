@@ -159,7 +159,7 @@ xvfb-run pnpm test:e2e:tauri       # 실 Tauri 바이너리 풀스택 (wdio+taur
 KB·memory의 `dist/`를 대신 만들어 주지는 않는다. 새 clone에서는 위의 exact commit
 checkout과 sibling install/build를 먼저 수행해야 하며, 하나라도 빠지거나 clean checkout이
 아니면 `agent-pairing.json` 검증이 실행을 fail-closed 한다. Agent의 proto 핀은
-`4b078d9ebd11335ae5963a842b0dbbb2250bd03a48e880559b82ce7a110e52fd`, memory package
+`71e4cb6b3d19f9df08c88e6225babc11e30fe445723badd440decdb2a33e6f42`, memory package
 version은 `0.1.4`다.
 
 설치자 CI는 [build-installers.yml](.github/workflows/build-installers.yml)이 Windows·Ubuntu·macOS에서
