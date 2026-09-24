@@ -19,6 +19,8 @@ export interface NvaAnimation {
 	label?: string;
 	intent?: string;
 	triggers?: string[];
+	/** 발화 머리 위치표. 형식 검사는 nva-procedural-motion.parseHeadTrack. */
+	head_track?: unknown;
 }
 
 export interface NvaManifest {
@@ -27,6 +29,8 @@ export interface NvaManifest {
 	canvas: { width: number; height: number; fps?: number };
 	background?: { type?: string; color?: string; src?: string };
 	chroma_key?: string;
+	/** 몸 움직임 설정(false=끔). 형식 검사는 nva-procedural-motion.parseMotionSpec. */
+	motion?: unknown;
 	animations: Record<string, NvaAnimation>;
 	scenario?: {
 		nodes?: Record<

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_MOTION_SPEC,
 	type HeadTrackFrame,
@@ -8,7 +8,6 @@ import {
 	applyHeadTrackToRect,
 	drawWithMotion,
 	headTrackFrameAt,
-	isReducedMotion,
 	motionAt,
 	parseHeadTrack,
 	parseMotionSpec,
