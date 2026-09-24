@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NvaManifest } from "../../nva";
-import { canCarryAlpha, containRect, PrebakedAvatarRenderer } from "../prebaked-renderer";
+import {
+	PrebakedAvatarRenderer,
+	canCarryAlpha,
+	containRect,
+} from "../prebaked-renderer";
 
 describe("containRect", () => {
 	it("letterboxes a portrait source inside a wider target", () => {
@@ -13,7 +17,12 @@ describe("containRect", () => {
 	});
 
 	it("returns an empty rect for a zero-size source or target", () => {
-		expect(containRect(0, 100, 100, 100)).toEqual({ dx: 0, dy: 0, dw: 0, dh: 0 });
+		expect(containRect(0, 100, 100, 100)).toEqual({
+			dx: 0,
+			dy: 0,
+			dw: 0,
+			dh: 0,
+		});
 		expect(containRect(100, 100, 0, 0)).toEqual({ dx: 0, dy: 0, dw: 0, dh: 0 });
 	});
 });
@@ -50,7 +59,6 @@ function makeVideo(): HTMLVideoElement {
 	vi.spyOn(video, "play").mockResolvedValue();
 	return video;
 }
-
 
 /** The element the renderer is keeping for this clip URL. */
 function videoForUrl(url: string): HTMLVideoElement {
@@ -156,10 +164,7 @@ describe("PrebakedAvatarRenderer", () => {
 			playCalls.length = 0;
 			pauseCalls.length = 0;
 			const original = {
-				src: Object.getOwnPropertyDescriptor(
-					HTMLMediaElement.prototype,
-					"src",
-				),
+				src: Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "src"),
 				play: HTMLMediaElement.prototype.play,
 				pause: HTMLMediaElement.prototype.pause,
 			};
@@ -177,7 +182,9 @@ describe("PrebakedAvatarRenderer", () => {
 				playCalls.push(this);
 				return Promise.resolve();
 			};
-			HTMLMediaElement.prototype.pause = function pause(this: HTMLVideoElement) {
+			HTMLMediaElement.prototype.pause = function pause(
+				this: HTMLVideoElement,
+			) {
 				pauseCalls.push(this);
 			};
 			restore = () => {
@@ -270,4 +277,130 @@ describe("PrebakedAvatarRenderer", () => {
 		});
 	});
 
+	describe("procedural motion integration", () => {
+		let rafCallbacks: ((time: number) => void)[] = [];
+		let origRaf: typeof requestAnimationFrame;
+
+		beforeEach(() => {
+			rafCallbacks = [];
+			origRaf = window.requestAnimationFrame;
+			window.requestAnimationFrame = vi.fn((cb) => {
+				rafCallbacks.push(cb);
+				return rafCallbacks.length;
+			});
+		});
+
+		afterEach(() => {
+			window.requestAnimationFrame = origRaf;
+		});
+
+		it("draws directly to canvas without offscreen when motion: false", async () => {
+			const manifest = { ...baseManifest(), motion: false };
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async (p) => `blob:${p}`,
+			});
+			const video = makeVideo();
+			Object.defineProperty(video, "readyState", {
+				value: 4,
+				configurable: true,
+			});
+			Object.defineProperty(video, "videoWidth", {
+				value: 100,
+				configurable: true,
+			});
+			Object.defineProperty(video, "videoHeight", {
+				value: 100,
+				configurable: true,
+			});
+
+			const mockCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+				save: vi.fn(),
+				restore: vi.fn(),
+				translate: vi.fn(),
+				rotate: vi.fn(),
+			};
+			const canvas = document.createElement("canvas");
+			canvas.width = 100;
+			canvas.height = 100;
+			vi.spyOn(canvas, "getContext").mockReturnValue(mockCtx as any);
+
+			renderer.start(video, canvas);
+			expect(rafCallbacks.length).toBeGreaterThan(0);
+			rafCallbacks[0]!(100);
+
+			// Direct draw to mockCtx
+			expect(mockCtx.drawImage).toHaveBeenCalledWith(video, 0, 0, 100, 100);
+			// No rotation applied
+			expect(mockCtx.rotate).not.toHaveBeenCalled();
+			renderer.stop();
+		});
+
+		it("uses offscreen canvas and applies motion when motion is enabled (default)", async () => {
+			const manifest = baseManifest();
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async (p) => `blob:${p}`,
+			});
+			const video = makeVideo();
+			Object.defineProperty(video, "readyState", {
+				value: 4,
+				configurable: true,
+			});
+			Object.defineProperty(video, "videoWidth", {
+				value: 100,
+				configurable: true,
+			});
+			Object.defineProperty(video, "videoHeight", {
+				value: 100,
+				configurable: true,
+			});
+
+			const mockCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+				save: vi.fn(),
+				restore: vi.fn(),
+				translate: vi.fn(),
+				rotate: vi.fn(),
+			};
+			const canvas = document.createElement("canvas");
+			canvas.width = 100;
+			canvas.height = 100;
+
+			const mockOffscreenCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+			};
+			const getContextSpy = vi
+				.spyOn(HTMLCanvasElement.prototype, "getContext")
+				.mockImplementation(function (this: HTMLCanvasElement) {
+					if (this === canvas) return mockCtx as any;
+					return mockOffscreenCtx as any;
+				});
+
+			renderer.start(video, canvas);
+			expect(rafCallbacks.length).toBeGreaterThan(0);
+			rafCallbacks[0]!(2000);
+
+			// Offscreen received the video draw
+			expect(mockOffscreenCtx.drawImage).toHaveBeenCalledWith(
+				video,
+				0,
+				0,
+				100,
+				100,
+			);
+			// Target canvas received motion draw (save, restore, rotate)
+			expect(mockCtx.save).toHaveBeenCalled();
+			expect(mockCtx.restore).toHaveBeenCalled();
+
+			renderer.stop();
+			getContextSpy.mockRestore();
+		});
+	});
 });

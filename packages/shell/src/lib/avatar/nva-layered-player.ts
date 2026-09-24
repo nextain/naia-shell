@@ -6,6 +6,14 @@
 
 import { type NvaManifest, derive } from "./nva-core";
 import { NvaHeadOverlay } from "./nva-head-overlay";
+import {
+	type HeadTrackSpec,
+	type MotionSpec,
+	drawWithMotion,
+	headTrackFrameAt,
+	parseHeadTrack,
+	parseMotionSpec,
+} from "./nva-procedural-motion";
 import { NvaSyncDriver } from "./nva-sync-driver";
 
 export type PlayerState = "idle" | "speaking" | "gesturing";
@@ -56,6 +64,10 @@ export class NvaLayeredPlayer {
 	private overlay: NvaHeadOverlay | null = null;
 	private driver: NvaSyncDriver | null = null;
 	private head: HeadSource | null = null;
+	private motionSpec: MotionSpec | null;
+	private offscreenCanvas: HTMLCanvasElement | null = null;
+	private offscreenCtx: CanvasRenderingContext2D | null = null;
+	private headTrack: HeadTrackSpec | null = null;
 
 	private _state: PlayerState = "idle";
 	private raf = 0;
@@ -77,6 +89,7 @@ export class NvaLayeredPlayer {
 		this.ctx = ctx;
 		this.manifest = manifest;
 		this.opts = opts;
+		this.motionSpec = parseMotionSpec(manifest);
 		const d = derive(manifest);
 		this.idleKey = d.idleKey;
 		this.talkKey = d.talkKey;
@@ -185,6 +198,8 @@ export class NvaLayeredPlayer {
 		this.abortLoad?.(); // 진행 중 back 로드 취소
 		this.clearGestureListener();
 		this.teardownHead();
+		this.offscreenCanvas = null;
+		this.offscreenCtx = null;
 		this.front.pause();
 		this.back.pause();
 	}
@@ -304,6 +319,7 @@ export class NvaLayeredPlayer {
 		const speakAnim = this.talkKey
 			? this.manifest.animations?.[this.talkKey]
 			: undefined;
+		this.headTrack = parseHeadTrack(speakAnim);
 		const chroma = this.opts.chromaKey ?? speakAnim?.head_chroma ?? "#00ff00";
 		this.overlay = new NvaHeadOverlay({ keyColor: chroma });
 		this.driver = new NvaSyncDriver(head.video, head.audioClock, {
@@ -318,6 +334,28 @@ export class NvaLayeredPlayer {
 		this.overlay?.dispose();
 		this.overlay = null;
 		this.head = null;
+		this.headTrack = null;
+	}
+
+	private ensureOffscreen(
+		width: number,
+		height: number,
+	): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+		if (!this.offscreenCanvas) {
+			this.offscreenCanvas = document.createElement("canvas");
+			this.offscreenCanvas.width = width;
+			this.offscreenCanvas.height = height;
+			this.offscreenCtx = this.offscreenCanvas.getContext("2d", {
+				alpha: true,
+			});
+		} else {
+			if (this.offscreenCanvas.width !== width)
+				this.offscreenCanvas.width = width;
+			if (this.offscreenCanvas.height !== height)
+				this.offscreenCanvas.height = height;
+		}
+		if (!this.offscreenCtx) return null;
+		return { canvas: this.offscreenCanvas, ctx: this.offscreenCtx };
 	}
 
 	private startLoop(): void {
@@ -334,8 +372,24 @@ export class NvaLayeredPlayer {
 					v.videoHeight,
 				);
 				if (rect.dw > 0 && rect.dh > 0) {
-					this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-					this.ctx.drawImage(v, rect.dx, rect.dy, rect.dw, rect.dh);
+					const motionSpec = this.motionSpec;
+					const offscreen = motionSpec
+						? this.ensureOffscreen(this.canvas.width, this.canvas.height)
+						: null;
+					const drawTarget = offscreen ? offscreen.ctx : this.ctx;
+
+					if (offscreen) {
+						offscreen.ctx.clearRect(
+							0,
+							0,
+							this.canvas.width,
+							this.canvas.height,
+						);
+					} else {
+						this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+					}
+
+					drawTarget.drawImage(v, rect.dx, rect.dy, rect.dw, rect.dh);
 					this.framesDrawn += 1;
 					// 발화 중 head 오버레이 합성(speak.face_bbox 기준).
 					const speakAnim = this.talkKey
@@ -350,15 +404,36 @@ export class NvaLayeredPlayer {
 						this.head.video.readyState >= 2
 					) {
 						try {
-							this.overlay.draw(this.ctx, this.head.video, bbox, rect, {
-								scale: this.opts.headScale,
-								offsetX: this.opts.headOffsetX,
-								offsetY: this.opts.headOffsetY,
-								smoothing: this.opts.headSmoothing,
-							});
+							const trackFrame = this.headTrack
+								? headTrackFrameAt(this.headTrack, v.currentTime)
+								: null;
+							this.overlay.draw(
+								drawTarget,
+								this.head.video,
+								bbox,
+								rect,
+								{
+									scale: this.opts.headScale,
+									offsetX: this.opts.headOffsetX,
+									offsetY: this.opts.headOffsetY,
+									smoothing: this.opts.headSmoothing,
+								},
+								trackFrame,
+							);
 						} catch {
 							/* 오버레이 예외 격리(렌더 루프 유지) */
 						}
+					}
+
+					if (offscreen) {
+						this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+						drawWithMotion(
+							this.ctx,
+							offscreen.canvas,
+							rect,
+							motionSpec,
+							performance.now(),
+						);
 					}
 				}
 			}

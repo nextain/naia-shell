@@ -4,6 +4,10 @@
 
 import type { DrawRect } from "./nva-base-renderer";
 import { type ChromakeyOpts, NvaChromakeyGL } from "./nva-chromakey-gl";
+import {
+	type HeadTrackFrame,
+	applyHeadTrackToRect,
+} from "./nva-procedural-motion";
 
 export interface HeadTuning {
 	/** head 크기 배율(정합 미세조정). 기본 1. */
@@ -80,6 +84,7 @@ export class NvaHeadOverlay {
 		bbox: number[],
 		drawRect: DrawRect,
 		tuning: HeadTuning = {},
+		trackFrame?: HeadTrackFrame | null,
 	): HeadRect | null {
 		const hw =
 			(head as HTMLVideoElement).videoWidth ||
@@ -91,6 +96,8 @@ export class NvaHeadOverlay {
 
 		const keyed = this.key.process(head, hw, hh);
 		let rect = faceBboxToRect(bbox, drawRect, tuning);
+		const tracked = applyHeadTrackToRect(rect, drawRect, trackFrame);
+		rect = tracked.rect;
 
 		const rawS = tuning.smoothing ?? 0;
 		const s = Number.isFinite(rawS) ? Math.min(0.99, Math.max(0, rawS)) : 0; // clamp [0,0.99]
@@ -104,7 +111,19 @@ export class NvaHeadOverlay {
 			};
 		}
 		this.smoothed = rect;
-		ctx.drawImage(keyed, rect.x, rect.y, rect.w, rect.h);
+
+		if (tracked.rotDeg !== 0) {
+			const cx = rect.x + rect.w / 2;
+			const cy = rect.y + rect.h / 2;
+			ctx.save();
+			ctx.translate(cx, cy);
+			ctx.rotate((tracked.rotDeg * Math.PI) / 180);
+			ctx.translate(-cx, -cy);
+			ctx.drawImage(keyed, rect.x, rect.y, rect.w, rect.h);
+			ctx.restore();
+		} else {
+			ctx.drawImage(keyed, rect.x, rect.y, rect.w, rect.h);
+		}
 		return rect;
 	}
 

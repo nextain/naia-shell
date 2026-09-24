@@ -13,9 +13,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NvaManifest } from "../nva-core";
 
+const overlayDrawCalls: any[] = [];
+
 vi.mock("../nva-head-overlay", () => ({
 	NvaHeadOverlay: class {
-		draw() {}
+		draw(...args: any[]) {
+			overlayDrawCalls.push(args);
+		}
 		dispose() {}
 	},
 }));
@@ -144,7 +148,7 @@ function installMediaDoubles(): () => void {
 	};
 }
 
-function makePlayer() {
+function makePlayer(manifest: NvaManifest = MANIFEST) {
 	const canvas = document.createElement("canvas");
 	// jsdom has no raster canvas; these tests exercise media buffer ownership.
 	// Keep the double on this canvas so other rendering tests remain unaffected.
@@ -153,7 +157,7 @@ function makePlayer() {
 	});
 	canvas.width = 400;
 	canvas.height = 700;
-	return new NvaLayeredPlayer(canvas, MANIFEST, {
+	return new NvaLayeredPlayer(canvas, manifest, {
 		resolveClip: (clip) => `blob:${clip}`,
 	});
 }
@@ -239,5 +243,130 @@ describe("NvaLayeredPlayer base clip swapping", () => {
 		await player.gesture("wave");
 		player.stop();
 		expect(assignmentsOf("blob:wave.webm")).toBe(1);
+	});
+
+	describe("motion and head_track in NvaLayeredPlayer", () => {
+		let rafCallbacks: ((time: number) => void)[] = [];
+		let origRaf: typeof requestAnimationFrame;
+
+		const activeHead = () => {
+			const v = document.createElement("video");
+			Object.defineProperty(v, "readyState", { value: 4, configurable: true });
+			Object.defineProperty(v, "videoWidth", {
+				value: 100,
+				configurable: true,
+			});
+			Object.defineProperty(v, "videoHeight", {
+				value: 100,
+				configurable: true,
+			});
+			return { video: v, audioClock: () => 0 };
+		};
+
+		beforeEach(() => {
+			overlayDrawCalls.length = 0;
+			rafCallbacks = [];
+			origRaf = window.requestAnimationFrame;
+			window.requestAnimationFrame = vi.fn((cb) => {
+				rafCallbacks.push(cb);
+				return rafCallbacks.length;
+			});
+			Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", {
+				value: 400,
+				configurable: true,
+			});
+			Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", {
+				value: 700,
+				configurable: true,
+			});
+		});
+
+		afterEach(() => {
+			window.requestAnimationFrame = origRaf;
+		});
+
+		it("passes trackFrame to overlay.draw when head_track is present in speak animation", async () => {
+			const manifestWithTrack: NvaManifest = {
+				...MANIFEST,
+				animations: {
+					...MANIFEST.animations,
+					speak: {
+						...MANIFEST.animations.speak,
+						head_track: {
+							fps: 25,
+							frames: [
+								[0.01, 0.02, 1.5, 1.05],
+								[0.03, 0.04, 3.0, 1.1],
+							],
+						},
+					},
+				},
+			};
+			const player = makePlayer(manifestWithTrack);
+			await player.start();
+			const h = activeHead();
+			await player.speak(h);
+
+			expect(rafCallbacks.length).toBeGreaterThan(0);
+			const lastCb = rafCallbacks[rafCallbacks.length - 1]!;
+			lastCb(100);
+
+			expect(overlayDrawCalls.length).toBeGreaterThan(0);
+			const lastCall = overlayDrawCalls[overlayDrawCalls.length - 1];
+			expect(lastCall[5]).toEqual([0.01, 0.02, 1.5, 1.05]);
+
+			player.stop();
+		});
+
+		it("passes null trackFrame to overlay.draw when head_track is absent", async () => {
+			const player = makePlayer(MANIFEST);
+			await player.start();
+			const h = activeHead();
+			await player.speak(h);
+
+			expect(rafCallbacks.length).toBeGreaterThan(0);
+			const lastCb = rafCallbacks[rafCallbacks.length - 1]!;
+			lastCb(100);
+
+			expect(overlayDrawCalls.length).toBeGreaterThan(0);
+			const lastCall = overlayDrawCalls[overlayDrawCalls.length - 1];
+			expect(lastCall[5]).toBeNull();
+
+			player.stop();
+		});
+
+		it("draws directly to canvas without offscreen when motion: false", async () => {
+			const manifestNoMotion: NvaManifest = {
+				...MANIFEST,
+				motion: false,
+			};
+			const canvas = document.createElement("canvas");
+			canvas.width = 400;
+			canvas.height = 700;
+			const mockCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+				save: vi.fn(),
+				restore: vi.fn(),
+				translate: vi.fn(),
+				rotate: vi.fn(),
+			};
+			Object.defineProperty(canvas, "getContext", {
+				value: () => mockCtx,
+			});
+
+			const player = new NvaLayeredPlayer(canvas, manifestNoMotion, {
+				resolveClip: (c) => `blob:${c}`,
+			});
+			await player.start();
+
+			expect(rafCallbacks.length).toBeGreaterThan(0);
+			rafCallbacks[rafCallbacks.length - 1]!(100);
+
+			expect(mockCtx.drawImage).toHaveBeenCalled();
+			expect(mockCtx.rotate).not.toHaveBeenCalled();
+
+			player.stop();
+		});
 	});
 });
