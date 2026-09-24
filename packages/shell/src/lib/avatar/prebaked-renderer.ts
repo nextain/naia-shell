@@ -1,8 +1,10 @@
 import { type NvaManifest, defaultClipOf, findPrebakedSpeech } from "../nva";
+import { readActiveVoiceLevel } from "../voice/voice-level";
 import type {
 	AvatarPlaybackOptions,
 	AvatarSpeechRenderer,
 } from "./avatar-renderer";
+import { NvaAudioGate } from "./nva-audio-gate";
 import { NvaChromakeyGL } from "./nva-chromakey-gl";
 import { TwinLoop } from "./twin-loop";
 
@@ -11,6 +13,11 @@ interface Config {
 	locale: string;
 	resolveAssetUrl: (path: string) => Promise<string>;
 	onSpeaking?: (speaking: boolean) => void;
+	/**
+	 * RMS of the TTS audio playing now, or null when it cannot be measured.
+	 * Defaults to the shell AudioQueue that is playing.
+	 */
+	voiceLevel?: () => number | null;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -73,6 +80,13 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
+	/** Idle clip element, kept playing under the talking loop for voice gating. */
+	private idleVideo: HTMLVideoElement | null = null;
+	private speakingVisual = false;
+	private readonly gate = new NvaAudioGate();
+	private lastDrawAt: number | null = null;
+	/** Chroma key per clip element (a clip without alpha needs its own key). */
+	private keyColors = new WeakMap<HTMLVideoElement, string | undefined>();
 
 	constructor(private readonly config: Config) {}
 
@@ -135,11 +149,18 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		}
 	}
 
-	/** Switch idle/talking visual only. Shell owns the actual audio playback. */
+	/**
+	 * Switch idle/talking visual only. Shell owns the actual audio playback.
+	 * While speaking, the talking loop is shown only while the audio level is
+	 * above the gate threshold (see drawSource), like the Studio clip engine;
+	 * the idle loop keeps playing under it (playClip).
+	 */
 	setSpeakingVisual(active: boolean): void {
 		if (!this.video || this.disposed) return;
 		this.generation++;
 		this.config.onSpeaking?.(active);
+		this.speakingVisual = active;
+		this.gate.reset("idle");
 		if (active) {
 			const clip =
 				this.config.manifest.vrm_slots?.visemes?.aiueo?.clip ??
@@ -147,7 +168,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				this.config.manifest.animations.talking?.clip ??
 				this.config.manifest.animations.speak?.clip ??
 				defaultClipOf(this.config.manifest).video;
-			void this.playClip(clip, true, true);
+			void this.playClip(clip, true, true).catch(() => {});
 		} else {
 			void this.playIdle();
 		}
@@ -161,17 +182,28 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	): Promise<void> {
 		if (!this.video || !this.mountedVideo)
 			throw new Error("NVA video is not mounted");
-		this.currentKeyColor =
+		const keyColor =
 			this.config.manifest.chroma_key ??
 			(canCarryAlpha(path)
 				? undefined
 				: this.config.manifest.background?.color);
+		this.currentKeyColor = keyColor;
 		const url = await this.config.resolveAssetUrl(path);
 		if (this.disposed || !this.mountedVideo)
 			throw new Error("NVA renderer stopped");
 		const video = this.videoForClip(url);
+		this.keyColors.set(video, keyColor);
+		// Under the talking loop the idle loop keeps running, so the voice gate
+		// can cut back to a closed mouth in every pause (drawSource). It is
+		// only played, never paused or sought (WebKitGTK freeze, TwinLoop).
+		const idleLoop =
+			loop && this.speakingVisual && this.idleVideo && this.idleVideo !== video
+				? this.loops.get(this.idleVideo)
+				: undefined;
+		if (idleLoop) void idleLoop.play().catch(() => {});
 		if (this.video !== video) {
-			this.leaveClip(this.video);
+			if (!idleLoop || this.video !== this.idleVideo)
+				this.leaveClip(this.video);
 			this.video = video;
 		}
 		if (loop) {
@@ -274,22 +306,47 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	private async playIdle(): Promise<void> {
 		if (!this.video || this.disposed) return;
-		await this.playClip(
-			defaultClipOf(this.config.manifest).video,
-			true,
-			true,
-		).catch(() => {});
+		await this.playClip(defaultClipOf(this.config.manifest).video, true, true)
+			.then(() => {
+				this.idleVideo = this.video;
+			})
+			.catch(() => {});
+	}
+
+	/**
+	 * Element to draw this frame. While the talking loop is on and the audio
+	 * level is known, the gate picks talking (voice) or idle (pause).
+	 * Unknown level (MP3, browser speech) keeps the talking loop, as before.
+	 */
+	drawSource(nowMs: number): HTMLVideoElement | null {
+		const video = this.video ? (this.activeLoop?.current ?? this.video) : null;
+		const last = this.lastDrawAt;
+		this.lastDrawAt = nowMs;
+		if (!this.speakingVisual || !video) return video;
+		const level = (this.config.voiceLevel ?? readActiveVoiceLevel)();
+		if (level == null) return video;
+		const state = this.gate.process(level, last == null ? 0 : nowMs - last);
+		const idle = this.idleVideo
+			? (this.loops.get(this.idleVideo)?.current ?? this.idleVideo)
+			: null;
+		if (
+			state === "idle" &&
+			idle &&
+			idle !== video &&
+			idle.readyState >= 2 &&
+			idle.videoWidth > 0
+		)
+			return idle;
+		return video;
 	}
 
 	/** 숨은 decode `<video>`를 매 프레임 표시 `<canvas>`에 합성(필요 시 크로마키). */
 	private startDrawLoop(): void {
 		if (this.running) return;
 		this.running = true;
-		const draw = () => {
+		const draw = (now?: number) => {
 			if (!this.running) return;
-			const video = this.video
-				? (this.activeLoop?.current ?? this.video)
-				: null;
+			const video = this.drawSource(now ?? performance.now());
 			const canvas = this.canvas;
 			const ctx = this.ctx;
 			if (
@@ -308,7 +365,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				);
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
 				if (rect.dw > 0 && rect.dh > 0) {
-					const keyColor = this.currentKeyColor;
+					const keyColor = this.keyColors.has(video)
+						? this.keyColors.get(video)
+						: this.currentKeyColor;
 					let drew = false;
 					if (keyColor && !this.keyerFailed) {
 						try {
@@ -337,6 +396,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	interrupt(): void {
 		this.generation++;
+		this.speakingVisual = false;
 		this.config.onSpeaking?.(false);
 		void this.playIdle();
 	}

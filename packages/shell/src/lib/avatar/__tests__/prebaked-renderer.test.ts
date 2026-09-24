@@ -248,7 +248,7 @@ describe("PrebakedAvatarRenderer", () => {
 			renderer.stop();
 		});
 
-		it("plays the element that owns the clip and lets the one it left run out", async () => {
+		it("plays the element that owns the clip, keeps idle under talking and lets talking run out", async () => {
 			const { renderer, video } = await mounted();
 			playCalls.length = 0;
 			pauseCalls.length = 0;
@@ -256,13 +256,30 @@ describe("PrebakedAvatarRenderer", () => {
 			await settleClips();
 			const talking = videoForUrl("blob:clips/speech-ko.mp4");
 			expect(playCalls).toContain(talking);
-			expect(playCalls).not.toContain(video);
-			// Pausing a playing element can freeze WebKitGTK; the idle loop
-			// finishes its pass hidden and does not hand over at the end.
+			// The idle loop keeps playing under the talking loop so the voice
+			// gate can show a closed mouth in pauses. Nothing is paused: pausing a
+			// playing element can freeze WebKitGTK.
 			expect(pauseCalls).toEqual([]);
+			const idleTwin = [...document.querySelectorAll("video")].find(
+				(element) =>
+					(element as HTMLVideoElement).dataset.naiaClipUrl ===
+						"blob:clips/idle.webm" && element !== video,
+			) as HTMLVideoElement;
+			// At the end of its pass the idle loop hands over to its twin.
+			playCalls.length = 0;
 			video.dispatchEvent(new Event("ended"));
 			await settleClips();
-			expect(playCalls.filter((element) => element !== talking)).toEqual([]);
+			expect(playCalls).toEqual([idleTwin]);
+
+			// Speech over: the talking loop finishes its pass hidden and does not
+			// hand over at the end; still nothing is paused.
+			renderer.setSpeakingVisual(false);
+			await settleClips();
+			expect(pauseCalls).toEqual([]);
+			playCalls.length = 0;
+			talking.dispatchEvent(new Event("ended"));
+			await settleClips();
+			expect(playCalls).toEqual([]);
 			renderer.stop();
 		});
 
@@ -273,7 +290,7 @@ describe("PrebakedAvatarRenderer", () => {
 		 * main thread (gdb, 2026-09-24). Loops must not use `loop`, and no element
 		 * may be sought while it plays.
 		 */
-		it("loops without the loop attribute and seeks only paused, hidden elements", async () => {
+		it("loops without the loop attribute, keeps idle looping under talking, and seeks only paused, hidden elements", async () => {
 			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 			const playing = new Set<HTMLVideoElement>();
 			const seeks: { element: HTMLVideoElement; whilePlaying: boolean }[] = [];
@@ -322,43 +339,54 @@ describe("PrebakedAvatarRenderer", () => {
 			try {
 				const { renderer } = await mounted();
 				const loopedEnds: HTMLVideoElement[] = [];
-				/** The element of the shown loop that is playing now. */
-				const shown = () => {
-					const drawn = [...playing].filter(
-						(element) => element.dataset.naiaClipUrl === shownUrl,
+				const idleUrl = "blob:clips/idle.webm";
+				const talkingUrl = "blob:clips/speech-ko.mp4";
+				/** The one element of a clip's loop that is playing now. */
+				const playingOf = (url: string) => {
+					const found = [...playing].filter(
+						(element) => element.dataset.naiaClipUrl === url,
 					);
-					expect(drawn).toHaveLength(1);
-					return drawn[0];
+					expect(found).toHaveLength(1);
+					return found[0];
 				};
-				let shownUrl = "blob:clips/idle.webm";
-				for (let round = 0; round < 3; round++) {
-					for (let wrap = 0; wrap < 3; wrap++) {
-						const current = shown();
-						endOf(current);
-						loopedEnds.push(current);
-						await settleClips();
-						// The other element of the pair took over at once.
-						expect(shown()).not.toBe(current);
-						vi.advanceTimersByTime(300);
-					}
-					const left = [...playing].filter(
-						(element) => element.dataset.naiaClipUrl === shownUrl,
-					);
-					renderer.setSpeakingVisual(round % 2 === 0);
-					shownUrl =
-						round % 2 === 0 ? "blob:clips/speech-ko.mp4" : "blob:clips/idle.webm";
+				/** Let a loop reach its end once; its twin must take over at once. */
+				const wrap = async (url: string) => {
+					const current = playingOf(url);
+					endOf(current);
+					loopedEnds.push(current);
 					await settleClips();
-					// The loop that was left finishes its pass and stops there.
-					for (const element of left) {
+					expect(playingOf(url)).not.toBe(current);
+					vi.advanceTimersByTime(300);
+				};
+				let speaking = false;
+				for (let round = 0; round < 4; round++) {
+					for (let pass = 0; pass < 3; pass++) {
+						if (speaking) await wrap(talkingUrl);
+						// The idle loop keeps looping under the talking loop too.
+						await wrap(idleUrl);
+					}
+					const leftTalking = speaking
+						? [...playing].filter(
+								(element) => element.dataset.naiaClipUrl === talkingUrl,
+							)
+						: [];
+					speaking = !speaking;
+					renderer.setSpeakingVisual(speaking);
+					await settleClips();
+					// The talking loop that was left finishes its pass and stops there.
+					for (const element of leftTalking) {
 						endOf(element);
 						await settleClips();
 						vi.advanceTimersByTime(300);
 					}
-					expect(
-						[...playing].filter(
-							(element) => element.dataset.naiaClipUrl !== shownUrl,
-						),
-					).toEqual([]);
+					playingOf(idleUrl);
+					if (speaking) playingOf(talkingUrl);
+					else
+						expect(
+							[...playing].filter(
+								(element) => element.dataset.naiaClipUrl === talkingUrl,
+							),
+						).toEqual([]);
 				}
 				const all = [...document.querySelectorAll("video")];
 				expect(all).toHaveLength(4);
