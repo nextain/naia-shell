@@ -4,6 +4,12 @@ import type {
 	AvatarSpeechRenderer,
 } from "./avatar-renderer";
 import { NvaChromakeyGL } from "./nva-chromakey-gl";
+import {
+	type MotionSpec,
+	drawWithMotion,
+	parseMotionSpec,
+	resolveChestY,
+} from "./nva-procedural-motion";
 
 interface Config {
 	manifest: NvaManifest;
@@ -50,13 +56,21 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private keyer: NvaChromakeyGL | null = null;
 	private keyerFailed = false;
 	private currentKeyColor: string | undefined;
+	private motionSpec: MotionSpec | null;
+	private offscreenCanvas: HTMLCanvasElement | null = null;
+	private offscreenCtx: CanvasRenderingContext2D | null = null;
 	private disposed = false;
 	private generation = 0;
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
 
-	constructor(private readonly config: Config) {}
+	constructor(private readonly config: Config) {
+		this.motionSpec = parseMotionSpec(config.manifest);
+		if (this.motionSpec) {
+			this.motionSpec.chest_y = resolveChestY(config.manifest, this.motionSpec);
+		}
+	}
 
 	start(video: HTMLVideoElement, canvas: HTMLCanvasElement): void {
 		this.video = video;
@@ -213,7 +227,28 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		).catch(() => {});
 	}
 
-	/** 숨은 decode `<video>`를 매 프레임 표시 `<canvas>`에 합성(필요 시 크로마키). */
+	private ensureOffscreen(
+		width: number,
+		height: number,
+	): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+		if (!this.offscreenCanvas) {
+			this.offscreenCanvas = document.createElement("canvas");
+			this.offscreenCanvas.width = width;
+			this.offscreenCanvas.height = height;
+			this.offscreenCtx = this.offscreenCanvas.getContext("2d", {
+				alpha: true,
+			});
+		} else {
+			if (this.offscreenCanvas.width !== width)
+				this.offscreenCanvas.width = width;
+			if (this.offscreenCanvas.height !== height)
+				this.offscreenCanvas.height = height;
+		}
+		if (!this.offscreenCtx) return null;
+		return { canvas: this.offscreenCanvas, ctx: this.offscreenCtx };
+	}
+
+	/** 숨은 decode `<video>`를 매 프레임 표시 `<canvas>`에 합성(필요 시 크로마키 및 라이브2D식 절차적 모션). */
 	private startDrawLoop(): void {
 		if (this.running) return;
 		this.running = true;
@@ -239,6 +274,16 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
 				if (rect.dw > 0 && rect.dh > 0) {
 					const keyColor = this.currentKeyColor;
+					const motionSpec = this.motionSpec;
+					const offscreen = motionSpec
+						? this.ensureOffscreen(canvas.width, canvas.height)
+						: null;
+					const drawTarget = offscreen ? offscreen.ctx : ctx;
+
+					if (offscreen) {
+						offscreen.ctx.clearRect(0, 0, canvas.width, canvas.height);
+					}
+
 					let drew = false;
 					if (keyColor && !this.keyerFailed) {
 						try {
@@ -249,7 +294,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 								video.videoWidth,
 								video.videoHeight,
 							);
-							ctx.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
+							drawTarget.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
 							drew = true;
 						} catch {
 							// WebGL2 unavailable or context lost — fall back to a plain
@@ -257,7 +302,18 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 							this.keyerFailed = true;
 						}
 					}
-					if (!drew) ctx.drawImage(video, rect.dx, rect.dy, rect.dw, rect.dh);
+					if (!drew)
+						drawTarget.drawImage(video, rect.dx, rect.dy, rect.dw, rect.dh);
+
+					if (offscreen) {
+						drawWithMotion(
+							ctx,
+							offscreen.canvas,
+							rect,
+							motionSpec,
+							performance.now(),
+						);
+					}
 				}
 			}
 			this.raf = requestAnimationFrame(draw);
@@ -278,6 +334,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.raf = 0;
 		this.keyer?.dispose();
 		this.keyer = null;
+		this.offscreenCanvas = null;
+		this.offscreenCtx = null;
 		this.interrupt();
 		for (const v of this.clipVideos.values()) {
 			v.pause();

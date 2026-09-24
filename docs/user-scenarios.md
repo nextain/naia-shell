@@ -2149,4 +2149,25 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-MEMORY-THRESHOLD-693 | `packages/shell/src/lib/llm/__tests__/surfacing.test.ts`: 새 상태(on-threshold user-choice/off-no-embedding/off-disabled), 판정자(judge) 선택 및 사실 추출 역할 불변성, 민감도 3단계 문턱 읽기·쓰기; `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: `skill_memory_recall` keep-list 포함 및 허용 계약; `packages/shell/src/components/__tests__/SmallLlmSection.test.tsx`: 점수 문턱 상시 노출 및 선택 영속, 선택 상태 텍스트, 민감도 라디오, 꺼짐 시 숨김, 상시 기억 도구 힌트 렌더링 | `packages/shell/e2e/memory-settings.spec.ts`: 실 UI 설정 기억 탭 점수 문턱 상태 표시, 민감도 선택 영속, 꺼짐 전환 및 도구 힌트 노출, memorySurfacingJudge 영속; E2E(실 셸): 루크 확인 대기 |
 
+## UC-NVA-MOTION — NVA 플레이어 Live2D식 몸 움직임과 몸을 따라가는 머리 층 (#714)
+
+사용자가 NVA 외모를 고르면 캐릭터가 가만히 있을 때도 천천히 숨 쉬며 조금씩 흔들린다. 말을 시작하고 끝낼 때도 움직임이 튀지 않고 이어진다. 움직임 줄이기 설정을 켠 사용자에게는 움직이지 않는다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 기본값으로 움직인다. 두 시각의 프레임에서 머리 영역이 움직인다. |
+| 꺼짐 | `motion:false`면 프레임이 시간에 따라 변하지 않는다(클립 자체 변화 제외). |
+| 잘못된 값 | 필드 단위로 기본값을 쓴다. |
+| 전환 | 대기→발화→대기 전환 앞뒤로 움직임 위상이 이어진다(각도 연속). |
+| 움직임 줄이기 | 멈춘다. |
+| 좁은 폭 | 캔버스가 작아도 비율대로 움직이고 잘리지 않는다. |
+| 머리 위치표 | 있으면 옮겨지고, 없거나 잘못되면 고정이다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-NVA-MOTION | `packages/shell/src/lib/avatar/__tests__/nva-procedural-motion.test.ts`: motionAt 값과 주기/연속성, parseMotionSpec 필드별 검사/false/누락, sliceGeometry 좌표 계산 위아래 일치, parseHeadTrack/프레임 번호/유효성, faceBboxToRect 위치표 적용; `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: spec null 기존 그리기 일치 및 모션 그리기; `packages/shell/src/lib/avatar/__tests__/nva-layered-player.test.ts`: 오프스크린 모션 합성 및 head_track 적용 | `packages/shell/e2e/nva-motion.spec.ts`: 실 캔버스 기본 움직임(두 시각 머리 픽셀 차이), reducedMotion 에뮬레이션 차이 없음, 좁은 폭 잘림 없음 |
+
+
 
