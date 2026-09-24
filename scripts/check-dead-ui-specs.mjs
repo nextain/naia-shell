@@ -142,12 +142,12 @@ function rustCommandNames() {
 /**
  * 지금 없는 채로 두는 명령. 왜 없는지 적어야 한다.
  *
- * 둘 다 스펙만 남고 구현이 없는 자리다. 지우거나 만들거나 둘 중 하나인데,
+ * 스펙만 남고 구현이 없는 자리다. 지우거나 만들거나 둘 중 하나인데,
  * 그 판단은 그 기능을 아는 사람이 해야 한다.
  */
-const KNOWN_MISSING_COMMANDS = new Map([
-	["discord_api", "70-channel-sync-dm 이 부른다. 이름이 바뀌었을 수 있다"],
-]);
+// "discord_api" 는 2026-09-24 에 뺐다. 부르던 70-channel-sync-dm 스펙이
+// Discord 표면과 함께 #610 에서 지워졌다.
+const KNOWN_MISSING_COMMANDS = new Map([]);
 
 /**
  * 영구히 꺼 둔 조작을 누르려는 스펙.
@@ -218,7 +218,13 @@ const packagedApps = new Set(
 // "connections" 는 2026-09-12 에 뺐다. 오너 결정으로 브라우저 미리보기에서도
 // 연결 탭을 연다(ef3dc42c) — disabled 가 없어졌으므로 이 면제가 더는 걸리지
 // 않고, 남겨 두면 "낡았다" 로 붉어진다.
-const KNOWN_DISABLED = new Map([]);
+// 메모리 백업 두 조작은 지원 내보내기 경로가 생길 때까지 꺼 둔다. 그 스펙
+// (memory-settings.spec.ts "backup remains disabled ...")은 누르지 않고
+// `toBeDisabled()` 로 꺼져 있다는 사실 자체를 단정한다 — 열리면 붉어져야 한다.
+const KNOWN_DISABLED = new Map([
+	["memory-backup-password", "스펙이 꺼짐 상태 자체를 단정한다"],
+	["memory-backup-export", "스펙이 꺼짐 상태 자체를 단정한다"],
+]);
 
 /**
  * 렌더되지 않는 파일에만 있는 표지.
