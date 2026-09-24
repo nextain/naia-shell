@@ -1879,6 +1879,7 @@ Test Coverage Map
 | UC-SLIDES-FOCUS-EXIT | 발표자가 집중 모드로 발표하면 '집중 모드 종료' 버튼이 잠시 뒤 사라져 슬라이드 오른쪽 위 쪽 번호가 보이고, 마우스를 움직이면 다시 나타난다. | `slides-center-area.test.tsx`(FR-SLIDES-FOCUS-EXIT.1) |
 | UC-SLIDES-PAGE-GAP | 발표자가 자동 발표를 켜면, 쪽이 넘어간 뒤 청중이 새 쪽을 볼 틈(0.5초) 뒤에 낭독이 시작된다. 음성이 미리 준비돼 있어도 바로 말하지 않고, 합성이 늦으면 그보다 더 기다리지 않는다. | `slide-page-gap.test.ts`(미리 합성 있음 → 첫 재생 500~550ms, 합성 3초 → 3초에 재생, 대기 취소, 대기를 끄면 실패하는 변이 확인) |
 | UC-SLIDES-REC-LINUX | 발표자가 리눅스(X11·Xwayland)에서 "MP4 녹화"를 누르고 발표한 뒤 멈추면, 셸 창 화면과 스피커로 나간 소리(나이아 낭독)가 함께 담긴 MP4가 video 폴더에 남는다. ffmpeg가 바로 실패하거나 셸이 순수 Wayland 창이면 "녹화 중"으로 바뀌지 않고 녹화 실패가 뜬다. 녹화 중에 ffmpeg가 죽으면 멈출 때 실패가 뜨고 다시 녹화할 수 있다. | `slides_recording_test.rs`(x11grab·window_id·pulse 인자, Wayland 오류, 조기 종료, q 정지, 8초 뒤 강제 종료, 녹화 중 사망; `--ignored` 실녹화: Xvfb 창 + 격리 PipeWire 널 싱크 → ffprobe 영상·소리 두 트랙), `slides-host(-bridge).test.ts`(recording_lost), 변이 확인 |
+| UC-VOICE-LINUX-MANIFEST | 리눅스 사용자가 셸 설정에서 로컬 음성(Naia Host Voice)을 켜면 리눅스용 엔진(linux_trt_6g)을 받는다. 이미 같은 버전의 리눅스 엔진이 설치돼 있으면 다시 받지 않는다. 다른 운영체제용 목록이 끼어들면 아무것도 받지 않고 "다른 플랫폼용 목록"이라는 오류와 어느 프로파일·운영체제가 어긋났는지를 보여 준다. | Rust `download_manifest_for_another_platform_is_rejected_before_download`·`debug_scripts_pin_follows_the_host_platform`, `stage-voxcpm2-runtime.test.ts` |
 
 P04 must cover empty, loaded, progress, success, error, narrow viewport, keyboard/ARIA and error recovery. Browser IPC mocks prove wiring only; native recording and store delivery require separate evidence. Existing range, repeat, notes toggle, fullscreen and voice selection remain covered.
 

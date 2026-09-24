@@ -268,12 +268,24 @@ copyFileSync(
 	resolve(shellDir, "src-tauri", "voxcpm2-activation-contract.json"),
 	resolve(e2eVoxCpm2Bundle, "voxcpm2-activation-contract.json"),
 );
-// A staged bundle is this build's real manifest; the checked-in one is the
-// Windows fallback for a tree that has not staged yet.
+// A staged bundle is this build's real manifest; the checked-in pin for this
+// host is the fallback for a tree that has not staged yet. A manifest for
+// another OS is skipped — Rust would refuse it anyway, after staging it.
+function e2eManifestMatchesHost(candidate) {
+	if (!existsSync(candidate)) return false;
+	try {
+		return (
+			JSON.parse(readFileSync(candidate, "utf8")).profile ===
+			e2eInstaller.profile
+		);
+	} catch {
+		return false;
+	}
+}
 const e2eVoxCpm2DownloadManifest = [
 	resolve(shellDir, "src-tauri", "voxcpm2-runtime", "download-manifest.json"),
-	resolve(shellDir, "scripts", "voxcpm2-download-manifest.json"),
-].find((candidate) => existsSync(candidate));
+	resolve(shellDir, e2eInstaller.downloadManifest),
+].find(e2eManifestMatchesHost);
 if (e2eVoxCpm2DownloadManifest) {
 	copyFileSync(
 		e2eVoxCpm2DownloadManifest,

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "profile": "linux_trt_6g",
+  "artifactManifestSha256": "43a80742df8828465f7df05f72519c412111bcdd5b727d113280e8112dc51778",
+  "archive": {
+    "url": "https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip",
+    "sha256": "e6e6a76f970a1311cc868ba38aa95bd7654a60d7f77f6c6274c9433ab62b642d",
+    "bytes": 2935215844,
+    "unpackedBytes": 5365350406,
+    "files": 45549
+  }
+}

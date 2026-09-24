@@ -43,6 +43,8 @@ export const VOXCPM2_PROFILES = {
 		contract: "src-tauri/voxcpm2-activation-contract.json",
 		modelPrep: "src-tauri/windows/prepare-voxcpm2-model.ps1",
 		modelPrepName: "prepare-voxcpm2-model.ps1",
+		// Checked-in download pin that dev and E2E builds read on this OS.
+		downloadManifest: "scripts/voxcpm2-download-manifest.json",
 		defaultDownloadUrl:
 			"https://stnaiapub83b29893.blob.core.windows.net/releases/windows_trt_6g/releases/0.2.2/voxcpm2-runtime-win-trt6g-r2.zip",
 		defaultTar: "tar.exe",
@@ -53,6 +55,9 @@ export const VOXCPM2_PROFILES = {
 		contract: "src-tauri/voxcpm2-activation-contract.json",
 		modelPrep: "src-tauri/linux/prepare-voxcpm2-model.sh",
 		modelPrepName: "prepare-voxcpm2-model.sh",
+		// Same content CI stages into the 0.2.3 Linux release. Without it a Linux
+		// dev shell fell back to the Windows pin and downloaded the Windows engine.
+		downloadManifest: "scripts/voxcpm2-download-manifest.linux.json",
 		defaultDownloadUrl:
 			"https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip",
 		// The archive is a ZIP; GNU tar cannot read it. libarchive's bsdtar can,
