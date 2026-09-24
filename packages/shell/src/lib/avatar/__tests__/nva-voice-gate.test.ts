@@ -1,0 +1,128 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { NvaManifest } from "../../nva";
+import { NvaAudioGate } from "../nva-audio-gate";
+import { PrebakedAvatarRenderer } from "../prebaked-renderer";
+
+describe("NvaAudioGate (same rule as the naia.land Studio clip engine)", () => {
+	it("opens on voice and closes only after 200 ms of silence", () => {
+		const gate = new NvaAudioGate();
+		expect(gate.process(0, 33)).toBe("idle");
+		expect(gate.process(0.05, 33)).toBe("talking");
+		expect(gate.process(0.001, 100)).toBe("talking");
+		expect(gate.process(0.001, 99)).toBe("talking");
+		expect(gate.process(0.001, 1)).toBe("idle");
+	});
+});
+
+/** Studio .nva shape: idle + one looping talking clip, no per-sentence clips. */
+function studioManifest(): NvaManifest {
+	return {
+		nva_version: "0.2",
+		canvas: { width: 720, height: 1280, fps: 24 },
+		background: { type: "transparent" },
+		animations: {
+			idle: { clip: "clips/idle.webm", loop: true, can_talk: false },
+			talking: { clip: "clips/talking.webm", loop: true, can_talk: true },
+		},
+		expressions: { neutral: "idle", speaking: "talking" },
+	};
+}
+
+function markDecoded(video: HTMLVideoElement): void {
+	Object.defineProperty(video, "readyState", { value: 4, configurable: true });
+	Object.defineProperty(video, "videoWidth", {
+		value: 720,
+		configurable: true,
+	});
+	Object.defineProperty(video, "videoHeight", {
+		value: 1280,
+		configurable: true,
+	});
+}
+
+function clipElement(url: string): HTMLVideoElement {
+	const found = [...document.querySelectorAll("video")].find(
+		(element) => (element as HTMLVideoElement).dataset.naiaClipUrl === url,
+	);
+	if (!found) throw new Error(`no <video> holds ${url}`);
+	return found as HTMLVideoElement;
+}
+
+async function flush(): Promise<void> {
+	for (let i = 0; i < 6; i++) await Promise.resolve();
+}
+
+describe("PrebakedAvatarRenderer voice gating", () => {
+	beforeEach(() => {
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+	});
+	afterEach(() => {
+		vi.restoreAllMocks();
+		document.body.innerHTML = "";
+	});
+
+	async function speakingRenderer(level: { value: number | null }) {
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: studioManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+			voiceLevel: () => level.value,
+		});
+		const mounted = document.createElement("video");
+		document.body.appendChild(mounted);
+		renderer.start(mounted, document.createElement("canvas"));
+		await flush();
+		renderer.setSpeakingVisual(true);
+		await flush();
+		const idle = clipElement("blob:clips/idle.webm");
+		const talking = clipElement("blob:clips/talking.webm");
+		markDecoded(idle);
+		markDecoded(talking);
+		return { renderer, idle, talking };
+	}
+
+	it("shows the talking loop only while the voice is audible", async () => {
+		const level = { value: 0 as number | null };
+		const { renderer, idle, talking } = await speakingRenderer(level);
+
+		// Pause before the first word: mouth closed.
+		expect(renderer.drawSource(1000)).toBe(idle);
+		level.value = 0.08;
+		expect(renderer.drawSource(1033)).toBe(talking);
+		// Short gap between syllables (< 200 ms hold): stays talking.
+		level.value = 0;
+		expect(renderer.drawSource(1133)).toBe(talking);
+		// Pause between sentences: back to the closed-mouth idle clip.
+		expect(renderer.drawSource(1300)).toBe(idle);
+		renderer.stop();
+	});
+
+	it("keeps the idle clip running under the talking loop", async () => {
+		const level = { value: 0 as number | null };
+		const { renderer, idle } = await speakingRenderer(level);
+		const play = HTMLMediaElement.prototype.play as unknown as ReturnType<
+			typeof vi.fn
+		>;
+		expect(play.mock.contexts).toContain(idle);
+		renderer.stop();
+	});
+
+	it("falls back to the talking loop when the level is unknown (MP3, browser speech)", async () => {
+		const level = { value: null as number | null };
+		const { renderer, talking } = await speakingRenderer(level);
+		expect(renderer.drawSource(1000)).toBe(talking);
+		expect(renderer.drawSource(1500)).toBe(talking);
+		renderer.stop();
+	});
+
+	it("ignores the level when not speaking", async () => {
+		const level = { value: 0.2 as number | null };
+		const { renderer, idle } = await speakingRenderer(level);
+		renderer.setSpeakingVisual(false);
+		await flush();
+		expect(renderer.drawSource(2000)).toBe(idle);
+		renderer.stop();
+	});
+});

@@ -249,8 +249,14 @@ describe("PrebakedAvatarRenderer", () => {
 			await settleClips();
 			const talking = videoForUrl("blob:clips/speech-ko.mp4");
 			expect(playCalls).toContain(talking);
-			expect(playCalls).not.toContain(video);
-			expect(pauseCalls).toContain(video);
+			// The idle element keeps decoding under the talking loop so the voice
+			// gate can show a closed mouth in pauses (no src churn either way).
+			expect(playCalls).toContain(video);
+
+			pauseCalls.length = 0;
+			renderer.setSpeakingVisual(false);
+			await settleClips();
+			expect(pauseCalls).toContain(talking);
 			renderer.stop();
 		});
 
