@@ -1,10 +1,9 @@
 use std::path::{Component, Path, PathBuf};
-use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
-static RECORDING: OnceLock<Mutex<Option<(Child, PathBuf)>>> = OnceLock::new();
+static RECORDING: OnceLock<Mutex<Option<crate::slides_recording::Recorder>>> = OnceLock::new();
 
 fn root(adk_path: &str, app_id: &str) -> Result<PathBuf, String> {
     // app_id is a single path component; '.'/'..' would traverse out of apps/ (the
@@ -141,28 +140,75 @@ pub fn app_sandbox_open_in_workspace(app: AppHandle, adk_path: String, app_id: S
     app.emit("workspace-open-file-request", granted.clone()).map_err(|error| error.to_string())?;
     Ok(granted)
 }
+/// The shell's own toplevel on Linux: its X11 XID and display, or `NotX11`
+/// when GTK runs as a native Wayland client. Read on the GTK main thread.
+#[cfg(target_os = "linux")]
+fn linux_shell_window(window: &tauri::WebviewWindow) -> Result<crate::slides_recording::LinuxWindow, String> {
+    use crate::slides_recording::LinuxWindow;
+    let (sender, receiver) = std::sync::mpsc::channel();
+    window
+        .with_webview(move |platform| {
+            use gtk::prelude::*;
+            let found = platform
+                .inner()
+                .toplevel()
+                .and_then(|toplevel| toplevel.window())
+                .and_then(|gdk_window| {
+                    let display = gdk_window.display().name().to_string();
+                    gdk_window
+                        .downcast::<gdkx11::X11Window>()
+                        .ok()
+                        .map(|x11| LinuxWindow::X11 { display: Some(display), xid: x11.xid() as u64 })
+                })
+                .unwrap_or(LinuxWindow::NotX11);
+            let _ = sender.send(found);
+        })
+        .map_err(|error| error.to_string())?;
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .map_err(|_| "could not read the shell window for MP4 recording".to_string())
+}
+
 #[tauri::command]
-pub fn slides_recording_start(adk_path: String) -> Result<(), String> {
+pub async fn slides_recording_start(window: tauri::WebviewWindow, adk_path: String) -> Result<(), String> {
+    use crate::slides_recording::{audio_input, capture_target, ffmpeg_args, Platform, Recorder, AUDIO_SOURCE_ENV, STARTUP_PROBE};
     let recording = RECORDING.get_or_init(|| Mutex::new(None));
-    let mut recording = recording.lock().map_err(|_| "recording lock poisoned")?;
-    if recording.is_some() { return Err("recording already active".into()); }
+    if recording.lock().map_err(|_| "recording lock poisoned")?.is_some() {
+        return Err("recording already active".into());
+    }
+    #[cfg(target_os = "linux")]
+    let linux = Some(linux_shell_window(&window)?);
+    #[cfg(not(target_os = "linux"))]
+    let linux = { let _ = &window; None };
+    let platform = Platform::current();
+    let target = capture_target(platform, linux, std::env::var("DISPLAY").ok())?;
+    let audio = audio_input(platform, std::env::var(AUDIO_SOURCE_ENV).ok().as_deref());
     let folder = root(&adk_path, "land.naia.slides")?.join("video");
     std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_secs();
     let output = folder.join(format!("naia-presentation-{timestamp}.mp4"));
-    let ffmpeg = std::env::var("NAIA_FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".into());
-    let child = Command::new(ffmpeg).args(["-y", "-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-i", "title=Naia", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]).arg(&output).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|error| format!("could not start MP4 recording: {error}"))?;
-    *recording = Some((child, output));
-    Ok(())
+    let ffmpeg = std::env::var_os("NAIA_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
+    let args = ffmpeg_args(&target, &audio, &output);
+    crate::log_both(&format!("[slides-recording] start {target:?} audio={audio:?}"));
+    tauri::async_runtime::spawn_blocking(move || {
+        let recording = RECORDING.get_or_init(|| Mutex::new(None));
+        let mut recording = recording.lock().map_err(|_| "recording lock poisoned")?;
+        if recording.is_some() { return Err("recording already active".into()); }
+        *recording = Some(Recorder::start(&ffmpeg, &args, output, STARTUP_PROBE)?);
+        Ok(())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 #[tauri::command]
-pub fn slides_recording_stop() -> Result<String, String> {
-    let recording = RECORDING.get_or_init(|| Mutex::new(None));
-    let mut recording = recording.lock().map_err(|_| "recording lock poisoned")?;
-    let (mut child, output) = recording.take().ok_or("recording is not active")?;
-    let _ = child.kill();
-    let _ = child.wait();
-    Ok(output.to_string_lossy().into_owned())
+pub async fn slides_recording_stop() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let recording = RECORDING.get_or_init(|| Mutex::new(None));
+        let recorder = recording.lock().map_err(|_| "recording lock poisoned")?.take().ok_or("recording is not active")?;
+        recorder.stop(crate::slides_recording::STOP_GRACE).map(|output| output.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]

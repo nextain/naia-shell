@@ -122,6 +122,7 @@ export default {
 	"slides.rangeEnd": "Trang kết thúc của bài thuyết trình",
 	"slides.fullscreenExit": "Thoát toàn màn hình",
 	"slides.fullscreenError": "Không thể bật toàn màn hình. Hãy cập nhật Naia rồi thử lại.",
+	"slides.recordingFailed": "Ghi MP4 thất bại. Chi tiết ffmpeg có trong nhật ký Naia.",
 	"slides.speechError": "Narration stopped. Check voice settings or resume to try again.",
 	"slides.state.empty": "No deck",
 	"slides.state.loading": "Loading",

@@ -1809,7 +1809,7 @@ Chat 지연 로드 UI 상태 매트릭스: **기본**은 variant를 지정하지
 | S-APP-SANDBOX | 앱 샌드박스 경로 강제 | UC9 앱 | app_sandbox.rs 단위·cargo |
 | S-BGM-LIB | BGM 라이브러리 SoT(#528) | UC8 확장 | bgm-library(-store).test.ts·BgmPlayer.test.tsx |
 | S-APP-OPEN-GRANT | 열림=동의 grant(#543) | UC9 앱 | workspace.rs 단위 |
-| S-SLIDES-REC | 슬라이드 MP4 녹화(#546) | UC9 앱 | app_sandbox.rs 상태머신 · 설치 전제는 e2e/467-slide-presenter.spec.ts(설치 매니페스트·`naia://app-install` 창) |
+| S-SLIDES-REC | 슬라이드 MP4 녹화(#546) | UC9 앱 | app_sandbox.rs 상태머신 · slides_recording_test.rs(리눅스 x11grab·소리·정지) · 설치 전제는 e2e/467-slide-presenter.spec.ts(설치 매니페스트·`naia://app-install` 창) |
 | S-I18N-COMPLETE | t() 키 14개 언어 완비 | 전 UC | check-compile-integrity·i18n-user-facing.test.ts(로케일 파일이 정본, #559) |
 
 
@@ -1909,6 +1909,7 @@ Test Coverage Map
 | UC-SLIDES-PPTX | Select PDF/PPTX; lazily convert general PPTX locally with isolated LibreOffice profile. Preserve original files and existing Office sessions. Display original filename and same-basename MD, else embedded notes, with blank/hidden page mapping. | slides_import and slides_files Rust tests; slides-files.test.ts, slides-files-bridge.test.ts, slides-center-area.test.tsx; real isolated conversion fixture |
 | UC-SLIDES-IMPORT-LIFETIME | Progress, cancel, retry, timeout, missing converter, corrupt input, bounded content/version/options cache and late result rejection. | slides_import Rust tests; slides-files.test.ts, slides-files-bridge.test.ts; slides-sidecar.spec.ts |
 | UC-SLIDES-EDIT | Edit page narration; apply/cancel; pause speech before applying; export edited Markdown copy; guard unapplied and unexported changes on document/script replacement. | slide-script.test.ts, slides-center-area.test.tsx, slides-sidecar.spec.ts |
+| UC-SLIDES-REC-LINUX | 발표자가 리눅스(X11·Xwayland)에서 "MP4 녹화"를 누르고 발표한 뒤 멈추면, 셸 창 화면과 스피커로 나간 소리(나이아 낭독)가 함께 담긴 MP4가 video 폴더에 남는다. ffmpeg가 바로 실패하거나 셸이 순수 Wayland 창이면 "녹화 중"으로 바뀌지 않고 녹화 실패가 뜬다. 녹화 중에 ffmpeg가 죽으면 멈출 때 실패가 뜨고 다시 녹화할 수 있다. | `slides_recording_test.rs`(x11grab·window_id·pulse 인자, Wayland 오류, 조기 종료, q 정지, 8초 뒤 강제 종료, 녹화 중 사망; `--ignored` 실녹화: Xvfb 창 + 격리 PipeWire 널 싱크 → ffprobe 영상·소리 두 트랙), `slides-host(-bridge).test.ts`(recording_lost), 변이 확인 |
 
 P04 must cover empty, loaded, progress, success, error, narrow viewport, keyboard/ARIA and error recovery. Browser IPC mocks prove wiring only; native recording and store delivery require separate evidence. Existing range, repeat, notes toggle, fullscreen and voice selection remain covered.
 

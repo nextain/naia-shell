@@ -236,6 +236,40 @@ describe("installed Slides host bridge", () => {
 		expect(host.reply.mock.calls.at(-1)?.[0]).not.toHaveProperty("capability");
 	});
 
+	it("releases ownership and reports recording_lost when the host recording is gone", async () => {
+		const start = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+		const stop = vi
+			.fn<() => Promise<string>>()
+			.mockRejectedValueOnce(
+				"recording_lost: ffmpeg finished with exit status: 1",
+			)
+			.mockResolvedValue("video/next.mp4");
+		const host = setup({ start, stop });
+		host.send(SLIDES_HOST_ACTIONS.hello, "hello-lost");
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "start-lost");
+		await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+		host.send(SLIDES_HOST_ACTIONS.recordingStop, "stop-lost");
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({
+					id: "stop-lost",
+					ok: false,
+					error: "recording_lost",
+				}),
+				ORIGIN,
+			),
+		);
+		// Ownership is released: the same frame can start a new recording.
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "start-again");
+		await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({ id: "start-again", ok: true }),
+				ORIGIN,
+			),
+		);
+	});
+
 	it("stops a recording whose start resolves after iframe disposal", async () => {
 		let resolveStart!: () => void;
 		const start = vi.fn(

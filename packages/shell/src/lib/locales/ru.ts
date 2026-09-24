@@ -122,6 +122,7 @@ export default {
 	"slides.rangeEnd": "Конечная страница презентации",
 	"slides.fullscreenExit": "Выйти из полноэкранного режима",
 	"slides.fullscreenError": "Не удалось включить полноэкранный режим. Обновите Naia и повторите попытку.",
+	"slides.recordingFailed": "Не удалось записать MP4. Подробности ffmpeg — в журнале Naia.",
 	"slides.speechError": "Narration stopped. Check voice settings or resume to try again.",
 	"slides.state.empty": "No deck",
 	"slides.state.loading": "Loading",

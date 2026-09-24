@@ -31,7 +31,11 @@ import {
 	type SlidesOpenedPdf,
 } from "../../lib/slides-files";
 import { replaceSlideScriptPage } from "../../lib/slide-script";
-import { startSlidesRecording, stopSlidesRecording } from "../../lib/slides-host";
+import {
+	isRecordingLost,
+	startSlidesRecording,
+	stopSlidesRecording,
+} from "../../lib/slides-host";
 import { useAppStore } from "../../stores/app";
 import { SlidesControls } from "./SlidesControls";
 import {
@@ -647,8 +651,12 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			const fileName = output.split(/[\\/]/).pop();
 			if (fileName) await naia.openInWorkspace?.(`video/${fileName}`);
 		} catch (error) {
-			// A failed stop retains native ownership, so keep Stop available to retry.
-			setRecordingError(String(error));
+			// A failed stop retains native ownership, so keep Stop available to
+			// retry — unless the host reports the recording as lost.
+			if (recording && isRecordingLost(error)) setRecording(false);
+			setRecordingError(
+				`${t("slides.recordingFailed")} (${String(error).replace(/^Error: /, "")})`,
+			);
 		}
 	}
 
