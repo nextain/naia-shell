@@ -1335,7 +1335,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
 | **FR-NVA-MOTION.1** | NVA 플레이어는 대기·발화·몸짓 모든 상태에서 캐릭터 전체에 숨쉬기와 흔들림을 입힌다. 상태가 바뀌어도 움직임 위상이 끊기지 않는다. GPU·Ditto 없이 동작한다(FR-NVA-WEB.1 유지). | UC-NVA-MOTION | `packages/shell/src/lib/avatar/__tests__/nva-procedural-motion.test.ts`, `prebaked-renderer.test.ts`, `e2e/nva-motion.spec.ts` | In progress |
-| **FR-NVA-MOTION.2** | 매니페스트 `motion`으로 크기와 주기를 조절하거나(`false`면) 끌 수 있다. 잘못된 값은 필드 단위로 기본값을 쓴다. 사용자가 움직임 줄이기를 켜 두면 멈춘다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `e2e/nva-motion.spec.ts` | In progress |
+| **FR-NVA-MOTION.2** | 매니페스트 `motion`으로 크기와 주기를 조절하거나(`false`면) 끌 수 있다. 잘못된 값은 필드 단위로 기본값을 쓴다. 사용자가 움직임 줄이기를 켜 두면 멈춘다. 가슴선 기본값은 얼굴 상자에서 계산한다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `e2e/nva-motion.spec.ts` | In progress |
 | **FR-NVA-MOTION.3** | 층 플레이어에서 발화 애니메이션에 `head_track`이 있으면 머리 층이 몸 클립의 현재 프레임에 맞춰 옮겨지고 돌고 커진다. 없으면 지금처럼 고정 위치다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `nva-layered-player.test.ts` | In progress |
 
 

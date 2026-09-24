@@ -8,6 +8,7 @@ import {
 	type MotionSpec,
 	drawWithMotion,
 	parseMotionSpec,
+	resolveChestY,
 } from "./nva-procedural-motion";
 
 interface Config {
@@ -66,6 +67,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	constructor(private readonly config: Config) {
 		this.motionSpec = parseMotionSpec(config.manifest);
+		if (this.motionSpec) {
+			this.motionSpec.chest_y = resolveChestY(config.manifest, this.motionSpec);
+		}
 	}
 
 	start(video: HTMLVideoElement, canvas: HTMLCanvasElement): void {

@@ -2,6 +2,7 @@
 //
 // 1. 순수 계산부:
 //    - parseMotionSpec: 매니페스트 최상위 motion 필드 파싱 (허용 범위 검사, 개별 필드 기본값 폴백, false=null)
+//    - resolveChestY: 가슴선(chest_y) 결정 (매니페스트 motion.chest_y -> face_bbox 기반 계산 -> 0.72 기본값)
 //    - motionAt: 주어진 시각(tMs, performance.now())에 대한 breath(0..breath), angleDeg 계산 (벽시계 연속성 보장)
 //    - sliceGeometry: 가슴선(chest_y) 기준 상하 2조각 분할 기하 계산 (1px 오버랩 지원)
 // 2. 그리기부:
@@ -11,6 +12,8 @@
 //    - parseHeadTrack: 발화 애니메이션의 head_track 필드 파싱
 //    - headTrackFrameAt: currentTime 기준 현재 프레임 선택
 //    - applyHeadTrackToRect: faceBboxToRect 결과에 위치 이동/중심 기준 회전/스케일 적용
+
+import { type NvaManifest, derive } from "./nva-core";
 
 export interface MotionSpec {
 	/** 숨쉬기 세로 늘임 최대 비율 (0~0.05, 기본 0.010) */
@@ -134,6 +137,98 @@ export function parseMotionSpec(manifest: unknown): MotionSpec | null {
 		chest_y: parseNumber(m.chest_y, 0.3, 0.95, DEFAULT_MOTION_SPEC.chest_y),
 		pivot_y: parseNumber(m.pivot_y, 0.5, 1.5, DEFAULT_MOTION_SPEC.pivot_y),
 	};
+}
+
+/**
+ * 가슴선(chest_y)을 결정하는 순수 함수 (naia-shell #714).
+ * 1. 매니페스트 motion.chest_y가 유효(0.3~0.95)하면 그 값.
+ * 2. 없고 발화 애니메이션(derive(manifest).talkKey)의 face_bbox가 있으면,
+ *    얼굴 상자 아래끝 + 얼굴 높이 * 0.35 ([x,y,l] 정사각 및 [x,y,w,h] 직사각 모두 지원).
+ *    결과는 0.3~0.95로 클램프.
+ * 3. 둘 다 없으면 0.72 (spec?.chest_y 유효 시 그 값 폴백).
+ */
+export function resolveChestY(
+	manifest: unknown,
+	spec?: MotionSpec | null,
+): number {
+	if (manifest && typeof manifest === "object") {
+		// 1. 매니페스트 motion.chest_y가 유효하면 그 값
+		const rawMotion = (manifest as { motion?: unknown }).motion;
+		if (rawMotion && typeof rawMotion === "object") {
+			const cy = (rawMotion as { chest_y?: unknown }).chest_y;
+			if (
+				typeof cy === "number" &&
+				Number.isFinite(cy) &&
+				cy >= 0.3 &&
+				cy <= 0.95
+			) {
+				return cy;
+			}
+		}
+
+		// 2. 없고 발화 애니메이션 face_bbox가 있으면 아래끝 + 높이 * 0.35
+		const m = manifest as NvaManifest;
+		let talkAnim: { face_bbox?: number[] } | undefined;
+		try {
+			const d = derive(m);
+			if (d.talkKey && m.animations) {
+				talkAnim = m.animations[d.talkKey];
+			}
+		} catch {
+			// derive 실패 시 무시
+		}
+		if (!talkAnim && m.animations && typeof m.animations === "object") {
+			talkAnim = m.animations.talking ?? m.animations.speak;
+		}
+
+		const bbox = talkAnim?.face_bbox;
+		if (Array.isArray(bbox)) {
+			let bottom: number | undefined;
+			let height: number | undefined;
+			if (bbox.length === 3) {
+				const [, y, l] = bbox;
+				if (
+					typeof y === "number" &&
+					Number.isFinite(y) &&
+					typeof l === "number" &&
+					Number.isFinite(l) &&
+					l > 0
+				) {
+					bottom = y + l;
+					height = l;
+				}
+			} else if (bbox.length === 4) {
+				const [, y, , h] = bbox;
+				if (
+					typeof y === "number" &&
+					Number.isFinite(y) &&
+					typeof h === "number" &&
+					Number.isFinite(h) &&
+					h > 0
+				) {
+					bottom = y + h;
+					height = h;
+				}
+			}
+
+			if (bottom !== undefined && height !== undefined) {
+				const calculated = bottom + height * 0.35;
+				return Math.min(0.95, Math.max(0.3, calculated));
+			}
+		}
+	}
+
+	// 3. 둘 다 없으면 0.72 (spec?.chest_y 유효 시 그 값 폴백)
+	if (
+		spec &&
+		typeof spec.chest_y === "number" &&
+		Number.isFinite(spec.chest_y) &&
+		spec.chest_y >= 0.3 &&
+		spec.chest_y <= 0.95
+	) {
+		return spec.chest_y;
+	}
+	return DEFAULT_MOTION_SPEC.chest_y;
 }
 
 /**

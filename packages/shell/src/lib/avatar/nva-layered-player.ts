@@ -13,6 +13,7 @@ import {
 	headTrackFrameAt,
 	parseHeadTrack,
 	parseMotionSpec,
+	resolveChestY,
 } from "./nva-procedural-motion";
 import { NvaSyncDriver } from "./nva-sync-driver";
 
@@ -90,6 +91,9 @@ export class NvaLayeredPlayer {
 		this.manifest = manifest;
 		this.opts = opts;
 		this.motionSpec = parseMotionSpec(manifest);
+		if (this.motionSpec) {
+			this.motionSpec.chest_y = resolveChestY(manifest, this.motionSpec);
+		}
 		const d = derive(manifest);
 		this.idleKey = d.idleKey;
 		this.talkKey = d.talkKey;

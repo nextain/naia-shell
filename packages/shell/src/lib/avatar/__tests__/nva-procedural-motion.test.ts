@@ -12,6 +12,7 @@ import {
 	motionAt,
 	parseHeadTrack,
 	parseMotionSpec,
+	resolveChestY,
 	sliceGeometry,
 } from "../nva-procedural-motion";
 
@@ -89,6 +90,136 @@ describe("nva-procedural-motion", () => {
 				chest_y: 0.3,
 				pivot_y: 1.5,
 			});
+		});
+	});
+
+	describe("resolveChestY", () => {
+		it("경우 1: 매니페스트 motion.chest_y가 유효하면 그 값을 우선 사용한다", () => {
+			const manifest = {
+				motion: { chest_y: 0.65 },
+				animations: {
+					talking: {
+						loop: true,
+						can_talk: true,
+						face_bbox: [0.2, 0.3, 0.4],
+					},
+				},
+			};
+			const spec = parseMotionSpec(manifest);
+			expect(resolveChestY(manifest, spec)).toBe(0.65);
+		});
+
+		it("경우 2: [x,y,l] 정사각 face_bbox에서 가슴선을 계산한다 (아래끝 + 높이의 0.35배)", () => {
+			// 아래끝 = 0.3 + 0.4 = 0.7, 높이 = 0.4
+			// 0.7 + 0.4 * 0.35 = 0.84
+			const manifest = {
+				animations: {
+					speak: {
+						loop: true,
+						can_talk: true,
+						face_bbox: [0.2, 0.3, 0.4],
+					},
+				},
+			};
+			const spec = parseMotionSpec(manifest);
+			expect(resolveChestY(manifest, spec)).toBeCloseTo(0.84, 5);
+		});
+
+		it("경우 2: [x,y,w,h] 직사각 face_bbox에서 가슴선을 계산한다 (아래끝 + 높이의 0.35배)", () => {
+			// 아래끝 = 0.25 + 0.4 = 0.65, 높이 = 0.4
+			// 0.65 + 0.4 * 0.35 = 0.79
+			const manifest = {
+				animations: {
+					talking: {
+						loop: true,
+						can_talk: true,
+						face_bbox: [0.15, 0.25, 0.35, 0.4],
+					},
+				},
+			};
+			const spec = parseMotionSpec(manifest);
+			expect(resolveChestY(manifest, spec)).toBeCloseTo(0.79, 5);
+		});
+
+		it("범위 자르기: 얼굴이 큰 구도(bbox 아래끝 0.8)에서 결과가 0.95 이하로 제한된다", () => {
+			// 아래끝 = 0.2 + 0.6 = 0.8, 높이 = 0.6
+			// 0.8 + 0.6 * 0.35 = 1.01 -> clamp to 0.95
+			const manifest = {
+				animations: {
+					talking: {
+						loop: true,
+						can_talk: true,
+						face_bbox: [0.1, 0.2, 0.6],
+					},
+				},
+			};
+			const spec = parseMotionSpec(manifest);
+			const cy = resolveChestY(manifest, spec);
+			expect(cy).toBeLessThanOrEqual(0.95);
+			expect(cy).toBe(0.95);
+		});
+
+		it("범위 자르기: 얼굴이 매우 위쪽에 위치한 경우 결과가 0.3 이상으로 제한된다", () => {
+			// 아래끝 = 0.05 + 0.1 = 0.15, 높이 = 0.1
+			// 0.15 + 0.1 * 0.35 = 0.185 -> clamp to 0.3
+			const manifest = {
+				animations: {
+					talking: {
+						loop: true,
+						can_talk: true,
+						face_bbox: [0.1, 0.05, 0.1],
+					},
+				},
+			};
+			const spec = parseMotionSpec(manifest);
+			const cy = resolveChestY(manifest, spec);
+			expect(cy).toBeGreaterThanOrEqual(0.3);
+			expect(cy).toBe(0.3);
+		});
+
+		it("경우 3: 둘 다 없으면 기본값 0.72를 반환한다", () => {
+			expect(resolveChestY({})).toBe(0.72);
+			expect(resolveChestY(null)).toBe(0.72);
+			expect(resolveChestY(undefined)).toBe(0.72);
+			expect(resolveChestY({ motion: false })).toBe(0.72);
+		});
+
+		it("경우 3: motion.chest_y가 유효 범위 밖이고 face_bbox도 없으면 0.72를 반환한다", () => {
+			const manifestLow = { motion: { chest_y: 0.1 } };
+			expect(resolveChestY(manifestLow)).toBe(0.72);
+
+			const manifestHigh = { motion: { chest_y: 1.2 } };
+			expect(resolveChestY(manifestHigh)).toBe(0.72);
+		});
+
+		it("경우 3: face_bbox가 비정상(빈 배열 또는 무효값)이고 motion.chest_y가 없으면 0.72를 반환한다", () => {
+			const manifest = {
+				animations: {
+					talking: {
+						loop: true,
+						can_talk: true,
+						face_bbox: [],
+					},
+				},
+			};
+			expect(resolveChestY(manifest)).toBe(0.72);
+		});
+
+		it("derive(manifest).talkKey를 통해 발화 애니메이션을 찾아 face_bbox를 계산한다", () => {
+			const manifest = {
+				animations: {
+					idle: { loop: true, can_talk: false, clip: "idle.webm" },
+					custom_talk: {
+						loop: true,
+						can_talk: true,
+						clip: "talk.webm",
+						face_bbox: [0.1, 0.2, 0.4],
+					},
+				},
+			};
+			// 아래끝 = 0.2 + 0.4 = 0.6, 높이 = 0.4
+			// 0.6 + 0.4 * 0.35 = 0.74
+			expect(resolveChestY(manifest)).toBeCloseTo(0.74, 5);
 		});
 	});
 

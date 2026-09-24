@@ -402,5 +402,28 @@ describe("PrebakedAvatarRenderer", () => {
 			renderer.stop();
 			getContextSpy.mockRestore();
 		});
+
+		it("resolves chest_y from manifest talking animation face_bbox", async () => {
+			const manifest = {
+				...baseManifest(),
+				animations: {
+					...baseManifest().animations,
+					talking: {
+						clip: "clips/speech-ko.mp4",
+						loop: true,
+						can_talk: true,
+						face_bbox: [0.2, 0.3, 0.4] as [number, number, number],
+					},
+				},
+			};
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async (p) => `blob:${p}`,
+			});
+			// 아래끝 0.7 + 0.4 * 0.35 = 0.84
+			expect((renderer as any).motionSpec?.chest_y).toBeCloseTo(0.84, 5);
+			renderer.stop();
+		});
 	});
 });
