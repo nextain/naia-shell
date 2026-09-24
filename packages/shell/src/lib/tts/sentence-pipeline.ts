@@ -131,6 +131,18 @@ export interface SentenceTtsPipelineDeps {
 
 export interface SentenceTtsPipeline {
 	sendSentence(sentence: string): void;
+	/**
+	 * Synthesize a sentence ahead of time without playing it (slide page turn).
+	 * A later sendSentence with the same text and voice plays the prefetched
+	 * audio instead of synthesizing again. Local voice prefetch goes through
+	 * the same single-flight scheduler, so the voice host still sees one
+	 * request at a time. Returns false when the provider cannot prefetch.
+	 */
+	prefetchSentence(sentence: string): boolean;
+	/** Abort and drop every prefetched sentence that has not been played. */
+	discardPrefetch(): void;
+	/** Number of prefetched sentences waiting to be played (diagnostics/tests). */
+	prefetchedCount(): number;
 	/** Barge-in/new turn: drop pending requests and cancel in-flight synthesis. */
 	interrupt(): void;
 	/** Session teardown: interrupt + clear the recent-utterance ring. */
@@ -149,18 +161,48 @@ export function createSentenceTtsPipeline(
 	const abortControllers = new Map<string, AbortController>();
 	const recentTexts: string[] = [];
 	let localVoiceUnavailableNoticed = false;
+	type SynthesisOutput = Awaited<ReturnType<typeof synthesizeTts>>;
+	/**
+	 * Prefetched synthesis, keyed by provider+voice+normalized text. Kept apart
+	 * from activeRequests/abortControllers on purpose: a slide page turn calls
+	 * interrupt() before reading the next page, and that must not cancel the
+	 * audio prefetched for exactly that page. Only discardPrefetch() drops it.
+	 */
+	const prefetched = new Map<
+		string,
+		{ promise: Promise<SynthesisOutput>; abort: AbortController }
+	>();
 
-	function sendSentence(sentence: string): void {
-		// Preserve the original Markdown in chat, but send only natural speech
-		// text to the selected voice engine.
-		const voiceCfg = deps.getVoiceConfig();
-		const clean = ttsTextFilter.filter(
+	function prefetchKey(
+		clean: string,
+		voiceCfg: PipelineVoiceConfig | null,
+	): string {
+		return JSON.stringify([
+			voiceCfg?.ttsProvider ?? "edge",
+			voiceCfg?.voice ?? "",
+			voiceCfg?.vllmTtsHost ?? "",
+			clean,
+		]);
+	}
+
+	function cleanForVoice(
+		sentence: string,
+		voiceCfg: PipelineVoiceConfig | null,
+	): string {
+		return ttsTextFilter.filter(
 			sentence,
 			voiceCfg?.voice ||
 				(typeof document !== "undefined"
 					? document.documentElement.lang
 					: undefined),
 		);
+	}
+
+	function sendSentence(sentence: string): void {
+		// Preserve the original Markdown in chat, but send only natural speech
+		// text to the selected voice engine.
+		const voiceCfg = deps.getVoiceConfig();
+		const clean = cleanForVoice(sentence, voiceCfg);
 		if (!clean) return;
 		const reserved = deps.reserveReveal(sentence);
 		let revealed = false;
@@ -303,7 +345,9 @@ export function createSentenceTtsPipeline(
 		// non-browser provider is synthesized here (gateway / direct API / edge
 		// WS). The AbortController lets interrupt/cleanup cancel the in-flight
 		// fetch/WS (and stop paid TTS).
-		const abort = new AbortController();
+		const prefetchedEntry = prefetched.get(prefetchKey(clean, voiceCfg));
+		if (prefetchedEntry) prefetched.delete(prefetchKey(clean, voiceCfg));
+		const abort = prefetchedEntry?.abort ?? new AbortController();
 		abortControllers.set(reqId, abort);
 		let synthesisStartedAt = 0;
 		// 2026-09-11 streaming contract: for the local voice host, reserve the
@@ -371,7 +415,18 @@ export function createSentenceTtsPipeline(
 		// The Windows 8GB path shares one GPU between VoxCPM2 and Ditto. Keep it
 		// strictly half-duplex; cloud TTS providers retain parallel synthesis.
 		let synthesis: ReturnType<typeof synthesize>;
-		if (ttsProviderForCost === "naia-local-voice" && localVoiceScheduler) {
+		if (prefetchedEntry) {
+			// Already synthesized (or queued in the scheduler) during the previous
+			// page. Timing restarts here so the RTF verdict reflects the wait the
+			// listener actually hears, which releases playback immediately.
+			if (!revealed) deps.setOutputStage("tts");
+			synthesisStartedAt = performance.now();
+			Logger.info(TAG, "Using prefetched TTS sentence", { reqId, seq });
+			synthesis = prefetchedEntry.promise;
+		} else if (
+			ttsProviderForCost === "naia-local-voice" &&
+			localVoiceScheduler
+		) {
 			synthesis = localVoiceScheduler.schedule(() => synthesize());
 		} else {
 			synthesis = synthesize();
@@ -549,8 +604,64 @@ export function createSentenceTtsPipeline(
 		}
 	}
 
+	function prefetchSentence(sentence: string): boolean {
+		const voiceCfg = deps.getVoiceConfig();
+		if (!voiceCfg) return false;
+		const clean = cleanForVoice(sentence, voiceCfg);
+		if (!clean) return false;
+		const provider = voiceCfg.ttsProvider ?? "edge";
+		if (getTtsProviderMeta(provider)?.isClientSide) return false;
+		if (deps.getRenderer()?.hasAuthoredClip(clean)) return false;
+		const key = prefetchKey(clean, voiceCfg);
+		if (prefetched.has(key)) return true;
+		const abort = new AbortController();
+		const run = () => {
+			if (abort.signal.aborted) {
+				return Promise.reject(
+					new DOMException("TTS prefetch discarded", "AbortError"),
+				);
+			}
+			return synthesizeTts({
+				text: clean,
+				voice: voiceCfg.voice,
+				provider: provider as TtsProviderId,
+				naiaKey: voiceCfg.naiaKey,
+				gatewayUrl: voiceCfg.gatewayUrl,
+				vllmHost: voiceCfg.vllmHost,
+				vllmTtsHost: voiceCfg.vllmTtsHost,
+				localRefAudioBase64:
+					provider === "naia-local-voice"
+						? (deps.getLocalRefAudioB64() ?? undefined)
+						: undefined,
+				signal: abort.signal,
+			});
+		};
+		const scheduler = deps.getScheduler();
+		const promise =
+			provider === "naia-local-voice" && scheduler
+				? scheduler.schedule(run)
+				: run();
+		// The consumer observes the rejection; an unconsumed prefetch must not
+		// surface as an unhandled rejection.
+		promise.catch(() => undefined);
+		prefetched.set(key, { promise, abort });
+		Logger.info(TAG, "Prefetching TTS sentence", {
+			sentence: clean.slice(0, 50),
+			provider,
+		});
+		return true;
+	}
+
+	function discardPrefetch(): void {
+		for (const entry of prefetched.values()) entry.abort.abort();
+		prefetched.clear();
+	}
+
 	return {
 		sendSentence,
+		prefetchSentence,
+		discardPrefetch,
+		prefetchedCount: () => prefetched.size,
 		interrupt,
 		dispose(): void {
 			// Session teardown drops the pipeline's own requests but deliberately
@@ -558,6 +669,7 @@ export function createSentenceTtsPipeline(
 			// live utterance. Voice-pipeline cleanup must not silence an ongoing
 			// chat-mode browser reply — original ChatArea behavior preserved.
 			clearRequests();
+			discardPrefetch();
 			recentTexts.length = 0;
 		},
 		rearmLocalVoiceNotice(): void {

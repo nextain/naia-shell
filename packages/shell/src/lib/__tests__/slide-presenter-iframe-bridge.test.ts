@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	SLIDE_PRESENTER_CANCEL_EVENT,
+	SLIDE_PRESENTER_PREFETCH_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
 } from "../slide-presenter-events";
@@ -45,6 +46,28 @@ describe("slide-presenter iframe bridge", () => {
 		);
 		window.removeEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handler);
 		expect(handler).toHaveBeenCalledTimes(1);
+	});
+
+	it("FR-SLIDES-PREFETCH.1: forwards prefetch and discard messages", () => {
+		stop = startSlidePresenterIframeBridge();
+		const handler = vi.fn();
+		window.addEventListener(SLIDE_PRESENTER_PREFETCH_EVENT, handler);
+		const detail = { generation: 3, page: 4, text: "다음 쪽." };
+		fireMessage({ type: "naia-slides:prefetch", detail }, ASSET, null);
+		fireMessage({ type: "naia-slides:prefetch" }, ASSET, null);
+		fireMessage(
+			{ type: "naia-slides:prefetch", detail },
+			"https://evil.test",
+			null,
+		);
+		window.removeEventListener(SLIDE_PRESENTER_PREFETCH_EVENT, handler);
+		expect(handler).toHaveBeenCalledTimes(2);
+		expect((handler.mock.calls[0][0] as CustomEvent).detail).toEqual(detail);
+		expect((handler.mock.calls[1][0] as CustomEvent).detail).toEqual({
+			generation: 0,
+			page: null,
+			text: null,
+		});
 	});
 
 	it("ignores messages from a non-asset origin", () => {

@@ -2,12 +2,27 @@ export const SLIDE_PRESENTER_SPEAK_EVENT = "naia:slide-presenter-speak";
 export const SLIDE_PRESENTER_CANCEL_EVENT = "naia:slide-presenter-cancel";
 export const SLIDE_PRESENTER_SPEECH_RESULT_EVENT =
 	"naia:slide-presenter-speech-result";
+/**
+ * Ask the Shell to synthesize the opening of the NEXT page while the current
+ * page is still being read, so a page turn does not wait for synthesis.
+ * `text: null` discards any prefetched audio (pause, stop, previous page,
+ * script edit, leaving the presentation).
+ */
+export const SLIDE_PRESENTER_PREFETCH_EVENT = "naia:slide-presenter-prefetch";
 
 export interface SlidePresenterSpeechRequest {
 	requestId: string;
 	generation: number;
 	page: number;
 	text: string;
+}
+
+export interface SlidePresenterPrefetchRequest {
+	/** Generation of the page currently being read; the prefetch waits behind it. */
+	generation: number;
+	/** Page whose opening is prefetched (null when discarding). */
+	page: number | null;
+	text: string | null;
 }
 
 export interface SlidePresenterSpeechResult {
@@ -198,5 +213,20 @@ export function cancelSlidePresenterSpeech(
 	}
 	window.dispatchEvent(
 		new CustomEvent(SLIDE_PRESENTER_CANCEL_EVENT, { detail }),
+	);
+}
+
+export function requestSlidePresenterPrefetch(
+	detail: SlidePresenterPrefetchRequest,
+): void {
+	if (window.parent !== window) {
+		window.parent.postMessage({ type: "naia-slides:prefetch", detail }, "*");
+		return;
+	}
+	window.dispatchEvent(
+		new CustomEvent<SlidePresenterPrefetchRequest>(
+			SLIDE_PRESENTER_PREFETCH_EVENT,
+			{ detail },
+		),
 	);
 }

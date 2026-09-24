@@ -1,6 +1,7 @@
 import { Logger } from "./logger";
 import {
 	SLIDE_PRESENTER_CANCEL_EVENT,
+	SLIDE_PRESENTER_PREFETCH_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
 	type SlidePresenterSpeechRequest,
@@ -53,6 +54,12 @@ export function startSlidePresenterIframeBridge(): () => void {
 					SLIDE_PRESENTER_SPEAK_EVENT,
 					{ detail: data.detail as SlidePresenterSpeechRequest },
 				),
+			);
+		} else if (data.type === "naia-slides:prefetch") {
+			window.dispatchEvent(
+				new CustomEvent(SLIDE_PRESENTER_PREFETCH_EVENT, {
+					detail: data.detail ?? { generation: 0, page: null, text: null },
+				}),
 			);
 		} else if (data.type === "naia-slides:cancel") {
 			window.dispatchEvent(
