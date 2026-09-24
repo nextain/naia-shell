@@ -120,6 +120,18 @@ describe("adapter 변환 (domain↔protocol↔wire, canon)", () => {
     // provider 안엔 enableThinking 안 강제(top-level 이 권위)
     expect(JSON.parse(JSON.stringify(out))).toHaveProperty("requestId", "r1");
   });
+  it("outbound 등가: thinking.level top-level 운반 및 무효값 필터링 (#709)", () => {
+    const outHigh = toAgentOutbound(req({ thinking: { level: "high" }, enableThinking: true })) as Record<string, unknown>;
+    expect(outHigh["thinking"]).toEqual({ level: "high" });
+    expect(outHigh["enableThinking"]).toBe(true);
+
+    const outOff = toAgentOutbound(req({ thinking: { level: "off" }, enableThinking: false })) as Record<string, unknown>;
+    expect(outOff["thinking"]).toEqual({ level: "off" });
+    expect(outOff["enableThinking"]).toBe(false);
+
+    const outInvalid = toAgentOutbound(req({ thinking: { level: "invalid" as any } })) as Record<string, unknown>;
+    expect("thinking" in outInvalid).toBe(false);
+  });
   it("S4: environmentSegments 운반(아바타 감정·앱) + 미지정 시 필드 부재", () => {
     // 송신 시: 셸 환경고유 세그먼트가 chat_request wire 에 그대로 실린다(Rust json_to_chat_request → proto environment_segments_json).
     const withSegs = toAgentOutbound(req({

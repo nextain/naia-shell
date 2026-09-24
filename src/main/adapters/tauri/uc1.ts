@@ -30,6 +30,12 @@ export function toAgentOutbound(out: DomainOutbound): AgentOutbound {
         ...(out.environmentSegments !== undefined ? { environmentSegments: out.environmentSegments } : {}), // S4 — 코어가 머지(Rust json_to_chat_request → proto environment_segments_json)
         ...(out.enableTools !== undefined ? { enableTools: out.enableTools } : {}),
         ...(out.enableThinking !== undefined ? { enableThinking: out.enableThinking } : {}),
+        ...(out.thinking !== undefined &&
+        (out.thinking.level === "off" ||
+          out.thinking.level === "low" ||
+          out.thinking.level === "high")
+          ? { thinking: out.thinking }
+          : {}),
         ...(out.disabledSkills !== undefined ? { disabledSkills: out.disabledSkills } : {}),
         ...(out.channel !== undefined ? { channel: out.channel } : {}),
         ...(out.grounding !== undefined ? { grounding: out.grounding } : {}),

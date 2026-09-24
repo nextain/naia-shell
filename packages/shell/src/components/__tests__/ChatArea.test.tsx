@@ -118,6 +118,8 @@ const capturedRequests: {
 	onChunk: (chunk: AgentResponseChunk) => void;
 	disabledSkills?: string[];
 	enableTools?: boolean;
+	enableThinking?: boolean;
+	thinking?: { level: "off" | "low" | "high" };
 }[] = [];
 vi.mock("../../lib/chat-service", () => ({
 	sendChatMessage: vi.fn().mockImplementation(
@@ -128,6 +130,8 @@ vi.mock("../../lib/chat-service", () => ({
 			onChunk: (chunk: AgentResponseChunk) => void;
 			disabledSkills?: string[];
 			enableTools?: boolean;
+			enableThinking?: boolean;
+			thinking?: { level: "off" | "low" | "high" };
 		}) => {
 			capturedOnChunk = opts.onChunk;
 			capturedRequests.push(opts);
@@ -2197,4 +2201,52 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
+	it("sends thinking { level: 'high' } and enableThinking: true when thinkingLevel is high (#709 / FR-CHAT-THINKING.5)", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				thinkingLevel: "high",
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "Hello High" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(capturedRequests.length).toBeGreaterThanOrEqual(1));
+		const lastReq = capturedRequests[capturedRequests.length - 1];
+		expect(lastReq.thinking).toEqual({ level: "high" });
+		expect(lastReq.enableThinking).toBe(true);
+
+		lastReq.onChunk({ type: "finish", requestId: lastReq.requestId });
+		localStorage.removeItem("naia-config");
+	});
+
+	it("sends thinking { level: 'off' } and enableThinking: false by default (#709 / FR-CHAT-THINKING.5)", async () => {
+		useChatStore.setState(useChatStore.getInitialState());
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "Hello Off" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(capturedRequests.length).toBeGreaterThanOrEqual(1));
+		const lastReq = capturedRequests[capturedRequests.length - 1];
+		expect(lastReq.thinking).toEqual({ level: "off" });
+		expect(lastReq.enableThinking).toBe(false);
+
+		lastReq.onChunk({ type: "finish", requestId: lastReq.requestId });
+		localStorage.removeItem("naia-config");
+	});
 });
+

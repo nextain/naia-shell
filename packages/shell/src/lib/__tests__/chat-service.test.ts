@@ -760,4 +760,88 @@ describe("chat-service", () => {
 			});
 		}
 	});
+
+	describe("sendChatMessage thinking forwarding (#709 / FR-CHAT-THINKING.5)", () => {
+		it("옛 경로에서 thinking.level 과 enableThinking 을 최상위에 싣는다 (high / off 포함)", async () => {
+			vi.stubEnv("VITE_NAIA_NEW_CORE", "");
+			const { sendChatMessage } = await import("../chat-service");
+
+			mockListen.mockImplementation(
+				async (_event: string, handler: (event: { payload: string }) => void) => {
+					setTimeout(() => {
+						handler({
+							payload: JSON.stringify({ type: "finish", requestId: "req-think-1" }),
+						});
+					}, 5);
+					return mockUnlisten;
+				},
+			);
+
+			await sendChatMessage({
+				message: "test",
+				provider: { provider: "gemini", model: "m", apiKey: "k" },
+				history: [],
+				onChunk: () => {},
+				requestId: "req-think-1",
+				thinking: { level: "high" },
+				enableThinking: true,
+			});
+
+			const callHigh = mockInvoke.mock.calls.find(
+				(c) => c[0] === "send_to_agent_command",
+			);
+			expect(callHigh).toBeDefined();
+			const payloadHigh = JSON.parse(
+				(callHigh?.[1] as { message: string }).message,
+			);
+			expect(payloadHigh.thinking).toEqual({ level: "high" });
+			expect(payloadHigh.enableThinking).toBe(true);
+
+			// off 도 명시적으로 전송
+			mockInvoke.mockClear();
+			await sendChatMessage({
+				message: "test off",
+				provider: { provider: "gemini", model: "m", apiKey: "k" },
+				history: [],
+				onChunk: () => {},
+				requestId: "req-think-2",
+				thinking: { level: "off" },
+				enableThinking: false,
+			});
+
+			const callOff = mockInvoke.mock.calls.find(
+				(c) => c[0] === "send_to_agent_command",
+			);
+			expect(callOff).toBeDefined();
+			const payloadOff = JSON.parse(
+				(callOff?.[1] as { message: string }).message,
+			);
+			expect(payloadOff.thinking).toEqual({ level: "off" });
+			expect(payloadOff.enableThinking).toBe(false);
+		});
+
+		it("새 코어(isNewCore) 분기에서 thinking 과 enableThinking 을 전달한다", async () => {
+			vi.stubEnv("VITE_NAIA_NEW_CORE", "1");
+			const { sendChatMessage } = await import("../chat-service");
+
+			await sendChatMessage({
+				message: "test new core",
+				provider: { provider: "gemini", model: "m", apiKey: "k" },
+				history: [],
+				onChunk: () => {},
+				requestId: "req-new-core-1",
+				thinking: { level: "low" },
+				enableThinking: true,
+			});
+
+			const call = mockInvoke.mock.calls.find(
+				(c) => c[0] === "send_to_agent_command",
+			);
+			expect(call).toBeDefined();
+			const payload = JSON.parse((call?.[1] as { message: string }).message);
+			expect(payload.thinking).toEqual({ level: "low" });
+			expect(payload.enableThinking).toBe(true);
+		});
+	});
 });
+

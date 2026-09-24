@@ -427,6 +427,22 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
             .map(|x| x.to_string()),
         enable_tools: v.get("enableTools").and_then(|x| x.as_bool()),
         enable_thinking: v.get("enableThinking").and_then(|x| x.as_bool()),
+        thinking: v
+            .get("thinking")
+            .and_then(|t| t.get("level"))
+            .and_then(|l| l.as_str())
+            .and_then(|s| match s {
+                "off" => Some(pb::ThinkingRequest {
+                    level: pb::ThinkingLevel::Off as i32,
+                }),
+                "low" => Some(pb::ThinkingRequest {
+                    level: pb::ThinkingLevel::Low as i32,
+                }),
+                "high" => Some(pb::ThinkingRequest {
+                    level: pb::ThinkingLevel::High as i32,
+                }),
+                _ => None,
+            }),
         gateway_url: s("gatewayUrl"),
         disabled_skills: v
             .get("disabledSkills")
@@ -1376,4 +1392,63 @@ mod live_tests {
         assert!(tokens > 0, "tokens>0 = 실 z.ai (chat_state={chat_state})");
         assert!(text.chars().count() > 5, "real text");
     }
+
+    #[test]
+    fn test_try_json_to_chat_request_thinking_mapping() {
+        use super::pb::ThinkingLevel;
+        use super::try_json_to_chat_request;
+
+        let parse_level = |val: serde_json::Value| {
+            let req = try_json_to_chat_request(&val).expect("valid request");
+            req.thinking.map(|t| t.level)
+        };
+
+        // off
+        assert_eq!(
+            parse_level(serde_json::json!({
+                "thinking": { "level": "off" }
+            })),
+            Some(ThinkingLevel::Off as i32)
+        );
+
+        // low
+        assert_eq!(
+            parse_level(serde_json::json!({
+                "thinking": { "level": "low" }
+            })),
+            Some(ThinkingLevel::Low as i32)
+        );
+
+        // high
+        assert_eq!(
+            parse_level(serde_json::json!({
+                "thinking": { "level": "high" }
+            })),
+            Some(ThinkingLevel::High as i32)
+        );
+
+        // none (missing)
+        assert_eq!(parse_level(serde_json::json!({})), None);
+
+        // invalid value
+        assert_eq!(
+            parse_level(serde_json::json!({
+                "thinking": { "level": "auto" }
+            })),
+            None
+        );
+        assert_eq!(
+            parse_level(serde_json::json!({
+                "thinking": { "level": "unknown" }
+            })),
+            None
+        );
+        assert_eq!(
+            parse_level(serde_json::json!({
+                "thinking": "not an object"
+            })),
+            None
+        );
+    }
 }
+

@@ -12,6 +12,7 @@ import {
 	removeAllowedTool,
 	resolveConfiguredGatewayUrl,
 	resolveGatewayUrl,
+	resolveThinkingLevel,
 	saveConfig,
 } from "../config";
 
@@ -344,3 +345,55 @@ describe("legacy NVA runtime migration on save", () => {
 		expect(saved.localVoiceEnabled).toBe(false);
 	});
 });
+
+describe("resolveThinkingLevel migration (#709 / FR-CHAT-THINKING.4)", () => {
+	it("defaults to off when config is null or undefined or empty", () => {
+		expect(resolveThinkingLevel(null)).toBe("off");
+		expect(resolveThinkingLevel(undefined)).toBe("off");
+		expect(resolveThinkingLevel({})).toBe("off");
+	});
+
+	it("migrates enableThinking: true to low when thinkingLevel is absent", () => {
+		expect(resolveThinkingLevel({ enableThinking: true })).toBe("low");
+	});
+
+	it("migrates enableThinking: false to off when thinkingLevel is absent", () => {
+		expect(resolveThinkingLevel({ enableThinking: false })).toBe("off");
+	});
+
+	it("preserves explicit valid thinkingLevel", () => {
+		expect(resolveThinkingLevel({ thinkingLevel: "off" })).toBe("off");
+		expect(resolveThinkingLevel({ thinkingLevel: "low" })).toBe("low");
+		expect(resolveThinkingLevel({ thinkingLevel: "high" })).toBe("high");
+	});
+
+	it("prioritizes thinkingLevel over enableThinking", () => {
+		expect(
+			resolveThinkingLevel({ thinkingLevel: "high", enableThinking: false }),
+		).toBe("high");
+		expect(
+			resolveThinkingLevel({ thinkingLevel: "off", enableThinking: true }),
+		).toBe("off");
+	});
+
+	it("falls back to enableThinking when thinkingLevel is an invalid value", () => {
+		expect(
+			resolveThinkingLevel({
+				thinkingLevel: "invalid" as any,
+				enableThinking: true,
+			}),
+		).toBe("low");
+		expect(
+			resolveThinkingLevel({
+				thinkingLevel: "invalid" as any,
+				enableThinking: false,
+			}),
+		).toBe("off");
+		expect(
+			resolveThinkingLevel({
+				thinkingLevel: "auto" as any,
+			}),
+		).toBe("off");
+	});
+});
+

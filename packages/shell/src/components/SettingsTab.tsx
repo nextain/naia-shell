@@ -76,8 +76,10 @@ import {
 	loadConfig,
 	loadConfigWithSecrets,
 	removeAllowedTool,
+	resolveThinkingLevel,
 	saveConfig,
 	saveConfigSecure,
+	type ThinkingLevel,
 } from "../lib/config";
 import {
 	type AgentFact,
@@ -819,8 +821,8 @@ export function SettingsTab() {
 	const [environmentTerminalInput, setEnvironmentTerminalInput] = useState(
 		existing?.environmentTerminalInput === true,
 	);
-	const [enableThinking, setEnableThinking] = useState(
-		existing?.enableThinking ?? false,
+	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
+		resolveThinkingLevel(existing),
 	);
 	const workspaceRoot = existing?.workspaceRoot || getAdkPath() || "";
 	const [voice, setVoice] = useState(
@@ -2480,6 +2482,41 @@ export function SettingsTab() {
 		} as unknown as Record<string, unknown>);
 	}
 
+	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high"];
+
+	function handleThinkingChange(level: ThinkingLevel) {
+		setThinkingLevel(level);
+		persistConfig({
+			thinkingLevel: level,
+			enableThinking: level !== "off",
+		});
+	}
+
+	function handleThinkingKeyDown(
+		e: React.KeyboardEvent<HTMLButtonElement>,
+		currentLevel: ThinkingLevel,
+	) {
+		let targetLevel: ThinkingLevel | null = null;
+		if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+			e.preventDefault();
+			const idx = THINKING_LEVELS.indexOf(currentLevel);
+			targetLevel = THINKING_LEVELS[(idx + 1) % THINKING_LEVELS.length];
+		} else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+			e.preventDefault();
+			const idx = THINKING_LEVELS.indexOf(currentLevel);
+			targetLevel =
+				THINKING_LEVELS[(idx - 1 + THINKING_LEVELS.length) % THINKING_LEVELS.length];
+		}
+		if (targetLevel) {
+			handleThinkingChange(targetLevel);
+			const parent = e.currentTarget.parentElement;
+			const nextButton = parent?.querySelector<HTMLButtonElement>(
+				`[data-testid="thinking-level-${targetLevel}"]`,
+			);
+			nextButton?.focus();
+		}
+	}
+
 
 	function persistVideoAvatarSelection(nextNva?: string) {
 		const selectedNva = nextNva || nvaModel || DEFAULT_NVA_MODEL;
@@ -2875,7 +2912,8 @@ export function SettingsTab() {
 			honorific: honorific.trim() || undefined,
 			speechStyle,
 			enableTools,
-			enableThinking,
+			thinkingLevel,
+			enableThinking: thinkingLevel !== "off",
 			gatewayUrl:
 				enableTools &&
 				gatewayUrl.trim() &&
@@ -4816,20 +4854,70 @@ export function SettingsTab() {
 						/>
 					</div>
 					{enableTools && <DevicePairingSection />}
-					<div className="settings-field settings-toggle-row">
-						{/* expert role editor */}
-						<label htmlFor="thinking-toggle">
-							{t("settings.enableThinking")}
+					<div className="settings-field" data-testid="thinking-level-section">
+						<label id="thinking-level-label">
+							{t("settings.thinkingLevel")}
 						</label>
-						<input
-							id="thinking-toggle"
-							type="checkbox"
-							checked={enableThinking}
-							onChange={(e) => {
-								setEnableThinking(e.target.checked);
-								persistConfig({ enableThinking: e.target.checked });
+						<div
+							role="radiogroup"
+							aria-labelledby="thinking-level-label"
+							style={{
+								display: "flex",
+								gap: "4px",
+								width: "100%",
+								marginTop: "4px",
 							}}
-						/>
+						>
+							{THINKING_LEVELS.map((level) => {
+								const active = thinkingLevel === level;
+								const label =
+									level === "off"
+										? t("settings.thinkingLevelOff")
+										: level === "low"
+											? t("settings.thinkingLevelLow")
+											: t("settings.thinkingLevelHigh");
+								return (
+									<button
+										key={level}
+										type="button"
+										role="radio"
+										aria-checked={active}
+										tabIndex={active ? 0 : -1}
+										data-testid={`thinking-level-${level}`}
+										onClick={() => handleThinkingChange(level)}
+										onKeyDown={(e) => handleThinkingKeyDown(e, level)}
+										style={{
+											flex: "1 1 0",
+											minWidth: 0,
+											padding: "6px 8px",
+											borderRadius: "4px",
+											border: active
+												? "1px solid var(--accent, #2563eb)"
+												: "1px solid var(--border-color, #e2e8f0)",
+											backgroundColor: active
+												? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+												: "var(--bg-surface, var(--espresso, #ffffff))",
+											color: active
+												? "var(--accent, #2563eb)"
+												: "var(--text-primary, var(--cream, #0f172a))",
+											fontWeight: active ? 600 : 400,
+											fontSize: "13px",
+											cursor: "pointer",
+											textAlign: "center",
+											whiteSpace: "nowrap",
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											transition: "all 0.15s ease",
+										}}
+									>
+										{label}
+									</button>
+								);
+							})}
+						</div>
+						<div className="settings-hint" style={{ marginTop: "4px" }}>
+							{t("settings.thinkingLevelHint")}
+						</div>
 					</div>
 
 					{/* #502 (FR-ENV-ATTENTION.4): 표면 목록에는 사용자의 터미널 이름이 들어간다.

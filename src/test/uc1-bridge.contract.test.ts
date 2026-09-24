@@ -59,4 +59,21 @@ describe("ChatBridge (outbound driving adapter)", () => {
     await bridge.cancel(handle);
     expect(chat.cancelled[0]?.requestId).toBe("r1");
   });
+  it("thinking: level 유효값(off/low/high) 전달 및 무효값 필터링 (#709)", () => {
+    const chat = new MockChatPort();
+    let seq = 0;
+    const bridge = new ChatBridge({ chat, clientId: "s", newRequestId: () => `r-${++seq}` });
+
+    bridge.submit({ ...input, thinking: { level: "high" }, enableThinking: true }, () => {});
+    expect(chat.started[0]?.thinking).toEqual({ level: "high" });
+    expect(chat.started[0]?.enableThinking).toBe(true);
+
+    bridge.submit({ ...input, thinking: { level: "off" }, enableThinking: false }, () => {});
+    expect(chat.started[1]?.thinking).toEqual({ level: "off" });
+    expect(chat.started[1]?.enableThinking).toBe(false);
+
+    bridge.submit({ ...input, thinking: { level: "invalid" as any } }, () => {});
+    expect(chat.started[2]?.thinking).toBeUndefined();
+  });
 });
+
