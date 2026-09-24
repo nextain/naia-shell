@@ -3,10 +3,11 @@
  * InnerTube 기반 검색 + 스트림 URL 엔드포인트를 셸 BGM 플레이어(`components/BgmPlayer.tsx`)에 제공.
  * 레이어 = 환경 사이드카(SoT: docs/brain-body-environment.md). agent 독립.
  */
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import { Innertube } from "youtubei.js";
 import { allowOriginFor } from "./cors-origin.js";
+import { listenOnLoopback } from "./loopback-listen.js";
 
 // Fixed default 18791 (shell hardcodes it); NAIA_BGM_PORT overrides for tests.
 export const YT_SERVER_PORT = Number(process.env.NAIA_BGM_PORT) || 18791;
@@ -189,7 +190,7 @@ export function startYoutubeServer(): void {
 	// Pre-warm Innertube in the background
 	getInnertube().catch(() => {});
 
-	const server = createServer(async (req, res) => {
+	const handler: RequestListener = async (req, res) => {
 		if (req.method === "OPTIONS") {
 			cors(req, res);
 			res.writeHead(204);
@@ -222,16 +223,10 @@ export function startYoutubeServer(): void {
 			process.stderr.write(`[youtube-server] request error: ${err}\n`);
 			json(req, res, 500, { error: "internal server error" });
 		}
-	});
+	};
 
-	// Listen on all interfaces (no host arg) so both 127.0.0.1 and ::1 are covered.
-	// On macOS, `localhost` resolves to ::1 (IPv6) by default; binding only to
-	// 127.0.0.1 would make the server unreachable from the Tauri webview.
-	server.listen(YT_SERVER_PORT, () => {
-		process.stderr.write(`[youtube-server] listening on port ${YT_SERVER_PORT}\n`);
-	});
-
-	server.on("error", (err: NodeJS.ErrnoException) => {
+	// Loopback only — both 127.0.0.1 and ::1, never every interface (#716).
+	listenOnLoopback(handler, YT_SERVER_PORT, (err) => {
 		process.stderr.write(`[youtube-server] error: ${err}\n`);
 		if (err.code === "EADDRINUSE") {
 			// FR-BGM.14 (#517): exit immediately instead of retrying. A retry loop
