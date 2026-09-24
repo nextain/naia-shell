@@ -62,9 +62,29 @@ jobs:
             artifact: darwin-x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
+    env:
+      # 앱스토어 앱 서명을 확인할 Ed25519 공개키(raw 32바이트 base64). src-tauri/src/app.rs 가
+      # option_env! 로 빌드할 때 박는다. 비어 있으면 release 빌드는 스토어 앱을 전부 거절한다.
+      # 운영 스토어 키: Key Vault kv-naia-83b29893 의 naia-app-signing-prod-ed25519-public.
+      NAIA_APP_SIGNING_PUBLIC_KEY: ${{ vars.NAIA_APP_SIGNING_PUBLIC_KEY }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Check app store signing public key
+        shell: bash
+        env:
+          RELEASE_BUILD: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+        run: |
+          key="${NAIA_APP_SIGNING_PUBLIC_KEY:-}"
+          if [[ "$key" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+            echo "App signing public key: $key"
+          elif [[ "$RELEASE_BUILD" == "true" ]]; then
+            echo "::error::vars.NAIA_APP_SIGNING_PUBLIC_KEY is missing or not a 32-byte base64 key; the installer would reject every store app."
+            exit 1
+          else
+            echo "::warning::vars.NAIA_APP_SIGNING_PUBLIC_KEY is not set; this build rejects every store app."
+          fi
 
       - name: Clone required public runtime sources
         run: |
