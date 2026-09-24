@@ -41,6 +41,7 @@ import {
 	REQUIRED_PROTO_SHA256,
 	resolvePairedAgent,
 } from "./agent-pairing.mjs";
+import { ensureEgoBrowserVendor } from "./ego-browser-vendor.mjs";
 import { herdrReleaseDir } from "./stage-herdr.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
 
@@ -612,6 +613,12 @@ async function main() {
 			"NAIA_UNSIGNED_UPDATER_BUILD is local validation only and is forbidden in CI",
 		);
 	}
+
+	// tauri.conf.json bundles the vendored ego-browser dist/, which a fresh
+	// checkout does not have; tauri-build fails without it (#587). Every cargo
+	// run below, including the Windows regression gate, compiles that build
+	// script, so the vendor comes first.
+	ensureEgoBrowserVendor();
 
 	if (platform === "win32") {
 		console.log("[stage-runtime] host voice upgrade regression gate");

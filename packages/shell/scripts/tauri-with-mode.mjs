@@ -31,6 +31,7 @@ import {
 	ensurePairedAgentCheckout,
 } from "./agent-pairing.mjs";
 import { developmentInstanceEnv } from "./dev-instance.mjs";
+import { ensureEgoBrowserVendor } from "./ego-browser-vendor.mjs";
 import { developmentInstanceHome } from "./instance-home.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
 import { applyNaiaInstanceEnv } from "./naia-instance-urls.mjs";
@@ -362,6 +363,9 @@ if (!existsSync(resolve(pairedAgent, "dist/main/composition/index.js"))) {
 	throw new Error(`Paired naia-agent build failed or did not produce dist/main/composition/index.js: ${pairedAgent}`);
 }
 process.stdout.write(`[tauri-with-mode] new core=${env.VITE_NAIA_NEW_CORE}, agent=${env.NAIA_AGENT_SCRIPT}, proto=${env.NAIA_AGENT_PROTO_DIR}\n`);
+// tauri-build refuses to compile without the vendored ego-browser dist/ that
+// tauri.conf.json bundles, and a fresh checkout does not have it (#587).
+ensureEgoBrowserVendor();
 
 if (isBuild) {
 	// Release installer: production tauri.conf.json (real app identity), no dev
