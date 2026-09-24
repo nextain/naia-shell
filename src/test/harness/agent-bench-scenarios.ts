@@ -135,6 +135,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   // 기억 떠오름 설정(#692)·점수 문턱(#693). 기억 슬라이스 소관이다.
   "UC-MEMORY-SURFACING-692",
   "UC-MEMORY-THRESHOLD-693",
+  // 생각 세기 설정과 턴 단위 전달(#709). 설정 화면과 전달 계약이다.
+  "UC-THINKING-LEVEL-709",
 ];
 
 export function ownedByEpic(uc: string): boolean {
