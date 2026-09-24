@@ -1210,6 +1210,7 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | FR-SLIDES-PPTX.3 | Display original PPTX name; original same-basename MD first, embedded notes otherwise. Export hidden slides to retain physical page indexes and blank notes. Preserve manual script selection and all presentation controls. | Pending |
 | FR-SLIDES-EDIT.1 | Current page script editor with apply/cancel; applying pauses speech and retains page mapping. Protect dirty edits on file replacement/unload. | Pending |
 | FR-SLIDES-EDIT.2 | Explicitly download edited Markdown copy; never automatically overwrite original MD/PPTX. Label unsaved state and failures. | Pending |
+| FR-SLIDES-PDF-SOFTMASK.1 | PDF 투명 효과(soft mask: /SMask Luminosity, /SMask Alpha + /TR)가 있는 페이지를 WebKitGTK(리눅스 Tauri 웹뷰)에서도 Chromium·poppler와 같은 모양으로 그린다. 그라데이션 글자·반투명 번짐·그림자가 불투명한 사각형·분홍 원으로 칠해지면 안 된다. 원인은 pdf.js 5.x가 soft mask를 캔버스 `filter`(SVG url 필터)로만 합성하는데 WebKitGTK 2.52에는 `CanvasRenderingContext2D.filter`가 없어 마스크가 통째로 빠지는 것이다. pdf.js 6.0.227부터 캔버스 필터가 없을 때 픽셀 버퍼로 마스크를 합성하므로, 셸이 쓰는 pdfjs-dist와 react-pdf가 쓰는 pdfjs-dist를 같은 6.3.289로 고정한다(react-pdf 11은 React 19가 필요해 `pnpm-workspace.yaml` overrides로 맞춘다). Slides와 Workspace PDF 뷰어에 함께 적용된다. | Done |
 
 Design: general PPTX follows the issue's local PDF conversion path first. The measured image-only direct rendering shortcut remains optional, not a replacement for general import. Verify synthetic text/table/image decks separately. Static viewing excludes animations, transitions, embedded-video playback and raster/PPTX text editing.
 
