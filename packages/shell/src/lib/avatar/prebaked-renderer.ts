@@ -4,6 +4,7 @@ import type {
 	AvatarSpeechRenderer,
 } from "./avatar-renderer";
 import { NvaChromakeyGL } from "./nva-chromakey-gl";
+import { TwinLoop } from "./twin-loop";
 
 interface Config {
 	manifest: NvaManifest;
@@ -20,6 +21,19 @@ export function containRect(cw: number, ch: number, vw: number, vh: number) {
 	const dw = vw * scale;
 	const dh = vh * scale;
 	return { dx: (cw - dw) / 2, dy: (ch - dh) / 2, dw, dh };
+}
+
+/** Resolves when the element reaches its end (or fails). */
+function endOf(video: HTMLVideoElement): Promise<void> {
+	return new Promise((resolve) => {
+		const done = () => {
+			video.removeEventListener("ended", done);
+			video.removeEventListener("error", done);
+			resolve();
+		};
+		video.addEventListener("ended", done);
+		video.addEventListener("error", done);
+	});
 }
 
 /** WebM alone can carry a real (VP9 yuva420p) alpha channel; other containers cannot. */
@@ -45,6 +59,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private mountedVideo: HTMLVideoElement | null = null;
 	/** 클립 URL → 그 클립을 계속 들고 있는 <video>. 한 번 로드한 클립은 src 를 다시 대입하지 않는다. */
 	private clipVideos = new Map<string, HTMLVideoElement>();
+	/** Clip element → its looping pair. Loops never use the `loop` attribute (see TwinLoop). */
+	private loops = new Map<HTMLVideoElement, TwinLoop>();
+	/** The loop being shown, or null while a one-shot clip plays. */
+	private activeLoop: TwinLoop | null = null;
 	private canvas: HTMLCanvasElement | null = null;
 	private ctx: CanvasRenderingContext2D | null = null;
 	private keyer: NvaChromakeyGL | null = null;
@@ -153,16 +171,26 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			throw new Error("NVA renderer stopped");
 		const video = this.videoForClip(url);
 		if (this.video !== video) {
-			this.video.pause();
+			this.leaveClip(this.video);
 			this.video = video;
 		}
-		video.loop = loop;
-		video.muted = muted;
-		video.currentTime = 0;
 		if (loop) {
-			await video.play();
+			// Resume where the loop stopped. Rewinding here would seek an
+			// element that may still be streaming (WebKitGTK freeze, TwinLoop).
+			const pair = this.loopFor(video, url);
+			this.activeLoop = pair;
+			pair.setMuted(muted);
+			await pair.play();
 			return;
 		}
+		this.activeLoop = null;
+		this.loops.get(video)?.stop();
+		video.loop = false;
+		// A one-shot clip left before its end is still running, hidden and
+		// muted. Let it finish: rewinding a playing element can freeze WebKitGTK.
+		if (!video.paused) await endOf(video);
+		video.muted = muted;
+		if (video.currentTime !== 0) video.currentTime = 0;
 		await new Promise<void>((resolve, reject) => {
 			const ready = () => options?.onPlaybackReady?.();
 			const ended = () => resolve();
@@ -188,20 +216,60 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		if (!mounted) throw new Error("NVA video is not mounted");
 		const pooled = this.clipVideos.get(url);
 		if (pooled) return pooled;
-		let video: HTMLVideoElement;
-		if (this.clipVideos.size === 0) {
-			video = mounted;
-		} else {
-			video = document.createElement("video");
-			video.playsInline = true;
-			video.crossOrigin = mounted.crossOrigin;
-			video.style.cssText = mounted.style.cssText;
-			mounted.parentNode?.insertBefore(video, mounted.nextSibling);
-		}
+		const video =
+			this.clipVideos.size === 0 ? mounted : this.siblingVideo(mounted);
 		video.src = url;
 		video.dataset.naiaClipUrl = url;
 		this.clipVideos.set(url, video);
 		return video;
+	}
+
+	/** A hidden decode element next to the mounted one, styled like it. */
+	private siblingVideo(mounted: HTMLVideoElement): HTMLVideoElement {
+		const video = document.createElement("video");
+		video.playsInline = true;
+		video.crossOrigin = mounted.crossOrigin;
+		video.style.cssText = mounted.style.cssText;
+		mounted.parentNode?.insertBefore(video, mounted.nextSibling);
+		return video;
+	}
+
+	/**
+	 * The looping pair for a clip element. The twin loads the same URL once,
+	 * when the clip first loops, and then only takes turns with the element.
+	 */
+	private loopFor(video: HTMLVideoElement, url: string): TwinLoop {
+		const existing = this.loops.get(video);
+		if (existing) return existing;
+		const mounted = this.mountedVideo;
+		if (!mounted) throw new Error("NVA video is not mounted");
+		const twinOf = () => {
+			const twin = this.siblingVideo(mounted);
+			twin.preload = "auto";
+			twin.src = url;
+			twin.dataset.naiaClipUrl = url;
+			twin.dataset.naiaLoopTwin = "true";
+			return twin;
+		};
+		const pair = new TwinLoop(video, twinOf(), {
+			replace: twinOf,
+			remove: (element) => {
+				if (element !== mounted) element.remove();
+			},
+		});
+		this.loops.set(video, pair);
+		return pair;
+	}
+
+	/**
+	 * Leave a clip without touching its pipeline: a loop stops at the end of
+	 * its pass, a one-shot clip is muted and runs out hidden. Pausing a playing
+	 * element can freeze WebKitGTK (see TwinLoop).
+	 */
+	private leaveClip(video: HTMLVideoElement): void {
+		const pair = this.loops.get(video);
+		if (pair) pair.stop();
+		else video.muted = true;
 	}
 
 	private async playIdle(): Promise<void> {
@@ -219,7 +287,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.running = true;
 		const draw = () => {
 			if (!this.running) return;
-			const video = this.video;
+			const video = this.video
+				? (this.activeLoop?.current ?? this.video)
+				: null;
 			const canvas = this.canvas;
 			const ctx = this.ctx;
 			if (
@@ -279,6 +349,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.keyer?.dispose();
 		this.keyer = null;
 		this.interrupt();
+		for (const pair of this.loops.values()) {
+			pair.dispose();
+			for (const v of pair.all) if (v !== this.mountedVideo) v.remove();
+		}
+		this.loops.clear();
+		this.activeLoop = null;
 		for (const v of this.clipVideos.values()) {
 			v.pause();
 			if (v !== this.mountedVideo) v.remove();
