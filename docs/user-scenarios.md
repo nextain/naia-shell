@@ -1774,7 +1774,7 @@ Chat 지연 로드 UI 상태 매트릭스: **기본**은 variant를 지정하지
 | S-APP-SANDBOX | 앱 샌드박스 경로 강제 | UC9 앱 | app_sandbox.rs 단위·cargo |
 | S-BGM-LIB | BGM 라이브러리 SoT(#528) | UC8 확장 | bgm-library(-store).test.ts·BgmPlayer.test.tsx |
 | S-APP-OPEN-GRANT | 열림=동의 grant(#543) | UC9 앱 | workspace.rs 단위 |
-| S-SLIDES-REC | 슬라이드 MP4 녹화(#546) | UC9 앱 | app_sandbox.rs 상태머신 · 설치 전제는 e2e/467-slide-presenter.spec.ts(설치 매니페스트·`naia://app-install` 창) |
+| S-SLIDES-REC | 슬라이드 MP4 녹화(#546) | UC9 앱 | app_sandbox.rs 상태머신 · slides_recording_test.rs(리눅스 x11grab·소리·정지) · 설치 전제는 e2e/467-slide-presenter.spec.ts(설치 매니페스트·`naia://app-install` 창) |
 | S-I18N-COMPLETE | t() 키 14개 언어 완비 | 전 UC | check-compile-integrity·i18n-user-facing.test.ts(로케일 파일이 정본, #559) |
 
 
@@ -1878,6 +1878,7 @@ Test Coverage Map
 | UC-SLIDES-PREFETCH | 발표자가 로컬 음성으로 여러 쪽을 자동 발표하면, 한 쪽 낭독이 끝나고 다음 쪽 첫 문장이 합성 시간(수 초)을 기다리지 않고 곧바로 이어진다. 중간에 일시정지하거나 이전 쪽으로 가면 미리 만든 소리는 버려지고, 끝 쪽 뒤로는 아무것도 미리 만들지 않는다. | `sentence-pipeline-prefetch.test.ts`(지연 3초 가짜 음성 서버: 미리 합성 있으면 쪽 넘김 대기 1초 미만, 없으면 3초 — 미리 합성을 끄면 실패하는 변이 확인), `slides-center-area.test.tsx`(다음 쪽 요청·끝 쪽 제외·일시정지 폐기), `slide-presenter-iframe-bridge.test.ts` |
 | UC-SLIDES-FOCUS-EXIT | 발표자가 집중 모드로 발표하면 '집중 모드 종료' 버튼이 잠시 뒤 사라져 슬라이드 오른쪽 위 쪽 번호가 보이고, 마우스를 움직이면 다시 나타난다. | `slides-center-area.test.tsx`(FR-SLIDES-FOCUS-EXIT.1) |
 | UC-SLIDES-PAGE-GAP | 발표자가 자동 발표를 켜면, 쪽이 넘어간 뒤 청중이 새 쪽을 볼 틈(0.5초) 뒤에 낭독이 시작된다. 음성이 미리 준비돼 있어도 바로 말하지 않고, 합성이 늦으면 그보다 더 기다리지 않는다. | `slide-page-gap.test.ts`(미리 합성 있음 → 첫 재생 500~550ms, 합성 3초 → 3초에 재생, 대기 취소, 대기를 끄면 실패하는 변이 확인) |
+| UC-SLIDES-REC-LINUX | 발표자가 리눅스(X11·Xwayland)에서 "MP4 녹화"를 누르고 발표한 뒤 멈추면, 셸 창 화면과 스피커로 나간 소리(나이아 낭독)가 함께 담긴 MP4가 video 폴더에 남는다. ffmpeg가 바로 실패하거나 셸이 순수 Wayland 창이면 "녹화 중"으로 바뀌지 않고 녹화 실패가 뜬다. 녹화 중에 ffmpeg가 죽으면 멈출 때 실패가 뜨고 다시 녹화할 수 있다. | `slides_recording_test.rs`(x11grab·window_id·pulse 인자, Wayland 오류, 조기 종료, q 정지, 8초 뒤 강제 종료, 녹화 중 사망; `--ignored` 실녹화: Xvfb 창 + 격리 PipeWire 널 싱크 → ffprobe 영상·소리 두 트랙), `slides-host(-bridge).test.ts`(recording_lost), 변이 확인 |
 
 P04 must cover empty, loaded, progress, success, error, narrow viewport, keyboard/ARIA and error recovery. Browser IPC mocks prove wiring only; native recording and store delivery require separate evidence. Existing range, repeat, notes toggle, fullscreen and voice selection remain covered.
 

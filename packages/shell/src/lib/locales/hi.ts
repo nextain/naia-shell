@@ -115,6 +115,7 @@ export default {
 	"slides.rangeEnd": "प्रस्तुति का अंतिम पृष्ठ",
 	"slides.fullscreenExit": "फ़ुल स्क्रीन से बाहर निकलें",
 	"slides.fullscreenError": "फ़ुल स्क्रीन चालू नहीं हो सकी। Naia अपडेट करके फिर कोशिश करें।",
+	"slides.recordingFailed": "MP4 रिकॉर्डिंग विफल रही। ffmpeg का विवरण Naia लॉग में है।",
 	"slides.speechError": "Narration stopped. Check voice settings or resume to try again.",
 	"slides.state.empty": "No deck",
 	"slides.state.loading": "Loading",

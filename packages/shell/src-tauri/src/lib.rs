@@ -3,6 +3,7 @@ mod app;
 mod app_sandbox;
 mod slides_import;
 mod slides_files;
+mod slides_recording;
 mod audit;
 mod browser;
 mod browser_webview;

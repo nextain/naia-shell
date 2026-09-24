@@ -115,6 +115,7 @@ export default {
 	"slides.rangeEnd": "발표 종료 페이지",
 	"slides.fullscreenExit": "전체 화면 종료",
 	"slides.fullscreenError": "전체 화면을 열지 못했습니다. Naia를 업데이트한 뒤 다시 시도해 주세요.",
+	"slides.recordingFailed": "MP4 녹화에 실패했습니다. 자세한 ffmpeg 기록은 Naia 로그에 있습니다.",
 	"slides.speechError": "음성 발표가 멈췄습니다. 음성 설정을 확인하거나 계속 발표를 눌러 다시 시도하세요.",
 	"slides.state.empty": "자료 없음",
 	"slides.state.loading": "불러오는 중",

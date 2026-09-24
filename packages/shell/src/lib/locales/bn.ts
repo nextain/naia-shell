@@ -115,6 +115,7 @@ export default {
 	"slides.rangeEnd": "উপস্থাপনার শেষ পৃষ্ঠা",
 	"slides.fullscreenExit": "পূর্ণস্ক্রিন বন্ধ করুন",
 	"slides.fullscreenError": "পূর্ণস্ক্রিন চালু করা যায়নি। Naia আপডেট করে আবার চেষ্টা করুন।",
+	"slides.recordingFailed": "MP4 রেকর্ডিং ব্যর্থ হয়েছে। ffmpeg-এর বিস্তারিত Naia লগে আছে।",
 	"slides.speechError": "Narration stopped. Check voice settings or resume to try again.",
 	"slides.state.empty": "No deck",
 	"slides.state.loading": "Loading",

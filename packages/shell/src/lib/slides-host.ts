@@ -485,8 +485,20 @@ export async function stopSlidesRecording(): Promise<string> {
 		return typeof output === "string" ? output : "";
 	} catch (error) {
 		// A failed stop leaves the host recording owned and retryable. Keep the
-		// client in the same state so a second stop can complete it safely.
-		localRecordingState = "active";
+		// client in the same state so a second stop can complete it safely —
+		// unless the host says the recording is gone (ffmpeg died or had to be
+		// killed): then there is nothing left to stop.
+		localRecordingState = isRecordingLost(error) ? "idle" : "active";
 		throw error;
 	}
+}
+
+/**
+ * Stop error code: the host recording ended without a usable MP4 and the host
+ * no longer owns a recording, so the client must leave the recording state.
+ */
+export const SLIDES_RECORDING_LOST = "recording_lost";
+
+export function isRecordingLost(error: unknown): boolean {
+	return String(error).includes(SLIDES_RECORDING_LOST);
 }

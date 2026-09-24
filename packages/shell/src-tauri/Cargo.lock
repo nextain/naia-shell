@@ -3311,6 +3311,7 @@ dependencies = [
  "env_logger",
  "fs2",
  "futures-util",
+ "gdkx11",
  "getrandom 0.3.4",
  "gtk",
  "libc",
