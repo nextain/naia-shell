@@ -73,6 +73,8 @@ vi.mock("../../lib/voice/audio-queue", () => ({
 		pauseBeforePlayback() {
 			ttsSyncMocks.pauseBeforePlayback();
 		}
+		// FR-SLIDES-PAGE-GAP.1: minimum gap before a slide page's first sound.
+		holdPlaybackUntil(_atMs: number) {}
 		resumePlayback() {
 			ttsSyncMocks.resumePlayback();
 		}

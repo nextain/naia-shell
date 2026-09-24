@@ -33,6 +33,26 @@ export function splitSlideNarration(
 	return parts.map((p) => p.trim()).filter(Boolean);
 }
 
+/**
+ * FR-SLIDES-PAGE-GAP.1: minimum time from a page's narration request (the page
+ * is on screen) to its first sound. Prefetched audio would otherwise start the
+ * instant the page turns, before the listener has seen the new page. Luke's
+ * value 2026-09-24: 500 ms. Synthesis slower than this adds no further wait.
+ * Override: VITE_NAIA_SLIDES_PAGE_GAP_MS (same convention as the chunk mode).
+ */
+export const SLIDE_PAGE_MIN_GAP_MS = 500;
+
+export function slidePageMinGapMs(
+	raw: string | undefined = import.meta.env?.VITE_NAIA_SLIDES_PAGE_GAP_MS as
+		| string
+		| undefined,
+): number {
+	const parsed = raw == null || raw.trim() === "" ? Number.NaN : Number(raw);
+	return Number.isFinite(parsed) && parsed >= 0
+		? parsed
+		: SLIDE_PAGE_MIN_GAP_MS;
+}
+
 /** How many opening pieces of the next page are synthesized ahead. */
 export const SLIDE_PREFETCH_PIECES = 2;
 

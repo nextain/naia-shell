@@ -104,6 +104,7 @@ import {
 } from "../lib/proactive-speech-settings";
 import {
 	SlideNarrationPrefetcher,
+	slidePageMinGapMs,
 	splitSlideNarration,
 } from "../lib/slide-narration-prefetch";
 import {
@@ -1223,6 +1224,9 @@ export function ChatArea({
 			) {
 				return;
 			}
+			// FR-SLIDES-PAGE-GAP.1: the page is on screen when its narration is
+			// requested; its first sound may not start before this + the gap.
+			const earliestPlaybackAt = performance.now() + slidePageMinGapMs();
 			interruptTts();
 			activeSlidePresenterSpeechRef.current = detail;
 			slidePrefetcherRef.current?.beforeNarration();
@@ -1256,6 +1260,9 @@ export function ChatArea({
 					return;
 				}
 				initializeSpeechTts(config);
+				// Pause, page move and stop reach interruptTts → AudioQueue.clear(),
+				// which cancels this hold together with the queued audio.
+				audioQueueRef.current?.holdPlaybackUntil(earliestPlaybackAt);
 				beginProactiveTtsTextSync(detail.text.trim());
 				// 2026-09-11: 슬라이드 낭독문은 한 장 전체가 한 요청으로 들어와 첫 소리까지
 				// 장 전체 합성 시간을 기다렸다(로컬 VoxCPM2 RTF 0.48 → 8~50초 무음). 채팅 경로처럼

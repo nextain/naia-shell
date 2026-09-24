@@ -91,6 +91,11 @@ export class AudioQueue {
 	private nextExpectedSeq = 0;
 	private pendingOrdered: Map<number, AudioQueueItem | null> = new Map();
 
+	// FR-SLIDES-PAGE-GAP.1: earliest time (performance.now) the next idle start
+	// may begin playing. 0 = no hold. Cleared by clear() (pause, page move, stop).
+	private holdUntil = 0;
+	private holdTimer: ReturnType<typeof setTimeout> | null = null;
+
 	constructor(callbacks: AudioQueueCallbacks = {}) {
 		this.callbacks = callbacks;
 	}
@@ -112,6 +117,47 @@ export class AudioQueue {
 	private enqueueItem(item: AudioQueueItem): void {
 		this.queue.push(item);
 		if (!this.playing && !this.playbackPaused) this.playNext();
+	}
+
+	/**
+	 * Do not START playback before `atMs` (performance.now clock). Audio that
+	 * is ready earlier waits until then; audio that is ready later plays at
+	 * once, so the start time is max(atMs, audio ready). Only an idle queue is
+	 * held — an item already playing is never delayed. clear() cancels it.
+	 */
+	holdPlaybackUntil(atMs: number): void {
+		this.clearHold();
+		this.holdUntil = atMs;
+	}
+
+	private clearHold(): void {
+		if (this.holdTimer !== null) {
+			clearTimeout(this.holdTimer);
+			this.holdTimer = null;
+		}
+		this.holdUntil = 0;
+	}
+
+	/** True while an idle start must still wait; arms one timer to retry. */
+	private waitingForHold(): boolean {
+		if (this.holdUntil === 0) return false;
+		const waitMs = this.holdUntil - performance.now();
+		if (waitMs <= 0) {
+			this.clearHold();
+			return false;
+		}
+		if (this.holdTimer === null) {
+			const generation = this.generation;
+			this.holdTimer = setTimeout(() => {
+				this.holdTimer = null;
+				if (generation !== this.generation) return;
+				this.holdUntil = 0;
+				if (!this.playing && !this.playbackPaused && this.queue.length > 0) {
+					this.playNext();
+				}
+			}, waitMs);
+		}
+		return true;
 	}
 
 	/** Hold queued audio without stopping an item that is already playing. */
@@ -202,6 +248,7 @@ export class AudioQueue {
 	/** Stop current playback and clear all queued audio. */
 	clear(): void {
 		this.generation++;
+		this.clearHold();
 		this.queue = [];
 		this.playbackPaused = false;
 		this.pendingOrdered.clear();
@@ -340,6 +387,12 @@ export class AudioQueue {
 			Logger.debug("AudioQueue", "playNext:empty → end", {});
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
+			return;
+		}
+		if (!this.playing && this.waitingForHold()) {
+			Logger.debug("AudioQueue", "playNext:held for minimum gap", {
+				queued: this.queue.length,
+			});
 			return;
 		}
 		Logger.debug("AudioQueue", "playNext:start", {
