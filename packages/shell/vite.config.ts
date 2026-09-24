@@ -65,12 +65,8 @@ export default defineConfig(async () => ({
 		// Prefer explicit TAURI/PLAYWRIGHT host; otherwise bind all interfaces for Tailscale.
 		host: host || true,
 		// Vite 6 blocks unknown Host headers (Tailscale MagicDNS → 403) unless allowed.
-		allowedHosts: [
-			"localhost",
-			"127.0.0.1",
-			"pc-bazzite.tail4f7a25.ts.net",
-			".tail4f7a25.ts.net",
-		],
+		// ".ts.net" admits any MagicDNS name without naming a private tailnet here.
+		allowedHosts: ["localhost", "127.0.0.1", ".ts.net"],
 		hmr: host
 			? {
 					protocol: "ws",

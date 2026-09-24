@@ -426,20 +426,20 @@ describe("#582 ADK 별 절대 경로 환경 주입 (S3a)", () => {
   };
 
   it("상대 경로·공백 든 경로·빈 cwd 에서 같은 결과가 나온다", () => {
-    const absolute = "/var/home/luke/naia adk";
+    const absolute = "/var/home/user/naia adk";
     expect(resolveAdkDir(absolute, "", "linux")).toBe(absolute);
     expect(resolveAdkDir(absolute, "/somewhere/else", "linux")).toBe(absolute);
-    expect(resolveAdkDir("./naia adk", "/var/home/luke", "linux")).toBe(absolute);
-    expect(resolveAdkDir("../luke/naia adk", "/var/home/other", "linux")).toBe(absolute);
+    expect(resolveAdkDir("./naia adk", "/var/home/user", "linux")).toBe(absolute);
+    expect(resolveAdkDir("../user/naia adk", "/var/home/other", "linux")).toBe(absolute);
     const fromAbsolute = egoLaunchEnv({ ...base, adkDir: resolveAdkDir(absolute, "", "linux") });
-    const fromRelative = egoLaunchEnv({ ...base, adkDir: resolveAdkDir("./naia adk", "/var/home/luke", "linux") });
+    const fromRelative = egoLaunchEnv({ ...base, adkDir: resolveAdkDir("./naia adk", "/var/home/user", "linux") });
     expect(fromRelative).toEqual(fromAbsolute);
     // 빈 cwd 에서 상대 경로는 자리를 추측하지 않고 형식 있게 거부한다.
     expect(() => resolveAdkDir("./naia adk", "", "linux")).toThrow(/절대 작업 디렉터리/);
   });
 
   it("학습 루트와 `~` 확장 변수가 ADK 아래 절대 경로로 잡힌다", () => {
-    const adk = "/var/home/luke/naia adk";
+    const adk = "/var/home/user/naia adk";
     const env = egoLaunchEnv({ ...base, adkDir: adk });
     expect(env.HOME).toBe(`${adk}/ego-host`);
     expect(env.USERPROFILE).toBeUndefined();
@@ -453,12 +453,12 @@ describe("#582 ADK 별 절대 경로 환경 주입 (S3a)", () => {
   });
 
   it("윈도우는 USERPROFILE 로, 경로는 역슬래시로 잡힌다 (계약 4.9)", () => {
-    const adk = "C:\\Users\\luke\\naia adk";
+    const adk = "C:\\Users\\Default\\naia adk";
     const env = egoLaunchEnv({ ...base, platform: "win32", adkDir: resolveAdkDir(adk, "", "win32") });
-    expect(env.USERPROFILE).toBe("C:\\Users\\luke\\naia adk\\ego-host");
+    expect(env.USERPROFILE).toBe("C:\\Users\\Default\\naia adk\\ego-host");
     expect(env.HOME).toBeUndefined();
-    expect(env.EGO_BROWSER_AGENT_WORKSPACE).toBe("C:\\Users\\luke\\naia adk\\ego-host\\agent-workspace");
-    expect(joinPath("win32", adk, "ego-host", "lease.json")).toBe("C:\\Users\\luke\\naia adk\\ego-host\\lease.json");
+    expect(env.EGO_BROWSER_AGENT_WORKSPACE).toBe("C:\\Users\\Default\\naia adk\\ego-host\\agent-workspace");
+    expect(joinPath("win32", adk, "ego-host", "lease.json")).toBe("C:\\Users\\Default\\naia adk\\ego-host\\lease.json");
   });
 });
 

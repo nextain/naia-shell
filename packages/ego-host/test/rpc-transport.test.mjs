@@ -65,7 +65,7 @@ test("프레이밍: 상한을 넘는 길이 헤더는 본문을 기다리지 않
 // ── 소켓 경로: 세 OS ─────────────────────────────────────────────────────────
 
 test("소켓 경로: linux·darwin 은 unix 소켓, win32 는 named pipe 다", () => {
-  const adkRoot = "/var/home/luke/alpha-adk";
+  const adkRoot = "/var/home/user/alpha-adk";
   const linux = supervisorSocketPath({ adkRoot, platform: "linux", runtimeDir: "/run/user/1000" });
   const darwin = supervisorSocketPath({ adkRoot, platform: "darwin", runtimeDir: "/tmp" });
   const win32 = supervisorSocketPath({ adkRoot, platform: "win32" });

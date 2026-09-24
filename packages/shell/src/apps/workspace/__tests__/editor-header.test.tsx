@@ -27,7 +27,7 @@ describe("Editor Header UX (#678)", () => {
 			return Promise.resolve();
 		});
 
-		const testPath = "/var/home/luke/project/packages/shell/src/index.ts";
+		const testPath = "/var/home/user/project/packages/shell/src/index.ts";
 		render(<Editor filePath={testPath} />);
 
 		await waitFor(() => {
@@ -46,7 +46,7 @@ describe("Editor Header UX (#678)", () => {
 			return Promise.resolve();
 		});
 
-		const testPath = "/var/home/luke/project/missing-file.ts";
+		const testPath = "/var/home/user/project/missing-file.ts";
 		render(<Editor filePath={testPath} />);
 
 		await waitFor(() => {

@@ -1,7 +1,7 @@
 # S4 증거 — 파생 스킬·UPSTREAM-DIFF·naia.land 학습 (#582)
 
 작성 2026-09-10. 담당 Opus(구현). 계약: `docs/progress/issue-582-ego-browser-host.md` 6절·9절 S4.
-worktree `/var/home/luke/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
+worktree `~/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
 
 ## 1. 무엇을 만들었나
 
