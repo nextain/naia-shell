@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
+import { ensureEgoBrowserVendor } from "./ego-browser-vendor.mjs";
 import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
 import {
 	parseGitWorktreePaths,
@@ -187,6 +188,10 @@ if (
 		"The shell-owned BGM sidecar build failed or did not produce its runtime entry files",
 	);
 }
+// tauri.conf.json 의 bundle.resources 가 벤더 ego-browser dist/ 를 요구하므로
+// cargo 보다 먼저 만든다. 뒤에 두면 build.rs 가 그 자리가 없다며 먼저 죽는다 (#587).
+// 이미 빌드돼 있으면 다시 만들지 않으므로 오프라인 재실행은 네트워크를 쓰지 않는다.
+ensureEgoBrowserVendor({ shellDir });
 const result = spawnSync(
 	cargo,
 	["build", "--manifest-path", manifestPath, "--features", "webdriver-e2e"],
@@ -213,32 +218,12 @@ if (result.status !== 0) process.exit(result.status ?? 1);
 // ⚠️ 그 자리에 소스 트리를 가리키는 **심링크를 두면 안 된다.** 2026-09-10 실측: 링크를 두자
 //    tauri-build 의 리소스 복사가 원본을 자기 자신 위에 복사해 `packages/ego-host` 의 소스
 //    파일 23개가 전부 0바이트가 됐다. 지난 실행이 남긴 링크가 있으면 여기서 걷어낸다.
-const egoHostSource = resolve(shellDir, "..", "ego-host");
 const egoHostStaged = resolve(targetDir, "debug", "ego-host");
 if (lstatSafe(egoHostStaged)?.isSymbolicLink()) {
 	rmSync(egoHostStaged, { force: true });
 	process.stdout.write("[e2e] 지난 ego-host 심링크를 걷어냈다 (리소스 복사가 소유하는 자리다)\n");
 }
-// 벤더 SDK dist 는 `env_browser_script` 만 쓴다. 이미 빌드돼 있으면 다시 만들지 않는다 —
-// npm ci 는 네트워크를 요구하고 이 실기는 오프라인이어야 한다.
-if (existsSync(egoHostSource)) {
-	const vendorRoot = resolve(egoHostSource, "vendor/ego-lite/package/ego-browser");
-	const vendorDist = resolve(vendorRoot, "dist/out/index.js");
-	if (!existsSync(vendorDist) && existsSync(resolve(vendorRoot, "node_modules"))) {
-		const vendorBuild = spawnSync("npm", ["run", "build"], {
-			cwd: vendorRoot,
-			stdio: "inherit",
-			shell: process.platform === "win32",
-		});
-		if (vendorBuild.status !== 0) {
-			process.stdout.write("[e2e] 벤더 ego-browser 빌드 실패 — env_browser_script 는 못 돈다\n");
-		}
-	} else if (!existsSync(vendorDist)) {
-		process.stdout.write(
-			"[e2e] 벤더 ego-browser 의 node_modules 가 없다 — 오프라인 실기이므로 설치하지 않는다\n",
-		);
-	}
-}
+// 벤더 SDK dist 는 cargo build 앞에서 ensureEgoBrowserVendor 가 이미 만들었다 (#587).
 
 /** `lstat` 은 없는 경로에서 던진다. 없음과 오류를 여기서 하나로 만든다. */
 function lstatSafe(path) {

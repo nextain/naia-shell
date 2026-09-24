@@ -41,6 +41,7 @@ import {
 	REQUIRED_PROTO_SHA256,
 	resolvePairedAgent,
 } from "./agent-pairing.mjs";
+import { ensureEgoBrowserVendor } from "./ego-browser-vendor.mjs";
 import { herdrReleaseDir } from "./stage-herdr.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
 
@@ -712,6 +713,9 @@ async function main() {
 
 	console.log("[stage-runtime] ⑤ core build");
 	run("pnpm build", REPO_ROOT, coreEnv);
+	// tauri.conf.json bundles the vendored ego-browser dist/, which a fresh
+	// checkout does not have; tauri-build fails without it (#587).
+	ensureEgoBrowserVendor();
 
 	console.log("[stage-runtime] ⑥ tauri build");
 	// AppImage의 linuxdeploy가 번들 안의 Node 및 다중 아키텍처 네이티브 모듈까지

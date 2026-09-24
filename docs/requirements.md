@@ -298,6 +298,14 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 > pnpm major의 `node_modules` 교체가 TTY 질문으로 정지하지 않아야 하며, dev 시작도 같은 resolver를
 > 거쳐 paired Agent의 stale/missing `dist`를 빌드한 뒤에만 Tauri를 실행한다.
 >
+> **FR-INSTALL.2 #587 보강(2026-09-24):** `tauri.conf.json`의 `bundle.resources`는 벤더
+> `ego-host/vendor/ego-lite/package/ego-browser/dist/`를 요구하지만 그 폴더는 gitignore된
+> 빌드 산출물이라 깨끗한 체크아웃에 없다. 그래서 설치본 빌드(`stage-runtime.mjs`), dev/prod
+> 실행(`tauri-with-mode.mjs`), 실기 e2e 빌드(`build-e2e-tauri.mjs`)는 Tauri 크레이트를 컴파일하기
+> **전에** 공통 `ego-browser-vendor.mjs`로 그 dist를 만든다(`npm ci --ignore-scripts` 후
+> `node scripts/build.mjs`, 이미 있으면 재사용). 만들지 못하면 cargo의 리소스 누락 오류보다 먼저
+> 원인을 밝히며 중단한다. 검증: `scripts/__tests__/ego-browser-vendor.test.mjs` + CI `build installers` 4 OS.
+>
 > **clean-runner 보강(2026-07-18)**: `naia-agent`의 production 의존성인 공개
 > `naia-kb-compiler`·`naia-memory`도 정규 alpha-adk 레이아웃에 clone한 뒤 agent보다 먼저
 > install/build하고 산출물을 확인한다. 셸 TypeScript 빌드 전에 루트
