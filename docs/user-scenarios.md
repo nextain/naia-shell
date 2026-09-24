@@ -912,6 +912,24 @@ Test Coverage Map
 | sidecar가 EADDRINUSE에서 즉시 종료 | vitest: 점유된 포트로 `startYoutubeServer()` → `process.exit(1)` 호출 검증(재시도 타이머 없음) | — |
 | probe 중 앱 종료 → 다음 세션 회수 | teardown이 미저장 자식을 PID 파일로 종료(검증 후) | 종료 경로는 위 reclaim 백스톱이 최종 방어선(포트 소유자 기준이라 PID 파일 유실과 무관) |
 
+## UC-BGM-LOOPBACK-ONLY-716 — 음악 서버는 이 기계 안에서만 받는다 (#716)
+
+Windows에 Naia를 새로 설치하고 처음 켰더니 "공용 및 프라이빗 네트워크에서 이 앱에 액세스하도록
+허용하시겠습니까? — Node.js JavaScript Runtime" 방화벽 창이 뜬다. BGM sidecar가 모든
+인터페이스에서 받고 있었기 때문이다. 허용을 누르면 같은 네트워크의 다른 기기가 인증 없는
+음악 서버에 닿는다.
+
+- sidecar는 `127.0.0.1`과 `::1`에서만 받는다. 첫 실행에 방화벽 창이 뜨지 않는다.
+- 셸·건강 확인·포트 회수(`127.0.0.1`)와 개발 인스턴스·E2E의 `localhost`는 그대로 닿는다.
+- 같은 네트워크의 다른 기기에서는 닿지 않는다.
+- IPv6가 꺼진 기계에서도 IPv4 루프백으로 음악이 동작한다.
+
+Test Coverage Map
+
+| UC | 단위·계약 | 비고 |
+|---|---|---|
+| UC-BGM-LOOPBACK-ONLY-716 | `src/test/bgm-sidecar-loopback.contract.test.ts`: 두 루프백 주소만 연다·127.0.0.1 도달과 LAN 주소 거부·::1 도달·점유 포트는 치명 오류 | 설치본 실측(2026-09-25 Windows): 수정 전 `:::18791` + 방화벽 창, 수정 빌드 `127.0.0.1`·`::1`만 수신 |
+
 ## UC-SETTINGS-ROUNDTRIP: 설정 변경·재시작·실행 반영
 
 설정을 바꾸고 앱을 다시 켰을 때 그 값이 살아 있어야 한다. 파일이 정본이고
