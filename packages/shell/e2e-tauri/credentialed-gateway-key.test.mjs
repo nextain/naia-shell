@@ -32,7 +32,7 @@ test("윈도우식 경로(역슬래시·드라이브·끝 구분자)를 스코�
 	// setAdkPath 가 write_naia_path_cache 로 스코프를 묶을 때 끝의 슬래시·역슬래시를
 	// 뗀다. 소스가 그 형태와 어긋나면 `stale ADK startup IPC rejected` 로 갈린다.
 	const bound =
-		"C:\\Users\\Luke\\AppData\\Local\\Temp\\naia-shell-e2e-xyz\\adk";
+		"C:\\Users\\Default\\AppData\\Local\\Temp\\naia-shell-e2e-xyz\\adk";
 	const args = buildCredsUpdateInvokeArgs({
 		provider: "nextain",
 		naiaKey: "k",

@@ -237,13 +237,13 @@ fn symlink_escape_and_index_are_not_rewritten() {
 #[test]
 fn asset_url_keeps_directory_segments_for_relative_worker() {
     let input = if cfg!(windows) {
-        "C:\\Users\\User Name\\.naia\\apps\\land.naia.slides\\assets\\index.js"
+        "C:\\Users\\Default User\\.naia\\apps\\land.naia.slides\\assets\\index.js"
     } else {
-        "/home/User Name/.naia/apps/land.naia.slides/assets/index.js"
+        "/home/Default User/.naia/apps/land.naia.slides/assets/index.js"
     };
     let url = asset_localhost_url(input);
     assert!(url.ends_with("/assets/index.js"), "{url}");
-    assert!(url.contains("User%20Name"), "{url}");
+    assert!(url.contains("Default%20User"), "{url}");
     let worker = format!(
         "{}pdf.worker.min-qwK7q_zL.mjs",
         &url[..url.rfind('/').unwrap() + 1]

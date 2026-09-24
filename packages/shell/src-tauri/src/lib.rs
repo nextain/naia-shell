@@ -17138,7 +17138,7 @@ mod tests {
 
     #[test]
     fn agent_spawn_env_uses_adk_path_not_leftover_home_clone() {
-        let leftover = r"C:\Users\LukeYang\naia-adk";
+        let leftover = r"C:\Users\Default\naia-adk";
         let selected = r"D:\alpha-adk";
         let env = agent_adk_spawn_env(Some(selected));
         assert_eq!(env.naia_adk_path.as_deref(), Some(selected));
@@ -17150,7 +17150,7 @@ mod tests {
         assert!(!env.remove_inherited_adk_env);
         let selected_path = env.naia_adk_path.expect("selected adk-path");
         assert!(
-            !selected_path.contains(r"Users\LukeYang\naia-adk"),
+            !selected_path.contains(r"Users\Default\naia-adk"),
             "second clone path must not be used when adk-path is set: {selected_path}"
         );
     }

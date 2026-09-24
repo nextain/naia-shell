@@ -35,8 +35,8 @@ file-anchors EXIT=0
 traceability EXIT=0
 uc-traceability EXIT=0
 e2e-inventory EXIT=0
-  - DIR  /var/home/luke/alpha-adk/.worktrees/naia-shell-582-ego-host/tmp
-  - FILE /var/home/luke/alpha-adk/.worktrees/naia-shell-582-ego-host/tsconfig.build.json
+  - DIR  ~/alpha-adk/.worktrees/naia-shell-582-ego-host/tmp
+  - FILE ~/alpha-adk/.worktrees/naia-shell-582-ego-host/tsconfig.build.json
 vendor-check EXIT=0
 ## 잔류
 marker=0 supervisord=0 cage=0

@@ -143,7 +143,6 @@ const benchTitles = [
  * 문서와 어긋나면(이미 등록됐는데 남아 있으면) 그것도 붉어진다.
  */
 const BENCH_ORPHAN_BASELINE = [
-	"UC-BGM-ORPHAN-PORT-RECOVERY",
 	"UC-CODEX-ROLES",
 	"UC-CODEX-WORKER-LIFECYCLE",
 	"UC-DISCORD",
