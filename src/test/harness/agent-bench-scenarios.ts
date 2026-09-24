@@ -117,6 +117,24 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   // 품질 축 UC(#549)는 에이전트가 무엇을 하느냐가 아니라 이 저장소가 스스로를
   // 어떻게 재느냐다. 위 계열들이 재는 능력 축 어디에도 걸리지 않는다.
   "UC-QUALITY-",
+  // 2026-09-24 (#712) — 앞 단계가 붉어 드러나지 않던 사이 들어온 UC 중 에이전트 능력
+  // 축이 아닌 것. 음성·기억·채팅은 앞으로 능력 축 UC 가 생길 수 있어 이름 전체로 적는다.
+  // BGM 은 재생·포트·소유권이라 계열 전체가 에이전트 환경 에픽 밖이다.
+  "UC-BGM-",
+  // 예전 설정 필드의 메인 모델 이관(#707). 설정 해석이다.
+  "UC-NAIA-LEGACY-MAIN-MODEL",
+  // QA 회차 운영은 사람의 검사 절차다.
+  "UC-QA-",
+  // 인스턴스별 land·API 호스트 선택(#653). 빌드 모드 설정이다.
+  "UC-INSTANCE-URLS-653",
+  // 음성 런타임 공유 캐시(#703)·설치 사전 검사(#700). 설치와 저장 배치다.
+  "UC-VOICE-SHARED-CACHE-703",
+  "UC-VOICE-INSTALL-PRECHECK-700",
+  // 채팅 본문 마크다운 보존(#683). 렌더링이다.
+  "UC-CHAT-MARKDOWN-FIDELITY-683",
+  // 기억 떠오름 설정(#692)·점수 문턱(#693). 기억 슬라이스 소관이다.
+  "UC-MEMORY-SURFACING-692",
+  "UC-MEMORY-THRESHOLD-693",
 ];
 
 export function ownedByEpic(uc: string): boolean {

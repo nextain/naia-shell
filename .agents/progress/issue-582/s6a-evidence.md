@@ -1,7 +1,7 @@
 # S6a 증거 — 셸 도구·권한·기능 플래그 (#582)
 
 작성 2026-09-10. 계약: `docs/progress/issue-582-ego-browser-host.md` 3절 4번·4.9·7절 P04·9절 S6a.
-worktree `/var/home/luke/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
+worktree `~/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
 
 ## 1. 무엇을 만들었나
 

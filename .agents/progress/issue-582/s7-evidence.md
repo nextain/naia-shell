@@ -3,7 +3,7 @@
 작성 2026-09-10. 대상 리뷰: `.agents/progress/issue-582/codex-impl-review-20260910.md` (P0 1, P1 5, P2 1).
 계약: `docs/progress/issue-582-ego-browser-host.md` 3절 4번·4.3.1·4.3.2·4.4·4.7,
 `.agents/progress/issue-582/s0-review-fable.md` 마지막 두 절.
-worktree `/var/home/luke/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
+worktree `~/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
 
 커밋 셋:
 

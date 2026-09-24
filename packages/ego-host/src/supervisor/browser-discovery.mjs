@@ -168,7 +168,7 @@ function win32Candidates(env, fs) {
   const path = win32Path;
   const programFiles = env["ProgramFiles"] || "C:\\Program Files";
   const programFilesX86 = env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-  const localAppData = env.LOCALAPPDATA || path.join(env.USERPROFILE || "C:\\Users\\user", "AppData", "Local");
+  const localAppData = env.LOCALAPPDATA || path.join(env.USERPROFILE || "C:\\Users\\Default", "AppData", "Local");
   const specs = [
     ["edge", path.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe")],
     ["edge", path.join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe")],

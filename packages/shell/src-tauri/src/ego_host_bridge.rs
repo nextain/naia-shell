@@ -1093,7 +1093,7 @@ mod tests {
 
     #[test]
     fn socket_path_matches_the_node_rule_on_three_platforms() {
-        let adk = "/var/home/luke/naia-adk";
+        let adk = "/var/home/user/naia-adk";
         let cases = [
             ("linux", Some("/run/user/1000")),
             ("darwin", Some("/tmp")),
@@ -1206,10 +1206,10 @@ mod tests {
 
     #[test]
     fn the_adk_hash_is_twelve_hex_characters() {
-        let hash = adk_hash("/var/home/luke/naia-adk");
+        let hash = adk_hash("/var/home/user/naia-adk");
         assert_eq!(hash.len(), 12);
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_ne!(hash, adk_hash("/var/home/luke/naia-adk2"));
+        assert_ne!(hash, adk_hash("/var/home/user/naia-adk2"));
     }
 
     #[test]

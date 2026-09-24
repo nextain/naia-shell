@@ -1,7 +1,7 @@
 # S6b 증거 — Rust 생명주기 편입 (#582)
 
 작성 2026-09-10. 계약: `docs/progress/issue-582-ego-browser-host.md` 4.8·4.9, 9절 S6b.
-worktree `/var/home/luke/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
+worktree `~/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
 
 ## 1. 무엇을 만들었나
 

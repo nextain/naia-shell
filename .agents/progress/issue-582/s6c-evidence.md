@@ -2,7 +2,7 @@
 
 작성 2026-09-10. 계약: `docs/progress/issue-582-ego-browser-host.md` 4.2·4.4·4.5·4.8·4.9,
 9절 S6a·S6b 행과 `.agents/progress/issue-582/s0-review-fable.md` 마지막 절(S6c 요구).
-worktree `/var/home/luke/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
+worktree `~/alpha-adk/.worktrees/naia-shell-582-ego-host`, 브랜치 `feat/582-ego-browser-host`.
 
 커밋 셋: `af909a91`(ego-host 관리 채널·데몬), `669f874c`(Rust 다리), `bf831dbe`(웹뷰 어댑터·패키징·풀스택 e2e).
 
