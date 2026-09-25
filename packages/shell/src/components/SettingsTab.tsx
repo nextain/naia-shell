@@ -160,6 +160,7 @@ import {
 import { listSttProviders } from "../lib/stt/registry";
 import { listTtsProviderMetas } from "../lib/tts/registry";
 import { synthesizeTts } from "../lib/tts/synthesize";
+import type { VoicePlaybackMode } from "../lib/tts/voice-playback-mode";
 import type { ModelCapability, ProviderId } from "../lib/types";
 import { type UpdateInfo, checkForUpdate } from "../lib/updater";
 import { type VoiceHostGpu, voiceHostProfile } from "../lib/voice/host-profile";
@@ -5308,6 +5309,33 @@ export function SettingsTab() {
 									</div>
 								</div>
 							)}
+							<div className="settings-field" data-testid="voice-playback-mode">
+								<label htmlFor="voice-playback-mode-select">
+									{t("settings.voicePlaybackMode")}
+								</label>
+								<select
+									id="voice-playback-mode-select"
+									value={existing?.voicePlaybackMode ?? "auto"}
+									onChange={(event) => {
+										if (!existing) return;
+										saveConfig({
+											...existing,
+											voicePlaybackMode: event.target.value as VoicePlaybackMode,
+										});
+									}}
+								>
+									<option value="auto">{t("settings.voicePlaybackModeAuto")}</option>
+									<option value="streaming">
+										{t("settings.voicePlaybackModeStreaming")}
+									</option>
+									<option value="sentence">
+										{t("settings.voicePlaybackModeSentence")}
+									</option>
+								</select>
+								<div className="settings-hint">
+									{t("settings.voicePlaybackModeHint")}
+								</div>
+							</div>
 						</div>
 					)}
 

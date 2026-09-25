@@ -2,6 +2,7 @@ import type { EnvironmentAwareness } from "@nextain/naia-os-core/composition";
 import type { VramTierId } from "./capabilities/vram-tiers";
 import type { Locale } from "./i18n";
 import { Logger } from "./logger";
+import type { VoicePlaybackMode } from "./tts/voice-playback-mode";
 import {
 	SECRET_KEYS,
 	RETIRED_VOICE_SECRET_KEYS,
@@ -421,6 +422,21 @@ export interface AppConfig {
 	 * 런타임은 기본으로 돌아간다 — 카드를 뽑았다고 음성이 아예 안 뜨면 안 된다.
 	 */
 	localVoiceGpuIndex?: number;
+	/**
+	 * FR-VOICE.22 (2026-09-25): 로컬 음성(naia-local-voice) 재생 방식.
+	 *
+	 *   "auto"      (기본값) 런타임이 실시간을 알리거나 실측 RTF≤1.3 이면
+	 *               스트리밍(느리면 pre-roll), 그보다 느리거나 RTF 를 아직
+	 *               모르면 문장 방식.
+	 *   "streaming" 항상 PCM 스트림을 받는 대로 재생 — 첫 소리가 가장 빠르지만
+	 *               엔진이 실시간보다 느리면 끊길 수 있다.
+	 *   "sentence"  항상 문장 전체가 합성된 뒤 재생 — 끊기지 않지만 첫 소리가
+	 *               늦다.
+	 *
+	 * 다른 TTS provider(edge/gateway 등)는 애초에 PCM 스트림을 제공하지 않으므로
+	 * 이 값의 영향을 받지 않는다. 결정 로직: `tts/voice-playback-mode.ts`.
+	 */
+	voicePlaybackMode?: VoicePlaybackMode;
 	/**
 	 * FR-VOICE.13 (#419): recorded when a safety migration disabled the local
 	 * voice authority (retired localGpuTier treated as stale authority). The

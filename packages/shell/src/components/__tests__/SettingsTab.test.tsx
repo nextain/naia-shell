@@ -3752,3 +3752,130 @@ describe("SettingsTab — 로컬 음성 카드 선택 (#537)", () => {
 		});
 	});
 });
+
+/**
+ * FR-VOICE.22 (2026-09-25) — "음성 재생 방식" 설정: 자동/스트리밍/문장.
+ * `.agents/work/naia-res/studio-impl/voice-streaming-regression-20260925.md`.
+ */
+describe("SettingsTab — 음성 재생 방식 (FR-VOICE.22)", () => {
+	beforeEach(() => {
+		secureStoreMock.get.mockImplementation((key: string) =>
+			Promise.resolve(key === "naiaKey" ? "gw-member" : null),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(24);
+			if (command === "voxcpm2_status") return Promise.resolve(false);
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: "ready",
+					ready: true,
+					canStart: true,
+					summary: "",
+					steps: [],
+				});
+			return Promise.resolve([]);
+		});
+	});
+
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	function seedLocalVoice(extra: Record<string, unknown> = {}) {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				naiaKey: "nk",
+				ttsEnabled: true,
+				ttsProvider: "naia-local-voice",
+				localVoiceEnabled: true,
+				...extra,
+			}),
+		);
+	}
+
+	it("기본값은 자동이다(설정을 저장한 적이 없어도)", async () => {
+		seedLocalVoice();
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		const select = await vi.waitFor(() => {
+			const element = document.getElementById("voice-playback-mode-select");
+			expect(element).toBeTruthy();
+			return element as HTMLSelectElement;
+		});
+		expect(select.value).toBe("auto");
+		const labels = Array.from(select.options).map((o) => o.value);
+		expect(labels).toEqual(["auto", "streaming", "sentence"]);
+	});
+
+	it("저장된 값을 그대로 반영한다", async () => {
+		seedLocalVoice({ voicePlaybackMode: "sentence" });
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		const select = await vi.waitFor(() => {
+			const element = document.getElementById("voice-playback-mode-select");
+			expect(element).toBeTruthy();
+			return element as HTMLSelectElement;
+		});
+		expect(select.value).toBe("sentence");
+	});
+
+	it("고르면 설정에 남는다(스트리밍으로 변경)", async () => {
+		seedLocalVoice();
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		const select = await vi.waitFor(() => {
+			const element = document.getElementById("voice-playback-mode-select");
+			expect(element).toBeTruthy();
+			return element as HTMLSelectElement;
+		});
+		fireEvent.change(select, { target: { value: "streaming" } });
+
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.voicePlaybackMode).toBe("streaming");
+		});
+	});
+
+	it("문장 방식으로 바꿔도 남는다", async () => {
+		seedLocalVoice({ voicePlaybackMode: "streaming" });
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		const select = await vi.waitFor(() => {
+			const element = document.getElementById("voice-playback-mode-select");
+			expect(element).toBeTruthy();
+			return element as HTMLSelectElement;
+		});
+		expect(select.value).toBe("streaming");
+		fireEvent.change(select, { target: { value: "sentence" } });
+
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			expect(saved.voicePlaybackMode).toBe("sentence");
+		});
+	});
+
+	it("다른 provider 를 쓰면 설정 칸 자체가 보이지 않는다", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				naiaKey: "nk",
+				ttsProvider: "edge",
+			}),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		await vi.waitFor(() => {
+			expect(
+				document.querySelector('[data-testid="gateway-tts-provider"]'),
+			).toBeTruthy();
+		});
+		expect(document.getElementById("voice-playback-mode-select")).toBeNull();
+	});
+});

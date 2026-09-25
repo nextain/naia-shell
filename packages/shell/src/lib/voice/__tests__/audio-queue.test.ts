@@ -233,6 +233,27 @@ describe("AudioQueue streamed PCM playback", () => {
 		expect(second.startedAt).toBeCloseTo((first.startedAt ?? 0) + 0.1, 5);
 	});
 
+	it("FR-VOICE.22: startDelaySeconds pushes the first chunk's scheduled start out (pre-roll)", () => {
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		stream.startDelaySeconds = 0.7;
+		queue.enqueueOrderedStream(0, stream, {});
+		stream.push(new Int16Array(2_400)); // 100 ms
+		const [first] = FakeAudioContext.sources;
+		// Default lead is 0.04s; startDelaySeconds must win when it is larger.
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.7, 5);
+	});
+
+	it("startDelaySeconds=0 (default) keeps the existing 40ms lead unchanged", () => {
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		expect(stream.startDelaySeconds).toBe(0);
+		queue.enqueueOrderedStream(0, stream, {});
+		stream.push(new Int16Array(2_400));
+		const [first] = FakeAudioContext.sources;
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
+	});
+
 	it("treats an empty stream as unavailable and advances to the next sentence", () => {
 		const queue = new AudioQueue();
 		const stream = new PcmStreamSource(24_000);

@@ -1208,6 +1208,7 @@ export function ChatArea({
 			gatewayUrl: LAB_GATEWAY_URL,
 			vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 			vllmTtsHost: config.vllmTtsHost,
+			voicePlaybackMode: config.voicePlaybackMode, // FR-VOICE.22
 		};
 	}
 
@@ -2828,6 +2829,7 @@ export function ChatArea({
 					gatewayUrl: LAB_GATEWAY_URL,
 					vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 					vllmTtsHost: config.vllmTtsHost,
+					voicePlaybackMode: config.voicePlaybackMode, // FR-VOICE.22
 				};
 
 				// Start STT engine — route to Tauri plugin (offline) or API-based

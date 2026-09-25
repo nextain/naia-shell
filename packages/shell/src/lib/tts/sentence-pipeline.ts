@@ -29,6 +29,12 @@ import { getTtsProviderMeta } from "./index";
 import type { LocalVoiceScheduler } from "./local-voice-scheduler";
 import { synthesizeTts } from "./synthesize";
 import { ttsTextFilter } from "./text-filter";
+import {
+	VoicePlaybackRtfTracker,
+	decidePlaybackMethod,
+	estimateSentenceDurationSeconds,
+	type VoicePlaybackMode,
+} from "./voice-playback-mode";
 import { isVoiceWarmingHold } from "./warming-hold";
 
 const TAG = "tts-pipeline";
@@ -48,6 +54,8 @@ export interface PipelineVoiceConfig {
 	vllmHost?: string;
 	/** naia-local-voice provider: local cascade / VoxCPM2 voice host. */
 	vllmTtsHost?: string;
+	/** FR-VOICE.22 (2026-09-25): 음성 재생 방식. 생략하면 "auto". */
+	voicePlaybackMode?: VoicePlaybackMode;
 }
 
 /** The renderer surface the pipeline is allowed to touch (FR-VOICE.16). */
@@ -149,6 +157,12 @@ export function createSentenceTtsPipeline(
 	const abortControllers = new Map<string, AbortController>();
 	const recentTexts: string[] = [];
 	let localVoiceUnavailableNoticed = false;
+	// FR-VOICE.22 — "auto" 재생 방식의 RTF 폴백: 이 파이프라인 인스턴스가
+	// 살아있는 동안(세션) 마지막으로 측정한 로컬 음성 RTF 를 기억해, 다음
+	// 문장의 스트리밍/문장 판정에 다시 쓴다. 첫 문장은 항상 모름(문장 방식)
+	// 으로 시작한다 — 바지인으로는 리셋하지 않는다(엔진 warm 상태는 턴과
+	// 무관하다, LocalVoiceScheduler 의 admission tail 과 같은 이유).
+	const voicePlaybackRtfTracker = new VoicePlaybackRtfTracker();
 
 	function sendSentence(sentence: string): void {
 		// Preserve the original Markdown in chat, but send only natural speech
@@ -304,16 +318,52 @@ export function createSentenceTtsPipeline(
 		// 2026-09-11 streaming contract: for the local voice host, reserve the
 		// ordered slot as a PCM stream *now* and feed chunks as they arrive, so
 		// playback starts on the first chunk instead of after the whole WAV.
+		//
+		// FR-VOICE.22 (2026-09-25): whether that slot is even opened as a stream
+		// now depends on the "음성 재생 방식" decision — "sentence" (forced, or
+		// auto with an unknown/slow RTF) never streams; it always waits for the
+		// whole WAV (the existing no-stream-support fallback below already
+		// handles that: pcmStream stays null → the WAV branch runs). "streaming"
+		// always streams. "auto" streams when the last measured RTF says the
+		// engine keeps up (pre-roll for the borderline band); the very first
+		// local-voice sentence of the session has no RTF yet and safely falls
+		// back to sentence.
 		const streamQueue = deps.getQueue();
+		const playbackDecision =
+			ttsProviderForCost === "naia-local-voice"
+				? decidePlaybackMethod({
+						mode: voiceCfg?.voicePlaybackMode ?? "auto",
+						// 2026-09-25 기준 어떤 로컬 음성 런타임도 /health 에 실시간 신호를
+						// 내보내지 않는다(voice-playback-mode.ts 상단 참고) — 신호가
+						// 생기면 여기서 readRuntimeRealtimeHint(...) 로 채운다. 지금은
+						// RTF 실측 폴백만 쓴다.
+						explicitRealtime: null,
+						rtf: voicePlaybackRtfTracker.get(),
+						estimatedDurationSeconds: estimateSentenceDurationSeconds(clean),
+					})
+				: null;
 		const pcmStream =
 			ttsProviderForCost === "naia-local-voice" &&
-			streamQueue?.enqueueOrderedStream
+			streamQueue?.enqueueOrderedStream &&
+			playbackDecision?.method === "streaming"
 				? new PcmStreamSource(24000)
 				: null;
+		if (pcmStream) {
+			pcmStream.startDelaySeconds = playbackDecision?.preRollSeconds ?? 0;
+		}
 		if (pcmStream && streamQueue?.enqueueOrderedStream) {
 			streamQueue.enqueueOrderedStream(seq, pcmStream, {
 				onPlaybackStart: revealText,
 				onPlaybackUnavailable: revealText,
+			});
+		}
+		if (playbackDecision) {
+			Logger.info(TAG, "Voice playback mode decision", {
+				seq,
+				mode: voiceCfg?.voicePlaybackMode ?? "auto",
+				method: playbackDecision.method,
+				reason: playbackDecision.reason,
+				preRollSeconds: Number(playbackDecision.preRollSeconds.toFixed(2)),
 			});
 		}
 		const synthesize = () => {
@@ -407,11 +457,16 @@ export function createSentenceTtsPipeline(
 
 				// FR-VOICE.19 (#519): measure every local sentence, not only the
 				// first — a later RTF<1 is the "engine warmed" release signal.
-				if (ttsProviderForCost === "naia-local-voice" && localVoiceScheduler) {
+				// FR-VOICE.22 (2026-09-25): the same measurement also feeds
+				// voicePlaybackRtfTracker, which the NEXT sentence's "auto"
+				// playback-mode decision reads (independent of whether the
+				// warming-hold scheduler is present).
+				if (ttsProviderForCost === "naia-local-voice") {
 					const duration = wavDurationSeconds(audioBase64);
 					const elapsed =
 						Math.max(0, performance.now() - synthesisStartedAt) / 1000;
-					const verdict = localVoiceScheduler.onSentenceResult(
+					voicePlaybackRtfTracker.record(elapsed, duration ?? null);
+					const verdict = localVoiceScheduler?.onSentenceResult(
 						localVoiceGeneration,
 						{ elapsedSeconds: elapsed, durationSeconds: duration ?? null },
 					);

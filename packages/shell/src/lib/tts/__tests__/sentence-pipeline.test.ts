@@ -275,10 +275,21 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		vi.unstubAllGlobals();
 	});
 
-	/** A queue that understands the streaming contract. */
+	/**
+	 * A queue that understands the streaming contract.
+	 *
+	 * FR-VOICE.22 (2026-09-25): forces `voicePlaybackMode: "streaming"` —
+	 * these tests exercise the streaming SLOT MECHANICS (enqueueOrderedStream,
+	 * chunk feeding, failure release), which must stay deterministic regardless
+	 * of the "auto" mode's RTF-based decision (covered separately in
+	 * voice-playback-mode.test.ts and the "auto" describe block below).
+	 */
 	function makeStreamingDeps(scheduler: LocalVoiceScheduler | null = null) {
 		const { deps, queue, reveal } = makeDeps({
-			getVoiceConfig: () => ({ ttsProvider: "naia-local-voice" }),
+			getVoiceConfig: () => ({
+				ttsProvider: "naia-local-voice",
+				voicePlaybackMode: "streaming",
+			}),
 			getScheduler: () => scheduler,
 		});
 		const streaming = Object.assign(queue, {
@@ -423,4 +434,103 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		expect(resumePlayback).toHaveBeenCalledTimes(1);
 	});
 
+});
+
+describe("sentence TTS pipeline — FR-VOICE.22 음성 재생 방식 integration", () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	/** Minimal valid RIFF/WAVE payload of an exact duration, base64-encoded
+	 * (same construction as audio-queue.test.ts's wavDurationSeconds test). */
+	function makeWavBase64(durationSeconds: number): string {
+		const sampleRate = 24_000;
+		const pcmBytes = Math.max(2, Math.round(durationSeconds * sampleRate) * 2);
+		const bytes = new Uint8Array(44 + pcmBytes);
+		const view = new DataView(bytes.buffer);
+		const put = (offset: number, text: string) => {
+			for (let i = 0; i < text.length; i++)
+				bytes[offset + i] = text.charCodeAt(i);
+		};
+		put(0, "RIFF");
+		put(8, "WAVE");
+		put(12, "fmt ");
+		put(36, "data");
+		view.setUint32(4, bytes.length - 8, true);
+		view.setUint32(16, 16, true);
+		view.setUint16(20, 1, true);
+		view.setUint16(22, 1, true);
+		view.setUint32(24, sampleRate, true);
+		view.setUint32(28, sampleRate * 2, true);
+		view.setUint16(32, 2, true);
+		view.setUint16(34, 16, true);
+		view.setUint32(40, pcmBytes, true);
+		let binary = "";
+		for (const byte of bytes) binary += String.fromCharCode(byte);
+		return btoa(binary);
+	}
+
+	function makeAutoDeps(mode: "auto" | "streaming" | "sentence" = "auto") {
+		const { deps, queue, reveal } = makeDeps({
+			getVoiceConfig: () => ({
+				ttsProvider: "naia-local-voice",
+				voicePlaybackMode: mode,
+			}),
+			getScheduler: () => null,
+		});
+		const streaming = Object.assign(queue, { enqueueOrderedStream: vi.fn() });
+		return { deps, queue: streaming, reveal };
+	}
+
+	it('mode="auto" 의 첫 문장은 RTF 를 모르므로 스트리밍 슬롯을 열지 않는다(문장 방식)', async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) });
+		const { deps, queue } = makeAutoDeps("auto");
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+		expect(queue.enqueueOrderedStream).not.toHaveBeenCalled();
+		await flush();
+		expect(synthesizeMock).toHaveBeenCalledWith(
+			expect.objectContaining({ streamPcm: false }),
+		);
+		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
+			0,
+			expect.any(String),
+			expect.any(Object),
+		);
+	});
+
+	it('mode="sentence" 는 RTF 가 좋아져도 절대 스트리밍 슬롯을 열지 않는다', async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) });
+		const { deps, queue } = makeAutoDeps("sentence");
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("첫 문장.");
+		await flush();
+		pipeline.sendSentence("둘째 문장.");
+		await flush();
+		expect(queue.enqueueOrderedStream).not.toHaveBeenCalled();
+		expect(synthesizeMock).toHaveBeenCalledWith(
+			expect.objectContaining({ streamPcm: false }),
+		);
+	});
+
+	it('mode="streaming" 은 RTF 를 몰라도(첫 문장) 항상 스트리밍 슬롯을 연다', async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) });
+		const { deps, queue } = makeAutoDeps("streaming");
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+	});
+
+	it('mode="auto" 는 앞 문장의 실측 RTF 가 좋으면 다음 문장부터 스트리밍한다', async () => {
+		// First sentence resolves ~instantly against a positive-duration WAV —
+		// elapsed≈0s over a real duration measures RTF≈0 (well within realtime).
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(2) });
+		const { deps, queue } = makeAutoDeps("auto");
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("첫 문장.");
+		expect(queue.enqueueOrderedStream).not.toHaveBeenCalled();
+		await flush();
+
+		pipeline.sendSentence("둘째 문장.");
+		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+	});
 });

@@ -39,6 +39,15 @@ export class PcmStreamSource {
 	readonly chunks: Int16Array[] = [];
 	ended = false;
 	failed = false;
+	/**
+	 * FR-VOICE.22 (2026-09-25) — "auto" 재생 방식이 RTF 를 실시간보다 약간
+	 * 느리다고 판정했을 때(`voice-playback-mode.ts` pre-roll), 첫 청크를 이만큼
+	 * 늦게 재생 시작하라는 지시. 0 이면 기존 동작(첫 청크에 40ms 리드만 두고
+	 * 바로 재생) 그대로다. `AudioQueue.playStream` 이 최초 스케줄에만 반영한다
+	 * — 청크는 그동안에도 계속 쌓이므로(버퍼가 이미 있는 배열), 재생 시작
+	 * 시점만 늦추면 그 사이 도착한 뒷 청크들이 실질적인 pre-roll 버퍼가 된다.
+	 */
+	startDelaySeconds = 0;
 	private onChunk: ((chunk: Int16Array) => void) | null = null;
 	private onEnd: (() => void) | null = null;
 	constructor(public sampleRate = 24000) {}
@@ -274,8 +283,13 @@ export class AudioQueue {
 				src.buffer = buf;
 				src.connect(ctx.destination);
 				const now = ctx.currentTime;
-				// 40 ms lead on the very first chunk absorbs scheduling jitter.
-				const at = Math.max(now + (started ? 0 : 0.04), nextStart);
+				// 40 ms lead on the very first chunk absorbs scheduling jitter;
+				// startDelaySeconds (FR-VOICE.22 pre-roll) can push that lead out
+				// further when "auto" judged the engine only slightly slower than
+				// realtime — chunks keep arriving during the wait and become the
+				// buffer.
+				const firstChunkLead = Math.max(0.04, stream.startDelaySeconds);
+				const at = Math.max(now + (started ? 0 : firstChunkLead), nextStart);
 				src.start(at);
 				nextStart = at + buf.duration;
 				pending++;
