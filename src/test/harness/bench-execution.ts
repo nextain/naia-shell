@@ -364,21 +364,9 @@ export const EXTRA_VERIFICATION: Readonly<Record<string, readonly VerificationSt
       ["파일을 고칠 수 있다고 메시지를 보낼 수 있는 것은 아니다", "자격증명을 쓰는 호출은 별도 승인이 필요하다"],
     ),
   ],
-  "UC-CHANNEL-SESSION-HANDOFF": [
-    E2E_TAURI("e2e-tauri/specs/channel-reboot.spec.ts", "한 이슈에 대화 정체성 하나만 실 디스크에 남는지",
-      ["한 이슈에 대화 정체성이 하나만 남는다"],
-    ),
-  ],
-  "UC-CHANNEL-SESSION-DUPLICATE-DELIVERY": [
-    E2E_TAURI("e2e-tauri/specs/channel-reboot.spec.ts", "처리 이력이 재부팅을 넘어 실제로 남는지",
-      ["처리 이력이 재부팅을 넘어 남는다"],
-    ),
-  ],
-  "UC-CHANNEL-SESSION-DISCLOSURE-DENY": [
-    E2E_TAURI("e2e-tauri/specs/channel-reboot.spec.ts", "채널 발신함에 기밀이 실리지 않는지",
-      ["워크스페이스 기밀이 채널로 나가는 자리에 적히지 않는다"],
-    ),
-  ],
+  // UC-CHANNEL-SESSION-* 의 실 백엔드 수단이던 e2e-tauri/specs/channel-reboot.spec.ts 는
+  // #610 이 Discord 채널 표면과 함께 지웠다. 남은 수단은 문서 Test Coverage Map 의 계약
+  // 테스트뿐이고, 계열이 요구하는 native 증거는 지금 없다 — 없는 파일을 가리켜 두지 않는다.
   "UC-HERDR-CONTROL-OBSERVE": [
     LIVE_HERDR("src/test/herdr-control-live.contract.test.ts", "살아 있는 Herdr 의 자원과 개정을 실제로 읽는다",
       ["자원을 타입이 선언된 값으로 읽는다", "스냅샷에 개정이 실려 있고 단조 증가한다"],

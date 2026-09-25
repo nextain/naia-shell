@@ -1,9 +1,33 @@
 // #716 — BGM 사이드카는 루프백에서만 받는다. 모든 인터페이스에서 받으면 Windows 가
 // 첫 실행마다 방화벽 창을 띄우고, 허용하면 같은 네트워크의 기기가 인증 없는 서버에 닿는다.
-import { createServer, request, type Server } from "node:http";
+import { createServer, type IncomingMessage, request, type Server, type ServerResponse } from "node:http";
 import { networkInterfaces } from "node:os";
-import { afterEach, describe, expect, it } from "vitest";
-import { LOOPBACK_HOSTS, listenOnLoopback } from "../../packages/bgm-sidecar/src/loopback-listen.js";
+import { resolve as resolvePath } from "node:path";
+import { pathToFileURL } from "node:url";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+
+/**
+ * 모듈 표면. 패키지 소스를 정적으로 import 하면 루트 tsc 의 rootDir(src) 밖이라
+ * 컴파일이 깨진다(TS6059) — 다른 계약 테스트처럼 실행 시점에 불러온다.
+ */
+interface LoopbackModule {
+	LOOPBACK_HOSTS: readonly string[];
+	listenOnLoopback(
+		handler: (req: IncomingMessage, res: ServerResponse) => void,
+		port: number,
+		onFatal: (err: NodeJS.ErrnoException, host: string) => void,
+		onSkip: (err: NodeJS.ErrnoException, host: string) => void,
+	): Server[];
+}
+
+const MODULE_URL = pathToFileURL(
+	resolvePath(__dirname, "..", "..", "packages", "bgm-sidecar", "src", "loopback-listen.ts"),
+).href;
+let LOOPBACK_HOSTS: LoopbackModule["LOOPBACK_HOSTS"];
+let listenOnLoopback: LoopbackModule["listenOnLoopback"];
+beforeAll(async () => {
+	({ LOOPBACK_HOSTS, listenOnLoopback } = (await import(MODULE_URL)) as LoopbackModule);
+});
 
 let servers: Server[] = [];
 

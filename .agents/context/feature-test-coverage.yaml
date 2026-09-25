@@ -152,8 +152,6 @@ entries:
     status: partial
     tests:
       - { tier: deterministic_ci, path: packages/shell/src/lib/__tests__/discord-auth.test.ts }
-      - { tier: browser_mock, path: packages/shell/e2e/discord-settings-secure.spec.ts }
-      - { tier: browser_mock, path: packages/shell/e2e/discord-channel-agent.spec.ts }
     gap: "A real Discord account and channel relay remain credentialed opt-in tests."
   - id: naia-shell:feature:req-011
     requirement: REQ-011
@@ -186,7 +184,6 @@ entries:
     tests:
       - { tier: deterministic_ci, path: packages/shell/src/lib/__tests__/config-secrets.test.ts }
       - { tier: browser_mock, path: packages/shell/e2e/config-sot-boot.spec.ts }
-      - { tier: browser_mock, path: packages/shell/e2e/discord-settings-secure.spec.ts }
   - id: naia-shell:feature:req-015
     requirement: REQ-015
     feature: Desktop distribution, bundled runtimes, and updates

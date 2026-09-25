@@ -1,9 +1,9 @@
 {
 	"generatedFrom": "packages/shell/e2e-tauri/specs",
-	"total": 95,
+	"total": 94,
 	"summary": {
 		"credentialed_live": 67,
-		"deterministic_ci": 20,
+		"deterministic_ci": 19,
 		"native_local": 8
 	},
 	"specs": [
@@ -891,16 +891,6 @@
 				"NAIA_E2E_VOXCPM2_TEST_VOICE"
 			],
 			"tier": "native_local"
-		},
-		{
-			"spec": "95-llm-role-settings.spec.ts",
-			"conf": [
-				"wdio.conf.codex.ts"
-			],
-			"env": [
-				"NAIA_E2E_ADK_PATH"
-			],
-			"tier": "deterministic_ci"
 		},
 		{
 			"spec": "95-voice-linux-shell.spec.ts",

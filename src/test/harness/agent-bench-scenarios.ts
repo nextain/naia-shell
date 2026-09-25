@@ -47,6 +47,15 @@ const FAMILIES: readonly {
   { prefix: "UC-ENV-ATTENTION-POLICY", gate: "integration", requiredEvidence: ["native"] },
   // 두 저장소 어휘 동기도 결정론이다.
   { prefix: "UC-WIRE-UNION-", gate: "protocol", requiredEvidence: ["mock"] },
+  // 2026-09-25 (#712) — 앞 단계가 붉어 드러나지 않던 사이 들어온 능력 축 UC.
+  // 모델이 받는 도구 목록(#611)은 실제 대화·음성 세션이 무엇을 싣는지로 본다.
+  { prefix: "UC-TOOLS-SURFACE-611", gate: "protocol", requiredEvidence: ["native"] },
+  // 도구 루트 결속(#651)은 실제 Codex app-server 의 cwd·샌드박스로만 확인된다.
+  { prefix: "UC-WORKSPACE-BIND-651", gate: "integration", requiredEvidence: ["native"] },
+  // 열린 문서·터미널 인지와 제어(#680), 승인 편집(#687)은 실 UI 의 표시·승인과
+  // 실제 PTY·디스크 반영을 둘 다 거쳐야 한다.
+  { prefix: "UC-WORKSPACE-AI-CONTEXT-AND-CONTROL", gate: "native", requiredEvidence: ["browser", "native"] },
+  { prefix: "UC-WORKSPACE-OPEN-FILE-EDIT-687", gate: "native", requiredEvidence: ["browser", "native"] },
 ];
 
 /**
@@ -137,6 +146,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-MEMORY-THRESHOLD-693",
   // 생각 세기 설정과 턴 단위 전달(#709). 설정 화면과 전달 계약이다.
   "UC-THINKING-LEVEL-709",
+  // NVA 플레이어의 몸 움직임(#714). 아바타 렌더링이다.
+  "UC-NVA-",
 ];
 
 export function ownedByEpic(uc: string): boolean {

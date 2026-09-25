@@ -140,7 +140,7 @@ describe("Terminal File Link Provider (#678)", () => {
 
 		await waitFor(() => {
 			expect(screen.getByRole("alert")).toHaveTextContent(
-				"파일을 찾을 수 없습니다: src/missing.ts",
+				"workspace.fileNotFound",
 			);
 		});
 		expect(onFileLocation).not.toHaveBeenCalled();

@@ -961,7 +961,7 @@ export function App() {
 			if (useAppStore.getState().activeApp !== "workspace") {
 				useAppStore.getState().setActiveApp("workspace");
 			}
-			showGlobalToast(`파일을 찾을 수 없습니다: ${event.payload}`);
+			showGlobalToast(t("workspace.fileNotFound", { path: String(event.payload) }));
 		});
 		void invoke<string | null>("get_startup_open_file")
 			.then(queueFile)
@@ -985,7 +985,7 @@ export function App() {
 							Logger.warn("App", "open-grant register failed (#543)", {
 								error: String(error),
 							});
-							showGlobalToast(`파일을 열 수 없습니다: ${dropped}`);
+							showGlobalToast(t("workspace.fileOpenFailed", { path: String(dropped) }));
 						});
 				}
 			});

@@ -27,7 +27,6 @@ export const config = {
 	runner: "local" as const,
 	specs: [
 		"./specs/90-codex-live-chat.spec.ts",
-		"./specs/95-llm-role-settings.spec.ts",
 		"./specs/96-codex-readiness.spec.ts",
 		"./specs/97-course-worker-guidance.spec.ts",
 	],

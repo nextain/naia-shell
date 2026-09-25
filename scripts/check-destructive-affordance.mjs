@@ -128,6 +128,13 @@ const REVERSIBLE = new Map([
 		},
 	],
 	[
+		"write_naia_path_cache",
+		{
+			why: "ADK 경로를 가리키는 포인터 파일을 새 경로로 바꿔 쓴다. 실패하면 이전 값으로 되돌리고, 사용자가 다른 경로를 고르면 다시 쓴다. 작업 공간 자체는 건드리지 않는다",
+			callers: /setAdkPath/,
+		},
+	],
+	[
 		"delete_naia_settings",
 		{
 			why: "설정 파일 하나를 지우면 기본값으로 돌아간다. 부르는 곳도 초기화 흐름 안이다",
@@ -206,6 +213,10 @@ const ACKNOWLEDGED = new Map([
 	[
 		"packages/shell/src/lib/tab-skills.ts:capture_screen_region",
 		"화면을 찍어 돌려주는 명령이다. 본문의 remove_file 은 자기가 방금 만든 임시 PNG 를 지우는 것이라 사용자 자산을 없애지 않는다 — 이름이 아니라 하는 일로 판정하기 시작하면서 후보가 됐다",
+	],
+	[
+		"packages/shell/src/lib/secure-store.ts:secure_store_delete",
+		"로그인 자격 하나를 지운다. 부르는 곳은 연결 해제 확인 화면(setShowLabDisconnect) 뒤의 로그아웃, 서버가 거절한 자격의 정리, 초기화 확인 화면 뒤의 초기화이고, 다시 로그인하면 돌아온다. 감싼 함수(deleteSecretKey·deleteSecretKeyAtPath)를 거쳐 여러 흐름에서 불려 이 검사기가 각 흐름의 확인을 따라가지 못한다",
 	],
 	[
 		"packages/shell/src/components/AppInstallDialog.tsx:app_install",
@@ -665,10 +676,13 @@ function invokeBindings(sources) {
 
 const invokeSites = invokeBindings(sources);
 
+// 조립 호출(이름을 변수로 넘기는 invoke) 면제. 자리가 없어지면 낡았다고 알려 준다.
+// 예전 자리 environment-skill.ts::tauriCommands 는 #582 가 감독자 어댑터를
+// ego-browser-env-ipc.ts 로 옮기며 없어졌다.
 const COMPOSED_ALLOWED = new Map([
 	[
-		"packages/shell/src/lib/environment-skill.ts::tauriCommands",
-		"EnvironmentCommandPort 어댑터. 지나가는 이름은 environment-skill 의 동작 표에서 리터럴로 정한다",
+		"packages/shell/src/lib/ego-browser-env-ipc.ts::invokeEgoHost",
+		"EgoHostApi 어댑터의 기본 invoke. 지나가는 이름은 같은 파일의 call(\"ego_host_*\") 리터럴과 EGO_HOST_OP_COMMAND 표로 정한다",
 	],
 ]);
 let callSites = 0;

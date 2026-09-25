@@ -330,7 +330,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(
 											cwd: workingDirRef.current,
 										});
 										if (!exists) {
-											showToast(`파일을 찾을 수 없습니다: ${location.path}`);
+											showToast(t("workspace.fileNotFound", { path: location.path }));
 											return;
 										}
 									} catch (err) {

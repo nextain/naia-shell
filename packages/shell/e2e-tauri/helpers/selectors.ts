@@ -103,19 +103,6 @@ export const S = {
 	skillsCount: ".skills-count",
 	skillsEnableAllBtn: ".skills-action-btn:first-child",
 	skillsDisableAllBtn: ".skills-action-btn:last-child",
-	gatewaySkillCard: '[data-testid="gateway-skill-card"]',
-	skillsInstallBtn: '[data-testid="skills-install-btn"]',
-	skillInstallResultSuccess: ".skill-install-result.success",
-	skillInstallResultError: ".skill-install-result.error",
-
-	// Channels tab (5th tab)
-	channelsTabBtn: '[data-chat-tab="channels"]',
-	channelsTabApp: '[data-testid="channels-tab"]',
-	channelCard: '[data-testid="channel-card"]',
-	channelStatus: '[data-testid="channel-status"]',
-	channelLoginBtn: ".channel-action-btn.login",
-	channelLogoutBtn: ".channel-action-btn.logout",
-	channelsRefreshBtn: ".channels-refresh-btn",
 
 	// Agents tab (6th tab)
 	// Agents 는 채팅 탭이 아니라 메타 화면의 탭이다. 순서로 집으면 탭 구성이

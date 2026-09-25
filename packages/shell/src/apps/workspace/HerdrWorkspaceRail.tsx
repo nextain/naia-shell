@@ -74,25 +74,25 @@ export function HerdrWorkspaceRail(props: RailProps) {
 							onClick={props.onShowHerdr}
 							title={t("workspace.herdrBackLabel")}
 						>
-							Herdr 화면으로
+							{t("workspace.herdrBackButton")}
 						</button>
 					) : props.onShowViewer && (props.openFilePath || (props.openDocs && props.openDocs.length > 0)) ? (
 						<button
 							type="button"
 							className="herdr-workspace__toggle-btn"
 							onClick={props.onShowViewer}
-							title="파일 뷰어 보기"
+							title={t("workspace.showViewerLabel")}
 						>
-							파일 뷰어로
+							{t("workspace.showViewerButton")}
 						</button>
 					) : props.onShowViewer ? (
 						<button
 							type="button"
 							className="herdr-workspace__toggle-btn"
 							onClick={props.onShowViewer}
-							title="파일 뷰어 보기"
+							title={t("workspace.showViewerLabel")}
 						>
-							뷰어 보기
+							{t("workspace.showViewerShort")}
 						</button>
 					) : null}
 				</header>
