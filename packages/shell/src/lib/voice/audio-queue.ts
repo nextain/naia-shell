@@ -278,22 +278,30 @@ export class AudioQueue {
 		let advanced = false;
 		let pending = 0;
 		let ended = false;
-		// FR-VOICE.22 gap-review-2 (2026-09-25) — snapshot BEFORE subscribe():
-		// subscribe() synchronously replays every chunk already sitting in
-		// `stream.chunks` (and fires the end callback immediately if the
-		// stream already ended), so by the time the first chunk handler below
-		// runs, `stream.chunks`/`stream.ended` may already reflect the FULL
-		// sentence. We need the pre-turn snapshot, not the post-replay state,
-		// to know how much of the requested pre-roll is already satisfied.
-		const initialBufferedSeconds =
-			stream.chunks.reduce((sum, c) => sum + c.length, 0) /
-			(stream.sampleRate || 1);
-		const initialEnded = stream.ended;
+		// gap-review-3 (2026-09-25): the timer that will fire `onPlaybackStart`
+		// once the first chunk's scheduled `at` arrives — hoisted to this outer
+		// scope (not just inside the `!started` branch below) so `advance()`
+		// can fire it early instead of losing it (see `advance` below).
+		let startTimer: ReturnType<typeof setTimeout> | null = null;
+		let fireStart: (() => void) | null = null;
 		const isCurrent = () =>
 			generation === this.generation && this.currentStream === stream;
 		const advance = () => {
 			if (!isCurrent() || advanced) return;
 			advanced = true;
+			// gap-review-3: a very short clip (or a test double that drives
+			// `onended` synchronously) can have every scheduled source finish
+			// — and thus reach here — before the deferred `startTimer` below
+			// has fired. Once `currentStream` is cleared, `isCurrent()` turns
+			// false and the still-pending timer would fire into a no-op,
+			// permanently dropping the reveal/speaking notification for a
+			// sentence that DID play. Fire it now instead of letting it race.
+			if (startTimer !== null) {
+				clearTimeout(startTimer);
+				this.pendingStartTimers.delete(startTimer);
+				startTimer = null;
+				fireStart?.();
+			}
 			stream.unsubscribe();
 			this.currentStream = null;
 			this.playNext();
@@ -314,15 +322,31 @@ export class AudioQueue {
 				// 40 ms lead on the very first chunk absorbs scheduling jitter;
 				// startDelaySeconds (FR-VOICE.22 pre-roll) can push that lead out
 				// further when "auto" judged the engine only slightly slower than
-				// realtime. gap-review-2: that extra lead is only what's still
-				// missing after subtracting what had already buffered by this
-				// stream's turn (synthesis kept running while the previous
-				// sentence played) — zero once the sentence is fully synthesized.
+				// realtime. gap-review-3 (2026-09-25): the buffered/ended state
+				// used to subtract from that target is read LIVE, right here,
+				// instead of from a one-time snapshot taken before subscribe() —
+				// `PcmStreamSource.push()` appends to `stream.chunks` before
+				// invoking this callback, so this correctly reflects everything
+				// available at the moment THIS chunk is actually being
+				// scheduled. That covers both directions of staleness: chunks
+				// that arrived from background synthesis before this stream's
+				// turn (still present in `stream.chunks` when subscribe()
+				// replays them here) AND chunks/ends that arrive strictly AFTER
+				// an early, empty subscribe() — e.g. the whole-WAV fallback's
+				// `push(decoded.samples); end();`, which lands the ENTIRE
+				// sentence as a single chunk on an already-subscribed, still-
+				// empty stream; a pre-subscribe snapshot would see "0 buffered"
+				// forever and wait out the full pre-roll target for audio that
+				// had, by the time it actually arrived, no more synthesis left
+				// to wait for.
+				const bufferedSecondsNow =
+					stream.chunks.reduce((sum, c) => sum + c.length, 0) /
+					(stream.sampleRate || 1);
 				const effectiveDelay = effectivePreRollSeconds(
 					stream.startDelaySeconds,
-					initialBufferedSeconds,
+					bufferedSecondsNow,
 					stream.expectedDurationSeconds,
-					initialEnded,
+					stream.ended,
 				);
 				const firstChunkLead = Math.max(0.04, effectiveDelay);
 				const at = Math.max(now + (started ? 0 : firstChunkLead), nextStart);
@@ -349,17 +373,18 @@ export class AudioQueue {
 					// would otherwise show the answer and move the mouth while
 					// the speaker is still silent.
 					const leadMs = Math.max(0, (at - now) * 1000);
-					const fireStart = () => {
-						this.pendingStartTimers.delete(timer);
+					fireStart = () => {
+						if (startTimer !== null) this.pendingStartTimers.delete(startTimer);
+						startTimer = null;
 						if (!isCurrent()) return;
 						item.onPlaybackStart?.();
 						if (!wasPlaying) this.callbacks.onPlaybackStart?.();
 					};
-					const timer =
+					startTimer =
 						leadMs > 0
 							? setTimeout(fireStart, leadMs)
 							: setTimeout(fireStart, 0);
-					this.pendingStartTimers.add(timer);
+					this.pendingStartTimers.add(startTimer);
 				}
 			},
 			() => {

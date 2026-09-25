@@ -41,9 +41,13 @@ function makeDeps(overrides: Partial<SentenceTtsPipelineDeps> = {}) {
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Minimal valid RIFF/WAVE payload of an exact duration, base64-encoded
- * (same construction as audio-queue.test.ts's wavDurationSeconds test). */
-function makeWavBase64(durationSeconds: number): string {
-	const sampleRate = 24_000;
+ * (same construction as audio-queue.test.ts's wavDurationSeconds test).
+ * gap-review-3 (2026-09-25): sampleRate is an optional third arg (default
+ * 24_000, matching PcmStreamSource's own default) so tests can build a WAV
+ * whose encoded rate actually differs from that default — otherwise a test
+ * asserting `stream.sampleRate` would pass even if the pipeline never read
+ * the WAV header at all. */
+function makeWavBase64(durationSeconds: number, sampleRate = 24_000): string {
 	const pcmBytes = Math.max(2, Math.round(durationSeconds * sampleRate) * 2);
 	const bytes = new Uint8Array(44 + pcmBytes);
 	const view = new DataView(bytes.buffer);
@@ -397,6 +401,22 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
 	});
 
+	it.each([[16_000], [48_000]])(
+		"gap-review-3: the whole-WAV fallback carries the WAV's own sample rate (%dHz), not the stream's 24kHz default",
+		async (sampleRate) => {
+			synthesizeMock.mockResolvedValue({
+				audioBase64: makeWavBase64(1, sampleRate),
+			});
+			const { deps, queue } = makeStreamingDeps();
+			createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+			await flush();
+			const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+			expect(stream.sampleRate).toBe(sampleRate);
+			expect(stream.ended).toBe(true);
+			expect(stream.failed).toBe(false);
+		},
+	);
+
 	it("fails the reserved slot (does not silently vanish) when the whole-WAV fallback payload is undecodable", async () => {
 		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" }); // too short to be a RIFF/WAVE payload
 		const { deps, queue } = makeStreamingDeps();
@@ -611,5 +631,40 @@ describe("sentence TTS pipeline — FR-VOICE.22 음성 재생 방식 integration
 		);
 		expect(streamedSeqs).toEqual([1, 2]);
 		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(2);
+	});
+
+	it("gap-review-3: a borderline-RTF decision's preRollSeconds/estimated duration actually land on the stream object", async () => {
+		// Force the first sentence's measured RTF into the borderline band
+		// (1.0 < RTF <= 1.3) by controlling performance.now() directly, so the
+		// SECOND sentence's "auto" decision is streaming+pre-roll (not the
+		// zero-preroll realtime case, which would pass this assertion even if
+		// the two assignments in synthesize() were deleted, since both
+		// stream.startDelaySeconds and stream.expectedDurationSeconds default
+		// to 0/null already matching a 0-preRoll outcome).
+		const now = vi
+			.spyOn(performance, "now")
+			.mockReturnValueOnce(0) // sentence 1: synthesisStartedAt
+			.mockReturnValueOnce(1_100) // sentence 1: elapsedMs (diagnostics)
+			.mockReturnValueOnce(1_100) // sentence 1: elapsed used for RTF record
+			.mockReturnValue(0); // sentence 2 onward: value irrelevant here
+		try {
+			synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) }); // 1s WAV
+			const { deps, queue } = makeAutoDeps("auto");
+			const pipeline = createSentenceTtsPipeline(deps);
+			pipeline.sendSentence(
+				"첫 문장입니다, 충분히 길게 써서 예상 길이를 만듭니다.",
+			);
+			await flush();
+			// elapsed(1.1s)/duration(1s) = RTF 1.1 → borderline band.
+			pipeline.sendSentence(
+				"둘째 문장도 충분히 길게 써서 예상 길이가 0보다 크게 만듭니다.",
+			);
+			expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+			const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+			expect(stream.startDelaySeconds).toBeGreaterThan(0);
+			expect(stream.expectedDurationSeconds).toBeGreaterThan(0);
+		} finally {
+			now.mockRestore();
+		}
 	});
 });

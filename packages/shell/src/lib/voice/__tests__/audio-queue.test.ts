@@ -251,6 +251,25 @@ describe("AudioQueue streamed PCM playback", () => {
 		expect(second.startedAt).toBeCloseTo((first.startedAt ?? 0) + 0.1, 5);
 	});
 
+	it("gap-review-3: a large pre-roll actually delays the start notification until `at`, not just the 40ms floor", () => {
+		// Guards against a leadMs that gets silently capped (e.g. Math.min(40,
+		// leadMs)) — with startDelaySeconds=1.3, onPlaybackStart must NOT fire
+		// until close to 1.2s have elapsed (1.3s target - the 100ms chunk's
+		// own duration, which now counts as already-buffered), not at 40ms.
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		const started = vi.fn();
+		stream.startDelaySeconds = 1.3;
+		queue.enqueueOrderedStream(0, stream, { onPlaybackStart: started });
+		stream.push(new Int16Array(2_400)); // 100 ms → effective delay 1.2s
+		vi.advanceTimersByTime(40);
+		expect(started).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1159); // total 1199ms — still short of 1200ms
+		expect(started).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1); // total 1200ms
+		expect(started).toHaveBeenCalledTimes(1);
+	});
+
 	it("FR-VOICE.22: startDelaySeconds pushes the first chunk's scheduled start out (pre-roll)", () => {
 		const queue = new AudioQueue();
 		const stream = new PcmStreamSource(24_000);
@@ -259,7 +278,13 @@ describe("AudioQueue streamed PCM playback", () => {
 		stream.push(new Int16Array(2_400)); // 100 ms
 		const [first] = FakeAudioContext.sources;
 		// Default lead is 0.04s; startDelaySeconds must win when it is larger.
-		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.7, 5);
+		// gap-review-3: the buffered amount is read LIVE at the moment this
+		// very chunk is scheduled, and PcmStreamSource.push() appends to
+		// `chunks` before invoking the callback — so this chunk's own 100ms
+		// already counts as "buffered ahead" and is subtracted from the
+		// target (0.7 - 0.1 = 0.6). Excluding it would leave the original
+		// bug unfixed (see the exact repro test below).
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.6, 5);
 	});
 
 	it("startDelaySeconds=0 (default) keeps the existing 40ms lead unchanged", () => {
@@ -309,6 +334,54 @@ describe("AudioQueue streamed PCM playback", () => {
 		queue.enqueueOrderedStream(0, stream, {});
 		const [first] = FakeAudioContext.sources;
 		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
+	});
+
+	it("gap-review-3 repro: a whole-WAV fallback landing on an already-subscribed, still-empty stream is not double-delayed", () => {
+		// Exact coordinator repro: subscribe (enqueueOrderedStream) on an EMPTY
+		// stream FIRST — this is what happens at turn-arrival for a normal
+		// streaming slot — and only AFTERWARDS does the whole-WAV fallback
+		// (sentence-pipeline.ts) land the entire sentence as one push()+end()
+		// call. A pre-subscribe snapshot would have captured "0 buffered" for
+		// good, since nothing had arrived yet when subscribe() ran, and would
+		// wait out the full 1.3s pre-roll target for audio that, by the time
+		// it actually arrived, had nothing left to wait for.
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		stream.startDelaySeconds = 1.3;
+		stream.expectedDurationSeconds = 5;
+		queue.enqueueOrderedStream(0, stream, {}); // subscribe while empty
+		stream.push(new Int16Array(5 * 24_000)); // the whole 5s WAV lands at once
+		stream.end();
+		const [first] = FakeAudioContext.sources;
+		// Without the fix: now+1.3. With the fix: just the 40ms jitter floor.
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
+	});
+
+	it("gap-review-3: onended racing ahead of the deferred start timer still fires onPlaybackStart", () => {
+		// A very short clip (or a test double that drives onended
+		// synchronously, as this test does) can have its source finish —
+		// and therefore reach advance() via maybeFinish() — before the
+		// setTimeout scheduled for the pre-roll-delayed start notification
+		// has had a chance to fire. Without a fix, advance() clears
+		// currentStream, isCurrent() turns false, and the still-pending timer
+		// later fires into a no-op — the reveal/speaking notification is
+		// lost forever for a sentence that DID play.
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		const started = vi.fn();
+		stream.startDelaySeconds = 1.3;
+		queue.enqueueOrderedStream(0, stream, { onPlaybackStart: started });
+		stream.push(new Int16Array(2_400)); // 100 ms, scheduled ~1.3s out
+		expect(started).not.toHaveBeenCalled(); // timer hasn't fired yet
+		// Simulate onended firing (and the stream ending) before any fake-timer
+		// advancement — the race the coordinator described.
+		FakeAudioContext.sources[0].onended?.();
+		stream.end();
+		expect(started).toHaveBeenCalledTimes(1);
+		// The original timer must have been cancelled, not merely raced —
+		// advancing past its delay must not fire it a second time.
+		vi.advanceTimersByTime(2000);
+		expect(started).toHaveBeenCalledTimes(1);
 	});
 
 	it("treats an empty stream as unavailable and advances to the next sentence", () => {
