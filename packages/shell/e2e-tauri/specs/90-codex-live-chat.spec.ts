@@ -1,6 +1,9 @@
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { E2E_WORKSPACE } from "../codex-e2e-environment.js";
+import {
+	CODEX_E2E_MODEL,
+	E2E_WORKSPACE,
+} from "../codex-e2e-environment.js";
 import {
 	countCompletedAssistantMessages,
 	getNewAssistantMessages,
@@ -64,7 +67,9 @@ describe("Codex live chat through the isolated real Naia Shell", () => {
 			readFileSync(resolve(adkPath, "naia-settings/config.json"), "utf8"),
 		);
 		expect(seeded.provider).toBe("codex");
-		expect(seeded.model).toBe("gpt-5.4");
+		// 심는 쪽(codex-e2e-environment)과 같은 값을 본다. 모델 글자를 여기 따로
+		// 적어 두었더니 기본 모델이 바뀐 뒤로 before 에서 곧장 죽었다.
+		expect(seeded.model).toBe(CODEX_E2E_MODEL);
 		await browser.execute(
 			(path: string, config: Record<string, unknown>) => {
 				localStorage.setItem("naia-adk-path", path);
@@ -95,7 +100,7 @@ describe("Codex live chat through the isolated real Naia Shell", () => {
 		await tauriInvoke("send_to_agent_command", {
 			message: JSON.stringify({ type: "reload_settings" }),
 		});
-		await waitForRunLog("loaded=true codex/gpt-5.4");
+		await waitForRunLog(`loaded=true codex/${CODEX_E2E_MODEL}`);
 	});
 
 	it("renders two consecutive real Codex turns in the embedded Windows UI", async () => {

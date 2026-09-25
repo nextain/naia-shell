@@ -305,16 +305,19 @@ async function waitForAppReadySurface(): Promise<void> {
 			),
 		{ timeout: 60_000 },
 	);
-	// jikime c0d967e9 baseline 의 ChatApp.tsx 는 chat-tabs 안에 button.chat-tab
-	// 3개 (chat / history / channels). origin/main 의 #337 시리즈에서 8 tab 으로
-	// 확장됐던 helper 가 cherry-pick 으로 baseline 위에 그대로 들어옴 = mismatch.
-	// 3 tab 이 baseline 의 정확한 contract. (debug log 에서 무한 false 확인.)
+	// 채팅 머리의 탭은 지금 chat · history 둘이다 (`ChatArea.tsx` 의 `data-chat-tab`).
+	// 예전 판정은 탭 개수 "셋 이상" 을 기다려, 탭이 둘로 준 뒤로 매 스펙마다 육십 초를
+	// 기다리다 던졌다. 그 예외가 전역 before 를 끊어 키 전달·권한 자동 승인까지 건너뛰었다.
+	// 개수가 아니라 이름으로 기다린다.
 	await browser.waitUntil(
 		async () =>
 			browser.execute(
-				() => document.querySelectorAll(".chat-tabs .chat-tab").length >= 3,
+				(chat: string, history: string) =>
+					!!document.querySelector(chat) && !!document.querySelector(history),
+				S.chatTab,
+				S.historyTab,
 			),
-		{ timeout: 60_000 },
+		{ timeout: 60_000, timeoutMsg: "채팅 머리의 chat·history 탭이 뜨지 않았다" },
 	);
 }
 

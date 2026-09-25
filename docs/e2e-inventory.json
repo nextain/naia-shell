@@ -721,6 +721,9 @@
 			"env": [
 				"NAIA_E2E_ADK_PATH"
 			],
+			"platforms": [
+				"linux"
+			],
 			"tier": "deterministic_ci"
 		},
 		{
@@ -728,6 +731,9 @@
 			"conf": [],
 			"env": [
 				"NAIA_E2E_ADK_PATH"
+			],
+			"platforms": [
+				"linux"
 			],
 			"tier": "deterministic_ci"
 		},

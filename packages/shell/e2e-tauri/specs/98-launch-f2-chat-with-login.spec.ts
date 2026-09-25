@@ -30,11 +30,11 @@ describe("98 — F2 로그인 후 대화 (런칭 핵심)", () => {
 		await chatInput.waitForEnabled({ timeout: 30_000 });
 	});
 
-	it("chat tabs 8개 표시 (chat / history / progress / skills / channels / agents / diagnostics / settings)", async () => {
-		const tabCount = await browser.execute(
-			() => document.querySelectorAll(".chat-tabs .chat-tab").length,
-		);
-		expect(tabCount).toBeGreaterThanOrEqual(8);
+	it("채팅 머리에 chat · history 탭이 표시된다", async () => {
+		// 나머지 화면(스킬·채널·진단 등)은 설정 안으로 옮겨졌다. 개수로 재면 그 이동마다
+		// 조용히 깨지므로 남아 있어야 하는 두 탭을 이름으로 잰다.
+		await (await $(S.chatTab)).waitForDisplayed({ timeout: 30_000 });
+		await (await $(S.historyTab)).waitForDisplayed({ timeout: 30_000 });
 	});
 
 	it("심긴 공급자로 sendChatMessage path 를 지난다", async () => {

@@ -1,3 +1,5 @@
+// platforms: linux
+// Windows 에서는 브라우저 호스트가 기본으로 꺼져 있다(browserHostEnabled("win32") === false). marker 확인·회수가 windows4060 게이트(계약 4.9) 전이라 이 스펙이 재는 회수 규칙이 Windows 에는 아직 없다.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";

@@ -115,12 +115,15 @@ describe("70c — nextain default-provider live chat", () => {
 						invoke: (command: string, value: unknown) => Promise<unknown>;
 					};
 				};
+				// creds_update 는 워크스페이스에 묶인 시작 메시지다 — adkPath 없이
+				// 보내면 네이티브가 "startup message IPC requires an ADK path" 로 거절한다.
 				await shell.__TAURI_INTERNALS__?.invoke("send_to_agent_command", {
 					message: JSON.stringify({
 						type: "creds_update",
 						provider: "nextain",
 						naiaKey,
 					}),
+					adkPath: localStorage.getItem("naia-adk-path") ?? "",
 				});
 			}, E2E_NAIA_KEY as string);
 			await browser.pause(500);

@@ -14,14 +14,20 @@ describe("GPU-free pre-baked NVA through the real Tauri Shell", () => {
 		await browser.waitUntil(
 			() =>
 				browser.execute(() => {
+					// `[data-video-avatar-prebaked]` 는 이제 합성 캔버스다. WebM 은 그 옆의
+					// 숨은 <video>(클립마다 하나씩 풀링)에서 디코드된다. 캔버스에 readyState 를
+					// 물으면 늘 undefined 라 이 기다림이 영영 끝나지 않았다.
 					const avatar = document.querySelector<HTMLElement>("[data-video-avatar]");
-					const video = document.querySelector<HTMLVideoElement>(
-						"[data-video-avatar-prebaked]",
+					const canvas = document.querySelector("[data-video-avatar-prebaked]");
+					const videos = Array.from(
+						avatar?.querySelectorAll<HTMLVideoElement>("video") ?? [],
 					);
 					return (
 						avatar?.dataset.videoAvatarLoaded === "true" &&
-						video !== null &&
-						video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+						canvas instanceof HTMLCanvasElement &&
+						videos.some(
+							(video) => video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
+						)
 					);
 				}),
 			{
@@ -32,10 +38,14 @@ describe("GPU-free pre-baked NVA through the real Tauri Shell", () => {
 
 		const state = await browser.execute(() => {
 			const avatar = document.querySelector<HTMLElement>("[data-video-avatar]");
-			const video = document.querySelector<HTMLVideoElement>(
-				"[data-video-avatar-prebaked]",
+			const videos = Array.from(
+				avatar?.querySelectorAll<HTMLVideoElement>("video") ?? [],
 			);
-			const rect = video?.getBoundingClientRect();
+			// 지금 도는 클립(idle 루프)을 본다. 보이는 면은 캔버스라 크기는 캔버스에서 잰다.
+			const video = videos.find((candidate) => !candidate.paused) ?? videos[0];
+			const rect = document
+				.querySelector("[data-video-avatar-prebaked]")
+				?.getBoundingClientRect();
 			return {
 				mode: avatar?.dataset.videoAvatarMode,
 				loaded: avatar?.dataset.videoAvatarLoaded,

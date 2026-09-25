@@ -49,7 +49,7 @@ if (!E2E_NAIA_KEY?.startsWith("gw-"))
 if (process.env.NAIA_E2E_VOICE_6G !== "1") {
 	throw new Error("Set NAIA_E2E_VOICE_6G=1 to run the 6GB voice acceptance");
 }
-configureCodexE2eEnvironment();
+configureCodexE2eEnvironment("voice-6g");
 
 export const config = {
 	transformRequest,

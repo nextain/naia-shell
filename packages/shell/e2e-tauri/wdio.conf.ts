@@ -249,6 +249,9 @@ if (process.env.NAIA_E2E_ADK_PATH?.trim()) {
 	if (CREDENTIALED_SEED_ACTIVE) {
 		process.env.VITE_NAIA_E2E_PROVIDER ??= CREDENTIALED_MAIN_PROVIDER;
 		process.env.VITE_NAIA_E2E_MODEL ??= CREDENTIALED_MAIN_MODEL;
+		// The credentialed key belongs to the production instance; a Vite dev
+		// server otherwise resolves to api-dev.naia.land (naia-instance-urls).
+		process.env.VITE_NAIA_WEB_BASE_URL ??= "https://www.naia.land";
 	}
 }
 
