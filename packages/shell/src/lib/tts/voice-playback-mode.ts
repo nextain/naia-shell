@@ -84,9 +84,16 @@ export interface PlaybackDecision {
  *
  * L(estimatedDurationSeconds) 초 분량을 RTF r 로 합성하면 실제로는 L×r 초가
  * 걸린다. 그 차이(L×(r−1))만큼 재생 시작을 늦춰 미리 쌓아 두면, 합성이 재생을
- * 다시 앞지르지 않는 한 끊기지 않는다. r≤1 이거나 L 을 모르면 여유값만 돌려준다
- * (L 을 모르는 채로 L×(r−1) 항을 계산할 수 없으므로 — 그래도 스케줄링 지터에는
- * 대비해 둔다).
+ * 다시 앞지르지 않는 한 끊기지 않는다. r 나 L 을 몰라서 그 항을 아예 계산할 수
+ * 없을 때만 여유값만 돌려준다(그래도 스케줄링 지터에는 대비해 둔다).
+ *
+ * gap-review-6 (2026-09-25): r≤1 을 "당길 필요 없음"으로 보고 공식 자체를
+ * 건너뛰던 이전 버전은 r=1.0 에서 여유값(0.3s)이 그대로 나오는데 r=1.0001 에서는
+ * (공식이 적용되어) 사실상 같은 값(≈0.3s)이 나오면서도, r=1.0 을 "실시간" 분기가
+ * 아예 preRollSeconds=0 으로 하드코딩해 버려 둘 사이에 불연속 단절(0 → 0.3s)이
+ * 생겼다. r≤1 구간에도 공식을 그대로 적용하면(L×(r−1) 항이 음수가 되어 여유값을
+ * 깎고, 0 이하로는 클램프) 연속된 값이 나온다 — 예: L=5, r=0.95 → 0.05s,
+ * r=1.0 → 0.3s, r=1.0001 → ≈0.3s.
  */
 export function computePreRollSeconds(
 	estimatedDurationSeconds: number | null | undefined,
@@ -98,8 +105,7 @@ export function computePreRollSeconds(
 		!Number.isFinite(rtf) ||
 		estimatedDurationSeconds == null ||
 		!Number.isFinite(estimatedDurationSeconds) ||
-		estimatedDurationSeconds <= 0 ||
-		rtf <= 1
+		estimatedDurationSeconds <= 0
 	) {
 		return Math.max(0, marginSeconds);
 	}
@@ -128,8 +134,8 @@ export function estimateSentenceDurationSeconds(
  *
  *   1. 런타임이 실시간을 명시적으로 알리면 → 스트리밍, pre-roll 없음.
  *   2. RTF 를 모르면(첫 측정 전) → 문장 방식(안전 쪽 기본값).
- *   3. RTF ≤ 1.0 → 스트리밍, pre-roll 없음.
- *   4. 1.0 < RTF ≤ 1.3 → 스트리밍 + pre-roll.
+ *   3. RTF ≤ 1.0 → 스트리밍 + pre-roll(공식값, 보통 여유값 근방 — gap-review-6).
+ *   4. 1.0 < RTF ≤ 1.3 → 스트리밍 + pre-roll(같은 공식, 3번과 연속).
  *   5. RTF > 1.3 → 문장 방식.
  */
 export function decidePlaybackMethod(
@@ -161,7 +167,18 @@ export function decidePlaybackMethod(
 		return { method: "sentence", preRollSeconds: 0, reason: "rtf-unknown" };
 
 	if (rtf <= REALTIME_RTF_CEILING)
-		return { method: "streaming", preRollSeconds: 0, reason: "rtf-realtime" };
+		// gap-review-6 (2026-09-25): 더 이상 0 으로 못박지 않는다 — computePreRollSeconds
+		// 의 공식을 그대로 태워, RTF=1.0 경계에서 borderline 분기(바로 아래)가 주는
+		// 값과 연속되게 한다(둘 다 결국 같은 공식을 부른다).
+		return {
+			method: "streaming",
+			preRollSeconds: computePreRollSeconds(
+				input.estimatedDurationSeconds,
+				rtf,
+				input.marginSeconds,
+			),
+			reason: "rtf-realtime",
+		};
 
 	if (rtf <= BORDERLINE_RTF_CEILING)
 		return {
@@ -245,10 +262,54 @@ export function readRuntimeRealtimeHint(health: unknown): boolean | null {
  */
 export class VoicePlaybackRtfTracker {
 	private lastRtf: number | null = null;
+	/**
+	 * gap-review-6 (2026-09-25): the synthesis target (e.g. the local voice
+	 * host address) `lastRtf` was actually measured against. `null` when no
+	 * target has been noted yet — distinct from "measured against a target
+	 * that happens to resolve to the empty/undefined value" only in that
+	 * both are treated as one bucket, which is fine since a config without a
+	 * host address can't distinguish targets anyway.
+	 */
+	private lastTarget: string | null = null;
+
+	/**
+	 * gap-review-6: applies target-change invalidation shared by
+	 * `noteTarget()` and `record()` — a target swap (switching
+	 * `vllmTtsHost` mid-session, most concretely) means the OLD measurement
+	 * says nothing about how fast the NEW target actually is, so it must be
+	 * treated as "unknown" until the new target's own first sentence is
+	 * measured, not silently carried over.
+	 */
+	private applyTarget(target: string | null): void {
+		if (target !== this.lastTarget) {
+			this.lastTarget = target;
+			this.lastRtf = null;
+		}
+	}
+
+	/**
+	 * gap-review-6: call with the CURRENT synthesis target before reading
+	 * `get()` at decision time. This catches a target swap even before this
+	 * sentence's own `record()` would run — without it, the FIRST sentence
+	 * sent to a newly-swapped-to target would still read the old target's
+	 * stale RTF and could stream with zero pre-roll on a host that has never
+	 * actually been measured.
+	 */
+	noteTarget(target: string | null = null): void {
+		this.applyTarget(target);
+	}
 
 	/** elapsedSeconds/durationSeconds 로 RTF 를 계산해 기록한다. 유효하지 않은
-	 * 측정(길이 0/음수, 유한하지 않음)은 무시한다 — 이전 값을 지우지 않는다. */
-	record(elapsedSeconds: number, durationSeconds: number | null): void {
+	 * 측정(길이 0/음수, 유한하지 않음)은 무시한다 — 이전 값을 지우지 않는다.
+	 * gap-review-6: `target` 이 이전과 다르면(예: vllmTtsHost 변경) 기록 전에
+	 * "모름" 상태로 먼저 되돌린다 — 호출부가 target 을 안 넘기면(기본값 null)
+	 * 기존 동작(target 무관, 세션 내내 이어짐)과 동일하다. */
+	record(
+		elapsedSeconds: number,
+		durationSeconds: number | null,
+		target: string | null = null,
+	): void {
+		this.applyTarget(target);
 		if (
 			durationSeconds == null ||
 			!Number.isFinite(durationSeconds) ||
@@ -267,5 +328,6 @@ export class VoicePlaybackRtfTracker {
 	/** 새 세션/바지인 — 엔진 상태가 이어질 이유가 없는 새 턴에서 호출한다. */
 	reset(): void {
 		this.lastRtf = null;
+		this.lastTarget = null;
 	}
 }

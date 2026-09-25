@@ -356,6 +356,14 @@ export function createSentenceTtsPipeline(
 			deps.setOutputStage("tts");
 			synthesisStartedAt = performance.now();
 			const estimatedDurationSeconds = estimateSentenceDurationSeconds(clean);
+			// gap-review-6 (2026-09-25): note the CURRENT synthesis target
+			// (the local voice host address) before reading the tracked RTF.
+			// A host swap mid-session (config now points sendSentence's own
+			// requests at a different, unmeasured vllmTtsHost) must not let
+			// this sentence read the OLD host's RTF as if it still applied —
+			// that stale, likely-fast reading would decide "streaming, zero
+			// pre-roll" against a host that has never actually been timed.
+			voicePlaybackRtfTracker.noteTarget(voiceCfg?.vllmTtsHost ?? null);
 			playbackDecision =
 				ttsProviderForCost === "naia-local-voice"
 					? decidePlaybackMethod({
@@ -486,7 +494,11 @@ export function createSentenceTtsPipeline(
 					const duration = wavDurationSeconds(audioBase64);
 					const elapsed =
 						Math.max(0, performance.now() - synthesisStartedAt) / 1000;
-					voicePlaybackRtfTracker.record(elapsed, duration ?? null);
+					voicePlaybackRtfTracker.record(
+						elapsed,
+						duration ?? null,
+						voiceCfg?.vllmTtsHost ?? null,
+					);
 					const verdict = localVoiceScheduler?.onSentenceResult(
 						localVoiceGeneration,
 						{ elapsedSeconds: elapsed, durationSeconds: duration ?? null },
@@ -670,6 +682,10 @@ export function createSentenceTtsPipeline(
 			// chat-mode browser reply — original ChatArea behavior preserved.
 			clearRequests();
 			recentTexts.length = 0;
+			// gap-review-6 (2026-09-25): a fresh session must not carry over a
+			// stale RTF measurement — this pipeline instance's `record()` calls
+			// are the only writer, so nothing else resets it.
+			voicePlaybackRtfTracker.reset();
 		},
 		rearmLocalVoiceNotice(): void {
 			localVoiceUnavailableNoticed = false;

@@ -25,6 +25,11 @@ const ttsSyncMocks = vi.hoisted(() => ({
 	}),
 	streamsAvatarPcm: vi.fn(() => false),
 	enqueueOrdered: vi.fn(),
+	// gap-review-6 (2026-09-25): needed so a forced "streaming" voicePlaybackMode
+	// decision actually opens a stream slot in tests — without this, the real
+	// pipeline's `streamQueue?.enqueueOrderedStream` guard is always falsy here
+	// and every decision silently collapses to non-streaming regardless of mode.
+	enqueueOrderedStream: vi.fn(),
 	skipOrdered: vi.fn(),
 	clear: vi.fn(),
 	destroy: vi.fn(),
@@ -45,7 +50,15 @@ vi.mock("../../lib/tts/synthesize", () => ({
 	streamsAvatarPcm: ttsSyncMocks.streamsAvatarPcm,
 }));
 
-vi.mock("../../lib/voice/audio-queue", () => ({
+vi.mock("../../lib/voice/audio-queue", async (importOriginal) => ({
+	// gap-review-6 (2026-09-25): keep the REAL PcmStreamSource/decodeWavPcm16 —
+	// no prior test in this file ever forced a "streaming" playback decision
+	// (mode was always default "auto", and the first local-voice sentence of a
+	// session always measures "unknown RTF" → sentence method), so nothing here
+	// previously needed them. A forced mode="streaming" sentence now
+	// constructs a real PcmStreamSource inside the pipeline — without this,
+	// `new PcmStreamSource(...)` throws ("no export on the mock").
+	...(await importOriginal<typeof import("../../lib/voice/audio-queue")>()),
 	AudioQueue: class {
 		constructor(
 			callbacks: {
@@ -66,6 +79,10 @@ vi.mock("../../lib/voice/audio-queue", () => ({
 		enqueueOrdered(seq: number, audio: string, callbacks?: unknown) {
 			ttsSyncMocks.audioQueueActive = true;
 			ttsSyncMocks.enqueueOrdered(seq, audio, callbacks);
+		}
+		enqueueOrderedStream(seq: number, stream: unknown, callbacks?: unknown) {
+			ttsSyncMocks.audioQueueActive = true;
+			ttsSyncMocks.enqueueOrderedStream(seq, stream, callbacks);
 		}
 		skipOrdered(seq: number) {
 			ttsSyncMocks.skipOrdered(seq);
@@ -94,6 +111,36 @@ function deferred<T>() {
 		resolve = res;
 	});
 	return { promise, resolve };
+}
+
+/** Minimal valid RIFF/WAVE payload, base64-encoded (same construction as
+ * sentence-pipeline.test.ts's makeWavBase64) — for a forced-streaming
+ * decision, the real (unmocked, gap-review-6) PcmStreamSource/decodeWavPcm16
+ * actually parse whatever synthesizeTts resolves with. */
+function makeWavBase64(durationSeconds: number, sampleRate = 24_000): string {
+	const pcmBytes = Math.max(2, Math.round(durationSeconds * sampleRate) * 2);
+	const bytes = new Uint8Array(44 + pcmBytes);
+	const view = new DataView(bytes.buffer);
+	const put = (offset: number, text: string) => {
+		for (let i = 0; i < text.length; i++)
+			bytes[offset + i] = text.charCodeAt(i);
+	};
+	put(0, "RIFF");
+	put(8, "WAVE");
+	put(12, "fmt ");
+	put(36, "data");
+	view.setUint32(4, bytes.length - 8, true);
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true);
+	view.setUint16(22, 1, true);
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true);
+	view.setUint16(32, 2, true);
+	view.setUint16(34, 16, true);
+	view.setUint32(40, pcmBytes, true);
+	let binary = "";
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary);
 }
 
 vi.mock("@tauri-apps/plugin-store", () => {
@@ -248,7 +295,9 @@ describe("ChatArea", () => {
 		});
 
 		render(<ChatArea />);
-		fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+		fireEvent.click(
+			document.querySelector(".chat-voice-btn") as HTMLButtonElement,
+		);
 
 		await waitFor(() =>
 			expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledTimes(1),
@@ -435,9 +484,9 @@ describe("ChatArea", () => {
 
 		// #572 — 원문은 답변 본문이 아니라 실패 표시의 접힌 상세로 간다.
 		await waitFor(() =>
-			expect(useChatStore.getState().messages.at(-1)?.failure?.detail).toContain(
-				"provider rejected the API key",
-			),
+			expect(
+				useChatStore.getState().messages.at(-1)?.failure?.detail,
+			).toContain("provider rejected the API key"),
 		);
 		expect(useChatStore.getState().messages.at(-1)?.content).toBe("");
 		expect(useChatStore.getState().isStreaming).toBe(false);
@@ -1121,6 +1170,95 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
+	it("gap-review-6: changing voicePlaybackMode mid voice-SESSION takes effect from the next sentence, not frozen at session start", async () => {
+		// FR-VOICE.22 setting is copied into the Shell TTS pipeline's live config
+		// (pipelineVoiceConfigRef) by initializeSpeechTts(). During an ordinary
+		// typed-chat turn that ALWAYS runs fresh from handleSend (chatTtsEnabled
+		// path), so it self-heals on every send — not a useful reproduction.
+		// The real bug is scoped to an ACTIVE VOICE SESSION (handleVoiceToggle):
+		// once pipelineActiveRef.current is true, handleSend's chatTtsEnabled
+		// guard (`!pipelineActiveRef.current && ...`) skips re-running
+		// initializeSpeechTts for every turn inside that session, so the
+		// voicePlaybackMode snapshotted at session start stayed frozen until the
+		// session restarted — exactly what naia-config-changed must now refresh.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b", // requiresApiKey:false — no secure-store/apiKey detour needed
+				sttProvider: "web-speech",
+				sttModel: "",
+				ttsEnabled: true,
+				ttsProvider: "naia-local-voice",
+				vllmTtsHost: "http://localhost:8910",
+				voicePlaybackMode: "sentence",
+			}),
+		);
+		Object.defineProperty(window, "SpeechRecognition", {
+			configurable: true,
+			value: FakeSpeechRecognition,
+		});
+
+		render(<ChatArea />);
+		fireEvent.click(
+			document.querySelector(".chat-voice-btn") as HTMLButtonElement,
+		);
+		// Session start: pipelineVoiceConfigRef.current is snapshotted here with
+		// voicePlaybackMode="sentence" (same code path this test's fix touches).
+		await waitFor(() =>
+			expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledTimes(1),
+		);
+
+		// Flip the setting mid-session (same pattern saveConfig() uses: persist
+		// then notify) — the live voice session stays open, no restart.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				sttProvider: "web-speech",
+				sttModel: "",
+				ttsEnabled: true,
+				ttsProvider: "naia-local-voice",
+				vllmTtsHost: "http://localhost:8910",
+				voicePlaybackMode: "streaming",
+			}),
+		);
+		window.dispatchEvent(new CustomEvent("naia-config-changed"));
+
+		// A real (unmocked, gap-review-6) PcmStreamSource/decodeWavPcm16 now runs
+		// for the forced-streaming decision — resolve with an actual WAV so it
+		// decodes cleanly instead of falling back to the "engine unavailable"
+		// notice, which would be a distraction from what this test checks.
+		ttsSyncMocks.synthesizeTts.mockResolvedValueOnce({
+			audioBase64: makeWavBase64(1),
+			costUsd: 0,
+		});
+
+		// A turn during the live voice session (pipelineActiveRef.current=true —
+		// text input still routes through the ordinary sendChatMessage path,
+		// same as the "Pipeline voice mode" flow ChatArea already uses). The
+		// input placeholder changes while listening ("듣고 있어요...").
+		const input = screen.getByPlaceholderText(/메시지|message|듣고/i);
+		fireEvent.change(input, { target: { value: "voice-session turn" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		capturedRequests[0].onChunk({
+			type: "text",
+			requestId: capturedRequests[0].requestId,
+			text: "This sentence should stream now, not use the session-start snapshot.",
+		});
+		capturedRequests[0].onChunk({
+			type: "finish",
+			requestId: capturedRequests[0].requestId,
+		});
+
+		await waitFor(() =>
+			expect(ttsSyncMocks.enqueueOrderedStream).toHaveBeenCalledTimes(1),
+		);
+		localStorage.removeItem("naia-config");
+	});
+
 	it("keeps the video avatar visible without synthesizing speech when TTS is off", async () => {
 		const playAuthoredClip = vi.fn();
 		useCascadeAvatarStore.setState({
@@ -1541,7 +1679,9 @@ describe("ChatArea", () => {
 		});
 		request.onChunk({ type: "finish", requestId: request.requestId });
 
-		await waitFor(() => expect(screen.getByText("Visible answer.")).toBeDefined());
+		await waitFor(() =>
+			expect(screen.getByText("Visible answer.")).toBeDefined(),
+		);
 		const assistants = useChatStore
 			.getState()
 			.messages.filter((message) => message.role === "assistant");
@@ -1904,10 +2044,7 @@ describe("ChatArea", () => {
 
 	it("does not hydrate stale Gateway history over the local conversation", async () => {
 		// A completed first turn must remain the source of the second request.
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({ }),
-		);
+		localStorage.setItem("naia-config", JSON.stringify({}));
 		const { getGatewayHistory } = await import("../../lib/gateway-sessions");
 		(getGatewayHistory as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
 			{
@@ -2083,11 +2220,8 @@ describe("ChatArea", () => {
 			expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(3),
 		);
 		expect(
-			ttsSyncMocks.synthesizeTts.mock.calls.map(
-				(call: any[]) => call[0].text,
-			),
+			ttsSyncMocks.synthesizeTts.mock.calls.map((call: any[]) => call[0].text),
 		).toEqual(["첫 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."]);
 		localStorage.removeItem("naia-config");
 	});
-
 });

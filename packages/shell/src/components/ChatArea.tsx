@@ -34,6 +34,11 @@ import {
 	shouldActivateRadioDj,
 } from "../lib/bgm-skill";
 import {
+	executeBrowserHostSkill,
+	isBrowserHostTool,
+	liveBrowserHostDeps,
+} from "../lib/browser-host-skill";
+import {
 	type SpeechActivityResume,
 	cancelChat,
 	configureSpeechProfile,
@@ -64,11 +69,6 @@ import {
 	saveConfig,
 } from "../lib/config";
 import {
-	executeBrowserHostSkill,
-	isBrowserHostTool,
-	liveBrowserHostDeps,
-} from "../lib/browser-host-skill";
-import {
 	ENVIRONMENT_APP_ID,
 	environmentClearNeeded,
 	environmentSession,
@@ -86,7 +86,6 @@ import {
 	isOmniModel,
 } from "../lib/llm";
 import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
-import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import {
@@ -95,7 +94,6 @@ import {
 	isModelFacingToolAllowed,
 } from "../lib/model-facing-tools";
 import { buildSystemPrompt } from "../lib/persona";
-import { effectiveMainRole } from "../lib/slots/model";
 import {
 	RADIO_DJ_DEFAULT_SETTINGS,
 	normalizeProactiveSpeechSettings,
@@ -107,6 +105,7 @@ import {
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
 	type SlidePresenterSpeechRequest,
 } from "../lib/slide-presenter-events";
+import { effectiveMainRole } from "../lib/slots/model";
 import {
 	activateMicUnlessSpeechActivityOwnsVoice,
 	canSpeakProactiveText,
@@ -139,6 +138,7 @@ import type {
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
+import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { AudioQueue } from "../lib/voice/audio-queue";
 import {
@@ -368,10 +368,11 @@ function ChatErrorNotice({
  */
 export type ChatVariant = "rail" | "floating";
 
-
 /** 슬라이드 낭독문 분할 (VITE_NAIA_SLIDES_TTS_CHUNK: word | phrase | sentence). */
 function splitSlideNarration(text: string): string[] {
-	const mode = (import.meta.env.VITE_NAIA_SLIDES_TTS_CHUNK as string | undefined) ?? "sentence";
+	const mode =
+		(import.meta.env.VITE_NAIA_SLIDES_TTS_CHUNK as string | undefined) ??
+		"sentence";
 	const clean = text.replace(/\s+/g, " ").trim();
 	if (!clean) return [];
 	let parts: string[];
@@ -858,13 +859,30 @@ export function ChatArea({
 			const loc = (e as CustomEvent<string | null>).detail ?? null;
 			voiceSessionRef.current?.setLanguage?.(loc);
 		};
+		// gap-review-6 (2026-09-25): "음성 재생 방식"(voicePlaybackMode) was only
+		// ever copied into pipelineVoiceConfigRef once, at session start
+		// (handleVoiceToggle) or at initializeSpeechTts — same snapshot pattern
+		// as ttsProvider/vllmTtsHost above. So changing the setting in Settings
+		// mid-conversation dispatched `naia-config-changed` but had nothing
+		// downstream re-reading it: sendSentence() → deps.getVoiceConfig() reads
+		// this ref fresh every call, but the ref's OWN voicePlaybackMode field
+		// never changed until the session restarted. Refresh just that one
+		// field here, matching the onUrl/onB64 pattern above — other voice
+		// settings' existing capture-once behavior is unchanged (out of scope).
+		const onConfigChanged = () => {
+			const pipeline = pipelineVoiceConfigRef.current;
+			if (pipeline)
+				pipeline.voicePlaybackMode = loadConfig()?.voicePlaybackMode;
+		};
 		window.addEventListener("naia:voice-ref-url", onUrl);
 		window.addEventListener("naia:voice-ref-audio", onB64);
 		window.addEventListener("naia:locale-change", onLocale);
+		window.addEventListener("naia-config-changed", onConfigChanged);
 		return () => {
 			window.removeEventListener("naia:voice-ref-url", onUrl);
 			window.removeEventListener("naia:voice-ref-audio", onB64);
 			window.removeEventListener("naia:locale-change", onLocale);
+			window.removeEventListener("naia-config-changed", onConfigChanged);
 		};
 	}, []);
 
@@ -875,7 +893,6 @@ export function ChatArea({
 			handleSend(message);
 		});
 	}, []);
-
 
 	// Auto-send queued messages when streaming ends
 	useEffect(() => {
@@ -900,26 +917,54 @@ export function ChatArea({
 		const safeTimestamp = capturedAt.replace(/[:.]/g, "-");
 		const base = `diagnostics/voice/${slide ? `page-${slide.page}` : "chat"}-${safeTimestamp}`;
 		const audioRelativePath = `${base}.wav`;
-		const audioBytes = Uint8Array.from(atob(result.audioBase64), (char) => char.charCodeAt(0));
+		const audioBytes = Uint8Array.from(atob(result.audioBase64), (char) =>
+			char.charCodeAt(0),
+		);
 		const record = {
 			schemaVersion: 1,
 			captureKind: slide ? "slides-tts" : "chat-tts",
 			capturedAt,
-			slide: slide ? { page: slide.page, generation: slide.generation, requestId: slide.requestId } : null,
+			slide: slide
+				? {
+						page: slide.page,
+						generation: slide.generation,
+						requestId: slide.requestId,
+					}
+				: null,
 			text: result.text,
 			provider: result.provider,
 			voice: result.voice ?? null,
 			localReferenceAudioPresent: result.localReferenceAudioPresent,
-			localVoiceRuntimeStatus: result.provider === "naia-local-voice" ? "captured-during-local-voice-request" : null,
+			localVoiceRuntimeStatus:
+				result.provider === "naia-local-voice"
+					? "captured-during-local-voice-request"
+					: null,
 			vllmTtsHost: result.vllmTtsHost ?? null,
 			synthesisElapsedMs: result.elapsedMs,
 			audioDurationSeconds: result.audioDurationSeconds,
 			audioRelativePath,
 		};
 		return writeAppSandboxFile(appId, audioRelativePath, Array.from(audioBytes))
-			.then(() => writeAppSandboxFile(appId, `${base}.json`, Array.from(new TextEncoder().encode(JSON.stringify(record, null, 2)))))
-			.then(() => Logger.info("ChatArea", "captured local voice diagnostic", { appId, provider: result.provider, audioRelativePath }))
-			.catch((error) => Logger.warn("ChatArea", "local voice diagnostic capture failed", { appId, error: String(error) }));
+			.then(() =>
+				writeAppSandboxFile(
+					appId,
+					`${base}.json`,
+					Array.from(new TextEncoder().encode(JSON.stringify(record, null, 2))),
+				),
+			)
+			.then(() =>
+				Logger.info("ChatArea", "captured local voice diagnostic", {
+					appId,
+					provider: result.provider,
+					audioRelativePath,
+				}),
+			)
+			.catch((error) =>
+				Logger.warn("ChatArea", "local voice diagnostic capture failed", {
+					appId,
+					error: String(error),
+				}),
+			);
 	}
 
 	function settleSlidePresenterSpeech(
@@ -1749,7 +1794,9 @@ export function ChatArea({
 		// When the saved model is not valid for the active provider, fall back to the default.
 		// Skip validation for providers with dynamic models (e.g. Ollama — empty static model list).
 		const savedModel =
-			configuredModel || getDefaultLlmModel(activeProvider) || "gemini-2.5-flash";
+			configuredModel ||
+			getDefaultLlmModel(activeProvider) ||
+			"gemini-2.5-flash";
 		const providerMeta = getLlmProvider(activeProvider);
 		const hasDynamicModels = providerMeta && providerMeta.models.length === 0;
 		// The gateway catalog is populated asynchronously, so a model selected
@@ -2125,7 +2172,9 @@ export function ChatArea({
 					);
 				})
 				.catch((err) => {
-					Logger.warn("ChatArea", "browser host skill error", { error: String(err) });
+					Logger.warn("ChatArea", "browser host skill error", {
+						error: String(err),
+					});
 					useChatStore
 						.getState()
 						.updateStreamingToolResult(req.toolCallId, false, String(err));
@@ -3905,7 +3954,9 @@ export function ChatArea({
 						className="chat-compaction-notice"
 						data-testid="bgm-sidecar-error"
 					>
-						<span>BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.</span>
+						<span>
+							BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.
+						</span>
 					</div>
 				)}
 				{compactionNotice !== null && activeTab === "chat" && (
@@ -4213,7 +4264,6 @@ export function ChatArea({
 					</div>
 				</div>
 			)}
-			
 		</>
 	);
 }

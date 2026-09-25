@@ -668,6 +668,72 @@ describe("sentence TTS pipeline — FR-VOICE.22 음성 재생 방식 integration
 		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(2);
 	});
 
+	it("gap-review-6: switching vllmTtsHost mid-session drops the stale RTF (new host's first sentence is sentence-method, not streaming)", async () => {
+		// Sentence 1 against hostA measures a fast RTF (near-instant mock
+		// resolve over a real-duration WAV → RTF well within realtime), which
+		// would normally make sentence 2 stream. But sentence 2 is dispatched
+		// AFTER the config switches to hostB — a host that has never been
+		// measured. The old bug: voicePlaybackRtfTracker.get() has no notion
+		// of "target", so it would hand back hostA's fast RTF as if it still
+		// described hostB, streaming with zero pre-roll against an unmeasured
+		// (possibly much slower) host.
+		let host = "hostA";
+		const { deps, queue } = makeDeps({
+			getVoiceConfig: () => ({
+				ttsProvider: "naia-local-voice",
+				voicePlaybackMode: "auto",
+				vllmTtsHost: host,
+			}),
+			getScheduler: () => null,
+		});
+		const streaming = Object.assign(queue, { enqueueOrderedStream: vi.fn() });
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(2) });
+		const pipeline = createSentenceTtsPipeline(deps);
+
+		pipeline.sendSentence("첫 문장, hostA.");
+		await flush();
+		// Confirm the fast RTF really was recorded and WOULD stream on the
+		// same host (sanity check on the test's own premise).
+		host = "hostA";
+		pipeline.sendSentence("같은 호스트 둘째 문장.");
+		expect(streaming.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+		await flush();
+
+		// Now switch hosts before the next sentence is admitted.
+		host = "hostB";
+		pipeline.sendSentence("호스트 전환 뒤 첫 문장, hostB.");
+		// No NEW stream slot opened for hostB's unmeasured first sentence —
+		// still exactly the one call recorded above from same-host sentence 2.
+		expect(streaming.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+		expect(synthesizeMock).toHaveBeenLastCalledWith(
+			expect.objectContaining({ streamPcm: false }),
+		);
+	});
+
+	it("gap-review-6: dispose() resets the RTF tracker so a later session doesn't inherit a stale reading", async () => {
+		const { deps, queue } = makeAutoDeps("auto");
+		const streaming = Object.assign(queue, { enqueueOrderedStream: vi.fn() });
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(2) });
+		const pipeline = createSentenceTtsPipeline(deps);
+
+		pipeline.sendSentence("세션1 첫 문장.");
+		await flush();
+		pipeline.sendSentence("세션1 둘째 문장(스트리밍 확인용).");
+		expect(streaming.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+		await flush();
+
+		pipeline.dispose();
+
+		// A fresh sentence after dispose must see "unknown RTF" again, not the
+		// pre-dispose measurement — same pipeline instance, simulating a new
+		// session/turn reusing it without a measured RTF surviving teardown.
+		pipeline.sendSentence("dispose 이후 새 세션 첫 문장.");
+		expect(streaming.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+		expect(synthesizeMock).toHaveBeenLastCalledWith(
+			expect.objectContaining({ streamPcm: false }),
+		);
+	});
+
 	it("gap-review-3: a borderline-RTF decision's preRollSeconds/estimated duration actually land on the stream object", async () => {
 		// Force the first sentence's measured RTF into the borderline band
 		// (1.0 < RTF <= 1.3) by controlling performance.now() directly, so the

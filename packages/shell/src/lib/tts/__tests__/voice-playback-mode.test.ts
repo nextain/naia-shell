@@ -86,14 +86,51 @@ describe("decidePlaybackMethod — mode=auto 판정 경계 (RTF 0.9 / 1.1 / 1.6 
 		});
 	});
 
-	it("RTF=1.0(경계, 포함) → pre-roll 없이 스트리밍", () => {
+	it("RTF=1.0(경계, 포함) → 스트리밍이지만 pre-roll 은 여유값(공식과 연속)", () => {
+		// gap-review-6 (2026-09-25): 예전엔 "실시간" 분기가 preRollSeconds 를 0 으로
+		// 못박아서, RTF=1.0(여기)과 RTF=1.0001(borderline 분기, 공식 적용)
+		// 사이에 0 → ≈margin 의 불연속 단절이 있었다. 이제 이 분기도 같은 공식을
+		// 타므로 L=4, r=1.0 → 4*0 + 0.3(기본 여유값) = 0.3 로 연속된다.
 		const decision = decidePlaybackMethod({
 			mode: "auto",
 			rtf: REALTIME_RTF_CEILING,
 			estimatedDurationSeconds: 4,
 		});
 		expect(decision.method).toBe("streaming");
-		expect(decision.preRollSeconds).toBe(0);
+		expect(decision.preRollSeconds).toBeCloseTo(0.3, 10);
+	});
+
+	it("gap-review-6: RTF=0.95/1.0/1.0001 경계에서 pre-roll 이 끊기지 않는다", () => {
+		// 설계 공식 max(0, L×(r−1)+여유) 를 실시간 구간에도 그대로 적용한 결과.
+		// L=5, margin=0.3(기본값) 기준: 0.95→0.05s, 1.0→0.3s, 1.0001→≈0.3s(연속).
+		const below = decidePlaybackMethod({
+			mode: "auto",
+			rtf: 0.95,
+			estimatedDurationSeconds: 5,
+		});
+		const at = decidePlaybackMethod({
+			mode: "auto",
+			rtf: 1.0,
+			estimatedDurationSeconds: 5,
+		});
+		const above = decidePlaybackMethod({
+			mode: "auto",
+			rtf: 1.0001,
+			estimatedDurationSeconds: 5,
+		});
+		expect(below.method).toBe("streaming");
+		expect(below.preRollSeconds).toBeCloseTo(0.05, 10);
+		expect(at.method).toBe("streaming");
+		expect(at.preRollSeconds).toBeCloseTo(0.3, 10);
+		expect(above.method).toBe("streaming");
+		expect(above.preRollSeconds).toBeCloseTo(0.3, 3);
+		// 경계를 넘나들어도 값이 튀지 않는다(급격한 계단 없음).
+		expect(Math.abs(at.preRollSeconds - below.preRollSeconds)).toBeLessThan(
+			0.3,
+		);
+		expect(Math.abs(above.preRollSeconds - at.preRollSeconds)).toBeLessThan(
+			0.01,
+		);
 	});
 
 	it("RTF=1.1(실시간을 약간 넘음) → pre-roll 을 둔 스트리밍", () => {
@@ -160,9 +197,14 @@ describe("computePreRollSeconds — pre-roll ≈ L×(r−1)+여유", () => {
 		);
 	});
 
-	it("RTF≤1 이면 여유값만 돌려준다(당길 필요 없음)", () => {
+	it("RTF<1 이면 공식이 여유값을 깎는다(RTF=1 일 때만 여유값 그대로)", () => {
+		// gap-review-6 (2026-09-25): 예전엔 rtf<=1 전체를 "여유값만 돌려준다"로
+		// 특수 취급해 RTF=1.0 과 RTF=1.0001 사이에 불연속을 만들었다. 이제는
+		// r=1 에서 L×(r−1) 항이 0 이 되어 우연히 여유값과 같아질 뿐, r<1 이면
+		// 그 항이 음수가 되어 여유값을 깎는다(0 이하로는 클램프).
 		expect(computePreRollSeconds(10, 1, 0.3)).toBe(0.3);
-		expect(computePreRollSeconds(10, 0.5, 0.3)).toBe(0.3);
+		// L=10, r=0.5 → 10*(-0.5)+0.3 = -4.7 → clamp 0.
+		expect(computePreRollSeconds(10, 0.5, 0.3)).toBe(0);
 	});
 
 	it("예상 길이를 모르면 여유값만 돌려준다", () => {
