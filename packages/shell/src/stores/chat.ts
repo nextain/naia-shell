@@ -1,4 +1,4 @@
-﻿import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { Logger } from "../lib/logger";
 import type {
@@ -38,6 +38,7 @@ interface ChatState {
 	messageQueue: string[];
 
 	setSessionId: (id: string) => void;
+	setLocalSessionId: (id: string) => void;
 	setMessages: (messages: ChatMessage[]) => void;
 	addMessage: (
 		msg: Pick<ChatMessage, "role" | "content"> &
@@ -93,6 +94,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	messageQueue: [],
 
 	setSessionId: (id) => set({ sessionId: id }),
+	setLocalSessionId: (id) => set({ localSessionId: id }),
 
 	setMessages: (messages) => set({ messages }),
 

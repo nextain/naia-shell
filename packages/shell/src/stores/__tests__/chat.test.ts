@@ -23,6 +23,11 @@ describe("useChatStore", () => {
 		expect(useChatStore.getState().sessionId).toBe("s1");
 	});
 
+	it("setLocalSessionId sets the local session id", () => {
+		useChatStore.getState().setLocalSessionId("chat-custom-1");
+		expect(useChatStore.getState().localSessionId).toBe("chat-custom-1");
+	});
+
 	it("setMessages replaces all messages", () => {
 		const store = useChatStore.getState();
 		store.setMessages([
