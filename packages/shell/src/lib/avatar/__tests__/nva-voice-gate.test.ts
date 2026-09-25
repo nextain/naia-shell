@@ -47,7 +47,7 @@ describe("NvaAudioGate (same rule as the naia.land Studio clip engine)", () => {
 		expect(gate.process(0.05, 1)).toBe("talking");
 	});
 
-	it("mutation check: without the 400 ms shell hold (falling back to the 200 ms web hold), a 300 ms in-sentence pause would wrongly close", () => {
+	it("contrast: the 200 ms web hold closes on a 300 ms in-sentence pause that the 400 ms shell hold keeps open", () => {
 		const gate = new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_GATE_HOLD_MS);
 		gate.process(0.05, 33);
 		expect(gate.process(0, 300)).toBe("idle");
