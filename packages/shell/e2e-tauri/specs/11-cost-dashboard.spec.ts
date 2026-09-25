@@ -1,6 +1,7 @@
 import { getLastAssistantMessage, sendMessage } from "../helpers/chat.js";
 import { S } from "../helpers/selectors.js";
 import { assertSemantic } from "../helpers/semantic.js";
+import { openSettingsSection } from "../helpers/settings.js";
 
 describe("11 — Cost Dashboard", () => {
 	before(async () => {
@@ -75,20 +76,56 @@ describe("11 — Cost Dashboard", () => {
 			{ timeout: 5_000 },
 		);
 
-		// Re-open dashboard
-		await costBadge.click();
+		// 나이아 키는 이제 localStorage 가 아니라 ADK 보안 저장소에 있고, 잔액 칸은
+		// 그 저장소에 키가 있을 때만 그려진다. 예전처럼 naia-config 에 가짜 키를
+		// 끼워 넣어도 대시보드는 모른다. 실제 로그인과 같은 길을 탄다 — 설정이
+		// 떠 있는 동안 naia_auth_complete 를 받으면 설정이 키를 보안 저장소에 넣고
+		// naia_auth_ready 를 알린다(SettingsTab 의 로그인 콜백).
+		const naiaKey = process.env.NAIA_API_KEY ?? "";
+		if (!naiaKey) throw new Error("NAIA_API_KEY is required for the Lab balance check");
+		await openSettingsSection("brain");
+		await browser.execute(async (key: string) => {
+			(window as unknown as { __naiaE2eAuthReady?: boolean }).__naiaE2eAuthReady = false;
+			window.addEventListener(
+				"naia_auth_ready",
+				() => {
+					(window as unknown as { __naiaE2eAuthReady?: boolean }).__naiaE2eAuthReady = true;
+				},
+				{ once: true },
+			);
+			const internals = (
+				window as unknown as {
+					__TAURI_INTERNALS__?: {
+						invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+					};
+				}
+			).__TAURI_INTERNALS__;
+			if (!internals) throw new Error("Tauri invoke not available");
+			await internals.invoke("plugin:event|emit", {
+				event: "naia_auth_complete",
+				payload: { naiaKey: key, naiaUserId: "e2e-cost-dashboard" },
+			});
+		}, naiaKey);
+		await browser.waitUntil(
+			() =>
+				browser.execute(
+					() =>
+						(window as unknown as { __naiaE2eAuthReady?: boolean })
+							.__naiaE2eAuthReady === true,
+				),
+			{ timeout: 30_000, timeoutMsg: "Settings did not finish the Naia login callback" },
+		);
+
+		// Back to chat and re-open the dashboard with the stored key
+		await browser.execute((sel: string) => {
+			(document.querySelector(sel) as HTMLElement | null)?.click();
+		}, S.chatTab);
+		const badge = await $(S.costBadge);
+		await badge.waitForDisplayed({ timeout: 10_000 });
+		await badge.click();
 
 		const dashboard = await $(S.costDashboard);
 		await dashboard.waitForDisplayed({ timeout: 10_000 });
-
-		// 나이아 키는 이제 localStorage 가 아니라 보안 저장소에 있어, 예전처럼
-		// naia-config 에 키를 끼워 넣어도 대시보드는 모른다. 대시보드는 열릴 때
-		// 보안 저장소를 한 번 묻고, 로그인이 끝나면 오는 `naia_auth_ready` 신호로
-		// 잔액 칸을 연다. 첫 조회가 끝난 뒤 그 신호를 보내 로그인 직후를 흉내 낸다.
-		await browser.pause(1_000);
-		await browser.execute(() => {
-			window.dispatchEvent(new Event("naia_auth_ready"));
-		});
 
 		// Lab balance section should be visible (loading, error, or content)
 		await browser.waitUntil(
@@ -98,8 +135,8 @@ describe("11 — Cost Dashboard", () => {
 					S.labBalanceRow,
 				),
 			{
-				timeout: 5_000,
-				timeoutMsg: "Lab balance row did not appear after naia_auth_ready",
+				timeout: 15_000,
+				timeoutMsg: "Lab balance row did not appear with a stored Naia key",
 			},
 		);
 	});

@@ -32,6 +32,25 @@ async function tauriInvoke<T>(
 }
 
 async function submitProfilePhrase(phrase: string): Promise<void> {
+	// 응답을 쓰거나 읽는 동안 전송 버튼은 같은 자리의 멈춤 버튼(.chat-cancel-btn)
+	// 이 된다. 전시 소개는 쉬지 않고 이어 말하므로 기다려도 돌아오지 않는다.
+	// 사람이 그렇듯 먼저 멈춤을 누르고, 전송 버튼이 돌아오면 문구를 보낸다.
+	await browser.waitUntil(
+		async () =>
+			browser.execute(() => {
+				const cancel = document.querySelector(
+					".chat-cancel-btn",
+				) as HTMLButtonElement | null;
+				if (!cancel) return true;
+				cancel.click();
+				return false;
+			}),
+		{
+			timeout: 30_000,
+			interval: 700,
+			timeoutMsg: `chat stayed busy before sending: ${phrase}`,
+		},
+	);
 	const before = await browser.execute(
 		(sel: string) => document.querySelectorAll(sel).length,
 		S.userMessage,

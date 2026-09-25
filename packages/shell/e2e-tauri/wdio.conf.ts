@@ -914,10 +914,14 @@ export const config = {
 		// 앞 스펙의 부작용이 뒤 스펙의 실패로 보인다. 앱을 띄우기 전에 매번 다시
 		// 심어 스펙을 서로 떼어 놓는다.
 		if (CREDENTIALED_SEED_ACTIVE && process.env.NAIA_E2E_ADK_PATH?.trim()) {
-			seedCredentialedAdk(
-				process.env.NAIA_E2E_ADK_PATH.trim(),
-				credentialedSeedOptionsFromEnv(),
-			);
+			const seededAdk = process.env.NAIA_E2E_ADK_PATH.trim();
+			seedCredentialedAdk(seededAdk, credentialedSeedOptionsFromEnv());
+			// 발화 프로필 같은 화면 설정은 ui-config.json 에 남는다. 71 이 전시 소개를
+			// 켠 채 실패하자 뒤 스펙 전부가 쉬지 않는 발화에 막혀 한 줄도 보내지
+			// 못했다. 갓 만든 워크스페이스처럼 이 파일 없이 시작한다.
+			rmSync(resolve(seededAdk, "naia-settings", "ui-config.json"), {
+				force: true,
+			});
 		}
 
 		if (IS_WINDOWS) {

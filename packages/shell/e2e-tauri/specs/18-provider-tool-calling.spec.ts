@@ -14,8 +14,10 @@ async function countToolActivities(): Promise<number> {
 	);
 }
 
+// #611 이후 모델이 보는 시각 도구 이름은 get_time 이다(src/lib/model-facing-tools.ts).
+// 예전 skill_time 활동은 더는 생기지 않아 이 스펙이 늘 시간 초과로 끝났다.
 /**
- * Require a new, successful skill_time activity and inspect its tool output.
+ * Require a new, successful get_time activity and inspect its tool output.
  * The DOM count is captured before the request so an activity left by an
  * earlier test cannot satisfy this request. The assistant's answer is checked
  * separately below; this output is the tool result rendered by ToolActivity.
@@ -35,7 +37,7 @@ async function waitForCurrentSkillTimeResult(
 					);
 					const freshSkillTime = activities
 						.slice(baseCount)
-						.filter((activity) => activity.dataset.toolName === "skill_time");
+						.filter((activity) => activity.dataset.toolName === "get_time");
 					if (freshSkillTime.length === 0) return null;
 
 					// A failed current invocation must not be hidden by a later answer or
@@ -68,7 +70,7 @@ async function waitForCurrentSkillTimeResult(
 
 			if (observation?.status === "error") {
 				throw new Error(
-					`Current skill_time activity failed (beforeToolCount=${beforeToolCount})`,
+					`Current get_time activity failed (beforeToolCount=${beforeToolCount})`,
 				);
 			}
 
@@ -84,7 +86,7 @@ async function waitForCurrentSkillTimeResult(
 					);
 					const freshSkillTime = activities
 						.slice(baseCount)
-						.filter((activity) => activity.dataset.toolName === "skill_time");
+						.filter((activity) => activity.dataset.toolName === "get_time");
 					const latest = freshSkillTime[freshSkillTime.length - 1];
 					latest?.querySelector<HTMLButtonElement>("button")?.click();
 				}, beforeToolCount);
@@ -94,14 +96,14 @@ async function waitForCurrentSkillTimeResult(
 		},
 		{
 			timeout: 60_000,
-			timeoutMsg: `A fresh successful skill_time result with output did not appear (beforeToolCount=${beforeToolCount})`,
+			timeoutMsg: `A fresh successful get_time result with output did not appear (beforeToolCount=${beforeToolCount})`,
 		},
 	);
 
 	const finalObservation = observation as SkillTimeObservation | null;
 	if (!finalObservation?.output) {
 		throw new Error(
-			"skill_time succeeded but returned no rendered tool output",
+			"get_time succeeded but returned no rendered tool output",
 		);
 	}
 	return finalObservation.output;
@@ -115,28 +117,28 @@ async function waitForCurrentSkillTimeResult(
  */
 describe("18 — provider tool calling", () => {
 	before(async () => {
-		await enableToolsForSpec(["skill_time"]);
+		await enableToolsForSpec(["get_time"]);
 		const chatInput = await $(S.chatInput);
 		await chatInput.waitForEnabled({ timeout: 15_000 });
 	});
 
-	it("should execute skill_time via tool calling and return time", async () => {
+	it("should execute get_time via tool calling and return time", async () => {
 		const beforeToolCount = await countToolActivities();
 		await sendMessage(
-			"지금 몇 시야? 반드시 skill_time 도구를 사용해서 알려줘.",
+			"지금 몇 시야? 반드시 get_time 도구를 사용해서 알려줘.",
 		);
 
 		const toolOutput = await waitForCurrentSkillTimeResult(beforeToolCount);
 		if (!/\b\d{1,2}:\d{2}\b/.test(toolOutput)) {
 			throw new Error(
-				`skill_time returned a successful activity without a time value: ${toolOutput}`,
+				`get_time returned a successful activity without a time value: ${toolOutput}`,
 			);
 		}
 
 		const text = await getLastAssistantMessage();
 		await assertSemantic(
 			text,
-			"skill_time 도구를 사용해서 현재 시각을 알려달라고 했다",
+			"get_time 도구를 사용해서 현재 시각을 알려달라고 했다",
 			"AI가 실제 시간 정보를 제공했는가? '도구를 찾을 수 없다/실행할 수 없다'면 FAIL. 시:분 형태의 실제 시각이 포함되어야 PASS",
 		);
 	});

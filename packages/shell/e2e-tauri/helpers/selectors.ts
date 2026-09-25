@@ -217,7 +217,7 @@ export const S = {
 	memoryEmbeddingBaseUrl: 'input[placeholder*="localhost:11434"]',
 	memoryEmbeddingModel: 'input[placeholder*="text-embedding-ada-002"]',
 	memoryBackupPasswordInput:
-		'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="\ubc44\ubc00\ubc88\ud638"]',
+		'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="\ube44\ubc00\ubc88\ud638"]',
 	memoryExportBtn: ".memory-export-btn",
 	memoryImportBtn: ".memory-import-btn",
 	memorySection: ".memory-settings-section",

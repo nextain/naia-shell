@@ -417,8 +417,13 @@ describe("91 — Memory Settings Integration", () => {
 			await setNativeValue(S.memoryEmbeddingModel, "nomic-embed-text");
 			await clickSave();
 
+			// 라디오를 누르는 순간 공급자만 먼저 저장된다(persistConfig). 공급자만 보고
+			// 멈추면 저장 버튼이 쓴 URL·모델보다 먼저 읽어 undefined 를 본다.
 			const config = await waitForConfigCondition(
-				(cfg) => cfg.memoryEmbeddingProvider === "vllm",
+				(cfg) =>
+					cfg.memoryEmbeddingProvider === "vllm" &&
+					cfg.memoryEmbeddingBaseUrl === "http://localhost:11434" &&
+					cfg.memoryEmbeddingModel === "nomic-embed-text",
 			);
 			expect(config.memoryEmbeddingProvider).toBe("vllm");
 			expect(config.memoryEmbeddingBaseUrl).toBe("http://localhost:11434");
@@ -436,21 +441,39 @@ describe("91 — Memory Settings Integration", () => {
 		});
 
 		it("should write the memory LLM role to config.json", async () => {
-			await clickRadio("memory-llm", "vllm");
-			await browser.pause(300);
-			await setNativeValue(
-				'input[placeholder="http://localhost:8000"]',
-				"http://localhost:8001",
+			// #692·#694 가 기억 LLM 라디오(memory-llm)를 "작은 LLM" 선택(small-llm)
+			// 으로 바꿨다. 이 구역은 저장 버튼이 아니라 칸을 떠날 때(blur) 곧바로
+			// config.json 에 쓴다.
+			const previous = await browser.execute(
+				() =>
+					(
+						document.querySelector(
+							'input[name="small-llm"]:checked',
+						) as HTMLInputElement | null
+					)?.value ?? "",
 			);
+			await clickRadio("small-llm", "vllm");
 			await setNativeValue(
-				'input[placeholder="minicpm-4.5-omni"]',
-				"test-model",
+				'[data-testid="small-llm-base-url"]',
+				"http://localhost:8001/v1",
 			);
-			await clickSave();
+			await setNativeValue('[data-testid="small-llm-model"]', "test-model");
+			await browser.execute(() => {
+				const el = document.querySelector(
+					'[data-testid="small-llm-model"]',
+				) as HTMLInputElement | null;
+				if (!el) throw new Error("small LLM model input not found");
+				el.focus();
+				el.blur();
+				el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+			});
 
 			const config = await waitForConfigCondition((cfg) => {
 				const roles = cfg.llmRoles as Record<string, Record<string, unknown>>;
-				return roles?.memory?.provider === "vllm";
+				return (
+					roles?.memory?.provider === "vllm" &&
+					roles?.memory?.model === "test-model"
+				);
 			});
 			const roles = config.llmRoles as Record<
 				string,
@@ -458,11 +481,13 @@ describe("91 — Memory Settings Integration", () => {
 			>;
 			expect(roles.memory.provider).toBe("vllm");
 			expect(roles.memory.model).toBe("test-model");
+			expect(String(roles.memory.baseUrl)).toContain("localhost:8001");
 
-			// Revert
-			await clickRadio("memory-llm", "none");
-			await clickSave();
-			await browser.pause(500);
+			// Revert to whatever was chosen before.
+			if (previous === "threshold" || previous === "off") {
+				await clickRadio("small-llm", previous);
+				await browser.pause(500);
+			}
 		});
 
 		it("should persist memory settings in localStorage after save", async () => {
@@ -555,13 +580,38 @@ describe("91 — Memory Settings Integration", () => {
 				{ timeout: 5_000, timeoutMsg: "memory-embedding=offline not restored" },
 			);
 
-			await browser.waitUntil(
-				() => isRadioChecked("memory-offline-model", "all-mpnet-base-v2"),
-				{
-					timeout: 5_000,
-					timeoutMsg: "memory-offline-model=all-mpnet-base-v2 not restored",
-				},
-			);
+			try {
+				await browser.waitUntil(
+					() => isRadioChecked("memory-offline-model", "all-mpnet-base-v2"),
+					{ timeout: 5_000 },
+				);
+			} catch {
+				// 무엇이 대신 골라져 있는지, 저장소 두 곳에 무엇이 남았는지 함께 남긴다.
+				const shown = await browser.execute(
+					() =>
+						(
+							document.querySelector(
+								'input[name="memory-offline-model"]:checked',
+							) as HTMLInputElement | null
+						)?.value ?? "(none)",
+				);
+				const local = await browser.execute(() => {
+					try {
+						return String(
+							JSON.parse(localStorage.getItem("naia-config") ?? "{}")
+								.memoryOfflineModel,
+						);
+					} catch {
+						return "(unreadable)";
+					}
+				});
+				const file = await readCurrentConfig()
+					.then((cfg) => String(cfg.memoryOfflineModel))
+					.catch(() => "(unreadable)");
+				throw new Error(
+					`memory-offline-model=all-mpnet-base-v2 not restored (shown=${shown}, localStorage=${local}, config.json=${file})`,
+				);
+			}
 
 			// Revert
 			await clickRadio("memory-embedding", "none");
@@ -737,9 +787,8 @@ describe("91 — Memory Settings Integration", () => {
 				return Boolean(el);
 			});
 			await browser.pause(500);
-			expect(arrived, "기억 구역(.facts-list 또는 .settings-hint)이 화면에 없다").toBe(
-				true,
-			);
+			// 기억 구역(.facts-list 또는 .settings-hint)이 화면에 있어야 한다.
+			expect(arrived).toBe(true);
 		});
 
 		it("should show facts list or empty-state hint", async () => {
@@ -811,7 +860,7 @@ describe("91 — Memory Settings Integration", () => {
 				const pw = inputs.find((el) => {
 					const ph = el.placeholder.toLowerCase();
 					return (
-						ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638")
+						ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
 					);
 				});
 				if (pw) pw.scrollIntoView({ block: "center" });
@@ -828,7 +877,7 @@ describe("91 — Memory Settings Integration", () => {
 				).some(
 					(el) =>
 						el.placeholder.toLowerCase().includes("password") ||
-						el.placeholder.includes("\ubc44\ubc00\ubc88\ud638"),
+						el.placeholder.includes("\ube44\ubc00\ubc88\ud638"),
 				),
 			);
 			expect(hasPw).toBe(true);
@@ -855,7 +904,7 @@ describe("91 — Memory Settings Integration", () => {
 				const pw = inputs.find((el) => {
 					const ph = el.placeholder.toLowerCase();
 					return (
-						ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638")
+						ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
 					);
 				});
 				if (!pw) throw new Error("backup password input not found");

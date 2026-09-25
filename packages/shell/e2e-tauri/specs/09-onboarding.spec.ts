@@ -119,6 +119,8 @@ describe("09 — Onboarding Wizard", () => {
 			S.onboardingNextBtn,
 		);
 		expect(hasNext).toBe(false);
+		// "나중에" 도 같은 전환 가드를 탄다 — 단계가 막 바뀐 직후의 클릭은 버려진다.
+		await browser.pause(STEP_TRANSITION_MS);
 		await later.click();
 		const step = await waitForStepChange("provider");
 		expect(["voice", "complete"]).toContain(step);
