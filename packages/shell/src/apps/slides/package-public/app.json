@@ -6,7 +6,7 @@
     "en": "Naia Slides"
   },
   "iconUrl": "icon.svg",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "PDF·PPTX 발표, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원하는 슬라이드 앱",
   "descriptions": {
     "ko": "PDF·PPTX 발표, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원합니다. 녹화는 data-private/apps/land.naia.slides/video/에 저장됩니다.",

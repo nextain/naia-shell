@@ -4,8 +4,11 @@ import {
 	SLIDES_HOST,
 	SLIDES_HOST_ACTIONS,
 	type SlidesHostState,
+	SLIDES_RECORDING_LOST,
+	isRecordingLost,
 	isTrustedSlidesFrame,
 	readSlidesThemeTokens,
+	recordingFailure,
 	startSlidesRecording,
 	stopSlidesRecording,
 } from "./slides-host";
@@ -235,6 +238,13 @@ export function installSlidesHostBridge(
 				recordingCancelRequested = false;
 			} catch (error) {
 				recordingStopPending = false;
+				if (isRecordingLost(error)) {
+					recordingActive = false;
+					recordingOwner = null;
+					recordingStartRequestId = null;
+					recordingCancelRequested = false;
+					return;
+				}
 				retainOrphanedRecording(stopRecording);
 				Logger.warn(
 					"SlidesHostBridge",
@@ -377,7 +387,10 @@ export function installSlidesHostBridge(
 						);
 						return;
 					}
-					errorReply(requestId, "recording_failed");
+					Logger.warn("SlidesHostBridge", "Slides recording start failed", {
+						error: String(error),
+					});
+					errorReply(requestId, recordingFailure("recording_failed", error));
 				});
 			return;
 		}
@@ -433,6 +446,16 @@ export function installSlidesHostBridge(
 			.catch((error) => {
 				stopPromise = null;
 				recordingStopPending = false;
+				if (isRecordingLost(error)) {
+					// The host no longer owns a recording: release ownership so
+					// the frame can start again, and say so instead of retrying.
+					recordingActive = false;
+					recordingOwner = null;
+					recordingStartRequestId = null;
+					recordingCancelRequested = false;
+					if (active) errorReply(requestId, SLIDES_RECORDING_LOST);
+					return;
+				}
 				// Keep active ownership after a failed stop so the same trusted
 				// frame can retry without opening a second recording.
 				if (!active) {
@@ -446,7 +469,10 @@ export function installSlidesHostBridge(
 					);
 					return;
 				}
-				errorReply(requestId, "recording_failed");
+				Logger.warn("SlidesHostBridge", "Slides recording stop failed", {
+					error: String(error),
+				});
+				errorReply(requestId, recordingFailure("recording_failed", error));
 			});
 	};
 

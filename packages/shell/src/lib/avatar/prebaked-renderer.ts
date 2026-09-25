@@ -1,8 +1,14 @@
 import { type NvaManifest, defaultClipOf, findPrebakedSpeech } from "../nva";
+import { readActiveVoiceLevel } from "../voice/voice-level";
 import type {
 	AvatarPlaybackOptions,
 	AvatarSpeechRenderer,
 } from "./avatar-renderer";
+import {
+	NVA_GATE_THRESHOLD,
+	NVA_SHELL_HOLD_MS,
+	NvaAudioGate,
+} from "./nva-audio-gate";
 import { NvaChromakeyGL } from "./nva-chromakey-gl";
 import {
 	type MotionSpec,
@@ -10,12 +16,18 @@ import {
 	parseMotionSpec,
 	resolveChestY,
 } from "./nva-procedural-motion";
+import { TwinLoop } from "./twin-loop";
 
 interface Config {
 	manifest: NvaManifest;
 	locale: string;
 	resolveAssetUrl: (path: string) => Promise<string>;
 	onSpeaking?: (speaking: boolean) => void;
+	/**
+	 * RMS of the TTS audio playing now, or null when it cannot be measured.
+	 * Defaults to the shell AudioQueue that is playing.
+	 */
+	voiceLevel?: () => number | null;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -28,7 +40,70 @@ export function containRect(cw: number, ch: number, vw: number, vh: number) {
 	return { dx: (cw - dw) / 2, dy: (ch - dh) / 2, dw, dh };
 }
 
+/** Resolves when the element reaches its end (or fails). */
+function endOf(video: HTMLVideoElement): Promise<void> {
+	return new Promise((resolve) => {
+		const done = () => {
+			video.removeEventListener("ended", done);
+			video.removeEventListener("error", done);
+			resolve();
+		};
+		video.addEventListener("ended", done);
+		video.addEventListener("error", done);
+	});
+}
+
 /** WebM alone can carry a real (VP9 yuva420p) alpha channel; other containers cannot. */
+/** How long the drawn clip takes to fade into the next one (idle <-> talking). */
+export const NVA_SWITCH_FADE_MS = 100;
+
+/**
+ * Fades the previously drawn clip out over the newly chosen one, so a switch
+ * between clips whose head is framed a little differently does not jump.
+ * Switching back during a fade continues from the current mix instead of
+ * restarting it, so rapid switches never flash either clip at full strength.
+ */
+export class SwitchCrossfade<T> {
+	private shown: T | null = null;
+	private from: T | null = null;
+	private startedAt = 0;
+
+	constructor(private readonly fadeMs = NVA_SWITCH_FADE_MS) {}
+
+	/** Records the source drawn at `nowMs`; returns the one to fade out and its opacity. */
+	next(source: T | null, nowMs: number): { from: T; alpha: number } | null {
+		if (source !== this.shown) {
+			const progress = this.progress(nowMs);
+			if (this.from !== null && source === this.from && progress < 1) {
+				// Back to the clip that was fading out: reverse from the same mix.
+				this.from = this.shown;
+				this.startedAt = nowMs - (1 - progress) * this.fadeMs;
+			} else {
+				this.from = source === null ? null : this.shown;
+				this.startedAt = nowMs;
+			}
+			this.shown = source;
+		}
+		if (this.from === null) return null;
+		const progress = this.progress(nowMs);
+		if (progress >= 1) {
+			this.from = null;
+			return null;
+		}
+		return { from: this.from, alpha: 1 - progress };
+	}
+
+	reset(): void {
+		this.shown = null;
+		this.from = null;
+	}
+
+	private progress(nowMs: number): number {
+		if (this.fadeMs <= 0) return 1;
+		return Math.min(1, Math.max(0, (nowMs - this.startedAt) / this.fadeMs));
+	}
+}
+
 export function canCarryAlpha(clipPath: string): boolean {
 	return /\.webm$/i.test(clipPath);
 }
@@ -51,6 +126,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private mountedVideo: HTMLVideoElement | null = null;
 	/** 클립 URL → 그 클립을 계속 들고 있는 <video>. 한 번 로드한 클립은 src 를 다시 대입하지 않는다. */
 	private clipVideos = new Map<string, HTMLVideoElement>();
+	/** Clip element → its looping pair. Loops never use the `loop` attribute (see TwinLoop). */
+	private loops = new Map<HTMLVideoElement, TwinLoop>();
+	/** The loop being shown, or null while a one-shot clip plays. */
+	private activeLoop: TwinLoop | null = null;
 	private canvas: HTMLCanvasElement | null = null;
 	private ctx: CanvasRenderingContext2D | null = null;
 	private keyer: NvaChromakeyGL | null = null;
@@ -64,6 +143,26 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
+	/** Idle clip element, kept playing under the talking loop for voice gating. */
+	private idleVideo: HTMLVideoElement | null = null;
+	private speakingVisual = false;
+	/**
+	 * Speech ended and the switch back to the idle loop is still resolving
+	 * (playIdle is async). Until it lands, `this.video` is still the talking
+	 * loop, so drawSource keeps showing the idle clip that runs under it
+	 * instead of flashing the talking head for a few hundred milliseconds
+	 * at every page end (2026-09-25 IR recording, take 2).
+	 */
+	private returningToIdle = false;
+	private readonly gate = new NvaAudioGate(
+		NVA_GATE_THRESHOLD,
+		NVA_SHELL_HOLD_MS,
+		"idle",
+	);
+	private readonly fade = new SwitchCrossfade<HTMLVideoElement>();
+	private lastDrawAt: number | null = null;
+	/** Chroma key per clip element (a clip without alpha needs its own key). */
+	private keyColors = new WeakMap<HTMLVideoElement, string | undefined>();
 
 	constructor(private readonly config: Config) {
 		this.motionSpec = parseMotionSpec(config.manifest);
@@ -106,6 +205,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		options?: AvatarPlaybackOptions,
 	): Promise<void> {
 		if (!this.video || this.disposed) return;
+		this.returningToIdle = false;
 		const match = findPrebakedSpeech(
 			this.config.manifest,
 			text,
@@ -131,11 +231,19 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		}
 	}
 
-	/** Switch idle/talking visual only. Shell owns the actual audio playback. */
+	/**
+	 * Switch idle/talking visual only. Shell owns the actual audio playback.
+	 * While speaking, the talking loop is shown only while the audio level is
+	 * above the gate threshold (see drawSource), like the Studio clip engine;
+	 * the idle loop keeps playing under it (playClip).
+	 */
 	setSpeakingVisual(active: boolean): void {
 		if (!this.video || this.disposed) return;
 		this.generation++;
 		this.config.onSpeaking?.(active);
+		this.speakingVisual = active;
+		this.returningToIdle = !active;
+		this.gate.reset("idle");
 		if (active) {
 			const clip =
 				this.config.manifest.vrm_slots?.visemes?.aiueo?.clip ??
@@ -143,7 +251,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				this.config.manifest.animations.talking?.clip ??
 				this.config.manifest.animations.speak?.clip ??
 				defaultClipOf(this.config.manifest).video;
-			void this.playClip(clip, true, true);
+			void this.playClip(clip, true, true).catch(() => {});
 		} else {
 			void this.playIdle();
 		}
@@ -157,26 +265,47 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	): Promise<void> {
 		if (!this.video || !this.mountedVideo)
 			throw new Error("NVA video is not mounted");
-		this.currentKeyColor =
+		const keyColor =
 			this.config.manifest.chroma_key ??
 			(canCarryAlpha(path)
 				? undefined
 				: this.config.manifest.background?.color);
+		this.currentKeyColor = keyColor;
 		const url = await this.config.resolveAssetUrl(path);
 		if (this.disposed || !this.mountedVideo)
 			throw new Error("NVA renderer stopped");
 		const video = this.videoForClip(url);
+		this.keyColors.set(video, keyColor);
+		// Under the talking loop the idle loop keeps running, so the voice gate
+		// can cut back to a closed mouth in every pause (drawSource). It is
+		// only played, never paused or sought (WebKitGTK freeze, TwinLoop).
+		const idleLoop =
+			loop && this.speakingVisual && this.idleVideo && this.idleVideo !== video
+				? this.loops.get(this.idleVideo)
+				: undefined;
+		if (idleLoop) void idleLoop.play().catch(() => {});
 		if (this.video !== video) {
-			this.video.pause();
+			if (!idleLoop || this.video !== this.idleVideo)
+				this.leaveClip(this.video);
 			this.video = video;
 		}
-		video.loop = loop;
-		video.muted = muted;
-		video.currentTime = 0;
 		if (loop) {
-			await video.play();
+			// Resume where the loop stopped. Rewinding here would seek an
+			// element that may still be streaming (WebKitGTK freeze, TwinLoop).
+			const pair = this.loopFor(video, url);
+			this.activeLoop = pair;
+			pair.setMuted(muted);
+			await pair.play();
 			return;
 		}
+		this.activeLoop = null;
+		this.loops.get(video)?.stop();
+		video.loop = false;
+		// A one-shot clip left before its end is still running, hidden and
+		// muted. Let it finish: rewinding a playing element can freeze WebKitGTK.
+		if (!video.paused) await endOf(video);
+		video.muted = muted;
+		if (video.currentTime !== 0) video.currentTime = 0;
 		await new Promise<void>((resolve, reject) => {
 			const ready = () => options?.onPlaybackReady?.();
 			const ended = () => resolve();
@@ -202,29 +331,151 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		if (!mounted) throw new Error("NVA video is not mounted");
 		const pooled = this.clipVideos.get(url);
 		if (pooled) return pooled;
-		let video: HTMLVideoElement;
-		if (this.clipVideos.size === 0) {
-			video = mounted;
-		} else {
-			video = document.createElement("video");
-			video.playsInline = true;
-			video.crossOrigin = mounted.crossOrigin;
-			video.style.cssText = mounted.style.cssText;
-			mounted.parentNode?.insertBefore(video, mounted.nextSibling);
-		}
+		const video =
+			this.clipVideos.size === 0 ? mounted : this.siblingVideo(mounted);
 		video.src = url;
 		video.dataset.naiaClipUrl = url;
 		this.clipVideos.set(url, video);
 		return video;
 	}
 
+	/** A hidden decode element next to the mounted one, styled like it. */
+	private siblingVideo(mounted: HTMLVideoElement): HTMLVideoElement {
+		const video = document.createElement("video");
+		video.playsInline = true;
+		video.crossOrigin = mounted.crossOrigin;
+		video.style.cssText = mounted.style.cssText;
+		mounted.parentNode?.insertBefore(video, mounted.nextSibling);
+		return video;
+	}
+
+	/**
+	 * The looping pair for a clip element. The twin loads the same URL once,
+	 * when the clip first loops, and then only takes turns with the element.
+	 */
+	private loopFor(video: HTMLVideoElement, url: string): TwinLoop {
+		const existing = this.loops.get(video);
+		if (existing) return existing;
+		const mounted = this.mountedVideo;
+		if (!mounted) throw new Error("NVA video is not mounted");
+		const twinOf = () => {
+			const twin = this.siblingVideo(mounted);
+			twin.preload = "auto";
+			twin.src = url;
+			twin.dataset.naiaClipUrl = url;
+			twin.dataset.naiaLoopTwin = "true";
+			return twin;
+		};
+		const pair = new TwinLoop(video, twinOf(), {
+			replace: twinOf,
+			remove: (element) => {
+				if (element !== mounted) element.remove();
+			},
+		});
+		this.loops.set(video, pair);
+		return pair;
+	}
+
+	/**
+	 * Leave a clip without touching its pipeline: a loop stops at the end of
+	 * its pass, a one-shot clip is muted and runs out hidden. Pausing a playing
+	 * element can freeze WebKitGTK (see TwinLoop).
+	 */
+	private leaveClip(video: HTMLVideoElement): void {
+		const pair = this.loops.get(video);
+		if (pair) pair.stop();
+		else video.muted = true;
+	}
+
 	private async playIdle(): Promise<void> {
 		if (!this.video || this.disposed) return;
-		await this.playClip(
-			defaultClipOf(this.config.manifest).video,
-			true,
-			true,
-		).catch(() => {});
+		await this.playClip(defaultClipOf(this.config.manifest).video, true, true)
+			.then(() => {
+				this.idleVideo = this.video;
+			})
+			.catch(() => {})
+			.finally(() => {
+				this.returningToIdle = false;
+			});
+	}
+
+	/**
+	 * Element to draw this frame. While the talking loop is on and the audio
+	 * level is known, the gate picks talking (voice) or idle (pause).
+	 * Unknown level (MP3, browser speech) keeps the talking loop, as before.
+	 */
+	drawSource(nowMs: number): HTMLVideoElement | null {
+		const video = this.video ? (this.activeLoop?.current ?? this.video) : null;
+		const last = this.lastDrawAt;
+		this.lastDrawAt = nowMs;
+		if (!video) return video;
+		const idle = this.idleVideo
+			? (this.loops.get(this.idleVideo)?.current ?? this.idleVideo)
+			: null;
+		const idleReady =
+			idle !== null &&
+			idle !== video &&
+			idle.readyState >= 2 &&
+			idle.videoWidth > 0;
+		if (!this.speakingVisual)
+			return this.returningToIdle && idleReady ? idle : video;
+		const level = (this.config.voiceLevel ?? readActiveVoiceLevel)();
+		if (level == null) return video;
+		const state = this.gate.process(level, last == null ? 0 : nowMs - last);
+		if (state === "idle" && idleReady) return idle;
+		return video;
+	}
+
+	/** Key colour the clip is drawn with, or null for a clip with its own alpha. */
+	private keyColorOf(video: HTMLVideoElement) {
+		return this.keyColors.has(video)
+			? this.keyColors.get(video)
+			: this.currentKeyColor;
+	}
+
+	/** True when drawing this clip goes through the one shared chroma keyer. */
+	private keyedDraw(video: HTMLVideoElement): boolean {
+		return Boolean(this.keyColorOf(video)) && !this.keyerFailed;
+	}
+
+	private paint(
+		ctx: CanvasRenderingContext2D,
+		canvas: HTMLCanvasElement,
+		video: HTMLVideoElement,
+		alpha: number,
+	): void {
+		const rect = containRect(
+			canvas.width,
+			canvas.height,
+			video.videoWidth,
+			video.videoHeight,
+		);
+		if (rect.dw <= 0 || rect.dh <= 0) return;
+		const previousAlpha = ctx.globalAlpha;
+		ctx.globalAlpha = alpha;
+		try {
+			const keyColor = this.keyColorOf(video);
+			if (keyColor && !this.keyerFailed) {
+				try {
+					if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
+					else this.keyer.setParams({ keyColor });
+					const keyed = this.keyer.process(
+						video,
+						video.videoWidth,
+						video.videoHeight,
+					);
+					ctx.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
+					return;
+				} catch {
+					// WebGL2 unavailable or context lost — fall back to a plain
+					// (possibly opaque-backdrop) draw rather than a blank canvas.
+					this.keyerFailed = true;
+				}
+			}
+			ctx.drawImage(video, rect.dx, rect.dy, rect.dw, rect.dh);
+		} finally {
+			ctx.globalAlpha = previousAlpha;
+		}
 	}
 
 	private ensureOffscreen(
@@ -252,9 +503,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private startDrawLoop(): void {
 		if (this.running) return;
 		this.running = true;
-		const draw = () => {
+		const draw = (now?: number) => {
 			if (!this.running) return;
-			const video = this.video;
+			const nowMs = now ?? performance.now();
+			const video = this.drawSource(nowMs);
 			const canvas = this.canvas;
 			const ctx = this.ctx;
 			if (
@@ -265,55 +517,37 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				video.videoWidth > 0 &&
 				video.videoHeight > 0
 			) {
-				const rect = containRect(
-					canvas.width,
-					canvas.height,
-					video.videoWidth,
-					video.videoHeight,
-				);
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
-				if (rect.dw > 0 && rect.dh > 0) {
-					const keyColor = this.currentKeyColor;
-					const motionSpec = this.motionSpec;
-					const offscreen = motionSpec
-						? this.ensureOffscreen(canvas.width, canvas.height)
-						: null;
-					const drawTarget = offscreen ? offscreen.ctx : ctx;
+				const motionSpec = this.motionSpec;
+				const offscreen = motionSpec
+					? this.ensureOffscreen(canvas.width, canvas.height)
+					: null;
+				const drawTarget = offscreen ? offscreen.ctx : ctx;
 
-					if (offscreen) {
-						offscreen.ctx.clearRect(0, 0, canvas.width, canvas.height);
-					}
+				if (offscreen) {
+					offscreen.ctx.clearRect(0, 0, canvas.width, canvas.height);
+				}
 
-					let drew = false;
-					if (keyColor && !this.keyerFailed) {
-						try {
-							if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
-							else this.keyer.setParams({ keyColor });
-							const keyed = this.keyer.process(
-								video,
-								video.videoWidth,
-								video.videoHeight,
-							);
-							drawTarget.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
-							drew = true;
-						} catch {
-							// WebGL2 unavailable or context lost — fall back to a plain
-							// (possibly opaque-backdrop) draw rather than a blank canvas.
-							this.keyerFailed = true;
-						}
-					}
-					if (!drew)
-						drawTarget.drawImage(video, rect.dx, rect.dy, rect.dw, rect.dh);
+				this.paint(drawTarget, canvas, video, 1);
+				const fading = this.fade.next(video, nowMs);
+				if (
+					fading &&
+					fading.from.readyState >= 2 &&
+					fading.from.videoWidth > 0 &&
+					fading.from.videoHeight > 0 &&
+					!this.keyedDraw(video) &&
+					!this.keyedDraw(fading.from)
+				)
+					this.paint(drawTarget, canvas, fading.from, fading.alpha);
 
-					if (offscreen) {
-						drawWithMotion(
-							ctx,
-							offscreen.canvas,
-							rect,
-							motionSpec,
-							performance.now(),
-						);
-					}
+				if (offscreen) {
+					const rect = containRect(
+						canvas.width,
+						canvas.height,
+						video.videoWidth,
+						video.videoHeight,
+					);
+					drawWithMotion(ctx, offscreen.canvas, rect, motionSpec, nowMs);
 				}
 			}
 			this.raf = requestAnimationFrame(draw);
@@ -323,6 +557,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	interrupt(): void {
 		this.generation++;
+		this.speakingVisual = false;
+		this.returningToIdle = true;
 		this.config.onSpeaking?.(false);
 		void this.playIdle();
 	}
@@ -337,6 +573,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.offscreenCanvas = null;
 		this.offscreenCtx = null;
 		this.interrupt();
+		for (const pair of this.loops.values()) {
+			pair.dispose();
+			for (const v of pair.all) if (v !== this.mountedVideo) v.remove();
+		}
+		this.loops.clear();
+		this.activeLoop = null;
 		for (const v of this.clipVideos.values()) {
 			v.pause();
 			if (v !== this.mountedVideo) v.remove();

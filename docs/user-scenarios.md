@@ -1021,6 +1021,7 @@ Those older sections are historical evidence only.
 |---|---|---|
 | **UC-NVA-TTS-OWNERSHIP** | NVA를 선택한 상태에서 어떤 TTS provider를 골라도(로컬/클라우드/브라우저) 실제로 그 엔진의 음성이 재생된다. NVA는 오디오를 자체 합성하지 않고 Shell의 실제 재생 시작/종료에 맞춰 입모양만 움직인다. 단, 정확히 일치하는 저작 문구(온보딩 인사말 등)는 그 클립 자체의 녹음 음성이 재생된다. | ChatArea 컴포넌트 테스트(계약 재작성 포함), media-runtime-routing contract test |
 | **UC-NVA-COMPOSITE** | NVA가 대기·발화·대기를 오갈 때 앱 배경이 항상 유지되고, 알파를 가질 수 없는 발화 클립(mp4 등)이라도 검은 배경이 노출되지 않는다. | prebaked-renderer 유닛 테스트; 실기 Windows 시각 검증은 이 세션에서 미실시 |
+| **UC-NVA-VOICE-GATE** | Studio에서 만든 NVA(대기 + 말하기 반복 클립 한 벌)로 슬라이드 낭독이나 채팅 음성을 들으면, 소리가 나는 동안만 입이 움직이고 문장 사이·쉼에서는 입을 다문 대기 영상으로 돌아간다. naia.land Studio 발화 클립과 같은 규칙이다. | `nva-voice-gate.test.ts`, `voice-level.test.ts`; 실기 녹화 확인은 이 커밋에서 미실시 |
 | **UC-SETTINGS-AVATAR-SYNC** | 로그인·원격 설정 반영 등으로 메인 화면의 아바타가 NVA로 바뀌면, 설정 탭의 상세/미리보기도 같은 시점에 NVA로 갱신된다(재시작 불요). | SettingsTab hydration 회귀 테스트 |
 | **UC-DISCORD-TAB-LIVE** | 대화창 하단 🌐 Channels 탭을 열면 실제 연결 상태·서버·채널 목록·대화 스레드가 보인다("안정화 작업 중" 정적 문구가 아니다). | NaiaMetaArea + ChannelsTab 컴포넌트 테스트 |
 | **UC-BGM-NO-FALSE-SKIP** | YouTube 곡이 실제로 재생 중이면, iframe의 "재생 중" 신호 메시지가 유실되더라도(WebView2 핸드셰이크 이슈) 12초 워치독이 다른 곡으로 강제 전환하지 않는다. 진행률(`infoDelivery`) 신호가 독립적으로 재생을 확인한다. | `components/__tests__/BgmPlayer.test.tsx`(신규) + `e2e/bgm-skill.spec.ts` 실 브라우저 재작성(대기열 보존·상태 diagnostic 확인) |
@@ -1792,7 +1793,7 @@ Chat 지연 로드 UI 상태 매트릭스: **기본**은 variant를 지정하지
 | S-APP-SANDBOX | 앱 샌드박스 경로 강제 | UC9 앱 | app_sandbox.rs 단위·cargo |
 | S-BGM-LIB | BGM 라이브러리 SoT(#528) | UC8 확장 | bgm-library(-store).test.ts·BgmPlayer.test.tsx |
 | S-APP-OPEN-GRANT | 열림=동의 grant(#543) | UC9 앱 | workspace.rs 단위 |
-| S-SLIDES-REC | 슬라이드 MP4 녹화(#546) | UC9 앱 | app_sandbox.rs 상태머신 · 설치 전제는 e2e/467-slide-presenter.spec.ts(설치 매니페스트·`naia://app-install` 창) |
+| S-SLIDES-REC | 슬라이드 MP4 녹화(#546) | UC9 앱 | app_sandbox.rs 상태머신 · slides_recording_test.rs(리눅스 x11grab·소리·정지) · 설치 전제는 e2e/467-slide-presenter.spec.ts(설치 매니페스트·`naia://app-install` 창) |
 | S-I18N-COMPLETE | t() 키 14개 언어 완비 | 전 UC | check-compile-integrity·i18n-user-facing.test.ts(로케일 파일이 정본, #559) |
 
 
@@ -1892,6 +1893,12 @@ Test Coverage Map
 | UC-SLIDES-PPTX | Select PDF/PPTX; lazily convert general PPTX locally with isolated LibreOffice profile. Preserve original files and existing Office sessions. Display original filename and same-basename MD, else embedded notes, with blank/hidden page mapping. | slides_import and slides_files Rust tests; slides-files.test.ts, slides-files-bridge.test.ts, slides-center-area.test.tsx; real isolated conversion fixture |
 | UC-SLIDES-IMPORT-LIFETIME | Progress, cancel, retry, timeout, missing converter, corrupt input, bounded content/version/options cache and late result rejection. | slides_import Rust tests; slides-files.test.ts, slides-files-bridge.test.ts; slides-sidecar.spec.ts |
 | UC-SLIDES-EDIT | Edit page narration; apply/cancel; pause speech before applying; export edited Markdown copy; guard unapplied and unexported changes on document/script replacement. | slide-script.test.ts, slides-center-area.test.tsx, slides-sidecar.spec.ts |
+| UC-SLIDES-PDF-SOFTMASK | 리눅스 셸(WebKitGTK)에서 Chromium으로 인쇄한 발표 PDF를 Slides에 열면, 그라데이션 글자·배경 번짐·카드 그림자가 브라우저·poppler와 같은 반투명으로 보인다. 분홍 원이나 회색 사각형 같은 불투명 덩어리가 생기지 않는다. | `slides-pdfjs-soft-mask.test.ts`(react-pdf와 앱의 pdf.js가 같은 버전이고 6.0.227 이상인지, 필터 없는 합성 경로가 있는지). 실제 WebKitGTK 렌더 비교는 저장소 밖 수동 검증: 한 쪽짜리 재현 PDF(그라데이션 글자·radial-gradient·box-shadow)와 IR 덱을 설치본 전후 빌드로 WebKitGTK 2.52에서 그려 분홍 화소 수 비교(수정 전 92,318 → 수정 후 0) |
+| UC-SLIDES-PREFETCH | 발표자가 로컬 음성으로 여러 쪽을 자동 발표하면, 한 쪽 낭독이 끝나고 다음 쪽 첫 문장이 합성 시간(수 초)을 기다리지 않고 곧바로 이어진다. 중간에 일시정지하거나 이전 쪽으로 가면 미리 만든 소리는 버려지고, 끝 쪽 뒤로는 아무것도 미리 만들지 않는다. | `sentence-pipeline-prefetch.test.ts`(지연 3초 가짜 음성 서버: 미리 합성 있으면 쪽 넘김 대기 1초 미만, 없으면 3초 — 미리 합성을 끄면 실패하는 변이 확인), `slides-center-area.test.tsx`(다음 쪽 요청·끝 쪽 제외·일시정지 폐기), `slide-presenter-iframe-bridge.test.ts` |
+| UC-SLIDES-FOCUS-EXIT | 발표자가 집중 모드로 발표하면 '집중 모드 종료' 버튼이 잠시 뒤 사라져 슬라이드 오른쪽 위 쪽 번호가 보이고, 마우스를 움직이면 다시 나타난다. | `slides-center-area.test.tsx`(FR-SLIDES-FOCUS-EXIT.1) |
+| UC-SLIDES-PAGE-GAP | 발표자가 자동 발표를 켜면, 쪽이 넘어간 뒤 청중이 새 쪽을 볼 틈(0.5초) 뒤에 낭독이 시작된다. 음성이 미리 준비돼 있어도 바로 말하지 않고, 합성이 늦으면 그보다 더 기다리지 않는다. | `slide-page-gap.test.ts`(미리 합성 있음 → 첫 재생 500~550ms, 합성 3초 → 3초에 재생, 대기 취소, 대기를 끄면 실패하는 변이 확인) |
+| UC-SLIDES-REC-LINUX | 발표자가 리눅스(X11·Xwayland)에서 "MP4 녹화"를 누르고 발표한 뒤 멈추면, 셸 창 화면과 스피커로 나간 소리(나이아 낭독)가 함께 담긴 MP4가 video 폴더에 남는다. ffmpeg가 바로 실패하거나 셸이 순수 Wayland 창이면 "녹화 중"으로 바뀌지 않고 녹화 실패가 뜬다. 녹화 중에 ffmpeg가 죽으면 멈출 때 실패가 뜨고 다시 녹화할 수 있다. | `slides_recording_test.rs`(x11grab·window_id·pulse 인자, Wayland 오류, 조기 종료, q 정지, 8초 뒤 강제 종료, 녹화 중 사망; `--ignored` 실녹화: Xvfb 창 + 격리 PipeWire 널 싱크 → ffprobe 영상·소리 두 트랙), `slides-host(-bridge).test.ts`(recording_lost), 변이 확인 |
+| UC-VOICE-LINUX-MANIFEST | 리눅스 사용자가 셸 설정에서 로컬 음성(Naia Host Voice)을 켜면 리눅스용 엔진(linux_trt_6g)을 받는다. 이미 같은 버전의 리눅스 엔진이 설치돼 있으면 다시 받지 않는다. 다른 운영체제용 목록이 끼어들면 아무것도 받지 않고 "다른 플랫폼용 목록"이라는 오류와 어느 프로파일·운영체제가 어긋났는지를 보여 준다. | Rust `download_manifest_for_another_platform_is_rejected_before_download`·`debug_scripts_pin_follows_the_host_platform`, `stage-voxcpm2-runtime.test.ts` |
 
 P04 must cover empty, loaded, progress, success, error, narrow viewport, keyboard/ARIA and error recovery. Browser IPC mocks prove wiring only; native recording and store delivery require separate evidence. Existing range, repeat, notes toggle, fullscreen and voice selection remain covered.
 
@@ -1956,6 +1963,7 @@ Test Coverage Map (P02)
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/components/__tests__/ChatArea.test.tsx`: 슬라이드 낭독문이 문장 수만큼 나뉘어 TTS 로 들어가는지 | — | 페이지 한 덩어리 요청으로 되돌아가면 호출 수가 1 이 되어 붉어진다 |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/tts/__tests__/local-voice-scheduler.test.ts`: 첫 PCM 청크가 워밍업 홀드를 푸는지(1초 이내면 엔진 웜으로 인정), 느린 첫 청크는 홀드를 유지하는지, 지난 턴의 청크가 새 턴을 풀지 않는지 | — | 첫 청크가 곧 enqueue 신호다 — 이것이 없으면 스트리밍을 해도 홀드가 문장 완성까지 안 풀려 지연이 그대로 남는다 |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: 실사용 아바타 렌더러가 클립마다 `<video>` 를 하나씩 두어 왕복에서 `src` 재대입이 없는지, 활성 요소만 재생하고 떠난 요소는 멈추는지, 만든 형제 요소를 정지 때 거두는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | VideoAvatarCanvas 가 등록하는 렌더러가 이쪽이다 — layered 플레이어만 고치면 실제 경로는 그대로 멈춘다(2026-09-11 3/3) |
+| S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/twin-loop.test.ts` + `prebaked-renderer.test.ts`: 반복 클립이 `loop` 속성 없이 두 요소로 번갈아 도는지, 끝난 요소만 멈춘 뒤 늦게 되감는지, 재생 중인 요소에는 seek·pause 가 한 번도 없는지, 떠난 반복이 이번 회차 끝에서 멈추는지 | 격리 WebKitGTK 부하 시험: 실제 렌더러를 WebKitGTK 4.1 창에서 idle/talking 전환·반복시키며 20초 무응답을 정지로 판정하고 gdb 스택을 남긴다 | FR-VOICE.23. 수정 전 렌더러는 같은 조건에서 `loop`·`currentTime`·`pause()` 세 경로 모두로 녹화 셸과 같은 스택의 정지를 재현했다 |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/nva-layered-player.test.ts`: idle↔talk 왕복에서 같은 클립을 다시 로드하지 않고(버퍼당 `src` 대입 1회) 매번 교체는 일어나는지, 재사용 클립을 되감는지, 로드가 취소된 클립은 다시 로드하는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | 낭독이 아바타를 idle↔talk 로 계속 왕복시켜 WebKitGTK 미디어 파이프라인 해체 교착을 밟았다(gdb 2/2). 재생 계약과 같은 슬라이스에 둔다 |
 
 ### UC-TOOLS-SURFACE-611 — model-facing tool boundary

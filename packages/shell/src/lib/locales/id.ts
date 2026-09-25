@@ -122,6 +122,7 @@ export default {
 	"slides.rangeEnd": "Halaman akhir presentasi",
 	"slides.fullscreenExit": "Keluar dari layar penuh",
 	"slides.fullscreenError": "Layar penuh tidak dapat dibuka. Perbarui Naia lalu coba lagi.",
+	"slides.recordingFailed": "Perekaman MP4 gagal. Detail ffmpeg ada di log Naia.",
 	"slides.speechError": "Narration stopped. Check voice settings or resume to try again.",
 	"slides.state.empty": "No deck",
 	"slides.state.loading": "Loading",

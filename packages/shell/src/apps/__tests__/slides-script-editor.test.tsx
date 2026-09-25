@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -17,7 +19,8 @@ vi.mock("../../lib/logger", () => ({
 }));
 vi.mock("../../lib/config", () => ({ addAllowedTool: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("../../lib/slides-host", () => ({
+vi.mock("../../lib/slides-host", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/slides-host")>()),
 	startSlidesRecording: vi.fn(),
 	stopSlidesRecording: vi.fn(),
 }));
@@ -133,6 +136,61 @@ describe("Slides script editor", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
 		await waitFor(() => expect(screen.getByRole("button", { name: "Record MP4" })).toBeEnabled());
 		expect(stopSlidesRecording).toHaveBeenCalledTimes(2);
+	});
+
+	it("shows a recording failure and offers Record again when the host lost the recording", async () => {
+		vi.mocked(stopSlidesRecording).mockClear();
+		vi.mocked(startSlidesRecording).mockResolvedValueOnce(undefined);
+		vi.mocked(stopSlidesRecording).mockRejectedValueOnce(
+			"recording_lost: ffmpeg stopped during recording (exit status: 1): pulse: connection refused",
+		);
+		render(<SlidesCenterArea naia={new EditorBridge()} />);
+		openPdf();
+		await waitForDeck();
+		fireEvent.click(screen.getByRole("button", { name: "Record MP4" }));
+		await waitFor(() => expect(screen.getByRole("button", { name: "Stop recording" })).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("MP4 recording failed"));
+		expect(screen.getByRole("alert")).toHaveTextContent("connection refused");
+		expect(screen.getByRole("button", { name: "Record MP4" })).toBeEnabled();
+		expect(stopSlidesRecording).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows a start failure with the host error without moving the controls", async () => {
+		vi.mocked(startSlidesRecording).mockRejectedValueOnce(
+			new Error("recording_failed: current webview is not a WebviewWindow"),
+		);
+		const { container } = render(<SlidesCenterArea naia={new EditorBridge()} />);
+		openPdf();
+		await waitForDeck();
+		fireEvent.click(screen.getByRole("button", { name: "Record MP4" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("MP4 recording failed");
+		expect(alert).toHaveTextContent("current webview is not a WebviewWindow");
+		// The error sits in the overlay above the controls, never in the
+		// section's column: an in-flow line pushed the buttons up under the
+		// pointer and a click meant for "Start presenting" missed (2026-09-24).
+		const section = container.querySelector("section.slides-app");
+		const notices = alert.closest(".slides-app__notices");
+		expect(notices).not.toBeNull();
+		expect(notices?.parentElement).toHaveClass("slides-app__dock");
+		expect(
+			notices?.parentElement?.querySelector(".slides-app__controls"),
+		).not.toBeNull();
+		expect(alert.parentElement).not.toBe(section);
+		expect(
+			Array.from(section?.children ?? []).some((child) =>
+				child.classList.contains("slides-app__error"),
+			),
+		).toBe(false);
+		const css = readFileSync(
+			resolve(import.meta.dirname, "../slides/slides.css"),
+			"utf8",
+		);
+		const rule = css.match(/\.slides-app__notices\s*\{([^}]*)\}/)?.[1] ?? "";
+		expect(rule).toMatch(/position:\s*absolute/);
+		expect(rule).toMatch(/bottom:\s*100%/);
+		expect(css).toMatch(/\.slides-app__dock\s*\{[^}]*position:\s*relative/);
 	});
 
 	beforeEach(async () => {

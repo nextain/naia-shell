@@ -1,11 +1,31 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NvaManifest } from "../../nva";
+import { drawWithMotion } from "../nva-procedural-motion";
 import {
 	PrebakedAvatarRenderer,
 	canCarryAlpha,
 	containRect,
 } from "../prebaked-renderer";
+
+vi.mock("../nva-procedural-motion", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../nva-procedural-motion")>();
+	return {
+		...actual,
+		drawWithMotion: vi.fn(
+			(
+				target: CanvasRenderingContext2D,
+				source: CanvasImageSource,
+				rect: import("../nva-procedural-motion").DrawRect,
+				spec: import("../nva-procedural-motion").MotionSpec | null,
+				tMs: number,
+			) => {
+				return actual.drawWithMotion(target, source, rect, spec, tMs);
+			},
+		),
+	};
+});
 
 describe("containRect", () => {
 	it("letterboxes a portrait source inside a wider target", () => {
@@ -60,10 +80,12 @@ function makeVideo(): HTMLVideoElement {
 	return video;
 }
 
-/** The element the renderer is keeping for this clip URL. */
+/** The element the renderer is keeping for this clip URL (not its loop twin). */
 function videoForUrl(url: string): HTMLVideoElement {
 	const found = [...document.querySelectorAll("video")].find(
-		(element) => (element as HTMLVideoElement).dataset.naiaClipUrl === url,
+		(element) =>
+			(element as HTMLVideoElement).dataset.naiaClipUrl === url &&
+			!(element as HTMLVideoElement).dataset.naiaLoopTwin,
 	);
 	if (!found) throw new Error(`no <video> holds ${url}`);
 	return found as HTMLVideoElement;
@@ -223,12 +245,13 @@ describe("PrebakedAvatarRenderer", () => {
 			for (let i = 0; i < 6; i++) await Promise.resolve();
 		};
 
-		it("assigns src once per clip across idle→talking round trips", async () => {
+		it("assigns src once per element across idle→talking round trips", async () => {
 			const { renderer, video } = await mounted();
-			expect(srcAssignments).toHaveLength(1); // idle
+			// idle, then its loop twin (TwinLoop: a loop takes two elements)
+			expect(srcAssignments).toHaveLength(2);
 			renderer.setSpeakingVisual(true);
 			await settleClips();
-			expect(srcAssignments).toHaveLength(2); // talking, on a second element
+			expect(srcAssignments).toHaveLength(4); // talking and its twin
 
 			const before = srcAssignments.length;
 			renderer.setSpeakingVisual(false);
@@ -240,15 +263,19 @@ describe("PrebakedAvatarRenderer", () => {
 			// Every later switch re-uses a decoder that is already loaded.
 			expect(srcAssignments).toHaveLength(before);
 			expect(srcAssignments[0].element).toBe(video);
-			expect(srcAssignments[1].element).not.toBe(video);
+			expect(new Set(srcAssignments.map((entry) => entry.element)).size).toBe(
+				4,
+			);
 			expect(srcAssignments.map((entry) => entry.url)).toEqual([
 				"blob:clips/idle.webm",
+				"blob:clips/idle.webm",
+				"blob:clips/speech-ko.mp4",
 				"blob:clips/speech-ko.mp4",
 			]);
 			renderer.stop();
 		});
 
-		it("plays the element that owns the clip and pauses the one it left", async () => {
+		it("plays the element that owns the clip, keeps idle under talking and lets talking run out", async () => {
 			const { renderer, video } = await mounted();
 			playCalls.length = 0;
 			pauseCalls.length = 0;
@@ -256,9 +283,165 @@ describe("PrebakedAvatarRenderer", () => {
 			await settleClips();
 			const talking = videoForUrl("blob:clips/speech-ko.mp4");
 			expect(playCalls).toContain(talking);
-			expect(playCalls).not.toContain(video);
-			expect(pauseCalls).toContain(video);
+			// The idle loop keeps playing under the talking loop so the voice
+			// gate can show a closed mouth in pauses. Nothing is paused: pausing a
+			// playing element can freeze WebKitGTK.
+			expect(pauseCalls).toEqual([]);
+			const idleTwin = [...document.querySelectorAll("video")].find(
+				(element) =>
+					(element as HTMLVideoElement).dataset.naiaClipUrl ===
+						"blob:clips/idle.webm" && element !== video,
+			) as HTMLVideoElement;
+			// At the end of its pass the idle loop hands over to its twin.
+			playCalls.length = 0;
+			video.dispatchEvent(new Event("ended"));
+			await settleClips();
+			expect(playCalls).toEqual([idleTwin]);
+
+			// Speech over: the talking loop finishes its pass hidden and does not
+			// hand over at the end; still nothing is paused.
+			renderer.setSpeakingVisual(false);
+			await settleClips();
+			expect(pauseCalls).toEqual([]);
+			playCalls.length = 0;
+			talking.dispatchEvent(new Event("ended"));
+			await settleClips();
+			expect(playCalls).toEqual([]);
 			renderer.stop();
+		});
+
+		/**
+		 * The recording shell froze with the main thread in didEnd → doSeek (the
+		 * `loop` attribute rewinding at end of stream) waiting for the video sink
+		 * lock, while the sink's thread held it in triggerRepaint waiting for the
+		 * main thread (gdb, 2026-09-24). Loops must not use `loop`, and no element
+		 * may be sought while it plays.
+		 */
+		it("loops without the loop attribute, keeps idle looping under talking, and seeks only paused, hidden elements", async () => {
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+			const playing = new Set<HTMLVideoElement>();
+			const seeks: { element: HTMLVideoElement; whilePlaying: boolean }[] = [];
+			const originalCurrentTime = Object.getOwnPropertyDescriptor(
+				HTMLMediaElement.prototype,
+				"currentTime",
+			);
+			const originalPaused = Object.getOwnPropertyDescriptor(
+				HTMLMediaElement.prototype,
+				"paused",
+			);
+			HTMLMediaElement.prototype.play = function play(this: HTMLVideoElement) {
+				playCalls.push(this);
+				playing.add(this);
+				return Promise.resolve();
+			};
+			const pausedWhilePlaying: HTMLVideoElement[] = [];
+			let tearingDown = false;
+			HTMLMediaElement.prototype.pause = function pause(
+				this: HTMLVideoElement,
+			) {
+				pauseCalls.push(this);
+				if (playing.has(this) && !tearingDown) pausedWhilePlaying.push(this);
+				playing.delete(this);
+			};
+			Object.defineProperty(HTMLMediaElement.prototype, "paused", {
+				configurable: true,
+				get(this: HTMLVideoElement) {
+					return !playing.has(this);
+				},
+			});
+			Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+				configurable: true,
+				get(this: { __t?: number }) {
+					return this.__t ?? 0;
+				},
+				set(this: HTMLVideoElement & { __t?: number }, value: number) {
+					seeks.push({ element: this, whilePlaying: playing.has(this) });
+					this.__t = value;
+				},
+			});
+			/** What the browser does at end of stream without `loop`. */
+			const endOf = (element: HTMLVideoElement) => {
+				(element as unknown as { __t: number }).__t = 9;
+				playing.delete(element);
+				element.dispatchEvent(new Event("ended"));
+			};
+			try {
+				const { renderer } = await mounted();
+				const loopedEnds: HTMLVideoElement[] = [];
+				const idleUrl = "blob:clips/idle.webm";
+				const talkingUrl = "blob:clips/speech-ko.mp4";
+				/** The one element of a clip's loop that is playing now. */
+				const playingOf = (url: string) => {
+					const found = [...playing].filter(
+						(element) => element.dataset.naiaClipUrl === url,
+					);
+					expect(found).toHaveLength(1);
+					return found[0];
+				};
+				/** Let a loop reach its end once; its twin must take over at once. */
+				const wrap = async (url: string) => {
+					const current = playingOf(url);
+					endOf(current);
+					loopedEnds.push(current);
+					await settleClips();
+					expect(playingOf(url)).not.toBe(current);
+					vi.advanceTimersByTime(300);
+				};
+				let speaking = false;
+				for (let round = 0; round < 4; round++) {
+					for (let pass = 0; pass < 3; pass++) {
+						if (speaking) await wrap(talkingUrl);
+						// The idle loop keeps looping under the talking loop too.
+						await wrap(idleUrl);
+					}
+					const leftTalking = speaking
+						? [...playing].filter(
+								(element) => element.dataset.naiaClipUrl === talkingUrl,
+							)
+						: [];
+					speaking = !speaking;
+					renderer.setSpeakingVisual(speaking);
+					await settleClips();
+					// The talking loop that was left finishes its pass and stops there.
+					for (const element of leftTalking) {
+						endOf(element);
+						await settleClips();
+						vi.advanceTimersByTime(300);
+					}
+					playingOf(idleUrl);
+					if (speaking) playingOf(talkingUrl);
+					else
+						expect(
+							[...playing].filter(
+								(element) => element.dataset.naiaClipUrl === talkingUrl,
+							),
+						).toEqual([]);
+				}
+				const all = [...document.querySelectorAll("video")];
+				expect(all).toHaveLength(4);
+				for (const element of all) expect(element.loop).toBe(false);
+				// Every loop wrap alternated elements and rewound the one that ended.
+				expect(new Set(loopedEnds).size).toBeGreaterThanOrEqual(4);
+				expect(seeks.length).toBeGreaterThanOrEqual(loopedEnds.length);
+				expect(seeks.filter((seek) => seek.whilePlaying)).toEqual([]);
+				expect(pausedWhilePlaying).toEqual([]);
+				tearingDown = true;
+				renderer.stop();
+			} finally {
+				vi.useRealTimers();
+				if (originalCurrentTime)
+					Object.defineProperty(
+						HTMLMediaElement.prototype,
+						"currentTime",
+						originalCurrentTime,
+					);
+				if (originalPaused)
+					Object.defineProperty(
+						HTMLMediaElement.prototype,
+						"paused",
+						originalPaused,
+					);
+			}
 		});
 
 		it("keeps the extra clip element next to the mounted one and removes it on stop", async () => {
@@ -267,8 +450,9 @@ describe("PrebakedAvatarRenderer", () => {
 			await settleClips();
 			const talking = videoForUrl("blob:clips/speech-ko.mp4");
 			expect(talking.parentElement).toBe(host);
-			expect(video.nextSibling).toBe(talking);
-			expect(host.querySelectorAll("video")).toHaveLength(2);
+			// mounted idle, its twin, talking and its twin — all in the host
+			expect(host.querySelectorAll("video")).toHaveLength(4);
+			expect(host.firstElementChild).toBe(video);
 
 			renderer.stop();
 			// The element the host mounted stays; the ones the renderer added leave.
@@ -288,6 +472,7 @@ describe("PrebakedAvatarRenderer", () => {
 				rafCallbacks.push(cb);
 				return rafCallbacks.length;
 			});
+			vi.mocked(drawWithMotion).mockClear();
 		});
 
 		afterEach(() => {
@@ -426,6 +611,184 @@ describe("PrebakedAvatarRenderer", () => {
 			// 아래끝 0.7 + 0.4 * 0.35 = 0.84
 			expect((renderer as any).motionSpec?.chest_y).toBeCloseTo(0.84, 5);
 			renderer.stop();
+		});
+
+		it("invokes drawWithMotion once per frame and draws both fading clips to offscreen canvas during crossfade", async () => {
+			const manifest = {
+				...baseManifest(),
+				background: { type: "transparent" as const },
+			};
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async (p) => `blob:${p}`,
+			});
+
+			const v1 = makeVideo();
+			Object.defineProperty(v1, "readyState", { value: 4, configurable: true });
+			Object.defineProperty(v1, "videoWidth", {
+				value: 100,
+				configurable: true,
+			});
+			Object.defineProperty(v1, "videoHeight", {
+				value: 100,
+				configurable: true,
+			});
+
+			const v2 = makeVideo();
+			Object.defineProperty(v2, "readyState", { value: 4, configurable: true });
+			Object.defineProperty(v2, "videoWidth", {
+				value: 100,
+				configurable: true,
+			});
+			Object.defineProperty(v2, "videoHeight", {
+				value: 100,
+				configurable: true,
+			});
+
+			const mockCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+				save: vi.fn(),
+				restore: vi.fn(),
+				translate: vi.fn(),
+				rotate: vi.fn(),
+			};
+			const canvas = document.createElement("canvas");
+			canvas.width = 100;
+			canvas.height = 100;
+
+			const mockOffscreenCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+			};
+			const getContextSpy = vi
+				.spyOn(HTMLCanvasElement.prototype, "getContext")
+				.mockImplementation(function (this: HTMLCanvasElement) {
+					if (this === canvas) return mockCtx as any;
+					return mockOffscreenCtx as any;
+				});
+
+			const drawSourceSpy = vi
+				.spyOn(renderer, "drawSource")
+				.mockReturnValueOnce(v1)
+				.mockReturnValue(v2);
+
+			renderer.start(v1, canvas);
+			expect(rafCallbacks.length).toBeGreaterThan(0);
+
+			// Frame 1: v1 is drawn and established in crossfade
+			const firstFrame = rafCallbacks[0];
+			firstFrame?.(1000);
+
+			mockOffscreenCtx.drawImage.mockClear();
+			vi.mocked(drawWithMotion).mockClear();
+
+			// Frame 2: switches to v2, fading v1 in crossfade
+			const secondFrame = rafCallbacks[rafCallbacks.length - 1];
+			secondFrame?.(1050);
+
+			// (가)-1: 한 프레임에 drawWithMotion이 정확히 1번 불리는지
+			expect(drawWithMotion).toHaveBeenCalledTimes(1);
+			// (가)-2: 페이드 중이면 오프스크린에 drawImage가 2번(현재 v2, 이전 클립 v1) 불리는지
+			expect(mockOffscreenCtx.drawImage).toHaveBeenCalledTimes(2);
+			expect(mockOffscreenCtx.drawImage).toHaveBeenNthCalledWith(
+				1,
+				v2,
+				0,
+				0,
+				100,
+				100,
+			);
+			expect(mockOffscreenCtx.drawImage).toHaveBeenNthCalledWith(
+				2,
+				v1,
+				0,
+				0,
+				100,
+				100,
+			);
+
+			renderer.stop();
+			getContextSpy.mockRestore();
+			drawSourceSpy.mockRestore();
+		});
+
+		it("does not invoke drawWithMotion and draws both fading clips directly to screen canvas when motion is disabled", async () => {
+			const manifest = {
+				...baseManifest(),
+				motion: false,
+				background: { type: "transparent" as const },
+			};
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async (p) => `blob:${p}`,
+			});
+
+			const v1 = makeVideo();
+			Object.defineProperty(v1, "readyState", { value: 4, configurable: true });
+			Object.defineProperty(v1, "videoWidth", {
+				value: 100,
+				configurable: true,
+			});
+			Object.defineProperty(v1, "videoHeight", {
+				value: 100,
+				configurable: true,
+			});
+
+			const v2 = makeVideo();
+			Object.defineProperty(v2, "readyState", { value: 4, configurable: true });
+			Object.defineProperty(v2, "videoWidth", {
+				value: 100,
+				configurable: true,
+			});
+			Object.defineProperty(v2, "videoHeight", {
+				value: 100,
+				configurable: true,
+			});
+
+			const mockCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+				save: vi.fn(),
+				restore: vi.fn(),
+				translate: vi.fn(),
+				rotate: vi.fn(),
+			};
+			const canvas = document.createElement("canvas");
+			canvas.width = 100;
+			canvas.height = 100;
+			vi.spyOn(canvas, "getContext").mockReturnValue(mockCtx as any);
+
+			const drawSourceSpy = vi
+				.spyOn(renderer, "drawSource")
+				.mockReturnValueOnce(v1)
+				.mockReturnValue(v2);
+
+			renderer.start(v1, canvas);
+			expect(rafCallbacks.length).toBeGreaterThan(0);
+
+			// Frame 1: v1 is drawn and established in crossfade
+			const firstFrame = rafCallbacks[0];
+			firstFrame?.(1000);
+
+			mockCtx.drawImage.mockClear();
+			vi.mocked(drawWithMotion).mockClear();
+
+			// Frame 2: switches to v2, fading v1 in crossfade directly on target ctx
+			const secondFrame = rafCallbacks[rafCallbacks.length - 1];
+			secondFrame?.(1050);
+
+			// (나)-1: drawWithMotion이 불리지 않는지
+			expect(drawWithMotion).not.toHaveBeenCalled();
+			// (나)-2: 화면 ctx에 페이드 두 번 그리기가 되는지 (현재 v2, 이전 클립 v1)
+			expect(mockCtx.drawImage).toHaveBeenCalledTimes(2);
+			expect(mockCtx.drawImage).toHaveBeenNthCalledWith(1, v2, 0, 0, 100, 100);
+			expect(mockCtx.drawImage).toHaveBeenNthCalledWith(2, v1, 0, 0, 100, 100);
+
+			renderer.stop();
+			drawSourceSpy.mockRestore();
 		});
 	});
 });

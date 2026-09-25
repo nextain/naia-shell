@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -17,8 +18,10 @@ import type {
 } from "../../lib/app-registry";
 import { setLocale } from "../../lib/i18n";
 import {
+	SLIDE_PRESENTER_PREFETCH_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
+	type SlidePresenterPrefetchRequest,
 	type SlidePresenterSpeechRequest,
 } from "../../lib/slide-presenter-events";
 
@@ -547,5 +550,117 @@ describe("SlidesCenterArea", () => {
 		await waitFor(() =>
 			expect(screen.getByText("일시정지")).toBeInTheDocument(),
 		);
+	});
+
+	it("FR-SLIDES-PREFETCH.1: asks for the next page while reading, never past the end page", async () => {
+		const speaks: SlidePresenterSpeechRequest[] = [];
+		const prefetches: SlidePresenterPrefetchRequest[] = [];
+		const onSpeak = (event: Event) =>
+			speaks.push((event as CustomEvent<SlidePresenterSpeechRequest>).detail);
+		const onPrefetch = (event: Event) =>
+			prefetches.push(
+				(event as CustomEvent<SlidePresenterPrefetchRequest>).detail,
+			);
+		window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, onSpeak);
+		window.addEventListener(SLIDE_PRESENTER_PREFETCH_EVENT, onPrefetch);
+		try {
+			render(<SlidesCenterArea naia={new MockBridge()} />);
+			fireEvent.change(screen.getByLabelText(/PDF/), {
+				target: { files: [new File(["pdf"], "deck.pdf")] },
+			});
+			await waitFor(() =>
+				expect(screen.getByText("1 / 3")).toBeInTheDocument(),
+			);
+			fireEvent.change(screen.getByLabelText("발표 종료 페이지"), {
+				target: { value: "2" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
+			await waitFor(() => expect(speaks).toHaveLength(1));
+			// The next page's narration is requested with this page's generation,
+			// and only after this page's own speech request.
+			await waitFor(() =>
+				expect(prefetches.at(-1)).toMatchObject({
+					generation: speaks[0].generation,
+					page: 2,
+					text: "PDF text 2",
+				}),
+			);
+			const firstPrefetch = prefetches.length;
+			window.dispatchEvent(
+				new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
+					detail: { ...speaks[0], status: "finished" },
+				}),
+			);
+			await waitFor(() => expect(speaks).toHaveLength(2));
+			expect(speaks[1]).toMatchObject({ page: 2, text: "PDF text 2" });
+			// Page 2 is the presentation end page: nothing is prefetched past it.
+			await waitFor(() =>
+				expect(prefetches.at(-1)).toMatchObject({ page: null, text: null }),
+			);
+			expect(
+				prefetches.slice(firstPrefetch).filter((p) => p.page === 3),
+			).toHaveLength(0);
+		} finally {
+			window.removeEventListener(SLIDE_PRESENTER_SPEAK_EVENT, onSpeak);
+			window.removeEventListener(SLIDE_PRESENTER_PREFETCH_EVENT, onPrefetch);
+		}
+	});
+
+	it("FR-SLIDES-PREFETCH.1: pausing discards the prefetched next page", async () => {
+		const prefetches: SlidePresenterPrefetchRequest[] = [];
+		const onPrefetch = (event: Event) =>
+			prefetches.push(
+				(event as CustomEvent<SlidePresenterPrefetchRequest>).detail,
+			);
+		window.addEventListener(SLIDE_PRESENTER_PREFETCH_EVENT, onPrefetch);
+		try {
+			render(<SlidesCenterArea naia={new MockBridge()} />);
+			fireEvent.change(screen.getByLabelText(/PDF/), {
+				target: { files: [new File(["pdf"], "deck.pdf")] },
+			});
+			await waitFor(() =>
+				expect(screen.getByText("1 / 3")).toBeInTheDocument(),
+			);
+			fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
+			await waitFor(() => expect(prefetches.at(-1)).toMatchObject({ page: 2 }));
+			fireEvent.click(screen.getByRole("button", { name: "일시정지" }));
+			await waitFor(() =>
+				expect(prefetches.at(-1)).toMatchObject({ page: null, text: null }),
+			);
+		} finally {
+			window.removeEventListener(SLIDE_PRESENTER_PREFETCH_EVENT, onPrefetch);
+		}
+	});
+
+	it("FR-SLIDES-FOCUS-EXIT.1: the focus exit button hides while presenting and returns on pointer movement", async () => {
+		const { container } = render(<SlidesCenterArea naia={new MockBridge()} />);
+		fireEvent.change(screen.getByLabelText(/PDF/), {
+			target: { files: [new File(["pdf"], "deck.pdf")] },
+		});
+		await waitFor(() => expect(screen.getByText("1 / 3")).toBeInTheDocument());
+		const app = container.querySelector(".slides-app") as HTMLElement;
+		fireEvent.click(screen.getByRole("button", { name: "발표 집중 모드" }));
+		// Not presenting yet: the exit button stays visible.
+		expect(app).toHaveAttribute("data-focus-chrome", "active");
+		expect(container.querySelector(".slides-app__focus-exit")).not.toBeNull();
+		vi.useFakeTimers();
+		try {
+			fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
+			expect(app).toHaveAttribute("data-focus-chrome", "active");
+			act(() => {
+				vi.advanceTimersByTime(2_600);
+			});
+			expect(app).toHaveAttribute("data-focus-chrome", "idle");
+			fireEvent.pointerMove(app);
+			expect(app).toHaveAttribute("data-focus-chrome", "active");
+			act(() => {
+				vi.advanceTimersByTime(2_600);
+			});
+			expect(app).toHaveAttribute("data-focus-chrome", "idle");
+			// The button is still reachable (keyboard focus shows it via CSS).
+			expect(container.querySelector(".slides-app__focus-exit")).not.toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

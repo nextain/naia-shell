@@ -104,9 +104,16 @@ import {
 	toSpeechProfileCommandInput,
 } from "../lib/proactive-speech-settings";
 import {
+	SlideNarrationPrefetcher,
+	slidePageMinGapMs,
+	splitSlideNarration,
+} from "../lib/slide-narration-prefetch";
+import {
 	SLIDE_PRESENTER_CANCEL_EVENT,
+	SLIDE_PRESENTER_PREFETCH_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
+	type SlidePresenterPrefetchRequest,
 	type SlidePresenterSpeechRequest,
 } from "../lib/slide-presenter-events";
 import {
@@ -357,18 +364,6 @@ function ChatErrorNotice({
 export type ChatVariant = "rail" | "floating";
 
 
-/** 슬라이드 낭독문 분할 (VITE_NAIA_SLIDES_TTS_CHUNK: word | phrase | sentence). */
-function splitSlideNarration(text: string): string[] {
-	const mode = (import.meta.env.VITE_NAIA_SLIDES_TTS_CHUNK as string | undefined) ?? "sentence";
-	const clean = text.replace(/\s+/g, " ").trim();
-	if (!clean) return [];
-	let parts: string[];
-	if (mode === "word") parts = clean.split(" ");
-	else if (mode === "phrase") parts = clean.split(/(?<=[,.!?…])\s+/);
-	else parts = clean.split(/(?<=[.!?…])\s+/);
-	return parts.map((p) => p.trim()).filter(Boolean);
-}
-
 export function ChatArea({
 	variant = "floating",
 }: { variant?: ChatVariant } = {}) {
@@ -526,6 +521,16 @@ export function ChatArea({
 	const sentencePipelineRef = useRef<SentenceTtsPipeline | null>(null);
 	const activeSlidePresenterSpeechRef =
 		useRef<SlidePresenterSpeechRequest | null>(null);
+	// FR-SLIDES-PREFETCH.1: next page's opening sentences, synthesized while
+	// the current page is read so a page turn does not wait for synthesis.
+	const slidePrefetcherRef = useRef<SlideNarrationPrefetcher | null>(null);
+	if (!slidePrefetcherRef.current) {
+		slidePrefetcherRef.current = new SlideNarrationPrefetcher({
+			prefetchSentence: (sentence) =>
+				sentencePipelineRef.current?.prefetchSentence(sentence) ?? false,
+			discardPrefetch: () => sentencePipelineRef.current?.discardPrefetch(),
+		});
+	}
 	if (!sentencePipelineRef.current) {
 		sentencePipelineRef.current = createSentenceTtsPipeline({
 			generateRequestId,
@@ -1220,8 +1225,12 @@ export function ChatArea({
 			) {
 				return;
 			}
+			// FR-SLIDES-PAGE-GAP.1: the page is on screen when its narration is
+			// requested; its first sound may not start before this + the gap.
+			const earliestPlaybackAt = performance.now() + slidePageMinGapMs();
 			interruptTts();
 			activeSlidePresenterSpeechRef.current = detail;
+			slidePrefetcherRef.current?.beforeNarration();
 			void (async () => {
 				for (
 					let attempt = 0;
@@ -1241,15 +1250,20 @@ export function ChatArea({
 				)
 					return;
 				if (currentRequestId.current) {
+					slidePrefetcherRef.current?.discard();
 					settleSlidePresenterSpeech("failed", "chat_busy");
 					return;
 				}
 				const config = await loadConfigWithSecrets();
 				if (!config || config.ttsEnabled !== true) {
+					slidePrefetcherRef.current?.discard();
 					settleSlidePresenterSpeech("failed", "tts_disabled");
 					return;
 				}
 				initializeSpeechTts(config);
+				// Pause, page move and stop reach interruptTts → AudioQueue.clear(),
+				// which cancels this hold together with the queued audio.
+				audioQueueRef.current?.holdPlaybackUntil(earliestPlaybackAt);
 				beginProactiveTtsTextSync(detail.text.trim());
 				// 2026-09-11: 슬라이드 낭독문은 한 장 전체가 한 요청으로 들어와 첫 소리까지
 				// 장 전체 합성 시간을 기다렸다(로컬 VoxCPM2 RTF 0.48 → 8~50초 무음). 채팅 경로처럼
@@ -1259,6 +1273,9 @@ export function ChatArea({
 					sendSentenceToTts(piece);
 				}
 				finishLocalVoicePrebuffer();
+				// The page's own sentences are queued first; only now may the next
+				// page's opening be prefetched, strictly behind them.
+				slidePrefetcherRef.current?.narrationQueued(detail.generation);
 				Logger.info("ChatArea", "slide narration entered TTS pipeline", {
 					page: detail.page,
 					generation: detail.generation,
@@ -1268,6 +1285,7 @@ export function ChatArea({
 				if (
 					activeSlidePresenterSpeechRef.current?.requestId === detail.requestId
 				) {
+					slidePrefetcherRef.current?.discard();
 					settleSlidePresenterSpeech("failed", String(error));
 				}
 			});
@@ -1276,6 +1294,9 @@ export function ChatArea({
 			const detail = (
 				event as CustomEvent<{ requestId?: string; generation?: number }>
 			).detail;
+			// Pause, stop, previous page or a new question: a prefetched next page
+			// is no longer the page that will be read next.
+			slidePrefetcherRef.current?.discard();
 			const active = activeSlidePresenterSpeechRef.current;
 			if (!active) return;
 			if (detail?.requestId && detail.requestId !== active.requestId) return;
@@ -1283,12 +1304,23 @@ export function ChatArea({
 				return;
 			interruptTts();
 		};
+		const handlePrefetch = (event: Event) => {
+			slidePrefetcherRef.current?.request(
+				(event as CustomEvent<SlidePresenterPrefetchRequest>).detail,
+			);
+		};
 		window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, handleSpeak);
 		window.addEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handleCancel);
+		window.addEventListener(SLIDE_PRESENTER_PREFETCH_EVENT, handlePrefetch);
 		return () => {
 			disposed = true;
 			window.removeEventListener(SLIDE_PRESENTER_SPEAK_EVENT, handleSpeak);
 			window.removeEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handleCancel);
+			window.removeEventListener(
+				SLIDE_PRESENTER_PREFETCH_EVENT,
+				handlePrefetch,
+			);
+			slidePrefetcherRef.current?.discard();
 			if (activeSlidePresenterSpeechRef.current) interruptTts();
 		};
 	}, []);

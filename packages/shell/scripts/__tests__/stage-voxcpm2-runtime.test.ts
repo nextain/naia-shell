@@ -600,6 +600,59 @@ describe("설치 스크립트 이름의 단일 출처 (#537)", () => {
 		);
 	});
 
+	it("운영체제마다 제 프로파일의 내려받기 매니페스트를 고정해 둔다", () => {
+		const shellDir = resolve(import.meta.dirname, "..", "..");
+		const expected = {
+			win32: {
+				profile: "windows_trt_6g",
+				url: "/windows_trt_6g/releases/0.2.2/",
+				bytes: 2496064260,
+			},
+			linux: {
+				profile: "linux_trt_6g",
+				url: "/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip",
+				bytes: 2935215844,
+			},
+		} as const;
+		const pins = new Set<string>();
+		for (const [platform, want] of Object.entries(expected)) {
+			const row = voxCpm2Profile(platform);
+			pins.add(row.downloadManifest);
+			const manifest = JSON.parse(
+				readFileSync(resolve(shellDir, row.downloadManifest), "utf8"),
+			);
+			expect(manifest.profile, platform).toBe(row.profile);
+			expect(manifest.profile, platform).toBe(want.profile);
+			expect(manifest.archive.url, platform).toContain(want.url);
+			expect(manifest.archive.url, platform).toBe(
+				row.defaultDownloadUrl,
+			);
+			expect(manifest.archive.bytes, platform).toBe(want.bytes);
+		}
+		// 한 파일을 두 운영체제가 나눠 쓰면 리눅스가 Windows 엔진을 받는다.
+		expect(pins.size).toBe(2);
+		expect(
+			JSON.parse(
+				readFileSync(
+					resolve(shellDir, voxCpm2Profile("linux").downloadManifest),
+					"utf8",
+				),
+			).artifactManifestSha256,
+		).toBe("43a80742df8828465f7df05f72519c412111bcdd5b727d113280e8112dc51778");
+	});
+
+	it("스테이징 스크립트는 내려받기 매니페스트 파일 이름을 직접 적지 않는다", () => {
+		const shellDir = resolve(import.meta.dirname, "..", "..");
+		for (const relativePath of stagingScripts) {
+			const source = readFileSync(resolve(shellDir, relativePath), "utf8");
+			expect(
+				source,
+				`${relativePath} 가 매니페스트 이름을 직접 적었다 — VOXCPM2_PROFILES 를 통하게 하라`,
+			).not.toMatch(/voxcpm2-download-manifest[.a-z]*\.json/);
+			expect(source).toContain(".downloadManifest");
+		}
+	});
+
 	it("스테이징 스크립트는 설치 스크립트 이름을 직접 적지 않는다", () => {
 		const shellDir = resolve(import.meta.dirname, "..", "..");
 		for (const relativePath of stagingScripts) {

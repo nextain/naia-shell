@@ -2,3 +2,12 @@
 # packages/shell = old shell verbatim 편입(UI 보존) + chat-service 만 새 core 결선.
 packages:
   - "packages/*"
+
+# react-pdf 10.x pins pdfjs-dist 5.4.296, which composes PDF soft masks only via
+# CanvasRenderingContext2D.filter. WebKitGTK (the Linux Tauri webview) has no
+# canvas filter, so soft masks were dropped and transparent gradients rendered
+# as opaque blocks (Slides/Workspace PDF "pink box" bug). pdf.js 6.0.227+ falls
+# back to a pixel-buffer SMask path (mozilla/pdf.js#21236). react-pdf 11 moves to
+# pdf.js 6 but requires React 19, so pin the shared pdf.js here instead.
+overrides:
+  "react-pdf>pdfjs-dist": 6.3.289

@@ -122,6 +122,7 @@ export default {
 	"slides.rangeEnd": "発表終了ページ",
 	"slides.fullscreenExit": "全画面を終了",
 	"slides.fullscreenError": "全画面表示にできませんでした。Naiaを更新して、もう一度お試しください。",
+	"slides.recordingFailed": "MP4の録画に失敗しました。ffmpegの詳細はNaiaのログにあります。",
 	"slides.speechError": "Narration stopped. Check voice settings or resume to try again.",
 	"slides.state.empty": "No deck",
 	"slides.state.loading": "Loading",

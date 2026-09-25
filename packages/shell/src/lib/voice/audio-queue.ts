@@ -7,6 +7,15 @@
  */
 
 import { Logger } from "../logger";
+import {
+	VOICE_LEVEL_WINDOW_SEC,
+	type VoiceLevelSource,
+	VoiceLevelTimeline,
+	releaseVoiceLevelSource,
+	rmsEnvelope,
+	setActiveVoiceLevelSource,
+	wavEnvelope,
+} from "./voice-level";
 
 export interface AudioQueueCallbacks {
 	onPlaybackStart?: () => void;
@@ -75,8 +84,12 @@ export class PcmStreamSource {
 	}
 }
 
-export class AudioQueue {
+export class AudioQueue implements VoiceLevelSource {
 	private queue: AudioQueueItem[] = [];
+	/** Reads the level of the item playing now (null = cannot measure, e.g. MP3). */
+	private levelReader: (() => number | null) | null = null;
+	/** Envelope of streamed PCM chunks on the shared AudioContext clock. */
+	private streamLevels = new VoiceLevelTimeline();
 	private current: HTMLAudioElement | null = null;
 	private currentStream: PcmStreamSource | null = null;
 	private streamSources = new Set<AudioBufferSourceNode>();
@@ -90,6 +103,11 @@ export class AudioQueue {
 	// it advances the cursor without playing, so later seqs don't stall.
 	private nextExpectedSeq = 0;
 	private pendingOrdered: Map<number, AudioQueueItem | null> = new Map();
+
+	// FR-SLIDES-PAGE-GAP.1: earliest time (performance.now) the next idle start
+	// may begin playing. 0 = no hold. Cleared by clear() (pause, page move, stop).
+	private holdUntil = 0;
+	private holdTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(callbacks: AudioQueueCallbacks = {}) {
 		this.callbacks = callbacks;
@@ -112,6 +130,47 @@ export class AudioQueue {
 	private enqueueItem(item: AudioQueueItem): void {
 		this.queue.push(item);
 		if (!this.playing && !this.playbackPaused) this.playNext();
+	}
+
+	/**
+	 * Do not START playback before `atMs` (performance.now clock). Audio that
+	 * is ready earlier waits until then; audio that is ready later plays at
+	 * once, so the start time is max(atMs, audio ready). Only an idle queue is
+	 * held — an item already playing is never delayed. clear() cancels it.
+	 */
+	holdPlaybackUntil(atMs: number): void {
+		this.clearHold();
+		this.holdUntil = atMs;
+	}
+
+	private clearHold(): void {
+		if (this.holdTimer !== null) {
+			clearTimeout(this.holdTimer);
+			this.holdTimer = null;
+		}
+		this.holdUntil = 0;
+	}
+
+	/** True while an idle start must still wait; arms one timer to retry. */
+	private waitingForHold(): boolean {
+		if (this.holdUntil === 0) return false;
+		const waitMs = this.holdUntil - performance.now();
+		if (waitMs <= 0) {
+			this.clearHold();
+			return false;
+		}
+		if (this.holdTimer === null) {
+			const generation = this.generation;
+			this.holdTimer = setTimeout(() => {
+				this.holdTimer = null;
+				if (generation !== this.generation) return;
+				this.holdUntil = 0;
+				if (!this.playing && !this.playbackPaused && this.queue.length > 0) {
+					this.playNext();
+				}
+			}, waitMs);
+		}
+		return true;
 	}
 
 	/** Hold queued audio without stopping an item that is already playing. */
@@ -202,6 +261,7 @@ export class AudioQueue {
 	/** Stop current playback and clear all queued audio. */
 	clear(): void {
 		this.generation++;
+		this.clearHold();
 		this.queue = [];
 		this.playbackPaused = false;
 		this.pendingOrdered.clear();
@@ -224,10 +284,27 @@ export class AudioQueue {
 			}
 		}
 		this.streamSources.clear();
+		this.stopLevel();
 		if (this.playing) {
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
 		}
+	}
+
+	/** RMS of the audio this queue is playing now, or null when unknown. */
+	voiceLevel(): number | null {
+		return this.levelReader ? this.levelReader() : null;
+	}
+
+	private startLevel(reader: () => number | null): void {
+		this.levelReader = reader;
+		setActiveVoiceLevelSource(this);
+	}
+
+	private stopLevel(): void {
+		this.levelReader = null;
+		this.streamLevels.clear();
+		releaseVoiceLevelSource(this);
 	}
 
 	/** Whether audio is currently playing or queued. */
@@ -284,6 +361,7 @@ export class AudioQueue {
 				// 40 ms lead on the very first chunk absorbs scheduling jitter.
 				const at = Math.max(now + (started ? 0 : 0.04), nextStart);
 				src.start(at);
+				this.streamLevels.add(at, rmsEnvelope(ch, stream.sampleRate));
 				nextStart = at + buf.duration;
 				pending++;
 				this.streamSources.add(src);
@@ -294,6 +372,7 @@ export class AudioQueue {
 				};
 				if (!started) {
 					started = true;
+					this.startLevel(() => this.streamLevels.levelAt(ctx.currentTime));
 					Logger.debug("AudioQueue", "playStream:first chunk scheduled", {
 						at: Number(at.toFixed(3)),
 						now: Number(now.toFixed(3)),
@@ -338,8 +417,15 @@ export class AudioQueue {
 	private playNext(): void {
 		if (this.queue.length === 0) {
 			Logger.debug("AudioQueue", "playNext:empty → end", {});
+			this.stopLevel();
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
+			return;
+		}
+		if (!this.playing && this.waitingForHold()) {
+			Logger.debug("AudioQueue", "playNext:held for minimum gap", {
+				queued: this.queue.length,
+			});
 			return;
 		}
 		Logger.debug("AudioQueue", "playNext:start", {
@@ -395,6 +481,14 @@ export class AudioQueue {
 		audio.onplay = () => {
 			if (!isCurrent()) return;
 			started = true;
+			const envelope = isWav ? wavEnvelope(mp3Base64) : null;
+			this.startLevel(() => {
+				if (!envelope) return null;
+				const index = Math.floor(
+					(audio.currentTime || 0) / VOICE_LEVEL_WINDOW_SEC,
+				);
+				return index >= 0 && index < envelope.length ? envelope[index] : 0;
+			});
 			item.onPlaybackStart?.();
 			// Only fire onPlaybackStart for the first chunk in a sequence
 			if (!wasPlaying) {

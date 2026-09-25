@@ -122,6 +122,7 @@ export default {
 	"slides.rangeEnd": "Endseite der Präsentation",
 	"slides.fullscreenExit": "Vollbild beenden",
 	"slides.fullscreenError": "Vollbild konnte nicht aktiviert werden. Aktualisieren Sie Naia und versuchen Sie es erneut.",
+	"slides.recordingFailed": "MP4-Aufnahme fehlgeschlagen. Details zu ffmpeg stehen im Naia-Protokoll.",
 	"slides.speechError": "Narration stopped. Check voice settings or resume to try again.",
 	"slides.state.empty": "No deck",
 	"slides.state.loading": "Loading",

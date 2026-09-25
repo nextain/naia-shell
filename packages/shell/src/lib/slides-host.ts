@@ -485,8 +485,39 @@ export async function stopSlidesRecording(): Promise<string> {
 		return typeof output === "string" ? output : "";
 	} catch (error) {
 		// A failed stop leaves the host recording owned and retryable. Keep the
-		// client in the same state so a second stop can complete it safely.
-		localRecordingState = "active";
+		// client in the same state so a second stop can complete it safely —
+		// unless the host says the recording is gone (ffmpeg died or had to be
+		// killed): then there is nothing left to stop.
+		localRecordingState = isRecordingLost(error) ? "idle" : "active";
 		throw error;
 	}
+}
+
+/**
+ * Stop error code: the host recording ended without a usable MP4 and the host
+ * no longer owns a recording, so the client must leave the recording state.
+ */
+export const SLIDES_RECORDING_LOST = "recording_lost";
+
+/** Longest host error text passed on to the app frame and shown to the user. */
+export const RECORDING_ERROR_DETAIL_LIMIT = 240;
+
+/**
+ * `code: <host error>` for a failed recording operation. The code stays first
+ * so callers that look for it keep working; the host's own error follows so
+ * the presenter and the log see why (before this, every host failure reached
+ * the app as a bare `recording_failed`).
+ */
+export function recordingFailure(code: string, error: unknown): string {
+	const detail = String(error)
+		.replace(/^Error: /, "")
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: strip control characters from host text
+		.replace(/[\u0000-\u001f\u007f]+/g, " ")
+		.trim()
+		.slice(0, RECORDING_ERROR_DETAIL_LIMIT);
+	return detail && detail !== code ? `${code}: ${detail}` : code;
+}
+
+export function isRecordingLost(error: unknown): boolean {
+	return String(error).includes(SLIDES_RECORDING_LOST);
 }

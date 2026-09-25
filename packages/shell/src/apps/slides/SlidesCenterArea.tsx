@@ -22,6 +22,7 @@ import {
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
 	type SlidePresenterSpeechResult,
 	cancelSlidePresenterSpeech,
+	requestSlidePresenterPrefetch,
 	requestSlidePresenterSpeech,
 } from "../../lib/slide-presenter-events";
 import { useTabSkills } from "../../lib/tab-skills";
@@ -31,7 +32,11 @@ import {
 	type SlidesOpenedPdf,
 } from "../../lib/slides-files";
 import { replaceSlideScriptPage } from "../../lib/slide-script";
-import { startSlidesRecording, stopSlidesRecording } from "../../lib/slides-host";
+import {
+	isRecordingLost,
+	startSlidesRecording,
+	stopSlidesRecording,
+} from "../../lib/slides-host";
 import { useAppStore } from "../../stores/app";
 import { SlidesControls } from "./SlidesControls";
 import {
@@ -46,6 +51,7 @@ import "./slides.css";
 
 export { resolveSlidesPdfWorkerUrl } from "./SlidesViewer";
 const TAG = "SlidesCenterArea";
+const FOCUS_CHROME_IDLE_MS = 2_500;
 
 export interface SlidesAppApi {
 	start: () => void;
@@ -105,8 +111,13 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const [recording, setRecording] = useState(false);
 	const [recordingError, setRecordingError] = useState<string | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
+	// FR-SLIDES-FOCUS-EXIT.1: while presenting in focus mode the exit button
+	// sits over the slide's top-right corner (where decks put the page number),
+	// so it hides after a short idle and comes back on pointer movement.
+	const [focusChromeActive, setFocusChromeActive] = useState(true);
 	const [notesVisible, setNotesVisible] = useState(true);
 	const activeSpeechRef = useRef<string | null>(null);
+	const prefetchRequestedRef = useRef(false);
 	const notesRef = useRef(speakerNotes);
 	const pageTextsRef = useRef(pageTexts);
 	notesRef.current = speakerNotes;
@@ -177,6 +188,16 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const currentNarration = useMemo(
 		() => narrationForPage(state.page, speakerNotes, pageTexts),
 		[state.page, speakerNotes, pageTexts],
+	);
+
+	// FR-SLIDES-PREFETCH.1: the page read after this one, or nothing at the
+	// presentation end page (no synthesis past rangeEnd).
+	const nextNarration = useMemo(
+		() =>
+			state.page < state.rangeEnd
+				? narrationForPage(state.page + 1, speakerNotes, pageTexts)
+				: "",
+		[state.page, state.rangeEnd, speakerNotes, pageTexts],
 	);
 
 	const deckContext = useMemo(
@@ -263,6 +284,32 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		state.page,
 		state.speech,
 	]);
+
+	// While a page is being read, ask the Shell to synthesize the next page's
+	// opening so the page turn does not wait for it. Runs after the speech
+	// request effect above, so the Shell queues this page's sentences first.
+	// Leaving the presentation (pause, stop, answering, completed, failure)
+	// or an empty next page sends a discard; a script edit re-sends new text.
+	useEffect(() => {
+		const text = nextNarration.trim();
+		if (state.mode !== "presenting" || state.speech === "idle" || !text) {
+			if (prefetchRequestedRef.current) {
+				prefetchRequestedRef.current = false;
+				requestSlidePresenterPrefetch({
+					generation: state.generation,
+					page: null,
+					text: null,
+				});
+			}
+			return;
+		}
+		prefetchRequestedRef.current = true;
+		requestSlidePresenterPrefetch({
+			generation: state.generation,
+			page: state.page + 1,
+			text,
+		});
+	}, [nextNarration, state.generation, state.mode, state.page, state.speech]);
 
 	useEffect(() => {
 		const onResult = (event: Event) => {
@@ -647,10 +694,41 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			const fileName = output.split(/[\\/]/).pop();
 			if (fileName) await naia.openInWorkspace?.(`video/${fileName}`);
 		} catch (error) {
-			// A failed stop retains native ownership, so keep Stop available to retry.
-			setRecordingError(String(error));
+			// A failed stop retains native ownership, so keep Stop available to
+			// retry — unless the host reports the recording as lost.
+			if (recording && isRecordingLost(error)) setRecording(false);
+			Logger.warn(TAG, "recording toggle failed", {
+				stage: recording ? "stop" : "start",
+				error: String(error),
+			});
+			setRecordingError(
+				`${t("slides.recordingFailed")} (${String(error).replace(/^Error: /, "")})`,
+			);
 		}
 	}
+
+	const focusChromeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+		null,
+	);
+	const revealFocusChrome = useCallback(() => {
+		setFocusChromeActive(true);
+		if (focusChromeTimerRef.current) clearTimeout(focusChromeTimerRef.current);
+		focusChromeTimerRef.current = setTimeout(() => {
+			focusChromeTimerRef.current = null;
+			setFocusChromeActive(false);
+		}, FOCUS_CHROME_IDLE_MS);
+	}, []);
+	const focusPresenting = focusMode && state.mode === "presenting";
+	useEffect(() => {
+		if (focusPresenting) revealFocusChrome();
+		else setFocusChromeActive(true);
+		return () => {
+			if (focusChromeTimerRef.current) {
+				clearTimeout(focusChromeTimerRef.current);
+				focusChromeTimerRef.current = null;
+			}
+		};
+	}, [focusPresenting, revealFocusChrome]);
 
 	return (
 		<section
@@ -658,6 +736,10 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			className="slides-app"
 			aria-label={t("slides.title")}
 			data-focus={focusMode}
+			data-focus-chrome={
+				focusPresenting && !focusChromeActive ? "idle" : "active"
+			}
+			onPointerMove={focusPresenting ? revealFocusChrome : undefined}
 			data-state={state.mode}
 			data-notes-visible={notesVisible}
 		>
@@ -748,32 +830,39 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				) : null}
 			</div>
 
-			<SlidesControls
-				state={state}
-				fullscreen={fullscreen}
-				recording={recording}
-				editing={scriptEditorOpen}
-				onAction={runAction}
-				onRangeChange={(start, end) => {
-					cancelSpeech();
-					dispatch({ type: "set-range", start, end });
-				}}
-				onGoto={gotoPage}
-				onToggleRepeat={() => {
-					dispatch({ type: "toggle-repeat" });
-					Logger.info(TAG, "presentation repeat toggled", {
-						enabled: !state.repeat,
-					});
-				}}
-				onToggleFullscreen={() => void toggleFullscreen()}
-				onToggleRecording={() => void toggleRecording()}
-			/>
-			<SlidesErrorNotice
-				speechError={Boolean(state.error)}
-				recordingError={recordingError}
-				fullscreenError={fullscreenError}
-				fileError={fileError}
-			/>
+			<div className="slides-app__dock">
+				<SlidesControls
+					state={state}
+					fullscreen={fullscreen}
+					recording={recording}
+					editing={scriptEditorOpen}
+					onAction={runAction}
+					onRangeChange={(start, end) => {
+						cancelSpeech();
+						dispatch({ type: "set-range", start, end });
+					}}
+					onGoto={gotoPage}
+					onToggleRepeat={() => {
+						dispatch({ type: "toggle-repeat" });
+						Logger.info(TAG, "presentation repeat toggled", {
+							enabled: !state.repeat,
+						});
+					}}
+					onToggleFullscreen={() => void toggleFullscreen()}
+					onToggleRecording={() => void toggleRecording()}
+				/>
+				{/* Notices float above the controls instead of joining the column:
+				    an in-flow error line shrank the viewer and moved the buttons
+				    up, so a click aimed at "Start presenting" landed elsewhere. */}
+				<div className="slides-app__notices" data-testid="slides-notices">
+					<SlidesErrorNotice
+						speechError={Boolean(state.error)}
+						recordingError={recordingError}
+						fullscreenError={fullscreenError}
+						fileError={fileError}
+					/>
+				</div>
+			</div>
 		</section>
 	);
 }

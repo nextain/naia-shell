@@ -3,6 +3,7 @@ mod app;
 mod app_sandbox;
 mod slides_import;
 mod slides_files;
+mod slides_recording;
 mod audit;
 mod browser;
 mod browser_webview;
@@ -6336,9 +6337,24 @@ fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn voxcpm2_scripts_download_manifest_path() -> std::path::PathBuf {
+/// Checked-in download pin per operating system. Linux once fell through to
+/// the Windows pin in debug builds and downloaded the Windows engine, which
+/// then failed provenance (python/bin/python3, http_server.*.so missing).
+fn voxcpm2_scripts_download_manifest_name(os: voice_runtime::HostOs) -> &'static str {
+    match os {
+        voice_runtime::HostOs::Windows => "voxcpm2-download-manifest.json",
+        voice_runtime::HostOs::Linux => "voxcpm2-download-manifest.linux.json",
+    }
+}
+
+fn voxcpm2_scripts_download_manifest_path_for(os: voice_runtime::HostOs) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../scripts/voxcpm2-download-manifest.json")
+        .join("../scripts")
+        .join(voxcpm2_scripts_download_manifest_name(os))
+}
+
+fn voxcpm2_scripts_download_manifest_path() -> Option<std::path::PathBuf> {
+    voice_runtime::host_os().map(voxcpm2_scripts_download_manifest_path_for)
 }
 
 fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
@@ -6351,8 +6367,9 @@ fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::P
     }
     // tauri:dev without the wrapper still must not prefer a stale staged copy.
     if cfg!(debug_assertions) {
-        let scripts_pin = voxcpm2_scripts_download_manifest_path();
-        if scripts_pin.is_file() {
+        if let Some(scripts_pin) =
+            voxcpm2_scripts_download_manifest_path().filter(|path| path.is_file())
+        {
             return Some(scripts_pin);
         }
     }
@@ -6365,6 +6382,33 @@ fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::P
 
 fn read_voxcpm2_download_manifest(
     path: &std::path::Path,
+) -> Result<VoxCpm2DownloadManifest, String> {
+    read_voxcpm2_download_manifest_for_host(path, voice_runtime::host_os())
+}
+
+/// A manifest for another operating system must be refused before any byte is
+/// downloaded; otherwise the payload only fails provenance after 2.5 GB.
+fn voxcpm2_download_manifest_host_mismatch(
+    profile_id: &str,
+    host: Option<voice_runtime::HostOs>,
+) -> Option<String> {
+    let profile = voice_runtime::profile(profile_id)?;
+    match host {
+        Some(host) if profile.os == host => None,
+        Some(host) => Some(format!(
+            "Naia Host download manifest is for another platform: profile {profile_id} targets {:?}, but this machine is {host:?}",
+            profile.os
+        )),
+        None => Some(format!(
+            "Naia Host download manifest profile {profile_id} targets {:?}, but this operating system has no local voice runtime",
+            profile.os
+        )),
+    }
+}
+
+fn read_voxcpm2_download_manifest_for_host(
+    path: &std::path::Path,
+    host: Option<voice_runtime::HostOs>,
 ) -> Result<VoxCpm2DownloadManifest, String> {
     let raw = std::fs::read_to_string(path)
         .map_err(|error| format!("Could not read Naia Host download manifest: {error}"))?;
@@ -6381,6 +6425,9 @@ fn read_voxcpm2_download_manifest(
         || manifest.archive.files > 100_000
     {
         return Err("Naia Host download manifest contract mismatch".to_string());
+    }
+    if let Some(mismatch) = voxcpm2_download_manifest_host_mismatch(&manifest.profile, host) {
+        return Err(format!("{mismatch} ({})", path.display()));
     }
     let url = url::Url::parse(&manifest.archive.url)
         .map_err(|error| format!("Naia Host package URL is invalid: {error}"))?;
@@ -14431,7 +14478,7 @@ mod tests {
 
     #[test]
     fn debug_scripts_pin_is_the_live_voxcpm2_archive_size() {
-        let path = voxcpm2_scripts_download_manifest_path();
+        let path = voxcpm2_scripts_download_manifest_path_for(voice_runtime::HostOs::Windows);
         assert!(
             path.is_file(),
             "canonical download-manifest missing: {}",
@@ -14441,6 +14488,60 @@ mod tests {
         let manifest: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(manifest["archive"]["bytes"].as_u64(), Some(2496064260));
         assert_ne!(manifest["archive"]["bytes"].as_u64(), Some(2494187310));
+    }
+
+    #[test]
+    fn debug_scripts_pin_follows_the_host_platform() {
+        use voice_runtime::HostOs;
+        for (os, profile, bytes) in [
+            (HostOs::Windows, "windows_trt_6g", 2496064260_u64),
+            (HostOs::Linux, "linux_trt_6g", 2935215844_u64),
+        ] {
+            let path = voxcpm2_scripts_download_manifest_path_for(os);
+            let manifest = read_voxcpm2_download_manifest_for_host(&path, Some(os))
+                .unwrap_or_else(|error| panic!("{os:?} pin {}: {error}", path.display()));
+            assert_eq!(manifest.profile, profile);
+            assert_eq!(manifest.archive.bytes, bytes);
+        }
+        let linux = read_voxcpm2_download_manifest_for_host(
+            &voxcpm2_scripts_download_manifest_path_for(HostOs::Linux),
+            Some(HostOs::Linux),
+        )
+        .unwrap();
+        assert!(linux.archive.url.contains("/linux_trt_6g/releases/0.2.3/"));
+        assert_eq!(
+            linux.artifact_manifest_sha256,
+            "43a80742df8828465f7df05f72519c412111bcdd5b727d113280e8112dc51778"
+        );
+        if let Some(host) = voice_runtime::host_os() {
+            assert_eq!(
+                voxcpm2_scripts_download_manifest_path(),
+                Some(voxcpm2_scripts_download_manifest_path_for(host))
+            );
+        }
+    }
+
+    #[test]
+    fn download_manifest_for_another_platform_is_rejected_before_download() {
+        use voice_runtime::HostOs;
+        let windows_pin = voxcpm2_scripts_download_manifest_path_for(HostOs::Windows);
+        let error = read_voxcpm2_download_manifest_for_host(&windows_pin, Some(HostOs::Linux))
+            .expect_err("a Windows manifest must not be accepted on Linux");
+        assert!(error.contains("another platform"), "{error}");
+        assert!(error.contains("windows_trt_6g"), "{error}");
+        assert!(error.contains("Windows"), "{error}");
+        assert!(error.contains("Linux"), "{error}");
+
+        let linux_pin = voxcpm2_scripts_download_manifest_path_for(HostOs::Linux);
+        let error = read_voxcpm2_download_manifest_for_host(&linux_pin, Some(HostOs::Windows))
+            .expect_err("a Linux manifest must not be accepted on Windows");
+        assert!(error.contains("linux_trt_6g"), "{error}");
+
+        assert!(read_voxcpm2_download_manifest_for_host(&linux_pin, None).is_err());
+        assert_eq!(
+            voxcpm2_download_manifest_host_mismatch("linux_rocm_6g", Some(HostOs::Linux)),
+            None
+        );
     }
 
     #[test]

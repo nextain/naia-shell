@@ -106,13 +106,14 @@ const env = interactiveLaunchEnv(process.env);
 // in release builds.
 const devVoxCpm2Bundle = resolve(SHELL, "src-tauri", "voxcpm2-runtime");
 const hostVoxCpm2Profile = voxCpm2Profile();
-// Canonical pin is scripts/voxcpm2-download-manifest.json (git). The copy under
-// src-tauri/voxcpm2-runtime is a staging artifact and was preferred first, so
-// tauri:dev rejected the live zip (#640 luke-victus: 2494187310 vs 2496064260).
+// Canonical pin is the host profile's scripts/voxcpm2-download-manifest*.json
+// (git). The copy under src-tauri/voxcpm2-runtime is a staging artifact and was
+// preferred first, so tauri:dev rejected the live zip (#640 luke-victus:
+// 2494187310 vs 2496064260). The pin follows the host OS: a single Windows pin
+// made the Linux dev shell download the Windows engine.
 const canonicalVoxCpm2DownloadManifest = resolve(
 	SHELL,
-	"scripts",
-	"voxcpm2-download-manifest.json",
+	hostVoxCpm2Profile.downloadManifest,
 );
 function voxCpm2ManifestMatchesHost(candidate) {
 	if (!existsSync(candidate)) return false;
