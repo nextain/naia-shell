@@ -22,8 +22,11 @@ import type { TtsProviderId } from "../config";
  * SentenceTtsPipelineDeps and calls the public interface only.
  */
 import { Logger } from "../logger";
-import { PcmStreamSource } from "../voice/audio-queue";
-import { wavDurationSeconds } from "../voice/audio-queue";
+import {
+	PcmStreamSource,
+	decodeWavPcm16,
+	wavDurationSeconds,
+} from "../voice/audio-queue";
 import { estimateTtsCost } from "./cost";
 import { getTtsProviderMeta } from "./index";
 import type { LocalVoiceScheduler } from "./local-voice-scheduler";
@@ -316,11 +319,11 @@ export function createSentenceTtsPipeline(
 		abortControllers.set(reqId, abort);
 		let synthesisStartedAt = 0;
 		// 2026-09-11 streaming contract: for the local voice host, reserve the
-		// ordered slot as a PCM stream *now* and feed chunks as they arrive, so
+		// ordered slot as a PCM stream and feed chunks as they arrive, so
 		// playback starts on the first chunk instead of after the whole WAV.
 		//
 		// FR-VOICE.22 (2026-09-25): whether that slot is even opened as a stream
-		// now depends on the "음성 재생 방식" decision — "sentence" (forced, or
+		// depends on the "음성 재생 방식" decision — "sentence" (forced, or
 		// auto with an unknown/slow RTF) never streams; it always waits for the
 		// whole WAV (the existing no-stream-support fallback below already
 		// handles that: pcmStream stays null → the WAV branch runs). "streaming"
@@ -328,44 +331,22 @@ export function createSentenceTtsPipeline(
 		// engine keeps up (pre-roll for the borderline band); the very first
 		// local-voice sentence of the session has no RTF yet and safely falls
 		// back to sentence.
+		//
+		// gap-review-2 (2026-09-25): the decision itself is made INSIDE
+		// `synthesize()`, not here at `sendSentence` call time. A whole AI turn
+		// dispatches all of its sentences in a burst (as the reply streams in),
+		// well before the FIRST one's synthesis even starts — reading
+		// `voicePlaybackRtfTracker.get()` here would see "unknown" for every
+		// sentence in the turn and never stream until the NEXT turn. Deciding
+		// inside `synthesize()` means the decision runs exactly when this
+		// sentence's OWN synthesis is about to start, which for local voice is
+		// exactly when the half-duplex scheduler admits it — i.e. after the
+		// previous sentence's synthesis has already settled and recorded its
+		// RTF (`LocalVoiceScheduler.schedule` only invokes the job once the
+		// previous one's tail resolves).
 		const streamQueue = deps.getQueue();
-		const playbackDecision =
-			ttsProviderForCost === "naia-local-voice"
-				? decidePlaybackMethod({
-						mode: voiceCfg?.voicePlaybackMode ?? "auto",
-						// 2026-09-25 기준 어떤 로컬 음성 런타임도 /health 에 실시간 신호를
-						// 내보내지 않는다(voice-playback-mode.ts 상단 참고) — 신호가
-						// 생기면 여기서 readRuntimeRealtimeHint(...) 로 채운다. 지금은
-						// RTF 실측 폴백만 쓴다.
-						explicitRealtime: null,
-						rtf: voicePlaybackRtfTracker.get(),
-						estimatedDurationSeconds: estimateSentenceDurationSeconds(clean),
-					})
-				: null;
-		const pcmStream =
-			ttsProviderForCost === "naia-local-voice" &&
-			streamQueue?.enqueueOrderedStream &&
-			playbackDecision?.method === "streaming"
-				? new PcmStreamSource(24000)
-				: null;
-		if (pcmStream) {
-			pcmStream.startDelaySeconds = playbackDecision?.preRollSeconds ?? 0;
-		}
-		if (pcmStream && streamQueue?.enqueueOrderedStream) {
-			streamQueue.enqueueOrderedStream(seq, pcmStream, {
-				onPlaybackStart: revealText,
-				onPlaybackUnavailable: revealText,
-			});
-		}
-		if (playbackDecision) {
-			Logger.info(TAG, "Voice playback mode decision", {
-				seq,
-				mode: voiceCfg?.voicePlaybackMode ?? "auto",
-				method: playbackDecision.method,
-				reason: playbackDecision.reason,
-				preRollSeconds: Number(playbackDecision.preRollSeconds.toFixed(2)),
-			});
-		}
+		let playbackDecision: ReturnType<typeof decidePlaybackMethod> | null = null;
+		let pcmStream: PcmStreamSource | null = null;
 		const synthesize = () => {
 			if (!activeRequests.has(reqId)) {
 				return Promise.reject(
@@ -374,6 +355,46 @@ export function createSentenceTtsPipeline(
 			}
 			deps.setOutputStage("tts");
 			synthesisStartedAt = performance.now();
+			const estimatedDurationSeconds = estimateSentenceDurationSeconds(clean);
+			playbackDecision =
+				ttsProviderForCost === "naia-local-voice"
+					? decidePlaybackMethod({
+							mode: voiceCfg?.voicePlaybackMode ?? "auto",
+							// 2026-09-25 기준 어떤 로컬 음성 런타임도 /health 에 실시간 신호를
+							// 내보내지 않는다(voice-playback-mode.ts 상단 참고) — 신호가
+							// 생기면 여기서 readRuntimeRealtimeHint(...) 로 채운다. 지금은
+							// RTF 실측 폴백만 쓴다.
+							explicitRealtime: null,
+							rtf: voicePlaybackRtfTracker.get(),
+							estimatedDurationSeconds,
+						})
+					: null;
+			const stream =
+				ttsProviderForCost === "naia-local-voice" &&
+				streamQueue?.enqueueOrderedStream &&
+				playbackDecision?.method === "streaming"
+					? new PcmStreamSource(24000)
+					: null;
+			if (stream) {
+				stream.startDelaySeconds = playbackDecision?.preRollSeconds ?? 0;
+				stream.expectedDurationSeconds = estimatedDurationSeconds;
+			}
+			pcmStream = stream;
+			if (stream && streamQueue?.enqueueOrderedStream) {
+				streamQueue.enqueueOrderedStream(seq, stream, {
+					onPlaybackStart: revealText,
+					onPlaybackUnavailable: revealText,
+				});
+			}
+			if (playbackDecision) {
+				Logger.info(TAG, "Voice playback mode decision", {
+					seq,
+					mode: voiceCfg?.voicePlaybackMode ?? "auto",
+					method: playbackDecision.method,
+					reason: playbackDecision.reason,
+					preRollSeconds: Number(playbackDecision.preRollSeconds.toFixed(2)),
+				});
+			}
 			return synthesizeTts({
 				text: clean,
 				voice: voiceCfg?.voice,
@@ -387,13 +408,13 @@ export function createSentenceTtsPipeline(
 						? (deps.getLocalRefAudioB64() ?? undefined)
 						: undefined,
 				signal: abort.signal,
-				streamPcm: !!pcmStream,
-				onPcmChunk: pcmStream
+				streamPcm: !!stream,
+				onPcmChunk: stream
 					? (chunk, rate) => {
 							if (!activeRequests.has(reqId)) return;
-							pcmStream.sampleRate = rate;
-							const firstChunk = pcmStream.chunks.length === 0;
-							pcmStream.push(chunk);
+							stream.sampleRate = rate;
+							const firstChunk = stream.chunks.length === 0;
+							stream.push(chunk);
 							if (firstChunk) {
 								const elapsed =
 									Math.max(0, performance.now() - synthesisStartedAt) / 1000;
@@ -482,16 +503,47 @@ export function createSentenceTtsPipeline(
 					}
 				}
 				activeRequests.delete(reqId);
-				if (pcmStream) {
-					if (pcmStream.chunks.length === 0) {
-						// Host answered a whole WAV (no streaming support): play it whole.
-						pcmStream.fail();
-						deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
-							onPlaybackStart: revealText,
-							onPlaybackUnavailable: revealText,
-						});
+				const openedStream = pcmStream;
+				if (openedStream) {
+					if (openedStream.chunks.length === 0) {
+						// Host answered a whole WAV (no streaming support). Feed it into
+						// the SAME already-reserved stream slot — gap-review-2
+						// (2026-09-25): re-enqueueing at this seq through
+						// AudioQueue.enqueueOrdered is silently dropped. The moment
+						// this seq's turn came, the stream slot was flushed straight
+						// into the play queue regardless of whether any chunk had
+						// arrived yet, so the ordered flush cursor has already moved
+						// past `seq` by the time this WAV lands; a fresh
+						// enqueueOrdered(seq, ...) call sits in pendingOrdered forever
+						// (Audio 0회) instead of playing. Decoding the WAV into the
+						// stream's own PCM buffer plays through the slot regardless of
+						// where the cursor is — the stream is already wired into the
+						// ordered queue either way (subscribed if its turn already
+						// came, still pending otherwise).
+						const decoded = decodeWavPcm16(audioBase64);
+						if (decoded) {
+							openedStream.sampleRate = decoded.sampleRate;
+							openedStream.push(decoded.samples);
+							openedStream.end();
+							// The eager "streaming" decision logged above never fired
+							// for this sentence — log what actually played.
+							Logger.info(TAG, "Voice playback mode decision", {
+								seq,
+								mode: voiceCfg?.voicePlaybackMode ?? "auto",
+								method: "sentence",
+								reason: "host-returned-whole-wav",
+								preRollSeconds: 0,
+							});
+						} else {
+							openedStream.fail();
+							Logger.warn(
+								TAG,
+								"Local voice host returned an undecodable WAV for a reserved stream slot — sentence dropped",
+								{ seq },
+							);
+						}
 					} else {
-						pcmStream.end();
+						openedStream.end();
 					}
 				} else {
 					deps.getQueue()?.enqueueOrdered(seq, audioBase64, {

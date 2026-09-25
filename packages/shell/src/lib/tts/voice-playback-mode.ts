@@ -178,6 +178,41 @@ export function decidePlaybackMethod(
 }
 
 /**
+ * 실제로 재생을 늦출 시간 — pre-roll 목표에서 "이미 쌓인 만큼"을 뺀 나머지.
+ *
+ * 적대검수 2회차(2026-09-25) 발견: `decidePlaybackMethod` 가 돌려주는
+ * `preRollSeconds` 는 "이 문장의 합성이 지금 막 시작된다면" 가정한 목표값이다.
+ * 그런데 실제로는 앞 문장이 재생되는 동안에도 이 문장의 합성이 이미 진행되고
+ * 있어서(half-duplex 스케줄러가 순서대로 GPU 를 돌린다), 이 문장의 차례가
+ * 왔을 때는 목표보다 더 많이 — 심지어 문장 전체가 — 이미 버퍼에 쌓여 있을 수
+ * 있다. 쌓인 만큼을 무시하고 목표값을 그대로 지연에 더하면(예: 목표 1.3초인데
+ * 이미 문장 전체가 끝나 있어도 1.3초를 통째로 더 기다림) 필요 없는 공백이
+ * 생긴다. 합성이 끝났거나(ended) 예상 길이만큼 이미 쌓였으면 지연은 0이다.
+ */
+export function effectivePreRollSeconds(
+	targetPreRollSeconds: number,
+	alreadyBufferedSeconds: number,
+	expectedDurationSeconds: number | null | undefined,
+	ended: boolean,
+): number {
+	if (ended) return 0;
+	if (
+		expectedDurationSeconds != null &&
+		Number.isFinite(expectedDurationSeconds) &&
+		expectedDurationSeconds > 0 &&
+		Number.isFinite(alreadyBufferedSeconds) &&
+		alreadyBufferedSeconds >= expectedDurationSeconds
+	) {
+		return 0;
+	}
+	const buffered =
+		Number.isFinite(alreadyBufferedSeconds) && alreadyBufferedSeconds > 0
+			? alreadyBufferedSeconds
+			: 0;
+	return Math.max(0, targetPreRollSeconds - buffered);
+}
+
+/**
  * 런타임 /health(또는 start_voxcpm2 ready) 페이로드에서 실시간 가능 신호를
  * 읽는다. 구조를 넓게 인식해 두지만(capabilities 배열의 "realtime"/
  * "realtime_watermark" 종류, 또는 boolean `realtime` 필드), 2026-09-25 기준

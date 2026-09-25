@@ -40,6 +40,35 @@ function makeDeps(overrides: Partial<SentenceTtsPipelineDeps> = {}) {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** Minimal valid RIFF/WAVE payload of an exact duration, base64-encoded
+ * (same construction as audio-queue.test.ts's wavDurationSeconds test). */
+function makeWavBase64(durationSeconds: number): string {
+	const sampleRate = 24_000;
+	const pcmBytes = Math.max(2, Math.round(durationSeconds * sampleRate) * 2);
+	const bytes = new Uint8Array(44 + pcmBytes);
+	const view = new DataView(bytes.buffer);
+	const put = (offset: number, text: string) => {
+		for (let i = 0; i < text.length; i++)
+			bytes[offset + i] = text.charCodeAt(i);
+	};
+	put(0, "RIFF");
+	put(8, "WAVE");
+	put(12, "fmt ");
+	put(36, "data");
+	view.setUint32(4, bytes.length - 8, true);
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true);
+	view.setUint16(22, 1, true);
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true);
+	view.setUint16(32, 2, true);
+	view.setUint16(34, 16, true);
+	view.setUint32(40, pcmBytes, true);
+	let binary = "";
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary);
+}
+
 describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 	afterEach(() => {
 		vi.clearAllMocks();
@@ -162,7 +191,11 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 				audioDurationSeconds: null,
 			}),
 		);
-		expect(queue.enqueueOrdered).toHaveBeenCalledWith(0, "QUJD", expect.any(Object));
+		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
+			0,
+			"QUJD",
+			expect.any(Object),
+		);
 	});
 
 	it("local engine failure: one notice, no browser fallback, slot released", async () => {
@@ -311,9 +344,9 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(1);
 		// The slot is claimed before the request leaves — that is what removes
 		// the whole-page wait before the first sound.
-		expect(
-			queue.enqueueOrderedStream.mock.invocationCallOrder[0],
-		).toBeLessThan(synthesizeMock.mock.invocationCallOrder[0]);
+		expect(queue.enqueueOrderedStream.mock.invocationCallOrder[0]).toBeLessThan(
+			synthesizeMock.mock.invocationCallOrder[0],
+		);
 		await flush();
 		expect(synthesizeMock).toHaveBeenCalledWith(
 			expect.objectContaining({ streamPcm: true }),
@@ -347,19 +380,41 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 	});
 
 	it("plays the assembled WAV when the host answered without streaming", async () => {
-		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) });
 		const { deps, queue } = makeStreamingDeps();
 		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
 		await flush();
 		const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+		// gap-review-2 (2026-09-25): the host never streamed a chunk of its
+		// own, but the reserved slot is fed the WAV decoded into PCM and ends —
+		// it is NOT released via fail() + a second enqueueOrdered(seq, ...),
+		// which the real AudioQueue's ordered flush cursor would silently drop
+		// once this seq's turn has already come.
+		expect(stream.failed).toBe(false);
+		expect(stream.ended).toBe(true);
+		expect(stream.chunks.length).toBeGreaterThan(0);
+		expect(stream.sampleRate).toBe(24_000);
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
+	});
+
+	it("fails the reserved slot (does not silently vanish) when the whole-WAV fallback payload is undecodable", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" }); // too short to be a RIFF/WAVE payload
+		const { deps, queue } = makeStreamingDeps();
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("첫 문장.");
+		pipeline.sendSentence("둘째 문장.");
+		await flush();
+		await flush();
+		const stream = queue.enqueueOrderedStream.mock.calls[0][1];
 		expect(stream.chunks).toHaveLength(0);
-		// The reserved stream slot is released, and the sentence still plays.
 		expect(stream.failed).toBe(true);
-		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
-			0,
-			"QUJD",
-			expect.any(Object),
-		);
+		expect(stream.ended).toBe(true);
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
+		// The failure released the slot — seq 1 was not stalled behind it.
+		expect(
+			queue.enqueueOrderedStream.mock.calls.map((call: unknown[]) => call[0]),
+		).toEqual([0, 1]);
+		expect(pipeline.hasActiveRequests()).toBe(false);
 	});
 
 	it("releases a failed stream slot so the next sentence is not stalled", async () => {
@@ -386,7 +441,10 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 	it("FR-VOICE.20: the first chunk resumes playback before the sentence finishes", async () => {
 		const pausePlayback = vi.fn();
 		const resumePlayback = vi.fn();
-		const scheduler = new LocalVoiceScheduler({ pausePlayback, resumePlayback });
+		const scheduler = new LocalVoiceScheduler({
+			pausePlayback,
+			resumePlayback,
+		});
 		let sendChunk!: (chunk: Int16Array) => void;
 		let finish!: (value: { audioBase64: string }) => void;
 		synthesizeMock.mockImplementation((opts: any) => {
@@ -418,22 +476,23 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		expect(queue.enqueueOrderedStream.mock.calls[0][1].ended).toBe(true);
 	});
 
-	it("FR-VOICE.20: a host that sends no chunks still releases through the enqueue path", async () => {
+	it("FR-VOICE.20: a host that sends no chunks still releases playback through the reserved stream slot", async () => {
 		const pausePlayback = vi.fn();
 		const resumePlayback = vi.fn();
-		const scheduler = new LocalVoiceScheduler({ pausePlayback, resumePlayback });
-		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const scheduler = new LocalVoiceScheduler({
+			pausePlayback,
+			resumePlayback,
+		});
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) });
 		const { deps, queue } = makeStreamingDeps(scheduler);
 		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
 		await flush();
-		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
-			0,
-			"QUJD",
-			expect.any(Object),
-		);
+		const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+		expect(stream.ended).toBe(true);
+		expect(stream.chunks.length).toBeGreaterThan(0);
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
 		expect(resumePlayback).toHaveBeenCalledTimes(1);
 	});
-
 });
 
 describe("sentence TTS pipeline — FR-VOICE.22 음성 재생 방식 integration", () => {
@@ -441,35 +500,6 @@ describe("sentence TTS pipeline — FR-VOICE.22 음성 재생 방식 integration
 		vi.clearAllMocks();
 		vi.unstubAllGlobals();
 	});
-
-	/** Minimal valid RIFF/WAVE payload of an exact duration, base64-encoded
-	 * (same construction as audio-queue.test.ts's wavDurationSeconds test). */
-	function makeWavBase64(durationSeconds: number): string {
-		const sampleRate = 24_000;
-		const pcmBytes = Math.max(2, Math.round(durationSeconds * sampleRate) * 2);
-		const bytes = new Uint8Array(44 + pcmBytes);
-		const view = new DataView(bytes.buffer);
-		const put = (offset: number, text: string) => {
-			for (let i = 0; i < text.length; i++)
-				bytes[offset + i] = text.charCodeAt(i);
-		};
-		put(0, "RIFF");
-		put(8, "WAVE");
-		put(12, "fmt ");
-		put(36, "data");
-		view.setUint32(4, bytes.length - 8, true);
-		view.setUint32(16, 16, true);
-		view.setUint16(20, 1, true);
-		view.setUint16(22, 1, true);
-		view.setUint32(24, sampleRate, true);
-		view.setUint32(28, sampleRate * 2, true);
-		view.setUint16(32, 2, true);
-		view.setUint16(34, 16, true);
-		view.setUint32(40, pcmBytes, true);
-		let binary = "";
-		for (const byte of bytes) binary += String.fromCharCode(byte);
-		return btoa(binary);
-	}
 
 	function makeAutoDeps(mode: "auto" | "streaming" | "sentence" = "auto") {
 		const { deps, queue, reveal } = makeDeps({
@@ -532,5 +562,54 @@ describe("sentence TTS pipeline — FR-VOICE.22 음성 재생 방식 integration
 
 		pipeline.sendSentence("둘째 문장.");
 		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+	});
+
+	it("gap-review-2: 실 스케줄러 아래 flush 없이 연달아 보내도(burst) 같은 턴 안에서 둘째 문장부터 재판정한다", async () => {
+		// The old bug: the decision read voicePlaybackRtfTracker.get() at
+		// sendSentence() call time — synchronously, before any sentence's
+		// synthesis had even started. A real AI reply dispatches every
+		// sentence of a turn in a burst (as text streams in), well before the
+		// first one's synthesis resolves, so every sentence saw "unknown RTF"
+		// and fell back to "sentence" for the WHOLE turn, not just the first
+		// sentence. The fix moves the decision inside synthesize(), which the
+		// LocalVoiceScheduler only invokes once the previous sentence's job
+		// has settled (and its RTF recorded) — this test never calls
+		// `await flush()` between the three sendSentence() calls, matching
+		// exactly how ChatArea actually dispatches a streamed reply.
+		const pausePlayback = vi.fn();
+		const resumePlayback = vi.fn();
+		const scheduler = new LocalVoiceScheduler({
+			pausePlayback,
+			resumePlayback,
+		});
+		// Every resolved WAV is 2s; the mock resolves near-instantly, so the
+		// measured RTF (elapsed/duration) lands well within realtime (<=1.0).
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(2) });
+		const { deps, queue } = makeAutoDeps("auto");
+		deps.getScheduler = () => scheduler;
+		const pipeline = createSentenceTtsPipeline(deps);
+
+		// Burst dispatch — no await between sends.
+		pipeline.sendSentence("첫 문장.");
+		pipeline.sendSentence("둘째 문장.");
+		pipeline.sendSentence("셋째 문장.");
+
+		// Nothing has streamed yet: even the first sentence's synthesize()
+		// (and therefore its decision) only runs once the scheduler admits it.
+		expect(queue.enqueueOrderedStream).not.toHaveBeenCalled();
+
+		await flush();
+		await flush();
+
+		// Sentence 1: no RTF measured yet anywhere in the session → "sentence"
+		// (no stream slot). Sentences 2 and 3: by the time the scheduler
+		// admits THEIR synthesize(), sentence 1's synthesis has already
+		// settled and recorded a good RTF — despite no flush having ever
+		// separated the three sendSentence() calls.
+		const streamedSeqs = queue.enqueueOrderedStream.mock.calls.map(
+			(call: unknown[]) => call[0],
+		);
+		expect(streamedSeqs).toEqual([1, 2]);
+		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(2);
 	});
 });

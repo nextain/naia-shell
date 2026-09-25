@@ -7,6 +7,7 @@
  */
 
 import { Logger } from "../logger";
+import { effectivePreRollSeconds } from "../tts/voice-playback-mode";
 
 export interface AudioQueueCallbacks {
 	onPlaybackStart?: () => void;
@@ -48,6 +49,13 @@ export class PcmStreamSource {
 	 * 시점만 늦추면 그 사이 도착한 뒷 청크들이 실질적인 pre-roll 버퍼가 된다.
 	 */
 	startDelaySeconds = 0;
+	/**
+	 * FR-VOICE.22 gap-review-2 (2026-09-25) — 이 문장의 예상 길이(초). 이미
+	 * 이만큼(또는 그 이상) 버퍼가 쌓였으면 `startDelaySeconds` 를 더 기다릴
+	 * 이유가 없다(`effectivePreRollSeconds` 가 쓴다). 없으면(undefined) 그
+	 * 판단을 건너뛰고 "이미 쌓인 만큼 빼기"만 적용한다.
+	 */
+	expectedDurationSeconds: number | null = null;
 	private onChunk: ((chunk: Int16Array) => void) | null = null;
 	private onEnd: (() => void) | null = null;
 	constructor(public sampleRate = 24000) {}
@@ -82,6 +90,13 @@ export class AudioQueue {
 	private current: HTMLAudioElement | null = null;
 	private currentStream: PcmStreamSource | null = null;
 	private streamSources = new Set<AudioBufferSourceNode>();
+	/**
+	 * FR-VOICE.22 gap-review-2 (2026-09-25) — timers that will fire
+	 * `onPlaybackStart` at the moment a scheduled chunk actually becomes
+	 * audible (see `playStream`). Tracked so `clear()` can cancel one that
+	 * hasn't fired yet instead of leaving it to run after playback was cut.
+	 */
+	private pendingStartTimers = new Set<ReturnType<typeof setTimeout>>();
 	private playing = false;
 	private playbackPaused = false;
 	private generation = 0;
@@ -226,6 +241,8 @@ export class AudioQueue {
 			}
 		}
 		this.streamSources.clear();
+		for (const timer of this.pendingStartTimers) clearTimeout(timer);
+		this.pendingStartTimers.clear();
 		if (this.playing) {
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
@@ -261,6 +278,17 @@ export class AudioQueue {
 		let advanced = false;
 		let pending = 0;
 		let ended = false;
+		// FR-VOICE.22 gap-review-2 (2026-09-25) — snapshot BEFORE subscribe():
+		// subscribe() synchronously replays every chunk already sitting in
+		// `stream.chunks` (and fires the end callback immediately if the
+		// stream already ended), so by the time the first chunk handler below
+		// runs, `stream.chunks`/`stream.ended` may already reflect the FULL
+		// sentence. We need the pre-turn snapshot, not the post-replay state,
+		// to know how much of the requested pre-roll is already satisfied.
+		const initialBufferedSeconds =
+			stream.chunks.reduce((sum, c) => sum + c.length, 0) /
+			(stream.sampleRate || 1);
+		const initialEnded = stream.ended;
 		const isCurrent = () =>
 			generation === this.generation && this.currentStream === stream;
 		const advance = () => {
@@ -286,9 +314,17 @@ export class AudioQueue {
 				// 40 ms lead on the very first chunk absorbs scheduling jitter;
 				// startDelaySeconds (FR-VOICE.22 pre-roll) can push that lead out
 				// further when "auto" judged the engine only slightly slower than
-				// realtime — chunks keep arriving during the wait and become the
-				// buffer.
-				const firstChunkLead = Math.max(0.04, stream.startDelaySeconds);
+				// realtime. gap-review-2: that extra lead is only what's still
+				// missing after subtracting what had already buffered by this
+				// stream's turn (synthesis kept running while the previous
+				// sentence played) — zero once the sentence is fully synthesized.
+				const effectiveDelay = effectivePreRollSeconds(
+					stream.startDelaySeconds,
+					initialBufferedSeconds,
+					stream.expectedDurationSeconds,
+					initialEnded,
+				);
+				const firstChunkLead = Math.max(0.04, effectiveDelay);
 				const at = Math.max(now + (started ? 0 : firstChunkLead), nextStart);
 				src.start(at);
 				nextStart = at + buf.duration;
@@ -305,9 +341,25 @@ export class AudioQueue {
 						at: Number(at.toFixed(3)),
 						now: Number(now.toFixed(3)),
 						ctxState: ctx.state,
+						effectiveDelay: Number(effectiveDelay.toFixed(3)),
 					});
-					item.onPlaybackStart?.();
-					if (!wasPlaying) this.callbacks.onPlaybackStart?.();
+					// gap-review-2: fire onPlaybackStart (text reveal, speaking
+					// state, avatar mouth) when the sound actually becomes
+					// audible (`at`), not the instant it was scheduled — pre-roll
+					// would otherwise show the answer and move the mouth while
+					// the speaker is still silent.
+					const leadMs = Math.max(0, (at - now) * 1000);
+					const fireStart = () => {
+						this.pendingStartTimers.delete(timer);
+						if (!isCurrent()) return;
+						item.onPlaybackStart?.();
+						if (!wasPlaying) this.callbacks.onPlaybackStart?.();
+					};
+					const timer =
+						leadMs > 0
+							? setTimeout(fireStart, leadMs)
+							: setTimeout(fireStart, 0);
+					this.pendingStartTimers.add(timer);
 				}
 			},
 			() => {
@@ -456,6 +508,95 @@ export function wavDurationSeconds(audioBase64: string): number | null {
 			offset = body + size + (size % 2);
 		}
 		return byteRate > 0 && dataSize > 0 ? dataSize / byteRate : null;
+	} catch {
+		return null;
+	}
+}
+
+/** A decoded RIFF/WAVE payload as mono PCM16 samples ready for `PcmStreamSource.push`. */
+export interface DecodedWavPcm16 {
+	samples: Int16Array;
+	sampleRate: number;
+}
+
+/**
+ * Decode a RIFF/WAVE base64 payload into mono PCM16 samples.
+ *
+ * FR-VOICE.22 gap-review-2 (2026-09-25) — when a "streaming" local-voice slot
+ * is already reserved (`enqueueOrderedStream`) but the host turns out not to
+ * support streaming and answers with one whole WAV, that audio must be fed
+ * into the SAME `PcmStreamSource` (`push` + `end`), not re-enqueued through
+ * `AudioQueue.enqueueOrdered` at the same seq — by the time the WAV arrives,
+ * the ordered flush cursor has already moved past that seq (the stream slot
+ * was flushed into the play queue the moment its turn came, independent of
+ * whether any chunk had arrived yet), so a second `enqueueOrdered` call for
+ * the same seq sits in `pendingOrdered` forever and is silently dropped.
+ * Only 16-bit PCM (`audioFormat === 1`, the universal case for local TTS
+ * output) is supported; multi-channel input is downmixed to mono to match
+ * what `PcmStreamSource`/`AudioQueue.playStream` already assume.
+ */
+export function decodeWavPcm16(audioBase64: string): DecodedWavPcm16 | null {
+	try {
+		const binary = atob(audioBase64);
+		if (
+			binary.length < 44 ||
+			binary.slice(0, 4) !== "RIFF" ||
+			binary.slice(8, 12) !== "WAVE"
+		) {
+			return null;
+		}
+		const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+		const view = new DataView(bytes.buffer);
+		let offset = 12;
+		let audioFormat = 0;
+		let numChannels = 0;
+		let sampleRate = 0;
+		let bitsPerSample = 0;
+		let dataOffset = -1;
+		let dataSize = 0;
+		while (offset + 8 <= bytes.length) {
+			const id = binary.slice(offset, offset + 4);
+			const size = view.getUint32(offset + 4, true);
+			const body = offset + 8;
+			if (id === "fmt " && size >= 16 && body + 16 <= bytes.length) {
+				audioFormat = view.getUint16(body, true);
+				numChannels = view.getUint16(body + 2, true);
+				sampleRate = view.getUint32(body + 4, true);
+				bitsPerSample = view.getUint16(body + 14, true);
+			} else if (id === "data") {
+				dataOffset = body;
+				dataSize = Math.min(size, Math.max(0, bytes.length - body));
+				break;
+			}
+			offset = body + size + (size % 2);
+		}
+		if (
+			dataOffset < 0 ||
+			dataSize <= 0 ||
+			sampleRate <= 0 ||
+			numChannels <= 0 ||
+			// audioFormat 0xFFFE (WAVE_FORMAT_EXTENSIBLE) also carries 16-bit PCM
+			// in practice for this engine family; anything else is unsupported.
+			(audioFormat !== 1 && audioFormat !== 0xfffe) ||
+			bitsPerSample !== 16
+		) {
+			return null;
+		}
+		const frameBytes = numChannels * 2;
+		const frameCount = Math.floor(dataSize / frameBytes);
+		if (frameCount <= 0) return null;
+		const samples = new Int16Array(frameCount);
+		for (let i = 0; i < frameCount; i++) {
+			let sum = 0;
+			for (let ch = 0; ch < numChannels; ch++) {
+				sum += view.getInt16(dataOffset + i * frameBytes + ch * 2, true);
+			}
+			samples[i] = Math.max(
+				-0x8000,
+				Math.min(0x7fff, Math.round(sum / numChannels)),
+			);
+		}
+		return { samples, sampleRate };
 	} catch {
 		return null;
 	}

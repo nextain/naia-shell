@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	AudioQueue,
 	PcmStreamSource,
@@ -195,6 +195,14 @@ describe("AudioQueue streamed PCM playback", () => {
 		FakeAudioContext.now = 0;
 		vi.stubGlobal("Audio", FakeAudio);
 		vi.stubGlobal("AudioContext", FakeAudioContext);
+		// gap-review-2 (2026-09-25): onPlaybackStart now fires on a timer keyed
+		// to the scheduled `at` time (real sound onset), not synchronously at
+		// schedule time — see "playStream:first chunk scheduled".
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	it("holds a later stream until the earlier reserved sentence has played", () => {
@@ -213,6 +221,11 @@ describe("AudioQueue streamed PCM playback", () => {
 
 		FakeAudio.instances[0].onended?.();
 		expect(FakeAudioContext.sources).toHaveLength(1);
+		// gap-review-2: onPlaybackStart fires when the sound actually starts
+		// (the scheduled `at`, here a 40ms lead), not the instant it was
+		// scheduled.
+		expect(started).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(40);
 		expect(started).toHaveBeenCalledTimes(1);
 	});
 
@@ -223,9 +236,14 @@ describe("AudioQueue streamed PCM playback", () => {
 		const itemStart = vi.fn();
 		queue.enqueueOrderedStream(0, stream, { onPlaybackStart: itemStart });
 		stream.push(new Int16Array(2_400)); // 100 ms
+		// gap-review-2: deferred to the scheduled `at` (40ms lead), not fired
+		// the instant the chunk was scheduled.
+		expect(itemStart).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(40);
 		expect(itemStart).toHaveBeenCalledTimes(1);
 		expect(onPlaybackStart).toHaveBeenCalledTimes(1);
 		stream.push(new Int16Array(2_400));
+		vi.advanceTimersByTime(1000);
 		expect(itemStart).toHaveBeenCalledTimes(1); // only the first chunk starts
 		const [first, second] = FakeAudioContext.sources;
 		expect(first.startedAt).toBeGreaterThan(0);
@@ -250,6 +268,45 @@ describe("AudioQueue streamed PCM playback", () => {
 		expect(stream.startDelaySeconds).toBe(0);
 		queue.enqueueOrderedStream(0, stream, {});
 		stream.push(new Int16Array(2_400));
+		const [first] = FakeAudioContext.sources;
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
+	});
+
+	it("gap-review-2 repro: pre-roll only covers what is not already buffered by turn-arrival", () => {
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		// Background synthesis kept running while the previous sentence played:
+		// 1.0s of audio is already sitting in the stream BEFORE this stream's
+		// turn arrives (before enqueueOrderedStream/subscribe).
+		stream.push(new Int16Array(24_000)); // 1.0s already buffered
+		stream.startDelaySeconds = 1.3; // target pre-roll (e.g. RTF-based)
+		stream.expectedDurationSeconds = 5;
+		queue.enqueueOrderedStream(0, stream, {});
+		const [first] = FakeAudioContext.sources;
+		// Without the fix this would wait the full 1.3s target. With the fix,
+		// only the still-missing 0.3s (1.3 - 1.0) is added.
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.3, 5);
+	});
+
+	it("gap-review-2: a fully-buffered-ahead stream gets no extra pre-roll (just the 40ms jitter floor)", () => {
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		stream.push(new Int16Array(5 * 24_000)); // 5.0s — the whole sentence already buffered
+		stream.startDelaySeconds = 1.3;
+		stream.expectedDurationSeconds = 5;
+		queue.enqueueOrderedStream(0, stream, {});
+		const [first] = FakeAudioContext.sources;
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
+	});
+
+	it("gap-review-2: an already-ended stream (fully synthesized) never waits for pre-roll", () => {
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		stream.push(new Int16Array(2_400)); // 100 ms
+		stream.end();
+		stream.startDelaySeconds = 1.3;
+		stream.expectedDurationSeconds = 5;
+		queue.enqueueOrderedStream(0, stream, {});
 		const [first] = FakeAudioContext.sources;
 		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
 	});
@@ -288,10 +345,15 @@ describe("AudioQueue streamed PCM playback", () => {
 		queue.enqueueOrderedStream(0, stream, { onPlaybackStart: started });
 		stream.push(new Int16Array(2_400));
 		expect(FakeAudioContext.sources).toHaveLength(1);
+		// gap-review-2: onPlaybackStart is still pending on a timer (the
+		// scheduled `at` has not arrived yet) when clear() runs.
 		queue.clear();
 		expect(FakeAudioContext.sources[0].stopped).toBe(true);
 		stream.push(new Int16Array(2_400));
 		expect(FakeAudioContext.sources).toHaveLength(1);
-		expect(started).toHaveBeenCalledTimes(1);
+		// The pending start timer must be cancelled by clear(), so it never
+		// fires for a cancelled/stale item -- proves timer cleanup on cancel.
+		vi.advanceTimersByTime(1000);
+		expect(started).toHaveBeenCalledTimes(0);
 	});
 });

@@ -6,6 +6,7 @@ import {
 	VoicePlaybackRtfTracker,
 	computePreRollSeconds,
 	decidePlaybackMethod,
+	effectivePreRollSeconds,
 	estimateSentenceDurationSeconds,
 	readRuntimeRealtimeHint,
 } from "../voice-playback-mode";
@@ -181,6 +182,69 @@ describe("computePreRollSeconds — pre-roll ≈ L×(r−1)+여유", () => {
 	it("길이가 0 이하이면 여유값만 돌려준다", () => {
 		expect(computePreRollSeconds(0, 1.4, 0.3)).toBe(0.3);
 		expect(computePreRollSeconds(-5, 1.4, 0.3)).toBe(0.3);
+	});
+});
+
+describe("effectivePreRollSeconds — gap-review-2: 이미 쌓인 만큼을 뺀 실제 지연", () => {
+	it("적대검수 2회차 재현 수치: 목표 pre-roll 1.34s, 이미 1.3s 쌓임 → 0.04s (3.34s 아님)", () => {
+		// 첫 문장 2s 재생 중 둘째 문장(5s, RTF=1.2)이 완성 직전까지 합성되어
+		// 1.3초 분량이 이미 버퍼에 쌓인 상태로 차례가 옴. 목표 pre-roll은
+		// L=5, r=1.2, margin=0.3 → 5*0.2+0.3 = 1.3... 실제 좌표는 예시로
+		// margin 포함 1.34s를 목표로 가정.
+		const target = 1.34;
+		const alreadyBuffered = 1.3;
+		expect(
+			effectivePreRollSeconds(target, alreadyBuffered, 5, false),
+		).toBeCloseTo(0.04, 10);
+	});
+
+	it("합성이 끝났으면(ended) 쌓인 양과 무관하게 항상 0", () => {
+		expect(effectivePreRollSeconds(2, 0, 5, true)).toBe(0);
+		expect(effectivePreRollSeconds(2, 100, 5, true)).toBe(0);
+	});
+
+	it("쌓인 양이 예상 길이 이상이면(문장 전체가 이미 버퍼에 있음) 0", () => {
+		expect(effectivePreRollSeconds(1.3, 5, 5, false)).toBe(0);
+		expect(effectivePreRollSeconds(1.3, 6, 5, false)).toBe(0);
+	});
+
+	it("아무것도 안 쌓였으면(0) 목표값을 그대로 쓴다", () => {
+		expect(effectivePreRollSeconds(1.3, 0, 5, false)).toBeCloseTo(1.3, 10);
+	});
+
+	it("일부만 쌓였으면 목표에서 쌓인 만큼을 정확히 뺀다(변이 방지 — 근사 아닌 정확 비교)", () => {
+		expect(effectivePreRollSeconds(2.0, 0.75, 5, false)).toBeCloseTo(1.25, 10);
+	});
+
+	it("쌓인 양이 목표를 넘지만 예상 길이에는 못 미치면 0으로 클램프(음수 금지)", () => {
+		// expectedDurationSeconds=null(모름)이라 "쌓인 양 ≥ expected" 단축 조건이
+		// 적용되지 않는 경로도 직접 검증 — 그래도 음수로 떨어지면 안 된다.
+		expect(effectivePreRollSeconds(0.5, 3, null, false)).toBe(0);
+	});
+
+	it("expectedDurationSeconds 를 모르면(null/undefined) '쌓인 양≥예상 길이' 단축 없이 뺄셈만 적용", () => {
+		expect(effectivePreRollSeconds(1.3, 0.5, null, false)).toBeCloseTo(0.8, 10);
+		expect(effectivePreRollSeconds(1.3, 0.5, undefined, false)).toBeCloseTo(
+			0.8,
+			10,
+		);
+	});
+
+	it("alreadyBufferedSeconds 가 유효하지 않으면(NaN/음수) 0으로 취급 — 목표값을 그대로 쓴다", () => {
+		expect(effectivePreRollSeconds(1.3, Number.NaN, 5, false)).toBeCloseTo(
+			1.3,
+			10,
+		);
+		expect(effectivePreRollSeconds(1.3, -2, 5, false)).toBeCloseTo(1.3, 10);
+	});
+
+	it("expectedDurationSeconds 가 0/음수/비유한이면 '쌓인 양≥예상 길이' 단축을 적용하지 않는다", () => {
+		expect(effectivePreRollSeconds(0.5, 10, 0, false)).toBe(0); // 뺄셈만으로도 0
+		expect(effectivePreRollSeconds(1.3, 0.5, 0, false)).toBeCloseTo(0.8, 10);
+		expect(effectivePreRollSeconds(1.3, 0.5, -5, false)).toBeCloseTo(0.8, 10);
+		expect(
+			effectivePreRollSeconds(1.3, 0.5, Number.POSITIVE_INFINITY, false),
+		).toBeCloseTo(0.8, 10);
 	});
 });
 
