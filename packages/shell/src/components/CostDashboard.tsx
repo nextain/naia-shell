@@ -8,6 +8,7 @@ import {
 	hasNaiaKeySecure,
 } from "../lib/config";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
+import { formatCredits, formatCreditsExact } from "../lib/credits";
 import { getLocale, t } from "../lib/i18n";
 import {
 	clearCachedLabCredits,
@@ -220,8 +221,15 @@ function LabBalanceSection() {
 		<div className="lab-balance-section">
 			<div className="lab-balance-row">
 				<span className="lab-balance-label">{t("cost.labBalance")}</span>
-				<span className="lab-balance-value">
-					{balance.toFixed(2)} {t("cost.labCredits")}
+				<span
+					className="lab-balance-value"
+					title={
+						balance >= 1000
+							? `${formatCreditsExact(balance, 2)} ${t("cost.labCredits")}`
+							: undefined
+					}
+				>
+					{formatCredits(balance, 2)} {t("cost.labCredits")}
 				</span>
 			</div>
 			<button

@@ -103,6 +103,7 @@ import {
 } from "../lib/i18n";
 import { DevicePairingSection } from "./DevicePairingSection";
 import { SmallLlmSection } from "./SmallLlmSection";
+import { formatCredits, formatCreditsExact } from "../lib/credits";
 import {
 	fetchLabBalancePayload,
 	isLabBalanceUnauthorized,
@@ -3958,13 +3959,20 @@ export function SettingsTab() {
 									<span className="lab-balance-label">
 										{t("settings.labBalance")}
 									</span>
-									<span className="lab-balance-value">
+									<span
+										className="lab-balance-value"
+										title={
+											labBalance !== null && labBalance >= 1000
+												? `${formatCreditsExact(labBalance, 2)} ${t("cost.labCredits")}`
+												: undefined
+										}
+									>
 										{labBalanceLoading
 											? t("settings.labBalanceLoading")
 											: labBalanceError
 												? t("cost.labError")
 												: labBalance !== null
-													? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
+													? `${formatCredits(labBalance, 2)} ${t("cost.labCredits")}`
 													: "-"}
 									</span>
 									{!labBalanceLoading && labBalanceError && (
