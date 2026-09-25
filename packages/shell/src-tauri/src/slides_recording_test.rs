@@ -175,10 +175,41 @@ mod lifecycle {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
-    fn scratch(name: &str) -> PathBuf {
+    /// A per-test temp folder holding the fake ffmpeg and its output. It is
+    /// removed when the test ends: left behind, the fakes' tiny "o.mp4" files
+    /// in /tmp were mistaken for failed real recordings (2026-09-25).
+    struct Scratch(PathBuf);
+
+    impl std::ops::Deref for Scratch {
+        type Target = Path;
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn scratch(name: &str) -> Scratch {
         let dir = std::env::temp_dir().join(format!("naia-rec-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        dir
+        Scratch(dir)
+    }
+
+    #[test]
+    fn scratch_folder_and_fake_output_are_removed_when_the_test_ends() {
+        let kept = {
+            let dir = scratch("cleanup");
+            let out = dir.join("o.mp4");
+            fake(&dir, "exit 0");
+            std::fs::write(&out, "finalized").unwrap();
+            assert!(out.exists());
+            dir.to_path_buf()
+        };
+        assert!(!kept.exists(), "{} was left behind", kept.display());
     }
 
     /// A fake ffmpeg: a shell script; the output path arrives as the last arg.
