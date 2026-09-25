@@ -275,7 +275,9 @@ describe("SettingsTab", () => {
 			</StrictMode>,
 		);
 
-		expect(await screen.findByText(/52041\.39/)).toBeDefined();
+		const balanceEl = await screen.findByText(/52\.04K/);
+		expect(balanceEl).toBeDefined();
+		expect(balanceEl.getAttribute("title")).toContain("52,041.39");
 		expect(mockInvoke).toHaveBeenCalledWith("fetch_naia_balance", {
 			gatewayUrl: expect.any(String),
 			naiaKey: "strict-mode-key",

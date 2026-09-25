@@ -186,4 +186,27 @@ describe("CostDashboard", () => {
 			expect(screen.getByText(/12\.50/)).toBeDefined();
 		});
 	});
+
+	it("formats Lab balance >= 1000 with K and title attribute", async () => {
+		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-k-key");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve({ balance: 255_000_000 }),
+			}),
+		);
+
+		render(<CostDashboard messages={[]} />);
+		await waitFor(() => {
+			expect(hasNaiaKeySecure).toHaveBeenCalled();
+		});
+		window.dispatchEvent(new CustomEvent("naia_auth_ready"));
+
+		await waitFor(() => {
+			const el = screen.getByText(/2\.55K/);
+			expect(el).toBeDefined();
+			expect(el.getAttribute("title")).toContain("2,550.00");
+		});
+	});
 });
