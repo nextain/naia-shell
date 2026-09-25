@@ -1,3 +1,5 @@
+// platforms: linux
+// PipeWire 가상 마이크(pw-play)와 espeak-ng 로 소리를 넣는다.
 import { execSync, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { S } from "../helpers/selectors.js";

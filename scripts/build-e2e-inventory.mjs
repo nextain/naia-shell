@@ -84,6 +84,7 @@ import { basename, join } from "node:path";
 import ts from "typescript";
 import { resolveCallee } from "./lib/bindings.mjs";
 import { makeEnv, staticStringsIn } from "./lib/jsx-static.mjs";
+import { KNOWN_OS } from "./lib/release-target.mjs";
 
 const SPEC_DIR = "packages/shell/e2e-tauri/specs";
 const CONF_DIR = "packages/shell/e2e-tauri";
@@ -475,12 +476,15 @@ for (const name of readdirSync(SPEC_DIR).filter((f) => f.endsWith(".spec.ts")).s
 	const usesDevice = DEVICE_TOOLS.test(source) || outbound.loopback.length > 0;
 	const keyed = envs.some((e) => KEY_ENV.test(e));
 	const requires = requiresCapabilities(source);
+	const platforms = declaredPlatforms(name, source);
 	rows.push({
 		spec: name,
 		conf: confOwners.get(name) ?? [],
 		env: envs,
 		// 아직 이어지지 않은 능력. 스펙이 스스로 선언한다.
 		...(requires.length > 0 ? { requires } : {}),
+		// 그 운영체제에서만 도는 스펙. 스펙이 스스로 선언한다.
+		...(platforms ? { platforms } : {}),
 		tier: device || usesDevice
 			? "native_local"
 			: keyed || talks
@@ -513,6 +517,34 @@ function requiresCapabilities(source) {
 		match = pattern.exec(source);
 	}
 	return out;
+}
+
+/**
+ * 스펙이 선언한 **도는 운영체제**.
+ *
+ * 형식: `// platforms: linux` 또는 `// platforms: linux, darwin`
+ *
+ * 왜 필요한가: PipeWire 가상 마이크나 리눅스 음성 프로필을 쓰는 스펙은 윈도우에서
+ * 돌 수 없다. 그 사실이 목록에 없으면 윈도우 배포의 회귀가 그 스펙을 요구하고,
+ * 윈도우 기계가 맡아 "환경 없음" 으로 붉힌다 — 결함이 아니라 운영체제 차이다.
+ * 적힌 운영체제 밖의 배포는 이 스펙을 조건으로 삼지 않는다
+ * (`scripts/lib/release-target.mjs`).
+ */
+function declaredPlatforms(name, source) {
+	const match = /^[ \t]*\/\/[ \t]*platforms:[ \t]*([A-Za-z, \t]+)$/m.exec(source);
+	if (!match) return null;
+	const list = match[1]
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+	const unknown = list.filter((os) => !KNOWN_OS.includes(os));
+	if (unknown.length || list.length === 0) {
+		console.error(
+			`[e2e-inventory] ${name}: 알 수 없는 platforms 선언 "${match[1].trim()}" (쓸 수 있는 것: ${KNOWN_OS.join(", ")})`,
+		);
+		process.exit(2);
+	}
+	return [...new Set(list)].sort();
 }
 
 const summary = rows.reduce((acc, row) => {

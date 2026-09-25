@@ -1,3 +1,5 @@
+// platforms: linux
+// 리눅스 음성 프로필(linux_trt_6g)을 확인한다. 윈도우 짝은 94-voice-6g-shell.
 import { readFileSync } from "node:fs";
 import { sendMessage } from "../helpers/chat.js";
 

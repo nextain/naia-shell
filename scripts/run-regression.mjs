@@ -47,6 +47,13 @@ import {
 } from "./lib/run-premise.mjs";
 import { planGroups, wdioSpecArgs } from "./lib/regression-selection.mjs";
 import {
+	machineInTargets,
+	osOfPlatform,
+	releaseTargets,
+	specInTargets,
+	specRunsOn,
+} from "./lib/release-target.mjs";
+import {
 	isRetestRecord,
 	pickLatestRecord,
 	retestSourceName,
@@ -117,10 +124,20 @@ const rosterFile = existsSync(ROSTER)
 // 합류하지 않은 기계는 몫을 받지 않는다. 받으면 그 몫이 영영 비고, 완결성
 // 판정은 그것을 "아무도 맡지 않았다" 로 붉힌다 — 옳은 판정이지만 사람은
 // 그것을 회귀로 읽는다.
+//
+// 이번 배포 대상 운영체제의 기계끼리만 나눈다(`scripts/lib/release-target.mjs`).
+// 대상이 아닌 운영체제의 기계가 몫을 받으면 게이트가 그 기록을 세지 않으므로
+// 그 몫이 영영 빈다.
+const { targets, source: targetSource } = releaseTargets();
 const roster = {
 	...rosterFile,
-	machines: (rosterFile.machines ?? []).filter((m) => m.active !== false),
+	machines: (rosterFile.machines ?? []).filter(
+		(m) => m.active !== false && machineInTargets(m, targets),
+	),
 };
+if (targets) {
+	console.log(`[regression] 배포 대상 ${targets.join(", ")} (${targetSource})`);
+}
 
 /**
  * 이 기계가 정말 그 이름의 기계인지 본다.
@@ -150,7 +167,10 @@ const profile = roster.machines.find((m) => m.name === machine);
 if (roster.machines.length > 0 && !profile) {
 	const dormant = (rosterFile.machines ?? []).find((m) => m.name === machine);
 	console.error(
-		dormant
+		dormant && dormant.active !== false && !machineInTargets(dormant, targets)
+			? `${machine}(${dormant.os}) 는 이번 배포 대상 운영체제(${targets.join(", ")})의 기계가 아니다.\n` +
+					`${targetSource} 의 targets 를 확인하라.`
+			: dormant
 			? `${machine} 는 명단에 있지만 아직 합류하지 않았다(active: false).\n` +
 					`${ROSTER} 에서 active 를 true 로 바꾸면 몫을 받는다.`
 			: `${ROSTER} 에 이 기계(${machine})가 없다.\n` +
@@ -191,8 +211,11 @@ if (profile) {
  * 돌릴 수 없는 것을 받는다.
  */
 function shareOf(tier) {
+	// 대상 운영체제에서 돌지 않는 스펙은 나누기 전에 뺀다. 이 기계의 운영체제에서
+	// 돌지 않는 스펙도 뺀다 — 맡으면 "환경 없음" 으로 붉어질 뿐 결함이 아니다.
+	const myOs = profile?.os ?? osOfPlatform(process.platform);
 	const inTier = inventory.specs
-		.filter((s) => s.tier === tier)
+		.filter((s) => s.tier === tier && specInTargets(s, targets) && specRunsOn(s, myOs))
 		.sort((a, b) => a.spec.localeCompare(b.spec));
 	const owners = roster.machines
 		.filter((m) => m.tiers.includes(tier))

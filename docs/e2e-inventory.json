@@ -1,9 +1,9 @@
 {
 	"generatedFrom": "packages/shell/e2e-tauri/specs",
-	"total": 109,
+	"total": 95,
 	"summary": {
-		"credentialed_live": 79,
-		"deterministic_ci": 22,
+		"credentialed_live": 67,
+		"deterministic_ci": 20,
 		"native_local": 8
 	},
 	"specs": [
@@ -181,16 +181,8 @@
 		{
 			"spec": "15-skill-manager-ai.spec.ts",
 			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
+			"env": [],
+			"tier": "deterministic_ci"
 		},
 		{
 			"spec": "16-skill-weather.spec.ts",
@@ -245,44 +237,6 @@
 				"NAIA_E2E_ADK_PATH"
 			],
 			"tier": "credentialed_live"
-		},
-		{
-			"spec": "20-cron-basic.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
-			],
-			"requires": [
-				{
-					"capability": "cron",
-					"tracker": "naia-agent#128"
-				}
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "22-channels-config.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH"
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "23-channels-status.spec.ts",
-			"conf": [],
-			"env": [],
-			"tier": "deterministic_ci"
 		},
 		{
 			"spec": "24-adk-setup-flow.spec.ts",
@@ -363,20 +317,6 @@
 			"tier": "credentialed_live"
 		},
 		{
-			"spec": "37-execute-command.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
-		},
-		{
 			"spec": "38-file-operations.spec.ts",
 			"conf": [],
 			"env": [
@@ -441,20 +381,6 @@
 		},
 		{
 			"spec": "44-diagnostics-full.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "46-channels-operations.spec.ts",
 			"conf": [],
 			"env": [
 				"CAFE_E2E_API_KEY",
@@ -605,18 +531,6 @@
 			"tier": "credentialed_live"
 		},
 		{
-			"spec": "61-channels-interactions.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH"
-			],
-			"tier": "credentialed_live"
-		},
-		{
 			"spec": "64-settings-gateway-tts.spec.ts",
 			"conf": [],
 			"env": [
@@ -664,36 +578,6 @@
 			"tier": "credentialed_live"
 		},
 		{
-			"spec": "69-notify-discord-live.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"DISCORD_WEBHOOK",
-				"DISCORD_WEBHOOK_URL",
-				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "70-channel-sync-dm.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"LAB_KEY",
-				"LAB_USER_ID",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH"
-			],
-			"tier": "credentialed_live"
-		},
-		{
 			"spec": "70b-live-providers-switching.spec.ts",
 			"conf": [],
 			"env": [
@@ -729,39 +613,11 @@
 			"tier": "credentialed_live"
 		},
 		{
-			"spec": "72-naia-discord-skill.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
-		},
-		{
 			"spec": "73-tts-edge-preview.spec.ts",
 			"conf": [],
 			"env": [
 				"CAFE_E2E_API_KEY",
 				"GEMINI_API_KEY",
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_FIXTURE",
-				"NAIA_E2E_ADK_PATH"
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "74-channel-sync-lifecycle.spec.ts",
-			"conf": [],
-			"env": [
-				"CAFE_E2E_API_KEY",
-				"GEMINI_API_KEY",
-				"LAB_KEY",
-				"LAB_USER_ID",
 				"NAIA_API_KEY",
 				"NAIA_E2E_ADK_FIXTURE",
 				"NAIA_E2E_ADK_PATH"
@@ -1005,32 +861,6 @@
 			"tier": "deterministic_ci"
 		},
 		{
-			"spec": "92-discord-secure-cancel.spec.ts",
-			"conf": [
-				"wdio.conf.discord-settings.ts"
-			],
-			"env": [],
-			"tier": "deterministic_ci"
-		},
-		{
-			"spec": "93-discord-inbox-handoff.spec.ts",
-			"conf": [
-				"wdio.conf.discord-settings.ts"
-			],
-			"env": [],
-			"tier": "deterministic_ci"
-		},
-		{
-			"spec": "94-discord-live-auth.spec.ts",
-			"conf": [
-				"wdio.conf.discord-live.ts"
-			],
-			"env": [
-				"NAIA_E2E_DISCORD_TOKEN_FILE"
-			],
-			"tier": "credentialed_live"
-		},
-		{
 			"spec": "94-nva-prebaked-shell.spec.ts",
 			"conf": [
 				"wdio.conf.nva-prebaked.ts"
@@ -1084,6 +914,9 @@
 				"NAIA_E2E_VOICE_SCREENSHOT",
 				"NAIA_E2E_VOXCPM2_TEST_VOICE"
 			],
+			"platforms": [
+				"linux"
+			],
 			"tier": "native_local"
 		},
 		{
@@ -1130,6 +963,9 @@
 				"NAIA_E2E_ADK_PATH",
 				"NAIA_E2E_NAIA_KEY",
 				"NAIA_E2E_VOICE_ARTIFACTS"
+			],
+			"platforms": [
+				"linux"
 			],
 			"tier": "native_local"
 		},
@@ -1203,6 +1039,9 @@
 			"spec": "99-stt-mic-test.spec.ts",
 			"conf": [],
 			"env": [],
+			"platforms": [
+				"linux"
+			],
 			"tier": "native_local"
 		},
 		{
@@ -1211,12 +1050,6 @@
 			"env": [
 				"GEMINI_API_KEY"
 			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "channel-reboot.spec.ts",
-			"conf": [],
-			"env": [],
 			"tier": "credentialed_live"
 		},
 		{
