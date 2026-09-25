@@ -123,14 +123,18 @@ function throwIfShaped(value: unknown, what: string): Record<string, unknown> {
 	return shape;
 }
 
+/** 웹뷰 안의 기본 호출. 지나가는 명령 이름은 아래 메서드들의 리터럴과 `EGO_HOST_OP_COMMAND` 로 정해진다. */
+function invokeEgoHost<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+	return invoke<T>(command, args);
+}
+
 /**
  * 어댑터가 보는 감독자 면 하나. 각 메서드가 정확히 어떤 명령으로 가는지가 이 파일의 전부다.
  *
  * @param call Tauri `invoke`. 테스트가 대역을 꽂는 자리다 — 웹뷰 밖(vitest)에는 IPC 가 없다.
  */
 export function createIpcEgoHostApi(
-	call: <T>(command: string, args?: Record<string, unknown>) => Promise<T> = (command, args) =>
-		invoke(command, args),
+	call: <T>(command: string, args?: Record<string, unknown>) => Promise<T> = invokeEgoHost,
 	subscribe: () => Promise<unknown> = ensureFrameListener,
 ): EgoHostApi {
 	/**
