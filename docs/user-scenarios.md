@@ -969,6 +969,7 @@ Those older sections are historical evidence only.
 |---|---|---|
 | **UC-NVA-TTS-OWNERSHIP** | NVA를 선택한 상태에서 어떤 TTS provider를 골라도(로컬/클라우드/브라우저) 실제로 그 엔진의 음성이 재생된다. NVA는 오디오를 자체 합성하지 않고 Shell의 실제 재생 시작/종료에 맞춰 입모양만 움직인다. 단, 정확히 일치하는 저작 문구(온보딩 인사말 등)는 그 클립 자체의 녹음 음성이 재생된다. | ChatArea 컴포넌트 테스트(계약 재작성 포함), media-runtime-routing contract test |
 | **UC-NVA-COMPOSITE** | NVA가 대기·발화·대기를 오갈 때 앱 배경이 항상 유지되고, 알파를 가질 수 없는 발화 클립(mp4 등)이라도 검은 배경이 노출되지 않는다. | prebaked-renderer 유닛 테스트; 실기 Windows 시각 검증은 이 세션에서 미실시 |
+| **UC-NVA-VOICE-GATE** | Studio에서 만든 NVA(대기 + 말하기 반복 클립 한 벌)로 슬라이드 낭독이나 채팅 음성을 들으면, 소리가 나는 동안만 입이 움직이고 400ms 이상 쉬는 곳과 말이 끝난 뒤에는 입을 다문 대기 영상으로 돌아간다. 그보다 짧은 쉼에서는 입을 닫지 않는다. 입은 소리와 0.1초 안에서 맞고, 기기 출력 지연(0~0.3초)과 화면 주사율(24~144Hz)이 달라도 같다. | `nva-voice-gate.test.ts`, `voice-level.test.ts`, `lipsync-platform-matrix.test.ts`; Linux WebKitGTK 합성 음성 녹화 측정, Windows·macOS 실기 미실시 |
 | **UC-SETTINGS-AVATAR-SYNC** | 로그인·원격 설정 반영 등으로 메인 화면의 아바타가 NVA로 바뀌면, 설정 탭의 상세/미리보기도 같은 시점에 NVA로 갱신된다(재시작 불요). | SettingsTab hydration 회귀 테스트 |
 | **UC-DISCORD-TAB-LIVE** | 대화창 하단 🌐 Channels 탭을 열면 실제 연결 상태·서버·채널 목록·대화 스레드가 보인다("안정화 작업 중" 정적 문구가 아니다). | NaiaMetaArea + ChannelsTab 컴포넌트 테스트 |
 | **UC-BGM-NO-FALSE-SKIP** | YouTube 곡이 실제로 재생 중이면, iframe의 "재생 중" 신호 메시지가 유실되더라도(WebView2 핸드셰이크 이슈) 12초 워치독이 다른 곡으로 강제 전환하지 않는다. 진행률(`infoDelivery`) 신호가 독립적으로 재생을 확인한다. | `components/__tests__/BgmPlayer.test.tsx`(신규) + `e2e/bgm-skill.spec.ts` 실 브라우저 재작성(대기열 보존·상태 diagnostic 확인) |

@@ -1230,10 +1230,15 @@ export function ChatArea({
 				onPlaybackStart: () => {
 					ttsPlayingRef.current = true;
 					setTtsPlaying(true);
+					// review 8 merge: the NVA talking loop follows the coarse
+					// queue signal; pauses inside it are closed by the renderer's
+					// voice-level gate (a restart on every audible edge jerked).
+					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(true);
 				},
 				onPlaybackEnd: () => {
 					ttsPlayingRef.current = false;
 					setTtsPlaying(false);
+					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
 					settleAvatarEmotionIfIdle();
 					settleSlidePresenterSpeech("finished");
 				},
@@ -1243,9 +1248,10 @@ export function ChatArea({
 				// 먼저 움직이던 문제. mic 정지/쿨다운(ttsPlayingRef 쪽)은
 				// 범위 밖(코디네이터 지시, review 본문의 "같은 신호" 제안은
 				// 이번 라운드에 포함되지 않음) — 기존 거친 신호 그대로 둔다.
+				// review 8: VRM mouth only; the signal holds 400 ms through
+				// silence (AUDIBLE_OFF_HOLD_MS) so it does not flicker.
 				onAudibleChange: (audible) => {
 					useAvatarStore.getState().setSpeaking(audible);
-					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(audible);
 				},
 			});
 		}
@@ -2823,6 +2829,8 @@ export function ChatArea({
 					onPlaybackStart: () => {
 						ttsPlayingRef.current = true;
 						setTtsPlaying(true);
+						// review 8 merge: NVA talking loop on the coarse signal (see above).
+						useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(true);
 						// ★재개 타이머 취소(2026-07-15 리뷰): 문장별 합성 지연으로 큐가 잠깐 비면
 						// onPlaybackEnd 가 800ms 재개 타이머를 건다. 다음 문장이 그 전에 도착해
 						// 재생을 시작해도 타이머는 살아 있어 재생 중 마이크를 재개통 → 자기발화 누수.
@@ -2846,6 +2854,7 @@ export function ChatArea({
 					onPlaybackEnd: () => {
 						ttsPlayingRef.current = false;
 						setTtsPlaying(false);
+						useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
 						// Cooldown: suppress STT for 1.5s after TTS ends
 						// to prevent mic echo from final TTS audio
 						ttsCooldownUntilRef.current = Date.now() + 800;
@@ -2869,11 +2878,9 @@ export function ChatArea({
 					// gap-review-7 구멍 5-1: 위 initializeSpeechTts 와 같은 분리 —
 					// 아바타 입은 실제 audible 신호만 따른다. 마이크 정지/쿨다운은
 					// 범위 밖(코디네이터 지시)이라 onPlaybackStart/End 에 그대로 둔다.
+					// review 8: VRM mouth only (held signal, see above).
 					onAudibleChange: (audible) => {
 						useAvatarStore.getState().setSpeaking(audible);
-						useCascadeAvatarStore
-							.getState()
-							.renderer?.setSpeakingVisual(audible);
 					},
 				});
 				audioQueueRef.current = queue;

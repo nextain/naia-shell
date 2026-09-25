@@ -8,6 +8,42 @@
 
 import { Logger } from "../logger";
 import { effectivePreRollSeconds } from "../tts/voice-playback-mode";
+import {
+	type LevelBlock,
+	type LevelEdge,
+	type LevelsAround,
+	type LevelsAroundQuery,
+	VOICE_LEVEL_WINDOW_SEC,
+	type VoiceLevelSource,
+	VoiceLevelTimeline,
+	envelopeLevelAt,
+	levelsAround,
+	outputLatencySeconds,
+	releaseVoiceLevelSource,
+	rmsEnvelope,
+	setActiveVoiceLevelSource,
+	wavEnvelope,
+} from "./voice-level";
+
+/**
+ * How long the audible signal (`onAudibleChange`) stays on through silence
+ * before it reports false. Same length as the NVA shell hold
+ * (`NVA_SHELL_HOLD_MS`): a pause shorter than this is part of speaking — a
+ * breath, the gap between two sentences that are both already synthesized,
+ * or a chunk that arrives a few ms late — and must not switch the avatar's
+ * speaking state off and on again (2026-09-25 review 8, hole 2). When nothing
+ * more is queued or being synthesized, the signal goes off without this wait.
+ */
+export const AUDIBLE_OFF_HOLD_MS = 400;
+
+/** Earliest a stream item can start after the one before it (first-chunk lead). */
+const STREAM_MIN_START_LEAD_SEC = 0.04;
+
+/** Reads the level of what the queue is playing, on that item's own clock. */
+interface LevelReader {
+	level(): number | null;
+	around(query: LevelsAroundQuery): LevelsAround | null;
+}
 
 export interface AudioQueueCallbacks {
 	onPlaybackStart?: () => void;
@@ -116,8 +152,21 @@ export class PcmStreamSource {
 	}
 }
 
-export class AudioQueue {
+export class AudioQueue implements VoiceLevelSource {
 	private queue: AudioQueueItem[] = [];
+	/** Level of the audio heard now and around it (null = cannot measure). */
+	private levelReader: LevelReader | null = null;
+	/** Envelope of streamed PCM chunks on the shared AudioContext clock. */
+	private streamLevels = new VoiceLevelTimeline();
+	/** Envelope per queued item, computed once when the avatar first asks. */
+	private itemEnvelopes = new WeakMap<
+		AudioQueueItem,
+		{ chunks: number; envelope: Float32Array | null }
+	>();
+	/** The stream item `currentStream` belongs to, and whether it has scheduled audio. */
+	private currentStreamItem: AudioQueueItem | null = null;
+	private currentStreamScheduled = false;
+	private audibleOffTimer: ReturnType<typeof setTimeout> | null = null;
 	private current: HTMLAudioElement | null = null;
 	private currentStream: PcmStreamSource | null = null;
 	private streamSources = new Set<AudioBufferSourceNode>();
@@ -135,10 +184,54 @@ export class AudioQueue {
 	/** gap-review-7 구멍 5-1: 스피커에서 실제로 소리가 나는 중인가. */
 	private audible = false;
 
+	/**
+	 * gap-review-8 hole 2: `true` is reported at once; `false` only after
+	 * `AUDIBLE_OFF_HOLD_MS` of continued silence (plus the device latency, the
+	 * sound already sent keeps playing that long). Anything audible again in
+	 * that time cancels it, so an item boundary with the next item ready, a
+	 * breath, or a slightly late chunk never flips the signal.
+	 */
 	private setAudible(value: boolean): void {
-		if (this.audible === value) return;
-		this.audible = value;
-		this.callbacks.onAudibleChange?.(value);
+		if (value) {
+			this.cancelAudibleOff();
+			if (this.audible) return;
+			this.audible = true;
+			this.callbacks.onAudibleChange?.(true);
+			return;
+		}
+		if (!this.audible || this.audibleOffTimer !== null) return;
+		this.armAudibleOff(AUDIBLE_OFF_HOLD_MS);
+	}
+
+	/** Nothing more will play: report false once the last sound has left the speaker. */
+	private endAudible(): void {
+		if (!this.audible) return;
+		this.cancelAudibleOff();
+		this.armAudibleOff(0);
+	}
+
+	/** Playback was cut: nothing is heard any more. */
+	private silenceAudibleNow(): void {
+		this.cancelAudibleOff();
+		if (!this.audible) return;
+		this.audible = false;
+		this.callbacks.onAudibleChange?.(false);
+	}
+
+	private armAudibleOff(holdMs: number): void {
+		const delayMs = holdMs + outputLatencySeconds(sharedAudioContext) * 1000;
+		this.audibleOffTimer = setTimeout(() => {
+			this.audibleOffTimer = null;
+			if (!this.audible) return;
+			this.audible = false;
+			this.callbacks.onAudibleChange?.(false);
+		}, delayMs);
+	}
+
+	private cancelAudibleOff(): void {
+		if (this.audibleOffTimer === null) return;
+		clearTimeout(this.audibleOffTimer);
+		this.audibleOffTimer = null;
 	}
 
 	// Ordered enqueue: buffer out-of-order items until their turn.
@@ -272,6 +365,8 @@ export class AudioQueue {
 			this.currentStream.unsubscribe();
 			this.currentStream = null;
 		}
+		this.currentStreamItem = null;
+		this.currentStreamScheduled = false;
 		for (const src of this.streamSources) {
 			try {
 				src.stop();
@@ -283,11 +378,262 @@ export class AudioQueue {
 		for (const timer of this.pendingStartTimers) clearTimeout(timer);
 		this.pendingStartTimers.clear();
 		// gap-review-7 구멍 5-1: 중단된 재생은 더 이상 들리지 않는다.
-		this.setAudible(false);
+		this.silenceAudibleNow();
+		this.stopLevel();
 		if (this.playing) {
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
 		}
+	}
+
+	/** RMS of the audio heard now, or null when unknown. */
+	voiceLevel(): number | null {
+		return this.levelReader ? this.levelReader.level() : null;
+	}
+
+	/** Levels around the audible moment, or null when they cannot be measured. */
+	voiceLevelsAround(query: LevelsAroundQuery): LevelsAround | null {
+		return this.levelReader ? this.levelReader.around(query) : null;
+	}
+
+	private startLevel(reader: LevelReader): void {
+		this.levelReader = reader;
+		setActiveVoiceLevelSource(this);
+	}
+
+	private stopLevel(): void {
+		this.levelReader = null;
+		this.streamLevels.clear();
+		releaseVoiceLevelSource(this);
+	}
+
+	/**
+	 * Nothing queued, nothing held for ordering, and every reserved slot
+	 * already flushed: no sentence is waiting or being synthesized. The time
+	 * after the audio still playing is then real silence (review hole 5).
+	 */
+	private nothingQueued(): boolean {
+		return (
+			this.queue.length === 0 &&
+			this.pendingOrdered.size === 0 &&
+			this.flushCursor >= this.nextExpectedSeq
+		);
+	}
+
+	/**
+	 * What follows the audio the reader knows, when no next item is bound.
+	 * `self` is the <audio> element the reader is reading, if any.
+	 */
+	private edgeWhenNoNext(self: HTMLAudioElement | null): LevelEdge {
+		return this.nothingQueued() &&
+			(this.current === null || this.current === self) &&
+			(this.currentStream === null || this.currentStream.ended)
+			? "silence"
+			: "unknown";
+	}
+
+	/**
+	 * Envelope of an item not yet playing (null: cannot be measured, e.g. MP3,
+	 * or a stream with nothing synthesized yet). `complete` = nothing more
+	 * will be added to it.
+	 */
+	private upcomingLevels(
+		item: AudioQueueItem,
+	): { envelope: Float32Array; complete: boolean } | null {
+		const stream = item.stream;
+		const cached = this.itemEnvelopes.get(item);
+		if (stream) {
+			if (!cached || cached.chunks !== stream.chunks.length) {
+				const parts = stream.chunks.map((c) =>
+					rmsEnvelope(c, stream.sampleRate, VOICE_LEVEL_WINDOW_SEC, 1 / 0x8000),
+				);
+				const total = parts.reduce((n, p) => n + p.length, 0);
+				const envelope = new Float32Array(total);
+				let offset = 0;
+				for (const p of parts) {
+					envelope.set(p, offset);
+					offset += p.length;
+				}
+				this.itemEnvelopes.set(item, {
+					chunks: stream.chunks.length,
+					envelope: total > 0 ? envelope : null,
+				});
+			}
+			const envelope = this.itemEnvelopes.get(item)?.envelope ?? null;
+			return envelope ? { envelope, complete: stream.ended } : null;
+		}
+		if (!cached) {
+			const audio = item.audioBase64 ?? "";
+			this.itemEnvelopes.set(item, {
+				chunks: 0,
+				envelope: audio.startsWith("UklGR") ? wavEnvelope(audio) : null,
+			});
+		}
+		const envelope = this.itemEnvelopes.get(item)?.envelope ?? null;
+		return envelope ? { envelope, complete: true } : null;
+	}
+
+	/**
+	 * Blocks and edge for the item queued after the known audio, placed at
+	 * `earliestStart` — the soonest it can be heard, so a pause is never
+	 * counted longer than it will be (review hole 2).
+	 */
+	private withUpcoming(
+		blocks: LevelBlock[],
+		next: AudioQueueItem | null,
+		earliestStart: number,
+		self: HTMLAudioElement | null = null,
+	): LevelEdge {
+		if (!next) return this.edgeWhenNoNext(self);
+		const up = this.upcomingLevels(next);
+		if (up) blocks.push({ start: earliestStart, envelope: up.envelope });
+		return "unknown";
+	}
+
+	/** Reader for streamed PCM on the AudioContext clock (all stream items share it). */
+	private streamReader(ctx: AudioContext): LevelReader {
+		const audibleNow = () => ctx.currentTime - outputLatencySeconds(ctx);
+		return {
+			level: () => this.streamLevels.levelAt(audibleNow()),
+			around: (query) => {
+				const now = audibleNow();
+				const blocks = [...this.streamLevels.blocks(now)];
+				const lastEnd = this.streamLevels.end();
+				const stream = this.currentStream;
+				let after: LevelEdge;
+				if (stream && !this.currentStreamScheduled) {
+					// The current item has not scheduled anything yet (pre-roll,
+					// resume): it starts no sooner than one lead after the later of
+					// the previous audio's end and the render clock now.
+					after = this.withUpcoming(
+						blocks,
+						this.currentStreamItem,
+						Math.max(lastEnd, ctx.currentTime) + STREAM_MIN_START_LEAD_SEC,
+					);
+				} else if (stream && !stream.ended) {
+					after = "unknown"; // more chunks of this sentence are coming
+				} else if (stream || this.current === null) {
+					after = this.withUpcoming(
+						blocks,
+						this.queue[0] ?? null,
+						Math.max(lastEnd, ctx.currentTime) + STREAM_MIN_START_LEAD_SEC,
+					);
+				} else {
+					after = "unknown"; // an <audio> item on another clock is next
+				}
+				return levelsAround(
+					blocks,
+					now + query.leadSec,
+					query.backSec,
+					query.aheadSec,
+					after,
+				);
+			},
+		};
+	}
+
+	/**
+	 * Reader for a WAV sentence played by an <audio> element, on its media
+	 * clock. The next queued item (FIFO `queue[0]` while this one plays) is
+	 * placed right after its end.
+	 *
+	 * `currentTime` alone is the audible position (review hole 4: the wall
+	 * clock anchored on the `playing` event is gone — when that event fires
+	 * relative to the sound differs per engine). A media element's clock is
+	 * already the playout position: Chromium/WebView2 reports the timestamp of
+	 * the audio the device is playing (its audio renderer counts the output
+	 * delay), GStreamer (WebKitGTK) and AVFoundation (WKWebView) report the
+	 * sink/presentation position. Subtracting a Web Audio latency here would
+	 * count the device delay twice. `playbackRate` scales the media clock
+	 * against real time (`levelsAround`).
+	 */
+	private mediaReader(
+		audio: HTMLAudioElement,
+		envelope: Float32Array,
+		prior: LevelReader | null,
+	): LevelReader {
+		const rate = () =>
+			Number.isFinite(audio.playbackRate) && audio.playbackRate > 0
+				? audio.playbackRate
+				: 1;
+		const audibleNow = () => audio.currentTime || 0;
+		const duration = envelope.length * VOICE_LEVEL_WINDOW_SEC;
+		// Until the media clock moves, this sentence is not heard yet: the
+		// reader before it (the gap after the previous sentence, which has this
+		// one bound as next) still describes what is audible. The `play` and
+		// `playing` events are not used for timing — engines fire them at
+		// different distances from the sound.
+		let before = prior;
+		const started = () => {
+			if ((audio.currentTime || 0) <= 0) return false;
+			before = null; // heard now; let the earlier reader go
+			return true;
+		};
+		return {
+			level: () =>
+				started()
+					? envelopeLevelAt(envelope, audibleNow())
+					: (before?.level() ?? null),
+			around: (query) => {
+				if (!started())
+					return before
+						? before.around(query)
+						: { levels: [], now: -1, stepMs: VOICE_LEVEL_WINDOW_SEC * 1000 };
+				const r = rate();
+				const blocks: LevelBlock[] = [{ start: 0, envelope }];
+				const after = this.withUpcoming(
+					blocks,
+					this.queue[0] ?? null,
+					duration,
+					audio,
+				);
+				return levelsAround(
+					blocks,
+					audibleNow() + query.leadSec * r,
+					query.backSec,
+					query.aheadSec,
+					after,
+					r,
+				);
+			},
+		};
+	}
+
+	/**
+	 * Reader for the gap after an <audio> sentence ended. `next` is the item
+	 * that was queued behind it when it ended, bound here because `playNext`
+	 * is about to shift it off the queue (review hole 2: reading `queue[0]`
+	 * after that shift read the sentence after next). The ended sentence's
+	 * tail and the silence since it ended are known; the next sentence can be
+	 * heard at the earliest now. With no next item and nothing queued, what
+	 * follows is silence (review hole 5).
+	 */
+	private gapReader(
+		envelope: Float32Array,
+		rate: number,
+		next: AudioQueueItem | null,
+	): LevelReader {
+		const endedAt = performance.now();
+		const duration = envelope.length * VOICE_LEVEL_WINDOW_SEC;
+		// Only the silence since the end is timed by the wall clock: nothing
+		// is playing, so there is no media clock left to read.
+		const audibleSinceEnd = () => ((performance.now() - endedAt) / 1000) * rate;
+		return {
+			level: () => envelopeLevelAt(envelope, duration + audibleSinceEnd()),
+			around: (query) => {
+				const now = duration + audibleSinceEnd();
+				const blocks: LevelBlock[] = [{ start: 0, envelope }];
+				const after = this.withUpcoming(blocks, next, Math.max(duration, now));
+				return levelsAround(
+					blocks,
+					now + query.leadSec * rate,
+					query.backSec,
+					query.aheadSec,
+					after,
+					rate,
+				);
+			},
+		};
 	}
 
 	/** Whether audio is currently playing or queued. */
@@ -314,6 +660,8 @@ export class AudioQueue {
 			ended: stream.ended,
 		});
 		this.currentStream = stream;
+		this.currentStreamItem = item;
+		this.currentStreamScheduled = false;
 		let nextStart = 0;
 		let started = false;
 		let advanced = false;
@@ -363,6 +711,7 @@ export class AudioQueue {
 			this.setAudible(false);
 			stream.unsubscribe();
 			this.currentStream = null;
+			this.currentStreamItem = null;
 			this.playNext();
 		};
 		const maybeFinish = () => {
@@ -416,6 +765,10 @@ export class AudioQueue {
 					const at = Math.max(now + (started ? 0 : firstChunkLead), nextStart);
 					src.start(at);
 					nextStart = at + buf.duration;
+					// Level envelope on the same clock as `at` (after pre-roll and
+					// after resume — beginSubscribe runs only once the context runs).
+					this.streamLevels.add(at, rmsEnvelope(ch, stream.sampleRate));
+					this.currentStreamScheduled = true;
 					// gap-review-7 구멍 5-1: 이 조각이 도착하기 전(방금 this
 					// 시점) 아무 소스도 재생 중이 아니었으면(pending===0) — 첫
 					// 조각이거나, 버퍼 고갈 뒤 재개 — 그 직전까지는 조용했다는
@@ -432,17 +785,14 @@ export class AudioQueue {
 						if (pending === 0 && !ended) this.setAudible(false);
 						maybeFinish();
 					};
-					// gap-review-7 구멍 5-2: 스피커에서 실제로 들리는 시각은
-					// `at` 보다 출력 레이턴시(outputLatency, 없으면
-					// baseLatency)만큼 더 늦다 — 두 알림(거친 onPlaybackStart,
-					// 이 세밀한 audible) 모두 그 지연을 더해 스케줄한다.
-					const outputLatencySeconds =
-						(ctx as unknown as { outputLatency?: number }).outputLatency ??
-						ctx.baseLatency ??
-						0;
+					// gap-review-7 구멍 5-2 / review 8: 스피커에서 실제로 들리는
+					// 시각은 `at` 보다 baseLatency + outputLatency 만큼 늦다(두
+					// 단계가 이어지므로 합). 아바타 입의 음성 크기 시계와 같은
+					// 함수(`outputLatencySeconds`)를 쓴다 — 두 알림(거친
+					// onPlaybackStart, 세밀한 audible)과 입이 같은 순간을 본다.
 					const audibleLeadMs = Math.max(
 						0,
-						(at - now + outputLatencySeconds) * 1000,
+						(at - now + outputLatencySeconds(ctx)) * 1000,
 					);
 					if (wasSilent) {
 						if (audibleTimer !== null) {
@@ -461,6 +811,7 @@ export class AudioQueue {
 					}
 					if (!started) {
 						started = true;
+						this.startLevel(this.streamReader(ctx));
 						Logger.debug("AudioQueue", "playStream:first chunk scheduled", {
 							at: Number(at.toFixed(3)),
 							now: Number(now.toFixed(3)),
@@ -532,6 +883,9 @@ export class AudioQueue {
 	private playNext(): void {
 		if (this.queue.length === 0) {
 			Logger.debug("AudioQueue", "playNext:empty → end", {});
+			// Nothing waiting or being synthesized: the voice has ended, the
+			// speaking signal goes off with the last sound (no hold).
+			if (this.nothingQueued()) this.endAudible();
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
 			return;
@@ -586,6 +940,12 @@ export class AudioQueue {
 			this.playNext();
 		};
 
+		// The level reader follows the media clock from the moment play() is
+		// asked for, not from the `play`/`playing` event (engine-dependent).
+		const envelope = isWav ? wavEnvelope(mp3Base64) : null;
+		if (envelope)
+			this.startLevel(this.mediaReader(audio, envelope, this.levelReader));
+		else this.stopLevel();
 		audio.onplay = () => {
 			if (!isCurrent()) return;
 			started = true;
@@ -602,6 +962,13 @@ export class AudioQueue {
 		};
 
 		audio.onended = () => {
+			if (isCurrent() && envelope) {
+				const rate =
+					Number.isFinite(audio.playbackRate) && audio.playbackRate > 0
+						? audio.playbackRate
+						: 1;
+				this.startLevel(this.gapReader(envelope, rate, this.queue[0] ?? null));
+			}
 			this.setAudible(false);
 			advance();
 		};

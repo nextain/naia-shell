@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	AUDIBLE_OFF_HOLD_MS,
 	AudioQueue,
 	PcmStreamSource,
 	wavDurationSeconds,
@@ -70,27 +71,80 @@ describe("AudioQueue sentence callbacks", () => {
 	});
 
 	it("gap-review-7 (2026-09-25) 구멍 5-1: HTMLAudioElement 경로(WAV 대체 합성 포함)도 실제 재생 시작/종료에 맞춰 audible 을 켜고 끈다", () => {
-		const onAudibleChange = vi.fn();
-		const queue = new AudioQueue({ onAudibleChange });
-		queue.enqueue("YmFzZTY0");
-		const audio = FakeAudio.instances[0];
-		// 디코딩/합성 대기 동안(onplay 전)에는 아직 안 켜진다.
-		expect(onAudibleChange).not.toHaveBeenCalled();
-		audio.onplay?.();
-		expect(onAudibleChange).toHaveBeenLastCalledWith(true);
-		audio.onended?.();
-		expect(onAudibleChange).toHaveBeenLastCalledWith(false);
+		vi.useFakeTimers();
+		try {
+			const onAudibleChange = vi.fn();
+			const queue = new AudioQueue({ onAudibleChange });
+			queue.enqueue("YmFzZTY0");
+			const audio = FakeAudio.instances[0];
+			// 디코딩/합성 대기 동안(onplay 전)에는 아직 안 켜진다.
+			expect(onAudibleChange).not.toHaveBeenCalled();
+			audio.onplay?.();
+			expect(onAudibleChange).toHaveBeenLastCalledWith(true);
+			audio.onended?.();
+			// review 8: nothing else queued → off with the last sound, no hold.
+			vi.advanceTimersByTime(0);
+			expect(onAudibleChange).toHaveBeenLastCalledWith(false);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("구멍 5-1: onerror 도 audible 을 false 로 되돌린다", () => {
-		const onAudibleChange = vi.fn();
-		const queue = new AudioQueue({ onAudibleChange });
-		queue.enqueue("YmFzZTY0");
-		const audio = FakeAudio.instances[0];
-		audio.onplay?.();
-		expect(onAudibleChange).toHaveBeenLastCalledWith(true);
-		audio.onerror?.(new Event("error"));
-		expect(onAudibleChange).toHaveBeenLastCalledWith(false);
+		vi.useFakeTimers();
+		try {
+			const onAudibleChange = vi.fn();
+			const queue = new AudioQueue({ onAudibleChange });
+			queue.enqueue("YmFzZTY0");
+			const audio = FakeAudio.instances[0];
+			audio.onplay?.();
+			expect(onAudibleChange).toHaveBeenLastCalledWith(true);
+			audio.onerror?.(new Event("error"));
+			vi.advanceTimersByTime(0);
+			expect(onAudibleChange).toHaveBeenLastCalledWith(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("review 8 hole 2: two queued sentences play back to back without the audible signal going off between them", () => {
+		vi.useFakeTimers();
+		try {
+			const onAudibleChange = vi.fn();
+			const queue = new AudioQueue({ onAudibleChange });
+			queue.enqueue("first");
+			queue.enqueue("second");
+			FakeAudio.instances[0].onplay?.();
+			FakeAudio.instances[0].onended?.();
+			vi.advanceTimersByTime(30); // decode of the next sentence
+			FakeAudio.instances[1].onplay?.();
+			vi.advanceTimersByTime(AUDIBLE_OFF_HOLD_MS * 2);
+			expect(onAudibleChange.mock.calls).toEqual([[true]]);
+			FakeAudio.instances[1].onended?.();
+			vi.advanceTimersByTime(0);
+			expect(onAudibleChange.mock.calls).toEqual([[true], [false]]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("review 8 hole 2: with a sentence still being synthesized, the signal goes off only after the hold", () => {
+		vi.useFakeTimers();
+		try {
+			const onAudibleChange = vi.fn();
+			const queue = new AudioQueue({ onAudibleChange });
+			const first = queue.reserveSeq();
+			queue.reserveSeq(); // second sentence: synthesis still running
+			queue.enqueueOrdered(first, "first");
+			FakeAudio.instances[0].onplay?.();
+			FakeAudio.instances[0].onended?.();
+			vi.advanceTimersByTime(AUDIBLE_OFF_HOLD_MS - 1);
+			expect(onAudibleChange).toHaveBeenLastCalledWith(true);
+			vi.advanceTimersByTime(1);
+			expect(onAudibleChange).toHaveBeenLastCalledWith(false);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("reads PCM duration from a RIFF/WAVE payload", () => {
@@ -147,6 +201,7 @@ class FakeAudioContext {
 	// 인스턴스를 테스트마다 재설정할 수 있게 한다.
 	static state: "running" | "suspended" = "running";
 	static outputLatency = 0;
+	static baseLatency: number | undefined = undefined;
 	static resumeImpl: () => Promise<void> = async () => {
 		FakeAudioContext.state = "running";
 	};
@@ -164,6 +219,9 @@ class FakeAudioContext {
 	}
 	get outputLatency() {
 		return FakeAudioContext.outputLatency;
+	}
+	get baseLatency() {
+		return FakeAudioContext.baseLatency;
 	}
 	createBuffer(_channels: number, length: number, rate: number) {
 		return {
@@ -550,7 +608,7 @@ describe("AudioQueue streamed PCM playback", () => {
 			expect(onAudibleChange).toHaveBeenLastCalledWith(true);
 		});
 
-		it("버퍼 고갈(다음 조각이 아직 없는데 재생이 앞선 조각을 다 씀) 동안은 false, 새 조각이 오면 다시 true", () => {
+		it("버퍼 고갈(다음 조각이 아직 없는데 재생이 앞선 조각을 다 씀)이 유지 시간을 넘으면 false, 새 조각이 오면 다시 true", () => {
 			const onAudibleChange = vi.fn();
 			const queue = new AudioQueue({ onAudibleChange });
 			const stream = new PcmStreamSource(24_000);
@@ -561,10 +619,30 @@ describe("AudioQueue streamed PCM playback", () => {
 			// 이 조각이 다 재생됨 — 다음 조각이 아직 없다(스트림은 아직 안
 			// 끝났다 = 진짜 고갈, WAV 대체 합성 대기와 같은 모양의 침묵).
 			FakeAudioContext.sources[0].onended?.();
+			// review 8 hole 2: a short underrun is not a pause in speech.
+			vi.advanceTimersByTime(AUDIBLE_OFF_HOLD_MS - 1);
+			expect(onAudibleChange).toHaveBeenLastCalledWith(true);
+			vi.advanceTimersByTime(1);
 			expect(onAudibleChange).toHaveBeenLastCalledWith(false);
 			stream.push(new Int16Array(2_400)); // 고갈 뒤 재개
 			vi.advanceTimersByTime(200);
 			expect(onAudibleChange).toHaveBeenLastCalledWith(true);
+		});
+
+		it("review 8 hole 2: chunks arriving 10 ms late do not toggle the signal per chunk", () => {
+			const onAudibleChange = vi.fn();
+			const queue = new AudioQueue({ onAudibleChange });
+			const stream = new PcmStreamSource(24_000);
+			queue.enqueueOrderedStream(0, stream, {});
+			stream.push(new Int16Array(2_400)); // 100ms
+			vi.advanceTimersByTime(40);
+			for (let i = 0; i < 4; i++) {
+				FakeAudioContext.sources[i].onended?.(); // underrun
+				vi.advanceTimersByTime(10);
+				stream.push(new Int16Array(2_400)); // 10 ms late
+				vi.advanceTimersByTime(1);
+			}
+			expect(onAudibleChange.mock.calls).toEqual([[true]]);
 		});
 
 		it("스트림이 끝까지 재생되면(advance) false 로 닫힌다", () => {
@@ -577,6 +655,8 @@ describe("AudioQueue streamed PCM playback", () => {
 			vi.advanceTimersByTime(40);
 			expect(onAudibleChange).toHaveBeenLastCalledWith(true);
 			FakeAudioContext.sources[0].onended?.();
+			// Nothing else queued: off with the last sound (device latency 0 here).
+			vi.advanceTimersByTime(0);
 			expect(onAudibleChange).toHaveBeenLastCalledWith(false);
 		});
 
@@ -667,6 +747,24 @@ describe("AudioQueue streamed PCM playback", () => {
 			vi.advanceTimersByTime(2);
 			expect(onAudibleChange).toHaveBeenCalledWith(true);
 			expect(onPlaybackStart).toHaveBeenCalledTimes(1);
+		});
+
+		it("review 8: baseLatency and outputLatency add up (one latency function)", () => {
+			FakeAudioContext.outputLatency = 0.05;
+			FakeAudioContext.baseLatency = 0.01;
+			try {
+				const onAudibleChange = vi.fn();
+				const queue = new AudioQueue({ onAudibleChange });
+				const stream = new PcmStreamSource(24_000);
+				queue.enqueueOrderedStream(0, stream, {});
+				stream.push(new Int16Array(2_400));
+				vi.advanceTimersByTime(99); // 40 ms lead + 60 ms latency
+				expect(onAudibleChange).not.toHaveBeenCalled();
+				vi.advanceTimersByTime(1);
+				expect(onAudibleChange).toHaveBeenCalledWith(true);
+			} finally {
+				FakeAudioContext.baseLatency = undefined;
+			}
 		});
 
 		it("outputLatency 가 없으면(0) baseLatency 로 대신 보정한다", () => {
