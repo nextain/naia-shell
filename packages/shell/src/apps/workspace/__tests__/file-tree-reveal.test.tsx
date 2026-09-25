@@ -19,7 +19,7 @@ vi.mock("../../../lib/logger", () => ({
 	Logger: { info: vi.fn(), warn: vi.fn() },
 }));
 
-import { getLocale, setLocale } from "../../../lib/i18n";
+import { getLocale, setLocale, t } from "../../../lib/i18n";
 import { FileTree, isUnresolvedTemplateEntry } from "../FileTree";
 
 describe("FileTree open-file reveal", () => {
@@ -139,7 +139,7 @@ describe("FileTree open-file reveal", () => {
 		expect(
 			await screen.findByTestId("workspace-tree-external-file"),
 		).toBeInTheDocument();
-		expect(screen.getByText("외부 파일")).toBeInTheDocument();
+		expect(screen.getByText(t("fileTree.externalBadge"))).toBeInTheDocument();
 		expect(screen.getByText("outside.md")).toBeInTheDocument();
 
 		// Clicking the external file triggers onFileSelect

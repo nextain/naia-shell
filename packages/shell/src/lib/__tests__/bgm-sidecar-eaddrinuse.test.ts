@@ -25,11 +25,13 @@ afterEach(async () => {
 });
 
 it("점유된 포트에서 exit(1)을 호출한다 — 재시도 루프 없음", async () => {
-	// The sidecar listens without a host (dual-stack wildcard); block the exact
-	// same wildcard so EADDRINUSE is deterministic across IPv4/IPv6 setups.
+	// Since #716 the sidecar binds the loopback addresses only, and 127.0.0.1 is
+	// the one whose failure is fatal. Block that exact address: holding the
+	// wildcard instead does not collide on Windows (a specific-address bind
+	// succeeds beside a wildcard holder), so the test only passed on Linux.
 	blocker = createServer();
 	await new Promise<void>((resolve) => {
-		blocker?.listen(0, resolve);
+		blocker?.listen(0, "127.0.0.1", resolve);
 	});
 	const address = blocker.address();
 	if (address === null || typeof address === "string") {
