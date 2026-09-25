@@ -204,6 +204,9 @@ export async function configureSettings(opts: {
 
 /** 설정 내부 섹션 탭으로 이동한다 (#541: 설정은 내부 탭 구조). */
 export async function openSettingsSection(id: string): Promise<void> {
+	// 구역 탭은 설정 패널 안에 있다. 패널이 닫혀 있으면 탭이 보이지 않아 십 초를
+	// 기다리다 죽는다 — 먼저 연다(이미 열려 있으면 아무 일도 하지 않는다).
+	await navigateToSettings();
 	// 드라이버가 클릭을 거절하는 환경이 있어 clickElement 를 지난다.
 	await clickElement(`[data-settings-tab="${id}"]`, 10_000);
 	await browser.pause(300);
@@ -262,6 +265,38 @@ export async function setNativeValue(
 		selector,
 		value,
 	);
+}
+
+/**
+ * Choose a <select> option so React's onChange fires. Assigning `select.value`
+ * directly updates React's value tracker first, so the change event looks like
+ * a no-op and the handler never runs. Returns false when the option is missing
+ * or disabled.
+ */
+export async function chooseSelectOption(
+	selector: string,
+	value: string,
+): Promise<boolean> {
+	const chosen = await browser.execute(
+		(sel: string, val: string) => {
+			const select = document.querySelector(sel) as HTMLSelectElement | null;
+			const option = select
+				? Array.from(select.options).find((o) => o.value === val)
+				: undefined;
+			if (!select || !option || option.disabled) return false;
+			const setter = Object.getOwnPropertyDescriptor(
+				HTMLSelectElement.prototype,
+				"value",
+			)?.set;
+			setter?.call(select, val);
+			select.dispatchEvent(new Event("change", { bubbles: true }));
+			return true;
+		},
+		selector,
+		value,
+	);
+	await browser.pause(500);
+	return chosen;
 }
 
 /** Click an element by selector using browser.execute (reliable in WebKitGTK). */

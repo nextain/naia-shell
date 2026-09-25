@@ -1,5 +1,6 @@
 import { S } from "../helpers/selectors.js";
 import {
+	chooseSelectOption,
 	ensureAppReady,
 	navigateToSettings,
 	openSettingsSection,
@@ -28,13 +29,15 @@ describe("73 — Edge TTS preview", () => {
 
 	it("should have TTS provider selector defaulting to edge", async () => {
 		await scrollToSection(S.gatewayTtsProvider);
+		// 앞선 스펙이 공급자를 바꿔 두면 edge 음성 목록·미리듣기가 아예 렌더되지
+		// 않는다. 이 스펙의 전제(edge)를 직접 세운다.
+		expect(await chooseSelectOption(S.gatewayTtsProvider, "edge")).toBe(true);
 		const providerValue = await browser.execute((sel: string) => {
 			const el = document.querySelector(sel) as HTMLSelectElement | null;
 			return el?.value ?? "";
 		}, S.gatewayTtsProvider);
 
-		// Default should be "edge" on fresh app or at least a valid string
-		expect(typeof providerValue).toBe("string");
+		expect(providerValue).toBe("edge");
 	});
 
 	it("should have voice preview button", async () => {

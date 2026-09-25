@@ -41,9 +41,16 @@ async function waitForStepChange(from: string): Promise<string> {
 	return next;
 }
 
+// 마법사는 단계를 바꾼 뒤 300ms 동안(다음 단계 안내 말풍선을 붙일 때까지)
+// 다음 클릭을 무시한다(OnboardingWizard goNext 의 transitioning 가드). 이름
+// 입력이 그보다 빨리 끝나는 윈도 WebView2 에서는 클릭이 버려져 agentName 에
+// 멈춰 섰다. 사람이 누르는 간격만큼 기다렸다 누른다.
+const STEP_TRANSITION_MS = 400;
+
 async function clickNext(): Promise<void> {
 	const next = await $(S.onboardingNextBtn);
 	await next.waitForEnabled({ timeout: 10_000 });
+	await browser.pause(STEP_TRANSITION_MS);
 	await next.click();
 }
 

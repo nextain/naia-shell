@@ -1,7 +1,9 @@
 import { S } from "../helpers/selectors.js";
 import {
+	chooseSelectOption,
 	ensureAppReady,
 	navigateToSettings,
+	openSettingsSection,
 	scrollToSection,
 } from "../helpers/settings.js";
 
@@ -23,29 +25,24 @@ describe("78 — voice pipeline mode", () => {
 
 	// ── Settings Labels ──
 
-	it("should show friendly section labels (Brain/Listening/Speaking)", async () => {
-		await navigateToSettings();
-		const settingsTab = await $(S.settingsTab);
-		await settingsTab.waitForDisplayed({ timeout: 10_000 });
-
-		const sectionLabels = await browser.execute(() => {
-			const dividers = document.querySelectorAll(
-				".settings-section-divider span",
-			);
-			return Array.from(dividers).map((el) => el.textContent?.trim() ?? "");
-		});
-
-		// Should contain brain(LLM) and voice-related sections
-		const hasLlmSection = sectionLabels.some(
-			(l) => l.includes("LLM") || l.includes("두뇌") || l.includes("Brain"),
+	it("should split brain and voice into their own settings sections", async () => {
+		// #541 이후 설정은 구역 탭으로 나뉘고 활성 구역만 렌더한다. LLM 은 brain,
+		// 음성은 voice 구역이라 한 화면의 구분선 이름을 더는 셀 수 없다.
+		await openSettingsSection("voice");
+		const tabs = await browser.execute(() =>
+			Array.from(document.querySelectorAll("[data-settings-tab]")).map(
+				(el) => (el as HTMLElement).dataset.settingsTab ?? "",
+			),
 		);
-		expect(hasLlmSection).toBe(true);
+		expect(tabs).toContain("brain");
+		expect(tabs).toContain("voice");
 	});
 
 	// ── TTS Provider + Voice ──
 
-	it("should have TTS provider dropdown with edge as default", async () => {
+	it("should select the free edge TTS provider", async () => {
 		await scrollToSection(S.ttsProviderSelect);
+		expect(await chooseSelectOption(S.ttsProviderSelect, "edge")).toBe(true);
 
 		const value = await browser.execute((sel: string) => {
 			return (document.querySelector(sel) as HTMLSelectElement)?.value ?? "";
@@ -83,70 +80,29 @@ describe("78 — voice pipeline mode", () => {
 		);
 	});
 
-	// ── Switch to OpenAI + verify voice list ──
+	// ── Removed cloud voices (#603) ──
 
-	it("should switch TTS to openai and show correct voices", async () => {
-		await scrollToSection(S.ttsProviderSelect);
-
-		await browser.execute((sel: string) => {
+	it("should not offer the removed openai and google TTS providers", async () => {
+		const ids = await browser.execute((sel: string) => {
 			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return;
-			select.value = "openai";
-			select.dispatchEvent(new Event("change", { bubbles: true }));
+			return select ? Array.from(select.options).map((o) => o.value) : [];
 		}, S.ttsProviderSelect);
+		expect(ids).not.toContain("openai");
+		expect(ids).not.toContain("google");
+	});
 
-		await browser.pause(500);
-
-		// Should have API key input
+	it("should switch TTS to the browser voice without an API key", async () => {
+		expect(await chooseSelectOption(S.ttsProviderSelect, "browser")).toBe(true);
 		const hasApiKey = await browser.execute((sel: string) => {
 			return !!document.querySelector(sel);
 		}, S.ttsApiKeyInput);
-		expect(hasApiKey).toBe(true);
-
-		// Should have openai voices including alloy, nova
-		const voices = await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return [];
-			return Array.from(select.options).map((o) => o.value);
-		}, S.ttsVoiceSelect);
-
-		expect(voices).toContain("alloy");
-		expect(voices).toContain("nova");
-	});
-
-	// ── Switch to Google + verify voice list ──
-
-	it("should switch TTS to google and show Neural2 voices", async () => {
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return;
-			select.value = "google";
-			select.dispatchEvent(new Event("change", { bubbles: true }));
-		}, S.ttsProviderSelect);
-
-		await browser.pause(500);
-
-		const voices = await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return [];
-			return Array.from(select.options).map((o) => o.value);
-		}, S.ttsVoiceSelect);
-
-		expect(voices).toContain("ko-KR-Neural2-A");
-		expect(voices).toContain("ko-KR-Neural2-C");
+		expect(hasApiKey).toBe(false);
 	});
 
 	// ── Restore edge and go back ──
 
 	it("should restore edge provider", async () => {
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return;
-			select.value = "edge";
-			select.dispatchEvent(new Event("change", { bubbles: true }));
-		}, S.ttsProviderSelect);
-
-		await browser.pause(300);
+		expect(await chooseSelectOption(S.ttsProviderSelect, "edge")).toBe(true);
 	});
 
 	// ── Voice Button ──

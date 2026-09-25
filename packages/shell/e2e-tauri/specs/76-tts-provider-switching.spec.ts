@@ -1,7 +1,8 @@
 import { S } from "../helpers/selectors.js";
 import {
+	chooseSelectOption,
 	ensureAppReady,
-	navigateToSettings,
+	openSettingsSection,
 	scrollToSection,
 } from "../helpers/settings.js";
 
@@ -17,28 +18,45 @@ import {
  * #603 이 타사 클라우드 음성(Google·OpenAI·ElevenLabs)을 제거했다. 예전의
  * OpenAI 미리듣기와 ElevenLabs 전환 단계는 없는 공급자를 고르던 것이라 걷었고,
  * 목록에 다시 나타나지 않는지를 대신 본다.
+ *
+ * 설정은 활성 구역만 렌더한다 — 음성 구역을 열어야 공급자 선택이 DOM 에 선다.
+ * 앞선 스펙이 공급자를 바꿔 두었을 수 있어, 출발점(edge)은 직접 고른다.
  */
-const EXPECTED_PROVIDERS = ["edge", "nextain"];
+const EXPECTED_PROVIDERS = ["edge", "nextain", "browser", "vllm"];
 const REMOVED_PROVIDERS = ["google", "openai", "elevenlabs"];
+
+async function providerOptions(): Promise<
+	{ value: string; disabled: boolean }[]
+> {
+	return browser.execute((sel: string) => {
+		const select = document.querySelector(sel) as HTMLSelectElement | null;
+		if (!select) return [];
+		return Array.from(select.options).map((o) => ({
+			value: o.value,
+			disabled: o.disabled,
+		}));
+	}, S.ttsProviderSelect);
+}
+
+async function voiceCount(): Promise<number> {
+	return browser.execute((sel: string) => {
+		const select = document.querySelector(sel) as HTMLSelectElement | null;
+		return select?.options.length ?? 0;
+	}, S.ttsVoiceSelect);
+}
 
 describe("76 — TTS provider switching", () => {
 	before(async () => {
 		await ensureAppReady();
-		await navigateToSettings();
-		const settingsTab = await $(S.settingsTab);
-		await settingsTab.waitForDisplayed({ timeout: 10_000 });
+		await openSettingsSection("voice");
+		await (await $(S.ttsProviderSelect)).waitForExist({ timeout: 10_000 });
 	});
 
 	// ── Provider dropdown ──
 
 	it("should show TTS provider dropdown with all providers", async () => {
 		await scrollToSection(S.ttsProviderSelect);
-
-		const providerIds = await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return [];
-			return Array.from(select.options).map((o) => o.value);
-		}, S.ttsProviderSelect);
+		const providerIds = (await providerOptions()).map((o) => o.value);
 
 		for (const id of EXPECTED_PROVIDERS) {
 			expect(providerIds).toContain(id);
@@ -48,7 +66,8 @@ describe("76 — TTS provider switching", () => {
 		}
 	});
 
-	it("should default to edge provider", async () => {
+	it("should select the free edge provider", async () => {
+		expect(await chooseSelectOption(S.ttsProviderSelect, "edge")).toBe(true);
 		const value = await browser.execute((sel: string) => {
 			const select = document.querySelector(sel) as HTMLSelectElement | null;
 			return select?.value ?? "";
@@ -68,12 +87,7 @@ describe("76 — TTS provider switching", () => {
 	});
 
 	it("should show voice options for edge provider", async () => {
-		const voiceCount = await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			return select?.options.length ?? 0;
-		}, S.ttsVoiceSelect);
-
-		expect(voiceCount).toBeGreaterThan(0);
+		expect(await voiceCount()).toBeGreaterThan(0);
 	});
 
 	it("should preview edge TTS voice (actual audio)", async () => {
@@ -97,45 +111,25 @@ describe("76 — TTS provider switching", () => {
 		);
 	});
 
-	// ── Switch to Nextain (Naia key) ──
+	// ── Nextain (Naia key) ──
 
-	it("should switch to nextain and show naia account hint if not logged in", async () => {
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return;
-			select.value = "nextain";
-			select.dispatchEvent(new Event("change", { bubbles: true }));
-		}, S.ttsProviderSelect);
+	it("should gate nextain on the Naia account and never ask for an API key", async () => {
+		const nextain = (await providerOptions()).find((o) => o.value === "nextain");
+		expect(nextain).toBeDefined();
+		const chosen = await chooseSelectOption(S.ttsProviderSelect, "nextain");
+		// 나이아 계정이 없으면 옵션이 잠겨 고를 수 없다 — 잠김과 선택 실패가 일치해야 한다.
+		expect(chosen).toBe(!nextain?.disabled);
 
-		await browser.pause(500);
-
-		// No API key input should appear
 		const apiKeyExists = await browser.execute((sel: string) => {
 			return !!document.querySelector(sel);
 		}, S.ttsApiKeyInput);
 		expect(apiKeyExists).toBe(false);
-
-		// If no naiaKey, hint should show
-		const hintText = await browser.execute(() => {
-			const hint = document.querySelector(".settings-hint");
-			return hint?.textContent ?? "";
-		});
-
-		// Either hint or naia is already logged in — both ok
-		expect(typeof hintText).toBe("string");
 	});
 
 	// ── Switch back to edge ──
 
 	it("should switch back to edge and work normally", async () => {
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return;
-			select.value = "edge";
-			select.dispatchEvent(new Event("change", { bubbles: true }));
-		}, S.ttsProviderSelect);
-
-		await browser.pause(500);
+		expect(await chooseSelectOption(S.ttsProviderSelect, "edge")).toBe(true);
 
 		// No API key input
 		const apiKeyExists = await browser.execute((sel: string) => {
@@ -144,11 +138,7 @@ describe("76 — TTS provider switching", () => {
 		expect(apiKeyExists).toBe(false);
 
 		// Voice list restored
-		const voiceCount = await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			return select?.options.length ?? 0;
-		}, S.ttsVoiceSelect);
-		expect(voiceCount).toBeGreaterThan(0);
+		expect(await voiceCount()).toBeGreaterThan(0);
 	});
 
 	// ── Cleanup ──

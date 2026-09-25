@@ -1,7 +1,8 @@
 import { S } from "../helpers/selectors.js";
 import {
+	chooseSelectOption,
 	ensureAppReady,
-	navigateToSettings,
+	openSettingsSection,
 	scrollToSection,
 } from "../helpers/settings.js";
 
@@ -111,23 +112,13 @@ describe("85 — voice actual recording", () => {
 	// ── Phase 2: Voice button with STT provider ──
 
 	it("should configure vosk STT and enable TTS", async () => {
-		await navigateToSettings();
-		const settingsTab = await $(S.settingsTab);
-		await settingsTab.waitForDisplayed({ timeout: 10_000 });
+		// 설정은 활성 구역만 렌더한다 — STT·TTS 는 voice 구역에 있다.
+		await openSettingsSection("voice");
+		const sttSelect = '[data-testid="stt-provider-section"] select';
+		await (await $(sttSelect)).waitForExist({ timeout: 10_000 });
 
 		// Set vosk STT (offline — no MediaRecorder needed)
-		await browser.execute(() => {
-			const selects = document.querySelectorAll("select");
-			for (const sel of selects) {
-				const options = Array.from(sel.options).map((o) => o.value);
-				if (options.includes("vosk") && options.includes("whisper")) {
-					sel.value = "vosk";
-					sel.dispatchEvent(new Event("change", { bubbles: true }));
-					return;
-				}
-			}
-		});
-		await browser.pause(300);
+		expect(await chooseSelectOption(sttSelect, "vosk")).toBe(true);
 
 		// Enable TTS
 		await scrollToSection(S.ttsToggle);
@@ -145,20 +136,12 @@ describe("85 — voice actual recording", () => {
 		}
 		await browser.pause(300);
 
-		// Save
-		await browser.execute(() => {
-			const btns = document.querySelectorAll("button");
-			for (const btn of btns) {
-				if (
-					btn.textContent?.includes("저장") ||
-					btn.textContent?.includes("Save")
-				) {
-					btn.click();
-					return;
-				}
-			}
+		// 음성 구역은 바꾸는 즉시 저장한다 — 저장 단추가 따로 없다.
+		const persisted = await browser.execute(() => {
+			const cfg = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+			return { sttProvider: cfg.sttProvider, ttsEnabled: cfg.ttsEnabled };
 		});
-		await browser.pause(1500);
+		expect(persisted).toEqual({ sttProvider: "vosk", ttsEnabled: true });
 	});
 
 	it("should click voice button and check STT initialization", async () => {

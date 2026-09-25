@@ -2,8 +2,9 @@ import { getLastAssistantMessage, sendMessage } from "../helpers/chat.js";
 import { autoApprovePermissions } from "../helpers/permissions.js";
 import { S } from "../helpers/selectors.js";
 import {
+	chooseSelectOption,
 	ensureAppReady,
-	navigateToSettings,
+	openSettingsSection,
 	scrollToSection,
 } from "../helpers/settings.js";
 
@@ -17,7 +18,20 @@ import {
  * 4. Switch back to LLM model → TTS resumes
  *
  * Verifies that model switching doesn't break TTS pipeline.
+ *
+ * 설정은 활성 구역만 렌더한다 — TTS 토글·공급자는 voice, 모델 선택은 brain
+ * 구역이다. 두 구역을 오가므로 TTS 켜짐 여부는 저장된 설정에서 읽는다.
  */
+async function persistedTtsConfig(): Promise<{
+	ttsEnabled?: boolean;
+	ttsProvider?: string;
+}> {
+	return browser.execute(() => {
+		const cfg = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		return { ttsEnabled: cfg.ttsEnabled, ttsProvider: cfg.ttsProvider };
+	});
+}
+
 describe("82 — chat TTS multi-model", () => {
 	let dispose: (() => void) | undefined;
 
@@ -28,9 +42,8 @@ describe("82 — chat TTS multi-model", () => {
 	// ── Setup: enable TTS + edge provider ──
 
 	it("should enable TTS with edge provider", async () => {
-		await navigateToSettings();
-		const settingsTab = await $(S.settingsTab);
-		await settingsTab.waitForDisplayed({ timeout: 10_000 });
+		await openSettingsSection("voice");
+		await (await $(S.ttsToggle)).waitForExist({ timeout: 10_000 });
 
 		// Enable TTS
 		await scrollToSection(S.ttsToggle);
@@ -48,14 +61,11 @@ describe("82 — chat TTS multi-model", () => {
 
 		// Set edge TTS
 		await scrollToSection(S.ttsProviderSelect);
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (select) {
-				select.value = "edge";
-				select.dispatchEvent(new Event("change", { bubbles: true }));
-			}
-		}, S.ttsProviderSelect);
-		await browser.pause(300);
+		expect(await chooseSelectOption(S.ttsProviderSelect, "edge")).toBe(true);
+		expect(await persistedTtsConfig()).toEqual({
+			ttsEnabled: true,
+			ttsProvider: "edge",
+		});
 	});
 
 	// ── Test 1: Default provider (Nextain/Gemini) ──
@@ -105,9 +115,8 @@ describe("82 — chat TTS multi-model", () => {
 	// ── Test 2: Switch LLM model ──
 
 	it("should switch to different model in settings", async () => {
-		await navigateToSettings();
-		const settingsTab = await $(S.settingsTab);
-		await settingsTab.waitForDisplayed({ timeout: 10_000 });
+		await openSettingsSection("brain");
+		await (await $("#model-select")).waitForExist({ timeout: 10_000 });
 
 		// Read current model
 		const currentModel = await browser.execute(() => {
@@ -118,35 +127,28 @@ describe("82 — chat TTS multi-model", () => {
 		});
 
 		// Get available models and pick a different one
-		const switched = await browser.execute((current: string) => {
+		const nextModel = await browser.execute((current: string) => {
 			const select = document.querySelector(
 				"#model-select",
 			) as HTMLSelectElement | null;
-			if (!select) return false;
-			for (const opt of select.options) {
-				// Pick a different LLM model (not omni, not current)
-				if (
-					opt.value !== current &&
-					!opt.textContent?.includes("🗣️") &&
-					opt.value !== "__custom__"
-				) {
-					select.value = opt.value;
-					select.dispatchEvent(new Event("change", { bubbles: true }));
-					return true;
-				}
-			}
-			return false;
+			if (!(select instanceof HTMLSelectElement)) return "";
+			// Pick a different LLM model (not omni, not current)
+			const opt = Array.from(select.options).find(
+				(o) =>
+					o.value !== current &&
+					!o.disabled &&
+					!o.textContent?.includes("🗣️") &&
+					o.value !== "__custom__",
+			);
+			return opt?.value ?? "";
 		}, currentModel);
-
-		await browser.pause(300);
+		// 단일 모델 공급자는 #model-select 가 선택 상자가 아니다 — 바꿀 모델이 없다.
+		if (nextModel) {
+			expect(await chooseSelectOption("#model-select", nextModel)).toBe(true);
+		}
 
 		// Verify TTS is still enabled after model switch
-		const ttsStillEnabled = await browser.execute((sel: string) => {
-			return (
-				(document.querySelector(sel) as HTMLInputElement)?.checked ?? false
-			);
-		}, S.ttsToggle);
-		expect(ttsStillEnabled).toBe(true);
+		expect((await persistedTtsConfig()).ttsEnabled).toBe(true);
 	});
 
 	it("should send message with switched model and still get response", async () => {
@@ -179,9 +181,7 @@ describe("82 — chat TTS multi-model", () => {
 	// ── Test 3: Omni model check ──
 
 	it("should detect omni model has voice icon 🗣️", async () => {
-		await navigateToSettings();
-		const settingsTab = await $(S.settingsTab);
-		await settingsTab.waitForDisplayed({ timeout: 10_000 });
+		await openSettingsSection("brain");
 
 		const hasOmni = await browser.execute(() => {
 			const select = document.querySelector(

@@ -75,36 +75,33 @@ describe("11 — Cost Dashboard", () => {
 			{ timeout: 5_000 },
 		);
 
-		// Inject a naiaKey into config to simulate Lab connection
-		await browser.execute(() => {
-			const raw = localStorage.getItem("naia-config");
-			if (!raw) return;
-			const config = JSON.parse(raw);
-			config.naiaKey = "test-lab-key-e2e";
-			localStorage.setItem("naia-config", JSON.stringify(config));
-		});
-
-		// Re-open dashboard with new config
+		// Re-open dashboard
 		await costBadge.click();
 
 		const dashboard = await $(S.costDashboard);
 		await dashboard.waitForDisplayed({ timeout: 10_000 });
 
-		// Lab balance section should be visible (loading or content)
-		const hasLabBalance = await browser.execute(
-			(sel: string) => !!document.querySelector(sel),
-			S.labBalanceRow,
-		);
-		expect(hasLabBalance).toBe(true);
-
-		// Remove naiaKey to restore clean state (dashboard stays open for next test)
+		// 나이아 키는 이제 localStorage 가 아니라 보안 저장소에 있어, 예전처럼
+		// naia-config 에 키를 끼워 넣어도 대시보드는 모른다. 대시보드는 열릴 때
+		// 보안 저장소를 한 번 묻고, 로그인이 끝나면 오는 `naia_auth_ready` 신호로
+		// 잔액 칸을 연다. 첫 조회가 끝난 뒤 그 신호를 보내 로그인 직후를 흉내 낸다.
+		await browser.pause(1_000);
 		await browser.execute(() => {
-			const raw = localStorage.getItem("naia-config");
-			if (!raw) return;
-			const config = JSON.parse(raw);
-			config.naiaKey = undefined;
-			localStorage.setItem("naia-config", JSON.stringify(config));
+			window.dispatchEvent(new Event("naia_auth_ready"));
 		});
+
+		// Lab balance section should be visible (loading, error, or content)
+		await browser.waitUntil(
+			() =>
+				browser.execute(
+					(sel: string) => !!document.querySelector(sel),
+					S.labBalanceRow,
+				),
+			{
+				timeout: 5_000,
+				timeoutMsg: "Lab balance row did not appear after naia_auth_ready",
+			},
+		);
 	});
 
 	it("should close cost dashboard on second badge click", async () => {

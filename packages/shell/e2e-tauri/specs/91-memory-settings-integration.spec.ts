@@ -6,7 +6,7 @@ import { assertSemantic } from "../helpers/semantic.js";
 import {
 	clickBySelector,
 	ensureAppReady,
-	navigateToSettings,
+	openSettingsSection,
 	safeRefresh,
 	scrollToSection,
 	setNativeValue,
@@ -149,9 +149,8 @@ async function clickSave(): Promise<void> {
 
 /** Navigate to settings and wait for the memory section to render. */
 async function gotoSettingsMemory(): Promise<void> {
-	await navigateToSettings();
-	const settingsTab = await $(S.settingsTab);
-	await settingsTab.waitForDisplayed({ timeout: 10_000 });
+	// 설정은 활성 구역만 렌더한다 — 메모리 어댑터 선택은 memory 구역에 있다.
+	await openSettingsSection("memory");
 	// Brief pause for tab transition animation before scrolling
 	await browser.pause(500);
 	await scrollToSection(S.memoryAdapterLocal);
