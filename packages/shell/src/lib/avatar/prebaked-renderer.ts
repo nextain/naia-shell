@@ -5,9 +5,8 @@ import type {
 	AvatarSpeechRenderer,
 } from "./avatar-renderer";
 import {
-	NVA_GATE_HOLD_MS,
 	NVA_GATE_THRESHOLD,
-	NVA_SHELL_MIN_IDLE_MS,
+	NVA_SHELL_HOLD_MS,
 	NvaAudioGate,
 } from "./nva-audio-gate";
 import { NvaChromakeyGL } from "./nva-chromakey-gl";
@@ -148,9 +147,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private returningToIdle = false;
 	private readonly gate = new NvaAudioGate(
 		NVA_GATE_THRESHOLD,
-		NVA_GATE_HOLD_MS,
+		NVA_SHELL_HOLD_MS,
 		"idle",
-		NVA_SHELL_MIN_IDLE_MS,
 	);
 	private readonly fade = new SwitchCrossfade<HTMLVideoElement>();
 	private lastDrawAt: number | null = null;

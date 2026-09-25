@@ -4,7 +4,7 @@ import type { NvaManifest } from "../../nva";
 import {
 	NVA_GATE_HOLD_MS,
 	NVA_GATE_THRESHOLD,
-	NVA_SHELL_MIN_IDLE_MS,
+	NVA_SHELL_HOLD_MS,
 	NvaAudioGate,
 } from "../nva-audio-gate";
 import { PrebakedAvatarRenderer, SwitchCrossfade } from "../prebaked-renderer";
@@ -26,25 +26,31 @@ describe("NvaAudioGate (same rule as the naia.land Studio clip engine)", () => {
 		expect(gate.process(0.05, 33)).toBe("talking");
 	});
 
-	it("with the shell minimum, a closed gate stays closed for 250 ms so no idle flash is shorter", () => {
-		const gate = new NvaAudioGate(
-			NVA_GATE_THRESHOLD,
-			NVA_GATE_HOLD_MS,
-			"idle",
-			NVA_SHELL_MIN_IDLE_MS,
-		);
+	it("with the shell hold, a pause inside a sentence keeps the mouth moving instead of snapping shut", () => {
+		const gate = new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_SHELL_HOLD_MS);
 		// The first word of an utterance opens at once.
 		expect(gate.process(0.05, 33)).toBe("talking");
-		expect(gate.process(0, 200)).toBe("idle");
-		// Voice returns 33 ms later: still idle, the head does not flash.
-		expect(gate.process(0.05, 33)).toBe("idle");
-		expect(gate.process(0.05, 200)).toBe("idle");
-		// 250 ms after closing, the voice opens it again.
-		expect(gate.process(0.05, 17)).toBe("talking");
-		// After a reset the next word opens at once again.
-		expect(gate.process(0, 200)).toBe("idle");
-		gate.reset();
-		expect(gate.process(0.05, 0)).toBe("talking");
+		// 350 ms of silence: under the 400 ms shell hold, still talking.
+		expect(gate.process(0, 200)).toBe("talking");
+		expect(gate.process(0, 150)).toBe("talking");
+		// The voice returns before the hold elapses: it never closed.
+		expect(gate.process(0.05, 33)).toBe("talking");
+	});
+
+	it("with the shell hold, a pause at or past 400 ms closes and reopens at once (no minimum closed time)", () => {
+		const gate = new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_SHELL_HOLD_MS);
+		gate.process(0.05, 33);
+		expect(gate.process(0, 399)).toBe("talking");
+		expect(gate.process(0, 1)).toBe("idle");
+		// Voice returns 1 ms after closing: opens at once, unlike the removed
+		// NVA_SHELL_MIN_IDLE_MS rule that used to hold it shut for 250 ms more.
+		expect(gate.process(0.05, 1)).toBe("talking");
+	});
+
+	it("mutation check: without the 400 ms shell hold (falling back to the 200 ms web hold), a 300 ms in-sentence pause would wrongly close", () => {
+		const gate = new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_GATE_HOLD_MS);
+		gate.process(0.05, 33);
+		expect(gate.process(0, 300)).toBe("idle");
 	});
 });
 
@@ -171,16 +177,19 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 		return { renderer, idle, talking };
 	}
 
-	it("keeps the idle clip at least 250 ms once shown, so a short pause does not flash it", async () => {
+	it("keeps talking through an in-sentence pause and closes only near the 400 ms shell hold", async () => {
 		const level = { value: 0.08 as number | null };
 		const { renderer, idle, talking } = await speakingRenderer(level);
 		expect(renderer.drawSource(1000)).toBe(talking);
 		level.value = 0;
+		// 300 ms of silence, under the 400 ms shell hold: still talking.
 		expect(renderer.drawSource(1100)).toBe(talking);
-		expect(renderer.drawSource(1200)).toBe(idle);
+		expect(renderer.drawSource(1300)).toBe(talking);
+		// Past the hold: idle.
+		expect(renderer.drawSource(1401)).toBe(idle);
+		// Voice returns right away: opens at once, no minimum closed time.
 		level.value = 0.08;
-		expect(renderer.drawSource(1233)).toBe(idle);
-		expect(renderer.drawSource(1450)).toBe(talking);
+		expect(renderer.drawSource(1420)).toBe(talking);
 		renderer.stop();
 	});
 
@@ -234,17 +243,18 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 			frame(1000);
 			frame(1033);
 			level.value = 0;
-			// Hold elapses: idle is chosen, talking is laid over it at full strength.
-			expect(frame(1240)).toEqual([
+			// 400 ms shell hold elapses (from 1033): idle is chosen, talking is
+			// laid over it at full strength.
+			expect(frame(1433)).toEqual([
 				{ source: idle, alpha: 1 },
 				{ source: talking, alpha: 1 },
 			]);
-			const mid = frame(1290);
+			const mid = frame(1483);
 			expect(mid[0]).toEqual({ source: idle, alpha: 1 });
 			expect(mid[1].source).toBe(talking);
 			expect(mid[1].alpha).toBeCloseTo(0.5);
 			// Fade over: only idle is drawn.
-			expect(frame(1400)).toEqual([{ source: idle, alpha: 1 }]);
+			expect(frame(1593)).toEqual([{ source: idle, alpha: 1 }]);
 			renderer.stop();
 		} finally {
 			vi.unstubAllGlobals();
@@ -259,11 +269,11 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 		expect(renderer.drawSource(1000)).toBe(idle);
 		level.value = 0.08;
 		expect(renderer.drawSource(1033)).toBe(talking);
-		// Short gap between syllables (< 200 ms hold): stays talking.
+		// Short gap between syllables (< 400 ms shell hold): stays talking.
 		level.value = 0;
 		expect(renderer.drawSource(1133)).toBe(talking);
-		// Pause between sentences: back to the closed-mouth idle clip.
-		expect(renderer.drawSource(1300)).toBe(idle);
+		// Pause between sentences (past the hold): back to the closed-mouth idle clip.
+		expect(renderer.drawSource(1500)).toBe(idle);
 		renderer.stop();
 	});
 
@@ -330,14 +340,14 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 		const { renderer, idle, talking } = await speakingRenderer(level);
 		expect(renderer.drawSource(1000)).toBe(talking);
 		level.value = 0;
-		expect(renderer.drawSource(1300)).toBe(idle);
+		expect(renderer.drawSource(1500)).toBe(idle);
 		// Narration settles: playIdle has not landed yet, the talking loop is
 		// still the active clip, and it must not flash back on screen.
 		renderer.setSpeakingVisual(false);
-		expect(renderer.drawSource(1333)).toBe(idle);
-		expect(renderer.drawSource(1366)).toBe(idle);
+		expect(renderer.drawSource(1533)).toBe(idle);
+		expect(renderer.drawSource(1566)).toBe(idle);
 		await flush();
-		expect(renderer.drawSource(1400)).toBe(idle);
+		expect(renderer.drawSource(1600)).toBe(idle);
 		renderer.stop();
 	});
 
