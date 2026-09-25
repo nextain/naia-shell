@@ -2,10 +2,14 @@ import type { EnvironmentAwareness } from "@nextain/naia-os-core/composition";
 import type { VramTierId } from "./capabilities/vram-tiers";
 import type { Locale } from "./i18n";
 import { Logger } from "./logger";
-import type { VoicePlaybackMode } from "./tts/voice-playback-mode";
 import {
-	SECRET_KEYS,
+	NAIA_INSTANCE_URLS,
+	naiaLaunchMode,
+	resolveNaiaInstance,
+} from "./naia-instance-urls";
+import {
 	RETIRED_VOICE_SECRET_KEYS,
+	SECRET_KEYS,
 	deleteLegacySecretKey,
 	deleteSecretKeyAtPath,
 	getLegacySecretEntries,
@@ -18,12 +22,8 @@ import {
 	saveSecretKeyAtPath,
 } from "./secure-store";
 import { NAIA_SLOT_DEFAULTS } from "./slots/model";
+import type { VoicePlaybackMode } from "./tts/voice-playback-mode";
 import type { ProviderId } from "./types";
-import {
-	NAIA_INSTANCE_URLS,
-	naiaLaunchMode,
-	resolveNaiaInstance,
-} from "./naia-instance-urls";
 
 const STORAGE_KEY = "naia-config";
 

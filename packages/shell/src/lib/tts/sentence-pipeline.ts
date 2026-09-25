@@ -30,10 +30,10 @@ import type { LocalVoiceScheduler } from "./local-voice-scheduler";
 import { synthesizeTts } from "./synthesize";
 import { ttsTextFilter } from "./text-filter";
 import {
+	type VoicePlaybackMode,
 	VoicePlaybackRtfTracker,
 	decidePlaybackMethod,
 	estimateSentenceDurationSeconds,
-	type VoicePlaybackMode,
 } from "./voice-playback-mode";
 import { isVoiceWarmingHold } from "./warming-hold";
 
