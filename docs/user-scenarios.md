@@ -1958,7 +1958,7 @@ Test Coverage Map (P02)
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: 실사용 아바타 렌더러가 클립마다 `<video>` 를 하나씩 두어 왕복에서 `src` 재대입이 없는지, 활성 요소만 재생하고 떠난 요소는 멈추는지, 만든 형제 요소를 정지 때 거두는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | VideoAvatarCanvas 가 등록하는 렌더러가 이쪽이다 — layered 플레이어만 고치면 실제 경로는 그대로 멈춘다(2026-09-11 3/3) |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/nva-layered-player.test.ts`: idle↔talk 왕복에서 같은 클립을 다시 로드하지 않고(버퍼당 `src` 대입 1회) 매번 교체는 일어나는지, 재사용 클립을 되감는지, 로드가 취소된 클립은 다시 로드하는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | 낭독이 아바타를 idle↔talk 로 계속 왕복시켜 WebKitGTK 미디어 파이프라인 해체 교착을 밟았다(gdb 2/2). 재생 계약과 같은 슬라이스에 둔다 |
 
-## UC-TOOLS-SURFACE-611 — model-facing tool boundary
+### UC-TOOLS-SURFACE-611 — model-facing tool boundary
 
 Naia가 대화나 음성 세션을 시작할 때 모델에 전달되는 도구는 제품에 남긴 관찰·표현 표면만 포함한다: 시간, 날씨, 메모, 워크스페이스 파일 읽기, YouTube BGM, 인앱 브라우저. 기억은 별도 자동 회상·저장 경로로 남기며 모델 도구 이름으로 만들지 않는다. 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 풀, ADK `SKILL.md` 로더, 알림 및 그 밖의 작업 도구는 모델 목록에서 사라진다.
 Exception #687: `skill_workspace_edit_open_file` (open editor file only, per-edit approval) — see UC-WORKSPACE-OPEN-FILE-EDIT-687.
@@ -2001,7 +2001,7 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-INSTANCE-URLS-653 | `packages/shell/src/lib/__tests__/naia-instance-urls.test.ts`; `packages/shell/scripts/__tests__/launch-env.test.mjs` | existing onboarding login specs keep redirect_uri/source=desktop |
 
-## UC-WORKSPACE-BIND-651 — Codex and fs-tools use the shell workspace root
+### UC-WORKSPACE-BIND-651 — Codex and fs-tools use the shell workspace root
 
 The workspace UI `set_root` canonical path is the Codex app-server cwd and the fs-tools allow-root. OS temp is not a second sandbox. Turning on 「터미널에 직접 입력 허용」 raises Codex sandbox to workspace-write on that same root. Naia write/github tools stay removed.
 
@@ -2020,7 +2020,7 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-WORKSPACE-BIND-651 | paired nextain/naia-agent repository: workspace-bind.contract.test.ts + codex-app-server-provider.contract.test.ts (not files of this repository) | shell spawn cwd follows ADK path (Rust `current_dir`) | Codex와 fs 도구가 셸이 정한 작업 공간 루트에서 실행된다 |
 
-## UC-WORKSPACE-AI-CONTEXT-AND-CONTROL (#680) — AI workspace/Herdr context awareness and terminal/UI control
+### UC-WORKSPACE-AI-CONTEXT-AND-CONTROL (#680) — AI workspace/Herdr context awareness and terminal/UI control
 
 AI 에이전트가 사용자가 열어둔 파일 목록(`openDocs`), 현재 활성 문서(`openFilePath`), 커서 위치(`line`, `column`, `selectedText`), 그리고 Herdr 터미널의 최근 출력(`terminalTail`)을 컨텍스트로 인지하고, 필요 시 도구를 통해 버퍼를 조회(`skill_workspace_get_terminal_output`)할 수 있다. 또한 사용자가 보고 있는 Herdr 터미널로 가시적 명령을 실행(`skill_workspace_terminal_exec`)하고, 화면 전환(`skill_workspace_set_surface`), 문서 닫기(`skill_workspace_close_file`), 스페이스 포커스(`skill_workspace_focus_space`)를 제어할 수 있다.
 
@@ -2039,7 +2039,7 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` | AI가 작업 공간·Herdr 상태를 알고 터미널과 화면을 제어한다 |
 
-## UC-WORKSPACE-OPEN-FILE-EDIT-687 — AI edits the open editor file with per-edit approval
+### UC-WORKSPACE-OPEN-FILE-EDIT-687 — AI edits the open editor file with per-edit approval
 
 - **Actor**: 사용자, AI 에이전트(Naia)
 - **Preconditions**: 워크스페이스 앱이 활성화되어 있고 편집기에 파일이 하나 열려 있음.
@@ -2070,7 +2070,7 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI | 확인하는 것 |
 |---|---|---|---|
-| UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, `workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` | 열린 파일만 편집 대상이 되고, 편집마다 승인/거절·시간 초과가 지켜지며, 승인된 편집만 디스크와 편집기에 반영된다 |
+| UC-WORKSPACE-OPEN-FILE-EDIT-687 | `packages/shell/src/apps/workspace/__tests__/open-file-edit.test.ts`, `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/apps/workspace/__tests__/open-file-edit-review.test.tsx`, `packages/shell/src/apps/workspace/__tests__/workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` | 열린 파일만 편집 대상이 되고, 편집마다 승인/거절·시간 초과가 지켜지며, 승인된 편집만 디스크와 편집기에 반영된다 |
 
 ## UC-VOICE-SHARED-CACHE-703 — 개발·운영 인스턴스가 같은 음성 런타임을 한 번만 내려받는다 (#703)
 
