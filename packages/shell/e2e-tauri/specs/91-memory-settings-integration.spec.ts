@@ -413,8 +413,25 @@ describe("91 — Memory Settings Integration", () => {
 		it("should write vllm embedding fields and derived aliases to config.json", async () => {
 			await clickRadio("memory-embedding", "vllm");
 			await browser.pause(300);
+			// vLLM 임베딩 Base URL 및 Model 입력 필드는 포커스를 벗어날 때(blur) config.json에 저장된다.
 			await setNativeValue(S.memoryEmbeddingBaseUrl, "http://localhost:11434");
+			await browser.execute((sel: string) => {
+				const el = document.querySelector(sel) as HTMLInputElement | null;
+				if (!el) throw new Error(`${sel} not found`);
+				el.focus();
+				el.blur();
+				el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+			}, S.memoryEmbeddingBaseUrl);
+
 			await setNativeValue(S.memoryEmbeddingModel, "nomic-embed-text");
+			await browser.execute((sel: string) => {
+				const el = document.querySelector(sel) as HTMLInputElement | null;
+				if (!el) throw new Error(`${sel} not found`);
+				el.focus();
+				el.blur();
+				el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+			}, S.memoryEmbeddingModel);
+
 			await clickSave();
 
 			// 라디오를 누르는 순간 공급자만 먼저 저장된다(persistConfig). 공급자만 보고
@@ -848,143 +865,132 @@ describe("91 — Memory Settings Integration", () => {
 	});
 
 	// ── Suite 6: Backup export ──────────────────────────────────────────────────
+	// 백업 구역은 구현 검증 전까지 의도적으로 비활성화되어 있으므로 비활성 상태 및 준비 중 안내 계약을 검증한다.
 	describe("6) Backup export", () => {
 		before(async () => {
 			await ensureAppReady();
 			await gotoSettingsMemory();
 			// Scroll to backup area
 			await browser.execute(() => {
-				const inputs = Array.from(
-					document.querySelectorAll("input[type='password']"),
-				) as HTMLInputElement[];
-				const pw = inputs.find((el) => {
-					const ph = el.placeholder.toLowerCase();
-					return (
-						ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
-					);
-				});
+				const pw =
+					(document.querySelector(
+						'[data-testid="memory-backup-password"]',
+					) as HTMLElement | null) ??
+					(
+						Array.from(
+							document.querySelectorAll("input[type='password']"),
+						) as HTMLInputElement[]
+					).find((el) => {
+						const ph = el.placeholder.toLowerCase();
+						return (
+							ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
+						);
+					});
 				if (pw) pw.scrollIntoView({ block: "center" });
 			});
 			await browser.pause(500);
 		});
 
-		it("should render backup password input", async () => {
-			const hasPw = await browser.execute(() =>
-				(
-					Array.from(
-						document.querySelectorAll("input[type='password']"),
-					) as HTMLInputElement[]
-				).some(
-					(el) =>
-						el.placeholder.toLowerCase().includes("password") ||
-						el.placeholder.includes("\ube44\ubc00\ubc88\ud638"),
-				),
-			);
-			expect(hasPw).toBe(true);
-		});
-
-		it("should enable export button only after password is entered", async () => {
-			const disabledBefore = await browser.execute(() => {
-				const btns = Array.from(
-					document.querySelectorAll("button"),
-				) as HTMLButtonElement[];
-				return (
-					btns.find((b) =>
-						/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
-					)?.disabled ?? true
-				);
-			});
-			expect(disabledBefore).toBe(true);
-
-			// Fill password
-			await browser.execute(() => {
-				const inputs = Array.from(
-					document.querySelectorAll("input[type='password']"),
-				) as HTMLInputElement[];
-				const pw = inputs.find((el) => {
-					const ph = el.placeholder.toLowerCase();
-					return (
-						ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
-					);
-				});
-				if (!pw) throw new Error("backup password input not found");
-				const setter = Object.getOwnPropertyDescriptor(
-					HTMLInputElement.prototype,
-					"value",
-				)?.set;
-				if (setter) setter.call(pw, "e2e-test-pw-123");
-				else pw.value = "e2e-test-pw-123";
-				pw.dispatchEvent(new Event("input", { bubbles: true }));
-			});
-			await browser.pause(300);
-
-			const enabledAfter = await browser.execute(() => {
-				const btns = Array.from(
-					document.querySelectorAll("button"),
-				) as HTMLButtonElement[];
-				return !btns.find((b) =>
-					/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
-				)?.disabled;
-			});
-			expect(enabledAfter).toBe(true);
-		});
-
-		it("should trigger export and show done or error status (IPC called)", async () => {
-			// Click export
-			await browser.execute(() => {
-				const btns = Array.from(
-					document.querySelectorAll("button"),
-				) as HTMLButtonElement[];
-				const btn = btns.find((b) =>
-					/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
-				);
-				if (btn && !btn.disabled) btn.click();
-			});
-
-			// Wait for export IPC to respond:
-			// - button shows "..." while in-progress
-			// - backup outcome: ✓/done (success) or fail/error keywords in a hint
-			let ipcResponded = false;
-			await browser.waitUntil(
-				async () => {
-					const result = await browser.execute(() => {
-						const btns = Array.from(
-							document.querySelectorAll("button"),
-						) as HTMLButtonElement[];
-						const exportBtn = btns.find((b) =>
-							/(export|\ub0b4\ubcf4\ub0b4\uae30|\.\.\.)/i.test(
-								b.textContent ?? "",
-							),
+		it("should render disabled backup password input", async () => {
+			const pwState = await browser.execute(() => {
+				const el =
+					(document.querySelector(
+						'[data-testid="memory-backup-password"]',
+					) as HTMLInputElement | null) ??
+					(
+						Array.from(
+							document.querySelectorAll("input[type='password']"),
+						) as HTMLInputElement[]
+					).find((input) => {
+						const ph = input.placeholder.toLowerCase();
+						return (
+							ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
 						);
-						const isInProgress = exportBtn?.textContent?.trim() === "...";
-						// Match backup-specific outcome hints only:
-						// exclude "✓ Saved" / "저장" which are settings-save hints
-						const isDone = Array.from(
-							document.querySelectorAll(".settings-hint"),
-						).some(
-							(el) =>
-								/\u2713|done/i.test(el.textContent ?? "") &&
-								!/\bsaved\b|\uc800\uc7a5/i.test(el.textContent ?? ""),
-						);
-						const hasError = Array.from(
-							document.querySelectorAll(".settings-hint"),
-						).some((el) =>
-							/(\bfail(ed)?\b|\berror\b|\uc624\ub958|\uc2e4\ud328)/i.test(
-								el.textContent ?? "",
-							),
-						);
-						return { isInProgress, isDone, hasError };
 					});
-					if (result.isInProgress || result.isDone || result.hasError) {
-						ipcResponded = true;
-						return true;
-					}
-					return false;
-				},
-				{ timeout: 8_000, timeoutMsg: "Export IPC did not respond" },
-			);
-			// If waitUntil passed, IPC was called and responded
-			expect(ipcResponded).toBe(true);
+				if (!el) return null;
+				return { exists: true, disabled: el.disabled };
+			});
+			expect(pwState).not.toBeNull();
+			expect(pwState?.exists).toBe(true);
+			expect(pwState?.disabled).toBe(true);
+		});
+
+		it("should render disabled export and import buttons", async () => {
+			const buttonStates = await browser.execute(() => {
+				const exportBtn =
+					(document.querySelector(
+						'[data-testid="memory-backup-export"]',
+					) as HTMLButtonElement | null) ??
+					(
+						Array.from(
+							document.querySelectorAll("button"),
+						) as HTMLButtonElement[]
+					).find((b) =>
+						/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
+					);
+
+				const importBtn =
+					(exportBtn?.nextElementSibling as HTMLButtonElement | null) ??
+					(
+						Array.from(
+							document.querySelectorAll("button"),
+						) as HTMLButtonElement[]
+					).find((b) =>
+						/(import|\uac00\uc838\uc624\uae30)/i.test(b.textContent ?? ""),
+					);
+
+				return {
+					exportExists: !!exportBtn,
+					exportDisabled: exportBtn?.disabled ?? false,
+					importExists: !!importBtn,
+					importDisabled: importBtn?.disabled ?? false,
+				};
+			});
+			expect(buttonStates.exportExists).toBe(true);
+			expect(buttonStates.exportDisabled).toBe(true);
+			expect(buttonStates.importExists).toBe(true);
+			expect(buttonStates.importDisabled).toBe(true);
+		});
+
+		it("should display coming soon hint in backup field", async () => {
+			const hintInfo = await browser.execute(() => {
+				const pwInput =
+					document.querySelector('[data-testid="memory-backup-password"]') ??
+					(
+						Array.from(
+							document.querySelectorAll("input[type='password']"),
+						) as HTMLInputElement[]
+					).find((input) => {
+						const ph = input.placeholder.toLowerCase();
+						return (
+							ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
+						);
+					});
+				const field = pwInput?.closest(".settings-field");
+				const hintEl = field?.querySelector(
+					"span.settings-hint",
+				) as HTMLElement | null;
+				if (!hintEl) return null;
+				const style = window.getComputedStyle(hintEl);
+				const isVisible =
+					style.display !== "none" &&
+					style.visibility !== "hidden" &&
+					style.opacity !== "0";
+				return {
+					exists: true,
+					visible: isVisible,
+					text: (hintEl.textContent ?? "").trim(),
+				};
+			});
+			expect(hintInfo).not.toBeNull();
+			expect(hintInfo?.exists).toBe(true);
+			expect(hintInfo?.visible).toBe(true);
+			expect(hintInfo?.text.length).toBeGreaterThan(0);
+			expect(
+				/(backup|\ubc31\uc5c5|coming|future|\uc9c0\uc6d0)/i.test(
+					hintInfo?.text ?? "",
+				),
+			).toBe(true);
 		});
 	});
 
