@@ -36,6 +36,20 @@ import {
  */
 export const AUDIBLE_OFF_HOLD_MS = 400;
 
+/**
+ * gap-review-8 (2026-09-25) 구멍 5-2: AudioContext.resume() 대기 시간 제한(ms).
+ * 브라우저나 OS 사운드 장치가 resume() 프로미스를 영영 완료하지 않는 경우
+ * 대기열이 영구 정지(deadlock)되는 문제를 방지하기 위한 안전 타임아웃 fallback.
+ */
+export const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 2500;
+
+/**
+ * VL-3 구멍 1: 스트림이 ended 된 후 AudioContext 가 suspended 상태일 때
+ * running 전환을 기다리는 최대 대기 시간(ms). 5초 안에 running 이 되지 않으면
+ * 경고 로그를 남기고 해당 문장을 건너뛰어 다음 항목으로 진행한다.
+ */
+export const SUSPENDED_ENDED_STREAM_MAX_WAIT_MS = 5000;
+
 /** Earliest a stream item can start after the one before it (first-chunk lead). */
 const STREAM_MIN_START_LEAD_SEC = 0.04;
 
@@ -43,6 +57,7 @@ const STREAM_MIN_START_LEAD_SEC = 0.04;
 interface LevelReader {
 	level(): number | null;
 	around(query: LevelsAroundQuery): LevelsAround | null;
+	rebindNext?(next: AudioQueueItem | null): void;
 }
 
 export interface AudioQueueCallbacks {
@@ -60,6 +75,12 @@ export interface AudioQueueCallbacks {
 	onAudibleChange?: (audible: boolean) => void;
 	/** Audio output device ID (from enumerateDevices). Applied via setSinkId. */
 	outputDeviceId?: string;
+	/**
+	 * Whether the response stream is still active (conversation is ongoing).
+	 * While true, an empty queue is NOT treated as final silence (the 400ms
+	 * audible hold is preserved between sentences).
+	 */
+	isResponseActive?: () => boolean;
 }
 
 export interface AudioQueueItemCallbacks {
@@ -183,6 +204,14 @@ export class AudioQueue implements VoiceLevelSource {
 	private callbacks: AudioQueueCallbacks;
 	/** gap-review-7 구멍 5-1: 스피커에서 실제로 소리가 나는 중인가. */
 	private audible = false;
+	/** VL-3 구멍 1: suspended 대기 관련 리스너 및 타이머 정리 콜백 */
+	private cancelStreamResumeListeners: (() => void) | null = null;
+	/** VL-3 구멍 2: HTMLAudioElement 폴링/리스너 정리 콜백 */
+	private cancelMediaAudiblePoll: (() => void) | null = null;
+	/** VL-3 구멍 3: 직전 재생 항목 타입 추적 */
+	private lastPlaybackType: "stream" | "media" | null = null;
+	/** VL-4 구멍 2: 실제 재생 시작 시에만 1씩 증가하는 재생 일련번호 */
+	private playbackSeq = 0;
 
 	/**
 	 * gap-review-8 hole 2: `true` is reported at once; `false` only after
@@ -191,7 +220,7 @@ export class AudioQueue implements VoiceLevelSource {
 	 * that time cancels it, so an item boundary with the next item ready, a
 	 * breath, or a slightly late chunk never flips the signal.
 	 */
-	private setAudible(value: boolean): void {
+	private setAudible(value: boolean, includeLatency = true): void {
 		if (value) {
 			this.cancelAudibleOff();
 			if (this.audible) return;
@@ -200,14 +229,14 @@ export class AudioQueue implements VoiceLevelSource {
 			return;
 		}
 		if (!this.audible || this.audibleOffTimer !== null) return;
-		this.armAudibleOff(AUDIBLE_OFF_HOLD_MS);
+		this.armAudibleOff(AUDIBLE_OFF_HOLD_MS, includeLatency);
 	}
 
 	/** Nothing more will play: report false once the last sound has left the speaker. */
-	private endAudible(): void {
+	private endAudible(includeLatency = true): void {
 		if (!this.audible) return;
 		this.cancelAudibleOff();
-		this.armAudibleOff(0);
+		this.armAudibleOff(0, includeLatency);
 	}
 
 	/** Playback was cut: nothing is heard any more. */
@@ -218,8 +247,11 @@ export class AudioQueue implements VoiceLevelSource {
 		this.callbacks.onAudibleChange?.(false);
 	}
 
-	private armAudibleOff(holdMs: number): void {
-		const delayMs = holdMs + outputLatencySeconds(sharedAudioContext) * 1000;
+	private armAudibleOff(holdMs: number, includeLatency = true): void {
+		const latencyMs = includeLatency
+			? outputLatencySeconds(sharedAudioContext) * 1000
+			: 0;
+		const delayMs = holdMs + latencyMs;
 		this.audibleOffTimer = setTimeout(() => {
 			this.audibleOffTimer = null;
 			if (!this.audible) return;
@@ -350,9 +382,19 @@ export class AudioQueue implements VoiceLevelSource {
 
 	/** Stop current playback and clear all queued audio. */
 	clear(): void {
+		if (this.cancelStreamResumeListeners) {
+			this.cancelStreamResumeListeners();
+			this.cancelStreamResumeListeners = null;
+		}
+		if (this.cancelMediaAudiblePoll) {
+			this.cancelMediaAudiblePoll();
+			this.cancelMediaAudiblePoll = null;
+		}
+		this.lastPlaybackType = null;
 		this.generation++;
 		this.queue = [];
 		this.playbackPaused = false;
+		this.responseActive = false;
 		this.pendingOrdered.clear();
 		this.flushCursor = 0;
 		this.nextExpectedSeq = 0;
@@ -407,12 +449,30 @@ export class AudioQueue implements VoiceLevelSource {
 		releaseVoiceLevelSource(this);
 	}
 
+	private responseActive = false;
+
+	/** Mark whether the response stream is currently ongoing. */
+	setResponseActive(active: boolean): void {
+		this.responseActive = active;
+	}
+
+	private isResponseActive(): boolean {
+		if (this.callbacks.isResponseActive?.()) return true;
+		return this.responseActive;
+	}
+
 	/**
 	 * Nothing queued, nothing held for ordering, and every reserved slot
 	 * already flushed: no sentence is waiting or being synthesized. The time
 	 * after the audio still playing is then real silence (review hole 5).
+	 *
+	 * When the conversational response stream is still active (LLM is still
+	 * generating text and the next sentence hasn't been reserved yet),
+	 * we do NOT skip the 400ms hold — only when the response has fully ended
+	 * is the time past the audio treated as real silence.
 	 */
 	private nothingQueued(): boolean {
+		if (this.isResponseActive()) return false;
 		return (
 			this.queue.length === 0 &&
 			this.pendingOrdered.size === 0 &&
@@ -596,6 +656,9 @@ export class AudioQueue implements VoiceLevelSource {
 					r,
 				);
 			},
+			rebindNext: (newNext: AudioQueueItem | null) => {
+				before?.rebindNext?.(newNext);
+			},
 		};
 	}
 
@@ -618,12 +681,17 @@ export class AudioQueue implements VoiceLevelSource {
 		// Only the silence since the end is timed by the wall clock: nothing
 		// is playing, so there is no media clock left to read.
 		const audibleSinceEnd = () => ((performance.now() - endedAt) / 1000) * rate;
+		let currentNext = next;
 		return {
 			level: () => envelopeLevelAt(envelope, duration + audibleSinceEnd()),
 			around: (query) => {
 				const now = duration + audibleSinceEnd();
 				const blocks: LevelBlock[] = [{ start: 0, envelope }];
-				const after = this.withUpcoming(blocks, next, Math.max(duration, now));
+				const after = this.withUpcoming(
+					blocks,
+					currentNext,
+					Math.max(duration, now),
+				);
 				return levelsAround(
 					blocks,
 					now + query.leadSec * rate,
@@ -632,6 +700,9 @@ export class AudioQueue implements VoiceLevelSource {
 					after,
 					rate,
 				);
+			},
+			rebindNext: (newNext: AudioQueueItem | null) => {
+				currentNext = newNext;
 			},
 		};
 	}
@@ -663,60 +734,326 @@ export class AudioQueue implements VoiceLevelSource {
 		this.currentStreamItem = item;
 		this.currentStreamScheduled = false;
 		let nextStart = 0;
+		let firstScheduledAt = 0;
+		let lastScheduledEnd = 0;
 		let started = false;
 		let advanced = false;
 		let pending = 0;
 		let ended = false;
 		// gap-review-3 (2026-09-25): the timer that will fire `onPlaybackStart`
-		// once the first chunk's scheduled `at` arrives — hoisted to this outer
-		// scope (not just inside the `!started` branch below) so `advance()`
-		// can fire it early instead of losing it (see `advance` below).
+		// once the first chunk's scheduled `at` arrives.
 		let startTimer: ReturnType<typeof setTimeout> | null = null;
 		let fireStart: (() => void) | null = null;
-		// gap-review-7 (2026-09-25) 구멍 5-1: 위 `startTimer`/`fireStart` 는
-		// 아이템의 "첫" 조각에만 한 번 쓰이는 거친 신호(onPlaybackStart)용이다.
-		// 이 타이머는 그와 별개로, 조용한 구간(첫 조각 대기·미리 채움·버퍼
-		// 고갈 뒤 재개) 뒤에 나오는 "이번" 조각이 실제로 들리기 시작하는
-		// 순간마다 다시 걸린다 — 아이템 생애 동안 여러 번 걸릴 수 있다(버퍼
-		// 고갈이 여러 번이면). 한 번에 하나만 대기하면 되므로(고갈→침묵→다음
-		// 조각 도착까지는 새 타이머가 없다) 변수 하나로 충분하다.
+		// gap-review-7 (2026-09-25) 구멍 5-1: 실제 스피커에서 소리가 나는 시각 타이머.
 		let audibleTimer: ReturnType<typeof setTimeout> | null = null;
 		let fireAudible: (() => void) | null = null;
+		let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+		let suspendedWaitTimer: ReturnType<typeof setTimeout> | null = null;
+		let stateChangeListener: (() => void) | null = null;
+		const eventTarget = ctx as unknown as EventTarget;
+
+		const cleanupResumeListeners = () => {
+			if (resumeTimer !== null) {
+				clearTimeout(resumeTimer);
+				resumeTimer = null;
+			}
+			if (suspendedWaitTimer !== null) {
+				clearTimeout(suspendedWaitTimer);
+				suspendedWaitTimer = null;
+			}
+			if (
+				stateChangeListener !== null &&
+				typeof eventTarget?.removeEventListener === "function"
+			) {
+				eventTarget.removeEventListener("statechange", stateChangeListener);
+				stateChangeListener = null;
+			}
+			if (this.cancelStreamResumeListeners === cleanupResumeListeners) {
+				this.cancelStreamResumeListeners = null;
+			}
+		};
+		this.cancelStreamResumeListeners = cleanupResumeListeners;
+
 		const isCurrent = () =>
 			generation === this.generation && this.currentStream === stream;
 		const advance = () => {
+			cleanupResumeListeners();
 			if (!isCurrent() || advanced) return;
 			advanced = true;
-			// gap-review-3: a very short clip (or a test double that drives
-			// `onended` synchronously) can have every scheduled source finish
-			// — and thus reach here — before the deferred `startTimer` below
-			// has fired. Once `currentStream` is cleared, `isCurrent()` turns
-			// false and the still-pending timer would fire into a no-op,
-			// permanently dropping the reveal/speaking notification for a
-			// sentence that DID play. Fire it now instead of letting it race.
+
+			// VL-review1 시계 부류: 소리 버퍼가 출력 지연보다 짧아 들림 타이머가 아직
+			// 대기 중일 때, 끝나는 순간 즉시 들림을 켜지 말고 실제로 들리는 시각
+			// (스케줄 시각 + 출력 지연)에 켜고 그 뒤 소리가 끝나는 시각에 끄도록 한다.
+			// 입이 소리보다 먼저 열리는 것을 원천 방지한다.
+			const lat = outputLatencySeconds(ctx);
+			const now = ctx.currentTime;
+			const leadRemainMs = Math.round(
+				Math.max(0, (firstScheduledAt - now + lat) * 1000),
+			);
+			const endRemainMs = Math.round(
+				Math.max(0, (lastScheduledEnd - now + lat) * 1000),
+			);
+			const currentPlaybackSeq = this.playbackSeq;
+
+			// gap-review-3: onPlaybackStart 알림은 소스가 렌더링을 마쳤을 때 즉시 통지한다.
 			if (startTimer !== null) {
 				clearTimeout(startTimer);
 				this.pendingStartTimers.delete(startTimer);
 				startTimer = null;
 				fireStart?.();
 			}
+
+			// VL-review1 시계 부류: 소리 버퍼가 출력 지연보다 짧아 들림 타이머가 아직
+			// 대기 중일 때, 끝나는 순간 즉시 들림을 켜지 말고 실제로 들리는 시각
+			// (스케줄 시각 + 출력 지연)에 켜고 그 뒤 소리가 끝나는 시각에 끄도록 한다.
+			// 입이 소리보다 먼저 열리는 것을 원천 방지한다.
+			let shouldTurnAudibleOn = false;
 			if (audibleTimer !== null) {
 				clearTimeout(audibleTimer);
 				this.pendingStartTimers.delete(audibleTimer);
 				audibleTimer = null;
-				fireAudible?.();
+				if (leadRemainMs > 0) {
+					const delayedOn = setTimeout(() => {
+						this.pendingStartTimers.delete(delayedOn);
+						if (generation !== this.generation) return;
+						if (this.playbackSeq !== currentPlaybackSeq) return;
+						this.setAudible(true);
+					}, leadRemainMs);
+					this.pendingStartTimers.add(delayedOn);
+
+					const offDelay = Math.max(leadRemainMs, endRemainMs);
+					const delayedOff = setTimeout(() => {
+						this.pendingStartTimers.delete(delayedOff);
+						if (generation !== this.generation) return;
+						if (this.playbackSeq !== currentPlaybackSeq) return;
+						if (this.nothingQueued() && !this.playing) {
+							this.silenceAudibleNow();
+						} else {
+							// VL-3 구멍 3: 이미 lat를 더해 예약한 끄기는 출력 지연을 다시 더하지 않고 400ms 유지만 적용
+							this.setAudible(false, false);
+						}
+					}, offDelay);
+					this.pendingStartTimers.add(delayedOff);
+				} else {
+					if (endRemainMs > 0) {
+						shouldTurnAudibleOn = true;
+						const delayedOff = setTimeout(() => {
+							this.pendingStartTimers.delete(delayedOff);
+							if (generation !== this.generation) return;
+							if (this.playbackSeq !== currentPlaybackSeq) return;
+							if (this.nothingQueued() && !this.playing) {
+								this.silenceAudibleNow();
+							} else {
+								// VL-3 구멍 3: 이미 lat를 더해 예약한 끄기는 출력 지연을 다시 더하지 않고 400ms 유지만 적용
+								this.setAudible(false, false);
+							}
+						}, endRemainMs);
+						this.pendingStartTimers.add(delayedOff);
+					} else {
+						this.setAudible(false, false);
+					}
+				}
+			} else {
+				if (this.audible && endRemainMs > 0) {
+					const delayedOff = setTimeout(() => {
+						this.pendingStartTimers.delete(delayedOff);
+						if (generation !== this.generation) return;
+						if (this.playbackSeq !== currentPlaybackSeq) return;
+						if (this.nothingQueued() && !this.playing) {
+							this.silenceAudibleNow();
+						} else {
+							// VL-3 구멍 3: 이미 lat를 더해 예약한 끄기는 출력 지연을 다시 더하지 않고 400ms 유지만 적용
+							this.setAudible(false, false);
+						}
+					}, endRemainMs);
+					this.pendingStartTimers.add(delayedOff);
+				} else {
+					this.setAudible(false, false);
+				}
 			}
-			// gap-review-7 구멍 5-1: 이 아이템의 소리는 끝났다 — 다음 항목이
-			// 곧바로 이어 재생되면 그 항목이 스스로 다시 true 를 켠다.
-			this.setAudible(false);
+
 			stream.unsubscribe();
 			this.currentStream = null;
 			this.currentStreamItem = null;
 			this.playNext();
+			if (shouldTurnAudibleOn && generation === this.generation) {
+				this.setAudible(true);
+			}
 		};
 		const maybeFinish = () => {
-			if (ended && pending === 0) advance();
+			if (ended && pending === 0 && pendingChunks.length === 0) advance();
 		};
+
+		// VL-review1 경합 부류: 컨텍스트가 suspended 상태일 때 들어온 청크를 보관.
+		// 타임아웃이 지나도 컨텍스트가 아직 suspended 이면 멈춘 시계(currentTime)로
+		// src.start 나 setTimeout(fireAudible)을 걸지 않고, 실제로 running 상태로
+		// 재개된 뒤의 시계로 시작 시각과 입 타이머를 잡는다.
+		const pendingChunks: Array<{
+			chunk: Int16Array;
+			buf: AudioBuffer;
+			ch: Float32Array;
+			src: AudioBufferSourceNode;
+		}> = [];
+
+		const skipSuspendedSentence = () => {
+			cleanupResumeListeners();
+			if (!isCurrent()) return;
+			Logger.warn(
+				"AudioQueue",
+				"playStream: suspended context wait timeout, skipping sentence",
+				{
+					generation,
+					pendingChunks: pendingChunks.length,
+					streamSources: this.streamSources.size,
+				},
+			);
+			for (const src of this.streamSources) {
+				try {
+					src.stop();
+				} catch {
+					/* already stopped */
+				}
+				try {
+					if (typeof src.disconnect === "function") {
+						src.disconnect();
+					}
+				} catch {
+					/* ignore */
+				}
+			}
+			this.streamSources.clear();
+			pendingChunks.length = 0;
+			if (audibleTimer !== null) {
+				clearTimeout(audibleTimer);
+				this.pendingStartTimers.delete(audibleTimer);
+				audibleTimer = null;
+			}
+			if (startTimer !== null) {
+				clearTimeout(startTimer);
+				this.pendingStartTimers.delete(startTimer);
+				startTimer = null;
+			}
+			this.silenceAudibleNow();
+			item.onPlaybackUnavailable?.();
+			advance();
+		};
+
+		const cancelSuspendedWaitTimer = () => {
+			if (suspendedWaitTimer !== null) {
+				clearTimeout(suspendedWaitTimer);
+				suspendedWaitTimer = null;
+			}
+		};
+
+		const armSuspendedWaitTimer = () => {
+			if (
+				suspendedWaitTimer !== null ||
+				ctx.state === "running" ||
+				!isCurrent()
+			)
+				return;
+			suspendedWaitTimer = setTimeout(() => {
+				suspendedWaitTimer = null;
+				if (!isCurrent()) return;
+				if (ctx.state !== "running") {
+					skipSuspendedSentence();
+				}
+			}, SUSPENDED_ENDED_STREAM_MAX_WAIT_MS);
+		};
+
+		const scheduleChunk = (
+			_chunk: Int16Array,
+			buf: AudioBuffer,
+			ch: Float32Array,
+			src: AudioBufferSourceNode,
+		) => {
+			const now = ctx.currentTime;
+			const isFirst = !started;
+			const bufferedSecondsNow =
+				stream.chunks.reduce((sum, c) => sum + c.length, 0) /
+				(stream.sampleRate || 1);
+			const effectiveDelay = effectivePreRollSeconds(
+				stream.startDelaySeconds,
+				bufferedSecondsNow,
+				stream.expectedDurationSeconds,
+				stream.ended,
+			);
+			const firstChunkLead = Math.max(0.04, effectiveDelay);
+			const at = Math.max(now + (started ? 0 : firstChunkLead), nextStart);
+			src.start(at);
+			if (isFirst) firstScheduledAt = at;
+			nextStart = at + buf.duration;
+			lastScheduledEnd = nextStart;
+
+			// Level envelope on the same clock as `at` (after pre-roll and
+			// after resume — beginSubscribe runs only once the context runs).
+			this.streamLevels.add(at, rmsEnvelope(ch, stream.sampleRate));
+			this.currentStreamScheduled = true;
+			const wasSilent = pending === 0;
+			pending++;
+			this.streamSources.add(src);
+			src.onended = () => {
+				this.streamSources.delete(src);
+				pending--;
+				if (!isCurrent()) return;
+				if (pending === 0 && !ended) this.setAudible(false);
+				maybeFinish();
+			};
+
+			const audibleLeadMs = Math.round(
+				Math.max(0, (at - now + outputLatencySeconds(ctx)) * 1000),
+			);
+			if (wasSilent) {
+				if (audibleTimer !== null) {
+					clearTimeout(audibleTimer);
+					this.pendingStartTimers.delete(audibleTimer);
+				}
+				fireAudible = () => {
+					if (audibleTimer !== null)
+						this.pendingStartTimers.delete(audibleTimer);
+					audibleTimer = null;
+					if (!isCurrent()) return;
+					this.setAudible(true);
+				};
+				audibleTimer = setTimeout(fireAudible, audibleLeadMs);
+				this.pendingStartTimers.add(audibleTimer);
+			}
+			if (!started) {
+				started = true;
+				this.playbackSeq++;
+				this.lastPlaybackType = "stream";
+				this.startLevel(this.streamReader(ctx));
+				Logger.debug("AudioQueue", "playStream:first chunk scheduled", {
+					at: Number(at.toFixed(3)),
+					now: Number(now.toFixed(3)),
+					ctxState: ctx.state,
+					effectiveDelay: Number(effectiveDelay.toFixed(3)),
+				});
+				const leadMs = audibleLeadMs;
+				fireStart = () => {
+					if (startTimer !== null) this.pendingStartTimers.delete(startTimer);
+					startTimer = null;
+					if (!isCurrent()) return;
+					item.onPlaybackStart?.();
+					if (!wasPlaying) this.callbacks.onPlaybackStart?.();
+				};
+				startTimer =
+					leadMs > 0 ? setTimeout(fireStart, leadMs) : setTimeout(fireStart, 0);
+				this.pendingStartTimers.add(startTimer);
+			}
+		};
+
+		const flushPendingChunksIfRunning = () => {
+			if (!isCurrent() || ctx.state !== "running") return;
+			cancelSuspendedWaitTimer();
+			while (pendingChunks.length > 0) {
+				const p = pendingChunks.shift();
+				if (!p) break;
+				scheduleChunk(p.chunk, p.buf, p.ch, p.src);
+			}
+			maybeFinish();
+		};
+
 		const beginSubscribe = () => {
 			stream.subscribe(
 				(chunk) => {
@@ -727,119 +1064,13 @@ export class AudioQueue implements VoiceLevelSource {
 					const src = ctx.createBufferSource();
 					src.buffer = buf;
 					src.connect(ctx.destination);
-					const now = ctx.currentTime;
-					// 40 ms lead on the very first chunk absorbs scheduling jitter;
-					// startDelaySeconds (FR-VOICE.22 pre-roll) can push that lead out
-					// further when "auto" judged the engine only slightly slower than
-					// realtime. gap-review-3 (2026-09-25): the buffered state used to
-					// subtract from that target is read LIVE, right here, instead of
-					// from a one-time snapshot taken before subscribe() —
-					// `PcmStreamSource.push()` appends to `stream.chunks` before
-					// invoking this callback, so this correctly reflects everything
-					// available at the moment THIS chunk is actually being scheduled.
-					// That covers background synthesis that buffered chunks before
-					// this stream's turn (still present in `stream.chunks` when
-					// subscribe() replays them here).
-					//
-					// gap-review-4 (2026-09-25): `stream.ended` read here is ALSO
-					// live, but that alone is not enough for a producer that calls
-					// `push(chunk); end();` back to back — `push()` invokes this
-					// callback SYNCHRONOUSLY, before the caller's next line can call
-					// `end()`, so `stream.ended` is still `false` at exactly the
-					// moment it matters most: the whole-WAV fallback landing its
-					// entire sentence as one chunk on an already-subscribed, empty
-					// stream. `PcmStreamSource.pushFinal()` exists for exactly that
-					// case — it sets `ended = true` BEFORE calling `onChunk`, so the
-					// live read below sees the true final state and skips the
-					// pre-roll wait for audio that has nothing left to wait for.
-					const bufferedSecondsNow =
-						stream.chunks.reduce((sum, c) => sum + c.length, 0) /
-						(stream.sampleRate || 1);
-					const effectiveDelay = effectivePreRollSeconds(
-						stream.startDelaySeconds,
-						bufferedSecondsNow,
-						stream.expectedDurationSeconds,
-						stream.ended,
-					);
-					const firstChunkLead = Math.max(0.04, effectiveDelay);
-					const at = Math.max(now + (started ? 0 : firstChunkLead), nextStart);
-					src.start(at);
-					nextStart = at + buf.duration;
-					// Level envelope on the same clock as `at` (after pre-roll and
-					// after resume — beginSubscribe runs only once the context runs).
-					this.streamLevels.add(at, rmsEnvelope(ch, stream.sampleRate));
-					this.currentStreamScheduled = true;
-					// gap-review-7 구멍 5-1: 이 조각이 도착하기 전(방금 this
-					// 시점) 아무 소스도 재생 중이 아니었으면(pending===0) — 첫
-					// 조각이거나, 버퍼 고갈 뒤 재개 — 그 직전까지는 조용했다는
-					// 뜻이다. 그 경우에만 "들리기 시작함" 타이머를 다시 건다.
-					const wasSilent = pending === 0;
-					pending++;
-					this.streamSources.add(src);
-					src.onended = () => {
-						this.streamSources.delete(src);
-						pending--;
-						// gap-review-7 구멍 5-1: 버퍼 고갈(다음 조각이 아직 안
-						// 왔는데 재생할 게 떨어짐) — 스트림은 안 끝났지만
-						// 지금 이 순간은 조용하다. 즉시 false.
-						if (pending === 0 && !ended) this.setAudible(false);
-						maybeFinish();
-					};
-					// gap-review-7 구멍 5-2 / review 8: 스피커에서 실제로 들리는
-					// 시각은 `at` 보다 baseLatency + outputLatency 만큼 늦다(두
-					// 단계가 이어지므로 합). 아바타 입의 음성 크기 시계와 같은
-					// 함수(`outputLatencySeconds`)를 쓴다 — 두 알림(거친
-					// onPlaybackStart, 세밀한 audible)과 입이 같은 순간을 본다.
-					const audibleLeadMs = Math.max(
-						0,
-						(at - now + outputLatencySeconds(ctx)) * 1000,
-					);
-					if (wasSilent) {
-						if (audibleTimer !== null) {
-							clearTimeout(audibleTimer);
-							this.pendingStartTimers.delete(audibleTimer);
-						}
-						fireAudible = () => {
-							if (audibleTimer !== null)
-								this.pendingStartTimers.delete(audibleTimer);
-							audibleTimer = null;
-							if (!isCurrent()) return;
-							this.setAudible(true);
-						};
-						audibleTimer = setTimeout(fireAudible, audibleLeadMs);
-						this.pendingStartTimers.add(audibleTimer);
-					}
-					if (!started) {
-						started = true;
-						this.startLevel(this.streamReader(ctx));
-						Logger.debug("AudioQueue", "playStream:first chunk scheduled", {
-							at: Number(at.toFixed(3)),
-							now: Number(now.toFixed(3)),
-							ctxState: ctx.state,
-							effectiveDelay: Number(effectiveDelay.toFixed(3)),
-						});
-						// gap-review-2: fire onPlaybackStart (text reveal, speaking
-						// state, avatar mouth) when the sound actually becomes
-						// audible (`at`), not the instant it was scheduled — pre-roll
-						// would otherwise show the answer and move the mouth while
-						// the speaker is still silent.
-						//
-						// gap-review-7 구멍 5-2: 같은 출력 레이턴시 보정을 여기도
-						// 적용 — 이 알림도 "실제 재생 시각"을 뜻하기 때문.
-						const leadMs = audibleLeadMs;
-						fireStart = () => {
-							if (startTimer !== null)
-								this.pendingStartTimers.delete(startTimer);
-							startTimer = null;
-							if (!isCurrent()) return;
-							item.onPlaybackStart?.();
-							if (!wasPlaying) this.callbacks.onPlaybackStart?.();
-						};
-						startTimer =
-							leadMs > 0
-								? setTimeout(fireStart, leadMs)
-								: setTimeout(fireStart, 0);
-						this.pendingStartTimers.add(startTimer);
+
+					if (ctx.state === "running") {
+						scheduleChunk(chunk, buf, ch, src);
+					} else {
+						// Context is suspended: do not schedule with stopped clock.
+						// Keep source ready so queue is not blocked, but hold start until real resume.
+						pendingChunks.push({ chunk, buf, ch, src });
 					}
 				},
 				() => {
@@ -848,34 +1079,76 @@ export class AudioQueue implements VoiceLevelSource {
 					Logger.debug("AudioQueue", "playStream:source ended", {
 						pending,
 						started,
+						pendingChunks: pendingChunks.length,
 					});
-					if (!started) {
+					if (!started && pendingChunks.length === 0 && pending === 0) {
 						// Nothing arrived (failed/empty synthesis): release the slot.
+						this.levelReader?.rebindNext?.(this.queue[0] ?? null);
 						item.onPlaybackUnavailable?.();
 						advance();
 						return;
+					}
+					if (ctx.state !== "running" && pendingChunks.length > 0) {
+						armSuspendedWaitTimer();
 					}
 					maybeFinish();
 				},
 			);
 		};
-		// gap-review-7 구멍 5-2: ctx 가 suspended 면 `ctx.currentTime` 이 멈춰
-		// 있다 — 그 값으로 계산한 `at`/`leadMs` 는 재개 후 실제 재생 시각과
-		// 어긋난다(알림이 실제보다 일찍 옴). 재개를 기다린 뒤에야 첫 조각을
-		// 스케줄한다. `FakeAudioContext` 테스트 더블은 항상 "running" 이므로
-		// 이 분기는 기존 시험에서는 타지 않는다(동일한 동기 경로 유지).
+
+		let subscribed = false;
+
+		const handleStateChange = () => {
+			if (!isCurrent()) return;
+			if (ctx.state === "running") {
+				if (resumeTimer !== null) {
+					clearTimeout(resumeTimer);
+					resumeTimer = null;
+				}
+				if (!subscribed) {
+					subscribed = true;
+					beginSubscribe();
+				}
+				cancelSuspendedWaitTimer();
+				flushPendingChunksIfRunning();
+			} else {
+				if (subscribed) {
+					armSuspendedWaitTimer();
+				}
+			}
+		};
+
+		if (typeof eventTarget?.addEventListener === "function") {
+			stateChangeListener = handleStateChange;
+			eventTarget.addEventListener("statechange", stateChangeListener);
+		}
+
 		if (ctx.state !== "running") {
 			Logger.debug("AudioQueue", "playStream:awaiting resume", {
 				ctxState: ctx.state,
 			});
+			const onReady = () => {
+				if (resumeTimer !== null) {
+					clearTimeout(resumeTimer);
+					resumeTimer = null;
+				}
+				if (!isCurrent()) return;
+				if (!subscribed) {
+					subscribed = true;
+					beginSubscribe();
+				}
+				if (ctx.state === "running") {
+					cancelSuspendedWaitTimer();
+					flushPendingChunksIfRunning();
+				}
+			};
+			resumeTimer = setTimeout(onReady, AUDIO_CONTEXT_RESUME_TIMEOUT_MS);
 			void ctx
 				.resume()
 				.catch(() => {})
-				.then(() => {
-					if (!isCurrent()) return;
-					beginSubscribe();
-				});
+				.then(onReady);
 		} else {
+			subscribed = true;
 			beginSubscribe();
 		}
 	}
@@ -885,7 +1158,10 @@ export class AudioQueue implements VoiceLevelSource {
 			Logger.debug("AudioQueue", "playNext:empty → end", {});
 			// Nothing waiting or being synthesized: the voice has ended, the
 			// speaking signal goes off with the last sound (no hold).
-			if (this.nothingQueued()) this.endAudible();
+			if (this.nothingQueued()) {
+				const includeLatency = this.lastPlaybackType !== "media";
+				this.endAudible(includeLatency);
+			}
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
 			return;
@@ -924,8 +1200,59 @@ export class AudioQueue implements VoiceLevelSource {
 		this.current = audio;
 
 		let started = false;
+		let audibleStarted = false;
 		let unavailableSignaled = false;
 		let advanced = false;
+		let mediaAudiblePollTimer: ReturnType<typeof setInterval> | null = null;
+		let timeUpdateListener: (() => void) | null = null;
+
+		const priorLevelReader = this.levelReader;
+		const rebindPriorLevelOnSkip = () => {
+			if (priorLevelReader) {
+				this.levelReader = priorLevelReader;
+				this.levelReader.rebindNext?.(this.queue[0] ?? null);
+			} else {
+				this.stopLevel();
+			}
+		};
+
+		const markAudibleStarted = () => {
+			if (audibleStarted) return;
+			audibleStarted = true;
+			this.playbackSeq++;
+			this.lastPlaybackType = "media";
+		};
+
+		const cancelMediaPoll = () => {
+			if (mediaAudiblePollTimer !== null) {
+				clearInterval(mediaAudiblePollTimer);
+				mediaAudiblePollTimer = null;
+			}
+			if (
+				timeUpdateListener !== null &&
+				typeof audio.removeEventListener === "function"
+			) {
+				audio.removeEventListener("timeupdate", timeUpdateListener);
+				timeUpdateListener = null;
+			}
+			if (this.cancelMediaAudiblePoll === cancelMediaPoll) {
+				this.cancelMediaAudiblePoll = null;
+			}
+		};
+		this.cancelMediaAudiblePoll = cancelMediaPoll;
+
+		const checkAudibleStarted = () => {
+			if (!isCurrent()) {
+				cancelMediaPoll();
+				return;
+			}
+			if ((audio.currentTime || 0) > 0) {
+				cancelMediaPoll();
+				markAudibleStarted();
+				this.setAudible(true);
+			}
+		};
+
 		const isCurrent = () =>
 			generation === this.generation && this.current === audio;
 		const signalUnavailable = () => {
@@ -934,6 +1261,7 @@ export class AudioQueue implements VoiceLevelSource {
 			item.onPlaybackUnavailable?.();
 		};
 		const advance = () => {
+			cancelMediaPoll();
 			if (!isCurrent() || advanced) return;
 			advanced = true;
 			this.current = null;
@@ -954,34 +1282,68 @@ export class AudioQueue implements VoiceLevelSource {
 			if (!wasPlaying) {
 				this.callbacks.onPlaybackStart?.();
 			}
-			// gap-review-7 구멍 5-1: HTMLAudioElement 경로(WAV 대체 합성 포함)
-			// 도 스트림 경로와 같은 세밀한 신호를 낸다 — `onplay` 는 디코딩이
-			// 끝나고 실제로 재생이 시작될 때 붙는다(WAV 합성 대기 시간에는
-			// 붙지 않음).
-			this.setAudible(true);
+			// VL-3: 미디어 경로에서는 웹 오디오 출력 지연을 쓰지 않고,
+			// audio.currentTime > 0 을 조회해 처음 0을 넘은 때에 입 신호를 켠다.
+			if ((audio.currentTime || 0) > 0) {
+				markAudibleStarted();
+				this.setAudible(true);
+			} else {
+				cancelMediaPoll();
+				this.cancelMediaAudiblePoll = cancelMediaPoll;
+				timeUpdateListener = checkAudibleStarted;
+				if (typeof audio.addEventListener === "function") {
+					audio.addEventListener("timeupdate", timeUpdateListener);
+				}
+				mediaAudiblePollTimer = setInterval(checkAudibleStarted, 10);
+			}
 		};
 
 		audio.onended = () => {
-			if (isCurrent() && envelope) {
-				const rate =
-					Number.isFinite(audio.playbackRate) && audio.playbackRate > 0
-						? audio.playbackRate
-						: 1;
-				this.startLevel(this.gapReader(envelope, rate, this.queue[0] ?? null));
+			cancelMediaPoll();
+			if (!isCurrent()) return;
+			if ((audio.currentTime || 0) > 0) {
+				markAudibleStarted();
 			}
-			this.setAudible(false);
+			if (audibleStarted) {
+				if (envelope) {
+					const rate =
+						Number.isFinite(audio.playbackRate) && audio.playbackRate > 0
+							? audio.playbackRate
+							: 1;
+					this.startLevel(
+						this.gapReader(envelope, rate, this.queue[0] ?? null),
+					);
+				}
+				// VL-3: 미디어 경로 끄기는 출력 지연을 빼고 400ms 유지만 적용
+				// VL-6: 소리가 실제로 시작된 경우에만 입 끄기를 실행
+				this.setAudible(false, false);
+			} else {
+				rebindPriorLevelOnSkip();
+			}
 			advance();
 		};
 
 		audio.onerror = (e) => {
+			cancelMediaPoll();
+			if (!isCurrent()) return;
 			Logger.warn("AudioQueue", "Audio playback error", { error: String(e) });
-			this.setAudible(false);
+			// VL-6: 소리가 실제로 시작된 경우에만 입 끄기를 실행
+			if (audibleStarted) {
+				this.setAudible(false, false);
+			} else {
+				rebindPriorLevelOnSkip();
+			}
 			signalUnavailable();
 			advance();
 		};
 
 		audio.play().catch((err) => {
+			cancelMediaPoll();
+			if (!isCurrent()) return;
 			Logger.warn("AudioQueue", "Audio play rejected", { error: String(err) });
+			if (!audibleStarted) {
+				rebindPriorLevelOnSkip();
+			}
 			signalUnavailable();
 			advance();
 		});

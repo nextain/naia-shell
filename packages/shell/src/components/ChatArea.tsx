@@ -1253,6 +1253,10 @@ export function ChatArea({
 				onAudibleChange: (audible) => {
 					useAvatarStore.getState().setSpeaking(audible);
 				},
+				isResponseActive: () =>
+					useChatStore.getState().isStreaming ||
+					(ttsTextSyncRef.current.active &&
+						!ttsTextSyncRef.current.llmFinished),
 			});
 		}
 		sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
@@ -2882,6 +2886,10 @@ export function ChatArea({
 					onAudibleChange: (audible) => {
 						useAvatarStore.getState().setSpeaking(audible);
 					},
+					isResponseActive: () =>
+						useChatStore.getState().isStreaming ||
+						(ttsTextSyncRef.current.active &&
+							!ttsTextSyncRef.current.llmFinished),
 				});
 				audioQueueRef.current = queue;
 				sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
@@ -4136,13 +4144,15 @@ export function ChatArea({
 						<span className="voice-status-spinner" />
 						<span className="voice-status-text">
 							{voiceStatus.phase === "cold-start"
-								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s` +
-									(voiceStatus.queuePosition != null
-										? ` · ${t("chat.voiceColdStartQueue")} ${voiceStatus.queuePosition}`
-										: "") +
-									(voiceStatus.etaSeconds != null
-										? ` · ${t("chat.voiceColdStartEta")} ~${voiceStatus.etaSeconds}s`
-										: "")
+								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s${
+										voiceStatus.queuePosition != null
+											? ` · ${t("chat.voiceColdStartQueue")} ${voiceStatus.queuePosition}`
+											: ""
+									}${
+										voiceStatus.etaSeconds != null
+											? ` · ${t("chat.voiceColdStartEta")} ~${voiceStatus.etaSeconds}s`
+											: ""
+									}`
 								: t("chat.voiceConnecting")}
 						</span>
 						{voiceStatus.phase === "cold-start" && (

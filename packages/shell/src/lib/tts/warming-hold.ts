@@ -25,7 +25,9 @@ if (typeof window !== "undefined") {
 	window.addEventListener("naia:voice-model-preparing", (event) => {
 		const value = !!(event as CustomEvent<boolean>).detail;
 		warming = value;
-		if (value) engineBootGeneration++;
+	});
+	window.addEventListener("naia:voice-engine-boot-retry", () => {
+		engineBootGeneration++;
 	});
 }
 
@@ -47,4 +49,9 @@ export function setVoiceWarmingHoldForTest(value: boolean): void {
 /** 테스트용 — 엔진 재기동 세대를 이벤트 없이 올린다. */
 export function bumpVoiceEngineBootGenerationForTest(): void {
 	engineBootGeneration++;
+}
+
+/** 테스트용 — 엔진 재기동 세대를 초기화한다. */
+export function resetVoiceEngineBootGenerationForTest(): void {
+	engineBootGeneration = 0;
 }

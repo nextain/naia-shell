@@ -266,6 +266,46 @@ function finiteNonNegative(value: unknown): number {
 }
 
 /**
+ * Selects whether to trust measured output latency (from getOutputTimestamp) or
+ * declared output latency (baseLatency + outputLatency).
+ *
+ * Rules:
+ * 1. Measured latency cannot be 0 or negative. Sound physically cannot leave an audio
+ *    hardware pipeline with 0 latency; a zero reading indicates an uninitialized,
+ *    placeholder, or broken timestamp implementation (e.g. contextTime == currentTime).
+ * 2. When declared latency is positive (declared > 0), the measured latency must not
+ *    be substantially smaller than declared (e.g. measured < declared * 0.85).
+ *    Audio samples cannot physically bypass the hardware ring buffer and driver queue
+ *    that baseLatency and outputLatency represent. If measured is 0 or substantially
+ *    below declared, trusting measured would compute an audible moment that is too early,
+ *    causing the avatar's mouth to open before sound is physically heard.
+ * 3. Only when measured latency is strictly positive and believable (not substantially
+ *    smaller than declared, and <= MAX_OUTPUT_LATENCY_SEC) do we prefer measured,
+ *    as it accurately tracks dynamic drift, Bluetooth buffer accumulation, and device delays.
+ * 4. Otherwise, declared latency is the trustworthy fallback.
+ */
+export function selectOutputLatency(
+	measured: number | null,
+	declared: number,
+): number {
+	const safeDeclared = Math.min(MAX_OUTPUT_LATENCY_SEC, Math.max(0, declared));
+	if (
+		measured == null ||
+		!Number.isFinite(measured) ||
+		measured <= 0 ||
+		measured > MAX_OUTPUT_LATENCY_SEC
+	) {
+		return safeDeclared;
+	}
+	// If declared latency is known (> 0), reject measured values that are
+	// substantially smaller than declared (e.g. less than 85% of declared or 0).
+	if (safeDeclared > 0 && measured < safeDeclared * 0.85) {
+		return safeDeclared;
+	}
+	return measured;
+}
+
+/**
  * Seconds between the moment an AudioContext renders a sample
  * (`currentTime`) and the moment the speaker plays it. The one function every
  * AudioContext-based "audible" time in the shell uses: the AudioQueue start
@@ -274,7 +314,8 @@ function finiteNonNegative(value: unknown): number {
  * 1. `getOutputTimestamp()` when it gives a real reading: it reports the
  *    context time of the sample leaving the device at a performance time, so
  *    the delay is measured, not declared. Chromium/WebView2 and Safari fill
- *    it; an engine that returns zeros is skipped.
+ *    it; an engine that returns zeros or values substantially below declared
+ *    hardware buffers is skipped in favor of declared latency.
  * 2. Otherwise `baseLatency + outputLatency`. They are two consecutive stages
  *    (context to audio system, audio system to device), so they add up. Either
  *    may be missing (older WebKit has no `outputLatency`), 0 (WebKitGTK 2.52
@@ -289,23 +330,24 @@ export function outputLatencySeconds(
 	nowMs: number = typeof performance !== "undefined" ? performance.now() : 0,
 ): number {
 	if (!ctx) return 0;
+	const declared = Math.min(
+		MAX_OUTPUT_LATENCY_SEC,
+		finiteNonNegative(ctx.baseLatency) + finiteNonNegative(ctx.outputLatency),
+	);
 	const current = finiteNonNegative(ctx.currentTime);
+	let measured: number | null = null;
 	try {
 		const ts = ctx.getOutputTimestamp?.();
 		const contextTime = finiteNonNegative(ts?.contextTime);
 		const performanceTime = finiteNonNegative(ts?.performanceTime);
 		if (current > 0 && contextTime > 0 && performanceTime > 0) {
 			const heard = contextTime + Math.max(0, nowMs - performanceTime) / 1000;
-			const measured = current - heard;
-			if (measured >= 0 && measured <= MAX_OUTPUT_LATENCY_SEC) return measured;
+			measured = current - heard;
 		}
 	} catch {
-		// fall through to the declared latencies
+		// fall through to selectOutputLatency with measured = null
 	}
-	return Math.min(
-		MAX_OUTPUT_LATENCY_SEC,
-		finiteNonNegative(ctx.baseLatency) + finiteNonNegative(ctx.outputLatency),
-	);
+	return selectOutputLatency(measured, declared);
 }
 
 /** Anything that can report the level of the audio it is playing now. */

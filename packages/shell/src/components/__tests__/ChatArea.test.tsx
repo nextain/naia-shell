@@ -238,6 +238,17 @@ describe("ChatArea", () => {
 		vi.clearAllMocks();
 		vi.mocked(isNewCore).mockReturnValue(false);
 		mockInvoke.mockResolvedValue(undefined);
+		// gap-review-8 (2026-09-25) 구멍 6: `vi.clearAllMocks()` 는 호출 기록만
+		// 지우고 `mockResolvedValueOnce` 로 쌓아 둔 1회용 큐는 그대로 남긴다.
+		// "does not send a turn when pre-turn BGM skill registration fails" 가
+		// `mockSendAppSkills.mockResolvedValueOnce(false)` 를 스스로 소비하지
+		// 못하고 끝나면(그 시험 자체가 API 키 게이트에서 먼저 막힘) 그 false
+		// 가 다음 시험으로 새어 들어가 엉뚱한 시험에서
+		// "skill_youtube_bgm_registration_failed" 로 튄다 — 시험을 옮겨도
+		// 새는 지점(이 mock)이 그대로면 피해자만 바뀐다. 세션마다 큐까지
+		// 비우고 원래 기본값으로 되돌린다.
+		mockSendAppSkills.mockReset();
+		mockSendAppSkills.mockResolvedValue(true);
 		useChatStore.setState(useChatStore.getInitialState());
 		useAvatarStore.setState(useAvatarStore.getInitialState());
 		useCascadeAvatarStore.setState(useCascadeAvatarStore.getInitialState());

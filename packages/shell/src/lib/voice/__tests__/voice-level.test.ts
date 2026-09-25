@@ -228,6 +228,30 @@ describe("outputLatencySeconds", () => {
 		expect(outputLatencySeconds(ctx, 5000)).toBeCloseTo(0.02, 6);
 	});
 
+	it("review hole: trusts declared latency when getOutputTimestamp gives 0 latency (contextTime == currentTime)", () => {
+		const ctx = {
+			currentTime: 10,
+			baseLatency: 0.01,
+			outputLatency: 0.15,
+			// contextTime == currentTime and performanceTime == nowMs yields measured = 0
+			getOutputTimestamp: () => ({ contextTime: 10, performanceTime: 2000 }),
+		};
+		// Must NOT return 0 (which would open the mouth 160ms ahead of voice).
+		// Must return declared latency (0.01 + 0.15 = 0.16s).
+		expect(outputLatencySeconds(ctx, 2000)).toBeCloseTo(0.16, 6);
+	});
+
+	it("review hole: trusts declared latency when getOutputTimestamp is substantially smaller than declared", () => {
+		const ctx = {
+			currentTime: 10,
+			baseLatency: 0.01,
+			outputLatency: 0.15,
+			// measured is 0.01s, substantially smaller than declared 0.16s (< 85%)
+			getOutputTimestamp: () => ({ contextTime: 9.99, performanceTime: 2000 }),
+		};
+		expect(outputLatencySeconds(ctx, 2000)).toBeCloseTo(0.16, 6);
+	});
+
 	it("handles no context", () => {
 		expect(outputLatencySeconds(null)).toBe(0);
 	});

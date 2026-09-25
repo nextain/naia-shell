@@ -55,6 +55,20 @@ export const DEFAULT_PREROLL_MARGIN_RELATIVE = 0.05;
  * 가 이 값을 대신한다 — 아래 참고. */
 export const DEFAULT_CHARS_PER_SECOND = 7;
 
+/**
+ * gap-review-8 (2026-09-25) 구멍 2-1: RTF 표본에 반영할 최소 문장 길이(초).
+ * 짧은 문장은 고정 지연이 섞여 RTF를 왜곡해 5문장 동안 자동 모드를
+ * 끌어내리는 문제를 방지하기 위해, 이보다 짧은 표본은 표본 목록에 더하지 않는다.
+ */
+export const MIN_RTF_SAMPLE_DURATION_SECONDS = 1.0;
+
+/**
+ * gap-review-8 (2026-09-25) 구멍 3-1: 문장 길이 보정기(SentenceRateCalibrator)
+ * 이상치 필터링 경계 (초당 1~40자).
+ */
+export const MIN_CALIBRATED_CHARS_PER_SECOND = 1;
+export const MAX_CALIBRATED_CHARS_PER_SECOND = 40;
+
 export interface PlaybackDecisionInput {
 	mode: VoicePlaybackMode;
 	/**
@@ -359,7 +373,7 @@ export class VoicePlaybackRtfTracker {
 		if (
 			durationSeconds == null ||
 			!Number.isFinite(durationSeconds) ||
-			durationSeconds <= 0 ||
+			durationSeconds < MIN_RTF_SAMPLE_DURATION_SECONDS ||
 			!Number.isFinite(elapsedSeconds) ||
 			elapsedSeconds < 0
 		)
@@ -368,9 +382,16 @@ export class VoicePlaybackRtfTracker {
 		if (this.samples.length > RTF_SAMPLE_WINDOW) this.samples.shift();
 	}
 
-	/** gap-review-7 구멍 2-1: 최근 표본들 중 최댓값(보수적) — 표본이 없으면 null. */
+	/**
+	 * VL-review1 추정값 부류: 최근 창(최대 5개)의 중앙값(상위 중앙값)을 반환한다.
+	 * 최댓값 하나에 의해 짧은 문장의 부푼 RTF가 창 전체에 남아 방식을 문장 재생으로
+	 * 끌어내리는 문제를 방지하면서도, 적은 표본(1~2개)에서는 안전성을 보존한다.
+	 */
 	get(): number | null {
-		return this.samples.length > 0 ? Math.max(...this.samples) : null;
+		if (this.samples.length === 0) return null;
+		const sorted = [...this.samples].sort((a, b) => a - b);
+		const mid = Math.floor(sorted.length / 2);
+		return sorted[mid];
 	}
 
 	/** 새 세션/바지인 — 엔진 상태가 이어질 이유가 없는 새 턴에서 호출한다. */
@@ -396,21 +417,32 @@ export function buildSynthesisTargetKey(
 	return `${host ?? ""}|gpu=${gpuIndex ?? ""}|gen=${engineBootGeneration}`;
 }
 
+/** 최근 글자 속도 표본 창 크기 (범위 내 튀는 이상치가 세션 끝까지 남지 않도록 제한). */
+export const CALIBRATOR_SAMPLE_WINDOW = 10;
+
 /**
  * gap-review-7 (2026-09-25) 구멍 3-1: 문장 길이(L) 추정에 쓰는 초당 글자 수를
  * 고정값(DEFAULT_CHARS_PER_SECOND) 대신 이 세션에서 실제로 관측한
- * (글자 수, 합성 오디오 길이) 쌍으로 보정한다. 참조 음성이 느리거나 숫자·약어가
- * 풀려 읽히면 고정값과 실제 발화 속도가 크게 벌어질 수 있다 — 세션이 진행될
- * 수록 이 보정이 그 문장차를 흡수한다. 표본이 아직 없으면(세션 첫 문장 등)
- * `get()` 이 null 을 돌려주고, 호출부는 DEFAULT_CHARS_PER_SECOND 로 폴백한다.
+ * (글자 수, 합성 오디오 길이) 쌍으로 보정한다.
  *
- * 창 없이 누적 평균을 쓴다 — RTF 와 달리 발화 속도는 하드웨어 경합으로 급변하는
- * 값이 아니라 "이 참조 음성이 대략 얼마나 빨리 말하는가"에 가깝고, 표본이
- * 많을수록 더 정확해지는 값이라 최근 것만 우대할 이유가 약하다.
+ * VL-review1 추정값 부류: 범위(1~40자/초) 안의 튀는 값 하나가 세션 끝까지 누적 평균에
+ * 남아 예상 길이를 왜곡하지 않도록, 최근 N개(CALIBRATOR_SAMPLE_WINDOW) 창의
+ * 오디오 길이 가중 평균을 사용한다.
  */
 export class SentenceRateCalibrator {
-	private totalChars = 0;
-	private totalSeconds = 0;
+	private samples: Array<{ chars: number; seconds: number }> = [];
+	private lastVoiceKey: string | null = null;
+
+	/**
+	 * gap-review-8 (2026-09-25) 구멍 3-1: 목소리나 참조 음성이 변경되면
+	 * 발화 속도 통계를 리셋한다.
+	 */
+	noteVoiceIdentity(key: string | null = null): void {
+		if (key !== this.lastVoiceKey) {
+			this.lastVoiceKey = key;
+			this.samples = [];
+		}
+	}
 
 	record(charLength: number, durationSeconds: number | null | undefined): void {
 		if (
@@ -420,17 +452,28 @@ export class SentenceRateCalibrator {
 			durationSeconds <= 0
 		)
 			return;
-		this.totalChars += charLength;
-		this.totalSeconds += durationSeconds;
+		const rate = charLength / durationSeconds;
+		if (
+			rate < MIN_CALIBRATED_CHARS_PER_SECOND ||
+			rate > MAX_CALIBRATED_CHARS_PER_SECOND
+		)
+			return;
+		this.samples.push({ chars: charLength, seconds: durationSeconds });
+		if (this.samples.length > CALIBRATOR_SAMPLE_WINDOW) {
+			this.samples.shift();
+		}
 	}
 
-	/** 보정된 초당 글자 수, 또는 표본이 아직 없으면 null. */
+	/** 보정된 초당 글자 수(최근 창 오디오 길이 가중 평균), 또는 표본이 아직 없으면 null. */
 	get(): number | null {
-		return this.totalSeconds > 0 ? this.totalChars / this.totalSeconds : null;
+		if (this.samples.length === 0) return null;
+		const totalChars = this.samples.reduce((sum, s) => sum + s.chars, 0);
+		const totalSeconds = this.samples.reduce((sum, s) => sum + s.seconds, 0);
+		return totalSeconds > 0 ? totalChars / totalSeconds : null;
 	}
 
 	reset(): void {
-		this.totalChars = 0;
-		this.totalSeconds = 0;
+		this.samples = [];
+		this.lastVoiceKey = null;
 	}
 }

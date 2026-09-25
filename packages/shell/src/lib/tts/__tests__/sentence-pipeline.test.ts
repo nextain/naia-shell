@@ -802,4 +802,155 @@ describe("sentence TTS pipeline — FR-VOICE.22 음성 재생 방식 integration
 			now.mockRestore();
 		}
 	});
+
+	it("gap-review-8 구멍 4-1: pipeline passes rtfInformedPreRoll=true to onFirstChunk for RTF-informed pre-roll sentence", async () => {
+		const now = vi
+			.spyOn(performance, "now")
+			.mockReturnValueOnce(0) // sentence 1: synthesisStartedAt
+			.mockReturnValueOnce(1_100) // sentence 1: elapsedMs
+			.mockReturnValueOnce(1_100) // sentence 1: elapsed for RTF
+			.mockReturnValue(0);
+		try {
+			synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) });
+			const scheduler = {
+				noteSentence: vi.fn(),
+				schedule: vi.fn((fn: () => any) => fn()),
+				onFirstChunk: vi.fn(),
+				onSentenceResult: vi.fn(),
+				onEnqueued: vi.fn(),
+				finishStream: vi.fn(),
+				interrupt: vi.fn(),
+				noteTarget: vi.fn(),
+			};
+			const { deps, queue } = makeDeps({
+				getVoiceConfig: () => ({
+					ttsProvider: "naia-local-voice",
+					voicePlaybackMode: "auto",
+				}),
+				getScheduler: () => scheduler as any,
+			});
+			Object.assign(queue, { enqueueOrderedStream: vi.fn() });
+			const pipeline = createSentenceTtsPipeline(deps);
+
+			pipeline.sendSentence("첫 문장으로 RTF 1.1을 만듭니다.");
+			await flush();
+
+			// Sentence 2: RTF 1.1 is known -> method is streaming with preRoll > 0.
+			synthesizeMock.mockImplementationOnce(async (opts) => {
+				opts.onPcmChunk?.(new Int16Array(240), 24_000);
+				return { audioBase64: makeWavBase64(1) };
+			});
+
+			pipeline.sendSentence("둘째 문장은 RTF를 아는 pre-roll 스트리밍입니다.");
+			await flush();
+
+			expect(scheduler.onFirstChunk).toHaveBeenCalledWith(
+				expect.any(Number),
+				expect.any(Number),
+				true,
+			);
+		} finally {
+			now.mockRestore();
+		}
+	});
+
+	it("gap-review-8: switching localVoiceGpuIndex mid-session drops the stale RTF (mutant MG guard)", async () => {
+		let gpuIndex: number | undefined = 0;
+		const { deps, queue } = makeDeps({
+			getVoiceConfig: () => ({
+				ttsProvider: "naia-local-voice",
+				voicePlaybackMode: "auto",
+				vllmTtsHost: "http://localhost:8910",
+				localVoiceGpuIndex: gpuIndex,
+			}),
+			getScheduler: () => null,
+		});
+		const streaming = Object.assign(queue, { enqueueOrderedStream: vi.fn() });
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(2) });
+		const pipeline = createSentenceTtsPipeline(deps);
+
+		pipeline.sendSentence("첫 문장, GPU 0.");
+		await flush();
+		// Confirm the fast RTF was recorded and would stream on the same GPU.
+		pipeline.sendSentence("같은 GPU 둘째 문장.");
+		expect(streaming.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+		await flush();
+
+		// Now switch GPU index before the next sentence is admitted.
+		gpuIndex = 1;
+		pipeline.sendSentence("GPU 전환 뒤 첫 문장, GPU 1.");
+		// No new stream slot opened for GPU 1's unmeasured first sentence.
+		expect(streaming.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+		expect(synthesizeMock).toHaveBeenLastCalledWith(
+			expect.objectContaining({ streamPcm: false }),
+		);
+	});
+
+	it("gap-review-8: sentenceRateCalibrator.record updates expectedDurationSeconds for subsequent sentences (mutant MF guard)", async () => {
+		const now = vi
+			.spyOn(performance, "now")
+			.mockReturnValueOnce(0) // sentence 1: synthesisStartedAt
+			.mockReturnValueOnce(1_100) // sentence 1: elapsedMs
+			.mockReturnValueOnce(1_100) // sentence 1: elapsed for RTF
+			.mockReturnValue(0);
+		try {
+			// Sentence 1: text length exactly 20 chars. WAV duration = 1.0s.
+			// Calibrated rate = 20 chars / 1.0s = 20 chars/sec.
+			synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) });
+			const { deps, queue } = makeAutoDeps("auto");
+			const pipeline = createSentenceTtsPipeline(deps);
+
+			pipeline.sendSentence("01234567890123456789");
+			await flush();
+
+			// Sentence 2: length exactly 40 chars.
+			// With calibrated rate (20 chars/sec): expected duration = 40 / 20 = 2.0s.
+			// Without calibration / mutant MF (default 7 chars/sec): expected duration = 40 / 7 ≈ 5.71s.
+			pipeline.sendSentence("0123456789012345678901234567890123456789");
+			expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+			const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+			expect(stream.expectedDurationSeconds).toBeCloseTo(2.0, 1);
+		} finally {
+			now.mockRestore();
+		}
+	});
+
+	it("gap-review-8: changing voice resets sentenceRateCalibrator so next sentence uses default rate", async () => {
+		let currentVoice = "voice1";
+		const now = vi
+			.spyOn(performance, "now")
+			.mockReturnValueOnce(0)
+			.mockReturnValueOnce(1_100)
+			.mockReturnValueOnce(1_100)
+			.mockReturnValue(0);
+		try {
+			synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(1) });
+			const { deps, queue } = makeDeps({
+				getVoiceConfig: () => ({
+					ttsProvider: "naia-local-voice",
+					voicePlaybackMode: "auto",
+					voice: currentVoice,
+				}),
+				getScheduler: () => null,
+			});
+			const streaming = Object.assign(queue, { enqueueOrderedStream: vi.fn() });
+			const pipeline = createSentenceTtsPipeline(deps);
+
+			// Exactly 21 chars in 1s -> 21 chars/sec
+			pipeline.sendSentence("012345678901234567890");
+			await flush();
+
+			// Switch voice before sentence 2
+			currentVoice = "voice2";
+			// Exactly 21 chars.
+			// If reset to default 7 chars/sec: 21 / 7 = 3.0s.
+			// If stale calibration (21 chars/sec) remained: 21 / 21 = 1.0s.
+			pipeline.sendSentence("012345678901234567890");
+			expect(streaming.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+			const stream = streaming.enqueueOrderedStream.mock.calls[0][1];
+			expect(stream.expectedDurationSeconds).toBeCloseTo(3.0, 1);
+		} finally {
+			now.mockRestore();
+		}
+	});
 });

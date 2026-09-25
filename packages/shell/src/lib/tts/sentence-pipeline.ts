@@ -377,8 +377,9 @@ export function createSentenceTtsPipeline(
 			deps.setOutputStage("tts");
 			synthesisStartedAt = performance.now();
 			// gap-review-7 (2026-09-25) 구멍 3-1: 세션 실측 평균(있으면)으로
-			// L 추정을 보정한다 — 초기 몇 문장은 고정 기본값(7자/초)으로
-			// 시작하고, 실측이 쌓이면 그 목소리의 실제 속도를 따른다.
+			// gap-review-8 구멍 3-1: 목소리나 참조 음성이 바뀌면 보정기를 리셋한다.
+			const voiceIdentityKey = `${voiceCfg?.voice ?? ""}|ref=${deps.getLocalRefAudioB64() ?? ""}`;
+			sentenceRateCalibrator.noteVoiceIdentity(voiceIdentityKey);
 			const calibratedCharsPerSecond =
 				sentenceRateCalibrator.get() ?? DEFAULT_CHARS_PER_SECOND;
 			const estimatedDurationSeconds = estimateSentenceDurationSeconds(
@@ -404,6 +405,7 @@ export function createSentenceTtsPipeline(
 			if (ttsProviderForCost === "naia-local-voice") {
 				localVoiceScheduler?.noteTarget(synthesisTargetKey);
 			}
+			const rtfAtDecision = voicePlaybackRtfTracker.get();
 			playbackDecision =
 				ttsProviderForCost === "naia-local-voice"
 					? decidePlaybackMethod({
@@ -413,10 +415,14 @@ export function createSentenceTtsPipeline(
 							// 생기면 여기서 readRuntimeRealtimeHint(...) 로 채운다. 지금은
 							// RTF 실측 폴백만 쓴다.
 							explicitRealtime: null,
-							rtf: voicePlaybackRtfTracker.get(),
+							rtf: rtfAtDecision,
 							estimatedDurationSeconds,
 						})
 					: null;
+			const rtfInformedPreRoll =
+				playbackDecision?.method === "streaming" &&
+				rtfAtDecision != null &&
+				Number.isFinite(rtfAtDecision);
 			const stream =
 				ttsProviderForCost === "naia-local-voice" &&
 				streamQueue?.enqueueOrderedStream &&
@@ -474,6 +480,7 @@ export function createSentenceTtsPipeline(
 								localVoiceScheduler?.onFirstChunk(
 									localVoiceGeneration,
 									elapsed,
+									rtfInformedPreRoll,
 								);
 							}
 						}

@@ -48,6 +48,7 @@ class FakeContext {
 	static sources: FakeBufferSource[] = [];
 	static baseLatency: number | undefined = undefined;
 	static outputLatency: number | undefined = undefined;
+	static timestampMode: "normal" | "zero" | "none" = "none";
 	destination = {};
 	state = "running";
 	get currentTime() {
@@ -58,6 +59,21 @@ class FakeContext {
 	}
 	get outputLatency() {
 		return FakeContext.outputLatency;
+	}
+	getOutputTimestamp(): AudioTimestamp | undefined {
+		if (FakeContext.timestampMode === "none") return undefined;
+		if (FakeContext.timestampMode === "zero") {
+			return {
+				contextTime: this.currentTime,
+				performanceTime: performance.now(),
+			};
+		}
+		const lat =
+			(FakeContext.baseLatency ?? 0) + (FakeContext.outputLatency ?? 0);
+		return {
+			contextTime: Math.max(0, this.currentTime - lat),
+			performanceTime: performance.now(),
+		};
 	}
 	resume() {
 		return Promise.resolve();
@@ -76,6 +92,8 @@ class FakeAudio {
 	static instances: FakeAudio[] = [];
 	static eventMs = 0;
 	static decodeMs = 50;
+	static clockMode: "heard" | "decode" = "heard";
+	static latencySec = 0;
 	onplay: (() => void) | null = null;
 	onended: (() => void) | null = null;
 	onerror: ((e: Event) => void) | null = null;
@@ -98,7 +116,9 @@ class FakeAudio {
 		return Promise.resolve();
 	}
 	get currentTime() {
-		const t = (simMs - this.soundAtMs) / 1000;
+		// "decode": reports position ahead of sound by latencySec
+		const offset = FakeAudio.clockMode === "decode" ? FakeAudio.latencySec : 0;
+		const t = (simMs - this.soundAtMs + offset * 1000) / 1000;
 		return Math.min(Math.max(0, t), this.durationMs / 1000);
 	}
 	set currentTime(_v: number) {}
@@ -235,13 +255,18 @@ async function simulate(
 	latencySec: number,
 	fps: number,
 	eventMs: number,
+	timestampMode: "normal" | "zero" | "none" = "none",
+	clockMode: "heard" | "decode" = "heard",
 ): Promise<Outcome> {
 	simMs = 0;
 	FakeContext.sources = [];
 	FakeContext.baseLatency = latencySec > 0 ? 0.005 : undefined;
 	FakeContext.outputLatency = latencySec > 0 ? latencySec - 0.005 : 0;
+	FakeContext.timestampMode = timestampMode;
 	FakeAudio.instances = [];
 	FakeAudio.eventMs = eventMs;
+	FakeAudio.clockMode = clockMode;
+	FakeAudio.latencySec = latencySec;
 
 	const renderer = new PrebakedAvatarRenderer({
 		manifest: manifest(),
@@ -329,8 +354,13 @@ async function simulate(
 
 const LATENCIES = [0, 0.04, 0.15, 0.3];
 const FPS = [24, 30, 60, 144];
+const TIMESTAMP_MODES: Array<"normal" | "zero" | "none"> = [
+	"normal",
+	"zero",
+	"none",
+];
 
-describe("lipsync across platforms (latency x frame rate x play event)", () => {
+describe("lipsync across platforms (latency x frame rate x play event x getOutputTimestamp)", () => {
 	beforeEach(() => {
 		vi.useFakeTimers({
 			toFake: ["setTimeout", "clearTimeout", "performance", "Date"],
@@ -350,18 +380,33 @@ describe("lipsync across platforms (latency x frame rate x play event)", () => {
 		vi.restoreAllMocks();
 	});
 
-	const cases: Array<["stream" | "media", number, number, number]> = [];
+	type CaseRow = [
+		"stream" | "media",
+		number,
+		number,
+		number,
+		"normal" | "zero" | "none",
+	];
+	const cases: CaseRow[] = [];
 	for (const latency of LATENCIES)
-		for (const fps of FPS) {
-			cases.push(["stream", latency, fps, 0]);
-			cases.push(["media", latency, fps, -100]);
-			cases.push(["media", latency, fps, 100]);
-		}
+		for (const fps of FPS)
+			for (const timestampMode of TIMESTAMP_MODES) {
+				cases.push(["stream", latency, fps, 0, timestampMode]);
+				cases.push(["media", latency, fps, -100, timestampMode]);
+				cases.push(["media", latency, fps, 100, timestampMode]);
+			}
 
 	it.each(cases)(
-		"%s path, latency %f s, %i fps, play event %i ms from the sound",
-		async (path, latency, fps, eventMs) => {
-			const { changes, heard } = await simulate(path, latency, fps, eventMs);
+		"%s path, latency %f s, %i fps, play event %i ms, timestampMode %s",
+		async (path, latency, fps, eventMs, timestampMode) => {
+			const { changes, heard } = await simulate(
+				path,
+				latency,
+				fps,
+				eventMs,
+				timestampMode,
+				"heard",
+			);
 			const want = expectedOpen(heard);
 			const wantChanges: Array<[number, boolean]> = [];
 			for (const [a, b] of want) wantChanges.push([a, true], [b, false]);
@@ -378,10 +423,55 @@ describe("lipsync across platforms (latency x frame rate x play event)", () => {
 				const fs = await import("node:fs");
 				fs.appendFileSync(
 					out,
-					`${JSON.stringify({ path, latency, fps, eventMs, offsets: offsets.map((o) => Math.round(o)) })}\n`,
+					`${JSON.stringify({ path, latency, fps, eventMs, timestampMode, offsets: offsets.map((o) => Math.round(o)) })}\n`,
 				);
 			}
 			for (const off of offsets) expect(Math.abs(off)).toBeLessThanOrEqual(100);
 		},
 	);
+
+	describe("VL-review1 플랫폼 부류: <audio>.currentTime 디코드 위치 시 드리프트 포착 검증", () => {
+		// 알려진 한계: WebView2·WKWebView 실기 확인 필요
+		// 현재 계약은 "currentTime 을 들림 위치로 본다"이다. 미디어 요소의 currentTime 이
+		// 실제 들림 위치가 아닌 하드웨어/드라이버 디코드 위치를 반환하는 엔진 환경에서는
+		// 입이 출력 지연만큼 앞서서 열리는 알려진 한계가 존재한다.
+		it.each([
+			[
+				0.15,
+				30,
+				-116.67,
+				[-82.67, -116.67, -109.67, -115.67, -115.67, -116.67],
+			],
+			[0.3, 24, -266.33, [-66.33, -258.33, -259.33, -233.33, -266.33, -249.33]],
+			[
+				0.3,
+				60,
+				-299.33,
+				[-116.33, -283.33, -292.33, -283.33, -299.33, -282.33],
+			],
+		])(
+			"알려진 한계: WebView2·WKWebView 실기 확인 필요 - media 경로에서 currentTime 이 들림 위치보다 출력 지연(%f s, %i fps)만큼 앞선 디코드 위치이면 선행 수치가 고정 기대값과 일치한다",
+			async (latency, fps, expectedMaxLead, expectedOffsets) => {
+				const { changes, heard } = await simulate(
+					"media",
+					latency,
+					fps,
+					0,
+					"none",
+					"decode",
+				);
+				const want = expectedOpen(heard);
+				const wantChanges: Array<[number, boolean]> = [];
+				for (const [a, b] of want) wantChanges.push([a, true], [b, false]);
+				// t_visual - t_heard_sound: 입이 소리보다 앞서 열리면 음수 오프셋 발생
+				const offsets = changes.map(([t], i) => t - wantChanges[i][0]);
+				const maxLead = Math.min(...offsets);
+				expect(maxLead).toBeCloseTo(expectedMaxLead, 1);
+				expect(offsets.length).toBe(expectedOffsets.length);
+				for (let i = 0; i < offsets.length; i++) {
+					expect(offsets[i]).toBeCloseTo(expectedOffsets[i], 1);
+				}
+			},
+		);
+	});
 });

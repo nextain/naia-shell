@@ -443,10 +443,12 @@ async function synthNaiaLocalVoice(
 				const delayMs = LOCAL_VOICE_STARTUP_RETRY_DELAYS_MS[retry];
 				// Tell the chat surface the wait is the VOICE MODEL booting, not the
 				// LLM thinking — the output-stage chip switches its label on this.
-				if (isOwnLoopbackEngine && typeof window !== "undefined")
+				if (isOwnLoopbackEngine && typeof window !== "undefined") {
 					window.dispatchEvent(
 						new CustomEvent("naia:voice-model-preparing", { detail: true }),
 					);
+					window.dispatchEvent(new CustomEvent("naia:voice-engine-boot-retry"));
+				}
 				Logger.info("tts-synthesize", "Local voice unreachable; retrying", {
 					retry: retry + 1,
 					delayMs,

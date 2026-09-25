@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
 	BORDERLINE_RTF_CEILING,
+	CALIBRATOR_SAMPLE_WINDOW,
 	DEFAULT_PREROLL_MARGIN_RELATIVE,
 	DEFAULT_PREROLL_MARGIN_SECONDS,
+	MAX_CALIBRATED_CHARS_PER_SECOND,
+	MIN_CALIBRATED_CHARS_PER_SECOND,
+	MIN_RTF_SAMPLE_DURATION_SECONDS,
 	REALTIME_RTF_CEILING,
 	SentenceRateCalibrator,
 	VoicePlaybackRtfTracker,
@@ -475,6 +479,29 @@ describe("VoicePlaybackRtfTracker — 세션 내 보수적 RTF 기억(최근 N�
 		tracker.reset();
 		expect(tracker.get()).toBeNull();
 	});
+
+	it("gap-review-8 구멍 2-1: durationSeconds < MIN_RTF_SAMPLE_DURATION_SECONDS 인 짧은 문장은 표본에서 제외한다", () => {
+		expect(MIN_RTF_SAMPLE_DURATION_SECONDS).toBe(1.0);
+		const tracker = new VoicePlaybackRtfTracker();
+		// MIN_RTF_SAMPLE_DURATION_SECONDS 보다 짧은 문장: 고정 지연 때문에 RTF가 부풀려진 경우
+		tracker.record(1.6, MIN_RTF_SAMPLE_DURATION_SECONDS - 0.2);
+		expect(tracker.get()).toBeNull();
+
+		// MIN_RTF_SAMPLE_DURATION_SECONDS(1.0s) 이상인 문장은 정상 기록
+		tracker.record(1.0, MIN_RTF_SAMPLE_DURATION_SECONDS);
+		expect(tracker.get()).toBeCloseTo(1.0, 10);
+	});
+
+	it("VL-review1 추정값 부류: 최근 창의 최댓값 하나(1.5)가 정상 표본들의 방식을 끌어내리지 않는다 (중앙값)", () => {
+		const tracker = new VoicePlaybackRtfTracker();
+		// 정상적인 빠른 표본 2개 (RTF 0.8)
+		tracker.record(1.6, 2.0); // 0.8
+		tracker.record(1.6, 2.0); // 0.8
+		// 짧은 문장 고정 지연 오버헤드로 인한 1회성 이상치 (1.0초 오디오에 1.5초 합성 = RTF 1.5)
+		tracker.record(1.5, 1.0); // 1.5 > 느림 경계 1.3
+		// 최댓값(1.5) 하나에 끌려가지 않고 중앙값(0.8)을 취하여 방식을 문장 방식으로 떨어뜨리지 않음
+		expect(tracker.get()).toBeCloseTo(0.8, 5);
+	});
 });
 
 describe("buildSynthesisTargetKey — gap-review-7 구멍 2-1: 합성 조건 키", () => {
@@ -538,6 +565,72 @@ describe("SentenceRateCalibrator — gap-review-7 구멍 3-1: 세션 실측으�
 		calibrator.record(70, 10);
 		calibrator.reset();
 		expect(calibrator.get()).toBeNull();
+	});
+
+	it("gap-review-8 구멍 3-1: 1~40자/초 범위를 벗어나는 이상치(outlier)는 무시한다", () => {
+		expect(MIN_CALIBRATED_CHARS_PER_SECOND).toBe(1);
+		expect(MAX_CALIBRATED_CHARS_PER_SECOND).toBe(40);
+		const calibrator = new SentenceRateCalibrator();
+		// 1자/초 미만 (0.5자/초) -> 무시
+		calibrator.record(MIN_CALIBRATED_CHARS_PER_SECOND * 0.5, 1);
+		expect(calibrator.get()).toBeNull();
+
+		// 40자/초 초과 (50자/초) -> 무시
+		calibrator.record(MAX_CALIBRATED_CHARS_PER_SECOND + 10, 1);
+		expect(calibrator.get()).toBeNull();
+
+		// 정상 범위 (10자 / 1초 = 10자/초) -> 기록
+		calibrator.record(10, 1);
+		expect(calibrator.get()).toBeCloseTo(10, 10);
+
+		// 정상 범위 (20자 / 2초 = 10자/초) -> 누적 (총 30자 / 3초 = 10자/초)
+		calibrator.record(20, 2);
+		expect(calibrator.get()).toBeCloseTo(10, 10);
+	});
+
+	it("gap-review-8 구멍 3-1: noteVoiceIdentity 로 목소리나 참조음성이 바뀌면 통계를 리셋한다", () => {
+		const calibrator = new SentenceRateCalibrator();
+		calibrator.noteVoiceIdentity("voiceA|ref=abc");
+		calibrator.record(20, 1); // 20자/초
+		expect(calibrator.get()).toBeCloseTo(20, 10);
+
+		// 같은 key -> 유지
+		calibrator.noteVoiceIdentity("voiceA|ref=abc");
+		expect(calibrator.get()).toBeCloseTo(20, 10);
+
+		// key 변경 -> 리셋 (get()은 null)
+		calibrator.noteVoiceIdentity("voiceB|ref=xyz");
+		expect(calibrator.get()).toBeNull();
+
+		// 새 voice로 새 측정 기록
+		calibrator.record(10, 1); // 10자/초
+		expect(calibrator.get()).toBeCloseTo(10, 10);
+
+		// reset() 시 lastVoiceKey도 초기화
+		calibrator.reset();
+		expect(calibrator.get()).toBeNull();
+		// 같은 key를 다시 주더라도 reset 직후이므로 새로 인식
+		calibrator.noteVoiceIdentity("voiceB|ref=xyz");
+		expect(calibrator.get()).toBeNull();
+	});
+
+	it("VL-review1 추정값 부류: 범위 안의 튀는 값 하나가 최근 N개 창 이후 세션 끝까지 남지 않고 밀려난다", () => {
+		const calibrator = new SentenceRateCalibrator();
+		// 정상 표본 (10자/초) 2개
+		calibrator.record(20, 2);
+		calibrator.record(20, 2);
+		expect(calibrator.get()).toBeCloseTo(10, 5);
+
+		// 범위(1~40) 안의 튀는 값(33자/초) 하나 유입
+		calibrator.record(20, 0.6); // ~33.3자/초
+		expect(calibrator.get()).toBeGreaterThan(12);
+
+		// 이후 정상 표본(10자/초)이 CALIBRATOR_SAMPLE_WINDOW(10)개 이상 들어오면 튀는 값이 밀려남
+		for (let i = 0; i < CALIBRATOR_SAMPLE_WINDOW; i++) {
+			calibrator.record(20, 2);
+		}
+		// 튀는 값이 창에서 완전히 밀려나 10자/초로 복귀함
+		expect(calibrator.get()).toBeCloseTo(10, 5);
 	});
 });
 

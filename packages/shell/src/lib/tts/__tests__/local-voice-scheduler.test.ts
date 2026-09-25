@@ -373,4 +373,15 @@ describe("LocalVoiceScheduler (FR-VOICE.16 Phase 2a — FR-VOICE.11/12/19 semant
 		expect(setWarmingVisible).not.toHaveBeenCalledWith(true);
 		expect(resumePlayback).toHaveBeenCalled();
 	});
+
+	it("gap-review-8 구멍 4-1: RTF 아는 pre-roll 문장은 elapsedSeconds>1 이어도 warming hold 를 열지 않고 warmed 유지", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		// Cold engine initially (warmed = false), slow first chunk (1.5s > 1s),
+		// but rtfInformedPreRoll = true.
+		scheduler.onFirstChunk(scheduler.generation, 1.5, true);
+		expect(setWarmingVisible).not.toHaveBeenCalledWith(true);
+		expect(resumePlayback).toHaveBeenCalledTimes(1);
+	});
 });

@@ -192,9 +192,13 @@ export class LocalVoiceScheduler {
 	 * previous `!holdActive → release` path made complete-then-play unreachable
 	 * on RTF>1 hardware (e.g. windows_trt_6g on RTX 4060 8GB).
 	 */
-	onFirstChunk(generation: number, elapsedSeconds: number): void {
+	onFirstChunk(
+		generation: number,
+		elapsedSeconds: number,
+		rtfInformedPreRoll = false,
+	): void {
 		if (generation !== this.state.generation) return;
-		if (elapsedSeconds <= 1) {
+		if (elapsedSeconds <= 1 || rtfInformedPreRoll) {
 			this.state.warmed = true;
 			this.state.firstResultSeen = true;
 		} else if (
