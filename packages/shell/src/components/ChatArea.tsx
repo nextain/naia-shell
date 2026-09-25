@@ -48,6 +48,7 @@ import {
 	sendChatMessage,
 	yieldSpeechActivity,
 } from "../lib/chat-service";
+import { getConversationHistory } from "../lib/conversation-store";
 import {
 	type AppConfig,
 	DEFAULT_NAIA_LOCAL_URL,
@@ -170,7 +171,7 @@ import { isNaiaAuthWireError, wireErrorMessage } from "../lib/wire-errors";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
-import { useChatStore } from "../stores/chat";
+import { getStoredLocalSessionId, useChatStore } from "../stores/chat";
 import { useLogsStore } from "../stores/logs";
 import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
@@ -367,6 +368,40 @@ function splitSlideNarration(text: string): string[] {
 	else if (mode === "phrase") parts = clean.split(/(?<=[,.!?…])\s+/);
 	else parts = clean.split(/(?<=[.!?…])\s+/);
 	return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+export async function loadOrCreateSession(): Promise<void> {
+	const store = useChatStore.getState();
+	store.setSessionId("agent:main:main");
+
+	const storedKey = getStoredLocalSessionId() || store.localSessionId;
+	if (!storedKey) return;
+	store.setLocalSessionId(storedKey);
+
+	try {
+		const history = await getConversationHistory(storedKey);
+		const currentStore = useChatStore.getState();
+		if (currentStore.localSessionId !== storedKey) return;
+		currentStore.setSessionId("agent:main:main");
+		if (history.length > 0) {
+			if (currentStore.messages.length === 0) {
+				currentStore.setMessages(history);
+				Logger.info("ChatArea", "Restored local conversation transcript", {
+					sessionId: storedKey,
+					messageCount: history.length,
+				});
+			}
+		} else {
+			Logger.info("ChatArea", "No transcript found for local session", {
+				sessionId: storedKey,
+			});
+		}
+	} catch (err) {
+		Logger.warn("ChatArea", "Failed to restore conversation transcript", {
+			sessionId: storedKey,
+			error: String(err),
+		});
+	}
 }
 
 export function ChatArea({
@@ -658,23 +693,13 @@ export function ChatArea({
 
 	const setEmotion = useAvatarStore((s) => s.setEmotion);
 
-	// The agent owns the local transcript. Do not hydrate the visual chat from
-	// the legacy Gateway session: its asynchronous response can arrive after a
-	// first local turn and replace the completed user/assistant pair with an
-	// unrelated history. The next request then has an invalid role sequence.
+	// The agent owns the local transcript. On mount, restore the current conversation
+	// from the local session transcript if one exists, or keep the fresh key.
 	useEffect(() => {
 		if (sessionLoaded.current) return;
 		sessionLoaded.current = true;
 
-		const loadSession = async () => {
-			const store = useChatStore.getState();
-			store.setSessionId("agent:main:main");
-			Logger.info("ChatArea", "Skipped legacy Gateway history hydration", {
-				reason: "agent-local-transcript-is-authoritative",
-			});
-		};
-
-		loadSession().catch((err) => {
+		loadOrCreateSession().catch((err) => {
 			Logger.warn("ChatArea", "Failed to load session", {
 				error: String(err),
 			});

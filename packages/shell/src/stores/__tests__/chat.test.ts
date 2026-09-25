@@ -1,8 +1,16 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { useChatStore } from "../chat";
+import {
+	CHAT_LOCAL_SESSION_KEY,
+	clearStoredLocalSessionId,
+	getStoredLocalSessionId,
+	setStoredLocalSessionId,
+	useChatStore,
+} from "../chat";
 
 describe("useChatStore", () => {
 	afterEach(() => {
+		clearStoredLocalSessionId();
 		useChatStore.setState(useChatStore.getInitialState());
 	});
 
@@ -23,9 +31,22 @@ describe("useChatStore", () => {
 		expect(useChatStore.getState().sessionId).toBe("s1");
 	});
 
-	it("setLocalSessionId sets the local session id", () => {
+	it("setLocalSessionId sets the local session id and persists to sessionStorage", () => {
 		useChatStore.getState().setLocalSessionId("chat-custom-1");
 		expect(useChatStore.getState().localSessionId).toBe("chat-custom-1");
+		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe("chat-custom-1");
+		expect(getStoredLocalSessionId()).toBe("chat-custom-1");
+	});
+
+	it("getStoredLocalSessionId, setStoredLocalSessionId, clearStoredLocalSessionId manage key", () => {
+		clearStoredLocalSessionId();
+		expect(getStoredLocalSessionId()).toBeNull();
+		setStoredLocalSessionId("chat-storage-key");
+		expect(getStoredLocalSessionId()).toBe("chat-storage-key");
+		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe("chat-storage-key");
+		clearStoredLocalSessionId();
+		expect(getStoredLocalSessionId()).toBeNull();
+		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBeNull();
 	});
 
 	it("setMessages replaces all messages", () => {
@@ -43,9 +64,10 @@ describe("useChatStore", () => {
 		expect(messages[0].content).toBe("restored");
 	});
 
-	it("newConversation resets all state except provider", () => {
+	it("newConversation resets all state except provider and replaces localSessionId", () => {
 		const store = useChatStore.getState();
 		store.setSessionId("s1");
+		store.setLocalSessionId("chat-old-key");
 		store.addMessage({ role: "user", content: "hi" });
 		store.setProvider("xai");
 
@@ -57,6 +79,10 @@ describe("useChatStore", () => {
 		expect(state.totalSessionCost).toBe(0);
 		// provider is preserved (not reset by newConversation)
 		expect(state.provider).toBe("xai");
+		// localSessionId is replaced with a fresh key and persisted
+		expect(state.localSessionId).not.toBe("chat-old-key");
+		expect(state.localSessionId.startsWith("chat-")).toBe(true);
+		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe(state.localSessionId);
 	});
 
 	it("addMessage adds user message", () => {

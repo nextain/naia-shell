@@ -70,6 +70,33 @@ interface ChatState {
 	dequeueMessage: () => string | undefined;
 }
 
+// 새로고침에는 지금 대화를 되살리되, 앱을 새로 켜면 새 대화로 시작한다(sessionStorage).
+export const CHAT_LOCAL_SESSION_KEY = "naia-chat-session-id";
+
+export function getStoredLocalSessionId(): string | null {
+	if (typeof sessionStorage === "undefined") return null;
+	try {
+		const val = sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY);
+		return val && val.trim() ? val.trim() : null;
+	} catch {
+		return null;
+	}
+}
+
+export function setStoredLocalSessionId(id: string): void {
+	if (typeof sessionStorage === "undefined") return;
+	try {
+		sessionStorage.setItem(CHAT_LOCAL_SESSION_KEY, id);
+	} catch {}
+}
+
+export function clearStoredLocalSessionId(): void {
+	if (typeof sessionStorage === "undefined") return;
+	try {
+		sessionStorage.removeItem(CHAT_LOCAL_SESSION_KEY);
+	} catch {}
+}
+
 function generateId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -78,9 +105,19 @@ function generateLocalSessionId(): string {
 	return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function getInitialLocalSessionId(): string {
+	const stored = getStoredLocalSessionId();
+	if (stored) {
+		return stored;
+	}
+	const fresh = generateLocalSessionId();
+	setStoredLocalSessionId(fresh);
+	return fresh;
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
 	sessionId: null,
-	localSessionId: generateLocalSessionId(),
+	localSessionId: getInitialLocalSessionId(),
 	messages: [],
 	isStreaming: false,
 	streamingContent: "",
@@ -94,7 +131,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	messageQueue: [],
 
 	setSessionId: (id) => set({ sessionId: id }),
-	setLocalSessionId: (id) => set({ localSessionId: id }),
+	setLocalSessionId: (id) => {
+		setStoredLocalSessionId(id);
+		set({ localSessionId: id });
+	},
 
 	setMessages: (messages) => set({ messages }),
 
@@ -292,9 +332,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		) {
 			requestBrowserVisibilitySync();
 		}
+		const nextSessionId = generateLocalSessionId();
+		setStoredLocalSessionId(nextSessionId);
 		set({
 			sessionId: null,
-			localSessionId: generateLocalSessionId(),
+			localSessionId: nextSessionId,
 			messages: [],
 			isStreaming: false,
 			streamingContent: "",
