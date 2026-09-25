@@ -4,7 +4,12 @@ import type {
 	AvatarPlaybackOptions,
 	AvatarSpeechRenderer,
 } from "./avatar-renderer";
-import { NvaAudioGate } from "./nva-audio-gate";
+import {
+	NVA_GATE_HOLD_MS,
+	NVA_GATE_THRESHOLD,
+	NVA_SHELL_MIN_IDLE_MS,
+	NvaAudioGate,
+} from "./nva-audio-gate";
 import { NvaChromakeyGL } from "./nva-chromakey-gl";
 import { TwinLoop } from "./twin-loop";
 
@@ -44,6 +49,56 @@ function endOf(video: HTMLVideoElement): Promise<void> {
 }
 
 /** WebM alone can carry a real (VP9 yuva420p) alpha channel; other containers cannot. */
+/** How long the drawn clip takes to fade into the next one (idle <-> talking). */
+export const NVA_SWITCH_FADE_MS = 150;
+
+/**
+ * Fades the previously drawn clip out over the newly chosen one, so a switch
+ * between clips whose head is framed a little differently does not jump.
+ * Switching back during a fade continues from the current mix instead of
+ * restarting it, so rapid switches never flash either clip at full strength.
+ */
+export class SwitchCrossfade<T> {
+	private shown: T | null = null;
+	private from: T | null = null;
+	private startedAt = 0;
+
+	constructor(private readonly fadeMs = NVA_SWITCH_FADE_MS) {}
+
+	/** Records the source drawn at `nowMs`; returns the one to fade out and its opacity. */
+	next(source: T | null, nowMs: number): { from: T; alpha: number } | null {
+		if (source !== this.shown) {
+			const progress = this.progress(nowMs);
+			if (this.from !== null && source === this.from && progress < 1) {
+				// Back to the clip that was fading out: reverse from the same mix.
+				this.from = this.shown;
+				this.startedAt = nowMs - (1 - progress) * this.fadeMs;
+			} else {
+				this.from = source === null ? null : this.shown;
+				this.startedAt = nowMs;
+			}
+			this.shown = source;
+		}
+		if (this.from === null) return null;
+		const progress = this.progress(nowMs);
+		if (progress >= 1) {
+			this.from = null;
+			return null;
+		}
+		return { from: this.from, alpha: 1 - progress };
+	}
+
+	reset(): void {
+		this.shown = null;
+		this.from = null;
+	}
+
+	private progress(nowMs: number): number {
+		if (this.fadeMs <= 0) return 1;
+		return Math.min(1, Math.max(0, (nowMs - this.startedAt) / this.fadeMs));
+	}
+}
+
 export function canCarryAlpha(clipPath: string): boolean {
 	return /\.webm$/i.test(clipPath);
 }
@@ -83,7 +138,13 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	/** Idle clip element, kept playing under the talking loop for voice gating. */
 	private idleVideo: HTMLVideoElement | null = null;
 	private speakingVisual = false;
-	private readonly gate = new NvaAudioGate();
+	private readonly gate = new NvaAudioGate(
+		NVA_GATE_THRESHOLD,
+		NVA_GATE_HOLD_MS,
+		"idle",
+		NVA_SHELL_MIN_IDLE_MS,
+	);
+	private readonly fade = new SwitchCrossfade<HTMLVideoElement>();
 	private lastDrawAt: number | null = null;
 	/** Chroma key per clip element (a clip without alpha needs its own key). */
 	private keyColors = new WeakMap<HTMLVideoElement, string | undefined>();
@@ -340,6 +401,58 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		return video;
 	}
 
+	/** Key colour the clip is drawn with, or null for a clip with its own alpha. */
+	private keyColorOf(video: HTMLVideoElement) {
+		return this.keyColors.has(video)
+			? this.keyColors.get(video)
+			: this.currentKeyColor;
+	}
+
+	/** True when drawing this clip goes through the one shared chroma keyer. */
+	private keyedDraw(video: HTMLVideoElement): boolean {
+		return Boolean(this.keyColorOf(video)) && !this.keyerFailed;
+	}
+
+	private paint(
+		ctx: CanvasRenderingContext2D,
+		canvas: HTMLCanvasElement,
+		video: HTMLVideoElement,
+		alpha: number,
+	): void {
+		const rect = containRect(
+			canvas.width,
+			canvas.height,
+			video.videoWidth,
+			video.videoHeight,
+		);
+		if (rect.dw <= 0 || rect.dh <= 0) return;
+		const previousAlpha = ctx.globalAlpha;
+		ctx.globalAlpha = alpha;
+		try {
+			const keyColor = this.keyColorOf(video);
+			if (keyColor && !this.keyerFailed) {
+				try {
+					if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
+					else this.keyer.setParams({ keyColor });
+					const keyed = this.keyer.process(
+						video,
+						video.videoWidth,
+						video.videoHeight,
+					);
+					ctx.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
+					return;
+				} catch {
+					// WebGL2 unavailable or context lost — fall back to a plain
+					// (possibly opaque-backdrop) draw rather than a blank canvas.
+					this.keyerFailed = true;
+				}
+			}
+			ctx.drawImage(video, rect.dx, rect.dy, rect.dw, rect.dh);
+		} finally {
+			ctx.globalAlpha = previousAlpha;
+		}
+	}
+
 	/** 숨은 decode `<video>`를 매 프레임 표시 `<canvas>`에 합성(필요 시 크로마키). */
 	private startDrawLoop(): void {
 		if (this.running) return;
@@ -357,37 +470,18 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				video.videoWidth > 0 &&
 				video.videoHeight > 0
 			) {
-				const rect = containRect(
-					canvas.width,
-					canvas.height,
-					video.videoWidth,
-					video.videoHeight,
-				);
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
-				if (rect.dw > 0 && rect.dh > 0) {
-					const keyColor = this.keyColors.has(video)
-						? this.keyColors.get(video)
-						: this.currentKeyColor;
-					let drew = false;
-					if (keyColor && !this.keyerFailed) {
-						try {
-							if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
-							else this.keyer.setParams({ keyColor });
-							const keyed = this.keyer.process(
-								video,
-								video.videoWidth,
-								video.videoHeight,
-							);
-							ctx.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
-							drew = true;
-						} catch {
-							// WebGL2 unavailable or context lost — fall back to a plain
-							// (possibly opaque-backdrop) draw rather than a blank canvas.
-							this.keyerFailed = true;
-						}
-					}
-					if (!drew) ctx.drawImage(video, rect.dx, rect.dy, rect.dw, rect.dh);
-				}
+				this.paint(ctx, canvas, video, 1);
+				const fading = this.fade.next(video, now ?? performance.now());
+				if (
+					fading &&
+					fading.from.readyState >= 2 &&
+					fading.from.videoWidth > 0 &&
+					fading.from.videoHeight > 0 &&
+					!this.keyedDraw(video) &&
+					!this.keyedDraw(fading.from)
+				)
+					this.paint(ctx, canvas, fading.from, fading.alpha);
 			}
 			this.raf = requestAnimationFrame(draw);
 		};

@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NvaManifest } from "../../nva";
-import { NvaAudioGate } from "../nva-audio-gate";
-import { PrebakedAvatarRenderer } from "../prebaked-renderer";
+import {
+	NVA_GATE_HOLD_MS,
+	NVA_GATE_THRESHOLD,
+	NVA_SHELL_MIN_IDLE_MS,
+	NvaAudioGate,
+} from "../nva-audio-gate";
+import { PrebakedAvatarRenderer, SwitchCrossfade } from "../prebaked-renderer";
 
 describe("NvaAudioGate (same rule as the naia.land Studio clip engine)", () => {
 	it("opens on voice and closes only after 200 ms of silence", () => {
@@ -12,6 +17,59 @@ describe("NvaAudioGate (same rule as the naia.land Studio clip engine)", () => {
 		expect(gate.process(0.001, 100)).toBe("talking");
 		expect(gate.process(0.001, 99)).toBe("talking");
 		expect(gate.process(0.001, 1)).toBe("idle");
+	});
+
+	it("without a minimum idle time, a word right after the hold reopens at once (web rule)", () => {
+		const gate = new NvaAudioGate();
+		gate.process(0.05, 33);
+		expect(gate.process(0, 200)).toBe("idle");
+		expect(gate.process(0.05, 33)).toBe("talking");
+	});
+
+	it("with the shell minimum, a closed gate stays closed for 250 ms so no idle flash is shorter", () => {
+		const gate = new NvaAudioGate(
+			NVA_GATE_THRESHOLD,
+			NVA_GATE_HOLD_MS,
+			"idle",
+			NVA_SHELL_MIN_IDLE_MS,
+		);
+		// The first word of an utterance opens at once.
+		expect(gate.process(0.05, 33)).toBe("talking");
+		expect(gate.process(0, 200)).toBe("idle");
+		// Voice returns 33 ms later: still idle, the head does not flash.
+		expect(gate.process(0.05, 33)).toBe("idle");
+		expect(gate.process(0.05, 200)).toBe("idle");
+		// 250 ms after closing, the voice opens it again.
+		expect(gate.process(0.05, 17)).toBe("talking");
+		// After a reset the next word opens at once again.
+		expect(gate.process(0, 200)).toBe("idle");
+		gate.reset();
+		expect(gate.process(0.05, 0)).toBe("talking");
+	});
+});
+
+describe("SwitchCrossfade", () => {
+	it("fades the previous clip out over 150 ms after a switch", () => {
+		const fade = new SwitchCrossfade<string>(150);
+		expect(fade.next("talking", 0)).toBeNull();
+		expect(fade.next("talking", 500)).toBeNull();
+		expect(fade.next("idle", 1000)).toEqual({ from: "talking", alpha: 1 });
+		expect(fade.next("idle", 1075)).toEqual({ from: "talking", alpha: 0.5 });
+		expect(fade.next("idle", 1150)).toBeNull();
+		expect(fade.next("idle", 1300)).toBeNull();
+	});
+
+	it("switching back mid-fade continues from the same mix instead of jumping", () => {
+		const fade = new SwitchCrossfade<string>(150);
+		fade.next("talking", 0);
+		fade.next("idle", 1000);
+		// 30 ms into the fade, talking is still at 80 %.
+		expect(fade.next("idle", 1030)?.alpha).toBeCloseTo(0.8);
+		// Voice returns: now idle fades out from 20 %, so talking shows at 80 %.
+		const back = fade.next("talking", 1030);
+		expect(back?.from).toBe("idle");
+		expect(back?.alpha).toBeCloseTo(0.2);
+		expect(fade.next("talking", 1060)).toBeNull();
 	});
 });
 
@@ -112,6 +170,86 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 		const talking = playingElement("blob:clips/talking.webm");
 		return { renderer, idle, talking };
 	}
+
+	it("keeps the idle clip at least 250 ms once shown, so a short pause does not flash it", async () => {
+		const level = { value: 0.08 as number | null };
+		const { renderer, idle, talking } = await speakingRenderer(level);
+		expect(renderer.drawSource(1000)).toBe(talking);
+		level.value = 0;
+		expect(renderer.drawSource(1100)).toBe(talking);
+		expect(renderer.drawSource(1200)).toBe(idle);
+		level.value = 0.08;
+		expect(renderer.drawSource(1233)).toBe(idle);
+		expect(renderer.drawSource(1450)).toBe(talking);
+		renderer.stop();
+	});
+
+	it("draws the clip it left over the new one while fading", async () => {
+		const level = { value: 0.08 as number | null };
+		const draws: { source: unknown; alpha: number }[] = [];
+		const ctx = {
+			globalAlpha: 1,
+			clearRect: vi.fn(),
+			drawImage(source: unknown) {
+				draws.push({ source, alpha: ctx.globalAlpha });
+			},
+		};
+		const canvas = document.createElement("canvas");
+		canvas.width = 360;
+		canvas.height = 640;
+		Object.defineProperty(canvas, "getContext", { value: () => ctx });
+		const frames: FrameRequestCallback[] = [];
+		vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+			frames.push(cb);
+			return frames.length;
+		});
+		vi.stubGlobal("cancelAnimationFrame", () => {});
+		try {
+			const renderer = new PrebakedAvatarRenderer({
+				manifest: studioManifest(),
+				locale: "ko-KR",
+				resolveAssetUrl: async (path) => `blob:${path}`,
+				voiceLevel: () => level.value,
+			});
+			const mounted = document.createElement("video");
+			document.body.appendChild(mounted);
+			renderer.start(mounted, canvas);
+			await flush();
+			renderer.setSpeakingVisual(true);
+			await flush();
+			for (const element of [
+				...clipElements("blob:clips/idle.webm"),
+				...clipElements("blob:clips/talking.webm"),
+			])
+				markDecoded(element);
+			const idle = playingElement("blob:clips/idle.webm");
+			const talking = playingElement("blob:clips/talking.webm");
+			const frame = (at: number) => {
+				draws.length = 0;
+				const cb = frames.shift();
+				if (!cb) throw new Error("no frame requested");
+				cb(at);
+				return draws.slice();
+			};
+			frame(1000);
+			frame(1033);
+			level.value = 0;
+			// Hold elapses: idle is chosen, talking is laid over it at full strength.
+			expect(frame(1240)).toEqual([
+				{ source: idle, alpha: 1 },
+				{ source: talking, alpha: 1 },
+			]);
+			const mid = frame(1315);
+			expect(mid[0]).toEqual({ source: idle, alpha: 1 });
+			expect(mid[1].source).toBe(talking);
+			expect(mid[1].alpha).toBeCloseTo(0.5);
+			// Fade over: only idle is drawn.
+			expect(frame(1400)).toEqual([{ source: idle, alpha: 1 }]);
+			renderer.stop();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
 
 	it("shows the talking loop only while the voice is audible", async () => {
 		const level = { value: 0 as number | null };
