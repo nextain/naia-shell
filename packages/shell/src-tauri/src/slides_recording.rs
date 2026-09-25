@@ -36,6 +36,9 @@ pub(crate) const STDERR_TAIL_LINES: usize = 12;
 pub(crate) const STARTUP_PROBE: Duration = Duration::from_millis(1500);
 /// How long a graceful stop may take before ffmpeg is killed.
 pub(crate) const STOP_GRACE: Duration = Duration::from_secs(8);
+/// Pulse capture fragment in bytes (10 ms of 48 kHz stereo s16); see ffmpeg_args.
+pub(crate) const PULSE_FRAGMENT_BYTES: &str = "1920";
+
 /// PulseAudio / pipewire-pulse name for the default sink's monitor source.
 pub(crate) const LINUX_DEFAULT_AUDIO: &str = "@DEFAULT_MONITOR@";
 /// Env override for the audio source (`none` disables audio).
@@ -162,9 +165,21 @@ pub(crate) fn ffmpeg_args(
     }
     match audio {
         AudioInput::None => {}
-        AudioInput::Pulse(source) => {
-            push(&["-thread_queue_size", "1024", "-f", "pulse", "-i", source])
-        }
+        // Default pulse fragments are large enough that the captured sound
+        // lands 67-93 ms ahead of the picture in the file (2026-09-25 lipsync
+        // probe: the avatar mouth looked late by that much on top of any real
+        // delay). A 1920-byte fragment (10 ms of 48 kHz stereo s16) brought
+        // the offset to 10-33 ms, about one captured video frame.
+        AudioInput::Pulse(source) => push(&[
+            "-thread_queue_size",
+            "1024",
+            "-fragment_size",
+            PULSE_FRAGMENT_BYTES,
+            "-f",
+            "pulse",
+            "-i",
+            source,
+        ]),
         AudioInput::DirectShow(device) => {
             let input = format!("audio={device}");
             push(&["-thread_queue_size", "1024", "-f", "dshow", "-i", &input]);

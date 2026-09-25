@@ -137,6 +137,12 @@ fn linux_args_use_x11grab_window_id_and_pulse_audio() {
     let video_input = args.iter().position(|a| a == "-window_id").unwrap() + 2;
     assert_eq!(args[video_input..video_input + 2], ["-i", ":7"]);
     assert_eq!(window_after(&args, "pulse"), ["pulse", "-i"]);
+    // Small capture fragments keep the sound in step with the picture; the
+    // option belongs to the pulse input, so it must come before its -i.
+    let fragment_at = args.iter().position(|a| a == "-fragment_size").unwrap();
+    assert_eq!(args[fragment_at + 1], "1920");
+    assert!(fragment_at < args.iter().position(|a| a == "pulse").unwrap());
+    assert!(fragment_at > video_input);
     let audio_input_at = args.iter().position(|a| a == "pulse").unwrap() + 2;
     assert_eq!(args[audio_input_at], "@DEFAULT_MONITOR@");
     assert_eq!(window_after(&args, "-c:a"), ["-c:a", "aac"]);

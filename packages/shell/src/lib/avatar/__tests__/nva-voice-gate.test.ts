@@ -7,7 +7,11 @@ import {
 	NVA_SHELL_HOLD_MS,
 	NvaAudioGate,
 } from "../nva-audio-gate";
-import { PrebakedAvatarRenderer, SwitchCrossfade } from "../prebaked-renderer";
+import {
+	NVA_LEVEL_LEAD_MS,
+	PrebakedAvatarRenderer,
+	SwitchCrossfade,
+} from "../prebaked-renderer";
 
 describe("NvaAudioGate (same rule as the naia.land Studio clip engine)", () => {
 	it("opens on voice and closes only after 200 ms of silence", () => {
@@ -51,6 +55,68 @@ describe("NvaAudioGate (same rule as the naia.land Studio clip engine)", () => {
 		const gate = new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_GATE_HOLD_MS);
 		gate.process(0.05, 33);
 		expect(gate.process(0, 300)).toBe("idle");
+	});
+});
+
+describe("NvaAudioGate.processAhead (shell, levels known ahead)", () => {
+	const V = 0.05; // voiced window
+	/** `ms` of levels in 20 ms windows. */
+	const run = (value: number, ms: number) =>
+		new Array(Math.round(ms / 20)).fill(value);
+	const shellGate = () =>
+		new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_SHELL_HOLD_MS);
+
+	it("closes at the very start of a pause that will last at least the hold", () => {
+		const gate = shellGate();
+		gate.processAhead([V, ...run(0, 600)], 20, 16);
+		// First silent frame, 500 ms of silence ahead: closes now, not 400 ms later.
+		expect(gate.processAhead([...run(0, 500), V], 20, 16)).toBe("idle");
+	});
+
+	it("never closes on a pause shorter than the hold, even one just under it", () => {
+		const gate = shellGate();
+		gate.processAhead([V], 20, 16);
+		// 380 ms pause (0 now + 18 more windows), then voice.
+		let levels = [...run(0, 380), V, V];
+		for (let t = 0; t < 380; t += 20) {
+			expect(gate.processAhead(levels, 20, 20)).toBe("talking");
+			levels = levels.slice(1);
+		}
+		expect(gate.processAhead(levels, 20, 20)).toBe("talking");
+	});
+
+	it("a pause just over the hold closes for its whole length instead of blinking at its end", () => {
+		const gate = shellGate();
+		gate.processAhead([V], 20, 16);
+		let levels = [...run(0, 460), V, V];
+		const states: string[] = [];
+		while (levels.length > 1) {
+			states.push(gate.processAhead(levels.slice(0, 22), 20, 20));
+			levels = levels.slice(1);
+		}
+		// Closed from the first silent window to the last, then open.
+		expect(states.slice(0, 23)).toEqual(new Array(23).fill("idle"));
+		expect(states[23]).toBe("talking");
+	});
+
+	it("closes at once when the speech ends (silence to the end of the audio)", () => {
+		const gate = shellGate();
+		gate.processAhead([V], 20, 16);
+		expect(gate.processAhead(run(0, 420), 20, 16)).toBe("idle");
+	});
+
+	it("falls back to waiting out the hold when the levels do not reach far enough", () => {
+		const gate = shellGate();
+		gate.processAhead([V], 20, 16);
+		// Only 100 ms known, all silent: cannot tell yet.
+		expect(gate.processAhead(run(0, 100), 20, 200)).toBe("talking");
+		expect(gate.processAhead(run(0, 100), 20, 120)).toBe("idle");
+	});
+
+	it("opens on the first voiced window", () => {
+		const gate = shellGate();
+		expect(gate.processAhead(run(0, 400), 20, 16)).toBe("idle");
+		expect(gate.processAhead([V, ...run(0, 400)], 20, 16)).toBe("talking");
 	});
 });
 
@@ -190,6 +256,56 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 		// Voice returns right away: opens at once, no minimum closed time.
 		level.value = 0.08;
 		expect(renderer.drawSource(1420)).toBe(talking);
+		renderer.stop();
+	});
+
+	it("with levels ahead, reads NVA_LEVEL_LEAD_MS early and closes at the start of a long pause", async () => {
+		const level = { value: 0.08 as number | null };
+		const asked: number[] = [];
+		// Voice until t=1.0 s, silence 1.0-1.6 s, voice again (20 ms windows).
+		const timeline = (t: number) => (t < 1 || t >= 1.6 ? 0.08 : 0);
+		let clockSec = 0;
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: studioManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+			voiceLevel: () => level.value,
+			voiceLevelsAhead: (aheadSec) => {
+				asked.push(aheadSec);
+				const out: number[] = [];
+				for (let i = 0; i * 0.02 <= aheadSec + 1e-9; i++)
+					out.push(timeline(clockSec + i * 0.02));
+				return out;
+			},
+		});
+		const mounted = document.createElement("video");
+		document.body.appendChild(mounted);
+		renderer.start(mounted, document.createElement("canvas"));
+		await flush();
+		renderer.setSpeakingVisual(true);
+		await flush();
+		for (const element of [
+			...clipElements("blob:clips/idle.webm"),
+			...clipElements("blob:clips/talking.webm"),
+		])
+			markDecoded(element);
+		const idle = playingElement("blob:clips/idle.webm");
+		const talking = playingElement("blob:clips/talking.webm");
+		clockSec = 0.9;
+		expect(renderer.drawSource(900)).toBe(talking);
+		// 60 ms before the pause is audible the gate already reads it.
+		clockSec = 0.93;
+		expect(renderer.drawSource(930)).toBe(talking);
+		clockSec = 0.95;
+		expect(renderer.drawSource(950)).toBe(idle);
+		// And 60 ms before the voice returns it opens again.
+		clockSec = 1.53;
+		expect(renderer.drawSource(1530)).toBe(idle);
+		clockSec = 1.55;
+		expect(renderer.drawSource(1550)).toBe(talking);
+		expect(asked[0]).toBeCloseTo(
+			(NVA_LEVEL_LEAD_MS + NVA_SHELL_HOLD_MS) / 1000,
+		);
 		renderer.stop();
 	});
 

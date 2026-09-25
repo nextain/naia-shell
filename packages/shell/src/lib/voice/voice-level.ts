@@ -115,6 +115,41 @@ export class VoiceLevelTimeline {
 		this.segments.push({ start, envelope, windowSec });
 	}
 
+	/**
+	 * Levels from `time` to `time + aheadSec`, one per window. The audio is
+	 * already decoded, so the avatar can see a pause coming instead of
+	 * waiting it out (see `NvaAudioGate.processAhead`). The list stops where
+	 * the scheduled audio ends: what comes after it is not known yet (the
+	 * next chunk or sentence may follow at once), so it must not read as
+	 * silence.
+	 */
+	levelsAhead(
+		time: number,
+		aheadSec: number,
+		stepSec = VOICE_LEVEL_WINDOW_SEC,
+	): number[] {
+		const out: number[] = [];
+		const end = this.end();
+		const steps = Math.max(1, Math.ceil(aheadSec / stepSec));
+		for (let i = 0; i <= steps; i++) {
+			const at = time + i * stepSec;
+			if (at >= end) break;
+			out.push(this.levelAt(at));
+		}
+		return out;
+	}
+
+	/** End of the last scheduled segment on the clock (-Infinity if none). */
+	private end(): number {
+		let end = Number.NEGATIVE_INFINITY;
+		for (const segment of this.segments)
+			end = Math.max(
+				end,
+				segment.start + segment.envelope.length * segment.windowSec,
+			);
+		return end;
+	}
+
 	levelAt(time: number): number {
 		// Forget segments that ended more than a second ago.
 		while (this.segments.length > 0) {
@@ -136,10 +171,146 @@ export class VoiceLevelTimeline {
 	}
 }
 
+/** Level of a whole-payload envelope at `time` seconds (0 outside it). */
+export function envelopeLevelAt(
+	envelope: Float32Array,
+	time: number,
+	windowSec = VOICE_LEVEL_WINDOW_SEC,
+): number {
+	const index = Math.floor(time / windowSec);
+	return index >= 0 && index < envelope.length ? envelope[index] : 0;
+}
+
+/**
+ * Levels of a whole-payload envelope from `time` to `time + aheadSec`. The
+ * list stops at the end of the payload: the next sentence may start right
+ * after it, so the time past the end is unknown, not silent. (Reading it as
+ * silence closed the mouth on every short pause between two sentences.)
+ */
+export function envelopeLevelsAhead(
+	envelope: Float32Array,
+	time: number,
+	aheadSec: number,
+	windowSec = VOICE_LEVEL_WINDOW_SEC,
+): number[] {
+	const out: number[] = [];
+	const end = envelope.length * windowSec;
+	const steps = Math.max(1, Math.ceil(aheadSec / windowSec));
+	for (let i = 0; i <= steps; i++) {
+		const at = Math.max(0, time) + i * windowSec;
+		if (at >= end) break;
+		out.push(envelopeLevelAt(envelope, at, windowSec));
+	}
+	return out;
+}
+
+/**
+ * Levels ahead of `time` in the playing envelope and, past its end, in the
+ * envelope of the sentence queued right after it (null = next unknown, the
+ * list then stops at the end of the current one). Sentences play back to
+ * back, so the pause between two sentences is the tail silence of one plus
+ * the lead silence of the next; without the next envelope that pause could
+ * only be waited out.
+ */
+export function envelopeLevelsAheadThen(
+	current: Float32Array,
+	time: number,
+	aheadSec: number,
+	next: Float32Array | null,
+	windowSec = VOICE_LEVEL_WINDOW_SEC,
+): number[] {
+	const levels = envelopeLevelsAhead(current, time, aheadSec, windowSec);
+	if (!next) return levels;
+	const coveredSec = levels.length * windowSec;
+	const restSec = aheadSec - coveredSec;
+	if (restSec < 0) return levels;
+	const nextStart = Math.max(0, time) + coveredSec - current.length * windowSec;
+	return levels.concat(
+		envelopeLevelsAhead(next, nextStart, restSec, windowSec),
+	);
+}
+
+/**
+ * How far `HTMLMediaElement.currentTime` may trail the wall clock before the
+ * clock stops trusting the wall clock (a real stall, not a slow counter).
+ */
+export const MEDIA_CLOCK_MAX_LEAD_SEC = 0.25;
+
+/**
+ * Audible position of an `<audio>` element.
+ *
+ * Measured on WebKitGTK 2.52 (2026-09-25 lipsync probe, see
+ * `.agents/work/naia-res/studio-impl/lipsync-lag-diagnosis-20260925.md`):
+ * `currentTime` of a playing `<audio>` trails the sound actually coming out
+ * by 60-170 ms and the amount changes from one playback to the next, while
+ * the wall clock counted from the `playing` event matched the sound within a
+ * frame. A mouth driven by `currentTime` therefore opened late by that much.
+ *
+ * This clock runs on the wall clock from the moment the element reports
+ * `playing`, and falls back to `currentTime` whenever the two disagree the
+ * other way (`currentTime` ahead: re-anchor on it) or by more than
+ * `MEDIA_CLOCK_MAX_LEAD_SEC` (a real stall or buffering: follow the element).
+ * Before `playing` has fired it reports `currentTime` unchanged.
+ */
+export class AudibleMediaClock {
+	private anchorWallMs: number | null = null;
+	private anchorMediaSec = 0;
+
+	constructor(
+		private readonly nowMs: () => number = () => performance.now(),
+		private readonly maxLeadSec = MEDIA_CLOCK_MAX_LEAD_SEC,
+	) {}
+
+	/** Call from the element's `playing` event (and again after a resume). */
+	playing(currentTime: number): void {
+		this.anchorWallMs = this.nowMs();
+		this.anchorMediaSec = Math.max(0, currentTime || 0);
+	}
+
+	/** Call from the element's `pause`, `waiting` or `ended` event. */
+	halt(): void {
+		this.anchorWallMs = null;
+	}
+
+	/** Audible position in seconds, given the element's `currentTime` now. */
+	time(currentTime: number): number {
+		const media = Math.max(0, currentTime || 0);
+		if (this.anchorWallMs == null) return media;
+		const wall =
+			this.anchorMediaSec + (this.nowMs() - this.anchorWallMs) / 1000;
+		if (media >= wall) {
+			this.anchorWallMs = this.nowMs();
+			this.anchorMediaSec = media;
+			return media;
+		}
+		return Math.min(wall, media + this.maxLeadSec);
+	}
+}
+
+/**
+ * Time on an AudioContext clock of the sound leaving the speaker now.
+ * `currentTime` is where the graph is rendering; the device plays that
+ * `baseLatency + outputLatency` later (WebKitGTK 2.52 reports 0.0029 s and 0,
+ * browsers with a real output latency report tens of ms).
+ */
+export function audibleContextTime(ctx: {
+	currentTime: number;
+	baseLatency?: number;
+	outputLatency?: number;
+}): number {
+	return ctx.currentTime - (ctx.baseLatency || 0) - (ctx.outputLatency || 0);
+}
+
 /** Anything that can report the level of the audio it is playing now. */
 export interface VoiceLevelSource {
 	/** RMS of the audio playing now, or null when it cannot be measured. */
 	voiceLevel(): number | null;
+	/**
+	 * Levels from now to `aheadSec` later, one per `VOICE_LEVEL_WINDOW_SEC`
+	 * (index 0 = now). Optional: a source that cannot see ahead leaves it out
+	 * and the avatar falls back to waiting out each pause. Null = unknown.
+	 */
+	voiceLevelsAhead?(aheadSec: number): number[] | null;
 }
 
 let activeSource: VoiceLevelSource | null = null;
@@ -157,4 +328,13 @@ export function releaseVoiceLevelSource(source: VoiceLevelSource): void {
 /** Level of whatever TTS audio is playing now, or null when unknown. */
 export function readActiveVoiceLevel(): number | null {
 	return activeSource ? activeSource.voiceLevel() : null;
+}
+
+/**
+ * Levels of the active TTS audio from now to `aheadSec` later, or null when
+ * nothing is playing or the source cannot look ahead.
+ */
+export function readActiveVoiceLevelsAhead(aheadSec: number): number[] | null {
+	if (!activeSource?.voiceLevelsAhead) return null;
+	return activeSource.voiceLevelsAhead(aheadSec);
 }

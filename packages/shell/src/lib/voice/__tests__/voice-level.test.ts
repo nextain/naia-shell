@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AudioQueue } from "../audio-queue";
 import {
+	AudibleMediaClock,
 	VOICE_LEVEL_WINDOW_SEC,
 	VoiceLevelTimeline,
+	audibleContextTime,
+	envelopeLevelAt,
+	envelopeLevelsAhead,
+	envelopeLevelsAheadThen,
 	readActiveVoiceLevel,
+	readActiveVoiceLevelsAhead,
+	releaseVoiceLevelSource,
 	rmsEnvelope,
+	setActiveVoiceLevelSource,
 	wavEnvelope,
 } from "../voice-level";
 
@@ -72,6 +80,108 @@ describe("voice level envelope", () => {
 		expect(timeline.levelAt(10.05)).toBe(0);
 		expect(timeline.levelAt(10.11)).toBeCloseTo(0.5);
 		expect(timeline.levelAt(12)).toBe(0);
+	});
+});
+
+describe("voice level lookahead", () => {
+	it("reads the timeline ahead of the clock, one level per window", () => {
+		const timeline = new VoiceLevelTimeline();
+		timeline.add(10, new Float32Array([0.2, 0.2, 0, 0, 0.5, 0.5]));
+		const ahead = timeline.levelsAhead(10.01, 0.08);
+		expect(ahead).toHaveLength(5);
+		expect(ahead[0]).toBeCloseTo(0.2);
+		expect(ahead[2]).toBe(0);
+		expect(ahead[4]).toBeCloseTo(0.5);
+	});
+
+	it("stops the timeline lookahead where the scheduled audio ends (next chunk unknown)", () => {
+		const timeline = new VoiceLevelTimeline();
+		timeline.add(10, new Float32Array([0.2, 0, 0]));
+		expect(timeline.levelsAhead(10.01, 0.4)).toHaveLength(3);
+		expect(timeline.levelsAhead(10.07, 0.4)).toEqual([]);
+	});
+
+	it("reads a whole-payload envelope ahead and stops at its end (next sentence unknown)", () => {
+		const envelope = new Float32Array([0.3, 0, 0.3, 0]);
+		expect(envelopeLevelAt(envelope, 0.045)).toBeCloseTo(0.3);
+		expect(envelopeLevelsAhead(envelope, 0.02, 0.2)).toEqual([
+			0,
+			expect.closeTo(0.3),
+			0,
+		]);
+		expect(envelopeLevelsAhead(envelope, 0.09, 0.2)).toEqual([]);
+	});
+
+	it("continues the lookahead into the sentence queued next", () => {
+		const current = new Float32Array([0.3, 0, 0]);
+		const next = new Float32Array([0, 0.3, 0.3]);
+		// From 0.02 s: two windows left of this sentence, then the next one.
+		expect(envelopeLevelsAheadThen(current, 0.02, 0.1, next)).toEqual([
+			0,
+			0,
+			0,
+			expect.closeTo(0.3),
+			expect.closeTo(0.3),
+		]);
+		expect(envelopeLevelsAheadThen(current, 0.02, 0.1, null)).toEqual([0, 0]);
+	});
+
+	it("reports no lookahead from a source that cannot look ahead", () => {
+		const source = { voiceLevel: () => 0.1 };
+		setActiveVoiceLevelSource(source);
+		expect(readActiveVoiceLevelsAhead(0.4)).toBeNull();
+		releaseVoiceLevelSource(source);
+		const ahead = {
+			voiceLevel: () => 0.1,
+			voiceLevelsAhead: (sec: number) => [sec],
+		};
+		setActiveVoiceLevelSource(ahead);
+		expect(readActiveVoiceLevelsAhead(0.4)).toEqual([0.4]);
+		releaseVoiceLevelSource(ahead);
+		expect(readActiveVoiceLevelsAhead(0.4)).toBeNull();
+	});
+
+	it("puts the context clock back by the device latency", () => {
+		expect(
+			audibleContextTime({
+				currentTime: 5,
+				baseLatency: 0.01,
+				outputLatency: 0.04,
+			}),
+		).toBeCloseTo(4.95);
+		expect(audibleContextTime({ currentTime: 5 })).toBe(5);
+	});
+});
+
+describe("AudibleMediaClock", () => {
+	it("runs on the wall clock from 'playing' while currentTime trails it", () => {
+		let now = 1000;
+		const clock = new AudibleMediaClock(() => now);
+		expect(clock.time(0)).toBe(0); // before 'playing': the element's own time
+		clock.playing(0);
+		now = 1300;
+		// currentTime still says 0.18 s; 0.3 s of sound has played.
+		expect(clock.time(0.18)).toBeCloseTo(0.3);
+	});
+
+	it("re-anchors when currentTime runs ahead of the wall clock", () => {
+		let now = 0;
+		const clock = new AudibleMediaClock(() => now);
+		clock.playing(0);
+		now = 100;
+		expect(clock.time(0.2)).toBeCloseTo(0.2);
+		now = 150;
+		expect(clock.time(0.2)).toBeCloseTo(0.25);
+	});
+
+	it("follows the element on a real stall and after a pause", () => {
+		let now = 0;
+		const clock = new AudibleMediaClock(() => now, 0.25);
+		clock.playing(0);
+		now = 2000; // stuck at 0.5 s for 1.5 s
+		expect(clock.time(0.5)).toBeCloseTo(0.75);
+		clock.halt();
+		expect(clock.time(0.5)).toBe(0.5);
 	});
 });
 

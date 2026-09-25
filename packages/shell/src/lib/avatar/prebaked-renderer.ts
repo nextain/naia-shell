@@ -1,5 +1,9 @@
 import { type NvaManifest, defaultClipOf, findPrebakedSpeech } from "../nva";
-import { readActiveVoiceLevel } from "../voice/voice-level";
+import {
+	VOICE_LEVEL_WINDOW_SEC,
+	readActiveVoiceLevel,
+	readActiveVoiceLevelsAhead,
+} from "../voice/voice-level";
 import type {
 	AvatarPlaybackOptions,
 	AvatarSpeechRenderer,
@@ -8,6 +12,7 @@ import {
 	NVA_GATE_THRESHOLD,
 	NVA_SHELL_HOLD_MS,
 	NvaAudioGate,
+	type NvaGateState,
 } from "./nva-audio-gate";
 import { NvaChromakeyGL } from "./nva-chromakey-gl";
 import { TwinLoop } from "./twin-loop";
@@ -22,6 +27,11 @@ interface Config {
 	 * Defaults to the shell AudioQueue that is playing.
 	 */
 	voiceLevel?: () => number | null;
+	/**
+	 * Levels from now to `aheadSec` later, one per `VOICE_LEVEL_WINDOW_SEC`,
+	 * or null when unknown. Defaults to the shell AudioQueue that is playing.
+	 */
+	voiceLevelsAhead?: (aheadSec: number) => number[] | null;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -50,6 +60,17 @@ function endOf(video: HTMLVideoElement): Promise<void> {
 /** WebM alone can carry a real (VP9 yuva420p) alpha channel; other containers cannot. */
 /** How long the drawn clip takes to fade into the next one (idle <-> talking). */
 export const NVA_SWITCH_FADE_MS = 100;
+
+/**
+ * How far ahead of the audible sound the gate reads the voice level, when the
+ * level source can look ahead. A switch decided in this frame becomes visible
+ * one display frame later (~16 ms at 60 Hz) and reaches the middle of the
+ * crossfade `NVA_SWITCH_FADE_MS / 2` after that, so a gate that reads the
+ * level of the sound playing now shows the mouth change about 66 ms late.
+ * Reading 60 ms ahead (three 20 ms level windows) lands the middle of the
+ * crossfade on the sound.
+ */
+export const NVA_LEVEL_LEAD_MS = 60;
 
 /**
  * Fades the previously drawn clip out over the newly chosen one, so a switch
@@ -387,7 +408,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	/**
 	 * Element to draw this frame. While the talking loop is on and the audio
-	 * level is known, the gate picks talking (voice) or idle (pause).
+	 * level is known, the gate picks talking (voice) or idle (pause). When the
+	 * level source can look ahead, the gate reads `NVA_LEVEL_LEAD_MS` ahead and
+	 * judges each pause by its whole length (`NvaAudioGate.processAhead`);
+	 * otherwise it waits each pause out (`process`).
 	 * Unknown level (MP3, browser speech) keeps the talking loop, as before.
 	 */
 	drawSource(nowMs: number): HTMLVideoElement | null {
@@ -405,9 +429,23 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			idle.videoWidth > 0;
 		if (!this.speakingVisual)
 			return this.returningToIdle && idleReady ? idle : video;
-		const level = (this.config.voiceLevel ?? readActiveVoiceLevel)();
-		if (level == null) return video;
-		const state = this.gate.process(level, last == null ? 0 : nowMs - last);
+		const deltaMs = last == null ? 0 : nowMs - last;
+		const stepMs = VOICE_LEVEL_WINDOW_SEC * 1000;
+		const levels = (this.config.voiceLevelsAhead ?? readActiveVoiceLevelsAhead)(
+			(NVA_LEVEL_LEAD_MS + NVA_SHELL_HOLD_MS) / 1000,
+		);
+		let state: NvaGateState;
+		if (levels && levels.length > 0) {
+			const lead = Math.min(
+				levels.length - 1,
+				Math.round(NVA_LEVEL_LEAD_MS / stepMs),
+			);
+			state = this.gate.processAhead(levels.slice(lead), stepMs, deltaMs);
+		} else {
+			const level = (this.config.voiceLevel ?? readActiveVoiceLevel)();
+			if (level == null) return video;
+			state = this.gate.process(level, deltaMs);
+		}
 		if (state === "idle" && idleReady) return idle;
 		return video;
 	}

@@ -75,6 +75,48 @@ export class NvaAudioGate {
 		return this.current;
 	}
 
+	/**
+	 * Same rule, but with the coming levels known (the TTS audio is already
+	 * decoded, so the avatar can read ahead). `levels[0]` is the level now and
+	 * each next entry is `stepMs` later.
+	 *
+	 * The causal `process` can only learn that a pause was long enough by
+	 * waiting it out, so every close came a full hold time (400 ms in the
+	 * shell) after the voice stopped, and a pause only a little longer than
+	 * the hold closed the mouth for a few frames just before the next word.
+	 * Knowing the future, the pause is judged by its whole length instead:
+	 * a pause that will last at least the hold closes the moment it starts,
+	 * and a shorter one never closes at all. When the levels do not reach far
+	 * enough to tell, this falls back to the causal rule.
+	 */
+	processAhead(
+		levels: ArrayLike<number>,
+		stepMs: number,
+		deltaMs: number,
+	): NvaGateState {
+		if (levels.length === 0) return this.current;
+		const now = levels[0];
+		if (now >= this.threshold) {
+			this.silenceMs = 0;
+			this.current = "talking";
+			return this.current;
+		}
+		if (this.current === "idle") return this.current;
+		this.silenceMs += Math.max(0, deltaMs);
+		// Silence already passed plus the silence still known to come.
+		let comingMs = 0;
+		for (let i = 1; i < levels.length; i++) {
+			if (levels[i] >= this.threshold) {
+				// Voice returns: close only if the whole pause reaches the hold.
+				if (this.silenceMs + comingMs >= this.holdMs) this.current = "idle";
+				return this.current;
+			}
+			comingMs += stepMs;
+		}
+		if (this.silenceMs + comingMs >= this.holdMs) this.current = "idle";
+		return this.current;
+	}
+
 	reset(initial: NvaGateState = "idle"): void {
 		this.current = initial;
 		this.silenceMs = 0;
