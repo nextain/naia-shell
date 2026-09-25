@@ -1,5 +1,8 @@
 version: "0.2.3"
 date: "2026-09-17"
+# 이번 배포가 나가는 운영체제. 배포 전 회귀(scripts/check-regression-complete.mjs)가
+# 이 운영체제의 기계와 스펙만 조건으로 삼는다 — scripts/lib/release-target.mjs.
+targets: [windows]
 summary:
   en: "Character-core shrink for Windows: drop third-party cloud LLM/voice and Discord/cron work tools, keep Naia account + local + Azure routes, and fix RTF>1 local-voice silence. Also ships the app store/Slides baseline already staged for 0.2.3."
   ko: "윈도우 캐릭터 코어 축소본입니다. 타사 클라우드 LLM·음성·Discord/cron 직접 일 도구를 제거하고, 나이아 계정·로컬·Azure 경로만 남기며, RTF>1 로컬 음성 무음을 고칩니다. 앱스토어/슬라이드 기반도 포함합니다."

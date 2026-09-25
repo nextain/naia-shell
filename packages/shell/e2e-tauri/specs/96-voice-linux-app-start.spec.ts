@@ -1,3 +1,5 @@
+// platforms: linux
+// 리눅스 로컬 음성 사이드카 기동을 확인한다(#537).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ensureAppReady } from "../helpers/settings.js";

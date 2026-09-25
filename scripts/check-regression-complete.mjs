@@ -26,6 +26,11 @@ import { join } from "node:path";
 import {
 	inventoryDigestFromFile,
 } from "./lib/inventory-digest.mjs";
+import {
+	machineInTargets,
+	releaseTargets,
+	specInTargets,
+} from "./lib/release-target.mjs";
 import { isRetestRecord } from "./lib/retest-selection.mjs";
 
 const args = process.argv.slice(2);
@@ -41,7 +46,24 @@ if (!existsSync(INVENTORY)) {
 	process.exit(1);
 }
 const inventory = JSON.parse(readFileSync(INVENTORY, "utf8"));
-const all = new Set(inventory.specs.map((s) => s.spec));
+/**
+ * 이번 배포가 나가는 운영체제. 나가지 않는 운영체제에서만 도는 스펙과 그
+ * 운영체제의 기계는 판정에 넣지 않는다 — `scripts/lib/release-target.mjs`.
+ * 빠진 것은 아래에서 이름과 함께 출력한다. 조용히 사라지면 통과처럼 보인다.
+ */
+const { targets, source: targetSource } = releaseTargets();
+const outOfTarget = inventory.specs.filter((s) => !specInTargets(s, targets)).map((s) => s.spec);
+const all = new Set(
+	inventory.specs.filter((s) => specInTargets(s, targets)).map((s) => s.spec),
+);
+if (targets) {
+	console.log(
+		`[regression-complete] 배포 대상 ${targets.join(", ")} (${targetSource}) — 스펙 ${inventory.specs.length} 중 ${all.size}개가 조건이다`,
+	);
+	if (outOfTarget.length) {
+		console.log(`  대상 운영체제에서 돌지 않아 조건에서 뺀 스펙 ${outOfTarget.length}개: ${outOfTarget.join(", ")}`);
+	}
+}
 
 if (!existsSync(RUNS)) {
 	console.error(`[regression-complete] ❌ ${RUNS} 이 없다 — 아직 아무 기계도 회귀를 돌리지 않았다`);
@@ -95,8 +117,21 @@ const roster = existsSync(ROSTER)
 	? JSON.parse(readFileSync(ROSTER, "utf8"))
 	: { machines: [] };
 const activeMachines = new Set(
-	(roster.machines ?? []).filter((m) => m.active !== false).map((m) => m.name),
+	(roster.machines ?? [])
+		.filter((m) => m.active !== false && machineInTargets(m, targets))
+		.map((m) => m.name),
 );
+/** 활성이지만 이번 배포 대상 운영체제가 아닌 기계. 그 기록은 판정에 넣지 않는다. */
+const offTargetMachines = new Map(
+	(roster.machines ?? [])
+		.filter((m) => m.active !== false && !machineInTargets(m, targets))
+		.map((m) => [m.name, m.os]),
+);
+if (offTargetMachines.size) {
+	console.log(
+		`  배포 대상이 아닌 운영체제의 기계 ${offTargetMachines.size}대는 이번 판정에서 뺀다: ${[...offTargetMachines].map(([name, os]) => `${name}(${os})`).join(", ")}`,
+	);
+}
 /**
  * 기계가 예전에 쓰던 이름. 같은 기계인데 이름만 바뀐 기록을 "모르는 기계" 로
  * 말하면 사람이 헷갈린다 — 실제로 이 저장소의 첫 기록들이 호스트명을 따
@@ -130,6 +165,10 @@ const inWindow = readdirSync(RUNS)
 	.filter(({ file, record }) => {
 		if (!record.machine) {
 			rejected.push(`${file}: 기계 이름이 없다 — 회귀 기록이 아니다`);
+			return false;
+		}
+		if (offTargetMachines.has(record.machine)) {
+			rejected.push(`${file}: ${record.machine} 은 이번 배포 대상 운영체제(${targets.join(", ")})의 기계가 아니다`);
 			return false;
 		}
 		if (activeMachines.size > 0 && !activeMachines.has(record.machine)) {
