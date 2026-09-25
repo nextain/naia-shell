@@ -523,8 +523,16 @@ export function createSentenceTtsPipeline(
 						const decoded = decodeWavPcm16(audioBase64);
 						if (decoded) {
 							openedStream.sampleRate = decoded.sampleRate;
-							openedStream.push(decoded.samples);
-							openedStream.end();
+							// gap-review-4 (2026-09-25): pushFinal(), not
+							// push()+end() — this single chunk IS the whole
+							// sentence, already finished. push() invokes
+							// AudioQueue's onChunk synchronously and only
+							// afterward would end() run, so the live
+							// `stream.ended` read inside that callback would
+							// still see `false` and apply the full pre-roll
+							// wait to audio that has nothing left to wait
+							// for. pushFinal() sets `ended` first.
+							openedStream.pushFinal(decoded.samples);
 							// The eager "streaming" decision logged above never fired
 							// for this sentence — log what actually played.
 							Logger.info(TAG, "Voice playback mode decision", {

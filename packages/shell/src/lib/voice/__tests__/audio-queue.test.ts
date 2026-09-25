@@ -357,6 +357,42 @@ describe("AudioQueue streamed PCM playback", () => {
 		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
 	});
 
+	it("gap-review-4 repro 1: pushFinal() on an already-subscribed, still-empty stream is not delayed even when buffered < expected duration", () => {
+		// Coordinator's exact repro: startDelaySeconds=3.3, expectedDurationSeconds=10,
+		// subscribe empty, then a single 2s chunk that is ALSO the last one. The
+		// old push()+end() pair fails here specifically because 2s < 10s never
+		// hits the "buffered >= expected" shortcut in effectivePreRollSeconds —
+		// it can only reach delay=0 through the `ended` branch, and push()
+		// invokes onChunk (and therefore reads `stream.ended`) synchronously,
+		// BEFORE a caller's separate end() call could ever run.
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		stream.startDelaySeconds = 3.3;
+		stream.expectedDurationSeconds = 10;
+		queue.enqueueOrderedStream(0, stream, {}); // subscribe while empty
+		stream.pushFinal(new Int16Array(2 * 24_000)); // 2s, and the last chunk
+		const [first] = FakeAudioContext.sources;
+		// Without the fix: now+1.30 (3.3 target − 2s buffered). With the fix:
+		// just the 40ms jitter floor, since the sentence had already finished.
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
+	});
+
+	it("gap-review-4 repro 2: pushFinal() is not delayed when expectedDurationSeconds is unknown (null)", () => {
+		// Coordinator's second repro: startDelaySeconds=1.3, expectedDurationSeconds
+		// left at its default (null) — the "buffered >= expected" shortcut in
+		// effectivePreRollSeconds is skipped entirely when expected is null, so
+		// this scenario can ONLY reach delay=0 through the `ended` branch.
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		stream.startDelaySeconds = 1.3;
+		queue.enqueueOrderedStream(0, stream, {}); // subscribe while empty
+		stream.pushFinal(new Int16Array(0.5 * 24_000)); // 0.5s WAV, and the last chunk
+		const [first] = FakeAudioContext.sources;
+		// Without the fix: now+0.80 (1.3 target − 0.5s buffered). With the fix:
+		// just the 40ms jitter floor.
+		expect(first.startedAt).toBeCloseTo(FakeAudioContext.now + 0.04, 5);
+	});
+
 	it("gap-review-3: onended racing ahead of the deferred start timer still fires onPlaybackStart", () => {
 		// A very short clip (or a test double that drives onended
 		// synchronously, as this test does) can have its source finish —

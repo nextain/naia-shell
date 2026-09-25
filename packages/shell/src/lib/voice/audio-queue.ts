@@ -69,6 +69,27 @@ export class PcmStreamSource {
 		this.ended = true;
 		this.onEnd?.();
 	}
+	/**
+	 * gap-review-4 (2026-09-25): push a chunk that is ALSO the last one, e.g.
+	 * a whole-WAV fallback decoded into a single chunk. `push(chunk); end();`
+	 * looks equivalent but is not: `push()` invokes `onChunk` synchronously,
+	 * and only AFTER that call returns does the caller get to call `end()` —
+	 * so `AudioQueue.playStream`'s first-chunk delay calculation, which reads
+	 * `stream.ended` live at the moment `onChunk` fires, still sees `false`
+	 * and applies the full pre-roll target to audio that has, in fact,
+	 * already finished synthesizing. Setting `ended` BEFORE calling `onChunk`
+	 * closes that window: the live read inside `onChunk` sees the true final
+	 * state instead of a transient in-progress one.
+	 */
+	pushFinal(chunk: Int16Array): void {
+		if (this.ended) return;
+		this.ended = true;
+		if (chunk.length > 0) {
+			this.chunks.push(chunk);
+			this.onChunk?.(chunk);
+		}
+		this.onEnd?.();
+	}
 	fail(): void {
 		this.failed = true;
 		this.end();
@@ -322,23 +343,27 @@ export class AudioQueue {
 				// 40 ms lead on the very first chunk absorbs scheduling jitter;
 				// startDelaySeconds (FR-VOICE.22 pre-roll) can push that lead out
 				// further when "auto" judged the engine only slightly slower than
-				// realtime. gap-review-3 (2026-09-25): the buffered/ended state
-				// used to subtract from that target is read LIVE, right here,
-				// instead of from a one-time snapshot taken before subscribe() —
+				// realtime. gap-review-3 (2026-09-25): the buffered state used to
+				// subtract from that target is read LIVE, right here, instead of
+				// from a one-time snapshot taken before subscribe() —
 				// `PcmStreamSource.push()` appends to `stream.chunks` before
 				// invoking this callback, so this correctly reflects everything
-				// available at the moment THIS chunk is actually being
-				// scheduled. That covers both directions of staleness: chunks
-				// that arrived from background synthesis before this stream's
-				// turn (still present in `stream.chunks` when subscribe()
-				// replays them here) AND chunks/ends that arrive strictly AFTER
-				// an early, empty subscribe() — e.g. the whole-WAV fallback's
-				// `push(decoded.samples); end();`, which lands the ENTIRE
-				// sentence as a single chunk on an already-subscribed, still-
-				// empty stream; a pre-subscribe snapshot would see "0 buffered"
-				// forever and wait out the full pre-roll target for audio that
-				// had, by the time it actually arrived, no more synthesis left
-				// to wait for.
+				// available at the moment THIS chunk is actually being scheduled.
+				// That covers background synthesis that buffered chunks before
+				// this stream's turn (still present in `stream.chunks` when
+				// subscribe() replays them here).
+				//
+				// gap-review-4 (2026-09-25): `stream.ended` read here is ALSO
+				// live, but that alone is not enough for a producer that calls
+				// `push(chunk); end();` back to back — `push()` invokes this
+				// callback SYNCHRONOUSLY, before the caller's next line can call
+				// `end()`, so `stream.ended` is still `false` at exactly the
+				// moment it matters most: the whole-WAV fallback landing its
+				// entire sentence as one chunk on an already-subscribed, empty
+				// stream. `PcmStreamSource.pushFinal()` exists for exactly that
+				// case — it sets `ended = true` BEFORE calling `onChunk`, so the
+				// live read below sees the true final state and skips the
+				// pre-roll wait for audio that has nothing left to wait for.
 				const bufferedSecondsNow =
 					stream.chunks.reduce((sum, c) => sum + c.length, 0) /
 					(stream.sampleRate || 1);

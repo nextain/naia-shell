@@ -401,6 +401,41 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
 	});
 
+	it("gap-review-4: the fallback's single chunk reports ended=true synchronously when the stream was subscribed before it landed", async () => {
+		// This mirrors the REAL timing, not a simplified one: enqueueOrderedStream
+		// is always called (and would be subscribed by a real AudioQueue) BEFORE
+		// synthesizeTts's promise resolves — sendSentence() reserves and hands
+		// off the slot synchronously, well before `await flush()` lets the
+		// mocked WAV response land. Subscribing here BEFORE that flush
+		// reproduces "already-subscribed, still-empty" exactly.
+		synthesizeMock.mockResolvedValue({ audioBase64: makeWavBase64(0.5) });
+		const { deps, queue } = makeStreamingDeps();
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+		const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+		let onChunkCalls = 0;
+		let onEndCalls = 0;
+		let endedAtOnChunk: boolean | null = null;
+		stream.subscribe(
+			() => {
+				onChunkCalls++;
+				// gap-review-4 (2026-09-25): the exact assertion that catches the
+				// push()+end() ordering bug — push() invokes this callback
+				// synchronously, before a separate end() call could ever run, so
+				// a push()+end() pair would still show `false` here. Only
+				// pushFinal() (ended set BEFORE the callback) makes this `true`.
+				endedAtOnChunk = stream.ended;
+			},
+			() => {
+				onEndCalls++;
+			},
+		);
+		expect(onChunkCalls).toBe(0); // nothing has arrived yet
+		await flush(); // the whole-WAV fallback lands now, via pushFinal()
+		expect(onChunkCalls).toBe(1);
+		expect(endedAtOnChunk).toBe(true);
+		expect(onEndCalls).toBe(1);
+	});
+
 	it.each([[16_000], [48_000]])(
 		"gap-review-3: the whole-WAV fallback carries the WAV's own sample rate (%dHz), not the stream's 24kHz default",
 		async (sampleRate) => {
