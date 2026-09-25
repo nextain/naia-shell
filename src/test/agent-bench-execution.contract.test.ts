@@ -332,9 +332,12 @@ describe("문서와 하네스가 어긋나면 드러난다", () => {
     // 확인 수단이 없는 시나리오는 이름이 드러난다. 예외 목록으로 감추지 않는다.
     // 두 자리 모두 실제 모델을 띄워야 증명되고, 자격증명과 비용이 드는 사람 결정이다.
     // 요구를 낮춰 초록불로 만드는 것은 작성자 몫이 아니므로 이름을 그대로 남긴다.
+    // UC-WORKSPACE-BIND-651 은 수단이 짝 저장소 naia-agent 의 계약 테스트에만 있다.
+    // 이 저장소 파일이 아니므로 가리킬 수 없고, 실제 Codex app-server 를 띄우는 확인도 아직 없다.
     expect(orphans.sort(), `확인 수단 없는 시나리오: ${orphans.join(", ")}`).toEqual([
       "UC-ENV-ATTENTION-POLICY",
       "UC-ORCHESTRATION-CODING-PROVIDER",
+      "UC-WORKSPACE-BIND-651",
     ]);
   });
 

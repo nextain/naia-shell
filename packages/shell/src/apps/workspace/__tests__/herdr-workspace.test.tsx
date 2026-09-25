@@ -14,6 +14,7 @@ import {
 	type NaiaContextBridge,
 	type ToolHandler,
 } from "../../../lib/app-registry";
+import { t } from "../../../lib/i18n";
 import type { FileLocation, TerminalHandle } from "../Terminal";
 
 const mockInvoke = vi.fn();
@@ -689,7 +690,7 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		);
 
 		// Initially without open file, toggle button is not present
-		expect(screen.queryByRole("button", { name: "Herdr 화면으로" })).toBeNull();
+		expect(screen.queryByRole("button", { name: t("workspace.herdrBackButton") })).toBeNull();
 
 		// Open file
 		await toolHandlers.get("skill_workspace_open_file")?.({
@@ -698,12 +699,12 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 
 		await waitFor(() =>
 			expect(
-				screen.getByRole("button", { name: "Herdr 화면으로" }),
+				screen.getByRole("button", { name: t("workspace.herdrBackButton") }),
 			).toBeInTheDocument(),
 		);
 
 		// Clicking Herdr 화면으로 switches surface back to herdr
-		fireEvent.click(screen.getByRole("button", { name: "Herdr 화면으로" }));
+		fireEvent.click(screen.getByRole("button", { name: t("workspace.herdrBackButton") }));
 		await waitFor(() => {
 			expect(screen.getByTestId("embedded-herdr-terminal")).toBeInTheDocument();
 		});
@@ -711,12 +712,12 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 		// Now on Herdr surface, rail offers to switch back to viewer ("파일 뷰어로")
 		await waitFor(() => {
 			expect(
-				screen.getByRole("button", { name: "파일 뷰어로" }),
+				screen.getByRole("button", { name: t("workspace.showViewerButton") }),
 			).toBeInTheDocument();
 		});
 
 		// Clicking "파일 뷰어로" switches back to viewer
-		fireEvent.click(screen.getByRole("button", { name: "파일 뷰어로" }));
+		fireEvent.click(screen.getByRole("button", { name: t("workspace.showViewerButton") }));
 		await waitFor(() => {
 			expect(screen.getByTestId("workspace-viewer")).toBeInTheDocument();
 		});

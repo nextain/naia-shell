@@ -283,7 +283,7 @@ export function FileTree({
 			className="workspace-tree__external-file"
 			data-testid="workspace-tree-external-file"
 		>
-			<span className="workspace-tree__external-badge">외부 파일</span>
+			<span className="workspace-tree__external-badge">{t("fileTree.externalBadge")}</span>
 			<button
 				type="button"
 				className="workspace-tree__external-path"

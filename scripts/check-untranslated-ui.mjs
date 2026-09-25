@@ -333,8 +333,8 @@ for (const file of walk(ROOT)) {
 // 522 에서 521 로 한 줄 줄었다. 브라우저 앱의 "표면 없음"·"이동 실패" 안내를
 // browser.noSurface/browser.navigateFailed 로 옮겼다(#576). 같은 회차에 새로
 // 생긴 아바타 없음 안내는 처음부터 avatar.noModel 키로 들어가 집계에 오르지 않았다.
-const BASELINE_LINES = 515;
-const BASELINE_FILES = 60;
+const BASELINE_LINES = 498;
+const BASELINE_FILES = 58;
 
 console.log(`[untranslated-ui] 화면에 박힌 한국어 ${total}줄 / ${perFile.length}파일 (baseline ${BASELINE_LINES}줄 / ${BASELINE_FILES}파일)`);
 for (const row of perFile.slice(0, 5)) console.log(`  ${String(row.lines).padStart(4)} ${row.file}`);

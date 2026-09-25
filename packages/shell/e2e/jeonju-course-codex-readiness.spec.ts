@@ -122,13 +122,5 @@ test("UC-JEONJU-COURSE-READINESS: student checks Codex before selecting the cour
 		// the stale workspaceRoot seeded above during boot.
 		workspaceRoot: "/tmp/mock-naia-adk-workspace",
 	});
-
-	// Connections opens in the browser preview too (ef3dc42c). Course readiness
-	// checks that it opens and that a raw token field never reaches the WebView —
-	// the bot token stays in native secure storage.
-	const connectionsTab = page.locator('[data-settings-tab="connections"]');
-	await expect(connectionsTab).toBeEnabled();
-	await connectionsTab.click();
-	await expect(page.getByTestId("discord-connections")).toBeVisible();
-	await expect(page.locator('input[type="password"]')).toHaveCount(0);
+	// 연결(Discord) 탭 확인은 #610 이 그 탭을 지우며 함께 걷었다.
 });

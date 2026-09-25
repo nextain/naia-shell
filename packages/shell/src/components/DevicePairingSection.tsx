@@ -178,6 +178,7 @@ export function DevicePairingSection() {
 								data-testid="device-revoke"
 								onClick={() =>
 									run(async () => {
+										if (!globalThis.confirm(t("settings.deviceRevokeConfirm"))) return;
 										await invoke("device_token_revoke", {
 											nodeId: node.nodeId,
 										});

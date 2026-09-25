@@ -371,7 +371,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 |---|---|---|
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
-| UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 실제 Shell 설정 화면에서 역할 설정 저장과 재시작 복원 |
+| UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | 실 UI 스펙(95-llm-role-settings)은 #589/#598 이 두뇌 화면의 역할 편집기를 지우며 함께 지웠다 — 실 UI 확인 없음 |
 | UC-NAIA-AZURE-MODELS | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts` · `registry.test.ts`: 나이아 계정 선택기가 `deepseek-v4-flash` · `solar-pro4` · `solar-mini` · `gpt-5.6-luna` 네 개만 노출하고 Codex 목록은 그대로인지. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 가격 순·성능 순과 빠진 모델 숨김. `e2e/capability-settings.spec.ts`: 실 UI 선택기 네 개. | 실 대화 403은 게이트웨이 소유 — 선택기 축소가 고치지 않는다 |
 | UC-NAIA-LEGACY-MAIN-MODEL | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts`: 선택기 모델 유지, 퇴역 id(#670·#603)는 게이트웨이가 제공해도 기본값으로, 그 밖의 id는 게이트웨이 목록에 있으면 유지(`gpt-5.4-nano`)·없으면 기본값·목록을 못 읽으면 그대로, `gatewayServedModelIds` 가 live·상태 없음만 센다. `packages/shell/src/hooks/__tests__/useAgentAuthSync.test.ts`: 기동 훅이 게이트웨이 제공 모델을 저장하지 않고, 퇴역 id는 즉시 옮기고, 목록 실패 시 건드리지 않고, 확인 중 바뀐 설정을 덮지 않는다. | 실 Shell 기동 확인은 대기 — 화면 변화 없음(설정 값만) |
 
@@ -739,7 +739,7 @@ P02 검증:
 | Scenario | Unit / contract | UI / integration | Real Discord E2E |
 |---|---|---|---|
 | UC-DISCORD-1 | credential boundary, allow-list, participation policy | Settings connection flow | bot invite, permissions, allowed-channel activation |
-| UC-DISCORD-1A | #610 removed the Connections settings tab and its unit test (ConnectionsSettingsTab.test.tsx); Rust dotenv parser accepts only `DISCORD_BOT_TOKEN` for debug E2E | `e2e/discord-settings-secure.spec.ts`: no inline token and no-argument native-command contract; `e2e/discord-channel-agent.spec.ts`: allow-list save. The native-cancellation and live-auth e2e-tauri specs (92, 94) were removed with the tab in #610. | provisioned test bot: allow-list save → Agent authority `ready` |
+| UC-DISCORD-1A | #610 removed the Connections settings tab and its unit test (ConnectionsSettingsTab.test.tsx); Rust dotenv parser accepts only `DISCORD_BOT_TOKEN` for debug E2E | The browser specs (discord-settings-secure, discord-channel-agent) waited on the removed Connections tab and were deleted in 0.2.3. The native-cancellation and live-auth e2e-tauri specs (92, 94) were removed with the tab in #610. | provisioned test bot: allow-list save → Agent authority `ready` |
 | UC-DISCORD-1B | #610 removed the Connections settings tab and the Channels tab together with their unit tests (ConnectionsSettingsTab.test.tsx, ChannelsTab.test.tsx) | #610 removed the inbox handoff e2e-tauri spec (93) with the tabs | provisioned test bot: binding save → inbox channel list → inbound/outbound records remain in their binding |
 | UC-DISCORD-2 | recency and selected-channel persistence | narrow/wide channel inbox navigation | multi-channel history visibility |
 | UC-DISCORD-3 | Gateway event deduplication, per-channel context, reconnect | live status and unread rendering | two-channel message/reply/reconnect flow |
@@ -959,7 +959,7 @@ Test Coverage Map
 
 | UC | 단위·계약 | 실기 | 비고 |
 |---|---|---|---|
-| UC-SETTINGS-ROUNDTRIP | `src/lib/__tests__/config-boot-merge.test.ts`: 부팅 병합에서 파일이 캐시를 이긴다 / `src/lib/__tests__/adk-store.test.ts`: 작업 공간 포인터 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 설정 저장이 파일에 남고 다시 읽힌다 | 실기 스펙은 아직 CI 에서 돌지 않는다(#550) |
+| UC-SETTINGS-ROUNDTRIP | `src/lib/__tests__/config-boot-merge.test.ts`: 부팅 병합에서 파일이 캐시를 이긴다 / `src/lib/__tests__/adk-store.test.ts`: 작업 공간 포인터 | 실 UI 확인은 역할 편집기와 함께 지운 95-llm-role-settings 가 맡았었다 — 지금은 없다 | 역할 편집기 제거(#589/#598) |
 | UC-SETTINGS-ALLOWED-TOOLS | `src/lib/__tests__/config.test.ts` removeAllowedTool + `SettingsTab.test.tsx` 이름 목록·개별 해제 | — | #647 |
 | UC-SETTINGS-OPEN-LOG | `scripts/__tests__/instance-home.test.mjs` opener 범위 + `SettingsTab.test.tsx` 실패 오류 | — | #646 `~/.naia` 와 `~/.naia-dev` 로그 폴더 |
 | UC-SETTINGS-ADK-RESET | `src/lib/__tests__/adk-path-reset.test.ts` 패키지 재시작 vs 개발 창 유지 + `SettingsTab.test.tsx` 재시작 필요 안내 | — | #642 `tauri:dev` 는 relaunch 로 창만 죽이지 않는다 |
@@ -1958,7 +1958,7 @@ Test Coverage Map (P02)
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: 실사용 아바타 렌더러가 클립마다 `<video>` 를 하나씩 두어 왕복에서 `src` 재대입이 없는지, 활성 요소만 재생하고 떠난 요소는 멈추는지, 만든 형제 요소를 정지 때 거두는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | VideoAvatarCanvas 가 등록하는 렌더러가 이쪽이다 — layered 플레이어만 고치면 실제 경로는 그대로 멈춘다(2026-09-11 3/3) |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/nva-layered-player.test.ts`: idle↔talk 왕복에서 같은 클립을 다시 로드하지 않고(버퍼당 `src` 대입 1회) 매번 교체는 일어나는지, 재사용 클립을 되감는지, 로드가 취소된 클립은 다시 로드하는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | 낭독이 아바타를 idle↔talk 로 계속 왕복시켜 WebKitGTK 미디어 파이프라인 해체 교착을 밟았다(gdb 2/2). 재생 계약과 같은 슬라이스에 둔다 |
 
-## UC-TOOLS-SURFACE-611 — model-facing tool boundary
+### UC-TOOLS-SURFACE-611 — model-facing tool boundary
 
 Naia가 대화나 음성 세션을 시작할 때 모델에 전달되는 도구는 제품에 남긴 관찰·표현 표면만 포함한다: 시간, 날씨, 메모, 워크스페이스 파일 읽기, YouTube BGM, 인앱 브라우저. 기억은 별도 자동 회상·저장 경로로 남기며 모델 도구 이름으로 만들지 않는다. 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 풀, ADK `SKILL.md` 로더, 알림 및 그 밖의 작업 도구는 모델 목록에서 사라진다.
 Exception #687: `skill_workspace_edit_open_file` (open editor file only, per-edit approval) — see UC-WORKSPACE-OPEN-FILE-EDIT-687.
@@ -2001,7 +2001,7 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-INSTANCE-URLS-653 | `packages/shell/src/lib/__tests__/naia-instance-urls.test.ts`; `packages/shell/scripts/__tests__/launch-env.test.mjs` | existing onboarding login specs keep redirect_uri/source=desktop |
 
-## UC-WORKSPACE-BIND-651 — Codex and fs-tools use the shell workspace root
+### UC-WORKSPACE-BIND-651 — Codex and fs-tools use the shell workspace root
 
 The workspace UI `set_root` canonical path is the Codex app-server cwd and the fs-tools allow-root. OS temp is not a second sandbox. Turning on 「터미널에 직접 입력 허용」 raises Codex sandbox to workspace-write on that same root. Naia write/github tools stay removed.
 
@@ -2020,7 +2020,7 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-WORKSPACE-BIND-651 | paired nextain/naia-agent repository: workspace-bind.contract.test.ts + codex-app-server-provider.contract.test.ts (not files of this repository) | shell spawn cwd follows ADK path (Rust `current_dir`) | Codex와 fs 도구가 셸이 정한 작업 공간 루트에서 실행된다 |
 
-## UC-WORKSPACE-AI-CONTEXT-AND-CONTROL (#680) — AI workspace/Herdr context awareness and terminal/UI control
+### UC-WORKSPACE-AI-CONTEXT-AND-CONTROL (#680) — AI workspace/Herdr context awareness and terminal/UI control
 
 AI 에이전트가 사용자가 열어둔 파일 목록(`openDocs`), 현재 활성 문서(`openFilePath`), 커서 위치(`line`, `column`, `selectedText`), 그리고 Herdr 터미널의 최근 출력(`terminalTail`)을 컨텍스트로 인지하고, 필요 시 도구를 통해 버퍼를 조회(`skill_workspace_get_terminal_output`)할 수 있다. 또한 사용자가 보고 있는 Herdr 터미널로 가시적 명령을 실행(`skill_workspace_terminal_exec`)하고, 화면 전환(`skill_workspace_set_surface`), 문서 닫기(`skill_workspace_close_file`), 스페이스 포커스(`skill_workspace_focus_space`)를 제어할 수 있다.
 
@@ -2039,7 +2039,7 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-WORKSPACE-AI-CONTEXT-AND-CONTROL | `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` | `packages/shell/src/apps/workspace/__tests__/herdr-workspace.test.tsx`, `Terminal.tsx`, `Editor.tsx` | AI가 작업 공간·Herdr 상태를 알고 터미널과 화면을 제어한다 |
 
-## UC-WORKSPACE-OPEN-FILE-EDIT-687 — AI edits the open editor file with per-edit approval
+### UC-WORKSPACE-OPEN-FILE-EDIT-687 — AI edits the open editor file with per-edit approval
 
 - **Actor**: 사용자, AI 에이전트(Naia)
 - **Preconditions**: 워크스페이스 앱이 활성화되어 있고 편집기에 파일이 하나 열려 있음.
@@ -2070,7 +2070,7 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI | 확인하는 것 |
 |---|---|---|---|
-| UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, `workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` | 열린 파일만 편집 대상이 되고, 편집마다 승인/거절·시간 초과가 지켜지며, 승인된 편집만 디스크와 편집기에 반영된다 |
+| UC-WORKSPACE-OPEN-FILE-EDIT-687 | `packages/shell/src/apps/workspace/__tests__/open-file-edit.test.ts`, `packages/shell/src/apps/workspace/__tests__/herdr-workspace-bridge.test.tsx`, `packages/shell/src/apps/workspace/__tests__/open-file-edit-review.test.tsx`, `packages/shell/src/apps/workspace/__tests__/workspace-app-registry.test.tsx`, Rust `agent_open_file_tests` | `packages/shell/e2e/687-open-file-edit.spec.ts` | 열린 파일만 편집 대상이 되고, 편집마다 승인/거절·시간 초과가 지켜지며, 승인된 편집만 디스크와 편집기에 반영된다 |
 
 ## UC-VOICE-SHARED-CACHE-703 — 개발·운영 인스턴스가 같은 음성 런타임을 한 번만 내려받는다 (#703)
 

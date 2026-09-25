@@ -46,7 +46,18 @@ const BIOME_CANDIDATES = [
 	"node_modules/.bin/biome",
 ];
 
+/**
+ * 패키지의 JS 진입점. `.bin/biome` 은 sh 스크립트라 Windows 에서 execFileSync 가
+ * 띄우지 못한다(ENOENT) — 그래서 Windows 로컬에서는 이 게이트가 늘 붉었다.
+ * 진입점을 node 로 띄우면 두 운영체제에서 같다.
+ */
+const BIOME_ENTRIES = [
+	"packages/shell/node_modules/@biomejs/biome/bin/biome",
+	"node_modules/@biomejs/biome/bin/biome",
+];
+
 function biomeCommand() {
+	for (const path of BIOME_ENTRIES) if (existsSync(path)) return [process.execPath, [path]];
 	for (const path of BIOME_CANDIDATES) if (existsSync(path)) return [path, []];
 	// 설치를 바꾸는 것은 사람의 몫이다. 게이트는 고정 버전을 그때그때 쓴다.
 	return ["npx", ["--yes", `@biomejs/biome@${BIOME_VERSION}`]];
@@ -74,29 +85,37 @@ const files = tracked();
 
 /* ─────────────── biome 이 판정하는 형태 ─────────────── */
 
+/** 한 번에 넘기는 파일 수. Windows 명령줄은 32K 자에서 끊긴다. */
+const BIOME_CHUNK = 200;
+
 function biomeHits(rule) {
 	const [bin, lead] = biomeCommand();
 	let output = "";
-	try {
-		output = execFileSync(
-			bin,
-			[...lead, "lint", `--only=${rule}`, "--reporter=github", "--max-diagnostics=1000", ...files],
-			{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-		);
-	} catch (err) {
-		// biome 은 진단이 있으면 0 이 아닌 코드로 끝난다. 출력은 그대로 쓴다.
-		output = `${err.stdout ?? ""}${err.stderr ?? ""}`;
-		if (!output) {
-			console.error(`  ⚠ biome 을 돌리지 못했다(${rule}): ${err.message}`);
-			return null;
+	for (let start = 0; start < files.length; start += BIOME_CHUNK) {
+		const chunk = files.slice(start, start + BIOME_CHUNK);
+		try {
+			output += execFileSync(
+				bin,
+				[...lead, "lint", `--only=${rule}`, "--reporter=github", "--max-diagnostics=1000", ...chunk],
+				{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+			);
+		} catch (err) {
+			// biome 은 진단이 있으면 0 이 아닌 코드로 끝난다. 출력은 그대로 쓴다.
+			const got = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+			if (!got) {
+				console.error(`  ⚠ biome 을 돌리지 못했다(${rule}): ${err.message}`);
+				return null;
+			}
+			output += got;
 		}
 	}
+	const cwd = `${process.cwd().replace(/\\/g, "/")}/`;
 	const hits = [];
 	for (const line of output.split("\n")) {
 		const m = /^::(?:error|warning) title=lint\/([^,]+),file=([^,]+),line=(\d+)/.exec(line);
 		if (!m) continue;
 		if (m[1] !== rule) continue;
-		hits.push({ file: m[2].replace(`${process.cwd()}/`, ""), line: Number(m[3]) });
+		hits.push({ file: m[2].replace(/\\/g, "/").replace(cwd, ""), line: Number(m[3]) });
 	}
 	return hits;
 }
