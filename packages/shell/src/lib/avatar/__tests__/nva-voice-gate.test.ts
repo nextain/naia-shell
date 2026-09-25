@@ -239,7 +239,7 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 				{ source: idle, alpha: 1 },
 				{ source: talking, alpha: 1 },
 			]);
-			const mid = frame(1315);
+			const mid = frame(1290);
 			expect(mid[0]).toEqual({ source: idle, alpha: 1 });
 			expect(mid[1].source).toBe(talking);
 			expect(mid[1].alpha).toBeCloseTo(0.5);
@@ -322,6 +322,22 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 		const { renderer, talking } = await speakingRenderer(level);
 		expect(renderer.drawSource(1000)).toBe(talking);
 		expect(renderer.drawSource(1500)).toBe(talking);
+		renderer.stop();
+	});
+
+	it("keeps the closed-mouth idle clip while speech ends and the switch to idle resolves", async () => {
+		const level = { value: 0.08 as number | null };
+		const { renderer, idle, talking } = await speakingRenderer(level);
+		expect(renderer.drawSource(1000)).toBe(talking);
+		level.value = 0;
+		expect(renderer.drawSource(1300)).toBe(idle);
+		// Narration settles: playIdle has not landed yet, the talking loop is
+		// still the active clip, and it must not flash back on screen.
+		renderer.setSpeakingVisual(false);
+		expect(renderer.drawSource(1333)).toBe(idle);
+		expect(renderer.drawSource(1366)).toBe(idle);
+		await flush();
+		expect(renderer.drawSource(1400)).toBe(idle);
 		renderer.stop();
 	});
 

@@ -50,7 +50,7 @@ function endOf(video: HTMLVideoElement): Promise<void> {
 
 /** WebM alone can carry a real (VP9 yuva420p) alpha channel; other containers cannot. */
 /** How long the drawn clip takes to fade into the next one (idle <-> talking). */
-export const NVA_SWITCH_FADE_MS = 150;
+export const NVA_SWITCH_FADE_MS = 100;
 
 /**
  * Fades the previously drawn clip out over the newly chosen one, so a switch
@@ -138,6 +138,14 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	/** Idle clip element, kept playing under the talking loop for voice gating. */
 	private idleVideo: HTMLVideoElement | null = null;
 	private speakingVisual = false;
+	/**
+	 * Speech ended and the switch back to the idle loop is still resolving
+	 * (playIdle is async). Until it lands, `this.video` is still the talking
+	 * loop, so drawSource keeps showing the idle clip that runs under it
+	 * instead of flashing the talking head for a few hundred milliseconds
+	 * at every page end (2026-09-25 IR recording, take 2).
+	 */
+	private returningToIdle = false;
 	private readonly gate = new NvaAudioGate(
 		NVA_GATE_THRESHOLD,
 		NVA_GATE_HOLD_MS,
@@ -185,6 +193,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		options?: AvatarPlaybackOptions,
 	): Promise<void> {
 		if (!this.video || this.disposed) return;
+		this.returningToIdle = false;
 		const match = findPrebakedSpeech(
 			this.config.manifest,
 			text,
@@ -221,6 +230,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.generation++;
 		this.config.onSpeaking?.(active);
 		this.speakingVisual = active;
+		this.returningToIdle = !active;
 		this.gate.reset("idle");
 		if (active) {
 			const clip =
@@ -371,7 +381,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			.then(() => {
 				this.idleVideo = this.video;
 			})
-			.catch(() => {});
+			.catch(() => {})
+			.finally(() => {
+				this.returningToIdle = false;
+			});
 	}
 
 	/**
@@ -383,21 +396,21 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		const video = this.video ? (this.activeLoop?.current ?? this.video) : null;
 		const last = this.lastDrawAt;
 		this.lastDrawAt = nowMs;
-		if (!this.speakingVisual || !video) return video;
-		const level = (this.config.voiceLevel ?? readActiveVoiceLevel)();
-		if (level == null) return video;
-		const state = this.gate.process(level, last == null ? 0 : nowMs - last);
+		if (!video) return video;
 		const idle = this.idleVideo
 			? (this.loops.get(this.idleVideo)?.current ?? this.idleVideo)
 			: null;
-		if (
-			state === "idle" &&
-			idle &&
+		const idleReady =
+			idle !== null &&
 			idle !== video &&
 			idle.readyState >= 2 &&
-			idle.videoWidth > 0
-		)
-			return idle;
+			idle.videoWidth > 0;
+		if (!this.speakingVisual)
+			return this.returningToIdle && idleReady ? idle : video;
+		const level = (this.config.voiceLevel ?? readActiveVoiceLevel)();
+		if (level == null) return video;
+		const state = this.gate.process(level, last == null ? 0 : nowMs - last);
+		if (state === "idle" && idleReady) return idle;
 		return video;
 	}
 
@@ -491,6 +504,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	interrupt(): void {
 		this.generation++;
 		this.speakingVisual = false;
+		this.returningToIdle = true;
 		this.config.onSpeaking?.(false);
 		void this.playIdle();
 	}
