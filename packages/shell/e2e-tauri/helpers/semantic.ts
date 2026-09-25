@@ -44,30 +44,6 @@ interface SemanticJudgeResult {
 	reason: string;
 }
 
-function extractJson(text: string): SemanticJudgeResult {
-	const m = text.match(/\{[\s\S]*\}/);
-	if (!m) {
-		return {
-			verdict: "FAIL",
-			reason: `No JSON found in judge response: ${text.slice(0, 160)}`,
-		};
-	}
-	try {
-		const parsed = JSON.parse(m[0]) as Partial<SemanticJudgeResult>;
-		const verdict = parsed.verdict === "PASS" ? "PASS" : "FAIL";
-		return {
-			verdict,
-			reason: parsed.reason ?? "No reason",
-		};
-	} catch (err) {
-		return {
-			verdict: "FAIL",
-			reason: `Invalid JSON from judge: ${String(err)}`,
-		};
-	}
-}
-
-
 /**
  * 이 실행이 어느 청구처를 몇 번 두드렸는지 적는다.
  *
@@ -99,55 +75,130 @@ type JudgeContent =
 			| { type: "image_url"; image_url: { url: string } }
 	  >;
 
-async function callJudge(content: JudgeContent): Promise<SemanticJudgeResult> {
+type JudgeOutcome =
+	| { kind: "verdict"; result: SemanticJudgeResult }
+	| { kind: "judge_error"; reason: string };
+
+async function callJudgeOnce(content: JudgeContent): Promise<JudgeOutcome> {
 	if (!JUDGE_API_KEY) {
 		return {
-			verdict: "FAIL",
-			reason: "Missing judge API key (NAIA_API_KEY)",
+			kind: "verdict",
+			result: {
+				verdict: "FAIL",
+				reason: "Missing judge API key (NAIA_API_KEY)",
+			},
 		};
 	}
 
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), JUDGE_TIMEOUT_MS);
 	recordBillableCall("naia-gateway-judge");
-	const res = await fetch(JUDGE_ENDPOINT, {
-		method: "POST",
-		headers: {
-			"content-type": "application/json",
-			"X-AnyLLM-Key": `Bearer ${JUDGE_API_KEY}`,
-		},
-		body: JSON.stringify({
-			model: JUDGE_MODEL,
-			temperature: 0,
-			messages: [{ role: "user", content }],
-		}),
-		signal: controller.signal,
-	}).catch((err) => {
+	let res: Response;
+	try {
+		res = await fetch(JUDGE_ENDPOINT, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"X-AnyLLM-Key": `Bearer ${JUDGE_API_KEY}`,
+			},
+			body: JSON.stringify({
+				model: JUDGE_MODEL,
+				temperature: 0,
+				messages: [{ role: "user", content }],
+			}),
+			signal: controller.signal,
+		});
+	} catch (err) {
+		clearTimeout(timeoutId);
 		return {
-			ok: false,
-			status: 599,
-			json: async () => ({}),
-			__err: String(err),
-		} as unknown as Response;
-	});
+			kind: "judge_error",
+			reason: `Judge request error: ${String(err)}`,
+		};
+	}
 	clearTimeout(timeoutId);
 
 	if (!res.ok) {
 		return {
-			verdict: "FAIL",
+			kind: "judge_error",
 			reason: `Judge HTTP ${res.status}`,
 		};
 	}
 
-	const body = await res.json();
-	const message = body?.choices?.[0]?.message?.content;
+	let body: Record<string, unknown> | undefined;
+	try {
+		body = (await res.json()) as Record<string, unknown>;
+	} catch (err) {
+		return {
+			kind: "judge_error",
+			reason: `Invalid JSON body in judge response: ${String(err)}`,
+		};
+	}
+
+	const choices = body?.choices as
+		| Array<{ message?: { content?: unknown } }>
+		| undefined;
+	const message = choices?.[0]?.message?.content;
 	const text: string =
 		typeof message === "string"
 			? message
 			: Array.isArray(message)
 				? message.map((p: { text?: string }) => p.text ?? "").join("")
 				: "";
-	return extractJson(text);
+
+	if (!text || text.trim().length === 0) {
+		return {
+			kind: "judge_error",
+			reason: "Empty judge reply",
+		};
+	}
+
+	const m = text.match(/\{[\s\S]*\}/);
+	if (!m) {
+		return {
+			kind: "judge_error",
+			reason: `No JSON found in judge response: ${text.slice(0, 160)}`,
+		};
+	}
+
+	try {
+		const parsed = JSON.parse(m[0]) as Partial<SemanticJudgeResult>;
+		const verdict = parsed.verdict === "PASS" ? "PASS" : "FAIL";
+		return {
+			kind: "verdict",
+			result: {
+				verdict,
+				reason: parsed.reason ?? "No reason",
+			},
+		};
+	} catch (err) {
+		return {
+			kind: "judge_error",
+			reason: `Invalid JSON from judge: ${String(err)}`,
+		};
+	}
+}
+
+async function callJudge(content: JudgeContent): Promise<SemanticJudgeResult> {
+	const initial = await callJudgeOnce(content);
+	if (initial.kind === "verdict") {
+		return initial.result;
+	}
+
+	// Retry once ONLY for judge-side failures (HTTP error, unparsable JSON, empty reply)
+	console.log(
+		`[e2e] transient judge failure (${initial.reason}) — retrying judge call once`,
+	);
+	await new Promise((r) => setTimeout(r, 1_000));
+
+	const retry = await callJudgeOnce(content);
+	if (retry.kind === "verdict") {
+		return retry.result;
+	}
+
+	return {
+		verdict: "FAIL",
+		reason: retry.reason,
+	};
 }
 
 export async function judgeSemantics(opts: {

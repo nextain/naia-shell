@@ -31,8 +31,50 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
+import { createServer } from "node:net";
 import { basename } from "node:path";
 import { delimiter, join, resolve } from "node:path";
+
+/**
+ * 선호 포트가 비어 있는지 확인하고, 이미 점유되어 있으면 OS가 할당하는
+ * 빈 포트(listen on 0)에 바인드하여 실제 포트를 돌려준다.
+ * 선호 포트가 비어 있을 때는 기본값으로 유지한다.
+ */
+function checkPortFree(port, host = "127.0.0.1") {
+	return new Promise((resolve) => {
+		const server = createServer();
+		server.unref();
+		server.once("error", () => resolve(false));
+		server.listen(port, host, () => {
+			server.close(() => resolve(true));
+		});
+	});
+}
+
+function getOsFreePort(host = "127.0.0.1") {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.unref();
+		server.once("error", reject);
+		server.listen(0, host, () => {
+			const address = server.address();
+			const port =
+				typeof address === "object" && address !== null ? address.port : 0;
+			server.close(() => resolve(port));
+		});
+	});
+}
+
+async function resolveFreePort(preferredPort, host = "127.0.0.1") {
+	if (await checkPortFree(preferredPort, host)) {
+		return preferredPort;
+	}
+	const freePort = await getOsFreePort(host);
+	console.log(
+		`[regression] 선호 포트 ${preferredPort} 이 이미 점유되어 있어 OS 빈 포트 ${freePort} 로 대체한다`,
+	);
+	return freePort;
+}
 import {
 	describeReclaimed,
 	reclaimStrandedSidecars,
@@ -880,8 +922,9 @@ for (const [conf, specs] of groups) {
 	// 기본값으로 쓰기 때문에, 연달아 돌리면 앞 실행의 드라이버가 아직 그
 	// 포트를 잡고 있어 세션 생성이 실패한다 — 실제로 전용 설정 셋이
 	// `UND_ERR_INVALID_ARG` 로 죽었다. 그 실패는 회귀가 아니라 자리 다툼이다.
-	const groupPort = 4450 + groupIndex * 4;
-	console.log(`[regression] ${conf} — 스펙 ${specs.length}개`);
+	const preferredPort = 4450 + groupIndex * 4;
+	const groupPort = await resolveFreePort(preferredPort);
+	console.log(`[regression] ${conf} — 스펙 ${specs.length}개 (포트 ${groupPort})`);
 	// 출력을 화면에 그대로 내면서 동시에 모은다. 십몇 분 도는 동안 아무
 	// 소리가 없으면 사람이 멈춘 줄 알고 취소한다. 예전에는 `sh -c "... | tee"`
 	// 로 했는데 윈도우에는 sh 가 없어 그 기계에서는 아예 돌지 않았다.
@@ -1074,11 +1117,12 @@ console.log(`[regression] 기록: ${out} (${status})`);
  * 여덟 번 잡아 온 거짓 통과 그대로다. 실패로 남기되 `flaky` 로 표시해
  * 판단할 재료를 준다.
  */
-function retryFailedOnce(failed) {
+async function retryFailedOnce(failed) {
 	const flaky = [];
 	const stable = [];
 	for (const { conf, spec } of failed) {
 		console.log(`[regression] 다시 한 번: ${spec} (${conf})`);
+		const retryPort = await resolveFreePort(4490);
 		const child = spawnSync(
 			process.platform === "win32" ? "pnpm.cmd" : "pnpm",
 			[
@@ -1095,7 +1139,7 @@ function retryFailedOnce(failed) {
 				encoding: "utf8",
 				stdio: ["inherit", "pipe", "pipe"],
 				maxBuffer: 512 * 1024 * 1024,
-				env: { ...process.env, NAIA_E2E_WEBDRIVER_PORT: "4490" },
+				env: { ...process.env, NAIA_E2E_WEBDRIVER_PORT: String(retryPort) },
 				shell: process.platform === "win32",
 			},
 		);
@@ -1121,7 +1165,7 @@ const retryTargets = classifyFlaky
 		)
 	: [];
 const { flaky, stable } = retryTargets.length
-	? retryFailedOnce(retryTargets)
+	? await retryFailedOnce(retryTargets)
 	: { flaky: [], stable: [] };
 if (flaky.length) {
 	console.log(

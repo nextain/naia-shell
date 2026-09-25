@@ -387,7 +387,7 @@ async function setTextareaAndSend(
  * Send a message in the chat input and wait for the assistant to finish responding.
  * Uses DOM queries (not element refs) to avoid stale element issues in WebKitGTK.
  */
-export async function sendMessage(
+async function sendMessageOnce(
 	text: string,
 	options: { completedMessageTimeoutMs?: number } = {},
 ): Promise<void> {
@@ -536,6 +536,60 @@ export async function sendMessage(
 		// Tool success verification is handled by waitForToolSuccess() in individual specs.
 	} finally {
 		await traceDelta();
+	}
+}
+
+async function waitForChatIdle(timeoutMs = 30_000): Promise<void> {
+	const input = await $(S.chatInput);
+	await input.waitForEnabled({ timeout: timeoutMs });
+	await browser.waitUntil(
+		async () => {
+			return browser.execute(
+				(cursorSel: string, sendSel: string) => {
+					if (document.querySelector(cursorSel)) return false;
+					if (document.querySelector(".chat-cancel-btn")) return false;
+					const buttons = Array.from(
+						document.querySelectorAll(sendSel),
+					) as HTMLButtonElement[];
+					return buttons.some(
+						(btn) =>
+							!btn.classList.contains("chat-cancel-btn") &&
+							!btn.className.split(/\s+/).includes("chat-cancel-btn"),
+					);
+				},
+				S.cursorBlink,
+				S.chatSendBtn,
+			);
+		},
+		{
+			timeout: timeoutMs,
+			timeoutMsg:
+				"Chat did not become idle before retry (cursor-blink or cancel-btn still present, or normal send button not ready)",
+		},
+	);
+}
+
+/**
+ * Send a message in the chat input and wait for the assistant to finish responding.
+ * Retries once if the upstream provider stream was terminated transiently.
+ */
+export async function sendMessage(
+	text: string,
+	options: { completedMessageTimeoutMs?: number } = {},
+): Promise<void> {
+	try {
+		await sendMessageOnce(text, options);
+	} catch (err) {
+		const errorText = err instanceof Error ? err.message : String(err);
+		if (errorText.includes("provider error: terminated")) {
+			console.log(
+				`[e2e] transient provider termination — retrying once: ${text}`,
+			);
+			await waitForChatIdle(30_000);
+			await sendMessageOnce(text, options);
+			return;
+		}
+		throw err;
 	}
 }
 

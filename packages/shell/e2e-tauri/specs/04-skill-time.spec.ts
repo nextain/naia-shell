@@ -1,6 +1,7 @@
 import {
 	countCompletedAssistantMessages,
 	getLastAssistantMessage,
+	getLastToolName,
 	sendMessage,
 } from "../helpers/chat.js";
 import { assertSemantic } from "../helpers/semantic.js";
@@ -13,6 +14,21 @@ const BUILTIN_SKILLS = [
 	"skill_weather",
 	"skill_notify_slack",
 ];
+
+function formatKstTime(date: Date): string {
+	// 자정을 넘는 구간도 판정 모델이 읽도록 날짜를 붙인다(예: 2026-09-26 23:58).
+	const parts = new Intl.DateTimeFormat("en-CA", {
+		timeZone: "Asia/Seoul",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		hourCycle: "h23",
+	}).formatToParts(date);
+	const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+	return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}
 
 async function countSuccessfulSkillTimeActivities(): Promise<number> {
 	return browser.execute(() => {
@@ -112,6 +128,7 @@ describe("04 — skill_time", () => {
 	it("should execute skill_time and return time info", async () => {
 		const beforeToolCount = await countSuccessfulSkillTimeActivities();
 		const beforeAssistantCount = await countCompletedAssistantMessages();
+		let sendTime = new Date();
 		await sendMessage(
 			"지금 몇 시야? 반드시 get_time 도구를 실제 호출해서 알려줘.",
 		);
@@ -127,6 +144,7 @@ describe("04 — skill_time", () => {
 		if (!toolOk) {
 			const retryBeforeToolCount = await countSuccessfulSkillTimeActivities();
 			const retryBeforeAssistantCount = await countCompletedAssistantMessages();
+			sendTime = new Date();
 			await sendMessage(
 				"반드시 get_time 도구를 실제 호출해서 현재 시각을 HH:MM 형식으로만 답해.",
 			);
@@ -142,14 +160,25 @@ describe("04 — skill_time", () => {
 				);
 			}
 		}
+		const replyTime = new Date();
 		const text = await getLastAssistantMessage();
 		expect(text).not.toMatch(
 			/\[오류\]|API key not valid|Bad Request|Tool Call:|print\s*\(/i,
 		);
+		const finalToolCount = await countSuccessfulSkillTimeActivities();
+		expect(finalToolCount).toBeGreaterThan(beforeToolCount);
+		const lastTool = await getLastToolName();
+		expect(lastTool).toBe("get_time");
+
+		const windowStart = new Date(sendTime.getTime() - 2 * 60 * 1000);
+		const windowEnd = new Date(replyTime.getTime() + 2 * 60 * 1000);
+		const startKst = formatKstTime(windowStart);
+		const endKst = formatKstTime(windowEnd);
+
 		await assertSemantic(
 			text,
 			"get_time 도구를 사용해서 현재 시각을 알려달라고 했다",
-			"AI가 실제 시간 정보(시:분 형태)를 제공했는가? '도구를 찾을 수 없다/실행할 수 없다'는 FAIL. 실제 시각 데이터가 포함되어야 PASS",
+			`AI가 KST(한국 표준시, Asia/Seoul) 기준 현재 시각을 올바르게 안내했는가? 허용 시간 범위는 ${startKst}부터 ${endKst}까지(전송 2분 전부터 응답 2분 후까지)이다. 범위는 24시간제이며 12시간제 답은 오전 12시=00시, 오후 12시=12시, 오후 H시=H+12시로 바꿔 비교한다. 날짜는 말하지 않아도 된다. 범위 안의 시각이면 12시간제·24시간제·자연어 어떤 형식이든 PASS. 허용 범위를 벗어난 시각, 오류, 거부, 빈 응답은 FAIL.`,
 		);
 	});
 });
