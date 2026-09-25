@@ -11,28 +11,24 @@ import {
 	scrollToSection,
 	setNativeValue,
 } from "../helpers/settings.js";
+import { CREDENTIALED_MAIN_MODEL } from "../credentialed-adk-seed.js";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-/** Gemini API key — required for semantic judge (Suites 3 & 4). */
-const GEMINI_KEY =
-	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
-
 /**
- * Naia Gateway key — allows using nextain provider without a direct Gemini key.
- * When set, Suites 1 & 2 run against the nextain provider.
- * Suites 3 & 4 (LLM chat + semantic judge) still require GEMINI_KEY.
+ * Naia Gateway key — the chat provider (nextain) and the semantic judge
+ * (helpers/semantic.ts) both go through the Naia gateway.
+ *
+ * 예전에는 Gemini 직결 키가 있어야 대화·판정 묶음(3·4)이 돌았고, 없으면
+ * `describe.skip` 으로 조용히 빠졌다. #602 가 그 공급자를 지운 뒤로 그 키를
+ * 요구한다는 이유로 스펙 전체가 회귀에서 빠졌다. 판정자도 게이트웨이로 옮겼으니
+ * 이제 네 묶음 모두 이 키 하나로 돈다.
  */
 const NAIA_KEY = process.env.NAIA_API_KEY || "";
 
-if (!GEMINI_KEY && !NAIA_KEY) {
-	throw new Error(
-		"Auth key required: set CAFE_E2E_API_KEY/GEMINI_API_KEY (Gemini) or NAIA_API_KEY (nextain) in shell/.env",
-	);
+if (!NAIA_KEY) {
+	throw new Error("Auth key required: set NAIA_API_KEY (Naia gateway)");
 }
-
-/** Whether Suites 3/4 (chat + semantic judge) can run. */
-const CAN_RUN_CHAT_SUITES = !!GEMINI_KEY;
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
@@ -165,13 +161,12 @@ async function gotoSettingsMemory(): Promise<void> {
 }
 
 /**
- * Force config to a specific provider so LLM tests always work.
- * Uses gemini provider when GEMINI_KEY is available, otherwise nextain.
+ * Force config to the Naia gateway provider so LLM tests always work.
  * Ensures handleSave() does not early-return due to missing naiaKey.
  */
 async function forceProviderConfig(): Promise<void> {
 	await browser.execute(
-		(geminiKey: string, naiaKey: string) => {
+		(naiaKey: string, model: string) => {
 			const existing = (() => {
 				try {
 					return (
@@ -181,32 +176,20 @@ async function forceProviderConfig(): Promise<void> {
 					return {};
 				}
 			})();
-			const config = geminiKey
-				? {
-						...existing,
-						provider: "gemini",
-						model: "gemini-2.5-flash",
-						apiKey: geminiKey,
-						naiaKey: undefined,
-						naiaUserId: undefined,
-						onboardingComplete: true,
-						appVisible: true,
-						discordSessionMigrated: true,
-					}
-				: {
-						...existing,
-						provider: "nextain",
-						model: "gemini-2.5-flash",
-						apiKey: "",
-						naiaKey: naiaKey,
-						onboardingComplete: true,
-						appVisible: true,
-						discordSessionMigrated: true,
-					};
+			const config = {
+				...existing,
+				provider: "nextain",
+				model,
+				apiKey: "",
+				naiaKey: naiaKey,
+				onboardingComplete: true,
+				appVisible: true,
+				discordSessionMigrated: true,
+			};
 			localStorage.setItem("naia-config", JSON.stringify(config));
 		},
-		GEMINI_KEY,
 		NAIA_KEY,
+		CREDENTIALED_MAIN_MODEL,
 	);
 	await safeRefresh();
 	const appRoot = await $(S.appRoot);
@@ -235,7 +218,7 @@ async function forceProviderConfig(): Promise<void> {
 
 /**
  * Retry wrapper for assertSemantic — retries once on Judge HTTP 599
- * (transient network error from the judge's Gemini API call).
+ * (transient network error from the judge's Naia gateway call).
  */
 async function assertSemanticWithRetry(
 	answer: string,
@@ -410,8 +393,8 @@ describe("91 — Memory Settings Integration", () => {
 	// Suite 2: Settings -> naia-settings/config.json SoT
 	describe("2) Settings -> current config.json contract", () => {
 		before(async () => {
-			// Force gemini provider to avoid handleSave() early-return due to
-			// nextain provider + missing naiaKey (stored in secure store, loaded async).
+			// Put naiaKey in local config to avoid handleSave() early-return
+			// (the key lives in the secure store and loads async).
 			await forceProviderConfig();
 			await gotoSettingsMemory();
 		});
@@ -591,12 +574,11 @@ describe("91 — Memory Settings Integration", () => {
 	});
 
 	// ── Suite 3: Memory storage & recall (same session) ─────────────────────────
-	// Requires GEMINI_KEY (for semantic judge). Skip when only NAIA_KEY is set.
-	(CAN_RUN_CHAT_SUITES ? describe : describe.skip)(
+	describe(
 		"3) Memory storage and recall (same session)",
 		() => {
 			before(async () => {
-				// Force gemini so LLM calls work regardless of real user config
+				// Force the gateway provider so LLM calls work regardless of real user config
 				await forceProviderConfig();
 				await clickBySelector(S.chatTab);
 				const chatInput = await $(S.chatInput);
@@ -653,8 +635,7 @@ describe("91 — Memory Settings Integration", () => {
 	);
 
 	// ── Suite 4: Cross-session memory recall ────────────────────────────────────
-	// Requires GEMINI_KEY (for semantic judge). Skip when only NAIA_KEY is set.
-	(CAN_RUN_CHAT_SUITES ? describe : describe.skip)(
+	describe(
 		"4) Cross-session memory recall (new conversation)",
 		() => {
 			before(async () => {

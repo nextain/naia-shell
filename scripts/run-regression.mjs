@@ -30,7 +30,7 @@ import {
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
-import { hostname } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { basename } from "node:path";
 import { delimiter, join, resolve } from "node:path";
 import {
@@ -357,6 +357,23 @@ for (const tier of tiers) {
 	}
 }
 
+// 산출물 자리와 비용 원장은 이 실행의 것이므로 러너가 만든다.
+//
+// 스펙과 헬퍼는 두 변수를 읽어 화면 흔적과 판정 호출 수를 남긴다. 사람이
+// 넣어야 하는 값으로 두었더니 선별이 그것을 "요구 환경 없음" 으로 읽어,
+// 두 변수만 빠진 스펙들까지 통째로 빠졌다(2026-09-25 win-rtx4060 마른 실행에서
+// 일흔네 개 중 다수). 비용 원장은 아래에서 기록에 옮겨 적는 자리인데, 아무도
+// 채우지 않아 그 칸이 늘 비어 있었다. 밖에서 준 값은 그대로 존중한다.
+{
+	const runDir = join(
+		tmpdir(),
+		`naia-regression-${machine}-${new Date().toISOString().replace(/[:.]/g, "-")}`,
+	);
+	process.env.NAIA_E2E_ARTIFACTS_DIR ||= join(runDir, "artifacts");
+	process.env.NAIA_E2E_COST_LEDGER ||= join(runDir, "cost-ledger.json");
+	if (!dryRun) mkdirSync(process.env.NAIA_E2E_ARTIFACTS_DIR, { recursive: true });
+}
+
 // 등급이 요구하는 환경 변수가 실제로 있는지 먼저 본다. 없으면 그 스펙은
 // **wdio 에 넘기지 않는다.**
 //
@@ -447,7 +464,11 @@ function missingPrerequisites() {
 		);
 	if (!has("WebKitWebDriver") && process.platform === "linux")
 		missing.push("WebKitWebDriver (리눅스 웹뷰 드라이버)");
-	if (!has("tauri-driver")) missing.push("tauri-driver");
+	// Windows 는 앱에 들어 있는 WebDriver(tauri_plugin_wdio_webdriver)에 바로
+	// 붙는다(#539, wdio.conf.ts). tauri-driver 는 리눅스 경로의 전제다 — Windows
+	// 에서 이것을 요구하면 쓰지도 않는 도구 때문에 전체가 "전제 없음" 이 된다.
+	if (process.platform !== "win32" && !has("tauri-driver"))
+		missing.push("tauri-driver");
 	// 자리 계산은 agent-pairing 이 하나로 갖는다. 여기에 다시 적으면 빌드가
 	// 두는 자리와 갈라진다 — 실제로 그랬다. Windows 빌드는 MSVC 경로 길이
 	// 때문에 `C:/tmp/...` 에 짓는데 러너는 리눅스 자리만 보고 있었고, 그래서
@@ -478,15 +499,12 @@ function missingPrerequisites() {
 	// 그 키다. 사람이 쓰는 실제 ADK 의 설정은 이 등급에 영향을 주지 않는다.
 	const needsModel = tiers.includes("credentialed_live");
 	if (needsModel) {
-		for (const name of ["NAIA_API_KEY", "GEMINI_API_KEY"]) {
-			if (!(process.env[name] ?? "").length) {
-				missing.push(
-					`${name} (자격증명 등급의 대화·판정에 필요하다` +
-						(name === "NAIA_API_KEY"
-							? " — 이 키가 없으면 격리 워크스페이스에 살아 있는 공급자를 심지 못해 대화 스펙이 fetch failed 로 죽는다)"
-							: ")"),
-				);
-			}
+		// 판정 모델도 같은 게이트웨이로 부르므로(helpers/semantic.ts) 이 키 하나가
+		// 대화와 판정의 전제다. 예전에는 판정용 GEMINI_API_KEY 를 따로 요구했다.
+		if (!(process.env.NAIA_API_KEY ?? "").length) {
+			missing.push(
+				"NAIA_API_KEY (자격증명 등급의 대화·판정에 필요하다 — 이 키가 없으면 격리 워크스페이스에 살아 있는 공급자를 심지 못해 대화 스펙이 fetch failed 로 죽는다)",
+			);
 		}
 		// codex 는 이제 그것을 실제로 쓰는 스펙의 전제일 뿐이다. 전체 전제로 두면
 		// 자격증명 등급 마흔다섯 개가 codex 로그인 하나에 통째로 묶인다.

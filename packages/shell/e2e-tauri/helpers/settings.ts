@@ -276,8 +276,9 @@ import { clickElement } from "./click.js";
 
 export { clickElement };
 
-const API_KEY =
-	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
+// 대화 공급자는 나이아 게이트웨이(nextain) 하나다. 예전의 Gemini 직결 분기는
+// 제품 기본값이 아니게 된 뒤로 이 키를 요구하는 스펙만 늘렸다 — 회귀 러너가
+// 그 키가 없다는 이유로 예순 개 넘는 스펙을 빼 버렸다.
 const NAIA_KEY = process.env.NAIA_API_KEY || "";
 // 기본값이 Windows 드라이브 경로로 박혀 있어 다른 기계에서는 설치 화면이
 // 먼저 뜬다 (#541). 저장소 위치에서 형제 naia-adk 를 찾는다.
@@ -408,43 +409,25 @@ export async function ensureAppReady(): Promise<void> {
 
 	if (!alreadyConfigured) {
 		await browser.execute(
-			(geminiKey: string, naiaKey: string) => {
+			(naiaKey: string) => {
 				const existing = localStorage.getItem("naia-config");
 				const config = existing ? JSON.parse(existing) : {};
-				if (naiaKey && !geminiKey) {
-					// Use nextain provider when only naia key is available
-					Object.assign(config, {
-						provider: "nextain",
-						model: config.model || "gemini-2.5-pro",
-						apiKey: "",
-						naiaKey: naiaKey,
-						agentName: config.agentName || "Naia",
-						userName: config.userName || "Tester",
-						vrmModel: config.vrmModel || "/avatars/01-OL_Woman.vrm",
-						persona: config.persona || "Friendly AI companion",
-						enableTools: true,
-						locale: config.locale || "ko",
-						onboardingComplete: true,
-						appVisible: true,
-					});
-				} else {
-					Object.assign(config, {
-						provider: config.provider || "gemini",
-						model: config.model || "gemini-2.5-flash",
-						apiKey: config.apiKey || geminiKey,
-						agentName: config.agentName || "Naia",
-						userName: config.userName || "Tester",
-						vrmModel: config.vrmModel || "/avatars/01-OL_Woman.vrm",
-						persona: config.persona || "Friendly AI companion",
-						enableTools: true,
-						locale: config.locale || "ko",
-						onboardingComplete: true,
-						appVisible: true,
-					});
-				}
+				Object.assign(config, {
+					provider: "nextain",
+					model: config.model || "gemini-2.5-pro",
+					apiKey: "",
+					naiaKey: naiaKey,
+					agentName: config.agentName || "Naia",
+					userName: config.userName || "Tester",
+					vrmModel: config.vrmModel || "/avatars/01-OL_Woman.vrm",
+					persona: config.persona || "Friendly AI companion",
+					enableTools: true,
+					locale: config.locale || "ko",
+					onboardingComplete: true,
+					appVisible: true,
+				});
 				localStorage.setItem("naia-config", JSON.stringify(config));
 			},
-			API_KEY,
 			NAIA_KEY,
 		);
 		// Retry refresh — WebKitGTK may throw UND_ERR_HEADERS_TIMEOUT intermittently

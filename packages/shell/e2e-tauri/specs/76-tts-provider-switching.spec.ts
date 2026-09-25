@@ -13,18 +13,13 @@ import {
  * 2. Switching provider shows/hides API key input
  * 3. Voice list updates per provider
  * 4. Voice preview produces audio (Edge TTS — free, always works)
- * 5. OpenAI TTS preview with API key (if OPENAI_API_KEY set)
- * 6. Validates no broken voices (voices that fail to synthesize)
  *
- * Requires: Gateway running. OPENAI_API_KEY env var for OpenAI test.
+ * #603 이 타사 클라우드 음성(Google·OpenAI·ElevenLabs)을 제거했다. 예전의
+ * OpenAI 미리듣기와 ElevenLabs 전환 단계는 없는 공급자를 고르던 것이라 걷었고,
+ * 목록에 다시 나타나지 않는지를 대신 본다.
  */
-const EXPECTED_PROVIDERS = [
-	"edge",
-	"google",
-	"openai",
-	"elevenlabs",
-	"nextain",
-];
+const EXPECTED_PROVIDERS = ["edge", "nextain"];
+const REMOVED_PROVIDERS = ["google", "openai", "elevenlabs"];
 
 describe("76 — TTS provider switching", () => {
 	before(async () => {
@@ -47,6 +42,9 @@ describe("76 — TTS provider switching", () => {
 
 		for (const id of EXPECTED_PROVIDERS) {
 			expect(providerIds).toContain(id);
+		}
+		for (const id of REMOVED_PROVIDERS) {
+			expect(providerIds).not.toContain(id);
 		}
 	});
 
@@ -97,123 +95,6 @@ describe("76 — TTS provider switching", () => {
 			},
 			{ timeout: 30_000, timeoutMsg: "Edge TTS preview did not finish in 30s" },
 		);
-	});
-
-	// ── Switch to OpenAI ──
-
-	it("should switch to openai provider and show API key input", async () => {
-		await scrollToSection(S.ttsProviderSelect);
-
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return;
-			select.value = "openai";
-			select.dispatchEvent(new Event("change", { bubbles: true }));
-		}, S.ttsProviderSelect);
-
-		await browser.pause(500);
-
-		const apiKeyExists = await browser.execute((sel: string) => {
-			return !!document.querySelector(sel);
-		}, S.ttsApiKeyInput);
-
-		expect(apiKeyExists).toBe(true);
-	});
-
-	it("should show openai voice options", async () => {
-		const voices = await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return [];
-			return Array.from(select.options).map((o) => ({
-				id: o.value,
-				label: o.textContent,
-			}));
-		}, S.ttsVoiceSelect);
-
-		expect(voices.length).toBeGreaterThan(0);
-		// OpenAI should have known voices
-		const ids = voices.map((v) => v.id);
-		expect(ids).toContain("nova");
-		expect(ids).toContain("alloy");
-	});
-
-	it("should preview openai TTS if API key is available", async () => {
-		const apiKey = process.env.OPENAI_API_KEY ?? "";
-		if (!apiKey) {
-			console.log("[SKIP] OPENAI_API_KEY not set, skipping OpenAI preview");
-			return;
-		}
-
-		// Enter API key
-		await browser.execute(
-			(sel: string, key: string) => {
-				const input = document.querySelector(sel) as HTMLInputElement | null;
-				if (!input) return;
-				const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-					window.HTMLInputElement.prototype,
-					"value",
-				)?.set;
-				nativeInputValueSetter?.call(input, key);
-				input.dispatchEvent(new Event("input", { bubbles: true }));
-				input.dispatchEvent(new Event("change", { bubbles: true }));
-			},
-			S.ttsApiKeyInput,
-			apiKey,
-		);
-
-		await browser.pause(300);
-
-		// Select "alloy" voice for test
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return;
-			select.value = "alloy";
-			select.dispatchEvent(new Event("change", { bubbles: true }));
-		}, S.ttsVoiceSelect);
-
-		await browser.pause(300);
-
-		// Click preview
-		await scrollToSection(S.voicePreviewBtn);
-		await browser.execute((sel: string) => {
-			const btn = document.querySelector(sel) as HTMLButtonElement | null;
-			if (btn && !btn.disabled) btn.click();
-		}, S.voicePreviewBtn);
-
-		// Wait for preview (OpenAI can take longer)
-		await browser.waitUntil(
-			async () => {
-				return browser.execute((sel: string) => {
-					const btn = document.querySelector(sel) as HTMLButtonElement | null;
-					return btn ? !btn.disabled : true;
-				}, S.voicePreviewBtn);
-			},
-			{
-				timeout: 45_000,
-				timeoutMsg: "OpenAI TTS preview did not finish in 45s",
-			},
-		);
-	});
-
-	// ── Switch to ElevenLabs ──
-
-	it("should switch to elevenlabs and show API key input", async () => {
-		await scrollToSection(S.ttsProviderSelect);
-
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement | null;
-			if (!select) return;
-			select.value = "elevenlabs";
-			select.dispatchEvent(new Event("change", { bubbles: true }));
-		}, S.ttsProviderSelect);
-
-		await browser.pause(500);
-
-		const apiKeyExists = await browser.execute((sel: string) => {
-			return !!document.querySelector(sel);
-		}, S.ttsApiKeyInput);
-
-		expect(apiKeyExists).toBe(true);
 	});
 
 	// ── Switch to Nextain (Naia key) ──

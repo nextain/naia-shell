@@ -905,6 +905,18 @@ export const config = {
 		await requirePortFree(IN_APP_PORT);
 		if (!IS_WINDOWS) await requirePortFree(NATIVE_DRIVER_PORT);
 
+		// 스펙마다 앱은 새로 뜨지만 격리 워크스페이스의 config.json 은 실행 내내
+		// 하나다. 온보딩을 되돌리는 스펙(resetOnboarding)은 그 파일을 비우므로,
+		// 한 번만 심어 두면 그 뒤 스펙 전부가 공급자 없이 돌아 대화가 죽는다 —
+		// 앞 스펙의 부작용이 뒤 스펙의 실패로 보인다. 앱을 띄우기 전에 매번 다시
+		// 심어 스펙을 서로 떼어 놓는다.
+		if (CREDENTIALED_SEED_ACTIVE && process.env.NAIA_E2E_ADK_PATH?.trim()) {
+			seedCredentialedAdk(
+				process.env.NAIA_E2E_ADK_PATH.trim(),
+				credentialedSeedOptionsFromEnv(),
+			);
+		}
+
 		if (IS_WINDOWS) {
 			tauriDriver = spawn(TAURI_BINARY, [], {
 				stdio: [null, process.stdout, process.stderr],

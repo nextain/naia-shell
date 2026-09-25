@@ -8,23 +8,23 @@
 //
 // SAFETY: this spec must NEVER touch the user's real `~/naia-adk`.
 // All scenarios use a per-run temp directory under
-// `process.env.NAIA_E2E_ADK_BASE` (default: OS temp), and clean up after
+// the `NAIA_E2E_ADK_BASE` env var (default: OS temp), and clean up after
 // themselves.
 
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { CREDENTIALED_MAIN_MODEL } from "../credentialed-adk-seed.js";
 import { S } from "../helpers/selectors.js";
 import { safeRefresh } from "../helpers/settings.js";
 
 const E2E_ADK_BASE =
-	process.env.NAIA_E2E_ADK_BASE ??
-	"C:\\Windows\\Temp\\naia-e2e-adk";
+	process.env.NAIA_E2E_ADK_BASE ?? join(tmpdir(), "naia-e2e-adk");
 
-const API_KEY =
-	process.env.CAFE_E2E_API_KEY ?? process.env.GEMINI_API_KEY ?? "";
-
-// API_KEY is only needed by S3 (LLM round-trip). S1 and S2 verify branch +
-// clone + onboarding entry without making any LLM call, so they must run
-// even when the key is absent — that is the primary value we want from #325
-// and #326. S3 self-skips when API_KEY is empty.
+// S3 (LLM round-trip) uses the Naia gateway key the harness requires for the
+// credentialed tier. It used to need a direct Gemini key and self-skip without
+// one; #602 removed that provider, so the spec was excluded from regression
+// for requiring a key nothing can use anymore.
+const NAIA_KEY = process.env.NAIA_API_KEY ?? "";
 
 /** Per-test path so reruns do not collide. */
 function tmpAdkPath(tag: string): string {
@@ -178,20 +178,21 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		await overlay.waitForDisplayed({ timeout: 240_000 });
 	});
 
-	(API_KEY ? it : it.skip)("S3: load existing ADK → onboarding skipped (provider preconfigured)", async () => {
+	it("S3: load existing ADK → onboarding skipped (provider preconfigured)", async () => {
+		if (!NAIA_KEY) throw new Error("NAIA_API_KEY is not set");
 		// Build a minimal "existing ADK" by running init + copy + writing
 		// provider config so onboarding skips.
 		await tauriInvoke<void>("init_naia_settings", { adkPath: existing });
 		await tauriInvoke<void>("copy_bundled_assets", { adkPath: existing });
 		await browser.execute(
-			(p: string, key: string) => {
+			(p: string, key: string, model: string) => {
 				localStorage.setItem(
 					"naia-config",
 					JSON.stringify({
 						workspaceRoot: p,
-						provider: "gemini",
-						model: "gemini-2.5-flash",
-						apiKey: key,
+						provider: "nextain",
+						model,
+						naiaKey: key,
 						agentName: "Naia",
 						userName: "E2E",
 						vrmModel: "/avatars/01-OL_Woman.vrm",
@@ -204,7 +205,8 @@ describe("24 — ADK Setup Flow (#328)", function () {
 				localStorage.setItem("naia-adk-path", p);
 			},
 			existing,
-			API_KEY,
+			NAIA_KEY,
+			CREDENTIALED_MAIN_MODEL,
 		);
 		await safeRefresh();
 

@@ -18,15 +18,15 @@ import {
 /**
  * 70c 전용 실행 conf — 실 기본 프로바이더(nextain/deepseek-v4-flash) 라이브 대화.
  * voice-6g conf 와 같은 codex-e2e-environment 소유 앱/vite 기동을 재사용한다.
- * NAIA_E2E_NAIA_KEY(gw- 유료 테스트 회원 키) 없이는 실행 불가(라이브 전용).
+ * NAIA_API_KEY(gw- 유료 테스트 회원 키) 없이는 실행 불가(라이브 전용).
  */
 const EXE = process.platform === "win32" ? ".exe" : "";
 const TAURI_BINARY =
 	process.env.TAURI_BINARY ??
 	resolve(E2E_TARGET_DIR, "debug", `naia-shell${EXE}`);
-if (!process.env.NAIA_E2E_NAIA_KEY?.startsWith("gw-"))
+if (!process.env.NAIA_API_KEY?.startsWith("gw-"))
 	throw new Error(
-		"NAIA_E2E_NAIA_KEY must contain a paid test member gateway key",
+		"NAIA_API_KEY must contain a paid test member gateway key",
 	);
 configureCodexE2eEnvironment();
 

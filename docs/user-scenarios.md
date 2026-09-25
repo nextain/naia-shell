@@ -1035,7 +1035,7 @@ Those older sections are historical evidence only.
 
 | Scenario | User-observable outcome | Coverage |
 |---|---|---|
-| **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 Naia 선택기에는 `deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`만 나타나고, "Naia 기본값 적용"을 눌러도 메인은 Flash로 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `lib/slots/__tests__/settings-slots.contract.test.ts`, `components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_E2E_NAIA_KEY 필요) |
+| **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 Naia 선택기에는 `deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`만 나타나고, "Naia 기본값 적용"을 눌러도 메인은 Flash로 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `lib/slots/__tests__/settings-slots.contract.test.ts`, `components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_API_KEY 필요) |
 
 ### 2026-09-13 로그인하지 않고 쓰기 (#591, 에픽 #589)
 

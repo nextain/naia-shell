@@ -79,7 +79,7 @@
  * 기대지 않는다** — 경계는 린트가 지고, 게이트는 자기가 읽는 범위를 지킨다.
  * 그래서 다음 회차의 도전은 린트를 통과하는 형태여야 한다.
  */
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import ts from "typescript";
 import { resolveCallee } from "./lib/bindings.mjs";
@@ -310,13 +310,21 @@ const AMBIENT =
 
 function requiredEnv(source) {
 	const found = new Set();
+	// 기본값은 문자열만이 아니다. 이름 붙은 상수(`|| CREDENTIALED_MAIN_MODEL`)도
+	// 실제 값이다. 다른 환경 변수로 넘기는 것(`|| process.env.B`)은 기본값이 아니라
+	// 또 하나의 요구이므로 여기서 받지 않는다 — 그 B 는 다음 매치로 따로 센다.
 	for (const m of source.matchAll(
-		/process\.env\.([A-Z_0-9]+)\s*(?:(\|\||\?\?)\s*("(?:[^"\\]|\\.)*"|`[^`]*`|'[^']*'))?/g,
+		/process\.env\.([A-Z_0-9]+)\s*(?:(\|\||\?\?)\s*("(?:[^"\\]|\\.)*"|`[^`]*`|'[^']*'|(?!process\.env\.)[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*))?/g,
 	)) {
 		const [, name, , fallback] = m;
 		if (AMBIENT.test(name)) continue;
 		// 뒤에 실제 값이 붙어 있으면 없어도 돈다. 빈 문자열은 값이 아니다.
-		if (fallback && fallback.replace(/^["'`]|["'`]$/g, "").length > 0) continue;
+		if (
+			fallback &&
+			!/^(?:undefined|null)$/.test(fallback) &&
+			fallback.replace(/^["'`]|["'`]$/g, "").length > 0
+		)
+			continue;
 		found.add(name);
 	}
 	// 이름을 문자열로 들고 다니다 `process.env[name]` 으로 읽는 자리.
@@ -332,6 +340,36 @@ function requiredEnv(source) {
 // 초기화 전 접근이 된다.
 for (const name of readdirSync(CONF_DIR).filter((f) => /^wdio\.conf\..+\.ts$/.test(f))) {
 	confEnv.set(name, requiredEnv(readFileSync(join(CONF_DIR, name), "utf8")));
+}
+
+/**
+ * 전용 설정이 **스스로 채우는** 환경 변수.
+ *
+ * `wdio.conf.grok.ts` 는 최상위에서 `process.env.NAIA_E2E_MAIN_PROVIDER = "grok"`
+ * 을 적고, `wdio.conf.codex.ts` 가 부르는 `codex-e2e-environment.ts` 는
+ * `process.env.NAIA_E2E_ADK_PATH` 에 격리 워크스페이스를 넣는다. 스펙은 그 값을
+ * 기본값 없이 읽으므로 요구로 세어졌고, 러너는 그 설정이 채울 값을 "없다" 며
+ * 스펙을 통째로 뺐다 — 설정 둘이 한 번도 뜨지 않은 까닭이다.
+ *
+ * 그래서 설정 파일과, 그것이 불러 쓰는 이 디렉터리의 모듈(`./x.js`, 한 겹)에서
+ * `process.env.X = …` 대입을 모아 그 설정이 맡는 스펙의 요구에서 뺀다. 대입이
+ * 조건 안에 있어도 채우는 것으로 본다 — 조건을 따지는 것은 이 목록의 보증 밖이다.
+ */
+const confProvided = new Map();
+const ASSIGNED_ENV = /process\.env\.([A-Z_0-9]+)\s*(?:=(?!=)|\|\|=|\?\?=)/g;
+function assignedEnv(source) {
+	return [...source.matchAll(ASSIGNED_ENV)].map((m) => m[1]);
+}
+for (const name of readdirSync(CONF_DIR).filter((f) => /^wdio\.conf\..+\.ts$/.test(f))) {
+	const source = readFileSync(join(CONF_DIR, name), "utf8");
+	const provided = new Set(assignedEnv(source));
+	for (const m of source.matchAll(/from\s+"\.\/([\w.-]+)\.js"/g)) {
+		const local = join(CONF_DIR, `${m[1]}.ts`);
+		if (existsSync(local)) {
+			for (const env of assignedEnv(readFileSync(local, "utf8"))) provided.add(env);
+		}
+	}
+	confProvided.set(name, provided);
 }
 
 const helperEnv = new Map();
@@ -458,7 +496,13 @@ for (const name of readdirSync(SPEC_DIR).filter((f) => f.endsWith(".spec.ts")).s
 	const fromConf = (confOwners.get(name) ?? []).flatMap(
 		(conf) => confEnv.get(conf) ?? [],
 	);
-	const envs = [...new Set([...direct, ...viaHelpers, ...fromConf])].sort();
+	// 맡는 전용 설정이 **모두** 채우는 변수는 요구가 아니다.
+	const owners = confOwners.get(name) ?? [];
+	const supplied = (env) =>
+		owners.length > 0 && owners.every((conf) => confProvided.get(conf)?.has(env));
+	const envs = [...new Set([...direct, ...viaHelpers, ...fromConf])]
+		.filter((env) => !supplied(env))
+		.sort();
 	const device = envs.some((e) => DEVICE_ENV.test(e));
 	// 대화 헬퍼를 부르면 모델이 필요하다 — 환경 변수에 드러나지 않아도.
 	// 헬퍼를 거치지 않고 스펙이 직접 모델을 부르는 자리도 있다. 헬퍼 이름만

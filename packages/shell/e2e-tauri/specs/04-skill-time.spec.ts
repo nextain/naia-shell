@@ -78,80 +78,33 @@ async function waitForCurrentSkillTimeSuccess(
 
 describe("04 — skill_time", () => {
 	before(async () => {
-		const explicitAdkPath = process.env.NAIA_E2E_ADK_PATH?.trim();
-		if (explicitAdkPath) {
-			// An explicit ADK is prepared by the caller. Preserve its canonical
-			// provider/model/secure credentials and only persist test-safe UI flags
-			// through the product's normal config writeback path.
-			const patch = await browser.execute((builtinNames: string[]) => {
-				const raw = localStorage.getItem("naia-config");
-				const previous = raw ? JSON.parse(raw) : {};
-				const disabled = Array.isArray(previous.disabledSkills)
-					? previous.disabledSkills
-					: [];
-				const builtins = new Set(builtinNames);
-				return {
-					enableTools: true,
-					onboardingComplete: true,
-					disabledSkills: disabled.filter(
-						(name: unknown) => typeof name !== "string" || !builtins.has(name),
-					),
-				};
-			}, BUILTIN_SKILLS);
-			await persistConfigPatch(patch);
-			await safeRefresh();
-			await waitForSkillTimeConfigRehydration();
-			const chatInput = await $(".chat-input");
-			await chatInput.waitForEnabled({ timeout: 15_000 });
-			return;
+		// 하네스(wdio.conf.ts)가 늘 격리 ADK 를 만든다. 예전의 Gemini 직결 대안은
+		// 그 공급자가 사라진 뒤(#602) 도달할 수 없는 분기였고, 그 키를 요구한다는
+		// 이유로 이 스펙이 회귀에서 빠졌다.
+		if (!process.env.NAIA_E2E_ADK_PATH?.trim()) {
+			throw new Error("NAIA_E2E_ADK_PATH is not set — run through wdio.conf.ts");
 		}
-
-		const apiKey =
-			process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
-		const naiaKey = process.env.NAIA_API_KEY || "";
-		const gatewayToken =
-			process.env.CAFE_GATEWAY_TOKEN ||
-			process.env.GATEWAY_MASTER_KEY ||
-			"naia-dev-token";
-		// Provider routing — prefer Gemini direct (cheapest LIVE) when key is
-		// available, fall back to nextain (lab proxy) when only the naia key
-		// is present so the spec still runs in NAIA_API_KEY-only setups.
-		const useNaia = !apiKey && naiaKey;
-		await browser.execute(
-			(key: string, naia: string, token: string, naiaMode: boolean) => {
-				const raw = localStorage.getItem("naia-config");
-				const prev = raw ? JSON.parse(raw) : {};
-				const disabled = Array.isArray(prev.disabledSkills)
-					? prev.disabledSkills
-					: [];
-				const builtins = new Set([
-					"skill_time",
-					"skill_system_status",
-					"skill_memo",
-					"skill_weather",
-					"skill_notify_slack",
-				]);
-				const config = {
-					...prev,
-					provider: naiaMode ? "nextain" : "gemini",
-					model:
-						prev.model || (naiaMode ? "gemini-2.5-pro" : "gemini-2.5-flash"),
-					apiKey: naiaMode ? "" : key || prev.apiKey || "",
-					naiaKey: naiaMode ? naia : prev.naiaKey || "",
-					enableTools: true,
-					gatewayUrl: prev.gatewayUrl || "ws://localhost:18789",
-					gatewayToken: token || prev.gatewayToken || "naia-dev-token",
-					onboardingComplete: true,
-					disabledSkills: disabled.filter((n: string) => !builtins.has(n)),
-				};
-				localStorage.setItem("naia-config", JSON.stringify(config));
-			},
-			apiKey,
-			naiaKey,
-			gatewayToken,
-			useNaia,
-		);
+		// An explicit ADK is prepared by the caller. Preserve its canonical
+		// provider/model/secure credentials and only persist test-safe UI flags
+		// through the product's normal config writeback path.
+		const patch = await browser.execute((builtinNames: string[]) => {
+			const raw = localStorage.getItem("naia-config");
+			const previous = raw ? JSON.parse(raw) : {};
+			const disabled = Array.isArray(previous.disabledSkills)
+				? previous.disabledSkills
+				: [];
+			const builtins = new Set(builtinNames);
+			return {
+				enableTools: true,
+				onboardingComplete: true,
+				disabledSkills: disabled.filter(
+					(name: unknown) => typeof name !== "string" || !builtins.has(name),
+				),
+			};
+		}, BUILTIN_SKILLS);
+		await persistConfigPatch(patch);
 		await safeRefresh();
+		await waitForSkillTimeConfigRehydration();
 		const chatInput = await $(".chat-input");
 		await chatInput.waitForEnabled({ timeout: 15_000 });
 	});
