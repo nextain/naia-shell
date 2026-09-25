@@ -453,6 +453,12 @@ cron-skills 뿐이다(프로덕션 import 0, naia-agent#128).
 `allowedTools` 단정은 지웠다. 그 배열은 에이전트가 읽지 않으므로 이름이 거기 있든
 없든 도구가 붙는지와 무관하고, 알림이 실제로 나갔는지도 말하지 못한다.
 
+**#611 이후 퇴역** (#721): #611 이 모델에 보이는 도구 목록에서 `notify` 를 뺐고,
+알림을 보내는 다른 화면·명령도 없어 `17-skill-notify` 를 지웠다. 같은 이유로
+`07-cleanup`(`memo_delete`), `40-sessions-spawn`(`sessions_spawn`),
+`44-diagnostics-full`(`skill_diagnostics` — 진단 화면은 31·60·33 이 본다),
+`48-voicewake-set`(`skill_voicewake`) 도 지웠다. 위 표의 17 행은 그때까지의 기록이다.
+
 ### baseline 갱신·coverage 규칙 (R1)
 - **old-bug 승계 vs new 교정**: old 버그 *승계(동일 재현)* 기본, 교정은 별도 결정. ⚠️ **단 민감-도메인(security/policy/approval/safety) old-bug = 승계 금지**(명시 승인 필요) — deny-by-default 우선(R2 codex, R5 safety 포함).
 - **coverage = 중요도 기준**(루크 측정가능성 skew 방지): 측정 불가여도 중요 시나리오는 격리 목록에 *중요도* 명시(후순위 자동화 방지).

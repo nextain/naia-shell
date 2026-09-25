@@ -1,8 +1,8 @@
 {
 	"generatedFrom": "packages/shell/e2e-tauri/specs",
-	"total": 81,
+	"total": 76,
 	"summary": {
-		"credentialed_live": 57,
+		"credentialed_live": 52,
 		"deterministic_ci": 18,
 		"native_local": 6
 	},
@@ -54,14 +54,6 @@
 				"NAIA_E2E_ADK_PATH",
 				"NAIA_E2E_ARTIFACTS_DIR",
 				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "07-cleanup.spec.ts",
-			"conf": [],
-			"env": [
-				"NAIA_E2E_ARTIFACTS_DIR"
 			],
 			"tier": "credentialed_live"
 		},
@@ -151,17 +143,6 @@
 				"NAIA_E2E_ADK_PATH",
 				"NAIA_E2E_ARTIFACTS_DIR",
 				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "17-skill-notify.spec.ts",
-			"conf": [],
-			"env": [
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_NOTIFY_LOG"
 			],
 			"tier": "credentialed_live"
 		},
@@ -269,17 +250,6 @@
 			"tier": "credentialed_live"
 		},
 		{
-			"spec": "40-sessions-spawn.spec.ts",
-			"conf": [],
-			"env": [
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
-		},
-		{
 			"spec": "42-sessions-crud.spec.ts",
 			"conf": [],
 			"env": [
@@ -294,28 +264,6 @@
 			"env": [
 				"NAIA_API_KEY",
 				"NAIA_E2E_ADK_PATH"
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "44-diagnostics-full.spec.ts",
-			"conf": [],
-			"env": [
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
-			],
-			"tier": "credentialed_live"
-		},
-		{
-			"spec": "48-voicewake-set.spec.ts",
-			"conf": [],
-			"env": [
-				"NAIA_API_KEY",
-				"NAIA_E2E_ADK_PATH",
-				"NAIA_E2E_ARTIFACTS_DIR",
-				"NAIA_E2E_COST_LEDGER"
 			],
 			"tier": "credentialed_live"
 		},
