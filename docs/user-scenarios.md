@@ -371,7 +371,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 |---|---|---|
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
-| UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 실제 Shell 설정 화면에서 역할 설정 저장과 재시작 복원 |
+| UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | 실 UI 스펙(95-llm-role-settings)은 #589/#598 이 두뇌 화면의 역할 편집기를 지우며 함께 지웠다 — 실 UI 확인 없음 |
 | UC-NAIA-AZURE-MODELS | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts` · `registry.test.ts`: 나이아 계정 선택기가 `deepseek-v4-flash` · `solar-pro4` · `solar-mini` · `gpt-5.6-luna` 네 개만 노출하고 Codex 목록은 그대로인지. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 가격 순·성능 순과 빠진 모델 숨김. `e2e/capability-settings.spec.ts`: 실 UI 선택기 네 개. | 실 대화 403은 게이트웨이 소유 — 선택기 축소가 고치지 않는다 |
 | UC-NAIA-LEGACY-MAIN-MODEL | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts`: 선택기 모델 유지, 퇴역 id(#670·#603)는 게이트웨이가 제공해도 기본값으로, 그 밖의 id는 게이트웨이 목록에 있으면 유지(`gpt-5.4-nano`)·없으면 기본값·목록을 못 읽으면 그대로, `gatewayServedModelIds` 가 live·상태 없음만 센다. `packages/shell/src/hooks/__tests__/useAgentAuthSync.test.ts`: 기동 훅이 게이트웨이 제공 모델을 저장하지 않고, 퇴역 id는 즉시 옮기고, 목록 실패 시 건드리지 않고, 확인 중 바뀐 설정을 덮지 않는다. | 실 Shell 기동 확인은 대기 — 화면 변화 없음(설정 값만) |
 
@@ -739,7 +739,7 @@ P02 검증:
 | Scenario | Unit / contract | UI / integration | Real Discord E2E |
 |---|---|---|---|
 | UC-DISCORD-1 | credential boundary, allow-list, participation policy | Settings connection flow | bot invite, permissions, allowed-channel activation |
-| UC-DISCORD-1A | #610 removed the Connections settings tab and its unit test (ConnectionsSettingsTab.test.tsx); Rust dotenv parser accepts only `DISCORD_BOT_TOKEN` for debug E2E | `e2e/discord-settings-secure.spec.ts`: no inline token and no-argument native-command contract; `e2e/discord-channel-agent.spec.ts`: allow-list save. The native-cancellation and live-auth e2e-tauri specs (92, 94) were removed with the tab in #610. | provisioned test bot: allow-list save → Agent authority `ready` |
+| UC-DISCORD-1A | #610 removed the Connections settings tab and its unit test (ConnectionsSettingsTab.test.tsx); Rust dotenv parser accepts only `DISCORD_BOT_TOKEN` for debug E2E | The browser specs (discord-settings-secure, discord-channel-agent) waited on the removed Connections tab and were deleted in 0.2.3. The native-cancellation and live-auth e2e-tauri specs (92, 94) were removed with the tab in #610. | provisioned test bot: allow-list save → Agent authority `ready` |
 | UC-DISCORD-1B | #610 removed the Connections settings tab and the Channels tab together with their unit tests (ConnectionsSettingsTab.test.tsx, ChannelsTab.test.tsx) | #610 removed the inbox handoff e2e-tauri spec (93) with the tabs | provisioned test bot: binding save → inbox channel list → inbound/outbound records remain in their binding |
 | UC-DISCORD-2 | recency and selected-channel persistence | narrow/wide channel inbox navigation | multi-channel history visibility |
 | UC-DISCORD-3 | Gateway event deduplication, per-channel context, reconnect | live status and unread rendering | two-channel message/reply/reconnect flow |
@@ -959,7 +959,7 @@ Test Coverage Map
 
 | UC | 단위·계약 | 실기 | 비고 |
 |---|---|---|---|
-| UC-SETTINGS-ROUNDTRIP | `src/lib/__tests__/config-boot-merge.test.ts`: 부팅 병합에서 파일이 캐시를 이긴다 / `src/lib/__tests__/adk-store.test.ts`: 작업 공간 포인터 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 설정 저장이 파일에 남고 다시 읽힌다 | 실기 스펙은 아직 CI 에서 돌지 않는다(#550) |
+| UC-SETTINGS-ROUNDTRIP | `src/lib/__tests__/config-boot-merge.test.ts`: 부팅 병합에서 파일이 캐시를 이긴다 / `src/lib/__tests__/adk-store.test.ts`: 작업 공간 포인터 | 실 UI 확인은 역할 편집기와 함께 지운 95-llm-role-settings 가 맡았었다 — 지금은 없다 | 역할 편집기 제거(#589/#598) |
 | UC-SETTINGS-ALLOWED-TOOLS | `src/lib/__tests__/config.test.ts` removeAllowedTool + `SettingsTab.test.tsx` 이름 목록·개별 해제 | — | #647 |
 | UC-SETTINGS-OPEN-LOG | `scripts/__tests__/instance-home.test.mjs` opener 범위 + `SettingsTab.test.tsx` 실패 오류 | — | #646 `~/.naia` 와 `~/.naia-dev` 로그 폴더 |
 | UC-SETTINGS-ADK-RESET | `src/lib/__tests__/adk-path-reset.test.ts` 패키지 재시작 vs 개발 창 유지 + `SettingsTab.test.tsx` 재시작 필요 안내 | — | #642 `tauri:dev` 는 relaunch 로 창만 죽이지 않는다 |

@@ -191,22 +191,6 @@ describe("99 — manual screenshots", () => {
 		await screenshot("skills-tab");
 	});
 
-	it("should capture channels tab", async () => {
-		await clickTab(S.channelsTabBtn);
-		try {
-			await browser.waitUntil(
-				async () => {
-					return await browser.execute(
-						(sel: string) => !document.querySelector(sel),
-						".channels-loading",
-					);
-				},
-				{ timeout: 10000 },
-			);
-		} catch {}
-		await screenshot("channels-tab");
-	});
-
 	it("should capture diagnostics tab", async () => {
 		await clickTab(S.diagnosticsTabBtn);
 		try {

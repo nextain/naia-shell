@@ -70,6 +70,10 @@ const ALLOWED_ABSENT = new Map([
 	// 이 사유를 남겨 게이트가 다른 새 결손을 계속 잡게 한다.
 	['data-meta-tab="progress"', "#579 — 진입점 없음, 처분 대기"],
 	['data-meta-tab="diagnostics"', "#579 — 진입점 없음, 처분 대기"],
+	// #605 가 게이트웨이 스킬 설치 표면을 지웠다. 14·28 스펙은 그것이 다시 생기지
+	// 않는지 **없음**을 단언한다 — 기다리는 것이 아니라 부재가 기대값이다.
+	['gateway-skill-card', "#605 — 지운 설치 표면의 부재를 단언한다"],
+	['skills-install-btn', "#605 — 지운 설치 표면의 부재를 단언한다"],
 ]);
 
 function tracked(dir, extension) {
