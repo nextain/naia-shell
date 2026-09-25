@@ -113,35 +113,10 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 
-/** Minimal valid RIFF/WAVE payload, base64-encoded (same construction as
- * sentence-pipeline.test.ts's makeWavBase64) — for a forced-streaming
- * decision, the real (unmocked, gap-review-6) PcmStreamSource/decodeWavPcm16
- * actually parse whatever synthesizeTts resolves with. */
-function makeWavBase64(durationSeconds: number, sampleRate = 24_000): string {
-	const pcmBytes = Math.max(2, Math.round(durationSeconds * sampleRate) * 2);
-	const bytes = new Uint8Array(44 + pcmBytes);
-	const view = new DataView(bytes.buffer);
-	const put = (offset: number, text: string) => {
-		for (let i = 0; i < text.length; i++)
-			bytes[offset + i] = text.charCodeAt(i);
-	};
-	put(0, "RIFF");
-	put(8, "WAVE");
-	put(12, "fmt ");
-	put(36, "data");
-	view.setUint32(4, bytes.length - 8, true);
-	view.setUint32(16, 16, true);
-	view.setUint16(20, 1, true);
-	view.setUint16(22, 1, true);
-	view.setUint32(24, sampleRate, true);
-	view.setUint32(28, sampleRate * 2, true);
-	view.setUint16(32, 2, true);
-	view.setUint16(34, 16, true);
-	view.setUint32(40, pcmBytes, true);
-	let binary = "";
-	for (const byte of bytes) binary += String.fromCharCode(byte);
-	return btoa(binary);
-}
+// gap-review-7 (2026-09-25) 구멍 6-1: makeWavBase64 는 gap-review-6 전용
+// 시험(강제 스트리밍 재생 방식)에서만 쓰였다 — 그 시험을 전용 파일
+// ChatArea.voice-playback-mode-session.test.tsx 로 옮기며 여기서는
+// 미사용이 되어 삭제(그 파일에 동일 헬퍼가 있다).
 
 vi.mock("@tauri-apps/plugin-store", () => {
 	const store = {
@@ -253,6 +228,13 @@ describe("ChatArea", () => {
 		FakeSpeechRecognition.latest = null;
 		capturedOnChunk = null;
 		capturedRequests.length = 0;
+		// gap-review-7 (2026-09-25) 구멍 6-1: 각 시험이 끝에서 스스로
+		// localStorage.removeItem("naia-config") 를 부르는 방식은 그 시험이
+		// 자기 removeItem 줄에 닿기 전에 던지면(예: waitFor 타임아웃) "naia-config"
+		// 가 다음 시험으로 새어 들어간다 — 전체 파일 실행에서만 재현되고
+		// 단일 시험 실행(-t)에서는 항상 통과하는 원인. 개별 시험이 실패해도
+		// 항상 청소되도록 공용 afterEach 에서 무조건 지운다.
+		localStorage.clear();
 		vi.clearAllMocks();
 		vi.mocked(isNewCore).mockReturnValue(false);
 		mockInvoke.mockResolvedValue(undefined);
@@ -1170,94 +1152,11 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
-	it("gap-review-6: changing voicePlaybackMode mid voice-SESSION takes effect from the next sentence, not frozen at session start", async () => {
-		// FR-VOICE.22 setting is copied into the Shell TTS pipeline's live config
-		// (pipelineVoiceConfigRef) by initializeSpeechTts(). During an ordinary
-		// typed-chat turn that ALWAYS runs fresh from handleSend (chatTtsEnabled
-		// path), so it self-heals on every send — not a useful reproduction.
-		// The real bug is scoped to an ACTIVE VOICE SESSION (handleVoiceToggle):
-		// once pipelineActiveRef.current is true, handleSend's chatTtsEnabled
-		// guard (`!pipelineActiveRef.current && ...`) skips re-running
-		// initializeSpeechTts for every turn inside that session, so the
-		// voicePlaybackMode snapshotted at session start stayed frozen until the
-		// session restarted — exactly what naia-config-changed must now refresh.
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({
-				provider: "ollama",
-				model: "qwen3:8b", // requiresApiKey:false — no secure-store/apiKey detour needed
-				sttProvider: "web-speech",
-				sttModel: "",
-				ttsEnabled: true,
-				ttsProvider: "naia-local-voice",
-				vllmTtsHost: "http://localhost:8910",
-				voicePlaybackMode: "sentence",
-			}),
-		);
-		Object.defineProperty(window, "SpeechRecognition", {
-			configurable: true,
-			value: FakeSpeechRecognition,
-		});
-
-		render(<ChatArea />);
-		fireEvent.click(
-			document.querySelector(".chat-voice-btn") as HTMLButtonElement,
-		);
-		// Session start: pipelineVoiceConfigRef.current is snapshotted here with
-		// voicePlaybackMode="sentence" (same code path this test's fix touches).
-		await waitFor(() =>
-			expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledTimes(1),
-		);
-
-		// Flip the setting mid-session (same pattern saveConfig() uses: persist
-		// then notify) — the live voice session stays open, no restart.
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({
-				provider: "ollama",
-				model: "qwen3:8b",
-				sttProvider: "web-speech",
-				sttModel: "",
-				ttsEnabled: true,
-				ttsProvider: "naia-local-voice",
-				vllmTtsHost: "http://localhost:8910",
-				voicePlaybackMode: "streaming",
-			}),
-		);
-		window.dispatchEvent(new CustomEvent("naia-config-changed"));
-
-		// A real (unmocked, gap-review-6) PcmStreamSource/decodeWavPcm16 now runs
-		// for the forced-streaming decision — resolve with an actual WAV so it
-		// decodes cleanly instead of falling back to the "engine unavailable"
-		// notice, which would be a distraction from what this test checks.
-		ttsSyncMocks.synthesizeTts.mockResolvedValueOnce({
-			audioBase64: makeWavBase64(1),
-			costUsd: 0,
-		});
-
-		// A turn during the live voice session (pipelineActiveRef.current=true —
-		// text input still routes through the ordinary sendChatMessage path,
-		// same as the "Pipeline voice mode" flow ChatArea already uses). The
-		// input placeholder changes while listening ("듣고 있어요...").
-		const input = screen.getByPlaceholderText(/메시지|message|듣고/i);
-		fireEvent.change(input, { target: { value: "voice-session turn" } });
-		fireEvent.keyDown(input, { key: "Enter" });
-		await waitFor(() => expect(capturedRequests).toHaveLength(1));
-		capturedRequests[0].onChunk({
-			type: "text",
-			requestId: capturedRequests[0].requestId,
-			text: "This sentence should stream now, not use the session-start snapshot.",
-		});
-		capturedRequests[0].onChunk({
-			type: "finish",
-			requestId: capturedRequests[0].requestId,
-		});
-
-		await waitFor(() =>
-			expect(ttsSyncMocks.enqueueOrderedStream).toHaveBeenCalledTimes(1),
-		);
-		localStorage.removeItem("naia-config");
-	});
+	// gap-review-7 (2026-09-25) 구멍 6-1: 이 파일의 앞선(무관한, round-7 이전
+	// 베이스라인에서도 이미 깨져 있던) 시험들과 상태가 섞여 파일 전체 실행에서만
+	// 실패하던 것을 확인 — 전용 파일로 옮겨 격리했다:
+	// ChatArea.voice-playback-mode-session.test.tsx 의
+	// "gap-review-6: changing voicePlaybackMode mid voice-SESSION ..." 참고.
 
 	it("keeps the video avatar visible without synthesizing speech when TTS is off", async () => {
 		const playAuthoredClip = vi.fn();

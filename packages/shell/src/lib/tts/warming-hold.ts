@@ -11,10 +11,21 @@
  */
 
 let warming = false;
+/**
+ * gap-review-7 (2026-09-25) 구멍 2-1/4-1: 엔진이 "다시 기동 중"이라고 알려온
+ * 횟수. `naia:voice-model-preparing`(detail:true) 는 direct 루프백 엔진이
+ * 연결이 끊겨(TypeError) 재시도하는 정확히 그 순간에만 쏜다(synthesize.ts) —
+ * 즉 엔진이 새로 뜨거나 죽었다 살아난 신호다. 이 세대 번호를
+ * `buildSynthesisTargetKey` 가 합성 조건 키에 포함해, RTF 캐시(2-1)와
+ * warming-hold 의 `warmed` 상태(4-1)를 엔진 재기동 시 함께 무효화한다.
+ */
+let engineBootGeneration = 0;
 
 if (typeof window !== "undefined") {
 	window.addEventListener("naia:voice-model-preparing", (event) => {
-		warming = !!(event as CustomEvent<boolean>).detail;
+		const value = !!(event as CustomEvent<boolean>).detail;
+		warming = value;
+		if (value) engineBootGeneration++;
 	});
 }
 
@@ -23,7 +34,17 @@ export function isVoiceWarmingHold(): boolean {
 	return warming;
 }
 
+/** gap-review-7 구멍 2-1: 엔진 재기동 세대 번호 — 합성 조건 키에 섞어 넣는다. */
+export function getVoiceEngineBootGeneration(): number {
+	return engineBootGeneration;
+}
+
 /** 테스트용 — 이벤트 없이 상태를 세운다. */
 export function setVoiceWarmingHoldForTest(value: boolean): void {
 	warming = value;
+}
+
+/** 테스트용 — 엔진 재기동 세대를 이벤트 없이 올린다. */
+export function bumpVoiceEngineBootGenerationForTest(): void {
+	engineBootGeneration++;
 }

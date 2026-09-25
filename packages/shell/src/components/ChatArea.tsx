@@ -1228,18 +1228,24 @@ export function ChatArea({
 			audioQueueRef.current = new AudioQueue({
 				outputDeviceId: config.ttsOutputDeviceId || undefined,
 				onPlaybackStart: () => {
-					useAvatarStore.getState().setSpeaking(true);
 					ttsPlayingRef.current = true;
 					setTtsPlaying(true);
-					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(true);
 				},
 				onPlaybackEnd: () => {
-					useAvatarStore.getState().setSpeaking(false);
 					ttsPlayingRef.current = false;
 					setTtsPlaying(false);
-					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
 					settleAvatarEmotionIfIdle();
 					settleSlidePresenterSpeech("finished");
+				},
+				// gap-review-7 (2026-09-25) 구멍 5-1: 아바타 입(립싱크의 "말하는
+				// 중" 신호)은 큐가 바쁜지가 아니라 스피커에서 실제로 소리가
+				// 나는 동안만 따라간다 — 첫 조각 대기·미리 채움 구간에 입이
+				// 먼저 움직이던 문제. mic 정지/쿨다운(ttsPlayingRef 쪽)은
+				// 범위 밖(코디네이터 지시, review 본문의 "같은 신호" 제안은
+				// 이번 라운드에 포함되지 않음) — 기존 거친 신호 그대로 둔다.
+				onAudibleChange: (audible) => {
+					useAvatarStore.getState().setSpeaking(audible);
+					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(audible);
 				},
 			});
 		}
@@ -1254,6 +1260,7 @@ export function ChatArea({
 			vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 			vllmTtsHost: config.vllmTtsHost,
 			voicePlaybackMode: config.voicePlaybackMode, // FR-VOICE.22
+			localVoiceGpuIndex: config.localVoiceGpuIndex, // gap-review-7 구멍 2-1
 		};
 	}
 
@@ -2814,10 +2821,8 @@ export function ChatArea({
 				const queue = new AudioQueue({
 					outputDeviceId: config.ttsOutputDeviceId || undefined,
 					onPlaybackStart: () => {
-						useAvatarStore.getState().setSpeaking(true);
 						ttsPlayingRef.current = true;
 						setTtsPlaying(true);
-						useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(true);
 						// ★재개 타이머 취소(2026-07-15 리뷰): 문장별 합성 지연으로 큐가 잠깐 비면
 						// onPlaybackEnd 가 800ms 재개 타이머를 건다. 다음 문장이 그 전에 도착해
 						// 재생을 시작해도 타이머는 살아 있어 재생 중 마이크를 재개통 → 자기발화 누수.
@@ -2839,10 +2844,8 @@ export function ChatArea({
 						}
 					},
 					onPlaybackEnd: () => {
-						useAvatarStore.getState().setSpeaking(false);
 						ttsPlayingRef.current = false;
 						setTtsPlaying(false);
-						useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
 						// Cooldown: suppress STT for 1.5s after TTS ends
 						// to prevent mic echo from final TTS audio
 						ttsCooldownUntilRef.current = Date.now() + 800;
@@ -2863,6 +2866,15 @@ export function ChatArea({
 							}
 						}, 800);
 					},
+					// gap-review-7 구멍 5-1: 위 initializeSpeechTts 와 같은 분리 —
+					// 아바타 입은 실제 audible 신호만 따른다. 마이크 정지/쿨다운은
+					// 범위 밖(코디네이터 지시)이라 onPlaybackStart/End 에 그대로 둔다.
+					onAudibleChange: (audible) => {
+						useAvatarStore.getState().setSpeaking(audible);
+						useCascadeAvatarStore
+							.getState()
+							.renderer?.setSpeakingVisual(audible);
+					},
 				});
 				audioQueueRef.current = queue;
 				sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
@@ -2879,6 +2891,7 @@ export function ChatArea({
 					vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 					vllmTtsHost: config.vllmTtsHost,
 					voicePlaybackMode: config.voicePlaybackMode, // FR-VOICE.22
+					localVoiceGpuIndex: config.localVoiceGpuIndex, // gap-review-7 구멍 2-1
 				};
 
 				// Start STT engine — route to Tauri plugin (offline) or API-based

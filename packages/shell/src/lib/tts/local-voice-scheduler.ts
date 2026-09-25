@@ -48,6 +48,12 @@ export class LocalVoiceScheduler {
 		warmed: false,
 		firstResultSeen: false,
 	};
+	/**
+	 * gap-review-7 (2026-09-25) 구멍 4-1: `warmed` 가 실제로 유효한 합성 조건
+	 * 묶음(호스트/GPU/엔진 기동 세대) — `interrupt()`(매 턴/새 대화/슬라이드
+	 * 페이지)로는 더 이상 지워지지 않고, 이 키가 바뀔 때만 지워진다.
+	 */
+	private lastTargetKey: string | null = null;
 
 	constructor(private readonly deps: LocalVoiceSchedulerDeps) {}
 
@@ -59,18 +65,43 @@ export class LocalVoiceScheduler {
 	/**
 	 * Barge-in / new turn: supersede the hold state and clear the indicator.
 	 * The admission tail is kept on purpose (see module doc).
+	 *
+	 * gap-review-7 (2026-09-25) 구멍 4-1(가장 무거움): `warmed` 는 더 이상 여기서
+	 * 지워지지 않는다. 예전 동작은 RTF 1.1 인 4060 에서 두 번째 턴부터 "자동"이
+	 * RTF 를 알아서 실시간+미리채움을 고르는데도, 새 턴마다 `warmed=false` 로
+	 * 되돌아가 첫 조각이 1초를 넘으면 대기 장치가 다시 열리고(complete-then-play)
+	 * 미리채움 계산이 무의미해지는 문제였다 — 재생 방식은 사용자 설정이 아니라
+	 * 첫 조각 도착 시간이 정하는 셈이었다. `warmed` 는 이제 `noteTarget()` 이
+	 * 관리하는, RTF 추적기와 같은 수명(세션 + 합성 조건 묶음)을 따른다 — 대상이
+	 * 안 바뀌면 턴이 바뀌어도 "엔진이 이미 몸풀렸다"는 사실을 그대로 믿는다.
 	 */
 	interrupt(): void {
+		const warmed = this.state.warmed;
 		this.state = {
 			generation: this.state.generation + 1,
 			sentenceCount: 0,
 			enqueuedCount: 0,
 			streamFinished: false,
 			holdActive: false,
-			warmed: false,
+			warmed,
 			firstResultSeen: false,
 		};
 		this.deps.setWarmingVisible?.(false);
+	}
+
+	/**
+	 * gap-review-7 (2026-09-25) 구멍 2-1/4-1: 호출부(sentence-pipeline.ts)가
+	 * `VoicePlaybackRtfTracker.noteTarget()` 과 같은 지점(문장 자신의 합성이
+	 * 막 시작되려는 순간)에서, 같은 합성 조건 키(`buildSynthesisTargetKey`)로
+	 * 이것도 함께 부른다. 키가 이전과 다르면(호스트/GPU/엔진 기동 세대 중
+	 * 하나라도 바뀜) `warmed` 를 지운다 — 새로 뜬/바뀐 엔진이 실제로 빠른지
+	 * 증명하기 전까지는 이전 엔진의 몸풀림 상태를 믿지 않는다.
+	 */
+	noteTarget(targetKey: string | null = null): void {
+		if (targetKey !== this.lastTargetKey) {
+			this.lastTargetKey = targetKey;
+			this.state.warmed = false;
+		}
 	}
 
 	/** seq 0 opens the playback window (pauses playback); later seqs count up. */

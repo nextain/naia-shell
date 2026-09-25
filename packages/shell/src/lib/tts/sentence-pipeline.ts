@@ -33,12 +33,18 @@ import type { LocalVoiceScheduler } from "./local-voice-scheduler";
 import { synthesizeTts } from "./synthesize";
 import { ttsTextFilter } from "./text-filter";
 import {
+	DEFAULT_CHARS_PER_SECOND,
+	SentenceRateCalibrator,
 	type VoicePlaybackMode,
 	VoicePlaybackRtfTracker,
+	buildSynthesisTargetKey,
 	decidePlaybackMethod,
 	estimateSentenceDurationSeconds,
 } from "./voice-playback-mode";
-import { isVoiceWarmingHold } from "./warming-hold";
+import {
+	getVoiceEngineBootGeneration,
+	isVoiceWarmingHold,
+} from "./warming-hold";
 
 const TAG = "tts-pipeline";
 
@@ -59,6 +65,12 @@ export interface PipelineVoiceConfig {
 	vllmTtsHost?: string;
 	/** FR-VOICE.22 (2026-09-25): 음성 재생 방식. 생략하면 "auto". */
 	voicePlaybackMode?: VoicePlaybackMode;
+	/**
+	 * gap-review-7 (2026-09-25) 구멍 2-1: 합성 조건 키(`buildSynthesisTargetKey`)
+	 * 에 섞이는 GPU 인덱스. 같은 호스트라도 GPU 가 바뀌면 RTF/warmed 캐시는
+	 * 무효다 — `src/lib/config.ts` 의 `localVoiceGpuIndex` 원본을 그대로 흘린다.
+	 */
+	localVoiceGpuIndex?: number;
 }
 
 /** The renderer surface the pipeline is allowed to touch (FR-VOICE.16). */
@@ -166,6 +178,10 @@ export function createSentenceTtsPipeline(
 	// 으로 시작한다 — 바지인으로는 리셋하지 않는다(엔진 warm 상태는 턴과
 	// 무관하다, LocalVoiceScheduler 의 admission tail 과 같은 이유).
 	const voicePlaybackRtfTracker = new VoicePlaybackRtfTracker();
+	// gap-review-7 (2026-09-25) 구멍 3-1: 초당 글자수(L 추정)를 세션 내 실측으로
+	// 보정한다 — 합성 조건(호스트/GPU)이 아니라 참조 음성의 말투 속성이므로
+	// 대상 키에 묶지 않는다. 파이프라인과 같은 수명(dispose 에서 리셋).
+	const sentenceRateCalibrator = new SentenceRateCalibrator();
 
 	function sendSentence(sentence: string): void {
 		// Preserve the original Markdown in chat, but send only natural speech
@@ -347,6 +363,11 @@ export function createSentenceTtsPipeline(
 		const streamQueue = deps.getQueue();
 		let playbackDecision: ReturnType<typeof decidePlaybackMethod> | null = null;
 		let pcmStream: PcmStreamSource | null = null;
+		// gap-review-7 구멍 2-1/3-1: synthesize() 안에서 계산해, 그 결과를 쓰는
+		// .then() 성공 핸들러(같은 클로저 밖, synthesize() 호출 이후)에서도
+		// 같은 값을 다시 쓴다 — 문장 사이 target 이 바뀌어도 이 문장 자신의
+		// RTF 기록은 자신이 합성될 때의 조건 키로 남아야 한다.
+		let synthesisTargetKey: string | null = null;
 		const synthesize = () => {
 			if (!activeRequests.has(reqId)) {
 				return Promise.reject(
@@ -355,15 +376,34 @@ export function createSentenceTtsPipeline(
 			}
 			deps.setOutputStage("tts");
 			synthesisStartedAt = performance.now();
-			const estimatedDurationSeconds = estimateSentenceDurationSeconds(clean);
-			// gap-review-6 (2026-09-25): note the CURRENT synthesis target
-			// (the local voice host address) before reading the tracked RTF.
-			// A host swap mid-session (config now points sendSentence's own
-			// requests at a different, unmeasured vllmTtsHost) must not let
-			// this sentence read the OLD host's RTF as if it still applied —
-			// that stale, likely-fast reading would decide "streaming, zero
-			// pre-roll" against a host that has never actually been timed.
-			voicePlaybackRtfTracker.noteTarget(voiceCfg?.vllmTtsHost ?? null);
+			// gap-review-7 (2026-09-25) 구멍 3-1: 세션 실측 평균(있으면)으로
+			// L 추정을 보정한다 — 초기 몇 문장은 고정 기본값(7자/초)으로
+			// 시작하고, 실측이 쌓이면 그 목소리의 실제 속도를 따른다.
+			const calibratedCharsPerSecond =
+				sentenceRateCalibrator.get() ?? DEFAULT_CHARS_PER_SECOND;
+			const estimatedDurationSeconds = estimateSentenceDurationSeconds(
+				clean,
+				calibratedCharsPerSecond,
+			);
+			// gap-review-6/7 (2026-09-25): note the CURRENT synthesis target
+			// (host + GPU + 엔진 기동 세대를 합친 합성 조건 키) before reading
+			// the tracked RTF. A host/GPU swap or 엔진 재기동 mid-session must
+			// not let this sentence read the OLD condition's RTF/warmed 상태를
+			// 그대로 믿게 — that stale, likely-fast reading would decide
+			// "streaming, zero pre-roll" against a target that has never
+			// actually been timed under its current condition.
+			synthesisTargetKey = buildSynthesisTargetKey(
+				voiceCfg?.vllmTtsHost ?? null,
+				voiceCfg?.localVoiceGpuIndex ?? null,
+				getVoiceEngineBootGeneration(),
+			);
+			voicePlaybackRtfTracker.noteTarget(synthesisTargetKey);
+			// gap-review-7 구멍 4-1: 같은 지점, 같은 키로 스케줄러의 `warmed`
+			// 도 무효화 여부를 판단한다 — 턴 경계(interrupt)가 아니라 합성
+			// 조건 변경만이 "엔진이 다시 몸풀어야 한다"는 신호다.
+			if (ttsProviderForCost === "naia-local-voice") {
+				localVoiceScheduler?.noteTarget(synthesisTargetKey);
+			}
 			playbackDecision =
 				ttsProviderForCost === "naia-local-voice"
 					? decidePlaybackMethod({
@@ -497,8 +537,11 @@ export function createSentenceTtsPipeline(
 					voicePlaybackRtfTracker.record(
 						elapsed,
 						duration ?? null,
-						voiceCfg?.vllmTtsHost ?? null,
+						synthesisTargetKey,
 					);
+					// gap-review-7 구멍 3-1: 이 문장의 실제 글자수/실제 길이로
+					// L 추정 보정치를 갱신 — 다음 문장부터 반영된다.
+					sentenceRateCalibrator.record(clean.trim().length, duration ?? null);
 					const verdict = localVoiceScheduler?.onSentenceResult(
 						localVoiceGeneration,
 						{ elapsedSeconds: elapsed, durationSeconds: duration ?? null },
@@ -686,6 +729,10 @@ export function createSentenceTtsPipeline(
 			// stale RTF measurement — this pipeline instance's `record()` calls
 			// are the only writer, so nothing else resets it.
 			voicePlaybackRtfTracker.reset();
+			// gap-review-7 구멍 3-1: 같은 이유로 세션 경계에서 L 추정 보정치도
+			// 리셋한다 — 새 세션은 다시 기본값(7자/초)에서 시작해 스스로
+			// 보정한다.
+			sentenceRateCalibrator.reset();
 		},
 		rearmLocalVoiceNotice(): void {
 			localVoiceUnavailableNoticed = false;

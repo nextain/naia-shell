@@ -493,6 +493,40 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		expect(pipeline.hasActiveRequests()).toBe(false);
 	});
 
+	it("gap-review-7 (2026-09-25) 구멍 6-2 (M19 변이 방지): 끼어들기(interrupt) 뒤 늦게 도착한 조각은 버려진 스트림에 쌓이지 않는다", async () => {
+		// M19: onPcmChunk 의 activeRequests 가드(sentence-pipeline.ts:422 부근)
+		// 를 지워도 기존 시험은 다 통과했다 — 끼어들기 뒤 도착하는 조각을
+		// 직접 흉내 내는 시험이 없었기 때문이다. 지금은 큐가 구독을 끊어
+		// 소리가 나진 않지만, 그 방어에만 기대면 나중에 구조가 바뀔 때
+		// 조용히 깨진다 — 파이프라인 자신도 늦은 조각을 막아야 한다.
+		// gap-review-7 검증 세션에서 tsc 가 `let x: T | null = null` +
+		// 클로저 대입 + `x?.()` 조합을 `never` 로 좁혀 TS2349 를 냈다 — 이
+		// 파일의 FR-VOICE.20(위)이 이미 쓰는 정의확정단언(`!`) 관용구로
+		// 맞춘다.
+		let capturedOnChunk!: (chunk: Int16Array, rate: number) => void;
+		synthesizeMock.mockImplementation(
+			(opts: any) =>
+				new Promise(() => {
+					// 절대 resolve/reject 하지 않는다 — 끼어들기로 버려지는
+					// 진행 중 요청을 흉내 낸다.
+					capturedOnChunk = opts.onPcmChunk;
+				}),
+		);
+		const { deps, queue } = makeStreamingDeps();
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("첫 문장.");
+		const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+		expect(capturedOnChunk).toBeTruthy();
+		capturedOnChunk(chunkOf(1, 2), 24_000);
+		expect(stream.chunks).toHaveLength(1); // 정상 조각은 쌓인다
+
+		pipeline.interrupt(); // activeRequests 를 비운다 — 이 reqId 는 더 이상 활성이 아니다.
+
+		// 끼어들기 뒤에 도착한 늦은 조각 — activeRequests 가드가 막아야 한다.
+		capturedOnChunk(chunkOf(9, 9, 9), 24_000);
+		expect(stream.chunks).toHaveLength(1); // 여전히 1개 — 늦은 조각이 안 쌓였다
+	});
+
 	it("FR-VOICE.20: the first chunk resumes playback before the sentence finishes", async () => {
 		const pausePlayback = vi.fn();
 		const resumePlayback = vi.fn();

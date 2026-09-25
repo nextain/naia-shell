@@ -38,9 +38,21 @@ export const BORDERLINE_RTF_CEILING = 1.3;
 /** pre-roll 계산의 안전 여유(초). 스케줄링 지터를 흡수한다. */
 export const DEFAULT_PREROLL_MARGIN_SECONDS = 0.3;
 
-/** 문장 길이 추정에 쓰는 기본 발화 속도(초당 글자 수). 정밀 측정값이 아니라
- * pre-roll 여유를 잡기 위한 근사치 — 실제 합성 시간과의 오차는 여유값이
- * 흡수한다. */
+/**
+ * gap-review-7 (2026-09-25) 구멍 3-1: 여유값의 두 번째 성분 — 문장 길이(L)
+ * 추정치 자체의 오차를 흡수하는 몫. 고정 0.3초만으로는 L 추정이 실제보다
+ * 짧을 때(느린 참조 음성, 숫자·약어가 풀려 읽히는 경우 등) 문장이 길수록
+ * 절대 오차도 커지는데 여유값은 그대로다 — 그래서 이 몫은 L 에 비례한다.
+ * 값 0.05(5%)는 초기값이다: SentenceRateCalibrator 가 세션 실측으로
+ * 초당 글자 수 자체를 보정하므로, 이 비례항은 "그래도 남는" 오차만 덮으면
+ * 된다고 보고 작게 잡았다 — 실제 기기에서 끊김이 남으면 루크 확인 후 올린다.
+ */
+export const DEFAULT_PREROLL_MARGIN_RELATIVE = 0.05;
+
+/** 문장 길이 추정에 쓰는 기본 발화 속도(초당 글자 수) — 아직 이 세션에서
+ * 실측치가 없을 때만 쓰는 폴백. 정밀 측정값이 아니라 pre-roll 여유를 잡기
+ * 위한 근사치다. gap-review-7 (3-1): 실측이 쌓이면 `SentenceRateCalibrator`
+ * 가 이 값을 대신한다 — 아래 참고. */
 export const DEFAULT_CHARS_PER_SECOND = 7;
 
 export interface PlaybackDecisionInput {
@@ -94,6 +106,12 @@ export interface PlaybackDecision {
  * 생겼다. r≤1 구간에도 공식을 그대로 적용하면(L×(r−1) 항이 음수가 되어 여유값을
  * 깎고, 0 이하로는 클램프) 연속된 값이 나온다 — 예: L=5, r=0.95 → 0.05s,
  * r=1.0 → 0.3s, r=1.0001 → ≈0.3s.
+ *
+ * gap-review-7 (2026-09-25) 구멍 3-1: 여유값이 이제 L 에 비례하는 몫을 포함한다
+ * — `marginSeconds + estimatedDurationSeconds × DEFAULT_PREROLL_MARGIN_RELATIVE`.
+ * L 추정 자체가 짧게 틀렸을 때(느린 참조 음성 등) 그 오차는 L 에 비례해 커지므로,
+ * 여유값도 L 에 비례해야 문장이 길어도 같은 비율로 안전하다. L 을 모르면(가드절)
+ * 비례항을 계산할 근거가 없으므로 고정 여유값만 돌려준다.
  */
 export function computePreRollSeconds(
 	estimatedDurationSeconds: number | null | undefined,
@@ -109,7 +127,9 @@ export function computePreRollSeconds(
 	) {
 		return Math.max(0, marginSeconds);
 	}
-	return Math.max(0, estimatedDurationSeconds * (rtf - 1) + marginSeconds);
+	const proportionalMargin =
+		marginSeconds + estimatedDurationSeconds * DEFAULT_PREROLL_MARGIN_RELATIVE;
+	return Math.max(0, estimatedDurationSeconds * (rtf - 1) + proportionalMargin);
 }
 
 /**
@@ -142,9 +162,20 @@ export function decidePlaybackMethod(
 	input: PlaybackDecisionInput,
 ): PlaybackDecision {
 	if (input.mode === "streaming")
+		// gap-review-7 (2026-09-25) 구멍 4-2: 예전엔 강제 스트리밍이 RTF 를 알아도
+		// 항상 preRollSeconds=0 이었다 — 요구 정의("실시간 방식 = max(0, L×(r−1)+
+		// 여유)만큼 쌓은 뒤 재생")와 어긋났고, RTF>1 기기에서 "스트리밍"을 고르면
+		// 매 문장이 끊겼다(M21 변이가 이 0 을 못박아 뒀었다). computePreRollSeconds
+		// 는 rtf/L 을 모르면 이미 여유값만 돌려주므로, 모를 때와 알 때를 가릴 필요
+		// 없이 항상 그대로 호출하면 된다. 설정 화면 "끊길 수 있다" 문구와 이 동작이
+		// 다르므로 루크 확인이 오면 조정한다.
 		return {
 			method: "streaming",
-			preRollSeconds: 0,
+			preRollSeconds: computePreRollSeconds(
+				input.estimatedDurationSeconds,
+				input.rtf,
+				input.marginSeconds,
+			),
 			reason: "user-forced-streaming",
 		};
 	if (input.mode === "sentence")
@@ -256,34 +287,48 @@ export function readRuntimeRealtimeHint(health: unknown): boolean | null {
 }
 
 /**
- * 세션(턴)에 걸쳐 마지막으로 측정한 RTF 를 기억하는 작은 상태 보관소.
- * "자동" 모드의 첫 문장은 RTF 를 모르므로 문장 방식으로 시작하고, 그 문장의
- * 실측 RTF 를 여기 기록해 다음 문장부터 스트리밍 여부를 다시 판정한다.
+ * gap-review-7 (2026-09-25) 구멍 2-1: 표본 몇 개를 기억할지. 표본 하나만 쓰면
+ * 턴의 첫 문장(재생 경합이 없어 낙관적)이 뒤 문장(이전 문장 재생 + NVA 렌더링과
+ * GPU 를 나눠 쓰며 더 느려짐)보다 빠르게 측정되기 쉽고, 마지막 값만 남기면 그
+ * 낙관적인 값이 그대로 다음 판정에 쓰인다. 최근 N 개를 보수적으로(최댓값) 묶으면
+ * 한 번이라도 느린 표본이 나왔을 때 그 사실을 몇 문장 더 기억한다.
+ */
+const RTF_SAMPLE_WINDOW = 5;
+
+/**
+ * 세션에 걸쳐 최근 측정한 RTF 표본들을 기억하는 작은 상태 보관소. "자동" 모드의
+ * 첫 문장은 RTF 를 모르므로 문장 방식으로 시작하고, 그 문장의 실측 RTF 를 여기
+ * 기록해 다음 문장부터 스트리밍 여부를 다시 판정한다.
+ *
+ * gap-review-7 구멍 2-1: 표본은 이제 "값 하나"가 아니라 "최근 N 개 중 최댓값"
+ * 이다(RTF_SAMPLE_WINDOW). 최댓값을 쓰는 이유는 안전 쪽으로 보수적이기
+ * 때문이다 — 최근에 한 번이라도 예상보다 느렸다면(경합, 콜드스타트 잔재 등)
+ * 그 사실을 몇 문장 더 반영해 pre-roll 을 넉넉히 잡는다.
  */
 export class VoicePlaybackRtfTracker {
-	private lastRtf: number | null = null;
+	private samples: number[] = [];
 	/**
-	 * gap-review-6 (2026-09-25): the synthesis target (e.g. the local voice
-	 * host address) `lastRtf` was actually measured against. `null` when no
-	 * target has been noted yet — distinct from "measured against a target
-	 * that happens to resolve to the empty/undefined value" only in that
-	 * both are treated as one bucket, which is fine since a config without a
-	 * host address can't distinguish targets anyway.
+	 * gap-review-6 (2026-09-25): the synthesis target `samples` was actually
+	 * measured against. `null` when no target has been noted yet.
+	 * gap-review-7 (2026-09-25) 구멍 2-1: 호출부(sentence-pipeline.ts)가 이제 이
+	 * 문자열에 호스트 주소뿐 아니라 GPU 번호와 엔진 기동 세대까지 합성해 넘긴다
+	 * (buildSynthesisTargetKey) — 이 클래스 입장에서는 여전히 "문자열이 달라지면
+	 * 무효화"만 하면 되므로 이 타입/로직은 그대로다.
 	 */
 	private lastTarget: string | null = null;
 
 	/**
 	 * gap-review-6: applies target-change invalidation shared by
 	 * `noteTarget()` and `record()` — a target swap (switching
-	 * `vllmTtsHost` mid-session, most concretely) means the OLD measurement
-	 * says nothing about how fast the NEW target actually is, so it must be
-	 * treated as "unknown" until the new target's own first sentence is
-	 * measured, not silently carried over.
+	 * `vllmTtsHost`/GPU/엔진 기동 세대 — gap-review-7) means the OLD
+	 * measurements say nothing about how fast the NEW target actually is, so
+	 * they must be treated as "unknown" until the new target's own sentences
+	 * are measured, not silently carried over.
 	 */
 	private applyTarget(target: string | null): void {
 		if (target !== this.lastTarget) {
 			this.lastTarget = target;
-			this.lastRtf = null;
+			this.samples = [];
 		}
 	}
 
@@ -299,8 +344,9 @@ export class VoicePlaybackRtfTracker {
 		this.applyTarget(target);
 	}
 
-	/** elapsedSeconds/durationSeconds 로 RTF 를 계산해 기록한다. 유효하지 않은
-	 * 측정(길이 0/음수, 유한하지 않음)은 무시한다 — 이전 값을 지우지 않는다.
+	/** elapsedSeconds/durationSeconds 로 RTF 를 계산해 표본에 더한다. 유효하지
+	 * 않은 측정(길이 0/음수, 유한하지 않음)은 무시한다 — 기존 표본을 지우지
+	 * 않는다. 창(RTF_SAMPLE_WINDOW)을 넘으면 가장 오래된 표본을 버린다.
 	 * gap-review-6: `target` 이 이전과 다르면(예: vllmTtsHost 변경) 기록 전에
 	 * "모름" 상태로 먼저 되돌린다 — 호출부가 target 을 안 넘기면(기본값 null)
 	 * 기존 동작(target 무관, 세션 내내 이어짐)과 동일하다. */
@@ -318,16 +364,73 @@ export class VoicePlaybackRtfTracker {
 			elapsedSeconds < 0
 		)
 			return;
-		this.lastRtf = elapsedSeconds / durationSeconds;
+		this.samples.push(elapsedSeconds / durationSeconds);
+		if (this.samples.length > RTF_SAMPLE_WINDOW) this.samples.shift();
 	}
 
+	/** gap-review-7 구멍 2-1: 최근 표본들 중 최댓값(보수적) — 표본이 없으면 null. */
 	get(): number | null {
-		return this.lastRtf;
+		return this.samples.length > 0 ? Math.max(...this.samples) : null;
 	}
 
 	/** 새 세션/바지인 — 엔진 상태가 이어질 이유가 없는 새 턴에서 호출한다. */
 	reset(): void {
-		this.lastRtf = null;
+		this.samples = [];
 		this.lastTarget = null;
+	}
+}
+
+/**
+ * gap-review-7 (2026-09-25) 구멍 2-1: RTF/warming 캐시를 무효화할 "합성 조건
+ * 묶음" 키. 호스트 주소 하나만 보면 다음이 새지 않는다 — 음성 카드(GPU) 를
+ * 바꿔도 호스트는 그대로고, 엔진이 재기동해도 주소는 그대로다. 세 값을 하나의
+ * 문자열로 합쳐 `VoicePlaybackRtfTracker.noteTarget`/`LocalVoiceScheduler.
+ * noteTarget` 에 공통으로 넘기면, 셋 중 하나라도 바뀔 때 두 캐시가 함께
+ * 무효화된다.
+ */
+export function buildSynthesisTargetKey(
+	host: string | null | undefined,
+	gpuIndex: number | null | undefined,
+	engineBootGeneration: number,
+): string {
+	return `${host ?? ""}|gpu=${gpuIndex ?? ""}|gen=${engineBootGeneration}`;
+}
+
+/**
+ * gap-review-7 (2026-09-25) 구멍 3-1: 문장 길이(L) 추정에 쓰는 초당 글자 수를
+ * 고정값(DEFAULT_CHARS_PER_SECOND) 대신 이 세션에서 실제로 관측한
+ * (글자 수, 합성 오디오 길이) 쌍으로 보정한다. 참조 음성이 느리거나 숫자·약어가
+ * 풀려 읽히면 고정값과 실제 발화 속도가 크게 벌어질 수 있다 — 세션이 진행될
+ * 수록 이 보정이 그 문장차를 흡수한다. 표본이 아직 없으면(세션 첫 문장 등)
+ * `get()` 이 null 을 돌려주고, 호출부는 DEFAULT_CHARS_PER_SECOND 로 폴백한다.
+ *
+ * 창 없이 누적 평균을 쓴다 — RTF 와 달리 발화 속도는 하드웨어 경합으로 급변하는
+ * 값이 아니라 "이 참조 음성이 대략 얼마나 빨리 말하는가"에 가깝고, 표본이
+ * 많을수록 더 정확해지는 값이라 최근 것만 우대할 이유가 약하다.
+ */
+export class SentenceRateCalibrator {
+	private totalChars = 0;
+	private totalSeconds = 0;
+
+	record(charLength: number, durationSeconds: number | null | undefined): void {
+		if (
+			charLength <= 0 ||
+			durationSeconds == null ||
+			!Number.isFinite(durationSeconds) ||
+			durationSeconds <= 0
+		)
+			return;
+		this.totalChars += charLength;
+		this.totalSeconds += durationSeconds;
+	}
+
+	/** 보정된 초당 글자 수, 또는 표본이 아직 없으면 null. */
+	get(): number | null {
+		return this.totalSeconds > 0 ? this.totalChars / this.totalSeconds : null;
+	}
+
+	reset(): void {
+		this.totalChars = 0;
+		this.totalSeconds = 0;
 	}
 }

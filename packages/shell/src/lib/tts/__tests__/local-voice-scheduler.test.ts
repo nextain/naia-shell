@@ -234,7 +234,7 @@ describe("LocalVoiceScheduler (FR-VOICE.16 Phase 2a — FR-VOICE.11/12/19 semant
 
 	/**
 	 * Device e2e follows merge on win-rtx4060.
- * #621: on RTF>1 streaming-host hardware the first chunk arrives before the
+	 * #621: on RTF>1 streaming-host hardware the first chunk arrives before the
 	 * per-sentence RTF verdict. A slow first chunk must open the warming hold
 	 * (not resume a starved cold queue) so complete-then-play remains reachable.
 	 */
@@ -317,5 +317,60 @@ describe("LocalVoiceScheduler (FR-VOICE.16 Phase 2a — FR-VOICE.11/12/19 semant
 		});
 		expect(resumePlayback).toHaveBeenCalledTimes(1);
 		expect(setWarmingVisible).toHaveBeenLastCalledWith(false);
+	});
+
+	it("gap-review-7 (2026-09-25) 구멍 4-1(최우선): interrupt()(턴/새 대화/슬라이드 페이지 경계)는 warmed 를 지우지 않는다 — 같은 합성 대상이면 다음 턴도 엔진이 이미 몸풀렸다고 믿는다", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		// 턴 1: 실시간 결과로 warmed=true 확정.
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		scheduler.onSentenceResult(scheduler.generation, {
+			elapsedSeconds: 1,
+			durationSeconds: 2,
+		});
+		// 바지인/새 턴 — 예전 동작이면 여기서 warmed 가 지워졌다.
+		scheduler.interrupt();
+		// 턴 2: 같은 대상, 느린 첫 조각(4s>1s) — 예전 동작이면 콜드로 오판해
+		// "음성 모델 준비 중" 대기 장치를 다시 연다. 이제는 warmed 가 살아
+		// 있어 열지 않고, 즉시 재생을 푼다.
+		scheduler.noteSentence(0);
+		scheduler.onFirstChunk(scheduler.generation, 4);
+		expect(setWarmingVisible).not.toHaveBeenCalledWith(true);
+		expect(resumePlayback).toHaveBeenCalled();
+	});
+
+	it("구멍 4-1/2-1: noteTarget 으로 합성 대상이 바뀌면 warmed 가 무효화되어 대기 장치가 다시 열릴 수 있다", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		scheduler.onSentenceResult(scheduler.generation, {
+			elapsedSeconds: 1,
+			durationSeconds: 2,
+		});
+		scheduler.interrupt();
+		// 엔진 재기동/GPU 변경/호스트 교체 — 합성 조건 키가 바뀐다.
+		scheduler.noteTarget("host-b|gpu=0|gen=1");
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		scheduler.onFirstChunk(scheduler.generation, 4);
+		expect(setWarmingVisible).toHaveBeenCalledWith(true);
+		expect(resumePlayback).not.toHaveBeenCalled();
+	});
+
+	it("구멍 4-1: 같은 합성 대상으로 다시 noteTarget 을 불러도 warmed 를 지우지 않는다", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		scheduler.noteTarget("host|gpu=0|gen=0");
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		scheduler.onSentenceResult(scheduler.generation, {
+			elapsedSeconds: 1,
+			durationSeconds: 2,
+		});
+		scheduler.interrupt();
+		scheduler.noteTarget("host|gpu=0|gen=0"); // 같은 키 — 그대로 유지
+		scheduler.noteSentence(0);
+		scheduler.onFirstChunk(scheduler.generation, 4);
+		expect(setWarmingVisible).not.toHaveBeenCalledWith(true);
+		expect(resumePlayback).toHaveBeenCalled();
 	});
 });

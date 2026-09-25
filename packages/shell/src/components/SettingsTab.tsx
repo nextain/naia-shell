@@ -5320,11 +5320,14 @@ export function SettingsTab() {
 										if (!existing) return;
 										saveConfig({
 											...existing,
-											voicePlaybackMode: event.target.value as VoicePlaybackMode,
+											voicePlaybackMode: event.target
+												.value as VoicePlaybackMode,
 										});
 									}}
 								>
-									<option value="auto">{t("settings.voicePlaybackModeAuto")}</option>
+									<option value="auto">
+										{t("settings.voicePlaybackModeAuto")}
+									</option>
 									<option value="streaming">
 										{t("settings.voicePlaybackModeStreaming")}
 									</option>
