@@ -330,7 +330,8 @@ describe("PrebakedAvatarRenderer", () => {
 
 			renderer.start(video, canvas);
 			expect(rafCallbacks.length).toBeGreaterThan(0);
-			rafCallbacks[0]!(100);
+			const [firstFrame] = rafCallbacks;
+			firstFrame?.(100);
 
 			// Direct draw to mockCtx
 			expect(mockCtx.drawImage).toHaveBeenCalledWith(video, 0, 0, 100, 100);
@@ -385,7 +386,8 @@ describe("PrebakedAvatarRenderer", () => {
 
 			renderer.start(video, canvas);
 			expect(rafCallbacks.length).toBeGreaterThan(0);
-			rafCallbacks[0]!(2000);
+			const [firstFrame] = rafCallbacks;
+			firstFrame?.(2000);
 
 			// Offscreen received the video draw
 			expect(mockOffscreenCtx.drawImage).toHaveBeenCalledWith(
