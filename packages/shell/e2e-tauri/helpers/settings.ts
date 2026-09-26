@@ -385,55 +385,87 @@ export async function ensureAppReady(): Promise<void> {
 		// An explicit ADK is prepared by the caller. Its config.json is the source
 		// of truth; do not write a legacy localStorage config or refresh over it.
 		const expectedAdkPath = normalizeAdkPath(explicitAdkPath);
-		await browser.waitUntil(
-			async () => {
-				const state = await browser.execute(() => {
-					const selectedPath = localStorage.getItem("naia-adk-path") ?? "";
-					const raw = localStorage.getItem("naia-config");
-					if (!raw) return { selectedPath, ready: false };
-					try {
-						const config = JSON.parse(raw) as {
-							onboardingComplete?: unknown;
-							llmRoles?: {
-								main?: {
-									provider?: unknown;
-									model?: unknown;
+		// 시간 초과 때 어느 조건이 모자랐는지 보이도록 마지막 관측값을 남긴다.
+		let lastObserved = "(관측 전)";
+		try {
+			await browser.waitUntil(
+				async () => {
+					lastObserved = await browser.execute(() => {
+						const raw = localStorage.getItem("naia-config");
+						let summary = "config=없음";
+						if (raw) {
+							try {
+								const c = JSON.parse(raw) as {
+									onboardingComplete?: unknown;
+									locale?: unknown;
+									llmRoles?: { main?: { provider?: unknown; model?: unknown } };
+								};
+								summary =
+									`onboardingComplete=${String(c.onboardingComplete)}, ` +
+									`locale=${String(c.locale)}, ` +
+									`main=${String(c.llmRoles?.main?.provider)}/${String(c.llmRoles?.main?.model)}`;
+							} catch {
+								summary = "config=파싱 실패";
+							}
+						}
+						return (
+							`adkPath=${localStorage.getItem("naia-adk-path") ?? "unset"}, ${summary}, ` +
+							`setup=${!!document.querySelector(".adk-setup-screen")}, ` +
+							`onboarding=${!!document.querySelector('[data-testid="onboarding"]')}, ` +
+							`splash=${!!document.querySelector(".splash-ring")}`
+						);
+					});
+					const state = await browser.execute(() => {
+						const selectedPath = localStorage.getItem("naia-adk-path") ?? "";
+						const raw = localStorage.getItem("naia-config");
+						if (!raw) return { selectedPath, ready: false };
+						try {
+							const config = JSON.parse(raw) as {
+								onboardingComplete?: unknown;
+								llmRoles?: {
+									main?: {
+										provider?: unknown;
+										model?: unknown;
+									};
 								};
 							};
-						};
-						const main = config.llmRoles?.main;
-						return {
-							selectedPath,
-							ready:
-								config.onboardingComplete === true &&
-								typeof main?.provider === "string" &&
-								main.provider.length > 0 &&
-								typeof main.model === "string" &&
-								main.model.length > 0,
-						};
-					} catch {
-						return { selectedPath, ready: false };
+							const main = config.llmRoles?.main;
+							return {
+								selectedPath,
+								ready:
+									config.onboardingComplete === true &&
+									typeof main?.provider === "string" &&
+									main.provider.length > 0 &&
+									typeof main.model === "string" &&
+									main.model.length > 0,
+							};
+						} catch {
+							return { selectedPath, ready: false };
+						}
+					});
+					const selectedPath = String(state.selectedPath ?? "");
+					if (
+						selectedPath &&
+						normalizeAdkPath(selectedPath) !== expectedAdkPath
+					) {
+						throw new Error(
+							`selected ADK path mismatch: expected ${explicitAdkPath}, got ${selectedPath}`,
+						);
 					}
-				});
-				const selectedPath = String(state.selectedPath ?? "");
-				if (
-					selectedPath &&
-					normalizeAdkPath(selectedPath) !== expectedAdkPath
-				) {
-					throw new Error(
-						`selected ADK path mismatch: expected ${explicitAdkPath}, got ${selectedPath}`,
+					return (
+						normalizeAdkPath(selectedPath) === expectedAdkPath &&
+						state.ready === true
 					);
-				}
-				return (
-					normalizeAdkPath(selectedPath) === expectedAdkPath &&
-					state.ready === true
-				);
-			},
-			{
-				timeout: 60_000,
-				timeoutMsg: `explicit ADK did not hydrate: ${explicitAdkPath} (selected path, onboarding, and main provider/model are required)`,
-			},
-		);
+				},
+				{ timeout: 60_000 },
+			);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			if (reason.startsWith("selected ADK path mismatch")) throw error;
+			throw new Error(
+				`explicit ADK did not hydrate: ${explicitAdkPath} (selected path, onboarding, and main provider/model are required); last: ${lastObserved}`,
+			);
+		}
 		await waitForAppReadySurface();
 		return;
 	}

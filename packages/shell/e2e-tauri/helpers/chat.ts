@@ -571,7 +571,8 @@ async function waitForChatIdle(timeoutMs = 30_000): Promise<void> {
 
 /**
  * Send a message in the chat input and wait for the assistant to finish responding.
- * Retries once if the upstream provider stream was terminated transiently.
+ * Retries once if the upstream provider stream was terminated or went idle
+ * transiently (transport failures, not model behavior).
  */
 export async function sendMessage(
 	text: string,
@@ -581,9 +582,12 @@ export async function sendMessage(
 		await sendMessageOnce(text, options);
 	} catch (err) {
 		const errorText = err instanceof Error ? err.message : String(err);
-		if (errorText.includes("provider error: terminated")) {
+		if (
+			errorText.includes("provider error: terminated") ||
+			/provider error: .*stream idle for \d+ms/.test(errorText)
+		) {
 			console.log(
-				`[e2e] transient provider termination — retrying once: ${text}`,
+				`[e2e] transient provider stream failure — retrying once: ${text}`,
 			);
 			await waitForChatIdle(30_000);
 			await sendMessageOnce(text, options);

@@ -135,17 +135,41 @@ describe("09 — Onboarding Wizard", () => {
 		expect(step).toBe("complete");
 		await clickNext();
 
-		await browser.waitUntil(
-			async () =>
-				browser.execute(
-					(sel: string) => !document.querySelector(sel),
-					S.onboardingOverlay,
-				),
-			{
-				timeout: 30_000,
-				timeoutMsg: "Onboarding did not close after the start button",
-			},
-		);
+		// 완료는 설정 저장·잔액 조회까지 기다린 뒤 닫힌다. 실패하면 마법사가
+		// 이유를 completion-error 로 띄우므로 시간 초과 문구에 그 글을 싣는다.
+		let completionError = "";
+		let startButton = "";
+		try {
+			await browser.waitUntil(
+				async () => {
+					const state = await browser.execute(
+						(sel: string, btn: string) => {
+							const button = document.querySelector(btn) as HTMLButtonElement | null;
+							return {
+								open: !!document.querySelector(sel),
+								error:
+									document.querySelector(".onboarding-step__completion-error")
+										?.textContent ?? "",
+								// 완료 중이면 버튼이 꺼지고 "적용 중" 글로 바뀐다.
+								button: button
+									? `${button.disabled ? "disabled" : "enabled"} "${button.textContent ?? ""}"`
+									: "none",
+							};
+						},
+						S.onboardingOverlay,
+						S.onboardingNextBtn,
+					);
+					completionError = state.error;
+					startButton = state.button;
+					return !state.open;
+				},
+				{ timeout: 30_000 },
+			);
+		} catch {
+			throw new Error(
+				`Onboarding did not close after the start button (button=${startButton})${completionError ? ` — ${completionError}` : ""}`,
+			);
+		}
 
 		const config = await browser.execute(() => {
 			const raw = localStorage.getItem("naia-config");

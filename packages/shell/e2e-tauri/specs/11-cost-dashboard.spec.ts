@@ -106,15 +106,29 @@ describe("11 — Cost Dashboard", () => {
 				payload: { naiaKey: key, naiaUserId: "e2e-cost-dashboard" },
 			});
 		}, naiaKey);
-		await browser.waitUntil(
-			() =>
-				browser.execute(
-					() =>
-						(window as unknown as { __naiaE2eAuthReady?: boolean })
-							.__naiaE2eAuthReady === true,
-				),
-			{ timeout: 30_000, timeoutMsg: "Settings did not finish the Naia login callback" },
-		);
+		// 콜백이 실패하면 설정이 이유를 .settings-error 로 띄운다. 시간 초과 문구에 싣는다.
+		let settingsError = "";
+		try {
+			await browser.waitUntil(
+				async () => {
+					const state = await browser.execute(() => ({
+						ready:
+							(window as unknown as { __naiaE2eAuthReady?: boolean })
+								.__naiaE2eAuthReady === true,
+						error:
+							document.querySelector('.settings-error[role="alert"]')
+								?.textContent ?? "",
+					}));
+					settingsError = state.error;
+					return state.ready;
+				},
+				{ timeout: 30_000 },
+			);
+		} catch {
+			throw new Error(
+				`Settings did not finish the Naia login callback${settingsError ? ` — ${settingsError}` : ""}`,
+			);
+		}
 
 		// Back to chat and re-open the dashboard with the stored key
 		await browser.execute((sel: string) => {

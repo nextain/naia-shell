@@ -15,6 +15,7 @@ export function interactiveLaunchEnv(source = process.env, mode = "dev") {
 			key === "CAFE_DEBUG_E2E" ||
 			key === "TAURI_WEBDRIVER_PORT" ||
 			key === "WEBVIEW2_USER_DATA_FOLDER" ||
+			key === "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS" ||
 			key.startsWith("NAIA_E2E_") ||
 			key.startsWith("VITE_NAIA_E2E_")
 		) {

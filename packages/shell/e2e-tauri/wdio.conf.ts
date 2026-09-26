@@ -187,6 +187,17 @@ if (IS_WINDOWS) {
 	process.env.APPDATA = resolve(appDataRoot, "roaming");
 	process.env.LOCALAPPDATA = resolve(appDataRoot, "local");
 	process.env.WEBVIEW2_USER_DATA_FOLDER = E2E_PROFILE_DIR;
+	// WebView2 는 마이크 요청마다 권한 창을 띄운다. 무인 실행에는 누를 사람이
+	// 없어 85 가 `NotAllowedError` 로 실패했다(2026-09-26 win-rtx4060, 사람이
+	// 허용을 누른 단독 실행만 통과). 카메라·마이크 요청만 자동 수락하고 실제
+	// 장치는 그대로 쓴다(화면 캡처 권한까지 건드리는 fake-ui 스위치는 쓰지 않는다).
+	// 이 변수는 앱의 인자를 대신하므로 wry 기본 인자(wry 0.55 webview2/mod.rs)를
+	// 함께 싣는다.
+	process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = [
+		"--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+		"--autoplay-policy=no-user-gesture-required",
+		"--auto-accept-camera-and-microphone-capture",
+	].join(" ");
 }
 
 // ── 자격증명 등급의 살아 있는 기본 공급자 (#547) ──────────────────────────────
