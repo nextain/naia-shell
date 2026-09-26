@@ -10,12 +10,31 @@ import { S } from "./selectors.js";
 export async function safeRefresh(maxAttempts = 3): Promise<void> {
 	for (let attempt = 0; attempt < maxAttempts; attempt++) {
 		try {
+			// execute 안에서 바로 reload 하면 문맥이 사라져 매번 30초 스크립트
+			// 타임아웃을 먹는다 — 다음 틱으로 미루고, 표식이 사라져야 새 문서다.
 			await browser
 				.execute(() => {
-					window.location.reload();
+					(window as unknown as { __naiaReloadMark?: number }).__naiaReloadMark = 1;
+					setTimeout(() => {
+						window.location.reload();
+					}, 0);
 				})
 				.catch(() => {});
-			await browser.pause(800); // reload 네비게이션 시작 여유
+			await browser.waitUntil(
+				async () => {
+					try {
+						const mark = await browser.execute(
+							() =>
+								(window as unknown as { __naiaReloadMark?: number })
+									.__naiaReloadMark ?? null,
+						);
+						return mark === null;
+					} catch {
+						return false; // 내비게이션 중 — 아직 새 문서가 아니다
+					}
+				},
+				{ timeout: 30_000, interval: 200, timeoutMsg: "reload did not replace the document" },
+			);
 			const appRoot = await $(S.appRoot);
 			await appRoot.waitForExist({ timeout: 30_000 });
 			return;

@@ -99,6 +99,7 @@
 			"conf": [],
 			"env": [
 				"NAIA_API_KEY",
+				"NAIA_E2E_ADK_PATH",
 				"NAIA_E2E_ARTIFACTS_DIR",
 				"NAIA_E2E_COST_LEDGER"
 			],
@@ -650,6 +651,8 @@
 			"spec": "99-store-certification.spec.ts",
 			"conf": [],
 			"env": [
+				"NAIA_API_KEY",
+				"NAIA_E2E_ADK_PATH",
 				"NAIA_E2E_ARTIFACTS_DIR"
 			],
 			"tier": "credentialed_live"

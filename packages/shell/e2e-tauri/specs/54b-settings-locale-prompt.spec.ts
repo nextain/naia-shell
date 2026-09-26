@@ -198,9 +198,9 @@ describe("54 — Locale affects system prompt config", () => {
 	});
 });
 
-// ── Onboarding: speechStyle step locale-aware skip ──
+// ── Onboarding: speechStyle step is shown in every locale ──
 
-describe("54b — Onboarding speechStyle step skip by locale", () => {
+describe("54b — Onboarding speechStyle step in every locale", () => {
 	/**
 	 * 그 locale 로 온보딩을 처음 상태에서 시작한다.
 	 *
@@ -243,10 +243,10 @@ describe("54b — Onboarding speechStyle step skip by locale", () => {
 	/**
 	 * welcome → agentName → userName 을 지난 다음 단계를 돌려준다.
 	 *
-	 * 지금 순서에서 말투(speechStyle)는 사용자 이름 바로 뒤다. 존댓말이 없는
-	 * 로케일이면 그 단계를 건너뛰어 곧장 character 가 나온다. 예전 판정은 공급자
-	 * 카드·API 키 단계를 먼저 지나고 디스코드 버튼으로 완료를 추정했는데, 그 화면은
-	 * #447·#602 로 사라졌다. 이제는 단계 표지(data-step)를 그대로 읽는다.
+	 * 온보딩 마법사에서는 말투(speechStyle) 단계에서 formal/casual 뿐 아니라
+	 * 추가 페르소나 및 호칭도 설정하므로, 모든 로케일에서 speechStyle 단계를
+	 * 표시한다 (OnboardingWizard의 STEPS_WITHOUT_NAIA). 단계 표지(data-step)를
+	 * 그대로 읽는다.
 	 */
 	async function stepAfterUserName(): Promise<string> {
 		const overlay = await $(S.onboardingOverlay);
@@ -283,17 +283,8 @@ describe("54b — Onboarding speechStyle step skip by locale", () => {
 		await browser.pause(2000);
 	});
 
-	// Non-formality locales: speechStyle step should be SKIPPED → land on character
-	for (const locale of NON_FORMALITY_LOCALES) {
-		it(`onboarding skips speechStyle for '${locale}'`, async () => {
-			await setupOnboarding(locale);
-			const step = await stepAfterUserName();
-			expect(step).toBe("character");
-		});
-	}
-
-	// Formality locales: speechStyle step should be SHOWN
-	for (const locale of FORMALITY_LOCALES) {
+	// In onboarding, speechStyle step is shown for all locales (casual/formal & persona setup)
+	for (const locale of [...FORMALITY_LOCALES, ...NON_FORMALITY_LOCALES]) {
 		it(`onboarding shows speechStyle for '${locale}'`, async () => {
 			await setupOnboarding(locale);
 			const step = await stepAfterUserName();

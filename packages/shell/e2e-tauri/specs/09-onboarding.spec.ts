@@ -4,8 +4,8 @@ import { resetOnboarding } from "../helpers/settings.js";
 /**
  * 09 — 온보딩 마법사를 처음부터 끝까지 지난다.
  *
- * 지금의 순서: welcome → agentName → userName → speechStyle(로케일에 따라
- * 건너뜀) → character → background → provider → voice → complete.
+ * 지금의 순서: welcome → agentName → userName → speechStyle(모든 로케일)
+ * → character → background → provider → voice → complete.
  *
  * 예전 스펙은 공급자 카드와 API 키 입력, 웹훅 단계를 지났다. #447 이 키 입력을
  * 온보딩 밖으로 옮기고 #589·#602 가 타사 직결 공급자를 없애면서 그 화면은
