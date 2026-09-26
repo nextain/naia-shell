@@ -71,6 +71,9 @@ describe("스펙의 운영체제", () => {
 			"95-voice-linux-shell.spec.ts",
 			"96-voice-linux-app-start.spec.ts",
 			"99-stt-mic-test.spec.ts",
+			// #721: 브라우저 호스트 두 스펙은 리눅스 호스트 전용으로 표시됐다.
+			"env-tool-browser-host-fullstack.spec.ts",
+			"env-tool-browser-host-lifecycle.spec.ts",
 		]);
 		for (const spec of linuxOnly) expect(spec.platforms).toEqual(["linux"]);
 	});
