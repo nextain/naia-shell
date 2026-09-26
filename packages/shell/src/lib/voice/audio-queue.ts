@@ -88,6 +88,9 @@ export class AudioQueue implements VoiceLevelSource {
 	private queue: AudioQueueItem[] = [];
 	/** Reads the level of the item playing now (null = cannot measure, e.g. MP3). */
 	private levelReader: (() => number | null) | null = null;
+	/** Reads the level offsetSec ahead of playback (null = cannot measure or unbuffered). */
+	private levelAheadReader: ((offsetSec: number) => number | null) | null =
+		null;
 	/** Envelope of streamed PCM chunks on the shared AudioContext clock. */
 	private streamLevels = new VoiceLevelTimeline();
 	private current: HTMLAudioElement | null = null;
@@ -97,6 +100,18 @@ export class AudioQueue implements VoiceLevelSource {
 	private playbackPaused = false;
 	private generation = 0;
 	private callbacks: AudioQueueCallbacks;
+	private streamEnvelopeCache = new WeakMap<
+		PcmStreamSource,
+		{ chunkCount: number; envelope: Float32Array; durationSec: number }
+	>();
+	private wavItemCache = new WeakMap<
+		AudioQueueItem,
+		{ envelope: Float32Array; durationSec: number } | null
+	>();
+	private streamWholeAudioCache = new WeakMap<
+		PcmStreamSource,
+		{ envelope: Float32Array; durationSec: number } | null
+	>();
 
 	// Ordered enqueue: buffer out-of-order items until their turn.
 	// A `null` value marks a reserved slot whose synthesis failed / fell back —
@@ -284,6 +299,9 @@ export class AudioQueue implements VoiceLevelSource {
 			}
 		}
 		this.streamSources.clear();
+		this.streamEnvelopeCache = new WeakMap();
+		this.wavItemCache = new WeakMap();
+		this.streamWholeAudioCache = new WeakMap();
 		this.stopLevel();
 		if (this.playing) {
 			this.playing = false;
@@ -296,13 +314,23 @@ export class AudioQueue implements VoiceLevelSource {
 		return this.levelReader ? this.levelReader() : null;
 	}
 
-	private startLevel(reader: () => number | null): void {
+	/** RMS of the audio offsetSec ahead of playback, or null when unknown. */
+	voiceLevelAhead(offsetSec: number): number | null {
+		return this.levelAheadReader ? this.levelAheadReader(offsetSec) : null;
+	}
+
+	private startLevel(
+		reader: () => number | null,
+		aheadReader?: (offsetSec: number) => number | null,
+	): void {
 		this.levelReader = reader;
+		this.levelAheadReader = aheadReader ?? null;
 		setActiveVoiceLevelSource(this);
 	}
 
 	private stopLevel(): void {
 		this.levelReader = null;
+		this.levelAheadReader = null;
 		this.streamLevels.clear();
 		releaseVoiceLevelSource(this);
 	}
@@ -315,6 +343,169 @@ export class AudioQueue implements VoiceLevelSource {
 	/** Destroy the queue and release resources. */
 	destroy(): void {
 		this.clear();
+	}
+
+	private getStreamEnvelope(stream: PcmStreamSource): {
+		chunkCount: number;
+		envelope: Float32Array;
+		durationSec: number;
+	} {
+		const cached = this.streamEnvelopeCache.get(stream);
+		if (cached && cached.chunkCount === stream.chunks.length) {
+			return cached;
+		}
+
+		let totalSamples = 0;
+		for (const chunk of stream.chunks) {
+			totalSamples += chunk.length;
+		}
+
+		const samples = new Int16Array(totalSamples);
+		let offset = 0;
+		for (const chunk of stream.chunks) {
+			samples.set(chunk, offset);
+			offset += chunk.length;
+		}
+
+		const envelope = rmsEnvelope(
+			samples,
+			stream.sampleRate,
+			VOICE_LEVEL_WINDOW_SEC,
+			1 / 0x8000,
+		);
+		const durationSec =
+			stream.sampleRate > 0 ? totalSamples / stream.sampleRate : 0;
+
+		const result = {
+			chunkCount: stream.chunks.length,
+			envelope,
+			durationSec,
+		};
+		this.streamEnvelopeCache.set(stream, result);
+		return result;
+	}
+
+	private getItemWavEnvelope(
+		item: AudioQueueItem,
+		audioBase64: string,
+	): { envelope: Float32Array; durationSec: number } | null {
+		const cached = this.wavItemCache.get(item);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const envelope = wavEnvelope(audioBase64);
+		if (!envelope) {
+			this.wavItemCache.set(item, null);
+			return null;
+		}
+		const durationSec = envelope.length * VOICE_LEVEL_WINDOW_SEC;
+		const result = { envelope, durationSec };
+		this.wavItemCache.set(item, result);
+		return result;
+	}
+
+	private getStreamWholeAudioEnvelope(stream: PcmStreamSource): {
+		envelope: Float32Array;
+		durationSec: number;
+	} | null {
+		const cached = this.streamWholeAudioCache.get(stream);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const audioBase64 = stream.wholeAudioBase64;
+		if (!audioBase64 || !audioBase64.startsWith("UklGR")) {
+			this.streamWholeAudioCache.set(stream, null);
+			return null;
+		}
+		const envelope = wavEnvelope(audioBase64);
+		if (!envelope) {
+			this.streamWholeAudioCache.set(stream, null);
+			return null;
+		}
+		const durationSec = envelope.length * VOICE_LEVEL_WINDOW_SEC;
+		const result = { envelope, durationSec };
+		this.streamWholeAudioCache.set(stream, result);
+		return result;
+	}
+
+	/**
+	 * 다음 대기열 항목으로 이어 봄, 이유(문장 사이 쉼에서 입 닫힘 증가).
+	 * 현재 항목 끝을 넘는 앞보기는 대기열의 다음 항목들로 이어서 답한다.
+	 */
+	private lookaheadQueue(overSec: number): number | null {
+		let over = overSec;
+		for (const item of this.queue) {
+			if (item.stream) {
+				const stream = item.stream;
+				if (stream.chunks.length > 0) {
+					const cached = this.getStreamEnvelope(stream);
+					if (over < cached.durationSec) {
+						const index = Math.floor(over / VOICE_LEVEL_WINDOW_SEC);
+						return index >= 0 && index < cached.envelope.length
+							? cached.envelope[index]
+							: 0;
+					}
+					if (!stream.ended) {
+						return null;
+					}
+					// chunks 가 있고 ended 이면 wholeAudioBase64 는 무시하고 PCM 초 길이를 빼고 다음 항목으로
+					over -= cached.durationSec;
+					continue;
+				}
+
+				// chunks 가 비어 있는 경우
+				if (!stream.ended) {
+					return null;
+				}
+
+				// stream.ended === true
+				if (stream.wholeAudioBase64) {
+					// ended 이고 chunks 가 비어 있고 wholeAudioBase64 가 있으면 WAV 항목과 같은 봉투 판정
+					// (wavEnvelope 가 null 이면 null 을 돌려주고 뒤 항목으로 넘어가지 않음)
+					const cached = this.getStreamWholeAudioEnvelope(stream);
+					if (!cached) {
+						return null;
+					}
+					if (over < cached.durationSec) {
+						const index = Math.floor(over / VOICE_LEVEL_WINDOW_SEC);
+						return index >= 0 && index < cached.envelope.length
+							? cached.envelope[index]
+							: 0;
+					}
+					over -= cached.durationSec;
+					continue;
+				}
+
+				// ended 이고 둘 다 없으면(재생 안 되는 빈 문장) 길이 0 으로 보고 다음 항목으로
+				continue;
+			}
+
+			// WAV 또는 MP3 등 일반 오디오 항목
+			const audioBase64 = item.audioBase64 ?? "";
+			if (audioBase64.startsWith("UklGR")) {
+				const cached = this.getItemWavEnvelope(item, audioBase64);
+				if (!cached) {
+					return null;
+				}
+				if (over < cached.durationSec) {
+					const index = Math.floor(over / VOICE_LEVEL_WINDOW_SEC);
+					return index >= 0 && index < cached.envelope.length
+						? cached.envelope[index]
+						: 0;
+				}
+				over -= cached.durationSec;
+				continue;
+			}
+
+			// MP3 등 봉투를 모르는 항목: null
+			return null;
+		}
+
+		// 대기열이 끝났을 때: 예약만 되고 아직 대기열에 안 들어온 문장이 있으면 null, 없으면 0
+		if (this.nextExpectedSeq > this.flushCursor) {
+			return null;
+		}
+		return 0;
 	}
 
 	/** Play a streaming PCM item: schedule chunks back-to-back as they arrive. */
@@ -372,7 +563,18 @@ export class AudioQueue implements VoiceLevelSource {
 				};
 				if (!started) {
 					started = true;
-					this.startLevel(() => this.streamLevels.levelAt(ctx.currentTime));
+					this.startLevel(
+						() => this.streamLevels.levelAt(ctx.currentTime),
+						(offsetSec: number) => {
+							const time = ctx.currentTime + offsetSec;
+							if (time > nextStart) {
+								if (!stream.ended) return null;
+								// 다음 대기열 항목으로 이어 봄, 이유(문장 사이 쉼에서 입 닫힘 증가)
+								return this.lookaheadQueue(time - nextStart);
+							}
+							return this.streamLevels.peekLevelAt(time) ?? 0;
+						},
+					);
 					Logger.debug("AudioQueue", "playStream:first chunk scheduled", {
 						at: Number(at.toFixed(3)),
 						now: Number(now.toFixed(3)),
@@ -438,6 +640,8 @@ export class AudioQueue implements VoiceLevelSource {
 			this.callbacks.onPlaybackEnd?.();
 			return;
 		}
+		// 꺼낸 항목이 시작하기 전에는 앞 항목 클로저가 대기열에서 빠진 이 항목을 못 보므로 모름
+		this.levelAheadReader = () => null;
 		const generation = this.generation;
 		const wasPlaying = this.playing;
 		this.playing = true;
@@ -482,13 +686,26 @@ export class AudioQueue implements VoiceLevelSource {
 			if (!isCurrent()) return;
 			started = true;
 			const envelope = isWav ? wavEnvelope(mp3Base64) : null;
-			this.startLevel(() => {
-				if (!envelope) return null;
-				const index = Math.floor(
-					(audio.currentTime || 0) / VOICE_LEVEL_WINDOW_SEC,
-				);
-				return index >= 0 && index < envelope.length ? envelope[index] : 0;
-			});
+			this.startLevel(
+				() => {
+					if (!envelope) return null;
+					const index = Math.floor(
+						(audio.currentTime || 0) / VOICE_LEVEL_WINDOW_SEC,
+					);
+					return index >= 0 && index < envelope.length ? envelope[index] : 0;
+				},
+				(offsetSec: number) => {
+					if (!envelope) return null;
+					const durationSec = envelope.length * VOICE_LEVEL_WINDOW_SEC;
+					const time = (audio.currentTime || 0) + offsetSec;
+					if (time >= durationSec) {
+						// 다음 대기열 항목으로 이어 봄, 이유(문장 사이 쉼에서 입 닫힘 증가)
+						return this.lookaheadQueue(time - durationSec);
+					}
+					const index = Math.floor(time / VOICE_LEVEL_WINDOW_SEC);
+					return index >= 0 && index < envelope.length ? envelope[index] : 0;
+				},
+			);
 			item.onPlaybackStart?.();
 			// Only fire onPlaybackStart for the first chunk in a sequence
 			if (!wasPlaying) {

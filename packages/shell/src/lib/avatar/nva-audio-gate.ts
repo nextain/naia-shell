@@ -1,43 +1,30 @@
 /**
  * Voice-activity gate for a pre-baked NVA talking loop.
  *
- * Same rule and threshold as the naia.land Studio clip engine
- * (`src/features/studio/audio-gate.ts`, threshold 0.015 RMS): the talking
- * clip shows while the voice is above the threshold, and the idle clip
- * (mouth closed) returns after the voice has stayed below it for the hold
- * time. The hold time itself differs by surface — see `NVA_GATE_HOLD_MS` and
- * `NVA_SHELL_HOLD_MS` below.
+ * Same base threshold (0.015 RMS) as the naia.land Studio clip engine
+ * (`src/features/studio/audio-gate.ts`): the talking clip shows while voice is
+ * detected, and the idle clip (mouth closed) returns when speech ends.
+ *
+ * In the presentation recording (643s, 125 sentence ends), the median delay
+ * from voice ending to mouth closing was 0.52s (IQR 0.43~0.55s). The cause was
+ * that NvaAudioGate waited for 400ms (NVA_SHELL_HOLD_MS) of silence before
+ * closing, plus 100ms switch crossfade. The 400ms hold remains essential to
+ * prevent mouth snapping shut on short in-sentence pauses (breaths, commas).
+ * Because TTS audio waveform is known ahead of playback (WAV envelope / buffered
+ * PCM stream), lookahead eliminates the trailing lag without dropping in-sentence
+ * hold: closing starts 50ms before voice ends (NVA_SHELL_CLOSE_LEAD_MS) so the
+ * fade finishes right as sound ends, and opening starts 250ms early
+ * (NVA_SHELL_OPEN_LEAD_MS) because post-LM-2 measurement showed mouth opening was median 0.11s slower than audio.
  */
 export const NVA_GATE_THRESHOLD = 0.015;
 /** Web (naia.land Studio clip engine) hold time. Unchanged. */
 export const NVA_GATE_HOLD_MS = 200;
-/**
- * Shell only: hold time before the gate closes (talking clip → idle clip).
- * Longer than the web's 200 ms so a pause inside a sentence (breath, comma)
- * keeps the mouth moving instead of snapping shut and reopening a fraction
- * of a second later — the "발음을 하다가 입을 탁 닫아버리는" effect Luke flagged
- * after the 2026-09-25 IR recording (take 2).
- *
- * An earlier fix (`NVA_SHELL_MIN_IDLE_MS`, 2026-09-25) instead kept the gate
- * closed for a minimum time once it *had* closed, which stopped the closed
- * clip from flashing for only a few frames but still let it close early on a
- * short in-sentence pause, so the first syllable after that pause still came
- * out of a closed mouth. Raising the hold time itself avoids closing on a
- * short pause in the first place, so that minimum-closed rule is gone.
- *
- * Value: measured from take2's own silence-gap distribution (RMS over
- * 20 ms windows, the same 0.015 threshold, `nextain-ir-0924-deck-luke-avatar-
- * 0925c-slides-app-20260925-take2.mp4`, 646.9 s / 968 gaps). Gap lengths are
- * not smoothly spread: about 85 % of gaps are under ~380 ms (breath/comma
- * pauses inside a sentence and between words), the population thins out
- * sharply from there, and a second cluster of longer gaps (sentence
- * boundaries, then page turns at ~1.0-1.5 s) starts back up past ~640 ms.
- * 400 ms sits just past the short-pause tail (85th percentile ≈ 380 ms) and
- * inside that thin stretch, so it keeps the mouth moving through nearly all
- * in-sentence pauses while still closing well before the next sentence or
- * page.
- */
+/** Shell hold time (ms) to keep mouth moving through short in-sentence pauses. */
 export const NVA_SHELL_HOLD_MS = 400;
+/** Lead time (ms) to open the gate early before audible voice begins (post-LM-2 measurement showed mouth opening was median 0.11s slower than audio). */
+export const NVA_SHELL_OPEN_LEAD_MS = 250;
+/** Lead time (ms) before silence to begin closing the gate (half of 100ms fade). */
+export const NVA_SHELL_CLOSE_LEAD_MS = 50;
 
 export type NvaGateState = "idle" | "talking";
 
@@ -57,7 +44,58 @@ export class NvaAudioGate {
 		return this.current;
 	}
 
-	process(rms: number, deltaMs: number): NvaGateState {
+	process(
+		rms: number,
+		deltaMs: number,
+		ahead?: (offsetSec: number) => number | null,
+	): NvaGateState {
+		if (ahead) {
+			let hasNull = false;
+			let allCloseSilent = true;
+			const closeLeadSec = NVA_SHELL_CLOSE_LEAD_MS / 1000;
+			const sampleIntervalSec = 0.02;
+			const sampleCount = Math.round(NVA_SHELL_HOLD_MS / 20); // 20 samples (i = 0..19)
+
+			for (let i = 0; i < sampleCount; i++) {
+				const val = ahead(closeLeadSec + i * sampleIntervalSec);
+				if (val === null) {
+					hasNull = true;
+					break;
+				}
+				if (val >= this.threshold) {
+					allCloseSilent = false;
+				}
+			}
+
+			if (!hasNull) {
+				// 닫기 판정이 열기보다 우선: 마지막 50ms 동안 지금 샘플이 아직 커도 다시 열지 않음
+				if (allCloseSilent) {
+					this.current = "idle";
+					this.silenceMs = 0;
+					return this.current;
+				}
+
+				// 하나라도 문턱 이상이면 닫지 않음 (짧은 쉼). 지금 샘플만 보고 닫지 않음.
+				// 열기 판정: 지금 크기 또는 NVA_SHELL_OPEN_LEAD_MS 뒤의 크기가 문턱 이상이면 talking
+				const openLeadSec = NVA_SHELL_OPEN_LEAD_MS / 1000;
+				const futureVal = ahead(openLeadSec);
+				if (
+					rms >= this.threshold ||
+					(futureVal !== null && futureVal >= this.threshold)
+				) {
+					this.current = "talking";
+					this.silenceMs = 0;
+					return this.current;
+				}
+
+				if (this.current === "talking") {
+					this.silenceMs = 0;
+					return this.current;
+				}
+				return this.current;
+			}
+		}
+
 		const step = Math.max(0, deltaMs);
 		if (this.current === "idle") {
 			if (rms >= this.threshold) {

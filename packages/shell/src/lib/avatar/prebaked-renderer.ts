@@ -1,5 +1,8 @@
 import { type NvaManifest, defaultClipOf, findPrebakedSpeech } from "../nva";
-import { readActiveVoiceLevel } from "../voice/voice-level";
+import {
+	readActiveVoiceLevel,
+	readActiveVoiceLevelAhead,
+} from "../voice/voice-level";
 import type {
 	AvatarPlaybackOptions,
 	AvatarSpeechRenderer,
@@ -28,6 +31,12 @@ interface Config {
 	 * Defaults to the shell AudioQueue that is playing.
 	 */
 	voiceLevel?: () => number | null;
+	/**
+	 * RMS of the TTS audio offsetSec into the future relative to current
+	 * playback position, or null when unknown.
+	 * Defaults to the shell AudioQueue that is playing.
+	 */
+	voiceLevelAhead?: (offsetSec: number) => number | null;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -421,7 +430,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			return this.returningToIdle && idleReady ? idle : video;
 		const level = (this.config.voiceLevel ?? readActiveVoiceLevel)();
 		if (level == null) return video;
-		const state = this.gate.process(level, last == null ? 0 : nowMs - last);
+		const ahead = this.config.voiceLevelAhead ?? readActiveVoiceLevelAhead;
+		const state = this.gate.process(
+			level,
+			last == null ? 0 : nowMs - last,
+			ahead,
+		);
 		if (state === "idle" && idleReady) return idle;
 		return video;
 	}

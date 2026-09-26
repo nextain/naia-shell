@@ -12,6 +12,7 @@ class FakeAudio {
 	onended: (() => void) | null = null;
 	onerror: ((event: Event) => void) | null = null;
 	src: string;
+	currentTime = 0;
 	pause = vi.fn();
 	play = vi.fn<() => Promise<void>>(() => FakeAudio.playImpl());
 
@@ -320,5 +321,283 @@ describe("AudioQueue streamed PCM playback", () => {
 		});
 		stream.fail();
 		expect(unavailable).toHaveBeenCalledTimes(1);
+	});
+
+	it("reports lookahead level in streamed PCM: null beyond scheduled chunks when unended, 0 when ended", () => {
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, stream);
+		// Push 100ms chunk (2400 samples)
+		stream.push(new Int16Array(2_400));
+		const firstSource = FakeAudioContext.sources[0];
+		expect(firstSource).toBeDefined();
+
+		// Playhead is at the scheduled start (e.g. 0.04s)
+		FakeAudioContext.now = firstSource.startedAt ?? 0.04;
+
+		// Ahead within scheduled chunk (50ms ahead = 0.09s, within [0.04, 0.14])
+		expect(queue.voiceLevelAhead(0.05)).not.toBeNull();
+
+		// Ahead past scheduled chunk while stream is NOT ended: returns null (unknown future)
+		expect(queue.voiceLevelAhead(0.2)).toBeNull();
+
+		// Stream ends
+		stream.end();
+
+		// Ahead past scheduled chunk after stream ended: returns 0 (speech finished)
+		expect(queue.voiceLevelAhead(0.2)).toBe(0);
+	});
+});
+
+function makeWavBase64(
+	durationSec: number,
+	sampleValue = 0x4000,
+	sampleRate = 24_000,
+): string {
+	const sampleCount = Math.round(durationSec * sampleRate);
+	const pcmBytes = sampleCount * 2;
+	const bytes = new Uint8Array(44 + pcmBytes);
+	const view = new DataView(bytes.buffer);
+	const chunks = [
+		[0, "RIFF"],
+		[8, "WAVE"],
+		[12, "fmt "],
+		[36, "data"],
+	] as const;
+	for (const [offset, text] of chunks) {
+		for (let i = 0; i < text.length; i++)
+			bytes[offset + i] = text.charCodeAt(i);
+	}
+	view.setUint32(4, bytes.length - 8, true);
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true); // PCM
+	view.setUint16(22, 1, true); // mono
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true);
+	view.setUint16(32, 2, true);
+	view.setUint16(34, 16, true);
+	view.setUint32(40, pcmBytes, true);
+	for (let i = 0; i < sampleCount; i++) {
+		view.setInt16(44 + i * 2, sampleValue, true);
+	}
+	let binary = "";
+	for (let i = 0; i < bytes.length; i++) {
+		binary += String.fromCharCode(bytes[i]);
+	}
+	return btoa(binary);
+}
+
+describe("AudioQueue lookahead continuation across queue items", () => {
+	beforeEach(() => {
+		FakeAudio.instances = [];
+		FakeAudio.playImpl = () => Promise.resolve();
+		FakeAudioContext.sources = [];
+		FakeAudioContext.now = 0;
+		vi.stubGlobal("Audio", FakeAudio);
+		vi.stubGlobal("AudioContext", FakeAudioContext);
+	});
+
+	it("(A) 스트림 항목 재생 중, 현재 스트림 ended, 대기열에 다음 스트림 항목이 조각을 받아 둔 상태: 현재 끝 + 0.1초 앞보기가 다음 스트림 봉투의 0.1초 칸 값(0 아님)을 돌려줌", () => {
+		const queue = new AudioQueue();
+		const stream1 = new PcmStreamSource(24_000);
+		const stream2 = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, stream1);
+		queue.enqueueOrderedStream(1, stream2);
+
+		// stream1: 100ms (2400 samples)
+		stream1.push(new Int16Array(2_400).fill(0x4000));
+		stream1.end();
+
+		// stream2: 200ms (4800 samples)
+		stream2.push(new Int16Array(4_800).fill(0x4000));
+
+		const firstSource = FakeAudioContext.sources[0];
+		expect(firstSource).toBeDefined();
+		FakeAudioContext.now = firstSource.startedAt ?? 0.04;
+
+		// current stream ends at FakeAudioContext.now + 0.1s
+		// lookahead at current end + 0.1s: offsetSec = 0.2s
+		const offsetSec = 0.2;
+		const level = queue.voiceLevelAhead(offsetSec);
+		expect(level).not.toBeNull();
+		expect(level).toBeGreaterThan(0);
+		expect(level).toBeCloseTo(0.5, 1);
+	});
+
+	it("(B) 같은 상황에서 다음 스트림이 받은 길이를 넘는 시각 + 그 스트림 미종료: null", () => {
+		const queue = new AudioQueue();
+		const stream1 = new PcmStreamSource(24_000);
+		const stream2 = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, stream1);
+		queue.enqueueOrderedStream(1, stream2);
+
+		stream1.push(new Int16Array(2_400).fill(0x4000));
+		stream1.end();
+
+		// stream2 has received 200ms of audio, not ended
+		stream2.push(new Int16Array(4_800).fill(0x4000));
+		expect(stream2.ended).toBe(false);
+
+		const firstSource = FakeAudioContext.sources[0];
+		FakeAudioContext.now = firstSource.startedAt ?? 0.04;
+
+		// current stream duration is 0.1s. offsetSec = 0.1 + 0.3 = 0.4s (over = 0.3s > stream2 duration 0.2s)
+		const offsetSec = 0.4;
+		expect(queue.voiceLevelAhead(offsetSec)).toBeNull();
+	});
+
+	it("(C) 현재 스트림 ended, 대기열 비었고 예약된 문장 없음: 0. 예약만 된 문장이 있음(reserveSeq 뒤 아직 enqueue 안 함): null", () => {
+		const queue = new AudioQueue();
+		const seq0 = queue.reserveSeq();
+		const stream = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(seq0, stream);
+		stream.push(new Int16Array(2_400).fill(0x4000));
+		stream.end();
+
+		const firstSource = FakeAudioContext.sources[0];
+		FakeAudioContext.now = firstSource.startedAt ?? 0.04;
+		const offsetSec = 0.2; // beyond stream end (over = 0.1s)
+
+		// Case 1: 대기열 비었고 예약된 문장 없음 -> 0
+		expect(queue.voiceLevelAhead(offsetSec)).toBe(0);
+
+		// Case 2: reserveSeq 호출되어 예약만 된 문장이 있음 -> null
+		queue.reserveSeq();
+		expect(queue.voiceLevelAhead(offsetSec)).toBeNull();
+	});
+
+	it("(D) WAV 항목 재생 중 봉투 끝 뒤, 대기열에 다음 WAV 항목: 다음 WAV 봉투 값. 다음이 MP3: null", () => {
+		const wav1 = makeWavBase64(0.1, 0x4000);
+		const wav2 = makeWavBase64(0.2, 0x4000);
+
+		// Case 1: 다음이 WAV 항목 -> 다음 WAV 봉투 값
+		const queue1 = new AudioQueue();
+		queue1.enqueue(wav1);
+		queue1.enqueue(wav2);
+
+		const audio1 = FakeAudio.instances[0];
+		audio1.onplay?.();
+		audio1.currentTime = 0.05;
+
+		// wav1 duration: 0.1s. currentTime: 0.05s. offsetSec: 0.1s -> time = 0.15s, over = 0.05s
+		const val1 = queue1.voiceLevelAhead(0.1);
+		expect(val1).not.toBeNull();
+		expect(val1).toBeGreaterThan(0);
+		expect(val1).toBeCloseTo(0.5, 1);
+
+		// Case 2: 다음이 MP3 -> null
+		const queue2 = new AudioQueue();
+		queue2.enqueue(wav1);
+		queue2.enqueue("bXAzaGVhZGVy"); // MP3, does not start with UklGR
+
+		const audio2 = FakeAudio.instances[FakeAudio.instances.length - 1];
+		audio2.onplay?.();
+		audio2.currentTime = 0.05;
+
+		expect(queue2.voiceLevelAhead(0.1)).toBeNull();
+	});
+
+	it("(E) 현재 스트림 ended, 대기열 다음 항목이 조각 없는 ended 스트림 + wholeAudioBase64(WAV): 그 WAV 봉투 값", () => {
+		const queue = new AudioQueue();
+		const stream1 = new PcmStreamSource(24_000);
+		const stream2 = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, stream1);
+		queue.enqueueOrderedStream(1, stream2);
+
+		stream1.push(new Int16Array(2_400).fill(0x4000));
+		stream1.end();
+
+		const wav = makeWavBase64(0.2, 0x4000);
+		stream2.endWithAudio(wav);
+
+		const firstSource = FakeAudioContext.sources[0];
+		FakeAudioContext.now = firstSource.startedAt ?? 0.04;
+
+		// stream1 duration: 0.1s. offsetSec = 0.15s (over = 0.05s into stream2)
+		const val = queue.voiceLevelAhead(0.15);
+		expect(val).not.toBeNull();
+		expect(val).toBeGreaterThan(0);
+		expect(val).toBeCloseTo(0.5, 1);
+	});
+
+	it("(F) 현재 스트림 미종료 + 예약 끝 뒤: 지금처럼 null (기존 시험 유지)", () => {
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, stream);
+		stream.push(new Int16Array(2_400).fill(0x4000));
+		expect(stream.ended).toBe(false);
+
+		const firstSource = FakeAudioContext.sources[0];
+		FakeAudioContext.now = firstSource.startedAt ?? 0.04;
+
+		// lookahead past scheduled 100ms
+		expect(queue.voiceLevelAhead(0.2)).toBeNull();
+	});
+
+	it("(G) 스트림 A 재생 중, 대기열에 조각 없는 미종료 스트림 B, 그 뒤 대기열·예약 없음. A 를 끝내 playNext 가 B 를 꺼낸 뒤(B 의 첫 조각 전) voiceLevelAhead(0.1) 이 null. B 에 첫 조각을 넣으면 숫자(B 봉투 값)를 돌려줌", () => {
+		const queue = new AudioQueue();
+		const streamA = new PcmStreamSource(24_000);
+		const streamB = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, streamA);
+		queue.enqueueOrderedStream(1, streamB);
+
+		// 스트림 A: 100ms (2400 samples)
+		streamA.push(new Int16Array(2_400).fill(0x4000));
+		const sourceA = FakeAudioContext.sources[0];
+		expect(sourceA).toBeDefined();
+		FakeAudioContext.now = sourceA.startedAt ?? 0.04;
+
+		// A 를 끝냄 -> bufferSource의 onended로 playNext 가 호출되어 B 를 꺼냄
+		streamA.end();
+		sourceA.onended?.();
+
+		// B 의 첫 조각 전: voiceLevelAhead(0.1) 이 null
+		expect(queue.voiceLevelAhead(0.1)).toBeNull();
+
+		// B 에 첫 조각을 넣음 -> startLevel 호출되어 숫자(B 봉투 값)를 돌려줌
+		streamB.push(new Int16Array(2_400).fill(0x4000));
+		const sourceB = FakeAudioContext.sources[1];
+		expect(sourceB).toBeDefined();
+		FakeAudioContext.now = sourceB.startedAt ?? 0.14;
+
+		const level = queue.voiceLevelAhead(0.05);
+		expect(level).not.toBeNull();
+		expect(level).toBeGreaterThan(0);
+		expect(level).toBeCloseTo(0.5, 1);
+	});
+
+	it("(H) 스트림 A 재생 중, 대기열에 WAV B 와 그 뒤 WAV C. A 가 끝나 B 를 꺼낸 뒤 onplay 전 voiceLevelAhead(0.1) 이 null(C 의 값이 아님). onplay 뒤에는 B 봉투 값", () => {
+		const queue = new AudioQueue();
+		const streamA = new PcmStreamSource(24_000);
+		const wavB = makeWavBase64(0.2, 0x4000);
+		const wavC = makeWavBase64(0.2, 0x4000);
+
+		queue.enqueueOrderedStream(0, streamA);
+		queue.enqueueOrdered(1, wavB);
+		queue.enqueueOrdered(2, wavC);
+
+		// 스트림 A: 100ms
+		streamA.push(new Int16Array(2_400).fill(0x4000));
+		const sourceA = FakeAudioContext.sources[0];
+		expect(sourceA).toBeDefined();
+		FakeAudioContext.now = sourceA.startedAt ?? 0.04;
+
+		// A 가 끝나 B 를 꺼냄
+		streamA.end();
+		sourceA.onended?.();
+
+		// B 를 꺼낸 뒤 onplay 전: voiceLevelAhead(0.1) 이 null (C 의 값이 아님)
+		expect(FakeAudio.instances).toHaveLength(1);
+		expect(queue.voiceLevelAhead(0.1)).toBeNull();
+
+		// onplay 뒤에는 B 봉투 값
+		const audioB = FakeAudio.instances[0];
+		audioB.currentTime = 0;
+		audioB.onplay?.();
+
+		const level = queue.voiceLevelAhead(0.1);
+		expect(level).not.toBeNull();
+		expect(level).toBeGreaterThan(0);
+		expect(level).toBeCloseTo(0.5, 1);
 	});
 });

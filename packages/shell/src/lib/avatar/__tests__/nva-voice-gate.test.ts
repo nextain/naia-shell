@@ -5,6 +5,7 @@ import {
 	NVA_GATE_HOLD_MS,
 	NVA_GATE_THRESHOLD,
 	NVA_SHELL_HOLD_MS,
+	NVA_SHELL_OPEN_LEAD_MS,
 	NvaAudioGate,
 } from "../nva-audio-gate";
 import { PrebakedAvatarRenderer, SwitchCrossfade } from "../prebaked-renderer";
@@ -51,6 +52,60 @@ describe("NvaAudioGate (same rule as the naia.land Studio clip engine)", () => {
 		const gate = new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_GATE_HOLD_MS);
 		gate.process(0.05, 33);
 		expect(gate.process(0, 300)).toBe("idle");
+	});
+
+	it("(가) closes to idle when future samples from +50ms for 400ms are silent even if current rms is audible", () => {
+		const gate = new NvaAudioGate(
+			NVA_GATE_THRESHOLD,
+			NVA_SHELL_HOLD_MS,
+			"talking",
+		);
+		const ahead = (offsetSec: number) => (offsetSec >= 0.05 ? 0 : 0.05);
+		expect(gate.process(0.05, 33, ahead)).toBe("idle");
+	});
+
+	it("(나) stays talking during short in-sentence pause when sound resumes at 250ms", () => {
+		const gate = new NvaAudioGate(
+			NVA_GATE_THRESHOLD,
+			NVA_SHELL_HOLD_MS,
+			"talking",
+		);
+		const ahead = (offsetSec: number) => (offsetSec >= 0.25 ? 0.05 : 0);
+		expect(gate.process(0, 33, ahead)).toBe("talking");
+	});
+
+	it("(다) preserves 400ms hold rule when lookahead returns null", () => {
+		const gate = new NvaAudioGate(
+			NVA_GATE_THRESHOLD,
+			NVA_SHELL_HOLD_MS,
+			"talking",
+		);
+		const ahead = () => null;
+		expect(gate.process(0, 399, ahead)).toBe("talking");
+		expect(gate.process(0, 1, ahead)).toBe("idle");
+	});
+
+	it("(라) opens to talking when quiet now but sound begins at 250ms", () => {
+		expect(NVA_SHELL_OPEN_LEAD_MS).toBe(250);
+		const gate = new NvaAudioGate(
+			NVA_GATE_THRESHOLD,
+			NVA_SHELL_HOLD_MS,
+			"idle",
+		);
+		const ahead = (offsetSec: number) => (offsetSec >= 0.25 ? 0.05 : 0);
+		expect(gate.process(0, 33, ahead)).toBe("talking");
+	});
+
+	it("(마) preserves web default gate behavior when lookahead is omitted", () => {
+		const webGate = new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_GATE_HOLD_MS);
+		expect(webGate.process(0.05, 33)).toBe("talking");
+		expect(webGate.process(0, 199)).toBe("talking");
+		expect(webGate.process(0, 1)).toBe("idle");
+
+		const shellGate = new NvaAudioGate(NVA_GATE_THRESHOLD, NVA_SHELL_HOLD_MS);
+		expect(shellGate.process(0.05, 33)).toBe("talking");
+		expect(shellGate.process(0, 399)).toBe("talking");
+		expect(shellGate.process(0, 1)).toBe("idle");
 	});
 });
 
@@ -255,6 +310,76 @@ describe("PrebakedAvatarRenderer voice gating", () => {
 			expect(mid[1].alpha).toBeCloseTo(0.5);
 			// Fade over: only idle is drawn.
 			expect(frame(1593)).toEqual([{ source: idle, alpha: 1 }]);
+			renderer.stop();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("draws idle clip on the exact frame when voiceLevelAhead indicates sentence end", async () => {
+		const level = { value: 0.08 as number | null };
+		let sentenceEnding = false;
+		const voiceLevelAhead = (offsetSec: number) => {
+			if (sentenceEnding && offsetSec >= 0.05) return 0;
+			return level.value;
+		};
+
+		const draws: { source: unknown; alpha: number }[] = [];
+		const ctx = {
+			globalAlpha: 1,
+			clearRect: vi.fn(),
+			drawImage(source: unknown) {
+				draws.push({ source, alpha: ctx.globalAlpha });
+			},
+		};
+		const canvas = document.createElement("canvas");
+		canvas.width = 360;
+		canvas.height = 640;
+		Object.defineProperty(canvas, "getContext", { value: () => ctx });
+		const frames: FrameRequestCallback[] = [];
+		vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+			frames.push(cb);
+			return frames.length;
+		});
+		vi.stubGlobal("cancelAnimationFrame", () => {});
+		try {
+			const renderer = new PrebakedAvatarRenderer({
+				manifest: studioManifest(),
+				locale: "ko-KR",
+				resolveAssetUrl: async (path) => `blob:${path}`,
+				voiceLevel: () => level.value,
+				voiceLevelAhead,
+			});
+			const mounted = document.createElement("video");
+			document.body.appendChild(mounted);
+			renderer.start(mounted, canvas);
+			await flush();
+			renderer.setSpeakingVisual(true);
+			await flush();
+			for (const element of [
+				...clipElements("blob:clips/idle.webm"),
+				...clipElements("blob:clips/talking.webm"),
+			])
+				markDecoded(element);
+			const idle = playingElement("blob:clips/idle.webm");
+			const talking = playingElement("blob:clips/talking.webm");
+			const frame = (at: number) => {
+				draws.length = 0;
+				const cb = frames.shift();
+				if (!cb) throw new Error("no frame requested");
+				cb(at);
+				return draws.slice();
+			};
+
+			frame(1000);
+			expect(draws[0].source).toBe(talking);
+
+			// Sentence ends: lookahead from +50ms is silence, though current level is still 0.08.
+			sentenceEnding = true;
+			const endFrame = frame(1033);
+			// Gate closes immediately to idle; idle clip is drawn as target (with talking crossfaded).
+			expect(endFrame[0].source).toBe(idle);
+			expect(endFrame[1].source).toBe(talking);
 			renderer.stop();
 		} finally {
 			vi.unstubAllGlobals();

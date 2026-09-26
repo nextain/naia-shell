@@ -4,6 +4,7 @@ import {
 	VOICE_LEVEL_WINDOW_SEC,
 	VoiceLevelTimeline,
 	readActiveVoiceLevel,
+	readActiveVoiceLevelAhead,
 	rmsEnvelope,
 	wavEnvelope,
 } from "../voice-level";
@@ -73,6 +74,16 @@ describe("voice level envelope", () => {
 		expect(timeline.levelAt(10.11)).toBeCloseTo(0.5);
 		expect(timeline.levelAt(12)).toBe(0);
 	});
+
+	it("looks up clock time without pruning segments via peekLevelAt", () => {
+		const timeline = new VoiceLevelTimeline();
+		timeline.add(10, new Float32Array([0.2, 0.2]));
+		expect(timeline.peekLevelAt(10.01)).toBeCloseTo(0.2);
+		expect(timeline.peekLevelAt(10.05)).toBeNull();
+		// Looking far ahead does not prune the segment at 10.0
+		expect(timeline.peekLevelAt(15)).toBeNull();
+		expect(timeline.levelAt(10.01)).toBeCloseTo(0.2);
+	});
 });
 
 class FakeAudio {
@@ -116,7 +127,30 @@ describe("AudioQueue voice level", () => {
 		queue.enqueue("SUQzBAAAAAAA");
 		FakeAudio.instances[0].onplay?.();
 		expect(queue.voiceLevel()).toBeNull();
+		expect(queue.voiceLevelAhead(0.1)).toBeNull();
 		queue.clear();
+	});
+
+	it("reads correct window in WAV envelope for voiceLevelAhead and returns 0 past the end", () => {
+		const queue = new AudioQueue();
+		expect(readActiveVoiceLevelAhead(0.1)).toBeNull();
+		queue.enqueue(wavBase64(toneThenSilence(0.5, 0.5)));
+		const audio = FakeAudio.instances[0];
+		audio.onplay?.();
+
+		audio.currentTime = 0.2;
+		// 0.2 + 0.1 = 0.3s (voiced section)
+		expect(queue.voiceLevelAhead(0.1)).toBeGreaterThan(0.015);
+		expect(readActiveVoiceLevelAhead(0.1)).toBeGreaterThan(0.015);
+
+		// 0.2 + 0.5 = 0.7s (silent section inside sentence)
+		expect(queue.voiceLevelAhead(0.5)).toBe(0);
+
+		// 0.2 + 1.5 = 1.7s (past envelope end)
+		expect(queue.voiceLevelAhead(1.5)).toBe(0);
+
+		audio.onended?.();
+		expect(readActiveVoiceLevelAhead(0.1)).toBeNull();
 	});
 
 	it("uses a window small enough for one video frame", () => {

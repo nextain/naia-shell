@@ -131,6 +131,20 @@ export class VoiceLevelTimeline {
 		return 0;
 	}
 
+	/**
+	 * Looks up the level at `time` without pruning segments that ended, so
+	 * lookahead queries do not discard chunks still needed by playback.
+	 * Returns null if no segment covers the time.
+	 */
+	peekLevelAt(time: number): number | null {
+		for (const segment of this.segments) {
+			const index = Math.floor((time - segment.start) / segment.windowSec);
+			if (index >= 0 && index < segment.envelope.length)
+				return segment.envelope[index];
+		}
+		return null;
+	}
+
 	clear(): void {
 		this.segments = [];
 	}
@@ -140,6 +154,11 @@ export class VoiceLevelTimeline {
 export interface VoiceLevelSource {
 	/** RMS of the audio playing now, or null when it cannot be measured. */
 	voiceLevel(): number | null;
+	/**
+	 * RMS of the audio offsetSec into the future relative to current playback
+	 * position, or null when unknown.
+	 */
+	voiceLevelAhead?(offsetSec: number): number | null;
 }
 
 let activeSource: VoiceLevelSource | null = null;
@@ -157,4 +176,14 @@ export function releaseVoiceLevelSource(source: VoiceLevelSource): void {
 /** Level of whatever TTS audio is playing now, or null when unknown. */
 export function readActiveVoiceLevel(): number | null {
 	return activeSource ? activeSource.voiceLevel() : null;
+}
+
+/**
+ * Level of whatever TTS audio is playing offsetSec ahead of the playback clock,
+ * or null when unknown (e.g. MP3, unbuffered stream future, no active source).
+ */
+export function readActiveVoiceLevelAhead(offsetSec: number): number | null {
+	return activeSource?.voiceLevelAhead
+		? activeSource.voiceLevelAhead(offsetSec)
+		: null;
 }
