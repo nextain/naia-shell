@@ -11,6 +11,7 @@
 // the `NAIA_E2E_ADK_BASE` env var (default: OS temp), and clean up after
 // themselves.
 
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CREDENTIALED_MAIN_MODEL } from "../credentialed-adk-seed.js";
@@ -90,6 +91,33 @@ async function waitForSplashGone(timeout = 30_000): Promise<void> {
 	);
 }
 
+/** Put an ADK path into the setup input. WebDriver setValue types key by key
+ *  and on Windows WebView2 the path came out mangled (clone failed with
+ *  os error 123), so set it through the native setter like other helpers. */
+async function setAdkSetupPath(value: string): Promise<void> {
+	await browser.execute(
+		(sel: string, val: string) => {
+			const el = document.querySelector(sel) as HTMLInputElement | null;
+			if (!el) throw new Error(`ADK setup input ${sel} not found`);
+			const setter = Object.getOwnPropertyDescriptor(
+				HTMLInputElement.prototype,
+				"value",
+			)?.set;
+			if (setter) setter.call(el, val);
+			else el.value = val;
+			el.dispatchEvent(new Event("input", { bubbles: true }));
+		},
+		S.adkSetupInput,
+		value,
+	);
+	const typed = await browser.execute(
+		(sel: string) =>
+			(document.querySelector(sel) as HTMLInputElement | null)?.value ?? null,
+		S.adkSetupInput,
+	);
+	expect(typed).toBe(value);
+}
+
 /** Best-effort cleanup for a scenario's temp dir. */
 async function safeDeleteAdk(adkPath: string): Promise<void> {
 	try {
@@ -142,7 +170,7 @@ describe("24 — ADK Setup Flow (#328)", function () {
 
 		const input = await $(S.adkSetupInput);
 		await input.waitForDisplayed({ timeout: 5_000 });
-		await input.setValue(empty);
+		await setAdkSetupPath(empty);
 
 		const confirm = await $(S.adkSetupConfirmBtn);
 		await confirm.click();
@@ -153,14 +181,13 @@ describe("24 — ADK Setup Flow (#328)", function () {
 	});
 
 	it("S2: folder with other files → new_exists branch (delete-only)", async () => {
-		// Pre-create a non-empty folder without naia-settings/ via Tauri 2
-		// internals. write_naia_asset is the cheapest existing command that
-		// creates an arbitrary file inside the ADK path — but it writes
-		// under naia-settings/, which would put us in the has_settings branch.
-		// Instead, use init_naia_settings then delete the naia-settings dir,
-		// leaving stray VRM/bgm placeholder files behind.
-		await tauriInvoke<void>("init_naia_settings", { adkPath: hasOther });
-		await tauriInvoke<void>("delete_naia_settings", { adkPath: hasOther });
+		// Pre-create a non-empty folder without naia-settings/. init_naia_settings
+		// followed by delete_naia_settings leaves an empty folder (it only makes
+		// subdirectories under naia-settings/), which inspect_adk_dir reports as
+		// "empty". The spec runs on the same machine as the app, so write a
+		// stray file directly.
+		mkdirSync(hasOther, { recursive: true });
+		writeFileSync(join(hasOther, "stray.txt"), "e2e has_other_files\n");
 
 		await resetSetupState();
 		await safeRefresh();
@@ -174,7 +201,7 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		await cards[0].click();
 		const input = await $(S.adkSetupInput);
 		await input.waitForDisplayed({ timeout: 5_000 });
-		await input.setValue(hasOther);
+		await setAdkSetupPath(hasOther);
 		await (await $(S.adkSetupConfirmBtn)).click();
 
 		// Expect new_exists branch — only the "delete-and-restart" card should
