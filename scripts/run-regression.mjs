@@ -85,7 +85,9 @@ import { inventoryDigestFromFile } from "./lib/inventory-digest.mjs";
 import {
 	addPremiseSignals,
 	countPremiseSignals,
+	expectedGroupStarts,
 	judgePremise,
+	launchesSharedApp,
 } from "./lib/run-premise.mjs";
 import { planGroups, wdioSpecArgs } from "./lib/regression-selection.mjs";
 import {
@@ -701,6 +703,9 @@ const passedSpecs = [];
 // 떠야 하는데, 앞 세션의 고아가 리스를 쥐면 앱만 뜨고 뇌 없이 돈다. 그 사실이
 // 기록에 없으면 남는 것은 제품 결함처럼 보이는 실패 숫자뿐이다.
 let premiseSignals = { agentStarts: 0, leaseBlocked: 0 };
+// 떴어야 할 에이전트 수. 앱을 공유하는 전용 설정은 스펙 수가 아니라 묶음마다
+// 한 번이다(run-premise.mjs launchesSharedApp).
+let expectedStarts = 0;
 const groupResults = [];
 
 /**
@@ -965,6 +970,14 @@ for (const [conf, specs] of groups) {
 		? specs
 		: outcome.passed.filter((spec) => specs.includes(spec));
 	executed.push(...ran);
+	const readConf = (name) => {
+		const file = resolve("packages/shell/e2e-tauri", name);
+		return existsSync(file) ? readFileSync(file, "utf8") : null;
+	};
+	expectedStarts += expectedGroupStarts({
+		sharedApp: launchesSharedApp(readConf(conf), readConf),
+		ran: ran.length,
+	});
 	passedSpecs.push(...passedHere);
 	groupResults.push({
 		conf,
@@ -1009,13 +1022,14 @@ function fingerprint() {
 }
 
 /**
- * 이 실행에 뇌가 있었는가. 스펙 하나가 세션 하나이고 세션마다 에이전트가 한 번
- * 떠야 하므로, 기동 수가 돈 스펙 수와 같고 리스에 막힌 세션이 없어야 성립한다.
+ * 이 실행에 뇌가 있었는가. 기동 수가 기대한 수(세션마다 한 번, 앱을 공유하는
+ * 묶음은 묶음마다 한 번)와 같고 리스에 막힌 세션이 없어야 성립한다.
  */
 const premiseVerdict = judgePremise({
 	agentStarts: premiseSignals.agentStarts,
 	leaseBlocked: premiseSignals.leaseBlocked,
 	executed: executed.length,
+	expectedStarts,
 });
 if (premiseVerdict.premise !== "ok") {
 	console.log(
@@ -1053,6 +1067,7 @@ const record = {
 		agentStarts: premiseSignals.agentStarts,
 		leaseBlocked: premiseSignals.leaseBlocked,
 		executed: executed.length,
+		expectedStarts,
 		reason: premiseVerdict.reason,
 	},
 	// 어느 wdio 설정이 어디까지 갔는지. 한 설정이 실패해도 다른 설정의
