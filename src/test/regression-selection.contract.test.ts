@@ -142,13 +142,29 @@ const RECORD = JSON.parse(
 	envMissingBeforeRun: Record<string, string[]>;
 };
 
-/** 그 기록이 맡았던 몫을 인벤토리에서 그대로 집는다. */
+/**
+ * 그 기록이 맡았던 몫. 그날의 인벤토리에서 떠 둔 것을 읽는다.
+ *
+ * 예전에는 살아 있는 `docs/e2e-inventory.json` 에서 집었다. 그러면 그날의
+ * 스펙이 제품에서 지워질 때마다(#610 의 23-channels·93-discord, #603 의 88)
+ * 픽스처가 그날이 아니게 되어, 선별 함수가 옳아도 이 파일이 붉어졌다.
+ */
+const SNAPSHOT = JSON.parse(
+	readFileSync(
+		resolve(
+			ROOT,
+			"src/test/fixtures/regression-selection-naia-os-3090-2026-09-05.json",
+		),
+		"utf8",
+	),
+) as { specs: SpecEntry[] };
+const MINE: SpecEntry[] = SNAPSHOT.specs.filter((s) =>
+	RECORD.planned.includes(s.spec),
+);
+/** 오늘의 인벤토리. 그날이 아니라 지금의 선언을 재는 자리에서만 쓴다. */
 const INVENTORY = JSON.parse(
 	readFileSync(resolve(ROOT, "docs/e2e-inventory.json"), "utf8"),
 ) as { specs: SpecEntry[] };
-const MINE: SpecEntry[] = INVENTORY.specs.filter((s) =>
-	RECORD.planned.includes(s.spec),
-);
 
 /**
  * 그날 기계의 환경. 기록의 `envMissingBeforeRun` 에 적힌 이름만 없고 나머지
@@ -579,12 +595,59 @@ describe("능력이 아직 이어지지 않은 스펙", () => {
 		// 규칙만 있고 인벤토리가 안 실으면 러너는 아무것도 보지 못한다.
 		// `docs/e2e-inventory.json` 은 `build-e2e-inventory.mjs` 가 스펙 주석에서
 		// 읽어 채운다.
-		const cron = INVENTORY.specs.find(
-			(s) => s.spec === "20-cron-basic.spec.ts",
-		) as (SpecEntry & { requires?: { capability: string; tracker: string }[] }) | undefined;
-		expect(cron, "20-cron-basic 이 인벤토리에 없다").toBeTruthy();
-		expect(cron?.requires).toEqual([
-			{ capability: "cron", tracker: "naia-agent#128" },
-		]);
+		//
+		// 예전에는 `20-cron-basic` 하나를 이름으로 집었다. cron 이 제품에서
+		// 빠지며(#611) 그 스펙이 지워지자 이 단정은 선언 배선과 무관하게 붉어졌다.
+		// 이제 스펙마다 주석의 선언과 인벤토리의 `requires` 가 같은지 본다 —
+		// 선언이 하나도 없는 날에도 "주석에 적었는데 인벤토리가 안 실었다" 는
+		// 어긋남은 그대로 잡힌다.
+		const marker =
+			/^[ \t]*\/\/[ \t]*requires:[ \t]*capability:([A-Za-z0-9_-]+)[ \t]*\(([^)]+)\)/gm;
+		for (const entry of INVENTORY.specs) {
+			const source = readFileSync(
+				resolve(ROOT, "packages", "shell", "e2e-tauri", "specs", entry.spec),
+				"utf8",
+			);
+			const declared = [...source.matchAll(marker)].map((m) => ({
+				capability: m[1],
+				tracker: m[2].trim(),
+			}));
+			expect(entry.requires ?? [], `${entry.spec} 의 선언이 인벤토리와 다르다`).toEqual(
+				declared,
+			);
+		}
+	});
+});
+
+// ── 전용 설정이 스스로 채우는 변수 ─────────────────────────────────────────
+//
+// `wdio.conf.grok.ts` 는 `process.env.NAIA_E2E_MAIN_PROVIDER = "grok"` 을 적고,
+// `wdio.conf.codex.ts` 가 부르는 `codex-e2e-environment.ts` 는 격리 워크스페이스를
+// `NAIA_E2E_ADK_PATH` 에 넣는다. 인벤토리가 그것을 요구로 세던 동안 러너는 그
+// 설정들이 채울 값을 "없다" 며 스펙을 통째로 뺐다.
+describe("전용 설정이 채우는 변수", () => {
+	const entry = (name: string) => {
+		const found = INVENTORY.specs.find((s) => s.spec === name);
+		expect(found, `${name} 이 인벤토리에 없다`).toBeTruthy();
+		return found as SpecEntry;
+	};
+
+	it("설정이 대입하는 변수는 그 설정이 맡는 스펙의 요구가 아니다", () => {
+		expect(entry("96-grok-readiness.spec.ts").env).not.toContain(
+			"NAIA_E2E_MAIN_PROVIDER",
+		);
+		expect(entry("96-grok-readiness.spec.ts").env).not.toContain(
+			"NAIA_E2E_MAIN_MODEL",
+		);
+		expect(entry("90-codex-live-chat.spec.ts").env).not.toContain(
+			"NAIA_E2E_ADK_PATH",
+		);
+	});
+
+	it("설정이 읽기만 하는 변수는 여전히 요구다", () => {
+		// 반대쪽을 못 박지 않으면 "설정에 적힌 변수는 다 뺀다" 도 통과한다.
+		expect(entry("70c-nextain-default-chat.spec.ts").env).toContain(
+			"NAIA_API_KEY",
+		);
 	});
 });

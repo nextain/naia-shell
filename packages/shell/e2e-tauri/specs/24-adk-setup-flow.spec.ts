@@ -8,23 +8,26 @@
 //
 // SAFETY: this spec must NEVER touch the user's real `~/naia-adk`.
 // All scenarios use a per-run temp directory under
-// `process.env.NAIA_E2E_ADK_BASE` (default: OS temp), and clean up after
+// the `NAIA_E2E_ADK_BASE` env var (default: OS temp), and clean up after
 // themselves.
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { CREDENTIALED_MAIN_MODEL } from "../credentialed-adk-seed.js";
 import { S } from "../helpers/selectors.js";
 import { safeRefresh } from "../helpers/settings.js";
 
 const E2E_ADK_BASE =
-	process.env.NAIA_E2E_ADK_BASE ??
-	"C:\\Windows\\Temp\\naia-e2e-adk";
+	process.env.NAIA_E2E_ADK_BASE ?? join(tmpdir(), "naia-e2e-adk");
 
-const API_KEY =
-	process.env.CAFE_E2E_API_KEY ?? process.env.GEMINI_API_KEY ?? "";
-
-// API_KEY is only needed by S3 (LLM round-trip). S1 and S2 verify branch +
-// clone + onboarding entry without making any LLM call, so they must run
-// even when the key is absent — that is the primary value we want from #325
-// and #326. S3 self-skips when API_KEY is empty.
+// S3 (LLM round-trip) uses the Naia gateway key the harness requires for the
+// credentialed tier. It used to need a direct Gemini key and self-skip without
+// one; #602 removed that provider, so the spec was excluded from regression
+// for requiring a key nothing can use anymore.
+const NAIA_KEY = process.env.NAIA_API_KEY ?? "";
+const FORCE_SETUP_KEY = "naia-e2e-force-setup";
+const FORCE_ONBOARDING_KEY = "naia-e2e-force-onboarding";
 
 /** Per-test path so reruns do not collide. */
 function tmpAdkPath(tag: string): string {
@@ -33,12 +36,19 @@ function tmpAdkPath(tag: string): string {
 
 /** Wipe localStorage entries that gate ADK setup / onboarding. */
 async function resetSetupState(): Promise<void> {
-	await browser.execute(() => {
-		localStorage.removeItem("naia-config");
-		localStorage.removeItem("naia-remote-key");
-		localStorage.removeItem("naia-remote-user-id");
-		localStorage.removeItem("naia-adk-path");
-	});
+	await browser.execute(
+		(setupKey: string, onboardingKey: string) => {
+			localStorage.removeItem("naia-config");
+			localStorage.removeItem("naia-remote-key");
+			localStorage.removeItem("naia-remote-user-id");
+			localStorage.removeItem("naia-adk-path");
+			// 표식은 sessionStorage 다(App.tsx) — 앱을 다시 띄우면 저절로 사라진다.
+			sessionStorage.setItem(setupKey, "1");
+			sessionStorage.setItem(onboardingKey, "1");
+		},
+		FORCE_SETUP_KEY,
+		FORCE_ONBOARDING_KEY,
+	);
 }
 
 /** Invoke a Tauri command from inside the webview.
@@ -82,6 +92,33 @@ async function waitForSplashGone(timeout = 30_000): Promise<void> {
 	);
 }
 
+/** Put an ADK path into the setup input. WebDriver setValue types key by key
+ *  and on Windows WebView2 the path came out mangled (clone failed with
+ *  os error 123), so set it through the native setter like other helpers. */
+async function setAdkSetupPath(value: string): Promise<void> {
+	await browser.execute(
+		(sel: string, val: string) => {
+			const el = document.querySelector(sel) as HTMLInputElement | null;
+			if (!el) throw new Error(`ADK setup input ${sel} not found`);
+			const setter = Object.getOwnPropertyDescriptor(
+				HTMLInputElement.prototype,
+				"value",
+			)?.set;
+			if (setter) setter.call(el, val);
+			else el.value = val;
+			el.dispatchEvent(new Event("input", { bubbles: true }));
+		},
+		S.adkSetupInput,
+		value,
+	);
+	const typed = await browser.execute(
+		(sel: string) =>
+			(document.querySelector(sel) as HTMLInputElement | null)?.value ?? null,
+		S.adkSetupInput,
+	);
+	expect(typed).toBe(value);
+}
+
 /** Best-effort cleanup for a scenario's temp dir. */
 async function safeDeleteAdk(adkPath: string): Promise<void> {
 	try {
@@ -101,6 +138,19 @@ describe("24 — ADK Setup Flow (#328)", function () {
 	const existing = tmpAdkPath("existing");
 
 	after(async () => {
+		await browser.execute(
+			(setupKey: string, onboardingKey: string, adkPath?: string) => {
+				sessionStorage.removeItem(setupKey);
+				sessionStorage.removeItem(onboardingKey);
+				if (adkPath) {
+					localStorage.setItem("naia-adk-path", adkPath);
+				}
+			},
+			FORCE_SETUP_KEY,
+			FORCE_ONBOARDING_KEY,
+			process.env.NAIA_E2E_ADK_PATH,
+		);
+		await safeRefresh();
 		await safeDeleteAdk(empty);
 		await safeDeleteAdk(hasOther);
 		await safeDeleteAdk(existing);
@@ -121,7 +171,7 @@ describe("24 — ADK Setup Flow (#328)", function () {
 
 		const input = await $(S.adkSetupInput);
 		await input.waitForDisplayed({ timeout: 5_000 });
-		await input.setValue(empty);
+		await setAdkSetupPath(empty);
 
 		const confirm = await $(S.adkSetupConfirmBtn);
 		await confirm.click();
@@ -132,16 +182,22 @@ describe("24 — ADK Setup Flow (#328)", function () {
 	});
 
 	it("S2: folder with other files → new_exists branch (delete-only)", async () => {
-		// Pre-create a non-empty folder without naia-settings/ via Tauri 2
-		// internals. write_naia_asset is the cheapest existing command that
-		// creates an arbitrary file inside the ADK path — but it writes
-		// under naia-settings/, which would put us in the has_settings branch.
-		// Instead, use init_naia_settings then delete the naia-settings dir,
-		// leaving stray VRM/bgm placeholder files behind.
-		await tauriInvoke<void>("init_naia_settings", { adkPath: hasOther });
-		await tauriInvoke<void>("delete_naia_settings", { adkPath: hasOther });
+		// Pre-create a non-empty folder without naia-settings/. init_naia_settings
+		// followed by delete_naia_settings leaves an empty folder (it only makes
+		// subdirectories under naia-settings/), which inspect_adk_dir reports as
+		// "empty". The spec runs on the same machine as the app, so write a
+		// stray file directly.
+		mkdirSync(hasOther, { recursive: true });
+		writeFileSync(join(hasOther, "stray.txt"), "e2e has_other_files\n");
 
 		await resetSetupState();
+		// The headline check below is Korean. With naia-config removed the
+		// setup screen falls back to navigator.language (i18n detectLocale), which
+		// is not ko on every Linux runner, so pin the locale for this screen only.
+		// The new-start flow clears local data afterwards.
+		await browser.execute(() => {
+			localStorage.setItem("naia-config", JSON.stringify({ locale: "ko" }));
+		});
 		await safeRefresh();
 
 		const setup = await $(S.adkSetupScreen);
@@ -153,7 +209,7 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		await cards[0].click();
 		const input = await $(S.adkSetupInput);
 		await input.waitForDisplayed({ timeout: 5_000 });
-		await input.setValue(hasOther);
+		await setAdkSetupPath(hasOther);
 		await (await $(S.adkSetupConfirmBtn)).click();
 
 		// Expect new_exists branch — only the "delete-and-restart" card should
@@ -171,6 +227,11 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		const cardCount = (await $$(S.adkSetupOptionCard)).length;
 		expect(cardCount).toBe(1); // only delete-and-restart
 
+		// Mock window.confirm to return true
+		await browser.execute(() => {
+			window.confirm = () => true;
+		});
+
 		// Click delete-and-restart and wait for onboarding.
 		const deleteCard = (await $$(S.adkSetupOptionCard))[0];
 		await deleteCard.click();
@@ -178,20 +239,29 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		await overlay.waitForDisplayed({ timeout: 240_000 });
 	});
 
-	(API_KEY ? it : it.skip)("S3: load existing ADK → onboarding skipped (provider preconfigured)", async () => {
+	it("S3: load existing ADK → onboarding skipped (provider preconfigured)", async () => {
+		if (!NAIA_KEY) throw new Error("NAIA_API_KEY is not set");
 		// Build a minimal "existing ADK" by running init + copy + writing
 		// provider config so onboarding skips.
 		await tauriInvoke<void>("init_naia_settings", { adkPath: existing });
 		await tauriInvoke<void>("copy_bundled_assets", { adkPath: existing });
 		await browser.execute(
-			(p: string, key: string) => {
+			(
+				p: string,
+				key: string,
+				model: string,
+				setupKey: string,
+				onboardingKey: string,
+			) => {
+				sessionStorage.removeItem(setupKey);
+				sessionStorage.removeItem(onboardingKey);
 				localStorage.setItem(
 					"naia-config",
 					JSON.stringify({
 						workspaceRoot: p,
-						provider: "gemini",
-						model: "gemini-2.5-flash",
-						apiKey: key,
+						provider: "nextain",
+						model,
+						naiaKey: key,
 						agentName: "Naia",
 						userName: "E2E",
 						vrmModel: "/avatars/01-OL_Woman.vrm",
@@ -204,7 +274,10 @@ describe("24 — ADK Setup Flow (#328)", function () {
 				localStorage.setItem("naia-adk-path", p);
 			},
 			existing,
-			API_KEY,
+			NAIA_KEY,
+			CREDENTIALED_MAIN_MODEL,
+			FORCE_SETUP_KEY,
+			FORCE_ONBOARDING_KEY,
 		);
 		await safeRefresh();
 

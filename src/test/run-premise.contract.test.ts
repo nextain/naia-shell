@@ -44,7 +44,13 @@ interface PremiseModule {
 		agentStarts: number;
 		leaseBlocked: number;
 		executed: number;
+		expectedStarts?: number;
 	}): { premise: string; reason: string };
+	launchesSharedApp(
+		confSource: string,
+		readSibling?: (name: string) => string | null,
+	): boolean;
+	expectedGroupStarts(input: { sharedApp: boolean; ran: number }): number;
 }
 
 const load = async (): Promise<PremiseModule> =>
@@ -162,5 +168,64 @@ describe("실행 전제 — 그 세션들에 뇌가 있었는가", () => {
 		const total = addPremiseSignals(first, second);
 		expect(total).toEqual({ agentStarts: 3, leaseBlocked: 37 });
 		expect(judgePremise({ ...total, executed: 38 }).premise).toBe("invalid");
+	});
+
+	it("앱을 onPrepare 에서 한 번 띄우는 설정은 묶음마다 기동 하나를 기대한다", async () => {
+		const { expectedGroupStarts, judgePremise, launchesSharedApp } =
+			await load();
+
+		// 2026-09-26 win-rtx4060: codex 묶음은 스펙 둘에 기동 하나였다. 스펙
+		// 수와 비교하면 뇌가 있었던 실행을 "전제 불성립" 으로 버리게 된다.
+		const codexConf =
+			"async onPrepare() {\n\t\tawait startOwnedViteServer();\n\t\tawait startOwnedEmbeddedApp(TAURI_BINARY);\n\t},";
+		const radioConf =
+			"async onPrepare() { reset(); await start(binary); },";
+		const defaultConf =
+			"async onPrepare() {\n\t\treclaimLeakedAgentChild();\n\t\tawait requirePortFree(VITE_PORT, VITE_HOST);\n\t},";
+		expect(launchesSharedApp(codexConf)).toBe(true);
+		expect(launchesSharedApp(radioConf)).toBe(true);
+		expect(launchesSharedApp(defaultConf)).toBe(false);
+		// codex-delegation 은 codex 설정을 펼쳐 그 onPrepare 를 물려받는다.
+		const delegationConf =
+			'import { config as codexConfig } from "./wdio.conf.codex.js";\nexport const config = { ...codexConfig, specs: [] };';
+		const siblings: Record<string, string> = {
+			"wdio.conf.codex.ts": codexConf,
+		};
+		expect(
+			launchesSharedApp(delegationConf, (name) => siblings[name] ?? null),
+		).toBe(true);
+		// 가져오기만 하고 펼치지 않으면 물려받지 않는다.
+		expect(
+			launchesSharedApp(
+				'import { config as codexConfig } from "./wdio.conf.codex.js";\nexport const config = {};',
+				(name) => siblings[name] ?? null,
+			),
+		).toBe(false);
+
+		expect(expectedGroupStarts({ sharedApp: true, ran: 2 })).toBe(1);
+		// 한 스펙도 돌지 못했으면 앱이 떴다고 기대하지 않는다.
+		expect(expectedGroupStarts({ sharedApp: true, ran: 0 })).toBe(0);
+		expect(expectedGroupStarts({ sharedApp: false, ran: 62 })).toBe(62);
+
+		const expectedStarts =
+			expectedGroupStarts({ sharedApp: false, ran: 62 }) +
+			expectedGroupStarts({ sharedApp: true, ran: 2 });
+		expect(
+			judgePremise({
+				agentStarts: 63,
+				leaseBlocked: 0,
+				executed: 64,
+				expectedStarts,
+			}).premise,
+		).toBe("ok");
+		// 공유 앱이 아예 뜨지 않았다면 여전히 깨진다.
+		const broken = judgePremise({
+			agentStarts: 62,
+			leaseBlocked: 0,
+			executed: 64,
+			expectedStarts,
+		});
+		expect(broken.premise).toBe("invalid");
+		expect(broken.reason).toContain("63");
 	});
 });

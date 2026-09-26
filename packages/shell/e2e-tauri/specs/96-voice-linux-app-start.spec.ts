@@ -14,7 +14,7 @@ import { ensureAppReady } from "../helpers/settings.js";
  * and per-launch token contract is exercised too. What it does not do is ask
  * an LLM for a reply; that path is covered by 95-voice-linux-shell.
  */
-const NAIA_KEY = process.env.NAIA_E2E_NAIA_KEY ?? "";
+const NAIA_KEY = process.env.NAIA_API_KEY ?? "";
 const ADK_PATH = process.env.NAIA_E2E_ADK_PATH ?? "";
 const ARTIFACTS = process.env.NAIA_E2E_VOICE_ARTIFACTS ?? "";
 const TEXT = "안녕하세요. 리눅스 셸에서 처음으로 제 목소리로 말하고 있어요.";
@@ -122,7 +122,7 @@ describe("Linux local voice starts through the real Tauri Shell", function () {
 
 	before(async () => {
 		if (!NAIA_KEY.startsWith("gw-"))
-			throw new Error("NAIA_E2E_NAIA_KEY must be a Naia member gateway key");
+			throw new Error("NAIA_API_KEY must be a Naia member gateway key");
 		if (!ADK_PATH) throw new Error("NAIA_E2E_ADK_PATH must point to a workspace");
 		await browser.setTimeout({ script: 900_000 });
 		await ensureAppReady();

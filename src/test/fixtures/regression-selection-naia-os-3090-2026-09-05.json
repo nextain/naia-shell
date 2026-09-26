@@ -1,0 +1,133 @@
+{
+	"$comment": "docs/regression-runs/naia-os-3090-2026-09-05T18-02-15-115Z.json 이 맡았던 몫을, 그 기록을 재는 테스트가 처음 생긴 커밋(804a797a)의 docs/e2e-inventory.json 에서 그대로 떠 온 것. 살아 있는 인벤토리는 스펙이 지워질 때마다 달라져 그날을 되살리지 못한다.",
+	"source": {
+		"inventoryCommit": "804a797a",
+		"record": "docs/regression-runs/naia-os-3090-2026-09-05T18-02-15-115Z.json"
+	},
+	"specs": [
+		{
+			"spec": "100-herdr-first-frame.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "23-channels-status.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "31-diagnostics.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "33-usage-dashboard.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "85-voice-actual-recording.spec.ts",
+			"conf": [],
+			"env": [
+				"CAFE_E2E_API_KEY",
+				"GEMINI_API_KEY",
+				"NAIA_API_KEY",
+				"NAIA_E2E_ADK_FIXTURE"
+			],
+			"tier": "native_local"
+		},
+		{
+			"spec": "88-stt-tts-combo-verification.spec.ts",
+			"conf": [],
+			"env": [
+				"CAFE_E2E_API_KEY",
+				"ELEVENLABS_API_KEY",
+				"GEMINI_API_KEY",
+				"NAIA_API_KEY",
+				"NAIA_E2E_ADK_FIXTURE",
+				"OPENAI_API_KEY"
+			],
+			"tier": "native_local"
+		},
+		{
+			"spec": "92-browser-app-clicks.spec.ts",
+			"conf": [],
+			"env": [
+				"NAIA_E2E_ARTIFACTS_DIR"
+			],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "93-discord-inbox-handoff.spec.ts",
+			"conf": [
+				"wdio.conf.discord-settings.ts"
+			],
+			"env": [],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "94-voice-6g-shell.spec.ts",
+			"conf": [
+				"wdio.conf.voice-6g.ts"
+			],
+			"env": [
+				"NAIA_E2E_ARTIFACTS_DIR",
+				"NAIA_E2E_NAIA_KEY",
+				"NAIA_E2E_VOICE_6G",
+				"NAIA_E2E_VOICE_SCREENSHOT",
+				"NAIA_E2E_VOXCPM2_TEST_VOICE"
+			],
+			"tier": "native_local"
+		},
+		{
+			"spec": "95-llm-role-settings.spec.ts",
+			"conf": [
+				"wdio.conf.codex.ts"
+			],
+			"env": [
+				"NAIA_E2E_ADK_PATH"
+			],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "96-codex-readiness.spec.ts",
+			"conf": [
+				"wdio.conf.codex.ts"
+			],
+			"env": [],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "96-memory-storage-boundary.spec.ts",
+			"conf": [],
+			"env": [
+				"NAIA_E2E_ADK_PATH"
+			],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "96-voice-linux-app-start.spec.ts",
+			"conf": [],
+			"env": [
+				"CAFE_E2E_API_KEY",
+				"GEMINI_API_KEY",
+				"NAIA_API_KEY",
+				"NAIA_E2E_ADK_FIXTURE",
+				"NAIA_E2E_ADK_PATH",
+				"NAIA_E2E_NAIA_KEY",
+				"NAIA_E2E_VOICE_ARTIFACTS"
+			],
+			"tier": "native_local"
+		},
+		{
+			"spec": "environment-dispatch.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
+		}
+	]
+}

@@ -30,9 +30,51 @@ import {
 	readFileSync,
 	writeFileSync,
 } from "node:fs";
-import { hostname } from "node:os";
+import { hostname, tmpdir } from "node:os";
+import { createServer } from "node:net";
 import { basename } from "node:path";
 import { delimiter, join, resolve } from "node:path";
+
+/**
+ * 선호 포트가 비어 있는지 확인하고, 이미 점유되어 있으면 OS가 할당하는
+ * 빈 포트(listen on 0)에 바인드하여 실제 포트를 돌려준다.
+ * 선호 포트가 비어 있을 때는 기본값으로 유지한다.
+ */
+function checkPortFree(port, host = "127.0.0.1") {
+	return new Promise((resolve) => {
+		const server = createServer();
+		server.unref();
+		server.once("error", () => resolve(false));
+		server.listen(port, host, () => {
+			server.close(() => resolve(true));
+		});
+	});
+}
+
+function getOsFreePort(host = "127.0.0.1") {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.unref();
+		server.once("error", reject);
+		server.listen(0, host, () => {
+			const address = server.address();
+			const port =
+				typeof address === "object" && address !== null ? address.port : 0;
+			server.close(() => resolve(port));
+		});
+	});
+}
+
+async function resolveFreePort(preferredPort, host = "127.0.0.1") {
+	if (await checkPortFree(preferredPort, host)) {
+		return preferredPort;
+	}
+	const freePort = await getOsFreePort(host);
+	console.log(
+		`[regression] 선호 포트 ${preferredPort} 이 이미 점유되어 있어 OS 빈 포트 ${freePort} 로 대체한다`,
+	);
+	return freePort;
+}
 import {
 	describeReclaimed,
 	reclaimStrandedSidecars,
@@ -43,7 +85,9 @@ import { inventoryDigestFromFile } from "./lib/inventory-digest.mjs";
 import {
 	addPremiseSignals,
 	countPremiseSignals,
+	expectedGroupStarts,
 	judgePremise,
+	launchesSharedApp,
 } from "./lib/run-premise.mjs";
 import { planGroups, wdioSpecArgs } from "./lib/regression-selection.mjs";
 import {
@@ -357,6 +401,23 @@ for (const tier of tiers) {
 	}
 }
 
+// 산출물 자리와 비용 원장은 이 실행의 것이므로 러너가 만든다.
+//
+// 스펙과 헬퍼는 두 변수를 읽어 화면 흔적과 판정 호출 수를 남긴다. 사람이
+// 넣어야 하는 값으로 두었더니 선별이 그것을 "요구 환경 없음" 으로 읽어,
+// 두 변수만 빠진 스펙들까지 통째로 빠졌다(2026-09-25 win-rtx4060 마른 실행에서
+// 일흔네 개 중 다수). 비용 원장은 아래에서 기록에 옮겨 적는 자리인데, 아무도
+// 채우지 않아 그 칸이 늘 비어 있었다. 밖에서 준 값은 그대로 존중한다.
+{
+	const runDir = join(
+		tmpdir(),
+		`naia-regression-${machine}-${new Date().toISOString().replace(/[:.]/g, "-")}`,
+	);
+	process.env.NAIA_E2E_ARTIFACTS_DIR ||= join(runDir, "artifacts");
+	process.env.NAIA_E2E_COST_LEDGER ||= join(runDir, "cost-ledger.json");
+	if (!dryRun) mkdirSync(process.env.NAIA_E2E_ARTIFACTS_DIR, { recursive: true });
+}
+
 // 등급이 요구하는 환경 변수가 실제로 있는지 먼저 본다. 없으면 그 스펙은
 // **wdio 에 넘기지 않는다.**
 //
@@ -447,7 +508,11 @@ function missingPrerequisites() {
 		);
 	if (!has("WebKitWebDriver") && process.platform === "linux")
 		missing.push("WebKitWebDriver (리눅스 웹뷰 드라이버)");
-	if (!has("tauri-driver")) missing.push("tauri-driver");
+	// Windows 는 앱에 들어 있는 WebDriver(tauri_plugin_wdio_webdriver)에 바로
+	// 붙는다(#539, wdio.conf.ts). tauri-driver 는 리눅스 경로의 전제다 — Windows
+	// 에서 이것을 요구하면 쓰지도 않는 도구 때문에 전체가 "전제 없음" 이 된다.
+	if (process.platform !== "win32" && !has("tauri-driver"))
+		missing.push("tauri-driver");
 	// 자리 계산은 agent-pairing 이 하나로 갖는다. 여기에 다시 적으면 빌드가
 	// 두는 자리와 갈라진다 — 실제로 그랬다. Windows 빌드는 MSVC 경로 길이
 	// 때문에 `C:/tmp/...` 에 짓는데 러너는 리눅스 자리만 보고 있었고, 그래서
@@ -478,15 +543,12 @@ function missingPrerequisites() {
 	// 그 키다. 사람이 쓰는 실제 ADK 의 설정은 이 등급에 영향을 주지 않는다.
 	const needsModel = tiers.includes("credentialed_live");
 	if (needsModel) {
-		for (const name of ["NAIA_API_KEY", "GEMINI_API_KEY"]) {
-			if (!(process.env[name] ?? "").length) {
-				missing.push(
-					`${name} (자격증명 등급의 대화·판정에 필요하다` +
-						(name === "NAIA_API_KEY"
-							? " — 이 키가 없으면 격리 워크스페이스에 살아 있는 공급자를 심지 못해 대화 스펙이 fetch failed 로 죽는다)"
-							: ")"),
-				);
-			}
+		// 판정 모델도 같은 게이트웨이로 부르므로(helpers/semantic.ts) 이 키 하나가
+		// 대화와 판정의 전제다. 예전에는 판정용 GEMINI_API_KEY 를 따로 요구했다.
+		if (!(process.env.NAIA_API_KEY ?? "").length) {
+			missing.push(
+				"NAIA_API_KEY (자격증명 등급의 대화·판정에 필요하다 — 이 키가 없으면 격리 워크스페이스에 살아 있는 공급자를 심지 못해 대화 스펙이 fetch failed 로 죽는다)",
+			);
 		}
 		// codex 는 이제 그것을 실제로 쓰는 스펙의 전제일 뿐이다. 전체 전제로 두면
 		// 자격증명 등급 마흔다섯 개가 codex 로그인 하나에 통째로 묶인다.
@@ -641,6 +703,9 @@ const passedSpecs = [];
 // 떠야 하는데, 앞 세션의 고아가 리스를 쥐면 앱만 뜨고 뇌 없이 돈다. 그 사실이
 // 기록에 없으면 남는 것은 제품 결함처럼 보이는 실패 숫자뿐이다.
 let premiseSignals = { agentStarts: 0, leaseBlocked: 0 };
+// 떴어야 할 에이전트 수. 앱을 공유하는 전용 설정은 스펙 수가 아니라 묶음마다
+// 한 번이다(run-premise.mjs launchesSharedApp).
+let expectedStarts = 0;
 const groupResults = [];
 
 /**
@@ -862,8 +927,9 @@ for (const [conf, specs] of groups) {
 	// 기본값으로 쓰기 때문에, 연달아 돌리면 앞 실행의 드라이버가 아직 그
 	// 포트를 잡고 있어 세션 생성이 실패한다 — 실제로 전용 설정 셋이
 	// `UND_ERR_INVALID_ARG` 로 죽었다. 그 실패는 회귀가 아니라 자리 다툼이다.
-	const groupPort = 4450 + groupIndex * 4;
-	console.log(`[regression] ${conf} — 스펙 ${specs.length}개`);
+	const preferredPort = 4450 + groupIndex * 4;
+	const groupPort = await resolveFreePort(preferredPort);
+	console.log(`[regression] ${conf} — 스펙 ${specs.length}개 (포트 ${groupPort})`);
 	// 출력을 화면에 그대로 내면서 동시에 모은다. 십몇 분 도는 동안 아무
 	// 소리가 없으면 사람이 멈춘 줄 알고 취소한다. 예전에는 `sh -c "... | tee"`
 	// 로 했는데 윈도우에는 sh 가 없어 그 기계에서는 아예 돌지 않았다.
@@ -904,6 +970,14 @@ for (const [conf, specs] of groups) {
 		? specs
 		: outcome.passed.filter((spec) => specs.includes(spec));
 	executed.push(...ran);
+	const readConf = (name) => {
+		const file = resolve("packages/shell/e2e-tauri", name);
+		return existsSync(file) ? readFileSync(file, "utf8") : null;
+	};
+	expectedStarts += expectedGroupStarts({
+		sharedApp: launchesSharedApp(readConf(conf), readConf),
+		ran: ran.length,
+	});
 	passedSpecs.push(...passedHere);
 	groupResults.push({
 		conf,
@@ -948,13 +1022,14 @@ function fingerprint() {
 }
 
 /**
- * 이 실행에 뇌가 있었는가. 스펙 하나가 세션 하나이고 세션마다 에이전트가 한 번
- * 떠야 하므로, 기동 수가 돈 스펙 수와 같고 리스에 막힌 세션이 없어야 성립한다.
+ * 이 실행에 뇌가 있었는가. 기동 수가 기대한 수(세션마다 한 번, 앱을 공유하는
+ * 묶음은 묶음마다 한 번)와 같고 리스에 막힌 세션이 없어야 성립한다.
  */
 const premiseVerdict = judgePremise({
 	agentStarts: premiseSignals.agentStarts,
 	leaseBlocked: premiseSignals.leaseBlocked,
 	executed: executed.length,
+	expectedStarts,
 });
 if (premiseVerdict.premise !== "ok") {
 	console.log(
@@ -992,6 +1067,7 @@ const record = {
 		agentStarts: premiseSignals.agentStarts,
 		leaseBlocked: premiseSignals.leaseBlocked,
 		executed: executed.length,
+		expectedStarts,
 		reason: premiseVerdict.reason,
 	},
 	// 어느 wdio 설정이 어디까지 갔는지. 한 설정이 실패해도 다른 설정의
@@ -1056,11 +1132,12 @@ console.log(`[regression] 기록: ${out} (${status})`);
  * 여덟 번 잡아 온 거짓 통과 그대로다. 실패로 남기되 `flaky` 로 표시해
  * 판단할 재료를 준다.
  */
-function retryFailedOnce(failed) {
+async function retryFailedOnce(failed) {
 	const flaky = [];
 	const stable = [];
 	for (const { conf, spec } of failed) {
 		console.log(`[regression] 다시 한 번: ${spec} (${conf})`);
+		const retryPort = await resolveFreePort(4490);
 		const child = spawnSync(
 			process.platform === "win32" ? "pnpm.cmd" : "pnpm",
 			[
@@ -1077,7 +1154,7 @@ function retryFailedOnce(failed) {
 				encoding: "utf8",
 				stdio: ["inherit", "pipe", "pipe"],
 				maxBuffer: 512 * 1024 * 1024,
-				env: { ...process.env, NAIA_E2E_WEBDRIVER_PORT: "4490" },
+				env: { ...process.env, NAIA_E2E_WEBDRIVER_PORT: String(retryPort) },
 				shell: process.platform === "win32",
 			},
 		);
@@ -1103,7 +1180,7 @@ const retryTargets = classifyFlaky
 		)
 	: [];
 const { flaky, stable } = retryTargets.length
-	? retryFailedOnce(retryTargets)
+	? await retryFailedOnce(retryTargets)
 	: { flaky: [], stable: [] };
 if (flaky.length) {
 	console.log(

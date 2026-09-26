@@ -198,12 +198,9 @@ describe("54 — Locale affects system prompt config", () => {
 	});
 });
 
-// ── Onboarding: speechStyle step locale-aware skip ──
+// ── Onboarding: speechStyle step is shown in every locale ──
 
-describe("54b — Onboarding speechStyle step skip by locale", () => {
-	const API_KEY =
-		process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "test-e2e";
-
+describe("54b — Onboarding speechStyle step in every locale", () => {
 	/**
 	 * 그 locale 로 온보딩을 처음 상태에서 시작한다.
 	 *
@@ -244,55 +241,37 @@ describe("54b — Onboarding speechStyle step skip by locale", () => {
 	}
 
 	/**
-	 * Navigate through onboarding until speechStyle or complete step.
-	 * All interactions use JS click/setValue (WebKitGTK compat).
-	 * Returns "speechStyle" | "complete" | "unknown".
+	 * welcome → agentName → userName 을 지난 다음 단계를 돌려준다.
+	 *
+	 * 온보딩 마법사에서는 말투(speechStyle) 단계에서 formal/casual 뿐 아니라
+	 * 추가 페르소나 및 호칭도 설정하므로, 모든 로케일에서 speechStyle 단계를
+	 * 표시한다 (OnboardingWizard의 STEPS_WITHOUT_NAIA). 단계 표지(data-step)를
+	 * 그대로 읽는다.
 	 */
-	async function navigateToSpeechStyleOrComplete(): Promise<string> {
+	async function stepAfterUserName(): Promise<string> {
 		const overlay = await $(S.onboardingOverlay);
 		await overlay.waitForDisplayed({ timeout: 15_000 });
+		const step = () =>
+			browser.execute(
+				(sel: string) =>
+					document.querySelector(sel)?.getAttribute("data-step") ?? "",
+				S.onboardingStep,
+			);
+		const advanceFrom = async (from: string) => {
+			await jsClick(S.onboardingNextBtn);
+			await browser.waitUntil(async () => (await step()) !== from, {
+				timeout: 10_000,
+				timeoutMsg: `onboarding stayed on step "${from}"`,
+			});
+		};
 
-		// Step: provider — select first available card, click Next
-		await browser.execute(() => {
-			const card = document.querySelector(
-				".onboarding-provider-cards .onboarding-provider-card:not(.disabled)",
-			) as HTMLButtonElement | null;
-			card?.click();
-		});
-		await browser.pause(300);
-		await jsClick(S.onboardingNextBtn);
-
-		// Step: apiKey — fill and advance
-		await jsSetValue(S.onboardingInput, API_KEY);
-		await jsClick(S.onboardingNextBtn);
-
-		// Step: agentName
+		expect(await step()).toBe("welcome");
+		await advanceFrom("welcome");
 		await jsSetValue(S.onboardingInput, "E2E-Agent");
-		await jsClick(S.onboardingNextBtn);
-
-		// Step: userName
+		await advanceFrom("agentName");
 		await jsSetValue(S.onboardingInput, "E2E-User");
-		await jsClick(S.onboardingNextBtn);
-
-		// Step: character — click first VRM card, advance
-		await jsClick(S.onboardingVrmCard);
-		await jsClick(S.onboardingNextBtn);
-
-		// Step: personality — click first card, advance
-		await jsClick(S.onboardingPersonalityCard);
-		await jsClick(S.onboardingNextBtn);
-
-		// Now we're on speechStyle OR complete (if skipped)
-		await browser.pause(500);
-		const discordBtn = await $(
-			'[data-testid="onboarding-discord-connect-btn"]',
-		);
-		if (await discordBtn.isExisting()) return "complete";
-
-		const settingsField = await $(".onboarding-content .settings-field");
-		if (await settingsField.isExisting()) return "speechStyle";
-
-		return "unknown";
+		await advanceFrom("userName");
+		return step();
 	}
 
 	// Restore normal config after all onboarding tests
@@ -304,20 +283,11 @@ describe("54b — Onboarding speechStyle step skip by locale", () => {
 		await browser.pause(2000);
 	});
 
-	// Non-formality locales: speechStyle step should be SKIPPED → land on complete
-	for (const locale of NON_FORMALITY_LOCALES) {
-		it(`onboarding skips speechStyle for '${locale}'`, async () => {
-			await setupOnboarding(locale);
-			const step = await navigateToSpeechStyleOrComplete();
-			expect(step).toBe("complete");
-		});
-	}
-
-	// Formality locales: speechStyle step should be SHOWN
-	for (const locale of FORMALITY_LOCALES) {
+	// In onboarding, speechStyle step is shown for all locales (casual/formal & persona setup)
+	for (const locale of [...FORMALITY_LOCALES, ...NON_FORMALITY_LOCALES]) {
 		it(`onboarding shows speechStyle for '${locale}'`, async () => {
 			await setupOnboarding(locale);
-			const step = await navigateToSpeechStyleOrComplete();
+			const step = await stepAfterUserName();
 			expect(step).toBe("speechStyle");
 		});
 	}

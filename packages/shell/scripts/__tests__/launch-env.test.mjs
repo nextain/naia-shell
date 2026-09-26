@@ -34,6 +34,7 @@ test("interactive launch removes native E2E workspace overrides", () => {
 		VITE_NAIA_E2E_AUTOCHAT: "1",
 		TAURI_WEBDRIVER_PORT: "4450",
 		WEBVIEW2_USER_DATA_FOLDER: "C:/tmp/e2e/webview2",
+		WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--auto-accept-camera-and-microphone-capture",
 		NAIA_AGENT_SCRIPT: "C:/paired/agent.mjs",
 	};
 

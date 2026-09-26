@@ -69,19 +69,17 @@ export const S = {
 	// 삼십 초를 채우고 죽었다(#564 재조사). check-dead-ui-specs 는 클래스
 	// 선택자를 풀지 못해 그 드리프트를 보지 못했으므로 표지로 바꾼다.
 	onboardingOverlay: '[data-testid="onboarding"]',
-	onboardingNextBtn: ".onboarding-next-btn",
-	onboardingSkipBtn: ".onboarding-skip-btn",
-	onboardingBackBtn: ".onboarding-back-btn",
-	onboardingInput: ".onboarding-input",
-	onboardingProviderCard: ".onboarding-provider-card",
-	onboardingVrmCard: ".onboarding-vrm-card",
-	onboardingPersonalityCard: ".onboarding-personality-card",
-	onboardingValidateBtn: ".onboarding-validate-btn",
-	onboardingValidationSuccess: ".onboarding-validation-success",
-	onboardingLabSection: ".onboarding-provider-card.lab-card",
-	onboardingLabBtn: ".onboarding-provider-card.lab-card",
-	onboardingLabDesc: ".onboarding-provider-card.lab-card .provider-card-desc",
-	onboardingDivider: ".onboarding-divider",
+	// 나머지도 표지로 짚는다. 예전 클래스(`.onboarding-next-btn` 등)는 마법사가
+	// 단계형으로 바뀐 뒤 하나도 남지 않아, 그것을 쓰던 스펙이 조건부 분기로
+	// 아무것도 재지 않거나 삼십 초를 채우고 죽었다. 공급자 카드·API 키·랩 카드
+	// 선택자는 그 화면이 없어져(#447·#602) 걷었다.
+	onboardingStep: '[data-testid="onboarding-step"]',
+	onboardingNextBtn: '[data-testid="onboarding-next"]',
+	onboardingBackBtn: '[data-testid="onboarding-back"]',
+	onboardingInput: '[data-testid="onboarding-input"]',
+	onboardingVrmCard: '[data-testid="onboarding-avatar-card"]',
+	onboardingNaiaLoginBtn: ".onboarding-step__naia-btn",
+	onboardingProviderLater: '[data-testid="onboarding-provider-later"]',
 
 	// Lab (Settings + CostDashboard)
 	labConnectedRow: ".lab-connected-row",
@@ -219,7 +217,7 @@ export const S = {
 	memoryEmbeddingBaseUrl: 'input[placeholder*="localhost:11434"]',
 	memoryEmbeddingModel: 'input[placeholder*="text-embedding-ada-002"]',
 	memoryBackupPasswordInput:
-		'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="\ubc44\ubc00\ubc88\ud638"]',
+		'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="\ube44\ubc00\ubc88\ud638"]',
 	memoryExportBtn: ".memory-export-btn",
 	memoryImportBtn: ".memory-import-btn",
 	memorySection: ".memory-settings-section",

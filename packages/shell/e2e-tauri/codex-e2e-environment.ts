@@ -79,8 +79,21 @@ export const E2E_TARGET_DIR = resolve(
 // avoids a rebuilt test binary silently waiting on a different Vite server.
 const E2E_VITE_PORT = 1422;
 const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
-const E2E_PREBAKED_NVA_ENABLED = process.env.NAIA_E2E_PREBAKED_NVA === "1";
-const E2E_VOICE_6G_ENABLED = process.env.NAIA_E2E_VOICE_6G === "1";
+/** 이 설정이 심는 codex 모델. 스펙은 글자를 따로 적지 않고 이것을 본다. */
+export const CODEX_E2E_MODEL =
+	process.env.NAIA_E2E_MAIN_MODEL ?? DEFAULT_CODEX_MODEL;
+/**
+ * 어떤 아바타·음성 프로필을 심을지는 그 설정 파일이 정한다.
+ *
+ * 예전에는 NAIA_E2E_PREBAKED_NVA·NAIA_E2E_VOICE_6G 를 여기서 직접 읽었다. 회귀
+ * 러너는 모든 전용 설정을 한 환경에서 돌리므로 두 값이 늘 함께 켜져, NVA 설정이
+ * 음성 6G 프로필까지 심고(vllmTtsHost) codex·grok 설정도 둘 다 떠안았다. 환경
+ * 변수는 이제 해당 설정의 "켜도 된다" 관문으로만 남고, 프로필은 인자로 받는다.
+ */
+export type CodexE2eProfile = "default" | "nva-prebaked" | "voice-6g";
+let activeProfile: CodexE2eProfile = "default";
+const prebakedNvaEnabled = (): boolean => activeProfile === "nva-prebaked";
+const voice6gEnabled = (): boolean => activeProfile === "voice-6g";
 const E2E_NVA_SOURCE =
 	process.env.NAIA_E2E_NVA_SOURCE ??
 	resolve(
@@ -162,7 +175,10 @@ export function resolveRequiredPairedAgent(): string {
  * artifacts. The Tauri E2E binary uses com.naia.shell.e2e, but that identity
  * still shares its APPDATA location unless the harness owns it explicitly.
  */
-export function configureCodexE2eEnvironment(): void {
+export function configureCodexE2eEnvironment(
+	profile: CodexE2eProfile = "default",
+): void {
+	activeProfile = profile;
 	process.env.CAFE_DEBUG_E2E = "1";
 	process.env.NAIA_E2E_MODE = "1";
 	process.env.NAIA_E2E_MOCK_CLONE = "1";
@@ -256,7 +272,7 @@ export function resetCodexE2eRoot(): void {
 		mkdirSync(dir, { recursive: true });
 	}
 	const voiceVrmPath = resolve(E2E_SETTINGS, "vrm-files", "01-OL_Woman.vrm");
-	if (E2E_VOICE_6G_ENABLED) {
+	if (voice6gEnabled()) {
 		if (!E2E_VRM_SOURCE || !existsSync(E2E_VRM_SOURCE)) {
 			throw new Error(
 				"NAIA_E2E_VOICE_6G=1 requires NAIA_E2E_VRM_SOURCE pointing to a real VRM",
@@ -270,7 +286,7 @@ export function resetCodexE2eRoot(): void {
 	const config = buildSeedShellConfig({
 		provider: mainProvider,
 		model: mainModel,
-		...(E2E_VOICE_6G_ENABLED
+		...(voice6gEnabled()
 			? {
 					localVoiceEnabled: true,
 					ttsProvider: "naia-local-voice" as const,
@@ -280,7 +296,7 @@ export function resetCodexE2eRoot(): void {
 					vrmModel: voiceVrmPath,
 				}
 			: {}),
-		...(E2E_PREBAKED_NVA_ENABLED
+		...(prebakedNvaEnabled()
 			? {
 					onboardingComplete: true,
 					workspaceRoot: E2E_WORKSPACE,
@@ -289,7 +305,7 @@ export function resetCodexE2eRoot(): void {
 				}
 			: {}),
 	});
-	if (E2E_PREBAKED_NVA_ENABLED) {
+	if (prebakedNvaEnabled()) {
 		if (!E2E_NVA_SOURCE || !existsSync(E2E_NVA_SOURCE)) {
 			throw new Error(
 				"NAIA_E2E_PREBAKED_NVA=1 requires NAIA_E2E_NVA_SOURCE pointing to a real pre-baked NVA bundle",
@@ -306,7 +322,7 @@ export function resetCodexE2eRoot(): void {
 	writeFileSync(E2E_CONFIG_PATH, JSON.stringify(config, null, 2), {
 		mode: 0o600,
 	});
-	if (E2E_VOICE_6G_ENABLED) {
+	if (voice6gEnabled()) {
 		writeFileSync(
 			E2E_SLOTS_MANIFEST_PATH,
 			JSON.stringify(
@@ -349,7 +365,7 @@ export function resetCodexE2eRoot(): void {
 			{ mode: 0o600 },
 		);
 	}
-	if (E2E_PREBAKED_NVA_ENABLED) {
+	if (prebakedNvaEnabled()) {
 		writeFileSync(
 			E2E_UI_CONFIG_PATH,
 			JSON.stringify(
@@ -440,11 +456,18 @@ export async function startOwnedViteServer(): Promise<void> {
 				VITE_NAIA_E2E_PROVIDER: process.env.NAIA_E2E_MAIN_PROVIDER ?? "codex",
 				VITE_NAIA_E2E_MODEL:
 					process.env.NAIA_E2E_MAIN_MODEL ?? DEFAULT_CODEX_MODEL,
-				...(E2E_PREBAKED_NVA_ENABLED || E2E_VOICE_6G_ENABLED
+				...(prebakedNvaEnabled() || voice6gEnabled()
 					? {}
 					: { VITE_NAIA_E2E_NO_AVATAR: "1" }),
 				// The BGM acceptance fixture is same-origin and never contacts YouTube.
 				VITE_NAIA_E2E_BGM_IFRAME_URL: "/e2e/bgm-playback-fixture.html",
+				// A Vite dev server resolves to the dev instance unless the web base
+				// says otherwise (naia-instance-urls). The credentialed key and the
+				// semantic judge both target production, so a logged-in nextain chat
+				// went to api-dev.naia.land and came back 403. Pin the instance the
+				// key belongs to; an explicit env choice still wins.
+				VITE_NAIA_WEB_BASE_URL:
+					process.env.VITE_NAIA_WEB_BASE_URL ?? "https://www.naia.land",
 			},
 		},
 	);

@@ -49,10 +49,16 @@ function userTurnIndex(
 	marker: string,
 	from = 0,
 ): number {
-	return turns.findIndex(
-		(turn, index) =>
-			index >= from && turn.role === "user" && turn.content.includes(marker),
-	);
+	// If a transient provider error was retried, the transcript may have
+	// multiple user turns with this marker. Use the last one to check
+	// the successful turn's assistant response.
+	for (let i = turns.length - 1; i >= from; i--) {
+		const turn = turns[i];
+		if (turn && turn.role === "user" && turn.content.includes(marker)) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 function hasNonEmptyAssistantAfter(

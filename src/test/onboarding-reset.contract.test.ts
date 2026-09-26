@@ -28,6 +28,14 @@ const HELPERS = resolve(
 	"helpers",
 	"settings.ts",
 );
+const SPEC_24 = resolve(
+	ROOT,
+	"packages",
+	"shell",
+	"e2e-tauri",
+	"specs",
+	"24-adk-setup-flow.spec.ts",
+);
 const DISPATCH_SPEC = resolve(
 	ROOT,
 	"packages",
@@ -59,6 +67,25 @@ function stringConst(tree: ts.SourceFile, name: string): string | null {
 			ts.isStringLiteral(node.initializer)
 		) {
 			found = node.initializer.text;
+			return;
+		}
+		node.forEachChild(visit);
+	};
+	visit(tree);
+	return found;
+}
+
+/** `const <이름> = …` 의 초기화식 텍스트. 없으면 null. */
+function variableInitializer(tree: ts.SourceFile, name: string): string | null {
+	let found: string | null = null;
+	const visit = (node: ts.Node): void => {
+		if (
+			ts.isVariableDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			node.name.text === name &&
+			node.initializer
+		) {
+			found = node.initializer.getText(tree);
 			return;
 		}
 		node.forEachChild(visit);
@@ -129,14 +156,11 @@ describe("온보딩을 되살리는 길 (#564)", () => {
 		expect(condition).toContain("e2eForceOnboarding");
 	});
 
-	it("네 스펙이 저마다 손으로 비우지 않고 같은 헬퍼를 쓴다", () => {
+	it("온보딩을 되돌리는 스펙이 저마다 손으로 비우지 않고 같은 헬퍼를 쓴다", () => {
 		// 손으로 적힌 세 줄이 남아 있으면 그 스펙만 다시 조용히 실패한다.
-		for (const name of [
-			"09-onboarding",
-			"13-lab-login",
-			"67-onboarding-config-save",
-			"54b-settings-locale-prompt",
-		]) {
+		// 13-lab-login·67-onboarding-config-save 는 사라진 화면(랩 카드, API 키
+		// 단계)을 재던 것이라 걷고, 그 몫은 09 가 지금 마법사로 잰다.
+		for (const name of ["09-onboarding", "54b-settings-locale-prompt"]) {
 			const source = readFileSync(
 				resolve(ROOT, "packages", "shell", "e2e-tauri", "specs", `${name}.spec.ts`),
 				"utf8",
@@ -145,12 +169,104 @@ describe("온보딩을 되살리는 길 (#564)", () => {
 				"resetOnboarding(",
 			);
 			expect(
-				source.includes('localStorage.removeItem("naia-config")'),
+				manualOnboardingResets(parse(
+					resolve(ROOT, "packages", "shell", "e2e-tauri", "specs", `${name}.spec.ts`),
+				)),
 				`${name} 에 손으로 비우는 옛 줄이 남아 있다`,
-			).toBe(false);
+			).toEqual([]);
 		}
 	});
+
+	it("옛 모양은 잡고, 온보딩과 무관한 캐시 비우기는 잡지 않는다", () => {
+		const sample = (code: string) =>
+			manualOnboardingResets(
+				ts.createSourceFile("s.ts", code, ts.ScriptTarget.Latest, true),
+			);
+		expect(
+			sample(`it("x", async () => {
+				await browser.execute(() => localStorage.removeItem("naia-config"));
+				await safeRefresh();
+				await (await $(S.onboardingOverlay)).waitForDisplayed();
+			});`),
+		).toHaveLength(1);
+		expect(
+			sample(`async function seed() {
+				await browser.execute(() => localStorage.removeItem("naia-config"));
+			}`),
+		).toEqual([]);
+	});
 });
+
+/**
+ * 손으로 온보딩을 되돌리는 함수들의 이름.
+ *
+ * 옛 모양은 한 함수 안에서 `naia-config` 를 지우고 온보딩 화면을 기다리는
+ * 것이다. 예전 판정은 `removeItem("naia-config")` 글자 하나만 봤다. 그래서
+ * 54b 가 설정 이전(migration)을 재려고 캐시를 비우는 자리 — 온보딩과 무관하다 —
+ * 까지 옛 줄로 세어, 스펙을 고치지 않고는 초록이 될 수 없었다. 이제 같은 함수가
+ * 온보딩을 기다리는지까지 본다.
+ */
+function manualOnboardingResets(tree: ts.SourceFile): string[] {
+	const out: string[] = [];
+	const clearsConfig = (node: ts.Node): boolean => {
+		let hit = false;
+		const walk = (n: ts.Node): void => {
+			if (hit) return;
+			if (
+				ts.isCallExpression(n) &&
+				ts.isPropertyAccessExpression(n.expression) &&
+				n.expression.name.text === "removeItem" &&
+				n.arguments[0] &&
+				ts.isStringLiteral(n.arguments[0]) &&
+				(n.arguments[0] as ts.StringLiteral).text === "naia-config"
+			) {
+				hit = true;
+				return;
+			}
+			n.forEachChild(walk);
+		};
+		walk(node);
+		return hit;
+	};
+	const waitsForOnboarding = (node: ts.Node): boolean => {
+		let hit = false;
+		const walk = (n: ts.Node): void => {
+			if (hit) return;
+			if (ts.isIdentifier(n) && /^onboarding(?:Overlay|Step)$/.test(n.text)) {
+				hit = true;
+				return;
+			}
+			n.forEachChild(walk);
+		};
+		walk(node);
+		return hit;
+	};
+	const visit = (node: ts.Node): void => {
+		if (
+			(ts.isFunctionDeclaration(node) ||
+				ts.isArrowFunction(node) ||
+				ts.isFunctionExpression(node)) &&
+			node.body &&
+			// browser.execute 콜백은 페이지 안에서 도는 조각이라 바깥 함수가 판정한다.
+			!(
+				ts.isCallExpression(node.parent) &&
+				ts.isPropertyAccessExpression(node.parent.expression) &&
+				node.parent.expression.name.text === "execute"
+			)
+		) {
+			if (clearsConfig(node.body) && waitsForOnboarding(node.body)) {
+				out.push(
+					ts.isFunctionDeclaration(node) && node.name
+						? node.name.text
+						: `<line ${tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1}>`,
+				);
+			}
+		}
+		node.forEachChild(visit);
+	};
+	visit(tree);
+	return out;
+}
 
 /** 이 파일이 던지는 오류 문구들. 주석은 코드가 아니므로 세지 않는다. */
 function thrownMessages(tree: ts.SourceFile): string[] {
@@ -184,5 +300,60 @@ describe("환경 전달 스펙의 전제 (#502)", () => {
 		// 남아 있어야 한다 — 셸이 확인을 지어내면 이 요청에도 확인이 온다.
 		expect(source).toContain("bogusOutcome");
 		expect(source).toContain('expect(probe.bogusOutcome).toBe("NO_ACK")');
+	});
+});
+
+describe("ADK 설정 화면 표식과 바인딩 가드 (#328)", () => {
+	it("E2E_FORCE_SETUP_KEY 와 spec 24의 FORCE_SETUP_KEY 가 모두 naia-e2e-force-setup 이다", () => {
+		const app = stringConst(parse(APP_TSX), "E2E_FORCE_SETUP_KEY");
+		const spec24 = stringConst(parse(SPEC_24), "FORCE_SETUP_KEY");
+
+		expect(app, "App.tsx 에 E2E_FORCE_SETUP_KEY 가 없다").toBe(
+			"naia-e2e-force-setup",
+		);
+		expect(spec24, "spec 24 에 FORCE_SETUP_KEY 가 없다").toBe(
+			"naia-e2e-force-setup",
+		);
+	});
+
+	it("자동 실행 씨앗 가드 조건에 e2eForceSetup 이 포함된다", () => {
+		const condition = seedGuardCondition(parse(APP_TSX));
+
+		expect(condition, "naia-config 를 쓰는 if 문을 찾지 못했다").not.toBeNull();
+		expect(condition).toContain("e2eForceSetup");
+	});
+
+	it("e2eAdkNeedsBinding 초기화식에 e2eForceSetup 이 포함된다", () => {
+		const init = variableInitializer(parse(APP_TSX), "e2eAdkNeedsBinding");
+
+		expect(init, "App.tsx 에 e2eAdkNeedsBinding 선언을 찾지 못했다").not.toBeNull();
+		expect(init).toContain("e2eForceSetup");
+	});
+
+	it("spec 24의 FORCE_ONBOARDING_KEY 가 E2E_FORCE_ONBOARDING_KEY 와 같다", () => {
+		const app = stringConst(parse(APP_TSX), "E2E_FORCE_ONBOARDING_KEY");
+		const spec24 = stringConst(parse(SPEC_24), "FORCE_ONBOARDING_KEY");
+
+		expect(app, "App.tsx 에 E2E_FORCE_ONBOARDING_KEY 가 없다").not.toBeNull();
+		expect(spec24, "spec 24 에 FORCE_ONBOARDING_KEY 가 없다").not.toBeNull();
+		expect(spec24).toBe(app);
+	});
+
+	it("두 표식은 sessionStorage 로만 오간다 — 앱을 다시 띄우면 사라져야 한다", () => {
+		// localStorage 에 두면 스펙이 지운 뒤 디스크에 쓰이기 전에 앱이 강제
+		// 종료될 때 표식이 다음 스펙까지 살아남았다(2026-09-26 윈도 28 이 설정
+		// 화면에 갇혔다).
+		const variable = variableInitializer(parse(APP_TSX), "e2eForceSetup");
+		expect(variable).toContain("sessionStorage.getItem(E2E_FORCE_SETUP_KEY)");
+		const onboarding = variableInitializer(parse(APP_TSX), "e2eForceOnboarding");
+		expect(onboarding).toContain(
+			"sessionStorage.getItem(E2E_FORCE_ONBOARDING_KEY)",
+		);
+		for (const path of [APP_TSX, HELPERS, SPEC_24]) {
+			const source = readFileSync(path, "utf8");
+			expect(source, path).not.toMatch(
+				/localStorage\.(?:get|set|remove)Item\(\s*(?:(?:E2E_)?FORCE_\w+|key|setupKey|onboardingKey|["']naia-e2e-force-[\w-]+["'])/,
+			);
+		}
 	});
 });

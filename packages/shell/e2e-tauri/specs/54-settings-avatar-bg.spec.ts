@@ -1,3 +1,5 @@
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { S } from "../helpers/selectors.js";
 import {
 	clickBySelector,
@@ -8,6 +10,28 @@ import {
 	scrollToSection,
 } from "../helpers/settings.js";
 
+// 1x1 PNG. 설정은 ADK 의 naia-settings/background 에 있는 파일을 그대로 고르게 한다.
+// 바이트 배열로 적는다 — base64 한 줄은 OSS 공개 관문이 토큰으로 본다.
+const PNG_1X1 = Buffer.from([
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+	0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+	0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xcf, 0xc0, 0x50,
+	0x0f, 0x00, 0x04, 0x85, 0x01, 0x80, 0x84, 0xa9, 0x8c, 0x21, 0x00, 0x00,
+	0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+/** 격리 ADK 는 템플릿 자산을 복제하지 않아 배경이 비어 있다 — 고를 거리를 둘 심는다. */
+function seedBackgrounds(): void {
+	const adk = process.env.NAIA_E2E_ADK_PATH?.trim();
+	if (!adk) throw new Error("NAIA_E2E_ADK_PATH is not set — run through wdio.conf.ts");
+	const dir = join(adk, "naia-settings", "background");
+	mkdirSync(dir, { recursive: true });
+	if (readdirSync(dir).length >= 2) return;
+	writeFileSync(join(dir, "e2e-bg-a.png"), PNG_1X1);
+	writeFileSync(join(dir, "e2e-bg-b.png"), PNG_1X1);
+}
+
 /**
  * 54 — Settings: Avatar VRM & Background
  *
@@ -16,6 +40,7 @@ import {
  */
 describe("54 — settings avatar & background", () => {
 	before(async () => {
+		seedBackgrounds();
 		await ensureAppReady();
 		// 아바타와 배경은 '아바타' 구역에 있고, VRM 카드는 공급자를 VRM 으로
 		// 바꿔야 렌더된다 (#541).
@@ -71,8 +96,8 @@ describe("54 — settings avatar & background", () => {
 			const select = document.querySelector(sel) as HTMLSelectElement | null;
 			return select ? select.options.length : 0;
 		}, S.bgSelect);
-		// "없음" 옵션 + 실제 배경 1개 이상
-		expect(optionCount).toBeGreaterThanOrEqual(2);
+		// "없음" + 심은 배경 둘.
+		expect(optionCount).toBeGreaterThanOrEqual(3);
 	});
 
 	it("should switch the background selection", async () => {
@@ -88,6 +113,7 @@ describe("54 — settings avatar & background", () => {
 			select.dispatchEvent(new Event("change", { bubbles: true }));
 			return { from: current, to: next };
 		}, S.bgSelect);
+		expect(changed).not.toBeNull();
 		if (!changed) return;
 		await browser.pause(300);
 		const value = await browser.execute(
@@ -96,6 +122,27 @@ describe("54 — settings avatar & background", () => {
 			S.bgSelect,
 		);
 		expect(value).toBe(changed.to);
+	});
+
+	after(async () => {
+		// 같은 실행의 뒤 스펙이 심은 배경을 물려받지 않게 "없음"으로 되돌리고 지운다.
+		await openSettingsSection("general").catch(() => {});
+		await browser
+			.execute((sel: string) => {
+				const select = document.querySelector(sel) as HTMLSelectElement | null;
+				if (!select || select.value === "") return;
+				select.value = "";
+				select.dispatchEvent(new Event("change", { bubbles: true }));
+			}, S.bgSelect)
+			.catch(() => {});
+		await browser.pause(300);
+		const adk = process.env.NAIA_E2E_ADK_PATH?.trim();
+		if (adk) {
+			for (const name of ["e2e-bg-a.png", "e2e-bg-b.png"]) {
+				rmSync(join(adk, "naia-settings", "background", name), { force: true });
+			}
+		}
+		await clickBySelector(S.chatTab).catch(() => {});
 	});
 
 	it("should navigate back to chat tab", async () => {

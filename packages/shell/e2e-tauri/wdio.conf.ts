@@ -187,6 +187,17 @@ if (IS_WINDOWS) {
 	process.env.APPDATA = resolve(appDataRoot, "roaming");
 	process.env.LOCALAPPDATA = resolve(appDataRoot, "local");
 	process.env.WEBVIEW2_USER_DATA_FOLDER = E2E_PROFILE_DIR;
+	// WebView2 는 마이크 요청마다 권한 창을 띄운다. 무인 실행에는 누를 사람이
+	// 없어 85 가 `NotAllowedError` 로 실패했다(2026-09-26 win-rtx4060, 사람이
+	// 허용을 누른 단독 실행만 통과). 카메라·마이크 요청만 자동 수락하고 실제
+	// 장치는 그대로 쓴다(화면 캡처 권한까지 건드리는 fake-ui 스위치는 쓰지 않는다).
+	// 이 변수는 앱의 인자를 대신하므로 wry 기본 인자(wry 0.55 webview2/mod.rs)를
+	// 함께 싣는다.
+	process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = [
+		"--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+		"--autoplay-policy=no-user-gesture-required",
+		"--auto-accept-camera-and-microphone-capture",
+	].join(" ");
 }
 
 // ── 자격증명 등급의 살아 있는 기본 공급자 (#547) ──────────────────────────────
@@ -249,6 +260,9 @@ if (process.env.NAIA_E2E_ADK_PATH?.trim()) {
 	if (CREDENTIALED_SEED_ACTIVE) {
 		process.env.VITE_NAIA_E2E_PROVIDER ??= CREDENTIALED_MAIN_PROVIDER;
 		process.env.VITE_NAIA_E2E_MODEL ??= CREDENTIALED_MAIN_MODEL;
+		// The credentialed key belongs to the production instance; a Vite dev
+		// server otherwise resolves to api-dev.naia.land (naia-instance-urls).
+		process.env.VITE_NAIA_WEB_BASE_URL ??= "https://www.naia.land";
 	}
 }
 
@@ -904,6 +918,22 @@ export const config = {
 		reclaimLeakedAgentChild();
 		await requirePortFree(IN_APP_PORT);
 		if (!IS_WINDOWS) await requirePortFree(NATIVE_DRIVER_PORT);
+
+		// 스펙마다 앱은 새로 뜨지만 격리 워크스페이스의 config.json 은 실행 내내
+		// 하나다. 온보딩을 되돌리는 스펙(resetOnboarding)은 그 파일을 비우므로,
+		// 한 번만 심어 두면 그 뒤 스펙 전부가 공급자 없이 돌아 대화가 죽는다 —
+		// 앞 스펙의 부작용이 뒤 스펙의 실패로 보인다. 앱을 띄우기 전에 매번 다시
+		// 심어 스펙을 서로 떼어 놓는다.
+		if (CREDENTIALED_SEED_ACTIVE && process.env.NAIA_E2E_ADK_PATH?.trim()) {
+			const seededAdk = process.env.NAIA_E2E_ADK_PATH.trim();
+			seedCredentialedAdk(seededAdk, credentialedSeedOptionsFromEnv());
+			// 발화 프로필 같은 화면 설정은 ui-config.json 에 남는다. 71 이 전시 소개를
+			// 켠 채 실패하자 뒤 스펙 전부가 쉬지 않는 발화에 막혀 한 줄도 보내지
+			// 못했다. 갓 만든 워크스페이스처럼 이 파일 없이 시작한다.
+			rmSync(resolve(seededAdk, "naia-settings", "ui-config.json"), {
+				force: true,
+			});
+		}
 
 		if (IS_WINDOWS) {
 			tauriDriver = spawn(TAURI_BINARY, [], {

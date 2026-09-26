@@ -1,6 +1,7 @@
 import {
 	countCompletedAssistantMessages,
 	getLastAssistantMessage,
+	getLastToolName,
 	sendMessage,
 } from "../helpers/chat.js";
 import { assertSemantic } from "../helpers/semantic.js";
@@ -13,6 +14,21 @@ const BUILTIN_SKILLS = [
 	"skill_weather",
 	"skill_notify_slack",
 ];
+
+function formatKstTime(date: Date): string {
+	// 자정을 넘는 구간도 판정 모델이 읽도록 날짜를 붙인다(예: 2026-09-26 23:58).
+	const parts = new Intl.DateTimeFormat("en-CA", {
+		timeZone: "Asia/Seoul",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		hourCycle: "h23",
+	}).formatToParts(date);
+	const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+	return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}
 
 async function countSuccessfulSkillTimeActivities(): Promise<number> {
 	return browser.execute(() => {
@@ -78,80 +94,33 @@ async function waitForCurrentSkillTimeSuccess(
 
 describe("04 — skill_time", () => {
 	before(async () => {
-		const explicitAdkPath = process.env.NAIA_E2E_ADK_PATH?.trim();
-		if (explicitAdkPath) {
-			// An explicit ADK is prepared by the caller. Preserve its canonical
-			// provider/model/secure credentials and only persist test-safe UI flags
-			// through the product's normal config writeback path.
-			const patch = await browser.execute((builtinNames: string[]) => {
-				const raw = localStorage.getItem("naia-config");
-				const previous = raw ? JSON.parse(raw) : {};
-				const disabled = Array.isArray(previous.disabledSkills)
-					? previous.disabledSkills
-					: [];
-				const builtins = new Set(builtinNames);
-				return {
-					enableTools: true,
-					onboardingComplete: true,
-					disabledSkills: disabled.filter(
-						(name: unknown) => typeof name !== "string" || !builtins.has(name),
-					),
-				};
-			}, BUILTIN_SKILLS);
-			await persistConfigPatch(patch);
-			await safeRefresh();
-			await waitForSkillTimeConfigRehydration();
-			const chatInput = await $(".chat-input");
-			await chatInput.waitForEnabled({ timeout: 15_000 });
-			return;
+		// 하네스(wdio.conf.ts)가 늘 격리 ADK 를 만든다. 예전의 Gemini 직결 대안은
+		// 그 공급자가 사라진 뒤(#602) 도달할 수 없는 분기였고, 그 키를 요구한다는
+		// 이유로 이 스펙이 회귀에서 빠졌다.
+		if (!process.env.NAIA_E2E_ADK_PATH?.trim()) {
+			throw new Error("NAIA_E2E_ADK_PATH is not set — run through wdio.conf.ts");
 		}
-
-		const apiKey =
-			process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
-		const naiaKey = process.env.NAIA_API_KEY || "";
-		const gatewayToken =
-			process.env.CAFE_GATEWAY_TOKEN ||
-			process.env.GATEWAY_MASTER_KEY ||
-			"naia-dev-token";
-		// Provider routing — prefer Gemini direct (cheapest LIVE) when key is
-		// available, fall back to nextain (lab proxy) when only the naia key
-		// is present so the spec still runs in NAIA_API_KEY-only setups.
-		const useNaia = !apiKey && naiaKey;
-		await browser.execute(
-			(key: string, naia: string, token: string, naiaMode: boolean) => {
-				const raw = localStorage.getItem("naia-config");
-				const prev = raw ? JSON.parse(raw) : {};
-				const disabled = Array.isArray(prev.disabledSkills)
-					? prev.disabledSkills
-					: [];
-				const builtins = new Set([
-					"skill_time",
-					"skill_system_status",
-					"skill_memo",
-					"skill_weather",
-					"skill_notify_slack",
-				]);
-				const config = {
-					...prev,
-					provider: naiaMode ? "nextain" : "gemini",
-					model:
-						prev.model || (naiaMode ? "gemini-2.5-pro" : "gemini-2.5-flash"),
-					apiKey: naiaMode ? "" : key || prev.apiKey || "",
-					naiaKey: naiaMode ? naia : prev.naiaKey || "",
-					enableTools: true,
-					gatewayUrl: prev.gatewayUrl || "ws://localhost:18789",
-					gatewayToken: token || prev.gatewayToken || "naia-dev-token",
-					onboardingComplete: true,
-					disabledSkills: disabled.filter((n: string) => !builtins.has(n)),
-				};
-				localStorage.setItem("naia-config", JSON.stringify(config));
-			},
-			apiKey,
-			naiaKey,
-			gatewayToken,
-			useNaia,
-		);
+		// An explicit ADK is prepared by the caller. Preserve its canonical
+		// provider/model/secure credentials and only persist test-safe UI flags
+		// through the product's normal config writeback path.
+		const patch = await browser.execute((builtinNames: string[]) => {
+			const raw = localStorage.getItem("naia-config");
+			const previous = raw ? JSON.parse(raw) : {};
+			const disabled = Array.isArray(previous.disabledSkills)
+				? previous.disabledSkills
+				: [];
+			const builtins = new Set(builtinNames);
+			return {
+				enableTools: true,
+				onboardingComplete: true,
+				disabledSkills: disabled.filter(
+					(name: unknown) => typeof name !== "string" || !builtins.has(name),
+				),
+			};
+		}, BUILTIN_SKILLS);
+		await persistConfigPatch(patch);
 		await safeRefresh();
+		await waitForSkillTimeConfigRehydration();
 		const chatInput = await $(".chat-input");
 		await chatInput.waitForEnabled({ timeout: 15_000 });
 	});
@@ -159,6 +128,7 @@ describe("04 — skill_time", () => {
 	it("should execute skill_time and return time info", async () => {
 		const beforeToolCount = await countSuccessfulSkillTimeActivities();
 		const beforeAssistantCount = await countCompletedAssistantMessages();
+		let sendTime = new Date();
 		await sendMessage(
 			"지금 몇 시야? 반드시 get_time 도구를 실제 호출해서 알려줘.",
 		);
@@ -174,6 +144,7 @@ describe("04 — skill_time", () => {
 		if (!toolOk) {
 			const retryBeforeToolCount = await countSuccessfulSkillTimeActivities();
 			const retryBeforeAssistantCount = await countCompletedAssistantMessages();
+			sendTime = new Date();
 			await sendMessage(
 				"반드시 get_time 도구를 실제 호출해서 현재 시각을 HH:MM 형식으로만 답해.",
 			);
@@ -189,14 +160,25 @@ describe("04 — skill_time", () => {
 				);
 			}
 		}
+		const replyTime = new Date();
 		const text = await getLastAssistantMessage();
 		expect(text).not.toMatch(
 			/\[오류\]|API key not valid|Bad Request|Tool Call:|print\s*\(/i,
 		);
+		const finalToolCount = await countSuccessfulSkillTimeActivities();
+		expect(finalToolCount).toBeGreaterThan(beforeToolCount);
+		const lastTool = await getLastToolName();
+		expect(lastTool).toBe("get_time");
+
+		const windowStart = new Date(sendTime.getTime() - 2 * 60 * 1000);
+		const windowEnd = new Date(replyTime.getTime() + 2 * 60 * 1000);
+		const startKst = formatKstTime(windowStart);
+		const endKst = formatKstTime(windowEnd);
+
 		await assertSemantic(
 			text,
 			"get_time 도구를 사용해서 현재 시각을 알려달라고 했다",
-			"AI가 실제 시간 정보(시:분 형태)를 제공했는가? '도구를 찾을 수 없다/실행할 수 없다'는 FAIL. 실제 시각 데이터가 포함되어야 PASS",
+			`AI가 KST(한국 표준시, Asia/Seoul) 기준 현재 시각을 올바르게 안내했는가? 허용 시간 범위는 ${startKst}부터 ${endKst}까지(전송 2분 전부터 응답 2분 후까지)이다. 범위는 24시간제이며 12시간제 답은 오전 12시=00시, 오후 12시=12시, 오후 H시=H+12시로 바꿔 비교한다. 날짜는 말하지 않아도 된다. 범위 안의 시각이면 12시간제·24시간제·자연어 어떤 형식이든 PASS. 허용 범위를 벗어난 시각, 오류, 거부, 빈 응답은 FAIL.`,
 		);
 	});
 });

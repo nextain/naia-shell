@@ -1,170 +1,100 @@
 import { S } from "../helpers/selectors.js";
-import {
-	ensureAppReady,
-	navigateToSettings,
-	openSettingsSection,
-	scrollToSection,
-} from "../helpers/settings.js";
+import { ensureAppReady, openSettingsSection } from "../helpers/settings.js";
 
 /**
  * 77 — STT Provider Switching E2E
  *
- * Tests STT provider UI:
- * 1. STT provider dropdown shows offline + API providers
- * 2. Offline providers (vosk/whisper) show model manager
- * 3. API providers (google/elevenlabs) show API key field
- * 4. Naia Cloud STT shows login prompt when not authenticated
- * 5. Switching providers updates UI correctly
+ * 음성 구역의 STT 공급자 선택(`data-testid="stt-provider-section"`)을 잰다.
+ *
+ * #603 이 타사 클라우드 음성(google·elevenlabs)과 나이아 클라우드 STT 를 흔적
+ * 없이 걷었다. 예전 이 스펙은 그 셋이 목록에 있고 API 키 칸이 뜨기를 기다려,
+ * 공급자가 사라진 뒤로는 통과할 수 없었다. 지금 남은 것은 브라우저 내장
+ * (web-speech), 오프라인 엔진(vosk·whisper), 로컬 vLLM ASR 이다.
  */
-const EXPECTED_STT_PROVIDERS = [
-	"vosk",
-	"whisper",
-	"nextain",
-	"google",
-	"elevenlabs",
-];
+const EXPECTED_STT_PROVIDERS = ["web-speech", "vosk", "whisper", "vllm"];
+const REMOVED_STT_PROVIDERS = ["nextain", "google", "elevenlabs"];
+const STT_SELECT = '[data-testid="stt-provider-section"] select';
+
+async function sttOptions(): Promise<string[]> {
+	return browser.execute((sel: string) => {
+		const select = document.querySelector(sel) as HTMLSelectElement | null;
+		if (!select) return [];
+		return Array.from(select.options)
+			.map((o) => o.value)
+			.filter((v) => v !== "");
+	}, STT_SELECT);
+}
+
+async function chooseStt(value: string): Promise<void> {
+	await browser.execute(
+		(sel: string, next: string) => {
+			const select = document.querySelector(sel) as HTMLSelectElement | null;
+			if (!select) throw new Error("STT 공급자 선택이 없다");
+			const setter = Object.getOwnPropertyDescriptor(
+				HTMLSelectElement.prototype,
+				"value",
+			)?.set;
+			setter?.call(select, next);
+			select.dispatchEvent(new Event("change", { bubbles: true }));
+		},
+		STT_SELECT,
+		value,
+	);
+	await browser.pause(500);
+}
 
 describe("77 — STT provider switching", () => {
 	before(async () => {
 		await ensureAppReady();
-		await navigateToSettings();
-		// #541 이후 설정은 내부 탭이고 **활성 탭만 렌더**한다
-		// (`SettingsTab.tsx` 의 `activeSettingsTab === "voice" && …`). 설정만 열면
-		// 프로필 탭이 서므로 음성 컨트롤은 DOM 에 아예 없다 — 셀렉터가 낡은 것이
-		// 아니라 가는 길이 빠져 있었다.
+		// 설정은 활성 구역만 렌더한다 — 음성 구역을 열어야 STT 선택이 DOM 에 선다.
 		await openSettingsSection("voice");
-		const settingsTab = await $(S.settingsTab);
-		await settingsTab.waitForDisplayed({ timeout: 10_000 });
+		await (await $(STT_SELECT)).waitForExist({ timeout: 10_000 });
 	});
 
-	it("should show STT provider dropdown with all providers", async () => {
-		// Find the STT provider select (uses listSttProviders registry)
-		const providerIds = await browser.execute(() => {
-			const selects = document.querySelectorAll("select");
-			for (const sel of selects) {
-				const options = Array.from(sel.options).map((o) => o.value);
-				if (options.includes("vosk") && options.includes("whisper")) {
-					return options.filter((v) => v !== ""); // exclude empty "none" option
-				}
-			}
-			return [];
-		});
-
-		for (const id of EXPECTED_STT_PROVIDERS) {
-			expect(providerIds).toContain(id);
-		}
+	it("STT 공급자 목록이 남은 공급자만 보여 준다", async () => {
+		const ids = await sttOptions();
+		for (const id of EXPECTED_STT_PROVIDERS) expect(ids).toContain(id);
+		for (const id of REMOVED_STT_PROVIDERS) expect(ids).not.toContain(id);
 	});
 
-	it("should show provider order: free → Naia → paid", async () => {
-		const providerIds = await browser.execute(() => {
-			const selects = document.querySelectorAll("select");
-			for (const sel of selects) {
-				const options = Array.from(sel.options).map((o) => o.value);
-				if (options.includes("vosk") && options.includes("whisper")) {
-					return options.filter((v) => v !== "");
-				}
-			}
-			return [];
-		});
-
-		// vosk and whisper should come before nextain, which should come before google/elevenlabs
-		const voskIdx = providerIds.indexOf("vosk");
-		const whisperIdx = providerIds.indexOf("whisper");
-		const nextainIdx = providerIds.indexOf("nextain");
-		const googleIdx = providerIds.indexOf("google");
-
-		expect(voskIdx).toBeLessThan(nextainIdx);
-		expect(whisperIdx).toBeLessThan(nextainIdx);
-		expect(nextainIdx).toBeLessThan(googleIdx);
+	it("무료 브라우저 내장이 오프라인 엔진보다 앞에 온다", async () => {
+		const ids = await sttOptions();
+		expect(ids.indexOf("web-speech")).toBeLessThan(ids.indexOf("vosk"));
+		expect(ids.indexOf("vosk")).toBeLessThan(ids.indexOf("vllm"));
 	});
 
-	it("should switch to vosk and show model manager", async () => {
-		await browser.execute(() => {
-			const selects = document.querySelectorAll("select");
-			for (const sel of selects) {
-				const options = Array.from(sel.options).map((o) => o.value);
-				if (options.includes("vosk")) {
-					sel.value = "vosk";
-					sel.dispatchEvent(new Event("change", { bubbles: true }));
-					return;
-				}
-			}
-		});
-
-		await browser.pause(500);
-
-		// Model manager button should appear for offline engine
-		const hasModelBtn = await browser.execute(() => {
-			return !!document.querySelector(".onboarding-next-btn");
-		});
+	it("vosk 를 고르면 모델 관리 버튼이 뜬다", async () => {
+		await chooseStt("vosk");
+		const hasModelBtn = await browser.execute(
+			(sel: string) =>
+				!!document
+					.querySelector(sel)
+					?.closest(".settings-tab")
+					?.querySelector(".onboarding-next-btn"),
+			STT_SELECT,
+		);
 		expect(hasModelBtn).toBe(true);
 	});
 
-	it("should switch to google and show API key hint", async () => {
-		await browser.execute(() => {
-			const selects = document.querySelectorAll("select");
-			for (const sel of selects) {
-				const options = Array.from(sel.options).map((o) => o.value);
-				if (options.includes("vosk")) {
-					sel.value = "google";
-					sel.dispatchEvent(new Event("change", { bubbles: true }));
-					return;
-				}
-			}
-		});
-
-		await browser.pause(500);
-
-		// API key input should appear
-		const hasApiKey = await browser.execute(() => {
-			return !!document.querySelector("#stt-api-key");
-		});
-		expect(hasApiKey).toBe(true);
-	});
-
-	it("should switch to nextain and show login prompt if not logged in", async () => {
-		await browser.execute(() => {
-			const selects = document.querySelectorAll("select");
-			for (const sel of selects) {
-				const options = Array.from(sel.options).map((o) => o.value);
-				if (options.includes("vosk")) {
-					sel.value = "nextain";
-					sel.dispatchEvent(new Event("change", { bubbles: true }));
-					return;
-				}
-			}
-		});
-
-		await browser.pause(500);
-
-		// Should show either login hint or nothing (if already logged in)
-		const hint = await browser.execute(() => {
-			const el = document.querySelector(".settings-hint");
-			return el?.textContent ?? "";
-		});
-		expect(typeof hint).toBe("string");
-	});
-
-	it("should switch back to empty (none) and hide all extras", async () => {
-		await browser.execute(() => {
-			const selects = document.querySelectorAll("select");
-			for (const sel of selects) {
-				const options = Array.from(sel.options).map((o) => o.value);
-				if (options.includes("vosk")) {
-					sel.value = "";
-					sel.dispatchEvent(new Event("change", { bubbles: true }));
-					return;
-				}
-			}
-		});
-
-		await browser.pause(500);
-
-		// No API key input or model manager
-		const hasApiKey = await browser.execute(
-			() => !!document.querySelector("#stt-api-key"),
+	it("vllm 을 고르면 ASR 호스트 칸이 뜬다", async () => {
+		await chooseStt("vllm");
+		const hasHost = await browser.execute(() =>
+			Array.from(document.querySelectorAll(".settings-field label")).some(
+				(label) => label.textContent?.trim() === "vLLM STT Host",
+			),
 		);
-		expect(hasApiKey).toBe(false);
+		expect(hasHost).toBe(true);
+	});
+
+	it("없음으로 되돌리면 딸린 칸이 사라진다", async () => {
+		await chooseStt("");
+		const extras = await browser.execute(() => ({
+			host: Array.from(document.querySelectorAll(".settings-field label")).some(
+				(label) => label.textContent?.trim() === "vLLM STT Host",
+			),
+			apiKey: !!document.querySelector("#stt-api-key"),
+		}));
+		expect(extras).toEqual({ host: false, apiKey: false });
 	});
 
 	it("should navigate back to chat tab", async () => {
@@ -172,7 +102,6 @@ describe("77 — STT provider switching", () => {
 			const el = document.querySelector(sel) as HTMLElement | null;
 			if (el) el.click();
 		}, S.chatTab);
-
 		const chatInput = await $(S.chatInput);
 		await chatInput.waitForDisplayed({ timeout: 5_000 });
 	});

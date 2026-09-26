@@ -1,5 +1,8 @@
 import { S } from "../helpers/selectors.js";
-import { enableToolsForSpec } from "../helpers/settings.js";
+import {
+	enableToolsForSpec,
+	openSettingsSection,
+} from "../helpers/settings.js";
 
 /**
  * 34 — Device Pairing E2E
@@ -20,17 +23,9 @@ describe("34 — device pairing", () => {
 	});
 
 	it("should navigate to Settings tab", async () => {
-		await browser.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (el) el.click();
-		}, S.settingsTabBtn);
-
-		try {
-			const settingsTab = await $(S.settingsTab);
-			await settingsTab.waitForDisplayed({ timeout: 10_000 });
-		} catch {
-			// Settings tab may not appear — skip gracefully
-		}
+		// 설정은 활성 구역만 렌더한다 — 도구 토글과 기기 연결 구역은 brain 구역에 있다.
+		await openSettingsSection("brain");
+		await (await $(S.toolsToggle)).waitForExist({ timeout: 10_000 });
 	});
 
 	it("should ensure tools are enabled", async () => {

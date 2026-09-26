@@ -1,11 +1,18 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const JUDGE_MODEL = process.env.CAFE_E2E_JUDGE_MODEL || "gemini-2.5-flash";
-const JUDGE_API_KEY =
-	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY;
+import { CREDENTIALED_MAIN_MODEL } from "../credentialed-adk-seed.js";
+
+// 판정 모델도 셸과 같은 나이아 게이트웨이로 부른다. 예전에는 Google Gemini 를
+// 직접 불러 GEMINI_API_KEY 가 따로 필요했고, 그 키가 없는 기계에서는 판정을 쓰는
+// 스펙 전부가 "요구 환경 없음" 으로 빠졌다. 게이트웨이는 OpenAI 호환이다.
+const JUDGE_MODEL = process.env.NAIA_E2E_JUDGE_MODEL || CREDENTIALED_MAIN_MODEL;
+const JUDGE_API_KEY = process.env.NAIA_API_KEY;
+const JUDGE_ENDPOINT = `${(process.env.NAIA_E2E_GATEWAY_URL || "https://api.nextain.io").replace(/\/+$/, "")}/v1/chat/completions`;
+// 게이트웨이의 첫 응답이 25~42초까지 늦어지는 때가 있다(2026-09-26 실측). 15초로
+// 끊으면 멀쩡한 답이 판정 요청 중단으로 FAIL 이 됐다(10 — 두 번 모두 AbortError).
 const JUDGE_TIMEOUT_MS = Number(
-	process.env.CAFE_E2E_JUDGE_TIMEOUT_MS || "15000",
+	process.env.CAFE_E2E_JUDGE_TIMEOUT_MS || "60000",
 );
 const SEMANTIC_LOG_DIR =
 	process.env.CAFE_E2E_SEMANTIC_LOG_DIR || "/tmp/e2e-semantic-logs";
@@ -39,36 +46,12 @@ interface SemanticJudgeResult {
 	reason: string;
 }
 
-function extractJson(text: string): SemanticJudgeResult {
-	const m = text.match(/\{[\s\S]*\}/);
-	if (!m) {
-		return {
-			verdict: "FAIL",
-			reason: `No JSON found in judge response: ${text.slice(0, 160)}`,
-		};
-	}
-	try {
-		const parsed = JSON.parse(m[0]) as Partial<SemanticJudgeResult>;
-		const verdict = parsed.verdict === "PASS" ? "PASS" : "FAIL";
-		return {
-			verdict,
-			reason: parsed.reason ?? "No reason",
-		};
-	} catch (err) {
-		return {
-			verdict: "FAIL",
-			reason: `Invalid JSON from judge: ${String(err)}`,
-		};
-	}
-}
-
-
 /**
  * 이 실행이 어느 청구처를 몇 번 두드렸는지 적는다.
  *
  * 비용을 추정으로 적으면 아무도 믿지 않는다. 실제 호출 수를 남기고, 금액은
- * 각 콘솔의 청구서와 대조한다. 청구처가 갈리므로 이름으로 나눠 적는다 —
- * 판정 모델은 Google Gemini 이고, 셸이 쓰는 모델은 나이아 게이트웨이다.
+ * 각 콘솔의 청구서와 대조한다. 판정 호출은 셸의 대화와 같은 나이아
+ * 게이트웨이로 가지만, 무엇이 비용을 냈는지 가르려고 이름을 따로 적는다.
  */
 function recordBillableCall(surface: string): void {
 	const path = process.env.NAIA_E2E_COST_LEDGER;
@@ -87,59 +70,146 @@ function recordBillableCall(surface: string): void {
 	}
 }
 
+type JudgeContent =
+	| string
+	| Array<
+			| { type: "text"; text: string }
+			| { type: "image_url"; image_url: { url: string } }
+	  >;
+
+type JudgeOutcome =
+	| { kind: "verdict"; result: SemanticJudgeResult }
+	| { kind: "judge_error"; reason: string };
+
+async function callJudgeOnce(content: JudgeContent): Promise<JudgeOutcome> {
+	if (!JUDGE_API_KEY) {
+		return {
+			kind: "verdict",
+			result: {
+				verdict: "FAIL",
+				reason: "Missing judge API key (NAIA_API_KEY)",
+			},
+		};
+	}
+
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), JUDGE_TIMEOUT_MS);
+	recordBillableCall("naia-gateway-judge");
+	let res: Response;
+	try {
+		res = await fetch(JUDGE_ENDPOINT, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"X-AnyLLM-Key": `Bearer ${JUDGE_API_KEY}`,
+			},
+			body: JSON.stringify({
+				model: JUDGE_MODEL,
+				temperature: 0,
+				messages: [{ role: "user", content }],
+			}),
+			signal: controller.signal,
+		});
+	} catch (err) {
+		clearTimeout(timeoutId);
+		return {
+			kind: "judge_error",
+			reason: `Judge request error: ${String(err)}`,
+		};
+	}
+	clearTimeout(timeoutId);
+
+	if (!res.ok) {
+		return {
+			kind: "judge_error",
+			reason: `Judge HTTP ${res.status}`,
+		};
+	}
+
+	let body: Record<string, unknown> | undefined;
+	try {
+		body = (await res.json()) as Record<string, unknown>;
+	} catch (err) {
+		return {
+			kind: "judge_error",
+			reason: `Invalid JSON body in judge response: ${String(err)}`,
+		};
+	}
+
+	const choices = body?.choices as
+		| Array<{ message?: { content?: unknown } }>
+		| undefined;
+	const message = choices?.[0]?.message?.content;
+	const text: string =
+		typeof message === "string"
+			? message
+			: Array.isArray(message)
+				? message.map((p: { text?: string }) => p.text ?? "").join("")
+				: "";
+
+	if (!text || text.trim().length === 0) {
+		return {
+			kind: "judge_error",
+			reason: "Empty judge reply",
+		};
+	}
+
+	const m = text.match(/\{[\s\S]*\}/);
+	if (!m) {
+		return {
+			kind: "judge_error",
+			reason: `No JSON found in judge response: ${text.slice(0, 160)}`,
+		};
+	}
+
+	try {
+		const parsed = JSON.parse(m[0]) as Partial<SemanticJudgeResult>;
+		const verdict = parsed.verdict === "PASS" ? "PASS" : "FAIL";
+		return {
+			kind: "verdict",
+			result: {
+				verdict,
+				reason: parsed.reason ?? "No reason",
+			},
+		};
+	} catch (err) {
+		return {
+			kind: "judge_error",
+			reason: `Invalid JSON from judge: ${String(err)}`,
+		};
+	}
+}
+
+async function callJudge(content: JudgeContent): Promise<SemanticJudgeResult> {
+	const initial = await callJudgeOnce(content);
+	if (initial.kind === "verdict") {
+		return initial.result;
+	}
+
+	// Retry once ONLY for judge-side failures (HTTP error, unparsable JSON, empty reply)
+	console.log(
+		`[e2e] transient judge failure (${initial.reason}) — retrying judge call once`,
+	);
+	await new Promise((r) => setTimeout(r, 1_000));
+
+	const retry = await callJudgeOnce(content);
+	if (retry.kind === "verdict") {
+		return retry.result;
+	}
+
+	return {
+		verdict: "FAIL",
+		reason: retry.reason,
+	};
+}
+
 export async function judgeSemantics(opts: {
 	task: string;
 	answer: string;
 	criteria: string;
 }): Promise<SemanticJudgeResult> {
-	if (!JUDGE_API_KEY) {
-		return {
-			verdict: "FAIL",
-			reason: "Missing judge API key (CAFE_E2E_API_KEY or GEMINI_API_KEY)",
-		};
-	}
-
 	const prompt = `You are a strict E2E semantic judge.\nTask: ${opts.task}\nAnswer: ${opts.answer}\nCriteria: ${opts.criteria}\nReturn JSON only: {"verdict":"PASS|FAIL","reason":"..."}\n`;
-
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), JUDGE_TIMEOUT_MS);
-	recordBillableCall("google-gemini-judge");
-	const res = await fetch(
-		`https://generativelanguage.googleapis.com/v1beta/models/${JUDGE_MODEL}:generateContent?key=${JUDGE_API_KEY}`,
-		{
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				contents: [{ role: "user", parts: [{ text: prompt }] }],
-				generationConfig: {
-					temperature: 0,
-				},
-			}),
-			signal: controller.signal,
-		},
-	).catch((err) => {
-		return {
-			ok: false,
-			status: 599,
-			json: async () => ({}),
-			__err: String(err),
-		} as unknown as Response;
-	});
-	clearTimeout(timeoutId);
-
-	if (!res.ok) {
-		return {
-			verdict: "FAIL",
-			reason: `Judge HTTP ${res.status}`,
-		};
-	}
-
-	const body = await res.json();
-	const text: string =
-		body?.candidates?.[0]?.content?.parts
-			?.map((p: { text?: string }) => p.text ?? "")
-			.join("") ?? "";
-	return extractJson(text);
+	return callJudge(prompt);
 }
 
 /**
@@ -234,67 +304,14 @@ export async function judgeVisualSemantics(opts: {
 	screenshotBase64: string;
 	criteria: string;
 }): Promise<SemanticJudgeResult> {
-	if (!JUDGE_API_KEY) {
-		return {
-			verdict: "FAIL",
-			reason: "Missing judge API key (CAFE_E2E_API_KEY or GEMINI_API_KEY)",
-		};
-	}
-
 	const prompt = `You are a strict E2E semantic judge.\nTask: ${opts.task}\nCriteria: ${opts.criteria}\nAnalyze the provided screenshot and return JSON only: {"verdict":"PASS|FAIL","reason":"..."}\n`;
-
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), JUDGE_TIMEOUT_MS);
-	recordBillableCall("google-gemini-judge");
-	const res = await fetch(
-		`https://generativelanguage.googleapis.com/v1beta/models/${JUDGE_MODEL}:generateContent?key=${JUDGE_API_KEY}`,
+	return callJudge([
+		{ type: "text", text: prompt },
 		{
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				contents: [
-					{
-						role: "user",
-						parts: [
-							{ text: prompt },
-							{
-								inlineData: {
-									mimeType: "image/png",
-									data: opts.screenshotBase64,
-								},
-							},
-						],
-					},
-				],
-				generationConfig: {
-					temperature: 0,
-				},
-			}),
-			signal: controller.signal,
+			type: "image_url",
+			image_url: { url: `data:image/png;base64,${opts.screenshotBase64}` },
 		},
-	).catch((err) => {
-		return {
-			ok: false,
-			status: 599,
-			json: async () => ({}),
-			__err: String(err),
-		} as unknown as Response;
-	});
-	clearTimeout(timeoutId);
-
-	if (!res.ok) {
-		return {
-			verdict: "FAIL",
-			reason: `Judge HTTP ${res.status}`,
-		};
-	}
-
-	const body = await res.json();
-	const text: string =
-		body?.candidates?.[0]?.content?.parts
-			?.map((p: { text?: string }) => p.text ?? "")
-			.join("") ?? "";
-	return extractJson(text);
+	]);
 }
 
 /**

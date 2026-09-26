@@ -127,11 +127,11 @@ describe("HistoryTab", () => {
 		expect(screen.queryByText("Legacy Peer")).toBeNull();
 	});
 
-	it("marks current session", async () => {
-		useChatStore.setState({ sessionId: "agent:main:main" });
+	it("marks current session by localSessionId", async () => {
+		useChatStore.setState({ localSessionId: "chat-1234", sessionId: "agent:main:main" });
 		mockListConversations.mockResolvedValue([
 			{
-				key: "agent:main:main",
+				key: "chat-1234",
 				label: "Current",
 				messageCount: 3,
 				createdAt: Date.now(),
@@ -146,10 +146,33 @@ describe("HistoryTab", () => {
 		});
 	});
 
-	it("loads regular session on click", async () => {
+	it("does not reload when clicking current session", async () => {
+		useChatStore.setState({ localSessionId: "chat-1234", sessionId: "agent:main:main" });
 		mockListConversations.mockResolvedValue([
 			{
-				key: "agent:main:abc",
+				key: "chat-1234",
+				label: "Current Chat",
+				messageCount: 2,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
+		]);
+
+		render(<HistoryTab onLoadSession={onLoadSession} />);
+		await waitFor(() => {
+			expect(screen.getByText("Current Chat")).toBeDefined();
+		});
+
+		fireEvent.click(screen.getByText("Current Chat"));
+		expect(mockGetConversationHistory).not.toHaveBeenCalled();
+		expect(onLoadSession).not.toHaveBeenCalled();
+	});
+
+	it("loads regular session on click", async () => {
+		useChatStore.setState({ localSessionId: "chat-1234", sessionId: "agent:main:main" });
+		mockListConversations.mockResolvedValue([
+			{
+				key: "chat-abc",
 				label: "Regular Chat",
 				messageCount: 2,
 				createdAt: Date.now(),
@@ -175,9 +198,49 @@ describe("HistoryTab", () => {
 		await waitFor(() => {
 			expect(onLoadSession).toHaveBeenCalled();
 			const state = useChatStore.getState();
-			expect(state.sessionId).toBe("agent:main:abc");
+			expect(state.localSessionId).toBe("chat-abc");
+			expect(state.sessionId).toBe("agent:main:main");
 			expect(state.messages).toHaveLength(1);
 		});
+	});
+
+	it("resets chat when current session is deleted", async () => {
+		vi.spyOn(window, "confirm").mockReturnValue(true);
+		useChatStore.setState({
+			localSessionId: "chat-current",
+			sessionId: "agent:main:main",
+			messages: [
+				{ id: "m1", role: "user", content: "active message", timestamp: 1000 },
+			],
+		});
+		mockListConversations.mockResolvedValue([
+			{
+				key: "chat-current",
+				label: "Current To Delete",
+				messageCount: 1,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
+		]);
+		mockDeleteConversation.mockResolvedValue(true);
+
+		const { container } = render(<HistoryTab onLoadSession={onLoadSession} />);
+		await waitFor(() => {
+			expect(screen.getByText("Current To Delete")).toBeDefined();
+		});
+
+		const deleteBtn = container.querySelector(".history-delete-btn");
+		expect(deleteBtn).not.toBeNull();
+		fireEvent.click(deleteBtn!);
+
+		await waitFor(() => {
+			expect(mockDeleteConversation).toHaveBeenCalledWith("chat-current");
+		});
+
+		const state = useChatStore.getState();
+		expect(state.messages).toHaveLength(0);
+		expect(state.localSessionId).not.toBe("chat-current");
+		expect(state.sessionId).toBe("agent:main:main");
 	});
 
 	it("deletes session on confirm", async () => {

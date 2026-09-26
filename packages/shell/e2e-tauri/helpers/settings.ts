@@ -10,12 +10,31 @@ import { S } from "./selectors.js";
 export async function safeRefresh(maxAttempts = 3): Promise<void> {
 	for (let attempt = 0; attempt < maxAttempts; attempt++) {
 		try {
+			// execute 안에서 바로 reload 하면 문맥이 사라져 매번 30초 스크립트
+			// 타임아웃을 먹는다 — 다음 틱으로 미루고, 표식이 사라져야 새 문서다.
 			await browser
 				.execute(() => {
-					window.location.reload();
+					(window as unknown as { __naiaReloadMark?: number }).__naiaReloadMark = 1;
+					setTimeout(() => {
+						window.location.reload();
+					}, 0);
 				})
 				.catch(() => {});
-			await browser.pause(800); // reload 네비게이션 시작 여유
+			await browser.waitUntil(
+				async () => {
+					try {
+						const mark = await browser.execute(
+							() =>
+								(window as unknown as { __naiaReloadMark?: number })
+									.__naiaReloadMark ?? null,
+						);
+						return mark === null;
+					} catch {
+						return false; // 내비게이션 중 — 아직 새 문서가 아니다
+					}
+				},
+				{ timeout: 30_000, interval: 200, timeoutMsg: "reload did not replace the document" },
+			);
 			const appRoot = await $(S.appRoot);
 			await appRoot.waitForExist({ timeout: 30_000 });
 			return;
@@ -204,6 +223,9 @@ export async function configureSettings(opts: {
 
 /** 설정 내부 섹션 탭으로 이동한다 (#541: 설정은 내부 탭 구조). */
 export async function openSettingsSection(id: string): Promise<void> {
+	// 구역 탭은 설정 패널 안에 있다. 패널이 닫혀 있으면 탭이 보이지 않아 십 초를
+	// 기다리다 죽는다 — 먼저 연다(이미 열려 있으면 아무 일도 하지 않는다).
+	await navigateToSettings();
 	// 드라이버가 클릭을 거절하는 환경이 있어 clickElement 를 지난다.
 	await clickElement(`[data-settings-tab="${id}"]`, 10_000);
 	await browser.pause(300);
@@ -264,6 +286,38 @@ export async function setNativeValue(
 	);
 }
 
+/**
+ * Choose a <select> option so React's onChange fires. Assigning `select.value`
+ * directly updates React's value tracker first, so the change event looks like
+ * a no-op and the handler never runs. Returns false when the option is missing
+ * or disabled.
+ */
+export async function chooseSelectOption(
+	selector: string,
+	value: string,
+): Promise<boolean> {
+	const chosen = await browser.execute(
+		(sel: string, val: string) => {
+			const select = document.querySelector(sel) as HTMLSelectElement | null;
+			const option = select
+				? Array.from(select.options).find((o) => o.value === val)
+				: undefined;
+			if (!select || !option || option.disabled) return false;
+			const setter = Object.getOwnPropertyDescriptor(
+				HTMLSelectElement.prototype,
+				"value",
+			)?.set;
+			setter?.call(select, val);
+			select.dispatchEvent(new Event("change", { bubbles: true }));
+			return true;
+		},
+		selector,
+		value,
+	);
+	await browser.pause(500);
+	return chosen;
+}
+
 /** Click an element by selector using browser.execute (reliable in WebKitGTK). */
 export async function clickBySelector(selector: string): Promise<void> {
 	await browser.execute((sel: string) => {
@@ -276,8 +330,9 @@ import { clickElement } from "./click.js";
 
 export { clickElement };
 
-const API_KEY =
-	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
+// 대화 공급자는 나이아 게이트웨이(nextain) 하나다. 예전의 Gemini 직결 분기는
+// 제품 기본값이 아니게 된 뒤로 이 키를 요구하는 스펙만 늘렸다 — 회귀 러너가
+// 그 키가 없다는 이유로 예순 개 넘는 스펙을 빼 버렸다.
 const NAIA_KEY = process.env.NAIA_API_KEY || "";
 // 기본값이 Windows 드라이브 경로로 박혀 있어 다른 기계에서는 설치 화면이
 // 먼저 뜬다 (#541). 저장소 위치에서 형제 naia-adk 를 찾는다.
@@ -304,16 +359,19 @@ async function waitForAppReadySurface(): Promise<void> {
 			),
 		{ timeout: 60_000 },
 	);
-	// jikime c0d967e9 baseline 의 ChatApp.tsx 는 chat-tabs 안에 button.chat-tab
-	// 3개 (chat / history / channels). origin/main 의 #337 시리즈에서 8 tab 으로
-	// 확장됐던 helper 가 cherry-pick 으로 baseline 위에 그대로 들어옴 = mismatch.
-	// 3 tab 이 baseline 의 정확한 contract. (debug log 에서 무한 false 확인.)
+	// 채팅 머리의 탭은 지금 chat · history 둘이다 (`ChatArea.tsx` 의 `data-chat-tab`).
+	// 예전 판정은 탭 개수 "셋 이상" 을 기다려, 탭이 둘로 준 뒤로 매 스펙마다 육십 초를
+	// 기다리다 던졌다. 그 예외가 전역 before 를 끊어 키 전달·권한 자동 승인까지 건너뛰었다.
+	// 개수가 아니라 이름으로 기다린다.
 	await browser.waitUntil(
 		async () =>
 			browser.execute(
-				() => document.querySelectorAll(".chat-tabs .chat-tab").length >= 3,
+				(chat: string, history: string) =>
+					!!document.querySelector(chat) && !!document.querySelector(history),
+				S.chatTab,
+				S.historyTab,
 			),
-		{ timeout: 60_000 },
+		{ timeout: 60_000, timeoutMsg: "채팅 머리의 chat·history 탭이 뜨지 않았다" },
 	);
 }
 
@@ -327,55 +385,87 @@ export async function ensureAppReady(): Promise<void> {
 		// An explicit ADK is prepared by the caller. Its config.json is the source
 		// of truth; do not write a legacy localStorage config or refresh over it.
 		const expectedAdkPath = normalizeAdkPath(explicitAdkPath);
-		await browser.waitUntil(
-			async () => {
-				const state = await browser.execute(() => {
-					const selectedPath = localStorage.getItem("naia-adk-path") ?? "";
-					const raw = localStorage.getItem("naia-config");
-					if (!raw) return { selectedPath, ready: false };
-					try {
-						const config = JSON.parse(raw) as {
-							onboardingComplete?: unknown;
-							llmRoles?: {
-								main?: {
-									provider?: unknown;
-									model?: unknown;
+		// 시간 초과 때 어느 조건이 모자랐는지 보이도록 마지막 관측값을 남긴다.
+		let lastObserved = "(관측 전)";
+		try {
+			await browser.waitUntil(
+				async () => {
+					lastObserved = await browser.execute(() => {
+						const raw = localStorage.getItem("naia-config");
+						let summary = "config=없음";
+						if (raw) {
+							try {
+								const c = JSON.parse(raw) as {
+									onboardingComplete?: unknown;
+									locale?: unknown;
+									llmRoles?: { main?: { provider?: unknown; model?: unknown } };
+								};
+								summary =
+									`onboardingComplete=${String(c.onboardingComplete)}, ` +
+									`locale=${String(c.locale)}, ` +
+									`main=${String(c.llmRoles?.main?.provider)}/${String(c.llmRoles?.main?.model)}`;
+							} catch {
+								summary = "config=파싱 실패";
+							}
+						}
+						return (
+							`adkPath=${localStorage.getItem("naia-adk-path") ?? "unset"}, ${summary}, ` +
+							`setup=${!!document.querySelector(".adk-setup-screen")}, ` +
+							`onboarding=${!!document.querySelector('[data-testid="onboarding"]')}, ` +
+							`splash=${!!document.querySelector(".splash-ring")}`
+						);
+					});
+					const state = await browser.execute(() => {
+						const selectedPath = localStorage.getItem("naia-adk-path") ?? "";
+						const raw = localStorage.getItem("naia-config");
+						if (!raw) return { selectedPath, ready: false };
+						try {
+							const config = JSON.parse(raw) as {
+								onboardingComplete?: unknown;
+								llmRoles?: {
+									main?: {
+										provider?: unknown;
+										model?: unknown;
+									};
 								};
 							};
-						};
-						const main = config.llmRoles?.main;
-						return {
-							selectedPath,
-							ready:
-								config.onboardingComplete === true &&
-								typeof main?.provider === "string" &&
-								main.provider.length > 0 &&
-								typeof main.model === "string" &&
-								main.model.length > 0,
-						};
-					} catch {
-						return { selectedPath, ready: false };
+							const main = config.llmRoles?.main;
+							return {
+								selectedPath,
+								ready:
+									config.onboardingComplete === true &&
+									typeof main?.provider === "string" &&
+									main.provider.length > 0 &&
+									typeof main.model === "string" &&
+									main.model.length > 0,
+							};
+						} catch {
+							return { selectedPath, ready: false };
+						}
+					});
+					const selectedPath = String(state.selectedPath ?? "");
+					if (
+						selectedPath &&
+						normalizeAdkPath(selectedPath) !== expectedAdkPath
+					) {
+						throw new Error(
+							`selected ADK path mismatch: expected ${explicitAdkPath}, got ${selectedPath}`,
+						);
 					}
-				});
-				const selectedPath = String(state.selectedPath ?? "");
-				if (
-					selectedPath &&
-					normalizeAdkPath(selectedPath) !== expectedAdkPath
-				) {
-					throw new Error(
-						`selected ADK path mismatch: expected ${explicitAdkPath}, got ${selectedPath}`,
+					return (
+						normalizeAdkPath(selectedPath) === expectedAdkPath &&
+						state.ready === true
 					);
-				}
-				return (
-					normalizeAdkPath(selectedPath) === expectedAdkPath &&
-					state.ready === true
-				);
-			},
-			{
-				timeout: 60_000,
-				timeoutMsg: `explicit ADK did not hydrate: ${explicitAdkPath} (selected path, onboarding, and main provider/model are required)`,
-			},
-		);
+				},
+				{ timeout: 60_000 },
+			);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			if (reason.startsWith("selected ADK path mismatch")) throw error;
+			throw new Error(
+				`explicit ADK did not hydrate: ${explicitAdkPath} (selected path, onboarding, and main provider/model are required); last: ${lastObserved}`,
+			);
+		}
 		await waitForAppReadySurface();
 		return;
 	}
@@ -408,43 +498,25 @@ export async function ensureAppReady(): Promise<void> {
 
 	if (!alreadyConfigured) {
 		await browser.execute(
-			(geminiKey: string, naiaKey: string) => {
+			(naiaKey: string) => {
 				const existing = localStorage.getItem("naia-config");
 				const config = existing ? JSON.parse(existing) : {};
-				if (naiaKey && !geminiKey) {
-					// Use nextain provider when only naia key is available
-					Object.assign(config, {
-						provider: "nextain",
-						model: config.model || "gemini-2.5-pro",
-						apiKey: "",
-						naiaKey: naiaKey,
-						agentName: config.agentName || "Naia",
-						userName: config.userName || "Tester",
-						vrmModel: config.vrmModel || "/avatars/01-OL_Woman.vrm",
-						persona: config.persona || "Friendly AI companion",
-						enableTools: true,
-						locale: config.locale || "ko",
-						onboardingComplete: true,
-						appVisible: true,
-					});
-				} else {
-					Object.assign(config, {
-						provider: config.provider || "gemini",
-						model: config.model || "gemini-2.5-flash",
-						apiKey: config.apiKey || geminiKey,
-						agentName: config.agentName || "Naia",
-						userName: config.userName || "Tester",
-						vrmModel: config.vrmModel || "/avatars/01-OL_Woman.vrm",
-						persona: config.persona || "Friendly AI companion",
-						enableTools: true,
-						locale: config.locale || "ko",
-						onboardingComplete: true,
-						appVisible: true,
-					});
-				}
+				Object.assign(config, {
+					provider: "nextain",
+					model: config.model || "gemini-2.5-pro",
+					apiKey: "",
+					naiaKey: naiaKey,
+					agentName: config.agentName || "Naia",
+					userName: config.userName || "Tester",
+					vrmModel: config.vrmModel || "/avatars/01-OL_Woman.vrm",
+					persona: config.persona || "Friendly AI companion",
+					enableTools: true,
+					locale: config.locale || "ko",
+					onboardingComplete: true,
+					appVisible: true,
+				});
 				localStorage.setItem("naia-config", JSON.stringify(config));
 			},
-			API_KEY,
 			NAIA_KEY,
 		);
 		// Retry refresh — WebKitGTK may throw UND_ERR_HEADERS_TIMEOUT intermittently
@@ -590,7 +662,7 @@ export async function resetOnboarding(
 	// 2) 브라우저 캐시를 비우고, 이번 부팅은 마법사를 보라는 표식을 세운다.
 	await browser.execute(
 		(key: string, s: Record<string, unknown>) => {
-			localStorage.setItem(key, "1");
+			sessionStorage.setItem(key, "1");
 			if (Object.keys(s).length === 0) localStorage.removeItem("naia-config");
 			else localStorage.setItem("naia-config", JSON.stringify(s));
 		},
@@ -604,7 +676,7 @@ export async function resetOnboarding(
 	// 3) 표식은 여기서 지운다. 남겨 두면 뒤따르는 다른 스펙 파일까지 마법사가
 	//    뜨는 상태가 되어, 이 헬퍼가 고치려던 것과 반대 방향으로 어긋난다.
 	await browser.execute((key: string) => {
-		localStorage.removeItem(key);
+		sessionStorage.removeItem(key);
 	}, FORCE_ONBOARDING_KEY);
 }
 
@@ -673,7 +745,7 @@ async function readOnboardingSurface(): Promise<OnboardingSurface> {
 			},
 			errorText,
 			onboardingComplete,
-			hasMarker: localStorage.getItem(key) === "1",
+			hasMarker: sessionStorage.getItem(key) === "1",
 			adkPath: localStorage.getItem("naia-adk-path"),
 		};
 	}, FORCE_ONBOARDING_KEY)) as OnboardingSurface;

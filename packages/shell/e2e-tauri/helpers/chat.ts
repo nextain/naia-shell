@@ -387,7 +387,7 @@ async function setTextareaAndSend(
  * Send a message in the chat input and wait for the assistant to finish responding.
  * Uses DOM queries (not element refs) to avoid stale element issues in WebKitGTK.
  */
-export async function sendMessage(
+async function sendMessageOnce(
 	text: string,
 	options: { completedMessageTimeoutMs?: number } = {},
 ): Promise<void> {
@@ -536,6 +536,96 @@ export async function sendMessage(
 		// Tool success verification is handled by waitForToolSuccess() in individual specs.
 	} finally {
 		await traceDelta();
+	}
+}
+
+async function waitForChatIdle(timeoutMs = 30_000): Promise<void> {
+	const input = await $(S.chatInput);
+	await input.waitForEnabled({ timeout: timeoutMs });
+	await browser.waitUntil(
+		async () => {
+			return browser.execute(
+				(cursorSel: string, sendSel: string) => {
+					if (document.querySelector(cursorSel)) return false;
+					if (document.querySelector(".chat-cancel-btn")) return false;
+					const buttons = Array.from(
+						document.querySelectorAll(sendSel),
+					) as HTMLButtonElement[];
+					return buttons.some(
+						(btn) =>
+							!btn.classList.contains("chat-cancel-btn") &&
+							!btn.className.split(/\s+/).includes("chat-cancel-btn"),
+					);
+				},
+				S.cursorBlink,
+				S.chatSendBtn,
+			);
+		},
+		{
+			timeout: timeoutMs,
+			timeoutMsg:
+				"Chat did not become idle before retry (cursor-blink or cancel-btn still present, or normal send button not ready)",
+		},
+	);
+}
+
+const TRANSIENT_RETRY_BACKOFFS_MS = [5_000, 15_000] as const;
+
+// tool loop limit exceeded는 전송 장애가 아닌 에이전트의 도구 라운드 상한(flaky 모델 루프)입니다.
+function isToolLoopError(errorText: string): boolean {
+	return errorText.includes("tool loop limit exceeded");
+}
+
+function isProviderStreamError(errorText: string): boolean {
+	return (
+		errorText.includes("provider error: terminated") ||
+		/provider error: .*stream idle for \d+ms/.test(errorText)
+	);
+}
+
+function getTransientChatErrorMaxRetries(errorText: string): number {
+	if (isToolLoopError(errorText)) {
+		return 1;
+	}
+	if (isProviderStreamError(errorText)) {
+		return 2;
+	}
+	return 0;
+}
+
+/**
+ * Send a message in the chat input and wait for the assistant to finish responding.
+ * Retries with backoff if the upstream provider stream was terminated or went idle
+ * transiently (transport failure, up to 2 retries) or if tool loop limit was exceeded
+ * (flaky model loop, at most 1 retry).
+ */
+export async function sendMessage(
+	text: string,
+	options: { completedMessageTimeoutMs?: number } = {},
+): Promise<void> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			await sendMessageOnce(text, options);
+			return;
+		} catch (err) {
+			const errorText = err instanceof Error ? err.message : String(err);
+			const maxRetries = getTransientChatErrorMaxRetries(errorText);
+			if (
+				attempt < maxRetries &&
+				attempt < TRANSIENT_RETRY_BACKOFFS_MS.length
+			) {
+				const backoffMs = TRANSIENT_RETRY_BACKOFFS_MS[attempt] ?? 5_000;
+				const retryIndex = attempt + 1;
+				const utc = new Date().toISOString();
+				console.log(
+					`[${utc}] [e2e] transient failure (retry ${retryIndex}/${maxRetries}, backoff ${backoffMs}ms): ${errorText} — retrying: ${text}`,
+				);
+				await browser.pause(backoffMs);
+				await waitForChatIdle(30_000);
+				continue;
+			}
+			throw err;
+		}
 	}
 }
 
