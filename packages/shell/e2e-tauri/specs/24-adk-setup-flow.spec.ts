@@ -190,6 +190,13 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		writeFileSync(join(hasOther, "stray.txt"), "e2e has_other_files\n");
 
 		await resetSetupState();
+		// The headline check below is Korean. With naia-config removed the
+		// setup screen falls back to navigator.language (i18n detectLocale), which
+		// is not ko on every Linux runner, so pin the locale for this screen only.
+		// The new-start flow clears local data afterwards.
+		await browser.execute(() => {
+			localStorage.setItem("naia-config", JSON.stringify({ locale: "ko" }));
+		});
 		await safeRefresh();
 
 		const setup = await $(S.adkSetupScreen);
