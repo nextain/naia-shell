@@ -42,8 +42,9 @@ async function resetSetupState(): Promise<void> {
 			localStorage.removeItem("naia-remote-key");
 			localStorage.removeItem("naia-remote-user-id");
 			localStorage.removeItem("naia-adk-path");
-			localStorage.setItem(setupKey, "1");
-			localStorage.setItem(onboardingKey, "1");
+			// 표식은 sessionStorage 다(App.tsx) — 앱을 다시 띄우면 저절로 사라진다.
+			sessionStorage.setItem(setupKey, "1");
+			sessionStorage.setItem(onboardingKey, "1");
 		},
 		FORCE_SETUP_KEY,
 		FORCE_ONBOARDING_KEY,
@@ -139,8 +140,8 @@ describe("24 — ADK Setup Flow (#328)", function () {
 	after(async () => {
 		await browser.execute(
 			(setupKey: string, onboardingKey: string, adkPath?: string) => {
-				localStorage.removeItem(setupKey);
-				localStorage.removeItem(onboardingKey);
+				sessionStorage.removeItem(setupKey);
+				sessionStorage.removeItem(onboardingKey);
 				if (adkPath) {
 					localStorage.setItem("naia-adk-path", adkPath);
 				}
@@ -252,8 +253,8 @@ describe("24 — ADK Setup Flow (#328)", function () {
 				setupKey: string,
 				onboardingKey: string,
 			) => {
-				localStorage.removeItem(setupKey);
-				localStorage.removeItem(onboardingKey);
+				sessionStorage.removeItem(setupKey);
+				sessionStorage.removeItem(onboardingKey);
 				localStorage.setItem(
 					"naia-config",
 					JSON.stringify({

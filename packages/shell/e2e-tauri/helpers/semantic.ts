@@ -9,8 +9,10 @@ import { CREDENTIALED_MAIN_MODEL } from "../credentialed-adk-seed.js";
 const JUDGE_MODEL = process.env.NAIA_E2E_JUDGE_MODEL || CREDENTIALED_MAIN_MODEL;
 const JUDGE_API_KEY = process.env.NAIA_API_KEY;
 const JUDGE_ENDPOINT = `${(process.env.NAIA_E2E_GATEWAY_URL || "https://api.nextain.io").replace(/\/+$/, "")}/v1/chat/completions`;
+// 게이트웨이의 첫 응답이 25~42초까지 늦어지는 때가 있다(2026-09-26 실측). 15초로
+// 끊으면 멀쩡한 답이 판정 요청 중단으로 FAIL 이 됐다(10 — 두 번 모두 AbortError).
 const JUDGE_TIMEOUT_MS = Number(
-	process.env.CAFE_E2E_JUDGE_TIMEOUT_MS || "15000",
+	process.env.CAFE_E2E_JUDGE_TIMEOUT_MS || "60000",
 );
 const SEMANTIC_LOG_DIR =
 	process.env.CAFE_E2E_SEMANTIC_LOG_DIR || "/tmp/e2e-semantic-logs";

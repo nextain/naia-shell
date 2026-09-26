@@ -136,10 +136,13 @@ export function App() {
 		import.meta.env.VITE_NAIA_E2E_PROVIDER?.trim() || "ollama";
 	const e2eModel = import.meta.env.VITE_NAIA_E2E_MODEL?.trim() || "e2e";
 	// ADK 설정 화면을 재는 스펙(24)은 위 자동 바인딩을 한 번 꺼야 한다. E2E 빌드에서만 읽는다.
+	// 두 표식은 sessionStorage 에 둔다 — 새로 고침에는 남고 앱을 다시 띄우면 사라진다.
+	// localStorage 에 두면 스펙이 지운 뒤 디스크에 쓰이기 전에 앱이 강제 종료될 때
+	// 다음 스펙까지 살아남아, 그 스펙이 설정 화면에 갇혔다(2026-09-26 윈도 28).
 	const e2eForceSetup =
 		Boolean(e2eAdkPath) &&
-		typeof localStorage !== "undefined" &&
-		localStorage.getItem(E2E_FORCE_SETUP_KEY) === "1";
+		typeof sessionStorage !== "undefined" &&
+		sessionStorage.getItem(E2E_FORCE_SETUP_KEY) === "1";
 	const e2eAdkNeedsBinding = Boolean(
 		!e2eForceSetup && e2eAdkPath && getAdkPath() !== e2eAdkPath,
 	);
@@ -156,8 +159,8 @@ export function App() {
 	// 지우는 것은 헬퍼의 몫이다 — 여기서 지우면 이 블록이 렌더마다 돌므로
 	// 마법사 중간에 표식이 사라져 다시 건너뛰게 된다.
 	const e2eForceOnboarding =
-		typeof localStorage !== "undefined" &&
-		localStorage.getItem(E2E_FORCE_ONBOARDING_KEY) === "1";
+		typeof sessionStorage !== "undefined" &&
+		sessionStorage.getItem(E2E_FORCE_ONBOARDING_KEY) === "1";
 	if (
 		e2eAdkPath &&
 		!e2eAdkNeedsBinding &&

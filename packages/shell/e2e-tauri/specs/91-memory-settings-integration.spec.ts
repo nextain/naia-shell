@@ -675,7 +675,10 @@ describe("91 — Memory Settings Integration", () => {
 				);
 			});
 
-			it("should store user identity and integrate multi-turn context", async () => {
+			it("should store user identity and integrate multi-turn context", async function () {
+				// 대화 두 번과 판정 두 번(판정마다 최대 60초 + 재시도)이 한 it 에 있다.
+				// 게이트웨이가 느린 때 기본 180초를 넘길 수 있어 이 it 만 넉넉히 둔다.
+				this.timeout(420_000);
 				await sendMessage(
 					"\ub0b4 \uc774\ub984\uc740 Luke\uc774\uace0, \ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790\uc57c.",
 				);

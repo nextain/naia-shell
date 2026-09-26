@@ -338,4 +338,22 @@ describe("ADK 설정 화면 표식과 바인딩 가드 (#328)", () => {
 		expect(spec24, "spec 24 에 FORCE_ONBOARDING_KEY 가 없다").not.toBeNull();
 		expect(spec24).toBe(app);
 	});
+
+	it("두 표식은 sessionStorage 로만 오간다 — 앱을 다시 띄우면 사라져야 한다", () => {
+		// localStorage 에 두면 스펙이 지운 뒤 디스크에 쓰이기 전에 앱이 강제
+		// 종료될 때 표식이 다음 스펙까지 살아남았다(2026-09-26 윈도 28 이 설정
+		// 화면에 갇혔다).
+		const variable = variableInitializer(parse(APP_TSX), "e2eForceSetup");
+		expect(variable).toContain("sessionStorage.getItem(E2E_FORCE_SETUP_KEY)");
+		const onboarding = variableInitializer(parse(APP_TSX), "e2eForceOnboarding");
+		expect(onboarding).toContain(
+			"sessionStorage.getItem(E2E_FORCE_ONBOARDING_KEY)",
+		);
+		for (const path of [APP_TSX, HELPERS, SPEC_24]) {
+			const source = readFileSync(path, "utf8");
+			expect(source, path).not.toMatch(
+				/localStorage\.(?:get|set|remove)Item\(\s*(?:(?:E2E_)?FORCE_\w+|key|setupKey|onboardingKey|["']naia-e2e-force-[\w-]+["'])/,
+			);
+		}
+	});
 });

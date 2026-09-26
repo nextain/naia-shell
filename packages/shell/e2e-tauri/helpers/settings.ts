@@ -662,7 +662,7 @@ export async function resetOnboarding(
 	// 2) 브라우저 캐시를 비우고, 이번 부팅은 마법사를 보라는 표식을 세운다.
 	await browser.execute(
 		(key: string, s: Record<string, unknown>) => {
-			localStorage.setItem(key, "1");
+			sessionStorage.setItem(key, "1");
 			if (Object.keys(s).length === 0) localStorage.removeItem("naia-config");
 			else localStorage.setItem("naia-config", JSON.stringify(s));
 		},
@@ -676,7 +676,7 @@ export async function resetOnboarding(
 	// 3) 표식은 여기서 지운다. 남겨 두면 뒤따르는 다른 스펙 파일까지 마법사가
 	//    뜨는 상태가 되어, 이 헬퍼가 고치려던 것과 반대 방향으로 어긋난다.
 	await browser.execute((key: string) => {
-		localStorage.removeItem(key);
+		sessionStorage.removeItem(key);
 	}, FORCE_ONBOARDING_KEY);
 }
 
@@ -745,7 +745,7 @@ async function readOnboardingSurface(): Promise<OnboardingSurface> {
 			},
 			errorText,
 			onboardingComplete,
-			hasMarker: localStorage.getItem(key) === "1",
+			hasMarker: sessionStorage.getItem(key) === "1",
 			adkPath: localStorage.getItem("naia-adk-path"),
 		};
 	}, FORCE_ONBOARDING_KEY)) as OnboardingSurface;
