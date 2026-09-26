@@ -575,6 +575,13 @@ describe("91 — Memory Settings Integration", () => {
 			});
 			expect(saved?.memoryEmbeddingProvider).toBe("offline");
 
+			// Wait for config.json (boot hydration SoT) to reflect the debounced save before reload
+			await waitForConfigCondition(
+				(cfg) =>
+					cfg.memoryEmbeddingProvider === "offline" &&
+					cfg.memoryOfflineModel === "all-mpnet-base-v2",
+			);
+
 			// Refresh (preserves localStorage, re-initializes React state)
 			await safeRefresh();
 			const appRoot = await $(S.appRoot);

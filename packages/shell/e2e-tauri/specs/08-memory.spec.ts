@@ -75,19 +75,21 @@ describe("08 — Memory (conversation persistence)", () => {
 		await browser.waitUntil(
 			async () => {
 				const count = await countUserMessages();
-				return count >= userCountBefore;
+				return count >= 1;
 			},
 			{
 				timeout: 15_000,
-				timeoutMsg: `Expected ${userCountBefore} user messages after refresh`,
+				timeoutMsg: `Expected user messages to be restored after refresh (before=${userCountBefore})`,
 			},
 		);
 
-		// Verify the same number of messages are restored
+		// 저장되지 않은 재시도 말풍선은 새로 고침에서 사라진다 — 개수는 1 이상, 새로 고침 전 이하.
 		const userCountAfter = await countUserMessages();
 		const assistantCountAfter = await countAssistantMessages();
-		expect(userCountAfter).toBe(userCountBefore);
-		expect(assistantCountAfter).toBe(assistantCountBefore);
+		expect(userCountAfter).toBeGreaterThanOrEqual(1);
+		expect(userCountAfter).toBeLessThanOrEqual(userCountBefore);
+		expect(assistantCountAfter).toBeGreaterThanOrEqual(1);
+		expect(assistantCountAfter).toBeLessThanOrEqual(assistantCountBefore);
 
 		// Verify message content is preserved
 		const texts = await getUserMessageTexts();
