@@ -113,6 +113,7 @@ function applyPersistedPresentationConfig(
  * `resetOnboarding()` 이 세우고, 오버레이를 확인한 뒤 지운다.
  */
 export const E2E_FORCE_ONBOARDING_KEY = "naia-e2e-force-onboarding";
+export const E2E_FORCE_SETUP_KEY = "naia-e2e-force-setup";
 
 export function App() {
 	const configHydrationStartedRef = useRef(false);
@@ -134,8 +135,13 @@ export function App() {
 	const e2eProvider =
 		import.meta.env.VITE_NAIA_E2E_PROVIDER?.trim() || "ollama";
 	const e2eModel = import.meta.env.VITE_NAIA_E2E_MODEL?.trim() || "e2e";
+	// ADK 설정 화면을 재는 스펙(24)은 위 자동 바인딩을 한 번 꺼야 한다. E2E 빌드에서만 읽는다.
+	const e2eForceSetup =
+		Boolean(e2eAdkPath) &&
+		typeof localStorage !== "undefined" &&
+		localStorage.getItem(E2E_FORCE_SETUP_KEY) === "1";
 	const e2eAdkNeedsBinding = Boolean(
-		e2eAdkPath && getAdkPath() !== e2eAdkPath,
+		!e2eForceSetup && e2eAdkPath && getAdkPath() !== e2eAdkPath,
 	);
 	// 온보딩을 재는 스펙은 이 자리를 한 번 꺼야 한다.
 	//
@@ -156,6 +162,7 @@ export function App() {
 		e2eAdkPath &&
 		!e2eAdkNeedsBinding &&
 		!e2eForceOnboarding &&
+		!e2eForceSetup &&
 		!isOnboardingComplete()
 	) {
 		localStorage.setItem(
@@ -187,7 +194,7 @@ export function App() {
 		toastTimerRef.current = window.setTimeout(() => setGlobalToast(null), 4000);
 	}, []);
 	const [showAdkSetup, setShowAdkSetup] = useState(
-		() => e2eAdkNeedsBinding || !isAdkInitialized(),
+		() => e2eForceSetup || e2eAdkNeedsBinding || !isAdkInitialized(),
 	);
 	const [showAppInstall, setShowAppInstall] = useState(false);
 	const [appInstallRequest, setAppInstallRequest] =

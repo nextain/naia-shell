@@ -28,6 +28,14 @@ const HELPERS = resolve(
 	"helpers",
 	"settings.ts",
 );
+const SPEC_24 = resolve(
+	ROOT,
+	"packages",
+	"shell",
+	"e2e-tauri",
+	"specs",
+	"24-adk-setup-flow.spec.ts",
+);
 const DISPATCH_SPEC = resolve(
 	ROOT,
 	"packages",
@@ -59,6 +67,25 @@ function stringConst(tree: ts.SourceFile, name: string): string | null {
 			ts.isStringLiteral(node.initializer)
 		) {
 			found = node.initializer.text;
+			return;
+		}
+		node.forEachChild(visit);
+	};
+	visit(tree);
+	return found;
+}
+
+/** `const <이름> = …` 의 초기화식 텍스트. 없으면 null. */
+function variableInitializer(tree: ts.SourceFile, name: string): string | null {
+	let found: string | null = null;
+	const visit = (node: ts.Node): void => {
+		if (
+			ts.isVariableDeclaration(node) &&
+			ts.isIdentifier(node.name) &&
+			node.name.text === name &&
+			node.initializer
+		) {
+			found = node.initializer.getText(tree);
 			return;
 		}
 		node.forEachChild(visit);
@@ -273,5 +300,42 @@ describe("환경 전달 스펙의 전제 (#502)", () => {
 		// 남아 있어야 한다 — 셸이 확인을 지어내면 이 요청에도 확인이 온다.
 		expect(source).toContain("bogusOutcome");
 		expect(source).toContain('expect(probe.bogusOutcome).toBe("NO_ACK")');
+	});
+});
+
+describe("ADK 설정 화면 표식과 바인딩 가드 (#328)", () => {
+	it("E2E_FORCE_SETUP_KEY 와 spec 24의 FORCE_SETUP_KEY 가 모두 naia-e2e-force-setup 이다", () => {
+		const app = stringConst(parse(APP_TSX), "E2E_FORCE_SETUP_KEY");
+		const spec24 = stringConst(parse(SPEC_24), "FORCE_SETUP_KEY");
+
+		expect(app, "App.tsx 에 E2E_FORCE_SETUP_KEY 가 없다").toBe(
+			"naia-e2e-force-setup",
+		);
+		expect(spec24, "spec 24 에 FORCE_SETUP_KEY 가 없다").toBe(
+			"naia-e2e-force-setup",
+		);
+	});
+
+	it("자동 실행 씨앗 가드 조건에 e2eForceSetup 이 포함된다", () => {
+		const condition = seedGuardCondition(parse(APP_TSX));
+
+		expect(condition, "naia-config 를 쓰는 if 문을 찾지 못했다").not.toBeNull();
+		expect(condition).toContain("e2eForceSetup");
+	});
+
+	it("e2eAdkNeedsBinding 초기화식에 e2eForceSetup 이 포함된다", () => {
+		const init = variableInitializer(parse(APP_TSX), "e2eAdkNeedsBinding");
+
+		expect(init, "App.tsx 에 e2eAdkNeedsBinding 선언을 찾지 못했다").not.toBeNull();
+		expect(init).toContain("e2eForceSetup");
+	});
+
+	it("spec 24의 FORCE_ONBOARDING_KEY 가 E2E_FORCE_ONBOARDING_KEY 와 같다", () => {
+		const app = stringConst(parse(APP_TSX), "E2E_FORCE_ONBOARDING_KEY");
+		const spec24 = stringConst(parse(SPEC_24), "FORCE_ONBOARDING_KEY");
+
+		expect(app, "App.tsx 에 E2E_FORCE_ONBOARDING_KEY 가 없다").not.toBeNull();
+		expect(spec24, "spec 24 에 FORCE_ONBOARDING_KEY 가 없다").not.toBeNull();
+		expect(spec24).toBe(app);
 	});
 });

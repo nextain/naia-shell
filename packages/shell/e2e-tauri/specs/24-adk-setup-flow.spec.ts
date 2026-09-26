@@ -25,6 +25,8 @@ const E2E_ADK_BASE =
 // one; #602 removed that provider, so the spec was excluded from regression
 // for requiring a key nothing can use anymore.
 const NAIA_KEY = process.env.NAIA_API_KEY ?? "";
+const FORCE_SETUP_KEY = "naia-e2e-force-setup";
+const FORCE_ONBOARDING_KEY = "naia-e2e-force-onboarding";
 
 /** Per-test path so reruns do not collide. */
 function tmpAdkPath(tag: string): string {
@@ -33,12 +35,18 @@ function tmpAdkPath(tag: string): string {
 
 /** Wipe localStorage entries that gate ADK setup / onboarding. */
 async function resetSetupState(): Promise<void> {
-	await browser.execute(() => {
-		localStorage.removeItem("naia-config");
-		localStorage.removeItem("naia-remote-key");
-		localStorage.removeItem("naia-remote-user-id");
-		localStorage.removeItem("naia-adk-path");
-	});
+	await browser.execute(
+		(setupKey: string, onboardingKey: string) => {
+			localStorage.removeItem("naia-config");
+			localStorage.removeItem("naia-remote-key");
+			localStorage.removeItem("naia-remote-user-id");
+			localStorage.removeItem("naia-adk-path");
+			localStorage.setItem(setupKey, "1");
+			localStorage.setItem(onboardingKey, "1");
+		},
+		FORCE_SETUP_KEY,
+		FORCE_ONBOARDING_KEY,
+	);
 }
 
 /** Invoke a Tauri command from inside the webview.
@@ -101,6 +109,19 @@ describe("24 — ADK Setup Flow (#328)", function () {
 	const existing = tmpAdkPath("existing");
 
 	after(async () => {
+		await browser.execute(
+			(setupKey: string, onboardingKey: string, adkPath?: string) => {
+				localStorage.removeItem(setupKey);
+				localStorage.removeItem(onboardingKey);
+				if (adkPath) {
+					localStorage.setItem("naia-adk-path", adkPath);
+				}
+			},
+			FORCE_SETUP_KEY,
+			FORCE_ONBOARDING_KEY,
+			process.env.NAIA_E2E_ADK_PATH,
+		);
+		await safeRefresh();
 		await safeDeleteAdk(empty);
 		await safeDeleteAdk(hasOther);
 		await safeDeleteAdk(existing);
@@ -171,6 +192,11 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		const cardCount = (await $$(S.adkSetupOptionCard)).length;
 		expect(cardCount).toBe(1); // only delete-and-restart
 
+		// Mock window.confirm to return true
+		await browser.execute(() => {
+			window.confirm = () => true;
+		});
+
 		// Click delete-and-restart and wait for onboarding.
 		const deleteCard = (await $$(S.adkSetupOptionCard))[0];
 		await deleteCard.click();
@@ -185,7 +211,15 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		await tauriInvoke<void>("init_naia_settings", { adkPath: existing });
 		await tauriInvoke<void>("copy_bundled_assets", { adkPath: existing });
 		await browser.execute(
-			(p: string, key: string, model: string) => {
+			(
+				p: string,
+				key: string,
+				model: string,
+				setupKey: string,
+				onboardingKey: string,
+			) => {
+				localStorage.removeItem(setupKey);
+				localStorage.removeItem(onboardingKey);
 				localStorage.setItem(
 					"naia-config",
 					JSON.stringify({
@@ -207,6 +241,8 @@ describe("24 — ADK Setup Flow (#328)", function () {
 			existing,
 			NAIA_KEY,
 			CREDENTIALED_MAIN_MODEL,
+			FORCE_SETUP_KEY,
+			FORCE_ONBOARDING_KEY,
 		);
 		await safeRefresh();
 
