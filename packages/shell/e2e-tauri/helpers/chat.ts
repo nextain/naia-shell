@@ -579,6 +579,7 @@ function isToolLoopError(errorText: string): boolean {
 function isProviderStreamError(errorText: string): boolean {
 	return (
 		errorText.includes("provider error: terminated") ||
+		errorText.includes("provider returned reasoning without a final answer") ||
 		/provider error: .*stream idle for \d+ms/.test(errorText)
 	);
 }
