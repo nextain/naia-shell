@@ -17,9 +17,15 @@ const ROOT = resolve(__dirname, "..", "..");
 const GATE = resolve(ROOT, "scripts", "check-regression-complete.mjs");
 const TARGET_URL = pathToFileURL(resolve(ROOT, "scripts", "lib", "release-target.mjs")).href;
 
+interface KnownIssue {
+	os: string;
+	reason: string;
+}
+
 interface Spec {
 	spec: string;
 	platforms?: string[];
+	knownIssues?: KnownIssue[];
 }
 
 /** 모듈 표면. `.mjs` 정적 import 는 루트 tsc 프로그램을 오염시킨다. */
@@ -27,6 +33,7 @@ interface TargetModule {
 	parseTargets(text: string): string[] | null;
 	specInTargets(spec: Spec, targets: string[] | null): boolean;
 	specRunsOn(spec: Spec, os: string): boolean;
+	specKnownIssue(spec: Spec, os: string): KnownIssue | null;
 }
 
 let target: TargetModule;
@@ -148,14 +155,46 @@ function runGate(targets: string | null, records: ReturnType<typeof passedRecord
 	return { code: result.status ?? -1, out: `${result.stdout}${result.stderr}` };
 }
 
-const windowsSpecs = inventory.specs.filter((s) => !s.platforms || s.platforms.includes("windows")).map((s) => s.spec);
+describe("기지 결함(known issues) 제외", () => {
+	it("98-codex-chat-delegation 은 Windows 기지 결함으로 인벤토리에 남는다", () => {
+		const spec98 = inventory.specs.find((s) => s.spec === "98-codex-chat-delegation.spec.ts");
+		expect(spec98).toBeDefined();
+		expect(spec98?.knownIssues).toEqual([
+			{
+				os: "windows",
+				reason: "Codex CLI 0.157 downgrades sandbox to read-only with approval_policy=never; fix belongs in naia-agent subagent-codex.ts and ships after v0.2.3",
+			},
+		]);
+	});
+
+	it("기지 결함이 있는 운영체제에서는 돌지 않는 것으로 본다", () => {
+		const sample: Spec = {
+			spec: "sample.spec.ts",
+			knownIssues: [{ os: "windows", reason: "some reason" }],
+		};
+		expect(target.specRunsOn(sample, "windows")).toBe(false);
+		expect(target.specRunsOn(sample, "linux")).toBe(true);
+		expect(target.specInTargets(sample, ["windows"])).toBe(false);
+		expect(target.specInTargets(sample, ["linux"])).toBe(true);
+		expect(target.specInTargets(sample, null)).toBe(true);
+		expect(target.specKnownIssue(sample, "windows")).toEqual({ os: "windows", reason: "some reason" });
+		expect(target.specKnownIssue(sample, "linux")).toBeNull();
+	});
+});
+
+function getWindowsSpecs(): string[] {
+	return inventory.specs.filter((s) => target.specRunsOn(s, "windows")).map((s) => s.spec);
+}
 const allSpecs = inventory.specs.map((s) => s.spec);
 
 describe("윈도우 배포의 게이트", () => {
 	it("윈도우 기계가 윈도우에서 도는 스펙을 전부 통과시키면 초록이다", () => {
+		const windowsSpecs = getWindowsSpecs();
 		const { code, out } = runGate("[windows]", [passedRecord("win-rtx4060", windowsSpecs)]);
 		expect(out).toContain("배포 대상 windows");
 		expect(out).toContain("99-stt-mic-test.spec.ts");
+		expect(out).toContain("98-codex-chat-delegation.spec.ts");
+		expect(out).toContain("Codex CLI 0.157 downgrades sandbox to read-only");
 		expect(code).toBe(0);
 	});
 
@@ -168,6 +207,7 @@ describe("윈도우 배포의 게이트", () => {
 	});
 
 	it("윈도우에서 도는 스펙 하나가 빠지면 붉다", () => {
+		const windowsSpecs = getWindowsSpecs();
 		const { code, out } = runGate("[windows]", [passedRecord("win-rtx4060", windowsSpecs.slice(1))]);
 		expect(out).toContain(windowsSpecs[0]);
 		expect(code).not.toBe(0);
@@ -176,6 +216,7 @@ describe("윈도우 배포의 게이트", () => {
 
 describe("좁히지 않은 배포는 예전처럼 전부를 본다", () => {
 	it("targets 가 없으면 리눅스 기계의 몫이 비어 붉다", () => {
+		const windowsSpecs = getWindowsSpecs();
 		const { code } = runGate(null, [passedRecord("win-rtx4060", windowsSpecs)]);
 		expect(code).not.toBe(0);
 	});

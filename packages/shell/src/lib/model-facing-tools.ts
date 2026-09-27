@@ -4,7 +4,9 @@
  * read-only skill_memory_recall (nextain/naia-shell#693, Luke 2026-09-23).
  * Knowledge tools are read-only compiled workspace knowledge
  * (nextain/naia-shell#699, Luke 2026-09-23 「다 고쳐」);
- * write/exec/GitHub/Obsidian/notify/MCP/ADK-skill tools stay out.
+ * write/exec/GitHub/Obsidian/notify/MCP/ADK-skill tools stay out, except for
+ * intentional model-facing exceptions: workspace terminal exec / open-file edit,
+ * and delegate_agent (delegate_agent is intentionally model-facing, gated agent-side).
  */
 export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"get_time",
@@ -42,6 +44,7 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"skill_workspace_focus_space",
 	"skill_workspace_terminal_exec",
 	"skill_workspace_get_terminal_output",
+	"delegate_agent",
 ] as const;
 
 const MODEL_FACING_TOOL_KEEP_SET = new Set<string>(

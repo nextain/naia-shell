@@ -95,6 +95,7 @@ import {
 	osOfPlatform,
 	releaseTargets,
 	specInTargets,
+	specKnownIssue,
 	specRunsOn,
 } from "./lib/release-target.mjs";
 import {
@@ -366,6 +367,19 @@ for (const tier of tiers) {
 	console.log(
 		`  ${tier.padEnd(18)} ${String(mine.filter((s) => s.tier === tier).length).padStart(3)} / ${total} (${owners}대가 나눔)`,
 	);
+}
+const myOs = profile?.os ?? osOfPlatform(process.platform);
+const knownExcluded = inventory.specs.filter(
+	(s) => tiers.includes(s.tier) && specKnownIssue(s, myOs),
+);
+if (knownExcluded.length > 0) {
+	console.log(
+		`  기지 결함(known issue)으로 이 기계(${myOs})에서 제외된 스펙 ${knownExcluded.length}개:`,
+	);
+	for (const s of knownExcluded) {
+		const issue = specKnownIssue(s, myOs);
+		console.log(`      ${s.spec}: ${issue.reason}`);
+	}
 }
 
 // 죽은 실행이 남긴 BGM 사이드카를 걷어 낸다 (#577).

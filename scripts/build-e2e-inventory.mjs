@@ -521,6 +521,7 @@ for (const name of readdirSync(SPEC_DIR).filter((f) => f.endsWith(".spec.ts")).s
 	const keyed = envs.some((e) => KEY_ENV.test(e));
 	const requires = requiresCapabilities(source);
 	const platforms = declaredPlatforms(name, source);
+	const knownIssues = declaredKnownIssues(name, source);
 	rows.push({
 		spec: name,
 		conf: confOwners.get(name) ?? [],
@@ -529,12 +530,50 @@ for (const name of readdirSync(SPEC_DIR).filter((f) => f.endsWith(".spec.ts")).s
 		...(requires.length > 0 ? { requires } : {}),
 		// 그 운영체제에서만 도는 스펙. 스펙이 스스로 선언한다.
 		...(platforms ? { platforms } : {}),
+		// 특정 운영체제의 기지 결함(배포 대상에서 제외). 스펙이 한 줄 이유와 함께 스스로 선언한다.
+		...(knownIssues.length > 0 ? { knownIssues } : {}),
 		tier: device || usesDevice
 			? "native_local"
 			: keyed || talks
 				? "credentialed_live"
 				: "deterministic_ci",
 	});
+}
+
+/**
+ * 스펙이 선언한 **특정 운영체제의 기지 결함(known issue)**.
+ *
+ * 형식: `// known-issue: windows (<한 줄 사유>)` 또는 `// known-issue: windows: <한 줄 사유>`
+ *
+ * 왜 필요한가: 셸 회귀가 아니라 에이전트·도구의 알려진 문제로 특정 OS 배포에서
+ * 제외해야 하는 스펙이 있다(예: 98-codex-chat-delegation — Codex CLI 0.157 샌드박스
+ * 강등, naia-agent fix 후속). 플랫폼 비호환과 달리 기지 결함이므로 조용히
+ * OS 태그로 숨기지 않고 사유와 함께 배포 게이트에 노출한다.
+ */
+function declaredKnownIssues(name, source) {
+	const out = [];
+	const pattern =
+		/^[ \t]*\/\/[ \t]*known-issue:[ \t]*([A-Za-z0-9_-]+)(?:[ \t]*\(([^)]+)\)|:[ \t]*(.+))$/gm;
+	let match = pattern.exec(source);
+	while (match) {
+		const os = match[1].trim();
+		const reason = (match[2] ?? match[3] ?? "").trim();
+		if (!KNOWN_OS.includes(os)) {
+			console.error(
+				`[e2e-inventory] ${name}: 알 수 없는 known-issue 운영체제 "${os}" (쓸 수 있는 것: ${KNOWN_OS.join(", ")})`,
+			);
+			process.exit(2);
+		}
+		if (!reason) {
+			console.error(
+				`[e2e-inventory] ${name}: known-issue 사유가 비어 있다 — 한 줄 이유를 적어라`,
+			);
+			process.exit(2);
+		}
+		out.push({ os, reason });
+		match = pattern.exec(source);
+	}
+	return out;
 }
 
 /**
@@ -609,7 +648,7 @@ if (process.argv.includes("--check")) {
 		console.error(`[e2e-inventory] ❌ ${OUT} 이 없다 — node scripts/build-e2e-inventory.mjs 로 만들어라`);
 		process.exit(1);
 	}
-	if (current !== rendered) {
+	if (current.replace(/\r\n/g, "\n") !== rendered.replace(/\r\n/g, "\n")) {
 		console.error(`[e2e-inventory] ❌ ${OUT} 이 지금 스펙과 어긋난다 — 다시 생성해 커밋하라`);
 		process.exit(1);
 	}

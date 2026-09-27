@@ -45,6 +45,7 @@ describe("model-facing tool contract", () => {
 			"skill_workspace_focus_space",
 			"skill_workspace_terminal_exec",
 			"skill_workspace_get_terminal_output",
+			"delegate_agent",
 		]);
 	});
 
@@ -84,6 +85,7 @@ describe("model-facing tool contract", () => {
 		expect(isModelFacingToolAllowed("memory_save")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_memory_save")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_memory_delete")).toBe(false);
+		expect(isModelFacingToolAllowed("delegate_agent")).toBe(true);
 	});
 
 	it("workspace app tools stay inside the keep list", async () => {

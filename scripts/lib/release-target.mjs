@@ -105,9 +105,21 @@ export function releaseTargets({ root = ".", argv = process.argv.slice(2) } = {}
 	};
 }
 
-/** 이 스펙이 그 운영체제에서 도는가. `platforms` 가 없으면 어디서나 돈다. */
+/**
+ * 이 스펙이 그 운영체제에서 도는가.
+ * `platforms` 가 없으면 어디서나 돌되, 그 운영체제의 기지 결함(`knownIssues`)이
+ * 선언되어 있으면 돌지 않는 것으로 본다.
+ */
 export function specRunsOn(spec, os) {
-	return !Array.isArray(spec.platforms) || spec.platforms.includes(os);
+	if (Array.isArray(spec.platforms) && !spec.platforms.includes(os)) return false;
+	if (Array.isArray(spec.knownIssues) && spec.knownIssues.some((issue) => issue.os === os)) return false;
+	return true;
+}
+
+/** 이 스펙에 그 운영체제의 기지 결함(known issue)이 선언되어 있는가. */
+export function specKnownIssue(spec, os) {
+	if (!Array.isArray(spec.knownIssues)) return null;
+	return spec.knownIssues.find((issue) => issue.os === os) ?? null;
 }
 
 /** 대상 중 하나에서라도 도는가. 대상이 없으면(좁히지 않으면) 언제나 참. */

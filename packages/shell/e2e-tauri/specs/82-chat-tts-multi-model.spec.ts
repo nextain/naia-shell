@@ -132,16 +132,23 @@ describe("82 — chat TTS multi-model", () => {
 				"#model-select",
 			) as HTMLSelectElement | null;
 			if (!(select instanceof HTMLSelectElement)) return "";
-			// Pick a different LLM model (not omni, not current)
-			const opt = Array.from(select.options).find(
+			// Pick a different LLM model (not omni, not current).
+			// Prefer known-streaming models (solar-pro4, then gpt-5.6-luna),
+			// and fall back to the first available option other than current.
+			const candidates = Array.from(select.options).filter(
 				(o) =>
 					o.value !== current &&
 					!o.disabled &&
 					!o.textContent?.includes("🗣️") &&
 					o.value !== "__custom__",
 			);
-			return opt?.value ?? "";
+			const preferred =
+				candidates.find((o) => o.value === "solar-pro4") ??
+				candidates.find((o) => o.value === "gpt-5.6-luna") ??
+				candidates[0];
+			return preferred?.value ?? "";
 		}, currentModel);
+		console.log(`[82] chosen model: ${nextModel}`);
 		// 단일 모델 공급자는 #model-select 가 선택 상자가 아니다 — 바꿀 모델이 없다.
 		if (nextModel) {
 			expect(await chooseSelectOption("#model-select", nextModel)).toBe(true);

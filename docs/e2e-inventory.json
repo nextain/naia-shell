@@ -627,6 +627,12 @@
 			"env": [
 				"NAIA_E2E_ARTIFACTS_DIR"
 			],
+			"knownIssues": [
+				{
+					"os": "windows",
+					"reason": "Codex CLI 0.157 downgrades sandbox to read-only with approval_policy=never; fix belongs in naia-agent subagent-codex.ts and ships after v0.2.3"
+				}
+			],
 			"tier": "credentialed_live"
 		},
 		{
