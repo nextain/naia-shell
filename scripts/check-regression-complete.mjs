@@ -30,6 +30,7 @@ import {
 	machineInTargets,
 	releaseTargets,
 	specInTargets,
+	specKnownIssue,
 } from "./lib/release-target.mjs";
 import { isRetestRecord } from "./lib/retest-selection.mjs";
 
@@ -52,7 +53,13 @@ const inventory = JSON.parse(readFileSync(INVENTORY, "utf8"));
  * 빠진 것은 아래에서 이름과 함께 출력한다. 조용히 사라지면 통과처럼 보인다.
  */
 const { targets, source: targetSource } = releaseTargets();
-const outOfTarget = inventory.specs.filter((s) => !specInTargets(s, targets)).map((s) => s.spec);
+const excludedSpecs = inventory.specs.filter((s) => !specInTargets(s, targets));
+const knownIssueExclusions = excludedSpecs.filter((s) =>
+	targets ? targets.some((os) => specKnownIssue(s, os)) : false,
+);
+const platformExclusions = excludedSpecs.filter(
+	(s) => !knownIssueExclusions.includes(s),
+);
 const all = new Set(
 	inventory.specs.filter((s) => specInTargets(s, targets)).map((s) => s.spec),
 );
@@ -60,8 +67,19 @@ if (targets) {
 	console.log(
 		`[regression-complete] 배포 대상 ${targets.join(", ")} (${targetSource}) — 스펙 ${inventory.specs.length} 중 ${all.size}개가 조건이다`,
 	);
-	if (outOfTarget.length) {
-		console.log(`  대상 운영체제에서 돌지 않아 조건에서 뺀 스펙 ${outOfTarget.length}개: ${outOfTarget.join(", ")}`);
+	if (platformExclusions.length) {
+		console.log(`  대상 운영체제에서 돌지 않아 조건에서 뺀 스펙 ${platformExclusions.length}개: ${platformExclusions.map((s) => s.spec).join(", ")}`);
+	}
+	if (knownIssueExclusions.length) {
+		console.log(`  기지 결함(known issue)으로 조건에서 뺀 스펙 ${knownIssueExclusions.length}개:`);
+		for (const s of knownIssueExclusions) {
+			for (const os of targets) {
+				const issue = specKnownIssue(s, os);
+				if (issue) {
+					console.log(`    ${s.spec} (${os}): ${issue.reason}`);
+				}
+			}
+		}
 	}
 }
 

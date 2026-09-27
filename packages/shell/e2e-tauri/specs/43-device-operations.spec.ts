@@ -1,5 +1,8 @@
 import { S } from "../helpers/selectors.js";
-import { enableToolsForSpec } from "../helpers/settings.js";
+import {
+	enableToolsForSpec,
+	openSettingsSection,
+} from "../helpers/settings.js";
 
 /**
  * 43 — Device operations through Settings + Tauri IPC (#570).
@@ -104,10 +107,8 @@ describe("43 — device operations", () => {
 	});
 
 	it("shows the device pairing section in Settings", async () => {
-		await browser.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (el) el.click();
-		}, S.settingsTabBtn);
+		// 설정은 활성 구역만 렌더한다 — 기기 연결 구역은 brain 구역에 있다.
+		await openSettingsSection("brain");
 		const section = await $('[data-testid="device-section"]');
 		await section.waitForDisplayed({ timeout: 10_000 });
 	});

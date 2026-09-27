@@ -13190,6 +13190,10 @@ async fn write_naia_path_cache(
         // Native E2E owns its workspace through NAIA_E2E_ADK_PATH. Never let
         // a disposable test run overwrite the real user's next-start cache.
         let Some(cache_path) = naia_path_cache_target(home, debug_e2e_enabled()) else {
+            // The file write is skipped, but the in-memory startup scope must
+            // still bind: without it every scoped startup IPC (creds_update,
+            // …) is rejected as "not bound to an ADK" for the whole E2E run.
+            state.startup_messages.lock().unwrap().set_scope(&adk_path)?;
             return Ok(());
         };
         let changed = naia_path_cache_changed(&cache_path, &adk_path);

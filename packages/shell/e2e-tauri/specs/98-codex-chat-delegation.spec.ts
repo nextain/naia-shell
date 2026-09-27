@@ -1,3 +1,4 @@
+// known-issue: windows (Codex CLI 0.157 downgrades sandbox to read-only with approval_policy=never; fix belongs in naia-agent subagent-codex.ts and ships after v0.2.3)
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";

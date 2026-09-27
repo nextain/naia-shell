@@ -1998,6 +1998,82 @@ describe("ChatArea", () => {
 		expect(state.sessionId).toBe("agent:main:main");
 	});
 
+	it("restores current conversation messages on mount when stored key and transcript exist", async () => {
+		sessionStorage.setItem("naia-chat-session-id", "chat-mount-restore-test");
+		const jsonl = [
+			JSON.stringify({ role: "user", content: "복원된 메시지", timestamp: 1000 }),
+			JSON.stringify({ role: "assistant", content: "복원된 답변", timestamp: 1001 }),
+		].join("\n");
+		mockInvoke.mockImplementation((cmd, args) => {
+			if (cmd === "read_conversation" && args?.sessionId === "chat-mount-restore-test") {
+				return Promise.resolve(jsonl);
+			}
+			return Promise.resolve(undefined);
+		});
+
+		render(<ChatArea />);
+		await waitFor(() => {
+			expect(screen.getByText("복원된 메시지")).toBeDefined();
+			expect(screen.getByText("복원된 답변")).toBeDefined();
+		});
+
+		const state = useChatStore.getState();
+		expect(state.localSessionId).toBe("chat-mount-restore-test");
+		expect(state.sessionId).toBe("agent:main:main");
+		expect(state.messages).toHaveLength(2);
+		expect(state.messages[0].content).toBe("복원된 메시지");
+		expect(state.messages[1].content).toBe("복원된 답변");
+		sessionStorage.removeItem("naia-chat-session-id");
+	});
+
+	it("keeps stored key and shows empty messages on mount when no transcript exists", async () => {
+		sessionStorage.setItem("naia-chat-session-id", "chat-fresh-key-no-transcript");
+		mockInvoke.mockImplementation((cmd) => {
+			if (cmd === "read_conversation") {
+				return Promise.resolve("");
+			}
+			return Promise.resolve(undefined);
+		});
+
+		render(<ChatArea />);
+		await new Promise((r) => setTimeout(r, 100));
+
+		const state = useChatStore.getState();
+		expect(state.localSessionId).toBe("chat-fresh-key-no-transcript");
+		expect(state.sessionId).toBe("agent:main:main");
+		expect(state.messages).toHaveLength(0);
+		sessionStorage.removeItem("naia-chat-session-id");
+	});
+
+	it("new conversation button replaces stored key in sessionStorage and resets messages", async () => {
+		sessionStorage.setItem("naia-chat-session-id", "chat-previous-session");
+		useChatStore.setState({
+			sessionId: "agent:main:main",
+			localSessionId: "chat-previous-session",
+			messages: [
+				{
+					id: "m1",
+					role: "user",
+					content: "이전 대화",
+					timestamp: 1000,
+				},
+			],
+		});
+
+		render(<ChatArea />);
+		const btn = screen.getByTitle(/새 대화|New Chat/);
+		fireEvent.click(btn);
+
+		await new Promise((r) => setTimeout(r, 100));
+
+		const state = useChatStore.getState();
+		expect(state.messages).toHaveLength(0);
+		expect(state.localSessionId).not.toBe("chat-previous-session");
+		expect(state.localSessionId.startsWith("chat-")).toBe(true);
+		expect(sessionStorage.getItem("naia-chat-session-id")).toBe(state.localSessionId);
+		sessionStorage.removeItem("naia-chat-session-id");
+	});
+
 	it("recalls previous input with ArrowUp", async () => {
 		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(

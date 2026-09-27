@@ -37,10 +37,10 @@ const VOICE_MANIFEST = {
 		loaderProfile: "linux_trt_6g",
 	},
 };
-const E2E_NAIA_KEY = process.env.NAIA_E2E_NAIA_KEY;
+const E2E_NAIA_KEY = process.env.NAIA_API_KEY;
 if (!E2E_NAIA_KEY?.startsWith("gw-"))
 	throw new Error(
-		"NAIA_E2E_NAIA_KEY must contain a paid test member gateway key",
+		"NAIA_API_KEY must contain a paid test member gateway key",
 	);
 if (process.env.NAIA_E2E_VOICE_6G !== "1") {
 	throw new Error("Set NAIA_E2E_VOICE_6G=1 to run the 6GB voice acceptance");

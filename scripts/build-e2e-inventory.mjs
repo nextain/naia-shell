@@ -79,7 +79,7 @@
  * 기대지 않는다** — 경계는 린트가 지고, 게이트는 자기가 읽는 범위를 지킨다.
  * 그래서 다음 회차의 도전은 린트를 통과하는 형태여야 한다.
  */
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import ts from "typescript";
 import { resolveCallee } from "./lib/bindings.mjs";
@@ -310,13 +310,21 @@ const AMBIENT =
 
 function requiredEnv(source) {
 	const found = new Set();
+	// 기본값은 문자열만이 아니다. 이름 붙은 상수(`|| CREDENTIALED_MAIN_MODEL`)도
+	// 실제 값이다. 다른 환경 변수로 넘기는 것(`|| process.env.B`)은 기본값이 아니라
+	// 또 하나의 요구이므로 여기서 받지 않는다 — 그 B 는 다음 매치로 따로 센다.
 	for (const m of source.matchAll(
-		/process\.env\.([A-Z_0-9]+)\s*(?:(\|\||\?\?)\s*("(?:[^"\\]|\\.)*"|`[^`]*`|'[^']*'))?/g,
+		/process\.env\.([A-Z_0-9]+)\s*(?:(\|\||\?\?)\s*("(?:[^"\\]|\\.)*"|`[^`]*`|'[^']*'|(?!process\.env\.)[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*))?/g,
 	)) {
 		const [, name, , fallback] = m;
 		if (AMBIENT.test(name)) continue;
 		// 뒤에 실제 값이 붙어 있으면 없어도 돈다. 빈 문자열은 값이 아니다.
-		if (fallback && fallback.replace(/^["'`]|["'`]$/g, "").length > 0) continue;
+		if (
+			fallback &&
+			!/^(?:undefined|null)$/.test(fallback) &&
+			fallback.replace(/^["'`]|["'`]$/g, "").length > 0
+		)
+			continue;
 		found.add(name);
 	}
 	// 이름을 문자열로 들고 다니다 `process.env[name]` 으로 읽는 자리.
@@ -332,6 +340,36 @@ function requiredEnv(source) {
 // 초기화 전 접근이 된다.
 for (const name of readdirSync(CONF_DIR).filter((f) => /^wdio\.conf\..+\.ts$/.test(f))) {
 	confEnv.set(name, requiredEnv(readFileSync(join(CONF_DIR, name), "utf8")));
+}
+
+/**
+ * 전용 설정이 **스스로 채우는** 환경 변수.
+ *
+ * `wdio.conf.grok.ts` 는 최상위에서 `process.env.NAIA_E2E_MAIN_PROVIDER = "grok"`
+ * 을 적고, `wdio.conf.codex.ts` 가 부르는 `codex-e2e-environment.ts` 는
+ * `process.env.NAIA_E2E_ADK_PATH` 에 격리 워크스페이스를 넣는다. 스펙은 그 값을
+ * 기본값 없이 읽으므로 요구로 세어졌고, 러너는 그 설정이 채울 값을 "없다" 며
+ * 스펙을 통째로 뺐다 — 설정 둘이 한 번도 뜨지 않은 까닭이다.
+ *
+ * 그래서 설정 파일과, 그것이 불러 쓰는 이 디렉터리의 모듈(`./x.js`, 한 겹)에서
+ * `process.env.X = …` 대입을 모아 그 설정이 맡는 스펙의 요구에서 뺀다. 대입이
+ * 조건 안에 있어도 채우는 것으로 본다 — 조건을 따지는 것은 이 목록의 보증 밖이다.
+ */
+const confProvided = new Map();
+const ASSIGNED_ENV = /process\.env\.([A-Z_0-9]+)\s*(?:=(?!=)|\|\|=|\?\?=)/g;
+function assignedEnv(source) {
+	return [...source.matchAll(ASSIGNED_ENV)].map((m) => m[1]);
+}
+for (const name of readdirSync(CONF_DIR).filter((f) => /^wdio\.conf\..+\.ts$/.test(f))) {
+	const source = readFileSync(join(CONF_DIR, name), "utf8");
+	const provided = new Set(assignedEnv(source));
+	for (const m of source.matchAll(/from\s+"\.\/([\w.-]+)\.js"/g)) {
+		const local = join(CONF_DIR, `${m[1]}.ts`);
+		if (existsSync(local)) {
+			for (const env of assignedEnv(readFileSync(local, "utf8"))) provided.add(env);
+		}
+	}
+	confProvided.set(name, provided);
 }
 
 const helperEnv = new Map();
@@ -458,7 +496,13 @@ for (const name of readdirSync(SPEC_DIR).filter((f) => f.endsWith(".spec.ts")).s
 	const fromConf = (confOwners.get(name) ?? []).flatMap(
 		(conf) => confEnv.get(conf) ?? [],
 	);
-	const envs = [...new Set([...direct, ...viaHelpers, ...fromConf])].sort();
+	// 맡는 전용 설정이 **모두** 채우는 변수는 요구가 아니다.
+	const owners = confOwners.get(name) ?? [];
+	const supplied = (env) =>
+		owners.length > 0 && owners.every((conf) => confProvided.get(conf)?.has(env));
+	const envs = [...new Set([...direct, ...viaHelpers, ...fromConf])]
+		.filter((env) => !supplied(env))
+		.sort();
 	const device = envs.some((e) => DEVICE_ENV.test(e));
 	// 대화 헬퍼를 부르면 모델이 필요하다 — 환경 변수에 드러나지 않아도.
 	// 헬퍼를 거치지 않고 스펙이 직접 모델을 부르는 자리도 있다. 헬퍼 이름만
@@ -477,6 +521,7 @@ for (const name of readdirSync(SPEC_DIR).filter((f) => f.endsWith(".spec.ts")).s
 	const keyed = envs.some((e) => KEY_ENV.test(e));
 	const requires = requiresCapabilities(source);
 	const platforms = declaredPlatforms(name, source);
+	const knownIssues = declaredKnownIssues(name, source);
 	rows.push({
 		spec: name,
 		conf: confOwners.get(name) ?? [],
@@ -485,12 +530,50 @@ for (const name of readdirSync(SPEC_DIR).filter((f) => f.endsWith(".spec.ts")).s
 		...(requires.length > 0 ? { requires } : {}),
 		// 그 운영체제에서만 도는 스펙. 스펙이 스스로 선언한다.
 		...(platforms ? { platforms } : {}),
+		// 특정 운영체제의 기지 결함(배포 대상에서 제외). 스펙이 한 줄 이유와 함께 스스로 선언한다.
+		...(knownIssues.length > 0 ? { knownIssues } : {}),
 		tier: device || usesDevice
 			? "native_local"
 			: keyed || talks
 				? "credentialed_live"
 				: "deterministic_ci",
 	});
+}
+
+/**
+ * 스펙이 선언한 **특정 운영체제의 기지 결함(known issue)**.
+ *
+ * 형식: `// known-issue: windows (<한 줄 사유>)` 또는 `// known-issue: windows: <한 줄 사유>`
+ *
+ * 왜 필요한가: 셸 회귀가 아니라 에이전트·도구의 알려진 문제로 특정 OS 배포에서
+ * 제외해야 하는 스펙이 있다(예: 98-codex-chat-delegation — Codex CLI 0.157 샌드박스
+ * 강등, naia-agent fix 후속). 플랫폼 비호환과 달리 기지 결함이므로 조용히
+ * OS 태그로 숨기지 않고 사유와 함께 배포 게이트에 노출한다.
+ */
+function declaredKnownIssues(name, source) {
+	const out = [];
+	const pattern =
+		/^[ \t]*\/\/[ \t]*known-issue:[ \t]*([A-Za-z0-9_-]+)(?:[ \t]*\(([^)]+)\)|:[ \t]*(.+))$/gm;
+	let match = pattern.exec(source);
+	while (match) {
+		const os = match[1].trim();
+		const reason = (match[2] ?? match[3] ?? "").trim();
+		if (!KNOWN_OS.includes(os)) {
+			console.error(
+				`[e2e-inventory] ${name}: 알 수 없는 known-issue 운영체제 "${os}" (쓸 수 있는 것: ${KNOWN_OS.join(", ")})`,
+			);
+			process.exit(2);
+		}
+		if (!reason) {
+			console.error(
+				`[e2e-inventory] ${name}: known-issue 사유가 비어 있다 — 한 줄 이유를 적어라`,
+			);
+			process.exit(2);
+		}
+		out.push({ os, reason });
+		match = pattern.exec(source);
+	}
+	return out;
 }
 
 /**
@@ -565,7 +648,7 @@ if (process.argv.includes("--check")) {
 		console.error(`[e2e-inventory] ❌ ${OUT} 이 없다 — node scripts/build-e2e-inventory.mjs 로 만들어라`);
 		process.exit(1);
 	}
-	if (current !== rendered) {
+	if (current.replace(/\r\n/g, "\n") !== rendered.replace(/\r\n/g, "\n")) {
 		console.error(`[e2e-inventory] ❌ ${OUT} 이 지금 스펙과 어긋난다 — 다시 생성해 커밋하라`);
 		process.exit(1);
 	}

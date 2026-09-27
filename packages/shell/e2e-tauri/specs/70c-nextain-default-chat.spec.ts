@@ -9,10 +9,10 @@ import { S } from "../helpers/selectors.js";
  * 검증한다. v0.2.2 실사용 QA에서 이 경로의 자동 e2e 부재가 갭으로 확인됐다
  * (naia-shell#476 Scope 8).
  *
- * NAIA_E2E_NAIA_KEY(유료 테스트 회원 gw- 키)가 없으면 skip — 키 없는 CI에서 무해.
+ * NAIA_API_KEY(유료 테스트 회원 gw- 키)가 없으면 skip — 키 없는 CI에서 무해.
  * 세션을 공유하는 다른 스펙을 오염시키지 않도록 종료 시 원래 provider 로 복원한다.
  */
-const E2E_NAIA_KEY = process.env.NAIA_E2E_NAIA_KEY;
+const E2E_NAIA_KEY = process.env.NAIA_API_KEY;
 
 async function waitAppRoot(): Promise<void> {
 	await browser.waitUntil(
@@ -115,12 +115,15 @@ describe("70c — nextain default-provider live chat", () => {
 						invoke: (command: string, value: unknown) => Promise<unknown>;
 					};
 				};
+				// creds_update 는 워크스페이스에 묶인 시작 메시지다 — adkPath 없이
+				// 보내면 네이티브가 "startup message IPC requires an ADK path" 로 거절한다.
 				await shell.__TAURI_INTERNALS__?.invoke("send_to_agent_command", {
 					message: JSON.stringify({
 						type: "creds_update",
 						provider: "nextain",
 						naiaKey,
 					}),
+					adkPath: localStorage.getItem("naia-adk-path") ?? "",
 				});
 			}, E2E_NAIA_KEY as string);
 			await browser.pause(500);

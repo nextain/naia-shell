@@ -67,7 +67,6 @@ tauri-driver (port 4444)
 | 03-basic-chat | "안녕" → 응답 수신 확인 |
 | 04-skill-time | skill_time 도구 실행 → 시간 정보 확인 |
 | 06-skill-memo | skill_memo 저장 + 읽기 확인 |
-| 07-cleanup | 메모 삭제 |
 
 ## 기술 스택
 

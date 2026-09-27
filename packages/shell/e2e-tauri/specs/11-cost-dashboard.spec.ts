@@ -1,6 +1,7 @@
 import { getLastAssistantMessage, sendMessage } from "../helpers/chat.js";
 import { S } from "../helpers/selectors.js";
 import { assertSemantic } from "../helpers/semantic.js";
+import { openSettingsSection } from "../helpers/settings.js";
 
 describe("11 — Cost Dashboard", () => {
 	before(async () => {
@@ -75,36 +76,83 @@ describe("11 — Cost Dashboard", () => {
 			{ timeout: 5_000 },
 		);
 
-		// Inject a naiaKey into config to simulate Lab connection
-		await browser.execute(() => {
-			const raw = localStorage.getItem("naia-config");
-			if (!raw) return;
-			const config = JSON.parse(raw);
-			config.naiaKey = "test-lab-key-e2e";
-			localStorage.setItem("naia-config", JSON.stringify(config));
-		});
+		// 나이아 키는 이제 localStorage 가 아니라 ADK 보안 저장소에 있고, 잔액 칸은
+		// 그 저장소에 키가 있을 때만 그려진다. 예전처럼 naia-config 에 가짜 키를
+		// 끼워 넣어도 대시보드는 모른다. 실제 로그인과 같은 길을 탄다 — 설정이
+		// 떠 있는 동안 naia_auth_complete 를 받으면 설정이 키를 보안 저장소에 넣고
+		// naia_auth_ready 를 알린다(SettingsTab 의 로그인 콜백).
+		const naiaKey = process.env.NAIA_API_KEY ?? "";
+		if (!naiaKey) throw new Error("NAIA_API_KEY is required for the Lab balance check");
+		await openSettingsSection("brain");
+		await browser.execute(async (key: string) => {
+			(window as unknown as { __naiaE2eAuthReady?: boolean }).__naiaE2eAuthReady = false;
+			window.addEventListener(
+				"naia_auth_ready",
+				() => {
+					(window as unknown as { __naiaE2eAuthReady?: boolean }).__naiaE2eAuthReady = true;
+				},
+				{ once: true },
+			);
+			const internals = (
+				window as unknown as {
+					__TAURI_INTERNALS__?: {
+						invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+					};
+				}
+			).__TAURI_INTERNALS__;
+			if (!internals) throw new Error("Tauri invoke not available");
+			await internals.invoke("plugin:event|emit", {
+				event: "naia_auth_complete",
+				payload: { naiaKey: key, naiaUserId: "e2e-cost-dashboard" },
+			});
+		}, naiaKey);
+		// 콜백이 실패하면 설정이 이유를 .settings-error 로 띄운다. 시간 초과 문구에 싣는다.
+		let settingsError = "";
+		try {
+			await browser.waitUntil(
+				async () => {
+					const state = await browser.execute(() => ({
+						ready:
+							(window as unknown as { __naiaE2eAuthReady?: boolean })
+								.__naiaE2eAuthReady === true,
+						error:
+							document.querySelector('.settings-error[role="alert"]')
+								?.textContent ?? "",
+					}));
+					settingsError = state.error;
+					return state.ready;
+				},
+				{ timeout: 30_000 },
+			);
+		} catch {
+			throw new Error(
+				`Settings did not finish the Naia login callback${settingsError ? ` — ${settingsError}` : ""}`,
+			);
+		}
 
-		// Re-open dashboard with new config
-		await costBadge.click();
+		// Back to chat and re-open the dashboard with the stored key
+		await browser.execute((sel: string) => {
+			(document.querySelector(sel) as HTMLElement | null)?.click();
+		}, S.chatTab);
+		const badge = await $(S.costBadge);
+		await badge.waitForDisplayed({ timeout: 10_000 });
+		await badge.click();
 
 		const dashboard = await $(S.costDashboard);
 		await dashboard.waitForDisplayed({ timeout: 10_000 });
 
-		// Lab balance section should be visible (loading or content)
-		const hasLabBalance = await browser.execute(
-			(sel: string) => !!document.querySelector(sel),
-			S.labBalanceRow,
+		// Lab balance section should be visible (loading, error, or content)
+		await browser.waitUntil(
+			() =>
+				browser.execute(
+					(sel: string) => !!document.querySelector(sel),
+					S.labBalanceRow,
+				),
+			{
+				timeout: 15_000,
+				timeoutMsg: "Lab balance row did not appear with a stored Naia key",
+			},
 		);
-		expect(hasLabBalance).toBe(true);
-
-		// Remove naiaKey to restore clean state (dashboard stays open for next test)
-		await browser.execute(() => {
-			const raw = localStorage.getItem("naia-config");
-			if (!raw) return;
-			const config = JSON.parse(raw);
-			config.naiaKey = undefined;
-			localStorage.setItem("naia-config", JSON.stringify(config));
-		});
 	});
 
 	it("should close cost dashboard on second badge click", async () => {

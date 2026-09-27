@@ -3,9 +3,6 @@ import { resolve } from "node:path";
 import { S } from "../helpers/selectors.js";
 import { safeRefresh } from "../helpers/settings.js";
 
-const API_KEY =
-	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
-
 type PreparedAdkConfig = {
 	llmRoles?: {
 		main?: {
@@ -53,39 +50,11 @@ describe("01 — App Launch", () => {
 
 	it("should hydrate onboarding from the selected ADK fixture", async () => {
 		const prepared = readPreparedAdk();
+		// 하네스(wdio.conf.ts)가 늘 격리 ADK 를 만든다. 예전의 Gemini 직결
+		// 대안은 그 공급자가 사라진 뒤(#602) 도달할 수 없는 분기였고, 그 키를
+		// 요구한다는 이유로 이 스펙이 회귀에서 빠졌다.
 		if (!prepared) {
-			await browser.execute((key: string) => {
-				localStorage.setItem(
-					"naia-config",
-					JSON.stringify({
-						provider: "gemini",
-						model: "gemini-2.5-flash",
-						apiKey: key,
-						agentName: "Naia",
-						userName: "Tester",
-						vrmModel: "/avatars/01-OL_Woman.vrm",
-						persona: "Friendly AI companion",
-						enableTools: true,
-						locale: "ko",
-						onboardingComplete: true,
-					}),
-				);
-			}, API_KEY);
-			await safeRefresh();
-			await browser.waitUntil(
-				async () =>
-					browser.execute(
-						(sel: string) => !document.querySelector(sel),
-						S.onboardingOverlay,
-					),
-				{
-					timeout: 15_000,
-					timeoutMsg: "Onboarding still visible after config set",
-				},
-			);
-			const appRoot = await $(S.appRoot);
-			await appRoot.waitForDisplayed({ timeout: 10_000 });
-			return;
+			throw new Error("NAIA_E2E_ADK_PATH is not set — run through wdio.conf.ts");
 		}
 		await safeRefresh();
 

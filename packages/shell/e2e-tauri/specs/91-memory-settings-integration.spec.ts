@@ -6,33 +6,29 @@ import { assertSemantic } from "../helpers/semantic.js";
 import {
 	clickBySelector,
 	ensureAppReady,
-	navigateToSettings,
+	openSettingsSection,
 	safeRefresh,
 	scrollToSection,
 	setNativeValue,
 } from "../helpers/settings.js";
+import { CREDENTIALED_MAIN_MODEL } from "../credentialed-adk-seed.js";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-/** Gemini API key — required for semantic judge (Suites 3 & 4). */
-const GEMINI_KEY =
-	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
-
 /**
- * Naia Gateway key — allows using nextain provider without a direct Gemini key.
- * When set, Suites 1 & 2 run against the nextain provider.
- * Suites 3 & 4 (LLM chat + semantic judge) still require GEMINI_KEY.
+ * Naia Gateway key — the chat provider (nextain) and the semantic judge
+ * (helpers/semantic.ts) both go through the Naia gateway.
+ *
+ * 예전에는 Gemini 직결 키가 있어야 대화·판정 묶음(3·4)이 돌았고, 없으면
+ * `describe.skip` 으로 조용히 빠졌다. #602 가 그 공급자를 지운 뒤로 그 키를
+ * 요구한다는 이유로 스펙 전체가 회귀에서 빠졌다. 판정자도 게이트웨이로 옮겼으니
+ * 이제 네 묶음 모두 이 키 하나로 돈다.
  */
 const NAIA_KEY = process.env.NAIA_API_KEY || "";
 
-if (!GEMINI_KEY && !NAIA_KEY) {
-	throw new Error(
-		"Auth key required: set CAFE_E2E_API_KEY/GEMINI_API_KEY (Gemini) or NAIA_API_KEY (nextain) in shell/.env",
-	);
+if (!NAIA_KEY) {
+	throw new Error("Auth key required: set NAIA_API_KEY (Naia gateway)");
 }
-
-/** Whether Suites 3/4 (chat + semantic judge) can run. */
-const CAN_RUN_CHAT_SUITES = !!GEMINI_KEY;
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
@@ -153,9 +149,8 @@ async function clickSave(): Promise<void> {
 
 /** Navigate to settings and wait for the memory section to render. */
 async function gotoSettingsMemory(): Promise<void> {
-	await navigateToSettings();
-	const settingsTab = await $(S.settingsTab);
-	await settingsTab.waitForDisplayed({ timeout: 10_000 });
+	// 설정은 활성 구역만 렌더한다 — 메모리 어댑터 선택은 memory 구역에 있다.
+	await openSettingsSection("memory");
 	// Brief pause for tab transition animation before scrolling
 	await browser.pause(500);
 	await scrollToSection(S.memoryAdapterLocal);
@@ -165,13 +160,12 @@ async function gotoSettingsMemory(): Promise<void> {
 }
 
 /**
- * Force config to a specific provider so LLM tests always work.
- * Uses gemini provider when GEMINI_KEY is available, otherwise nextain.
+ * Force config to the Naia gateway provider so LLM tests always work.
  * Ensures handleSave() does not early-return due to missing naiaKey.
  */
 async function forceProviderConfig(): Promise<void> {
 	await browser.execute(
-		(geminiKey: string, naiaKey: string) => {
+		(naiaKey: string, model: string) => {
 			const existing = (() => {
 				try {
 					return (
@@ -181,32 +175,20 @@ async function forceProviderConfig(): Promise<void> {
 					return {};
 				}
 			})();
-			const config = geminiKey
-				? {
-						...existing,
-						provider: "gemini",
-						model: "gemini-2.5-flash",
-						apiKey: geminiKey,
-						naiaKey: undefined,
-						naiaUserId: undefined,
-						onboardingComplete: true,
-						appVisible: true,
-						discordSessionMigrated: true,
-					}
-				: {
-						...existing,
-						provider: "nextain",
-						model: "gemini-2.5-flash",
-						apiKey: "",
-						naiaKey: naiaKey,
-						onboardingComplete: true,
-						appVisible: true,
-						discordSessionMigrated: true,
-					};
+			const config = {
+				...existing,
+				provider: "nextain",
+				model,
+				apiKey: "",
+				naiaKey: naiaKey,
+				onboardingComplete: true,
+				appVisible: true,
+				discordSessionMigrated: true,
+			};
 			localStorage.setItem("naia-config", JSON.stringify(config));
 		},
-		GEMINI_KEY,
 		NAIA_KEY,
+		CREDENTIALED_MAIN_MODEL,
 	);
 	await safeRefresh();
 	const appRoot = await $(S.appRoot);
@@ -235,7 +217,7 @@ async function forceProviderConfig(): Promise<void> {
 
 /**
  * Retry wrapper for assertSemantic — retries once on Judge HTTP 599
- * (transient network error from the judge's Gemini API call).
+ * (transient network error from the judge's Naia gateway call).
  */
 async function assertSemanticWithRetry(
 	answer: string,
@@ -410,8 +392,8 @@ describe("91 — Memory Settings Integration", () => {
 	// Suite 2: Settings -> naia-settings/config.json SoT
 	describe("2) Settings -> current config.json contract", () => {
 		before(async () => {
-			// Force gemini provider to avoid handleSave() early-return due to
-			// nextain provider + missing naiaKey (stored in secure store, loaded async).
+			// Put naiaKey in local config to avoid handleSave() early-return
+			// (the key lives in the secure store and loads async).
 			await forceProviderConfig();
 			await gotoSettingsMemory();
 		});
@@ -431,12 +413,34 @@ describe("91 — Memory Settings Integration", () => {
 		it("should write vllm embedding fields and derived aliases to config.json", async () => {
 			await clickRadio("memory-embedding", "vllm");
 			await browser.pause(300);
+			// vLLM 임베딩 Base URL 및 Model 입력 필드는 포커스를 벗어날 때(blur) config.json에 저장된다.
 			await setNativeValue(S.memoryEmbeddingBaseUrl, "http://localhost:11434");
+			await browser.execute((sel: string) => {
+				const el = document.querySelector(sel) as HTMLInputElement | null;
+				if (!el) throw new Error(`${sel} not found`);
+				el.focus();
+				el.blur();
+				el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+			}, S.memoryEmbeddingBaseUrl);
+
 			await setNativeValue(S.memoryEmbeddingModel, "nomic-embed-text");
+			await browser.execute((sel: string) => {
+				const el = document.querySelector(sel) as HTMLInputElement | null;
+				if (!el) throw new Error(`${sel} not found`);
+				el.focus();
+				el.blur();
+				el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+			}, S.memoryEmbeddingModel);
+
 			await clickSave();
 
+			// 라디오를 누르는 순간 공급자만 먼저 저장된다(persistConfig). 공급자만 보고
+			// 멈추면 저장 버튼이 쓴 URL·모델보다 먼저 읽어 undefined 를 본다.
 			const config = await waitForConfigCondition(
-				(cfg) => cfg.memoryEmbeddingProvider === "vllm",
+				(cfg) =>
+					cfg.memoryEmbeddingProvider === "vllm" &&
+					cfg.memoryEmbeddingBaseUrl === "http://localhost:11434" &&
+					cfg.memoryEmbeddingModel === "nomic-embed-text",
 			);
 			expect(config.memoryEmbeddingProvider).toBe("vllm");
 			expect(config.memoryEmbeddingBaseUrl).toBe("http://localhost:11434");
@@ -454,21 +458,39 @@ describe("91 — Memory Settings Integration", () => {
 		});
 
 		it("should write the memory LLM role to config.json", async () => {
-			await clickRadio("memory-llm", "vllm");
-			await browser.pause(300);
-			await setNativeValue(
-				'input[placeholder="http://localhost:8000"]',
-				"http://localhost:8001",
+			// #692·#694 가 기억 LLM 라디오(memory-llm)를 "작은 LLM" 선택(small-llm)
+			// 으로 바꿨다. 이 구역은 저장 버튼이 아니라 칸을 떠날 때(blur) 곧바로
+			// config.json 에 쓴다.
+			const previous = await browser.execute(
+				() =>
+					(
+						document.querySelector(
+							'input[name="small-llm"]:checked',
+						) as HTMLInputElement | null
+					)?.value ?? "",
 			);
+			await clickRadio("small-llm", "vllm");
 			await setNativeValue(
-				'input[placeholder="minicpm-4.5-omni"]',
-				"test-model",
+				'[data-testid="small-llm-base-url"]',
+				"http://localhost:8001/v1",
 			);
-			await clickSave();
+			await setNativeValue('[data-testid="small-llm-model"]', "test-model");
+			await browser.execute(() => {
+				const el = document.querySelector(
+					'[data-testid="small-llm-model"]',
+				) as HTMLInputElement | null;
+				if (!el) throw new Error("small LLM model input not found");
+				el.focus();
+				el.blur();
+				el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+			});
 
 			const config = await waitForConfigCondition((cfg) => {
 				const roles = cfg.llmRoles as Record<string, Record<string, unknown>>;
-				return roles?.memory?.provider === "vllm";
+				return (
+					roles?.memory?.provider === "vllm" &&
+					roles?.memory?.model === "test-model"
+				);
 			});
 			const roles = config.llmRoles as Record<
 				string,
@@ -476,11 +498,13 @@ describe("91 — Memory Settings Integration", () => {
 			>;
 			expect(roles.memory.provider).toBe("vllm");
 			expect(roles.memory.model).toBe("test-model");
+			expect(String(roles.memory.baseUrl)).toContain("localhost:8001");
 
-			// Revert
-			await clickRadio("memory-llm", "none");
-			await clickSave();
-			await browser.pause(500);
+			// Revert to whatever was chosen before.
+			if (previous === "threshold" || previous === "off") {
+				await clickRadio("small-llm", previous);
+				await browser.pause(500);
+			}
 		});
 
 		it("should persist memory settings in localStorage after save", async () => {
@@ -551,6 +575,13 @@ describe("91 — Memory Settings Integration", () => {
 			});
 			expect(saved?.memoryEmbeddingProvider).toBe("offline");
 
+			// Wait for config.json (boot hydration SoT) to reflect the debounced save before reload
+			await waitForConfigCondition(
+				(cfg) =>
+					cfg.memoryEmbeddingProvider === "offline" &&
+					cfg.memoryOfflineModel === "all-mpnet-base-v2",
+			);
+
 			// Refresh (preserves localStorage, re-initializes React state)
 			await safeRefresh();
 			const appRoot = await $(S.appRoot);
@@ -573,13 +604,38 @@ describe("91 — Memory Settings Integration", () => {
 				{ timeout: 5_000, timeoutMsg: "memory-embedding=offline not restored" },
 			);
 
-			await browser.waitUntil(
-				() => isRadioChecked("memory-offline-model", "all-mpnet-base-v2"),
-				{
-					timeout: 5_000,
-					timeoutMsg: "memory-offline-model=all-mpnet-base-v2 not restored",
-				},
-			);
+			try {
+				await browser.waitUntil(
+					() => isRadioChecked("memory-offline-model", "all-mpnet-base-v2"),
+					{ timeout: 5_000 },
+				);
+			} catch {
+				// 무엇이 대신 골라져 있는지, 저장소 두 곳에 무엇이 남았는지 함께 남긴다.
+				const shown = await browser.execute(
+					() =>
+						(
+							document.querySelector(
+								'input[name="memory-offline-model"]:checked',
+							) as HTMLInputElement | null
+						)?.value ?? "(none)",
+				);
+				const local = await browser.execute(() => {
+					try {
+						return String(
+							JSON.parse(localStorage.getItem("naia-config") ?? "{}")
+								.memoryOfflineModel,
+						);
+					} catch {
+						return "(unreadable)";
+					}
+				});
+				const file = await readCurrentConfig()
+					.then((cfg) => String(cfg.memoryOfflineModel))
+					.catch(() => "(unreadable)");
+				throw new Error(
+					`memory-offline-model=all-mpnet-base-v2 not restored (shown=${shown}, localStorage=${local}, config.json=${file})`,
+				);
+			}
 
 			// Revert
 			await clickRadio("memory-embedding", "none");
@@ -591,12 +647,11 @@ describe("91 — Memory Settings Integration", () => {
 	});
 
 	// ── Suite 3: Memory storage & recall (same session) ─────────────────────────
-	// Requires GEMINI_KEY (for semantic judge). Skip when only NAIA_KEY is set.
-	(CAN_RUN_CHAT_SUITES ? describe : describe.skip)(
+	describe(
 		"3) Memory storage and recall (same session)",
 		() => {
 			before(async () => {
-				// Force gemini so LLM calls work regardless of real user config
+				// Force the gateway provider so LLM calls work regardless of real user config
 				await forceProviderConfig();
 				await clickBySelector(S.chatTab);
 				const chatInput = await $(S.chatInput);
@@ -627,7 +682,10 @@ describe("91 — Memory Settings Integration", () => {
 				);
 			});
 
-			it("should store user identity and integrate multi-turn context", async () => {
+			it("should store user identity and integrate multi-turn context", async function () {
+				// 대화 두 번과 판정 두 번(판정마다 최대 60초 + 재시도)이 한 it 에 있다.
+				// 게이트웨이가 느린 때 기본 180초를 넘길 수 있어 이 it 만 넉넉히 둔다.
+				this.timeout(420_000);
 				await sendMessage(
 					"\ub0b4 \uc774\ub984\uc740 Luke\uc774\uace0, \ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790\uc57c.",
 				);
@@ -653,8 +711,7 @@ describe("91 — Memory Settings Integration", () => {
 	);
 
 	// ── Suite 4: Cross-session memory recall ────────────────────────────────────
-	// Requires GEMINI_KEY (for semantic judge). Skip when only NAIA_KEY is set.
-	(CAN_RUN_CHAT_SUITES ? describe : describe.skip)(
+	describe(
 		"4) Cross-session memory recall (new conversation)",
 		() => {
 			before(async () => {
@@ -757,9 +814,8 @@ describe("91 — Memory Settings Integration", () => {
 				return Boolean(el);
 			});
 			await browser.pause(500);
-			expect(arrived, "기억 구역(.facts-list 또는 .settings-hint)이 화면에 없다").toBe(
-				true,
-			);
+			// 기억 구역(.facts-list 또는 .settings-hint)이 화면에 있어야 한다.
+			expect(arrived).toBe(true);
 		});
 
 		it("should show facts list or empty-state hint", async () => {
@@ -819,143 +875,132 @@ describe("91 — Memory Settings Integration", () => {
 	});
 
 	// ── Suite 6: Backup export ──────────────────────────────────────────────────
+	// 백업 구역은 구현 검증 전까지 의도적으로 비활성화되어 있으므로 비활성 상태 및 준비 중 안내 계약을 검증한다.
 	describe("6) Backup export", () => {
 		before(async () => {
 			await ensureAppReady();
 			await gotoSettingsMemory();
 			// Scroll to backup area
 			await browser.execute(() => {
-				const inputs = Array.from(
-					document.querySelectorAll("input[type='password']"),
-				) as HTMLInputElement[];
-				const pw = inputs.find((el) => {
-					const ph = el.placeholder.toLowerCase();
-					return (
-						ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638")
-					);
-				});
+				const pw =
+					(document.querySelector(
+						'[data-testid="memory-backup-password"]',
+					) as HTMLElement | null) ??
+					(
+						Array.from(
+							document.querySelectorAll("input[type='password']"),
+						) as HTMLInputElement[]
+					).find((el) => {
+						const ph = el.placeholder.toLowerCase();
+						return (
+							ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
+						);
+					});
 				if (pw) pw.scrollIntoView({ block: "center" });
 			});
 			await browser.pause(500);
 		});
 
-		it("should render backup password input", async () => {
-			const hasPw = await browser.execute(() =>
-				(
-					Array.from(
-						document.querySelectorAll("input[type='password']"),
-					) as HTMLInputElement[]
-				).some(
-					(el) =>
-						el.placeholder.toLowerCase().includes("password") ||
-						el.placeholder.includes("\ubc44\ubc00\ubc88\ud638"),
-				),
-			);
-			expect(hasPw).toBe(true);
-		});
-
-		it("should enable export button only after password is entered", async () => {
-			const disabledBefore = await browser.execute(() => {
-				const btns = Array.from(
-					document.querySelectorAll("button"),
-				) as HTMLButtonElement[];
-				return (
-					btns.find((b) =>
-						/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
-					)?.disabled ?? true
-				);
-			});
-			expect(disabledBefore).toBe(true);
-
-			// Fill password
-			await browser.execute(() => {
-				const inputs = Array.from(
-					document.querySelectorAll("input[type='password']"),
-				) as HTMLInputElement[];
-				const pw = inputs.find((el) => {
-					const ph = el.placeholder.toLowerCase();
-					return (
-						ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638")
-					);
-				});
-				if (!pw) throw new Error("backup password input not found");
-				const setter = Object.getOwnPropertyDescriptor(
-					HTMLInputElement.prototype,
-					"value",
-				)?.set;
-				if (setter) setter.call(pw, "e2e-test-pw-123");
-				else pw.value = "e2e-test-pw-123";
-				pw.dispatchEvent(new Event("input", { bubbles: true }));
-			});
-			await browser.pause(300);
-
-			const enabledAfter = await browser.execute(() => {
-				const btns = Array.from(
-					document.querySelectorAll("button"),
-				) as HTMLButtonElement[];
-				return !btns.find((b) =>
-					/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
-				)?.disabled;
-			});
-			expect(enabledAfter).toBe(true);
-		});
-
-		it("should trigger export and show done or error status (IPC called)", async () => {
-			// Click export
-			await browser.execute(() => {
-				const btns = Array.from(
-					document.querySelectorAll("button"),
-				) as HTMLButtonElement[];
-				const btn = btns.find((b) =>
-					/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
-				);
-				if (btn && !btn.disabled) btn.click();
-			});
-
-			// Wait for export IPC to respond:
-			// - button shows "..." while in-progress
-			// - backup outcome: ✓/done (success) or fail/error keywords in a hint
-			let ipcResponded = false;
-			await browser.waitUntil(
-				async () => {
-					const result = await browser.execute(() => {
-						const btns = Array.from(
-							document.querySelectorAll("button"),
-						) as HTMLButtonElement[];
-						const exportBtn = btns.find((b) =>
-							/(export|\ub0b4\ubcf4\ub0b4\uae30|\.\.\.)/i.test(
-								b.textContent ?? "",
-							),
+		it("should render disabled backup password input", async () => {
+			const pwState = await browser.execute(() => {
+				const el =
+					(document.querySelector(
+						'[data-testid="memory-backup-password"]',
+					) as HTMLInputElement | null) ??
+					(
+						Array.from(
+							document.querySelectorAll("input[type='password']"),
+						) as HTMLInputElement[]
+					).find((input) => {
+						const ph = input.placeholder.toLowerCase();
+						return (
+							ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
 						);
-						const isInProgress = exportBtn?.textContent?.trim() === "...";
-						// Match backup-specific outcome hints only:
-						// exclude "✓ Saved" / "저장" which are settings-save hints
-						const isDone = Array.from(
-							document.querySelectorAll(".settings-hint"),
-						).some(
-							(el) =>
-								/\u2713|done/i.test(el.textContent ?? "") &&
-								!/\bsaved\b|\uc800\uc7a5/i.test(el.textContent ?? ""),
-						);
-						const hasError = Array.from(
-							document.querySelectorAll(".settings-hint"),
-						).some((el) =>
-							/(\bfail(ed)?\b|\berror\b|\uc624\ub958|\uc2e4\ud328)/i.test(
-								el.textContent ?? "",
-							),
-						);
-						return { isInProgress, isDone, hasError };
 					});
-					if (result.isInProgress || result.isDone || result.hasError) {
-						ipcResponded = true;
-						return true;
-					}
-					return false;
-				},
-				{ timeout: 8_000, timeoutMsg: "Export IPC did not respond" },
-			);
-			// If waitUntil passed, IPC was called and responded
-			expect(ipcResponded).toBe(true);
+				if (!el) return null;
+				return { exists: true, disabled: el.disabled };
+			});
+			expect(pwState).not.toBeNull();
+			expect(pwState?.exists).toBe(true);
+			expect(pwState?.disabled).toBe(true);
+		});
+
+		it("should render disabled export and import buttons", async () => {
+			const buttonStates = await browser.execute(() => {
+				const exportBtn =
+					(document.querySelector(
+						'[data-testid="memory-backup-export"]',
+					) as HTMLButtonElement | null) ??
+					(
+						Array.from(
+							document.querySelectorAll("button"),
+						) as HTMLButtonElement[]
+					).find((b) =>
+						/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
+					);
+
+				const importBtn =
+					(exportBtn?.nextElementSibling as HTMLButtonElement | null) ??
+					(
+						Array.from(
+							document.querySelectorAll("button"),
+						) as HTMLButtonElement[]
+					).find((b) =>
+						/(import|\uac00\uc838\uc624\uae30)/i.test(b.textContent ?? ""),
+					);
+
+				return {
+					exportExists: !!exportBtn,
+					exportDisabled: exportBtn?.disabled ?? false,
+					importExists: !!importBtn,
+					importDisabled: importBtn?.disabled ?? false,
+				};
+			});
+			expect(buttonStates.exportExists).toBe(true);
+			expect(buttonStates.exportDisabled).toBe(true);
+			expect(buttonStates.importExists).toBe(true);
+			expect(buttonStates.importDisabled).toBe(true);
+		});
+
+		it("should display coming soon hint in backup field", async () => {
+			const hintInfo = await browser.execute(() => {
+				const pwInput =
+					document.querySelector('[data-testid="memory-backup-password"]') ??
+					(
+						Array.from(
+							document.querySelectorAll("input[type='password']"),
+						) as HTMLInputElement[]
+					).find((input) => {
+						const ph = input.placeholder.toLowerCase();
+						return (
+							ph.includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638")
+						);
+					});
+				const field = pwInput?.closest(".settings-field");
+				const hintEl = field?.querySelector(
+					"span.settings-hint",
+				) as HTMLElement | null;
+				if (!hintEl) return null;
+				const style = window.getComputedStyle(hintEl);
+				const isVisible =
+					style.display !== "none" &&
+					style.visibility !== "hidden" &&
+					style.opacity !== "0";
+				return {
+					exists: true,
+					visible: isVisible,
+					text: (hintEl.textContent ?? "").trim(),
+				};
+			});
+			expect(hintInfo).not.toBeNull();
+			expect(hintInfo?.exists).toBe(true);
+			expect(hintInfo?.visible).toBe(true);
+			expect(hintInfo?.text.length).toBeGreaterThan(0);
+			expect(
+				/(backup|\ubc31\uc5c5|coming|future|\uc9c0\uc6d0)/i.test(
+					hintInfo?.text ?? "",
+				),
+			).toBe(true);
 		});
 	});
 

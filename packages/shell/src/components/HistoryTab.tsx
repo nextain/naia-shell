@@ -30,7 +30,8 @@ export function HistoryTab({ onLoadSession }: { onLoadSession: () => void }) {
 	const [sessions, setSessions] = useState<ConversationSession[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [loadError, setLoadError] = useState<string | null>(null);
-	const currentSessionId = useChatStore((s) => s.sessionId);
+	// 로컬 대화 transcript는 localSessionId(chat-<ts>-<rand>)를 키로 식별한다.
+	const currentSessionId = useChatStore((s) => s.localSessionId);
 
 	useEffect(() => {
 		loadSessions();
@@ -59,7 +60,8 @@ export function HistoryTab({ onLoadSession }: { onLoadSession: () => void }) {
 			const messages = await getConversationHistory(key);
 			const store = useChatStore.getState();
 			store.newConversation();
-			store.setSessionId(key);
+			store.setLocalSessionId(key);
+			store.setSessionId("agent:main:main");
 			store.setMessages(messages);
 			onLoadSession();
 		} catch (err) {
@@ -75,7 +77,9 @@ export function HistoryTab({ onLoadSession }: { onLoadSession: () => void }) {
 			await deleteConversation(key);
 			setSessions((prev) => prev.filter((s) => s.key !== key));
 			if (key === currentSessionId) {
-				useChatStore.getState().newConversation();
+				const store = useChatStore.getState();
+				store.newConversation();
+				store.setSessionId("agent:main:main");
 			}
 		} catch (err) {
 			Logger.warn("HistoryTab", "Failed to delete session", {

@@ -32,6 +32,25 @@ async function tauriInvoke<T>(
 }
 
 async function submitProfilePhrase(phrase: string): Promise<void> {
+	// 응답을 쓰거나 읽는 동안 전송 버튼은 같은 자리의 멈춤 버튼(.chat-cancel-btn)
+	// 이 된다. 전시 소개는 쉬지 않고 이어 말하므로 기다려도 돌아오지 않는다.
+	// 사람이 그렇듯 먼저 멈춤을 누르고, 전송 버튼이 돌아오면 문구를 보낸다.
+	await browser.waitUntil(
+		async () =>
+			browser.execute(() => {
+				const cancel = document.querySelector(
+					".chat-cancel-btn",
+				) as HTMLButtonElement | null;
+				if (!cancel) return true;
+				cancel.click();
+				return false;
+			}),
+		{
+			timeout: 30_000,
+			interval: 700,
+			timeoutMsg: `chat stayed busy before sending: ${phrase}`,
+		},
+	);
 	const before = await browser.execute(
 		(sel: string) => document.querySelectorAll(sel).length,
 		S.userMessage,
@@ -493,10 +512,16 @@ describe("71 — Proactive speech profiles (#82)", () => {
 			knowledgeScopePresent: Boolean(
 				document.querySelector('[data-testid="proactive-knowledge-scope"]'),
 			),
+			timersPresent: Boolean(
+				document.querySelector('[data-testid="proactive-idle-ms"]') ||
+					document.querySelector('[data-testid="proactive-interval-ms"]'),
+			),
 		}));
 		expect(controls.profileOptions).toEqual(["disabled", "exhibition_intro"]);
 		expect(controls.bgmPresent).toBe(false);
 		expect(controls.knowledgeScopePresent).toBe(true);
+		// #643: 대기·간격 타이머는 DJ 세션에만 뜻이 있어 일반(전시) 구역에는 없다.
+		expect(controls.timersPresent).toBe(false);
 
 		await browser.execute(() => {
 			const setValue = (selector: string, value: string) => {
@@ -516,8 +541,6 @@ describe("71 — Proactive speech profiles (#82)", () => {
 			};
 			setValue('[data-testid="proactive-speech-profile"]', "exhibition_intro");
 			setValue('[data-testid="proactive-timezone"]', "Asia/Seoul");
-			setValue('[data-testid="proactive-idle-ms"]', "5000");
-			setValue('[data-testid="proactive-interval-ms"]', "30000");
 			setValue('[data-testid="proactive-knowledge-scope"]', "expo-2026");
 			(
 				document.querySelector(
@@ -531,8 +554,6 @@ describe("71 — Proactive speech profiles (#82)", () => {
 				config.proactiveSpeechProfile === "exhibition_intro" &&
 				config.proactiveSpeechPermitted === false &&
 				config.proactiveSpeechTimezone === "Asia/Seoul" &&
-				config.proactiveSpeechIdleMs === 5000 &&
-				config.proactiveSpeechIntervalMs === 30000 &&
 				config.proactiveSpeechKnowledgeScope === "expo-2026"
 			);
 		}, { timeout: 10_000, timeoutMsg: "exhibition settings were not persisted" });
@@ -560,8 +581,6 @@ describe("71 — Proactive speech profiles (#82)", () => {
 				return (
 					restored.proactiveSpeechProfile === "exhibition_intro" &&
 					restored.proactiveSpeechTimezone === "Asia/Seoul" &&
-					restored.proactiveSpeechIdleMs === 5000 &&
-					restored.proactiveSpeechIntervalMs === 30000 &&
 					restored.proactiveSpeechKnowledgeScope === "expo-2026"
 				);
 			},
@@ -579,16 +598,6 @@ describe("71 — Proactive speech profiles (#82)", () => {
 					'[data-testid="proactive-timezone"]',
 				) as HTMLInputElement | null
 			)?.value,
-			idleMs: (
-				document.querySelector(
-					'[data-testid="proactive-idle-ms"]',
-				) as HTMLInputElement | null
-			)?.value,
-			intervalMs: (
-				document.querySelector(
-					'[data-testid="proactive-interval-ms"]',
-				) as HTMLInputElement | null
-			)?.value,
 			knowledgeScope: (
 				document.querySelector(
 					'[data-testid="proactive-knowledge-scope"]',
@@ -601,8 +610,6 @@ describe("71 — Proactive speech profiles (#82)", () => {
 		expect(visible).toEqual({
 			profile: "exhibition_intro",
 			timezone: "Asia/Seoul",
-			idleMs: "5000",
-			intervalMs: "30000",
 			knowledgeScope: "expo-2026",
 			bgmPresent: false,
 		});
@@ -632,13 +639,15 @@ describe("71 — Proactive speech profiles (#82)", () => {
 	});
 
 	it("reports the standalone cascade boundary through registered native IPC", async () => {
+		// 7ac9d9f9 가 윈도 VoxCPM2 TRT 를 cascade 에서 떼어 내며 설치 상태 명령을
+		// voxcpm2_installation_status 로 바꾸고 단계도 그 런타임에 맞게 다시 짰다.
 		const status = await tauriInvoke<{
 			phase: string;
 			ready: boolean;
 			canStart: boolean;
 			summary: string;
 			steps: Array<{ id: string; progressPercent: number; actionAvailable: boolean }>;
-		}>("cascade_installation_status");
+		}>("voxcpm2_installation_status");
 		expect(["ready", "ready-to-start", "blocked", "requires-action"]).toContain(
 			status.phase,
 		);
@@ -647,12 +656,11 @@ describe("71 — Proactive speech profiles (#82)", () => {
 		expect(status.summary.length).toBeGreaterThan(0);
 		expect(status.steps.map((step) => step.id)).toEqual(
 			expect.arrayContaining([
-				"loader",
+				"runtime-entrypoint",
 				"python-runtime",
-				"cascade-service-bundle",
-
+				"trt-voice-service",
 				"voxcpm2-model",
-				"reference-voices",
+				"reference-voice",
 			]),
 		);
 		for (const step of status.steps) {
