@@ -17,10 +17,12 @@ describe("model-facing tool contract", () => {
 			"memo_get",
 			"memo_save",
 			"skill_memory_recall",
+			"skill_memory_save",
 			"skill_knowledge_ask",
 			"skill_knowledge_search",
 			"skill_knowledge_graph",
 			"skill_knowledge_scope",
+			"skill_knowledge_store",
 			"list_dir",
 			"read_file",
 			"skill_youtube_bgm",
@@ -79,11 +81,12 @@ describe("model-facing tool contract", () => {
 			false,
 		);
 		expect(isModelFacingToolAllowed("skill_knowledge_search")).toBe(true);
+		expect(isModelFacingToolAllowed("skill_knowledge_store")).toBe(true);
 		expect(isModelFacingToolAllowed("skill_knowledge_delete")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_knowledge_compile")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_memory_recall")).toBe(true);
+		expect(isModelFacingToolAllowed("skill_memory_save")).toBe(true);
 		expect(isModelFacingToolAllowed("memory_save")).toBe(false);
-		expect(isModelFacingToolAllowed("skill_memory_save")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_memory_delete")).toBe(false);
 		expect(isModelFacingToolAllowed("delegate_agent")).toBe(true);
 	});

@@ -19,6 +19,22 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_724_memory_knowledge_tools": {
+      "issue": 724,
+      "title": "모델 keep list에 기억·지식 저장 도구를 열고 계약 테스트를 실행한다 (#724)",
+      "requirements": "docs/requirements.md FR-TOOLS-SURFACE.1~2",
+      "scenario": "docs/user-scenarios.md UC-TOOLS-SURFACE-611",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "completed",
+      "verification": "packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts",
+      "last_updated": "2026-09-28T15:28:00+09:00"
+    },
     "issue_680_ai_workspace_context_control": {
       "issue": 680,
       "title": "AI의 워크스페이스/Herdr 컨텍스트 인지 및 터미널·UI 제어 연동 (#678 Epics 8 & 9)",

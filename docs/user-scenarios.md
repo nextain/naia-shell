@@ -1971,6 +1971,8 @@ Exception #687: `skill_workspace_edit_open_file` (open editor file only, per-edi
 
 #699 (2026-09-23 루크 「다 고쳐」): 회사 질문은 세션의 몇 번째 턴이든 지식 도구로 답할 수 있다. 첫 턴에도 제외 목록이 온전히 적용되어 미허용 작업 도구가 노출되는 첫 턴 갭이 제거된다. 받지 못하면(시간 초과·실패) 그 턴은 도구 없이 보낸다. 이전 목록을 재사용하지 않는다(새로 등록된 도구가 열리는 것을 막기 위해). 음성 경로 실기 확인: `e2e-tauri/specs/94-voice-6g-shell.spec.ts`(`test:e2e:tauri:voice-6g`) win-rtx4060 통과 2026-09-23 18:31 KST (1:55, main=nextain/deepseek-v4-flash via api.nextain.io, 설치 런타임 격리 복사본 + CC0 테스트 음색; 하네스 provider 전환은 #704 의 599d9475 를 커밋 없이 적용).
 
+#724 (2026-09-28): 기억·지식 저장 도구(`skill_memory_save`, `skill_knowledge_store`)를 모델 keep list에 추가. 개인 사실은 `skill_memory_save`, 워크스페이스 지식은 `skill_knowledge_store`, 명시적 메모 요청만 `memo_save`로 라우팅하며 기억 부탁이 `memo_save`로 가지 않는다. `shell_exec`, `write_file` 등 제거된 작업 도구는 계속 거절된다.
+
 | 상태 | 사용자 기대 |
 |---|---|
 | 기본 | 도구 목록을 열면 남긴 도구만 표시되고 작업 도구는 표시되지 않는다. |
