@@ -673,10 +673,13 @@ describe("conf 생성 golden (FR-INSTALL.2)", () => {
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"scripts/sign-windows-binary.ps1",
+				"../scripts/sign-windows-binary.ps1",
 				"%1",
 			],
 		});
+		const scriptArg = conf.bundle.windows.signCommand.args[4];
+		expect(scriptArg).toBe("../scripts/sign-windows-binary.ps1");
+		expect(existsSync(resolve(SHELL, "src-tauri", scriptArg))).toBe(true);
 		for (const r of AGENT_RESOURCES) expect(conf.bundle.resources[r]).toBe(r);
 		for (const r of BGM_RESOURCES) expect(conf.bundle.resources[r]).toBe(r);
 		expect(conf.bundle.resources["resources/node.exe"]).toBe("node.exe");

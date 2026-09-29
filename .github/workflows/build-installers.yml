@@ -252,17 +252,43 @@ jobs:
           pnpm -C packages/shell exec tauri bundle --verbose
           --config src-tauri/tauri.conf.generated.json
 
-      - name: Verify application executable signature after bundle
+      - name: Verify application executable signature inside bundled MSI
         if: matrix.platform == 'win32'
         shell: pwsh
         run: |
-          $app = Get-Item "packages/shell/src-tauri/target/release/naia-shell.exe"
-          $appSig = Get-AuthenticodeSignature -LiteralPath $app.FullName
-          if ($appSig.Status -ne "Valid") {
-            throw "naia-shell.exe signature is not valid after bundle: $($appSig.Status)"
+          # Tauri bundler restores target/release/naia-shell.exe from a pre-bundle copy after bundling,
+          # so verifying target/release/naia-shell.exe directly only checks the pre-bundle binary.
+          # To verify that signCommand actually signed the patched payload binary, we extract the MSI and
+          # inspect naia-shell.exe inside it. This step runs before 'Publicly sign Windows installers'
+          # to fail fast if the packaged payload binary is invalid before spending time signing installer packages
+          # (administrative extraction via msiexec /a does not require the MSI to have an outer signature).
+          $msi = @(Get-ChildItem packages/shell/src-tauri/target/release/bundle/msi/*.msi)
+          if ($msi.Count -ne 1) {
+            throw "Expected exactly one MSI, found $($msi.Count)"
           }
-          if ($appSig.SignerCertificate.Subject -notmatch "O=Nextain INC") {
-            throw "naia-shell.exe signer subject mismatch after bundle: $($appSig.SignerCertificate.Subject)"
+          $targetDir = Join-Path $env:RUNNER_TEMP "naia-msi-sig-verify"
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          try {
+            $process = Start-Process -FilePath "msiexec.exe" `
+              -ArgumentList "/a `"$($msi[0].FullName)`" /qn TARGETDIR=`"$targetDir`"" `
+              -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              throw "MSI administrative extraction failed with exit code $($process.ExitCode)"
+            }
+            $shellExe = Get-ChildItem -LiteralPath $targetDir -Recurse -File -Filter "naia-shell.exe" |
+              Select-Object -First 1
+            if (-not $shellExe) {
+              throw "naia-shell.exe not found inside extracted MSI: $targetDir"
+            }
+            $sig = Get-AuthenticodeSignature -LiteralPath $shellExe.FullName
+            if ($sig.Status -ne "Valid") {
+              throw "naia-shell.exe inside MSI signature is not valid: $($sig.Status)"
+            }
+            if ($sig.SignerCertificate.Subject -notmatch "O=Nextain INC") {
+              throw "naia-shell.exe inside MSI signer subject mismatch: $($sig.SignerCertificate.Subject)"
+            }
+          } finally {
+            Remove-Item -LiteralPath $targetDir -Recurse -Force -ErrorAction SilentlyContinue
           }
 
       - name: Publicly sign Windows installers

@@ -25,16 +25,24 @@ describe("sign-windows-binary (#725)", () => {
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"scripts/sign-windows-binary.ps1",
+				"../scripts/sign-windows-binary.ps1",
 				"%1",
 			],
 		});
+		const scriptArg = winConf.bundle.windows.signCommand.args[4];
+		expect(scriptArg).toBe("../scripts/sign-windows-binary.ps1");
+		expect(existsSync(resolve(SHELL, "src-tauri", scriptArg))).toBe(true);
 
 		const linuxConf = generateConf(matrix, "linux");
 		expect(linuxConf.bundle.windows).toBeUndefined();
 
 		const darwinConf = generateConf(matrix, "darwin");
 		expect(darwinConf.bundle.windows).toBeUndefined();
+	});
+
+	it("sign-windows-binary.ps1 replaces signatures and does not contain AppendSignature $true", () => {
+		const script = readFileSync(SCRIPT_PATH, "utf8");
+		expect(script).not.toContain("AppendSignature $true");
 	});
 
 	it("sign-windows-binary.ps1 exits 0 and does nothing when NAIA_WINDOWS_SIGN is not '1'", () => {

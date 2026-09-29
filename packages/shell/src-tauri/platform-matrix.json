@@ -116,7 +116,7 @@
 							"-ExecutionPolicy",
 							"Bypass",
 							"-File",
-							"scripts/sign-windows-binary.ps1",
+							"../scripts/sign-windows-binary.ps1",
 							"%1"
 						]
 					},
