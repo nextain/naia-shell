@@ -8,6 +8,9 @@ import { generateConf } from "../stage-runtime.mjs";
 const SHELL = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SCRIPT_PATH = resolve(SHELL, "scripts/sign-windows-binary.ps1");
 const MATRIX_PATH = resolve(SHELL, "src-tauri/platform-matrix.json");
+const SYSTEM_VCRUNTIME = process.env.SystemRoot
+	? `${process.env.SystemRoot}\\System32\\vcruntime140.dll`
+	: "C:\\Windows\\System32\\vcruntime140.dll";
 
 describe("sign-windows-binary (#725)", () => {
 	it("sign-windows-binary.ps1 exists in packages/shell/scripts", () => {
@@ -45,35 +48,9 @@ describe("sign-windows-binary (#725)", () => {
 		expect(script).not.toContain("AppendSignature $true");
 	});
 
-	it("sign-windows-binary.ps1 exits 0 and does nothing when NAIA_WINDOWS_SIGN is not '1'", () => {
-		// Run powershell to execute the script against this test file itself
-		const output = execFileSync(
-			"powershell",
-			[
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-File",
-				SCRIPT_PATH,
-				fileURLToPath(import.meta.url),
-			],
-			{
-				encoding: "utf8",
-				env: {
-					...process.env,
-					NAIA_WINDOWS_SIGN: "",
-				},
-			},
-		);
-		expect(output).toContain("NAIA_WINDOWS_SIGN is not enabled");
-	});
-
-	it("sign-windows-binary.ps1 skips known third-party binaries even if NAIA_WINDOWS_SIGN is '1'", () => {
-		// Test with system vcruntime140.dll if on Windows
-		const sys32 = process.env.SystemRoot
-			? `${process.env.SystemRoot}\\System32\\vcruntime140.dll`
-			: "C:\\Windows\\System32\\vcruntime140.dll";
-		if (existsSync(sys32)) {
+	describe.skipIf(process.platform !== "win32")("PowerShell execution", () => {
+		it("sign-windows-binary.ps1 exits 0 and does nothing when NAIA_WINDOWS_SIGN is not '1'", () => {
+			// Run powershell to execute the script against this test file itself
 			const output = execFileSync(
 				"powershell",
 				[
@@ -82,41 +59,66 @@ describe("sign-windows-binary (#725)", () => {
 					"Bypass",
 					"-File",
 					SCRIPT_PATH,
-					sys32,
+					fileURLToPath(import.meta.url),
 				],
 				{
 					encoding: "utf8",
 					env: {
 						...process.env,
-						NAIA_WINDOWS_SIGN: "1",
+						NAIA_WINDOWS_SIGN: "",
 					},
 				},
 			);
-			expect(output).toContain("Skipping known third-party binary");
-		}
-	});
+			expect(output).toContain("NAIA_WINDOWS_SIGN is not enabled");
+		});
 
-	it("sign-windows-binary.ps1 throws when target file does not exist", () => {
-		expect(() => {
-			execFileSync(
-				"powershell",
-				[
-					"-NoProfile",
-					"-ExecutionPolicy",
-					"Bypass",
-					"-File",
-					SCRIPT_PATH,
-					"non_existent_dummy_binary.exe",
-				],
-				{
-					encoding: "utf8",
-					env: {
-						...process.env,
-						NAIA_WINDOWS_SIGN: "1",
+		it.skipIf(!existsSync(SYSTEM_VCRUNTIME))(
+			"sign-windows-binary.ps1 skips known third-party binaries even if NAIA_WINDOWS_SIGN is '1'",
+			() => {
+				const output = execFileSync(
+					"powershell",
+					[
+						"-NoProfile",
+						"-ExecutionPolicy",
+						"Bypass",
+						"-File",
+						SCRIPT_PATH,
+						SYSTEM_VCRUNTIME,
+					],
+					{
+						encoding: "utf8",
+						env: {
+							...process.env,
+							NAIA_WINDOWS_SIGN: "1",
+						},
 					},
-					stdio: "pipe",
-				},
-			);
-		}).toThrow();
+				);
+				expect(output).toContain("Skipping known third-party binary");
+			},
+		);
+
+		it("sign-windows-binary.ps1 throws when target file does not exist", () => {
+			expect(() => {
+				execFileSync(
+					"powershell",
+					[
+						"-NoProfile",
+						"-ExecutionPolicy",
+						"Bypass",
+						"-File",
+						SCRIPT_PATH,
+						"non_existent_dummy_binary.exe",
+					],
+					{
+						encoding: "utf8",
+						env: {
+							...process.env,
+							NAIA_WINDOWS_SIGN: "1",
+						},
+						stdio: "pipe",
+					},
+				);
+			}).toThrow();
+		});
 	});
 });
