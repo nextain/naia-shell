@@ -247,9 +247,23 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NAIA_WINDOWS_SIGN: "1"
         run: >-
           pnpm -C packages/shell exec tauri bundle --verbose
           --config src-tauri/tauri.conf.generated.json
+
+      - name: Verify application executable signature after bundle
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $app = Get-Item "packages/shell/src-tauri/target/release/naia-shell.exe"
+          $appSig = Get-AuthenticodeSignature -LiteralPath $app.FullName
+          if ($appSig.Status -ne "Valid") {
+            throw "naia-shell.exe signature is not valid after bundle: $($appSig.Status)"
+          }
+          if ($appSig.SignerCertificate.Subject -notmatch "O=Nextain INC") {
+            throw "naia-shell.exe signer subject mismatch after bundle: $($appSig.SignerCertificate.Subject)"
+          }
 
       - name: Publicly sign Windows installers
         if: matrix.platform == 'win32'
@@ -468,6 +482,13 @@ jobs:
           $contract = (Get-Content packages/shell/src-tauri/platform-matrix.json -Raw |
             ConvertFrom-Json).os.win32.steamDepot
           $binary = Join-Path $steamDepot $contract.entrypoint
+          $depotSig = Get-AuthenticodeSignature -LiteralPath $binary
+          if ($depotSig.Status -ne "Valid") {
+            throw "Steam depot naia-shell.exe signature is not valid: $($depotSig.Status)"
+          }
+          if ($depotSig.SignerCertificate.Subject -notmatch "O=Nextain INC") {
+            throw "Steam depot naia-shell.exe signer subject mismatch: $($depotSig.SignerCertificate.Subject)"
+          }
 
           $uninstall = Start-Process -FilePath $uninstaller `
             -ArgumentList "/S" -Wait -PassThru

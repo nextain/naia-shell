@@ -109,6 +109,17 @@
 				"windows": {
 					"certificateThumbprint": null,
 					"digestAlgorithm": "sha256",
+					"signCommand": {
+						"cmd": "powershell",
+						"args": [
+							"-NoProfile",
+							"-ExecutionPolicy",
+							"Bypass",
+							"-File",
+							"scripts/sign-windows-binary.ps1",
+							"%1"
+						]
+					},
 					"webviewInstallMode": {
 						"type": "offlineInstaller"
 					},

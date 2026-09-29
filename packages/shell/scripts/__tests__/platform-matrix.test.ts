@@ -666,6 +666,17 @@ describe("conf 생성 golden (FR-INSTALL.2)", () => {
 		expect(conf.bundle.createUpdaterArtifacts).toBe(true);
 		expect(conf.bundle.publisher).toBe("Nextain Inc.");
 		expect(conf.bundle.windows.nsis.installMode).toBe("currentUser");
+		expect(conf.bundle.windows.signCommand).toEqual({
+			cmd: "powershell",
+			args: [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"scripts/sign-windows-binary.ps1",
+				"%1",
+			],
+		});
 		for (const r of AGENT_RESOURCES) expect(conf.bundle.resources[r]).toBe(r);
 		for (const r of BGM_RESOURCES) expect(conf.bundle.resources[r]).toBe(r);
 		expect(conf.bundle.resources["resources/node.exe"]).toBe("node.exe");
@@ -694,6 +705,7 @@ describe("conf 생성 golden (FR-INSTALL.2)", () => {
 		expect(conf.bundle.linux.rpm.depends).toContain("pipewire-alsa");
 		expect(conf.bundle.linux.rpm.depends).toContain("alsa-lib");
 		expect(conf.bundle.icon).toBeUndefined();
+		expect(conf.bundle.windows).toBeUndefined();
 	});
 
 	it("darwin: targets app/dmg + icon = 전체 배열 (배열 대체 시맨틱스 고정) + vosk/msvc 0", () => {
@@ -710,6 +722,7 @@ describe("conf 생성 golden (FR-INSTALL.2)", () => {
 		const keys = Object.keys(conf.bundle.resources);
 		expect(keys.some((k) => k.includes("vosk"))).toBe(false);
 		expect(keys.some((k) => k.includes("vcruntime"))).toBe(false);
+		expect(conf.bundle.windows).toBeUndefined();
 	});
 
 	it("cascade-loader 유/무 분기: 있으면 리소스 등재, 없으면 항목 자체 생략", () => {
