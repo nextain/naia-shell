@@ -180,7 +180,7 @@ jobs:
         run: |
           git init ../naia-agent
           git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
-          git -C ../naia-agent fetch --depth 1 origin 53f0d887132cb31df2ea079a236945e10912a7f1
+          git -C ../naia-agent fetch --depth 1 origin 3b0e101c04dc4346f765240b63160fb6cee91d2a
           git -C ../naia-agent checkout --detach FETCH_HEAD
       - name: native tests (cargo)
         run: |

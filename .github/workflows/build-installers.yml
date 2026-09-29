@@ -70,11 +70,11 @@ jobs:
         run: |
           git init ../naia-agent
           git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
-          git -C ../naia-agent fetch --depth 1 origin 53f0d887132cb31df2ea079a236945e10912a7f1
+          git -C ../naia-agent fetch --depth 1 origin 3b0e101c04dc4346f765240b63160fb6cee91d2a
           git -C ../naia-agent checkout --detach FETCH_HEAD
           git init ../naia-kb-compiler
           git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
-          git -C ../naia-kb-compiler fetch --depth 1 origin f1ceb075ed5e170d9c2eacb7e06674945d1ad53c
+          git -C ../naia-kb-compiler fetch --depth 1 origin 24f52c14ea906c250304f39d48866c7a47e1b596
           git -C ../naia-kb-compiler checkout --detach FETCH_HEAD
           git init ../naia-memory
           git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
