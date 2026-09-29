@@ -11,6 +11,7 @@ const MATRIX_PATH = resolve(SHELL, "src-tauri/platform-matrix.json");
 const SYSTEM_VCRUNTIME = process.env.SystemRoot
 	? `${process.env.SystemRoot}\\System32\\vcruntime140.dll`
 	: "C:\\Windows\\System32\\vcruntime140.dll";
+const PORTABLE_PWSH_BIN = "C:\\alpha-adk\\tmp\\w2070-023-regression\\pwsh7\\bin";
 
 describe("sign-windows-binary (#725)", () => {
 	it("sign-windows-binary.ps1 exists in packages/shell/scripts", () => {
@@ -48,7 +49,29 @@ describe("sign-windows-binary (#725)", () => {
 		expect(script).not.toContain("AppendSignature $true");
 	});
 
+	it("sign-windows-binary.ps1 uses CodeSigningAccountName and does not contain SigningAccountName", () => {
+		const script = readFileSync(SCRIPT_PATH, "utf8");
+		expect(script).toContain("CodeSigningAccountName");
+		expect(script).not.toContain("-SigningAccountName");
+		expect(script).not.toMatch(/\bSigningAccountName\s*=/);
+	});
+
+	it("sign-windows-binary.ps1 does not use Start-Process", () => {
+		const script = readFileSync(SCRIPT_PATH, "utf8");
+		expect(script).not.toContain("Start-Process");
+	});
+
+	it("sign-windows-binary.ps1 contains PSEdition branch and PSModulePath reset", () => {
+		const script = readFileSync(SCRIPT_PATH, "utf8");
+		expect(script).toContain("PSEdition");
+		expect(script).toContain("PSModulePath");
+	});
+
 	describe.skipIf(process.platform !== "win32")("PowerShell execution", () => {
+		const testEnv = existsSync(PORTABLE_PWSH_BIN)
+			? { ...process.env, PATH: `${PORTABLE_PWSH_BIN};${process.env.PATH ?? ""}` }
+			: process.env;
+
 		it("sign-windows-binary.ps1 exits 0 and does nothing when NAIA_WINDOWS_SIGN is not '1'", () => {
 			// Run powershell to execute the script against this test file itself
 			const output = execFileSync(
@@ -64,7 +87,7 @@ describe("sign-windows-binary (#725)", () => {
 				{
 					encoding: "utf8",
 					env: {
-						...process.env,
+						...testEnv,
 						NAIA_WINDOWS_SIGN: "",
 					},
 				},
@@ -88,7 +111,7 @@ describe("sign-windows-binary (#725)", () => {
 					{
 						encoding: "utf8",
 						env: {
-							...process.env,
+							...testEnv,
 							NAIA_WINDOWS_SIGN: "1",
 						},
 					},
@@ -112,13 +135,47 @@ describe("sign-windows-binary (#725)", () => {
 					{
 						encoding: "utf8",
 						env: {
-							...process.env,
+							...testEnv,
 							NAIA_WINDOWS_SIGN: "1",
 						},
 						stdio: "pipe",
 					},
 				);
 			}).toThrow();
+		});
+
+		it("sign-windows-binary.ps1 fails when pwsh is not in PATH and NAIA_WINDOWS_SIGN is '1'", () => {
+			let failed = false;
+			let output = "";
+			try {
+				execFileSync(
+					"powershell",
+					[
+						"-NoProfile",
+						"-ExecutionPolicy",
+						"Bypass",
+						"-File",
+						SCRIPT_PATH,
+						fileURLToPath(import.meta.url),
+					],
+					{
+						encoding: "utf8",
+						env: {
+							...process.env,
+							NAIA_WINDOWS_SIGN: "1",
+							PATH: "C:\\Windows\\System32;C:\\Windows\\System32\\WindowsPowerShell\\v1.0",
+						},
+						stdio: "pipe",
+					},
+				);
+			} catch (err: unknown) {
+				failed = true;
+				const execError = err as { status?: number; stdout?: string; stderr?: string };
+				expect(execError.status).not.toBe(0);
+				output = `${execError.stdout ?? ""} ${execError.stderr ?? ""}`;
+			}
+			expect(failed).toBe(true);
+			expect(output).toMatch(/pwsh.*(required|not found)/i);
 		});
 	});
 });
