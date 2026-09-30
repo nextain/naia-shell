@@ -2216,5 +2216,29 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
 
+## UC-APP-MANIFEST-V2 — 앱 매니페스트 v2 스키마 및 legacy 프로필 호환 (#735)
+
+앱 작성자가 v2 매니페스트(`manifest_version: 2`)를 선언하여 앱을 배포하거나, 기존 구형 매니페스트(`manifest_version` 미선언) 앱을 설치·실행할 때의 동작이다.
+- 앱 작성자는 `manifest_version: 2`, `context`, `skills[]`, `permissions`, `host_permissions`, `optional_permissions`, `requires[]`, `help`, `data_use`, `publisher`, `keepAlive`, 도구별 `exported` 등 v2 명세를 선언할 수 있다.
+- v2 매니페스트 앱은 설치 시 엄격한 유효성 검사(`validate_manifest`)를 거치며, 알 수 없는 권한 선언, `context` 길이 상한 초과(800자), 도구 이름 명명 규칙 위반(`skill_` 접두사 누락 또는 중복), `host_permissions` 없는 `browser`/`login-handoff` 권한 선언이 발견되면 설치가 즉시 거부된다.
+- 기존 구형(legacy) 앱(`manifest_version` 없음 또는 1)은 동일한 검사에서 경고(warning)만 남기고 설치와 실행이 기존과 동일하게 유지된다(동작 변화 없음).
+- `keepAlive: false`가 선언된 앱은 Rust/TS 역직렬화 및 AppDescriptor 등록에서 보존되어, 앱 전환 시 언마운트 정책이 정상 적용된다.
+
+| 상태 | 사용자/앱 작성자 기대 |
+|---|---|
+| 기본 | v2 매니페스트(`manifest_version: 2`)로 선언된 유효한 앱은 정상적으로 설치·등록되며, 셸에 profile: "v2"로 인식된다. |
+| legacy 호환 | `manifest_version`이 없는 legacy 앱(예: Naia Slides 0.1.0 `app.json`)은 profile: "legacy"로 인식되어 기존과 완전히 동일하게 로드·실행된다. |
+| 진행 | 앱 설치 시 `validate_manifest` 검사가 수행된다. v2에서 오류가 없으면 설치가 완료된다. |
+| 성공 | v2 선택 필드(`context`, `skills`, `permissions`, `host_permissions`, `optional_permissions`, `requires`, `help`, `data_use`, `publisher`, `keepAlive`, `exported`)가 Rust에서 TS까지 손실 없이 전달된다. `keepAlive: false` 앱은 언마운트 설정이 보존된다. |
+| 오류 | v2 앱에서 알 수 없는 권한, 800자 초과 context, 잘못된/중복 도구 이름, host_permissions 누락 시 설치가 거부되고 명확한 에러 메시지가 반환된다. legacy 앱은 경고 로그만 남기고 설치가 계속된다. |
+| 좁은 폭 | 해당 없음 (매니페스트 스키마 및 로더 계약). |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-APP-MANIFEST-V2 | `packages/shell/src-tauri/src/app.rs` tests: `manifest_v2_full_fields_roundtrip`, `legacy_slides_app_json_is_legacy_profile`, `keep_alive_false_preserved_in_manifest`, `validate_manifest_rejects_unknown_permission_in_v2`, `validate_manifest_warns_unknown_permission_in_legacy`, `validate_manifest_rejects_exceeded_context_length_in_v2`, `validate_manifest_rejects_invalid_tool_name_prefix_in_v2`, `validate_manifest_rejects_duplicate_tool_name_in_v2`, `validate_manifest_rejects_browser_without_host_permissions_in_v2`; `packages/shell/src/lib/__tests__/app-loader.test.ts`: `keepAlive:false` 적용 및 `profile` 판정 ("legacy" vs "v2"); `packages/shell/src/lib/__tests__/app-permissions.test.ts`: TS-Rust 권한 목록 일치 검증 | `e2e/467-slide-presenter.spec.ts`, `e2e/slides-sidecar.spec.ts` 무회귀 통과 |
+
+
 
 

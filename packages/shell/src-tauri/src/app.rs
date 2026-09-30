@@ -613,12 +613,55 @@ fn prepare_apps_root_with_legacy_home(
     Ok(root)
 }
 
+/// Known app permissions aligned with PC 4.2 draft and TS app-permissions.ts.
+pub const KNOWN_PERMISSIONS: &[&str] = &[
+    "fullscreen",
+    "downloads",
+    "modals",
+    "speech",
+    "environment",
+    "files.pick",
+    "media.record",
+    "character.read",
+    "character.write",
+    "browser",
+    "browser.upload",
+    "login-handoff",
+    "shell.command",
+];
+
+/// Maximum allowed length (in unicode characters) for the context field.
+pub const MAX_CONTEXT_LENGTH: usize = 800;
+
+/// A skill procedure specification declared in app.json.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+pub struct AppSkillSpec {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Data use and privacy disclosure declared in app.json.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+pub struct AppDataUseSpec {
+    #[serde(default, rename = "leaves_device", alias = "leavesDevice", skip_serializing_if = "Option::is_none")]
+    pub leaves_device: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 /// Panel manifest stored in ~/.naia/apps/{id}/app.json
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppManifest {
     pub id: String,
     pub name: String,
+    #[serde(default, rename = "manifest_version", alias = "manifestVersion", skip_serializing_if = "Option::is_none")]
+    pub manifest_version: Option<u32>,
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptions: Option<std::collections::HashMap<String, String>>,
     pub icon: Option<String>,
     /// Path to SVG icon file, relative to app directory (e.g. "icon.svg")
     #[serde(rename = "iconUrl", skip_serializing_if = "Option::is_none")]
@@ -632,6 +675,26 @@ pub struct AppManifest {
     pub icon_svg: Option<String>,
     pub names: Option<std::collections::HashMap<String, String>>,
     pub version: Option<String>,
+    #[serde(default, rename = "keepAlive", alias = "keep_alive", skip_serializing_if = "Option::is_none")]
+    pub keep_alive: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<Vec<AppSkillSpec>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<Vec<String>>,
+    #[serde(default, rename = "host_permissions", alias = "hostPermissions", skip_serializing_if = "Option::is_none")]
+    pub host_permissions: Option<Vec<String>>,
+    #[serde(default, rename = "optional_permissions", alias = "optionalPermissions", skip_serializing_if = "Option::is_none")]
+    pub optional_permissions: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<std::collections::HashMap<String, String>>,
+    #[serde(default, rename = "data_use", alias = "dataUse", skip_serializing_if = "Option::is_none")]
+    pub data_use: Option<AppDataUseSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
     /// Tools the app exposes to Naia. Declared statically in app.json so the
     /// Shell can register proxy stubs with the Agent; actual execution is routed
     /// to the app iframe via postMessage (GenericInstalledApp).
@@ -660,6 +723,124 @@ pub struct AppToolSpec {
     /// Permission tier (0=auto, 1=notify, 2=confirm). Defaults to 1.
     #[serde(default = "default_tool_tier")]
     pub tier: u8,
+    /// Whether this tool is exported for cross-app invocation (default false).
+    #[serde(default)]
+    pub exported: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IssueLevel {
+    Error,
+    Warning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManifestIssue {
+    pub level: IssueLevel,
+    pub field: String,
+    pub message: String,
+}
+
+/// Validate manifest according to v2 specification and legacy profile compatibility rules.
+///
+/// If `manifest_version >= 2`, rule violations are reported as `IssueLevel::Error` (installation rejected).
+/// If `manifest_version` is missing or < 2 (legacy), violations are reported as `IssueLevel::Warning`
+/// allowing the app to install/load with warning logs as before.
+pub fn validate_manifest(manifest: &AppManifest) -> Vec<ManifestIssue> {
+    let mut issues = Vec::new();
+    let is_v2 = manifest.manifest_version.unwrap_or(1) >= 2;
+    let make_level = |is_err: bool| -> IssueLevel {
+        if is_err && is_v2 {
+            IssueLevel::Error
+        } else {
+            IssueLevel::Warning
+        }
+    };
+
+    // 1. 알 수 없는 권한 (permissions, optional_permissions)
+    let check_perms = |perms: &Option<Vec<String>>, field_name: &str, issues: &mut Vec<ManifestIssue>| {
+        if let Some(ref list) = perms {
+            for perm in list {
+                if !KNOWN_PERMISSIONS.contains(&perm.as_str()) {
+                    issues.push(ManifestIssue {
+                        level: make_level(true),
+                        field: field_name.to_string(),
+                        message: format!("알 수 없는 권한입니다: {}", perm),
+                    });
+                }
+            }
+        }
+    };
+    check_perms(&manifest.permissions, "permissions", &mut issues);
+    check_perms(&manifest.optional_permissions, "optional_permissions", &mut issues);
+
+    // 2. context 길이 상한 초과
+    if let Some(ref ctx) = manifest.context {
+        if ctx.chars().count() > MAX_CONTEXT_LENGTH {
+            issues.push(ManifestIssue {
+                level: make_level(true),
+                field: "context".to_string(),
+                message: format!(
+                    "context 길이가 상한({}자)을 초과했습니다: {}자",
+                    MAX_CONTEXT_LENGTH,
+                    ctx.chars().count()
+                ),
+            });
+        }
+    }
+
+    // 3. 도구 이름 규칙 (skill_ 접두사, 중복)
+    if let Some(ref tools) = manifest.tools {
+        let mut seen_names = std::collections::HashSet::new();
+        for tool in tools {
+            if !tool.name.starts_with("skill_") {
+                issues.push(ManifestIssue {
+                    level: make_level(true),
+                    field: "tools".to_string(),
+                    message: format!("도구 이름은 'skill_'로 시작해야 합니다: {}", tool.name),
+                });
+            }
+            if !seen_names.insert(&tool.name) {
+                issues.push(ManifestIssue {
+                    level: make_level(true),
+                    field: "tools".to_string(),
+                    message: format!("중복된 도구 이름이 있습니다: {}", tool.name),
+                });
+            }
+        }
+    }
+
+    // 4. browser / login-handoff 권한 선언에 host_permissions 없음
+    let declared_perms: Vec<&str> = manifest
+        .permissions
+        .as_deref()
+        .into_iter()
+        .flatten()
+        .chain(manifest.optional_permissions.as_deref().into_iter().flatten())
+        .map(|s| s.as_str())
+        .collect();
+
+    let has_browser_or_login = declared_perms
+        .iter()
+        .any(|&p| p == "browser" || p == "login-handoff");
+    if has_browser_or_login {
+        let has_host_perms = manifest
+            .host_permissions
+            .as_ref()
+            .map(|list| !list.is_empty())
+            .unwrap_or(false);
+        if !has_host_perms {
+            issues.push(ManifestIssue {
+                level: make_level(true),
+                field: "host_permissions".to_string(),
+                message: "'browser' 또는 'login-handoff' 권한 선언 시 'host_permissions'가 반드시 지정되어야 합니다"
+                    .to_string(),
+            });
+        }
+    }
+
+    issues
 }
 
 fn default_tool_tier() -> u8 {
@@ -1190,6 +1371,258 @@ mod tests {
         assert!(list_installed_from(home.path()).is_err());
         assert!(!outside.path().join("apps").exists());
     }
+
+    #[test]
+    fn slides_package_public_app_json_reads_as_legacy_profile() {
+        let slides_json = include_str!("../../src/apps/slides/package-public/app.json");
+        let manifest: AppManifest = serde_json::from_str(slides_json).expect("slides app.json must deserialize");
+        assert_eq!(manifest.id, "land.naia.slides");
+        assert!(manifest.manifest_version.is_none());
+        assert!(manifest.descriptions.is_some());
+        let descriptions = manifest.descriptions.as_ref().unwrap();
+        assert!(descriptions.contains_key("ko"));
+        assert!(descriptions.contains_key("en"));
+
+        let issues = validate_manifest(&manifest);
+        // Legacy profile must not produce any Error-level issues
+        assert!(!issues.iter().any(|i| i.level == IssueLevel::Error));
+    }
+
+    #[test]
+    fn manifest_v2_full_fields_roundtrip() {
+        let original_json = r#"{
+            "manifest_version": 2,
+            "id": "land.naia.v2test",
+            "name": "Naia V2 Test",
+            "description": "Test app description",
+            "descriptions": {
+                "ko": "테스트 설명",
+                "en": "Test description"
+            },
+            "icon": "🚀",
+            "iconUrl": "icon.svg",
+            "names": {
+                "ko": "테스트",
+                "en": "Test"
+            },
+            "version": "1.2.3",
+            "keepAlive": false,
+            "context": "context.md",
+            "skills": [
+                {
+                    "id": "test-skill",
+                    "version": "1.0.0",
+                    "path": "skills/test/SKILL.md"
+                }
+            ],
+            "permissions": ["fullscreen", "downloads", "speech", "browser"],
+            "host_permissions": ["https://example.com/*"],
+            "optional_permissions": ["modals"],
+            "requires": ["land.naia.slides@>=0.2"],
+            "help": {
+                "ko": "help/ko.md",
+                "en": "help/en.md"
+            },
+            "data_use": {
+                "leaves_device": ["https://example.com/api"],
+                "note": "Telemetry only"
+            },
+            "publisher": "nextain",
+            "tools": [
+                {
+                    "name": "skill_v2_action",
+                    "description": "Do action",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string" }
+                        }
+                    },
+                    "tier": 2,
+                    "exported": true
+                }
+            ]
+        }"#;
+
+        let manifest: AppManifest = serde_json::from_str(original_json).unwrap();
+        assert_eq!(manifest.manifest_version, Some(2));
+        assert_eq!(manifest.id, "land.naia.v2test");
+        assert_eq!(manifest.keep_alive, Some(false));
+        assert_eq!(manifest.context.as_deref(), Some("context.md"));
+        assert_eq!(manifest.publisher.as_deref(), Some("nextain"));
+
+        let skills = manifest.skills.as_ref().unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].id, "test-skill");
+        assert_eq!(skills[0].version.as_deref(), Some("1.0.0"));
+
+        let tools = manifest.tools.as_ref().unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name, "skill_v2_action");
+        assert_eq!(tools[0].tier, 2);
+        assert!(tools[0].exported);
+
+        let data_use = manifest.data_use.as_ref().unwrap();
+        assert_eq!(data_use.leaves_device.as_deref(), Some(&vec!["https://example.com/api".to_string()][..]));
+
+        let issues = validate_manifest(&manifest);
+        assert!(issues.is_empty(), "valid v2 manifest should have no issues: {:?}", issues);
+
+        // Serialization round-trip
+        let serialized = serde_json::to_string(&manifest).unwrap();
+        let remanifest: AppManifest = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(remanifest.manifest_version, Some(2));
+        assert_eq!(remanifest.id, "land.naia.v2test");
+        assert_eq!(remanifest.keep_alive, Some(false));
+        assert_eq!(remanifest.tools.unwrap()[0].exported, true);
+    }
+
+    #[test]
+    fn keep_alive_false_preserved_in_manifest() {
+        let json_false = r#"{"id":"test","name":"Test","keepAlive":false}"#;
+        let manifest_false: AppManifest = serde_json::from_str(json_false).unwrap();
+        assert_eq!(manifest_false.keep_alive, Some(false));
+
+        let json_true = r#"{"id":"test","name":"Test","keepAlive":true}"#;
+        let manifest_true: AppManifest = serde_json::from_str(json_true).unwrap();
+        assert_eq!(manifest_true.keep_alive, Some(true));
+
+        let json_none = r#"{"id":"test","name":"Test"}"#;
+        let manifest_none: AppManifest = serde_json::from_str(json_none).unwrap();
+        assert_eq!(manifest_none.keep_alive, None);
+    }
+
+    #[test]
+    fn validate_manifest_unknown_permissions_rule() {
+        let v2_json = r#"{
+            "manifest_version": 2,
+            "id": "test",
+            "name": "Test",
+            "permissions": ["fullscreen", "completely_unknown_perm"]
+        }"#;
+        let v2_manifest: AppManifest = serde_json::from_str(v2_json).unwrap();
+        let v2_issues = validate_manifest(&v2_manifest);
+        assert!(v2_issues.iter().any(|i| i.level == IssueLevel::Error && i.field == "permissions"));
+
+        let legacy_json = r#"{
+            "id": "test",
+            "name": "Test",
+            "permissions": ["completely_unknown_perm"]
+        }"#;
+        let legacy_manifest: AppManifest = serde_json::from_str(legacy_json).unwrap();
+        let legacy_issues = validate_manifest(&legacy_manifest);
+        assert!(legacy_issues.iter().any(|i| i.level == IssueLevel::Warning && i.field == "permissions"));
+        assert!(!legacy_issues.iter().any(|i| i.level == IssueLevel::Error));
+    }
+
+    #[test]
+    fn validate_manifest_context_length_limit_rule() {
+        let long_context = "a".repeat(801);
+        let v2_json = format!(
+            r#"{{"manifest_version": 2, "id": "test", "name": "Test", "context": "{}"}}"#,
+            long_context
+        );
+        let v2_manifest: AppManifest = serde_json::from_str(&v2_json).unwrap();
+        let v2_issues = validate_manifest(&v2_manifest);
+        assert!(v2_issues.iter().any(|i| i.level == IssueLevel::Error && i.field == "context"));
+
+        let legacy_json = format!(
+            r#"{{"id": "test", "name": "Test", "context": "{}"}}"#,
+            long_context
+        );
+        let legacy_manifest: AppManifest = serde_json::from_str(&legacy_json).unwrap();
+        let legacy_issues = validate_manifest(&legacy_manifest);
+        assert!(legacy_issues.iter().any(|i| i.level == IssueLevel::Warning && i.field == "context"));
+        assert!(!legacy_issues.iter().any(|i| i.level == IssueLevel::Error));
+    }
+
+    #[test]
+    fn validate_manifest_tool_naming_and_duplicates_rule() {
+        // Bad prefix in v2 -> Error
+        let bad_prefix_json = r#"{
+            "manifest_version": 2,
+            "id": "test",
+            "name": "Test",
+            "tools": [{"name": "bad_tool_name"}]
+        }"#;
+        let bad_prefix_manifest: AppManifest = serde_json::from_str(bad_prefix_json).unwrap();
+        let bad_prefix_issues = validate_manifest(&bad_prefix_manifest);
+        assert!(bad_prefix_issues.iter().any(|i| i.level == IssueLevel::Error && i.message.contains("skill_")));
+
+        // Duplicate tool in v2 -> Error
+        let dup_json = r#"{
+            "manifest_version": 2,
+            "id": "test",
+            "name": "Test",
+            "tools": [
+                {"name": "skill_do_something"},
+                {"name": "skill_do_something"}
+            ]
+        }"#;
+        let dup_manifest: AppManifest = serde_json::from_str(dup_json).unwrap();
+        let dup_issues = validate_manifest(&dup_manifest);
+        assert!(dup_issues.iter().any(|i| i.level == IssueLevel::Error && i.message.contains("중복")));
+
+        // Legacy -> Warnings, not Errors
+        let legacy_bad_tool_json = r#"{
+            "id": "test",
+            "name": "Test",
+            "tools": [{"name": "not_prefixed"}]
+        }"#;
+        let legacy_bad_manifest: AppManifest = serde_json::from_str(legacy_bad_tool_json).unwrap();
+        let legacy_issues = validate_manifest(&legacy_bad_manifest);
+        assert!(legacy_issues.iter().any(|i| i.level == IssueLevel::Warning));
+        assert!(!legacy_issues.iter().any(|i| i.level == IssueLevel::Error));
+    }
+
+    #[test]
+    fn validate_manifest_browser_requires_host_permissions_rule() {
+        // v2 with browser but empty host_permissions -> Error
+        let v2_no_host_json = r#"{
+            "manifest_version": 2,
+            "id": "test",
+            "name": "Test",
+            "permissions": ["browser"],
+            "host_permissions": []
+        }"#;
+        let v2_no_host_manifest: AppManifest = serde_json::from_str(v2_no_host_json).unwrap();
+        let v2_issues = validate_manifest(&v2_no_host_manifest);
+        assert!(v2_issues.iter().any(|i| i.level == IssueLevel::Error && i.field == "host_permissions"));
+
+        // v2 with login-handoff but no host_permissions -> Error
+        let v2_login_json = r#"{
+            "manifest_version": 2,
+            "id": "test",
+            "name": "Test",
+            "permissions": ["login-handoff"]
+        }"#;
+        let v2_login_manifest: AppManifest = serde_json::from_str(v2_login_json).unwrap();
+        let v2_login_issues = validate_manifest(&v2_login_manifest);
+        assert!(v2_login_issues.iter().any(|i| i.level == IssueLevel::Error && i.field == "host_permissions"));
+
+        // Legacy with browser but no host_permissions -> Warning, not Error
+        let legacy_browser_json = r#"{
+            "id": "test",
+            "name": "Test",
+            "permissions": ["browser"]
+        }"#;
+        let legacy_browser_manifest: AppManifest = serde_json::from_str(legacy_browser_json).unwrap();
+        let legacy_issues = validate_manifest(&legacy_browser_manifest);
+        assert!(legacy_issues.iter().any(|i| i.level == IssueLevel::Warning && i.field == "host_permissions"));
+        assert!(!legacy_issues.iter().any(|i| i.level == IssueLevel::Error));
+
+        // v2 with browser and valid host_permissions -> OK
+        let v2_valid_json = r#"{
+            "manifest_version": 2,
+            "id": "test",
+            "name": "Test",
+            "permissions": ["browser"],
+            "host_permissions": ["https://example.com/*"]
+        }"#;
+        let v2_valid_manifest: AppManifest = serde_json::from_str(v2_valid_json).unwrap();
+        let v2_valid_issues = validate_manifest(&v2_valid_manifest);
+        assert!(v2_valid_issues.is_empty(), "expected no issues, got {:?}", v2_valid_issues);
+    }
 }
 
 /// Result of a successful app install.
@@ -1311,22 +1744,33 @@ pub fn app_install(
         );
     }
 
-    // Read id (the canonical app id → becomes the directory name).
-    #[derive(Deserialize)]
-    struct ManifestLite {
-        id: String,
-        name: Option<String>,
-    }
+    // Read AppManifest and validate according to v2 / legacy profile rules.
     let manifest_data = std::fs::read_to_string(&manifest_path).map_err(|error| {
         let _ = std::fs::remove_dir_all(&tmp);
         format!("app.json을 읽을 수 없습니다: {}", error)
     })?;
-    let manifest: ManifestLite = serde_json::from_str(&manifest_data).map_err(|error| {
+    let manifest: AppManifest = serde_json::from_str(&manifest_data).map_err(|error| {
         let _ = std::fs::remove_dir_all(&tmp);
         format!("app.json 형식이 유효하지 않습니다: {}", error)
     })?;
+
+    let issues = validate_manifest(&manifest);
+    let errors: Vec<_> = issues.iter().filter(|i| i.level == IssueLevel::Error).collect();
+    if !errors.is_empty() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        let msg = errors.iter().map(|e| e.message.as_str()).collect::<Vec<_>>().join("; ");
+        return Err(format!("앱 매니페스트 유효성 검사 실패: {}", msg));
+    }
+    for warning in issues.iter().filter(|i| i.level == IssueLevel::Warning) {
+        log::warn!("App {} manifest warning: {}", manifest.id, warning.message);
+    }
+
     let id = manifest.id;
-    let display_name = manifest.name.unwrap_or_else(|| derived.clone());
+    let display_name = if manifest.name.is_empty() {
+        derived.clone()
+    } else {
+        manifest.name
+    };
 
     // The id becomes a path segment — sanitize strictly.
     let id_safe = is_safe_app_id(&id);
@@ -1580,6 +2024,15 @@ pub fn app_install_store(
         std::fs::File::open(&manifest_path).map_err(|_| "app.json missing".to_string())?,
     )
     .map_err(|e| format!("Invalid app.json: {}", e))?;
+    let issues = validate_manifest(&manifest);
+    let errors: Vec<_> = issues.iter().filter(|i| i.level == IssueLevel::Error).collect();
+    if !errors.is_empty() {
+        let msg = errors.iter().map(|e| e.message.as_str()).collect::<Vec<_>>().join("; ");
+        return Err(format!("App manifest validation failed: {}", msg));
+    }
+    for warning in issues.iter().filter(|i| i.level == IssueLevel::Warning) {
+        log::warn!("App {} manifest warning: {}", manifest.id, warning.message);
+    }
     if manifest.id != app_id {
         return Err("Installed manifest id mismatch".to_string());
     }

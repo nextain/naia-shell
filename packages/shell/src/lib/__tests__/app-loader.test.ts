@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../stores/app";
 import { loadInstalledApps, removeInstalledApp } from "../app-loader";
 import { appRegistry } from "../app-registry";
@@ -119,6 +119,64 @@ describe("app-loader", () => {
 			await loadInstalledApps();
 
 			expect(appRegistry.get("keepalive-off")?.keepAlive).toBe(false);
+		});
+
+		it("assigns profile 'legacy' when manifest_version is absent", async () => {
+			mockInvoke.mockResolvedValue([
+				{ id: "legacy-app", name: "Legacy App" },
+			]);
+
+			await loadInstalledApps();
+
+			const app = appRegistry.get("legacy-app");
+			expect(app?.profile).toBe("legacy");
+			expect(app?.manifestVersion).toBeUndefined();
+		});
+
+		it("assigns profile 'v2' and maps v2 fields when manifest_version is 2", async () => {
+			mockInvoke.mockResolvedValue([
+				{
+					id: "v2-app",
+					name: "V2 App",
+					manifest_version: 2,
+					descriptions: { ko: "설명", en: "desc" },
+					context: "context.md",
+					skills: [{ id: "test-skill", version: "1.0.0", path: "skills/test/SKILL.md" }],
+					permissions: ["speech", "browser"],
+					host_permissions: ["https://example.com/*"],
+					optional_permissions: ["modals"],
+					requires: ["land.naia.slides@>=0.2"],
+					help: { ko: "help/ko.md" },
+					data_use: { leaves_device: ["https://api.example.com"], note: "telemetry" },
+					publisher: "nextain",
+					tools: [
+						{
+							name: "skill_test_action",
+							description: "Test action",
+							exported: true,
+						},
+					],
+				},
+			]);
+
+			await loadInstalledApps();
+
+			const app = appRegistry.get("v2-app");
+			expect(app).toBeDefined();
+			expect(app?.profile).toBe("v2");
+			expect(app?.manifestVersion).toBe(2);
+			expect(app?.descriptions).toEqual({ ko: "설명", en: "desc" });
+			expect(app?.context).toBe("context.md");
+			expect(app?.skills).toHaveLength(1);
+			expect(app?.skills?.[0].id).toBe("test-skill");
+			expect(app?.permissions).toEqual(["speech", "browser"]);
+			expect(app?.hostPermissions).toEqual(["https://example.com/*"]);
+			expect(app?.optionalPermissions).toEqual(["modals"]);
+			expect(app?.requires).toEqual(["land.naia.slides@>=0.2"]);
+			expect(app?.help).toEqual({ ko: "help/ko.md" });
+			expect(app?.dataUse?.leaves_device).toEqual(["https://api.example.com"]);
+			expect(app?.publisher).toBe("nextain");
+			expect(app?.tools?.[0].exported).toBe(true);
 		});
 
 		it("replaces an installed registration when the same app id moves roots", async () => {

@@ -42,6 +42,8 @@ export interface NaiaTool {
 	};
 	/** Permission tier (0=auto, 1=notify, 2=confirm, 3=block). Default 1. */
 	tier?: number;
+	/** Whether this tool is exported for cross-app invocation (default false). */
+	exported?: boolean;
 }
 
 /** Handler invoked when Naia calls an app tool. Returns a result string or void. */
@@ -234,6 +236,20 @@ export interface AppCenterProps {
 // biome-ignore lint/suspicious/noExplicitAny: intentionally open API contract
 export type AppApi = Record<string, (...args: any[]) => unknown>;
 
+/** A skill procedure specification declared in app.json. */
+export interface AppSkillSpec {
+	id: string;
+	version?: string;
+	path?: string;
+}
+
+/** Data use and privacy declaration in app.json. */
+export interface AppDataUseSpec {
+	leavesDevice?: string[];
+	leaves_device?: string[];
+	note?: string;
+}
+
 /** Full description of an app. Register via `appRegistry.register()`. */
 export interface AppDescriptor {
 	/** Unique identifier, e.g. "avatar", "browser", "issues" */
@@ -248,6 +264,30 @@ export interface AppDescriptor {
 	iconSvg?: string;
 	/** Absolute path to index.html ??if set, app renders via iframe (asset protocol). */
 	htmlEntry?: string;
+	/** Schema version declared by the app manifest (1 or undefined = legacy, 2+ = v2) */
+	manifestVersion?: number;
+	/** Profile mode derived from manifestVersion ("legacy" | "v2") */
+	profile?: "legacy" | "v2";
+	/** Localized descriptions (locale -> text) */
+	descriptions?: Record<string, string>;
+	/** AI system context declaration or path */
+	context?: string;
+	/** Skills declared by the app */
+	skills?: AppSkillSpec[];
+	/** Required permissions declared by the app */
+	permissions?: string[];
+	/** Allowed host network / domain patterns */
+	hostPermissions?: string[];
+	/** Optional permissions */
+	optionalPermissions?: string[];
+	/** App / skill dependencies */
+	requires?: string[];
+	/** Localized help documentation paths (locale -> path) */
+	help?: Record<string, string>;
+	/** Privacy and data use disclosures */
+	dataUse?: AppDataUseSpec;
+	/** App publisher identifier */
+	publisher?: string;
 	/**
 	 * Built-in apps (browser, workspace) cannot be deleted by the user.
 	 * Installed apps (~/.naia/apps/) should omit this or set false.

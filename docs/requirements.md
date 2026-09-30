@@ -1351,6 +1351,16 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-NVA-MOTION.2** | 매니페스트 `motion`으로 크기와 주기를 조절하거나(`false`면) 끌 수 있다. 잘못된 값은 필드 단위로 기본값을 쓴다. 사용자가 움직임 줄이기를 켜 두면 멈춘다. 가슴선 기본값은 얼굴 상자에서 계산한다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `e2e/nva-motion.spec.ts` | In progress |
 | **FR-NVA-MOTION.3** | 층 플레이어에서 발화 애니메이션에 `head_track`이 있으면 머리 층이 몸 클립의 현재 프레임에 맞춰 옮겨지고 돌고 커진다. 없으면 지금처럼 고정 위치다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `nva-layered-player.test.ts` | In progress |
 
+## 기능 요구사항 (FR) — 나이아 앱 PR-1: 매니페스트 v2 스키마 + legacy 프로필 (#735)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **APP-FR-01** | 매니페스트에 `manifest_version`(정수)을 둔다. 없거나 1이면 legacy 프로필로 본다. TS `AppDescriptor` 및 `InstalledAppManifest`에 `profile: "legacy" \| "v2"`와 `manifestVersion`이 전달된다. | UC-APP-MANIFEST-V2 | `app.rs` tests, `app-loader.test.ts` | In Progress |
+| **APP-FR-02** | v2 선택 필드를 Rust `AppManifest`와 TS `InstalledAppManifest`/`AppDescriptor` 양쪽에서 읽고 전달한다: `context`, `skills[]`, `permissions`, `host_permissions`, `optional_permissions`, `requires[]`, `help`, `data_use`, `descriptions`, `keepAlive`, `publisher`, 도구의 `exported`. | UC-APP-MANIFEST-V2 | `app.rs` `manifest_v2_full_fields_roundtrip`, `app-loader.test.ts` | In Progress |
+| **APP-FR-03** | 매니페스트 검사(`validate_manifest`): 알 수 없는 권한(KNOWN_PERMISSIONS 외), 컨텍스트 길이 상한(800자) 초과, 도구 이름 `skill_` 접두사 누락 또는 중복, `browser`/`login-handoff` 권한에 `host_permissions` 미선언은 v2(`manifest_version >= 2`)에서 설치 거부(Error). legacy 앱은 경고(Warning)만 기록하고 설치·로드를 유지한다. | UC-APP-MANIFEST-V2 | `app.rs` validate_manifest tests, `app_install` tests | In Progress |
+| **APP-FR-04** | `keepAlive: false`가 실제로 적용된다. Rust `AppManifest`에 `keepAlive` 역직렬화 필드를 추가하여 값이 버려지는 결함(T2)을 해결하고, TS 로더에서 등록 시 올바르게 반영한다. | UC-APP-MANIFEST-V2 | `app.rs` `keep_alive_false_preserved_in_manifest`, `app-loader.test.ts` | In Progress |
+
+
 
 
 
