@@ -146,6 +146,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-MEMORY-THRESHOLD-693",
   // 생각 세기 설정과 턴 단위 전달(#709). 설정 화면과 전달 계약이다.
   "UC-THINKING-LEVEL-709",
+  // 사용 비용 크레딧 표시와 Steam판 결제 진입점 숨김(#727). 표시와 배포 채널 설정이다.
+  "UC-CREDITS-DISPLAY",
   // NVA 플레이어의 몸 움직임(#714). 아바타 렌더링이다.
   "UC-NVA-",
 ];
