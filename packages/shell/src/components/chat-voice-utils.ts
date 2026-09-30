@@ -1,5 +1,6 @@
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import type { AppConfig } from "../lib/config";
+import { paymentLinksHiddenNow } from "../lib/distribution";
 import { t } from "../lib/i18n";
 import type {
 	VoiceCloseReason,
@@ -33,13 +34,22 @@ export function resolveTtsVoiceId(config: AppConfig): string | undefined {
 	return config.ttsVoice;
 }
 
+/** Out-of-credits notice; no top-up wording where payment links are hidden (Steam, #727). */
+function creditsShortMessage(): string {
+	return t(
+		paymentLinksHiddenNow()
+			? "chat.voiceErrorCreditsNoTopup"
+			: "chat.voiceErrorCredits",
+	);
+}
+
 export function voiceFailureMessage(
 	status: VoiceConnectionStatus | null,
 	error: unknown,
 ): string {
 	if (status?.phase === "sold-out") return t("chat.voiceSoldOut");
 	if (status?.phase === "error" && status.reason === "credits")
-		return t("chat.voiceErrorCredits");
+		return creditsShortMessage();
 	if (status?.phase === "error" && status.reason === "auth")
 		return t("chat.voiceErrorAuth");
 	if (status?.phase === "error" && status.reason === "superseded")
@@ -58,7 +68,7 @@ export function voiceCloseMessage(reason: VoiceCloseReason): string | null {
 		case "consent":
 			return t("chat.voiceErrorConsent");
 		case "credits":
-			return t("chat.voiceErrorCredits");
+			return creditsShortMessage();
 		case "auth":
 			return t("chat.voiceErrorAuth");
 		default:

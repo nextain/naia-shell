@@ -16,12 +16,12 @@ export {
 	applyNaiaModelMetadata,
 	fetchOllamaModels,
 	fetchVllmModels,
-	formatModelLabel,
 	getModelPriceScore,
 	sortModels,
 	selectableConversationModels,
 	shouldHideModelPicker,
 } from "./registry";
+export { formatModelLabel } from "./model-label";
 export type {
 	LlmProviderMeta,
 	LlmModelMeta,

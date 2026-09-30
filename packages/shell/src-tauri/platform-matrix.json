@@ -170,11 +170,16 @@
 					"bgm-sidecar/package.json",
 					"bgm-sidecar/dist/bgm-server-bin.js",
 					"bgm-sidecar/dist/youtube-server.js",
-					"bgm-sidecar/node_modules/youtubei.js/package.json"
+					"bgm-sidecar/node_modules/youtubei.js/package.json",
+					"naia-distribution.txt"
 				],
 				"excludedFiles": [
 					"uninstall.exe"
 				],
+				"distributionMarker": {
+					"file": "naia-distribution.txt",
+					"content": "steam"
+				},
 				"manifest": "steam-files.sha256"
 			}
 		},

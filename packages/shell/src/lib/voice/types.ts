@@ -35,7 +35,7 @@ export const LIVE_PROVIDER_COST_HINTS: Record<
 > = {
 	"azure-voice-live": {
 		cost: "~$0.019/min",
-		note: "Naia credits — Voice Live Std LLM Audio × 1.1",
+		note: "Naia credits — Voice Live Std LLM Audio",
 	},
 	"naia-omni": {
 		cost: "~$0.33/hr",

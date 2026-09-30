@@ -209,4 +209,51 @@ describe("CostDashboard", () => {
 			expect(el.getAttribute("title")).toContain("2,550.00");
 		});
 	});
+	it("shows Naia-account usage in credits and own-key usage as a dollar provider estimate (#727)", async () => {
+		const mixed: ChatMessage[] = [
+			{
+				id: "n1",
+				role: "assistant",
+				content: "a",
+				timestamp: 1,
+				cost: {
+					inputTokens: 10,
+					outputTokens: 10,
+					cost: 0.0123,
+					provider: "nextain",
+					model: "gpt-5.6-luna",
+				},
+			},
+			{
+				id: "g1",
+				role: "assistant",
+				content: "b",
+				timestamp: 2,
+				cost: {
+					inputTokens: 10,
+					outputTokens: 10,
+					cost: 0.002,
+					provider: "gemini",
+					model: "gemini-2.5-flash",
+				},
+			},
+		];
+		render(<CostDashboard messages={mixed} />);
+		expect(screen.getAllByText("≈ 12.3 credits").length).toBeGreaterThan(0);
+		expect(screen.queryByText(/\$0\.0123/)).toBeNull();
+		expect(
+			screen.getAllByText("$0.0020 (provider price est.)").length,
+		).toBeGreaterThan(0);
+		expect(
+			screen.getByText("≈ 12.3 credits + $0.0020 (provider price est.)"),
+		).toBeDefined();
+	});
+
+	it("shows the charge button on the standard build (#727)", async () => {
+		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-good-key");
+		vi.mocked(hasNaiaKeySecure).mockResolvedValue(true);
+		render(<CostDashboard messages={[]} />);
+		await screen.findByText(/12\.50/);
+		expect(await screen.findByText("Charge Credits")).toBeDefined();
+	});
 });

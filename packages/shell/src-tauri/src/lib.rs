@@ -10,6 +10,7 @@ mod capture;
 mod cli_detect;
 pub mod data_home;
 mod device_pairing;
+mod distribution;
 mod ego_host;
 mod ego_host_bridge;
 mod herdr;
@@ -5800,6 +5801,12 @@ fn naia_balance_endpoint(gateway_url: &str) -> Result<url::Url, String> {
     }
     base.join("/v1/profile/balance")
         .map_err(|_| "Invalid Naia balance endpoint".to_string())
+}
+
+/// Distribution channel of this build: "steam" for the Steam depot, else "standard" (#727).
+#[tauri::command]
+fn get_distribution_channel() -> String {
+    distribution::detect_current_channel().as_str().to_string()
 }
 
 /// Fetch account balance in the native process. WebView fetch can be blocked by
@@ -13802,6 +13809,7 @@ pub fn run() {
             memory_export_backup,
             memory_import_backup,
             fetch_naia_balance,
+            get_distribution_channel,
             list_audio_output_devices,
             detect_gpu_vram,
             generate_oauth_state,

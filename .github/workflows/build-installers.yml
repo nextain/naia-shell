@@ -516,6 +516,23 @@ jobs:
             throw "Steam depot naia-shell.exe signer subject mismatch: $($depotSig.SignerCertificate.Subject)"
           }
 
+          # #727: the Steam build tells itself apart by this marker file, so it
+          # must exist in the depot and be covered by the depot hash list.
+          $markerFile = $contract.distributionMarker.file
+          $markerPath = Join-Path $steamDepot $markerFile
+          if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+            throw "Steam depot distribution marker is missing: $markerFile"
+          }
+          if ((Get-Content -LiteralPath $markerPath -Raw).Trim() -ne $contract.distributionMarker.content) {
+            throw "Steam depot distribution marker content mismatch"
+          }
+          $manifestPath = Join-Path $steamDepot $contract.manifest
+          $markerHash = (Get-FileHash -LiteralPath $markerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $markerLine = "$markerHash  $markerFile"
+          if (-not ((Get-Content -LiteralPath $manifestPath) -contains $markerLine)) {
+            throw "Steam depot hash list does not cover the distribution marker"
+          }
+
           $uninstall = Start-Process -FilePath $uninstaller `
             -ArgumentList "/S" -Wait -PassThru
           if ($uninstall.ExitCode -ne 0) {

@@ -47,6 +47,16 @@ export function prepareSteamDepot({
 		});
 	}
 
+	// #727: the depot is the same executable as the NSIS install, so the shell
+	// learns it is the Steam build from this marker (src-tauri/src/distribution.rs
+	// reads it next to the executable). Written before the manifest so it is
+	// covered by the depot hash list.
+	const marker = contract.distributionMarker;
+	if (!marker?.file || !marker?.content) {
+		throw new Error("Steam depot contract has no distributionMarker");
+	}
+	writeFileSync(resolve(depotDir, marker.file), `${marker.content}\n`, "utf8");
+
 	for (const required of contract.requiredFiles) {
 		const path = resolve(depotDir, required);
 		if (!statSync(path, { throwIfNoEntry: false })?.isFile()) {
@@ -71,7 +81,12 @@ export function prepareSteamDepot({
 	if (lines.length === 0) throw new Error("Steam portable depot is empty");
 	writeFileSync(manifestPath, `${lines.join("\n")}\n`, "utf8");
 
-	return { depotDir, entrypoint: resolve(depotDir, contract.entrypoint), manifestPath };
+	return {
+		depotDir,
+		entrypoint: resolve(depotDir, contract.entrypoint),
+		manifestPath,
+		markerPath: resolve(depotDir, marker.file),
+	};
 }
 
 function parseArgs(argv) {

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { isNaiaAccountProvider } from "../lib/credits";
 import { Logger } from "../lib/logger";
 import type {
 	ChatMessage,
@@ -8,6 +9,12 @@ import type {
 	ToolCall,
 } from "../lib/types";
 import { useAppStore } from "./app";
+
+function naiaPortion(
+	cost: { provider: string; cost: number } | undefined,
+): number {
+	return cost && isNaiaAccountProvider(cost.provider) ? cost.cost : 0;
+}
 
 function requestBrowserVisibilitySync() {
 	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
@@ -33,6 +40,8 @@ interface ChatState {
 	streamingToolCalls: ToolCall[];
 	provider: ProviderId;
 	totalSessionCost: number;
+	/** Portion of `totalSessionCost` (USD estimate) incurred on the Naia account (#727). */
+	totalSessionCostNaia: number;
 	sessionCostEntries: CostEntry[];
 	pendingApproval: PendingApproval | null;
 	messageQueue: string[];
@@ -126,6 +135,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	// FR-LLM-LOGOUT.2: 초기 제공자는 비어 있다. 설정이 제공자를 정한다.
 	provider: "",
 	totalSessionCost: 0,
+	totalSessionCostNaia: 0,
 	sessionCostEntries: [],
 	pendingApproval: null,
 	messageQueue: [],
@@ -145,6 +155,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 				{ ...msg, id: generateId(), timestamp: Date.now() },
 			],
 			totalSessionCost: s.totalSessionCost + (msg.cost?.cost ?? 0),
+			totalSessionCostNaia: s.totalSessionCostNaia + naiaPortion(msg.cost),
 		})),
 
 	updateLastMessage: (role, content) =>
@@ -281,6 +292,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			return {
 				messages,
 				totalSessionCost: s.totalSessionCost + entry.cost,
+				totalSessionCostNaia: s.totalSessionCostNaia + naiaPortion(entry),
 			};
 		}),
 
@@ -300,6 +312,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			return {
 				sessionCostEntries,
 				totalSessionCost: s.totalSessionCost + entry.cost,
+				totalSessionCostNaia: s.totalSessionCostNaia + naiaPortion(entry),
 			};
 		}),
 
@@ -343,6 +356,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			streamingThinking: "",
 			streamingToolCalls: [],
 			totalSessionCost: 0,
+			totalSessionCostNaia: 0,
 			sessionCostEntries: [],
 			pendingApproval: null,
 			messageQueue: [],

@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
+import { formatUsageCost } from "../lib/credits-usage";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import type { AuditEvent, AuditFilter } from "../lib/types";
+import { useChatStore } from "../stores/chat";
 import { useProgressStore } from "../stores/progress";
 
 const EVENT_TYPE_ICONS: Record<string, string> = {
@@ -26,13 +28,9 @@ function formatTime(timestamp: string): string {
 	}
 }
 
-function formatCost(cost: number): string {
-	if (cost < 0.001) return `$${cost.toFixed(6)}`;
-	if (cost < 0.01) return `$${cost.toFixed(4)}`;
-	return `$${cost.toFixed(3)}`;
-}
-
 export function WorkProgressArea() {
+	// Audit stats carry no per-provider split; the active provider decides the unit.
+	const provider = useChatStore((s) => s.provider);
 	const events = useProgressStore((s) => s.events);
 	const stats = useProgressStore((s) => s.stats);
 	const isLoading = useProgressStore((s) => s.isLoading);
@@ -112,7 +110,7 @@ export function WorkProgressArea() {
 							</div>
 							<div className="work-progress-stat">
 								<span className="stat-value">
-									{formatCost(stats.total_cost)}
+									{formatUsageCost(stats.total_cost, provider)}
 								</span>
 								<span className="stat-label">{t("progress.totalCost")}</span>
 							</div>

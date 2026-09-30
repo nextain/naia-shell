@@ -117,6 +117,7 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
+import { resetDistributionChannelForTests } from "../../lib/distribution";
 import { setLocale } from "../../lib/i18n";
 import { SettingsTab } from "../SettingsTab";
 
@@ -282,6 +283,49 @@ describe("SettingsTab", () => {
 			gatewayUrl: expect.any(String),
 			naiaKey: "strict-mode-key",
 		});
+	});
+
+	async function renderConnectedSettings(channel: "steam" | "standard") {
+		resetDistributionChannelForTests();
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-2.5-flash",
+				apiKey: "",
+				naiaKey: "channel-key",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "fetch_naia_balance") {
+				return Promise.resolve({ balance: 5_204_139_000 });
+			}
+			if (command === "get_distribution_channel") {
+				return Promise.resolve(channel);
+			}
+			return Promise.resolve([]);
+		});
+		Object.defineProperty(window, "__TAURI_INTERNALS__", {
+			configurable: true,
+			value: {},
+		});
+		render(<SettingsTab />);
+		await screen.findByText(/52\.04K/);
+		// Let the channel lookup settle before asserting either way.
+		await new Promise((r) => setTimeout(r, 20));
+	}
+
+	it("shows the credit top-up and dashboard buttons on the standard build (#727)", async () => {
+		await renderConnectedSettings("standard");
+		expect(screen.queryByText("Charge Credits")).not.toBeNull();
+		expect(screen.queryByText("Dashboard")).not.toBeNull();
+	});
+
+	it("hides the credit top-up and dashboard buttons on the Steam build, keeping the balance (#727)", async () => {
+		await renderConnectedSettings("steam");
+		expect(screen.queryByText(/52\.04K/)).not.toBeNull();
+		expect(screen.queryByText("Charge Credits")).toBeNull();
+		expect(screen.queryByText("Dashboard")).toBeNull();
 	});
 
 	it("says the balance lookup failed and offers a way to try again (#575)", async () => {
@@ -647,14 +691,14 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 
 		await screen.findByText(
-			/Price per 1M tokens: Input \$0\.165 · Output \$0\.165/,
+			/Price per 1M tokens: Input 165 credits · Output 165 credits/,
 		);
 		let modelSelect = document.getElementById(
 			"model-select",
 		) as HTMLSelectElement;
 		const labels = [...modelSelect.options].map((option) => option.text);
 		expect(labels).toContain(
-			"Solar Mini (Price per 1M tokens: Input $0.165 / Output $0.165)",
+			"Solar Mini (Price per 1M tokens: Input 165 credits / Output 165 credits)",
 		);
 		expect(labels.some((label) => label.includes("(Naia)"))).toBe(false);
 		expect(labels.some((label) => label.includes("Analysis only"))).toBe(false);
@@ -763,16 +807,16 @@ describe("SettingsTab", () => {
 			labels.some(
 				(l) =>
 					l.includes("Solar Pro 4") &&
-					l.includes("$0.330") &&
-					l.includes("$1.320"),
+					l.includes("330 credits") &&
+					l.includes("1.32K credits"),
 			),
 		).toBe(true);
 		expect(
 			labels.some(
 				(l) =>
 					l.includes("Solar Mini") &&
-					l.includes("$0.165") &&
-					l.includes("$0.165"),
+					l.includes("165 credits") &&
+					!l.includes("$"),
 			),
 		).toBe(true);
 		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);

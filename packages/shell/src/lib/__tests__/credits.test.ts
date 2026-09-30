@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { formatCredits, formatCreditsExact } from "../credits";
+import {
+	formatCredits,
+	formatCreditsExact,
+	formatCreditsFromUsd,
+	isNaiaAccountProvider,
+	usdToCredits,
+} from "../credits";
+import {
+	formatUsageCost,
+	formatUsageTotal,
+	formatUsdEstimate,
+} from "../credits-usage";
 
 describe("formatCredits", () => {
 	it("formats examples from specification correctly", () => {
@@ -67,5 +78,38 @@ describe("formatCreditsExact", () => {
 		expect(formatCreditsExact(1000, 2)).toBe("1,000.00");
 		expect(formatCreditsExact(2550, 2)).toBe("2,550.00");
 		expect(formatCreditsExact(12.5, 2)).toBe("12.50");
+	});
+});
+
+describe("USD to credit display (#727)", () => {
+	it("converts at 1 credit = $0.001 with no markup", () => {
+		expect(usdToCredits(0.01)).toBeCloseTo(10);
+		expect(usdToCredits(10)).toBe(10000);
+	});
+
+	it("formats converted amounts through the shared K formatter", () => {
+		expect(formatCreditsFromUsd(0.0123)).toBe("12.3");
+		expect(formatCreditsFromUsd(0.000254)).toBe("0.254");
+		expect(formatCreditsFromUsd(0.165)).toBe("165");
+		expect(formatCreditsFromUsd(1.5)).toBe("1.5K");
+		expect(formatCreditsFromUsd(10)).toBe("10K");
+	});
+
+	it("labels Naia-account usage in credits and own-key usage in dollars", () => {
+		expect(isNaiaAccountProvider("nextain")).toBe(true);
+		expect(isNaiaAccountProvider("gemini")).toBe(false);
+		expect(formatUsageCost(0.0123, "nextain")).toBe("≈ 12.3 credits");
+		expect(formatUsageCost(0.0123, "gemini")).toBe(
+			"$0.012 (provider price est.)",
+		);
+		expect(formatUsdEstimate(0.0000123)).toBe("$0.000012");
+	});
+
+	it("keeps both currencies apart in a mixed total", () => {
+		expect(formatUsageTotal(0.05, 0)).toBe("≈ 50 credits");
+		expect(formatUsageTotal(0, 0.02)).toBe("$0.020 (provider price est.)");
+		expect(formatUsageTotal(0.05, 0.02)).toBe(
+			"≈ 50 credits + $0.020 (provider price est.)",
+		);
 	});
 });

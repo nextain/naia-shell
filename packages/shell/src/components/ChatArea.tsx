@@ -125,6 +125,17 @@ import {
 	getSttProvider,
 } from "../lib/stt";
 import { estimateSttCost } from "../lib/tts/cost";
+import { isNaiaAccountProvider } from "../lib/credits";
+import {
+	formatApproxCredits,
+	formatProviderEstimate,
+	formatUsageCost,
+	formatUsageTotal,
+} from "../lib/credits-usage";
+import {
+	paymentLinksHiddenNow,
+	usePaymentLinksHidden,
+} from "../lib/distribution";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
 	acceptPipelineOutputStage,
@@ -296,12 +307,6 @@ export const modelToolBoundary = makeModelToolBoundary({
 	fetchTools: () => fetchAgentSkills({ includeDisallowed: true }),
 	warn: (m, c) => Logger.warn("ChatArea", m, c),
 });
-
-function formatCost(cost: number): string {
-	if (cost < 0.001) return `$${cost.toFixed(6)}`;
-	if (cost < 0.01) return `$${cost.toFixed(4)}`;
-	return `$${cost.toFixed(3)}`;
-}
 
 /** 로컬 음성(naia-local-voice) 음색 id — 사용자 음성 참조(voiceRefUrl, RefAudioSection
  *  프리셋)의 **파일명**이 façade `/ref/voices` 팔레트 id 와 일치하므로 basename 을 그대로
@@ -653,6 +658,9 @@ export function ChatArea({
 	const streamingThinking = useChatStore((s) => s.streamingThinking);
 	const streamingToolCalls = useChatStore((s) => s.streamingToolCalls);
 	const totalSessionCost = useChatStore((s) => s.totalSessionCost);
+	const totalSessionCostNaia = useChatStore((s) => s.totalSessionCostNaia);
+	// Loads the distribution channel at startup so it is known when a message is built.
+	usePaymentLinksHidden();
 	const sessionCostEntries = useChatStore((s) => s.sessionCostEntries);
 	const provider = useChatStore((s) => s.provider);
 	const pendingApproval = useChatStore((s) => s.pendingApproval);
@@ -2607,11 +2615,17 @@ export function ChatArea({
 			"naia-omni": "nextain",
 			"vllm-omni": "vllm",
 		};
+		const costProvider = providerMap[info.provider] ?? info.provider;
+		// Naia-account sessions are billed in credits (1 credit = $0.001);
+		// bring-your-own providers stay a provider-price estimate in dollars.
+		const costText = isNaiaAccountProvider(costProvider)
+			? formatApproxCredits(totalCost)
+			: formatProviderEstimate(totalCost);
 		useChatStore.getState().addMessage({
 			role: "assistant",
-			content: `🎙️ ${durationStr} · ~$${totalCost.toFixed(3)} (${hint.note})`,
+			content: `🎙️ ${durationStr} · ${costText} (${hint.note})`,
 			cost: {
-				provider: (providerMap[info.provider] ?? info.provider) as any,
+				provider: costProvider as any,
 				model:
 					info.provider === "azure-voice-live"
 						? "azure-realtime"
@@ -3621,7 +3635,11 @@ export function ChatArea({
 			// raw dump. Cleanup below turns voice off so there is no retry loop.
 			if (!cancelled) {
 				const content = errStr.includes("subscription-required")
-					? t("chat.voiceSubscriptionRequired")
+					? t(
+							paymentLinksHiddenNow()
+								? "chat.voiceSubscriptionRequiredNoLink"
+								: "chat.voiceSubscriptionRequired",
+						)
 					: errStr.includes("auth-failed")
 						? t("chat.voiceNeedLabKey")
 						: voiceFailureMessage(lastVoiceStatusRef.current, err);
@@ -3867,7 +3885,10 @@ export function ChatArea({
 									className="cost-badge session-cost cost-badge-clickable"
 									onClick={() => setShowCostDashboard((v) => !v)}
 								>
-									{formatCost(totalSessionCost)}
+									{formatUsageTotal(
+										totalSessionCostNaia,
+										totalSessionCost - totalSessionCostNaia,
+									)}
 								</button>
 							)}
 						<button
@@ -4010,7 +4031,7 @@ export function ChatArea({
 								)}
 								{msg.cost && provider !== "ollama" && provider !== "vllm" && (
 									<span className="cost-badge">
-										{formatCost(msg.cost.cost)} ·{" "}
+										{formatUsageCost(msg.cost.cost, msg.cost.provider)} ·{" "}
 										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
 										{t("chat.tokens")}
 									</span>

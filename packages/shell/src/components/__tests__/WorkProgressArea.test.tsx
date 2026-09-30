@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuditEvent, AuditStats } from "../../lib/types";
+import { useChatStore } from "../../stores/chat";
 import { useProgressStore } from "../../stores/progress";
 import { WorkProgressArea } from "../WorkProgressArea";
 
@@ -14,6 +15,7 @@ describe("WorkProgressArea", () => {
 	afterEach(() => {
 		cleanup();
 		useProgressStore.setState(useProgressStore.getInitialState());
+		useChatStore.setState({ provider: "" });
 	});
 
 	const sampleEvent: AuditEvent = {
@@ -68,10 +70,19 @@ describe("WorkProgressArea", () => {
 		expect(screen.getByText("42")).toBeDefined();
 	});
 
-	it("displays total cost in stats", () => {
+	it("shows the total cost as approximate credits on a Naia account (#727)", () => {
+		useChatStore.setState({ provider: "nextain" });
 		useProgressStore.setState({ stats: sampleStats, isLoading: false });
 		render(<WorkProgressArea />);
-		expect(screen.getByText("$0.053")).toBeDefined();
+		expect(screen.getByText("≈ 53 credits")).toBeDefined();
+		expect(screen.queryByText(/\$0\.053/)).toBeNull();
+	});
+
+	it("keeps dollars, labelled as a provider-price estimate, for own-key providers (#727)", () => {
+		useChatStore.setState({ provider: "gemini" });
+		useProgressStore.setState({ stats: sampleStats, isLoading: false });
+		render(<WorkProgressArea />);
+		expect(screen.getByText("$0.053 (provider price est.)")).toBeDefined();
 	});
 
 	it("renders event list", () => {

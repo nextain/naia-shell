@@ -53,3 +53,40 @@ export function formatCreditsExact(
 	}
 	return num.toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
+
+// ---------------------------------------------------------------------------
+// USD -> credit conversion for usage-cost displays (#727).
+//
+// 1 credit = $0.001. The shell never applies a markup: any multiplier lives in
+// the gateway (`GET /v1/pricing` prices and its deductions). These helpers only
+// change units; every credit amount goes through `formatCredits` above, and
+// localized usage text lives in `credits-usage.ts`.
+// ---------------------------------------------------------------------------
+
+export const CREDITS_PER_USD = 1000;
+
+/** Provider id of the Naia account (gateway-billed in credits). */
+const NAIA_ACCOUNT_PROVIDER = "nextain";
+
+export function isNaiaAccountProvider(
+	provider: string | null | undefined,
+): boolean {
+	return provider === NAIA_ACCOUNT_PROVIDER;
+}
+
+export function usdToCredits(usd: number): number {
+	return usd * CREDITS_PER_USD;
+}
+
+/** Round a credit amount for display: fine below 10, coarse above, then K form. */
+function formatCreditAmount(credits: number): string {
+	const abs = Math.abs(credits);
+	const digits = abs < 1 ? 3 : abs < 10 ? 2 : abs < 100 ? 1 : 0;
+	const rounded = Number(credits.toFixed(digits));
+	return formatCredits(rounded);
+}
+
+/** "5,000" / "2.55K" style credit amount converted from a USD figure. */
+export function formatCreditsFromUsd(usd: number): string {
+	return formatCreditAmount(usdToCredits(usd));
+}

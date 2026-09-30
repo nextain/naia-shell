@@ -8,7 +8,13 @@ import {
 	hasNaiaKeySecure,
 } from "../lib/config";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
-import { formatCredits, formatCreditsExact } from "../lib/credits";
+import {
+	formatCredits,
+	formatCreditsExact,
+	isNaiaAccountProvider,
+} from "../lib/credits";
+import { formatUsageCost, formatUsageTotal } from "../lib/credits-usage";
+import { usePaymentLinksHidden } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import {
 	clearCachedLabCredits,
@@ -79,18 +85,13 @@ function groupCosts(
 	return Array.from(map.values());
 }
 
-function formatCost(cost: number): string {
-	if (cost < 0.001) return `$${cost.toFixed(6)}`;
-	if (cost < 0.01) return `$${cost.toFixed(4)}`;
-	return `$${cost.toFixed(3)}`;
-}
-
 const GATEWAY_URL = LAB_GATEWAY_URL;
 
 const BALANCE_CACHE_TTL = 30_000; // 30 seconds
 const BALANCE_FETCH_TIMEOUT_MS = 8_000;
 
 function LabBalanceSection() {
+	const paymentLinksHidden = usePaymentLinksHidden();
 	const [balance, setBalance] = useState<number | null>(
 		readCachedLabCredits(BALANCE_CACHE_TTL)?.value ?? null,
 	);
@@ -232,6 +233,7 @@ function LabBalanceSection() {
 					{formatCredits(balance, 2)} {t("cost.labCredits")}
 				</span>
 			</div>
+			{!paymentLinksHidden && (
 			<button
 				type="button"
 				className="lab-charge-btn"
@@ -243,6 +245,7 @@ function LabBalanceSection() {
 			>
 				{t("cost.labCharge")}
 			</button>
+			)}
 		</div>
 	);
 }
@@ -283,7 +286,12 @@ export function CostDashboard({
 		return <div className="cost-dashboard-empty">{t("cost.empty")}</div>;
 	}
 
-	const totalCost = groups.reduce((sum, g) => sum + g.cost, 0);
+	const naiaTotal = groups
+		.filter((g) => isNaiaAccountProvider(g.provider))
+		.reduce((sum, g) => sum + g.cost, 0);
+	const otherTotal = groups
+		.filter((g) => !isNaiaAccountProvider(g.provider))
+		.reduce((sum, g) => sum + g.cost, 0);
 	const totalInput = groups.reduce((sum, g) => sum + g.inputTokens, 0);
 	const totalOutput = groups.reduce((sum, g) => sum + g.outputTokens, 0);
 
@@ -314,7 +322,7 @@ export function CostDashboard({
 							<td>
 								{g.outputTokens > 0 ? g.outputTokens.toLocaleString() : "-"}
 							</td>
-							<td>{formatCost(g.cost)}</td>
+							<td>{formatUsageCost(g.cost, g.provider)}</td>
 						</tr>
 					))}
 				</tbody>
@@ -323,7 +331,7 @@ export function CostDashboard({
 						<td colSpan={3}>{t("cost.total")}</td>
 						<td>{totalInput.toLocaleString()}</td>
 						<td>{totalOutput.toLocaleString()}</td>
-						<td>{formatCost(totalCost)}</td>
+						<td>{formatUsageTotal(naiaTotal, otherTotal)}</td>
 					</tr>
 				</tfoot>
 			</table>

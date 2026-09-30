@@ -103,7 +103,12 @@ import {
 } from "../lib/i18n";
 import { DevicePairingSection } from "./DevicePairingSection";
 import { SmallLlmSection } from "./SmallLlmSection";
-import { formatCredits, formatCreditsExact } from "../lib/credits";
+import {
+	formatCredits,
+	formatCreditsExact,
+	formatCreditsFromUsd,
+} from "../lib/credits";
+import { usePaymentLinksHidden } from "../lib/distribution";
 import {
 	fetchLabBalancePayload,
 	isLabBalanceUnauthorized,
@@ -622,7 +627,13 @@ function DeviceSelect({
 	);
 }
 
+/** Localized provider price tag; the Naia credit tag follows the UI language. */
+function ttsPricingLabel(p: { id: string; pricing?: string }): string {
+	return p.id === "nextain" ? t("tts.pricingNaiaCredits") : (p.pricing ?? "");
+}
+
 export function SettingsTab() {
+	const paymentLinksHidden = usePaymentLinksHidden();
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
 		| "profile"
 		| "brain"
@@ -3990,6 +4001,8 @@ export function SettingsTab() {
 									)}
 								</div>
 								<div className="lab-actions-row">
+									{!paymentLinksHidden && (
+										<>
 									<button
 										type="button"
 										className="voice-preview-btn"
@@ -4012,6 +4025,8 @@ export function SettingsTab() {
 									>
 										{t("cost.labCharge")}
 									</button>
+										</>
+									)}
 									{showLabDisconnect ? (
 										<div className="reset-confirm-app" style={{ marginTop: 8 }}>
 											<p className="reset-confirm-msg">
@@ -4750,22 +4765,24 @@ export function SettingsTab() {
 							{provider === "nextain" && selectedModelMeta?.pricing ? (
 								<span style={{ color: "var(--accent-color, #64a0ff)" }}>
 									{t("settings.pricingPerMillionTokens")}:{" "}
-									{t("settings.priceInput")} $
-									{selectedModelMeta.pricing[0].toFixed(3)} ·{" "}
-									{t("settings.priceOutput")} $
-									{selectedModelMeta.pricing[1].toFixed(3)}
+									{t("settings.priceInput")}{" "}
+									{formatCreditsFromUsd(selectedModelMeta.pricing[0])}{" "}
+									{t("cost.labCredits")} ·{" "}
+									{t("settings.priceOutput")}{" "}
+									{formatCreditsFromUsd(selectedModelMeta.pricing[1])}{" "}
+									{t("cost.labCredits")}
 									{selectedModelMeta.cachePricing ? (
 										<>
 											{" · "}
 											{t("settings.priceCacheRead")}{" "}
 											{selectedModelMeta.cachePricing.read === null
 												? "—"
-												: `$${selectedModelMeta.cachePricing.read.toFixed(3)}`}
+												: `${formatCreditsFromUsd(selectedModelMeta.cachePricing.read)} ${t("cost.labCredits")}`}
 											{" · "}
 											{t("settings.priceCacheWrite")}{" "}
 											{selectedModelMeta.cachePricing.write === null
 												? "—"
-												: `$${selectedModelMeta.cachePricing.write.toFixed(3)}`}
+												: `${formatCreditsFromUsd(selectedModelMeta.cachePricing.write)} ${t("cost.labCredits")}`}
 										</>
 									) : null}
 								</span>
@@ -5114,7 +5131,7 @@ export function SettingsTab() {
 											disabled={p.requiresNaiaKey && !naiaKey}
 										>
 											{p.name}
-											{p.pricing ? ` - ${p.pricing}` : ""}
+											{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
 											{p.requiresNaiaKey && !naiaKey
 												? ` (${t("settings.ttsNaiaRequired")})`
 												: ""}
@@ -5253,7 +5270,7 @@ export function SettingsTab() {
 									}
 								>
 									{p.name}
-									{p.pricing ? ` - ${p.pricing}` : ""}
+									{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
 									{p.requiresNaiaKey && !naiaKey
 										? ` (${t("settings.ttsNaiaRequired")})`
 										: ""}
