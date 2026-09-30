@@ -1,15 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppCenterProps } from "../../lib/app-registry";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../../lib/ui-preferences";
 import { useAppStore } from "../../stores/app";
 import { HerdrWorkspaceRail } from "./HerdrWorkspaceRail";
 import { HerdrWorkspaceSurface } from "./HerdrWorkspaceSurface";
 import { QuickOpen } from "./QuickOpen";
+import { WorkspaceQuadView } from "./WorkspaceQuadView";
 import { focusedHerdrAgent } from "./herdr";
 import type { OpenFileEditProposal } from "./open-file-edit";
+import { writePty } from "./pty-ipc";
+import type { TerminalSource, TerminalSourceKind } from "./terminal-source";
 import { useHerdrDocuments } from "./useHerdrDocuments";
 import { useHerdrRuntime } from "./useHerdrRuntime";
 import { useHerdrWorkspaceBridge } from "./useHerdrWorkspaceBridge";
+import { usePtyTerminalSource } from "./usePtyTerminalSource";
 
 export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 	const runtime = useHerdrRuntime();
@@ -116,8 +125,63 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 		setEditProposal,
 	});
 
+	const layoutPreference = useUiPreference<string>(
+		UI_PREFERENCE_KEYS.workspaceLayout,
+		"quad",
+	);
+	const [layout, setLayout] = useState<"quad" | "standard">(
+		layoutPreference === "standard" ? "standard" : "quad",
+	);
+
+	useEffect(() => {
+		if (layoutPreference === "standard" || layoutPreference === "quad") {
+			setLayout(layoutPreference);
+		}
+	}, [layoutPreference]);
+
+	const toggleLayout = useCallback(() => {
+		const next = layout === "quad" ? "standard" : "quad";
+		setLayout(next);
+		void patchUiPreferences({ [UI_PREFERENCE_KEYS.workspaceLayout]: next });
+	}, [layout]);
+
+	const ptySource = usePtyTerminalSource({
+		workspaceRoot: runtime.workspaceRoot,
+		autoLaunchOpencode: true,
+	});
+
+	const herdrSource = useMemo<TerminalSource>(
+		() => ({
+			kind: "herdr",
+			pty: runtime.pty,
+			launching: runtime.launching,
+			launchError: runtime.launchError,
+			terminalReady: runtime.terminalReady,
+			terminalError: runtime.terminalError,
+			workingDir: runtime.workspaceRoot,
+			launch: runtime.launchHerdr,
+			retry: runtime.retryHerdr,
+			onTerminalReady: runtime.onTerminalReady,
+			onPtyExit: runtime.onPtyExit,
+			runOpencode: runtime.pty
+				? () => writePty(runtime.pty!.pty_id, "opencode\r")
+				: undefined,
+		}),
+		[runtime],
+	);
+
+	const [selectedSourceKind, setSelectedSourceKind] =
+		useState<TerminalSourceKind>("pty");
+
+	const activeTerminalSource =
+		selectedSourceKind === "herdr" ? herdrSource : ptySource;
+
 	return (
-		<div className="herdr-workspace" data-testid="herdr-workspace">
+		<div
+			className="herdr-workspace"
+			data-testid="herdr-workspace"
+			data-layout={layout}
+		>
 			<HerdrWorkspaceRail
 				workspaceRoot={runtime.workspaceRoot}
 				surface={runtime.surface}
@@ -132,14 +196,29 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 				onShowViewer={handleShowViewer}
 				onFocusWorkspace={runtime.focusWorkspace}
 				onFocusAgent={runtime.focusAgent}
+				layout={layout}
+				onToggleLayout={toggleLayout}
 			/>
-			<HerdrWorkspaceSurface
-				{...runtime}
-				{...documents}
-				editProposal={editProposal}
-				onApproveEdit={approveEdit}
-				onRejectEdit={rejectEdit}
-			/>
+			{layout === "quad" ? (
+				<WorkspaceQuadView
+					terminalSource={activeTerminalSource}
+					availableSources={["pty", "herdr"]}
+					selectedSourceKind={selectedSourceKind}
+					onSelectSourceKind={setSelectedSourceKind}
+					terminalRef={runtime.terminalRef}
+					onFileLocation={documents.openLocation}
+					onAskAi={documents.sendToNaia}
+					workspaceRoot={runtime.workspaceRoot}
+				/>
+			) : (
+				<HerdrWorkspaceSurface
+					{...runtime}
+					{...documents}
+					editProposal={editProposal}
+					onApproveEdit={approveEdit}
+					onRejectEdit={rejectEdit}
+				/>
+			)}
 			{documents.quickOpenVisible && runtime.workspaceRoot && (
 				<QuickOpen
 					workspaceRoot={runtime.workspaceRoot}

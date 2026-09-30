@@ -1,0 +1,326 @@
+import {
+	type PointerEvent as ReactPointerEvent,
+	type RefObject,
+	Suspense,
+	lazy,
+	useCallback,
+	useRef,
+	useState,
+} from "react";
+import { t } from "../../lib/i18n";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../../lib/ui-preferences";
+import { QuadIframePane } from "./QuadIframePane";
+import type { FileLocation, TerminalHandle } from "./Terminal";
+import type { TerminalSource, TerminalSourceKind } from "./terminal-source";
+
+const LazyTerminal = lazy(() =>
+	import("./Terminal").then((module) => ({ default: module.Terminal })),
+);
+
+export interface WorkspaceQuadViewProps {
+	terminalSource: TerminalSource;
+	terminalRef?: RefObject<TerminalHandle>;
+	onAskAi?: (path: string) => void;
+	onFileLocation?: (location: FileLocation) => void;
+	availableSources?: TerminalSourceKind[];
+	selectedSourceKind?: TerminalSourceKind;
+	onSelectSourceKind?: (kind: TerminalSourceKind) => void;
+	workspaceRoot?: string;
+}
+
+const DEFAULT_RATIOS = [0.34, 0.33, 0.33];
+const MIN_RATIO = 0.15;
+
+export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
+	const savedRatios = useUiPreference<number[]>(
+		UI_PREFERENCE_KEYS.workspaceSplitRatios,
+		DEFAULT_RATIOS,
+	);
+
+	const initialRatios =
+		Array.isArray(savedRatios) && savedRatios.length === 3
+			? savedRatios
+			: DEFAULT_RATIOS;
+
+	const [ratios, setRatios] = useState<number[]>(initialRatios);
+	const [isResizing, setIsResizing] = useState(false);
+
+	const containerRef = useRef<HTMLDivElement>(null);
+	const dragRef = useRef<{
+		handleIndex: number;
+		startX: number;
+		startRatios: number[];
+		containerWidth: number;
+	} | null>(null);
+
+	const handlePointerDown = useCallback(
+		(handleIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
+			const container = containerRef.current;
+			if (!container) return;
+			const rect = container.getBoundingClientRect();
+			if (rect.width <= 0) return;
+
+			dragRef.current = {
+				handleIndex,
+				startX: event.clientX,
+				startRatios: [...ratios],
+				containerWidth: rect.width,
+			};
+
+			setIsResizing(true);
+			document.body.classList.add("resizing-col");
+			if (typeof (event.currentTarget as HTMLElement).setPointerCapture === "function") {
+				try {
+					(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+				} catch {}
+			}
+		},
+		[ratios],
+	);
+
+	const handlePointerMove = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>) => {
+			const drag = dragRef.current;
+			if (!drag) return;
+
+			const deltaX = event.clientX - drag.startX;
+			const deltaRatio = deltaX / drag.containerWidth;
+			const next = [...drag.startRatios];
+
+			if (drag.handleIndex === 0) {
+				// Dragging between Pane 0 (Terminal) and Pane 1 (Docs)
+				let r0 = drag.startRatios[0] + deltaRatio;
+				let r1 = drag.startRatios[1] - deltaRatio;
+				const sum = drag.startRatios[0] + drag.startRatios[1];
+
+				r0 = Math.max(MIN_RATIO, Math.min(sum - MIN_RATIO, r0));
+				r1 = sum - r0;
+
+				next[0] = Math.round(r0 * 1000) / 1000;
+				next[1] = Math.round(r1 * 1000) / 1000;
+			} else if (drag.handleIndex === 1) {
+				// Dragging between Pane 1 (Docs) and Pane 2 (Dashboard)
+				let r1 = drag.startRatios[1] + deltaRatio;
+				let r2 = drag.startRatios[2] - deltaRatio;
+				const sum = drag.startRatios[1] + drag.startRatios[2];
+
+				r1 = Math.max(MIN_RATIO, Math.min(sum - MIN_RATIO, r1));
+				r2 = sum - r1;
+
+				next[1] = Math.round(r1 * 1000) / 1000;
+				next[2] = Math.round(r2 * 1000) / 1000;
+			}
+
+			setRatios(next);
+		},
+		[],
+	);
+
+	const handlePointerUp = useCallback(
+		(event: ReactPointerEvent<HTMLDivElement>) => {
+			if (!dragRef.current) return;
+			dragRef.current = null;
+			setIsResizing(false);
+			document.body.classList.remove("resizing-col");
+
+			if (typeof (event.currentTarget as HTMLElement).releasePointerCapture === "function") {
+				try {
+					(event.currentTarget as HTMLElement).releasePointerCapture(
+						event.pointerId,
+					);
+				} catch {}
+			}
+
+			void patchUiPreferences({
+				[UI_PREFERENCE_KEYS.workspaceSplitRatios]: ratios,
+			});
+		},
+		[ratios],
+	);
+
+	const {
+		terminalSource,
+		terminalRef,
+		onAskAi,
+		onFileLocation,
+		availableSources,
+		selectedSourceKind,
+		onSelectSourceKind,
+	} = props;
+
+	return (
+		<div
+			ref={containerRef}
+			className={`workspace-quad${isResizing ? " workspace-quad--resizing" : ""}`}
+			data-testid="workspace-quad"
+		>
+			{/* Pane 0: Terminal */}
+			<div
+				className="workspace-quad__pane workspace-quad__pane--terminal"
+				data-testid="quad-pane-terminal"
+				style={{ flex: `${ratios[0]} 1 0%`, minWidth: "140px" }}
+			>
+				<header className="workspace-quad__pane-header">
+					<div className="workspace-quad__pane-title-group">
+						<span className="workspace-quad__pane-title">
+							터미널
+						</span>
+						{availableSources &&
+							availableSources.length > 1 &&
+							onSelectSourceKind && (
+								<div
+									className="workspace-quad__source-switch"
+									role="radiogroup"
+									aria-label="터미널 소스 선택"
+								>
+									{availableSources.map((kind) => (
+										<button
+											key={kind}
+											type="button"
+											className={`workspace-quad__source-btn${selectedSourceKind === kind ? " workspace-quad__source-btn--active" : ""}`}
+											onClick={() => onSelectSourceKind(kind)}
+											data-testid={`quad-source-${kind}`}
+										>
+											{kind === "pty" ? "PTY" : "Herdr"}
+										</button>
+									))}
+								</div>
+							)}
+					</div>
+					<div className="workspace-quad__pane-actions">
+						{terminalSource.runOpencode && (
+							<button
+								type="button"
+								className="workspace-quad__opencode-btn"
+								onClick={terminalSource.runOpencode}
+								title="터미널에서 opencode 실행"
+								data-testid="quad-run-opencode"
+							>
+								opencode
+							</button>
+						)}
+						<button
+							type="button"
+							className="workspace-quad__pane-btn"
+							onClick={terminalSource.retry}
+							title={t("workspace.herdrRetry")}
+							data-testid="quad-terminal-restart"
+						>
+							↻
+						</button>
+					</div>
+				</header>
+
+				<div className="workspace-quad__pane-content workspace-quad__terminal-host">
+					{terminalSource.pty ? (
+						<Suspense fallback={null}>
+							<LazyTerminal
+								ref={terminalRef}
+								pty_id={terminalSource.pty.pty_id}
+								active={true}
+								workingDir={terminalSource.workingDir}
+								onExit={terminalSource.onPtyExit}
+								onReady={terminalSource.onTerminalReady}
+								onFileLocation={onFileLocation}
+								onAskAi={onAskAi}
+							/>
+						</Suspense>
+					) : terminalSource.launchError ? (
+						<div
+							className="workspace-quad__state"
+							role="alert"
+							data-testid="quad-terminal-state"
+						>
+							<span>{terminalSource.launchError}</span>
+							<button
+								type="button"
+								className="workspace-quad__retry-btn"
+								onClick={terminalSource.retry}
+								data-testid="quad-terminal-reconnect"
+							>
+								{t("workspace.herdrRetry")}
+							</button>
+						</div>
+					) : (
+						<div
+							className="workspace-quad__state"
+							role="status"
+							aria-live="polite"
+							data-testid="quad-terminal-state"
+						>
+							<span>
+								{terminalSource.launching
+									? t("workspace.herdrStarting")
+									: t("workspace.herdrExited")}
+							</span>
+							{!terminalSource.launching && (
+								<button
+									type="button"
+									className="workspace-quad__retry-btn"
+									onClick={terminalSource.retry}
+									data-testid="quad-terminal-reconnect"
+								>
+									{t("workspace.herdrRetry")}
+								</button>
+							)}
+						</div>
+					)}
+				</div>
+			</div>
+
+			{/* Handle 0: Between Terminal and Docs */}
+			<div
+				role="separator"
+				aria-orientation="vertical"
+				className="resize-handle workspace-quad__handle"
+				data-testid="quad-handle-0"
+				onPointerDown={(e) => handlePointerDown(0, e)}
+				onPointerMove={handlePointerMove}
+				onPointerUp={handlePointerUp}
+				tabIndex={0}
+				title="칸 너비 조절"
+			/>
+
+			{/* Pane 1: Documents */}
+			<div
+				className="workspace-quad__pane-wrapper"
+				style={{ flex: `${ratios[1]} 1 0%`, minWidth: "140px" }}
+			>
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>
+			</div>
+
+			{/* Handle 1: Between Docs and Dashboard */}
+			<div
+				role="separator"
+				aria-orientation="vertical"
+				className="resize-handle workspace-quad__handle"
+				data-testid="quad-handle-1"
+				onPointerDown={(e) => handlePointerDown(1, e)}
+				onPointerMove={handlePointerMove}
+				onPointerUp={handlePointerUp}
+				tabIndex={0}
+				title="칸 너비 조절"
+			/>
+
+			{/* Pane 2: Dashboard */}
+			<div
+				className="workspace-quad__pane-wrapper"
+				style={{ flex: `${ratios[2]} 1 0%`, minWidth: "140px" }}
+			>
+				<QuadIframePane
+					title="대시보드"
+					url="http://localhost:3142"
+					paneId="dashboard"
+				/>
+			</div>
+		</div>
+	);
+}

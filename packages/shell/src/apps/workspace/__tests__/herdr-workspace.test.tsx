@@ -9,11 +9,15 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type NaiaContextBridge,
 	type ToolHandler,
 } from "../../../lib/app-registry";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+} from "../../../lib/ui-preferences";
 import { t } from "../../../lib/i18n";
 import type { FileLocation, TerminalHandle } from "../Terminal";
 
@@ -190,6 +194,10 @@ const bridge: NaiaContextBridge = {
 };
 
 describe("HerdrWorkspaceCenterArea", () => {
+	beforeEach(() => {
+		void patchUiPreferences({ [UI_PREFERENCE_KEYS.workspaceLayout]: "standard" });
+	});
+
 	afterEach(() => {
 		cleanup();
 		mockInvoke.mockReset();

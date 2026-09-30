@@ -2216,5 +2216,29 @@ Test Coverage Map (P02)
 |---|---|---|
 | UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
 
+## UC-WORKSPACE-QUAD-732 — 워크스페이스 3단 작업 화면(터미널·문서·대시보드) (#732)
+
+워크스페이스 진입 시 단일 터미널 대신 3단 분할 작업 화면(좌: 터미널, 중: 문서 http://localhost:3142/docs, 우: 대시보드 http://localhost:3142)을 기본으로 제공한다.
+각 단 사이에는 드래그 가능한 분할 조절자(resize-handle)가 있어 마우스 드래그로 폭 비율을 조절할 수 있으며, 이 비율은 UI 설정(`workspaceSplitRatios`)에 저장되어 유지된다.
+레일 헤더의 레이아웃 토글 버튼("1단" / "3단")으로 기존 단일 화면과 3단 화면을 언제든 전환할 수 있으며 전환 상태 또한 영속된다.
+터미널 상단에는 소스 선택(PTY / Herdr) 및 opencode 빠른 실행 버튼이 제공되며, 문서·대시보드 서비스(3142 포트) 미응답 시 "대시보드가 꺼져 있습니다" 오프라인 안내 카드와 재시도 버튼이 표시된다.
+3단 화면 전환 시에도 채팅(Naia) 오버레이는 독립적으로 유지되어 재마운트되지 않는다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 워크스페이스 탭을 열면 터미널·문서·대시보드가 3단 분할(기본 비율 38:31:31)로 한 화면에 나타난다. |
+| 빈 목록 / 오프라인 | 3142 포트 ADK 서버가 꺼져 있을 경우 iframe 오류 대신 오프라인 안내 카드와 재시도 버튼이 표시된다. |
+| 진행 | 분할 바를 드래그하는 동안 실시간으로 각 단의 너비가 조절되며 텍스트 선택이 방지된다. |
+| 성공 | 분할 비율 및 1단/3단 레이아웃 전환 상태가 `UI_PREFERENCE_KEYS`에 영속되어 재진입 시 유지된다. |
+| 오류 | 터미널 프로세스 종료 또는 기동 실패 시 재연결(↻) 버튼으로 복구할 수 있다. |
+| 좁은 폭 | 각 단의 최소 너비(140px)가 보장되어 과도한 축소로 인한 깨짐을 방지한다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-WORKSPACE-QUAD-732 | `packages/shell/src/apps/workspace/__tests__/workspace-quad.test.tsx`: 3단 레이아웃 렌더링, 1단/3단 토글, 드래그 비율 갱신 및 UI preferences 영속, 터미널 소스 전환(PTY/Herdr), opencode 트리거, 3142 헬스체크 및 오프라인 카드 렌더링; `packages/shell/src/lib/__tests__/ui-preferences.test.ts`: workspaceLayout 및 workspaceSplitRatios 키 등록 | `packages/shell/e2e/workspace-quad.spec.ts`: 실 UI 워크스페이스 진입 시 3단 화면 확인, 1단/3단 토글, opencode 및 소스 선택 버튼 존재 검증 |
+
+
 
 
