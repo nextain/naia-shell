@@ -631,6 +631,7 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
 ];
 
 /// Maximum allowed length (in unicode characters) for the context field.
+/// PR-1 은 `context` 필드 문자열만 제한한다. `context.md` 파일 길이 측정은 경로 가두기(절대 경로·`..`·심볼릭 링크 거부)와 함께 PR-6 에서
 pub const MAX_CONTEXT_LENGTH: usize = 800;
 
 /// A skill procedure specification declared in app.json.
@@ -707,6 +708,9 @@ pub struct AppManifest {
         skip_serializing_if = "Option::is_none"
     )]
     pub html_entry: Option<String>,
+    /// Unrecognized top-level manifest keys collected for warning issues
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// A tool an installed app exposes to Naia.
@@ -758,7 +762,16 @@ pub fn validate_manifest(manifest: &AppManifest) -> Vec<ManifestIssue> {
         }
     };
 
-    // 1. 알 수 없는 권한 (permissions, optional_permissions)
+    // 1. 알 수 없는 최상위 매니페스트 필드 (v2·legacy 모두 Warning, 설치는 그대로 통과)
+    for key in manifest.extra.keys() {
+        issues.push(ManifestIssue {
+            level: IssueLevel::Warning,
+            field: key.clone(),
+            message: format!("알 수 없는 매니페스트 필드입니다: {}", key),
+        });
+    }
+
+    // 2. 알 수 없는 권한 (permissions, optional_permissions)
     let check_perms = |perms: &Option<Vec<String>>, field_name: &str, issues: &mut Vec<ManifestIssue>| {
         if let Some(ref list) = perms {
             for perm in list {
@@ -775,7 +788,7 @@ pub fn validate_manifest(manifest: &AppManifest) -> Vec<ManifestIssue> {
     check_perms(&manifest.permissions, "permissions", &mut issues);
     check_perms(&manifest.optional_permissions, "optional_permissions", &mut issues);
 
-    // 2. context 길이 상한 초과
+    // 3. context 길이 상한 초과 (PR-1 은 `context` 필드 문자열만 제한한다. `context.md` 파일 길이 측정은 경로 가두기(절대 경로·`..`·심볼릭 링크 거부)와 함께 PR-6 에서)
     if let Some(ref ctx) = manifest.context {
         if ctx.chars().count() > MAX_CONTEXT_LENGTH {
             issues.push(ManifestIssue {
@@ -790,7 +803,7 @@ pub fn validate_manifest(manifest: &AppManifest) -> Vec<ManifestIssue> {
         }
     }
 
-    // 3. 도구 이름 규칙 (skill_ 접두사, 중복)
+    // 4. 도구 이름 규칙 (skill_ 접두사, 중복)
     if let Some(ref tools) = manifest.tools {
         let mut seen_names = std::collections::HashSet::new();
         for tool in tools {
@@ -811,7 +824,7 @@ pub fn validate_manifest(manifest: &AppManifest) -> Vec<ManifestIssue> {
         }
     }
 
-    // 4. browser / login-handoff 권한 선언에 host_permissions 없음
+    // 5. browser / login-handoff 권한 선언에 host_permissions 없음
     let declared_perms: Vec<&str> = manifest
         .permissions
         .as_deref()
@@ -1383,9 +1396,18 @@ mod tests {
         assert!(descriptions.contains_key("ko"));
         assert!(descriptions.contains_key("en"));
 
+        // All keys declared in slides app.json must be recognized (no unknown keys in extra)
+        assert!(
+            manifest.extra.is_empty(),
+            "slides app.json must not have unknown keys, got: {:?}",
+            manifest.extra
+        );
+
         let issues = validate_manifest(&manifest);
-        // Legacy profile must not produce any Error-level issues
+        // Legacy profile must not produce any Error-level issues or unknown field warnings
         assert!(!issues.iter().any(|i| i.level == IssueLevel::Error));
+        assert!(!issues.iter().any(|i| manifest.extra.contains_key(&i.field)));
+        assert!(issues.is_empty(), "expected no issues for slides app.json, got: {:?}", issues);
     }
 
     #[test]
@@ -1469,12 +1491,22 @@ mod tests {
         assert!(issues.is_empty(), "valid v2 manifest should have no issues: {:?}", issues);
 
         // Serialization round-trip
+        assert!(manifest.extra.is_empty());
         let serialized = serde_json::to_string(&manifest).unwrap();
         let remanifest: AppManifest = serde_json::from_str(&serialized).unwrap();
         assert_eq!(remanifest.manifest_version, Some(2));
         assert_eq!(remanifest.id, "land.naia.v2test");
         assert_eq!(remanifest.keep_alive, Some(false));
         assert_eq!(remanifest.tools.unwrap()[0].exported, true);
+        assert!(remanifest.extra.is_empty());
+
+        // Extra fields roundtrip
+        let extra_json = r#"{"id":"test","name":"Test","custom_key":"custom_val"}"#;
+        let manifest_extra: AppManifest = serde_json::from_str(extra_json).unwrap();
+        assert_eq!(manifest_extra.extra.get("custom_key"), Some(&serde_json::Value::String("custom_val".to_string())));
+        let serialized_extra = serde_json::to_string(&manifest_extra).unwrap();
+        let remanifest_extra: AppManifest = serde_json::from_str(&serialized_extra).unwrap();
+        assert_eq!(remanifest_extra.extra.get("custom_key"), Some(&serde_json::Value::String("custom_val".to_string())));
     }
 
     #[test]
@@ -1622,6 +1654,42 @@ mod tests {
         let v2_valid_manifest: AppManifest = serde_json::from_str(v2_valid_json).unwrap();
         let v2_valid_issues = validate_manifest(&v2_valid_manifest);
         assert!(v2_valid_issues.is_empty(), "expected no issues, got {:?}", v2_valid_issues);
+    }
+
+    #[test]
+    fn validate_manifest_unknown_keys_warns() {
+        // v2 with typo key "permission" -> Warning 1건, Error 0건, 설치 거부 없음
+        let v2_typo_json = r#"{
+            "manifest_version": 2,
+            "id": "test",
+            "name": "Test",
+            "permission": ["fullscreen"]
+        }"#;
+        let v2_typo_manifest: AppManifest = serde_json::from_str(v2_typo_json).unwrap();
+        assert!(v2_typo_manifest.extra.contains_key("permission"));
+        let v2_issues = validate_manifest(&v2_typo_manifest);
+        let warnings: Vec<_> = v2_issues.iter().filter(|i| i.level == IssueLevel::Warning).collect();
+        let errors: Vec<_> = v2_issues.iter().filter(|i| i.level == IssueLevel::Error).collect();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(errors.len(), 0, "typo key must produce 0 errors so install is not rejected");
+        assert_eq!(warnings[0].field, "permission");
+        assert!(warnings[0].message.contains("permission"));
+
+        // Legacy with unknown key -> Warning 1건, Error 0건
+        let legacy_typo_json = r#"{
+            "id": "test",
+            "name": "Test",
+            "unknown_extra_field": "some_value"
+        }"#;
+        let legacy_typo_manifest: AppManifest = serde_json::from_str(legacy_typo_json).unwrap();
+        assert!(legacy_typo_manifest.extra.contains_key("unknown_extra_field"));
+        let legacy_issues = validate_manifest(&legacy_typo_manifest);
+        let legacy_warnings: Vec<_> = legacy_issues.iter().filter(|i| i.level == IssueLevel::Warning).collect();
+        let legacy_errors: Vec<_> = legacy_issues.iter().filter(|i| i.level == IssueLevel::Error).collect();
+        assert_eq!(legacy_warnings.len(), 1);
+        assert_eq!(legacy_errors.len(), 0);
+        assert_eq!(legacy_warnings[0].field, "unknown_extra_field");
+        assert!(legacy_warnings[0].message.contains("unknown_extra_field"));
     }
 }
 

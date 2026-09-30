@@ -2222,6 +2222,7 @@ Test Coverage Map (P02)
 - 앱 작성자는 `manifest_version: 2`, `context`, `skills[]`, `permissions`, `host_permissions`, `optional_permissions`, `requires[]`, `help`, `data_use`, `publisher`, `keepAlive`, 도구별 `exported` 등 v2 명세를 선언할 수 있다.
 - v2 매니페스트 앱은 설치 시 엄격한 유효성 검사(`validate_manifest`)를 거치며, 알 수 없는 권한 선언, `context` 길이 상한 초과(800자), 도구 이름 명명 규칙 위반(`skill_` 접두사 누락 또는 중복), `host_permissions` 없는 `browser`/`login-handoff` 권한 선언이 발견되면 설치가 즉시 거부된다.
 - 기존 구형(legacy) 앱(`manifest_version` 없음 또는 1)은 동일한 검사에서 경고(warning)만 남기고 설치와 실행이 기존과 동일하게 유지된다(동작 변화 없음).
+- 알 수 없는 최상위 매니페스트 키는 v2·legacy 모두 경고(Warning)를 기록하며 설치를 차단하지 않는다. PR-1 은 `context` 필드 문자열만 제한하며, `context.md` 파일 길이 측정은 경로 가두기(절대 경로·`..`·심볼릭 링크 거부)와 함께 PR-6 에서 다룬다.
 - `keepAlive: false`가 선언된 앱은 Rust/TS 역직렬화 및 AppDescriptor 등록에서 보존되어, 앱 전환 시 언마운트 정책이 정상 적용된다.
 
 | 상태 | 사용자/앱 작성자 기대 |
@@ -2230,14 +2231,14 @@ Test Coverage Map (P02)
 | legacy 호환 | `manifest_version`이 없는 legacy 앱(예: Naia Slides 0.1.0 `app.json`)은 profile: "legacy"로 인식되어 기존과 완전히 동일하게 로드·실행된다. |
 | 진행 | 앱 설치 시 `validate_manifest` 검사가 수행된다. v2에서 오류가 없으면 설치가 완료된다. |
 | 성공 | v2 선택 필드(`context`, `skills`, `permissions`, `host_permissions`, `optional_permissions`, `requires`, `help`, `data_use`, `publisher`, `keepAlive`, `exported`)가 Rust에서 TS까지 손실 없이 전달된다. `keepAlive: false` 앱은 언마운트 설정이 보존된다. |
-| 오류 | v2 앱에서 알 수 없는 권한, 800자 초과 context, 잘못된/중복 도구 이름, host_permissions 누락 시 설치가 거부되고 명확한 에러 메시지가 반환된다. legacy 앱은 경고 로그만 남기고 설치가 계속된다. |
+| 오류 | v2 앱에서 알 수 없는 권한, 800자 초과 context, 잘못된/중복 도구 이름, host_permissions 누락 시 설치가 거부되고 명확한 에러 메시지가 반환된다. legacy 앱은 경고 로그만 남기고 설치가 계속된다. 알 수 없는 필드는 양쪽 모두 경고만 남긴다. |
 | 좁은 폭 | 해당 없음 (매니페스트 스키마 및 로더 계약). |
 
 Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
-| UC-APP-MANIFEST-V2 | `packages/shell/src-tauri/src/app.rs` tests: `slides_package_public_app_json_reads_as_legacy_profile`, `manifest_v2_full_fields_roundtrip`, `keep_alive_false_preserved_in_manifest`, `validate_manifest_unknown_permissions_rule`, `validate_manifest_context_length_limit_rule`, `validate_manifest_tool_naming_and_duplicates_rule`, `validate_manifest_browser_requires_host_permissions_rule` (설치 거부는 테스트가 아니라 `app_install`/`app_install_store`가 `IssueLevel::Error`에서 거부하는 코드 경로로 처리); `packages/shell/src/lib/__tests__/app-loader.test.ts`: `app-loader > loadInstalledApps` (`"keeps installed apps alive by default so state survives app switches"`, `"respects an explicit keepAlive:false opt-out in the manifest"`, `"assigns profile 'legacy' when manifest_version is absent"`, `"assigns profile 'v2' and maps v2 fields when manifest_version is 2"`); `packages/shell/src/lib/__tests__/app-permissions.test.ts`: `app-permissions` (`"matches the Rust KNOWN_PERMISSIONS list in app.rs exactly"`, `"identifies known and unknown permissions correctly"`) | `e2e/467-slide-presenter.spec.ts`, `e2e/slides-sidecar.spec.ts` 무회귀 통과 |
+| UC-APP-MANIFEST-V2 | `packages/shell/src-tauri/src/app.rs` tests: `slides_package_public_app_json_reads_as_legacy_profile`, `manifest_v2_full_fields_roundtrip`, `keep_alive_false_preserved_in_manifest`, `validate_manifest_unknown_permissions_rule`, `validate_manifest_context_length_limit_rule`, `validate_manifest_tool_naming_and_duplicates_rule`, `validate_manifest_browser_requires_host_permissions_rule`, `validate_manifest_unknown_keys_warns` (설치 거부는 테스트가 아니라 `app_install`/`app_install_store`가 `IssueLevel::Error`에서 거부하는 코드 경로로 처리); `packages/shell/src/lib/__tests__/app-loader.test.ts`: `app-loader > loadInstalledApps` (`"keeps installed apps alive by default so state survives app switches"`, `"respects an explicit keepAlive:false opt-out in the manifest"`, `"assigns profile 'legacy' when manifest_version is absent"`, `"assigns profile 'v2' and maps v2 fields when manifest_version is 2"`); `packages/shell/src/lib/__tests__/app-permissions.test.ts`: `app-permissions` (`"matches the Rust KNOWN_PERMISSIONS list in app.rs exactly"`, `"identifies known and unknown permissions correctly"`) | `e2e/467-slide-presenter.spec.ts`, `e2e/slides-sidecar.spec.ts` 무회귀 통과 |
 
 > e2e `slides-sidecar.spec.ts:251` 은 이 PR 이전부터 실패하는 항목(스펙의 `convertFileSrc` 목이 `127.0.0.1`→`localhost` 치환을 하지만 Playwright 기본 호스트가 이미 `localhost` 라서 iframe 과 호스트가 같은 출처가 됨; 이 PR 과 무관).
 
