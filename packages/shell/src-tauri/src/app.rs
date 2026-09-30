@@ -709,7 +709,7 @@ pub struct AppManifest {
     )]
     pub html_entry: Option<String>,
     /// Unrecognized top-level manifest keys collected for warning issues
-    #[serde(flatten)]
+    #[serde(flatten, skip_serializing)]
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
@@ -746,6 +746,10 @@ pub struct ManifestIssue {
     pub message: String,
 }
 
+fn is_shell_reserved_key(key: &str) -> bool {
+    matches!(key, "htmlEntry" | "iconSvg" | "html_entry" | "icon_svg")
+}
+
 /// Validate manifest according to v2 specification and legacy profile compatibility rules.
 ///
 /// If `manifest_version >= 2`, rule violations are reported as `IssueLevel::Error` (installation rejected).
@@ -762,12 +766,17 @@ pub fn validate_manifest(manifest: &AppManifest) -> Vec<ManifestIssue> {
         }
     };
 
-    // 1. 알 수 없는 최상위 매니페스트 필드 (v2·legacy 모두 Warning, 설치는 그대로 통과)
+    // 1. 알 수 없는 최상위 매니페스트 필드 및 셸 예약 필드 (v2·legacy 모두 Warning, 설치는 그대로 통과)
     for key in manifest.extra.keys() {
+        let message = if is_shell_reserved_key(key) {
+            format!("'{}' 필드는 셸이 채우는 값이라 무시됨", key)
+        } else {
+            format!("알 수 없는 매니페스트 필드입니다: {}", key)
+        };
         issues.push(ManifestIssue {
             level: IssueLevel::Warning,
             field: key.clone(),
-            message: format!("알 수 없는 매니페스트 필드입니다: {}", key),
+            message,
         });
     }
 
@@ -940,6 +949,12 @@ fn list_installed_from_root(
             rewrite_installed_app_asset_urls(&entry.path());
             manifest.html_entry = html_path.to_string_lossy().into_owned().into();
         }
+
+        // Strip shell-reserved keys from extra so they cannot linger even in in-memory structures
+        manifest.extra.remove("htmlEntry");
+        manifest.extra.remove("iconSvg");
+        manifest.extra.remove("html_entry");
+        manifest.extra.remove("icon_svg");
 
         apps.push(manifest);
     }
@@ -1500,13 +1515,14 @@ mod tests {
         assert_eq!(remanifest.tools.unwrap()[0].exported, true);
         assert!(remanifest.extra.is_empty());
 
-        // Extra fields roundtrip
+        // Extra fields collected into manifest.extra during deserialization, but omitted from serialization (IPC)
         let extra_json = r#"{"id":"test","name":"Test","custom_key":"custom_val"}"#;
         let manifest_extra: AppManifest = serde_json::from_str(extra_json).unwrap();
         assert_eq!(manifest_extra.extra.get("custom_key"), Some(&serde_json::Value::String("custom_val".to_string())));
         let serialized_extra = serde_json::to_string(&manifest_extra).unwrap();
+        assert!(!serialized_extra.contains("custom_key"), "unknown extra keys must not be serialized");
         let remanifest_extra: AppManifest = serde_json::from_str(&serialized_extra).unwrap();
-        assert_eq!(remanifest_extra.extra.get("custom_key"), Some(&serde_json::Value::String("custom_val".to_string())));
+        assert!(remanifest_extra.extra.is_empty(), "deserialized result from serialized JSON must have empty extra");
     }
 
     #[test]
@@ -1690,6 +1706,160 @@ mod tests {
         assert_eq!(legacy_errors.len(), 0);
         assert_eq!(legacy_warnings[0].field, "unknown_extra_field");
         assert!(legacy_warnings[0].message.contains("unknown_extra_field"));
+    }
+
+    #[test]
+    fn shell_filled_fields_cannot_be_overridden_by_app_json() {
+        let evil_json = r#"{
+            "manifest_version": 2,
+            "id": "land.naia.evil",
+            "name": "Evil App",
+            "htmlEntry": "C:/evil/index.html",
+            "iconSvg": "<svg onload=alert(1)>"
+        }"#;
+
+        // Deserializing app.json: htmlEntry and iconSvg are skip_deserializing, so placed into extra
+        let mut manifest: AppManifest = serde_json::from_str(evil_json).expect("must deserialize evil manifest");
+        assert_eq!(
+            manifest.extra.get("htmlEntry"),
+            Some(&serde_json::Value::String("C:/evil/index.html".to_string()))
+        );
+        assert_eq!(
+            manifest.extra.get("iconSvg"),
+            Some(&serde_json::Value::String("<svg onload=alert(1)>".to_string()))
+        );
+
+        // validate_manifest reports warnings for shell-reserved keys but does not reject install (0 errors)
+        let issues = validate_manifest(&manifest);
+        let warnings: Vec<_> = issues.iter().filter(|i| i.level == IssueLevel::Warning).collect();
+        let errors: Vec<_> = issues.iter().filter(|i| i.level == IssueLevel::Error).collect();
+        assert_eq!(errors.len(), 0, "shell-reserved keys must not reject install");
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings.iter().any(|w| w.field == "htmlEntry" && w.message.contains("셸이 채우는 값이라 무시됨")));
+        assert!(warnings.iter().any(|w| w.field == "iconSvg" && w.message.contains("셸이 채우는 값이라 무시됨")));
+
+        // Shell populates trusted values
+        manifest.html_entry = Some("C:/apps/a/index.html".to_string());
+        manifest.icon_svg = Some("<svg/>".to_string());
+
+        let serialized = serde_json::to_string(&manifest).expect("must serialize");
+
+        // Raw JSON string must contain each key exactly ONCE (no duplication from extra)
+        assert_eq!(
+            serialized.matches("\"htmlEntry\"").count(),
+            1,
+            "htmlEntry must appear exactly once in serialized json, got: {}",
+            serialized
+        );
+        assert_eq!(
+            serialized.matches("\"iconSvg\"").count(),
+            1,
+            "iconSvg must appear exactly once in serialized json, got: {}",
+            serialized
+        );
+
+        // Reparsing JSON confirms shell values are preserved, evil values are absent
+        let parsed: serde_json::Value = serde_json::from_str(&serialized).expect("must parse json");
+        assert_eq!(parsed["htmlEntry"], "C:/apps/a/index.html");
+        assert_eq!(parsed["iconSvg"], "<svg/>");
+
+        // When shell values are None, extra keys must NOT resurrect into empty slots
+        manifest.html_entry = None;
+        manifest.icon_svg = None;
+        let serialized_none = serde_json::to_string(&manifest).expect("must serialize none");
+        assert!(!serialized_none.contains("\"htmlEntry\""), "empty htmlEntry must not be filled by extra");
+        assert!(!serialized_none.contains("\"iconSvg\""), "empty iconSvg must not be filled by extra");
+    }
+
+    #[test]
+    fn list_installed_from_root_shell_filled_fields_cannot_be_overridden_by_app_json() {
+        let home = tempfile::tempdir().unwrap();
+        let apps_dir = apps_root(home.path());
+        let app_dir = apps_dir.join("land.naia.evil");
+        std::fs::create_dir_all(&app_dir).unwrap();
+
+        let evil_json = r#"{
+            "manifest_version": 2,
+            "id": "land.naia.evil",
+            "name": "Evil App",
+            "iconUrl": "icon.svg",
+            "htmlEntry": "C:/evil/index.html",
+            "iconSvg": "<svg onload=alert(1)>"
+        }"#;
+        std::fs::write(app_dir.join("app.json"), evil_json).unwrap();
+        std::fs::write(app_dir.join("index.html"), "<!doctype html><html><body>trusted</body></html>").unwrap();
+        std::fs::write(app_dir.join("icon.svg"), "<svg><path d=\"trusted\"/></svg>").unwrap();
+
+        let installed = list_installed_from_root(home.path(), apps_dir).expect("must list installed");
+        assert_eq!(installed.len(), 1);
+        let manifest = &installed[0];
+        assert_eq!(manifest.id, "land.naia.evil");
+
+        // In-memory manifest has trusted shell-populated paths/contents
+        assert!(manifest.html_entry.as_ref().unwrap().ends_with("index.html"));
+        assert_ne!(manifest.html_entry.as_deref(), Some("C:/evil/index.html"));
+        assert_eq!(manifest.icon_svg.as_deref(), Some("<svg><path d=\"trusted\"/></svg>"));
+
+        // IPC serialization roundtrip: keys appear once, trusted values win, evil values absent
+        let serialized = serde_json::to_string(manifest).expect("must serialize");
+        assert_eq!(
+            serialized.matches("\"htmlEntry\"").count(),
+            1,
+            "htmlEntry must appear exactly once in serialized json"
+        );
+        assert_eq!(
+            serialized.matches("\"iconSvg\"").count(),
+            1,
+            "iconSvg must appear exactly once in serialized json"
+        );
+        assert!(!serialized.contains("C:/evil/index.html"));
+        assert!(!serialized.contains("onload=alert"));
+
+        let parsed: serde_json::Value = serde_json::from_str(&serialized).expect("must parse json");
+        assert_eq!(parsed["htmlEntry"], manifest.html_entry.as_ref().unwrap().as_str());
+        assert_eq!(parsed["iconSvg"], "<svg><path d=\"trusted\"/></svg>");
+    }
+
+    #[test]
+    fn validate_manifest_warns_on_shell_reserved_keys() {
+        // v2 with shell-reserved keys -> Warning only, 0 errors
+        let v2_json = r#"{
+            "manifest_version": 2,
+            "id": "test",
+            "name": "Test",
+            "htmlEntry": "evil.html",
+            "iconSvg": "<svg/>",
+            "html_entry": "evil2.html",
+            "icon_svg": "<svg2/>"
+        }"#;
+        let v2_manifest: AppManifest = serde_json::from_str(v2_json).unwrap();
+        let v2_issues = validate_manifest(&v2_manifest);
+        let v2_warnings: Vec<_> = v2_issues.iter().filter(|i| i.level == IssueLevel::Warning).collect();
+        let v2_errors: Vec<_> = v2_issues.iter().filter(|i| i.level == IssueLevel::Error).collect();
+        assert_eq!(v2_errors.len(), 0, "shell reserved keys must produce 0 errors");
+        assert_eq!(v2_warnings.len(), 4);
+        for field in &["htmlEntry", "iconSvg", "html_entry", "icon_svg"] {
+            assert!(
+                v2_warnings.iter().any(|w| w.field == *field && w.message.contains("셸이 채우는 값이라 무시됨")),
+                "expected warning mentioning '셸이 채우는 값이라 무시됨' for field {}",
+                field
+            );
+        }
+
+        // Legacy with shell-reserved keys -> Warning only, 0 errors
+        let legacy_json = r#"{
+            "id": "test",
+            "name": "Test",
+            "htmlEntry": "evil.html"
+        }"#;
+        let legacy_manifest: AppManifest = serde_json::from_str(legacy_json).unwrap();
+        let legacy_issues = validate_manifest(&legacy_manifest);
+        let legacy_warnings: Vec<_> = legacy_issues.iter().filter(|i| i.level == IssueLevel::Warning).collect();
+        let legacy_errors: Vec<_> = legacy_issues.iter().filter(|i| i.level == IssueLevel::Error).collect();
+        assert_eq!(legacy_errors.len(), 0);
+        assert_eq!(legacy_warnings.len(), 1);
+        assert_eq!(legacy_warnings[0].field, "htmlEntry");
+        assert!(legacy_warnings[0].message.contains("셸이 채우는 값이라 무시됨"));
     }
 }
 
