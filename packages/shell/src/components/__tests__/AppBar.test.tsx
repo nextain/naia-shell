@@ -1,17 +1,23 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetDistributionChannelForTests } from "../../lib/distribution";
 
-const { mockNavigate, mockSetActiveApp, mockOpenUrl } = vi.hoisted(() => ({
-	mockNavigate: vi.fn(),
-	mockSetActiveApp: vi.fn(),
-	mockOpenUrl: vi.fn().mockResolvedValue(undefined),
-}));
+const { mockNavigate, mockSetActiveApp, mockOpenUrl, channel } = vi.hoisted(
+	() => ({
+		channel: { value: "standard" },
+		mockNavigate: vi.fn(),
+		mockSetActiveApp: vi.fn(),
+		mockOpenUrl: vi.fn().mockResolvedValue(undefined),
+	}),
+);
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn().mockResolvedValue(undefined),
+	invoke: vi.fn(async (cmd: string) =>
+		cmd === "get_distribution_channel" ? channel.value : undefined,
+	),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -159,22 +165,41 @@ describe("AppBar — add dialog", () => {
 		expect(mockOpenUrl).not.toHaveBeenCalled();
 	});
 
-	it("opens the third app-store item in the system browser", () => {
+	it("opens the third app-store item in the system browser", async () => {
+		resetDistributionChannelForTests();
 		render(<AppBar />);
 		fireEvent.click(screen.getByTitle("appbar.addItem"));
-		fireEvent.click(screen.getByText("appbar.appStore").closest("button")!);
+		fireEvent.click(
+			(await screen.findByText("appbar.appStore")).closest("button")!,
+		);
 
 		expect(mockOpenUrl).toHaveBeenCalledWith("https://dev.naia.land/ko/apps");
 		expect(mockSetActiveApp).not.toHaveBeenCalledWith("browser");
 		expect(mockNavigate).not.toHaveBeenCalled();
 	});
 
-	it("opens add-url dialog when + clicked", () => {
+	it("hides the web app store item on the Steam build (#727)", async () => {
+		channel.value = "steam";
+		resetDistributionChannelForTests();
+		try {
+			render(<AppBar />);
+			fireEvent.click(screen.getByTitle("appbar.addItem"));
+			await new Promise((r) => setTimeout(r, 20));
+			expect(screen.queryByText("appbar.appStore")).toBeNull();
+			expect(screen.getByText("appbar.addShortcut")).toBeDefined();
+		} finally {
+			channel.value = "standard";
+			resetDistributionChannelForTests();
+		}
+	});
+
+	it("opens add-url dialog when + clicked", async () => {
+		resetDistributionChannelForTests();
 		render(<AppBar />);
 		fireEvent.click(screen.getByTitle("appbar.addItem"));
 		expect(screen.getByText("appbar.addShortcut")).toBeDefined();
 		expect(screen.getByText("appbar.addApp")).toBeDefined();
-		expect(screen.getByText("appbar.appStore")).toBeDefined();
+		expect(await screen.findByText("appbar.appStore")).toBeDefined();
 		// 바로가기·앱·파일·앱스토어 넷. 앱스토어 항목이 #471 에서 늘었다.
 		expect(
 			document.querySelectorAll(".app-bar-url-dialog__section"),

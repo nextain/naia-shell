@@ -9,7 +9,8 @@ import { useEffect, useState } from "react";
  * an external payment page from inside the app, so payment links are hidden
  * there.
  */
-export type DistributionChannel = "steam" | "standard";
+/** "unknown" = the native lookup failed or gave an unexpected answer; treated like Steam (fail closed). */
+export type DistributionChannel = "steam" | "standard" | "unknown";
 
 let cachedChannel: DistributionChannel | null = null;
 let inflight: Promise<DistributionChannel> | null = null;
@@ -21,9 +22,9 @@ export function loadDistributionChannel(): Promise<DistributionChannel> {
 			.then(() => invoke<string>("get_distribution_channel"))
 			.then(
 				(value): DistributionChannel =>
-					value === "steam" ? "steam" : "standard",
+					value === "steam" || value === "standard" ? value : "unknown",
 			)
-			.catch((): DistributionChannel => "standard")
+			.catch((): DistributionChannel => "unknown")
 			.then((channel) => {
 				cachedChannel = channel;
 				return channel;

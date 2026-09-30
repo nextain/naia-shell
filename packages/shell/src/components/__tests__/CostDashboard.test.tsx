@@ -3,6 +3,12 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../lib/types";
 
+vi.mock("@tauri-apps/api/core", () => ({
+	invoke: vi.fn(async (cmd: string) =>
+		cmd === "get_distribution_channel" ? "standard" : undefined,
+	),
+}));
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
 	openUrl: vi.fn().mockResolvedValue(undefined),
 }));
@@ -142,7 +148,9 @@ describe("CostDashboard", () => {
 		await waitFor(() => {
 			expect(screen.getByTestId("lab-balance-expired")).toBeDefined();
 		});
-		expect(screen.queryByText(/잔액 조회 실패|Failed to load balance/)).toBeNull();
+		expect(
+			screen.queryByText(/잔액 조회 실패|Failed to load balance/),
+		).toBeNull();
 	});
 
 	it("flips to a re-login state when a chat completion reports the key as unauthorized (#402)", async () => {

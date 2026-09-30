@@ -32,9 +32,15 @@ describe("distribution channel (#727)", () => {
 		expect(paymentLinksHiddenNow()).toBe(false);
 	});
 
-	it("falls back to standard when the native call fails (browser dev)", async () => {
-		invokeMock.mockRejectedValue(new Error("no tauri"));
-		await expect(loadDistributionChannel()).resolves.toBe("standard");
-		expect(paymentLinksHiddenNow()).toBe(false);
+	it("fails closed when the native call fails: payment UI stays hidden (#727)", async () => {
+		invokeMock.mockRejectedValue(new Error("boom"));
+		await expect(loadDistributionChannel()).resolves.toBe("unknown");
+		expect(paymentLinksHiddenNow()).toBe(true);
+	});
+
+	it("fails closed on an unexpected native answer", async () => {
+		invokeMock.mockResolvedValue(undefined);
+		await expect(loadDistributionChannel()).resolves.toBe("unknown");
+		expect(paymentLinksHiddenNow()).toBe(true);
 	});
 });
