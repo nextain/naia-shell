@@ -800,4 +800,26 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 			);
 		});
 	});
+
+	it("switches to standard layout when opening a file from 3-pane quad layout (#732)", async () => {
+		respondWith(snapshot);
+		await patchUiPreferences({
+			[UI_PREFERENCE_KEYS.workspaceLayout]: "quad",
+		});
+		await renderHerdr();
+
+		// Initially in quad layout
+		const workspace = screen.getByTestId("herdr-workspace");
+		expect(workspace).toHaveAttribute("data-layout", "quad");
+		expect(screen.getByTestId("workspace-quad")).toBeInTheDocument();
+
+		// Opening a file from tree should switch to standard layout
+		const treeBtn = await screen.findByText("Open tree file");
+		fireEvent.click(treeBtn);
+
+		await waitFor(() => {
+			expect(workspace).toHaveAttribute("data-layout", "standard");
+		});
+	});
 });
+

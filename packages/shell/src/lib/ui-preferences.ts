@@ -17,6 +17,7 @@ export const UI_PREFERENCE_KEYS = {
 	updatePromptSnooze: "updatePromptSnooze",
 	workspaceLayout: "workspaceLayout",
 	workspaceSplitRatios: "workspaceSplitRatios",
+	opencodeCommand: "opencodeCommand",
 } as const;
 
 export type UiPreferenceKey =

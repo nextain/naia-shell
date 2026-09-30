@@ -199,4 +199,43 @@ describe("ui preferences persistence", () => {
 			ADK_ONE,
 		);
 	});
+
+	it("persists and reads workspaceLayout, workspaceSplitRatios, and opencodeCommand (#732)", async () => {
+		expect(UI_PREFERENCE_KEYS.workspaceLayout).toBe("workspaceLayout");
+		expect(UI_PREFERENCE_KEYS.workspaceSplitRatios).toBe("workspaceSplitRatios");
+		expect(UI_PREFERENCE_KEYS.opencodeCommand).toBe("opencodeCommand");
+
+		await hydrateUiPreferences(
+			{
+				uiPreferences: {
+					[UI_PREFERENCE_KEYS.workspaceLayout]: "quad",
+					[UI_PREFERENCE_KEYS.workspaceSplitRatios]: [0.4, 0.3, 0.3],
+					[UI_PREFERENCE_KEYS.opencodeCommand]: "opencode --model sonnet",
+				},
+			},
+			{ adkPath: ADK_ONE, canPersist: true },
+		);
+
+		const snapshot = getUiPreferencesSnapshot();
+		expect(snapshot[UI_PREFERENCE_KEYS.workspaceLayout]).toBe("quad");
+		expect(snapshot[UI_PREFERENCE_KEYS.workspaceSplitRatios]).toEqual([
+			0.4, 0.3, 0.3,
+		]);
+		expect(snapshot[UI_PREFERENCE_KEYS.opencodeCommand]).toBe(
+			"opencode --model sonnet",
+		);
+
+		// Patching updates snapshot and render cache
+		await patchUiPreferences({
+			[UI_PREFERENCE_KEYS.workspaceLayout]: "standard",
+			[UI_PREFERENCE_KEYS.workspaceSplitRatios]: [0.34, 0.33, 0.33],
+		});
+
+		const updated = getUiPreferencesSnapshot();
+		expect(updated[UI_PREFERENCE_KEYS.workspaceLayout]).toBe("standard");
+		expect(updated[UI_PREFERENCE_KEYS.workspaceSplitRatios]).toEqual([
+			0.34, 0.33, 0.33,
+		]);
+	});
 });
+

@@ -4,6 +4,7 @@ import {
 	Suspense,
 	lazy,
 	useCallback,
+	useEffect,
 	useRef,
 	useState,
 } from "react";
@@ -32,8 +33,33 @@ export interface WorkspaceQuadViewProps {
 	workspaceRoot?: string;
 }
 
-const DEFAULT_RATIOS = [0.34, 0.33, 0.33];
-const MIN_RATIO = 0.15;
+export const DEFAULT_RATIOS = [0.34, 0.33, 0.33];
+export const MIN_RATIO = 0.15;
+
+export function validateRatios(val: unknown): number[] {
+	if (!Array.isArray(val) || val.length !== 3) {
+		return [...DEFAULT_RATIOS];
+	}
+	const [r0, r1, r2] = val;
+	if (
+		typeof r0 !== "number" ||
+		!Number.isFinite(r0) ||
+		typeof r1 !== "number" ||
+		!Number.isFinite(r1) ||
+		typeof r2 !== "number" ||
+		!Number.isFinite(r2)
+	) {
+		return [...DEFAULT_RATIOS];
+	}
+	if (r0 < MIN_RATIO || r1 < MIN_RATIO || r2 < MIN_RATIO) {
+		return [...DEFAULT_RATIOS];
+	}
+	const sum = r0 + r1 + r2;
+	if (Math.abs(sum - 1.0) > 0.05) {
+		return [...DEFAULT_RATIOS];
+	}
+	return [r0, r1, r2];
+}
 
 export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 	const savedRatios = useUiPreference<number[]>(
@@ -41,12 +67,11 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 		DEFAULT_RATIOS,
 	);
 
-	const initialRatios =
-		Array.isArray(savedRatios) && savedRatios.length === 3
-			? savedRatios
-			: DEFAULT_RATIOS;
-
-	const [ratios, setRatios] = useState<number[]>(initialRatios);
+	const [ratios, setRatios] = useState<number[]>(() =>
+		validateRatios(savedRatios),
+	);
+	const latestRatiosRef = useRef<number[]>(ratios);
+	latestRatiosRef.current = ratios;
 	const [isResizing, setIsResizing] = useState(false);
 
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -56,6 +81,23 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 		startRatios: number[];
 		containerWidth: number;
 	} | null>(null);
+
+	useEffect(() => {
+		if (!dragRef.current) {
+			const valid = validateRatios(savedRatios);
+			setRatios((current) => {
+				if (
+					Math.abs(current[0] - valid[0]) < 0.001 &&
+					Math.abs(current[1] - valid[1]) < 0.001 &&
+					Math.abs(current[2] - valid[2]) < 0.001
+				) {
+					return current;
+				}
+				latestRatiosRef.current = valid;
+				return valid;
+			});
+		}
+	}, [savedRatios]);
 
 	const handlePointerDown = useCallback(
 		(handleIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
@@ -92,7 +134,6 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 			const next = [...drag.startRatios];
 
 			if (drag.handleIndex === 0) {
-				// Dragging between Pane 0 (Terminal) and Pane 1 (Docs)
 				let r0 = drag.startRatios[0] + deltaRatio;
 				let r1 = drag.startRatios[1] - deltaRatio;
 				const sum = drag.startRatios[0] + drag.startRatios[1];
@@ -103,7 +144,6 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				next[0] = Math.round(r0 * 1000) / 1000;
 				next[1] = Math.round(r1 * 1000) / 1000;
 			} else if (drag.handleIndex === 1) {
-				// Dragging between Pane 1 (Docs) and Pane 2 (Dashboard)
 				let r1 = drag.startRatios[1] + deltaRatio;
 				let r2 = drag.startRatios[2] - deltaRatio;
 				const sum = drag.startRatios[1] + drag.startRatios[2];
@@ -115,12 +155,13 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				next[2] = Math.round(r2 * 1000) / 1000;
 			}
 
+			latestRatiosRef.current = next;
 			setRatios(next);
 		},
 		[],
 	);
 
-	const handlePointerUp = useCallback(
+	const endDrag = useCallback(
 		(event: ReactPointerEvent<HTMLDivElement>) => {
 			if (!dragRef.current) return;
 			dragRef.current = null;
@@ -135,11 +176,12 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				} catch {}
 			}
 
+			const toSave = latestRatiosRef.current;
 			void patchUiPreferences({
-				[UI_PREFERENCE_KEYS.workspaceSplitRatios]: ratios,
+				[UI_PREFERENCE_KEYS.workspaceSplitRatios]: toSave,
 			});
 		},
-		[ratios],
+		[],
 	);
 
 	const {
@@ -158,7 +200,6 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 			className={`workspace-quad${isResizing ? " workspace-quad--resizing" : ""}`}
 			data-testid="workspace-quad"
 		>
-			{/* Pane 0: Terminal */}
 			<div
 				className="workspace-quad__pane workspace-quad__pane--terminal"
 				data-testid="quad-pane-terminal"
@@ -272,7 +313,6 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				</div>
 			</div>
 
-			{/* Handle 0: Between Terminal and Docs */}
 			<div
 				role="separator"
 				aria-orientation="vertical"
@@ -280,12 +320,12 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				data-testid="quad-handle-0"
 				onPointerDown={(e) => handlePointerDown(0, e)}
 				onPointerMove={handlePointerMove}
-				onPointerUp={handlePointerUp}
+				onPointerUp={endDrag}
+				onPointerCancel={endDrag}
 				tabIndex={0}
 				title="칸 너비 조절"
 			/>
 
-			{/* Pane 1: Documents */}
 			<div
 				className="workspace-quad__pane-wrapper"
 				style={{ flex: `${ratios[1]} 1 0%`, minWidth: "140px" }}
@@ -297,7 +337,6 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				/>
 			</div>
 
-			{/* Handle 1: Between Docs and Dashboard */}
 			<div
 				role="separator"
 				aria-orientation="vertical"
@@ -305,12 +344,12 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				data-testid="quad-handle-1"
 				onPointerDown={(e) => handlePointerDown(1, e)}
 				onPointerMove={handlePointerMove}
-				onPointerUp={handlePointerUp}
+				onPointerUp={endDrag}
+				onPointerCancel={endDrag}
 				tabIndex={0}
 				title="칸 너비 조절"
 			/>
 
-			{/* Pane 2: Dashboard */}
 			<div
 				className="workspace-quad__pane-wrapper"
 				style={{ flex: `${ratios[2]} 1 0%`, minWidth: "140px" }}

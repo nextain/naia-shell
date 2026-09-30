@@ -112,11 +112,15 @@ export function QuadIframePane({
 							🔌
 						</span>
 						<h4 className="workspace-quad__offline-title">
-							대시보드가 꺼져 있습니다
+							{paneId === "docs"
+								? "문서 서버가 꺼져 있습니다"
+								: "대시보드가 꺼져 있습니다"}
 						</h4>
 						<p className="workspace-quad__offline-url">{url}</p>
 						<p className="workspace-quad__offline-desc">
-							3142 포트에서 ADK 서버를 기동한 후 다시 시도해 주세요.
+							{paneId === "docs"
+								? "3142 포트에서 문서 서버를 기동한 후 다시 시도해 주세요."
+								: "3142 포트에서 ADK 서버를 기동한 후 다시 시도해 주세요."}
 						</p>
 						<button
 							type="button"
@@ -135,6 +139,7 @@ export function QuadIframePane({
 							title={title}
 							className="workspace-quad__iframe"
 							data-testid={`quad-${paneId}-iframe`}
+							sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
 							onError={() => setOnline(false)}
 						/>
 					</div>
