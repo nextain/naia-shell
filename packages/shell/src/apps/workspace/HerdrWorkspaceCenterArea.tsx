@@ -260,8 +260,8 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 							agentStatus: focused?.agent_status ?? null,
 							cwd: focused?.foreground_cwd ?? focused?.cwd ?? null,
 							terminalTail:
-								typeof activeTerminalRef.current?.getBufferText === "function"
-									? activeTerminalRef.current.getBufferText(20) || null
+								typeof bridgeTerminalRef.current?.getBufferText === "function"
+									? bridgeTerminalRef.current.getBufferText(20) || null
 									: null,
 						}
 					: null,
@@ -269,10 +269,11 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 		});
 	}, [
 		activeApp,
-		activeTerminalRef,
+		bridgeTerminalRef,
 		documents.editorRef,
 		documents.openDocs,
 		documents.openFilePath,
+		layout,
 		naia,
 		runtime.snapshot,
 		runtime.surface,

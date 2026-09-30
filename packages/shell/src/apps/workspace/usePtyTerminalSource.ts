@@ -94,6 +94,7 @@ export function usePtyTerminalSource(
 			// 절대 경로가 확보되기 전에는 pty_create를 호출하지 않는다.
 			if (!dir || !isAbsolutePath(dir)) {
 				if (mountedRef.current && generation === launchGenerationRef.current) {
+					setLaunchError("Absolute workspace directory required");
 					setLaunching(false);
 				}
 				return;
@@ -180,14 +181,15 @@ export function usePtyTerminalSource(
 			setWorkingDir(options.workspaceRoot.trim());
 			if (
 				prevRoot !== undefined &&
-				prevRoot !== options.workspaceRoot &&
-				currentPtyIdRef.current
+				prevRoot !== options.workspaceRoot
 			) {
 				const priorId = currentPtyIdRef.current;
 				currentPtyIdRef.current = null;
 				setPty(null);
 				setTerminalReady(false);
-				killPty(priorId).catch(() => {});
+				if (priorId) {
+					killPty(priorId).catch(() => {});
+				}
 				void launch();
 				return;
 			}
@@ -196,7 +198,13 @@ export function usePtyTerminalSource(
 		if (!initialLaunchStartedRef.current && isEnabled) {
 			initialLaunchStartedRef.current = true;
 			void launch();
-		} else if (isEnabled && !currentPtyIdRef.current && !launching && !launchError) {
+		} else if (
+			isEnabled &&
+			!currentPtyIdRef.current &&
+			!launching &&
+			!launchError &&
+			isAbsolutePath(options.workspaceRoot)
+		) {
 			void launch();
 		}
 	}, [isEnabled, launch, launchError, launching, options.workspaceRoot]);

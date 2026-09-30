@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { createRef, forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -202,9 +202,11 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			fireEvent.pointerDown(handle0, { clientX: 340, pointerId: 1 });
 			expect(document.body.classList.contains("resizing-col")).toBe(true);
 
-			fireEvent.pointerMove(handle0, { clientX: 440, pointerId: 1 });
-			// Cancel should remove resizing class and persist latest ratios
-			fireEvent.pointerCancel(handle0, { pointerId: 1 });
+			// Send pointerMove and pointerCancel consecutively in a single act before render
+			act(() => {
+				fireEvent.pointerMove(handle0, { clientX: 440, pointerId: 1 });
+				fireEvent.pointerCancel(handle0, { pointerId: 1 });
+			});
 
 			expect(document.body.classList.contains("resizing-col")).toBe(false);
 
@@ -309,6 +311,28 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			const isUp = await probeServerHealth("http://localhost:3142", 500);
 			expect(isUp).toBe(false);
 		});
+
+
+		it("marks pane as offline when iframe loads empty document", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(
+				new Response(null, { status: 200 }),
+			);
+
+			render(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			const iframe = await screen.findByTestId("quad-docs-iframe");
+			fireEvent.load(iframe);
+
+			expect(
+				await screen.findByTestId("quad-docs-offline"),
+			).toBeInTheDocument();
+		});
 	});
 
 	describe("usePtyTerminalSource platform shell and lifecycle", () => {
@@ -345,22 +369,39 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			expect(isAbsolutePath(undefined)).toBe(false);
 		});
 
-		it("does not call pty_create when absolute path is not available", async () => {
-			mockInvoke.mockResolvedValue("");
+		it("does not call pty_create when absolute path is not available and does not loop detection", async () => {
+			mockInvoke.mockImplementation(async (cmd) => {
+				if (cmd === "workspace_detect_adk_root") return "";
+				if (cmd === "pty_create") {
+					return { pty_id: "pty-session-test", pid: 1234 };
+				}
+				return "";
+			});
 
-			renderHook(() =>
+			const { result } = renderHook(() =>
 				usePtyTerminalSource({
 					workspaceRoot: "relative/dir",
 					enabled: true,
 				}),
 			);
 
-			await waitFor(() => {
-				const calls = mockInvoke.mock.calls.filter(
-					(c) => c[0] === "pty_create",
-				);
-				expect(calls).toHaveLength(0);
+			// Flush invoke promises and any subsequent microtasks/effects
+			await act(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 50));
 			});
+
+			const ptyCalls = mockInvoke.mock.calls.filter(
+				(c) => c[0] === "pty_create",
+			);
+			expect(ptyCalls).toHaveLength(0);
+
+			const detectCalls = mockInvoke.mock.calls.filter(
+				(c) => c[0] === "workspace_detect_adk_root",
+			);
+			expect(detectCalls.length).toBeLessThanOrEqual(1);
+
+			expect(result.current.launching).toBe(false);
+			expect(result.current.launchError).toBe("Absolute workspace directory required");
 		});
 
 		it("spawns PTY with command and absolute dir, kills on unmount", async () => {

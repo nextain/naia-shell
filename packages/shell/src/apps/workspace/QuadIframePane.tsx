@@ -48,7 +48,9 @@ export function QuadIframePane({
 	useEffect(() => {
 		let cancelled = false;
 		probeServerHealth(checkUrl).then((isUp) => {
-			if (!cancelled) setOnline(isUp);
+			if (!cancelled) {
+				setOnline((curr) => (curr === false ? false : isUp));
+			}
 		});
 		return () => {
 			cancelled = true;
@@ -66,6 +68,27 @@ export function QuadIframePane({
 			if (typeof window !== "undefined") window.open(url, "_blank");
 		});
 	}, [url]);
+
+	const handleIframeLoad = useCallback(
+		(event: React.SyntheticEvent<HTMLIFrameElement>) => {
+			const iframe = event.currentTarget;
+			try {
+				const doc = iframe.contentDocument || iframe.contentWindow?.document;
+				if (doc) {
+					const isBlank =
+						doc.location?.href === "about:blank" ||
+						!doc.body ||
+						(doc.body.children.length === 0 && !doc.body.textContent?.trim());
+					if (isBlank) {
+						setOnline(false);
+					}
+				}
+			} catch {
+				// Cross-origin 정상 로드 시 보안 예외는 무시
+			}
+		},
+		[],
+	);
 
 	return (
 		<div
@@ -140,6 +163,7 @@ export function QuadIframePane({
 							className="workspace-quad__iframe"
 							data-testid={`quad-${paneId}-iframe`}
 							sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+							onLoad={handleIframeLoad}
 							onError={() => setOnline(false)}
 						/>
 					</div>
