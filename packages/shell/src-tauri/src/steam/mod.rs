@@ -4,6 +4,8 @@
 //! 초기화 실패 시 패닉이나 종료 없이 정상 부팅하고 미실행 상태로 보고한다.
 //! 순수 로직과 Trait(`SteamBackend`)은 타깃 OS에 무관하게 컴파일·단위 시험된다.
 
+pub mod pending;
+pub use pending::*;
 pub mod windows;
 pub use windows::*;
 
@@ -314,53 +316,40 @@ mod tests {
     #[test]
     fn test_ticket_request_race_with_callback_thread() {
         use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::{mpsc, Arc, Barrier, Mutex};
+        use std::sync::Arc;
+        use std::sync::Barrier;
         use std::thread;
         use std::time::Duration;
 
-        let pending_tickets = Arc::new(Mutex::new(std::collections::HashMap::<
-            u32,
-            mpsc::Sender<Result<Vec<u8>, String>>,
-        >::new()));
-
+        let registry = TicketRegistry::<u32>::new();
         let barrier_sdk_called = Arc::new(Barrier::new(2));
         let callback_processed = Arc::new(AtomicBool::new(false));
 
-        let pending_for_cb = pending_tickets.clone();
+        let reg_for_cb = registry.clone();
         let barrier_for_cb = barrier_sdk_called.clone();
         let cb_processed_clone = callback_processed.clone();
 
-        // 콜백 스레드 모사 (run_callbacks() 가 돌며 이벤트를 처리하는 스레드)
+        // 콜백 스레드: SDK 요청 직후, pending 등록 완료 전에 응답 처리를 시도하는 시나리오
         let cb_thread = thread::spawn(move || {
             // SDK 요청이 시작될 때까지 동기화 장벽에서 대기
             barrier_for_cb.wait();
-            // SDK 요청 직후, pending 삽입 전 시점에 lock 획득 시도
-            // pending_tickets가 요청 시작부터 삽입까지 잠겨 있으므로 lock 대기
-            let mut map = pending_for_cb.lock().unwrap();
-            if let Some(tx) = map.remove(&42) {
-                let _ = tx.send(Ok(vec![0xaa, 0xbb, 0xcc]));
-                cb_processed_clone.store(true, Ordering::SeqCst);
-            }
+            // SDK 요청 직후 콜백 도착: pending 잠금을 획득하여 complete_ticket 시도
+            // 생산 TicketRegistry 잠금 하에서 request_and_register가 끝나기 전까지 대기한 뒤
+            // 등록된 티켓을 성공적으로 완료해야 함
+            let handled = reg_for_cb.complete_ticket(&42u32, Ok(vec![0xaa, 0xbb, 0xcc]));
+            cb_processed_clone.store(handled, Ordering::SeqCst);
         });
 
-        // 티켓 요청 스레드 (get_web_api_ticket 로직 모사)
-        let (tx, rx) = mpsc::channel();
-        let ticket_id = 42u32;
-
-        let _auth_ticket = {
-            // 1. SDK 요청 직전 lock 획득
-            let mut map = pending_tickets.lock().unwrap();
-            // 2. SDK 요청 시점 재현 (장벽으로 콜백 스레드 깨움)
+        // 티켓 요청 스레드: 생산 TicketRegistry.request_and_register 실행
+        let (_ticket, rx) = registry.request_and_register(|| {
+            // SDK 요청 시점 재현: 콜백 스레드를 깨움
             barrier_sdk_called.wait();
-            // 콜백 스레드가 lock을 시도하도록 짧은 지연
-            thread::sleep(Duration::from_millis(20));
-            // 3. pending map에 핸들 삽입
-            map.insert(ticket_id, tx);
-            ticket_id
-            // 4. 스코프 종료로 lock 해제
-        };
+            // 콜백 스레드가 complete_ticket 락을 시도하도록 지연
+            thread::sleep(Duration::from_millis(50));
+            42u32
+        });
 
-        // 5. lock 해제 후 응답 대기
+        // 잠금 해제 후 콜백이 전달한 응답 수신 확인
         let res = rx.recv_timeout(Duration::from_secs(2));
         assert!(
             res.is_ok(),
@@ -372,5 +361,6 @@ mod tests {
         assert!(callback_processed.load(Ordering::SeqCst));
 
         cb_thread.join().unwrap();
+        assert_eq!(registry.pending_count(), 0);
     }
 }

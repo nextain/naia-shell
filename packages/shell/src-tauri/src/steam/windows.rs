@@ -57,20 +57,15 @@ pub fn is_allowed_steam_url(url: &str) -> bool {
     }
 }
 
+use super::pending::TicketRegistry;
+
 #[cfg(windows)]
 pub struct WindowsSteamBackend {
     client: steamworks::Client,
     _callback_thread: std::thread::JoinHandle<()>,
     _auth_callback: steamworks::CallbackHandle,
     _ticket_callback: steamworks::CallbackHandle,
-    pending_tickets: Arc<
-        std::sync::Mutex<
-            Vec<(
-                steamworks::AuthTicket,
-                std::sync::mpsc::Sender<Result<Vec<u8>, String>>,
-            )>,
-        >,
-    >,
+    pending_tickets: TicketRegistry<steamworks::AuthTicket>,
 }
 
 #[cfg(windows)]
@@ -95,38 +90,25 @@ impl WindowsSteamBackend {
             },
         );
 
-        let pending_tickets = Arc::new(std::sync::Mutex::new(
-            Vec::<(
-                steamworks::AuthTicket,
-                std::sync::mpsc::Sender<Result<Vec<u8>, String>>,
-            )>::new(),
-        ));
-
+        let pending_tickets = TicketRegistry::<steamworks::AuthTicket>::new();
         let pending_clone = pending_tickets.clone();
         let ticket_callback = client.register_callback(
             move |resp: steamworks::TicketForWebApiResponse| {
-                let mut list = pending_clone.lock().unwrap();
-                let tx_opt = if let Some(idx) = list.iter().position(|(t, _)| *t == resp.ticket_handle) {
-                    Some(list.swap_remove(idx).1)
-                } else {
-                    None
-                };
-                if let Some(tx) = tx_opt {
-                    if resp.result.is_ok() {
-                        let len = resp.ticket_len.max(0) as usize;
-                        let slice = if len <= resp.ticket.len() {
-                            &resp.ticket[..len]
-                        } else {
-                            &resp.ticket[..]
-                        };
-                        let _ = tx.send(Ok(slice.to_vec()));
+                let res = if resp.result.is_ok() {
+                    let len = resp.ticket_len.max(0) as usize;
+                    let slice = if len <= resp.ticket.len() {
+                        &resp.ticket[..len]
                     } else {
-                        let _ = tx.send(Err(format!(
-                            "Steam web API ticket callback failed: {:?}",
-                            resp.result
-                        )));
-                    }
-                }
+                        &resp.ticket[..]
+                    };
+                    Ok(slice.to_vec())
+                } else {
+                    Err(format!(
+                        "Steam web API ticket callback failed: {:?}",
+                        resp.result
+                    ))
+                };
+                pending_clone.complete_ticket(&resp.ticket_handle, res);
             },
         );
 
@@ -158,29 +140,17 @@ impl SteamBackend for WindowsSteamBackend {
     }
 
     fn get_web_api_ticket(&self, identity: &str) -> Result<String, String> {
-        let (tx, rx): (
-            std::sync::mpsc::Sender<Result<Vec<u8>, String>>,
-            std::sync::mpsc::Receiver<Result<Vec<u8>, String>>,
-        ) = std::sync::mpsc::channel();
-
-        let auth_ticket = {
-            let mut list = self.pending_tickets.lock().unwrap();
-            let ticket = self
-                .client
+        let (auth_ticket, rx) = self.pending_tickets.request_and_register(|| {
+            self.client
                 .user()
-                .authentication_session_ticket_for_webapi(identity);
-            list.push((ticket, tx));
-            ticket
-        };
+                .authentication_session_ticket_for_webapi(identity)
+        });
 
         match rx.recv_timeout(std::time::Duration::from_secs(10)) {
             Ok(Ok(bytes)) => Ok(bytes_to_hex(&bytes)),
             Ok(Err(err)) => Err(err),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                let mut list = self.pending_tickets.lock().unwrap();
-                if let Some(idx) = list.iter().position(|(t, _)| *t == auth_ticket) {
-                    list.swap_remove(idx);
-                }
+                self.pending_tickets.cancel_ticket(&auth_ticket);
                 Err("Timed out waiting for Steam Web API ticket callback (10s)".to_string())
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
