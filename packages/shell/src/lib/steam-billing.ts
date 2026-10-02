@@ -418,11 +418,14 @@ export async function listenToSteamAuthorization(
  */
 export function isAllowedSteamUrl(urlStr: string): boolean {
 	try {
-		const parsed = new URL(urlStr);
+		const parsed = new URL(urlStr.trim());
 		if (parsed.protocol !== "https:") return false;
+		if (parsed.username !== "" || parsed.password !== "") return false;
+		if (parsed.port !== "" && parsed.port !== "443") return false;
+		const host = parsed.hostname.toLowerCase();
 		return (
-			parsed.hostname === "store.steampowered.com" ||
-			parsed.hostname === "checkout.steampowered.com"
+			host === "store.steampowered.com" ||
+			host === "checkout.steampowered.com"
 		);
 	} catch {
 		return false;

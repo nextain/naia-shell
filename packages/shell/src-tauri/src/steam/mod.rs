@@ -239,6 +239,34 @@ mod tests {
             "https://store.steampowered.com.attacker.com"
         ));
         assert!(!is_allowed_steam_url("invalid-url"));
+
+        // #729 지적 1 회귀 테스트 케이스
+        assert!(!is_allowed_steam_url(
+            "https://store.steampowered.com:443@evil.example/path"
+        ));
+        assert!(!is_allowed_steam_url(
+            "https://store.steampowered.com.evil.example/"
+        ));
+        assert!(!is_allowed_steam_url(
+            "https://evil.example/?u=https://store.steampowered.com"
+        ));
+        assert!(!is_allowed_steam_url("http://store.steampowered.com/"));
+        assert!(!is_allowed_steam_url(
+            "https://user:pass@store.steampowered.com/"
+        ));
+        assert!(!is_allowed_steam_url(
+            "https://store.steampowered.com:8080/checkout"
+        ));
+        assert!(is_allowed_steam_url("HTTPS://STORE.STEAMPOWERED.COM/"));
+        assert!(is_allowed_steam_url(
+            "https://STORE.STEAMPOWERED.COM/app/5354630"
+        ));
+        assert!(is_allowed_steam_url(
+            "https://CHECKOUT.STEAMPOWERED.COM/checkout/order/12345"
+        ));
+        assert!(is_allowed_steam_url(
+            "https://store.steampowered.com:443/app/5354630"
+        ));
     }
 
     #[test]

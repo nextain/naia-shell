@@ -35,20 +35,26 @@ pub fn bytes_to_hex(bytes: &[u8]) -> String {
 }
 
 pub fn is_allowed_steam_url(url: &str) -> bool {
-    let lower = url.trim().to_lowercase();
-    if !lower.starts_with("https://") {
+    let parsed = match url::Url::parse(url.trim()) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+    if parsed.scheme() != "https" {
         return false;
     }
-    let rest = &lower["https://".len()..];
-    let host = match rest.find('/') {
-        Some(pos) => &rest[..pos],
-        None => rest,
-    };
-    let host = match host.find(':') {
-        Some(pos) => &host[..pos],
-        None => host,
-    };
-    host == "store.steampowered.com" || host == "checkout.steampowered.com"
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return false;
+    }
+    if !parsed.port().map_or(true, |p| p == 443) {
+        return false;
+    }
+    match parsed.host_str() {
+        Some(h) => {
+            h.eq_ignore_ascii_case("store.steampowered.com")
+                || h.eq_ignore_ascii_case("checkout.steampowered.com")
+        }
+        None => false,
+    }
 }
 
 #[cfg(windows)]

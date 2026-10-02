@@ -537,7 +537,7 @@ describe("steam-billing client (#729)", () => {
 		});
 	});
 
-	describe("isAllowedSteamUrl (#729 P2 지적 10)", () => {
+	describe("isAllowedSteamUrl (#729 P2 지적 10, 지적 1)", () => {
 		it("accepts valid Steam store and checkout URLs", () => {
 			expect(
 				isAllowedSteamUrl("https://store.steampowered.com/checkout/order-123"),
@@ -545,13 +545,38 @@ describe("steam-billing client (#729)", () => {
 			expect(
 				isAllowedSteamUrl("https://checkout.steampowered.com/pay/order-456"),
 			).toBe(true);
+			expect(
+				isAllowedSteamUrl("https://store.steampowered.com:443/app/5354630"),
+			).toBe(true);
+			expect(
+				isAllowedSteamUrl("HTTPS://STORE.STEAMPOWERED.COM/"),
+			).toBe(true);
+			expect(
+				isAllowedSteamUrl("https://CHECKOUT.STEAMPOWERED.COM/checkout/order/12345"),
+			).toBe(true);
 		});
 
-		it("rejects non-https, external domains, and malformed strings", () => {
+		it("rejects non-https, external domains, userinfo, non-443 ports, and malformed strings", () => {
 			expect(isAllowedSteamUrl("http://store.steampowered.com/checkout")).toBe(false);
 			expect(isAllowedSteamUrl("https://evil.com/store.steampowered.com")).toBe(false);
 			expect(isAllowedSteamUrl("javascript:alert(1)")).toBe(false);
 			expect(isAllowedSteamUrl("not-a-url")).toBe(false);
+			// #729 지적 1 회귀 테스트
+			expect(
+				isAllowedSteamUrl("https://store.steampowered.com:443@evil.example/path"),
+			).toBe(false);
+			expect(
+				isAllowedSteamUrl("https://store.steampowered.com.evil.example/"),
+			).toBe(false);
+			expect(
+				isAllowedSteamUrl("https://evil.example/?u=https://store.steampowered.com"),
+			).toBe(false);
+			expect(
+				isAllowedSteamUrl("https://user:pass@store.steampowered.com/"),
+			).toBe(false);
+			expect(
+				isAllowedSteamUrl("https://store.steampowered.com:8080/checkout"),
+			).toBe(false);
 		});
 	});
 
