@@ -214,6 +214,11 @@ const CostDashboard = lazy(() =>
 		default: CostDashboard,
 	})),
 );
+const SteamPurchaseModal = lazy(() =>
+	import("./SteamPurchaseModal").then(({ SteamPurchaseModal }) => ({
+		default: SteamPurchaseModal,
+	})),
+);
 const DiagnosticsTab = lazy(() =>
 	import("./DiagnosticsTab").then(({ DiagnosticsTab }) => ({
 		default: DiagnosticsTab,
@@ -420,6 +425,13 @@ export function ChatArea({
 	// "음성 모델 준비 중…" instead of "생각 중…"/"음성 처리 중…" — the wait is the
 	// voice model, not the LLM (user report 2026-08-18).
 	const [voiceModelPreparing, setVoiceModelPreparing] = useState(false);
+	const [steamPurchaseModalOpen, setSteamPurchaseModalOpen] = useState(false);
+	useEffect(() => {
+		const onOpenSteam = () => setSteamPurchaseModalOpen(true);
+		window.addEventListener("open-steam-purchase", onOpenSteam);
+		return () =>
+			window.removeEventListener("open-steam-purchase", onOpenSteam);
+	}, []);
 	// #520 — 정체 가드(#511)가 타이머 콜백에서 읽어야 하므로 ref 로도 들고 있는다.
 	// state 는 렌더 시점 값이라 setTimeout 안에서는 낡은 값을 본다.
 	const voiceModelPreparingRef = useRef(false);
@@ -4285,6 +4297,14 @@ export function ChatArea({
 						</div>
 					</div>
 				</div>
+			)}
+			{steamPurchaseModalOpen && (
+				<Suspense fallback={null}>
+					<SteamPurchaseModal
+						isOpen={steamPurchaseModalOpen}
+						onClose={() => setSteamPurchaseModalOpen(false)}
+					/>
+				</Suspense>
 			)}
 		</>
 	);

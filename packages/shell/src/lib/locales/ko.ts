@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} 크레딧",
 	"steam.purchase.buyButton": "구매하기",
 	"steam.purchase.preparing": "Steam 결제 준비 중…",
-	"steam.purchase.delayedNotice": "Steam 결제를 준비하는 중입니다. 잠시만 기다려주세요…",
+	"steam.purchase.delayedNotice": "확인이 지연되고 있습니다.",
 	"steam.purchase.authorizing": "Steam 오버레이에서 결제를 승인해주세요.",
 	"steam.purchase.webFlowInstructions": "Steam 결제 페이지가 열렸습니다. 결제를 마친 후 아래 버튼을 눌러주세요.",
 	"steam.purchase.completedWebButton": "결제를 완료했어요",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "구매 가능한 크레딧 팩이 없습니다.",
 	"voice.ref.errCreditInsufficientSteam": "크레딧이 부족합니다. 설정에서 Steam으로 충전해주세요.",
 	"chat.voiceErrorCreditsSteam": "크레딧이 부족하여 음성 합성이 중단되었습니다. 설정에서 Steam으로 충전해주세요.",
+	"steam.purchase.authRequired": "나이아 계정 인증이 필요합니다.",
+	"steam.purchase.reopenWebButton": "Steam 결제 페이지 다시 열기",
+	"steam.purchase.retryCheck": "다시 확인",
+	"steam.purchase.retryPurchase": "다시 시도",
+	"steam.purchase.notLinkedNotice": "Steam 계정 연결이 필요합니다.",
+	"steam.purchase.goToSettings": "설정으로 이동",
+	"steam.purchase.invalidUrl": "Steam 결제 URL이 올바르지 않습니다."
+
 } as const;

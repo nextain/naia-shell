@@ -46,13 +46,24 @@ function creditsShortMessage(): string {
 	);
 }
 
+/** Opens the Steam purchase modal by dispatching the open-steam-purchase event. */
+export function openSteamPurchaseModal(): void {
+	if (typeof window !== "undefined") {
+		window.dispatchEvent(new CustomEvent("open-steam-purchase"));
+	}
+}
+
 export function voiceFailureMessage(
 	status: VoiceConnectionStatus | null,
 	error: unknown,
 ): string {
 	if (status?.phase === "sold-out") return t("chat.voiceSoldOut");
-	if (status?.phase === "error" && status.reason === "credits")
+	if (status?.phase === "error" && status.reason === "credits") {
+		if (isSteamChannelNow()) {
+			openSteamPurchaseModal();
+		}
 		return creditsShortMessage();
+	}
 	if (status?.phase === "error" && status.reason === "auth")
 		return t("chat.voiceErrorAuth");
 	if (status?.phase === "error" && status.reason === "superseded")

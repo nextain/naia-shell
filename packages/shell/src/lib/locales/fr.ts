@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} crédits",
 	"steam.purchase.buyButton": "Acheter",
 	"steam.purchase.preparing": "Préparation de l'achat Steam…",
-	"steam.purchase.delayedNotice": "Préparation de l'achat Steam en cours. Veuillez patienter…",
+	"steam.purchase.delayedNotice": "La vérification prend plus de temps que prévu.",
 	"steam.purchase.authorizing": "Veuillez finaliser la transaction dans la superposition Steam.",
 	"steam.purchase.webFlowInstructions": "La page de paiement Steam s'est ouverte. Une fois le paiement effectué, cliquez sur le bouton ci-dessous.",
 	"steam.purchase.completedWebButton": "J'ai effectué le paiement",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "Aucun pack de crédits disponible.",
 	"voice.ref.errCreditInsufficientSteam": "Crédits insuffisants. Veuillez recharger via Steam dans les Paramètres.",
 	"chat.voiceErrorCreditsSteam": "La synthèse vocale s'est arrêtée faute de crédits. Veuillez recharger via Steam dans les Paramètres.",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

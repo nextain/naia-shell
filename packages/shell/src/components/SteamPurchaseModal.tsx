@@ -1,173 +1,207 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getNaiaKeySecure } from "../lib/config";
 import { t } from "../lib/i18n";
 import { clearCachedLabCredits } from "../lib/lab-balance";
 import { Logger } from "../lib/logger";
+import { getNaiaKeySecure } from "../lib/config";
 import {
+	createSteamAuthListener,
 	createSteamOrder,
 	fetchSteamPacks,
 	finalizeSteamOrder,
-	listenToSteamAuthorization,
+	isAllowedSteamUrl,
 	openSteamUrl,
+	type SteamAuthListener,
 	type SteamOrderResponse,
 	type SteamPack,
+	VALID_STEAM_ORDER_STATUSES,
 } from "../lib/steam-billing";
-import { useAppStore } from "../stores/app";
 
-export interface SteamPurchaseModalProps {
-	isOpen: boolean;
-	onClose: () => void;
-	onPurchaseSuccess?: () => void;
-	onSuccess?: () => void;
-	naiaKey?: string;
-	gatewayUrl?: string;
-}
-
-type ModalFlowState =
+export type PurchaseFlowState =
 	| "idle"
 	| "creating"
+	| "delayed"
 	| "authorizing"
 	| "web_flow"
 	| "finalizing"
 	| "success"
 	| "error";
 
+export interface SteamPurchaseModalProps {
+	isOpen: boolean;
+	onClose: () => void;
+	naiaKey?: string;
+	gatewayUrl?: string;
+	onPurchaseSuccess?: () => void;
+	onSuccess?: () => void;
+	onNavigateToSettings?: () => void;
+	pollIntervalMs?: number;
+	maxPollAttempts?: number;
+}
+
 export function SteamPurchaseModal({
 	isOpen,
 	onClose,
-	onPurchaseSuccess,
-	onSuccess,
 	naiaKey,
 	gatewayUrl,
+	onPurchaseSuccess,
+	onSuccess,
+	onNavigateToSettings,
+	pollIntervalMs,
+	maxPollAttempts,
 }: SteamPurchaseModalProps) {
-	const pushModal = useAppStore((s) => s.pushModal);
-	const popModal = useAppStore((s) => s.popModal);
-
 	const [packs, setPacks] = useState<SteamPack[]>([]);
 	const [loadingPacks, setLoadingPacks] = useState(false);
 	const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
-	const [flowState, setFlowState] = useState<ModalFlowState>("idle");
-	const [delayedNotice, setDelayedNotice] = useState(false);
-	const [currentOrder, setCurrentOrder] = useState<SteamOrderResponse | null>(null);
+	const [flowState, setFlowState] = useState<PurchaseFlowState>("idle");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const [currentOrder, setCurrentOrder] = useState<SteamOrderResponse | null>(null);
+	const [activeIdempotencyKey, setActiveIdempotencyKey] = useState<string | null>(null);
 
+	const authListenerRef = useRef<SteamAuthListener | null>(null);
+	const finalizingOrderIdsRef = useRef<Set<string>>(new Set());
+	const finalizedOrderIdsRef = useRef<Set<string>>(new Set());
 	const abortControllerRef = useRef<AbortController | null>(null);
-	const unlistenRef = useRef<(() => void) | null>(null);
-
-	// Modal stack tracking for Chrome embedding
-	useEffect(() => {
-		if (!isOpen) return;
-		pushModal();
-		return () => popModal();
-	}, [isOpen, pushModal, popModal]);
-
-	// Load packs on open
-	useEffect(() => {
-		if (!isOpen) {
-			setFlowState("idle");
-			setDelayedNotice(false);
-			setCurrentOrder(null);
-			setErrorMessage(null);
-			setSelectedPackId(null);
-			unlistenRef.current?.();
-			unlistenRef.current = null;
-			abortControllerRef.current?.abort();
-			abortControllerRef.current = null;
-			return;
-		}
-
-		let active = true;
-		setLoadingPacks(true);
-		fetchSteamPacks(gatewayUrl)
-			.then((loadedPacks) => {
-				if (!active) return;
-				setPacks(loadedPacks);
-				if (loadedPacks.length > 0) {
-					setSelectedPackId(loadedPacks[0].id);
-				}
-				setLoadingPacks(false);
-			})
-			.catch((err) => {
-				if (!active) return;
-				Logger.warn("SteamPurchaseModal", "Failed to fetch Steam packs", { error: String(err) });
-				setLoadingPacks(false);
-			});
-
-		return () => {
-			active = false;
-		};
-	}, [isOpen, gatewayUrl]);
-
-	// Clean up listeners on unmount
-	useEffect(() => {
-		return () => {
-			unlistenRef.current?.();
-			abortControllerRef.current?.abort();
-		};
-	}, []);
-
-	// Handle Escape key
-	useEffect(() => {
-		if (!isOpen) return;
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape" && flowState !== "finalizing" && flowState !== "creating") {
-				handleClose();
-			}
-		};
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [isOpen, flowState]);
 
 	const handleClose = useCallback(() => {
-		unlistenRef.current?.();
-		unlistenRef.current = null;
+		authListenerRef.current?.unlisten();
+		authListenerRef.current = null;
 		abortControllerRef.current?.abort();
 		abortControllerRef.current = null;
 		onClose();
 	}, [onClose]);
 
+	// Clean up listeners on unmount
+	useEffect(() => {
+		return () => {
+			authListenerRef.current?.unlisten();
+			authListenerRef.current = null;
+			abortControllerRef.current?.abort();
+			abortControllerRef.current = null;
+		};
+	}, []);
+
+	// Reset state when modal opens or closes
+	useEffect(() => {
+		if (isOpen) {
+			setFlowState("idle");
+			setErrorMessage(null);
+			setCurrentOrder(null);
+			setActiveIdempotencyKey(null);
+			finalizingOrderIdsRef.current.clear();
+			finalizedOrderIdsRef.current.clear();
+
+			setLoadingPacks(true);
+			fetchSteamPacks(gatewayUrl)
+				.then((p) => {
+					setPacks(p);
+					if (p.length > 0) {
+						setSelectedPackId(p[0].id);
+					}
+				})
+				.catch((err) => {
+					Logger.warn("SteamPurchaseModal", "Failed to fetch packs", {
+						error: String(err),
+					});
+					setErrorMessage(String(err));
+				})
+				.finally(() => setLoadingPacks(false));
+		} else {
+			authListenerRef.current?.unlisten();
+			authListenerRef.current = null;
+			abortControllerRef.current?.abort();
+			abortControllerRef.current = null;
+		}
+	}, [isOpen, gatewayUrl]);
+
+	// Keyboard ESC to close
+	useEffect(() => {
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape" && isOpen && flowState !== "finalizing") {
+				handleClose();
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [isOpen, flowState, handleClose]);
+
 	const handleFinalize = useCallback(
 		async (orderId: string, key: string) => {
+			const idStr = String(orderId);
+			if (
+				finalizingOrderIdsRef.current.has(idStr) ||
+				finalizedOrderIdsRef.current.has(idStr)
+			) {
+				return;
+			}
+			finalizingOrderIdsRef.current.add(idStr);
 			setFlowState("finalizing");
 			try {
-				await finalizeSteamOrder(key, orderId, {
+				const res = await finalizeSteamOrder(key, idStr, {
 					gatewayUrl,
 					signal: abortControllerRef.current?.signal,
 				});
+				finalizedOrderIdsRef.current.add(idStr);
+				finalizingOrderIdsRef.current.delete(idStr);
+
 				clearCachedLabCredits();
 				window.dispatchEvent(new Event("naia_auth_ready"));
+
+				if (res.granted_now) {
+					onPurchaseSuccess?.();
+					onSuccess?.();
+				}
 				setFlowState("success");
-				onPurchaseSuccess?.();
-				onSuccess?.();
-			} catch (err) {
+			} catch (err: any) {
+				finalizingOrderIdsRef.current.delete(idStr);
 				Logger.warn("SteamPurchaseModal", "Finalize failed", { error: String(err) });
+				const errStr = String(err?.message || err);
+				if (
+					errStr.includes("steam_failed") ||
+					errStr.includes("order_reversed") ||
+					errStr.includes("order_init_failed")
+				) {
+					setErrorMessage(t("steam.purchase.cancelled"));
+				} else {
+					setErrorMessage(errStr);
+				}
 				setFlowState("error");
-				setErrorMessage(String(err));
 			}
 		},
 		[gatewayUrl, onPurchaseSuccess, onSuccess],
 	);
 
-	const handleStartPurchase = async () => {
+	const executeOrder = async (idempotencyKey: string) => {
 		if (!selectedPackId) return;
 		let effectiveNaiaKey = naiaKey;
 		if (!effectiveNaiaKey) {
 			try {
 				effectiveNaiaKey = (await getNaiaKeySecure()) ?? undefined;
 			} catch (err) {
-				Logger.warn("SteamPurchaseModal", "Failed to get naiaKey", { error: String(err) });
+				Logger.warn("SteamPurchaseModal", "Failed to get naiaKey", {
+					error: String(err),
+				});
 			}
 		}
 
 		if (!effectiveNaiaKey) {
 			setFlowState("error");
-			setErrorMessage("Naia account authentication required");
+			setErrorMessage(t("steam.purchase.authRequired"));
 			return;
 		}
 
+		// Register microtransaction listener BEFORE sending the order request (#729 P1 지적 9)
+		authListenerRef.current?.unlisten();
+		try {
+			const listener = await createSteamAuthListener();
+			authListenerRef.current = listener;
+		} catch (e) {
+			Logger.warn("SteamPurchaseModal", "Failed to register early auth listener", {
+				error: String(e),
+			});
+		}
+
 		setFlowState("creating");
-		setDelayedNotice(false);
 		setErrorMessage(null);
 
 		const controller = new AbortController();
@@ -176,36 +210,106 @@ export function SteamPurchaseModal({
 		try {
 			const order = await createSteamOrder(effectiveNaiaKey, selectedPackId, {
 				gatewayUrl,
+				idempotencyKey,
 				signal: controller.signal,
-				onDelayNotice: () => setDelayedNotice(true),
+				pollIntervalMs,
+				maxPollAttempts,
 			});
 			setCurrentOrder(order);
 
-			if (order.flow === "web") {
-				setFlowState("web_flow");
-				if (order.steamurl) {
-					await openSteamUrl(order.steamurl).catch((err) => {
-						Logger.warn("SteamPurchaseModal", "Failed to open steam URL", { error: String(err) });
+			// P1 지적 6: Check order.status 7종 BEFORE branching by flow
+			if (
+				!VALID_STEAM_ORDER_STATUSES.has(order.status) ||
+				order.status === "INIT_FAILED" ||
+				order.status === "FAILED" ||
+				order.status === "MISMATCH" ||
+				order.status === "REVERSED"
+			) {
+				setFlowState("error");
+				setErrorMessage(t("steam.purchase.cancelled"));
+				return;
+			}
+
+			if (order.status === "GRANTED") {
+				clearCachedLabCredits();
+				window.dispatchEvent(new Event("naia_auth_ready"));
+				onPurchaseSuccess?.();
+				onSuccess?.();
+				setFlowState("success");
+				return;
+			}
+
+			if (order.status === "CREATED") {
+				// 10s poll limit reached while still CREATED (#729 P1 지적 8)
+				setFlowState("delayed");
+				return;
+			}
+
+			if (order.status === "INITIATED") {
+				if (order.flow === "web") {
+					if (!order.steamurl || !isAllowedSteamUrl(order.steamurl)) {
+						setFlowState("error");
+						setErrorMessage(t("steam.purchase.invalidUrl"));
+						return;
+					}
+					try {
+						await openSteamUrl(order.steamurl);
+						setFlowState("web_flow");
+					} catch (err: any) {
+						setFlowState("error");
+						setErrorMessage(String(err?.message || err));
+					}
+				} else {
+					// Client flow
+					setFlowState("authorizing");
+					authListenerRef.current?.waitForOrder(order.order_id, {
+						onAuthorized: () => {
+							handleFinalize(order.order_id, effectiveNaiaKey!);
+						},
+						onCancelled: () => {
+							setFlowState("error");
+							setErrorMessage(t("steam.purchase.cancelled"));
+						},
 					});
 				}
-			} else {
-				// Client flow: wait for Steam microtransaction authorization event
-				setFlowState("authorizing");
-				const unlisten = await listenToSteamAuthorization(order.order_id, {
-					onAuthorized: () => {
-						handleFinalize(order.order_id, effectiveNaiaKey);
-					},
-					onCancelled: () => {
-						setFlowState("idle");
-						setErrorMessage(t("steam.purchase.cancelled"));
-					},
-				});
-				unlistenRef.current = unlisten;
 			}
-		} catch (err) {
-			Logger.warn("SteamPurchaseModal", "Order creation failed", { error: String(err) });
+		} catch (err: any) {
+			if (controller.signal.aborted) return;
+			Logger.warn("SteamPurchaseModal", "Order creation failed", {
+				error: String(err),
+			});
+			const msg = String(err?.message || err);
+			if (msg === "steam_not_linked") {
+				setErrorMessage(t("steam.purchase.notLinkedNotice"));
+			} else if (
+				msg.includes("steam_failed") ||
+				msg.includes("order_reversed") ||
+				msg.includes("order_init_failed")
+			) {
+				setErrorMessage(t("steam.purchase.cancelled"));
+			} else {
+				setErrorMessage(msg);
+			}
 			setFlowState("error");
-			setErrorMessage(String(err));
+		}
+	};
+
+	// Start a brand-new purchase attempt (generates a new idempotency key)
+	const handleStartPurchase = () => {
+		const key =
+			typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+				? crypto.randomUUID()
+				: `naia-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+		setActiveIdempotencyKey(key);
+		executeOrder(key);
+	};
+
+	// Retry existing purchase attempt (preserves existing idempotency key)
+	const handleRetryAttempt = () => {
+		if (activeIdempotencyKey) {
+			executeOrder(activeIdempotencyKey);
+		} else {
+			handleStartPurchase();
 		}
 	};
 
@@ -220,7 +324,7 @@ export function SteamPurchaseModal({
 			aria-modal="true"
 			aria-labelledby="steam-purchase-title"
 			onClick={(e) => {
-				if (e.target === e.currentTarget && flowState !== "finalizing" && flowState !== "creating") {
+				if (e.target === e.currentTarget && flowState !== "finalizing") {
 					handleClose();
 				}
 			}}
@@ -240,14 +344,15 @@ export function SteamPurchaseModal({
 						display: "flex",
 						justifyContent: "space-between",
 						alignItems: "center",
-						borderBottom: "1px solid var(--border-color, rgba(255, 255, 255, 0.1))",
+						borderBottom:
+							"1px solid var(--border-color, rgba(255, 255, 255, 0.1))",
 						paddingBottom: 12,
 					}}
 				>
 					<h3 id="steam-purchase-title" style={{ margin: 0, fontSize: "1.1rem" }}>
 						{t("steam.purchase.title")}
 					</h3>
-					{flowState !== "finalizing" && flowState !== "creating" && (
+					{flowState !== "finalizing" && (
 						<button
 							type="button"
 							onClick={handleClose}
@@ -290,35 +395,128 @@ export function SteamPurchaseModal({
 					<div style={{ textAlign: "center", padding: "32px 0" }}>
 						<p>{t("steam.purchase.finalizing")}</p>
 					</div>
+				) : flowState === "delayed" ? (
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: 16,
+							textAlign: "center",
+							padding: "16px 0",
+						}}
+					>
+						<p style={{ fontSize: "1rem" }}>{t("steam.purchase.delayedNotice")}</p>
+						<div
+							style={{
+								display: "flex",
+								justifyContent: "center",
+								gap: 8,
+								marginTop: 8,
+							}}
+						>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={handleClose}
+								style={{ background: "transparent", opacity: 0.8 }}
+							>
+								{t("apps.close")}
+							</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={handleRetryAttempt}
+								style={{
+									background: "var(--cream, #fff)",
+									color: "var(--espresso, #1a1a1a)",
+									fontWeight: "bold",
+								}}
+							>
+								{t("steam.purchase.retryCheck")}
+							</button>
+						</div>
+					</div>
 				) : flowState === "authorizing" ? (
-					<div style={{ textAlign: "center", padding: "24px 0" }}>
-						<p style={{ marginBottom: 16 }}>{t("steam.purchase.authorizing")}</p>
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: 16,
+							textAlign: "center",
+							padding: "20px 0",
+						}}
+					>
+						<p style={{ marginBottom: 8, fontWeight: "bold" }}>
+							{t("steam.purchase.authorizing")}
+						</p>
 						<p style={{ fontSize: "0.85rem", opacity: 0.7 }}>
 							{t("steam.purchase.delayedNotice")}
 						</p>
+						<button
+							type="button"
+							className="voice-preview-btn"
+							style={{
+								background: "var(--cream, #fff)",
+								color: "var(--espresso, #1a1a1a)",
+								marginTop: 12,
+							}}
+							onClick={async () => {
+								let key = naiaKey;
+								if (!key) {
+									try {
+										key = (await getNaiaKeySecure()) ?? undefined;
+									} catch {
+										/* empty */
+									}
+								}
+								if (key && currentOrder) {
+									handleFinalize(currentOrder.order_id, key);
+								}
+							}}
+						>
+							{t("steam.purchase.completedWebButton")}
+						</button>
 					</div>
 				) : flowState === "web_flow" ? (
-					<div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "12px 0" }}>
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: 16,
+							padding: "12px 0",
+						}}
+					>
 						<p>{t("steam.purchase.webFlowInstructions")}</p>
 						{currentOrder?.steamurl && (
 							<button
 								type="button"
 								className="voice-preview-btn"
-								onClick={() => openSteamUrl(currentOrder.steamurl!)}
+								onClick={async () => {
+									try {
+										await openSteamUrl(currentOrder.steamurl!);
+									} catch (err: any) {
+										setErrorMessage(String(err?.message || err));
+									}
+								}}
 							>
-								Steam 결제 페이지 다시 열기
+								{t("steam.purchase.reopenWebButton")}
 							</button>
 						)}
 						<button
 							type="button"
 							className="voice-preview-btn"
-							style={{ background: "var(--cream, #fff)", color: "var(--espresso, #1a1a1a)" }}
+							style={{
+								background: "var(--cream, #fff)",
+								color: "var(--espresso, #1a1a1a)",
+							}}
 							onClick={async () => {
-								let key: string | undefined;
-								try {
-									key = await getNaiaKeySecure();
-								} catch {
-									/* empty */
+								let key = naiaKey;
+								if (!key) {
+									try {
+										key = (await getNaiaKeySecure()) ?? undefined;
+									} catch {
+										/* empty */
+									}
 								}
 								if (key && currentOrder) {
 									handleFinalize(currentOrder.order_id, key);
@@ -330,7 +528,7 @@ export function SteamPurchaseModal({
 					</div>
 				) : flowState === "creating" ? (
 					<div style={{ textAlign: "center", padding: "32px 0" }}>
-						<p>{delayedNotice ? t("steam.purchase.delayedNotice") : t("steam.purchase.preparing")}</p>
+						<p>{t("steam.purchase.preparing")}</p>
 					</div>
 				) : (
 					<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -343,18 +541,56 @@ export function SteamPurchaseModal({
 									padding: "8px 12px",
 									borderRadius: 6,
 									fontSize: "0.9rem",
+									display: "flex",
+									flexDirection: "column",
+									gap: 8,
 								}}
 							>
-								{errorMessage}
+								<div>{errorMessage}</div>
+								{errorMessage === t("steam.purchase.notLinkedNotice") && (
+									<button
+										type="button"
+										className="voice-preview-btn"
+										style={{ alignSelf: "flex-start", padding: "4px 10px" }}
+										onClick={() => {
+											handleClose();
+											onNavigateToSettings?.();
+										}}
+									>
+										{t("steam.purchase.goToSettings")}
+									</button>
+								)}
+								{activeIdempotencyKey && (
+									<button
+										type="button"
+										className="voice-preview-btn"
+										style={{ alignSelf: "flex-start", padding: "4px 10px" }}
+										onClick={handleRetryAttempt}
+									>
+										{t("steam.purchase.retryPurchase")}
+									</button>
+								)}
 							</div>
 						)}
 
 						{loadingPacks ? (
-							<p style={{ textAlign: "center", padding: "24px 0", opacity: 0.8 }}>
+							<p
+								style={{
+									textAlign: "center",
+									padding: "24px 0",
+									opacity: 0.8,
+								}}
+							>
 								{t("steam.purchase.loadingPacks")}
 							</p>
 						) : packs.length === 0 ? (
-							<p style={{ textAlign: "center", padding: "24px 0", opacity: 0.8 }}>
+							<p
+								style={{
+									textAlign: "center",
+									padding: "24px 0",
+									opacity: 0.8,
+								}}
+							>
 								{t("steam.purchase.emptyPacks")}
 							</p>
 						) : (
@@ -389,14 +625,26 @@ export function SteamPurchaseModal({
 												borderRadius: 8,
 												padding: "12px 14px",
 												cursor: "pointer",
-												background: isSelected ? "rgba(255, 255, 255, 0.08)" : "transparent",
+												background: isSelected
+													? "rgba(255, 255, 255, 0.08)"
+													: "transparent",
 												transition: "all 0.15s ease",
 											}}
 										>
-											<div style={{ fontWeight: "bold", fontSize: "1rem", marginBottom: 4 }}>
-												{t("steam.purchase.packCredits", { credits: pack.credits })}
+											<div
+												style={{
+													fontWeight: "bold",
+													fontSize: "1rem",
+													marginBottom: 4,
+												}}
+											>
+												{t("steam.purchase.packCredits", {
+													credits: pack.credits,
+												})}
 											</div>
-											<div style={{ opacity: 0.8, fontSize: "0.9rem" }}>{priceStr}</div>
+											<div style={{ opacity: 0.8, fontSize: "0.9rem" }}>
+												{priceStr}
+											</div>
 										</div>
 									);
 								})}
@@ -409,7 +657,8 @@ export function SteamPurchaseModal({
 								justifyContent: "flex-end",
 								gap: 8,
 								marginTop: 8,
-								borderTop: "1px solid var(--border-color, rgba(255, 255, 255, 0.1))",
+								borderTop:
+									"1px solid var(--border-color, rgba(255, 255, 255, 0.1))",
 								paddingTop: 12,
 							}}
 						>

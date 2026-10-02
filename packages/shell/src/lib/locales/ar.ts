@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} رصيد",
 	"steam.purchase.buyButton": "شراء",
 	"steam.purchase.preparing": "جاري تجهيز الشراء عبر Steam…",
-	"steam.purchase.delayedNotice": "جاري إعداد الشراء عبر Steam. يرجى الانتظار قليلاً…",
+	"steam.purchase.delayedNotice": "تأخر التحقق من الدفع.",
 	"steam.purchase.authorizing": "يرجى إكمال المعاملة في تراكب Steam.",
 	"steam.purchase.webFlowInstructions": "تم فتح صفحة دفع Steam. بعد إتمام الدفع، انقر على الزر أدناه.",
 	"steam.purchase.completedWebButton": "أكملت الدفع",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "لا توجد حزم رصيد متاحة.",
 	"voice.ref.errCreditInsufficientSteam": "الرصيد غير كافٍ. يرجى شحن الرصيد عبر Steam في الإعدادات.",
 	"chat.voiceErrorCreditsSteam": "توليد الصوت متوقف لعدم كفاية الرصيد. يرجى شحن الرصيد عبر Steam في الإعدادات.",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

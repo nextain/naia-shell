@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} 点数",
 	"steam.purchase.buyButton": "购买",
 	"steam.purchase.preparing": "正在准备Steam支付…",
-	"steam.purchase.delayedNotice": "正在准备Steam支付，请稍候…",
+	"steam.purchase.delayedNotice": "确认已延迟，请稍后。",
 	"steam.purchase.authorizing": "请在Steam浮层中完成支付确认。",
 	"steam.purchase.webFlowInstructions": "Steam支付页面已打开。支付完成后，请点击下方按钮。",
 	"steam.purchase.completedWebButton": "我已完成支付",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "暂无可用点数包。",
 	"voice.ref.errCreditInsufficientSteam": "点数不足。请在设置中通过Steam进行充值。",
 	"chat.voiceErrorCreditsSteam": "由于点数不足，语音生成已停止。请在设置中通过Steam进行充值。",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

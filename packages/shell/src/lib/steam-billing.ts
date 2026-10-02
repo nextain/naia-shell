@@ -20,9 +20,28 @@ export interface SteamOrderPack {
 	credits: number;
 }
 
+export type SteamOrderStatus =
+	| "CREATED"
+	| "INITIATED"
+	| "INIT_FAILED"
+	| "GRANTED"
+	| "FAILED"
+	| "MISMATCH"
+	| "REVERSED";
+
+export const VALID_STEAM_ORDER_STATUSES: Set<string> = new Set([
+	"CREATED",
+	"INITIATED",
+	"INIT_FAILED",
+	"GRANTED",
+	"FAILED",
+	"MISMATCH",
+	"REVERSED",
+]);
+
 export interface SteamOrderResponse {
 	order_id: string;
-	status: "CREATED" | "INITIATED" | "INIT_FAILED" | "PAID" | string;
+	status: SteamOrderStatus | string;
 	flow: "client" | "web";
 	steamurl: string | null;
 	pack: SteamOrderPack;
@@ -57,7 +76,7 @@ export interface FinalizeSteamOrderOptions {
 	signal?: AbortSignal;
 }
 
-const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+export const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
 	new Promise((resolve, reject) => {
 		if (signal?.aborted) {
 			return reject(new Error("Aborted"));
@@ -189,30 +208,26 @@ export async function createSteamOrder(
 	let order = await sendOrderRequest();
 	options.onStatusChange?.(order.status);
 
-	// If client flow and status is CREATED, poll until INITIATED or INIT_FAILED
+	// If client flow and status is CREATED, poll until INITIATED or non-CREATED up to maxPoll times
 	let pollCount = 0;
 	while (order.status === "CREATED") {
 		pollCount++;
 		if (pollCount > maxPoll) {
-			Logger.info("SteamBilling", "Order status remained CREATED after 10s, entering delay notice state");
+			Logger.info(
+				"SteamBilling",
+				"Order status remained CREATED after limit, stopping poll",
+			);
 			options.onDelayNotice?.();
-			// Continue polling with delay notice active until aborted or status changes
+			break;
 		}
 
 		await sleep(interval, options.signal);
 		order = await sendOrderRequest();
 		options.onStatusChange?.(order.status);
 
-		if (order.status === "INIT_FAILED") {
-			throw new Error("order_init_failed");
-		}
-		if (order.status === "INITIATED" || order.status === "PAID") {
+		if (order.status !== "CREATED") {
 			break;
 		}
-	}
-
-	if (order.status === "INIT_FAILED") {
-		throw new Error("order_init_failed");
 	}
 
 	return order;
@@ -292,8 +307,80 @@ export async function finalizeSteamOrder(
 	throw new Error("not_approved");
 }
 
+export interface SteamAuthListener {
+	unlisten: () => void;
+	waitForOrder: (
+		orderId: string,
+		callbacks: {
+			onAuthorized: () => void;
+			onCancelled: () => void;
+		},
+	) => void;
+}
+
 /**
- * Subscribes to the native steam_microtxn_authorization event.
+ * Creates an early listener for steam_microtxn_authorization events (#729).
+ * Buffers any event arriving before order_id is known to prevent race conditions.
+ */
+export async function createSteamAuthListener(): Promise<SteamAuthListener> {
+	const receivedEvents = new Map<string, SteamMicrotxnAuthEvent>();
+	let pendingWaiter: {
+		orderId: string;
+		onAuthorized: () => void;
+		onCancelled: () => void;
+	} | null = null;
+
+	const unlisten = await listen<SteamMicrotxnAuthEvent>(
+		"steam_microtxn_authorization",
+		(event) => {
+			const receivedOrderId = String(event.payload.order_id);
+			Logger.info("SteamBilling", "Received steam_microtxn_authorization", {
+				orderId: receivedOrderId,
+				authorized: event.payload.authorized,
+			});
+
+			if (pendingWaiter && pendingWaiter.orderId === receivedOrderId) {
+				if (event.payload.authorized) {
+					pendingWaiter.onAuthorized();
+				} else {
+					pendingWaiter.onCancelled();
+				}
+				pendingWaiter = null;
+			} else {
+				receivedEvents.set(receivedOrderId, event.payload);
+			}
+		},
+	);
+
+	return {
+		unlisten: () => {
+			unlisten();
+			receivedEvents.clear();
+			pendingWaiter = null;
+		},
+		waitForOrder: (orderId, callbacks) => {
+			const targetId = String(orderId);
+			if (receivedEvents.has(targetId)) {
+				const event = receivedEvents.get(targetId)!;
+				receivedEvents.delete(targetId);
+				if (event.authorized) {
+					callbacks.onAuthorized();
+				} else {
+					callbacks.onCancelled();
+				}
+			} else {
+				pendingWaiter = {
+					orderId: targetId,
+					onAuthorized: callbacks.onAuthorized,
+					onCancelled: callbacks.onCancelled,
+				};
+			}
+		},
+	};
+}
+
+/**
+ * Subscribes to the native steam_microtxn_authorization event for a specific order.
  * Matches order_id as string.
  */
 export async function listenToSteamAuthorization(
@@ -327,8 +414,27 @@ export async function listenToSteamAuthorization(
 }
 
 /**
+ * Checks if a given Steam checkout/store URL is allowed according to design specs.
+ */
+export function isAllowedSteamUrl(urlStr: string): boolean {
+	try {
+		const parsed = new URL(urlStr);
+		if (parsed.protocol !== "https:") return false;
+		return (
+			parsed.hostname === "store.steampowered.com" ||
+			parsed.hostname === "checkout.steampowered.com"
+		);
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Opens a Steam URL (store or checkout) using the native steam_open_url command.
  */
 export async function openSteamUrl(url: string): Promise<void> {
+	if (!isAllowedSteamUrl(url)) {
+		throw new Error("Invalid or disallowed Steam payment URL");
+	}
 	await invoke("steam_open_url", { url });
 }

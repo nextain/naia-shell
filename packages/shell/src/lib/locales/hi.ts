@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} क्रेडिट",
 	"steam.purchase.buyButton": "खरीदें",
 	"steam.purchase.preparing": "Steam खरीद की तैयारी हो रही है…",
-	"steam.purchase.delayedNotice": "Steam खरीद तैयार की जा रही है। कृपया थोड़ी प्रतीक्षा करें…",
+	"steam.purchase.delayedNotice": "सत्यापन में देरी हो रही है।",
 	"steam.purchase.authorizing": "कृपया Steam ओवरले में लेनदेन पूरा करें।",
 	"steam.purchase.webFlowInstructions": "Steam भुगतान पृष्ठ खुला। भुगतान पूरा होने के बाद, नीचे दिए गए बटन पर क्लिक करें।",
 	"steam.purchase.completedWebButton": "मैंने भुगतान पूरा कर लिया है",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "कोई क्रेडिट पैक उपलब्ध नहीं है।",
 	"voice.ref.errCreditInsufficientSteam": "अपर्याप्त क्रेडिट। कृपया सेटिंग्स में Steam के माध्यम से क्रेडिट टॉप-अप करें।",
 	"chat.voiceErrorCreditsSteam": "अपर्याप्त क्रेडिट के कारण आवाज़ उत्पादन रुक गया। कृपया Steam के माध्यम से टॉप-अप करें।",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

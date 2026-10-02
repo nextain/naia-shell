@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} tín dụng",
 	"steam.purchase.buyButton": "Mua",
 	"steam.purchase.preparing": "Đang chuẩn bị thanh toán Steam…",
-	"steam.purchase.delayedNotice": "Đang chuẩn bị thanh toán Steam. Vui lòng đợi trong giây lát…",
+	"steam.purchase.delayedNotice": "Quá trình xác nhận đang bị chậm trễ.",
 	"steam.purchase.authorizing": "Vui lòng hoàn tất giao dịch trong lớp phủ Steam.",
 	"steam.purchase.webFlowInstructions": "Trang thanh toán Steam đã mở. Sau khi hoàn tất thanh toán, nhấp vào nút bên dưới.",
 	"steam.purchase.completedWebButton": "Tôi đã hoàn tất thanh toán",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "Không có gói tín dụng khả dụng.",
 	"voice.ref.errCreditInsufficientSteam": "Không đủ tín dụng. Vui lòng nạp tín dụng qua Steam trong Cài đặt.",
 	"chat.voiceErrorCreditsSteam": "Tạo giọng nói đã dừng do không đủ tín dụng. Vui lòng nạp tín dụng qua Steam trong Cài đặt.",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} クレジット",
 	"steam.purchase.buyButton": "購入する",
 	"steam.purchase.preparing": "Steam決済を準備中…",
-	"steam.purchase.delayedNotice": "Steam決済を準備しています。少々お待ちください…",
+	"steam.purchase.delayedNotice": "確認が遅延しています。",
 	"steam.purchase.authorizing": "Steamオーバーレイで決済を承認してください。",
 	"steam.purchase.webFlowInstructions": "Steam決済ページが開きました。決済完了後、下のボタンを押してください。",
 	"steam.purchase.completedWebButton": "決済を完了しました",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "利用可能なクレジットパックがありません。",
 	"voice.ref.errCreditInsufficientSteam": "クレジットが不足しています。設定からSteamでチャージしてください。",
 	"chat.voiceErrorCreditsSteam": "クレジット不足のため音声生成が停止しました。設定からSteamでチャージしてください。",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

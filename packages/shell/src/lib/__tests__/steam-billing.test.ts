@@ -23,9 +23,12 @@ const fetchMock = vi.fn();
 globalThis.fetch = fetchMock as unknown as typeof fetch;
 
 import {
+	VALID_STEAM_ORDER_STATUSES,
+	createSteamAuthListener,
 	createSteamOrder,
 	fetchSteamPacks,
 	finalizeSteamOrder,
+	isAllowedSteamUrl,
 	listenToSteamAuthorization,
 	openSteamUrl,
 } from "../steam-billing";
@@ -35,6 +38,20 @@ describe("steam-billing client (#729)", () => {
 		invokeMock.mockReset();
 		fetchMock.mockReset();
 		eventListeners.clear();
+	});
+
+	describe("VALID_STEAM_ORDER_STATUSES", () => {
+		it("contains exactly the 7 expected order statuses and excludes PAID", () => {
+			expect(VALID_STEAM_ORDER_STATUSES.has("CREATED")).toBe(true);
+			expect(VALID_STEAM_ORDER_STATUSES.has("INITIATED")).toBe(true);
+			expect(VALID_STEAM_ORDER_STATUSES.has("INIT_FAILED")).toBe(true);
+			expect(VALID_STEAM_ORDER_STATUSES.has("GRANTED")).toBe(true);
+			expect(VALID_STEAM_ORDER_STATUSES.has("FAILED")).toBe(true);
+			expect(VALID_STEAM_ORDER_STATUSES.has("MISMATCH")).toBe(true);
+			expect(VALID_STEAM_ORDER_STATUSES.has("REVERSED")).toBe(true);
+			expect(VALID_STEAM_ORDER_STATUSES.has("PAID")).toBe(false);
+			expect(VALID_STEAM_ORDER_STATUSES.size).toBe(7);
+		});
 	});
 
 	describe("fetchSteamPacks", () => {
@@ -120,6 +137,52 @@ describe("steam-billing client (#729)", () => {
 			});
 		});
 
+		it("preserves idempotencyKey across calls when supplied", async () => {
+			const mockOrder = {
+				order_id: "112233",
+				status: "INITIATED",
+				flow: "client",
+				steamurl: null,
+				pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
+			};
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => mockOrder,
+			});
+
+			await createSteamOrder("gw-key", "pack-1", {
+				gatewayUrl: "https://api.naia.test",
+				idempotencyKey: "fixed-key-42",
+			});
+
+			const [, req] = fetchMock.mock.calls[0];
+			expect(JSON.parse(req.body).idempotency_key).toBe("fixed-key-42");
+		});
+
+		it("returns order directly when returned status is GRANTED", async () => {
+			const mockOrder = {
+				order_id: "order-granted-1",
+				status: "GRANTED",
+				flow: "client",
+				steamurl: null,
+				pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
+			};
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => mockOrder,
+			});
+
+			const order = await createSteamOrder("gw-key", "pack-1", {
+				gatewayUrl: "https://api.naia.test",
+			});
+
+			expect(order.status).toBe("GRANTED");
+			expect(order.order_id).toBe("order-granted-1");
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+
 		it("polls when initial status is CREATED until it becomes INITIATED", async () => {
 			fetchMock
 				.mockResolvedValueOnce({
@@ -158,7 +221,7 @@ describe("steam-billing client (#729)", () => {
 			expect(onStatusChange).toHaveBeenCalledWith("INITIATED");
 		});
 
-		it("throws order_init_failed if polling encounters INIT_FAILED", async () => {
+		it("stops polling and returns order when status transitions from CREATED to INIT_FAILED", async () => {
 			fetchMock
 				.mockResolvedValueOnce({
 					ok: true,
@@ -183,61 +246,39 @@ describe("steam-billing client (#729)", () => {
 					}),
 				});
 
-			await expect(
-				createSteamOrder("gw-key", "pack-1", {
-					gatewayUrl: "https://api.naia.test",
-					pollIntervalMs: 10,
-				}),
-			).rejects.toThrow("order_init_failed");
+			const order = await createSteamOrder("gw-key", "pack-1", {
+				gatewayUrl: "https://api.naia.test",
+				pollIntervalMs: 10,
+			});
+			expect(order.status).toBe("INIT_FAILED");
+			expect(fetchMock).toHaveBeenCalledTimes(2);
 		});
 
-		it("triggers onDelayNotice if CREATED persists beyond maxPollAttempts", async () => {
-			// Returns CREATED 3 times, then INITIATED on 4th
-			fetchMock
-				.mockResolvedValueOnce({
-					ok: true,
-					status: 200,
-					json: async () => ({
-						order_id: "123456",
-						status: "CREATED",
-						flow: "client",
-						steamurl: null,
-						pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
-					}),
-				})
-				.mockResolvedValueOnce({
-					ok: true,
-					status: 200,
-					json: async () => ({
-						order_id: "123456",
-						status: "CREATED",
-						flow: "client",
-						steamurl: null,
-						pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
-					}),
-				})
-				.mockResolvedValueOnce({
-					ok: true,
-					status: 200,
-					json: async () => ({
-						order_id: "123456",
-						status: "INITIATED",
-						flow: "client",
-						steamurl: null,
-						pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
-					}),
-				});
+		it("stops polling and returns order with CREATED when maxPollAttempts is reached (#729 P1 지적 8)", async () => {
+			fetchMock.mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: async () => ({
+					order_id: "123456",
+					status: "CREATED",
+					flow: "client",
+					steamurl: null,
+					pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
+				}),
+			});
 
 			const onDelayNotice = vi.fn();
 			const order = await createSteamOrder("gw-key", "pack-1", {
 				gatewayUrl: "https://api.naia.test",
-				maxPollAttempts: 1, // trigger delay notice after 1 poll
+				maxPollAttempts: 2,
 				pollIntervalMs: 10,
 				onDelayNotice,
 			});
 
 			expect(onDelayNotice).toHaveBeenCalledTimes(1);
-			expect(order.status).toBe("INITIATED");
+			expect(order.status).toBe("CREATED");
+			// Initial fetch + 2 poll iterations = 3 fetches
+			expect(fetchMock).toHaveBeenCalledTimes(3);
 		});
 
 		it("handles gateway error codes on order creation", async () => {
@@ -341,7 +382,7 @@ describe("steam-billing client (#729)", () => {
 			expect(fetchMock).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
 		});
 
-		it("does not retry on fatal 409 errors (steam_failed, order_init_failed)", async () => {
+		it("does not retry on fatal 409 errors (steam_failed, order_init_failed, order_reversed)", async () => {
 			fetchMock.mockResolvedValueOnce({
 				ok: false,
 				status: 409,
@@ -355,6 +396,84 @@ describe("steam-billing client (#729)", () => {
 			).rejects.toThrow("steam_failed");
 
 			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe("createSteamAuthListener (#729 P1 지적 9)", () => {
+		it("buffers event arriving BEFORE waitForOrder is called (race condition test)", async () => {
+			const listener = await createSteamAuthListener();
+			const handler = eventListeners.get("steam_microtxn_authorization");
+			expect(handler).toBeDefined();
+
+			// Microtransaction event arrives early from Steam SDK before order creation HTTP response
+			handler!({
+				payload: {
+					app_id: 5354630,
+					order_id: "order-early-123",
+					authorized: true,
+				},
+			});
+
+			// Now order creation finishes and waitForOrder is called
+			const onAuthorized = vi.fn();
+			const onCancelled = vi.fn();
+			listener.waitForOrder("order-early-123", { onAuthorized, onCancelled });
+
+			expect(onAuthorized).toHaveBeenCalledTimes(1);
+			expect(onCancelled).not.toHaveBeenCalled();
+
+			listener.unlisten();
+		});
+
+		it("handles early event with authorized: false", async () => {
+			const listener = await createSteamAuthListener();
+			const handler = eventListeners.get("steam_microtxn_authorization");
+
+			handler!({
+				payload: {
+					app_id: 5354630,
+					order_id: "order-cancel-456",
+					authorized: false,
+				},
+			});
+
+			const onAuthorized = vi.fn();
+			const onCancelled = vi.fn();
+			listener.waitForOrder("order-cancel-456", { onAuthorized, onCancelled });
+
+			expect(onAuthorized).not.toHaveBeenCalled();
+			expect(onCancelled).toHaveBeenCalledTimes(1);
+
+			listener.unlisten();
+		});
+
+		it("handles event arriving AFTER waitForOrder is called", async () => {
+			const listener = await createSteamAuthListener();
+			const onAuthorized = vi.fn();
+			const onCancelled = vi.fn();
+
+			listener.waitForOrder("order-late-789", { onAuthorized, onCancelled });
+
+			const handler = eventListeners.get("steam_microtxn_authorization");
+			handler!({
+				payload: {
+					app_id: 5354630,
+					order_id: "order-late-789",
+					authorized: true,
+				},
+			});
+
+			expect(onAuthorized).toHaveBeenCalledTimes(1);
+			expect(onCancelled).not.toHaveBeenCalled();
+
+			listener.unlisten();
+		});
+
+		it("cleans up listener and buffers on unlisten()", async () => {
+			const listener = await createSteamAuthListener();
+			expect(eventListeners.has("steam_microtxn_authorization")).toBe(true);
+			listener.unlisten();
+			expect(eventListeners.has("steam_microtxn_authorization")).toBe(false);
 		});
 	});
 
@@ -418,13 +537,38 @@ describe("steam-billing client (#729)", () => {
 		});
 	});
 
+	describe("isAllowedSteamUrl (#729 P2 지적 10)", () => {
+		it("accepts valid Steam store and checkout URLs", () => {
+			expect(
+				isAllowedSteamUrl("https://store.steampowered.com/checkout/order-123"),
+			).toBe(true);
+			expect(
+				isAllowedSteamUrl("https://checkout.steampowered.com/pay/order-456"),
+			).toBe(true);
+		});
+
+		it("rejects non-https, external domains, and malformed strings", () => {
+			expect(isAllowedSteamUrl("http://store.steampowered.com/checkout")).toBe(false);
+			expect(isAllowedSteamUrl("https://evil.com/store.steampowered.com")).toBe(false);
+			expect(isAllowedSteamUrl("javascript:alert(1)")).toBe(false);
+			expect(isAllowedSteamUrl("not-a-url")).toBe(false);
+		});
+	});
+
 	describe("openSteamUrl", () => {
-		it("invokes native steam_open_url", async () => {
+		it("invokes native steam_open_url on allowed URL", async () => {
 			invokeMock.mockResolvedValueOnce(undefined);
 			await openSteamUrl("https://store.steampowered.com/checkout");
 			expect(invokeMock).toHaveBeenCalledWith("steam_open_url", {
 				url: "https://store.steampowered.com/checkout",
 			});
+		});
+
+		it("rejects disallowed URL without invoking steam_open_url", async () => {
+			await expect(openSteamUrl("https://malicious-site.example/pay")).rejects.toThrow(
+				"Invalid or disallowed Steam payment URL",
+			);
+			expect(invokeMock).not.toHaveBeenCalled();
 		});
 	});
 });

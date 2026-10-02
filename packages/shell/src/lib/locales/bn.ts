@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} ক্রেডিট",
 	"steam.purchase.buyButton": "কিনুন",
 	"steam.purchase.preparing": "Steam ক্রয়ের প্রস্তুতি চলছে…",
-	"steam.purchase.delayedNotice": "Steam ক্রয় প্রস্তুত করা হচ্ছে। দয়া করে একটু অপেক্ষা করুন…",
+	"steam.purchase.delayedNotice": "যাচাইকরণে বিলম্ব হচ্ছে।",
 	"steam.purchase.authorizing": "Steam ওভারলেতে লেনদেন সম্পন্ন করুন।",
 	"steam.purchase.webFlowInstructions": "Steam পেমেন্ট পৃষ্ঠা খোলা হয়েছে। অর্থ প্রদান সম্পন্ন হলে নিচের বোতামে ক্লিক করুন।",
 	"steam.purchase.completedWebButton": "আমি পেমেন্ট সম্পন্ন করেছি",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "কোন ক্রেডিট প্যাক উপলব্ধ নেই।",
 	"voice.ref.errCreditInsufficientSteam": "অপর্যাপ্ত ক্রেডিট। দয়া করে সেটিংসে Steam-এর মাধ্যমে ক্রেডিট টপ-আপ করুন।",
 	"chat.voiceErrorCreditsSteam": "অপর্যাপ্ত ক্রেডিটের কারণে ভয়েস তৈরি বন্ধ হয়েছে। দয়া করে Steam-এর মাধ্যমে টপ-আপ করুন।",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

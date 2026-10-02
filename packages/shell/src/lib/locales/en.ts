@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} Credits",
 	"steam.purchase.buyButton": "Purchase",
 	"steam.purchase.preparing": "Preparing Steam purchase…",
-	"steam.purchase.delayedNotice": "Preparing Steam purchase. Please wait a moment…",
+	"steam.purchase.delayedNotice": "Verification is taking longer than expected.",
 	"steam.purchase.authorizing": "Please complete the transaction in the Steam overlay.",
 	"steam.purchase.webFlowInstructions": "Steam payment page opened. Once payment is completed, click the button below.",
 	"steam.purchase.completedWebButton": "I completed the payment",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "No credit packs available.",
 	"voice.ref.errCreditInsufficientSteam": "Insufficient credits. Please top up credits via Steam in Settings.",
 	"chat.voiceErrorCreditsSteam": "Voice generation stopped due to insufficient credits. Please top up credits via Steam in Settings.",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

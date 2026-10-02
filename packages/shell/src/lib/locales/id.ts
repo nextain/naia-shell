@@ -1361,7 +1361,7 @@ export default {
 	"steam.purchase.packCredits": "{credits} Kredit",
 	"steam.purchase.buyButton": "Beli",
 	"steam.purchase.preparing": "Menyiapkan pembelian Steam…",
-	"steam.purchase.delayedNotice": "Menyiapkan pembelian Steam. Mohon tunggu sebentar…",
+	"steam.purchase.delayedNotice": "Verifikasi tertunda.",
 	"steam.purchase.authorizing": "Harap selesaikan transaksi di overlay Steam.",
 	"steam.purchase.webFlowInstructions": "Halaman pembayaran Steam terbuka. Setelah pembayaran selesai, klik tombol di bawah.",
 	"steam.purchase.completedWebButton": "Saya sudah menyelesaikan pembayaran",
@@ -1372,4 +1372,12 @@ export default {
 	"steam.purchase.emptyPacks": "Tidak ada paket kredit yang tersedia.",
 	"voice.ref.errCreditInsufficientSteam": "Kredit tidak cukup. Silakan isi ulang kredit melalui Steam di Pengaturan.",
 	"chat.voiceErrorCreditsSteam": "Pembuatan suara terhenti karena kredit tidak cukup. Silakan isi ulang via Steam di Pengaturan.",
+	"steam.purchase.authRequired": "Naia account authentication required.",
+	"steam.purchase.reopenWebButton": "Reopen Steam payment page",
+	"steam.purchase.retryCheck": "Check again",
+	"steam.purchase.retryPurchase": "Retry purchase",
+	"steam.purchase.notLinkedNotice": "Steam account link required.",
+	"steam.purchase.goToSettings": "Go to Settings",
+	"steam.purchase.invalidUrl": "Invalid Steam payment URL."
+
 } as const;

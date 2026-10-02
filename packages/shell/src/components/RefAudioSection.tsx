@@ -23,6 +23,7 @@ import {
 	loadConfig,
 	saveConfig,
 } from "../lib/config";
+import { SteamPurchaseModal } from "./SteamPurchaseModal";
 import { formatCreditsFromUsd } from "../lib/credits";
 import {
 	isSteamChannelNow,
@@ -287,6 +288,7 @@ export function RefAudioSection({
 	>("unknown");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string>("");
+	const [steamPurchaseModalOpen, setSteamPurchaseModalOpen] = useState(false);
 	const [notice, setNotice] = useState<string>("");
 	const [confirmingRemove, setConfirmingRemove] = useState(false);
 
@@ -1169,7 +1171,25 @@ export function RefAudioSection({
 						{notice}
 					</div>
 				)}
-				{error && <div className="settings-error">{error}</div>}
+				{error && (
+					<div
+						className="settings-error"
+						style={{ display: "flex", flexDirection: "column", gap: 6 }}
+					>
+						<div>{error}</div>
+						{isSteam && error === S.err.creditInsufficient && (
+							<button
+								type="button"
+								className="voice-preview-btn"
+								data-testid="ref-audio-steam-charge-btn"
+								style={{ alignSelf: "flex-start", marginTop: 4 }}
+								onClick={() => setSteamPurchaseModalOpen(true)}
+							>
+								{t("cost.labCharge")}
+							</button>
+						)}
+					</div>
+				)}
 				{isLocal && localEngine === "off" && (
 					<div className="settings-hint" data-testid="ref-audio-engine-off">
 						{hideEngineStartControl ? (
@@ -1205,6 +1225,10 @@ export function RefAudioSection({
 					</div>
 				)}
 			</div>
+			<SteamPurchaseModal
+				isOpen={steamPurchaseModalOpen}
+				onClose={() => setSteamPurchaseModalOpen(false)}
+			/>
 		</>
 	);
 }
