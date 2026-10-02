@@ -67,24 +67,29 @@ export function SteamPurchaseModal({
 	const finalizingOrderIdsRef = useRef<Set<string>>(new Set());
 	const finalizedOrderIdsRef = useRef<Set<string>>(new Set());
 	const abortControllerRef = useRef<AbortController | null>(null);
+	const isExecutingRef = useRef(false);
+	const attemptTokenRef = useRef<symbol | null>(null);
 
-	const handleClose = useCallback(() => {
+	const invalidateAttempt = useCallback(() => {
+		attemptTokenRef.current = null;
+		isExecutingRef.current = false;
 		authListenerRef.current?.unlisten();
 		authListenerRef.current = null;
 		abortControllerRef.current?.abort();
 		abortControllerRef.current = null;
+	}, []);
+
+	const handleClose = useCallback(() => {
+		invalidateAttempt();
 		onClose();
-	}, [onClose]);
+	}, [invalidateAttempt, onClose]);
 
 	// Clean up listeners on unmount
 	useEffect(() => {
 		return () => {
-			authListenerRef.current?.unlisten();
-			authListenerRef.current = null;
-			abortControllerRef.current?.abort();
-			abortControllerRef.current = null;
+			invalidateAttempt();
 		};
-	}, []);
+	}, [invalidateAttempt]);
 
 	// Reset state when modal opens or closes
 	useEffect(() => {
@@ -112,12 +117,9 @@ export function SteamPurchaseModal({
 				})
 				.finally(() => setLoadingPacks(false));
 		} else {
-			authListenerRef.current?.unlisten();
-			authListenerRef.current = null;
-			abortControllerRef.current?.abort();
-			abortControllerRef.current = null;
+			invalidateAttempt();
 		}
-	}, [isOpen, gatewayUrl]);
+	}, [isOpen, gatewayUrl, invalidateAttempt]);
 
 	// Keyboard ESC to close
 	useEffect(() => {
@@ -177,6 +179,12 @@ export function SteamPurchaseModal({
 	);
 
 	const executeOrder = async (attempt: PurchaseAttempt) => {
+		// Synchronous guard and attempt token before first await (#729 지적 3)
+		if (isExecutingRef.current) return;
+		isExecutingRef.current = true;
+		const attemptToken = Symbol("purchase-attempt");
+		attemptTokenRef.current = attemptToken;
+
 		let effectiveNaiaKey = naiaKey;
 		if (!effectiveNaiaKey) {
 			try {
@@ -188,7 +196,14 @@ export function SteamPurchaseModal({
 			}
 		}
 
+		// Validate token after secure key await
+		if (attemptTokenRef.current !== attemptToken) {
+			isExecutingRef.current = false;
+			return;
+		}
+
 		if (!effectiveNaiaKey) {
+			isExecutingRef.current = false;
 			setFlowState("error");
 			setErrorMessage(t("steam.purchase.authRequired"));
 			return;
@@ -196,14 +211,23 @@ export function SteamPurchaseModal({
 
 		// Register microtransaction listener BEFORE sending the order request (#729 P1 지적 9)
 		authListenerRef.current?.unlisten();
+		authListenerRef.current = null;
+		let listener: SteamAuthListener | null = null;
 		try {
-			const listener = await createSteamAuthListener();
-			authListenerRef.current = listener;
+			listener = await createSteamAuthListener();
 		} catch (e) {
 			Logger.warn("SteamPurchaseModal", "Failed to register early auth listener", {
 				error: String(e),
 			});
 		}
+
+		// Validate token after listener registration await: if cancelled, unlisten immediately and do not POST (#729 지적 3)
+		if (attemptTokenRef.current !== attemptToken) {
+			listener?.unlisten();
+			isExecutingRef.current = false;
+			return;
+		}
+		authListenerRef.current = listener;
 
 		setFlowState("creating");
 		setErrorMessage(null);
@@ -219,6 +243,13 @@ export function SteamPurchaseModal({
 				pollIntervalMs,
 				maxPollAttempts,
 			});
+
+			// Validate token after createSteamOrder await
+			if (attemptTokenRef.current !== attemptToken) {
+				isExecutingRef.current = false;
+				return;
+			}
+
 			setCurrentOrder(order);
 
 			// P1 지적 6: Check order.status 7종 BEFORE branching by flow
@@ -278,7 +309,10 @@ export function SteamPurchaseModal({
 				}
 			}
 		} catch (err: any) {
-			if (controller.signal.aborted) return;
+			if (attemptTokenRef.current !== attemptToken || controller.signal.aborted) {
+				isExecutingRef.current = false;
+				return;
+			}
 			Logger.warn("SteamPurchaseModal", "Order creation failed", {
 				error: String(err),
 			});
@@ -295,6 +329,10 @@ export function SteamPurchaseModal({
 				setErrorMessage(msg);
 			}
 			setFlowState("error");
+		} finally {
+			if (attemptTokenRef.current === attemptToken) {
+				isExecutingRef.current = false;
+			}
 		}
 	};
 

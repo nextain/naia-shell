@@ -30,6 +30,8 @@ vi.mock("../../lib/config", () => ({
 const fetchMock = vi.fn();
 globalThis.fetch = fetchMock as unknown as typeof fetch;
 
+import { getNaiaKeySecure } from "../../lib/config";
+import * as steamBilling from "../../lib/steam-billing";
 import { SteamPurchaseModal } from "../SteamPurchaseModal";
 import { setLocale } from "../../lib/i18n";
 
@@ -795,5 +797,192 @@ describe("SteamPurchaseModal component (#729)", () => {
 
 		fireEvent.click(screen.getByText("취소"));
 		expect(onClose).toHaveBeenCalled();
+	});
+
+	describe("order execution cancellation and synchronous guard (#729 지적 3)", () => {
+		it("rapid double click creates only one order POST request", async () => {
+			const orderBodies: any[] = [];
+			fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					if (init?.body) {
+						orderBodies.push(JSON.parse(String(init.body)));
+					}
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-1",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			const buyBtn = screen.getByText("구매하기");
+			// Rapid double click
+			fireEvent.click(buyBtn);
+			fireEvent.click(buyBtn);
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+			});
+
+			// Only exactly 1 POST request must be made
+			expect(orderBodies.length).toBe(1);
+		});
+
+		it.each(["handleClose", "isOpenChange", "unmount"] as const)(
+			"aborts order before POST when closed via %s during secure key retrieval",
+			async (closeMode) => {
+				let resolveKey!: (val: string) => void;
+				const keyPromise = new Promise<string>((resolve) => {
+					resolveKey = resolve;
+				});
+				vi.mocked(getNaiaKeySecure).mockReturnValueOnce(keyPromise as any);
+
+				let postCalled = false;
+				fetchMock.mockImplementation(async (url: string | URL | Request) => {
+					const urlStr = typeof url === "string" ? url : url.toString();
+					if (urlStr.includes("/v1/billing/steam/packs")) {
+						return { ok: true, status: 200, json: async () => defaultPacks };
+					}
+					if (urlStr.includes("/v1/billing/steam/orders")) {
+						postCalled = true;
+						return { ok: true, status: 200, json: async () => ({}) };
+					}
+					return { ok: false, status: 404, json: async () => ({}) };
+				});
+
+				const onClose = vi.fn();
+				const { rerender, unmount } = render(
+					<SteamPurchaseModal
+						isOpen={true}
+						gatewayUrl="https://api.naia.test"
+						// naiaKey omitted so it calls getNaiaKeySecure
+						onClose={onClose}
+					/>,
+				);
+
+				await waitFor(() => {
+					expect(screen.getByText("1000 크레딧")).toBeDefined();
+				});
+
+				fireEvent.click(screen.getByText("구매하기"));
+
+				// Modal closed while awaiting secure key
+				if (closeMode === "handleClose") {
+					fireEvent.click(screen.getByText("취소"));
+				} else if (closeMode === "isOpenChange") {
+					rerender(
+						<SteamPurchaseModal
+							isOpen={false}
+							gatewayUrl="https://api.naia.test"
+							onClose={onClose}
+						/>,
+					);
+				} else if (closeMode === "unmount") {
+					unmount();
+				}
+
+				// Late resolution of secure key
+				resolveKey("late-key");
+				await new Promise((r) => setTimeout(r, 20));
+
+				// POST must not have been called
+				expect(postCalled).toBe(false);
+			},
+		);
+
+		it.each(["handleClose", "isOpenChange", "unmount"] as const)(
+			"aborts order before POST and unlistens late listener when closed via %s during listener registration",
+			async (closeMode) => {
+				const unlistenMock = vi.fn();
+				let resolveListener!: (l: any) => void;
+				const listenerPromise = new Promise<any>((resolve) => {
+					resolveListener = resolve;
+				});
+
+				const spy = vi.spyOn(steamBilling, "createSteamAuthListener").mockReturnValueOnce(listenerPromise as any);
+
+				let postCalled = false;
+				fetchMock.mockImplementation(async (url: string | URL | Request) => {
+					const urlStr = typeof url === "string" ? url : url.toString();
+					if (urlStr.includes("/v1/billing/steam/packs")) {
+						return { ok: true, status: 200, json: async () => defaultPacks };
+					}
+					if (urlStr.includes("/v1/billing/steam/orders")) {
+						postCalled = true;
+						return { ok: true, status: 200, json: async () => ({}) };
+					}
+					return { ok: false, status: 404, json: async () => ({}) };
+				});
+
+				const onClose = vi.fn();
+				const { rerender, unmount } = render(
+					<SteamPurchaseModal
+						isOpen={true}
+						gatewayUrl="https://api.naia.test"
+						naiaKey="test-key"
+						onClose={onClose}
+					/>,
+				);
+
+				await waitFor(() => {
+					expect(screen.getByText("1000 크레딧")).toBeDefined();
+				});
+
+				fireEvent.click(screen.getByText("구매하기"));
+
+				// Modal closed while awaiting listener registration
+				if (closeMode === "handleClose") {
+					fireEvent.click(screen.getByText("취소"));
+				} else if (closeMode === "isOpenChange") {
+					rerender(
+						<SteamPurchaseModal
+							isOpen={false}
+							gatewayUrl="https://api.naia.test"
+							naiaKey="test-key"
+							onClose={onClose}
+						/>,
+					);
+				} else if (closeMode === "unmount") {
+					unmount();
+				}
+
+				// Late resolution of listener registration
+				resolveListener({
+					waitForOrder: vi.fn(),
+					unlisten: unlistenMock,
+				});
+				await new Promise((r) => setTimeout(r, 20));
+
+				// Late listener must be unlistened immediately and POST must never start
+				expect(unlistenMock).toHaveBeenCalledTimes(1);
+				expect(postCalled).toBe(false);
+
+				spy.mockRestore();
+			},
+		);
 	});
 });
