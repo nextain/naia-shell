@@ -60,7 +60,10 @@ jobs:
             $hits = $env:PATH -split ';' | Where-Object { $_ -and (Test-Path (Join-Path $_ $d)) } | ForEach-Object { Join-Path $_ $d }
             Write-Host "  $d -> $($hits -join ' | ')"
           }
-          & D:\diag\cdb.exe -g -G -c "q" @args 2>&1 | Select-String -Pattern "ERROR|WARNING|Unable|failed|LdrpSnap|LdrpLoadDll|Loading DLL|ModLoad" | Select-Object -First 200 | Out-Host
+          $env:PATH -split ';' | Set-Content D:\diag\path.txt
+          & D:\diag\cdb.exe -g -G -c "q" @args > D:\diag\cdb.txt 2>&1
+          Write-Host "DIAG CDB ERRORS:"
+          Select-String -Path D:\diag\cdb.txt -Pattern " ERROR|LdrpReportError|ModLoad|libvosk|libstdc|libgcc|winpthread|steam_api|VCRUNTIME" | Select-Object -Last 120 | ForEach-Object { "  $($_.Line)" } | Out-Host
           & $exe @($args | Select-Object -Skip 1)
           Write-Host "DIAG DIRECT EXIT: $LASTEXITCODE"
           exit $LASTEXITCODE
@@ -72,3 +75,8 @@ jobs:
         run: |
           pnpm -C packages/shell run tauri:build:bundle 2>&1 | Select-String -Pattern "DIAG|->|ERROR|LdrpSnap|error|0xc0|test result|Command failed" | Select-Object -First 400
           exit 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: diag-loader
+          path: D:\diag\*.txt
