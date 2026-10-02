@@ -221,6 +221,7 @@ export function SteamPurchaseModal({
 
 		if (!effectiveNaiaKey) {
 			isExecutingRef.current = false;
+			setPreservedAttempt(null);
 			setFlowState("error");
 			setErrorMessage(t("steam.purchase.authRequired"));
 			return;
@@ -373,6 +374,7 @@ export function SteamPurchaseModal({
 
 	// Start a brand-new purchase attempt (generates a new idempotency key with currently selected pack)
 	const handleStartPurchase = () => {
+		if (isExecutingRef.current) return;
 		if (!selectedPackId) return;
 		const key =
 			typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -385,6 +387,7 @@ export function SteamPurchaseModal({
 
 	// Retry existing purchase attempt (preserves existing idempotency key and packId regardless of selection changes)
 	const handleRetryAttempt = () => {
+		if (isExecutingRef.current) return;
 		if (preservedAttempt) {
 			executeOrder(preservedAttempt);
 		} else {

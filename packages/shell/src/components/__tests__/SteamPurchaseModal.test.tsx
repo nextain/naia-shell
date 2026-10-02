@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -875,22 +875,42 @@ describe("SteamPurchaseModal component (#729)", () => {
 	});
 
 	describe("order execution cancellation and synchronous guard (#729 지적 3)", () => {
-		it("rapid double click creates only one order POST request", async () => {
+		it("rapid double click during listener registration does not overwrite preserved attempt and retry preserves key and pack (#729 P1 지적 1)", async () => {
+			let resolveListener!: (val: any) => void;
+			const listenerPromise = new Promise((resolve) => {
+				resolveListener = resolve;
+			});
+			const listenerSpy = vi
+				.spyOn(steamBilling, "createSteamAuthListener")
+				.mockReturnValueOnce(listenerPromise as any);
+
 			const orderBodies: any[] = [];
+			let postCount = 0;
+
 			fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
 				const urlStr = typeof url === "string" ? url : url.toString();
 				if (urlStr.includes("/v1/billing/steam/packs")) {
 					return { ok: true, status: 200, json: async () => defaultPacks };
 				}
 				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					postCount++;
 					if (init?.body) {
 						orderBodies.push(JSON.parse(String(init.body)));
 					}
+					if (postCount === 1) {
+						// First POST fails/lost (returns error)
+						return {
+							ok: false,
+							status: 500,
+							json: async () => ({ detail: { error: "order_init_failed" } }),
+						};
+					}
+					// Retry POST succeeds
 					return {
 						ok: true,
 						status: 200,
 						json: async () => ({
-							order_id: "order-1",
+							order_id: "order-retry-1",
 							status: "INITIATED",
 							flow: "client",
 							steamurl: null,
@@ -901,30 +921,57 @@ describe("SteamPurchaseModal component (#729)", () => {
 				return { ok: false, status: 404, json: async () => ({}) };
 			});
 
-			render(
-				<SteamPurchaseModal
-					isOpen={true}
-					gatewayUrl="https://api.naia.test"
-					naiaKey="test-key"
-					onClose={vi.fn()}
-				/>,
-			);
+			try {
+				render(
+					<SteamPurchaseModal
+						isOpen={true}
+						gatewayUrl="https://api.naia.test"
+						naiaKey="test-key"
+						onClose={vi.fn()}
+					/>,
+				);
 
-			await waitFor(() => {
-				expect(screen.getByText("1000 크레딧")).toBeDefined();
-			});
+				await waitFor(() => {
+					expect(screen.getByText("1000 크레딧")).toBeDefined();
+				});
 
-			const buyBtn = screen.getByText("구매하기");
-			// Rapid double click
-			fireEvent.click(buyBtn);
-			fireEvent.click(buyBtn);
+				const buyBtn = screen.getByText("구매하기");
+				// First click starts purchase attempt and enters delayed listener registration
+				fireEvent.click(buyBtn);
 
-			await waitFor(() => {
-				expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
-			});
+				// Second click arrives while listener registration is still pending
+				fireEvent.click(buyBtn);
 
-			// Only exactly 1 POST request must be made
-			expect(orderBodies.length).toBe(1);
+				// Now resolve listener registration for the first attempt
+				await act(async () => {
+					resolveListener({ unlisten: vi.fn() });
+				});
+
+				// First POST request was sent and failed with 500
+				await waitFor(() => {
+					expect(orderBodies.length).toBe(1);
+					expect(screen.getByText("다시 시도")).toBeDefined();
+				});
+
+				const firstKey = orderBodies[0].idempotency_key;
+				const firstPackId = orderBodies[0].pack_id;
+				expect(firstKey).toBeTruthy();
+				expect(firstPackId).toBe("pack-100");
+
+				// Click retry
+				fireEvent.click(screen.getByText("다시 시도"));
+
+				await waitFor(() => {
+					expect(orderBodies.length).toBe(2);
+					expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+				});
+
+				// Retry POST must have the exact same idempotency key and pack_id as first POST
+				expect(orderBodies[1].idempotency_key).toBe(firstKey);
+				expect(orderBodies[1].pack_id).toBe(firstPackId);
+			} finally {
+				listenerSpy.mockRestore();
+			}
 		});
 
 		it.each(["handleClose", "isOpenChange", "unmount"] as const)(
