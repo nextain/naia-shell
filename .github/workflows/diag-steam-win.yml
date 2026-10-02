@@ -1,4 +1,4 @@
-# 임시 진단 (nextain/naia-shell#729): Windows cargo test 의 STATUS_ENTRYPOINT_NOT_FOUND 원인 확인.
+# 임시 진단 (nextain/naia-shell#729): 셸 lib 테스트의 STATUS_ENTRYPOINT_NOT_FOUND 원인 DLL·함수 확인.
 # diag/** 브랜치에서만 돈다. 원인을 찾으면 브랜치째 지운다.
 name: diag-steam-win
 on:
@@ -9,55 +9,66 @@ permissions:
 jobs:
   diag:
     runs-on: windows-2025
+    timeout-minutes: 60
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: edd3b76137904990e47593015184728a6969d01d
+      - name: Clone required public runtime sources
+        run: |
+          git init ../naia-agent
+          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
+          git -C ../naia-agent fetch --depth 1 origin 3b0e101c04dc4346f765240b63160fb6cee91d2a
+          git -C ../naia-agent checkout --detach FETCH_HEAD
+          git init ../naia-kb-compiler
+          git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
+          git -C ../naia-kb-compiler fetch --depth 1 origin 24f52c14ea906c250304f39d48866c7a47e1b596
+          git -C ../naia-kb-compiler checkout --detach FETCH_HEAD
+          git init ../naia-memory
+          git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
+          git -C ../naia-memory fetch --depth 1 origin e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf
+          git -C ../naia-memory checkout --detach FETCH_HEAD
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.1"
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: "1.97.0"
-      - name: Minimal steamworks crate test
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare loader-snap runner
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Continue"
-          New-Item -ItemType Directory -Force mini/src | Out-Null
-          Set-Content mini/Cargo.toml @"
-          [package]
-          name = "mini"
-          version = "0.1.0"
-          edition = "2021"
-          [dependencies]
-          steamworks = "=0.13.1"
-          "@
-          Set-Content mini/src/lib.rs @"
-          pub fn touch() -> bool { steamworks::Client::init_app(5354630).is_ok() }
-          #[cfg(test)]
-          mod tests {
-              #[test]
-              fn links() { let f: fn() -> bool = super::touch; assert!(f as usize != 0); }
-          }
-          "@
-          Push-Location mini
-          cargo test --no-run 2>&1 | Select-Object -Last 5
-          $exe = Get-ChildItem target/debug/deps/mini-*.exe | Select-Object -First 1
-          Write-Host "TEST EXE: $($exe.FullName)"
-          & $exe.FullName
-          Write-Host "MINI EXIT: $LASTEXITCODE  (0xc0000139 = ENTRYPOINT_NOT_FOUND)"
-          cargo test 2>&1 | Select-Object -Last 8
-          Write-Host "== where steam_api64.dll on PATH"
-          where.exe steam_api64.dll
-          Write-Host "== DLLs copied by steamworks-sys"
-          Get-ChildItem -Recurse target -Filter steam_api64.dll | ForEach-Object { "$($_.FullName) $($_.Length)" }
+          New-Item -ItemType Directory -Force D:\diag | Out-Null
+          Copy-Item -Recurse "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\*" D:\diag\
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          $dumpbin = Get-ChildItem -Recurse "$vs\VC\Tools\MSVC" -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
-          Write-Host "== imports of test exe (DLL names)"
-          & $dumpbin.FullName /dependents $exe.FullName
-          Write-Host "== steam_api64 imports"
-          & $dumpbin.FullName /imports:steam_api64.dll $exe.FullName
-          Pop-Location
-      - name: Loader snaps for minimal test exe
+          $db = Get-ChildItem -Recurse "$vs\VC\Tools\MSVC" -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          Copy-Item (Split-Path $db.FullName) -Destination D:\diag\msvcbin -Recurse
+          Set-Content D:\diag\run.cmd '@pwsh -NoProfile -File D:\diag\run.ps1 %*'
+          Set-Content D:\diag\run.ps1 @'
+          $exe = $args[0]
+          $name = Split-Path $exe -Leaf
+          Write-Host "DIAG EXE: $exe"
+          Write-Host "DIAG PATH:"; $env:PATH -split ';' | ForEach-Object { "  $_" }
+          & D:\diag\gflags.exe /i $name +sls | Out-Host
+          Write-Host "DIAG DEPENDENTS:"
+          $deps = & D:\diag\msvcbin\dumpbin.exe /nologo /dependents $exe | Where-Object { $_ -match '^\s+\S+\.dll\s*$' } | ForEach-Object { $_.Trim() }
+          foreach ($d in $deps) {
+            $hits = $env:PATH -split ';' | Where-Object { $_ -and (Test-Path (Join-Path $_ $d)) } | ForEach-Object { Join-Path $_ $d }
+            Write-Host "  $d -> $($hits -join ' | ')"
+          }
+          & D:\diag\cdb.exe -g -G -c "q" @args 2>&1 | Select-String -Pattern "ERROR|WARNING|Unable|failed|LdrpSnap|LdrpLoadDll|Loading DLL|ModLoad" | Select-Object -First 200 | Out-Host
+          & $exe @($args | Select-Object -Skip 1)
+          Write-Host "DIAG DIRECT EXIT: $LASTEXITCODE"
+          exit $LASTEXITCODE
+          '@
+      - name: Shell lib test under loader snaps
         shell: pwsh
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER: D:\diag\run.cmd
         run: |
-          $ErrorActionPreference = "Continue"
-          $exe = Get-ChildItem mini/target/debug/deps/mini-*.exe | Select-Object -First 1
-          $dbg = "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64"
-          Get-ChildItem $dbg -Filter *.exe | Select-Object -ExpandProperty Name | Select-String "gflags|cdb"
-          & "$dbg\gflags.exe" /i $exe.Name +sls
-          & "$dbg\cdb.exe" -g -G -c "q" $exe.FullName 2>&1 | Select-String -Pattern "ERROR|entry|Procedure|not found|steam_api|LdrpSnap|Unable" | Select-Object -First 60
+          pnpm -C packages/shell run tauri:build:bundle 2>&1 | Select-String -Pattern "DIAG|->|ERROR|LdrpSnap|error|0xc0|test result|Command failed" | Select-Object -First 400
+          exit 0
