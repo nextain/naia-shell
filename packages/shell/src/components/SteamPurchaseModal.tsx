@@ -74,7 +74,7 @@ export function SteamPurchaseModal({
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [currentOrder, setCurrentOrder] = useState<SteamOrderResponse | null>(null);
 	const [preservedAttempt, setPreservedAttempt] = useState<PurchaseAttempt | null>(null);
-	const [grantedNow, setGrantedNow] = useState<boolean>(true);
+	const [grantedNow, setGrantedNow] = useState<boolean>(false);
 
 	const authListenerRef = useRef<SteamAuthListener | null>(null);
 	const finalizingOrderIdsRef = useRef<Set<string>>(new Set());
@@ -111,7 +111,7 @@ export function SteamPurchaseModal({
 			setErrorMessage(null);
 			setCurrentOrder(null);
 			setPreservedAttempt(null);
-			setGrantedNow(true);
+			setGrantedNow(false);
 			finalizingOrderIdsRef.current.clear();
 			finalizedOrderIdsRef.current.clear();
 
@@ -286,8 +286,7 @@ export function SteamPurchaseModal({
 			if (order.status === "GRANTED") {
 				clearCachedLabCredits();
 				window.dispatchEvent(new Event("naia_auth_ready"));
-				onPurchaseSuccess?.();
-				onSuccess?.();
+				setGrantedNow(false);
 				setFlowState("success");
 				return;
 			}

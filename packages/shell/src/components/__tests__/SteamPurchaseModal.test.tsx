@@ -478,50 +478,73 @@ describe("SteamPurchaseModal component (#729)", () => {
 		expect(latestKey).toBe(initialKey);
 	});
 
-	it("immediate GRANTED status finishes without authorization flow (#729 P1 지적 6)", async () => {
+	it("immediate GRANTED status displays already granted notice and does not invoke success callbacks (#729 지적 3)", async () => {
 		const onPurchaseSuccess = vi.fn();
-		fetchMock.mockImplementation(async (url: string | URL | Request) => {
-			const urlStr = typeof url === "string" ? url : url.toString();
-			if (urlStr.includes("/v1/billing/steam/packs")) {
-				return { ok: true, status: 200, json: async () => defaultPacks };
-			}
-			if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
-				return {
-					ok: true,
-					status: 200,
-					json: async () => ({
-						order_id: "order-already-granted",
-						status: "GRANTED",
-						flow: "client",
-						steamurl: null,
-						pack: defaultPacks[0],
-					}),
-				};
-			}
-			return { ok: false, status: 404, json: async () => ({}) };
-		});
+		const onSuccess = vi.fn();
+		let authReadyDispatched = false;
+		const authReadyListener = () => {
+			authReadyDispatched = true;
+		};
+		window.addEventListener("naia_auth_ready", authReadyListener);
 
-		render(
-			<SteamPurchaseModal
-				isOpen={true}
-				gatewayUrl="https://api.naia.test"
-				naiaKey="test-key"
-				onClose={vi.fn()}
-				onPurchaseSuccess={onPurchaseSuccess}
-			/>,
-		);
+		try {
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-already-granted",
+							status: "GRANTED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
 
-		await waitFor(() => {
-			expect(screen.getByText("1000 크레딧")).toBeDefined();
-		});
+			render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+					onPurchaseSuccess={onPurchaseSuccess}
+					onSuccess={onSuccess}
+				/>,
+			);
 
-		fireEvent.click(screen.getByText("1000 크레딧"));
-		fireEvent.click(screen.getByText("구매하기"));
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
 
-		await waitFor(() => {
-			expect(onPurchaseSuccess).toHaveBeenCalledTimes(1);
-			expect(screen.getByText("크레딧 충전이 완료되었습니다!")).toBeDefined();
-		});
+			fireEvent.click(screen.getByText("1000 크레딧"));
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				// Displays already granted notice instead of success message
+				expect(screen.getByText("이미 반영된 주문입니다.")).toBeDefined();
+			});
+
+			// Must not call onPurchaseSuccess or onSuccess
+			expect(onPurchaseSuccess).not.toHaveBeenCalled();
+			expect(onSuccess).not.toHaveBeenCalled();
+
+			// Must not display new recharge text or +N credits
+			expect(screen.queryByText("크레딧 충전이 완료되었습니다!")).toBeNull();
+			expect(screen.queryByText(/\+1000/)).toBeNull();
+
+			// naia_auth_ready balance refresh event must be dispatched
+			expect(authReadyDispatched).toBe(true);
+		} finally {
+			window.removeEventListener("naia_auth_ready", authReadyListener);
+		}
 	});
 
 	it("failure and unknown statuses show error before flow branching (#729 P1 지적 6)", async () => {
