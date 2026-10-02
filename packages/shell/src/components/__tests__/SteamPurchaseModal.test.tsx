@@ -30,6 +30,7 @@ vi.mock("../../lib/config", () => ({
 const fetchMock = vi.fn();
 globalThis.fetch = fetchMock as unknown as typeof fetch;
 
+import { listen } from "@tauri-apps/api/event";
 import { getNaiaKeySecure } from "../../lib/config";
 import * as steamBilling from "../../lib/steam-billing";
 import { SteamPurchaseModal } from "../SteamPurchaseModal";
@@ -47,6 +48,14 @@ describe("SteamPurchaseModal component (#729)", () => {
 		await setLocale("ko");
 		vi.clearAllMocks();
 		eventListeners.clear();
+		invokeMock.mockReset();
+		vi.mocked(listen).mockImplementation(async (eventName: any, handler: any) => {
+			eventListeners.set(eventName, handler);
+			return () => {
+				eventListeners.delete(eventName);
+			};
+		});
+		vi.mocked(getNaiaKeySecure).mockImplementation(async () => "gw-testkey123");
 
 		// Default packs fetch response
 		fetchMock.mockImplementation(async (url: string | URL | Request) => {
@@ -1557,5 +1566,1464 @@ describe("SteamPurchaseModal component (#729)", () => {
 		// Unmount cleanly restores baseline
 		unmount();
 		expect(useAppStore.getState().modalCount).toBe(initialCount);
+	});
+
+	describe("Late async resolution and attempt token ownership (#729 fix4)", () => {
+		it("guard release path 1 (217행): late resolution of secure key in cancelled attempt A does not release execution guard of running attempt B", async () => {
+			let resolveKeyA!: (k: string) => void;
+			const keyPromiseA = new Promise<string>((res) => {
+				resolveKeyA = res;
+			});
+			let resolveKeyB!: (k: string) => void;
+			const keyPromiseB = new Promise<string>((res) => {
+				resolveKeyB = res;
+			});
+
+			let keyCallCount = 0;
+			vi.mocked(getNaiaKeySecure).mockImplementation(async () => {
+				keyCallCount++;
+				if (keyCallCount === 1) return keyPromiseA;
+				if (keyCallCount === 2) return keyPromiseB;
+				return "key-unexpected-C";
+			});
+
+			let orderPostCount = 0;
+			const orderPostPacks: string[] = [];
+			fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					orderPostCount++;
+					const body = JSON.parse(String(init?.body || "{}"));
+					orderPostPacks.push(body.pack_id);
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: `order-${orderPostCount}`,
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks.find((p) => p.id === body.pack_id) || defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			// Attempt A begins with pack-100 (first pack by default)
+			fireEvent.click(screen.getByText("구매하기"));
+			expect(keyCallCount).toBe(1);
+
+			// Cancel attempt A by closing and reopening the modal
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("2500 크레딧")).toBeDefined();
+			});
+
+			// Attempt B begins with pack-250
+			fireEvent.click(screen.getByText("2500 크레딧"));
+			fireEvent.click(screen.getByText("구매하기"));
+			expect(keyCallCount).toBe(2);
+
+			// Now attempt A finishes its key retrieval late
+			resolveKeyA("key-A");
+			await new Promise((r) => setTimeout(r, 20));
+
+			// User clicks purchase again (attempt C) while B is still running
+			fireEvent.click(screen.getByText("구매하기"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Attempt C must have been rejected by B's execution guard:
+			// No 3rd key retrieval call
+			expect(keyCallCount).toBe(2);
+			// No order POST yet (B is still awaiting key)
+			expect(orderPostCount).toBe(0);
+
+			// Now complete B's key retrieval
+			resolveKeyB("key-B");
+			await waitFor(() => {
+				expect(orderPostCount).toBe(1);
+			});
+			// B's pack (pack-250) was ordered
+			expect(orderPostPacks).toEqual(["pack-250"]);
+		});
+
+		it("guard release path 2 (245행): late resolution of listener registration in cancelled attempt A does not release execution guard of running attempt B", async () => {
+			let resolveListenA!: (fn: () => void) => void;
+			const listenPromiseA = new Promise<() => void>((res) => {
+				resolveListenA = res;
+			});
+
+			const unlistenA = vi.fn();
+			let listenCallCount = 0;
+			vi.mocked(listen).mockImplementation(async (event: string, handler: any) => {
+				if (event === "steam_microtxn_authorization") {
+					listenCallCount++;
+					if (listenCallCount === 1) {
+						await listenPromiseA;
+						return unlistenA;
+					}
+				}
+				eventListeners.set(event, handler);
+				return () => {
+					eventListeners.delete(event);
+				};
+			});
+
+			let resolveKeyB!: (k: string) => void;
+			const keyPromiseB = new Promise<string>((res) => {
+				resolveKeyB = res;
+			});
+
+			let keyCallCount = 0;
+			vi.mocked(getNaiaKeySecure).mockImplementation(async () => {
+				keyCallCount++;
+				if (keyCallCount === 1) return keyPromiseB;
+				return "key-unexpected-C";
+			});
+
+			let orderPostCount = 0;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					orderPostCount++;
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-B",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[1],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			// In attempt A, naiaKey prop is provided so key lookup is skipped and A proceeds to listener registration
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="key-A"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			// Attempt A begins
+			fireEvent.click(screen.getByText("구매하기"));
+			expect(listenCallCount).toBe(1);
+
+			// Close and reopen modal without naiaKey prop for B, so B awaits key lookup
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("2500 크레딧")).toBeDefined();
+			});
+
+			// Attempt B begins with pack-250 (awaits key lookup, flowState is still idle!)
+			fireEvent.click(screen.getByText("2500 크레딧"));
+			fireEvent.click(screen.getByText("구매하기"));
+			expect(keyCallCount).toBe(1);
+
+			// Now attempt A finishes its listener registration late
+			resolveListenA(() => {});
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Attempt A unlistens its own listener immediately
+			expect(unlistenA).toHaveBeenCalledTimes(1);
+
+			// User clicks purchase (C) while B is still running
+			fireEvent.click(screen.getByText("구매하기"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			// C must be rejected: no new key lookup (keyCallCount remains 1)
+			expect(keyCallCount).toBe(1);
+			expect(orderPostCount).toBe(0);
+
+			// Complete B's key lookup
+			resolveKeyB("key-B");
+
+			await waitFor(() => {
+				expect(orderPostCount).toBe(1);
+			});
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+			});
+		});
+
+		it("guard release path 3 (267행): late resolve of order creation in cancelled attempt A does not release execution guard of running attempt B", async () => {
+			let resolveOrderA!: (val: any) => void;
+			const orderPromiseA = new Promise<any>((res) => {
+				resolveOrderA = res;
+			});
+			let resolveListenB!: (fn: () => void) => void;
+			const listenPromiseB = new Promise<() => void>((res) => {
+				resolveListenB = res;
+			});
+
+			let listenCallCount = 0;
+			vi.mocked(listen).mockImplementation(async (event: any, handler: any) => {
+				if (event === "steam_microtxn_authorization") {
+					listenCallCount++;
+					if (listenCallCount === 2) {
+						await listenPromiseB;
+					}
+				}
+				eventListeners.set(event, handler);
+				return () => {
+					eventListeners.delete(event);
+				};
+			});
+
+			let orderPostCount = 0;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					orderPostCount++;
+					if (orderPostCount === 1) {
+						return { ok: true, status: 200, json: async () => orderPromiseA };
+					}
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-B",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[1],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			// Attempt A begins
+			fireEvent.click(screen.getByText("구매하기"));
+			await waitFor(() => {
+				expect(orderPostCount).toBe(1);
+			});
+
+			// Close and reopen modal
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("2500 크레딧")).toBeDefined();
+			});
+
+			// Attempt B begins with pack-250
+			fireEvent.click(screen.getByText("2500 크레딧"));
+			fireEvent.click(screen.getByText("구매하기"));
+			expect(listenCallCount).toBe(2);
+
+			// Attempt A resolves late with order-A
+			resolveOrderA({
+				order_id: "order-A",
+				status: "INITIATED",
+				flow: "client",
+				steamurl: null,
+				pack: defaultPacks[0],
+			});
+			await new Promise((r) => setTimeout(r, 20));
+
+			// User clicks purchase (C) while B is still running
+			fireEvent.click(screen.getByText("구매하기"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			// C is rejected: orderPostCount remains 1
+			expect(orderPostCount).toBe(1);
+
+			// Resolve B's listener
+			resolveListenB(() => {});
+
+			await waitFor(() => {
+				expect(orderPostCount).toBe(2);
+			});
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+			});
+		});
+
+		it("guard release path 4 (331행): late reject of order creation in cancelled attempt A does not release execution guard of running attempt B", async () => {
+			let rejectOrderA!: (err: any) => void;
+			const orderPromiseA = new Promise<any>((_, rej) => {
+				rejectOrderA = rej;
+			});
+			let resolveListenB!: (fn: () => void) => void;
+			const listenPromiseB = new Promise<() => void>((res) => {
+				resolveListenB = res;
+			});
+
+			let listenCallCount = 0;
+			vi.mocked(listen).mockImplementation(async (event: any, handler: any) => {
+				if (event === "steam_microtxn_authorization") {
+					listenCallCount++;
+					if (listenCallCount === 2) {
+						await listenPromiseB;
+					}
+				}
+				eventListeners.set(event, handler);
+				return () => {
+					eventListeners.delete(event);
+				};
+			});
+
+			let orderPostCount = 0;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					orderPostCount++;
+					if (orderPostCount === 1) {
+						return {
+							ok: false,
+							status: 500,
+							json: async () => {
+								await orderPromiseA;
+								return { detail: { error: "server_error" } };
+							},
+						};
+					}
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-B",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[1],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			// Attempt A begins
+			fireEvent.click(screen.getByText("구매하기"));
+			await waitFor(() => {
+				expect(orderPostCount).toBe(1);
+			});
+
+			// Close and reopen modal
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("2500 크레딧")).toBeDefined();
+			});
+
+			// Attempt B begins
+			fireEvent.click(screen.getByText("2500 크레딧"));
+			fireEvent.click(screen.getByText("구매하기"));
+			expect(listenCallCount).toBe(2);
+
+			// Attempt A rejects late
+			rejectOrderA(new Error("Network failed"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			// User clicks purchase (C) while B is still running
+			fireEvent.click(screen.getByText("구매하기"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			// C is rejected: orderPostCount remains 1
+			expect(orderPostCount).toBe(1);
+
+			// Resolve B's listener
+			resolveListenB(() => {});
+
+			await waitFor(() => {
+				expect(orderPostCount).toBe(2);
+			});
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+			});
+		});
+
+		it("late URL open resolve: modal closed and reopened while openSteamUrl is pending does not transition to web_flow on late resolve", async () => {
+			let resolveUrlA!: () => void;
+			const urlPromiseA = new Promise<void>((res) => {
+				resolveUrlA = res;
+			});
+
+			invokeMock.mockImplementation(async (cmd: string) => {
+				if (cmd === "steam_open_url") {
+					await urlPromiseA;
+					return;
+				}
+			});
+
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-web-1",
+							status: "INITIATED",
+							flow: "web",
+							steamurl: "https://store.steampowered.com/checkout/approvetxn/12345",
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			// Start purchase (attempt A)
+			fireEvent.click(screen.getByText("구매하기"));
+
+			// Wait until steam_open_url is invoked
+			await waitFor(() => {
+				expect(invokeMock).toHaveBeenCalledWith("steam_open_url", {
+					url: "https://store.steampowered.com/checkout/approvetxn/12345",
+				});
+			});
+
+			// Close and reopen modal while steam_open_url is pending
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			// Now resolve URL open late
+			resolveUrlA();
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Modal must remain on initial screen (idle), NOT transition to web_flow
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByText("Steam 결제 페이지가 열렸습니다. 결제를 마친 후 아래 버튼을 눌러주세요.")).toBeNull();
+		});
+
+		it("late URL open reject: modal closed and reopened while openSteamUrl is pending does not transition to error on late reject", async () => {
+			let rejectUrlA!: (err: any) => void;
+			const urlPromiseA = new Promise<void>((_, rej) => {
+				rejectUrlA = rej;
+			});
+
+			invokeMock.mockImplementation(async (cmd: string) => {
+				if (cmd === "steam_open_url") {
+					await urlPromiseA;
+					return;
+				}
+			});
+
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-web-2",
+							status: "INITIATED",
+							flow: "web",
+							steamurl: "https://store.steampowered.com/checkout/approvetxn/12345",
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(invokeMock).toHaveBeenCalledWith("steam_open_url", {
+					url: "https://store.steampowered.com/checkout/approvetxn/12345",
+				});
+			});
+
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			// Now reject URL open late
+			rejectUrlA(new Error("Failed to open browser"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Modal must remain on initial screen, no error displayed
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+
+		it("finalize late success: modal rerendered false->true during finalize does not update state, call success callbacks, or dispatch events", async () => {
+			let resolveFinalizeA!: (val: any) => void;
+			const finalizePromiseA = new Promise<any>((res) => {
+				resolveFinalizeA = res;
+			});
+
+			let finalizeCalled = false;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-finalize-1",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				if (urlStr.includes("/finalize")) {
+					finalizeCalled = true;
+					return {
+						ok: true,
+						status: 200,
+						json: async () => finalizePromiseA,
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const onPurchaseSuccess = vi.fn();
+			const onSuccess = vi.fn();
+			let authReadyDispatched = false;
+			const authReadyHandler = () => {
+				authReadyDispatched = true;
+			};
+			window.addEventListener("naia_auth_ready", authReadyHandler);
+
+			try {
+				const { rerender } = render(
+					<SteamPurchaseModal
+						isOpen={true}
+						gatewayUrl="https://api.naia.test"
+						naiaKey="test-key"
+						onClose={vi.fn()}
+						onPurchaseSuccess={onPurchaseSuccess}
+						onSuccess={onSuccess}
+					/>,
+				);
+
+				await waitFor(() => {
+					expect(screen.getByText("1000 크레딧")).toBeDefined();
+				});
+
+				fireEvent.click(screen.getByText("구매하기"));
+
+				await waitFor(() => {
+					expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+				});
+
+				// Dispatch microtransaction authorization event to trigger handleFinalize
+				const authHandler = eventListeners.get("steam_microtxn_authorization");
+				expect(authHandler).toBeDefined();
+				act(() => {
+					authHandler!({
+						payload: { app_id: 480, order_id: "order-finalize-1", authorized: true },
+					});
+				});
+
+				await waitFor(() => {
+					expect(screen.getByText("결제 확인 중…")).toBeDefined();
+					expect(finalizeCalled).toBe(true);
+				});
+
+				// Rerender isOpen false then true as required for finalize testing
+				rerender(
+					<SteamPurchaseModal
+						isOpen={false}
+						gatewayUrl="https://api.naia.test"
+						naiaKey="test-key"
+						onClose={vi.fn()}
+						onPurchaseSuccess={onPurchaseSuccess}
+						onSuccess={onSuccess}
+					/>,
+				);
+				rerender(
+					<SteamPurchaseModal
+						isOpen={true}
+						gatewayUrl="https://api.naia.test"
+						naiaKey="test-key"
+						onClose={vi.fn()}
+						onPurchaseSuccess={onPurchaseSuccess}
+						onSuccess={onSuccess}
+					/>,
+				);
+
+				await waitFor(() => {
+					expect(screen.getByText("1000 크레딧")).toBeDefined();
+				});
+
+				// Late resolve of finalize
+				resolveFinalizeA({ status: "GRANTED", granted_now: true });
+				await new Promise((r) => setTimeout(r, 20));
+
+				// Verifications:
+				// 1. New modal state remains idle (not success)
+				expect(screen.getByText("구매하기")).toBeDefined();
+				expect(screen.queryByText("크레딧 충전이 완료되었습니다!")).toBeNull();
+				// 2. No callbacks called
+				expect(onPurchaseSuccess).not.toHaveBeenCalled();
+				expect(onSuccess).not.toHaveBeenCalled();
+				// 3. No naia_auth_ready dispatched
+				expect(authReadyDispatched).toBe(false);
+			} finally {
+				window.removeEventListener("naia_auth_ready", authReadyHandler);
+			}
+		});
+
+		it("finalize late failure: modal rerendered false->true during finalize does not update state to error on late rejection", async () => {
+			let rejectFinalizeA!: (err: any) => void;
+			const finalizePromiseA = new Promise<any>((_, rej) => {
+				rejectFinalizeA = rej;
+			});
+
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-finalize-2",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				if (urlStr.includes("/finalize")) {
+					return {
+						ok: false,
+						status: 409,
+						json: async () => {
+							await finalizePromiseA;
+							return { detail: { error: "steam_failed" } };
+						},
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+			});
+
+			const authHandler = eventListeners.get("steam_microtxn_authorization");
+			act(() => {
+				authHandler!({
+					payload: { app_id: 480, order_id: "order-finalize-2", authorized: true },
+				});
+			});
+
+			await waitFor(() => {
+				expect(screen.getByText("결제 확인 중…")).toBeDefined();
+			});
+
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			// Late rejection of finalize
+			rejectFinalizeA(new Error("steam_failed"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Modal must remain idle, not error
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByText("Steam 결제가 취소되었습니다")).toBeNull();
+		});
+
+		it("authorizing completion button key retrieval late success and failure: does not trigger handleFinalize after modal reopen", async () => {
+			let resolveKeyBtn!: (k: string) => void;
+			const keyPromiseSuccess = new Promise<string>((res) => {
+				resolveKeyBtn = res;
+			});
+
+			let keyCallCount = 0;
+			vi.mocked(getNaiaKeySecure).mockImplementation(async () => {
+				keyCallCount++;
+				if (keyCallCount === 1) return "key-initial";
+				return keyPromiseSuccess;
+			});
+
+			let finalizeCalled = false;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-auth-btn-1",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				if (urlStr.includes("/finalize")) {
+					finalizeCalled = true;
+					return { ok: true, status: 200, json: async () => ({ status: "GRANTED", granted_now: true }) };
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(screen.getByText("결제를 완료했어요")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("결제를 완료했어요"));
+			expect(keyCallCount).toBe(2);
+
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			resolveKeyBtn("key-btn-delayed");
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(finalizeCalled).toBe(false);
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+
+		it("authorizing completion button key retrieval late failure: does not show error on reopened modal", async () => {
+			let rejectKeyBtn!: (err: any) => void;
+			const keyPromiseFail = new Promise<string>((_, rej) => {
+				rejectKeyBtn = rej;
+			});
+
+			let keyCallCount = 0;
+			vi.mocked(getNaiaKeySecure).mockImplementation(async () => {
+				keyCallCount++;
+				if (keyCallCount === 1) return "key-initial";
+				return keyPromiseFail;
+			});
+
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-auth-btn-2",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(screen.getByText("결제를 완료했어요")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("결제를 완료했어요"));
+			expect(keyCallCount).toBe(2);
+
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			rejectKeyBtn(new Error("key lookup error"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+
+		it("web_flow completion button key retrieval late success and failure: does not trigger handleFinalize or error on reopened modal", async () => {
+			let resolveKeyBtn!: (k: string) => void;
+			const keyPromise = new Promise<string>((res) => {
+				resolveKeyBtn = res;
+			});
+
+			let keyCallCount = 0;
+			vi.mocked(getNaiaKeySecure).mockImplementation(async () => {
+				keyCallCount++;
+				if (keyCallCount === 1) return "key-initial";
+				return keyPromise;
+			});
+
+			invokeMock.mockResolvedValue(undefined);
+
+			let finalizeCalled = false;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-web-btn-1",
+							status: "INITIATED",
+							flow: "web",
+							steamurl: "https://store.steampowered.com/checkout/approvetxn/12345",
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				if (urlStr.includes("/finalize")) {
+					finalizeCalled = true;
+					return { ok: true, status: 200, json: async () => ({ status: "GRANTED", granted_now: true }) };
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 결제 페이지가 열렸습니다. 결제를 마친 후 아래 버튼을 눌러주세요.")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("결제를 완료했어요"));
+			expect(keyCallCount).toBe(2);
+
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			resolveKeyBtn("key-web-delayed");
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(finalizeCalled).toBe(false);
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+
+		it("reopenWebButton late success and failure: does not alter reopened modal state", async () => {
+			let resolveReopen!: () => void;
+			const reopenPromise = new Promise<void>((res) => {
+				resolveReopen = res;
+			});
+
+			let reopenCount = 0;
+			invokeMock.mockImplementation(async (cmd: string) => {
+				if (cmd === "steam_open_url") {
+					reopenCount++;
+					if (reopenCount > 1) {
+						await reopenPromise;
+					}
+					return;
+				}
+			});
+
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-reopen-1",
+							status: "INITIATED",
+							flow: "web",
+							steamurl: "https://store.steampowered.com/checkout/approvetxn/12345",
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 결제 페이지 다시 열기")).toBeDefined();
+			});
+
+			// User clicks "Steam 결제 페이지 다시 열기"
+			fireEvent.click(screen.getByText("Steam 결제 페이지 다시 열기"));
+			expect(reopenCount).toBe(2);
+
+			// Reopen modal while reopen is pending
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			resolveReopen();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+
+		it("reopenWebButton late failure: does not show error on reopened modal", async () => {
+			let rejectReopen!: (err: any) => void;
+			const reopenPromise = new Promise<void>((_, rej) => {
+				rejectReopen = rej;
+			});
+
+			let reopenCount = 0;
+			invokeMock.mockImplementation(async (cmd: string) => {
+				if (cmd === "steam_open_url") {
+					reopenCount++;
+					if (reopenCount > 1) {
+						await reopenPromise;
+					}
+					return;
+				}
+			});
+
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-reopen-2",
+							status: "INITIATED",
+							flow: "web",
+							steamurl: "https://store.steampowered.com/checkout/approvetxn/12345",
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 결제 페이지 다시 열기")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("Steam 결제 페이지 다시 열기"));
+			expect(reopenCount).toBe(2);
+
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			rejectReopen(new Error("reopen failed"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+
+		it("pack fetch late success: older generation fetch does not overwrite newer modal packs", async () => {
+			let resolveGen1!: (val: any) => void;
+			const gen1Promise = new Promise<any>((res) => {
+				resolveGen1 = res;
+			});
+
+			const gen2Packs = [
+				{ id: "pack-999", price_cents: 9999, currency: "USD", credits: 9999 },
+			];
+
+			let packFetchCount = 0;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					packFetchCount++;
+					if (packFetchCount === 1) {
+						return {
+							ok: true,
+							status: 200,
+							json: async () => gen1Promise,
+						};
+					}
+					return {
+						ok: true,
+						status: 200,
+						json: async () => gen2Packs,
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			expect(packFetchCount).toBe(1);
+
+			// Close and reopen modal to trigger generation 2
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("9999 크레딧")).toBeDefined();
+			});
+
+			// Now generation 1 packs resolve late
+			resolveGen1([
+				{ id: "pack-111", price_cents: 1111, currency: "USD", credits: 1111 },
+			]);
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Modal must still show generation 2 packs (9999), NOT generation 1 (1111)
+			expect(screen.getByText("9999 크레딧")).toBeDefined();
+			expect(screen.queryByText("1111 크레딧")).toBeNull();
+		});
+
+		it("pack fetch late failure: older generation fetch failure does not show error on newer modal", async () => {
+			let rejectGen1!: (err: any) => void;
+			const gen1Promise = new Promise<any>((_, rej) => {
+				rejectGen1 = rej;
+			});
+
+			const gen2Packs = [
+				{ id: "pack-888", price_cents: 8888, currency: "USD", credits: 8888 },
+			];
+
+			let packFetchCount = 0;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					packFetchCount++;
+					if (packFetchCount === 1) {
+						return {
+							ok: false,
+							status: 500,
+							json: async () => {
+								await gen1Promise;
+								return { detail: { error: "failed" } };
+							},
+						};
+					}
+					return {
+						ok: true,
+						status: 200,
+						json: async () => gen2Packs,
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			expect(packFetchCount).toBe(1);
+
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("8888 크레딧")).toBeDefined();
+			});
+
+			rejectGen1(new Error("Gen 1 fetch error"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(screen.getByText("8888 크레딧")).toBeDefined();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
 	});
 });

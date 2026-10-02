@@ -76,12 +76,17 @@ export function SteamPurchaseModal({
 	const [preservedAttempt, setPreservedAttempt] = useState<PurchaseAttempt | null>(null);
 	const [grantedNow, setGrantedNow] = useState<boolean>(false);
 
+	const openGenerationRef = useRef(0);
 	const authListenerRef = useRef<SteamAuthListener | null>(null);
 	const finalizingOrderIdsRef = useRef<Set<string>>(new Set());
 	const finalizedOrderIdsRef = useRef<Set<string>>(new Set());
 	const abortControllerRef = useRef<AbortController | null>(null);
 	const isExecutingRef = useRef(false);
 	const attemptTokenRef = useRef<symbol | null>(null);
+
+	const isCurrent = useCallback((token: symbol | null): token is symbol => {
+		return token !== null && attemptTokenRef.current === token;
+	}, []);
 
 	const invalidateAttempt = useCallback(() => {
 		attemptTokenRef.current = null;
@@ -100,6 +105,7 @@ export function SteamPurchaseModal({
 	// Clean up listeners on unmount
 	useEffect(() => {
 		return () => {
+			openGenerationRef.current++;
 			invalidateAttempt();
 		};
 	}, [invalidateAttempt]);
@@ -107,6 +113,7 @@ export function SteamPurchaseModal({
 	// Reset state when modal opens or closes
 	useEffect(() => {
 		if (isOpen) {
+			const generation = ++openGenerationRef.current;
 			setFlowState("idle");
 			setErrorMessage(null);
 			setCurrentOrder(null);
@@ -118,19 +125,26 @@ export function SteamPurchaseModal({
 			setLoadingPacks(true);
 			fetchSteamPacks(gatewayUrl)
 				.then((p) => {
+					if (openGenerationRef.current !== generation) return;
 					setPacks(p);
 					if (p.length > 0) {
 						setSelectedPackId(p[0].id);
 					}
 				})
 				.catch((err) => {
+					if (openGenerationRef.current !== generation) return;
 					Logger.warn("SteamPurchaseModal", "Failed to fetch packs", {
 						error: String(err),
 					});
 					setErrorMessage(String(err));
 				})
-				.finally(() => setLoadingPacks(false));
+				.finally(() => {
+					if (openGenerationRef.current === generation) {
+						setLoadingPacks(false);
+					}
+				});
 		} else {
+			openGenerationRef.current++;
 			invalidateAttempt();
 		}
 	}, [isOpen, gatewayUrl, invalidateAttempt]);
@@ -147,7 +161,10 @@ export function SteamPurchaseModal({
 	}, [isOpen, flowState, handleClose]);
 
 	const handleFinalize = useCallback(
-		async (orderId: string, key: string) => {
+		async (orderId: string, key: string, token: symbol) => {
+			if (!isCurrent(token)) {
+				return;
+			}
 			const idStr = String(orderId);
 			if (
 				finalizingOrderIdsRef.current.has(idStr) ||
@@ -162,6 +179,9 @@ export function SteamPurchaseModal({
 					gatewayUrl,
 					signal: abortControllerRef.current?.signal,
 				});
+				if (!isCurrent(token)) {
+					return;
+				}
 				finalizedOrderIdsRef.current.add(idStr);
 				finalizingOrderIdsRef.current.delete(idStr);
 
@@ -176,6 +196,9 @@ export function SteamPurchaseModal({
 				}
 				setFlowState("success");
 			} catch (err: any) {
+				if (!isCurrent(token)) {
+					return;
+				}
 				finalizingOrderIdsRef.current.delete(idStr);
 				Logger.warn("SteamPurchaseModal", "Finalize failed", { error: String(err) });
 				const errStr = String(err?.message || err);
@@ -191,7 +214,7 @@ export function SteamPurchaseModal({
 				setFlowState("error");
 			}
 		},
-		[gatewayUrl, onPurchaseSuccess, onSuccess],
+		[gatewayUrl, onPurchaseSuccess, onSuccess, isCurrent],
 	);
 
 	const executeOrder = async (attempt: PurchaseAttempt) => {
@@ -202,170 +225,175 @@ export function SteamPurchaseModal({
 		attemptTokenRef.current = attemptToken;
 		setPreservedAttempt(attempt);
 
-		let effectiveNaiaKey = naiaKey;
-		if (!effectiveNaiaKey) {
-			try {
-				effectiveNaiaKey = (await getNaiaKeySecure()) ?? undefined;
-			} catch (err) {
-				Logger.warn("SteamPurchaseModal", "Failed to get naiaKey", {
-					error: String(err),
-				});
-			}
-		}
-
-		// Validate token after secure key await
-		if (attemptTokenRef.current !== attemptToken) {
-			isExecutingRef.current = false;
-			return;
-		}
-
-		if (!effectiveNaiaKey) {
-			isExecutingRef.current = false;
-			setPreservedAttempt(null);
-			setFlowState("error");
-			setErrorMessage(t("steam.purchase.authRequired"));
-			return;
-		}
-
-		// Register microtransaction listener BEFORE sending the order request (#729 P1 지적 9)
-		authListenerRef.current?.unlisten();
-		authListenerRef.current = null;
-		let listener: SteamAuthListener | null = null;
 		try {
-			listener = await createSteamAuthListener();
-		} catch (e) {
-			Logger.warn("SteamPurchaseModal", "Failed to register early auth listener", {
-				error: String(e),
-			});
-		}
-
-		// Validate token after listener registration await: if cancelled, unlisten immediately and do not POST (#729 지적 3)
-		if (attemptTokenRef.current !== attemptToken) {
-			listener?.unlisten();
-			isExecutingRef.current = false;
-			return;
-		}
-		authListenerRef.current = listener;
-
-		setFlowState("creating");
-		setErrorMessage(null);
-
-		const controller = new AbortController();
-		abortControllerRef.current = controller;
-
-		try {
-			const order = await createSteamOrder(effectiveNaiaKey, attempt.packId, {
-				gatewayUrl,
-				idempotencyKey: attempt.idempotencyKey,
-				signal: controller.signal,
-				pollIntervalMs,
-				maxPollAttempts,
-			});
-
-			// Validate token after createSteamOrder await
-			if (attemptTokenRef.current !== attemptToken) {
-				isExecutingRef.current = false;
-				return;
-			}
-
-			setCurrentOrder(order);
-
-			// P1 지적 6: Check order.status 7종 BEFORE branching by flow
-			if (
-				!VALID_STEAM_ORDER_STATUSES.has(order.status) ||
-				order.status === "INIT_FAILED" ||
-				order.status === "FAILED" ||
-				order.status === "MISMATCH" ||
-				order.status === "REVERSED"
-			) {
-				setFlowState("error");
-				setErrorMessage(t("steam.purchase.cancelled"));
-				return;
-			}
-
-			if (order.status === "GRANTED") {
-				clearCachedLabCredits();
-				window.dispatchEvent(new Event("naia_auth_ready"));
-				setGrantedNow(false);
-				setFlowState("success");
-				return;
-			}
-
-			if (order.status === "CREATED") {
-				// 10s poll limit reached while still CREATED (#729 P1 지적 8)
-				setFlowState("delayed");
-				return;
-			}
-
-			if (order.status === "INITIATED") {
-				if (order.flow === "web") {
-					if (!order.steamurl || !isAllowedSteamUrl(order.steamurl)) {
-						setFlowState("error");
-						setErrorMessage(t("steam.purchase.invalidUrl"));
-						return;
-					}
-					try {
-						await openSteamUrl(order.steamurl);
-						setFlowState("web_flow");
-					} catch (err: any) {
-						setFlowState("error");
-						setErrorMessage(String(err?.message || err));
-					}
-				} else {
-					// Client flow
-					setFlowState("authorizing");
-					authListenerRef.current?.waitForOrder(order.order_id, {
-						onAuthorized: () => {
-							handleFinalize(order.order_id, effectiveNaiaKey!);
-						},
-						onCancelled: () => {
-							setFlowState("error");
-							setErrorMessage(t("steam.purchase.cancelled"));
-						},
+			let effectiveNaiaKey = naiaKey;
+			if (!effectiveNaiaKey) {
+				try {
+					effectiveNaiaKey = (await getNaiaKeySecure()) ?? undefined;
+				} catch (err) {
+					Logger.warn("SteamPurchaseModal", "Failed to get naiaKey", {
+						error: String(err),
 					});
 				}
 			}
-		} catch (err: any) {
-			// If cancelled by modal close or token invalidated, finish silently without state update
-			if (attemptTokenRef.current !== attemptToken) {
-				isExecutingRef.current = false;
+
+			// Validate token after secure key await
+			if (!isCurrent(attemptToken)) {
 				return;
 			}
 
-			// If deadline (10s) expired, transition to delayed screen and keep attempt preserved (#729 지적 7)
-			if (isSteamOrderTimeout(err)) {
-				Logger.info(
-					"SteamPurchaseModal",
-					"Order creation timed out (10s total deadline), showing delayed screen",
-				);
-				setFlowState("delayed");
+			if (!effectiveNaiaKey) {
+				setPreservedAttempt(null);
+				setFlowState("error");
+				setErrorMessage(t("steam.purchase.authRequired"));
 				return;
 			}
 
-			// If user initiated close/abort (controller.signal.aborted), finish silently without state update
-			if (controller.signal.aborted) {
-				isExecutingRef.current = false;
-				return;
+			// Register microtransaction listener BEFORE sending the order request (#729 P1 지적 9)
+			authListenerRef.current?.unlisten();
+			authListenerRef.current = null;
+			let listener: SteamAuthListener | null = null;
+			try {
+				listener = await createSteamAuthListener();
+			} catch (e) {
+				Logger.warn("SteamPurchaseModal", "Failed to register early auth listener", {
+					error: String(e),
+				});
 			}
 
-			Logger.warn("SteamPurchaseModal", "Order creation failed", {
-				error: String(err),
-			});
-			const msg = String(err?.message || err);
-			if (msg === "steam_not_linked") {
-				setErrorMessage(t("steam.purchase.notLinkedNotice"));
-			} else if (
-				msg.includes("steam_failed") ||
-				msg.includes("order_reversed") ||
-				msg.includes("order_init_failed")
-			) {
-				setErrorMessage(t("steam.purchase.cancelled"));
-			} else {
-				setErrorMessage(msg);
+			// Validate token after listener registration await: if cancelled, unlisten immediately and do not POST (#729 지적 3)
+			if (!isCurrent(attemptToken)) {
+				listener?.unlisten();
+				return;
 			}
-			setFlowState("error");
+			authListenerRef.current = listener;
+
+			setFlowState("creating");
+			setErrorMessage(null);
+
+			const controller = new AbortController();
+			abortControllerRef.current = controller;
+
+			try {
+				const order = await createSteamOrder(effectiveNaiaKey, attempt.packId, {
+					gatewayUrl,
+					idempotencyKey: attempt.idempotencyKey,
+					signal: controller.signal,
+					pollIntervalMs,
+					maxPollAttempts,
+				});
+
+				// Validate token after createSteamOrder await
+				if (!isCurrent(attemptToken)) {
+					return;
+				}
+
+				setCurrentOrder(order);
+
+				// P1 지적 6: Check order.status 7종 BEFORE branching by flow
+				if (
+					!VALID_STEAM_ORDER_STATUSES.has(order.status) ||
+					order.status === "INIT_FAILED" ||
+					order.status === "FAILED" ||
+					order.status === "MISMATCH" ||
+					order.status === "REVERSED"
+				) {
+					setFlowState("error");
+					setErrorMessage(t("steam.purchase.cancelled"));
+					return;
+				}
+
+				if (order.status === "GRANTED") {
+					clearCachedLabCredits();
+					window.dispatchEvent(new Event("naia_auth_ready"));
+					setGrantedNow(false);
+					setFlowState("success");
+					return;
+				}
+
+				if (order.status === "CREATED") {
+					// 10s poll limit reached while still CREATED (#729 P1 지적 8)
+					setFlowState("delayed");
+					return;
+				}
+
+				if (order.status === "INITIATED") {
+					if (order.flow === "web") {
+						if (!order.steamurl || !isAllowedSteamUrl(order.steamurl)) {
+							setFlowState("error");
+							setErrorMessage(t("steam.purchase.invalidUrl"));
+							return;
+						}
+						try {
+							await openSteamUrl(order.steamurl);
+							if (!isCurrent(attemptToken)) {
+								return;
+							}
+							setFlowState("web_flow");
+						} catch (err: any) {
+							if (!isCurrent(attemptToken)) {
+								return;
+							}
+							setFlowState("error");
+							setErrorMessage(String(err?.message || err));
+						}
+					} else {
+						// Client flow
+						setFlowState("authorizing");
+						authListenerRef.current?.waitForOrder(order.order_id, {
+							onAuthorized: () => {
+								handleFinalize(order.order_id, effectiveNaiaKey!, attemptToken);
+							},
+							onCancelled: () => {
+								if (!isCurrent(attemptToken)) {
+									return;
+								}
+								setFlowState("error");
+								setErrorMessage(t("steam.purchase.cancelled"));
+							},
+						});
+					}
+				}
+			} catch (err: any) {
+				// If cancelled by modal close or token invalidated, finish silently without state update
+				if (!isCurrent(attemptToken)) {
+					return;
+				}
+
+				// If deadline (10s) expired, transition to delayed screen and keep attempt preserved (#729 지적 7)
+				if (isSteamOrderTimeout(err)) {
+					Logger.info(
+						"SteamPurchaseModal",
+						"Order creation timed out (10s total deadline), showing delayed screen",
+					);
+					setFlowState("delayed");
+					return;
+				}
+
+				// If user initiated close/abort (controller.signal.aborted), finish silently without state update
+				if (controller.signal.aborted) {
+					return;
+				}
+
+				Logger.warn("SteamPurchaseModal", "Order creation failed", {
+					error: String(err),
+				});
+				const msg = String(err?.message || err);
+				if (msg === "steam_not_linked") {
+					setErrorMessage(t("steam.purchase.notLinkedNotice"));
+				} else if (
+					msg.includes("steam_failed") ||
+					msg.includes("order_reversed") ||
+					msg.includes("order_init_failed")
+				) {
+					setErrorMessage(t("steam.purchase.cancelled"));
+				} else {
+					setErrorMessage(msg);
+				}
+				setFlowState("error");
+			}
 		} finally {
-			if (attemptTokenRef.current === attemptToken) {
+			if (isCurrent(attemptToken)) {
 				isExecutingRef.current = false;
 			}
 		}
@@ -546,6 +574,11 @@ export function SteamPurchaseModal({
 								marginTop: 12,
 							}}
 							onClick={async () => {
+								const token = attemptTokenRef.current;
+								if (!token || !isCurrent(token)) return;
+								const orderId = currentOrder?.order_id;
+								if (!orderId) return;
+
 								let key = naiaKey;
 								if (!key) {
 									try {
@@ -554,8 +587,9 @@ export function SteamPurchaseModal({
 										/* empty */
 									}
 								}
-								if (key && currentOrder) {
-									handleFinalize(currentOrder.order_id, key);
+								if (!isCurrent(token)) return;
+								if (key) {
+									handleFinalize(orderId, key, token);
 								}
 							}}
 						>
@@ -592,10 +626,17 @@ export function SteamPurchaseModal({
 								type="button"
 								className="voice-preview-btn"
 								onClick={async () => {
+									const token = attemptTokenRef.current;
+									if (!token || !isCurrent(token)) return;
+									const steamUrl = currentOrder?.steamurl;
+									if (!steamUrl) return;
+
 									try {
 										setErrorMessage(null);
-										await openSteamUrl(currentOrder.steamurl!);
+										await openSteamUrl(steamUrl);
+										if (!isCurrent(token)) return;
 									} catch (err: any) {
+										if (!isCurrent(token)) return;
 										setErrorMessage(String(err?.message || err));
 									}
 								}}
@@ -611,6 +652,11 @@ export function SteamPurchaseModal({
 								color: "var(--espresso, #1a1a1a)",
 							}}
 							onClick={async () => {
+								const token = attemptTokenRef.current;
+								if (!token || !isCurrent(token)) return;
+								const orderId = currentOrder?.order_id;
+								if (!orderId) return;
+
 								let key = naiaKey;
 								if (!key) {
 									try {
@@ -619,8 +665,9 @@ export function SteamPurchaseModal({
 										/* empty */
 									}
 								}
-								if (key && currentOrder) {
-									handleFinalize(currentOrder.order_id, key);
+								if (!isCurrent(token)) return;
+								if (key) {
+									handleFinalize(orderId, key, token);
 								}
 							}}
 						>
