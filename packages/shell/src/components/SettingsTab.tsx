@@ -1663,14 +1663,6 @@ export function SettingsTab() {
 	const labSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const labBrowserVisibleRef = useRef(false);
 
-	// Hide Chrome X11 embed while Steam purchase modal is open
-	useEffect(() => {
-		if (steamPurchaseModalOpen) {
-			pushModal();
-			return () => popModal();
-		}
-	}, [steamPurchaseModalOpen, pushModal, popModal]);
-
 	const handleSteamLink = async () => {
 		if (!naiaKey) return;
 		setSteamLinking(true);

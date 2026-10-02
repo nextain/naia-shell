@@ -4,6 +4,7 @@ import { t } from "../lib/i18n";
 import { clearCachedLabCredits } from "../lib/lab-balance";
 import { Logger } from "../lib/logger";
 import { getNaiaKeySecure } from "../lib/config";
+import { useAppStore } from "../stores/app";
 import {
 	createSteamAuthListener,
 	createSteamOrder,
@@ -51,6 +52,18 @@ export function SteamPurchaseModal({
 	pollIntervalMs,
 	maxPollAttempts,
 }: SteamPurchaseModalProps) {
+	const pushModal = useAppStore((s) => s.pushModal);
+	const popModal = useAppStore((s) => s.popModal);
+
+	// Modal stack tracking for Chrome embedding (#729 지적 9)
+	useEffect(() => {
+		if (!isOpen) return;
+		pushModal();
+		return () => {
+			popModal();
+		};
+	}, [isOpen, pushModal, popModal]);
+
 	interface PurchaseAttempt {
 		idempotencyKey: string;
 		packId: string;

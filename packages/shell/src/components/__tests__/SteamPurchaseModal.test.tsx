@@ -34,6 +34,7 @@ import { getNaiaKeySecure } from "../../lib/config";
 import * as steamBilling from "../../lib/steam-billing";
 import { SteamPurchaseModal } from "../SteamPurchaseModal";
 import { setLocale } from "../../lib/i18n";
+import { useAppStore } from "../../stores/app";
 
 describe("SteamPurchaseModal component (#729)", () => {
 	const defaultPacks = [
@@ -633,7 +634,10 @@ describe("SteamPurchaseModal component (#729)", () => {
 		});
 
 		// 1st open succeeds during order initiation
-		invokeMock.mockResolvedValueOnce(undefined);
+		invokeMock.mockImplementation(async (cmd: string) => {
+			if (cmd === "steam_open_url") return undefined;
+			return undefined;
+		});
 
 		render(
 			<SteamPurchaseModal
@@ -657,11 +661,17 @@ describe("SteamPurchaseModal component (#729)", () => {
 			expect(screen.getByText("결제를 완료했어요")).toBeDefined();
 		});
 
-		expect(invokeMock).toHaveBeenCalledTimes(1);
+		const steamOpenCalls = invokeMock.mock.calls.filter((c) => c[0] === "steam_open_url");
+		expect(steamOpenCalls.length).toBe(1);
 		expect(screen.queryByRole("alert")).toBeNull();
 
 		// 2nd open fails when clicking reopen button
-		invokeMock.mockRejectedValueOnce(new Error("Failed to open browser: OS error"));
+		invokeMock.mockImplementation(async (cmd: string) => {
+			if (cmd === "steam_open_url") {
+				throw new Error("Failed to open browser: OS error");
+			}
+			return undefined;
+		});
 
 		fireEvent.click(screen.getByText("Steam 결제 페이지 다시 열기"));
 
@@ -1329,5 +1339,47 @@ describe("SteamPurchaseModal component (#729)", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it("modalCount in useAppStore increments by exactly 1 when opened, and returns to baseline when closed (#729 지적 9)", async () => {
+		const initialCount = useAppStore.getState().modalCount;
+
+		const { rerender, unmount } = render(
+			<SteamPurchaseModal
+				isOpen={true}
+				gatewayUrl="https://api.naia.test"
+				naiaKey="test-key"
+				onClose={vi.fn()}
+			/>,
+		);
+
+		// Must increment by exactly 1
+		expect(useAppStore.getState().modalCount).toBe(initialCount + 1);
+
+		// When isOpen transitions to false, modalCount must return to baseline
+		rerender(
+			<SteamPurchaseModal
+				isOpen={false}
+				gatewayUrl="https://api.naia.test"
+				naiaKey="test-key"
+				onClose={vi.fn()}
+			/>,
+		);
+		expect(useAppStore.getState().modalCount).toBe(initialCount);
+
+		// When reopened, increments by 1 again
+		rerender(
+			<SteamPurchaseModal
+				isOpen={true}
+				gatewayUrl="https://api.naia.test"
+				naiaKey="test-key"
+				onClose={vi.fn()}
+			/>,
+		);
+		expect(useAppStore.getState().modalCount).toBe(initialCount + 1);
+
+		// Unmount cleanly restores baseline
+		unmount();
+		expect(useAppStore.getState().modalCount).toBe(initialCount);
 	});
 });
