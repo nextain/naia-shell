@@ -211,8 +211,8 @@ export async function performSteamLogin(
 	});
 
 	await invoke("complete_naia_auth", {
-		apiKey: data.api_key,
-		userId: data.user_id,
+		naiaKey: data.api_key,
+		naiaUserId: data.user_id,
 	});
 
 	return data;

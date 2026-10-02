@@ -120,8 +120,8 @@ describe("steam-auth client (#729)", () => {
 			});
 
 			expect(invokeMock).toHaveBeenCalledWith("complete_naia_auth", {
-				apiKey: "gw-validkey123",
-				userId: "user-1",
+				naiaKey: "gw-validkey123",
+				naiaUserId: "user-1",
 			});
 		});
 
@@ -177,8 +177,8 @@ describe("steam-auth client (#729)", () => {
 
 			expect(result.user_id).toBe("user-new");
 			expect(invokeMock).toHaveBeenCalledWith("complete_naia_auth", {
-				apiKey: "gw-newkey789",
-				userId: "user-new",
+				naiaKey: "gw-newkey789",
+				naiaUserId: "user-new",
 			});
 		});
 

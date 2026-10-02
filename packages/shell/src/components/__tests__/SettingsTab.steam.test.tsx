@@ -149,7 +149,7 @@ describe("SettingsTab on Steam edition (#729)", () => {
 
 	it("calls steamLinkIdentity and displays success message on success", async () => {
 		mockSteamLinkIdentity.mockResolvedValueOnce({
-			status: "linked",
+			success: true,
 		});
 
 		render(<SettingsTab />);
@@ -169,9 +169,11 @@ describe("SettingsTab on Steam edition (#729)", () => {
 	});
 
 	it("displays error message when identity_linked_elsewhere occurs", async () => {
-		const error: any = new Error("Account linked elsewhere");
-		error.code = "identity_linked_elsewhere";
-		mockSteamLinkIdentity.mockRejectedValueOnce(error);
+		mockSteamLinkIdentity.mockResolvedValueOnce({
+			success: false,
+			errorCode: "identity_linked_elsewhere",
+			error: "이 Steam 계정은 다른 나이아 계정에 연결되어 있습니다",
+		});
 
 		render(<SettingsTab />);
 
@@ -186,6 +188,29 @@ describe("SettingsTab on Steam edition (#729)", () => {
 			expect(mockSteamLinkIdentity).toHaveBeenCalledWith("gw-test-steam-key");
 			const msg = screen.getByTestId("steam-link-message");
 			expect(msg.textContent).toContain("다른 나이아 계정에 연결되어 있습니다");
+		});
+	});
+
+	it("displays general error message when steamLinkIdentity fails with other errors", async () => {
+		mockSteamLinkIdentity.mockResolvedValueOnce({
+			success: false,
+			errorCode: "network_error",
+			error: "Network connection failed",
+		});
+
+		render(<SettingsTab />);
+
+		await screen.findByTestId("profile-naia-account");
+		const linkBtn = screen.getByTestId("steam-link-btn");
+
+		await act(async () => {
+			fireEvent.click(linkBtn);
+		});
+
+		await waitFor(() => {
+			expect(mockSteamLinkIdentity).toHaveBeenCalledWith("gw-test-steam-key");
+			const msg = screen.getByTestId("steam-link-message");
+			expect(msg.textContent).toContain("Network connection failed");
 		});
 	});
 });

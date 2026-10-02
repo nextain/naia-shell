@@ -1676,14 +1676,13 @@ export function SettingsTab() {
 		setSteamLinking(true);
 		setSteamLinkMessage(null);
 		try {
-			await steamLinkIdentity(naiaKey);
-			setSteamLinkMessage({
-				type: "success",
-				text: t("settings.steamLinkSuccess"),
-			});
-		} catch (err: any) {
-			const code = err?.code || "";
-			if (code === "identity_linked_elsewhere") {
+			const res = await steamLinkIdentity(naiaKey);
+			if (res.success) {
+				setSteamLinkMessage({
+					type: "success",
+					text: t("settings.steamLinkSuccess"),
+				});
+			} else if (res.errorCode === "identity_linked_elsewhere") {
 				setSteamLinkMessage({
 					type: "error",
 					text: t("settings.steamLinkedElsewhere"),
@@ -1691,9 +1690,14 @@ export function SettingsTab() {
 			} else {
 				setSteamLinkMessage({
 					type: "error",
-					text: String(err?.message || err),
+					text: res.error || "Failed to link Steam account",
 				});
 			}
+		} catch (err: any) {
+			setSteamLinkMessage({
+				type: "error",
+				text: String(err?.message || err),
+			});
 		} finally {
 			setSteamLinking(false);
 		}
