@@ -1,0 +1,63 @@
+# 임시 진단 (nextain/naia-shell#729): Windows cargo test 의 STATUS_ENTRYPOINT_NOT_FOUND 원인 확인.
+# diag/** 브랜치에서만 돈다. 원인을 찾으면 브랜치째 지운다.
+name: diag-steam-win
+on:
+  push:
+    branches: ["diag/**"]
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: windows-2025
+    steps:
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: "1.97.0"
+      - name: Minimal steamworks crate test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          New-Item -ItemType Directory -Force mini/src | Out-Null
+          Set-Content mini/Cargo.toml @"
+          [package]
+          name = "mini"
+          version = "0.1.0"
+          edition = "2021"
+          [dependencies]
+          steamworks = "=0.13.1"
+          "@
+          Set-Content mini/src/lib.rs @"
+          pub fn touch() -> bool { steamworks::Client::init_app(5354630).is_ok() }
+          #[cfg(test)]
+          mod tests {
+              #[test]
+              fn links() { let f: fn() -> bool = super::touch; assert!(f as usize != 0); }
+          }
+          "@
+          Push-Location mini
+          cargo test --no-run 2>&1 | Select-Object -Last 5
+          $exe = Get-ChildItem target/debug/deps/mini-*.exe | Select-Object -First 1
+          Write-Host "TEST EXE: $($exe.FullName)"
+          & $exe.FullName
+          Write-Host "MINI EXIT: $LASTEXITCODE  (0xc0000139 = ENTRYPOINT_NOT_FOUND)"
+          cargo test 2>&1 | Select-Object -Last 8
+          Write-Host "== where steam_api64.dll on PATH"
+          where.exe steam_api64.dll
+          Write-Host "== DLLs copied by steamworks-sys"
+          Get-ChildItem -Recurse target -Filter steam_api64.dll | ForEach-Object { "$($_.FullName) $($_.Length)" }
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem -Recurse "$vs\VC\Tools\MSVC" -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          Write-Host "== imports of test exe (DLL names)"
+          & $dumpbin.FullName /dependents $exe.FullName
+          Write-Host "== steam_api64 imports"
+          & $dumpbin.FullName /imports:steam_api64.dll $exe.FullName
+          Pop-Location
+      - name: Loader snaps for minimal test exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $exe = Get-ChildItem mini/target/debug/deps/mini-*.exe | Select-Object -First 1
+          $dbg = "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64"
+          Get-ChildItem $dbg -Filter *.exe | Select-Object -ExpandProperty Name | Select-String "gflags|cdb"
+          & "$dbg\gflags.exe" /i $exe.Name +sls
+          & "$dbg\cdb.exe" -g -G -c "q" $exe.FullName 2>&1 | Select-String -Pattern "ERROR|entry|Procedure|not found|steam_api|LdrpSnap|Unable" | Select-Object -First 60
