@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Đã hủy thanh toán Steam",
 	"steam.purchase.loadingPacks": "Đang tải các gói tín dụng…",
 	"steam.purchase.emptyPacks": "Không có gói tín dụng khả dụng.",
+	"steam.purchase.alreadyGranted": "Đơn hàng này đã được xử lý trước đó.",
 	"voice.ref.errCreditInsufficientSteam": "Không đủ tín dụng. Vui lòng nạp tín dụng qua Steam trong Cài đặt.",
 	"chat.voiceErrorCreditsSteam": "Tạo giọng nói đã dừng do không đủ tín dụng. Vui lòng nạp tín dụng qua Steam trong Cài đặt.",
 	"steam.purchase.authRequired": "Naia account authentication required.",

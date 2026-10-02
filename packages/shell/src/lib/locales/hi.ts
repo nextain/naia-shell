@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Steam खरीद रद्द कर दी गई",
 	"steam.purchase.loadingPacks": "क्रेडिट पैक लोड हो रहे हैं…",
 	"steam.purchase.emptyPacks": "कोई क्रेडिट पैक उपलब्ध नहीं है।",
+	"steam.purchase.alreadyGranted": "यह ऑर्डर पहले ही प्रोसेस हो चुका है।",
 	"voice.ref.errCreditInsufficientSteam": "अपर्याप्त क्रेडिट। कृपया सेटिंग्स में Steam के माध्यम से क्रेडिट टॉप-अप करें।",
 	"chat.voiceErrorCreditsSteam": "अपर्याप्त क्रेडिट के कारण आवाज़ उत्पादन रुक गया। कृपया Steam के माध्यम से टॉप-अप करें।",
 	"steam.purchase.authRequired": "Naia account authentication required.",

@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Steam決済がキャンセルされました",
 	"steam.purchase.loadingPacks": "クレジットパックを読み込み中…",
 	"steam.purchase.emptyPacks": "利用可能なクレジットパックがありません。",
+	"steam.purchase.alreadyGranted": "この注文は既に反映されています。",
 	"voice.ref.errCreditInsufficientSteam": "クレジットが不足しています。設定からSteamでチャージしてください。",
 	"chat.voiceErrorCreditsSteam": "クレジット不足のため音声生成が停止しました。設定からSteamでチャージしてください。",
 	"steam.purchase.authRequired": "Naia account authentication required.",

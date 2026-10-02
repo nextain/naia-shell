@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "تم إلغاء شراء Steam",
 	"steam.purchase.loadingPacks": "جاري تحميل حزم الرصيد…",
 	"steam.purchase.emptyPacks": "لا توجد حزم رصيد متاحة.",
+	"steam.purchase.alreadyGranted": "تمت معالجة هذا الطلب بالفعل.",
 	"voice.ref.errCreditInsufficientSteam": "الرصيد غير كافٍ. يرجى شحن الرصيد عبر Steam في الإعدادات.",
 	"chat.voiceErrorCreditsSteam": "توليد الصوت متوقف لعدم كفاية الرصيد. يرجى شحن الرصيد عبر Steam في الإعدادات.",
 	"steam.purchase.authRequired": "Naia account authentication required.",

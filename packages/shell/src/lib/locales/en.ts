@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Steam purchase cancelled",
 	"steam.purchase.loadingPacks": "Loading credit packs…",
 	"steam.purchase.emptyPacks": "No credit packs available.",
+	"steam.purchase.alreadyGranted": "This order has already been processed.",
 	"voice.ref.errCreditInsufficientSteam": "Insufficient credits. Please top up credits via Steam in Settings.",
 	"chat.voiceErrorCreditsSteam": "Voice generation stopped due to insufficient credits. Please top up credits via Steam in Settings.",
 	"steam.purchase.authRequired": "Naia account authentication required.",

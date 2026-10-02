@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Покупка в Steam отменена",
 	"steam.purchase.loadingPacks": "Загрузка пакетов кредитов…",
 	"steam.purchase.emptyPacks": "Нет доступных пакетов кредитов.",
+	"steam.purchase.alreadyGranted": "Этот заказ уже был обработан.",
 	"voice.ref.errCreditInsufficientSteam": "Недостаточно кредитов. Пожалуйста, пополните баланс через Steam в Настройках.",
 	"chat.voiceErrorCreditsSteam": "Синтез речи остановлен из-за нехватки кредитов. Пополните баланс через Steam в Настройках.",
 	"steam.purchase.authRequired": "Naia account authentication required.",

@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Steam 결제가 취소되었습니다",
 	"steam.purchase.loadingPacks": "크레딧 팩 불러오는 중…",
 	"steam.purchase.emptyPacks": "구매 가능한 크레딧 팩이 없습니다.",
+	"steam.purchase.alreadyGranted": "이미 반영된 주문입니다.",
 	"voice.ref.errCreditInsufficientSteam": "크레딧이 부족합니다. 설정에서 Steam으로 충전해주세요.",
 	"chat.voiceErrorCreditsSteam": "크레딧이 부족하여 음성 합성이 중단되었습니다. 설정에서 Steam으로 충전해주세요.",
 	"steam.purchase.authRequired": "나이아 계정 인증이 필요합니다.",

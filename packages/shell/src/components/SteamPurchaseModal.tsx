@@ -62,6 +62,7 @@ export function SteamPurchaseModal({
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [currentOrder, setCurrentOrder] = useState<SteamOrderResponse | null>(null);
 	const [preservedAttempt, setPreservedAttempt] = useState<PurchaseAttempt | null>(null);
+	const [grantedNow, setGrantedNow] = useState<boolean>(true);
 
 	const authListenerRef = useRef<SteamAuthListener | null>(null);
 	const finalizingOrderIdsRef = useRef<Set<string>>(new Set());
@@ -98,6 +99,7 @@ export function SteamPurchaseModal({
 			setErrorMessage(null);
 			setCurrentOrder(null);
 			setPreservedAttempt(null);
+			setGrantedNow(true);
 			finalizingOrderIdsRef.current.clear();
 			finalizedOrderIdsRef.current.clear();
 
@@ -153,6 +155,8 @@ export function SteamPurchaseModal({
 
 				clearCachedLabCredits();
 				window.dispatchEvent(new Event("naia_auth_ready"));
+
+				setGrantedNow(Boolean(res.granted_now));
 
 				if (res.granted_now) {
 					onPurchaseSuccess?.();
@@ -419,9 +423,11 @@ export function SteamPurchaseModal({
 					<div style={{ textAlign: "center", padding: "24px 0" }}>
 						<div style={{ fontSize: "2.5rem", marginBottom: 12 }}>✓</div>
 						<p style={{ fontWeight: "bold", fontSize: "1.1rem", marginBottom: 8 }}>
-							{t("steam.purchase.success")}
+							{grantedNow
+								? t("steam.purchase.success")
+								: t("steam.purchase.alreadyGranted")}
 						</p>
-						{selectedPack && (
+						{grantedNow && selectedPack && (
 							<p style={{ opacity: 0.8, marginBottom: 20 }}>
 								+{selectedPack.credits} {t("cost.labCredits")}
 							</p>

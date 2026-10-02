@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Steam支付已取消",
 	"steam.purchase.loadingPacks": "正在加载点数包…",
 	"steam.purchase.emptyPacks": "暂无可用点数包。",
+	"steam.purchase.alreadyGranted": "该订单已处理完成。",
 	"voice.ref.errCreditInsufficientSteam": "点数不足。请在设置中通过Steam进行充值。",
 	"chat.voiceErrorCreditsSteam": "由于点数不足，语音生成已停止。请在设置中通过Steam进行充值。",
 	"steam.purchase.authRequired": "Naia account authentication required.",

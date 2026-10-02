@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Pembelian Steam dibatalkan",
 	"steam.purchase.loadingPacks": "Memuat paket kredit…",
 	"steam.purchase.emptyPacks": "Tidak ada paket kredit yang tersedia.",
+	"steam.purchase.alreadyGranted": "Pesanan ini sudah diproses sebelumnya.",
 	"voice.ref.errCreditInsufficientSteam": "Kredit tidak cukup. Silakan isi ulang kredit melalui Steam di Pengaturan.",
 	"chat.voiceErrorCreditsSteam": "Pembuatan suara terhenti karena kredit tidak cukup. Silakan isi ulang via Steam di Pengaturan.",
 	"steam.purchase.authRequired": "Naia account authentication required.",

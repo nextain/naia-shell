@@ -779,7 +779,9 @@ describe("SteamPurchaseModal component (#729)", () => {
 
 		await waitFor(() => {
 			expect(finalizeCallCount).toBe(1);
-			expect(screen.getByText("크레딧 충전이 완료되었습니다!")).toBeDefined();
+			expect(screen.getByText("이미 반영된 주문입니다.")).toBeDefined();
+			expect(screen.queryByText("크레딧 충전이 완료되었습니다!")).toBeNull();
+			expect(screen.queryByText("+1000 크레딧")).toBeNull();
 		});
 
 		// granted_now: false must NOT call onPurchaseSuccess
@@ -1048,5 +1050,86 @@ describe("SteamPurchaseModal component (#729)", () => {
 				spy.mockRestore();
 			},
 		);
+	});
+
+	it("displays already processed notice without credit addition when granted_now is false (#729 지적 6)", async () => {
+		const onPurchaseSuccess = vi.fn();
+		const onSuccess = vi.fn();
+		let authReadyDispatched = false;
+		const authReadyListener = () => {
+			authReadyDispatched = true;
+		};
+		window.addEventListener("naia_auth_ready", authReadyListener);
+
+		fetchMock.mockImplementation(async (url: string | URL | Request) => {
+			const urlStr = typeof url === "string" ? url : url.toString();
+			if (urlStr.includes("/v1/billing/steam/packs")) {
+				return { ok: true, status: 200, json: async () => defaultPacks };
+			}
+			if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({
+						order_id: "order-already-granted",
+						status: "INITIATED",
+						flow: "client",
+						steamurl: null,
+						pack: defaultPacks[0],
+					}),
+				};
+			}
+			if (urlStr.includes("/finalize")) {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ status: "GRANTED", granted_now: false }),
+				};
+			}
+			return { ok: false, status: 404, json: async () => ({}) };
+		});
+
+		try {
+			render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+					onPurchaseSuccess={onPurchaseSuccess}
+					onSuccess={onSuccess}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("1000 크레딧"));
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("결제를 완료했어요"));
+
+			await waitFor(() => {
+				expect(screen.getByText("이미 반영된 주문입니다.")).toBeDefined();
+			});
+
+			// Must NOT show new credit addition
+			expect(screen.queryByText("크레딧 충전이 완료되었습니다!")).toBeNull();
+			expect(screen.queryByText("+1000 크레딧")).toBeNull();
+
+			// Callbacks for new purchase must not be invoked
+			expect(onPurchaseSuccess).not.toHaveBeenCalled();
+			expect(onSuccess).not.toHaveBeenCalled();
+
+			// Auth ready event must still be dispatched to refresh balance
+			expect(authReadyDispatched).toBe(true);
+		} finally {
+			window.removeEventListener("naia_auth_ready", authReadyListener);
+		}
 	});
 });

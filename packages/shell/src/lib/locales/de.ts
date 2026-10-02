@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Steam-Kauf abgebrochen",
 	"steam.purchase.loadingPacks": "Guthabenpakete werden geladen…",
 	"steam.purchase.emptyPacks": "Keine Guthabenpakete verfügbar.",
+	"steam.purchase.alreadyGranted": "Diese Bestellung wurde bereits verarbeitet.",
 	"voice.ref.errCreditInsufficientSteam": "Nicht genügend Guthaben. Bitte lade Guthaben über Steam in den Einstellungen auf.",
 	"chat.voiceErrorCreditsSteam": "Sprachausgabe wegen unzureichendem Guthaben gestoppt. Bitte lade Guthaben über Steam auf.",
 	"steam.purchase.authRequired": "Naia account authentication required.",

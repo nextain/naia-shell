@@ -1370,6 +1370,7 @@ export default {
 	"steam.purchase.cancelled": "Steam ক্রয় বাতিল করা হয়েছে",
 	"steam.purchase.loadingPacks": "ক্রেডিট প্যাক লোড হচ্ছে…",
 	"steam.purchase.emptyPacks": "কোন ক্রেডিট প্যাক উপলব্ধ নেই।",
+	"steam.purchase.alreadyGranted": "এই অর্ডারটি ইতিমধ্যে প্রক্রিয়া করা হয়েছে।",
 	"voice.ref.errCreditInsufficientSteam": "অপর্যাপ্ত ক্রেডিট। দয়া করে সেটিংসে Steam-এর মাধ্যমে ক্রেডিট টপ-আপ করুন।",
 	"chat.voiceErrorCreditsSteam": "অপর্যাপ্ত ক্রেডিটের কারণে ভয়েস তৈরি বন্ধ হয়েছে। দয়া করে Steam-এর মাধ্যমে টপ-আপ করুন।",
 	"steam.purchase.authRequired": "Naia account authentication required.",
