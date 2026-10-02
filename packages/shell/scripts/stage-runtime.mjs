@@ -20,7 +20,7 @@
  *
  * cwd 무관(자기 위치 기준). 진입 = `pnpm run tauri:build:bundle` = `node scripts/stage-runtime.mjs`.
  */
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync, execSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	chmodSync,
@@ -546,27 +546,72 @@ export function provisionMsvcRedist(matrix, platform, arch) {
 	console.log(`[stage-runtime] ② MSVC 재배포 ${spec.files.length}종 ← ${dir}`);
 }
 
+/** (win) cargo metadata로 steamworks-sys에 동봉된 steam_api64.dll 경로를 탐색 (#729). */
+export function findSteamworksSdkDll(
+	fileName,
+	{
+		manifestPath = resolve(SHELL, "src-tauri", "Cargo.toml"),
+		spawnSyncImpl = spawnSync,
+	} = {},
+) {
+	try {
+		const res = spawnSyncImpl(
+			"cargo",
+			["metadata", "--format-version", "1", "--locked", "--manifest-path", manifestPath],
+			{ encoding: "utf8", shell: false, maxBuffer: 64 * 1024 * 1024 },
+		);
+		if (res.status !== 0 || !res.stdout) {
+			return null;
+		}
+		const metadata = JSON.parse(res.stdout);
+		const pkg = metadata.packages?.find((p) => p.name === "steamworks-sys");
+		if (!pkg?.manifest_path) {
+			return null;
+		}
+		const pkgDir = dirname(pkg.manifest_path);
+		return resolve(pkgDir, "lib", "steam", "redistributable_bin", "win64", fileName);
+	} catch {
+		return null;
+	}
+}
+
 /** (win) Steamworks SDK steam_api64.dll → resources/ 복사 (#729). */
-export function provisionSteamworks(matrix, platform, _arch, { copy = copyFileSync, exists = existsSync } = {}) {
+export function provisionSteamworks(
+	matrix,
+	platform,
+	_arch,
+	{
+		copy = copyFileSync,
+		exists = existsSync,
+		findSdkDll = findSteamworksSdkDll,
+	} = {},
+) {
 	const spec = matrix.os[platform]?.steamworks;
 	if (!spec) return;
 	for (const f of spec.files) {
 		const dest = resolve(RESOURCES, f);
 		if (exists(dest)) continue;
+		const sdkCandidate = findSdkDll(f);
 		const candidates = [
+			sdkCandidate,
 			process.env.STEAM_API_DLL_PATH,
-			process.env.STEAMWORKS_SDK_DIR && resolve(process.env.STEAMWORKS_SDK_DIR, "redistributable_bin/win64", f),
+			process.env.STEAMWORKS_SDK_DIR &&
+				resolve(process.env.STEAMWORKS_SDK_DIR, "redistributable_bin", "win64", f),
 			resolve(SHELL, "src-tauri", "target", "release", f),
 			resolve(SHELL, "src-tauri", "target", "debug", f),
 			resolve(SHELL, "src-tauri", "target", "x86_64-pc-windows-msvc", "release", f),
 			resolve(SHELL, "src-tauri", "target", "x86_64-pc-windows-msvc", "debug", f),
 		].filter(Boolean);
 		const found = candidates.find((p) => exists(p));
-		if (found) {
-			mkdirSync(RESOURCES, { recursive: true });
-			copy(found, dest);
-			console.log(`[stage-runtime] ②-b Steamworks ${f} ← ${found}`);
+		if (!found) {
+			const searchedList = candidates.map((p) => `  - ${p}`).join("\n");
+			throw new Error(
+				`[stage-runtime] Steamworks (${f}) 미발견 — 탐색한 경로:\n${searchedList}\n  → cargo metadata 또는 env STEAM_API_DLL_PATH / STEAMWORKS_SDK_DIR 설정 필요`,
+			);
 		}
+		mkdirSync(RESOURCES, { recursive: true });
+		copy(found, dest);
+		console.log(`[stage-runtime] ②-b Steamworks ${f} ← ${found}`);
 	}
 }
 

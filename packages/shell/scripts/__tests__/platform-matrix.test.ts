@@ -25,11 +25,13 @@ import {
 	assertBundleArchSupported,
 	ensureNodeExecutable,
 	extractArchive,
+	findSteamworksSdkDll,
 	generateConf,
 	invalidateVoskBuildCache,
 	installerCoreEnv,
 	prepareRuntime,
 	provisionNode,
+	provisionSteamworks,
 	selectNodeArchive,
 	wrapStaticExecutableForBundle,
 } from "../stage-runtime.mjs";
@@ -1184,3 +1186,78 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow).toContain("Steam depot hash list does not cover the distribution marker");
 	});
 });
+
+describe("provisionSteamworks (#729)", () => {
+	it("finds steam_api64.dll from cargo metadata of locked steamworks-sys", () => {
+		const dll = findSteamworksSdkDll("steam_api64.dll");
+		expect(dll).toBeTruthy();
+		expect(dll).toContain("steamworks-sys");
+		expect(dll).toContain("steam_api64.dll");
+		expect(existsSync(dll!)).toBe(true);
+	});
+
+	it("returns null if cargo metadata fails or outputs invalid json", () => {
+		const failSpawn = () => ({ status: 1, stdout: "", stderr: "failed" });
+		expect(
+			findSteamworksSdkDll("steam_api64.dll", { spawnSyncImpl: failSpawn as any }),
+		).toBeNull();
+
+		const badJsonSpawn = () => ({ status: 0, stdout: "invalid-json", stderr: "" });
+		expect(
+			findSteamworksSdkDll("steam_api64.dll", { spawnSyncImpl: badJsonSpawn as any }),
+		).toBeNull();
+
+		const missingPkgSpawn = () => ({
+			status: 0,
+			stdout: JSON.stringify({ packages: [{ name: "other-crate" }] }),
+			stderr: "",
+		});
+		expect(
+			findSteamworksSdkDll("steam_api64.dll", { spawnSyncImpl: missingPkgSpawn as any }),
+		).toBeNull();
+	});
+
+	it("copies steam_api64.dll from cargo metadata SDK path when dest and target candidates do not exist", () => {
+		const copied: [string, string][] = [];
+		const fakeCopy = (src: string, dst: string) => {
+			copied.push([src, dst]);
+		};
+		const fakeExists = (path: string) => {
+			// destination and target paths do not exist
+			if (path.includes("resources")) return false;
+			if (path.includes("target")) return false;
+			// only the SDK path exists
+			if (path.includes("steamworks-sys")) return true;
+			return false;
+		};
+		const fakeFindSdkDll = (_fileName: string) =>
+			"/mock/cargo/registry/steamworks-sys-0.13.0/lib/steam/redistributable_bin/win64/steam_api64.dll";
+
+		provisionSteamworks(matrix, "win32", "x64", {
+			copy: fakeCopy as any,
+			exists: fakeExists as any,
+			findSdkDll: fakeFindSdkDll,
+		});
+
+		expect(copied.length).toBe(1);
+		expect(copied[0][0]).toBe(
+			"/mock/cargo/registry/steamworks-sys-0.13.0/lib/steam/redistributable_bin/win64/steam_api64.dll",
+		);
+		expect(copied[0][1]).toContain("steam_api64.dll");
+	});
+
+	it("aborts with detailed candidate paths when all steamworks candidates are missing", () => {
+		const fakeCopy = () => {};
+		const fakeExists = () => false; // nothing exists
+		const fakeFindSdkDll = () => null; // metadata returned null
+
+		expect(() => {
+			provisionSteamworks(matrix, "win32", "x64", {
+				copy: fakeCopy as any,
+				exists: fakeExists as any,
+				findSdkDll: fakeFindSdkDll,
+			});
+		}).toThrow(/Steamworks \(steam_api64\.dll\) 미발견 — 탐색한 경로/);
+	});
+});
+
