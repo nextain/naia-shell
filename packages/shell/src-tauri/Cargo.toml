@@ -90,4 +90,5 @@ x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
 windows-sys = { version = "0.59", features = ["Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_Ime"] }
 raw-window-handle = "0.6"
 steamworks = "0.13.1"
+open = "5.3.3"
 
