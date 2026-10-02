@@ -4,60 +4,16 @@
 //! 초기화 실패 시 패닉이나 종료 없이 정상 부팅하고 미실행 상태로 보고한다.
 //! 순수 로직과 Trait(`SteamBackend`)은 타깃 OS에 무관하게 컴파일·단위 시험된다.
 
+pub mod windows;
+pub use windows::*;
+
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::Emitter;
 
-pub const STEAM_APP_ID: u32 = 5354630;
-pub const GATEWAY_IDENTITY: &str = "naia-gateway";
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct SteamStatus {
-    pub available: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-    pub steam_id_present: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SteamAuthTicket {
     pub ticket_hex: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SteamMicrotxnAuthPayload {
-    pub app_id: u32,
-    pub order_id: String,
-    pub authorized: bool,
-}
-
-/// URL 허용 목록 검증:
-/// https:// 프로토콜이어야 하며, 호스트는 store.steampowered.com 또는 checkout.steampowered.com이어야 한다.
-pub fn is_allowed_steam_url(url_str: &str) -> bool {
-    if let Ok(parsed) = url::Url::parse(url_str) {
-        if parsed.scheme() == "https" {
-            if let Some(host) = parsed.host_str() {
-                return host == "store.steampowered.com" || host == "checkout.steampowered.com";
-            }
-        }
-    }
-    false
-}
-
-/// 바이트 슬라이스를 16진수 문자열로 변환 (소문자).
-pub fn bytes_to_hex(bytes: &[u8]) -> String {
-    let mut hex = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        use std::fmt::Write;
-        let _ = write!(hex, "{:02x}", b);
-    }
-    hex
-}
-
-pub trait SteamBackend: Send + Sync {
-    fn status(&self) -> SteamStatus;
-    fn get_web_api_ticket(&self, identity: &str) -> Result<String, String>;
-    fn open_url(&self, url: &str) -> Result<(), String>;
 }
 
 /// Steam 기능을 사용할 수 없을 때의 백엔드
@@ -136,124 +92,11 @@ impl SteamBackend for MockSteamBackend {
 }
 
 #[cfg(windows)]
-pub struct WindowsSteamBackend {
-    client: steamworks::Client,
-    _callback_thread: std::thread::JoinHandle<()>,
-    pending_tickets: Arc<
-        std::sync::Mutex<
-            std::collections::HashMap<
-                steamworks::AuthTicket,
-                std::sync::mpsc::Sender<Result<Vec<u8>, String>>,
-            >,
-        >,
-    >,
-}
-
-#[cfg(windows)]
 impl WindowsSteamBackend {
     pub fn init(app_handle: tauri::AppHandle) -> Result<Self, String> {
-        let (client, single) = steamworks::Client::init_app(STEAM_APP_ID)
-            .map_err(|e| format!("Failed to initialize Steamworks SDK: {e}"))?;
-
-        let handle_for_auth = app_handle.clone();
-        client.register_callback::<steamworks::MicroTxnAuthorizationResponse, _>(move |resp| {
-            let payload = SteamMicrotxnAuthPayload {
-                app_id: resp.app_id.0,
-                order_id: resp.order_id.to_string(),
-                authorized: resp.authorized,
-            };
-            let _ = handle_for_auth.emit("steam_microtxn_authorization", payload);
-        });
-
-        let pending_tickets = Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
-            steamworks::AuthTicket,
-            std::sync::mpsc::Sender<Result<Vec<u8>, String>>,
-        >::new()));
-
-        let pending_clone = pending_tickets.clone();
-        client.register_callback::<steamworks::TicketForWebApiResponse, _>(move |resp| {
-            let mut map = pending_clone.lock().unwrap();
-            if let Some(tx) = map.remove(&resp.ticket_handle) {
-                if resp.result.is_ok() {
-                    let len = resp.ticket_len.max(0) as usize;
-                    let slice = if len <= resp.ticket.len() {
-                        &resp.ticket[..len]
-                    } else {
-                        &resp.ticket[..]
-                    };
-                    let _ = tx.send(Ok(slice.to_vec()));
-                } else {
-                    let _ = tx.send(Err(format!(
-                        "Steam web API ticket callback failed: {:?}",
-                        resp.result
-                    )));
-                }
-            }
-        });
-
-        let callback_thread = std::thread::spawn(move || {
-            loop {
-                single.run_callbacks();
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-        });
-
-        Ok(Self {
-            client,
-            _callback_thread: callback_thread,
-            pending_tickets,
+        Self::init_with_emitter(STEAM_APP_ID, move |payload| {
+            let _ = app_handle.emit("steam_microtxn_authorization", payload);
         })
-    }
-}
-
-#[cfg(windows)]
-impl SteamBackend for WindowsSteamBackend {
-    fn status(&self) -> SteamStatus {
-        let steam_id_present = self.client.user().logged_on();
-        SteamStatus {
-            available: true,
-            reason: None,
-            steam_id_present,
-        }
-    }
-
-    fn get_web_api_ticket(&self, identity: &str) -> Result<String, String> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let auth_ticket = self
-            .client
-            .user()
-            .authentication_session_ticket_for_webapi(identity);
-        {
-            let mut map = self.pending_tickets.lock().unwrap();
-            map.insert(auth_ticket, tx);
-        }
-
-        match rx.recv_timeout(std::time::Duration::from_secs(10)) {
-            Ok(Ok(bytes)) => Ok(bytes_to_hex(&bytes)),
-            Ok(Err(err)) => Err(err),
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                let mut map = self.pending_tickets.lock().unwrap();
-                map.remove(&auth_ticket);
-                Err("Timed out waiting for Steam Web API ticket callback (10s)".to_string())
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                Err("Steam Web API ticket channel disconnected".to_string())
-            }
-        }
-    }
-
-    fn open_url(&self, url: &str) -> Result<(), String> {
-        if !is_allowed_steam_url(url) {
-            return Err(format!("URL is not allowed: {url}"));
-        }
-        if self.client.utils().is_overlay_enabled() {
-            self.client
-                .friends()
-                .activate_game_overlay_to_web_page(url);
-            Ok(())
-        } else {
-            open::that(url).map_err(|e| format!("Failed to open system browser: {e}"))
-        }
     }
 }
 
@@ -438,5 +281,68 @@ mod tests {
 
         let ticket_res = state.backend.get_web_api_ticket(GATEWAY_IDENTITY);
         assert!(ticket_res.is_err());
+    }
+
+    #[test]
+    fn test_ticket_request_race_with_callback_thread() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc, Barrier, Mutex};
+        use std::thread;
+        use std::time::Duration;
+
+        let pending_tickets = Arc::new(Mutex::new(std::collections::HashMap::<
+            u32,
+            mpsc::Sender<Result<Vec<u8>, String>>,
+        >::new()));
+
+        let barrier_sdk_called = Arc::new(Barrier::new(2));
+        let callback_processed = Arc::new(AtomicBool::new(false));
+
+        let pending_for_cb = pending_tickets.clone();
+        let barrier_for_cb = barrier_sdk_called.clone();
+        let cb_processed_clone = callback_processed.clone();
+
+        // 콜백 스레드 모사 (run_callbacks() 가 돌며 이벤트를 처리하는 스레드)
+        let cb_thread = thread::spawn(move || {
+            // SDK 요청이 시작될 때까지 동기화 장벽에서 대기
+            barrier_for_cb.wait();
+            // SDK 요청 직후, pending 삽입 전 시점에 lock 획득 시도
+            // pending_tickets가 요청 시작부터 삽입까지 잠겨 있으므로 lock 대기
+            let mut map = pending_for_cb.lock().unwrap();
+            if let Some(tx) = map.remove(&42) {
+                let _ = tx.send(Ok(vec![0xaa, 0xbb, 0xcc]));
+                cb_processed_clone.store(true, Ordering::SeqCst);
+            }
+        });
+
+        // 티켓 요청 스레드 (get_web_api_ticket 로직 모사)
+        let (tx, rx) = mpsc::channel();
+        let ticket_id = 42u32;
+
+        let _auth_ticket = {
+            // 1. SDK 요청 직전 lock 획득
+            let mut map = pending_tickets.lock().unwrap();
+            // 2. SDK 요청 시점 재현 (장벽으로 콜백 스레드 깨움)
+            barrier_sdk_called.wait();
+            // 콜백 스레드가 lock을 시도하도록 짧은 지연
+            thread::sleep(Duration::from_millis(20));
+            // 3. pending map에 핸들 삽입
+            map.insert(ticket_id, tx);
+            ticket_id
+            // 4. 스코프 종료로 lock 해제
+        };
+
+        // 5. lock 해제 후 응답 대기
+        let res = rx.recv_timeout(Duration::from_secs(2));
+        assert!(
+            res.is_ok(),
+            "Ticket response must be received without timeout"
+        );
+        let bytes = res.unwrap().unwrap();
+        assert_eq!(bytes, vec![0xaa, 0xbb, 0xcc]);
+        assert_eq!(bytes_to_hex(&bytes), "aabbcc");
+        assert!(callback_processed.load(Ordering::SeqCst));
+
+        cb_thread.join().unwrap();
     }
 }
