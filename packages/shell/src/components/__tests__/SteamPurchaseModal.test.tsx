@@ -410,6 +410,83 @@ describe("SteamPurchaseModal component (#729)", () => {
 		expect(orderBodies[1].pack_id).toBe("pack-250");
 	});
 
+	it("preserves original key and pack on retry after selecting another pack with keyboard (#729 P2 지적 4)", async () => {
+		const orderBodies: any[] = [];
+
+		fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+			const urlStr = typeof url === "string" ? url : url.toString();
+			if (urlStr.includes("/v1/billing/steam/packs")) {
+				return { ok: true, status: 200, json: async () => defaultPacks };
+			}
+			if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+				if (init?.body) {
+					orderBodies.push(JSON.parse(String(init.body)));
+				}
+				if (orderBodies.length === 1) {
+					return {
+						ok: false,
+						status: 409,
+						json: async () => ({ detail: { error: "failed_attempt" } }),
+					};
+				}
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({
+						order_id: "order-retry-kbd",
+						status: "INITIATED",
+						flow: "client",
+						steamurl: null,
+						pack: defaultPacks[0],
+					}),
+				};
+			}
+			return { ok: false, status: 404, json: async () => ({}) };
+		});
+
+		render(
+			<SteamPurchaseModal
+				isOpen={true}
+				gatewayUrl="https://api.naia.test"
+				naiaKey="test-key"
+				onClose={vi.fn()}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText("1000 크레딧")).toBeDefined();
+		});
+
+		// 1. Initial selection: 1000 credits (pack-100)
+		fireEvent.click(screen.getByText("1000 크레딧"));
+		fireEvent.click(screen.getByText("구매하기"));
+
+		await waitFor(() => {
+			expect(screen.getByText("다시 시도")).toBeDefined();
+		});
+
+		expect(orderBodies.length).toBe(1);
+		const originalKey = orderBodies[0].idempotency_key;
+		expect(originalKey).toBeTruthy();
+		expect(orderBodies[0].pack_id).toBe("pack-100");
+
+		// 2. User navigates with keyboard to select 2500 credits (pack-250)
+		fireEvent.keyDown(screen.getByText("2500 크레딧"), { key: "Enter" });
+
+		// 3. Instead of new purchase, user clicks "다시 시도" (retry)
+		fireEvent.click(screen.getByText("다시 시도"));
+
+		await waitFor(() => {
+			expect(orderBodies.length).toBe(2);
+			expect(screen.getByText("Steam 오버레이에서 결제를 승인해주세요.")).toBeDefined();
+		});
+
+		// Retry POST MUST retain original idempotency key AND original pack_id (pack-100, NOT pack-250)
+		expect(orderBodies[1].idempotency_key).toBe(originalKey);
+		expect(orderBodies[1].pack_id).toBe("pack-100");
+		expect(orderBodies[1].pack_id).not.toBe("pack-250");
+	});
+
 	it("order status CREATED limit transitions to delayed UI with retry check and close buttons (#729 P1 지적 8)", async () => {
 		const orderBodies: any[] = [];
 		let postCount = 0;

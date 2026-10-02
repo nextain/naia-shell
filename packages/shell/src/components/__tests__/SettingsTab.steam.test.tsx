@@ -15,20 +15,25 @@ vi.mock("../../lib/distribution", () => ({
 	loadDistributionChannel: async () => "steam",
 }));
 
-vi.mock("../../lib/steam-billing", () => ({
-	fetchSteamPacks: vi.fn().mockResolvedValue([
-		{
-			id: "pack-1",
-			price_cents: 1000,
-			currency: "USD",
-			credits: 1000000,
-		},
-	]),
-	createSteamOrder: vi.fn(),
-	finalizeSteamOrder: vi.fn(),
-	listenToSteamAuthorization: vi.fn().mockResolvedValue(() => {}),
-	openSteamUrl: vi.fn(),
-}));
+vi.mock("../../lib/steam-billing", async () => {
+	const actual = await vi.importActual<any>("../../lib/steam-billing");
+	return {
+		...actual,
+		fetchSteamPacks: vi.fn().mockResolvedValue([
+			{
+				id: "pack-1",
+				price_cents: 1000,
+				currency: "USD",
+				credits: 1000000,
+			},
+		]),
+		createSteamOrder: vi.fn(),
+		finalizeSteamOrder: vi.fn(),
+		createSteamAuthListener: vi.fn().mockResolvedValue({ unlisten: vi.fn() }),
+		listenToSteamAuthorization: vi.fn().mockResolvedValue(() => {}),
+		openSteamUrl: vi.fn(),
+	};
+});
 
 const secureStoreMock = vi.hoisted(() => ({
 	get: vi.fn().mockResolvedValue(null),
@@ -91,10 +96,37 @@ vi.mock("../../lib/chat-service", () => ({
 	sendCredsUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { useEffect, useState } from "react";
+import * as steamBilling from "../../lib/steam-billing";
 import { clearCachedLabCredits } from "../../lib/lab-balance";
 import { setLocale } from "../../lib/i18n";
-import { navigateToSettings, useAppStore } from "../../stores/app";
+import { useAppStore } from "../../stores/app";
 import { SettingsTab } from "../SettingsTab";
+import { SteamPurchaseModal } from "../SteamPurchaseModal";
+
+function ShellAppHarness({ initialSettingsMounted = false }: { initialSettingsMounted?: boolean }) {
+	const activeApp = useAppStore((s) => s.activeApp);
+	const [settingsMounted, setSettingsMounted] = useState(initialSettingsMounted);
+	const [modalOpen, setModalOpen] = useState(true);
+
+	useEffect(() => {
+		if (activeApp === "settings") {
+			setSettingsMounted(true);
+		}
+	}, [activeApp]);
+
+	return (
+		<div>
+			<SteamPurchaseModal
+				isOpen={modalOpen}
+				gatewayUrl="https://api.naia.test"
+				naiaKey="test-key"
+				onClose={() => setModalOpen(false)}
+			/>
+			{settingsMounted && <SettingsTab />}
+		</div>
+	);
+}
 
 describe("SettingsTab on Steam edition (#729)", () => {
 	beforeEach(async () => {
@@ -215,45 +247,82 @@ describe("SettingsTab on Steam edition (#729)", () => {
 		});
 	});
 
-	it("① activates profile tab and displays steam-link-btn on initial deferred settings entry (#729 지적 4)", async () => {
-		useAppStore.getState().setActiveApp("settings");
-		useAppStore.getState().setRequestedSettingsTab("profile");
+	it("① navigates from purchase modal button to settings app and displays profile tab and steam-link-btn on initial deferred mount (#729 지적 4)", async () => {
+		useAppStore.setState({ activeApp: "chat", requestedSettingsTab: null });
+		(steamBilling.createSteamOrder as any).mockRejectedValueOnce(new Error("steam_not_linked"));
 
-		render(<SettingsTab />);
+		render(<ShellAppHarness initialSettingsMounted={false} />);
 
+		// Initially SettingsTab is NOT mounted
+		expect(screen.queryByTestId("steam-link-btn")).toBeNull();
+
+		// Start purchase in modal
+		await waitFor(() => {
+			expect(screen.getByText("1000000 크레딧")).toBeDefined();
+		});
+		fireEvent.click(screen.getByText("1000000 크레딧"));
+		fireEvent.click(screen.getByText("구매하기"));
+
+		// Modal shows steam_not_linked error and "설정으로 이동" button
+		await waitFor(() => {
+			expect(screen.getByText("Steam 계정 연결이 필요합니다.")).toBeDefined();
+			expect(screen.getByText("설정으로 이동")).toBeDefined();
+		});
+
+		// User clicks the real button in the purchase modal
+		fireEvent.click(screen.getByText("설정으로 이동"));
+
+		// Settings app mounts for the first time and renders profile tab with steam-link-btn
 		await waitFor(() => {
 			expect(screen.getByTestId("steam-link-btn")).toBeDefined();
 		});
 
 		const profileBtn = document.querySelector('[data-settings-tab="profile"]');
 		expect(profileBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
+		expect(useAppStore.getState().activeApp).toBe("settings");
 		expect(useAppStore.getState().requestedSettingsTab).toBeNull();
 	});
 
-	it("② switches from another active tab (brain) to profile tab and displays steam-link-btn on navigateToSettings (#729 지적 4)", async () => {
-		render(<SettingsTab />);
+	it("② switches already opened settings app from brain tab to profile tab with steam-link-btn on modal button click (#729 지적 4)", async () => {
+		useAppStore.setState({ activeApp: "settings", requestedSettingsTab: null });
+		(steamBilling.createSteamOrder as any).mockRejectedValueOnce(new Error("steam_not_linked"));
 
-		// Switch to brain tab first
-		await act(async () => {
-			navigateToSettings("brain");
-		});
+		render(<ShellAppHarness initialSettingsMounted={true} />);
+
+		// Settings app is already mounted; switch it to brain tab by clicking brain tab button
+		await screen.findByTestId("profile-naia-account");
+		const brainBtn = document.querySelector('[data-settings-tab="brain"]');
+		expect(brainBtn).not.toBeNull();
+		fireEvent.click(brainBtn!);
 
 		await waitFor(() => {
-			const brainBtn = document.querySelector('[data-settings-tab="brain"]');
 			expect(brainBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
 			expect(screen.queryByTestId("steam-link-btn")).toBeNull();
 		});
 
-		// Now call navigateToSettings("profile")
-		await act(async () => {
-			navigateToSettings("profile");
+		// Start purchase in modal
+		await waitFor(() => {
+			expect(screen.getByText("1000000 크레딧")).toBeDefined();
+		});
+		fireEvent.click(screen.getByText("1000000 크레딧"));
+		fireEvent.click(screen.getByText("구매하기"));
+
+		// Modal shows steam_not_linked error and "설정으로 이동" button
+		await waitFor(() => {
+			expect(screen.getByText("Steam 계정 연결이 필요합니다.")).toBeDefined();
+			expect(screen.getByText("설정으로 이동")).toBeDefined();
 		});
 
+		// User clicks the real button in the purchase modal
+		fireEvent.click(screen.getByText("설정으로 이동"));
+
+		// Settings app switches from brain to profile tab and renders steam-link-btn
 		await waitFor(() => {
-			const profileBtn = document.querySelector('[data-settings-tab="profile"]');
-			expect(profileBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
 			expect(screen.getByTestId("steam-link-btn")).toBeDefined();
 		});
+
+		const profileBtn = document.querySelector('[data-settings-tab="profile"]');
+		expect(profileBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
 		expect(useAppStore.getState().requestedSettingsTab).toBeNull();
 	});
 
@@ -272,6 +341,9 @@ describe("SettingsTab on Steam edition (#729)", () => {
 			const brainBtn = document.querySelector('[data-settings-tab="brain"]');
 			expect(brainBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
 			expect(screen.queryByTestId("steam-link-btn")).toBeNull();
+			// Assert actual content of brain tab is rendered (#729 지적 4)
+			expect(document.getElementById("provider-select")).not.toBeNull();
+			expect(screen.getByText("두뇌 (LLM)")).toBeDefined();
 		});
 		expect(useAppStore.getState().activeApp).toBe("settings");
 		expect(useAppStore.getState().requestedSettingsTab).toBeNull();
@@ -292,6 +364,9 @@ describe("SettingsTab on Steam edition (#729)", () => {
 			const voiceBtn = document.querySelector('[data-settings-tab="voice"]');
 			expect(voiceBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
 			expect(screen.queryByTestId("steam-link-btn")).toBeNull();
+			// Assert actual content of voice tab is rendered (#729 지적 4)
+			expect(document.getElementById("tts-toggle")).not.toBeNull();
+			expect(screen.getByText("음성 대화 설정")).toBeDefined();
 		});
 		expect(useAppStore.getState().activeApp).toBe("settings");
 		expect(useAppStore.getState().requestedSettingsTab).toBeNull();

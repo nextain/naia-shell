@@ -410,6 +410,143 @@ describe("steam-billing client (#729)", () => {
 			}
 		});
 
+		it("initial response timeout after 10s deadline preserves idempotencyKey and packId on subsequent retry (#729 지적 4)", async () => {
+			vi.useFakeTimers();
+			try {
+				const orderBodies: any[] = [];
+				let callCount = 0;
+				fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+					callCount++;
+					if (init?.body) {
+						orderBodies.push(JSON.parse(String(init.body)));
+					}
+					if (callCount === 1) {
+						return new Promise((_resolve, reject) => {
+							init?.signal?.addEventListener("abort", () => {
+								reject(new DOMException("The operation was aborted.", "AbortError"));
+							});
+						});
+					}
+					return Promise.resolve({
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-retry-initial-timeout",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
+						}),
+					});
+				});
+
+				const key = "fixed-key-initial-timeout";
+				const firstPromise = createSteamOrder("gw-key", "pack-1", {
+					gatewayUrl: "https://api.naia.test",
+					idempotencyKey: key,
+					totalTimeoutMs: 10000,
+				});
+				const assertion = expect(firstPromise).rejects.toThrow(SteamOrderTimeoutError);
+
+				await vi.advanceTimersByTimeAsync(10000);
+				await assertion;
+
+				expect(orderBodies.length).toBe(1);
+				expect(orderBodies[0].idempotency_key).toBe(key);
+				expect(orderBodies[0].pack_id).toBe("pack-1");
+
+				// Retry request with preserved key and packId
+				const retryResult = await createSteamOrder("gw-key", "pack-1", {
+					gatewayUrl: "https://api.naia.test",
+					idempotencyKey: key,
+				});
+
+				expect(orderBodies.length).toBe(2);
+				expect(orderBodies[1].idempotency_key).toBe(key);
+				expect(orderBodies[1].pack_id).toBe("pack-1");
+				expect(retryResult.order_id).toBe("order-retry-initial-timeout");
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("slow re-request during CREATED polling timeout after 10s deadline preserves idempotencyKey and packId on subsequent retry (#729 지적 4)", async () => {
+			vi.useFakeTimers();
+			try {
+				const orderBodies: any[] = [];
+				let callCount = 0;
+				fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+					callCount++;
+					if (init?.body) {
+						orderBodies.push(JSON.parse(String(init.body)));
+					}
+					if (callCount === 1) {
+						return Promise.resolve({
+							ok: true,
+							status: 200,
+							json: async () => ({
+								order_id: "order-poll-1",
+								status: "CREATED",
+								flow: "client",
+								steamurl: null,
+								pack: { id: "pack-2", price_cents: 1999, currency: "USD", credits: 2500 },
+							}),
+						});
+					}
+					if (callCount === 2) {
+						return new Promise((_resolve, reject) => {
+							init?.signal?.addEventListener("abort", () => {
+								reject(new DOMException("The operation was aborted.", "AbortError"));
+							});
+						});
+					}
+					return Promise.resolve({
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-retry-created-timeout",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: { id: "pack-2", price_cents: 1999, currency: "USD", credits: 2500 },
+						}),
+					});
+				});
+
+				const key = "fixed-key-created-timeout";
+				const firstPromise = createSteamOrder("gw-key", "pack-2", {
+					gatewayUrl: "https://api.naia.test",
+					idempotencyKey: key,
+					pollIntervalMs: 1000,
+					totalTimeoutMs: 10000,
+				});
+				const assertion = expect(firstPromise).rejects.toThrow(SteamOrderTimeoutError);
+
+				await vi.advanceTimersByTimeAsync(1000);
+				await vi.advanceTimersByTimeAsync(9000);
+				await assertion;
+
+				expect(orderBodies.length).toBe(2);
+				expect(orderBodies[0].idempotency_key).toBe(key);
+				expect(orderBodies[0].pack_id).toBe("pack-2");
+				expect(orderBodies[1].idempotency_key).toBe(key);
+				expect(orderBodies[1].pack_id).toBe("pack-2");
+
+				// Retry request with preserved key and packId
+				const retryResult = await createSteamOrder("gw-key", "pack-2", {
+					gatewayUrl: "https://api.naia.test",
+					idempotencyKey: key,
+				});
+
+				expect(orderBodies.length).toBe(3);
+				expect(orderBodies[2].idempotency_key).toBe(key);
+				expect(orderBodies[2].pack_id).toBe("pack-2");
+				expect(retryResult.order_id).toBe("order-retry-created-timeout");
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
 		it("distinguishes user cancellation from deadline timeout (#729 지적 7)", async () => {
 			const controller = new AbortController();
 			fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
