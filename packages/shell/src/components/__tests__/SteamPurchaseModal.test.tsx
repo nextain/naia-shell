@@ -610,6 +610,70 @@ describe("SteamPurchaseModal component (#729)", () => {
 		});
 	});
 
+	it("web flow: initial open succeeds and reopen failure displays error inside web_flow screen (#729 지적 5)", async () => {
+		fetchMock.mockImplementation(async (url: string | URL | Request) => {
+			const urlStr = typeof url === "string" ? url : url.toString();
+			if (urlStr.includes("/v1/billing/steam/packs")) {
+				return { ok: true, status: 200, json: async () => defaultPacks };
+			}
+			if (urlStr.includes("/v1/billing/steam/orders")) {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({
+						order_id: "order-web-reopen-fail",
+						status: "INITIATED",
+						flow: "web",
+						steamurl: "https://store.steampowered.com/checkout/order-web-reopen-fail",
+						pack: defaultPacks[0],
+					}),
+				};
+			}
+			return { ok: false, status: 404, json: async () => ({}) };
+		});
+
+		// 1st open succeeds during order initiation
+		invokeMock.mockResolvedValueOnce(undefined);
+
+		render(
+			<SteamPurchaseModal
+				isOpen={true}
+				gatewayUrl="https://api.naia.test"
+				naiaKey="test-key"
+				onClose={vi.fn()}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText("1000 크레딧")).toBeDefined();
+		});
+
+		fireEvent.click(screen.getByText("1000 크레딧"));
+		fireEvent.click(screen.getByText("구매하기"));
+
+		// Enters web_flow screen successfully
+		await waitFor(() => {
+			expect(screen.getByText("Steam 결제 페이지 다시 열기")).toBeDefined();
+			expect(screen.getByText("결제를 완료했어요")).toBeDefined();
+		});
+
+		expect(invokeMock).toHaveBeenCalledTimes(1);
+		expect(screen.queryByRole("alert")).toBeNull();
+
+		// 2nd open fails when clicking reopen button
+		invokeMock.mockRejectedValueOnce(new Error("Failed to open browser: OS error"));
+
+		fireEvent.click(screen.getByText("Steam 결제 페이지 다시 열기"));
+
+		// Error message MUST be displayed inside web_flow screen while retaining web_flow buttons
+		await waitFor(() => {
+			expect(screen.getByRole("alert")).toBeDefined();
+			expect(screen.getByText("Failed to open browser: OS error")).toBeDefined();
+			expect(screen.getByText("Steam 결제 페이지 다시 열기")).toBeDefined();
+			expect(screen.getByText("결제를 완료했어요")).toBeDefined();
+		});
+	});
+
 	it("web flow: invalid or disallowed URL shows error and does not enter web flow (#729 P2 지적 10)", async () => {
 		fetchMock.mockImplementation(async (url: string | URL | Request) => {
 			const urlStr = typeof url === "string" ? url : url.toString();

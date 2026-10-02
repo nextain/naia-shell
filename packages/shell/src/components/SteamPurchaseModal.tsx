@@ -531,12 +531,28 @@ export function SteamPurchaseModal({
 						}}
 					>
 						<p>{t("steam.purchase.webFlowInstructions")}</p>
+						{errorMessage && (
+							<div
+								role="alert"
+								style={{
+									background: "rgba(255, 80, 80, 0.15)",
+									border: "1px solid rgba(255, 80, 80, 0.3)",
+									color: "#ff8080",
+									padding: "8px 12px",
+									borderRadius: 6,
+									fontSize: "0.9rem",
+								}}
+							>
+								{errorMessage}
+							</div>
+						)}
 						{currentOrder?.steamurl && (
 							<button
 								type="button"
 								className="voice-preview-btn"
 								onClick={async () => {
 									try {
+										setErrorMessage(null);
 										await openSteamUrl(currentOrder.steamurl!);
 									} catch (err: any) {
 										setErrorMessage(String(err?.message || err));
