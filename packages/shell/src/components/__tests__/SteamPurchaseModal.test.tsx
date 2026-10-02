@@ -235,7 +235,7 @@ describe("SteamPurchaseModal component (#729)", () => {
 		});
 	});
 
-	it("idempotency key reuse on network failure / retry (#729 검수 보강 1)", async () => {
+	it("idempotency key and pack preservation on retry even after pack selection change (#729 지적 2)", async () => {
 		const orderBodies: any[] = [];
 		let postAttempt = 0;
 
@@ -250,15 +250,15 @@ describe("SteamPurchaseModal component (#729)", () => {
 					orderBodies.push(JSON.parse(String(init.body)));
 				}
 				if (postAttempt === 1) {
-					// First attempt: network error / response lost
+					// 1st POST fails (e.g. response lost / network failure)
 					throw new Error("Network connection lost");
 				}
-				// Second attempt: succeeds
+				// 2nd POST succeeds
 				return {
 					ok: true,
 					status: 200,
 					json: async () => ({
-						order_id: "order-retried-1",
+						order_id: "order-retry-123",
 						status: "INITIATED",
 						flow: "client",
 						steamurl: null,
@@ -282,6 +282,7 @@ describe("SteamPurchaseModal component (#729)", () => {
 			expect(screen.getByText("1000 크레딧")).toBeDefined();
 		});
 
+		// 1. Initial selection: 1000 credits (pack-1)
 		fireEvent.click(screen.getByText("1000 크레딧"));
 		fireEvent.click(screen.getByText("구매하기"));
 
@@ -294,8 +295,12 @@ describe("SteamPurchaseModal component (#729)", () => {
 		expect(orderBodies.length).toBe(1);
 		const firstKey = orderBodies[0].idempotency_key;
 		expect(firstKey).toBeTruthy();
+		expect(orderBodies[0].pack_id).toBe("pack-100");
 
-		// Click retry button ("다시 시도")
+		// 2. User changes pack selection in UI (mouse) to 2500 credits (pack-250)
+		fireEvent.click(screen.getByText("2500 크레딧"));
+
+		// 3. User clicks "다시 시도" (retry)
 		fireEvent.click(screen.getByText("다시 시도"));
 
 		await waitFor(() => {
@@ -305,12 +310,14 @@ describe("SteamPurchaseModal component (#729)", () => {
 
 		expect(orderBodies.length).toBe(2);
 		const secondKey = orderBodies[1].idempotency_key;
+		const secondPackId = orderBodies[1].pack_id;
 
-		// Critical verification: both POST requests MUST have the exact same idempotency_key!
+		// Critical verification: Retry POST MUST retain original idempotency key AND original pack_id!
 		expect(secondKey).toBe(firstKey);
+		expect(secondPackId).toBe("pack-100");
 	});
 
-	it("new purchase generates a new idempotency key", async () => {
+	it("new purchase generates a new idempotency key with newly selected pack (#729 지적 2)", async () => {
 		const orderBodies: any[] = [];
 
 		fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
@@ -344,6 +351,7 @@ describe("SteamPurchaseModal component (#729)", () => {
 			expect(screen.getByText("1000 크레딧")).toBeDefined();
 		});
 
+		// 1. Initial selection: 1000 credits (pack-100)
 		fireEvent.click(screen.getByText("1000 크레딧"));
 		fireEvent.click(screen.getByText("구매하기"));
 
@@ -351,15 +359,22 @@ describe("SteamPurchaseModal component (#729)", () => {
 			expect(screen.getByText("다시 시도")).toBeDefined();
 		});
 
-		// Instead of retry button, click the footer "구매하기" button to start a brand-new purchase
+		expect(orderBodies.length).toBe(1);
+		expect(orderBodies[0].pack_id).toBe("pack-100");
+
+		// 2. Select another pack (keyboard Enter on 2500 credits)
+		fireEvent.keyDown(screen.getByText("2500 크레딧"), { key: "Enter" });
+
+		// 3. Click the explicit footer "구매하기" button to start a brand-new purchase
 		fireEvent.click(screen.getByText("구매하기"));
 
 		await waitFor(() => {
 			expect(orderBodies.length).toBe(2);
 		});
 
-		// A new purchase attempt MUST generate a new, different idempotency key
-		expect(orderBodies[0].idempotency_key).not.toBe(orderBodies[1].idempotency_key);
+		// A new purchase attempt MUST generate a new idempotency key AND use the newly selected pack!
+		expect(orderBodies[1].idempotency_key).not.toBe(orderBodies[0].idempotency_key);
+		expect(orderBodies[1].pack_id).toBe("pack-250");
 	});
 
 	it("order status CREATED limit transitions to delayed UI with retry check and close buttons (#729 P1 지적 8)", async () => {

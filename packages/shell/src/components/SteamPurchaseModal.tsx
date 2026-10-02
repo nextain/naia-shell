@@ -50,13 +50,18 @@ export function SteamPurchaseModal({
 	pollIntervalMs,
 	maxPollAttempts,
 }: SteamPurchaseModalProps) {
+	interface PurchaseAttempt {
+		idempotencyKey: string;
+		packId: string;
+	}
+
 	const [packs, setPacks] = useState<SteamPack[]>([]);
 	const [loadingPacks, setLoadingPacks] = useState(false);
 	const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
 	const [flowState, setFlowState] = useState<PurchaseFlowState>("idle");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [currentOrder, setCurrentOrder] = useState<SteamOrderResponse | null>(null);
-	const [activeIdempotencyKey, setActiveIdempotencyKey] = useState<string | null>(null);
+	const [preservedAttempt, setPreservedAttempt] = useState<PurchaseAttempt | null>(null);
 
 	const authListenerRef = useRef<SteamAuthListener | null>(null);
 	const finalizingOrderIdsRef = useRef<Set<string>>(new Set());
@@ -87,7 +92,7 @@ export function SteamPurchaseModal({
 			setFlowState("idle");
 			setErrorMessage(null);
 			setCurrentOrder(null);
-			setActiveIdempotencyKey(null);
+			setPreservedAttempt(null);
 			finalizingOrderIdsRef.current.clear();
 			finalizedOrderIdsRef.current.clear();
 
@@ -171,8 +176,7 @@ export function SteamPurchaseModal({
 		[gatewayUrl, onPurchaseSuccess, onSuccess],
 	);
 
-	const executeOrder = async (idempotencyKey: string) => {
-		if (!selectedPackId) return;
+	const executeOrder = async (attempt: PurchaseAttempt) => {
 		let effectiveNaiaKey = naiaKey;
 		if (!effectiveNaiaKey) {
 			try {
@@ -208,9 +212,9 @@ export function SteamPurchaseModal({
 		abortControllerRef.current = controller;
 
 		try {
-			const order = await createSteamOrder(effectiveNaiaKey, selectedPackId, {
+			const order = await createSteamOrder(effectiveNaiaKey, attempt.packId, {
 				gatewayUrl,
-				idempotencyKey,
+				idempotencyKey: attempt.idempotencyKey,
 				signal: controller.signal,
 				pollIntervalMs,
 				maxPollAttempts,
@@ -294,20 +298,22 @@ export function SteamPurchaseModal({
 		}
 	};
 
-	// Start a brand-new purchase attempt (generates a new idempotency key)
+	// Start a brand-new purchase attempt (generates a new idempotency key with currently selected pack)
 	const handleStartPurchase = () => {
+		if (!selectedPackId) return;
 		const key =
 			typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
 				? crypto.randomUUID()
 				: `naia-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-		setActiveIdempotencyKey(key);
-		executeOrder(key);
+		const attempt: PurchaseAttempt = { idempotencyKey: key, packId: selectedPackId };
+		setPreservedAttempt(attempt);
+		executeOrder(attempt);
 	};
 
-	// Retry existing purchase attempt (preserves existing idempotency key)
+	// Retry existing purchase attempt (preserves existing idempotency key and packId regardless of selection changes)
 	const handleRetryAttempt = () => {
-		if (activeIdempotencyKey) {
-			executeOrder(activeIdempotencyKey);
+		if (preservedAttempt) {
+			executeOrder(preservedAttempt);
 		} else {
 			handleStartPurchase();
 		}
@@ -560,7 +566,7 @@ export function SteamPurchaseModal({
 										{t("steam.purchase.goToSettings")}
 									</button>
 								)}
-								{activeIdempotencyKey && (
+								{preservedAttempt && (
 									<button
 										type="button"
 										className="voice-preview-btn"

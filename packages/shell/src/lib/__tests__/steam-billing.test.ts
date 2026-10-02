@@ -137,7 +137,7 @@ describe("steam-billing client (#729)", () => {
 			});
 		});
 
-		it("preserves idempotencyKey across calls when supplied", async () => {
+		it("preserves idempotencyKey and packId across retry calls when supplied (#729 지적 2)", async () => {
 			const mockOrder = {
 				order_id: "112233",
 				status: "INITIATED",
@@ -145,19 +145,44 @@ describe("steam-billing client (#729)", () => {
 				steamurl: null,
 				pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
 			};
-			fetchMock.mockResolvedValueOnce({
+			fetchMock.mockResolvedValue({
 				ok: true,
 				status: 200,
 				json: async () => mockOrder,
 			});
 
+			// Retry call with preserved attempt (fixed key and fixed packId)
 			await createSteamOrder("gw-key", "pack-1", {
 				gatewayUrl: "https://api.naia.test",
 				idempotencyKey: "fixed-key-42",
 			});
+			const [, req1] = fetchMock.mock.calls[0];
+			expect(JSON.parse(req1.body)).toMatchObject({
+				idempotency_key: "fixed-key-42",
+				pack_id: "pack-1",
+			});
 
-			const [, req] = fetchMock.mock.calls[0];
-			expect(JSON.parse(req.body).idempotency_key).toBe("fixed-key-42");
+			// Second retry call retains both key and packId
+			await createSteamOrder("gw-key", "pack-1", {
+				gatewayUrl: "https://api.naia.test",
+				idempotencyKey: "fixed-key-42",
+			});
+			const [, req2] = fetchMock.mock.calls[1];
+			expect(JSON.parse(req2.body)).toMatchObject({
+				idempotency_key: "fixed-key-42",
+				pack_id: "pack-1",
+			});
+
+			// Brand-new purchase uses new packId and new key
+			await createSteamOrder("gw-key", "pack-2", {
+				gatewayUrl: "https://api.naia.test",
+				idempotencyKey: "new-key-99",
+			});
+			const [, req3] = fetchMock.mock.calls[2];
+			expect(JSON.parse(req3.body)).toMatchObject({
+				idempotency_key: "new-key-99",
+				pack_id: "pack-2",
+			});
 		});
 
 		it("returns order directly when returned status is GRANTED", async () => {
