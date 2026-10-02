@@ -397,7 +397,9 @@ export function SteamPurchaseModal({
 
 	if (!isOpen) return null;
 
-	const selectedPack = packs.find((p) => p.id === selectedPackId);
+	const grantedPack =
+		currentOrder?.pack ??
+		(preservedAttempt ? packs.find((p) => p.id === preservedAttempt.packId) : null);
 
 	return createPortal(
 		<div
@@ -461,9 +463,9 @@ export function SteamPurchaseModal({
 								? t("steam.purchase.success")
 								: t("steam.purchase.alreadyGranted")}
 						</p>
-						{grantedNow && selectedPack && (
+						{grantedNow && grantedPack && (
 							<p style={{ opacity: 0.8, marginBottom: 20 }}>
-								+{selectedPack.credits} {t("cost.labCredits")}
+								+{grantedPack.credits} {t("cost.labCredits")}
 							</p>
 						)}
 						<button

@@ -269,6 +269,16 @@ describe("SteamPurchaseModal component (#729)", () => {
 					}),
 				};
 			}
+			if (urlStr.includes("/finalize")) {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({
+						status: "GRANTED",
+						granted_now: true,
+					}),
+				};
+			}
 			return { ok: false, status: 404, json: async () => ({}) };
 		});
 
@@ -318,6 +328,26 @@ describe("SteamPurchaseModal component (#729)", () => {
 		// Critical verification: Retry POST MUST retain original idempotency key AND original pack_id!
 		expect(secondKey).toBe(firstKey);
 		expect(secondPackId).toBe("pack-100");
+
+		// 4. Simulate microtransaction authorization to proceed through finalize (#729 P2 지적 2)
+		const authHandler = eventListeners.get("steam_microtxn_authorization");
+		expect(authHandler).toBeDefined();
+		await act(async () => {
+			authHandler!({
+				payload: {
+					app_id: 5354630,
+					order_id: "order-retry-123",
+					authorized: true,
+				},
+			});
+		});
+
+		// 5. Success screen must show 1000 credits (+1000 크레딧) for original order, NOT +2500
+		await waitFor(() => {
+			expect(screen.getByText("크레딧 충전이 완료되었습니다!")).toBeDefined();
+			expect(screen.getByText("+1000 크레딧")).toBeDefined();
+			expect(screen.queryByText("+2500 크레딧")).toBeNull();
+		});
 	});
 
 	it("new purchase generates a new idempotency key with newly selected pack (#729 지적 2)", async () => {
