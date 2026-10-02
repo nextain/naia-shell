@@ -316,51 +316,80 @@ mod tests {
     #[test]
     fn test_ticket_request_race_with_callback_thread() {
         use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::mpsc;
         use std::sync::Arc;
-        use std::sync::Barrier;
         use std::thread;
         use std::time::Duration;
 
         let registry = TicketRegistry::<u32>::new();
-        let barrier_sdk_called = Arc::new(Barrier::new(2));
         let callback_processed = Arc::new(AtomicBool::new(false));
 
+        // SDK 요청 시작 통지 채널
+        let (sdk_started_tx, sdk_started_rx) = mpsc::channel::<()>();
+        // 콜백의 pending 뮤텍스 획득 시도 결과 관찰 채널
+        let (obs_tx, obs_rx) = mpsc::channel::<bool>();
+
         let reg_for_cb = registry.clone();
-        let barrier_for_cb = barrier_sdk_called.clone();
         let cb_processed_clone = callback_processed.clone();
 
-        // 콜백 스레드: SDK 요청 직후, pending 등록 완료 전에 응답 처리를 시도하는 시나리오
+        // 콜백 스레드: SDK 요청 함수 실행 중 pending 등록 전에 콜백이 도착하는 시나리오
         let cb_thread = thread::spawn(move || {
-            // SDK 요청이 시작될 때까지 동기화 장벽에서 대기
-            barrier_for_cb.wait();
-            // SDK 요청 직후 콜백 도착: pending 잠금을 획득하여 complete_ticket 시도
-            // 생산 TicketRegistry 잠금 하에서 request_and_register가 끝나기 전까지 대기한 뒤
-            // 등록된 티켓을 성공적으로 완료해야 함
-            let handled = reg_for_cb.complete_ticket(&42u32, Ok(vec![0xaa, 0xbb, 0xcc]));
-            cb_processed_clone.store(handled, Ordering::SeqCst);
+            // 1. SDK 요청이 시작될 때까지 대기
+            sdk_started_rx.recv().unwrap();
+
+            // 2. 실제 pending 뮤텍스 획득 시도 및 결과 확인
+            let is_locked = reg_for_cb.is_pending_locked();
+            if is_locked {
+                // [정상 코드]: SDK 요청 함수가 실행 중일 때 pending 뮤텍스가 이미 획득되어 있음 (콜백의 잠금 획득이 차단됨을 확인)
+                obs_tx.send(true).unwrap();
+
+                // 차단된 상태에서 complete_ticket을 호출하여 뮤텍스 잠금 대기 진입
+                // request_and_register가 pending 등록을 완료하고 잠금을 해제하면 진입하여 등록된 티켓을 완료함
+                let handled = reg_for_cb.complete_ticket(&42u32, Ok(vec![0xaa, 0xbb, 0xcc]));
+                cb_processed_clone.store(handled, Ordering::SeqCst);
+            } else {
+                // [잠금 축소 mutation]: SDK 요청 함수가 잠금 밖에서 실행되어 pending 뮤텍스가 차단되지 않음
+                // 미등록 상태의 콜백 처리를 먼저 완료
+                let handled = reg_for_cb.complete_ticket(&42u32, Ok(vec![0xaa, 0xbb, 0xcc]));
+                cb_processed_clone.store(handled, Ordering::SeqCst);
+
+                // 미등록 콜백 처리가 끝난 뒤 신호 전달
+                obs_tx.send(false).unwrap();
+            }
         });
 
         // 티켓 요청 스레드: 생산 TicketRegistry.request_and_register 실행
         let (_ticket, rx) = registry.request_and_register(|| {
-            // SDK 요청 시점 재현: 콜백 스레드를 깨움
-            barrier_sdk_called.wait();
-            // 콜백 스레드가 complete_ticket 락을 시도하도록 지연
-            thread::sleep(Duration::from_millis(50));
+            // SDK 요청 함수 시작 통지
+            sdk_started_tx.send(()).unwrap();
+
+            // 콜백의 실제 pending 뮤텍스 획득 시도 및 결과 확인
+            let lock_blocked = obs_rx.recv().unwrap();
+            if lock_blocked {
+                // 정상 코드: 콜백의 잠금 획득이 차단된 것을 확인한 뒤 요청을 반환해 등록을 진행
+            } else {
+                // 잠금 축소 mutation: 미등록 콜백 처리가 끝난 뒤 요청을 반환
+            }
             42u32
         });
+
+        // 완료 플래그 검사는 콜백 스레드 join 뒤에 수행 (#729 지적 6)
+        cb_thread.join().unwrap();
+        assert!(
+            callback_processed.load(Ordering::SeqCst),
+            "Callback must be successfully processed"
+        );
 
         // 잠금 해제 후 콜백이 전달한 응답 수신 확인
         let res = rx.recv_timeout(Duration::from_secs(2));
         assert!(
             res.is_ok(),
-            "Ticket response must be received without timeout"
+            "Ticket response must be received without timeout: {:?}",
+            res.err()
         );
         let bytes = res.unwrap().unwrap();
         assert_eq!(bytes, vec![0xaa, 0xbb, 0xcc]);
         assert_eq!(bytes_to_hex(&bytes), "aabbcc");
-        assert!(callback_processed.load(Ordering::SeqCst));
-
-        cb_thread.join().unwrap();
         assert_eq!(registry.pending_count(), 0);
     }
 }

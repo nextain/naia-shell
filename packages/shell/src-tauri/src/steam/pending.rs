@@ -74,4 +74,9 @@ impl<T: PartialEq + Clone> TicketRegistry<T> {
     pub fn pending_count(&self) -> usize {
         self.pending.lock().unwrap().len()
     }
+
+    /// pending 뮤텍스가 현재 잠겨 있는지(다른 스레드가 보유 중인지) 확인한다 (경합 검증 및 진단용).
+    pub fn is_pending_locked(&self) -> bool {
+        self.pending.try_lock().is_err()
+    }
 }
