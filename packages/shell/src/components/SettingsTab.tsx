@@ -182,7 +182,7 @@ import {
 	clearLocalVoiceAccessToken,
 	localVoiceFacadeUrlFromReady,
 } from "../lib/voice/local-runtime";
-import { useAppStore } from "../stores/app";
+import { normalizeSettingsTab, useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
@@ -682,6 +682,24 @@ export function SettingsTab() {
 	const isSettingsActive = useAppStore((s) => s.activeApp === "settings");
 	const storeTtsEnabled = useAppStore((s) => s.ttsEnabled);
 	const setStoreTtsEnabled = useAppStore((s) => s.setTtsEnabled);
+	const requestedSettingsTab = useAppStore((s) => s.requestedSettingsTab);
+	const setRequestedSettingsTab = useAppStore((s) => s.setRequestedSettingsTab);
+
+	useEffect(() => {
+		if (requestedSettingsTab) {
+			const normalized = normalizeSettingsTab(requestedSettingsTab);
+			if (normalized) {
+				setActiveSettingsTab(normalized as any);
+				if (normalized === "profile") {
+					requestAnimationFrame(() => {
+						const btn = document.querySelector('[data-testid="steam-link-btn"]');
+						btn?.scrollIntoView({ behavior: "smooth", block: "center" });
+					});
+				}
+			}
+			setRequestedSettingsTab(null);
+		}
+	}, [requestedSettingsTab, setRequestedSettingsTab]);
 	const [savedVrmModel, setSavedVrmModel] = useState(
 		normalizeLocalPath(existing?.vrmModel ?? DEFAULT_AVATAR_MODEL),
 	);

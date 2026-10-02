@@ -4,7 +4,7 @@ import { t } from "../lib/i18n";
 import { clearCachedLabCredits } from "../lib/lab-balance";
 import { Logger } from "../lib/logger";
 import { getNaiaKeySecure } from "../lib/config";
-import { useAppStore } from "../stores/app";
+import { navigateToSettings, useAppStore } from "../stores/app";
 import {
 	createSteamAuthListener,
 	createSteamOrder,
@@ -36,7 +36,6 @@ export interface SteamPurchaseModalProps {
 	gatewayUrl?: string;
 	onPurchaseSuccess?: () => void;
 	onSuccess?: () => void;
-	onNavigateToSettings?: () => void;
 	pollIntervalMs?: number;
 	maxPollAttempts?: number;
 }
@@ -48,7 +47,6 @@ export function SteamPurchaseModal({
 	gatewayUrl,
 	onPurchaseSuccess,
 	onSuccess,
-	onNavigateToSettings,
 	pollIntervalMs,
 	maxPollAttempts,
 }: SteamPurchaseModalProps) {
@@ -653,7 +651,7 @@ export function SteamPurchaseModal({
 										style={{ alignSelf: "flex-start", padding: "4px 10px" }}
 										onClick={() => {
 											handleClose();
-											onNavigateToSettings?.();
+											navigateToSettings("profile");
 										}}
 									>
 										{t("steam.purchase.goToSettings")}

@@ -93,6 +93,7 @@ vi.mock("../../lib/chat-service", () => ({
 
 import { clearCachedLabCredits } from "../../lib/lab-balance";
 import { setLocale } from "../../lib/i18n";
+import { navigateToSettings, useAppStore } from "../../stores/app";
 import { SettingsTab } from "../SettingsTab";
 
 describe("SettingsTab on Steam edition (#729)", () => {
@@ -212,5 +213,108 @@ describe("SettingsTab on Steam edition (#729)", () => {
 			const msg = screen.getByTestId("steam-link-message");
 			expect(msg.textContent).toContain("Network connection failed");
 		});
+	});
+
+	it("① activates profile tab and displays steam-link-btn on initial deferred settings entry (#729 지적 4)", async () => {
+		useAppStore.getState().setActiveApp("settings");
+		useAppStore.getState().setRequestedSettingsTab("profile");
+
+		render(<SettingsTab />);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("steam-link-btn")).toBeDefined();
+		});
+
+		const profileBtn = document.querySelector('[data-settings-tab="profile"]');
+		expect(profileBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
+		expect(useAppStore.getState().requestedSettingsTab).toBeNull();
+	});
+
+	it("② switches from another active tab (brain) to profile tab and displays steam-link-btn on navigateToSettings (#729 지적 4)", async () => {
+		render(<SettingsTab />);
+
+		// Switch to brain tab first
+		await act(async () => {
+			navigateToSettings("brain");
+		});
+
+		await waitFor(() => {
+			const brainBtn = document.querySelector('[data-settings-tab="brain"]');
+			expect(brainBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
+			expect(screen.queryByTestId("steam-link-btn")).toBeNull();
+		});
+
+		// Now call navigateToSettings("profile")
+		await act(async () => {
+			navigateToSettings("profile");
+		});
+
+		await waitFor(() => {
+			const profileBtn = document.querySelector('[data-settings-tab="profile"]');
+			expect(profileBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
+			expect(screen.getByTestId("steam-link-btn")).toBeDefined();
+		});
+		expect(useAppStore.getState().requestedSettingsTab).toBeNull();
+	});
+
+	it("③ normalizes tab: 'ai' event to brain tab and displays brain contents (#729 지적 4)", async () => {
+		render(<SettingsTab />);
+
+		await act(async () => {
+			window.dispatchEvent(
+				new CustomEvent("naia-open-settings", {
+					detail: { tab: "ai" },
+				}),
+			);
+		});
+
+		await waitFor(() => {
+			const brainBtn = document.querySelector('[data-settings-tab="brain"]');
+			expect(brainBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
+			expect(screen.queryByTestId("steam-link-btn")).toBeNull();
+		});
+		expect(useAppStore.getState().activeApp).toBe("settings");
+		expect(useAppStore.getState().requestedSettingsTab).toBeNull();
+	});
+
+	it("④ handles tab: 'voice' event and displays voice tab (#729 지적 4)", async () => {
+		render(<SettingsTab />);
+
+		await act(async () => {
+			window.dispatchEvent(
+				new CustomEvent("naia-open-settings", {
+					detail: { tab: "voice" },
+				}),
+			);
+		});
+
+		await waitFor(() => {
+			const voiceBtn = document.querySelector('[data-settings-tab="voice"]');
+			expect(voiceBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
+			expect(screen.queryByTestId("steam-link-btn")).toBeNull();
+		});
+		expect(useAppStore.getState().activeApp).toBe("settings");
+		expect(useAppStore.getState().requestedSettingsTab).toBeNull();
+	});
+
+	it("⑤ ignores unlisted tab id and keeps current tab unchanged (#729 지적 4)", async () => {
+		render(<SettingsTab />);
+
+		await screen.findByTestId("steam-link-btn");
+		const profileBtn = document.querySelector('[data-settings-tab="profile"]');
+		expect(profileBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
+
+		await act(async () => {
+			window.dispatchEvent(
+				new CustomEvent("naia-open-settings", {
+					detail: { tab: "nonexistent_tab_id_xyz" },
+				}),
+			);
+		});
+
+		// Still in profile tab with steam-link-btn visible
+		expect(profileBtn?.classList.contains("settings-tab-btn--active")).toBe(true);
+		expect(screen.getByTestId("steam-link-btn")).toBeDefined();
+		expect(useAppStore.getState().requestedSettingsTab).toBeNull();
 	});
 });

@@ -53,6 +53,64 @@ interface AppState {
 	ttsEnabled: boolean;
 	setTtsEnabled: (enabled: boolean) => void;
 	toggleTtsEnabled: () => void;
+	/**
+	 * Requested settings tab (e.g. "profile", "brain", "voice").
+	 * Read and consumed by SettingsTab on mount or change.
+	 */
+	requestedSettingsTab: string | null;
+	setRequestedSettingsTab: (tab: string | null) => void;
+}
+
+export const VALID_SETTINGS_TABS = new Set<string>([
+	"profile",
+	"brain",
+	"voice",
+	"avatar",
+	"persona",
+	"memory",
+	"knowledge",
+	"skills",
+	"general",
+]);
+
+/**
+ * Normalizes requested settings tab:
+ * "ai" -> "brain", valid tab IDs are kept, unlisted IDs return null.
+ */
+export function normalizeSettingsTab(tab: unknown): string | null {
+	if (typeof tab !== "string") return null;
+	const trimmed = tab.trim().toLowerCase();
+	if (trimmed === "ai") return "brain";
+	if (VALID_SETTINGS_TABS.has(trimmed)) return trimmed;
+	return null;
+}
+
+/**
+ * Navigates to Settings app and requests a specific settings tab.
+ * Smoothly scrolls to steam-link-btn if in profile tab.
+ */
+export function navigateToSettings(tab: string = "profile"): void {
+	const normalized = normalizeSettingsTab(tab) ?? "profile";
+	useAppStore.getState().setRequestedSettingsTab(normalized);
+	useAppStore.getState().setActiveApp("settings");
+	if (typeof window !== "undefined") {
+		requestAnimationFrame(() => {
+			const btn = document.querySelector('[data-testid="steam-link-btn"]');
+			btn?.scrollIntoView({ behavior: "smooth", block: "center" });
+		});
+	}
+}
+
+// Global listener for naia-open-settings events (#729 지적 4)
+if (typeof window !== "undefined") {
+	window.addEventListener("naia-open-settings", (e: Event) => {
+		const rawTab = (e as CustomEvent<{ tab?: string }>)?.detail?.tab;
+		const normalized = normalizeSettingsTab(rawTab);
+		if (normalized) {
+			useAppStore.getState().setRequestedSettingsTab(normalized);
+			useAppStore.getState().setActiveApp("settings");
+		}
+	});
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -109,6 +167,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 	ttsEnabled: false,
 	setTtsEnabled: (enabled) => set({ ttsEnabled: enabled }),
 	toggleTtsEnabled: () => set((s) => ({ ttsEnabled: !s.ttsEnabled })),
+	requestedSettingsTab: null,
+	setRequestedSettingsTab: (tab) => set({ requestedSettingsTab: tab }),
 }));
 
 /**

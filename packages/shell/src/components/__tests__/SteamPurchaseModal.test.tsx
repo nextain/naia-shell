@@ -827,7 +827,6 @@ describe("SteamPurchaseModal component (#729)", () => {
 			return { ok: false, status: 404, json: async () => ({}) };
 		});
 
-		const onNavigateToSettings = vi.fn();
 		const onClose = vi.fn();
 
 		render(
@@ -836,7 +835,6 @@ describe("SteamPurchaseModal component (#729)", () => {
 				gatewayUrl="https://api.naia.test"
 				naiaKey="test-key"
 				onClose={onClose}
-				onNavigateToSettings={onNavigateToSettings}
 			/>,
 		);
 
@@ -854,7 +852,8 @@ describe("SteamPurchaseModal component (#729)", () => {
 
 		fireEvent.click(screen.getByText("설정으로 이동"));
 		expect(onClose).toHaveBeenCalled();
-		expect(onNavigateToSettings).toHaveBeenCalled();
+		expect(useAppStore.getState().activeApp).toBe("settings");
+		expect(useAppStore.getState().requestedSettingsTab).toBe("profile");
 	});
 
 	it("closes on cancel button click", async () => {
