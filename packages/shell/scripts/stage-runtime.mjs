@@ -554,25 +554,39 @@ export function findSteamworksSdkDll(
 		spawnSyncImpl = spawnSync,
 	} = {},
 ) {
+	let res;
 	try {
-		const res = spawnSyncImpl(
+		res = spawnSyncImpl(
 			"cargo",
 			["metadata", "--format-version", "1", "--locked", "--manifest-path", manifestPath],
 			{ encoding: "utf8", shell: false, maxBuffer: 64 * 1024 * 1024 },
 		);
-		if (res.status !== 0 || !res.stdout) {
-			return null;
-		}
-		const metadata = JSON.parse(res.stdout);
-		const pkg = metadata.packages?.find((p) => p.name === "steamworks-sys");
-		if (!pkg?.manifest_path) {
-			return null;
-		}
-		const pkgDir = dirname(pkg.manifest_path);
-		return resolve(pkgDir, "lib", "steam", "redistributable_bin", "win64", fileName);
-	} catch {
+	} catch (err) {
+		throw new Error(`cargo metadata execution failed: ${err.message}`);
+	}
+	if (res.error) {
+		throw new Error(`cargo metadata execution failed: ${res.error.message}`);
+	}
+	if (res.status !== 0) {
+		throw new Error(
+			`cargo metadata failed with exit code ${res.status}: ${res.stderr || "unknown error"}`,
+		);
+	}
+	if (!res.stdout || !res.stdout.trim()) {
+		throw new Error("cargo metadata produced empty stdout");
+	}
+	let metadata;
+	try {
+		metadata = JSON.parse(res.stdout);
+	} catch (err) {
+		throw new Error(`Failed to parse cargo metadata JSON: ${err.message}`);
+	}
+	const pkg = metadata.packages?.find((p) => p.name === "steamworks-sys");
+	if (!pkg?.manifest_path) {
 		return null;
 	}
+	const pkgDir = dirname(pkg.manifest_path);
+	return resolve(pkgDir, "lib", "steam", "redistributable_bin", "win64", fileName);
 }
 
 /** (win) Steamworks SDK steam_api64.dll → resources/ 복사 (#729). */

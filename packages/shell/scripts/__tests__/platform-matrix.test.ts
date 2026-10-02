@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { prepareSteamDepot } from "../prepare-steam-depot.mjs";
 // .mjs(JS) 모듈 — 타입 선언 없음. tsconfig include=["src"] 라 tsc 스코프 밖(vitest 만 수집).
 import {
@@ -1196,16 +1196,16 @@ describe("provisionSteamworks (#729)", () => {
 		expect(existsSync(dll!)).toBe(true);
 	});
 
-	it("returns null if cargo metadata fails or outputs invalid json", () => {
+	it("throws descriptive error if cargo metadata fails or outputs invalid json", () => {
 		const failSpawn = () => ({ status: 1, stdout: "", stderr: "failed" });
-		expect(
+		expect(() =>
 			findSteamworksSdkDll("steam_api64.dll", { spawnSyncImpl: failSpawn as any }),
-		).toBeNull();
+		).toThrow(/cargo metadata failed with exit code 1: failed/);
 
 		const badJsonSpawn = () => ({ status: 0, stdout: "invalid-json", stderr: "" });
-		expect(
+		expect(() =>
 			findSteamworksSdkDll("steam_api64.dll", { spawnSyncImpl: badJsonSpawn as any }),
-		).toBeNull();
+		).toThrow(/Failed to parse cargo metadata JSON/);
 
 		const missingPkgSpawn = () => ({
 			status: 0,
@@ -1215,6 +1215,29 @@ describe("provisionSteamworks (#729)", () => {
 		expect(
 			findSteamworksSdkDll("steam_api64.dll", { spawnSyncImpl: missingPkgSpawn as any }),
 		).toBeNull();
+	});
+
+	it("aborts immediately when cargo metadata fails even if other candidate paths exist", () => {
+		const fakeCopy = vi.fn();
+		const fakeExists = vi.fn((path: string) => {
+			// dest does not exist, but target candidate exists
+			if (path.includes("resources")) return false;
+			return path.includes("target");
+		});
+		const failFindSdkDll = () => {
+			throw new Error("cargo metadata failed with exit code 101");
+		};
+
+		expect(() => {
+			provisionSteamworks(matrix, "win32", "x64", {
+				copy: fakeCopy as any,
+				exists: fakeExists as any,
+				findSdkDll: failFindSdkDll,
+			});
+		}).toThrow(/cargo metadata failed with exit code 101/);
+
+		// copy was never called because it aborted immediately on metadata failure
+		expect(fakeCopy).not.toHaveBeenCalled();
 	});
 
 	it("copies steam_api64.dll from cargo metadata SDK path when dest and target candidates do not exist", () => {
