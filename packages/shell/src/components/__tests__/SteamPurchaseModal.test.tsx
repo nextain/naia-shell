@@ -1132,4 +1132,202 @@ describe("SteamPurchaseModal component (#729)", () => {
 			window.removeEventListener("naia_auth_ready", authReadyListener);
 		}
 	});
+
+	it("modal: shows delayed screen at 10s deadline when initial response hangs, cancels request, and preserves attempt (#729 지적 7)", async () => {
+		vi.useFakeTimers();
+		try {
+			let orderRequestSignal: AbortSignal | null | undefined;
+			let initialKey: string | undefined;
+			let initialPackId: string | undefined;
+
+			fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					orderRequestSignal = init?.signal;
+					const body = JSON.parse(init?.body as string);
+					initialKey = body.idempotency_key;
+					initialPackId = body.pack_id;
+					return new Promise((_resolve, reject) => {
+						if (init?.signal?.aborted) {
+							return reject(new DOMException("The operation was aborted.", "AbortError"));
+						}
+						init?.signal?.addEventListener("abort", () => {
+							reject(new DOMException("The operation was aborted.", "AbortError"));
+						});
+					});
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			// Flush initial pack fetch
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(screen.getByText("1000 크레딧")).toBeDefined();
+			fireEvent.click(screen.getByText("1000 크레딧"));
+			fireEvent.click(screen.getByText("구매하기"));
+
+			// Flush microtasks for executeOrder start
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(initialPackId).toBe("pack-100");
+			expect(initialKey).toBeDefined();
+			expect(orderRequestSignal?.aborted).toBe(false);
+
+			// Fast forward to 10s deadline
+			await vi.advanceTimersByTimeAsync(10000);
+
+			// Must show delayed notice
+			expect(screen.getByText("확인이 지연되고 있습니다.")).toBeDefined();
+			// Ongoing request must be aborted
+			expect(orderRequestSignal?.aborted).toBe(true);
+
+			// Retry check must preserve key and packId
+			let retryKey: string | undefined;
+			let retryPackId: string | undefined;
+			fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					const body = JSON.parse(init?.body as string);
+					retryKey = body.idempotency_key;
+					retryPackId = body.pack_id;
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-retried",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			fireEvent.click(screen.getByText("다시 확인"));
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(retryKey).toBe(initialKey);
+			expect(retryPackId).toBe("pack-100");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("modal: shows delayed screen at 10s deadline when re-request after CREATED hangs, cancels request, and preserves attempt (#729 지적 7)", async () => {
+		vi.useFakeTimers();
+		try {
+			let orderCallCount = 0;
+			let reRequestSignal: AbortSignal | null | undefined;
+			let initialKey: string | undefined;
+			let initialPackId: string | undefined;
+
+			fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					orderCallCount++;
+					const body = JSON.parse(init?.body as string);
+					initialKey = body.idempotency_key;
+					initialPackId = body.pack_id;
+
+					if (orderCallCount === 1) {
+						return {
+							ok: true,
+							status: 200,
+							json: async () => ({
+								order_id: "order-poll-1",
+								status: "CREATED",
+								flow: "client",
+								steamurl: null,
+								pack: defaultPacks[0],
+							}),
+						};
+					}
+					// Second request hangs
+					reRequestSignal = init?.signal;
+					return new Promise((_resolve, reject) => {
+						if (init?.signal?.aborted) {
+							return reject(new DOMException("The operation was aborted.", "AbortError"));
+						}
+						init?.signal?.addEventListener("abort", () => {
+							reject(new DOMException("The operation was aborted.", "AbortError"));
+						});
+					});
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					naiaKey="test-key"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await vi.advanceTimersByTimeAsync(0);
+			fireEvent.click(screen.getByText("1000 크레딧"));
+			fireEvent.click(screen.getByText("구매하기"));
+
+			// Initial request completes with CREATED, sleep for 1s starts
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(orderCallCount).toBe(2);
+			expect(reRequestSignal?.aborted).toBe(false);
+
+			// Advance remaining 9s to hit 10s deadline
+			await vi.advanceTimersByTimeAsync(9000);
+
+			expect(screen.getByText("확인이 지연되고 있습니다.")).toBeDefined();
+			expect(reRequestSignal?.aborted).toBe(true);
+
+			// Retry check retains original key and pack
+			let retryKey: string | undefined;
+			let retryPackId: string | undefined;
+			fetchMock.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/orders")) {
+					const body = JSON.parse(init?.body as string);
+					retryKey = body.idempotency_key;
+					retryPackId = body.pack_id;
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-retried-2",
+							status: "INITIATED",
+							flow: "client",
+							steamurl: null,
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			fireEvent.click(screen.getByText("다시 확인"));
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(retryKey).toBe(initialKey);
+			expect(retryPackId).toBe(initialPackId);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });

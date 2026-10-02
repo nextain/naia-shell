@@ -24,6 +24,8 @@ globalThis.fetch = fetchMock as unknown as typeof fetch;
 
 import {
 	VALID_STEAM_ORDER_STATUSES,
+	SteamOrderTimeoutError,
+	isSteamOrderTimeout,
 	createSteamAuthListener,
 	createSteamOrder,
 	fetchSteamPacks,
@@ -316,6 +318,122 @@ describe("steam-billing client (#729)", () => {
 			await expect(
 				createSteamOrder("gw-key", "pack-1", { gatewayUrl: "https://api.naia.test" }),
 			).rejects.toThrow("steam_not_linked");
+		});
+
+		it("aborts initial request and rejects with SteamOrderTimeoutError after 10s deadline (#729 지적 7)", async () => {
+			vi.useFakeTimers();
+			try {
+				let capturedSignal: AbortSignal | null | undefined;
+				fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+					capturedSignal = init?.signal;
+					return new Promise((_resolve, reject) => {
+						if (init?.signal?.aborted) {
+							return reject(new DOMException("The operation was aborted.", "AbortError"));
+						}
+						init?.signal?.addEventListener("abort", () => {
+							reject(new DOMException("The operation was aborted.", "AbortError"));
+						});
+					});
+				});
+
+				const promise = createSteamOrder("gw-key", "pack-1", {
+					gatewayUrl: "https://api.naia.test",
+					totalTimeoutMs: 10000,
+				});
+				const assertion = expect(promise).rejects.toThrow(SteamOrderTimeoutError);
+
+				// Initially not aborted
+				expect(capturedSignal?.aborted).toBe(false);
+
+				// Fast forward to 10s deadline
+				await vi.advanceTimersByTimeAsync(10000);
+
+				await assertion;
+				expect(capturedSignal?.aborted).toBe(true);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("aborts slow re-request during CREATED polling and rejects with SteamOrderTimeoutError after 10s deadline (#729 지적 7)", async () => {
+			vi.useFakeTimers();
+			try {
+				let reRequestSignal: AbortSignal | null | undefined;
+				let callCount = 0;
+				fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+					callCount++;
+					if (callCount === 1) {
+						// Initial request returns CREATED immediately
+						return Promise.resolve({
+							ok: true,
+							status: 200,
+							json: async () => ({
+								order_id: "order-poll-timeout",
+								status: "CREATED",
+								flow: "client",
+								steamurl: null,
+								pack: { id: "pack-1", price_cents: 999, currency: "USD", credits: 1000 },
+							}),
+						});
+					}
+					// Second request hangs
+					reRequestSignal = init?.signal;
+					return new Promise((_resolve, reject) => {
+						if (init?.signal?.aborted) {
+							return reject(new DOMException("The operation was aborted.", "AbortError"));
+						}
+						init?.signal?.addEventListener("abort", () => {
+							reject(new DOMException("The operation was aborted.", "AbortError"));
+						});
+					});
+				});
+
+				const promise = createSteamOrder("gw-key", "pack-1", {
+					gatewayUrl: "https://api.naia.test",
+					pollIntervalMs: 1000,
+					totalTimeoutMs: 10000,
+				});
+				const assertion = expect(promise).rejects.toThrow(SteamOrderTimeoutError);
+
+				// Advance past initial response and first poll interval (1000ms)
+				await vi.advanceTimersByTimeAsync(1000);
+				expect(callCount).toBe(2);
+				expect(reRequestSignal?.aborted).toBe(false);
+
+				// Advance remaining time to 10s total deadline
+				await vi.advanceTimersByTimeAsync(9000);
+
+				await assertion;
+				expect(reRequestSignal?.aborted).toBe(true);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("distinguishes user cancellation from deadline timeout (#729 지적 7)", async () => {
+			const controller = new AbortController();
+			fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+				return new Promise((_resolve, reject) => {
+					init?.signal?.addEventListener("abort", () => {
+						reject(new DOMException("The operation was aborted.", "AbortError"));
+					});
+				});
+			});
+
+			const promise = createSteamOrder("gw-key", "pack-1", {
+				gatewayUrl: "https://api.naia.test",
+				signal: controller.signal,
+				totalTimeoutMs: 10000,
+			});
+
+			controller.abort();
+
+			await expect(promise).rejects.toThrow();
+			try {
+				await promise;
+			} catch (err) {
+				expect(isSteamOrderTimeout(err)).toBe(false);
+			}
 		});
 	});
 

@@ -64,9 +64,26 @@ export interface CreateSteamOrderOptions {
 	idempotencyKey?: string;
 	maxPollAttempts?: number;
 	pollIntervalMs?: number;
+	totalTimeoutMs?: number;
 	onStatusChange?: (status: string) => void;
 	onDelayNotice?: () => void;
 	signal?: AbortSignal;
+}
+
+export class SteamOrderTimeoutError extends Error {
+	readonly isTimeout = true;
+	constructor(message = "Steam order creation deadline exceeded (10s)") {
+		super(message);
+		this.name = "SteamOrderTimeoutError";
+	}
+}
+
+export function isSteamOrderTimeout(err: unknown): boolean {
+	return (
+		err instanceof SteamOrderTimeoutError ||
+		(err as any)?.isTimeout === true ||
+		(err as any)?.name === "SteamOrderTimeoutError"
+	);
 }
 
 export interface FinalizeSteamOrderOptions {
@@ -155,82 +172,147 @@ export async function createSteamOrder(
 
 	const maxPoll = options.maxPollAttempts ?? 10;
 	const interval = options.pollIntervalMs ?? 1000;
+	const totalTimeoutMs = options.totalTimeoutMs ?? 10000;
 
-	const sendOrderRequest = async (): Promise<SteamOrderResponse> => {
-		const payload = {
-			pack_id: packId,
-			flow: "client",
-			language,
-			idempotency_key: idempotencyKey,
-		};
+	// Total deadline begins BEFORE the first POST (#729 지적 7)
+	const internalController = new AbortController();
+	let timedOut = false;
 
-		const response = await fetch(`${baseUrl}/v1/billing/steam/orders`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-AnyLLM-Key": `Bearer ${naiaKey}`,
-			},
-			body: JSON.stringify(payload),
-			signal: options.signal,
-		});
-
-		if (!response.ok) {
-			let errorData: unknown;
-			try {
-				errorData = await response.json();
-			} catch {
-				throw new Error(`Order creation failed: HTTP ${response.status}`);
-			}
-			const code = parseGatewayErrorCode(errorData);
-			if (response.status === 404 && code === "pack_not_found") {
-				throw new Error("pack_not_found");
-			}
-			if (response.status === 409 && code === "steam_not_linked") {
-				throw new Error("steam_not_linked");
-			}
-			if (response.status === 409 && code === "idempotency_key_reused") {
-				throw new Error("idempotency_key_reused");
-			}
-			if (response.status === 503 && code === "provider_not_configured") {
-				throw new Error("provider_not_configured");
-			}
-			throw new Error(
-				code ? `Order creation failed: ${code}` : `HTTP ${response.status}`,
-			);
-		}
-
-		const data = (await response.json()) as SteamOrderResponse;
-		// Ensure order_id is always a string
-		data.order_id = String(data.order_id);
-		return data;
+	const onExternalAbort = () => {
+		internalController.abort(options.signal?.reason ?? new Error("Aborted"));
 	};
 
-	let order = await sendOrderRequest();
-	options.onStatusChange?.(order.status);
-
-	// If client flow and status is CREATED, poll until INITIATED or non-CREATED up to maxPoll times
-	let pollCount = 0;
-	while (order.status === "CREATED") {
-		pollCount++;
-		if (pollCount > maxPoll) {
-			Logger.info(
-				"SteamBilling",
-				"Order status remained CREATED after limit, stopping poll",
-			);
-			options.onDelayNotice?.();
-			break;
+	if (options.signal) {
+		if (options.signal.aborted) {
+			throw options.signal.reason ?? new Error("Aborted");
 		}
-
-		await sleep(interval, options.signal);
-		order = await sendOrderRequest();
-		options.onStatusChange?.(order.status);
-
-		if (order.status !== "CREATED") {
-			break;
-		}
+		options.signal.addEventListener("abort", onExternalAbort, { once: true });
 	}
 
-	return order;
+	const timeoutTimer = setTimeout(() => {
+		timedOut = true;
+		internalController.abort(new SteamOrderTimeoutError());
+	}, totalTimeoutMs);
+
+	const cleanup = () => {
+		clearTimeout(timeoutTimer);
+		if (options.signal) {
+			options.signal.removeEventListener("abort", onExternalAbort);
+		}
+	};
+
+	try {
+		const sendOrderRequest = async (): Promise<SteamOrderResponse> => {
+			const payload = {
+				pack_id: packId,
+				flow: "client",
+				language,
+				idempotency_key: idempotencyKey,
+			};
+
+			let response: Response;
+			try {
+				response = await fetch(`${baseUrl}/v1/billing/steam/orders`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-AnyLLM-Key": `Bearer ${naiaKey}`,
+					},
+					body: JSON.stringify(payload),
+					signal: internalController.signal,
+				});
+			} catch (fetchErr: any) {
+				if (timedOut) {
+					throw new SteamOrderTimeoutError();
+				}
+				throw fetchErr;
+			}
+
+			if (!response.ok) {
+				let errorData: unknown;
+				try {
+					errorData = await response.json();
+				} catch {
+					if (timedOut) {
+						throw new SteamOrderTimeoutError();
+					}
+					throw new Error(`Order creation failed: HTTP ${response.status}`);
+				}
+				const code = parseGatewayErrorCode(errorData);
+				if (response.status === 404 && code === "pack_not_found") {
+					throw new Error("pack_not_found");
+				}
+				if (response.status === 409 && code === "steam_not_linked") {
+					throw new Error("steam_not_linked");
+				}
+				if (response.status === 409 && code === "idempotency_key_reused") {
+					throw new Error("idempotency_key_reused");
+				}
+				if (response.status === 503 && code === "provider_not_configured") {
+					throw new Error("provider_not_configured");
+				}
+				throw new Error(
+					code ? `Order creation failed: ${code}` : `HTTP ${response.status}`,
+				);
+			}
+
+			let data: SteamOrderResponse;
+			try {
+				data = (await response.json()) as SteamOrderResponse;
+			} catch (jsonErr) {
+				if (timedOut) {
+					throw new SteamOrderTimeoutError();
+				}
+				throw jsonErr;
+			}
+			// Ensure order_id is always a string
+			data.order_id = String(data.order_id);
+			return data;
+		};
+
+		let order = await sendOrderRequest();
+		options.onStatusChange?.(order.status);
+
+		// If client flow and status is CREATED, poll until INITIATED or non-CREATED up to maxPoll times
+		let pollCount = 0;
+		while (order.status === "CREATED") {
+			pollCount++;
+			if (pollCount > maxPoll || timedOut) {
+				Logger.info(
+					"SteamBilling",
+					"Order status remained CREATED after limit, stopping poll",
+				);
+				options.onDelayNotice?.();
+				break;
+			}
+
+			try {
+				await sleep(interval, internalController.signal);
+			} catch (sleepErr) {
+				if (timedOut) {
+					options.onDelayNotice?.();
+					throw new SteamOrderTimeoutError();
+				}
+				throw sleepErr;
+			}
+
+			order = await sendOrderRequest();
+			options.onStatusChange?.(order.status);
+
+			if (order.status !== "CREATED") {
+				break;
+			}
+		}
+
+		return order;
+	} catch (err) {
+		if (timedOut) {
+			throw new SteamOrderTimeoutError();
+		}
+		throw err;
+	} finally {
+		cleanup();
+	}
 }
 
 /**

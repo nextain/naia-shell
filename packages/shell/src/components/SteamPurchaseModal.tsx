@@ -10,6 +10,7 @@ import {
 	fetchSteamPacks,
 	finalizeSteamOrder,
 	isAllowedSteamUrl,
+	isSteamOrderTimeout,
 	openSteamUrl,
 	type SteamAuthListener,
 	type SteamOrderResponse,
@@ -188,6 +189,7 @@ export function SteamPurchaseModal({
 		isExecutingRef.current = true;
 		const attemptToken = Symbol("purchase-attempt");
 		attemptTokenRef.current = attemptToken;
+		setPreservedAttempt(attempt);
 
 		let effectiveNaiaKey = naiaKey;
 		if (!effectiveNaiaKey) {
@@ -313,10 +315,28 @@ export function SteamPurchaseModal({
 				}
 			}
 		} catch (err: any) {
-			if (attemptTokenRef.current !== attemptToken || controller.signal.aborted) {
+			// If cancelled by modal close or token invalidated, finish silently without state update
+			if (attemptTokenRef.current !== attemptToken) {
 				isExecutingRef.current = false;
 				return;
 			}
+
+			// If deadline (10s) expired, transition to delayed screen and keep attempt preserved (#729 지적 7)
+			if (isSteamOrderTimeout(err)) {
+				Logger.info(
+					"SteamPurchaseModal",
+					"Order creation timed out (10s total deadline), showing delayed screen",
+				);
+				setFlowState("delayed");
+				return;
+			}
+
+			// If user initiated close/abort (controller.signal.aborted), finish silently without state update
+			if (controller.signal.aborted) {
+				isExecutingRef.current = false;
+				return;
+			}
+
 			Logger.warn("SteamPurchaseModal", "Order creation failed", {
 				error: String(err),
 			});
