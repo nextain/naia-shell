@@ -2225,6 +2225,7 @@ describe("SteamPurchaseModal component (#729)", () => {
 
 			// Modal must remain on initial screen, no error displayed
 			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByText("Failed to open browser")).toBeNull();
 			expect(screen.queryByRole("alert")).toBeNull();
 		});
 
@@ -2614,10 +2615,11 @@ describe("SteamPurchaseModal component (#729)", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByText("key lookup error")).toBeNull();
 			expect(screen.queryByRole("alert")).toBeNull();
 		});
 
-		it("web_flow completion button key retrieval late success and failure: does not trigger handleFinalize or error on reopened modal", async () => {
+		it("web_flow completion button key retrieval late success: does not trigger handleFinalize or error on reopened modal", async () => {
 			let resolveKeyBtn!: (k: string) => void;
 			const keyPromise = new Promise<string>((res) => {
 				resolveKeyBtn = res;
@@ -2703,6 +2705,96 @@ describe("SteamPurchaseModal component (#729)", () => {
 
 			expect(finalizeCalled).toBe(false);
 			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+
+		it("web_flow completion button key retrieval late failure: does not trigger handleFinalize or alter reopened modal", async () => {
+			let rejectKeyBtn!: (err: any) => void;
+			const keyPromiseFail = new Promise<string>((_, rej) => {
+				rejectKeyBtn = rej;
+			});
+
+			let keyCallCount = 0;
+			vi.mocked(getNaiaKeySecure).mockImplementation(async () => {
+				keyCallCount++;
+				if (keyCallCount === 1) return "key-initial";
+				return keyPromiseFail;
+			});
+
+			invokeMock.mockResolvedValue(undefined);
+
+			let finalizeCalled = false;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					return { ok: true, status: 200, json: async () => defaultPacks };
+				}
+				if (urlStr.includes("/v1/billing/steam/orders") && !urlStr.includes("/finalize")) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							order_id: "order-web-btn-fail",
+							status: "INITIATED",
+							flow: "web",
+							steamurl: "https://store.steampowered.com/checkout/approvetxn/12345",
+							pack: defaultPacks[0],
+						}),
+					};
+				}
+				if (urlStr.includes("/finalize")) {
+					finalizeCalled = true;
+					return { ok: true, status: 200, json: async () => ({ status: "GRANTED", granted_now: true }) };
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("구매하기"));
+
+			await waitFor(() => {
+				expect(screen.getByText("Steam 결제 페이지가 열렸습니다. 결제를 마친 후 아래 버튼을 눌러주세요.")).toBeDefined();
+			});
+
+			fireEvent.click(screen.getByText("결제를 완료했어요"));
+			expect(keyCallCount).toBe(2);
+
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(screen.getByText("1000 크레딧")).toBeDefined();
+			});
+
+			rejectKeyBtn(new Error("key lookup error"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(finalizeCalled).toBe(false);
+			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByText("key lookup error")).toBeNull();
 			expect(screen.queryByRole("alert")).toBeNull();
 		});
 
@@ -2881,6 +2973,7 @@ describe("SteamPurchaseModal component (#729)", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(screen.getByText("구매하기")).toBeDefined();
+			expect(screen.queryByText("reopen failed")).toBeNull();
 			expect(screen.queryByRole("alert")).toBeNull();
 		});
 
@@ -3023,6 +3116,190 @@ describe("SteamPurchaseModal component (#729)", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(screen.getByText("8888 크레딧")).toBeDefined();
+			expect(screen.queryByText("Error: Failed to fetch Steam packs: HTTP 500")).toBeNull();
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
+
+		it("pack fetch late success during pending newer fetch: older generation finally does not prematurely clear loading state", async () => {
+			let resolveGen1!: (val: any) => void;
+			const gen1Promise = new Promise<any>((res) => {
+				resolveGen1 = res;
+			});
+
+			let resolveGen2!: (val: any) => void;
+			const gen2Promise = new Promise<any>((res) => {
+				resolveGen2 = res;
+			});
+
+			const gen1Packs = [
+				{ id: "pack-111", price_cents: 1111, currency: "USD", credits: 1111 },
+			];
+			const gen2Packs = [
+				{ id: "pack-999", price_cents: 9999, currency: "USD", credits: 9999 },
+			];
+
+			let packFetchCount = 0;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					packFetchCount++;
+					if (packFetchCount === 1) {
+						return {
+							ok: true,
+							status: 200,
+							json: async () => gen1Promise,
+						};
+					}
+					return {
+						ok: true,
+						status: 200,
+						json: async () => gen2Promise,
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			expect(packFetchCount).toBe(1);
+
+			// Close and reopen modal to trigger generation 2 fetch while gen 1 is still pending
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			expect(packFetchCount).toBe(2);
+
+			// Generation 2 is pending: modal must show loading and disable buy button
+			expect(screen.getByText("크레딧 팩 불러오는 중…")).toBeDefined();
+			expect(screen.getByText("구매하기").closest("button")?.disabled).toBe(true);
+
+			// While generation 2 is pending, generation 1 resolves
+			resolveGen1(gen1Packs);
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Gen 1's finally must NOT prematurely clear loading, nor show gen 1 packs
+			expect(screen.getByText("크레딧 팩 불러오는 중…")).toBeDefined();
+			expect(screen.getByText("구매하기").closest("button")?.disabled).toBe(true);
+			expect(screen.queryByText("1111 크레딧")).toBeNull();
+
+			// Now generation 2 resolves
+			resolveGen2(gen2Packs);
+			await waitFor(() => {
+				expect(screen.getByText("9999 크레딧")).toBeDefined();
+			});
+
+			expect(screen.queryByText("크레딧 팩 불러오는 중…")).toBeNull();
+			expect(screen.getByText("구매하기").closest("button")?.disabled).toBe(false);
+		});
+
+		it("pack fetch late failure during pending newer fetch: older generation finally does not prematurely clear loading state", async () => {
+			let rejectGen1!: (err: any) => void;
+			const gen1Promise = new Promise<any>((_, rej) => {
+				rejectGen1 = rej;
+			});
+
+			let resolveGen2!: (val: any) => void;
+			const gen2Promise = new Promise<any>((res) => {
+				resolveGen2 = res;
+			});
+
+			const gen2Packs = [
+				{ id: "pack-888", price_cents: 8888, currency: "USD", credits: 8888 },
+			];
+
+			let packFetchCount = 0;
+			fetchMock.mockImplementation(async (url: string | URL | Request) => {
+				const urlStr = typeof url === "string" ? url : url.toString();
+				if (urlStr.includes("/v1/billing/steam/packs")) {
+					packFetchCount++;
+					if (packFetchCount === 1) {
+						return {
+							ok: false,
+							status: 500,
+							json: async () => {
+								await gen1Promise;
+								return { detail: { error: "failed" } };
+							},
+						};
+					}
+					return {
+						ok: true,
+						status: 200,
+						json: async () => gen2Promise,
+					};
+				}
+				return { ok: false, status: 404, json: async () => ({}) };
+			});
+
+			const { rerender } = render(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			expect(packFetchCount).toBe(1);
+
+			// Close and reopen modal to trigger generation 2 fetch while gen 1 is still pending
+			rerender(
+				<SteamPurchaseModal
+					isOpen={false}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+			rerender(
+				<SteamPurchaseModal
+					isOpen={true}
+					gatewayUrl="https://api.naia.test"
+					onClose={vi.fn()}
+				/>,
+			);
+
+			expect(packFetchCount).toBe(2);
+
+			// Generation 2 is pending: modal must show loading and disable buy button
+			expect(screen.getByText("크레딧 팩 불러오는 중…")).toBeDefined();
+			expect(screen.getByText("구매하기").closest("button")?.disabled).toBe(true);
+
+			// While generation 2 is pending, generation 1 rejects
+			rejectGen1(new Error("Gen 1 fetch error"));
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Gen 1's catch and finally must NOT clear loading state or show error
+			expect(screen.getByText("크레딧 팩 불러오는 중…")).toBeDefined();
+			expect(screen.getByText("구매하기").closest("button")?.disabled).toBe(true);
+			expect(screen.queryByText("Error: Failed to fetch Steam packs: HTTP 500")).toBeNull();
+			expect(screen.queryByRole("alert")).toBeNull();
+
+			// Now generation 2 resolves
+			resolveGen2(gen2Packs);
+			await waitFor(() => {
+				expect(screen.getByText("8888 크레딧")).toBeDefined();
+			});
+
+			expect(screen.queryByText("크레딧 팩 불러오는 중…")).toBeNull();
+			expect(screen.getByText("구매하기").closest("button")?.disabled).toBe(false);
+			expect(screen.queryByText("Error: Failed to fetch Steam packs: HTTP 500")).toBeNull();
 			expect(screen.queryByRole("alert")).toBeNull();
 		});
 	});
