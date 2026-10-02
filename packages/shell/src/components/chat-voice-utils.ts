@@ -82,6 +82,9 @@ export function voiceCloseMessage(reason: VoiceCloseReason): string | null {
 		case "consent":
 			return t("chat.voiceErrorConsent");
 		case "credits":
+			if (isSteamChannelNow()) {
+				openSteamPurchaseModal();
+			}
 			return creditsShortMessage();
 		case "auth":
 			return t("chat.voiceErrorAuth");
