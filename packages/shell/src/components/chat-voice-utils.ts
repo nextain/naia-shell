@@ -1,6 +1,6 @@
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import type { AppConfig } from "../lib/config";
-import { paymentLinksHiddenNow } from "../lib/distribution";
+import { isSteamChannelNow, paymentLinksHiddenNow } from "../lib/distribution";
 import { t } from "../lib/i18n";
 import type {
 	VoiceCloseReason,
@@ -34,8 +34,11 @@ export function resolveTtsVoiceId(config: AppConfig): string | undefined {
 	return config.ttsVoice;
 }
 
-/** Out-of-credits notice; no top-up wording where payment links are hidden (Steam, #727). */
+/** Out-of-credits notice; tailored for Steam or hidden payment links. */
 function creditsShortMessage(): string {
+	if (isSteamChannelNow()) {
+		return t("chat.voiceErrorCreditsSteam");
+	}
 	return t(
 		paymentLinksHiddenNow()
 			? "chat.voiceErrorCreditsNoTopup"

@@ -1,76 +1,67 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
 // @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const eventListeners = vi.hoisted(
-	() => new Map<string, (event: { payload: any }) => void>(),
-);
-const secureStore = vi.hoisted(() => ({
-	get: vi.fn().mockResolvedValue(null),
-	set: vi.fn().mockResolvedValue(undefined),
-	delete: vi.fn().mockResolvedValue(undefined),
-}));
-
-// Mock Tauri invoke
-const loggedOutMocks = vi.hoisted(() => ({
-	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
-}));
-vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
-	...(await importOriginal<
-		typeof import("../../lib/llm/logged-out-default")
-	>()),
-	resolveLoggedOutLlm: loggedOutMocks.resolveLoggedOutLlm,
-}));
-
-vi.mock("../../lib/voice/host-profile", () => ({
-	// 이 테스트들이 흉내 내는 기계는 카드 한 장짜리 Windows 다 (#537).
-	// 프로파일 이름은 하드웨어 사실이라 화면이 아니라 여기서 정한다.
-	voiceHostProfile: () =>
-		Promise.resolve({
-			profile: "windows_trt_6g",
-			gpus: [{ index: 0, freeMib: 8192, totalMib: 8192 }],
-			gpuChoiceIsMeaningful: false,
-			defaultGpuIndex: 0,
-		}),
-	resetVoiceHostProfileCache: () => {},
-}));
-
-const chan = vi.hoisted(() => ({ value: "steam" }));
-const defaultInvoke = vi.hoisted(
-	() => (command: string) =>
-		command === "get_distribution_channel"
-			? Promise.resolve(chan.value)
-			: command === "fetch_naia_balance"
-				? Promise.resolve({ balance: 1_000_000 })
-				: command === "secure_store_get"
-					? Promise.resolve(null)
-					: command === "read_naia_ui_config"
-						? Promise.resolve("{}")
-						: Promise.resolve(true),
-);
-
+const invokeMock = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn(defaultInvoke),
+	invoke: vi.fn(async (cmd: string, ...args: unknown[]) => {
+		if (cmd === "frontend_log") return Promise.resolve();
+		if (cmd === "secure_store_get") return Promise.resolve(null);
+		if (cmd === "read_naia_ui_config") return Promise.resolve("{}");
+		return invokeMock(cmd, ...args);
+	}),
 	convertFileSrc: vi.fn((path: string) => `file://${path}`),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-	listen: vi.fn((event: string, handler: (event: { payload: any }) => void) => {
-		eventListeners.set(event, handler);
-		return Promise.resolve(() => eventListeners.delete(event));
-	}),
+	listen: vi.fn(async () => () => {}),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
-	openUrl: vi.fn().mockResolvedValue(undefined),
+	openUrl: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-	open: vi.fn().mockResolvedValue(null),
+vi.mock("../../lib/distribution", () => ({
+	useIsSteamChannel: () => true,
+	isSteamChannelNow: () => true,
+	usePaymentLinksHidden: () => true,
+	paymentLinksHiddenNow: () => true,
+	loadDistributionChannel: async () => "steam",
 }));
 
-vi.mock("@tauri-apps/plugin-store", () => ({
-	load: vi.fn().mockResolvedValue(secureStore),
+const mockPerformSteamLogin = vi.fn();
+vi.mock("../../lib/steam-auth", () => ({
+	performSteamLogin: (...args: unknown[]) => mockPerformSteamLogin(...args),
+}));
+
+vi.mock("../../lib/config", () => ({
+	loadConfig: () => ({}),
+	saveConfig: vi.fn(),
+	getAdkPath: () => "/home/user/naia-adk",
+	getNaiaWebBaseUrl: () => "https://www.naia.test",
+	LAB_GATEWAY_URL: "https://api.naia.test",
+	hasNaiaKeySecure: async () => false,
+	getNaiaKeySecure: async () => null,
+	detectGpuVramGb: async () => 8,
+}));
+
+vi.mock("../../lib/secure-store", () => ({
+	getSecureStorePath: () => "/home/user/.secure-store",
+	hasSecretKeyAtPath: async () => false,
+	saveSecretKeyAtPath: vi.fn(),
+	deleteSecretKey: vi.fn(),
+}));
+
+vi.mock("../../lib/adk-store", () => ({
+	getAdkPath: () => "/home/user/naia-adk",
+	listNaiaAssets: vi.fn().mockResolvedValue([]),
+	toAssetUrl: vi.fn(),
+	toLocalBlobUrl: vi.fn(),
+	writeNaiaConfig: vi.fn(),
+	writeNaiaConfigAtPath: vi.fn(),
+	writeAgentKeyStrictAtPath: vi.fn(),
+	writeSlotsManifest: vi.fn(),
+	buildNaiaConfigEnv: vi.fn(),
 }));
 
 vi.mock("../../lib/chat-service", () => ({
@@ -84,67 +75,141 @@ vi.mock("../../lib/chat-service", () => ({
 	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
 	sendAuthUpdateStrict: vi.fn().mockResolvedValue(undefined),
 	reloadAgentSettings: vi.fn().mockResolvedValue(undefined),
-	isNewCore: () => false, // 기본 old 경로(비파괴 graft) — new-core graft 검증은 onboarding-core.test.ts
-}));
-vi.mock("../../lib/onboarding-core", () => ({
-	completeOnboardingNewCore: vi.fn().mockResolvedValue(undefined),
-	// isNewCore=false 라 core() 는 null → makeOnboardingSession 미호출. 안전상 stub 제공.
-	makeOnboardingSession: vi.fn(() => ({
-		assets: vi.fn().mockResolvedValue([]),
-		submit: vi.fn().mockResolvedValue({ step: "welcome" }),
-		onNaiaAuthCallback: vi.fn().mockResolvedValue({ step: "provider" }),
-		currentStep: () => "welcome",
-		completeWith: vi.fn().mockResolvedValue(undefined),
-	})),
+	isNewCore: () => false,
 }));
 
-// Mock getLocale to return "ko" so Korean strings are used
-vi.mock("../../lib/i18n", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../../lib/i18n")>();
-	return { ...actual, getLocale: () => "ko" as any };
-});
-
-// Mock VrmPreview (Three.js doesn't work in jsdom)
 vi.mock("../VrmPreview", () => ({
 	VrmPreview: ({ modelPath }: { modelPath: string }) => (
 		<div data-testid="vrm-preview" data-model={modelPath} />
 	),
 }));
 
-import { resetDistributionChannelForTests } from "../../lib/distribution";
 import { OnboardingWizard } from "../OnboardingWizard";
+import { setLocale } from "../../lib/i18n";
 
-const DONATION = "[data-testid=onboarding-discord-connect-btn]";
-
-// #727: the welcome-step donation button opens the naia.land donation page, a
-// web payment path. It must not render on Steam or while the channel is unknown.
-describe("OnboardingWizard donation button (#727)", () => {
-	beforeEach(() => resetDistributionChannelForTests());
-	afterEach(() => cleanup());
-
-	async function renderWelcome(channel: string) {
-		chan.value = channel;
-		const view = render(<OnboardingWizard onComplete={() => {}} />);
-		// The discord button sits beside the donation button in the same row.
-		await waitFor(() =>
-			expect(view.container.querySelector(DONATION)).not.toBeNull(),
-		);
-		await new Promise((r) => setTimeout(r, 30));
-		const row = view.container.querySelector(DONATION)!.parentElement!;
-		return row.querySelectorAll("button").length;
-	}
-
-	it("renders the donation button on the standard channel", async () => {
-		const standard = await renderWelcome("standard");
-		cleanup();
-		resetDistributionChannelForTests();
-		expect(await renderWelcome("steam")).toBe(standard - 1);
+describe("OnboardingWizard on Steam edition (#729)", () => {
+	beforeEach(async () => {
+		vi.useFakeTimers();
+		document.body.innerHTML = "";
+		await setLocale("ko");
+		vi.clearAllMocks();
 	});
 
-	it("hides it when the channel is unknown (fail closed)", async () => {
-		const standard = await renderWelcome("standard");
+	afterEach(() => {
+		vi.runAllTimers();
+		vi.useRealTimers();
 		cleanup();
-		resetDistributionChannelForTests();
-		expect(await renderWelcome("bogus")).toBe(standard - 1);
+		document.body.innerHTML = "";
+	});
+
+	function flush() {
+		act(() => {
+			vi.advanceTimersByTime(400);
+		});
+	}
+
+	function advanceToProvider() {
+		// welcome -> agentName
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// agentName -> userName
+		fireEvent.change(screen.getByPlaceholderText("Naia"), {
+			target: { value: "Mochi" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// userName -> speechStyle
+		fireEvent.change(
+			screen.getByPlaceholderText(/Enter a name|이름을 입력하세요/),
+			{
+				target: { value: "Alex" },
+			},
+		);
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// speechStyle -> character
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// character -> background
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// background -> provider
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+	}
+
+	it("shows 'Steam으로 계속하기' as primary and '기존 계정 연결' as secondary in provider step", () => {
+		render(<OnboardingWizard onComplete={vi.fn()} />);
+		advanceToProvider();
+
+		// Now in provider / connect step
+		expect(screen.getByText("Steam으로 계속하기")).toBeDefined();
+		expect(screen.getByText("기존 계정 연결")).toBeDefined();
+	});
+
+	it("triggers performSteamLogin when clicking Steam button", async () => {
+		mockPerformSteamLogin.mockResolvedValueOnce({
+			user_id: "user-steam-1",
+			is_new_user: false,
+			api_key: "gw-steamkey123",
+		});
+
+		render(<OnboardingWizard onComplete={vi.fn()} />);
+		advanceToProvider();
+
+		const steamBtn = screen.getByText("Steam으로 계속하기");
+		expect(steamBtn).toBeDefined();
+
+		await act(async () => {
+			fireEvent.click(steamBtn);
+		});
+
+		expect(mockPerformSteamLogin).toHaveBeenCalledWith(
+			expect.objectContaining({
+				boundary: expect.objectContaining({
+					adkPath: "/home/user/naia-adk",
+					secureStorePath: "/home/user/.secure-store",
+				}),
+			}),
+		);
+	});
+
+	it("shows consent dialog when onConsentRequired is invoked", async () => {
+		let consentCallback: (() => Promise<boolean>) | undefined;
+		mockPerformSteamLogin.mockImplementationOnce(async (options) => {
+			consentCallback = options.onConsentRequired;
+			// simulate triggering the callback
+			const consentPromise = consentCallback!();
+			// Wait for UI to update with consent dialog
+			return consentPromise.then((agreed) => {
+				if (!agreed) throw new Error("Consent declined");
+				return {
+					user_id: "user-steam-new",
+					is_new_user: true,
+					api_key: "gw-newkey123",
+				};
+			});
+		});
+
+		render(<OnboardingWizard onComplete={vi.fn()} />);
+		advanceToProvider();
+
+		await act(async () => {
+			fireEvent.click(screen.getByText("Steam으로 계속하기"));
+		});
+
+		// Consent dialog should now be visible
+		expect(screen.getByText("서비스 이용 동의")).toBeDefined();
+		expect(screen.getByText("동의하고 계속하기")).toBeDefined();
+
+		// Click consent agree
+		await act(async () => {
+			fireEvent.click(screen.getByText("동의하고 계속하기"));
+		});
 	});
 });

@@ -19,6 +19,22 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_729_steam_login_pay": {
+      "issue": 729,
+      "title": "Steam판 Steam 로그인과 크레딧 팩 결제 (셸) (#729 1단계)",
+      "requirements": "docs/requirements.md FR-STEAM-AUTH.1~4 FR-STEAM-PAY.1~5 NFR-STEAM-DIST.1~2",
+      "scenario": "docs/user-scenarios.md UC-STEAM-LOGIN-729 UC-STEAM-PACK-PAY-729",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "completed",
+      "verification": "packages/shell test (8 suites, 108 tests), cargo test steam::tests (5 tests), tsc --noEmit",
+      "last_updated": "2026-10-02T22:25:00+09:00"
+    },
     "issue_724_memory_knowledge_tools": {
       "issue": 724,
       "title": "모델 keep list에 기억·지식 저장 도구를 열고 계약 테스트를 실행한다 (#724)",

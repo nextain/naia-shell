@@ -104,6 +104,12 @@
 					"vcruntime140_1.dll"
 				]
 			},
+			"steamworks": {
+				"$comment": "Steamworks SDK steam_api64.dll — Windows 빌드가 실행 파일과 같은 디렉터리에 배치. Steam 미설치 기기에서 standard판이 시작조차 못 하는 링크 실패 방지 (#729).",
+				"files": [
+					"steam_api64.dll"
+				]
+			},
 			"installer": {
 				"publisher": "Nextain Inc.",
 				"windows": {
@@ -165,6 +171,7 @@
 				"entrypoint": "naia-shell.exe",
 				"requiredFiles": [
 					"naia-shell.exe",
+					"steam_api64.dll",
 					"node.exe",
 					"agent/package.json",
 					"bgm-sidecar/package.json",

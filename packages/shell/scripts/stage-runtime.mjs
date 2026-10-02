@@ -275,6 +275,7 @@ export function generateConf(
 	resources[`resources/${row.nodeBinary}`] = row.nodeBinary;
 	for (const f of row.vosk?.files ?? []) resources[`resources/${f}`] = f;
 	for (const f of row.msvcRedist?.files ?? []) resources[`resources/${f}`] = f;
+	for (const f of row.steamworks?.files ?? []) resources[`resources/${f}`] = f;
 	if (cascadeLoaderPresent)
 		Object.assign(resources, matrix.common.cascadeLoaderResources);
 	if (voxcpm2RuntimePresent)
@@ -453,11 +454,13 @@ export async function prepareRuntime(
 	{
 		provisionNodeImpl = provisionNode,
 		provisionMsvcImpl = provisionMsvcRedist,
+		provisionSteamworksImpl = provisionSteamworks,
 	} = {},
 ) {
 	assertBundleArchSupported(matrix, platform, arch);
 	await provisionNodeImpl(matrix, platform, arch);
 	provisionMsvcImpl(matrix, platform, arch);
+	provisionSteamworksImpl(matrix, platform, arch);
 }
 
 /** MSVC 재배포 dll 원본 디렉토리 탐색(win 전용). 반환 = 발견 디렉토리, 실패 = 탐색 경로 나열 에러. (export = 실측 프로브용) */
@@ -541,6 +544,30 @@ export function provisionMsvcRedist(matrix, platform, arch) {
 	mkdirSync(RESOURCES, { recursive: true });
 	for (const f of spec.files) copyFileSync(join(dir, f), resolve(RESOURCES, f));
 	console.log(`[stage-runtime] ② MSVC 재배포 ${spec.files.length}종 ← ${dir}`);
+}
+
+/** (win) Steamworks SDK steam_api64.dll → resources/ 복사 (#729). */
+export function provisionSteamworks(matrix, platform, _arch, { copy = copyFileSync, exists = existsSync } = {}) {
+	const spec = matrix.os[platform]?.steamworks;
+	if (!spec) return;
+	for (const f of spec.files) {
+		const dest = resolve(RESOURCES, f);
+		if (exists(dest)) continue;
+		const candidates = [
+			process.env.STEAM_API_DLL_PATH,
+			process.env.STEAMWORKS_SDK_DIR && resolve(process.env.STEAMWORKS_SDK_DIR, "redistributable_bin/win64", f),
+			resolve(SHELL, "src-tauri", "target", "release", f),
+			resolve(SHELL, "src-tauri", "target", "debug", f),
+			resolve(SHELL, "src-tauri", "target", "x86_64-pc-windows-msvc", "release", f),
+			resolve(SHELL, "src-tauri", "target", "x86_64-pc-windows-msvc", "debug", f),
+		].filter(Boolean);
+		const found = candidates.find((p) => exists(p));
+		if (found) {
+			mkdirSync(RESOURCES, { recursive: true });
+			copy(found, dest);
+			console.log(`[stage-runtime] ②-b Steamworks ${f} ← ${found}`);
+		}
+	}
 }
 
 function readMatrix() {

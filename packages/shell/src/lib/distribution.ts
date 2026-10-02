@@ -63,3 +63,36 @@ export function usePaymentLinksHidden(): boolean {
 	}, []);
 	return channel !== "standard";
 }
+
+/** Returns true only if the channel is confirmed to be "steam". */
+export function isSteamChannelNow(): boolean {
+	return cachedChannel === "steam";
+}
+
+/** Hook form: returns true only if the channel is "steam". */
+export function useIsSteamChannel(): boolean {
+	const [channel, setChannel] = useState<DistributionChannel | null>(
+		cachedChannel,
+	);
+	useEffect(() => {
+		let alive = true;
+		void loadDistributionChannel().then((value) => {
+			if (alive) setChannel(value);
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
+	return channel === "steam";
+}
+
+/** Alias for isSteamChannelNow: Steam pack purchase is available on Steam edition (#729). */
+export function steamPurchaseAvailableNow(): boolean {
+	return isSteamChannelNow();
+}
+
+/** Alias for useIsSteamChannel: Steam pack purchase is available on Steam edition (#729). */
+export function useSteamPurchaseAvailable(): boolean {
+	return useIsSteamChannel();
+}
+

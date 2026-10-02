@@ -1356,3 +1356,25 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 | **FR-CREDITS-DISPLAY.1** | Naia 계정 사용 비용은 모든 화면에서 "약 N 크레딧"(1크레딧 = $0.001, 달러 × 1,000)으로 표시하고, 셸은 배수를 곱하지 않는다. 자기 API 키 제공자는 달러 "제공사 요금 추정"으로 표시한다. 금액 서식은 `lib/credits.ts` 한 곳을 쓴다. 14개 언어 키 누락 0. | UC-CREDITS-DISPLAY | `credits.test.ts`, `CostDashboard.test.tsx`, `ChatArea.test.tsx`, `WorkProgressArea.test.tsx`, `SettingsTab.test.tsx`, `registry.test.ts`, `i18n-user-facing.test.ts` | In progress |
 | **FR-CREDITS-DISPLAY.2** | Steam판(표시 파일 `naia-distribution.txt` 또는 `SteamAppId`=5354630)에서는 크레딧 충전 버튼·naia.land 결제·대시보드 링크와 부족 안내의 웹 결제 문구를 숨긴다. 표시 파일은 데포 해시 목록에 포함되고 CI가 확인한다. | UC-CREDITS-DISPLAY | `src-tauri/src/distribution.rs` 단위 시험, `platform-matrix.test.ts`, `distribution.test.ts`, `CostDashboard.steam.test.tsx`, `SettingsTab.test.tsx` | In progress |
+
+## 기능 요구사항 (FR) — Steam판 Steam 로그인 및 계정 연결 (#729)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-STEAM-AUTH.1** | Steam판 첫 실행 온보딩 화면에서 "Steam으로 계속하기"를 기본 주 버튼으로 제공하고, 기존 웹 로그인은 "기존 계정 연결" 보조 버튼으로 제공한다. Standard판에서는 기존 웹 로그인이 기본으로 유지된다. | UC-STEAM-LOGIN-729 | `OnboardingWizard.steam.test.tsx`, `e2e/steam-auth.spec.ts` | Done |
+| **FR-STEAM-AUTH.2** | Steam 로그인은 `GetAuthTicketForWebApi("naia-gateway")`로 획득한 티켓(16진 문자열)으로 `POST /v1/auth/steam/login`을 호출하며, 409 `consent_required` 수신 시 약관·개인정보 동의 화면을 거쳐 새 티켓으로 `terms_agreed: true` 재요청한다. 성공 시 발급된 가상 키(`gw-`)로 `naia_auth_complete`를 방출한다. | UC-STEAM-LOGIN-729 | `src-tauri/src/steam/mod.rs`, `steam-auth.test.ts` | Done |
+| **FR-STEAM-AUTH.3** | 기존 웹 로그인 사용자에게 Steam판 설정 탭에서 "Steam 계정 연결" 버튼을 제공하고, `POST /v1/auth/identities/steam/link`를 호출하여 409 `identity_linked_elsewhere` 시 타 계정 연결 안내를 명확히 표시한다. | UC-STEAM-LOGIN-729 | `SettingsTab.steam.test.tsx`, `steam-auth.test.ts` | Done |
+| **FR-STEAM-AUTH.4** | Steam 로그인 시작 시점의 ADK 경로, 저장소 경로, 시도 식별자를 캡처하여, 티켓 발급·동의·HTTP 완료 후에도 동일한 시도와 ADK 경로인 경우에만 키를 저장/방출한다. | UC-STEAM-LOGIN-729 | `steam-auth.test.ts` | Done |
+
+## 기능 요구사항 (FR) — Steam판 크레딧 팩 결제 (#729)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-STEAM-PAY.1** | Steam판(`channel == "steam"`)에서만 크레딧 팩 충전 UI를 노출하고, 팩 목록은 `GET /v1/billing/steam/packs`에서 받아 동적으로 렌더링한다. Standard/Unknown판에서는 Steam 결제 UI를 노출하지 않는다(fail-closed). 웹 결제 링크는 Steam판에서 계속 숨긴다. | UC-STEAM-PACK-PAY-729 | `CostDashboard.steam.test.tsx`, `steam-billing.test.ts` | Done |
+| **FR-STEAM-PAY.2** | 팩 구매 클릭 시 고유한 `idempotency_key`를 생성하여 `POST /v1/billing/steam/orders`를 호출한다(`flow`, `language`, `pack_id`, `idempotency_key`만 전송). 네트워크 오류에 의한 동일 시도 재전송 시 동일 키를 재사용한다. | UC-STEAM-PACK-PAY-729 | `steam-billing.test.ts` | Done |
+| **FR-STEAM-PAY.3** | 주문 응답이 `CREATED`인 경우 1초 간격으로 최대 10초간 동일 키로 재확인하며, 10초 초과 시 지연 안내 및 재확인 버튼을 제공한다. `INITIATED`는 승인 대기, `GRANTED`는 즉시 잔액 재조회, 실패 상태는 오류를 표시한다. 게이트웨이 오류 본문(`{"detail": {"error": "..."}}`)을 파싱하여 정직한 메시지를 보여준다. | UC-STEAM-PACK-PAY-729 | `steam-billing.test.ts`, `CostDashboard.steam.test.tsx` | Done |
+| **FR-STEAM-PAY.4** | `steam_microtxn_authorization` 이벤트의 `order_id`(10진 문자열, u64 손실 없음)를 대조하여 승인 시 `POST /v1/billing/steam/orders/{order_id}/finalize`를 호출하며, 409 `not_approved`는 지수 백오프로 최대 3회 재시도한다. 성공 시 잔액을 재조회한다. 중복 finalize 시 `granted_now: false`를 안전하게 처리한다. | UC-STEAM-PACK-PAY-729 | `src-tauri/src/steam/mod.rs`, `steam-billing.test.ts` | Done |
+| **FR-STEAM-PAY.5** | 웹 흐름(`flow: "web"`)인 경우 허용된 도메인의 `steamurl`을 열고(미허용 시 차단), "결제를 완료했어요" 버튼으로 수동 finalize를 지원한다. 흐름 선택은 상수 `flow`(기본 `"client"`)로 제어한다. | UC-STEAM-PACK-PAY-729 | `src-tauri/src/steam/mod.rs`, `steam-billing.test.ts` | Done |
+| **NFR-STEAM-DIST.1** | Steamworks SDK는 Windows 전용(`cfg(windows)`)으로 연동하며, `steam_api64.dll`은 NSIS, MSI, Steam 디포 모두에서 `naia-shell.exe`와 동일 디렉터리에 배치한다. | UC-STEAM-PACK-PAY-729 | `platform-matrix.test.ts` | Done |
+| **NFR-STEAM-DIST.2** | SteamAPI 초기화는 배포 채널이 `"steam"`일 때만 시도하고, 초기화 실패 시에도 패닉 없이 미실행 상태로 정상 부팅한다. 전용 스레드에서 주기적으로 콜백을 처리한다. | UC-STEAM-PACK-PAY-729 | `src-tauri/src/steam/mod.rs` | Done |
+

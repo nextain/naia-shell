@@ -14,8 +14,9 @@ import {
 	isNaiaAccountProvider,
 } from "../lib/credits";
 import { formatUsageCost, formatUsageTotal } from "../lib/credits-usage";
-import { usePaymentLinksHidden } from "../lib/distribution";
+import { useIsSteamChannel, usePaymentLinksHidden } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
+import { SteamPurchaseModal } from "./SteamPurchaseModal";
 import {
 	clearCachedLabCredits,
 	fetchLabBalancePayload,
@@ -92,6 +93,9 @@ const BALANCE_FETCH_TIMEOUT_MS = 8_000;
 
 function LabBalanceSection() {
 	const paymentLinksHidden = usePaymentLinksHidden();
+	const isSteamChannel = useIsSteamChannel();
+	const [steamPurchaseModalOpen, setSteamPurchaseModalOpen] = useState(false);
+	const [currentNaiaKey, setCurrentNaiaKey] = useState<string>("");
 	const [balance, setBalance] = useState<number | null>(
 		readCachedLabCredits(BALANCE_CACHE_TTL)?.value ?? null,
 	);
@@ -246,6 +250,31 @@ function LabBalanceSection() {
 				{t("cost.labCharge")}
 			</button>
 			)}
+			{isSteamChannel && (
+			<button
+				type="button"
+				className="lab-charge-btn"
+				data-testid="steam-charge-btn"
+				onClick={async () => {
+					const key = await getNaiaKeySecure().catch(() => null);
+					setCurrentNaiaKey(key ?? "");
+					setSteamPurchaseModalOpen(true);
+				}}
+			>
+				{t("cost.labCharge")}
+			</button>
+			)}
+			<SteamPurchaseModal
+				isOpen={steamPurchaseModalOpen}
+				onClose={() => setSteamPurchaseModalOpen(false)}
+				naiaKey={currentNaiaKey}
+				onSuccess={() => {
+					clearCachedLabCredits();
+					setLoading(true);
+					fetchBalance();
+					window.dispatchEvent(new Event("naia_auth_ready"));
+				}}
+			/>
 		</div>
 	);
 }

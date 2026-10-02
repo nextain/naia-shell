@@ -310,7 +310,20 @@ export function ensurePairedAgentCheckout(options = {}) {
 			resolve(shellDir, "..", "..", "..", "..", "naia-agent"),
 		];
 
-		const primary = primaryRoots.find((p) => existsSync(p) && existsSync(resolve(p, ".git")));
+		const primary = primaryRoots.find((p) => {
+			if (!existsSync(p) || !existsSync(resolve(p, ".git"))) return false;
+			const hasCommit = spawnSync("git", ["-C", p, "rev-parse", "--verify", `${REQUIRED_AGENT_COMMIT}^{commit}`], {
+				encoding: "utf8",
+				shell: false,
+			}).status === 0;
+			if (hasCommit) return true;
+			const fetchResult = spawnSync("git", ["-C", p, "fetch", "origin", REQUIRED_AGENT_COMMIT], {
+				encoding: "utf8",
+				shell: false,
+			});
+			if (fetchResult.status === 0) return true;
+			return spawnSync("git", ["-C", p, "fetch", "origin"], { encoding: "utf8", shell: false }).status === 0;
+		});
 		if (!primary) {
 			throw new Error(
 				`Cannot auto-prepare paired naia-agent: primary repository not found in ${primaryRoots.join(", ")}`,

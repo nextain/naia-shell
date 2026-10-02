@@ -110,8 +110,11 @@ import {
 } from "../lib/credits";
 import {
 	paymentLinksHiddenNow,
+	useIsSteamChannel,
 	usePaymentLinksHidden,
 } from "../lib/distribution";
+import { steamLinkIdentity } from "../lib/steam-auth";
+import { SteamPurchaseModal } from "./SteamPurchaseModal";
 import {
 	fetchLabBalancePayload,
 	isLabBalanceUnauthorized,
@@ -637,6 +640,7 @@ function ttsPricingLabel(p: { id: string; pricing?: string }): string {
 
 export function SettingsTab() {
 	const paymentLinksHidden = usePaymentLinksHidden();
+	const isSteamChannel = useIsSteamChannel();
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
 		| "profile"
 		| "brain"
@@ -1650,8 +1654,50 @@ export function SettingsTab() {
 		string,
 		unknown
 	> | null>(null);
+	const [steamPurchaseModalOpen, setSteamPurchaseModalOpen] = useState(false);
+	const [steamLinking, setSteamLinking] = useState(false);
+	const [steamLinkMessage, setSteamLinkMessage] = useState<{
+		type: "success" | "error";
+		text: string;
+	} | null>(null);
 	const labSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const labBrowserVisibleRef = useRef(false);
+
+	// Hide Chrome X11 embed while Steam purchase modal is open
+	useEffect(() => {
+		if (steamPurchaseModalOpen) {
+			pushModal();
+			return () => popModal();
+		}
+	}, [steamPurchaseModalOpen, pushModal, popModal]);
+
+	const handleSteamLink = async () => {
+		if (!naiaKey) return;
+		setSteamLinking(true);
+		setSteamLinkMessage(null);
+		try {
+			await steamLinkIdentity(naiaKey);
+			setSteamLinkMessage({
+				type: "success",
+				text: t("settings.steamLinkSuccess"),
+			});
+		} catch (err: any) {
+			const code = err?.code || "";
+			if (code === "identity_linked_elsewhere") {
+				setSteamLinkMessage({
+					type: "error",
+					text: t("settings.steamLinkedElsewhere"),
+				});
+			} else {
+				setSteamLinkMessage({
+					type: "error",
+					text: String(err?.message || err),
+				});
+			}
+		} finally {
+			setSteamLinking(false);
+		}
+	};
 
 	// A profile can have been saved before its automatic slot wiring was
 	// available (or while the app was being restarted). Reconcile it once after
@@ -4040,6 +4086,29 @@ export function SettingsTab() {
 											</button>
 										</>
 									)}
+									{isSteamChannel && (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="steam-charge-btn"
+											onClick={() => setSteamPurchaseModalOpen(true)}
+										>
+											{t("cost.labCharge")}
+										</button>
+									)}
+									{isSteamChannel && (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="steam-link-btn"
+											disabled={steamLinking}
+											onClick={handleSteamLink}
+										>
+											{steamLinking
+												? `${t("settings.steamLinkBtn")}...`
+												: t("settings.steamLinkBtn")}
+										</button>
+									)}
 									{showLabDisconnect ? (
 										<div className="reset-confirm-app" style={{ marginTop: 8 }}>
 											<p className="reset-confirm-msg">
@@ -4162,6 +4231,21 @@ export function SettingsTab() {
 										</button>
 									)}
 								</div>
+								{steamLinkMessage && (
+									<div
+										className="settings-hint"
+										data-testid="steam-link-message"
+										style={{
+											color:
+												steamLinkMessage.type === "success"
+													? "var(--green-bright, #4ade80)"
+													: "var(--red-bright, #f87171)",
+											marginTop: "6px",
+										}}
+									>
+										{steamLinkMessage.text}
+									</div>
+								)}
 							</div>
 						</div>
 					)}
@@ -6328,6 +6412,16 @@ export function SettingsTab() {
 					<AboutSection />
 				</>
 			)}
+
+			<SteamPurchaseModal
+				isOpen={steamPurchaseModalOpen}
+				onClose={() => setSteamPurchaseModalOpen(false)}
+				naiaKey={naiaKey}
+				onSuccess={() => {
+					if (naiaKey) void fetchLabBalance(naiaKey);
+					window.dispatchEvent(new Event("naia_auth_ready"));
+				}}
+			/>
 
 			{/* STT Model Manager Modal — root-level (triggered from brain tab) */}
 			{sttModelModalOpen && (

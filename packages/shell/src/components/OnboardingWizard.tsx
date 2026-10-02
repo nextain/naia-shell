@@ -52,6 +52,8 @@ import {
 } from "../lib/nva";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
+import { useIsSteamChannel } from "../lib/distribution";
+import { performSteamLogin } from "../lib/steam-auth";
 import {
 	type OnboardingSession,
 	type StepInput,
@@ -399,6 +401,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	>("none");
 	const naiaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const loginAdkPathRef = useRef<string | null>(null);
+	const isSteam = useIsSteamChannel();
+	const attemptIdRef = useRef<string | null>(null);
+	const [consentPromptOpen, setConsentPromptOpen] = useState(false);
+	const consentResolverRef = useRef<((agreed: boolean) => void) | null>(null);
 	const latestRef = useRef<OnboardingSnapshot | null>(null);
 	const onboardingGpuSummary =
 		detectedVramGb != null
@@ -1068,6 +1074,42 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		}
 	}
 
+	async function handleSteamLogin() {
+		const currentAdk = getAdkPath();
+		const currentSecure = getSecureStorePath();
+		const attemptId = `steam-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		loginAdkPathRef.current = currentAdk;
+		attemptIdRef.current = attemptId;
+		setNaiaLoginWaiting(true);
+		setCompletionError("");
+
+		try {
+			await performSteamLogin({
+				boundary: {
+					adkPath: currentAdk,
+					secureStorePath: currentSecure,
+					attemptId,
+				},
+				getCurrentBoundary: () => ({
+					adkPath: getAdkPath(),
+					secureStorePath: getSecureStorePath(),
+					attemptId: attemptIdRef.current ?? "",
+				}),
+				onConsentRequired: () =>
+					new Promise<boolean>((resolve) => {
+						consentResolverRef.current = resolve;
+						setConsentPromptOpen(true);
+					}),
+			});
+		} catch (error) {
+			setNaiaLoginWaiting(false);
+			setCompletionError(String(error));
+		} finally {
+			setConsentPromptOpen(false);
+			consentResolverRef.current = null;
+		}
+	}
+
 	async function saveCompletedConfig(
 		auth?: NaiaAuthPayload,
 		snapshot: OnboardingSnapshot = {
@@ -1637,17 +1679,42 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							</>
 						) : (
 							<>
-								<button
-									type="button"
-									className="onboarding-step__naia-btn"
-									onClick={handleNaiaLogin}
-									disabled={naiaLoginWaiting}
-									style={{ marginTop: 16, width: "100%" }}
-								>
-									{naiaLoginWaiting
-										? t("onboard.lab.waiting")
-										: t("onboard.connect.naiaPath")}
-								</button>
+								{isSteam ? (
+									<>
+										<button
+											type="button"
+											className="onboarding-step__naia-btn"
+											onClick={handleSteamLogin}
+											disabled={naiaLoginWaiting}
+											style={{ marginTop: 16, width: "100%" }}
+										>
+											{naiaLoginWaiting
+												? t("onboard.lab.waiting")
+												: t("onboard.connect.steamPrimary")}
+										</button>
+										<button
+											type="button"
+											className="onboarding-step__link"
+											onClick={handleNaiaLogin}
+											disabled={naiaLoginWaiting}
+											style={{ marginTop: 8 }}
+										>
+											{t("onboard.connect.steamWebSecondary")}
+										</button>
+									</>
+								) : (
+									<button
+										type="button"
+										className="onboarding-step__naia-btn"
+										onClick={handleNaiaLogin}
+										disabled={naiaLoginWaiting}
+										style={{ marginTop: 16, width: "100%" }}
+									>
+										{naiaLoginWaiting
+											? t("onboard.lab.waiting")
+											: t("onboard.connect.naiaPath")}
+									</button>
+								)}
 								{/* #447-5: own-key/provider setup moved out of onboarding —
 								    "직접 설정" finishes onboarding and opens the full Settings
 								    screen (provider + model + key) instead of a provider-less
@@ -1843,6 +1910,94 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 					</button>
 				)}
 			</div>
+
+			{consentPromptOpen && (
+				<div
+					className="modal-overlay"
+					role="dialog"
+					aria-modal="true"
+					style={{ zIndex: 110 }}
+				>
+					<div
+						className="settings-modal"
+						style={{ width: 400, maxWidth: "90vw", padding: 20 }}
+					>
+						<h3 style={{ margin: "0 0 12px 0", fontSize: "1.1rem" }}>
+							{t("onboard.steam.consentTitle")}
+						</h3>
+						<p style={{ fontSize: "0.9rem", lineHeight: 1.5, opacity: 0.85, margin: "0 0 16px 0" }}>
+							{t("onboard.steam.consentDesc")}
+						</p>
+						<div
+							style={{
+								display: "flex",
+								gap: 12,
+								fontSize: "0.85rem",
+								marginBottom: 20,
+							}}
+						>
+							<a
+								href="https://www.naia.land/legal/terms"
+								target="_blank"
+								rel="noopener noreferrer"
+								onClick={(e) => {
+									e.preventDefault();
+									openUrl("https://www.naia.land/legal/terms");
+								}}
+								style={{ color: "var(--cream, #fff)", textDecoration: "underline" }}
+							>
+								{getLocale() === "ko" ? "서비스 이용약관" : "Terms of Service"}
+							</a>
+							<a
+								href="https://www.naia.land/legal/privacy"
+								target="_blank"
+								rel="noopener noreferrer"
+								onClick={(e) => {
+									e.preventDefault();
+									openUrl("https://www.naia.land/legal/privacy");
+								}}
+								style={{ color: "var(--cream, #fff)", textDecoration: "underline" }}
+							>
+								{getLocale() === "ko" ? "개인정보 처리방침" : "Privacy Policy"}
+							</a>
+						</div>
+						<div
+							style={{
+								display: "flex",
+								justifyContent: "flex-end",
+								gap: 8,
+							}}
+						>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => {
+									consentResolverRef.current?.(false);
+									setConsentPromptOpen(false);
+								}}
+								style={{ background: "transparent", opacity: 0.8 }}
+							>
+								{t("settings.cancel")}
+							</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => {
+									consentResolverRef.current?.(true);
+									setConsentPromptOpen(false);
+								}}
+								style={{
+									background: "var(--cream, #fff)",
+									color: "var(--espresso, #1a1a1a)",
+									fontWeight: "bold",
+								}}
+							>
+								{t("onboard.steam.agreeAndContinue")}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

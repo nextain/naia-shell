@@ -1,52 +1,100 @@
-import { cleanup, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Steam build (#727): the native side reports the "steam" channel, so the
-// balance stays visible but the credit top-up entry point must not render.
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn(async (cmd: string) =>
-		cmd === "get_distribution_channel" ? "steam" : undefined,
-	),
+	invoke: vi.fn(async (cmd: string) => {
+		if (cmd === "frontend_log") return Promise.resolve();
+		if (cmd === "get_distribution_channel") return "steam";
+		return undefined;
+	}),
 }));
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
 	openUrl: vi.fn().mockResolvedValue(undefined),
 }));
+
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: vi.fn().mockResolvedValue(() => {}),
 }));
+
+vi.mock("../../lib/distribution", () => ({
+	useIsSteamChannel: () => true,
+	isSteamChannelNow: () => true,
+	usePaymentLinksHidden: () => true,
+	paymentLinksHiddenNow: () => true,
+}));
+
 vi.mock("../../lib/config", () => ({
 	LAB_GATEWAY_URL: "https://example.test",
-	getNaiaKeySecure: vi.fn().mockResolvedValue("gw-good-key"),
+	NAIA_WEB_BASE_URL: "https://www.naia.test",
+	getNaiaKeySecure: vi.fn().mockResolvedValue("gw-steam-key-123"),
 	hasNaiaKeySecure: vi.fn().mockResolvedValue(true),
 }));
 
-import { resetDistributionChannelForTests } from "../../lib/distribution";
+vi.mock("../../lib/steam-billing", () => ({
+	fetchSteamPacks: vi.fn().mockResolvedValue([
+		{
+			id: "pack-1",
+			price_cents: 1000,
+			currency: "USD",
+			credits: 1000000,
+		},
+	]),
+	createSteamOrder: vi.fn(),
+	finalizeSteamOrder: vi.fn(),
+	listenToSteamAuthorization: vi.fn().mockResolvedValue(() => {}),
+	openSteamUrl: vi.fn(),
+}));
+
 import { clearCachedLabCredits } from "../../lib/lab-balance";
+import { setLocale } from "../../lib/i18n";
 import { CostDashboard } from "../CostDashboard";
 
-describe("CostDashboard on the Steam build", () => {
-	beforeEach(() => {
+describe("CostDashboard on Steam edition (#729)", () => {
+	beforeEach(async () => {
+		vi.clearAllMocks();
 		clearCachedLabCredits();
-		resetDistributionChannelForTests();
+		await setLocale("ko");
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
 				ok: true,
-				json: () => Promise.resolve({ balance: 1_250_000 }),
+				json: () => Promise.resolve({ balance: 500_000 }),
 			}),
 		);
 	});
+
 	afterEach(() => {
 		cleanup();
 		vi.unstubAllGlobals();
 	});
 
-	it("shows the balance but hides the charge button", async () => {
+	it("renders Steam charge button when on Steam channel", async () => {
 		render(<CostDashboard messages={[]} />);
-		await screen.findByText(/12\.50/);
-		// Let the channel lookup settle, then assert the button is still absent.
-		await new Promise((r) => setTimeout(r, 20));
-		expect(screen.queryByText("Charge Credits")).toBeNull();
+
+		await waitFor(() => {
+			const chargeBtn = screen.getByTestId("steam-charge-btn");
+			expect(chargeBtn).toBeDefined();
+			expect(chargeBtn.textContent).toContain("충전");
+		});
+	});
+
+	it("opens SteamPurchaseModal when Steam charge button is clicked", async () => {
+		render(<CostDashboard messages={[]} />);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("steam-charge-btn")).toBeDefined();
+		});
+
+		await act(async () => {
+			fireEvent.click(screen.getByTestId("steam-charge-btn"));
+		});
+
+		// Modal should open and show title / pack
+		await waitFor(() => {
+			expect(screen.getAllByText("크레딧 충전").length).toBeGreaterThanOrEqual(2);
+			expect(screen.getByText("1000000 크레딧")).toBeDefined();
+		});
 	});
 });

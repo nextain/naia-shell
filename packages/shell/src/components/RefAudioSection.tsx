@@ -24,7 +24,12 @@ import {
 	saveConfig,
 } from "../lib/config";
 import { formatCreditsFromUsd } from "../lib/credits";
-import { paymentLinksHiddenNow, usePaymentLinksHidden } from "../lib/distribution";
+import {
+	isSteamChannelNow,
+	paymentLinksHiddenNow,
+	useIsSteamChannel,
+	usePaymentLinksHidden,
+} from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import { warmLocalVoice } from "../lib/tts/synthesize";
@@ -127,9 +132,11 @@ function pickStrings() {
 			network: t("voice.ref.errNetwork"),
 			auth: t("voice.ref.errAuth"),
 			creditInsufficient: t(
-				paymentLinksHiddenNow()
-					? "voice.ref.errCreditInsufficientNoTopup"
-					: "voice.ref.errCreditInsufficient",
+				isSteamChannelNow()
+					? "voice.ref.errCreditInsufficientSteam"
+					: paymentLinksHiddenNow()
+						? "voice.ref.errCreditInsufficientNoTopup"
+						: "voice.ref.errCreditInsufficient",
 			),
 			format: t("voice.ref.errFormat"),
 			tooLarge: t("voice.ref.errTooLarge"),
@@ -257,7 +264,8 @@ export function RefAudioSection({
 	// 새 객체가 되었다. S 는 훅 일곱 곳의 의존성이라 그대로 두면 렌더가
 	// 끝없이 되풀이된다 — 실제로 테스트가 그 자리에서 멈췄다.
 	const paymentLinksHidden = usePaymentLinksHidden();
-	const S = useMemo(pickStrings, [getLocale(), paymentLinksHidden]);
+	const isSteam = useIsSteamChannel();
+	const S = useMemo(pickStrings, [getLocale(), paymentLinksHidden, isSteam]);
 	// Naia Local runs on the user's own GPU — recording/uploading a reference
 	// voice is free and never touches the gateway, so hide the $0.01 hints.
 	const config = loadConfig();

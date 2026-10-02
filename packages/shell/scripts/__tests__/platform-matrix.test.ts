@@ -687,6 +687,7 @@ describe("conf 생성 golden (FR-INSTALL.2)", () => {
 			expect(conf.bundle.resources[`resources/${f}`]).toBe(f);
 		for (const f of MSVC_DLLS)
 			expect(conf.bundle.resources[`resources/${f}`]).toBe(f);
+		expect(conf.bundle.resources["resources/steam_api64.dll"]).toBe("steam_api64.dll");
 		expect(conf.bundle.icon).toBeUndefined();
 	});
 
@@ -1086,6 +1087,7 @@ describe("installer workflow integration contracts", () => {
 			entrypoint: "naia-shell.exe",
 			requiredFiles: [
 				"naia-shell.exe",
+				"steam_api64.dll",
 				"node.exe",
 				"agent/package.json",
 				"bgm-sidecar/package.json",

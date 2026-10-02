@@ -321,10 +321,10 @@ describe("SettingsTab", () => {
 		expect(screen.queryByText("Dashboard")).not.toBeNull();
 	});
 
-	it("hides the credit top-up and dashboard buttons on the Steam build, keeping the balance (#727)", async () => {
+	it("hides the external dashboard button on the Steam build while keeping the balance and Steam charge (#727, #729)", async () => {
 		await renderConnectedSettings("steam");
 		expect(screen.queryByText(/52\.04K/)).not.toBeNull();
-		expect(screen.queryByText("Charge Credits")).toBeNull();
+		expect(screen.queryByText("Charge Credits")).not.toBeNull();
 		expect(screen.queryByText("Dashboard")).toBeNull();
 	});
 

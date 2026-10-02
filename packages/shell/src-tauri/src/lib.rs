@@ -21,6 +21,7 @@ mod voice_runtime;
 mod voice_cache;
 mod stt_models;
 mod workspace;
+pub mod steam;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -13810,6 +13811,10 @@ pub fn run() {
             memory_import_backup,
             fetch_naia_balance,
             get_distribution_channel,
+            steam::steam_status,
+            steam::steam_get_web_api_ticket,
+            steam::steam_open_url,
+            steam::complete_naia_auth,
             list_audio_output_devices,
             detect_gpu_vram,
             generate_oauth_state,
@@ -13990,6 +13995,9 @@ pub fn run() {
             // Resolve the bundled Herdr binary (resource_dir/herdr) with a PATH
             // fallback, once, before any Workspace spawn/API call.
             herdr::init_herdr_bin(&app_handle);
+            let steam_channel = distribution::detect_current_channel();
+            let steam_state = steam::init_steam_state(steam_channel, Some(&app_handle));
+            app.manage(steam_state);
             let state: tauri::State<'_, AppState> = app.state();
 
             // Initialize audit DB

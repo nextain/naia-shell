@@ -2226,5 +2226,44 @@ Test Coverage Map (P02)
 | UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
 | UC-CREDITS-DISPLAY | `packages/shell/src/lib/__tests__/credits.test.ts`: 달러 × 1,000 크레딧 환산 한 곳; `packages/shell/src/components/__tests__/CostDashboard.steam.test.tsx`, `packages/shell/src/components/__tests__/AboutSection.steam.test.tsx`, `packages/shell/src/components/__tests__/OnboardingWizard.steam.test.tsx`, `packages/shell/src/components/__tests__/AppBar.test.tsx`: Steam판·판정 실패 시 결제·후원·웹 스토어 진입점 숨김; `packages/shell/src/lib/voice/__tests__/live-pricing.test.ts`: 음성 요금은 게이트웨이 시간당 행만 쓰고 없으면 금액 생략 | 실기 Steam 데포 빌드 확인은 릴리스 절차에서 한다 |
 
+## UC-STEAM-LOGIN-729 — Steam판 Steam 로그인 및 기존 계정 연결 (#729)
+
+Steam판 나이아 셸 온보딩 화면에서 사용자는 "Steam으로 계속하기"를 기본 버튼으로 누르고, 추가 자격 증명 입력 없이 자신의 Steam 계정으로 즉시 로그인할 수 있다. 기존에 Google/Discord 등 웹 계정을 보유한 사용자는 웹 로그인 상태에서 설정 탭의 "Steam 계정 연결" 버튼을 통해 현재 나이아 계정에 Steam 신원을 연결할 수 있다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | Steam판 온보딩 첫 화면에서 "Steam으로 계속하기"가 주 버튼으로 노출되고, 기존 웹 로그인은 "기존 계정 연결" 보조 버튼으로 제공된다. Standard판에서는 기존 웹 로그인이 주 버튼으로 유지된다. |
+| 빈 목록 | 해당 없음. |
+| 진행 | Steam 로그인 버튼 클릭 시 "Steam 로그인 진행 중..." 인디케이터가 표시되며, 신규 사용자인 경우(409 `consent_required`) 약관 및 개인정보 동의 화면이 나타난다. 동의 시 새 티켓으로 로그인을 완료한다. |
+| 성공 | 발급된 가상 키(`gw-`)와 사용자 ID로 `naia_auth_complete` 이벤트가 발생하고 온보딩/설정이 로그인 완료 상태로 안전하게 전환된다. 계정 연결 성공 시 연결 완료 안내가 표시된다. |
+| 오류 | Steam 미실행 상태, 티켓 발급 실패, 401 유효하지 않은 티켓, 409 타 계정 연결(`identity_linked_elsewhere`)은 사용자에게 명확하고 정직한 오류 메시지를 보여준다. 파싱할 수 없는 오류 본문은 일반 실패로 처리한다. 로그인 도중 ADK 전환 시 저장을 중단하여 안전한 격리 경계를 지킨다. |
+| 좁은 폭 | 360px 모바일/좁은 창 폭에서도 버튼과 약관 동의 UI가 잘리지 않고 온전하게 접근 가능하다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-STEAM-LOGIN-729 | `packages/shell/src-tauri/src/steam/mod.rs`: Steam trait mock, 티켓 16진수 변환, web api ticket 타임아웃, Steam 미실행 분기; `packages/shell/src/lib/__tests__/steam-auth.test.ts`: 로그인 성공, consent_required 동의 후 재요청, steam_ticket_invalid, Steam 미실행, 계정 연결 성공, identity_linked_elsewhere, 로그인 경계 ADK 변경/이전 시도 무시, {detail:{error}} 에러 구조 파싱 및 파싱 불가 본문 처리; `packages/shell/src/components/__tests__/OnboardingWizard.steam.test.tsx`: Steam판 온보딩 기본 버튼 및 기존 계정 연결 보조 버튼; `packages/shell/src/components/__tests__/SettingsTab.steam.test.tsx`: Steam 계정 연결 버튼 | `packages/shell/e2e/steam-auth.spec.ts`: 실 UI 온보딩 Steam 로그인 및 설정 탭 계정 연결 버튼, 좁은 폭 360px 반응형 |
+
+## UC-STEAM-PACK-PAY-729 — Steam판 크레딧 팩 결제 (소액결제 연동) (#729)
+
+Steam판 사용자는 비용 대시보드(CostDashboard)와 설정(SettingsTab)의 충전 버튼, 또는 크레딧 부족 안내(채팅, 레퍼런스 음성 등)를 통해 Steam 소액결제로 크레딧 팩을 구매할 수 있다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | Steam판에서만 크레딧 충전 버튼과 "Steam에서 충전" 안내가 활성화되며, 누르면 팩 선택 모달이 열린다. Standard/Unknown판에서는 Steam 결제 UI가 노출되지 않는다. |
+| 빈 목록 | 게이트웨이 팩 목록(`GET /v1/billing/steam/packs`) 조회가 비어있거나 실패하면 오류 및 재시도 안내를 표시한다. |
+| 진행 | 팩 선택 시 고유한 `idempotency_key`로 주문을 생성한다. 응답이 `CREATED`인 경우 최대 10초간 동일 키로 1초 간격 재확인하며, 10초 초과 시 "확인이 지연되고 있습니다" 안내 및 수동 재확인 버튼을 제공한다. 클라이언트 흐름(`flow: "client"`)에서는 Steam 오버레이 승인 후 `steam_microtxn_authorization` 이벤트 수신 및 `finalize` 호출을 진행한다. |
+| 성공 | 결제 완료 후 즉시 계정 잔액이 갱신되며, 성공 완료 모달이 표시된다. 이미 승인/지급된 주문 재확정 시(`granted_now: false`) 중복 지급 없이 완료 처리된다. |
+| 오류 | 409 `not_approved`는 지수 백오프로 최대 3회 재시도한다. 409 `steam_not_linked` 시 계정 연결 안내를 노출하고, 결제 취소(`authorized: false`) 또는 실패 상태(`INIT_FAILED` 등) 시 취소/오류 안내를 제공한다. 웹 흐름(`flow: "web"`)에서 steamurl 누락/거부 시 오류를 표시한다. |
+| 좁은 폭 | 360px 폭에서도 팩 카드 목록이 반응형 1열로 줄바꿈되어 가격·크레딧 정보가 겹치지 않고 정상 표시된다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-STEAM-PACK-PAY-729 | `packages/shell/src-tauri/src/steam/mod.rs`: MicroTxnAuthorizationResponse 이벤트 emit (order_id 10진 문자열 보존), steam_open_url URL 허용목록 검증; `packages/shell/src/lib/__tests__/steam-billing.test.ts`: 팩 목록 조회, 주문 생성 flow/idempotency_key, CREATED 폴링 및 지연 안내, INIT_FAILED 오류, INITIATED 승인 이벤트 -> finalize -> 잔액 재조회, not_approved 재시도, authorized=false, steam_not_linked, 중복 finalize granted_now:false, order_id u64 큰 값 보존, 웹 흐름 steamurl 열기 및 수동 finalize; `packages/shell/src/components/__tests__/CostDashboard.steam.test.tsx`: Steam판 충전 모달 렌더링 및 결제 인터랙션; `packages/shell/src/components/__tests__/ChatArea.steam.test.tsx`, `RefAudioSection.steam.test.tsx`, `chat-voice-utils.test.ts`: "Steam에서 충전" 문구 및 모달 연동; `packages/shell/scripts/__tests__/platform-matrix.test.ts`: steam_api64.dll 리소스 매핑 및 depot requiredFiles 계약 | `packages/shell/e2e/steam-billing.spec.ts`: 실 UI 팩 선택 및 결제 완료 처리, 좁은 폭 360px 스크린샷 |
+
+
 
 
