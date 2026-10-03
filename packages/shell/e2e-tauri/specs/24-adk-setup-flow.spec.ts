@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { CREDENTIALED_MAIN_MODEL } from "../credentialed-adk-seed.js";
 import { S } from "../helpers/selectors.js";
 import { safeRefresh } from "../helpers/settings.js";
+import { clickElement } from "../helpers/click.js";
 
 const E2E_ADK_BASE =
 	process.env.NAIA_E2E_ADK_BASE ?? join(tmpdir(), "naia-e2e-adk");
@@ -166,15 +167,13 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		await waitForSplashGone();
 
 		// First card is "신규 시작" — open new mode.
-		const cards = await $$(S.adkSetupOptionCard);
-		await cards[0].click();
+		await clickElement(S.adkSetupOptionCard);
 
 		const input = await $(S.adkSetupInput);
 		await input.waitForDisplayed({ timeout: 5_000 });
 		await setAdkSetupPath(empty);
 
-		const confirm = await $(S.adkSetupConfirmBtn);
-		await confirm.click();
+		await clickElement(S.adkSetupConfirmBtn);
 
 		// Clone + init + assets can take a while; allow generous timeout.
 		const overlay = await $(S.onboardingOverlay);
@@ -205,12 +204,11 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		await waitForSplashGone();
 
 		// Open new mode and enter the pre-populated path.
-		const cards = await $$(S.adkSetupOptionCard);
-		await cards[0].click();
+		await clickElement(S.adkSetupOptionCard);
 		const input = await $(S.adkSetupInput);
 		await input.waitForDisplayed({ timeout: 5_000 });
 		await setAdkSetupPath(hasOther);
-		await (await $(S.adkSetupConfirmBtn)).click();
+		await clickElement(S.adkSetupConfirmBtn);
 
 		// Expect new_exists branch — only the "delete-and-restart" card should
 		// be present (no "use as-is" because there is no naia-settings/).
@@ -233,8 +231,7 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		});
 
 		// Click delete-and-restart and wait for onboarding.
-		const deleteCard = (await $$(S.adkSetupOptionCard))[0];
-		await deleteCard.click();
+		await clickElement(S.adkSetupOptionCard);
 		const overlay = await $(S.onboardingOverlay);
 		await overlay.waitForDisplayed({ timeout: 240_000 });
 	});
@@ -297,7 +294,7 @@ describe("24 — ADK Setup Flow (#328)", function () {
 		const chatInput = await $(S.chatInput);
 		await chatInput.waitForEnabled({ timeout: 30_000 });
 		await chatInput.setValue("hello");
-		await (await $(S.chatSendBtn)).click();
+		await clickElement(S.chatSendBtn);
 
 		const assistant = await $(S.completedAssistantMessage);
 		await assistant.waitForDisplayed({ timeout: 60_000 });
