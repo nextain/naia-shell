@@ -98,6 +98,16 @@ describe("check-steam-bundle detector tests", () => {
 		expect(minResult.violations.some((v) => v.patternId === "donation")).toBe(true);
 	});
 
+	for (const q of ["'", "`"]) {
+		it(`fails on donation direct route call quoted with ${q}`, () => {
+			const code = `openUrl(naiaWebUrl(${q}donation${q}, NAIA_WEB_BASE_URL));`;
+			const rawResult = checkSnippet(code);
+			expect(rawResult.violations.some((v) => v.patternId === "donation")).toBe(true);
+			const minResult = checkSnippet(minifyCode(code));
+			expect(minResult.violations.some((v) => v.patternId === "donation")).toBe(true);
+		});
+	}
+
 	const routes = ["billing", "dashboard", "apps"] as const;
 
 	for (const route of routes) {
@@ -205,6 +215,23 @@ describe("check-steam-bundle detector tests", () => {
 				const minResult = checkSnippet(minified);
 				expect(minResult.violations.some((v) => v.patternId === route)).toBe(true);
 			});
+
+			for (const q of ["'", "`"]) {
+				it(`detects direct route call quoted with ${q} in raw and minified form: ${route}`, () => {
+					const code = `
+          function naiaWebUrl(path, base) {
+            const root = base.replace(/\\/+$/u, "");
+            const suffix = path.replace(/^\\/+/u, "");
+            return suffix ? root + "/" + suffix : root;
+          }
+          openUrl(naiaWebUrl(${q}${route}${q}, NAIA_WEB_BASE_URL));
+        `;
+					const rawResult = checkSnippet(code);
+					expect(rawResult.violations.some((v) => v.patternId === route)).toBe(true);
+					const minResult = checkSnippet(minifyCode(code));
+					expect(minResult.violations.some((v) => v.patternId === route)).toBe(true);
+				});
+			}
 
 			// Negative cases (safe inputs)
 			it(`does not detect "settings.<route>": ${route}`, () => {
