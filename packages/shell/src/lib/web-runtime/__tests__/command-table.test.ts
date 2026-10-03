@@ -33,16 +33,26 @@ interface ExtractionResult {
 	directInvokeCallCount: number;
 }
 
+interface TopLevelObject {
+	isConst: boolean;
+	values: string[];
+}
+
+interface InvokeBindingCheck {
+	isInvoke: boolean;
+	isDirect: boolean;
+}
+
 function extractFromSource(
 	sourceFile: ts.SourceFile,
 	filePath = "snippet.ts",
 ): ExtractionResult {
 	const directInvokeIdentifiers = new Set<string>();
 	const coreNamespaceIdentifiers = new Set<string>();
-	const topLevelConstObjects = new Map<string, string[]>();
+	const topLevelObjects = new Map<string, TopLevelObject>();
 	const wrappedFunctions = new Map<string, string>(); // fnName -> paramName
 
-	// 1. Static imports & Top-level const objects
+	// 1. Static imports & Top-level objects
 	for (const stmt of sourceFile.statements) {
 		if (ts.isImportDeclaration(stmt)) {
 			const moduleSpecifier = unwrap(stmt.moduleSpecifier);
@@ -67,6 +77,7 @@ function extractFromSource(
 				}
 			}
 		} else if (ts.isVariableStatement(stmt)) {
+			const isConst = Boolean(stmt.declarationList.flags & ts.NodeFlags.Const);
 			for (const decl of stmt.declarationList.declarations) {
 				if (ts.isIdentifier(decl.name) && decl.initializer) {
 					const init = unwrap(decl.initializer);
@@ -83,7 +94,7 @@ function extractFromSource(
 								}
 							}
 						}
-						topLevelConstObjects.set(decl.name.text, values);
+						topLevelObjects.set(decl.name.text, { isConst, values });
 					}
 				}
 			}
@@ -132,38 +143,44 @@ function extractFromSource(
 	}
 	scanDynamicImports(sourceFile);
 
+	// Unified invoke binding check
+	function isInvoke(
+		expr: ts.Node,
+		activeParamBindings?: Set<string>,
+	): InvokeBindingCheck {
+		const unwrapped = unwrap(expr);
+		if (ts.isIdentifier(unwrapped)) {
+			if (directInvokeIdentifiers.has(unwrapped.text)) {
+				return { isInvoke: true, isDirect: true };
+			}
+			if (wrappedFunctions.has(unwrapped.text)) {
+				return { isInvoke: true, isDirect: false };
+			}
+			if (activeParamBindings?.has(unwrapped.text)) {
+				return { isInvoke: true, isDirect: false };
+			}
+		} else if (ts.isPropertyAccessExpression(unwrapped)) {
+			const parentExpr = unwrap(unwrapped.expression);
+			if (
+				ts.isIdentifier(parentExpr) &&
+				coreNamespaceIdentifiers.has(parentExpr.text) &&
+				unwrapped.name.text === "invoke"
+			) {
+				return { isInvoke: true, isDirect: true };
+			}
+		}
+		return { isInvoke: false, isDirect: false };
+	}
+
 	// 3. Detect wrapped functions
 	function checkWrapper(fnName: string, firstParamName: string, body: ts.Node) {
 		if (!firstParamName || !body) return;
 		let found = false;
 		function walkBody(node: ts.Node) {
 			if (found) return;
-			if (ts.isReturnStatement(node) && node.expression) {
-				const retExpr = unwrap(node.expression);
-				if (ts.isCallExpression(retExpr)) {
-					const callee = unwrap(retExpr.expression);
-					if (
-						ts.isIdentifier(callee) &&
-						directInvokeIdentifiers.has(callee.text)
-					) {
-						const firstArg = retExpr.arguments[0]
-							? unwrap(retExpr.arguments[0])
-							: null;
-						if (
-							firstArg &&
-							ts.isIdentifier(firstArg) &&
-							firstArg.text === firstParamName
-						) {
-							found = true;
-						}
-					}
-				}
-			} else if (ts.isCallExpression(node)) {
-				const callee = unwrap(node.expression);
-				if (
-					ts.isIdentifier(callee) &&
-					directInvokeIdentifiers.has(callee.text)
-				) {
+			if (ts.isCallExpression(node)) {
+				const check = isInvoke(node.expression);
+				if (check.isInvoke) {
 					const firstArg = node.arguments[0] ? unwrap(node.arguments[0]) : null;
 					if (
 						firstArg &&
@@ -171,6 +188,7 @@ function extractFromSource(
 						firstArg.text === firstParamName
 					) {
 						found = true;
+						return;
 					}
 				}
 			}
@@ -214,34 +232,6 @@ function extractFromSource(
 	const commands = new Set<string>();
 	const uninterpretable: string[] = [];
 	let directInvokeCallCount = 0;
-
-	function isInvokeCallee(
-		expr: ts.Node,
-		activeParamBindings: Set<string>,
-	): { isInvoke: boolean; isDirect: boolean } {
-		const unwrapped = unwrap(expr);
-		if (ts.isIdentifier(unwrapped)) {
-			if (directInvokeIdentifiers.has(unwrapped.text)) {
-				return { isInvoke: true, isDirect: true };
-			}
-			if (wrappedFunctions.has(unwrapped.text)) {
-				return { isInvoke: true, isDirect: false };
-			}
-			if (activeParamBindings.has(unwrapped.text)) {
-				return { isInvoke: true, isDirect: false };
-			}
-		} else if (ts.isPropertyAccessExpression(unwrapped)) {
-			const parentExpr = unwrap(unwrapped.expression);
-			if (
-				ts.isIdentifier(parentExpr) &&
-				coreNamespaceIdentifiers.has(parentExpr.text) &&
-				unwrapped.name.text === "invoke"
-			) {
-				return { isInvoke: true, isDirect: true };
-			}
-		}
-		return { isInvoke: false, isDirect: false };
-	}
 
 	function resolveFirstArg(
 		firstArgNode: ts.Node,
@@ -299,6 +289,7 @@ function extractFromSource(
 			// 3. const 지역 변수이고 초기값이 OBJ[...] 이며 OBJ 가 같은 파일의 최상위 const 객체 리터럴이면 그 객체의 문자열 값 전부
 			let curr: ts.Node | undefined = callNode;
 			let varDecl: ts.VariableDeclaration | null = null;
+			let isVarConst = false;
 			while (curr && curr !== sourceFile) {
 				if (
 					ts.isBlock(curr) ||
@@ -318,6 +309,9 @@ function extractFromSource(
 							for (const d of s.declarationList.declarations) {
 								if (ts.isIdentifier(d.name) && d.name.text === idName) {
 									varDecl = d;
+									isVarConst = Boolean(
+										s.declarationList.flags & ts.NodeFlags.Const,
+									);
 									break;
 								}
 							}
@@ -335,11 +329,16 @@ function extractFromSource(
 					const objExpr = unwrap(init.expression);
 					if (
 						ts.isIdentifier(objExpr) &&
-						topLevelConstObjects.has(objExpr.text)
+						topLevelObjects.has(objExpr.text)
 					) {
-						const vals = topLevelConstObjects.get(objExpr.text);
-						if (vals) {
-							for (const v of vals) commands.add(v);
+						const topObj = topLevelObjects.get(objExpr.text)!;
+						if (isVarConst && topObj.isConst) {
+							for (const v of topObj.values) commands.add(v);
+							return;
+						} else {
+							uninterpretable.push(
+								`${filePath}:${getLine(sourceFile, callNode)}`,
+							);
 							return;
 						}
 					}
@@ -390,16 +389,10 @@ function extractFromSource(
 			let newParams: Set<string> | null = null;
 			for (const p of node.parameters) {
 				if (p.initializer && ts.isIdentifier(p.name)) {
-					const init = unwrap(p.initializer);
-					if (ts.isIdentifier(init)) {
-						if (
-							directInvokeIdentifiers.has(init.text) ||
-							wrappedFunctions.has(init.text) ||
-							activeParamBindings.has(init.text)
-						) {
-							if (!newParams) newParams = new Set(activeParamBindings);
-							newParams.add(p.name.text);
-						}
+					const check = isInvoke(p.initializer, activeParamBindings);
+					if (check.isInvoke) {
+						if (!newParams) newParams = new Set(activeParamBindings);
+						newParams.add(p.name.text);
 					}
 				}
 			}
@@ -407,7 +400,7 @@ function extractFromSource(
 		}
 
 		if (ts.isCallExpression(node)) {
-			const check = isInvokeCallee(node.expression, nextParamBindings);
+			const check = isInvoke(node.expression, nextParamBindings);
 			if (check.isInvoke) {
 				if (check.isDirect) directInvokeCallCount++;
 				if (node.arguments.length > 0) {
@@ -641,6 +634,46 @@ describe("command-table", () => {
 		it("ignores invoke call when core is not imported (0 commands)", () => {
 			const res = runSnippet('invoke("z");');
 			expect(res.commands.size).toBe(0);
+			expect(res.uninterpretable).toEqual([]);
+		});
+
+		it("extracts namespace invoke binding in default parameter: api(call = core.invoke)", () => {
+			const res = runSnippet(
+				'import * as core from "@tauri-apps/api/core"; function api(call = core.invoke) { call("p"); }',
+			);
+			expect(Array.from(res.commands)).toEqual(["p"]);
+			expect(res.uninterpretable).toEqual([]);
+		});
+
+		it("extracts namespace invoke in wrapped function passed to default parameter: api(call = w)", () => {
+			const res = runSnippet(
+				'import * as core from "@tauri-apps/api/core"; function w(c: string) { return core.invoke(c); } function api(call = w) { call("q"); }',
+			);
+			expect(Array.from(res.commands)).toEqual(["q"]);
+			expect(res.uninterpretable).toEqual([]);
+		});
+
+		it("reports uninterpretable when local variable is not const: let cmd = OPS[x]", () => {
+			const res = runSnippet(
+				'import { invoke } from "@tauri-apps/api/core"; const OPS = { a: "r" }; function f(x: string) { let cmd = OPS[x]; invoke(cmd); }',
+			);
+			expect(res.commands.size).toBe(0);
+			expect(res.uninterpretable.length).toBe(1);
+		});
+
+		it("reports uninterpretable when top-level object is not const: let OPS = { a: \"s\" }", () => {
+			const res = runSnippet(
+				'import { invoke } from "@tauri-apps/api/core"; let OPS = { a: "s" }; function f(x: string) { const cmd = OPS[x]; invoke(cmd); }',
+			);
+			expect(res.commands.size).toBe(0);
+			expect(res.uninterpretable.length).toBe(1);
+		});
+
+		it("extracts all commands when both local variable and top-level object are const", () => {
+			const res = runSnippet(
+				'import { invoke } from "@tauri-apps/api/core"; const OPS = { a: "t", b: "u" }; function f(x: string) { const cmd = OPS[x]; invoke(cmd); }',
+			);
+			expect(Array.from(res.commands).sort()).toEqual(["t", "u"]);
 			expect(res.uninterpretable).toEqual([]);
 		});
 	});
