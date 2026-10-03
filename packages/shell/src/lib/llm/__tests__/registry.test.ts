@@ -3,7 +3,6 @@ import {
 	fetchNaiaPricing,
 	fetchNaiaModelMetadata,
 	applyNaiaModelMetadata,
-	formatModelLabel,
 	getDefaultLlmModel,
 	getLlmModel,
 	getLlmProvider,
@@ -355,6 +354,8 @@ describe("registry — Naia Azure model metadata", () => {
 	});
 });
 
+import { formatModelLabel } from "../model-label";
+
 describe("registry — formatModelLabel", () => {
 	it("returns base label when no pricing", () => {
 		const model = getLlmModel("nextain", "gpt-5.6-luna")!;
@@ -365,7 +366,7 @@ describe("registry — formatModelLabel", () => {
 	it("formats label with pricing when provided", () => {
 		const label = formatModelLabel({ id: "test", label: "Test Model", capabilities: ["llm"], pricing: [1.5, 10.0] });
 		expect(label).toBe(
-			"Test Model (Price per 1M tokens: Input $1.500 / Output $10.000)",
+			"Test Model (Price per 1M tokens: Input 1.5K credits / Output 10K credits)",
 		);
 	});
 });

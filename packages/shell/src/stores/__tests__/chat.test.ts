@@ -163,6 +163,27 @@ describe("useChatStore", () => {
 		expect(useChatStore.getState().totalSessionCost).toBe(0.003);
 	});
 
+	it("tracks the Naia-account share of the session cost separately (#727)", () => {
+		const store = useChatStore.getState();
+		store.addCostEntry({
+			inputTokens: 1,
+			outputTokens: 1,
+			cost: 0.004,
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+		});
+		store.addCostEntry({
+			inputTokens: 1,
+			outputTokens: 1,
+			cost: 0.001,
+			provider: "gemini",
+			model: "gemini-2.5-flash",
+		});
+		const state = useChatStore.getState();
+		expect(state.totalSessionCost).toBeCloseTo(0.005);
+		expect(state.totalSessionCostNaia).toBeCloseTo(0.004);
+	});
+
 	it("addCostEntry attaches cost to last assistant message", () => {
 		const store = useChatStore.getState();
 		store.addMessage({ role: "assistant", content: "response" });

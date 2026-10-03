@@ -62,7 +62,7 @@ describe("LLM registry — Naia-account picker (#670)", () => {
 	});
 
 	it("formatModelLabel appends a tag for comingSoon models (language-agnostic)", async () => {
-		const { formatModelLabel } = await import("../registry.js");
+		const { formatModelLabel } = await import("../model-label.js");
 		const base = formatModelLabel({
 			id: "x",
 			label: "X",

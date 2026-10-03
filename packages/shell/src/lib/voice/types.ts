@@ -20,7 +20,10 @@ export type LiveProviderId =
 	| "openai-realtime";
 
 // Retain historical IDs for migration, but never offer them as live choices.
-type ActiveLiveProviderId = Exclude<LiveProviderId, "naia" | "gemini-live" | "openai-realtime">;
+type ActiveLiveProviderId = Exclude<
+	LiveProviderId,
+	"naia" | "gemini-live" | "openai-realtime"
+>;
 
 export const LIVE_PROVIDER_LABELS: Record<ActiveLiveProviderId, string> = {
 	"naia-omni": "Naia Omni",
@@ -34,14 +37,14 @@ export const LIVE_PROVIDER_COST_HINTS: Record<
 	{ cost: string; note: string }
 > = {
 	"azure-voice-live": {
-		cost: "~$0.019/min",
-		note: "Naia credits — Voice Live Std LLM Audio × 1.1",
+		cost: "Naia credits",
+		note: "Naia credits — Voice Live Std LLM Audio",
 	},
 	"naia-omni": {
-		cost: "~$0.33/hr",
+		cost: "Naia credits",
 		note: "Naia credits — hourly session (local: free)",
 	},
-	"vllm-omni": { cost: "Free*", note: "Local GPU / RunPod ~$0.22/hr" },
+	"vllm-omni": { cost: "Free*", note: "Local GPU / RunPod" },
 	"edge-tts": { cost: "Free", note: "TTS only" },
 };
 

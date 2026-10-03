@@ -1,10 +1,17 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../lib/types";
 
+const mockOpenUrl = vi.fn().mockResolvedValue(undefined);
+vi.mock("@tauri-apps/api/core", () => ({
+	invoke: vi.fn(async (cmd: string) =>
+		cmd === "get_distribution_channel" ? "standard" : undefined,
+	),
+}));
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
-	openUrl: vi.fn().mockResolvedValue(undefined),
+	openUrl: (...args: unknown[]) => mockOpenUrl(...args),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -15,6 +22,7 @@ vi.mock("../../lib/config", () => ({
 	LAB_GATEWAY_URL: "https://example.test",
 	getNaiaKeySecure: vi.fn().mockResolvedValue(null),
 	hasNaiaKeySecure: vi.fn().mockResolvedValue(false),
+	NAIA_WEB_BASE_URL: "https://naia.land",
 }));
 
 import { getNaiaKeySecure, hasNaiaKeySecure } from "../../lib/config";
@@ -142,7 +150,9 @@ describe("CostDashboard", () => {
 		await waitFor(() => {
 			expect(screen.getByTestId("lab-balance-expired")).toBeDefined();
 		});
-		expect(screen.queryByText(/잔액 조회 실패|Failed to load balance/)).toBeNull();
+		expect(
+			screen.queryByText(/잔액 조회 실패|Failed to load balance/),
+		).toBeNull();
 	});
 
 	it("flips to a re-login state when a chat completion reports the key as unauthorized (#402)", async () => {
@@ -185,5 +195,80 @@ describe("CostDashboard", () => {
 		await waitFor(() => {
 			expect(screen.getByText(/12\.50/)).toBeDefined();
 		});
+	});
+
+	it("formats Lab balance >= 1000 with K and title attribute", async () => {
+		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-k-key");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve({ balance: 255_000_000 }),
+			}),
+		);
+
+		render(<CostDashboard messages={[]} />);
+		await waitFor(() => {
+			expect(hasNaiaKeySecure).toHaveBeenCalled();
+		});
+		window.dispatchEvent(new CustomEvent("naia_auth_ready"));
+
+		await waitFor(() => {
+			const el = screen.getByText(/2\.55K/);
+			expect(el).toBeDefined();
+			expect(el.getAttribute("title")).toContain("2,550.00");
+		});
+	});
+	it("shows Naia-account usage in credits and own-key usage as a dollar provider estimate (#727)", async () => {
+		const mixed: ChatMessage[] = [
+			{
+				id: "n1",
+				role: "assistant",
+				content: "a",
+				timestamp: 1,
+				cost: {
+					inputTokens: 10,
+					outputTokens: 10,
+					cost: 0.0123,
+					provider: "nextain",
+					model: "gpt-5.6-luna",
+				},
+			},
+			{
+				id: "g1",
+				role: "assistant",
+				content: "b",
+				timestamp: 2,
+				cost: {
+					inputTokens: 10,
+					outputTokens: 10,
+					cost: 0.002,
+					provider: "gemini",
+					model: "gemini-2.5-flash",
+				},
+			},
+		];
+		render(<CostDashboard messages={mixed} />);
+		expect(screen.getAllByText("≈ 12.3 credits").length).toBeGreaterThan(0);
+		expect(screen.queryByText(/\$0\.0123/)).toBeNull();
+		expect(
+			screen.getAllByText("$0.0020 (provider price est.)").length,
+		).toBeGreaterThan(0);
+		expect(
+			screen.getByText("≈ 12.3 credits + $0.0020 (provider price est.)"),
+		).toBeDefined();
+	});
+
+	it("shows the charge button on the standard build and calls openUrl on click (#727)", async () => {
+		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-good-key");
+		vi.mocked(hasNaiaKeySecure).mockResolvedValue(true);
+		render(<CostDashboard messages={[]} />);
+		await screen.findByText(/12\.50/);
+		const chargeBtn = await screen.findByText("Charge Credits");
+		expect(chargeBtn).toBeDefined();
+
+		mockOpenUrl.mockClear();
+		fireEvent.click(chargeBtn);
+		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/billing"));
 	});
 });

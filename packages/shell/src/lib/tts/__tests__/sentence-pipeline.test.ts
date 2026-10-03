@@ -139,11 +139,11 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 			"QUJD",
 			expect.objectContaining({ onPlaybackStart: expect.any(Function) }),
 		);
-		// Gateway costUsd is already API × 1.1. Do not multiply again.
+		// The shell applies no markup of its own; the gateway costUsd is used as-is.
 		expect(deps.addCostEntry).toHaveBeenCalledWith(
 			expect.objectContaining({
 				cost: 0.01,
-				model: "tts:nextain (+10%)",
+				model: "tts:nextain",
 			}),
 		);
 	});

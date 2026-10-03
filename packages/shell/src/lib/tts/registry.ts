@@ -75,10 +75,10 @@ registerTtsProviderMeta({
 	id: "nextain",
 	name: "Naia Cloud TTS",
 	description:
-		"Azure Neural HD (SunHi / Hyunsu). Credits = API cost × 1.1 via the gateway.",
+		"Azure Neural HD (SunHi / Hyunsu), billed in Naia credits via the gateway.",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	pricing: "Naia credit (API × 1.1)",
+	pricing: "Naia credits",
 	voices: [
 		{
 			id: "ko-KR-SunHi:DragonHDLatestNeural",

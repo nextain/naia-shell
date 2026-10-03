@@ -1092,8 +1092,10 @@ describe("installer workflow integration contracts", () => {
 				"bgm-sidecar/dist/bgm-server-bin.js",
 				"bgm-sidecar/dist/youtube-server.js",
 				"bgm-sidecar/node_modules/youtubei.js/package.json",
+				"naia-distribution.txt",
 			],
 			excludedFiles: ["uninstall.exe"],
+			distributionMarker: { file: "naia-distribution.txt", content: "steam" },
 			manifest: "steam-files.sha256",
 		});
 	});
@@ -1126,5 +1128,57 @@ describe("installer workflow integration contracts", () => {
 			rmSync(source, { recursive: true, force: true });
 			rmSync(bundle, { recursive: true, force: true });
 		}
+	});
+
+	it("writes the Steam distribution marker into the depot and its hash list (#727)", () => {
+		const source = mkdtempSync(resolve(tmpdir(), "naia-steam-source-"));
+		const bundle = mkdtempSync(resolve(tmpdir(), "naia-steam-bundle-"));
+		try {
+			// The NSIS source never carries the marker; the depot script adds it.
+			for (const file of matrix.os.win32.steamDepot.requiredFiles) {
+				if (file === matrix.os.win32.steamDepot.distributionMarker.file) continue;
+				const path = resolve(source, file);
+				mkdirSync(dirname(path), { recursive: true });
+				writeFileSync(path, `fixture:${file}`);
+			}
+			expect(
+				existsSync(resolve(source, matrix.os.win32.steamDepot.distributionMarker.file)),
+			).toBe(false);
+			const result = prepareSteamDepot({
+				sourceDir: source,
+				bundleDir: bundle,
+				contract: matrix.os.win32.steamDepot,
+			});
+			const marker = matrix.os.win32.steamDepot.distributionMarker;
+			expect(readFileSync(result.markerPath, "utf8").trim()).toBe(marker.content);
+			const markerBytes = readFileSync(result.markerPath);
+			const hash = createHash("sha256").update(markerBytes).digest("hex");
+			expect(readFileSync(result.manifestPath, "utf8")).toContain(
+				`${hash}  ${marker.file}`,
+			);
+		} finally {
+			rmSync(source, { recursive: true, force: true });
+			rmSync(bundle, { recursive: true, force: true });
+		}
+	});
+
+	it("does not put the Steam marker in a non-Steam (NSIS) payload and keeps the native reader in step", () => {
+		const marker = matrix.os.win32.steamDepot.distributionMarker;
+		// Only the depot script writes the marker; no other script or config may.
+		expect(readFileSync(resolve(SHELL, "scripts/prepare-steam-depot.mjs"), "utf8")).toContain(
+			"distributionMarker",
+		);
+		const tauriConf = readFileSync(resolve(SHELL, "src-tauri/tauri.conf.json"), "utf8");
+		expect(tauriConf).not.toContain(marker.file);
+		// The Rust reader must look for the same file name and content.
+		const rust = readFileSync(resolve(SHELL, "src-tauri/src/distribution.rs"), "utf8");
+		expect(rust).toContain(`pub const MARKER_FILE: &str = "${marker.file}";`);
+		expect(rust).toContain(`pub const MARKER_CONTENT: &str = "${marker.content}";`);
+		expect(rust).toContain('pub const STEAM_APP_ID: &str = "5354630";');
+	});
+
+	it("verifies the Steam marker and its hash-list entry in CI (#727)", () => {
+		expect(workflow).toContain("Steam depot distribution marker is missing");
+		expect(workflow).toContain("Steam depot hash list does not cover the distribution marker");
 	});
 });

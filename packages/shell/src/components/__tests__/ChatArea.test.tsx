@@ -567,6 +567,27 @@ describe("ChatArea", () => {
 		expect(screen.getByText(/\$0\.005/)).toBeDefined();
 	});
 
+	it("shows Naia-account session cost in credits, not dollars (#727)", () => {
+		useChatStore.setState({
+			provider: "nextain",
+			totalSessionCost: 0.005,
+			totalSessionCostNaia: 0.005,
+		});
+		render(<ChatArea />);
+		expect(screen.getByText("≈ 5 credits")).toBeDefined();
+		expect(screen.queryByText(/\$0\.005/)).toBeNull();
+	});
+
+	it("labels own-key session cost as a provider-price estimate (#727)", () => {
+		useChatStore.setState({
+			provider: "gemini",
+			totalSessionCost: 0.005,
+			totalSessionCostNaia: 0,
+		});
+		render(<ChatArea />);
+		expect(screen.getByText("$0.0050 (provider price est.)")).toBeDefined();
+	});
+
 	it("shows streaming indicator when streaming", () => {
 		useChatStore.setState({
 			isStreaming: true,
