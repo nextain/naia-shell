@@ -2226,5 +2226,32 @@ Test Coverage Map (P02)
 | UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
 | UC-CREDITS-DISPLAY | `packages/shell/src/lib/__tests__/credits.test.ts`: 달러 × 1,000 크레딧 환산 한 곳; `packages/shell/src/components/__tests__/CostDashboard.steam.test.tsx`, `packages/shell/src/components/__tests__/AboutSection.steam.test.tsx`, `packages/shell/src/components/__tests__/OnboardingWizard.steam.test.tsx`, `packages/shell/src/components/__tests__/AppBar.test.tsx`: Steam판·판정 실패 시 결제·후원·웹 스토어 진입점 숨김; `packages/shell/src/lib/voice/__tests__/live-pricing.test.ts`: 음성 요금은 게이트웨이 시간당 행만 쓰고 없으면 금액 생략 | 실기 Steam 데포 빌드 확인은 릴리스 절차에서 한다 |
 
+## UC-APP-MANIFEST-V2 — 앱 매니페스트 v2 스키마 및 legacy 프로필 호환 (#735)
+
+앱 작성자가 v2 매니페스트(`manifest_version: 2`)를 선언하여 앱을 배포하거나, 기존 구형 매니페스트(`manifest_version` 미선언) 앱을 설치·실행할 때의 동작이다.
+- 앱 작성자는 `manifest_version: 2`, `context`, `skills[]`, `permissions`, `host_permissions`, `optional_permissions`, `requires[]`, `help`, `data_use`, `publisher`, `keepAlive`, 도구별 `exported` 등 v2 명세를 선언할 수 있다.
+- v2 매니페스트 앱은 설치 시 엄격한 유효성 검사(`validate_manifest`)를 거치며, 알 수 없는 권한 선언, `context` 길이 상한 초과(800자), 도구 이름 명명 규칙 위반(`skill_` 접두사 누락 또는 중복), `host_permissions` 없는 `browser`/`login-handoff` 권한 선언이 발견되면 설치가 즉시 거부된다.
+- 기존 구형(legacy) 앱(`manifest_version` 없음 또는 1)은 동일한 검사에서 경고(warning)만 남기고 설치와 실행이 기존과 동일하게 유지된다(동작 변화 없음).
+- 알 수 없는 최상위 매니페스트 키는 v2·legacy 모두 경고(Warning)를 기록하며 설치를 차단하지 않는다. 셸 예약 키(`htmlEntry`, `iconSvg`)가 app.json에 있더라도 경고만 기록되고 무시되며, `extra` 필드는 IPC 직렬화에서 제외(`skip_serializing`)되어 셸이 채우는 값을 덮어쓰지 않는다. PR-1 은 `context` 필드 문자열만 제한하며, `context.md` 파일 길이 측정은 경로 가두기(절대 경로·`..`·심볼릭 링크 거부)와 함께 PR-6 에서 다룬다.
+- `keepAlive: false`가 선언된 앱은 Rust/TS 역직렬화 및 AppDescriptor 등록에서 보존되어, 앱 전환 시 언마운트 정책이 정상 적용된다.
+
+| 상태 | 사용자/앱 작성자 기대 |
+|---|---|
+| 기본 | v2 매니페스트(`manifest_version: 2`)로 선언된 유효한 앱은 정상적으로 설치·등록되며, 셸에 profile: "v2"로 인식된다. |
+| legacy 호환 | `manifest_version`이 없는 legacy 앱(예: Naia Slides 0.1.0 `app.json`)은 profile: "legacy"로 인식되어 기존과 완전히 동일하게 로드·실행된다. |
+| 진행 | 앱 설치 시 `validate_manifest` 검사가 수행된다. v2에서 오류가 없으면 설치가 완료된다. |
+| 성공 | v2 선택 필드(`context`, `skills`, `permissions`, `host_permissions`, `optional_permissions`, `requires`, `help`, `data_use`, `publisher`, `keepAlive`, `exported`)가 Rust에서 TS까지 손실 없이 전달된다. `keepAlive: false` 앱은 언마운트 설정이 보존된다. |
+| 오류 | v2 앱에서 알 수 없는 권한, 800자 초과 context, 잘못된/중복 도구 이름, host_permissions 누락 시 설치가 거부되고 명확한 에러 메시지가 반환된다. legacy 앱은 경고 로그만 남기고 설치가 계속된다. 알 수 없는 필드는 양쪽 모두 경고만 남긴다. |
+| 좁은 폭 | 해당 없음 (매니페스트 스키마 및 로더 계약). |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-APP-MANIFEST-V2 | `packages/shell/src-tauri/src/app.rs` tests: `slides_package_public_app_json_reads_as_legacy_profile`, `manifest_v2_full_fields_roundtrip`, `keep_alive_false_preserved_in_manifest`, `validate_manifest_unknown_permissions_rule`, `validate_manifest_context_length_limit_rule`, `validate_manifest_tool_naming_and_duplicates_rule`, `validate_manifest_browser_requires_host_permissions_rule`, `validate_manifest_unknown_keys_warns`, `validate_manifest_warns_on_shell_reserved_keys`, `shell_filled_fields_cannot_be_overridden_by_app_json`, `list_installed_from_root_shell_filled_fields_cannot_be_overridden_by_app_json` (설치 거부는 테스트가 아니라 `app_install`/`app_install_store`가 `IssueLevel::Error`에서 거부하는 코드 경로로 처리); `packages/shell/src/lib/__tests__/app-loader.test.ts`: `app-loader > loadInstalledApps` (`"keeps installed apps alive by default so state survives app switches"`, `"respects an explicit keepAlive:false opt-out in the manifest"`, `"assigns profile 'legacy' when manifest_version is absent"`, `"assigns profile 'v2' and maps v2 fields when manifest_version is 2"`); `packages/shell/src/lib/__tests__/app-permissions.test.ts`: `app-permissions` (`"matches the Rust KNOWN_PERMISSIONS list in app.rs exactly"`, `"identifies known and unknown permissions correctly"`) | `e2e/467-slide-presenter.spec.ts`, `e2e/slides-sidecar.spec.ts` 무회귀 통과 |
+
+> e2e `slides-sidecar.spec.ts:251` 은 이 PR 이전부터 실패하는 항목(스펙의 `convertFileSrc` 목이 `127.0.0.1`→`localhost` 치환을 하지만 Playwright 기본 호스트가 이미 `localhost` 라서 iframe 과 호스트가 같은 출처가 됨; 이 PR 과 무관).
+
+
 
 

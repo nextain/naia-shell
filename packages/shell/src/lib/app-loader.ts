@@ -3,9 +3,9 @@ import { createGenericInstalledApp } from "../apps/generic-installed/GenericInst
 import { useAppStore } from "../stores/app";
 import { Logger } from "./logger";
 import { appRegistry } from "./app-registry";
-import type { NaiaTool } from "./app-registry";
+import type { AppDataUseSpec, AppSkillSpec, NaiaTool } from "./app-registry";
 
-interface InstalledAppManifest {
+export interface InstalledAppManifest {
 	id: string;
 	name: string;
 	description?: string;
@@ -13,7 +13,22 @@ interface InstalledAppManifest {
 	/** Inline SVG content loaded from iconUrl by Rust app_list_installed */
 	iconSvg?: string;
 	names?: Record<string, string>;
+	descriptions?: Record<string, string>;
 	version?: string;
+	manifest_version?: number;
+	manifestVersion?: number;
+	context?: string;
+	skills?: AppSkillSpec[];
+	permissions?: string[];
+	host_permissions?: string[];
+	hostPermissions?: string[];
+	optional_permissions?: string[];
+	optionalPermissions?: string[];
+	requires?: string[];
+	help?: Record<string, string>;
+	data_use?: AppDataUseSpec;
+	dataUse?: AppDataUseSpec;
+	publisher?: string;
 	/** Tools the app exposes to Naia (declared in app.json). */
 	tools?: NaiaTool[];
 	/** Absolute path to index.html if present */
@@ -126,13 +141,34 @@ export async function loadInstalledApps(): Promise<void> {
 			continue;
 		}
 
+		const manifestVersion = manifest.manifest_version ?? manifest.manifestVersion;
+		const profile: "legacy" | "v2" =
+			manifestVersion != null && manifestVersion >= 2 ? "v2" : "legacy";
+		const hostPermissions =
+			manifest.host_permissions ?? manifest.hostPermissions;
+		const optionalPermissions =
+			manifest.optional_permissions ?? manifest.optionalPermissions;
+		const dataUse = manifest.data_use ?? manifest.dataUse;
+
 		appRegistry.register({
 			id: manifest.id,
 			name: manifest.name,
 			names: manifest.names,
+			descriptions: manifest.descriptions,
 			icon: manifest.icon,
 			iconSvg: manifest.iconSvg,
 			htmlEntry: manifest.htmlEntry,
+			manifestVersion,
+			profile,
+			context: manifest.context,
+			skills: manifest.skills,
+			permissions: manifest.permissions,
+			hostPermissions,
+			optionalPermissions,
+			requires: manifest.requires,
+			help: manifest.help,
+			dataUse,
+			publisher: manifest.publisher,
 			tools: manifest.tools,
 			source: "installed",
 			// Keep installed apps mounted across app switches — same treatment as
