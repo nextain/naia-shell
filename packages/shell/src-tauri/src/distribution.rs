@@ -20,6 +20,7 @@ pub const STEAM_APP_ID: &str = "5354630";
 pub enum Channel {
     Standard,
     Steam,
+    Unknown,
 }
 
 impl Channel {
@@ -27,23 +28,42 @@ impl Channel {
         match self {
             Channel::Standard => "standard",
             Channel::Steam => "steam",
+            Channel::Unknown => "unknown",
         }
     }
 }
 
 /// `install_dir` 아래 표시 파일이 있거나 `steam_app_id_env` 가 Steam App ID 면 Steam 판.
 pub fn detect_channel(install_dir: Option<&Path>, steam_app_id_env: Option<&str>) -> Channel {
-    if let Some(dir) = install_dir {
-        if let Ok(text) = std::fs::read_to_string(dir.join(MARKER_FILE)) {
-            if text.trim().eq_ignore_ascii_case(MARKER_CONTENT) {
-                return Channel::Steam;
-            }
-        }
-    }
     if steam_app_id_env.map(str::trim) == Some(STEAM_APP_ID) {
         return Channel::Steam;
     }
-    Channel::Standard
+
+    let dir = match install_dir {
+        Some(d) => d,
+        None => return Channel::Unknown,
+    };
+
+    match std::fs::metadata(dir) {
+        Ok(meta) if meta.is_dir() => {}
+        _ => return Channel::Unknown,
+    }
+
+    let marker = dir.join(MARKER_FILE);
+    match marker.try_exists() {
+        Ok(false) => Channel::Standard,
+        Ok(true) => match std::fs::read_to_string(&marker) {
+            Ok(text) => {
+                if text.trim().eq_ignore_ascii_case(MARKER_CONTENT) {
+                    Channel::Steam
+                } else {
+                    Channel::Unknown
+                }
+            }
+            Err(_) => Channel::Unknown,
+        },
+        Err(_) => Channel::Unknown,
+    }
 }
 
 pub fn detect_current_channel() -> Channel {
@@ -81,18 +101,38 @@ mod tests {
     }
 
     #[test]
-    fn marker_file_absent_is_standard() {
+    fn marker_file_absent_in_valid_dir_is_standard() {
         let dir = temp_dir("absent");
         assert_eq!(detect_channel(Some(&dir), None), Channel::Standard);
-        assert_eq!(detect_channel(None, None), Channel::Standard);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn marker_with_other_content_is_standard() {
+    fn marker_with_other_content_is_unknown() {
         let dir = temp_dir("other");
         std::fs::write(dir.join(MARKER_FILE), "nsis").unwrap();
-        assert_eq!(detect_channel(Some(&dir), None), Channel::Standard);
+        assert_eq!(detect_channel(Some(&dir), None), Channel::Unknown);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn marker_read_error_is_unknown() {
+        let dir = temp_dir("read_err");
+        std::fs::create_dir_all(dir.join(MARKER_FILE)).unwrap(); // directory causes read_to_string error
+        assert_eq!(detect_channel(Some(&dir), None), Channel::Unknown);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn none_install_dir_is_unknown() {
+        assert_eq!(detect_channel(None, None), Channel::Unknown);
+    }
+
+    #[test]
+    fn nonexistent_install_dir_is_unknown() {
+        let dir = temp_dir("nonexistent");
+        let non_dir = dir.join("not_created");
+        assert_eq!(detect_channel(Some(&non_dir), None), Channel::Unknown);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -101,6 +141,7 @@ mod tests {
         let dir = temp_dir("env");
         assert_eq!(detect_channel(Some(&dir), Some("5354630")), Channel::Steam);
         assert_eq!(detect_channel(Some(&dir), Some(" 5354630 ")), Channel::Steam);
+        assert_eq!(detect_channel(None, Some("5354630")), Channel::Steam);
         assert_eq!(detect_channel(Some(&dir), Some("480")), Channel::Standard);
         assert_eq!(detect_channel(Some(&dir), Some("")), Channel::Standard);
         std::fs::remove_dir_all(&dir).unwrap();

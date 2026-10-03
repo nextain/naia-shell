@@ -357,11 +357,17 @@ export interface ChannelInfo {
 	accounts: ChannelAccountInfo[];
 }
 
+export interface ProviderCostStat {
+	provider: string;
+	cost: number;
+}
+
 export interface AuditStats {
 	total_events: number;
 	by_event_type: [string, number][];
 	by_tool_name: [string, number][];
 	total_cost: number;
+	by_provider?: ProviderCostStat[];
 }
 
 // === Device Pairing ===

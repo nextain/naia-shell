@@ -75,6 +75,7 @@ export function HistoryTab({ onLoadSession }: { onLoadSession: () => void }) {
 		if (!window.confirm(t("history.deleteConfirm"))) return;
 		try {
 			await deleteConversation(key);
+			useChatStore.getState().deleteSessionOverlay(key);
 			setSessions((prev) => prev.filter((s) => s.key !== key));
 			if (key === currentSessionId) {
 				const store = useChatStore.getState();

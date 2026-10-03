@@ -146,4 +146,71 @@ describe("WorkProgressArea", () => {
 		expect(payload).not.toBeNull();
 		expect(payload?.textContent).toContain("/test.txt");
 	});
+
+	it("does not reformat historical nextain credits when active provider changes to own-key (#727 Defect 3)", () => {
+		const statsWithProvider: AuditStats = {
+			...sampleStats,
+			total_cost: 0.05,
+			by_provider: [{ provider: "nextain", cost: 0.05 }],
+		};
+		useProgressStore.setState({ stats: statsWithProvider, isLoading: false });
+
+		// Initially nextain
+		useChatStore.setState({ provider: "nextain" });
+		const { rerender } = render(<WorkProgressArea />);
+		expect(screen.getByText("≈ 50 credits")).toBeDefined();
+
+		// User changes active provider to openai
+		useChatStore.setState({ provider: "openai" });
+		rerender(<WorkProgressArea />);
+
+		// Historical nextain usage must stay as credits and NOT mutate to $0.050
+		expect(screen.getByText("≈ 50 credits")).toBeDefined();
+		expect(screen.queryByText(/\$0\.050/)).toBeNull();
+	});
+
+	it("displays legacy records with (이전 기록) label (#727 Defect 3)", () => {
+		const statsLegacy: AuditStats = {
+			...sampleStats,
+			total_cost: 0.02,
+			by_provider: [{ provider: "legacy", cost: 0.02 }],
+		};
+		useProgressStore.setState({ stats: statsLegacy, isLoading: false });
+		render(<WorkProgressArea />);
+		expect(
+			screen.getByText("$0.020 (provider price est.) (이전 기록)"),
+		).toBeDefined();
+	});
+
+	it("displays new unconfirmed records without units with (공급자·단위 미확인) label (#727 Defect 3)", () => {
+		const statsUnconfirmed: AuditStats = {
+			...sampleStats,
+			total_cost: 0.01,
+			by_provider: [{ provider: "unconfirmed", cost: 0.01 }],
+		};
+		useProgressStore.setState({ stats: statsUnconfirmed, isLoading: false });
+		render(<WorkProgressArea />);
+		expect(screen.getByText("0.010 (공급자·단위 미확인)")).toBeDefined();
+		expect(screen.queryByText(/\$/)).toBeNull();
+		expect(screen.queryByText(/credits/)).toBeNull();
+	});
+
+	it("displays mixed records containing confirmed, legacy, and unconfirmed (#727 Defect 3)", () => {
+		const statsMixed: AuditStats = {
+			...sampleStats,
+			total_cost: 0.08,
+			by_provider: [
+				{ provider: "nextain", cost: 0.05 },
+				{ provider: "legacy", cost: 0.02 },
+				{ provider: "unconfirmed", cost: 0.01 },
+			],
+		};
+		useProgressStore.setState({ stats: statsMixed, isLoading: false });
+		render(<WorkProgressArea />);
+		expect(
+			screen.getByText(
+				"≈ 50 credits + $0.020 (provider price est.) (이전 기록) + 0.010 (공급자·단위 미확인)",
+			),
+		).toBeDefined();
+	});
 });

@@ -3479,9 +3479,24 @@ async fn agent_dispatcher(
                     .and_then(|x| x.as_str())
                     .unwrap_or("")
                     .to_string();
+                let provider_name = v
+                    .get("provider")
+                    .and_then(|p| p.get("provider"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let model_name = v
+                    .get("provider")
+                    .and_then(|p| p.get("model"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                audit::record_request_context(&request_id, &provider_name, &model_name);
+
                 let req = match agent_grpc::try_json_to_chat_request(&v) {
                     Ok(req) => req,
                     Err(e) => {
+                        audit::finish_request_context(&request_id);
                         let err = serde_json::json!({
                             "type": "error",
                             "requestId": request_id,
@@ -3495,20 +3510,25 @@ async fn agent_dispatcher(
                 };
                 let mut c = client.clone();
                 let app2 = app.clone();
-                let app_err = app.clone(); // emit closure 媛 app2 瑜?move ???먮윭 寃쎈줈??蹂꾨룄 clone
+                let app_err = app.clone(); // emit closure 가 app2 를 move 할 때 에러 경로용 별도 clone
                 let db2 = audit_db.clone();
+                let req_id_clean = request_id.clone();
                 tauri::async_runtime::spawn(async move {
+                    let req_id_emit = req_id_clean.clone();
                     let emit = move |json: String| {
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
                             audit::maybe_log_event(&db2, &parsed);
+                            let event_type = parsed
+                                .get("type")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or("");
+                            if matches!(event_type, "finish" | "error") {
+                                audit::finish_request_context(&req_id_emit);
+                            }
                             if memory::dispatch_backup_response(&parsed) {
                                 return;
                             }
                             if debug_e2e_enabled() {
-                                let event_type = parsed
-                                    .get("type")
-                                    .and_then(|value| value.as_str())
-                                    .unwrap_or("");
                                 if matches!(event_type, "usage" | "finish") {
                                     let event_request_id = parsed
                                         .get("requestId")
@@ -3524,8 +3544,11 @@ async fn agent_dispatcher(
                         let _ = app2.emit("agent_response", &json);
                     };
                     if let Err(e) = c.chat(req, emit).await {
+                        audit::finish_request_context(&req_id_clean);
                         let err = serde_json::json!({"type":"error","requestId":request_id,"message":format!("grpc chat: {}", e)}).to_string();
                         let _ = app_err.emit("agent_response", &err);
+                    } else {
+                        audit::finish_request_context(&req_id_clean);
                     }
                 });
             }
@@ -3551,6 +3574,7 @@ async fn agent_dispatcher(
                     .and_then(|x| x.as_str())
                     .unwrap_or("")
                     .to_string();
+                audit::finish_request_context(&rid);
                 let activity_id = v
                     .get("activityId")
                     .and_then(|x| x.as_str())

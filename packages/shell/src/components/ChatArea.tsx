@@ -2607,6 +2607,7 @@ export function ChatArea({
 		const info = voiceStartRef.current;
 		if (!info) return;
 		voiceStartRef.current = null;
+		const targetLocalSessionId = useChatStore.getState().localSessionId;
 		const elapsed = (Date.now() - info.time) / 1000;
 		if (elapsed < 3) return; // ignore very short sessions
 		// Naia Local runs on the user's own GPU — no Naia-credit charge. Show a
@@ -2616,7 +2617,7 @@ export function ChatArea({
 				elapsed < 60
 					? `${Math.round(elapsed)}s`
 					: `${Math.floor(elapsed / 60)}m ${Math.round(elapsed % 60)}s`;
-			useChatStore.getState().addMessage({
+			useChatStore.getState().recordVoiceCostSummary(targetLocalSessionId, {
 				role: "assistant",
 				content: `🎙️ ${dur} · 로컬 (무료)`,
 			});
@@ -2644,7 +2645,7 @@ export function ChatArea({
 				const totalCost = rate == null ? null : rate * (elapsed / 3600);
 				const costText =
 					totalCost == null ? "" : ` · ${formatApproxCredits(totalCost)}`;
-				useChatStore.getState().addMessage({
+				useChatStore.getState().recordVoiceCostSummary(targetLocalSessionId, {
 					role: "assistant",
 					content: `🎙️ ${durationStr}${costText} (${hint.note})`,
 					...(totalCost == null

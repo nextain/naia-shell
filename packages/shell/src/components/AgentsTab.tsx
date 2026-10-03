@@ -4,6 +4,7 @@ import {
 	listConversations,
 	type ConversationSession,
 } from "../lib/conversation-store";
+import { useChatStore } from "../stores/chat";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 
@@ -32,8 +33,12 @@ export function AgentsTab() {
 		async (key: string) => {
 			if (!confirm(t("agents.deleteSessionConfirm"))) return;
 			const ok = await deleteConversation(key);
-			if (ok) fetchData();
-			else Logger.warn("AgentsTab", "delete session failed", { key });
+			if (ok) {
+				useChatStore.getState().deleteSessionOverlay(key);
+				fetchData();
+			} else {
+				Logger.warn("AgentsTab", "delete session failed", { key });
+			}
 		},
 		[fetchData],
 	);

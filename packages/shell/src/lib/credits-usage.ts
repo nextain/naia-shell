@@ -32,6 +32,49 @@ export function formatUsageCost(
 		: formatProviderEstimate(usd);
 }
 
+/** Raw number formatting for unconfirmed records (no currency/unit). */
+export function formatRawCost(cost: number): string {
+	if (cost < 0.001) return cost.toFixed(6);
+	if (cost < 0.01) return cost.toFixed(4);
+	return cost.toFixed(3);
+}
+
+/** Formats a single provider's cumulative cost stat. */
+export function formatProviderCostStat(
+	provider: string,
+	cost: number,
+): string {
+	if (provider === "legacy") {
+		return `${formatProviderEstimate(cost)} (이전 기록)`;
+	}
+	if (provider === "unconfirmed") {
+		return `${formatRawCost(cost)} (공급자·단위 미확인)`;
+	}
+	if (isNaiaAccountProvider(provider)) {
+		return formatApproxCredits(cost);
+	}
+	return formatProviderEstimate(cost);
+}
+
+/**
+ * Format cumulative stats split by provider (#727).
+ * Each provider is formatted using its own currency/unit.
+ */
+export function formatByProviderStats(
+	byProvider: { provider: string; cost: number }[] | undefined,
+	fallbackTotalCost: number,
+	currentProvider?: string | null,
+): string {
+	if (!byProvider || byProvider.length === 0) {
+		return formatUsageCost(fallbackTotalCost, currentProvider);
+	}
+	const nonZero = byProvider.filter((s) => s.cost > 0);
+	const target = nonZero.length > 0 ? nonZero : byProvider;
+	return target
+		.map((s) => formatProviderCostStat(s.provider, s.cost))
+		.join(" + ");
+}
+
 /**
  * Total over mixed providers. Naia-account and provider-priced amounts are
  * different currencies, so both are shown when both exist.
@@ -44,3 +87,5 @@ export function formatUsageTotal(naiaUsd: number, otherUsd: number): string {
 	}
 	return parts.join(" + ");
 }
+
+
