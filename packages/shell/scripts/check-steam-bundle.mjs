@@ -12,24 +12,33 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+function createRouteRegex(route) {
+	return new RegExp(
+		`(?:` +
+			`[a-zA-Z0-9_$)\]}]\\s*\\+\\s*["'\`]\\/?${route}(?=["'\`\\/]|$)|` +
+			`(?<=["'\`])(?!(?:[^"'\`]*?\\/)?(?:v1|api)\\/)[a-zA-Z0-9_\${}()\\-./]*\\/${route}(?=["'\`\\/]|$)` +
+		`)`,
+	);
+}
+
 export const PAYMENT_PATTERNS = [
 	{
 		id: "billing",
 		description: "Billing URL / entrypoint (SettingsTab / CostDashboard)",
-		// Matches URL combination ending in /billing, e.g. `${base}/${locale}/billing`, naiaWebUrl(`${locale}/billing`)
-		regex: /\/(?!(?:v1|api)\/)[a-zA-Z0-9_${}()\-.]+\/billing(?=["'`\\/]|$)/,
+		// Matches URL combination ending in /billing, e.g. `${base}/${locale}/billing`, `${getLocale()}/billing`, "ko/billing", e+"/billing"
+		regex: createRouteRegex("billing"),
 	},
 	{
 		id: "dashboard",
 		description: "Dashboard URL / entrypoint (SettingsTab)",
-		// Matches URL combination ending in /dashboard, e.g. `${base}/${locale}/dashboard`
-		regex: /\/(?!(?:v1|api)\/)[a-zA-Z0-9_${}()\-.]+\/dashboard(?=["'`\\/]|$)/,
+		// Matches URL combination ending in /dashboard, e.g. `${base}/${locale}/dashboard`, `${x}/dashboard`, "ko/dashboard", e+"/dashboard"
+		regex: createRouteRegex("dashboard"),
 	},
 	{
 		id: "apps",
 		description: "App store web URL / entrypoint (AppBar)",
-		// Matches web store URL combination ending in /apps, e.g. `${base}/${locale}/apps` (excluding /v1/apps API)
-		regex: /\/(?!(?:v1|api)\/)[a-zA-Z0-9_${}()\-.]+\/apps(?=["'`\\/]|$)/,
+		// Matches web store URL combination ending in /apps, e.g. `${base}/${locale}/apps`, `${x}/apps`, "ko/apps", e+"/apps" (excluding /v1/apps, /api/apps, /v1/apps/products)
+		regex: createRouteRegex("apps"),
 	},
 	{
 		id: "donation",

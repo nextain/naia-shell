@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 سيتي بوب",
 	"voice.ref.errCreditInsufficientNoTopup": "الرصيد غير كافٍ.",
 	"chat.voiceErrorCreditsNoTopup": "لا يوجد رصيد كافٍ.",
-	"chat.voiceSubscriptionRequiredNoLink": "مطلوب اشتراك مدفوع (BASIC أو أعلى)."
+	"chat.voiceSubscriptionRequiredNoLink": "مطلوب اشتراك مدفوع (BASIC أو أعلى).",
+	"onboard.welcome.alphaDescSteam": "هذا الإصدار في مرحلة اختبار ألفا. كثير من الميزات لم تستقر بعد وقد تحدث أخطاء غير متوقعة. نحن نتحسن باستمرار.",
+	"about.desc2Steam": "المشروع في مرحلة الاختبار التجريبي حالياً. كثير من الميزات قيد التطوير أو غير مستقرة، وقد تحدث أخطاء غير متوقعة. انضم إلينا عبر الإبلاغ عن الأخطاء والترجمة واقتراح الميزات والمساهمة بالكود."
 } as const;

@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 シティポップ",
 	"voice.ref.errCreditInsufficientNoTopup": "クレジット残高が不足しています。",
 	"chat.voiceErrorCreditsNoTopup": "クレジットが不足しています。",
-	"chat.voiceSubscriptionRequiredNoLink": "有料サブスクリプション(BASIC以上)が必要です。"
+	"chat.voiceSubscriptionRequiredNoLink": "有料サブスクリプション(BASIC以上)が必要です。",
+	"onboard.welcome.alphaDescSteam": "現在のバージョンはアルファテスト段階です。多くの機能はまだ安定化されておらず、予期しないエラーが発生することがあります。継続的に改善中です。",
+	"about.desc2Steam": "現在はアルファテスト段階です。多くの機能が開発中または不安定であり、予期しないエラーが発生する可能性があります。バグ報告、翻訳、機能提案、コード貢献など、様々な形でご参加ください。"
 } as const;

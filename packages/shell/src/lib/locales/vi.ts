@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 City Pop",
 	"voice.ref.errCreditInsufficientNoTopup": "Không đủ tín dụng.",
 	"chat.voiceErrorCreditsNoTopup": "Bạn đã hết tín dụng.",
-	"chat.voiceSubscriptionRequiredNoLink": "Cần đăng ký trả phí (BASIC trở lên)."
+	"chat.voiceSubscriptionRequiredNoLink": "Cần đăng ký trả phí (BASIC trở lên).",
+	"onboard.welcome.alphaDescSteam": "Phiên bản này đang trong giai đoạn thử nghiệm alpha. Nhiều tính năng chưa ổn định và có thể xảy ra lỗi bất ngờ. Chúng tôi không ngừng cải tiến.",
+	"about.desc2Steam": "Hiện đang trong giai đoạn alpha — nhiều tính năng đang phát triển hoặc chưa ổn định, lỗi không mong muốn có thể xảy ra. Hãy tham gia qua báo cáo lỗi, dịch thuật, đề xuất tính năng, đóng góp mã và nhiều hơn nữa."
 } as const;

@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 City Pop",
 	"voice.ref.errCreditInsufficientNoTopup": "Nicht genügend Credits.",
 	"chat.voiceErrorCreditsNoTopup": "Deine Credits sind aufgebraucht.",
-	"chat.voiceSubscriptionRequiredNoLink": "Ein kostenpflichtiges Abo (BASIC oder höher) ist erforderlich."
+	"chat.voiceSubscriptionRequiredNoLink": "Ein kostenpflichtiges Abo (BASIC oder höher) ist erforderlich.",
+	"onboard.welcome.alphaDescSteam": "Diese Version befindet sich in der Alpha-Testphase. Viele Funktionen sind noch nicht stabil und es können unerwartete Fehler auftreten. Wir verbessern die App kontinuierlich.",
+	"about.desc2Steam": "Derzeit in der Alpha-Phase — viele Funktionen sind in Entwicklung oder noch nicht stabil, unerwartete Fehler können auftreten. Mach mit durch Bug-Reports, Übersetzungen, Feature-Vorschläge, Code-Beiträge und mehr."
 } as const;

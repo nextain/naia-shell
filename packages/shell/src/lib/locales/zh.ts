@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 城市流行",
 	"voice.ref.errCreditInsufficientNoTopup": "积分不足。",
 	"chat.voiceErrorCreditsNoTopup": "积分不足。",
-	"chat.voiceSubscriptionRequiredNoLink": "需要付费订阅（BASIC 及以上）。"
+	"chat.voiceSubscriptionRequiredNoLink": "需要付费订阅（BASIC 及以上）。",
+	"onboard.welcome.alphaDescSteam": "当前版本为 Alpha 测试阶段，许多功能尚未稳定，可能会出现意外错误。我们正在持续改进中。",
+	"about.desc2Steam": "目前处于 Alpha 测试阶段，许多功能仍在开发中或尚未稳定，可能出现意外错误。欢迎通过错误报告、翻译、功能建议、代码贡献等方式加入我们。"
 } as const;

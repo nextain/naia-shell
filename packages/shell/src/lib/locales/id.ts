@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 City Pop",
 	"voice.ref.errCreditInsufficientNoTopup": "Kredit tidak cukup.",
 	"chat.voiceErrorCreditsNoTopup": "Kredit Anda habis.",
-	"chat.voiceSubscriptionRequiredNoLink": "Diperlukan langganan berbayar (BASIC atau lebih tinggi)."
+	"chat.voiceSubscriptionRequiredNoLink": "Diperlukan langganan berbayar (BASIC atau lebih tinggi).",
+	"onboard.welcome.alphaDescSteam": "Versi ini dalam tahap uji coba alfa. Banyak fitur yang belum stabil dan kesalahan tak terduga mungkin terjadi. Kami terus melakukan perbaikan.",
+	"about.desc2Steam": "Saat ini dalam fase alpha — banyak fitur sedang dikembangkan atau belum stabil, dan kesalahan tak terduga mungkin terjadi. Bergabunglah melalui laporan bug, terjemahan, saran fitur, kontribusi kode, dan lainnya."
 } as const;

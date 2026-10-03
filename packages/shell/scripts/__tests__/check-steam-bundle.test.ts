@@ -123,4 +123,80 @@ describe("check-steam-bundle detector tests", () => {
 		expect(result.success).toBe(true);
 		expect(result.violations).toHaveLength(0);
 	});
+
+	it("fails on CostDashboard actual call minified with esbuild", async () => {
+		const { createRequire } = await import("node:module");
+		const require = createRequire(import.meta.url);
+		const vitePath = require.resolve("vite");
+		const esbuild = createRequire(vitePath)("esbuild");
+
+		const code = `
+      function renderCharge(openUrl, naiaWebUrl, getLocale, NAIA_WEB_BASE_URL) {
+        openUrl(naiaWebUrl(\`\${getLocale()}/billing\`, NAIA_WEB_BASE_URL)).catch(() => {});
+      }
+    `;
+		const minified = esbuild.transformSync(code, { minify: true }).code;
+		fs.writeFileSync(path.join(tempDir, "cost-dashboard-minified.js"), minified);
+
+		const result = checkSteamBundle({ distDir: tempDir });
+		expect(result.success).toBe(false);
+		expect(result.violations.some((v) => v.patternId === "billing")).toBe(true);
+	});
+
+	it("detects route variants (${x}/route, ko/route, e+/route) minified with esbuild for billing, dashboard, apps", async () => {
+		const { createRequire } = await import("node:module");
+		const require = createRequire(import.meta.url);
+		const vitePath = require.resolve("vite");
+		const esbuild = createRequire(vitePath)("esbuild");
+
+		for (const route of ["billing", "dashboard", "apps"] as const) {
+			const routeDir = fs.mkdtempSync(path.join(os.tmpdir(), `variant-${route}-`));
+			try {
+				const code = `
+          const a = \`\${x}/${route}\`;
+          const b = "ko/${route}";
+          const c = e + "/${route}";
+        `;
+				const minified = esbuild.transformSync(code, { minify: true }).code;
+				fs.writeFileSync(path.join(routeDir, `${route}-variants.js`), minified);
+
+				const result = checkSteamBundle({ distDir: routeDir });
+				expect(result.success).toBe(false);
+				expect(result.violations.some((v) => v.patternId === route)).toBe(true);
+			} finally {
+				fs.rmSync(routeDir, { recursive: true, force: true });
+			}
+		}
+	});
+
+	it("does not detect API routes (/v1/<route>, /api/<route>, /v1/internal/<route>, /api/ko/<route>, /v1/apps/products)", async () => {
+		const { createRequire } = await import("node:module");
+		const require = createRequire(import.meta.url);
+		const vitePath = require.resolve("vite");
+		const esbuild = createRequire(vitePath)("esbuild");
+
+		const code = `
+      fetch("/v1/billing");
+      fetch("/api/billing");
+      fetch("/v1/internal/billing");
+      fetch("/api/ko/billing");
+
+      fetch("/v1/dashboard");
+      fetch("/api/dashboard");
+      fetch("/v1/internal/dashboard");
+      fetch("/api/ko/dashboard");
+
+      fetch("/v1/apps");
+      fetch("/api/apps");
+      fetch("/v1/internal/apps");
+      fetch("/api/ko/apps");
+      fetch("/v1/apps/products");
+    `;
+		const minified = esbuild.transformSync(code, { minify: true }).code;
+		fs.writeFileSync(path.join(tempDir, "api-routes.js"), minified);
+
+		const result = checkSteamBundle({ distDir: tempDir });
+		expect(result.success).toBe(true);
+		expect(result.violations).toHaveLength(0);
+	});
 });

@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 City Pop",
 	"voice.ref.errCreditInsufficientNoTopup": "Créditos insuficientes.",
 	"chat.voiceErrorCreditsNoTopup": "Seus créditos acabaram.",
-	"chat.voiceSubscriptionRequiredNoLink": "É necessária uma assinatura paga (BASIC ou superior)."
+	"chat.voiceSubscriptionRequiredNoLink": "É necessária uma assinatura paga (BASIC ou superior).",
+	"onboard.welcome.alphaDescSteam": "Esta versão está na fase de teste alfa. Muitas funcionalidades ainda não estão estabilizadas e podem ocorrer erros inesperados. Estamos melhorando continuamente.",
+	"about.desc2Steam": "Atualmente em fase alpha — muitos recursos estão em desenvolvimento ou instáveis, erros inesperados podem ocorrer. Participe com relatórios de bugs, traduções, sugestões, contribuições de código e mais."
 } as const;

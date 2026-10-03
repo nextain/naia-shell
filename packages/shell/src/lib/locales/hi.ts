@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 सिटी पॉप",
 	"voice.ref.errCreditInsufficientNoTopup": "क्रेडिट अपर्याप्त हैं।",
 	"chat.voiceErrorCreditsNoTopup": "आपके क्रेडिट समाप्त हो गए हैं।",
-	"chat.voiceSubscriptionRequiredNoLink": "सशुल्क सदस्यता (BASIC या उससे ऊपर) आवश्यक है।"
+	"chat.voiceSubscriptionRequiredNoLink": "सशुल्क सदस्यता (BASIC या उससे ऊपर) आवश्यक है।",
+	"onboard.welcome.alphaDescSteam": "यह संस्करण अल्फा परीक्षण चरण में है। कई सुविधाएँ अभी तक स्थिर नहीं हैं और अप्रत्याशित त्रुटियाँ हो सकती हैं। हम लगातार सुधार कर रहे हैं।",
+	"about.desc2Steam": "वर्तमान में अल्फा परीक्षण चरण में है — कई सुविधाएं विकास में हैं या अस्थिर हैं, अप्रत्याशित त्रुटियां हो सकती हैं। बग रिपोर्ट, अनुवाद, सुझाव, कोड योगदान आदि से जुड़ें।"
 } as const;

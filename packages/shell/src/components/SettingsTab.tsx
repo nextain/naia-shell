@@ -6490,7 +6490,9 @@ export function AboutSection() {
 			<div className="settings-about__body">
 				<p className="settings-about__desc">{t("about.desc1")}</p>
 				<div className="settings-about__alpha-badge">⚠ Alpha</div>
-				<p className="settings-about__desc">{t("about.desc2")}</p>
+				<p className="settings-about__desc">
+					{t(IS_STEAM_BUILD ? "about.desc2Steam" : "about.desc2")}
+				</p>
 				<div className="settings-about__links">
 					<a
 						href="https://github.com/nextain/naia-shell"

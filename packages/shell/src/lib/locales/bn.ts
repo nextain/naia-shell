@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 সিটি পপ",
 	"voice.ref.errCreditInsufficientNoTopup": "ক্রেডিট ব্যালেন্স অপর্যাপ্ত।",
 	"chat.voiceErrorCreditsNoTopup": "আপনার ক্রেডিট শেষ হয়ে গেছে।",
-	"chat.voiceSubscriptionRequiredNoLink": "পেইড সাবস্ক্রিপশন (BASIC বা তার উপরে) প্রয়োজন।"
+	"chat.voiceSubscriptionRequiredNoLink": "পেইড সাবস্ক্রিপশন (BASIC বা তার উপরে) প্রয়োজন।",
+	"onboard.welcome.alphaDescSteam": "এই সংস্করণটি আলফা পরীক্ষা পর্যায়ে রয়েছে। অনেক ফিচার এখনো স্থিতিশীল হয়নি এবং অপ্রত্যাশিত ত্রুটি হতে পারে। আমরা ক্রমাগত উন্নতি করছি।",
+	"about.desc2Steam": "বর্তমানে আলফা পরীক্ষা পর্যায়ে — অনেক ফিচার নির্মাণাধীন বা অস্থির, অপ্রত্যাশিত ত্রুটি হতে পারে। বাগ রিপোর্ট, অনুবাদ, পরামর্শ, কোড অবদানে যোগ দিন।"
 } as const;

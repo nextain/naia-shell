@@ -1344,5 +1344,7 @@ export default {
 	"bgm.cat.citypop": "🌸 시티팝",
 	"voice.ref.errCreditInsufficientNoTopup": "크레딧 잔액이 부족합니다.",
 	"chat.voiceErrorCreditsNoTopup": "크레딧이 부족해요.",
-	"chat.voiceSubscriptionRequiredNoLink": "유료 구독이 필요합니다 (BASIC 이상)."
+	"chat.voiceSubscriptionRequiredNoLink": "유료 구독이 필요합니다 (BASIC 이상).",
+	"onboard.welcome.alphaDescSteam": "현재 알파 테스트 단계로, 많은 기능이 구현 중이거나 안정화되어 있지 않아 예기치 않은 오류가 발생할 수 있습니다. 버그 리포트, 번역, 기능 제안, 코드 기여 등 다양한 방식으로 함께해 주세요.",
+	"about.desc2Steam": "현재 알파 테스트 단계로, 많은 기능이 구현 중이거나 안정화되어 있지 않아 예기치 않은 오류가 발생할 수 있습니다. 버그 리포트, 번역, 기능 제안, 코드 기여 등 다양한 방식으로 함께해 주세요."
 } as const;

@@ -1336,7 +1336,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							</p>
 							<div className="onboarding-welcome__badge">⚠ Alpha</div>
 							<p className="onboarding-welcome__text">
-								{t("onboard.welcome.alphaDesc")}
+								{t(
+									IS_STEAM_BUILD
+										? "onboard.welcome.alphaDescSteam"
+										: "onboard.welcome.alphaDesc",
+								)}
 							</p>
 							<button
 								type="button"
