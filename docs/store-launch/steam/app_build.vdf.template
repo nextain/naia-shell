@@ -1,7 +1,16 @@
+// Steam App Build Configuration Template
+//
+// VDF 배치 및 실행 구조:
+// - 본 파일(app_build.vdf)과 depot VDF(depot_build_windows.vdf, depot_build_linux.vdf)는
+//   모두 <steam 작업 폴더>/scripts 아래에 배치됩니다.
+// - buildoutput: "../output" (또는 "..\\output")
+// - contentroot: "../content" (또는 "..\\content")
+// - Linux 콘텐츠는 "../content/linux", Windows 콘텐츠는 "../content/windows" 에 배치됩니다.
+
 "appbuild"
 {
     "appid" "__STEAM_APP_ID__"
-    "desc" "Naia __VERSION__ Windows release"
+    "desc" "Naia __VERSION__ release"
     "buildoutput" "..\\output"
     "contentroot" "..\\content"
     "setlive" ""
@@ -12,4 +21,3 @@
         "{{LINUX_DEPOT_ID}}" "depot_build_linux.vdf"
     }
 }
-

@@ -1,7 +1,30 @@
+// Linux Steam Depot Build Configuration Template
+//
+// VDF 배치 및 실행 구조:
+// - app_build.vdf 및 depot_build_linux.vdf(또는 depot_build_windows.vdf)는 모두 <steam 작업 폴더>/scripts 에 위치합니다.
+// - Linux ContentRoot는 <steam 작업 폴더>/scripts 기준 "../content/linux"로 지정됩니다 (Windows 템플릿의 "..\\content\\windows"와 동일 구조).
+//
+// 아카이브 추출 절차:
+// 1. mkdir -p <steam 작업 폴더>/content/linux
+// 2. tar -xzf <archive> -C <steam 작업 폴더>/content/linux --strip-components=1
+//    (--strip-components=1 로 최상위 steam-depot-linux/ 접두사를 제거)
+// 3. content/linux/AppRun 이 직접 존재하고 실행 가능한지 확인:
+//    test -x <steam 작업 폴더>/content/linux/AppRun
+//
+// SteamPipe preview 파일 목록 확인 절차:
+// 1. app_build.vdf의 preview 플래그("preview" "1")를 사용하여 빌드 preview 실행:
+//    steamcmd +login <username> +run_app_build_http scripts/app_build.vdf +quit
+// 2. 생성된 SteamPipe preview 파일 목록에서 다음 사항을 반드시 확인:
+//    - AppRun 이 데포 루트에 직접 위치해야 함 (content/linux/AppRun -> depot root AppRun)
+//    - steam-depot-linux 접두사가 없어야 함
+//    - scripts 디렉터리가 포함되지 않아야 함
+//    - .exe, .dll 등 Windows 전용 콘텐츠가 포함되지 않아야 함
+// ※ preview 실행 및 실제 업로드는 조정자가 Steamworks 계정으로 수행하므로, 본 보고서에서는 미검증으로 기록합니다.
+
 "DepotBuildConfig"
 {
     "DepotID" "{{LINUX_DEPOT_ID}}"
-    "ContentRoot" "."
+    "ContentRoot" "../content/linux"
     "FileMapping"
     {
         "LocalPath" "*"
