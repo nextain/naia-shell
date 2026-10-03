@@ -66,12 +66,60 @@ pub fn detect_channel(install_dir: Option<&Path>, steam_app_id_env: Option<&str>
     }
 }
 
+#[cfg(test)]
+#[derive(Clone, Debug)]
+pub struct TestDistributionInputs {
+    pub exe_path: Option<std::path::PathBuf>,
+    pub steam_app_id: Option<String>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_INPUTS: std::cell::RefCell<Option<TestDistributionInputs>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub struct DistributionTestGuard {
+    prev: Option<TestDistributionInputs>,
+}
+
+#[cfg(test)]
+impl Drop for DistributionTestGuard {
+    fn drop(&mut self) {
+        TEST_INPUTS.with(|cell| {
+            *cell.borrow_mut() = self.prev.take();
+        });
+    }
+}
+
+#[cfg(test)]
+pub fn set_test_distribution_inputs(
+    exe_path: Option<std::path::PathBuf>,
+    steam_app_id: Option<String>,
+) -> DistributionTestGuard {
+    TEST_INPUTS.with(|cell| {
+        let prev = cell.borrow_mut().replace(TestDistributionInputs {
+            exe_path,
+            steam_app_id,
+        });
+        DistributionTestGuard { prev }
+    })
+}
+
+pub fn collect_distribution_inputs() -> (Option<std::path::PathBuf>, Option<String>) {
+    #[cfg(test)]
+    {
+        if let Some(inputs) = TEST_INPUTS.with(|cell| cell.borrow().clone()) {
+            return (inputs.exe_path, inputs.steam_app_id);
+        }
+    }
+    (std::env::current_exe().ok(), std::env::var("SteamAppId").ok())
+}
+
 pub fn detect_current_channel() -> Channel {
-    let install_dir = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(Path::to_path_buf));
-    let env = std::env::var("SteamAppId").ok();
-    detect_channel(install_dir.as_deref(), env.as_deref())
+    let (exe_path, env) = collect_distribution_inputs();
+    let install_dir = exe_path.as_deref().and_then(Path::parent);
+    detect_channel(install_dir, env.as_deref())
 }
 
 #[cfg(test)]

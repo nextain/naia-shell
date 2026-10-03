@@ -5836,8 +5836,79 @@ fn get_distribution_channel() -> String {
 #[cfg(test)]
 #[test]
 fn native_ipc_get_distribution_channel_invoked() {
-    let ch = get_distribution_channel();
-    assert!(ch == "standard" || ch == "steam" || ch == "unknown");
+    fn temp_ipc_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "naia-dist-ipc-{}-{}-{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // 1. 표지 steam -> "steam"
+    {
+        let dir = temp_ipc_dir("steam_marker");
+        let exe = dir.join("naia-shell");
+        std::fs::write(dir.join(distribution::MARKER_FILE), "steam\n").unwrap();
+        let _guard = distribution::set_test_distribution_inputs(Some(exe), None);
+        assert_eq!(get_distribution_channel(), "steam");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // 2. 정상 설치 폴더의 표지 부재 -> "standard"
+    {
+        let dir = temp_ipc_dir("absent_marker");
+        let exe = dir.join("naia-shell");
+        let _guard = distribution::set_test_distribution_inputs(Some(exe), None);
+        assert_eq!(get_distribution_channel(), "standard");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // 3. 손상 링크(#[cfg(unix)]) -> "unknown"
+    #[cfg(unix)]
+    {
+        let dir = temp_ipc_dir("broken_symlink");
+        let exe = dir.join("naia-shell");
+        let non_target = dir.join("nonexistent_target_file");
+        let marker = dir.join(distribution::MARKER_FILE);
+        std::os::unix::fs::symlink(&non_target, &marker).unwrap();
+        let _guard = distribution::set_test_distribution_inputs(Some(exe), None);
+        assert_eq!(get_distribution_channel(), "unknown");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // 4. 읽기 오류 (표지 경로를 폴더로) -> "unknown"
+    {
+        let dir = temp_ipc_dir("dir_marker");
+        let exe = dir.join("naia-shell");
+        std::fs::create_dir_all(dir.join(distribution::MARKER_FILE)).unwrap();
+        let _guard = distribution::set_test_distribution_inputs(Some(exe), None);
+        assert_eq!(get_distribution_channel(), "unknown");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // 5. 설치 경로 None -> "unknown"
+    {
+        let _guard = distribution::set_test_distribution_inputs(None, None);
+        assert_eq!(get_distribution_channel(), "unknown");
+    }
+
+    // 6. 환경 변수 일치 -> "steam"
+    {
+        let dir = temp_ipc_dir("env_steam");
+        let exe = dir.join("naia-shell");
+        let _guard = distribution::set_test_distribution_inputs(
+            Some(exe),
+            Some(distribution::STEAM_APP_ID.to_string()),
+        );
+        assert_eq!(get_distribution_channel(), "steam");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
 
 /// Fetch account balance in the native process. WebView fetch can be blocked by
