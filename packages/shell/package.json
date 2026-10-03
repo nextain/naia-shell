@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "vite --mode web",
     "build": "tsc -b && vite build && node scripts/check-bundle-budget.mjs",
+    "build:web": "tsc -b && vite build --mode web --outDir dist-web",
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "build:slides": "vite build --config vite.slides.config.ts",
     "preview": "vite preview",
