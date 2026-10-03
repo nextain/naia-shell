@@ -193,7 +193,7 @@ export function checkSteamBundle({ distDir, patterns = PAYMENT_PATTERNS } = {}) 
 	const DIRECT_CALL_RE =
 		activeRoutes.length > 0
 			? new RegExp(
-					`(?:naiaWebUrl|[a-zA-Z0-9_$]+)\\s*\\(\\s*["'](${routeRegexPart})["']`,
+					`(?:naiaWebUrl|[a-zA-Z0-9_$]+)\\s*\\(\\s*["'\`](${routeRegexPart})["'\`]`,
 					"gi",
 				)
 			: null;
