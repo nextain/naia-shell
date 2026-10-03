@@ -35,6 +35,7 @@ import {
 	saveConfig,
 	saveConfigSecure,
 } from "../lib/config";
+import { IS_STEAM_BUILD } from "../lib/distribution";
 import { type Locale, type TranslationKey, getLocale, t } from "../lib/i18n";
 import {
 	fetchLabBalancePayload,
@@ -1360,17 +1361,20 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							>
 								{t("onboard.welcome.discordBtn")}
 							</button>
-							<button
-								type="button"
-								className="onboarding-welcome__github-btn"
-								onClick={() =>
-									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-										openUrl(naiaWebUrl("donation", NAIA_WEB_BASE_URL)),
-									)
-								}
-							>
-								{t("onboard.welcome.donationBtn")}
-							</button>
+							{!IS_STEAM_BUILD && (
+								<button
+									type="button"
+									className="onboarding-welcome__github-btn"
+									onClick={() => {
+										if (IS_STEAM_BUILD) return;
+										import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+											openUrl(naiaWebUrl("donation", NAIA_WEB_BASE_URL)),
+										);
+									}}
+								>
+									{t("onboard.welcome.donationBtn")}
+								</button>
+							)}
 						</div>
 					</>
 				)}

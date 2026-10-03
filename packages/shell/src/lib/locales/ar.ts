@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "يتم استيراد عرض تقديمي آخر حاليًا.",
 	"bgm.dragToReorder": "اسحب لإعادة الترتيب",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 سيتي بوب"
+	"bgm.cat.citypop": "🌸 سيتي بوب",
+	"voice.ref.errCreditInsufficientNoTopup": "الرصيد غير كافٍ.",
+	"chat.voiceErrorCreditsNoTopup": "لا يوجد رصيد كافٍ.",
+	"chat.voiceSubscriptionRequiredNoLink": "مطلوب اشتراك مدفوع (BASIC أو أعلى)."
 } as const;

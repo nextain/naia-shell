@@ -101,6 +101,7 @@ import {
 	setLocale,
 	t,
 } from "../lib/i18n";
+import { IS_STEAM_BUILD } from "../lib/distribution";
 import { DevicePairingSection } from "./DevicePairingSection";
 import { SmallLlmSection } from "./SmallLlmSection";
 import {
@@ -3982,28 +3983,34 @@ export function SettingsTab() {
 									)}
 								</div>
 								<div className="lab-actions-row">
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={() =>
-											openUrl(
-												`${getNaiaWebBaseUrl()}/${locale}/dashboard`,
-											).catch(() => {})
-										}
-									>
-										{t("settings.labDashboard")}
-									</button>
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={() =>
-											openUrl(`${getNaiaWebBaseUrl()}/${locale}/billing`).catch(
-												() => {},
-											)
-										}
-									>
-										{t("cost.labCharge")}
-									</button>
+									{!IS_STEAM_BUILD && (
+										<>
+											<button
+												type="button"
+												className="voice-preview-btn"
+												onClick={() => {
+													if (IS_STEAM_BUILD) return;
+													openUrl(
+														`${getNaiaWebBaseUrl()}/${locale}/dashboard`,
+													).catch(() => {});
+												}}
+											>
+												{t("settings.labDashboard")}
+											</button>
+											<button
+												type="button"
+												className="voice-preview-btn"
+												onClick={() => {
+													if (IS_STEAM_BUILD) return;
+													openUrl(
+														`${getNaiaWebBaseUrl()}/${locale}/billing`,
+													).catch(() => {});
+												}}
+											>
+												{t("cost.labCharge")}
+											</button>
+										</>
+									)}
 									{showLabDisconnect ? (
 										<div className="reset-confirm-app" style={{ marginTop: 8 }}>
 											<p className="reset-confirm-msg">
@@ -6474,7 +6481,7 @@ export function SettingsTab() {
 	);
 }
 
-function AboutSection() {
+export function AboutSection() {
 	return (
 		<div className="settings-about">
 			<div className="settings-section-divider">
@@ -6513,20 +6520,23 @@ function AboutSection() {
 					>
 						{t("about.linkDiscord")}
 					</a>
-					<a
-						href="https://github.com/sponsors/nextain"
-						target="_blank"
-						rel="noopener noreferrer"
-						className="settings-about__link settings-about__link--sponsor"
-						onClick={(e) => {
-							e.preventDefault();
-							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-								openUrl("https://github.com/sponsors/nextain"),
-							);
-						}}
-					>
-						{t("about.linkSponsor")}
-					</a>
+					{!IS_STEAM_BUILD && (
+						<a
+							href="https://github.com/sponsors/nextain"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="settings-about__link settings-about__link--sponsor"
+							onClick={(e) => {
+								e.preventDefault();
+								if (IS_STEAM_BUILD) return;
+								import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+									openUrl("https://github.com/sponsors/nextain"),
+								);
+							}}
+						>
+							{t("about.linkSponsor")}
+						</a>
+					)}
 				</div>
 			</div>
 		</div>

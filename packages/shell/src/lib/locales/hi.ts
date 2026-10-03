@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "एक अन्य प्रस्तुति पहले से आयात हो रही है।",
 	"bgm.dragToReorder": "क्रम बदलने के लिए खींचें",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 सिटी पॉप"
+	"bgm.cat.citypop": "🌸 सिटी पॉप",
+	"voice.ref.errCreditInsufficientNoTopup": "क्रेडिट अपर्याप्त हैं।",
+	"chat.voiceErrorCreditsNoTopup": "आपके क्रेडिट समाप्त हो गए हैं।",
+	"chat.voiceSubscriptionRequiredNoLink": "सशुल्क सदस्यता (BASIC या उससे ऊपर) आवश्यक है।"
 } as const;

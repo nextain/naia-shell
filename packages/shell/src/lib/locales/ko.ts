@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "다른 프레젠테이션을 가져오는 중입니다.",
 	"bgm.dragToReorder": "끌어서 순서 바꾸기",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 시티팝"
+	"bgm.cat.citypop": "🌸 시티팝",
+	"voice.ref.errCreditInsufficientNoTopup": "크레딧 잔액이 부족합니다.",
+	"chat.voiceErrorCreditsNoTopup": "크레딧이 부족해요.",
+	"chat.voiceSubscriptionRequiredNoLink": "유료 구독이 필요합니다 (BASIC 이상)."
 } as const;

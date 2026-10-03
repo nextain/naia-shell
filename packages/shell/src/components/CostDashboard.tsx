@@ -8,6 +8,7 @@ import {
 	hasNaiaKeySecure,
 } from "../lib/config";
 import { naiaWebUrl } from "../lib/naia-instance-urls";
+import { IS_STEAM_BUILD } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import {
 	clearCachedLabCredits,
@@ -224,17 +225,20 @@ function LabBalanceSection() {
 					{balance.toFixed(2)} {t("cost.labCredits")}
 				</span>
 			</div>
-			<button
-				type="button"
-				className="lab-charge-btn"
-				onClick={() =>
-					openUrl(naiaWebUrl(`${getLocale()}/billing`, NAIA_WEB_BASE_URL)).catch(
-						() => {},
-					)
-				}
-			>
-				{t("cost.labCharge")}
-			</button>
+			{!IS_STEAM_BUILD && (
+				<button
+					type="button"
+					className="lab-charge-btn"
+					onClick={() => {
+						if (IS_STEAM_BUILD) return;
+						openUrl(naiaWebUrl(`${getLocale()}/billing`, NAIA_WEB_BASE_URL)).catch(
+							() => {},
+						);
+					}}
+				>
+					{t("cost.labCharge")}
+				</button>
+			)}
 		</div>
 	);
 }

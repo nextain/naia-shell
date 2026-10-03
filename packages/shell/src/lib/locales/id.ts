@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "Impor presentasi lain sedang berlangsung.",
 	"bgm.dragToReorder": "Seret untuk mengurutkan",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 City Pop"
+	"bgm.cat.citypop": "🌸 City Pop",
+	"voice.ref.errCreditInsufficientNoTopup": "Kredit tidak cukup.",
+	"chat.voiceErrorCreditsNoTopup": "Kredit Anda habis.",
+	"chat.voiceSubscriptionRequiredNoLink": "Diperlukan langganan berbayar (BASIC atau lebih tinggi)."
 } as const;

@@ -15,6 +15,7 @@
     "tauri:dev:clean": "node scripts/dev-setup.mjs --clean && node scripts/tauri-with-mode.mjs dev",
     "agent:prepare": "node scripts/prepare-paired-agent.mjs",
     "tauri:build:bundle": "node scripts/stage-runtime.mjs",
+    "tauri:build:steam": "node scripts/build-steam.mjs",
     "tauri:installer": "node scripts/dev-setup.mjs && node scripts/stage-runtime.mjs",
     "check": "biome check --write .",
     "format": "biome format --write .",

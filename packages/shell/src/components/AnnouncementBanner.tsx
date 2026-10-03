@@ -4,6 +4,7 @@ import {
 	getLocalizedText,
 	markAnnouncementRead,
 } from "../lib/announcements";
+import { IS_STEAM_BUILD } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 
 interface AnnouncementBannerProps {
@@ -24,15 +25,19 @@ export function AnnouncementBanner({
 	onDismissAll,
 	onDismissOne,
 }: AnnouncementBannerProps) {
-	if (announcements.length === 0) return null;
+	const visibleAnnouncements = IS_STEAM_BUILD
+		? announcements.filter((a) => !a.url || a.url.trim() === "")
+		: announcements;
+
+	if (visibleAnnouncements.length === 0) return null;
 
 	const lang = getLocale();
 	// Show the first (highest-priority) announcement
-	const item = announcements[0];
+	const item = visibleAnnouncements[0];
 	const icon = TYPE_ICON[item.type] ?? "ℹ";
 	const title = getLocalizedText(item.title, lang);
 	const body = getLocalizedText(item.body, lang);
-	const remaining = announcements.length - 1;
+	const remaining = visibleAnnouncements.length - 1;
 
 	const handleDismiss = () => {
 		markAnnouncementRead(item.id);
@@ -40,11 +45,12 @@ export function AnnouncementBanner({
 	};
 
 	const handleDismissAll = () => {
-		for (const a of announcements) markAnnouncementRead(a.id);
+		for (const a of visibleAnnouncements) markAnnouncementRead(a.id);
 		onDismissAll();
 	};
 
 	const handleLink = () => {
+		if (IS_STEAM_BUILD) return;
 		if (item.url && /^https?:\/\//.test(item.url)) {
 			openUrl(item.url).catch(() => {});
 		}

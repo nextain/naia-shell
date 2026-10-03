@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "Другая презентация уже импортируется.",
 	"bgm.dragToReorder": "Перетащите для сортировки",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 Сити-поп"
+	"bgm.cat.citypop": "🌸 Сити-поп",
+	"voice.ref.errCreditInsufficientNoTopup": "Недостаточно кредитов.",
+	"chat.voiceErrorCreditsNoTopup": "Кредиты закончились.",
+	"chat.voiceSubscriptionRequiredNoLink": "Требуется платная подписка (BASIC или выше)."
 } as const;

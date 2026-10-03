@@ -23,6 +23,7 @@ import {
 	loadConfig,
 	saveConfig,
 } from "../lib/config";
+import { IS_STEAM_BUILD } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import { warmLocalVoice } from "../lib/tts/synthesize";
@@ -124,7 +125,11 @@ function pickStrings() {
 		err: {
 			network: t("voice.ref.errNetwork"),
 			auth: t("voice.ref.errAuth"),
-			creditInsufficient: t("voice.ref.errCreditInsufficient"),
+			creditInsufficient: t(
+				IS_STEAM_BUILD
+					? "voice.ref.errCreditInsufficientNoTopup"
+					: "voice.ref.errCreditInsufficient",
+			),
 			format: t("voice.ref.errFormat"),
 			tooLarge: t("voice.ref.errTooLarge"),
 			uploadInProgress: t("voice.ref.errUploadInProgress"),

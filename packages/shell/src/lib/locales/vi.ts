@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "Một bài thuyết trình khác đang được nhập.",
 	"bgm.dragToReorder": "Kéo để sắp xếp lại",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 City Pop"
+	"bgm.cat.citypop": "🌸 City Pop",
+	"voice.ref.errCreditInsufficientNoTopup": "Không đủ tín dụng.",
+	"chat.voiceErrorCreditsNoTopup": "Bạn đã hết tín dụng.",
+	"chat.voiceSubscriptionRequiredNoLink": "Cần đăng ký trả phí (BASIC trở lên)."
 } as const;

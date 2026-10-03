@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "另一个演示文稿正在导入。",
 	"bgm.dragToReorder": "拖动以重新排序",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 城市流行"
+	"bgm.cat.citypop": "🌸 城市流行",
+	"voice.ref.errCreditInsufficientNoTopup": "积分不足。",
+	"chat.voiceErrorCreditsNoTopup": "积分不足。",
+	"chat.voiceSubscriptionRequiredNoLink": "需要付费订阅（BASIC 及以上）。"
 } as const;

@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "Outra importação de apresentação já está em andamento.",
 	"bgm.dragToReorder": "Arraste para reordenar",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 City Pop"
+	"bgm.cat.citypop": "🌸 City Pop",
+	"voice.ref.errCreditInsufficientNoTopup": "Créditos insuficientes.",
+	"chat.voiceErrorCreditsNoTopup": "Seus créditos acabaram.",
+	"chat.voiceSubscriptionRequiredNoLink": "É necessária uma assinatura paga (BASIC ou superior)."
 } as const;

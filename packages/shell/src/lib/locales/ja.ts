@@ -1341,5 +1341,8 @@ export default {
 	"slides.importBusy": "別のプレゼンテーションを読み込み中です。",
 	"bgm.dragToReorder": "ドラッグで並べ替え",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 シティポップ"
+	"bgm.cat.citypop": "🌸 シティポップ",
+	"voice.ref.errCreditInsufficientNoTopup": "クレジット残高が不足しています。",
+	"chat.voiceErrorCreditsNoTopup": "クレジットが不足しています。",
+	"chat.voiceSubscriptionRequiredNoLink": "有料サブスクリプション(BASIC以上)が必要です。"
 } as const;

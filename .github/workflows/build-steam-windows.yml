@@ -1,0 +1,343 @@
+name: build steam windows
+
+on:
+  push:
+    branches:
+      - 'release/*-steam'
+  workflow_dispatch:
+
+concurrency:
+  group: build-steam-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-steam:
+    runs-on: windows-2025
+    timeout-minutes: 150
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Clone required public runtime sources
+        run: |
+          git init ../naia-agent
+          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
+          git -C ../naia-agent fetch --depth 1 origin 3b0e101c04dc4346f765240b63160fb6cee91d2a
+          git -C ../naia-agent checkout --detach FETCH_HEAD
+          git init ../naia-kb-compiler
+          git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
+          git -C ../naia-kb-compiler fetch --depth 1 origin 24f52c14ea906c250304f39d48866c7a47e1b596
+          git -C ../naia-kb-compiler checkout --detach FETCH_HEAD
+          git init ../naia-memory
+          git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
+          git -C ../naia-memory fetch --depth 1 origin e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf
+          git -C ../naia-memory checkout --detach FETCH_HEAD
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.1"
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: "1.97.0"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Provision verified Windows VoxCPM2 release input
+        shell: pwsh
+        run: |
+          $url = "https://stnaiapub83b29893.blob.core.windows.net/releases/windows_trt_6g/releases/0.2.2/voxcpm2-runtime-win-trt6g-r2.zip"
+          $archive = Join-Path $env:RUNNER_TEMP "voxcpm2-runtime-win-trt6g.zip"
+          $runtime = Join-Path $env:RUNNER_TEMP "voxcpm2-runtime"
+          curl.exe --location --fail --retry 4 --retry-all-errors --output $archive $url
+          if ($LASTEXITCODE -ne 0) { throw "VoxCPM2 release input download failed" }
+          $item = Get-Item -LiteralPath $archive
+          if ($item.Length -ne 2496064260) {
+            throw "VoxCPM2 release input size mismatch: $($item.Length)"
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          if ($hash -ne "0057dcd5d440ac2bd736bc407df7822cb66b628ad031024877dd425e8ed2db33") {
+            throw "VoxCPM2 release input SHA-256 mismatch"
+          }
+          New-Item -ItemType Directory -Force -Path $runtime | Out-Null
+          tar.exe -xf $archive -C $runtime
+          if ($LASTEXITCODE -ne 0) { throw "VoxCPM2 release input extraction failed" }
+          "NAIA_VOXCPM2_TRT_RUNTIME_DIR=$runtime" >> $env:GITHUB_ENV
+          "NAIA_VOXCPM2_TRT_ARCHIVE=$archive" >> $env:GITHUB_ENV
+          "NAIA_VOXCPM2_TRT_ARTIFACT_SHA256=5dc02662267f79489896621d39f975af1d081bba49fecf5daac2a1a78e0a4ce5" >> $env:GITHUB_ENV
+
+      - name: Build Steam bundle from platform matrix
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NAIA_TAURI_NO_BUNDLE: '1'
+        run: pnpm -C packages/shell run tauri:build:steam
+
+      - name: Check Steam bundle for payment links
+        run: node packages/shell/scripts/check-steam-bundle.mjs
+
+      - name: Authenticate to Azure for Artifact Signing
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
+        with:
+          client-id: ${{ vars.AZURE_ARTIFACT_SIGNING_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_ARTIFACT_SIGNING_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_ARTIFACT_SIGNING_SUBSCRIPTION_ID }}
+
+      - name: Publicly sign Windows application payload
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          endpoint: https://krc.codesigning.azure.net/
+          signing-account-name: nextain-public-signing
+          certificate-profile-name: naia-public-trust
+          files: ${{ github.workspace }}\packages\shell\src-tauri\target\release\naia-shell.exe
+          files-folder: ${{ github.workspace }}\packages\shell\src-tauri\resources
+          files-folder-filter: exe,dll,pyd,node
+          files-folder-recurse: true
+          append-signature: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          timeout: 1800
+          batch-size: 30000
+
+      - name: Verify signed Windows application payload
+        shell: pwsh
+        run: |
+          $app = Get-Item "packages/shell/src-tauri/target/release/naia-shell.exe"
+          $payloads = @(
+            $app
+            Get-ChildItem "packages/shell/src-tauri/resources" -Recurse -File |
+              Where-Object { $_.Extension -in @(".exe", ".dll", ".pyd", ".node") }
+          )
+          if ($payloads.Count -lt 2) {
+            throw "Expected the app executable and bundled Windows PE payloads"
+          }
+
+          foreach ($payload in $payloads) {
+            $authenticode = Get-AuthenticodeSignature -LiteralPath $payload.FullName
+            if ($authenticode.Status -ne "Valid") {
+              throw "Invalid bundled PE signature: $($payload.FullName) = $($authenticode.Status)"
+            }
+          }
+
+          $appSignature = Get-AuthenticodeSignature -LiteralPath $app.FullName
+          if ($appSignature.SignerCertificate.Subject -notmatch "O=Nextain INC") {
+            throw "Unexpected app signer subject: $($appSignature.SignerCertificate.Subject)"
+          }
+
+      - name: Bundle signed Windows application payload
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NAIA_WINDOWS_SIGN: "1"
+        run: >-
+          pnpm -C packages/shell exec tauri bundle --verbose
+          --config src-tauri/tauri.conf.generated.json
+
+      - name: Verify application executable signature inside bundled MSI
+        shell: pwsh
+        run: |
+          # Tauri bundler restores target/release/naia-shell.exe from a pre-bundle copy after bundling,
+          # so verifying target/release/naia-shell.exe directly only checks the pre-bundle binary.
+          # To verify that signCommand actually signed the patched payload binary, we extract the MSI and
+          # inspect naia-shell.exe inside it. This step runs before 'Publicly sign Windows installers'
+          # to fail fast if the packaged payload binary is invalid before spending time signing installer packages
+          # (administrative extraction via msiexec /a does not require the MSI to have an outer signature).
+          $msi = @(Get-ChildItem packages/shell/src-tauri/target/release/bundle/msi/*.msi)
+          if ($msi.Count -ne 1) {
+            throw "Expected exactly one MSI, found $($msi.Count)"
+          }
+          $targetDir = Join-Path $env:RUNNER_TEMP "naia-msi-sig-verify"
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          try {
+            $process = Start-Process -FilePath "msiexec.exe" `
+              -ArgumentList "/a `"$($msi[0].FullName)`" /qn TARGETDIR=`"$targetDir`"" `
+              -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              throw "MSI administrative extraction failed with exit code $($process.ExitCode)"
+            }
+            $shellExe = Get-ChildItem -LiteralPath $targetDir -Recurse -File -Filter "naia-shell.exe" |
+              Select-Object -First 1
+            if (-not $shellExe) {
+              throw "naia-shell.exe not found inside extracted MSI: $targetDir"
+            }
+            $sig = Get-AuthenticodeSignature -LiteralPath $shellExe.FullName
+            if ($sig.Status -ne "Valid") {
+              throw "naia-shell.exe inside MSI signature is not valid: $($sig.Status)"
+            }
+            if ($sig.SignerCertificate.Subject -notmatch "O=Nextain INC") {
+              throw "naia-shell.exe inside MSI signer subject mismatch: $($sig.SignerCertificate.Subject)"
+            }
+          } finally {
+            Remove-Item -LiteralPath $targetDir -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Publicly sign Windows installers
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          endpoint: https://krc.codesigning.azure.net/
+          signing-account-name: nextain-public-signing
+          certificate-profile-name: naia-public-trust
+          files-folder: ${{ github.workspace }}\packages\shell\src-tauri\target\release\bundle
+          files-folder-filter: exe,msi
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify Authenticode and refresh updater signatures
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $bundleDir = Resolve-Path "packages/shell/src-tauri/target/release/bundle"
+          $installers = @(
+            Get-ChildItem "$bundleDir/nsis/*-setup.exe"
+            Get-ChildItem "$bundleDir/msi/*.msi"
+          )
+          if ($installers.Count -ne 2) {
+            throw "Expected one NSIS and one MSI installer, found $($installers.Count)"
+          }
+
+          foreach ($installer in $installers) {
+            $authenticode = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+            if ($authenticode.Status -ne "Valid") {
+              throw "Invalid Authenticode signature: $($installer.Name) = $($authenticode.Status)"
+            }
+            if ($authenticode.SignerCertificate.Subject -notmatch "O=Nextain INC") {
+              throw "Unexpected signer subject: $($authenticode.SignerCertificate.Subject)"
+            }
+
+            $updaterSignature = "$($installer.FullName).sig"
+            Remove-Item -LiteralPath $updaterSignature -Force -ErrorAction SilentlyContinue
+            pnpm -C packages/shell exec tauri signer sign $installer.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "Updater signing failed: $($installer.Name)"
+            }
+            if (-not (Test-Path -LiteralPath $updaterSignature -PathType Leaf)) {
+              throw "Updater signature was not created: $updaterSignature"
+            }
+          }
+
+      - name: Verify installer artifacts
+        run: node packages/shell/scripts/verify-artifacts.mjs
+
+      - name: Validate MSI structure
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem packages/shell/src-tauri/target/release/bundle/msi/*.msi)
+          if ($msi.Count -ne 1) {
+            throw "Expected exactly one MSI, found $($msi.Count)"
+          }
+          $target = Join-Path $env:RUNNER_TEMP "naia-msi-admin"
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          $process = Start-Process -FilePath "msiexec.exe" `
+            -ArgumentList "/a `"$($msi[0].FullName)`" /qn TARGETDIR=`"$target`"" `
+            -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "MSI administrative extraction failed with exit code $($process.ExitCode)"
+          }
+          $shellBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "naia-shell.exe")
+          $nodeBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "node.exe")
+          if ($shellBinary.Count -ne 1 -or $nodeBinary.Count -ne 1) {
+            throw "MSI payload incomplete: naia-shell.exe=$($shellBinary.Count), node.exe=$($nodeBinary.Count)"
+          }
+
+      - name: Install NSIS and prove bundled Node at runtime
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem `
+            packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw "NSIS installer not found"
+          }
+          $process = Start-Process -FilePath $installer.FullName `
+            -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "NSIS silent install failed with exit code $($process.ExitCode)"
+          }
+          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $binary = Join-Path $resourceDir "naia-shell.exe"
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+            throw "Installed naia-shell.exe not found: $binary"
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $resourceDir "node.exe") -PathType Leaf)) {
+            throw "Installed bundled node.exe not found: $resourceDir"
+          }
+          node packages/shell/scripts/verify-installed-smoke.mjs `
+            --binary $binary --resource-dir $resourceDir --timeout-ms 120000
+
+      - name: Prepare and verify Steam portable depot
+        id: steam
+        shell: pwsh
+        run: |
+          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $uninstaller = Join-Path $resourceDir "uninstall.exe"
+          if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+            throw "NSIS uninstaller not found before Steam depot preparation"
+          }
+          $bundleDir = Resolve-Path "packages/shell/src-tauri/target/release/bundle"
+          $steamDepot = node packages/shell/scripts/prepare-steam-depot.mjs `
+            --source $resourceDir --bundle-dir $bundleDir `
+            --github-output $env:GITHUB_OUTPUT
+          if ($LASTEXITCODE -ne 0) {
+            throw "Steam depot preparation failed with exit code $LASTEXITCODE"
+          }
+          $steamDepot = $steamDepot.Trim()
+          $contract = (Get-Content packages/shell/src-tauri/platform-matrix.json -Raw |
+            ConvertFrom-Json).os.win32.steamDepot
+          $binary = Join-Path $steamDepot $contract.entrypoint
+          $depotSig = Get-AuthenticodeSignature -LiteralPath $binary
+          if ($depotSig.Status -ne "Valid") {
+            throw "Steam depot naia-shell.exe signature is not valid: $($depotSig.Status)"
+          }
+          if ($depotSig.SignerCertificate.Subject -notmatch "O=Nextain INC") {
+            throw "Steam depot naia-shell.exe signer subject mismatch: $($depotSig.SignerCertificate.Subject)"
+          }
+
+          $uninstall = Start-Process -FilePath $uninstaller `
+            -ArgumentList "/S" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "NSIS silent uninstall failed with exit code $($uninstall.ExitCode)"
+          }
+          for ($attempt = 0; $attempt -lt 20 -and
+              (Test-Path -LiteralPath $resourceDir); $attempt++) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path -LiteralPath $resourceDir) {
+            throw "NSIS install location remains after silent uninstall"
+          }
+          $uninstallKey = Get-ChildItem `
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" `
+            -ErrorAction SilentlyContinue |
+            Get-ItemProperty |
+            Where-Object DisplayName -eq "Naia"
+          if ($uninstallKey) {
+            throw "NSIS uninstall registry entry remains after silent uninstall"
+          }
+
+          node packages/shell/scripts/verify-installed-smoke.mjs `
+            --binary $binary --resource-dir $steamDepot --timeout-ms 120000
+          if ($LASTEXITCODE -ne 0) {
+            throw "Steam portable smoke failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Upload Steam portable depot
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: naia-shell-steam-win32-${{ github.sha }}
+          path: ${{ steps.steam.outputs.depot }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14

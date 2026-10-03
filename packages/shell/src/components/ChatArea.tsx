@@ -18,6 +18,7 @@ import {
 	stopListening as sttStop,
 } from "tauri-plugin-stt-api";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
+import { IS_STEAM_BUILD } from "../lib/distribution";
 import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
@@ -3621,7 +3622,11 @@ export function ChatArea({
 			// raw dump. Cleanup below turns voice off so there is no retry loop.
 			if (!cancelled) {
 				const content = errStr.includes("subscription-required")
-					? t("chat.voiceSubscriptionRequired")
+					? t(
+							IS_STEAM_BUILD
+								? "chat.voiceSubscriptionRequiredNoLink"
+								: "chat.voiceSubscriptionRequired",
+						)
 					: errStr.includes("auth-failed")
 						? t("chat.voiceNeedLabKey")
 						: voiceFailureMessage(lastVoiceStatusRef.current, err);
