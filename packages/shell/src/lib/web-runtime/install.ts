@@ -5,6 +5,8 @@ import {
 	unregisterEventListener,
 } from "./event-bus";
 import { routeCommand } from "./router";
+import { registerWebLlmProvider } from "./llm-provider";
+import { WEB_LLM_MODEL_ID } from "./webllm-model";
 
 export const WEB_RUNTIME_MARKER = "naia-web-runtime";
 
@@ -63,5 +65,17 @@ export function installWebRuntime(): void {
 		!localStorage.getItem("naia-adk-path")
 	) {
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+	}
+
+	registerWebLlmProvider();
+
+	if (
+		typeof localStorage !== "undefined" &&
+		!localStorage.getItem("naia-config")
+	) {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID }),
+		);
 	}
 }

@@ -1,5 +1,46 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin, searchForWorkspaceRoot } from "vite";
+import { resolveWebAgentDir } from "./scripts/web-agent-dir.mjs";
+import { WEB_CSP } from "./src/lib/web-runtime/csp";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const workerPath = path.resolve(__dirname, "web-worker/create-agent-worker.ts");
+
+function virtualAgentWorkerPlugin(mode: string): Plugin {
+	const virtualId = "virtual:naia-agent-worker";
+	const resolvedVirtualId = `\0${virtualId}`;
+
+	return {
+		name: "virtual-naia-agent-worker",
+		resolveId(id: string) {
+			if (id === virtualId) {
+				if (mode === "web") {
+					return workerPath;
+				}
+				return resolvedVirtualId;
+			}
+		},
+		load(id: string) {
+			if (id === resolvedVirtualId) {
+				return 'export function createAgentWorker() { throw new Error("desktop_only:agent-worker"); }';
+			}
+		},
+	};
+}
+
+function webCspPlugin(): Plugin {
+	return {
+		name: "web-csp",
+		apply: "build",
+		transformIndexHtml(html: string) {
+			const meta = `<meta http-equiv="Content-Security-Policy" content="${WEB_CSP}">`;
+			return html.replace("<head>", `<head>\n    ${meta}`);
+		},
+	};
+}
 
 function readPositiveIntegerEnv(
 	name: string,
@@ -28,59 +69,95 @@ function readPositiveIntegerEnv(
 const host = process.env.TAURI_DEV_HOST || process.env.PLAYWRIGHT_HOST;
 const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 
-export default defineConfig(async () => ({
-	plugins: [react()],
-	build: {
-		// Bundle-budget verification uses this graph to prove that large optional
-		// surfaces stay behind dynamic imports instead of merely producing a
-		// similarly named output file.
-		manifest: true,
-	},
-	define: {
-		__BUILD_ID__: JSON.stringify(
-			new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
-		),
-	},
-	test: {
-		exclude: [
-			"e2e/**",
-			"e2e-tauri/**",
-			"node_modules/**",
-			// src-tauri 전체 제외: Rust 테스트는 cargo test, 스테이징된 agent(src-tauri/agent,
-			// stage-agent.mjs 산출물)는 자체 vitest 스위트로 검증. 여기 나열하면 agent 의
-			// 620+ 테스트(naia-memory sqlite 등)가 셸 스코프로 새어들어 P04 신호를 오염시킨다.
-			"src-tauri/**",
+export default defineConfig(async ({ mode }) => {
+	const isWeb = mode === "web";
+	if (isWeb && !process.env.VITE_NAIA_WEB_LLM) {
+		process.env.VITE_NAIA_WEB_LLM = "webllm";
+	}
+	const agentDir = isWeb ? resolveWebAgentDir(process.env) : null;
+
+	return {
+		plugins: [
+			react(),
+			virtualAgentWorkerPlugin(mode),
+			...(isWeb ? [webCspPlugin()] : []),
 		],
-		setupFiles: ["./vitest.setup.ts"],
-		// Run test files sequentially. Several panel suites time out or leak shared
-		// state when many files run in parallel under load (they pass individually
-		// and with --no-file-parallelism); sequential keeps the suite green.
-		fileParallelism: false,
-		testTimeout: 15000,
-	},
-	clearScreen: false,
-	server: {
-		port,
-		strictPort: true,
-		// Prefer explicit TAURI/PLAYWRIGHT host; otherwise bind all interfaces for Tailscale.
-		host: host || true,
-		// Vite 6 blocks unknown Host headers (Tailscale MagicDNS → 403) unless allowed.
-		// ".ts.net" admits any MagicDNS name without naming a private tailnet here.
-		allowedHosts: ["localhost", "127.0.0.1", ".ts.net"],
-		hmr: host
+		build: {
+			// Bundle-budget verification uses this graph to prove that large optional
+			// surfaces stay behind dynamic imports instead of merely producing a
+			// similarly named output file.
+			manifest: true,
+		},
+		define: {
+			__BUILD_ID__: JSON.stringify(
+				new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
+			),
+		},
+		test: {
+			exclude: [
+				"e2e/**",
+				"e2e-tauri/**",
+				"node_modules/**",
+				// src-tauri 전체 제외: Rust 테스트는 cargo test, 스테이징된 agent(src-tauri/agent,
+				// stage-agent.mjs 산출물)는 자체 vitest 스위트로 검증. 여기 나열하면 agent 의
+				// 620+ 테스트(naia-memory sqlite 등)가 셸 스코프로 새어들어 P04 신호를 오염시킨다.
+				"src-tauri/**",
+			],
+			setupFiles: ["./vitest.setup.ts"],
+			// Run test files sequentially. Several panel suites time out or leak shared
+			// state when many files run in parallel under load (they pass individually
+			// and with --no-file-parallelism); sequential keeps the suite green.
+			fileParallelism: false,
+			testTimeout: 15000,
+		},
+		clearScreen: false,
+		server: {
+			port,
+			strictPort: true,
+			// Prefer explicit TAURI/PLAYWRIGHT host; otherwise bind all interfaces for Tailscale.
+			host: host || true,
+			// Vite 6 blocks unknown Host headers (Tailscale MagicDNS → 403) unless allowed.
+			// ".ts.net" admits any MagicDNS name without naming a private tailnet here.
+			allowedHosts: ["localhost", "127.0.0.1", ".ts.net"],
+			hmr: host
+				? {
+						protocol: "ws",
+						host,
+						port: port + 1,
+					}
+				: undefined,
+			watch: {
+				ignored: ["**/src-tauri/**"],
+			},
+			...(isWeb && agentDir
+				? {
+						fs: {
+							allow: [searchForWorkspaceRoot(process.cwd()), agentDir],
+						},
+					}
+				: {}),
+		},
+		resolve: {
+			alias: {
+				"@": "/src",
+				...(isWeb && agentDir
+					? {
+							"@naia-agent": path.join(agentDir, "src/main"),
+						}
+					: {}),
+			},
+		},
+		...(isWeb
 			? {
-					protocol: "ws",
-					host,
-					port: port + 1,
+					worker: {
+						format: "es" as const,
+					},
+					preview: {
+						headers: {
+							"Content-Security-Policy": WEB_CSP,
+						},
+					},
 				}
-			: undefined,
-		watch: {
-			ignored: ["**/src-tauri/**"],
-		},
-	},
-	resolve: {
-		alias: {
-			"@": "/src",
-		},
-	},
-}));
+			: {}),
+	};
+});

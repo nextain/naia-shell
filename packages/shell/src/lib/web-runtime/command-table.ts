@@ -1,10 +1,12 @@
 export type CommandClassification = "web" | "stub" | "desktop-only";
 
 export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
-	// Web implemented (exact 3 commands)
+	// Web implemented (exact 5 commands)
 	"plugin:event|listen": "web",
 	"plugin:event|unlisten": "web",
 	"plugin:event|emit": "web",
+	send_to_agent_command: "web",
+	cancel_stream: "web",
 
 	// Plugin stubs (from tauri-base-mock.ts)
 	"plugin:store|load": "stub",
@@ -69,7 +71,6 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	browser_wv_snapshot: "desktop-only",
 	cancel_app_relaunch: "desktop-only",
 	cancel_coding_job: "desktop-only",
-	cancel_stream: "desktop-only",
 	capture_screen_region: "desktop-only",
 	clear_naia_path_cache: "desktop-only",
 	cli_detect_one: "desktop-only",
@@ -164,7 +165,6 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	resume_coding_job: "desktop-only",
 	secure_store_delete: "desktop-only",
 	secure_store_set: "desktop-only",
-	send_to_agent_command: "desktop-only",
 	setup_wsl: "desktop-only",
 	slides_cancel_open: "desktop-only",
 	slides_open_document: "desktop-only",

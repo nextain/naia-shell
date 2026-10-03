@@ -5,6 +5,7 @@ import {
 	handleEventListen,
 	handleEventUnlisten,
 } from "./event-bus";
+import { getAgentBridge } from "./agent-bridge";
 
 const warnedCommands = new Set<string>();
 
@@ -30,6 +31,42 @@ export async function routeCommand(
 			return handleEventEmit(
 				args as { event: string; payload: unknown },
 			);
+		}
+		if (cmd === "send_to_agent_command") {
+			const message = (args as { message?: string })?.message ?? "";
+			const byteLen = new TextEncoder().encode(message).length;
+			const MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
+			if (byteLen > MAX_MESSAGE_BYTES) {
+				throw new Error(`Message too large: ${byteLen} bytes`);
+			}
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(message);
+			} catch (e) {
+				throw new Error(
+					`Invalid JSON from frontend: ${e instanceof Error ? e.message : String(e)}`,
+				);
+			}
+			if (
+				typeof parsed !== "object" ||
+				parsed === null ||
+				Array.isArray(parsed)
+			) {
+				throw new Error("Message must be a JSON object");
+			}
+			const typeVal = (parsed as { type?: unknown }).type;
+			if (typeof typeVal !== "string") {
+				throw new Error("Message must have a string 'type' field");
+			}
+			getAgentBridge().sendLine(message);
+			return null;
+		}
+		if (cmd === "cancel_stream") {
+			const requestId = (args as { requestId?: string })?.requestId;
+			getAgentBridge().sendLine(
+				JSON.stringify({ type: "cancel_stream", requestId }),
+			);
+			return null;
 		}
 	}
 

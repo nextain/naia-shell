@@ -497,16 +497,18 @@ describe("command-table", () => {
 		).toEqual([]);
 	});
 
-	it("has exactly 3 keys classified as 'web'", () => {
+	it("has exactly 5 keys classified as 'web'", () => {
 		const webKeys = Object.entries(COMMAND_TABLE)
 			.filter(([_, value]) => value === "web")
 			.map(([key]) => key)
 			.sort();
 
 		expect(webKeys).toEqual([
+			"cancel_stream",
 			"plugin:event|emit",
 			"plugin:event|listen",
 			"plugin:event|unlisten",
+			"send_to_agent_command",
 		]);
 	});
 
