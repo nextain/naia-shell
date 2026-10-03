@@ -13504,6 +13504,20 @@ async fn delete_naia_adk(
     std::fs::remove_dir_all(&adk).map_err(|e| format!("Failed to delete {adk_path}: {e}"))
 }
 
+fn naia_adk_git_clone(repo_url: &str, adk_path: &str) -> Result<(), String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["clone", "--depth", "1", repo_url, adk_path]);
+    platform::hide_console(&mut cmd);
+    match cmd.output() {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("git clone failed ({stderr})"))
+        }
+        Err(e) => Err(format!("git not found ({e})")),
+    }
+}
+
 /// Clone nextain/naia-template-project (the ADK canonical — the old
 /// nextain/naia-adk repo is archived and misses the official Naia
 /// characters, so fresh installs seeded a stale workspace; #454) shallow
@@ -13547,23 +13561,10 @@ async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), S
     }
 
     // Try git clone first.
-    let mut cmd = std::process::Command::new("git");
-    cmd.args([
-        "clone",
-        "--depth",
-        "1",
-        "https://github.com/nextain/naia-template-project",
-        &adk_path,
-    ]);
-    platform::hide_console(&mut cmd);
-    match cmd.output() {
-        Ok(output) if output.status.success() => return Ok(()),
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("[clone_naia_adk] git clone failed ({stderr}), falling back to zip");
-        }
+    match naia_adk_git_clone(NAIA_ADK_REPO_URL, &adk_path) {
+        Ok(()) => return Ok(()),
         Err(e) => {
-            log::warn!("[clone_naia_adk] git not found ({e}), falling back to zip");
+            log::warn!("[clone_naia_adk] {e}, falling back to zip");
         }
     }
 
@@ -13577,12 +13578,19 @@ async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), S
     naia_adk_download_zip(&adk_path, &app_handle).await
 }
 
-async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result<(), String> {
-    const ZIP_URL: &str =
-        "https://github.com/nextain/naia-template-project/archive/refs/heads/main.zip";
+/// ADK 정본 저장소. 설치 때 새 워크스페이스로 받는다.
+const NAIA_ADK_REPO_URL: &str = "https://github.com/nextain/naia-template-project";
+/// git 이 없을 때 받는 같은 저장소의 main 브랜치 zip.
+const NAIA_ADK_ZIP_URL: &str =
+    "https://github.com/nextain/naia-template-project/archive/refs/heads/main.zip";
 
+async fn naia_adk_fetch_zip(
+    zip_url: &str,
+    adk_path: &str,
+    mut on_progress: impl FnMut(u64, Option<u64>),
+) -> Result<(), String> {
     // Stream the download so we can emit byte progress (~200ms throttle).
-    let mut response = reqwest::get(ZIP_URL)
+    let mut response = reqwest::get(zip_url)
         .await
         .map_err(|e| format!("zip download failed: {e}"))?;
     let total = response.content_length();
@@ -13599,26 +13607,12 @@ async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result
         downloaded += chunk.len() as u64;
         buf.extend_from_slice(&chunk);
         if last_emit.elapsed() >= std::time::Duration::from_millis(200) {
-            let _ = app_handle.emit(
-                "adk_setup_progress",
-                serde_json::json!({
-                    "phase": "zip_progress",
-                    "downloaded": downloaded,
-                    "total": total,
-                }),
-            );
+            on_progress(downloaded, total);
             last_emit = std::time::Instant::now();
         }
     }
     // Final progress emit so UI shows 100% before extraction starts.
-    let _ = app_handle.emit(
-        "adk_setup_progress",
-        serde_json::json!({
-            "phase": "zip_progress",
-            "downloaded": downloaded,
-            "total": total,
-        }),
-    );
+    on_progress(downloaded, total);
 
     // Extract ??GitHub zips contain a single top-level "naia-adk-main/" folder.
     let cursor = std::io::Cursor::new(buf);
@@ -13650,6 +13644,16 @@ async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result
         }
     }
     Ok(())
+}
+
+async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result<(), String> {
+    naia_adk_fetch_zip(NAIA_ADK_ZIP_URL, adk_path, |downloaded, total| {
+        let _ = app_handle.emit(
+            "adk_setup_progress",
+            serde_json::json!({ "phase": "zip_progress", "downloaded": downloaded, "total": total }),
+        );
+    })
+    .await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
