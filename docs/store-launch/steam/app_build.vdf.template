@@ -9,6 +9,7 @@
     "depots"
     {
         "__WINDOWS_DEPOT_ID__" "depot_build_windows.vdf"
+        "{{LINUX_DEPOT_ID}}" "depot_build_linux.vdf"
     }
 }
 

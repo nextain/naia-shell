@@ -1,0 +1,363 @@
+name: build steam linux
+
+on:
+  push:
+    branches:
+      - 'release/*-steam'
+  workflow_dispatch:
+
+concurrency:
+  group: build-steam-linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-steam-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Clone required public runtime sources
+        run: |
+          git init ../naia-agent
+          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
+          git -C ../naia-agent fetch --depth 1 origin 3b0e101c04dc4346f765240b63160fb6cee91d2a
+          git -C ../naia-agent checkout --detach FETCH_HEAD
+          git init ../naia-kb-compiler
+          git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
+          git -C ../naia-kb-compiler fetch --depth 1 origin 24f52c14ea906c250304f39d48866c7a47e1b596
+          git -C ../naia-kb-compiler checkout --detach FETCH_HEAD
+          git init ../naia-memory
+          git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
+          git -C ../naia-memory fetch --depth 1 origin e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf
+          git -C ../naia-memory checkout --detach FETCH_HEAD
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.1"
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: "1.97.0"
+
+      - name: Install Linux build and smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+             libasound2-dev libssl-dev libxdo-dev libudev-dev \
+             pipewire-alsa xvfb rpm libarchive-tools
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Provision verified Linux VoxCPM2 release input
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip"
+          archive="${RUNNER_TEMP}/voxcpm2-runtime-linux-trt6g-r1.zip"
+          runtime="${RUNNER_TEMP}/voxcpm2-runtime"
+          archive_bytes=2935215844
+          archive_sha256="e6e6a76f970a1311cc868ba38aa95bd7654a60d7f77f6c6274c9433ab62b642d"
+          manifest_sha256="43a80742df8828465f7df05f72519c412111bcdd5b727d113280e8112dc51778"
+          curl --location --fail --retry 4 --retry-all-errors --output "$archive" "$url"
+          test "$(stat -c '%s' "$archive")" = "$archive_bytes"
+          printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --status
+          rm -rf "$runtime"
+          mkdir -p "$runtime"
+          bsdtar -xf "$archive" -C "$runtime"
+          test -f "$runtime/artifact-manifest.json"
+          test "$(sha256sum "$runtime/artifact-manifest.json" | cut -d' ' -f1)" = "$manifest_sha256"
+          {
+            echo "NAIA_VOXCPM2_TARGET_PLATFORM=linux"
+            echo "NAIA_SYSTEM_TAR=bsdtar"
+            echo "NAIA_VOXCPM2_TRT_RUNTIME_DIR=$runtime"
+            echo "NAIA_VOXCPM2_TRT_ARCHIVE=$archive"
+            echo "NAIA_VOXCPM2_TRT_ARTIFACT_SHA256=$manifest_sha256"
+          } >> "$GITHUB_ENV"
+
+      - name: Build Steam bundle from platform matrix
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          NAIA_TAURI_NO_BUNDLE: '0'
+        run: pnpm -C packages/shell run tauri:build:steam
+
+      - name: Check Steam bundle for payment links
+        run: node packages/shell/scripts/check-steam-bundle.mjs
+
+      - name: Archive executable Linux AppImage
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APPIMAGE_PATHS=()
+          while IFS= read -r path; do APPIMAGE_PATHS+=("$path"); done < <(
+            find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print
+          )
+          test "${#APPIMAGE_PATHS[@]}" -eq 1 || {
+            echo "::error::Expected exactly one Linux AppImage, found ${#APPIMAGE_PATHS[@]}"
+            exit 1
+          }
+          APPIMAGE_PATH="${APPIMAGE_PATHS[0]}"
+          test -x "$APPIMAGE_PATH" || {
+            echo "::error::Linux AppImage is not executable: $APPIMAGE_PATH"
+            exit 1
+          }
+          APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
+          tar -C "$BUNDLE_DIR/appimage" -czf "$BUNDLE_DIR/appimage/${APPIMAGE_NAME}.tar.gz" "$APPIMAGE_NAME"
+
+      - name: Verify installer artifacts
+        run: node packages/shell/scripts/verify-artifacts.mjs
+
+      - name: Validate Linux package structures
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          RPM="$(find "$BUNDLE_DIR/rpm" -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+          APPIMAGE_TAR="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage.tar.gz' -print -quit)"
+          test -n "$RPM" && rpm -K --nosignature "$RPM"
+          test -n "$APPIMAGE_TAR" && tar -tzf "$APPIMAGE_TAR" >/dev/null
+          EXTRACTED="$(mktemp -d)"
+          trap 'rm -rf "$EXTRACTED"' EXIT
+          tar -xzf "$APPIMAGE_TAR" -C "$EXTRACTED"
+          EXTRACTED_APPIMAGE="$(find "$EXTRACTED" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$EXTRACTED_APPIMAGE" && test -x "$EXTRACTED_APPIMAGE"
+          (
+            cd "$EXTRACTED"
+            "$EXTRACTED_APPIMAGE" --appimage-extract >/dev/null
+          )
+          test -x "$EXTRACTED/squashfs-root/AppRun"
+          find "$EXTRACTED/squashfs-root" -type f -name 'naia-shell' -perm -111 -print -quit | grep -q .
+          find "$EXTRACTED/squashfs-root" -type f -name 'node' -perm -111 -print -quit | grep -q .
+
+      - name: Prepare Steam portable Linux depot
+        id: steam-depot
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APPIMAGE="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$APPIMAGE" && test -x "$APPIMAGE"
+          APPIMAGE="$(realpath "$APPIMAGE")"
+
+          APPIMAGE_SHA="$(sha256sum "$APPIMAGE" | awk '{print $1}')"
+          echo "Built AppImage: $APPIMAGE (SHA-256: $APPIMAGE_SHA)"
+          echo "appimage_sha256=$APPIMAGE_SHA" >> "$GITHUB_OUTPUT"
+
+          EXTRACT_DIR="$(mktemp -d)"
+          (
+            cd "$EXTRACT_DIR"
+            "$APPIMAGE" --appimage-extract >/dev/null
+          )
+          rm -rf steam-depot-linux
+          mv "$EXTRACT_DIR/squashfs-root" steam-depot-linux
+          rm -rf "$EXTRACT_DIR"
+
+          test -x steam-depot-linux/AppRun || chmod +x steam-depot-linux/AppRun
+
+          find steam-depot-linux -type f -exec sha256sum {} + | sort -k2 > steam-depot-linux-files.sha256
+          DEPOT_FILE_COUNT="$(wc -l < steam-depot-linux-files.sha256)"
+          echo "Final Steam depot prepared with $DEPOT_FILE_COUNT files"
+          echo "file_count=$DEPOT_FILE_COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Verify bundled Node mutation probe on depot
+        shell: bash
+        run: |
+          DEPOT_DIR="$PWD/steam-depot-linux"
+          BIN="$DEPOT_DIR/AppRun"
+          NODE_PATH="$(find "$DEPOT_DIR" -type f -name 'node' -perm -111 -print -quit)"
+          test -n "$NODE_PATH"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+
+          mv "$NODE_PATH" "${NODE_PATH}.mutation-disabled"
+          set +e
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+          MUTATION_STATUS=$?
+          set -e
+          mv "${NODE_PATH}.mutation-disabled" "$NODE_PATH"
+          test "$MUTATION_STATUS" -ne 0 || {
+            echo "::error::mutation probe unexpectedly passed without bundled Node"
+            exit 1
+          }
+          echo "mutation probe: expected RED confirmed"
+
+      - name: Verify normal agent and BGM execution on depot
+        shell: bash
+        run: |
+          DEPOT_DIR="$PWD/steam-depot-linux"
+          BIN="$DEPOT_DIR/AppRun"
+          NODE_PATH="$(find "$DEPOT_DIR" -type f -name 'node' -perm -111 -print -quit)"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+
+      - name: Verify Claude wrapper concurrency, repair, and tamper rejection
+        shell: bash
+        run: |
+          DEPOT_DIR="$PWD/steam-depot-linux"
+          NODE_PATH="$(find "$DEPOT_DIR" -type f -name 'node' -perm -111 -print -quit)"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+
+          WRAPPED_CLAUDE="$RESOURCE_DIR/agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
+          WRAPPED_PAYLOAD="$WRAPPED_CLAUDE.payload.gz"
+          WRAPPER_CACHE="$RUNNER_TEMP/naia-wrapper-cache"
+          test -x "$WRAPPED_CLAUDE"
+
+          # 1) Two simultaneous launches
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version &
+          WRAPPER_PID_1=$!
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version &
+          WRAPPER_PID_2=$!
+          wait "$WRAPPER_PID_1"
+          wait "$WRAPPER_PID_2"
+          sleep 1
+          RESTORED_CLAUDE="$(find "$WRAPPER_CACHE/naia/embedded-cli" -name 'claude-*' -type f -perm -u+x -print -quit)"
+          test -n "$RESTORED_CLAUDE" || {
+            echo "::error::wrapped Claude executable was not restored into the user cache"
+            exit 1
+          }
+
+          # 2) Executable-but-corrupt cache repair
+          rm -f "$RESTORED_CLAUDE"
+          printf 'corrupt cache' > "$RESTORED_CLAUDE"
+          chmod 700 "$RESTORED_CLAUDE"
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version
+
+          # 3) Tamper rejection on a disposable copy
+          TAMPER_TMP="$(mktemp -d)"
+          cp -a "$DEPOT_DIR" "$TAMPER_TMP/depot-copy"
+          REL_CLAUDE="${WRAPPED_CLAUDE#$DEPOT_DIR/}"
+          TAMPER_CLAUDE="$TAMPER_TMP/depot-copy/$REL_CLAUDE"
+          TAMPER_PAYLOAD="$TAMPER_CLAUDE.payload.gz"
+
+          node -e 'const fs=require("node:fs"),z=require("node:zlib");fs.writeFileSync(process.argv[1],z.gzipSync(Buffer.from("#!/bin/sh\nexit 0\n")))' "$TAMPER_TMP/tampered.gz"
+          cp "$TAMPER_TMP/tampered.gz" "$TAMPER_PAYLOAD"
+          rm -f "$RESTORED_CLAUDE"
+          set +e
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$TAMPER_CLAUDE" --version
+          TAMPER_STATUS=$?
+          set -e
+          rm -rf "$TAMPER_TMP"
+          test "$TAMPER_STATUS" -ne 0 || {
+            echo "::error::tampered wrapped payload unexpectedly executed"
+            exit 1
+          }
+          echo "wrapped payload tamper probe: expected RED confirmed"
+
+      - name: Verify relocated depot execution via AppRun
+        shell: bash
+        run: |
+          RELOCATED_DEPOT="$RUNNER_TEMP/relocated-steam-depot-linux"
+          rm -rf "$RELOCATED_DEPOT"
+          mv steam-depot-linux "$RELOCATED_DEPOT"
+
+          RELOCATED_ENTRY="$RELOCATED_DEPOT/AppRun"
+          test -x "$RELOCATED_ENTRY"
+          NODE_PATH="$(find "$RELOCATED_DEPOT" -type f -name 'node' -perm -111 -print -quit)"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$RELOCATED_ENTRY" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+
+          # Move back for archiving
+          mv "$RELOCATED_DEPOT" steam-depot-linux
+
+      - name: Archive Steam portable Linux depot
+        shell: bash
+        run: |
+          tar -czf naia-shell-steam-linux.tar.gz steam-depot-linux
+          # Verify tar integrity
+          tar -tzf naia-shell-steam-linux.tar.gz >/dev/null
+
+      - name: Upload Steam portable Linux depot artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: naia-shell-steam-linux-${{ github.sha }}
+          path: |
+            naia-shell-steam-linux.tar.gz
+            steam-depot-linux-files.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-steam-depot-download:
+    needs: build-steam-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.1"
+
+      - name: Install runtime and smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-0 libgtk-3-0 pipewire-alsa libasound2 xvfb
+
+      - name: Download Steam Linux depot artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: naia-shell-steam-linux-${{ github.sha }}
+          path: downloaded-artifact
+
+      - name: Extract downloaded depot and verify integrity, symlinks, and permissions
+        shell: bash
+        run: |
+          test -f downloaded-artifact/naia-shell-steam-linux.tar.gz
+          test -f downloaded-artifact/steam-depot-linux-files.sha256
+
+          tar -xzf downloaded-artifact/naia-shell-steam-linux.tar.gz
+
+          # 1) Verify file hashes
+          sha256sum --check downloaded-artifact/steam-depot-linux-files.sha256
+
+          # 2) Verify executable permissions and essential entrypoints
+          test -x steam-depot-linux/AppRun || {
+            echo "::error::steam-depot-linux/AppRun is not executable"
+            exit 1
+          }
+
+          NODE_PATH="$(find steam-depot-linux -type f -name 'node' -perm -111 -print -quit)"
+          test -n "$NODE_PATH" || {
+            echo "::error::bundled node is not executable"
+            exit 1
+          }
+
+          SHELL_PATH="$(find steam-depot-linux -type f -name 'naia-shell' -perm -111 -print -quit)"
+          test -n "$SHELL_PATH" || {
+            echo "::error::bundled naia-shell is not executable"
+            exit 1
+          }
+
+          # 3) Verify symlinks are valid (not broken)
+          BROKEN_LINKS=0
+          while IFS= read -r link; do
+            if [ ! -e "$link" ]; then
+              echo "::error::Broken symlink: $link -> $(readlink "$link")"
+              BROKEN_LINKS=$((BROKEN_LINKS + 1))
+            fi
+          done < <(find steam-depot-linux -type l)
+          test "$BROKEN_LINKS" -eq 0 || exit 1
+
+      - name: Smoke verified depot with AppRun in xvfb
+        shell: bash
+        run: |
+          DEPOT_DIR="$PWD/steam-depot-linux"
+          BIN="$DEPOT_DIR/AppRun"
+          NODE_PATH="$(find "$DEPOT_DIR" -type f -name 'node' -perm -111 -print -quit)"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
