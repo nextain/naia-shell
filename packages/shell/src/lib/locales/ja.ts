@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "クレジット",
 	"cost.approxCredits": "約 {amount} クレジット",
 	"cost.providerEstimate": "{amount} (プロバイダー料金の推定)",
+	"cost.earlierRecords": "以前の記録",
+	"cost.unconfirmedProvider": "プロバイダーおよび単位未確認",
 	"tts.pricingNaiaCredits": "Naia クレジット",
 	"voice.ref.errCreditInsufficientNoTopup": "クレジット残高が不足しています。",
 	"chat.voiceErrorCreditsNoTopup": "クレジットが不足しています。",

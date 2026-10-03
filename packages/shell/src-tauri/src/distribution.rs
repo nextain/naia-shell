@@ -50,9 +50,9 @@ pub fn detect_channel(install_dir: Option<&Path>, steam_app_id_env: Option<&str>
     }
 
     let marker = dir.join(MARKER_FILE);
-    match marker.try_exists() {
-        Ok(false) => Channel::Standard,
-        Ok(true) => match std::fs::read_to_string(&marker) {
+    match std::fs::symlink_metadata(&marker) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Channel::Standard,
+        Ok(_) => match std::fs::read_to_string(&marker) {
             Ok(text) => {
                 if text.trim().eq_ignore_ascii_case(MARKER_CONTENT) {
                     Channel::Steam
@@ -144,6 +144,50 @@ mod tests {
         assert_eq!(detect_channel(None, Some("5354630")), Channel::Steam);
         assert_eq!(detect_channel(Some(&dir), Some("480")), Channel::Standard);
         assert_eq!(detect_channel(Some(&dir), Some("")), Channel::Standard);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn broken_symlink_marker_is_unknown() {
+        let dir = temp_dir("broken_symlink");
+        let non_target = dir.join("nonexistent_target_file");
+        let marker = dir.join(MARKER_FILE);
+        std::os::unix::fs::symlink(&non_target, &marker).unwrap();
+        assert_eq!(detect_channel(Some(&dir), None), Channel::Unknown);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn native_ipc_channel_strings_match_each_case() {
+        let dir = temp_dir("ipc_cases");
+
+        // Case 1: 표지 steam -> "steam"
+        let steam_dir = dir.join("steam");
+        std::fs::create_dir_all(&steam_dir).unwrap();
+        std::fs::write(steam_dir.join(MARKER_FILE), "steam").unwrap();
+        assert_eq!(detect_channel(Some(&steam_dir), None).as_str(), "steam");
+
+        // Case 2: 정상 부재 -> "standard"
+        let standard_dir = dir.join("standard");
+        std::fs::create_dir_all(&standard_dir).unwrap();
+        assert_eq!(detect_channel(Some(&standard_dir), None).as_str(), "standard");
+
+        // Case 3: 손상 링크 (unix) -> "unknown"
+        #[cfg(unix)]
+        {
+            let broken_dir = dir.join("broken");
+            std::fs::create_dir_all(&broken_dir).unwrap();
+            let non_target = broken_dir.join("missing_target");
+            std::os::unix::fs::symlink(&non_target, broken_dir.join(MARKER_FILE)).unwrap();
+            assert_eq!(detect_channel(Some(&broken_dir), None).as_str(), "unknown");
+        }
+
+        // Case 4: 읽기 오류 (디렉터리 표지) -> "unknown"
+        let err_dir = dir.join("read_err");
+        std::fs::create_dir_all(err_dir.join(MARKER_FILE)).unwrap();
+        assert_eq!(detect_channel(Some(&err_dir), None).as_str(), "unknown");
+
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -5833,6 +5833,13 @@ fn get_distribution_channel() -> String {
     distribution::detect_current_channel().as_str().to_string()
 }
 
+#[cfg(test)]
+#[test]
+fn native_ipc_get_distribution_channel_invoked() {
+    let ch = get_distribution_channel();
+    assert!(ch == "standard" || ch == "steam" || ch == "unknown");
+}
+
 /// Fetch account balance in the native process. WebView fetch can be blocked by
 /// browser CORS/PNA even though the authenticated desktop account is valid.
 #[tauri::command]
@@ -15435,7 +15442,7 @@ mod tests {
 
         assert_eq!(infer_repos_adk_root(user_adk.to_str().unwrap()), None);
     }
-    #[test]
+
     /// 활성화 계약은 운영체제마다 다른 배치를 담되, 무관한 것은 한 벌만 둔다.
     #[test]
     fn 활성화_계약이_두_운영체제를_담는다() {

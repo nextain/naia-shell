@@ -1,8 +1,9 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../lib/types";
 
+const mockOpenUrl = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn(async (cmd: string) =>
 		cmd === "get_distribution_channel" ? "standard" : undefined,
@@ -10,7 +11,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
-	openUrl: vi.fn().mockResolvedValue(undefined),
+	openUrl: (...args: unknown[]) => mockOpenUrl(...args),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -21,6 +22,7 @@ vi.mock("../../lib/config", () => ({
 	LAB_GATEWAY_URL: "https://example.test",
 	getNaiaKeySecure: vi.fn().mockResolvedValue(null),
 	hasNaiaKeySecure: vi.fn().mockResolvedValue(false),
+	NAIA_WEB_BASE_URL: "https://naia.land",
 }));
 
 import { getNaiaKeySecure, hasNaiaKeySecure } from "../../lib/config";
@@ -257,11 +259,16 @@ describe("CostDashboard", () => {
 		).toBeDefined();
 	});
 
-	it("shows the charge button on the standard build (#727)", async () => {
+	it("shows the charge button on the standard build and calls openUrl on click (#727)", async () => {
 		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-good-key");
 		vi.mocked(hasNaiaKeySecure).mockResolvedValue(true);
 		render(<CostDashboard messages={[]} />);
 		await screen.findByText(/12\.50/);
-		expect(await screen.findByText("Charge Credits")).toBeDefined();
+		const chargeBtn = await screen.findByText("Charge Credits");
+		expect(chargeBtn).toBeDefined();
+
+		mockOpenUrl.mockClear();
+		fireEvent.click(chargeBtn);
+		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/billing"));
 	});
 });

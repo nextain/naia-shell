@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "tín chỉ",
 	"cost.approxCredits": "khoảng {amount} tín dụng",
 	"cost.providerEstimate": "{amount} (ước tính theo giá nhà cung cấp)",
+	"cost.earlierRecords": "Bản ghi trước đó",
+	"cost.unconfirmedProvider": "Chưa xác nhận nhà cung cấp và đơn vị",
 	"tts.pricingNaiaCredits": "Tín dụng Naia",
 	"voice.ref.errCreditInsufficientNoTopup": "Không đủ tín dụng.",
 	"chat.voiceErrorCreditsNoTopup": "Bạn đã hết tín dụng.",

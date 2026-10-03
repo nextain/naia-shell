@@ -269,4 +269,85 @@ describe("HistoryTab", () => {
 			expect(mockDeleteConversation).toHaveBeenCalledWith("agent:main:old");
 		});
 	});
+
+	it("preserves session, messages, costs, list, and summaries when deleteConversation fails, but discards on success (#727 Defect 2)", async () => {
+		vi.spyOn(window, "confirm").mockReturnValue(true);
+		const key = "chat-fail-test";
+		useChatStore.setState({
+			localSessionId: key,
+			sessionId: "agent:main:main",
+			totalSessionCost: 0.05,
+			messages: [
+				{ id: "m1", role: "user", content: "saved message", timestamp: 1000 },
+			],
+		});
+		useChatStore.getState().recordVoiceCostSummary(key, {
+			role: "assistant",
+			content: "Voice cost 1",
+			cost: { cost: 0.01, inputTokens: 1, outputTokens: 1, provider: "test-provider", model: "test-model" },
+		});
+
+		mockListConversations.mockResolvedValue([
+			{
+				key,
+				label: "Fail Target",
+				messageCount: 1,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
+		]);
+		// Simulate delete failure (IPC error or backend false)
+		mockDeleteConversation.mockResolvedValue(false);
+
+		const { container } = render(<HistoryTab onLoadSession={onLoadSession} />);
+		await waitFor(() => {
+			expect(screen.getByText("Fail Target")).toBeDefined();
+		});
+
+		const deleteBtn = container.querySelector(".history-delete-btn");
+		expect(deleteBtn).not.toBeNull();
+		fireEvent.click(deleteBtn!);
+
+		await waitFor(() => {
+			expect(mockDeleteConversation).toHaveBeenCalledWith(key);
+		});
+
+		// Check preservation after deletion failure
+		const stateAfterFailure = useChatStore.getState();
+		expect(stateAfterFailure.localSessionId).toBe(key);
+		expect(stateAfterFailure.messages.length).toBeGreaterThanOrEqual(1);
+		expect(stateAfterFailure.totalSessionCost).toBeGreaterThan(0);
+		expect(screen.getByText("Fail Target")).toBeDefined();
+
+		// Subsequent voice summary must NOT be blocked
+		useChatStore.getState().recordVoiceCostSummary(key, {
+			role: "assistant",
+			content: "Voice cost 2",
+			cost: { cost: 0.02, inputTokens: 2, outputTokens: 2, provider: "test-provider", model: "test-model" },
+		});
+		const overlayAfterFollowup = useChatStore.getState().sessionOverlays[key];
+		expect(overlayAfterFollowup?.deleted).toBeFalsy();
+		expect(overlayAfterFollowup?.messages.length).toBe(2);
+
+		// Now simulate delete success
+		mockDeleteConversation.mockResolvedValue(true);
+		fireEvent.click(deleteBtn!);
+
+		await waitFor(() => {
+			expect(screen.queryByText("Fail Target")).toBeNull();
+		});
+
+		const stateAfterSuccess = useChatStore.getState();
+		expect(stateAfterSuccess.localSessionId).not.toBe(key);
+		const overlayAfterSuccess = useChatStore.getState().sessionOverlays[key];
+		expect(overlayAfterSuccess?.deleted).toBe(true);
+
+		// Subsequent voice summary is now discarded
+		useChatStore.getState().recordVoiceCostSummary(key, {
+			role: "assistant",
+			content: "Voice cost 3",
+			cost: { cost: 0.03, inputTokens: 3, outputTokens: 3, provider: "test-provider", model: "test-model" },
+		});
+		expect(useChatStore.getState().sessionOverlays[key]?.messages.length).toBe(0);
+	});
 });

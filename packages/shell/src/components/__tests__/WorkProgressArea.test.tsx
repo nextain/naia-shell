@@ -169,7 +169,7 @@ describe("WorkProgressArea", () => {
 		expect(screen.queryByText(/\$0\.050/)).toBeNull();
 	});
 
-	it("displays legacy records with (이전 기록) label (#727 Defect 3)", () => {
+	it("displays legacy records with Earlier records label in English locale (#727 Defect 3)", () => {
 		const statsLegacy: AuditStats = {
 			...sampleStats,
 			total_cost: 0.02,
@@ -178,11 +178,11 @@ describe("WorkProgressArea", () => {
 		useProgressStore.setState({ stats: statsLegacy, isLoading: false });
 		render(<WorkProgressArea />);
 		expect(
-			screen.getByText("$0.020 (provider price est.) (이전 기록)"),
+			screen.getByText("$0.020 (provider price est.) (Earlier records)"),
 		).toBeDefined();
 	});
 
-	it("displays new unconfirmed records without units with (공급자·단위 미확인) label (#727 Defect 3)", () => {
+	it("displays new unconfirmed records without units with Provider and unit unconfirmed label in English (#727 Defect 3)", () => {
 		const statsUnconfirmed: AuditStats = {
 			...sampleStats,
 			total_cost: 0.01,
@@ -190,7 +190,9 @@ describe("WorkProgressArea", () => {
 		};
 		useProgressStore.setState({ stats: statsUnconfirmed, isLoading: false });
 		render(<WorkProgressArea />);
-		expect(screen.getByText("0.010 (공급자·단위 미확인)")).toBeDefined();
+		expect(
+			screen.getByText("0.010 (Provider and unit unconfirmed)"),
+		).toBeDefined();
 		expect(screen.queryByText(/\$/)).toBeNull();
 		expect(screen.queryByText(/credits/)).toBeNull();
 	});
@@ -209,7 +211,7 @@ describe("WorkProgressArea", () => {
 		render(<WorkProgressArea />);
 		expect(
 			screen.getByText(
-				"≈ 50 credits + $0.020 (provider price est.) (이전 기록) + 0.010 (공급자·단위 미확인)",
+				"≈ 50 credits + $0.020 (provider price est.) (Earlier records) + 0.010 (Provider and unit unconfirmed)",
 			),
 		).toBeDefined();
 	});

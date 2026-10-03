@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "الاعتمادات",
 	"cost.approxCredits": "حوالي {amount} رصيد",
 	"cost.providerEstimate": "{amount} (تقدير سعر المزوّد)",
+	"cost.earlierRecords": "سجلات سابقة",
+	"cost.unconfirmedProvider": "المزود والوحدة غير مؤكدين",
 	"tts.pricingNaiaCredits": "أرصدة Naia",
 	"voice.ref.errCreditInsufficientNoTopup": "الرصيد غير كافٍ.",
 	"chat.voiceErrorCreditsNoTopup": "لا يوجد رصيد كافٍ.",

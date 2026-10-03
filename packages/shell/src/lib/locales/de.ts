@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "Credits",
 	"cost.approxCredits": "ca. {amount} Credits",
 	"cost.providerEstimate": "{amount} (geschätzter Anbieterpreis)",
+	"cost.earlierRecords": "Frühere Aufzeichnungen",
+	"cost.unconfirmedProvider": "Anbieter und Einheit unbestätigt",
 	"tts.pricingNaiaCredits": "Naia-Credits",
 	"voice.ref.errCreditInsufficientNoTopup": "Nicht genügend Credits.",
 	"chat.voiceErrorCreditsNoTopup": "Deine Credits sind aufgebraucht.",

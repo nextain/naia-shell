@@ -2,7 +2,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Announcement } from "../../lib/announcements";
-import { resetDistributionChannelForTests } from "../../lib/distribution";
+import {
+	loadDistributionChannel,
+	resetDistributionChannelForTests,
+} from "../../lib/distribution";
 import { AnnouncementBanner } from "../AnnouncementBanner";
 
 const mockOpenUrl = vi.fn().mockResolvedValue(undefined);
@@ -82,11 +85,18 @@ describe("AnnouncementBanner — Steam and Channel distribution guards (#727)", 
 			/>,
 		);
 
+		// Confirm native channel IPC call was dispatched and completed
 		await waitFor(() => {
-			expect(screen.queryByText(/새 요금제 안내|New Billing Plan/)).toBeNull();
+			expect(mockInvoke).toHaveBeenCalledWith("get_distribution_channel");
 		});
+		const channel = await loadDistributionChannel();
+		expect(channel).toBe("unknown");
 
-		expect(screen.getByText(/점검 안내|Maintenance Notice/)).toBeDefined();
+		// Non-URL maintenance announcement is visible once processed
+		expect(await screen.findByText(/점검 안내|Maintenance Notice/)).toBeDefined();
+
+		// URL announcement body and link button are absent, openUrl 0 calls
+		expect(screen.queryByText(/새 요금제 안내|New Billing Plan/)).toBeNull();
 		expect(screen.queryByRole("button", { name: /자세히 보기|Details/ })).toBeNull();
 		expect(mockOpenUrl).toHaveBeenCalledTimes(0);
 	});
@@ -102,11 +112,18 @@ describe("AnnouncementBanner — Steam and Channel distribution guards (#727)", 
 			/>,
 		);
 
+		// Confirm native channel IPC call was dispatched and completed
 		await waitFor(() => {
-			expect(screen.queryByText(/새 요금제 안내|New Billing Plan/)).toBeNull();
+			expect(mockInvoke).toHaveBeenCalledWith("get_distribution_channel");
 		});
+		const channel = await loadDistributionChannel();
+		expect(channel).toBe("unknown");
 
-		expect(screen.getByText(/점검 안내|Maintenance Notice/)).toBeDefined();
+		// Non-URL maintenance announcement is visible once processed
+		expect(await screen.findByText(/점검 안내|Maintenance Notice/)).toBeDefined();
+
+		// URL announcement body and link button are absent, openUrl 0 calls
+		expect(screen.queryByText(/새 요금제 안내|New Billing Plan/)).toBeNull();
 		expect(screen.queryByRole("button", { name: /자세히 보기|Details/ })).toBeNull();
 		expect(mockOpenUrl).toHaveBeenCalledTimes(0);
 	});
@@ -122,11 +139,15 @@ describe("AnnouncementBanner — Steam and Channel distribution guards (#727)", 
 			/>,
 		);
 
+		// Confirm native channel IPC call was dispatched and completed
 		await waitFor(() => {
-			// Entire banner should be null since only the URL announcement was in the list
-			expect(container.firstChild).toBeNull();
+			expect(mockInvoke).toHaveBeenCalledWith("get_distribution_channel");
 		});
+		const channel = await loadDistributionChannel();
+		expect(channel).toBe("steam");
 
+		// Entire banner should be null since only the URL announcement was in the list
+		expect(container.firstChild).toBeNull();
 		expect(screen.queryByText(/새 요금제 안내|New Billing Plan/)).toBeNull();
 		expect(screen.queryByText(/충전 페이지로 이동합니다|Visit the billing page/)).toBeNull();
 		expect(screen.queryByRole("button", { name: /자세히 보기|Details/ })).toBeNull();

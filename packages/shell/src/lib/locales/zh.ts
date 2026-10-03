@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "学分",
 	"cost.approxCredits": "约 {amount} 积分",
 	"cost.providerEstimate": "{amount}（服务商价格估算）",
+	"cost.earlierRecords": "早期记录",
+	"cost.unconfirmedProvider": "提供商与单位未确认",
 	"tts.pricingNaiaCredits": "Naia 积分",
 	"voice.ref.errCreditInsufficientNoTopup": "积分不足。",
 	"chat.voiceErrorCreditsNoTopup": "积分不足。",

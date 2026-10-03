@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "kredit",
 	"cost.approxCredits": "sekitar {amount} kredit",
 	"cost.providerEstimate": "{amount} (perkiraan harga penyedia)",
+	"cost.earlierRecords": "Catatan sebelumnya",
+	"cost.unconfirmedProvider": "Penyedia dan unit belum dikonfirmasi",
 	"tts.pricingNaiaCredits": "Kredit Naia",
 	"voice.ref.errCreditInsufficientNoTopup": "Kredit tidak cukup.",
 	"chat.voiceErrorCreditsNoTopup": "Kredit Anda habis.",

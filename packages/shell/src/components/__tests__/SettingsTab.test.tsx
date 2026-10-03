@@ -93,8 +93,13 @@ vi.mock("@tauri-apps/api/event", () => ({
 	),
 }));
 
+const { mockOpenUrl, mockOpenPath } = vi.hoisted(() => ({
+	mockOpenUrl: vi.fn().mockResolvedValue(undefined),
+	mockOpenPath: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@tauri-apps/plugin-opener", () => ({
-	openUrl: vi.fn().mockResolvedValue(undefined),
+	openUrl: (...args: unknown[]) => mockOpenUrl(...args),
+	openPath: (...args: unknown[]) => mockOpenPath(...args),
 }));
 
 const chatServiceMocks = vi.hoisted(() => ({
@@ -315,10 +320,19 @@ describe("SettingsTab", () => {
 		await new Promise((r) => setTimeout(r, 20));
 	}
 
-	it("shows the credit top-up and dashboard buttons on the standard build (#727)", async () => {
+	it("shows the credit top-up and dashboard buttons on the standard build and calls openUrl on click (#727)", async () => {
 		await renderConnectedSettings("standard");
-		expect(screen.queryByText("Charge Credits")).not.toBeNull();
-		expect(screen.queryByText("Dashboard")).not.toBeNull();
+		const chargeBtn = screen.queryByText("Charge Credits");
+		const dashboardBtn = screen.queryByText("Dashboard");
+		expect(chargeBtn).not.toBeNull();
+		expect(dashboardBtn).not.toBeNull();
+		mockOpenUrl.mockClear();
+
+		fireEvent.click(chargeBtn!);
+		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/billing"));
+
+		fireEvent.click(dashboardBtn!);
+		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/dashboard"));
 	});
 
 	it("hides the credit top-up and dashboard buttons on the Steam build, keeping the balance (#727)", async () => {
@@ -3541,15 +3555,6 @@ describe("SettingsTab — agent health check (#296)", () => {
 });
 
 // ── #297: Log viewer button ───────────────────────────────────────────────────
-
-const mockOpenPath = vi.fn();
-vi.mock("@tauri-apps/plugin-opener", async (importOriginal) => {
-	const original = (await importOriginal()) as Record<string, unknown>;
-	return {
-		...original,
-		openPath: (...args: unknown[]) => mockOpenPath(...args),
-	};
-});
 
 describe("SettingsTab — log viewer (#297)", () => {
 	afterEach(() => {

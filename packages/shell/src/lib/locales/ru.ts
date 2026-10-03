@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "кредиты",
 	"cost.approxCredits": "около {amount} кредитов",
 	"cost.providerEstimate": "{amount} (оценка по цене провайдера)",
+	"cost.earlierRecords": "Предыдущие записи",
+	"cost.unconfirmedProvider": "Поставщик и единица измерения не подтверждены",
 	"tts.pricingNaiaCredits": "Кредиты Naia",
 	"voice.ref.errCreditInsufficientNoTopup": "Недостаточно кредитов.",
 	"chat.voiceErrorCreditsNoTopup": "Кредиты закончились.",

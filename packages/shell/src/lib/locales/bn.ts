@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "ক্রেডিট",
 	"cost.approxCredits": "প্রায় {amount} ক্রেডিট",
 	"cost.providerEstimate": "{amount} (প্রদানকারীর মূল্যের আনুমানিক হিসাব)",
+	"cost.earlierRecords": "পূর্ববর্তী রেকর্ড",
+	"cost.unconfirmedProvider": "সরবরাহকারী এবং ইউনিট নিশ্চিত নয়",
 	"tts.pricingNaiaCredits": "Naia ক্রেডিট",
 	"voice.ref.errCreditInsufficientNoTopup": "ক্রেডিট ব্যালেন্স অপর্যাপ্ত।",
 	"chat.voiceErrorCreditsNoTopup": "আপনার ক্রেডিট শেষ হয়ে গেছে।",

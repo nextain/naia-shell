@@ -45,10 +45,10 @@ export function formatProviderCostStat(
 	cost: number,
 ): string {
 	if (provider === "legacy") {
-		return `${formatProviderEstimate(cost)} (이전 기록)`;
+		return `${formatProviderEstimate(cost)} (${t("cost.earlierRecords")})`;
 	}
 	if (provider === "unconfirmed") {
-		return `${formatRawCost(cost)} (공급자·단위 미확인)`;
+		return `${formatRawCost(cost)} (${t("cost.unconfirmedProvider")})`;
 	}
 	if (isNaiaAccountProvider(provider)) {
 		return formatApproxCredits(cost);

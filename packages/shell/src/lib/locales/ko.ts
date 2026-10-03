@@ -992,6 +992,8 @@ export default {
 	"cost.labCredits": "크레딧",
 	"cost.approxCredits": "약 {amount} 크레딧",
 	"cost.providerEstimate": "{amount} (제공사 요금 추정)",
+	"cost.earlierRecords": "이전 기록",
+	"cost.unconfirmedProvider": "공급자·단위 미확인",
 	"tts.pricingNaiaCredits": "Naia 크레딧",
 	"voice.ref.errCreditInsufficientNoTopup": "크레딧 잔액이 부족합니다.",
 	"chat.voiceErrorCreditsNoTopup": "크레딧이 부족해요.",

@@ -46,6 +46,7 @@ pub struct AuditStats {
     pub by_provider: Vec<ProviderCostStat>,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct RequestContext {
     pub provider: String,
@@ -82,6 +83,7 @@ pub fn finish_request_context(request_id: &str) {
     }
 }
 
+#[allow(dead_code)]
 pub fn get_request_context(request_id: &str) -> Option<RequestContext> {
     if request_id.is_empty() {
         return None;
@@ -169,24 +171,14 @@ pub fn maybe_log_event(db: &AuditDb, chunk: &serde_json::Value) {
     let success = chunk.get("success").and_then(|v| v.as_bool());
 
     let payload = if event_type == "usage" {
-        let chunk_model = chunk.get("model").and_then(|v| v.as_str()).unwrap_or("");
-        let resolved_provider = if let Some(ctx) = get_request_context(request_id) {
-            // Confirm execution against requested model and provider
-            if !chunk_model.is_empty()
-                && chunk_model == ctx.model
-                && !ctx.provider.is_empty()
-                && chunk
-                    .get("provider")
-                    .and_then(|v| v.as_str())
-                    .map(|p| p == ctx.provider)
-                    .unwrap_or(true)
-            {
-                ctx.provider
-            } else {
-                "unconfirmed".to_string()
-            }
-        } else {
-            "unconfirmed".to_string()
+        let raw_provider = chunk
+            .get("provider")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let resolved_provider = match raw_provider {
+            Some(p) => p.to_string(),
+            None => "unconfirmed".to_string(),
         };
 
         let mut enriched = chunk.clone();
@@ -1055,7 +1047,7 @@ mod tests {
     }
 
     #[test]
-    fn maybe_log_event_verifies_provider_against_registered_request() {
+    fn missing_provider_is_unconfirmed_even_if_model_matches_request() {
         let (db, _dir) = test_db();
         record_request_context("req-verified", "nextain", "grok-4.3");
 
@@ -1073,54 +1065,82 @@ mod tests {
         assert_eq!(events.len(), 1);
         let payload = events[0].payload.as_ref().unwrap();
         let parsed: serde_json::Value = serde_json::from_str(payload).unwrap();
-        assert_eq!(parsed.get("provider").and_then(|v| v.as_str()), Some("nextain"));
+        assert_eq!(parsed.get("provider").and_then(|v| v.as_str()), Some("unconfirmed"));
         assert_eq!(parsed.get("schema_version").and_then(|v| v.as_u64()), Some(2));
     }
 
     #[test]
-    fn maybe_log_event_marks_unconfirmed_on_model_mismatch() {
+    fn event_provider_records_event_value_even_if_different_from_shell_selection() {
         let (db, _dir) = test_db();
-        // Request requested grok-4.3 on nextain
-        record_request_context("req-mismatch", "nextain", "grok-4.3");
+        record_request_context("req-diff", "nextain", "grok-4.3");
 
-        // But actual execution model returned in usage was gpt-4o
         let chunk: serde_json::Value = serde_json::from_str(
-            r#"{"type":"usage","requestId":"req-mismatch","inputTokens":100,"outputTokens":50,"cost":0.05,"model":"gpt-4o"}"#,
+            r#"{"type":"usage","requestId":"req-diff","inputTokens":100,"outputTokens":50,"cost":0.05,"model":"grok-4.3","provider":"custom_provider"}"#,
         )
         .unwrap();
         maybe_log_event(&db, &chunk);
 
         let events = query_events(&db, &AuditFilter {
-            request_id: Some("req-mismatch".to_string()),
+            request_id: Some("req-diff".to_string()),
             ..Default::default()
         })
         .unwrap();
         assert_eq!(events.len(), 1);
         let payload = events[0].payload.as_ref().unwrap();
         let parsed: serde_json::Value = serde_json::from_str(payload).unwrap();
-        // Must be unconfirmed due to mismatch between requested model and actual execution model!
-        assert_eq!(parsed.get("provider").and_then(|v| v.as_str()), Some("unconfirmed"));
+        assert_eq!(parsed.get("provider").and_then(|v| v.as_str()), Some("custom_provider"));
+    }
+
+    #[test]
+    fn maybe_log_event_marks_unconfirmed_on_missing_or_blank_provider() {
+        let (db, _dir) = test_db();
+        // Model matches request, but provider is omitted, empty, or whitespace
+        record_request_context("req-blank-1", "nextain", "grok-4.3");
+        record_request_context("req-blank-2", "nextain", "grok-4.3");
+
+        let chunk1: serde_json::Value = serde_json::from_str(
+            r#"{"type":"usage","requestId":"req-blank-1","inputTokens":100,"outputTokens":50,"cost":0.05,"model":"grok-4.3","provider":""}"#,
+        )
+        .unwrap();
+        maybe_log_event(&db, &chunk1);
+
+        let chunk2: serde_json::Value = serde_json::from_str(
+            r#"{"type":"usage","requestId":"req-blank-2","inputTokens":100,"outputTokens":50,"cost":0.05,"model":"grok-4.3","provider":"   "}"#,
+        )
+        .unwrap();
+        maybe_log_event(&db, &chunk2);
+
+        let events1 = query_events(&db, &AuditFilter {
+            request_id: Some("req-blank-1".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        let payload1: serde_json::Value = serde_json::from_str(events1[0].payload.as_ref().unwrap()).unwrap();
+        assert_eq!(payload1.get("provider").and_then(|v| v.as_str()), Some("unconfirmed"));
+
+        let events2 = query_events(&db, &AuditFilter {
+            request_id: Some("req-blank-2".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        let payload2: serde_json::Value = serde_json::from_str(events2[0].payload.as_ref().unwrap()).unwrap();
+        assert_eq!(payload2.get("provider").and_then(|v| v.as_str()), Some("unconfirmed"));
     }
 
     #[test]
     fn maybe_log_event_preserves_provider_during_provider_switch() {
         let (db, _dir) = test_db();
-        // Request 1 initiated on nextain
         record_request_context("req-1-old", "nextain", "grok-4.3");
-
-        // User switches to openai and initiates Request 2
         record_request_context("req-2-new", "openai", "gpt-4o");
 
-        // Response for Request 1 arrives now
         let chunk1: serde_json::Value = serde_json::from_str(
-            r#"{"type":"usage","requestId":"req-1-old","inputTokens":10,"outputTokens":10,"cost":0.05,"model":"grok-4.3"}"#,
+            r#"{"type":"usage","requestId":"req-1-old","inputTokens":10,"outputTokens":10,"cost":0.05,"model":"grok-4.3","provider":"nextain"}"#,
         )
         .unwrap();
         maybe_log_event(&db, &chunk1);
 
-        // Response for Request 2 arrives
         let chunk2: serde_json::Value = serde_json::from_str(
-            r#"{"type":"usage","requestId":"req-2-new","inputTokens":10,"outputTokens":10,"cost":0.02,"model":"gpt-4o"}"#,
+            r#"{"type":"usage","requestId":"req-2-new","inputTokens":10,"outputTokens":10,"cost":0.02,"model":"gpt-4o","provider":"openai"}"#,
         )
         .unwrap();
         maybe_log_event(&db, &chunk2);
@@ -1134,5 +1154,47 @@ mod tests {
 
         assert!(openai_stat.is_some());
         assert!((openai_stat.unwrap().cost - 0.02).abs() < 0.0001);
+    }
+
+    #[test]
+    fn grpc_usage_conversion_saved_to_sqlite_and_aggregated_as_unconfirmed() {
+        let (db, _dir) = test_db();
+        // Agent proto event has no provider in UsageEvent
+        let proto_ev = crate::agent_grpc::pb::AgentEvent {
+            request_id: "req-grpc-live".to_string(),
+            event: Some(crate::agent_grpc::pb::agent_event::Event::Usage(
+                crate::agent_grpc::pb::UsageEvent {
+                    input_tokens: 150,
+                    output_tokens: 75,
+                    cost: Some(0.045),
+                    model: Some("deepseek-v4-pro".to_string()),
+                },
+            )),
+            ..Default::default()
+        };
+
+        // Output of agent_grpc::agent_event_to_ui_json
+        let ui_json = crate::agent_grpc::agent_event_to_ui_json(&proto_ev);
+        assert!(ui_json.get("provider").is_none());
+
+        // Stored in SQLite
+        maybe_log_event(&db, &ui_json);
+
+        // Verify stored payload in SQLite
+        let events = query_events(&db, &AuditFilter {
+            request_id: Some("req-grpc-live".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(events.len(), 1);
+        let payload: serde_json::Value = serde_json::from_str(events[0].payload.as_ref().unwrap()).unwrap();
+        assert_eq!(payload.get("provider").and_then(|v| v.as_str()), Some("unconfirmed"));
+        assert_eq!(payload.get("schema_version").and_then(|v| v.as_u64()), Some(2));
+
+        // Aggregated in SQLite query_stats
+        let stats = query_stats(&db).unwrap();
+        let unconfirmed_stat = stats.by_provider.iter().find(|p| p.provider == "unconfirmed");
+        assert!(unconfirmed_stat.is_some());
+        assert!((unconfirmed_stat.unwrap().cost - 0.045).abs() < 0.0001);
     }
 }
