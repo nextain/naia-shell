@@ -11,34 +11,32 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 
-function createRouteRegex(route) {
-	return new RegExp(
-		`(?:` +
-			`[a-zA-Z0-9_$)\]}]\\s*\\+\\s*["'\`]\\/?${route}(?=["'\`\\/]|$)|` +
-			`(?<=["'\`])(?!(?:[^"'\`]*?\\/)?(?:v1|api)\\/)[a-zA-Z0-9_\${}()\\-./]*\\/${route}(?=["'\`\\/]|$)` +
-		`)`,
-	);
+const require = createRequire(import.meta.url);
+let ts;
+try {
+	ts = require("typescript");
+} catch {
+	ts = null;
 }
 
 export const PAYMENT_PATTERNS = [
 	{
 		id: "billing",
 		description: "Billing URL / entrypoint (SettingsTab / CostDashboard)",
-		// Matches URL combination ending in /billing, e.g. `${base}/${locale}/billing`, `${getLocale()}/billing`, "ko/billing", e+"/billing"
-		regex: createRouteRegex("billing"),
+		// Fallback / legacy regex representation
+		regex: /\/(?!(?:v1|api)\/)[a-zA-Z0-9_${}()\-./]*\/billing(?=[/?#"'`\\]|$)/,
 	},
 	{
 		id: "dashboard",
 		description: "Dashboard URL / entrypoint (SettingsTab)",
-		// Matches URL combination ending in /dashboard, e.g. `${base}/${locale}/dashboard`, `${x}/dashboard`, "ko/dashboard", e+"/dashboard"
-		regex: createRouteRegex("dashboard"),
+		regex: /\/(?!(?:v1|api)\/)[a-zA-Z0-9_${}()\-./]*\/dashboard(?=[/?#"'`\\]|$)/,
 	},
 	{
 		id: "apps",
 		description: "App store web URL / entrypoint (AppBar)",
-		// Matches web store URL combination ending in /apps, e.g. `${base}/${locale}/apps`, `${x}/apps`, "ko/apps", e+"/apps" (excluding /v1/apps, /api/apps, /v1/apps/products)
-		regex: createRouteRegex("apps"),
+		regex: /\/(?!(?:v1|api)\/)[a-zA-Z0-9_${}()\-./]*\/apps(?=[/?#"'`\\]|$)/,
 	},
 	{
 		id: "donation",
@@ -53,6 +51,168 @@ export const PAYMENT_PATTERNS = [
 		regex: /(?:github\.com\/)?sponsors\/nextain/,
 	},
 ];
+
+const CANDIDATE_RE = /(?:\/)(billing|dashboard|apps)(?=$|[/?#"'`\\])/g;
+const API_RE = /(?:^|\/)(?:v1|api)(?:\/|$)/;
+
+function flattenPlus(expr) {
+	if (!ts) return [];
+	if (ts.isParenthesizedExpression(expr)) {
+		return flattenPlus(expr.expression);
+	}
+	if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+		return [...flattenPlus(expr.left), ...flattenPlus(expr.right)];
+	}
+	if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+		return [{ type: "static", text: expr.text }];
+	}
+	if (ts.isTemplateExpression(expr)) {
+		const list = [{ type: "static", text: expr.head.text }];
+		for (const span of expr.templateSpans) {
+			list.push({ type: "dynamic", expr: span.expression });
+			list.push({ type: "static", text: span.literal.text });
+		}
+		return list;
+	}
+	return [{ type: "dynamic", expr }];
+}
+
+function checkStaticAndDynamicChain(elements, targetRoutes) {
+	const folded = [];
+	for (const el of elements) {
+		if (el.type === "static") {
+			if (folded.length > 0 && folded[folded.length - 1].type === "static") {
+				folded[folded.length - 1].text += el.text;
+			} else {
+				folded.push({ type: "static", text: el.text });
+			}
+		} else {
+			folded.push(el);
+		}
+	}
+
+	const violations = [];
+	let hasApiPrefix = false;
+
+	for (const el of folded) {
+		if (el.type === "static") {
+			const text = el.text;
+			CANDIDATE_RE.lastIndex = 0;
+			let match;
+			while ((match = CANDIDATE_RE.exec(text)) !== null) {
+				const route = match[1];
+				if (!targetRoutes.includes(route)) continue;
+				const matchIndex = match.index;
+				const prefix = text.slice(0, matchIndex);
+
+				if (hasApiPrefix || API_RE.test(prefix)) {
+					// Excluded as API context
+					continue;
+				}
+				violations.push({ patternId: route, matched: match[0] });
+			}
+
+			if (API_RE.test(text)) {
+				hasApiPrefix = true;
+			}
+		}
+	}
+
+	return violations;
+}
+
+function analyzeJsWithTs(content, targetRoutes) {
+	if (!ts) return null;
+	const sf = ts.createSourceFile("bundle.js", content, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+	const violations = [];
+
+	function visit(node, parentIsPlus = false) {
+		if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+			if (!parentIsPlus) {
+				const elements = flattenPlus(node);
+				violations.push(...checkStaticAndDynamicChain(elements, targetRoutes));
+				for (const el of elements) {
+					if (el.type === "dynamic" && el.expr) {
+						visit(el.expr, false);
+					}
+				}
+				return;
+			}
+		} else if (ts.isTemplateExpression(node) && !parentIsPlus) {
+			const elements = flattenPlus(node);
+			violations.push(...checkStaticAndDynamicChain(elements, targetRoutes));
+			for (const el of elements) {
+				if (el.type === "dynamic" && el.expr) {
+					visit(el.expr, false);
+				}
+			}
+			return;
+		} else if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && !parentIsPlus) {
+			const elements = [{ type: "static", text: node.text }];
+			violations.push(...checkStaticAndDynamicChain(elements, targetRoutes));
+			return;
+		}
+
+		ts.forEachChild(node, (child) => {
+			const isPlus = ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken;
+			visit(child, isPlus);
+		});
+	}
+
+	visit(sf, false);
+	return violations;
+}
+
+function analyzeJsFallback(content, targetRoutes) {
+	// Strip comments and regex literals
+	const stripped = content
+		.replace(/\/\*[\s\S]*?\*\//g, "")
+		.replace(/(^|[^\\:])\/\/.*$/gm, "$1")
+		.replace(/\/(?![*\/])(?:\\.|[^\\\/\r\n])+\/[gimsuy]*/g, " ");
+
+	// Extract string literals and templates
+	const STR_RE = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
+	const violations = [];
+	let match;
+	while ((match = STR_RE.exec(stripped)) !== null) {
+		let unescaped = match[2];
+		try {
+			unescaped = JSON.parse(`"${unescaped.replace(/"/g, '\\"')}"`);
+		} catch {}
+		const chainViolations = checkStaticAndDynamicChain([{ type: "static", text: unescaped }], targetRoutes);
+		violations.push(...chainViolations);
+	}
+	return violations;
+}
+
+function analyzeJs(content, targetRoutes) {
+	const result = analyzeJsWithTs(content, targetRoutes);
+	if (result !== null) return result;
+	return analyzeJsFallback(content, targetRoutes);
+}
+
+function analyzeHtml(content, targetRoutes) {
+	const violations = [];
+	const noComments = content.replace(/<!--[\s\S]*?-->/g, "");
+
+	const SCRIPT_RE = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+	let scriptMatch;
+	while ((scriptMatch = SCRIPT_RE.exec(noComments)) !== null) {
+		const scriptCode = scriptMatch[1];
+		if (scriptCode && scriptCode.trim()) {
+			violations.push(...analyzeJs(scriptCode, targetRoutes));
+		}
+	}
+
+	const ATTR_RE = /\b[a-zA-Z0-9_\-]+=(?:"([^"]*)"|'([^']*)')/g;
+	let attrMatch;
+	while ((attrMatch = ATTR_RE.exec(noComments)) !== null) {
+		const val = attrMatch[1] ?? attrMatch[2] ?? "";
+		violations.push(...checkStaticAndDynamicChain([{ type: "static", text: val }], targetRoutes));
+	}
+
+	return violations;
+}
 
 export function scanBundleFiles(dir) {
 	let files = [];
@@ -81,14 +241,44 @@ export function checkSteamBundle({ distDir, patterns = PAYMENT_PATTERNS } = {}) 
 		};
 	}
 
+	const patternMap = new Map(patterns.map((p) => [p.id, p]));
+	const activeRouteIds = ["billing", "dashboard", "apps"].filter((id) => patternMap.has(id));
+	const otherPatterns = patterns.filter(
+		(p) => p.id !== "billing" && p.id !== "dashboard" && p.id !== "apps",
+	);
+
 	const violations = [];
 	for (const file of files) {
 		const content = fs.readFileSync(file, "utf8");
-		for (const pattern of patterns) {
+		const ext = path.extname(file).toLowerCase();
+		const relFile = path.relative(resolvedDist, file);
+
+		// 1. Route violations (billing, dashboard, apps)
+		if (activeRouteIds.length > 0) {
+			let routeViolations = [];
+			if (ext === ".html") {
+				routeViolations = analyzeHtml(content, activeRouteIds);
+			} else {
+				routeViolations = analyzeJs(content, activeRouteIds);
+			}
+
+			for (const rv of routeViolations) {
+				const pat = patternMap.get(rv.patternId);
+				violations.push({
+					file: relFile,
+					patternId: rv.patternId,
+					description: pat?.description || rv.patternId,
+					matched: rv.matched,
+				});
+			}
+		}
+
+		// 2. Other patterns (donation, sponsors, etc.)
+		for (const pattern of otherPatterns) {
 			const match = content.match(pattern.regex);
 			if (match) {
 				violations.push({
-					file: path.relative(resolvedDist, file),
+					file: relFile,
 					patternId: pattern.id,
 					description: pattern.description,
 					matched: match[0],
