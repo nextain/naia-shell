@@ -17,6 +17,9 @@ jobs:
   build-steam-linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 150
+    outputs:
+      voxcpm2_manifest_sha256: ${{ steps.voxcpm2-origin.outputs.voxcpm2_manifest_sha256 }}
+      voxcpm2_artifact_manifest_sha256: ${{ steps.voxcpm2-origin.outputs.voxcpm2_artifact_manifest_sha256 }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -91,6 +94,21 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
           NAIA_TAURI_NO_BUNDLE: '0'
         run: pnpm -C packages/shell run tauri:build:steam
+
+      - name: Record VoxCPM2 download manifest origin SHA-256
+        id: voxcpm2-origin
+        shell: bash
+        run: |
+          ORIG_PATH="packages/shell/src-tauri/voxcpm2-runtime/download-manifest.json"
+          test -f "$ORIG_PATH" || {
+            echo "::error::Missing origin download-manifest.json at $ORIG_PATH"
+            exit 1
+          }
+          ORIG_SHA="$(sha256sum "$ORIG_PATH" | awk '{print $1}')"
+          echo "Origin download-manifest.json SHA-256: $ORIG_SHA"
+          echo "ORIG_VOXCPM2_MANIFEST_SHA256=$ORIG_SHA" >> "$GITHUB_ENV"
+          echo "voxcpm2_manifest_sha256=$ORIG_SHA" >> "$GITHUB_OUTPUT"
+          echo "voxcpm2_artifact_manifest_sha256=$NAIA_VOXCPM2_TRT_ARTIFACT_SHA256" >> "$GITHUB_OUTPUT"
 
       - name: Check Steam bundle for payment links
         run: node packages/shell/scripts/check-steam-bundle.mjs
@@ -188,31 +206,28 @@ jobs:
               }
             }
 
+            // Explicit mapping of known absolute symlinks created during AppImage build/extraction
+            // to their valid depot-relative target paths. Only entries in this map are permitted.
+            const KNOWN_ABSOLUTE_SYMLINKS = new Map([
+              [".DirIcon", "Naia.png"],
+              ["usr/lib/im-fcitx5.so", "usr/lib64/gtk-3.0/3.0.0/immodules/im-fcitx5.so"],
+              ["usr/lib/im-ibus.so", "usr/lib64/gtk-3.0/3.0.0/immodules/im-ibus.so"],
+              ["usr/lib/libprintbackend-cups.so", "usr/lib64/gtk-3.0/3.0.0/printbackends/libprintbackend-cups.so"],
+              ["usr/lib/libprintbackend-file.so", "usr/lib64/gtk-3.0/3.0.0/printbackends/libprintbackend-file.so"],
+              ["usr/lib/libprintbackend-lpr.so", "usr/lib64/gtk-3.0/3.0.0/printbackends/libprintbackend-lpr.so"],
+            ]);
+
             for (const symlink of symlinks) {
               const rel = path.relative(depotDir, symlink);
               const target = fs.readlinkSync(symlink);
               if (path.isAbsolute(target)) {
-                let internal = null;
-                const cand1 = path.join(depotDir, target.replace(/^\/+/, ""));
-                if (fs.existsSync(cand1)) internal = cand1;
-                if (!internal && target.includes(".AppDir/")) {
-                  const after = target.split(".AppDir/")[1];
-                  const cand2 = path.join(depotDir, after);
-                  if (fs.existsSync(cand2)) internal = cand2;
+                if (!KNOWN_ABSOLUTE_SYMLINKS.has(rel)) {
+                  throw new Error(`Absolute symlink not in known mapping: ${rel} -> ${target}`);
                 }
-                if (!internal && path.basename(symlink) === ".DirIcon") {
-                  const cand3 = path.join(depotDir, path.basename(target));
-                  if (fs.existsSync(cand3)) internal = cand3;
-                  const cand4 = path.join(depotDir, "Naia.png");
-                  if (!internal && fs.existsSync(cand4)) internal = cand4;
-                }
-                if (!internal) {
-                  const cand5 = path.join(depotDir, path.basename(target));
-                  if (fs.existsSync(cand5)) internal = cand5;
-                }
-
-                if (!internal) {
-                  throw new Error(`External symlink has no internal counterpart: ${rel} -> ${target}`);
+                const internalRel = KNOWN_ABSOLUTE_SYMLINKS.get(rel);
+                const internal = path.join(depotDir, internalRel);
+                if (!fs.existsSync(internal)) {
+                  throw new Error(`Known symlink target does not exist inside depot: ${rel} -> ${internalRel}`);
                 }
 
                 const newRelTarget = path.relative(path.dirname(symlink), internal);
@@ -411,6 +426,70 @@ jobs:
           }
           echo "wrapped payload tamper probe: expected RED confirmed"
 
+      - name: Write process group cleanup helper
+        shell: bash
+        run: |
+          cat << 'EOF' > /tmp/cleanup-process-group.mjs
+          export async function cleanupProcessGroup(pgid, { timeoutMs = 5000, pollIntervalMs = 100 } = {}) {
+            if (!pgid || typeof pgid !== "number" || pgid <= 1) {
+              throw new Error(`Invalid pgid for cleanupProcessGroup: ${pgid}`);
+            }
+
+            function isGroupAlive() {
+              try {
+                process.kill(-pgid, 0);
+                return true;
+              } catch (err) {
+                if (err && err.code === "ESRCH") {
+                  return false;
+                }
+                throw err;
+              }
+            }
+
+            function sendSignal(sig) {
+              try {
+                process.kill(-pgid, sig);
+              } catch (err) {
+                if (err && err.code === "ESRCH") {
+                  return;
+                }
+                throw err;
+              }
+            }
+
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            if (!isGroupAlive()) {
+              return;
+            }
+
+            sendSignal("SIGTERM");
+            const termDeadline = Date.now() + timeoutMs;
+            while (Date.now() < termDeadline) {
+              if (!isGroupAlive()) {
+                return;
+              }
+              await sleep(pollIntervalMs);
+            }
+
+            if (isGroupAlive()) {
+              sendSignal("SIGKILL");
+              const killDeadline = Date.now() + timeoutMs;
+              while (Date.now() < killDeadline) {
+                if (!isGroupAlive()) {
+                  return;
+                }
+                await sleep(pollIntervalMs);
+              }
+            }
+
+            if (isGroupAlive()) {
+              throw new Error(`Process group ${pgid} still alive after SIGKILL and timeout`);
+            }
+          }
+          EOF
+
       - name: Verify relocated depot execution via AppRun
         shell: bash
         run: |
@@ -497,6 +576,7 @@ jobs:
           import os from "node:os";
           import path from "node:path";
           import { inspectInstalledSession } from "./packages/shell/scripts/verify-installed-smoke.mjs";
+          import { cleanupProcessGroup } from "/tmp/cleanup-process-group.mjs";
 
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           const binary = process.env.RUNNER_TEMP + "/relocated-steam-depot-linux/AppRun";
@@ -532,18 +612,9 @@ jobs:
           });
 
           async function cleanup() {
-            if (child.exitCode === null) {
-              console.log("[smoke] Cleaning up process group...");
-              try { process.kill(-child.pid, "SIGTERM"); } catch {
-                try { child.kill("SIGTERM"); } catch {}
-              }
-              const endWait = Date.now() + 5000;
-              while (child.exitCode === null && Date.now() < endWait) await sleep(200);
-              if (child.exitCode === null) {
-                try { process.kill(-child.pid, "SIGKILL"); } catch {
-                  try { child.kill("SIGKILL"); } catch {}
-                }
-              }
+            console.log("[smoke] Cleaning up process group...");
+            if (child && child.pid) {
+              await cleanupProcessGroup(child.pid, { timeoutMs: 5000 });
             }
           }
 
@@ -680,15 +751,28 @@ jobs:
           if (modelPrepSha !== origModelPrepSha) throw new Error("Model prep script SHA-256 mismatch with repository source");
           console.log(`[voxcpm2] PASS: Model prep script SHA-256 matches repository source (${modelPrepSha})`);
 
+          const downloadManifestSha = sha256File(downloadManifestPath);
+          const expectedManifestSha = process.env.ORIG_VOXCPM2_MANIFEST_SHA256;
+          if (!expectedManifestSha) {
+            throw new Error("Missing ORIG_VOXCPM2_MANIFEST_SHA256 environment variable");
+          }
+          if (downloadManifestSha !== expectedManifestSha) {
+            throw new Error(`download-manifest.json SHA-256 mismatch: got ${downloadManifestSha}, expected ${expectedManifestSha}`);
+          }
+          console.log(`[voxcpm2] PASS: download-manifest.json whole-file SHA-256 matches origin (${downloadManifestSha})`);
+
           const manifest = JSON.parse(fs.readFileSync(downloadManifestPath, "utf8"));
-          const EXPECTED_ARTIFACT_MANIFEST_SHA256 = "43a80742df8828465f7df05f72519c412111bcdd5b727d113280e8112dc51778";
+          const expectedArtifactManifestSha = process.env.NAIA_VOXCPM2_TRT_ARTIFACT_SHA256;
+          if (!expectedArtifactManifestSha) {
+            throw new Error("Missing NAIA_VOXCPM2_TRT_ARTIFACT_SHA256 environment variable");
+          }
           const EXPECTED_ARCHIVE_URL = "https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip";
           const EXPECTED_ARCHIVE_SHA256 = "e6e6a76f970a1311cc868ba38aa95bd7654a60d7f77f6c6274c9433ab62b642d";
           const EXPECTED_ARCHIVE_BYTES = 2935215844;
 
           if (manifest.profile !== "linux_trt_6g") throw new Error(`Unexpected manifest profile: ${manifest.profile}`);
-          if (manifest.artifactManifestSha256?.toLowerCase() !== EXPECTED_ARTIFACT_MANIFEST_SHA256.toLowerCase()) {
-            throw new Error(`artifactManifestSha256 mismatch: ${manifest.artifactManifestSha256}`);
+          if (manifest.artifactManifestSha256?.toLowerCase() !== expectedArtifactManifestSha.toLowerCase()) {
+            throw new Error(`artifactManifestSha256 mismatch: ${manifest.artifactManifestSha256} vs ${expectedArtifactManifestSha}`);
           }
           if (manifest.archive?.url !== EXPECTED_ARCHIVE_URL) {
             throw new Error(`archive.url mismatch: ${manifest.archive?.url}`);
@@ -699,7 +783,7 @@ jobs:
           if (manifest.archive?.bytes !== EXPECTED_ARCHIVE_BYTES) {
             throw new Error(`archive.bytes mismatch: ${manifest.archive?.bytes}`);
           }
-          console.log("[voxcpm2] PASS: download-manifest.json verified against workflow pinned constants.");
+          console.log("[voxcpm2] PASS: download-manifest.json verified against origin SHA-256 and NAIA_VOXCPM2_TRT_ARTIFACT_SHA256.");
           EOF
 
           # Move back for archiving
@@ -726,6 +810,9 @@ jobs:
     needs: build-steam-linux
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      ORIG_VOXCPM2_MANIFEST_SHA256: ${{ needs.build-steam-linux.outputs.voxcpm2_manifest_sha256 }}
+      NAIA_VOXCPM2_TRT_ARTIFACT_SHA256: ${{ needs.build-steam-linux.outputs.voxcpm2_artifact_manifest_sha256 }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -837,6 +924,166 @@ jobs:
             exit 1
           }
 
+      - name: Verify VoxCPM2 runtime resources in downloaded depot
+        shell: bash
+        run: |
+          node --input-type=module << 'EOF'
+          import fs from "node:fs";
+          import path from "node:path";
+          import crypto from "node:crypto";
+
+          function sha256File(file) {
+            const hash = crypto.createHash("sha256");
+            const fd = fs.openSync(file, "r");
+            const buf = Buffer.alloc(1024 * 1024);
+            let bytesRead;
+            while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+              hash.update(buf.subarray(0, bytesRead));
+            }
+            fs.closeSync(fd);
+            return hash.digest("hex");
+          }
+
+          const depotDir = path.resolve("steam-depot-linux");
+          function findNodeDir(dir) {
+            const queue = [dir];
+            while (queue.length > 0) {
+              const cur = queue.pop();
+              for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
+                const full = path.join(cur, ent.name);
+                if (ent.isDirectory()) queue.push(full);
+                else if (ent.isFile() && ent.name === "node") {
+                  try { fs.accessSync(full, fs.constants.X_OK); return cur; } catch {}
+                }
+              }
+            }
+            throw new Error("Could not find bundled node executable");
+          }
+          const resourceDir = findNodeDir(depotDir);
+          const voxRuntimeDir = path.join(resourceDir, "voxcpm2-runtime");
+
+          console.log(`[voxcpm2] Checking bundled download resources in: ${voxRuntimeDir}`);
+
+          const downloadManifestPath = path.join(voxRuntimeDir, "download-manifest.json");
+          const modelPrepPath = path.join(voxRuntimeDir, "prepare-voxcpm2-model.sh");
+          const contractPath = path.join(voxRuntimeDir, "voxcpm2-activation-contract.json");
+
+          if (!fs.existsSync(downloadManifestPath)) throw new Error("Missing voxcpm2-runtime/download-manifest.json");
+          if (!fs.existsSync(modelPrepPath)) throw new Error("Missing voxcpm2-runtime/prepare-voxcpm2-model.sh");
+          if (!fs.existsSync(contractPath)) throw new Error("Missing voxcpm2-runtime/voxcpm2-activation-contract.json");
+
+          const origContractPath = "packages/shell/src-tauri/voxcpm2-activation-contract.json";
+          const origModelPrepPath = "packages/shell/src-tauri/linux/prepare-voxcpm2-model.sh";
+
+          const contractSha = sha256File(contractPath);
+          const origContractSha = sha256File(origContractPath);
+          if (contractSha !== origContractSha) throw new Error("Contract SHA-256 mismatch with repository source");
+          console.log(`[voxcpm2] PASS: Contract SHA-256 matches repository source (${contractSha})`);
+
+          const modelPrepSha = sha256File(modelPrepPath);
+          const origModelPrepSha = sha256File(origModelPrepPath);
+          if (modelPrepSha !== origModelPrepSha) throw new Error("Model prep script SHA-256 mismatch with repository source");
+          console.log(`[voxcpm2] PASS: Model prep script SHA-256 matches repository source (${modelPrepSha})`);
+
+          const downloadManifestSha = sha256File(downloadManifestPath);
+          const expectedManifestSha = process.env.ORIG_VOXCPM2_MANIFEST_SHA256;
+          if (!expectedManifestSha) {
+            throw new Error("Missing ORIG_VOXCPM2_MANIFEST_SHA256 environment variable");
+          }
+          if (downloadManifestSha !== expectedManifestSha) {
+            throw new Error(`download-manifest.json SHA-256 mismatch: got ${downloadManifestSha}, expected ${expectedManifestSha}`);
+          }
+          console.log(`[voxcpm2] PASS: download-manifest.json whole-file SHA-256 matches origin (${downloadManifestSha})`);
+
+          const manifest = JSON.parse(fs.readFileSync(downloadManifestPath, "utf8"));
+          const expectedArtifactManifestSha = process.env.NAIA_VOXCPM2_TRT_ARTIFACT_SHA256;
+          if (!expectedArtifactManifestSha) {
+            throw new Error("Missing NAIA_VOXCPM2_TRT_ARTIFACT_SHA256 environment variable");
+          }
+          const EXPECTED_ARCHIVE_URL = "https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip";
+          const EXPECTED_ARCHIVE_SHA256 = "e6e6a76f970a1311cc868ba38aa95bd7654a60d7f77f6c6274c9433ab62b642d";
+          const EXPECTED_ARCHIVE_BYTES = 2935215844;
+
+          if (manifest.profile !== "linux_trt_6g") throw new Error(`Unexpected manifest profile: ${manifest.profile}`);
+          if (manifest.artifactManifestSha256?.toLowerCase() !== expectedArtifactManifestSha.toLowerCase()) {
+            throw new Error(`artifactManifestSha256 mismatch: ${manifest.artifactManifestSha256} vs ${expectedArtifactManifestSha}`);
+          }
+          if (manifest.archive?.url !== EXPECTED_ARCHIVE_URL) {
+            throw new Error(`archive.url mismatch: ${manifest.archive?.url}`);
+          }
+          if (manifest.archive?.sha256?.toLowerCase() !== EXPECTED_ARCHIVE_SHA256.toLowerCase()) {
+            throw new Error(`archive.sha256 mismatch: ${manifest.archive?.sha256}`);
+          }
+          if (manifest.archive?.bytes !== EXPECTED_ARCHIVE_BYTES) {
+            throw new Error(`archive.bytes mismatch: ${manifest.archive?.bytes}`);
+          }
+          console.log("[voxcpm2] PASS: download-manifest.json verified in downloaded depot.");
+          EOF
+
+      - name: Write process group cleanup helper
+        shell: bash
+        run: |
+          cat << 'EOF' > /tmp/cleanup-process-group.mjs
+          export async function cleanupProcessGroup(pgid, { timeoutMs = 5000, pollIntervalMs = 100 } = {}) {
+            if (!pgid || typeof pgid !== "number" || pgid <= 1) {
+              throw new Error(`Invalid pgid for cleanupProcessGroup: ${pgid}`);
+            }
+
+            function isGroupAlive() {
+              try {
+                process.kill(-pgid, 0);
+                return true;
+              } catch (err) {
+                if (err && err.code === "ESRCH") {
+                  return false;
+                }
+                throw err;
+              }
+            }
+
+            function sendSignal(sig) {
+              try {
+                process.kill(-pgid, sig);
+              } catch (err) {
+                if (err && err.code === "ESRCH") {
+                  return;
+                }
+                throw err;
+              }
+            }
+
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            if (!isGroupAlive()) {
+              return;
+            }
+
+            sendSignal("SIGTERM");
+            const termDeadline = Date.now() + timeoutMs;
+            while (Date.now() < termDeadline) {
+              if (!isGroupAlive()) {
+                return;
+              }
+              await sleep(pollIntervalMs);
+            }
+
+            if (isGroupAlive()) {
+              sendSignal("SIGKILL");
+              const killDeadline = Date.now() + timeoutMs;
+              while (Date.now() < killDeadline) {
+                if (!isGroupAlive()) {
+                  return;
+                }
+                await sleep(pollIntervalMs);
+              }
+            }
+
+            if (isGroupAlive()) {
+              throw new Error(`Process group ${pgid} still alive after SIGKILL and timeout`);
+            }
+          }
+          EOF
+
       - name: Smoke verified depot with AppRun in xvfb
         shell: bash
         run: |
@@ -846,6 +1093,7 @@ jobs:
           import os from "node:os";
           import path from "node:path";
           import { inspectInstalledSession } from "./packages/shell/scripts/verify-installed-smoke.mjs";
+          import { cleanupProcessGroup } from "/tmp/cleanup-process-group.mjs";
 
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           const binary = path.resolve("steam-depot-linux/AppRun");
@@ -881,18 +1129,9 @@ jobs:
           });
 
           async function cleanup() {
-            if (child.exitCode === null) {
-              console.log("[smoke] Cleaning up process group...");
-              try { process.kill(-child.pid, "SIGTERM"); } catch {
-                try { child.kill("SIGTERM"); } catch {}
-              }
-              const endWait = Date.now() + 5000;
-              while (child.exitCode === null && Date.now() < endWait) await sleep(200);
-              if (child.exitCode === null) {
-                try { process.kill(-child.pid, "SIGKILL"); } catch {
-                  try { child.kill("SIGKILL"); } catch {}
-                }
-              }
+            console.log("[smoke] Cleaning up process group...");
+            if (child && child.pid) {
+              await cleanupProcessGroup(child.pid, { timeoutMs: 5000 });
             }
           }
 
