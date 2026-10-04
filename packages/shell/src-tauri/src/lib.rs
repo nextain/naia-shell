@@ -13613,10 +13613,24 @@ async fn delete_naia_adk(
     std::fs::remove_dir_all(&adk).map_err(|e| format!("Failed to delete {adk_path}: {e}"))
 }
 
-/// Clone nextain/naia-template-project (the ADK canonical — the old
-/// nextain/naia-adk repo is archived and misses the official Naia
-/// characters, so fresh installs seeded a stale workspace; #454) shallow
-/// into adk_path.
+fn naia_adk_git_clone(repo_url: &str, adk_path: &str) -> Result<(), String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["clone", "--depth", "1", repo_url, adk_path]);
+    platform::hide_console(&mut cmd);
+    match cmd.output() {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(format!("git clone failed ({stderr})"))
+        }
+        Err(e) => Err(format!("git not found ({e})")),
+    }
+}
+
+/// Clone nextain/naia-adk (the ADK canonical, #739) shallow into adk_path.
+/// #454 had switched this to a separate template repository on the belief
+/// that naia-adk was archived and lacked the official characters; neither
+/// holds — naia-adk is active and ships the default VRMs and background videos.
 /// Falls back to zip download if git is not installed.
 /// Fails if the directory already exists and is non-empty.
 ///
@@ -13656,23 +13670,10 @@ async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), S
     }
 
     // Try git clone first.
-    let mut cmd = std::process::Command::new("git");
-    cmd.args([
-        "clone",
-        "--depth",
-        "1",
-        "https://github.com/nextain/naia-template-project",
-        &adk_path,
-    ]);
-    platform::hide_console(&mut cmd);
-    match cmd.output() {
-        Ok(output) if output.status.success() => return Ok(()),
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("[clone_naia_adk] git clone failed ({stderr}), falling back to zip");
-        }
+    match naia_adk_git_clone(NAIA_ADK_REPO_URL, &adk_path) {
+        Ok(()) => return Ok(()),
         Err(e) => {
-            log::warn!("[clone_naia_adk] git not found ({e}), falling back to zip");
+            log::warn!("[clone_naia_adk] {e}, falling back to zip");
         }
     }
 
@@ -13686,12 +13687,155 @@ async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), S
     naia_adk_download_zip(&adk_path, &app_handle).await
 }
 
-async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result<(), String> {
-    const ZIP_URL: &str =
-        "https://github.com/nextain/naia-template-project/archive/refs/heads/main.zip";
+/// ADK 정본 저장소. 설치 때 새 워크스페이스로 받는다 (#739).
+const NAIA_ADK_REPO_URL: &str = "https://github.com/nextain/naia-adk";
+/// git 이 없을 때 받는 같은 저장소의 main 브랜치 zip.
+const NAIA_ADK_ZIP_URL: &str = "https://github.com/nextain/naia-adk/archive/refs/heads/main.zip";
 
+#[cfg(test)]
+mod naia_adk_source_tests {
+    use super::{NAIA_ADK_REPO_URL, NAIA_ADK_ZIP_URL};
+
+    #[test]
+    fn clone_source_is_naia_adk() {
+        // 세 번째 시험이 주소 리터럴 개수를 세므로 여기서는 쪼개 쓴다.
+        assert_eq!(
+            NAIA_ADK_REPO_URL,
+            concat!("https://github.com/nextain/", "naia-adk")
+        );
+    }
+
+    #[test]
+    fn zip_source_is_naia_adk_main_branch() {
+        assert_eq!(
+            NAIA_ADK_ZIP_URL,
+            format!("{NAIA_ADK_REPO_URL}/archive/refs/heads/main.zip")
+        );
+    }
+
+    #[test]
+    fn no_other_adk_source_remains_in_lib() {
+        // 상수만 바꾸고 다른 자리에 옛 주소나 주소 리터럴이 남는 실수를 막는다.
+        // 검색어를 쪼개 써서 이 시험 자신과 겹치지 않게 한다.
+        let src = include_str!("lib.rs");
+        let old = concat!("naia-template", "-project");
+        assert!(
+            !src.contains(old),
+            "lib.rs still references the old ADK source"
+        );
+        let repo_literal = concat!("\"https://github.com/nextain/", "naia-adk\"");
+        assert_eq!(
+            src.matches(repo_literal).count(),
+            1,
+            "repo URL literal must appear only in NAIA_ADK_REPO_URL"
+        );
+    }
+}
+
+#[cfg(test)]
+mod naia_adk_source_network_tests {
+    use super::{naia_adk_fetch_zip, naia_adk_git_clone, NAIA_ADK_REPO_URL, NAIA_ADK_ZIP_URL};
+    use std::path::{Path, PathBuf};
+
+    const PL04_ASSET_PATHS: [&str; 4] = [
+        "naia-settings/vrm-files/naia_char_skin_head.vrm",
+        "naia-settings/vrm-files/naia_char_with_hair.vrm",
+        "naia-settings/background/flower-shop-beachside-moewalls-com.mp4",
+        "naia-settings/background/morning-coffee.3840x2160.mp4",
+    ];
+
+    fn resolve_fetch_dir() -> PathBuf {
+        let dir_str = std::env::var("NAIA_WO05_FETCH_DIR")
+            .expect("NAIA_WO05_FETCH_DIR environment variable is not set");
+        PathBuf::from(dir_str)
+    }
+
+    fn check_pl04_assets(base: &Path) {
+        let mut missing_or_invalid = Vec::new();
+        let mut valid_assets = Vec::new();
+
+        for rel_path in PL04_ASSET_PATHS {
+            let full_path = base.join(rel_path);
+            match std::fs::metadata(&full_path) {
+                Ok(meta) if meta.is_file() && meta.len() > 1_000_000 => {
+                    valid_assets.push((full_path, meta.len()));
+                }
+                Ok(meta) => {
+                    missing_or_invalid.push(format!(
+                        "{} (exists but is_file={}, len={})",
+                        full_path.display(),
+                        meta.is_file(),
+                        meta.len()
+                    ));
+                }
+                Err(e) => {
+                    missing_or_invalid.push(format!("{} (error: {e})", full_path.display()));
+                }
+            }
+        }
+
+        if !missing_or_invalid.is_empty() {
+            panic!(
+                "Missing or invalid PL-04 assets in {}:\n{}",
+                base.display(),
+                missing_or_invalid.join("\n")
+            );
+        }
+
+        for (path, size) in valid_assets {
+            println!("Asset confirmed: {} ({} bytes)", path.display(), size);
+        }
+    }
+
+    #[test]
+    #[ignore = "network: nextain/naia-adk 실제 받기, 수동 실행"]
+    fn real_git_clone_has_pl04_assets() {
+        let fetch_dir = resolve_fetch_dir();
+        let git_dir = fetch_dir.join("git");
+        if git_dir.exists() {
+            panic!("git target directory already exists: {}", git_dir.display());
+        }
+        naia_adk_git_clone(
+            NAIA_ADK_REPO_URL,
+            git_dir.to_str().expect("valid utf-8 git_dir"),
+        )
+        .expect("naia_adk_git_clone failed");
+        check_pl04_assets(&git_dir);
+    }
+
+    #[tokio::test]
+    #[ignore = "network: nextain/naia-adk 실제 받기, 수동 실행"]
+    async fn real_zip_fetch_has_pl04_assets() {
+        let fetch_dir = resolve_fetch_dir();
+        let zip_dir = fetch_dir.join("zip");
+        if zip_dir.exists() {
+            panic!("zip target directory already exists: {}", zip_dir.display());
+        }
+        let mut progress_called = false;
+        naia_adk_fetch_zip(
+            NAIA_ADK_ZIP_URL,
+            zip_dir.to_str().expect("valid utf-8 zip_dir"),
+            |_downloaded, _total| {
+                progress_called = true;
+            },
+        )
+        .await
+        .expect("naia_adk_fetch_zip failed");
+        assert!(
+            progress_called,
+            "progress callback was not called during zip fetch"
+        );
+        check_pl04_assets(&zip_dir);
+    }
+}
+
+async fn naia_adk_fetch_zip(
+    zip_url: &str,
+    adk_path: &str,
+    mut on_progress: impl FnMut(u64, Option<u64>),
+) -> Result<(), String> {
     // Stream the download so we can emit byte progress (~200ms throttle).
-    let mut response = reqwest::get(ZIP_URL)
+    let mut response = reqwest::get(zip_url)
         .await
         .map_err(|e| format!("zip download failed: {e}"))?;
     let total = response.content_length();
@@ -13708,26 +13852,12 @@ async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result
         downloaded += chunk.len() as u64;
         buf.extend_from_slice(&chunk);
         if last_emit.elapsed() >= std::time::Duration::from_millis(200) {
-            let _ = app_handle.emit(
-                "adk_setup_progress",
-                serde_json::json!({
-                    "phase": "zip_progress",
-                    "downloaded": downloaded,
-                    "total": total,
-                }),
-            );
+            on_progress(downloaded, total);
             last_emit = std::time::Instant::now();
         }
     }
     // Final progress emit so UI shows 100% before extraction starts.
-    let _ = app_handle.emit(
-        "adk_setup_progress",
-        serde_json::json!({
-            "phase": "zip_progress",
-            "downloaded": downloaded,
-            "total": total,
-        }),
-    );
+    on_progress(downloaded, total);
 
     // Extract ??GitHub zips contain a single top-level "naia-adk-main/" folder.
     let cursor = std::io::Cursor::new(buf);
@@ -13759,6 +13889,16 @@ async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result
         }
     }
     Ok(())
+}
+
+async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result<(), String> {
+    naia_adk_fetch_zip(NAIA_ADK_ZIP_URL, adk_path, |downloaded, total| {
+        let _ = app_handle.emit(
+            "adk_setup_progress",
+            serde_json::json!({ "phase": "zip_progress", "downloaded": downloaded, "total": total }),
+        );
+    })
+    .await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

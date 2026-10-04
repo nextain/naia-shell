@@ -19,6 +19,22 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_739_adk_clone_source": {
+      "issue": 739,
+      "title": "설치 워크스페이스 받기 대상을 naia-adk 로 되돌리기 (#739)",
+      "requirements": "docs/requirements.md FR-ADK-SRC.1",
+      "scenario": "docs/user-scenarios.md S-ADK-SOURCE",
+      "gates": {
+        "P01": "docs/user-scenarios.md S-ADK-SOURCE 행 추가",
+        "P02": "docs/user-scenarios.md Test Coverage Map 표 S-ADK-SOURCE 행 추가",
+        "P03": "docs/requirements.md FR-ADK-SRC.1 행 추가",
+        "P04": "naia_adk_source_tests, naia_adk_source_network_tests(실제 받기), e2e-tauri specs/24-adk-setup-flow.spec.ts(모의 받기, 수정 전후 비교) 실행 기록은 작업 보고에 있음",
+        "P05": "pending"
+      },
+      "status": "in_review",
+      "verification": "packages/shell/src-tauri/src/lib.rs naia_adk_source_tests, naia_adk_source_network_tests; packages/shell/e2e-tauri/specs/24-adk-setup-flow.spec.ts",
+      "last_updated": "2026-10-03T20:08:00+09:00"
+    },
     "issue_724_memory_knowledge_tools": {
       "issue": 724,
       "title": "모델 keep list에 기억·지식 저장 도구를 열고 계약 테스트를 실행한다 (#724)",
