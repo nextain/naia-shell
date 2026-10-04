@@ -1,4 +1,4 @@
-import { chromium, expect, test } from "@playwright/test";
+import { chromium, expect, type Page, type Route, test } from "@playwright/test";
 
 test.skip(
 	process.env.NAIA_E2E_WEB_REALMODEL !== "1",
@@ -8,6 +8,53 @@ test.skip(
 const EXPECTED_COMMIT = "13ea427991542965091f2f3211b9325a36dbd522";
 const EXPECTED_AGENTS_SHA = "29350557ec7bef5b9f67ad4ddc26a06a8d6e2de0";
 const EXPECTED_CLAUDE_SHA = "43c994c2d3617f947bcb5adf1933e21dabe46bb5";
+
+async function readOpfsAdkStatus(page: Page): Promise<{
+	commit: string;
+	agentsSize: number;
+	agentsSha: string;
+	claudeSize: number;
+	claudeSha: string;
+} | null> {
+	return await page.evaluate(async () => {
+		try {
+			const root = await navigator.storage.getDirectory();
+			const adk = await root.getDirectoryHandle("naia-adk");
+			const settings = await adk.getDirectoryHandle("naia-settings");
+			const sourceFile = await settings.getFileHandle(".web-adk-source.json");
+			const sourceText = await (await sourceFile.getFile()).text();
+			const marker = JSON.parse(sourceText);
+
+			const gitBlobSha1 = async (bytes: Uint8Array): Promise<string> => {
+				const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`);
+				const buf = new Uint8Array(header.byteLength + bytes.byteLength);
+				buf.set(header, 0);
+				buf.set(bytes, header.byteLength);
+				const hashBuffer = await crypto.subtle.digest("SHA-1", buf);
+				const hashArray = Array.from(new Uint8Array(hashBuffer));
+				return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+			};
+
+			const agentsFile = await (await adk.getFileHandle("AGENTS.md")).getFile();
+			const agentsBuf = new Uint8Array(await agentsFile.arrayBuffer());
+			const agentsSha = await gitBlobSha1(agentsBuf);
+
+			const claudeFile = await (await adk.getFileHandle("CLAUDE.md")).getFile();
+			const claudeBuf = new Uint8Array(await claudeFile.arrayBuffer());
+			const claudeSha = await gitBlobSha1(claudeBuf);
+
+			return {
+				commit: marker.commit,
+				agentsSize: agentsFile.size,
+				agentsSha,
+				claudeSize: claudeFile.size,
+				claudeSha,
+			};
+		} catch {
+			return null;
+		}
+	});
+}
 
 test("real webllm model with OPFS ADK persona and workspace", async ({}, testInfo) => {
 	test.setTimeout(16 * 60_000);
@@ -31,6 +78,7 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 	const context = await chromium.launchPersistentContext(profileDir, {
 		args,
 		headless: true,
+		serviceWorkers: "block",
 	});
 
 	try {
@@ -44,6 +92,32 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 				responses200.push(res.url());
 			}
 		});
+
+		// Precheck: check OPFS on same-origin blank page before page.goto("/")
+		let precheckRouteCalled = 0;
+		const precheckHandler = async (route: Route) => {
+			precheckRouteCalled++;
+			await route.fulfill({
+				status: 200,
+				contentType: "text/html",
+				body: "<!DOCTYPE html><html><body>precheck</body></html>",
+			});
+		};
+		await page.route("**/__naia_precheck__", precheckHandler);
+		await page.goto("/__naia_precheck__");
+		expect(precheckRouteCalled).toBe(1);
+		expect(new URL(page.url()).origin).toBe(new URL("/", page.url()).origin);
+
+		const precheck = await readOpfsAdkStatus(page);
+		const cachedBefore =
+			precheck !== null &&
+			precheck.commit === EXPECTED_COMMIT &&
+			precheck.agentsSize === 3860 &&
+			precheck.agentsSha === EXPECTED_AGENTS_SHA &&
+			precheck.claudeSize === 11 &&
+			precheck.claudeSha === EXPECTED_CLAUDE_SHA;
+
+		await page.unroute("**/__naia_precheck__", precheckHandler);
 
 		const t0 = Date.now();
 		await page.goto("/");
@@ -69,45 +143,7 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 
 		// Check ADK download in OPFS within 60s
 		await expect(async () => {
-			const opfsCheck = await page.evaluate(async () => {
-				try {
-					const root = await navigator.storage.getDirectory();
-					const adk = await root.getDirectoryHandle("naia-adk");
-					const settings = await adk.getDirectoryHandle("naia-settings");
-					const sourceFile = await settings.getFileHandle(".web-adk-source.json");
-					const sourceText = await (await sourceFile.getFile()).text();
-					const marker = JSON.parse(sourceText);
-
-					const gitBlobSha1 = async (bytes: Uint8Array): Promise<string> => {
-						const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`);
-						const buf = new Uint8Array(header.byteLength + bytes.byteLength);
-						buf.set(header, 0);
-						buf.set(bytes, header.byteLength);
-						const hashBuffer = await crypto.subtle.digest("SHA-1", buf);
-						const hashArray = Array.from(new Uint8Array(hashBuffer));
-						return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-					};
-
-					const agentsFile = await (await adk.getFileHandle("AGENTS.md")).getFile();
-					const agentsBuf = new Uint8Array(await agentsFile.arrayBuffer());
-					const agentsSha = await gitBlobSha1(agentsBuf);
-
-					const claudeFile = await (await adk.getFileHandle("CLAUDE.md")).getFile();
-					const claudeBuf = new Uint8Array(await claudeFile.arrayBuffer());
-					const claudeSha = await gitBlobSha1(claudeBuf);
-
-					return {
-						commit: marker.commit,
-						agentsSize: agentsFile.size,
-						agentsSha,
-						claudeSize: claudeFile.size,
-						claudeSha,
-					};
-				} catch {
-					return null;
-				}
-			});
-
+			const opfsCheck = await readOpfsAdkStatus(page);
 			expect(opfsCheck).not.toBeNull();
 			expect(opfsCheck!.commit).toBe(EXPECTED_COMMIT);
 			expect(opfsCheck!.agentsSize).toBe(3860);
@@ -116,10 +152,17 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 			expect(opfsCheck!.claudeSha).toBe(EXPECTED_CLAUDE_SHA);
 		}).toPass({ timeout: 60_000 });
 
-		// Verify 200 response from raw.githubusercontent.com for AGENTS.md and CLAUDE.md if newly fetched
+		// Verify 200 response from raw.githubusercontent.com for AGENTS.md and CLAUDE.md
 		const agentsUrl = `https://raw.githubusercontent.com/nextain/naia-adk/${EXPECTED_COMMIT}/AGENTS.md`;
 		const claudeUrl = `https://raw.githubusercontent.com/nextain/naia-adk/${EXPECTED_COMMIT}/CLAUDE.md`;
-		if (requestedUrls.includes(agentsUrl) || requestedUrls.includes(claudeUrl)) {
+		if (cachedBefore) {
+			testInfo.annotations.push({
+				type: "cachedBefore",
+				description: "true",
+			});
+		} else {
+			expect(requestedUrls).toContain(agentsUrl);
+			expect(requestedUrls).toContain(claudeUrl);
 			expect(responses200).toContain(agentsUrl);
 			expect(responses200).toContain(claudeUrl);
 		}
@@ -130,13 +173,20 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 
 		// Write custom config with persona: "You are 루미..."
 		await page.evaluate(async () => {
-			const internals = (
-				window as unknown as {
-					__TAURI_INTERNALS__: {
-						invoke: (cmd: string, args: unknown) => Promise<unknown>;
-					};
+			const internals: unknown = Reflect.get(window, "__TAURI_INTERNALS__");
+			if (
+				typeof internals !== "object" ||
+				internals === null ||
+				!("invoke" in internals) ||
+				typeof (internals as { invoke: unknown }).invoke !== "function"
+			) {
+				throw new Error("__TAURI_INTERNALS__.invoke is not available");
+			}
+			const invoke = (
+				internals as {
+					invoke: (cmd: string, args?: unknown) => Promise<unknown>;
 				}
-			).__TAURI_INTERNALS__;
+			).invoke;
 			const config = {
 				provider: "webllm",
 				model: "Qwen3-4B-q4f32_1-MLC",
@@ -152,7 +202,7 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 				NAIA_AGENT_NAME: "루미",
 				NAIA_SPEECH_STYLE: "casual",
 			};
-			await internals.invoke("write_naia_config", {
+			await invoke("write_naia_config", {
 				adkPath: "opfs://naia-adk",
 				json: JSON.stringify(config),
 			});

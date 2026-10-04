@@ -28,14 +28,21 @@ async function writeConfig(
 	config: Record<string, unknown>,
 ): Promise<void> {
 	await page.evaluate(async (cfg) => {
-		const internals = (
-			window as unknown as {
-				__TAURI_INTERNALS__: {
-					invoke: (cmd: string, args: unknown) => Promise<unknown>;
-				};
+		const internals: unknown = Reflect.get(window, "__TAURI_INTERNALS__");
+		if (
+			typeof internals !== "object" ||
+			internals === null ||
+			!("invoke" in internals) ||
+			typeof (internals as { invoke: unknown }).invoke !== "function"
+		) {
+			throw new Error("__TAURI_INTERNALS__.invoke is not available");
+		}
+		const invoke = (
+			internals as {
+				invoke: (cmd: string, args?: unknown) => Promise<unknown>;
 			}
-		).__TAURI_INTERNALS__;
-		await internals.invoke("write_naia_config", {
+		).invoke;
+		await invoke("write_naia_config", {
 			adkPath: "opfs://naia-adk",
 			json: JSON.stringify(cfg),
 		});
@@ -43,20 +50,28 @@ async function writeConfig(
 	}, config);
 
 	const readBack = await page.evaluate(async () => {
-		const internals = (
-			window as unknown as {
-				__TAURI_INTERNALS__: {
-					invoke: (cmd: string, args: unknown) => Promise<unknown>;
-				};
+		const internals: unknown = Reflect.get(window, "__TAURI_INTERNALS__");
+		if (
+			typeof internals !== "object" ||
+			internals === null ||
+			!("invoke" in internals) ||
+			typeof (internals as { invoke: unknown }).invoke !== "function"
+		) {
+			throw new Error("__TAURI_INTERNALS__.invoke is not available");
+		}
+		const invoke = (
+			internals as {
+				invoke: (cmd: string, args?: unknown) => Promise<unknown>;
 			}
-		).__TAURI_INTERNALS__;
-		return await internals.invoke("read_naia_config", {
+		).invoke;
+		return await invoke("read_naia_config", {
 			adkPath: "opfs://naia-adk",
 		});
 	});
 
 	const parsed = JSON.parse(String(readBack));
 	expect(parsed.agentName).toBe(config.agentName);
+	expect(parsed.persona).toBe(config.persona);
 }
 
 async function getAgentWorker(page: Page): Promise<Worker> {

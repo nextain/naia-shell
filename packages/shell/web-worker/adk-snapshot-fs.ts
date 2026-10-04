@@ -30,11 +30,7 @@ export interface DirLike {
 function isNotFoundOrTypeMismatch(err: unknown): boolean {
 	if (err && typeof err === "object") {
 		const name = "name" in err ? (err as { name: unknown }).name : undefined;
-		const message =
-			"message" in err ? (err as { message: unknown }).message : undefined;
 		if (name === "NotFoundError" || name === "TypeMismatchError") return true;
-		if (message === "NotFoundError" || message === "TypeMismatchError")
-			return true;
 	}
 	return false;
 }

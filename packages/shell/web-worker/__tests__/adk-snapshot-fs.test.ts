@@ -8,10 +8,9 @@ import {
 	readAdkSnapshot,
 } from "../adk-snapshot-fs";
 
-class MockNotFoundError extends Error {
+class MockNotFoundError extends DOMException {
 	constructor(message = "Not found") {
-		super(message);
-		this.name = "NotFoundError";
+		super(message, "NotFoundError");
 	}
 }
 
@@ -194,6 +193,46 @@ describe("adk-snapshot-fs", () => {
 			await expect(readAdkSnapshot(() => Promise.resolve(mockRoot))).rejects.toThrow(
 				"Disk hardware failure",
 			);
+		});
+
+		it("rejects readAdkSnapshot when error name is Error and message is NotFoundError", async () => {
+			const genericError = new Error("NotFoundError");
+			expect(genericError.name).toBe("Error");
+			expect(genericError.message).toBe("NotFoundError");
+
+			const mockRoot: DirLike = {
+				async getDirectoryHandle() {
+					throw genericError;
+				},
+				async getFileHandle() {
+					throw genericError;
+				},
+				async *values() {},
+			};
+
+			await expect(
+				readAdkSnapshot(() => Promise.resolve(mockRoot)),
+			).rejects.toThrow(genericError);
+		});
+
+		it("rejects readAdkSnapshot when error name is Error and message is TypeMismatchError", async () => {
+			const genericError = new Error("TypeMismatchError");
+			expect(genericError.name).toBe("Error");
+			expect(genericError.message).toBe("TypeMismatchError");
+
+			const mockRoot: DirLike = {
+				async getDirectoryHandle() {
+					throw genericError;
+				},
+				async getFileHandle() {
+					throw genericError;
+				},
+				async *values() {},
+			};
+
+			await expect(
+				readAdkSnapshot(() => Promise.resolve(mockRoot)),
+			).rejects.toThrow(genericError);
 		});
 	});
 

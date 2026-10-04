@@ -1,13 +1,26 @@
+export interface RelayPortLike {
+	postMessage(data: unknown): void;
+	addEventListener(
+		type: "message",
+		listener: (event: { data: unknown }) => void,
+	): void;
+	removeEventListener(
+		type: "message",
+		listener: (event: { data: unknown }) => void,
+	): void;
+	start(): void;
+}
+
 export function relayAgentPort(deps: {
-	outer: MessagePort;
-	inner: MessagePort;
+	outer: RelayPortLike;
+	inner: RelayPortLike;
 	beforeChatRequest: () => Promise<void>;
 	diag: { log(message: string, ctx?: unknown): void };
 }): { stop(): void } {
 	let chain: Promise<void> = Promise.resolve();
 	let stopped = false;
 
-	const handleOuterMessage = (event: MessageEvent) => {
+	const handleOuterMessage = (event: { data: unknown }) => {
 		if (stopped) return;
 		if (typeof event.data !== "string") {
 			deps.diag.log("non-string message ignored on outer port", {
@@ -50,7 +63,7 @@ export function relayAgentPort(deps: {
 			});
 	};
 
-	const handleInnerMessage = (event: MessageEvent) => {
+	const handleInnerMessage = (event: { data: unknown }) => {
 		if (stopped) return;
 		if (typeof event.data !== "string") {
 			deps.diag.log("non-string message ignored on inner port", {
