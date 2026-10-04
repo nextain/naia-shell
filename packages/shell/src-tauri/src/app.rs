@@ -885,7 +885,7 @@ pub fn app_run_shell(cmd: String, args: Vec<String>) -> Result<AppShellResult, S
     #[cfg(windows)]
     let final_args = windows_cmd_args(&cmd, &args);
 
-    let mut cmd = std::process::Command::new(program);
+    let mut cmd = crate::host_env::command_for(program);
     cmd.args(&final_args).current_dir(&home_path); // Always run from HOME, never inheriting Tauri's cwd
     crate::platform::hide_console(&mut cmd);
     let output = cmd

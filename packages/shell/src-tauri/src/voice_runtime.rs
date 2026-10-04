@@ -354,7 +354,7 @@ pub fn query_gpus(accelerator: Accelerator) -> Vec<GpuInfo> {
         ),
         Accelerator::Rocm => ("rocm-smi", vec!["--showmeminfo", "vram", "--csv"]),
     };
-    let mut command = std::process::Command::new(program);
+    let mut command = crate::host_env::host_command(program);
     command.args(&args);
     crate::platform::hide_console(&mut command);
     let Ok(output) = command.output() else {

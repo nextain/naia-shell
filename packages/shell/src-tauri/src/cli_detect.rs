@@ -253,7 +253,7 @@ fn run_command_with_timeout(
     args: &[String],
     timeout: Duration,
 ) -> CommandOutcome {
-    let mut command = Command::new(program);
+    let mut command = crate::host_env::command_for(program);
     command
         .args(args)
         .stdin(Stdio::null())
@@ -498,7 +498,7 @@ pub fn open_login(id: &str) -> Result<(), String> {
     let program = resolve_executable(&candidates)
         .ok_or_else(|| format!("{id} is not installed"))?;
 
-    let mut command = Command::new(&program);
+    let mut command = crate::host_env::command_for(&program);
     command.args(&desc.login.args).stdin(Stdio::null());
     if !desc.login.open_in_terminal {
         crate::platform::hide_console(&mut command);

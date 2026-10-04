@@ -246,7 +246,7 @@ pub(super) fn find_converter(cancellation: &CancellationToken) -> ImportResult<C
         let Some(path) = resolve_converter_candidate(&candidate) else {
             continue;
         };
-        let mut command = Command::new(&path);
+        let mut command = crate::host_env::command_for(&path);
         command
             .arg("--version")
             .stdin(Stdio::null())
@@ -344,7 +344,7 @@ pub(super) fn convert_with_libreoffice(
     let expected_output = output_dir.join("input.pdf");
     let filter_options = r#"{"ExportHiddenSlides":{"type":"boolean","value":"true"},"ExportNotesPages":{"type":"boolean","value":"false"},"UseLosslessCompression":{"type":"boolean","value":"true"},"ReduceImageResolution":{"type":"boolean","value":"false"}}"#;
 
-    let mut command = Command::new(&converter.path);
+    let mut command = crate::host_env::command_for(&converter.path);
     command
         .arg(format!("-env:UserInstallation={profile_uri}"))
         .arg("--headless")

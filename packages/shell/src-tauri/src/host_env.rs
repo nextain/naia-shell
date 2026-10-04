@@ -96,6 +96,26 @@ pub(crate) fn host_command(program: impl AsRef<OsStr>) -> Command {
     command
 }
 
+/// 프로그램이 번들(`APPDIR` 아래)에 있으면 true. 이름만 있는 프로그램(PATH 탐색)은 시스템 것으로 본다.
+pub(crate) fn program_is_bundled(program: &OsStr, appdir: Option<&str>) -> bool {
+    let Some(appdir) = appdir.map(|value| value.trim_end_matches('/')).filter(|v| !v.is_empty())
+    else {
+        return false;
+    };
+    program.to_str().is_some_and(|text| is_under(text, appdir))
+}
+
+/// 실행 시점에 경로가 정해지는 프로그램용 Command. 번들 안 프로그램(node, 에이전트 등)은
+/// 상속 환경을 그대로 두고, 그 밖의 것(시스템 설치본, PATH 로 찾은 이름)은 주입 환경을 되돌린다.
+pub(crate) fn command_for(program: impl AsRef<OsStr>) -> Command {
+    let appdir = std::env::var("APPDIR").ok();
+    if program_is_bundled(program.as_ref(), appdir.as_deref()) {
+        Command::new(program)
+    } else {
+        host_command(program)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +195,15 @@ mod tests {
         let envs: Vec<_> = command.get_envs().collect();
         assert!(envs.contains(&(OsStr::new("LD_LIBRARY_PATH"), None)));
         assert!(envs.contains(&(OsStr::new("PATH"), Some(OsStr::new("/usr/bin")))));
+    }
+
+    #[test]
+    fn 번들_안_프로그램만_번들로_본다() {
+        let bundled = OsStr::new("/app/usr/lib/Naia/node");
+        assert!(program_is_bundled(bundled, Some("/app")));
+        assert!(!program_is_bundled(OsStr::new("/usr/bin/node"), Some("/app")));
+        assert!(!program_is_bundled(OsStr::new("node"), Some("/app")));
+        assert!(!program_is_bundled(OsStr::new("/app2/node"), Some("/app")));
+        assert!(!program_is_bundled(bundled, None));
     }
 }

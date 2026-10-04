@@ -2452,7 +2452,7 @@ fn start_gateway_health_monitor(app_handle: AppHandle) -> Arc<std::sync::atomic:
 /// Rust cannot attach the child's stdio to a non-existent console. `hide_console`
 /// sets `CREATE_NO_WINDOW` (no-op on Unix), which fixes the pipe setup.
 fn node_major_version<P: AsRef<std::ffi::OsStr>>(node_path: P) -> Option<u32> {
-    let mut cmd = Command::new(node_path);
+    let mut cmd = crate::host_env::command_for(node_path);
     cmd.arg("-v");
     platform::hide_console(&mut cmd);
     let output = cmd.output().ok()?;
@@ -2951,11 +2951,11 @@ fn direct_agent_command(
     if agent_script.ends_with(".ts") {
         let (node_bin, tsx_cli) =
             tsx_direct.ok_or_else(|| "agent_direct_tsx_runner_required".to_string())?;
-        let mut command = Command::new(&node_bin);
+        let mut command = crate::host_env::command_for(&node_bin);
         command.arg(&tsx_cli).arg(agent_script).arg("--stdio");
         Ok((format!("{} {}", node_bin, tsx_cli), command))
     } else {
-        let mut command = Command::new(agent_path);
+        let mut command = crate::host_env::command_for(agent_path);
         command.arg(agent_script).arg("--stdio");
         Ok((agent_path.to_string(), command))
     }
@@ -4214,16 +4214,16 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     };
 
     let (runner, mut cmd) = if let Some((node_bin, tsx_cli)) = tsx_direct {
-        let mut c = Command::new(&node_bin);
+        let mut c = crate::host_env::command_for(&node_bin);
         c.arg(&tsx_cli).arg(&script_path);
         (format!("{} {}", node_bin, tsx_cli), c)
     } else if use_tsx {
         let npx = std::env::var("NAIA_AGENT_RUNNER").unwrap_or_else(|_| platform::resolve_npx());
-        let mut c = Command::new(&npx);
+        let mut c = crate::host_env::command_for(&npx);
         c.arg("tsx").arg(&script_path);
         (npx, c)
     } else {
-        let mut c = Command::new(&node_path);
+        let mut c = crate::host_env::command_for(&node_path);
         c.arg(&script_path);
         (node_path.clone(), c)
     };
@@ -5850,7 +5850,7 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
     #[cfg(target_os = "linux")]
     {
         let output =
-            tokio::task::spawn_blocking(|| std::process::Command::new("/usr/bin/pw-dump").output())
+            tokio::task::spawn_blocking(|| crate::host_env::host_command("/usr/bin/pw-dump").output())
                 .await
                 .map_err(|e| format!("task error: {e}"))?
                 .map_err(|e| format!("pw-dump error: {e}"))?;
@@ -9813,7 +9813,7 @@ fn capture_discord_token_native() -> Result<zeroize::Zeroizing<String>, String> 
     #[cfg(target_os = "linux")]
     {
         for (program, args) in candidates {
-            if let Ok(output) = std::process::Command::new(program).args(*args).output() {
+            if let Ok(output) = crate::host_env::host_command(program).args(*args).output() {
                 if output.status.success() {
                     let mut bytes = zeroize::Zeroizing::new(output.stdout);
                     trim_secret_newline(&mut bytes);

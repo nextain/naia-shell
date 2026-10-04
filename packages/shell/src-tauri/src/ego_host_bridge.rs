@@ -403,7 +403,7 @@ async fn ensure_daemon(adk_dir: &str, resource_dir: Option<PathBuf>) -> Result<V
     let node = crate::find_node_binary()?;
     let secret = new_admin_secret();
 
-    let mut command = std::process::Command::new(&node);
+    let mut command = crate::host_env::command_for(&node);
     command
         .arg(&entry)
         .arg("--adk")

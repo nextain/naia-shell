@@ -308,7 +308,7 @@ fn agent_browser_bin() -> Option<String> {
     }
 
     // 3. PATH lookup
-    let mut lookup = Command::new(if cfg!(windows) { "where.exe" } else { "which" });
+    let mut lookup = crate::host_env::command_for(if cfg!(windows) { "where.exe" } else { "which" });
     lookup.arg("agent-browser");
     platform::hide_console(&mut lookup);
     if let Ok(out) = lookup.output() {
@@ -503,7 +503,7 @@ fn spawn_chrome(port: u16, tmpdir: &str) -> Result<Child, String> {
                 c.arg("--host").arg(&bin);
                 c
             } else {
-                Command::new(&bin)
+                crate::host_env::command_for(&bin)
             }
         }
         #[cfg(not(target_os = "linux"))]
@@ -804,7 +804,7 @@ pub fn browser_embed_focus() -> Result<(), String> {
 /// Run an agent-browser command against the active Chrome CDP session.
 fn run_agent_cmd(port: u16, args: &[&str]) -> Result<String, String> {
     let bin = agent_browser_bin().ok_or("agent-browser not found")?;
-    let mut cmd = Command::new(&bin);
+    let mut cmd = crate::host_env::command_for(&bin);
     cmd.arg("--cdp").arg(port.to_string()).args(args);
     platform::hide_console(&mut cmd);
     let out = cmd.output().map_err(|e| format!("agent-browser: {e}"))?;
@@ -831,7 +831,7 @@ pub async fn browser_embed_navigate(url: String) -> Result<(), String> {
     if let Some(bin) = agent_browser_bin() {
         let url2 = url.clone();
         let out = tokio::task::spawn_blocking(move || {
-            let mut cmd = std::process::Command::new(&bin);
+            let mut cmd = crate::host_env::command_for(&bin);
             cmd.arg("--cdp")
                 .arg(port.to_string())
                 .arg("open")
@@ -1262,7 +1262,7 @@ pub async fn browser_open_login(app: AppHandle, url: String) -> Result<(), Strin
         crate::log_both(
             "[browser_login] Chrome for Testing not found — running agent-browser install",
         );
-        let mut cmd = Command::new(&bin);
+        let mut cmd = crate::host_env::command_for(&bin);
         cmd.arg("install");
         platform::hide_console(&mut cmd);
         let out = cmd
@@ -1315,7 +1315,7 @@ pub async fn browser_open_login(app: AppHandle, url: String) -> Result<(), Strin
         })
         .unwrap_or_else(|| "--window-position=100,100".into());
 
-    let mut cmd = Command::new(&chrome_path);
+    let mut cmd = crate::host_env::command_for(&chrome_path);
     cmd.args([
         "--no-first-run",
         "--no-default-browser-check",

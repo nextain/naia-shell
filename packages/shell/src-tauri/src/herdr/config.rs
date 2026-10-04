@@ -105,7 +105,7 @@ fn session_name_for_runtime(runtime: &std::path::Path) -> String {
 /// 얹힌다. `--session` 은 하위 명령보다 **앞**에 와야 하는 전역 옵션이라 여기서
 /// 먼저 넣는다.
 pub(super) fn herdr_command() -> std::process::Command {
-    let mut command = std::process::Command::new(herdr_bin());
+    let mut command = crate::host_env::command_for(herdr_bin());
     if let Some(session) = herdr_session_name() {
         command.arg("--session").arg(session);
     }
