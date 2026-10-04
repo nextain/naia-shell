@@ -324,7 +324,7 @@ test.describe("UC-NVA-ABOVE-CHAT - Video Avatar positioned above chat area", () 
 		await expect(
 			page.locator('[data-video-avatar-loaded="true"]'),
 		).toBeVisible({ timeout: 15_000 });
-		const zeroBox = await assertContactAndBoundaries(page, "pan 0");
+		const { canvasBox: zeroBox } = await assertContactAndBoundaries(page, "pan 0");
 
 		const panContext = await page.context().browser()!.newContext();
 		const panPage = await panContext.newPage();
@@ -349,6 +349,13 @@ test.describe("UC-NVA-ABOVE-CHAT - Video Avatar positioned above chat area", () 
 			panRatioError,
 			`Aspect ratio error in pan test: ${panRatioError}`,
 		).toBeLessThanOrEqual(0.02);
+
+		// Saved pan must move the canvas by exactly {x: +30, y: -20} from pan 0.
+		expect(zeroBox).not.toBeNull();
+		expect(Math.abs(panBox!.x - zeroBox!.x - 30)).toBeLessThanOrEqual(2);
+		expect(Math.abs(panBox!.y - zeroBox!.y + 20)).toBeLessThanOrEqual(2);
+		expect(Math.abs(panBox!.width - zeroBox!.width)).toBeLessThanOrEqual(2);
+		expect(Math.abs(panBox!.height - zeroBox!.height)).toBeLessThanOrEqual(2);
 
 		await saveScreenshot(panPage, "nva-above-chat-pan.png");
 		await panContext.close();
