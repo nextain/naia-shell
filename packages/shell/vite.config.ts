@@ -88,34 +88,6 @@ function webCspPlugin(): Plugin {
 	};
 }
 
-function stripRawGithubPlugin(): Plugin {
-	return {
-		name: "strip-raw-github",
-		renderChunk(code) {
-			if (code.includes("raw.githubusercontent.com")) {
-				return {
-					code: code.replaceAll(
-						"raw.githubusercontent.com",
-						"raw.githubusercontent.invalid",
-					),
-					map: null,
-				};
-			}
-		},
-		transform(code) {
-			if (code.includes("raw.githubusercontent.com")) {
-				return {
-					code: code.replaceAll(
-						"raw.githubusercontent.com",
-						"raw.githubusercontent.invalid",
-					),
-					map: null,
-				};
-			}
-		},
-	};
-}
-
 function readPositiveIntegerEnv(
 	name: string,
 	fallback: number,
@@ -154,14 +126,13 @@ export default defineConfig(async ({ mode }) => {
 		plugins: [
 			react(),
 			virtualAgentWorkerPlugin(mode),
-			...(isWeb ? [webCspPlugin(), webAdkPlugin(), stripRawGithubPlugin()] : []),
+			...(isWeb ? [webCspPlugin(), webAdkPlugin()] : []),
 		],
 		build: {
 			// Bundle-budget verification uses this graph to prove that large optional
 			// surfaces stay behind dynamic imports instead of merely producing a
 			// similarly named output file.
 			manifest: true,
-			target: "es2022",
 		},
 		define: {
 			__BUILD_ID__: JSON.stringify(
@@ -226,7 +197,6 @@ export default defineConfig(async ({ mode }) => {
 			? {
 					worker: {
 						format: "es" as const,
-						plugins: () => [stripRawGithubPlugin()],
 					},
 					preview: {
 						headers: {

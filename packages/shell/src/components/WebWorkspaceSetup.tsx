@@ -8,9 +8,13 @@ import {
 } from "../lib/web-runtime/web-adk-status";
 import { getWebFs } from "../lib/web-runtime/web-fs";
 
-export function useWebAdkStatus(): WebAdkStatus {
-	return useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus);
-}
+const DESKTOP_ADK_STATUS: WebAdkStatus = { phase: "ready" };
+
+export const useWebAdkStatus: () => WebAdkStatus =
+	import.meta.env.MODE === "web"
+		? () => useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus)
+		: () => DESKTOP_ADK_STATUS;
+
 
 export interface WebWorkspaceSetupProps {
 	status?: WebAdkStatus;

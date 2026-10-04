@@ -19,7 +19,7 @@ export type Locale =
 
 export type { TranslationKey };
 
-type TranslationTable = Record<TranslationKey, string>;
+type TranslationTable = Readonly<Partial<Record<TranslationKey, string>>>;
 type LocaleModule = { default: TranslationTable };
 
 const localeLoaders: Record<Locale, () => Promise<LocaleModule>> = {
@@ -100,7 +100,7 @@ export function t(
 	key: TranslationKey,
 	params?: Readonly<Record<string, string | number>>,
 ): string {
-	const value = currentTranslations[key];
+	const value = currentTranslations[key] ?? key;
 	if (!params) return value;
 	return value.replace(/\{(\w+)\}/g, (whole, name) =>
 		Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : whole,

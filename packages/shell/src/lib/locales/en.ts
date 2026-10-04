@@ -1,3 +1,5 @@
+import englishWeb from "./en-web";
+
 // 이 파일이 이 언어의 정본이다. 생성물이 아니다.
 //
 // 예전에는 `scripts/i18n-translations.source.ts` 에서 생성한다고 적혀 있었는데,
@@ -8,7 +10,10 @@
 // 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
 // (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
 // 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
-export default {
+//
+// 웹 모드 전용 문구(`webModel.*`, `webWorkspace.*`)는 데스크톱 첫 번들 예산 절약을
+// 위해 데스크톱 운영 빌드(MODE === "production")에서 번들 대상에서 제외된다.
+const englishCore = {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
 	"apps.loginRequired": "Sign in to Naia first.",
@@ -1342,24 +1347,12 @@ export default {
 	"bgm.dragToReorder": "Drag to reorder",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
 	"bgm.cat.citypop": "🌸 City Pop",
-	"webModel.checking": "Checking local model…",
-	"webModel.loading": "Downloading {model} ({percent}%). Sending blocked until ready.",
-	"webModel.ready": "Local model ready: {model}",
-	"webModel.fallbackActive": "Fallback model active.",
-	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
-	"webModel.f16Yes": "yes",
-	"webModel.f16No": "no",
-	"webModel.adapterUnknown": "Unknown adapter",
-	"webModel.errorNoWebgpu": "WebGPU is unavailable in this browser. Open in latest Chrome.",
-	"webModel.errorNoShaderF16": "GPU lacks shader-f16 to run {model}.",
-	"webModel.errorDeviceLost": "Insufficient GPU memory for {model}.",
-	"webModel.errorLoadFailed": "Failed to load {model}.",
-	"webModel.useFallback": "Use {model}",
-	"webModel.backToDefault": "Back to default model {model}",
-	"webModel.retry": "Retry",
-	"webModel.details": "Details",
-	"webWorkspace.description": "Workspaces are stored only inside this browser.",
-	"webWorkspace.startDefault": "Start with default workspace",
-	"webWorkspace.installing": "Preparing workspace {done}/{total}",
-	"webWorkspace.retry": "Retry"
 } as const;
+
+type EnglishTable = Readonly<Record<keyof typeof englishCore, string>> &
+	Readonly<Partial<Record<keyof typeof englishWeb, string>>>;
+const english: EnglishTable =
+	import.meta.env.MODE === "production"
+		? englishCore
+		: { ...englishCore, ...englishWeb };
+export default english;

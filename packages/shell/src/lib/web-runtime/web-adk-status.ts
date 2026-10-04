@@ -61,6 +61,6 @@ declare global {
 	}
 }
 
-if (typeof window !== "undefined") {
+if (import.meta.env.MODE === "web" && typeof window !== "undefined") {
 	window.__NAIA_WEB_ADK_STATUS__ = getWebAdkStatus;
 }
