@@ -248,10 +248,20 @@ export function AppMainContent(props: AppMainContentProps) {
 	}, [uiMode]);
 
 	useEffect(() => {
+		if (!naiaVisible || showAdkSetup) return;
 		updateAvatarLayout();
-	}, [updateAvatarLayout, chatHeight, chatVisible, naiaWidth, uiMode]);
+	}, [
+		updateAvatarLayout,
+		chatHeight,
+		chatVisible,
+		naiaWidth,
+		uiMode,
+		naiaVisible,
+		showAdkSetup,
+	]);
 
 	useEffect(() => {
+		if (!naiaVisible || showAdkSetup) return;
 		const chatEl = chatAreaRef.current;
 		if (!chatEl) return;
 		const observer = new ResizeObserver(() => {
@@ -260,11 +270,12 @@ export function AppMainContent(props: AppMainContentProps) {
 		observer.observe(chatEl);
 		if (overlayRef.current) observer.observe(overlayRef.current);
 		window.addEventListener("resize", updateAvatarLayout);
+		updateAvatarLayout();
 		return () => {
 			observer.disconnect();
 			window.removeEventListener("resize", updateAvatarLayout);
 		};
-	}, [updateAvatarLayout]);
+	}, [updateAvatarLayout, naiaVisible, showAdkSetup]);
 
 	if (showAdkSetup)
 		return (

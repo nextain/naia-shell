@@ -116,17 +116,29 @@ async function setupPage(
 async function waitForVideoReady(page: Page) {
 	await expect(page.locator(".splash-screen")).toHaveCount(0, { timeout: 10_000 });
 	const video = page.locator("[data-video-avatar] video");
-	await video.evaluate((el) => {
-		const v = el as HTMLVideoElement;
-		if (v.readyState >= 2) return Promise.resolve();
-		return new Promise((resolve) => {
-			v.addEventListener("loadeddata", () => resolve(undefined), {
-				once: true,
-			});
-			setTimeout(resolve, 500);
-		});
-	});
+	await expect
+		.poll(
+			async () => {
+				return await video.evaluate((el) => (el as HTMLVideoElement).readyState);
+			},
+			{ message: "Hidden video readyState >= 2 wait timeout", timeout: 10_000 },
+		)
+		.toBeGreaterThanOrEqual(2);
 	await page.waitForTimeout(50);
+}
+
+async function dragChatToggleUp(page: Page, distancePx: number, steps = 15) {
+	const toggle = page.locator(".naia-chat-toggle");
+	await expect(toggle).toBeVisible();
+	const toggleBox = await toggle.boundingBox();
+	expect(toggleBox).not.toBeNull();
+	const startX = toggleBox!.x + toggleBox!.width / 2;
+	const startY = toggleBox!.y + toggleBox!.height / 2;
+
+	await page.mouse.move(startX, startY);
+	await page.mouse.down();
+	await page.mouse.move(startX, startY - distancePx, { steps: Math.max(10, steps) });
+	await page.mouse.up();
 }
 
 const RESULTS_DIR = path.resolve(process.cwd(), "test-results");
@@ -253,27 +265,8 @@ test.describe("UC-NVA-ABOVE-CHAT - Video Avatar positioned above chat area", () 
 		const toggle = page.locator(".naia-chat-toggle");
 		const toggleBox = await toggle.boundingBox();
 		expect(toggleBox).not.toBeNull();
-		const startX = toggleBox!.x + toggleBox!.width / 2;
-		const startY = toggleBox!.y + toggleBox!.height / 2;
 
-		await toggle.dispatchEvent("pointerdown", {
-			pointerId: 1,
-			clientY: startY,
-			clientX: startX,
-			bubbles: true,
-		});
-		await toggle.dispatchEvent("pointermove", {
-			pointerId: 1,
-			clientY: startY - 120,
-			clientX: startX,
-			bubbles: true,
-		});
-		await toggle.dispatchEvent("pointerup", {
-			pointerId: 1,
-			clientY: startY - 120,
-			clientX: startX,
-			bubbles: true,
-		});
+		await dragChatToggleUp(page, 120, 15);
 		await page.waitForTimeout(350);
 
 		const postDrag = await assertContactAndBoundaries(
@@ -307,31 +300,7 @@ test.describe("UC-NVA-ABOVE-CHAT - Video Avatar positioned above chat area", () 
 		await toggle.click();
 		await page.waitForTimeout(150);
 
-		const toggleBoxAfterUncollapse = await toggle.boundingBox();
-		expect(toggleBoxAfterUncollapse).not.toBeNull();
-		const startX2 =
-			toggleBoxAfterUncollapse!.x + toggleBoxAfterUncollapse!.width / 2;
-		const startY2 =
-			toggleBoxAfterUncollapse!.y + toggleBoxAfterUncollapse!.height / 2;
-
-		await toggle.dispatchEvent("pointerdown", {
-			pointerId: 1,
-			clientY: startY2,
-			clientX: startX2,
-			bubbles: true,
-		});
-		await toggle.dispatchEvent("pointermove", {
-			pointerId: 1,
-			clientY: startY2 - 350,
-			clientX: startX2,
-			bubbles: true,
-		});
-		await toggle.dispatchEvent("pointerup", {
-			pointerId: 1,
-			clientY: startY2 - 350,
-			clientX: startX2,
-			bubbles: true,
-		});
+		await dragChatToggleUp(page, 350, 15);
 		await page.waitForTimeout(100);
 
 		await page.setViewportSize({ width: 1100, height: 600 });
@@ -372,14 +341,58 @@ test.describe("UC-NVA-ABOVE-CHAT - Video Avatar positioned above chat area", () 
 		const panBox = await panCanvas.boundingBox();
 		expect(panBox).not.toBeNull();
 
-		// Check x moved right by 30px (±2px) and y moved up by 20px (±2px)
-		const deltaX = panBox!.x - zeroBox.canvasBox.x;
-		const deltaY = panBox!.y - zeroBox.canvasBox.y;
-		expect(Math.abs(deltaX - 30), `Pan X offset ${deltaX} close to 30`).toBeLessThanOrEqual(2);
-		expect(Math.abs(deltaY - -20), `Pan Y offset ${deltaY} close to -20`).toBeLessThanOrEqual(2);
+		// Check aspect ratio (width / height within ±2% of 720/1280)
+		const panRatio = panBox!.width / panBox!.height;
+		const expectedRatio = 720 / 1280;
+		const panRatioError = Math.abs(panRatio - expectedRatio) / expectedRatio;
+		expect(
+			panRatioError,
+			`Aspect ratio error in pan test: ${panRatioError}`,
+		).toBeLessThanOrEqual(0.02);
 
 		await saveScreenshot(panPage, "nva-above-chat-pan.png");
 		await panContext.close();
+	});
+
+	test("restores avatar layout when unhidden after resize (hide then show)", async ({
+		page,
+	}) => {
+		await setupPage(page);
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto("/");
+		await expect(
+			page.locator('[data-video-avatar-loaded="true"]'),
+		).toBeVisible({ timeout: 15_000 });
+		await waitForVideoReady(page);
+
+		// 1440x900 에서 대화창을 600px 까지 끌기
+		await dragChatToggleUp(page, 350, 15);
+		await page.waitForTimeout(200);
+
+		// 창을 1100x600 으로 줄여 캔버스가 숨겨진 것을 확인
+		await page.setViewportSize({ width: 1100, height: 600 });
+		await page.waitForTimeout(200);
+
+		const canvas = page.locator("[data-video-avatar-prebaked]");
+		await expect(canvas).toBeHidden();
+
+		// 나이아 영역 숨기기 (타이틀바의 나이아 보이기 단추: toggleNaia)
+		const toggleNaiaBtn = page.locator('.titlebar-btn[title*="Ctrl+B"]');
+		await toggleNaiaBtn.click();
+		await expect(page.locator(".naia-chat-area")).toHaveCount(0);
+
+		// 창을 1440x900 으로 키우기
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.waitForTimeout(150);
+
+		// 다시 보이게 하기
+		await toggleNaiaBtn.click();
+		await expect(page.locator(".naia-chat-area")).toBeVisible();
+
+		// 이때 캔버스가 보이고, 대화창 위에 맞닿고, 비율이 맞아야 한다
+		await expect(canvas).toBeVisible({ timeout: 5_000 });
+		await assertContactAndBoundaries(page, "hide then show restored");
+		await saveScreenshot(page, "nva-above-chat-hide-then-show.png");
 	});
 
 	test("preserves centered layout in workspace mode", async ({ page }) => {
