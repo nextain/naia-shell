@@ -40,13 +40,35 @@ function isExactNotFoundError(e: unknown): boolean {
 	return false;
 }
 
+export interface WebFsWritableFileStream {
+	write(data: string | Blob): Promise<void>;
+	close(): Promise<void>;
+}
+
+export interface WebFsFileHandle {
+	getFile(): Promise<{ text(): Promise<string> }>;
+	createWritable(): Promise<WebFsWritableFileStream>;
+}
+
+export interface WebFsDirectoryHandle {
+	getDirectoryHandle(
+		name: string,
+		options?: { create?: boolean },
+	): Promise<WebFsDirectoryHandle>;
+	getFileHandle(
+		name: string,
+		options?: { create?: boolean },
+	): Promise<WebFsFileHandle>;
+	removeEntry(name: string): Promise<void>;
+}
+
 export function createOpfsWebFs(
-	getRoot: () => Promise<FileSystemDirectoryHandle>,
+	getRoot: () => Promise<WebFsDirectoryHandle>,
 ): WebFs {
 	return {
 		async readText(path: string): Promise<string | null> {
 			const segs = validateAndSplitPath(path);
-			let currentDir: FileSystemDirectoryHandle;
+			let currentDir: WebFsDirectoryHandle;
 			try {
 				currentDir = await getRoot();
 			} catch (e) {
@@ -66,7 +88,7 @@ export function createOpfsWebFs(
 			}
 
 			const fileName = segs[segs.length - 1];
-			let fileHandle: FileSystemFileHandle;
+			let fileHandle: WebFsFileHandle;
 			try {
 				fileHandle = await currentDir.getFileHandle(fileName, {
 					create: false,
@@ -113,6 +135,8 @@ export function createOpfsWebFs(
 
 			try {
 				const writable = await fileHandle.createWritable();
+				let writeError: unknown = null;
+				let hasWriteError = false;
 				try {
 					let chunk: string | Blob;
 					if (typeof data === "string") {
@@ -123,9 +147,21 @@ export function createOpfsWebFs(
 						chunk = new Blob([buf]);
 					}
 					await writable.write(chunk);
-				} finally {
-					await writable.close();
+				} catch (err) {
+					hasWriteError = true;
+					writeError = err;
 				}
+
+				if (hasWriteError) {
+					try {
+						await writable.close();
+					} catch {
+						// write 실패 시 close 실패는 무시하고 원래 writeError 보존
+					}
+					throw writeError;
+				}
+
+				await writable.close();
 			} catch (e) {
 				if (isNewFile) {
 					try {
@@ -140,7 +176,7 @@ export function createOpfsWebFs(
 
 		async exists(path: string): Promise<boolean> {
 			const segs = validateAndSplitPath(path);
-			let currentDir: FileSystemDirectoryHandle;
+			let currentDir: WebFsDirectoryHandle;
 			try {
 				currentDir = await getRoot();
 			} catch (e) {

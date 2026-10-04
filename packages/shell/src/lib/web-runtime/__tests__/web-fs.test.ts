@@ -3,6 +3,8 @@ import {
 	createMemoryWebFs,
 	createOpfsWebFs,
 	validateAndSplitPath,
+	type WebFsDirectoryHandle,
+	type WebFsFileHandle,
 } from "../web-fs";
 
 describe("web-fs", () => {
@@ -70,18 +72,13 @@ describe("web-fs", () => {
 	});
 
 	describe("OpfsWebFs with mock handles", () => {
-		interface MockFileHandle {
-			kind: "file";
+		interface MockFileHandle extends WebFsFileHandle {
+			kind?: "file";
 			name: string;
-			getFile(): Promise<{ text(): Promise<string> }>;
-			createWritable(): Promise<{
-				write(data: unknown): Promise<void>;
-				close(): Promise<void>;
-			}>;
 		}
 
-		interface MockDirHandle {
-			kind: "directory";
+		interface MockDirHandle extends WebFsDirectoryHandle {
+			kind?: "directory";
 			name: string;
 			getDirectoryHandle(
 				name: string,
@@ -91,6 +88,7 @@ describe("web-fs", () => {
 				name: string,
 				options?: { create?: boolean },
 			): Promise<MockFileHandle>;
+			removeEntry(name: string): Promise<void>;
 		}
 
 		it("returns null on NotFoundError during readText and exists", async () => {
@@ -105,11 +103,10 @@ describe("web-fs", () => {
 				async getFileHandle() {
 					throw notFoundError;
 				},
+				async removeEntry() {},
 			};
 
-			const fs = createOpfsWebFs(() =>
-				Promise.resolve(mockRoot as unknown as FileSystemDirectoryHandle),
-			);
+			const fs = createOpfsWebFs(() => Promise.resolve(mockRoot));
 			expect(await fs.readText("missing/dir/file.txt")).toBeNull();
 			expect(await fs.exists("missing/dir/file.txt")).toBe(false);
 		});
@@ -126,11 +123,10 @@ describe("web-fs", () => {
 				async getFileHandle() {
 					throw diskError;
 				},
+				async removeEntry() {},
 			};
 
-			const fs = createOpfsWebFs(() =>
-				Promise.resolve(mockRoot as unknown as FileSystemDirectoryHandle),
-			);
+			const fs = createOpfsWebFs(() => Promise.resolve(mockRoot));
 			await expect(fs.readText("dir/file.txt")).rejects.toThrow(
 				"Disk hardware failure",
 			);
@@ -175,6 +171,7 @@ describe("web-fs", () => {
 					if (name === "data.txt") return mockFile;
 					throw new DOMException("Not found", "NotFoundError");
 				},
+				async removeEntry() {},
 			};
 
 			const mockRoot: MockDirHandle = {
@@ -187,11 +184,10 @@ describe("web-fs", () => {
 				async getFileHandle() {
 					throw new DOMException("Not found", "NotFoundError");
 				},
+				async removeEntry() {},
 			};
 
-			const fs = createOpfsWebFs(() =>
-				Promise.resolve(mockRoot as unknown as FileSystemDirectoryHandle),
-			);
+			const fs = createOpfsWebFs(() => Promise.resolve(mockRoot));
 			await fs.writeBytes("sub/data.txt", "mock content");
 			expect(writtenData).toBe("mock content");
 			expect(closed).toBe(true);
@@ -230,8 +226,8 @@ describe("web-fs", () => {
 				},
 			});
 
-			const mockDir = {
-				kind: "directory" as const,
+			const mockDir: MockDirHandle = {
+				kind: "directory",
 				name: "root",
 				async getDirectoryHandle() {
 					throw new DOMException("Not found", "NotFoundError");
@@ -254,9 +250,7 @@ describe("web-fs", () => {
 				},
 			};
 
-			const fs = createOpfsWebFs(() =>
-				Promise.resolve(mockDir as unknown as FileSystemDirectoryHandle),
-			);
+			const fs = createOpfsWebFs(() => Promise.resolve(mockDir));
 
 			await expect(fs.writeBytes("new-file.txt", "content")).rejects.toThrow(
 				"createWritable failed",
@@ -285,7 +279,7 @@ describe("web-fs", () => {
 						throw new Error("createWritable failed");
 					}
 					return {
-						async write(data: unknown) {
+						async write(data: string | Blob) {
 							files.set(name, { text: String(data) });
 						},
 						async close() {},
@@ -293,8 +287,8 @@ describe("web-fs", () => {
 				},
 			});
 
-			const mockDir = {
-				kind: "directory" as const,
+			const mockDir: MockDirHandle = {
+				kind: "directory",
 				name: "root",
 				async getDirectoryHandle() {
 					throw new DOMException("Not found", "NotFoundError");
@@ -317,9 +311,7 @@ describe("web-fs", () => {
 				},
 			};
 
-			const fs = createOpfsWebFs(() =>
-				Promise.resolve(mockDir as unknown as FileSystemDirectoryHandle),
-			);
+			const fs = createOpfsWebFs(() => Promise.resolve(mockDir));
 
 			await fs.writeBytes("existing-file.txt", "initial content");
 			expect(await fs.exists("existing-file.txt")).toBe(true);
@@ -330,6 +322,133 @@ describe("web-fs", () => {
 			).rejects.toThrow("createWritable failed");
 			expect(await fs.exists("existing-file.txt")).toBe(true);
 			expect(await fs.readText("existing-file.txt")).toBe("initial content");
+		});
+
+		it("preserves write error when both write and close fail, closes once, and cleans up new file", async () => {
+			const writeErr = new Error("write failed");
+			const closeErr = new Error("close failed");
+			let closeCalls = 0;
+			const files = new Map<string, { text: string }>();
+
+			const createMockFile = (name: string): MockFileHandle => ({
+				kind: "file",
+				name,
+				async getFile() {
+					const f = files.get(name);
+					if (!f) throw new DOMException("Not found", "NotFoundError");
+					return {
+						async text() {
+							return f.text;
+						},
+					};
+				},
+				async createWritable() {
+					return {
+						async write() {
+							throw writeErr;
+						},
+						async close() {
+							closeCalls++;
+							throw closeErr;
+						},
+					};
+				},
+			});
+
+			const mockDir: MockDirHandle = {
+				kind: "directory",
+				name: "root",
+				async getDirectoryHandle() {
+					throw new DOMException("Not found", "NotFoundError");
+				},
+				async getFileHandle(name: string, options?: { create?: boolean }) {
+					if (!files.has(name)) {
+						if (options?.create) {
+							files.set(name, { text: "" });
+						} else {
+							throw new DOMException("Not found", "NotFoundError");
+						}
+					}
+					return createMockFile(name);
+				},
+				async removeEntry(name: string) {
+					if (!files.has(name)) {
+						throw new DOMException("Not found", "NotFoundError");
+					}
+					files.delete(name);
+				},
+			};
+
+			const fs = createOpfsWebFs(() => Promise.resolve(mockDir));
+
+			await expect(
+				fs.writeBytes("new-file-both-fail.txt", "content"),
+			).rejects.toBe(writeErr);
+			expect(closeCalls).toBe(1);
+			expect(await fs.exists("new-file-both-fail.txt")).toBe(false);
+		});
+
+		it("preserves close error when write succeeds but close fails, and cleans up new file", async () => {
+			const closeErr = new Error("close failed only");
+			let closeCalls = 0;
+			const files = new Map<string, { text: string }>();
+
+			const createMockFile = (name: string): MockFileHandle => ({
+				kind: "file",
+				name,
+				async getFile() {
+					const f = files.get(name);
+					if (!f) throw new DOMException("Not found", "NotFoundError");
+					return {
+						async text() {
+							return f.text;
+						},
+					};
+				},
+				async createWritable() {
+					return {
+						async write(data: string | Blob) {
+							files.set(name, { text: String(data) });
+						},
+						async close() {
+							closeCalls++;
+							throw closeErr;
+						},
+					};
+				},
+			});
+
+			const mockDir: MockDirHandle = {
+				kind: "directory",
+				name: "root",
+				async getDirectoryHandle() {
+					throw new DOMException("Not found", "NotFoundError");
+				},
+				async getFileHandle(name: string, options?: { create?: boolean }) {
+					if (!files.has(name)) {
+						if (options?.create) {
+							files.set(name, { text: "" });
+						} else {
+							throw new DOMException("Not found", "NotFoundError");
+						}
+					}
+					return createMockFile(name);
+				},
+				async removeEntry(name: string) {
+					if (!files.has(name)) {
+						throw new DOMException("Not found", "NotFoundError");
+					}
+					files.delete(name);
+				},
+			};
+
+			const fs = createOpfsWebFs(() => Promise.resolve(mockDir));
+
+			await expect(
+				fs.writeBytes("new-file-close-fail.txt", "content"),
+			).rejects.toBe(closeErr);
+			expect(closeCalls).toBe(1);
+			expect(await fs.exists("new-file-close-fail.txt")).toBe(false);
 		});
 	});
 });

@@ -5,7 +5,12 @@ import {
 	WEB_ADK_SOURCE,
 	type WebAdkSource,
 } from "../web-adk";
-import { createMemoryWebFs, createOpfsWebFs } from "../web-fs";
+import {
+	createMemoryWebFs,
+	createOpfsWebFs,
+	type WebFsDirectoryHandle,
+	type WebFsFileHandle,
+} from "../web-fs";
 
 describe("web-adk", () => {
 	it("computes git blob sha-1 for CLAUDE.md content", async () => {
@@ -271,7 +276,7 @@ describe("web-adk", () => {
 	it("recovers from write failure without leaving empty file that bypasses subsequent provisioning", async () => {
 		let failWritable = false;
 
-		class MockDirHandle {
+		class MockDirHandle implements WebFsDirectoryHandle {
 			kind = "directory" as const;
 			name: string;
 			files = new Map<string, Uint8Array>();
@@ -303,7 +308,7 @@ describe("web-adk", () => {
 			async getFileHandle(
 				name: string,
 				options?: { create?: boolean },
-			): Promise<any> {
+			): Promise<WebFsFileHandle> {
 				const hasFile = this.files.has(name);
 				if (!hasFile) {
 					if (options?.create) {
@@ -315,23 +320,14 @@ describe("web-adk", () => {
 
 				const parent = this;
 				return {
-					kind: "file",
-					name,
 					async getFile() {
 						const data = parent.files.get(name);
 						if (data === undefined) {
 							throw new DOMException(`File not found: ${name}`, "NotFoundError");
 						}
 						return {
-							size: data.byteLength,
 							async text() {
 								return new TextDecoder().decode(data);
-							},
-							async arrayBuffer() {
-								return data.buffer.slice(
-									data.byteOffset,
-									data.byteOffset + data.byteLength,
-								);
 							},
 						};
 					},
@@ -385,9 +381,7 @@ describe("web-adk", () => {
 		}
 
 		const mockRoot = new MockDirHandle("root");
-		const fs = createOpfsWebFs(
-			() => Promise.resolve(mockRoot as unknown as FileSystemDirectoryHandle),
-		);
+		const fs = createOpfsWebFs(() => Promise.resolve(mockRoot));
 
 		const agentsContent = new TextEncoder().encode("# Test Agents\nValid content");
 		const agentsSha1 = await gitBlobSha1(agentsContent);
