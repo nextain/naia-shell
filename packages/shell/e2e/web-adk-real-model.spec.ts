@@ -106,7 +106,11 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 		await page.route("**/__naia_precheck__", precheckHandler);
 		await page.goto("/__naia_precheck__");
 		expect(precheckRouteCalled).toBe(1);
-		expect(new URL(page.url()).origin).toBe(new URL("/", page.url()).origin);
+		const baseURL = testInfo.project.use.baseURL;
+		if (typeof baseURL !== "string" || baseURL === "") {
+			throw new Error("baseURL must be a non-empty string");
+		}
+		expect(new URL(page.url()).origin).toBe(new URL(baseURL).origin);
 
 		const precheck = await readOpfsAdkStatus(page);
 		const cachedBefore =
