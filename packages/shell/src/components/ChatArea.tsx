@@ -19,7 +19,10 @@ import {
 } from "tauri-plugin-stt-api";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
 import { WebModelStatusBar, useWebModelStatus } from "./WebModelStatusBar";
-import { isWebSendBlocked } from "../lib/web-runtime/web-model-status";
+import {
+	getWebModelStatus,
+	isWebSendBlocked,
+} from "../lib/web-runtime/web-model-status";
 import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
@@ -1597,7 +1600,11 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
-		if (webSendBlocked) return;
+		if (
+			import.meta.env.MODE === "web" &&
+			isWebSendBlocked(getWebModelStatus())
+		)
+			return;
 		if (await handleSpeechProfilePhrase(text)) return;
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
@@ -2939,6 +2946,13 @@ export function ChatArea({
 											"Skipping duplicate send (already streaming)",
 											{ text },
 										);
+										return;
+									}
+									if (
+										import.meta.env.MODE === "web" &&
+										isWebSendBlocked(getWebModelStatus())
+									) {
+										setInput(text);
 										return;
 									}
 									handleSend(text);

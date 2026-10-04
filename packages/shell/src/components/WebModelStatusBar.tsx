@@ -88,25 +88,28 @@ export function WebModelStatusBar(props: {
 			>
 				<p className="chat-error-notice__lead">{leadMessage}</p>
 				{adapterLine && <p className="chat-error-notice__adapter">{adapterLine}</p>}
-				{fallbackModel && (
+				<div className="update-banner-actions">
+					{fallbackModel && (
+						<button
+							type="button"
+							className="chat-error-notice__retry"
+							data-testid="web-model-fallback"
+							onClick={() => handleSwitchModel(fallbackModel)}
+						>
+							{t("webModel.useFallback", {
+								model: WEB_LLM_MODEL_LABELS[fallbackModel] ?? fallbackModel,
+							})}
+						</button>
+					)}
 					<button
 						type="button"
-						data-testid="web-model-fallback"
-						onClick={() => handleSwitchModel(fallbackModel)}
+						className="chat-error-notice__retry"
+						data-testid="web-model-retry"
+						onClick={handleRetry}
 					>
-						{t("webModel.useFallback", {
-							model: WEB_LLM_MODEL_LABELS[fallbackModel] ?? fallbackModel,
-						})}
+						{t("webModel.retry")}
 					</button>
-				)}
-				<button
-					type="button"
-					className="chat-error-notice__retry"
-					data-testid="web-model-retry"
-					onClick={handleRetry}
-				>
-					{t("webModel.retry")}
-				</button>
+				</div>
 				{status.errorMessage && (
 					<details className="chat-error-notice__details">
 						<summary>{t("webModel.details")}</summary>
@@ -151,6 +154,7 @@ export function WebModelStatusBar(props: {
 							<span>{t("webModel.fallbackActive")}</span>{" "}
 							<button
 								type="button"
+								className="chat-error-notice__retry"
 								data-testid="web-model-back-to-default"
 								onClick={() => handleSwitchModel(WEB_LLM_MODEL_ID)}
 							>

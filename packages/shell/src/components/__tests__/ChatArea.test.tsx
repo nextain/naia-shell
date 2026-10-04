@@ -17,6 +17,10 @@ import { useAvatarStore } from "../../stores/avatar";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { useChatStore } from "../../stores/chat";
 import { ChatArea, modelToolBoundary } from "../ChatArea";
+import {
+	resetWebModelStatusForTests,
+	setWebModelStatus,
+} from "../../lib/web-runtime/web-model-status";
 
 const ttsSyncMocks = vi.hoisted(() => ({
 	synthesizeTts: vi.fn().mockResolvedValue({
@@ -209,6 +213,24 @@ class FakeSpeechRecognition {
 	stop = vi.fn();
 	abort = vi.fn();
 
+	emitResult(
+		results: { transcript: string; confidence?: number; isFinal: boolean }[],
+	) {
+		const resultList = results.map((r) => {
+			const alt = { transcript: r.transcript, confidence: r.confidence ?? 1 };
+			const item = Object.assign([alt], {
+				isFinal: r.isFinal,
+				length: 1,
+				item: (index: number) => (index === 0 ? alt : undefined),
+			});
+			return item;
+		});
+		this.onresult?.({
+			resultIndex: 0,
+			results: Object.assign(resultList, { length: resultList.length }),
+		});
+	}
+
 	constructor() {
 		FakeSpeechRecognition.latest = this;
 	}
@@ -246,6 +268,8 @@ describe("ChatArea", () => {
 			audioBase64: "default-audio",
 			costUsd: 0,
 		});
+		resetWebModelStatusForTests();
+		vi.unstubAllEnvs();
 	});
 
 	it("renders input field and buttons", () => {
@@ -2324,5 +2348,87 @@ describe("ChatArea", () => {
 		lastReq.onChunk({ type: "finish", requestId: lastReq.requestId });
 		localStorage.removeItem("naia-config");
 	});
+
+	it("sends request when pre-ready event subscription callback is invoked after ready in web mode", async () => {
+		vi.stubEnv("MODE", "web");
+		setWebModelStatus({ phase: "checking" });
+
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "openai",
+				model: "gpt-4o",
+				apiKey: "test-key",
+			}),
+		);
+
+		render(<ChatArea />);
+
+		// Model transitions to ready after mount
+		setWebModelStatus({ phase: "ready" });
+
+		// Trigger event subscription callback registered before ready
+		window.dispatchEvent(
+			new CustomEvent("naia:interference-event", {
+				detail: {
+					source: "browser",
+					action: "opened",
+					url: "https://example.com",
+				},
+			}),
+		);
+
+		await waitFor(
+			() => {
+				expect(capturedRequests.length).toBeGreaterThan(0);
+			},
+			{ timeout: 1000 },
+		);
+		const req = capturedRequests[capturedRequests.length - 1];
+		expect(req.message).toContain("https://example.com");
+	});
+
+	it("preserves pre-ready STT final result in input and prevents transmission after debounce in web mode", async () => {
+		vi.stubEnv("MODE", "web");
+		setWebModelStatus({ phase: "checking" });
+
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "openai",
+				model: "gpt-4o",
+				sttProvider: "web-speech",
+			}),
+		);
+		Object.defineProperty(window, "SpeechRecognition", {
+			configurable: true,
+			value: FakeSpeechRecognition,
+		});
+
+		render(<ChatArea />);
+
+		const voiceBtn = document.querySelector(".chat-voice-btn") as HTMLButtonElement;
+		fireEvent.click(voiceBtn);
+
+		await waitFor(() => {
+			expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledTimes(1);
+		});
+
+		act(() => {
+			FakeSpeechRecognition.latest?.emitResult([
+				{ transcript: "준비 전 STT 텍스트", isFinal: true },
+			]);
+		});
+
+		// Wait past 300ms debounce
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 400));
+		});
+
+		const input = document.querySelector(".chat-input") as HTMLTextAreaElement;
+		expect(input.value).toBe("준비 전 STT 텍스트");
+		expect(capturedRequests).toHaveLength(0);
+	});
 });
+
 
