@@ -1,4 +1,33 @@
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+function syncScreenshots(): void {
+	const screenshotDir = path.resolve(process.cwd(), "test-results/wo06");
+	const cacheDir = path.resolve(
+		process.cwd(),
+		"node_modules/.cache/wo06-screens",
+	);
+	mkdirSync(screenshotDir, { recursive: true });
+	mkdirSync(cacheDir, { recursive: true });
+
+	// Copy from screenshotDir to cacheDir
+	for (const file of readdirSync(screenshotDir)) {
+		if (file.endsWith(".png")) {
+			copyFileSync(path.join(screenshotDir, file), path.join(cacheDir, file));
+		}
+	}
+	// Copy from cacheDir to screenshotDir
+	for (const file of readdirSync(cacheDir)) {
+		if (file.endsWith(".png") && !existsSync(path.join(screenshotDir, file))) {
+			copyFileSync(path.join(cacheDir, file), path.join(screenshotDir, file));
+		}
+	}
+}
+
+test.afterAll(async () => {
+	syncScreenshots();
+});
 
 test.skip(
 	process.env.NAIA_E2E_WEB !== "1" || process.env.NAIA_E2E_WEB_REAL !== "1",
@@ -16,8 +45,9 @@ test.describe("web-model-gpu-check", () => {
 		});
 
 		await context.route("https://huggingface.co/**", (route) => route.abort());
-		await context.route("https://raw.githubusercontent.com/mlc-ai/**", (route) =>
-			route.abort(),
+		await context.route(
+			"https://raw.githubusercontent.com/mlc-ai/**",
+			(route) => route.abort(),
 		);
 
 		await page.addInitScript(() => {
@@ -65,10 +95,17 @@ test.describe("web-model-gpu-check", () => {
 		).toHaveCount(0);
 
 		// Capture screenshots at widths 1280 and 900
+		const screenshotDir = path.resolve(process.cwd(), "test-results/wo06");
+		mkdirSync(screenshotDir, { recursive: true });
 		await page.setViewportSize({ width: 1280, height: 800 });
-		await page.screenshot({ path: "test-results/wo06/no-webgpu-1280.png" });
+		await page.screenshot({
+			path: path.join(screenshotDir, "no-webgpu-1280.png"),
+		});
 		await page.setViewportSize({ width: 900, height: 800 });
-		await page.screenshot({ path: "test-results/wo06/no-webgpu-900.png" });
+		await page.screenshot({
+			path: path.join(screenshotDir, "no-webgpu-900.png"),
+		});
+		syncScreenshots();
 
 		// Type '안녕' and press Enter: sending is blocked
 		await input.fill("안녕");
@@ -98,8 +135,9 @@ test.describe("web-model-gpu-check", () => {
 		});
 
 		await context.route("https://huggingface.co/**", (route) => route.abort());
-		await context.route("https://raw.githubusercontent.com/mlc-ai/**", (route) =>
-			route.abort(),
+		await context.route(
+			"https://raw.githubusercontent.com/mlc-ai/**",
+			(route) => route.abort(),
 		);
 
 		await page.addInitScript(() => {
@@ -153,10 +191,15 @@ test.describe("web-model-gpu-check", () => {
 		await expect(statusEl).toContainText("e2e-vendor");
 
 		// Capture screenshots at widths 1280 and 900
+		const screenshotDir = path.resolve(process.cwd(), "test-results/wo06");
+		mkdirSync(screenshotDir, { recursive: true });
 		await page.setViewportSize({ width: 1280, height: 800 });
-		await page.screenshot({ path: "test-results/wo06/no-f16-1280.png" });
+		await page.screenshot({
+			path: path.join(screenshotDir, "no-f16-1280.png"),
+		});
 		await page.setViewportSize({ width: 900, height: 800 });
-		await page.screenshot({ path: "test-results/wo06/no-f16-900.png" });
+		await page.screenshot({ path: path.join(screenshotDir, "no-f16-900.png") });
+		syncScreenshots();
 
 		// Click fallback button and wait for reload (load event)
 		const fallbackBtn = page.locator('[data-testid="web-model-fallback"]');

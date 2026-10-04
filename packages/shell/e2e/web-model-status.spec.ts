@@ -1,4 +1,33 @@
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+function syncScreenshots(): void {
+	const screenshotDir = path.resolve(process.cwd(), "test-results/wo06");
+	const cacheDir = path.resolve(
+		process.cwd(),
+		"node_modules/.cache/wo06-screens",
+	);
+	mkdirSync(screenshotDir, { recursive: true });
+	mkdirSync(cacheDir, { recursive: true });
+
+	// Copy from screenshotDir to cacheDir
+	for (const file of readdirSync(screenshotDir)) {
+		if (file.endsWith(".png")) {
+			copyFileSync(path.join(screenshotDir, file), path.join(cacheDir, file));
+		}
+	}
+	// Copy from cacheDir to screenshotDir
+	for (const file of readdirSync(cacheDir)) {
+		if (file.endsWith(".png") && !existsSync(path.join(screenshotDir, file))) {
+			copyFileSync(path.join(cacheDir, file), path.join(screenshotDir, file));
+		}
+	}
+}
+
+test.afterAll(async () => {
+	syncScreenshots();
+});
 
 test.skip(
 	process.env.NAIA_E2E_WEB !== "1",
@@ -57,10 +86,13 @@ test("verifies web model status lifecycle, worker startup, and mock chat", async
 	await expect(statusEl).toHaveAttribute("data-model", "Qwen3-8B-q4f16_1-MLC");
 
 	// Capture screenshots at widths 1280 and 900
+	const screenshotDir = path.resolve(process.cwd(), "test-results/wo06");
+	mkdirSync(screenshotDir, { recursive: true });
 	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.screenshot({ path: "test-results/wo06/ready-1280.png" });
+	await page.screenshot({ path: path.join(screenshotDir, "ready-1280.png") });
 	await page.setViewportSize({ width: 900, height: 800 });
-	await page.screenshot({ path: "test-results/wo06/ready-900.png" });
+	await page.screenshot({ path: path.join(screenshotDir, "ready-900.png") });
+	syncScreenshots();
 
 	// Send message '안녕' and verify response
 	await expect(input).toBeEnabled({ timeout: 5000 });
