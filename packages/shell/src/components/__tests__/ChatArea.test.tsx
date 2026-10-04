@@ -2420,13 +2420,8 @@ describe("ChatArea", () => {
 			]);
 		});
 
-		// Wait past 300ms debounce
-		await act(async () => {
-			await new Promise((resolve) => setTimeout(resolve, 400));
-		});
-
 		const input = document.querySelector(".chat-input") as HTMLTextAreaElement;
-		expect(input.value).toBe("준비 전 STT 텍스트");
+		await waitFor(() => expect(input.value).toBe("준비 전 STT 텍스트"));
 		expect(capturedRequests).toHaveLength(0);
 	});
 });

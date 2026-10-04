@@ -5,7 +5,6 @@ import {
 	resetWebModelStatusForTests,
 } from "../web-model-status";
 import {
-	WEB_LLM_FALLBACK_F16,
 	WEB_LLM_FALLBACK_F32,
 	WEB_LLM_MODEL_ID,
 	WEB_LLM_MODEL_PREF_KEY,
@@ -46,7 +45,7 @@ describe("model-start", () => {
 		expect(status.errorKind).toBe("no-webgpu");
 	});
 
-	it("sets no-shader-f16 error and starts with model null when f16 is missing and default 8B model is chosen", async () => {
+	it("sets no-shader-f16 error and starts with model null when f16 is missing and default 4B f16 model is chosen", async () => {
 		const bridge = { start: vi.fn() };
 		const gpu = {
 			requestAdapter: vi.fn().mockResolvedValue({
@@ -133,7 +132,7 @@ describe("model-start", () => {
 	it("prioritizes storage preference over buildModel", async () => {
 		const bridge = { start: vi.fn() };
 		const storage = {
-			getItem: vi.fn(() => WEB_LLM_FALLBACK_F16),
+			getItem: vi.fn(() => WEB_LLM_MODEL_ID),
 		};
 
 		await startWebModel({
@@ -144,8 +143,25 @@ describe("model-start", () => {
 			bridge,
 		});
 
-		expect(bridge.start).toHaveBeenCalledWith({ model: WEB_LLM_FALLBACK_F16 });
-		expect(getWebModelStatus().model).toBe(WEB_LLM_FALLBACK_F16);
+		expect(bridge.start).toHaveBeenCalledWith({ model: WEB_LLM_MODEL_ID });
+		expect(getWebModelStatus().model).toBe(WEB_LLM_MODEL_ID);
+	});
+
+	it("falls back to default model when storage contains legacy removed model id", async () => {
+		const bridge = { start: vi.fn() };
+		const storage = {
+			getItem: vi.fn(() => "Qwen3-8B-q4f16_1-MLC"),
+		};
+
+		await startWebModel({
+			gpu: undefined,
+			storage,
+			engineKind: "fake",
+			bridge,
+		});
+
+		expect(bridge.start).toHaveBeenCalledWith({ model: WEB_LLM_MODEL_ID });
+		expect(getWebModelStatus().model).toBe(WEB_LLM_MODEL_ID);
 	});
 
 	it("warns and falls back to default model when buildModel is not in whitelist", async () => {

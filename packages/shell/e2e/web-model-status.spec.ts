@@ -57,7 +57,8 @@ test("verifies web model status lifecycle, worker startup, and mock chat", async
 		timeout: 15_000,
 	});
 	await expect(statusEl).toHaveAttribute("role", "status");
-	await expect(statusEl).toHaveAttribute("data-model", "Qwen3-8B-q4f16_1-MLC");
+	await expect(statusEl).toHaveAttribute("data-model", "Qwen3-4B-q4f16_1-MLC");
+	await expect(statusEl).toContainText("Qwen3 4B (4bit f16)");
 
 	// Capture screenshots at widths 1280 and 900
 	const shotDir = process.env.WO06_SHOT_DIR;

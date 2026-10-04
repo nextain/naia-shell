@@ -1,5 +1,4 @@
 import {
-	WEB_LLM_FALLBACK_F16,
 	WEB_LLM_FALLBACK_F32,
 	WEB_LLM_MODEL_ID,
 	type WebLlmModelId,
@@ -79,12 +78,14 @@ export function isWebSendBlocked(status: WebModelStatus): boolean {
 export function fallbackModelFor(
 	status: WebModelStatus,
 ): WebLlmModelId | null {
-	if (status.model !== WEB_LLM_MODEL_ID || status.errorKind === "no-webgpu") {
-		return null;
+	if (
+		status.model === WEB_LLM_MODEL_ID &&
+		status.errorKind !== "no-webgpu" &&
+		status.shaderF16 !== true
+	) {
+		return WEB_LLM_FALLBACK_F32;
 	}
-	return status.shaderF16 === true
-		? WEB_LLM_FALLBACK_F16
-		: WEB_LLM_FALLBACK_F32;
+	return null;
 }
 
 export function errorKindFromEngineErrorName(

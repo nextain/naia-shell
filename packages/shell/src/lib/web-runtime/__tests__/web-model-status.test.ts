@@ -9,7 +9,6 @@ import {
 	subscribeWebModelStatus,
 } from "../web-model-status";
 import {
-	WEB_LLM_FALLBACK_F16,
 	WEB_LLM_FALLBACK_F32,
 	WEB_LLM_MODEL_ID,
 } from "../webllm-model";
@@ -70,7 +69,7 @@ describe("web-model-status", () => {
 		expect(
 			fallbackModelFor({
 				phase: "error",
-				model: WEB_LLM_FALLBACK_F16,
+				model: WEB_LLM_FALLBACK_F32,
 				progress: 0,
 				shaderF16: true,
 			}),
@@ -87,7 +86,7 @@ describe("web-model-status", () => {
 			}),
 		).toBeNull();
 
-		// 3. If shaderF16 is true, returns 4B f16
+		// 3. If shaderF16 is true and device-lost, returns null (retry only)
 		expect(
 			fallbackModelFor({
 				phase: "error",
@@ -96,7 +95,7 @@ describe("web-model-status", () => {
 				errorKind: "device-lost",
 				shaderF16: true,
 			}),
-		).toBe(WEB_LLM_FALLBACK_F16);
+		).toBeNull();
 
 		// 4. If shaderF16 is false or undefined, returns 4B f32
 		expect(

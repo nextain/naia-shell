@@ -1,10 +1,8 @@
-export const WEB_LLM_MODEL_ID = "Qwen3-8B-q4f16_1-MLC";
-export const WEB_LLM_FALLBACK_F16 = "Qwen3-4B-q4f16_1-MLC";
+export const WEB_LLM_MODEL_ID = "Qwen3-4B-q4f16_1-MLC";
 export const WEB_LLM_FALLBACK_F32 = "Qwen3-4B-q4f32_1-MLC";
 
 export const WEB_LLM_MODEL_IDS = [
 	WEB_LLM_MODEL_ID,
-	WEB_LLM_FALLBACK_F16,
 	WEB_LLM_FALLBACK_F32,
 ] as const;
 
@@ -44,7 +42,6 @@ export function readWebLlmModelPreference(
 }
 
 export const WEB_LLM_MODEL_LABELS: Record<WebLlmModelId, string> = {
-	"Qwen3-8B-q4f16_1-MLC": "Qwen3 8B (4bit f16)",
 	"Qwen3-4B-q4f16_1-MLC": "Qwen3 4B (4bit f16)",
 	"Qwen3-4B-q4f32_1-MLC": "Qwen3 4B (4bit f32)",
 };

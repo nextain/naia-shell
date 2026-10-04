@@ -8,7 +8,6 @@ import {
 	setWebModelStatus,
 } from "../../lib/web-runtime/web-model-status";
 import {
-	WEB_LLM_FALLBACK_F16,
 	WEB_LLM_FALLBACK_F32,
 	WEB_LLM_MODEL_ID,
 } from "../../lib/web-runtime/webllm-model";
@@ -61,7 +60,7 @@ describe("WebModelStatusBar", () => {
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("status");
 		expect(el.getAttribute("data-phase")).toBe("ready");
-		expect(el.textContent).toContain("Qwen3 8B (4bit f16)");
+		expect(el.textContent).toContain("Qwen3 4B (4bit f16)");
 		expect(el.textContent).toContain("NVIDIA · Ada · RTX 4060");
 	});
 
@@ -79,6 +78,7 @@ describe("WebModelStatusBar", () => {
 		expect(el.textContent).toContain(t("webModel.fallbackActive"));
 
 		const backBtn = screen.getByTestId("web-model-back-to-default");
+		expect(backBtn.textContent).toContain("Qwen3 4B (4bit f16)");
 		fireEvent.click(backBtn);
 		expect(onSwitchModel).toHaveBeenCalledWith(WEB_LLM_MODEL_ID);
 	});
@@ -123,24 +123,25 @@ describe("WebModelStatusBar", () => {
 		expect(onSwitchModel).toHaveBeenCalledWith(WEB_LLM_FALLBACK_F32);
 	});
 
-	it("renders device-lost error with shaderF16 true proposing 4B f16 fallback button", () => {
-		const onSwitchModel = vi.fn();
+	it("renders device-lost error with shaderF16 true proposing retry button only and no fallback button", () => {
+		const onRetry = vi.fn();
 		setWebModelStatus({
 			phase: "error",
 			errorKind: "device-lost",
 			model: WEB_LLM_MODEL_ID,
 			shaderF16: true,
 		});
-		render(<WebModelStatusBar onSwitchModel={onSwitchModel} />);
+		render(<WebModelStatusBar onRetry={onRetry} />);
 
 		const el = screen.getByTestId("web-model-status");
 		expect(el.getAttribute("role")).toBe("alert");
 		expect(el.getAttribute("data-error-kind")).toBe("device-lost");
 
-		const fallbackBtn = screen.getByTestId("web-model-fallback");
-		expect(fallbackBtn.textContent).toContain("Qwen3 4B (4bit f16)");
-		fireEvent.click(fallbackBtn);
-		expect(onSwitchModel).toHaveBeenCalledWith(WEB_LLM_FALLBACK_F16);
+		expect(screen.queryByTestId("web-model-fallback")).toBeNull();
+		const retryBtn = screen.getByTestId("web-model-retry");
+		expect(retryBtn).toBeDefined();
+		fireEvent.click(retryBtn);
+		expect(onRetry).toHaveBeenCalledTimes(1);
 	});
 
 	it("renders load-failed error with expandable original error details and retry button", () => {
