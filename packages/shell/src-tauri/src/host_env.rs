@@ -12,27 +12,33 @@
 use std::ffi::{OsStr, OsString};
 use std::process::Command;
 
-fn is_under(entry: &str, appdir: &str) -> bool {
+fn trim_trailing_slashes(mut appdir: &[u8]) -> &[u8] {
+    while let [rest @ .., b'/'] = appdir {
+        appdir = rest;
+    }
+    appdir
+}
+
+fn is_under(entry: &[u8], appdir: &[u8]) -> bool {
     entry == appdir
         || entry
             .strip_prefix(appdir)
-            .is_some_and(|rest| rest.starts_with('/'))
+            .is_some_and(|rest| rest.first() == Some(&b'/'))
 }
 
-/// `appdir` 아래를 가리키는 `:` 구분 항목을 뺀 값. 바뀐 것이 없으면 `None`,
-/// 전부 빠져 비면 `Some(None)`, 일부만 남으면 `Some(Some(남은 값))`.
-pub(crate) fn strip_appdir_entries(value: &str, appdir: &str) -> Option<Option<String>> {
-    let appdir = appdir.trim_end_matches('/');
+/// 바이트 단위 정리. 리눅스 경로·환경값은 UTF-8 이 아닐 수 있으므로 문자열로 바꾸지 않는다.
+fn strip_appdir_bytes(value: &[u8], appdir: &[u8]) -> Option<Option<Vec<u8>>> {
+    let appdir = trim_trailing_slashes(appdir);
     // `APPDIR=/` 는 AppImage 가 만들지 않는 값이다. 그대로 따르면 `/usr/lib` 같은 시스템
     // 항목까지 모두 빠져 시스템 프로그램이 더 크게 깨지므로, 정리하지 않고 그대로 둔다.
-    if appdir.is_empty() || !value.contains(appdir) {
+    if appdir.is_empty() || !value.windows(appdir.len()).any(|w| w == appdir) {
         return None;
     }
-    let kept: Vec<&str> = value
-        .split(':')
+    let kept: Vec<&[u8]> = value
+        .split(|byte| *byte == b':')
         .filter(|entry| !is_under(entry, appdir))
         .collect();
-    let rebuilt = kept.join(":");
+    let rebuilt = kept.join(&b':');
     if rebuilt == value {
         return None;
     }
@@ -41,6 +47,21 @@ pub(crate) fn strip_appdir_entries(value: &str, appdir: &str) -> Option<Option<S
     } else {
         Some(rebuilt)
     })
+}
+
+/// `OsStr` 판. `:`(ASCII) 경계에서만 자르고 잇기 때문에 인코딩된 바이트가 그대로 유효하다.
+fn strip_appdir_os(value: &OsStr, appdir: &OsStr) -> Option<Option<OsString>> {
+    strip_appdir_bytes(value.as_encoded_bytes(), appdir.as_encoded_bytes()).map(|stripped| {
+        // SAFETY: 입력 OsStr 의 바이트를 ASCII `:` 경계에서만 나누고 이었다.
+        stripped.map(|bytes| unsafe { OsString::from_encoded_bytes_unchecked(bytes) })
+    })
+}
+
+/// `appdir` 아래를 가리키는 `:` 구분 항목을 뺀 값. 바뀐 것이 없으면 `None`,
+/// 전부 빠져 비면 `Some(None)`, 일부만 남으면 `Some(Some(남은 값))`.
+pub(crate) fn strip_appdir_entries(value: &str, appdir: &str) -> Option<Option<String>> {
+    strip_appdir_bytes(value.as_bytes(), appdir.as_bytes())
+        .map(|stripped| stripped.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 /// 자식에게 줄 환경 변경 목록: `(이름, Some(새 값))` 은 덮어쓰기, `(이름, None)` 은 제거.
@@ -52,7 +73,7 @@ where
     let Some(appdir) = vars
         .iter()
         .find(|(name, _)| name == OsStr::new("APPDIR"))
-        .and_then(|(_, value)| value.to_str())
+        .map(|(_, value)| value.as_os_str())
         .filter(|value| !value.is_empty())
     else {
         return Vec::new();
@@ -60,9 +81,7 @@ where
     vars.iter()
         .filter(|(name, _)| name != OsStr::new("APPDIR"))
         .filter_map(|(name, value)| {
-            let text = value.to_str()?;
-            strip_appdir_entries(text, appdir)
-                .map(|stripped| (name.clone(), stripped.map(OsString::from)))
+            strip_appdir_os(value, appdir).map(|stripped| (name.clone(), stripped))
         })
         .collect()
 }
@@ -99,18 +118,20 @@ pub(crate) fn host_command(program: impl AsRef<OsStr>) -> Command {
 }
 
 /// 프로그램이 번들(`APPDIR` 아래)에 있으면 true. 이름만 있는 프로그램(PATH 탐색)은 시스템 것으로 본다.
-pub(crate) fn program_is_bundled(program: &OsStr, appdir: Option<&str>) -> bool {
-    let Some(appdir) = appdir.map(|value| value.trim_end_matches('/')).filter(|v| !v.is_empty())
+pub(crate) fn program_is_bundled(program: &OsStr, appdir: Option<&OsStr>) -> bool {
+    let Some(appdir) = appdir
+        .map(|value| trim_trailing_slashes(value.as_encoded_bytes()))
+        .filter(|value| !value.is_empty())
     else {
         return false;
     };
-    program.to_str().is_some_and(|text| is_under(text, appdir))
+    is_under(program.as_encoded_bytes(), appdir)
 }
 
 /// 실행 시점에 경로가 정해지는 프로그램용 Command. 번들 안 프로그램(node, 에이전트 등)은
 /// 상속 환경을 그대로 두고, 그 밖의 것(시스템 설치본, PATH 로 찾은 이름)은 주입 환경을 되돌린다.
 pub(crate) fn command_for(program: impl AsRef<OsStr>) -> Command {
-    let appdir = std::env::var("APPDIR").ok();
+    let appdir = std::env::var_os("APPDIR");
     if program_is_bundled(program.as_ref(), appdir.as_deref()) {
         Command::new(program)
     } else {
@@ -202,10 +223,10 @@ mod tests {
     #[test]
     fn 번들_안_프로그램만_번들로_본다() {
         let bundled = OsStr::new("/app/usr/lib/Naia/node");
-        assert!(program_is_bundled(bundled, Some("/app")));
-        assert!(!program_is_bundled(OsStr::new("/usr/bin/node"), Some("/app")));
-        assert!(!program_is_bundled(OsStr::new("node"), Some("/app")));
-        assert!(!program_is_bundled(OsStr::new("/app2/node"), Some("/app")));
+        assert!(program_is_bundled(bundled, Some(OsStr::new("/app"))));
+        assert!(!program_is_bundled(OsStr::new("/usr/bin/node"), Some(OsStr::new("/app"))));
+        assert!(!program_is_bundled(OsStr::new("node"), Some(OsStr::new("/app"))));
+        assert!(!program_is_bundled(OsStr::new("/app2/node"), Some(OsStr::new("/app"))));
         assert!(!program_is_bundled(bundled, None));
     }
 
@@ -213,5 +234,23 @@ mod tests {
     fn appdir_가_루트면_시스템_항목을_지우지_않는다() {
         assert_eq!(strip_appdir_entries("/usr/lib:/usr/lib64", "/"), None);
         assert_eq!(strip_appdir_entries("/usr/bin", "///"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn utf8_가_아닌_appdir_와_값도_정리한다() {
+        use std::os::unix::ffi::OsStrExt;
+        let appdir = OsStr::from_bytes(b"/tmp/.mount_\xff\xfeNaia");
+        let value = OsStr::from_bytes(b"/tmp/.mount_\xff\xfeNaia/usr/lib/:/usr/lib64");
+        let changes = host_tool_env_changes(vec![
+            (OsString::from("APPDIR"), appdir.to_os_string()),
+            (OsString::from("LD_LIBRARY_PATH"), value.to_os_string()),
+        ]);
+        assert_eq!(
+            changes,
+            vec![(OsString::from("LD_LIBRARY_PATH"), Some(OsString::from("/usr/lib64")))]
+        );
+        let bundled = OsStr::from_bytes(b"/tmp/.mount_\xff\xfeNaia/usr/bin/node");
+        assert!(program_is_bundled(bundled, Some(appdir)));
     }
 }
