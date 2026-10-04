@@ -23,6 +23,8 @@ fn is_under(entry: &str, appdir: &str) -> bool {
 /// 전부 빠져 비면 `Some(None)`, 일부만 남으면 `Some(Some(남은 값))`.
 pub(crate) fn strip_appdir_entries(value: &str, appdir: &str) -> Option<Option<String>> {
     let appdir = appdir.trim_end_matches('/');
+    // `APPDIR=/` 는 AppImage 가 만들지 않는 값이다. 그대로 따르면 `/usr/lib` 같은 시스템
+    // 항목까지 모두 빠져 시스템 프로그램이 더 크게 깨지므로, 정리하지 않고 그대로 둔다.
     if appdir.is_empty() || !value.contains(appdir) {
         return None;
     }
@@ -205,5 +207,11 @@ mod tests {
         assert!(!program_is_bundled(OsStr::new("node"), Some("/app")));
         assert!(!program_is_bundled(OsStr::new("/app2/node"), Some("/app")));
         assert!(!program_is_bundled(bundled, None));
+    }
+
+    #[test]
+    fn appdir_가_루트면_시스템_항목을_지우지_않는다() {
+        assert_eq!(strip_appdir_entries("/usr/lib:/usr/lib64", "/"), None);
+        assert_eq!(strip_appdir_entries("/usr/bin", "///"), None);
     }
 }
