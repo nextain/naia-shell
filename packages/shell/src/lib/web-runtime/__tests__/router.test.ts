@@ -2,23 +2,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../logger";
 import { resetWarnedCommands, routeCommand } from "../router";
+import { createMemoryWebFs, setWebFsForTests } from "../web-fs";
+import { INITIAL_WEB_WORKSPACE_CONFIG } from "../web-workspace-commands";
 
 describe("router", () => {
 	beforeEach(() => {
 		resetWarnedCommands();
 		vi.restoreAllMocks();
+		setWebFsForTests(createMemoryWebFs());
 	});
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		setWebFsForTests(null);
 	});
 
-	it("returns identical stub values as tauri-base-mock for two or more commands", async () => {
+	it("returns stub values for plugin stubs and initial config for read_naia_config", async () => {
 		const appVersion = await routeCommand("plugin:app|version");
 		expect(appVersion).toBe("0.1.3");
 
-		const naiaConfig = await routeCommand("read_naia_config");
-		expect(naiaConfig).toBeNull();
+		const naiaConfig = await routeCommand("read_naia_config", {
+			adkPath: "opfs://naia-adk",
+		});
+		expect(naiaConfig).toBe(
+			JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG, null, 2),
+		);
 
 		const storeLoad = await routeCommand("plugin:store|load");
 		expect(storeLoad).toBe(1);

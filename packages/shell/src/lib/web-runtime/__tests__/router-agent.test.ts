@@ -70,10 +70,14 @@ describe("router agent commands", () => {
 		expect(sentLines).toEqual(['{"type":"cancel_stream","requestId":"r1"}']);
 	});
 
-	it("rejects reload_agent_settings with desktop_only:reload_agent_settings", async () => {
-		await expect(routeCommand("reload_agent_settings")).rejects.toThrow(
-			"desktop_only:reload_agent_settings",
-		);
+	it("routes reload_agent_settings returning not-available status", async () => {
+		const res = await routeCommand("reload_agent_settings");
+		expect(res).toEqual({
+			available: false,
+			memoryReloaded: false,
+			memoryRetained: false,
+			memoryStatus: "next_start",
+		});
 		expect(sentLines).toHaveLength(0);
 	});
 });

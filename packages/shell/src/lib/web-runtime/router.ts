@@ -6,6 +6,8 @@ import {
 	handleEventUnlisten,
 } from "./event-bus";
 import { getAgentBridge } from "./agent-bridge";
+import { getWebFs } from "./web-fs";
+import { handleWebWorkspaceCommand } from "./web-workspace-commands";
 
 const warnedCommands = new Set<string>();
 
@@ -67,6 +69,16 @@ export async function routeCommand(
 				JSON.stringify({ type: "cancel_stream", requestId }),
 			);
 			return null;
+		}
+		if (
+			cmd === "read_naia_config" ||
+			cmd === "write_naia_config" ||
+			cmd === "read_naia_ui_config" ||
+			cmd === "write_naia_ui_config" ||
+			cmd === "write_naia_path_cache" ||
+			cmd === "reload_agent_settings"
+		) {
+			return handleWebWorkspaceCommand(cmd, args, getWebFs());
 		}
 	}
 

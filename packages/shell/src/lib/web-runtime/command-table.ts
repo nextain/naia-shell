@@ -1,12 +1,18 @@
 export type CommandClassification = "web" | "stub" | "desktop-only";
 
 export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
-	// Web implemented (exact 5 commands)
+	// Web implemented (exact 11 commands)
 	"plugin:event|listen": "web",
 	"plugin:event|unlisten": "web",
 	"plugin:event|emit": "web",
 	send_to_agent_command: "web",
 	cancel_stream: "web",
+	read_naia_config: "web",
+	write_naia_config: "web",
+	read_naia_ui_config: "web",
+	write_naia_ui_config: "web",
+	write_naia_path_cache: "web",
+	reload_agent_settings: "web",
 
 	// Plugin stubs (from tauri-base-mock.ts)
 	"plugin:store|load": "stub",
@@ -35,7 +41,6 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 
 	// Shell source stubs (from tauri-base-mock.ts)
 	frontend_log: "stub",
-	read_naia_config: "stub",
 	// 웹에는 비밀값 저장소가 없어 "없음"으로 답하고, 쓰기는 FE-04 까지 desktop-only
 	secure_store_get: "stub",
 
@@ -157,9 +162,7 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	read_naia_knowledge_config: "desktop-only",
 	read_naia_knowledge_kb: "desktop-only",
 	read_naia_ref_audio: "desktop-only",
-	read_naia_ui_config: "desktop-only",
 	reboot_computer: "desktop-only",
-	reload_agent_settings: "desktop-only",
 	reset_naia_config_files: "desktop-only",
 	reset_window_state: "desktop-only",
 	resume_coding_job: "desktop-only",
@@ -196,11 +199,8 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	workspace_write_file: "desktop-only",
 	write_agent_key: "desktop-only",
 	write_jeonju_course_target: "desktop-only",
-	write_naia_config: "desktop-only",
 	write_naia_knowledge_config: "desktop-only",
-	write_naia_path_cache: "desktop-only",
 	write_naia_ref_audio: "desktop-only",
-	write_naia_ui_config: "desktop-only",
 	write_slots_manifest: "desktop-only",
 	write_temp_text: "desktop-only",
 };
@@ -230,6 +230,5 @@ export const STUB_RESPONSES: Readonly<Record<string, unknown>> = {
 	"plugin:process|exit": null,
 	"plugin:process|restart": null,
 	frontend_log: null,
-	read_naia_config: null,
 	secure_store_get: null,
 };

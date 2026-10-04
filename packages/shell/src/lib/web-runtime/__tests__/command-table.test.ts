@@ -497,7 +497,7 @@ describe("command-table", () => {
 		).toEqual([]);
 	});
 
-	it("has exactly 5 keys classified as 'web'", () => {
+	it("has exactly 11 keys classified as 'web'", () => {
 		const webKeys = Object.entries(COMMAND_TABLE)
 			.filter(([_, value]) => value === "web")
 			.map(([key]) => key)
@@ -508,7 +508,13 @@ describe("command-table", () => {
 			"plugin:event|emit",
 			"plugin:event|listen",
 			"plugin:event|unlisten",
+			"read_naia_config",
+			"read_naia_ui_config",
+			"reload_agent_settings",
 			"send_to_agent_command",
+			"write_naia_config",
+			"write_naia_path_cache",
+			"write_naia_ui_config",
 		]);
 	});
 
