@@ -4,6 +4,10 @@ import type {
 	WebLLMEngineLike,
 } from "@naia-agent/composition/browser-agent.js";
 
+declare global {
+	var __naiaFakeEngineRequests: WebLLMChatRequest["messages"][] | undefined;
+}
+
 export const FAKE_ENGINE_MARKER = "naia-fake-webllm-engine";
 
 export function makeFakeWebLLMEngine(): WebLLMEngineLike {
@@ -13,8 +17,11 @@ export function makeFakeWebLLMEngine(): WebLLMEngineLike {
 		chat: {
 			completions: {
 				async create(
-					_req: WebLLMChatRequest,
+					req: WebLLMChatRequest,
 				): Promise<AsyncIterable<WebLLMChatChunk>> {
+					(globalThis.__naiaFakeEngineRequests ??= []).push(
+						structuredClone(req.messages),
+					);
 					interrupted = false;
 					const chunks = [
 						`[${FAKE_ENGINE_MARKER}] `,

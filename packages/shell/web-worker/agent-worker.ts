@@ -1,15 +1,24 @@
 /// <reference lib="webworker" />
 import {
+	makePersonaSourceStore,
+	makeWorkspaceContextStore,
 	makeWebLLMProvider,
 	startBrowserAgent,
 	type WebLLMEngineLike,
 } from "@naia-agent/composition/browser-agent.js";
 import type { DiagnosticLog } from "@naia-agent/ports/uc1.js";
+import { WEB_ADK_PATH } from "../src/lib/web-runtime/web-adk-path";
 import {
 	isWebLlmModelId,
 	WEB_LLM_MODEL_ID,
 	type WebLlmModelId,
 } from "../src/lib/web-runtime/webllm-model";
+import {
+	EMPTY_ADK_SNAPSHOT,
+	makeSnapshotFs,
+	readAdkSnapshot,
+} from "./adk-snapshot-fs";
+import { relayAgentPort } from "./agent-port-relay";
 
 const diag: DiagnosticLog = {
 	log(message: string, ctx?: unknown) {
@@ -151,10 +160,34 @@ self.addEventListener("message", (event: MessageEvent) => {
 			model: selectedModel ?? WEB_LLM_MODEL_ID,
 		});
 
+		let snapshot = EMPTY_ADK_SNAPSHOT;
+		const refresh = async () => {
+			snapshot = await readAdkSnapshot(() => navigator.storage.getDirectory());
+		};
+
+		const channel = new MessageChannel();
+		relayAgentPort({
+			outer: port,
+			inner: channel.port1,
+			beforeChatRequest: refresh,
+			diag,
+		});
+
+		const snapshotFs = makeSnapshotFs(() => snapshot);
+
 		startBrowserAgent({
-			port,
+			port: channel.port2,
 			diag,
 			provider,
+			personaSource: makePersonaSourceStore({
+				fs: snapshotFs,
+				adkPath: WEB_ADK_PATH,
+			}),
+			workspaceContext: makeWorkspaceContextStore({
+				fs: snapshotFs,
+				adkPath: WEB_ADK_PATH,
+				cwd: WEB_ADK_PATH,
+			}),
 		});
 	}
 });
