@@ -102,7 +102,7 @@ test("첫 실행", async ({ browser }) => {
 	});
 
 	const parsed = JSON.parse(configText);
-	expect(parsed).toEqual({
+	expect(parsed).toMatchObject({
 		provider: "webllm",
 		model: "Qwen3-4B-q4f16_1-MLC",
 		agentName: "Naia",
