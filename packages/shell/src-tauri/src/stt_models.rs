@@ -70,7 +70,7 @@ fn detect_avx_support() -> bool {
 }
 
 fn detect_nvidia_vram() -> Option<u32> {
-    let mut cmd = std::process::Command::new("nvidia-smi");
+    let mut cmd = crate::host_env::host_command("nvidia-smi");
     cmd.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
     #[cfg(windows)]
     {

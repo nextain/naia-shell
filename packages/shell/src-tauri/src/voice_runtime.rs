@@ -705,7 +705,7 @@ mod tests {
         assert_eq!(var, "CUDA_VISIBLE_DEVICES");
 
         // 물리 카드의 UUID. 우리가 고른 번호가 가리키는 실체다.
-        let uuids = std::process::Command::new("nvidia-smi")
+        let uuids = crate::host_env::host_command("nvidia-smi")
             .args(["--query-gpu=index,uuid", "--format=csv,noheader"])
             .output()
             .expect("nvidia-smi");

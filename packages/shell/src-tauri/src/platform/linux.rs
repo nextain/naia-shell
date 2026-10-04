@@ -566,7 +566,7 @@ pub(crate) fn kill_cascade(ownership: Option<&CascadeOwnership>, pid: u32) {
 /// PID of the process listening on a local TCP port, if any (FR-BGM.13 #517).
 /// Parses `ss -ltnpH` (iproute2): `... users:(("node",pid=1234,fd=18))`.
 pub(crate) fn pid_listening_on_port(port: u16) -> Option<u32> {
-    let output = Command::new("ss")
+    let output = crate::host_env::host_command("ss")
         .args(["-ltnpH", &format!("sport = :{port}")])
         .output()
         .ok()?;
@@ -924,7 +924,7 @@ impl PlatformWindowManager for X11WindowManager {
     fn find_window_by_pid(&self, pid: u32, timeout_ms: u64) -> Result<PlatformHandle, String> {
         let attempts = (timeout_ms / 500).max(1);
         for _ in 0..attempts {
-            if let Ok(out) = Command::new("xdotool")
+            if let Ok(out) = crate::host_env::host_command("xdotool")
                 .args(["search", "--pid", &pid.to_string()])
                 .env("DISPLAY", ":0")
                 .output()
@@ -952,7 +952,7 @@ impl PlatformWindowManager for X11WindowManager {
     fn find_window_by_name(&self, name: &str, timeout_ms: u64) -> Result<PlatformHandle, String> {
         let attempts = (timeout_ms / 500).max(1);
         for attempt in 0..attempts {
-            if let Ok(out) = Command::new("xdotool")
+            if let Ok(out) = crate::host_env::host_command("xdotool")
                 .args(["search", "--name", &format!("^{name}$")])
                 .env("DISPLAY", ":0")
                 .output()
@@ -1142,7 +1142,7 @@ impl PlatformWindowManager for X11WindowManager {
 
         // 2. Check native PATH (works for RPM/deb installed Chrome)
         for name in &["google-chrome", "chromium", "chromium-browser"] {
-            if let Ok(out) = Command::new("which").arg(name).output() {
+            if let Ok(out) = crate::host_env::host_command("which").arg(name).output() {
                 if out.status.success() {
                     let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
                     if !p.is_empty() {
@@ -1158,7 +1158,7 @@ impl PlatformWindowManager for X11WindowManager {
         if is_naia_flatpak {
             // Inside Flatpak sandbox: must use flatpak-spawn --host to reach the host
             for name in &["google-chrome", "chromium", "chromium-browser"] {
-                if let Ok(out) = Command::new("flatpak-spawn")
+                if let Ok(out) = crate::host_env::host_command("flatpak-spawn")
                     .args(["--host", "which", name])
                     .output()
                 {
@@ -1171,7 +1171,7 @@ impl PlatformWindowManager for X11WindowManager {
                 }
             }
             for app_id in &["com.google.Chrome", "org.chromium.Chromium"] {
-                let installed = Command::new("flatpak-spawn")
+                let installed = crate::host_env::host_command("flatpak-spawn")
                     .args(["--host", "flatpak", "info", app_id])
                     .output()
                     .map(|o| o.status.success())
@@ -1183,7 +1183,7 @@ impl PlatformWindowManager for X11WindowManager {
         } else {
             // Native mode: query Flatpak directly
             for app_id in &["com.google.Chrome", "org.chromium.Chromium"] {
-                let installed = Command::new("flatpak")
+                let installed = crate::host_env::host_command("flatpak")
                     .args(["info", app_id])
                     .output()
                     .map(|o| o.status.success())

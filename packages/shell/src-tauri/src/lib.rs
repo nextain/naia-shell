@@ -13,6 +13,7 @@ mod device_pairing;
 mod ego_host;
 mod ego_host_bridge;
 mod herdr;
+mod host_env;
 mod memory;
 mod platform;
 mod pty;
@@ -2709,8 +2710,9 @@ fn normalize_paired_path(path: &std::path::Path) -> String {
 
 fn runtime_git_output(dir: &std::path::Path, args: &[&str]) -> Result<String, String> {
     let dir_string = dir.to_string_lossy().to_string();
-    let mut command = std::process::Command::new("git");
+    let mut command = crate::host_env::host_command("git");
     command.args(["-C", dir_string.as_str()]).args(args);
+    crate::host_env::sanitize_for_host_tool(&mut command);
     platform::hide_console(&mut command);
     let output = command
         .output()
@@ -5900,8 +5902,9 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
 /// 遺꾩궛 遺덇?, TP ??蹂꾨룄). 利?3090횞2 硫?48 ???꾨땶 24(per-GPU ?덉궛??留욎쓬).
 /// detect_gpu_vram(async, capacity-only)怨??숈씪 nvidia-smi, 釉붾줈??而⑦뀓?ㅽ듃??
 fn detect_vram_gb_blocking() -> Option<f64> {
-    let mut command = std::process::Command::new("nvidia-smi");
+    let mut command = crate::host_env::host_command("nvidia-smi");
     command.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
+    crate::host_env::sanitize_for_host_tool(&mut command);
     platform::hide_console(&mut command);
     let output = command.output().ok()?;
     if !output.status.success() {
@@ -6675,6 +6678,8 @@ fn voxcpm2_installer_command(
             .arg(powershell_compatible_path(state_root));
         command
     };
+    // 번들 libssl 이 시스템 curl 앞에 잡히지 않게 AppImage 주입 환경을 되돌린다(#729).
+    crate::host_env::sanitize_for_host_tool(&mut command);
     command.env("PYTHONUTF8", "1");
     command
 }
@@ -9130,7 +9135,7 @@ async fn voice_host_profile() -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn detect_gpu_vram() -> Result<serde_json::Value, String> {
     let output = tokio::task::spawn_blocking(|| {
-        let mut command = std::process::Command::new("nvidia-smi");
+        let mut command = crate::host_env::host_command("nvidia-smi");
         command.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
         platform::hide_console(&mut command);
         command.output()
@@ -9215,7 +9220,7 @@ fn open_log_in_editor(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(&path).spawn();
     #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(&path).spawn();
+    let result = crate::host_env::host_command("xdg-open").arg(&path).spawn();
     result
         .map(|_| ())
         .map_err(|e| format!("Failed to open log file: {}", e))
@@ -9585,7 +9590,7 @@ fn read_agent_secret(adk_path: &str, env_key: &str) -> Result<zeroize::Zeroizing
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        let output = std::process::Command::new("secret-tool")
+        let output = crate::host_env::host_command("secret-tool")
             .args(["lookup", "service", "naia-agent", "account", env_key])
             .output()
             .map_err(|_| "keychain_unavailable".to_string())?;
@@ -12435,8 +12440,9 @@ fn coding_job_to_shell_value(job: agent_grpc::pb::CodingJob) -> Result<serde_jso
 }
 
 fn course_git_output(workspace_path: &str, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new("git");
+    let mut command = crate::host_env::host_command("git");
     command.arg("-C").arg(workspace_path).args(args);
+    crate::host_env::sanitize_for_host_tool(&mut command);
     platform::hide_console(&mut command);
     let output = command
         .output()
@@ -12966,7 +12972,7 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         // Linux Secret Service via secret-tool.
-        let status = std::process::Command::new("secret-tool")
+        let status = crate::host_env::host_command("secret-tool")
             .args([
                 "store",
                 "--label",
@@ -13045,7 +13051,7 @@ async fn remove_agent_key(adk_path: &str, env_key: &str) -> Result<(), String> {
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        let status = std::process::Command::new("secret-tool")
+        let status = crate::host_env::host_command("secret-tool")
             .args(["clear", "service", "naia-agent", "account", env_key])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -13547,7 +13553,7 @@ async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), S
     }
 
     // Try git clone first.
-    let mut cmd = std::process::Command::new("git");
+    let mut cmd = crate::host_env::host_command("git");
     cmd.args([
         "clone",
         "--depth",

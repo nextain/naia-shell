@@ -901,7 +901,7 @@ pub fn parse_nvidia_identity_csv(text: &str) -> Vec<GpuIdentity> {
 }
 
 pub fn query_nvidia_identities() -> Vec<GpuIdentity> {
-    let mut cmd = std::process::Command::new("nvidia-smi");
+    let mut cmd = crate::host_env::host_command("nvidia-smi");
     cmd.arg("--query-gpu=index,name,compute_cap,driver_version")
         .arg("--format=csv,noheader");
     #[cfg(windows)]

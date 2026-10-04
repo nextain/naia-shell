@@ -465,7 +465,7 @@ fn spawn_chrome(port: u16, tmpdir: &str) -> Result<Child, String> {
             let command_flag = format!("--command={bin_name}");
             let is_flatpak = std::env::var("FLATPAK").is_ok();
             if is_flatpak {
-                let mut c = Command::new("flatpak-spawn");
+                let mut c = crate::host_env::host_command("flatpak-spawn");
                 c.args([
                     "--host",
                     "flatpak",
@@ -478,7 +478,7 @@ fn spawn_chrome(port: u16, tmpdir: &str) -> Result<Child, String> {
                 ]);
                 c
             } else {
-                let mut c = Command::new("flatpak");
+                let mut c = crate::host_env::host_command("flatpak");
                 c.args([
                     "run",
                     "--filesystem=home",
@@ -499,7 +499,7 @@ fn spawn_chrome(port: u16, tmpdir: &str) -> Result<Child, String> {
         {
             let is_flatpak = std::env::var("FLATPAK").is_ok();
             if is_flatpak {
-                let mut c = Command::new("flatpak-spawn");
+                let mut c = crate::host_env::host_command("flatpak-spawn");
                 c.arg("--host").arg(&bin);
                 c
             } else {

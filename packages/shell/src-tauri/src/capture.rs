@@ -192,7 +192,7 @@ fn capture_linux(x: i32, y: i32, w: i32, h: i32, path: &PathBuf) -> Result<(), S
     let path_str = path.to_str().ok_or("invalid temp path")?;
 
     // Try scrot (lightweight, common on X11)
-    let scrot = std::process::Command::new("scrot")
+    let scrot = crate::host_env::host_command("scrot")
         .args(["-a", &format!("{x},{y},{w},{h}"), path_str])
         .status();
     if let Ok(s) = scrot {
@@ -202,7 +202,7 @@ fn capture_linux(x: i32, y: i32, w: i32, h: i32, path: &PathBuf) -> Result<(), S
     }
 
     // Fallback: ImageMagick import (also works on Wayland via XWayland)
-    let import = std::process::Command::new("import")
+    let import = crate::host_env::host_command("import")
         .args([
             "-window",
             "root",

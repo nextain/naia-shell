@@ -370,7 +370,7 @@ fn pty_execute_sync_blocking(
         crate::platform::hide_console(&mut cmd);
         cmd
     } else {
-        let mut cmd = std::process::Command::new("bash");
+        let mut cmd = crate::host_env::host_command("bash");
         cmd.arg("-lc").arg(&command);
         cmd
     };

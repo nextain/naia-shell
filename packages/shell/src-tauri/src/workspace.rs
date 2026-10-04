@@ -276,6 +276,7 @@ pub fn collect_workspace_git_dirs(root: &Path) -> Vec<PathBuf> {
 fn git_cmd(path: &Path, args: &[&str]) -> std::process::Command {
     let mut cmd = std::process::Command::new("git");
     cmd.current_dir(path).args(args);
+    crate::host_env::sanitize_for_host_tool(&mut cmd);
     crate::platform::hide_console(&mut cmd);
     cmd
 }

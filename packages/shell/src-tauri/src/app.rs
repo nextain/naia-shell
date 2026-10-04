@@ -1283,6 +1283,7 @@ pub fn app_install(
     // Clone via arg vector — no shell, no shell injection. --depth 1 for speed.
     let mut command = std::process::Command::new("git");
     command.args(["clone", "--depth", "1", source, &tmp.to_string_lossy()]);
+    crate::host_env::sanitize_for_host_tool(&mut command);
     crate::platform::hide_console(&mut command);
     let output = command
         .output()
