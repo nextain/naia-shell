@@ -19,10 +19,13 @@ import {
 } from "tauri-plugin-stt-api";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
 import { WebModelStatusBar, useWebModelStatus } from "./WebModelStatusBar";
+import { WebWorkspaceSetup, useWebAdkStatus } from "./WebWorkspaceSetup";
 import {
 	getWebModelStatus,
 	isWebSendBlocked,
 } from "../lib/web-runtime/web-model-status";
+import { getWebAdkStatus } from "../lib/web-runtime/web-adk-status";
+
 import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
@@ -413,8 +416,10 @@ export function ChatArea({
 	variant = "floating",
 }: { variant?: ChatVariant } = {}) {
 	const webModelStatus = useWebModelStatus();
+	const webAdkStatus = useWebAdkStatus();
 	const webSendBlocked =
-		import.meta.env.MODE === "web" && isWebSendBlocked(webModelStatus);
+		import.meta.env.MODE === "web" &&
+		isWebSendBlocked(webModelStatus, webAdkStatus);
 	const [input, setInput] = useState("");
 	type OutputStage = "thinking" | "tts" | "render" | null;
 	const [outputStage, setOutputStage] = useState<OutputStage>(null);
@@ -1603,7 +1608,7 @@ export function ChatArea({
 		if (!text) return;
 		if (
 			import.meta.env.MODE === "web" &&
-			isWebSendBlocked(getWebModelStatus())
+			isWebSendBlocked(getWebModelStatus(), getWebAdkStatus())
 		)
 			return;
 		if (await handleSpeechProfilePhrase(text)) return;
@@ -1817,15 +1822,17 @@ export function ChatArea({
 			// Startup registration can race the agent process. Refresh the
 			// idempotent descriptor immediately before every turn so semantic
 			// requests such as Radio DJ cannot degrade into text-only claims.
-			const bgmSkillReady = await sendAppSkills(BGM_APP_ID, [
-				SKILL_YOUTUBE_BGM,
-			]);
-			Logger.info("ChatArea", "turn bgm skill registration", {
-				ready: bgmSkillReady,
-				requestId,
-			});
-			if (!bgmSkillReady) {
-				throw new Error("skill_youtube_bgm_registration_failed");
+			if (import.meta.env.MODE !== "web") {
+				const bgmSkillReady = await sendAppSkills(BGM_APP_ID, [
+					SKILL_YOUTUBE_BGM,
+				]);
+				Logger.info("ChatArea", "turn bgm skill registration", {
+					ready: bgmSkillReady,
+					requestId,
+				});
+				if (!bgmSkillReady) {
+					throw new Error("skill_youtube_bgm_registration_failed");
+				}
 			}
 			// #502 (FR-ENV-ATTENTION.5): 싣기 직전에 관측을 갱신한다.
 			//
@@ -2951,7 +2958,7 @@ export function ChatArea({
 									}
 									if (
 										import.meta.env.MODE === "web" &&
-										isWebSendBlocked(getWebModelStatus())
+										isWebSendBlocked(getWebModelStatus(), getWebAdkStatus())
 									) {
 										setInput(text);
 										return;
@@ -3975,7 +3982,12 @@ export function ChatArea({
 					className="chat-messages"
 					style={{ display: activeTab === "chat" ? "flex" : "none" }}
 				>
-					{messages
+					{import.meta.env.MODE === "web" &&
+					webAdkStatus.phase !== "ready" ? (
+						<WebWorkspaceSetup status={webAdkStatus} />
+					) : (
+						<>
+							{messages
 						.filter((msg) => {
 							if (
 								msg.role === "user" &&
@@ -4086,6 +4098,8 @@ export function ChatArea({
 									: t(`chat.outputStage.${outputStage}`)}
 							</span>
 						</output>
+					)}
+						</>
 					)}
 
 					<div ref={messagesEndRef} />

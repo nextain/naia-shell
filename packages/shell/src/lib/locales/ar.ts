@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "استخدام {model}",
 	"webModel.backToDefault": "العودة إلى النموذج الافتراضي {model}",
 	"webModel.retry": "إعادة المحاولة",
-	"webModel.details": "التفاصيل"
+	"webModel.details": "التفاصيل",
+	"webWorkspace.description": "يتم تخزين مساحات العمل داخل هذا المتصفح فقط.",
+	"webWorkspace.startDefault": "البدء بمساحة العمل الافتراضية",
+	"webWorkspace.installing": "جارٍ إعداد مساحة العمل {done}/{total}",
+	"webWorkspace.retry": "إعادة المحاولة"
 } as const;

@@ -440,15 +440,17 @@ export function App() {
 		if (!configHydrated) return;
 		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 descriptor.tools 경로가
 		// 없다 — 전용 등록. 실행은 ChatArea dispatchAppToolCall 의 BGM 분기.
-		sendAppSkills(BGM_APP_ID, [SKILL_YOUTUBE_BGM])
-			.then(() =>
-				Logger.info("App", "startup bgm skill registered", {
-					tool: SKILL_YOUTUBE_BGM.name,
-				}),
-			)
-			.catch((err) =>
-				Logger.warn("App", "startup bgm skill failed", { error: String(err) }),
-			);
+		if (import.meta.env.MODE !== "web") {
+			sendAppSkills(BGM_APP_ID, [SKILL_YOUTUBE_BGM])
+				.then(() =>
+					Logger.info("App", "startup bgm skill registered", {
+						tool: SKILL_YOUTUBE_BGM.name,
+					}),
+				)
+				.catch((err) =>
+					Logger.warn("App", "startup bgm skill failed", { error: String(err) }),
+				);
+		}
 		// #611: skill_environment is not model-facing. Clear any stale registration
 		// from older shells; observation still hydrates for `always` awareness.
 		sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
@@ -666,7 +668,9 @@ export function App() {
 	// Same pattern as BrowserCenterArea auto-allowing browser tools on mount.
 	useEffect(() => {
 		addAllowedTool("skill_app");
-		addAllowedTool("skill_youtube_bgm");
+		if (import.meta.env.MODE !== "web") {
+			addAllowedTool("skill_youtube_bgm");
+		}
 	}, []);
 
 	// #605 — refresh CLI detection into config on app start (Skills tab also refreshes on enter).
@@ -874,11 +878,13 @@ export function App() {
 				})
 				.catch(() => {});
 		}
-		fetchUnreadAnnouncements()
-			.then((list) => {
-				if (active && list.length > 0) setAnnouncements(list);
-			})
-			.catch(() => {});
+		if (import.meta.env.MODE !== "web") {
+			fetchUnreadAnnouncements()
+				.then((list) => {
+					if (active && list.length > 0) setAnnouncements(list);
+				})
+				.catch(() => {});
+		}
 		return () => {
 			active = false;
 		};

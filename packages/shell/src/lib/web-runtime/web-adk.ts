@@ -1,40 +1,24 @@
 import { Logger } from "../logger";
 import { webAdkOpfsPath } from "./web-adk-path";
+import {
+	WEB_ADK_COMMIT,
+	type WebAdkBundle,
+} from "./web-adk-source";
+import {
+	getWebAdkStatus,
+	setWebAdkStatus,
+	type WebAdkStatus,
+} from "./web-adk-status";
 import type { WebFs } from "./web-fs";
 
-export const DEFAULT_WEB_ADK_BASE =
-	"https://raw.githubusercontent.com/nextain/naia-adk/13ea427991542965091f2f3211b9325a36dbd522/";
-
-export interface WebAdkFileSpec {
-	path: string;
-	size: number;
-	sha1: string;
+export function decodeBase64ToBytes(base64: string): Uint8Array {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return bytes;
 }
-
-export interface WebAdkSource {
-	repo: string;
-	commit: string;
-	files: readonly WebAdkFileSpec[];
-	dirs: readonly string[];
-}
-
-export const WEB_ADK_SOURCE: WebAdkSource = {
-	repo: "nextain/naia-adk",
-	commit: "13ea427991542965091f2f3211b9325a36dbd522",
-	files: [
-		{
-			path: "AGENTS.md",
-			size: 3860,
-			sha1: "29350557ec7bef5b9f67ad4ddc26a06a8d6e2de0",
-		},
-		{
-			path: "CLAUDE.md",
-			size: 11,
-			sha1: "43c994c2d3617f947bcb5adf1933e21dabe46bb5",
-		},
-	],
-	dirs: ["projects/naia-template-project"],
-};
 
 export async function gitBlobSha1(bytes: Uint8Array): Promise<string> {
 	const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`);
@@ -49,15 +33,15 @@ export async function gitBlobSha1(bytes: Uint8Array): Promise<string> {
 
 export interface ProvisionWebAdkDeps {
 	fs: WebFs;
-	fetch: (
+	fetch?: (
 		url: string,
 	) => Promise<{
 		ok: boolean;
 		status: number;
-		arrayBuffer(): Promise<ArrayBuffer>;
+		json(): Promise<unknown>;
 	}>;
-	base: string;
-	source?: WebAdkSource;
+	baseUrl?: string;
+	onProgress?: (done: number, total: number) => void;
 }
 
 export type ProvisionWebAdkResult =
@@ -67,96 +51,219 @@ export type ProvisionWebAdkResult =
 export async function provisionWebAdk(
 	deps: ProvisionWebAdkDeps,
 ): Promise<ProvisionWebAdkResult> {
-	const source = deps.source ?? WEB_ADK_SOURCE;
 	const markerPath = webAdkOpfsPath("naia-settings/.web-adk-source.json");
+	const baseUrl =
+		deps.baseUrl ??
+		(typeof import.meta !== "undefined" && import.meta.env?.BASE_URL
+			? import.meta.env.BASE_URL
+			: "/");
+	const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+	const bundleUrl = `${normalizedBase}web-adk/${WEB_ADK_COMMIT}.json`;
+	const fetcher = deps.fetch ?? ((u: string) => fetch(u));
 
 	try {
-		const existingMarker = await deps.fs.readText(markerPath);
-		if (existingMarker) {
-			try {
-				const parsed = JSON.parse(existingMarker);
-				if (parsed && parsed.commit === source.commit) {
-					return { ok: true, written: [] };
-				}
-			} catch {
-				// marker invalid, proceed with provisioning
+		const res = await fetcher(bundleUrl);
+		if (!res.ok) {
+			const reason = `http_${res.status}`;
+			Logger.error("WebAdk", "bundle fetch failed", { url: bundleUrl, status: res.status });
+			return {
+				ok: false,
+				failed: [{ path: bundleUrl, reason }],
+			};
+		}
+
+		const bundle = (await res.json()) as WebAdkBundle;
+		if (!bundle || !Array.isArray(bundle.files)) {
+			return {
+				ok: false,
+				failed: [{ path: bundleUrl, reason: "invalid_bundle_format" }],
+			};
+		}
+
+		// Reject duplicate paths within the bundle
+		const seenPaths = new Set<string>();
+		for (const file of bundle.files) {
+			if (seenPaths.has(file.path)) {
+				Logger.error("WebAdk", "duplicate path in bundle", { path: file.path });
+				return {
+					ok: false,
+					failed: [{ path: file.path, reason: "duplicate_path" }],
+				};
+			}
+			seenPaths.add(file.path);
+		}
+
+		if (Array.isArray(bundle.dirs)) {
+			for (const dir of bundle.dirs) {
+				await deps.fs.ensureDir(webAdkOpfsPath(dir));
 			}
 		}
 
-		for (const dir of source.dirs) {
-			await deps.fs.ensureDir(webAdkOpfsPath(dir));
-		}
+		const total = bundle.files.length;
+		let done = 0;
+		deps.onProgress?.(0, total);
 
-		const base = deps.base.endsWith("/") ? deps.base : `${deps.base}/`;
 		const written: string[] = [];
-		const failed: { path: string; reason: string }[] = [];
 
-		for (const file of source.files) {
+		for (const file of bundle.files) {
 			const targetPath = webAdkOpfsPath(file.path);
 			const exists = await deps.fs.exists(targetPath);
 			if (exists) {
+				done++;
+				deps.onProgress?.(done, total);
 				continue;
 			}
 
-			const url = `${base}${file.path}`;
-			try {
-				const res = await deps.fetch(url);
-				if (!res.ok) {
-					failed.push({ path: file.path, reason: `http_${res.status}` });
-					continue;
-				}
-				const ab = await res.arrayBuffer();
-				const bytes = new Uint8Array(ab);
-				if (bytes.byteLength !== file.size) {
-					failed.push({ path: file.path, reason: "size_mismatch" });
-					continue;
-				}
-				const sha1 = await gitBlobSha1(bytes);
-				if (sha1 !== file.sha1) {
-					failed.push({ path: file.path, reason: "sha1_mismatch" });
-					continue;
-				}
-				await deps.fs.writeBytes(targetPath, bytes);
-				written.push(file.path);
-			} catch (e) {
-				failed.push({
-					path: file.path,
-					reason: e instanceof Error ? e.message : String(e),
-				});
+			if (typeof file.base64 !== "string") {
+				return {
+					ok: false,
+					failed: [{ path: file.path, reason: "missing_content" }],
+				};
 			}
-		}
 
-		if (failed.length > 0) {
-			for (const f of failed) {
-				Logger.error("WebAdk", "provision failed", {
-					path: f.path,
-					reason: f.reason,
+			const bytes = decodeBase64ToBytes(file.base64);
+			if (bytes.byteLength !== file.size) {
+				Logger.error("WebAdk", "size mismatch", {
+					path: file.path,
+					expected: file.size,
+					actual: bytes.byteLength,
 				});
+				return {
+					ok: false,
+					failed: [{ path: file.path, reason: "size_mismatch" }],
+				};
 			}
-			return { ok: false, failed };
+
+			const sha1 = await gitBlobSha1(bytes);
+			if (sha1 !== file.sha1) {
+				Logger.error("WebAdk", "sha1 mismatch", {
+					path: file.path,
+					expected: file.sha1,
+					actual: sha1,
+				});
+				return {
+					ok: false,
+					failed: [{ path: file.path, reason: "sha1_mismatch" }],
+				};
+			}
+
+			await deps.fs.writeBytes(targetPath, bytes);
+			written.push(file.path);
+			done++;
+			deps.onProgress?.(done, total);
 		}
 
 		const markerData = {
-			repo: source.repo,
-			commit: source.commit,
-			files: source.files.map((f) => f.path),
-			dirs: [...source.dirs],
+			source: "bundle",
+			repo: bundle.repo,
+			commit: bundle.commit,
+			fileCount: bundle.files.length,
 		};
 		await deps.fs.writeBytes(markerPath, JSON.stringify(markerData, null, 2));
 		return { ok: true, written };
 	} catch (e) {
-		Logger.error("WebAdk", "provision failed", {
-			path: markerPath,
-			reason: e instanceof Error ? e.message : String(e),
-		});
+		const message = e instanceof Error ? e.message : String(e);
+		Logger.error("WebAdk", "provisioning exception", { error: message });
 		return {
 			ok: false,
-			failed: [
-				{
-					path: markerPath,
-					reason: e instanceof Error ? e.message : String(e),
-				},
-			],
+			failed: [{ path: bundleUrl, reason: message }],
 		};
 	}
+}
+
+export interface CheckWebAdkStartupDeps {
+	fs?: WebFs;
+	fetch?: (
+		url: string,
+	) => Promise<{
+		ok: boolean;
+		status: number;
+		json(): Promise<unknown>;
+	}>;
+	baseUrl?: string;
+}
+
+export async function checkWebAdkStartup(
+	deps: CheckWebAdkStartupDeps = {},
+): Promise<WebAdkStatus> {
+	setWebAdkStatus({ phase: "checking" });
+
+	const fs = deps.fs ?? (await import("./web-fs")).getWebFs();
+	const markerPath = webAdkOpfsPath("naia-settings/.web-adk-source.json");
+
+	let marker: Record<string, unknown> | null = null;
+	try {
+		const text = await fs.readText(markerPath);
+		if (text) {
+			const parsed = JSON.parse(text);
+			if (parsed && typeof parsed === "object") {
+				marker = parsed;
+			}
+		}
+	} catch {
+		marker = null;
+	}
+
+	const agentsMdExists = await fs.exists(webAdkOpfsPath("AGENTS.md"));
+
+	// Case 1: marker has source: "bundle" and matching commit -> ready
+	if (marker && marker.source === "bundle" && marker.commit === WEB_ADK_COMMIT) {
+		setWebAdkStatus({ phase: "ready" });
+		return getWebAdkStatus();
+	}
+
+	// Case 2: existing workspace needing fill
+	// - marker has source: "bundle" and commit differs
+	// - OR marker exists without source field (round 2 style, even if commit matches)
+	// - OR no marker, but AGENTS.md exists
+	const isExistingWorkspace =
+		(marker && marker.source === "bundle" && marker.commit !== WEB_ADK_COMMIT) ||
+		(marker && !marker.source) ||
+		(!marker && agentsMdExists);
+
+	if (isExistingWorkspace) {
+		setWebAdkStatus({ phase: "installing", done: 0, total: 0 });
+		const result = await provisionWebAdk({
+			fs,
+			fetch: deps.fetch,
+			baseUrl: deps.baseUrl,
+			onProgress: (done, total) => {
+				setWebAdkStatus({ phase: "installing", done, total });
+			},
+		});
+
+		if (result.ok) {
+			setWebAdkStatus({ phase: "ready" });
+		} else {
+			const reason = result.failed[0]?.reason ?? "provision_failed";
+			setWebAdkStatus({ phase: "error", reason });
+		}
+		return getWebAdkStatus();
+	}
+
+	// Case 3: neither marker nor AGENTS.md -> needs-setup (even if config.json exists)
+	setWebAdkStatus({ phase: "needs-setup" });
+	return getWebAdkStatus();
+}
+
+export async function installDefaultWebAdk(
+	deps: ProvisionWebAdkDeps,
+): Promise<ProvisionWebAdkResult> {
+	setWebAdkStatus({ phase: "installing", done: 0, total: 0 });
+	const result = await provisionWebAdk({
+		...deps,
+		onProgress: (done, total) => {
+			setWebAdkStatus({ phase: "installing", done, total });
+			deps.onProgress?.(done, total);
+		},
+	});
+
+	if (result.ok) {
+		setWebAdkStatus({ phase: "ready" });
+	} else {
+		const reason = result.failed[0]?.reason ?? "provision_failed";
+		setWebAdkStatus({ phase: "error", reason });
+	}
+
+	return result;
 }

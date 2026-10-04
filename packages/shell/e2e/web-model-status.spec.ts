@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { startDefaultWorkspace } from "./helpers/web-workspace";
 
 
 test.skip(
@@ -71,6 +72,7 @@ test("verifies web model status lifecycle, worker startup, and mock chat", async
 	}
 
 	// Send message '안녕' and verify response
+	await startDefaultWorkspace(page);
 	await expect(input).toBeEnabled({ timeout: 5000 });
 	await input.fill("안녕");
 	await input.press("Enter");

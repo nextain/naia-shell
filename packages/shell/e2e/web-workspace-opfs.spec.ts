@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { startDefaultWorkspace } from "./helpers/web-workspace";
 
 test.skip(
 	process.env.NAIA_E2E_WEB !== "1",
@@ -10,49 +10,15 @@ test.skip(
 
 const FIXED_ADK_COMMIT = "13ea427991542965091f2f3211b9325a36dbd522";
 
-function getAdkRepo(): string {
-	const repo = process.env.NAIA_E2E_ADK_REPO;
-	if (!repo) {
-		throw new Error(
-			"NAIA_E2E_ADK_REPO environment variable is required for web workspace OPFS tests",
-		);
-	}
-	return repo;
-}
-
 test("첫 실행", async ({ browser }) => {
-	const adkRepo = getAdkRepo();
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
-	const interceptedPaths: string[] = [];
 	const requestedUrls: string[] = [];
 	const pageErrors: Error[] = [];
 
 	page.on("request", (req) => requestedUrls.push(req.url()));
 	page.on("pageerror", (err) => pageErrors.push(err));
-
-	await context.route("**/__naia_e2e_adk__/**", async (route, req) => {
-		const url = req.url();
-		const idx = url.indexOf("/__naia_e2e_adk__/");
-		const sub = decodeURIComponent(url.slice(idx + "/__naia_e2e_adk__/".length));
-		interceptedPaths.push(sub);
-		try {
-			const stdout = execFileSync("git", [
-				"-C",
-				adkRepo,
-				"show",
-				`${FIXED_ADK_COMMIT}:${sub}`,
-			]);
-			await route.fulfill({
-				status: 200,
-				contentType: "application/octet-stream",
-				body: stdout,
-			});
-		} catch {
-			await route.fulfill({ status: 404, body: "Not found" });
-		}
-	});
 
 	const t0 = Date.now();
 	await page.goto("/");
@@ -141,7 +107,6 @@ test("첫 실행", async ({ browser }) => {
 });
 
 test("설정 왕복", async ({ browser }) => {
-	const adkRepo = getAdkRepo();
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
@@ -151,27 +116,6 @@ test("설정 왕복", async ({ browser }) => {
 	page.on("request", (req) => requestedUrls.push(req.url()));
 	page.on("pageerror", (err) => pageErrors.push(err));
 
-	await context.route("**/__naia_e2e_adk__/**", async (route, req) => {
-		const url = req.url();
-		const idx = url.indexOf("/__naia_e2e_adk__/");
-		const sub = decodeURIComponent(url.slice(idx + "/__naia_e2e_adk__/".length));
-		try {
-			const stdout = execFileSync("git", [
-				"-C",
-				adkRepo,
-				"show",
-				`${FIXED_ADK_COMMIT}:${sub}`,
-			]);
-			await route.fulfill({
-				status: 200,
-				contentType: "application/octet-stream",
-				body: stdout,
-			});
-		} catch {
-			await route.fulfill({ status: 404, body: "Not found" });
-		}
-	});
-
 	await page.goto("/");
 	await expect(page.locator('[data-app-ready="true"]')).toBeAttached({
 		timeout: 30_000,
@@ -179,13 +123,9 @@ test("설정 왕복", async ({ browser }) => {
 
 	// Write custom config with agentName E2E-ROUNDTRIP
 	const writeResult = await page.evaluate(async () => {
-		const internals = (
-			window as unknown as {
-				__TAURI_INTERNALS__: {
-					invoke: (cmd: string, args: unknown) => Promise<unknown>;
-				};
-			}
-		).__TAURI_INTERNALS__;
+		const internals = Reflect.get(window, "__TAURI_INTERNALS__") as {
+			invoke: (cmd: string, args: unknown) => Promise<unknown>;
+		};
 		const customConfig = {
 			provider: "webllm",
 			model: "Qwen3-4B-q4f16_1-MLC",
@@ -208,13 +148,9 @@ test("설정 왕복", async ({ browser }) => {
 	});
 
 	const readResult = await page.evaluate(async () => {
-		const internals = (
-			window as unknown as {
-				__TAURI_INTERNALS__: {
-					invoke: (cmd: string, args: unknown) => Promise<unknown>;
-				};
-			}
-		).__TAURI_INTERNALS__;
+		const internals = Reflect.get(window, "__TAURI_INTERNALS__") as {
+			invoke: (cmd: string, args: unknown) => Promise<unknown>;
+		};
 		return await internals.invoke("read_naia_config", {
 			adkPath: "opfs://naia-adk",
 		});
@@ -223,13 +159,9 @@ test("설정 왕복", async ({ browser }) => {
 
 	// Invalid JSON string "{" rejected with naia_config_invalid_json
 	const invalidJsonError = await page.evaluate(async () => {
-		const internals = (
-			window as unknown as {
-				__TAURI_INTERNALS__: {
-					invoke: (cmd: string, args: unknown) => Promise<unknown>;
-				};
-			}
-		).__TAURI_INTERNALS__;
+		const internals = Reflect.get(window, "__TAURI_INTERNALS__") as {
+			invoke: (cmd: string, args: unknown) => Promise<unknown>;
+		};
 		try {
 			await internals.invoke("write_naia_config", {
 				adkPath: "opfs://naia-adk",
@@ -244,13 +176,9 @@ test("설정 왕복", async ({ browser }) => {
 
 	// Mismatched path rejected with web_adk_path_mismatch:/tmp/x
 	const mismatchPathError = await page.evaluate(async () => {
-		const internals = (
-			window as unknown as {
-				__TAURI_INTERNALS__: {
-					invoke: (cmd: string, args: unknown) => Promise<unknown>;
-				};
-			}
-		).__TAURI_INTERNALS__;
+		const internals = Reflect.get(window, "__TAURI_INTERNALS__") as {
+			invoke: (cmd: string, args: unknown) => Promise<unknown>;
+		};
 		try {
 			await internals.invoke("write_naia_config", {
 				adkPath: "/tmp/x",
@@ -276,105 +204,113 @@ test("설정 왕복", async ({ browser }) => {
 });
 
 test("ADK 받기", async ({ browser }) => {
-	const adkRepo = getAdkRepo();
 	const context = await browser.newContext();
 	const page = await context.newPage();
 
-	const interceptedPaths: string[] = [];
 	const requestedUrls: string[] = [];
 	const pageErrors: Error[] = [];
 
 	page.on("request", (req) => requestedUrls.push(req.url()));
 	page.on("pageerror", (err) => pageErrors.push(err));
 
-	await context.route("**/__naia_e2e_adk__/**", async (route, req) => {
-		const url = req.url();
-		const idx = url.indexOf("/__naia_e2e_adk__/");
-		const sub = decodeURIComponent(url.slice(idx + "/__naia_e2e_adk__/".length));
-		interceptedPaths.push(sub);
-		try {
-			const stdout = execFileSync("git", [
-				"-C",
-				adkRepo,
-				"show",
-				`${FIXED_ADK_COMMIT}:${sub}`,
-			]);
-			await route.fulfill({
-				status: 200,
-				contentType: "application/octet-stream",
-				body: stdout,
-			});
-		} catch {
-			await route.fulfill({ status: 404, body: "Not found" });
-		}
-	});
-
 	await page.goto("/");
 	await expect(page.locator('[data-app-ready="true"]')).toBeAttached({
 		timeout: 30_000,
 	});
 
-	// Wait up to 30s for .web-adk-source.json to exist in OPFS
-	await expect(async () => {
-		const marker = await page.evaluate(async () => {
-			try {
-				const root = await navigator.storage.getDirectory();
-				const adk = await root.getDirectoryHandle("naia-adk");
-				const settings = await adk.getDirectoryHandle("naia-settings");
-				const fileHandle = await settings.getFileHandle(
-					".web-adk-source.json",
-				);
-				const file = await fileHandle.getFile();
-				return JSON.parse(await file.text());
-			} catch {
-				return null;
+	// Install default workspace via UI
+	await startDefaultWorkspace(page);
+
+	// Verify all 116 files in OPFS match bundle git blob SHA-1 and sizes
+	const verificationResult = await page.evaluate(async (commit) => {
+		const res = await fetch(`/web-adk/${commit}.json`);
+		if (!res.ok) throw new Error(`Failed to fetch bundle: ${res.status}`);
+		interface BundleData {
+			repo: string;
+			commit: string;
+			files: Array<{ path: string; size: number; sha1: string }>;
+			dirs: string[];
+		}
+		const bundle = (await res.json()) as BundleData;
+
+		const root = await navigator.storage.getDirectory();
+		const adk = await root.getDirectoryHandle("naia-adk");
+		const settings = await adk.getDirectoryHandle("naia-settings");
+		const markerFile = await settings.getFileHandle(".web-adk-source.json");
+		interface MarkerData {
+			source: string;
+			repo: string;
+			commit: string;
+			fileCount: number;
+		}
+		const marker = JSON.parse(await (await markerFile.getFile()).text()) as MarkerData;
+
+		const gitBlobSha1 = async (bytes: Uint8Array): Promise<string> => {
+			const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`);
+			const buf = new Uint8Array(header.byteLength + bytes.byteLength);
+			buf.set(header, 0);
+			buf.set(bytes, header.byteLength);
+			const hashBuffer = await crypto.subtle.digest("SHA-1", buf);
+			const hashArray = Array.from(new Uint8Array(hashBuffer));
+			return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+		};
+
+		let matched = 0;
+		for (const file of bundle.files) {
+			const parts = file.path.split("/");
+			let dir = adk;
+			for (let i = 0; i < parts.length - 1; i++) {
+				dir = await dir.getDirectoryHandle(parts[i]);
 			}
-		});
-		expect(marker).not.toBeNull();
-		expect(marker.commit).toBe(FIXED_ADK_COMMIT);
-	}).toPass({ timeout: 30_000 });
-
-	const { agentsSize, claudeText, hasTemplateProject } = await page.evaluate(
-		async () => {
-			const root = await navigator.storage.getDirectory();
-			const adk = await root.getDirectoryHandle("naia-adk");
-
-			const agentsHandle = await adk.getFileHandle("AGENTS.md");
-			const agentsFile = await agentsHandle.getFile();
-
-			const claudeHandle = await adk.getFileHandle("CLAUDE.md");
-			const claudeFile = await claudeHandle.getFile();
-
-			const projectsDir = await adk.getDirectoryHandle("projects");
-			let hasProj = false;
-			try {
-				await projectsDir.getDirectoryHandle("naia-template-project");
-				hasProj = true;
-			} catch {
-				hasProj = false;
+			const fileHandle = await dir.getFileHandle(parts[parts.length - 1]);
+			const f = await fileHandle.getFile();
+			const buf = new Uint8Array(await f.arrayBuffer());
+			const sha1 = await gitBlobSha1(buf);
+			if (sha1 === file.sha1 && buf.byteLength === file.size) {
+				matched++;
 			}
+		}
 
-			return {
-				agentsSize: agentsFile.size,
-				claudeText: await claudeFile.text(),
-				hasTemplateProject: hasProj,
-			};
-		},
-	);
+		let hasTemplate = false;
+		try {
+			const projDir = await adk.getDirectoryHandle("projects");
+			await projDir.getDirectoryHandle("naia-template-project");
+			hasTemplate = true;
+		} catch {
+			hasTemplate = false;
+		}
 
-	expect(agentsSize).toBe(3860);
-	expect(claudeText.startsWith("@AGENTS.md")).toBe(true);
-	expect(hasTemplateProject).toBe(true);
+		return {
+			bundleTotal: bundle.files.length,
+			matched,
+			marker,
+			hasTemplate,
+		};
+	}, FIXED_ADK_COMMIT);
 
-	expect(interceptedPaths.sort()).toEqual(["AGENTS.md", "CLAUDE.md"]);
+	expect(verificationResult.bundleTotal).toBe(116);
+	expect(verificationResult.matched).toBe(116);
+	expect(verificationResult.marker).toEqual({
+		source: "bundle",
+		repo: "nextain/naia-adk",
+		commit: FIXED_ADK_COMMIT,
+		fileCount: 116,
+	});
+	expect(verificationResult.hasTemplate).toBe(true);
 
-	// Reloading the same context should not trigger new fetch requests
-	const initialInterceptedCount = interceptedPaths.length;
+	// Reloading the same context should not trigger new bundle fetch
+	let reloadedBundleFetched = false;
+	page.on("request", (req) => {
+		if (req.url().includes(`/web-adk/${FIXED_ADK_COMMIT}.json`)) {
+			reloadedBundleFetched = true;
+		}
+	});
 	await page.reload();
 	await expect(page.locator('[data-app-ready="true"]')).toBeAttached({
 		timeout: 30_000,
 	});
-	expect(interceptedPaths.length).toBe(initialInterceptedCount);
+	await startDefaultWorkspace(page);
+	expect(reloadedBundleFetched).toBe(false);
 
 	for (const url of requestedUrls) {
 		expect(url).not.toContain("raw.githubusercontent.com");

@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "{model} でダウンロード",
 	"webModel.backToDefault": "デフォルトモデル {model} に戻る",
 	"webModel.retry": "再試行",
-	"webModel.details": "詳細"
+	"webModel.details": "詳細",
+	"webWorkspace.description": "ワークスペースはこのブラウザ内のみに保存されます",
+	"webWorkspace.startDefault": "デフォルトのワークスペースで開始",
+	"webWorkspace.installing": "ワークスペースを準備中 {done}/{total}",
+	"webWorkspace.retry": "再試行"
 } as const;

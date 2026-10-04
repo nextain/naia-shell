@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { startDefaultWorkspace } from "./helpers/web-workspace";
 
 test.skip(
 	process.env.NAIA_E2E_WEB !== "1",
@@ -82,6 +83,7 @@ test("enforces Web CSP policy on page and worker", async ({
 	expect(pageWasmResult).toBe("ok");
 
 	// Trigger worker by sending a message
+	await startDefaultWorkspace(page);
 	await expect(input).toBeEnabled({ timeout: 5000 });
 	await input.fill("안녕");
 	await input.press("Enter");

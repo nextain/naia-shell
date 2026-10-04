@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "{model} ব্যবহার করুন",
 	"webModel.backToDefault": "ডিফল্ট মডেল {model}-এ ফিরে যান",
 	"webModel.retry": "আবার চেষ্টা করুন",
-	"webModel.details": "বিস্তারিত"
+	"webModel.details": "বিস্তারিত",
+	"webWorkspace.description": "ওয়ার্কস্পেস শুধুমাত্র এই ব্রাউজারের মধ্যে সংরক্ষিত হয়।",
+	"webWorkspace.startDefault": "ডিফল্ট ওয়ার্কস্পেস দিয়ে শুরু করুন",
+	"webWorkspace.installing": "ওয়ার্কস্পেস প্রস্তুত করা হচ্ছে {done}/{total}",
+	"webWorkspace.retry": "আবার চেষ্টা করুন"
 } as const;

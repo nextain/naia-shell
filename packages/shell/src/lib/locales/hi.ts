@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "{model} का उपयोग करें",
 	"webModel.backToDefault": "डिफ़ॉल्ट मॉडल {model} पर वापस जाएँ",
 	"webModel.retry": "पुनः प्रयास करें",
-	"webModel.details": "विवरण"
+	"webModel.details": "विवरण",
+	"webWorkspace.description": "कार्यस्थान केवल इस ब्राउज़र के अंदर संग्रहीत होते हैं।",
+	"webWorkspace.startDefault": "डिफ़ॉल्ट कार्यस्थान से प्रारंभ करें",
+	"webWorkspace.installing": "कार्यस्थान तैयार किया जा रहा है {done}/{total}",
+	"webWorkspace.retry": "पुनः प्रयास करें"
 } as const;

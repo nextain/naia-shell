@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "Переключить на {model}",
 	"webModel.backToDefault": "Вернуться к модели по умолчанию {model}",
 	"webModel.retry": "Повторить",
-	"webModel.details": "Подробности"
+	"webModel.details": "Подробности",
+	"webWorkspace.description": "Рабочие пространства хранятся только в этом браузере.",
+	"webWorkspace.startDefault": "Начать со стандартного рабочего пространства",
+	"webWorkspace.installing": "Подготовка рабочего пространства {done}/{total}",
+	"webWorkspace.retry": "Повторить попытку"
 } as const;

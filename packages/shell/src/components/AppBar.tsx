@@ -740,7 +740,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					document.body,
 				)}
 			{/* ── BGM (right side of app-bar) ─── */}
-			<BgmPlayer naia={bgmBridge} />
+			{import.meta.env.MODE !== "web" && <BgmPlayer naia={bgmBridge} />}
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}

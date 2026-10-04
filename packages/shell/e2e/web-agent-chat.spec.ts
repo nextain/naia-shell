@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { startDefaultWorkspace } from "./helpers/web-workspace";
 
 test.skip(
 	process.env.NAIA_E2E_WEB !== "1",
@@ -39,6 +40,9 @@ test("sends chat message and receives fake webllm engine response", async ({
 	await expect(input).toBeVisible({
 		timeout: Math.max(left, 1000),
 	});
+
+	// Workspace setup
+	await startDefaultWorkspace(page);
 
 	// First message
 	await expect(input).toBeEnabled({ timeout: 5000 });

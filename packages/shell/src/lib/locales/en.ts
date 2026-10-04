@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "Use {model}",
 	"webModel.backToDefault": "Back to default model {model}",
 	"webModel.retry": "Retry",
-	"webModel.details": "Details"
+	"webModel.details": "Details",
+	"webWorkspace.description": "Workspaces are stored only inside this browser.",
+	"webWorkspace.startDefault": "Start with default workspace",
+	"webWorkspace.installing": "Preparing workspace {done}/{total}",
+	"webWorkspace.retry": "Retry"
 } as const;

@@ -3,6 +3,8 @@ import {
 	WEB_LLM_MODEL_ID,
 	type WebLlmModelId,
 } from "./webllm-model";
+import { getWebAdkStatus, type WebAdkStatus } from "./web-adk-status";
+
 
 export type WebModelPhase = "checking" | "loading" | "ready" | "error";
 export type WebModelErrorKind =
@@ -71,9 +73,14 @@ export function resetWebModelStatusForTests(): void {
 	listeners.clear();
 }
 
-export function isWebSendBlocked(status: WebModelStatus): boolean {
-	return status.phase !== "ready";
+export function isWebSendBlocked(
+	status: WebModelStatus,
+	adkStatus?: WebAdkStatus,
+): boolean {
+	const adk = adkStatus ?? getWebAdkStatus();
+	return status.phase !== "ready" || adk.phase !== "ready";
 }
+
 
 export function fallbackModelFor(
 	status: WebModelStatus,

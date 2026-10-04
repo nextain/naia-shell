@@ -1,4 +1,5 @@
-import { chromium, expect, type Page, type Route, test } from "@playwright/test";
+import { chromium, expect, type Page, test } from "@playwright/test";
+import { startDefaultWorkspace } from "./helpers/web-workspace";
 
 test.skip(
 	process.env.NAIA_E2E_WEB_REALMODEL !== "1",
@@ -93,35 +94,9 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 			}
 		});
 
-		// Precheck: check OPFS on same-origin blank page before page.goto("/")
-		let precheckRouteCalled = 0;
-		const precheckHandler = async (route: Route) => {
-			precheckRouteCalled++;
-			await route.fulfill({
-				status: 200,
-				contentType: "text/html",
-				body: "<!DOCTYPE html><html><body>precheck</body></html>",
-			});
-		};
-		await page.route("**/__naia_precheck__", precheckHandler);
-		await page.goto("/__naia_precheck__");
-		expect(precheckRouteCalled).toBe(1);
-		const baseURL = testInfo.project.use.baseURL;
-		if (typeof baseURL !== "string" || baseURL === "") {
-			throw new Error("baseURL must be a non-empty string");
-		}
-		expect(new URL(page.url()).origin).toBe(new URL(baseURL).origin);
-
-		const precheck = await readOpfsAdkStatus(page);
-		const cachedBefore =
-			precheck !== null &&
-			precheck.commit === EXPECTED_COMMIT &&
-			precheck.agentsSize === 3860 &&
-			precheck.agentsSha === EXPECTED_AGENTS_SHA &&
-			precheck.claudeSize === 11 &&
-			precheck.claudeSha === EXPECTED_CLAUDE_SHA;
-
-		await page.unroute("**/__naia_precheck__", precheckHandler);
+		// Precheck: verify /web-adk/${EXPECTED_COMMIT}.json is 200
+		const precheckRes = await page.request.get(`/web-adk/${EXPECTED_COMMIT}.json`);
+		expect(precheckRes.status()).toBe(200);
 
 		const t0 = Date.now();
 		await page.goto("/");
@@ -145,6 +120,9 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 			timeout: Math.max(left, 1000),
 		});
 
+		// Workspace setup
+		await startDefaultWorkspace(page);
+
 		// Check ADK download in OPFS within 60s
 		await expect(async () => {
 			const opfsCheck = await readOpfsAdkStatus(page);
@@ -155,21 +133,6 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 			expect(opfsCheck!.claudeSize).toBe(11);
 			expect(opfsCheck!.claudeSha).toBe(EXPECTED_CLAUDE_SHA);
 		}).toPass({ timeout: 60_000 });
-
-		// Verify 200 response from raw.githubusercontent.com for AGENTS.md and CLAUDE.md
-		const agentsUrl = `https://raw.githubusercontent.com/nextain/naia-adk/${EXPECTED_COMMIT}/AGENTS.md`;
-		const claudeUrl = `https://raw.githubusercontent.com/nextain/naia-adk/${EXPECTED_COMMIT}/CLAUDE.md`;
-		if (cachedBefore) {
-			testInfo.annotations.push({
-				type: "cachedBefore",
-				description: "true",
-			});
-		} else {
-			expect(requestedUrls).toContain(agentsUrl);
-			expect(requestedUrls).toContain(claudeUrl);
-			expect(responses200).toContain(agentsUrl);
-			expect(responses200).toContain(claudeUrl);
-		}
 
 		// Wait for status bar ready within 10 minutes (600,000 ms)
 		const readyStatus = page.locator('[data-phase="ready"]');

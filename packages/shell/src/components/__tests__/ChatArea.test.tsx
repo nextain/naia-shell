@@ -21,6 +21,11 @@ import {
 	resetWebModelStatusForTests,
 	setWebModelStatus,
 } from "../../lib/web-runtime/web-model-status";
+import {
+	resetWebAdkStatusForTests,
+	setWebAdkStatus,
+} from "../../lib/web-runtime/web-adk-status";
+import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "../../lib/bgm-skill";
 import { ensureBgmSidecar } from "../../lib/bgm-sidecar-url";
 
 const ttsSyncMocks = vi.hoisted(() => ({
@@ -243,6 +248,8 @@ describe("ChatArea", () => {
 		mockSendAppSkills.mockReset().mockResolvedValue(true);
 		vi.mocked(fetchAgentSkills).mockResolvedValue([]);
 		modelToolBoundary.reset();
+		resetWebModelStatusForTests();
+		resetWebAdkStatusForTests();
 	});
 	afterEach(() => {
 		cleanup();
@@ -2366,8 +2373,9 @@ describe("ChatArea", () => {
 
 		render(<ChatArea />);
 
-		// Model transitions to ready after mount
+		// Model and workspace transition to ready after mount
 		setWebModelStatus({ phase: "ready" });
+		setWebAdkStatus({ phase: "ready" });
 
 		// Trigger event subscription callback registered before ready
 		window.dispatchEvent(
@@ -2461,6 +2469,59 @@ describe("ChatArea", () => {
 			vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
 		}
 	});
+
+	it("does not call BGM sendAppSkills on send in web mode", async () => {
+		vi.stubEnv("MODE", "web");
+		setWebModelStatus({ phase: "ready" });
+		setWebAdkStatus({ phase: "ready" });
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+		mockSendAppSkills.mockClear();
+		try {
+			render(<ChatArea />);
+			const input = await screen.findByPlaceholderText(/메시지|message/i);
+			fireEvent.change(input, { target: { value: "hello web" } });
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests).toHaveLength(1));
+			expect(mockSendAppSkills).toHaveBeenCalledTimes(0);
+		} finally {
+			vi.unstubAllEnvs();
+			localStorage.removeItem("naia-config");
+		}
+	});
+
+	it("calls BGM sendAppSkills once per turn in desktop mode", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+		mockSendAppSkills.mockClear();
+		try {
+			render(<ChatArea />);
+			const input = await screen.findByPlaceholderText(/메시지|message/i);
+			fireEvent.change(input, { target: { value: "hello desktop" } });
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests).toHaveLength(1));
+			expect(mockSendAppSkills).toHaveBeenCalledTimes(1);
+			expect(mockSendAppSkills).toHaveBeenCalledWith(
+				BGM_APP_ID,
+				[SKILL_YOUTUBE_BGM],
+			);
+		} finally {
+			localStorage.removeItem("naia-config");
+		}
+	});
 });
+
 
 

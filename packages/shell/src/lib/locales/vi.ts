@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "Dùng {model}",
 	"webModel.backToDefault": "Quay lại mô hình mặc định {model}",
 	"webModel.retry": "Thử lại",
-	"webModel.details": "Chi tiết"
+	"webModel.details": "Chi tiết",
+	"webWorkspace.description": "Không gian làm việc chỉ được lưu trữ trong trình duyệt này.",
+	"webWorkspace.startDefault": "Bắt đầu với không gian làm việc mặc định",
+	"webWorkspace.installing": "Đang chuẩn bị không gian làm việc {done}/{total}",
+	"webWorkspace.retry": "Thử lại"
 } as const;

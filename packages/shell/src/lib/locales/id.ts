@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "Gunakan {model}",
 	"webModel.backToDefault": "Kembali ke model default {model}",
 	"webModel.retry": "Coba lagi",
-	"webModel.details": "Rincian"
+	"webModel.details": "Rincian",
+	"webWorkspace.description": "Ruang kerja hanya disimpan di dalam browser ini.",
+	"webWorkspace.startDefault": "Mulai dengan ruang kerja default",
+	"webWorkspace.installing": "Menyiapkan ruang kerja {done}/{total}",
+	"webWorkspace.retry": "Coba lagi"
 } as const;

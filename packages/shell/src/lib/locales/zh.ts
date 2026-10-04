@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "切换至 {model}",
 	"webModel.backToDefault": "返回默认模型 {model}",
 	"webModel.retry": "重试",
-	"webModel.details": "详细信息"
+	"webModel.details": "详细信息",
+	"webWorkspace.description": "工作区仅保存在此浏览器中",
+	"webWorkspace.startDefault": "使用默认工作区开始",
+	"webWorkspace.installing": "正在准备工作区 {done}/{total}",
+	"webWorkspace.retry": "重试"
 } as const;

@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { type BrowserContext, expect, type Page, test, type Worker } from "@playwright/test";
-import { getAdkRepo, routeWebAdkRepo } from "./helpers/web-adk-route";
+import { startDefaultWorkspace } from "./helpers/web-workspace";
 
 test.skip(
 	process.env.NAIA_E2E_WEB !== "1",
@@ -90,12 +90,8 @@ async function prepareWebAdkPage(
 	requestedUrls: string[],
 	pageErrors: Error[],
 ): Promise<void> {
-	getAdkRepo(); // throws if NAIA_E2E_ADK_REPO is not set
-
 	page.on("request", (req) => requestedUrls.push(req.url()));
 	page.on("pageerror", (err) => pageErrors.push(err));
-
-	await routeWebAdkRepo(context);
 
 	const t0 = Date.now();
 	await page.goto("/");
@@ -118,6 +114,9 @@ async function prepareWebAdkPage(
 	await expect(input).toBeVisible({
 		timeout: Math.max(left, 1000),
 	});
+
+	// Install default workspace via UI
+	await startDefaultWorkspace(page);
 
 	// OPFS marker naia-adk/naia-settings/.web-adk-source.json within 30s
 	await expect(async () => {

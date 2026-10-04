@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "{model} 로 받기",
 	"webModel.backToDefault": "기본 모델 {model} 로 돌아가기",
 	"webModel.retry": "다시 시도",
-	"webModel.details": "자세한 내용"
+	"webModel.details": "자세한 내용",
+	"webWorkspace.description": "작업 공간은 이 브라우저 안에만 저장됩니다",
+	"webWorkspace.startDefault": "기본 작업 공간으로 시작",
+	"webWorkspace.installing": "작업 공간 준비 중 {done}/{total}",
+	"webWorkspace.retry": "다시 시도"
 } as const;

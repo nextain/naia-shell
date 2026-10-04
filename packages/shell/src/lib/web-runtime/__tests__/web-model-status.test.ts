@@ -12,6 +12,7 @@ import {
 	WEB_LLM_FALLBACK_F32,
 	WEB_LLM_MODEL_ID,
 } from "../webllm-model";
+import { setWebAdkStatus } from "../web-adk-status";
 
 describe("web-model-status", () => {
 	beforeEach(() => {
@@ -58,10 +59,51 @@ describe("web-model-status", () => {
 	});
 
 	it("evaluates isWebSendBlocked correctly", () => {
-		expect(isWebSendBlocked({ phase: "checking", model: WEB_LLM_MODEL_ID, progress: 0 })).toBe(true);
-		expect(isWebSendBlocked({ phase: "loading", model: WEB_LLM_MODEL_ID, progress: 0.4 })).toBe(true);
-		expect(isWebSendBlocked({ phase: "error", model: WEB_LLM_MODEL_ID, progress: 0 })).toBe(true);
-		expect(isWebSendBlocked({ phase: "ready", model: WEB_LLM_MODEL_ID, progress: 1 })).toBe(false);
+		setWebAdkStatus({ phase: "ready" });
+		expect(
+			isWebSendBlocked({ phase: "checking", model: WEB_LLM_MODEL_ID, progress: 0 }),
+		).toBe(true);
+		expect(
+			isWebSendBlocked({ phase: "loading", model: WEB_LLM_MODEL_ID, progress: 0.4 }),
+		).toBe(true);
+		expect(
+			isWebSendBlocked({ phase: "error", model: WEB_LLM_MODEL_ID, progress: 0 }),
+		).toBe(true);
+		expect(
+			isWebSendBlocked({ phase: "ready", model: WEB_LLM_MODEL_ID, progress: 1 }),
+		).toBe(false);
+
+		// Model ready + workspace needs-setup -> blocked
+		expect(
+			isWebSendBlocked(
+				{ phase: "ready", model: WEB_LLM_MODEL_ID, progress: 1 },
+				{ phase: "needs-setup" },
+			),
+		).toBe(true);
+
+		// Model ready + workspace installing -> blocked
+		expect(
+			isWebSendBlocked(
+				{ phase: "ready", model: WEB_LLM_MODEL_ID, progress: 1 },
+				{ phase: "installing", done: 5, total: 10 },
+			),
+		).toBe(true);
+
+		// Model ready + workspace error -> blocked
+		expect(
+			isWebSendBlocked(
+				{ phase: "ready", model: WEB_LLM_MODEL_ID, progress: 1 },
+				{ phase: "error", reason: "error" },
+			),
+		).toBe(true);
+
+		// Model ready + workspace ready -> unblocked
+		expect(
+			isWebSendBlocked(
+				{ phase: "ready", model: WEB_LLM_MODEL_ID, progress: 1 },
+				{ phase: "ready" },
+			),
+		).toBe(false);
 	});
 
 	it("calculates fallbackModelFor according to specification matrix", () => {

@@ -1357,5 +1357,9 @@ export default {
 	"webModel.useFallback": "Obter {model}",
 	"webModel.backToDefault": "Voltar ao modelo predefinido {model}",
 	"webModel.retry": "Tentar novamente",
-	"webModel.details": "Detalhes"
+	"webModel.details": "Detalhes",
+	"webWorkspace.description": "Os espaços de trabalho são armazenados apenas neste navegador.",
+	"webWorkspace.startDefault": "Iniciar com o espaço de trabalho padrão",
+	"webWorkspace.installing": "Preparando espaço de trabalho {done}/{total}",
+	"webWorkspace.retry": "Tentar novamente"
 } as const;

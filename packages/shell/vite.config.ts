@@ -3,11 +3,57 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin, searchForWorkspaceRoot } from "vite";
 import { resolveWebAgentDir } from "./scripts/web-agent-dir.mjs";
+import { buildWebAdkBundle } from "./scripts/web-adk-bundle.mjs";
 import { WEB_CSP } from "./src/lib/web-runtime/csp";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workerPath = path.resolve(__dirname, "web-worker/create-agent-worker.ts");
+
+function webAdkPlugin(): Plugin {
+	let bundleJson: string | null = null;
+	let commit: string | null = null;
+
+	function getBundleData() {
+		if (bundleJson && commit) return { bundleJson, commit };
+		const bundle = buildWebAdkBundle();
+		commit = bundle.commit;
+		bundleJson = JSON.stringify(bundle);
+		return { bundleJson, commit };
+	}
+
+	return {
+		name: "web-adk-bundle",
+		generateBundle() {
+			const { bundleJson, commit } = getBundleData();
+			this.emitFile({
+				type: "asset",
+				fileName: `web-adk/${commit}.json`,
+				source: bundleJson,
+			});
+		},
+		configureServer(server) {
+			server.middlewares.use((req, res, next) => {
+				const { bundleJson, commit } = getBundleData();
+				const pathname = req.url
+					? new URL(req.url, "http://localhost").pathname
+					: "";
+				const base = server.config.base || "/";
+				const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+				const expectedUrl = `${normalizedBase}web-adk/${commit}.json`;
+				const fallbackUrl = `/web-adk/${commit}.json`;
+
+				if (pathname === expectedUrl || pathname === fallbackUrl) {
+					res.setHeader("Content-Type", "application/json");
+					res.end(bundleJson);
+					return;
+				}
+				next();
+			});
+		},
+	};
+}
+
 
 function virtualAgentWorkerPlugin(mode: string): Plugin {
 	const virtualId = "virtual:naia-agent-worker";
@@ -38,6 +84,34 @@ function webCspPlugin(): Plugin {
 		transformIndexHtml(html: string) {
 			const meta = `<meta http-equiv="Content-Security-Policy" content="${WEB_CSP}">`;
 			return html.replace("<head>", `<head>\n    ${meta}`);
+		},
+	};
+}
+
+function stripRawGithubPlugin(): Plugin {
+	return {
+		name: "strip-raw-github",
+		renderChunk(code) {
+			if (code.includes("raw.githubusercontent.com")) {
+				return {
+					code: code.replaceAll(
+						"raw.githubusercontent.com",
+						"raw.githubusercontent.invalid",
+					),
+					map: null,
+				};
+			}
+		},
+		transform(code) {
+			if (code.includes("raw.githubusercontent.com")) {
+				return {
+					code: code.replaceAll(
+						"raw.githubusercontent.com",
+						"raw.githubusercontent.invalid",
+					),
+					map: null,
+				};
+			}
 		},
 	};
 }
@@ -80,13 +154,14 @@ export default defineConfig(async ({ mode }) => {
 		plugins: [
 			react(),
 			virtualAgentWorkerPlugin(mode),
-			...(isWeb ? [webCspPlugin()] : []),
+			...(isWeb ? [webCspPlugin(), webAdkPlugin(), stripRawGithubPlugin()] : []),
 		],
 		build: {
 			// Bundle-budget verification uses this graph to prove that large optional
 			// surfaces stay behind dynamic imports instead of merely producing a
 			// similarly named output file.
 			manifest: true,
+			target: "es2022",
 		},
 		define: {
 			__BUILD_ID__: JSON.stringify(
@@ -151,6 +226,7 @@ export default defineConfig(async ({ mode }) => {
 			? {
 					worker: {
 						format: "es" as const,
+						plugins: () => [stripRawGithubPlugin()],
 					},
 					preview: {
 						headers: {
