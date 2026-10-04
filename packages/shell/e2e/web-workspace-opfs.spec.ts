@@ -102,20 +102,30 @@ test("첫 실행", async ({ browser }) => {
 	});
 
 	const parsed = JSON.parse(configText);
-	expect(parsed).toMatchObject({
+	expect(parsed).toEqual({
 		provider: "webllm",
 		model: "Qwen3-4B-q4f16_1-MLC",
 		agentName: "Naia",
 		speechStyle: "casual",
 		persona: "You are Naia, an AI companion. Speak casually and warmly.",
 		onboardingComplete: true,
+		workspaceRoot: "opfs://naia-adk",
+		enableTools: true,
+		localVoiceEnabled: false,
+		NAIA_MAIN_PROVIDER: "webllm",
+		NAIA_MAIN_MODEL: "Qwen3-4B-q4f16_1-MLC",
+		NAIA_AGENT_NAME: "Naia",
+		NAIA_SPEECH_STYLE: "casual",
 	});
 
-	// Screenshot test-results/wo08/main-1280.png
-	const screenshotPath = path.resolve("test-results/wo08/main-1280.png");
-	fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
-	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.screenshot({ path: screenshotPath });
+	const shotDir = process.env.WO08_SHOT_DIR;
+	if (shotDir) {
+		fs.mkdirSync(shotDir, { recursive: true });
+		await page.setViewportSize({ width: 1280, height: 800 });
+		await page.screenshot({ path: path.join(shotDir, "main-1280.png") });
+		await page.setViewportSize({ width: 900, height: 800 });
+		await page.screenshot({ path: path.join(shotDir, "main-900.png") });
+	}
 
 	// Ensure no external github request
 	for (const url of requestedUrls) {

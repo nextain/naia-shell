@@ -14,18 +14,49 @@ describe("web-workspace-commands", () => {
 			fs,
 		)) as string;
 
-		const expected = JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG, null, 2);
-		expect(first).toBe(expected);
-
 		const inStorage = await fs.readText("naia-adk/naia-settings/config.json");
-		expect(inStorage).toBe(expected);
+		expect(inStorage).not.toBeNull();
+		const parsedInStorage = JSON.parse(inStorage as string);
+		const expectedConfig = {
+			provider: "webllm",
+			model: "Qwen3-4B-q4f16_1-MLC",
+			agentName: "Naia",
+			speechStyle: "casual",
+			persona: "You are Naia, an AI companion. Speak casually and warmly.",
+			onboardingComplete: true,
+		};
+		expect(parsedInStorage).toEqual(expectedConfig);
+		expect(JSON.parse(first)).toEqual(expectedConfig);
 
 		const second = (await handleWebWorkspaceCommand(
 			"read_naia_config",
 			{ adkPath: "opfs://naia-adk" },
 			fs,
 		)) as string;
-		expect(second).toBe(expected);
+		expect(JSON.parse(second)).toEqual(expectedConfig);
+	});
+
+	it("rejects read_naia_config when initial config writeBytes fails", async () => {
+		const failingFs: WebFs = {
+			async readText() {
+				return null;
+			},
+			async writeBytes() {
+				throw new Error("Disk full or permission denied");
+			},
+			async exists() {
+				return false;
+			},
+			async ensureDir() {},
+		};
+
+		await expect(
+			handleWebWorkspaceCommand(
+				"read_naia_config",
+				{ adkPath: "opfs://naia-adk" },
+				failingFs,
+			),
+		).rejects.toThrow("Disk full or permission denied");
 	});
 
 	it("write_naia_config roundtrips valid JSON configuration", async () => {

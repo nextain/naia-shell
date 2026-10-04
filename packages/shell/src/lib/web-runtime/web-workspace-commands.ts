@@ -71,6 +71,7 @@ export async function handleWebWorkspaceCommand(
 			Logger.warn("WebWorkspace", "failed to write initial config", {
 				error: String(e),
 			});
+			throw e;
 		}
 		return initialText;
 	}

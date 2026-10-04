@@ -29,6 +29,17 @@ function isNotFoundError(e: unknown): boolean {
 	return false;
 }
 
+function isExactNotFoundError(e: unknown): boolean {
+	if (typeof DOMException !== "undefined" && e instanceof DOMException) {
+		return e.name === "NotFoundError";
+	}
+	if (e && typeof e === "object" && "name" in e) {
+		const name = (e as { name?: unknown }).name;
+		return name === "NotFoundError";
+	}
+	return false;
+}
+
 export function createOpfsWebFs(
 	getRoot: () => Promise<FileSystemDirectoryHandle>,
 ): WebFs {
@@ -85,14 +96,45 @@ export function createOpfsWebFs(
 			}
 
 			const fileName = segs[segs.length - 1];
+			let isNewFile = false;
+			try {
+				await currentDir.getFileHandle(fileName, { create: false });
+			} catch (e) {
+				if (isExactNotFoundError(e)) {
+					isNewFile = true;
+				} else {
+					throw e;
+				}
+			}
+
 			const fileHandle = await currentDir.getFileHandle(fileName, {
 				create: true,
 			});
-			const writable = await fileHandle.createWritable();
+
 			try {
-				await writable.write(data as unknown as BufferSource);
-			} finally {
-				await writable.close();
+				const writable = await fileHandle.createWritable();
+				try {
+					let chunk: string | Blob;
+					if (typeof data === "string") {
+						chunk = data;
+					} else {
+						const buf = new ArrayBuffer(data.byteLength);
+						new Uint8Array(buf).set(data);
+						chunk = new Blob([buf]);
+					}
+					await writable.write(chunk);
+				} finally {
+					await writable.close();
+				}
+			} catch (e) {
+				if (isNewFile) {
+					try {
+						await currentDir.removeEntry(fileName);
+					} catch {
+						// ignore cleanup error to preserve original error
+					}
+				}
+				throw e;
 			}
 		},
 

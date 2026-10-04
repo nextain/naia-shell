@@ -5,7 +5,7 @@ import {
 	WEB_ADK_SOURCE,
 	type WebAdkSource,
 } from "../web-adk";
-import { createMemoryWebFs } from "../web-fs";
+import { createMemoryWebFs, createOpfsWebFs } from "../web-fs";
 
 describe("web-adk", () => {
 	it("computes git blob sha-1 for CLAUDE.md content", async () => {
@@ -267,4 +267,204 @@ describe("web-adk", () => {
 			).toBe(false);
 		}
 	});
+
+	it("recovers from write failure without leaving empty file that bypasses subsequent provisioning", async () => {
+		let failWritable = false;
+
+		class MockDirHandle {
+			kind = "directory" as const;
+			name: string;
+			files = new Map<string, Uint8Array>();
+			dirs = new Map<string, MockDirHandle>();
+
+			constructor(name = "") {
+				this.name = name;
+			}
+
+			async getDirectoryHandle(
+				name: string,
+				options?: { create?: boolean },
+			): Promise<MockDirHandle> {
+				let dir = this.dirs.get(name);
+				if (!dir) {
+					if (options?.create) {
+						dir = new MockDirHandle(name);
+						this.dirs.set(name, dir);
+					} else {
+						throw new DOMException(
+							`Directory not found: ${name}`,
+							"NotFoundError",
+						);
+					}
+				}
+				return dir;
+			}
+
+			async getFileHandle(
+				name: string,
+				options?: { create?: boolean },
+			): Promise<any> {
+				const hasFile = this.files.has(name);
+				if (!hasFile) {
+					if (options?.create) {
+						this.files.set(name, new Uint8Array(0));
+					} else {
+						throw new DOMException(`File not found: ${name}`, "NotFoundError");
+					}
+				}
+
+				const parent = this;
+				return {
+					kind: "file",
+					name,
+					async getFile() {
+						const data = parent.files.get(name);
+						if (data === undefined) {
+							throw new DOMException(`File not found: ${name}`, "NotFoundError");
+						}
+						return {
+							size: data.byteLength,
+							async text() {
+								return new TextDecoder().decode(data);
+							},
+							async arrayBuffer() {
+								return data.buffer.slice(
+									data.byteOffset,
+									data.byteOffset + data.byteLength,
+								);
+							},
+						};
+					},
+					async createWritable() {
+						if (failWritable) {
+							throw new Error("simulated createWritable failure");
+						}
+						return {
+							async write(data: unknown) {
+								let bytes: Uint8Array;
+								if (typeof data === "string") {
+									bytes = new TextEncoder().encode(data);
+								} else if (data instanceof Uint8Array) {
+									bytes = data;
+								} else if (data instanceof ArrayBuffer) {
+									bytes = new Uint8Array(data);
+								} else if (ArrayBuffer.isView(data)) {
+									bytes = new Uint8Array(
+										data.buffer,
+										data.byteOffset,
+										data.byteLength,
+									);
+								} else if (
+									typeof Blob !== "undefined" &&
+									data instanceof Blob
+								) {
+									const ab = await data.arrayBuffer();
+									bytes = new Uint8Array(ab);
+								} else {
+									bytes = new Uint8Array(0);
+								}
+								parent.files.set(name, bytes);
+							},
+							async close() {},
+						};
+					},
+				};
+			}
+
+			async removeEntry(name: string): Promise<void> {
+				if (this.files.has(name)) {
+					this.files.delete(name);
+					return;
+				}
+				if (this.dirs.has(name)) {
+					this.dirs.delete(name);
+					return;
+				}
+				throw new DOMException(`Entry not found: ${name}`, "NotFoundError");
+			}
+		}
+
+		const mockRoot = new MockDirHandle("root");
+		const fs = createOpfsWebFs(
+			() => Promise.resolve(mockRoot as unknown as FileSystemDirectoryHandle),
+		);
+
+		const agentsContent = new TextEncoder().encode("# Test Agents\nValid content");
+		const agentsSha1 = await gitBlobSha1(agentsContent);
+		const claudeContent = new TextEncoder().encode("@AGENTS.md\n");
+		const claudeSha1 = await gitBlobSha1(claudeContent);
+
+		const testSource: WebAdkSource = {
+			repo: "nextain/naia-adk",
+			commit: "test-commit-recovery",
+			files: [
+				{
+					path: "AGENTS.md",
+					size: agentsContent.byteLength,
+					sha1: agentsSha1,
+				},
+				{
+					path: "CLAUDE.md",
+					size: claudeContent.byteLength,
+					sha1: claudeSha1,
+				},
+			],
+			dirs: ["projects/naia-template-project"],
+		};
+
+		const mockFetch = async (url: string) => {
+			if (url.endsWith("AGENTS.md")) {
+				return {
+					ok: true,
+					status: 200,
+					arrayBuffer: async () => agentsContent.buffer,
+				};
+			}
+			if (url.endsWith("CLAUDE.md")) {
+				return {
+					ok: true,
+					status: 200,
+					arrayBuffer: async () => claudeContent.buffer,
+				};
+			}
+			return {
+				ok: false,
+				status: 404,
+				arrayBuffer: async () => new ArrayBuffer(0),
+			};
+		};
+
+		// 1. Fail switch ON during first provisioning
+		failWritable = true;
+		const firstRes = await provisionWebAdk({
+			fs,
+			fetch: mockFetch,
+			base: "https://example.com/base/",
+			source: testSource,
+		});
+
+		expect(firstRes.ok).toBe(false);
+		expect(
+			await fs.exists("naia-adk/naia-settings/.web-adk-source.json"),
+		).toBe(false);
+
+		// 2. Fail switch OFF during second provisioning
+		failWritable = false;
+		const secondRes = await provisionWebAdk({
+			fs,
+			fetch: mockFetch,
+			base: "https://example.com/base/",
+			source: testSource,
+		});
+
+		expect(secondRes.ok).toBe(true);
+		expect(
+			await fs.exists("naia-adk/naia-settings/.web-adk-source.json"),
+		).toBe(true);
+
+		const agentsText = await fs.readText("naia-adk/AGENTS.md");
+		expect(agentsText).not.toBe("");
+		expect(agentsText).toBe("# Test Agents\nValid content");
+	});
 });
+
