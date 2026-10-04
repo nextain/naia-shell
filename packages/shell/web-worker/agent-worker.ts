@@ -5,7 +5,11 @@ import {
 	type WebLLMEngineLike,
 } from "@naia-agent/composition/browser-agent.js";
 import type { DiagnosticLog } from "@naia-agent/ports/uc1.js";
-import { WEB_LLM_MODEL_ID } from "../src/lib/web-runtime/webllm-model";
+import {
+	isWebLlmModelId,
+	WEB_LLM_MODEL_ID,
+	type WebLlmModelId,
+} from "../src/lib/web-runtime/webllm-model";
 
 const diag: DiagnosticLog = {
 	log(message: string, ctx?: unknown) {
@@ -54,7 +58,7 @@ function handleProgress(p: { progress: number; text: string }): void {
 	}
 }
 
-async function loadEngine(): Promise<WebLLMEngineLike> {
+async function loadEngine(model: WebLlmModelId): Promise<WebLLMEngineLike> {
 	const startTime = performance.now();
 	try {
 		if (import.meta.env.VITE_NAIA_WEB_LLM === "fake") {
@@ -62,7 +66,7 @@ async function loadEngine(): Promise<WebLLMEngineLike> {
 			const engine = makeFakeWebLLMEngine();
 			self.postMessage({
 				kind: "engine-ready",
-				model: WEB_LLM_MODEL_ID,
+				model,
 				elapsedMs: Math.round(performance.now() - startTime),
 			});
 			return engine;
@@ -72,13 +76,10 @@ async function loadEngine(): Promise<WebLLMEngineLike> {
 			import.meta.env.VITE_NAIA_WEB_LLM === "webllm"
 		) {
 			const { createWebLLMEngine } = await import("./webllm-engine");
-			const engine = await createWebLLMEngine(
-				WEB_LLM_MODEL_ID,
-				handleProgress,
-			);
+			const engine = await createWebLLMEngine(model, handleProgress);
 			self.postMessage({
 				kind: "engine-ready",
-				model: WEB_LLM_MODEL_ID,
+				model,
 				elapsedMs: Math.round(performance.now() - startTime),
 			});
 			return engine;
@@ -88,15 +89,20 @@ async function loadEngine(): Promise<WebLLMEngineLike> {
 		);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
-		self.postMessage({ kind: "engine-error", message });
+		const name = err instanceof Error ? err.name : "Error";
+		self.postMessage({ kind: "engine-error", name, message });
 		throw err;
 	}
 }
 
+let selectedModel: WebLlmModelId | null = null;
 let enginePromise: Promise<WebLLMEngineLike> | null = null;
 function getEngine(): Promise<WebLLMEngineLike> {
+	if (!selectedModel) {
+		return Promise.reject(new Error("webllm-not-started"));
+	}
 	if (!enginePromise) {
-		enginePromise = loadEngine();
+		enginePromise = loadEngine(selectedModel);
 	}
 	return enginePromise;
 }
@@ -117,12 +123,32 @@ self.addEventListener("message", (event: MessageEvent) => {
 			return;
 		}
 
-		// 엔진 준비 약속은 연결 메시지를 받는 순간 한 번 만들고 기억한다(내려받기를 바로 시작한다).
-		void getEngine();
+		if (data.model === undefined) {
+			selectedModel = WEB_LLM_MODEL_ID;
+		} else if (data.model === null) {
+			selectedModel = null;
+		} else if (typeof data.model === "string") {
+			if (isWebLlmModelId(data.model)) {
+				selectedModel = data.model;
+			} else {
+				self.postMessage({
+					kind: "engine-error",
+					name: "InvalidModel",
+					message: `허용되지 않은 모델: ${data.model}`,
+				});
+				selectedModel = null;
+			}
+		} else {
+			selectedModel = null;
+		}
+
+		if (selectedModel) {
+			void getEngine();
+		}
 
 		const provider = makeWebLLMProvider({
 			getEngine,
-			model: WEB_LLM_MODEL_ID,
+			model: selectedModel ?? WEB_LLM_MODEL_ID,
 		});
 
 		startBrowserAgent({

@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "Another presentation import is already running.",
 	"bgm.dragToReorder": "Drag to reorder",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 City Pop"
+	"bgm.cat.citypop": "🌸 City Pop",
+	"webModel.checking": "Checking local model…",
+	"webModel.loading": "Downloading {model} ({percent}%). Sending blocked until ready.",
+	"webModel.ready": "Local model ready: {model}",
+	"webModel.fallbackActive": "Fallback model active.",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "yes",
+	"webModel.f16No": "no",
+	"webModel.adapterUnknown": "Unknown adapter",
+	"webModel.errorNoWebgpu": "WebGPU is unavailable in this browser. Open in latest Chrome.",
+	"webModel.errorNoShaderF16": "GPU lacks shader-f16 to run {model}.",
+	"webModel.errorDeviceLost": "Insufficient GPU memory for {model}.",
+	"webModel.errorLoadFailed": "Failed to load {model}.",
+	"webModel.useFallback": "Use {model}",
+	"webModel.backToDefault": "Back to default model {model}",
+	"webModel.retry": "Retry",
+	"webModel.details": "Details"
 } as const;

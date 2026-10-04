@@ -18,6 +18,8 @@ import {
 	stopListening as sttStop,
 } from "tauri-plugin-stt-api";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
+import { WebModelStatusBar, useWebModelStatus } from "./WebModelStatusBar";
+import { isWebSendBlocked } from "../lib/web-runtime/web-model-status";
 import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
@@ -407,6 +409,9 @@ export async function loadOrCreateSession(): Promise<void> {
 export function ChatArea({
 	variant = "floating",
 }: { variant?: ChatVariant } = {}) {
+	const webModelStatus = useWebModelStatus();
+	const webSendBlocked =
+		import.meta.env.MODE === "web" && isWebSendBlocked(webModelStatus);
 	const [input, setInput] = useState("");
 	type OutputStage = "thinking" | "tts" | "render" | null;
 	const [outputStage, setOutputStage] = useState<OutputStage>(null);
@@ -1592,6 +1597,7 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		if (webSendBlocked) return;
 		if (await handleSpeechProfilePhrase(text)) return;
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
@@ -4109,6 +4115,10 @@ export function ChatArea({
 					</div>
 				)}
 
+				{import.meta.env.MODE === "web" && activeTab === "chat" && (
+					<WebModelStatusBar />
+				)}
+
 				{/* Input (chat tab only) */}
 				<div
 					className="chat-input-bar"
@@ -4189,7 +4199,8 @@ export function ChatArea({
 						<button
 							type="button"
 							onClick={() => handleSend()}
-							disabled={!input.trim()}
+							disabled={!input.trim() || webSendBlocked}
+							aria-describedby={webSendBlocked ? "web-model-status" : undefined}
 							className="chat-send-btn"
 						>
 							↑

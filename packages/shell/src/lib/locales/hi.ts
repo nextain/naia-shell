@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "एक अन्य प्रस्तुति पहले से आयात हो रही है।",
 	"bgm.dragToReorder": "क्रम बदलने के लिए खींचें",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 सिटी पॉप"
+	"bgm.cat.citypop": "🌸 सिटी पॉप",
+	"webModel.checking": "स्थानीय मॉडल की जाँच की जा रही है…",
+	"webModel.loading": "स्थानीय मॉडल {model} डाउनलोड हो रहा है ({percent}%)। डाउनलोड पूरा होने तक संदेश नहीं भेजे जा सकते।",
+	"webModel.ready": "स्थानीय मॉडल तैयार है: {model}",
+	"webModel.fallbackActive": "वैकल्पिक मॉडल के साथ बातचीत चल रही है।",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "समर्थित",
+	"webModel.f16No": "असमर्थित",
+	"webModel.adapterUnknown": "अज्ञात एडेप्टर",
+	"webModel.errorNoWebgpu": "इस ब्राउज़र में स्थानीय मॉडल शुरू करने के लिए WebGPU उपलब्ध नहीं है। कृपया नवीनतम Chrome में खोलें।",
+	"webModel.errorNoShaderF16": "यह GPU shader-f16 का समर्थन नहीं करता है और {model} नहीं चला सकता।",
+	"webModel.errorDeviceLost": "{model} चलाने के लिए GPU मेमोरी अपर्याप्त है।",
+	"webModel.errorLoadFailed": "स्थानीय मॉडल {model} लोड करने में विफल।",
+	"webModel.useFallback": "{model} का उपयोग करें",
+	"webModel.backToDefault": "डिफ़ॉल्ट मॉडल {model} पर वापस जाएँ",
+	"webModel.retry": "पुनः प्रयास करें",
+	"webModel.details": "विवरण"
 } as const;

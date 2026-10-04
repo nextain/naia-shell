@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "다른 프레젠테이션을 가져오는 중입니다.",
 	"bgm.dragToReorder": "끌어서 순서 바꾸기",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 시티팝"
+	"bgm.cat.citypop": "🌸 시티팝",
+	"webModel.checking": "로컬 모델을 확인하고 있습니다…",
+	"webModel.loading": "로컬 모델 {model} 내려받는 중 {percent}%. 다 받을 때까지 메시지를 보낼 수 없습니다.",
+	"webModel.ready": "로컬 모델 준비됨: {model}",
+	"webModel.fallbackActive": "대체 모델로 대화 중입니다.",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "지원",
+	"webModel.f16No": "지원 안 함",
+	"webModel.adapterUnknown": "이름을 알 수 없는 어댑터",
+	"webModel.errorNoWebgpu": "이 브라우저에서 WebGPU 를 쓸 수 없어 로컬 모델을 띄우지 못했습니다. 최신 크롬에서 열어 주세요.",
+	"webModel.errorNoShaderF16": "이 GPU 는 shader-f16 을 지원하지 않아 {model} 을 띄울 수 없습니다.",
+	"webModel.errorDeviceLost": "GPU 메모리가 모자라 {model} 을 띄우지 못했습니다.",
+	"webModel.errorLoadFailed": "로컬 모델 {model} 을 불러오지 못했습니다.",
+	"webModel.useFallback": "{model} 로 받기",
+	"webModel.backToDefault": "기본 모델 {model} 로 돌아가기",
+	"webModel.retry": "다시 시도",
+	"webModel.details": "자세한 내용"
 } as const;

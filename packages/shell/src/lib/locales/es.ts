@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "Ya hay otra importación de presentación en curso.",
 	"bgm.dragToReorder": "Arrastrar para reordenar",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 City Pop"
+	"bgm.cat.citypop": "🌸 City Pop",
+	"webModel.checking": "Comprobando el modelo local…",
+	"webModel.loading": "Descargando modelo local {model} ({percent}%). No se pueden enviar mensajes hasta que finalice la descarga.",
+	"webModel.ready": "Modelo local listo: {model}",
+	"webModel.fallbackActive": "Conversando con el modelo alternativo.",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "compatible",
+	"webModel.f16No": "no compatible",
+	"webModel.adapterUnknown": "Adaptador desconocido",
+	"webModel.errorNoWebgpu": "WebGPU no está disponible en este navegador para iniciar el modelo local. Ábralo en la versión más reciente de Chrome.",
+	"webModel.errorNoShaderF16": "Esta GPU no admite shader-f16 y no puede ejecutar {model}.",
+	"webModel.errorDeviceLost": "Memoria de GPU insuficiente para iniciar {model}.",
+	"webModel.errorLoadFailed": "No se pudo cargar el modelo local {model}.",
+	"webModel.useFallback": "Usar {model}",
+	"webModel.backToDefault": "Volver al modelo predeterminado {model}",
+	"webModel.retry": "Reintentar",
+	"webModel.details": "Detalles"
 } as const;

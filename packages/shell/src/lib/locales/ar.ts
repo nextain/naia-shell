@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "يتم استيراد عرض تقديمي آخر حاليًا.",
 	"bgm.dragToReorder": "اسحب لإعادة الترتيب",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 سيتي بوب"
+	"bgm.cat.citypop": "🌸 سيتي بوب",
+	"webModel.checking": "جارٍ التحقق من النموذج المحلي…",
+	"webModel.loading": "جارٍ تنزيل النموذج المحلي {model} ({percent}%). لا يمكن إرسال الرسائل حتى يكتمل التنزيل.",
+	"webModel.ready": "النموذج المحلي جاهز: {model}",
+	"webModel.fallbackActive": "تجري المحادثة باستخدام النموذج البديل.",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "مدعوم",
+	"webModel.f16No": "غير مدعوم",
+	"webModel.adapterUnknown": "محول غير معروف",
+	"webModel.errorNoWebgpu": "تقنية WebGPU غير متوفرة في هذا المتصفح لتشغيل النموذج المحلي. يرجى الفتح في أحدث إصدار من Chrome.",
+	"webModel.errorNoShaderF16": "وحدة معالجة الرسومات هذه لا تدعم shader-f16 ولا يمكنها تشغيل {model}.",
+	"webModel.errorDeviceLost": "ذاكرة GPU غير كافية لتشغيل {model}.",
+	"webModel.errorLoadFailed": "فشل تحميل النموذج المحلي {model}.",
+	"webModel.useFallback": "استخدام {model}",
+	"webModel.backToDefault": "العودة إلى النموذج الافتراضي {model}",
+	"webModel.retry": "إعادة المحاولة",
+	"webModel.details": "التفاصيل"
 } as const;

@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "Một bài thuyết trình khác đang được nhập.",
 	"bgm.dragToReorder": "Kéo để sắp xếp lại",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 City Pop"
+	"bgm.cat.citypop": "🌸 City Pop",
+	"webModel.checking": "Đang kiểm tra mô hình cục bộ…",
+	"webModel.loading": "Đang tải xuống mô hình cục bộ {model} ({percent}%). Không thể gửi tin nhắn cho đến khi tải xong.",
+	"webModel.ready": "Mô hình cục bộ đã sẵn sàng: {model}",
+	"webModel.fallbackActive": "Đang trò chuyện với mô hình thay thế.",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "hỗ trợ",
+	"webModel.f16No": "không hỗ trợ",
+	"webModel.adapterUnknown": "Bộ điều hợp không xác định",
+	"webModel.errorNoWebgpu": "Trình duyệt này không hỗ trợ WebGPU để khởi động mô hình cục bộ. Vui lòng mở trong Chrome mới nhất.",
+	"webModel.errorNoShaderF16": "GPU này không hỗ trợ shader-f16 và không thể chạy {model}.",
+	"webModel.errorDeviceLost": "Không đủ bộ nhớ GPU để khởi động {model}.",
+	"webModel.errorLoadFailed": "Không thể tải mô hình cục bộ {model}.",
+	"webModel.useFallback": "Dùng {model}",
+	"webModel.backToDefault": "Quay lại mô hình mặc định {model}",
+	"webModel.retry": "Thử lại",
+	"webModel.details": "Chi tiết"
 } as const;

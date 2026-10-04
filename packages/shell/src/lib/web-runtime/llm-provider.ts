@@ -1,5 +1,9 @@
 import { registerLlmProvider } from "../llm/registry";
-import { WEB_LLM_MODEL_ID } from "./webllm-model";
+import {
+	WEB_LLM_MODEL_ID,
+	WEB_LLM_MODEL_IDS,
+	WEB_LLM_MODEL_LABELS,
+} from "./webllm-model";
 
 export function registerWebLlmProvider(): void {
 	registerLlmProvider({
@@ -9,12 +13,10 @@ export function registerWebLlmProvider(): void {
 		requiresApiKey: false,
 		isLocal: true,
 		defaultModel: WEB_LLM_MODEL_ID,
-		models: [
-			{
-				id: WEB_LLM_MODEL_ID,
-				label: "Qwen3 8B (4bit)",
-				capabilities: ["llm"],
-			},
-		],
+		models: WEB_LLM_MODEL_IDS.map((id) => ({
+			id,
+			label: WEB_LLM_MODEL_LABELS[id],
+			capabilities: ["llm"],
+		})),
 	});
 }

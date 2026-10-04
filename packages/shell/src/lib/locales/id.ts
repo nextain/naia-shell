@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "Impor presentasi lain sedang berlangsung.",
 	"bgm.dragToReorder": "Seret untuk mengurutkan",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 City Pop"
+	"bgm.cat.citypop": "🌸 City Pop",
+	"webModel.checking": "Memeriksa model lokal…",
+	"webModel.loading": "Mengunduh model lokal {model} ({percent}%). Tidak dapat mengirim pesan hingga pengunduhan selesai.",
+	"webModel.ready": "Model lokal siap: {model}",
+	"webModel.fallbackActive": "Sedang mengobrol dengan model cadangan.",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "didukung",
+	"webModel.f16No": "tidak didukung",
+	"webModel.adapterUnknown": "Adaptor tidak dikenal",
+	"webModel.errorNoWebgpu": "WebGPU tidak tersedia di peramban ini untuk memulai model lokal. Silakan buka di Chrome terbaru.",
+	"webModel.errorNoShaderF16": "GPU ini tidak mendukung shader-f16 dan tidak dapat menjalankan {model}.",
+	"webModel.errorDeviceLost": "Memori GPU tidak mencukupi untuk menjalankan {model}.",
+	"webModel.errorLoadFailed": "Gagal memuat model lokal {model}.",
+	"webModel.useFallback": "Gunakan {model}",
+	"webModel.backToDefault": "Kembali ke model default {model}",
+	"webModel.retry": "Coba lagi",
+	"webModel.details": "Rincian"
 } as const;

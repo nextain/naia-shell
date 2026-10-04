@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createAgentBridge, type WorkerLike } from "../agent-bridge";
+import {
+	getWebModelStatus,
+	resetWebModelStatusForTests,
+} from "../web-model-status";
+import { WEB_LLM_MODEL_ID } from "../webllm-model";
 
 class FakeWorker implements WorkerLike {
 	posted: { message: unknown; transfer?: Transferable[] }[] = [];
@@ -15,10 +20,26 @@ class FakeWorker implements WorkerLike {
 		}
 		this.listeners[type].push(listener);
 	}
+
+	dispatchMessage(data: unknown): void {
+		for (const listener of this.listeners["message"] ?? []) {
+			listener({ data });
+		}
+	}
+
+	dispatchError(error: unknown): void {
+		for (const listener of this.listeners["error"] ?? []) {
+			listener(error);
+		}
+	}
 }
 
 describe("agent-bridge", () => {
-	it("satisfies the worker bridge lifecycle and line forwarding contract", async () => {
+	beforeEach(() => {
+		resetWebModelStatusForTests();
+	});
+
+	it("creates worker only on start and buffers lines sent before start", async () => {
 		let workerCreationCount = 0;
 		let workerInstance: FakeWorker | null = null;
 		const emittedEvents: { event: string; payload: unknown }[] = [];
@@ -35,32 +56,34 @@ describe("agent-bridge", () => {
 
 		const bridge = createAgentBridge({ createWorker, emit });
 
-		// 1. sendLine 전에는 Worker 를 만들지 않는다.
+		// 1. sendLine before start: does NOT create worker, buffers line
+		bridge.sendLine("buffered-1");
+		bridge.sendLine("buffered-2");
 		expect(workerCreationCount).toBe(0);
 		expect(workerInstance).toBeNull();
 
-		// 2. sendLine 을 세 번 불러도 Worker 는 하나다.
-		bridge.sendLine("line-1");
+		// 2. start: creates worker exactly once, carries model in connect message
+		bridge.start({ model: WEB_LLM_MODEL_ID });
 		expect(workerCreationCount).toBe(1);
 		const capturedWorker = workerInstance!;
 		expect(capturedWorker).not.toBeNull();
 
-		bridge.sendLine("line-2");
-		bridge.sendLine("line-3");
+		// Calling start again does not create another worker
+		bridge.start({ model: "another-model" });
 		expect(workerCreationCount).toBe(1);
 
-		// Worker 생성 시 넘긴 port2 확인
+		// Worker connect message checks
 		expect(capturedWorker.posted).toHaveLength(1);
 		expect(capturedWorker.posted[0].message).toEqual({
 			kind: "naia-agent-connect",
+			model: WEB_LLM_MODEL_ID,
 		});
 		const transferred = capturedWorker.posted[0].transfer;
 		expect(transferred).toBeDefined();
 		expect(transferred).toHaveLength(1);
 		const workerPort = transferred![0] as MessagePort;
-		expect(workerPort).toBeDefined();
 
-		// 3. 넘긴 port2 로 Worker 쪽이 받은 줄이 보낸 줄과 같다.
+		// 3. Buffered lines are delivered in order, subsequent sendLine goes directly
 		const receivedLines: string[] = [];
 		workerPort.onmessage = (ev: MessageEvent) => {
 			if (typeof ev.data === "string") {
@@ -69,11 +92,12 @@ describe("agent-bridge", () => {
 		};
 		workerPort.start?.();
 
-		// 비동기 틱 대기
-		await new Promise((r) => setTimeout(r, 50));
-		expect(receivedLines).toEqual(["line-1", "line-2", "line-3"]);
+		bridge.sendLine("immediate-3");
 
-		// 4. Worker 쪽이 port2.postMessage("{\"type\":\"finish\"}") 하면 emit 이 ("agent_response", 그 문자열) 로 한 번 불린다.
+		await new Promise((r) => setTimeout(r, 50));
+		expect(receivedLines).toEqual(["buffered-1", "buffered-2", "immediate-3"]);
+
+		// Response emitting via MessagePort
 		const finishStr = '{"type":"finish"}';
 		workerPort.postMessage(finishStr);
 		await new Promise((r) => setTimeout(r, 50));
@@ -81,13 +105,122 @@ describe("agent-bridge", () => {
 			{ event: "agent_response", payload: finishStr },
 		]);
 
-		// 5. 문자열이 아닌 메시지는 emit 하지 않는다.
-		workerPort.postMessage({ type: "finish" });
-		workerPort.postMessage(12345);
-		await new Promise((r) => setTimeout(r, 50));
-		expect(emittedEvents).toHaveLength(1);
-
-		// 6. 시험이 끝나면 포트를 닫는다.
 		workerPort.close();
+	});
+
+	it("updates web-model-status store from control messages", () => {
+		let workerInstance: FakeWorker | null = null;
+		const bridge = createAgentBridge({
+			createWorker: () => {
+				workerInstance = new FakeWorker();
+				return workerInstance;
+			},
+			emit: () => {},
+		});
+
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		const worker = workerInstance!;
+
+		// engine-progress
+		worker.dispatchMessage({
+			kind: "engine-progress",
+			progress: 0.42,
+			text: "fetching weights",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "loading",
+			progress: 0.42,
+		});
+
+		// engine-ready with whitelisted model
+		worker.dispatchMessage({
+			kind: "engine-ready",
+			model: WEB_LLM_MODEL_ID,
+			elapsedMs: 1234,
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "ready",
+			progress: 1,
+			model: WEB_LLM_MODEL_ID,
+		});
+
+		// engine-ready with unknown model does not update store
+		worker.dispatchMessage({
+			kind: "engine-ready",
+			model: "Unknown-Model",
+		});
+		expect(getWebModelStatus().model).toBe(WEB_LLM_MODEL_ID);
+
+		// engine-error with WebGPUNotAvailableError
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "WebGPUNotAvailableError",
+			message: "No WebGPU",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "no-webgpu",
+			errorMessage: "No WebGPU",
+		});
+
+		// progress ignored when in error phase
+		worker.dispatchMessage({
+			kind: "engine-progress",
+			progress: 0.99,
+		});
+		expect(getWebModelStatus().phase).toBe("error");
+
+		// engine-error with ShaderF16SupportError
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "ShaderF16SupportError",
+			message: "Shader F16 not supported",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "no-shader-f16",
+		});
+
+		// engine-error with DeviceLostError
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "DeviceLostError",
+			message: "Device Lost",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "device-lost",
+		});
+
+		// engine-error with WebGPUNotFoundError
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "WebGPUNotFoundError",
+			message: "GPU not found",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "no-webgpu",
+		});
+
+		// engine-error with unknown error name
+		worker.dispatchMessage({
+			kind: "engine-error",
+			name: "SomethingElseError",
+			message: "Failed to compile shader",
+		});
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "load-failed",
+			errorMessage: "Failed to compile shader",
+		});
+
+		// worker error event sets load-failed
+		worker.dispatchError({ message: "Worker runtime fatal error" });
+		expect(getWebModelStatus()).toMatchObject({
+			phase: "error",
+			errorKind: "load-failed",
+			errorMessage: "Worker runtime fatal error",
+		});
 	});
 });

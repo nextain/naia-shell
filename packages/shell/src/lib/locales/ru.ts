@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "Другая презентация уже импортируется.",
 	"bgm.dragToReorder": "Перетащите для сортировки",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 Сити-поп"
+	"bgm.cat.citypop": "🌸 Сити-поп",
+	"webModel.checking": "Проверка локальной модели…",
+	"webModel.loading": "Загрузка локальной модели {model} ({percent}%). Отправка сообщений недоступна до окончания загрузки.",
+	"webModel.ready": "Локальная модель готова: {model}",
+	"webModel.fallbackActive": "Идет общение с резервной моделью.",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "поддерживается",
+	"webModel.f16No": "не поддерживается",
+	"webModel.adapterUnknown": "Неизвестный адаптер",
+	"webModel.errorNoWebgpu": "WebGPU недоступен в этом браузере для запуска локальной модели. Пожалуйста, откройте в последней версии Chrome.",
+	"webModel.errorNoShaderF16": "Этот GPU не поддерживает shader-f16 и не может запустить {model}.",
+	"webModel.errorDeviceLost": "Недостаточно видеопамяти GPU для запуска {model}.",
+	"webModel.errorLoadFailed": "Не удалось загрузить локальную модель {model}.",
+	"webModel.useFallback": "Переключить на {model}",
+	"webModel.backToDefault": "Вернуться к модели по умолчанию {model}",
+	"webModel.retry": "Повторить",
+	"webModel.details": "Подробности"
 } as const;

@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "另一个演示文稿正在导入。",
 	"bgm.dragToReorder": "拖动以重新排序",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 城市流行"
+	"bgm.cat.citypop": "🌸 城市流行",
+	"webModel.checking": "正在检查本地模型…",
+	"webModel.loading": "正在下载本地模型 {model} ({percent}%)。下载完成前无法发送消息。",
+	"webModel.ready": "本地模型已就绪：{model}",
+	"webModel.fallbackActive": "正在使用备用模型对话。",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "支持",
+	"webModel.f16No": "不支持",
+	"webModel.adapterUnknown": "未知适配器",
+	"webModel.errorNoWebgpu": "此浏览器不支持 WebGPU，无法启动本地模型。请在最新版 Chrome 中打开。",
+	"webModel.errorNoShaderF16": "此 GPU 不支持 shader-f16，无法运行 {model}。",
+	"webModel.errorDeviceLost": "GPU 显存不足，无法启动 {model}。",
+	"webModel.errorLoadFailed": "无法加载本地模型 {model}。",
+	"webModel.useFallback": "切换至 {model}",
+	"webModel.backToDefault": "返回默认模型 {model}",
+	"webModel.retry": "重试",
+	"webModel.details": "详细信息"
 } as const;

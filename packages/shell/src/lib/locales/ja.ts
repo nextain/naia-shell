@@ -1341,5 +1341,21 @@ export default {
 	"slides.importBusy": "別のプレゼンテーションを読み込み中です。",
 	"bgm.dragToReorder": "ドラッグで並べ替え",
 	"bgm.cat.kpop": "🇰🇷 K-Pop",
-	"bgm.cat.citypop": "🌸 シティポップ"
+	"bgm.cat.citypop": "🌸 シティポップ",
+	"webModel.checking": "ローカルモデルを確認しています…",
+	"webModel.loading": "ローカルモデル {model} をダウンロード中 ({percent}%)。完了するまでメッセージを送信できません。",
+	"webModel.ready": "ローカルモデルの準備が完了しました: {model}",
+	"webModel.fallbackActive": "代替モデルと対話中です。",
+	"webModel.adapter": "GPU: {adapter} · shader-f16 {f16}",
+	"webModel.f16Yes": "対応",
+	"webModel.f16No": "非対応",
+	"webModel.adapterUnknown": "不明なアダプター",
+	"webModel.errorNoWebgpu": "このブラウザではWebGPUが利用できないため、ローカルモデルを起動できませんでした。最新のChromeで開いてください。",
+	"webModel.errorNoShaderF16": "このGPUはshader-f16に対応していないため、{model} を起動できません。",
+	"webModel.errorDeviceLost": "GPUメモリが不足しているため、{model} を起動できませんでした。",
+	"webModel.errorLoadFailed": "ローカルモデル {model} を読み込めませんでした。",
+	"webModel.useFallback": "{model} でダウンロード",
+	"webModel.backToDefault": "デフォルトモデル {model} に戻る",
+	"webModel.retry": "再試行",
+	"webModel.details": "詳細"
 } as const;
