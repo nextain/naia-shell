@@ -638,6 +638,7 @@ export function ChatArea({
 	const [bgmSidecarError, setBgmSidecarError] = useState<string | null>(null);
 
 	useEffect(() => {
+		if (import.meta.env.MODE === "web") return;
 		let cancelled = false;
 		void ensureBgmSidecar()
 			.then(() => {

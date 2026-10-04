@@ -21,6 +21,7 @@ import {
 	resetWebModelStatusForTests,
 	setWebModelStatus,
 } from "../../lib/web-runtime/web-model-status";
+import { ensureBgmSidecar } from "../../lib/bgm-sidecar-url";
 
 const ttsSyncMocks = vi.hoisted(() => ({
 	synthesizeTts: vi.fn().mockResolvedValue({
@@ -270,6 +271,7 @@ describe("ChatArea", () => {
 		});
 		resetWebModelStatusForTests();
 		vi.unstubAllEnvs();
+		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
 	});
 
 	it("renders input field and buttons", () => {
@@ -2423,6 +2425,41 @@ describe("ChatArea", () => {
 		const input = document.querySelector(".chat-input") as HTMLTextAreaElement;
 		await waitFor(() => expect(input.value).toBe("준비 전 STT 텍스트"));
 		expect(capturedRequests).toHaveLength(0);
+	});
+
+	it("skips ensureBgmSidecar and does not render bgm-sidecar-error in web mode", async () => {
+		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+		vi.stubEnv("MODE", "web");
+		vi.mocked(ensureBgmSidecar).mockRejectedValueOnce(
+			new Error("desktop_only:ensure_bgm_server"),
+		);
+		try {
+			render(<ChatArea />);
+			await screen.findByPlaceholderText(/메시지|message/i);
+			expect(ensureBgmSidecar).toHaveBeenCalledTimes(0);
+			expect(screen.queryByTestId("bgm-sidecar-error")).toBeNull();
+		} finally {
+			vi.unstubAllEnvs();
+			vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+		}
+	});
+
+	it("renders bgm-sidecar-error notification when ensureBgmSidecar fails in desktop mode", async () => {
+		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+		vi.mocked(ensureBgmSidecar).mockRejectedValueOnce(
+			new Error("desktop_only:ensure_bgm_server"),
+		);
+		try {
+			render(<ChatArea />);
+			const alert = await screen.findByTestId("bgm-sidecar-error");
+			expect(alert).toBeDefined();
+			expect(alert.textContent).toContain(
+				"BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.",
+			);
+			expect(ensureBgmSidecar).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+		}
 	});
 });
 
