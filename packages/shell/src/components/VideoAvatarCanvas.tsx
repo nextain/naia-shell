@@ -21,26 +21,50 @@ import {
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
-interface VideoAvatarCanvasProps {
+import type React from "react";
+
+export interface VideoAvatarCanvasProps {
 	nvaModel?: string;
+	layout?: "app" | "workspace";
+	isSpaceInsufficient?: boolean;
 }
 type Mode = "loading" | "prebaked" | "error";
-interface NvaPan {
+export interface NvaPan {
 	x: number;
 	y: number;
 }
-const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
-function videoTransform(pan: NvaPan): string {
-	return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px)`;
+export const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
+export function videoTransform(
+	pan: NvaPan,
+	layout: "app" | "workspace" = "app",
+): string {
+	if (layout === "workspace") {
+		return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px)`;
+	}
+	return `translate(${pan.x}px, ${pan.y}px)`;
 }
-const VIDEO_STYLE = {
+export const VIDEO_STYLE: React.CSSProperties = {
 	maxWidth: "min(100%, 56vh)",
 	maxHeight: "92%",
-	objectFit: "contain" as const,
+	objectFit: "contain",
+};
+export const APP_CANVAS_STYLE: React.CSSProperties = {
+	maxWidth: "calc(var(--naia-width, 320px) - 16px)",
+	maxHeight: "100%",
+	minHeight: 0,
+	minWidth: 0,
+	width: "auto",
+	height: "auto",
+	objectFit: "contain",
+	display: "block",
 };
 
 /** GPU 없는 pre-baked NVA player. retired server-side avatar/cascade를 시작하지 않는다. */
-export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
+export function VideoAvatarCanvas({
+	nvaModel,
+	layout = "app",
+	isSpaceInsufficient,
+}: VideoAvatarCanvasProps) {
 	const setLoaded = useAvatarStore((state) => state.setLoaded);
 	const [mode, setMode] = useState<Mode>("loading");
 	const [error, setError] = useState("");
@@ -155,6 +179,39 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		};
 	}, [video, canvas, manifest, bundleDir, setLoaded]);
 
+	const isWorkspace = layout === "workspace";
+	const outerStyle: React.CSSProperties = isWorkspace
+		? {
+				position: "relative",
+				width: "100%",
+				height: "100%",
+				overflow: "hidden",
+				display: "grid",
+				placeItems: "center",
+			}
+		: {
+				position: "absolute",
+				left: 0,
+				width: "var(--naia-width, 320px)",
+				top: "var(--naia-avatar-top, 48px)",
+				bottom: "var(--naia-chat-reserve, 0px)",
+				display: "grid",
+				placeItems: "end center",
+				gridTemplateRows: "minmax(0, 1fr)",
+				overflow: "hidden",
+				visibility: isSpaceInsufficient ? "hidden" : undefined,
+			};
+
+	const canvasStyle: React.CSSProperties = isWorkspace
+		? { ...VIDEO_STYLE, transform: videoTransform(pan, "workspace") }
+		: {
+				...APP_CANVAS_STYLE,
+				aspectRatio: manifest
+					? `${manifest.canvas.width} / ${manifest.canvas.height}`
+					: "720 / 1280",
+				transform: videoTransform(pan, "app"),
+			};
+
 	return (
 		<div
 			data-video-avatar
@@ -162,14 +219,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			data-video-avatar-mode={mode}
 			data-video-avatar-loaded={mode === "prebaked" ? "true" : "false"}
 			data-video-avatar-error={error}
-			style={{
-				position: "relative",
-				width: "100%",
-				height: "100%",
-				overflow: "hidden",
-				display: "grid",
-				placeItems: "center",
-			}}
+			style={outerStyle}
 		>
 			{/* Hidden decode buffer — never shown directly (mp4 talking clips have no
 			    alpha, so the visible surface is always the composited canvas below). */}
@@ -182,7 +232,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			<canvas
 				ref={setCanvas}
 				data-video-avatar-prebaked
-				style={{ ...VIDEO_STYLE, transform: videoTransform(pan) }}
+				style={canvasStyle}
 			/>
 			{mode !== "prebaked" && (
 				<output data-video-avatar-status={mode} aria-live="polite">

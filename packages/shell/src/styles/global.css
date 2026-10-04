@@ -11880,12 +11880,6 @@ body.resizing-col * {
 	background: transparent;
 }
 
-.onboarding-step__nva-crop--live-naia .onboarding-step__nva-crop-media {
-	/* The live Naia source contains large transparent/black headroom. Move the
-	   crop window down into the source and zoom to its manifest face_bbox. */
-	top: -80px;
-	width: 200px;
-}
 
 .onboarding-step__avatar-badge {
 	position: absolute;

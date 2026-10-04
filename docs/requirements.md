@@ -1356,3 +1356,14 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 | **FR-CREDITS-DISPLAY.1** | Naia 계정 사용 비용은 모든 화면에서 "약 N 크레딧"(1크레딧 = $0.001, 달러 × 1,000)으로 표시하고, 셸은 배수를 곱하지 않는다. 자기 API 키 제공자는 달러 "제공사 요금 추정"으로 표시한다. 금액 서식은 `lib/credits.ts` 한 곳을 쓴다. 14개 언어 키 누락 0. | UC-CREDITS-DISPLAY | `credits.test.ts`, `CostDashboard.test.tsx`, `ChatArea.test.tsx`, `WorkProgressArea.test.tsx`, `SettingsTab.test.tsx`, `registry.test.ts`, `i18n-user-facing.test.ts` | In progress |
 | **FR-CREDITS-DISPLAY.2** | Steam판(표시 파일 `naia-distribution.txt` 또는 `SteamAppId`=5354630)에서는 크레딧 충전 버튼·naia.land 결제·대시보드 링크와 부족 안내의 웹 결제 문구를 숨긴다. 표시 파일은 데포 해시 목록에 포함되고 CI가 확인한다. | UC-CREDITS-DISPLAY | `src-tauri/src/distribution.rs` 단위 시험, `platform-matrix.test.ts`, `distribution.test.ts`, `CostDashboard.steam.test.tsx`, `SettingsTab.test.tsx` | In progress |
+
+## 2026-10-04 Video avatar positioned above chat area (#444)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-NVA-ABOVE-CHAT.1** | 대화 모드가 "app"(왼쪽 소형, 기본값)일 때 비디오 아바타 캔버스는 왼쪽 열(`--naia-width`) 안에서 가로 가운데에 놓이고, 캔버스 아래 끝이 대화창 영역(`.naia-chat-area`, 끌기 막대 포함) 위 끝에 맞닿는다. AI 조작 막대(`.ai-control-bar`) 아래 끝보다 위로 올라가지 않도록 위쪽 여백을 두며, 캔버스는 비율(720/1280)을 유지하며 contain된다. | UC-NVA-ABOVE-CHAT | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`, `packages/shell/e2e/nva-avatar-above-chat.spec.ts` | Done |
+| **FR-NVA-ABOVE-CHAT.2** | 대화창 높이 드래그 조절(120~600px), 대화창 접기/펼치기, 창 크기 변경 시 `AppMainContent`에서 `ResizeObserver`로 대화창을 측정하여 `--naia-chat-reserve`를 갱신하고, 아바타 캔버스 위치와 크기가 실시간으로 추종한다. 접힘 시 끌기 막대 바로 위까지 내려온다. | UC-NVA-ABOVE-CHAT | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`, `packages/shell/e2e/nva-avatar-above-chat.spec.ts` | Done |
+| **FR-NVA-ABOVE-CHAT.3** | AI 조작 막대 아래 끝과 대화창 위 끝 사이 여유 공간이 80px 미만일 때는 아바타 캔버스를 숨겨(`visibility: hidden`) 대화창을 우선 보호하며, 여유 공간 확보 시 자동으로 다시 표시된다. | UC-NVA-ABOVE-CHAT | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`, `packages/shell/e2e/nva-avatar-above-chat.spec.ts` | Done |
+| **FR-NVA-ABOVE-CHAT.4** | 대화 모드가 "app"일 때 사용자의 nvaPan(카메라 pan) 설정은 열 가운데 기준 `translate(pan.x, pan.y)`로 온전히 반영된다. "workspace" 모드에서는 기존 중앙 배치(50vw 기준 transform 및 바깥 스타일)가 그대로 유지된다. | UC-NVA-ABOVE-CHAT | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`, `packages/shell/e2e/nva-avatar-above-chat.spec.ts` | Done |
+| **FR-NVA-ABOVE-CHAT.5** | 온보딩 아바타 카드 썸네일에서 옛 실사 나이아 전용 crop(`onboarding-step__nva-crop--live-naia`)을 제거하고, 기본 후드 나이아도 일반 NVA crop(`top: -12px; width: 125px`)을 적용하여 귀·정수리·얼굴 양옆이 잘리지 않고 온전하게 표시된다. | UC-NVA-ABOVE-CHAT | `packages/shell/e2e/205-onboarding-avatar-grid.spec.ts` | Done |
+

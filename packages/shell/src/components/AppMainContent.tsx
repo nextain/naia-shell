@@ -1,10 +1,11 @@
 import type {
+	CSSProperties,
 	Dispatch,
 	MutableRefObject,
 	PointerEvent,
 	SetStateAction,
 } from "react";
-import { Suspense, lazy, useMemo, useRef } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getBridgeForApp } from "../lib/active-bridge";
 import type { Announcement } from "../lib/announcements";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
@@ -61,6 +62,60 @@ interface ChatDragState {
 	startY: number;
 	startH: number;
 	moved: boolean;
+}
+
+export interface AvatarLayoutInputs {
+	uiMode: "app" | "workspace" | "onboarding" | "setup";
+	layerRect: { top: number; bottom: number } | null;
+	chatRect: { top: number; bottom: number } | null;
+	aiBarRect?: { top: number; bottom: number } | null;
+}
+
+export interface AvatarLayoutResult {
+	chatReserve: number | null;
+	avatarTop: number;
+	isSpaceInsufficient: boolean;
+}
+
+export function calculateAvatarLayout(
+	inputs: AvatarLayoutInputs,
+): AvatarLayoutResult {
+	const { uiMode, layerRect, chatRect, aiBarRect } = inputs;
+	if (uiMode === "workspace") {
+		return {
+			chatReserve: null,
+			avatarTop: 48,
+			isSpaceInsufficient: false,
+		};
+	}
+
+	if (!layerRect || !chatRect) {
+		return {
+			chatReserve: null,
+			avatarTop: 48,
+			isSpaceInsufficient: false,
+		};
+	}
+
+	const chatReserve = Math.max(
+		0,
+		Math.round(layerRect.bottom - chatRect.top),
+	);
+	const aiBarBottom = aiBarRect
+		? aiBarRect.bottom
+		: layerRect.top + 48;
+	const avatarTop = aiBarRect
+		? Math.max(48, Math.round(aiBarRect.bottom - layerRect.top))
+		: 48;
+
+	const availableHeight = chatRect.top - aiBarBottom;
+	const isSpaceInsufficient = availableHeight < 80;
+
+	return {
+		chatReserve,
+		avatarTop,
+		isSpaceInsufficient,
+	};
 }
 
 export interface AppMainContentProps {
@@ -154,6 +209,63 @@ export function AppMainContent(props: AppMainContentProps) {
 	const activatedKeepAliveAppsRef = useRef(new Set<string>());
 	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
 
+	const avatarLayerRef = useRef<HTMLDivElement>(null);
+	const chatAreaRef = useRef<HTMLDivElement>(null);
+	const overlayRef = useRef<HTMLDivElement>(null);
+	const [avatarLayout, setAvatarLayout] = useState<AvatarLayoutResult>(() =>
+		calculateAvatarLayout({
+			uiMode,
+			layerRect: null,
+			chatRect: null,
+			aiBarRect: null,
+		}),
+	);
+
+	const updateAvatarLayout = useCallback(() => {
+		if (!avatarLayerRef.current || !chatAreaRef.current) return;
+		const layerRect = avatarLayerRef.current.getBoundingClientRect();
+		const chatRect = chatAreaRef.current.getBoundingClientRect();
+		const aiBarEl = overlayRef.current?.querySelector(".ai-control-bar");
+		const aiBarRect = aiBarEl ? aiBarEl.getBoundingClientRect() : null;
+
+		const next = calculateAvatarLayout({
+			uiMode,
+			layerRect,
+			chatRect,
+			aiBarRect,
+		});
+
+		setAvatarLayout((prev) => {
+			if (
+				prev.chatReserve === next.chatReserve &&
+				prev.avatarTop === next.avatarTop &&
+				prev.isSpaceInsufficient === next.isSpaceInsufficient
+			) {
+				return prev;
+			}
+			return next;
+		});
+	}, [uiMode]);
+
+	useEffect(() => {
+		updateAvatarLayout();
+	}, [updateAvatarLayout, chatHeight, chatVisible, naiaWidth, uiMode]);
+
+	useEffect(() => {
+		const chatEl = chatAreaRef.current;
+		if (!chatEl) return;
+		const observer = new ResizeObserver(() => {
+			updateAvatarLayout();
+		});
+		observer.observe(chatEl);
+		if (overlayRef.current) observer.observe(overlayRef.current);
+		window.addEventListener("resize", updateAvatarLayout);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener("resize", updateAvatarLayout);
+		};
+	}, [updateAvatarLayout]);
+
 	if (showAdkSetup)
 		return (
 			<>
@@ -226,11 +338,26 @@ export function AppMainContent(props: AppMainContentProps) {
 			{naiaVisible && (
 				<>
 					{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
-						<div className="avatar-canvas-layer">
+						<div
+							className="avatar-canvas-layer"
+							ref={avatarLayerRef}
+							style={
+								avatarLayout.chatReserve !== null
+									? ({
+											"--naia-chat-reserve": `${avatarLayout.chatReserve}px`,
+											"--naia-avatar-top": `${avatarLayout.avatarTop}px`,
+										} as CSSProperties)
+									: undefined
+							}
+						>
 							<Suspense fallback={null}>
 								{avatarProvider === "naia-video-avatar" ? (
 									<Suspense fallback={<AvatarCanvas />}>
-										<VideoAvatarCanvas nvaModel={nvaModel} />
+										<VideoAvatarCanvas
+											nvaModel={nvaModel}
+											layout={uiMode === "workspace" ? "workspace" : "app"}
+											isSpaceInsufficient={avatarLayout.isSpaceInsufficient}
+										/>
 									</Suspense>
 								) : (
 									<AvatarCanvas />
@@ -238,9 +365,9 @@ export function AppMainContent(props: AppMainContentProps) {
 							</Suspense>
 						</div>
 					)}
-					<div className="naia-overlay">
+					<div className="naia-overlay" ref={overlayRef}>
 						<AiControlBar />
-						<div className="naia-chat-area">
+						<div className="naia-chat-area" ref={chatAreaRef}>
 							<button
 								type="button"
 								className="naia-chat-toggle"

@@ -27,14 +27,16 @@ const VRM_FILES = [
 	"naia_char_skin_head.vrm",
 	"naia_char_with_hair.vrm",
 ];
-const NVA_DIRS = ["naia", "naia-anime", "minho", "jina"];
+const NVA_DIRS = ["naia", "minho", "jina"];
 const NVA_VIDEO_BASE64 = readFileSync(
 	path.resolve(process.cwd(), "e2e/fixtures/head-green-100.mp4"),
 ).toString("base64");
-const LIVE_NAIA_CLIP = path.resolve(
-	process.cwd(),
-	"../../../naia-adk/naia-settings/nva-files/naia/clips/idle.webm",
-);
+const LIVE_NAIA_CLIP = process.env.NVA_LIVE_NAIA_CLIP
+	? path.resolve(process.env.NVA_LIVE_NAIA_CLIP)
+	: path.resolve(
+			process.cwd(),
+			"../../../naia-adk/naia-settings/nva-files/naia/clips/idle.webm",
+		);
 const LIVE_NAIA_VIDEO_BASE64 = existsSync(LIVE_NAIA_CLIP)
 	? readFileSync(LIVE_NAIA_CLIP).toString("base64")
 	: NVA_VIDEO_BASE64;
@@ -113,6 +115,7 @@ function buildInvokeMock() {
 		}
 		if (cmd === "write_naia_path_cache") return null;
 		if (cmd === "workspace_detect_adk_root") return ${JSON.stringify(ADK)};
+		if (cmd === "read_naia_config" || cmd === "read_naia_ui_config") return "";
 		return undefined;
 	};
 })();
@@ -248,7 +251,10 @@ test.describe("#447 onboarding avatar grid", () => {
 
 		const app = page.locator(".onboarding-app");
 		const grid = page.locator(".onboarding-step__avatar-grid");
-		const liveCrop = page.locator(".onboarding-step__nva-crop--live-naia");
+		const naiaCard = page.locator(".onboarding-step__avatar-card", {
+			hasText: "naia",
+		});
+		const liveCrop = naiaCard.locator(".onboarding-step__nva-crop");
 		const genericCrop = page.locator(".onboarding-step__nva-crop").nth(1);
 		const liveMedia = liveCrop.locator(".onboarding-step__nva-crop-media");
 		const genericMedia = genericCrop.locator(
@@ -287,12 +293,28 @@ test.describe("#447 onboarding avatar grid", () => {
 		expect(cropBox!.height).toBe(88);
 		expect(liveMediaBox!.width).toBeGreaterThan(cropBox!.width);
 		expect(liveMediaBox!.x).toBeLessThan(cropBox!.x);
-		// Exact Naia receives the requested lower crop while other NVA portraits
-		// keep the established top-biased framing.
-		await expect(liveMedia).toHaveCSS("top", "-80px");
-		await expect(liveMedia).toHaveCSS("width", "200px");
+		// Naia and other NVA portraits both use the standard top-biased framing.
+		await expect(liveMedia).toHaveCSS("top", "-12px");
+		await expect(liveMedia).toHaveCSS("width", "125px");
 		await expect(genericMedia).toHaveCSS("top", "-12px");
-		expect(liveMediaBox!.y).toBeLessThan(genericMediaBox!.y);
+		await expect(genericMedia).toHaveCSS("width", "125px");
+
+		await liveMedia.evaluate((el) => {
+			if (el.tagName === "IMG") {
+				const img = el as HTMLImageElement;
+				if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+				return new Promise((resolve) => {
+					img.addEventListener("load", () => resolve(undefined), { once: true });
+				});
+			}
+			const video = el as HTMLVideoElement;
+			if (video.readyState >= 2) return Promise.resolve();
+			return new Promise((resolve) => {
+				video.addEventListener("loadeddata", () => resolve(undefined), {
+					once: true,
+				});
+			});
+		});
 
 		await app.screenshot({
 			path: testInfo.outputPath("nva-crop-desktop.png"),
@@ -315,8 +337,7 @@ test.describe("#447 onboarding avatar grid", () => {
 		expect(narrowGrid!.x + narrowGrid!.width).toBeLessThanOrEqual(
 			narrowApp!.x + narrowApp!.width + 1,
 		);
-		await expect(liveMedia).toHaveCSS("top", "-80px");
-		expect(narrowMedia!.y).toBeLessThan(narrowCrop!.y);
+		await expect(liveMedia).toHaveCSS("top", "-12px");
 
 		await app.screenshot({
 			path: testInfo.outputPath("nva-crop-narrow.png"),

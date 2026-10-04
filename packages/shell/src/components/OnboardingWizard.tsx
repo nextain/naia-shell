@@ -266,9 +266,6 @@ function BackgroundThumbnail({
 
 function NvaThumbnail({ path, label }: { path: string; label: string }) {
 	const [preview, setPreview] = useState<BgOption | null>(null);
-	const bundleName = path.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase();
-	const isLiveActionNaia =
-		bundleName === "naia" || label.trim().toLowerCase() === "naia";
 
 	useEffect(() => {
 		let disposed = false;
@@ -311,9 +308,7 @@ function NvaThumbnail({ path, label }: { path: string; label: string }) {
 	// only picks a vertical band (still shows the whole body). Zoom into the head
 	// by oversizing the media inside a fixed, clipped, top-aligned frame.
 	return (
-		<span
-			className={`onboarding-step__avatar-img onboarding-step__nva-crop${isLiveActionNaia ? " onboarding-step__nva-crop--live-naia" : ""}`}
-		>
+		<span className="onboarding-step__avatar-img onboarding-step__nva-crop">
 			<BackgroundThumbnail
 				background={preview}
 				className="onboarding-step__nva-crop-media"

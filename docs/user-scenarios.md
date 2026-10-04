@@ -2226,5 +2226,25 @@ Test Coverage Map (P02)
 | UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
 | UC-CREDITS-DISPLAY | `packages/shell/src/lib/__tests__/credits.test.ts`: 달러 × 1,000 크레딧 환산 한 곳; `packages/shell/src/components/__tests__/CostDashboard.steam.test.tsx`, `packages/shell/src/components/__tests__/AboutSection.steam.test.tsx`, `packages/shell/src/components/__tests__/OnboardingWizard.steam.test.tsx`, `packages/shell/src/components/__tests__/AppBar.test.tsx`: Steam판·판정 실패 시 결제·후원·웹 스토어 진입점 숨김; `packages/shell/src/lib/voice/__tests__/live-pricing.test.ts`: 음성 요금은 게이트웨이 시간당 행만 쓰고 없으면 금액 생략 | 실기 Steam 데포 빌드 확인은 릴리스 절차에서 한다 |
 
+## UC-NVA-ABOVE-CHAT — 비디오 아바타를 대화창 위에 놓기 및 대화창 반응 (#444)
+
+대화 모드가 "app"(왼쪽 소형, 기본값)일 때 기본 비디오 아바타(NVA) 캔버스가 대화창 위 끝에 온전히 맞닿아 놓이며, 대화창 드래그(120~600px)·접기·창 크기 변경에 반응하여 상자 안에 비율을 지켜 배치된다. 공간이 80px 미만으로 부족하면 캔버스를 숨기고 공간 회복 시 복원된다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 대화 모드가 "app"일 때 비디오 아바타 캔버스 아래 끝이 대화창 위 끝에 맞닿고(--naia-chat-reserve), 캔버스 위 끝은 AI 조작 막대 아래에 위치하며, 왼쪽 열 안에서 비율(720/1280)을 유지한다. |
+| 빈 목록 | 해당 없음 (단일 아바타 캔버스). |
+| 진행 | 대화창 높이를 드래그로 조절하거나 접으면 아바타 캔버스 크기와 위치가 실시간으로 따라 바뀐다. |
+| 성공 | 접힘 시 토글 막대 바로 위까지 아바타가 내려오며, 창 크기 변경 시에도 대화창 위 맞닿음을 유지한다. 사용자가 지정한 nvaPan 이동값이 app 모드에서도 온전히 반영된다. workspace 모드에서는 기존 중앙 배치가 유지된다. |
+| 오류 / 공간 부족 | AI 조작 막대와 대화창 사이 여유 공간이 80px 미만일 때 아바타를 숨겨 대화창을 우선 보호하며, 여유 공간 확보 시 다시 표시된다. |
+| 좁은 폭 | 창 높이나 너비가 줄어도 캔버스 비율(720/1280)을 유지하며 대화창 위 경계를 벗어나지 않는다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-NVA-ABOVE-CHAT | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`: app 모드 pan-only transform, --naia-chat-reserve 아래 여백 사용, workspace 모드 50vw 유지, calculateAvatarLayout(대화창 보임·접힘·workspace 모드·공간 부족 판정) | `packages/shell/e2e/nva-avatar-above-chat.spec.ts`: 1440x900·1280x720 뷰포트 맞닿음(0~4px) 및 종횡비(±2%), 드래그 120px 높이 추종, 대화창 접기/펼치기 반응, 공간 부족(<80px) 숨김 및 복원, nvaPan 이동값(30, -20) 반영, workspace 모드 중앙 배치 보존; `packages/shell/e2e/205-onboarding-avatar-grid.spec.ts`: 새 후드 나이아 썸네일 framing 확인 |
+
+
 
 
