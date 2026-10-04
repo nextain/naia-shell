@@ -13,9 +13,13 @@ import {
 	type WebLlmModelId,
 } from "../lib/web-runtime/webllm-model";
 
-export function useWebModelStatus(): WebModelStatus {
-	return useSyncExternalStore(subscribeWebModelStatus, getWebModelStatus);
-}
+// 데스크톱 번들에 모델 이름을 넣지 않기 위해 형 단언 사용
+const DESKTOP_MODEL_STATUS = { phase: "ready", progress: 1 } as unknown as WebModelStatus;
+
+export const useWebModelStatus: () => WebModelStatus =
+	import.meta.env.MODE === "web" || import.meta.env.MODE === "test"
+		? () => useSyncExternalStore(subscribeWebModelStatus, getWebModelStatus)
+		: () => DESKTOP_MODEL_STATUS;
 
 export function WebModelStatusBar(props: {
 	onSwitchModel?: (model: WebLlmModelId) => void;
