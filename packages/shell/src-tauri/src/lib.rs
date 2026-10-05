@@ -7467,7 +7467,7 @@ fn voxcpm2_runtime_matches_bundle(
 }
 
 fn voxcpm2_python_runtime_is_ready(python: &str, service_dir: &str) -> bool {
-    let mut command = crate::host_env::host_command(python);
+    let mut command = crate::host_env::voice_python_command(python);
     command
         .args([
             "-c",
@@ -7486,7 +7486,7 @@ fn standalone_voxcpm2_python_is_ready(
     artifact_root: &std::path::Path,
     python_packages_dir: &std::path::Path,
 ) -> bool {
-    let mut command = crate::host_env::host_command(python);
+    let mut command = crate::host_env::voice_python_command(python);
     command
         .args([
             "-B",
@@ -8442,7 +8442,7 @@ fn spawn_voxcpm2(
         .open(&log_path)
         .map(Stdio::from)
         .unwrap_or_else(|_| Stdio::inherit());
-    let mut cmd = crate::host_env::host_command(&python);
+    let mut cmd = crate::host_env::voice_python_command(&python);
     cmd.args([
         "-B",
         "-s",
@@ -8665,7 +8665,7 @@ fn spawn_cascade(
         .join("slots-manifest.json");
     let inferred_repos_adk = infer_repos_adk_root(adk_path);
 
-    let mut cmd = crate::host_env::host_command(&python);
+    let mut cmd = crate::host_env::voice_python_command(&python);
     cmd.arg("-m")
         .arg("loader")
         .arg("launch")

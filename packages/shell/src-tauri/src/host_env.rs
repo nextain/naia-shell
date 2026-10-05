@@ -99,15 +99,28 @@ pub(crate) fn host_env_var(name: &str) -> String {
     }
 }
 
-/// 시스템 프로그램용 Command 에 AppImage 주입 환경을 되돌린다. AppImage 밖에서는 아무 일도 안 한다.
-pub(crate) fn sanitize_for_host_tool(command: &mut Command) -> &mut Command {
-    for (name, value) in host_tool_env_changes(std::env::vars_os()) {
+/// 환경 목록을 주입받는 순수 판: 목록 기준으로 정리한 변경을 Command 에 적용한다.
+pub(crate) fn apply_host_tool_env(
+    command: &mut Command,
+    vars: impl IntoIterator<Item = (OsString, OsString)>,
+) -> &mut Command {
+    for (name, value) in host_tool_env_changes(vars) {
         match value {
             Some(value) => command.env(name, value),
             None => command.env_remove(name),
         };
     }
     command
+}
+
+/// 시스템 프로그램용 Command 에 AppImage 주입 환경을 되돌린다. AppImage 밖에서는 아무 일도 안 한다.
+pub(crate) fn sanitize_for_host_tool(command: &mut Command) -> &mut Command {
+    apply_host_tool_env(command, std::env::vars_os())
+}
+
+/// 음성 런타임 python(슬롯 안, APPDIR 밖)을 띄우는 공용 Command. 호출부는 이 뒤에 자기 env 를 얹는다.
+pub(crate) fn voice_python_command(python: impl AsRef<OsStr>) -> Command {
+    host_command(python)
 }
 
 /// 시스템 프로그램을 띄우는 Command(주입 환경 되돌림 포함).
@@ -255,33 +268,43 @@ mod tests {
     }
 
     #[test]
-    fn 번들_python_이_받는_주입_변수를_모두_되돌린다() {
-        let changes = host_tool_env_changes(os(&[
-            ("APPDIR", "/tmp/.mount_Naia"),
-            ("PYTHONHOME", "/tmp/.mount_Naia/usr/"),
-            ("PYTHONPATH", "/tmp/.mount_Naia/usr/share/pyshared/"),
-            ("LD_LIBRARY_PATH", "/tmp/.mount_Naia/usr/lib/:/usr/lib64"),
-        ]));
-        let get = |name: &str| changes.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone());
-        assert_eq!(get("PYTHONHOME"), Some(None));
-        assert_eq!(get("PYTHONPATH"), Some(None));
-        assert_eq!(get("LD_LIBRARY_PATH"), Some(Some(OsString::from("/usr/lib64"))));
+    fn 주입_환경_판이_python_변수를_되돌리고_나머지는_상속에_맡긴다() {
+        let mut command = Command::new("true");
+        apply_host_tool_env(
+            &mut command,
+            os(&[
+                ("APPDIR", "/tmp/.mount_Naia"),
+                ("PYTHONHOME", "/tmp/.mount_Naia/usr/"),
+                ("PYTHONPATH", "/tmp/.mount_Naia/usr/share/pyshared/"),
+                ("LD_LIBRARY_PATH", "/tmp/.mount_Naia/usr/lib/:/usr/lib64"),
+                ("CUDA_VISIBLE_DEVICES", "1"),
+                ("NAIA_TOKEN", "secret"),
+            ]),
+        );
+        command.env("PYTHONPATH", "/slot/payload");
+        let envs: std::collections::HashMap<_, _> = command.get_envs().collect();
+        assert_eq!(envs.get(OsStr::new("PYTHONHOME")), Some(&None));
+        // 정리 뒤 호출부가 얹은 값이 이긴다.
+        assert_eq!(envs.get(OsStr::new("PYTHONPATH")), Some(&Some(OsStr::new("/slot/payload"))));
+        assert_eq!(
+            envs.get(OsStr::new("LD_LIBRARY_PATH")),
+            Some(&Some(OsStr::new("/usr/lib64")))
+        );
+        // APPDIR 밖 값은 건드리지 않는다(목록에 없음 = 상속 유지).
+        assert!(!envs.contains_key(OsStr::new("CUDA_VISIBLE_DEVICES")));
+        assert!(!envs.contains_key(OsStr::new("NAIA_TOKEN")));
     }
 
     #[test]
-    fn 음성_python_을_띄우는_자리는_host_command_를_쓴다() {
-        let source = include_str!("lib.rs");
-        for marker in [
-            "fn voxcpm2_python_runtime_is_ready(",
-            "fn standalone_voxcpm2_python_is_ready(",
-            "fn spawn_voxcpm2(",
+    fn 음성_python_을_Command_new_로_직접_만들지_않는다() {
+        // 패턴은 조각으로 이어 붙여, 이 시험 자신이 검색에 걸리지 않게 한다.
+        let direct = [format!("{}{}", "Command::new(", "python)"), format!("{}{}", "Command::new(", "&python)")];
+        for (name, source) in [
+            ("lib.rs", include_str!("lib.rs")),
+            ("voice_runtime.rs", include_str!("voice_runtime.rs")),
         ] {
-            let start = source.find(marker).expect(marker);
-            let body = &source[start..(start + 6000).min(source.len())];
-            assert!(
-                body.contains("host_env::host_command(") && !body.contains("= Command::new(&python)"),
-                "{marker}"
-            );
+            let hits: usize = direct.iter().map(|p| source.matches(p.as_str()).count()).sum();
+            assert_eq!(hits, 0, "{name}");
         }
     }
 }
