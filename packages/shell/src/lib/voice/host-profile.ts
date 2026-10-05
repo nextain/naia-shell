@@ -44,7 +44,9 @@ export async function voiceHostProfile(): Promise<VoiceHostProfile> {
 				const raw = await invoke<VoiceHostProfile>("voice_host_profile");
 				return { ...UNKNOWN, ...raw };
 			} catch (error) {
-				// 물어보지 못한 것과 맞는 프로파일이 없는 것을 구분해 남긴다.
+				// 물어보지 못한 것과 맞는 프로파일이 없는 것을 구분해 남긴다. 못 물은 결과는
+				// 캐시하지 않는다 — 일시 실패가 세션 내내 "프로파일 없음"으로 남지 않게.
+				cached = null;
 				Logger.warn("VoiceHostProfile", "프로파일을 묻지 못했습니다", {
 					error: String(error),
 				});

@@ -798,6 +798,7 @@ export default {
 	"settings.cascadeStopped": "Host voice engine stopped.",
 	"settings.cascadeError": "Host voice engine error",
 	"settings.localVoiceSelectionReverted": "Host voice could not start, so the previous voice selection was restored.",
+	"settings.localVoiceRetryLater": "The GPU query failed temporarily, so host voice did not start. Your settings were kept; please try again in a moment.",
 	"settings.localVoiceBlockedReverted": "Host voice is unavailable, so voice was switched back to the browser engine.",
 	"settings.engineEditGpu": "Edit GPU profile",
 	"settings.engineCapabilities": "Capabilities",

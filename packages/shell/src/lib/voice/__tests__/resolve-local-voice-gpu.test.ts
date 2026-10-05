@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 
-import { resolveLocalVoiceGpu } from "../local-runtime";
+import {
+	isTransientLocalVoiceError,
+	localVoiceHostArgs,
+	resolveLocalVoiceGpu,
+	resolveLocalVoiceHost,
+} from "../local-runtime";
 
 // Logger 도 invoke 를 쓰므로 해석 명령만 실패시킨다.
 function failResolve() {
@@ -13,27 +18,37 @@ function failResolve() {
 	});
 }
 
-describe("resolveLocalVoiceGpu", () => {
+describe("resolveLocalVoiceHost", () => {
 	beforeEach(() => invoke.mockReset());
 
-	it("returns the concrete number the backend resolved", async () => {
-		invoke.mockResolvedValue(1);
-		await expect(resolveLocalVoiceGpu(null)).resolves.toBe(1);
+	it("returns the card and the accelerator the backend decided together", async () => {
+		invoke.mockResolvedValue({ accelerator: "cuda", gpuIndex: 1, profile: "linux_trt" });
+		const host = await resolveLocalVoiceHost(null);
+		expect(host).toEqual({ gpuIndex: 1, accelerator: "cuda", profile: "linux_trt" });
 		expect(invoke).toHaveBeenCalledWith("resolve_voxcpm2_gpu", { gpuIndex: null });
+		// 설치·상태·시작이 같은 판정을 넘겨받는다.
+		expect(localVoiceHostArgs(host)).toEqual({ gpuIndex: 1, accelerator: "cuda" });
+		await expect(resolveLocalVoiceGpu(null)).resolves.toBe(1);
 	});
 
-	it("aborts the flow when automatic cannot be resolved (IPC failure)", async () => {
-		failResolve();
-		await expect(resolveLocalVoiceGpu(null)).rejects.toThrow("ipc down");
+	it("accepts the legacy number answer without an accelerator", async () => {
+		invoke.mockResolvedValue(2);
+		const host = await resolveLocalVoiceHost(null);
+		expect(host).toEqual({ gpuIndex: 2 });
+		expect(localVoiceHostArgs(host)).toEqual({ gpuIndex: 2 });
 	});
 
-	it("keeps going with the explicit choice when IPC fails", async () => {
+	it("aborts the flow on IPC failure, with or without an explicit card", async () => {
 		failResolve();
-		await expect(resolveLocalVoiceGpu(2)).resolves.toBe(2);
+		await expect(resolveLocalVoiceHost(null)).rejects.toThrow("ipc down");
+		await expect(resolveLocalVoiceHost(2)).rejects.toThrow("ipc down");
 	});
 
-	it("strict mode (out-of-flow status check) throws even with an explicit choice", async () => {
-		failResolve();
-		await expect(resolveLocalVoiceGpu(2, { strict: true })).rejects.toThrow("ipc down");
+	it("recognizes the transient marker", () => {
+		expect(
+			isTransientLocalVoiceError(new Error("voxcpm2_gpu_unresolved: query failed")),
+		).toBe(true);
+		expect(isTransientLocalVoiceError("voxcpm2_gpu_unresolved: x")).toBe(true);
+		expect(isTransientLocalVoiceError(new Error("boom"))).toBe(false);
 	});
 });

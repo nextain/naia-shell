@@ -171,7 +171,10 @@ import { type VoiceHostGpu, voiceHostProfile } from "../lib/voice/host-profile";
 import {
 	clearLocalVoiceAccessToken,
 	localVoiceFacadeUrlFromReady,
-	resolveLocalVoiceGpu,
+	type LocalVoiceHost,
+	isTransientLocalVoiceError,
+	localVoiceHostArgs,
+	resolveLocalVoiceHost,
 } from "../lib/voice/local-runtime";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
@@ -938,17 +941,15 @@ export function SettingsTab() {
 	// (resolveLocalVoiceGpu)으로 구체 번호로 바꿔 조회한다. 해석·조회 실패는 일시
 	// 오류라 상태를 바꾸지 않는다(null) — 로컬 음성을 끄는 효과가 반응하지 않게.
 	const refreshVoxCpm2Installation = useCallback(
-		async (gpuIndex?: number | null) => {
+		async (host?: LocalVoiceHost, options: { throwTransient?: boolean } = {}) => {
 		const generation = ++voxcpm2InstallationRequestRef.current;
 		try {
-			const resolvedGpu =
-				gpuIndex !== undefined
-					? gpuIndex
-					: await resolveLocalVoiceGpu(loadConfig()?.localVoiceGpuIndex ?? null, {
-							strict: true,
-						});
+			const resolvedHost =
+				host !== undefined
+					? host
+					: await resolveLocalVoiceHost(loadConfig()?.localVoiceGpuIndex ?? null);
 			const status = await invoke<unknown>("voxcpm2_installation_status", {
-				gpuIndex: resolvedGpu,
+				...localVoiceHostArgs(resolvedHost),
 			});
 			if (generation !== voxcpm2InstallationRequestRef.current) return null;
 			if (!isVoxCpm2InstallationStatus(status)) {
@@ -963,6 +964,8 @@ export function SettingsTab() {
 			Logger.warn("Settings", "Cascade installation status unavailable", {
 				error: String(error),
 			});
+			// 흐름 안에서는 일시 오류를 삼키지 않는다 — 흐름이 롤백 없이 멈춰야 한다.
+			if (options.throwTransient && isTransientLocalVoiceError(error)) throw error;
 			return null;
 		}
 	},
@@ -1078,19 +1081,21 @@ export function SettingsTab() {
 			// 흐름 중에는 카드 칸이 잠겨 있고, 바꾼 카드는 다음 흐름의 상태 확인
 			// (엔진 없음 → 재설치)에서 반영된다.
 			// 설정의 자동(null)은 그대로 두고, 흐름이 쓸 값은 구체적인 번호로 정한다.
-			const gpuIndexForRun: number | null = await resolveLocalVoiceGpu(
+			const hostForRun: LocalVoiceHost = await resolveLocalVoiceHost(
 				loadConfig()?.localVoiceGpuIndex ?? null,
 			);
-			let installation = await refreshVoxCpm2Installation(gpuIndexForRun);
+			const flowStatus = () =>
+				refreshVoxCpm2Installation(hostForRun, { throwTransient: true });
+			let installation = await flowStatus();
 			if (!installation?.canStart) {
 				setCascadeMsg(t("voice.hostEngineInstalling"));
 				const installed = await invoke<unknown>(
 					"install_voxcpm2_runtime",
-					{ gpuIndex: gpuIndexForRun },
+					localVoiceHostArgs(hostForRun),
 				);
 				if (isVoxCpm2InstallationStatus(installed))
 					setVoxCpm2Installation(installed);
-				installation = await refreshVoxCpm2Installation(gpuIndexForRun);
+				installation = await flowStatus();
 				if (!installation?.canStart)
 					return {
 						ready: null,
@@ -1103,11 +1108,12 @@ export function SettingsTab() {
 			// CASCADE_READY now exposes only the local voice facade URL.
 			// Pre-baked NVA playback remains independent from this voice runtime.
 			const ready = await invoke<string>("start_voxcpm2", {
-				expectedLoaderProfile,
+				// 가속기 판정과 같은 시점의 프로파일이 있으면 그것을 쓴다.
+				expectedLoaderProfile: hostForRun.profile ?? expectedLoaderProfile,
 				// 사람이 고른 카드가 있으면 그것으로 (#537).
-				gpuIndex: gpuIndexForRun,
+				...localVoiceHostArgs(hostForRun),
 			});
-			const afterStart = await refreshVoxCpm2Installation(gpuIndexForRun);
+			const afterStart = await flowStatus();
 			return afterStart?.ready
 				? { ready }
 				: {
@@ -1353,7 +1359,10 @@ export function SettingsTab() {
 				errorCode === "voxcpm2_naia_member_login_required";
 			const entitlementRejected =
 				errorCode === "voxcpm2_entitlement_rejected";
-			if (originalConfig) {
+			// 일시 오류(GPU 조회 실패 등)는 시작 불가의 증거가 아니다 — 설정을 유지하고
+			// "잠시 뒤 다시 시도" 안내만 낸다. 확정적 실패일 때만 롤백한다.
+			const transient = isTransientLocalVoiceError(e);
+			if (originalConfig && !transient) {
 				try {
 					await rollbackLocalVoiceSelection(
 						originalConfig,
@@ -1370,6 +1379,10 @@ export function SettingsTab() {
 				await recoverRejectedVoxCpm2Credential();
 				setCascadeMsg(t("settings.ttsNaiaRequired"));
 				setVoxcpm2InstallError(t("settings.ttsNaiaRequired"));
+			} else if (transient) {
+				const message = t("settings.localVoiceRetryLater");
+				setCascadeMsg(message);
+				setVoxcpm2InstallError(message);
 			} else {
 				surfaceLocalVoiceRevert(
 					`${t("settings.cascadeError")}${entitlementRejected ? "" : `: ${String(e)}`} — ${t(

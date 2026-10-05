@@ -338,13 +338,53 @@ pub fn resolve_torch_device(
 /// NVIDIA 는 `nvidia-smi`, AMD 는 `rocm-smi` 로 묻는다. 둘 다 없으면 `None` —
 /// 없는 것을 있다고 하지 않는다. 탐지 결과가 어느 프로파일을 쓸지 정한다.
 pub fn detect_accelerator() -> Option<Accelerator> {
-    if !query_gpus(Accelerator::TensorRtCuda).is_empty() {
-        return Some(Accelerator::TensorRtCuda);
+    detect_accelerator_checked().ok().flatten()
+}
+
+/// 가속기 판정의 순수 부분. NVIDIA 가 잡히면 CUDA, 아니면 ROCm 이 잡히면 ROCm —
+/// ROCm 으로 판정되면 nvidia-smi 의 조회 실패는 무시한다. NVIDIA 증거(실행 파일 존재)가
+/// 있는데 조회가 실패했고 ROCm 도 아닐 때만 오류(일시 오류일 수 있어 "없음"으로 보지 않는다).
+pub fn decide_accelerator(
+    nvidia: &NvidiaProbe,
+    rocm_present: bool,
+) -> Result<Option<Accelerator>, String> {
+    if matches!(nvidia, NvidiaProbe::Present(_)) {
+        return Ok(Some(Accelerator::TensorRtCuda));
     }
-    if !query_gpus(Accelerator::Rocm).is_empty() {
-        return Some(Accelerator::Rocm);
+    if rocm_present {
+        return Ok(Some(Accelerator::Rocm));
     }
-    None
+    match nvidia {
+        NvidiaProbe::QueryFailed(reason) => Err(reason.clone()),
+        _ => Ok(None),
+    }
+}
+
+/// [`detect_accelerator`] 와 같은 판정이되 일시 조회 실패를 오류로 구분해 돌려준다.
+/// 흐름은 이 판정을 한 번만 하고 결과를 인자로 넘긴다.
+pub fn detect_accelerator_checked() -> Result<Option<Accelerator>, String> {
+    let nvidia = probe_nvidia();
+    let rocm_present = !matches!(nvidia, NvidiaProbe::Present(_))
+        && !query_gpus(Accelerator::Rocm).is_empty();
+    decide_accelerator(&nvidia, rocm_present)
+}
+
+/// 흐름이 가속기 판정을 화면에 주고받는 이름. None(가속기 없음)도 값이다.
+pub fn accelerator_label(accelerator: Option<Accelerator>) -> &'static str {
+    match accelerator {
+        Some(Accelerator::TensorRtCuda) => "cuda",
+        Some(Accelerator::Rocm) => "rocm",
+        None => "none",
+    }
+}
+
+pub fn parse_accelerator_label(label: &str) -> Result<Option<Accelerator>, String> {
+    match label {
+        "cuda" => Ok(Some(Accelerator::TensorRtCuda)),
+        "rocm" => Ok(Some(Accelerator::Rocm)),
+        "none" => Ok(None),
+        other => Err(format!("모르는 가속기 이름입니다: {other}")),
+    }
 }
 
 /// NVIDIA 조회 결과. "NVIDIA 없음"과 "nvidia-smi 는 있는데 조회 실패"는 다르다 —
@@ -551,6 +591,25 @@ pub fn parse_rocm_gpu_csv(text: &str) -> Vec<GpuInfo> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn accelerator_decision_order_and_flow_label() {
+        let failed = NvidiaProbe::QueryFailed("x".to_string());
+        let present = NvidiaProbe::Present(vec![]);
+        // ROCm 이면 nvidia-smi 실패는 무시.
+        assert_eq!(decide_accelerator(&failed, true), Ok(Some(Accelerator::Rocm)));
+        // NVIDIA 증거가 있고 ROCm 이 아닌데 조회 실패면 오류, 없으면 가속기 없음.
+        assert!(decide_accelerator(&failed, false).is_err());
+        assert_eq!(decide_accelerator(&NvidiaProbe::Absent, false), Ok(None));
+        assert_eq!(
+            decide_accelerator(&present, true),
+            Ok(Some(Accelerator::TensorRtCuda))
+        );
+        for a in [Some(Accelerator::TensorRtCuda), Some(Accelerator::Rocm), None] {
+            assert_eq!(parse_accelerator_label(accelerator_label(a)), Ok(a));
+        }
+        assert!(parse_accelerator_label("tpu").is_err());
+    }
+
     #[test]
     fn nvidia_probe_separates_absent_from_failed_query() {
         use std::io::{Error, ErrorKind};

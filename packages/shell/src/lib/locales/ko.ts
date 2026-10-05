@@ -798,6 +798,7 @@ export default {
 	"settings.cascadeStopped": "호스트 음성 엔진을 중지했습니다.",
 	"settings.cascadeError": "호스트 음성 엔진 오류",
 	"settings.localVoiceSelectionReverted": "호스트 음성을 시작하지 못해 이전 음성 설정으로 되돌렸습니다.",
+	"settings.localVoiceRetryLater": "GPU 조회가 일시적으로 실패해 로컬 음성을 시작하지 못했습니다. 설정은 그대로 두었으니 잠시 뒤 다시 시도해 주세요.",
 	"settings.localVoiceBlockedReverted": "호스트 음성을 사용할 수 없어 브라우저 음성으로 전환했습니다.",
 	"settings.engineEditGpu": "GPU 프로필 편집",
 	"settings.engineCapabilities": "Capabilities",

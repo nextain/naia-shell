@@ -2333,6 +2333,54 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(await run("definitive")).not.toBe("naia-local-voice");
 	});
 
+	it("a transient GPU-unresolved error inside the flow keeps the settings and shows a retry message", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				ttsProvider: "edge",
+				ttsEnabled: false,
+				localVoiceEnabled: false,
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(false);
+			if (command === "resolve_voxcpm2_gpu")
+				return Promise.resolve({ accelerator: "cuda", gpuIndex: 0, profile: null });
+			if (command === "voxcpm2_installation_status")
+				return Promise.reject(new Error("voxcpm2_gpu_unresolved: GPU 조회에 실패했습니다"));
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+		const selector = screen.getByTestId("profile-tts-provider");
+		await vi.waitFor(() =>
+			expect(
+				(selector as HTMLSelectElement).querySelector(
+					'option[value="naia-local-voice"]',
+				),
+			).not.toBeDisabled(),
+		);
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+		await vi.waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_installation_status", {
+				gpuIndex: 0,
+				accelerator: "cuda",
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 100));
+		// 롤백하지 않는다: 고른 로컬 음성이 그대로이고, 설치·시작은 호출되지 않는다.
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.ttsProvider).toBe("naia-local-voice");
+		expect(mockInvoke).not.toHaveBeenCalledWith("install_voxcpm2_runtime", expect.anything());
+		expect(mockInvoke).not.toHaveBeenCalledWith("start_voxcpm2", expect.anything());
+	});
+
 	it("one run uses one card for status/install/start, and a failed start rolls back only the voice selection fields", async () => {
 		localStorage.setItem(
 			"naia-config",
@@ -2380,6 +2428,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 				});
 			}
 			if (command === "start_voxcpm2") return Promise.reject(new Error("boom"));
+			if (command === "resolve_voxcpm2_gpu")
+				return Promise.resolve({ accelerator: "cuda", gpuIndex: 1, profile: null });
 			return Promise.resolve([]);
 		});
 
@@ -2421,6 +2471,17 @@ describe("SettingsTab — memory tab (#298)", () => {
 			.map(([, args]) => (args as { gpuIndex?: number | null }).gpuIndex);
 		expect(gpuArgs.length).toBeGreaterThanOrEqual(3);
 		expect(new Set(gpuArgs)).toEqual(new Set([1]));
+		// 가속기 판정도 흐름 시작에 한 번 — 세 명령이 같은 값을 넘겨받는다.
+		const accelArgs = mockInvoke.mock.calls
+			.filter(([cmd]) =>
+				[
+					"voxcpm2_installation_status",
+					"install_voxcpm2_runtime",
+					"start_voxcpm2",
+				].includes(cmd as string),
+			)
+			.map(([, args]) => (args as { accelerator?: string }).accelerator);
+		expect(new Set(accelArgs)).toEqual(new Set(["cuda"]));
 	});
 
 	it("#507: selecting Local voice on an installed engine auto-starts without reverting", async () => {

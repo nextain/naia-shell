@@ -2,33 +2,82 @@ import { loadConfig } from "../config";
 import { Logger } from "../logger";
 import { voiceHostProfile } from "./host-profile";
 
+/** 흐름이 한 번 정한 호스트: 카드 번호와 가속기 판정(과 그에 맞는 프로파일). */
+export interface LocalVoiceHost {
+	gpuIndex: number | null;
+	/** "cuda" | "rocm" | "none". 구버전 백엔드 응답이면 없다. */
+	accelerator?: string;
+	/** 이 기계의 로컬 음성 프로파일(가속기 판정과 같은 시점의 값). */
+	profile?: string | null;
+}
+
+/** 일시 오류 표식(백엔드 VOXCPM2_GPU_UNRESOLVED). 이 오류는 설정을 바꾸는 근거가 못 된다. */
+export const VOXCPM2_GPU_UNRESOLVED = "voxcpm2_gpu_unresolved";
+
+export function isTransientLocalVoiceError(error: unknown): boolean {
+	const text =
+		error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
+	return text.includes(VOXCPM2_GPU_UNRESOLVED);
+}
+
+/** 설치·상태 확인·시작 명령에 넘길 인자: 같은 흐름은 같은 카드·같은 가속기. */
+export function localVoiceHostArgs(host: LocalVoiceHost): {
+	gpuIndex: number | null;
+	accelerator?: string;
+} {
+	return host.accelerator
+		? { gpuIndex: host.gpuIndex, accelerator: host.accelerator }
+		: { gpuIndex: host.gpuIndex };
+}
+
 /**
- * 설치·상태 확인·시작 한 흐름이 쓸 구체적인 카드 번호를 흐름 시작에 한 번 얻는다.
+ * 설치·상태 확인·시작 한 흐름이 쓸 호스트(카드 번호 + 가속기)를 흐름 시작에 한 번 얻는다.
  * `configured` 는 사람이 고른 값(자동 = null)이고 설정에는 그대로 둔다. 백엔드가
- * 명시·기록·여유 순으로 해석하고(없는 번호는 버림) 결과를 기록한다. 해석에 실패하면
- * 설정값을 그대로 쓴다.
+ * 가속기를 한 번 판정하고 명시·기록·여유 순으로 카드를 해석해(없는 번호는 버림) 함께 돌려준다.
+ * 해석하지 못하면 오류로 돌려보낸다 — 그대로 계속하면 명령마다 가속기를 다시 판정해
+ * 일시 실패가 다른 판정으로 새기 때문이다.
  */
-export async function resolveLocalVoiceGpu(
+export async function resolveLocalVoiceHost(
 	configured: number | null,
-	options: { strict?: boolean } = {},
-): Promise<number | null> {
+): Promise<LocalVoiceHost> {
 	try {
 		const { invoke } = await import("@tauri-apps/api/core");
 		const resolved = await invoke<unknown>("resolve_voxcpm2_gpu", {
 			gpuIndex: configured,
 		});
-		if (typeof resolved === "number" || resolved === null) return resolved;
+		if (typeof resolved === "number" || resolved === null) {
+			return { gpuIndex: resolved };
+		}
+		if (resolved && typeof resolved === "object") {
+			const value = resolved as {
+				gpuIndex?: unknown;
+				accelerator?: unknown;
+				profile?: unknown;
+			};
+			return {
+				gpuIndex: typeof value.gpuIndex === "number" ? value.gpuIndex : null,
+				...(typeof value.accelerator === "string"
+					? { accelerator: value.accelerator }
+					: {}),
+				...(typeof value.profile === "string" || value.profile === null
+					? { profile: value.profile as string | null }
+					: {}),
+			};
+		}
 	} catch (error) {
-		Logger.warn("LocalRuntime", "resolveLocalVoiceGpu:failed", {
+		Logger.warn("LocalRuntime", "resolveLocalVoiceHost:failed", {
 			error: String(error),
 		});
-		// 사람이 고른 번호가 있으면 그 값으로 계속한다. 자동(null)인데 해석을 못 했으면
-		// 흐름이 null 로 계속하면 백엔드가 다시 정하게 되므로 오류로 중단한다.
-		// strict(흐름 밖 상태 조회): 검증 못 한 저장 번호로 상태를 읽으면 "시작 불가"로
-		// 잘못 읽히므로 명시 번호여도 오류로 돌려보낸다.
-		if (configured === null || options.strict) throw error;
+		throw error;
 	}
-	return configured;
+	return { gpuIndex: configured };
+}
+
+/** 카드 번호만 필요한 호출자용. */
+export async function resolveLocalVoiceGpu(
+	configured: number | null,
+): Promise<number | null> {
+	return (await resolveLocalVoiceHost(configured)).gpuIndex;
 }
 
 export interface LocalVoiceHealth {
@@ -101,8 +150,10 @@ export async function recoverLocalVoiceToken(
 					expectedLoaderProfile: host.profile,
 					// 사람이 고른 카드가 있으면 그것으로. 없으면 런타임이 여유가
 					// 가장 많은 카드를 고른다 (#537). 구체 번호를 먼저 정해 넘긴다.
-					gpuIndex: await resolveLocalVoiceGpu(
-						loadConfig()?.localVoiceGpuIndex ?? null,
+					...localVoiceHostArgs(
+						await resolveLocalVoiceHost(
+							loadConfig()?.localVoiceGpuIndex ?? null,
+						),
 					),
 				});
 				const url = localVoiceFacadeUrlFromReady(ready);

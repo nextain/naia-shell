@@ -6002,7 +6002,10 @@ fn read_cascade_stderr_tail() -> String {
     }
 }
 
-fn read_cascade_loader_profile(manifest: &std::path::Path) -> Option<String> {
+fn read_cascade_loader_profile(
+    manifest: &std::path::Path,
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Option<String> {
     let raw = std::fs::read_to_string(manifest).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
     let profile = parsed
@@ -6021,8 +6024,7 @@ fn read_cascade_loader_profile(manifest: &std::path::Path) -> Option<String> {
     // 프로파일인지는 매니페스트가 아니라 이 기계가 정한다 — 같은 설정 파일을
     // 다른 기계에 옮겨도 그 기계의 프로파일로 읽혀야 한다.
     let os = voice_runtime::host_os()?;
-    let accelerator = voice_runtime::detect_accelerator()?;
-    voice_runtime::profile_for_host(os, accelerator).map(|p| p.id.to_string())
+    voice_runtime::profile_for_host(os, accelerator?).map(|p| p.id.to_string())
 }
 
 /// The Settings UI must distinguish an installed runtime that has not been
@@ -6122,9 +6124,10 @@ fn voxcpm2_cache_root() -> Result<(std::path::PathBuf, bool), String> {
     Ok((root, false))
 }
 
-fn voxcpm2_host_profile_id() -> Result<&'static str, String> {
+fn voxcpm2_host_profile_id(
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Result<&'static str, String> {
     let os = voice_runtime::host_os();
-    let accelerator = voice_runtime::detect_accelerator();
     let host_profile = os
         .zip(accelerator)
         .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator))
@@ -6143,22 +6146,28 @@ pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
 /// device query fails. An explicit or recorded index that is not in the live
 /// device list (card removed/disabled) is ignored.
 /// 새 해석·검증은 NVIDIA(TensorRtCuda) 호스트에서만. 판정은 프로파일 선택과 같은 방식.
-fn voxcpm2_is_nvidia_host() -> bool {
-    voice_runtime::detect_accelerator() == Some(voice_runtime::Accelerator::TensorRtCuda)
+fn voxcpm2_is_nvidia(accelerator: Option<voice_runtime::Accelerator>) -> bool {
+    accelerator == Some(voice_runtime::Accelerator::TensorRtCuda)
 }
 
-/// nvidia-smi 가 있는데 조회가 실패한 일시 오류는 "NVIDIA 없음"으로 보지 않고 표식 오류로.
-fn voxcpm2_ensure_gpu_query_ok() -> Result<(), String> {
-    match voice_runtime::probe_nvidia() {
-        voice_runtime::NvidiaProbe::QueryFailed(reason) => {
-            Err(format!("{VOXCPM2_GPU_UNRESOLVED} GPU 조회에 실패했습니다 ({reason})"))
-        }
-        _ => Ok(()),
+/// 흐름의 가속기 판정. 흐름이 넘겨준 값이 있으면 그대로 쓰고(재판정 없음), 없을 때(흐름 밖
+/// 단독 호출)만 한 번 판정한다. 판정은 가속기가 먼저다 — ROCm 등이면 nvidia-smi 실패는 무시,
+/// NVIDIA 증거가 있고 ROCm 도 아닌데 조회가 실패했을 때만 일시 오류 표식.
+fn voxcpm2_host_accelerator(
+    passed: Option<&str>,
+) -> Result<Option<voice_runtime::Accelerator>, String> {
+    if let Some(label) = passed.map(str::trim).filter(|label| !label.is_empty()) {
+        return voice_runtime::parse_accelerator_label(label);
     }
+    voice_runtime::detect_accelerator_checked()
+        .map_err(|reason| format!("{VOXCPM2_GPU_UNRESOLVED} GPU 조회에 실패했습니다 ({reason})"))
 }
 
-fn voxcpm2_resolve_gpu(gpu_index: Option<u32>) -> voice_runtime::GpuResolution {
-    if !voxcpm2_is_nvidia_host() {
+fn voxcpm2_resolve_gpu(
+    gpu_index: Option<u32>,
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> voice_runtime::GpuResolution {
+    if !voxcpm2_is_nvidia(accelerator) {
         // 이전 동작: 명시 > 기록 > (NVIDIA 식별자 최소 번호, 비-NVIDIA 에선 없음).
         let choice = gpu_index
             .or_else(|| voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root()))
@@ -6183,21 +6192,28 @@ fn voxcpm2_resolve_gpu(gpu_index: Option<u32>) -> voice_runtime::GpuResolution {
 
 /// 번호가 이미 정해져 있으면(흐름이 넘긴 값) 그대로 쓴다 — 캐시 키·설치·시작이 같은
 /// 번호를 보게. 해석은 번호가 없을 때만 한다.
-fn voxcpm2_effective_gpu(gpu_index: Option<u32>) -> Option<u32> {
-    gpu_index.or_else(|| voxcpm2_resolve_gpu(None).choice)
+fn voxcpm2_effective_gpu(
+    gpu_index: Option<u32>,
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Option<u32> {
+    gpu_index.or_else(|| voxcpm2_resolve_gpu(None, accelerator).choice)
 }
 
 /// 흐름 시작에 한 번: 해석하고 기록한다(명시/버려진 번호 → 새 번호는 로그). 자동으로
 /// 고른 번호는 source=auto 로 기록한다. 기록 실패는 로그만 — 반환값이 흐름의 번호다.
-fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Option<u32> {
-    if !voxcpm2_is_nvidia_host() {
+fn voxcpm2_resolve_and_record_gpu(
+    state_root: &std::path::Path,
+    gpu_index: Option<u32>,
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Option<u32> {
+    if !voxcpm2_is_nvidia(accelerator) {
         // 이전 동작: 명시 선택만 기록한다.
         if gpu_index.is_some() {
             let _ = voice_cache::record_gpu_choice(state_root, gpu_index);
         }
-        return voxcpm2_resolve_gpu(gpu_index).choice;
+        return voxcpm2_resolve_gpu(gpu_index, accelerator).choice;
     }
-    let resolution = voxcpm2_resolve_gpu(gpu_index);
+    let resolution = voxcpm2_resolve_gpu(gpu_index, accelerator);
     if let Some(gone) = resolution.dropped_explicit {
         log_both(&format!(
             "[Naia] 고른 카드 {gone} 번이 지금 장치 목록에 없어 자동 선택으로 내려갑니다 → {:?}",
@@ -6226,21 +6242,40 @@ fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Optio
     resolution.choice
 }
 
+/// 환경 값을 만들 때 카드 목록. NVIDIA 는 흐름이 정한 번호로 고정하므로 다시 묻지 않는다
+/// (번호가 없을 때만 조회). ROCm 은 이전 동작(목록으로 검증).
+fn voxcpm2_gpus_for_env(
+    accelerator: voice_runtime::Accelerator,
+    pinned: Option<u32>,
+) -> Vec<voice_runtime::GpuInfo> {
+    if accelerator == voice_runtime::Accelerator::TensorRtCuda && pinned.is_some() {
+        return Vec::new();
+    }
+    voice_runtime::query_gpus(accelerator)
+}
+
 /// 설치·시작: 흐름이 넘긴 번호는 고정(재검증으로 다른 카드가 되지 않는다), 없으면 해석.
-fn voxcpm2_pin_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Result<Option<u32>, String> {
+fn voxcpm2_pin_gpu(
+    state_root: &std::path::Path,
+    gpu_index: Option<u32>,
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Result<Option<u32>, String> {
     match gpu_index {
         Some(pinned) => Ok(Some(pinned)),
-        None => {
-            voxcpm2_ensure_gpu_query_ok()?;
-            voxcpm2_require_nvidia_choice(voxcpm2_resolve_and_record_gpu(state_root, None))
-        }
+        None => voxcpm2_require_nvidia_choice(
+            voxcpm2_resolve_and_record_gpu(state_root, None, accelerator),
+            accelerator,
+        ),
     }
 }
 
 /// NVIDIA 호스트에서 카드가 None 으로 내려가면 캐시 키·환경이 각자 다시 조회하게 된다.
 /// 흐름은 오류로 멈춘다. 다른 가속기 호스트는 이전 동작(None 허용).
-fn voxcpm2_require_nvidia_choice(choice: Option<u32>) -> Result<Option<u32>, String> {
-    if choice.is_none() && voxcpm2_is_nvidia_host() {
+fn voxcpm2_require_nvidia_choice(
+    choice: Option<u32>,
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Result<Option<u32>, String> {
+    if choice.is_none() && voxcpm2_is_nvidia(accelerator) {
         return Err("GPU 를 정하지 못했습니다 (장치 조회 실패) — 잠시 뒤 다시 시도해 주세요".to_string());
     }
     Ok(choice)
@@ -6254,27 +6289,27 @@ fn voxcpm2_voice_context(
     artifact_sha: &str,
     artifact_root: Option<&std::path::Path>,
     gpu_index: Option<u32>,
+    accelerator: Option<voice_runtime::Accelerator>,
 ) -> Result<voice_cache::VoiceContext, String> {
-    voxcpm2_ensure_gpu_query_ok()?;
     let (cache_root, read_only) = voxcpm2_cache_root()?;
     let state_root = voxcpm2_runtime_root();
-    let profile = voxcpm2_host_profile_id()?;
+    let profile = voxcpm2_host_profile_id(accelerator)?;
     let os = voxcpm2_cache_os();
-    let gpu_choice = voxcpm2_effective_gpu(gpu_index);
+    let gpu_choice = voxcpm2_effective_gpu(gpu_index, accelerator);
     let nvidias = if artifact_root.is_some() {
         voice_cache::query_nvidia_identities()
     } else {
         Vec::new()
     };
     let gpu = voice_cache::select_identity(&nvidias, gpu_choice);
-    if gpu_choice.is_none() && artifact_root.is_some() && voxcpm2_is_nvidia_host() {
+    if gpu_choice.is_none() && artifact_root.is_some() && voxcpm2_is_nvidia(accelerator) {
         // NVIDIA 호스트에서 카드가 None 이면 키가 카드 없이 만들어진다 — 오류로 멈춘다.
         return Err(format!("{VOXCPM2_GPU_UNRESOLVED} GPU 를 정하지 못했습니다 (장치 조회 실패)"));
     }
     if let (Some(wanted), None, true) = (
         gpu_choice,
         gpu.as_ref(),
-        artifact_root.is_some() && voxcpm2_is_nvidia_host(),
+        artifact_root.is_some() && voxcpm2_is_nvidia(accelerator),
     ) {
         // 정한 카드는 다른 카드로 바꾸지 않는다 — 안 보이면 명확한 오류.
         return Err(format!(
@@ -6300,11 +6335,13 @@ fn voxcpm2_voice_context(
 fn voxcpm2_context_for_bundle(
     bundle_root: &std::path::Path,
     gpu_index: Option<u32>,
+    accelerator: Option<voice_runtime::Accelerator>,
 ) -> Result<voice_cache::VoiceContext, String> {
     voxcpm2_voice_context(
         &voxcpm2_artifact_sha(bundle_root)?,
         Some(&bundle_root.join("artifact")),
         gpu_index,
+        accelerator,
     )
 }
 
@@ -6517,9 +6554,12 @@ fn read_voxcpm2_download_manifest(
     Ok(manifest)
 }
 
-fn voxcpm2_installed_payload_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn voxcpm2_installed_payload_root(
+    app: &tauri::AppHandle,
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Option<std::path::PathBuf> {
     let sha = voxcpm2_expected_artifact_sha256(app)?;
-    let ctx = voxcpm2_voice_context(&sha, None, None).ok()?;
+    let ctx = voxcpm2_voice_context(&sha, None, None, accelerator).ok()?;
     Some(ctx.slot_dir.join("payload"))
 }
 
@@ -6706,7 +6746,10 @@ fn voxcpm2_payload_validation_failures(
     failures
 }
 
-fn voxcpm2_bundle_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn voxcpm2_bundle_root(
+    app: &tauri::AppHandle,
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Option<std::path::PathBuf> {
     let development_root = if cfg!(debug_assertions) {
         std::env::var_os("NAIA_VOXCPM2_DEV_BUNDLE_ROOT")
             .filter(|value| !value.is_empty())
@@ -6729,7 +6772,7 @@ fn voxcpm2_bundle_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
                 }),
         )
     } else {
-        let installed = voxcpm2_installed_payload_root(app);
+        let installed = voxcpm2_installed_payload_root(app, accelerator);
         // FR-V017.38 (#518): reuse requires the bundled runtime pin to match.
         installed.and_then(|root| {
             voxcpm2_installed_payload_is_reusable(
@@ -7660,10 +7703,12 @@ async fn install_voxcpm2_runtime(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     gpu_index: Option<u32>,
+    accelerator: Option<String>,
 ) -> Result<VoxCpm2InstallationStatus, String> {
-    tokio::task::spawn_blocking(voxcpm2_ensure_gpu_query_ok)
+    // 가속기는 흐름이 넘긴 값을 쓴다. 없을 때(흐름 밖 단독 호출)만 여기서 한 번 판정.
+    let accelerator = tokio::task::spawn_blocking(move || voxcpm2_host_accelerator(accelerator.as_deref()))
         .await
-        .map_err(|error| format!("voxcpm2 gpu query task failed: {error}"))??;
+        .map_err(|error| format!("voxcpm2 accelerator task failed: {error}"))??;
     let _install_guard = state.voxcpm2_start.lock().await;
     if read_secure_naia_credential(&app).is_none() {
         return Err("voxcpm2_naia_member_login_required".to_string());
@@ -7674,7 +7719,6 @@ async fn install_voxcpm2_runtime(
     // 설치도 기동과 같은 판정을 쓴다. 운영체제 잠금 대신, 이 기계에 맞는
     // 프로파일이 있는지를 묻는다 — 없으면 그 사실이 이유가 된다.
     let os = voice_runtime::host_os();
-    let accelerator = voice_runtime::detect_accelerator();
     let host_profile = os
         .zip(accelerator)
         .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator))
@@ -7690,9 +7734,9 @@ async fn install_voxcpm2_runtime(
     };
 
     let state_root = voxcpm2_runtime_root();
-    let gpu_choice = voxcpm2_pin_gpu(&state_root, gpu_index).map_err(&fail)?;
+    let gpu_choice = voxcpm2_pin_gpu(&state_root, gpu_index, accelerator).map_err(&fail)?;
 
-    let staged = voxcpm2_bundle_root(&app);
+    let staged = voxcpm2_bundle_root(&app, accelerator);
     if staged.is_none() {
         if let Some(explicit) = voxcpm2_explicit_bundle_root(&app) {
             return Err(fail(voxcpm2_explicit_bundle_error(&explicit)));
@@ -7734,6 +7778,7 @@ async fn install_voxcpm2_runtime(
         &sha,
         pre_artifact_root.as_deref(),
         gpu_choice,
+        accelerator,
     )
     .map_err(&fail)?;
 
@@ -7848,7 +7893,7 @@ async fn install_voxcpm2_runtime(
     };
 
     let pre_slot_dir = ctx.slot_dir.clone();
-    let ctx = voxcpm2_context_for_bundle(&bundle_root, gpu_choice).map_err(&fail)?;
+    let ctx = voxcpm2_context_for_bundle(&bundle_root, gpu_choice, accelerator).map_err(&fail)?;
     if ctx.slot_dir != pre_slot_dir {
         return Err(fail(format!(
             "Resolved bundle slot dir {} does not match pre-download slot dir {}",
@@ -7956,7 +8001,7 @@ async fn install_voxcpm2_runtime(
                 &engine_dir,
                 &state_root,
             );
-            let gpus = voice_runtime::query_gpus(host_profile_val.hardware.accelerator);
+            let gpus = voxcpm2_gpus_for_env(host_profile_val.hardware.accelerator, gpu_choice);
             let accelerator_env = voice_runtime::accelerator_env(
                 &host_profile_val,
                 &gpus,
@@ -8075,17 +8120,25 @@ async fn install_voxcpm2_runtime(
 /// 화면은 이 값을 흐름 내내 인자로 넘긴다 — 자동(null)을 흐름 안에서 백엔드가
 /// 매번 다시 정하지 않게. 기록 쓰기가 실패해도 흐름은 이 값으로 일관되게 간다.
 #[tauri::command]
-async fn resolve_voxcpm2_gpu(gpu_index: Option<u32>) -> Result<Option<u32>, String> {
+async fn resolve_voxcpm2_gpu(gpu_index: Option<u32>) -> Result<serde_json::Value, String> {
     tokio::task::spawn_blocking(move || {
-        voxcpm2_ensure_gpu_query_ok()?;
-        if !voxcpm2_is_nvidia_host() {
+        // 흐름의 가속기 판정은 여기서 한 번. 카드 번호와 함께 돌려주고 설치·상태·시작이 쓴다.
+        let accelerator = voxcpm2_host_accelerator(None)?;
+        let gpu = if voxcpm2_is_nvidia(accelerator) {
+            voxcpm2_require_nvidia_choice(
+                voxcpm2_resolve_and_record_gpu(&voxcpm2_runtime_root(), gpu_index, accelerator),
+                accelerator,
+            )?
+        } else {
             // NVIDIA 가 아니면 이전 동작: 넘겨받은 값을 그대로.
-            return Ok(gpu_index);
-        }
-        voxcpm2_require_nvidia_choice(voxcpm2_resolve_and_record_gpu(
-            &voxcpm2_runtime_root(),
-            gpu_index,
-        ))
+            gpu_index
+        };
+        Ok(serde_json::json!({
+            "accelerator": voice_runtime::accelerator_label(accelerator),
+            "gpuIndex": gpu,
+            // 같은 판정에서 나온 프로파일 — 화면이 start 의 기대 프로파일로 쓴다.
+            "profile": voxcpm2_host_profile_id(accelerator).ok(),
+        }))
     })
     .await
     .map_err(|error| format!("voxcpm2 gpu resolve task failed: {error}"))?
@@ -8103,7 +8156,11 @@ async fn voxcpm2_installation_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     gpu_index: Option<u32>,
+    accelerator: Option<String>,
 ) -> Result<VoxCpm2InstallationStatus, String> {
+    let accelerator = tokio::task::spawn_blocking(move || voxcpm2_host_accelerator(accelerator.as_deref()))
+        .await
+        .map_err(|error| format!("voxcpm2 accelerator task failed: {error}"))??;
     let adk_path = data_home::read_child_from_dirs_home(DataHomeChild::AdkPath)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
@@ -8112,13 +8169,14 @@ async fn voxcpm2_installation_status(
             &std::path::PathBuf::from(path)
                 .join("naia-settings")
                 .join("slots-manifest.json"),
+            accelerator,
         )
     });
-    let bundle_root = voxcpm2_bundle_root(&app);
+    let bundle_root = voxcpm2_bundle_root(&app, accelerator);
     let installer_available = bundle_root.is_some()
         || (voxcpm2_download_manifest_path(&app)
             .is_some_and(|path| read_voxcpm2_download_manifest(&path).is_ok()));
-    let ctx = match bundle_root.as_deref().map(|root| voxcpm2_context_for_bundle(root, gpu_index)) {
+    let ctx = match bundle_root.as_deref().map(|root| voxcpm2_context_for_bundle(root, gpu_index, accelerator)) {
         Some(Ok(ctx)) => Some(ctx),
         Some(Err(error)) if error.starts_with(VOXCPM2_GPU_UNRESOLVED) => return Err(error),
         _ => None,
@@ -8415,7 +8473,7 @@ fn spawn_voxcpm2(
     // 어느 카드에 올리고 공유 라이브러리를 어디서 찾을지. 값을 만드는 일은
     // voice_runtime 이 하고 여기서는 붙이기만 한다 — 만드는 쪽을 아카이브
     // 없이 잴 수 있어야 하기 때문이다.
-    let gpus = voice_runtime::query_gpus(profile.hardware.accelerator);
+    let gpus = voxcpm2_gpus_for_env(profile.hardware.accelerator, configured_gpu);
     let library_dir = profile.accelerator_library_dir(bundle_root);
     let library_path_var = profile.layout().library_path_var;
     let accelerator_env = voice_runtime::accelerator_env(
@@ -8806,8 +8864,12 @@ async fn start_voxcpm2(
     // gpu_index: 사람이 설정에서 고른 카드 번호. 없으면 최저 인덱스 NVIDIA
     // 카드를 쓴다(엔진 빌드 카드와 일치). 카드가 한 장뿐인 기계에서는 설정 자체가 보이지 않는다.
     gpu_index: Option<u32>,
+    accelerator: Option<String>,
 ) -> Result<String, String> {
     let _start_guard = state.voxcpm2_start.lock().await;
+    let accelerator = tokio::task::spawn_blocking(move || voxcpm2_host_accelerator(accelerator.as_deref()))
+        .await
+        .map_err(|error| format!("voxcpm2 accelerator task failed: {error}"))??;
     let adk_path = if debug_e2e_enabled() {
         std::env::var("NAIA_E2E_ADK_PATH")
             .ok()
@@ -8822,7 +8884,7 @@ async fn start_voxcpm2(
     let manifest_path = std::path::PathBuf::from(&adk_path)
         .join("naia-settings")
         .join("slots-manifest.json");
-    let profile = read_cascade_loader_profile(&manifest_path);
+    let profile = read_cascade_loader_profile(&manifest_path, accelerator);
     let expected = expected_loader_profile
         .as_deref()
         .filter(|value| !value.is_empty())
@@ -8832,7 +8894,7 @@ async fn start_voxcpm2(
     let resolved = voice_runtime::ensure_runs_here(
         expected,
         voice_runtime::host_os(),
-        voice_runtime::detect_accelerator(),
+        accelerator,
     )?;
     if profile.as_deref() != Some(expected) {
         return Err("voxcpm2_profile_manifest_not_ready".to_string());
@@ -8859,7 +8921,7 @@ async fn start_voxcpm2(
         .await
         .map_err(|error| format!("VRAM detection task failed: {error}"))?;
     voice_runtime::validate_vram(resolved, vram)?;
-    let bundle_root = match voxcpm2_bundle_root(&app) {
+    let bundle_root = match voxcpm2_bundle_root(&app, accelerator) {
         Some(root) => root,
         None => {
             let message = if let Some(root) = voxcpm2_explicit_bundle_root(&app) {
@@ -8875,7 +8937,7 @@ async fn start_voxcpm2(
         }
     };
     let state_root = voxcpm2_runtime_root();
-    let effective_gpu = match voxcpm2_pin_gpu(&state_root, gpu_index) {
+    let effective_gpu = match voxcpm2_pin_gpu(&state_root, gpu_index, accelerator) {
         Ok(choice) => choice,
         Err(error) => {
             log_both(&format!("[Naia] voxcpm2 gpu resolve failed: {error}"));
@@ -8884,7 +8946,7 @@ async fn start_voxcpm2(
         }
     };
 
-    let ctx = match voxcpm2_context_for_bundle(&bundle_root, effective_gpu) {
+    let ctx = match voxcpm2_context_for_bundle(&bundle_root, effective_gpu, accelerator) {
         Ok(c) => c,
         Err(error) => {
             log_both(&format!("[Naia] voxcpm2 context build failed: {error}"));
@@ -9081,7 +9143,9 @@ async fn start_cascade(
         .join("slots-manifest.json");
     // Host voice is a device capability, not a Naia account entitlement.
     // The explicit voice-only manifest/profile is the start authority.
-    let loader_profile = read_cascade_loader_profile(&manifest_path);
+    // 흐름 밖(레거시 cascade 시작) 단독 호출: 여기서 한 번 판정한다.
+    let loader_profile =
+        read_cascade_loader_profile(&manifest_path, voice_runtime::detect_accelerator());
     let expected_loader_profile = expected_loader_profile
         .as_deref()
         .filter(|profile| !profile.is_empty())
@@ -9258,15 +9322,16 @@ async fn write_slots_manifest(adk_path: String, json: String) -> Result<(), Stri
 async fn voice_host_profile() -> Result<serde_json::Value, String> {
     let resolved = tokio::task::spawn_blocking(|| {
         let os = voice_runtime::host_os();
-        let accelerator = voice_runtime::detect_accelerator();
+        // 일시 조회 실패는 "프로파일 없음"으로 돌려주지 않고 오류로 — 화면이 캐시하지 않게.
+        let accelerator = voice_runtime::detect_accelerator_checked()?;
         let profile = os
             .zip(accelerator)
             .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator));
         let gpus = accelerator.map(voice_runtime::query_gpus).unwrap_or_default();
-        (profile, gpus)
+        Ok::<_, String>((profile, gpus))
     })
     .await
-    .map_err(|error| format!("task error: {error}"))?;
+    .map_err(|error| format!("task error: {error}"))??;
     let (profile, gpus) = resolved;
     Ok(serde_json::json!({
         "profile": profile.map(|p| p.id),
@@ -15623,6 +15688,21 @@ mod tests {
     }
 
     #[test]
+    fn flow_passed_accelerator_is_used_without_redetecting() {
+        // 넘겨받은 값은 이 기계의 실제 상태와 상관없이 그대로 쓴다(재판정 없음).
+        assert_eq!(
+            voxcpm2_host_accelerator(Some("rocm")),
+            Ok(Some(voice_runtime::Accelerator::Rocm))
+        );
+        assert_eq!(
+            voxcpm2_host_accelerator(Some("cuda")),
+            Ok(Some(voice_runtime::Accelerator::TensorRtCuda))
+        );
+        assert_eq!(voxcpm2_host_accelerator(Some("none")), Ok(None));
+        assert!(voxcpm2_host_accelerator(Some("tpu")).is_err());
+    }
+
+    #[test]
     fn read_cascade_loader_profile_reads_manifest_gpu_profile() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = dir.path().join("slots-manifest.json");
@@ -15634,7 +15714,9 @@ mod tests {
             .zip(voice_runtime::detect_accelerator())
             .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator))
             .map(|p| p.id);
-        assert_eq!(read_cascade_loader_profile(&manifest).as_deref(), expected);
+        assert_eq!(read_cascade_loader_profile(&manifest, voice_runtime::detect_accelerator()).as_deref(),
+            expected
+        );
     }
 
     #[test]
@@ -15732,7 +15814,10 @@ mod tests {
         let manifest = dir.path().join("slots-manifest.json");
         std::fs::write(&manifest, r#"{"gpu":{"loaderProfile":"laptop;rm"}}"#).unwrap();
 
-        assert_eq!(read_cascade_loader_profile(&manifest), None);
+        assert_eq!(
+            read_cascade_loader_profile(&manifest, voice_runtime::detect_accelerator()),
+            None
+        );
     }
 
     #[test]
