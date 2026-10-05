@@ -508,7 +508,7 @@ fn spawn_chrome(port: u16, tmpdir: &str) -> Result<Child, String> {
         }
         #[cfg(not(target_os = "linux"))]
         {
-            Command::new(&bin)
+            std::process::Command::new(&bin)
         }
     };
 

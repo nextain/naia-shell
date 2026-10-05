@@ -4255,6 +4255,7 @@ export function SettingsTab() {
 													<select
 														data-testid="profile-tts-provider"
 														aria-label={t("settings.ttsProvider")}
+														disabled={cascadeBusy}
 														value={ttsProvider}
 														onChange={(event) =>
 															void selectProfileTtsProvider(
@@ -4356,7 +4357,7 @@ export function SettingsTab() {
 							<select
 								id="local-gpu-tier"
 								value={localGpuTier}
-								disabled={!naiaKey}
+								disabled={!naiaKey || cascadeBusy}
 								onChange={(e) => {
 									// R3/R4/R5: 선택 = 스테이징(즉시 persist 안 함) + 로컬 슬롯 스테이징 +
 									// 백엔드 warm(대기). "적용"(저장)에서 실제 앱에 커밋.
@@ -5053,6 +5054,7 @@ export function SettingsTab() {
 						<input
 							id="tts-toggle"
 							type="checkbox"
+							disabled={cascadeBusy}
 							checked={ttsEnabled}
 							onChange={(e) => {
 								setTtsEnabled(e.target.checked);
@@ -6489,6 +6491,7 @@ export function SettingsTab() {
 								type="button"
 								className="onboarding-next-btn"
 								onClick={handleSyncDialogApply}
+								disabled={cascadeBusy}
 							>
 								{t("settings.labSyncDialog.useOnline")}
 							</button>

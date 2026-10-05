@@ -6217,11 +6217,20 @@ fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Optio
 }
 
 /// 설치·시작: 흐름이 넘긴 번호는 고정(재검증으로 다른 카드가 되지 않는다), 없으면 해석.
-fn voxcpm2_pin_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Option<u32> {
+fn voxcpm2_pin_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Result<Option<u32>, String> {
     match gpu_index {
-        Some(pinned) => Some(pinned),
-        None => voxcpm2_resolve_and_record_gpu(state_root, None),
+        Some(pinned) => Ok(Some(pinned)),
+        None => voxcpm2_require_nvidia_choice(voxcpm2_resolve_and_record_gpu(state_root, None)),
     }
+}
+
+/// NVIDIA 호스트에서 카드가 None 으로 내려가면 캐시 키·환경이 각자 다시 조회하게 된다.
+/// 흐름은 오류로 멈춘다. 다른 가속기 호스트는 이전 동작(None 허용).
+fn voxcpm2_require_nvidia_choice(choice: Option<u32>) -> Result<Option<u32>, String> {
+    if choice.is_none() && voxcpm2_is_nvidia_host() {
+        return Err("GPU 를 정하지 못했습니다 (장치 조회 실패) — 잠시 뒤 다시 시도해 주세요".to_string());
+    }
+    Ok(choice)
 }
 
 fn voxcpm2_voice_context(
@@ -6240,6 +6249,10 @@ fn voxcpm2_voice_context(
         Vec::new()
     };
     let gpu = voice_cache::select_identity(&nvidias, gpu_choice);
+    if gpu_choice.is_none() && artifact_root.is_some() && voxcpm2_is_nvidia_host() {
+        // NVIDIA 호스트에서 카드가 None 이면 키가 카드 없이 만들어진다 — 오류로 멈춘다.
+        return Err("GPU 를 정하지 못했습니다 (장치 조회 실패)".to_string());
+    }
     if let (Some(wanted), None, true) = (
         gpu_choice,
         gpu.as_ref(),
@@ -7656,7 +7669,7 @@ async fn install_voxcpm2_runtime(
     };
 
     let state_root = voxcpm2_runtime_root();
-    let gpu_choice = voxcpm2_pin_gpu(&state_root, gpu_index);
+    let gpu_choice = voxcpm2_pin_gpu(&state_root, gpu_index).map_err(&fail)?;
 
     let staged = voxcpm2_bundle_root(&app);
     if staged.is_none() {
@@ -8045,12 +8058,15 @@ async fn resolve_voxcpm2_gpu(gpu_index: Option<u32>) -> Result<Option<u32>, Stri
     tokio::task::spawn_blocking(move || {
         if !voxcpm2_is_nvidia_host() {
             // NVIDIA 가 아니면 이전 동작: 넘겨받은 값을 그대로.
-            return gpu_index;
+            return Ok(gpu_index);
         }
-        voxcpm2_resolve_and_record_gpu(&voxcpm2_runtime_root(), gpu_index)
+        voxcpm2_require_nvidia_choice(voxcpm2_resolve_and_record_gpu(
+            &voxcpm2_runtime_root(),
+            gpu_index,
+        ))
     })
     .await
-    .map_err(|error| format!("voxcpm2 gpu resolve task failed: {error}"))
+    .map_err(|error| format!("voxcpm2 gpu resolve task failed: {error}"))?
 }
 
 /// 화면에서 카드 칸을 바꿀 때: 번호는 기록하고, "자동"(None)은 기록을 지운다.
@@ -8835,7 +8851,14 @@ async fn start_voxcpm2(
         }
     };
     let state_root = voxcpm2_runtime_root();
-    let effective_gpu = voxcpm2_pin_gpu(&state_root, gpu_index);
+    let effective_gpu = match voxcpm2_pin_gpu(&state_root, gpu_index) {
+        Ok(choice) => choice,
+        Err(error) => {
+            log_both(&format!("[Naia] voxcpm2 gpu resolve failed: {error}"));
+            emit_voxcpm2_progress_failed(&app, &error);
+            return Err(error);
+        }
+    };
 
     let ctx = match voxcpm2_context_for_bundle(&bundle_root, effective_gpu) {
         Ok(c) => c,
