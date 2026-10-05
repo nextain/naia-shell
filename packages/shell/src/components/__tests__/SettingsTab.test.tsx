@@ -2144,6 +2144,84 @@ describe("SettingsTab — memory tab (#298)", () => {
 		});
 	});
 
+	it("one run uses one card for status/install/start, and a failed start rolls back only the voice selection fields", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				ttsProvider: "edge",
+				ttsEnabled: false,
+				localVoiceEnabled: false,
+				localVoiceGpuIndex: 1,
+			}),
+		);
+		let installed = false;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(false);
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: installed ? "ready-to-start" : "blocked",
+					ready: false,
+					canStart: installed,
+					summary: installed ? "ready" : "Install required",
+					steps: [],
+				});
+			if (command === "install_voxcpm2_runtime") {
+				// 설치가 길어지는 동안 설정이 바뀐다: 카드와 무관한 키, 카드 번호.
+				const live = JSON.parse(localStorage.getItem("naia-config") || "{}");
+				localStorage.setItem(
+					"naia-config",
+					JSON.stringify({ ...live, userName: "changed-meanwhile", localVoiceGpuIndex: 0 }),
+				);
+				installed = true;
+				return Promise.resolve({
+					phase: "ready-to-start",
+					ready: false,
+					canStart: true,
+					summary: "ready",
+					steps: [],
+				});
+			}
+			if (command === "start_voxcpm2") return Promise.reject(new Error("boom"));
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+		const selector = screen.getByTestId("profile-tts-provider");
+		await vi.waitFor(() =>
+			expect(
+				(selector as HTMLSelectElement).querySelector(
+					'option[value="naia-local-voice"]',
+				),
+			).not.toBeDisabled(),
+		);
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved.ttsProvider).toBe("edge");
+			expect(saved.localVoiceEnabled).toBe(false);
+			// 다른 키는 지금 값 유지(롤백이 시작 시점 사본으로 덮지 않는다).
+			expect(saved.userName).toBe("changed-meanwhile");
+			expect(saved.localVoiceGpuIndex).toBe(0);
+		});
+		const gpuArgs = mockInvoke.mock.calls
+			.filter(([cmd]) =>
+				[
+					"voxcpm2_installation_status",
+					"install_voxcpm2_runtime",
+					"start_voxcpm2",
+				].includes(cmd as string),
+			)
+			.map(([, args]) => (args as { gpuIndex?: number | null }).gpuIndex);
+		expect(gpuArgs.length).toBeGreaterThanOrEqual(3);
+		expect(new Set(gpuArgs)).toEqual(new Set([1]));
+	});
+
 	it("#507: selecting Local voice on an installed engine auto-starts without reverting", async () => {
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
 		localStorage.setItem(

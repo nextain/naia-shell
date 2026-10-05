@@ -915,12 +915,17 @@ export function SettingsTab() {
 	const [voxcpm2Installation, setVoxCpm2Installation] =
 		useState<VoxCpm2InstallationStatus | null>(null);
 	const voxcpm2InstallationRequestRef = useRef(0);
-	const refreshVoxCpm2Installation = useCallback(async () => {
+	// gpuIndex 를 넘기면 그 값으로, 생략하면 지금 저장된 카드로 상태를 본다.
+	// 설치·시작 한 흐름 안에서는 항상 흐름이 정한 값을 넘긴다.
+	const refreshVoxCpm2Installation = useCallback(
+		async (gpuIndex?: number | null) => {
 		const generation = ++voxcpm2InstallationRequestRef.current;
 		try {
-			// 상태도 지금 고른 카드 기준으로 본다 — 저장된 옛 카드의 엔진이 있다고 "준비됨"으로 읽으면 바뀐 카드로 시작하다 실패한다.
 			const status = await invoke<unknown>("voxcpm2_installation_status", {
-				gpuIndex: loadConfig()?.localVoiceGpuIndex ?? null,
+				gpuIndex:
+					gpuIndex !== undefined
+						? gpuIndex
+						: (loadConfig()?.localVoiceGpuIndex ?? null),
 			});
 			if (generation !== voxcpm2InstallationRequestRef.current) return null;
 			if (!isVoxCpm2InstallationStatus(status)) {
@@ -937,7 +942,9 @@ export function SettingsTab() {
 			});
 			return null;
 		}
-	}, []);
+	},
+	[],
+	);
 	useEffect(() => {
 		invoke<boolean>("voxcpm2_status")
 			.then(setCascadeRunning)
@@ -1043,12 +1050,13 @@ export function SettingsTab() {
 		message?: string;
 	}> => {
 		try {
-			// 카드 번호는 한 번만 읽는다. 설치가 길어 그 사이 카드를 바꿔도, 이어지는
-			// 첫 시작은 설치에 쓴 카드와 같아야 엔진이 있다. 바꾼 카드는 다음 시작의
-			// 상태 확인(엔진 없음 → 재설치)에서 반영된다.
+			// 카드 번호는 흐름 시작에 한 번만 정한다. 설치·설치 후 확인·시작·시작 후
+			// 확인이 모두 이 값을 인자로 쓴다(흐름 중 설정을 다시 읽지 않는다).
+			// 흐름 중에는 카드 칸이 잠겨 있고, 바꾼 카드는 다음 흐름의 상태 확인
+			// (엔진 없음 → 재설치)에서 반영된다.
 			const gpuIndexForRun: number | null =
 				loadConfig()?.localVoiceGpuIndex ?? null;
-			let installation = await refreshVoxCpm2Installation();
+			let installation = await refreshVoxCpm2Installation(gpuIndexForRun);
 			if (!installation?.canStart) {
 				setCascadeMsg(t("voice.hostEngineInstalling"));
 				const installed = await invoke<unknown>(
@@ -1057,7 +1065,7 @@ export function SettingsTab() {
 				);
 				if (isVoxCpm2InstallationStatus(installed))
 					setVoxCpm2Installation(installed);
-				installation = await refreshVoxCpm2Installation();
+				installation = await refreshVoxCpm2Installation(gpuIndexForRun);
 				if (!installation?.canStart)
 					return {
 						ready: null,
@@ -1074,7 +1082,7 @@ export function SettingsTab() {
 				// 사람이 고른 카드가 있으면 그것으로 (#537).
 				gpuIndex: gpuIndexForRun,
 			});
-			const afterStart = await refreshVoxCpm2Installation();
+			const afterStart = await refreshVoxCpm2Installation(gpuIndexForRun);
 			return afterStart?.ready
 				? { ready }
 				: {
@@ -1095,11 +1103,10 @@ export function SettingsTab() {
 	) => {
 		const shouldNormalizeBlockedLocal =
 			normalizeBlockedLocal && cfg.ttsProvider === "naia-local-voice";
-		// 되돌리는 것은 음성 선택(켬/공급자)이지 사람이 고른 카드가 아니다. 시작 때
-		// 찍어 둔 cfg 가 아니라 지금 저장된 카드 선택을 보존한다(설치 중 바꾼 것 포함).
-		const liveConfig = loadConfig();
+		// 되돌리는 것은 이 흐름이 바꾼 음성 선택 필드뿐이다. 시작 때 찍어 둔 cfg 전체로
+		// 덮지 않고 지금 저장된 설정 위에 그 필드만 되돌린다 — 다른 키는 현재 값 유지.
 		const fallbackConfig: AppConfig = {
-			...cfg,
+			...(loadConfig() ?? cfg),
 			localVoiceEnabled: shouldNormalizeBlockedLocal
 				? false
 				: cfg.localVoiceEnabled,
@@ -1107,11 +1114,7 @@ export function SettingsTab() {
 			ttsProvider: shouldNormalizeBlockedLocal ? "edge" : cfg.ttsProvider,
 			...restoreMigrationNotice,
 		};
-		if (liveConfig) {
-			if (liveConfig.localVoiceGpuIndex == null)
-				delete fallbackConfig.localVoiceGpuIndex;
-			else fallbackConfig.localVoiceGpuIndex = liveConfig.localVoiceGpuIndex;
-		}
+		fallbackConfig.vllmTtsHost = cfg.vllmTtsHost;
 		saveConfig(fallbackConfig);
 		setTtsProvider(fallbackConfig.ttsProvider ?? "edge");
 		setTtsEnabled(fallbackConfig.ttsEnabled === true);
@@ -5229,6 +5232,7 @@ export function SettingsTab() {
 						</label>
 						<select
 							id="tts-provider-select"
+							disabled={cascadeBusy}
 							data-testid="gateway-tts-provider"
 							value={ttsProvider}
 							onChange={async (e) => {
@@ -5398,6 +5402,7 @@ export function SettingsTab() {
 									</label>
 									<select
 										id="local-voice-gpu"
+										disabled={cascadeBusy}
 										value={
 											existing?.localVoiceGpuIndex == null
 												? ""
@@ -5437,6 +5442,7 @@ export function SettingsTab() {
 							</label>
 							<input
 								type="text"
+								disabled={cascadeBusy}
 								value={vllmTtsHost}
 								onChange={(e) => {
 									setVllmTtsHost(e.target.value);
