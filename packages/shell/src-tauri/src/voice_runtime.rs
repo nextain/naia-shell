@@ -631,6 +631,28 @@ pub fn parse_rocm_gpu_csv(text: &str) -> Vec<GpuInfo> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn accelerator_env_never_carries_appdir_entries_from_the_parent_value() {
+        let profile = profile("linux_trt_6g").expect("linux profile");
+        let raw = "/tmp/.mount_Naia/usr/lib/:/usr/lib64";
+        let cleaned = crate::host_env::strip_path_list(raw, Some("/tmp/.mount_Naia"));
+        let env = accelerator_env(
+            profile,
+            &[],
+            Some(1),
+            Some(std::path::Path::new("/slot/accel")),
+            &cleaned,
+        );
+        let lib = env
+            .iter()
+            .find(|(k, _)| k == profile.layout().library_path_var)
+            .map(|(_, v)| v.clone())
+            .expect("library path");
+        assert!(!lib.contains(".mount_Naia"), "{lib}");
+        assert!(lib.starts_with("/slot/accel"));
+        assert!(lib.contains("/usr/lib64"));
+    }
+
+    #[test]
     fn recorded_auto_card_is_kept_only_while_it_has_enough_free_memory() {
         let card = |index, free| GpuInfo { index, free_mib: free, total_mib: 24576 };
         let gpus = [card(0, 2000), card(1, 20000)];

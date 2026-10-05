@@ -89,13 +89,18 @@ where
 /// 이 프로세스의 환경에서 AppImage 주입분을 뺀 `(이름, 값)` 목록(현재 값 조회용).
 pub(crate) fn host_env_var(name: &str) -> String {
     let raw = std::env::var(name).unwrap_or_default();
-    match std::env::var("APPDIR") {
-        Ok(appdir) => match strip_appdir_entries(&raw, &appdir) {
+    strip_path_list(&raw, std::env::var("APPDIR").ok().as_deref())
+}
+
+/// 경로 목록 값에서 APPDIR 아래 항목을 뺀 값(순수). APPDIR 이 없거나 해당 항목이 없으면 그대로.
+pub(crate) fn strip_path_list(raw: &str, appdir: Option<&str>) -> String {
+    match appdir {
+        Some(appdir) => match strip_appdir_entries(raw, appdir) {
             Some(Some(value)) => value,
             Some(None) => String::new(),
-            None => raw,
+            None => raw.to_string(),
         },
-        Err(_) => raw,
+        None => raw.to_string(),
     }
 }
 
@@ -335,5 +340,15 @@ mod tests {
         assert_eq!(var("PYTHONPATH").as_deref(), Some("/slot/pp"));
         // 부모 프로세스의 환경은 그대로 상속된다(env_clear 같은 상속 상실 회귀를 잡는다).
         assert_eq!(var("PATH"), std::env::var("PATH").ok());
+    }
+
+    #[test]
+    fn 경로_목록_원본에서_appdir_항목을_뺀다() {
+        assert_eq!(
+            strip_path_list("/tmp/.mount_Naia/usr/lib/:/usr/lib64", Some("/tmp/.mount_Naia")),
+            "/usr/lib64"
+        );
+        assert_eq!(strip_path_list("/tmp/.mount_Naia/usr/lib", Some("/tmp/.mount_Naia")), "");
+        assert_eq!(strip_path_list("/usr/lib64", None), "/usr/lib64");
     }
 }

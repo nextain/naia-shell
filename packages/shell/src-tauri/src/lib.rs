@@ -8504,7 +8504,8 @@ fn spawn_voxcpm2(
         &gpus,
         configured_gpu,
         library_dir.is_dir().then_some(library_dir.as_path()),
-        &std::env::var(library_path_var).unwrap_or_default(),
+        // 자식 환경을 만드는 값이라 AppImage 가 넣은 APPDIR 항목은 뺀 부모 값을 쓴다.
+        &host_env::host_env_var(library_path_var),
     );
     let mut gpu_selected = false;
     for (key, value) in &accelerator_env {
