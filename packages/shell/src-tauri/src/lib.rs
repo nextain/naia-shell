@@ -5901,6 +5901,18 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
 /// **primary GPU(nvidia-smi 泥?以?留?* 蹂몃떎 ??硫??GPU ?⑹궛 ?????⑥씪 紐⑤뜽? GPU 媛?
 /// 遺꾩궛 遺덇?, TP ??蹂꾨룄). 利?3090횞2 硫?48 ???꾨땶 24(per-GPU ?덉궛??留욎쓬).
 /// detect_gpu_vram(async, capacity-only)怨??숈씪 nvidia-smi, 釉붾줈??而⑦뀓?ㅽ듃??
+/// 흐름(설치·시작)의 VRAM 조회. NVIDIA 로 판정된 흐름에서 nvidia-smi 가 실행 오류·0 아닌
+/// 종료·시간 초과로 값을 못 읽으면 "VRAM 부족"이 아니라 일시 오류 표식으로 돌려준다.
+fn voxcpm2_vram_gb_blocking(
+    accelerator: Option<voice_runtime::Accelerator>,
+) -> Result<Option<f64>, String> {
+    if !voxcpm2_is_nvidia(accelerator) {
+        return Ok(detect_vram_gb_blocking());
+    }
+    voice_runtime::vram_gb_from_probe(&voice_runtime::probe_nvidia())
+        .map_err(|reason| format!("{VOXCPM2_GPU_UNRESOLVED} VRAM 조회에 실패했습니다 ({reason})"))
+}
+
 fn detect_vram_gb_blocking() -> Option<f64> {
     let mut command = crate::host_env::host_command("nvidia-smi");
     command.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
@@ -7713,9 +7725,9 @@ async fn install_voxcpm2_runtime(
     if read_secure_naia_credential(&app).is_none() {
         return Err("voxcpm2_naia_member_login_required".to_string());
     }
-    let vram = tokio::task::spawn_blocking(detect_vram_gb_blocking)
+    let vram = tokio::task::spawn_blocking(move || voxcpm2_vram_gb_blocking(accelerator))
         .await
-        .map_err(|error| format!("VRAM detection task failed: {error}"))?;
+        .map_err(|error| format!("VRAM detection task failed: {error}"))??;
     // 설치도 기동과 같은 판정을 쓴다. 운영체제 잠금 대신, 이 기계에 맞는
     // 프로파일이 있는지를 묻는다 — 없으면 그 사실이 이유가 된다.
     let os = voice_runtime::host_os();
@@ -8917,9 +8929,9 @@ async fn start_voxcpm2(
         return Ok(ready);
     }
 
-    let vram = tokio::task::spawn_blocking(detect_vram_gb_blocking)
+    let vram = tokio::task::spawn_blocking(move || voxcpm2_vram_gb_blocking(accelerator))
         .await
-        .map_err(|error| format!("VRAM detection task failed: {error}"))?;
+        .map_err(|error| format!("VRAM detection task failed: {error}"))??;
     voice_runtime::validate_vram(resolved, vram)?;
     let bundle_root = match voxcpm2_bundle_root(&app, accelerator) {
         Some(root) => root,

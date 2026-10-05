@@ -416,6 +416,19 @@ pub fn classify_nvidia_probe(result: std::io::Result<(bool, String)>) -> NvidiaP
     }
 }
 
+/// 조회 결과에서 VRAM(GB)을 읽는다. 첫 카드의 총량, 읽었으면 Some. 없음은 Ok(None),
+/// 조회 실패는 Err — 값을 못 읽은 것을 "VRAM 부족"으로 확정하지 않게 구분한다.
+pub fn vram_gb_from_probe(probe: &NvidiaProbe) -> Result<Option<f64>, String> {
+    match probe {
+        NvidiaProbe::Present(gpus) => Ok(gpus
+            .first()
+            .filter(|gpu| gpu.total_mib > 0)
+            .map(|gpu| (gpu.total_mib as f64 / 1024.0).round())),
+        NvidiaProbe::Absent => Ok(None),
+        NvidiaProbe::QueryFailed(reason) => Err(reason.clone()),
+    }
+}
+
 /// nvidia-smi 를 시간 제한(10초) 안에서 실행해 분류한다.
 pub fn probe_nvidia() -> NvidiaProbe {
     let mut command = crate::host_env::host_command("nvidia-smi");
@@ -591,6 +604,17 @@ pub fn parse_rocm_gpu_csv(text: &str) -> Vec<GpuInfo> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn vram_read_failure_is_not_a_vram_shortage() {
+        let failed = NvidiaProbe::QueryFailed("timeout".to_string());
+        assert!(vram_gb_from_probe(&failed).is_err());
+        assert_eq!(vram_gb_from_probe(&NvidiaProbe::Absent), Ok(None));
+        let card = |total| GpuInfo { index: 0, free_mib: 0, total_mib: total };
+        // 읽었는데 부족하면 값 그대로(확정 실패는 validate_vram 이 낸다).
+        assert_eq!(vram_gb_from_probe(&NvidiaProbe::Present(vec![card(4096)])), Ok(Some(4.0)));
+        assert_eq!(vram_gb_from_probe(&NvidiaProbe::Present(vec![card(24576)])), Ok(Some(24.0)));
+    }
+
     #[test]
     fn accelerator_decision_order_and_flow_label() {
         let failed = NvidiaProbe::QueryFailed("x".to_string());
