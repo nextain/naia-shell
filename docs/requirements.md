@@ -1351,6 +1351,18 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-NVA-MOTION.2** | 매니페스트 `motion`으로 크기와 주기를 조절하거나(`false`면) 끌 수 있다. 잘못된 값은 필드 단위로 기본값을 쓴다. 사용자가 움직임 줄이기를 켜 두면 멈춘다. 가슴선 기본값은 얼굴 상자에서 계산한다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `e2e/nva-motion.spec.ts` | In progress |
 | **FR-NVA-MOTION.3** | 층 플레이어에서 발화 애니메이션에 `head_track`이 있으면 머리 층이 몸 클립의 현재 프레임에 맞춰 옮겨지고 돌고 커진다. 없으면 지금처럼 고정 위치다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `nva-layered-player.test.ts` | In progress |
 
+## 기능 요구사항 (FR) — 워크스페이스 3단 작업 화면 (#732)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-WORKSPACE-QUAD.1** | 워크스페이스 앱 진입 시 기본 레이아웃으로 3단 분할 화면(좌: 터미널, 중: 문서 `http://localhost:3142/docs`, 우: 작업판 `http://127.0.0.1:8896/`)을 렌더링한다. 레일 상단 헤더의 토글 버튼("1단" / "3단")으로 기존 단일 화면과 3단 화면을 즉시 전환할 수 있다. | UC-WORKSPACE-QUAD-732 | `workspace-quad.test.tsx`, `herdr-workspace.test.tsx`, `e2e/workspace-quad.spec.ts` | Done |
+| **FR-WORKSPACE-QUAD.2** | 3단 화면의 각 단 사이에 드래그 가능한 분할 조절자(`.resize-handle`)를 제공하여 마우스 포인터 드래그로 각 단의 폭 비율을 실시간 조정할 수 있다. 조절된 분할 비율과 1단/3단 레이아웃 선택 상태는 `UI_PREFERENCE_KEYS`(`workspaceLayout`, `workspaceSplitRatios`)를 통해 영속된다. | UC-WORKSPACE-QUAD-732 | `workspace-quad.test.tsx`, `ui-preferences.test.ts` | Done |
+| **FR-WORKSPACE-QUAD.3** | 터미널 단은 독립적인 xterm 서피스를 사용하며, Herdr 소스(`useHerdrRuntime`)와 일반 PTY 소스(`usePtyTerminalSource`, pwsh/bash 자동감지)를 런타임에 전환할 수 있다. 상단에 `opencode` 빠른 실행 버튼을 두어 터미널에서 즉시 에이전트 CLI를 구동할 수 있다. | UC-WORKSPACE-QUAD-732 | `workspace-quad.test.tsx`, `usePtyTerminalSource.ts` | Done |
+| **FR-WORKSPACE-QUAD.4** | 문서 및 작업판 단은 iframe으로 외부 서비스를 임베딩하며, CSP `frame-src`에 `http://localhost:3142 http://127.0.0.1:3142 http://127.0.0.1:8896 http://localhost:8896`를 허용한다. 대상 서비스 미응답 시 iframe 대신 오프라인 안내 카드와 재시도(↻) 버튼을 표시하며, 칸 내용 하단에 "화면이 비어 있으면 브라우저에서 여세요" 안내와 "브라우저에서 열기" 버튼을 두어 교차 출처 차단 등 임베딩 불가 시 외부 브라우저(`@tauri-apps/plugin-opener` `openUrl`)로 열 수 있게 한다. | UC-WORKSPACE-QUAD-732 | `workspace-quad.test.tsx`, `QuadIframePane.tsx`, `tauri.conf.json`, `tauri.e2e.conf.json`, `quad-csp.test.ts`, `e2e/workspace-quad.spec.ts` | Done |
+| **FR-WORKSPACE-QUAD.5** | 3단 화면 전환 및 비율 조정 중에도 채팅(Naia) 오버레이는 독립적으로 유지되어 재마운트되거나 상태가 유실되지 않는다(FR-UI.2 준수). | UC-WORKSPACE-QUAD-732 | `e2e/workspace-quad.spec.ts` | Done |
+| **FR-WORKSPACE-QUAD.6** | 문서 칸과 작업판 칸의 주소는 UI 설정(`workspaceQuadDocsUrl`, `workspaceQuadBoardUrl`)을 통해 변경할 수 있으며, 이 컴퓨터의 http·https 루프백 주소(`127.0.0.1`, `localhost`, `[::1]`, 사용자명·비밀번호 없음)만 허용(`normalizeQuadPaneUrl`)한다. 빈 값 저장 시 기본값으로 복귀하고, 유효하지 않은 입력 시 `role="alert"` 오류를 표시하며 저장을 거부한다. 설정 파일의 저장값이 유효하지 않은 경우 기본 주소를 사용하고 안내를 노출한다. | UC-WORKSPACE-QUAD-732 | `workspace-quad.test.tsx`, `ui-preferences.test.ts`, `e2e/workspace-quad.spec.ts`, `e2e-tauri/specs/90-workspace-quad-pane-url.spec.ts` | Done |
+
+
 
 
 

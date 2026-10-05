@@ -2226,5 +2226,31 @@ Test Coverage Map (P02)
 | UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
 | UC-CREDITS-DISPLAY | `packages/shell/src/lib/__tests__/credits.test.ts`: 달러 × 1,000 크레딧 환산 한 곳; `packages/shell/src/components/__tests__/CostDashboard.steam.test.tsx`, `packages/shell/src/components/__tests__/AboutSection.steam.test.tsx`, `packages/shell/src/components/__tests__/OnboardingWizard.steam.test.tsx`, `packages/shell/src/components/__tests__/AppBar.test.tsx`: Steam판·판정 실패 시 결제·후원·웹 스토어 진입점 숨김; `packages/shell/src/lib/voice/__tests__/live-pricing.test.ts`: 음성 요금은 게이트웨이 시간당 행만 쓰고 없으면 금액 생략 | 실기 Steam 데포 빌드 확인은 릴리스 절차에서 한다 |
 
+## UC-WORKSPACE-QUAD-732 — 워크스페이스 3단 작업 화면(터미널·문서·작업판) (#732)
+
+워크스페이스 진입 시 단일 터미널 대신 3단 분할 작업 화면(좌: 터미널, 중: 문서 `http://localhost:3142/docs`, 우: 작업판 `http://127.0.0.1:8896/`)을 기본으로 제공한다.
+각 단 사이에는 드래그 가능한 분할 조절자(resize-handle)가 있어 마우스 드래그로 폭 비율을 조절할 수 있으며, 이 비율은 UI 설정(`workspaceSplitRatios`)에 저장되어 유지된다.
+레일 헤더의 레이아웃 토글 버튼("1단" / "3단")으로 기존 단일 화면과 3단 화면을 언제든 전환할 수 있으며 전환 상태 또한 영속된다.
+터미널 상단에는 소스 선택(PTY / Herdr) 및 opencode 빠른 실행 버튼이 제공된다.
+문서 칸과 작업판 칸은 UI preferences(`workspaceQuadDocsUrl`, `workspaceQuadBoardUrl`)를 통해 주소를 설정할 수 있으며(이 컴퓨터의 http·https 루프백 주소만 허용), 설정이 없거나 빈 값 저장 시 기본값(`http://localhost:3142/docs`, `http://127.0.0.1:8896/`)으로 동작한다.
+CSP `frame-src`는 3142 및 8896 출처(`http://localhost:3142 http://127.0.0.1:3142 http://127.0.0.1:8896 http://localhost:8896`)만 허용하며, CSP 외부 출처나 교차 출처 차단 등 임베딩 불가 시를 대비해 각 칸에 "화면이 비어 있으면 브라우저에서 여세요" 안내 및 "브라우저에서 열기" 버튼을 제공한다. 대상 서비스 미응답 시 오프라인 안내 카드와 재시도 버튼이 표시된다.
+3단 화면 전환 시에도 채팅(Naia) 오버레이는 독립적으로 유지되어 재마운트되지 않는다.
+
+| 상태 | 사용자 기대 | 대응 검증 (P02) |
+|---|---|---|
+| 기본 | 워크스페이스 탭을 열면 터미널·문서·작업판이 3단 분할(기본 비율 34:33:33)로 한 화면에 나타나며, 설정 미지정 시 기본 주소(문서 `http://localhost:3142/docs`, 작업판 `http://127.0.0.1:8896/`)로 로드된다. | `workspace-quad.test.tsx` (기본 렌더링, 기본 주소 iframe), `e2e/workspace-quad.spec.ts` (3단 및 기본 주소 확인) |
+| 빈 목록 (설정 없음=기본 주소) | 주소 설정 값이 없거나 빈 문자열로 저장 시 설정을 초기화하고 기본 주소로 복귀한다. | `workspace-quad.test.tsx` (빈 값 저장 시 preference 초기화 및 기본값 복귀 단위 시험), `e2e/workspace-quad.spec.ts` |
+| 진행 (서버 확인 중) | 서버 응답 확인 중(`online === null`) 동안 `role="status"` "확인 중…" 표시를 노출하며, 분할 바를 드래그하는 동안 실시간으로 각 단의 너비가 조절된다. | `workspace-quad.test.tsx` (서버 확인 지연 중 status 표시 및 관측 순번 검증), `e2e/workspace-quad.spec.ts` (확인 중 role="status" 노출) |
+| 성공 (저장됨) | 유효한 루프백 http·https 주소 저장 시 UI preferences에 영속되고 iframe 주소가 즉시 갱신되며 앱 재시작 후에도 유지된다. | `workspace-quad.test.tsx` (주소 변경, iframe src 갱신, writeNaiaUiConfig 왕복 영속 모사 시험), `e2e/workspace-quad.spec.ts` (주소 저장 후 iframe src 갱신), `e2e-tauri/specs/90-workspace-quad-pane-url.spec.ts` (실 Tauri 설정 파일 및 재시작 세션 유지) |
+| 오류 (허용되지 않는 주소, 서버 미응답) | 허용되지 않는 주소 입력 시 `role="alert"` 오류 안내("허용되지 않는 주소입니다(이 컴퓨터의 http·https 주소만)")를 표시하고 저장을 거부한다. 저장된 설정값이 유효하지 않은 경우 기본 주소로 폴백하며 "허용되지 않는 주소라 기본 주소를 씁니다" 안내를 노출한다. 서버 미응답 시 오프라인 카드와 재시도(↻)를 표시한다. | `workspace-quad.test.tsx` (`normalizeQuadPaneUrl` 단위 검증, 잘못된 주소 저장 거부, 잘못된 저장값 기본 주소 폴백, 오프라인 카드 렌더링 및 재시도 복구), `e2e/workspace-quad.spec.ts` (alert 오류 및 서버 미응답 복구) |
+| 좁은 폭 (1,100px 이하) | 1,100px 이하 창 폭에서도 칸 머리의 주소, 주소 바꾸기, 새로고침, 열기 버튼이 잘리거나 겹치지 않고 정상 접근 가능하다. 각 단의 최소 너비(140px)가 보장된다. | `e2e/workspace-quad.spec.ts` (1,100px viewport에서 bounding box 겹침 없음 확인, CSS minWidth 및 overflow 가드) |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-WORKSPACE-QUAD-732 | `packages/shell/src/apps/workspace/__tests__/workspace-quad.test.tsx`: 3단 레이아웃 렌더링, 1단/3단 토글, 드래그 비율 갱신 및 UI preferences 영속, 터미널 소스 전환(PTY/Herdr), opencode 트리거; `normalizeQuadPaneUrl` 유효/무효 URL 판정 단위 검증, 주소 미설정 기본 주소 로드, 주소 변경 및 `writeNaiaUiConfig` 왕복 영속, 잘못된 주소 오류 노출 및 잘못된 설정값 기본 주소 폴백; `QuadIframePane` 관측 순번(`observationSeq`) 기반 헬스체크·A→B→A 지연 응답 격리·iframe onError 후 지연 성공 무시·재시도 복구, 설정 주소 probe fetch 검증, 외부 브라우저 열기(`openUrl`) 호출; `packages/shell/src/lib/__tests__/ui-preferences.test.ts`: workspaceLayout, workspaceSplitRatios, workspaceQuadDocsUrl, workspaceQuadBoardUrl 키 등록; `packages/shell/src/lib/__tests__/quad-csp.test.ts`: tauri.conf.json 및 tauri.e2e.conf.json의 frame-src 3142/8896 토큰 일치 검증 | `packages/shell/e2e/workspace-quad.spec.ts`: 실 UI 3단 화면 확인, 1단/3단 토글, opencode 및 소스 선택 버튼 존재 검증, (a) 작업판 기본 주소 표시, (b) 주소 바꾸기→허용 주소 저장→iframe src 변경, (c) 주소 바꾸기 취소(단추·Esc), (d) 허용되지 않는 주소 alert 오류 및 iframe 유지, (e) 브라우저에서 열기 클릭 시 opener 호출 검증, (f) 1,100px 이하 좁은 폭 헤더 요소 비겹침 bounding box 검증, (h) role="status" 확인 중 표시, (i) 서버 미응답→오프라인 카드→다시 시도 복구, (j) A→B→A 지연 응답 순번 보장; `packages/shell/e2e-tauri/specs/90-workspace-quad-pane-url.spec.ts`: 실 Tauri 백엔드 설정 저장 및 세션 재시작 복원 검증 |
+
+
 
 

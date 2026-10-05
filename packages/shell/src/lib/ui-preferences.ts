@@ -15,6 +15,11 @@ export const UI_PREFERENCE_KEYS = {
 	classifiedDirs: "classifiedDirs",
 	readAnnouncementIds: "readAnnouncementIds",
 	updatePromptSnooze: "updatePromptSnooze",
+	workspaceLayout: "workspaceLayout",
+	workspaceSplitRatios: "workspaceSplitRatios",
+	opencodeCommand: "opencodeCommand",
+	workspaceQuadDocsUrl: "workspaceQuadDocsUrl",
+	workspaceQuadBoardUrl: "workspaceQuadBoardUrl",
 } as const;
 
 export type UiPreferenceKey =

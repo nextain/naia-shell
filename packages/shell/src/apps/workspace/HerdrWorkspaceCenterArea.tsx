@@ -1,34 +1,175 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppCenterProps } from "../../lib/app-registry";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../../lib/ui-preferences";
 import { useAppStore } from "../../stores/app";
 import { HerdrWorkspaceRail } from "./HerdrWorkspaceRail";
 import { HerdrWorkspaceSurface } from "./HerdrWorkspaceSurface";
 import { QuickOpen } from "./QuickOpen";
+import type { TerminalHandle } from "./Terminal";
+import { WorkspaceQuadView } from "./WorkspaceQuadView";
 import { focusedHerdrAgent } from "./herdr";
 import type { OpenFileEditProposal } from "./open-file-edit";
+import { writePty } from "./pty-ipc";
+import type { TerminalSource, TerminalSourceKind } from "./terminal-source";
 import { useHerdrDocuments } from "./useHerdrDocuments";
+import type { HerdrSurface } from "./useHerdrRuntime";
 import { useHerdrRuntime } from "./useHerdrRuntime";
 import { useHerdrWorkspaceBridge } from "./useHerdrWorkspaceBridge";
+import { usePtyTerminalSource } from "./usePtyTerminalSource";
 
 export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 	const runtime = useHerdrRuntime();
+	const activeApp = useAppStore((s) => s.activeApp);
+
+	const layoutPreference = useUiPreference<string>(
+		UI_PREFERENCE_KEYS.workspaceLayout,
+		"quad",
+	);
+	const [layout, setLayout] = useState<"quad" | "standard">(
+		layoutPreference === "standard" ? "standard" : "quad",
+	);
+
+	useEffect(() => {
+		if (layoutPreference === "standard" || layoutPreference === "quad") {
+			setLayout(layoutPreference);
+		}
+	}, [layoutPreference]);
+
+	const ensureStandardLayout = useCallback(() => {
+		if (layout !== "standard") {
+			setLayout("standard");
+			void patchUiPreferences({
+				[UI_PREFERENCE_KEYS.workspaceLayout]: "standard",
+			});
+		}
+	}, [layout]);
+
+	const toggleLayout = useCallback(() => {
+		const next = layout === "quad" ? "standard" : "quad";
+		setLayout(next);
+		void patchUiPreferences({ [UI_PREFERENCE_KEYS.workspaceLayout]: next });
+	}, [layout]);
+
+	// Herdr용 터미널 ref와 일반 PTY용 터미널 ref 분리
+	const herdrTerminalRef = runtime.terminalRef;
+	const ptyTerminalRef = useRef<TerminalHandle>(null);
+
+	const [selectedSourceKind, setSelectedSourceKind] =
+		useState<TerminalSourceKind>("pty");
+
+	const activeTerminalRef =
+		selectedSourceKind === "herdr" ? herdrTerminalRef : ptyTerminalRef;
+
+	// 1단 복귀 시 3단 체류 중 발생했던 timeout 실패 오버레이 억제
+	const [suppressHerdrError, setSuppressHerdrError] = useState(false);
+	const prevLayoutRef = useRef(layout);
+
+	useEffect(() => {
+		if (prevLayoutRef.current === "quad" && layout === "standard") {
+			setSuppressHerdrError(true);
+			const timer = window.setTimeout(() => {
+				setSuppressHerdrError(false);
+			}, 8000);
+			return () => window.clearTimeout(timer);
+		}
+		prevLayoutRef.current = layout;
+	}, [layout]);
+
+	const handleHerdrTerminalReady = useCallback(() => {
+		setSuppressHerdrError(false);
+		runtime.onTerminalReady();
+	}, [runtime]);
+
+	// opencode 시작 명령을 로컬 UI 설정에서 읽고, 비어 있으면 자동 입력 안 함
+	const opencodeCommandPref = useUiPreference<string>(
+		UI_PREFERENCE_KEYS.opencodeCommand,
+		"",
+	);
+
+	// 일반 PTY는 3단이면서 그 소스가 선택됐을 때만 띄우고 다른 레이아웃·소스·언마운트에서 killPty.
+	// 워크스페이스 탭을 열기 전 자동 스폰 금지.
+	const isPtySourceActive =
+		activeApp === "workspace" &&
+		layout === "quad" &&
+		selectedSourceKind === "pty";
+
+	const ptySource = usePtyTerminalSource({
+		workspaceRoot: runtime.workspaceRoot,
+		enabled: isPtySourceActive,
+		initialCommand: opencodeCommandPref,
+	});
+
+	const herdrSource = useMemo<TerminalSource>(
+		() => ({
+			kind: "herdr",
+			pty: runtime.pty,
+			launching: runtime.launching,
+			launchError: runtime.launchError,
+			terminalReady: runtime.terminalReady,
+			terminalError: suppressHerdrError ? "" : runtime.terminalError,
+			workingDir: runtime.workspaceRoot,
+			launch: runtime.launchHerdr,
+			retry: runtime.retryHerdr,
+			onTerminalReady: handleHerdrTerminalReady,
+			onPtyExit: runtime.onPtyExit,
+			runOpencode: runtime.pty
+				? () => {
+						const cmd = opencodeCommandPref?.trim() || "opencode";
+						if (cmd.includes("\n") || cmd.includes("\r")) return Promise.resolve();
+						return writePty(runtime.pty!.pty_id, `${cmd}\r`);
+					}
+				: undefined,
+		}),
+		[
+			handleHerdrTerminalReady,
+			opencodeCommandPref,
+			runtime,
+			suppressHerdrError,
+		],
+	);
+
+	const activeTerminalSource =
+		selectedSourceKind === "herdr" ? herdrSource : ptySource;
+
+	// 파일 열기·터미널 명령 표시 처리
+	const handleShowHerdr = useCallback(() => {
+		if (layout === "quad") {
+			activeTerminalRef.current?.focus();
+			return;
+		}
+		runtime.showHerdr();
+	}, [activeTerminalRef, layout, runtime]);
+
+	const handleSetSurface = useCallback(
+		(surface: HerdrSurface) => {
+			if (surface === "viewer") {
+				ensureStandardLayout();
+			}
+			runtime.setSurface(surface);
+		},
+		[ensureStandardLayout, runtime],
+	);
+
 	const documents = useHerdrDocuments({
 		naia,
 		locationGenerationRef: runtime.locationGenerationRef,
 		snapshotRef: runtime.snapshotRef,
-		setSurface: runtime.setSurface,
-		showHerdr: runtime.showHerdr,
-		terminalRef: runtime.terminalRef,
+		setSurface: handleSetSurface,
+		showHerdr: handleShowHerdr,
+		terminalRef: herdrTerminalRef,
 	});
 
 	const [editProposal, setEditProposal] = useState<OpenFileEditProposal | null>(
 		null,
 	);
 
-	const activeApp = useAppStore((s) => s.activeApp);
-
 	const handleShowViewer = useCallback(async () => {
+		ensureStandardLayout();
 		if (documents.openFilePath) {
 			runtime.setSurface("viewer");
 			return;
@@ -52,7 +193,48 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 			} catch {}
 		}
 		runtime.setSurface("viewer");
-	}, [documents, runtime]);
+	}, [documents, ensureStandardLayout, runtime]);
+
+	const handleFileSelect = useCallback(
+		(file: string) => {
+			ensureStandardLayout();
+			documents.openFromTree(file);
+		},
+		[documents, ensureStandardLayout],
+	);
+
+	const handleOpenResolvedFile = useCallback(
+		async (path: string) => {
+			ensureStandardLayout();
+			return documents.openResolvedFile(path);
+		},
+		[documents, ensureStandardLayout],
+	);
+
+	// 3단에서 레일·나이아 도구가 쓰는 PTY와 화면의 xterm을 같은 세션으로 일치시킨다.
+	const bridgePty =
+		layout === "quad" ? activeTerminalSource.pty : runtime.pty;
+	const bridgeTerminalRef =
+		layout === "quad" ? activeTerminalRef : herdrTerminalRef;
+
+	const { approveEdit, rejectEdit } = useHerdrWorkspaceBridge({
+		naia,
+		snapshotRef: runtime.snapshotRef,
+		editorRef: documents.editorRef,
+		terminalRef: bridgeTerminalRef,
+		workspaceRoot: runtime.workspaceRoot,
+		openFilePath: documents.openFilePath,
+		openDocs: documents.openDocs,
+		pty: bridgePty,
+		findWorkspace: runtime.findWorkspace,
+		focusWorkspace: runtime.focusWorkspace,
+		openResolvedFile: handleOpenResolvedFile,
+		closeDoc: documents.closeDoc,
+		refreshSnapshot: runtime.refreshSnapshot,
+		showHerdr: handleShowHerdr,
+		setSurface: handleSetSurface,
+		setEditProposal,
+	});
 
 	useEffect(() => {
 		if (activeApp !== "workspace") return;
@@ -78,8 +260,8 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 							agentStatus: focused?.agent_status ?? null,
 							cwd: focused?.foreground_cwd ?? focused?.cwd ?? null,
 							terminalTail:
-								typeof runtime.terminalRef.current?.getBufferText === "function"
-									? runtime.terminalRef.current.getBufferText(20) || null
+								typeof bridgeTerminalRef.current?.getBufferText === "function"
+									? bridgeTerminalRef.current.getBufferText(20) || null
 									: null,
 						}
 					: null,
@@ -87,37 +269,23 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 		});
 	}, [
 		activeApp,
+		bridgeTerminalRef,
 		documents.editorRef,
 		documents.openDocs,
 		documents.openFilePath,
+		layout,
 		naia,
 		runtime.snapshot,
 		runtime.surface,
-		runtime.terminalRef,
 		runtime.workspaceRoot,
 	]);
 
-	const { approveEdit, rejectEdit } = useHerdrWorkspaceBridge({
-		naia,
-		snapshotRef: runtime.snapshotRef,
-		editorRef: documents.editorRef,
-		terminalRef: runtime.terminalRef,
-		workspaceRoot: runtime.workspaceRoot,
-		openFilePath: documents.openFilePath,
-		openDocs: documents.openDocs,
-		pty: runtime.pty,
-		findWorkspace: runtime.findWorkspace,
-		focusWorkspace: runtime.focusWorkspace,
-		openResolvedFile: documents.openResolvedFile,
-		closeDoc: documents.closeDoc,
-		refreshSnapshot: runtime.refreshSnapshot,
-		showHerdr: runtime.showHerdr,
-		setSurface: runtime.setSurface,
-		setEditProposal,
-	});
-
 	return (
-		<div className="herdr-workspace" data-testid="herdr-workspace">
+		<div
+			className="herdr-workspace"
+			data-testid="herdr-workspace"
+			data-layout={layout}
+		>
 			<HerdrWorkspaceRail
 				workspaceRoot={runtime.workspaceRoot}
 				surface={runtime.surface}
@@ -126,20 +294,37 @@ export function HerdrWorkspaceCenterArea({ naia }: AppCenterProps) {
 				classifiedDirs={documents.classifiedDirs}
 				fileTreeRegionRef={documents.fileTreeRegionRef}
 				snapshot={runtime.snapshot}
-				onFileSelect={documents.openFromTree}
+				onFileSelect={handleFileSelect}
 				onSendToNaia={documents.sendToNaia}
-				onShowHerdr={runtime.showHerdr}
+				onShowHerdr={handleShowHerdr}
 				onShowViewer={handleShowViewer}
 				onFocusWorkspace={runtime.focusWorkspace}
 				onFocusAgent={runtime.focusAgent}
+				layout={layout}
+				onToggleLayout={toggleLayout}
 			/>
-			<HerdrWorkspaceSurface
-				{...runtime}
-				{...documents}
-				editProposal={editProposal}
-				onApproveEdit={approveEdit}
-				onRejectEdit={rejectEdit}
-			/>
+			{layout === "quad" ? (
+				<WorkspaceQuadView
+					terminalSource={activeTerminalSource}
+					availableSources={["pty", "herdr"]}
+					selectedSourceKind={selectedSourceKind}
+					onSelectSourceKind={setSelectedSourceKind}
+					terminalRef={activeTerminalRef}
+					onFileLocation={documents.openLocation}
+					onAskAi={documents.sendToNaia}
+					workspaceRoot={runtime.workspaceRoot}
+				/>
+			) : (
+				<HerdrWorkspaceSurface
+					{...runtime}
+					terminalError={suppressHerdrError ? "" : runtime.terminalError}
+					onTerminalReady={handleHerdrTerminalReady}
+					{...documents}
+					editProposal={editProposal}
+					onApproveEdit={approveEdit}
+					onRejectEdit={rejectEdit}
+				/>
+			)}
 			{documents.quickOpenVisible && runtime.workspaceRoot && (
 				<QuickOpen
 					workspaceRoot={runtime.workspaceRoot}

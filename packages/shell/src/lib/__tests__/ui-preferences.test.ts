@@ -199,4 +199,57 @@ describe("ui preferences persistence", () => {
 			ADK_ONE,
 		);
 	});
+
+	it("persists and reads workspaceLayout, workspaceSplitRatios, and opencodeCommand (#732)", async () => {
+		expect(UI_PREFERENCE_KEYS.workspaceLayout).toBe("workspaceLayout");
+		expect(UI_PREFERENCE_KEYS.workspaceSplitRatios).toBe("workspaceSplitRatios");
+		expect(UI_PREFERENCE_KEYS.opencodeCommand).toBe("opencodeCommand");
+		expect(UI_PREFERENCE_KEYS.workspaceQuadDocsUrl).toBe("workspaceQuadDocsUrl");
+		expect(UI_PREFERENCE_KEYS.workspaceQuadBoardUrl).toBe("workspaceQuadBoardUrl");
+
+		await hydrateUiPreferences(
+			{
+				uiPreferences: {
+					[UI_PREFERENCE_KEYS.workspaceLayout]: "quad",
+					[UI_PREFERENCE_KEYS.workspaceSplitRatios]: [0.4, 0.3, 0.3],
+					[UI_PREFERENCE_KEYS.opencodeCommand]: "opencode --model sonnet",
+					[UI_PREFERENCE_KEYS.workspaceQuadDocsUrl]: "http://localhost:3142/docs",
+					[UI_PREFERENCE_KEYS.workspaceQuadBoardUrl]: "http://127.0.0.1:8896/",
+				},
+			},
+			{ adkPath: ADK_ONE, canPersist: true },
+		);
+
+		const snapshot = getUiPreferencesSnapshot();
+		expect(snapshot[UI_PREFERENCE_KEYS.workspaceLayout]).toBe("quad");
+		expect(snapshot[UI_PREFERENCE_KEYS.workspaceSplitRatios]).toEqual([
+			0.4, 0.3, 0.3,
+		]);
+		expect(snapshot[UI_PREFERENCE_KEYS.opencodeCommand]).toBe(
+			"opencode --model sonnet",
+		);
+		expect(snapshot[UI_PREFERENCE_KEYS.workspaceQuadDocsUrl]).toBe(
+			"http://localhost:3142/docs",
+		);
+		expect(snapshot[UI_PREFERENCE_KEYS.workspaceQuadBoardUrl]).toBe(
+			"http://127.0.0.1:8896/",
+		);
+
+		// Patching updates snapshot and render cache
+		await patchUiPreferences({
+			[UI_PREFERENCE_KEYS.workspaceLayout]: "standard",
+			[UI_PREFERENCE_KEYS.workspaceSplitRatios]: [0.34, 0.33, 0.33],
+			[UI_PREFERENCE_KEYS.workspaceQuadBoardUrl]: "http://localhost:8896/",
+		});
+
+		const updated = getUiPreferencesSnapshot();
+		expect(updated[UI_PREFERENCE_KEYS.workspaceLayout]).toBe("standard");
+		expect(updated[UI_PREFERENCE_KEYS.workspaceSplitRatios]).toEqual([
+			0.34, 0.33, 0.33,
+		]);
+		expect(updated[UI_PREFERENCE_KEYS.workspaceQuadBoardUrl]).toBe(
+			"http://localhost:8896/",
+		);
+	});
 });
+

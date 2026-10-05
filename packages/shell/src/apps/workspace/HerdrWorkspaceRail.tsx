@@ -19,6 +19,8 @@ interface RailProps {
 	onShowViewer?: () => void;
 	onFocusWorkspace: (workspaceId: string) => Promise<void>;
 	onFocusAgent: (paneId: string) => Promise<void>;
+	layout?: "quad" | "standard";
+	onToggleLayout?: () => void;
 }
 
 export function HerdrWorkspaceRail(props: RailProps) {
@@ -66,6 +68,23 @@ export function HerdrWorkspaceRail(props: RailProps) {
 						>
 							{workspaceName}
 						</span>
+					)}
+					{props.onToggleLayout && (
+						<button
+							type="button"
+							className="herdr-workspace__toggle-btn"
+							data-testid="workspace-layout-toggle"
+							onClick={props.onToggleLayout}
+							title={
+								props.layout === "quad"
+									? t("workspace.quadToggleToSingle")
+									: t("workspace.quadToggleToQuad")
+							}
+						>
+							{props.layout === "quad"
+								? t("workspace.quadLayoutSingle")
+								: t("workspace.quadLayoutQuad")}
+						</button>
 					)}
 					{props.surface === "viewer" ? (
 						<button
