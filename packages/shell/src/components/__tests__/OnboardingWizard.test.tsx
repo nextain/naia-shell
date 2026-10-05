@@ -522,6 +522,7 @@ describe("OnboardingWizard", () => {
 		let cascadeStarted = false;
 		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
 			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
+			if (cmd === "resolve_voxcpm2_gpu") return Promise.resolve(1);
 			if (cmd === "voxcpm2_installation_status") {
 				return Promise.resolve({
 					phase: cascadeStarted ? "ready" : "ready-to-start",
@@ -582,10 +583,15 @@ describe("OnboardingWizard", () => {
 
 		expect(invoke).toHaveBeenCalledWith("start_voxcpm2", {
 			expectedLoaderProfile: "windows_trt_6g",
-			// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).
-			gpuIndex: null,
+			// 흐름 시작에 백엔드가 정한 구체 번호를 설치·상태·시작에 같이 넘긴다 (#537).
+			gpuIndex: 1,
 		});
-		expect(invoke).toHaveBeenCalledWith("install_voxcpm2_runtime");
+		expect(invoke).toHaveBeenCalledWith("install_voxcpm2_runtime", {
+			gpuIndex: 1,
+		});
+		expect(invoke).toHaveBeenCalledWith("voxcpm2_installation_status", {
+			gpuIndex: 1,
+		});
 		expect(screen.getByRole("button", { name: /Host voice on/ })).toBeDefined();
 
 		clickNextByClass();

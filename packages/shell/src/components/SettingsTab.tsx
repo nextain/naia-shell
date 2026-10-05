@@ -170,6 +170,7 @@ import { type VoiceHostGpu, voiceHostProfile } from "../lib/voice/host-profile";
 import {
 	clearLocalVoiceAccessToken,
 	localVoiceFacadeUrlFromReady,
+	resolveLocalVoiceGpu,
 } from "../lib/voice/local-runtime";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
@@ -1054,8 +1055,10 @@ export function SettingsTab() {
 			// 확인이 모두 이 값을 인자로 쓴다(흐름 중 설정을 다시 읽지 않는다).
 			// 흐름 중에는 카드 칸이 잠겨 있고, 바꾼 카드는 다음 흐름의 상태 확인
 			// (엔진 없음 → 재설치)에서 반영된다.
-			const gpuIndexForRun: number | null =
-				loadConfig()?.localVoiceGpuIndex ?? null;
+			// 설정의 자동(null)은 그대로 두고, 흐름이 쓸 값은 구체적인 번호로 정한다.
+			const gpuIndexForRun: number | null = await resolveLocalVoiceGpu(
+				loadConfig()?.localVoiceGpuIndex ?? null,
+			);
 			let installation = await refreshVoxCpm2Installation(gpuIndexForRun);
 			if (!installation?.canStart) {
 				setCascadeMsg(t("voice.hostEngineInstalling"));
@@ -5415,6 +5418,10 @@ export function SettingsTab() {
 											if (raw === "") delete next.localVoiceGpuIndex;
 											else next.localVoiceGpuIndex = Number(raw);
 											saveConfig(next);
+											// 백엔드 기록도 맞춘다: 자동이면 기록을 지운다.
+											void invoke("set_voxcpm2_gpu_choice", {
+												gpuIndex: raw === "" ? null : Number(raw),
+											}).catch(() => {});
 										}}
 									>
 										<option value="">{t("settings.localVoiceGpuAuto")}</option>

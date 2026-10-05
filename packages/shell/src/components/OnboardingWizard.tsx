@@ -73,6 +73,7 @@ import { voiceHostProfile } from "../lib/voice/host-profile";
 import {
 	clearLocalVoiceAccessToken,
 	localVoiceFacadeUrlFromReady,
+	resolveLocalVoiceGpu,
 } from "../lib/voice/local-runtime";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
@@ -497,7 +498,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		window.speechSynthesis.speak(utter);
 	}
 
-	async function refreshVoxCpm2InstallationForOnboarding(): Promise<{
+	async function refreshVoxCpm2InstallationForOnboarding(
+		gpuIndex?: number | null,
+	): Promise<{
 		phase: string;
 		canStart: boolean;
 		ready: boolean;
@@ -506,7 +509,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	} | null> {
 		const generation = ++localVoiceInstallationRequestRef.current;
 		try {
-			const status = await invoke<unknown>("voxcpm2_installation_status");
+			const status = await invoke<unknown>(
+				"voxcpm2_installation_status",
+				gpuIndex === undefined ? undefined : { gpuIndex },
+			);
 			if (generation !== localVoiceInstallationRequestRef.current) return null;
 			if (
 				!status ||
@@ -571,11 +577,16 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		}
 		setLocalVoiceBusy(true);
 		try {
-			let installation = await refreshVoxCpm2InstallationForOnboarding();
+			// 온보딩은 고른 카드가 없다(null → 기록값, 없으면 여유 큰 카드). 흐름 시작에
+			// 구체 번호를 한 번 정해 상태·설치·시작에 모두 넘긴다.
+			const gpuIndexForRun = await resolveLocalVoiceGpu(null);
+			let installation =
+				await refreshVoxCpm2InstallationForOnboarding(gpuIndexForRun);
 			if (!installation?.canStart) {
 				setLocalVoiceMsg(t("voice.hostEngineInstalling"));
-				await invoke("install_voxcpm2_runtime");
-				installation = await refreshVoxCpm2InstallationForOnboarding();
+				await invoke("install_voxcpm2_runtime", { gpuIndex: gpuIndexForRun });
+				installation =
+					await refreshVoxCpm2InstallationForOnboarding(gpuIndexForRun);
 				if (!installation?.canStart)
 					throw new Error("voxcpm2_installation_verification_failed");
 			}
@@ -615,11 +626,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			const host = await voiceHostProfile();
 			const ready = await invoke<string>("start_voxcpm2", {
 				expectedLoaderProfile: host.profile,
-				// 온보딩 시점에는 고른 카드가 없다. 세 호출부의 인자를 같게 둬야
-				// 나중에 한 곳만 다르게 동작하지 않는다 (#537).
-				gpuIndex: null,
+				// 세 호출부(설정·온보딩·토큰 복구)가 같은 방식으로 구체 번호를 넘긴다 (#537).
+				gpuIndex: gpuIndexForRun,
 			});
-			const afterStart = await refreshVoxCpm2InstallationForOnboarding();
+			const afterStart =
+				await refreshVoxCpm2InstallationForOnboarding(gpuIndexForRun);
 			if (!afterStart?.ready) {
 				setLocalVoiceMsg(t("settings.localVoiceInstallFailed"));
 				return;

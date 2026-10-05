@@ -2,6 +2,29 @@ import { loadConfig } from "../config";
 import { Logger } from "../logger";
 import { voiceHostProfile } from "./host-profile";
 
+/**
+ * 설치·상태 확인·시작 한 흐름이 쓸 구체적인 카드 번호를 흐름 시작에 한 번 얻는다.
+ * `configured` 는 사람이 고른 값(자동 = null)이고 설정에는 그대로 둔다. 백엔드가
+ * 명시·기록·여유 순으로 해석하고(없는 번호는 버림) 결과를 기록한다. 해석에 실패하면
+ * 설정값을 그대로 쓴다.
+ */
+export async function resolveLocalVoiceGpu(
+	configured: number | null,
+): Promise<number | null> {
+	try {
+		const { invoke } = await import("@tauri-apps/api/core");
+		const resolved = await invoke<unknown>("resolve_voxcpm2_gpu", {
+			gpuIndex: configured,
+		});
+		if (typeof resolved === "number" || resolved === null) return resolved;
+	} catch (error) {
+		Logger.warn("LocalRuntime", "resolveLocalVoiceGpu:failed", {
+			error: String(error),
+		});
+	}
+	return configured;
+}
+
 export interface LocalVoiceHealth {
 	ttsReady: boolean;
 	avatarReady: boolean;
@@ -71,8 +94,10 @@ export async function recoverLocalVoiceToken(
 				const ready = await invoke<string>("start_voxcpm2", {
 					expectedLoaderProfile: host.profile,
 					// 사람이 고른 카드가 있으면 그것으로. 없으면 런타임이 여유가
-					// 가장 많은 카드를 고른다 (#537).
-					gpuIndex: loadConfig()?.localVoiceGpuIndex ?? null,
+					// 가장 많은 카드를 고른다 (#537). 구체 번호를 먼저 정해 넘긴다.
+					gpuIndex: await resolveLocalVoiceGpu(
+						loadConfig()?.localVoiceGpuIndex ?? null,
+					),
 				});
 				const url = localVoiceFacadeUrlFromReady(ready);
 				Logger.debug("LocalRuntime", "recoverLocalVoiceToken:result", {

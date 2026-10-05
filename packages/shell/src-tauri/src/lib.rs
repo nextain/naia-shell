@@ -7982,6 +7982,25 @@ async fn install_voxcpm2_runtime(
     }
 }
 
+/// 흐름(설치·상태 확인·시작)이 시작할 때 구체적인 카드 번호를 한 번 얻는다.
+/// 화면은 이 값을 흐름 내내 인자로 넘긴다 — 자동(null)을 흐름 안에서 백엔드가
+/// 매번 다시 정하지 않게. 기록 쓰기가 실패해도 흐름은 이 값으로 일관되게 간다.
+#[tauri::command]
+async fn resolve_voxcpm2_gpu(gpu_index: Option<u32>) -> Result<Option<u32>, String> {
+    tokio::task::spawn_blocking(move || {
+        voxcpm2_resolve_and_record_gpu(&voxcpm2_runtime_root(), gpu_index)
+    })
+    .await
+    .map_err(|error| format!("voxcpm2 gpu resolve task failed: {error}"))
+}
+
+/// 화면에서 카드 칸을 바꿀 때: 번호는 기록하고, "자동"(None)은 기록을 지운다.
+/// 지우지 않으면 예전에 고른 번호가 기록에 남아 자동 요청을 덮는다.
+#[tauri::command]
+fn set_voxcpm2_gpu_choice(gpu_index: Option<u32>) -> Result<(), String> {
+    voice_cache::record_gpu_choice(&voxcpm2_runtime_root(), gpu_index)
+}
+
 #[tauri::command]
 async fn voxcpm2_installation_status(
     app: tauri::AppHandle,
@@ -13867,6 +13886,8 @@ pub fn run() {
             write_naia_config,
             write_slots_manifest,
             voxcpm2_installation_status,
+            resolve_voxcpm2_gpu,
+            set_voxcpm2_gpu_choice,
             install_voxcpm2_runtime,
             start_voxcpm2,
             voice_host_profile,

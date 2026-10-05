@@ -2144,6 +2144,74 @@ describe("SettingsTab — memory tab (#298)", () => {
 		});
 	});
 
+	it("auto (null in settings) is resolved once by the backend and that number is used for the whole run", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				ttsProvider: "edge",
+				ttsEnabled: false,
+				localVoiceEnabled: false,
+			}),
+		);
+		let installed = false;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(false);
+			if (command === "resolve_voxcpm2_gpu") return Promise.resolve(1);
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: installed ? "ready-to-start" : "blocked",
+					ready: false,
+					canStart: installed,
+					summary: installed ? "ready" : "Install required",
+					steps: [],
+				});
+			if (command === "install_voxcpm2_runtime") {
+				installed = true;
+				return Promise.resolve({
+					phase: "ready-to-start",
+					ready: false,
+					canStart: true,
+					summary: "ready",
+					steps: [],
+				});
+			}
+			if (command === "start_voxcpm2") return Promise.reject(new Error("boom"));
+			return Promise.resolve([]);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+		const selector = screen.getByTestId("profile-tts-provider");
+		await vi.waitFor(() =>
+			expect(
+				(selector as HTMLSelectElement).querySelector(
+					'option[value="naia-local-voice"]',
+				),
+			).not.toBeDisabled(),
+		);
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+		await vi.waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("start_voxcpm2", {
+				expectedLoaderProfile: expect.anything(),
+				gpuIndex: 1,
+			}),
+		);
+		expect(mockInvoke).toHaveBeenCalledWith("resolve_voxcpm2_gpu", {
+			gpuIndex: null,
+		});
+		expect(mockInvoke).toHaveBeenCalledWith("install_voxcpm2_runtime", {
+			gpuIndex: 1,
+		});
+		// 설정에는 사람이 고른 값(자동)이 그대로 — 구체 번호를 설정에 쓰지 않는다.
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved.localVoiceGpuIndex).toBeUndefined();
+		});
+	});
+
 	it("one run uses one card for status/install/start, and a failed start rolls back only the voice selection fields", async () => {
 		localStorage.setItem(
 			"naia-config",
