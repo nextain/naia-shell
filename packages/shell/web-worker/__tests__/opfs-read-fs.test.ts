@@ -375,22 +375,31 @@ describe("opfs-read-fs", () => {
 		await fs.readText(["AGENTS.md"]);
 		await fs.readText(["notes", "hello.md"]);
 
-		const dirCalls = record.filter((r) => r[0] === "getDirectoryHandle");
-		const fileCalls = record.filter((r) => r[0] === "getFileHandle");
-		expect(dirCalls.length).toBeGreaterThan(0);
-		expect(fileCalls.length).toBeGreaterThan(0);
-
-		for (const call of [...dirCalls, ...fileCalls]) {
-			expect(call).toHaveLength(2);
-			expect(typeof call[1]).toBe("string");
-		}
-
-		const writeCalls = record.filter(
-			(r) =>
-				r[0] === "createWritable" ||
-				r[0] === "removeEntry" ||
-				r[0] === "move",
-		);
-		expect(writeCalls).toEqual([]);
+		expect(record).toEqual([
+			// stat([])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"],
+			// stat([".agents", "context"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", ".agents"], ["getDirectoryHandle", "context"],
+			// stat(["AGENTS.md"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", "AGENTS.md"], ["getFileHandle", "AGENTS.md"], ["getFile"],
+			// stat(["nope"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", "nope"],
+			// stat(["notes", "nope.md"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", "notes"], ["getDirectoryHandle", "nope.md"],
+			// stat(["nope", "x"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", "nope"],
+			// stat(["AGENTS.md", "x"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", "AGENTS.md"],
+			// list([])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["values"],
+			// list(["empty"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", "empty"], ["values"],
+			// list([".agents", "context"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", ".agents"], ["getDirectoryHandle", "context"], ["values"],
+			// readText(["AGENTS.md"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getFileHandle", "AGENTS.md"], ["getFile"], ["text"],
+			// readText(["notes", "hello.md"])
+			["getRoot"], ["getDirectoryHandle", "naia-adk"], ["getDirectoryHandle", "notes"], ["getFileHandle", "hello.md"], ["getFile"], ["text"],
+		]);
 	});
 });
