@@ -120,13 +120,28 @@ pub(crate) fn sanitize_for_host_tool(command: &mut Command) -> &mut Command {
 
 /// 음성 런타임 python(슬롯 안, APPDIR 밖)을 띄우는 공용 Command. 호출부는 이 뒤에 자기 env 를 얹는다.
 pub(crate) fn voice_python_command(python: impl AsRef<OsStr>) -> Command {
-    host_command(python)
+    voice_python_command_with(python, std::env::vars_os())
+}
+
+pub(crate) fn voice_python_command_with(
+    python: impl AsRef<OsStr>,
+    vars: impl IntoIterator<Item = (OsString, OsString)>,
+) -> Command {
+    host_command_with(python, vars)
 }
 
 /// 시스템 프로그램을 띄우는 Command(주입 환경 되돌림 포함).
 pub(crate) fn host_command(program: impl AsRef<OsStr>) -> Command {
+    host_command_with(program, std::env::vars_os())
+}
+
+/// `host_command` 의 환경 목록 주입판(정리 판정에만 쓰고, 자식은 실제 환경을 상속한다).
+pub(crate) fn host_command_with(
+    program: impl AsRef<OsStr>,
+    vars: impl IntoIterator<Item = (OsString, OsString)>,
+) -> Command {
     let mut command = Command::new(program);
-    sanitize_for_host_tool(&mut command);
+    apply_host_tool_env(&mut command, vars);
     command
 }
 
@@ -295,16 +310,30 @@ mod tests {
         assert!(!envs.contains_key(OsStr::new("NAIA_TOKEN")));
     }
 
+    #[cfg(unix)]
     #[test]
-    fn 음성_python_을_Command_new_로_직접_만들지_않는다() {
-        // 패턴은 조각으로 이어 붙여, 이 시험 자신이 검색에 걸리지 않게 한다.
-        let direct = [format!("{}{}", "Command::new(", "python)"), format!("{}{}", "Command::new(", "&python)")];
-        for (name, source) in [
-            ("lib.rs", include_str!("lib.rs")),
-            ("voice_runtime.rs", include_str!("voice_runtime.rs")),
-        ] {
-            let hits: usize = direct.iter().map(|p| source.matches(p.as_str()).count()).sum();
-            assert_eq!(hits, 0, "{name}");
-        }
+    fn 음성_python_Command_를_실제로_실행해_상속과_정리를_확인한다() {
+        let mut command = voice_python_command_with(
+            "/usr/bin/env",
+            os(&[
+                ("APPDIR", "/tmp/fake-appdir"),
+                ("PYTHONHOME", "/tmp/fake-appdir/usr/"),
+                ("LD_LIBRARY_PATH", "/tmp/fake-appdir/usr/lib:/usr/lib"),
+                ("PYTHONPATH", "/tmp/fake-appdir/x"),
+            ]),
+        );
+        command.env("PYTHONPATH", "/slot/pp");
+        let output = command.output().expect("env 실행");
+        let text = String::from_utf8_lossy(&output.stdout);
+        let var = |name: &str| {
+            text.lines()
+                .find_map(|line| line.strip_prefix(&format!("{name}=")))
+                .map(str::to_string)
+        };
+        assert_eq!(var("PYTHONHOME"), None);
+        assert_eq!(var("LD_LIBRARY_PATH").as_deref(), Some("/usr/lib"));
+        assert_eq!(var("PYTHONPATH").as_deref(), Some("/slot/pp"));
+        // 부모 프로세스의 환경은 그대로 상속된다(env_clear 같은 상속 상실 회귀를 잡는다).
+        assert_eq!(var("PATH"), std::env::var("PATH").ok());
     }
 }
