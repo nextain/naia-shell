@@ -14,6 +14,65 @@ export interface PtyTerminalSourceOptions {
 	enabled?: boolean;
 }
 
+export type LaunchErrorKind = "missing-root" | "pty-create" | "pty-exit" | null;
+
+export type PtyAction = "stop" | "invalidate" | "restart" | "launch" | "none";
+
+export interface DecidePtyActionInput {
+	enabled: boolean;
+	rootIsAbsolute: boolean;
+	rootChangedSinceLastEnabled: boolean;
+	hasLivePty: boolean;
+	launching: boolean;
+	errorKind: LaunchErrorKind;
+	initialLaunchStarted: boolean;
+}
+
+/**
+ * PTY 세션의 생명주기 및 실행 여부를 결정하는 순수 결정 함수.
+ * 결정표 순서대로 위에서부터 처음 맞는 조건을 반환한다.
+ */
+export function decidePtyAction(input: DecidePtyActionInput): PtyAction {
+	const {
+		enabled,
+		rootIsAbsolute,
+		rootChangedSinceLastEnabled,
+		hasLivePty,
+		launching,
+		errorKind,
+		initialLaunchStarted,
+	} = input;
+
+	if (!enabled) {
+		return hasLivePty ? "stop" : "none";
+	}
+	if (launching && rootChangedSinceLastEnabled && rootIsAbsolute) {
+		return "invalidate";
+	}
+	if (launching) {
+		return "none";
+	}
+	if (hasLivePty && rootChangedSinceLastEnabled && rootIsAbsolute) {
+		return "restart";
+	}
+	if (hasLivePty) {
+		return "none";
+	}
+	if (errorKind !== "missing-root" && errorKind !== null) {
+		return "none";
+	}
+	if (!initialLaunchStarted) {
+		return "launch";
+	}
+	if (errorKind === "missing-root" && rootIsAbsolute) {
+		return "launch";
+	}
+	if (errorKind === null && rootIsAbsolute) {
+		return "launch";
+	}
+	return "none";
+}
+
 export function isAbsolutePath(candidate: string | null | undefined): boolean {
 	if (!candidate || typeof candidate !== "string") return false;
 	const trimmed = candidate.trim();
@@ -36,6 +95,7 @@ export function usePtyTerminalSource(
 	const [pty, setPty] = useState<PtyCreated | null>(null);
 	const [launching, setLaunching] = useState(false);
 	const [launchError, setLaunchError] = useState("");
+	const [launchErrorKind, setLaunchErrorKind] = useState<LaunchErrorKind>(null);
 	const [terminalReady, setTerminalReady] = useState(false);
 	const [terminalError, setTerminalError] = useState("");
 	const [workingDir, setWorkingDir] = useState(
@@ -46,108 +106,187 @@ export function usePtyTerminalSource(
 	const launchGenerationRef = useRef(0);
 	const initialLaunchStartedRef = useRef(false);
 	const currentPtyIdRef = useRef<string | null>(null);
+	const currentBoundPtyRef = useRef<{
+		id: string;
+		generation: number;
+		root: string | undefined;
+	} | null>(null);
 	const prevRootRef = useRef<string | undefined>(options.workspaceRoot);
 	const autoCommandTimerRef = useRef<number | null>(null);
 	const autoCommandSentPtyIdRef = useRef<string | null>(null);
+	const currentRootRef = useRef<string | undefined>(options.workspaceRoot);
+	currentRootRef.current = options.workspaceRoot;
 
 	const isEnabled = options.enabled !== false;
+	const isEnabledRef = useRef(isEnabled);
+	isEnabledRef.current = isEnabled;
+
 	const shellCmd = options.shellCommand || detectDefaultShell();
 
 	useEffect(() => {
 		currentPtyIdRef.current = pty?.pty_id ?? null;
 	}, [pty]);
 
-	const resolveAbsoluteDir = useCallback(async (): Promise<string> => {
-		if (isAbsolutePath(options.workspaceRoot)) {
-			return options.workspaceRoot!.trim();
-		}
-		const adk = getAdkPath();
-		if (adk && isAbsolutePath(adk)) {
-			return adk.trim();
-		}
-		try {
-			const detected = await invoke<string>("workspace_detect_adk_root");
-			if (isAbsolutePath(detected)) {
-				return detected.trim();
+	const resolveAbsoluteDir = useCallback(
+		async (targetRoot?: string): Promise<string> => {
+			const root = targetRoot ?? currentRootRef.current;
+			if (isAbsolutePath(root)) {
+				return root!.trim();
 			}
-		} catch {}
-		return "";
-	}, [options.workspaceRoot]);
+			const adk = getAdkPath();
+			if (adk && isAbsolutePath(adk)) {
+				return adk.trim();
+			}
+			try {
+				const detected = await invoke<string>("workspace_detect_adk_root");
+				if (isAbsolutePath(detected)) {
+					return detected.trim();
+				}
+			} catch {}
+			return "";
+		},
+		[],
+	);
 
-	const launch = useCallback(async () => {
-		if (!isEnabled) return;
-		const generation = ++launchGenerationRef.current;
-		let created: PtyCreated | null = null;
+	const doLaunch = useCallback(
+		async (targetRoot?: string) => {
+			if (!isEnabledRef.current) return;
+			const generation = ++launchGenerationRef.current;
+			const capturedRoot = targetRoot ?? currentRootRef.current;
+			let created: PtyCreated | null = null;
 
-		if (autoCommandTimerRef.current) {
-			window.clearTimeout(autoCommandTimerRef.current);
-			autoCommandTimerRef.current = null;
-		}
+			if (autoCommandTimerRef.current) {
+				window.clearTimeout(autoCommandTimerRef.current);
+				autoCommandTimerRef.current = null;
+			}
 
-		setLaunching(true);
-		setLaunchError("");
-		setTerminalReady(false);
-		setTerminalError("");
+			setLaunching(true);
+			setLaunchError("");
+			setLaunchErrorKind(null);
+			setTerminalReady(false);
+			setTerminalError("");
 
-		try {
-			const dir = await resolveAbsoluteDir();
-			// 절대 경로가 확보되기 전에는 pty_create를 호출하지 않는다.
-			if (!dir || !isAbsolutePath(dir)) {
-				if (mountedRef.current && generation === launchGenerationRef.current) {
+			try {
+				const dir = await resolveAbsoluteDir(capturedRoot);
+
+				if (
+					!mountedRef.current ||
+					!isEnabledRef.current ||
+					generation !== launchGenerationRef.current ||
+					capturedRoot !== currentRootRef.current
+				) {
+					return;
+				}
+
+				// 절대 경로가 확보되기 전에는 pty_create를 호출하지 않는다.
+				if (!dir || !isAbsolutePath(dir)) {
+					setLaunchErrorKind("missing-root");
 					setLaunchError("Absolute workspace directory required");
 					setLaunching(false);
+					return;
 				}
-				return;
-			}
 
-			setWorkingDir(dir);
+				setWorkingDir(dir);
 
-			created = await invoke<PtyCreated>("pty_create", {
-				dir,
-				command: shellCmd,
-				rows: 30,
-				cols: 120,
-			});
+				if (
+					!mountedRef.current ||
+					!isEnabledRef.current ||
+					generation !== launchGenerationRef.current ||
+					capturedRoot !== currentRootRef.current
+				) {
+					return;
+				}
 
-			if (!mountedRef.current || generation !== launchGenerationRef.current) {
+				created = await invoke<PtyCreated>("pty_create", {
+					dir,
+					command: shellCmd,
+					rows: 30,
+					cols: 120,
+				});
+
+				if (
+					!mountedRef.current ||
+					!isEnabledRef.current ||
+					generation !== launchGenerationRef.current ||
+					capturedRoot !== currentRootRef.current
+				) {
+					if (created?.pty_id) {
+						await killPty(created.pty_id).catch(() => {});
+					}
+					return;
+				}
+
+				currentPtyIdRef.current = created.pty_id;
+				currentBoundPtyRef.current = {
+					id: created.pty_id,
+					generation,
+					root: capturedRoot,
+				};
+				setPty(created);
+			} catch (error) {
 				if (created?.pty_id) {
 					await killPty(created.pty_id).catch(() => {});
 				}
-				return;
+				if (
+					!mountedRef.current ||
+					!isEnabledRef.current ||
+					generation !== launchGenerationRef.current ||
+					capturedRoot !== currentRootRef.current
+				) {
+					return;
+				}
+				setLaunchErrorKind("pty-create");
+				setLaunchError(String(error));
+			} finally {
+				if (
+					mountedRef.current &&
+					generation === launchGenerationRef.current &&
+					capturedRoot === currentRootRef.current
+				) {
+					setLaunching(false);
+				}
 			}
+		},
+		[resolveAbsoluteDir, shellCmd],
+	);
 
-			currentPtyIdRef.current = created.pty_id;
-			setPty(created);
-		} catch (error) {
-			if (created?.pty_id) {
-				await killPty(created.pty_id).catch(() => {});
-			}
-			if (!mountedRef.current || generation !== launchGenerationRef.current) {
-				return;
-			}
-			setLaunchError(String(error));
-		} finally {
-			if (mountedRef.current && generation === launchGenerationRef.current) {
-				setLaunching(false);
-			}
-		}
-	}, [isEnabled, resolveAbsoluteDir, shellCmd]);
+	const launch = useCallback(async () => {
+		await doLaunch(currentRootRef.current);
+	}, [doLaunch]);
 
 	const retry = useCallback(async () => {
 		if (autoCommandTimerRef.current) {
 			window.clearTimeout(autoCommandTimerRef.current);
 			autoCommandTimerRef.current = null;
 		}
+		setLaunchErrorKind(null);
+		setLaunchError("");
+
+		const retryGeneration = ++launchGenerationRef.current;
+		const retryRoot = currentRootRef.current;
+
 		const priorId = currentPtyIdRef.current;
 		currentPtyIdRef.current = null;
+		currentBoundPtyRef.current = null;
 		setPty(null);
 		setTerminalReady(false);
 		setTerminalError("");
+
 		if (priorId) {
 			await killPty(priorId).catch(() => {});
 		}
-		await launch();
-	}, [launch]);
+
+		if (
+			!mountedRef.current ||
+			!isEnabledRef.current ||
+			retryGeneration !== launchGenerationRef.current ||
+			retryRoot !== currentRootRef.current
+		) {
+			return;
+		}
+
+		await doLaunch(retryRoot);
+	}, [doLaunch]);
 
 	const runOpencode = useCallback(async () => {
 		const targetId = currentPtyIdRef.current;
@@ -157,63 +296,107 @@ export function usePtyTerminalSource(
 		await writePty(targetId, `${cmd}\r`).catch(() => {});
 	}, [options.initialCommand]);
 
-	// enabled 상태 변경 및 작업 디렉터리 변경 반응
 	useEffect(() => {
+		currentRootRef.current = options.workspaceRoot;
+		isEnabledRef.current = isEnabled;
+
 		const prevRoot = prevRootRef.current;
-		prevRootRef.current = options.workspaceRoot;
+		const rootChangedSinceLastEnabled = prevRoot !== options.workspaceRoot;
+		const rootIsAbsolute = isAbsolutePath(options.workspaceRoot);
+		const hasLivePty = !!currentPtyIdRef.current;
+
+		const action = decidePtyAction({
+			enabled: isEnabled,
+			rootIsAbsolute,
+			rootChangedSinceLastEnabled,
+			hasLivePty,
+			launching,
+			errorKind: launchErrorKind,
+			initialLaunchStarted: initialLaunchStartedRef.current,
+		});
 
 		if (!isEnabled) {
+			++launchGenerationRef.current;
+			setLaunching(false);
+
 			if (autoCommandTimerRef.current) {
 				window.clearTimeout(autoCommandTimerRef.current);
 				autoCommandTimerRef.current = null;
 			}
-			if (currentPtyIdRef.current) {
+
+			if (action === "stop") {
 				const idToKill = currentPtyIdRef.current;
 				currentPtyIdRef.current = null;
+				currentBoundPtyRef.current = null;
 				setPty(null);
 				setTerminalReady(false);
-				killPty(idToKill).catch(() => {});
+				setTerminalError("");
+				setLaunchErrorKind(null);
+				setLaunchError("");
+				if (idToKill) {
+					killPty(idToKill).catch(() => {});
+				}
 			}
 			return;
 		}
 
-		if (options.workspaceRoot && isAbsolutePath(options.workspaceRoot)) {
-			setWorkingDir(options.workspaceRoot.trim());
-			if (
-				prevRoot !== undefined &&
-				prevRoot !== options.workspaceRoot
-			) {
-				const priorId = currentPtyIdRef.current;
-				currentPtyIdRef.current = null;
-				setPty(null);
-				setTerminalReady(false);
-				if (priorId) {
-					killPty(priorId).catch(() => {});
-				}
-				void launch();
-				return;
+		if (action === "invalidate") {
+			++launchGenerationRef.current;
+			setLaunching(false);
+			return;
+		}
+
+		if (action === "restart") {
+			++launchGenerationRef.current;
+			setLaunching(false);
+			if (autoCommandTimerRef.current) {
+				window.clearTimeout(autoCommandTimerRef.current);
+				autoCommandTimerRef.current = null;
 			}
+			const priorId = currentPtyIdRef.current;
+			currentPtyIdRef.current = null;
+			currentBoundPtyRef.current = null;
+			setPty(null);
+			setTerminalReady(false);
+			setTerminalError("");
+			setLaunchErrorKind(null);
+			setLaunchError("");
+			if (priorId) {
+				killPty(priorId).catch(() => {});
+			}
+			prevRootRef.current = options.workspaceRoot;
+			if (options.workspaceRoot && isAbsolutePath(options.workspaceRoot)) {
+				setWorkingDir(options.workspaceRoot.trim());
+			}
+			void doLaunch(options.workspaceRoot);
+			return;
 		}
 
-		if (!initialLaunchStartedRef.current && isEnabled) {
+		if (action === "launch") {
 			initialLaunchStartedRef.current = true;
-			void launch();
-		} else if (
-			isEnabled &&
-			!currentPtyIdRef.current &&
-			!launching &&
-			!launchError &&
-			isAbsolutePath(options.workspaceRoot)
-		) {
-			void launch();
+			prevRootRef.current = options.workspaceRoot;
+			if (options.workspaceRoot && isAbsolutePath(options.workspaceRoot)) {
+				setWorkingDir(options.workspaceRoot.trim());
+			}
+			void doLaunch(options.workspaceRoot);
+			return;
 		}
-	}, [isEnabled, launch, launchError, launching, options.workspaceRoot]);
 
-	// 언마운트 시에만 최신 pty_id 종료
+		prevRootRef.current = options.workspaceRoot;
+	}, [
+		isEnabled,
+		launchErrorKind,
+		launching,
+		options.workspaceRoot,
+		doLaunch,
+	]);
+
 	useEffect(() => {
 		mountedRef.current = true;
 		return () => {
 			mountedRef.current = false;
+			++launchGenerationRef.current;
+			setLaunching(false);
 			if (autoCommandTimerRef.current) {
 				window.clearTimeout(autoCommandTimerRef.current);
 				autoCommandTimerRef.current = null;
@@ -221,9 +404,78 @@ export function usePtyTerminalSource(
 			if (currentPtyIdRef.current) {
 				const idToKill = currentPtyIdRef.current;
 				currentPtyIdRef.current = null;
+				currentBoundPtyRef.current = null;
 				killPty(idToKill).catch(() => {});
 			}
 		};
+	}, []);
+
+	const boundPtyId = pty?.pty_id ?? null;
+	const boundGeneration = currentBoundPtyRef.current?.generation ?? -1;
+	const boundRoot = currentBoundPtyRef.current?.root;
+
+	const onTerminalReady = useCallback(() => {
+		if (!boundPtyId || boundGeneration < 0) return;
+
+		if (
+			!mountedRef.current ||
+			!isEnabledRef.current ||
+			boundGeneration !== launchGenerationRef.current ||
+			boundPtyId !== currentPtyIdRef.current ||
+			boundRoot !== currentRootRef.current
+		) {
+			return;
+		}
+
+		setTerminalReady(true);
+		setTerminalError("");
+
+		const cmd = options.initialCommand;
+		if (
+			autoCommandSentPtyIdRef.current !== boundPtyId &&
+			cmd &&
+			cmd.trim() &&
+			!cmd.includes("\n") &&
+			!cmd.includes("\r")
+		) {
+			autoCommandSentPtyIdRef.current = boundPtyId;
+			if (autoCommandTimerRef.current) {
+				window.clearTimeout(autoCommandTimerRef.current);
+			}
+			const timerGeneration = boundGeneration;
+			const timerPtyId = boundPtyId;
+			const timerRoot = boundRoot;
+
+			autoCommandTimerRef.current = window.setTimeout(() => {
+				if (
+					mountedRef.current &&
+					isEnabledRef.current &&
+					timerGeneration === launchGenerationRef.current &&
+					timerPtyId === currentPtyIdRef.current &&
+					timerRoot === currentRootRef.current
+				) {
+					writePty(timerPtyId, `${cmd.trim()}\r`).catch(() => {});
+				}
+			}, 100);
+		}
+	}, [boundPtyId, boundGeneration, boundRoot, options.initialCommand]);
+
+	const onPtyExit = useCallback((ptyId?: string) => {
+		const currentId = currentPtyIdRef.current;
+		if (!currentId || (ptyId && currentId !== ptyId)) {
+			return;
+		}
+
+		if (autoCommandTimerRef.current) {
+			window.clearTimeout(autoCommandTimerRef.current);
+			autoCommandTimerRef.current = null;
+		}
+		currentPtyIdRef.current = null;
+		currentBoundPtyRef.current = null;
+		setPty(null);
+		setTerminalReady(false);
+		setLaunchErrorKind("pty-exit");
+		setLaunchError(t("workspace.herdrExited"));
 	}, []);
 
 	return {
@@ -236,45 +488,8 @@ export function usePtyTerminalSource(
 		workingDir,
 		launch,
 		retry,
-		onTerminalReady: () => {
-			setTerminalReady(true);
-			setTerminalError("");
-
-			const currentId = currentPtyIdRef.current;
-			const cmd = options.initialCommand;
-			if (
-				currentId &&
-				autoCommandSentPtyIdRef.current !== currentId &&
-				cmd &&
-				cmd.trim() &&
-				!cmd.includes("\n") &&
-				!cmd.includes("\r")
-			) {
-				autoCommandSentPtyIdRef.current = currentId;
-				if (autoCommandTimerRef.current) {
-					window.clearTimeout(autoCommandTimerRef.current);
-				}
-				autoCommandTimerRef.current = window.setTimeout(() => {
-					if (currentPtyIdRef.current === currentId) {
-						writePty(currentId, `${cmd.trim()}\r`).catch(() => {});
-					}
-				}, 100);
-			}
-		},
-		onPtyExit: (ptyId) => {
-			if (autoCommandTimerRef.current) {
-				window.clearTimeout(autoCommandTimerRef.current);
-				autoCommandTimerRef.current = null;
-			}
-			setPty((current) => {
-				if (!ptyId || current?.pty_id === ptyId) {
-					currentPtyIdRef.current = null;
-					return null;
-				}
-				return current;
-			});
-			setLaunchError(t("workspace.herdrExited"));
-		},
+		onTerminalReady,
+		onPtyExit,
 		runOpencode,
 	};
 }

@@ -142,23 +142,35 @@ export function QuadIframePane({
 		setOnline(false);
 	}, []);
 
+	/**
+	 * iframe 로드 완료 시 빈 문서(오류 페이지 등) 여부를 감지한다.
+	 * 한계: 정상 교차 출처 로드와 X-Frame-Options·CSP frame-ancestors로 막힌 로드는
+	 * 부모 프레임에서 둘 다 contentDocument === null 이고 contentWindow.document 접근이
+	 * 보안 예외를 던지므로 부모에서 둘을 구분할 수 없다.
+	 * 따라서 부모가 문서를 읽을 수 있을 때(같은 출처)만 빈 문서를 감지하여 오프라인으로 전환하며,
+	 * contentDocument === null 이거나 contentWindow.document 접근이 예외를 던지면 상태를 바꾸지 않는다(온라인 유지).
+	 */
 	const handleIframeLoad = useCallback(
 		(event: React.SyntheticEvent<HTMLIFrameElement>) => {
 			const iframe = event.currentTarget;
+			let doc: Document | null | undefined = null;
 			try {
-				const doc = iframe.contentDocument || iframe.contentWindow?.document;
-				if (doc) {
-					const isBlank =
-						doc.location?.href === "about:blank" ||
-						!doc.body ||
-						(doc.body.children.length === 0 && !doc.body.textContent?.trim());
-					if (isBlank) {
-						observationSeqRef.current += 1;
-						setOnline(false);
-					}
-				}
+				doc = iframe.contentDocument || iframe.contentWindow?.document;
 			} catch {
-				// Cross-origin 정상 로드 시 보안 예외는 무시
+				// 교차 출처 차단 및 정상 교차 출처 로드 시 보안 예외는 구분 불가하므로 상태를 바꾸지 않음(온라인 유지)
+				return;
+			}
+			if (!doc) {
+				// 부모가 문서를 읽을 수 없는 경우(contentDocument === null 등) 상태를 바꾸지 않음(온라인 유지)
+				return;
+			}
+			const isBlank =
+				doc.location?.href === "about:blank" ||
+				!doc.body ||
+				(doc.body.children.length === 0 && !doc.body.textContent?.trim());
+			if (isBlank) {
+				observationSeqRef.current += 1;
+				setOnline(false);
 			}
 		},
 		[],
