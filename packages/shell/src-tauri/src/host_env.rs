@@ -253,4 +253,35 @@ mod tests {
         let bundled = OsStr::from_bytes(b"/tmp/.mount_\xff\xfeNaia/usr/bin/node");
         assert!(program_is_bundled(bundled, Some(appdir)));
     }
+
+    #[test]
+    fn 번들_python_이_받는_주입_변수를_모두_되돌린다() {
+        let changes = host_tool_env_changes(os(&[
+            ("APPDIR", "/tmp/.mount_Naia"),
+            ("PYTHONHOME", "/tmp/.mount_Naia/usr/"),
+            ("PYTHONPATH", "/tmp/.mount_Naia/usr/share/pyshared/"),
+            ("LD_LIBRARY_PATH", "/tmp/.mount_Naia/usr/lib/:/usr/lib64"),
+        ]));
+        let get = |name: &str| changes.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone());
+        assert_eq!(get("PYTHONHOME"), Some(None));
+        assert_eq!(get("PYTHONPATH"), Some(None));
+        assert_eq!(get("LD_LIBRARY_PATH"), Some(Some(OsString::from("/usr/lib64"))));
+    }
+
+    #[test]
+    fn 음성_python_을_띄우는_자리는_host_command_를_쓴다() {
+        let source = include_str!("lib.rs");
+        for marker in [
+            "fn voxcpm2_python_runtime_is_ready(",
+            "fn standalone_voxcpm2_python_is_ready(",
+            "fn spawn_voxcpm2(",
+        ] {
+            let start = source.find(marker).expect(marker);
+            let body = &source[start..(start + 6000).min(source.len())];
+            assert!(
+                body.contains("host_env::host_command(") && !body.contains("= Command::new(&python)"),
+                "{marker}"
+            );
+        }
+    }
 }

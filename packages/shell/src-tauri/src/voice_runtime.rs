@@ -1092,7 +1092,7 @@ mod tests {
             .expect("고른 번호의 UUID");
 
         // 그 환경으로 띄운 프로세스가 보는 유일한 장치의 UUID.
-        let seen = std::process::Command::new(&python)
+        let seen = crate::host_env::host_command(&python)
             .args([
                 "-c",
                 "import torch;print(torch.cuda.device_count());print(torch.cuda.get_device_properties(0).uuid)",
