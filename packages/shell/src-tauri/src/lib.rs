@@ -6147,6 +6147,16 @@ fn voxcpm2_is_nvidia_host() -> bool {
     voice_runtime::detect_accelerator() == Some(voice_runtime::Accelerator::TensorRtCuda)
 }
 
+/// nvidia-smi 가 있는데 조회가 실패한 일시 오류는 "NVIDIA 없음"으로 보지 않고 표식 오류로.
+fn voxcpm2_ensure_gpu_query_ok() -> Result<(), String> {
+    match voice_runtime::probe_nvidia() {
+        voice_runtime::NvidiaProbe::QueryFailed(reason) => {
+            Err(format!("{VOXCPM2_GPU_UNRESOLVED} GPU 조회에 실패했습니다 ({reason})"))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn voxcpm2_resolve_gpu(gpu_index: Option<u32>) -> voice_runtime::GpuResolution {
     if !voxcpm2_is_nvidia_host() {
         // 이전 동작: 명시 > 기록 > (NVIDIA 식별자 최소 번호, 비-NVIDIA 에선 없음).
@@ -6220,7 +6230,10 @@ fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Optio
 fn voxcpm2_pin_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Result<Option<u32>, String> {
     match gpu_index {
         Some(pinned) => Ok(Some(pinned)),
-        None => voxcpm2_require_nvidia_choice(voxcpm2_resolve_and_record_gpu(state_root, None)),
+        None => {
+            voxcpm2_ensure_gpu_query_ok()?;
+            voxcpm2_require_nvidia_choice(voxcpm2_resolve_and_record_gpu(state_root, None))
+        }
     }
 }
 
@@ -6242,6 +6255,7 @@ fn voxcpm2_voice_context(
     artifact_root: Option<&std::path::Path>,
     gpu_index: Option<u32>,
 ) -> Result<voice_cache::VoiceContext, String> {
+    voxcpm2_ensure_gpu_query_ok()?;
     let (cache_root, read_only) = voxcpm2_cache_root()?;
     let state_root = voxcpm2_runtime_root();
     let profile = voxcpm2_host_profile_id()?;
@@ -7647,6 +7661,9 @@ async fn install_voxcpm2_runtime(
     state: tauri::State<'_, AppState>,
     gpu_index: Option<u32>,
 ) -> Result<VoxCpm2InstallationStatus, String> {
+    tokio::task::spawn_blocking(voxcpm2_ensure_gpu_query_ok)
+        .await
+        .map_err(|error| format!("voxcpm2 gpu query task failed: {error}"))??;
     let _install_guard = state.voxcpm2_start.lock().await;
     if read_secure_naia_credential(&app).is_none() {
         return Err("voxcpm2_naia_member_login_required".to_string());
@@ -8060,6 +8077,7 @@ async fn install_voxcpm2_runtime(
 #[tauri::command]
 async fn resolve_voxcpm2_gpu(gpu_index: Option<u32>) -> Result<Option<u32>, String> {
     tokio::task::spawn_blocking(move || {
+        voxcpm2_ensure_gpu_query_ok()?;
         if !voxcpm2_is_nvidia_host() {
             // NVIDIA 가 아니면 이전 동작: 넘겨받은 값을 그대로.
             return Ok(gpu_index);

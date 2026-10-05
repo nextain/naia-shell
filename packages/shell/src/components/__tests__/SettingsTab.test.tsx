@@ -9,6 +9,12 @@ import {
 import { StrictMode } from "react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeNaiaConfig as writeNaiaConfigMock } from "../../lib/adk-store";
+
+vi.mock("../../lib/adk-store", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../lib/adk-store")>();
+	return { ...actual, writeNaiaConfig: vi.fn(actual.writeNaiaConfig) };
+});
 
 const eventListeners = vi.hoisted(
 	() =>
@@ -2270,6 +2276,63 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(saved.ttsProvider).toBe("naia-local-voice");
 	});
 
+	it("local voice is switched off only for a definitive block; an unknown or transient-marked block keeps it", async () => {
+		const seed = {
+			provider: "nextain",
+			model: "gemini-3.5-flash",
+			ttsProvider: "naia-local-voice",
+			ttsEnabled: false,
+			localVoiceEnabled: false,
+			vllmTtsHost: "http://localhost:8910",
+		};
+		const statusFor = (kind: "transient" | "definitive") => ({
+			phase: "blocked",
+			ready: false,
+			canStart: false,
+			summary: kind === "transient" ? "voxcpm2_gpu_unresolved: query failed" : "Install required",
+			steps: [
+				{
+					id: "runtime-entrypoint",
+					label: "Naia Host runtime",
+					state: "blocked",
+					action: "verify",
+					actionAvailable: false,
+					progressPercent: 0,
+					retryable: false,
+					failure: {
+						code: kind === "transient" ? "voxcpm2_gpu_unresolved" : "VOXCPM2_RUNTIME_ENTRYPOINT_MISSING",
+						message: "x",
+						retryable: false,
+					},
+				},
+			],
+		});
+		const run = async (kind: "transient" | "definitive") => {
+			localStorage.setItem("naia-config", JSON.stringify(seed));
+			mockInvoke.mockImplementation((cmd: string) => {
+				if (cmd === "detect_gpu_vram") return Promise.resolve(8);
+				if (cmd === "voxcpm2_status") return Promise.resolve(false);
+				if (cmd === "resolve_voxcpm2_gpu") return Promise.resolve(0);
+				if (cmd === "voxcpm2_installation_status")
+					return Promise.resolve(statusFor(kind));
+				return Promise.resolve([]);
+			});
+			const view = render(<SettingsTab />);
+			await vi.waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_installation_status", {
+					gpuIndex: 0,
+				}),
+			);
+			await new Promise((r) => setTimeout(r, 50));
+			const provider = JSON.parse(localStorage.getItem("naia-config") || "{}").ttsProvider;
+			view.unmount();
+			mockInvoke.mockClear();
+			return provider;
+		};
+		expect(await run("transient")).toBe("naia-local-voice");
+		expect(await run("definitive")).not.toBe("naia-local-voice");
+	});
+
 	it("one run uses one card for status/install/start, and a failed start rolls back only the voice selection fields", async () => {
 		localStorage.setItem(
 			"naia-config",
@@ -2300,7 +2363,12 @@ describe("SettingsTab — memory tab (#298)", () => {
 				const live = JSON.parse(localStorage.getItem("naia-config") || "{}");
 				localStorage.setItem(
 					"naia-config",
-					JSON.stringify({ ...live, userName: "changed-meanwhile", localVoiceGpuIndex: 0 }),
+					JSON.stringify({
+						...live,
+						userName: "changed-meanwhile",
+						localVoiceGpuIndex: 0,
+						naiaKey: "nk-live", // 흐름 도중 키가 바뀐다
+					}),
 				);
 				installed = true;
 				return Promise.resolve({
@@ -2334,6 +2402,13 @@ describe("SettingsTab — memory tab (#298)", () => {
 			// 다른 키는 지금 값 유지(롤백이 시작 시점 사본으로 덮지 않는다).
 			expect(saved.userName).toBe("changed-meanwhile");
 			expect(saved.localVoiceGpuIndex).toBe(0);
+		});
+		// 롤백이 쓰는 설정의 naiaKey 는 흐름 도중 바뀐 현재 값이어야 한다(옛 "nk" 아님).
+		await vi.waitFor(() => {
+			const calls = vi.mocked(writeNaiaConfigMock).mock.calls;
+			expect(calls.length).toBeGreaterThan(0);
+			const last = calls[calls.length - 1][0] as { naiaKey?: string };
+			expect(last.naiaKey).toBe("nk-live");
 		});
 		const gpuArgs = mockInvoke.mock.calls
 			.filter(([cmd]) =>
@@ -3117,7 +3192,22 @@ describe("SettingsTab — memory tab (#298)", () => {
 					ready: false,
 					canStart: false,
 					summary: "Local voice installation required.",
-					steps: [],
+					steps: [
+						{
+							id: "runtime-entrypoint",
+							label: "Naia Host runtime",
+							state: "blocked",
+							action: "verify",
+							actionAvailable: false,
+							progressPercent: 0,
+							retryable: false,
+							failure: {
+								code: "VOXCPM2_RUNTIME_ENTRYPOINT_MISSING",
+								message: "missing",
+								retryable: false,
+							},
+						},
+					],
 				});
 			}
 			return Promise.resolve([]);

@@ -148,6 +148,7 @@ import {
 } from "../lib/proactive-speech-settings";
 import {
 	deleteSecretKeyAtPath,
+	getSecretKey,
 	getSecureStorePath,
 	saveSecretKeyAtPath,
 } from "../lib/secure-store";
@@ -256,6 +257,23 @@ function isVoxCpm2InstallationStatus(
 		typeof candidate.ready === "boolean" &&
 		typeof candidate.summary === "string" &&
 		Array.isArray(candidate.steps)
+	);
+}
+
+/**
+ * 로컬 음성을 끄는 것은 "확정적 시작 불가"뿐이다 — 엔진·런타임 같은 필수 구성이 없다는
+ * 명확한 사유(막힌 단계 + 실패 코드)가 있을 때. 일시 오류 표식(voxcpm2_gpu_unresolved)이
+ * 붙은 경우나 사유를 알 수 없는 경우는 절대 끄지 않는다.
+ */
+function isDefinitiveLocalVoiceBlock(status: VoxCpm2InstallationStatus | null): boolean {
+	if (!status || status.canStart !== false) return false;
+	const text = [
+		status.summary,
+		...status.steps.map((step) => `${step.failure?.code ?? ""} ${step.failure?.message ?? ""}`),
+	].join(" ");
+	if (text.includes("voxcpm2_gpu_unresolved")) return false;
+	return status.steps.some(
+		(step) => step.state === "blocked" && !!step.failure?.code,
 	);
 }
 
@@ -1112,6 +1130,8 @@ export function SettingsTab() {
 			normalizeBlockedLocal && cfg.ttsProvider === "naia-local-voice";
 		// 되돌리는 것은 이 흐름이 바꾼 음성 선택 필드뿐이다. 시작 때 찍어 둔 cfg 전체로
 		// 덮지 않고 지금 저장된 설정 위에 그 필드만 되돌린다 — 다른 키는 현재 값 유지.
+		// naiaKey 를 포함한 나머지 값은 모두 지금 저장된 설정에서 온다 — 흐름 도중 로그인·
+		// 로그아웃·키 교체가 있었다면 클로저의 옛 값으로 되돌리지 않는다.
 		const fallbackConfig: AppConfig = {
 			...(loadConfig() ?? cfg),
 			localVoiceEnabled: shouldNormalizeBlockedLocal
@@ -1128,11 +1148,21 @@ export function SettingsTab() {
 		setVllmTtsHost(fallbackConfig.vllmTtsHost ?? DEFAULT_LOCAL_VOICE_HOST);
 		setCascadeRunning(false);
 		useCascadeAvatarStore.getState().setLocalFacadeUrl(null);
-		await writeNaiaConfig({
-			...fallbackConfig,
-			...(naiaKey ? { naiaKey } : {}),
-		} as unknown as Record<string, unknown>);
-		await writeSlotsManifest(fallbackConfig, detectedVramGb ?? undefined);
+		// 키는 지금 저장소의 값: 설정에 있으면 그것, 없으면 보안 저장소의 현재 값. 클로저의
+		// naiaKey 상태(흐름 시작 때 값)는 이 경로에서 쓰지 않는다.
+		let liveNaiaKey = fallbackConfig.naiaKey;
+		if (!liveNaiaKey) {
+			try {
+				liveNaiaKey = (await getSecretKey("naiaKey")) ?? undefined;
+			} catch {
+				liveNaiaKey = undefined;
+			}
+		}
+		const persistedConfig: AppConfig = liveNaiaKey
+			? { ...fallbackConfig, naiaKey: liveNaiaKey }
+			: fallbackConfig;
+		await writeNaiaConfig(persistedConfig as unknown as Record<string, unknown>);
+		await writeSlotsManifest(persistedConfig, detectedVramGb ?? undefined);
 	};
 	// #507: a local-voice revert must never be silent. Publish the reason on
 	// BOTH surfaces — voxcpm2InstallError renders in the voice tab even after
@@ -1185,7 +1215,7 @@ export function SettingsTab() {
 	const localVoiceTransactionRef = useRef(false);
 	useEffect(() => {
 		if (localVoiceTransactionRef.current) return;
-		if (voxcpm2Installation?.canStart !== false) return;
+		if (!isDefinitiveLocalVoiceBlock(voxcpm2Installation)) return;
 		const cfg = loadConfig();
 		if (!cfg || cfg.ttsProvider !== "naia-local-voice") return;
 		const blockedSummary = voxcpm2Installation?.summary?.trim() ?? "";

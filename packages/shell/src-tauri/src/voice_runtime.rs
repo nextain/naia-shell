@@ -347,6 +347,65 @@ pub fn detect_accelerator() -> Option<Accelerator> {
     None
 }
 
+/// NVIDIA 조회 결과. "NVIDIA 없음"과 "nvidia-smi 는 있는데 조회 실패"는 다르다 —
+/// 후자는 일시 오류일 수 있어 호출자가 "없음"으로 취급하면 안 된다.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NvidiaProbe {
+    Absent,
+    Present(Vec<GpuInfo>),
+    QueryFailed(String),
+}
+
+/// 실행 결과(성공 여부, stdout)를 NVIDIA 조회 결과로 분류한다. 프로그램 없음
+/// (NotFound)만 "없음"이고, 그 밖의 실행 오류·0 아닌 종료·해석 불가 출력은 실패다.
+pub fn classify_nvidia_probe(result: std::io::Result<(bool, String)>) -> NvidiaProbe {
+    match result {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => NvidiaProbe::Absent,
+        Err(error) => NvidiaProbe::QueryFailed(format!("nvidia-smi 실행 오류: {error}")),
+        Ok((false, _)) => NvidiaProbe::QueryFailed("nvidia-smi 가 0 이 아닌 코드로 끝났습니다".to_string()),
+        Ok((true, text)) => {
+            let gpus = parse_nvidia_gpu_csv(&text);
+            if !gpus.is_empty() {
+                NvidiaProbe::Present(gpus)
+            } else if text.trim().is_empty() {
+                NvidiaProbe::Absent
+            } else {
+                NvidiaProbe::QueryFailed("nvidia-smi 출력을 해석하지 못했습니다".to_string())
+            }
+        }
+    }
+}
+
+/// nvidia-smi 를 시간 제한(10초) 안에서 실행해 분류한다.
+pub fn probe_nvidia() -> NvidiaProbe {
+    let mut command = crate::host_env::host_command("nvidia-smi");
+    command
+        .args(["--query-gpu=index,memory.free,memory.total", "--format=csv,noheader,nounits"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    crate::platform::hide_console(&mut command);
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => return classify_nvidia_probe(Err(error)),
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return NvidiaProbe::QueryFailed("nvidia-smi 시간 초과".to_string());
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(error) => return classify_nvidia_probe(Err(error)),
+        }
+    }
+    classify_nvidia_probe(child.wait_with_output().map(|o| {
+        (o.status.success(), String::from_utf8_lossy(&o.stdout).to_string())
+    }))
+}
+
 /// 가속기에 카드 목록을 묻는다.
 ///
 /// 두 도구의 질의 형태가 다를 뿐 답의 모양은 같다 — 번호, 여유, 총량. 그
@@ -492,6 +551,35 @@ pub fn parse_rocm_gpu_csv(text: &str) -> Vec<GpuInfo> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn nvidia_probe_separates_absent_from_failed_query() {
+        use std::io::{Error, ErrorKind};
+        assert_eq!(
+            classify_nvidia_probe(Err(Error::from(ErrorKind::NotFound))),
+            NvidiaProbe::Absent
+        );
+        assert!(matches!(
+            classify_nvidia_probe(Err(Error::from(ErrorKind::PermissionDenied))),
+            NvidiaProbe::QueryFailed(_)
+        ));
+        assert!(matches!(
+            classify_nvidia_probe(Ok((false, String::new()))),
+            NvidiaProbe::QueryFailed(_)
+        ));
+        assert!(matches!(
+            classify_nvidia_probe(Ok((true, "garbage".to_string()))),
+            NvidiaProbe::QueryFailed(_)
+        ));
+        assert_eq!(
+            classify_nvidia_probe(Ok((true, String::new()))),
+            NvidiaProbe::Absent
+        );
+        assert!(matches!(
+            classify_nvidia_probe(Ok((true, "0, 8000, 12000\n".to_string()))),
+            NvidiaProbe::Present(g) if g.len() == 1
+        ));
+    }
+
     use super::*;
 
     fn gpu_info(index: u32, free_mib: u64) -> GpuInfo {
