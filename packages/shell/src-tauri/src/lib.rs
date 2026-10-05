@@ -6219,6 +6219,14 @@ fn voxcpm2_effective_gpu(
     gpu_index.or_else(|| voxcpm2_resolve_gpu(None, accelerator).choice)
 }
 
+/// 이미 실행 중인 엔진이 있는가(start_voxcpm2 가 기존 ready 를 돌려주는 조건과 같다).
+fn voxcpm2_engine_running(state: &AppState) -> bool {
+    let mut guard = lock_or_recover(&state.voxcpm2, "voxcpm2");
+    guard
+        .as_mut()
+        .is_some_and(|process| matches!(process.child.try_wait(), Ok(None)))
+}
+
 /// 흐름 시작에 한 번: 해석하고 기록한다(명시/버려진 번호 → 새 번호는 로그). 자동으로
 /// 고른 번호는 source=auto 로 기록한다. 기록 실패는 로그만 — 반환값이 흐름의 번호다.
 fn voxcpm2_resolve_and_record_gpu(
@@ -8153,11 +8161,14 @@ async fn install_voxcpm2_runtime(
 /// 매번 다시 정하지 않게. 기록 쓰기가 실패해도 흐름은 이 값으로 일관되게 간다.
 #[tauri::command]
 async fn resolve_voxcpm2_gpu(
+    state: tauri::State<'_, AppState>,
     gpu_index: Option<u32>,
     record: Option<bool>,
 ) -> Result<serde_json::Value, String> {
-    // record 가 true 일 때만 기록한다(설치·시작 흐름). 생략은 읽기 전용.
-    let record = record.unwrap_or(false);
+    // record 가 true 일 때만 기록한다(설치·시작 흐름). 생략은 읽기 전용. 이미 실행 중인
+    // 엔진이 있으면 시작은 기존 ready 를 돌려줄 뿐이므로 어느 흐름이든 기록을 바꾸지 않는다
+    // — 기록은 새로 빌드·시작하는 카드로만.
+    let record = record.unwrap_or(false) && !voxcpm2_engine_running(&state);
     tokio::task::spawn_blocking(move || {
         // 흐름의 가속기 판정은 여기서 한 번. 카드 번호와 함께 돌려주고 설치·상태·시작이 쓴다.
         let accelerator = voxcpm2_host_accelerator(None)?;

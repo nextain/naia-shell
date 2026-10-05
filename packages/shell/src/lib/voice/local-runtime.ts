@@ -151,11 +151,10 @@ export async function recoverLocalVoiceToken(
 				const { invoke } = await import("@tauri-apps/api/core");
 				// 프로파일 이름은 기계가 정한다 (#537). 여기서 박아 두면 다른
 				// 운영체제에서 그대로 어긋난다.
-				// 가속기 판정과 같은 시점의 프로파일을 쓴다. 캐시된 프로파일은 판정 결과가
+				// 기존 엔진에 다시 붙는 경로라 기록하지 않는다(record 생략). 가속기 판정과 같은 시점의 프로파일을 쓴다. 캐시된 프로파일은 판정 결과가
 				// 없을 때의 대비일 뿐이다 (앱 실행 중 GPU 구성이 바뀌어도 어긋나지 않게).
 				const resolvedHost = await resolveLocalVoiceHost(
 					loadConfig()?.localVoiceGpuIndex ?? null,
-					{ record: true },
 				);
 				const expectedLoaderProfile =
 					resolvedHost.profile ?? (await voiceHostProfile()).profile;
