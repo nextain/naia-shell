@@ -547,6 +547,8 @@ pub struct GpuResolution {
     pub choice: Option<u32>,
     pub dropped_explicit: Option<u32>,
     pub dropped_recorded: Option<u32>,
+    /// 기록된 자동 카드가 지금 여유 부족이라 다시 고른 경우 그 번호.
+    pub demoted_recorded: Option<u32>,
 }
 
 /// 명시 선택 > 저장된 선택 > 여유가 가장 큰 카드 > (목록 조회가 비었을 때만) `fallback`.
@@ -558,20 +560,34 @@ pub fn resolve_gpu_choice(
     explicit: Option<u32>,
     recorded: Option<u32>,
     gpus: &[GpuInfo],
+    min_free_mib: u64,
     fallback: impl FnOnce() -> Option<u32>,
 ) -> GpuResolution {
     let known = |index: u32| gpus.is_empty() || gpus.iter().any(|g| g.index == index);
+    // 엔진 재사용을 위해 자동 기록은 유지하되, 그 카드의 지금 여유가 요구량 미만이면 다시
+    // 고른다(조회 실패로 목록이 비면 판단하지 않고 기록을 그대로 쓴다).
+    let low_free = |index: u32| {
+        gpus.iter()
+            .find(|g| g.index == index)
+            .is_some_and(|g| g.free_mib < min_free_mib)
+    };
     let dropped_explicit = explicit.filter(|i| !known(*i));
     let dropped_recorded = recorded.filter(|i| !known(*i));
+    let demoted_recorded = if explicit.is_none() {
+        recorded.filter(|i| known(*i) && low_free(*i))
+    } else {
+        None
+    };
     let choice = explicit
         .filter(|i| known(*i))
-        .or_else(|| recorded.filter(|i| known(*i)))
+        .or_else(|| recorded.filter(|i| known(*i) && !low_free(*i)))
         .or_else(|| select_gpu(gpus, None))
         .or_else(fallback);
     GpuResolution {
         choice,
         dropped_explicit,
         dropped_recorded,
+        demoted_recorded,
     }
 }
 
@@ -614,6 +630,23 @@ pub fn parse_rocm_gpu_csv(text: &str) -> Vec<GpuInfo> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recorded_auto_card_is_kept_only_while_it_has_enough_free_memory() {
+        let card = |index, free| GpuInfo { index, free_mib: free, total_mib: 24576 };
+        let gpus = [card(0, 2000), card(1, 20000)];
+        let need = 6 * 1024;
+        // 기록된 0번은 여유 부족 → 여유 최대 카드(1번)로 다시 고르고 알린다.
+        let low = resolve_gpu_choice(None, Some(0), &gpus, need, || None);
+        assert_eq!((low.choice, low.demoted_recorded), (Some(1), Some(0)));
+        // 여유가 충분하면 엔진 재사용을 위해 기록 유지.
+        let kept = resolve_gpu_choice(None, Some(1), &gpus, need, || None);
+        assert_eq!((kept.choice, kept.demoted_recorded), (Some(1), None));
+        // 사람이 고른(명시) 카드는 여유와 상관없이 그대로.
+        assert_eq!(resolve_gpu_choice(Some(0), None, &gpus, need, || None).choice, Some(0));
+        // 조회 실패(목록 없음)면 판단하지 않고 기록 그대로.
+        assert_eq!(resolve_gpu_choice(None, Some(0), &[], need, || None).choice, Some(0));
+    }
+
     #[test]
     fn vram_read_failure_is_not_a_vram_shortage_and_follows_the_chosen_card() {
         let failed = NvidiaProbe::QueryFailed("timeout".to_string());
@@ -687,29 +720,29 @@ mod tests {
     fn 카드_결정_우선순위는_명시_저장_여유_후퇴() {
         let gpus = [gpu_info(0, 300), gpu_info(1, 16000)];
         let boom = || -> Option<u32> { panic!("후퇴는 목록이 비었을 때만") };
-        assert_eq!(resolve_gpu_choice(Some(0), Some(1), &gpus, boom).choice, Some(0));
-        assert_eq!(resolve_gpu_choice(None, Some(0), &gpus, boom).choice, Some(0));
-        assert_eq!(resolve_gpu_choice(None, None, &gpus, boom).choice, Some(1));
-        assert_eq!(resolve_gpu_choice(None, None, &[], || Some(0)).choice, Some(0));
-        assert_eq!(resolve_gpu_choice(None, None, &[], || None).choice, None);
+        assert_eq!(resolve_gpu_choice(Some(0), Some(1), &gpus, 0, boom).choice, Some(0));
+        assert_eq!(resolve_gpu_choice(None, Some(0), &gpus, 0, boom).choice, Some(0));
+        assert_eq!(resolve_gpu_choice(None, None, &gpus, 0, boom).choice, Some(1));
+        assert_eq!(resolve_gpu_choice(None, None, &[], 0, || Some(0)).choice, Some(0));
+        assert_eq!(resolve_gpu_choice(None, None, &[], 0, || None).choice, None);
     }
 
     #[test]
     fn 목록에_없는_번호는_버리고_내려간다() {
         let gpus = [gpu_info(1, 16000), gpu_info(2, 500)];
-        let gone = resolve_gpu_choice(Some(0), Some(0), &gpus, || None);
+        let gone = resolve_gpu_choice(Some(0), Some(0), &gpus, 0, || None);
         assert_eq!(gone.choice, Some(1));
         assert_eq!(gone.dropped_explicit, Some(0));
         assert_eq!(gone.dropped_recorded, Some(0));
-        let saved_gone = resolve_gpu_choice(None, Some(7), &gpus, || None);
+        let saved_gone = resolve_gpu_choice(None, Some(7), &gpus, 0, || None);
         assert_eq!(saved_gone.choice, Some(1));
         assert_eq!(saved_gone.dropped_recorded, Some(7));
     }
 
     #[test]
     fn 조회가_실패하면_명시와_저장_값을_믿는다() {
-        assert_eq!(resolve_gpu_choice(Some(3), None, &[], || Some(0)).choice, Some(3));
-        assert_eq!(resolve_gpu_choice(None, Some(2), &[], || Some(0)).choice, Some(2));
+        assert_eq!(resolve_gpu_choice(Some(3), None, &[], 0, || Some(0)).choice, Some(3));
+        assert_eq!(resolve_gpu_choice(None, Some(2), &[], 0, || Some(0)).choice, Some(2));
     }
 
     #[test]

@@ -31,6 +31,17 @@ describe("resolveLocalVoiceHost", () => {
 		await expect(resolveLocalVoiceGpu(null)).resolves.toBe(1);
 	});
 
+	it("records only when the caller is an actual install/start flow", async () => {
+		invoke.mockResolvedValue({ accelerator: "cuda", gpuIndex: 0 });
+		await resolveLocalVoiceHost(null);
+		expect(invoke).toHaveBeenLastCalledWith("resolve_voxcpm2_gpu", { gpuIndex: null });
+		await resolveLocalVoiceHost(null, { record: true });
+		expect(invoke).toHaveBeenLastCalledWith("resolve_voxcpm2_gpu", {
+			gpuIndex: null,
+			record: true,
+		});
+	});
+
 	it("accepts the legacy number answer without an accelerator", async () => {
 		invoke.mockResolvedValue(2);
 		const host = await resolveLocalVoiceHost(null);

@@ -596,7 +596,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		try {
 			// 온보딩은 고른 카드가 없다(null → 기록값, 없으면 여유 큰 카드). 흐름 시작에
 			// 구체 번호를 한 번 정해 상태·설치·시작에 모두 넘긴다.
-			const hostForRun = await resolveLocalVoiceHost(null);
+			const hostForRun = await resolveLocalVoiceHost(null, { record: true });
 			let installation =
 				await refreshVoxCpm2InstallationForOnboarding(hostForRun);
 			if (!installation?.canStart) {

@@ -40,11 +40,17 @@ export function localVoiceHostArgs(host: LocalVoiceHost): {
  */
 export async function resolveLocalVoiceHost(
 	configured: number | null,
+	options: { record?: boolean } = {},
 ): Promise<LocalVoiceHost> {
 	try {
-		const resolved = await invoke<unknown>("resolve_voxcpm2_gpu", {
-			gpuIndex: configured,
-		});
+		// record: 실제 설치·시작 흐름만 true. 읽기 전용 해석(화면 열 때·VRAM 표시·상태
+		// 조회)은 카드 기록을 건드리지 않는다.
+		const resolved = await invoke<unknown>(
+			"resolve_voxcpm2_gpu",
+			options.record
+				? { gpuIndex: configured, record: true }
+				: { gpuIndex: configured },
+		);
 		if (typeof resolved === "number" || resolved === null) {
 			return { gpuIndex: resolved };
 		}
@@ -149,6 +155,7 @@ export async function recoverLocalVoiceToken(
 				// 없을 때의 대비일 뿐이다 (앱 실행 중 GPU 구성이 바뀌어도 어긋나지 않게).
 				const resolvedHost = await resolveLocalVoiceHost(
 					loadConfig()?.localVoiceGpuIndex ?? null,
+					{ record: true },
 				);
 				const expectedLoaderProfile =
 					resolvedHost.profile ?? (await voiceHostProfile()).profile;

@@ -6191,6 +6191,7 @@ fn voxcpm2_resolve_gpu(
             choice,
             dropped_explicit: None,
             dropped_recorded: None,
+            demoted_recorded: None,
         };
     }
     let (recorded, source) = voice_cache::recorded_gpu_entry(&voxcpm2_runtime_root());
@@ -6200,7 +6201,11 @@ fn voxcpm2_resolve_gpu(
         log_both("[Naia] 자동 선택이라 사람이 고른/옛 카드 기록은 무시합니다");
     }
     let gpus = voice_runtime::query_gpus(voice_runtime::Accelerator::TensorRtCuda);
-    voice_runtime::resolve_gpu_choice(gpu_index, recorded, &gpus, || {
+    let min_free_mib = voice_runtime::host_os()
+        .zip(accelerator)
+        .and_then(|(os, a)| voice_runtime::profile_for_host(os, a))
+        .map_or(0, |p| (p.hardware.min_vram_gb * 1024.0) as u64);
+    voice_runtime::resolve_gpu_choice(gpu_index, recorded, &gpus, min_free_mib, || {
         voice_cache::query_nvidia_identities().iter().map(|g| g.index).min()
     })
 }
@@ -6220,10 +6225,11 @@ fn voxcpm2_resolve_and_record_gpu(
     state_root: &std::path::Path,
     gpu_index: Option<u32>,
     accelerator: Option<voice_runtime::Accelerator>,
+    record: bool,
 ) -> Option<u32> {
     if !voxcpm2_is_nvidia(accelerator) {
         // 이전 동작: 명시 선택만 기록한다.
-        if gpu_index.is_some() {
+        if record && gpu_index.is_some() {
             let _ = voice_cache::record_gpu_choice(state_root, gpu_index);
         }
         return voxcpm2_resolve_gpu(gpu_index, accelerator).choice;
@@ -6240,6 +6246,17 @@ fn voxcpm2_resolve_and_record_gpu(
             "[Naia] 저장된 카드 {gone} 번이 지금 장치 목록에 없어 자동 선택으로 내려갑니다 → {:?}",
             resolution.choice
         ));
+    }
+    if let Some(gone) = resolution.demoted_recorded {
+        // 엔진 재사용을 위해 자동 기록은 유지하지만, 여유가 요구 VRAM 미만이면 다시 고른다.
+        log_both(&format!(
+            "[Naia] 기록된 카드 {gone} 번의 여유 메모리가 부족해 여유가 가장 많은 카드로 다시 고릅니다 → {:?}",
+            resolution.choice
+        ));
+    }
+    // 읽기 전용 해석(화면 열 때·VRAM 표시·상태 조회)은 기록하지 않는다 — 기록은 실제 흐름만.
+    if !record {
+        return resolution.choice;
     }
     if let Some(choice) = resolution.choice {
         let source = if gpu_index == Some(choice) {
@@ -6278,7 +6295,7 @@ fn voxcpm2_pin_gpu(
     match gpu_index {
         Some(pinned) => Ok(Some(pinned)),
         None => voxcpm2_require_nvidia_choice(
-            voxcpm2_resolve_and_record_gpu(state_root, None, accelerator),
+            voxcpm2_resolve_and_record_gpu(state_root, None, accelerator, true),
             accelerator,
         ),
     }
@@ -8135,13 +8152,18 @@ async fn install_voxcpm2_runtime(
 /// 화면은 이 값을 흐름 내내 인자로 넘긴다 — 자동(null)을 흐름 안에서 백엔드가
 /// 매번 다시 정하지 않게. 기록 쓰기가 실패해도 흐름은 이 값으로 일관되게 간다.
 #[tauri::command]
-async fn resolve_voxcpm2_gpu(gpu_index: Option<u32>) -> Result<serde_json::Value, String> {
+async fn resolve_voxcpm2_gpu(
+    gpu_index: Option<u32>,
+    record: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    // record 가 true 일 때만 기록한다(설치·시작 흐름). 생략은 읽기 전용.
+    let record = record.unwrap_or(false);
     tokio::task::spawn_blocking(move || {
         // 흐름의 가속기 판정은 여기서 한 번. 카드 번호와 함께 돌려주고 설치·상태·시작이 쓴다.
         let accelerator = voxcpm2_host_accelerator(None)?;
         let gpu = if voxcpm2_is_nvidia(accelerator) {
             voxcpm2_require_nvidia_choice(
-                voxcpm2_resolve_and_record_gpu(&voxcpm2_runtime_root(), gpu_index, accelerator),
+                voxcpm2_resolve_and_record_gpu(&voxcpm2_runtime_root(), gpu_index, accelerator, record),
                 accelerator,
             )?
         } else {
