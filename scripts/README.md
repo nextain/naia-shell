@@ -63,6 +63,8 @@
 | `builds/uc1-outbound-probe.mjs` | **송신 헤드리스 등가 게이트** — 새 core toAgentOutbound type 을 frozen agent `parseRequest` 수용 집합과 결정론 비교. drift 시 exit 1. (수신=variant-probe 와 대칭) |
 | `builds/uc1-trace-harness.mjs` | **Option C 헤드리스 trace** — 새 core(dist)를 *실 child_process stdio* 로 구동, fake agent(에코)로 1턴 end-to-end(송신→스트리밍→렌더→해제). 실 frozen agent=`AGENT_CMD` 로 spawn 교체. 라이브 admin 무접촉. PASS 시 exit 0. |
 | `builds/uc1-graft-snippet.js` | (생성물, gitignore) DevTools 붙여넣기용 `window.uc1` 관측 헬퍼(classify/observeConsole/report). |
+| `r2-iso-prune.mjs` | R2 버킷 `naia-releases`의 빌드 후보 및 promote 백업 정리 계획 산출 순수 함수 및 CLI (#744). |
+| `r2-iso-prune-helper.mjs` | R2 naia-releases ISO 정리 워크플로 실행 보조 스크립트 — 활성 실행 전수 조회·페이지네이션·ETag 대조·개별 삭제·JSONL 결과 기록 (#744). |
 
 > **하위폴더 정책**: `cron/`(주기 배치)·`builds/`(빌드·graft)·`conform/`(전용 게이트)는 물리 폴더 허용(자기완결, 참조 안전). A~E 의 루트 평면 스크립트를 폴더로 옮기려면 — CLAUDE.md·`.agents/hooks/`·`src/test/*.mjs` 참조를 전부 갱신한 뒤에만(별도 작업).
 

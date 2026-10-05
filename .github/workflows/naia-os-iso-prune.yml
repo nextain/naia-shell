@@ -1,0 +1,183 @@
+name: Naia OS ISO Prune
+
+# Daily scheduled and manual pruning workflow for builds/ candidate ISOs
+# and previous/ promote backups in the naia-releases R2 bucket.
+#
+# Reference: nextain/naia-shell#744
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # Daily at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (do not delete objects if true)"
+        required: false
+        default: true
+        type: boolean
+      max_delete:
+        description: "Maximum number of candidate prefixes to delete (1-50)"
+        required: false
+        default: 10
+        type: number
+
+concurrency:
+  group: r2-iso-prune
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  notice_non_main:
+    name: Notice non-main ref
+    runs-on: ubuntu-24.04
+    if: github.ref != 'refs/heads/main'
+    steps:
+      - name: Write notice to summary
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          echo "## Naia OS ISO Prune: Skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pruning execution is restricted to \`refs/heads/main\`. The current ref is \`$GITHUB_REF\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "No R2 secrets were accessed and no operations were performed." >> "$GITHUB_STEP_SUMMARY"
+
+  prune:
+    name: Prune build candidates and promote backups
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Run prune unit tests
+        run: |
+          set -euo pipefail
+          node --test scripts/r2-iso-prune.test.mjs
+
+      - name: Determine run configuration
+        id: config
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_MAX_DELETE: ${{ inputs.max_delete }}
+          REPO_ISO_PRUNE_ENABLED: ${{ vars.ISO_PRUNE_ENABLED }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          IS_DRY_RUN="true"
+          MAX_DELETE=10
+          MODE_NOTE=""
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$INPUT_DRY_RUN" = "false" ]; then
+              IS_DRY_RUN="false"
+            fi
+            MAX_DELETE="$INPUT_MAX_DELETE"
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            if [ "$REPO_ISO_PRUNE_ENABLED" = "true" ]; then
+              IS_DRY_RUN="false"
+            else
+              MODE_NOTE="Schedule run defaults to dry-run because vars.ISO_PRUNE_ENABLED is not 'true'"
+            fi
+            MAX_DELETE=10
+          fi
+
+          if ! [[ "$MAX_DELETE" =~ ^[0-9]+$ ]] || [ "$MAX_DELETE" -lt 1 ] || [ "$MAX_DELETE" -gt 50 ]; then
+            echo "::error::max_delete must be an integer between 1 and 50 (got '$MAX_DELETE')"
+            exit 1
+          fi
+
+          echo "dry_run=$IS_DRY_RUN" >> "$GITHUB_OUTPUT"
+          echo "max_delete=$MAX_DELETE" >> "$GITHUB_OUTPUT"
+          echo "mode_note=$MODE_NOTE" >> "$GITHUB_OUTPUT"
+          echo "ref=$GITHUB_REF" >> "$GITHUB_OUTPUT"
+          echo "Configured: dry_run=$IS_DRY_RUN, max_delete=$MAX_DELETE, ref=$GITHUB_REF"
+
+      - name: Check active workflows at start
+        id: initial_check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ steps.config.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          node scripts/r2-iso-prune-helper.mjs check-active \
+            --dry-run "$DRY_RUN" \
+            --result-out prune-result.jsonl \
+            --output-env "$GITHUB_OUTPUT"
+
+      - name: Fetch listing from R2
+        if: steps.initial_check.outputs.should_skip != 'true'
+        id: fetch_listing
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          AWS_REGION: auto
+          DRY_RUN: ${{ steps.config.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          node scripts/r2-iso-prune-helper.mjs fetch-listing \
+            --bucket naia-releases \
+            --dry-run "$DRY_RUN" \
+            --out listing.json \
+            --result-out prune-result.jsonl
+
+      - name: Calculate prune plan and generate planned summary
+        if: steps.initial_check.outputs.should_skip != 'true'
+        id: plan
+        env:
+          MAX_DELETE: ${{ steps.config.outputs.max_delete }}
+          DRY_RUN: ${{ steps.config.outputs.dry_run }}
+          MODE_NOTE: ${{ steps.config.outputs.mode_note }}
+          GITHUB_REF: ${{ steps.config.outputs.ref }}
+        run: |
+          set -euo pipefail
+          node scripts/r2-iso-prune-helper.mjs plan \
+            --listing listing.json \
+            --max-delete "$MAX_DELETE" \
+            --dry-run "$DRY_RUN" \
+            --mode-note "$MODE_NOTE" \
+            --ref "$GITHUB_REF" \
+            --plan-out plan.json \
+            --result-out prune-result.jsonl \
+            --output-env "$GITHUB_OUTPUT" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Execute prune and verification
+        if: steps.initial_check.outputs.should_skip != 'true'
+        id: execute_prune
+        env:
+          DRY_RUN: ${{ steps.config.outputs.dry_run }}
+          MAX_DELETE: ${{ steps.config.outputs.max_delete }}
+          PLANNED_NOW: ${{ steps.plan.outputs.now }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          AWS_REGION: auto
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/r2-iso-prune-helper.mjs execute \
+            --bucket naia-releases \
+            --listing listing.json \
+            --now "$PLANNED_NOW" \
+            --dry-run "$DRY_RUN" \
+            --max-delete "$MAX_DELETE" \
+            --result-out prune-result.jsonl
+
+      - name: Generate execution result summary
+        if: always()
+        run: |
+          set -euo pipefail
+          node scripts/r2-iso-prune-helper.mjs render-result-summary \
+            --result-file prune-result.jsonl \
+            --summary-file "$GITHUB_STEP_SUMMARY"
