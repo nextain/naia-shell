@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 import {
+	BROWSER_READ_TOOL_NAMES,
+	makeBrowserReadTools,
 	makePersonaSourceStore,
 	makeWorkspaceContextStore,
 	makeWebLLMProvider,
@@ -19,6 +21,7 @@ import {
 	readAdkSnapshot,
 } from "./adk-snapshot-fs";
 import { relayAgentPort } from "./agent-port-relay";
+import { makeOpfsReadFs } from "./opfs-read-fs";
 
 const diag: DiagnosticLog = {
 	log(message: string, ctx?: unknown) {
@@ -158,12 +161,40 @@ self.addEventListener("message", (event: MessageEvent) => {
 		const provider = makeWebLLMProvider({
 			getEngine,
 			model: selectedModel ?? WEB_LLM_MODEL_ID,
+			toolNames: BROWSER_READ_TOOL_NAMES,
 		});
 
 		let snapshot = EMPTY_ADK_SNAPSHOT;
 		const refresh = async () => {
 			snapshot = await readAdkSnapshot(() => navigator.storage.getDirectory());
 		};
+
+		const toolExecutor = makeBrowserReadTools({
+			fs: makeOpfsReadFs(() => navigator.storage.getDirectory()),
+		});
+
+		port.addEventListener("message", (event: MessageEvent) => {
+			if (typeof event.data !== "string") return;
+			try {
+				const parsed = JSON.parse(event.data);
+				if (
+					parsed &&
+					typeof parsed === "object" &&
+					parsed.type === "skill_list" &&
+					typeof parsed.requestId === "string"
+				) {
+					port.postMessage(
+						JSON.stringify({
+							type: "skill_list_response",
+							requestId: parsed.requestId,
+							tools: toolExecutor.specs(),
+						}),
+					);
+				}
+			} catch {
+				// ignore
+			}
+		});
 
 		const channel = new MessageChannel();
 		relayAgentPort({
@@ -179,6 +210,7 @@ self.addEventListener("message", (event: MessageEvent) => {
 			port: channel.port2,
 			diag,
 			provider,
+			toolExecutor,
 			personaSource: makePersonaSourceStore({
 				fs: snapshotFs,
 				adkPath: WEB_ADK_PATH,
