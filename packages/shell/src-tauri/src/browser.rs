@@ -24,7 +24,7 @@
 //!   macOS:                  NOT YET SUPPORTED (add PlatformWindowManager impl)
 
 use crate::platform::{self, PlatformHandle, WindowRect};
-use std::process::{Child, Command};
+use std::process::Child;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 

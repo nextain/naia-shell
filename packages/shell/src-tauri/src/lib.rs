@@ -6142,7 +6142,23 @@ pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
 /// free memory ("자동 (여유가 가장 많은 카드)"); the lowest index only when the
 /// device query fails. An explicit or recorded index that is not in the live
 /// device list (card removed/disabled) is ignored.
+/// 새 해석·검증은 NVIDIA(TensorRtCuda) 호스트에서만. 판정은 프로파일 선택과 같은 방식.
+fn voxcpm2_is_nvidia_host() -> bool {
+    voice_runtime::detect_accelerator() == Some(voice_runtime::Accelerator::TensorRtCuda)
+}
+
 fn voxcpm2_resolve_gpu(gpu_index: Option<u32>) -> voice_runtime::GpuResolution {
+    if !voxcpm2_is_nvidia_host() {
+        // 이전 동작: 명시 > 기록 > (NVIDIA 식별자 최소 번호, 비-NVIDIA 에선 없음).
+        let choice = gpu_index
+            .or_else(|| voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root()))
+            .or_else(|| voice_cache::query_nvidia_identities().iter().map(|g| g.index).min());
+        return voice_runtime::GpuResolution {
+            choice,
+            dropped_explicit: None,
+            dropped_recorded: None,
+        };
+    }
     let (recorded, source) = voice_cache::recorded_gpu_entry(&voxcpm2_runtime_root());
     // 자동 요청은 source=auto 기록만 쓴다. 옛 기록(source 없음)·manual 기록은 무시.
     let (recorded, ignored) = voice_runtime::usable_recorded(gpu_index, recorded, source);
@@ -6164,6 +6180,13 @@ fn voxcpm2_effective_gpu(gpu_index: Option<u32>) -> Option<u32> {
 /// 흐름 시작에 한 번: 해석하고 기록한다(명시/버려진 번호 → 새 번호는 로그). 자동으로
 /// 고른 번호는 source=auto 로 기록한다. 기록 실패는 로그만 — 반환값이 흐름의 번호다.
 fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Option<u32> {
+    if !voxcpm2_is_nvidia_host() {
+        // 이전 동작: 명시 선택만 기록한다.
+        if gpu_index.is_some() {
+            let _ = voice_cache::record_gpu_choice(state_root, gpu_index);
+        }
+        return voxcpm2_resolve_gpu(gpu_index).choice;
+    }
     let resolution = voxcpm2_resolve_gpu(gpu_index);
     if let Some(gone) = resolution.dropped_explicit {
         log_both(&format!(
@@ -6217,7 +6240,11 @@ fn voxcpm2_voice_context(
         Vec::new()
     };
     let gpu = voice_cache::select_identity(&nvidias, gpu_choice);
-    if let (Some(wanted), None, true) = (gpu_choice, gpu.as_ref(), artifact_root.is_some()) {
+    if let (Some(wanted), None, true) = (
+        gpu_choice,
+        gpu.as_ref(),
+        artifact_root.is_some() && voxcpm2_is_nvidia_host(),
+    ) {
         // 정한 카드는 다른 카드로 바꾸지 않는다 — 안 보이면 명확한 오류.
         return Err(format!(
             "정해진 GPU {wanted} 번을 지금 장치 목록에서 찾지 못했습니다 (카드가 빠졌거나 드라이버 조회 실패)"
@@ -8016,6 +8043,10 @@ async fn install_voxcpm2_runtime(
 #[tauri::command]
 async fn resolve_voxcpm2_gpu(gpu_index: Option<u32>) -> Result<Option<u32>, String> {
     tokio::task::spawn_blocking(move || {
+        if !voxcpm2_is_nvidia_host() {
+            // NVIDIA 가 아니면 이전 동작: 넘겨받은 값을 그대로.
+            return gpu_index;
+        }
         voxcpm2_resolve_and_record_gpu(&voxcpm2_runtime_root(), gpu_index)
     })
     .await

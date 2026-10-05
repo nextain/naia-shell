@@ -21,6 +21,9 @@ export async function resolveLocalVoiceGpu(
 		Logger.warn("LocalRuntime", "resolveLocalVoiceGpu:failed", {
 			error: String(error),
 		});
+		// 사람이 고른 번호가 있으면 그 값으로 계속한다. 자동(null)인데 해석을 못 했으면
+		// 흐름이 null 로 계속하면 백엔드가 다시 정하게 되므로 오류로 중단한다.
+		if (configured === null) throw error;
 	}
 	return configured;
 }

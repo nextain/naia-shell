@@ -288,7 +288,12 @@ pub fn accelerator_env(
     let mut out = Vec::new();
     // 흐름이 정해 넘긴 번호는 재조회 결과와 상관없이 그대로 고정한다. 재조회는
     // 정보용이다 — 정한 카드가 안 보인다고 다른 카드로 바꾸지 않는다.
-    let pinned = configured_gpu.or_else(|| select_gpu(gpus, None));
+    // NVIDIA 프로파일만 고정한다. 다른 가속기(ROCm)는 이전 동작(목록으로 검증) 유지.
+    let pinned = if profile.hardware.accelerator == Accelerator::TensorRtCuda {
+        configured_gpu.or_else(|| select_gpu(gpus, None))
+    } else {
+        select_gpu(gpus, configured_gpu)
+    };
     if let Some(chosen) = pinned {
         out.push((
             profile.hardware.visible_devices_var.to_string(),
@@ -531,6 +536,10 @@ mod tests {
         // 조회가 비어도 정한 번호는 그대로.
         let env = accelerator_env(profile, &[], Some(3), None, "");
         assert_eq!(env[0].1, "3");
+        // ROCm 은 이전 동작: 목록에 없는 번호는 여유 큰 카드로.
+        let rocm = super::profile("linux_rocm_6g").unwrap();
+        let env = accelerator_env(rocm, &[gpu_info(0, 5), gpu_info(2, 9)], Some(7), None, "");
+        assert_eq!(env[0].1, "2");
         // 번호가 없을 때만 여유로 고른다.
         let env = accelerator_env(profile, &[gpu_info(0, 1), gpu_info(2, 9)], None, None, "");
         assert_eq!(env[0].1, "2");
