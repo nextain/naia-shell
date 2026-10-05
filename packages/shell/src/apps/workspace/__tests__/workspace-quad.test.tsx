@@ -24,6 +24,7 @@ import {
 } from "../WorkspaceQuadView";
 import type { TerminalSource } from "../terminal-source";
 import {
+	decidePtyAction,
 	detectDefaultShell,
 	isAbsolutePath,
 	usePtyTerminalSource,
@@ -368,6 +369,43 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			expect(
 				await screen.findByTestId("quad-docs-offline"),
 			).toBeInTheDocument();
+		});
+
+		it("leaves pane online when cross-origin load has null contentDocument and throwing contentWindow.document", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(
+				new Response(null, { status: 200 }),
+			);
+
+			render(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			const iframe = (await screen.findByTestId("quad-docs-iframe")) as HTMLIFrameElement;
+
+			Object.defineProperty(iframe, "contentDocument", {
+				value: null,
+				configurable: true,
+			});
+			Object.defineProperty(iframe, "contentWindow", {
+				value: {
+					get document() {
+						throw new DOMException(
+							"Blocked a frame with origin from accessing a cross-origin frame.",
+							"SecurityError",
+						);
+					},
+				},
+				configurable: true,
+			});
+
+			fireEvent.load(iframe);
+
+			expect(screen.getByTestId("quad-docs-iframe")).toBeInTheDocument();
+			expect(screen.queryByTestId("quad-docs-offline")).not.toBeInTheDocument();
 		});
 	});
 
@@ -1029,6 +1067,945 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			} finally {
 				vi.useRealTimers();
 			}
+		});
+
+		describe("decidePtyAction decision table (Task 1 4-2)", () => {
+			it("covers line 1: enabled=false stops if live pty exists, otherwise none", () => {
+				expect(
+					decidePtyAction({
+						enabled: false,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: true,
+						launching: false,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("stop");
+
+				expect(
+					decidePtyAction({
+						enabled: false,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: false,
+						launching: false,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+			});
+
+			it("covers line 2: launching=true and root changed to absolute yields invalidate", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: false,
+						launching: true,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("invalidate");
+			});
+
+			it("covers line 3: launching=true without valid root change yields none", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: false,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: false,
+						launching: true,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: false,
+						hasLivePty: false,
+						launching: true,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+			});
+
+			it("covers line 4: hasLivePty=true and root changed to absolute yields restart", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: true,
+						launching: false,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("restart");
+			});
+
+			it("covers line 5: hasLivePty=true without valid root change yields none", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: false,
+						hasLivePty: true,
+						launching: false,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: false,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: true,
+						launching: false,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+			});
+
+			it("covers line 6: errorKind other than missing-root and null yields none", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: false,
+						launching: false,
+						errorKind: "pty-create",
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: false,
+						launching: false,
+						errorKind: "pty-exit",
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+			});
+
+			it("covers line 7: initialLaunchStarted=false yields launch", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: false,
+						rootChangedSinceLastEnabled: false,
+						hasLivePty: false,
+						launching: false,
+						errorKind: null,
+						initialLaunchStarted: false,
+					}),
+				).toBe("launch");
+			});
+
+			it("covers line 8: errorKind=missing-root and root is absolute yields launch", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: false,
+						launching: false,
+						errorKind: "missing-root",
+						initialLaunchStarted: true,
+					}),
+				).toBe("launch");
+			});
+
+			it("covers line 9: errorKind=null and root is absolute yields launch", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: true,
+						rootChangedSinceLastEnabled: false,
+						hasLivePty: false,
+						launching: false,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("launch");
+			});
+
+			it("covers line 10: all other cases yield none", () => {
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: false,
+						rootChangedSinceLastEnabled: true,
+						hasLivePty: false,
+						launching: false,
+						errorKind: "missing-root",
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+
+				expect(
+					decidePtyAction({
+						enabled: true,
+						rootIsAbsolute: false,
+						rootChangedSinceLastEnabled: false,
+						hasLivePty: false,
+						launching: false,
+						errorKind: null,
+						initialLaunchStarted: true,
+					}),
+				).toBe("none");
+			});
+		});
+
+		it("Task 1 (1): spawns pty exactly once when enabled transitions from false to true with absolute root after missing-root error", async () => {
+			mockInvoke.mockImplementation(async (cmd) => {
+				if (cmd === "workspace_detect_adk_root") return "";
+				if (cmd === "pty_create") return { pty_id: "pty-1", pid: 101 };
+				return "";
+			});
+
+			const { result, rerender } = renderHook(
+				({ root, enabled }: { root: string; enabled: boolean }) =>
+					usePtyTerminalSource({
+						workspaceRoot: root,
+						enabled,
+					}),
+				{ initialProps: { root: "", enabled: true } },
+			);
+
+			await waitFor(() => {
+				expect(result.current.launchError).toBe(
+					"Absolute workspace directory required",
+				);
+			});
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(0);
+
+			// enabled=false 로 다시 렌더
+			rerender({ root: "", enabled: false });
+
+			// 그 상태에서 루트를 절대 경로로 다시 렌더
+			rerender({ root: "/work/absolute-dir", enabled: false });
+
+			// enabled=true 로 다시 렌더
+			rerender({ root: "/work/absolute-dir", enabled: true });
+
+			await waitFor(() => {
+				const ptyCalls = mockInvoke.mock.calls.filter(
+					(c) => c[0] === "pty_create",
+				);
+				expect(ptyCalls).toHaveLength(1);
+				expect(ptyCalls[0][1].dir).toBe("/work/absolute-dir");
+			});
+		});
+
+		it("Task 1 (2): retains single pty_create call without infinite retries when pty_create rejects", async () => {
+			mockInvoke.mockImplementation(async (cmd) => {
+				if (cmd === "pty_create") {
+					throw new Error("pty_create failed: access denied");
+				}
+				return "";
+			});
+
+			const { result, rerender } = renderHook(
+				({ root }: { root: string }) =>
+					usePtyTerminalSource({
+						workspaceRoot: root,
+						enabled: true,
+					}),
+				{ initialProps: { root: "/work/valid" } },
+			);
+
+			await waitFor(() => {
+				expect(result.current.launchError).toContain(
+					"pty_create failed: access denied",
+				);
+			});
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(1);
+
+			// Rerender multiple times with same props
+			rerender({ root: "/work/valid" });
+			rerender({ root: "/work/valid" });
+			rerender({ root: "/work/valid" });
+
+			await new Promise((r) => setTimeout(r, 50));
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(1);
+		});
+
+		it("Task 1 (3): does not auto-retry on root changes after pty-create failure, retries only via relaunch", async () => {
+			mockInvoke.mockImplementation(async (cmd) => {
+				if (cmd === "pty_create") {
+					throw new Error("pty creation error");
+				}
+				return "";
+			});
+
+			const { result, rerender } = renderHook(
+				({ root, enabled }: { root: string; enabled: boolean }) =>
+					usePtyTerminalSource({
+						workspaceRoot: root,
+						enabled,
+					}),
+				{ initialProps: { root: "/work/first", enabled: true } },
+			);
+
+			await waitFor(() => {
+				expect(result.current.launchError).toContain("pty creation error");
+			});
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(1);
+
+			// (a) 켜진 채 루트를 다른 절대 경로로 변경 -> pty_create 호출 수 유지
+			rerender({ root: "/work/second", enabled: true });
+			await new Promise((r) => setTimeout(r, 50));
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(1);
+
+			// (b) 꺼진 동안 루트를 바꾼 뒤 다시 켬 -> pty_create 호출 수 유지
+			rerender({ root: "/work/third", enabled: false });
+			rerender({ root: "/work/third", enabled: true });
+			await new Promise((r) => setTimeout(r, 50));
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(1);
+
+			// relaunch(retry) 호출 시 1회 증가
+			await act(async () => {
+				await result.current.retry();
+			});
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(2);
+		});
+
+		it("Task 1 (4): kills previous pty and spawns new pty when workspaceRoot changes, including after recovered pty-create error", async () => {
+			let idCounter = 1;
+			mockInvoke.mockImplementation(async (cmd) => {
+				if (cmd === "pty_create") {
+					return { pty_id: `pty-${idCounter++}`, pid: 200 };
+				}
+				if (cmd === "pty_kill") return;
+				return "";
+			});
+
+			const { result, rerender } = renderHook(
+				({ root }: { root: string }) =>
+					usePtyTerminalSource({
+						workspaceRoot: root,
+						enabled: true,
+					}),
+				{ initialProps: { root: "/work/initial" } },
+			);
+
+			await waitFor(() => {
+				expect(result.current.pty?.pty_id).toBe("pty-1");
+			});
+
+			// 루트 변경 -> pty_kill 1회, pty_create 2번째 호출
+			rerender({ root: "/work/changed" });
+
+			await waitFor(() => {
+				expect(result.current.pty?.pty_id).toBe("pty-2");
+			});
+			const killCalls = mockInvoke.mock.calls.filter((c) => c[0] === "pty_kill");
+			expect(killCalls).toHaveLength(1);
+			expect(killCalls[0][1]).toEqual({ ptyId: "pty-1" });
+
+			// pty-create 오류 후 relaunch 로 회복된 상태 검증
+			mockInvoke.mockImplementation(async (cmd) => {
+				if (cmd === "pty_create") {
+					if (idCounter === 3) {
+						idCounter++;
+						throw new Error("temporary failure");
+					}
+					return { pty_id: `pty-${idCounter++}`, pid: 300 };
+				}
+				if (cmd === "pty_kill") return;
+				return "";
+			});
+
+			await act(async () => {
+				await result.current.retry();
+			});
+			expect(result.current.launchError).toContain("temporary failure");
+
+			await act(async () => {
+				await result.current.retry();
+			});
+			expect(result.current.pty?.pty_id).toBe("pty-4");
+
+			// 이 상태에서 루트를 다른 절대 경로로 변경 -> 정상 재시작
+			rerender({ root: "/work/final" });
+
+			await waitFor(() => {
+				expect(result.current.pty?.pty_id).toBe("pty-5");
+			});
+			const finalKills = mockInvoke.mock.calls.filter((c) => c[0] === "pty_kill");
+			expect(finalKills.some((c) => c[1].ptyId === "pty-4")).toBe(true);
+		});
+
+		it("Task 1 (4-3): does not respawn pty after onPtyExit until user triggers relaunch", async () => {
+			let idCounter = 1;
+			mockInvoke.mockImplementation(async (cmd) => {
+				if (cmd === "pty_create") {
+					return { pty_id: `pty-${idCounter++}`, pid: 1234 };
+				}
+				if (cmd === "pty_kill") return;
+				return "";
+			});
+
+			const { result, rerender } = renderHook(
+				({ root, enabled }: { root: string; enabled: boolean }) =>
+					usePtyTerminalSource({
+						workspaceRoot: root,
+						enabled,
+					}),
+				{ initialProps: { root: "/work/exit-test", enabled: true } },
+			);
+
+			await waitFor(() => {
+				expect(result.current.pty?.pty_id).toBe("pty-1");
+			});
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(1);
+
+			// PTY가 스스로 끝남 (onPtyExit 호출)
+			act(() => {
+				result.current.onPtyExit("pty-1");
+			});
+
+			expect(result.current.pty).toBeNull();
+			expect(result.current.launchError).toBe(t("workspace.herdrExited"));
+
+			// 다시 렌더, 루트 변경, 꺼졌다 켜기 해도 pty_create 호출 수 증가 없음
+			rerender({ root: "/work/exit-test", enabled: true });
+			rerender({ root: "/work/exit-test-2", enabled: true });
+			rerender({ root: "/work/exit-test-2", enabled: false });
+			rerender({ root: "/work/exit-test-2", enabled: true });
+
+			await new Promise((r) => setTimeout(r, 50));
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(1);
+
+			// relaunch(retry) 호출 시 1회 증가
+			await act(async () => {
+				await result.current.retry();
+			});
+			await waitFor(() => {
+				expect(result.current.pty?.pty_id).toBe("pty-2");
+			});
+			expect(
+				mockInvoke.mock.calls.filter((c) => c[0] === "pty_create"),
+			).toHaveLength(2);
+		});
+
+		describe("launch generation and cancellation race conditions (Task 1 4-4)", () => {
+			it("(a) kills late pty and does not attach when disabled during slow pty_create, launching resets", async () => {
+				let resolvePty1!: (val: unknown) => void;
+				const pty1Promise = new Promise((resolve) => {
+					resolvePty1 = resolve;
+				});
+
+				mockInvoke.mockImplementation(async (cmd) => {
+					if (cmd === "pty_create") {
+						await pty1Promise;
+						return { pty_id: "pty-late-1", pid: 901 };
+					}
+					if (cmd === "pty_kill") return;
+					return "";
+				});
+
+				const { result, rerender } = renderHook(
+					({ enabled }: { enabled: boolean }) =>
+						usePtyTerminalSource({
+							workspaceRoot: "/work/race-a",
+							enabled,
+						}),
+					{ initialProps: { enabled: true } },
+				);
+
+				// pty_create가 호출되어 응답 대기 중인 상태를 확인
+				await waitFor(() => {
+					expect(mockInvoke).toHaveBeenCalledWith("pty_create", expect.anything());
+				});
+				expect(result.current.launching).toBe(true);
+
+				// pty_create 대기 중 꺼짐
+				rerender({ enabled: false });
+				expect(result.current.launching).toBe(false);
+
+				// 늦게 온 PTY 응답 도착
+				await act(async () => {
+					resolvePty1(null);
+					await new Promise((r) => setTimeout(r, 20));
+				});
+
+				// (d) finally 종료 후 launching 확인
+				expect(result.current.launching).toBe(false);
+				expect(result.current.pty).toBeNull();
+				const killCalls = mockInvoke.mock.calls.filter(
+					(c) => c[0] === "pty_kill",
+				);
+				expect(killCalls.some((c) => c[1].ptyId === "pty-late-1")).toBe(true);
+			});
+
+			it("(b) kills late pty and spawns exactly once for new root when workspaceRoot changes during slow pty_create", async () => {
+				let resolvePty1!: (val: unknown) => void;
+				const pty1Promise = new Promise((resolve) => {
+					resolvePty1 = resolve;
+				});
+
+				let createCount = 0;
+				mockInvoke.mockImplementation(async (cmd) => {
+					if (cmd === "pty_create") {
+						createCount++;
+						if (createCount === 1) {
+							await pty1Promise;
+							return { pty_id: "pty-slow-root-1", pid: 902 };
+						}
+						return { pty_id: "pty-fast-root-2", pid: 903 };
+					}
+					if (cmd === "pty_kill") return;
+					return "";
+				});
+
+				const { result, rerender } = renderHook(
+					({ root }: { root: string }) =>
+						usePtyTerminalSource({
+							workspaceRoot: root,
+							enabled: true,
+						}),
+					{ initialProps: { root: "/work/root-1" } },
+				);
+
+				// 1차 pty_create가 호출되어 응답 대기 중인 상태 확인
+				await waitFor(() => {
+					expect(createCount).toBe(1);
+				});
+
+				// pty_create 1차 호출 대기 중 루트를 다른 절대 경로로 변경
+				rerender({ root: "/work/root-2" });
+
+				// 1차 늦은 응답 해제
+				await act(async () => {
+					resolvePty1(null);
+					await new Promise((r) => setTimeout(r, 50));
+				});
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-fast-root-2");
+				});
+				expect(result.current.launching).toBe(false);
+
+				const killCalls = mockInvoke.mock.calls.filter(
+					(c) => c[0] === "pty_kill",
+				);
+				expect(killCalls.some((c) => c[1].ptyId === "pty-slow-root-1")).toBe(true);
+
+				const creates = mockInvoke.mock.calls.filter(
+					(c) => c[0] === "pty_create",
+				);
+				expect(creates).toHaveLength(2);
+				expect(creates[1][1].dir).toBe("/work/root-2");
+			});
+
+			it("(c) attaches only the final pty when cycled disabled->enabled during slow pty_create", async () => {
+				let resolvePty1!: (val: unknown) => void;
+				const pty1Promise = new Promise((resolve) => {
+					resolvePty1 = resolve;
+				});
+
+				let createCount = 0;
+				mockInvoke.mockImplementation(async (cmd) => {
+					if (cmd === "pty_create") {
+						createCount++;
+						if (createCount === 1) {
+							await pty1Promise;
+							return { pty_id: "pty-cycle-1", pid: 904 };
+						}
+						return { pty_id: "pty-cycle-2", pid: 905 };
+					}
+					if (cmd === "pty_kill") return;
+					return "";
+				});
+
+				const { result, rerender } = renderHook(
+					({ enabled }: { enabled: boolean }) =>
+						usePtyTerminalSource({
+							workspaceRoot: "/work/cycle",
+							enabled,
+						}),
+					{ initialProps: { enabled: true } },
+				);
+
+				// 1차 pty_create가 호출되어 응답 대기 중인 상태 확인
+				await waitFor(() => {
+					expect(createCount).toBe(1);
+				});
+
+				// 꺼짐 -> 켜짐
+				rerender({ enabled: false });
+				rerender({ enabled: true });
+
+				// 1차 늦은 응답 해제
+				await act(async () => {
+					resolvePty1(null);
+					await new Promise((r) => setTimeout(r, 50));
+				});
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-cycle-2");
+				});
+				expect(result.current.launching).toBe(false);
+
+				const killCalls = mockInvoke.mock.calls.filter(
+					(c) => c[0] === "pty_kill",
+				);
+				expect(killCalls.some((c) => c[1].ptyId === "pty-cycle-1")).toBe(true);
+			});
+
+			it("(e) late onPtyExit from stopped or restarted session does not corrupt state or delete new pty", async () => {
+				let idCounter = 1;
+				mockInvoke.mockImplementation(async (cmd) => {
+					if (cmd === "pty_create") {
+						return { pty_id: `pty-lateexit-${idCounter++}`, pid: 906 };
+					}
+					if (cmd === "pty_kill") return;
+					return "";
+				});
+
+				const { result, rerender } = renderHook(
+					({ root, enabled }: { root: string; enabled: boolean }) =>
+						usePtyTerminalSource({
+							workspaceRoot: root,
+							enabled,
+						}),
+					{ initialProps: { root: "/work/exit-race", enabled: true } },
+				);
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-lateexit-1");
+				});
+
+				// 꺼짐으로 정리
+				rerender({ root: "/work/exit-race", enabled: false });
+				expect(result.current.pty).toBeNull();
+
+				// 이전 PTY-1의 종료 콜백이 늦게 도착
+				act(() => {
+					result.current.onPtyExit("pty-lateexit-1");
+				});
+				expect(result.current.launchError).toBe("");
+
+				// 다시 켜면 pty_create 1회 정상 호출
+				rerender({ root: "/work/exit-race", enabled: true });
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-lateexit-2");
+				});
+
+				// 재시작으로 PTY-2 -> PTY-3 변경
+				rerender({ root: "/work/exit-race-2", enabled: true });
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-lateexit-3");
+				});
+
+				// 이전 PTY-2의 늦은 종료 콜백 도착
+				act(() => {
+					result.current.onPtyExit("pty-lateexit-2");
+				});
+				// 새 PTY-3이 삭제되지 않고 유지됨
+				expect(result.current.pty?.pty_id).toBe("pty-lateexit-3");
+				expect(result.current.launchError).toBe("");
+			});
+		});
+
+		describe("representative race condition tests (Task 1 4-5)", () => {
+			it("(f) ignores late workspace_detect_adk_root completion after invalidation, preventing stale workingDir and extra pty_create", async () => {
+				let resolveDetect!: (val: string) => void;
+				const detectPromise = new Promise<string>((resolve) => {
+					resolveDetect = resolve;
+				});
+
+				const createCalls: string[] = [];
+				mockInvoke.mockImplementation(async (cmd, args: any) => {
+					if (cmd === "workspace_detect_adk_root") {
+						return await detectPromise;
+					}
+					if (cmd === "pty_create") {
+						createCalls.push(args.dir);
+						return { pty_id: `pty-${createCalls.length}`, pid: 910 };
+					}
+					if (cmd === "pty_kill") return;
+					return "";
+				});
+
+				// 빈 루트로 초기 실행 -> detect 시작
+				const { result, rerender } = renderHook(
+					({ root, enabled }: { root: string; enabled: boolean }) =>
+						usePtyTerminalSource({
+							workspaceRoot: root,
+							enabled,
+						}),
+					{ initialProps: { root: "", enabled: true } },
+				);
+
+				// detect 대기 중 루트를 다른 절대 경로로 변경
+				rerender({ root: "/work/new-absolute", enabled: true });
+
+				// 새 실행으로 pty 생성 완료 대기
+				await waitFor(() => {
+					expect(result.current.workingDir).toBe("/work/new-absolute");
+					expect(result.current.pty?.pty_id).toBe("pty-1");
+				});
+
+				// 이전 탐지 결과 도착
+				await act(async () => {
+					resolveDetect("/work/stale-detected");
+					await new Promise((r) => setTimeout(r, 50));
+				});
+
+				// workingDir가 바뀌지 않고, 이전 탐지에 의한 추가 pty_create 없음
+				expect(result.current.workingDir).toBe("/work/new-absolute");
+				expect(createCalls).toEqual(["/work/new-absolute"]);
+			});
+
+			it("(g) ignores stale onTerminalReady from superseded pty with identical pty_id and maintains null pty intermediate render order", async () => {
+				mockInvoke.mockImplementation(async (cmd) => {
+					if (cmd === "pty_create") {
+						return { pty_id: "pty-ready-same", pid: 920 };
+					}
+					if (cmd === "pty_write") return;
+					if (cmd === "pty_kill") return;
+					return "";
+				});
+
+				const renderHistory: Array<{ pty: string | null; ready: boolean }> = [];
+
+				const { result, rerender } = renderHook(
+					({ root }: { root: string }) => {
+						const res = usePtyTerminalSource({
+							workspaceRoot: root,
+							initialCommand: "opencode-init",
+							enabled: true,
+						});
+						renderHistory.push({
+							pty: res.pty?.pty_id ?? null,
+							ready: res.terminalReady,
+						});
+						return res;
+					},
+					{ initialProps: { root: "/work/pty-a" } },
+				);
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-ready-same");
+				});
+
+				// PTY-1의 onTerminalReady 콜백을 따로 캡처
+				const pty1OnTerminalReady = result.current.onTerminalReady;
+
+				// 루트 변경으로 PTY-2 부착 (재시작)
+				rerender({ root: "/work/pty-b" });
+
+				await waitFor(() => {
+					expect(result.current.workingDir).toBe("/work/pty-b");
+					expect(result.current.pty?.pty_id).toBe("pty-ready-same");
+				});
+
+				// 재시작 중 pty 가 null 인 렌더가 새 PTY 연결보다 먼저 커밋됨을 단정
+				const nullPtyIndex = renderHistory.findIndex(
+					(snap, i) => i > 0 && snap.pty === null,
+				);
+				const pty2Index = renderHistory.findIndex(
+					(snap, i) => i > nullPtyIndex && snap.pty === "pty-ready-same",
+				);
+				expect(nullPtyIndex).toBeGreaterThan(-1);
+				expect(nullPtyIndex).toBeLessThan(pty2Index);
+
+				// PTY-1의 준비 콜백 호출 전 terminalReady·terminalError 저장
+				const readyBefore = result.current.terminalReady;
+				const errorBefore = result.current.terminalError;
+
+				// PTY-1의 준비 콜백 호출 -> 무시되어야 함
+				act(() => {
+					pty1OnTerminalReady();
+				});
+
+				expect(result.current.terminalReady).toBe(readyBefore);
+				expect(result.current.terminalError).toBe(errorBefore);
+
+				await new Promise((r) => setTimeout(r, 150));
+				expect(
+					mockInvoke.mock.calls.filter((c) => c[0] === "pty_write"),
+				).toHaveLength(0);
+
+				// PTY-2의 준비 콜백 호출 -> 정상 동작
+				act(() => {
+					result.current.onTerminalReady();
+				});
+
+				await waitFor(() => {
+					const writes = mockInvoke.mock.calls.filter(
+						(c) => c[0] === "pty_write",
+					);
+					expect(writes).toHaveLength(1);
+					expect(writes[0][1]).toEqual({
+						ptyId: "pty-ready-same",
+						data: "opencode-init\r",
+					});
+				});
+			});
+
+			it("(i) discards superseded retry when root changes during killPty, resulting in single pty for the latest root", async () => {
+				let resolveKill!: () => void;
+				const killPromise = new Promise<void>((resolve) => {
+					resolveKill = resolve;
+				});
+
+				const createCalls: string[] = [];
+				mockInvoke.mockImplementation(async (cmd, args: any) => {
+					if (cmd === "pty_create") {
+						createCalls.push(args.dir);
+						return { pty_id: `pty-retry-${createCalls.length}`, pid: 930 + createCalls.length };
+					}
+					if (cmd === "pty_kill") {
+						await killPromise;
+						return;
+					}
+					if (cmd === "pty_write") return;
+					return "";
+				});
+
+				const { result, rerender } = renderHook(
+					({ root }: { root: string }) =>
+						usePtyTerminalSource({
+							workspaceRoot: root,
+							enabled: true,
+							initialCommand: "retry-init-cmd",
+						}),
+					{ initialProps: { root: "/work/retry-1" } },
+				);
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-retry-1");
+				});
+
+				// retry 호출 시작 (killPty 대기 중 반환된 Promise 보관)
+				let retryPromise!: Promise<void>;
+				act(() => {
+					retryPromise = result.current.retry();
+				});
+
+				// killPty 대기 도중 루트를 다른 절대 경로로 변경
+				rerender({ root: "/work/retry-2" });
+
+				// killPty 완료 후 retry Promise await
+				resolveKill();
+				await act(async () => {
+					await retryPromise;
+				});
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-retry-2");
+				});
+
+				// pty_create가 새 루트로만 1회 더 불렸고 옛 루트로는 불리지 않음(호출 인자 dir로 확인)
+				expect(createCalls).toEqual(["/work/retry-1", "/work/retry-2"]);
+
+				// 최종 PTY가 새 루트의 것 1개
+				expect(result.current.pty?.pty_id).toBe("pty-retry-2");
+
+				// launching이 false
+				expect(result.current.launching).toBe(false);
+
+				// 최신 PTY의 준비 콜백을 부르면 terminalReady가 true가 되고 initialCommand가 최신 PTY id로 1회 쓰임
+				act(() => {
+					result.current.onTerminalReady();
+				});
+
+				expect(result.current.terminalReady).toBe(true);
+
+				await waitFor(() => {
+					const writes = mockInvoke.mock.calls.filter(
+						(c) => c[0] === "pty_write",
+					);
+					expect(writes).toHaveLength(1);
+					expect(writes[0][1]).toEqual({
+						ptyId: "pty-retry-2",
+						data: "retry-init-cmd\r",
+					});
+				});
+			});
+
+			it("(j) ignores stale onPtyExit from superseded pty with identical pty_id when root changes", async () => {
+				mockInvoke.mockImplementation(async (cmd) => {
+					if (cmd === "pty_create") {
+						return { pty_id: "pty-exit-same", pid: 940 };
+					}
+					if (cmd === "pty_kill") return;
+					return "";
+				});
+
+				const { result, rerender } = renderHook(
+					({ root }: { root: string }) =>
+						usePtyTerminalSource({
+							workspaceRoot: root,
+							enabled: true,
+						}),
+					{ initialProps: { root: "/work/pty-exit-a" } },
+				);
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-exit-same");
+				});
+
+				// PTY A의 onPtyExit를 잡아 둔 채
+				const ptyAOnPtyExit = result.current.onPtyExit;
+
+				// 루트 변경으로 PTY B 부착 (재시작)
+				rerender({ root: "/work/pty-exit-b" });
+
+				await waitFor(() => {
+					expect(result.current.workingDir).toBe("/work/pty-exit-b");
+					expect(result.current.pty?.pty_id).toBe("pty-exit-same");
+					expect(result.current.launchErrorKind).toBeNull();
+				});
+
+				// PTY A의 것을 같은 id 인자로 호출
+				act(() => {
+					ptyAOnPtyExit("pty-exit-same");
+				});
+
+				// pty는 B 그대로, launchErrorKind는 pty-exit이 아니며 종료 오류 문구가 보이지 않는다
+				expect(result.current.pty).not.toBeNull();
+				expect(result.current.pty?.pty_id).toBe("pty-exit-same");
+				expect(result.current.launchErrorKind).not.toBe("pty-exit");
+				expect(result.current.launchErrorKind).toBeNull();
+				expect(result.current.launchError).toBe("");
+			});
 		});
 	});
 });
