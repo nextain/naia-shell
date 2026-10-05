@@ -103,7 +103,18 @@ const TAURI_MOCK_SCRIPT = `
 		if (cmd === "frontend_log") return null;
 		if (cmd === "app_list_installed") return [];
 		if (cmd === "list_skills" || cmd === "list_stt_models") return [];
-		if (cmd === "read_naia_config") return null;
+		if (cmd === "write_naia_ui_config") {
+			try {
+				var jsonStr = typeof args.json === "string" ? args.json : JSON.stringify(args.json || {});
+				sessionStorage.setItem("__mock_ui_config__", jsonStr);
+			} catch (e) {}
+			return true;
+		}
+		if (cmd === "read_naia_ui_config") {
+			var saved = sessionStorage.getItem("__mock_ui_config__");
+			return saved || "{}";
+		}
+		if (cmd === "read_naia_config") return JSON.stringify({ onboardingComplete: true });
 		return undefined;
 	};
 })();
@@ -364,44 +375,74 @@ test.describe("Workspace 3-pane quad layout (issue #732)", () => {
 		// Click retry
 		await page.getByTestId("quad-docs-retry").click();
 
-		// Iframe should be visible with the new URL and offline notice gone
+		// Wait until checking indicator disappears and offline alert is gone (item 4)
+		await expect(page.getByTestId("quad-docs-checking")).not.toBeVisible({ timeout: 10_000 });
+		await expect(offline).not.toBeVisible({ timeout: 10_000 });
+
+		// Iframe should be visible with the new URL
 		await expect(page.getByTestId("quad-docs-iframe")).toBeVisible();
 		await expect(page.getByTestId("quad-docs-iframe")).toHaveAttribute(
 			"src",
 			"http://127.0.0.1:8899/offline-test",
 		);
-		await expect(offline).not.toBeVisible();
 	});
 
 	test("handles A->B->A route race: second A success is preserved against delayed first A failure", async ({
 		page,
 	}) => {
-		let firstAResolve: (() => void) | null = null;
-		let firstACount = 0;
+		let releaseFirstAFetch: (() => void) | null = null;
+		let notifyFirstAFetchReceived: () => void = () => {};
+		const firstAFetchEntered = new Promise<void>((resolve) => {
+			notifyFirstAFetchReceived = resolve;
+		});
+		let aFetchCount = 0;
 
-		await page.route("http://127.0.0.1:8896/temp-b", (route) =>
-			route.fulfill({ status: 200, body: "<html><body>Temp B OK</body></html>" }),
-		);
-		await page.route("http://127.0.0.1:8896/**", (route) =>
-			route.fulfill({ status: 200, body: "<html><body>Board</body></html>" }),
-		);
-
-		await page.route("http://localhost:3142/docs", async (route) => {
-			firstACount++;
-			if (firstACount === 1) {
-				// Defer first A request
-				await new Promise<void>((resolve) => {
-					firstAResolve = resolve;
-				});
-				await route.abort();
-				return;
+		await page.route("http://127.0.0.1:8896/temp-b**", (route) => {
+			if (route.request().resourceType() === "fetch") {
+				return route.fulfill({ status: 200, body: "OK" });
 			}
-			await route.fulfill({ status: 200, body: "<html><body>Docs A OK</body></html>" });
+			return route.fulfill({ status: 200, contentType: "text/html", body: "<html><body>Temp B OK</body></html>" });
+		});
+		await page.route("http://127.0.0.1:8896/**", (route) => {
+			if (route.request().resourceType() === "fetch") {
+				return route.fulfill({ status: 200, body: "OK" });
+			}
+			return route.fulfill({ status: 200, contentType: "text/html", body: "<html><body>Board</body></html>" });
 		});
 
 		await openWorkspace(page);
 
-		// First A is pending. Switch to B:
+		await page.unroute("**/localhost:3142/**");
+		await page.route("**/localhost:3142/**", async (route) => {
+			const resourceType = route.request().resourceType();
+			if (resourceType === "document") {
+				// iframe document requests always fulfill immediately with small HTML
+				return route.fulfill({ status: 200, contentType: "text/html", body: "<html><body>Docs A OK</body></html>" });
+			}
+			if (resourceType === "fetch") {
+				aFetchCount++;
+				if (aFetchCount === 1) {
+					// Defer only the first A server health check fetch
+					notifyFirstAFetchReceived();
+					await new Promise<void>((resolve) => {
+						releaseFirstAFetch = resolve;
+					});
+					return route.abort();
+				}
+				// Second A server health check fetch fulfills immediately
+				return route.fulfill({ status: 200, body: "OK" });
+			}
+			return route.fulfill({ status: 200, body: "OK" });
+		});
+
+		// Trigger fresh probe for current A URL so first A is deferred
+		await page.getByTestId("quad-docs-reload").click();
+
+		// 1. Wait until first A's server probe fetch has entered route handler (pending state)
+		await firstAFetchEntered;
+		expect(releaseFirstAFetch).not.toBeNull();
+
+		// 2. Switch to B
 		await page.getByTestId("quad-docs-change-url").click();
 		await page.getByTestId("quad-docs-url-input").fill("http://127.0.0.1:8896/temp-b");
 		await page.getByTestId("quad-docs-url-save").click();
@@ -411,25 +452,64 @@ test.describe("Workspace 3-pane quad layout (issue #732)", () => {
 			"http://127.0.0.1:8896/temp-b",
 		);
 
-		// Now switch back to A (second A):
+		// 3. Switch back to A (second A)
 		await page.getByTestId("quad-docs-change-url").click();
 		await page.getByTestId("quad-docs-url-input").fill("http://localhost:3142/docs");
 		await page.getByTestId("quad-docs-url-save").click();
 
-		// Second A succeeds -> iframe should appear with http://localhost:3142/docs
+		// 4. Wait for second A's probe to complete: checking indicator gone, offline absent, iframe visible
+		await expect(page.getByTestId("quad-docs-checking")).not.toBeVisible({ timeout: 10_000 });
+		await expect(page.getByTestId("quad-docs-offline")).not.toBeVisible();
+		await expect(page.getByTestId("quad-docs-iframe")).toBeVisible();
 		await expect(page.getByTestId("quad-docs-iframe")).toHaveAttribute(
 			"src",
 			"http://localhost:3142/docs",
 		);
 
-		// Release first deferred A request so it fails late
-		if (firstAResolve) {
-			(firstAResolve as () => void)();
-		}
+		// 5. Release first deferred A request so it fails late
+		(releaseFirstAFetch as unknown as () => void)();
 		await page.waitForTimeout(300);
 
-		// State must remain online with iframe visible
-		await expect(page.getByTestId("quad-docs-iframe")).toBeVisible();
+		// 6. Assert that after delayed first A failure, checking and offline are still absent, and iframe remains visible
+		await expect(page.getByTestId("quad-docs-checking")).not.toBeVisible();
 		await expect(page.getByTestId("quad-docs-offline")).not.toBeVisible();
+		await expect(page.getByTestId("quad-docs-iframe")).toBeVisible();
+		await expect(page.getByTestId("quad-docs-iframe")).toHaveAttribute(
+			"src",
+			"http://localhost:3142/docs",
+		);
+	});
+
+	test("persists edited pane URL across page.reload() (g)", async ({ page }) => {
+		await page.route("http://localhost:5000/**", (route) =>
+			route.fulfill({ status: 200, contentType: "text/html", body: "<html><body>Custom Reload OK</body></html>" }),
+		);
+
+		await openWorkspace(page);
+
+		// Edit docs URL and save
+		await page.getByTestId("quad-docs-change-url").click();
+		const input = page.getByTestId("quad-docs-url-input");
+		await expect(input).toBeVisible();
+		await input.fill("http://localhost:5000/reloaded-docs");
+		await page.getByTestId("quad-docs-url-save").click();
+		await expect(input).not.toBeVisible();
+		await expect(page.getByTestId("quad-docs-iframe")).toHaveAttribute(
+			"src",
+			"http://localhost:5000/reloaded-docs",
+		);
+
+		// Reload the page
+		await page.reload();
+		await expect(page.locator(".chat-app")).toBeVisible({ timeout: 10_000 });
+
+		// Reopen workspace
+		await openWorkspace(page);
+
+		// Assert restored URL in docs iframe
+		await expect(page.getByTestId("quad-docs-iframe")).toHaveAttribute(
+			"src",
+			"http://localhost:5000/reloaded-docs",
+		);
 	});
 });

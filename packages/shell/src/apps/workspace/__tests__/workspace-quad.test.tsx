@@ -676,15 +676,20 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 				url: "http://[::1]:8896/",
 			});
 
-			// Invalid inputs
+			// Invalid inputs: reject examples from spec
+			expect(normalizeQuadPaneUrl("https://example.com/").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("file:///C:/x").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("javascript:alert(1)").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("http://localhost@evil.example/").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("http://user:pw@localhost:8896/").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("http://127.0.0.2:8896/").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("http://localhost.evil.example/").ok).toBe(false);
 			expect(normalizeQuadPaneUrl("").ok).toBe(false);
 			expect(normalizeQuadPaneUrl("   ").ok).toBe(false);
+			expect(normalizeQuadPaneUrl(123).ok).toBe(false);
 			expect(normalizeQuadPaneUrl(null).ok).toBe(false);
 			expect(normalizeQuadPaneUrl(undefined).ok).toBe(false);
-			expect(normalizeQuadPaneUrl("javascript:alert(1)").ok).toBe(false);
 			expect(normalizeQuadPaneUrl("ftp://localhost:8896").ok).toBe(false);
-			expect(normalizeQuadPaneUrl("file:///etc/passwd").ok).toBe(false);
-			expect(normalizeQuadPaneUrl("http://example.com/").ok).toBe(false);
 			expect(normalizeQuadPaneUrl("http://192.168.1.5:8896/").ok).toBe(false);
 			expect(normalizeQuadPaneUrl("not a url").ok).toBe(false);
 		});
@@ -703,7 +708,7 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			});
 		});
 
-		it("persists edited URL via UI to ui-preferences and naia config, and recovers across simulated restart", async () => {
+		it("persists edited docs URL via UI to ui-preferences and naia config, and recovers across simulated restart", async () => {
 			vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
 			await hydrateUiPreferences(null, { adkPath: "/test/adk", canPersist: true });
 
@@ -742,6 +747,48 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			await waitFor(() => {
 				const docsIframe = screen.getByTestId("quad-docs-iframe");
 				expect(docsIframe).toHaveAttribute("src", "http://localhost:5000/custom-docs");
+			});
+		});
+
+		it("persists edited board URL via UI to ui-preferences and naia config, and recovers across simulated restart", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+			await hydrateUiPreferences(null, { adkPath: "/test/adk", canPersist: true });
+
+			const { unmount } = render(<WorkspaceQuadView terminalSource={createMockTerminalSource()} />);
+
+			// Change board URL
+			fireEvent.click(screen.getByTestId("quad-dashboard-change-url"));
+			const input = screen.getByTestId("quad-dashboard-url-input");
+			fireEvent.change(input, { target: { value: "http://localhost:8896/custom-board" } });
+			fireEvent.click(screen.getByTestId("quad-dashboard-url-save"));
+
+			// Check preferences updated
+			await waitFor(() => {
+				expect(getUiPreferencesSnapshot().workspaceQuadBoardUrl).toBe("http://localhost:8896/custom-board");
+				expect(mockWriteNaiaUiConfig).toHaveBeenCalledWith(
+					expect.objectContaining({
+						uiPreferences: expect.objectContaining({
+							workspaceQuadBoardUrl: "http://localhost:8896/custom-board",
+						}),
+					}),
+					"/test/adk",
+				);
+			});
+
+			unmount();
+
+			// Simulate restart: reset preferences and hydrate with stored snapshot
+			resetUiPreferencesForTests();
+			await hydrateUiPreferences(
+				{ uiPreferences: { workspaceQuadBoardUrl: "http://localhost:8896/custom-board" } },
+				{ adkPath: "/test/adk", canPersist: true },
+			);
+
+			render(<WorkspaceQuadView terminalSource={createMockTerminalSource()} />);
+
+			await waitFor(() => {
+				const boardIframe = screen.getByTestId("quad-dashboard-iframe");
+				expect(boardIframe).toHaveAttribute("src", "http://localhost:8896/custom-board");
 			});
 		});
 
