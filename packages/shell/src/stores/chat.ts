@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { isNaiaAccountProvider } from "../lib/credits";
 import { Logger } from "../lib/logger";
 import type {
 	ChatMessage,
@@ -8,6 +9,12 @@ import type {
 	ToolCall,
 } from "../lib/types";
 import { useAppStore } from "./app";
+
+function naiaPortion(
+	cost: { provider: string; cost: number } | undefined,
+): number {
+	return cost && isNaiaAccountProvider(cost.provider) ? cost.cost : 0;
+}
 
 function requestBrowserVisibilitySync() {
 	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
@@ -22,10 +29,18 @@ export interface PendingApproval {
 	description: string;
 }
 
+export interface SessionOverlay {
+	messages: ChatMessage[];
+	totalCost: number;
+	totalCostNaia: number;
+	deleted?: boolean;
+}
+
 interface ChatState {
 	sessionId: string | null;
 	/** Local session ID for offline history persistence (agent-side save). */
 	localSessionId: string;
+	sessionOverlays: Record<string, SessionOverlay>;
 	messages: ChatMessage[];
 	isStreaming: boolean;
 	streamingContent: string;
@@ -33,6 +48,8 @@ interface ChatState {
 	streamingToolCalls: ToolCall[];
 	provider: ProviderId;
 	totalSessionCost: number;
+	/** Portion of `totalSessionCost` (USD estimate) incurred on the Naia account (#727). */
+	totalSessionCostNaia: number;
 	sessionCostEntries: CostEntry[];
 	pendingApproval: PendingApproval | null;
 	messageQueue: string[];
@@ -44,6 +61,12 @@ interface ChatState {
 		msg: Pick<ChatMessage, "role" | "content"> &
 			Partial<Pick<ChatMessage, "cost" | "failure">>,
 	) => void;
+	recordVoiceCostSummary: (
+		targetLocalSessionId: string,
+		msg: Pick<ChatMessage, "role" | "content"> &
+			Partial<Pick<ChatMessage, "cost" | "failure">>,
+	) => void;
+	deleteSessionOverlay: (key: string) => void;
 	updateLastMessage: (role: ChatMessage["role"], content: string) => void;
 	startStreaming: () => void;
 	appendStreamChunk: (text: string) => void;
@@ -118,6 +141,7 @@ function getInitialLocalSessionId(): string {
 export const useChatStore = create<ChatState>()((set, get) => ({
 	sessionId: null,
 	localSessionId: getInitialLocalSessionId(),
+	sessionOverlays: {},
 	messages: [],
 	isStreaming: false,
 	streamingContent: "",
@@ -126,6 +150,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	// FR-LLM-LOGOUT.2: 초기 제공자는 비어 있다. 설정이 제공자를 정한다.
 	provider: "",
 	totalSessionCost: 0,
+	totalSessionCostNaia: 0,
 	sessionCostEntries: [],
 	pendingApproval: null,
 	messageQueue: [],
@@ -136,7 +161,26 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		set({ localSessionId: id });
 	},
 
-	setMessages: (messages) => set({ messages }),
+	setMessages: (messages) =>
+		set((s) => {
+			const overlay = s.sessionOverlays[s.localSessionId];
+			const baseCost = messages.reduce((sum, m) => sum + (m.cost?.cost ?? 0), 0);
+			const baseNaia = messages.reduce((sum, m) => sum + naiaPortion(m.cost), 0);
+			if (overlay && !overlay.deleted && overlay.messages.length > 0) {
+				const existingIds = new Set(messages.map((m) => m.id));
+				const extra = overlay.messages.filter((m) => !existingIds.has(m.id));
+				return {
+					messages: [...messages, ...extra],
+					totalSessionCost: baseCost + overlay.totalCost,
+					totalSessionCostNaia: baseNaia + overlay.totalCostNaia,
+				};
+			}
+			return {
+				messages,
+				totalSessionCost: baseCost,
+				totalSessionCostNaia: baseNaia,
+			};
+		}),
 
 	addMessage: (msg) =>
 		set((s) => ({
@@ -145,7 +189,61 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 				{ ...msg, id: generateId(), timestamp: Date.now() },
 			],
 			totalSessionCost: s.totalSessionCost + (msg.cost?.cost ?? 0),
+			totalSessionCostNaia: s.totalSessionCostNaia + naiaPortion(msg.cost),
 		})),
+
+	recordVoiceCostSummary: (targetLocalSessionId, msg) =>
+		set((s) => {
+			if (s.sessionOverlays[targetLocalSessionId]?.deleted) {
+				return s;
+			}
+			const newMsg: ChatMessage = {
+				...msg,
+				id: generateId(),
+				timestamp: Date.now(),
+			};
+			const costDelta = msg.cost?.cost ?? 0;
+			const naiaDelta = naiaPortion(msg.cost);
+
+			const prevOverlay = s.sessionOverlays[targetLocalSessionId] ?? {
+				messages: [],
+				totalCost: 0,
+				totalCostNaia: 0,
+			};
+			const nextOverlay: SessionOverlay = {
+				messages: [...prevOverlay.messages, newMsg],
+				totalCost: prevOverlay.totalCost + costDelta,
+				totalCostNaia: prevOverlay.totalCostNaia + naiaDelta,
+			};
+
+			const sessionOverlays = {
+				...s.sessionOverlays,
+				[targetLocalSessionId]: nextOverlay,
+			};
+
+			if (s.localSessionId === targetLocalSessionId) {
+				return {
+					sessionOverlays,
+					messages: [...s.messages, newMsg],
+					totalSessionCost: s.totalSessionCost + costDelta,
+					totalSessionCostNaia: s.totalSessionCostNaia + naiaDelta,
+				};
+			}
+
+			return { sessionOverlays };
+		}),
+
+	deleteSessionOverlay: (key) =>
+		set((s) => {
+			const overlays = { ...s.sessionOverlays };
+			overlays[key] = {
+				messages: [],
+				totalCost: 0,
+				totalCostNaia: 0,
+				deleted: true,
+			};
+			return { sessionOverlays: overlays };
+		}),
 
 	updateLastMessage: (role, content) =>
 		set((s) => {
@@ -281,6 +379,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			return {
 				messages,
 				totalSessionCost: s.totalSessionCost + entry.cost,
+				totalSessionCostNaia: s.totalSessionCostNaia + naiaPortion(entry),
 			};
 		}),
 
@@ -300,6 +399,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			return {
 				sessionCostEntries,
 				totalSessionCost: s.totalSessionCost + entry.cost,
+				totalSessionCostNaia: s.totalSessionCostNaia + naiaPortion(entry),
 			};
 		}),
 
@@ -343,6 +443,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			streamingThinking: "",
 			streamingToolCalls: [],
 			totalSessionCost: 0,
+			totalSessionCostNaia: 0,
 			sessionCostEntries: [],
 			pendingApproval: null,
 			messageQueue: [],

@@ -35,6 +35,10 @@ import {
 	saveConfig,
 	saveConfigSecure,
 } from "../lib/config";
+import {
+	paymentLinksHiddenNow,
+	usePaymentLinksHidden,
+} from "../lib/distribution";
 import { type Locale, type TranslationKey, getLocale, t } from "../lib/i18n";
 import {
 	fetchLabBalancePayload,
@@ -332,6 +336,7 @@ function getNaiaWebBaseUrl() {
 }
 
 export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
+	const paymentLinksHidden = usePaymentLinksHidden();
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
 	const setBackgroundMediaType = useAvatarStore(
@@ -914,10 +919,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						}),
 					}).catch(() => {});
 					assertCurrentAdk();
-					await sendAuthUpdate(
-						event.payload.naiaKey,
-						sourceAdkPath,
-					).catch(() => {});
+					await sendAuthUpdate(event.payload.naiaKey, sourceAdkPath).catch(
+						() => {},
+					);
 					assertCurrentAdk();
 					const onboarding = core();
 					if (onboarding) {
@@ -1210,10 +1214,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			// only persisted below), so reloadAgentSettings() re-read a config
 			// without naiaKey/provider and the FIRST session answered with empty
 			// 0-token replies until an app restart (#449 재발, 2026-08-18 실기).
-			await writeNaiaConfigAtPath({
-				...(completedFlat as Record<string, unknown>),
-				...buildNaiaConfigEnv(completedFlat as unknown as AppConfig),
-			}, sourceAdkPath);
+			await writeNaiaConfigAtPath(
+				{
+					...(completedFlat as Record<string, unknown>),
+					...buildNaiaConfigEnv(completedFlat as unknown as AppConfig),
+				},
+				sourceAdkPath,
+			);
 			assertCurrentAdk();
 			// Write naiaKey to OS keychain so standalone naia-agent can read it.
 			if (typeof completedFlat.naiaKey === "string")
@@ -1257,11 +1264,14 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				assertCurrentAdk();
 				const committed = loadConfig();
 				if (committed)
-					await writeNaiaConfigAtPath({
-						...(committed as unknown as Record<string, unknown>),
-						...buildNaiaConfigEnv(committed),
-						onboardingComplete: true,
-					}, sourceAdkPath);
+					await writeNaiaConfigAtPath(
+						{
+							...(committed as unknown as Record<string, unknown>),
+							...buildNaiaConfigEnv(committed),
+							onboardingComplete: true,
+						},
+						sourceAdkPath,
+					);
 				assertCurrentAdk();
 			}
 			addMessage({
@@ -1281,9 +1291,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				);
 			}, 1200);
 		} catch (error) {
-			setCompletionError(
-				`${t("onboard.applyFailed")} (${String(error)})`,
-			);
+			setCompletionError(`${t("onboard.applyFailed")} (${String(error)})`);
 		} finally {
 			setCompleting(false);
 		}
@@ -1360,17 +1368,21 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							>
 								{t("onboard.welcome.discordBtn")}
 							</button>
-							<button
-								type="button"
-								className="onboarding-welcome__github-btn"
-								onClick={() =>
-									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-										openUrl(naiaWebUrl("donation", NAIA_WEB_BASE_URL)),
-									)
-								}
-							>
-								{t("onboard.welcome.donationBtn")}
-							</button>
+							{!paymentLinksHidden && (
+								<button
+									type="button"
+									className="onboarding-welcome__github-btn"
+									onClick={() =>
+										import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+											paymentLinksHiddenNow()
+												? undefined
+												: openUrl(naiaWebUrl("donation", NAIA_WEB_BASE_URL)),
+										)
+									}
+								>
+									{t("onboard.welcome.donationBtn")}
+								</button>
+							)}
 						</div>
 					</>
 				)}
@@ -1810,9 +1822,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						onClick={isCompleteStep ? handleComplete : goNext}
 						disabled={
 							(isCompleteStep && completing) ||
-							(step === "character" &&
-								avatarProvider === "vrm" &&
-								!selectedVrm)
+							(step === "character" && avatarProvider === "vrm" && !selectedVrm)
 						}
 					>
 						{isCompleteStep && completing

@@ -104,6 +104,15 @@ import {
 import { DevicePairingSection } from "./DevicePairingSection";
 import { SmallLlmSection } from "./SmallLlmSection";
 import {
+	formatCredits,
+	formatCreditsExact,
+	formatCreditsFromUsd,
+} from "../lib/credits";
+import {
+	paymentLinksHiddenNow,
+	usePaymentLinksHidden,
+} from "../lib/distribution";
+import {
 	fetchLabBalancePayload,
 	isLabBalanceUnauthorized,
 	markNaiaKeyUnauthorized,
@@ -621,7 +630,13 @@ function DeviceSelect({
 	);
 }
 
+/** Localized provider price tag; the Naia credit tag follows the UI language. */
+function ttsPricingLabel(p: { id: string; pricing?: string }): string {
+	return p.id === "nextain" ? t("tts.pricingNaiaCredits") : (p.pricing ?? "");
+}
+
 export function SettingsTab() {
+	const paymentLinksHidden = usePaymentLinksHidden();
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
 		| "profile"
 		| "brain"
@@ -1042,10 +1057,9 @@ export function SettingsTab() {
 			let installation = await refreshVoxCpm2Installation();
 			if (!installation?.canStart) {
 				setCascadeMsg(t("voice.hostEngineInstalling"));
-				const installed = await invoke<unknown>(
-					"install_voxcpm2_runtime",
-					{ gpuIndex: existing?.localVoiceGpuIndex ?? null },
-				);
+				const installed = await invoke<unknown>("install_voxcpm2_runtime", {
+					gpuIndex: existing?.localVoiceGpuIndex ?? null,
+				});
 				if (isVoxCpm2InstallationStatus(installed))
 					setVoxCpm2Installation(installed);
 				installation = await refreshVoxCpm2Installation();
@@ -1291,11 +1305,10 @@ export function SettingsTab() {
 			return true;
 		} catch (e) {
 			setVoxcpm2Progress(null);
-			const errorCode = e instanceof Error ? e.message.trim() : String(e).trim();
-			const loginRequired =
-				errorCode === "voxcpm2_naia_member_login_required";
-			const entitlementRejected =
-				errorCode === "voxcpm2_entitlement_rejected";
+			const errorCode =
+				e instanceof Error ? e.message.trim() : String(e).trim();
+			const loginRequired = errorCode === "voxcpm2_naia_member_login_required";
+			const entitlementRejected = errorCode === "voxcpm2_entitlement_rejected";
 			if (originalConfig) {
 				try {
 					await rollbackLocalVoiceSelection(
@@ -2072,7 +2085,7 @@ export function SettingsTab() {
 				)
 					return;
 				setApiKey(cfg.apiKey ?? "");
-						setMemoryEmbeddingApiKey(cfg.memoryEmbeddingApiKey ?? "");
+				setMemoryEmbeddingApiKey(cfg.memoryEmbeddingApiKey ?? "");
 				setQdrantApiKey(cfg.qdrantApiKey ?? "");
 				setGatewayTtsApiKey("");
 				if (!cfg.naiaKey) return;
@@ -2102,7 +2115,10 @@ export function SettingsTab() {
 	const [naiaKeyUnauthorized, setNaiaKeyUnauthorized] = useState(false);
 	// #402: a chat completion 401 (surfaced via ChatArea's error handling)
 	// must flip this same account state, not just a balance-fetch 401.
-	useEffect(() => onNaiaKeyUnauthorized(() => setNaiaKeyUnauthorized(true)), []);
+	useEffect(
+		() => onNaiaKeyUnauthorized(() => setNaiaKeyUnauthorized(true)),
+		[],
+	);
 	const mountedRef = useRef(true);
 	const loginAdkPathRef = useRef<string | null>(null);
 	useEffect(() => {
@@ -2164,7 +2180,6 @@ export function SettingsTab() {
 	const [resetClearHistory, setResetClearHistory] = useState(false);
 	const [showLabDisconnect, setShowLabDisconnect] = useState(false);
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
-
 
 	useEffect(() => {
 		getAllAgentFacts()
@@ -2288,10 +2303,13 @@ export function SettingsTab() {
 					assertCurrentAdk();
 					saveConfig(nextConfig);
 					assertCurrentAdk();
-					await writeNaiaConfigAtPath({
-						...(nextConfig as unknown as Record<string, unknown>),
-						...buildNaiaConfigEnv(nextConfig),
-					}, sourceAdkPath);
+					await writeNaiaConfigAtPath(
+						{
+							...(nextConfig as unknown as Record<string, unknown>),
+							...buildNaiaConfigEnv(nextConfig),
+						},
+						sourceAdkPath,
+					);
 					assertCurrentAdk();
 					await sendAuthUpdateStrict(nextNaiaKey, sourceAdkPath);
 					assertCurrentAdk();
@@ -2505,7 +2523,9 @@ export function SettingsTab() {
 			e.preventDefault();
 			const idx = THINKING_LEVELS.indexOf(currentLevel);
 			targetLevel =
-				THINKING_LEVELS[(idx - 1 + THINKING_LEVELS.length) % THINKING_LEVELS.length];
+				THINKING_LEVELS[
+					(idx - 1 + THINKING_LEVELS.length) % THINKING_LEVELS.length
+				];
 		}
 		if (targetLevel) {
 			handleThinkingChange(targetLevel);
@@ -2516,7 +2536,6 @@ export function SettingsTab() {
 			nextButton?.focus();
 		}
 	}
-
 
 	function persistVideoAvatarSelection(nextNva?: string) {
 		const selectedNva = nextNva || nvaModel || DEFAULT_NVA_MODEL;
@@ -2968,7 +2987,8 @@ export function SettingsTab() {
 		const mainRole: LlmRoleConfig = {
 			provider,
 			model,
-			...(mainProviderUnchanged && persistedMainRole?.credentialRef !== undefined
+			...(mainProviderUnchanged &&
+			persistedMainRole?.credentialRef !== undefined
 				? { credentialRef: persistedMainRole.credentialRef }
 				: {}),
 			...(mainProviderUnchanged && persistedMainRole?.baseUrl !== undefined
@@ -3048,20 +3068,26 @@ export function SettingsTab() {
 		// Push webhook URLs + Discord defaults to the agent (#260). Replaces
 		// per-chat_request webhook field transmission with a one-shot config
 		// update so credentials don't appear in every stdio frame.
-		void sendNotifyConfig({
-			slackWebhookUrl: newConfig.slackWebhookUrl,
-			googleChatWebhookUrl: newConfig.googleChatWebhookUrl,
-		}, applyAdkPath);
+		void sendNotifyConfig(
+			{
+				slackWebhookUrl: newConfig.slackWebhookUrl,
+				googleChatWebhookUrl: newConfig.googleChatWebhookUrl,
+			},
+			applyAdkPath,
+		);
 		// Push all per-session credentials (#260 follow-up). Empty strings
 		// clear the corresponding cached entry on the agent — keeps the cache
 		// in sync with what the user just saved.
-		void sendCredsUpdate({
-			keys: newConfig.provider
-				? { [newConfig.provider]: newConfig.apiKey ?? "" }
-				: {},
-			ttsKeys: {},
-			gatewayToken: newConfig.gatewayToken ?? "",
-		}, applyAdkPath);
+		void sendCredsUpdate(
+			{
+				keys: newConfig.provider
+					? { [newConfig.provider]: newConfig.apiKey ?? "" }
+					: {},
+				ttsKeys: {},
+				gatewayToken: newConfig.gatewayToken ?? "",
+			},
+			applyAdkPath,
+		);
 		await setLocale(locale);
 		setAvatarModelPath(vrmModel);
 		setAvatarBackgroundImage(backgroundImage);
@@ -3557,8 +3583,7 @@ export function SettingsTab() {
 												dev: import.meta.env.DEV,
 												prepareAppRelaunch: () =>
 													invoke("prepare_app_relaunch"),
-												cancelAppRelaunch: () =>
-													invoke("cancel_app_relaunch"),
+												cancelAppRelaunch: () => invoke("cancel_app_relaunch"),
 												resetAdkPathBinding,
 												relaunch: async () => {
 													const { relaunch } = await import(
@@ -3958,13 +3983,20 @@ export function SettingsTab() {
 									<span className="lab-balance-label">
 										{t("settings.labBalance")}
 									</span>
-									<span className="lab-balance-value">
+									<span
+										className="lab-balance-value"
+										title={
+											labBalance !== null && labBalance >= 1000
+												? `${formatCreditsExact(labBalance, 2)} ${t("cost.labCredits")}`
+												: undefined
+										}
+									>
 										{labBalanceLoading
 											? t("settings.labBalanceLoading")
 											: labBalanceError
 												? t("cost.labError")
 												: labBalance !== null
-													? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
+													? `${formatCredits(labBalance, 2)} ${t("cost.labCredits")}`
 													: "-"}
 									</span>
 									{!labBalanceLoading && labBalanceError && (
@@ -3982,36 +4014,40 @@ export function SettingsTab() {
 									)}
 								</div>
 								<div className="lab-actions-row">
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={() =>
-											openUrl(
-												`${getNaiaWebBaseUrl()}/${locale}/dashboard`,
-											).catch(() => {})
-										}
-									>
-										{t("settings.labDashboard")}
-									</button>
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={() =>
-											openUrl(`${getNaiaWebBaseUrl()}/${locale}/billing`).catch(
-												() => {},
-											)
-										}
-									>
-										{t("cost.labCharge")}
-									</button>
+									{!paymentLinksHidden && (
+										<>
+											<button
+												type="button"
+												className="voice-preview-btn"
+												onClick={() =>
+													openUrl(
+														`${getNaiaWebBaseUrl()}/${locale}/dashboard`,
+													).catch(() => {})
+												}
+											>
+												{t("settings.labDashboard")}
+											</button>
+											<button
+												type="button"
+												className="voice-preview-btn"
+												onClick={() =>
+													openUrl(
+														`${getNaiaWebBaseUrl()}/${locale}/billing`,
+													).catch(() => {})
+												}
+											>
+												{t("cost.labCharge")}
+											</button>
+										</>
+									)}
 									{showLabDisconnect ? (
 										<div className="reset-confirm-app" style={{ marginTop: 8 }}>
 											<p className="reset-confirm-msg">
 												{t("settings.labDisconnectConfirm")}
 											</p>
 											<div className="reset-confirm-actions">
-													<button
-														type="button"
+												<button
+													type="button"
 													className="settings-reset-btn"
 													onClick={async () => {
 														const sourceAdkPath = getAdkPath();
@@ -4047,7 +4083,9 @@ export function SettingsTab() {
 																	provider: priorMain.provider ?? "",
 																	model: priorMain.model ?? "",
 																}
-															: await resolveLoggedOutLlm(priorConfig?.ollamaHost);
+															: await resolveLoggedOutLlm(
+																	priorConfig?.ollamaHost,
+																);
 														if (getAdkPath() !== sourceAdkPath) return;
 														setProvider(loggedOutLlm.provider);
 														setModel(loggedOutLlm.model);
@@ -4074,7 +4112,7 @@ export function SettingsTab() {
 																		: current.sttProvider,
 																naiaKey: undefined,
 																naiaUserId: undefined,
-																																																						};
+															};
 															const loggedOutConfig = writeConfiguredLlmRole(
 																loggedOutBase,
 																"main",
@@ -4391,13 +4429,15 @@ export function SettingsTab() {
 													: Math.max(
 															0,
 															Math.min(100, Math.round(progress.percent ?? 0)),
-														);												// 진행 문구는 로케일이 정한다. 예전에는 여기서 한국어인지만 보고
+														); // 진행 문구는 로케일이 정한다. 예전에는 여기서 한국어인지만 보고
 												// 골랐고, 나머지 열두 언어 사용자는 영어를 봤다.
 												const label = isDownload
 													? `${t("voice.install.downloading")} ${Math.round(
 															(progress.downloaded ?? 0) / 1048576,
 														)} / ${Math.round(total / 1048576)} MiB`
-													: (progress.label ?? progress.step ?? t("voice.install.installing"));
+													: (progress.label ??
+														progress.step ??
+														t("voice.install.installing"));
 												return (
 													<div
 														className="voxcpm2-install-progress"
@@ -4742,22 +4782,23 @@ export function SettingsTab() {
 							{provider === "nextain" && selectedModelMeta?.pricing ? (
 								<span style={{ color: "var(--accent-color, #64a0ff)" }}>
 									{t("settings.pricingPerMillionTokens")}:{" "}
-									{t("settings.priceInput")} $
-									{selectedModelMeta.pricing[0].toFixed(3)} ·{" "}
-									{t("settings.priceOutput")} $
-									{selectedModelMeta.pricing[1].toFixed(3)}
+									{t("settings.priceInput")}{" "}
+									{formatCreditsFromUsd(selectedModelMeta.pricing[0])}{" "}
+									{t("cost.labCredits")} · {t("settings.priceOutput")}{" "}
+									{formatCreditsFromUsd(selectedModelMeta.pricing[1])}{" "}
+									{t("cost.labCredits")}
 									{selectedModelMeta.cachePricing ? (
 										<>
 											{" · "}
 											{t("settings.priceCacheRead")}{" "}
 											{selectedModelMeta.cachePricing.read === null
 												? "—"
-												: `$${selectedModelMeta.cachePricing.read.toFixed(3)}`}
+												: `${formatCreditsFromUsd(selectedModelMeta.cachePricing.read)} ${t("cost.labCredits")}`}
 											{" · "}
 											{t("settings.priceCacheWrite")}{" "}
 											{selectedModelMeta.cachePricing.write === null
 												? "—"
-												: `$${selectedModelMeta.cachePricing.write.toFixed(3)}`}
+												: `${formatCreditsFromUsd(selectedModelMeta.cachePricing.write)} ${t("cost.labCredits")}`}
 										</>
 									) : null}
 								</span>
@@ -5070,16 +5111,14 @@ export function SettingsTab() {
 									)}
 									{sttProvider &&
 										(!sttNeedsLocalModel || sttModel) &&
-										!ttsEnabled && (
-										<div>{t("settings.voiceStatusTtsOff")}</div>
-									)}
+										!ttsEnabled && <div>{t("settings.voiceStatusTtsOff")}</div>}
 									{sttProvider &&
 										(!sttNeedsLocalModel || sttModel) &&
 										ttsEnabled && (
-										<div style={{ color: "var(--success-color, #4caf50)" }}>
-											{t("settings.voiceStatusReady")}
-										</div>
-									)}
+											<div style={{ color: "var(--success-color, #4caf50)" }}>
+												{t("settings.voiceStatusReady")}
+											</div>
+										)}
 								</div>
 							)}
 
@@ -5106,7 +5145,7 @@ export function SettingsTab() {
 											disabled={p.requiresNaiaKey && !naiaKey}
 										>
 											{p.name}
-											{p.pricing ? ` - ${p.pricing}` : ""}
+											{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
 											{p.requiresNaiaKey && !naiaKey
 												? ` (${t("settings.ttsNaiaRequired")})`
 												: ""}
@@ -5245,7 +5284,7 @@ export function SettingsTab() {
 									}
 								>
 									{p.name}
-									{p.pricing ? ` - ${p.pricing}` : ""}
+									{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
 									{p.requiresNaiaKey && !naiaKey
 										? ` (${t("settings.ttsNaiaRequired")})`
 										: ""}
@@ -5310,13 +5349,15 @@ export function SettingsTab() {
 										: Math.max(
 												0,
 												Math.min(100, Math.round(progress.percent ?? 0)),
-											);									// 진행 문구는 로케일이 정한다. 예전에는 여기서 한국어인지만 보고
+											); // 진행 문구는 로케일이 정한다. 예전에는 여기서 한국어인지만 보고
 									// 골랐고, 나머지 열두 언어 사용자는 영어를 봤다.
 									const label = isDownload
 										? `${t("voice.install.downloading")} ${Math.round(
 												(progress.downloaded ?? 0) / 1048576,
 											)} / ${Math.round(total / 1048576)} MiB`
-										: (progress.label ?? progress.step ?? t("voice.install.installing"));
+										: (progress.label ??
+											progress.step ??
+											t("voice.install.installing"));
 									return (
 										<div
 											className="voxcpm2-install-progress"
@@ -5832,7 +5873,7 @@ export function SettingsTab() {
 				</>
 			)}
 			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
-						{activeSettingsTab === "skills" && (
+			{activeSettingsTab === "skills" && (
 				<Suspense fallback={null}>
 					<SkillsTab>
 						<RadioDjSettingsCard
@@ -6129,10 +6170,7 @@ export function SettingsTab() {
 					</div>
 
 					{allowedTools.length > 0 && (
-						<div
-							className="settings-field"
-							data-testid="allowed-tools-section"
-						>
+						<div className="settings-field" data-testid="allowed-tools-section">
 							<label>
 								{t("settings.allowedTools")} ({allowedTools.length})
 							</label>
@@ -6474,7 +6512,8 @@ export function SettingsTab() {
 	);
 }
 
-function AboutSection() {
+export function AboutSection() {
+	const paymentLinksHidden = usePaymentLinksHidden();
 	return (
 		<div className="settings-about">
 			<div className="settings-section-divider">
@@ -6513,20 +6552,24 @@ function AboutSection() {
 					>
 						{t("about.linkDiscord")}
 					</a>
-					<a
-						href="https://github.com/sponsors/nextain"
-						target="_blank"
-						rel="noopener noreferrer"
-						className="settings-about__link settings-about__link--sponsor"
-						onClick={(e) => {
-							e.preventDefault();
-							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-								openUrl("https://github.com/sponsors/nextain"),
-							);
-						}}
-					>
-						{t("about.linkSponsor")}
-					</a>
+					{!paymentLinksHidden && (
+						<a
+							href="https://github.com/sponsors/nextain"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="settings-about__link settings-about__link--sponsor"
+							onClick={(e) => {
+								e.preventDefault();
+								import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+									paymentLinksHiddenNow()
+										? undefined
+										: openUrl("https://github.com/sponsors/nextain"),
+								);
+							}}
+						>
+							{t("about.linkSponsor")}
+						</a>
+					)}
 				</div>
 			</div>
 		</div>

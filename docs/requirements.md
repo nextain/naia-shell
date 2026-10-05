@@ -1365,3 +1365,5 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 
 
+| **FR-CREDITS-DISPLAY.1** | Naia 계정 사용 비용은 모든 화면에서 "약 N 크레딧"(1크레딧 = $0.001, 달러 × 1,000)으로 표시하고, 셸은 배수를 곱하지 않는다. 자기 API 키 제공자는 달러 "제공사 요금 추정"으로 표시한다. 금액 서식은 `lib/credits.ts` 한 곳을 쓴다. 14개 언어 키 누락 0. | UC-CREDITS-DISPLAY | `credits.test.ts`, `CostDashboard.test.tsx`, `ChatArea.test.tsx`, `WorkProgressArea.test.tsx`, `SettingsTab.test.tsx`, `registry.test.ts`, `i18n-user-facing.test.ts` | In progress |
+| **FR-CREDITS-DISPLAY.2** | Steam판(표시 파일 `naia-distribution.txt` 또는 `SteamAppId`=5354630)에서는 크레딧 충전 버튼·naia.land 결제·대시보드 링크와 부족 안내의 웹 결제 문구를 숨긴다. 표시 파일은 데포 해시 목록에 포함되고 CI가 확인한다. | UC-CREDITS-DISPLAY | `src-tauri/src/distribution.rs` 단위 시험, `platform-matrix.test.ts`, `distribution.test.ts`, `CostDashboard.steam.test.tsx`, `SettingsTab.test.tsx` | In progress |

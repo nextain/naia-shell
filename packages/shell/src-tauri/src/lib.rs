@@ -10,6 +10,7 @@ mod capture;
 mod cli_detect;
 pub mod data_home;
 mod device_pairing;
+mod distribution;
 mod ego_host;
 mod ego_host_bridge;
 mod herdr;
@@ -3478,9 +3479,24 @@ async fn agent_dispatcher(
                     .and_then(|x| x.as_str())
                     .unwrap_or("")
                     .to_string();
+                let provider_name = v
+                    .get("provider")
+                    .and_then(|p| p.get("provider"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let model_name = v
+                    .get("provider")
+                    .and_then(|p| p.get("model"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                audit::record_request_context(&request_id, &provider_name, &model_name);
+
                 let req = match agent_grpc::try_json_to_chat_request(&v) {
                     Ok(req) => req,
                     Err(e) => {
+                        audit::finish_request_context(&request_id);
                         let err = serde_json::json!({
                             "type": "error",
                             "requestId": request_id,
@@ -3494,20 +3510,25 @@ async fn agent_dispatcher(
                 };
                 let mut c = client.clone();
                 let app2 = app.clone();
-                let app_err = app.clone(); // emit closure 媛 app2 瑜?move ???먮윭 寃쎈줈??蹂꾨룄 clone
+                let app_err = app.clone(); // emit closure 가 app2 를 move 할 때 에러 경로용 별도 clone
                 let db2 = audit_db.clone();
+                let req_id_clean = request_id.clone();
                 tauri::async_runtime::spawn(async move {
+                    let req_id_emit = req_id_clean.clone();
                     let emit = move |json: String| {
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
                             audit::maybe_log_event(&db2, &parsed);
+                            let event_type = parsed
+                                .get("type")
+                                .and_then(|value| value.as_str())
+                                .unwrap_or("");
+                            if matches!(event_type, "finish" | "error") {
+                                audit::finish_request_context(&req_id_emit);
+                            }
                             if memory::dispatch_backup_response(&parsed) {
                                 return;
                             }
                             if debug_e2e_enabled() {
-                                let event_type = parsed
-                                    .get("type")
-                                    .and_then(|value| value.as_str())
-                                    .unwrap_or("");
                                 if matches!(event_type, "usage" | "finish") {
                                     let event_request_id = parsed
                                         .get("requestId")
@@ -3523,8 +3544,11 @@ async fn agent_dispatcher(
                         let _ = app2.emit("agent_response", &json);
                     };
                     if let Err(e) = c.chat(req, emit).await {
+                        audit::finish_request_context(&req_id_clean);
                         let err = serde_json::json!({"type":"error","requestId":request_id,"message":format!("grpc chat: {}", e)}).to_string();
                         let _ = app_err.emit("agent_response", &err);
+                    } else {
+                        audit::finish_request_context(&req_id_clean);
                     }
                 });
             }
@@ -3550,6 +3574,7 @@ async fn agent_dispatcher(
                     .and_then(|x| x.as_str())
                     .unwrap_or("")
                     .to_string();
+                audit::finish_request_context(&rid);
                 let activity_id = v
                     .get("activityId")
                     .and_then(|x| x.as_str())
@@ -5800,6 +5825,90 @@ fn naia_balance_endpoint(gateway_url: &str) -> Result<url::Url, String> {
     }
     base.join("/v1/profile/balance")
         .map_err(|_| "Invalid Naia balance endpoint".to_string())
+}
+
+/// Distribution channel of this build: "steam" for the Steam depot, else "standard" (#727).
+#[tauri::command]
+fn get_distribution_channel() -> String {
+    distribution::detect_current_channel().as_str().to_string()
+}
+
+#[cfg(test)]
+#[test]
+fn native_ipc_get_distribution_channel_invoked() {
+    fn temp_ipc_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "naia-dist-ipc-{}-{}-{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // 1. 표지 steam -> "steam"
+    {
+        let dir = temp_ipc_dir("steam_marker");
+        let exe = dir.join("naia-shell");
+        std::fs::write(dir.join(distribution::MARKER_FILE), "steam\n").unwrap();
+        let _guard = distribution::set_test_distribution_inputs(Some(exe), None);
+        assert_eq!(get_distribution_channel(), "steam");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // 2. 정상 설치 폴더의 표지 부재 -> "standard"
+    {
+        let dir = temp_ipc_dir("absent_marker");
+        let exe = dir.join("naia-shell");
+        let _guard = distribution::set_test_distribution_inputs(Some(exe), None);
+        assert_eq!(get_distribution_channel(), "standard");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // 3. 손상 링크(#[cfg(unix)]) -> "unknown"
+    #[cfg(unix)]
+    {
+        let dir = temp_ipc_dir("broken_symlink");
+        let exe = dir.join("naia-shell");
+        let non_target = dir.join("nonexistent_target_file");
+        let marker = dir.join(distribution::MARKER_FILE);
+        std::os::unix::fs::symlink(&non_target, &marker).unwrap();
+        let _guard = distribution::set_test_distribution_inputs(Some(exe), None);
+        assert_eq!(get_distribution_channel(), "unknown");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // 4. 읽기 오류 (표지 경로를 폴더로) -> "unknown"
+    {
+        let dir = temp_ipc_dir("dir_marker");
+        let exe = dir.join("naia-shell");
+        std::fs::create_dir_all(dir.join(distribution::MARKER_FILE)).unwrap();
+        let _guard = distribution::set_test_distribution_inputs(Some(exe), None);
+        assert_eq!(get_distribution_channel(), "unknown");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // 5. 설치 경로 None -> "unknown"
+    {
+        let _guard = distribution::set_test_distribution_inputs(None, None);
+        assert_eq!(get_distribution_channel(), "unknown");
+    }
+
+    // 6. 환경 변수 일치 -> "steam"
+    {
+        let dir = temp_ipc_dir("env_steam");
+        let exe = dir.join("naia-shell");
+        let _guard = distribution::set_test_distribution_inputs(
+            Some(exe),
+            Some(distribution::STEAM_APP_ID.to_string()),
+        );
+        assert_eq!(get_distribution_channel(), "steam");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
 
 /// Fetch account balance in the native process. WebView fetch can be blocked by
@@ -13802,6 +13911,7 @@ pub fn run() {
             memory_export_backup,
             memory_import_backup,
             fetch_naia_balance,
+            get_distribution_channel,
             list_audio_output_devices,
             detect_gpu_vram,
             generate_oauth_state,
@@ -15403,7 +15513,7 @@ mod tests {
 
         assert_eq!(infer_repos_adk_root(user_adk.to_str().unwrap()), None);
     }
-    #[test]
+
     /// 활성화 계약은 운영체제마다 다른 배치를 담되, 무관한 것은 한 벌만 둔다.
     #[test]
     fn 활성화_계약이_두_운영체제를_담는다() {

@@ -23,6 +23,8 @@ import {
 	loadConfig,
 	saveConfig,
 } from "../lib/config";
+import { formatCreditsFromUsd } from "../lib/credits";
+import { paymentLinksHiddenNow, usePaymentLinksHidden } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import { warmLocalVoice } from "../lib/tts/synthesize";
@@ -124,7 +126,11 @@ function pickStrings() {
 		err: {
 			network: t("voice.ref.errNetwork"),
 			auth: t("voice.ref.errAuth"),
-			creditInsufficient: t("voice.ref.errCreditInsufficient"),
+			creditInsufficient: t(
+				paymentLinksHiddenNow()
+					? "voice.ref.errCreditInsufficientNoTopup"
+					: "voice.ref.errCreditInsufficient",
+			),
 			format: t("voice.ref.errFormat"),
 			tooLarge: t("voice.ref.errTooLarge"),
 			uploadInProgress: t("voice.ref.errUploadInProgress"),
@@ -170,8 +176,9 @@ function formatDate(iso: string): string {
 	}
 }
 
-function formatBalance(balance: number): string {
-	return balance.toFixed(2);
+function formatBalance(balanceUsd: number): string {
+	// Gateway reports the balance in USD; the app shows credits (1 credit = $0.001).
+	return formatCreditsFromUsd(balanceUsd);
 }
 
 /** cc0-ko-female-01 → "여성 음색 1" — human name for a catalog file id, so the
@@ -249,7 +256,8 @@ export function RefAudioSection({
 	// 그대로 반환해 참조가 안정적이었는데, t() 기반으로 바꾸면서 렌더마다
 	// 새 객체가 되었다. S 는 훅 일곱 곳의 의존성이라 그대로 두면 렌더가
 	// 끝없이 되풀이된다 — 실제로 테스트가 그 자리에서 멈췄다.
-	const S = useMemo(pickStrings, [getLocale()]);
+	const paymentLinksHidden = usePaymentLinksHidden();
+	const S = useMemo(pickStrings, [getLocale(), paymentLinksHidden]);
 	// Naia Local runs on the user's own GPU — recording/uploading a reference
 	// voice is free and never touches the gateway, so hide the $0.01 hints.
 	const config = loadConfig();

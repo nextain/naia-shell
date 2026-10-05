@@ -704,6 +704,15 @@ P02 검증:
 - **무결성**: 업로드 디포에는 모든 파일의 상대 경로와 SHA256을 담은 `steam-files.sha256`이 포함된다.
 - **범위 경계**: Steamworks App ID·depot ID·계정 비밀·스토어 심사 제출은 저장소 밖 운영 단계이며 #314에서 추적한다.
 
+## UC-CREDITS-DISPLAY — 사용 비용 크레딧 표시와 Steam판 결제 버튼 숨김 (#727)
+
+- **사용자 목표**: Naia 계정으로 쓴 비용을 잔액과 같은 단위(크레딧)로 보고, Steam판에서는 앱 안에서 외부 결제로 가는 길이 보이지 않는다.
+- **환산**: 1크레딧 = $0.001. 셸은 배수를 곱하지 않고 단위만 바꾼다(달러 × 1,000). 배수는 게이트웨이(`/v1/pricing`)에만 있다.
+- **Naia 계정(nextain)**: 대화 배지·세션 합계·비용 상세·작업 진행·실시간 음성 요약은 "약 N 크레딧", 모델 선택은 "100만 토큰당 N 크레딧", 참조 음성은 "10 크레딧"·잔액은 크레딧.
+- **자기 API 키 제공자**: 달러를 유지하되 "제공사 요금 추정"으로 표시한다. 구독형 CLI·로컬 모델은 표시하지 않거나 "무료".
+- **Steam판**: 데포 준비 스크립트가 설치 폴더 최상위에 `naia-distribution.txt`(내용 `steam`)를 넣고, 셸이 시작할 때 읽는다. 보조 신호는 환경 변수 `SteamAppId`=5354630. Steam판에서는 "크레딧 충전"·대시보드 링크가 없고, 크레딧 부족·구독 필요 안내에 웹 결제 안내 문구가 없다. 잔액 표시는 남는다.
+- **상태**: 기본(표시 파일 없음)·Steam(표시 파일 있음)·채널 확인 전(숨김)·네이티브 호출 실패(일반판).
+
 ## UC-DISCORD — Discord 채널 에이전트 (신규 요구, 2026-07-20)
 
 ### UC-DISCORD-1: 개인 봇 연결과 채널 활동 허용
@@ -2215,6 +2224,7 @@ Test Coverage Map (P02)
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
 | UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
+| UC-CREDITS-DISPLAY | `packages/shell/src/lib/__tests__/credits.test.ts`: 달러 × 1,000 크레딧 환산 한 곳; `packages/shell/src/components/__tests__/CostDashboard.steam.test.tsx`, `packages/shell/src/components/__tests__/AboutSection.steam.test.tsx`, `packages/shell/src/components/__tests__/OnboardingWizard.steam.test.tsx`, `packages/shell/src/components/__tests__/AppBar.test.tsx`: Steam판·판정 실패 시 결제·후원·웹 스토어 진입점 숨김; `packages/shell/src/lib/voice/__tests__/live-pricing.test.ts`: 음성 요금은 게이트웨이 시간당 행만 쓰고 없으면 금액 생략 | 실기 Steam 데포 빌드 확인은 릴리스 절차에서 한다 |
 
 ## UC-WORKSPACE-QUAD-732 — 워크스페이스 3단 작업 화면(터미널·문서·대시보드) (#732)
 

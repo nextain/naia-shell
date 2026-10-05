@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuditEvent, AuditStats } from "../../lib/types";
+import { useChatStore } from "../../stores/chat";
 import { useProgressStore } from "../../stores/progress";
 import { WorkProgressArea } from "../WorkProgressArea";
 
@@ -14,6 +15,7 @@ describe("WorkProgressArea", () => {
 	afterEach(() => {
 		cleanup();
 		useProgressStore.setState(useProgressStore.getInitialState());
+		useChatStore.setState({ provider: "" });
 	});
 
 	const sampleEvent: AuditEvent = {
@@ -68,10 +70,19 @@ describe("WorkProgressArea", () => {
 		expect(screen.getByText("42")).toBeDefined();
 	});
 
-	it("displays total cost in stats", () => {
+	it("shows the total cost as approximate credits on a Naia account (#727)", () => {
+		useChatStore.setState({ provider: "nextain" });
 		useProgressStore.setState({ stats: sampleStats, isLoading: false });
 		render(<WorkProgressArea />);
-		expect(screen.getByText("$0.053")).toBeDefined();
+		expect(screen.getByText("≈ 53 credits")).toBeDefined();
+		expect(screen.queryByText(/\$0\.053/)).toBeNull();
+	});
+
+	it("keeps dollars, labelled as a provider-price estimate, for own-key providers (#727)", () => {
+		useChatStore.setState({ provider: "gemini" });
+		useProgressStore.setState({ stats: sampleStats, isLoading: false });
+		render(<WorkProgressArea />);
+		expect(screen.getByText("$0.053 (provider price est.)")).toBeDefined();
 	});
 
 	it("renders event list", () => {
@@ -134,5 +145,74 @@ describe("WorkProgressArea", () => {
 		const payload = container.querySelector(".work-progress-event-payload");
 		expect(payload).not.toBeNull();
 		expect(payload?.textContent).toContain("/test.txt");
+	});
+
+	it("does not reformat historical nextain credits when active provider changes to own-key (#727 Defect 3)", () => {
+		const statsWithProvider: AuditStats = {
+			...sampleStats,
+			total_cost: 0.05,
+			by_provider: [{ provider: "nextain", cost: 0.05 }],
+		};
+		useProgressStore.setState({ stats: statsWithProvider, isLoading: false });
+
+		// Initially nextain
+		useChatStore.setState({ provider: "nextain" });
+		const { rerender } = render(<WorkProgressArea />);
+		expect(screen.getByText("≈ 50 credits")).toBeDefined();
+
+		// User changes active provider to openai
+		useChatStore.setState({ provider: "openai" });
+		rerender(<WorkProgressArea />);
+
+		// Historical nextain usage must stay as credits and NOT mutate to $0.050
+		expect(screen.getByText("≈ 50 credits")).toBeDefined();
+		expect(screen.queryByText(/\$0\.050/)).toBeNull();
+	});
+
+	it("displays legacy records with Earlier records label in English locale (#727 Defect 3)", () => {
+		const statsLegacy: AuditStats = {
+			...sampleStats,
+			total_cost: 0.02,
+			by_provider: [{ provider: "legacy", cost: 0.02 }],
+		};
+		useProgressStore.setState({ stats: statsLegacy, isLoading: false });
+		render(<WorkProgressArea />);
+		expect(
+			screen.getByText("$0.020 (provider price est.) (Earlier records)"),
+		).toBeDefined();
+	});
+
+	it("displays new unconfirmed records without units with Provider and unit unconfirmed label in English (#727 Defect 3)", () => {
+		const statsUnconfirmed: AuditStats = {
+			...sampleStats,
+			total_cost: 0.01,
+			by_provider: [{ provider: "unconfirmed", cost: 0.01 }],
+		};
+		useProgressStore.setState({ stats: statsUnconfirmed, isLoading: false });
+		render(<WorkProgressArea />);
+		expect(
+			screen.getByText("0.010 (Provider and unit unconfirmed)"),
+		).toBeDefined();
+		expect(screen.queryByText(/\$/)).toBeNull();
+		expect(screen.queryByText(/credits/)).toBeNull();
+	});
+
+	it("displays mixed records containing confirmed, legacy, and unconfirmed (#727 Defect 3)", () => {
+		const statsMixed: AuditStats = {
+			...sampleStats,
+			total_cost: 0.08,
+			by_provider: [
+				{ provider: "nextain", cost: 0.05 },
+				{ provider: "legacy", cost: 0.02 },
+				{ provider: "unconfirmed", cost: 0.01 },
+			],
+		};
+		useProgressStore.setState({ stats: statsMixed, isLoading: false });
+		render(<WorkProgressArea />);
+		expect(
+			screen.getByText(
+				"≈ 50 credits + $0.020 (provider price est.) (Earlier records) + 0.010 (Provider and unit unconfirmed)",
+			),
+		).toBeDefined();
 	});
 });

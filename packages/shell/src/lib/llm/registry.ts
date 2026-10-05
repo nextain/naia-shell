@@ -487,29 +487,6 @@ export function applyCapabilityOverrides(
 	});
 }
 
-/** Format model label with pricing and capability hints. */
-export function formatModelLabel(model: LlmModelMeta): string {
-	const tFn =
-		typeof (globalThis as any).t === "function"
-			? ((globalThis as any).t as (k: string) => string)
-			: null;
-	const isAsr = model.capabilities.includes("asr");
-	let label = isAsr ? `${model.label} (ASR)` : model.label;
-	if (model.pricing) {
-		const [input, output] = model.pricing;
-		const pricingLabel = tFn
-			? tFn("settings.pricingPerMillionTokens")
-			: "Price per 1M tokens";
-		const inputLabel = tFn ? tFn("settings.priceInput") : "Input";
-		const outputLabel = tFn ? tFn("settings.priceOutput") : "Output";
-		label = `${label} (${pricingLabel}: ${inputLabel} $${input.toFixed(3)} / ${outputLabel} $${output.toFixed(3)})`;
-	}
-	if (model.comingSoon) {
-		label = `${label} (${tFn ? tFn("settings.comingSoonTag") : "준비중"})`;
-	}
-	return label;
-}
-
 // Product recommendation order for general chat, reviewed 2026-08-08.
 // This is a tier-based Naia recommendation, not a fabricated cross-vendor score.
 // Evidence: Microsoft Foundry benchmark methodology and model cards, plus the

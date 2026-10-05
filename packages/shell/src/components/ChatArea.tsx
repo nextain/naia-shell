@@ -125,6 +125,16 @@ import {
 	getSttProvider,
 } from "../lib/stt";
 import { estimateSttCost } from "../lib/tts/cost";
+import { fetchLiveVoiceHourlyRate } from "../lib/voice/live-pricing";
+import {
+	formatApproxCredits,
+	formatUsageCost,
+	formatUsageTotal,
+} from "../lib/credits-usage";
+import {
+	paymentLinksHiddenNow,
+	usePaymentLinksHidden,
+} from "../lib/distribution";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
 	acceptPipelineOutputStage,
@@ -297,12 +307,6 @@ export const modelToolBoundary = makeModelToolBoundary({
 	warn: (m, c) => Logger.warn("ChatArea", m, c),
 });
 
-function formatCost(cost: number): string {
-	if (cost < 0.001) return `$${cost.toFixed(6)}`;
-	if (cost < 0.01) return `$${cost.toFixed(4)}`;
-	return `$${cost.toFixed(3)}`;
-}
-
 /** 로컬 음성(naia-local-voice) 음색 id — 사용자 음성 참조(voiceRefUrl, RefAudioSection
  *  프리셋)의 **파일명**이 façade `/ref/voices` 팔레트 id 와 일치하므로 basename 을 그대로
  *  전달한다. (2026-07-15 루크 실증: 하드코딩 "default" 가 프리셋 선택을 façade 에 전달하지
@@ -357,10 +361,11 @@ function ChatErrorNotice({
  */
 export type ChatVariant = "rail" | "floating";
 
-
 /** 슬라이드 낭독문 분할 (VITE_NAIA_SLIDES_TTS_CHUNK: word | phrase | sentence). */
 function splitSlideNarration(text: string): string[] {
-	const mode = (import.meta.env.VITE_NAIA_SLIDES_TTS_CHUNK as string | undefined) ?? "sentence";
+	const mode =
+		(import.meta.env.VITE_NAIA_SLIDES_TTS_CHUNK as string | undefined) ??
+		"sentence";
 	const clean = text.replace(/\s+/g, " ").trim();
 	if (!clean) return [];
 	let parts: string[];
@@ -577,7 +582,8 @@ export function ChatArea({
 			getRenderer: () => useCascadeAvatarStore.getState().renderer,
 			beginCascadeJob: () => beginCascadeTtsJob(),
 			setOutputStage: (stage) => {
-				if (acceptPipelineOutputStage(ttsTextSyncRef.current)) setOutputStage(stage);
+				if (acceptPipelineOutputStage(ttsTextSyncRef.current))
+					setOutputStage(stage);
 			},
 			getQueue: () => audioQueueRef.current,
 			getVoiceConfig: () => pipelineVoiceConfigRef.current,
@@ -653,6 +659,9 @@ export function ChatArea({
 	const streamingThinking = useChatStore((s) => s.streamingThinking);
 	const streamingToolCalls = useChatStore((s) => s.streamingToolCalls);
 	const totalSessionCost = useChatStore((s) => s.totalSessionCost);
+	const totalSessionCostNaia = useChatStore((s) => s.totalSessionCostNaia);
+	// Loads the distribution channel at startup so it is known when a message is built.
+	usePaymentLinksHidden();
 	const sessionCostEntries = useChatStore((s) => s.sessionCostEntries);
 	const provider = useChatStore((s) => s.provider);
 	const pendingApproval = useChatStore((s) => s.pendingApproval);
@@ -896,7 +905,6 @@ export function ChatArea({
 		});
 	}, []);
 
-
 	// Auto-send queued messages when streaming ends
 	useEffect(() => {
 		if (!isChatRequestActive() && messageQueue.length > 0) {
@@ -920,26 +928,54 @@ export function ChatArea({
 		const safeTimestamp = capturedAt.replace(/[:.]/g, "-");
 		const base = `diagnostics/voice/${slide ? `page-${slide.page}` : "chat"}-${safeTimestamp}`;
 		const audioRelativePath = `${base}.wav`;
-		const audioBytes = Uint8Array.from(atob(result.audioBase64), (char) => char.charCodeAt(0));
+		const audioBytes = Uint8Array.from(atob(result.audioBase64), (char) =>
+			char.charCodeAt(0),
+		);
 		const record = {
 			schemaVersion: 1,
 			captureKind: slide ? "slides-tts" : "chat-tts",
 			capturedAt,
-			slide: slide ? { page: slide.page, generation: slide.generation, requestId: slide.requestId } : null,
+			slide: slide
+				? {
+						page: slide.page,
+						generation: slide.generation,
+						requestId: slide.requestId,
+					}
+				: null,
 			text: result.text,
 			provider: result.provider,
 			voice: result.voice ?? null,
 			localReferenceAudioPresent: result.localReferenceAudioPresent,
-			localVoiceRuntimeStatus: result.provider === "naia-local-voice" ? "captured-during-local-voice-request" : null,
+			localVoiceRuntimeStatus:
+				result.provider === "naia-local-voice"
+					? "captured-during-local-voice-request"
+					: null,
 			vllmTtsHost: result.vllmTtsHost ?? null,
 			synthesisElapsedMs: result.elapsedMs,
 			audioDurationSeconds: result.audioDurationSeconds,
 			audioRelativePath,
 		};
 		return writeAppSandboxFile(appId, audioRelativePath, Array.from(audioBytes))
-			.then(() => writeAppSandboxFile(appId, `${base}.json`, Array.from(new TextEncoder().encode(JSON.stringify(record, null, 2)))))
-			.then(() => Logger.info("ChatArea", "captured local voice diagnostic", { appId, provider: result.provider, audioRelativePath }))
-			.catch((error) => Logger.warn("ChatArea", "local voice diagnostic capture failed", { appId, error: String(error) }));
+			.then(() =>
+				writeAppSandboxFile(
+					appId,
+					`${base}.json`,
+					Array.from(new TextEncoder().encode(JSON.stringify(record, null, 2))),
+				),
+			)
+			.then(() =>
+				Logger.info("ChatArea", "captured local voice diagnostic", {
+					appId,
+					provider: result.provider,
+					audioRelativePath,
+				}),
+			)
+			.catch((error) =>
+				Logger.warn("ChatArea", "local voice diagnostic capture failed", {
+					appId,
+					error: String(error),
+				}),
+			);
 	}
 
 	function settleSlidePresenterSpeech(
@@ -1768,7 +1804,9 @@ export function ChatArea({
 		// When the saved model is not valid for the active provider, fall back to the default.
 		// Skip validation for providers with dynamic models (e.g. Ollama — empty static model list).
 		const savedModel =
-			configuredModel || getDefaultLlmModel(activeProvider) || "gemini-2.5-flash";
+			configuredModel ||
+			getDefaultLlmModel(activeProvider) ||
+			"gemini-2.5-flash";
 		const providerMeta = getLlmProvider(activeProvider);
 		const hasDynamicModels = providerMeta && providerMeta.models.length === 0;
 		// The gateway catalog is populated asynchronously, so a model selected
@@ -2149,7 +2187,9 @@ export function ChatArea({
 					);
 				})
 				.catch((err) => {
-					Logger.warn("ChatArea", "browser host skill error", { error: String(err) });
+					Logger.warn("ChatArea", "browser host skill error", {
+						error: String(err),
+					});
 					useChatStore
 						.getState()
 						.updateStreamingToolResult(req.toolCallId, false, String(err));
@@ -2567,6 +2607,7 @@ export function ChatArea({
 		const info = voiceStartRef.current;
 		if (!info) return;
 		voiceStartRef.current = null;
+		const targetLocalSessionId = useChatStore.getState().localSessionId;
 		const elapsed = (Date.now() - info.time) / 1000;
 		if (elapsed < 3) return; // ignore very short sessions
 		// Naia Local runs on the user's own GPU — no Naia-credit charge. Show a
@@ -2576,7 +2617,7 @@ export function ChatArea({
 				elapsed < 60
 					? `${Math.round(elapsed)}s`
 					: `${Math.floor(elapsed / 60)}m ${Math.round(elapsed % 60)}s`;
-			useChatStore.getState().addMessage({
+			useChatStore.getState().recordVoiceCostSummary(targetLocalSessionId, {
 				role: "assistant",
 				content: `🎙️ ${dur} · 로컬 (무료)`,
 			});
@@ -2588,41 +2629,42 @@ export function ChatArea({
 				info.provider as keyof typeof LIVE_PROVIDER_COST_HINTS
 			];
 		if (!hint || hint.cost === "Free") return;
-		// Cost hints carry a unit: "/hr" (hourly session models like naia-omni)
-		// or "/min" (per-minute providers). Hourly models bill by wall-clock
-		// time — applying the per-minute formula over-charged ~60×.
-		const match = hint.cost.match(/\$([\d.]+)\s*\/\s*(hr|min)/);
-		if (!match) return;
-		const rate = Number.parseFloat(match[1]);
-		const perHour = match[2] === "hr";
-		const totalCost = perHour ? rate * (elapsed / 3600) : rate * minutes;
+		// Only Naia-account sessions are billed by the gateway; anything else
+		// (local GPU, own key) shows no amount here.
+		const naiaBilled =
+			info.provider === "naia-omni" || info.provider === "azure-voice-live";
 		const durationStr =
 			minutes < 1
 				? `${Math.round(elapsed)}s`
 				: `${Math.floor(minutes)}m ${Math.round(elapsed % 60)}s`;
-		const inputTokens = perHour ? 0 : Math.round(elapsed * 32);
-		const outputTokens = perHour ? 0 : Math.round(elapsed * 32);
-		const providerMap: Record<string, string> = {
-			"azure-voice-live": "nextain",
-			"naia-omni": "nextain",
-			"vllm-omni": "vllm",
-		};
-		useChatStore.getState().addMessage({
-			role: "assistant",
-			content: `🎙️ ${durationStr} · ~$${totalCost.toFixed(3)} (${hint.note})`,
-			cost: {
-				provider: (providerMap[info.provider] ?? info.provider) as any,
-				model:
-					info.provider === "azure-voice-live"
-						? "azure-realtime"
-						: info.provider === "vllm-omni"
-							? "vllm-omni"
-							: "naia-omni",
-				inputTokens,
-				outputTokens,
-				cost: totalCost,
+		if (!naiaBilled) return;
+		// The rate comes from the gateway /v1/pricing (hourly rows) x 1000 credits;
+		// the shell holds no rate. Without one, the amount is omitted.
+		void fetchLiveVoiceHourlyRate(LAB_GATEWAY_URL, info.provider).then(
+			(rate) => {
+				const totalCost = rate == null ? null : rate * (elapsed / 3600);
+				const costText =
+					totalCost == null ? "" : ` · ${formatApproxCredits(totalCost)}`;
+				useChatStore.getState().recordVoiceCostSummary(targetLocalSessionId, {
+					role: "assistant",
+					content: `🎙️ ${durationStr}${costText} (${hint.note})`,
+					...(totalCost == null
+						? {}
+						: {
+								cost: {
+									provider: "nextain" as const,
+									model:
+										info.provider === "azure-voice-live"
+											? "azure-realtime"
+											: "naia-omni",
+									inputTokens: 0,
+									outputTokens: 0,
+									cost: totalCost,
+								},
+							}),
+				});
 			},
-		});
+		);
 	}
 
 	/** Route one sentence to the configured voice output. */
@@ -3621,7 +3663,11 @@ export function ChatArea({
 			// raw dump. Cleanup below turns voice off so there is no retry loop.
 			if (!cancelled) {
 				const content = errStr.includes("subscription-required")
-					? t("chat.voiceSubscriptionRequired")
+					? t(
+							paymentLinksHiddenNow()
+								? "chat.voiceSubscriptionRequiredNoLink"
+								: "chat.voiceSubscriptionRequired",
+						)
 					: errStr.includes("auth-failed")
 						? t("chat.voiceNeedLabKey")
 						: voiceFailureMessage(lastVoiceStatusRef.current, err);
@@ -3867,7 +3913,10 @@ export function ChatArea({
 									className="cost-badge session-cost cost-badge-clickable"
 									onClick={() => setShowCostDashboard((v) => !v)}
 								>
-									{formatCost(totalSessionCost)}
+									{formatUsageTotal(
+										totalSessionCostNaia,
+										totalSessionCost - totalSessionCostNaia,
+									)}
 								</button>
 							)}
 						<button
@@ -3928,7 +3977,9 @@ export function ChatArea({
 						className="chat-compaction-notice"
 						data-testid="bgm-sidecar-error"
 					>
-						<span>BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.</span>
+						<span>
+							BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.
+						</span>
 					</div>
 				)}
 				{compactionNotice !== null && activeTab === "chat" && (
@@ -4010,7 +4061,7 @@ export function ChatArea({
 								)}
 								{msg.cost && provider !== "ollama" && provider !== "vllm" && (
 									<span className="cost-badge">
-										{formatCost(msg.cost.cost)} ·{" "}
+										{formatUsageCost(msg.cost.cost, msg.cost.provider)} ·{" "}
 										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
 										{t("chat.tokens")}
 									</span>
@@ -4236,7 +4287,6 @@ export function ChatArea({
 					</div>
 				</div>
 			)}
-			
 		</>
 	);
 }
