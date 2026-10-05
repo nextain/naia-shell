@@ -918,7 +918,10 @@ export function SettingsTab() {
 	const refreshVoxCpm2Installation = useCallback(async () => {
 		const generation = ++voxcpm2InstallationRequestRef.current;
 		try {
-			const status = await invoke<unknown>("voxcpm2_installation_status");
+			// 상태도 지금 고른 카드 기준으로 본다 — 저장된 옛 카드의 엔진이 있다고 "준비됨"으로 읽으면 바뀐 카드로 시작하다 실패한다.
+			const status = await invoke<unknown>("voxcpm2_installation_status", {
+				gpuIndex: loadConfig()?.localVoiceGpuIndex ?? null,
+			});
 			if (generation !== voxcpm2InstallationRequestRef.current) return null;
 			if (!isVoxCpm2InstallationStatus(status)) {
 				Logger.warn("Settings", "Malformed cascade installation status", {});
@@ -1040,12 +1043,17 @@ export function SettingsTab() {
 		message?: string;
 	}> => {
 		try {
+			// 카드 번호는 한 번만 읽는다. 설치가 길어 그 사이 카드를 바꿔도, 이어지는
+			// 첫 시작은 설치에 쓴 카드와 같아야 엔진이 있다. 바꾼 카드는 다음 시작의
+			// 상태 확인(엔진 없음 → 재설치)에서 반영된다.
+			const gpuIndexForRun: number | null =
+				loadConfig()?.localVoiceGpuIndex ?? null;
 			let installation = await refreshVoxCpm2Installation();
 			if (!installation?.canStart) {
 				setCascadeMsg(t("voice.hostEngineInstalling"));
 				const installed = await invoke<unknown>(
 					"install_voxcpm2_runtime",
-					{ gpuIndex: loadConfig()?.localVoiceGpuIndex ?? null },
+					{ gpuIndex: gpuIndexForRun },
 				);
 				if (isVoxCpm2InstallationStatus(installed))
 					setVoxCpm2Installation(installed);
@@ -1064,8 +1072,7 @@ export function SettingsTab() {
 			const ready = await invoke<string>("start_voxcpm2", {
 				expectedLoaderProfile,
 				// 사람이 고른 카드가 있으면 그것으로 (#537).
-				// 설치가 길어 그 사이 사람이 카드를 바꿀 수 있다 — 렌더 시점 값이 아닌 지금 값.
-				gpuIndex: loadConfig()?.localVoiceGpuIndex ?? null,
+				gpuIndex: gpuIndexForRun,
 			});
 			const afterStart = await refreshVoxCpm2Installation();
 			return afterStart?.ready

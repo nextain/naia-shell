@@ -370,6 +370,40 @@ pub fn query_gpus(accelerator: Accelerator) -> Vec<GpuInfo> {
     }
 }
 
+/// 카드 번호 결정의 결과. 버려진 번호는 로그용이다.
+#[derive(Debug, PartialEq, Eq)]
+pub struct GpuResolution {
+    pub choice: Option<u32>,
+    pub dropped_explicit: Option<u32>,
+    pub dropped_recorded: Option<u32>,
+}
+
+/// 명시 선택 > 저장된 선택 > 여유가 가장 큰 카드 > (목록 조회가 비었을 때만) `fallback`.
+///
+/// 목록을 얻었는데 거기 없는 번호(카드 제거·비활성화)는 무시하고 다음 단계로
+/// 내려간다 — 없는 번호를 계속 찾다 실패하지 않게. 목록이 비면(조회 실패) 확인할
+/// 수 없으므로 명시·저장 값을 그대로 믿는다.
+pub fn resolve_gpu_choice(
+    explicit: Option<u32>,
+    recorded: Option<u32>,
+    gpus: &[GpuInfo],
+    fallback: impl FnOnce() -> Option<u32>,
+) -> GpuResolution {
+    let known = |index: u32| gpus.is_empty() || gpus.iter().any(|g| g.index == index);
+    let dropped_explicit = explicit.filter(|i| !known(*i));
+    let dropped_recorded = recorded.filter(|i| !known(*i));
+    let choice = explicit
+        .filter(|i| known(*i))
+        .or_else(|| recorded.filter(|i| known(*i)))
+        .or_else(|| select_gpu(gpus, None))
+        .or_else(fallback);
+    GpuResolution {
+        choice,
+        dropped_explicit,
+        dropped_recorded,
+    }
+}
+
 /// `index, memory.free, memory.total` 세 열. 단위는 MiB.
 pub fn parse_nvidia_gpu_csv(text: &str) -> Vec<GpuInfo> {
     text.lines()
@@ -410,6 +444,39 @@ pub fn parse_rocm_gpu_csv(text: &str) -> Vec<GpuInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn gpu_info(index: u32, free_mib: u64) -> GpuInfo {
+        GpuInfo { index, free_mib, total_mib: 24576 }
+    }
+
+    #[test]
+    fn 카드_결정_우선순위는_명시_저장_여유_후퇴() {
+        let gpus = [gpu_info(0, 300), gpu_info(1, 16000)];
+        let boom = || -> Option<u32> { panic!("후퇴는 목록이 비었을 때만") };
+        assert_eq!(resolve_gpu_choice(Some(0), Some(1), &gpus, boom).choice, Some(0));
+        assert_eq!(resolve_gpu_choice(None, Some(0), &gpus, boom).choice, Some(0));
+        assert_eq!(resolve_gpu_choice(None, None, &gpus, boom).choice, Some(1));
+        assert_eq!(resolve_gpu_choice(None, None, &[], || Some(0)).choice, Some(0));
+        assert_eq!(resolve_gpu_choice(None, None, &[], || None).choice, None);
+    }
+
+    #[test]
+    fn 목록에_없는_번호는_버리고_내려간다() {
+        let gpus = [gpu_info(1, 16000), gpu_info(2, 500)];
+        let gone = resolve_gpu_choice(Some(0), Some(0), &gpus, || None);
+        assert_eq!(gone.choice, Some(1));
+        assert_eq!(gone.dropped_explicit, Some(0));
+        assert_eq!(gone.dropped_recorded, Some(0));
+        let saved_gone = resolve_gpu_choice(None, Some(7), &gpus, || None);
+        assert_eq!(saved_gone.choice, Some(1));
+        assert_eq!(saved_gone.dropped_recorded, Some(7));
+    }
+
+    #[test]
+    fn 조회가_실패하면_명시와_저장_값을_믿는다() {
+        assert_eq!(resolve_gpu_choice(Some(3), None, &[], || Some(0)).choice, Some(3));
+        assert_eq!(resolve_gpu_choice(None, Some(2), &[], || Some(0)).choice, Some(2));
+    }
 
     #[test]
     fn nvidia_smi_출력에서_여유_큰_카드를_고른다() {

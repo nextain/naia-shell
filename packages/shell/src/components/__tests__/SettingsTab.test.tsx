@@ -2882,7 +2882,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 
 		render(<SettingsTab />);
 		await vi.waitFor(() =>
-			expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_installation_status"),
+			expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_installation_status", { gpuIndex: null }),
 		);
 		expect(mockInvoke).not.toHaveBeenCalledWith("start_voxcpm2", {
 			expectedLoaderProfile: "windows_trt_6g",

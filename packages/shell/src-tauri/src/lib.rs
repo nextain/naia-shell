@@ -6139,41 +6139,44 @@ pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
 
 /// #703: the single GPU the engine is keyed for, built on and loaded on.
 /// Explicit choice > the mode's recorded choice > the NVIDIA card with the most
-/// free memory ("자동 (여유가 가장 많은 카드)"); only if that query fails, the
-/// lowest-index card.
+/// free memory ("자동 (여유가 가장 많은 카드)"); the lowest index only when the
+/// device query fails. An explicit or recorded index that is not in the live
+/// device list (card removed/disabled) is ignored.
+fn voxcpm2_resolve_gpu(gpu_index: Option<u32>) -> voice_runtime::GpuResolution {
+    let recorded = voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root());
+    let gpus = voice_runtime::query_gpus(voice_runtime::Accelerator::TensorRtCuda);
+    voice_runtime::resolve_gpu_choice(gpu_index, recorded, &gpus, || {
+        voice_cache::query_nvidia_identities().iter().map(|g| g.index).min()
+    })
+}
+
 fn voxcpm2_effective_gpu(gpu_index: Option<u32>) -> Option<u32> {
-    resolve_gpu_choice(
-        gpu_index,
-        || voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root()),
-        || {
-            voice_runtime::select_gpu(
-                &voice_runtime::query_gpus(voice_runtime::Accelerator::TensorRtCuda),
-                None,
-            )
-        },
-        || voice_cache::query_nvidia_identities().iter().map(|g| g.index).min(),
-    )
+    voxcpm2_resolve_gpu(gpu_index).choice
 }
 
-fn resolve_gpu_choice(
-    explicit: Option<u32>,
-    recorded: impl FnOnce() -> Option<u32>,
-    most_free: impl FnOnce() -> Option<u32>,
-    lowest_index: impl FnOnce() -> Option<u32>,
-) -> Option<u32> {
-    explicit.or_else(recorded).or_else(most_free).or_else(lowest_index)
-}
-
-/// Explicit choices are recorded as before. An automatic pick is recorded too, the
-/// first time it is made: free memory changes as soon as the engine build starts,
-/// and the cache key / build / load must all keep the same card.
+/// Used by install and start: resolves the card once and records it whenever it
+/// differs from the record (first automatic pick, or an explicit/recorded card
+/// that vanished). Free memory changes as soon as the engine build starts, and
+/// the cache key / build / load must all keep the same card.
 fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Option<u32> {
-    let had_record = voice_cache::recorded_gpu_choice(state_root).is_some();
-    let choice = voxcpm2_effective_gpu(gpu_index);
-    if gpu_index.is_some() || (!had_record && choice.is_some()) {
-        let _ = voice_cache::record_gpu_choice(state_root, choice);
+    let resolution = voxcpm2_resolve_gpu(gpu_index);
+    if let Some(gone) = resolution.dropped_explicit {
+        log_both(&format!(
+            "[Naia] 고른 카드 {gone} 번이 지금 장치 목록에 없어 자동 선택으로 내려갑니다 → {:?}",
+            resolution.choice
+        ));
     }
-    choice
+    if let Some(gone) = resolution.dropped_recorded {
+        log_both(&format!(
+            "[Naia] 저장된 카드 {gone} 번이 지금 장치 목록에 없어 자동 선택으로 내려갑니다 → {:?}",
+            resolution.choice
+        ));
+    }
+    let recorded = voice_cache::recorded_gpu_choice(state_root);
+    if resolution.choice.is_some() && resolution.choice != recorded {
+        let _ = voice_cache::record_gpu_choice(state_root, resolution.choice);
+    }
+    resolution.choice
 }
 
 fn voxcpm2_voice_context(
@@ -7983,6 +7986,7 @@ async fn install_voxcpm2_runtime(
 async fn voxcpm2_installation_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    gpu_index: Option<u32>,
 ) -> Result<VoxCpm2InstallationStatus, String> {
     let adk_path = data_home::read_child_from_dirs_home(DataHomeChild::AdkPath)
         .map(|value| value.trim().to_string())
@@ -8000,7 +8004,7 @@ async fn voxcpm2_installation_status(
             .is_some_and(|path| read_voxcpm2_download_manifest(&path).is_ok()));
     let ctx = bundle_root
         .as_deref()
-        .and_then(|root| voxcpm2_context_for_bundle(root, None).ok());
+        .and_then(|root| voxcpm2_context_for_bundle(root, gpu_index).ok());
     let mut probe =
         tokio::task::spawn_blocking(move || {
             probe_voxcpm2_installation(bundle_root.as_deref(), ctx.as_ref())
@@ -18726,20 +18730,5 @@ mod voxcpm2_installer_precheck_tests {
             Some(fallback.clone()),
         );
         assert_eq!(result, fallback);
-    }
-
-    #[test]
-    fn voxcpm2_effective_gpu_prefers_explicit_choice() {
-        assert_eq!(voxcpm2_effective_gpu(Some(3)), Some(3));
-    }
-
-    #[test]
-    fn resolve_gpu_choice_order_explicit_recorded_most_free_lowest() {
-        let boom = || -> Option<u32> { panic!("must not be asked") };
-        assert_eq!(resolve_gpu_choice(Some(2), boom, boom, boom), Some(2));
-        assert_eq!(resolve_gpu_choice(None, || Some(1), boom, boom), Some(1));
-        assert_eq!(resolve_gpu_choice(None, || None, || Some(1), boom), Some(1));
-        assert_eq!(resolve_gpu_choice(None, || None, || None, || Some(0)), Some(0));
-        assert_eq!(resolve_gpu_choice(None, || None, || None, || None), None);
     }
 }
