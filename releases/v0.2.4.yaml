@@ -4,8 +4,8 @@ date: "2026-10-04"
 # 이 운영체제의 기계와 스펙만 조건으로 삼는다 — scripts/lib/release-target.mjs.
 targets: [windows]
 summary:
-  en: "Windows signing and credits release: the installed naia-shell.exe now keeps a valid Authenticode signature, Naia usage cost is shown in credits, and the Steam build hides top-up and payment links. Also pairs naia-agent 3b0e101 for knowledge recall."
-  ko: "윈도우 서명·크레딧 릴리스입니다. 설치된 naia-shell.exe 의 Authenticode 서명이 유효하게 남고, 나이아 사용 비용을 크레딧으로 보여 주며, Steam 판에서는 충전·결제 링크를 숨깁니다. 지식 회상을 위해 naia-agent 3b0e101 과 짝을 맞춥니다."
+  en: "Windows signing, credits and 3-pane workspace release: the installed naia-shell.exe now keeps a valid Authenticode signature, Naia usage cost is shown in credits, the Steam build hides top-up and payment links, and a 3-pane workspace puts a terminal, docs and a board side by side. Also pairs naia-agent 3b0e101 for knowledge recall."
+  ko: "윈도우 서명·크레딧·3단 작업 화면 릴리스입니다. 설치된 naia-shell.exe 의 Authenticode 서명이 유효하게 남고, 나이아 사용 비용을 크레딧으로 보여 주며, Steam 판에서는 충전·결제 링크를 숨기며, 3단 작업 화면에서 터미널·문서·작업판을 나란히 씁니다. 지식 회상을 위해 naia-agent 3b0e101 과 짝을 맞춥니다."
 changes:
   - type: fix
     scope: release
@@ -25,6 +25,12 @@ changes:
     description:
       en: "Hide top-up, donation, sponsor and store links on the Steam build, and treat an unknown distribution channel as hidden."
       ko: "Steam 판에서 충전·후원·스폰서·스토어 링크를 숨기고, 배포 채널을 알 수 없으면 숨김으로 처리합니다."
+  - type: feature
+    scope: workspace
+    issue: 732
+    description:
+      en: "Add a 3-pane workspace: a terminal that can run opencode, a docs pane and a board pane side by side. The docs and board pane addresses can be changed to http or https addresses on this computer (localhost, 127.0.0.1 or [::1]), and the settings are kept across restarts."
+      ko: "3단 작업 화면을 더합니다. opencode 를 실행할 수 있는 터미널, 문서 칸, 작업판 칸을 나란히 둡니다. 문서·작업판 칸 주소는 이 컴퓨터(localhost·127.0.0.1·[::1])의 http·https 주소로 바꿀 수 있고, 설정은 다시 실행해도 유지됩니다."
   - type: fix
     scope: agent
     description:
