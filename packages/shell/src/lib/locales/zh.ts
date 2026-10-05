@@ -323,6 +323,7 @@ export default {
 	"settings.liveVoice": "Live 语音",
 	"tool.execute_command": "执行命令",
 	"tool.read_file": "读取文件",
+	"tool.list_dir": "查看文件夹",
 	"tool.search_files": "搜索文件",
 	"tool.web_search": "网页搜索",
 	"tool.apply_diff": "应用差异",

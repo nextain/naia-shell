@@ -323,6 +323,7 @@ export default {
 	"settings.liveVoice": "लाइव आवाज",
 	"tool.execute_command": "आदेश निष्पादित करें",
 	"tool.read_file": "फ़ाइल पढ़ें",
+	"tool.list_dir": "फ़ोल्डर देखें",
 	"tool.search_files": "फ़ाइलें खोजें",
 	"tool.web_search": "वेब खोज",
 	"tool.apply_diff": "डिफ लागू करें",

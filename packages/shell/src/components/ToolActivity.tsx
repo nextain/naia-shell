@@ -5,6 +5,7 @@ import { BrowserHostResult, browserHostCardFor } from "./BrowserHostResult";
 
 const TOOL_NAME_KEYS: Record<string, string> = {
 	execute_command: "tool.execute_command",
+	list_dir: "tool.list_dir",
 	read_file: "tool.read_file",
 	search_files: "tool.search_files",
 	web_search: "tool.web_search",

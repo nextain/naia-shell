@@ -323,6 +323,7 @@ export default {
 	"settings.liveVoice": "Live-Stimme",
 	"tool.execute_command": "Befehl ausführen",
 	"tool.read_file": "Datei lesen",
+	"tool.list_dir": "Ordner anzeigen",
 	"tool.search_files": "Dateien durchsuchen",
 	"tool.web_search": "Websuche",
 	"tool.apply_diff": "Diff anwenden",

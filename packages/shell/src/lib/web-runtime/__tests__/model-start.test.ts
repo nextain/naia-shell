@@ -45,11 +45,96 @@ describe("model-start", () => {
 		expect(status.errorKind).toBe("no-webgpu");
 	});
 
-	it("sets no-shader-f16 error and starts with model null when f16 is missing and default 4B f16 model is chosen", async () => {
+	it("WO13C-S4 auto-f32", async () => {
 		const bridge = { start: vi.fn() };
 		const gpu = {
 			requestAdapter: vi.fn().mockResolvedValue({
 				features: { has: () => false },
+				info: { vendor: "vendor-x", architecture: "arch-y", description: "" },
+			}),
+		};
+		const setItemSpy = vi.fn();
+		const storage = {
+			getItem: vi.fn(() => null),
+			setItem: setItemSpy,
+		};
+
+		await startWebModel({
+			gpu,
+			storage,
+			engineKind: undefined,
+			bridge,
+		});
+
+		expect(bridge.start).toHaveBeenCalledTimes(1);
+		expect(bridge.start).toHaveBeenCalledWith({ model: "Qwen3-4B-q4f32_1-MLC" });
+		const status = getWebModelStatus();
+		expect(status.phase).toBe("loading");
+		expect(status.model).toBe("Qwen3-4B-q4f32_1-MLC");
+		expect(status.errorKind).toBeUndefined();
+		expect(setItemSpy).not.toHaveBeenCalled();
+	});
+
+	it("WO13C-S5 explicit-f16-error", async () => {
+		const gpu = {
+			requestAdapter: vi.fn().mockResolvedValue({
+				features: { has: () => false },
+				info: { vendor: "vendor-x", architecture: "arch-y", description: "" },
+			}),
+		};
+
+		// 1. 저장값이 f16 인 경우
+		{
+			const bridge = { start: vi.fn() };
+			const storage = {
+				getItem: vi.fn((key: string) => {
+					if (key === WEB_LLM_MODEL_PREF_KEY) return WEB_LLM_MODEL_ID;
+					return null;
+				}),
+			};
+
+			await startWebModel({
+				gpu,
+				storage,
+				engineKind: undefined,
+				bridge,
+			});
+
+			expect(bridge.start).toHaveBeenCalledWith({ model: null });
+			const status = getWebModelStatus();
+			expect(status.phase).toBe("error");
+			expect(status.errorKind).toBe("no-shader-f16");
+			expect(status.shaderF16).toBe(false);
+			expect(status.adapter?.vendor).toBe("vendor-x");
+		}
+
+		// 2. 빌드 지정값이 f16 일 때 (별도 경우)
+		{
+			resetWebModelStatusForTests();
+			const bridge = { start: vi.fn() };
+
+			await startWebModel({
+				gpu,
+				storage: null,
+				engineKind: undefined,
+				buildModel: WEB_LLM_MODEL_ID,
+				bridge,
+			});
+
+			expect(bridge.start).toHaveBeenCalledWith({ model: null });
+			const status = getWebModelStatus();
+			expect(status.phase).toBe("error");
+			expect(status.errorKind).toBe("no-shader-f16");
+			expect(status.shaderF16).toBe(false);
+			expect(status.adapter?.vendor).toBe("vendor-x");
+		}
+	});
+
+	it("WO13C-S6 f16-capable-unchanged", async () => {
+		const bridge = { start: vi.fn() };
+		const gpu = {
+			requestAdapter: vi.fn().mockResolvedValue({
+				features: { has: (f: string) => f === "shader-f16" },
 				info: { vendor: "vendor-x", architecture: "arch-y", description: "" },
 			}),
 		};
@@ -61,12 +146,11 @@ describe("model-start", () => {
 			bridge,
 		});
 
-		expect(bridge.start).toHaveBeenCalledWith({ model: null });
+		expect(bridge.start).toHaveBeenCalledWith({ model: WEB_LLM_MODEL_ID });
 		const status = getWebModelStatus();
-		expect(status.phase).toBe("error");
-		expect(status.errorKind).toBe("no-shader-f16");
-		expect(status.shaderF16).toBe(false);
-		expect(status.adapter?.vendor).toBe("vendor-x");
+		expect(status.phase).toBe("loading");
+		expect(status.model).toBe(WEB_LLM_MODEL_ID);
+		expect(status.shaderF16).toBe(true);
 	});
 
 	it("starts with 4B f32 when f16 is missing but user preferred 4B f32", async () => {

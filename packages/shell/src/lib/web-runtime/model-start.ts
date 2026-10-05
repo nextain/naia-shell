@@ -3,7 +3,8 @@ import { checkWebGpu, type GpuLike } from "./webgpu-check";
 import {
 	isWebLlmModelId,
 	modelNeedsShaderF16,
-	readWebLlmModelPreference,
+	readWebLlmModelChoice,
+	WEB_LLM_FALLBACK_F32,
 	type WebLlmModelId,
 } from "./webllm-model";
 import { setWebModelStatus } from "./web-model-status";
@@ -21,7 +22,8 @@ export async function startWebModel(deps: {
 				value: deps.buildModel,
 			});
 		}
-		const model = readWebLlmModelPreference(deps.storage, deps.buildModel);
+		const choice = readWebLlmModelChoice(deps.storage, deps.buildModel);
+		let model = choice.model;
 		setWebModelStatus({ phase: "checking", model, progress: 0 });
 
 		if (deps.engineKind === "fake") {
@@ -42,18 +44,26 @@ export async function startWebModel(deps: {
 		}
 
 		if (modelNeedsShaderF16(model) && !result.shaderF16) {
-			setWebModelStatus({
-				phase: "error",
-				errorKind: "no-shader-f16",
-				adapter: result.adapter,
-				shaderF16: result.shaderF16,
-			});
-			deps.bridge.start({ model: null });
-			return;
+			if (!choice.explicit) {
+				const from = model;
+				const to = WEB_LLM_FALLBACK_F32;
+				model = to;
+				Logger.info("WebModel", "auto-selected f32 model", { from, to });
+			} else {
+				setWebModelStatus({
+					phase: "error",
+					errorKind: "no-shader-f16",
+					adapter: result.adapter,
+					shaderF16: result.shaderF16,
+				});
+				deps.bridge.start({ model: null });
+				return;
+			}
 		}
 
 		setWebModelStatus({
 			phase: "loading",
+			model,
 			progress: 0,
 			adapter: result.adapter,
 			shaderF16: result.shaderF16,

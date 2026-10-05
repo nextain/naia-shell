@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { setLocale } from "../../i18n";
 import { createMemoryWebFs, type WebFs } from "../web-fs";
 import {
 	handleWebWorkspaceCommand,
@@ -24,6 +25,7 @@ describe("web-workspace-commands", () => {
 			speechStyle: "casual",
 			persona: "You are Naia, an AI companion. Speak casually and warmly.",
 			onboardingComplete: true,
+			NAIA_LOCALE: "en",
 		};
 		expect(parsedInStorage).toEqual(expectedConfig);
 		expect(JSON.parse(first)).toEqual(expectedConfig);
@@ -217,5 +219,53 @@ describe("web-workspace-commands", () => {
 		await expect(
 			handleWebWorkspaceCommand("read_naia_config", { adkPath: 123 }, fs),
 		).rejects.toThrow("web_invalid_args:read_naia_config");
+	});
+
+	it("WO13C-S1 initial-config-locale", async () => {
+		try {
+			await setLocale("ko");
+			const fs = createMemoryWebFs();
+			const result = (await handleWebWorkspaceCommand(
+				"read_naia_config",
+				{ adkPath: "opfs://naia-adk" },
+				fs,
+			)) as string;
+
+			const expectedConfig = {
+				provider: "webllm",
+				model: "Qwen3-4B-q4f16_1-MLC",
+				agentName: "Naia",
+				speechStyle: "casual",
+				persona: "You are Naia, an AI companion. Speak casually and warmly.",
+				onboardingComplete: true,
+				NAIA_LOCALE: "ko",
+			};
+			expect(JSON.parse(result)).toEqual(expectedConfig);
+
+			const inStorage = await fs.readText("naia-adk/naia-settings/config.json");
+			expect(JSON.parse(inStorage as string)).toEqual(expectedConfig);
+		} finally {
+			await setLocale("en");
+		}
+	});
+
+	it("WO13C-S2 existing-config-untouched", async () => {
+		const fs = createMemoryWebFs();
+		const rawConfig = JSON.stringify({
+			provider: "webllm",
+			model: "Qwen3-4B-q4f16_1-MLC",
+			agentName: "ExistingNaia",
+		});
+		await fs.writeBytes("naia-adk/naia-settings/config.json", rawConfig);
+
+		const result = (await handleWebWorkspaceCommand(
+			"read_naia_config",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+
+		expect(result).toBe(rawConfig);
+		const inStorage = await fs.readText("naia-adk/naia-settings/config.json");
+		expect(inStorage).toBe(rawConfig);
 	});
 });

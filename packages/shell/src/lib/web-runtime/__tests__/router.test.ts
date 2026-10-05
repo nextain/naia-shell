@@ -25,7 +25,11 @@ describe("router", () => {
 			adkPath: "opfs://naia-adk",
 		});
 		expect(naiaConfig).toBe(
-			JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG, null, 2),
+			JSON.stringify(
+				{ ...INITIAL_WEB_WORKSPACE_CONFIG, NAIA_LOCALE: "en" },
+				null,
+				2,
+			),
 		);
 
 		const storeLoad = await routeCommand("plugin:store|load");

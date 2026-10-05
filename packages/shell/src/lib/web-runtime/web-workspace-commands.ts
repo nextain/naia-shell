@@ -1,3 +1,4 @@
+import { getLocale } from "../i18n";
 import { Logger } from "../logger";
 import { WEB_ADK_PATH, webAdkOpfsPath } from "./web-adk-path";
 import { WEB_LLM_MODEL_ID } from "./webllm-model";
@@ -64,7 +65,11 @@ export async function handleWebWorkspaceCommand(
 		if (existing !== null) {
 			return existing;
 		}
-		const initialText = JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG, null, 2);
+		const initialText = JSON.stringify(
+			{ ...INITIAL_WEB_WORKSPACE_CONFIG, NAIA_LOCALE: getLocale() },
+			null,
+			2,
+		);
 		try {
 			await fs.writeBytes(configPath, initialText);
 		} catch (e) {

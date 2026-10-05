@@ -155,7 +155,8 @@ self.addEventListener("message", (event: MessageEvent) => {
 		}
 
 		if (selectedModel) {
-			void getEngine();
+			// Warm-up only: a failure is already reported to the UI as engine-error.
+			getEngine().catch(() => {});
 		}
 
 		const provider = makeWebLLMProvider({

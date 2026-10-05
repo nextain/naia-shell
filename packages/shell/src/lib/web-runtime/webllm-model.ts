@@ -21,24 +21,31 @@ export function modelNeedsShaderF16(id: WebLlmModelId): boolean {
 
 export const WEB_LLM_MODEL_PREF_KEY = "naia-web-llm-model";
 
-export function readWebLlmModelPreference(
+export function readWebLlmModelChoice(
 	storage: { getItem(key: string): string | null } | null,
 	buildOverride?: string,
-): WebLlmModelId {
+): { model: WebLlmModelId; explicit: boolean } {
 	if (storage) {
 		try {
 			const saved = storage.getItem(WEB_LLM_MODEL_PREF_KEY);
 			if (isWebLlmModelId(saved)) {
-				return saved;
+				return { model: saved, explicit: true };
 			}
 		} catch {
 			// getItem 이 던지면 저장값이 없는 것으로 본다.
 		}
 	}
 	if (isWebLlmModelId(buildOverride)) {
-		return buildOverride;
+		return { model: buildOverride, explicit: true };
 	}
-	return WEB_LLM_MODEL_ID;
+	return { model: WEB_LLM_MODEL_ID, explicit: false };
+}
+
+export function readWebLlmModelPreference(
+	storage: { getItem(key: string): string | null } | null,
+	buildOverride?: string,
+): WebLlmModelId {
+	return readWebLlmModelChoice(storage, buildOverride).model;
 }
 
 export const WEB_LLM_MODEL_LABELS: Record<WebLlmModelId, string> = {

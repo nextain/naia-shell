@@ -116,6 +116,9 @@ test.describe("web-model-gpu-check", () => {
 		);
 
 		await page.addInitScript(() => {
+			if (!localStorage.getItem("naia-web-llm-model")) {
+				localStorage.setItem("naia-web-llm-model", "Qwen3-4B-q4f16_1-MLC");
+			}
 			const fakeGpu = {
 				requestAdapter: async () => ({
 					features: new Set<string>(),
@@ -194,6 +197,84 @@ test.describe("web-model-gpu-check", () => {
 		).toHaveAttribute("data-model", "Qwen3-4B-q4f32_1-MLC", {
 			timeout: 15_000,
 		});
+
+		expect(
+			pageErrors,
+			`Unexpected page errors during test:\n${pageErrors.map((e) => e.message || String(e)).join("\n")}`,
+		).toHaveLength(0);
+	});
+
+	test("WO13C-E1 auto-f32", async ({ page, context }) => {
+		const requestedUrls: string[] = [];
+		page.on("request", (req) => {
+			requestedUrls.push(req.url());
+		});
+
+		await context.route("https://huggingface.co/**", (route) => route.abort());
+		await context.route(
+			"https://raw.githubusercontent.com/mlc-ai/**",
+			(route) => route.abort(),
+		);
+
+		await page.addInitScript(() => {
+			const fakeGpu = {
+				requestAdapter: async () => ({
+					features: new Set<string>(),
+					info: {
+						vendor: "e2e-vendor",
+						architecture: "e2e-arch",
+						description: "",
+					},
+				}),
+			};
+			Object.defineProperty(Navigator.prototype, "gpu", {
+				configurable: true,
+				get: () => fakeGpu,
+			});
+		});
+
+		const pageErrors: Error[] = [];
+		page.on("pageerror", (err) => {
+			pageErrors.push(err);
+		});
+
+		const t0 = Date.now();
+		await page.goto("/");
+
+		// Condition 1: [data-app-ready="true"]
+		let left = 30_000 - (Date.now() - t0);
+		await expect(page.locator('[data-app-ready="true"]')).toBeAttached({
+			timeout: Math.max(left, 1000),
+		});
+
+		// Condition 2: .splash-screen count is 0
+		left = 30_000 - (Date.now() - t0);
+		await expect(page.locator(".splash-screen")).toHaveCount(0, {
+			timeout: Math.max(left, 1000),
+		});
+
+		// Condition 3: main chat input .naia-chat-area .chat-input is visible
+		left = 30_000 - (Date.now() - t0);
+		const input = page.locator(".naia-chat-area .chat-input");
+		await expect(input).toBeVisible({
+			timeout: Math.max(left, 1000),
+		});
+
+		const statusEl = page.locator('[data-testid="web-model-status"]');
+		const errorKind = await statusEl.getAttribute("data-error-kind");
+		expect(errorKind).not.toBe("no-shader-f16");
+
+		await expect(statusEl).toContainText("Qwen3 4B (4bit f32)", {
+			timeout: 15_000,
+		});
+
+		const finalErrorKind = await statusEl.getAttribute("data-error-kind");
+		expect(finalErrorKind).not.toBe("no-shader-f16");
+
+		const storedModel = await page.evaluate(() =>
+			localStorage.getItem("naia-web-llm-model"),
+		);
+		expect(storedModel).toBeNull();
 
 		expect(
 			pageErrors,

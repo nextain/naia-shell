@@ -328,6 +328,7 @@ const englishCore = {
 	"settings.liveVoice": "Live Voice",
 	"tool.execute_command": "Execute Command",
 	"tool.read_file": "Read File",
+	"tool.list_dir": "List folder",
 	"tool.search_files": "Search Files",
 	"tool.web_search": "Web Search",
 	"tool.apply_diff": "Apply Diff",
