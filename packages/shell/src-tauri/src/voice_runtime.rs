@@ -416,14 +416,24 @@ pub fn classify_nvidia_probe(result: std::io::Result<(bool, String)>) -> NvidiaP
     }
 }
 
-/// 조회 결과에서 VRAM(GB)을 읽는다. 첫 카드의 총량, 읽었으면 Some. 없음은 Ok(None),
-/// 조회 실패는 Err — 값을 못 읽은 것을 "VRAM 부족"으로 확정하지 않게 구분한다.
-pub fn vram_gb_from_probe(probe: &NvidiaProbe) -> Result<Option<f64>, String> {
+/// 조회 결과에서 한 카드의 VRAM(GB)을 읽는다. `index` 가 있으면 그 번호의 카드(흐름이
+/// 정한 카드), 없으면 첫 카드. 없음은 Ok(None). 조회 실패와 "정한 카드가 목록에 없음"은
+/// Err — 값을 못 읽은 것을 "VRAM 부족"으로 확정하지 않게 구분한다.
+pub fn vram_gb_from_probe(probe: &NvidiaProbe, index: Option<u32>) -> Result<Option<f64>, String> {
     match probe {
-        NvidiaProbe::Present(gpus) => Ok(gpus
-            .first()
-            .filter(|gpu| gpu.total_mib > 0)
-            .map(|gpu| (gpu.total_mib as f64 / 1024.0).round())),
+        NvidiaProbe::Present(gpus) => {
+            let card = match index {
+                Some(wanted) => Some(
+                    gpus.iter()
+                        .find(|gpu| gpu.index == wanted)
+                        .ok_or_else(|| format!("정해진 카드 {wanted} 번이 장치 목록에 없습니다"))?,
+                ),
+                None => gpus.first(),
+            };
+            Ok(card
+                .filter(|gpu| gpu.total_mib > 0)
+                .map(|gpu| (gpu.total_mib as f64 / 1024.0).round()))
+        }
         NvidiaProbe::Absent => Ok(None),
         NvidiaProbe::QueryFailed(reason) => Err(reason.clone()),
     }
@@ -605,14 +615,18 @@ pub fn parse_rocm_gpu_csv(text: &str) -> Vec<GpuInfo> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn vram_read_failure_is_not_a_vram_shortage() {
+    fn vram_read_failure_is_not_a_vram_shortage_and_follows_the_chosen_card() {
         let failed = NvidiaProbe::QueryFailed("timeout".to_string());
-        assert!(vram_gb_from_probe(&failed).is_err());
-        assert_eq!(vram_gb_from_probe(&NvidiaProbe::Absent), Ok(None));
-        let card = |total| GpuInfo { index: 0, free_mib: 0, total_mib: total };
-        // 읽었는데 부족하면 값 그대로(확정 실패는 validate_vram 이 낸다).
-        assert_eq!(vram_gb_from_probe(&NvidiaProbe::Present(vec![card(4096)])), Ok(Some(4.0)));
-        assert_eq!(vram_gb_from_probe(&NvidiaProbe::Present(vec![card(24576)])), Ok(Some(24.0)));
+        assert!(vram_gb_from_probe(&failed, None).is_err());
+        assert_eq!(vram_gb_from_probe(&NvidiaProbe::Absent, None), Ok(None));
+        let card = |index, total| GpuInfo { index, free_mib: 0, total_mib: total };
+        // 첫 카드는 4GB, 흐름이 고른 카드(1번)는 24GB: 고른 카드 기준으로 읽는다.
+        let two = NvidiaProbe::Present(vec![card(0, 4096), card(1, 24576)]);
+        assert_eq!(vram_gb_from_probe(&two, Some(1)), Ok(Some(24.0)));
+        assert_eq!(vram_gb_from_probe(&two, Some(0)), Ok(Some(4.0)));
+        assert_eq!(vram_gb_from_probe(&two, None), Ok(Some(4.0)));
+        // 정한 카드가 목록에 없으면 부족이 아니라 오류.
+        assert!(vram_gb_from_probe(&two, Some(5)).is_err());
     }
 
     #[test]

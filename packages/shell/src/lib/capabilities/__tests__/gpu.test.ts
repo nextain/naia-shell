@@ -1,5 +1,20 @@
-import { describe, expect, it } from "vitest";
-import { parseVramResult } from "../gpu";
+import { describe, expect, it, vi } from "vitest";
+
+const invoke = vi.fn();
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+
+import { detectGpuVramGb, parseVramResult } from "../gpu";
+
+describe("detectGpuVramGb", () => {
+	it("asks for the flow's card when an index is given, the first card otherwise", async () => {
+		invoke.mockResolvedValue(24);
+		await expect(detectGpuVramGb(1)).resolves.toBe(24);
+		expect(invoke).toHaveBeenCalledWith("detect_gpu_vram", { gpuIndex: 1 });
+		invoke.mockClear();
+		await detectGpuVramGb();
+		expect(invoke).toHaveBeenCalledWith("detect_gpu_vram");
+	});
+});
 
 describe("parseVramResult", () => {
 	it("accepts a positive finite number", () => {

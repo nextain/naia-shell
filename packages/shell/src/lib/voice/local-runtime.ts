@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { loadConfig } from "../config";
 import { Logger } from "../logger";
 import { voiceHostProfile } from "./host-profile";
@@ -41,7 +42,6 @@ export async function resolveLocalVoiceHost(
 	configured: number | null,
 ): Promise<LocalVoiceHost> {
 	try {
-		const { invoke } = await import("@tauri-apps/api/core");
 		const resolved = await invoke<unknown>("resolve_voxcpm2_gpu", {
 			gpuIndex: configured,
 		});
@@ -145,16 +145,18 @@ export async function recoverLocalVoiceToken(
 				const { invoke } = await import("@tauri-apps/api/core");
 				// 프로파일 이름은 기계가 정한다 (#537). 여기서 박아 두면 다른
 				// 운영체제에서 그대로 어긋난다.
-				const host = await voiceHostProfile();
+				// 가속기 판정과 같은 시점의 프로파일을 쓴다. 캐시된 프로파일은 판정 결과가
+				// 없을 때의 대비일 뿐이다 (앱 실행 중 GPU 구성이 바뀌어도 어긋나지 않게).
+				const resolvedHost = await resolveLocalVoiceHost(
+					loadConfig()?.localVoiceGpuIndex ?? null,
+				);
+				const expectedLoaderProfile =
+					resolvedHost.profile ?? (await voiceHostProfile()).profile;
 				const ready = await invoke<string>("start_voxcpm2", {
-					expectedLoaderProfile: host.profile,
+					expectedLoaderProfile,
 					// 사람이 고른 카드가 있으면 그것으로. 없으면 런타임이 여유가
 					// 가장 많은 카드를 고른다 (#537). 구체 번호를 먼저 정해 넘긴다.
-					...localVoiceHostArgs(
-						await resolveLocalVoiceHost(
-							loadConfig()?.localVoiceGpuIndex ?? null,
-						),
-					),
+					...localVoiceHostArgs(resolvedHost),
 				});
 				const url = localVoiceFacadeUrlFromReady(ready);
 				Logger.debug("LocalRuntime", "recoverLocalVoiceToken:result", {

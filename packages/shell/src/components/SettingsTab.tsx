@@ -781,6 +781,21 @@ export function SettingsTab() {
 	const [sttDownloading, setSttDownloading] = useState<string | null>(null);
 	const localGpuTier = "off" as const;
 	const [detectedVramGb, setDetectedVramGb] = useState<number | null>(null);
+	// 로컬 음성이 쓸 카드(흐름과 같은 해석)의 VRAM 을 읽는다. 해석을 못 하면 첫 카드.
+	// 읽지 못하면 null — 사용 시점에 다시 읽어 일시 실패가 화면을 잠그지 않게 한다.
+	const redetectVram = async (): Promise<number | null> => {
+		let gpuIndex: number | null = null;
+		try {
+			gpuIndex = (
+				await resolveLocalVoiceHost(loadConfig()?.localVoiceGpuIndex ?? null)
+			).gpuIndex;
+		} catch {
+			// 해석 실패는 아래 첫 카드 조회로 대신한다.
+		}
+		const vram = await detectGpuVramGb(gpuIndex);
+		setDetectedVramGb(vram);
+		return vram;
+	};
 	// Mirror App.tsx's syncAvatarConfig: without this, `naia-config-changed`
 	// (login/remote hydration, other tabs) leaves this tab's own avatar state
 	// stale — main switches to NVA while Settings' detail view stays on VRM.
@@ -796,7 +811,7 @@ export function SettingsTab() {
 	}, [detectedVramGb]);
 	// Detect GPU VRAM once on mount (#2 / FR-VRAM.1); null when unavailable.
 	useEffect(() => {
-		detectGpuVramGb().then(setDetectedVramGb);
+		void redetectVram();
 	}, []);
 	const [sttDownloadProgress, setSttDownloadProgress] = useState(0);
 
@@ -1295,7 +1310,8 @@ export function SettingsTab() {
 		let originalConfig: AppConfig | null = null;
 		try {
 			const cfg = loadConfig();
-			if (!cfg || detectedVramGb == null || detectedVramGb < 6) {
+			const vramNow = detectedVramGb ?? (await redetectVram());
+			if (!cfg || vramNow == null || vramNow < 6) {
 				setCascadeMsg(t("settings.localVoiceVramRequired"));
 				return false;
 			}
@@ -1329,7 +1345,7 @@ export function SettingsTab() {
 				...voiceConfig,
 				...(naiaKey ? { naiaKey } : {}),
 			} as unknown as Record<string, unknown>);
-			await writeSlotsManifest(voiceConfig, detectedVramGb);
+			await writeSlotsManifest(voiceConfig, vramNow);
 			const start = await startCascadeAndConfirm(
 				(await voiceHostProfile()).profile ?? undefined,
 			);
@@ -5470,7 +5486,10 @@ export function SettingsTab() {
 											// 백엔드 기록도 맞춘다: 자동이면 기록을 지운다.
 											void invoke("set_voxcpm2_gpu_choice", {
 												gpuIndex: raw === "" ? null : Number(raw),
-											}).catch(() => {});
+											})
+												.catch(() => {})
+												// 고른 카드 기준으로 VRAM 사전 검사를 다시 한다.
+												.then(() => redetectVram());
 										}}
 									>
 										<option value="">{t("settings.localVoiceGpuAuto")}</option>

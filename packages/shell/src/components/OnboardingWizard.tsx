@@ -411,8 +411,20 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			? t("onboard.connect.localVoiceAvailable")
 			: t("onboard.connect.vramCloud");
 
+	// 로컬 음성이 쓸 카드(흐름과 같은 해석)의 VRAM. 못 읽으면 null, 사용 시점에 다시 읽는다.
+	const redetectVram = async (): Promise<number | null> => {
+		let gpuIndex: number | null = null;
+		try {
+			gpuIndex = (await resolveLocalVoiceHost(null)).gpuIndex;
+		} catch {
+			// 해석 실패는 첫 카드 조회로 대신한다.
+		}
+		const vram = await detectGpuVramGb(gpuIndex);
+		setDetectedVramGb(vram);
+		return vram;
+	};
 	useEffect(() => {
-		detectGpuVramGb().then(setDetectedVramGb);
+		void redetectVram();
 	}, []);
 
 	// Restore the onboarding gate from the selected ADK only. The secure store
@@ -574,7 +586,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			}
 			return;
 		}
-		if (detectedVramGb == null || detectedVramGb < 6) return;
+		const vramNow = detectedVramGb ?? (await redetectVram());
+		if (vramNow == null || vramNow < 6) return;
 		if (!naiaLoginDone) {
 			setLocalVoiceMsg(t("settings.ttsNaiaRequired"));
 			return;

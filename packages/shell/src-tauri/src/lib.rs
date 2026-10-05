@@ -5905,11 +5905,14 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
 /// 종료·시간 초과로 값을 못 읽으면 "VRAM 부족"이 아니라 일시 오류 표식으로 돌려준다.
 fn voxcpm2_vram_gb_blocking(
     accelerator: Option<voice_runtime::Accelerator>,
+    gpu_index: Option<u32>,
 ) -> Result<Option<f64>, String> {
     if !voxcpm2_is_nvidia(accelerator) {
         return Ok(detect_vram_gb_blocking());
     }
-    voice_runtime::vram_gb_from_probe(&voice_runtime::probe_nvidia())
+    // 흐름이 정한 카드(번호가 없으면 같은 규칙으로 해석한 카드)의 VRAM 을 읽는다.
+    let card = voxcpm2_effective_gpu(gpu_index, accelerator);
+    voice_runtime::vram_gb_from_probe(&voice_runtime::probe_nvidia(), card)
         .map_err(|reason| format!("{VOXCPM2_GPU_UNRESOLVED} VRAM 조회에 실패했습니다 ({reason})"))
 }
 
@@ -7725,7 +7728,7 @@ async fn install_voxcpm2_runtime(
     if read_secure_naia_credential(&app).is_none() {
         return Err("voxcpm2_naia_member_login_required".to_string());
     }
-    let vram = tokio::task::spawn_blocking(move || voxcpm2_vram_gb_blocking(accelerator))
+    let vram = tokio::task::spawn_blocking(move || voxcpm2_vram_gb_blocking(accelerator, gpu_index))
         .await
         .map_err(|error| format!("VRAM detection task failed: {error}"))??;
     // 설치도 기동과 같은 판정을 쓴다. 운영체제 잠금 대신, 이 기계에 맞는
@@ -8929,7 +8932,7 @@ async fn start_voxcpm2(
         return Ok(ready);
     }
 
-    let vram = tokio::task::spawn_blocking(move || voxcpm2_vram_gb_blocking(accelerator))
+    let vram = tokio::task::spawn_blocking(move || voxcpm2_vram_gb_blocking(accelerator, gpu_index))
         .await
         .map_err(|error| format!("VRAM detection task failed: {error}"))??;
     voice_runtime::validate_vram(resolved, vram)?;
@@ -9364,28 +9367,32 @@ async fn voice_host_profile() -> Result<serde_json::Value, String> {
 /// NOTE: this reports *capacity only*. Real-time (RTF<1) on a given GPU is a
 /// measured gate (windows-manager F1) and is NOT inferred here.
 #[tauri::command]
-async fn detect_gpu_vram() -> Result<serde_json::Value, String> {
+async fn detect_gpu_vram(gpu_index: Option<u32>) -> Result<serde_json::Value, String> {
     let output = tokio::task::spawn_blocking(|| {
         let mut command = crate::host_env::host_command("nvidia-smi");
-        command.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
+        command.args(["--query-gpu=index,memory.total", "--format=csv,noheader,nounits"]);
         platform::hide_console(&mut command);
         command.output()
     })
     .await
     .map_err(|e| format!("task error: {e}"))?;
 
-    // Absent nvidia-smi / non-NVIDIA host ??null (not an error).
+    // Absent nvidia-smi / non-NVIDIA host -> null (not an error).
     let output = match output {
         Ok(o) if o.status.success() => o,
         _ => return Ok(serde_json::Value::Null),
     };
 
     let text = String::from_utf8_lossy(&output.stdout);
-    // First line = primary GPU's total memory in MiB.
+    // 카드 번호가 있으면 그 카드, 없으면 첫 줄(첫 카드)의 총 메모리(MiB).
     let mib = text
         .lines()
-        .next()
-        .and_then(|l| l.trim().parse::<f64>().ok());
+        .filter_map(|line| {
+            let (index, total) = line.split_once(',')?;
+            Some((index.trim().parse::<u32>().ok()?, total.trim().parse::<f64>().ok()?))
+        })
+        .find(|(index, _)| gpu_index.is_none_or(|wanted| *index == wanted))
+        .map(|(_, total)| total);
 
     Ok(match mib {
         Some(m) if m > 0.0 => serde_json::json!((m / 1024.0).round()),

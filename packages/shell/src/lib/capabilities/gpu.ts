@@ -19,13 +19,20 @@ export function parseVramResult(raw: unknown): number | null {
 }
 
 /**
- * Detect the primary GPU's total VRAM in GB. Returns null when unavailable
+ * Detect a GPU's total VRAM in GB (the given card, else the first). Returns null when unavailable
  * (non-NVIDIA host / no nvidia-smi / IPC error) — the settings UI then falls
  * back to manual tier selection.
  */
-export async function detectGpuVramGb(): Promise<number | null> {
+export async function detectGpuVramGb(
+	gpuIndex?: number | null,
+): Promise<number | null> {
 	try {
-		return parseVramResult(await invoke("detect_gpu_vram"));
+		// 카드 번호를 넘기면 그 카드의 VRAM(흐름이 쓸 카드). 없으면 첫 카드.
+		return parseVramResult(
+			gpuIndex == null
+				? await invoke("detect_gpu_vram")
+				: await invoke("detect_gpu_vram", { gpuIndex }),
+		);
 	} catch (err) {
 		Logger.warn("gpu", "detect_gpu_vram failed", { error: String(err) });
 		return null;
