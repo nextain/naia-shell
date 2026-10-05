@@ -6,10 +6,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	UI_PREFERENCE_KEYS,
 	getUiPreferencesSnapshot,
+	hydrateUiPreferences,
 	patchUiPreferences,
 	resetUiPreferencesForTests,
 } from "../../../lib/ui-preferences";
-import { QuadIframePane, probeServerHealth } from "../QuadIframePane";
+import {
+	QuadIframePane,
+	normalizeQuadPaneUrl,
+	probeServerHealth,
+} from "../QuadIframePane";
+import { t } from "../../../lib/i18n";
 import type { TerminalHandle } from "../Terminal";
 import {
 	DEFAULT_RATIOS,
@@ -27,6 +33,25 @@ const mockInvoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
+
+const mockOpenUrl = vi.fn(async (_url: string) => {});
+vi.mock("@tauri-apps/plugin-opener", () => ({
+	openUrl: (url: string) => mockOpenUrl(url),
+}));
+
+const mockGetAdkPath = vi.fn(() => null as string | null);
+const mockWriteNaiaUiConfig = vi.fn(
+	async (_config: unknown, _path?: string | null) => true,
+);
+vi.mock("../../../lib/adk-store", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../../lib/adk-store")>();
+	return {
+		...actual,
+		getAdkPath: () => mockGetAdkPath(),
+		writeNaiaUiConfig: (config: unknown, path?: string | null) =>
+			mockWriteNaiaUiConfig(config, path),
+	};
+});
 
 vi.mock("../Terminal", () => ({
 	Terminal: forwardRef<TerminalHandle, { pty_id: string }>(
@@ -49,7 +74,12 @@ vi.mock("../Terminal", () => ({
 describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 	beforeEach(() => {
 		resetUiPreferencesForTests();
+		mockGetAdkPath.mockReset();
+		mockGetAdkPath.mockReturnValue(null);
 		mockInvoke.mockReset();
+		mockOpenUrl.mockReset();
+		mockWriteNaiaUiConfig.mockReset();
+		mockWriteNaiaUiConfig.mockResolvedValue(true);
 		vi.restoreAllMocks();
 	});
 
@@ -255,10 +285,12 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			);
 
 			expect(await screen.findByTestId("quad-docs-offline")).toBeInTheDocument();
-			expect(screen.getByText("문서 서버가 꺼져 있습니다")).toBeVisible();
+			expect(
+				screen.getByText(t("workspace.quadOfflineTitle", { name: "문서" })),
+			).toBeVisible();
 			expect(
 				screen.getByText(
-					"3142 포트에서 문서 서버를 기동한 후 다시 시도해 주세요.",
+					t("workspace.quadOfflineDesc", { url: "http://localhost:3142/docs" }),
 				),
 			).toBeVisible();
 
@@ -275,9 +307,13 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			expect(
 				await screen.findByTestId("quad-dashboard-offline"),
 			).toBeInTheDocument();
-			expect(screen.getByText("대시보드가 꺼져 있습니다")).toBeVisible();
 			expect(
-				screen.getByText("3142 포트에서 ADK 서버를 기동한 후 다시 시도해 주세요."),
+				screen.getByText(t("workspace.quadOfflineTitle", { name: "대시보드" })),
+			).toBeVisible();
+			expect(
+				screen.getByText(
+					t("workspace.quadOfflineDesc", { url: "http://localhost:3142" }),
+				),
 			).toBeVisible();
 		});
 
@@ -332,6 +368,419 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			expect(
 				await screen.findByTestId("quad-docs-offline"),
 			).toBeInTheDocument();
+		});
+	});
+
+	describe("Task 2: QuadIframePane external open, health probing, and observation sequence race conditions", () => {
+		it("calls openUrl with configured URL on header ↗ button and footer button, with window.open fallback", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+			const windowOpenSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+			render(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			// 1. Header ↗ button
+			const externalBtn = screen.getByTestId("quad-docs-external");
+			fireEvent.click(externalBtn);
+			expect(mockOpenUrl).toHaveBeenCalledWith("http://localhost:3142/docs");
+
+			// 2. Footer button
+			const footerBtn = screen.getByTestId("quad-docs-open-browser");
+			fireEvent.click(footerBtn);
+			expect(mockOpenUrl).toHaveBeenCalledTimes(2);
+
+			// 3. Fallback to window.open when openUrl rejects
+			mockOpenUrl.mockRejectedValueOnce(new Error("openUrl error"));
+			fireEvent.click(footerBtn);
+			await waitFor(() => {
+				expect(windowOpenSpy).toHaveBeenCalledWith("http://localhost:3142/docs", "_blank");
+			});
+		});
+
+		it("probes server health against the pane's actual configured URL", async () => {
+			const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+
+			render(
+				<QuadIframePane
+					title="작업판"
+					url="http://127.0.0.1:8896/custom/path"
+					paneId="dashboard"
+				/>,
+			);
+
+			await waitFor(() => {
+				expect(fetchSpy).toHaveBeenCalledWith(
+					"http://127.0.0.1:8896/custom/path",
+					expect.objectContaining({ mode: "no-cors" }),
+				);
+			});
+		});
+
+		it("recovers to online when URL changes from offline to healthy, showing checking state and ignoring late prior probe", async () => {
+			let resolveUrlA: ((res: Response) => void) | null = null;
+
+			vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+				const urlStr = String(input);
+				if (urlStr.includes("3142")) {
+					return new Promise((res) => {
+						resolveUrlA = res;
+					});
+				}
+				// URL B (8896) resolves immediately
+				return Promise.resolve(new Response(null, { status: 200 }));
+			});
+
+			const { rerender } = render(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			// Initially checking
+			expect(screen.getByTestId("quad-docs-checking")).toBeInTheDocument();
+
+			// Change to live URL B before probe A finishes
+			rerender(
+				<QuadIframePane
+					title="문서"
+					url="http://127.0.0.1:8896/"
+					paneId="docs"
+				/>,
+			);
+
+			// URL B should resolve and display iframe
+			await waitFor(() => {
+				const iframe = screen.getByTestId("quad-docs-iframe");
+				expect(iframe).toHaveAttribute("src", "http://127.0.0.1:8896/");
+			});
+
+			// Now late probe A fails
+			if (resolveUrlA) {
+				(resolveUrlA as (res: Response) => void)(new Response(null, { status: 500 }));
+			}
+			await new Promise((r) => setTimeout(r, 50));
+
+			// Must still be online with URL B iframe
+			expect(screen.getByTestId("quad-docs-iframe")).toBeInTheDocument();
+			expect(screen.queryByTestId("quad-docs-offline")).not.toBeInTheDocument();
+		});
+
+		it("preserves offline notice when iframe error occurs before server probe resolves, and recovers on retry", async () => {
+			let resolveProbe: ((res: Response) => void) | null = null;
+			vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+				return new Promise((res) => {
+					resolveProbe = res;
+				});
+			});
+
+			render(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			// While probe is pending, trigger iframe load with empty document
+			const iframe = screen.getByTestId("quad-docs-iframe");
+			fireEvent.load(iframe);
+
+			// Offline notice should appear because empty doc load increments observationSeq and sets online=false
+			expect(await screen.findByTestId("quad-docs-offline")).toBeInTheDocument();
+
+			// Now the slow probe succeeds
+			if (resolveProbe) {
+				(resolveProbe as (res: Response) => void)(new Response(null, { status: 200 }));
+			}
+			await new Promise((r) => setTimeout(r, 50));
+
+			// Offline notice MUST NOT be overwritten by the stale probe response
+			expect(screen.getByTestId("quad-docs-offline")).toBeInTheDocument();
+			expect(screen.queryByTestId("quad-docs-iframe")).not.toBeInTheDocument();
+
+			// Click retry -> starts new observation seq and new probe
+			vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 200 }));
+			fireEvent.click(screen.getByTestId("quad-docs-retry"));
+
+			await waitFor(() => {
+				expect(screen.getByTestId("quad-docs-iframe")).toBeInTheDocument();
+			});
+		});
+
+		it("handles A->B->A probe races: second A success is preserved against late first A failure", async () => {
+			let rejectFirstA: ((err: any) => void) | null = null;
+			let callCount = 0;
+
+			vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+				callCount++;
+				if (callCount === 1) {
+					// First probe for A is deferred
+					return new Promise((_res, rej) => {
+						rejectFirstA = rej;
+					});
+				}
+				// Subsequent probes resolve immediately (status 200)
+				return Promise.resolve(new Response(null, { status: 200 }));
+			});
+
+			const { rerender } = render(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			// Switch to B
+			rerender(
+				<QuadIframePane
+					title="문서"
+					url="http://127.0.0.1:8896/"
+					paneId="docs"
+				/>,
+			);
+
+			// Switch back to A (second A)
+			rerender(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			// Second A resolves immediately with success
+			await waitFor(() => {
+				expect(screen.getByTestId("quad-docs-iframe")).toBeInTheDocument();
+			});
+
+			// Now first A probe rejects (fails) late
+			if (rejectFirstA) {
+				(rejectFirstA as (err: any) => void)(new TypeError("Late failure from first A"));
+			}
+			await new Promise((r) => setTimeout(r, 50));
+
+			// Final state remains online (iframe visible)
+			expect(screen.getByTestId("quad-docs-iframe")).toBeInTheDocument();
+			expect(screen.queryByTestId("quad-docs-offline")).not.toBeInTheDocument();
+		});
+
+		it("handles A->B->A probe races: second A failure is preserved against late first A success", async () => {
+			let resolveFirstA: ((res: any) => void) | null = null;
+			let callCount = 0;
+
+			vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+				callCount++;
+				if (callCount === 1) {
+					// First probe for A is deferred
+					return new Promise((res) => {
+						resolveFirstA = res;
+					});
+				}
+				if (callCount === 2) {
+					// Probe for B
+					return Promise.resolve(new Response(null, { status: 200 }));
+				}
+				// Second A fails
+				return Promise.reject(new TypeError("Second A failed"));
+			});
+
+			const { rerender } = render(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			// Switch to B
+			rerender(
+				<QuadIframePane
+					title="문서"
+					url="http://127.0.0.1:8896/"
+					paneId="docs"
+				/>,
+			);
+
+			// Switch back to A (second A)
+			rerender(
+				<QuadIframePane
+					title="문서"
+					url="http://localhost:3142/docs"
+					paneId="docs"
+				/>,
+			);
+
+			// Second A fails -> offline notice appears
+			await waitFor(() => {
+				expect(screen.getByTestId("quad-docs-offline")).toBeInTheDocument();
+			});
+
+			// Now first A probe resolves with success late
+			if (resolveFirstA) {
+				(resolveFirstA as (res: any) => void)(new Response(null, { status: 200 }));
+			}
+			await new Promise((r) => setTimeout(r, 50));
+
+			// Final state must remain offline
+			expect(screen.getByTestId("quad-docs-offline")).toBeInTheDocument();
+			expect(screen.queryByTestId("quad-docs-iframe")).not.toBeInTheDocument();
+		});
+	});
+
+	describe("Task 3: Configurable quad pane URLs, validation, and persistence", () => {
+		function createMockTerminalSource(): TerminalSource {
+			return {
+				kind: "pty",
+				pty: { pty_id: "pty-quad-1", pid: 1234 },
+				launching: false,
+				launchError: "",
+				terminalReady: true,
+				terminalError: "",
+				workingDir: "/work/test",
+				launch: vi.fn(async () => {}),
+				retry: vi.fn(async () => {}),
+				onTerminalReady: vi.fn(),
+				onPtyExit: vi.fn(),
+				runOpencode: vi.fn(async () => {}),
+			};
+		}
+
+		it("normalizes quad pane URLs and rejects non-local hosts and disallowed schemes", () => {
+			// Valid inputs
+			expect(normalizeQuadPaneUrl("http://localhost:3142/docs")).toEqual({
+				ok: true,
+				url: "http://localhost:3142/docs",
+			});
+			expect(normalizeQuadPaneUrl("http://127.0.0.1:8896")).toEqual({
+				ok: true,
+				url: "http://127.0.0.1:8896/",
+			});
+			expect(normalizeQuadPaneUrl("http://[::1]:8896/board")).toEqual({
+				ok: true,
+				url: "http://[::1]:8896/board",
+			});
+			expect(normalizeQuadPaneUrl("https://localhost:8443")).toEqual({
+				ok: true,
+				url: "https://localhost:8443/",
+			});
+			expect(normalizeQuadPaneUrl("http://::1:8896")).toEqual({
+				ok: true,
+				url: "http://[::1]:8896/",
+			});
+
+			// Invalid inputs
+			expect(normalizeQuadPaneUrl("").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("   ").ok).toBe(false);
+			expect(normalizeQuadPaneUrl(null).ok).toBe(false);
+			expect(normalizeQuadPaneUrl(undefined).ok).toBe(false);
+			expect(normalizeQuadPaneUrl("javascript:alert(1)").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("ftp://localhost:8896").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("file:///etc/passwd").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("http://example.com/").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("http://192.168.1.5:8896/").ok).toBe(false);
+			expect(normalizeQuadPaneUrl("not a url").ok).toBe(false);
+		});
+
+		it("uses default URLs when no preference is configured", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+
+			render(<WorkspaceQuadView terminalSource={createMockTerminalSource()} />);
+
+			await waitFor(() => {
+				const docsIframe = screen.getByTestId("quad-docs-iframe");
+				expect(docsIframe).toHaveAttribute("src", "http://localhost:3142/docs");
+
+				const boardIframe = screen.getByTestId("quad-dashboard-iframe");
+				expect(boardIframe).toHaveAttribute("src", "http://127.0.0.1:8896/");
+			});
+		});
+
+		it("persists edited URL via UI to ui-preferences and naia config, and recovers across simulated restart", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+			await hydrateUiPreferences(null, { adkPath: "/test/adk", canPersist: true });
+
+			const { unmount } = render(<WorkspaceQuadView terminalSource={createMockTerminalSource()} />);
+
+			// Change docs URL
+			fireEvent.click(screen.getByTestId("quad-docs-change-url"));
+			const input = screen.getByTestId("quad-docs-url-input");
+			fireEvent.change(input, { target: { value: "http://localhost:5000/custom-docs" } });
+			fireEvent.click(screen.getByTestId("quad-docs-url-save"));
+
+			// Check preferences updated
+			await waitFor(() => {
+				expect(getUiPreferencesSnapshot().workspaceQuadDocsUrl).toBe("http://localhost:5000/custom-docs");
+				expect(mockWriteNaiaUiConfig).toHaveBeenCalledWith(
+					expect.objectContaining({
+						uiPreferences: expect.objectContaining({
+							workspaceQuadDocsUrl: "http://localhost:5000/custom-docs",
+						}),
+					}),
+					"/test/adk",
+				);
+			});
+
+			unmount();
+
+			// Simulate restart: reset preferences and hydrate with stored snapshot
+			resetUiPreferencesForTests();
+			await hydrateUiPreferences(
+				{ uiPreferences: { workspaceQuadDocsUrl: "http://localhost:5000/custom-docs" } },
+				{ adkPath: "/test/adk", canPersist: true },
+			);
+
+			render(<WorkspaceQuadView terminalSource={createMockTerminalSource()} />);
+
+			await waitFor(() => {
+				const docsIframe = screen.getByTestId("quad-docs-iframe");
+				expect(docsIframe).toHaveAttribute("src", "http://localhost:5000/custom-docs");
+			});
+		});
+
+		it("rejects invalid URL with role=alert on edit, supports cancel, and falls back to default if stored config is invalid", async () => {
+			vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+
+			const { unmount } = render(<WorkspaceQuadView terminalSource={createMockTerminalSource()} />);
+
+			// 1. Try to set invalid URL
+			fireEvent.click(screen.getByTestId("quad-docs-change-url"));
+			const input = screen.getByTestId("quad-docs-url-input");
+			fireEvent.change(input, { target: { value: "http://external.domain.com" } });
+			fireEvent.click(screen.getByTestId("quad-docs-url-save"));
+
+			// Error alert should be visible
+			const alert = screen.getByTestId("quad-docs-url-error");
+			expect(alert).toHaveAttribute("role", "alert");
+			expect(alert).toBeVisible();
+
+			// Canceling closes edit and reverts
+			fireEvent.click(screen.getByTestId("quad-docs-url-cancel"));
+			expect(screen.queryByTestId("quad-docs-url-input")).not.toBeInTheDocument();
+			expect(screen.getByTestId("quad-docs-iframe")).toHaveAttribute("src", "http://localhost:3142/docs");
+
+			unmount();
+
+			// 2. Pre-existing invalid config value triggers fallback notice and uses default URL
+			resetUiPreferencesForTests();
+			await hydrateUiPreferences(
+				{ uiPreferences: { workspaceQuadDocsUrl: "http://invalid-external.com" } },
+				{ adkPath: "/test/adk", canPersist: true },
+			);
+
+			render(<WorkspaceQuadView terminalSource={createMockTerminalSource()} />);
+
+			await waitFor(() => {
+				expect(screen.getByTestId("quad-docs-fallback-notice")).toBeVisible();
+				expect(screen.getByTestId("quad-docs-iframe")).toHaveAttribute("src", "http://localhost:3142/docs");
+			});
 		});
 	});
 

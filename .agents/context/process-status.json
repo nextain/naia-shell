@@ -19,6 +19,25 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_732_workspace_quad": {
+      "issue": 732,
+      "title": "통합 작업 화면 — 칸 주소 설정, 작업판 CSP 8896, i18n, 외부 열기, e2e (#732)",
+      "requirements": "docs/requirements.md FR-WORKSPACE-QUAD.1, FR-WORKSPACE-QUAD.4, FR-WORKSPACE-QUAD.6",
+      "scenario": "docs/user-scenarios.md UC-WORKSPACE-QUAD-732",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "completed",
+      "deliverables": {
+        "report": "/var/home/luke/alpha-adk/.agents/progress/nts-lecture-1015-astra/lanes/release-024/agy-report-732-R-02b.md",
+        "verify_dir": "/var/home/luke/alpha-adk/.agents/progress/nts-lecture-1015-astra/lanes/release-024/verify-732-R-02b"
+      },
+      "last_updated": "2026-10-05T23:25:00+09:00"
+    },
     "issue_724_memory_knowledge_tools": {
       "issue": 724,
       "title": "모델 keep list에 기억·지식 저장 도구를 열고 계약 테스트를 실행한다 (#724)",

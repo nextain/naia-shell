@@ -77,11 +77,13 @@ export function HerdrWorkspaceRail(props: RailProps) {
 							onClick={props.onToggleLayout}
 							title={
 								props.layout === "quad"
-									? "단일 화면으로 전환"
-									: "3단 작업 화면으로 전환"
+									? t("workspace.quadToggleToSingle")
+									: t("workspace.quadToggleToQuad")
 							}
 						>
-							{props.layout === "quad" ? "1단" : "3단"}
+							{props.layout === "quad"
+								? t("workspace.quadLayoutSingle")
+								: t("workspace.quadLayoutQuad")}
 						</button>
 					)}
 					{props.surface === "viewer" ? (

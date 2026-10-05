@@ -18,6 +18,8 @@ export const UI_PREFERENCE_KEYS = {
 	workspaceLayout: "workspaceLayout",
 	workspaceSplitRatios: "workspaceSplitRatios",
 	opencodeCommand: "opencodeCommand",
+	workspaceQuadDocsUrl: "workspaceQuadDocsUrl",
+	workspaceQuadBoardUrl: "workspaceQuadBoardUrl",
 } as const;
 
 export type UiPreferenceKey =

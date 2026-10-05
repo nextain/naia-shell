@@ -14,7 +14,8 @@ import {
 	patchUiPreferences,
 	useUiPreference,
 } from "../../lib/ui-preferences";
-import { QuadIframePane } from "./QuadIframePane";
+import { QuadIframePane, normalizeQuadPaneUrl, probeServerHealth } from "./QuadIframePane";
+export { normalizeQuadPaneUrl, probeServerHealth };
 import type { FileLocation, TerminalHandle } from "./Terminal";
 import type { TerminalSource, TerminalSourceKind } from "./terminal-source";
 
@@ -208,7 +209,7 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				<header className="workspace-quad__pane-header">
 					<div className="workspace-quad__pane-title-group">
 						<span className="workspace-quad__pane-title">
-							터미널
+							{t("workspace.quadTerminal")}
 						</span>
 						{availableSources &&
 							availableSources.length > 1 &&
@@ -216,7 +217,7 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 								<div
 									className="workspace-quad__source-switch"
 									role="radiogroup"
-									aria-label="터미널 소스 선택"
+									aria-label={t("workspace.quadSourceSelect")}
 								>
 									{availableSources.map((kind) => (
 										<button
@@ -238,7 +239,7 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 								type="button"
 								className="workspace-quad__opencode-btn"
 								onClick={terminalSource.runOpencode}
-								title="터미널에서 opencode 실행"
+								title={t("workspace.quadRunOpencode")}
 								data-testid="quad-run-opencode"
 							>
 								opencode
@@ -323,7 +324,7 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				onPointerUp={endDrag}
 				onPointerCancel={endDrag}
 				tabIndex={0}
-				title="칸 너비 조절"
+				title={t("workspace.quadResizeHandle")}
 			/>
 
 			<div
@@ -331,8 +332,7 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				style={{ flex: `${ratios[1]} 1 0%`, minWidth: "140px" }}
 			>
 				<QuadIframePane
-					title="문서"
-					url="http://localhost:3142/docs"
+					title={t("workspace.quadDocs")}
 					paneId="docs"
 				/>
 			</div>
@@ -347,7 +347,7 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				onPointerUp={endDrag}
 				onPointerCancel={endDrag}
 				tabIndex={0}
-				title="칸 너비 조절"
+				title={t("workspace.quadResizeHandle")}
 			/>
 
 			<div
@@ -355,8 +355,7 @@ export function WorkspaceQuadView(props: WorkspaceQuadViewProps) {
 				style={{ flex: `${ratios[2]} 1 0%`, minWidth: "140px" }}
 			>
 				<QuadIframePane
-					title="대시보드"
-					url="http://localhost:3142"
+					title={t("workspace.quadBoard")}
 					paneId="dashboard"
 				/>
 			</div>

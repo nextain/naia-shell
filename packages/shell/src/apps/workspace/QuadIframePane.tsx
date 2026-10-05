@@ -1,20 +1,56 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../lib/i18n";
+import {
+	UI_PREFERENCE_KEYS,
+	type UiPreferenceKey,
+	patchUiPreferences,
+	useUiPreference,
+} from "../../lib/ui-preferences";
 
 export interface QuadIframePaneProps {
 	title: string;
-	url: string;
 	paneId: "docs" | "dashboard";
+	url?: string;
 	checkUrl?: string;
+	defaultUrl?: string;
+	prefKey?: UiPreferenceKey;
 }
 
 /**
- * 3142 서버 응답 여부를 no-cors fetch로 신속 확인한다 (FR-WORKSPACE-QUAD.4).
+ * 이 컴퓨터의 http·https 루프백 주소만 허용하는 URL 정규화/검증 순수 함수.
+ * hostname은 127.0.0.1, localhost, [::1] 중 하나여야 하며 사용자명/비밀번호는 허용하지 않는다.
+ */
+export function normalizeQuadPaneUrl(raw: unknown): { ok: true; url: string } | { ok: false } {
+	if (typeof raw !== "string") return { ok: false };
+	let trimmed = raw.trim();
+	if (!trimmed) return { ok: false };
+	trimmed = trimmed.replace(/^https?:\/\/::1(?=[:/]|$)/, (m) => m.replace("::1", "[::1]"));
+	let parsed: URL;
+	try {
+		parsed = new URL(trimmed);
+	} catch {
+		return { ok: false };
+	}
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+		return { ok: false };
+	}
+	if (parsed.username !== "" || parsed.password !== "") {
+		return { ok: false };
+	}
+	const hostname = parsed.hostname;
+	if (hostname !== "127.0.0.1" && hostname !== "localhost" && hostname !== "[::1]") {
+		return { ok: false };
+	}
+	return { ok: true, url: parsed.href };
+}
+
+/**
+ * 대상 서버 응답 여부를 no-cors fetch로 신속 확인한다 (FR-WORKSPACE-QUAD.4).
  * 포트가 닫혀 있으면 TCP 레벨에서 즉시 실패(TypeError: Failed to fetch)한다.
  */
 export async function probeServerHealth(
-	targetUrl = "http://localhost:3142",
+	targetUrl: string,
 	timeoutMs = 2500,
 ): Promise<boolean> {
 	try {
@@ -37,37 +73,74 @@ export async function probeServerHealth(
 
 export function QuadIframePane({
 	title,
-	url,
 	paneId,
-	checkUrl = "http://localhost:3142",
+	url,
+	checkUrl,
+	defaultUrl: customDefaultUrl,
+	prefKey: customPrefKey,
 }: QuadIframePaneProps) {
+	const defaultUrl =
+		customDefaultUrl ??
+		(paneId === "docs"
+			? "http://localhost:3142/docs"
+			: "http://127.0.0.1:8896/");
+	const prefKey =
+		customPrefKey ??
+		(paneId === "docs"
+			? UI_PREFERENCE_KEYS.workspaceQuadDocsUrl
+			: UI_PREFERENCE_KEYS.workspaceQuadBoardUrl);
+
+	const rawPref = useUiPreference<unknown>(prefKey, undefined);
+
+	let activeUrl: string;
+	let hasInvalidPref = false;
+
+	if (rawPref !== undefined && rawPref !== null && rawPref !== "") {
+		const norm = normalizeQuadPaneUrl(rawPref);
+		if (norm.ok) {
+			activeUrl = norm.url;
+		} else {
+			activeUrl = url ?? defaultUrl;
+			hasInvalidPref = true;
+		}
+	} else {
+		activeUrl = url ?? defaultUrl;
+	}
+
 	const [online, setOnline] = useState<boolean | null>(null);
 	const [probeAttempt, setProbeAttempt] = useState(0);
 	const [reloadKey, setReloadKey] = useState(0);
+	const observationSeqRef = useRef(0);
 
 	useEffect(() => {
+		const currentSeq = ++observationSeqRef.current;
+		setOnline(null);
 		let cancelled = false;
-		probeServerHealth(checkUrl).then((isUp) => {
-			if (!cancelled) {
-				setOnline((curr) => (curr === false ? false : isUp));
+		probeServerHealth(checkUrl ?? activeUrl).then((isUp) => {
+			if (!cancelled && observationSeqRef.current === currentSeq) {
+				setOnline(isUp);
 			}
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [checkUrl, probeAttempt]);
+	}, [activeUrl, checkUrl, probeAttempt]);
 
 	const handleRetry = useCallback(() => {
-		setOnline(null);
 		setProbeAttempt((count) => count + 1);
 		setReloadKey((key) => key + 1);
 	}, []);
 
 	const handleOpenExternal = useCallback(() => {
-		invoke("open_url", { url }).catch(() => {
-			if (typeof window !== "undefined") window.open(url, "_blank");
+		openUrl(activeUrl).catch(() => {
+			if (typeof window !== "undefined") window.open(activeUrl, "_blank");
 		});
-	}, [url]);
+	}, [activeUrl]);
+
+	const handleIframeError = useCallback(() => {
+		observationSeqRef.current += 1;
+		setOnline(false);
+	}, []);
 
 	const handleIframeLoad = useCallback(
 		(event: React.SyntheticEvent<HTMLIFrameElement>) => {
@@ -80,6 +153,7 @@ export function QuadIframePane({
 						!doc.body ||
 						(doc.body.children.length === 0 && !doc.body.textContent?.trim());
 					if (isBlank) {
+						observationSeqRef.current += 1;
 						setOnline(false);
 					}
 				}
@@ -90,24 +164,117 @@ export function QuadIframePane({
 		[],
 	);
 
+	const [isEditingUrl, setIsEditingUrl] = useState(false);
+	const [editUrlInput, setEditUrlInput] = useState("");
+	const [urlError, setUrlError] = useState<string | null>(null);
+
+	const startEditUrl = useCallback(() => {
+		setEditUrlInput(typeof rawPref === "string" ? rawPref : activeUrl);
+		setUrlError(null);
+		setIsEditingUrl(true);
+	}, [rawPref, activeUrl]);
+
+	const cancelEditUrl = useCallback(() => {
+		setIsEditingUrl(false);
+		setUrlError(null);
+	}, []);
+
+	const saveUrl = useCallback(() => {
+		const trimmed = editUrlInput.trim();
+		if (trimmed === "") {
+			void patchUiPreferences({ [prefKey]: undefined });
+			setIsEditingUrl(false);
+			setUrlError(null);
+			return;
+		}
+		const norm = normalizeQuadPaneUrl(trimmed);
+		if (!norm.ok) {
+			setUrlError(t("workspace.quadInvalidUrlAlert"));
+			return;
+		}
+		void patchUiPreferences({ [prefKey]: norm.url });
+		setIsEditingUrl(false);
+		setUrlError(null);
+	}, [editUrlInput, prefKey]);
+
 	return (
 		<div
 			className={`workspace-quad__pane workspace-quad__pane--${paneId}`}
 			data-testid={`quad-pane-${paneId}`}
 		>
 			<header className="workspace-quad__pane-header">
-				<div className="workspace-quad__pane-title-group">
-					<span className="workspace-quad__pane-title">{title}</span>
-					<span className="workspace-quad__pane-url" title={url}>
-						{url.replace(/^https?:\/\//, "")}
-					</span>
-				</div>
+				{isEditingUrl ? (
+					<div className="workspace-quad__url-edit-group">
+						<input
+							type="text"
+							className="workspace-quad__url-input"
+							value={editUrlInput}
+							onChange={(e) => {
+								setEditUrlInput(e.target.value);
+								setUrlError(null);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") {
+									e.preventDefault();
+									saveUrl();
+								} else if (e.key === "Escape") {
+									e.preventDefault();
+									cancelEditUrl();
+								}
+							}}
+							aria-label={t("workspace.quadUrlInputLabel", { name: title })}
+							data-testid={`quad-${paneId}-url-input`}
+							autoFocus
+						/>
+						<button
+							type="button"
+							className="workspace-quad__url-save-btn"
+							onClick={saveUrl}
+							data-testid={`quad-${paneId}-url-save`}
+						>
+							{t("workspace.quadSave")}
+						</button>
+						<button
+							type="button"
+							className="workspace-quad__url-cancel-btn"
+							onClick={cancelEditUrl}
+							data-testid={`quad-${paneId}-url-cancel`}
+						>
+							{t("workspace.quadCancel")}
+						</button>
+						{urlError && (
+							<div
+								role="alert"
+								className="workspace-quad__url-error"
+								data-testid={`quad-${paneId}-url-error`}
+							>
+								{urlError}
+							</div>
+						)}
+					</div>
+				) : (
+					<div className="workspace-quad__pane-title-group">
+						<span className="workspace-quad__pane-title">{title}</span>
+						<span className="workspace-quad__pane-url" title={activeUrl}>
+							{activeUrl.replace(/^https?:\/\//, "")}
+						</span>
+						<button
+							type="button"
+							className="workspace-quad__change-url-btn"
+							onClick={startEditUrl}
+							title={t("workspace.quadChangeUrl")}
+							data-testid={`quad-${paneId}-change-url`}
+						>
+							{t("workspace.quadChangeUrl")}
+						</button>
+					</div>
+				)}
 				<div className="workspace-quad__pane-actions">
 					<button
 						type="button"
 						className="workspace-quad__pane-btn"
 						onClick={handleRetry}
-						title="새로고침"
+						title={t("workspace.quadReload")}
 						data-testid={`quad-${paneId}-reload`}
 					>
 						↻
@@ -116,7 +283,7 @@ export function QuadIframePane({
 						type="button"
 						className="workspace-quad__pane-btn"
 						onClick={handleOpenExternal}
-						title="외부 브라우저에서 열기"
+						title={t("workspace.quadOpenExternal")}
 						data-testid={`quad-${paneId}-external`}
 					>
 						↗
@@ -124,7 +291,26 @@ export function QuadIframePane({
 				</div>
 			</header>
 
+			{hasInvalidPref && (
+				<div
+					className="workspace-quad__pref-fallback-notice"
+					role="note"
+					data-testid={`quad-${paneId}-fallback-notice`}
+				>
+					{t("workspace.quadFallbackDefaultNotice")}
+				</div>
+			)}
+
 			<div className="workspace-quad__pane-content">
+				{online === null && (
+					<div
+						className="workspace-quad__state workspace-quad__checking"
+						role="status"
+						data-testid={`quad-${paneId}-checking`}
+					>
+						<span>{t("workspace.quadChecking")}</span>
+					</div>
+				)}
 				{online === false ? (
 					<div
 						className="workspace-quad__state workspace-quad__offline"
@@ -135,15 +321,11 @@ export function QuadIframePane({
 							🔌
 						</span>
 						<h4 className="workspace-quad__offline-title">
-							{paneId === "docs"
-								? "문서 서버가 꺼져 있습니다"
-								: "대시보드가 꺼져 있습니다"}
+							{t("workspace.quadOfflineTitle", { name: title })}
 						</h4>
-						<p className="workspace-quad__offline-url">{url}</p>
+						<p className="workspace-quad__offline-url">{activeUrl}</p>
 						<p className="workspace-quad__offline-desc">
-							{paneId === "docs"
-								? "3142 포트에서 문서 서버를 기동한 후 다시 시도해 주세요."
-								: "3142 포트에서 ADK 서버를 기동한 후 다시 시도해 주세요."}
+							{t("workspace.quadOfflineDesc", { url: activeUrl })}
 						</p>
 						<button
 							type="button"
@@ -158,16 +340,30 @@ export function QuadIframePane({
 					<div className="workspace-quad__iframe-host">
 						<iframe
 							key={reloadKey}
-							src={url}
+							src={activeUrl}
 							title={title}
 							className="workspace-quad__iframe"
 							data-testid={`quad-${paneId}-iframe`}
 							sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
 							onLoad={handleIframeLoad}
-							onError={() => setOnline(false)}
+							onError={handleIframeError}
 						/>
 					</div>
 				)}
+			</div>
+
+			<div className="workspace-quad__pane-footer">
+				<span className="workspace-quad__pane-footer-text">
+					{t("workspace.quadOpenBrowserNotice")}
+				</span>
+				<button
+					type="button"
+					className="workspace-quad__open-browser-btn"
+					onClick={handleOpenExternal}
+					data-testid={`quad-${paneId}-open-browser`}
+				>
+					{t("workspace.quadOpenBrowserBtn")}
+				</button>
 			</div>
 		</div>
 	);
