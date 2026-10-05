@@ -1,4 +1,4 @@
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, type Request, expect, test } from "@playwright/test";
 import {
 	SEED_ADK_PATH,
 	TAURI_BASE_MOCK_FALLBACK,
@@ -395,6 +395,18 @@ test.describe("Workspace 3-pane quad layout (issue #732)", () => {
 		const firstAFetchEntered = new Promise<void>((resolve) => {
 			notifyFirstAFetchReceived = resolve;
 		});
+
+		let notifySecondAFetchDone: () => void = () => {};
+		const secondAFetchDone = new Promise<void>((resolve) => {
+			notifySecondAFetchDone = resolve;
+		});
+
+		let notifyFirstAAbortDone: () => void = () => {};
+		const firstAAbortDone = new Promise<void>((resolve) => {
+			notifyFirstAAbortDone = resolve;
+		});
+
+		let firstARequest: Request | null = null;
 		let aFetchCount = 0;
 
 		await page.route("http://127.0.0.1:8896/temp-b**", (route) => {
@@ -423,14 +435,19 @@ test.describe("Workspace 3-pane quad layout (issue #732)", () => {
 				aFetchCount++;
 				if (aFetchCount === 1) {
 					// Defer only the first A server health check fetch
+					firstARequest = route.request();
 					notifyFirstAFetchReceived();
 					await new Promise<void>((resolve) => {
 						releaseFirstAFetch = resolve;
 					});
-					return route.abort();
+					await route.abort();
+					notifyFirstAAbortDone();
+					return;
 				}
 				// Second A server health check fetch fulfills immediately
-				return route.fulfill({ status: 200, body: "OK" });
+				await route.fulfill({ status: 200, body: "OK" });
+				notifySecondAFetchDone();
+				return;
 			}
 			return route.fulfill({ status: 200, body: "OK" });
 		});
@@ -457,8 +474,11 @@ test.describe("Workspace 3-pane quad layout (issue #732)", () => {
 		await page.getByTestId("quad-docs-url-input").fill("http://localhost:3142/docs");
 		await page.getByTestId("quad-docs-url-save").click();
 
-		// 4. Wait for second A's probe to complete: checking indicator gone, offline absent, iframe visible
-		await expect(page.getByTestId("quad-docs-checking")).not.toBeVisible({ timeout: 10_000 });
+		// 4. Wait for second A's server check fetch to complete
+		await secondAFetchDone;
+
+		// Assert exact iframe src and absence of checking / offline indicators
+		await expect(page.getByTestId("quad-docs-checking")).not.toBeVisible();
 		await expect(page.getByTestId("quad-docs-offline")).not.toBeVisible();
 		await expect(page.getByTestId("quad-docs-iframe")).toBeVisible();
 		await expect(page.getByTestId("quad-docs-iframe")).toHaveAttribute(
@@ -466,11 +486,24 @@ test.describe("Workspace 3-pane quad layout (issue #732)", () => {
 			"http://localhost:3142/docs",
 		);
 
-		// 5. Release first deferred A request so it fails late
-		(releaseFirstAFetch as unknown as () => void)();
-		await page.waitForTimeout(300);
+		// 5. Before releasing first A, set up requestfailed listener for first A's request
+		const firstARequestFailed = page.waitForEvent(
+			"requestfailed",
+			(r) => r === firstARequest,
+		);
 
-		// 6. Assert that after delayed first A failure, checking and offline are still absent, and iframe remains visible
+		// Release first deferred A fetch
+		(releaseFirstAFetch as unknown as () => void)();
+
+		// Await both abort completion in route handler and requestfailed event
+		await Promise.all([firstAAbortDone, firstARequestFailed]);
+
+		// Explicit phase allowing page to process failure (requestAnimationFrame twice)
+		await page.evaluate(
+			() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+		);
+
+		// 6. Assert final state: checking and offline remain absent, iframe src is exactly second A URL
 		await expect(page.getByTestId("quad-docs-checking")).not.toBeVisible();
 		await expect(page.getByTestId("quad-docs-offline")).not.toBeVisible();
 		await expect(page.getByTestId("quad-docs-iframe")).toBeVisible();

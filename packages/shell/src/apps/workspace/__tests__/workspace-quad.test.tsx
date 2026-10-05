@@ -426,7 +426,7 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 
 			vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
 				const urlStr = String(input);
-				if (urlStr.includes("3142")) {
+				if (urlStr === "http://localhost:3142/docs") {
 					return new Promise((res) => {
 						resolveUrlA = res;
 					});
@@ -733,12 +733,17 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 				);
 			});
 
+			const writtenDocsConfig = mockWriteNaiaUiConfig.mock.calls.at(-1)?.[0] as
+				| Record<string, unknown>
+				| undefined;
+			expect(writtenDocsConfig).toBeDefined();
+
 			unmount();
 
-			// Simulate restart: reset preferences and hydrate with stored snapshot
+			// Simulate restart: reset preferences and hydrate with captured config from mockWriteNaiaUiConfig
 			resetUiPreferencesForTests();
 			await hydrateUiPreferences(
-				{ uiPreferences: { workspaceQuadDocsUrl: "http://localhost:5000/custom-docs" } },
+				writtenDocsConfig ?? null,
 				{ adkPath: "/test/adk", canPersist: true },
 			);
 
@@ -747,6 +752,7 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			await waitFor(() => {
 				const docsIframe = screen.getByTestId("quad-docs-iframe");
 				expect(docsIframe).toHaveAttribute("src", "http://localhost:5000/custom-docs");
+				expect(docsIframe.getAttribute("src")).toBe("http://localhost:5000/custom-docs");
 			});
 		});
 
@@ -775,12 +781,17 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 				);
 			});
 
+			const writtenBoardConfig = mockWriteNaiaUiConfig.mock.calls.at(-1)?.[0] as
+				| Record<string, unknown>
+				| undefined;
+			expect(writtenBoardConfig).toBeDefined();
+
 			unmount();
 
-			// Simulate restart: reset preferences and hydrate with stored snapshot
+			// Simulate restart: reset preferences and hydrate with captured config from mockWriteNaiaUiConfig
 			resetUiPreferencesForTests();
 			await hydrateUiPreferences(
-				{ uiPreferences: { workspaceQuadBoardUrl: "http://localhost:8896/custom-board" } },
+				writtenBoardConfig ?? null,
 				{ adkPath: "/test/adk", canPersist: true },
 			);
 
@@ -789,6 +800,7 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 			await waitFor(() => {
 				const boardIframe = screen.getByTestId("quad-dashboard-iframe");
 				expect(boardIframe).toHaveAttribute("src", "http://localhost:8896/custom-board");
+				expect(boardIframe.getAttribute("src")).toBe("http://localhost:8896/custom-board");
 			});
 		});
 

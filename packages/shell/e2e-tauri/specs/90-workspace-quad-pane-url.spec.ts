@@ -1,3 +1,4 @@
+import { createServer, type Server } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { S } from "../helpers/selectors.js";
@@ -23,6 +24,51 @@ async function resolveRequiredAdkPath(): Promise<string> {
 }
 
 describe("90 — Workspace Quad Pane URL & Config Persistence", () => {
+	let mockBoardServer: Server | null = null;
+	let mockDocsServer: Server | null = null;
+
+	before(async () => {
+		// Ensure port 8896 responds for board pane iframe
+		await new Promise<void>((resolve) => {
+			const server = createServer((_req, res) => {
+				res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+				res.end("<!DOCTYPE html><html><body><h1>Board Server</h1></body></html>");
+			});
+			server.on("error", (_err: any) => {
+				resolve();
+			});
+			server.listen(8896, () => {
+				mockBoardServer = server;
+				resolve();
+			});
+		});
+
+		// Ensure port 3142 responds for docs pane iframe
+		await new Promise<void>((resolve) => {
+			const server = createServer((_req, res) => {
+				res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+				res.end("<!DOCTYPE html><html><body><h1>Docs Server</h1></body></html>");
+			});
+			server.on("error", (_err: any) => {
+				resolve();
+			});
+			server.listen(3142, () => {
+				mockDocsServer = server;
+				resolve();
+			});
+		});
+	});
+
+	after(async () => {
+		if (mockBoardServer) {
+			await new Promise<void>((resolve) => mockBoardServer?.close(() => resolve()));
+			mockBoardServer = null;
+		}
+		if (mockDocsServer) {
+			await new Promise<void>((resolve) => mockDocsServer?.close(() => resolve()));
+			mockDocsServer = null;
+		}
+	});
 	it("should display the app root and navigate to workspace", async () => {
 		const appRoot = await $(S.appRoot);
 		await appRoot.waitForDisplayed({ timeout: 30_000 });
@@ -37,40 +83,37 @@ describe("90 — Workspace Quad Pane URL & Config Persistence", () => {
 	});
 
 	it("should verify default URLs for board (8896) and docs (3142) panes", async () => {
+		const expectedDefaultBoardUrl = "http://127.0.0.1:8896/";
+		const expectedDefaultDocsUrl = "http://localhost:3142/docs";
+
 		// Board pane default URL
-		const boardPane = await $('[data-testid="quad-pane-dashboard"]');
-		await boardPane.waitForDisplayed({ timeout: 10_000 });
+		const boardIframe = await $('[data-testid="quad-dashboard-iframe"]');
+		await boardIframe.waitForExist({ timeout: 10_000 });
 		await browser.waitUntil(
 			async () => {
-				const text = await browser.execute(() => {
-					const el = document.querySelector(
-						'[data-testid="quad-pane-dashboard"] .workspace-quad__pane-url',
-					);
-					return el?.textContent ?? "";
-				});
-				return text.includes("8896");
+				const src = await boardIframe.getAttribute("src");
+				return src === expectedDefaultBoardUrl;
 			},
-			{ timeout: 10_000, timeoutMsg: "board pane url does not contain 8896" },
+			{ timeout: 10_000, timeoutMsg: `board iframe src does not equal ${expectedDefaultBoardUrl}` },
 		);
+		expect(await boardIframe.getAttribute("src")).toBe(expectedDefaultBoardUrl);
 
 		// Docs pane default URL
-		const docsPane = await $('[data-testid="quad-pane-docs"]');
-		await docsPane.waitForDisplayed({ timeout: 10_000 });
+		const docsIframe = await $('[data-testid="quad-docs-iframe"]');
+		await docsIframe.waitForExist({ timeout: 10_000 });
 		await browser.waitUntil(
 			async () => {
-				const text = await browser.execute(() => {
-					const el = document.querySelector(
-						'[data-testid="quad-pane-docs"] .workspace-quad__pane-url',
-					);
-					return el?.textContent ?? "";
-				});
-				return text.includes("3142");
+				const src = await docsIframe.getAttribute("src");
+				return src === expectedDefaultDocsUrl;
 			},
-			{ timeout: 10_000, timeoutMsg: "docs pane url does not contain 3142" },
+			{ timeout: 10_000, timeoutMsg: `docs iframe src does not equal ${expectedDefaultDocsUrl}` },
 		);
+		expect(await docsIframe.getAttribute("src")).toBe(expectedDefaultDocsUrl);
 	});
 
 	it("should update docs URL via UI and persist to config file", async () => {
+		const targetDocsUrl = "http://127.0.0.1:3142/docs";
+
 		// Click change URL on docs pane
 		await clickElement('[data-testid="quad-docs-change-url"]', 10_000);
 
@@ -80,26 +123,24 @@ describe("90 — Workspace Quad Pane URL & Config Persistence", () => {
 		// Fill new URL
 		await setNativeValue(
 			'[data-testid="quad-docs-url-input"]',
-			"http://127.0.0.1:3142/docs",
+			targetDocsUrl,
 		);
 
 		// Click Save
 		await clickElement('[data-testid="quad-docs-url-save"]', 10_000);
 		await urlInput.waitForDisplayed({ reverse: true, timeout: 10_000 });
 
-		// Check displayed URL updated
+		// Check displayed URL updated via iframe src exact comparison
+		const docsIframe = await $('[data-testid="quad-docs-iframe"]');
+		await docsIframe.waitForExist({ timeout: 10_000 });
 		await browser.waitUntil(
 			async () => {
-				const text = await browser.execute(() => {
-					const el = document.querySelector(
-						'[data-testid="quad-pane-docs"] .workspace-quad__pane-url',
-					);
-					return el?.textContent ?? "";
-				});
-				return text.includes("127.0.0.1:3142/docs");
+				const src = await docsIframe.getAttribute("src");
+				return src === targetDocsUrl;
 			},
-			{ timeout: 10_000, timeoutMsg: "docs pane did not display updated URL" },
+			{ timeout: 10_000, timeoutMsg: `docs pane did not display updated URL ${targetDocsUrl}` },
 		);
+		expect(await docsIframe.getAttribute("src")).toBe(targetDocsUrl);
 
 		// Verify on disk config file (mandatory check)
 		const adkPath = await resolveRequiredAdkPath();
@@ -183,19 +224,17 @@ describe("90 — Workspace Quad Pane URL & Config Persistence", () => {
 		await clickElement('[data-testid="quad-dashboard-url-save"]', 10_000);
 		await urlInput.waitForDisplayed({ reverse: true, timeout: 10_000 });
 
-		// Check displayed URL updated
+		// Check displayed URL updated via iframe src exact comparison
+		const boardIframe = await $('[data-testid="quad-dashboard-iframe"]');
+		await boardIframe.waitForExist({ timeout: 10_000 });
 		await browser.waitUntil(
 			async () => {
-				const text = await browser.execute(() => {
-					const el = document.querySelector(
-						'[data-testid="quad-pane-dashboard"] .workspace-quad__pane-url',
-					);
-					return el?.textContent ?? "";
-				});
-				return text.includes("localhost:8896");
+				const src = await boardIframe.getAttribute("src");
+				return src === targetBoardUrl;
 			},
-			{ timeout: 10_000, timeoutMsg: "board pane did not display updated URL" },
+			{ timeout: 10_000, timeoutMsg: `board pane did not display updated URL ${targetBoardUrl}` },
 		);
+		expect(await boardIframe.getAttribute("src")).toBe(targetBoardUrl);
 
 		// Verify on disk config file (MANDATORY check)
 		const uiConfigPath = resolve(adkPath, "naia-settings", "ui-config.json");
@@ -240,24 +279,20 @@ describe("90 — Workspace Quad Pane URL & Config Persistence", () => {
 		const quadView = await $('[data-testid="workspace-quad"]');
 		await quadView.waitForDisplayed({ timeout: 30_000 });
 
-		// Check that the board pane restored the persisted URL
-		const boardPane = await $('[data-testid="quad-pane-dashboard"]');
-		await boardPane.waitForDisplayed({ timeout: 15_000 });
+		// Check that the board pane restored the persisted URL via iframe src exact comparison
+		const restoredBoardIframe = await $('[data-testid="quad-dashboard-iframe"]');
+		await restoredBoardIframe.waitForExist({ timeout: 15_000 });
 		await browser.waitUntil(
 			async () => {
-				const text = await browser.execute(() => {
-					const el = document.querySelector(
-						'[data-testid="quad-pane-dashboard"] .workspace-quad__pane-url',
-					);
-					return el?.textContent ?? "";
-				});
-				return text.includes("localhost:8896");
+				const src = await restoredBoardIframe.getAttribute("src");
+				return src === targetBoardUrl;
 			},
 			{
 				timeout: 15_000,
-				timeoutMsg: "board pane did not restore updated URL after reloadSession",
+				timeoutMsg: `board pane did not restore updated URL ${targetBoardUrl} after reloadSession`,
 			},
 		);
+		expect(await restoredBoardIframe.getAttribute("src")).toBe(targetBoardUrl);
 	});
 });
 
