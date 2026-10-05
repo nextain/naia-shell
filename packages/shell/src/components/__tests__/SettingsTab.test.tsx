@@ -2212,6 +2212,64 @@ describe("SettingsTab — memory tab (#298)", () => {
 		});
 	});
 
+	it("out-of-flow status check resolves the saved card; a transient resolve failure does not switch local voice off", async () => {
+		const seed = {
+			provider: "nextain",
+			model: "gemini-3.5-flash",
+			ttsProvider: "naia-local-voice",
+			// 자동 복원 흐름(켜짐 상태)이 끼지 않게 꺼 둔다 — 여기서 보는 것은 흐름 밖 상태 조회뿐.
+			ttsEnabled: false,
+			localVoiceEnabled: false,
+			vllmTtsHost: "http://localhost:8910",
+			localVoiceGpuIndex: 0, // 이 카드는 제거됨
+		};
+		localStorage.setItem("naia-config", JSON.stringify(seed));
+		let resolveFails = false;
+		mockInvoke.mockImplementation((cmd: string, args?: { gpuIndex?: number | null }) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(8);
+			if (cmd === "voxcpm2_status") return Promise.resolve(false);
+			if (cmd === "resolve_voxcpm2_gpu") {
+				return resolveFails
+					? Promise.reject(new Error("transient"))
+					: Promise.resolve(1);
+			}
+			if (cmd === "voxcpm2_installation_status") {
+				// 제거된 0번으로 조회하면 시작 불가로 읽힌다 — 해석된 번호(1)만 준비됨.
+				const ok = args?.gpuIndex === 1;
+				return Promise.resolve({
+					phase: ok ? "ready-to-start" : "blocked",
+					ready: false,
+					canStart: ok,
+					summary: ok ? "Ready" : "Card missing",
+					steps: [],
+				});
+			}
+			return Promise.resolve([]);
+		});
+
+		const first = render(<SettingsTab />);
+		await vi.waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_installation_status", {
+				gpuIndex: 1,
+			}),
+		);
+		expect(mockInvoke).toHaveBeenCalledWith("resolve_voxcpm2_gpu", { gpuIndex: 0 });
+		let saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.ttsProvider).toBe("naia-local-voice");
+		first.unmount();
+
+		// 해석 자체가 일시 오류: 상태를 바꾸지 않으므로 로컬 음성이 꺼지지 않는다.
+		resolveFails = true;
+		mockInvoke.mockClear();
+		render(<SettingsTab />);
+		await vi.waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("resolve_voxcpm2_gpu", { gpuIndex: 0 }),
+		);
+		await new Promise((r) => setTimeout(r, 50));
+		saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.ttsProvider).toBe("naia-local-voice");
+	});
+
 	it("one run uses one card for status/install/start, and a failed start rolls back only the voice selection fields", async () => {
 		localStorage.setItem(
 			"naia-config",

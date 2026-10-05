@@ -916,17 +916,21 @@ export function SettingsTab() {
 	const [voxcpm2Installation, setVoxCpm2Installation] =
 		useState<VoxCpm2InstallationStatus | null>(null);
 	const voxcpm2InstallationRequestRef = useRef(0);
-	// gpuIndex 를 넘기면 그 값으로, 생략하면 지금 저장된 카드로 상태를 본다.
-	// 설치·시작 한 흐름 안에서는 항상 흐름이 정한 값을 넘긴다.
+	// gpuIndex 를 넘기면 그 값으로(흐름 안), 생략하면 저장된 값을 흐름과 같은 해석
+	// (resolveLocalVoiceGpu)으로 구체 번호로 바꿔 조회한다. 해석·조회 실패는 일시
+	// 오류라 상태를 바꾸지 않는다(null) — 로컬 음성을 끄는 효과가 반응하지 않게.
 	const refreshVoxCpm2Installation = useCallback(
 		async (gpuIndex?: number | null) => {
 		const generation = ++voxcpm2InstallationRequestRef.current;
 		try {
+			const resolvedGpu =
+				gpuIndex !== undefined
+					? gpuIndex
+					: await resolveLocalVoiceGpu(loadConfig()?.localVoiceGpuIndex ?? null, {
+							strict: true,
+						});
 			const status = await invoke<unknown>("voxcpm2_installation_status", {
-				gpuIndex:
-					gpuIndex !== undefined
-						? gpuIndex
-						: (loadConfig()?.localVoiceGpuIndex ?? null),
+				gpuIndex: resolvedGpu,
 			});
 			if (generation !== voxcpm2InstallationRequestRef.current) return null;
 			if (!isVoxCpm2InstallationStatus(status)) {

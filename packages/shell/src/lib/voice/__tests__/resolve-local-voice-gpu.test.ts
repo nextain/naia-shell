@@ -31,4 +31,9 @@ describe("resolveLocalVoiceGpu", () => {
 		failResolve();
 		await expect(resolveLocalVoiceGpu(2)).resolves.toBe(2);
 	});
+
+	it("strict mode (out-of-flow status check) throws even with an explicit choice", async () => {
+		failResolve();
+		await expect(resolveLocalVoiceGpu(2, { strict: true })).rejects.toThrow("ipc down");
+	});
 });

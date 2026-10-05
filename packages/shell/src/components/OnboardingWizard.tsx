@@ -509,10 +509,14 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	} | null> {
 		const generation = ++localVoiceInstallationRequestRef.current;
 		try {
-			const status = await invoke<unknown>(
-				"voxcpm2_installation_status",
-				gpuIndex === undefined ? undefined : { gpuIndex },
-			);
+			// 흐름 밖 조회도 흐름과 같은 해석 규칙(고른 카드 없음 → 기록/자동)을 쓴다.
+			const resolvedGpu =
+				gpuIndex !== undefined
+					? gpuIndex
+					: await resolveLocalVoiceGpu(null, { strict: true });
+			const status = await invoke<unknown>("voxcpm2_installation_status", {
+				gpuIndex: resolvedGpu,
+			});
 			if (generation !== localVoiceInstallationRequestRef.current) return null;
 			if (
 				!status ||

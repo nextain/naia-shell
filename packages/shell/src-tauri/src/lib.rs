@@ -6233,6 +6233,10 @@ fn voxcpm2_require_nvidia_choice(choice: Option<u32>) -> Result<Option<u32>, Str
     Ok(choice)
 }
 
+/// 카드를 정하지 못한 일시 오류의 표식. 상태 조회는 이 오류를 "시작 불가"로 바꾸지 않고
+/// 그대로 돌려준다 — 화면이 로컬 음성을 끄지 않게.
+const VOXCPM2_GPU_UNRESOLVED: &str = "voxcpm2_gpu_unresolved:";
+
 fn voxcpm2_voice_context(
     artifact_sha: &str,
     artifact_root: Option<&std::path::Path>,
@@ -6251,7 +6255,7 @@ fn voxcpm2_voice_context(
     let gpu = voice_cache::select_identity(&nvidias, gpu_choice);
     if gpu_choice.is_none() && artifact_root.is_some() && voxcpm2_is_nvidia_host() {
         // NVIDIA 호스트에서 카드가 None 이면 키가 카드 없이 만들어진다 — 오류로 멈춘다.
-        return Err("GPU 를 정하지 못했습니다 (장치 조회 실패)".to_string());
+        return Err(format!("{VOXCPM2_GPU_UNRESOLVED} GPU 를 정하지 못했습니다 (장치 조회 실패)"));
     }
     if let (Some(wanted), None, true) = (
         gpu_choice,
@@ -6260,7 +6264,7 @@ fn voxcpm2_voice_context(
     ) {
         // 정한 카드는 다른 카드로 바꾸지 않는다 — 안 보이면 명확한 오류.
         return Err(format!(
-            "정해진 GPU {wanted} 번을 지금 장치 목록에서 찾지 못했습니다 (카드가 빠졌거나 드라이버 조회 실패)"
+            "{VOXCPM2_GPU_UNRESOLVED} 정해진 GPU {wanted} 번을 지금 장치 목록에서 찾지 못했습니다 (카드가 빠졌거나 드라이버 조회 실패)"
         ));
     }
     let tensorrt = artifact_root.and_then(|a| {
@@ -8096,9 +8100,11 @@ async fn voxcpm2_installation_status(
     let installer_available = bundle_root.is_some()
         || (voxcpm2_download_manifest_path(&app)
             .is_some_and(|path| read_voxcpm2_download_manifest(&path).is_ok()));
-    let ctx = bundle_root
-        .as_deref()
-        .and_then(|root| voxcpm2_context_for_bundle(root, gpu_index).ok());
+    let ctx = match bundle_root.as_deref().map(|root| voxcpm2_context_for_bundle(root, gpu_index)) {
+        Some(Ok(ctx)) => Some(ctx),
+        Some(Err(error)) if error.starts_with(VOXCPM2_GPU_UNRESOLVED) => return Err(error),
+        _ => None,
+    };
     let mut probe =
         tokio::task::spawn_blocking(move || {
             probe_voxcpm2_installation(bundle_root.as_deref(), ctx.as_ref())

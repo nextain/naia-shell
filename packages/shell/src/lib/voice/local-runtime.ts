@@ -10,6 +10,7 @@ import { voiceHostProfile } from "./host-profile";
  */
 export async function resolveLocalVoiceGpu(
 	configured: number | null,
+	options: { strict?: boolean } = {},
 ): Promise<number | null> {
 	try {
 		const { invoke } = await import("@tauri-apps/api/core");
@@ -23,7 +24,9 @@ export async function resolveLocalVoiceGpu(
 		});
 		// 사람이 고른 번호가 있으면 그 값으로 계속한다. 자동(null)인데 해석을 못 했으면
 		// 흐름이 null 로 계속하면 백엔드가 다시 정하게 되므로 오류로 중단한다.
-		if (configured === null) throw error;
+		// strict(흐름 밖 상태 조회): 검증 못 한 저장 번호로 상태를 읽으면 "시작 불가"로
+		// 잘못 읽히므로 명시 번호여도 오류로 돌려보낸다.
+		if (configured === null || options.strict) throw error;
 	}
 	return configured;
 }
