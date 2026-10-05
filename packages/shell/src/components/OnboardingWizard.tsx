@@ -596,7 +596,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		try {
 			// 온보딩은 고른 카드가 없다(null → 기록값, 없으면 여유 큰 카드). 흐름 시작에
 			// 구체 번호를 한 번 정해 상태·설치·시작에 모두 넘긴다.
-			const hostForRun = await resolveLocalVoiceHost(null, { record: true });
+			const hostForRun = await resolveLocalVoiceHost(null);
 			let installation =
 				await refreshVoxCpm2InstallationForOnboarding(hostForRun);
 			if (!installation?.canStart) {
@@ -645,6 +645,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				expectedLoaderProfile: hostForRun.profile ?? host.profile,
 				// 세 호출부(설정·온보딩·토큰 복구)가 같은 방식으로 카드·가속기를 넘긴다 (#537).
 				...localVoiceHostArgs(hostForRun),
+				// 온보딩은 항상 자동 모드: 새 엔진을 띄운 뒤에만 카드를 기록한다.
+				recordAuto: true,
 			});
 			const afterStart =
 				await refreshVoxCpm2InstallationForOnboarding(hostForRun);

@@ -40,17 +40,13 @@ export function localVoiceHostArgs(host: LocalVoiceHost): {
  */
 export async function resolveLocalVoiceHost(
 	configured: number | null,
-	options: { record?: boolean } = {},
 ): Promise<LocalVoiceHost> {
 	try {
-		// record: 실제 설치·시작 흐름만 true. 읽기 전용 해석(화면 열 때·VRAM 표시·상태
-		// 조회)은 카드 기록을 건드리지 않는다.
-		const resolved = await invoke<unknown>(
-			"resolve_voxcpm2_gpu",
-			options.record
-				? { gpuIndex: configured, record: true }
-				: { gpuIndex: configured },
-		);
+		// 해석은 읽기 전용이다. 자동 선택의 기록은 start_voxcpm2(recordAuto)가 새 엔진을
+		// 띄운 뒤에만 한다.
+		const resolved = await invoke<unknown>("resolve_voxcpm2_gpu", {
+			gpuIndex: configured,
+		});
 		if (typeof resolved === "number" || resolved === null) {
 			return { gpuIndex: resolved };
 		}
@@ -151,7 +147,7 @@ export async function recoverLocalVoiceToken(
 				const { invoke } = await import("@tauri-apps/api/core");
 				// 프로파일 이름은 기계가 정한다 (#537). 여기서 박아 두면 다른
 				// 운영체제에서 그대로 어긋난다.
-				// 기존 엔진에 다시 붙는 경로라 기록하지 않는다(record 생략). 가속기 판정과 같은 시점의 프로파일을 쓴다. 캐시된 프로파일은 판정 결과가
+				// 기존 엔진에 다시 붙는 경로라 recordAuto 를 보내지 않는다. 가속기 판정과 같은 시점의 프로파일을 쓴다. 캐시된 프로파일은 판정 결과가
 				// 없을 때의 대비일 뿐이다 (앱 실행 중 GPU 구성이 바뀌어도 어긋나지 않게).
 				const resolvedHost = await resolveLocalVoiceHost(
 					loadConfig()?.localVoiceGpuIndex ?? null,

@@ -6219,29 +6219,12 @@ fn voxcpm2_effective_gpu(
     gpu_index.or_else(|| voxcpm2_resolve_gpu(None, accelerator).choice)
 }
 
-/// 이미 실행 중인 엔진이 있는가(start_voxcpm2 가 기존 ready 를 돌려주는 조건과 같다).
-fn voxcpm2_engine_running(state: &AppState) -> bool {
-    let mut guard = lock_or_recover(&state.voxcpm2, "voxcpm2");
-    guard
-        .as_mut()
-        .is_some_and(|process| matches!(process.child.try_wait(), Ok(None)))
-}
-
-/// 흐름 시작에 한 번: 해석하고 기록한다(명시/버려진 번호 → 새 번호는 로그). 자동으로
-/// 고른 번호는 source=auto 로 기록한다. 기록 실패는 로그만 — 반환값이 흐름의 번호다.
-fn voxcpm2_resolve_and_record_gpu(
-    state_root: &std::path::Path,
+/// 흐름 시작에 한 번 해석한다. 여기서는 기록하지 않는다 — 자동 선택의 기록은 새 엔진을
+/// 실제로 띄운 start_voxcpm2 가 성공한 뒤에만 한다(기록 결정은 `voxcpm2_auto_record_target`).
+fn voxcpm2_resolve_gpu_logged(
     gpu_index: Option<u32>,
     accelerator: Option<voice_runtime::Accelerator>,
-    record: bool,
 ) -> Option<u32> {
-    if !voxcpm2_is_nvidia(accelerator) {
-        // 이전 동작: 명시 선택만 기록한다.
-        if record && gpu_index.is_some() {
-            let _ = voice_cache::record_gpu_choice(state_root, gpu_index);
-        }
-        return voxcpm2_resolve_gpu(gpu_index, accelerator).choice;
-    }
     let resolution = voxcpm2_resolve_gpu(gpu_index, accelerator);
     if let Some(gone) = resolution.dropped_explicit {
         log_both(&format!(
@@ -6262,24 +6245,23 @@ fn voxcpm2_resolve_and_record_gpu(
             resolution.choice
         ));
     }
-    // 읽기 전용 해석(화면 열 때·VRAM 표시·상태 조회)은 기록하지 않는다 — 기록은 실제 흐름만.
-    if !record {
-        return resolution.choice;
-    }
-    if let Some(choice) = resolution.choice {
-        let source = if gpu_index == Some(choice) {
-            voice_runtime::GpuSource::Manual
-        } else {
-            voice_runtime::GpuSource::Auto
-        };
-        let (recorded, recorded_source) = voice_cache::recorded_gpu_entry(state_root);
-        if recorded != Some(choice) || recorded_source != Some(source) {
-            if let Err(error) = voice_cache::record_gpu_choice_with(state_root, Some(choice), source) {
-                log_both(&format!("[Naia] 카드 기록 실패(흐름은 {choice} 번으로 진행): {error}"));
-            }
-        }
-    }
     resolution.choice
+}
+
+/// 자동 선택의 기록 결정(순수). 새 엔진을 실제로 spawn 했고(`spawned_new`) 화면이 자동 모드로
+/// 시작했으며(`record_auto`) NVIDIA 흐름일 때만 그 카드를 기록한다. 기존 ready 를 돌려준
+/// 경우·토큰 복구·읽기 전용 해석은 기록하지 않는다. 수동 선택은 set_voxcpm2_gpu_choice 담당.
+fn voxcpm2_auto_record_target(
+    spawned_new: bool,
+    record_auto: bool,
+    is_nvidia: bool,
+    gpu_index: Option<u32>,
+) -> Option<u32> {
+    if spawned_new && record_auto && is_nvidia {
+        gpu_index
+    } else {
+        None
+    }
 }
 
 /// 환경 값을 만들 때 카드 목록. NVIDIA 는 흐름이 정한 번호로 고정하므로 다시 묻지 않는다
@@ -6296,14 +6278,14 @@ fn voxcpm2_gpus_for_env(
 
 /// 설치·시작: 흐름이 넘긴 번호는 고정(재검증으로 다른 카드가 되지 않는다), 없으면 해석.
 fn voxcpm2_pin_gpu(
-    state_root: &std::path::Path,
+    _state_root: &std::path::Path,
     gpu_index: Option<u32>,
     accelerator: Option<voice_runtime::Accelerator>,
 ) -> Result<Option<u32>, String> {
     match gpu_index {
         Some(pinned) => Ok(Some(pinned)),
         None => voxcpm2_require_nvidia_choice(
-            voxcpm2_resolve_and_record_gpu(state_root, None, accelerator, true),
+            voxcpm2_resolve_gpu_logged(None, accelerator),
             accelerator,
         ),
     }
@@ -8160,21 +8142,14 @@ async fn install_voxcpm2_runtime(
 /// 화면은 이 값을 흐름 내내 인자로 넘긴다 — 자동(null)을 흐름 안에서 백엔드가
 /// 매번 다시 정하지 않게. 기록 쓰기가 실패해도 흐름은 이 값으로 일관되게 간다.
 #[tauri::command]
-async fn resolve_voxcpm2_gpu(
-    state: tauri::State<'_, AppState>,
-    gpu_index: Option<u32>,
-    record: Option<bool>,
-) -> Result<serde_json::Value, String> {
-    // record 가 true 일 때만 기록한다(설치·시작 흐름). 생략은 읽기 전용. 이미 실행 중인
-    // 엔진이 있으면 시작은 기존 ready 를 돌려줄 뿐이므로 어느 흐름이든 기록을 바꾸지 않는다
-    // — 기록은 새로 빌드·시작하는 카드로만.
-    let record = record.unwrap_or(false) && !voxcpm2_engine_running(&state);
+async fn resolve_voxcpm2_gpu(gpu_index: Option<u32>) -> Result<serde_json::Value, String> {
+    // 어떤 경우에도 기록하지 않는다 — 해석은 읽기 전용이다.
     tokio::task::spawn_blocking(move || {
         // 흐름의 가속기 판정은 여기서 한 번. 카드 번호와 함께 돌려주고 설치·상태·시작이 쓴다.
         let accelerator = voxcpm2_host_accelerator(None)?;
         let gpu = if voxcpm2_is_nvidia(accelerator) {
             voxcpm2_require_nvidia_choice(
-                voxcpm2_resolve_and_record_gpu(&voxcpm2_runtime_root(), gpu_index, accelerator, record),
+                voxcpm2_resolve_gpu_logged(gpu_index, accelerator),
                 accelerator,
             )?
         } else {
@@ -8913,6 +8888,8 @@ async fn start_voxcpm2(
     // 카드를 쓴다(엔진 빌드 카드와 일치). 카드가 한 장뿐인 기계에서는 설정 자체가 보이지 않는다.
     gpu_index: Option<u32>,
     accelerator: Option<String>,
+    // 자동 모드로 시작한 흐름만 true. 새 엔진을 실제로 띄운 뒤에만 그 카드를 기록한다.
+    record_auto: Option<bool>,
 ) -> Result<String, String> {
     let _start_guard = state.voxcpm2_start.lock().await;
     let accelerator = tokio::task::spawn_blocking(move || voxcpm2_host_accelerator(accelerator.as_deref()))
@@ -9095,6 +9072,24 @@ async fn start_voxcpm2(
     process.cache_lock = Some(cache_lock);
     let ready = process.ready.clone();
     *lock_or_recover(&state.voxcpm2, "voxcpm2") = Some(process);
+    // spawn 이 ready 까지 성공한 분기(시작 잠금을 잡은 채): 이때만 자동 선택을 기록한다.
+    // prior_ready 로 돌아간 분기와 시작 실패는 이 줄에 오지 않는다.
+    if let Some(card) = voxcpm2_auto_record_target(
+        true,
+        record_auto.unwrap_or(false),
+        voxcpm2_is_nvidia(accelerator),
+        effective_gpu,
+    ) {
+        let root = voxcpm2_runtime_root();
+        let (recorded, source) = voice_cache::recorded_gpu_entry(&root);
+        if recorded != Some(card) || source != Some(voice_runtime::GpuSource::Auto) {
+            if let Err(error) =
+                voice_cache::record_gpu_choice_with(&root, Some(card), voice_runtime::GpuSource::Auto)
+            {
+                log_both(&format!("[Naia] 카드 기록 실패(엔진은 {card} 번에서 실행 중): {error}"));
+            }
+        }
+    }
 
     if let Ok(receipt_path) = ctx.receipt_path() {
         if let Some(mut receipt) = voice_cache::read_migration_receipt(&receipt_path) {
@@ -15737,6 +15732,16 @@ mod tests {
         );
         // 공통 자료는 어느 운영체제에서 읽든 함께 온다.
         assert!(!contract.runtime.reference_voices.is_empty());
+    }
+
+    #[test]
+    fn auto_card_is_recorded_only_for_a_new_spawn_started_in_auto_mode() {
+        assert_eq!(voxcpm2_auto_record_target(true, true, true, Some(1)), Some(1));
+        // 기존 ready 를 돌려준 경우(새 spawn 아님)·자동 모드 아님(수동·토큰 복구)·NVIDIA 아님.
+        assert_eq!(voxcpm2_auto_record_target(false, true, true, Some(1)), None);
+        assert_eq!(voxcpm2_auto_record_target(true, false, true, Some(1)), None);
+        assert_eq!(voxcpm2_auto_record_target(true, true, false, Some(1)), None);
+        assert_eq!(voxcpm2_auto_record_target(true, true, true, None), None);
     }
 
     #[test]

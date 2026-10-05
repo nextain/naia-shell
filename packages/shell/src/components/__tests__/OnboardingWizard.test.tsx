@@ -585,6 +585,7 @@ describe("OnboardingWizard", () => {
 			expectedLoaderProfile: "windows_trt_6g",
 			// 흐름 시작에 백엔드가 정한 구체 번호를 설치·상태·시작에 같이 넘긴다 (#537).
 			gpuIndex: 1,
+			recordAuto: true,
 		});
 		expect(invoke).toHaveBeenCalledWith("install_voxcpm2_runtime", {
 			gpuIndex: 1,
@@ -666,6 +667,7 @@ describe("OnboardingWizard", () => {
 			expect(invoke).toHaveBeenCalledWith("start_voxcpm2", {
 				expectedLoaderProfile: "windows_trt_6g",
 				gpuIndex: null,
+			recordAuto: true,
 			});
 			expect(screen.getByText(/installation failed|설치에 실패했습니다/i)).toBeDefined();
 		});

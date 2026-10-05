@@ -1098,8 +1098,9 @@ export function SettingsTab() {
 			// 설정의 자동(null)은 그대로 두고, 흐름이 쓸 값은 구체적인 번호로 정한다.
 			const hostForRun: LocalVoiceHost = await resolveLocalVoiceHost(
 				loadConfig()?.localVoiceGpuIndex ?? null,
-				{ record: true },
 			);
+			// 카드를 고르지 않은(자동) 흐름만 start 가 새 엔진을 띄운 뒤 그 카드를 기록한다.
+			const autoCard = (loadConfig()?.localVoiceGpuIndex ?? null) === null;
 			const flowStatus = () =>
 				refreshVoxCpm2Installation(hostForRun, { throwTransient: true });
 			let installation = await flowStatus();
@@ -1128,6 +1129,7 @@ export function SettingsTab() {
 				expectedLoaderProfile: hostForRun.profile ?? expectedLoaderProfile,
 				// 사람이 고른 카드가 있으면 그것으로 (#537).
 				...localVoiceHostArgs(hostForRun),
+				...(autoCard ? { recordAuto: true } : {}),
 			});
 			const afterStart = await flowStatus();
 			return afterStart?.ready

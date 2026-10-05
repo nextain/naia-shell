@@ -2142,6 +2142,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 				expectedLoaderProfile: "windows_trt_6g",
 				// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).
 				gpuIndex: null,
+			recordAuto: true,
 			});
 			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 			expect(saved.ttsProvider).toBe("naia-local-voice");
@@ -2203,6 +2204,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 			expect(mockInvoke).toHaveBeenCalledWith("start_voxcpm2", {
 				expectedLoaderProfile: expect.anything(),
 				gpuIndex: 1,
+			recordAuto: true,
 			}),
 		);
 		expect(mockInvoke).toHaveBeenCalledWith("resolve_voxcpm2_gpu", {
@@ -2471,6 +2473,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 			.map(([, args]) => (args as { gpuIndex?: number | null }).gpuIndex);
 		expect(gpuArgs.length).toBeGreaterThanOrEqual(3);
 		expect(new Set(gpuArgs)).toEqual(new Set([1]));
+		// 사람이 카드를 고른 흐름(시드의 localVoiceGpuIndex: 1)은 자동 기록을 요청하지 않는다.
+		const startArgs = mockInvoke.mock.calls.find(([cmd]) => cmd === "start_voxcpm2")?.[1];
+		expect(startArgs).not.toHaveProperty("recordAuto");
 		// 가속기 판정도 흐름 시작에 한 번 — 세 명령이 같은 값을 넘겨받는다.
 		const accelArgs = mockInvoke.mock.calls
 			.filter(([cmd]) =>
@@ -2533,6 +2538,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 				expectedLoaderProfile: "windows_trt_6g",
 				// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).
 				gpuIndex: null,
+			recordAuto: true,
 			});
 			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 			expect(saved.ttsProvider).toBe("naia-local-voice");
@@ -2825,6 +2831,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 				expectedLoaderProfile: "windows_trt_6g",
 				// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).
 				gpuIndex: null,
+			recordAuto: true,
 			});
 		});
 	});
@@ -2895,6 +2902,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 				expectedLoaderProfile: "windows_trt_6g",
 				// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).
 				gpuIndex: null,
+			recordAuto: true,
 			});
 			expect(profileWrites.at(-1)?.gate.naiaAccount).toBe(true);
 		});
@@ -3180,6 +3188,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 				expectedLoaderProfile: "windows_trt_6g",
 				// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).
 				gpuIndex: null,
+			recordAuto: true,
 			});
 			const write = mockInvoke.mock.calls.find(
 				([cmd]) => cmd === "write_slots_manifest",
@@ -3228,6 +3237,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 			expectedLoaderProfile: "windows_trt_6g",
 			// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).
 			gpuIndex: null,
+			recordAuto: true,
 		});
 	});
 
@@ -3291,6 +3301,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 			expectedLoaderProfile: "windows_trt_6g",
 			// 고르지 않은 기본 상태 — 런타임이 여유로 고른다 (#537).
 			gpuIndex: null,
+			recordAuto: true,
 		});
 	});
 
