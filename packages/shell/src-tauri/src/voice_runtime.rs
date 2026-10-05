@@ -412,6 +412,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nvidia_smi_출력에서_여유_큰_카드를_고른다() {
+        let gpus = parse_nvidia_gpu_csv("0, 300, 24576\n1, 16000, 16384\n");
+        assert_eq!(select_gpu(&gpus, None), Some(1));
+        assert_eq!(select_gpu(&gpus, Some(0)), Some(0));
+        assert_eq!(select_gpu(&[], None), None);
+    }
+
+    #[test]
     fn 운영체제가_같으면_배치를_공유한다() {
         let win = profile("windows_trt_6g").unwrap();
         let linux = profile("linux_trt_6g").unwrap();

@@ -1045,7 +1045,7 @@ export function SettingsTab() {
 				setCascadeMsg(t("voice.hostEngineInstalling"));
 				const installed = await invoke<unknown>(
 					"install_voxcpm2_runtime",
-					{ gpuIndex: existing?.localVoiceGpuIndex ?? null },
+					{ gpuIndex: loadConfig()?.localVoiceGpuIndex ?? null },
 				);
 				if (isVoxCpm2InstallationStatus(installed))
 					setVoxCpm2Installation(installed);
@@ -1064,7 +1064,8 @@ export function SettingsTab() {
 			const ready = await invoke<string>("start_voxcpm2", {
 				expectedLoaderProfile,
 				// 사람이 고른 카드가 있으면 그것으로 (#537).
-				gpuIndex: existing?.localVoiceGpuIndex ?? null,
+				// 설치가 길어 그 사이 사람이 카드를 바꿀 수 있다 — 렌더 시점 값이 아닌 지금 값.
+				gpuIndex: loadConfig()?.localVoiceGpuIndex ?? null,
 			});
 			const afterStart = await refreshVoxCpm2Installation();
 			return afterStart?.ready
@@ -1087,6 +1088,9 @@ export function SettingsTab() {
 	) => {
 		const shouldNormalizeBlockedLocal =
 			normalizeBlockedLocal && cfg.ttsProvider === "naia-local-voice";
+		// 되돌리는 것은 음성 선택(켬/공급자)이지 사람이 고른 카드가 아니다. 시작 때
+		// 찍어 둔 cfg 가 아니라 지금 저장된 카드 선택을 보존한다(설치 중 바꾼 것 포함).
+		const liveConfig = loadConfig();
 		const fallbackConfig: AppConfig = {
 			...cfg,
 			localVoiceEnabled: shouldNormalizeBlockedLocal
@@ -1096,6 +1100,11 @@ export function SettingsTab() {
 			ttsProvider: shouldNormalizeBlockedLocal ? "edge" : cfg.ttsProvider,
 			...restoreMigrationNotice,
 		};
+		if (liveConfig) {
+			if (liveConfig.localVoiceGpuIndex == null)
+				delete fallbackConfig.localVoiceGpuIndex;
+			else fallbackConfig.localVoiceGpuIndex = liveConfig.localVoiceGpuIndex;
+		}
 		saveConfig(fallbackConfig);
 		setTtsProvider(fallbackConfig.ttsProvider ?? "edge");
 		setTtsEnabled(fallbackConfig.ttsEnabled === true);

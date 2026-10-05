@@ -6138,11 +6138,42 @@ pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
     "Another local voice runtime already owns port 8910 — most likely the other Naia instance. Stop its local voice first.";
 
 /// #703: the single GPU the engine is keyed for, built on and loaded on.
-/// Explicit choice > the mode's recorded choice > the lowest-index NVIDIA card.
+/// Explicit choice > the mode's recorded choice > the NVIDIA card with the most
+/// free memory ("자동 (여유가 가장 많은 카드)"); only if that query fails, the
+/// lowest-index card.
 fn voxcpm2_effective_gpu(gpu_index: Option<u32>) -> Option<u32> {
-    gpu_index
-        .or_else(|| voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root()))
-        .or_else(|| voice_cache::query_nvidia_identities().iter().map(|g| g.index).min())
+    resolve_gpu_choice(
+        gpu_index,
+        || voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root()),
+        || {
+            voice_runtime::select_gpu(
+                &voice_runtime::query_gpus(voice_runtime::Accelerator::TensorRtCuda),
+                None,
+            )
+        },
+        || voice_cache::query_nvidia_identities().iter().map(|g| g.index).min(),
+    )
+}
+
+fn resolve_gpu_choice(
+    explicit: Option<u32>,
+    recorded: impl FnOnce() -> Option<u32>,
+    most_free: impl FnOnce() -> Option<u32>,
+    lowest_index: impl FnOnce() -> Option<u32>,
+) -> Option<u32> {
+    explicit.or_else(recorded).or_else(most_free).or_else(lowest_index)
+}
+
+/// Explicit choices are recorded as before. An automatic pick is recorded too, the
+/// first time it is made: free memory changes as soon as the engine build starts,
+/// and the cache key / build / load must all keep the same card.
+fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Option<u32> {
+    let had_record = voice_cache::recorded_gpu_choice(state_root).is_some();
+    let choice = voxcpm2_effective_gpu(gpu_index);
+    if gpu_index.is_some() || (!had_record && choice.is_some()) {
+        let _ = voice_cache::record_gpu_choice(state_root, choice);
+    }
+    choice
 }
 
 fn voxcpm2_voice_context(
@@ -7567,10 +7598,7 @@ async fn install_voxcpm2_runtime(
     };
 
     let state_root = voxcpm2_runtime_root();
-    if gpu_index.is_some() {
-        let _ = voice_cache::record_gpu_choice(&state_root, gpu_index);
-    }
-    let gpu_choice = voxcpm2_effective_gpu(gpu_index);
+    let gpu_choice = voxcpm2_resolve_and_record_gpu(&state_root, gpu_index);
 
     let staged = voxcpm2_bundle_root(&app);
     if staged.is_none() {
@@ -8725,10 +8753,7 @@ async fn start_voxcpm2(
         }
     };
     let state_root = voxcpm2_runtime_root();
-    if gpu_index.is_some() {
-        let _ = voice_cache::record_gpu_choice(&state_root, gpu_index);
-    }
-    let effective_gpu = voxcpm2_effective_gpu(gpu_index);
+    let effective_gpu = voxcpm2_resolve_and_record_gpu(&state_root, gpu_index);
 
     let ctx = match voxcpm2_context_for_bundle(&bundle_root, effective_gpu) {
         Ok(c) => c,
@@ -18706,5 +18731,15 @@ mod voxcpm2_installer_precheck_tests {
     #[test]
     fn voxcpm2_effective_gpu_prefers_explicit_choice() {
         assert_eq!(voxcpm2_effective_gpu(Some(3)), Some(3));
+    }
+
+    #[test]
+    fn resolve_gpu_choice_order_explicit_recorded_most_free_lowest() {
+        let boom = || -> Option<u32> { panic!("must not be asked") };
+        assert_eq!(resolve_gpu_choice(Some(2), boom, boom, boom), Some(2));
+        assert_eq!(resolve_gpu_choice(None, || Some(1), boom, boom), Some(1));
+        assert_eq!(resolve_gpu_choice(None, || None, || Some(1), boom), Some(1));
+        assert_eq!(resolve_gpu_choice(None, || None, || None, || Some(0)), Some(0));
+        assert_eq!(resolve_gpu_choice(None, || None, || None, || None), None);
     }
 }
