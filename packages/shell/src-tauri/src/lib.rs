@@ -6143,21 +6143,26 @@ pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
 /// device query fails. An explicit or recorded index that is not in the live
 /// device list (card removed/disabled) is ignored.
 fn voxcpm2_resolve_gpu(gpu_index: Option<u32>) -> voice_runtime::GpuResolution {
-    let recorded = voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root());
+    let (recorded, source) = voice_cache::recorded_gpu_entry(&voxcpm2_runtime_root());
+    // 자동 요청은 source=auto 기록만 쓴다. 옛 기록(source 없음)·manual 기록은 무시.
+    let (recorded, ignored) = voice_runtime::usable_recorded(gpu_index, recorded, source);
+    if ignored {
+        log_both("[Naia] 자동 선택이라 사람이 고른/옛 카드 기록은 무시합니다");
+    }
     let gpus = voice_runtime::query_gpus(voice_runtime::Accelerator::TensorRtCuda);
     voice_runtime::resolve_gpu_choice(gpu_index, recorded, &gpus, || {
         voice_cache::query_nvidia_identities().iter().map(|g| g.index).min()
     })
 }
 
+/// 번호가 이미 정해져 있으면(흐름이 넘긴 값) 그대로 쓴다 — 캐시 키·설치·시작이 같은
+/// 번호를 보게. 해석은 번호가 없을 때만 한다.
 fn voxcpm2_effective_gpu(gpu_index: Option<u32>) -> Option<u32> {
-    voxcpm2_resolve_gpu(gpu_index).choice
+    gpu_index.or_else(|| voxcpm2_resolve_gpu(None).choice)
 }
 
-/// Used by install and start: resolves the card once and records it whenever it
-/// differs from the record (first automatic pick, or an explicit/recorded card
-/// that vanished). Free memory changes as soon as the engine build starts, and
-/// the cache key / build / load must all keep the same card.
+/// 흐름 시작에 한 번: 해석하고 기록한다(명시/버려진 번호 → 새 번호는 로그). 자동으로
+/// 고른 번호는 source=auto 로 기록한다. 기록 실패는 로그만 — 반환값이 흐름의 번호다.
 fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Option<u32> {
     let resolution = voxcpm2_resolve_gpu(gpu_index);
     if let Some(gone) = resolution.dropped_explicit {
@@ -6172,11 +6177,28 @@ fn voxcpm2_resolve_and_record_gpu(state_root: &std::path::Path, gpu_index: Optio
             resolution.choice
         ));
     }
-    let recorded = voice_cache::recorded_gpu_choice(state_root);
-    if resolution.choice.is_some() && resolution.choice != recorded {
-        let _ = voice_cache::record_gpu_choice(state_root, resolution.choice);
+    if let Some(choice) = resolution.choice {
+        let source = if gpu_index == Some(choice) {
+            voice_runtime::GpuSource::Manual
+        } else {
+            voice_runtime::GpuSource::Auto
+        };
+        let (recorded, recorded_source) = voice_cache::recorded_gpu_entry(state_root);
+        if recorded != Some(choice) || recorded_source != Some(source) {
+            if let Err(error) = voice_cache::record_gpu_choice_with(state_root, Some(choice), source) {
+                log_both(&format!("[Naia] 카드 기록 실패(흐름은 {choice} 번으로 진행): {error}"));
+            }
+        }
     }
     resolution.choice
+}
+
+/// 설치·시작: 흐름이 넘긴 번호는 고정(재검증으로 다른 카드가 되지 않는다), 없으면 해석.
+fn voxcpm2_pin_gpu(state_root: &std::path::Path, gpu_index: Option<u32>) -> Option<u32> {
+    match gpu_index {
+        Some(pinned) => Some(pinned),
+        None => voxcpm2_resolve_and_record_gpu(state_root, None),
+    }
 }
 
 fn voxcpm2_voice_context(
@@ -6195,6 +6217,12 @@ fn voxcpm2_voice_context(
         Vec::new()
     };
     let gpu = voice_cache::select_identity(&nvidias, gpu_choice);
+    if let (Some(wanted), None, true) = (gpu_choice, gpu.as_ref(), artifact_root.is_some()) {
+        // 정한 카드는 다른 카드로 바꾸지 않는다 — 안 보이면 명확한 오류.
+        return Err(format!(
+            "정해진 GPU {wanted} 번을 지금 장치 목록에서 찾지 못했습니다 (카드가 빠졌거나 드라이버 조회 실패)"
+        ));
+    }
     let tensorrt = artifact_root.and_then(|a| {
         voice_cache::tensorrt_version_from_lock(&a.join("installer-package-lock.json"))
     });
@@ -7601,7 +7629,7 @@ async fn install_voxcpm2_runtime(
     };
 
     let state_root = voxcpm2_runtime_root();
-    let gpu_choice = voxcpm2_resolve_and_record_gpu(&state_root, gpu_index);
+    let gpu_choice = voxcpm2_pin_gpu(&state_root, gpu_index);
 
     let staged = voxcpm2_bundle_root(&app);
     if staged.is_none() {
@@ -8776,7 +8804,7 @@ async fn start_voxcpm2(
         }
     };
     let state_root = voxcpm2_runtime_root();
-    let effective_gpu = voxcpm2_resolve_and_record_gpu(&state_root, gpu_index);
+    let effective_gpu = voxcpm2_pin_gpu(&state_root, gpu_index);
 
     let ctx = match voxcpm2_context_for_bundle(&bundle_root, effective_gpu) {
         Ok(c) => c,

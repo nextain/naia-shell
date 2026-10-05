@@ -286,7 +286,10 @@ pub fn accelerator_env(
     existing_library_path: &str,
 ) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    if let Some(chosen) = select_gpu(gpus, configured_gpu) {
+    // 흐름이 정해 넘긴 번호는 재조회 결과와 상관없이 그대로 고정한다. 재조회는
+    // 정보용이다 — 정한 카드가 안 보인다고 다른 카드로 바꾸지 않는다.
+    let pinned = configured_gpu.or_else(|| select_gpu(gpus, None));
+    if let Some(chosen) = pinned {
         out.push((
             profile.hardware.visible_devices_var.to_string(),
             chosen.to_string(),
@@ -367,6 +370,47 @@ pub fn query_gpus(accelerator: Accelerator) -> Vec<GpuInfo> {
     match accelerator {
         Accelerator::TensorRtCuda => parse_nvidia_gpu_csv(&text),
         Accelerator::Rocm => parse_rocm_gpu_csv(&text),
+    }
+}
+
+/// 저장된 카드 번호를 누가 남겼는가. 자동 요청은 자동 기록만 쓴다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuSource {
+    Auto,
+    Manual,
+}
+
+impl GpuSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GpuSource::Auto => "auto",
+            GpuSource::Manual => "manual",
+        }
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "auto" => Some(GpuSource::Auto),
+            "manual" => Some(GpuSource::Manual),
+            _ => None,
+        }
+    }
+}
+
+/// 이번 요청에 쓸 수 있는 저장값. 명시 선택이 있으면 저장값은 쓰이지 않는다(어차피
+/// 명시가 이긴다). 자동 요청(명시 없음)은 `source=auto` 기록만 쓰고, 옛 기록(source
+/// 없음)과 manual 기록은 무시한다. 두 번째 값은 "무시했다"(로그용).
+pub fn usable_recorded(
+    explicit: Option<u32>,
+    recorded: Option<u32>,
+    source: Option<GpuSource>,
+) -> (Option<u32>, bool) {
+    if explicit.is_some() || recorded.is_none() {
+        return (recorded, false);
+    }
+    if source == Some(GpuSource::Auto) {
+        (recorded, false)
+    } else {
+        (None, true)
     }
 }
 
@@ -476,6 +520,34 @@ mod tests {
     fn 조회가_실패하면_명시와_저장_값을_믿는다() {
         assert_eq!(resolve_gpu_choice(Some(3), None, &[], || Some(0)).choice, Some(3));
         assert_eq!(resolve_gpu_choice(None, Some(2), &[], || Some(0)).choice, Some(2));
+    }
+
+    #[test]
+    fn 정한_카드는_재조회에_안_보여도_고정된다() {
+        let profile = profile("linux_trt_6g").unwrap();
+        // 재조회에는 0번만 보이지만 흐름이 정한 번호는 1.
+        let env = accelerator_env(profile, &[gpu_info(0, 20000)], Some(1), None, "");
+        assert_eq!(env[0].1, "1");
+        // 조회가 비어도 정한 번호는 그대로.
+        let env = accelerator_env(profile, &[], Some(3), None, "");
+        assert_eq!(env[0].1, "3");
+        // 번호가 없을 때만 여유로 고른다.
+        let env = accelerator_env(profile, &[gpu_info(0, 1), gpu_info(2, 9)], None, None, "");
+        assert_eq!(env[0].1, "2");
+    }
+
+    #[test]
+    fn 자동_요청은_auto_기록만_쓴다() {
+        assert_eq!(usable_recorded(None, Some(1), Some(GpuSource::Auto)), (Some(1), false));
+        assert_eq!(usable_recorded(None, Some(1), Some(GpuSource::Manual)), (None, true));
+        // 옛 기록(source 없음)도 무시.
+        assert_eq!(usable_recorded(None, Some(1), None), (None, true));
+        // 기록이 없으면 무시할 것도 없다.
+        assert_eq!(usable_recorded(None, None, None), (None, false));
+        // 명시가 있으면 저장값은 그대로 넘어가지만 명시가 이긴다.
+        assert_eq!(usable_recorded(Some(0), Some(1), None), (Some(1), false));
+        assert_eq!(GpuSource::parse("auto"), Some(GpuSource::Auto));
+        assert_eq!(GpuSource::parse("x"), None);
     }
 
     #[test]

@@ -2439,13 +2439,23 @@ pub fn select_identity(ids: &[GpuIdentity], chosen_index: Option<u32>) -> Option
     }
 }
 
+/// 사람이 고른 번호(또는 지우기). 자동 선택의 기록은 `record_gpu_choice_with` 로 `Auto`.
 pub fn record_gpu_choice(state_root: &Path, index: Option<u32>) -> Result<(), String> {
+    record_gpu_choice_with(state_root, index, crate::voice_runtime::GpuSource::Manual)
+}
+
+pub fn record_gpu_choice_with(
+    state_root: &Path,
+    index: Option<u32>,
+    source: crate::voice_runtime::GpuSource,
+) -> Result<(), String> {
     std::fs::create_dir_all(state_root)
         .map_err(|e| format!("failed to create state dir {}: {}", state_root.display(), e))?;
     let dest = state_root.join("voice-gpu.json");
     let tmp = state_root.join("voice-gpu.json.tmp");
     let payload = serde_json::json!({
         "index": index,
+        "source": source.as_str(),
     });
     let data = serde_json::to_vec_pretty(&payload)
         .map_err(|e| format!("failed to serialize gpu choice: {}", e))?;
@@ -2460,14 +2470,30 @@ pub fn record_gpu_choice(state_root: &Path, index: Option<u32>) -> Result<(), St
 }
 
 pub fn recorded_gpu_choice(state_root: &Path) -> Option<u32> {
+    recorded_gpu_entry(state_root).0
+}
+
+/// 기록된 번호와 누가 남겼는지. source 가 없는 옛 기록은 `None`.
+pub fn recorded_gpu_entry(state_root: &Path) -> (Option<u32>, Option<crate::voice_runtime::GpuSource>) {
     let dest = state_root.join("voice-gpu.json");
-    let bytes = std::fs::read(&dest).ok()?;
+    let Ok(bytes) = std::fs::read(&dest) else {
+        return (None, None);
+    };
     #[derive(serde::Deserialize)]
     struct GpuChoiceRecord {
         index: Option<u32>,
+        #[serde(default)]
+        source: Option<String>,
     }
-    let rec: GpuChoiceRecord = serde_json::from_slice(&bytes).ok()?;
-    rec.index
+    let Ok(rec) = serde_json::from_slice::<GpuChoiceRecord>(&bytes) else {
+        return (None, None);
+    };
+    (
+        rec.index,
+        rec.source
+            .as_deref()
+            .and_then(crate::voice_runtime::GpuSource::parse),
+    )
 }
 
 // ─── 19. Port ownership ──────────────────────────────────────────────────────
@@ -4253,6 +4279,20 @@ mod tests {
         // Record None
         record_gpu_choice(&state_root, None).unwrap();
         assert_eq!(recorded_gpu_choice(&state_root), None);
+    }
+
+    #[test]
+    fn test_gpu_choice_source_round_trip() {
+        use crate::voice_runtime::GpuSource;
+        let temp = tempfile::tempdir().unwrap();
+        let state_root = temp.path().join("state");
+        record_gpu_choice(&state_root, Some(1)).unwrap();
+        assert_eq!(recorded_gpu_entry(&state_root), (Some(1), Some(GpuSource::Manual)));
+        record_gpu_choice_with(&state_root, Some(2), GpuSource::Auto).unwrap();
+        assert_eq!(recorded_gpu_entry(&state_root), (Some(2), Some(GpuSource::Auto)));
+        // 옛 기록: source 키 없음.
+        std::fs::write(state_root.join("voice-gpu.json"), br#"{"index": 0}"#).unwrap();
+        assert_eq!(recorded_gpu_entry(&state_root), (Some(0), None));
     }
 
     #[test]
