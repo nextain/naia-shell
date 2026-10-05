@@ -1792,12 +1792,10 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 				expect(createCalls).toEqual(["/work/new-absolute"]);
 			});
 
-			it("(g) ignores stale onTerminalReady from superseded pty and maintains null pty intermediate render order", async () => {
-				let ptyCount = 0;
+			it("(g) ignores stale onTerminalReady from superseded pty with identical pty_id and maintains null pty intermediate render order", async () => {
 				mockInvoke.mockImplementation(async (cmd) => {
 					if (cmd === "pty_create") {
-						ptyCount++;
-						return { pty_id: `pty-ready-${ptyCount}`, pid: 920 + ptyCount };
+						return { pty_id: "pty-ready-same", pid: 920 };
 					}
 					if (cmd === "pty_write") return;
 					if (cmd === "pty_kill") return;
@@ -1823,7 +1821,7 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 				);
 
 				await waitFor(() => {
-					expect(result.current.pty?.pty_id).toBe("pty-ready-1");
+					expect(result.current.pty?.pty_id).toBe("pty-ready-same");
 				});
 
 				// PTY-1의 onTerminalReady 콜백을 따로 캡처
@@ -1833,7 +1831,8 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 				rerender({ root: "/work/pty-b" });
 
 				await waitFor(() => {
-					expect(result.current.pty?.pty_id).toBe("pty-ready-2");
+					expect(result.current.workingDir).toBe("/work/pty-b");
+					expect(result.current.pty?.pty_id).toBe("pty-ready-same");
 				});
 
 				// 재시작 중 pty 가 null 인 렌더가 새 PTY 연결보다 먼저 커밋됨을 단정
@@ -1841,15 +1840,22 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 					(snap, i) => i > 0 && snap.pty === null,
 				);
 				const pty2Index = renderHistory.findIndex(
-					(snap) => snap.pty === "pty-ready-2",
+					(snap, i) => i > nullPtyIndex && snap.pty === "pty-ready-same",
 				);
 				expect(nullPtyIndex).toBeGreaterThan(-1);
 				expect(nullPtyIndex).toBeLessThan(pty2Index);
+
+				// PTY-1의 준비 콜백 호출 전 terminalReady·terminalError 저장
+				const readyBefore = result.current.terminalReady;
+				const errorBefore = result.current.terminalError;
 
 				// PTY-1의 준비 콜백 호출 -> 무시되어야 함
 				act(() => {
 					pty1OnTerminalReady();
 				});
+
+				expect(result.current.terminalReady).toBe(readyBefore);
+				expect(result.current.terminalError).toBe(errorBefore);
 
 				await new Promise((r) => setTimeout(r, 150));
 				expect(
@@ -1867,7 +1873,7 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 					);
 					expect(writes).toHaveLength(1);
 					expect(writes[0][1]).toEqual({
-						ptyId: "pty-ready-2",
+						ptyId: "pty-ready-same",
 						data: "opencode-init\r",
 					});
 				});
@@ -1883,12 +1889,83 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 				mockInvoke.mockImplementation(async (cmd, args: any) => {
 					if (cmd === "pty_create") {
 						createCalls.push(args.dir);
-						return { pty_id: `pty-retry-${createCalls.length}`, pid: 930 };
+						return { pty_id: `pty-retry-${createCalls.length}`, pid: 930 + createCalls.length };
 					}
 					if (cmd === "pty_kill") {
 						await killPromise;
 						return;
 					}
+					if (cmd === "pty_write") return;
+					return "";
+				});
+
+				const { result, rerender } = renderHook(
+					({ root }: { root: string }) =>
+						usePtyTerminalSource({
+							workspaceRoot: root,
+							enabled: true,
+							initialCommand: "retry-init-cmd",
+						}),
+					{ initialProps: { root: "/work/retry-1" } },
+				);
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-retry-1");
+				});
+
+				// retry 호출 시작 (killPty 대기 중 반환된 Promise 보관)
+				let retryPromise!: Promise<void>;
+				act(() => {
+					retryPromise = result.current.retry();
+				});
+
+				// killPty 대기 도중 루트를 다른 절대 경로로 변경
+				rerender({ root: "/work/retry-2" });
+
+				// killPty 완료 후 retry Promise await
+				resolveKill();
+				await act(async () => {
+					await retryPromise;
+				});
+
+				await waitFor(() => {
+					expect(result.current.pty?.pty_id).toBe("pty-retry-2");
+				});
+
+				// pty_create가 새 루트로만 1회 더 불렸고 옛 루트로는 불리지 않음(호출 인자 dir로 확인)
+				expect(createCalls).toEqual(["/work/retry-1", "/work/retry-2"]);
+
+				// 최종 PTY가 새 루트의 것 1개
+				expect(result.current.pty?.pty_id).toBe("pty-retry-2");
+
+				// launching이 false
+				expect(result.current.launching).toBe(false);
+
+				// 최신 PTY의 준비 콜백을 부르면 terminalReady가 true가 되고 initialCommand가 최신 PTY id로 1회 쓰임
+				act(() => {
+					result.current.onTerminalReady();
+				});
+
+				expect(result.current.terminalReady).toBe(true);
+
+				await waitFor(() => {
+					const writes = mockInvoke.mock.calls.filter(
+						(c) => c[0] === "pty_write",
+					);
+					expect(writes).toHaveLength(1);
+					expect(writes[0][1]).toEqual({
+						ptyId: "pty-retry-2",
+						data: "retry-init-cmd\r",
+					});
+				});
+			});
+
+			it("(j) ignores stale onPtyExit from superseded pty with identical pty_id when root changes", async () => {
+				mockInvoke.mockImplementation(async (cmd) => {
+					if (cmd === "pty_create") {
+						return { pty_id: "pty-exit-same", pid: 940 };
+					}
+					if (cmd === "pty_kill") return;
 					return "";
 				});
 
@@ -1898,38 +1975,36 @@ describe("Workspace Quad Layout (3단 작업 화면) — #732", () => {
 							workspaceRoot: root,
 							enabled: true,
 						}),
-					{ initialProps: { root: "/work/retry-1" } },
+					{ initialProps: { root: "/work/pty-exit-a" } },
 				);
 
 				await waitFor(() => {
-					expect(result.current.pty?.pty_id).toBe("pty-retry-1");
+					expect(result.current.pty?.pty_id).toBe("pty-exit-same");
 				});
 
-				// retry 호출 시작 (killPty 대기)
-				const retryPromise = act(async () => {
-					void result.current.retry();
-				});
+				// PTY A의 onPtyExit를 잡아 둔 채
+				const ptyAOnPtyExit = result.current.onPtyExit;
 
-				// killPty 대기 도중 루트를 다른 절대 경로로 변경
-				rerender({ root: "/work/retry-2" });
-
-				// killPty 완료
-				await act(async () => {
-					resolveKill();
-					await retryPromise;
-					await new Promise((r) => setTimeout(r, 50));
-				});
+				// 루트 변경으로 PTY B 부착 (재시작)
+				rerender({ root: "/work/pty-exit-b" });
 
 				await waitFor(() => {
-					expect(result.current.pty?.pty_id).toBe("pty-retry-2");
+					expect(result.current.workingDir).toBe("/work/pty-exit-b");
+					expect(result.current.pty?.pty_id).toBe("pty-exit-same");
+					expect(result.current.launchErrorKind).toBeNull();
 				});
 
-				// 이전 재시도는 pty_create를 추가로 부르지 않고, 최종 pty는 retry-2에 대한 것 1개
-				const creates = mockInvoke.mock.calls.filter(
-					(c) => c[0] === "pty_create",
-				);
-				expect(creates).toHaveLength(2);
-				expect(creates[1][1].dir).toBe("/work/retry-2");
+				// PTY A의 것을 같은 id 인자로 호출
+				act(() => {
+					ptyAOnPtyExit("pty-exit-same");
+				});
+
+				// pty는 B 그대로, launchErrorKind는 pty-exit이 아니며 종료 오류 문구가 보이지 않는다
+				expect(result.current.pty).not.toBeNull();
+				expect(result.current.pty?.pty_id).toBe("pty-exit-same");
+				expect(result.current.launchErrorKind).not.toBe("pty-exit");
+				expect(result.current.launchErrorKind).toBeNull();
+				expect(result.current.launchError).toBe("");
 			});
 		});
 	});

@@ -89,9 +89,13 @@ export function detectDefaultShell(): string {
 	return "bash";
 }
 
+export interface PtyTerminalSource extends TerminalSource {
+	launchErrorKind: LaunchErrorKind;
+}
+
 export function usePtyTerminalSource(
 	options: PtyTerminalSourceOptions = {},
-): TerminalSource {
+): PtyTerminalSource {
 	const [pty, setPty] = useState<PtyCreated | null>(null);
 	const [launching, setLaunching] = useState(false);
 	const [launchError, setLaunchError] = useState("");
@@ -460,29 +464,41 @@ export function usePtyTerminalSource(
 		}
 	}, [boundPtyId, boundGeneration, boundRoot, options.initialCommand]);
 
-	const onPtyExit = useCallback((ptyId?: string) => {
-		const currentId = currentPtyIdRef.current;
-		if (!currentId || (ptyId && currentId !== ptyId)) {
-			return;
-		}
+	const onPtyExit = useCallback(
+		(ptyId?: string) => {
+			if (!boundPtyId || boundGeneration < 0) return;
 
-		if (autoCommandTimerRef.current) {
-			window.clearTimeout(autoCommandTimerRef.current);
-			autoCommandTimerRef.current = null;
-		}
-		currentPtyIdRef.current = null;
-		currentBoundPtyRef.current = null;
-		setPty(null);
-		setTerminalReady(false);
-		setLaunchErrorKind("pty-exit");
-		setLaunchError(t("workspace.herdrExited"));
-	}, []);
+			if (
+				!mountedRef.current ||
+				!isEnabledRef.current ||
+				boundGeneration !== launchGenerationRef.current ||
+				boundPtyId !== currentPtyIdRef.current ||
+				boundRoot !== currentRootRef.current ||
+				(ptyId !== undefined && ptyId !== boundPtyId)
+			) {
+				return;
+			}
+
+			if (autoCommandTimerRef.current) {
+				window.clearTimeout(autoCommandTimerRef.current);
+				autoCommandTimerRef.current = null;
+			}
+			currentPtyIdRef.current = null;
+			currentBoundPtyRef.current = null;
+			setPty(null);
+			setTerminalReady(false);
+			setLaunchErrorKind("pty-exit");
+			setLaunchError(t("workspace.herdrExited"));
+		},
+		[boundPtyId, boundGeneration, boundRoot],
+	);
 
 	return {
 		kind: "pty",
 		pty,
 		launching,
 		launchError,
+		launchErrorKind,
 		terminalReady,
 		terminalError,
 		workingDir,
