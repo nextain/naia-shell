@@ -40,7 +40,7 @@ describe("페르소나 사용 안 함", () => {
 
 	describe("#752 비활성 경로 호칭 규칙", () => {
 		const SENTENCE_A =
-			'Never address the user with any title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal". If you know the user\'s name, use it; otherwise, speak directly without addressing them.';
+			'Never address the user with any title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal". Speak directly without addressing them.';
 		const SENTENCE_B =
 			'Do not address the user with any other title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal"; use only the form given above.';
 

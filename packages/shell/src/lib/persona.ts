@@ -132,8 +132,26 @@ export interface MemoryContext {
 	appContexts?: { type: string; data: Record<string, unknown> }[];
 }
 
+export const NAME_SUFFIX_HONORIFICS = [
+	"님",
+	"씨",
+	"군",
+	"양",
+	"さん",
+	"様",
+	"くん",
+	"ちゃん",
+	"君",
+] as const;
+
+export const NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION =
+	'Never address the user with any title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal". Speak directly without addressing them.';
+
+export const NO_HONORIFIC_NAME_ADDRESSING_INSTRUCTION =
+	'Never address the user with any title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal". Apart from the occasional use of their name described above, speak directly without addressing them.';
+
 export const NO_HONORIFIC_ADDRESSING_INSTRUCTION =
-	'Never address the user with any title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal". If you know the user\'s name, use it; otherwise, speak directly without addressing them.';
+	NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION;
 
 export const HONORIFIC_ADDRESSING_INSTRUCTION =
 	'Do not address the user with any other title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal"; use only the form given above.';
@@ -148,7 +166,7 @@ export const HONORIFIC_ADDRESSING_INSTRUCTION =
  * 없으면 스킬을 못 쓴다.
  */
 function buildNonPersonaPrompt(context?: MemoryContext): string {
-	const lines: string[] = [NO_HONORIFIC_ADDRESSING_INSTRUCTION];
+	const lines: string[] = [NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION];
 
 	if (context?.locale) {
 		const lang = localeToLanguage(context.locale);
@@ -187,29 +205,45 @@ export function buildSystemPrompt(
 
 	if (context?.userName) {
 		contextLines.push(
-			`The user's name is "${context.userName}". Address them by name occasionally.`,
+			`The user's name is "${context.userName}". Use the name only now and then: most replies should not contain it, never use it in two consecutive replies, and do not start replies with it.`,
 		);
 	}
 
+	const trimmedHonorific = (context?.honorific ?? "").trim();
 	if (
-		context?.honorific &&
-		(!context.locale || FORMALITY_LOCALES.has(context.locale))
+		trimmedHonorific &&
+		(!context?.locale || FORMALITY_LOCALES.has(context.locale))
 	) {
-		const lang = context.locale
+		const lang = context?.locale
 			? localeToLanguage(context.locale)
 			: "the user's language";
-		if (context.userName) {
+		if (context?.userName) {
 			contextLines.push(
-				`Address the user as "${context.honorific} ${context.userName || ""}" or "${context.userName || ""}${context.honorific}" as appropriate for ${lang}.`,
+				`Address the user as "${trimmedHonorific} ${context.userName || ""}" or "${context.userName || ""}${trimmedHonorific}" as appropriate for ${lang}.`,
 			);
+			contextLines.push(
+				`Use this form only now and then: most replies should not contain it, and never use it in two consecutive replies.`,
+			);
+			contextLines.push(HONORIFIC_ADDRESSING_INSTRUCTION);
 		} else {
-			contextLines.push(
-				`The user chose to be addressed as "${context.honorific}". Use it alone only if it works as a standalone form of address in ${lang}; if it is a suffix that needs a name (such as "님", "씨", "さん", or "様"), do not address the user at all.`,
-			);
+			if ((NAME_SUFFIX_HONORIFICS as readonly string[]).includes(trimmedHonorific)) {
+				contextLines.push(
+					`"${trimmedHonorific}" is a suffix that must follow a name, and the user's name is unknown, so never use "${trimmedHonorific}" by itself. Do not address the user at all; speak directly without any title or nickname.`,
+				);
+				contextLines.push(NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION);
+			} else {
+				contextLines.push(
+					`Address the user as "${trimmedHonorific}". Use it only now and then: most replies should not contain it, and never use it in two consecutive replies.`,
+				);
+				contextLines.push(HONORIFIC_ADDRESSING_INSTRUCTION);
+			}
 		}
-		contextLines.push(HONORIFIC_ADDRESSING_INSTRUCTION);
 	} else {
-		contextLines.push(NO_HONORIFIC_ADDRESSING_INSTRUCTION);
+		if (context?.userName) {
+			contextLines.push(NO_HONORIFIC_NAME_ADDRESSING_INSTRUCTION);
+		} else {
+			contextLines.push(NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION);
+		}
 	}
 
 	if (context?.locale) {
