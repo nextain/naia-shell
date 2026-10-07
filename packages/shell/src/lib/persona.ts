@@ -198,9 +198,15 @@ export function buildSystemPrompt(
 		const lang = context.locale
 			? localeToLanguage(context.locale)
 			: "the user's language";
-		contextLines.push(
-			`Address the user as "${context.honorific} ${context.userName || ""}" or "${context.userName || ""}${context.honorific}" as appropriate for ${lang}.`,
-		);
+		if (context.userName) {
+			contextLines.push(
+				`Address the user as "${context.honorific} ${context.userName || ""}" or "${context.userName || ""}${context.honorific}" as appropriate for ${lang}.`,
+			);
+		} else {
+			contextLines.push(
+				`The user chose to be addressed as "${context.honorific}". Use it alone only if it works as a standalone form of address in ${lang}; if it is a suffix that needs a name (such as "님", "씨", "さん", or "様"), do not address the user at all.`,
+			);
+		}
 		contextLines.push(HONORIFIC_ADDRESSING_INSTRUCTION);
 	} else {
 		contextLines.push(NO_HONORIFIC_ADDRESSING_INSTRUCTION);

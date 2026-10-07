@@ -217,6 +217,17 @@ describe("buildSystemPrompt", () => {
 				);
 		}
 
+		function extractHonorificInstructionLine(prompt: string): string | undefined {
+			return prompt
+				.split("\n")
+				.map((line) => line.trim().replace(/^- /, ""))
+				.find(
+					(line) =>
+						line.startsWith("Address the user as") ||
+						line.startsWith("The user chose to be addressed as"),
+				);
+		}
+
 		it("호칭 없음(ko 반말): 문장 A 가 들어가고 문장 B 는 들어가지 않는다", () => {
 			const result = buildSystemPrompt(undefined, {
 				locale: "ko",
@@ -245,6 +256,7 @@ describe("buildSystemPrompt", () => {
 				honorific: "님",
 			});
 			const expected = 'Address the user as "님 민수" or "민수님" as appropriate for Korean.';
+			expect(extractHonorificInstructionLine(result)).toBe(expected);
 			expect(result).toContain(expected);
 			expect(result).toContain(`${expected}\n${SENTENCE_B}`);
 			expect(extractAddressingLine(result)).toBe(SENTENCE_B);
@@ -257,20 +269,41 @@ describe("buildSystemPrompt", () => {
 				honorific: "님",
 			});
 			const expected = 'Address the user as "님 민수" or "민수님" as appropriate for the user\'s language.';
+			expect(extractHonorificInstructionLine(result)).toBe(expected);
 			expect(result).toContain(expected);
 			expect(result).toContain(`${expected}\n${SENTENCE_B}`);
 			expect(extractAddressingLine(result)).toBe(SENTENCE_B);
 			expect(result).not.toContain(SENTENCE_A);
 		});
 
-		it("호칭만 있고 이름 없음(locale 'ko', 호칭 '님' → B): 문장 B 가 들어가고 문장 A 는 들어가지 않는다", () => {
+		it("호칭만 있고 이름 없음(locale 'ko', 호칭 '님' → B): 새 문장과 문장 B 가 들어가고, '님 '와 'Address the user as'가 없으며 문장 A 도 없다", () => {
 			const result = buildSystemPrompt(undefined, {
 				locale: "ko",
 				honorific: "님",
 			});
-			const expected = 'Address the user as "님 " or "님" as appropriate for Korean.';
+			const expected =
+				'The user chose to be addressed as "님". Use it alone only if it works as a standalone form of address in Korean; if it is a suffix that needs a name (such as "님", "씨", "さん", or "様"), do not address the user at all.';
+			expect(extractHonorificInstructionLine(result)).toBe(expected);
 			expect(result).toContain(expected);
 			expect(result).toContain(`${expected}\n${SENTENCE_B}`);
+			expect(result).not.toContain('"님 "');
+			expect(result).not.toContain("Address the user as");
+			expect(extractAddressingLine(result)).toBe(SENTENCE_B);
+			expect(result).not.toContain(SENTENCE_A);
+		});
+
+		it("호칭만 있고 이름 없음(locale 'ko', 호칭 '오빠' → B): 새 문장에 '오빠'가 포함되고 문장 B 가 들어가며, 'Address the user as'가 없다", () => {
+			const result = buildSystemPrompt(undefined, {
+				locale: "ko",
+				honorific: "오빠",
+			});
+			const expected =
+				'The user chose to be addressed as "오빠". Use it alone only if it works as a standalone form of address in Korean; if it is a suffix that needs a name (such as "님", "씨", "さん", or "様"), do not address the user at all.';
+			expect(extractHonorificInstructionLine(result)).toBe(expected);
+			expect(result).toContain(expected);
+			expect(result).toContain("오빠");
+			expect(result).toContain(`${expected}\n${SENTENCE_B}`);
+			expect(result).not.toContain("Address the user as");
 			expect(extractAddressingLine(result)).toBe(SENTENCE_B);
 			expect(result).not.toContain(SENTENCE_A);
 		});
