@@ -1356,3 +1356,13 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 | **FR-CREDITS-DISPLAY.1** | Naia 계정 사용 비용은 모든 화면에서 "약 N 크레딧"(1크레딧 = $0.001, 달러 × 1,000)으로 표시하고, 셸은 배수를 곱하지 않는다. 자기 API 키 제공자는 달러 "제공사 요금 추정"으로 표시한다. 금액 서식은 `lib/credits.ts` 한 곳을 쓴다. 14개 언어 키 누락 0. | UC-CREDITS-DISPLAY | `credits.test.ts`, `CostDashboard.test.tsx`, `ChatArea.test.tsx`, `WorkProgressArea.test.tsx`, `SettingsTab.test.tsx`, `registry.test.ts`, `i18n-user-facing.test.ts` | In progress |
 | **FR-CREDITS-DISPLAY.2** | Steam판(표시 파일 `naia-distribution.txt` 또는 `SteamAppId`=5354630)에서는 크레딧 충전 버튼·naia.land 결제·대시보드 링크와 부족 안내의 웹 결제 문구를 숨긴다. 표시 파일은 데포 해시 목록에 포함되고 CI가 확인한다. | UC-CREDITS-DISPLAY | `src-tauri/src/distribution.rs` 단위 시험, `platform-matrix.test.ts`, `distribution.test.ts`, `CostDashboard.steam.test.tsx`, `SettingsTab.test.tsx` | In progress |
+
+## 기능 요구사항 (FR) — 한국어 대화 호칭 "친구" 제거 (#752)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-752-NO-CHINGU.1** | 음성(Live) 경로 시스템 프롬프트(`buildSystemPrompt`, `buildNonPersonaPrompt`)는 Context 블록에 호칭 규칙을 포함한다. 호칭 줄이 실제로 출력되지 않는 경우(호칭 미지정, en 호칭, 이름만 있음, context 미전달/빈 객체 등) 문장 A(`Never address the user with any title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal". If you know the user's name, use it; otherwise, speak directly without addressing them.`)를 포함하고, 호칭 줄이 출력된 경우 그 바로 다음 줄에 문장 B(`Do not address the user with any other title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal"; use only the form given above.`)를 포함하며, 문장 A와 B는 상호 배타적으로 정확히 하나만 들어간다. | UC-752-NO-CHINGU | `persona.test.ts`, `persona-disabled.test.ts` | 검증중 |
+| **FR-752-NO-CHINGU.2** | `DEFAULT_PERSONA` 첫 줄(`You are Naia (낸), a warm and capable AI agent living inside Naia.`)과 온보딩 기본 persona 문장(`You are ${name}, an AI agent. Speak ${speechDesc}.`)에 companion·friend 의미의 낱말을 일절 사용하지 않는다. | UC-752-NO-CHINGU | `persona.test.ts`, `persona-disabled.test.ts`, `OnboardingWizard.test.tsx` | 검증중 |
+| **FR-752-NO-CHINGU.3** | 한국어 화면 글자(`packages/shell/src/lib/locales/ko.ts`)와 영어 화면 글자(`packages/shell/src/lib/locales/en.ts`)에서 사용자를 부르는 "친구" 및 "friend" 표기를 정돈한다 (`personality.friendly.label`: "다정한 말투" / "Warm Tone", `onboard.speechStyle.casualDesc`: "편하게 반말로" / "Casual and relaxed"). | UC-752-NO-CHINGU | `752-no-chingu-labels.spec.ts` | 검증중 |
+| **FR-752-NO-CHINGU.4** | 코어 페어링 핀(`agent-pairing.json`의 `agentCommit` 및 `src-tauri/build.rs`의 `REQUIRED_AGENT_COMMIT`)은 코어 호칭 규칙 커밋 해시(`d3db31c13a295e1ecbab81f826d3c1d19b0c7ee8`)와 정확히 일치하도록 갱신한다. | UC-752-NO-CHINGU | `platform-matrix.test.ts`, grep 검증 | 검증중 |
+

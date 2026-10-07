@@ -108,7 +108,7 @@ export interface ChatMessage {
  * 두벌 제거: persona/locale/honorific/speechStyle/userName 은 코어가 config.json 에서 스스로 조립하므로 셸이 안 보낸다.
  * 셸 고유 = 아바타 감정 태그(avatarEmotion, 아바타 전용) + 앱 컨텍스트(app, 런타임 UI) +
  * 응답 스타일 힌트(responseStyle, 음성 파이프라인=brief)뿐. 폐쇄 union(코어가 화이트리스트).
- * ⚠️ 음성(Live)·discord 경로는 코어를 안 거치므로 buildSystemPrompt 를 그대로 쓴다 — 이 세그먼트는 gRPC 채팅 경로 전용.
+ * ⚠️ 음성(Live) 경로는 코어를 안 거치므로 buildSystemPrompt 를 그대로 쓴다. Discord 는 코어(naia-agent discord-channel → composePersonaPrompt)가 조립한다 — 이 세그먼트는 gRPC 채팅 경로 전용.
  * ⚠️ responseStyle: 음성 STT→채팅 파이프라인(코어 경유)이 raw systemPrompt(brevity)로 persona 를 덮던 회귀를 닫는다.
  *    간결성만 구조화로 보내고 persona 조립은 코어가 보존(어디서든 알파). brief=짧은 구어, normal=무영향(문구는 코어 소유).
  */

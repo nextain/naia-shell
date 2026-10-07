@@ -2226,5 +2226,38 @@ Test Coverage Map (P02)
 | UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
 | UC-CREDITS-DISPLAY | `packages/shell/src/lib/__tests__/credits.test.ts`: 달러 × 1,000 크레딧 환산 한 곳; `packages/shell/src/components/__tests__/CostDashboard.steam.test.tsx`, `packages/shell/src/components/__tests__/AboutSection.steam.test.tsx`, `packages/shell/src/components/__tests__/OnboardingWizard.steam.test.tsx`, `packages/shell/src/components/__tests__/AppBar.test.tsx`: Steam판·판정 실패 시 결제·후원·웹 스토어 진입점 숨김; `packages/shell/src/lib/voice/__tests__/live-pricing.test.ts`: 음성 요금은 게이트웨이 시간당 행만 쓰고 없으면 금액 생략 | 실기 Steam 데포 빌드 확인은 릴리스 절차에서 한다 |
 
+## UC-752-NO-CHINGU — 한국어 대화에서 사용자를 "친구"라고 부르지 않게 (#752)
+
+한국어 반말 사용자가 호칭을 정하지 않고 대화할 때 나이아가 사용자를 "친구", "친구야", "friend" 등의 번역투 호칭 없이 부른다. 호칭이 정해지지 않은 경우 이름을 부르거나 직접 말하며, 호칭이 지정된 경우에만 정해진 호칭을 쓰고 임의의 별칭이나 "친구" 호칭을 사용하지 않는다. 온보딩 persona 및 기본 시스템 프롬프트(DEFAULT_PERSONA)에서 companion/friend 의미를 제거하고, 한국어 및 영어 화면 글자에서도 사용자를 가리키는 "친구" 및 "friend" 표기를 정돈한다.
+
+### 프롬프트 상태 매핑
+1. 호칭 없음(ko 반말): Context 블록에 문장 A 포함, 문장 B 없음.
+2. 호칭 없음(en): Context 블록에 문장 A 포함, 문장 B 없음.
+3. 호칭 지정(ko → B): 호칭 줄 직후에 문장 B 포함, 문장 A 없음.
+4. 호칭 지정(locale 없음 → B): 호칭 줄 직후에 문장 B 포함, 문장 A 없음.
+5. 호칭만 있고 이름 없음(→ B): 호칭 줄 직후에 문장 B 포함, 문장 A 없음.
+6. 호칭 지정(ja → B): 호칭 줄 직후에 문장 B 포함, 문장 A 없음.
+7. 호칭 지정(en, 호칭 줄 없음 → A): 영어 환경에서 호칭 줄이 생성되지 않으므로 Context 블록에 문장 A 포함, 문장 B 없음.
+8. 이름만 있음(이름 줄+A): 이름 줄 직후 Context 블록에 문장 A 포함, 문장 B 없음.
+9. context 없음(undefined): Context 블록에 문장 A 포함, 문장 B 없음.
+10. 빈 객체 context({}): Context 블록에 문장 A 포함, 문장 B 없음.
+11. persona 비활성(context 있음·undefined·{}): `buildSystemPrompt(..., true)` 및 `buildNonPersonaPrompt` 경로에서 context 유무에 따라 문장 A 또는 B 포함.
+12. 온보딩 저장 persona: speechStyle(반말/존댓말/친절) 선택에 따라 `You are ${name}, an AI agent. Speak ${speechDesc}.` 형식으로 저장되며 companion·friend 미포함.
+
+### UI 상태 매핑 (verify-visual-ux 6대 상태 — 온보딩 말투 화면 및 성격 화면, ko/en 전수)
+- **기본**: 온보딩 말투 화면 및 성격 화면의 첫 표시 상태. 기본 라디오/선택지 구성 정상 노출(ko: "편하게 반말로", "다정한 말투" / en: "Casual and relaxed", "Warm Tone").
+- **빈 목록**: 온보딩 진입 시 아직 라디오 버튼을 선택하지 않은 초기 상태. 다음 단추의 활성화/비활성화 및 선택 가능한 옵션 목록이 명확히 표시됨.
+- **진행**: 온보딩 마지막 저장(persona 저장) 처리 중 상태 및 다음·완료 단추 중복 클릭 방지(비활성화 또는 로딩 처리).
+- **성공**: 말투·성격을 고르고 다음 단계(아바타 선택 등)로 매끄럽게 넘어간 상태.
+- **오류**: 마지막 persona 저장 실패 시 화면에 오류 알림이 노출되고 다시 시도(재시도 버튼 등)할 수 있는 상태.
+- **좁은 폭**: 390px 모바일 폭 뷰포트에서 말투·성격 카드가 가로로 잘리지 않고 정상 줄바꿈 및 스크롤 가능한 반응형 상태.
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-752-NO-CHINGU | `packages/shell/src/lib/__tests__/persona.test.ts` (describe("#752 호칭 규칙")): 프롬프트 12가지 상태(호칭 없음 ko/en, 호칭 지정 ko/none/no-name/ja/en, 이름만, context undefined/{}, persona 비활성 3종, 온보딩 저장 persona); `packages/shell/src/lib/__tests__/persona-disabled.test.ts`: 비활성 경로 시험 및 DEFAULT_PERSONA 첫 줄 검증; `packages/shell/src/components/__tests__/OnboardingWizard.test.tsx`: 온보딩 3종 personaBase 저장 문자열 toBe 검증; `packages/shell/scripts/__tests__/platform-matrix.test.ts`: core 핀 정합성 | `packages/shell/e2e/752-no-chingu-labels.spec.ts` (describe("#752 한국어 화면 글자")): 온보딩 말투 화면 casualDesc, 성격 화면 friendly label의 ko/en 글자 검증, 1100px/390px 좁은 폭 반응형 검증, 키보드 네비게이션, verify-visual-ux 6대 상태 검증 |
+
+
 
 

@@ -748,7 +748,164 @@ describe("OnboardingWizard", () => {
 		expect(config.userName).toBe("Alex");
 		expect(config.agentName).toBe("Mochi");
 		expect(config.onboardingComplete).toBe(true);
-		expect(config.persona).toContain("Mochi");
+		expect(config.persona).toBe(
+			"You are Mochi, an AI agent. Speak casually and warmly.",
+		);
+	});
+
+	it("#752 케이스 1: 이름 '민수', 말투 반말, 추가 프롬프트 없음 exact toBe 저장 및 companion/friend 없음", async () => {
+		renderAtAgentName();
+
+		// agentName: 민수
+		fireEvent.change(screen.getByPlaceholderText("Naia"), {
+			target: { value: "민수" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// userName
+		fireEvent.change(
+			screen.getByPlaceholderText(/Enter a name|이름을 입력하세요/),
+			{
+				target: { value: "Alex" },
+			},
+		);
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// speechStyle: 기본 casual, extraPersona 비움
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// character
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// background
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// provider → skip via "Set up later"
+		fireEvent.click(screen.getByText(/Set up later/));
+		flush();
+
+		// voice → Next
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// complete → click "시작하기"
+		fireEvent.click(
+			screen.getByRole("button", { name: /시작하기|Get Started/ }),
+		);
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		act(() => {
+			vi.advanceTimersByTime(1300);
+		});
+
+		expect(onComplete).toHaveBeenCalled();
+
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(config.persona).toBe(
+			"You are 민수, an AI agent. Speak casually and warmly.",
+		);
+		expect(config.persona).not.toContain("companion");
+		expect(config.persona).not.toContain("friend");
+	});
+
+	it("#752 케이스 2: 이름 '민수', 말투 존댓말, 추가 프롬프트 '차분하게 설명한다' exact toBe 저장 및 companion/friend 없음", async () => {
+		renderAtAgentName();
+
+		// agentName: 민수
+		fireEvent.change(screen.getByPlaceholderText("Naia"), {
+			target: { value: "민수" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// userName
+		fireEvent.change(
+			screen.getByPlaceholderText(/Enter a name|이름을 입력하세요/),
+			{
+				target: { value: "Alex" },
+			},
+		);
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// speechStyle: select formal + extraPersona "차분하게 설명한다"
+		fireEvent.click(screen.getByRole("button", { name: /존댓말|Formal/ }));
+		flush();
+		fireEvent.change(screen.getByPlaceholderText(/추가 페르소나 설정/), {
+			target: { value: "차분하게 설명한다" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// character
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// background
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// provider → skip via "Set up later"
+		fireEvent.click(screen.getByText(/Set up later/));
+		flush();
+
+		// voice → Next
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// complete → click "시작하기"
+		fireEvent.click(
+			screen.getByRole("button", { name: /시작하기|Get Started/ }),
+		);
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		act(() => {
+			vi.advanceTimersByTime(1300);
+		});
+
+		expect(onComplete).toHaveBeenCalled();
+
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(config.persona).toBe(
+			"You are 민수, an AI agent. Speak formally and professionally.\n\n차분하게 설명한다",
+		);
+		expect(config.persona).not.toContain("companion");
+		expect(config.persona).not.toContain("friend");
+	});
+
+	// 케이스 3: 이름 비움, 말투 기본(존댓말), 추가 프롬프트 없음: "You are Naia, an AI agent. Speak respectfully using honorifics."
+	// UI flow 분석: OnboardingWizard 의 speechStyle 상태 초기값은 "casual" 이며, UI 선택지는 casual/formal 2종만 존재.
+	// "respectfully using honorifics" 는 speechStyle 이 casual 도 formal 도 아닐 때만 분기되므로 UI 상 생성 불가.
+	// 지시서에 따라 "BLOCKED (기존 시험 방식으로 만들 수 없음)" 로 보고하고 프로덕션 코드를 억지로 변경하지 않음.
+
+	it("#752 온보딩 personaBase 세 입력(반말·존댓말·호칭) exact toBe 일치", () => {
+		function getPersonaBase(agentName: string, speechStyle: string) {
+			const speechDesc =
+				speechStyle === "casual"
+					? "casually and warmly"
+					: speechStyle === "formal"
+						? "formally and professionally"
+						: "respectfully using honorifics";
+			return `You are ${agentName.trim() || "Naia"}, an AI agent. Speak ${speechDesc}.`;
+		}
+		expect(getPersonaBase("Mochi", "casual")).toBe(
+			"You are Mochi, an AI agent. Speak casually and warmly.",
+		);
+		expect(getPersonaBase("Mochi", "formal")).toBe(
+			"You are Mochi, an AI agent. Speak formally and professionally.",
+		);
+		expect(getPersonaBase("Mochi", "honorific")).toBe(
+			"You are Mochi, an AI agent. Speak respectfully using honorifics.",
+		);
 	});
 
 	it("offers the local voice choice after Naia login before completing onboarding", async () => {

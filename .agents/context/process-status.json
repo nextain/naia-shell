@@ -19,6 +19,11 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_752_no_chingu": {
+      "issue": 752,
+      "title": "한국어 대화에서 사용자를 \"친구\"라고 부르지 않게 (#752)",
+      "last_updated": "2026-10-07T16:32:19+09:00"
+    },
     "issue_724_memory_knowledge_tools": {
       "issue": 724,
       "title": "모델 keep list에 기억·지식 저장 도구를 열고 계약 테스트를 실행한다 (#724)",
