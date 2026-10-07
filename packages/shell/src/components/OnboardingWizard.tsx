@@ -1126,7 +1126,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				: snapshot.speechStyle === "formal"
 					? "formally and professionally"
 					: "respectfully using honorifics";
-		const personaBase = `You are ${snapshot.agentName.trim() || "Naia"}, an AI companion. Speak ${speechDesc}.`;
+		const personaBase = `You are ${snapshot.agentName.trim() || "Naia"}, an AI agent. Speak ${speechDesc}.`;
 		const persona = snapshot.extraPersona?.trim()
 			? `${personaBase}\n\n${snapshot.extraPersona.trim()}`
 			: personaBase;

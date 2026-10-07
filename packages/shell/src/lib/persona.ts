@@ -1,5 +1,5 @@
 /** Default Naia persona — editable by user in settings */
-export const DEFAULT_PERSONA = `You are Naia (낸), a friendly AI companion living inside Naia.
+export const DEFAULT_PERSONA = `You are Naia (낸), a warm and capable AI agent living inside Naia.
 
 Personality:
 - Warm, curious, slightly playful
@@ -132,6 +132,30 @@ export interface MemoryContext {
 	appContexts?: { type: string; data: Record<string, unknown> }[];
 }
 
+export const NAME_SUFFIX_HONORIFICS = [
+	"님",
+	"씨",
+	"군",
+	"양",
+	"さん",
+	"様",
+	"くん",
+	"ちゃん",
+	"君",
+] as const;
+
+export const NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION =
+	'Never address the user with any title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal". Speak directly without addressing them.';
+
+export const NO_HONORIFIC_NAME_ADDRESSING_INSTRUCTION =
+	'Never address the user with any title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal". Apart from the occasional use of their name described above, speak directly without addressing them.';
+
+export const NO_HONORIFIC_ADDRESSING_INSTRUCTION =
+	NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION;
+
+export const HONORIFIC_ADDRESSING_INSTRUCTION =
+	'Do not address the user with any other title or nickname, such as "친구", "친구야", "friend", "buddy", or "pal"; use only the form given above.';
+
 /** Build full system prompt from persona text + optional memory context */
 
 /**
@@ -142,16 +166,14 @@ export interface MemoryContext {
  * 없으면 스킬을 못 쓴다.
  */
 function buildNonPersonaPrompt(context?: MemoryContext): string {
-	if (!context) return "";
-	const lines: string[] = [];
+	const lines: string[] = [NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION];
 
-	if (context.locale) {
+	if (context?.locale) {
 		const lang = localeToLanguage(context.locale);
 		lines.push(`IMPORTANT: Respond in ${lang}. The user's preferred language is ${lang}.`);
 	}
 
-
-	if (context.appContexts?.length) {
+	if (context?.appContexts?.length) {
 		for (const pc of context.appContexts) {
 			lines.push(`App [${pc.type}] context: ${JSON.stringify(pc.data)}`);
 		}
@@ -179,55 +201,77 @@ export function buildSystemPrompt(
 
 	const parts = [base];
 
-	if (context) {
-		const contextLines: string[] = [];
+	const contextLines: string[] = [];
 
-		if (context.userName) {
+	if (context?.userName) {
+		contextLines.push(
+			`The user's name is "${context.userName}". Use the name only now and then: most replies should not contain it, never use it in two consecutive replies, and do not start replies with it.`,
+		);
+	}
+
+	const trimmedHonorific = (context?.honorific ?? "").trim();
+	if (
+		trimmedHonorific &&
+		(!context?.locale || FORMALITY_LOCALES.has(context.locale))
+	) {
+		const lang = context?.locale
+			? localeToLanguage(context.locale)
+			: "the user's language";
+		if (context?.userName) {
 			contextLines.push(
-				`The user's name is "${context.userName}". Address them by name occasionally.`,
+				`Address the user as "${trimmedHonorific} ${context.userName || ""}" or "${context.userName || ""}${trimmedHonorific}" as appropriate for ${lang}.`,
 			);
-		}
-
-		if (
-			context.honorific &&
-			(!context.locale || FORMALITY_LOCALES.has(context.locale))
-		) {
-			const lang = context.locale
-				? localeToLanguage(context.locale)
-				: "the user's language";
 			contextLines.push(
-				`Address the user as "${context.honorific} ${context.userName || ""}" or "${context.userName || ""}${context.honorific}" as appropriate for ${lang}.`,
+				`Use this form only now and then: most replies should not contain it, and never use it in two consecutive replies.`,
 			);
-		}
-
-		if (context.locale) {
-			const lang = localeToLanguage(context.locale);
-			contextLines.push(
-				`IMPORTANT: Respond in ${lang}. The user's preferred language is ${lang}.`,
-			);
-		}
-
-		if (
-			context.speechStyle &&
-			(!context.locale || FORMALITY_LOCALES.has(context.locale))
-		) {
-			contextLines.push(
-				getSpeechStyleInstruction(context.locale || "ko", context.speechStyle),
-			);
-		}
-
-
-		if (context.appContexts?.length) {
-			for (const pc of context.appContexts) {
+			contextLines.push(HONORIFIC_ADDRESSING_INSTRUCTION);
+		} else {
+			if ((NAME_SUFFIX_HONORIFICS as readonly string[]).includes(trimmedHonorific)) {
 				contextLines.push(
-					`App [${pc.type}] context: ${JSON.stringify(pc.data)}`,
+					`"${trimmedHonorific}" is a suffix that must follow a name, and the user's name is unknown, so never use "${trimmedHonorific}" by itself. Do not address the user at all; speak directly without any title or nickname.`,
 				);
+				contextLines.push(NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION);
+			} else {
+				contextLines.push(
+					`Address the user as "${trimmedHonorific}". Use it only now and then: most replies should not contain it, and never use it in two consecutive replies.`,
+				);
+				contextLines.push(HONORIFIC_ADDRESSING_INSTRUCTION);
 			}
 		}
-
-		if (contextLines.length > 0) {
-			parts.push(`\nContext:\n${contextLines.join("\n")}`);
+	} else {
+		if (context?.userName) {
+			contextLines.push(NO_HONORIFIC_NAME_ADDRESSING_INSTRUCTION);
+		} else {
+			contextLines.push(NO_HONORIFIC_NO_NAME_ADDRESSING_INSTRUCTION);
 		}
+	}
+
+	if (context?.locale) {
+		const lang = localeToLanguage(context.locale);
+		contextLines.push(
+			`IMPORTANT: Respond in ${lang}. The user's preferred language is ${lang}.`,
+		);
+	}
+
+	if (
+		context?.speechStyle &&
+		(!context.locale || FORMALITY_LOCALES.has(context.locale))
+	) {
+		contextLines.push(
+			getSpeechStyleInstruction(context.locale || "ko", context.speechStyle),
+		);
+	}
+
+	if (context?.appContexts?.length) {
+		for (const pc of context.appContexts) {
+			contextLines.push(
+				`App [${pc.type}] context: ${JSON.stringify(pc.data)}`,
+			);
+		}
+	}
+
+	if (contextLines.length > 0) {
+		parts.push(`\nContext:\n${contextLines.join("\n")}`);
 	}
 
 	parts.push(getEmotionInstructions(context?.locale));
