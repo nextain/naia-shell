@@ -1351,6 +1351,16 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-NVA-MOTION.2** | 매니페스트 `motion`으로 크기와 주기를 조절하거나(`false`면) 끌 수 있다. 잘못된 값은 필드 단위로 기본값을 쓴다. 사용자가 움직임 줄이기를 켜 두면 멈춘다. 가슴선 기본값은 얼굴 상자에서 계산한다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `e2e/nva-motion.spec.ts` | In progress |
 | **FR-NVA-MOTION.3** | 층 플레이어에서 발화 애니메이션에 `head_track`이 있으면 머리 층이 몸 클립의 현재 프레임에 맞춰 옮겨지고 돌고 커진다. 없으면 지금처럼 고정 위치다. | UC-NVA-MOTION | `nva-procedural-motion.test.ts`, `nva-layered-player.test.ts` | In progress |
 
+## 기능 요구사항 (FR) — 나이아 앱 PR-1: 매니페스트 v2 스키마 + legacy 프로필 (#735)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **APP-FR-01** | 매니페스트에 `manifest_version`(정수)을 둔다. 없거나 1이면 legacy 프로필로 본다. TS `AppDescriptor` 및 `InstalledAppManifest`에 `profile: "legacy" \| "v2"`와 `manifestVersion`이 전달된다. | UC-APP-MANIFEST-V2 | `app.rs` `slides_package_public_app_json_reads_as_legacy_profile`, `app-loader.test.ts` (`"assigns profile 'legacy' when manifest_version is absent"`, `"assigns profile 'v2' and maps v2 fields when manifest_version is 2"`) | In Progress |
+| **APP-FR-02** | v2 선택 필드를 Rust `AppManifest`와 TS `InstalledAppManifest`/`AppDescriptor` 양쪽에서 읽고 전달한다: `context`, `skills[]`, `permissions`, `host_permissions`, `optional_permissions`, `requires[]`, `help`, `data_use`, `descriptions`, `keepAlive`, `publisher`, 도구의 `exported`. | UC-APP-MANIFEST-V2 | `app.rs` `manifest_v2_full_fields_roundtrip`, `app-loader.test.ts` (`"assigns profile 'v2' and maps v2 fields when manifest_version is 2"`) | In Progress |
+| **APP-FR-03** | 매니페스트 검사(`validate_manifest`): 알 수 없는 권한(KNOWN_PERMISSIONS 외), 컨텍스트 길이 상한(800자) 초과, 도구 이름 `skill_` 접두사 누락 또는 중복, `browser`/`login-handoff` 권한에 `host_permissions` 미선언은 v2(`manifest_version >= 2`)에서 설치 거부(Error). legacy 앱은 경고(Warning)만 기록하고 설치·로드를 유지한다. 알 수 없는 최상위 매니페스트 필드 및 셸 예약 키(`htmlEntry`, `iconSvg`)는 v2·legacy 모두 경고(Warning, 셸 예약 키는 무시 안내)를 기록하고 설치를 통과시킨다. `extra`는 직렬화에서 제외(`skip_serializing`)되어 셸이 채우는 값을 덮어쓰지 않는다. PR-1 은 `context` 필드 문자열만 제한한다. `context.md` 파일 길이 측정은 경로 가두기(절대 경로·`..`·심볼릭 링크 거부)와 함께 PR-6 에서. | UC-APP-MANIFEST-V2 | `app.rs` tests (`validate_manifest_unknown_permissions_rule`, `validate_manifest_context_length_limit_rule`, `validate_manifest_tool_naming_and_duplicates_rule`, `validate_manifest_browser_requires_host_permissions_rule`, `validate_manifest_unknown_keys_warns`, `validate_manifest_warns_on_shell_reserved_keys`, `shell_filled_fields_cannot_be_overridden_by_app_json`, `list_installed_from_root_shell_filled_fields_cannot_be_overridden_by_app_json`), `app-permissions.test.ts` (`"matches the Rust KNOWN_PERMISSIONS list in app.rs exactly"`, `"identifies known and unknown permissions correctly"`); 설치 거부는 테스트가 아니라 `app_install`/`app_install_store`가 `IssueLevel::Error`에서 거부하는 코드 경로로 처리 | In Progress |
+| **APP-FR-04** | `keepAlive: false`가 실제로 적용된다. Rust `AppManifest`에 `keepAlive` 역직렬화 필드를 추가하여 값이 버려지는 결함(T2)을 해결하고, TS 로더에서 등록 시 올바르게 반영한다. | UC-APP-MANIFEST-V2 | `app.rs` `keep_alive_false_preserved_in_manifest`, `app-loader.test.ts` (`"respects an explicit keepAlive:false opt-out in the manifest"`, `"keeps installed apps alive by default so state survives app switches"`) | In Progress |
+
+
 
 
 
