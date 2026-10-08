@@ -1366,3 +1366,63 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 | **FR-CREDITS-DISPLAY.1** | Naia 계정 사용 비용은 모든 화면에서 "약 N 크레딧"(1크레딧 = $0.001, 달러 × 1,000)으로 표시하고, 셸은 배수를 곱하지 않는다. 자기 API 키 제공자는 달러 "제공사 요금 추정"으로 표시한다. 금액 서식은 `lib/credits.ts` 한 곳을 쓴다. 14개 언어 키 누락 0. | UC-CREDITS-DISPLAY | `credits.test.ts`, `CostDashboard.test.tsx`, `ChatArea.test.tsx`, `WorkProgressArea.test.tsx`, `SettingsTab.test.tsx`, `registry.test.ts`, `i18n-user-facing.test.ts` | In progress |
 | **FR-CREDITS-DISPLAY.2** | Steam판(표시 파일 `naia-distribution.txt` 또는 `SteamAppId`=5354630)에서는 크레딧 충전 버튼·naia.land 결제·대시보드 링크와 부족 안내의 웹 결제 문구를 숨긴다. 표시 파일은 데포 해시 목록에 포함되고 CI가 확인한다. | UC-CREDITS-DISPLAY | `src-tauri/src/distribution.rs` 단위 시험, `platform-matrix.test.ts`, `distribution.test.ts`, `CostDashboard.steam.test.tsx`, `SettingsTab.test.tsx` | In progress |
+
+## 비기능 요구사항 (NFR) — R2 naia-releases ISO 빌드 후보 자동 정리 (#744, 2026-10-06)
+
+Cloudflare R2 `naia-releases` 버킷의 용량 누적(34개 후보 ISO 281GB 등)을 방지하고 무료 제공량(10GB) 초과 과금을 통제하기 위해, 배포본 및 백업을 보호하면서 오래된 빌드 후보 접두사를 자동으로 정리한다.
+
+### 보관 정책
+
+| 대상 | 보관 정책 | 근거 |
+|---|---|---|
+| 공개 키 `naia-os-live-amd64.iso`, `naia-os-amd-live-amd64.iso`, `naia-os-amd-server-live-amd64.iso` (+ `-CHECKSUM`) | 영구 보관 (현재 배포본) | 릴리스 노트·naia.land·외부 고정 다운로드 URL |
+| `previous/<공개 키>` (+ `-CHECKSUM`) | 공개 키마다 직전 1개 보관 (promote 시 덮어씀) | 변형별 1단계 즉시 되돌리기 |
+| `builds/<variant>/<ver>.<stamp>/` (`variant`: `nvidia`, `amd`, `amd-server`) | 변형 무리마다 **최신 2개 + 생성 3일(72시간) 미만** 보존, 나머지 삭제 | 사람이 부팅 확인(`BOOTED`) 후 promote할 여유 확보. 하루 여러 번 빌드돼도 3일간 보호 |
+| `builds/<ver>.<stamp>/` (변형 이름 없는 옛 경로) | `nvidia` 무리로 취급하여 동일 정책 적용 | 2026-08-31 이전 구 경로 호환성 |
+| `previous/<STAMP>/` (타임스탬프 폴더) | 변형 무관 **최신 2개 + 생성 3일 미만** 보존, 나머지 삭제 | promote 시 누적되는 이력 백업 정리 |
+| 그 밖의 경로 (`logos/`, `private-transfer/`, `stats-reports/` 등) | 절대 삭제하지 않음 (정리 대상 제외) | 릴리스 자산 외 범위 밖 데이터 보호 |
+
+### NFR 요구사항 명세
+
+| ID | 요구사항 | 출처 | 검증(P02) | 상태 |
+|---|---|---|---|:---:|
+| **NFR-R2-ISO-RETENTION.1** | 순수 함수 `planIsoPrune(objects, now, opts)`는 객체 목록과 기준 시각을 바탕으로 무리(`nvidia`, `amd`, `amd-server`, `previous`)별 최신 N개(기본 2개) 및 생성 M일(기본 3일, 정확히 72시간 경과 시점부터 삭제 후보) 미만 후보를 보존하고 오래된 순으로 삭제 후보를 산출한다. lastModified가 없거나 파싱 불가인 객체 또는 ETag가 누락/빈 값인 객체가 속한 접두사는 통째로 보존하며 `skipped`에 각각 `invalid-timestamp`, `missing-etag`로 남기고 무리 내 최신 순위 계산에서 제외한다. `now`가 유효하지 않으면 예외를 던진다. 계획 출력에 접두사별 키 목록과 최신 시각, 개별 객체 정보(정규화된 ETag 포함)를 포함한다. 허용 변형 목록 밖 이름(`builds/foo/...`)과 하위 디렉터리가 포함된 접두사는 통째로 제외(`skipped`)하며, 공개 키와 `previous/` 직하 파일은 절대 삭제 대상에 넣지 않는다. | #744 보관 정책 및 리뷰 반영 | `scripts/r2-iso-prune.test.mjs` 단위 시험 전수 시나리오 (보관 정책, 72시간 경계, ETag/missing-etag 검증, 2026-10-05 실측 데이터셋, CLI 입출력 및 헬퍼 로직, 엄격한 S3 응답 검증, 부분 실패 추적, 멱등 상태 기록 전수) | Done |
+| **NFR-R2-ISO-RETENTION.2** | CLI `scripts/r2-iso-prune.mjs`는 `aws s3api list-objects-v2` 출력(단일 페이지 및 다중 페이지 배열)을 읽어 stdout으로 계획 JSON을 내고 `--prefixes-out` 및 `--plan-out`으로 결과를 출력하며, 어떠한 R2 객체도 직접 삭제하지 않는다. listing 파일 부재/읽기 실패, JSON 파싱 실패, 알 수 없는 인자, 유효하지 않은 숫자 인자(`--max-delete` < 1 또는 정수 아님, `--now` 파싱 불가)에서는 0이 아닌 종료 코드로 즉시 실패한다. 성공 응답의 `Contents`가 null/빈 배열일 때만 빈 계획을 출력한다. | #744 구현 요구 및 리뷰 반영 | `scripts/r2-iso-prune.test.mjs` CLI 입출력, 다중 페이지, 실패 케이스 테스트 | Done |
+| **NFR-R2-ISO-RETENTION.3** | 워크플로 `.github/workflows/naia-os-iso-prune.yml`의 정리 job은 `if: github.ref == 'refs/heads/main'` 가드로 정본 브랜치에서만 실행되며, non-main 브랜치 수동 실행 시 비밀값을 사용하는 step이 일체 실행되지 않고 건너뜀 안내만 summary에 남긴다. 단, 이 job `if`는 단순 실수 방지 장치이며 저장소 쓰기 권한자의 악의적 우회(브랜치 내 if 제거)에 대한 보안 경계가 아니다. 진정한 보안 경계는 GitHub environment와 배포 브랜치 보호 정책이며 후속 과제이다. schedule은 저장소 변수 `ISO_PRUNE_ENABLED == 'true'`, dispatch는 `inputs.dry_run == false`일 때만 실삭제를 수행한다. 1회 삭제 상한(기본 10, dispatch 1~50 범위 외 fail-closed)을 셸에서 검증하고 워크플로 step에 inputs/vars 직접 인젝션을 전면 차단(`env:` 전달)한다. 액션은 보안 감사된 SHA로 고정된다. | #744 워크플로 및 리뷰 반영 | 워크플로 정적 검증, 브랜치 가드, dry-run / dispatch 조건 계약 | Done |
+| **NFR-R2-ISO-RETENTION.4** | 워크플로는 실행 시작 시 및 각 접두사 삭제 직전에 대상 워크플로(`naia-os-iso-promote.yml`, `naia-os-iso.yml`)마다 미완료 상태(`queued`, `in_progress`, `waiting`, `requested`, `pending`)를 개별 조회(`--limit 100`)하여 1개라도 있거나 조회가 100개 포화되면 활성으로 판정하여 삭제를 중단한다. gh 호출 실패 시 fail-closed로 실패 종료한다. R2 목록 조회는 AWS CLI 자동 페이지 처리에 의존하지 않고 `--no-paginate --max-keys 1000` 반복 호출로 `IsTruncated`/`NextContinuationToken`/`Contents` 유효성을 검증한다. 각 삭제 직전 접두사 재조회에서도 동일 페이지네이션 함수를 사용하며, 계획 때의 키 목록뿐 아니라 키마다 ETag(따옴표 제거 후)·Size·LastModified가 완전히 일치하는지 비교하고, 불일치 시 `changed-since-plan`으로 건너뛴다. 삭제 방식은 `aws s3 rm --recursive` 대신 계획에 있는 키만 개별 검증(`key.startsWith(prefix)`) 후 하나씩(`aws s3api delete-object --bucket naia-releases --key <key>`) 삭제하여 재조회 후 새로 유입된 객체가 삭제되지 않도록 방어한다. 보조 스크립트는 버킷을 `naia-releases`로 고정(`--bucket` 생략 시 기본값 사용, 다른 버킷/빈 문자열 지정 시 `invalid-bucket` fail-closed)하고, listing 파일 형태(`{ "Contents": [...] }` 외 객체 누락/파싱 실패 시 `listing-invalid` fail-closed)를 엄격히 검증한다. 결과는 JSON Lines(`prune-result.jsonl`)에 첫 줄 유효 헤더(mode `dry-run` 또는 `live`)를 필수로 하며, 무효 줄 존재 시 `invalid-result`로 기록(삭제된 항목 집계는 보존)하고, 취소/중단 시 미완료 접두사는 `unknown`으로 집계된다. 요약 표와 상태(`completed`/`partial`/`aborted`/`dry-run`)는 `if: always()` step에서 해당 파일만 읽어 생성한다. CLI/명령 오류는 원문 stderr나 명령줄 인자를 노출하지 않고 종료 코드 기반으로 일반화하여 기록한다. | #744 충돌 방지 및 안전 검증 | 셸/인-메모리 재검증 로직, 결과 요약 분리, fail-closed 구성 | Done |
+
+### 운영 설명 (Operation Guide)
+
+1. **경로별 의미와 역할**:
+   - **공개 키 (`naia-os-live-amd64.iso`, `naia-os-amd-live-amd64.iso`, `naia-os-amd-server-live-amd64.iso` 및 `-CHECKSUM`)**:
+     현재 공식 배포본으로 다운로드되는 정본 객체입니다. 릴리스 노트와 고정 URL이 연결되어 있으므로 prune 대상이 아니며 영구 보존됩니다.
+   - **`previous/<공개 키>` (예: `previous/naia-os-live-amd64.iso`)**:
+     `previous/` 폴더 바로 아래 위치하는 공개 키 사본입니다. `naia-os-iso-promote.yml` 실행 시 직전 공개본으로 덮어써지며, 변형별 1단계 즉시 롤백을 담당합니다. 정리 대상이 아닙니다.
+   - **`previous/<STAMP>/` (예: `previous/20260908T141606Z/`)**:
+     promote가 수행될 때마다 타임스탬프 이름으로 생성되는 백업 폴더입니다. 변형 구분 없이 하나의 `previous` 무리로 취급되어 최신 2개 및 3일 미만만 남기고 정리됩니다(변형별 개별 롤백은 위의 `previous/<공개 키>`가 상시 1벌을 유지하므로 안전함).
+   - **`builds/<variant>/<buildId>/` 및 `builds/<buildId>/`**:
+     `naia-os-iso.yml` 워크플로가 생성하는 CI 빌드 후보입니다. `builds/` 직하 숫자로 시작하는 옛 형식은 `nvidia` 무리로 분류됩니다. 무리별로 최신 2개와 3일 미만만 남기고 정리됩니다.
+
+2. **Dry-run 실행 및 모니터링**:
+   - GitHub Actions의 **Actions → Naia OS ISO Prune**에서 **Run workflow**를 누르고, `dry_run: true` (기본값) 상태로 수동 실행합니다.
+   - 실행 결과는 GitHub Step Summary에 계획 표(지울 접두사·무리·빌드 시각·용량, 보존 접두사 목록, 제외 접두사 목록, 확보 예상 용량)와 실행 결과 표(실제 삭제 목록, 건너뛴 목록, 실패 목록, 최종 상태 `dry-run`)로 나뉘어 보고되며, 실제 R2 삭제는 발생하지 않습니다.
+
+3. **자동 삭제 (`ISO_PRUNE_ENABLED`) 활성화 절차**:
+   - 최초 병합 직후에는 저장소 변수 `ISO_PRUNE_ENABLED`가 없으므로 schedule 트리거(매일 03:00 UTC)는 자동으로 dry-run으로만 실행됩니다.
+   - 관리자가 dry-run 결과의 삭제 목록과 용량을 검토한 뒤, 저장소 설정(**Settings → Secrets and variables → Actions → Variables**)에서 `ISO_PRUNE_ENABLED` 변수를 `true`로 등록하면 schedule 실행 시 실제 삭제가 활성화됩니다.
+   - 수동 실행 시에는 `dry_run` 체크를 해제(`false`)하면 변수 설정과 무관하게 1회성 실제 삭제가 수행됩니다.
+
+4. **정책 파라미터 변경 위치**:
+   - 기본 보관 개수(`keepPerGroup: 2`), 보존 기간(`minAgeDays: 3`), 기본 1회 삭제 상한(`maxDelete: 10`)은 `scripts/r2-iso-prune.mjs`의 `planIsoPrune` 기본 옵션 및 `.github/workflows/naia-os-iso-prune.yml`의 기본 입력값에서 관리됩니다.
+
+5. **브랜치 제한 및 추후 승인 환경(Environment) 연동 (Review #8)**:
+   - 실제 삭제 job은 정본 브랜치 `refs/heads/main`에서 실행될 때만 기동합니다(`if: github.ref == 'refs/heads/main'`). Pull Request나 기타 토픽 브랜치에서의 수동 실행은 비밀값을 사용하는 어떠한 step도 돌지 않으며, Step Summary에 main 전용 건너뜀 사유만 기록됩니다.
+   - **사실 관계 및 보안 경계**: job `if` 가드는 개발자의 단순 실수 방지(토픽 브랜치 테스트 중 우발적 삭제) 목적이며, 저장소 쓰기 권한자의 악의적인 행위(브랜치에서 `if`를 삭제하고 워크플로를 수동 실행)를 막는 완전한 보안 경계가 아닙니다. 진짜 신뢰 경계는 GitHub Settings의 보호된 승인 환경(Protected Environment)과 배포 브랜치 정책(Deployment branch policy)이며, 이는 저장소 관리 설정이 필요한 후속 과제입니다.
+   - **후속 운영 절차**: 저장소 관리자가 GitHub 웹 UI에서 `naia-r2-prune` environment를 생성하고 main 브랜치 전용 배포 정책 및 필수 검토자(Required reviewers) 승인 규칙을 설정한 후, 워크플로 job에 `environment: naia-r2-prune`를 지정하면 실삭제 실행 전 사람의 승인을 강제하는 진정한 보안 경계를 완성할 수 있습니다.
+
+6. **남은 동시성 경쟁 구간 및 한계 (Review #4, #5)**:
+   - 워크플로는 시작 시 및 각 접두사 삭제 직전에 5개 미완료 상태(`queued`, `in_progress`, `waiting`, `requested`, `pending`)를 전수 조회하여 ISO 빌드 및 promote와의 충돌을 방어하고, 삭제 직전 재조회에서 개별 키의 ETag·크기·수정 시각을 엄격히 대조합니다.
+   - 삭제 방식은 접두사 재귀 삭제(`rm --recursive`)를 전면 배제하고, 계획 시점에 확인된 키만 개별 `delete-object`로 삭제합니다. 이에 따라 재조회 이후 해당 접두사 하위에 신규 빌드 파일이 추가되더라도 신규 파일은 삭제되지 않고 안전하게 보존됩니다.
+   - 워크플로는 prune 전용 그룹(`concurrency: group: r2-iso-prune`)으로 prune 실행끼리만 직렬화하고, 빌드(`naia-os-iso.yml`)나 promote(`naia-os-iso-promote.yml`)와 공유하는 concurrency 그룹은 쓰지 않습니다(공유하면 대기 중인 빌드 실행이 취소될 수 있음). 또한 같은 prune 그룹 내에서 대기 중인 수동 실행이 뒤이어 유입된 schedule 실행에 의해 취소되거나 순서가 지연될 수 있습니다. R2 버킷 차원의 공유 락(shared atomic lock) 또한 외부 상태 및 추가 인프라 부재로 적용하지 않았습니다.
+   - 이에 따라 재조회(`list-objects-v2`)와 개별 `delete-object` 실행 사이의 수 초 미만 극미한 창에서 이미 존재하는 특정 키가 동일한 이름으로 덮어써지는(동일 키 업로드) 경우를 원자적으로 차단할 수는 없다는 물리적 한계가 남습니다. 그러나 주기적 1회 실행, 3일/최신 2개 보존 정책, 빌드 고유 ID 경로 구조로 인해 실제 운영 환경에서 이 짧은 창에 동일 키가 덮어써질 확률은 사실상 0에 수렴합니다.
+
