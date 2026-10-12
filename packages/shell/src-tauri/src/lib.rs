@@ -6657,6 +6657,17 @@ fn read_voxcpm2_profile_registry(
     parse_voxcpm2_profile_registry(&raw)
 }
 
+const EMBEDDED_VOXCPM2_PROFILE_REGISTRY_JSON: &str =
+    include_str!("../../scripts/voxcpm2-profile-registry.json");
+
+fn embedded_voxcpm2_profile_registry() -> &'static VoxCpm2ProfileRegistry {
+    static REGISTRY: std::sync::OnceLock<VoxCpm2ProfileRegistry> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        parse_voxcpm2_profile_registry(EMBEDDED_VOXCPM2_PROFILE_REGISTRY_JSON)
+            .expect("embedded voxcpm2-profile-registry.json must be valid")
+    })
+}
+
 fn voxcpm2_scripts_profile_registry_path() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../scripts/voxcpm2-profile-registry.json")
@@ -6702,11 +6713,8 @@ fn validate_voxcpm2_download_manifest(
     if manifest.schema_version != 1 {
         return Err("Naia Host download manifest contract mismatch".to_string());
     }
-    if let Some(reg) = registry {
-        validate_voxcpm2_artifact_profile(&manifest.profile, reg)?;
-    } else if voice_runtime::profile(&manifest.profile).is_none() {
-        return Err("Naia Host download manifest contract mismatch".to_string());
-    }
+    let reg = registry.unwrap_or_else(|| embedded_voxcpm2_profile_registry());
+    validate_voxcpm2_artifact_profile(&manifest.profile, reg)?;
     if !is_sha256(&manifest.artifact_manifest_sha256)
         || !is_sha256(&manifest.archive.sha256)
         || manifest.archive.bytes == 0
@@ -15479,6 +15487,104 @@ mod tests {
             err.contains("unsupported schema version"),
             "expected unsupported schema version error, got: {err}"
         );
+    }
+
+    #[test]
+    fn manifest_validation_without_registry_file_verifies_each_static_profile() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest_path = tmp.path().join("download-manifest.json");
+        let registry_path = tmp.path().join("profile-registry.json");
+        assert!(!registry_path.exists());
+
+        let base_manifest = VoxCpm2DownloadManifest {
+            schema_version: 1,
+            profile: String::new(),
+            artifact_manifest_sha256: "5dc02662267f79489896621d39f975af1d081bba49fecf5daac2a1a78e0a4ce5".to_string(),
+            archive: VoxCpm2DownloadArchive {
+                url: "https://stnaiapub83b29893.blob.core.windows.net/test.zip".to_string(),
+                sha256: "0057dcd5d440ac2bd736bc407df7822cb66b628ad031024877dd425e8ed2db33".to_string(),
+                bytes: 1000,
+                unpacked_bytes: 2000,
+                files: 10,
+            },
+        };
+
+        let static_profiles = voice_runtime::PROFILES;
+        assert_eq!(static_profiles.len(), 3, "voice_runtime::PROFILES must have 3 static profiles");
+
+        for profile in static_profiles {
+            let mut manifest = base_manifest.clone();
+            manifest.profile = profile.id.to_string();
+
+            let direct_res = validate_voxcpm2_download_manifest(&manifest, None);
+
+            std::fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+            let reader_res = read_voxcpm2_download_manifest(&manifest_path);
+
+            match profile.id {
+                "windows_trt_6g" => {
+                    assert!(direct_res.is_ok(), "windows_trt_6g must be accepted as released: {:?}", direct_res);
+                    assert!(reader_res.is_ok(), "windows_trt_6g must be accepted via reader fallback: {:?}", reader_res);
+                }
+                "linux_trt_6g" => {
+                    assert!(direct_res.is_ok(), "linux_trt_6g must be accepted as released: {:?}", direct_res);
+                    assert!(reader_res.is_ok(), "linux_trt_6g must be accepted via reader fallback: {:?}", reader_res);
+                }
+                "linux_rocm_6g" => {
+                    assert!(direct_res.is_err(), "linux_rocm_6g must be rejected because it is not in the profile registry");
+                    let direct_err = direct_res.err().unwrap();
+                    assert!(
+                        direct_err.contains("not found in profile registry"),
+                        "expected 'not found in profile registry', got: {direct_err}"
+                    );
+
+                    assert!(reader_res.is_err(), "linux_rocm_6g must be rejected via reader fallback");
+                    let reader_err = reader_res.err().unwrap();
+                    assert!(
+                        reader_err.contains("not found in profile registry"),
+                        "expected 'not found in profile registry', got: {reader_err}"
+                    );
+                }
+                other => panic!("unexpected profile in voice_runtime::PROFILES: {other}"),
+            }
+        }
+    }
+
+    #[test]
+    fn embedded_registry_matches_fixed_json_file() {
+        let scripts_pin_path = voxcpm2_scripts_profile_registry_path();
+        assert!(scripts_pin_path.is_file(), "fixed JSON registry file must exist at {}", scripts_pin_path.display());
+        let fixed_file_content = std::fs::read_to_string(&scripts_pin_path)
+            .expect("should read fixed profile registry JSON file");
+
+        assert_eq!(
+            EMBEDDED_VOXCPM2_PROFILE_REGISTRY_JSON,
+            fixed_file_content,
+            "embedded JSON string must match fixed file content exactly"
+        );
+
+        let parsed_from_file = parse_voxcpm2_profile_registry(&fixed_file_content)
+            .expect("fixed profile registry JSON must be valid");
+        let embedded_reg = embedded_voxcpm2_profile_registry();
+        assert_eq!(
+            embedded_reg,
+            &parsed_from_file,
+            "embedded registry struct must match parsed fixed file struct"
+        );
+
+        assert_eq!(embedded_reg.schema_version, 1);
+        assert_eq!(embedded_reg.entries.len(), 4);
+
+        let entries_map: std::collections::HashMap<_, _> = embedded_reg
+            .entries
+            .iter()
+            .map(|e| (e.id.as_str(), e.status.as_str()))
+            .collect();
+
+        assert_eq!(entries_map.get("windows_trt_6g"), Some(&"released"), "windows_trt_6g must be released");
+        assert_eq!(entries_map.get("linux_trt_6g"), Some(&"released"), "linux_trt_6g must be released");
+        assert_eq!(entries_map.get("linux_vulkan_8g"), Some(&"preview"), "linux_vulkan_8g must be preview");
+        assert_eq!(entries_map.get("linux_rocm_8g"), Some(&"planned"), "linux_rocm_8g must be planned");
     }
 
     #[test]
