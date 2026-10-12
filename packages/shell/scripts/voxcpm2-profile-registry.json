@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": {
+    "repository": "nextain/voxcpm2-tensorrt",
+    "path": "src/voxcpm2_tensorrt/profiles.py",
+    "sourceSha256": "3c42c55610fc3ea454562669cb2849126dca3c72f5ab8e19dd677a88f242d03c"
+  },
+  "entries": [
+    {
+      "id": "windows_trt_6g",
+      "os": "windows",
+      "accelerator": "cuda",
+      "backend": "tensorrt_locdit",
+      "minVramGiB": 6,
+      "status": "released",
+      "notes": "NVIDIA RTX, compute capability 7.5 or newer. LocDiT runs on a locally built TensorRT engine; W8A16 storage holds the 6 GiB budget."
+    },
+    {
+      "id": "linux_trt_6g",
+      "os": "linux",
+      "accelerator": "cuda",
+      "backend": "tensorrt_locdit",
+      "minVramGiB": 6,
+      "status": "released",
+      "notes": "Same model revision and same pins as the Windows profile, so a sentence synthesized on either system comes from one graph."
+    },
+    {
+      "id": "linux_vulkan_8g",
+      "os": "linux",
+      "accelerator": "vulkan",
+      "backend": "vulkan_cpp",
+      "minVramGiB": 8,
+      "status": "preview",
+      "notes": "AMD gfx1013 class hardware that no supported ROCm build reaches. Synthesis runs in a child VoxCPM.cpp server over Vulkan; this runtime still owns text preparation and audio finishing."
+    },
+    {
+      "id": "linux_rocm_8g",
+      "os": "linux",
+      "accelerator": "rocm",
+      "backend": "torch",
+      "minVramGiB": 8,
+      "status": "planned",
+      "notes": "Reserved for AMD RX hardware a ROCm torch build supports. ROCm presents itself as a torch cuda device, so the torch backend serves it without a separate code path."
+    }
+  ]
+}

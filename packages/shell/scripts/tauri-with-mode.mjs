@@ -184,6 +184,25 @@ if (mode === "dev") {
 			resolve(devTargetDebugVoxCpm2Bundle, "download-manifest.json"),
 		);
 	}
+	const canonicalVoxCpm2ProfileRegistry = resolve(
+		SHELL,
+		"scripts",
+		"voxcpm2-profile-registry.json",
+	);
+	const devVoxCpm2ProfileRegistry = [
+		canonicalVoxCpm2ProfileRegistry,
+		resolve(SHELL, "src-tauri", "voxcpm2-runtime", "profile-registry.json"),
+	].find((candidate) => existsSync(candidate));
+	if (devVoxCpm2ProfileRegistry) {
+		copyFileSync(
+			devVoxCpm2ProfileRegistry,
+			resolve(devVoxCpm2Bundle, "profile-registry.json"),
+		);
+		copyFileSync(
+			devVoxCpm2ProfileRegistry,
+			resolve(devTargetDebugVoxCpm2Bundle, "profile-registry.json"),
+		);
+	}
 }
 if (
 	mode === "dev" &&

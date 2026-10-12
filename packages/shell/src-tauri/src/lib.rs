@@ -6356,7 +6356,7 @@ fn try_cleanup_migrated_legacy(ctx: &voice_cache::VoiceContext) {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct VoxCpm2DownloadArchive {
     url: String,
@@ -6366,7 +6366,7 @@ struct VoxCpm2DownloadArchive {
     files: u64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct VoxCpm2DownloadManifest {
     schema_version: u8,
@@ -6702,16 +6702,10 @@ fn validate_voxcpm2_download_manifest(
     if manifest.schema_version != 1 {
         return Err("Naia Host download manifest contract mismatch".to_string());
     }
-    if voice_runtime::profile(&manifest.profile).is_none() {
-        return Err("Naia Host download manifest contract mismatch".to_string());
-    }
     if let Some(reg) = registry {
-        if !reg.entries.iter().any(|entry| entry.id == manifest.profile) {
-            return Err(format!(
-                "Naia Host download manifest profile '{}' not found in profile registry",
-                manifest.profile
-            ));
-        }
+        validate_voxcpm2_artifact_profile(&manifest.profile, reg)?;
+    } else if voice_runtime::profile(&manifest.profile).is_none() {
+        return Err("Naia Host download manifest contract mismatch".to_string());
     }
     if !is_sha256(&manifest.artifact_manifest_sha256)
         || !is_sha256(&manifest.archive.sha256)
@@ -6743,7 +6737,11 @@ fn validate_voxcpm2_artifact_profile(
         .entries
         .iter()
         .find(|entry| entry.id == profile_id)
-        .ok_or_else(|| format!("profile not found in registry: {profile_id}"))?;
+        .ok_or_else(|| {
+            format!(
+                "Naia Host download manifest profile '{profile_id}' not found in profile registry"
+            )
+        })?;
     if entry.status != VOXCPM2_STATUS_RELEASED {
         return Err(format!(
             "artifact validation rejected: profile '{}' has status '{}', only '{}' is allowed",
@@ -6761,24 +6759,44 @@ fn read_voxcpm2_download_manifest(
     let manifest: VoxCpm2DownloadManifest = serde_json::from_str(&raw)
         .map_err(|error| format!("Naia Host download manifest is invalid: {error}"))?;
 
-    let registry = path
+    let registry_path: Option<std::path::PathBuf> = if let Some(env_val) =
+        std::env::var_os("NAIA_VOXCPM2_PROFILE_REGISTRY").filter(|v| !v.is_empty())
+    {
+        let p = std::path::PathBuf::from(env_val);
+        if !p.is_file() {
+            return Err(format!(
+                "VoxCPM2 profile registry file configured via NAIA_VOXCPM2_PROFILE_REGISTRY does not exist: {}",
+                p.display()
+            ));
+        }
+        Some(p)
+    } else if let Some(sibling) = path
         .parent()
         .map(|dir| dir.join("profile-registry.json"))
         .filter(|p| p.is_file())
-        .or_else(|| {
-            std::env::var_os("NAIA_VOXCPM2_PROFILE_REGISTRY")
-                .map(std::path::PathBuf::from)
-                .filter(|p| p.is_file())
-        })
-        .or_else(|| {
-            let scripts_pin = voxcpm2_scripts_profile_registry_path();
-            if scripts_pin.is_file() {
-                Some(scripts_pin)
-            } else {
-                None
-            }
-        })
-        .and_then(|reg_path| read_voxcpm2_profile_registry(&reg_path).ok());
+    {
+        Some(sibling)
+    } else if path == voxcpm2_scripts_download_manifest_path() {
+        let scripts_pin = voxcpm2_scripts_profile_registry_path();
+        if scripts_pin.is_file() {
+            Some(scripts_pin)
+        } else {
+            None
+        }
+    } else if let Some(scripts_sibling) = path
+        .parent()
+        .map(|dir| dir.join("voxcpm2-profile-registry.json"))
+        .filter(|p| p.is_file())
+    {
+        Some(scripts_sibling)
+    } else {
+        None
+    };
+
+    let registry = match registry_path {
+        Some(reg_path) => Some(read_voxcpm2_profile_registry(&reg_path)?),
+        None => None,
+    };
 
     validate_voxcpm2_download_manifest(&manifest, registry.as_ref())?;
     Ok(manifest)
@@ -15304,6 +15322,163 @@ mod tests {
                 env, pin, res, is_debug
             );
         }
+    }
+
+    #[test]
+    fn manifest_reader_rejects_preview_and_planned_accepts_released() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest_path = tmp.path().join("download-manifest.json");
+        let registry_path = tmp.path().join("profile-registry.json");
+
+        let registry_content = r#"{
+            "schemaVersion": 1,
+            "generatedFrom": {
+                "repository": "nextain/voxcpm2-tensorrt",
+                "path": "src/voxcpm2_tensorrt/profiles.py",
+                "sourceSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            },
+            "entries": [
+                {
+                    "id": "windows_trt_6g",
+                    "os": "windows",
+                    "accelerator": "cuda",
+                    "backend": "tensorrt_locdit",
+                    "minVramGiB": 6,
+                    "status": "released",
+                    "notes": "released note"
+                },
+                {
+                    "id": "linux_vulkan_8g",
+                    "os": "linux",
+                    "accelerator": "vulkan",
+                    "backend": "vulkan_cpp",
+                    "minVramGiB": 8,
+                    "status": "preview",
+                    "notes": "preview note"
+                },
+                {
+                    "id": "linux_rocm_8g",
+                    "os": "linux",
+                    "accelerator": "rocm",
+                    "backend": "torch",
+                    "minVramGiB": 8,
+                    "status": "planned",
+                    "notes": "planned note"
+                }
+            ]
+        }"#;
+        std::fs::write(&registry_path, registry_content).unwrap();
+
+        let base_manifest = VoxCpm2DownloadManifest {
+            schema_version: 1,
+            profile: "windows_trt_6g".to_string(),
+            artifact_manifest_sha256: "5dc02662267f79489896621d39f975af1d081bba49fecf5daac2a1a78e0a4ce5".to_string(),
+            archive: VoxCpm2DownloadArchive {
+                url: "https://stnaiapub83b29893.blob.core.windows.net/test.zip".to_string(),
+                sha256: "0057dcd5d440ac2bd736bc407df7822cb66b628ad031024877dd425e8ed2db33".to_string(),
+                bytes: 1000,
+                unpacked_bytes: 2000,
+                files: 10,
+            },
+        };
+
+        // 1) released profile: windows_trt_6g -> must pass
+        let mut manifest = base_manifest.clone();
+        manifest.profile = "windows_trt_6g".to_string();
+        std::fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        let res = read_voxcpm2_download_manifest(&manifest_path);
+        assert!(res.is_ok(), "released profile must be accepted: {:?}", res);
+        assert_eq!(res.unwrap().profile, "windows_trt_6g");
+
+        // 2) preview profile: linux_vulkan_8g -> must be rejected
+        manifest.profile = "linux_vulkan_8g".to_string();
+        std::fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        let res = read_voxcpm2_download_manifest(&manifest_path);
+        assert!(res.is_err(), "preview profile must be rejected");
+        let err = res.err().unwrap();
+        assert!(
+            err.contains("preview") && err.contains("only 'released' is allowed"),
+            "expected preview rejection message, got: {err}"
+        );
+
+        // 3) planned profile: linux_rocm_8g -> must be rejected
+        manifest.profile = "linux_rocm_8g".to_string();
+        std::fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        let res = read_voxcpm2_download_manifest(&manifest_path);
+        assert!(res.is_err(), "planned profile must be rejected");
+        let err = res.err().unwrap();
+        assert!(
+            err.contains("planned") && err.contains("only 'released' is allowed"),
+            "expected planned rejection message, got: {err}"
+        );
+    }
+
+    #[test]
+    fn manifest_reader_registry_fallback_and_error_handling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manifest_path = tmp.path().join("download-manifest.json");
+        let registry_path = tmp.path().join("profile-registry.json");
+
+        let valid_manifest = VoxCpm2DownloadManifest {
+            schema_version: 1,
+            profile: "windows_trt_6g".to_string(),
+            artifact_manifest_sha256: "5dc02662267f79489896621d39f975af1d081bba49fecf5daac2a1a78e0a4ce5".to_string(),
+            archive: VoxCpm2DownloadArchive {
+                url: "https://stnaiapub83b29893.blob.core.windows.net/test.zip".to_string(),
+                sha256: "0057dcd5d440ac2bd736bc407df7822cb66b628ad031024877dd425e8ed2db33".to_string(),
+                bytes: 1000,
+                unpacked_bytes: 2000,
+                files: 10,
+            },
+        };
+        std::fs::write(&manifest_path, serde_json::to_string(&valid_manifest).unwrap()).unwrap();
+
+        // Case 1: 파일 없음 (registry file absent) -> passes via static fallback
+        assert!(!registry_path.exists());
+        let res_missing = read_voxcpm2_download_manifest(&manifest_path);
+        assert!(
+            res_missing.is_ok(),
+            "when profile-registry.json is missing, static fallback must pass: {:?}",
+            res_missing
+        );
+        assert_eq!(res_missing.unwrap().profile, "windows_trt_6g");
+
+        // Case 2: 깨진 JSON (corrupted JSON) -> must reject with error
+        std::fs::write(&registry_path, "{ broken json content").unwrap();
+        let res_corrupted = read_voxcpm2_download_manifest(&manifest_path);
+        assert!(
+            res_corrupted.is_err(),
+            "corrupted registry JSON must be rejected, got: {:?}",
+            res_corrupted
+        );
+        let err = res_corrupted.err().unwrap();
+        assert!(
+            err.contains("JSON is invalid") || err.contains("Could not read"),
+            "expected JSON invalid error, got: {err}"
+        );
+
+        // Case 3: 스키마 틀림 (invalid schema version or missing required field) -> must reject with error
+        let bad_schema = r#"{
+            "schemaVersion": 999,
+            "generatedFrom": {
+                "repository": "nextain/voxcpm2-tensorrt",
+                "path": "src/voxcpm2_tensorrt/profiles.py",
+                "sourceSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            },
+            "entries": []
+        }"#;
+        std::fs::write(&registry_path, bad_schema).unwrap();
+        let res_bad_schema = read_voxcpm2_download_manifest(&manifest_path);
+        assert!(
+            res_bad_schema.is_err(),
+            "unsupported schema version must be rejected, got: {:?}",
+            res_bad_schema
+        );
+        let err = res_bad_schema.err().unwrap();
+        assert!(
+            err.contains("unsupported schema version"),
+            "expected unsupported schema version error, got: {err}"
+        );
     }
 
     #[test]

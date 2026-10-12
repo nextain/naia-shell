@@ -44,6 +44,7 @@ import {
 import { ensureEgoBrowserVendor } from "./ego-browser-vendor.mjs";
 import { herdrReleaseDir } from "./stage-herdr.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
+import { resolveProfileRegistryPath } from "./stage-voxcpm2-runtime.mjs";
 
 const SHELL = resolve(dirname(fileURLToPath(import.meta.url)), ".."); // packages/shell
 const REPO_ROOT = resolve(SHELL, "../..");
@@ -666,7 +667,15 @@ async function main() {
 						// The staging script has to know which release it is
 						// building for, not which machine it is running on: a
 						// Windows release is cross-staged from Linux CI.
-						env: { NAIA_VOXCPM2_TARGET_PLATFORM: platform },
+						env: {
+							NAIA_VOXCPM2_TARGET_PLATFORM: platform,
+							...(resolveProfileRegistryPath(SHELL)
+								? {
+										NAIA_VOXCPM2_PROFILE_REGISTRY:
+											resolveProfileRegistryPath(SHELL),
+								  }
+								: {}),
+						},
 					},
 				]
 			: []),

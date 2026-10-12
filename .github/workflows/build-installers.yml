@@ -80,6 +80,10 @@ jobs:
           git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
           git -C ../naia-memory fetch --depth 1 origin e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf
           git -C ../naia-memory checkout --detach FETCH_HEAD
+          git init ../voxcpm2-tensorrt
+          git -C ../voxcpm2-tensorrt remote add origin https://github.com/nextain/voxcpm2-tensorrt.git
+          git -C ../voxcpm2-tensorrt fetch --depth 1 origin 6fdf26e018612db9910fce4161094a10af07013b || true
+          git -C ../voxcpm2-tensorrt checkout --detach FETCH_HEAD || true
 
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
@@ -138,6 +142,9 @@ jobs:
           "NAIA_VOXCPM2_TRT_RUNTIME_DIR=$runtime" >> $env:GITHUB_ENV
           "NAIA_VOXCPM2_TRT_ARCHIVE=$archive" >> $env:GITHUB_ENV
           "NAIA_VOXCPM2_TRT_ARTIFACT_SHA256=5dc02662267f79489896621d39f975af1d081bba49fecf5daac2a1a78e0a4ce5" >> $env:GITHUB_ENV
+          if (Test-Path -LiteralPath "packages/shell/scripts/voxcpm2-profile-registry.json") {
+            "NAIA_VOXCPM2_PROFILE_REGISTRY=$((Resolve-Path packages/shell/scripts/voxcpm2-profile-registry.json).Path)" >> $env:GITHUB_ENV
+          }
 
       - name: Provision verified Linux VoxCPM2 release input
         if: matrix.platform == 'linux'
@@ -164,6 +171,9 @@ jobs:
             echo "NAIA_VOXCPM2_TRT_RUNTIME_DIR=$runtime"
             echo "NAIA_VOXCPM2_TRT_ARCHIVE=$archive"
             echo "NAIA_VOXCPM2_TRT_ARTIFACT_SHA256=$manifest_sha256"
+            if [ -f packages/shell/scripts/voxcpm2-profile-registry.json ]; then
+              echo "NAIA_VOXCPM2_PROFILE_REGISTRY=$(realpath packages/shell/scripts/voxcpm2-profile-registry.json)"
+            fi
           } >> "$GITHUB_ENV"
 
       - name: Build installer bundle from platform matrix

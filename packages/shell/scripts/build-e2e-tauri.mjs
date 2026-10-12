@@ -265,3 +265,13 @@ if (e2eVoxCpm2DownloadManifest) {
 		resolve(e2eVoxCpm2Bundle, "download-manifest.json"),
 	);
 }
+const e2eVoxCpm2ProfileRegistry = [
+	resolve(shellDir, "src-tauri", "voxcpm2-runtime", "profile-registry.json"),
+	resolve(shellDir, "scripts", "voxcpm2-profile-registry.json"),
+].find((candidate) => existsSync(candidate));
+if (e2eVoxCpm2ProfileRegistry) {
+	copyFileSync(
+		e2eVoxCpm2ProfileRegistry,
+		resolve(e2eVoxCpm2Bundle, "profile-registry.json"),
+	);
+}

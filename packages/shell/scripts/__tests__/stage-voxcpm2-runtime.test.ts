@@ -39,6 +39,7 @@ function fixture() {
 	const shellDir = resolve(root, "shell");
 	const runtimeSource = resolve(root, "runtime");
 	for (const path of [
+		resolve(shellDir, "scripts"),
 		resolve(shellDir, "src-tauri"),
 		resolve(shellDir, "src-tauri/windows"),
 		resolve(shellDir, "src/lib"),
@@ -50,6 +51,16 @@ function fixture() {
 		resolve(runtimeSource, "licenses"),
 	])
 		mkdirSync(path, { recursive: true });
+	const pinRegistryPath = resolve(
+		process.cwd(),
+		"scripts/voxcpm2-profile-registry.json",
+	);
+	if (existsSync(pinRegistryPath)) {
+		writeFileSync(
+			resolve(shellDir, "scripts/voxcpm2-profile-registry.json"),
+			readFileSync(pinRegistryPath),
+		);
+	}
 	writeFileSync(
 		resolve(shellDir, "src-tauri/windows/prepare-voxcpm2-model.ps1"),
 		"shell orchestration",
@@ -613,6 +624,61 @@ describe("stageVoxCpm2Runtime", () => {
 			);
 		},
 	);
+
+	it("기본 staging 실행 결과물에 profile-registry.json이 포함된다", () => {
+		const source = fixture();
+		const destination = stageVoxCpm2Runtime(source);
+		const stagedRegistry = resolve(destination, "profile-registry.json");
+		expect(existsSync(stagedRegistry)).toBe(true);
+		const registryData = JSON.parse(readFileSync(stagedRegistry, "utf8"));
+		expect(registryData.schemaVersion).toBe(1);
+		const windowsEntry = registryData.entries.find(
+			(e: any) => e.id === "windows_trt_6g",
+		);
+		expect(windowsEntry).toBeDefined();
+		expect(windowsEntry.status).toBe("released");
+	});
+
+	it("등록부를 만들 수 없는 dev 환경에서도 기본 staging이 성공하고 정적 프로파일 fallback 경로를 유지한다", () => {
+		const source = fixture();
+		const destination = stageVoxCpm2Runtime({
+			...source,
+			profileRegistryJson: null,
+		});
+		const stagedRegistry = resolve(destination, "profile-registry.json");
+		expect(existsSync(stagedRegistry)).toBe(false);
+		expect(
+			existsSync(resolve(destination, "download-manifest.json")),
+		).toBe(true);
+	});
+
+	it("release·dev staging 호출부가 프로파일 등록부를 전달하도록 연결되어 있다", () => {
+		const shellDir = resolve(import.meta.dirname, "..", "..");
+		const devLauncher = readFileSync(
+			resolve(shellDir, "scripts/tauri-with-mode.mjs"),
+			"utf8",
+		);
+		expect(devLauncher).toContain("profile-registry.json");
+		expect(devLauncher).toContain(
+			'resolve(devTargetDebugVoxCpm2Bundle, "profile-registry.json")',
+		);
+
+		const e2eBuilder = readFileSync(
+			resolve(shellDir, "scripts/build-e2e-tauri.mjs"),
+			"utf8",
+		);
+		expect(e2eBuilder).toContain("profile-registry.json");
+		expect(e2eBuilder).toContain(
+			'resolve(e2eVoxCpm2Bundle, "profile-registry.json")',
+		);
+
+		const stageRuntime = readFileSync(
+			resolve(shellDir, "scripts/stage-runtime.mjs"),
+			"utf8",
+		);
+		expect(stageRuntime).toContain("resolveProfileRegistryPath");
+		expect(stageRuntime).toContain("NAIA_VOXCPM2_PROFILE_REGISTRY");
+	});
 });
 
 

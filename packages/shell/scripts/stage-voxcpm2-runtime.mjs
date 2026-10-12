@@ -487,27 +487,107 @@ export function voxCpm2SynthesisDefaultSource(shellDir = DEFAULT_SHELL) {
 	);
 }
 
-export function stageVoxCpm2Runtime({
+export function findVoxcpm2TensorrtDir(shellDir = DEFAULT_SHELL) {
+	if (
+		process.env.VOXCPM2_TENSORRT_DIR &&
+		existsSync(
+			resolve(
+				process.env.VOXCPM2_TENSORRT_DIR,
+				"src/voxcpm2_tensorrt/profiles.py",
+			),
+		)
+	) {
+		return resolve(process.env.VOXCPM2_TENSORRT_DIR);
+	}
+	const candidates = [
+		resolve(
+			shellDir,
+			"../../../refs/voxcpm2-tensorrt-worktrees/issue-757-s1-registry-20261012",
+		),
+		resolve(
+			shellDir,
+			"../../refs/voxcpm2-tensorrt-worktrees/issue-757-s1-registry-20261012",
+		),
+		resolve(shellDir, "../../../refs/voxcpm2-tensorrt"),
+		resolve(shellDir, "../../refs/voxcpm2-tensorrt"),
+		resolve(shellDir, "../voxcpm2-tensorrt"),
+		resolve(shellDir, "../../voxcpm2-tensorrt"),
+	];
+	for (const dir of candidates) {
+		if (existsSync(resolve(dir, "src/voxcpm2_tensorrt/profiles.py"))) {
+			return dir;
+		}
+	}
+	return null;
+}
+
+export function exportProfileRegistryFromVoxcpm2({
 	shellDir = DEFAULT_SHELL,
-	// The runtime being staged is a property of the release being built, not of
-	// the machine doing the building: a Windows release is cross-staged from
-	// Linux CI. Defaulting to process.platform would make the same command mean
-	// different things on different runners.
-	platform = process.env.NAIA_VOXCPM2_TARGET_PLATFORM || "win32",
-	descriptor = voxCpm2Profile(platform),
-	runtimeSource = process.env.NAIA_VOXCPM2_TRT_RUNTIME_DIR,
-	expectedManifestSha256 = process.env.NAIA_VOXCPM2_TRT_ARTIFACT_SHA256,
-	runtimeArchive = process.env.NAIA_VOXCPM2_TRT_ARCHIVE,
-	runtimeUrl =
-		process.env.NAIA_VOXCPM2_TRT_DOWNLOAD_URL ||
-		descriptor.defaultDownloadUrl,
-	tar = process.env.NAIA_SYSTEM_TAR || descriptor.defaultTar,
-	verifyRemoteDownload = verifyVoxCpm2RemoteDownload,
-	allowUnpublishedDownload =
-		process.env.NAIA_UNSIGNED_UPDATER_BUILD === "1" &&
-		process.env.CI !== "true",
-	profileRegistryJson = process.env.NAIA_VOXCPM2_PROFILE_REGISTRY,
+	output,
 } = {}) {
+	const voxcpm2Dir = findVoxcpm2TensorrtDir(shellDir);
+	if (!voxcpm2Dir) return null;
+	const outputPath =
+		output || resolve(shellDir, "scripts/voxcpm2-profile-registry.json");
+	mkdirSync(dirname(outputPath), { recursive: true });
+	const pythonCmd = process.platform === "win32" ? "python" : "python3";
+	const result = spawnSync(
+		pythonCmd,
+		["-m", "voxcpm2_tensorrt.profiles", "--output", outputPath],
+		{
+			cwd: voxcpm2Dir,
+			env: {
+				...process.env,
+				PYTHONPATH: resolve(voxcpm2Dir, "src"),
+			},
+			encoding: "utf8",
+		},
+	);
+	if (result.status === 0 && existsSync(outputPath)) {
+		return outputPath;
+	}
+	return null;
+}
+
+export function resolveProfileRegistryPath(shellDir = DEFAULT_SHELL) {
+	if (process.env.NAIA_VOXCPM2_PROFILE_REGISTRY) {
+		const envPath = resolve(process.env.NAIA_VOXCPM2_PROFILE_REGISTRY);
+		if (existsSync(envPath)) return envPath;
+	}
+	const candidateInShell = resolve(
+		shellDir,
+		"scripts/voxcpm2-profile-registry.json",
+	);
+	if (existsSync(candidateInShell)) return candidateInShell;
+
+	const exported = exportProfileRegistryFromVoxcpm2({ shellDir });
+	if (exported && existsSync(exported)) return exported;
+
+	return null;
+}
+
+export function stageVoxCpm2Runtime(options = {}) {
+	const {
+		shellDir = DEFAULT_SHELL,
+		// The runtime being staged is a property of the release being built, not of
+		// the machine doing the building: a Windows release is cross-staged from
+		// Linux CI. Defaulting to process.platform would make the same command mean
+		// different things on different runners.
+		platform = process.env.NAIA_VOXCPM2_TARGET_PLATFORM || "win32",
+		descriptor = voxCpm2Profile(platform),
+		runtimeSource = process.env.NAIA_VOXCPM2_TRT_RUNTIME_DIR,
+		expectedManifestSha256 = process.env.NAIA_VOXCPM2_TRT_ARTIFACT_SHA256,
+		runtimeArchive = process.env.NAIA_VOXCPM2_TRT_ARCHIVE,
+		runtimeUrl =
+			process.env.NAIA_VOXCPM2_TRT_DOWNLOAD_URL ||
+			descriptor.defaultDownloadUrl,
+		tar = process.env.NAIA_SYSTEM_TAR || descriptor.defaultTar,
+		verifyRemoteDownload = verifyVoxCpm2RemoteDownload,
+		allowUnpublishedDownload =
+			process.env.NAIA_UNSIGNED_UPDATER_BUILD === "1" &&
+			process.env.CI !== "true",
+		profileRegistryJson = process.env.NAIA_VOXCPM2_PROFILE_REGISTRY,
+	} = options;
 	if (!runtimeSource)
 		throw new Error(
 			`NAIA_VOXCPM2_TRT_RUNTIME_DIR is required for a ${descriptor.profile} release`,
@@ -614,13 +694,19 @@ export function stageVoxCpm2Runtime({
 		resolve(pending, "download-manifest.json"),
 		`${JSON.stringify(downloadManifest, null, 2)}\n`,
 	);
-	if (profileRegistryJson) {
-		const registryPath = resolve(profileRegistryJson);
-		if (!existsSync(registryPath))
+	const resolvedRegistry =
+		options.profileRegistryJson === null
+			? null
+			: profileRegistryJson
+				? resolve(profileRegistryJson)
+				: resolveProfileRegistryPath(shellDir);
+
+	if (resolvedRegistry) {
+		if (!existsSync(resolvedRegistry))
 			throw new Error(
-				`VoxCPM2 profile registry file does not exist: ${registryPath}`,
+				`VoxCPM2 profile registry file does not exist: ${resolvedRegistry}`,
 			);
-		copyFileSync(registryPath, resolve(pending, "profile-registry.json"));
+		copyFileSync(resolvedRegistry, resolve(pending, "profile-registry.json"));
 	}
 	rmSync(destination, { recursive: true, force: true });
 	renameSync(pending, destination);
