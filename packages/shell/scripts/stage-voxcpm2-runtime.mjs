@@ -506,6 +506,7 @@ export function stageVoxCpm2Runtime({
 	allowUnpublishedDownload =
 		process.env.NAIA_UNSIGNED_UPDATER_BUILD === "1" &&
 		process.env.CI !== "true",
+	profileRegistryJson = process.env.NAIA_VOXCPM2_PROFILE_REGISTRY,
 } = {}) {
 	if (!runtimeSource)
 		throw new Error(
@@ -613,6 +614,14 @@ export function stageVoxCpm2Runtime({
 		resolve(pending, "download-manifest.json"),
 		`${JSON.stringify(downloadManifest, null, 2)}\n`,
 	);
+	if (profileRegistryJson) {
+		const registryPath = resolve(profileRegistryJson);
+		if (!existsSync(registryPath))
+			throw new Error(
+				`VoxCPM2 profile registry file does not exist: ${registryPath}`,
+			);
+		copyFileSync(registryPath, resolve(pending, "profile-registry.json"));
+	}
 	rmSync(destination, { recursive: true, force: true });
 	renameSync(pending, destination);
 	return destination;
