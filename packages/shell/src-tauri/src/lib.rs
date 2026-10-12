@@ -1,5 +1,5 @@
 pub(crate) mod accelerator;
-mod vram_reservation;
+pub(crate) mod vram_reservation;
 mod agent_grpc;
 mod app;
 mod app_sandbox;
@@ -14411,6 +14411,7 @@ pub fn run() {
 			voxcpm2_runtime_status,
             ollama_runtime::ollama_runtime_status,
             ollama_runtime::ollama_runtime_start,
+            ollama_runtime::ollama_runtime_stop,
             ollama_runtime::ollama_runtime_remove,
             start_cascade,
             stop_cascade,
@@ -14921,6 +14922,12 @@ pub fn run() {
                     crate::ego_host::cleanup_current_adk("cleanup(shutdown)");
 
                     let state: tauri::State<'_, AppState> = window.state();
+
+                    // Ollama is a Shell-owned user runtime. Its supervisor
+                    // closes the process tree before Tauri releases managed state.
+                    let ollama_runtime: tauri::State<'_, ollama_runtime::RuntimeManager> =
+                        window.state();
+                    ollama_runtime.shutdown();
 
                     // Stop health monitor thread
                     if let Ok(guard) = state.health_monitor_shutdown.lock() {

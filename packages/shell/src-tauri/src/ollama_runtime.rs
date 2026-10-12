@@ -1,23 +1,30 @@
-//! User-scoped Ollama CLI installation and discovery.
+//! User-scoped Ollama installation, discovery, and owned server lifecycle.
 //!
-//! This stage deliberately does not execute the Ollama binary, contact an
-//! Ollama API, inspect a GPU, or alter an external Ollama installation.
+//! The supervisor only executes a validated managed CLI on loopback. It never
+//! adopts or terminates an external Ollama process and does not inspect GPUs.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Component, Path, PathBuf},
+    process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex, MutexGuard,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, State};
 use zip::ZipArchive;
+
+#[cfg(test)]
+use std::sync::atomic::AtomicBool;
+
+use crate::vram_reservation::ReservationLease;
 
 const RELEASE_VERSION: &str = "0.40.3";
 const RELEASE_BASE: &str = "https://github.com/ollama/ollama/releases/download";
@@ -25,6 +32,12 @@ const INTEGRITY_KIND: &str = "official_sha256_manifest";
 const MANIFEST_FILE: &str = "naia-shell-ollama.json";
 const STATE_EVENT: &str = "ollama_runtime_state_changed";
 const PROGRESS_EVENT: &str = "ollama_runtime_install_progress";
+const DEFAULT_HOST_URL: &str = "http://localhost:11434";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const READINESS_TIMEOUT: Duration = Duration::from_secs(30);
+const POLL_INTERVAL: Duration = Duration::from_millis(250);
+const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+const FORCE_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_EXTRACTED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 
@@ -161,9 +174,68 @@ enum RuntimeErrorCode {
     IntegrityMetadataMissing,
     IntegrityMismatch,
     ArchiveRejected,
+    HostNotAllowed,
+    ManagedEndpointUnsupported,
+    SpawnFailed,
+    ApiUnreachable,
+    ReadinessTimeout,
+    ProcessExited,
+    StopFailed,
     PermissionDenied,
     NotManaged,
     ConfirmationRequired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ServerState {
+    NotInstalled,
+    CheckingHost,
+    ExternalUnavailable,
+    Installing,
+    InstalledStopped,
+    Starting,
+    ReadyManaged,
+    ConnectedUnreserved,
+    ReadyRemote,
+    Stopping,
+    Stopped,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeOwnership {
+    None,
+    ManagedChild,
+    ExternalLocal,
+    Remote,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ReservationStatus {
+    NotRequested,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReservationSnapshot {
+    kind: Option<String>,
+    status: ReservationStatus,
+    bytes: Option<u64>,
+    reason_code: Option<String>,
+}
+
+impl Default for ReservationSnapshot {
+    fn default() -> Self {
+        Self {
+            kind: None,
+            status: ReservationStatus::NotRequested,
+            bytes: None,
+            reason_code: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -195,9 +267,14 @@ impl RuntimeError {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RuntimeSnapshot {
+    /// Installation state retained from stage 2 for IPC compatibility.
     state: RuntimeState,
+    server_state: ServerState,
+    ownership: RuntimeOwnership,
     installed_version: Option<String>,
     installed_versions: Vec<String>,
+    model_count: Option<usize>,
+    reservation: ReservationSnapshot,
     operation_id: Option<String>,
     phase: Option<String>,
     error: Option<RuntimeError>,
@@ -207,8 +284,12 @@ impl Default for RuntimeSnapshot {
     fn default() -> Self {
         Self {
             state: RuntimeState::NotInstalled,
+            server_state: ServerState::NotInstalled,
+            ownership: RuntimeOwnership::None,
             installed_version: None,
             installed_versions: Vec::new(),
+            model_count: None,
+            reservation: ReservationSnapshot::default(),
             operation_id: None,
             phase: None,
             error: None,
@@ -251,25 +332,136 @@ struct InstalledRuntime {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OperationKind {
     Install,
+    Start,
+    Stop,
     Remove,
 }
 
 #[derive(Clone, Debug)]
 struct ActiveOperation {
     id: String,
+    kind: OperationKind,
 }
 
-#[derive(Default)]
 struct ManagerState {
     snapshot: RuntimeSnapshot,
     operation: Option<ActiveOperation>,
     active_versions: BTreeSet<String>,
+    process: Option<ManagedProcess>,
+    next_process_generation: u64,
+    shutdown_requested: bool,
+}
+
+impl Default for ManagerState {
+    fn default() -> Self {
+        Self {
+            snapshot: RuntimeSnapshot::default(),
+            operation: None,
+            active_versions: BTreeSet::new(),
+            process: None,
+            next_process_generation: 1,
+            shutdown_requested: false,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RuntimeSettings {
+    managed_base_url: String,
+    request_timeout: Duration,
+    readiness_timeout: Duration,
+    poll_interval: Duration,
+    graceful_stop_timeout: Duration,
+    force_stop_timeout: Duration,
+}
+
+impl Default for RuntimeSettings {
+    fn default() -> Self {
+        Self {
+            managed_base_url: DEFAULT_HOST_URL.to_string(),
+            request_timeout: REQUEST_TIMEOUT,
+            readiness_timeout: READINESS_TIMEOUT,
+            poll_interval: POLL_INTERVAL,
+            graceful_stop_timeout: GRACEFUL_STOP_TIMEOUT,
+            force_stop_timeout: FORCE_STOP_TIMEOUT,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ProcessSpec {
+    executable: PathBuf,
+    arguments: Vec<String>,
+    environment: BTreeMap<std::ffi::OsString, std::ffi::OsString>,
+    inherit_environment: bool,
+}
+
+trait ManagedChild: Send {
+    fn has_exited(&mut self) -> io::Result<bool>;
+    fn request_graceful_shutdown(&mut self) -> io::Result<()>;
+    fn force_kill_tree(&mut self) -> io::Result<()>;
+    fn process_tree_alive(&self) -> io::Result<bool>;
+}
+
+trait RuntimeProcessRunner: Send + Sync {
+    fn spawn(&self, spec: &ProcessSpec) -> io::Result<Box<dyn ManagedChild>>;
+}
+
+struct SystemProcessRunner;
+
+struct OwnedChild {
+    child: Child,
+    ownership: ChildOwnership,
+}
+
+impl ManagedChild for OwnedChild {
+    fn has_exited(&mut self) -> io::Result<bool> {
+        self.child.try_wait().map(|status| status.is_some())
+    }
+
+    fn request_graceful_shutdown(&mut self) -> io::Result<()> {
+        self.ownership.request_graceful(self.child.id())
+    }
+
+    fn force_kill_tree(&mut self) -> io::Result<()> {
+        self.ownership.force_kill(&mut self.child)
+    }
+
+    fn process_tree_alive(&self) -> io::Result<bool> {
+        self.ownership.is_alive()
+    }
+}
+
+struct ManagedProcess {
+    child: Box<dyn ManagedChild>,
+    version: String,
+    generation: u64,
+    // Stage 4 fills this only after reservation-before-spawn is connected.
+    reservation: Option<ReservationLease>,
 }
 
 /// Tauri-managed state shared by the status, install, and remove commands.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct RuntimeManager {
     inner: Arc<Mutex<ManagerState>>,
+    downloader: Arc<dyn ArtifactDownloader>,
+    process_runner: Arc<dyn RuntimeProcessRunner>,
+    settings: RuntimeSettings,
+    locations: Option<(PathBuf, PathBuf)>,
+    release_pin: Option<ReleasePin>,
+}
+
+impl Default for RuntimeManager {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(ManagerState::default())),
+            downloader: Arc::new(HttpDownloader),
+            process_runner: Arc::new(SystemProcessRunner),
+            settings: RuntimeSettings::default(),
+            locations: None,
+            release_pin: None,
+        }
+    }
 }
 
 impl RuntimeManager {
@@ -281,22 +473,33 @@ impl RuntimeManager {
 
     fn begin(&self, id: &str, kind: OperationKind) -> Result<(), RuntimeError> {
         let mut state = self.lock();
-        if state.operation.is_some() {
+        if state.shutdown_requested || state.operation.is_some() {
             return Err(RuntimeError::new(
                 RuntimeErrorCode::RuntimeBusy,
                 "dispatch",
                 true,
             ));
         }
-        state.operation = Some(ActiveOperation { id: id.to_string() });
+        state.operation = Some(ActiveOperation {
+            id: id.to_string(),
+            kind,
+        });
         state.snapshot.operation_id = Some(id.to_string());
         state.snapshot.phase = Some(match kind {
             OperationKind::Install => "download".to_string(),
+            OperationKind::Start => "checking_host".to_string(),
+            OperationKind::Stop => "stop".to_string(),
             OperationKind::Remove => "remove".to_string(),
         });
         state.snapshot.error = None;
-        if kind == OperationKind::Install {
-            state.snapshot.state = RuntimeState::Installing;
+        match kind {
+            OperationKind::Install => {
+                state.snapshot.state = RuntimeState::Installing;
+                state.snapshot.server_state = ServerState::Installing;
+            }
+            OperationKind::Start => state.snapshot.server_state = ServerState::CheckingHost,
+            OperationKind::Stop => state.snapshot.server_state = ServerState::Stopping,
+            OperationKind::Remove => {}
         }
         Ok(())
     }
@@ -310,9 +513,9 @@ impl RuntimeManager {
 
     fn finish_success(&self, id: &str, versions: Vec<String>, installed: Option<String>) {
         let mut state = self.lock();
-        if !state.operation.as_ref().is_some_and(|op| op.id == id) {
+        let Some(operation) = state.operation.as_ref().filter(|op| op.id == id).cloned() else {
             return;
-        }
+        };
         state.operation = None;
         state.snapshot.state = if installed.is_some() || !versions.is_empty() {
             RuntimeState::InstalledStopped
@@ -324,15 +527,83 @@ impl RuntimeManager {
         state.snapshot.operation_id = Some(id.to_string());
         state.snapshot.phase = None;
         state.snapshot.error = None;
+        if matches!(
+            operation.kind,
+            OperationKind::Install | OperationKind::Remove
+        ) {
+            if state.process.is_some() {
+                state.snapshot.server_state = ServerState::ReadyManaged;
+                state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+            } else if operation.kind == OperationKind::Install
+                || !matches!(
+                    state.snapshot.server_state,
+                    ServerState::ConnectedUnreserved
+                        | ServerState::ReadyRemote
+                        | ServerState::ExternalUnavailable
+                )
+            {
+                state.snapshot.server_state = if state.snapshot.state == RuntimeState::NotInstalled
+                {
+                    ServerState::NotInstalled
+                } else {
+                    ServerState::InstalledStopped
+                };
+                state.snapshot.ownership = RuntimeOwnership::None;
+                state.snapshot.model_count = None;
+            }
+        }
     }
 
     fn finish_failure(&self, id: &str, error: RuntimeError) {
         let mut state = self.lock();
-        if !state.operation.as_ref().is_some_and(|op| op.id == id) {
+        let Some(operation) = state.operation.as_ref().filter(|op| op.id == id).cloned() else {
             return;
-        }
+        };
         state.operation = None;
-        state.snapshot.state = RuntimeState::Failed;
+        match operation.kind {
+            OperationKind::Install => {
+                state.snapshot.state = RuntimeState::Failed;
+                state.snapshot.server_state = ServerState::Failed;
+            }
+            OperationKind::Remove => {
+                state.snapshot.state =
+                    install_state_from_versions(&state.snapshot.installed_versions);
+                if state.process.is_some() {
+                    state.snapshot.server_state = ServerState::ReadyManaged;
+                    state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+                } else if !matches!(
+                    state.snapshot.server_state,
+                    ServerState::ConnectedUnreserved
+                        | ServerState::ReadyRemote
+                        | ServerState::ExternalUnavailable
+                ) {
+                    state.snapshot.server_state =
+                        if state.snapshot.state == RuntimeState::NotInstalled {
+                            ServerState::NotInstalled
+                        } else {
+                            ServerState::InstalledStopped
+                        };
+                    state.snapshot.ownership = RuntimeOwnership::None;
+                    state.snapshot.model_count = None;
+                }
+            }
+            OperationKind::Start => {
+                state.snapshot.state = if state.snapshot.installed_versions.is_empty() {
+                    RuntimeState::Failed
+                } else {
+                    RuntimeState::InstalledStopped
+                };
+                state.snapshot.server_state = ServerState::Failed;
+            }
+            OperationKind::Stop => {
+                state.snapshot.state = if state.snapshot.installed_versions.is_empty() {
+                    RuntimeState::NotInstalled
+                } else {
+                    RuntimeState::InstalledStopped
+                };
+                state.snapshot.server_state = ServerState::Failed;
+            }
+        }
         state.snapshot.operation_id = Some(id.to_string());
         state.snapshot.phase = None;
         state.snapshot.error = Some(error.for_operation(id));
@@ -347,9 +618,389 @@ impl RuntimeManager {
         state.operation.as_ref().map(|_| state.snapshot.clone())
     }
 
+    fn finish_server_operation(
+        &self,
+        id: &str,
+        versions: Vec<String>,
+        installed: Option<String>,
+        server_state: ServerState,
+        ownership: RuntimeOwnership,
+        model_count: Option<usize>,
+        error: Option<RuntimeError>,
+    ) {
+        let mut state = self.lock();
+        if !state.operation.as_ref().is_some_and(|op| op.id == id) {
+            return;
+        }
+        state.operation = None;
+        state.snapshot.state = if error.is_some() && versions.is_empty() {
+            RuntimeState::Failed
+        } else if versions.is_empty() && installed.is_none() {
+            RuntimeState::NotInstalled
+        } else {
+            RuntimeState::InstalledStopped
+        };
+        state.snapshot.installed_version = installed.or_else(|| versions.last().cloned());
+        state.snapshot.installed_versions = versions;
+        state.snapshot.server_state = server_state;
+        state.snapshot.ownership = ownership;
+        state.snapshot.model_count = model_count;
+        state.snapshot.operation_id = Some(id.to_string());
+        state.snapshot.phase = None;
+        state.snapshot.error = error.map(|error| error.for_operation(id));
+    }
+
+    fn locations(&self) -> Result<(PathBuf, PathBuf), RuntimeError> {
+        self.locations.clone().map_or_else(runtime_locations, Ok)
+    }
+
+    fn release_pin(&self) -> Result<ReleasePin, RuntimeError> {
+        self.release_pin
+            .map(Ok)
+            .unwrap_or_else(|| current_release_pin().copied())
+    }
+
+    fn snapshot(&self) -> RuntimeSnapshot {
+        self.lock().snapshot.clone()
+    }
+
+    fn is_shutting_down(&self) -> bool {
+        self.lock().shutdown_requested
+    }
+
     #[cfg(test)]
     fn mark_active_for_test(&self, version: &str) {
         self.lock().active_versions.insert(version.to_string());
+    }
+}
+
+impl RuntimeProcessRunner for SystemProcessRunner {
+    fn spawn(&self, spec: &ProcessSpec) -> io::Result<Box<dyn ManagedChild>> {
+        let mut command = Command::new(&spec.executable);
+        command
+            .args(&spec.arguments)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if !spec.inherit_environment {
+            command.env_clear();
+        }
+        for (key, value) in &spec.environment {
+            command.env(key, value);
+        }
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+            const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+            const CREATE_SUSPENDED: u32 = 0x0000_0004;
+            command
+                .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED)
+                .show_window(0);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::process::CommandExt;
+            let parent_pid = unsafe { libc::getpid() };
+            unsafe {
+                command.pre_exec(move || {
+                    if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM, 0, 0, 0) != 0 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    if libc::getppid() != parent_pid {
+                        libc::raise(libc::SIGTERM);
+                    }
+                    Ok(())
+                });
+            }
+        }
+
+        let mut child = command.spawn()?;
+        let ownership = match ChildOwnership::attach(&child) {
+            Ok(ownership) => ownership,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
+        #[cfg(windows)]
+        if let Err(error) = resume_suspended_child(&child) {
+            let mut ownership = ownership;
+            let _ = ownership.force_kill(&mut child);
+            let _ = child.wait();
+            return Err(error);
+        }
+        Ok(Box::new(OwnedChild { child, ownership }))
+    }
+}
+
+#[cfg(windows)]
+fn resume_suspended_child(child: &Child) -> io::Result<()> {
+    use std::mem::{size_of, zeroed};
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+    };
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    let mut entry: THREADENTRY32 = unsafe { zeroed() };
+    entry.dwSize = size_of::<THREADENTRY32>() as u32;
+    let mut found = false;
+    let mut has_entry = unsafe { Thread32First(snapshot, &mut entry) != 0 };
+    while has_entry {
+        if entry.th32OwnerProcessID == child.id() {
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if !thread.is_null() {
+                let resumed = unsafe { ResumeThread(thread) };
+                unsafe { CloseHandle(thread) };
+                if resumed != u32::MAX {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        has_entry = unsafe { Thread32Next(snapshot, &mut entry) != 0 };
+    }
+    unsafe { CloseHandle(snapshot) };
+    if found {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+struct ChildOwnership {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+// The Job Object handle is uniquely owned and only accessed through the
+// manager's mutex-protected child record, so moving that record between its
+// worker and supervisor threads is safe.
+#[cfg(windows)]
+unsafe impl Send for ChildOwnership {}
+
+#[cfg(unix)]
+struct ChildOwnership {
+    process_group: libc::pid_t,
+}
+
+#[cfg(all(not(windows), not(unix)))]
+struct ChildOwnership;
+
+impl ChildOwnership {
+    fn attach(child: &Child) -> io::Result<Self> {
+        #[cfg(windows)]
+        {
+            use std::mem::{size_of, zeroed};
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::System::JobObjects::{
+                AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+                SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            };
+
+            let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+            if handle.is_null() {
+                return Err(io::Error::last_os_error());
+            }
+            let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let configured = unsafe {
+                SetInformationJobObject(
+                    handle,
+                    JobObjectExtendedLimitInformation,
+                    &limits as *const _ as *const std::ffi::c_void,
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                ) != 0
+            };
+            let assigned = configured
+                && unsafe { AssignProcessToJobObject(handle, child.as_raw_handle() as _) != 0 };
+            if !assigned {
+                unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
+                return Err(io::Error::last_os_error());
+            }
+            return Ok(Self { handle });
+        }
+        #[cfg(unix)]
+        {
+            Ok(Self {
+                process_group: child.id() as libc::pid_t,
+            })
+        }
+        #[cfg(all(not(windows), not(unix)))]
+        {
+            let _ = child;
+            Ok(Self)
+        }
+    }
+
+    fn request_graceful(&self, _child_pid: u32) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            send_windows_ctrl_break(_child_pid)
+        }
+        #[cfg(unix)]
+        {
+            let result = unsafe { libc::kill(-self.process_group, libc::SIGTERM) };
+            if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        }
+        #[cfg(all(not(windows), not(unix)))]
+        {
+            let _ = _child_pid;
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "process tree termination is unsupported on this platform",
+            ))
+        }
+    }
+
+    fn force_kill(&self, child: &mut Child) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            let terminated = unsafe {
+                windows_sys::Win32::System::JobObjects::TerminateJobObject(self.handle, 1) != 0
+            };
+            if !terminated {
+                let _ = child.kill();
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+        #[cfg(unix)]
+        {
+            let result = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
+            if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+                Ok(())
+            } else {
+                let error = io::Error::last_os_error();
+                let _ = child.kill();
+                Err(error)
+            }
+        }
+        #[cfg(all(not(windows), not(unix)))]
+        {
+            child.kill()
+        }
+    }
+
+    fn is_alive(&self) -> io::Result<bool> {
+        #[cfg(windows)]
+        {
+            use std::mem::{size_of, zeroed};
+            use windows_sys::Win32::System::JobObjects::{
+                JobObjectBasicAccountingInformation, QueryInformationJobObject,
+                JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+            };
+            let mut accounting: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { zeroed() };
+            let queried = unsafe {
+                QueryInformationJobObject(
+                    self.handle,
+                    JobObjectBasicAccountingInformation,
+                    &mut accounting as *mut _ as *mut std::ffi::c_void,
+                    size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                    std::ptr::null_mut(),
+                ) != 0
+            };
+            if queried {
+                Ok(accounting.ActiveProcesses != 0)
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        }
+        #[cfg(unix)]
+        {
+            let result = unsafe { libc::kill(-self.process_group, 0) };
+            if result == 0 {
+                Ok(true)
+            } else {
+                match io::Error::last_os_error().raw_os_error() {
+                    Some(libc::ESRCH) => Ok(false),
+                    Some(libc::EPERM) => Ok(true),
+                    _ => Err(io::Error::last_os_error()),
+                }
+            }
+        }
+        #[cfg(all(not(windows), not(unix)))]
+        {
+            Ok(false)
+        }
+    }
+}
+
+#[cfg(windows)]
+fn send_windows_ctrl_break(child_pid: u32) -> io::Result<()> {
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, FreeConsole, GenerateConsoleCtrlEvent, GetConsoleProcessList,
+        CTRL_BREAK_EVENT,
+    };
+
+    let mut processes = [0u32; 64];
+    let count = unsafe { GetConsoleProcessList(processes.as_mut_ptr(), processes.len() as u32) };
+    let previous_console_process = if count == 0 {
+        None
+    } else {
+        processes[..count.min(processes.len() as u32) as usize]
+            .iter()
+            .copied()
+            .find(|pid| *pid != std::process::id())
+    };
+    if previous_console_process.is_some() {
+        unsafe { FreeConsole() };
+    }
+    let attached = unsafe { AttachConsole(child_pid) != 0 };
+    if !attached {
+        let error = io::Error::last_os_error();
+        if let Some(pid) = previous_console_process {
+            unsafe { AttachConsole(pid) };
+        }
+        return Err(error);
+    }
+    let sent = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, child_pid) != 0 };
+    let send_error = (!sent).then(io::Error::last_os_error);
+    unsafe { FreeConsole() };
+    if let Some(pid) = previous_console_process {
+        if unsafe { AttachConsole(pid) } == 0 && send_error.is_none() {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    send_error.map_or(Ok(()), Err)
+}
+
+#[cfg(windows)]
+impl Drop for ChildOwnership {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = windows_sys::Win32::Foundation::CloseHandle(self.handle);
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ChildOwnership {
+    fn drop(&mut self) {
+        let _ = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
+    }
+}
+
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        let _ = self.ownership.force_kill(&mut self.child);
+        let _ = self.child.try_wait();
     }
 }
 
@@ -537,6 +1188,17 @@ fn epoch_seconds() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn log_ollama_debug(event: &str, operation_id: Option<&str>, details: &str) {
+    let timestamp_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    crate::log_verbose(&format!(
+        "[{timestamp_ms}][OllamaRuntime] event={event} operation_id={} {details}",
+        operation_id.unwrap_or("none")
+    ));
 }
 
 fn install_io_error(error: io::Error, stage: &str, operation_id: &str) -> RuntimeError {
@@ -918,7 +1580,7 @@ fn install_release<D, F>(
     mut progress: F,
 ) -> Result<InstalledRuntime, RuntimeError>
 where
-    D: ArtifactDownloader,
+    D: ArtifactDownloader + ?Sized,
     F: FnMut(&str, u64, Option<u64>),
 {
     let expected_sha256 = pin
@@ -1283,11 +1945,1280 @@ fn snapshot_from_installations(
         } else {
             RuntimeState::InstalledStopped
         },
+        server_state: if error.is_some() {
+            ServerState::Failed
+        } else if versions.is_empty() {
+            ServerState::NotInstalled
+        } else {
+            ServerState::InstalledStopped
+        },
+        ownership: RuntimeOwnership::None,
         installed_version,
         installed_versions: versions,
+        model_count: None,
+        reservation: ReservationSnapshot::default(),
         operation_id: None,
         phase: None,
         error,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EndpointScope {
+    ManagedDefault,
+    Loopback,
+    Remote,
+}
+
+#[derive(Clone, Debug)]
+struct RuntimeEndpoint {
+    url: url::Url,
+    scope: EndpointScope,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProbeResult {
+    Ready { model_count: usize },
+    NotListening,
+    ApiUnreachable,
+}
+
+fn parse_endpoint(
+    host: Option<&str>,
+    default_base_url: &str,
+) -> Result<RuntimeEndpoint, RuntimeError> {
+    let raw = host.unwrap_or(default_base_url);
+    let url = url::Url::parse(raw)
+        .map_err(|_| RuntimeError::new(RuntimeErrorCode::HostNotAllowed, "endpoint", false))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err(RuntimeError::new(
+            RuntimeErrorCode::HostNotAllowed,
+            "endpoint",
+            false,
+        ));
+    }
+    let scope = if host.is_none() || is_default_managed_host(host) {
+        EndpointScope::ManagedDefault
+    } else if is_loopback_endpoint(&url) {
+        EndpointScope::Loopback
+    } else {
+        EndpointScope::Remote
+    };
+    Ok(RuntimeEndpoint { url, scope })
+}
+
+fn is_loopback_endpoint(url: &url::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback(),
+        Some(url::Host::Domain(name)) => {
+            name.eq_ignore_ascii_case("localhost")
+                || name
+                    .to_ascii_lowercase()
+                    .strip_suffix(".localhost")
+                    .is_some()
+        }
+        None => false,
+    }
+}
+
+fn api_tags_url(base: &url::Url) -> Result<url::Url, RuntimeError> {
+    let mut endpoint = base.clone();
+    let base_path = endpoint.path().trim_end_matches('/');
+    let path = if base_path.is_empty() {
+        "/api/tags".to_string()
+    } else {
+        format!("{base_path}/api/tags")
+    };
+    endpoint.set_path(&path);
+    Ok(endpoint)
+}
+
+fn probe_ollama(base: &url::Url, timeout: Duration) -> ProbeResult {
+    let Ok(endpoint) = api_tags_url(base) else {
+        return ProbeResult::ApiUnreachable;
+    };
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .connect_timeout(timeout)
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    else {
+        return ProbeResult::ApiUnreachable;
+    };
+    let response = match client.get(endpoint).send() {
+        Ok(response) => response,
+        Err(error) if is_connection_refused(&error) => return ProbeResult::NotListening,
+        Err(_) => return ProbeResult::ApiUnreachable,
+    };
+    if response.status() != reqwest::StatusCode::OK {
+        return ProbeResult::ApiUnreachable;
+    }
+    match response.json::<serde_json::Value>() {
+        Ok(payload) => payload
+            .as_object()
+            .and_then(|object| object.get("models"))
+            .and_then(serde_json::Value::as_array)
+            .map(|models| ProbeResult::Ready {
+                model_count: models.len(),
+            })
+            .unwrap_or(ProbeResult::ApiUnreachable),
+        Err(_) => ProbeResult::ApiUnreachable,
+    }
+}
+
+fn is_connection_refused(error: &reqwest::Error) -> bool {
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        if cause
+            .downcast_ref::<io::Error>()
+            .is_some_and(|io_error| io_error.kind() == io::ErrorKind::ConnectionRefused)
+        {
+            return true;
+        }
+        source = cause.source();
+    }
+    false
+}
+
+fn api_error(stage: &str, retryable: bool) -> RuntimeError {
+    RuntimeError::new(RuntimeErrorCode::ApiUnreachable, stage, retryable)
+}
+
+fn emit_optional_snapshot(app: Option<&AppHandle>, snapshot: &RuntimeSnapshot) {
+    if let Some(app) = app {
+        emit_snapshot(app, snapshot);
+    }
+}
+
+fn emit_manager_snapshot(app: Option<&AppHandle>, manager: &RuntimeManager) {
+    emit_optional_snapshot(app, &manager.snapshot());
+}
+
+fn install_state_from_versions(versions: &[String]) -> RuntimeState {
+    if versions.is_empty() {
+        RuntimeState::NotInstalled
+    } else {
+        RuntimeState::InstalledStopped
+    }
+}
+
+fn update_operation_snapshot(
+    manager: &RuntimeManager,
+    operation_id: &str,
+    versions: &[String],
+    installed_version: Option<&str>,
+    server_state: ServerState,
+    ownership: RuntimeOwnership,
+    model_count: Option<usize>,
+    phase: &str,
+) {
+    let mut state = manager.lock();
+    if !state
+        .operation
+        .as_ref()
+        .is_some_and(|operation| operation.id == operation_id)
+    {
+        return;
+    }
+    state.snapshot.state = if server_state == ServerState::Installing {
+        RuntimeState::Installing
+    } else {
+        install_state_from_versions(versions)
+    };
+    state.snapshot.server_state = server_state;
+    state.snapshot.ownership = ownership;
+    state.snapshot.installed_versions = versions.to_vec();
+    state.snapshot.installed_version = installed_version
+        .map(str::to_string)
+        .or_else(|| versions.last().cloned());
+    state.snapshot.model_count = model_count;
+    state.snapshot.phase = Some(phase.to_string());
+    state.snapshot.error = None;
+}
+
+fn process_is_stopped(process: &mut ManagedProcess) -> bool {
+    matches!(process.child.has_exited(), Ok(true))
+        && matches!(process.child.process_tree_alive(), Ok(false))
+}
+
+fn stop_managed_process(process: &mut ManagedProcess, settings: &RuntimeSettings) -> bool {
+    if process_is_stopped(process) {
+        return true;
+    }
+    let _ = process.child.request_graceful_shutdown();
+    let graceful_deadline = Instant::now() + settings.graceful_stop_timeout;
+    while Instant::now() < graceful_deadline {
+        if process_is_stopped(process) {
+            return true;
+        }
+        thread::sleep(settings.poll_interval.min(Duration::from_millis(50)));
+    }
+
+    let _ = process.child.force_kill_tree();
+    let force_deadline = Instant::now() + settings.force_stop_timeout;
+    while Instant::now() < force_deadline {
+        if process_is_stopped(process) {
+            return true;
+        }
+        thread::sleep(settings.poll_interval.min(Duration::from_millis(50)));
+    }
+    process_is_stopped(process)
+}
+
+fn update_runtime_snapshot(manager: &RuntimeManager, snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
+    let mut state = manager.lock();
+    if state.operation.is_some() {
+        return state.snapshot.clone();
+    }
+    state.snapshot = snapshot;
+    state.snapshot.clone()
+}
+
+fn current_installations(
+    anchor: &Path,
+    root: &Path,
+    pin: &ReleasePin,
+    operation_id: &str,
+) -> Result<(Vec<String>, bool), RuntimeError> {
+    inspect_installations(anchor, root, pin.os, pin.arch, operation_id)
+}
+
+fn finish_start_error(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    operation_id: &str,
+    error: RuntimeError,
+) {
+    manager.finish_failure(operation_id, error);
+    emit_manager_snapshot(app, manager);
+}
+
+fn finish_start_with_process_error(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    operation_id: &str,
+    generation: u64,
+    error: RuntimeError,
+) {
+    let mut process = {
+        let mut state = manager.lock();
+        if state
+            .process
+            .as_ref()
+            .is_some_and(|process| process.generation == generation)
+        {
+            state.process.take()
+        } else {
+            None
+        }
+    };
+    let snapshot = manager.snapshot();
+    let versions = snapshot.installed_versions;
+    let installed = snapshot.installed_version;
+    let (final_error, ownership) = if let Some(process_ref) = process.as_mut() {
+        if stop_managed_process(process_ref, &manager.settings) {
+            let mut state = manager.lock();
+            state.active_versions.remove(&process_ref.version);
+            (error, RuntimeOwnership::None)
+        } else {
+            let version = process_ref.version.clone();
+            let mut state = manager.lock();
+            state.active_versions.insert(version);
+            state.process = process.take();
+            (
+                RuntimeError::new(RuntimeErrorCode::StopFailed, "stop", true),
+                RuntimeOwnership::ManagedChild,
+            )
+        }
+    } else {
+        (error, RuntimeOwnership::None)
+    };
+    manager.finish_server_operation(
+        operation_id,
+        versions,
+        installed,
+        ServerState::Failed,
+        ownership,
+        None,
+        Some(final_error),
+    );
+    emit_manager_snapshot(app, manager);
+}
+
+fn perform_start_operation(
+    manager: RuntimeManager,
+    app: Option<AppHandle>,
+    anchor: PathBuf,
+    root: PathBuf,
+    pin: ReleasePin,
+    endpoint: RuntimeEndpoint,
+    operation_id: String,
+) {
+    log_ollama_debug(
+        "start.worker_enter",
+        Some(&operation_id),
+        &format!("host_scope={:?}", endpoint.scope),
+    );
+    let existing_managed = {
+        let mut state = manager.lock();
+        match state.process.as_mut() {
+            Some(process) => Some((
+                process.generation,
+                process.version.clone(),
+                process.child.has_exited(),
+            )),
+            None => None,
+        }
+    };
+    let initial_probe = probe_ollama(&endpoint.url, manager.settings.request_timeout);
+    let (mut versions, invalid_manifest) =
+        match current_installations(&anchor, &root, &pin, &operation_id) {
+            Ok(result) => result,
+            Err(error) => {
+                finish_start_error(&manager, app.as_ref(), &operation_id, error);
+                return;
+            }
+        };
+    if invalid_manifest {
+        finish_start_error(
+            &manager,
+            app.as_ref(),
+            &operation_id,
+            RuntimeError::new(RuntimeErrorCode::NotManaged, "discover", false),
+        );
+        return;
+    }
+    let installed_version = versions.last().cloned();
+    update_operation_snapshot(
+        &manager,
+        &operation_id,
+        &versions,
+        installed_version.as_deref(),
+        ServerState::CheckingHost,
+        if existing_managed.is_some() {
+            RuntimeOwnership::ManagedChild
+        } else {
+            RuntimeOwnership::None
+        },
+        None,
+        "checking_host",
+    );
+    emit_manager_snapshot(app.as_ref(), &manager);
+
+    if let Some((generation, version, exited)) = existing_managed {
+        match exited {
+            Ok(false) => {
+                log_ollama_debug(
+                    "start.managed_child_found",
+                    Some(&operation_id),
+                    "child_spawned=false",
+                );
+                let deadline = Instant::now() + manager.settings.readiness_timeout;
+                loop {
+                    let alive = {
+                        let mut state = manager.lock();
+                        match state
+                            .process
+                            .as_mut()
+                            .filter(|process| process.generation == generation)
+                        {
+                            Some(process) => process.child.has_exited().map(|exited| !exited),
+                            None => Ok(false),
+                        }
+                    };
+                    match alive {
+                        Ok(false) => {
+                            finish_start_with_process_error(
+                                &manager,
+                                app.as_ref(),
+                                &operation_id,
+                                generation,
+                                RuntimeError::new(RuntimeErrorCode::ProcessExited, "ready", true),
+                            );
+                            return;
+                        }
+                        Err(_) => {
+                            finish_start_with_process_error(
+                                &manager,
+                                app.as_ref(),
+                                &operation_id,
+                                generation,
+                                RuntimeError::new(RuntimeErrorCode::StopFailed, "monitor", true),
+                            );
+                            return;
+                        }
+                        Ok(true) => {}
+                    }
+                    let now = Instant::now();
+                    if now >= deadline {
+                        finish_start_with_process_error(
+                            &manager,
+                            app.as_ref(),
+                            &operation_id,
+                            generation,
+                            RuntimeError::new(RuntimeErrorCode::ReadinessTimeout, "ready", true),
+                        );
+                        return;
+                    }
+                    let timeout = manager
+                        .settings
+                        .request_timeout
+                        .min(deadline.saturating_duration_since(now));
+                    if let ProbeResult::Ready { model_count } = probe_ollama(&endpoint.url, timeout)
+                    {
+                        manager.finish_server_operation(
+                            &operation_id,
+                            versions,
+                            Some(version),
+                            ServerState::ReadyManaged,
+                            RuntimeOwnership::ManagedChild,
+                            Some(model_count),
+                            None,
+                        );
+                        emit_manager_snapshot(app.as_ref(), &manager);
+                        return;
+                    }
+                    thread::sleep(
+                        manager
+                            .settings
+                            .poll_interval
+                            .min(deadline.saturating_duration_since(Instant::now())),
+                    );
+                }
+            }
+            Ok(true) => {
+                finish_start_with_process_error(
+                    &manager,
+                    app.as_ref(),
+                    &operation_id,
+                    generation,
+                    RuntimeError::new(RuntimeErrorCode::ProcessExited, "monitor", true),
+                );
+                return;
+            }
+            Err(_) => {
+                finish_start_error(
+                    &manager,
+                    app.as_ref(),
+                    &operation_id,
+                    RuntimeError::new(RuntimeErrorCode::StopFailed, "monitor", true),
+                );
+                return;
+            }
+        }
+    }
+
+    match initial_probe {
+        ProbeResult::Ready { model_count } => {
+            log_ollama_debug(
+                "start.external_server_found",
+                Some(&operation_id),
+                &format!("model_count={model_count} child_spawned=false"),
+            );
+            manager.finish_server_operation(
+                &operation_id,
+                versions,
+                installed_version,
+                ServerState::ConnectedUnreserved,
+                RuntimeOwnership::ExternalLocal,
+                Some(model_count),
+                None,
+            );
+            emit_manager_snapshot(app.as_ref(), &manager);
+            return;
+        }
+        ProbeResult::ApiUnreachable => {
+            log_ollama_debug(
+                "start.probe_rejected",
+                Some(&operation_id),
+                "reason=api_unreachable child_spawned=false",
+            );
+            manager.finish_server_operation(
+                &operation_id,
+                versions,
+                installed_version,
+                ServerState::Failed,
+                RuntimeOwnership::None,
+                None,
+                Some(api_error("probe", true)),
+            );
+            emit_manager_snapshot(app.as_ref(), &manager);
+            return;
+        }
+        ProbeResult::NotListening => {
+            log_ollama_debug(
+                "start.endpoint_available_for_managed_launch",
+                Some(&operation_id),
+                "result=connection_refused",
+            );
+        }
+    }
+
+    if manager.is_shutting_down() {
+        return;
+    }
+    if versions.is_empty() {
+        log_ollama_debug("start.install_required", Some(&operation_id), "pin=0.40.3");
+        update_operation_snapshot(
+            &manager,
+            &operation_id,
+            &versions,
+            None,
+            ServerState::Installing,
+            RuntimeOwnership::None,
+            None,
+            "download",
+        );
+        emit_manager_snapshot(app.as_ref(), &manager);
+        let app_worker = app.clone();
+        let manager_worker = manager.clone();
+        let download = install_release(
+            &anchor,
+            &root,
+            &pin,
+            manager.downloader.as_ref(),
+            &operation_id,
+            |phase, received, total| {
+                manager_worker.set_phase(&operation_id, phase);
+                if let Some(app) = app_worker.as_ref() {
+                    emit_progress(app, &operation_id, phase, received, total);
+                }
+            },
+        );
+        match download {
+            Ok(_) => {
+                if manager.is_shutting_down() {
+                    return;
+                }
+                match current_installations(&anchor, &root, &pin, &operation_id) {
+                    Ok((found, invalid)) if !invalid && !found.is_empty() => {
+                        versions = found;
+                        log_ollama_debug(
+                            "start.install_ready",
+                            Some(&operation_id),
+                            "manifest_and_executable_verified=true",
+                        );
+                    }
+                    Ok(_) => {
+                        finish_start_error(
+                            &manager,
+                            app.as_ref(),
+                            &operation_id,
+                            RuntimeError::new(RuntimeErrorCode::NotManaged, "discover", false),
+                        );
+                        return;
+                    }
+                    Err(error) => {
+                        finish_start_error(&manager, app.as_ref(), &operation_id, error);
+                        return;
+                    }
+                }
+            }
+            Err(error) => {
+                finish_start_error(&manager, app.as_ref(), &operation_id, error);
+                return;
+            }
+        }
+    }
+
+    if manager.is_shutting_down() {
+        return;
+    }
+    let Some(version) = versions.last().cloned() else {
+        finish_start_error(
+            &manager,
+            app.as_ref(),
+            &operation_id,
+            RuntimeError::new(RuntimeErrorCode::VersionNotInstalled, "discover", false),
+        );
+        return;
+    };
+    log_ollama_debug(
+        "start.installation_selected",
+        Some(&operation_id),
+        &format!("version={version}"),
+    );
+    let manifest = match validate_installation(&root, &version, pin.os, pin.arch, &operation_id) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            finish_start_error(&manager, app.as_ref(), &operation_id, error);
+            return;
+        }
+    };
+    let executable = root.join(&version).join(&manifest.executable_relative_path);
+    update_operation_snapshot(
+        &manager,
+        &operation_id,
+        &versions,
+        Some(&version),
+        ServerState::Starting,
+        RuntimeOwnership::None,
+        None,
+        "starting",
+    );
+    emit_manager_snapshot(app.as_ref(), &manager);
+    let managed_url = match url::Url::parse(&manager.settings.managed_base_url) {
+        Ok(url) => url,
+        Err(_) => {
+            finish_start_error(
+                &manager,
+                app.as_ref(),
+                &operation_id,
+                RuntimeError::new(
+                    RuntimeErrorCode::ManagedEndpointUnsupported,
+                    "endpoint",
+                    false,
+                ),
+            );
+            return;
+        }
+    };
+    let managed_host = match managed_url.port_or_known_default() {
+        Some(port) => format!("127.0.0.1:{port}"),
+        None => {
+            finish_start_error(
+                &manager,
+                app.as_ref(),
+                &operation_id,
+                RuntimeError::new(
+                    RuntimeErrorCode::ManagedEndpointUnsupported,
+                    "endpoint",
+                    false,
+                ),
+            );
+            return;
+        }
+    };
+    let spec = ProcessSpec {
+        executable,
+        arguments: vec!["serve".to_string()],
+        environment: BTreeMap::from([(
+            std::ffi::OsString::from("OLLAMA_HOST"),
+            std::ffi::OsString::from(managed_host),
+        )]),
+        inherit_environment: true,
+    };
+    let child = match manager.process_runner.spawn(&spec) {
+        Ok(child) => child,
+        Err(error) => {
+            let code = if error.kind() == io::ErrorKind::PermissionDenied {
+                RuntimeErrorCode::PermissionDenied
+            } else {
+                RuntimeErrorCode::SpawnFailed
+            };
+            finish_start_error(
+                &manager,
+                app.as_ref(),
+                &operation_id,
+                RuntimeError::new(code, "spawn", true),
+            );
+            return;
+        }
+    };
+    let mut pending_child = Some(child);
+    let generation = {
+        let mut state = manager.lock();
+        let operation_is_current = state
+            .operation
+            .as_ref()
+            .is_some_and(|operation| operation.id == operation_id);
+        if state.shutdown_requested || !operation_is_current || state.process.is_some() {
+            None
+        } else {
+            let generation = state.next_process_generation;
+            state.next_process_generation = state.next_process_generation.wrapping_add(1).max(1);
+            state.active_versions.insert(version.clone());
+            state.process = Some(ManagedProcess {
+                child: pending_child
+                    .take()
+                    .expect("spawned Ollama child is present"),
+                version: version.clone(),
+                generation,
+                reservation: None,
+            });
+            state.snapshot.state = RuntimeState::InstalledStopped;
+            state.snapshot.server_state = ServerState::Starting;
+            state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+            state.snapshot.installed_version = Some(version.clone());
+            state.snapshot.installed_versions = versions.clone();
+            state.snapshot.model_count = None;
+            state.snapshot.phase = Some("ready".to_string());
+            Some(generation)
+        }
+    };
+    let Some(generation) = generation else {
+        log_ollama_debug(
+            "start.child_rejected_after_spawn",
+            Some(&operation_id),
+            "reason=shutdown_or_operation_changed",
+        );
+        if let Some(child) = pending_child {
+            let mut pending = ManagedProcess {
+                child,
+                version,
+                generation: 0,
+                reservation: None,
+            };
+            let _ = stop_managed_process(&mut pending, &manager.settings);
+        }
+        return;
+    };
+    log_ollama_debug(
+        "start.child_spawned",
+        Some(&operation_id),
+        &format!("version={version} arguments=serve host=loopback"),
+    );
+    emit_manager_snapshot(app.as_ref(), &manager);
+
+    let readiness_deadline = Instant::now() + manager.settings.readiness_timeout;
+    loop {
+        if manager.is_shutting_down() {
+            return;
+        }
+        let process_status = {
+            let mut state = manager.lock();
+            match state.process.as_mut() {
+                Some(process) if process.generation == generation => {
+                    match process.child.has_exited() {
+                        Ok(true) => 1,
+                        Ok(false) => 0,
+                        Err(_) => 2,
+                    }
+                }
+                _ => 3,
+            }
+        };
+        match process_status {
+            1 => {
+                log_ollama_debug(
+                    "start.child_exited_before_ready",
+                    Some(&operation_id),
+                    "stage=bind",
+                );
+                finish_start_with_process_error(
+                    &manager,
+                    app.as_ref(),
+                    &operation_id,
+                    generation,
+                    RuntimeError::new(RuntimeErrorCode::ProcessExited, "bind", true),
+                );
+                return;
+            }
+            2 => {
+                log_ollama_debug(
+                    "start.child_monitor_uncertain",
+                    Some(&operation_id),
+                    "result=stop_failed",
+                );
+                finish_start_with_process_error(
+                    &manager,
+                    app.as_ref(),
+                    &operation_id,
+                    generation,
+                    RuntimeError::new(RuntimeErrorCode::StopFailed, "monitor", true),
+                );
+                return;
+            }
+            3 => return,
+            _ => {}
+        }
+
+        let now = Instant::now();
+        if now >= readiness_deadline {
+            log_ollama_debug(
+                "start.readiness_timeout",
+                Some(&operation_id),
+                "elapsed_deadline_reached=true",
+            );
+            finish_start_with_process_error(
+                &manager,
+                app.as_ref(),
+                &operation_id,
+                generation,
+                RuntimeError::new(RuntimeErrorCode::ReadinessTimeout, "ready", true),
+            );
+            return;
+        }
+        let timeout = manager
+            .settings
+            .request_timeout
+            .min(readiness_deadline.saturating_duration_since(now));
+        match probe_ollama(&endpoint.url, timeout) {
+            ProbeResult::Ready { model_count } => {
+                log_ollama_debug(
+                    "start.ready_managed",
+                    Some(&operation_id),
+                    &format!("model_count={model_count}"),
+                );
+                let monitor = spawn_process_monitor(manager.clone(), app.clone(), generation);
+                if monitor.is_err() {
+                    finish_start_with_process_error(
+                        &manager,
+                        app.as_ref(),
+                        &operation_id,
+                        generation,
+                        RuntimeError::new(RuntimeErrorCode::SpawnFailed, "monitor", true),
+                    );
+                    return;
+                }
+                manager.finish_server_operation(
+                    &operation_id,
+                    versions.clone(),
+                    Some(version.clone()),
+                    ServerState::ReadyManaged,
+                    RuntimeOwnership::ManagedChild,
+                    Some(model_count),
+                    None,
+                );
+                emit_manager_snapshot(app.as_ref(), &manager);
+                return;
+            }
+            ProbeResult::NotListening | ProbeResult::ApiUnreachable => {
+                let remaining = readiness_deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    continue;
+                }
+                thread::sleep(manager.settings.poll_interval.min(remaining));
+            }
+        }
+    }
+}
+
+fn spawn_process_monitor(
+    manager: RuntimeManager,
+    app: Option<AppHandle>,
+    generation: u64,
+) -> io::Result<thread::JoinHandle<()>> {
+    thread::Builder::new()
+        .name("ollama-runtime-monitor".to_string())
+        .spawn(move || loop {
+            thread::sleep(manager.settings.poll_interval);
+            let observation = {
+                let mut state = manager.lock();
+                if state.shutdown_requested {
+                    return;
+                }
+                if state.operation.is_some() {
+                    continue;
+                }
+                let process_exited = match state
+                    .process
+                    .as_mut()
+                    .filter(|process| process.generation == generation)
+                {
+                    Some(process) => match process.child.has_exited() {
+                        Ok(true) => Some(true),
+                        Ok(false) => None,
+                        Err(_) => Some(false),
+                    },
+                    None => return,
+                };
+                let Some(child_exited) = process_exited else {
+                    continue;
+                };
+                let operation_id = next_operation_id();
+                state.operation = Some(ActiveOperation {
+                    id: operation_id.clone(),
+                    kind: OperationKind::Stop,
+                });
+                state.snapshot.operation_id = Some(operation_id.clone());
+                state.snapshot.phase = Some("reap".to_string());
+                state.snapshot.server_state = ServerState::Stopping;
+                state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+                let Some(process) = state.process.take() else {
+                    state.operation = None;
+                    state.snapshot.phase = None;
+                    return;
+                };
+                (operation_id, child_exited, process)
+            };
+            let (operation_id, child_exited, mut process) = observation;
+            let cleaned = stop_managed_process(&mut process, &manager.settings);
+            let version = process.version.clone();
+            let mut state = manager.lock();
+            if state
+                .operation
+                .as_ref()
+                .is_some_and(|operation| operation.id == operation_id)
+            {
+                state.operation = None;
+            }
+            state.snapshot.phase = None;
+            if cleaned {
+                state.active_versions.remove(&version);
+                state.snapshot.state =
+                    install_state_from_versions(&state.snapshot.installed_versions);
+                state.snapshot.server_state = ServerState::Failed;
+                state.snapshot.ownership = RuntimeOwnership::None;
+                state.snapshot.model_count = None;
+                state.snapshot.error = Some(RuntimeError::new(
+                    if child_exited {
+                        RuntimeErrorCode::ProcessExited
+                    } else {
+                        RuntimeErrorCode::StopFailed
+                    },
+                    "monitor",
+                    true,
+                ));
+            } else {
+                state.active_versions.insert(version);
+                state.process = Some(process);
+                state.snapshot.server_state = ServerState::Failed;
+                state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+                state.snapshot.model_count = None;
+                state.snapshot.error = Some(RuntimeError::new(
+                    RuntimeErrorCode::StopFailed,
+                    "monitor",
+                    true,
+                ));
+            }
+            let snapshot = state.snapshot.clone();
+            drop(state);
+            emit_optional_snapshot(app.as_ref(), &snapshot);
+            return;
+        })
+}
+
+fn dispatch_start(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    host: Option<String>,
+    device_id: Option<String>,
+) -> Result<String, RuntimeError> {
+    log_ollama_debug(
+        "start.enter",
+        None,
+        &format!(
+            "host_scope={} device_id_present={}",
+            if host.as_deref().is_some_and(is_default_managed_host_value) || host.is_none() {
+                "default_loopback"
+            } else {
+                "custom"
+            },
+            device_id.is_some()
+        ),
+    );
+    let endpoint = parse_endpoint(host.as_deref(), &manager.settings.managed_base_url)?;
+    log_ollama_debug(
+        "start.endpoint_classified",
+        None,
+        &format!("host_scope={:?}", endpoint.scope),
+    );
+    match endpoint.scope {
+        EndpointScope::ManagedDefault => {}
+        EndpointScope::Loopback => {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::ManagedEndpointUnsupported,
+                "endpoint",
+                false,
+            ));
+        }
+        EndpointScope::Remote => {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::HostNotAllowed,
+                "endpoint",
+                false,
+            ));
+        }
+    }
+    let pin = manager.release_pin()?;
+    let (anchor, root) = manager.locations()?;
+    let operation_id = next_operation_id();
+    manager.begin(&operation_id, OperationKind::Start)?;
+    log_ollama_debug(
+        "start.operation_started",
+        Some(&operation_id),
+        "operation_guard=held",
+    );
+    emit_manager_snapshot(app.as_ref(), manager);
+    let manager_worker = manager.clone();
+    let operation_id_worker = operation_id.clone();
+    let spawn = thread::Builder::new()
+        .name("ollama-runtime-start".to_string())
+        .spawn(move || {
+            perform_start_operation(
+                manager_worker,
+                app,
+                anchor,
+                root,
+                pin,
+                endpoint,
+                operation_id_worker,
+            );
+        });
+    if spawn.is_err() {
+        let error = RuntimeError::new(RuntimeErrorCode::SpawnFailed, "dispatch", true)
+            .for_operation(&operation_id);
+        manager.finish_failure(&operation_id, error.clone());
+        log_ollama_debug(
+            "start.dispatch_failed",
+            Some(&operation_id),
+            "error=spawn_failed",
+        );
+        emit_manager_snapshot(None, manager);
+        return Err(error);
+    }
+    Ok(operation_id)
+}
+
+fn is_default_managed_host_value(host: &str) -> bool {
+    is_default_managed_host(Some(host))
+}
+
+fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<String, RuntimeError> {
+    log_ollama_debug("stop.enter", None, "managed_process_check=true");
+    {
+        let state = manager.lock();
+        if state.operation.is_some() {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::RuntimeBusy,
+                "dispatch",
+                true,
+            ));
+        }
+        if state.process.is_none() {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::NotManaged,
+                "stop",
+                false,
+            ));
+        }
+    }
+    let operation_id = next_operation_id();
+    manager.begin(&operation_id, OperationKind::Stop)?;
+    log_ollama_debug(
+        "stop.operation_started",
+        Some(&operation_id),
+        "operation_guard=held ownership=managed_child",
+    );
+    emit_manager_snapshot(app.as_ref(), manager);
+    let manager_worker = manager.clone();
+    let operation_id_worker = operation_id.clone();
+    let spawn = thread::Builder::new()
+        .name("ollama-runtime-stop".to_string())
+        .spawn(move || {
+            let mut process = manager_worker.lock().process.take();
+            let Some(mut process) = process.take() else {
+                manager_worker.finish_failure(
+                    &operation_id_worker,
+                    RuntimeError::new(RuntimeErrorCode::NotManaged, "stop", false),
+                );
+                emit_manager_snapshot(app.as_ref(), &manager_worker);
+                return;
+            };
+            let version = process.version.clone();
+            if stop_managed_process(&mut process, &manager_worker.settings) {
+                log_ollama_debug(
+                    "stop.process_tree_reaped",
+                    Some(&operation_id_worker),
+                    &format!("version={version}"),
+                );
+                let snapshot = manager_worker.snapshot();
+                manager_worker.lock().active_versions.remove(&version);
+                manager_worker.finish_server_operation(
+                    &operation_id_worker,
+                    snapshot.installed_versions,
+                    snapshot.installed_version,
+                    ServerState::Stopped,
+                    RuntimeOwnership::None,
+                    None,
+                    None,
+                );
+                drop(process);
+            } else {
+                log_ollama_debug(
+                    "stop.process_tree_unconfirmed",
+                    Some(&operation_id_worker),
+                    &format!("version={version} error=stop_failed"),
+                );
+                let mut state = manager_worker.lock();
+                state.process = Some(process);
+                state.active_versions.insert(version);
+                drop(state);
+                manager_worker.finish_failure(
+                    &operation_id_worker,
+                    RuntimeError::new(RuntimeErrorCode::StopFailed, "stop", true),
+                );
+            }
+            emit_manager_snapshot(app.as_ref(), &manager_worker);
+        });
+    if spawn.is_err() {
+        let error = RuntimeError::new(RuntimeErrorCode::SpawnFailed, "dispatch", true)
+            .for_operation(&operation_id);
+        manager.finish_failure(&operation_id, error.clone());
+        log_ollama_debug(
+            "stop.dispatch_failed",
+            Some(&operation_id),
+            "error=spawn_failed",
+        );
+        emit_manager_snapshot(None, manager);
+        return Err(error);
+    }
+    Ok(operation_id)
+}
+
+fn status_snapshot(
+    manager: &RuntimeManager,
+    host: Option<&str>,
+) -> Result<RuntimeSnapshot, RuntimeError> {
+    if let Some(snapshot) = manager.operation_snapshot() {
+        return Ok(snapshot);
+    }
+    let endpoint = parse_endpoint(host, &manager.settings.managed_base_url)?;
+    log_ollama_debug(
+        "status.endpoint_classified",
+        None,
+        &format!("host_scope={:?}", endpoint.scope),
+    );
+    let process_state = if endpoint.scope == EndpointScope::ManagedDefault {
+        let mut state = manager.lock();
+        state.process.as_mut().map(|process| {
+            (
+                process.generation,
+                process.version.clone(),
+                process.child.has_exited(),
+            )
+        })
+    } else {
+        None
+    };
+    let probe_result = probe_ollama(&endpoint.url, manager.settings.request_timeout);
+    let pin = manager.release_pin()?;
+    let (anchor, root) = manager.locations()?;
+    let operation_id = next_operation_id();
+    let (versions, invalid) = current_installations(&anchor, &root, &pin, &operation_id)?;
+    let mut snapshot = snapshot_from_installations(
+        versions,
+        invalid.then(|| RuntimeError::new(RuntimeErrorCode::NotManaged, "discover", false)),
+    );
+
+    let managed_version = if endpoint.scope == EndpointScope::ManagedDefault {
+        match process_state {
+            Some((_, _, Ok(true))) => {
+                snapshot.server_state = ServerState::Failed;
+                snapshot.ownership = RuntimeOwnership::ManagedChild;
+                snapshot.error = Some(RuntimeError::new(
+                    RuntimeErrorCode::ProcessExited,
+                    "monitor",
+                    true,
+                ));
+                return Ok(update_runtime_snapshot(manager, snapshot));
+            }
+            Some((_, version, Ok(false))) => Some(version),
+            Some((_, _, Err(_))) => {
+                snapshot.server_state = ServerState::Failed;
+                snapshot.ownership = RuntimeOwnership::ManagedChild;
+                snapshot.error = Some(RuntimeError::new(
+                    RuntimeErrorCode::StopFailed,
+                    "status",
+                    true,
+                ));
+                return Ok(update_runtime_snapshot(manager, snapshot));
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+
+    match probe_result {
+        ProbeResult::Ready { model_count } => {
+            snapshot.server_state = match endpoint.scope {
+                EndpointScope::ManagedDefault if managed_version.is_some() => {
+                    snapshot.ownership = RuntimeOwnership::ManagedChild;
+                    ServerState::ReadyManaged
+                }
+                EndpointScope::ManagedDefault | EndpointScope::Loopback => {
+                    snapshot.ownership = RuntimeOwnership::ExternalLocal;
+                    ServerState::ConnectedUnreserved
+                }
+                EndpointScope::Remote => {
+                    snapshot.ownership = RuntimeOwnership::Remote;
+                    ServerState::ReadyRemote
+                }
+            };
+            if managed_version.is_some() {
+                snapshot.ownership = RuntimeOwnership::ManagedChild;
+            }
+            snapshot.model_count = Some(model_count);
+        }
+        ProbeResult::NotListening if endpoint.scope == EndpointScope::ManagedDefault => {
+            if managed_version.is_some() {
+                snapshot.server_state = ServerState::Failed;
+                snapshot.ownership = RuntimeOwnership::ManagedChild;
+                snapshot.error = Some(api_error("probe", true));
+            } else {
+                snapshot.server_state = if snapshot.state == RuntimeState::NotInstalled {
+                    ServerState::NotInstalled
+                } else {
+                    ServerState::InstalledStopped
+                };
+            }
+        }
+        ProbeResult::NotListening | ProbeResult::ApiUnreachable => {
+            snapshot.server_state = ServerState::ExternalUnavailable;
+            snapshot.ownership = if managed_version.is_some() {
+                RuntimeOwnership::ManagedChild
+            } else {
+                RuntimeOwnership::None
+            };
+            snapshot.error = Some(api_error("probe", true));
+        }
+    }
+    if managed_version.is_some() && snapshot.server_state != ServerState::ReadyManaged {
+        snapshot.server_state = ServerState::Failed;
+        snapshot.ownership = RuntimeOwnership::ManagedChild;
+    }
+    Ok(update_runtime_snapshot(manager, snapshot))
+}
+
+fn shutdown_manager(manager: &RuntimeManager) {
+    log_ollama_debug("shutdown.enter", None, "server_child_check=true");
+    let mut process = {
+        let mut state = manager.lock();
+        state.shutdown_requested = true;
+        state.operation = None;
+        state.snapshot.phase = None;
+        if state.process.is_some() {
+            state.snapshot.server_state = ServerState::Stopping;
+            state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+        }
+        state.process.take()
+    };
+    let Some(mut process) = process.take() else {
+        return;
+    };
+    let version = process.version.clone();
+    if stop_managed_process(&mut process, &manager.settings) {
+        log_ollama_debug(
+            "shutdown.process_tree_reaped",
+            None,
+            "ownership=managed_child",
+        );
+        let mut state = manager.lock();
+        state.active_versions.remove(&version);
+        state.snapshot.state = install_state_from_versions(&state.snapshot.installed_versions);
+        state.snapshot.server_state = ServerState::Stopped;
+        state.snapshot.ownership = RuntimeOwnership::None;
+        state.snapshot.model_count = None;
+        state.snapshot.error = None;
+    } else {
+        log_ollama_debug(
+            "shutdown.process_tree_unconfirmed",
+            None,
+            "error=stop_failed",
+        );
+        let mut state = manager.lock();
+        state.active_versions.insert(version);
+        state.process = Some(process);
+        state.snapshot.server_state = ServerState::Failed;
+        state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+        state.snapshot.error = Some(RuntimeError::new(
+            RuntimeErrorCode::StopFailed,
+            "shutdown",
+            true,
+        ));
     }
 }
 
@@ -1297,31 +3228,8 @@ pub(crate) fn ollama_runtime_status(
     app: AppHandle,
     manager: State<'_, RuntimeManager>,
 ) -> Result<RuntimeSnapshot, RuntimeError> {
-    let _host_was_supplied = host.is_some();
     log::debug!("OllamaRuntime::status host_value_redacted=true");
-    if let Some(snapshot) = manager.operation_snapshot() {
-        return Ok(snapshot);
-    }
-    let pin = match current_release_pin() {
-        Ok(pin) => pin,
-        Err(error) => {
-            let snapshot = RuntimeSnapshot {
-                state: RuntimeState::Failed,
-                error: Some(error.clone()),
-                ..RuntimeSnapshot::default()
-            };
-            manager.lock().snapshot = snapshot.clone();
-            emit_snapshot(&app, &snapshot);
-            return Ok(snapshot);
-        }
-    };
-    let (anchor, root) = runtime_locations()?;
-    let operation_id = next_operation_id();
-    let (versions, invalid) =
-        inspect_installations(&anchor, &root, pin.os, pin.arch, &operation_id)?;
-    let error = invalid.then(|| RuntimeError::new(RuntimeErrorCode::NotManaged, "discover", false));
-    let snapshot = snapshot_from_installations(versions, error);
-    manager.lock().snapshot = snapshot.clone();
+    let snapshot = status_snapshot(&manager, host.as_deref())?;
     emit_snapshot(&app, &snapshot);
     Ok(snapshot)
 }
@@ -1333,82 +3241,21 @@ pub(crate) fn ollama_runtime_start(
     app: AppHandle,
     manager: State<'_, RuntimeManager>,
 ) -> Result<String, RuntimeError> {
-    log::debug!(
-        "OllamaRuntime::start host_scope={} device_id_present={}",
-        if is_default_managed_host(host.as_deref()) {
-            "default_loopback"
-        } else {
-            "custom"
-        },
-        device_id.is_some()
-    );
-    if !is_default_managed_host(host.as_deref()) {
-        return Err(RuntimeError::new(
-            RuntimeErrorCode::NotManaged,
-            "endpoint",
-            false,
-        ));
-    }
-    let pin = current_release_pin()?;
-    let (anchor, root) = runtime_locations()?;
-    let operation_id = next_operation_id();
-    manager.begin(&operation_id, OperationKind::Install)?;
-    emit_snapshot(&app, &manager.lock().snapshot.clone());
+    dispatch_start(&manager, Some(app), host, device_id)
+}
 
-    let app_worker = app.clone();
-    let manager_worker = (*manager).clone();
-    let worker_id = operation_id.clone();
-    let spawn = std::thread::Builder::new()
-        .name("ollama-install-worker".to_string())
-        .spawn(move || {
-            let result = install_release(
-                &anchor,
-                &root,
-                pin,
-                &HttpDownloader,
-                &worker_id,
-                |phase, received, total| {
-                    manager_worker.set_phase(&worker_id, phase);
-                    emit_progress(&app_worker, &worker_id, phase, received, total);
-                },
-            );
-            match result {
-                Ok(installed) => {
-                    let (versions, error) =
-                        inspect_installations(&anchor, &root, pin.os, pin.arch, &worker_id)
-                            .map(|(versions, invalid)| {
-                                let error = invalid.then(|| {
-                                    RuntimeError::new(
-                                        RuntimeErrorCode::NotManaged,
-                                        "discover",
-                                        false,
-                                    )
-                                });
-                                (versions, error)
-                            })
-                            .unwrap_or_else(|error| (Vec::new(), Some(error)));
-                    if let Some(error) = error {
-                        manager_worker.finish_failure(&worker_id, error);
-                    } else {
-                        manager_worker.finish_success(
-                            &worker_id,
-                            versions,
-                            Some(installed.version),
-                        );
-                    }
-                }
-                Err(error) => manager_worker.finish_failure(&worker_id, error),
-            }
-            emit_snapshot(&app_worker, &manager_worker.lock().snapshot.clone());
-        });
-    if spawn.is_err() {
-        let error = RuntimeError::new(RuntimeErrorCode::DownloadFailed, "dispatch", true)
-            .for_operation(&operation_id);
-        manager.finish_failure(&operation_id, error.clone());
-        emit_snapshot(&app, &manager.lock().snapshot.clone());
-        return Err(error);
+#[tauri::command]
+pub(crate) fn ollama_runtime_stop(
+    app: AppHandle,
+    manager: State<'_, RuntimeManager>,
+) -> Result<String, RuntimeError> {
+    dispatch_stop(&manager, Some(app))
+}
+
+impl RuntimeManager {
+    pub(crate) fn shutdown(&self) {
+        shutdown_manager(self);
     }
-    Ok(operation_id)
 }
 
 #[tauri::command]
@@ -1419,7 +3266,7 @@ pub(crate) fn ollama_runtime_remove(
     manager: State<'_, RuntimeManager>,
 ) -> Result<String, RuntimeError> {
     validate_remove_request(&version, confirm)?;
-    let pin = current_release_pin()?;
+    let pin = manager.release_pin()?;
     let (anchor, root) = runtime_locations()?;
     let operation_id = next_operation_id();
     manager.begin(&operation_id, OperationKind::Remove)?;
@@ -1454,6 +3301,7 @@ pub(crate) fn ollama_runtime_remove(
 mod tests {
     use super::*;
     use std::io::Cursor;
+    use std::sync::atomic::AtomicUsize;
     use zip::write::SimpleFileOptions;
 
     struct FixtureDownloader {
@@ -1652,6 +3500,922 @@ mod tests {
                     .starts_with(".ollama-install-")
             })
             .count()
+    }
+
+    #[derive(Clone)]
+    struct ApiFixture {
+        tags_status: u16,
+        tags_body: Vec<u8>,
+        version_status: u16,
+        version_body: Vec<u8>,
+        delay: Duration,
+    }
+
+    impl ApiFixture {
+        fn ready(model_count: usize) -> Self {
+            let models = std::iter::repeat("{}")
+                .take(model_count)
+                .collect::<Vec<_>>()
+                .join(",");
+            Self {
+                tags_status: 200,
+                tags_body: format!("{{\"models\":[{models}]}}").into_bytes(),
+                version_status: 200,
+                version_body: br#"{"version":"fixture"}"#.to_vec(),
+                delay: Duration::ZERO,
+            }
+        }
+
+        fn malformed() -> Self {
+            Self {
+                tags_body: b"{\"models\":".to_vec(),
+                ..Self::ready(0)
+            }
+        }
+
+        fn status(status: u16) -> Self {
+            Self {
+                tags_status: status,
+                ..Self::ready(0)
+            }
+        }
+    }
+
+    struct TestApiServer {
+        address: std::net::SocketAddr,
+        stopped: Arc<AtomicBool>,
+        worker: Option<thread::JoinHandle<()>>,
+    }
+
+    impl TestApiServer {
+        fn bind(address: impl std::net::ToSocketAddrs, fixture: ApiFixture) -> io::Result<Self> {
+            let listener = std::net::TcpListener::bind(address)?;
+            listener.set_nonblocking(true)?;
+            let address = listener.local_addr()?;
+            let stopped = Arc::new(AtomicBool::new(false));
+            let worker_stopped = stopped.clone();
+            let worker = thread::spawn(move || {
+                while !worker_stopped.load(Ordering::Acquire) {
+                    match listener.accept() {
+                        Ok((mut stream, _)) => serve_fixture_request(&mut stream, &fixture),
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+            Ok(Self {
+                address,
+                stopped,
+                worker: Some(worker),
+            })
+        }
+
+        fn base_url(&self) -> String {
+            format!("http://{}", self.address)
+        }
+
+        fn stop(&self) {
+            self.stopped.store(true, Ordering::Release);
+        }
+    }
+
+    impl Drop for TestApiServer {
+        fn drop(&mut self) {
+            self.stop();
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+
+    fn serve_fixture_request(stream: &mut std::net::TcpStream, fixture: &ApiFixture) {
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+        let mut request = [0_u8; 2048];
+        let Ok(read) = stream.read(&mut request) else {
+            return;
+        };
+        let request = String::from_utf8_lossy(&request[..read]);
+        let path = request
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or_default();
+        let (status, body) = if path.ends_with("/api/tags") {
+            (fixture.tags_status, fixture.tags_body.as_slice())
+        } else if path.ends_with("/api/version") {
+            (fixture.version_status, fixture.version_body.as_slice())
+        } else {
+            (404, b"{}".as_slice())
+        };
+        if !fixture.delay.is_zero() {
+            thread::sleep(fixture.delay);
+        }
+        let reason = if status == 200 { "OK" } else { "Fixture" };
+        let header = format!(
+            "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let _ = stream.write_all(header.as_bytes());
+        let _ = stream.write_all(body);
+    }
+
+    struct FakeProcessState {
+        spawned: AtomicUsize,
+        captured_spec: Mutex<Option<ProcessSpec>>,
+        exited: AtomicBool,
+        descendants_alive: AtomicBool,
+        graceful_calls: AtomicUsize,
+        force_calls: AtomicUsize,
+        graceful_exits: AtomicBool,
+        graceful_reaps_descendants: AtomicBool,
+        force_reaps: AtomicBool,
+        listener: Mutex<Option<TestApiServer>>,
+        shutdown_manager_on_spawn: Mutex<Option<RuntimeManager>>,
+    }
+
+    impl FakeProcessState {
+        fn new() -> Self {
+            Self {
+                spawned: AtomicUsize::new(0),
+                captured_spec: Mutex::new(None),
+                exited: AtomicBool::new(false),
+                descendants_alive: AtomicBool::new(false),
+                graceful_calls: AtomicUsize::new(0),
+                force_calls: AtomicUsize::new(0),
+                graceful_exits: AtomicBool::new(true),
+                graceful_reaps_descendants: AtomicBool::new(true),
+                force_reaps: AtomicBool::new(true),
+                listener: Mutex::new(None),
+                shutdown_manager_on_spawn: Mutex::new(None),
+            }
+        }
+
+        fn stop_listener(&self) {
+            if let Some(listener) = self.listener.lock().unwrap().as_ref() {
+                listener.stop();
+            }
+        }
+
+        fn simulate_exit(&self) {
+            self.exited.store(true, Ordering::Release);
+            self.descendants_alive.store(false, Ordering::Release);
+            self.stop_listener();
+        }
+    }
+
+    struct FakeRunner {
+        state: Arc<FakeProcessState>,
+        api: Option<ApiFixture>,
+        exit_immediately: bool,
+    }
+
+    impl FakeRunner {
+        fn new(api: Option<ApiFixture>) -> Arc<Self> {
+            Arc::new(Self {
+                state: Arc::new(FakeProcessState::new()),
+                api,
+                exit_immediately: false,
+            })
+        }
+
+        fn exits_immediately() -> Arc<Self> {
+            Arc::new(Self {
+                state: Arc::new(FakeProcessState::new()),
+                api: None,
+                exit_immediately: true,
+            })
+        }
+
+        fn loses_bind_race(api: ApiFixture) -> Arc<Self> {
+            Arc::new(Self {
+                state: Arc::new(FakeProcessState::new()),
+                api: Some(api),
+                exit_immediately: true,
+            })
+        }
+    }
+
+    impl RuntimeProcessRunner for FakeRunner {
+        fn spawn(&self, spec: &ProcessSpec) -> io::Result<Box<dyn ManagedChild>> {
+            self.state.spawned.fetch_add(1, Ordering::Relaxed);
+            *self.state.captured_spec.lock().unwrap() = Some(spec.clone());
+            if let Some(manager) = self.state.shutdown_manager_on_spawn.lock().unwrap().take() {
+                manager.shutdown();
+            }
+            if let Some(api) = self.api.clone() {
+                let host = spec
+                    .environment
+                    .get(&std::ffi::OsString::from("OLLAMA_HOST"))
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing host"))?;
+                let address = host
+                    .to_string_lossy()
+                    .parse::<std::net::SocketAddr>()
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid host"))?;
+                let server = TestApiServer::bind(address, api)?;
+                *self.state.listener.lock().unwrap() = Some(server);
+            }
+            if self.exit_immediately {
+                self.state.exited.store(true, Ordering::Release);
+            }
+            Ok(Box::new(FakeChild {
+                state: self.state.clone(),
+            }))
+        }
+    }
+
+    struct FakeChild {
+        state: Arc<FakeProcessState>,
+    }
+
+    impl ManagedChild for FakeChild {
+        fn has_exited(&mut self) -> io::Result<bool> {
+            Ok(self.state.exited.load(Ordering::Acquire))
+        }
+
+        fn request_graceful_shutdown(&mut self) -> io::Result<()> {
+            self.state.graceful_calls.fetch_add(1, Ordering::Relaxed);
+            self.state.stop_listener();
+            if self.state.graceful_exits.load(Ordering::Acquire) {
+                self.state.exited.store(true, Ordering::Release);
+                self.state.descendants_alive.store(
+                    !self
+                        .state
+                        .graceful_reaps_descendants
+                        .load(Ordering::Acquire),
+                    Ordering::Release,
+                );
+            }
+            Ok(())
+        }
+
+        fn force_kill_tree(&mut self) -> io::Result<()> {
+            self.state.force_calls.fetch_add(1, Ordering::Relaxed);
+            self.state.stop_listener();
+            if self.state.force_reaps.load(Ordering::Acquire) {
+                self.state.exited.store(true, Ordering::Release);
+                self.state.descendants_alive.store(false, Ordering::Release);
+            }
+            Ok(())
+        }
+
+        fn process_tree_alive(&self) -> io::Result<bool> {
+            Ok(!self.state.exited.load(Ordering::Acquire)
+                || self.state.descendants_alive.load(Ordering::Acquire))
+        }
+    }
+
+    fn test_settings(port: u16) -> RuntimeSettings {
+        RuntimeSettings {
+            managed_base_url: format!("http://127.0.0.1:{port}"),
+            request_timeout: Duration::from_millis(30),
+            readiness_timeout: Duration::from_millis(160),
+            poll_interval: Duration::from_millis(3),
+            graceful_stop_timeout: Duration::from_millis(12),
+            force_stop_timeout: Duration::from_millis(12),
+        }
+    }
+
+    fn test_manager(
+        anchor: &tempfile::TempDir,
+        root: &Path,
+        port: u16,
+        runner: &Arc<FakeRunner>,
+        pin: ReleasePin,
+        downloader: Arc<dyn ArtifactDownloader>,
+        installed: bool,
+    ) -> RuntimeManager {
+        if installed {
+            write_managed_fixture(
+                root,
+                pin.version,
+                pin.os,
+                pin.arch,
+                b"fixture executable; injected runner never executes this file",
+            );
+        }
+        RuntimeManager {
+            inner: Arc::new(Mutex::new(ManagerState::default())),
+            downloader,
+            process_runner: runner.clone(),
+            settings: test_settings(port),
+            locations: Some((anchor.path().to_path_buf(), root.to_path_buf())),
+            release_pin: Some(pin),
+        }
+    }
+
+    fn wait_for_snapshot(
+        manager: &RuntimeManager,
+        timeout: Duration,
+        predicate: impl Fn(&RuntimeSnapshot) -> bool,
+    ) -> RuntimeSnapshot {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let snapshot = manager.snapshot();
+            if predicate(&snapshot) {
+                return snapshot;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for runtime snapshot"
+            );
+            thread::sleep(Duration::from_millis(3));
+        }
+    }
+
+    fn wait_for_operation(manager: &RuntimeManager, operation_id: &str) -> RuntimeSnapshot {
+        wait_for_snapshot(manager, Duration::from_secs(2), |snapshot| {
+            snapshot.operation_id.as_deref() == Some(operation_id) && snapshot.phase.is_none()
+        })
+    }
+
+    fn make_test_root(anchor: &tempfile::TempDir) -> PathBuf {
+        anchor.path().join("runtime-root")
+    }
+
+    #[test]
+    fn start_uses_verified_executable_serve_and_child_only_loopback_host() {
+        let api = ApiFixture::ready(2);
+        let runner = FakeRunner::new(Some(api.clone()));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+
+        let operation =
+            dispatch_start(&manager, None, None, Some("device-is-ignored".into())).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        assert_eq!(snapshot.server_state, ServerState::ReadyManaged);
+        assert_eq!(snapshot.ownership, RuntimeOwnership::ManagedChild);
+        assert_eq!(snapshot.model_count, Some(2));
+        assert_eq!(snapshot.state, RuntimeState::InstalledStopped);
+        let spec = runner.state.captured_spec.lock().unwrap().clone().unwrap();
+        assert_eq!(
+            spec.executable,
+            root.join(pin.version).join(pin.executable_relative_path)
+        );
+        assert_eq!(spec.arguments, vec!["serve"]);
+        assert!(spec.inherit_environment);
+        assert_eq!(
+            spec.environment
+                .get(&std::ffi::OsString::from("OLLAMA_HOST"))
+                .unwrap(),
+            &std::ffi::OsString::from(format!("127.0.0.1:{}", address.port()))
+        );
+        assert!(!spec
+            .environment
+            .contains_key(&std::ffi::OsString::from("OLLAMA_MODELS")));
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 1);
+        let serialized = serde_json::to_string(&snapshot).unwrap();
+        assert!(!serialized.contains(&root.to_string_lossy().to_string()));
+        assert!(!serialized.contains(&manager.settings.managed_base_url));
+        assert!(!serialized.to_ascii_lowercase().contains("pid"));
+        manager.shutdown();
+
+        let version_server = TestApiServer::bind("127.0.0.1:0", api).unwrap();
+        let client = reqwest::blocking::Client::new();
+        let version: serde_json::Value = client
+            .get(format!("{}/api/version", version_server.base_url()))
+            .send()
+            .unwrap()
+            .json()
+            .unwrap();
+        assert_eq!(version["version"], "fixture");
+        assert_eq!(
+            RuntimeSettings::default().managed_base_url,
+            "http://localhost:11434"
+        );
+    }
+
+    #[test]
+    fn missing_install_uses_fixture_archive_and_empty_models_are_ready() {
+        let bytes = tar_zst_regular("bin/ollama", b"fixture executable; never launched directly");
+        let pin = fixture_pin_for_bytes(ArchiveFormat::TarZst, &bytes);
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(bytes)),
+            false,
+        );
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        assert_eq!(snapshot.server_state, ServerState::ReadyManaged);
+        assert_eq!(snapshot.model_count, Some(0));
+        assert!(root.join(pin.version).join(MANIFEST_FILE).is_file());
+        let spec = runner.state.captured_spec.lock().unwrap().clone().unwrap();
+        assert_eq!(spec.executable, root.join(pin.version).join("bin/ollama"));
+        manager.shutdown();
+    }
+
+    #[test]
+    fn api_probe_requires_200_and_an_object_with_a_models_array() {
+        let wrong_shape = ApiFixture {
+            tags_body: br#"{"models":{}}"#.to_vec(),
+            ..ApiFixture::ready(0)
+        };
+        for fixture in [
+            ApiFixture::malformed(),
+            wrong_shape,
+            ApiFixture::status(503),
+        ] {
+            let server = TestApiServer::bind("127.0.0.1:0", fixture).unwrap();
+            let endpoint = url::Url::parse(&server.base_url()).unwrap();
+            assert_eq!(
+                probe_ollama(&endpoint, Duration::from_millis(80)),
+                ProbeResult::ApiUnreachable
+            );
+        }
+        let mut slow = ApiFixture::ready(0);
+        slow.delay = Duration::from_millis(60);
+        let server = TestApiServer::bind("127.0.0.1:0", slow).unwrap();
+        assert_eq!(
+            probe_ollama(
+                &url::Url::parse(&server.base_url()).unwrap(),
+                Duration::from_millis(5)
+            ),
+            ProbeResult::ApiUnreachable
+        );
+    }
+
+    #[test]
+    fn external_and_custom_loopback_servers_are_observed_but_never_owned() {
+        let external = TestApiServer::bind("127.0.0.1:0", ApiFixture::ready(1)).unwrap();
+        let port = external.address.port();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            port,
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let started = wait_for_operation(&manager, &operation);
+        assert_eq!(started.server_state, ServerState::ConnectedUnreserved);
+        assert_eq!(started.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+        let custom = external.base_url();
+        assert_eq!(
+            dispatch_start(&manager, None, Some(custom.clone()), None)
+                .unwrap_err()
+                .code,
+            RuntimeErrorCode::ManagedEndpointUnsupported
+        );
+        let status = status_snapshot(&manager, Some(&custom)).unwrap();
+        assert_eq!(status.server_state, ServerState::ConnectedUnreserved);
+        assert_eq!(status.ownership, RuntimeOwnership::ExternalLocal);
+        let unused = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let unavailable = format!("http://{}", unused.local_addr().unwrap());
+        drop(unused);
+        assert_eq!(
+            status_snapshot(&manager, Some(&unavailable))
+                .unwrap()
+                .server_state,
+            ServerState::ExternalUnavailable
+        );
+        assert_eq!(
+            dispatch_stop(&manager, None).unwrap_err().code,
+            RuntimeErrorCode::NotManaged
+        );
+        assert_eq!(
+            probe_ollama(
+                &url::Url::parse(&custom).unwrap(),
+                Duration::from_millis(80)
+            ),
+            ProbeResult::Ready { model_count: 1 }
+        );
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn invalid_listener_and_remote_management_requests_do_not_spawn_or_signal() {
+        let listener = TestApiServer::bind("127.0.0.1:0", ApiFixture::status(404)).unwrap();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            listener.address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            false,
+        );
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        assert_eq!(
+            snapshot.error.unwrap().code,
+            RuntimeErrorCode::ApiUnreachable
+        );
+        let snapshot_json = serde_json::to_string(&manager.snapshot()).unwrap();
+        assert!(!snapshot_json.contains(&manager.settings.managed_base_url));
+        assert!(!snapshot_json.contains(&root.to_string_lossy().to_string()));
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            dispatch_start(
+                &manager,
+                None,
+                Some("https://example.com:11434".into()),
+                None
+            )
+            .unwrap_err()
+            .code,
+            RuntimeErrorCode::HostNotAllowed
+        );
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            probe_ollama(
+                &url::Url::parse(&listener.base_url()).unwrap(),
+                Duration::from_millis(80)
+            ),
+            ProbeResult::ApiUnreachable
+        );
+    }
+
+    #[test]
+    fn readiness_timeout_and_early_exit_reap_only_the_spawned_child() {
+        let runner = FakeRunner::new(Some(ApiFixture::status(503)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let mut manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        manager.settings.readiness_timeout = Duration::from_millis(35);
+        manager.settings.request_timeout = Duration::from_millis(8);
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        assert_eq!(
+            snapshot.error.unwrap().code,
+            RuntimeErrorCode::ReadinessTimeout
+        );
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 1);
+        assert!(runner.state.exited.load(Ordering::Acquire));
+        assert!(!runner.state.descendants_alive.load(Ordering::Acquire));
+        assert!(manager.lock().process.is_none());
+
+        let immediate = FakeRunner::exits_immediately();
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &immediate,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        let error = snapshot.error.unwrap();
+        assert_eq!(error.code, RuntimeErrorCode::ProcessExited);
+        assert_eq!(error.stage, "bind");
+        assert!(manager.lock().process.is_none());
+
+        let race = FakeRunner::loses_bind_race(ApiFixture::ready(0));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &race,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        let error = snapshot.error.unwrap();
+        assert_eq!(error.code, RuntimeErrorCode::ProcessExited);
+        assert_eq!(error.stage, "bind");
+        assert_eq!(race.state.graceful_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(race.state.force_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            probe_ollama(
+                &url::Url::parse(&manager.settings.managed_base_url).unwrap(),
+                Duration::from_millis(80)
+            ),
+            ProbeResult::Ready { model_count: 0 }
+        );
+    }
+
+    #[test]
+    fn repeated_start_and_unexpected_exit_preserve_single_child_ownership() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(1)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let first = dispatch_start(&manager, None, None, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &first).server_state,
+            ServerState::ReadyManaged
+        );
+        assert_eq!(
+            status_snapshot(&manager, None).unwrap().server_state,
+            ServerState::ReadyManaged
+        );
+        let second = dispatch_start(&manager, None, None, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &second).server_state,
+            ServerState::ReadyManaged
+        );
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 1);
+        runner.state.stop_listener();
+        let unavailable = status_snapshot(&manager, None).unwrap();
+        assert_eq!(unavailable.server_state, ServerState::Failed);
+        assert_eq!(unavailable.ownership, RuntimeOwnership::ManagedChild);
+        assert_eq!(
+            unavailable.error.unwrap().code,
+            RuntimeErrorCode::ApiUnreachable
+        );
+        runner.state.simulate_exit();
+        let failed = wait_for_snapshot(&manager, Duration::from_secs(2), |snapshot| {
+            snapshot.server_state == ServerState::Failed
+                && snapshot
+                    .error
+                    .as_ref()
+                    .is_some_and(|error| error.code == RuntimeErrorCode::ProcessExited)
+        });
+        assert_eq!(failed.ownership, RuntimeOwnership::None);
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 1);
+        assert!(manager.lock().process.is_none());
+    }
+
+    #[test]
+    fn stop_reaps_gracefully_or_forces_descendants_and_failed_stop_can_retry() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let start = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_operation(&manager, &start);
+        let stop = dispatch_stop(&manager, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &stop).server_state,
+            ServerState::Stopped
+        );
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+        assert!(manager.lock().process.is_none());
+
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        runner
+            .state
+            .graceful_reaps_descendants
+            .store(false, Ordering::Release);
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let start = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_operation(&manager, &start);
+        let stop = dispatch_stop(&manager, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &stop).server_state,
+            ServerState::Stopped
+        );
+        assert!(runner.state.force_calls.load(Ordering::Relaxed) > 0);
+        assert!(manager.lock().active_versions.is_empty());
+
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        runner.state.graceful_exits.store(false, Ordering::Release);
+        runner.state.force_reaps.store(false, Ordering::Release);
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let start = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_operation(&manager, &start);
+        let remove_error = remove_installation(
+            &anchor.path().to_path_buf(),
+            &root,
+            pin.version,
+            pin.os,
+            pin.arch,
+            manager.in_use(pin.version),
+            "remove-active",
+        )
+        .unwrap_err();
+        assert_eq!(remove_error.code, RuntimeErrorCode::RuntimeInUse);
+        assert!(root.join(pin.version).is_dir());
+        manager
+            .begin("remove-active-operation", OperationKind::Remove)
+            .unwrap();
+        manager.finish_failure("remove-active-operation", remove_error);
+        let still_running = manager.snapshot();
+        assert_eq!(still_running.state, RuntimeState::InstalledStopped);
+        assert_eq!(still_running.server_state, ServerState::ReadyManaged);
+        assert_eq!(still_running.ownership, RuntimeOwnership::ManagedChild);
+
+        let stop = dispatch_stop(&manager, None).unwrap();
+        let failed = wait_for_operation(&manager, &stop);
+        assert_eq!(failed.error.unwrap().code, RuntimeErrorCode::StopFailed);
+        assert!(manager.in_use(pin.version));
+        assert!(manager.lock().process.is_some());
+        runner.state.force_reaps.store(true, Ordering::Release);
+        let retry = dispatch_stop(&manager, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &retry).server_state,
+            ServerState::Stopped
+        );
+        assert!(!manager.in_use(pin.version));
+    }
+
+    #[test]
+    fn operation_guard_blocks_overlapping_start_stop_and_remove() {
+        let runner = FakeRunner::new(Some(ApiFixture::status(503)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let mut manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        manager.settings.readiness_timeout = Duration::from_millis(90);
+        let first = dispatch_start(&manager, None, None, None).unwrap();
+        assert_eq!(
+            dispatch_start(&manager, None, None, None).unwrap_err().code,
+            RuntimeErrorCode::RuntimeBusy
+        );
+        assert_eq!(
+            dispatch_stop(&manager, None).unwrap_err().code,
+            RuntimeErrorCode::RuntimeBusy
+        );
+        assert_eq!(
+            manager
+                .begin("remove-race", OperationKind::Remove)
+                .unwrap_err()
+                .code,
+            RuntimeErrorCode::RuntimeBusy
+        );
+        assert_eq!(
+            wait_for_operation(&manager, &first).error.unwrap().code,
+            RuntimeErrorCode::ReadinessTimeout
+        );
+        assert!(manager.lock().process.is_none());
+    }
+
+    #[test]
+    fn shell_shutdown_reaps_child_and_cleans_a_child_spawned_during_shutdown() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let start = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_operation(&manager, &start);
+        manager.shutdown();
+        assert!(manager.is_shutting_down());
+        assert!(manager.lock().process.is_none());
+        assert!(manager.lock().active_versions.is_empty());
+
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        *runner.state.shutdown_manager_on_spawn.lock().unwrap() = Some(manager.clone());
+        let _operation = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_snapshot(&manager, Duration::from_secs(1), |_| {
+            runner.state.exited.load(Ordering::Acquire)
+                && runner.state.spawned.load(Ordering::Relaxed) == 1
+        });
+        assert!(manager.lock().process.is_none());
+        assert!(manager.is_shutting_down());
     }
 
     #[test]
