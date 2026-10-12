@@ -156,7 +156,7 @@
       "known_pre_existing_red": "ChatArea.test.tsx 29건은 이 슬라이스 이전부터 RED 다(HEAD 트리 재현). loadConfigWithSecrets 가 선택 ADK 가 없으면 apiKey 를 비워 handleSend 가 'No API key configured' 로 끝난다.",
       "qa": {
         "fragment": ".agents/progress/slides-narration-streaming-20260911/qa-slides-narration-streaming-cases-20260911.json (4건 — 첫 소리 ≤1s · 문장 간 이어짐 · 정지 즉시 · WAV 전용 호스트 폴백, 전부 NOT_RUN)",
-        "catalog": ".agents/progress/slides-narration-streaming-20260911/catalog (기존 11개 조각 + 이 조각 = 209건 컴파일, 내 4건 진단 0). QC-206~209 부여는 이 디렉터리의 **로컬 사본**에서만 일어났고 선택 ADK 사이드카(/var/home/luke/alpha-adk/qa/qc-numbers.json, sha 71c4caba…)는 손대지 않았다 — #582 의 'QC-206+ 는 Linux 2회차 종료 후' 보류와 충돌하지 않게.",
+        "catalog": ".agents/progress/slides-narration-streaming-20260911/catalog (기존 11개 조각 + 이 조각 = 209건 컴파일, 내 4건 진단 0). QC-206~209 부여는 이 디렉터리의 **로컬 사본**에서만 일어났고 선택 ADK 사이드카(ADK 작업공간 qa/qc-numbers.json, sha 71c4caba…)는 손대지 않았다 — #582 의 'QC-206+ 는 Linux 2회차 종료 후' 보류와 충돌하지 않게.",
         "not_ready": "catalogStatus=INCOMPLETE — 남은 error 1건은 이 슬라이스 밖(APP-ENV-005 → 존재하지 않는 FR-ENV-TOOL.2). scope-review 는 205건 카탈로그에 해시로 묶여 있어 새로 받지 않았다(그래서 v1 manifest 미생성 = 회차 초기화 불가). 실기 실행은 별도 세션."
       },
       "last_updated": "2026-09-11T23:20:00+09:00"
@@ -559,7 +559,7 @@
         "P05": "pending"
       },
       "status": "in_progress",
-      "deliverable": "Alpha workspace .agents/progress/naia-shell-024-dev-20261011/result-757-s3.md",
+      "deliverable": "비공개 조정 기록의 단계 3 결과 문서",
       "verification": "Vitest 150 passed/9 skipped; pytest 11 passed; accelerator Cargo 14 passed; full Rust 502 passed/4 failed/3 filtered (2 known baseline, 2 environment-dependent). Ref manifest sync, source boundary, and mirror checks pass. Shell pre-commit compile-integrity and logging checks pass. Standalone TypeScript and shell build checks fail on existing dependency/target errors. GPU tests not run; Muse code review pending.",
       "last_updated": "2026-10-13T05:03:27+09:00"
     },
