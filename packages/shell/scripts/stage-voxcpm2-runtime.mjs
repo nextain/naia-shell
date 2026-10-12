@@ -500,14 +500,6 @@ export function findVoxcpm2TensorrtDir(shellDir = DEFAULT_SHELL) {
 		return resolve(process.env.VOXCPM2_TENSORRT_DIR);
 	}
 	const candidates = [
-		resolve(
-			shellDir,
-			"../../../refs/voxcpm2-tensorrt-worktrees/issue-757-s1-registry-20261012",
-		),
-		resolve(
-			shellDir,
-			"../../refs/voxcpm2-tensorrt-worktrees/issue-757-s1-registry-20261012",
-		),
 		resolve(shellDir, "../../../refs/voxcpm2-tensorrt"),
 		resolve(shellDir, "../../refs/voxcpm2-tensorrt"),
 		resolve(shellDir, "../voxcpm2-tensorrt"),

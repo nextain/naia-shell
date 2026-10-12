@@ -15441,12 +15441,12 @@ mod tests {
         };
         std::fs::write(&manifest_path, serde_json::to_string(&valid_manifest).unwrap()).unwrap();
 
-        // Case 1: 파일 없음 (registry file absent) -> passes via static fallback
+        // Case 1: 파일 없음 (registry file absent) -> passes via embedded registry fallback
         assert!(!registry_path.exists());
         let res_missing = read_voxcpm2_download_manifest(&manifest_path);
         assert!(
             res_missing.is_ok(),
-            "when profile-registry.json is missing, static fallback must pass: {:?}",
+            "when profile-registry.json is missing, embedded registry fallback must pass: {:?}",
             res_missing
         );
         assert_eq!(res_missing.unwrap().profile, "windows_trt_6g");
