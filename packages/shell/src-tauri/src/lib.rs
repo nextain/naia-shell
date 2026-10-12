@@ -6346,6 +6346,18 @@ fn approved_voxcpm2_reservation_bytes(profile_id: &str) -> Option<u64> {
         .find_map(|(approved_id, bytes)| (*approved_id == profile_id).then_some(*bytes))
 }
 
+fn voxcpm2_reservation_request(
+    device_id: String,
+    profile_id: &str,
+) -> vram_reservation::LocalModelRequest {
+    vram_reservation::LocalModelRequest {
+        device_id,
+        kind: vram_reservation::LocalModelKind::Voice,
+        workload_id: profile_id.to_string(),
+        reservation_bytes: approved_voxcpm2_reservation_bytes(profile_id),
+    }
+}
+
 pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
     "Another local voice runtime already owns port 8910 — most likely the other Naia instance. Stop its local voice first.";
 
@@ -9277,9 +9289,6 @@ async fn start_voxcpm2(
     if let Some(ready) = prior_ready {
         return Ok(ready);
     }
-    let reservation_bytes = approved_voxcpm2_reservation_bytes(resolved.id())
-        .ok_or_else(|| "vram_reservation_profile_size_undecided".to_string())?;
-
     let bundle_root = match voxcpm2_bundle_root(&app, &inventory) {
         Some(root) => root,
         None => {
@@ -9372,14 +9381,10 @@ async fn start_voxcpm2(
             .ok_or_else(|| "voxcpm2_naia_member_login_required".to_string())?,
     );
 
-    let reservation = vram_reservation::try_reserve(vram_reservation::LocalModelRequest {
-        device_id: selected_device_id,
-        kind: vram_reservation::LocalModelKind::Voice,
-        workload_id: resolved.id().to_string(),
-        reservation_bytes,
-    })
-    .await
-    .map_err(|denial| format!("vram_reservation_{}", denial.reason.code()))?;
+    let reservation_request = voxcpm2_reservation_request(selected_device_id, resolved.id());
+    let reservation = vram_reservation::try_reserve(reservation_request)
+        .await
+        .map_err(|denial| format!("vram_reservation_{}", denial.reason.code()))?;
 
     // Only clean up an orphaned voice process after this request owns capacity;
     // a denied request must not stop a current workload as a side effect.
@@ -14998,7 +15003,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn released_voice_profiles_have_no_inferred_reservation_amount() {
+    fn released_voice_profiles_pass_undecided_amount_to_kind_only_reservation() {
         let registry = embedded_voxcpm2_profile_registry();
         for profile in registry
             .entries
@@ -15008,9 +15013,17 @@ mod tests {
             assert_eq!(
                 approved_voxcpm2_reservation_bytes(&profile.id),
                 None,
-                "{} must remain gated until its reservation amount is approved",
+                "{} must remain unestimated until its reservation amount is approved",
                 profile.id
             );
+            let request = voxcpm2_reservation_request(
+                "vulkan:uuid:fixture".to_string(),
+                &profile.id,
+            );
+            assert_eq!(request.device_id, "vulkan:uuid:fixture");
+            assert_eq!(request.kind, vram_reservation::LocalModelKind::Voice);
+            assert_eq!(request.workload_id, profile.id);
+            assert_eq!(request.reservation_bytes, None);
         }
     }
 

@@ -1,8 +1,9 @@
 //! Process-wide admission for local models that reserve accelerator memory.
 //!
-//! Callers provide an approved workload size and the stable accelerator device
-//! ID. Inventory is read fresh for each admission; the settings/profile cache
-//! is intentionally not involved.
+//! Callers provide the stable accelerator device ID and an optional approved
+//! workload size. An unknown size creates a kind-only lease without byte
+//! accounting. Inventory is read fresh for each admission; the settings/profile
+//! cache is intentionally not involved.
 
 use crate::accelerator::{self, AcceleratorInventory, DetectionStatus};
 use serde::Serialize;
@@ -25,7 +26,7 @@ pub(crate) struct LocalModelRequest {
     pub(crate) device_id: String,
     pub(crate) kind: LocalModelKind,
     pub(crate) workload_id: String,
-    pub(crate) reservation_bytes: u64,
+    pub(crate) reservation_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -36,13 +37,14 @@ pub(crate) enum ReservationStatus {
 }
 
 /// The intentionally small view shared with future local-model consumers.
-/// It contains no paths, device details, or model configuration.
+/// It contains no paths, device details, or model configuration. A `None` byte
+/// amount serializes as `null` for a kind-only lease.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReservationSnapshot {
     pub(crate) kind: LocalModelKind,
     pub(crate) status: ReservationStatus,
-    pub(crate) reservation_bytes: u64,
+    pub(crate) reservation_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -81,8 +83,9 @@ impl ReservationDenialReason {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReservationDenial {
     pub(crate) reason: ReservationDenialReason,
-    pub(crate) request_bytes: u64,
-    /// Effective available bytes after subtracting reservations still starting.
+    pub(crate) request_bytes: Option<u64>,
+    /// Effective available bytes after subtracting reservations still starting;
+    /// `None` also means byte availability was not checked for a kind-only request.
     pub(crate) available_vram_bytes: Option<u64>,
     pub(crate) conflicting_kind: Option<LocalModelKind>,
 }
@@ -131,16 +134,21 @@ impl ReservationManager {
             return Err(denial(reason, request.reservation_bytes, None, None));
         };
 
+        let Some(request_bytes) = request.reservation_bytes else {
+            return self.try_reserve_kind_only(request, device);
+        };
+
         let mut state = self.lock();
         let pending_bytes = checked_starting_total(state.entries.values().filter_map(|entry| {
             (entry.request.device_id == request.device_id
                 && entry.status == ReservationStatus::Starting)
                 .then_some(entry.request.reservation_bytes)
+                .flatten()
         }))
         .ok_or_else(|| {
             denial(
                 ReservationDenialReason::ReservationAccountingOverflow,
-                request.reservation_bytes,
+                Some(request_bytes),
                 device.available_vram_bytes,
                 None,
             )
@@ -159,16 +167,16 @@ impl ReservationManager {
             };
             return Err(denial(
                 reason,
-                request.reservation_bytes,
+                Some(request_bytes),
                 effective_available,
                 Some(conflict.request.kind),
             ));
         }
 
-        if request.reservation_bytes == 0 {
+        if request_bytes == 0 {
             return Err(denial(
                 ReservationDenialReason::InvalidReservationSize,
-                request.reservation_bytes,
+                Some(request_bytes),
                 effective_available,
                 None,
             ));
@@ -181,7 +189,7 @@ impl ReservationManager {
         }) {
             return Err(denial(
                 ReservationDenialReason::WorkloadAlreadyReserved,
-                request.reservation_bytes,
+                Some(request_bytes),
                 effective_available,
                 None,
             ));
@@ -190,7 +198,7 @@ impl ReservationManager {
         let Some(reported_available) = device.available_vram_bytes else {
             return Err(denial(
                 ReservationDenialReason::AvailableVramUnknown,
-                request.reservation_bytes,
+                Some(request_bytes),
                 None,
                 None,
             ));
@@ -198,15 +206,15 @@ impl ReservationManager {
         let Some(effective_available) = effective_available else {
             return Err(denial(
                 ReservationDenialReason::InsufficientAvailableVram,
-                request.reservation_bytes,
+                Some(request_bytes),
                 Some(0),
                 None,
             ));
         };
-        if request.reservation_bytes > effective_available {
+        if request_bytes > effective_available {
             return Err(denial(
                 ReservationDenialReason::InsufficientAvailableVram,
-                request.reservation_bytes,
+                Some(request_bytes),
                 Some(effective_available),
                 None,
             ));
@@ -215,7 +223,7 @@ impl ReservationManager {
         let token = state.next_token.checked_add(1).ok_or_else(|| {
             denial(
                 ReservationDenialReason::ReservationTokenExhausted,
-                request.reservation_bytes,
+                Some(request_bytes),
                 Some(effective_available),
                 None,
             )
@@ -223,7 +231,6 @@ impl ReservationManager {
         state.next_token = token;
         let kind = request.kind;
         let device_id = request.device_id.clone();
-        let reservation_bytes = request.reservation_bytes;
         state.entries.insert(
             token,
             ReservationEntry {
@@ -234,7 +241,68 @@ impl ReservationManager {
         drop(state);
 
         reservation_log(&format!(
-            "reservation granted device_id={device_id} kind={kind:?} bytes={reservation_bytes} available={reported_available} effective_available={effective_available}"
+            "reservation granted device_id={device_id} kind={kind:?} bytes={request_bytes} available={reported_available} effective_available={effective_available}"
+        ));
+        Ok(ReservationLease {
+            manager: self.clone(),
+            token,
+            device_id,
+            kind,
+        })
+    }
+
+    fn try_reserve_kind_only(
+        &self,
+        request: LocalModelRequest,
+        device: &crate::accelerator::AcceleratorDevice,
+    ) -> Result<ReservationLease, ReservationDenial> {
+        let mut state = self.lock();
+        let conflict = state.entries.values().find(|entry| {
+            entry.request.device_id == request.device_id && entry.request.kind != request.kind
+        });
+        if let Some(conflict) = conflict {
+            let reason = match device.total_vram_bytes {
+                Some(total) if total <= EIGHT_GIB => ReservationDenialReason::SameDeviceConflict,
+                _ => ReservationDenialReason::PolicyUndecided,
+            };
+            return Err(denial(reason, None, None, Some(conflict.request.kind)));
+        }
+
+        if state.entries.values().any(|entry| {
+            entry.request.device_id == request.device_id
+                && entry.request.kind == request.kind
+                && entry.request.workload_id == request.workload_id
+        }) {
+            return Err(denial(
+                ReservationDenialReason::WorkloadAlreadyReserved,
+                None,
+                None,
+                None,
+            ));
+        }
+
+        let token = state.next_token.checked_add(1).ok_or_else(|| {
+            denial(
+                ReservationDenialReason::ReservationTokenExhausted,
+                None,
+                None,
+                None,
+            )
+        })?;
+        state.next_token = token;
+        let kind = request.kind;
+        let device_id = request.device_id.clone();
+        state.entries.insert(
+            token,
+            ReservationEntry {
+                request,
+                status: ReservationStatus::Starting,
+            },
+        );
+        drop(state);
+
+        reservation_log(&format!(
+            "kind-only reservation granted device_id={device_id} kind={kind:?} bytes=unknown"
         ));
         Ok(ReservationLease {
             manager: self.clone(),
@@ -270,7 +338,7 @@ impl ReservationManager {
         let removed = self.lock().entries.remove(&token);
         if let Some(entry) = removed {
             reservation_log(&format!(
-                "reservation released device_id={} kind={:?} state={:?} bytes={}",
+                "reservation released device_id={} kind={:?} state={:?} bytes={:?}",
                 entry.request.device_id,
                 entry.request.kind,
                 entry.status,
@@ -313,13 +381,14 @@ fn process_manager() -> &'static ReservationManager {
 }
 
 /// Reserve an accelerator for a local model using a fresh provider inventory.
+/// A known size follows byte admission; an unknown size gets a kind-only lease.
 /// Call this before spawning the process and keep the returned lease for its
 /// full lifetime.
 pub(crate) async fn try_reserve(
     request: LocalModelRequest,
 ) -> Result<ReservationLease, ReservationDenial> {
     reservation_log(&format!(
-        "try_reserve device_id={} kind={:?} bytes={}",
+        "try_reserve device_id={} kind={:?} bytes={:?}",
         request.device_id, request.kind, request.reservation_bytes
     ));
     try_reserve_with_loader(process_manager(), request, accelerator::list_accelerators).await
@@ -359,12 +428,12 @@ fn checked_starting_total(bytes: impl IntoIterator<Item = u64>) -> Option<u64> {
 
 fn denial(
     reason: ReservationDenialReason,
-    request_bytes: u64,
+    request_bytes: Option<u64>,
     available_vram_bytes: Option<u64>,
     conflicting_kind: Option<LocalModelKind>,
 ) -> ReservationDenial {
     reservation_log(&format!(
-        "reservation denied reason={} request_bytes={request_bytes} available_bytes={available_vram_bytes:?} conflicting_kind={conflicting_kind:?}",
+        "reservation denied reason={} request_bytes={request_bytes:?} available_bytes={available_vram_bytes:?} conflicting_kind={conflicting_kind:?}",
         reason.code()
     ));
     ReservationDenial {
@@ -429,6 +498,23 @@ mod tests {
         kind: LocalModelKind,
         workload: &str,
         bytes: u64,
+    ) -> LocalModelRequest {
+        request_with_size(device_id, kind, workload, Some(bytes))
+    }
+
+    fn request_without_size(
+        device_id: &str,
+        kind: LocalModelKind,
+        workload: &str,
+    ) -> LocalModelRequest {
+        request_with_size(device_id, kind, workload, None)
+    }
+
+    fn request_with_size(
+        device_id: &str,
+        kind: LocalModelKind,
+        workload: &str,
+        bytes: Option<u64>,
     ) -> LocalModelRequest {
         LocalModelRequest {
             device_id: format!("vulkan:uuid:{device_id}"),
@@ -525,6 +611,102 @@ mod tests {
     }
 
     #[test]
+    fn voice_with_undecided_amount_reserves_an_empty_eight_gib_device() {
+        let manager = ReservationManager::default();
+        let fixture = eight_gib("a", Some(EIGHT_GIB));
+
+        let lease = manager
+            .try_reserve_with_inventory(
+                request_without_size("a", LocalModelKind::Voice, "profile"),
+                &fixture,
+            )
+            .unwrap();
+        let snapshot = manager
+            .reservations_for_device("vulkan:uuid:a")
+            .pop()
+            .unwrap();
+
+        assert_eq!(snapshot.kind, LocalModelKind::Voice);
+        assert_eq!(snapshot.status, ReservationStatus::Starting);
+        assert_eq!(snapshot.reservation_bytes, None);
+        assert!(lease.mark_running());
+        drop(lease);
+        assert!(manager.reservations_for_device("vulkan:uuid:a").is_empty());
+    }
+
+    #[test]
+    fn voice_with_undecided_amount_does_not_require_known_available_vram() {
+        let manager = ReservationManager::default();
+        let fixture = eight_gib("a", None);
+
+        let lease = manager
+            .try_reserve_with_inventory(
+                request_without_size("a", LocalModelKind::Voice, "profile"),
+                &fixture,
+            )
+            .unwrap();
+
+        let snapshot = manager
+            .reservations_for_device("vulkan:uuid:a")
+            .pop()
+            .unwrap();
+        let json = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(json["reservationBytes"], serde_json::Value::Null);
+        drop(lease);
+    }
+
+    #[test]
+    fn voice_kind_only_reservation_conflicts_with_local_llm_and_retries_after_release() {
+        let manager = ReservationManager::default();
+        let fixture = eight_gib("a", Some(EIGHT_GIB));
+        let local_llm = manager
+            .try_reserve_with_inventory(
+                request("a", LocalModelKind::LocalLlm, "llm", GIB),
+                &fixture,
+            )
+            .unwrap();
+
+        let denied = manager
+            .try_reserve_with_inventory(
+                request_without_size("a", LocalModelKind::Voice, "voice-profile"),
+                &fixture,
+            )
+            .unwrap_err();
+        assert_eq!(denied.reason, ReservationDenialReason::SameDeviceConflict);
+        assert_eq!(denied.request_bytes, None);
+        assert_eq!(denied.available_vram_bytes, None);
+        assert_eq!(denied.conflicting_kind, Some(LocalModelKind::LocalLlm));
+        assert_eq!(
+            manager.reservations_for_device("vulkan:uuid:a").len(),
+            1,
+            "denial must preserve the current LocalLlm lease"
+        );
+
+        drop(local_llm);
+        let voice = manager
+            .try_reserve_with_inventory(
+                request_without_size("a", LocalModelKind::Voice, "voice-profile"),
+                &fixture,
+            )
+            .unwrap();
+        let token = voice.token;
+        assert!(voice.mark_running());
+        drop(voice);
+        assert!(manager.reservations_for_device("vulkan:uuid:a").is_empty());
+        let replacement = manager
+            .try_reserve_with_inventory(
+                request_without_size("a", LocalModelKind::Voice, "voice-profile"),
+                &fixture,
+            )
+            .unwrap();
+        // A duplicate late release for the returned token must not clear a newer lease.
+        manager.release(token);
+        assert_eq!(manager.reservations_for_device("vulkan:uuid:a").len(), 1);
+        drop(replacement);
+        assert!(manager.reservations_for_device("vulkan:uuid:a").is_empty());
+    }
+
+    #[test]
     fn only_starting_reservations_are_subtracted_from_fresh_available_bytes() {
         let manager = ReservationManager::default();
         let fixture = inventory(vec![device("a", Some(16 * GIB), Some(8 * GIB))]);
@@ -558,26 +740,28 @@ mod tests {
 
     #[test]
     fn failed_start_drops_the_unpublished_lease_and_allows_a_retry() {
-        let manager = ReservationManager::default();
-        let fixture = eight_gib("a", Some(EIGHT_GIB));
-        let lease = manager
-            .try_reserve_with_inventory(
-                request("a", LocalModelKind::Voice, "profile", 2 * GIB),
-                &fixture,
-            )
-            .unwrap();
-        let failed_start: Result<(), &str> = (|| {
-            let _lease = lease;
-            Err("child spawn failed")
-        })();
-        assert_eq!(failed_start, Err("child spawn failed"));
-        assert!(manager.reservations_for_device("vulkan:uuid:a").is_empty());
-        assert!(manager
-            .try_reserve_with_inventory(
-                request("a", LocalModelKind::Voice, "profile", 2 * GIB),
-                &fixture
-            )
-            .is_ok());
+        for reservation_bytes in [Some(2 * GIB), None] {
+            let manager = ReservationManager::default();
+            let fixture = eight_gib("a", Some(EIGHT_GIB));
+            let lease = manager
+                .try_reserve_with_inventory(
+                    request_with_size("a", LocalModelKind::Voice, "profile", reservation_bytes),
+                    &fixture,
+                )
+                .unwrap();
+            let failed_start: Result<(), &str> = (|| {
+                let _lease = lease;
+                Err("child spawn failed")
+            })();
+            assert_eq!(failed_start, Err("child spawn failed"));
+            assert!(manager.reservations_for_device("vulkan:uuid:a").is_empty());
+            assert!(manager
+                .try_reserve_with_inventory(
+                    request_with_size("a", LocalModelKind::Voice, "profile", reservation_bytes,),
+                    &fixture
+                )
+                .is_ok());
+        }
     }
 
     #[test]
@@ -672,25 +856,27 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn child_is_reaped_before_its_starting_lease_can_be_released() {
-        let manager = ReservationManager::default();
-        let fixture = eight_gib("a", Some(EIGHT_GIB));
-        let lease = manager
-            .try_reserve_with_inventory(
-                request("a", LocalModelKind::Voice, "profile", GIB),
-                &fixture,
-            )
-            .unwrap();
-        let mut child = std::process::Command::new("sleep")
-            .arg("60")
-            .spawn()
-            .expect("sleep fixture process should start");
+        for reservation_bytes in [Some(GIB), None] {
+            let manager = ReservationManager::default();
+            let fixture = eight_gib("a", Some(EIGHT_GIB));
+            let lease = manager
+                .try_reserve_with_inventory(
+                    request_with_size("a", LocalModelKind::Voice, "profile", reservation_bytes),
+                    &fixture,
+                )
+                .unwrap();
+            let mut child = std::process::Command::new("sleep")
+                .arg("60")
+                .spawn()
+                .expect("sleep fixture process should start");
 
-        let status = crate::terminate_and_reap_child(&mut child);
-        assert!(status.is_some(), "child must be reaped before returning");
-        assert!(child.try_wait().unwrap().is_some());
-        assert_eq!(manager.reservations_for_device("vulkan:uuid:a").len(), 1);
+            let status = crate::terminate_and_reap_child(&mut child);
+            assert!(status.is_some(), "child must be reaped before returning");
+            assert!(child.try_wait().unwrap().is_some());
+            assert_eq!(manager.reservations_for_device("vulkan:uuid:a").len(), 1);
 
-        drop(lease);
-        assert!(manager.reservations_for_device("vulkan:uuid:a").is_empty());
+            drop(lease);
+            assert!(manager.reservations_for_device("vulkan:uuid:a").is_empty());
+        }
     }
 }
