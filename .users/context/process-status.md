@@ -1,10 +1,18 @@
-<!-- src-sha: 79119a0de519f7e9 -->
+<!-- src-sha: 686e35f3a34c824f -->
 
 ## VoxCPM2 프로파일 선택 호출부 이동 — 2026-10-13 (#757 단계 3)
 
 - 공통 가속기 인벤토리와 등록부 JSON을 설정·STT·음성 설치/시작 조회에 연결했다. Windows Vulkan 프로파일은 정본과 내보낸 셸 등록부 모두 `planned`다.
 - 검증: Vitest 150 통과/9 제외, 참조 등록부 pytest 11 통과, 전체 Rust 502 통과/4 실패/3 제외. 실패 2건은 기존 Linux baseline, 2건은 worktree 루트 감지와 Unix 소켓 경로 제한 환경 문제다. TypeScript/build는 기존 의존성·ES target 오류로 실패. 실제 GPU 시험은 하지 않았다.
 - P04 `in_progress`, P05 `pending`; 코드 검수 통과, DEV 실기 확인 전 완료 주장은 하지 않는다. 상세 결과는 비공개 조정 기록에 있다.
+
+## 음성 VRAM 예약과 #758 접점 — 2026-10-13 (#757 단계 4)
+
+- P01–P03: 사용자 시나리오, fixture 시험 매핑, 예약 요구사항을 기존 음성 흐름과 분리해 기록했다.
+- 검증: TypeScript 검사, core/Shell 빌드, Rust 빌드 통과. Vitest 150개 통과/9개 제외; Cargo 523개 통과/4개 기존 환경 실패/3개 필터. 새 예약/profile fixture, #758 API 계약 적합성, 충돌 표식·미러·diff 검사와 새 모듈 rustfmt는 통과했다. 전체 `cargo fmt --check`는 여러 기존 Rust 파일의 서식 차이로 실패해 일괄 서식 변경은 하지 않았다.
+- 기존 Rust 실패는 워크스페이스 루트 감지 1건, Windows 경로 fixture 2건, Unix 소켓 경로 길이 1건이다. 새 예약 fixture 실패는 없다. 제품 보존 통합 검증은 불변 기준판·서명 계약·신뢰된 runner receipt가 준비되지 않아 실행하지 못했다.
+- 결정 전 프로파일 용량은 추정하지 않으며, 기존 실행을 자동 종료하거나 새 요청을 대기열에 넣지 않는다.
+- 현재 상태: P04 진행 중, P05 대기. 프로파일별 승인 예약량과 8 GiB 초과 장치 공존 정책은 결정 전이며 완료 주장은 아니다. 실제 GPU 시험은 하지 않았다.
 
 ## BGM AI next/status observe — 2026-09-18 (#671)
 

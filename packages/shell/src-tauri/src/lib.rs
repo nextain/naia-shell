@@ -1,4 +1,5 @@
 pub(crate) mod accelerator;
+mod vram_reservation;
 mod agent_grpc;
 mod app;
 mod app_sandbox;
@@ -1308,13 +1309,50 @@ struct VoxCpm2Process {
     child: Child,
     ready: String,
     // The shared lock lives exactly as long as the server process record;
-    // Drop kills the child first, then the lock field is released.
+    // Drop reaps the child before either this lock or the VRAM lease is released.
     cache_lock: Option<voice_cache::RuntimeLock>,
+    reservation: vram_reservation::ReservationLease,
+}
+
+/// Owns the reservation while startup is waiting for the child handshake.
+/// Returning early or unwinding before readiness still kills and reaps the
+/// child before the lease field is dropped.
+struct PendingVoxCpm2Child {
+    child: Option<Child>,
+    reservation: Option<vram_reservation::ReservationLease>,
+}
+
+impl PendingVoxCpm2Child {
+    fn child_mut(&mut self) -> &mut Child {
+        self.child.as_mut().expect("pending voice child is present")
+    }
+
+    fn into_parts(mut self) -> (Child, vram_reservation::ReservationLease) {
+        (
+            self.child.take().expect("pending voice child is present"),
+            self.reservation
+                .take()
+                .expect("pending voice reservation is present"),
+        )
+    }
+}
+
+impl Drop for PendingVoxCpm2Child {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            terminate_and_reap_child(child);
+        }
+    }
+}
+
+impl VoxCpm2Process {
+    fn terminate_and_reap(&mut self) {
+        terminate_and_reap_child(&mut self.child);
+    }
 }
 impl Drop for VoxCpm2Process {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.terminate_and_reap();
         remove_pid_file("voxcpm2");
     }
 }
@@ -6297,6 +6335,17 @@ fn voxcpm2_host_profile_id(
         })
 }
 
+/// Reservation sizes are intentionally empty until Luke approves profile-level
+/// working-set amounts or a trusted source for deriving them. In particular,
+/// registry minimum VRAM is a compatibility threshold, not a reservation.
+const APPROVED_VOXCPM2_RESERVATION_BYTES: &[(&str, u64)] = &[];
+
+fn approved_voxcpm2_reservation_bytes(profile_id: &str) -> Option<u64> {
+    APPROVED_VOXCPM2_RESERVATION_BYTES
+        .iter()
+        .find_map(|(approved_id, bytes)| (*approved_id == profile_id).then_some(*bytes))
+}
+
 pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
     "Another local voice runtime already owns port 8910 — most likely the other Naia instance. Stop its local voice first.";
 
@@ -8673,13 +8722,20 @@ fn wait_for_child_exit(
             Ok(None) if std::time::Instant::now() < deadline => {
                 thread::sleep(std::time::Duration::from_millis(50));
             }
-            Ok(None) => {
-                let _ = child.kill();
-                return child.wait().ok();
-            }
-            Err(_) => return child.wait().ok(),
+            Ok(None) | Err(_) => return terminate_and_reap_child(child),
         }
     }
+}
+
+/// Do not let an owning reservation outlive an unreaped child. `wait` is
+/// deliberate even when the kill request fails: a failed signal is not proof
+/// that the process stopped.
+fn terminate_and_reap_child(child: &mut Child) -> Option<std::process::ExitStatus> {
+    if let Ok(Some(status)) = child.try_wait() {
+        return Some(status);
+    }
+    let _ = child.kill();
+    child.wait().ok()
 }
 
 /// 로컬 음성 런타임을 띄운다.
@@ -8693,6 +8749,7 @@ fn spawn_voxcpm2(
     profile: &voice_runtime::VoiceProfile,
     configured_gpu: Option<u32>,
     inventory: &accelerator::AcceleratorInventory,
+    reservation: vram_reservation::ReservationLease,
 ) -> Result<VoxCpm2Process, String> {
     let python = if cfg!(debug_assertions) {
         std::env::var("NAIA_VOXCPM2_PYTHON")
@@ -8803,17 +8860,22 @@ fn spawn_voxcpm2(
         "[Naia] 로컬 음성 런타임 기동 ({}): {} {}",
         profile.id(), python, "compiled voxcpm2_tensorrt.http_server"
     ));
-    let mut child = cmd.spawn().map_err(|error| {
+    let child = cmd.spawn().map_err(|error| {
         format!(
             "Failed to start Naia Host TensorRT runtime: {error}. See {}",
             log_path.display()
         )
     })?;
+    let mut pending = PendingVoxCpm2Child {
+        child: Some(child),
+        reservation: Some(reservation),
+    };
     let bootstrap = VoxCpm2Activation {
         naia_key,
         local_access_token: local_access_token.as_str(),
     };
-    let bootstrap_result = child
+    let bootstrap_result = pending
+        .child_mut()
         .stdin
         .take()
         .ok_or_else(|| "Failed to open Naia Host activation pipe".to_string())
@@ -8826,13 +8888,11 @@ fn spawn_voxcpm2(
                 .map_err(|error| format!("Failed to send Naia Host activation: {error}"))
         });
     if let Err(error) = bootstrap_result {
-        let _ = child.kill();
         return Err(error);
     }
-    let stdout = match child.stdout.take() {
+    let stdout = match pending.child_mut().stdout.take() {
         Some(stdout) => stdout,
         None => {
-            let _ = child.kill();
             return Err("Failed to capture Naia Host runtime output".to_string());
         }
     };
@@ -8851,27 +8911,31 @@ fn spawn_voxcpm2(
         match ready_rx.recv_timeout(std::time::Duration::from_millis(400)) {
             Ok(VoxCpm2StartupEvent::Ready(payload)) => break payload,
             Ok(VoxCpm2StartupEvent::Error(code)) => {
-                let _ = child.kill();
                 return Err(map_voxcpm2_startup_error(&code));
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                let status =
-                    wait_for_child_exit(&mut child, std::time::Duration::from_millis(1500));
+                let status = wait_for_child_exit(
+                    pending.child_mut(),
+                    std::time::Duration::from_millis(1500),
+                );
                 let tail = read_log_file_tail(&log_path, 12);
                 return Err(format_voxcpm2_runtime_exit(status, &log_path, &tail));
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                if let Ok(Some(status)) = child.try_wait() {
-                    let tail = read_log_file_tail(&log_path, 12);
-                    return Err(format_voxcpm2_runtime_exit(
-                        Some(status),
-                        &log_path,
-                        &tail,
-                    ));
+                match pending.child_mut().try_wait() {
+                    Ok(Some(status)) => {
+                        let tail = read_log_file_tail(&log_path, 12);
+                        return Err(format_voxcpm2_runtime_exit(Some(status), &log_path, &tail));
+                    }
+                    Ok(None) => {}
+                    Err(_) => {
+                        let status = terminate_and_reap_child(pending.child_mut());
+                        let tail = read_log_file_tail(&log_path, 12);
+                        return Err(format_voxcpm2_runtime_exit(status, &log_path, &tail));
+                    }
                 }
                 if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let status = child.wait().ok();
+                    let status = terminate_and_reap_child(pending.child_mut());
                     let tail = read_log_file_tail(&log_path, 12);
                     return Err(format_voxcpm2_runtime_exit(status, &log_path, &tail));
                 }
@@ -8879,12 +8943,9 @@ fn spawn_voxcpm2(
         }
     };
     if let Err(error) = validate_voxcpm2_ready(&ready, local_access_token.as_str()) {
-        let _ = child.kill();
         return Err(error);
     }
-    if !write_pid_file("voxcpm2", child.id()) {
-        let _ = child.kill();
-        let _ = child.wait();
+    if !write_pid_file("voxcpm2", pending.child_mut().id()) {
         return Err(
             "Naia Host TensorRT ownership record is held by another Shell; refusing an untracked child"
                 .to_string(),
@@ -8893,10 +8954,12 @@ fn spawn_voxcpm2(
     // The readiness payload contains a per-launch loopback bearer used by the
     // WebView. Never write that credential to logs.
     log_both("[Naia] Windows Naia Host TensorRT ready on loopback");
+    let (child, reservation) = pending.into_parts();
     Ok(VoxCpm2Process {
         child,
         ready,
         cache_lock: None,
+        reservation,
     })
 }
 
@@ -9185,27 +9248,37 @@ async fn start_voxcpm2(
     let effective_gpu = voxcpm2_effective_gpu(&inventory, gpu_index);
     let resolved = select_voxcpm2_profile(&inventory, effective_gpu, Some(expected))
         .ok_or_else(|| "이 기계에서 선택한 released 음성 프로파일을 사용할 수 없습니다".to_string())?;
+    let selected_device_id = voice_runtime::selected_device_id(&inventory, effective_gpu)
+        .ok_or_else(|| "vram_reservation_device_not_found".to_string())?;
     let profile = read_cascade_loader_profile(&manifest_path, Some(resolved.id()));
     if profile.as_deref() != Some(expected) {
         return Err("voxcpm2_profile_manifest_not_ready".to_string());
     }
 
-    let prior_ready = {
+    let (prior_ready, prior_status_unknown) = {
         let mut guard = lock_or_recover(&state.voxcpm2, "voxcpm2");
         if let Some(process) = guard.as_mut() {
-            if matches!(process.child.try_wait(), Ok(None)) {
-                Some(process.ready.clone())
-            } else {
-                let _ = guard.take();
-                None
+            match process.child.try_wait() {
+                Ok(None) => (Some(process.ready.clone()), false),
+                Ok(Some(_)) => {
+                    // try_wait returned Some only after the child was reaped.
+                    let _ = guard.take();
+                    (None, false)
+                }
+                Err(_) => (None, true),
             }
         } else {
-            None
+            (None, false)
         }
     };
+    if prior_status_unknown {
+        return Err("voxcpm2_child_status_unavailable".to_string());
+    }
     if let Some(ready) = prior_ready {
         return Ok(ready);
     }
+    let reservation_bytes = approved_voxcpm2_reservation_bytes(resolved.id())
+        .ok_or_else(|| "vram_reservation_profile_size_undecided".to_string())?;
 
     let bundle_root = match voxcpm2_bundle_root(&app, &inventory) {
         Some(root) => root,
@@ -9271,14 +9344,6 @@ async fn start_voxcpm2(
         }
     };
 
-    platform::kill_stale_voxcpm2();
-    if voice_cache::loopback_port_in_use(8910) {
-        let message = VOXCPM2_PORT_IN_USE_MESSAGE.to_string();
-        log_both(&format!("[Naia] {message}"));
-        emit_voxcpm2_progress_failed(&app, &message);
-        return Err(message);
-    }
-
     if let Err(err) = voice_cache::verify_native_hashes(&ctx.slot_dir, &bundle_root.join("artifact"), ctx.os) {
         let message = format!("Native code verification failed: {err}");
         log_both(&format!("[Naia] {message}"));
@@ -9307,6 +9372,25 @@ async fn start_voxcpm2(
             .ok_or_else(|| "voxcpm2_naia_member_login_required".to_string())?,
     );
 
+    let reservation = vram_reservation::try_reserve(vram_reservation::LocalModelRequest {
+        device_id: selected_device_id,
+        kind: vram_reservation::LocalModelKind::Voice,
+        workload_id: resolved.id().to_string(),
+        reservation_bytes,
+    })
+    .await
+    .map_err(|denial| format!("vram_reservation_{}", denial.reason.code()))?;
+
+    // Only clean up an orphaned voice process after this request owns capacity;
+    // a denied request must not stop a current workload as a side effect.
+    platform::kill_stale_voxcpm2();
+    if voice_cache::loopback_port_in_use(8910) {
+        let message = VOXCPM2_PORT_IN_USE_MESSAGE.to_string();
+        log_both(&format!("[Naia] {message}"));
+        emit_voxcpm2_progress_failed(&app, &message);
+        return Err(message);
+    }
+
     let bundle_root_for_spawn = bundle_root.clone();
     let ctx_for_spawn = ctx.clone();
     let inventory_for_spawn = inventory.clone();
@@ -9318,6 +9402,7 @@ async fn start_voxcpm2(
             &resolved,
             effective_gpu,
             &inventory_for_spawn,
+            reservation,
         )
     })
     .await
@@ -9326,6 +9411,10 @@ async fn start_voxcpm2(
         emit_voxcpm2_progress_failed(&app, &error);
         error
     })?;
+    if !process.reservation.mark_running() {
+        process.terminate_and_reap();
+        return Err("vram_reservation_lease_lost".to_string());
+    }
     process.cache_lock = Some(cache_lock);
     let ready = process.ready.clone();
     *lock_or_recover(&state.voxcpm2, "voxcpm2") = Some(process);
@@ -9348,7 +9437,7 @@ async fn start_voxcpm2(
 async fn stop_voxcpm2(state: tauri::State<'_, AppState>) -> Result<(), String> {
     if let Some(mut process) = lock_or_recover(&state.voxcpm2, "voxcpm2").take() {
         log_verbose("[Naia] Terminating local Naia Host TensorRT service...");
-        let _ = process.child.kill();
+        process.terminate_and_reap();
     }
     platform::kill_stale_voxcpm2();
     remove_pid_file("voxcpm2");
@@ -9360,11 +9449,14 @@ async fn voxcpm2_status(state: tauri::State<'_, AppState>) -> Result<bool, Strin
     let owned_alive = {
         let mut guard = lock_or_recover(&state.voxcpm2, "voxcpm2");
         if let Some(process) = guard.as_mut() {
-            if matches!(process.child.try_wait(), Ok(None)) {
-                true
-            } else {
-                let _ = guard.take();
-                false
+            match process.child.try_wait() {
+                Ok(None) => true,
+                Ok(Some(_)) => {
+                    // try_wait confirms the child is exited and reaped.
+                    let _ = guard.take();
+                    false
+                }
+                Err(_) => return Err("voxcpm2_child_status_unavailable".to_string()),
             }
         } else {
             false
@@ -9386,11 +9478,13 @@ async fn voxcpm2_runtime_status(state: tauri::State<'_, AppState>) -> Result<Str
     let running = {
         let mut guard = lock_or_recover(&state.voxcpm2, "voxcpm2");
         if let Some(process) = guard.as_mut() {
-            if matches!(process.child.try_wait(), Ok(None)) {
-                true
-            } else {
-                let _ = guard.take();
-                false
+            match process.child.try_wait() {
+                Ok(None) => true,
+                Ok(Some(_)) => {
+                    let _ = guard.take();
+                    false
+                }
+                Err(_) => return Err("voxcpm2_child_status_unavailable".to_string()),
             }
         } else {
             false
@@ -14865,7 +14959,7 @@ pub fn run() {
                     if let Ok(mut guard) = state.voxcpm2.lock() {
                         if let Some(mut process) = guard.take() {
                             log_verbose("[Naia] Terminating local Naia Host TensorRT service...");
-                            let _ = process.child.kill();
+                            process.terminate_and_reap();
                         }
                     }
                     remove_pid_file("voxcpm2");
@@ -14902,6 +14996,23 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn released_voice_profiles_have_no_inferred_reservation_amount() {
+        let registry = embedded_voxcpm2_profile_registry();
+        for profile in registry
+            .entries
+            .iter()
+            .filter(|entry| entry.status == VOXCPM2_STATUS_RELEASED)
+        {
+            assert_eq!(
+                approved_voxcpm2_reservation_bytes(&profile.id),
+                None,
+                "{} must remain gated until its reservation amount is approved",
+                profile.id
+            );
+        }
+    }
 
     #[test]
     fn debug_scripts_pin_is_the_live_voxcpm2_archive_size() {
