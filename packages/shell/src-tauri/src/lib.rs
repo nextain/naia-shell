@@ -1,3 +1,4 @@
+pub(crate) mod accelerator;
 mod agent_grpc;
 mod app;
 mod app_sandbox;

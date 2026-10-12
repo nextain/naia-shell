@@ -251,3 +251,11 @@
 2. `docs/progress/issue-{N}-{slug}.md` 신규 생성
 3. sdlc_gates 전체 status → "보류 중" (pending)으로 리셋
 4. resource_registry.violations 초기화
+
+
+**2026-10-13**: #757 단계 2 가속기 확인 층 구현 진행 중
+- 범위: Rust 내부 API와 Vulkan 경로. 기존 사용자 화면·호출부·프로파일 선택은 그대로 둔다.
+- P01/P03: 기존 UC-WIN-NVA-8G와 FR-VRAM.1/FR-CASCADE.11, 승인된 단계 2 지시서를 근거로 한다.
+- P02: fixture 기반 Rust 시험 계획과 구현을 기록한다.
+- P04: accelerator fixture 11/11, UI 150개 통과, Linux build 및 Windows provider compile을 확인했다. 전체 Cargo와 Shell bundle budget의 실패·환경 한계는 `.agy-work/757-s2/evidence.md`에 남겼다.
+- P05: Muse 코드 검수 전이므로 보류. 완료 주장은 아니오.
