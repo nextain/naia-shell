@@ -58,6 +58,8 @@ tauri-plugin-stt = { path = "plugins/tauri-plugin-stt", default-features = false
 log = "0.4"
 env_logger = "0.11"
 zip = "2"
+tar = "0.4"
+zstd = "0.13"
 quick-xml = "0.37"
 # HTTP client for CDP health-check (tiny, no async needed here)
 ureq = { version = "2", features = ["json"] }

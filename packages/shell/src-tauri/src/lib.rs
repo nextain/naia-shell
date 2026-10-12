@@ -17,6 +17,7 @@ mod ego_host;
 mod ego_host_bridge;
 mod herdr;
 mod memory;
+mod ollama_runtime;
 mod platform;
 mod project_catalog;
 mod pty;
@@ -14327,6 +14328,7 @@ pub fn run() {
             last_agent_restart: Mutex::new(None),
             startup_messages: Mutex::new(StartupMessageCache::default()),
         })
+        .manage(ollama_runtime::RuntimeManager::default())
         .manage(workspace::new_shared_watcher())
         .manage(pty::new_registry())
         .invoke_handler(tauri::generate_handler![
@@ -14407,6 +14409,9 @@ pub fn run() {
             stop_voxcpm2,
             voxcpm2_status,
 			voxcpm2_runtime_status,
+            ollama_runtime::ollama_runtime_status,
+            ollama_runtime::ollama_runtime_start,
+            ollama_runtime::ollama_runtime_remove,
             start_cascade,
             stop_cascade,
             cascade_status,

@@ -19,6 +19,23 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_758_s2_ollama_install": {
+      "issue": 758,
+      "title": "Ollama 설치·찾기 (#758 단계 2)",
+      "requirements": "design-758-s1.md 단계 2; 기존 FR-LLM-LOGOUT.1·FR-VRAM-RESERVATION.1 보존",
+      "scenario": "UC-LOCAL-MODEL-VRAM-RESERVATION (기존 Ollama provider 경로 보존)",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "verification": "Ollama fixture 18/18 passed; required Vitest 209 passed/8 skipped; required Cargo 544 passed/4 documented baseline failures/3 filtered out. The four Cargo failures are voice_cache::tests::test_migration_excluded, voice_cache::tests::test_resolve_cache_root, tests::infer_repos_adk_root_returns_none_without_workspace_checkout, and ego_host_bridge::tests::the_admin_secret_must_match_or_the_connection_is_refused. pnpm frozen-lockfile install and core build passed. No Ollama artifact download/install/serve or GPU test. Muse code review remains pending.",
+      "remaining": "Muse code review and review response; four Luke decisions remain pending. Keep completion claim at no until review passes.",
+      "last_updated": "2026-10-13T07:26:40+09:00"
+    },
     "issue_724_memory_knowledge_tools": {
       "issue": 724,
       "title": "모델 keep list에 기억·지식 저장 도구를 열고 계약 테스트를 실행한다 (#724)",

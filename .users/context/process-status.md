@@ -1,5 +1,11 @@
-<!-- src-sha: c735fe66de28722e -->
+<!-- src-sha: 427b91e428f330dd -->
 
+## Ollama 설치·찾기 — 2026-10-13 (#758 단계 2)
+
+- 범위는 Ollama CLI 설치·발견과 status/start-install/remove IPC다. 실제 Ollama 다운로드·설치·serve·GPU 사용은 금지한다.
+- 구현과 fixture 검증 완료: Ollama Rust 18/18, 지정 Vitest 209 passed/8 skipped, 지정 Cargo 544 passed/4 문서화된 기준 실패/3 filtered out. Muse 코드 검수 전 완료 주장은 하지 않는다.
+- 설치 방식, Linux 권한, 이미 실행 중인 Ollama 처리, 생각 모드 단계 구분은 모두 루크 결정 대기다.
+- 남은 일: Muse 코드 검수와 검수 반영. Cargo의 네 기존 실패는 해당 이슈 지시서의 기준 실패로 별도 기록했다.
 ## VoxCPM2 프로파일 선택 호출부 이동 — 2026-10-13 (#757 단계 3)
 
 - 공통 가속기 인벤토리와 등록부 JSON을 설정·STT·음성 설치/시작 조회에 연결했다. Windows Vulkan 프로파일은 정본과 내보낸 셸 등록부 모두 `planned`다.

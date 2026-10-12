@@ -3340,6 +3340,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "sysinfo",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
@@ -3366,6 +3367,7 @@ dependencies = [
  "x11rb",
  "zeroize",
  "zip 2.4.2",
+ "zstd",
 ]
 
 [[package]]
