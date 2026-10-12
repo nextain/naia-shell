@@ -6,11 +6,7 @@ import {
 	TAURI_BASE_MOCK_FALLBACK,
 } from "./helpers/tauri-base-mock";
 
-const CAPTURE_DIR = resolve(
-	process.cwd(),
-	"../..",
-	".agy-work/756-s1/captures",
-);
+const CAPTURE_DIR = resolve(process.cwd(), "test-results/project-app-captures");
 mkdirSync(CAPTURE_DIR, { recursive: true });
 
 const READY_CATALOG = {

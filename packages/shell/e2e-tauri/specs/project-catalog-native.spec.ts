@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect } from "@wdio/globals";
 
@@ -19,7 +20,7 @@ type NativeScan = {
 	readonly error?: string;
 };
 
-const TEMP_ROOT = resolve(process.cwd(), "../../.agy-work/756-s1/tmp");
+const TEMP_ROOT = tmpdir();
 let checkoutRoot = "";
 
 function writeFixture(relativePath: string, content: string): void {
