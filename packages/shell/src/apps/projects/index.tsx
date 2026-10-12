@@ -1,11 +1,7 @@
 import { Suspense, lazy } from "react";
 import { appRegistry } from "../../lib/app-registry";
 
-const ProjectsApp = lazy(() =>
-	import("./ProjectsApp").then(({ ProjectsApp }) => ({
-		default: ProjectsApp,
-	})),
-);
+const ProjectsApp = lazy(() => import("./ProjectsApp"));
 
 function ProjectsCenterArea() {
 	return (
@@ -17,10 +13,11 @@ function ProjectsCenterArea() {
 
 appRegistry.register({
 	id: "projects",
-	name: "프로젝트",
-	names: { ko: "프로젝트", en: "Projects" },
+	name: "Projects",
+	names: { ko: "프로젝트" },
 	icon: "📁",
 	builtIn: true,
 	keepAlive: true,
+	deferMountUntilActive: true,
 	center: ProjectsCenterArea,
 });

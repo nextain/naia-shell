@@ -48,6 +48,7 @@ describe("ProjectsApp — F-01", () => {
 		await import("../index");
 		expect(appRegistry.get("projects")?.builtIn).toBe(true);
 		expect(appRegistry.get("projects")?.keepAlive).toBe(true);
+		expect(appRegistry.get("projects")?.deferMountUntilActive).toBe(true);
 		expect(appRegistry.get("projects")?.id).toBe("projects");
 	});
 

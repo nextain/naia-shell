@@ -369,3 +369,5 @@ export function ProjectsApp() {
 		</main>
 	);
 }
+
+export default ProjectsApp;
