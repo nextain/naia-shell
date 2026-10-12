@@ -45,11 +45,14 @@ describe("ProjectsApp — F-01", () => {
 	});
 
 	it("registers a built-in keep-alive app without replacing existing app registrations", async () => {
+		const { useAppStore } = await import("../../../stores/app");
+		const appListVersion = useAppStore.getState().appListVersion;
 		await import("../index");
 		expect(appRegistry.get("projects")?.builtIn).toBe(true);
 		expect(appRegistry.get("projects")?.keepAlive).toBe(true);
 		expect(appRegistry.get("projects")?.deferMountUntilActive).toBe(true);
 		expect(appRegistry.get("projects")?.id).toBe("projects");
+		expect(useAppStore.getState().appListVersion).toBe(appListVersion + 1);
 	});
 
 	it("provides complete project UI translations in every shell locale", () => {
@@ -154,6 +157,41 @@ describe("ProjectsApp — F-01", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
 		expect(await screen.findByText("No projects found")).toBeTruthy();
 		expect(screen.getByText(/Check the checkout's projects\//)).toBeTruthy();
+	});
+
+	it("shows scan limits as an informational notice with cutoff evidence", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) =>
+			command === "projects_scan_checkout"
+				? {
+						...readyCatalog,
+						truncation: {
+							maxEntries: 200,
+							scannedEntries: 200,
+							moreEntriesAvailable: true,
+							maxConfigFileBytes: 65536,
+							oversizedFiles: [
+								{
+									file: "projects/large/project.yaml",
+									observedBytes: 65537,
+								},
+							],
+						},
+					}
+				: null,
+		);
+		render(<ProjectsApp />);
+		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
+
+		const notice = await screen.findByRole("status", {
+			name: "Some project details were skipped",
+		});
+		expect(notice.textContent).toContain("200 of 200 project entries");
+		expect(notice.textContent).toContain("projects/large/project.yaml");
+		expect(notice.textContent).toContain("65537 bytes");
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(
+			screen.getByRole("heading", { name: "Select a project" }),
+		).toBeTruthy();
 	});
 
 	it("does not open a project with configuration errors and tells the user what to fix", async () => {

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
 import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri";
+import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
 import { Logger } from "./lib/logger";
 import "./styles/global.css";
@@ -21,28 +22,40 @@ if ("__TAURI_INTERNALS__" in window) {
 }
 
 async function bootstrap() {
-	await Promise.all([initializeI18n(), import("./apps/projects/index")]);
-	// biome-ignore lint/style/noNonNullAssertion: root element always exists
-	createRoot(document.getElementById("root")!).render(
-		<StrictMode>
-			<App />
-		</StrictMode>,
-	);
-	// UI를 먼저 그린 뒤 부팅 진단을 실행해 capability probe가 첫 화면을 막지 않게 한다.
-	requestAnimationFrame(() => {
-		void import("./lib/avatar/nva-capability")
-			.then(({ probeNvaCapabilities }) => {
-				const nvaCaps = probeNvaCapabilities();
-				Logger.info("NvaCapability", "레이어드 플레이어 능력 프로브", {
-					...nvaCaps,
-					reasons: nvaCaps.reasons.join(",") || "-",
-				});
-			})
-			.catch((error: unknown) =>
-				Logger.warn("NvaCapability", "능력 프로브 실패", {
-					error: String(error),
-				}),
+	await bootstrapShell({
+		initializeI18n,
+		renderApp: () => {
+			// biome-ignore lint/style/noNonNullAssertion: root element always exists
+			createRoot(document.getElementById("root")!).render(
+				<StrictMode>
+					<App />
+				</StrictMode>,
 			);
+		},
+		afterRender: () => {
+			// UI를 먼저 그린 뒤 부팅 진단을 실행해 capability probe가 첫 화면을 막지 않게 한다.
+			requestAnimationFrame(() => {
+				void import("./lib/avatar/nva-capability")
+					.then(({ probeNvaCapabilities }) => {
+						const nvaCaps = probeNvaCapabilities();
+						Logger.info("NvaCapability", "레이어드 플레이어 능력 프로브", {
+							...nvaCaps,
+							reasons: nvaCaps.reasons.join(",") || "-",
+						});
+					})
+					.catch((error: unknown) =>
+						Logger.warn("NvaCapability", "능력 프로브 실패", {
+							error: String(error),
+						}),
+					);
+			});
+		},
+		registerProjectApp: () => import("./apps/projects/index"),
+		onProjectRegistrationFailure: (error) => {
+			Logger.error("Main", "Built-in project app registration failed", {
+				error: String(error),
+			});
+		},
 	});
 }
 

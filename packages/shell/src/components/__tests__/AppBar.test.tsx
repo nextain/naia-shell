@@ -1,16 +1,33 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { appRegistry } from "../../lib/app-registry";
 import { resetDistributionChannelForTests } from "../../lib/distribution";
 
-const { mockNavigate, mockSetActiveApp, mockOpenUrl, channel } = vi.hoisted(
-	() => ({
-		channel: { value: "standard" },
-		mockNavigate: vi.fn(),
-		mockSetActiveApp: vi.fn(),
-		mockOpenUrl: vi.fn().mockResolvedValue(undefined),
-	}),
-);
+const {
+	mockNavigate,
+	mockSetActiveApp,
+	mockOpenUrl,
+	channel,
+	registeredApps,
+	appListVersion,
+} = vi.hoisted(() => ({
+	channel: { value: "standard" },
+	mockNavigate: vi.fn(),
+	mockSetActiveApp: vi.fn(),
+	mockOpenUrl: vi.fn().mockResolvedValue(undefined),
+	registeredApps: {
+		value: [] as Array<{
+			id: string;
+			name: string;
+			center: () => null;
+			builtIn?: boolean;
+			icon?: string;
+			names?: Record<string, string>;
+		}>,
+	},
+	appListVersion: { value: 0 },
+}));
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -57,11 +74,14 @@ vi.mock("../../lib/app-loader", () => ({
 
 vi.mock("../../lib/app-registry", () => ({
 	appRegistry: {
-		list: vi.fn().mockReturnValue([]),
+		list: vi.fn(() => registeredApps.value),
 		get: vi.fn().mockReturnValue(undefined),
 		getApi: vi.fn((id: string) =>
 			id === "browser" ? { navigate: mockNavigate } : undefined,
 		),
+		register: vi.fn((descriptor: (typeof registeredApps.value)[number]) => {
+			registeredApps.value = [...registeredApps.value, descriptor];
+		}),
 		unregister: vi.fn(),
 	},
 	// Stub bridge: active-bridge.ts constructs one at module load. Keep it a
@@ -98,8 +118,10 @@ vi.mock("../../stores/app", () => {
 		activeApp: null,
 		setActiveApp: mockSetActiveApp,
 		setActiveAppContext: vi.fn(),
-		appListVersion: 0,
-		bumpAppListVersion: vi.fn(),
+		appListVersion: appListVersion.value,
+		bumpAppListVersion: () => {
+			appListVersion.value += 1;
+		},
 		pushModal: mockPushModal,
 		popModal: mockPopModal,
 	});
@@ -128,6 +150,9 @@ describe("AppBar — add dialog", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
+		registeredApps.value = [];
+		appListVersion.value = 0;
+		vi.mocked(appRegistry.list).mockImplementation(() => registeredApps.value);
 	});
 
 	it("renders + button", () => {
@@ -153,6 +178,33 @@ describe("AppBar — add dialog", () => {
 			"workspace",
 		]);
 		expect(screen.queryByLabelText("앱스토어")).toBeNull();
+	});
+
+	it("shows a built-in app registered after the first render and keeps the first tabs", async () => {
+		const { useAppStore } = await import("../../stores/app");
+		const { rerender } = render(<AppBar />);
+		expect(screen.queryByTitle("프로젝트")).toBeNull();
+
+		appRegistry.register({
+			id: "projects",
+			name: "Projects",
+			names: { ko: "프로젝트" },
+			icon: "📁",
+			builtIn: true,
+			center: () => null,
+		});
+		useAppStore.getState().bumpAppListVersion();
+		rerender(<AppBar />);
+
+		expect(screen.getByTitle("프로젝트")).toBeDefined();
+		const firstTabs = Array.from(
+			document.querySelectorAll(".app-bar-tabs > button"),
+		).slice(0, 3);
+		expect(firstTabs.map((node) => node.getAttribute("data-app-id"))).toEqual([
+			"desktop",
+			"browser",
+			"workspace",
+		]);
 	});
 
 	it("keeps direct app install as the second add-dialog item", () => {

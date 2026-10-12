@@ -203,6 +203,42 @@ test.describe("Project app — stage 1", () => {
 		await capture(page, "project-app-empty.png");
 	});
 
+	test("shows scan cutoffs as information instead of an error", async ({
+		page,
+	}) => {
+		await boot(page);
+		await page.evaluate(
+			(result) => {
+				(window as any).__PROJECT_E2E__.result = result;
+			},
+			{
+				...READY_CATALOG,
+				truncation: {
+					maxEntries: 200,
+					scannedEntries: 200,
+					moreEntriesAvailable: true,
+					maxConfigFileBytes: 65536,
+					oversizedFiles: [
+						{
+							file: "projects/large/project.yaml",
+							observedBytes: 65537,
+						},
+					],
+				},
+			},
+		);
+		await chooseCheckout(page);
+
+		const notice = page.getByRole("status", {
+			name: "Some project details were skipped",
+		});
+		await expect(notice).toContainText("200 of 200 project entries");
+		await expect(notice).toContainText("projects/large/project.yaml");
+		await expect(notice).toContainText("65537 bytes");
+		await expect(page.locator(".projects-app [role='alert']")).toHaveCount(0);
+		await capture(page, "project-app-truncated.png");
+	});
+
 	test("blocks invalid local configuration and recovers after choosing a readable checkout", async ({
 		page,
 	}) => {

@@ -45,6 +45,13 @@ const english = {
 	"projects.selectHint":
 		"Choose a ready project from the list to open its views.",
 	"projects.projectContent": "Selected project content",
+	"projects.scanLimitedTitle": "Some project details were skipped",
+	"projects.scanEntryLimit":
+		"Scanned {scanned} of {limit} project entries; more entries remain. Choose a smaller checkout to browse the rest.",
+	"projects.scanFileLimit":
+		"{count} configuration files exceeded the {limit}-byte limit and were not parsed.",
+	"projects.scanFileObservedBytes": "Read stopped after {bytes} bytes.",
+	"projects.scanMoreFiles": "{count} additional files were skipped.",
 } as const;
 
 type ProjectTranslationKey = keyof typeof english;
@@ -98,6 +105,13 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"목록에서 설정이 올바른 프로젝트를 선택하면 화면을 엽니다.",
 		"projects.projectContent": "선택한 프로젝트 내용",
+		"projects.scanLimitedTitle": "프로젝트 일부를 읽지 않았습니다",
+		"projects.scanEntryLimit":
+			"프로젝트 항목 {scanned}개를 확인했습니다. {limit}개 제한 이후에도 항목이 더 있어 나머지는 표시되지 않습니다. 나머지를 보려면 더 작은 체크아웃을 선택하세요.",
+		"projects.scanFileLimit":
+			"설정 파일 {count}개가 {limit}바이트 읽기 제한을 넘어 파싱하지 않았습니다.",
+		"projects.scanFileObservedBytes": "{bytes}바이트를 읽은 뒤 중단했습니다.",
+		"projects.scanMoreFiles": "그 밖에 {count}개 파일도 읽지 않았습니다.",
 	},
 	ja: {
 		"projects.title": "プロジェクト",
@@ -145,6 +159,15 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"一覧から設定に問題のないプロジェクトを選ぶと画面を開きます。",
 		"projects.projectContent": "選択したプロジェクトの内容",
+		"projects.scanLimitedTitle": "一部のプロジェクト情報を読み取りませんでした",
+		"projects.scanEntryLimit":
+			"{scanned} 件の項目を確認しました。上限の {limit} 件を超える項目があります。残りを見るには小さいチェックアウトを選択してください。",
+		"projects.scanFileLimit":
+			"設定ファイル {count} 件は {limit} バイトの読み取り上限を超えたため解析しませんでした。",
+		"projects.scanFileObservedBytes":
+			"{bytes} バイトを読み取った時点で停止しました。",
+		"projects.scanMoreFiles":
+			"ほかに {count} 件のファイルを読み取りませんでした。",
 	},
 	zh: {
 		"projects.title": "项目",
@@ -188,6 +211,13 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectTitle": "选择一个项目",
 		"projects.selectHint": "从列表中选择配置有效的项目以打开其视图。",
 		"projects.projectContent": "所选项目内容",
+		"projects.scanLimitedTitle": "部分项目资料未读取",
+		"projects.scanEntryLimit":
+			"已检查 {scanned} 个项目条目。超过 {limit} 个条目后仍有更多内容。请选择较小的检出目录以查看其余项目。",
+		"projects.scanFileLimit":
+			"{count} 个配置文件超过 {limit} 字节读取上限，因此未解析。",
+		"projects.scanFileObservedBytes": "读取 {bytes} 字节后停止。",
+		"projects.scanMoreFiles": "另有 {count} 个文件未读取。",
 	},
 	fr: {
 		"projects.title": "Projets",
@@ -234,6 +264,15 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"Choisissez un projet valide dans la liste pour ouvrir ses vues.",
 		"projects.projectContent": "Contenu du projet sélectionné",
+		"projects.scanLimitedTitle":
+			"Certaines informations de projet n’ont pas été lues",
+		"projects.scanEntryLimit":
+			"{scanned} entrées sur {limit} ont été parcourues ; d’autres entrées existent. Choisissez un checkout plus petit pour voir la suite.",
+		"projects.scanFileLimit":
+			"{count} fichiers de configuration dépassent la limite de lecture de {limit} octets et n’ont pas été analysés.",
+		"projects.scanFileObservedBytes":
+			"La lecture s’est arrêtée après {bytes} octets.",
+		"projects.scanMoreFiles": "{count} autres fichiers n’ont pas été lus.",
 	},
 	de: {
 		"projects.title": "Projekte",
@@ -280,6 +319,14 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"Wähle ein gültig konfiguriertes Projekt aus der Liste.",
 		"projects.projectContent": "Inhalt des ausgewählten Projekts",
+		"projects.scanLimitedTitle": "Einige Projektdaten wurden übersprungen",
+		"projects.scanEntryLimit":
+			"{scanned} von {limit} Projektelementen wurden geprüft; weitere Elemente sind vorhanden. Wähle einen kleineren Checkout, um den Rest zu sehen.",
+		"projects.scanFileLimit":
+			"{count} Konfigurationsdateien überschritten das Leselimit von {limit} Bytes und wurden nicht ausgewertet.",
+		"projects.scanFileObservedBytes":
+			"Das Lesen wurde nach {bytes} Bytes beendet.",
+		"projects.scanMoreFiles": "{count} weitere Dateien wurden übersprungen.",
 	},
 	ru: {
 		"projects.title": "Проекты",
@@ -325,6 +372,13 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"Выберите в списке проект с корректной конфигурацией.",
 		"projects.projectContent": "Содержимое выбранного проекта",
+		"projects.scanLimitedTitle": "Часть данных проектов не прочитана",
+		"projects.scanEntryLimit":
+			"Проверено элементов проектов: {scanned} из {limit}; есть и другие. Выберите меньший checkout, чтобы увидеть остальные проекты.",
+		"projects.scanFileLimit":
+			"Файлы конфигурации ({count}) превысили лимит чтения {limit} байт и не были разобраны.",
+		"projects.scanFileObservedBytes": "Чтение остановлено после {bytes} байт.",
+		"projects.scanMoreFiles": "Не прочитано ещё файлов: {count}.",
 	},
 	es: {
 		"projects.title": "Proyectos",
@@ -370,6 +424,14 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"Elige un proyecto válido de la lista para abrir sus vistas.",
 		"projects.projectContent": "Contenido del proyecto seleccionado",
+		"projects.scanLimitedTitle": "Se omitieron algunos datos de proyectos",
+		"projects.scanEntryLimit":
+			"Se revisaron {scanned} de {limit} entradas; hay más. Elige un checkout más pequeño para ver el resto.",
+		"projects.scanFileLimit":
+			"{count} archivos de configuración superaron el límite de lectura de {limit} bytes y no se analizaron.",
+		"projects.scanFileObservedBytes":
+			"La lectura se detuvo después de {bytes} bytes.",
+		"projects.scanMoreFiles": "Se omitieron {count} archivos más.",
 	},
 	ar: {
 		"projects.title": "المشاريع",
@@ -414,6 +476,13 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"اختر مشروعًا بإعدادات سليمة من القائمة لفتح واجهاته.",
 		"projects.projectContent": "محتوى المشروع المحدد",
+		"projects.scanLimitedTitle": "تم تخطي بعض بيانات المشاريع",
+		"projects.scanEntryLimit":
+			"تم فحص {scanned} من أصل {limit} عنصرًا، وما زالت هناك عناصر أخرى. اختر checkout أصغر لعرض البقية.",
+		"projects.scanFileLimit":
+			"تجاوزت ملفات الإعداد ({count}) حد القراءة البالغ {limit} بايت، لذلك لم يتم تحليلها.",
+		"projects.scanFileObservedBytes": "توقفَت القراءة بعد {bytes} بايت.",
+		"projects.scanMoreFiles": "تم تخطي {count} ملفات إضافية.",
 	},
 	hi: {
 		"projects.title": "प्रोजेक्ट",
@@ -456,6 +525,13 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectTitle": "प्रोजेक्ट चुनें",
 		"projects.selectHint": "दृश्य खोलने के लिए सूची से सही कॉन्फ़िगरेशन वाला प्रोजेक्ट चुनें।",
 		"projects.projectContent": "चुने गए प्रोजेक्ट की सामग्री",
+		"projects.scanLimitedTitle": "कुछ प्रोजेक्ट विवरण नहीं पढ़े गए",
+		"projects.scanEntryLimit":
+			"{limit} में से {scanned} प्रोजेक्ट प्रविष्टियाँ जाँची गईं; और प्रविष्टियाँ मौजूद हैं। बाकी देखने के लिए छोटा checkout चुनें।",
+		"projects.scanFileLimit":
+			"{count} कॉन्फ़िगरेशन फ़ाइलें {limit}-बाइट पढ़ने की सीमा से बड़ी थीं और पार्स नहीं की गईं।",
+		"projects.scanFileObservedBytes": "{bytes} बाइट पढ़ने के बाद रुक गया।",
+		"projects.scanMoreFiles": "{count} अतिरिक्त फ़ाइलें भी नहीं पढ़ी गईं।",
 	},
 	bn: {
 		"projects.title": "প্রকল্প",
@@ -500,6 +576,13 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"দৃশ্য খুলতে তালিকা থেকে সঠিক কনফিগারেশনের প্রকল্প বেছে নিন।",
 		"projects.projectContent": "নির্বাচিত প্রকল্পের বিষয়বস্তু",
+		"projects.scanLimitedTitle": "কিছু প্রকল্পের তথ্য পড়া হয়নি",
+		"projects.scanEntryLimit":
+			"{limit}টির মধ্যে {scanned}টি প্রকল্প এন্ট্রি পরীক্ষা করা হয়েছে; আরও এন্ট্রি রয়েছে। বাকি দেখতে ছোট checkout বেছে নিন।",
+		"projects.scanFileLimit":
+			"{count}টি কনফিগারেশন ফাইল {limit}-বাইট পড়ার সীমা ছাড়িয়েছে, তাই সেগুলো পার্স করা হয়নি।",
+		"projects.scanFileObservedBytes": "{bytes} বাইট পড়ার পর থামানো হয়েছে।",
+		"projects.scanMoreFiles": "আরও {count}টি ফাইল পড়া হয়নি।",
 	},
 	pt: {
 		"projects.title": "Projetos",
@@ -546,6 +629,13 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"Escolha na lista um projeto com configuração válida para abrir suas telas.",
 		"projects.projectContent": "Conteúdo do projeto selecionado",
+		"projects.scanLimitedTitle": "Alguns dados do projeto foram ignorados",
+		"projects.scanEntryLimit":
+			"{scanned} de {limit} entradas foram verificadas; há mais entradas. Escolha um checkout menor para ver o restante.",
+		"projects.scanFileLimit":
+			"{count} arquivos de configuração excederam o limite de leitura de {limit} bytes e não foram analisados.",
+		"projects.scanFileObservedBytes": "A leitura parou após {bytes} bytes.",
+		"projects.scanMoreFiles": "{count} arquivos adicionais foram ignorados.",
 	},
 	id: {
 		"projects.title": "Proyek",
@@ -591,6 +681,14 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"Pilih proyek dengan konfigurasi valid dari daftar untuk membuka tampilannya.",
 		"projects.projectContent": "Konten proyek terpilih",
+		"projects.scanLimitedTitle": "Sebagian data proyek tidak dibaca",
+		"projects.scanEntryLimit":
+			"{scanned} dari {limit} entri proyek telah diperiksa; masih ada entri lain. Pilih checkout yang lebih kecil untuk melihat sisanya.",
+		"projects.scanFileLimit":
+			"{count} file konfigurasi melebihi batas baca {limit} byte dan tidak diuraikan.",
+		"projects.scanFileObservedBytes":
+			"Pembacaan berhenti setelah {bytes} byte.",
+		"projects.scanMoreFiles": "{count} file tambahan juga dilewati.",
 	},
 	vi: {
 		"projects.title": "Dự án",
@@ -634,6 +732,13 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.selectHint":
 			"Chọn dự án có cấu hình hợp lệ trong danh sách để mở các màn hình.",
 		"projects.projectContent": "Nội dung dự án đã chọn",
+		"projects.scanLimitedTitle": "Một phần thông tin dự án chưa được đọc",
+		"projects.scanEntryLimit":
+			"Đã kiểm tra {scanned}/{limit} mục dự án và vẫn còn mục khác. Hãy chọn checkout nhỏ hơn để xem phần còn lại.",
+		"projects.scanFileLimit":
+			"{count} tệp cấu hình vượt giới hạn đọc {limit} byte nên chưa được phân tích.",
+		"projects.scanFileObservedBytes": "Đã dừng đọc sau {bytes} byte.",
+		"projects.scanMoreFiles": "Còn {count} tệp khác chưa được đọc.",
 	},
 };
 

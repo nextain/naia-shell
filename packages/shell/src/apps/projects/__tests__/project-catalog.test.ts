@@ -53,6 +53,24 @@ describe("Project catalog — F-01", () => {
 		expect(normalizeProjectCatalog({ projects: [] })).toEqual({ projects: [] });
 	});
 
+	it("preserves entry and file-size cutoff evidence from the native scan", () => {
+		const truncation = {
+			maxEntries: 200,
+			scannedEntries: 200,
+			moreEntriesAvailable: true,
+			maxConfigFileBytes: 65536,
+			oversizedFiles: [
+				{
+					file: "projects/large/project.yaml",
+					observedBytes: 65537,
+				},
+			],
+		};
+		expect(
+			normalizeProjectCatalog({ projects: [], truncation }).truncation,
+		).toEqual(truncation);
+	});
+
 	it("preserves every supported project and local-profile configuration error", () => {
 		const reasons = [
 			"missing",

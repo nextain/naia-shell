@@ -26,6 +26,18 @@ export interface CatalogProject {
 
 export interface ProjectCatalog {
 	projects: CatalogProject[];
+	truncation?: ProjectCatalogTruncation;
+}
+
+export interface ProjectCatalogTruncation {
+	maxEntries: number;
+	scannedEntries: number;
+	moreEntriesAvailable: boolean;
+	maxConfigFileBytes: number;
+	oversizedFiles: Array<{
+		file: string;
+		observedBytes: number;
+	}>;
 }
 
 const TEMPLATE_DIRECTORIES = new Set(["_template", "_template-local"]);
@@ -85,16 +97,68 @@ function parseProject(value: unknown): CatalogProject {
 	};
 }
 
+function parseProjectCatalogTruncation(
+	value: unknown,
+): ProjectCatalogTruncation | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (!isRecord(value)) throw new Error("Invalid project catalog truncation.");
+	const maxEntries = value.maxEntries;
+	const scannedEntries = value.scannedEntries;
+	const maxConfigFileBytes = value.maxConfigFileBytes;
+	if (
+		typeof maxEntries !== "number" ||
+		!Number.isSafeInteger(maxEntries) ||
+		maxEntries <= 0 ||
+		typeof scannedEntries !== "number" ||
+		!Number.isSafeInteger(scannedEntries) ||
+		scannedEntries < 0 ||
+		scannedEntries > maxEntries ||
+		typeof value.moreEntriesAvailable !== "boolean" ||
+		typeof maxConfigFileBytes !== "number" ||
+		!Number.isSafeInteger(maxConfigFileBytes) ||
+		maxConfigFileBytes <= 0 ||
+		!Array.isArray(value.oversizedFiles)
+	) {
+		throw new Error("Invalid project catalog truncation.");
+	}
+	const oversizedFiles = value.oversizedFiles.map((entry) => {
+		if (!isRecord(entry)) {
+			throw new Error("Invalid oversized project configuration record.");
+		}
+		const file = optionalString(entry.file);
+		const observedBytes = entry.observedBytes;
+		if (
+			!file ||
+			typeof observedBytes !== "number" ||
+			!Number.isSafeInteger(observedBytes) ||
+			observedBytes <= maxConfigFileBytes
+		) {
+			throw new Error("Invalid oversized project configuration record.");
+		}
+		return { file, observedBytes };
+	});
+	return {
+		maxEntries,
+		scannedEntries,
+		moreEntriesAvailable: value.moreEntriesAvailable,
+		maxConfigFileBytes,
+		oversizedFiles,
+	};
+}
+
 /** Validate the native catalog response before displaying any entry. */
 export function normalizeProjectCatalog(value: unknown): ProjectCatalog {
 	if (!isRecord(value) || !Array.isArray(value.projects)) {
 		throw new Error("Invalid project catalog response.");
 	}
 	const projects = value.projects.map(parseProject);
+	const visibleProjects = projects.filter(
+		(project) => !TEMPLATE_DIRECTORIES.has(project.directoryName),
+	);
+	const truncation = parseProjectCatalogTruncation(value.truncation);
 	return {
-		projects: projects.filter(
-			(project) => !TEMPLATE_DIRECTORIES.has(project.directoryName),
-		),
+		projects: visibleProjects,
+		...(truncation ? { truncation } : {}),
 	};
 }
 

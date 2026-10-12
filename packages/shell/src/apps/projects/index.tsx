@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 import { appRegistry } from "../../lib/app-registry";
+import { useAppStore } from "../../stores/app";
 
 const ProjectsApp = lazy(() => import("./ProjectsApp"));
 
@@ -21,3 +22,4 @@ appRegistry.register({
 	deferMountUntilActive: true,
 	center: ProjectsCenterArea,
 });
+useAppStore.getState().bumpAppListVersion();

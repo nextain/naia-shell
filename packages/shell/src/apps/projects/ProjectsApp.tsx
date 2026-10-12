@@ -4,6 +4,7 @@ import { Logger } from "../../lib/logger";
 import {
 	type CatalogProject,
 	type ProjectCatalog,
+	type ProjectCatalogTruncation,
 	type ProjectConfigIssue,
 	type ProjectConfigIssueReason,
 	scanProjectCatalog,
@@ -52,6 +53,59 @@ function ProjectIssueList({ issues }: { issues: ProjectConfigIssue[] }) {
 				</li>
 			))}
 		</ul>
+	);
+}
+
+function ProjectCatalogTruncationNotice({
+	truncation,
+}: {
+	truncation: ProjectCatalogTruncation;
+}) {
+	const shownFiles = truncation.oversizedFiles.slice(0, 3);
+	const remainingFiles = truncation.oversizedFiles.length - shownFiles.length;
+	return (
+		<output
+			className="projects-app__truncation"
+			aria-live="polite"
+			aria-label={projectText("projects.scanLimitedTitle")}
+		>
+			<strong>{projectText("projects.scanLimitedTitle")}</strong>
+			{truncation.moreEntriesAvailable && (
+				<span>
+					{projectText("projects.scanEntryLimit", {
+						scanned: truncation.scannedEntries,
+						limit: truncation.maxEntries,
+					})}
+				</span>
+			)}
+			{truncation.oversizedFiles.length > 0 && (
+				<>
+					<span>
+						{projectText("projects.scanFileLimit", {
+							count: truncation.oversizedFiles.length,
+							limit: truncation.maxConfigFileBytes,
+						})}
+					</span>
+					<span className="projects-app__truncation-files">
+						{shownFiles.map((file) => (
+							<span key={file.file}>
+								<code>{file.file}</code>{" "}
+								{projectText("projects.scanFileObservedBytes", {
+									bytes: file.observedBytes,
+								})}
+							</span>
+						))}
+					</span>
+					{remainingFiles > 0 && (
+						<span>
+							{projectText("projects.scanMoreFiles", {
+								count: remainingFiles,
+							})}
+						</span>
+					)}
+				</>
+			)}
+		</output>
 	);
 }
 
@@ -258,6 +312,13 @@ export function ProjectsApp() {
 					)}
 				</section>
 			)}
+
+			{loadState === "ready" &&
+				catalog?.truncation &&
+				(catalog.truncation.moreEntriesAvailable ||
+					catalog.truncation.oversizedFiles.length > 0) && (
+					<ProjectCatalogTruncationNotice truncation={catalog.truncation} />
+				)}
 
 			{loadState === "ready" && catalog && (
 				<div className="projects-app__layout">
