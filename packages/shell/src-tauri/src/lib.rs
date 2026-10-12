@@ -6472,16 +6472,248 @@ fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::P
         .filter(|path| path.is_file())
 }
 
-fn read_voxcpm2_download_manifest(
+const VOXCPM2_REGISTRY_SCHEMA_VERSION: u32 = 1;
+const VOXCPM2_STATUS_RELEASED: &str = "released";
+const VOXCPM2_STATUS_PREVIEW: &str = "preview";
+const VOXCPM2_STATUS_PLANNED: &str = "planned";
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VoxCpm2RegistryGeneratedFrom {
+    repository: String,
+    path: String,
+    source_sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VoxCpm2RegistryEntry {
+    id: String,
+    os: String,
+    accelerator: String,
+    backend: String,
+    min_vram_gi_b: u64,
+    status: String,
+    notes: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VoxCpm2ProfileRegistry {
+    schema_version: u32,
+    generated_from: VoxCpm2RegistryGeneratedFrom,
+    entries: Vec<VoxCpm2RegistryEntry>,
+}
+
+fn parse_voxcpm2_profile_registry(raw: &str) -> Result<VoxCpm2ProfileRegistry, String> {
+    let value: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|error| format!("VoxCPM2 profile registry JSON is invalid: {error}"))?;
+    let obj = value
+        .as_object()
+        .ok_or_else(|| "VoxCPM2 profile registry root must be an object".to_string())?;
+
+    let schema_version_val = obj
+        .get("schemaVersion")
+        .ok_or_else(|| "missing required field: schemaVersion".to_string())?;
+    let schema_version = schema_version_val
+        .as_u64()
+        .ok_or_else(|| "wrong type for schemaVersion: must be an integer".to_string())?;
+    if schema_version != VOXCPM2_REGISTRY_SCHEMA_VERSION as u64 {
+        return Err(format!("unsupported schema version: {schema_version}"));
+    }
+
+    let gen_val = obj
+        .get("generatedFrom")
+        .ok_or_else(|| "missing required field: generatedFrom".to_string())?;
+    let gen_obj = gen_val
+        .as_object()
+        .ok_or_else(|| "wrong type for generatedFrom: must be an object".to_string())?;
+
+    let repo_val = gen_obj
+        .get("repository")
+        .ok_or_else(|| "missing required field: generatedFrom.repository".to_string())?;
+    let repository = repo_val
+        .as_str()
+        .ok_or_else(|| "wrong type for generatedFrom.repository: must be a string".to_string())?
+        .to_string();
+
+    let path_val = gen_obj
+        .get("path")
+        .ok_or_else(|| "missing required field: generatedFrom.path".to_string())?;
+    let path = path_val
+        .as_str()
+        .ok_or_else(|| "wrong type for generatedFrom.path: must be a string".to_string())?
+        .to_string();
+
+    let sha_val = gen_obj
+        .get("sourceSha256")
+        .ok_or_else(|| "missing required field: generatedFrom.sourceSha256".to_string())?;
+    let source_sha256 = sha_val
+        .as_str()
+        .ok_or_else(|| "wrong type for generatedFrom.sourceSha256: must be a string".to_string())?
+        .to_string();
+
+    let entries_val = obj
+        .get("entries")
+        .ok_or_else(|| "missing required field: entries".to_string())?;
+    let entries_arr = entries_val
+        .as_array()
+        .ok_or_else(|| "wrong type for entries: must be an array".to_string())?;
+
+    let mut entries = Vec::with_capacity(entries_arr.len());
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for (idx, entry_val) in entries_arr.iter().enumerate() {
+        let entry_obj = entry_val
+            .as_object()
+            .ok_or_else(|| format!("entry at index {idx} must be an object"))?;
+
+        let id = entry_obj
+            .get("id")
+            .ok_or_else(|| "missing required field: id".to_string())?
+            .as_str()
+            .ok_or_else(|| "wrong type for id: must be a string".to_string())?
+            .to_string();
+
+        if !seen_ids.insert(id.clone()) {
+            return Err(format!("duplicate profile id: {id}"));
+        }
+
+        let os = entry_obj
+            .get("os")
+            .ok_or_else(|| "missing required field: os".to_string())?
+            .as_str()
+            .ok_or_else(|| "wrong type for os: must be a string".to_string())?
+            .to_string();
+
+        let accelerator = entry_obj
+            .get("accelerator")
+            .ok_or_else(|| "missing required field: accelerator".to_string())?
+            .as_str()
+            .ok_or_else(|| "wrong type for accelerator: must be a string".to_string())?
+            .to_string();
+
+        let backend = entry_obj
+            .get("backend")
+            .ok_or_else(|| "missing required field: backend".to_string())?
+            .as_str()
+            .ok_or_else(|| "wrong type for backend: must be a string".to_string())?
+            .to_string();
+
+        let status = entry_obj
+            .get("status")
+            .ok_or_else(|| "missing required field: status".to_string())?
+            .as_str()
+            .ok_or_else(|| "wrong type for status: must be a string".to_string())?
+            .to_string();
+
+        if status != VOXCPM2_STATUS_RELEASED
+            && status != VOXCPM2_STATUS_PREVIEW
+            && status != VOXCPM2_STATUS_PLANNED
+        {
+            return Err(format!("unknown profile status: {status}"));
+        }
+
+        let notes = entry_obj
+            .get("notes")
+            .ok_or_else(|| "missing required field: notes".to_string())?
+            .as_str()
+            .ok_or_else(|| "wrong type for notes: must be a string".to_string())?
+            .to_string();
+
+        let min_vram_gi_b = entry_obj
+            .get("minVramGiB")
+            .ok_or_else(|| "missing required field: minVramGiB".to_string())?
+            .as_u64()
+            .ok_or_else(|| "wrong type for minVramGiB: must be an integer".to_string())?;
+
+        entries.push(VoxCpm2RegistryEntry {
+            id,
+            os,
+            accelerator,
+            backend,
+            min_vram_gi_b,
+            status,
+            notes,
+        });
+    }
+
+    Ok(VoxCpm2ProfileRegistry {
+        schema_version: schema_version as u32,
+        generated_from: VoxCpm2RegistryGeneratedFrom {
+            repository,
+            path,
+            source_sha256,
+        },
+        entries,
+    })
+}
+
+fn read_voxcpm2_profile_registry(
     path: &std::path::Path,
-) -> Result<VoxCpm2DownloadManifest, String> {
+) -> Result<VoxCpm2ProfileRegistry, String> {
     let raw = std::fs::read_to_string(path)
-        .map_err(|error| format!("Could not read Naia Host download manifest: {error}"))?;
-    let manifest: VoxCpm2DownloadManifest = serde_json::from_str(&raw)
-        .map_err(|error| format!("Naia Host download manifest is invalid: {error}"))?;
-    if manifest.schema_version != 1
-        || voice_runtime::profile(&manifest.profile).is_none()
-        || !is_sha256(&manifest.artifact_manifest_sha256)
+        .map_err(|error| format!("Could not read VoxCPM2 profile registry: {error}"))?;
+    parse_voxcpm2_profile_registry(&raw)
+}
+
+fn voxcpm2_scripts_profile_registry_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../scripts/voxcpm2-profile-registry.json")
+}
+
+fn resolve_voxcpm2_profile_registry_path_from(
+    env_path: Option<&std::path::Path>,
+    debug_pin: Option<&std::path::Path>,
+    resource_dir: Option<&std::path::Path>,
+    is_debug: bool,
+) -> Option<std::path::PathBuf> {
+    if let Some(path) = env_path.filter(|p| p.is_file()) {
+        return Some(path.to_path_buf());
+    }
+    if is_debug {
+        if let Some(pin) = debug_pin.filter(|p| p.is_file()) {
+            return Some(pin.to_path_buf());
+        }
+    }
+    resource_dir
+        .map(|root| root.join("voxcpm2-runtime").join("profile-registry.json"))
+        .filter(|path| path.is_file())
+}
+
+fn voxcpm2_profile_registry_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    let from_env = std::env::var_os("NAIA_VOXCPM2_PROFILE_REGISTRY")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from);
+    let scripts_pin = voxcpm2_scripts_profile_registry_path();
+    let resource_dir = app.path().resource_dir().ok();
+    resolve_voxcpm2_profile_registry_path_from(
+        from_env.as_deref(),
+        Some(&scripts_pin),
+        resource_dir.as_deref(),
+        cfg!(debug_assertions),
+    )
+}
+
+fn validate_voxcpm2_download_manifest(
+    manifest: &VoxCpm2DownloadManifest,
+    registry: Option<&VoxCpm2ProfileRegistry>,
+) -> Result<(), String> {
+    if manifest.schema_version != 1 {
+        return Err("Naia Host download manifest contract mismatch".to_string());
+    }
+    if voice_runtime::profile(&manifest.profile).is_none() {
+        return Err("Naia Host download manifest contract mismatch".to_string());
+    }
+    if let Some(reg) = registry {
+        if !reg.entries.iter().any(|entry| entry.id == manifest.profile) {
+            return Err(format!(
+                "Naia Host download manifest profile '{}' not found in profile registry",
+                manifest.profile
+            ));
+        }
+    }
+    if !is_sha256(&manifest.artifact_manifest_sha256)
         || !is_sha256(&manifest.archive.sha256)
         || manifest.archive.bytes == 0
         || manifest.archive.unpacked_bytes == 0
@@ -6500,6 +6732,55 @@ fn read_voxcpm2_download_manifest(
     if !trusted_transport || !url.username().is_empty() || url.password().is_some() {
         return Err("Naia Host package URL must use trusted HTTPS".to_string());
     }
+    Ok(())
+}
+
+fn validate_voxcpm2_artifact_profile(
+    profile_id: &str,
+    registry: &VoxCpm2ProfileRegistry,
+) -> Result<(), String> {
+    let entry = registry
+        .entries
+        .iter()
+        .find(|entry| entry.id == profile_id)
+        .ok_or_else(|| format!("profile not found in registry: {profile_id}"))?;
+    if entry.status != VOXCPM2_STATUS_RELEASED {
+        return Err(format!(
+            "artifact validation rejected: profile '{}' has status '{}', only '{}' is allowed",
+            entry.id, entry.status, VOXCPM2_STATUS_RELEASED
+        ));
+    }
+    Ok(())
+}
+
+fn read_voxcpm2_download_manifest(
+    path: &std::path::Path,
+) -> Result<VoxCpm2DownloadManifest, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|error| format!("Could not read Naia Host download manifest: {error}"))?;
+    let manifest: VoxCpm2DownloadManifest = serde_json::from_str(&raw)
+        .map_err(|error| format!("Naia Host download manifest is invalid: {error}"))?;
+
+    let registry = path
+        .parent()
+        .map(|dir| dir.join("profile-registry.json"))
+        .filter(|p| p.is_file())
+        .or_else(|| {
+            std::env::var_os("NAIA_VOXCPM2_PROFILE_REGISTRY")
+                .map(std::path::PathBuf::from)
+                .filter(|p| p.is_file())
+        })
+        .or_else(|| {
+            let scripts_pin = voxcpm2_scripts_profile_registry_path();
+            if scripts_pin.is_file() {
+                Some(scripts_pin)
+            } else {
+                None
+            }
+        })
+        .and_then(|reg_path| read_voxcpm2_profile_registry(&reg_path).ok());
+
+    validate_voxcpm2_download_manifest(&manifest, registry.as_ref())?;
     Ok(manifest)
 }
 
@@ -14555,6 +14836,474 @@ mod tests {
         let manifest: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(manifest["archive"]["bytes"].as_u64(), Some(2496064260));
         assert_ne!(manifest["archive"]["bytes"].as_u64(), Some(2494187310));
+    }
+
+    #[test]
+    fn registry_rejects_unknown_status() {
+        let json_template = |status: &str| {
+            format!(
+                r#"{{
+                    "schemaVersion": 1,
+                    "generatedFrom": {{
+                        "repository": "nextain/voxcpm2-tensorrt",
+                        "path": "src/voxcpm2_tensorrt/profiles.py",
+                        "sourceSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    }},
+                    "entries": [
+                        {{
+                            "id": "test_profile",
+                            "os": "windows",
+                            "accelerator": "cuda",
+                            "backend": "tensorrt_locdit",
+                            "minVramGiB": 6,
+                            "status": "{status}",
+                            "notes": "test"
+                        }}
+                    ]
+                }}"#
+            )
+        };
+        for bad_status in &["unknown", "deprecated", "beta", "experimental", ""] {
+            let raw = json_template(bad_status);
+            let res = parse_voxcpm2_profile_registry(&raw);
+            assert!(res.is_err(), "status '{bad_status}' must be rejected");
+        }
+    }
+
+    #[test]
+    fn registry_accepts_each_known_status() {
+        let statuses = ["released", "preview", "planned"];
+        for status in statuses {
+            let raw = format!(
+                r#"{{
+                    "schemaVersion": 1,
+                    "generatedFrom": {{
+                        "repository": "nextain/voxcpm2-tensorrt",
+                        "path": "src/voxcpm2_tensorrt/profiles.py",
+                        "sourceSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    }},
+                    "entries": [
+                        {{
+                            "id": "profile_for_{status}",
+                            "os": "linux",
+                            "accelerator": "cuda",
+                            "backend": "tensorrt_locdit",
+                            "minVramGiB": 6,
+                            "status": "{status}",
+                            "notes": "test"
+                        }}
+                    ]
+                }}"#
+            );
+            let parsed = parse_voxcpm2_profile_registry(&raw).expect("known status must be accepted");
+            assert_eq!(parsed.entries.len(), 1);
+            assert_eq!(parsed.entries[0].status, status);
+        }
+    }
+
+    #[test]
+    fn registry_rejects_each_missing_required_field() {
+        let base: serde_json::Value = serde_json::json!({
+            "schemaVersion": 1,
+            "generatedFrom": {
+                "repository": "nextain/voxcpm2-tensorrt",
+                "path": "src/voxcpm2_tensorrt/profiles.py",
+                "sourceSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            },
+            "entries": [
+                {
+                    "id": "windows_trt_6g",
+                    "os": "windows",
+                    "accelerator": "cuda",
+                    "backend": "tensorrt_locdit",
+                    "minVramGiB": 6,
+                    "status": "released",
+                    "notes": "test"
+                }
+            ]
+        });
+
+        // 1) schemaVersion
+        let mut val = base.clone();
+        val.as_object_mut().unwrap().remove("schemaVersion");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing schemaVersion must be rejected");
+
+        // 2) generatedFrom
+        let mut val = base.clone();
+        val.as_object_mut().unwrap().remove("generatedFrom");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing generatedFrom must be rejected");
+
+        // 3) generatedFrom.repository
+        let mut val = base.clone();
+        val["generatedFrom"].as_object_mut().unwrap().remove("repository");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing generatedFrom.repository must be rejected");
+
+        // 4) generatedFrom.path
+        let mut val = base.clone();
+        val["generatedFrom"].as_object_mut().unwrap().remove("path");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing generatedFrom.path must be rejected");
+
+        // 5) generatedFrom.sourceSha256
+        let mut val = base.clone();
+        val["generatedFrom"].as_object_mut().unwrap().remove("sourceSha256");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing generatedFrom.sourceSha256 must be rejected");
+
+        // 6) entries
+        let mut val = base.clone();
+        val.as_object_mut().unwrap().remove("entries");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing entries must be rejected");
+
+        // 7) entry.id
+        let mut val = base.clone();
+        val["entries"][0].as_object_mut().unwrap().remove("id");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing entry.id must be rejected");
+
+        // 8) entry.os
+        let mut val = base.clone();
+        val["entries"][0].as_object_mut().unwrap().remove("os");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing entry.os must be rejected");
+
+        // 9) entry.accelerator
+        let mut val = base.clone();
+        val["entries"][0].as_object_mut().unwrap().remove("accelerator");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing entry.accelerator must be rejected");
+
+        // 10) entry.backend
+        let mut val = base.clone();
+        val["entries"][0].as_object_mut().unwrap().remove("backend");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing entry.backend must be rejected");
+
+        // 11) entry.status
+        let mut val = base.clone();
+        val["entries"][0].as_object_mut().unwrap().remove("status");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing entry.status must be rejected");
+
+        // 12) entry.notes
+        let mut val = base.clone();
+        val["entries"][0].as_object_mut().unwrap().remove("notes");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing entry.notes must be rejected");
+
+        // 13) entry.minVramGiB
+        let mut val = base.clone();
+        val["entries"][0].as_object_mut().unwrap().remove("minVramGiB");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "missing entry.minVramGiB must be rejected");
+    }
+
+    #[test]
+    fn registry_rejects_wrong_field_type() {
+        let base: serde_json::Value = serde_json::json!({
+            "schemaVersion": 1,
+            "generatedFrom": {
+                "repository": "nextain/voxcpm2-tensorrt",
+                "path": "src/voxcpm2_tensorrt/profiles.py",
+                "sourceSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            },
+            "entries": [
+                {
+                    "id": "windows_trt_6g",
+                    "os": "windows",
+                    "accelerator": "cuda",
+                    "backend": "tensorrt_locdit",
+                    "minVramGiB": 6,
+                    "status": "released",
+                    "notes": "test"
+                }
+            ]
+        });
+
+        // 1) schemaVersion not integer (string)
+        let mut val = base.clone();
+        val["schemaVersion"] = serde_json::json!("1");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "schemaVersion as string must be rejected");
+
+        // 2) generatedFrom not object (string)
+        let mut val = base.clone();
+        val["generatedFrom"] = serde_json::json!("invalid");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "generatedFrom as string must be rejected");
+
+        // 3) generatedFrom.repository not string (number)
+        let mut val = base.clone();
+        val["generatedFrom"]["repository"] = serde_json::json!(123);
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "generatedFrom.repository as number must be rejected");
+
+        // 4) generatedFrom.path not string (boolean)
+        let mut val = base.clone();
+        val["generatedFrom"]["path"] = serde_json::json!(true);
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "generatedFrom.path as boolean must be rejected");
+
+        // 5) generatedFrom.sourceSha256 not string (array)
+        let mut val = base.clone();
+        val["generatedFrom"]["sourceSha256"] = serde_json::json!([]);
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "generatedFrom.sourceSha256 as array must be rejected");
+
+        // 6) entries not array (object)
+        let mut val = base.clone();
+        val["entries"] = serde_json::json!({});
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "entries as object must be rejected");
+
+        // 7) entry.id not string (number)
+        let mut val = base.clone();
+        val["entries"][0]["id"] = serde_json::json!(123);
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "entry.id as number must be rejected");
+
+        // 8) entry.os not string (number)
+        let mut val = base.clone();
+        val["entries"][0]["os"] = serde_json::json!(123);
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "entry.os as number must be rejected");
+
+        // 9) entry.accelerator not string (boolean)
+        let mut val = base.clone();
+        val["entries"][0]["accelerator"] = serde_json::json!(false);
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "entry.accelerator as boolean must be rejected");
+
+        // 10) entry.backend not string (null)
+        let mut val = base.clone();
+        val["entries"][0]["backend"] = serde_json::Value::Null;
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "entry.backend as null must be rejected");
+
+        // 11) entry.status not string (number)
+        let mut val = base.clone();
+        val["entries"][0]["status"] = serde_json::json!(1);
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "entry.status as number must be rejected");
+
+        // 12) entry.notes not string (array)
+        let mut val = base.clone();
+        val["entries"][0]["notes"] = serde_json::json!(["note"]);
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "entry.notes as array must be rejected");
+
+        // 13) entry.minVramGiB not integer (string)
+        let mut val = base.clone();
+        val["entries"][0]["minVramGiB"] = serde_json::json!("6");
+        assert!(parse_voxcpm2_profile_registry(&val.to_string()).is_err(), "entry.minVramGiB as string must be rejected");
+    }
+
+    #[test]
+    fn registry_rejects_unsupported_schema_version() {
+        let template = |v: i32| {
+            format!(
+                r#"{{
+                    "schemaVersion": {v},
+                    "generatedFrom": {{
+                        "repository": "nextain/voxcpm2-tensorrt",
+                        "path": "src/voxcpm2_tensorrt/profiles.py",
+                        "sourceSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    }},
+                    "entries": []
+                }}"#
+            )
+        };
+        for unsupported in [0, 2, 3, 99] {
+            let raw = template(unsupported);
+            assert!(parse_voxcpm2_profile_registry(&raw).is_err(), "schemaVersion {unsupported} must be rejected");
+        }
+    }
+
+    #[test]
+    fn registry_rejects_duplicate_profile_id() {
+        let raw = r#"{
+            "schemaVersion": 1,
+            "generatedFrom": {
+                "repository": "nextain/voxcpm2-tensorrt",
+                "path": "src/voxcpm2_tensorrt/profiles.py",
+                "sourceSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            },
+            "entries": [
+                {
+                    "id": "windows_trt_6g",
+                    "os": "windows",
+                    "accelerator": "cuda",
+                    "backend": "tensorrt_locdit",
+                    "minVramGiB": 6,
+                    "status": "released",
+                    "notes": "first"
+                },
+                {
+                    "id": "windows_trt_6g",
+                    "os": "windows",
+                    "accelerator": "cuda",
+                    "backend": "tensorrt_locdit",
+                    "minVramGiB": 6,
+                    "status": "released",
+                    "notes": "duplicate"
+                }
+            ]
+        }"#;
+        assert!(parse_voxcpm2_profile_registry(raw).is_err(), "duplicate profile ID must be rejected");
+    }
+
+    #[test]
+    fn manifest_rejects_unregistered_profile_id() {
+        let registry = VoxCpm2ProfileRegistry {
+            schema_version: 1,
+            generated_from: VoxCpm2RegistryGeneratedFrom {
+                repository: "nextain/voxcpm2-tensorrt".to_string(),
+                path: "src/voxcpm2_tensorrt/profiles.py".to_string(),
+                source_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            },
+            entries: vec![
+                VoxCpm2RegistryEntry {
+                    id: "windows_trt_6g".to_string(),
+                    os: "windows".to_string(),
+                    accelerator: "cuda".to_string(),
+                    backend: "tensorrt_locdit".to_string(),
+                    min_vram_gi_b: 6,
+                    status: "released".to_string(),
+                    notes: "notes".to_string(),
+                },
+            ],
+        };
+
+        let valid_manifest = VoxCpm2DownloadManifest {
+            schema_version: 1,
+            profile: "windows_trt_6g".to_string(),
+            artifact_manifest_sha256: "5dc02662267f79489896621d39f975af1d081bba49fecf5daac2a1a78e0a4ce5".to_string(),
+            archive: VoxCpm2DownloadArchive {
+                url: "https://stnaiapub83b29893.blob.core.windows.net/test.zip".to_string(),
+                sha256: "0057dcd5d440ac2bd736bc407df7822cb66b628ad031024877dd425e8ed2db33".to_string(),
+                bytes: 1000,
+                unpacked_bytes: 2000,
+                files: 10,
+            },
+        };
+
+        assert!(validate_voxcpm2_download_manifest(&valid_manifest, Some(&registry)).is_ok());
+
+        let mut unregistered_manifest = valid_manifest.clone();
+        unregistered_manifest.profile = "unknown_profile_99g".to_string();
+        assert!(validate_voxcpm2_download_manifest(&unregistered_manifest, Some(&registry)).is_err());
+
+        let mut bad_sha = valid_manifest.clone();
+        bad_sha.artifact_manifest_sha256 = "not_a_sha256".to_string();
+        assert!(validate_voxcpm2_download_manifest(&bad_sha, Some(&registry)).is_err());
+
+        let mut zero_bytes = valid_manifest.clone();
+        zero_bytes.archive.bytes = 0;
+        assert!(validate_voxcpm2_download_manifest(&zero_bytes, Some(&registry)).is_err());
+
+        let mut zero_unpacked = valid_manifest.clone();
+        zero_unpacked.archive.unpacked_bytes = 0;
+        assert!(validate_voxcpm2_download_manifest(&zero_unpacked, Some(&registry)).is_err());
+
+        let mut too_large = valid_manifest.clone();
+        too_large.archive.unpacked_bytes = 17 * 1024 * 1024 * 1024;
+        assert!(validate_voxcpm2_download_manifest(&too_large, Some(&registry)).is_err());
+
+        let mut zero_files = valid_manifest.clone();
+        zero_files.archive.files = 0;
+        assert!(validate_voxcpm2_download_manifest(&zero_files, Some(&registry)).is_err());
+
+        let mut too_many_files = valid_manifest.clone();
+        too_many_files.archive.files = 100_001;
+        assert!(validate_voxcpm2_download_manifest(&too_many_files, Some(&registry)).is_err());
+
+        let mut bad_url = valid_manifest.clone();
+        bad_url.archive.url = "http://insecure.example.com/test.zip".to_string();
+        assert!(validate_voxcpm2_download_manifest(&bad_url, Some(&registry)).is_err());
+    }
+
+    #[test]
+    fn artifact_validation_is_released_only() {
+        let registry = VoxCpm2ProfileRegistry {
+            schema_version: 1,
+            generated_from: VoxCpm2RegistryGeneratedFrom {
+                repository: "nextain/voxcpm2-tensorrt".to_string(),
+                path: "src/voxcpm2_tensorrt/profiles.py".to_string(),
+                source_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            },
+            entries: vec![
+                VoxCpm2RegistryEntry {
+                    id: "windows_trt_6g".to_string(),
+                    os: "windows".to_string(),
+                    accelerator: "cuda".to_string(),
+                    backend: "tensorrt_locdit".to_string(),
+                    min_vram_gi_b: 6,
+                    status: "released".to_string(),
+                    notes: "notes".to_string(),
+                },
+                VoxCpm2RegistryEntry {
+                    id: "linux_vulkan_8g".to_string(),
+                    os: "linux".to_string(),
+                    accelerator: "vulkan".to_string(),
+                    backend: "vulkan_cpp".to_string(),
+                    min_vram_gi_b: 8,
+                    status: "preview".to_string(),
+                    notes: "notes".to_string(),
+                },
+                VoxCpm2RegistryEntry {
+                    id: "linux_rocm_8g".to_string(),
+                    os: "linux".to_string(),
+                    accelerator: "rocm".to_string(),
+                    backend: "torch".to_string(),
+                    min_vram_gi_b: 8,
+                    status: "planned".to_string(),
+                    notes: "notes".to_string(),
+                },
+            ],
+        };
+
+        let cases = [
+            ("windows_trt_6g", "released", true),
+            ("linux_vulkan_8g", "preview", false),
+            ("linux_rocm_8g", "planned", false),
+        ];
+
+        for (id, status, should_pass) in cases {
+            let res = validate_voxcpm2_artifact_profile(id, &registry);
+            if should_pass {
+                assert!(
+                    res.is_ok(),
+                    "profile with status '{status}' should pass artifact validation, got: {:?}",
+                    res
+                );
+            } else {
+                assert!(
+                    res.is_err(),
+                    "profile with status '{status}' must be rejected in artifact validation"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn registry_path_source_precedence() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let env_file = root.join("env-profile-registry.json");
+        let debug_pin_file = root.join("debug-pin-profile-registry.json");
+        let resource_dir = root.join("resources");
+        let resource_file = resource_dir.join("voxcpm2-runtime").join("profile-registry.json");
+
+        std::fs::write(&env_file, "env").unwrap();
+        std::fs::write(&debug_pin_file, "debug_pin").unwrap();
+        std::fs::create_dir_all(resource_file.parent().unwrap()).unwrap();
+        std::fs::write(&resource_file, "resource").unwrap();
+
+        let cases = [
+            (Some(&env_file), Some(&debug_pin_file), Some(&resource_dir), true, Some(&env_file)),
+            (Some(&env_file), None, Some(&resource_dir), false, Some(&env_file)),
+            (None, Some(&debug_pin_file), Some(&resource_dir), true, Some(&debug_pin_file)),
+            (None, Some(&debug_pin_file), Some(&resource_dir), false, Some(&resource_file)),
+            (None, None, Some(&resource_dir), true, Some(&resource_file)),
+            (None, None, Some(&resource_dir), false, Some(&resource_file)),
+            (None, None, None, true, None),
+            (None, None, None, false, None),
+        ];
+
+        for (env, pin, res, is_debug, expected) in cases {
+            let actual = resolve_voxcpm2_profile_registry_path_from(
+                env.map(|p| p.as_path()),
+                pin.map(|p| p.as_path()),
+                res.map(|p| p.as_path()),
+                is_debug,
+            );
+            assert_eq!(
+                actual.as_deref(),
+                expected.map(|p| p.as_path()),
+                "precedence mismatch for env={:?}, pin={:?}, res={:?}, is_debug={}",
+                env, pin, res, is_debug
+            );
+        }
     }
 
     #[test]
