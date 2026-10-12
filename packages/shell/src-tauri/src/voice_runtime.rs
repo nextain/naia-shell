@@ -1,34 +1,10 @@
-//! 로컬 음성 런타임의 두 축 — 운영체제와 하드웨어.
-//!
-//! 프로파일은 원래 `windows_trt_6g` 문자열 하나였고, 그 리터럴이 매니페스트
-//! 검증·활성화 계약·VRAM 판정·기동 게이트에 흩어져 직접 비교됐다. 축처럼
-//! 생겼지만 값이 하나뿐이라 축이 아니었다. Linux 를 얹으면 리터럴이 둘로 늘고
-//! BC-250 을 얹으면 셋으로 늘며, 그때마다 흩어진 자리를 전부 다시 훑어야 한다.
-//!
-//! 여기서는 축을 둘로 나눈다.
-//!
-//! * [`HostOs`] — 파일이 어디 놓이고 무엇으로 불리는가. 실행기 이름, 컴파일된
-//!   모듈의 확장자, 공유 라이브러리를 찾는 환경 변수가 여기 달린다.
-//! * [`HardwareProfile`] — 무엇으로 계산하는가. 가속기와 그것이 요구하는 VRAM.
-//!
-//! 프로파일은 이 둘의 곱일 뿐이다. 새 기계는 [`PROFILES`] 에 행 하나를 더하면
-//! 들어온다. 운영체제가 같으면 배치를 다시 적지 않고, 가속기가 같으면 요구
-//! 사항을 다시 적지 않는다.
+//! Registry driven selection and runtime-only TensorRT process layout.
 
 /// 런타임이 도는 운영체제. 파일 배치와 라이브러리 탐색 규약이 여기 달린다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostOs {
     Windows,
     Linux,
-}
-
-/// 무엇으로 계산하는가.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Accelerator {
-    /// NVIDIA + TensorRT.
-    TensorRtCuda,
-    /// AMD + ROCm. BC-250 대비 — 실기에서 재기 전까지는 선언만 있다.
-    Rocm,
 }
 
 /// 운영체제 축. 같은 운영체제를 쓰는 프로파일은 이것을 공유한다.
@@ -63,17 +39,10 @@ const LINUX_LAYOUT: OsLayout = OsLayout {
     library_path_var: "LD_LIBRARY_PATH",
 };
 
-/// 하드웨어 축. 같은 가속기를 쓰는 프로파일은 이것을 공유한다.
+/// Runtime process settings that are not profile eligibility data.
 #[derive(Debug, Clone, Copy)]
 pub struct HardwareProfile {
-    pub accelerator: Accelerator,
-    /// 런타임이 자기를 뭐라고 부르는지. 건강 확인 응답과 대조한다.
     pub service: &'static str,
-    pub backend: &'static str,
-    /// 이 가속기가 요구하는 최소 VRAM.
-    pub min_vram_gb: f64,
-    /// 어느 카드를 보여 줄지 정하는 환경 변수. NVIDIA 는
-    /// `CUDA_VISIBLE_DEVICES`, AMD 는 `ROCR_VISIBLE_DEVICES`.
     pub visible_devices_var: &'static str,
     /// 번들 안에서 가속기 공유 라이브러리가 놓이는 자리. site-packages 아래
     /// 상대 경로다 — 운영체제마다 site-packages 위치가 다르므로 그 앞은
@@ -82,51 +51,23 @@ pub struct HardwareProfile {
 }
 
 const TRT_6G: HardwareProfile = HardwareProfile {
-    accelerator: Accelerator::TensorRtCuda,
     service: "voxcpm2-tensorrt",
-    backend: "tensorrt_locdit",
-    min_vram_gb: 6.0,
     visible_devices_var: "CUDA_VISIBLE_DEVICES",
     library_dir_in_site_packages: "tensorrt_libs",
 };
 
-/// BC-250 대비 자리. 실기에서 재기 전까지 값은 잠정이다 — gfx1013 의 ROCm
-/// 지원이 제한적이라 실제로는 다른 백엔드로 내려갈 수 있다.
-const ROCM_6G: HardwareProfile = HardwareProfile {
-    accelerator: Accelerator::Rocm,
-    service: "voxcpm2-rocm",
-    backend: "rocm_locdit",
-    min_vram_gb: 6.0,
-    visible_devices_var: "ROCR_VISIBLE_DEVICES",
-    library_dir_in_site_packages: "rocm_libs",
-};
-
-/// 운영체제 × 하드웨어. 이름은 그 곱의 식별자일 뿐이다.
+/// A selected registry row with process layout resolved at runtime.
 #[derive(Debug, Clone, Copy)]
-pub struct VoiceProfile {
-    pub id: &'static str,
+pub struct VoiceProfile<'a> {
+    pub entry: &'a crate::VoxCpm2RegistryEntry,
     pub os: HostOs,
     pub hardware: HardwareProfile,
 }
 
-/// 아는 프로파일 전부. 새 기계는 여기 한 줄이다.
-pub const PROFILES: &[VoiceProfile] = &[
-    VoiceProfile {
-        id: "windows_trt_6g",
-        os: HostOs::Windows,
-        hardware: TRT_6G,
-    },
-    VoiceProfile {
-        id: "linux_trt_6g",
-        os: HostOs::Linux,
-        hardware: TRT_6G,
-    },
-    VoiceProfile {
-        id: "linux_rocm_6g",
-        os: HostOs::Linux,
-        hardware: ROCM_6G,
-    },
-];
+pub struct ProfileSelection<'a> {
+    pub profile: &'a crate::VoxCpm2RegistryEntry,
+    pub device: &'a crate::accelerator::AcceleratorDevice,
+}
 
 pub fn layout(os: HostOs) -> &'static OsLayout {
     match os {
@@ -135,7 +76,11 @@ pub fn layout(os: HostOs) -> &'static OsLayout {
     }
 }
 
-impl VoiceProfile {
+impl<'a> VoiceProfile<'a> {
+    pub fn id(&self) -> &'a str {
+        &self.entry.id
+    }
+
     pub fn layout(&self) -> &'static OsLayout {
         layout(self.os)
     }
@@ -163,10 +108,6 @@ fn join_relative(base: &std::path::Path, relative: &str) -> std::path::PathBuf {
         .fold(base.to_path_buf(), |acc, part| acc.join(part))
 }
 
-pub fn profile(id: &str) -> Option<&'static VoiceProfile> {
-    PROFILES.iter().find(|p| p.id == id)
-}
-
 /// 지금 이 빌드가 도는 운영체제. 지원하지 않는 곳에서는 `None`.
 pub fn host_os() -> Option<HostOs> {
     if cfg!(windows) {
@@ -178,61 +119,248 @@ pub fn host_os() -> Option<HostOs> {
     }
 }
 
-/// 이 기계에 맞는 프로파일. 운영체제와 가속기가 둘 다 맞아야 한다.
-pub fn profile_for_host(os: HostOs, accelerator: Accelerator) -> Option<&'static VoiceProfile> {
-    PROFILES
-        .iter()
-        .find(|p| p.os == os && p.hardware.accelerator == accelerator)
+fn registry_os(os: HostOs) -> &'static str {
+    match os {
+        HostOs::Windows => "windows",
+        HostOs::Linux => "linux",
+    }
 }
 
-/// 이 프로파일을 이 기계에서 돌려도 되는가.
-///
-/// 모르는 이름과 다른 기계의 프로파일을 여기서 갈라 낸다. 기동 직전에 한 번
-/// 물으면, 흩어진 리터럴 비교가 필요 없다.
-pub fn ensure_runs_here(
-    id: &str,
+/// Shell runtime support is an independent input: seeing an NVIDIA device in
+/// Vulkan does not make TensorRT or a Vulkan voice executable available.
+pub fn available_backends(os: Option<HostOs>) -> Vec<&'static str> {
+    match (os, host_os()) {
+        (Some(HostOs::Windows), Some(HostOs::Windows))
+        | (Some(HostOs::Linux), Some(HostOs::Linux)) => vec!["tensorrt_locdit"],
+        _ => Vec::new(),
+    }
+}
+
+fn backend_runtime_config(backend: &str) -> Option<HardwareProfile> {
+    match backend {
+        "tensorrt_locdit" => Some(TRT_6G),
+        _ => None,
+    }
+}
+
+pub fn runtime_profile<'a>(
+    entry: &'a crate::VoxCpm2RegistryEntry,
     os: Option<HostOs>,
-    accelerator: Option<Accelerator>,
-) -> Result<&'static VoiceProfile, String> {
-    let found = profile(id).ok_or_else(|| format!("모르는 음성 프로파일입니다: {id}"))?;
-    let os = os.ok_or_else(|| "이 운영체제에는 로컬 음성 런타임이 없습니다".to_string())?;
-    if found.os != os {
-        return Err(format!(
-            "{id} 는 이 운영체제용이 아닙니다 (프로파일 {:?}, 기계 {os:?})",
-            found.os
-        ));
-    }
-    let accelerator = accelerator
-        .ok_or_else(|| "가속기를 찾지 못했습니다 — 로컬 음성은 GPU 가 필요합니다".to_string())?;
-    if found.hardware.accelerator != accelerator {
-        return Err(format!(
-            "{id} 는 이 가속기용이 아닙니다 (프로파일 {:?}, 기계 {accelerator:?})",
-            found.hardware.accelerator
-        ));
-    }
-    Ok(found)
+) -> Option<VoiceProfile<'a>> {
+    let os = os?;
+    (entry.status == crate::VOXCPM2_STATUS_RELEASED
+        && entry.os == registry_os(os)
+        && backend_runtime_config(&entry.backend).is_some()
+        && available_backends(Some(os)).contains(&entry.backend.as_str()))
+    .then(|| VoiceProfile {
+        entry,
+        os,
+        hardware: backend_runtime_config(&entry.backend).expect("backend was checked"),
+    })
 }
 
-/// 프로파일이 요구하는 VRAM 을 채우는가.
-pub fn validate_vram(profile: &VoiceProfile, vram_gb: Option<f64>) -> Result<f64, String> {
-    let minimum = profile.hardware.min_vram_gb;
-    match vram_gb {
-        Some(vram) if vram >= minimum => Ok(vram),
-        Some(vram) => Err(format!(
-            "로컬 음성은 VRAM {minimum:.0}GB 이상이 필요합니다 (측정 {vram:.0}GB)"
-        )),
-        None => Err(format!(
-            "로컬 음성은 VRAM {minimum:.0}GB 이상인 GPU 가 필요합니다 — GPU 를 찾지 못했습니다"
-        )),
+fn execution_accelerator_matches(
+    profile_accelerator: &str,
+    device: &crate::accelerator::AcceleratorDevice,
+) -> bool {
+    use crate::accelerator::{AcceleratorApi, DeviceIdKind, HardwareVendor};
+
+    match profile_accelerator {
+        // The registry names a runtime API. Vulkan reports the enumerating API
+        // and hardware vendor separately, so CUDA maps explicitly through the
+        // NVIDIA vendor while backend support is checked independently.
+        "cuda" => {
+            device.vendor == HardwareVendor::Nvidia
+                && (device_legacy_index(device).is_some()
+                    || device.provider_id.kind == DeviceIdKind::VulkanUuid)
+        }
+        "vulkan" => device.accelerator == AcceleratorApi::Vulkan,
+        // The common inventory has no ROCm execution probe, so an AMD Vulkan
+        // device is not evidence that ROCm is available.
+        "rocm" => false,
+        _ => false,
     }
+}
+
+fn profile_minimum_bytes(entry: &crate::VoxCpm2RegistryEntry) -> Option<u64> {
+    entry.min_vram_gi_b.checked_mul(1024 * 1024 * 1024)
+}
+
+fn device_legacy_index(device: &crate::accelerator::AcceleratorDevice) -> Option<u32> {
+    device
+        .nvidia
+        .as_ref()
+        .and_then(|metadata| metadata.compatibility_index)
+}
+
+/// Preserve real NVIDIA indices where UUID matching supplied them. Devices
+/// without a legacy index get a deterministic display index from stable IDs;
+/// these display indices are never passed to CUDA in place of a legacy index.
+fn inventory_display_indices(
+    inventory: &crate::accelerator::AcceleratorInventory,
+) -> Vec<(String, u32)> {
+    let mut devices = inventory.devices.iter().collect::<Vec<_>>();
+    devices.sort_by(|left, right| left.provider_id.value.cmp(&right.provider_id.value));
+
+    let mut used = std::collections::HashSet::new();
+    let mut indexed = Vec::with_capacity(devices.len());
+    let mut pending = Vec::new();
+    for device in devices {
+        match device_legacy_index(device) {
+            Some(index) if used.insert(index) => {
+                indexed.push((device.provider_id.value.clone(), index));
+            }
+            _ => pending.push(device),
+        }
+    }
+
+    for device in pending {
+        let Some(index) = (0..u32::MAX).find(|index| !used.contains(index)) else {
+            break;
+        };
+        used.insert(index);
+        indexed.push((device.provider_id.value.clone(), index));
+    }
+
+    indexed.sort_by_key(|(_, index)| *index);
+    indexed
+}
+
+pub fn select_profile<'a>(
+    entries: &'a [crate::VoxCpm2RegistryEntry],
+    host: Option<HostOs>,
+    inventory: &'a crate::accelerator::AcceleratorInventory,
+    preferred_device_id: Option<&str>,
+    available_backends: &[&str],
+) -> Option<ProfileSelection<'a>> {
+    let host = host?;
+    if inventory.status != crate::accelerator::DetectionStatus::Detected {
+        return None;
+    }
+    let preferred_device = preferred_device_id
+        .and_then(|id| inventory.devices.iter().find(|device| device.provider_id.value == id));
+    let mut candidates = Vec::new();
+
+    for entry in entries.iter().filter(|entry| {
+        entry.status == crate::VOXCPM2_STATUS_RELEASED
+            && entry.os == registry_os(host)
+            && available_backends.contains(&entry.backend.as_str())
+            && backend_runtime_config(&entry.backend).is_some()
+    }) {
+        let Some(minimum) = profile_minimum_bytes(entry) else {
+            continue;
+        };
+        for device in inventory.devices.iter().filter(|device| {
+            preferred_device.is_none_or(|preferred| preferred.provider_id == device.provider_id)
+                && execution_accelerator_matches(&entry.accelerator, device)
+                && device.total_vram_bytes.is_some_and(|total| total >= minimum)
+        }) {
+            candidates.push((entry, device));
+        }
+    }
+
+    candidates
+        .into_iter()
+        .max_by(|(left_profile, left), (right_profile, right)| {
+            left.available_vram_bytes
+                .unwrap_or_default()
+                .cmp(&right.available_vram_bytes.unwrap_or_default())
+                .then_with(|| {
+                    device_legacy_index(right)
+                        .unwrap_or(u32::MAX)
+                        .cmp(&device_legacy_index(left).unwrap_or(u32::MAX))
+                })
+                .then_with(|| right.provider_id.value.cmp(&left.provider_id.value))
+                .then_with(|| right_profile.id.cmp(&left_profile.id))
+        })
+        .map(|(profile, device)| ProfileSelection { profile, device })
+}
+
+pub fn select_profile_by_id<'a>(
+    id: &str,
+    entries: &'a [crate::VoxCpm2RegistryEntry],
+    host: Option<HostOs>,
+    inventory: &'a crate::accelerator::AcceleratorInventory,
+    preferred_device_id: Option<&str>,
+    available_backends: &[&str],
+) -> Option<ProfileSelection<'a>> {
+    let entry = entries.iter().find(|entry| entry.id == id)?;
+    select_profile(
+        std::slice::from_ref(entry),
+        host,
+        inventory,
+        preferred_device_id,
+        available_backends,
+    )
+}
+
+pub fn inventory_gpu_info(
+    inventory: &crate::accelerator::AcceleratorInventory,
+) -> Vec<GpuInfo> {
+    inventory_display_indices(inventory)
+        .into_iter()
+        .filter_map(|(device_id, index)| {
+            let device = inventory
+                .devices
+                .iter()
+                .find(|device| device.provider_id.value == device_id)?;
+            let total_mib = device.total_vram_bytes? / (1024 * 1024);
+            let runtime_selector = device_legacy_index(device)
+                .map(|legacy_index| legacy_index.to_string())
+                .or_else(|| {
+                    (device.vendor == crate::accelerator::HardwareVendor::Nvidia)
+                        .then(|| device.provider_id.value.strip_prefix("vulkan:uuid:"))
+                        .flatten()
+                        .map(|uuid| format!("GPU-{uuid}"))
+                });
+            Some(GpuInfo {
+                index,
+                free_mib: device.available_vram_bytes.unwrap_or_default() / (1024 * 1024),
+                total_mib,
+                device_id,
+                vendor: device.vendor,
+                runtime_selector,
+            })
+        })
+        .collect()
+}
+
+pub fn selected_device_id(
+    inventory: &crate::accelerator::AcceleratorInventory,
+    configured_index: Option<u32>,
+) -> Option<String> {
+    let gpus = inventory_gpu_info(inventory);
+    if let Some(index) = configured_index {
+        if let Some(gpu) = gpus.iter().find(|gpu| gpu.index == index) {
+            return Some(gpu.device_id.clone());
+        }
+    }
+
+    let prefer_nvidia = gpus
+        .iter()
+        .any(|gpu| gpu.vendor == crate::accelerator::HardwareVendor::Nvidia);
+    gpus.iter()
+        .filter(|gpu| !prefer_nvidia || gpu.vendor == crate::accelerator::HardwareVendor::Nvidia)
+        .max_by(|left, right| {
+            left.free_mib
+                .cmp(&right.free_mib)
+                .then_with(|| right.index.cmp(&left.index))
+                .then_with(|| right.device_id.cmp(&left.device_id))
+        })
+        .map(|gpu| gpu.device_id.clone())
 }
 
 /// 카드 한 장의 상태.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GpuInfo {
     pub index: u32,
     pub free_mib: u64,
     pub total_mib: u64,
+    pub(crate) device_id: String,
+    pub(crate) vendor: crate::accelerator::HardwareVendor,
+    /// CUDA_VISIBLE_DEVICES selector. It is the UUID when NVIDIA's optional
+    /// compatibility-index supplement is unavailable.
+    pub(crate) runtime_selector: Option<String>,
 }
 
 /// 어느 카드에 올릴 것인가.
@@ -287,10 +415,21 @@ pub fn accelerator_env(
 ) -> Vec<(String, String)> {
     let mut out = Vec::new();
     if let Some(chosen) = select_gpu(gpus, configured_gpu) {
-        out.push((
-            profile.hardware.visible_devices_var.to_string(),
-            chosen.to_string(),
-        ));
+        if let Some(gpu) = gpus.iter().find(|gpu| gpu.index == chosen) {
+            let selector = match (gpu.vendor, gpu.runtime_selector.as_ref()) {
+                (crate::accelerator::HardwareVendor::Nvidia, Some(selector)) => {
+                    Some(selector.clone())
+                }
+                (crate::accelerator::HardwareVendor::Nvidia, None) => None,
+                (_, _) => Some(chosen.to_string()),
+            };
+            if let Some(selector) = selector {
+                out.push((
+                    profile.hardware.visible_devices_var.to_string(),
+                    selector,
+                ));
+            }
+        }
     }
     if let Some(dir) = library_dir {
         let separator = match profile.os {
@@ -325,182 +464,32 @@ pub fn resolve_torch_device(
     }
 }
 
-/// 이 기계의 가속기를 찾는다.
-///
-/// NVIDIA 는 `nvidia-smi`, AMD 는 `rocm-smi` 로 묻는다. 둘 다 없으면 `None` —
-/// 없는 것을 있다고 하지 않는다. 탐지 결과가 어느 프로파일을 쓸지 정한다.
-pub fn detect_accelerator() -> Option<Accelerator> {
-    if !query_gpus(Accelerator::TensorRtCuda).is_empty() {
-        return Some(Accelerator::TensorRtCuda);
-    }
-    if !query_gpus(Accelerator::Rocm).is_empty() {
-        return Some(Accelerator::Rocm);
-    }
-    None
-}
-
-/// 가속기에 카드 목록을 묻는다.
-///
-/// 두 도구의 질의 형태가 다를 뿐 답의 모양은 같다 — 번호, 여유, 총량. 그
-/// 차이를 여기서 흡수해 위쪽은 [`GpuInfo`] 만 본다.
-pub fn query_gpus(accelerator: Accelerator) -> Vec<GpuInfo> {
-    let (program, args) = match accelerator {
-        Accelerator::TensorRtCuda => (
-            "nvidia-smi",
-            vec![
-                "--query-gpu=index,memory.free,memory.total",
-                "--format=csv,noheader,nounits",
-            ],
-        ),
-        Accelerator::Rocm => ("rocm-smi", vec!["--showmeminfo", "vram", "--csv"]),
-    };
-    let mut command = std::process::Command::new(program);
-    command.args(&args);
-    crate::platform::hide_console(&mut command);
-    let Ok(output) = command.output() else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    match accelerator {
-        Accelerator::TensorRtCuda => parse_nvidia_gpu_csv(&text),
-        Accelerator::Rocm => parse_rocm_gpu_csv(&text),
-    }
-}
-
-/// `index, memory.free, memory.total` 세 열. 단위는 MiB.
-pub fn parse_nvidia_gpu_csv(text: &str) -> Vec<GpuInfo> {
-    text.lines()
-        .filter_map(|line| {
-            let mut parts = line.split(',').map(str::trim);
-            let index = parts.next()?.parse::<u32>().ok()?;
-            let free_mib = parts.next()?.parse::<u64>().ok()?;
-            let total_mib = parts.next()?.parse::<u64>().ok()?;
-            Some(GpuInfo {
-                index,
-                free_mib,
-                total_mib,
-            })
-        })
-        .collect()
-}
-
-/// `rocm-smi --showmeminfo vram --csv` 는 머리글이 있고 장치를 `card0` 처럼
-/// 적으며 바이트로 답한다. 그 셋만 다르고 나머지는 같다.
-pub fn parse_rocm_gpu_csv(text: &str) -> Vec<GpuInfo> {
-    text.lines()
-        .filter_map(|line| {
-            let mut parts = line.split(',').map(str::trim);
-            let device = parts.next()?;
-            let index = device.strip_prefix("card")?.parse::<u32>().ok()?;
-            let total_bytes = parts.next()?.parse::<u64>().ok()?;
-            let used_bytes = parts.next()?.parse::<u64>().ok()?;
-            let total_mib = total_bytes / (1024 * 1024);
-            Some(GpuInfo {
-                index,
-                free_mib: total_mib.saturating_sub(used_bytes / (1024 * 1024)),
-                total_mib,
-            })
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn profile(id: &str, os: HostOs) -> VoiceProfile<'static> {
+        let entry = crate::embedded_voxcpm2_profile_registry()
+            .entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .expect("fixture registry row");
+        VoiceProfile {
+            entry,
+            os,
+            hardware: TRT_6G,
+        }
+    }
+
     #[test]
     fn 운영체제가_같으면_배치를_공유한다() {
-        let win = profile("windows_trt_6g").unwrap();
-        let linux = profile("linux_trt_6g").unwrap();
+        let win = profile("windows_trt_6g", HostOs::Windows);
+        let linux = profile("linux_trt_6g", HostOs::Linux);
         assert_eq!(win.layout().compiled_module_extension, "pyd");
         assert_eq!(linux.layout().compiled_module_extension, "so");
         assert_eq!(linux.layout().library_path_var, "LD_LIBRARY_PATH");
-        // 같은 운영체제의 두 프로파일은 같은 배치를 가리킨다 — 사본이 아니다.
-        assert_eq!(
-            profile("linux_rocm_6g").unwrap().layout().python_relative,
-            linux.layout().python_relative
-        );
-    }
-
-    #[test]
-    fn 가속기가_같으면_요구사항을_공유한다() {
-        let win = profile("windows_trt_6g").unwrap();
-        let linux = profile("linux_trt_6g").unwrap();
-        assert_eq!(win.hardware.min_vram_gb, linux.hardware.min_vram_gb);
-        assert_eq!(win.hardware.backend, linux.hardware.backend);
-    }
-
-    #[test]
-    fn 모르는_이름은_거절한다() {
-        let err = ensure_runs_here(
-            "linux_cuda_99g",
-            Some(HostOs::Linux),
-            Some(Accelerator::TensorRtCuda),
-        )
-        .unwrap_err();
-        assert!(err.contains("모르는"), "{err}");
-    }
-
-    #[test]
-    fn 다른_운영체제의_프로파일은_거절한다() {
-        let err = ensure_runs_here(
-            "windows_trt_6g",
-            Some(HostOs::Linux),
-            Some(Accelerator::TensorRtCuda),
-        )
-        .unwrap_err();
-        assert!(err.contains("운영체제"), "{err}");
-    }
-
-    #[test]
-    fn 다른_가속기의_프로파일은_거절한다() {
-        let err = ensure_runs_here(
-            "linux_trt_6g",
-            Some(HostOs::Linux),
-            Some(Accelerator::Rocm),
-        )
-        .unwrap_err();
-        assert!(err.contains("가속기"), "{err}");
-    }
-
-    #[test]
-    fn 가속기를_못_찾으면_거절한다() {
-        let err = ensure_runs_here("linux_trt_6g", Some(HostOs::Linux), None).unwrap_err();
-        assert!(err.contains("가속기"), "{err}");
-    }
-
-    #[test]
-    fn 기계에_맞는_프로파일을_고른다() {
-        assert_eq!(
-            profile_for_host(HostOs::Linux, Accelerator::TensorRtCuda)
-                .unwrap()
-                .id,
-            "linux_trt_6g"
-        );
-        assert_eq!(
-            profile_for_host(HostOs::Linux, Accelerator::Rocm).unwrap().id,
-            "linux_rocm_6g"
-        );
-        assert_eq!(
-            profile_for_host(HostOs::Windows, Accelerator::TensorRtCuda)
-                .unwrap()
-                .id,
-            "windows_trt_6g"
-        );
-        // Windows + AMD 는 아직 없다. 없는 것을 있다고 하지 않는다.
-        assert!(profile_for_host(HostOs::Windows, Accelerator::Rocm).is_none());
-    }
-
-    #[test]
-    fn vram이_모자라면_거절한다() {
-        let p = profile("linux_trt_6g").unwrap();
-        assert_eq!(validate_vram(p, Some(24.0)).unwrap(), 24.0);
-        assert_eq!(validate_vram(p, Some(6.0)).unwrap(), 6.0);
-        assert!(validate_vram(p, Some(5.9)).is_err());
-        assert!(validate_vram(p, None).is_err());
+        assert_eq!(win.hardware.visible_devices_var, "CUDA_VISIBLE_DEVICES");
+        assert_eq!(linux.hardware.library_dir_in_site_packages, "tensorrt_libs");
     }
 
     fn gpu(index: u32, free_mib: u64) -> GpuInfo {
@@ -508,6 +497,73 @@ mod tests {
             index,
             free_mib,
             total_mib: 24576,
+            device_id: format!("fixture:{index}"),
+            vendor: crate::accelerator::HardwareVendor::Nvidia,
+            runtime_selector: Some(index.to_string()),
+        }
+    }
+
+    fn registry_entry(
+        id: &str,
+        os: &str,
+        accelerator: &str,
+        backend: &str,
+        min_vram_gi_b: u64,
+        status: &str,
+    ) -> crate::VoxCpm2RegistryEntry {
+        crate::VoxCpm2RegistryEntry {
+            id: id.to_owned(),
+            os: os.to_owned(),
+            accelerator: accelerator.to_owned(),
+            backend: backend.to_owned(),
+            min_vram_gi_b,
+            status: status.to_owned(),
+            notes: "fixture".to_owned(),
+        }
+    }
+
+    fn nvidia_device(
+        uuid: &str,
+        index: u32,
+        total_vram_bytes: u64,
+        available_vram_bytes: u64,
+    ) -> crate::accelerator::AcceleratorDevice {
+        use crate::accelerator::{
+            AcceleratorApi, AcceleratorDevice, ComputeCapability, DeviceIdKind, HardwareVendor,
+            InformationSource, NvidiaMetadata, ProviderScopedDeviceId,
+        };
+
+        AcceleratorDevice {
+            accelerator: AcceleratorApi::Vulkan,
+            vendor: HardwareVendor::Nvidia,
+            name: Some("NVIDIA fixture".to_owned()),
+            provider_id: ProviderScopedDeviceId {
+                provider: AcceleratorApi::Vulkan,
+                kind: DeviceIdKind::VulkanUuid,
+                value: format!("vulkan:uuid:{uuid}"),
+            },
+            total_vram_bytes: Some(total_vram_bytes),
+            available_vram_bytes: Some(available_vram_bytes),
+            info_source: InformationSource::Vulkan,
+            total_vram_source: Some(InformationSource::Vulkan),
+            available_vram_source: Some(InformationSource::NvidiaSmi),
+            nvidia: Some(NvidiaMetadata {
+                compatibility_index: Some(index),
+                name: Some("NVIDIA fixture".to_owned()),
+                compute_capability: Some(ComputeCapability { major: 8, minor: 9 }),
+                driver_version: Some("fixture".to_owned()),
+            }),
+            nvidia_info_source: Some(InformationSource::NvidiaSmi),
+        }
+    }
+
+    fn detected_inventory(
+        devices: Vec<crate::accelerator::AcceleratorDevice>,
+    ) -> crate::accelerator::AcceleratorInventory {
+        crate::accelerator::AcceleratorInventory {
+            status: crate::accelerator::DetectionStatus::Detected,
+            devices,
+            error_code: None,
         }
     }
 
@@ -546,38 +602,17 @@ mod tests {
     #[test]
     fn 번들_경로가_운영체제_축에서_나온다() {
         let base = std::path::Path::new("/bundle");
-        let win = profile("windows_trt_6g").unwrap();
-        let linux = profile("linux_trt_6g").unwrap();
+        let win = profile("windows_trt_6g", HostOs::Windows);
+        let linux = profile("linux_trt_6g", HostOs::Linux);
         assert!(win
             .bundled_python(base)
             .ends_with("artifact/python/python.exe"));
         assert!(linux
             .bundled_python(base)
             .ends_with("artifact/python/bin/python3"));
-        // 가속기 라이브러리는 두 축이 만나는 자리다 — 운영체제가 site-packages
-        // 위치를, 가속기가 그 아래 이름을 준다.
         assert!(linux
             .accelerator_library_dir(base)
             .ends_with("python/lib/python3.10/site-packages/tensorrt_libs"));
-        assert!(profile("linux_rocm_6g")
-            .unwrap()
-            .accelerator_library_dir(base)
-            .ends_with("site-packages/rocm_libs"));
-    }
-
-    #[test]
-    fn 가시_장치_변수는_가속기가_정한다() {
-        assert_eq!(
-            profile("linux_trt_6g").unwrap().hardware.visible_devices_var,
-            "CUDA_VISIBLE_DEVICES"
-        );
-        assert_eq!(
-            profile("linux_rocm_6g")
-                .unwrap()
-                .hardware
-                .visible_devices_var,
-            "ROCR_VISIBLE_DEVICES"
-        );
     }
 
     #[test]
@@ -585,7 +620,7 @@ mod tests {
         // 이 기계의 실제 모양 — 0번에 아바타가 상주한다.
         let gpus = [gpu(0, 20011), gpu(1, 24014)];
         let env = accelerator_env(
-            profile("linux_trt_6g").unwrap(),
+            &profile("linux_trt_6g", HostOs::Linux),
             &gpus,
             None,
             None,
@@ -601,7 +636,7 @@ mod tests {
     fn 사람이_고른_카드가_환경_변수가_된다() {
         let gpus = [gpu(0, 20011), gpu(1, 24014)];
         let env = accelerator_env(
-            profile("linux_trt_6g").unwrap(),
+            &profile("linux_trt_6g", HostOs::Linux),
             &gpus,
             Some(0),
             None,
@@ -611,23 +646,10 @@ mod tests {
     }
 
     #[test]
-    fn 가속기마다_변수_이름이_다르다() {
-        let gpus = [gpu(0, 16000)];
-        let rocm = accelerator_env(
-            profile("linux_rocm_6g").unwrap(),
-            &gpus,
-            None,
-            None,
-            "",
-        );
-        assert_eq!(rocm[0].0, "ROCR_VISIBLE_DEVICES");
-    }
-
-    #[test]
     fn 라이브러리_경로는_덮지_않고_앞에_붙인다() {
         let dir = std::path::Path::new("/bundle/artifact/lib/tensorrt_libs");
         let env = accelerator_env(
-            profile("linux_trt_6g").unwrap(),
+            &profile("linux_trt_6g", HostOs::Linux),
             &[],
             None,
             Some(dir),
@@ -646,7 +668,7 @@ mod tests {
     fn 운영체제마다_경로_구분자가_다르다() {
         let dir = std::path::Path::new("C:/bundle/tensorrt_libs");
         let env = accelerator_env(
-            profile("windows_trt_6g").unwrap(),
+            &profile("windows_trt_6g", HostOs::Windows),
             &[],
             None,
             Some(dir),
@@ -659,7 +681,7 @@ mod tests {
     #[test]
     fn 카드도_라이브러리도_없으면_세울_것이_없다() {
         let env = accelerator_env(
-            profile("linux_trt_6g").unwrap(),
+            &profile("linux_trt_6g", HostOs::Linux),
             &[],
             None,
             None,
@@ -677,120 +699,228 @@ mod tests {
         assert_eq!(resolve_torch_device(false, None), None);
     }
 
-    /// 세운 환경 변수가 실제로 그 카드에 올리는가.
-    ///
-    /// 앞의 테스트들은 "어느 카드를 고르는가" 와 "그 선택이 환경 변수가
-    /// 되는가" 까지만 잰다. 그 변수가 정말로 프로세스를 그 카드에 올리는지는
-    /// 붙여 보기 전에는 모른다 — 로컬 음성 런타임은 아카이브가 있어야 뜨므로
-    /// 그것으로는 잴 수 없다.
-    ///
-    /// 그래서 CUDA 를 쓰는 아무 프로세스나 우리가 만든 환경으로 띄우고, 그것이
-    /// 본 장치가 우리가 고른 물리 카드와 같은지 UUID 로 대조한다. 런타임이
-    /// 아니라 **배치 수단**을 재는 자리다.
-    ///
-    /// `NAIA_GPU_PLACEMENT_PYTHON` 에 torch 가 있는 파이썬을 주면 돈다. 없으면
-    /// 건너뛴다 — 기계마다 다른 경로를 코드에 박지 않는다.
+    #[test]
+    fn registry_selection_checks_status_os_accelerator_backend_and_vram() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let inventory = detected_inventory(vec![nvidia_device("aa", 0, 6 * GIB, 128 * 1024 * 1024)]);
+        let released = registry_entry("windows_trt_6g", "windows", "cuda", "tensorrt_locdit", 6, "released");
+        let available = ["tensorrt_locdit"];
+
+        assert!(select_profile(&[released.clone()], Some(HostOs::Windows), &inventory, None, &[]).is_none());
+        assert!(select_profile(&[released.clone()], Some(HostOs::Linux), &inventory, None, &available).is_none());
+        assert!(select_profile(&[registry_entry("windows_preview", "windows", "cuda", "tensorrt_locdit", 6, "preview")], Some(HostOs::Windows), &inventory, None, &available).is_none());
+        assert!(select_profile(&[registry_entry("windows_planned", "windows", "cuda", "tensorrt_locdit", 6, "planned")], Some(HostOs::Windows), &inventory, None, &available).is_none());
+        assert_eq!(select_profile(&[released], Some(HostOs::Windows), &inventory, None, &available).unwrap().device.provider_id.value, "vulkan:uuid:aa");
+    }
+
+    #[test]
+    fn registry_selection_requires_one_device_to_meet_inclusive_minimum() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let entry = registry_entry("linux_trt_6g", "linux", "cuda", "tensorrt_locdit", 6, "released");
+        let backends = ["tensorrt_locdit"];
+        let exact = detected_inventory(vec![nvidia_device("exact", 0, 6 * GIB, 1)]);
+        assert!(select_profile(&[entry.clone()], Some(HostOs::Linux), &exact, None, &backends).is_some());
+
+        let below = detected_inventory(vec![nvidia_device("below", 0, 6 * GIB - 1, 6 * GIB)]);
+        assert!(select_profile(&[entry.clone()], Some(HostOs::Linux), &below, None, &backends).is_none());
+
+        let split = detected_inventory(vec![
+            nvidia_device("first", 0, 4 * GIB, 4 * GIB),
+            nvidia_device("second", 1, 4 * GIB, 4 * GIB),
+        ]);
+        assert!(select_profile(&[entry], Some(HostOs::Linux), &split, None, &backends).is_none());
+    }
+
+    #[test]
+    fn registry_selection_keeps_vendor_api_and_backend_as_separate_checks() {
+        use crate::accelerator::{AcceleratorApi, HardwareVendor};
+
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let entry = registry_entry("linux_vulkan", "linux", "vulkan", "vulkan_cpp", 8, "released");
+        let mut device = nvidia_device("vk", 0, 8 * GIB, 8 * GIB);
+        let inventory = detected_inventory(vec![device.clone()]);
+        assert!(execution_accelerator_matches("vulkan", &inventory.devices[0]));
+        assert!(select_profile(&[entry.clone()], Some(HostOs::Linux), &inventory, None, &["tensorrt_locdit"]).is_none());
+        assert!(select_profile(&[entry.clone()], Some(HostOs::Linux), &inventory, None, &["vulkan_cpp"]).is_none());
+
+        device.vendor = HardwareVendor::Amd;
+        let amd = detected_inventory(vec![device]);
+        assert!(execution_accelerator_matches("vulkan", &amd.devices[0]));
+        assert!(!execution_accelerator_matches("cuda", &amd.devices[0]));
+        assert!(select_profile(&[entry], Some(HostOs::Linux), &amd, None, &["vulkan_cpp"]).is_none());
+        let rocm = registry_entry("linux_rocm", "linux", "rocm", "torch", 8, "released");
+        assert!(select_profile(&[rocm], Some(HostOs::Linux), &amd, None, &["torch"]).is_none());
+        assert_eq!(AcceleratorApi::Vulkan, amd.devices[0].accelerator);
+    }
+
+    #[test]
+    fn explicit_stable_device_id_precedes_the_free_memory_default() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let entries = [registry_entry("linux_trt_6g", "linux", "cuda", "tensorrt_locdit", 6, "released")];
+        let inventory = detected_inventory(vec![
+            nvidia_device("explicit", 0, 8 * GIB, 1 * GIB),
+            nvidia_device("default", 1, 12 * GIB, 10 * GIB),
+        ]);
+        let available = ["tensorrt_locdit"];
+
+        let explicit = select_profile(&entries, Some(HostOs::Linux), &inventory, Some("vulkan:uuid:explicit"), &available).unwrap();
+        assert_eq!(explicit.device.provider_id.value, "vulkan:uuid:explicit");
+        let default = select_profile(&entries, Some(HostOs::Linux), &inventory, None, &available).unwrap();
+        assert_eq!(default.device.provider_id.value, "vulkan:uuid:default");
+    }
+
+    #[test]
+    fn inventory_cards_use_uuid_joined_legacy_indices_and_existing_units() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let inventory = detected_inventory(vec![
+            nvidia_device("first", 3, 12 * GIB, 6 * GIB),
+            nvidia_device("second", 1, 8 * GIB, 4 * GIB),
+        ]);
+        let cards = inventory_gpu_info(&inventory);
+        assert_eq!(
+            cards
+                .iter()
+                .map(|gpu| (gpu.index, gpu.free_mib, gpu.total_mib))
+                .collect::<Vec<_>>(),
+            vec![(1, 4096, 8192), (3, 6144, 12288)]
+        );
+        assert_eq!(cards[0].device_id, "vulkan:uuid:second");
+        assert_eq!(select_gpu(&cards, None), Some(3));
+        assert_eq!(selected_device_id(&inventory, Some(1)).as_deref(), Some("vulkan:uuid:second"));
+    }
+
+    #[test]
+    fn missing_nvidia_supplement_keeps_vulkan_cards_and_binds_by_uuid() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let mut later = nvidia_device("z-device", 8, 8 * GIB, 6 * GIB);
+        later.nvidia = None;
+        later.nvidia_info_source = None;
+        let mut earlier = nvidia_device("a-device", 9, 8 * GIB, 4 * GIB);
+        earlier.nvidia = None;
+        earlier.nvidia_info_source = None;
+        let inventory = detected_inventory(vec![later, earlier]);
+
+        let cards = inventory_gpu_info(&inventory);
+
+        assert_eq!(cards.len(), 2);
+        assert_eq!(cards[0].device_id, "vulkan:uuid:a-device");
+        assert_eq!(cards[0].index, 0);
+        assert_eq!(cards[1].device_id, "vulkan:uuid:z-device");
+        assert_eq!(cards[1].index, 1);
+        assert_eq!(cards[1].runtime_selector.as_deref(), Some("GPU-z-device"));
+        assert_eq!(selected_device_id(&inventory, Some(1)).as_deref(), Some("vulkan:uuid:z-device"));
+
+        let profile = profile("linux_trt_6g", HostOs::Linux);
+        let env = accelerator_env(&profile, &cards, Some(1), None, "");
+        assert_eq!(env, vec![("CUDA_VISIBLE_DEVICES".to_string(), "GPU-z-device".to_string())]);
+    }
+
+    #[test]
+    fn non_nvidia_vulkan_cards_remain_in_the_existing_card_list() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let mut amd = nvidia_device("amd-device", 0, 8 * GIB, 6 * GIB);
+        amd.vendor = crate::accelerator::HardwareVendor::Amd;
+        amd.nvidia = None;
+        amd.nvidia_info_source = None;
+        let inventory = detected_inventory(vec![amd]);
+
+        let cards = inventory_gpu_info(&inventory);
+
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].vendor, crate::accelerator::HardwareVendor::Amd);
+        assert_eq!(cards[0].total_mib, 8192);
+        assert_eq!(cards[0].runtime_selector, None);
+    }
+
+    /// Reads the host's real Vulkan cards. Run only as an explicitly selected
+    /// hardware check; the stage-3 validation command skips it.
+    #[test]
+    fn 실제_기계에서_카드를_읽는다() {
+        let inventory = crate::accelerator::list_accelerators();
+        let cards = inventory_gpu_info(&inventory);
+        if cards.is_empty() {
+            return;
+        }
+        assert!(cards.iter().all(|card| card.total_mib > 0));
+        assert!(select_gpu(&cards, None).is_some());
+    }
+
+    /// Confirms CUDA's visibility selector reaches the NVIDIA UUID selected
+    /// from the shared inventory. The stage-3 validation command skips it.
     #[test]
     fn 세운_환경_변수가_실제로_그_카드에_올린다() {
         let Ok(python) = std::env::var("NAIA_GPU_PLACEMENT_PYTHON") else {
             return;
         };
-        let gpus = query_gpus(Accelerator::TensorRtCuda);
-        if gpus.len() < 2 {
-            return; // 카드가 하나면 배치를 확인할 수 없다
+        let Some(os) = host_os() else {
+            return;
+        };
+        let inventory = crate::accelerator::list_accelerators();
+        let nvidia_cards = inventory_gpu_info(&inventory)
+            .into_iter()
+            .filter(|card| card.vendor == crate::accelerator::HardwareVendor::Nvidia)
+            .collect::<Vec<_>>();
+        if nvidia_cards.len() < 2 {
+            return;
         }
-        let profile = profile("linux_trt_6g").unwrap();
-        let env = accelerator_env(profile, &gpus, None, None, "");
-        let (var, chosen) = env.first().expect("고른 카드가 있어야 한다");
-        assert_eq!(var, "CUDA_VISIBLE_DEVICES");
-
-        // 물리 카드의 UUID. 우리가 고른 번호가 가리키는 실체다.
-        let uuids = std::process::Command::new("nvidia-smi")
-            .args(["--query-gpu=index,uuid", "--format=csv,noheader"])
-            .output()
-            .expect("nvidia-smi");
-        let expected_uuid = String::from_utf8_lossy(&uuids.stdout)
-            .lines()
-            .find_map(|line| {
-                let (index, uuid) = line.split_once(',')?;
-                (index.trim() == chosen).then(|| uuid.trim().to_string())
-            })
-            .expect("고른 번호의 UUID");
-
-        // 그 환경으로 띄운 프로세스가 보는 유일한 장치의 UUID.
-        let seen = std::process::Command::new(&python)
+        let Some(chosen) = select_gpu(&nvidia_cards, None) else {
+            return;
+        };
+        let Some(device_id) = selected_device_id(&inventory, Some(chosen)) else {
+            return;
+        };
+        let Some(expected_uuid) = device_id.strip_prefix("vulkan:uuid:") else {
+            return;
+        };
+        let profile_id = match os {
+            HostOs::Windows => "windows_trt_6g",
+            HostOs::Linux => "linux_trt_6g",
+        };
+        let env = accelerator_env(
+            &profile(profile_id, os),
+            &nvidia_cards,
+            Some(chosen),
+            None,
+            "",
+        );
+        let (key, value) = env
+            .iter()
+            .find(|(key, _)| key == "CUDA_VISIBLE_DEVICES")
+            .expect("selected NVIDIA device must have a CUDA selector");
+        let output = std::process::Command::new(python)
             .args([
                 "-c",
                 "import torch;print(torch.cuda.device_count());print(torch.cuda.get_device_properties(0).uuid)",
             ])
-            .env(var, chosen)
+            .env(key, value)
             .output()
-            .expect("python");
-        let stdout = String::from_utf8_lossy(&seen.stdout);
+            .expect("GPU placement Python process");
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let mut lines = stdout.lines();
-        assert_eq!(
-            lines.next().unwrap_or_default().trim(),
-            "1",
-            "환경 변수를 세웠는데 장치가 하나로 좁혀지지 않았다: {stdout}"
-        );
-        let seen_uuid = lines.next().unwrap_or_default().trim().to_string();
-        assert!(
-            expected_uuid.contains(&seen_uuid) || seen_uuid.contains(expected_uuid.trim_start_matches("GPU-")),
-            "고른 카드({chosen}, {expected_uuid})가 아니라 {seen_uuid} 에 올라갔다"
-        );
+        assert_eq!(lines.next().unwrap_or_default().trim(), "1");
+        let seen_uuid = lines.next().unwrap_or_default();
+        let normalize = |uuid: &str| {
+            uuid.trim()
+                .trim_start_matches("GPU-")
+                .chars()
+                .filter(|ch| ch.is_ascii_hexdigit())
+                .map(|ch| ch.to_ascii_lowercase())
+                .collect::<String>()
+        };
+        assert_eq!(normalize(seen_uuid), normalize(expected_uuid));
     }
 
     #[test]
-    fn 실제_기계에서_카드를_읽는다() {
-        // NVIDIA 가 없는 기계에서는 빈 목록이 계약이다.
-        let gpus = query_gpus(Accelerator::TensorRtCuda);
-        if gpus.is_empty() {
-            return;
-        }
-        assert!(gpus.iter().all(|g| g.total_mib > 0));
-        assert!(select_gpu(&gpus, None).is_some());
-    }
-
-    #[test]
-    fn nvidia_답을_읽는다() {
-        // 이 기계의 실제 출력 모양.
-        let text = "0, 20465, 24576\n1, 24466, 24576\n";
-        assert_eq!(
-            parse_nvidia_gpu_csv(text),
-            vec![
-                GpuInfo {
-                    index: 0,
-                    free_mib: 20465,
-                    total_mib: 24576
-                },
-                GpuInfo {
-                    index: 1,
-                    free_mib: 24466,
-                    total_mib: 24576
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn 읽지_못한_줄은_버린다() {
-        // 머리글이나 경고가 섞여도 카드 목록이 통째로 날아가면 안 된다.
-        let text = "index, memory.free [MiB], memory.total [MiB]\n0, 100, 200\n";
-        assert_eq!(parse_nvidia_gpu_csv(text).len(), 1);
-    }
-
-    #[test]
-    fn rocm_답을_바이트에서_MiB로_옮긴다() {
-        // device, total, used — 바이트. BC-250 대비.
-        let text = "device,Total Memory (B),Total Memory Used (B)\ncard0,17179869184,1073741824\n";
-        assert_eq!(
-            parse_rocm_gpu_csv(text),
-            vec![GpuInfo {
-                index: 0,
-                free_mib: 15360,
-                total_mib: 16384
-            }]
-        );
+    fn unsupported_inventory_or_no_released_candidate_stays_empty() {
+        let entry = registry_entry("linux_trt_6g", "linux", "cuda", "tensorrt_locdit", 6, "released");
+        let unavailable = crate::accelerator::AcceleratorInventory {
+            status: crate::accelerator::DetectionStatus::Unavailable,
+            devices: Vec::new(),
+            error_code: None,
+        };
+        assert!(select_profile(&[entry], Some(HostOs::Linux), &unavailable, None, &["tensorrt_locdit"]).is_none());
+        assert!(select_profile(&[], Some(HostOs::Linux), &detected_inventory(Vec::new()), None, &["tensorrt_locdit"]).is_none());
     }
 
     #[test]

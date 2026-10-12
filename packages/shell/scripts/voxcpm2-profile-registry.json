@@ -3,7 +3,7 @@
   "generatedFrom": {
     "repository": "nextain/voxcpm2-tensorrt",
     "path": "src/voxcpm2_tensorrt/profiles.py",
-    "sourceSha256": "3c42c55610fc3ea454562669cb2849126dca3c72f5ab8e19dd677a88f242d03c"
+    "sourceSha256": "b15d1625e698c95ec52303b2647752cd4befb09d6aa9fa5a1f2a224eaeb582cf"
   },
   "entries": [
     {
@@ -41,6 +41,15 @@
       "minVramGiB": 8,
       "status": "planned",
       "notes": "Reserved for AMD RX hardware a ROCm torch build supports. ROCm presents itself as a torch cuda device, so the torch backend serves it without a separate code path."
+    },
+    {
+      "id": "windows_vulkan_8g",
+      "os": "windows",
+      "accelerator": "vulkan",
+      "backend": "vulkan_cpp",
+      "minVramGiB": 8,
+      "status": "planned",
+      "notes": "Reserved for a Windows Vulkan runtime. Windows voice executable and a verified Windows synthesis path are not implemented yet."
     }
   ]
 }

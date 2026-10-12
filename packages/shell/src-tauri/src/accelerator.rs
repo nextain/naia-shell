@@ -4,6 +4,12 @@
 //! hardware facts only; it does not choose or start a voice backend.
 
 use serde::Serialize;
+use std::io::{self, Read};
+use std::process::{Command, Output, Stdio};
+use std::sync::OnceLock;
+use std::thread;
+use std::time::{Duration, Instant};
+use tokio::sync::OnceCell;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,6 +67,10 @@ pub(crate) struct ComputeCapability {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct NvidiaMetadata {
+    /// Legacy NVIDIA index used by CUDA_VISIBLE_DEVICES. It is joined by UUID,
+    /// never inferred from Vulkan enumeration order.
+    pub(crate) compatibility_index: Option<u32>,
+    pub(crate) name: Option<String>,
     pub(crate) compute_capability: Option<ComputeCapability>,
     pub(crate) driver_version: Option<String>,
 }
@@ -133,9 +143,93 @@ enum ProbeOutcome {
     Error(DetectionErrorCode),
 }
 
+const NVIDIA_SMI_TIMEOUT: Duration = Duration::from_secs(2);
+
+fn bounded_command_output(
+    command: &mut Command,
+    timeout: Duration,
+) -> io::Result<Option<Output>> {
+    let started = Instant::now();
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = command.spawn()?;
+    let mut stdout = child.stdout.take().expect("stdout was piped");
+    let reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).map(|_| bytes)
+    });
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stdout = reader
+                    .join()
+                    .map_err(|_| io::Error::other("child stdout reader panicked"))??;
+                return Ok(Some(Output {
+                    status,
+                    stdout,
+                    stderr: Vec::new(),
+                }));
+            }
+            Ok(None) if started.elapsed() < timeout => {
+                thread::sleep(
+                    Duration::from_millis(10).min(timeout.saturating_sub(started.elapsed())),
+                );
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = reader.join();
+                return Ok(None);
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = reader.join();
+                return Err(error);
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct InventoryCache {
+    inventory: OnceCell<AcceleratorInventory>,
+}
+
+impl InventoryCache {
+    async fn get_or_init_with<F>(&self, load: F) -> AcceleratorInventory
+    where
+        F: FnOnce() -> AcceleratorInventory + Send + 'static,
+    {
+        self.inventory
+            .get_or_init(|| async move {
+                match tokio::task::spawn_blocking(load).await {
+                    Ok(inventory) => inventory,
+                    Err(_) => AcceleratorInventory {
+                        status: DetectionStatus::Error,
+                        devices: Vec::new(),
+                        error_code: Some(DetectionErrorCode::VulkanInstanceCreationFailed),
+                    },
+                }
+            })
+            .await
+            .clone()
+    }
+}
+
 /// Enumerate Vulkan devices without changing any existing consumer path.
 pub(crate) fn list_accelerators() -> AcceleratorInventory {
     inventory_from_probe(platform_probe())
+}
+
+/// Enumerate on a blocking worker and share both an in-flight query and its
+/// result across request-level consumers.
+pub(crate) async fn list_accelerators_cached() -> AcceleratorInventory {
+    static INVENTORY: OnceLock<InventoryCache> = OnceLock::new();
+    INVENTORY
+        .get_or_init(InventoryCache::default)
+        .get_or_init_with(list_accelerators)
+        .await
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -290,7 +384,9 @@ fn parse_nvidia_smi_rows(output: &str) -> Vec<NvidiaSupplement> {
         .lines()
         .filter_map(|line| {
             let mut fields = line.split(',').map(str::trim);
+            let compatibility_index = fields.next()?.parse::<u32>().ok();
             let uuid = fields.next()?;
+            let name = fields.next().and_then(nonempty_value);
             let compute_capability = fields.next().and_then(parse_compute_capability);
             let driver_version = fields.next().and_then(nonempty_value);
             let available_vram_bytes = fields
@@ -306,6 +402,8 @@ fn parse_nvidia_smi_rows(output: &str) -> Vec<NvidiaSupplement> {
             Some(NvidiaSupplement {
                 uuid: normalized_uuid,
                 metadata: NvidiaMetadata {
+                    compatibility_index,
+                    name,
                     compute_capability,
                     driver_version,
                 },
@@ -485,13 +583,14 @@ mod vulkan {
     const NVIDIA_SMI: &str = "nvidia-smi";
 
     fn query_nvidia_smi() -> Vec<super::NvidiaSupplement> {
-        let output = Command::new(NVIDIA_SMI)
-            .args([
-                "--query-gpu=uuid,compute_cap,driver_version,memory.free",
-                "--format=csv,noheader,nounits",
-            ])
-            .output();
-        let Ok(output) = output else {
+        let mut command = Command::new(NVIDIA_SMI);
+        command.args([
+            "--query-gpu=index,uuid,name,compute_cap,driver_version,memory.free",
+            "--format=csv,noheader,nounits",
+        ]);
+        crate::platform::hide_console(&mut command);
+        let output = super::bounded_command_output(&mut command, super::NVIDIA_SMI_TIMEOUT);
+        let Ok(Some(output)) = output else {
             return Vec::new();
         };
         if !output.status.success() {
@@ -655,9 +754,9 @@ mod tests {
         nvidia.memory_heaps[0].budget_bytes = Some(3 * GIB);
         nvidia.memory_heaps[0].usage_bytes = Some(2 * GIB);
         nvidia.uuid = Some(NVIDIA_UUID.to_owned());
-        let supplemental = parse_nvidia_smi_rows(&format!(
-            "GPU-00112233-4455-6677-8899-aabbccddeeff,8.9,560.35.03,4096\n"
-        ));
+        let supplemental = parse_nvidia_smi_rows(
+            "0,GPU-00112233-4455-6677-8899-aabbccddeeff,NVIDIA Fixture,8.9,560.35.03,4096\n",
+        );
         let mut raw = vec![nvidia];
         match_nvidia_supplements(&mut raw, supplemental);
 
@@ -674,6 +773,8 @@ mod tests {
         assert_eq!(
             device.nvidia,
             Some(NvidiaMetadata {
+                compatibility_index: Some(0),
+                name: Some("NVIDIA Fixture".to_owned()),
                 compute_capability: Some(ComputeCapability { major: 8, minor: 9 }),
                 driver_version: Some("560.35.03".to_owned()),
             })
@@ -748,9 +849,9 @@ mod tests {
     #[test]
     fn nvidia_query_values_are_optional_and_invalid_rows_are_discarded() {
         let parsed = parse_nvidia_smi_rows(concat!(
-            "GPU-00112233-4455-6677-8899-aabbccddeeff,N/A,N/A,N/A\n",
-            "not-a-uuid,8.9,560.35.03,4096\n",
-            "GPU-ffeeddcc-bbaa-9988-7766-554433221100,invalid, ,overflow\n"
+            "0,GPU-00112233-4455-6677-8899-aabbccddeeff,N/A,N/A,N/A,N/A\n",
+            "1,not-a-uuid,NVIDIA fixture,8.9,560.35.03,4096\n",
+            "2,GPU-ffeeddcc-bbaa-9988-7766-554433221100,NVIDIA fixture,invalid, ,overflow\n"
         ));
 
         assert_eq!(parsed.len(), 2);
@@ -822,5 +923,68 @@ mod tests {
             ]),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn simultaneous_inventory_requests_share_one_background_probe() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let cache = Arc::new(InventoryCache::default());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let first = {
+            let cache = cache.clone();
+            let calls = calls.clone();
+            async move {
+                cache
+                    .get_or_init_with(move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        thread::sleep(Duration::from_millis(30));
+                        inventory_from_probe(ProbeOutcome::UnsupportedPlatform)
+                    })
+                    .await
+            }
+        };
+        let second = {
+            let cache = cache.clone();
+            let calls = calls.clone();
+            async move {
+                cache
+                    .get_or_init_with(move || {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        inventory_from_probe(ProbeOutcome::Error(
+                            DetectionErrorCode::VulkanInstanceCreationFailed,
+                        ))
+                    })
+                    .await
+            }
+        };
+
+        let (first, second) = tokio::join!(first, second);
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(first, second);
+        assert_eq!(first.status, DetectionStatus::UnsupportedPlatform);
+    }
+
+    #[test]
+    fn timeout_fixture_child() {
+        if std::env::var_os("NAIA_ACCELERATOR_TIMEOUT_FIXTURE").is_some() {
+            thread::sleep(Duration::from_secs(10));
+        }
+    }
+
+    #[test]
+    fn supplemental_process_times_out_and_is_reaped() {
+        let started = Instant::now();
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "accelerator::tests::timeout_fixture_child"])
+            .env("NAIA_ACCELERATOR_TIMEOUT_FIXTURE", "1");
+
+        let output = bounded_command_output(&mut command, Duration::from_millis(50)).unwrap();
+
+        assert!(output.is_none());
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

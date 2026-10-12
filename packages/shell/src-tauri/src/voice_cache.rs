@@ -864,7 +864,7 @@ pub fn read_slot_record(slot_dir: &Path) -> Option<SlotRecord> {
     serde_json::from_slice(&bytes).ok()
 }
 
-// ─── 10. Engine stamp input from nvidia-smi and installer lock ───────────────
+// ─── 10. NVIDIA engine identity from shared inventory and installer lock ────
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -875,7 +875,7 @@ pub struct GpuIdentity {
     pub driver_version: String,
 }
 
-/// Parses `nvidia-smi --query-gpu=index,name,compute_cap,driver_version --format=csv,noheader` output.
+/// Parses the legacy-compatible NVIDIA identity columns supplied by the shared inventory.
 pub fn parse_nvidia_identity_csv(text: &str) -> Vec<GpuIdentity> {
     let mut identities = Vec::new();
     for line in text.lines() {
@@ -898,24 +898,6 @@ pub fn parse_nvidia_identity_csv(text: &str) -> Vec<GpuIdentity> {
         }
     }
     identities
-}
-
-pub fn query_nvidia_identities() -> Vec<GpuIdentity> {
-    let mut cmd = std::process::Command::new("nvidia-smi");
-    cmd.arg("--query-gpu=index,name,compute_cap,driver_version")
-        .arg("--format=csv,noheader");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
-    match cmd.output() {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            parse_nvidia_identity_csv(&stdout)
-        }
-        _ => Vec::new(),
-    }
 }
 
 pub fn tensorrt_version_from_lock(installer_lock: &Path) -> Option<String> {

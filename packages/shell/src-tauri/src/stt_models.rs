@@ -35,25 +35,24 @@ pub struct SttModelInfo {
     pub recommendation: String, // "recommended" | "slow" | "not-recommended" | ""
 }
 
-/// Detect system GPU VRAM, total RAM, and CPU capability for model recommendations.
-/// Cached after first call to avoid repeated nvidia-smi spawns.
-fn detect_hardware() -> (u32, u32, bool) {
+/// Detect RAM and CPU capability; GPU VRAM comes from the shared accelerator inventory.
+fn detect_hardware(gpu_vram_mb: u32) -> (u32, u32, bool) {
     use std::sync::OnceLock;
-    static HW: OnceLock<(u32, u32, bool)> = OnceLock::new();
-    *HW.get_or_init(|| {
+    static HW: OnceLock<(u32, bool)> = OnceLock::new();
+    let (total_ram_mb, has_avx) = *HW.get_or_init(|| {
         let total_ram_mb = {
             let mut sys = sysinfo::System::new();
             sys.refresh_memory();
             (sys.total_memory() / 1024 / 1024) as u32
         };
-        let gpu_vram_mb = detect_nvidia_vram().unwrap_or(0);
         let has_avx = detect_avx_support();
         info!(
-            "[STT] Hardware detected: RAM={}MB, GPU VRAM={}MB, AVX={}",
-            total_ram_mb, gpu_vram_mb, has_avx
+            "[STT] CPU hardware detected: RAM={}MB, AVX={}",
+            total_ram_mb, has_avx
         );
-        (total_ram_mb, gpu_vram_mb, has_avx)
-    })
+        (total_ram_mb, has_avx)
+    });
+    (total_ram_mb, gpu_vram_mb, has_avx)
 }
 
 /// Check if CPU supports AVX instructions.
@@ -67,22 +66,6 @@ fn detect_avx_support() -> bool {
     {
         false
     }
-}
-
-fn detect_nvidia_vram() -> Option<u32> {
-    let mut cmd = std::process::Command::new("nvidia-smi");
-    cmd.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let output = cmd.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.trim().lines().next()?.trim().parse::<u32>().ok()
 }
 
 /// Compute recommendation for each model based on hardware.
@@ -123,9 +106,9 @@ fn compute_recommendation(
 }
 
 /// Returns the full model catalog with download status and hardware-based recommendations.
-pub fn get_model_catalog(app: &AppHandle) -> Vec<SttModelInfo> {
+pub fn get_model_catalog(app: &AppHandle, gpu_vram_mb: u32) -> Vec<SttModelInfo> {
     let models_dir = get_stt_models_dir(app);
-    let (total_ram_mb, gpu_vram_mb, has_avx) = detect_hardware();
+    let (total_ram_mb, gpu_vram_mb, has_avx) = detect_hardware(gpu_vram_mb);
     let mut catalog = build_catalog();
     for model in &mut catalog {
         let model_path = models_dir.join(&model.model_id);

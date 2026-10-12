@@ -1282,10 +1282,18 @@ fn local_voxcpm2_is_healthy() -> bool {
                     && value
                         .get("profile")
                         .and_then(serde_json::Value::as_str)
-                        .and_then(voice_runtime::profile)
-                        .is_some_and(|p| {
+                        .and_then(|id| {
+                            embedded_voxcpm2_profile_registry()
+                                .entries
+                                .iter()
+                                .find(|entry| {
+                                    entry.id == id
+                                        && entry.status == VOXCPM2_STATUS_RELEASED
+                                })
+                        })
+                        .is_some_and(|profile| {
                             value.get("backend").and_then(serde_json::Value::as_str)
-                                == Some(p.hardware.backend)
+                                == Some(profile.backend.as_str())
                         })
             }),
         Err(_) => false,
@@ -5539,7 +5547,12 @@ fn frontend_log(level: String, message: String) {
 
 #[tauri::command]
 async fn list_stt_models(app: AppHandle) -> Vec<stt_models::SttModelInfo> {
-    tokio::task::spawn_blocking(move || stt_models::get_model_catalog(&app))
+    let inventory = accelerator::list_accelerators_cached().await;
+    let gpu_vram_mb = primary_nvidia_device(&inventory)
+        .and_then(|device| device.total_vram_bytes)
+        .map(|bytes| (bytes / (1024 * 1024)).min(u32::MAX as u64) as u32)
+        .unwrap_or_default();
+    tokio::task::spawn_blocking(move || stt_models::get_model_catalog(&app, gpu_vram_mb))
         .await
         .unwrap_or_default()
 }
@@ -6005,43 +6018,52 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
-/// 濡쒖뺄 cascade VRAM(GB) ?숆린 媛먯? ??start_cascade 媛 loader `--gpu` 濡??섍?.
-/// **primary GPU(nvidia-smi 泥?以?留?* 蹂몃떎 ??硫??GPU ?⑹궛 ?????⑥씪 紐⑤뜽? GPU 媛?
-/// 遺꾩궛 遺덇?, TP ??蹂꾨룄). 利?3090횞2 硫?48 ???꾨땶 24(per-GPU ?덉궛??留욎쓬).
-/// detect_gpu_vram(async, capacity-only)怨??숈씪 nvidia-smi, 釉붾줈??而⑦뀓?ㅽ듃??
-fn detect_vram_gb_blocking() -> Option<f64> {
-    let mut command = std::process::Command::new("nvidia-smi");
-    command.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
-    platform::hide_console(&mut command);
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mib = text.lines().next()?.trim().parse::<f64>().ok()?;
-    if mib > 0.0 {
-        Some((mib / 1024.0).round())
-    } else {
-        None
-    }
+/// Select the primary NVIDIA card for STT recommendations and the VRAM endpoint.
+fn primary_nvidia_device(
+    inventory: &accelerator::AcceleratorInventory,
+) -> Option<&accelerator::AcceleratorDevice> {
+    inventory
+        .devices
+        .iter()
+        .filter(|device| device.vendor == accelerator::HardwareVendor::Nvidia)
+        .min_by(|left, right| {
+            left.nvidia
+                .as_ref()
+                .and_then(|nvidia| nvidia.compatibility_index)
+                .unwrap_or(u32::MAX)
+                .cmp(
+                    &right
+                        .nvidia
+                        .as_ref()
+                        .and_then(|nvidia| nvidia.compatibility_index)
+                        .unwrap_or(u32::MAX),
+                )
+                .then_with(|| left.provider_id.value.cmp(&right.provider_id.value))
+        })
 }
 
-const MIN_VOICE_ONLY_VRAM_GB: f64 = 6.0;
+fn rounded_primary_nvidia_vram_gb(
+    inventory: &accelerator::AcceleratorInventory,
+) -> Option<f64> {
+    let bytes = primary_nvidia_device(inventory)?.total_vram_bytes?;
+    rounded_vram_gb(bytes)
+}
 
-fn validate_cascade_vram(
-    vram_gb: Option<f64>,
-    _loader_profile: Option<&str>,
-) -> Result<f64, String> {
-    let minimum = MIN_VOICE_ONLY_VRAM_GB;
-    match vram_gb {
-        Some(vram) if vram >= minimum => Ok(vram),
-        Some(vram) => Err(format!(
-            "Host voice profile requires NVIDIA RTX GPU VRAM {minimum:.0}GB or more (detected {vram:.0}GB)"
-        )),
-        None => Err(format!(
-            "Host voice profile requires a detected NVIDIA RTX GPU with VRAM {minimum:.0}GB or more"
-        )),
-    }
+fn rounded_vram_gb(bytes: u64) -> Option<f64> {
+    (bytes > 0).then(|| (bytes as f64 / 1024_f64.powi(3)).round())
+}
+
+fn selected_device_vram_gb(
+    inventory: &accelerator::AcceleratorInventory,
+    gpu_index: Option<u32>,
+) -> Option<f64> {
+    let id = voice_runtime::selected_device_id(inventory, gpu_index)?;
+    let bytes = inventory
+        .devices
+        .iter()
+        .find(|device| device.provider_id.value == id)?
+        .total_vram_bytes?;
+    rounded_vram_gb(bytes)
 }
 
 fn path_to_string(path: std::path::PathBuf) -> String {
@@ -6109,7 +6131,10 @@ fn read_cascade_stderr_tail() -> String {
     }
 }
 
-fn read_cascade_loader_profile(manifest: &std::path::Path) -> Option<String> {
+fn read_cascade_loader_profile(
+    manifest: &std::path::Path,
+    current_profile_id: Option<&str>,
+) -> Option<String> {
     let raw = std::fs::read_to_string(manifest).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
     let profile = parsed
@@ -6127,9 +6152,7 @@ fn read_cascade_loader_profile(manifest: &std::path::Path) -> Option<String> {
     // 저장된 하드웨어 프로파일은 전부 음성 전용 런타임으로 모인다. 어느
     // 프로파일인지는 매니페스트가 아니라 이 기계가 정한다 — 같은 설정 파일을
     // 다른 기계에 옮겨도 그 기계의 프로파일로 읽혀야 한다.
-    let os = voice_runtime::host_os()?;
-    let accelerator = voice_runtime::detect_accelerator()?;
-    voice_runtime::profile_for_host(os, accelerator).map(|p| p.id.to_string())
+    current_profile_id.map(str::to_owned)
 }
 
 /// The Settings UI must distinguish an installed runtime that has not been
@@ -6229,16 +6252,48 @@ fn voxcpm2_cache_root() -> Result<(std::path::PathBuf, bool), String> {
     Ok((root, false))
 }
 
-fn voxcpm2_host_profile_id() -> Result<&'static str, String> {
-    let os = voice_runtime::host_os();
-    let accelerator = voice_runtime::detect_accelerator();
-    let host_profile = os
-        .zip(accelerator)
-        .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator))
+fn select_voxcpm2_profile(
+    inventory: &accelerator::AcceleratorInventory,
+    gpu_index: Option<u32>,
+    requested_profile_id: Option<&str>,
+) -> Option<voice_runtime::VoiceProfile<'static>> {
+    let registry = embedded_voxcpm2_profile_registry();
+    let preferred_device_id = voice_runtime::selected_device_id(inventory, gpu_index);
+    let backends = voice_runtime::available_backends(voice_runtime::host_os());
+    let selection = match requested_profile_id {
+        Some(id) => voice_runtime::select_profile_by_id(
+            id,
+            &registry.entries,
+            voice_runtime::host_os(),
+            inventory,
+            preferred_device_id.as_deref(),
+            &backends,
+        ),
+        None => voice_runtime::select_profile(
+            &registry.entries,
+            voice_runtime::host_os(),
+            inventory,
+            preferred_device_id.as_deref(),
+            &backends,
+        ),
+    }?;
+    let selected_id = selection.profile.id.as_str();
+    let entry = registry
+        .entries
+        .iter()
+        .find(|entry| entry.id == selected_id)?;
+    voice_runtime::runtime_profile(entry, voice_runtime::host_os())
+}
+
+fn voxcpm2_host_profile_id(
+    inventory: &accelerator::AcceleratorInventory,
+    gpu_index: Option<u32>,
+) -> Result<&'static str, String> {
+    select_voxcpm2_profile(inventory, gpu_index, None)
+        .map(|profile| profile.id())
         .ok_or_else(|| {
-            "이 기계에 맞는 로컬 음성 프로파일이 없습니다 (운영체제·가속기 조합 미지원)".to_string()
-        })?;
-    Ok(host_profile.id)
+            "이 기계에 맞는 released 로컬 음성 프로파일이 없습니다 (운영체제·가속기·backend·VRAM 조건 미지원)".to_string()
+        })
 }
 
 pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
@@ -6246,24 +6301,58 @@ pub(crate) const VOXCPM2_PORT_IN_USE_MESSAGE: &str =
 
 /// #703: the single GPU the engine is keyed for, built on and loaded on.
 /// Explicit choice > the mode's recorded choice > the lowest-index NVIDIA card.
-fn voxcpm2_effective_gpu(gpu_index: Option<u32>) -> Option<u32> {
-    gpu_index
-        .or_else(|| voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root()))
-        .or_else(|| voice_cache::query_nvidia_identities().iter().map(|g| g.index).min())
+fn voxcpm2_effective_gpu(
+    inventory: &accelerator::AcceleratorInventory,
+    gpu_index: Option<u32>,
+) -> Option<u32> {
+    let configured = gpu_index.or_else(|| voice_cache::recorded_gpu_choice(&voxcpm2_runtime_root()));
+    let gpus = voice_runtime::inventory_gpu_info(inventory);
+    if let Some(configured) = configured.filter(|wanted| gpus.iter().any(|gpu| gpu.index == *wanted)) {
+        return Some(configured);
+    }
+    let prefer_nvidia = gpus
+        .iter()
+        .any(|gpu| gpu.vendor == accelerator::HardwareVendor::Nvidia);
+    gpus
+        .iter()
+        .filter(|gpu| !prefer_nvidia || gpu.vendor == accelerator::HardwareVendor::Nvidia)
+        .map(|gpu| gpu.index)
+        .min()
+}
+
+fn nvidia_identities_from_inventory(
+    inventory: &accelerator::AcceleratorInventory,
+) -> Vec<voice_cache::GpuIdentity> {
+    inventory
+        .devices
+        .iter()
+        .filter_map(|device| {
+            let nvidia = device.nvidia.as_ref()?;
+            Some(voice_cache::GpuIdentity {
+                index: nvidia.compatibility_index?,
+                name: nvidia.name.clone()?,
+                compute_cap: nvidia.compute_capability.map(|capability| {
+                    format!("{}.{}", capability.major, capability.minor)
+                })?,
+                driver_version: nvidia.driver_version.clone()?,
+            })
+        })
+        .collect()
 }
 
 fn voxcpm2_voice_context(
     artifact_sha: &str,
     artifact_root: Option<&std::path::Path>,
     gpu_index: Option<u32>,
+    inventory: &accelerator::AcceleratorInventory,
 ) -> Result<voice_cache::VoiceContext, String> {
     let (cache_root, read_only) = voxcpm2_cache_root()?;
     let state_root = voxcpm2_runtime_root();
-    let profile = voxcpm2_host_profile_id()?;
+    let gpu_choice = voxcpm2_effective_gpu(inventory, gpu_index);
+    let profile = voxcpm2_host_profile_id(inventory, gpu_choice)?;
     let os = voxcpm2_cache_os();
-    let gpu_choice = voxcpm2_effective_gpu(gpu_index);
     let nvidias = if artifact_root.is_some() {
-        voice_cache::query_nvidia_identities()
+        nvidia_identities_from_inventory(inventory)
     } else {
         Vec::new()
     };
@@ -6287,11 +6376,13 @@ fn voxcpm2_voice_context(
 fn voxcpm2_context_for_bundle(
     bundle_root: &std::path::Path,
     gpu_index: Option<u32>,
+    inventory: &accelerator::AcceleratorInventory,
 ) -> Result<voice_cache::VoiceContext, String> {
     voxcpm2_voice_context(
         &voxcpm2_artifact_sha(bundle_root)?,
         Some(&bundle_root.join("artifact")),
         gpu_index,
+        inventory,
     )
 }
 
@@ -6474,7 +6565,7 @@ fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::P
 }
 
 const VOXCPM2_REGISTRY_SCHEMA_VERSION: u32 = 1;
-const VOXCPM2_STATUS_RELEASED: &str = "released";
+pub(crate) const VOXCPM2_STATUS_RELEASED: &str = "released";
 const VOXCPM2_STATUS_PREVIEW: &str = "preview";
 const VOXCPM2_STATUS_PLANNED: &str = "planned";
 
@@ -6488,22 +6579,22 @@ struct VoxCpm2RegistryGeneratedFrom {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct VoxCpm2RegistryEntry {
-    id: String,
-    os: String,
-    accelerator: String,
-    backend: String,
-    min_vram_gi_b: u64,
-    status: String,
-    notes: String,
+pub(crate) struct VoxCpm2RegistryEntry {
+    pub(crate) id: String,
+    pub(crate) os: String,
+    pub(crate) accelerator: String,
+    pub(crate) backend: String,
+    pub(crate) min_vram_gi_b: u64,
+    pub(crate) status: String,
+    pub(crate) notes: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct VoxCpm2ProfileRegistry {
+pub(crate) struct VoxCpm2ProfileRegistry {
     schema_version: u32,
     generated_from: VoxCpm2RegistryGeneratedFrom,
-    entries: Vec<VoxCpm2RegistryEntry>,
+    pub(crate) entries: Vec<VoxCpm2RegistryEntry>,
 }
 
 fn parse_voxcpm2_profile_registry(raw: &str) -> Result<VoxCpm2ProfileRegistry, String> {
@@ -6811,9 +6902,12 @@ fn read_voxcpm2_download_manifest(
     Ok(manifest)
 }
 
-fn voxcpm2_installed_payload_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn voxcpm2_installed_payload_root(
+    app: &tauri::AppHandle,
+    inventory: &accelerator::AcceleratorInventory,
+) -> Option<std::path::PathBuf> {
     let sha = voxcpm2_expected_artifact_sha256(app)?;
-    let ctx = voxcpm2_voice_context(&sha, None, None).ok()?;
+    let ctx = voxcpm2_voice_context(&sha, None, None, inventory).ok()?;
     Some(ctx.slot_dir.join("payload"))
 }
 
@@ -7000,7 +7094,10 @@ fn voxcpm2_payload_validation_failures(
     failures
 }
 
-fn voxcpm2_bundle_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn voxcpm2_bundle_root(
+    app: &tauri::AppHandle,
+    inventory: &accelerator::AcceleratorInventory,
+) -> Option<std::path::PathBuf> {
     let development_root = if cfg!(debug_assertions) {
         std::env::var_os("NAIA_VOXCPM2_DEV_BUNDLE_ROOT")
             .filter(|value| !value.is_empty())
@@ -7023,7 +7120,7 @@ fn voxcpm2_bundle_root(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
                 }),
         )
     } else {
-        let installed = voxcpm2_installed_payload_root(app);
+        let installed = voxcpm2_installed_payload_root(app, inventory);
         // FR-V017.38 (#518): reuse requires the bundled runtime pin to match.
         installed.and_then(|root| {
             voxcpm2_installed_payload_is_reusable(
@@ -7957,34 +8054,22 @@ async fn install_voxcpm2_runtime(
     if read_secure_naia_credential(&app).is_none() {
         return Err("voxcpm2_naia_member_login_required".to_string());
     }
-    let vram = tokio::task::spawn_blocking(detect_vram_gb_blocking)
-        .await
-        .map_err(|error| format!("VRAM detection task failed: {error}"))?;
-    // 설치도 기동과 같은 판정을 쓴다. 운영체제 잠금 대신, 이 기계에 맞는
-    // 프로파일이 있는지를 묻는다 — 없으면 그 사실이 이유가 된다.
-    let os = voice_runtime::host_os();
-    let accelerator = voice_runtime::detect_accelerator();
-    let host_profile = os
-        .zip(accelerator)
-        .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator))
-        .ok_or_else(|| {
-            "이 기계에 맞는 로컬 음성 프로파일이 없습니다 (운영체제·가속기 조합 미지원)"
-                .to_string()
-        })?;
-    voice_runtime::validate_vram(host_profile, vram)?;
+    let inventory = accelerator::list_accelerators_cached().await;
+    let state_root = voxcpm2_runtime_root();
+    if gpu_index.is_some() {
+        let _ = voice_cache::record_gpu_choice(&state_root, gpu_index);
+    }
+    let gpu_choice = voxcpm2_effective_gpu(&inventory, gpu_index);
+    let host_profile = select_voxcpm2_profile(&inventory, gpu_choice, None).ok_or_else(|| {
+        "이 기계에 맞는 released 로컬 음성 프로파일이 없습니다 (운영체제·가속기·backend·개별 VRAM 조건 미지원)".to_string()
+    })?;
     let fail = |message: String| {
         log_both(&format!("[Naia] voxcpm2 install precheck failed: {message}"));
         emit_voxcpm2_progress_failed(&app, &message);
         message
     };
 
-    let state_root = voxcpm2_runtime_root();
-    if gpu_index.is_some() {
-        let _ = voice_cache::record_gpu_choice(&state_root, gpu_index);
-    }
-    let gpu_choice = voxcpm2_effective_gpu(gpu_index);
-
-    let staged = voxcpm2_bundle_root(&app);
+    let staged = voxcpm2_bundle_root(&app, &inventory);
     if staged.is_none() {
         if let Some(explicit) = voxcpm2_explicit_bundle_root(&app) {
             return Err(fail(voxcpm2_explicit_bundle_error(&explicit)));
@@ -8026,6 +8111,7 @@ async fn install_voxcpm2_runtime(
         &sha,
         pre_artifact_root.as_deref(),
         gpu_choice,
+        &inventory,
     )
     .map_err(&fail)?;
 
@@ -8140,7 +8226,7 @@ async fn install_voxcpm2_runtime(
     };
 
     let pre_slot_dir = ctx.slot_dir.clone();
-    let ctx = voxcpm2_context_for_bundle(&bundle_root, gpu_choice).map_err(&fail)?;
+    let ctx = voxcpm2_context_for_bundle(&bundle_root, gpu_choice, &inventory).map_err(&fail)?;
     if ctx.slot_dir != pre_slot_dir {
         return Err(fail(format!(
             "Resolved bundle slot dir {} does not match pre-download slot dir {}",
@@ -8214,10 +8300,11 @@ async fn install_voxcpm2_runtime(
     voxcpm2_installer_precheck(&bundle_root, &installer).map_err(fail)?;
 
     let engine_dir = ctx.engine_dir.as_deref().ok_or_else(|| {
-        fail("Could not identify the GPU (nvidia-smi) or the TensorRT version needed to key the engine.".to_string())
+        fail("Could not identify NVIDIA device metadata or the TensorRT version needed to key the engine.".to_string())
     })?;
     let log_path = ctx.install_log();
-    let host_profile_val = *host_profile;
+    let host_profile_val = host_profile;
+    let gpus = voice_runtime::inventory_gpu_info(&inventory);
     let install_result = tokio::task::spawn_blocking({
         let bundle_root = bundle_root.clone();
         let slot_dir = ctx.slot_dir.clone();
@@ -8226,6 +8313,7 @@ async fn install_voxcpm2_runtime(
         let app = app.clone();
         let installer = installer.clone();
         let log_path = log_path.clone();
+        let gpus = gpus.clone();
         move || -> Result<(), String> {
             use std::io::{BufRead, BufReader, Write};
             if let Some(parent) = log_path.parent() {
@@ -8248,7 +8336,6 @@ async fn install_voxcpm2_runtime(
                 &engine_dir,
                 &state_root,
             );
-            let gpus = voice_runtime::query_gpus(host_profile_val.hardware.accelerator);
             let accelerator_env = voice_runtime::accelerator_env(
                 &host_profile_val,
                 &gpus,
@@ -8368,6 +8455,9 @@ async fn voxcpm2_installation_status(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<VoxCpm2InstallationStatus, String> {
+    let inventory = accelerator::list_accelerators_cached().await;
+    let effective_gpu = voxcpm2_effective_gpu(&inventory, None);
+    let current_profile = select_voxcpm2_profile(&inventory, effective_gpu, None);
     let adk_path = data_home::read_child_from_dirs_home(DataHomeChild::AdkPath)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
@@ -8376,15 +8466,16 @@ async fn voxcpm2_installation_status(
             &std::path::PathBuf::from(path)
                 .join("naia-settings")
                 .join("slots-manifest.json"),
+            current_profile.as_ref().map(voice_runtime::VoiceProfile::id),
         )
     });
-    let bundle_root = voxcpm2_bundle_root(&app);
+    let bundle_root = voxcpm2_bundle_root(&app, &inventory);
     let installer_available = bundle_root.is_some()
         || (voxcpm2_download_manifest_path(&app)
             .is_some_and(|path| read_voxcpm2_download_manifest(&path).is_ok()));
     let ctx = bundle_root
         .as_deref()
-        .and_then(|root| voxcpm2_context_for_bundle(root, None).ok());
+        .and_then(|root| voxcpm2_context_for_bundle(root, None, &inventory).ok());
     let mut probe =
         tokio::task::spawn_blocking(move || {
             probe_voxcpm2_installation(bundle_root.as_deref(), ctx.as_ref())
@@ -8600,6 +8691,7 @@ fn spawn_voxcpm2(
     naia_key: &str,
     profile: &voice_runtime::VoiceProfile,
     configured_gpu: Option<u32>,
+    inventory: &accelerator::AcceleratorInventory,
 ) -> Result<VoxCpm2Process, String> {
     let python = if cfg!(debug_assertions) {
         std::env::var("NAIA_VOXCPM2_PYTHON")
@@ -8646,7 +8738,7 @@ fn spawn_voxcpm2(
         "VOXCPM_MODEL_DIR",
         ctx.model_dir(),
     )
-    .env("VOXCPM_BACKEND", profile.hardware.backend)
+    .env("VOXCPM_BACKEND", &profile.entry.backend)
     .env("VOXCPM_TRT_ENGINE_DIR", engine_dir)
     .env("VOXCPM_INT8", "1")
     .env("VOXCPM_CPU_QUANTIZE", "1")
@@ -8677,7 +8769,7 @@ fn spawn_voxcpm2(
     // 어느 카드에 올리고 공유 라이브러리를 어디서 찾을지. 값을 만드는 일은
     // voice_runtime 이 하고 여기서는 붙이기만 한다 — 만드는 쪽을 아카이브
     // 없이 잴 수 있어야 하기 때문이다.
-    let gpus = voice_runtime::query_gpus(profile.hardware.accelerator);
+    let gpus = voice_runtime::inventory_gpu_info(inventory);
     let library_dir = profile.accelerator_library_dir(bundle_root);
     let library_path_var = profile.layout().library_path_var;
     let accelerator_env = voice_runtime::accelerator_env(
@@ -8708,7 +8800,7 @@ fn spawn_voxcpm2(
     platform::hide_console(&mut cmd);
     log_both(&format!(
         "[Naia] 로컬 음성 런타임 기동 ({}): {} {}",
-        profile.id, python, "compiled voxcpm2_tensorrt.http_server"
+        profile.id(), python, "compiled voxcpm2_tensorrt.http_server"
     ));
     let mut child = cmd.spawn().map_err(|error| {
         format!(
@@ -9070,6 +9162,7 @@ async fn start_voxcpm2(
     gpu_index: Option<u32>,
 ) -> Result<String, String> {
     let _start_guard = state.voxcpm2_start.lock().await;
+    let inventory = accelerator::list_accelerators_cached().await;
     let adk_path = if debug_e2e_enabled() {
         std::env::var("NAIA_E2E_ADK_PATH")
             .ok()
@@ -9084,18 +9177,14 @@ async fn start_voxcpm2(
     let manifest_path = std::path::PathBuf::from(&adk_path)
         .join("naia-settings")
         .join("slots-manifest.json");
-    let profile = read_cascade_loader_profile(&manifest_path);
     let expected = expected_loader_profile
         .as_deref()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "voxcpm2_profile_expectation_required".to_string())?;
-    // 이 프로파일을 이 기계에서 돌려도 되는가. 모르는 이름과 다른 운영체제·
-    // 가속기의 프로파일은 여기서 갈린다. 흩어진 리터럴 비교를 대신한다.
-    let resolved = voice_runtime::ensure_runs_here(
-        expected,
-        voice_runtime::host_os(),
-        voice_runtime::detect_accelerator(),
-    )?;
+    let effective_gpu = voxcpm2_effective_gpu(&inventory, gpu_index);
+    let resolved = select_voxcpm2_profile(&inventory, effective_gpu, Some(expected))
+        .ok_or_else(|| "이 기계에서 선택한 released 음성 프로파일을 사용할 수 없습니다".to_string())?;
+    let profile = read_cascade_loader_profile(&manifest_path, Some(resolved.id()));
     if profile.as_deref() != Some(expected) {
         return Err("voxcpm2_profile_manifest_not_ready".to_string());
     }
@@ -9117,11 +9206,7 @@ async fn start_voxcpm2(
         return Ok(ready);
     }
 
-    let vram = tokio::task::spawn_blocking(detect_vram_gb_blocking)
-        .await
-        .map_err(|error| format!("VRAM detection task failed: {error}"))?;
-    voice_runtime::validate_vram(resolved, vram)?;
-    let bundle_root = match voxcpm2_bundle_root(&app) {
+    let bundle_root = match voxcpm2_bundle_root(&app, &inventory) {
         Some(root) => root,
         None => {
             let message = if let Some(root) = voxcpm2_explicit_bundle_root(&app) {
@@ -9140,9 +9225,7 @@ async fn start_voxcpm2(
     if gpu_index.is_some() {
         let _ = voice_cache::record_gpu_choice(&state_root, gpu_index);
     }
-    let effective_gpu = voxcpm2_effective_gpu(gpu_index);
-
-    let ctx = match voxcpm2_context_for_bundle(&bundle_root, effective_gpu) {
+    let ctx = match voxcpm2_context_for_bundle(&bundle_root, effective_gpu, &inventory) {
         Ok(c) => c,
         Err(error) => {
             log_both(&format!("[Naia] voxcpm2 context build failed: {error}"));
@@ -9225,13 +9308,15 @@ async fn start_voxcpm2(
 
     let bundle_root_for_spawn = bundle_root.clone();
     let ctx_for_spawn = ctx.clone();
+    let inventory_for_spawn = inventory.clone();
     let mut process = tokio::task::spawn_blocking(move || {
         spawn_voxcpm2(
             &bundle_root_for_spawn,
             &ctx_for_spawn,
             naia_key.as_str(),
-            resolved,
+            &resolved,
             effective_gpu,
+            &inventory_for_spawn,
         )
     })
     .await
@@ -9323,6 +9408,7 @@ async fn start_cascade(
     // IPC call then returns the same ready payload instead of cleaning the
     // first launch's child services out from underneath it.
     let _start_guard = state.cascade_start.lock().await;
+    let inventory = accelerator::list_accelerators_cached().await;
     let adk_path = if debug_e2e_enabled() {
         std::env::var("NAIA_E2E_ADK_PATH")
             .ok()
@@ -9339,7 +9425,13 @@ async fn start_cascade(
         .join("slots-manifest.json");
     // Host voice is a device capability, not a Naia account entitlement.
     // The explicit voice-only manifest/profile is the start authority.
-    let loader_profile = read_cascade_loader_profile(&manifest_path);
+    let configured_gpu = voxcpm2_effective_gpu(&inventory, None);
+    let current_profile = select_voxcpm2_profile(&inventory, configured_gpu, None);
+    let vram = selected_device_vram_gb(&inventory, configured_gpu);
+    let loader_profile = read_cascade_loader_profile(
+        &manifest_path,
+        current_profile.as_ref().map(|profile| profile.id()),
+    );
     let expected_loader_profile = expected_loader_profile
         .as_deref()
         .filter(|profile| !profile.is_empty())
@@ -9380,11 +9472,9 @@ async fn start_cascade(
     let bundle_root = cascade_bundle_root(&app);
 
     // Fail closed before probing, cleanup, or spawning any local service.
-    // The voice-only profile is available from the explicit 6GB boundary.
-    let vram = tokio::task::spawn_blocking(detect_vram_gb_blocking)
-        .await
-        .map_err(|e| format!("VRAM detection task failed: {e}"))?;
-    let vram = validate_cascade_vram(vram, loader_profile.as_deref())?;
+    if current_profile.is_none() {
+        return Err("이 기계에서 사용할 released 로컬 음성 프로파일이 없습니다".to_string());
+    }
 
     // Keep the legacy local Cascade launch contract independent of the direct
     // Windows Naia Host installation commands.
@@ -9423,7 +9513,7 @@ async fn start_cascade(
             &loader_dir,
             &adk_path,
             bundle_root.as_deref(),
-            Some(vram),
+            vram,
             loader_profile,
         )
     })
@@ -9499,35 +9589,16 @@ async fn write_slots_manifest(adk_path: String, json: String) -> Result<(), Stri
     std::fs::write(dir.join("slots-manifest.json"), json).map_err(|e| e.to_string())
 }
 
-/// Detect the primary GPU's total VRAM in GB via `nvidia-smi` (NVIDIA only).
-///
-/// Returns a whole-GB number (marketed VRAM is whole GB; nvidia-smi reports
-/// MiB, e.g. an RTX 4070 12 GB = ~12282 MiB ??11.99 GiB ??rounds to 12) or null
-/// when nvidia-smi is absent / non-NVIDIA / unparseable ??the settings UI then
-/// falls back to manual tier selection (#2 / FR-VRAM.1).
-///
-/// 이 기계의 로컬 음성 프로파일과 카드 목록.
-///
-/// 프로파일 이름은 운영체제와 가속기가 정하는 하드웨어 사실이다. 화면이 그
-/// 이름을 알 이유가 없다 — 예전에는 화면 세 곳이 `windows_trt_6g` 를 직접
-/// 박아 두어, 기계가 바뀌면 세 곳을 함께 고쳐야 했다. 여기서 한 번 물어
-/// 그대로 되돌려 준다.
+/// Resolve the local voice profile and card list from the shared accelerator inventory.
+/// The UI receives the existing profile, card, and selection fields.
 #[tauri::command]
 async fn voice_host_profile() -> Result<serde_json::Value, String> {
-    let resolved = tokio::task::spawn_blocking(|| {
-        let os = voice_runtime::host_os();
-        let accelerator = voice_runtime::detect_accelerator();
-        let profile = os
-            .zip(accelerator)
-            .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator));
-        let gpus = accelerator.map(voice_runtime::query_gpus).unwrap_or_default();
-        (profile, gpus)
-    })
-    .await
-    .map_err(|error| format!("task error: {error}"))?;
-    let (profile, gpus) = resolved;
+    let inventory = accelerator::list_accelerators_cached().await;
+    let gpu_choice = voxcpm2_effective_gpu(&inventory, None);
+    let profile = select_voxcpm2_profile(&inventory, gpu_choice, None);
+    let gpus = voice_runtime::inventory_gpu_info(&inventory);
     Ok(serde_json::json!({
-        "profile": profile.map(|p| p.id),
+        "profile": profile.as_ref().map(|profile| profile.id()),
         "gpus": gpus
             .iter()
             .map(|g| serde_json::json!({
@@ -9544,34 +9615,13 @@ async fn voice_host_profile() -> Result<serde_json::Value, String> {
 
 /// NOTE: this reports *capacity only*. Real-time (RTF<1) on a given GPU is a
 /// measured gate (windows-manager F1) and is NOT inferred here.
+/// The value retains the existing whole-GiB primary-NVIDIA response contract.
 #[tauri::command]
 async fn detect_gpu_vram() -> Result<serde_json::Value, String> {
-    let output = tokio::task::spawn_blocking(|| {
-        let mut command = std::process::Command::new("nvidia-smi");
-        command.args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
-        platform::hide_console(&mut command);
-        command.output()
-    })
-    .await
-    .map_err(|e| format!("task error: {e}"))?;
-
-    // Absent nvidia-smi / non-NVIDIA host ??null (not an error).
-    let output = match output {
-        Ok(o) if o.status.success() => o,
-        _ => return Ok(serde_json::Value::Null),
-    };
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    // First line = primary GPU's total memory in MiB.
-    let mib = text
-        .lines()
-        .next()
-        .and_then(|l| l.trim().parse::<f64>().ok());
-
-    Ok(match mib {
-        Some(m) if m > 0.0 => serde_json::json!((m / 1024.0).round()),
-        _ => serde_json::Value::Null,
-    })
+    let inventory = accelerator::list_accelerators_cached().await;
+    Ok(rounded_primary_nvidia_vram_gb(&inventory)
+        .map(serde_json::Value::from)
+        .unwrap_or(serde_json::Value::Null))
 }
 
 /// Check if Naia Gateway is reachable on localhost
@@ -15491,7 +15541,7 @@ mod tests {
     }
 
     #[test]
-    fn manifest_validation_without_registry_file_verifies_each_static_profile() {
+    fn manifest_validation_without_registry_file_uses_released_registry_rows() {
         let tmp = tempfile::tempdir().unwrap();
         let manifest_path = tmp.path().join("download-manifest.json");
         let registry_path = tmp.path().join("profile-registry.json");
@@ -15510,43 +15560,29 @@ mod tests {
             },
         };
 
-        let static_profiles = voice_runtime::PROFILES;
-        assert_eq!(static_profiles.len(), 3, "voice_runtime::PROFILES must have 3 static profiles");
+        let registry = embedded_voxcpm2_profile_registry();
+        assert_eq!(registry.entries.len(), 5);
 
-        for profile in static_profiles {
+        for profile in &registry.entries {
             let mut manifest = base_manifest.clone();
-            manifest.profile = profile.id.to_string();
+            manifest.profile = profile.id.clone();
 
             let direct_res = validate_voxcpm2_download_manifest(&manifest, None);
 
             std::fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
             let reader_res = read_voxcpm2_download_manifest(&manifest_path);
 
-            match profile.id {
-                "windows_trt_6g" => {
-                    assert!(direct_res.is_ok(), "windows_trt_6g must be accepted as released: {:?}", direct_res);
-                    assert!(reader_res.is_ok(), "windows_trt_6g must be accepted via reader fallback: {:?}", reader_res);
-                }
-                "linux_trt_6g" => {
-                    assert!(direct_res.is_ok(), "linux_trt_6g must be accepted as released: {:?}", direct_res);
-                    assert!(reader_res.is_ok(), "linux_trt_6g must be accepted via reader fallback: {:?}", reader_res);
-                }
-                "linux_rocm_6g" => {
-                    assert!(direct_res.is_err(), "linux_rocm_6g must be rejected because it is not in the profile registry");
-                    let direct_err = direct_res.err().unwrap();
-                    assert!(
-                        direct_err.contains("not found in profile registry"),
-                        "expected 'not found in profile registry', got: {direct_err}"
-                    );
-
-                    assert!(reader_res.is_err(), "linux_rocm_6g must be rejected via reader fallback");
-                    let reader_err = reader_res.err().unwrap();
-                    assert!(
-                        reader_err.contains("not found in profile registry"),
-                        "expected 'not found in profile registry', got: {reader_err}"
-                    );
-                }
-                other => panic!("unexpected profile in voice_runtime::PROFILES: {other}"),
+            if profile.status == VOXCPM2_STATUS_RELEASED {
+                assert!(direct_res.is_ok(), "{} must be accepted as released: {direct_res:?}", profile.id);
+                assert!(reader_res.is_ok(), "{} must be accepted via reader fallback: {reader_res:?}", profile.id);
+            } else {
+                assert!(direct_res.is_err(), "{} must not be accepted for artifacts", profile.id);
+                assert!(reader_res.is_err(), "{} must not be accepted via reader fallback", profile.id);
+                assert!(
+                    direct_res.unwrap_err().contains("only 'released' is allowed"),
+                    "{} must be rejected because it is not released",
+                    profile.id
+                );
             }
         }
     }
@@ -15574,7 +15610,7 @@ mod tests {
         );
 
         assert_eq!(embedded_reg.schema_version, 1);
-        assert_eq!(embedded_reg.entries.len(), 4);
+        assert_eq!(embedded_reg.entries.len(), 5);
 
         let entries_map: std::collections::HashMap<_, _> = embedded_reg
             .entries
@@ -15586,6 +15622,7 @@ mod tests {
         assert_eq!(entries_map.get("linux_trt_6g"), Some(&"released"), "linux_trt_6g must be released");
         assert_eq!(entries_map.get("linux_vulkan_8g"), Some(&"preview"), "linux_vulkan_8g must be preview");
         assert_eq!(entries_map.get("linux_rocm_8g"), Some(&"planned"), "linux_rocm_8g must be planned");
+        assert_eq!(entries_map.get("windows_vulkan_8g"), Some(&"planned"), "windows_vulkan_8g must be planned");
     }
 
     #[test]
@@ -16083,9 +16120,7 @@ mod tests {
         let lib_source = include_str!("lib.rs");
         for marker in [
             "fn runtime_git_output(",
-            "fn detect_vram_gb_blocking(",
             "fn voxcpm2_python_runtime_is_ready(",
-            "async fn detect_gpu_vram(",
             "fn course_git_output(",
         ] {
             assert!(
@@ -16093,6 +16128,11 @@ mod tests {
                 "{marker} must hide child consoles on Windows"
             );
         }
+        assert!(
+            function_source(include_str!("accelerator.rs"), "fn query_nvidia_smi(")
+                .contains("crate::platform::hide_console"),
+            "the shared NVIDIA helper must hide child consoles on Windows"
+        );
         assert!(
             function_source(include_str!("app.rs"), "pub fn app_install(")
                 .contains("crate::platform::hide_console"),
@@ -16602,39 +16642,34 @@ mod tests {
     }
 
     #[test]
-    fn read_cascade_loader_profile_reads_manifest_gpu_profile() {
+    fn read_cascade_loader_profile_returns_current_id_after_manifest_validation() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = dir.path().join("slots-manifest.json");
         std::fs::write(&manifest, r#"{"gpu":{"loaderProfile":" laptop_4060_8g "}}"#).unwrap();
 
         // 저장된 값이 무엇이든 답은 이 기계의 프로파일이다. 같은 설정 파일을
         // 다른 기계에 옮겨도 그 기계의 것으로 읽힌다.
-        let expected = voice_runtime::host_os()
-            .zip(voice_runtime::detect_accelerator())
-            .and_then(|(os, accelerator)| voice_runtime::profile_for_host(os, accelerator))
-            .map(|p| p.id);
-        assert_eq!(read_cascade_loader_profile(&manifest).as_deref(), expected);
+        assert_eq!(
+            read_cascade_loader_profile(&manifest, Some("linux_trt_6g")).as_deref(),
+            Some("linux_trt_6g")
+        );
     }
 
     #[test]
-    fn cascade_vram_requires_detected_nvidia_6gb_or_more() {
-        assert_eq!(validate_cascade_vram(Some(6.0), None).unwrap(), 6.0);
-        assert_eq!(
-            validate_cascade_vram(Some(16.0), Some("windows_trt_6g")).unwrap(),
-            16.0
-        );
-        assert!(validate_cascade_vram(Some(5.9), Some("windows_trt_6g")).is_err());
-        assert!(validate_cascade_vram(Some(5.9), None).is_err());
-        assert!(validate_cascade_vram(None, None).is_err());
-    }
+    fn read_cascade_loader_profile_reads_manifest_gpu_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join("slots-manifest.json");
+        std::fs::write(&manifest, r#"{"gpu":{"loaderProfile":"laptop_4060_8g"}}"#).unwrap();
 
-    #[test]
-    fn cascade_vram_allows_6gb_only_for_voice_only_profile() {
+        let inventory = accelerator::list_accelerators();
+        let gpu = voxcpm2_effective_gpu(&inventory, None);
+        let current_profile = select_voxcpm2_profile(&inventory, gpu, None);
+        let current_profile_id = current_profile.as_ref().map(|profile| profile.id());
+
         assert_eq!(
-            validate_cascade_vram(Some(6.0), Some("windows_trt_6g")).unwrap(),
-            6.0
+            read_cascade_loader_profile(&manifest, current_profile_id).as_deref(),
+            current_profile_id
         );
-        assert!(validate_cascade_vram(Some(5.9), Some("windows_trt_6g")).is_err());
     }
 
     #[test]
@@ -16711,7 +16746,7 @@ mod tests {
         let manifest = dir.path().join("slots-manifest.json");
         std::fs::write(&manifest, r#"{"gpu":{"loaderProfile":"laptop;rm"}}"#).unwrap();
 
-        assert_eq!(read_cascade_loader_profile(&manifest), None);
+        assert_eq!(read_cascade_loader_profile(&manifest, Some("linux_trt_6g")), None);
     }
 
     #[test]
@@ -19840,6 +19875,32 @@ mod voxcpm2_installer_precheck_tests {
 
     #[test]
     fn voxcpm2_effective_gpu_prefers_explicit_choice() {
-        assert_eq!(voxcpm2_effective_gpu(Some(3)), Some(3));
+        let inventory = accelerator::AcceleratorInventory {
+            status: accelerator::DetectionStatus::Detected,
+            devices: vec![accelerator::AcceleratorDevice {
+                accelerator: accelerator::AcceleratorApi::Vulkan,
+                vendor: accelerator::HardwareVendor::Nvidia,
+                name: Some("fixture".to_string()),
+                provider_id: accelerator::ProviderScopedDeviceId {
+                    provider: accelerator::AcceleratorApi::Vulkan,
+                    kind: accelerator::DeviceIdKind::VulkanUuid,
+                    value: "vulkan:uuid:fixture".to_string(),
+                },
+                total_vram_bytes: Some(8 * 1024 * 1024 * 1024),
+                available_vram_bytes: Some(7 * 1024 * 1024 * 1024),
+                info_source: accelerator::InformationSource::Vulkan,
+                total_vram_source: Some(accelerator::InformationSource::Vulkan),
+                available_vram_source: Some(accelerator::InformationSource::VulkanMemoryBudget),
+                nvidia: Some(accelerator::NvidiaMetadata {
+                    compatibility_index: Some(3),
+                    name: Some("fixture".to_string()),
+                    compute_capability: None,
+                    driver_version: None,
+                }),
+                nvidia_info_source: Some(accelerator::InformationSource::NvidiaSmi),
+            }],
+            error_code: None,
+        };
+        assert_eq!(voxcpm2_effective_gpu(&inventory, Some(3)), Some(3));
     }
 }

@@ -1,4 +1,10 @@
-<!-- src-sha: 63f78353c50a3cfd -->
+<!-- src-sha: 73f3d9477ea043d5 -->
+
+## VoxCPM2 프로파일 선택 호출부 이동 — 2026-10-13 (#757 단계 3)
+
+- 공통 가속기 인벤토리와 등록부 JSON을 설정·STT·음성 설치/시작 조회에 연결했다. Windows Vulkan 프로파일은 정본과 내보낸 셸 등록부 모두 `planned`다.
+- 검증: Vitest 150 통과/9 제외, 참조 등록부 pytest 11 통과, 전체 Rust 502 통과/4 실패/3 제외. 실패 2건은 기존 Linux baseline, 2건은 worktree 루트 감지와 Unix 소켓 경로 제한 환경 문제다. TypeScript/build는 기존 의존성·ES target 오류로 실패. 실제 GPU 시험은 하지 않았다.
+- P04 `in_progress`, P05 `pending`; Muse 코드 검수 전 완료 주장은 하지 않는다. 상세 결과: Alpha workspace `.agents/progress/naia-shell-024-dev-20261011/result-757-s3.md`.
 
 ## BGM AI next/status observe — 2026-09-18 (#671)
 
