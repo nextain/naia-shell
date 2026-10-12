@@ -551,6 +551,68 @@ describe("stageVoxCpm2Runtime", () => {
 			/package lock SHA-256 mismatch/,
 		);
 	});
+
+	it.each(["arg", "env"])(
+		"registry_staging_accepts_arg_or_env_and_copies_bytes via %s",
+		(mode) => {
+			const source = fixture();
+			const registryFixturePath = resolve(
+				source.shellDir,
+				"fixture-profile-registry.json",
+			);
+			const registryContent = `${JSON.stringify(
+				{
+					schemaVersion: 1,
+					generatedFrom: {
+						repository: "nextain/voxcpm2-tensorrt",
+						path: "src/voxcpm2_tensorrt/profiles.py",
+						sourceSha256: "a".repeat(64),
+					},
+					entries: [
+						{
+							id: "windows_trt_6g",
+							os: "windows",
+							accelerator: "cuda",
+							backend: "tensorrt_locdit",
+							minVramGiB: 6,
+							status: "released",
+							notes: "test notes",
+						},
+					],
+				},
+				null,
+				2,
+			)}\n`;
+			writeFileSync(registryFixturePath, registryContent, "utf8");
+
+			let destination: string;
+			if (mode === "arg") {
+				destination = stageVoxCpm2Runtime({
+					...source,
+					profileRegistryJson: registryFixturePath,
+				});
+			} else {
+				const originalEnv = process.env.NAIA_VOXCPM2_PROFILE_REGISTRY;
+				try {
+					process.env.NAIA_VOXCPM2_PROFILE_REGISTRY = registryFixturePath;
+					destination = stageVoxCpm2Runtime(source);
+				} finally {
+					if (originalEnv === undefined) {
+						delete process.env.NAIA_VOXCPM2_PROFILE_REGISTRY;
+					} else {
+						process.env.NAIA_VOXCPM2_PROFILE_REGISTRY = originalEnv;
+					}
+				}
+			}
+
+			const stagedRegistry = resolve(destination, "profile-registry.json");
+			expect(existsSync(stagedRegistry)).toBe(true);
+			expect(readFileSync(stagedRegistry, "utf8")).toBe(registryContent);
+			expect(readFileSync(stagedRegistry)).toEqual(
+				readFileSync(registryFixturePath),
+			);
+		},
+	);
 });
 
 
