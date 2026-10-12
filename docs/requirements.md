@@ -1366,3 +1366,15 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 | **FR-CREDITS-DISPLAY.1** | Naia 계정 사용 비용은 모든 화면에서 "약 N 크레딧"(1크레딧 = $0.001, 달러 × 1,000)으로 표시하고, 셸은 배수를 곱하지 않는다. 자기 API 키 제공자는 달러 "제공사 요금 추정"으로 표시한다. 금액 서식은 `lib/credits.ts` 한 곳을 쓴다. 14개 언어 키 누락 0. | UC-CREDITS-DISPLAY | `credits.test.ts`, `CostDashboard.test.tsx`, `ChatArea.test.tsx`, `WorkProgressArea.test.tsx`, `SettingsTab.test.tsx`, `registry.test.ts`, `i18n-user-facing.test.ts` | In progress |
 | **FR-CREDITS-DISPLAY.2** | Steam판(표시 파일 `naia-distribution.txt` 또는 `SteamAppId`=5354630)에서는 크레딧 충전 버튼·naia.land 결제·대시보드 링크와 부족 안내의 웹 결제 문구를 숨긴다. 표시 파일은 데포 해시 목록에 포함되고 CI가 확인한다. | UC-CREDITS-DISPLAY | `src-tauri/src/distribution.rs` 단위 시험, `platform-matrix.test.ts`, `distribution.test.ts`, `CostDashboard.steam.test.tsx`, `SettingsTab.test.tsx` | In progress |
+
+## 기능 요구사항 (FR) — 프로젝트 앱 뼈대와 프로젝트 선택 (#756 단계 1)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-PROJECT-APP.1** | 셸 앱 레지스트리에 내장 프로젝트 앱을 추가한다. 앱은 코딩 에이전트·대시보드·내부 이슈 세 탭을 제공하고, 선택된 naia-pj-adk 체크아웃의 `projects/*`에서 `_template`, `_template-local`을 제외한 프로젝트를 발견한다. 프로젝트는 이름·ID·repository로 검색할 수 있다. 프로젝트의 `project.yaml` 식별 정보와 profile을 읽으며 `local` profile은 `profile.yaml`과 `workspace/repos.json`도 읽는다. 프로젝트를 선택하면 앱 안에서 열고 선택된 제목을 세 탭에 유지한다. 빈 목록·설정 오류에 다음 조치를 안내한다. 이 단계에서 세 탭은 접근 가능한 빈 상태이며 Workspace/Herdr 런타임·PTY·코딩 작업자 API를 시작하거나 연결하지 않는다. | UC-PROJECT-APP-SELECT-OPEN-756-S1 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` (`Project catalog — F-01`), `ProjectsApp.test.tsx` (`ProjectsApp — F-01`); `packages/shell/e2e/project-app.spec.ts` (`Project app — stage 1`) | In progress |
+
+## 비기능 요구사항 (NFR) — 프로젝트 앱 경계와 접근성 (#756 단계 1)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **NFR-PROJECT-APP.1** | 탐색과 설정 읽기는 사용자가 선택한 naia-pj-adk 체크아웃 내부로 제한한다. 경로가 루트 밖으로 확장되지 않도록 하고, 누락·잘못된 설정을 성공으로 표시하지 않으며 문제 파일과 복구 다음 조치를 안내한다. 세 탭은 이름·선택 상태·키보드 이동을 접근 가능한 탭 의미로 노출하고, 진행·빈 목록·성공·오류 상태를 좁은 창에서도 읽고 조작할 수 있게 한다. | UC-PROJECT-APP-SELECT-OPEN-756-S1 | `project-catalog.test.ts` (`Project catalog — F-01`), `ProjectsApp.test.tsx` (`ProjectsApp — F-01`); `packages/shell/e2e/project-app.spec.ts` (`Project app — stage 1`) | In progress |

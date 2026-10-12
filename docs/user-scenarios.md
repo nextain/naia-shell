@@ -2252,6 +2252,28 @@ Test Coverage Map (P02)
 
 > e2e `slides-sidecar.spec.ts:251` 은 이 PR 이전부터 실패하는 항목(스펙의 `convertFileSrc` 목이 `127.0.0.1`→`localhost` 치환을 하지만 Playwright 기본 호스트가 이미 `localhost` 라서 iframe 과 호스트가 같은 출처가 됨; 이 PR 과 무관).
 
+## UC-PROJECT-APP-SELECT-OPEN-756-S1 — 체크아웃의 프로젝트를 찾아 앱에서 연다 (#756 단계 1)
+
+사용자는 naia-pj-adk 체크아웃을 선택하고 셸의 프로젝트 앱에서 그 체크아웃의 `projects/*`를 확인한다. `_template`과 `_template-local`은 목록에서 제외한다. 이름·ID·repository로 검색할 수 있다. 각 프로젝트의 `project.yaml`에서 식별 정보와 profile을 읽고, `local` profile이면 해당 `profile.yaml`과 `workspace/repos.json`도 읽는다. 사용자가 프로젝트를 선택하면 앱 안에서 프로젝트 제목을 확인하고 세 탭(코딩 에이전트·대시보드·내부 이슈)을 오가며 각 화면의 빈 상태를 볼 수 있다. 목록이 비었거나 설정을 읽지 못하면 무엇이 비었거나 잘못됐는지와 다음 조치를 안내한다. 모든 발견·읽기는 선택한 체크아웃 경계 안에서만 이뤄진다. 단계 1은 프로젝트 앱의 화면 뼈대만 제공하며 Workspace/Herdr 런타임, PTY, 코딩 작업자 API를 시작하거나 연결하지 않는다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 선택된 체크아웃과 프로젝트 선택 안내가 보인다. 프로젝트를 선택하면 프로젝트 제목과 세 탭이 표시된다. |
+| 빈 목록 | 유효한 프로젝트가 없으면 빈 상태와 다른 체크아웃 선택 또는 프로젝트 설정 확인이라는 다음 조치가 표시된다. 템플릿 프로젝트는 목록에 나타나지 않는다. |
+| 진행 | 체크아웃 안의 프로젝트와 필요한 설정 파일을 읽는 중임을 표시하며 중복 선택이나 빈 성공 화면으로 오인시키지 않는다. |
+| 성공 | 선택한 프로젝트 제목이 세 탭 모두에서 유지되고, 각 탭은 단계 1의 접근 가능한 빈 상태를 표시한다. |
+| 오류 | `project.yaml`, local profile의 `profile.yaml` 또는 `workspace/repos.json`이 없거나 잘못되었거나 읽히지 않으면 영향을 받은 프로젝트를 열지 않고 파일과 복구 조치를 안내한다. |
+| 좁은 폭 | 체크아웃 선택·프로젝트 목록·세 탭과 상태 안내가 좁은 창에서도 잘리지 않으며 키보드로 탐색할 수 있다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest 파일·그룹 | 실 UI Playwright 파일·그룹 |
+|---|---|---|
+| 선택된 체크아웃에서 유효한 프로젝트를 읽고 `_template`, `_template-local` 제외 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — `describe("Project catalog — F-01")`의 유효 목록 사례 | `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 검색·선택 사례 |
+| 읽는 중 표시, 프로젝트 열기, 세 탭에서 선택 유지 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` — `describe("ProjectsApp — F-01")`의 로딩·선택·열기 사례 | `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 프로젝트 열기·세 탭 빈 상태 사례 |
+| 빈 목록, 누락·잘못된 설정, 복구를 위한 다음 조치 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — `describe("Project catalog — F-01")`의 빈 목록·각 설정 오류 사례 | `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 빈 목록·설정 오류와 다음 조치 사례 |
+| 키보드 조작, 탭 의미·상태, 좁은 화면 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` — `describe("ProjectsApp — F-01")`의 탭 키보드·접근성 사례 | `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 키보드·좁은 화면 사례 |
+
 
 
 

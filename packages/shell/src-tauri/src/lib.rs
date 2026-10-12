@@ -17,6 +17,7 @@ mod ego_host_bridge;
 mod herdr;
 mod memory;
 mod platform;
+mod project_catalog;
 mod pty;
 mod voice_runtime;
 mod voice_cache;
@@ -14245,6 +14246,7 @@ pub fn run() {
             ego_host_bridge::ego_host_reconcile_lease, ego_host_bridge::ego_host_ensure_dirs,
             ego_host_bridge::ego_host_write_env_files, ego_host_bridge::ego_host_wait_pid_exit,
             list_skills,
+            project_catalog::projects_scan_checkout,
             frontend_log,
             list_stt_models,
             download_stt_model,
