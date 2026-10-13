@@ -1,4 +1,10 @@
-<!-- src-sha: 652082a00d35b59e -->
+<!-- src-sha: d32d5d070ea47a17 -->
+
+## Qwen3.5 모델 받기 수명주기 — #759 단계 2
+
+- 범위: FR-LLM-PULL.1 단계 2 검증 재개; P01–P03 산출물은 지시서·요구사항에 연결.
+- P04: frozen install/build, focused Cargo 54/54, full parallel Cargo 583/583 twice, and specified Vitest 274/274 passed. Coordinator Playwright name comparison: 55=55, stage-specific 0; no rerun.
+- P05: Muse code review pending. Completion claim: no.
 
 ## VRAM 예약과 Ollama 공급자 연결 — 2026-10-13 (#758 단계 4)
 

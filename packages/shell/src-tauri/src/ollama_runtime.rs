@@ -339,7 +339,7 @@ impl RuntimeError {
 
 #[derive(Serialize)]
 #[serde(untagged)]
-enum StopCommandError {
+pub(crate) enum StopCommandError {
     Runtime(RuntimeError),
     ModelPull(ModelPullError),
 }
@@ -410,7 +410,7 @@ struct QwenModelCandidate {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct QwenModelPolicy {
+pub(crate) struct QwenModelPolicy {
     candidates: Vec<QwenModelCandidate>,
     default_model_tag: Option<String>,
     context_default_tokens: Option<u64>,
@@ -520,7 +520,7 @@ enum ModelPullErrorCode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ModelPullError {
+pub(crate) struct ModelPullError {
     code: ModelPullErrorCode,
     stage: String,
     retryable: bool,
@@ -558,7 +558,7 @@ enum ModelPullState {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ModelPullSnapshot {
+pub(crate) struct ModelPullSnapshot {
     operation_id: Option<String>,
     tag: String,
     state: ModelPullState,
@@ -567,7 +567,7 @@ struct ModelPullSnapshot {
     error: Option<ModelPullError>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ModelPullProgress {
     operation_id: String,
@@ -581,7 +581,7 @@ struct ModelPullProgress {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ModelPullStartResponse {
+pub(crate) struct ModelPullStartResponse {
     operation_id: String,
     snapshot: ModelPullSnapshot,
 }
@@ -3502,28 +3502,26 @@ async fn stream_model_pull(
             }
         }
     }
-    if let Some(parsed) = finish_pull_buffer(&mut buffer)
+    if let Some((phase, digest, completed, total)) = finish_pull_buffer(&mut buffer)
         .map_err(|code| model_pull_error(code, "pull", true, Some(&operation_id)))?
     {
-        if let Some((phase, digest, completed, total)) = parsed {
-            saw_success |= phase == "success";
-            let layer_percent = match (completed, total) {
-                (Some(completed), Some(total)) if total > 0 => {
-                    Some((completed as f64 * 100.0 / total as f64).min(100.0))
-                }
-                _ => None,
-            };
-            let progress = ModelPullProgress {
-                operation_id: operation_id.clone(),
-                tag: tag.clone(),
-                phase,
-                digest,
-                completed,
-                total,
-                layer_percent,
-            };
-            emit_model_pull_progress(app.as_ref(), &progress);
-        }
+        saw_success |= phase == "success";
+        let layer_percent = match (completed, total) {
+            (Some(completed), Some(total)) if total > 0 => {
+                Some((completed as f64 * 100.0 / total as f64).min(100.0))
+            }
+            _ => None,
+        };
+        let progress = ModelPullProgress {
+            operation_id: operation_id.clone(),
+            tag: tag.clone(),
+            phase,
+            digest,
+            completed,
+            total,
+            layer_percent,
+        };
+        emit_model_pull_progress(app.as_ref(), &progress);
     }
     Ok(saw_success)
 }
@@ -3989,16 +3987,19 @@ fn start_model_pull_with_policy(
                     None,
                     &completion_worker,
                 ),
-                Err(error) => finish_model_pull(
-                    &manager_worker,
-                    app_worker.as_ref(),
-                    &operation_id_worker,
-                    ModelPullState::Failed,
-                    &error.stage,
-                    None,
-                    Some(error.for_operation(&operation_id_worker)),
-                    &completion_worker,
-                ),
+                Err(error) => {
+                    let stage = error.stage.clone();
+                    finish_model_pull(
+                        &manager_worker,
+                        app_worker.as_ref(),
+                        &operation_id_worker,
+                        ModelPullState::Failed,
+                        &stage,
+                        None,
+                        Some(error.for_operation(&operation_id_worker)),
+                        &completion_worker,
+                    )
+                }
             }
         });
     if worker.is_err() {
@@ -5833,9 +5834,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     static REAL_PROCESS_GROUP_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    #[cfg(target_os = "linux")]
-    static FAKE_RUNTIME_CHILD_STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
-
     struct FixtureDownloader {
         bytes: Vec<u8>,
         fail_after_partial_write: bool,
@@ -6076,6 +6074,10 @@ mod tests {
     struct TestApiServer {
         address: std::net::SocketAddr,
         stopped: Arc<AtomicBool>,
+        listening: Arc<AtomicBool>,
+        #[cfg(target_os = "linux")]
+        listen_fd: std::os::fd::RawFd,
+        fixture: Arc<Mutex<ApiFixture>>,
         worker: Option<thread::JoinHandle<()>>,
     }
 
@@ -6083,13 +6085,77 @@ mod tests {
         fn bind(address: impl std::net::ToSocketAddrs, fixture: ApiFixture) -> io::Result<Self> {
             let listener = std::net::TcpListener::bind(address)?;
             listener.set_nonblocking(true)?;
+            Self::from_listener(listener, true, fixture)
+        }
+
+        #[cfg(target_os = "linux")]
+        fn reserve_unlistened(
+            address: std::net::SocketAddrV4,
+            fixture: ApiFixture,
+        ) -> io::Result<Self> {
+            use std::os::fd::FromRawFd;
+
+            let fd = unsafe {
+                libc::socket(
+                    libc::AF_INET,
+                    libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+                    0,
+                )
+            };
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let socket = unsafe { std::net::TcpListener::from_raw_fd(fd) };
+            let address = libc::sockaddr_in {
+                sin_family: libc::AF_INET as libc::sa_family_t,
+                sin_port: address.port().to_be(),
+                sin_addr: libc::in_addr {
+                    s_addr: u32::from_ne_bytes(address.ip().octets()),
+                },
+                sin_zero: [0; 8],
+            };
+            let bound = unsafe {
+                libc::bind(
+                    fd,
+                    (&address as *const libc::sockaddr_in).cast(),
+                    std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+                )
+            };
+            if bound < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Self::from_listener(socket, false, fixture)
+        }
+
+        fn from_listener(
+            listener: std::net::TcpListener,
+            is_listening: bool,
+            fixture: ApiFixture,
+        ) -> io::Result<Self> {
+            listener.set_nonblocking(true)?;
             let address = listener.local_addr()?;
+            #[cfg(target_os = "linux")]
+            let listen_fd = {
+                use std::os::fd::AsRawFd;
+                listener.as_raw_fd()
+            };
             let stopped = Arc::new(AtomicBool::new(false));
             let worker_stopped = stopped.clone();
+            let listening = Arc::new(AtomicBool::new(is_listening));
+            let worker_listening = listening.clone();
+            let fixture = Arc::new(Mutex::new(fixture));
+            let worker_fixture = fixture.clone();
             let worker = thread::spawn(move || {
                 while !worker_stopped.load(Ordering::Acquire) {
+                    if !worker_listening.load(Ordering::Acquire) {
+                        thread::sleep(Duration::from_millis(2));
+                        continue;
+                    }
                     match listener.accept() {
-                        Ok((mut stream, _)) => serve_fixture_request(&mut stream, &fixture),
+                        Ok((mut stream, _)) => {
+                            let fixture = worker_fixture.lock().unwrap().clone();
+                            serve_fixture_request(&mut stream, &fixture);
+                        }
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                             thread::sleep(Duration::from_millis(2));
                         }
@@ -6100,6 +6166,10 @@ mod tests {
             Ok(Self {
                 address,
                 stopped,
+                listening,
+                #[cfg(target_os = "linux")]
+                listen_fd,
+                fixture,
                 worker: Some(worker),
             })
         }
@@ -6110,6 +6180,20 @@ mod tests {
 
         fn stop(&self) {
             self.stopped.store(true, Ordering::Release);
+        }
+
+        fn set_fixture(&self, fixture: ApiFixture) {
+            *self.fixture.lock().unwrap() = fixture;
+        }
+
+        #[cfg(target_os = "linux")]
+        fn listen(&self) {
+            if self.listening.load(Ordering::Acquire) {
+                return;
+            }
+            let result = unsafe { libc::listen(self.listen_fd, 128) };
+            assert_eq!(result, 0, "failed to activate the reserved test API socket");
+            self.listening.store(true, Ordering::Release);
         }
     }
 
@@ -6154,49 +6238,6 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    extern "C" fn fake_runtime_child_term_handler(_: libc::c_int) {
-        FAKE_RUNTIME_CHILD_STOP_REQUESTED.store(true, Ordering::Release);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    #[ignore = "spawned only as a fixture executable by process ownership tests"]
-    fn fake_managed_ollama_process_entry() {
-        let (Ok(port), Ok(mode), Ok(pid_file), Ok(reaped_file)) = (
-            std::env::var("NAIA_SHELL_FAKE_OLLAMA_PORT"),
-            std::env::var("NAIA_SHELL_FAKE_OLLAMA_MODE"),
-            std::env::var("NAIA_SHELL_FAKE_OLLAMA_PID_FILE"),
-            std::env::var("NAIA_SHELL_FAKE_OLLAMA_REAPED_FILE"),
-        ) else {
-            return;
-        };
-        FAKE_RUNTIME_CHILD_STOP_REQUESTED.store(false, Ordering::Release);
-        let previous = unsafe {
-            libc::signal(
-                libc::SIGTERM,
-                fake_runtime_child_term_handler as *const () as libc::sighandler_t,
-            )
-        };
-        assert_ne!(previous, libc::SIG_ERR);
-
-        let mut descendant = Command::new("/bin/sleep").arg("60").spawn().unwrap();
-        fs::write(pid_file, descendant.id().to_string()).unwrap();
-        let fixture = if mode == "unready" {
-            ApiFixture::status(503)
-        } else {
-            ApiFixture::ready(0)
-        };
-        let server =
-            TestApiServer::bind(("127.0.0.1", port.parse::<u16>().unwrap()), fixture).unwrap();
-        while !FAKE_RUNTIME_CHILD_STOP_REQUESTED.load(Ordering::Acquire) {
-            thread::sleep(Duration::from_millis(2));
-        }
-        drop(server);
-        let _ = descendant.wait().unwrap();
-        fs::write(reaped_file, b"descendant reaped").unwrap();
-    }
-
-    #[cfg(target_os = "linux")]
     fn shell_quote(value: &str) -> String {
         format!("'{}'", value.replace('\'', "'\\''"))
     }
@@ -6205,21 +6246,15 @@ mod tests {
     fn write_fake_executable_install(
         root: &Path,
         pin: ReleasePin,
-        port: u16,
-        mode: &str,
         pid_file: &Path,
         reaped_file: &Path,
     ) {
         use std::os::unix::fs::PermissionsExt;
 
-        let current_exe = std::env::current_exe().unwrap();
         let script = format!(
-            "#!/bin/sh\nexport NAIA_SHELL_FAKE_OLLAMA_PORT={}\nexport NAIA_SHELL_FAKE_OLLAMA_MODE={}\nexport NAIA_SHELL_FAKE_OLLAMA_PID_FILE={}\nexport NAIA_SHELL_FAKE_OLLAMA_REAPED_FILE={}\nexec {} --exact ollama_runtime::tests::fake_managed_ollama_process_entry --ignored --nocapture\n",
-            shell_quote(&port.to_string()),
-            shell_quote(mode),
+            "#!/bin/sh\nset -eu\npid_file={}\nreaped_file={}\ndescendant=\ntrap 'if [ -n \"$descendant\" ]; then wait \"$descendant\" 2>/dev/null || :; fi; printf \"descendant reaped\" > \"$reaped_file\"; exit 0' TERM\n/bin/sleep 60 &\ndescendant=$!\nprintf '%s' \"$descendant\" > \"$pid_file\"\nwait \"$descendant\"\n",
             shell_quote(&pid_file.to_string_lossy()),
             shell_quote(&reaped_file.to_string_lossy()),
-            shell_quote(&current_exe.to_string_lossy()),
         );
         write_managed_fixture(root, pin.version, pin.os, pin.arch, script.as_bytes());
         let (_, executable_relative_path) = expected_asset(pin.os, pin.arch);
@@ -6233,20 +6268,23 @@ mod tests {
         root: &Path,
         port: u16,
         pin: ReleasePin,
+        fixture_pid_file: &Path,
     ) -> RuntimeManager {
         RuntimeManager {
             inner: Arc::new(Mutex::new(ManagerState::default())),
             downloader: Arc::new(FixtureDownloader::succeeding(Vec::new())),
-            process_runner: Arc::new(SystemProcessRunner),
+            process_runner: Arc::new(FixtureStartBarrierRunner {
+                pid_file: fixture_pid_file.to_path_buf(),
+            }),
             reservation_manager: ReservationManager::default(),
             inventory_loader: Arc::new(e2e_fake_accelerator_inventory),
             settings: RuntimeSettings {
                 managed_base_url: format!("http://127.0.0.1:{port}"),
                 request_timeout: Duration::from_millis(30),
-                readiness_timeout: Duration::from_secs(2),
+                readiness_timeout: Duration::from_secs(10),
                 poll_interval: Duration::from_millis(5),
-                graceful_stop_timeout: Duration::from_millis(500),
-                force_stop_timeout: Duration::from_millis(500),
+                graceful_stop_timeout: Duration::from_secs(5),
+                force_stop_timeout: Duration::from_secs(2),
             },
             locations: Some((anchor.path().to_path_buf(), root.to_path_buf())),
             release_pin: Some(pin),
@@ -6254,12 +6292,60 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
+    struct FixtureStartBarrierRunner {
+        pid_file: PathBuf,
+    }
+
+    #[cfg(target_os = "linux")]
+    impl RuntimeProcessRunner for FixtureStartBarrierRunner {
+        fn spawn(&self, spec: &ProcessSpec) -> io::Result<Box<dyn ManagedChild>> {
+            let mut child = SystemProcessRunner.spawn(spec)?;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !self.pid_file.exists() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(5));
+            }
+            if !self.pid_file.exists() {
+                let _ = stop_managed_child(child.as_mut(), &RuntimeSettings::default());
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "fake managed child did not complete its startup handshake",
+                ));
+            }
+            Ok(child)
+        }
+    }
+
+    #[cfg(target_os = "linux")]
     fn wait_for_fixture_reap_marker(path: &Path) {
-        let deadline = Instant::now() + Duration::from_secs(2);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while !path.exists() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(path.exists(), "fake executable did not reap its descendant");
+    }
+
+    #[cfg(target_os = "linux")]
+    fn wait_for_fixture_pid_file(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !path.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            path.exists(),
+            "fake executable did not spawn its descendant"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    fn process_group_test_api() -> TestApiServer {
+        // Keep the ephemeral port bound but not listening until the fake child
+        // starts. This preserves the real launch probe's connection-refused
+        // result while preventing parallel tests from claiming the port.
+        TestApiServer::reserve_unlistened(
+            std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
+            ApiFixture::ready(0),
+        )
+        .unwrap()
     }
 
     struct FakeProcessState {
@@ -6585,7 +6671,7 @@ mod tests {
     }
 
     fn wait_for_operation(manager: &RuntimeManager, operation_id: &str) -> RuntimeSnapshot {
-        wait_for_snapshot(manager, Duration::from_secs(2), |snapshot| {
+        wait_for_snapshot(manager, Duration::from_secs(10), |snapshot| {
             snapshot.operation_id.as_deref() == Some(operation_id) && snapshot.phase.is_none()
         })
     }
@@ -7385,16 +7471,13 @@ mod tests {
         let anchor = tempfile::tempdir().unwrap();
         let root = make_test_root(&anchor);
         let pin = *release_pin("linux", "x86_64").unwrap();
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let api = process_group_test_api();
+        let port = api.address.port();
         let pid_file = anchor.path().join("fake-child.pid");
         let reaped_file = anchor.path().join("fake-child-reaped");
-        write_fake_executable_install(&root, pin, port, "unready", &pid_file, &reaped_file);
-        let mut manager = real_process_manager(&anchor, &root, port, pin);
-        manager.settings.readiness_timeout = Duration::from_secs(1);
+        write_fake_executable_install(&root, pin, &pid_file, &reaped_file);
+        let mut manager = real_process_manager(&anchor, &root, port, pin, &pid_file);
+        manager.settings.readiness_timeout = Duration::from_secs(5);
 
         let operation = dispatch_start(&manager, None, None, None).unwrap();
         let snapshot = wait_for_operation(&manager, &operation);
@@ -7429,17 +7512,17 @@ mod tests {
         let anchor = tempfile::tempdir().unwrap();
         let root = make_test_root(&anchor);
         let pin = *release_pin("linux", "x86_64").unwrap();
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let api = process_group_test_api();
+        let port = api.address.port();
         let pid_file = anchor.path().join("fake-child.pid");
         let reaped_file = anchor.path().join("fake-child-reaped");
-        write_fake_executable_install(&root, pin, port, "ready", &pid_file, &reaped_file);
-        let manager = real_process_manager(&anchor, &root, port, pin);
+        write_fake_executable_install(&root, pin, &pid_file, &reaped_file);
+        let manager = real_process_manager(&anchor, &root, port, pin, &pid_file);
 
         let start = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_fixture_pid_file(&pid_file);
+        api.set_fixture(ApiFixture::ready(0));
+        api.listen();
         assert_eq!(
             wait_for_operation(&manager, &start).server_state,
             ServerState::ReadyManaged
