@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "Tambahkan file VRM ke naia-settings/vrm-files/",
 	"settings.bgEmpty": "Tambahkan file ke naia-settings/background/",
 	"settings.ollamaConnected": "Terhubung — {n} model",
+	"settings.ollamaRuntimeLabel": "Runtime Ollama",
+	"settings.ollamaStart": "Jalankan Ollama",
+	"settings.ollamaStop": "Hentikan Ollama",
+	"settings.ollamaStateNotInstalled": "Belum terpasang",
+	"settings.ollamaStateCheckingHost": "Memeriksa host",
+	"settings.ollamaStateExternalUnavailable": "Server tidak tersedia",
+	"settings.ollamaStateInstalling": "Memasang",
+	"settings.ollamaStateInstalledStopped": "Terpasang, berhenti",
+	"settings.ollamaStateReserving": "Memeriksa reservasi akselerator",
+	"settings.ollamaStateStarting": "Memulai",
+	"settings.ollamaStateReadyManaged": "Siap (dikelola)",
+	"settings.ollamaStateReadyExternalLocal": "Siap (koneksi lokal)",
+	"settings.ollamaStateConnectedUnreserved": "Terhubung tanpa reservasi lokal",
+	"settings.ollamaStateReadyRemote": "Siap (jarak jauh)",
+	"settings.ollamaStateStopping": "Menghentikan",
+	"settings.ollamaStateStopped": "Berhenti",
+	"settings.ollamaStateFailed": "Gagal",
+	"settings.ollamaChatBlocked": "Chat Ollama lokal diblokir sampai reservasi aktif terkonfirmasi.",
+	"settings.ollamaReservationSameDeviceConflict": "Voice sedang memakai akselerator ini; Ollama lokal tidak dapat memakainya bersamaan.",
+	"settings.ollamaReservationPolicyUndecided": "Kebijakan penggunaan akselerator bersamaan belum ditentukan untuk tugas ini.",
+	"settings.ollamaDeviceSelectionRequired": "Pilih satu akselerator sebelum menjalankan Ollama lokal.",
+	"settings.ollamaDeviceMappingUnverified": "Pemetaan Ollama ke ID akselerator tidak dapat diverifikasi.",
+	"settings.ollamaDeviceNotFound": "Akselerator yang dipilih tidak tersedia.",
+	"settings.ollamaInventoryUnavailable": "Inventaris akselerator tidak tersedia.",
+	"settings.ollamaAvailableVramUnknown": "VRAM yang tersedia tidak dapat dibaca.",
+	"settings.ollamaInsufficientVram": "VRAM tersedia tidak cukup untuk reservasi ini.",
+	"settings.ollamaWorkloadAlreadyReserved": "Tugas Ollama ini sudah memiliki reservasi.",
+	"settings.ollamaReservationLeaseLost": "Reservasi akselerator hilang; Ollama dihentikan.",
 	"settings.ollamaDisconnected": "Tidak terhubung — Pastikan server Ollama berjalan",
 	"settings.vllmDisconnected": "Tidak terhubung — Pastikan server vLLM berjalan",
 	"settings.modelCurrentVal": "(saat ini)",

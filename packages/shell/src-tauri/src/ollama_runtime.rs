@@ -1,7 +1,8 @@
 //! User-scoped Ollama installation, discovery, and owned server lifecycle.
 //!
 //! The supervisor only executes a validated managed CLI on loopback. It never
-//! adopts or terminates an external Ollama process and does not inspect GPUs.
+//! signals an external Ollama process. Local Ollama use is admitted through the
+//! shared accelerator reservation manager.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -24,7 +25,17 @@ use zip::ZipArchive;
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
-use crate::vram_reservation::ReservationLease;
+use crate::accelerator::{
+    AcceleratorApi, AcceleratorDevice, AcceleratorInventory, DetectionStatus, DeviceIdKind,
+    HardwareVendor, InformationSource, NvidiaMetadata, ProviderScopedDeviceId,
+};
+use crate::vram_reservation::{
+    LocalModelKind, LocalModelRequest, ReservationLease, ReservationManager,
+};
+
+type InventoryLoader = Arc<dyn Fn() -> AcceleratorInventory + Send + Sync>;
+
+const OLLAMA_WORKLOAD_ID: &str = "ollama-local-llm";
 
 const RELEASE_VERSION: &str = "0.40.3";
 const RELEASE_BASE: &str = "https://github.com/ollama/ollama/releases/download";
@@ -189,6 +200,12 @@ enum RuntimeErrorCode {
     PermissionDenied,
     NotManaged,
     ConfirmationRequired,
+    AcceleratorInventoryUnavailable,
+    DeviceNotFound,
+    DeviceSelectionRequired,
+    DeviceMappingUnverified,
+    ReservationDenied,
+    ReservationLeaseLost,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -199,8 +216,10 @@ enum ServerState {
     ExternalUnavailable,
     Installing,
     InstalledStopped,
+    Reserving,
     Starting,
     ReadyManaged,
+    ReadyExternalLocal,
     ConnectedUnreserved,
     ReadyRemote,
     Stopping,
@@ -221,6 +240,9 @@ enum RuntimeOwnership {
 #[serde(rename_all = "snake_case")]
 enum ReservationStatus {
     NotRequested,
+    Starting,
+    Running,
+    Denied,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -229,6 +251,7 @@ struct ReservationSnapshot {
     kind: Option<String>,
     status: ReservationStatus,
     bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     reason_code: Option<String>,
 }
 
@@ -243,6 +266,38 @@ impl Default for ReservationSnapshot {
     }
 }
 
+impl ReservationSnapshot {
+    fn starting() -> Self {
+        Self {
+            kind: Some("local_llm".to_string()),
+            status: ReservationStatus::Starting,
+            bytes: None,
+            reason_code: None,
+        }
+    }
+
+    fn denied(reason_code: &str) -> Self {
+        Self {
+            kind: Some("local_llm".to_string()),
+            status: ReservationStatus::Denied,
+            bytes: None,
+            reason_code: Some(reason_code.to_string()),
+        }
+    }
+
+    fn from_lease(lease: &ReservationLease) -> Option<Self> {
+        lease.snapshot().map(|reservation| Self {
+            kind: Some("local_llm".to_string()),
+            status: match reservation.status {
+                crate::vram_reservation::ReservationStatus::Starting => ReservationStatus::Starting,
+                crate::vram_reservation::ReservationStatus::Running => ReservationStatus::Running,
+            },
+            bytes: reservation.reservation_bytes,
+            reason_code: None,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RuntimeError {
@@ -251,6 +306,8 @@ pub(crate) struct RuntimeError {
     retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     operation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason_code: Option<String>,
 }
 
 impl RuntimeError {
@@ -260,11 +317,17 @@ impl RuntimeError {
             stage: stage.to_string(),
             retryable,
             operation_id: None,
+            reason_code: None,
         }
     }
 
     fn for_operation(mut self, operation_id: &str) -> Self {
         self.operation_id = Some(operation_id.to_string());
+        self
+    }
+
+    fn with_reason_code(mut self, reason_code: &str) -> Self {
+        self.reason_code = Some(reason_code.to_string());
         self
     }
 }
@@ -353,6 +416,10 @@ struct ManagerState {
     operation: Option<ActiveOperation>,
     active_versions: BTreeSet<String>,
     process: Option<ManagedProcess>,
+    unreaped_processes: Vec<ManagedProcess>,
+    external_reservation: Option<ExternalReservation>,
+    external_reservation_pending: Option<(u64, String)>,
+    external_reservation_generation: u64,
     next_process_generation: u64,
     shutdown_requested: bool,
 }
@@ -364,6 +431,10 @@ impl Default for ManagerState {
             operation: None,
             active_versions: BTreeSet::new(),
             process: None,
+            unreaped_processes: Vec::new(),
+            external_reservation: None,
+            external_reservation_pending: None,
+            external_reservation_generation: 0,
             next_process_generation: 1,
             shutdown_requested: false,
         }
@@ -549,8 +620,12 @@ struct ManagedProcess {
     child: Box<dyn ManagedChild>,
     version: String,
     generation: u64,
-    // Stage 4 fills this only after reservation-before-spawn is connected.
     reservation: Option<ReservationLease>,
+}
+
+struct ExternalReservation {
+    host: String,
+    lease: ReservationLease,
 }
 
 /// Tauri-managed state shared by the status, install, and remove commands.
@@ -559,6 +634,8 @@ pub(crate) struct RuntimeManager {
     inner: Arc<Mutex<ManagerState>>,
     downloader: Arc<dyn ArtifactDownloader>,
     process_runner: Arc<dyn RuntimeProcessRunner>,
+    reservation_manager: ReservationManager,
+    inventory_loader: InventoryLoader,
     settings: RuntimeSettings,
     locations: Option<(PathBuf, PathBuf)>,
     release_pin: Option<ReleasePin>,
@@ -566,15 +643,167 @@ pub(crate) struct RuntimeManager {
 
 impl Default for RuntimeManager {
     fn default() -> Self {
+        let inventory_loader: InventoryLoader = if cfg!(debug_assertions)
+            && std::env::var_os("NAIA_SHELL_E2E_FAKE_ACCELERATOR").is_some()
+        {
+            Arc::new(e2e_fake_accelerator_inventory)
+        } else {
+            Arc::new(crate::accelerator::list_accelerators)
+        };
         Self {
             inner: Arc::new(Mutex::new(ManagerState::default())),
             downloader: Arc::new(HttpDownloader),
             process_runner: Arc::new(SystemProcessRunner),
+            reservation_manager: crate::vram_reservation::process_manager_clone(),
+            inventory_loader,
             settings: RuntimeSettings::default(),
             locations: None,
             release_pin: None,
         }
     }
+}
+
+fn e2e_fake_accelerator_inventory() -> AcceleratorInventory {
+    AcceleratorInventory {
+        status: DetectionStatus::Detected,
+        devices: vec![AcceleratorDevice {
+            accelerator: AcceleratorApi::Vulkan,
+            vendor: HardwareVendor::Nvidia,
+            name: Some("Fixture accelerator".to_string()),
+            provider_id: ProviderScopedDeviceId {
+                provider: AcceleratorApi::Vulkan,
+                kind: DeviceIdKind::VulkanUuid,
+                value: "vulkan:uuid:00112233445566778899aabbccddeeff".to_string(),
+            },
+            total_vram_bytes: Some(16 * 1024 * 1024 * 1024),
+            available_vram_bytes: Some(15 * 1024 * 1024 * 1024),
+            info_source: InformationSource::Vulkan,
+            total_vram_source: Some(InformationSource::Vulkan),
+            available_vram_source: Some(InformationSource::NvidiaSmi),
+            nvidia: Some(NvidiaMetadata {
+                compatibility_index: Some(0),
+                name: Some("Fixture accelerator".to_string()),
+                compute_capability: None,
+                driver_version: None,
+            }),
+            nvidia_info_source: Some(InformationSource::NvidiaSmi),
+        }],
+        error_code: None,
+    }
+}
+
+fn select_ollama_device(
+    inventory: &AcceleratorInventory,
+    requested_device_id: Option<&str>,
+) -> Result<(String, String), RuntimeError> {
+    if inventory.status != DetectionStatus::Detected {
+        let (code, reason) = if inventory.status == DetectionStatus::NoDevices {
+            (RuntimeErrorCode::DeviceNotFound, "device_not_found")
+        } else {
+            (
+                RuntimeErrorCode::AcceleratorInventoryUnavailable,
+                "inventory_unavailable",
+            )
+        };
+        return Err(RuntimeError::new(code, "reservation", true).with_reason_code(reason));
+    }
+    if inventory.devices.is_empty() {
+        return Err(
+            RuntimeError::new(RuntimeErrorCode::DeviceNotFound, "reservation", false)
+                .with_reason_code("device_not_found"),
+        );
+    }
+    let device = if let Some(requested_device_id) = requested_device_id {
+        let mut matches = inventory
+            .devices
+            .iter()
+            .filter(|device| device.provider_id.value == requested_device_id);
+        let Some(device) = matches.next() else {
+            return Err(
+                RuntimeError::new(RuntimeErrorCode::DeviceNotFound, "reservation", false)
+                    .with_reason_code("device_not_found"),
+            );
+        };
+        if matches.next().is_some() {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::DeviceMappingUnverified,
+                "mapping",
+                false,
+            )
+            .with_reason_code("device_mapping_unverified"));
+        }
+        device
+    } else {
+        if inventory.devices.len() != 1 {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::DeviceSelectionRequired,
+                "reservation",
+                false,
+            )
+            .with_reason_code("device_selection_required"));
+        }
+        &inventory.devices[0]
+    };
+
+    if device.vendor != HardwareVendor::Nvidia {
+        return Err(
+            RuntimeError::new(RuntimeErrorCode::DeviceMappingUnverified, "mapping", false)
+                .with_reason_code("device_mapping_unverified"),
+        );
+    }
+    let selector = device
+        .nvidia
+        .as_ref()
+        .and_then(|metadata| metadata.compatibility_index)
+        .filter(|index| {
+            inventory
+                .devices
+                .iter()
+                .filter(|candidate| {
+                    candidate
+                        .nvidia
+                        .as_ref()
+                        .and_then(|metadata| metadata.compatibility_index)
+                        == Some(*index)
+                })
+                .count()
+                == 1
+        })
+        .map(|index| index.to_string())
+        .or_else(|| {
+            let uuid = device.provider_id.value.strip_prefix("vulkan:uuid:")?;
+            if uuid.len() == 32 && uuid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                let selector = format!("GPU-{uuid}");
+                let collisions = inventory
+                    .devices
+                    .iter()
+                    .filter(|candidate| {
+                        candidate
+                            .provider_id
+                            .value
+                            .strip_prefix("vulkan:uuid:")
+                            .is_some_and(|candidate_uuid| {
+                                format!("GPU-{candidate_uuid}") == selector
+                            })
+                    })
+                    .count();
+                (collisions == 1).then_some(selector)
+            } else {
+                None
+            }
+        });
+    let Some(selector) = selector else {
+        return Err(
+            RuntimeError::new(RuntimeErrorCode::DeviceMappingUnverified, "mapping", false)
+                .with_reason_code("device_mapping_unverified"),
+        );
+    };
+    Ok((device.provider_id.value.clone(), selector))
+}
+
+fn reservation_error(reason_code: &str) -> RuntimeError {
+    RuntimeError::new(RuntimeErrorCode::ReservationDenied, "reservation", true)
+        .with_reason_code(reason_code)
 }
 
 impl RuntimeManager {
@@ -610,7 +839,10 @@ impl RuntimeManager {
                 state.snapshot.state = RuntimeState::Installing;
                 state.snapshot.server_state = ServerState::Installing;
             }
-            OperationKind::Start => state.snapshot.server_state = ServerState::CheckingHost,
+            OperationKind::Start => {
+                state.snapshot.server_state = ServerState::CheckingHost;
+                state.snapshot.reservation = ReservationSnapshot::default();
+            }
             OperationKind::Stop => state.snapshot.server_state = ServerState::Stopping,
             OperationKind::Remove => {}
         }
@@ -651,6 +883,8 @@ impl RuntimeManager {
                 || !matches!(
                     state.snapshot.server_state,
                     ServerState::ConnectedUnreserved
+                        | ServerState::ReadyExternalLocal
+                        | ServerState::Reserving
                         | ServerState::ReadyRemote
                         | ServerState::ExternalUnavailable
                 )
@@ -687,6 +921,8 @@ impl RuntimeManager {
                 } else if !matches!(
                     state.snapshot.server_state,
                     ServerState::ConnectedUnreserved
+                        | ServerState::ReadyExternalLocal
+                        | ServerState::Reserving
                         | ServerState::ReadyRemote
                         | ServerState::ExternalUnavailable
                 ) {
@@ -777,6 +1013,29 @@ impl RuntimeManager {
         self.lock().snapshot.clone()
     }
 
+    fn set_reservation_snapshot(&self, reservation: ReservationSnapshot) {
+        self.lock().snapshot.reservation = reservation;
+    }
+
+    fn try_reserve_local(
+        &self,
+        requested_device_id: Option<&str>,
+    ) -> Result<(ReservationLease, String, String), RuntimeError> {
+        let inventory = (self.inventory_loader)();
+        let (device_id, selector) = select_ollama_device(&inventory, requested_device_id)?;
+        let request = LocalModelRequest {
+            device_id: device_id.clone(),
+            kind: LocalModelKind::LocalLlm,
+            workload_id: OLLAMA_WORKLOAD_ID.to_string(),
+            reservation_bytes: None,
+        };
+        let lease = self
+            .reservation_manager
+            .try_reserve_with_inventory(request, &inventory)
+            .map_err(|denial| reservation_error(denial.reason.code()))?;
+        Ok((lease, device_id, selector))
+    }
+
     fn is_shutting_down(&self) -> bool {
         self.lock().shutdown_requested
     }
@@ -785,6 +1044,146 @@ impl RuntimeManager {
     fn mark_active_for_test(&self, version: &str) {
         self.lock().active_versions.insert(version.to_string());
     }
+}
+
+enum ExternalAdmission {
+    Reserved(ReservationSnapshot),
+    InProgress,
+    Denied(RuntimeError),
+}
+
+fn reserve_external_local(
+    manager: &RuntimeManager,
+    host: &str,
+    requested_device_id: Option<&str>,
+) -> ExternalAdmission {
+    let (generation, old_reservation) = {
+        let mut state = manager.lock();
+        if state.shutdown_requested {
+            return ExternalAdmission::Denied(RuntimeError::new(
+                RuntimeErrorCode::RuntimeBusy,
+                "reservation",
+                true,
+            ));
+        }
+        if let Some(existing) = state.external_reservation.as_ref() {
+            if existing.host == host {
+                return match ReservationSnapshot::from_lease(&existing.lease) {
+                    Some(snapshot) => ExternalAdmission::Reserved(snapshot),
+                    None => ExternalAdmission::Denied(
+                        RuntimeError::new(
+                            RuntimeErrorCode::ReservationLeaseLost,
+                            "reservation",
+                            true,
+                        )
+                        .with_reason_code("reservation_lease_lost"),
+                    ),
+                };
+            }
+        }
+        if state.external_reservation_pending.is_some() {
+            return ExternalAdmission::InProgress;
+        }
+        let old_reservation = state.external_reservation.take();
+        state.external_reservation_generation =
+            state.external_reservation_generation.wrapping_add(1).max(1);
+        let generation = state.external_reservation_generation;
+        state.external_reservation_pending = Some((generation, host.to_string()));
+        (generation, old_reservation)
+    };
+    drop(old_reservation);
+
+    let (lease, _device_id, _selector) = match manager.try_reserve_local(requested_device_id) {
+        Ok(value) => value,
+        Err(error) => {
+            let mut state = manager.lock();
+            if state
+                .external_reservation_pending
+                .as_ref()
+                .is_some_and(|(current, _)| *current == generation)
+            {
+                state.external_reservation_pending = None;
+            }
+            return ExternalAdmission::Denied(error);
+        }
+    };
+    if !lease.mark_running() {
+        let mut state = manager.lock();
+        if state
+            .external_reservation_pending
+            .as_ref()
+            .is_some_and(|(current, _)| *current == generation)
+        {
+            state.external_reservation_pending = None;
+        }
+        drop(state);
+        drop(lease);
+        return ExternalAdmission::Denied(
+            RuntimeError::new(RuntimeErrorCode::ReservationLeaseLost, "reservation", true)
+                .with_reason_code("reservation_lease_lost"),
+        );
+    }
+    let Some(reservation) = ReservationSnapshot::from_lease(&lease) else {
+        let mut state = manager.lock();
+        if state
+            .external_reservation_pending
+            .as_ref()
+            .is_some_and(|(current, _)| *current == generation)
+        {
+            state.external_reservation_pending = None;
+        }
+        drop(state);
+        drop(lease);
+        return ExternalAdmission::Denied(
+            RuntimeError::new(RuntimeErrorCode::ReservationLeaseLost, "reservation", true)
+                .with_reason_code("reservation_lease_lost"),
+        );
+    };
+    let mut lease_to_drop = Some(lease);
+    let committed = {
+        let mut state = manager.lock();
+        if state
+            .external_reservation_pending
+            .as_ref()
+            .is_some_and(|(current, current_host)| *current == generation && current_host == host)
+            && !state.shutdown_requested
+        {
+            state.external_reservation_pending = None;
+            state.external_reservation = Some(ExternalReservation {
+                host: host.to_string(),
+                lease: lease_to_drop.take().expect("new external lease is present"),
+            });
+            true
+        } else {
+            false
+        }
+    };
+    drop(lease_to_drop);
+    if committed {
+        ExternalAdmission::Reserved(reservation)
+    } else {
+        ExternalAdmission::Denied(RuntimeError::new(
+            RuntimeErrorCode::RuntimeBusy,
+            "reservation",
+            true,
+        ))
+    }
+}
+
+fn release_external_reservation_for_host(manager: &RuntimeManager, host: &str) {
+    let external_reservation = {
+        let mut state = manager.lock();
+        if state
+            .external_reservation
+            .as_ref()
+            .is_some_and(|reservation| reservation.host == host)
+        {
+            state.external_reservation.take()
+        } else {
+            None
+        }
+    };
+    drop(external_reservation);
 }
 
 impl RuntimeProcessRunner for SystemProcessRunner {
@@ -2366,6 +2765,34 @@ fn stop_managed_process(process: &mut ManagedProcess, settings: &RuntimeSettings
     stop_managed_child(process.child.as_mut(), settings)
 }
 
+fn mark_managed_reservation_running(manager: &RuntimeManager, generation: u64) -> bool {
+    let mut state = manager.lock();
+    let Some(process) = state
+        .process
+        .as_mut()
+        .filter(|process| process.generation == generation)
+    else {
+        return false;
+    };
+    let Some(lease) = process.reservation.as_ref() else {
+        return false;
+    };
+    let running = match lease.snapshot() {
+        Some(snapshot)
+            if snapshot.status == crate::vram_reservation::ReservationStatus::Running =>
+        {
+            true
+        }
+        Some(_) => lease.mark_running(),
+        None => false,
+    };
+    if running {
+        state.snapshot.reservation = ReservationSnapshot::from_lease(lease)
+            .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
+    }
+    running
+}
+
 fn update_runtime_snapshot(manager: &RuntimeManager, snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
     let mut state = manager.lock();
     if state.operation.is_some() {
@@ -2390,6 +2817,7 @@ fn finish_start_error(
     operation_id: &str,
     error: RuntimeError,
 ) {
+    manager.set_reservation_snapshot(ReservationSnapshot::default());
     manager.finish_failure(operation_id, error);
     emit_manager_snapshot(app, manager);
 }
@@ -2420,11 +2848,21 @@ fn finish_start_with_process_error(
         if stop_managed_process(process_ref, &manager.settings) {
             let mut state = manager.lock();
             state.active_versions.remove(&process_ref.version);
+            state.snapshot.reservation = if error.code == RuntimeErrorCode::ReservationLeaseLost {
+                ReservationSnapshot::denied("reservation_lease_lost")
+            } else {
+                ReservationSnapshot::default()
+            };
             (error, RuntimeOwnership::None)
         } else {
             let version = process_ref.version.clone();
             let mut state = manager.lock();
             state.active_versions.insert(version);
+            state.snapshot.reservation = process_ref
+                .reservation
+                .as_ref()
+                .and_then(ReservationSnapshot::from_lease)
+                .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
             state.process = process.take();
             (
                 RuntimeError::new(RuntimeErrorCode::StopFailed, "stop", true),
@@ -2453,6 +2891,7 @@ fn perform_start_operation(
     root: PathBuf,
     pin: ReleasePin,
     endpoint: RuntimeEndpoint,
+    device_id: Option<String>,
     operation_id: String,
 ) {
     log_ollama_debug(
@@ -2567,6 +3006,21 @@ fn perform_start_operation(
                         .min(deadline.saturating_duration_since(now));
                     if let ProbeResult::Ready { model_count } = probe_ollama(&endpoint.url, timeout)
                     {
+                        if !mark_managed_reservation_running(&manager, generation) {
+                            finish_start_with_process_error(
+                                &manager,
+                                app.as_ref(),
+                                &operation_id,
+                                generation,
+                                RuntimeError::new(
+                                    RuntimeErrorCode::ReservationLeaseLost,
+                                    "reservation",
+                                    true,
+                                )
+                                .with_reason_code("reservation_lease_lost"),
+                            );
+                            return;
+                        }
                         manager.finish_server_operation(
                             &operation_id,
                             versions,
@@ -2616,15 +3070,56 @@ fn perform_start_operation(
                 Some(&operation_id),
                 &format!("model_count={model_count} child_spawned=false"),
             );
-            manager.finish_server_operation(
+            update_operation_snapshot(
+                &manager,
                 &operation_id,
-                versions,
-                installed_version,
-                ServerState::ConnectedUnreserved,
+                &versions,
+                installed_version.as_deref(),
+                ServerState::Reserving,
                 RuntimeOwnership::ExternalLocal,
                 Some(model_count),
-                None,
+                "reserving",
             );
+            emit_manager_snapshot(app.as_ref(), &manager);
+            match reserve_external_local(&manager, endpoint.url.as_str(), device_id.as_deref()) {
+                ExternalAdmission::Reserved(reservation) => {
+                    manager.set_reservation_snapshot(reservation);
+                    manager.finish_server_operation(
+                        &operation_id,
+                        versions,
+                        installed_version,
+                        ServerState::ReadyExternalLocal,
+                        RuntimeOwnership::ExternalLocal,
+                        Some(model_count),
+                        None,
+                    );
+                }
+                ExternalAdmission::InProgress => {
+                    manager.set_reservation_snapshot(ReservationSnapshot::starting());
+                    manager.finish_server_operation(
+                        &operation_id,
+                        versions,
+                        installed_version,
+                        ServerState::Reserving,
+                        RuntimeOwnership::ExternalLocal,
+                        Some(model_count),
+                        None,
+                    );
+                }
+                ExternalAdmission::Denied(error) => {
+                    let reason_code = error.reason_code.as_deref().unwrap_or("reservation_denied");
+                    manager.set_reservation_snapshot(ReservationSnapshot::denied(reason_code));
+                    manager.finish_server_operation(
+                        &operation_id,
+                        versions,
+                        installed_version,
+                        ServerState::ConnectedUnreserved,
+                        RuntimeOwnership::ExternalLocal,
+                        Some(model_count),
+                        Some(error),
+                    );
+                }
+            }
             emit_manager_snapshot(app.as_ref(), &manager);
             return;
         }
@@ -2653,6 +3148,10 @@ fn perform_start_operation(
                 "result=connection_refused",
             );
         }
+    }
+
+    if endpoint.scope == EndpointScope::ManagedDefault {
+        release_external_reservation_for_host(&manager, endpoint.url.as_str());
     }
 
     if manager.is_shutting_down() {
@@ -2752,6 +3251,45 @@ fn perform_start_operation(
         &operation_id,
         &versions,
         Some(&version),
+        ServerState::Reserving,
+        RuntimeOwnership::None,
+        None,
+        "reserving",
+    );
+    emit_manager_snapshot(app.as_ref(), &manager);
+    let (lease, _selected_device_id, device_selector) =
+        match manager.try_reserve_local(device_id.as_deref()) {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                let reason_code = error.reason_code.as_deref().unwrap_or("reservation_denied");
+                manager.set_reservation_snapshot(ReservationSnapshot::denied(reason_code));
+                manager.finish_server_operation(
+                    &operation_id,
+                    versions,
+                    Some(version),
+                    ServerState::Failed,
+                    RuntimeOwnership::None,
+                    None,
+                    Some(error),
+                );
+                emit_manager_snapshot(app.as_ref(), &manager);
+                return;
+            }
+        };
+    let mut pending_reservation = Some(lease);
+    manager.set_reservation_snapshot(
+        ReservationSnapshot::from_lease(
+            pending_reservation
+                .as_ref()
+                .expect("reserved lease is present before spawn"),
+        )
+        .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost")),
+    );
+    update_operation_snapshot(
+        &manager,
+        &operation_id,
+        &versions,
+        Some(&version),
         ServerState::Starting,
         RuntimeOwnership::None,
         None,
@@ -2790,18 +3328,27 @@ fn perform_start_operation(
             return;
         }
     };
+    let environment = BTreeMap::from([
+        (
+            std::ffi::OsString::from("OLLAMA_HOST"),
+            std::ffi::OsString::from(managed_host),
+        ),
+        (
+            std::ffi::OsString::from("CUDA_VISIBLE_DEVICES"),
+            std::ffi::OsString::from(device_selector),
+        ),
+    ]);
     let spec = ProcessSpec {
         executable,
         arguments: vec!["serve".to_string()],
-        environment: BTreeMap::from([(
-            std::ffi::OsString::from("OLLAMA_HOST"),
-            std::ffi::OsString::from(managed_host),
-        )]),
+        environment,
         inherit_environment: true,
     };
     let child = match manager.process_runner.spawn(&spec) {
         Ok(child) => child,
         Err(error) => {
+            drop(pending_reservation.take());
+            manager.set_reservation_snapshot(ReservationSnapshot::default());
             let code = if error.kind() == io::ErrorKind::PermissionDenied {
                 RuntimeErrorCode::PermissionDenied
             } else {
@@ -2823,7 +3370,11 @@ fn perform_start_operation(
             .operation
             .as_ref()
             .is_some_and(|operation| operation.id == operation_id);
-        if state.shutdown_requested || !operation_is_current || state.process.is_some() {
+        if state.shutdown_requested
+            || !operation_is_current
+            || state.process.is_some()
+            || !state.unreaped_processes.is_empty()
+        {
             None
         } else {
             let generation = state.next_process_generation;
@@ -2835,7 +3386,7 @@ fn perform_start_operation(
                     .expect("spawned Ollama child is present"),
                 version: version.clone(),
                 generation,
-                reservation: None,
+                reservation: pending_reservation.take(),
             });
             state.snapshot.state = RuntimeState::InstalledStopped;
             state.snapshot.server_state = ServerState::Starting;
@@ -2856,11 +3407,41 @@ fn perform_start_operation(
         if let Some(child) = pending_child {
             let mut pending = ManagedProcess {
                 child,
-                version,
+                version: version.clone(),
                 generation: 0,
-                reservation: None,
+                reservation: pending_reservation.take(),
             };
-            let _ = stop_managed_process(&mut pending, &manager.settings);
+            if stop_managed_process(&mut pending, &manager.settings) {
+                drop(pending);
+                manager.set_reservation_snapshot(ReservationSnapshot::default());
+                finish_start_error(
+                    &manager,
+                    app.as_ref(),
+                    &operation_id,
+                    RuntimeError::new(RuntimeErrorCode::RuntimeBusy, "register", true),
+                );
+            } else {
+                let mut state = manager.lock();
+                state.active_versions.insert(version);
+                state.snapshot.server_state = ServerState::Failed;
+                state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+                state.snapshot.reservation = pending
+                    .reservation
+                    .as_ref()
+                    .and_then(ReservationSnapshot::from_lease)
+                    .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
+                state.snapshot.error = Some(RuntimeError::new(
+                    RuntimeErrorCode::StopFailed,
+                    "register",
+                    true,
+                ));
+                state.snapshot.phase = None;
+                state.snapshot.operation_id = Some(operation_id.clone());
+                state.operation = None;
+                state.unreaped_processes.push(pending);
+                drop(state);
+                emit_manager_snapshot(app.as_ref(), &manager);
+            }
         }
         return;
     };
@@ -2951,6 +3532,21 @@ fn perform_start_operation(
                     Some(&operation_id),
                     &format!("model_count={model_count}"),
                 );
+                if !mark_managed_reservation_running(&manager, generation) {
+                    finish_start_with_process_error(
+                        &manager,
+                        app.as_ref(),
+                        &operation_id,
+                        generation,
+                        RuntimeError::new(
+                            RuntimeErrorCode::ReservationLeaseLost,
+                            "reservation",
+                            true,
+                        )
+                        .with_reason_code("reservation_lease_lost"),
+                    );
+                    return;
+                }
                 let monitor = spawn_process_monitor(manager.clone(), app.clone(), generation);
                 if monitor.is_err() {
                     finish_start_with_process_error(
@@ -3047,6 +3643,7 @@ fn spawn_process_monitor(
             state.snapshot.phase = None;
             if cleaned {
                 state.active_versions.remove(&version);
+                state.snapshot.reservation = ReservationSnapshot::default();
                 state.snapshot.state =
                     install_state_from_versions(&state.snapshot.installed_versions);
                 state.snapshot.server_state = ServerState::Failed;
@@ -3063,6 +3660,11 @@ fn spawn_process_monitor(
                 ));
             } else {
                 state.active_versions.insert(version);
+                state.snapshot.reservation = process
+                    .reservation
+                    .as_ref()
+                    .and_then(ReservationSnapshot::from_lease)
+                    .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
                 state.process = Some(process);
                 state.snapshot.server_state = ServerState::Failed;
                 state.snapshot.ownership = RuntimeOwnership::ManagedChild;
@@ -3144,6 +3746,7 @@ fn dispatch_start(
                 root,
                 pin,
                 endpoint,
+                device_id,
                 operation_id_worker,
             );
         });
@@ -3167,7 +3770,7 @@ fn is_default_managed_host_value(host: &str) -> bool {
 }
 
 fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<String, RuntimeError> {
-    log_ollama_debug("stop.enter", None, "managed_process_check=true");
+    log_ollama_debug("stop.enter", None, "managed_or_external_lease_check=true");
     {
         let state = manager.lock();
         if state.operation.is_some() {
@@ -3177,7 +3780,11 @@ fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<Str
                 true,
             ));
         }
-        if state.process.is_none() {
+        if state.process.is_none()
+            && state.unreaped_processes.is_empty()
+            && state.external_reservation.is_none()
+            && state.external_reservation_pending.is_none()
+        {
             return Err(RuntimeError::new(
                 RuntimeErrorCode::NotManaged,
                 "stop",
@@ -3190,7 +3797,7 @@ fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<Str
     log_ollama_debug(
         "stop.operation_started",
         Some(&operation_id),
-        "operation_guard=held ownership=managed_child",
+        "operation_guard=held",
     );
     emit_manager_snapshot(app.as_ref(), manager);
     let manager_worker = manager.clone();
@@ -3198,43 +3805,85 @@ fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<Str
     let spawn = thread::Builder::new()
         .name("ollama-runtime-stop".to_string())
         .spawn(move || {
-            let mut process = manager_worker.lock().process.take();
-            let Some(mut process) = process.take() else {
-                manager_worker.finish_failure(
-                    &operation_id_worker,
-                    RuntimeError::new(RuntimeErrorCode::NotManaged, "stop", false),
-                );
-                emit_manager_snapshot(app.as_ref(), &manager_worker);
-                return;
+            let (mut processes, external_reservation, external_was_connected) = {
+                let mut state = manager_worker.lock();
+                let external_was_connected = state.external_reservation.is_some()
+                    || state.external_reservation_pending.is_some();
+                state.external_reservation_generation =
+                    state.external_reservation_generation.wrapping_add(1).max(1);
+                state.external_reservation_pending = None;
+                let mut processes = std::mem::take(&mut state.unreaped_processes);
+                if let Some(process) = state.process.take() {
+                    processes.push(process);
+                }
+                (
+                    processes,
+                    state.external_reservation.take(),
+                    external_was_connected,
+                )
             };
-            let version = process.version.clone();
-            if stop_managed_process(&mut process, &manager_worker.settings) {
-                log_ollama_debug(
-                    "stop.process_tree_reaped",
-                    Some(&operation_id_worker),
-                    &format!("version={version}"),
-                );
-                let snapshot = manager_worker.snapshot();
-                manager_worker.lock().active_versions.remove(&version);
+            drop(external_reservation);
+            let mut unreaped = Vec::new();
+            let mut stopped_versions = Vec::new();
+            for mut process in processes.drain(..) {
+                let version = process.version.clone();
+                if stop_managed_process(&mut process, &manager_worker.settings) {
+                    log_ollama_debug(
+                        "stop.process_tree_reaped",
+                        Some(&operation_id_worker),
+                        &format!("version={version}"),
+                    );
+                    stopped_versions.push(version);
+                    drop(process);
+                } else {
+                    log_ollama_debug(
+                        "stop.process_tree_unconfirmed",
+                        Some(&operation_id_worker),
+                        &format!("version={version} error=stop_failed"),
+                    );
+                    unreaped.push(process);
+                }
+            }
+            let snapshot = manager_worker.snapshot();
+            if unreaped.is_empty() {
+                {
+                    let mut state = manager_worker.lock();
+                    for version in stopped_versions {
+                        state.active_versions.remove(&version);
+                    }
+                    state.snapshot.reservation = ReservationSnapshot::default();
+                }
+                let (server_state, ownership, model_count) = if external_was_connected {
+                    (
+                        ServerState::ConnectedUnreserved,
+                        RuntimeOwnership::ExternalLocal,
+                        snapshot.model_count,
+                    )
+                } else {
+                    (ServerState::Stopped, RuntimeOwnership::None, None)
+                };
                 manager_worker.finish_server_operation(
                     &operation_id_worker,
                     snapshot.installed_versions,
                     snapshot.installed_version,
-                    ServerState::Stopped,
-                    RuntimeOwnership::None,
-                    None,
+                    server_state,
+                    ownership,
+                    model_count,
                     None,
                 );
-                drop(process);
             } else {
-                log_ollama_debug(
-                    "stop.process_tree_unconfirmed",
-                    Some(&operation_id_worker),
-                    &format!("version={version} error=stop_failed"),
-                );
                 let mut state = manager_worker.lock();
-                state.process = Some(process);
-                state.active_versions.insert(version);
+                for process in &unreaped {
+                    state.active_versions.insert(process.version.clone());
+                }
+                state.snapshot.server_state = ServerState::Failed;
+                state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+                state.snapshot.reservation = unreaped
+                    .first()
+                    .and_then(|process| process.reservation.as_ref())
+                    .and_then(ReservationSnapshot::from_lease)
+                    .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
+                state.unreaped_processes = unreaped;
                 drop(state);
                 manager_worker.finish_failure(
                     &operation_id_worker,
@@ -3261,6 +3910,7 @@ fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<Str
 fn status_snapshot(
     manager: &RuntimeManager,
     host: Option<&str>,
+    device_id: Option<&str>,
 ) -> Result<RuntimeSnapshot, RuntimeError> {
     if let Some(snapshot) = manager.operation_snapshot() {
         return Ok(snapshot);
@@ -3294,7 +3944,7 @@ fn status_snapshot(
     );
 
     let managed_version = if endpoint.scope == EndpointScope::ManagedDefault {
-        match process_state {
+        match process_state.as_ref() {
             Some((_, _, Ok(true))) => {
                 snapshot.server_state = ServerState::Failed;
                 snapshot.ownership = RuntimeOwnership::ManagedChild;
@@ -3305,7 +3955,7 @@ fn status_snapshot(
                 ));
                 return Ok(update_runtime_snapshot(manager, snapshot));
             }
-            Some((_, version, Ok(false))) => Some(version),
+            Some((_, version, Ok(false))) => Some(version.clone()),
             Some((_, _, Err(_))) => {
                 snapshot.server_state = ServerState::Failed;
                 snapshot.ownership = RuntimeOwnership::ManagedChild;
@@ -3323,26 +3973,72 @@ fn status_snapshot(
     };
 
     match probe_result {
-        ProbeResult::Ready { model_count } => {
-            snapshot.server_state = match endpoint.scope {
-                EndpointScope::ManagedDefault if managed_version.is_some() => {
-                    snapshot.ownership = RuntimeOwnership::ManagedChild;
-                    ServerState::ReadyManaged
+        ProbeResult::Ready { model_count } => match endpoint.scope {
+            EndpointScope::ManagedDefault if managed_version.is_some() => {
+                let process_reservation = {
+                    let state = manager.lock();
+                    state.process.as_ref().and_then(|process| {
+                        (Some(process.generation)
+                            == process_state.as_ref().map(|current| current.0))
+                        .then(|| {
+                            process
+                                .reservation
+                                .as_ref()
+                                .and_then(ReservationSnapshot::from_lease)
+                        })
+                        .flatten()
+                    })
+                };
+                match process_reservation {
+                    Some(reservation) if reservation.status == ReservationStatus::Running => {
+                        snapshot.server_state = ServerState::ReadyManaged;
+                        snapshot.ownership = RuntimeOwnership::ManagedChild;
+                        snapshot.reservation = reservation;
+                        snapshot.model_count = Some(model_count);
+                    }
+                    _ => {
+                        snapshot.server_state = ServerState::Failed;
+                        snapshot.ownership = RuntimeOwnership::ManagedChild;
+                        snapshot.reservation =
+                            ReservationSnapshot::denied("reservation_lease_lost");
+                        snapshot.error = Some(
+                            RuntimeError::new(
+                                RuntimeErrorCode::ReservationLeaseLost,
+                                "reservation",
+                                true,
+                            )
+                            .with_reason_code("reservation_lease_lost"),
+                        );
+                    }
                 }
-                EndpointScope::ManagedDefault | EndpointScope::Loopback => {
-                    snapshot.ownership = RuntimeOwnership::ExternalLocal;
-                    ServerState::ConnectedUnreserved
-                }
-                EndpointScope::Remote => {
-                    snapshot.ownership = RuntimeOwnership::Remote;
-                    ServerState::ReadyRemote
-                }
-            };
-            if managed_version.is_some() {
-                snapshot.ownership = RuntimeOwnership::ManagedChild;
             }
-            snapshot.model_count = Some(model_count);
-        }
+            EndpointScope::ManagedDefault | EndpointScope::Loopback => {
+                snapshot.model_count = Some(model_count);
+                snapshot.ownership = RuntimeOwnership::ExternalLocal;
+                match reserve_external_local(manager, endpoint.url.as_str(), device_id) {
+                    ExternalAdmission::Reserved(reservation) => {
+                        snapshot.server_state = ServerState::ReadyExternalLocal;
+                        snapshot.reservation = reservation;
+                    }
+                    ExternalAdmission::InProgress => {
+                        snapshot.server_state = ServerState::Reserving;
+                        snapshot.reservation = ReservationSnapshot::starting();
+                    }
+                    ExternalAdmission::Denied(error) => {
+                        let reason_code =
+                            error.reason_code.as_deref().unwrap_or("reservation_denied");
+                        snapshot.server_state = ServerState::ConnectedUnreserved;
+                        snapshot.reservation = ReservationSnapshot::denied(reason_code);
+                        snapshot.error = Some(error);
+                    }
+                }
+            }
+            EndpointScope::Remote => {
+                snapshot.server_state = ServerState::ReadyRemote;
+                snapshot.ownership = RuntimeOwnership::Remote;
+                snapshot.model_count = Some(model_count);
+            }
+        },
         ProbeResult::NotListening if endpoint.scope == EndpointScope::ManagedDefault => {
             if managed_version.is_some() {
                 snapshot.server_state = ServerState::Failed;
@@ -3375,61 +4071,96 @@ fn status_snapshot(
 
 fn shutdown_manager(manager: &RuntimeManager) {
     log_ollama_debug("shutdown.enter", None, "server_child_check=true");
-    let mut process = {
+    let (mut processes, external_reservation) = {
         let mut state = manager.lock();
         state.shutdown_requested = true;
         state.operation = None;
         state.snapshot.phase = None;
-        if state.process.is_some() {
+        state.external_reservation_generation =
+            state.external_reservation_generation.wrapping_add(1).max(1);
+        state.external_reservation_pending = None;
+        let mut processes = std::mem::take(&mut state.unreaped_processes);
+        if let Some(process) = state.process.take() {
+            processes.push(process);
+        }
+        let external_reservation = state.external_reservation.take();
+        if !processes.is_empty() {
             state.snapshot.server_state = ServerState::Stopping;
             state.snapshot.ownership = RuntimeOwnership::ManagedChild;
         }
-        state.process.take()
+        (processes, external_reservation)
     };
-    let Some(mut process) = process.take() else {
-        return;
-    };
-    let version = process.version.clone();
-    if stop_managed_process(&mut process, &manager.settings) {
-        log_ollama_debug(
-            "shutdown.process_tree_reaped",
-            None,
-            "ownership=managed_child",
-        );
-        let mut state = manager.lock();
+    let had_external_reservation = external_reservation.is_some();
+    drop(external_reservation);
+    let mut unreaped = Vec::new();
+    let mut stopped_versions = Vec::new();
+    for mut process in processes.drain(..) {
+        let version = process.version.clone();
+        if stop_managed_process(&mut process, &manager.settings) {
+            log_ollama_debug(
+                "shutdown.process_tree_reaped",
+                None,
+                "ownership=managed_child",
+            );
+            stopped_versions.push(version);
+            drop(process);
+        } else {
+            log_ollama_debug(
+                "shutdown.process_tree_unconfirmed",
+                None,
+                "error=stop_failed",
+            );
+            unreaped.push(process);
+        }
+    }
+    let mut state = manager.lock();
+    for version in stopped_versions {
         state.active_versions.remove(&version);
-        state.snapshot.state = install_state_from_versions(&state.snapshot.installed_versions);
-        state.snapshot.server_state = ServerState::Stopped;
-        state.snapshot.ownership = RuntimeOwnership::None;
-        state.snapshot.model_count = None;
-        state.snapshot.error = None;
+    }
+    if unreaped.is_empty() {
+        if had_external_reservation {
+            state.snapshot.server_state = ServerState::ConnectedUnreserved;
+            state.snapshot.ownership = RuntimeOwnership::ExternalLocal;
+            state.snapshot.error = None;
+        } else if state.snapshot.ownership == RuntimeOwnership::ManagedChild
+            || state.snapshot.server_state == ServerState::Stopping
+        {
+            state.snapshot.state = install_state_from_versions(&state.snapshot.installed_versions);
+            state.snapshot.server_state = ServerState::Stopped;
+            state.snapshot.ownership = RuntimeOwnership::None;
+            state.snapshot.model_count = None;
+            state.snapshot.error = None;
+        }
+        state.snapshot.reservation = ReservationSnapshot::default();
     } else {
-        log_ollama_debug(
-            "shutdown.process_tree_unconfirmed",
-            None,
-            "error=stop_failed",
-        );
-        let mut state = manager.lock();
-        state.active_versions.insert(version);
-        state.process = Some(process);
+        for process in &unreaped {
+            state.active_versions.insert(process.version.clone());
+        }
         state.snapshot.server_state = ServerState::Failed;
         state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+        state.snapshot.reservation = unreaped
+            .first()
+            .and_then(|process| process.reservation.as_ref())
+            .and_then(ReservationSnapshot::from_lease)
+            .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
         state.snapshot.error = Some(RuntimeError::new(
             RuntimeErrorCode::StopFailed,
             "shutdown",
             true,
         ));
+        state.unreaped_processes = unreaped;
     }
 }
 
 #[tauri::command]
 pub(crate) fn ollama_runtime_status(
     host: Option<String>,
+    device_id: Option<String>,
     app: AppHandle,
     manager: State<'_, RuntimeManager>,
 ) -> Result<RuntimeSnapshot, RuntimeError> {
     log::debug!("OllamaRuntime::status host_value_redacted=true");
-    let snapshot = status_snapshot(&manager, host.as_deref())?;
+    let snapshot = status_snapshot(&manager, host.as_deref(), device_id.as_deref())?;
     emit_snapshot(&app, &snapshot);
     Ok(snapshot)
 }
@@ -3911,6 +4642,8 @@ mod tests {
             inner: Arc::new(Mutex::new(ManagerState::default())),
             downloader: Arc::new(FixtureDownloader::succeeding(Vec::new())),
             process_runner: Arc::new(SystemProcessRunner),
+            reservation_manager: ReservationManager::default(),
+            inventory_loader: Arc::new(e2e_fake_accelerator_inventory),
             settings: RuntimeSettings {
                 managed_base_url: format!("http://127.0.0.1:{port}"),
                 request_timeout: Duration::from_millis(30),
@@ -3943,6 +4676,9 @@ mod tests {
         graceful_exits: AtomicBool,
         graceful_reaps_descendants: AtomicBool,
         force_reaps: AtomicBool,
+        fail_spawn: AtomicBool,
+        invalidate_reservation_on_spawn: AtomicBool,
+        reservation_manager_on_spawn: Mutex<Option<ReservationManager>>,
         listener: Mutex<Option<TestApiServer>>,
         shutdown_manager_on_spawn: Mutex<Option<RuntimeManager>>,
     }
@@ -3959,6 +4695,9 @@ mod tests {
                 graceful_exits: AtomicBool::new(true),
                 graceful_reaps_descendants: AtomicBool::new(true),
                 force_reaps: AtomicBool::new(true),
+                fail_spawn: AtomicBool::new(false),
+                invalidate_reservation_on_spawn: AtomicBool::new(false),
+                reservation_manager_on_spawn: Mutex::new(None),
                 listener: Mutex::new(None),
                 shutdown_manager_on_spawn: Mutex::new(None),
             }
@@ -4013,8 +4752,30 @@ mod tests {
         fn spawn(&self, spec: &ProcessSpec) -> io::Result<Box<dyn ManagedChild>> {
             self.state.spawned.fetch_add(1, Ordering::Relaxed);
             *self.state.captured_spec.lock().unwrap() = Some(spec.clone());
+            if self.state.fail_spawn.load(Ordering::Acquire) {
+                return Err(io::Error::other("injected spawn failure"));
+            }
             if let Some(manager) = self.state.shutdown_manager_on_spawn.lock().unwrap().take() {
                 manager.shutdown();
+            }
+            if self
+                .state
+                .invalidate_reservation_on_spawn
+                .load(Ordering::Acquire)
+            {
+                if let Some(manager) = self
+                    .state
+                    .reservation_manager_on_spawn
+                    .lock()
+                    .unwrap()
+                    .take()
+                {
+                    manager.release_workload_for_test(
+                        "vulkan:uuid:00112233445566778899aabbccddeeff",
+                        LocalModelKind::LocalLlm,
+                        OLLAMA_WORKLOAD_ID,
+                    );
+                }
             }
             if let Some(api) = self.api.clone() {
                 let host = spec
@@ -4109,6 +4870,28 @@ mod tests {
         downloader: Arc<dyn ArtifactDownloader>,
         installed: bool,
     ) -> RuntimeManager {
+        test_manager_with_inventory(
+            anchor,
+            root,
+            port,
+            runner,
+            pin,
+            downloader,
+            installed,
+            e2e_fake_accelerator_inventory(),
+        )
+    }
+
+    fn test_manager_with_inventory(
+        anchor: &tempfile::TempDir,
+        root: &Path,
+        port: u16,
+        runner: &Arc<FakeRunner>,
+        pin: ReleasePin,
+        downloader: Arc<dyn ArtifactDownloader>,
+        installed: bool,
+        inventory: AcceleratorInventory,
+    ) -> RuntimeManager {
         if installed {
             write_managed_fixture(
                 root,
@@ -4122,10 +4905,68 @@ mod tests {
             inner: Arc::new(Mutex::new(ManagerState::default())),
             downloader,
             process_runner: runner.clone(),
+            reservation_manager: ReservationManager::default(),
+            inventory_loader: Arc::new(move || inventory.clone()),
             settings: test_settings(port),
             locations: Some((anchor.path().to_path_buf(), root.to_path_buf())),
             release_pin: Some(pin),
         }
+    }
+
+    fn local_llm_device_id() -> &'static str {
+        "vulkan:uuid:00112233445566778899aabbccddeeff"
+    }
+
+    fn inventory_with_total_vram(total_vram_bytes: Option<u64>) -> AcceleratorInventory {
+        let mut inventory = e2e_fake_accelerator_inventory();
+        inventory.devices[0].total_vram_bytes = total_vram_bytes;
+        inventory.devices[0].available_vram_bytes = Some(7 * 1024 * 1024 * 1024);
+        inventory
+    }
+
+    fn reserve_test_voice(
+        manager: &RuntimeManager,
+        inventory: &AcceleratorInventory,
+    ) -> ReservationLease {
+        manager
+            .reservation_manager
+            .try_reserve_with_inventory(
+                LocalModelRequest {
+                    device_id: local_llm_device_id().to_string(),
+                    kind: LocalModelKind::Voice,
+                    workload_id: "voice-fixture".to_string(),
+                    reservation_bytes: Some(256 * 1024 * 1024),
+                },
+                inventory,
+            )
+            .expect("fake Voice lease is admitted")
+    }
+
+    #[test]
+    fn repeated_workload_id_cannot_create_a_second_local_lease() {
+        let inventory = e2e_fake_accelerator_inventory();
+        let manager = ReservationManager::default();
+        let request = LocalModelRequest {
+            device_id: local_llm_device_id().to_string(),
+            kind: LocalModelKind::LocalLlm,
+            workload_id: OLLAMA_WORKLOAD_ID.to_string(),
+            reservation_bytes: None,
+        };
+        let lease = manager
+            .try_reserve_with_inventory(request.clone(), &inventory)
+            .unwrap();
+        let duplicate = manager
+            .try_reserve_with_inventory(request, &inventory)
+            .unwrap_err();
+        assert_eq!(duplicate.reason.code(), "workload_already_reserved");
+        assert_eq!(
+            manager.reservations_for_device(local_llm_device_id()).len(),
+            1
+        );
+        drop(lease);
+        assert!(manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
     }
 
     fn wait_for_snapshot(
@@ -4178,13 +5019,15 @@ mod tests {
             true,
         );
 
-        let operation =
-            dispatch_start(&manager, None, None, Some("device-is-ignored".into())).unwrap();
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
         let snapshot = wait_for_operation(&manager, &operation);
         assert_eq!(snapshot.server_state, ServerState::ReadyManaged);
         assert_eq!(snapshot.ownership, RuntimeOwnership::ManagedChild);
         assert_eq!(snapshot.model_count, Some(2));
         assert_eq!(snapshot.state, RuntimeState::InstalledStopped);
+        assert_eq!(snapshot.reservation.kind.as_deref(), Some("local_llm"));
+        assert_eq!(snapshot.reservation.status, ReservationStatus::Running);
+        assert_eq!(snapshot.reservation.bytes, None);
         let spec = runner.state.captured_spec.lock().unwrap().clone().unwrap();
         assert_eq!(
             spec.executable,
@@ -4192,6 +5035,12 @@ mod tests {
         );
         assert_eq!(spec.arguments, vec!["serve"]);
         assert!(spec.inherit_environment);
+        assert_eq!(
+            spec.environment
+                .get(&std::ffi::OsString::from("CUDA_VISIBLE_DEVICES"))
+                .unwrap(),
+            &std::ffi::OsString::from("0")
+        );
         assert_eq!(
             spec.environment
                 .get(&std::ffi::OsString::from("OLLAMA_HOST"))
@@ -4254,6 +5103,282 @@ mod tests {
     }
 
     #[test]
+    fn voice_lease_conflicts_block_local_llm_without_spawning_and_keep_voice_lease() {
+        let gib = 1024_u64 * 1024 * 1024;
+        for (total_vram_bytes, reason_code) in [
+            (Some(8 * gib), "same_device_conflict"),
+            (Some(16 * gib), "policy_undecided"),
+            (None, "policy_undecided"),
+        ] {
+            let inventory = inventory_with_total_vram(total_vram_bytes);
+            let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+            let anchor = tempfile::tempdir().unwrap();
+            let root = make_test_root(&anchor);
+            let pin = *release_pin("linux", "x86_64").unwrap();
+            let address = std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap();
+            let manager = test_manager_with_inventory(
+                &anchor,
+                &root,
+                address.port(),
+                &runner,
+                pin,
+                Arc::new(FixtureDownloader::succeeding(Vec::new())),
+                true,
+                inventory.clone(),
+            );
+            let voice_lease = reserve_test_voice(&manager, &inventory);
+            let operation = dispatch_start(&manager, None, None, None).unwrap();
+            let snapshot = wait_for_operation(&manager, &operation);
+            assert_eq!(snapshot.server_state, ServerState::Failed);
+            assert_eq!(
+                snapshot.error.as_ref().unwrap().code,
+                RuntimeErrorCode::ReservationDenied
+            );
+            assert_eq!(
+                snapshot.error.as_ref().unwrap().reason_code.as_deref(),
+                Some(reason_code)
+            );
+            assert_eq!(snapshot.reservation.status, ReservationStatus::Denied);
+            assert_eq!(
+                snapshot.reservation.reason_code.as_deref(),
+                Some(reason_code)
+            );
+            assert_eq!(snapshot.reservation.bytes, None);
+            assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+            assert_eq!(
+                manager
+                    .reservation_manager
+                    .reservations_for_device(local_llm_device_id())
+                    .len(),
+                1
+            );
+            drop(voice_lease);
+        }
+    }
+
+    #[test]
+    fn inventory_selection_and_mapping_fail_closed_without_starting_a_child() {
+        let base = e2e_fake_accelerator_inventory();
+        let mut multiple = base.clone();
+        let mut second = multiple.devices[0].clone();
+        second.provider_id.value = "vulkan:uuid:ffeeddccbbaa99887766554433221100".to_string();
+        second.nvidia.as_mut().unwrap().compatibility_index = Some(1);
+        multiple.devices.push(second);
+
+        let mut unmapped = base.clone();
+        unmapped.devices[0].vendor = HardwareVendor::Amd;
+        unmapped.devices[0].nvidia = None;
+
+        let mut unavailable = base.clone();
+        unavailable.status = DetectionStatus::Unavailable;
+        unavailable.devices.clear();
+        let mut no_devices = base.clone();
+        no_devices.status = DetectionStatus::NoDevices;
+        no_devices.devices.clear();
+
+        for (inventory, expected_code, expected_reason, requested_device_id) in [
+            (
+                multiple,
+                RuntimeErrorCode::DeviceSelectionRequired,
+                "device_selection_required",
+                None,
+            ),
+            (
+                unmapped,
+                RuntimeErrorCode::DeviceMappingUnverified,
+                "device_mapping_unverified",
+                None,
+            ),
+            (
+                unavailable,
+                RuntimeErrorCode::AcceleratorInventoryUnavailable,
+                "inventory_unavailable",
+                None,
+            ),
+            (
+                no_devices,
+                RuntimeErrorCode::DeviceNotFound,
+                "device_not_found",
+                None,
+            ),
+            (
+                base,
+                RuntimeErrorCode::DeviceNotFound,
+                "device_not_found",
+                Some("vulkan:uuid:ffffffffffffffffffffffffffffffff"),
+            ),
+        ] {
+            let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+            let anchor = tempfile::tempdir().unwrap();
+            let root = make_test_root(&anchor);
+            let pin = *release_pin("linux", "x86_64").unwrap();
+            let address = std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap();
+            let manager = test_manager_with_inventory(
+                &anchor,
+                &root,
+                address.port(),
+                &runner,
+                pin,
+                Arc::new(FixtureDownloader::succeeding(Vec::new())),
+                true,
+                inventory,
+            );
+            let operation = dispatch_start(
+                &manager,
+                None,
+                None,
+                requested_device_id.map(str::to_string),
+            )
+            .unwrap();
+            let snapshot = wait_for_operation(&manager, &operation);
+            assert_eq!(snapshot.error.as_ref().unwrap().code, expected_code);
+            assert_eq!(
+                snapshot.error.as_ref().unwrap().reason_code.as_deref(),
+                Some(expected_reason)
+            );
+            assert_eq!(
+                snapshot.reservation.reason_code.as_deref(),
+                Some(expected_reason)
+            );
+            assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    #[test]
+    fn spawn_failure_returns_the_starting_lease() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        runner.state.fail_spawn.store(true, Ordering::Release);
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        assert_eq!(snapshot.error.unwrap().code, RuntimeErrorCode::SpawnFailed);
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 1);
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+    }
+
+    #[test]
+    fn lost_mark_running_reaps_child_before_returning_lease() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        *runner.state.reservation_manager_on_spawn.lock().unwrap() =
+            Some(manager.reservation_manager.clone());
+        runner
+            .state
+            .invalidate_reservation_on_spawn
+            .store(true, Ordering::Release);
+
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+
+        assert_eq!(
+            snapshot.error.as_ref().unwrap().code,
+            RuntimeErrorCode::ReservationLeaseLost
+        );
+        assert_eq!(
+            snapshot.error.as_ref().unwrap().reason_code.as_deref(),
+            Some("reservation_lease_lost")
+        );
+        assert_eq!(
+            snapshot.reservation.reason_code.as_deref(),
+            Some("reservation_lease_lost")
+        );
+        assert!(manager.lock().process.is_none());
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn rejected_spawn_keeps_unreaped_child_and_lease_for_shutdown_retry() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        runner.state.graceful_exits.store(false, Ordering::Release);
+        runner.state.force_reaps.store(false, Ordering::Release);
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        *runner.state.shutdown_manager_on_spawn.lock().unwrap() = Some(manager.clone());
+
+        let _operation = dispatch_start(&manager, None, None, None).unwrap();
+        let failed = wait_for_snapshot(&manager, Duration::from_secs(2), |snapshot| {
+            snapshot
+                .error
+                .as_ref()
+                .is_some_and(|error| error.code == RuntimeErrorCode::StopFailed)
+        });
+
+        assert_eq!(failed.server_state, ServerState::Failed);
+        assert_eq!(manager.lock().unreaped_processes.len(), 1);
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+        runner.state.force_reaps.store(true, Ordering::Release);
+        manager.shutdown();
+        assert!(manager.lock().unreaped_processes.is_empty());
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+    }
+
+    #[test]
     fn api_probe_requires_200_and_an_object_with_a_models_array() {
         let wrong_shape = ApiFixture {
             tags_body: br#"{"models":{}}"#.to_vec(),
@@ -4302,8 +5427,17 @@ mod tests {
         );
         let operation = dispatch_start(&manager, None, None, None).unwrap();
         let started = wait_for_operation(&manager, &operation);
-        assert_eq!(started.server_state, ServerState::ConnectedUnreserved);
+        assert_eq!(started.server_state, ServerState::ReadyExternalLocal);
         assert_eq!(started.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(started.reservation.status, ReservationStatus::Running);
+        assert_eq!(started.reservation.bytes, None);
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
         assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
         let custom = external.base_url();
         assert_eq!(
@@ -4312,22 +5446,38 @@ mod tests {
                 .code,
             RuntimeErrorCode::ManagedEndpointUnsupported
         );
-        let status = status_snapshot(&manager, Some(&custom)).unwrap();
-        assert_eq!(status.server_state, ServerState::ConnectedUnreserved);
+        let status = status_snapshot(&manager, Some(&custom), None).unwrap();
+        assert_eq!(status.server_state, ServerState::ReadyExternalLocal);
         assert_eq!(status.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
         let unused = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let unavailable = format!("http://{}", unused.local_addr().unwrap());
         drop(unused);
         assert_eq!(
-            status_snapshot(&manager, Some(&unavailable))
+            status_snapshot(&manager, Some(&unavailable), None)
                 .unwrap()
                 .server_state,
             ServerState::ExternalUnavailable
         );
-        assert_eq!(
-            dispatch_stop(&manager, None).unwrap_err().code,
-            RuntimeErrorCode::NotManaged
-        );
+        let active_again = status_snapshot(&manager, Some(&custom), None).unwrap();
+        assert_eq!(active_again.server_state, ServerState::ReadyExternalLocal);
+        assert_eq!(active_again.model_count, Some(1));
+        let stop = dispatch_stop(&manager, None).unwrap();
+        let stopped = wait_for_operation(&manager, &stop);
+        assert_eq!(stopped.server_state, ServerState::ConnectedUnreserved);
+        assert_eq!(stopped.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(stopped.model_count, Some(1));
+        assert_eq!(stopped.reservation.status, ReservationStatus::NotRequested);
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
         assert_eq!(
             probe_ollama(
                 &url::Url::parse(&custom).unwrap(),
@@ -4337,6 +5487,157 @@ mod tests {
         );
         assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 0);
         assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn application_shutdown_releases_external_lease_without_signaling_server() {
+        let external = TestApiServer::bind("127.0.0.1:0", ApiFixture::ready(1)).unwrap();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            external.address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        assert_eq!(
+            status_snapshot(&manager, None, None).unwrap().server_state,
+            ServerState::ReadyExternalLocal
+        );
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+
+        manager.shutdown();
+
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+        assert_eq!(
+            probe_ollama(
+                &url::Url::parse(&external.base_url()).unwrap(),
+                Duration::from_millis(80)
+            ),
+            ProbeResult::Ready { model_count: 1 }
+        );
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn external_loopback_conflict_keeps_models_visible_and_chat_unreserved() {
+        let external = TestApiServer::bind("127.0.0.1:0", ApiFixture::ready(2)).unwrap();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let mut inventory = inventory_with_total_vram(Some(8 * 1024 * 1024 * 1024));
+        inventory.devices[0].available_vram_bytes = Some(7 * 1024 * 1024 * 1024);
+        let manager = test_manager_with_inventory(
+            &anchor,
+            &root,
+            external.address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+            inventory.clone(),
+        );
+        let voice_lease = reserve_test_voice(&manager, &inventory);
+
+        let first = status_snapshot(&manager, None, None).unwrap();
+        let repeated = status_snapshot(&manager, None, None).unwrap();
+
+        for snapshot in [&first, &repeated] {
+            assert_eq!(snapshot.server_state, ServerState::ConnectedUnreserved);
+            assert_eq!(snapshot.ownership, RuntimeOwnership::ExternalLocal);
+            assert_eq!(snapshot.model_count, Some(2));
+            assert_eq!(snapshot.reservation.status, ReservationStatus::Denied);
+            assert_eq!(
+                snapshot.reservation.reason_code.as_deref(),
+                Some("same_device_conflict")
+            );
+        }
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            probe_ollama(
+                &url::Url::parse(&external.base_url()).unwrap(),
+                Duration::from_millis(80)
+            ),
+            ProbeResult::Ready { model_count: 2 }
+        );
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+        drop(voice_lease);
+    }
+
+    #[test]
+    fn simultaneous_external_status_requests_share_one_session_lease() {
+        let external = TestApiServer::bind("127.0.0.1:0", ApiFixture::ready(1)).unwrap();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            external.address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let workers = (0..2)
+            .map(|_| {
+                let manager = manager.clone();
+                let barrier = barrier.clone();
+                thread::spawn(move || {
+                    barrier.wait();
+                    status_snapshot(&manager, None, None).unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        barrier.wait();
+        let snapshots = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>();
+
+        assert!(snapshots.iter().all(|snapshot| matches!(
+            snapshot.server_state,
+            ServerState::ReadyExternalLocal | ServerState::Reserving
+        )));
+        assert_eq!(
+            status_snapshot(&manager, None, None).unwrap().server_state,
+            ServerState::ReadyExternalLocal
+        );
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
     }
 
     #[test]
@@ -4630,7 +5931,7 @@ mod tests {
             ServerState::ReadyManaged
         );
         assert_eq!(
-            status_snapshot(&manager, None).unwrap().server_state,
+            status_snapshot(&manager, None, None).unwrap().server_state,
             ServerState::ReadyManaged
         );
         let second = dispatch_start(&manager, None, None, None).unwrap();
@@ -4640,7 +5941,7 @@ mod tests {
         );
         assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 1);
         runner.state.stop_listener();
-        let unavailable = status_snapshot(&manager, None).unwrap();
+        let unavailable = status_snapshot(&manager, None, None).unwrap();
         assert_eq!(unavailable.server_state, ServerState::Failed);
         assert_eq!(unavailable.ownership, RuntimeOwnership::ManagedChild);
         assert_eq!(
@@ -4765,7 +6066,21 @@ mod tests {
         let failed = wait_for_operation(&manager, &stop);
         assert_eq!(failed.error.unwrap().code, RuntimeErrorCode::StopFailed);
         assert!(manager.in_use(pin.version));
-        assert!(manager.lock().process.is_some());
+        let state = manager.lock();
+        assert!(state.process.is_none());
+        assert_eq!(state.unreaped_processes.len(), 1);
+        assert_eq!(
+            state.snapshot.reservation.status,
+            ReservationStatus::Running
+        );
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+        drop(state);
         runner.state.force_reaps.store(true, Ordering::Release);
         let retry = dispatch_stop(&manager, None).unwrap();
         assert_eq!(

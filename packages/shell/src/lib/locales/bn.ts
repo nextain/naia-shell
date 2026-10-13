@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "naia-settings/vrm-files/ এ VRM ফাইল যোগ করুন",
 	"settings.bgEmpty": "naia-settings/background/ এ ফাইল যোগ করুন",
 	"settings.ollamaConnected": "সংযুক্ত — {n} মডেল",
+	"settings.ollamaRuntimeLabel": "Ollama রানটাইম",
+	"settings.ollamaStart": "Ollama চালু করুন",
+	"settings.ollamaStop": "Ollama বন্ধ করুন",
+	"settings.ollamaStateNotInstalled": "ইনস্টল করা নেই",
+	"settings.ollamaStateCheckingHost": "হোস্ট পরীক্ষা হচ্ছে",
+	"settings.ollamaStateExternalUnavailable": "সার্ভার পাওয়া যাচ্ছে না",
+	"settings.ollamaStateInstalling": "ইনস্টল হচ্ছে",
+	"settings.ollamaStateInstalledStopped": "ইনস্টল করা · বন্ধ",
+	"settings.ollamaStateReserving": "অ্যাক্সেলারেটর সংরক্ষণ পরীক্ষা হচ্ছে",
+	"settings.ollamaStateStarting": "চালু হচ্ছে",
+	"settings.ollamaStateReadyManaged": "প্রস্তুত (পরিচালিত)",
+	"settings.ollamaStateReadyExternalLocal": "প্রস্তুত (স্থানীয় সংযোগ)",
+	"settings.ollamaStateConnectedUnreserved": "স্থানীয় সংরক্ষণ ছাড়াই সংযুক্ত",
+	"settings.ollamaStateReadyRemote": "প্রস্তুত (দূরবর্তী)",
+	"settings.ollamaStateStopping": "বন্ধ হচ্ছে",
+	"settings.ollamaStateStopped": "বন্ধ",
+	"settings.ollamaStateFailed": "ব্যর্থ",
+	"settings.ollamaChatBlocked": "চলমান সংরক্ষণ নিশ্চিত না হওয়া পর্যন্ত স্থানীয় Ollama চ্যাট বন্ধ থাকবে।",
+	"settings.ollamaReservationSameDeviceConflict": "ভয়েস এই অ্যাক্সেলারেটর ব্যবহার করছে; স্থানীয় Ollama একই সময়ে এটি ব্যবহার করতে পারে না.",
+	"settings.ollamaReservationPolicyUndecided": "এই কাজের জন্য অ্যাক্সেলারেটর একসঙ্গে ব্যবহারের নীতি নির্ধারিত হয়নি.",
+	"settings.ollamaDeviceSelectionRequired": "স্থানীয় Ollama চালুর আগে একটি অ্যাক্সেলারেটর নির্বাচন করুন.",
+	"settings.ollamaDeviceMappingUnverified": "Ollama ও অ্যাক্সেলারেটর ID-এর মিল যাচাই করা যায়নি.",
+	"settings.ollamaDeviceNotFound": "নির্বাচিত অ্যাক্সেলারেটর পাওয়া যাচ্ছে না.",
+	"settings.ollamaInventoryUnavailable": "অ্যাক্সেলারেটর তালিকা পাওয়া যাচ্ছে না.",
+	"settings.ollamaAvailableVramUnknown": "উপলভ্য VRAM পড়া যায়নি.",
+	"settings.ollamaInsufficientVram": "এই সংরক্ষণের জন্য পর্যাপ্ত VRAM নেই.",
+	"settings.ollamaWorkloadAlreadyReserved": "এই Ollama কাজের সংরক্ষণ আগে থেকেই আছে.",
+	"settings.ollamaReservationLeaseLost": "অ্যাক্সেলারেটর সংরক্ষণ হারিয়েছে; Ollama বন্ধ করা হয়েছে.",
 	"settings.ollamaDisconnected": "সংযুক্ত নয় — নিশ্চিত করুন Ollama সার্ভার চলছে",
 	"settings.vllmDisconnected": "সংযুক্ত নয় — নিশ্চিত করুন vLLM সার্ভার চলছে",
 	"settings.modelCurrentVal": "(বর্তমান)",

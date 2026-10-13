@@ -81,6 +81,12 @@ const PROACTIVE_MOCK = `
 		return audio;
 	};
 	window.__TAURI_INTERNALS__.invoke = async function(command, args) {
+		if (command === "ollama_runtime_status") {
+			return {
+				serverState: "ready_managed",
+				reservation: { kind: "local_llm", status: "running", bytes: null }
+			};
+		}
 		if (command === "plugin:event|listen") {
 			if (!listeners.has(args.event)) listeners.set(args.event, []);
 			listeners.get(args.event).push(args.handler);

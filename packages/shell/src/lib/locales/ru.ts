@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "Добавьте VRM-файлы в naia-settings/vrm-files/",
 	"settings.bgEmpty": "Добавьте файлы в naia-settings/background/",
 	"settings.ollamaConnected": "Подключено — {n} моделей",
+	"settings.ollamaRuntimeLabel": "Среда Ollama",
+	"settings.ollamaStart": "Запустить Ollama",
+	"settings.ollamaStop": "Остановить Ollama",
+	"settings.ollamaStateNotInstalled": "Не установлена",
+	"settings.ollamaStateCheckingHost": "Проверка узла",
+	"settings.ollamaStateExternalUnavailable": "Сервер недоступен",
+	"settings.ollamaStateInstalling": "Установка",
+	"settings.ollamaStateInstalledStopped": "Установлена, остановлена",
+	"settings.ollamaStateReserving": "Проверка резерва ускорителя",
+	"settings.ollamaStateStarting": "Запуск",
+	"settings.ollamaStateReadyManaged": "Готово (управляется приложением)",
+	"settings.ollamaStateReadyExternalLocal": "Готово (локальное подключение)",
+	"settings.ollamaStateConnectedUnreserved": "Подключено без локального резерва",
+	"settings.ollamaStateReadyRemote": "Готово (удалённый узел)",
+	"settings.ollamaStateStopping": "Остановка",
+	"settings.ollamaStateStopped": "Остановлено",
+	"settings.ollamaStateFailed": "Ошибка",
+	"settings.ollamaChatBlocked": "Локальный чат Ollama заблокирован, пока не подтверждён активный резерв.",
+	"settings.ollamaReservationSameDeviceConflict": "Голосовой режим использует этот ускоритель; локальная Ollama не может использовать его одновременно.",
+	"settings.ollamaReservationPolicyUndecided": "Политика совместного использования ускорителя для этой задачи не определена.",
+	"settings.ollamaDeviceSelectionRequired": "Выберите один ускоритель перед запуском локальной Ollama.",
+	"settings.ollamaDeviceMappingUnverified": "Не удалось проверить соответствие Ollama и ID ускорителя.",
+	"settings.ollamaDeviceNotFound": "Выбранный ускоритель недоступен.",
+	"settings.ollamaInventoryUnavailable": "Список ускорителей недоступен.",
+	"settings.ollamaAvailableVramUnknown": "Не удалось определить доступную видеопамять.",
+	"settings.ollamaInsufficientVram": "Недостаточно доступной видеопамяти для резерва.",
+	"settings.ollamaWorkloadAlreadyReserved": "Для этой задачи Ollama резерв уже создан.",
+	"settings.ollamaReservationLeaseLost": "Резерв ускорителя потерян; Ollama остановлена.",
 	"settings.ollamaDisconnected": "Нет подключения — убедитесь, что сервер Ollama запущен",
 	"settings.vllmDisconnected": "Нет подключения — убедитесь, что сервер vLLM запущен",
 	"settings.modelCurrentVal": "(текущий)",

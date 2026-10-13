@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "Thêm file VRM vào naia-settings/vrm-files/",
 	"settings.bgEmpty": "Thêm file vào naia-settings/background/",
 	"settings.ollamaConnected": "Đã kết nối — {n} mô hình",
+	"settings.ollamaRuntimeLabel": "Tiến trình Ollama",
+	"settings.ollamaStart": "Khởi động Ollama",
+	"settings.ollamaStop": "Dừng Ollama",
+	"settings.ollamaStateNotInstalled": "Chưa cài đặt",
+	"settings.ollamaStateCheckingHost": "Đang kiểm tra máy chủ",
+	"settings.ollamaStateExternalUnavailable": "Máy chủ không khả dụng",
+	"settings.ollamaStateInstalling": "Đang cài đặt",
+	"settings.ollamaStateInstalledStopped": "Đã cài đặt · đã dừng",
+	"settings.ollamaStateReserving": "Đang kiểm tra đặt trước bộ tăng tốc",
+	"settings.ollamaStateStarting": "Đang khởi động",
+	"settings.ollamaStateReadyManaged": "Sẵn sàng (được quản lý)",
+	"settings.ollamaStateReadyExternalLocal": "Sẵn sàng (kết nối cục bộ)",
+	"settings.ollamaStateConnectedUnreserved": "Đã kết nối nhưng chưa đặt trước tài nguyên",
+	"settings.ollamaStateReadyRemote": "Sẵn sàng (từ xa)",
+	"settings.ollamaStateStopping": "Đang dừng",
+	"settings.ollamaStateStopped": "Đã dừng",
+	"settings.ollamaStateFailed": "Thất bại",
+	"settings.ollamaChatBlocked": "Đã chặn trò chuyện Ollama cục bộ cho đến khi xác nhận đặt trước đang chạy.",
+	"settings.ollamaReservationSameDeviceConflict": "Giọng nói đang dùng bộ tăng tốc này; Ollama cục bộ không thể dùng cùng lúc.",
+	"settings.ollamaReservationPolicyUndecided": "Chính sách dùng chung bộ tăng tốc cho tác vụ này chưa được xác định.",
+	"settings.ollamaDeviceSelectionRequired": "Hãy chọn một bộ tăng tốc trước khi khởi động Ollama cục bộ.",
+	"settings.ollamaDeviceMappingUnverified": "Không thể xác minh ánh xạ Ollama với ID bộ tăng tốc.",
+	"settings.ollamaDeviceNotFound": "Bộ tăng tốc đã chọn không khả dụng.",
+	"settings.ollamaInventoryUnavailable": "Không có danh sách bộ tăng tốc.",
+	"settings.ollamaAvailableVramUnknown": "Không thể đọc VRAM còn trống.",
+	"settings.ollamaInsufficientVram": "Không đủ VRAM còn trống cho đặt trước này.",
+	"settings.ollamaWorkloadAlreadyReserved": "Tác vụ Ollama này đã có đặt trước.",
+	"settings.ollamaReservationLeaseLost": "Đã mất đặt trước bộ tăng tốc; Ollama đã dừng.",
 	"settings.ollamaDisconnected": "Chưa kết nối — Hãy đảm bảo server Ollama đang chạy",
 	"settings.vllmDisconnected": "Chưa kết nối — Hãy đảm bảo server vLLM đang chạy",
 	"settings.modelCurrentVal": "(hiện tại)",

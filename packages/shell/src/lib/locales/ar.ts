@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "أضف ملفات VRM إلى naia-settings/vrm-files/",
 	"settings.bgEmpty": "أضف ملفات إلى naia-settings/background/",
 	"settings.ollamaConnected": "متصل — {n} نماذج",
+	"settings.ollamaRuntimeLabel": "بيئة Ollama",
+	"settings.ollamaStart": "بدء Ollama",
+	"settings.ollamaStop": "إيقاف Ollama",
+	"settings.ollamaStateNotInstalled": "غير مثبت",
+	"settings.ollamaStateCheckingHost": "جارٍ فحص المضيف",
+	"settings.ollamaStateExternalUnavailable": "الخادم غير متاح",
+	"settings.ollamaStateInstalling": "جارٍ التثبيت",
+	"settings.ollamaStateInstalledStopped": "مثبت ومتوقف",
+	"settings.ollamaStateReserving": "جارٍ فحص حجز المسرّع",
+	"settings.ollamaStateStarting": "جارٍ البدء",
+	"settings.ollamaStateReadyManaged": "جاهز (تديره shell)",
+	"settings.ollamaStateReadyExternalLocal": "جاهز (اتصال محلي)",
+	"settings.ollamaStateConnectedUnreserved": "متصل بلا حجز محلي",
+	"settings.ollamaStateReadyRemote": "جاهز (بعيد)",
+	"settings.ollamaStateStopping": "جارٍ الإيقاف",
+	"settings.ollamaStateStopped": "متوقف",
+	"settings.ollamaStateFailed": "فشل",
+	"settings.ollamaChatBlocked": "تم حظر محادثة Ollama المحلية حتى تأكيد وجود حجز قيد التشغيل.",
+	"settings.ollamaReservationSameDeviceConflict": "يستخدم الصوت هذا المسرّع؛ لا يمكن لـ Ollama المحلية استخدامه في الوقت نفسه.",
+	"settings.ollamaReservationPolicyUndecided": "لم تُحدّد سياسة المشاركة المتزامنة لهذا المسرّع لهذه المهمة.",
+	"settings.ollamaDeviceSelectionRequired": "اختر مسرّعًا واحدًا قبل بدء Ollama المحلية.",
+	"settings.ollamaDeviceMappingUnverified": "تعذر التحقق من مطابقة Ollama لمعرّف المسرّع.",
+	"settings.ollamaDeviceNotFound": "المسرّع المحدد غير متاح.",
+	"settings.ollamaInventoryUnavailable": "قائمة المسرّعات غير متاحة.",
+	"settings.ollamaAvailableVramUnknown": "تعذر قراءة ذاكرة الفيديو المتاحة.",
+	"settings.ollamaInsufficientVram": "ذاكرة الفيديو المتاحة غير كافية لهذا الحجز.",
+	"settings.ollamaWorkloadAlreadyReserved": "لدى مهمة Ollama هذه حجز بالفعل.",
+	"settings.ollamaReservationLeaseLost": "فُقد حجز المسرّع؛ أُوقفت Ollama.",
 	"settings.ollamaDisconnected": "غير متصل — تأكد من تشغيل خادم Ollama",
 	"settings.vllmDisconnected": "غير متصل — تأكد من تشغيل خادم vLLM",
 	"settings.modelCurrentVal": "(الحالي)",

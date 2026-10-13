@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "앱 목록을 불러오는 중…",
 	"apps.empty": "등록된 앱이 없습니다.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "naia-settings/vrm-files/ 에 VRM 파일을 추가하세요",
 	"settings.bgEmpty": "naia-settings/background/ 에 파일을 추가하세요",
 	"settings.ollamaConnected": "연결됨 — {n}개 모델",
+	"settings.ollamaRuntimeLabel": "Ollama 런타임",
+	"settings.ollamaStart": "Ollama 시작",
+	"settings.ollamaStop": "Ollama 중지",
+	"settings.ollamaStateNotInstalled": "설치되지 않음",
+	"settings.ollamaStateCheckingHost": "호스트 확인 중",
+	"settings.ollamaStateExternalUnavailable": "서버를 사용할 수 없음",
+	"settings.ollamaStateInstalling": "설치 중",
+	"settings.ollamaStateInstalledStopped": "설치됨 · 정지",
+	"settings.ollamaStateReserving": "가속기 예약 확인 중",
+	"settings.ollamaStateStarting": "시작 중",
+	"settings.ollamaStateReadyManaged": "준비됨 · 앱 관리",
+	"settings.ollamaStateReadyExternalLocal": "준비됨 · 로컬 연결",
+	"settings.ollamaStateConnectedUnreserved": "예약 없이 연결됨",
+	"settings.ollamaStateReadyRemote": "준비됨 · 원격 연결",
+	"settings.ollamaStateStopping": "종료 중",
+	"settings.ollamaStateStopped": "정지됨",
+	"settings.ollamaStateFailed": "실패",
+	"settings.ollamaChatBlocked": "실행 중인 예약이 확인될 때까지 로컬 Ollama 대화를 막습니다.",
+	"settings.ollamaReservationSameDeviceConflict": "음성이 이 가속기를 사용 중이어서 로컬 Ollama를 함께 사용할 수 없습니다.",
+	"settings.ollamaReservationPolicyUndecided": "이 작업의 동시 가속기 사용 정책이 정해지지 않았습니다.",
+	"settings.ollamaDeviceSelectionRequired": "로컬 Ollama를 시작하기 전에 가속기 하나를 선택해야 합니다.",
+	"settings.ollamaDeviceMappingUnverified": "Ollama와 가속기 ID의 대응을 확인할 수 없습니다.",
+	"settings.ollamaDeviceNotFound": "선택한 가속기를 사용할 수 없습니다.",
+	"settings.ollamaInventoryUnavailable": "가속기 목록을 확인할 수 없습니다.",
+	"settings.ollamaAvailableVramUnknown": "사용 가능한 VRAM을 확인할 수 없습니다.",
+	"settings.ollamaInsufficientVram": "예약에 필요한 VRAM이 부족합니다.",
+	"settings.ollamaWorkloadAlreadyReserved": "이 Ollama 작업은 이미 예약되어 있습니다.",
+	"settings.ollamaReservationLeaseLost": "가속기 예약이 사라져 Ollama를 종료했습니다.",
 	"settings.ollamaDisconnected": "연결 안 됨 — Ollama 서버가 실행 중인지 확인하세요",
 	"settings.vllmDisconnected": "연결 안 됨 — vLLM 서버가 실행 중인지 확인하세요",
 	"settings.modelCurrentVal": "(현재값)",

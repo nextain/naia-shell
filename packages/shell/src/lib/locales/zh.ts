@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "将VRM文件添加到 naia-settings/vrm-files/",
 	"settings.bgEmpty": "将文件添加到 naia-settings/background/",
 	"settings.ollamaConnected": "已连接 — {n} 个模型",
+	"settings.ollamaRuntimeLabel": "Ollama 运行时",
+	"settings.ollamaStart": "启动 Ollama",
+	"settings.ollamaStop": "停止 Ollama",
+	"settings.ollamaStateNotInstalled": "未安装",
+	"settings.ollamaStateCheckingHost": "正在检查主机",
+	"settings.ollamaStateExternalUnavailable": "服务器不可用",
+	"settings.ollamaStateInstalling": "正在安装",
+	"settings.ollamaStateInstalledStopped": "已安装，已停止",
+	"settings.ollamaStateReserving": "正在检查加速器预留",
+	"settings.ollamaStateStarting": "正在启动",
+	"settings.ollamaStateReadyManaged": "已就绪（受管理）",
+	"settings.ollamaStateReadyExternalLocal": "已就绪（本地连接）",
+	"settings.ollamaStateConnectedUnreserved": "已连接但未预留资源",
+	"settings.ollamaStateReadyRemote": "已就绪（远程）",
+	"settings.ollamaStateStopping": "正在停止",
+	"settings.ollamaStateStopped": "已停止",
+	"settings.ollamaStateFailed": "失败",
+	"settings.ollamaChatBlocked": "在确认预留正在运行前，已阻止本地 Ollama 对话。",
+	"settings.ollamaReservationSameDeviceConflict": "语音正在使用此加速器，无法同时运行本地 Ollama。",
+	"settings.ollamaReservationPolicyUndecided": "此工作负载的加速器并发策略尚未确定。",
+	"settings.ollamaDeviceSelectionRequired": "启动本地 Ollama 前，请先选择一个加速器。",
+	"settings.ollamaDeviceMappingUnverified": "无法验证 Ollama 与加速器 ID 的对应关系。",
+	"settings.ollamaDeviceNotFound": "所选加速器不可用。",
+	"settings.ollamaInventoryUnavailable": "无法读取加速器清单。",
+	"settings.ollamaAvailableVramUnknown": "无法读取可用显存。",
+	"settings.ollamaInsufficientVram": "可用显存不足，无法预留。",
+	"settings.ollamaWorkloadAlreadyReserved": "此 Ollama 工作负载已预留。",
+	"settings.ollamaReservationLeaseLost": "加速器预留丢失，Ollama 已停止。",
 	"settings.ollamaDisconnected": "未连接 — 请确认 Ollama 服务器正在运行",
 	"settings.vllmDisconnected": "未连接 — 请确认 vLLM 服务器正在运行",
 	"settings.modelCurrentVal": "(当前值)",

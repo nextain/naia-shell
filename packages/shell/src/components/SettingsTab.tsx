@@ -101,6 +101,13 @@ import {
 	setLocale,
 	t,
 } from "../lib/i18n";
+import {
+	fetchOllamaRuntimeSnapshot,
+	isManagedOllamaHost,
+	ollamaAdmissionMessageKey,
+	ollamaServerStateMessageKey,
+	type OllamaRuntimeSnapshot,
+} from "../lib/ollama-runtime";
 import { DevicePairingSection } from "./DevicePairingSection";
 import { SmallLlmSection } from "./SmallLlmSection";
 import {
@@ -854,6 +861,19 @@ export function SettingsTab() {
 		existing?.ollamaHost ?? DEFAULT_OLLAMA_HOST,
 	);
 	const [ollamaConnected, setOllamaConnected] = useState(false);
+	const [ollamaRuntime, setOllamaRuntime] =
+		useState<OllamaRuntimeSnapshot | null>(null);
+	const [ollamaRuntimeBusy, setOllamaRuntimeBusy] = useState(false);
+	const ollamaRuntimeRevisionRef = useRef(0);
+	const ollamaRuntimeStartPending = [
+		"checking_host",
+		"installing",
+		"reserving",
+		"starting",
+		"stopping",
+	].includes(ollamaRuntime?.serverState ?? "");
+	const priorOllamaProviderRef = useRef<ProviderId>(provider);
+	const priorOllamaHostRef = useRef(ollamaHost);
 	const [vllmHost, setVllmHost] = useState(
 		existing?.vllmHost ?? DEFAULT_VLLM_HOST,
 	);
@@ -1831,6 +1851,22 @@ export function SettingsTab() {
 	}, []);
 
 	useEffect(() => {
+		const previousProvider = priorOllamaProviderRef.current;
+		priorOllamaProviderRef.current = provider;
+		if (previousProvider === "ollama" && provider !== "ollama") {
+			void invoke("ollama_runtime_stop").catch(() => undefined);
+		}
+	}, [provider]);
+
+	useEffect(() => {
+		const previousHost = priorOllamaHostRef.current;
+		priorOllamaHostRef.current = ollamaHost;
+		if (provider === "ollama" && previousHost !== ollamaHost) {
+			void invoke("ollama_runtime_stop").catch(() => undefined);
+		}
+	}, [provider, ollamaHost]);
+
+	useEffect(() => {
 		if (provider !== "ollama") return;
 		fetchOllamaModels(ollamaHost).then(({ models, connected }) => {
 			setOllamaConnected(connected);
@@ -1841,6 +1877,43 @@ export function SettingsTab() {
 				}
 			}
 		});
+	}, [provider, ollamaHost]);
+
+	useEffect(() => {
+		if (provider !== "ollama") {
+			setOllamaRuntime(null);
+			return;
+		}
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		void listen<OllamaRuntimeSnapshot>(
+			"ollama_runtime_state_changed",
+			({ payload }) => {
+				if (!disposed) {
+					ollamaRuntimeRevisionRef.current += 1;
+					setOllamaRuntime(payload);
+				}
+			},
+		)
+			.then((cleanup) => {
+				if (disposed) cleanup();
+				else unlisten = cleanup;
+			})
+			.catch(() => undefined);
+		const revision = ollamaRuntimeRevisionRef.current;
+		void fetchOllamaRuntimeSnapshot(ollamaHost)
+			.then((snapshot) => {
+				if (!disposed && ollamaRuntimeRevisionRef.current === revision)
+					setOllamaRuntime(snapshot);
+			})
+			.catch(() => {
+				if (!disposed && ollamaRuntimeRevisionRef.current === revision)
+					setOllamaRuntime(null);
+			});
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
 	}, [provider, ollamaHost]);
 
 	useEffect(() => {
@@ -4607,18 +4680,100 @@ export function SettingsTab() {
 
 					{provider === "ollama" && (
 						<div className="settings-field">
-							<label>Ollama Host</label>
+							<label htmlFor="ollama-host-input">Ollama Host</label>
 							<input
+								id="ollama-host-input"
 								type="text"
 								value={ollamaHost}
 								onChange={(e) => setOllamaHost(e.target.value)}
 								onBlur={(e) => persistConfig({ ollamaHost: e.target.value })}
 								placeholder={DEFAULT_OLLAMA_HOST}
 							/>
-							<div className="settings-hint">
-								{ollamaConnected
-									? `연결됨 — ${(dynamicModels.ollama ?? []).length}개 모델`
-									: "연결 안 됨 — Ollama 서버가 실행 중인지 확인하세요"}
+							<div
+								className="settings-hint"
+								role="status"
+								aria-live="polite"
+								data-testid="ollama-runtime-status"
+							>
+								{ollamaRuntime
+									? `${t("settings.ollamaRuntimeLabel")}: ${t(ollamaServerStateMessageKey(ollamaRuntime.serverState))}`
+									: ollamaConnected
+										? t("settings.ollamaConnected", {
+												n: (dynamicModels.ollama ?? []).length,
+											})
+										: t("settings.ollamaDisconnected")}
+								{ollamaRuntime?.modelCount !== null &&
+									ollamaRuntime?.modelCount !== undefined && (
+										<span>
+											{` · ${t("settings.ollamaConnected", { n: ollamaRuntime.modelCount })}`}
+										</span>
+									)}
+								{ollamaRuntime &&
+									(ollamaRuntime.reservation?.status === "denied" ||
+										ollamaRuntime.error) && (
+										<p>
+											{t(
+												ollamaAdmissionMessageKey(
+													ollamaRuntime.reservation?.reasonCode ??
+														ollamaRuntime.error?.reasonCode ??
+														ollamaRuntime.error?.code ??
+														"reservation_denied",
+												),
+											)}
+										</p>
+									)}
+							</div>
+							<div className="settings-field">
+								{isManagedOllamaHost(ollamaHost) &&
+									ollamaRuntime?.serverState !== "ready_managed" &&
+									ollamaRuntime?.serverState !== "ready_external_local" && (
+										<button
+											className="voice-preview-btn"
+											data-testid="ollama-runtime-start"
+											disabled={ollamaRuntimeBusy || ollamaRuntimeStartPending}
+											onClick={async () => {
+												setOllamaRuntimeBusy(true);
+												const revision = ollamaRuntimeRevisionRef.current;
+												try {
+													await invoke("ollama_runtime_start", {
+														host: ollamaHost,
+														deviceId: null,
+													});
+													if (ollamaRuntimeRevisionRef.current === revision) {
+														const snapshot =
+															await fetchOllamaRuntimeSnapshot(ollamaHost);
+														if (ollamaRuntimeRevisionRef.current === revision)
+															setOllamaRuntime(snapshot);
+													}
+												} catch {
+													setOllamaRuntime(null);
+												} finally {
+													setOllamaRuntimeBusy(false);
+												}
+											}}
+										>
+											{t("settings.ollamaStart")}
+										</button>
+									)}
+								{ollamaRuntime?.serverState === "ready_managed" && (
+									<button
+										className="voice-preview-btn"
+										data-testid="ollama-runtime-stop"
+										disabled={ollamaRuntimeBusy}
+										onClick={async () => {
+											setOllamaRuntimeBusy(true);
+											try {
+												await invoke("ollama_runtime_stop");
+											} catch {
+												setOllamaRuntime(null);
+											} finally {
+												setOllamaRuntimeBusy(false);
+											}
+										}}
+									>
+										{t("settings.ollamaStop")}
+									</button>
+								)}
 							</div>
 						</div>
 					)}

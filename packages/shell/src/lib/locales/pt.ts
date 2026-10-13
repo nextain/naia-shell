@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "Adicione arquivos VRM em naia-settings/vrm-files/",
 	"settings.bgEmpty": "Adicione arquivos em naia-settings/background/",
 	"settings.ollamaConnected": "Conectado — {n} modelos",
+	"settings.ollamaRuntimeLabel": "Execução do Ollama",
+	"settings.ollamaStart": "Iniciar Ollama",
+	"settings.ollamaStop": "Parar Ollama",
+	"settings.ollamaStateNotInstalled": "Não instalado",
+	"settings.ollamaStateCheckingHost": "Verificando host",
+	"settings.ollamaStateExternalUnavailable": "Servidor indisponível",
+	"settings.ollamaStateInstalling": "Instalando",
+	"settings.ollamaStateInstalledStopped": "Instalado, parado",
+	"settings.ollamaStateReserving": "Verificando reserva do acelerador",
+	"settings.ollamaStateStarting": "Iniciando",
+	"settings.ollamaStateReadyManaged": "Pronto (gerenciado)",
+	"settings.ollamaStateReadyExternalLocal": "Pronto (conexão local)",
+	"settings.ollamaStateConnectedUnreserved": "Conectado sem reserva local",
+	"settings.ollamaStateReadyRemote": "Pronto (remoto)",
+	"settings.ollamaStateStopping": "Parando",
+	"settings.ollamaStateStopped": "Parado",
+	"settings.ollamaStateFailed": "Falha",
+	"settings.ollamaChatBlocked": "O chat local do Ollama fica bloqueado até haver uma reserva em execução.",
+	"settings.ollamaReservationSameDeviceConflict": "A voz está usando este acelerador; o Ollama local não pode usá-lo ao mesmo tempo.",
+	"settings.ollamaReservationPolicyUndecided": "A política de uso simultâneo deste acelerador não foi definida para esta tarefa.",
+	"settings.ollamaDeviceSelectionRequired": "Selecione um acelerador antes de iniciar o Ollama local.",
+	"settings.ollamaDeviceMappingUnverified": "Não foi possível verificar o vínculo do Ollama com o ID do acelerador.",
+	"settings.ollamaDeviceNotFound": "O acelerador selecionado está indisponível.",
+	"settings.ollamaInventoryUnavailable": "O inventário de aceleradores está indisponível.",
+	"settings.ollamaAvailableVramUnknown": "Não foi possível ler a VRAM disponível.",
+	"settings.ollamaInsufficientVram": "Não há VRAM disponível suficiente para esta reserva.",
+	"settings.ollamaWorkloadAlreadyReserved": "Esta tarefa do Ollama já tem uma reserva.",
+	"settings.ollamaReservationLeaseLost": "A reserva foi perdida; o Ollama foi parado.",
 	"settings.ollamaDisconnected": "Não conectado — Verifique se o servidor Ollama está em execução",
 	"settings.vllmDisconnected": "Não conectado — Verifique se o servidor vLLM está em execução",
 	"settings.modelCurrentVal": "(atual)",

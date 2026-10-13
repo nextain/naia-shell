@@ -5,9 +5,8 @@
 // 각각 아흔 몇 줄이 조용히 지워졌다(#559). 실제 작업 흐름은 오래전부터 이
 // 파일을 직접 고치는 쪽이었으므로, 정본을 여기로 옮기고 생성기를 없앴다.
 //
-// 키를 더할 때는 열네 파일에 모두 더한다. 하나라도 빠지면 `TranslationKey`
-// (= `keyof typeof en`) 로 tsc 가 걸고, `src/lib/__tests__/i18n-user-facing.test.ts`
-// 가 각 로케일 모듈을 따로 읽어 키 집합과 빈 값을 견준다.
+// `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+// i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
 	"apps.loading": "Loading apps…",
 	"apps.empty": "No apps are available.",
@@ -1284,6 +1283,34 @@ export default {
 	"settings.vrmEmpty": "naia-settings/vrm-files/ にVRMファイルを追加してください",
 	"settings.bgEmpty": "naia-settings/background/ にファイルを追加してください",
 	"settings.ollamaConnected": "接続済 — {n}モデル",
+	"settings.ollamaRuntimeLabel": "Ollama ランタイム",
+	"settings.ollamaStart": "Ollama を起動",
+	"settings.ollamaStop": "Ollama を停止",
+	"settings.ollamaStateNotInstalled": "未インストール",
+	"settings.ollamaStateCheckingHost": "ホストを確認中",
+	"settings.ollamaStateExternalUnavailable": "サーバーを利用できません",
+	"settings.ollamaStateInstalling": "インストール中",
+	"settings.ollamaStateInstalledStopped": "インストール済み・停止中",
+	"settings.ollamaStateReserving": "アクセラレーター予約を確認中",
+	"settings.ollamaStateStarting": "起動中",
+	"settings.ollamaStateReadyManaged": "準備完了（管理対象）",
+	"settings.ollamaStateReadyExternalLocal": "準備完了（ローカル接続）",
+	"settings.ollamaStateConnectedUnreserved": "予約なしで接続中",
+	"settings.ollamaStateReadyRemote": "準備完了（リモート）",
+	"settings.ollamaStateStopping": "停止中",
+	"settings.ollamaStateStopped": "停止済み",
+	"settings.ollamaStateFailed": "失敗",
+	"settings.ollamaChatBlocked": "実行中の予約が確認されるまでローカル Ollama チャットをブロックします。",
+	"settings.ollamaReservationSameDeviceConflict": "音声がこのアクセラレーターを使用中のため、ローカル Ollama は同時に使用できません。",
+	"settings.ollamaReservationPolicyUndecided": "この処理でのアクセラレーター同時利用方針が未確定です。",
+	"settings.ollamaDeviceSelectionRequired": "ローカル Ollama の起動前にアクセラレーターを 1 つ選択してください。",
+	"settings.ollamaDeviceMappingUnverified": "Ollama とアクセラレーター ID の対応を確認できません。",
+	"settings.ollamaDeviceNotFound": "選択したアクセラレーターを利用できません。",
+	"settings.ollamaInventoryUnavailable": "アクセラレーター一覧を取得できません。",
+	"settings.ollamaAvailableVramUnknown": "利用可能な VRAM を確認できません。",
+	"settings.ollamaInsufficientVram": "予約に必要な VRAM が不足しています。",
+	"settings.ollamaWorkloadAlreadyReserved": "この Ollama 処理はすでに予約されています。",
+	"settings.ollamaReservationLeaseLost": "アクセラレーター予約が失われたため Ollama を停止しました。",
 	"settings.ollamaDisconnected": "未接続 — Ollamaサーバーが起動しているか確認してください",
 	"settings.vllmDisconnected": "未接続 — vLLMサーバーが起動しているか確認してください",
 	"settings.modelCurrentVal": "(現在値)",

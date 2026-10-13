@@ -17,7 +17,6 @@ const EIGHT_GIB: u64 = 8 * GIB;
 #[serde(rename_all = "snake_case")]
 pub(crate) enum LocalModelKind {
     Voice,
-    #[allow(dead_code)] // Exposed for the #758 local-LLM consumer that is not in this stage.
     LocalLlm,
 }
 
@@ -105,7 +104,7 @@ struct ReservationState {
 /// Clones share the same lock and token space. Tests can construct an isolated
 /// manager while production consumers use `process_manager()`.
 #[derive(Debug, Clone, Default)]
-struct ReservationManager {
+pub(crate) struct ReservationManager {
     state: Arc<Mutex<ReservationState>>,
 }
 
@@ -116,7 +115,7 @@ impl ReservationManager {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn try_reserve_with_inventory(
+    pub(crate) fn try_reserve_with_inventory(
         &self,
         request: LocalModelRequest,
         inventory: &AcceleratorInventory,
@@ -312,7 +311,7 @@ impl ReservationManager {
         })
     }
 
-    fn reservations_for_device(&self, device_id: &str) -> Vec<ReservationSnapshot> {
+    pub(crate) fn reservations_for_device(&self, device_id: &str) -> Vec<ReservationSnapshot> {
         self.lock()
             .entries
             .values()
@@ -346,6 +345,35 @@ impl ReservationManager {
             ));
         }
     }
+
+    fn reservation_snapshot(&self, token: u64) -> Option<ReservationSnapshot> {
+        self.lock()
+            .entries
+            .get(&token)
+            .map(|entry| ReservationSnapshot {
+                kind: entry.request.kind,
+                status: entry.status,
+                reservation_bytes: entry.request.reservation_bytes,
+            })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn release_workload_for_test(
+        &self,
+        device_id: &str,
+        kind: LocalModelKind,
+        workload_id: &str,
+    ) {
+        let token = self.lock().entries.iter().find_map(|(token, entry)| {
+            (entry.request.device_id == device_id
+                && entry.request.kind == kind
+                && entry.request.workload_id == workload_id)
+                .then_some(*token)
+        });
+        if let Some(token) = token {
+            self.release(token);
+        }
+    }
 }
 
 /// Owns exactly one reservation. Dropping it removes that reservation once.
@@ -367,6 +395,15 @@ impl ReservationLease {
         ));
         changed
     }
+
+    pub(crate) fn snapshot(&self) -> Option<ReservationSnapshot> {
+        self.manager.reservation_snapshot(self.token)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn invalidate_for_test(&self) {
+        self.manager.release(self.token);
+    }
 }
 
 impl Drop for ReservationLease {
@@ -378,6 +415,10 @@ impl Drop for ReservationLease {
 fn process_manager() -> &'static ReservationManager {
     static MANAGER: OnceLock<ReservationManager> = OnceLock::new();
     MANAGER.get_or_init(ReservationManager::default)
+}
+
+pub(crate) fn process_manager_clone() -> ReservationManager {
+    process_manager().clone()
 }
 
 /// Reserve an accelerator for a local model using a fresh provider inventory.

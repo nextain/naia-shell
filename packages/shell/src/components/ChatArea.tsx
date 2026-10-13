@@ -79,6 +79,11 @@ import {
 } from "../lib/environment-skill";
 import { resetGatewaySession } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
+import {
+	assertOllamaChatAdmitted,
+	OllamaRuntimeAdmissionError,
+	ollamaAdmissionMessageKey,
+} from "../lib/ollama-chat-admission";
 import { markNaiaKeyUnauthorized } from "../lib/lab-balance";
 import {
 	getDefaultLlmModel,
@@ -1886,6 +1891,9 @@ export function ChatArea({
 				config.enableTools === true
 					? await modelToolBoundary.resolve()
 					: undefined;
+			if (activeProvider === "ollama") {
+				await assertOllamaChatAdmitted(config.ollamaHost);
+			}
 			await sendChatMessage({
 				message: text,
 				provider: {
@@ -1966,8 +1974,13 @@ export function ChatArea({
 				setShowNoAuthModal(true);
 				completeCurrentRequest(requestId);
 			} else {
+				const admissionKey =
+					err instanceof OllamaRuntimeAdmissionError
+						? ollamaAdmissionMessageKey(err.reasonCode)
+						: null;
+				const message = admissionKey ? t(admissionKey) : errStr;
 				useChatStore.getState().appendStreamChunk(`
-[${t("chat.error")}] ${errStr}`);
+[${t("chat.error")}] ${message}`);
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
 				completeCurrentRequest(requestId);

@@ -30,8 +30,20 @@ import ko from "../locales/ko";
  */
 
 const LOCALES: readonly Locale[] = [
-	"ko", "en", "ja", "zh", "fr", "de", "ru", "es",
-	"ar", "hi", "bn", "pt", "id", "vi",
+	"ko",
+	"en",
+	"ja",
+	"zh",
+	"fr",
+	"de",
+	"ru",
+	"es",
+	"ar",
+	"hi",
+	"bn",
+	"pt",
+	"id",
+	"vi",
 ];
 
 /** 각 로케일을 실제로 켜고 표 전체를 런타임 경로로 읽어 온다. */
@@ -40,7 +52,9 @@ async function readThroughRuntime(): Promise<Map<Locale, Map<string, string>>> {
 	const out = new Map<Locale, Map<string, string>>();
 	for (const locale of LOCALES) {
 		await setLocale(locale);
-		expect(getLocale(), `setLocale("${locale}") 이 반영되지 않았다`).toBe(locale);
+		expect(getLocale(), `setLocale("${locale}") 이 반영되지 않았다`).toBe(
+			locale,
+		);
 		out.set(locale, new Map(keys.map((key) => [key, t(key)])));
 	}
 	await setLocale("ko");
@@ -115,12 +129,17 @@ describe("사용자에게 보이는 문구는 i18n 을 지난다 (UC-QUALITY-I18
 		const modules = await Promise.all(
 			LOCALES.map(async (locale) => {
 				const mod = await import(`../locales/${locale}.ts`);
-				return [locale, Object.keys(mod.default).sort()] as const;
+				const translations =
+					locale === "en"
+						? {
+								...mod.default,
+								...(await import("../locales/ollama-en")).default,
+							}
+						: mod.default;
+				return [locale, Object.keys(translations).sort()] as const;
 			}),
 		);
-		const union = [
-			...new Set(modules.flatMap(([, keys]) => keys)),
-		].sort();
+		const union = [...new Set(modules.flatMap(([, keys]) => keys))].sort();
 		for (const [locale, keys] of modules) {
 			const missing = union.filter((key) => !keys.includes(key));
 			expect(

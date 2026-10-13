@@ -38,7 +38,9 @@ const loggedOutMocks = vi.hoisted(() => ({
 	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
 }));
 vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../../lib/llm/logged-out-default")>()),
+	...(await importOriginal<
+		typeof import("../../lib/llm/logged-out-default")
+	>()),
 	resolveLoggedOutLlm: loggedOutMocks.resolveLoggedOutLlm,
 }));
 
@@ -58,7 +60,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: async (...call: [string, ...unknown[]]) => {
 		const command = call[0];
 		const args = call[1] as { name?: string; value?: string } | undefined;
-		if (command === "secure_store_get") return (await secureStoreMock.get(args?.name)) ?? nativeSecrets.get(args?.name ?? "") ?? null;
+		if (command === "secure_store_get")
+			return (
+				(await secureStoreMock.get(args?.name)) ??
+				nativeSecrets.get(args?.name ?? "") ??
+				null
+			);
 		if (command === "secure_store_set") {
 			nativeSecrets.set(args!.name!, args!.value!);
 			return secureStoreMock.set(args?.name, args?.value);
@@ -67,13 +74,16 @@ vi.mock("@tauri-apps/api/core", () => ({
 			nativeSecrets.delete(args!.name!);
 			return secureStoreMock.delete(args?.name);
 		}
-		if (command === "device_list" || command === "device_list_requests") return [];
+		if (command === "device_list" || command === "device_list_requests")
+			return [];
 		const result = await mockInvoke(...call);
 		// Older fixtures use [] as their catch-all. Native config reads return
 		// JSON text; CLI discovery returns a snapshot, never a bare array.
 		if (Array.isArray(result) && result.length === 0) {
-			if (command === "read_naia_ui_config" || command === "read_naia_config") return "";
-			if (command === "cli_detect_refresh") return { results: [], detectedAt: Date.now() };
+			if (command === "read_naia_ui_config" || command === "read_naia_config")
+				return "";
+			if (command === "cli_detect_refresh")
+				return { results: [], detectedAt: Date.now() };
 		}
 		return result;
 	},
@@ -329,10 +339,14 @@ describe("SettingsTab", () => {
 		mockOpenUrl.mockClear();
 
 		fireEvent.click(chargeBtn!);
-		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/billing"));
+		expect(mockOpenUrl).toHaveBeenCalledWith(
+			expect.stringContaining("/billing"),
+		);
 
 		fireEvent.click(dashboardBtn!);
-		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/dashboard"));
+		expect(mockOpenUrl).toHaveBeenCalledWith(
+			expect.stringContaining("/dashboard"),
+		);
 	});
 
 	it("hides the credit top-up and dashboard buttons on the Steam build, keeping the balance (#727)", async () => {
@@ -514,7 +528,9 @@ describe("SettingsTab", () => {
 			gotoSettingsTab("general");
 		});
 
-		expect(document.querySelector('[data-settings-tab="general"]')?.className).toContain("settings-tab-btn--active");
+		expect(
+			document.querySelector('[data-settings-tab="general"]')?.className,
+		).toContain("settings-tab-btn--active");
 		// Retired Discord credentials must not reappear in the WebView.
 		expect(document.querySelector('input[type="password"]')).toBeNull();
 	});
@@ -1068,7 +1084,9 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		gotoSettingsTab("voice");
 
-		expect(await screen.findByTestId("voice-status-summary")).toBeInTheDocument();
+		expect(
+			await screen.findByTestId("voice-status-summary"),
+		).toBeInTheDocument();
 		expect(
 			screen.queryByText("STT model download and selection required."),
 		).toBeNull();
@@ -1398,7 +1416,10 @@ describe("SettingsTab", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.llmRoles).toEqual(
 			expect.objectContaining({
-				main: expect.objectContaining({ provider: "codex", model: "gpt-5.6-sol" }),
+				main: expect.objectContaining({
+					provider: "codex",
+					model: "gpt-5.6-sol",
+				}),
 			}),
 		);
 	});
@@ -2846,7 +2867,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 				payload: {
 					phase: "failed",
 					step: "failed",
-					label: "Naia Host TensorRT runtime exited before readiness (exit code 1). See C:/naia-test-home/logs/voxcpm2-stderr.log",
+					label:
+						"Naia Host TensorRT runtime exited before readiness (exit code 1). See C:/naia-test-home/logs/voxcpm2-stderr.log",
 					percent: 0,
 				},
 			});
@@ -3302,7 +3324,10 @@ describe("SettingsTab — memory tab (#298)", () => {
 			model: "gemini-3.1-flash-lite",
 		});
 		expect(saved.memoryLlmProvider).toBe("nextain");
-		expect(saved.llmRoles?.memory).toMatchObject({ provider: "nextain", model: "gpt-5.4-nano" }); // #692
+		expect(saved.llmRoles?.memory).toMatchObject({
+			provider: "nextain",
+			model: "gpt-5.4-nano",
+		}); // #692
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
@@ -4012,5 +4037,83 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 			expect(saved.enableThinking).toBe(true);
 		});
 	});
-});
 
+	it("shows Ollama runtime state, starts the default endpoint, and stops on provider switch", async () => {
+		await setLocale("en");
+		eventListeners.clear();
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				ollamaHost: "http://localhost:11434",
+			}),
+		);
+		const notInstalled = {
+			state: "not_installed",
+			serverState: "not_installed",
+			ownership: "none",
+			installedVersion: null,
+			installedVersions: [],
+			modelCount: null,
+			reservation: {
+				kind: null,
+				status: "not_requested",
+				bytes: null,
+				reasonCode: null,
+			},
+			operationId: null,
+			phase: null,
+			error: null,
+		};
+		let runtimeStatus = notInstalled;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "ollama_runtime_status")
+				return Promise.resolve(runtimeStatus);
+			if (command === "ollama_runtime_start") {
+				runtimeStatus = { ...notInstalled, serverState: "starting" };
+				return Promise.resolve("op-1");
+			}
+			return Promise.resolve([]);
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({ models: [] }),
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const providerSelect = document.getElementById(
+			"provider-select",
+		) as HTMLSelectElement;
+		fireEvent.change(providerSelect, { target: { value: "ollama" } });
+		await waitFor(() => {
+			expect(screen.getByTestId("ollama-runtime-status").textContent).toContain(
+				"Not installed",
+			);
+		});
+		fireEvent.click(screen.getByTestId("ollama-runtime-start"));
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"ollama_runtime_start",
+				expect.objectContaining({
+					host: "http://localhost:11434",
+					deviceId: null,
+				}),
+			),
+		);
+		await expect(screen.getByTestId("ollama-runtime-start")).toBeDisabled();
+		await waitFor(() => {
+			expect(screen.getByTestId("ollama-runtime-status").textContent).toContain(
+				"Starting",
+			);
+		});
+		fireEvent.change(providerSelect, { target: { value: "gemini" } });
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("ollama_runtime_stop"),
+		);
+	});
+});

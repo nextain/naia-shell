@@ -255,6 +255,80 @@ describe("ChatArea", () => {
 		expect(buttons.length).toBeGreaterThanOrEqual(2);
 	});
 
+	it("blocks local Ollama chat when its fresh runtime status is unreserved", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				ollamaHost: "http://localhost:11434",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) =>
+			command === "ollama_runtime_status"
+				? Promise.resolve({
+						serverState: "connected_unreserved",
+						reservation: {
+							kind: "local_llm",
+							status: "denied",
+							bytes: null,
+							reasonCode: "same_device_conflict",
+						},
+						error: {
+							code: "reservation_denied",
+							reasonCode: "same_device_conflict",
+						},
+					})
+				: Promise.resolve(undefined),
+		);
+		const { sendChatMessage } = await import("../../lib/chat-service");
+		vi.mocked(sendChatMessage).mockClear();
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "hello local model" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"ollama_runtime_status",
+				expect.objectContaining({ host: "http://localhost:11434" }),
+			);
+		});
+		expect(sendChatMessage).not.toHaveBeenCalled();
+		expect(capturedRequests).toHaveLength(0);
+	});
+
+	it("admits local Ollama chat only with a running LocalLlm lease", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				ollamaHost: "http://localhost:11434",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) =>
+			command === "ollama_runtime_status"
+				? Promise.resolve({
+						serverState: "ready_managed",
+						reservation: {
+							kind: "local_llm",
+							status: "running",
+							bytes: null,
+						},
+					})
+				: Promise.resolve(undefined),
+		);
+		const { sendChatMessage } = await import("../../lib/chat-service");
+		vi.mocked(sendChatMessage).mockClear();
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "hello local model" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(sendChatMessage).toHaveBeenCalledTimes(1));
+	});
+
 	it("cleans up the pipeline when Web Speech reports a permission error", async () => {
 		localStorage.setItem(
 			"naia-config",
@@ -272,7 +346,9 @@ describe("ChatArea", () => {
 		});
 
 		render(<ChatArea />);
-		fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+		fireEvent.click(
+			document.querySelector(".chat-voice-btn") as HTMLButtonElement,
+		);
 
 		await waitFor(() =>
 			expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledTimes(1),
@@ -460,9 +536,9 @@ describe("ChatArea", () => {
 
 		// #572 — 원문은 답변 본문이 아니라 실패 표시의 접힌 상세로 간다.
 		await waitFor(() =>
-			expect(useChatStore.getState().messages.at(-1)?.failure?.detail).toContain(
-				"provider rejected the API key",
-			),
+			expect(
+				useChatStore.getState().messages.at(-1)?.failure?.detail,
+			).toContain("provider rejected the API key"),
 		);
 		expect(useChatStore.getState().messages.at(-1)?.content).toBe("");
 		expect(useChatStore.getState().isStreaming).toBe(false);
@@ -1593,7 +1669,9 @@ describe("ChatArea", () => {
 		});
 		request.onChunk({ type: "finish", requestId: request.requestId });
 
-		await waitFor(() => expect(screen.getByText("Visible answer.")).toBeDefined());
+		await waitFor(() =>
+			expect(screen.getByText("Visible answer.")).toBeDefined(),
+		);
 		const assistants = useChatStore
 			.getState()
 			.messages.filter((message) => message.role === "assistant");
@@ -1956,10 +2034,7 @@ describe("ChatArea", () => {
 
 	it("does not hydrate stale Gateway history over the local conversation", async () => {
 		// A completed first turn must remain the source of the second request.
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({ }),
-		);
+		localStorage.setItem("naia-config", JSON.stringify({}));
 		const { getGatewayHistory } = await import("../../lib/gateway-sessions");
 		(getGatewayHistory as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
 			{
@@ -2022,11 +2097,22 @@ describe("ChatArea", () => {
 	it("restores current conversation messages on mount when stored key and transcript exist", async () => {
 		sessionStorage.setItem("naia-chat-session-id", "chat-mount-restore-test");
 		const jsonl = [
-			JSON.stringify({ role: "user", content: "복원된 메시지", timestamp: 1000 }),
-			JSON.stringify({ role: "assistant", content: "복원된 답변", timestamp: 1001 }),
+			JSON.stringify({
+				role: "user",
+				content: "복원된 메시지",
+				timestamp: 1000,
+			}),
+			JSON.stringify({
+				role: "assistant",
+				content: "복원된 답변",
+				timestamp: 1001,
+			}),
 		].join("\n");
 		mockInvoke.mockImplementation((cmd, args) => {
-			if (cmd === "read_conversation" && args?.sessionId === "chat-mount-restore-test") {
+			if (
+				cmd === "read_conversation" &&
+				args?.sessionId === "chat-mount-restore-test"
+			) {
 				return Promise.resolve(jsonl);
 			}
 			return Promise.resolve(undefined);
@@ -2048,7 +2134,10 @@ describe("ChatArea", () => {
 	});
 
 	it("keeps stored key and shows empty messages on mount when no transcript exists", async () => {
-		sessionStorage.setItem("naia-chat-session-id", "chat-fresh-key-no-transcript");
+		sessionStorage.setItem(
+			"naia-chat-session-id",
+			"chat-fresh-key-no-transcript",
+		);
 		mockInvoke.mockImplementation((cmd) => {
 			if (cmd === "read_conversation") {
 				return Promise.resolve("");
@@ -2091,7 +2180,9 @@ describe("ChatArea", () => {
 		expect(state.messages).toHaveLength(0);
 		expect(state.localSessionId).not.toBe("chat-previous-session");
 		expect(state.localSessionId.startsWith("chat-")).toBe(true);
-		expect(sessionStorage.getItem("naia-chat-session-id")).toBe(state.localSessionId);
+		expect(sessionStorage.getItem("naia-chat-session-id")).toBe(
+			state.localSessionId,
+		);
 		sessionStorage.removeItem("naia-chat-session-id");
 	});
 
@@ -2211,9 +2302,7 @@ describe("ChatArea", () => {
 			expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(3),
 		);
 		expect(
-			ttsSyncMocks.synthesizeTts.mock.calls.map(
-				(call: any[]) => call[0].text,
-			),
+			ttsSyncMocks.synthesizeTts.mock.calls.map((call: any[]) => call[0].text),
 		).toEqual(["첫 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."]);
 		localStorage.removeItem("naia-config");
 	});
@@ -2270,9 +2359,7 @@ describe("ChatArea", () => {
 	});
 
 	it("disables tools on first send when fetchAgentSkills rejects", async () => {
-		vi.mocked(fetchAgentSkills).mockRejectedValue(
-			new Error("Agent offline"),
-		);
+		vi.mocked(fetchAgentSkills).mockRejectedValue(new Error("Agent offline"));
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -2313,7 +2400,9 @@ describe("ChatArea", () => {
 		fireEvent.change(input, { target: { value: "Hello High" } });
 		fireEvent.keyDown(input, { key: "Enter" });
 
-		await waitFor(() => expect(capturedRequests.length).toBeGreaterThanOrEqual(1));
+		await waitFor(() =>
+			expect(capturedRequests.length).toBeGreaterThanOrEqual(1),
+		);
 		const lastReq = capturedRequests[capturedRequests.length - 1];
 		expect(lastReq.thinking).toEqual({ level: "high" });
 		expect(lastReq.enableThinking).toBe(true);
@@ -2337,7 +2426,9 @@ describe("ChatArea", () => {
 		fireEvent.change(input, { target: { value: "Hello Off" } });
 		fireEvent.keyDown(input, { key: "Enter" });
 
-		await waitFor(() => expect(capturedRequests.length).toBeGreaterThanOrEqual(1));
+		await waitFor(() =>
+			expect(capturedRequests.length).toBeGreaterThanOrEqual(1),
+		);
 		const lastReq = capturedRequests[capturedRequests.length - 1];
 		expect(lastReq.thinking).toEqual({ level: "off" });
 		expect(lastReq.enableThinking).toBe(false);
@@ -2346,4 +2437,3 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 });
-

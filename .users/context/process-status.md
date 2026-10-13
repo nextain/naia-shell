@@ -1,4 +1,11 @@
-<!-- src-sha: 3176cbc244067c4a -->
+<!-- src-sha: 652082a00d35b59e -->
+
+## VRAM 예약과 Ollama 공급자 연결 — 2026-10-13 (#758 단계 4)
+
+- 작업 기준은 단계 3 병합판이다. kind-only `LocalLlm` 예약, Ollama 상태·provider 연결 및 chat admission을 구현하고 가짜 inventory/runner로 검증했다.
+- 검증: `pnpm install --frozen-lockfile`, 루트·Shell production build, Shell tsc/Rust build 통과. 표적 Vitest 274 통과/8 제외, Ollama UI Playwright 3 통과, production Playwright 2 통과, 가짜 inventory Tauri 스펙 1 통과, Ollama Rust 40 통과/1 제외.
+- 전체 Shell Playwright는 153 통과/49 제외/56 실패다. 새 Ollama 스펙은 통과했으며 나머지 실패의 원인과 기준판 여부는 확인되지 않았다. 전체 Cargo는 566 통과/4 기존 기준 실패/1 제외/3 GPU 관련 필터; 네 기준 실패는 `infer_repos_adk_root_returns_none_without_workspace_checkout`, `test_migration_excluded`, `test_resolve_cache_root`, `the_admin_secret_must_match_or_the_connection_is_refused`다.
+- 실제 Ollama/GPU 시험은 하지 않았다. 설치 방식·Linux 권한·이미 실행 중인 Ollama·생각 모드 단계는 보수 기본값이며 루크 결정 대기다. P04는 진행 중, P05는 대기; Muse 검수와 단계 5 루크 실기 증거가 남아 완료 주장은 아니다.
 
 ## Ollama 서버 수명주기 — 2026-10-13 (#758 단계 3)
 
