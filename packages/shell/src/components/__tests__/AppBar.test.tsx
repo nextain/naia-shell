@@ -189,7 +189,7 @@ describe("AppBar — add dialog", () => {
 			id: "projects",
 			name: "Projects",
 			names: { ko: "프로젝트" },
-			icon: "📁",
+			icon: "🤖",
 			builtIn: true,
 			center: () => null,
 		});
@@ -197,6 +197,10 @@ describe("AppBar — add dialog", () => {
 		rerender(<AppBar />);
 
 		expect(screen.getByTitle("프로젝트")).toBeDefined();
+		expect(
+			screen.getByTitle("프로젝트").querySelector(".app-bar-tab-icon")
+				?.textContent,
+		).toBe("🤖");
 		const firstTabs = Array.from(
 			document.querySelectorAll(".app-bar-tabs > button"),
 		).slice(0, 3);

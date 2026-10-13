@@ -39,7 +39,6 @@ struct CatalogProject {
     name: String,
     repository: Option<String>,
     issue_tracker: Option<String>,
-    profile: Option<String>,
     config_errors: Vec<ConfigIssue>,
 }
 
@@ -75,9 +74,7 @@ pub fn projects_scan_checkout(checkout_path: String) -> Result<ProjectCatalog, S
         let Some(entry) = directory_entries.next() else {
             break;
         };
-        directories.push(
-            entry.map_err(|_| "A project entry could not be read.".to_owned())?,
-        );
+        directories.push(entry.map_err(|_| "A project entry could not be read.".to_owned())?);
         scanned_entries += 1;
     }
     let more_entries_available = if scanned_entries == MAX_PROJECT_ENTRIES {
@@ -157,50 +154,24 @@ fn read_project(
         return unavailable_project(directory_name, project_file, "invalid_yaml");
     };
 
-    let Some(project_id) = value_string(mapping, &["id", "project_id", "projectId"]) else {
+    let Some(project_mapping) = mapping
+        .get(&YamlValue::String("project".to_owned()))
+        .and_then(YamlValue::as_mapping)
+    else {
         return unavailable_project(directory_name, project_file, "missing_project_id");
     };
-    let Some(profile) = value_string(mapping, &["profile"]) else {
-        return unavailable_project(directory_name, project_file, "missing_profile");
+    let Some(project_id) = value_string(project_mapping, &["id"]) else {
+        return unavailable_project(directory_name, project_file, "missing_project_id");
     };
-
-    let mut config_errors = Vec::new();
-    if profile == "local" {
-        for (relative, parser) in [
-            ("profiles/local/profile.yaml", ConfigParser::Yaml),
-            ("profiles/local/workspace/repos.json", ConfigParser::Json),
-        ] {
-            let path = root.join(relative);
-            let result = match parser {
-                ConfigParser::Yaml => read_yaml(root, &path).map(|_| ()),
-                ConfigParser::Json => read_json(root, &path).map(|_| ()),
-            };
-            match result {
-                Ok(()) => {}
-                Err(ConfigFileReadError::Issue(reason)) => {
-                    config_errors.push(ConfigIssue {
-                        file: relative.to_owned(),
-                        reason,
-                    });
-                }
-                Err(ConfigFileReadError::Oversized { observed_bytes }) => {
-                    oversized_files.push(OversizedConfigFile {
-                        file: relative.to_owned(),
-                        observed_bytes,
-                    });
-                }
-            }
-        }
-    }
 
     CatalogProject {
         directory_name: directory_name.to_owned(),
         project_id: project_id.clone(),
-        name: value_string(mapping, &["name", "title"]).unwrap_or(project_id),
-        repository: value_string(mapping, &["repository", "repo"]),
-        issue_tracker: value_string(mapping, &["issue_tracker", "issueTracker"]),
-        profile: Some(profile),
-        config_errors,
+        name: value_string(project_mapping, &["name", "display_name", "title"])
+            .unwrap_or(project_id),
+        repository: value_string(project_mapping, &["repository"]),
+        issue_tracker: value_string(project_mapping, &["issue_tracker"]),
+        config_errors: Vec::new(),
     }
 }
 
@@ -211,15 +182,8 @@ fn incomplete_project(directory_name: &str) -> CatalogProject {
         name: directory_name.to_owned(),
         repository: None,
         issue_tracker: None,
-        profile: None,
         config_errors: Vec::new(),
     }
-}
-
-#[derive(Clone, Copy)]
-enum ConfigParser {
-    Yaml,
-    Json,
 }
 
 fn unavailable_project(directory_name: &str, file: String, reason: &'static str) -> CatalogProject {
@@ -229,7 +193,6 @@ fn unavailable_project(directory_name: &str, file: String, reason: &'static str)
         name: directory_name.to_owned(),
         repository: None,
         issue_tracker: None,
-        profile: None,
         config_errors: vec![ConfigIssue { file, reason }],
     }
 }
@@ -255,11 +218,6 @@ fn read_yaml(root: &Path, path: &Path) -> Result<YamlValue, ConfigFileReadError>
     serde_yaml::from_str(&text).map_err(|_| ConfigFileReadError::Issue("invalid_yaml"))
 }
 
-fn read_json(root: &Path, path: &Path) -> Result<serde_json::Value, ConfigFileReadError> {
-    let text = read_confined(root, path)?;
-    serde_json::from_str(&text).map_err(|_| ConfigFileReadError::Issue("invalid_json"))
-}
-
 fn read_confined(root: &Path, path: &Path) -> Result<String, ConfigFileReadError> {
     let canonical = dunce::canonicalize(path).map_err(|error| {
         ConfigFileReadError::Issue(if error.kind() == std::io::ErrorKind::NotFound {
@@ -274,8 +232,7 @@ fn read_confined(root: &Path, path: &Path) -> Result<String, ConfigFileReadError
     if !canonical.is_file() {
         return Err(ConfigFileReadError::Issue("unreadable"));
     }
-    let file = fs::File::open(canonical)
-        .map_err(|_| ConfigFileReadError::Issue("unreadable"))?;
+    let file = fs::File::open(canonical).map_err(|_| ConfigFileReadError::Issue("unreadable"))?;
     let mut bytes = Vec::with_capacity(MAX_CONFIG_FILE_BYTES + 1);
     file.take((MAX_CONFIG_FILE_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
@@ -306,26 +263,33 @@ mod tests {
         fs::write(path, content).unwrap();
     }
 
+    fn nested_project_yaml(id: &str) -> String {
+        format!(
+            "version: 1\nproject:\n  id: {id}\n  repository: example-org/{id}\n  issue_tracker: github\n  default_branch: main\n  integration_branch: develop\nroles: {{}}\ndiscord: {{}}\ncommands: {{}}\n"
+        )
+    }
+
     #[test]
     fn lists_projects_and_excludes_both_templates() {
         let (_temp, root) = checkout();
-        for name in ["_template", "_template-local", "alpha"] {
+        for name in ["_template", "_template-local", "example-project"] {
             write(
                 &root,
                 &format!("projects/{name}/project.yaml"),
-                &format!(
-                    "id: {name}\nname: {name} title\nprofile: server\nrepository: nextain/{name}\n"
-                ),
+                &nested_project_yaml(name),
             );
         }
 
         let catalog = projects_scan_checkout(root.to_string_lossy().into_owned()).unwrap();
         assert_eq!(catalog.projects.len(), 1);
         let project = &catalog.projects[0];
-        assert_eq!(project.project_id, "alpha");
-        assert_eq!(project.name, "alpha title");
-        assert_eq!(project.repository.as_deref(), Some("nextain/alpha"));
-        assert_eq!(project.profile.as_deref(), Some("server"));
+        assert_eq!(project.project_id, "example-project");
+        assert_eq!(project.name, "example-project");
+        assert_eq!(
+            project.repository.as_deref(),
+            Some("example-org/example-project")
+        );
+        assert_eq!(project.issue_tracker.as_deref(), Some("github"));
         assert!(project.config_errors.is_empty());
     }
 
@@ -347,8 +311,13 @@ mod tests {
         );
         write(
             &root,
-            "projects/no-profile/project.yaml",
-            "id: no-profile\n",
+            "projects/missing-id/project.yaml",
+            "version: 1\nroles: {}\n",
+        );
+        write(
+            &root,
+            "projects/top-level-id/project.yaml",
+            "version: 1\nid: top-level-id\n",
         );
 
         let catalog = projects_scan_checkout(root.to_string_lossy().into_owned()).unwrap();
@@ -360,66 +329,12 @@ mod tests {
         assert_eq!(by_name["missing"].config_errors[0].reason, "missing");
         assert_eq!(by_name["malformed"].config_errors[0].reason, "invalid_yaml");
         assert_eq!(
-            by_name["no-profile"].config_errors[0].reason,
-            "missing_profile"
-        );
-    }
-
-    #[test]
-    fn validates_both_local_profile_files() {
-        let (_temp, root) = checkout();
-        write(
-            &root,
-            "projects/local/project.yaml",
-            "id: local\nprofile: local\n",
-        );
-        write(&root, "profiles/local/profile.yaml", "mode: local\n");
-        write(&root, "profiles/local/workspace/repos.json", "{bad json");
-
-        let catalog = projects_scan_checkout(root.to_string_lossy().into_owned()).unwrap();
-        let project = &catalog.projects[0];
-        assert_eq!(project.config_errors.len(), 1);
-        assert_eq!(
-            project.config_errors[0].file,
-            "profiles/local/workspace/repos.json"
-        );
-        assert_eq!(project.config_errors[0].reason, "invalid_json");
-    }
-
-    #[test]
-    fn reports_missing_and_malformed_local_profile_files() {
-        let (_temp, root) = checkout();
-        write(
-            &root,
-            "projects/local/project.yaml",
-            "id: local\nprofile: local\n",
-        );
-
-        let missing = projects_scan_checkout(root.to_string_lossy().into_owned()).unwrap();
-        let missing_project = &missing.projects[0];
-        assert_eq!(missing_project.config_errors.len(), 2);
-        assert!(missing_project.config_errors.iter().any(|issue| {
-            issue.file == "profiles/local/profile.yaml" && issue.reason == "missing"
-        }));
-        assert!(missing_project.config_errors.iter().any(|issue| {
-            issue.file == "profiles/local/workspace/repos.json" && issue.reason == "missing"
-        }));
-
-        write(
-            &root,
-            "profiles/local/profile.yaml",
-            "mode: [unterminated\n",
-        );
-        write(&root, "profiles/local/workspace/repos.json", "[]");
-        let malformed = projects_scan_checkout(root.to_string_lossy().into_owned()).unwrap();
-        assert_eq!(malformed.projects[0].config_errors.len(), 1);
-        assert_eq!(
-            malformed.projects[0].config_errors[0].file,
-            "profiles/local/profile.yaml"
+            by_name["missing-id"].config_errors[0].reason,
+            "missing_project_id"
         );
         assert_eq!(
-            malformed.projects[0].config_errors[0].reason,
-            "invalid_yaml"
+            by_name["top-level-id"].config_errors[0].reason,
+            "missing_project_id"
         );
     }
 
@@ -431,7 +346,7 @@ mod tests {
             write(
                 &root,
                 &format!("projects/{name}/project.yaml"),
-                &format!("id: {name}\nprofile: server\n"),
+                &format!("version: 1\nproject:\n  id: {name}\n"),
             );
         }
 
@@ -447,7 +362,7 @@ mod tests {
     fn reports_an_oversized_project_file_as_catalog_truncation_not_a_config_error() {
         let (_temp, root) = checkout();
         let file = format!(
-            "id: large\nprofile: server\n{}",
+            "version: 1\nproject:\n  id: large\n{}",
             " ".repeat(MAX_CONFIG_FILE_BYTES + 1)
         );
         write(&root, "projects/large/project.yaml", &file);
@@ -471,34 +386,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn reports_an_oversized_local_profile_without_promoting_it_to_a_config_error() {
-        let (_temp, root) = checkout();
-        write(
-            &root,
-            "projects/local/project.yaml",
-            "id: local\nprofile: local\n",
-        );
-        write(
-            &root,
-            "profiles/local/profile.yaml",
-            &" ".repeat(MAX_CONFIG_FILE_BYTES + 1),
-        );
-        write(&root, "profiles/local/workspace/repos.json", "[]");
-
-        let catalog = projects_scan_checkout(root.to_string_lossy().into_owned()).unwrap();
-        assert!(catalog.projects[0].config_errors.is_empty());
-        assert_eq!(catalog.truncation.oversized_files.len(), 1);
-        assert_eq!(
-            catalog.truncation.oversized_files[0].file,
-            "profiles/local/profile.yaml"
-        );
-        assert_eq!(
-            catalog.truncation.oversized_files[0].observed_bytes,
-            MAX_CONFIG_FILE_BYTES + 1
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn rejects_configuration_symlinks_that_escape_the_checkout() {
@@ -508,7 +395,7 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         fs::write(
             outside.path().join("project.yaml"),
-            "id: outside\nprofile: server\n",
+            "version: 1\nproject:\n  id: outside\n",
         )
         .unwrap();
         fs::create_dir_all(root.join("projects/linked")).unwrap();

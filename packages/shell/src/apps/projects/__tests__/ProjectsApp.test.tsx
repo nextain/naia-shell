@@ -15,18 +15,17 @@ import { PROJECT_APP_TRANSLATIONS } from "../translations";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
-	open: vi.fn(async () => "/selected/naia-pj-adk"),
+	open: vi.fn(async () => "/selected/workspace"),
 }));
 
 const readyCatalog = {
 	projects: [
 		{
-			directoryName: "naia-shell",
-			projectId: "naia-shell",
-			name: "Naia Shell",
-			repository: "nextain/naia-shell",
+			directoryName: "example-app",
+			projectId: "example-app",
+			name: "Example App",
+			repository: "example-org/example-app",
 			issueTracker: "github",
-			profile: "server",
 			configErrors: [],
 		},
 	],
@@ -52,6 +51,7 @@ describe("ProjectsApp — F-01", () => {
 		expect(appRegistry.get("projects")?.keepAlive).toBe(true);
 		expect(appRegistry.get("projects")?.deferMountUntilActive).toBe(true);
 		expect(appRegistry.get("projects")?.id).toBe("projects");
+		expect(appRegistry.get("projects")?.icon).toBe("🤖");
 		expect(useAppStore.getState().appListVersion).toBe(appListVersion + 1);
 	});
 
@@ -105,32 +105,32 @@ describe("ProjectsApp — F-01", () => {
 		finishScan?.(readyCatalog);
 
 		const projectButton = await screen.findByRole("button", {
-			name: /Naia Shell/,
+			name: /Example App/,
 		});
 		fireEvent.click(projectButton);
 		expect(
-			screen.getByRole("heading", { name: "Naia Shell", level: 1 }),
+			screen.getByRole("heading", { name: "Example App", level: 1 }),
 		).toBeTruthy();
 		for (const label of ["Coding Agent", "Dashboard", "Internal Issues"]) {
 			const tab = screen.getByRole("tab", { name: label });
 			fireEvent.click(tab);
 			expect(tab.getAttribute("aria-selected")).toBe("true");
 			expect(
-				screen.getByRole("heading", { name: "Naia Shell", level: 1 }),
+				screen.getByRole("heading", { name: "Example App", level: 1 }),
 			).toBeTruthy();
 			expect(screen.getByRole("tabpanel").textContent).toContain(
 				"stage 1 placeholder",
 			);
 		}
 		expect(invoke).toHaveBeenCalledWith("projects_scan_checkout", {
-			checkoutPath: "/selected/naia-pj-adk",
+			checkoutPath: "/selected/workspace",
 		});
 	});
 
 	it("supports arrow and boundary-key navigation between accessible tabs", async () => {
 		render(<ProjectsApp />);
 		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
-		fireEvent.click(await screen.findByRole("button", { name: /Naia Shell/ }));
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
 		const coding = screen.getByRole("tab", { name: "Coding Agent" });
 		coding.focus();
 		fireEvent.keyDown(coding, { key: "ArrowRight" });
@@ -194,7 +194,7 @@ describe("ProjectsApp — F-01", () => {
 		).toBeTruthy();
 	});
 
-	it("does not open a project with configuration errors and tells the user what to fix", async () => {
+	it("does not open a project without its nested ID and tells the user what to fix", async () => {
 		vi.mocked(invoke).mockImplementation(async (command) => {
 			if (command !== "projects_scan_checkout") return null;
 			return {
@@ -205,11 +205,10 @@ describe("ProjectsApp — F-01", () => {
 						name: "Broken Project",
 						repository: null,
 						issueTracker: null,
-						profile: "local",
 						configErrors: [
 							{
-								file: "profiles/local/workspace/repos.json",
-								reason: "invalid_json",
+								file: "projects/broken/project.yaml",
+								reason: "missing_project_id",
 							},
 						],
 					},
@@ -223,9 +222,8 @@ describe("ProjectsApp — F-01", () => {
 				"This project has a configuration problem and cannot be opened.",
 			),
 		).toBeTruthy();
-		expect(
-			screen.getByText("profiles/local/workspace/repos.json"),
-		).toBeTruthy();
+		expect(screen.getByText("projects/broken/project.yaml")).toBeTruthy();
+		expect(screen.getByText(/The project ID is missing\./)).toBeTruthy();
 		expect(screen.getByText(/Check the listed file/)).toBeTruthy();
 		expect(
 			screen.getAllByRole("heading", { name: "Select a project" }),
@@ -252,7 +250,7 @@ describe("ProjectsApp — F-01", () => {
 		);
 		await waitFor(() => expect(screen.getByText("checkout")).toBeTruthy());
 		expect(
-			await screen.findByRole("button", { name: /Naia Shell/ }),
+			await screen.findByRole("button", { name: /Example App/ }),
 		).toBeTruthy();
 	});
 });

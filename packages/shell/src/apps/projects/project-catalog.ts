@@ -4,9 +4,7 @@ export type ProjectConfigIssueReason =
 	| "missing"
 	| "unreadable"
 	| "invalid_yaml"
-	| "invalid_json"
 	| "missing_project_id"
-	| "missing_profile"
 	| "unsafe_path";
 
 export interface ProjectConfigIssue {
@@ -20,7 +18,6 @@ export interface CatalogProject {
 	name: string;
 	repository: string | null;
 	issueTracker: string | null;
-	profile: string | null;
 	configErrors: ProjectConfigIssue[];
 }
 
@@ -45,9 +42,7 @@ const ISSUE_REASONS = new Set<ProjectConfigIssueReason>([
 	"missing",
 	"unreadable",
 	"invalid_yaml",
-	"invalid_json",
 	"missing_project_id",
-	"missing_profile",
 	"unsafe_path",
 ]);
 
@@ -92,7 +87,6 @@ function parseProject(value: unknown): CatalogProject {
 		name,
 		repository: optionalString(value.repository),
 		issueTracker: optionalString(value.issueTracker),
-		profile: optionalString(value.profile),
 		configErrors: value.configErrors.map(parseIssue),
 	};
 }

@@ -16,7 +16,7 @@ appRegistry.register({
 	id: "projects",
 	name: "Projects",
 	names: { ko: "프로젝트" },
-	icon: "📁",
+	icon: "🤖",
 	builtIn: true,
 	keepAlive: true,
 	deferMountUntilActive: true,

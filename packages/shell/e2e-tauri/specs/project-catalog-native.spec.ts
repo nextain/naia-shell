@@ -9,8 +9,9 @@ type NativeScan = {
 		readonly projects: Array<{
 			readonly directoryName: string;
 			readonly projectId: string;
+			readonly name: string;
 			readonly repository: string | null;
-			readonly profile: string | null;
+			readonly issueTracker: string | null;
 			readonly configErrors: Array<{
 				readonly file: string;
 				readonly reason: string;
@@ -62,26 +63,28 @@ describe("Project catalog native IPC — #756 stage 1", () => {
 		checkoutRoot = mkdtempSync(join(TEMP_ROOT, "project-catalog-native-"));
 		writeFixture(
 			"projects/_template/project.yaml",
-			"id: template\nprofile: server\n",
+			"version: 1\nproject:\n  id: template\n",
 		);
 		writeFixture(
 			"projects/_template-local/project.yaml",
-			"id: template-local\nprofile: local\n",
+			"version: 1\nproject:\n  id: template-local\n",
 		);
 		writeFixture(
-			"projects/alpha/project.yaml",
-			"id: alpha\nname: Alpha\nrepository: nextain/alpha\nissue_tracker: github\nprofile: local\n",
+			"projects/example-project/project.yaml",
+			"version: 1\nproject:\n  id: example-project\n  repository: example-org/example-project\n  issue_tracker: github\n  default_branch: main\n  integration_branch: develop\nroles: {}\ndiscord: {}\ncommands: {}\n",
 		);
 		writeFixture("projects/broken/project.yaml", "id: [invalid\n");
-		writeFixture("profiles/local/profile.yaml", "mode: local\n");
-		writeFixture("profiles/local/workspace/repos.json", "{invalid json");
+		writeFixture(
+			"projects/missing-id/project.yaml",
+			"version: 1\nproject:\n  repository: example-org/missing-id\n",
+		);
 	});
 
 	after(() => {
 		if (checkoutRoot) rmSync(checkoutRoot, { recursive: true, force: true });
 	});
 
-	it("reads only checkout configuration, excludes templates, and reports malformed local metadata", async () => {
+	it("reads nested project metadata, ignores unrelated settings, and excludes templates", async () => {
 		await browser.waitUntil(
 			async () =>
 				(await browser.execute(() => location.href.startsWith("http"))) ===
@@ -95,34 +98,32 @@ describe("Project catalog native IPC — #756 stage 1", () => {
 		expect(first.ok).toBe(true);
 		const firstProjects = first.value?.projects ?? [];
 		expect(firstProjects.map((project) => project.directoryName)).toEqual([
-			"alpha",
 			"broken",
+			"example-project",
+			"missing-id",
 		]);
-		const alpha = firstProjects.find(
-			(project) => project.directoryName === "alpha",
+		const exampleProject = firstProjects.find(
+			(project) => project.directoryName === "example-project",
 		);
-		expect(alpha?.projectId).toBe("alpha");
-		expect(alpha?.repository).toBe("nextain/alpha");
-		expect(alpha?.profile).toBe("local");
-		expect(alpha?.configErrors).toEqual([
-			{ file: "profiles/local/workspace/repos.json", reason: "invalid_json" },
-		]);
+		expect(exampleProject?.projectId).toBe("example-project");
+		expect(exampleProject?.name).toBe("example-project");
+		expect(exampleProject?.repository).toBe("example-org/example-project");
+		expect(exampleProject?.issueTracker).toBe("github");
+		expect(exampleProject?.configErrors).toEqual([]);
+		expect(exampleProject).not.toHaveProperty("profile");
 		expect(
 			firstProjects.find((project) => project.directoryName === "broken")
 				?.configErrors[0]?.reason,
 		).toBe("invalid_yaml");
-
-		writeFixture(
-			"profiles/local/workspace/repos.json",
-			JSON.stringify({ repositories: [] }),
-		);
-		const second = await nativeScan(checkoutRoot);
-		expect(second.ok).toBe(true);
 		expect(
-			second.value?.projects.find(
-				(project) => project.directoryName === "alpha",
-			)?.configErrors,
-		).toEqual([]);
+			firstProjects.find((project) => project.directoryName === "missing-id")
+				?.configErrors,
+		).toEqual([
+			{
+				file: "projects/missing-id/project.yaml",
+				reason: "missing_project_id",
+			},
+		]);
 	});
 
 	it("rejects a selected directory without a projects folder", async () => {

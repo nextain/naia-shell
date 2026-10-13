@@ -28,12 +28,9 @@ function issueMessage(reason: ProjectConfigIssueReason): ProjectTranslationKey {
 		case "unreadable":
 			return "projects.fileUnreadable";
 		case "invalid_yaml":
-		case "invalid_json":
 			return "projects.fileInvalid";
 		case "missing_project_id":
 			return "projects.projectIdMissing";
-		case "missing_profile":
-			return "projects.profileMissing";
 		case "unsafe_path":
 			return "projects.unsafePath";
 	}
