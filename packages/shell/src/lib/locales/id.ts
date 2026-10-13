@@ -1313,6 +1313,7 @@ export default {
 	"settings.ollamaReservationLeaseLost": "Reservasi akselerator hilang; Ollama dihentikan.",
 	"settings.ollamaDisconnected": "Tidak terhubung — Pastikan server Ollama berjalan",
 	"settings.vllmDisconnected": "Tidak terhubung — Pastikan server vLLM berjalan",
+	"settings.ollamaThinkingUnsupported": "Model ini tidak mendukung pemikiran. Fitur ini dimatikan untuk permintaan Ollama ini; setelan tersimpan Anda tetap sama.",
 	"settings.modelCurrentVal": "(saat ini)",
 	"settings.zaiHint": "Masukkan API Key yang diterbitkan setelah berlangganan Z.AI Coding Plan.",
 	"settings.vllmVoiceHint": "Tombol suara → auto-connect ws://[vLLM Host]/ws (keluaran audio MiniCPM-o)",

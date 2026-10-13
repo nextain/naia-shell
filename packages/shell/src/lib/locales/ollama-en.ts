@@ -27,4 +27,5 @@ export default {
 	"settings.ollamaInsufficientVram": "There is not enough available VRAM for this reservation.",
 	"settings.ollamaWorkloadAlreadyReserved": "This Ollama workload already has a reservation.",
 	"settings.ollamaReservationLeaseLost": "The accelerator reservation was lost; Ollama was stopped.",
+	"settings.ollamaThinkingUnsupported": "This model does not support thinking. Thinking is disabled for this request; your saved setting is unchanged.",
 } as const;

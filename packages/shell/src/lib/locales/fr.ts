@@ -1313,6 +1313,7 @@ export default {
 	"settings.ollamaReservationLeaseLost": "La réservation a été perdue ; Ollama a été arrêté.",
 	"settings.ollamaDisconnected": "Non connecté — Vérifiez que le serveur Ollama est en cours d'exécution",
 	"settings.vllmDisconnected": "Non connecté — Vérifiez que le serveur vLLM est en cours d'exécution",
+	"settings.ollamaThinkingUnsupported": "Ce modèle ne prend pas en charge la réflexion. Elle est désactivée pour cette requête Ollama ; votre préférence enregistrée reste inchangée.",
 	"settings.modelCurrentVal": "(actuel)",
 	"settings.zaiHint": "Entrez la clé API émise après l'abonnement au Z.AI Coding Plan.",
 	"settings.vllmVoiceHint": "Bouton voix → connexion auto ws://[vLLM Host]/ws (MiniCPM-o sortie audio)",

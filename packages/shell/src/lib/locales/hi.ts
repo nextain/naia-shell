@@ -1313,6 +1313,7 @@ export default {
 	"settings.ollamaReservationLeaseLost": "एक्सेलेरेटर आरक्षण खो गया; Ollama रोक दी गई.",
 	"settings.ollamaDisconnected": "जुड़ा नहीं — सुनिश्चित करें कि Ollama सर्वर चल रहा है",
 	"settings.vllmDisconnected": "जुड़ा नहीं — सुनिश्चित करें कि vLLM सर्वर चल रहा है",
+	"settings.ollamaThinkingUnsupported": "यह मॉडल थिंकिंग का समर्थन नहीं करता। इस Ollama अनुरोध के लिए इसे बंद किया जाएगा; आपकी सहेजी हुई सेटिंग नहीं बदलेगी।",
 	"settings.modelCurrentVal": "(वर्तमान)",
 	"settings.zaiHint": "Z.AI Coding Plan सब्सक्राइब करने के बाद जारी API Key दर्ज करें।",
 	"settings.vllmVoiceHint": "वॉइस बटन → ऑटो-कनेक्ट ws://[vLLM Host]/ws (MiniCPM-o ऑडियो आउटपुट)",

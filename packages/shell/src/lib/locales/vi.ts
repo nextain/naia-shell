@@ -1313,6 +1313,7 @@ export default {
 	"settings.ollamaReservationLeaseLost": "Đã mất đặt trước bộ tăng tốc; Ollama đã dừng.",
 	"settings.ollamaDisconnected": "Chưa kết nối — Hãy đảm bảo server Ollama đang chạy",
 	"settings.vllmDisconnected": "Chưa kết nối — Hãy đảm bảo server vLLM đang chạy",
+	"settings.ollamaThinkingUnsupported": "Mô hình này không hỗ trợ suy luận. Tính năng này sẽ tắt trong yêu cầu Ollama này; cài đặt đã lưu của bạn không đổi.",
 	"settings.modelCurrentVal": "(hiện tại)",
 	"settings.zaiHint": "Nhập API Key được cấp sau khi đăng ký Z.AI Coding Plan.",
 	"settings.vllmVoiceHint": "Nút thoại → tự động kết nối ws://[vLLM Host]/ws (âm thanh MiniCPM-o)",

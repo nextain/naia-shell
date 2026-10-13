@@ -11,6 +11,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from "react";
 import { resetAdkPathWithRelaunch } from "../lib/adk-path-reset";
 import {
@@ -35,6 +36,11 @@ import {
 	getDefaultTtsVoiceForAvatar,
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
+import {
+	getOllamaThinkingUnsupportedStatus,
+	matchesOllamaThinkingUnsupportedStatus,
+	subscribeOllamaThinkingUnsupportedStatus,
+} from "../lib/ollama-thinking-status";
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
@@ -863,6 +869,11 @@ export function SettingsTab() {
 	const [ollamaConnected, setOllamaConnected] = useState(false);
 	const [ollamaRuntime, setOllamaRuntime] =
 		useState<OllamaRuntimeSnapshot | null>(null);
+	const ollamaThinkingUnsupportedStatus = useSyncExternalStore(
+		subscribeOllamaThinkingUnsupportedStatus,
+		getOllamaThinkingUnsupportedStatus,
+		() => null,
+	);
 	const [ollamaRuntimeBusy, setOllamaRuntimeBusy] = useState(false);
 	const ollamaRuntimeRevisionRef = useRef(0);
 	const ollamaRuntimeStartPending = [
@@ -4722,6 +4733,16 @@ export function SettingsTab() {
 											)}
 										</p>
 									)}
+								{provider === "ollama" &&
+									matchesOllamaThinkingUnsupportedStatus(
+										ollamaThinkingUnsupportedStatus,
+										ollamaHost,
+										model,
+									) && (
+									<p role="status" data-testid="ollama-thinking-unsupported">
+										{t("settings.ollamaThinkingUnsupported")}
+									</p>
+								)}
 							</div>
 							<div className="settings-field">
 								{isManagedOllamaHost(ollamaHost) &&

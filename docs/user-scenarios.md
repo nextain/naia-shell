@@ -2218,14 +2218,14 @@ Test Coverage Map (P02)
 | 빈 목록 | 해당 없음 — 세 가지 선택지(끔/낮음/높음)가 고정 제공된다. |
 | 진행 | 라디오 버튼을 선택하는 즉시 반영되며, 생각을 켠 상태로 대화 시 답변 생성 중 생각(Reasoning) 아코디언이 접힌 상태로 표시된다. |
 | 성공 | 라디오 선택 즉시 설정이 영속되고 전체 저장 시에도 두 필드가 유지된다. 채팅 전송 시 `thinking.level`과 `enableThinking`이 에이전트로 명시적 전달된다. |
-| 오류 | 선택은 다른 설정과 같은 저장 경로(로컬 설정 + 설정 파일)를 쓰며, 이번 변경은 저장 실패 알림을 따로 두지 않는다(기존 체크박스와 같음). 잘못되었거나 없는 값은 읽을 때 "off"(옛 `enableThinking: true` 는 "low")로 정규화된다. |
-| 좁은 폭 | 360px 등 좁은 화면에서도 3개 라디오 분절 버튼이 줄바꿈되거나 잘리지 않고 온전하게 접근 가능하다. |
+| 오류 | 선택은 다른 설정과 같은 저장 경로(로컬 설정 + 설정 파일)를 쓰며, 이번 변경은 저장 실패 알림을 따로 두지 않는다(기존 체크박스와 같음). 잘못되었거나 없는 값은 읽을 때 "off"(옛 `enableThinking: true` 는 "low")로 정규화된다. Ollama `/api/show` 응답이 없거나 실패하면 기존 off/on 요청을 유지하고 미지원 안내를 띄우지 않는다. `thinking.values: [false]`일 때만 해당 요청을 끄고 안내하되 저장한 라디오 선택은 바꾸지 않는다. |
+| 좁은 폭 | 360px 등 좁은 화면에서도 3개 라디오 분절 버튼과 Ollama 미지원 안내가 잘리지 않고 온전하게 접근 가능하다. |
 
 Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI |
 |---|---|---|
-| UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환 | `packages/shell/e2e/thinking-settings.spec.ts`: 실 UI 설정 탭 라디오 선택, 메시지 전송 시 IPC 목 인자 검증, 좁은 폭(360px) 스크린샷 |
+| UC-THINKING-LEVEL-709 | `packages/shell/src/lib/__tests__/config.test.ts`: 마이그레이션(`resolveThinkingLevel`) 및 기본값; `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 라디오 선택 및 키보드 화살표 이동, handleSave 영속; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: thinking 명시 전달; `src/test/uc1-shell-compat.contract.test.ts`: 루트 core 어댑터 전달; `packages/shell/src-tauri/src/agent_grpc.rs`: proto 변환; Agent `src/test/uc1-ollama-provider.contract.test.ts`: Ollama `/api/show` 변환·캐시·실패 폴백 | `packages/shell/e2e/thinking-settings.spec.ts`: 설정·요청 모양; `packages/shell/e2e/ollama-settings.spec.ts`: `[false]` 상태 안내, 저장값 유지, ARIA·키보드·360px 좁은 폭 |
 | UC-CREDITS-DISPLAY | `packages/shell/src/lib/__tests__/credits.test.ts`: 달러 × 1,000 크레딧 환산 한 곳; `packages/shell/src/components/__tests__/CostDashboard.steam.test.tsx`, `packages/shell/src/components/__tests__/AboutSection.steam.test.tsx`, `packages/shell/src/components/__tests__/OnboardingWizard.steam.test.tsx`, `packages/shell/src/components/__tests__/AppBar.test.tsx`: Steam판·판정 실패 시 결제·후원·웹 스토어 진입점 숨김; `packages/shell/src/lib/voice/__tests__/live-pricing.test.ts`: 음성 요금은 게이트웨이 시간당 행만 쓰고 없으면 금액 생략 | 실기 Steam 데포 빌드 확인은 릴리스 절차에서 한다 |
 
 ## UC-APP-MANIFEST-V2 — 앱 매니페스트 v2 스키마 및 legacy 프로필 호환 (#735)

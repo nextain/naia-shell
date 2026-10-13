@@ -1311,6 +1311,7 @@ export default {
 	"settings.ollamaInsufficientVram": "예약에 필요한 VRAM이 부족합니다.",
 	"settings.ollamaWorkloadAlreadyReserved": "이 Ollama 작업은 이미 예약되어 있습니다.",
 	"settings.ollamaReservationLeaseLost": "가속기 예약이 사라져 Ollama를 종료했습니다.",
+	"settings.ollamaThinkingUnsupported": "이 모델은 생각 기능을 지원하지 않아 이번 Ollama 요청에서 생각을 끕니다. 저장한 설정은 변경되지 않았습니다.",
 	"settings.ollamaDisconnected": "연결 안 됨 — Ollama 서버가 실행 중인지 확인하세요",
 	"settings.vllmDisconnected": "연결 안 됨 — vLLM 서버가 실행 중인지 확인하세요",
 	"settings.modelCurrentVal": "(현재값)",

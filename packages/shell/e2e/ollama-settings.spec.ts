@@ -11,13 +11,18 @@ const TAURI_MOCK = `
 	window.__TAURI_EVENT_PLUGIN_INTERNALS__ = window.__TAURI_EVENT_PLUGIN_INTERNALS__ || {};
 	window.__TAURI_INTERNALS__.metadata = { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } };
 	var callbacks = new Map(); var nextCbId = 1;
+	var eventListeners = new Map();
 	window.__TAURI_INTERNALS__.transformCallback = function(fn, once) { var id = nextCbId++; callbacks.set(id, function(d){ if(once) callbacks.delete(id); return fn && fn(d); }); return id; };
 	window.__TAURI_INTERNALS__.unregisterCallback = function(id){ callbacks.delete(id); };
 	window.__TAURI_INTERNALS__.runCallback = function(id, d){ var cb = callbacks.get(id); if (cb) cb(d); };
+	function emitEvent(event, payload) { var hs = eventListeners.get(event) || []; hs.forEach(function(id) { window.__TAURI_INTERNALS__.runCallback(id, { event: event, payload: payload }); }); }
+	window.__OLLAMA_SETTINGS_E2E__.emitEvent = emitEvent;
+	window.__OLLAMA_SETTINGS_E2E__.hasListener = function(event) { return (eventListeners.get(event) || []).length > 0; };
 	window.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener = function() {};
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
-		if (cmd === "plugin:event|listen") return args.handler;
-		if (cmd === "plugin:event|emit" || cmd === "plugin:event|unlisten") return null;
+		if (cmd === "plugin:event|listen") { if (!eventListeners.has(args.event)) eventListeners.set(args.event, []); eventListeners.get(args.event).push(args.handler); return args.handler; }
+		if (cmd === "plugin:event|emit") { emitEvent(args.event, args.payload); return null; }
+		if (cmd === "plugin:event|unlisten") { var hs = eventListeners.get(args.event) || []; eventListeners.set(args.event, hs.filter(function(id) { return id !== args.eventId; })); return null; }
 		if (cmd === "read_naia_config") return localStorage.getItem("naia-config") || null;
 		if (cmd === "read_naia_ui_config") return "{}";
 		if (cmd === "device_list" || cmd === "device_list_requests") return [];
@@ -274,4 +279,95 @@ test("connected external loopback keeps its models visible without managed start
 			(call: { command: string }) => call.command === "ollama_runtime_stop",
 		),
 	).toBe(false);
+});
+
+test("explicit Ollama thinking unsupported status preserves the saved level and stays accessible at 360px", async ({
+	page,
+}) => {
+	await page.addInitScript(TAURI_MOCK);
+	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+	await page.addInitScript({ content: SEED_ADK_PATH });
+	await page.addInitScript(() => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				ollamaHost: "http://localhost:11434",
+				thinkingLevel: "high",
+				enableThinking: true,
+				locale: "en",
+				onboardingComplete: true,
+			}),
+		);
+	});
+	await installOllamaRuntimeMock(page, {
+		state: "ready_external_local",
+		serverState: "ready_external_local",
+		ownership: "external_local",
+		installedVersion: null,
+		installedVersions: [],
+		modelCount: 1,
+		reservation: { kind: "local_llm", status: "running", bytes: null, reasonCode: null },
+		operationId: null,
+		phase: null,
+		error: null,
+	});
+	await page.route("**/api/tags", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ models: [{ name: "qwen3:8b" }] }),
+		}),
+	);
+
+	await page.goto("/");
+	await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
+	await expect.poll(() =>
+		page.evaluate(() => (window as any).__OLLAMA_SETTINGS_E2E__.hasListener("agent_response")),
+	).toBe(true);
+	await page.evaluate(() => {
+		(window as any).__OLLAMA_SETTINGS_E2E__.emitEvent(
+			"agent_response",
+			JSON.stringify({
+				type: "log_entry",
+				requestId: "fixture-request",
+				level: "ollama_thinking_unsupported",
+				message: JSON.stringify({ host: "http://localhost:11434", model: "qwen3:8b" }),
+			}),
+		);
+	});
+	await page.getByRole("button", { name: /^(Settings|설정)$/ }).click();
+	await page.locator('[data-settings-tab="brain"]').click();
+	const status = page.getByTestId("ollama-runtime-status");
+	await expect(status).toBeVisible();
+	await expect(page.getByTestId("ollama-thinking-unsupported")).toHaveCount(1);
+	const radioGroup = page.getByRole("radiogroup", { name: /thinking level/i });
+	await expect(radioGroup).toBeVisible();
+	const high = page.getByTestId("thinking-level-high");
+	await expect(high).toHaveAttribute("aria-checked", "true");
+	await high.focus();
+	await page.keyboard.press("ArrowLeft");
+	await expect(page.getByTestId("thinking-level-low")).toHaveAttribute("aria-checked", "true");
+	await page.keyboard.press("ArrowRight");
+	await expect(high).toHaveAttribute("aria-checked", "true");
+	const warning = page
+		.getByRole("status")
+		.filter({ hasText: "This model does not support thinking. Thinking is disabled for this request; your saved setting is unchanged." });
+	await expect(warning).toBeVisible();
+	await expect(warning).toContainText(
+		"This model does not support thinking. Thinking is disabled for this request; your saved setting is unchanged.",
+	);
+	await expect(high).toHaveAttribute("aria-checked", "true");
+	const saved = await page.evaluate(() =>
+		JSON.parse(localStorage.getItem("naia-config") ?? "{}"),
+	);
+	expect(saved.thinkingLevel).toBe("high");
+	expect(saved.enableThinking).toBe(true);
+
+	await page.setViewportSize({ width: 360, height: 800 });
+	const statusBox = await status.boundingBox();
+	expect(statusBox).not.toBeNull();
+	expect(statusBox!.x + statusBox!.width).toBeLessThanOrEqual(361);
+	await expect(warning).toBeVisible();
 });

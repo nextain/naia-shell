@@ -1313,6 +1313,7 @@ export default {
 	"settings.ollamaReservationLeaseLost": "加速器预留丢失，Ollama 已停止。",
 	"settings.ollamaDisconnected": "未连接 — 请确认 Ollama 服务器正在运行",
 	"settings.vllmDisconnected": "未连接 — 请确认 vLLM 服务器正在运行",
+	"settings.ollamaThinkingUnsupported": "此模型不支持思考，因此本次 Ollama 请求会关闭思考。已保存的设置不会更改。",
 	"settings.modelCurrentVal": "(当前值)",
 	"settings.zaiHint": "请输入订阅 Z.AI Coding Plan 后颁发的 API Key。",
 	"settings.vllmVoiceHint": "语音按钮 → 自动连接 ws://[vLLM Host]/ws (MiniCPM-o 音频输出)",

@@ -23,6 +23,10 @@ import {
 	onAiInterferenceEvent,
 } from "../lib/ai-interference";
 import { appRegistry } from "../lib/app-registry";
+import {
+	parseOllamaThinkingUnsupportedMessage,
+	recordOllamaThinkingUnsupportedStatus,
+} from "../lib/ollama-thinking-status";
 import { writeAppSandboxFile } from "../lib/app-sandbox";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
@@ -1450,6 +1454,13 @@ export function ChatArea({
 				chunk = JSON.parse(raw) as Record<string, unknown>;
 			} catch {
 				return;
+			}
+			if (
+				chunk.type === "log_entry" &&
+				chunk.level === "ollama_thinking_unsupported"
+			) {
+				const status = parseOllamaThinkingUnsupportedMessage(chunk.message);
+				if (status) recordOllamaThinkingUnsupportedStatus(status);
 			}
 			if (typeof chunk.activityId !== "string") return;
 			if (

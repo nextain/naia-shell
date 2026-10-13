@@ -174,6 +174,7 @@ describe("사용자에게 보이는 문구는 i18n 을 지난다 (UC-QUALITY-I18
 			"apps.removeConfirm",
 			"adk.setup.recreateConfirm",
 			"voice.ref.errRecord",
+			"settings.ollamaThinkingUnsupported",
 		];
 		for (const locale of LOCALES) {
 			for (const key of required) {
