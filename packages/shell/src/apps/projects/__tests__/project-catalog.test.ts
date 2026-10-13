@@ -8,105 +8,147 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const project = (
-	directoryName: string,
+	projectId: string,
+	sourcePath = `projects/naia-pj-adk/projects/${projectId}`,
 	extra: Record<string, unknown> = {},
 ) => ({
-	directoryName,
-	projectId: directoryName,
-	name: directoryName,
+	projectPath: `/fixture/naia-adk/${sourcePath}`,
+	sourcePath,
+	projectId,
+	name: projectId,
 	repository: null,
 	issueTracker: null,
-	configErrors: [],
 	...extra,
 });
 
-describe("Project catalog — F-01", () => {
+const truncation = {
+	maxEntries: 200,
+	scannedEntries: 198,
+	moreEntriesAvailable: false,
+	maxRows: 200,
+	shownRows: 2,
+	moreRowsAvailable: false,
+	maxConfigFileBytes: 65536,
+	oversizedFiles: [],
+};
+
+describe("Project catalog — naia-adk scan", () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it("lists ready projects and excludes both template directories", () => {
+	it("normalizes discovered projects and keeps source paths relative", () => {
 		const result = normalizeProjectCatalog({
 			projects: [
-				project("_template"),
-				project("_template-local"),
-				project("example-project", {
-					projectId: "example-project-id",
-					repository: "example-org/example-project",
+				project("aipol", undefined, {
+					name: "AI Policy",
+					repository: "octocat/Hello-World",
 					issueTracker: "github",
 				}),
 			],
+			catalogErrors: [],
+			truncation,
 		});
 
 		expect(result.projects).toEqual([
 			{
-				directoryName: "example-project",
-				projectId: "example-project-id",
-				name: "example-project",
-				repository: "example-org/example-project",
+				projectPath: "/fixture/naia-adk/projects/naia-pj-adk/projects/aipol",
+				sourcePath: "projects/naia-pj-adk/projects/aipol",
+				projectId: "aipol",
+				name: "AI Policy",
+				repository: "octocat/Hello-World",
 				issueTracker: "github",
-				configErrors: [],
 			},
 		]);
+		expect(result.catalogErrors).toEqual([]);
+		expect(result.truncation).toEqual(truncation);
 	});
 
-	it("returns an empty list when the checkout contains no projects", () => {
-		expect(normalizeProjectCatalog({ projects: [] })).toEqual({ projects: [] });
+	it("returns an empty list without fabricating errors", () => {
+		expect(
+			normalizeProjectCatalog({ projects: [], catalogErrors: [] }),
+		).toEqual({ projects: [], catalogErrors: [] });
 	});
 
-	it("preserves entry and file-size cutoff evidence from the native scan", () => {
-		const truncation = {
-			maxEntries: 200,
-			scannedEntries: 200,
-			moreEntriesAvailable: true,
-			maxConfigFileBytes: 65536,
-			oversizedFiles: [
+	it("preserves scan-entry, display-row, and oversized-file evidence", () => {
+		const result = normalizeProjectCatalog({
+			projects: [],
+			catalogErrors: [
 				{
-					file: "projects/large/project.yaml",
-					observedBytes: 65537,
+					path: "projects/group/projects/demo/project.yaml",
+					reason: "file_too_large",
 				},
 			],
-		};
-		expect(
-			normalizeProjectCatalog({ projects: [], truncation }).truncation,
-		).toEqual(truncation);
-	});
-
-	it("preserves supported project configuration errors", () => {
-		const reasons = [
-			"missing",
-			"unreadable",
-			"invalid_yaml",
-			"missing_project_id",
-			"unsafe_path",
-		] as const;
-		const issues = reasons.map((reason) => ({
-			file: `projects/demo/${reason}`,
-			reason,
-		}));
-		const result = normalizeProjectCatalog({
-			projects: [project("demo", { configErrors: issues })],
+			truncation: {
+				...truncation,
+				scannedEntries: 200,
+				moreEntriesAvailable: true,
+				shownRows: 1,
+				maxRows: 200,
+				oversizedFiles: [
+					{
+						file: "projects/group/projects/demo/project.yaml",
+						observedBytes: 90000,
+					},
+				],
+			},
 		});
 
-		expect(result.projects[0].configErrors).toEqual(issues);
+		expect(result.catalogErrors[0].reason).toBe("file_too_large");
+		expect(result.truncation?.moreEntriesAvailable).toBe(true);
+		expect(result.truncation?.oversizedFiles[0].observedBytes).toBe(90000);
 	});
 
-	it("rejects malformed native responses rather than presenting an empty success", () => {
+	it("accepts known catalog error reasons and rejects unknown reasons", () => {
+		const result = normalizeProjectCatalog({
+			projects: [],
+			catalogErrors: [
+				{
+					path: "projects/group/projects/demo/project.yaml",
+					reason: "invalid_yaml",
+				},
+				{ path: "projects/group/projects/linked", reason: "unsafe_path" },
+			],
+		});
+		expect(result.catalogErrors).toHaveLength(2);
 		expect(() =>
-			normalizeProjectCatalog({ projects: [{ directoryName: "broken" }] }),
+			normalizeProjectCatalog({
+				projects: [],
+				catalogErrors: [{ path: "projects/demo", reason: "unknown" }],
+			}),
+		).toThrow("Invalid project catalog issue.");
+	});
+
+	it("rejects absolute or escaping display paths", () => {
+		expect(() =>
+			normalizeProjectCatalog({
+				projects: [project("escape", "../outside")],
+			}),
+		).toThrow("Invalid project catalog entry.");
+		expect(() =>
+			normalizeProjectCatalog({
+				projects: [project("absolute", "/private/path")],
+			}),
+		).toThrow("Invalid project catalog entry.");
+	});
+
+	it("rejects malformed native responses instead of presenting an empty success", () => {
+		expect(() =>
+			normalizeProjectCatalog({ projects: [{ projectId: "broken" }] }),
 		).toThrow("Invalid project catalog entry.");
 		expect(() => normalizeProjectCatalog({ projects: null })).toThrow(
 			"Invalid project catalog response.",
 		);
 	});
 
-	it("scans only the checkout selected by the user", async () => {
+	it("scans the configured naia-adk path", async () => {
 		vi.mocked(invoke).mockResolvedValue({
-			projects: [project("example-project")],
+			projects: [project("example")],
+			catalogErrors: [],
 		});
-		const result = await scanProjectCatalog("/selected/workspace");
+		const result = await scanProjectCatalog("/selected/naia-adk");
 
-		expect(invoke).toHaveBeenCalledWith("projects_scan_checkout", {
-			checkoutPath: "/selected/workspace",
+		expect(invoke).toHaveBeenCalledWith("projects_scan_adk", {
+			adkPath: "/selected/naia-adk",
 		});
-		expect(result.projects[0].projectId).toBe("example-project");
+		expect(result.projects[0].projectId).toBe("example");
 	});
 });

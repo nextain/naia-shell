@@ -2280,6 +2280,32 @@ Test Coverage Map (P02)
 | 빈 목록, 누락·잘못된 설정, 복구를 위한 다음 조치 | `packages/shell/src-tauri/src/project_catalog.rs` — `empty_projects_directory_returns_an_empty_catalog`, `reports_missing_and_malformed_project_configuration`; `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — `describe("Project catalog — F-01")`의 빈 목록·각 설정 오류 사례 | `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts` — `reads nested project metadata, ignores unrelated settings, and excludes templates`; `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 빈 목록·설정 오류와 다음 조치 사례 |
 | 키보드 조작, 탭 의미·상태, 좁은 화면 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` — `describe("ProjectsApp — F-01")`의 탭 키보드·접근성 사례 | `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 키보드·좁은 화면 사례 |
 
+## UC-PROJECT-APP-SINGLE-OPEN-756-S2 — naia-adk에서 프로젝트 하나를 열고 전환한다 (#756 단계 2)
+
+사용자는 셸에 저장된 naia-adk의 `projects/`에서 naia-pj-adk 양식 프로젝트를 검색한다. 경로가 저장되지 않았거나 유효하지 않을 때만 naia-adk 폴더를 한 번 선택하고, `projects/` 검증에 성공한 뒤 경로를 저장한다. 탐색은 `projects/`의 1단계 디렉터리와 각 디렉터리의 직계 하위인 2단계 디렉터리만 프로젝트 루트 후보로 확인하며, 각 후보의 `projects/<이름>/project.yaml`에서 중첩된 `project.id`가 있는 항목을 찾는다. 프로젝트를 열면 검색과 목록이 사라지고 현재 프로젝트 이름과 ‘다른 프로젝트 열기’가 있는 작은 머리줄, 코딩 에이전트·대시보드·내부 이슈의 세 탭만 표시한다. 탭을 바꾸면 프로젝트별 상태를 저장하고, 다른 프로젝트를 열거나 셸을 다시 시작해도 각 프로젝트의 마지막 탭과 마지막 프로젝트를 복원한다. 단계 2의 세 탭은 빈 화면이며 코딩 에이전트·대시보드·내부 이슈 공급원을 연결하지 않는다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 저장된 naia-adk 경로가 있으면 폴더 질문 없이 카탈로그를 읽는다. 경로가 없거나 열리지 않을 때는 폴더를 한 번 묻고, 성공적으로 검증한 뒤에만 저장한다. |
+| 목록 | 프로젝트 ID와 naia-adk 기준 상대 출처를 보여 주고 이름·ID·repository·출처로 검색한다. 체크아웃을 선택하거나 바꾸는 단계는 없다. |
+| 진행 | 카탈로그를 읽는 중임을 알리고 중복 선택을 막는다. |
+| 프로젝트 열기 | 목록과 검색이 사라지고 작은 머리줄, 세 탭과 현재 탭의 빈 화면만 표시한다. 프로젝트별 탭 상태를 저장한다. |
+| 전환 | ‘다른 프로젝트 열기’에서 목록을 다시 열고 선택 즉시 전환한다. 목록에서 돌아오기를 선택하거나 목록을 취소하면 현재 프로젝트와 탭으로 복귀한다. |
+| 재시작·복구 | 셸 재시작 때 마지막 프로젝트와 탭을 복원한다. 프로젝트가 없어졌거나 상태를 읽지 못하면 없는 앱 항목을 만들지 않고 목록에서 다시 고르게 한다. 저장 경로 오류는 다시 선택과 설정의 naia-adk 경로 재설정 안내를 제공한다. |
+| 오류·잘림 | 상대 경로와 사유를 표시한다. 전체 순회 항목 및 표시 행 200개, `project.yaml` 64 KiB 상한을 알리고 초과 파일 수와 크기를 표시한다. |
+| 좁은 폭·키보드 | 목록 검색과 세 탭을 읽고 조작할 수 있으며 탭은 방향키·Home·End를 지원한다. 앱 막대의 프로젝트 앱 항목은 하나다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest·Rust 코드 그룹 | 실 UI Playwright |
+|---|---|---|
+| naia-adk 1·2단 후보 탐색, 중첩 `project.id`, 밑줄 템플릿 및 3단계 이후 제외 | `packages/shell/src-tauri/src/project_catalog.rs` — `discovers_first_and_second_level_candidate_roots_and_skips_deeper_roots`, `lists_only_projects_with_nested_id_and_reports_relative_metadata_errors`; `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — `Project catalog — naia-adk scan` | `packages/shell/e2e/project-app.spec.ts` — saved path / catalog scan; `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts` — `Project catalog native IPC — #756 stage 2` |
+| 저장 경로 우선, 경로 없음·무효·취소 복구, 검증 후 경로 저장 | `ProjectsApp.test.tsx` — `loads the saved ADK catalog directly`, `asks once for naia-adk`, `shows path recovery`, `shows a path error`; `project-catalog.test.ts` — `scans the configured naia-adk path` | `project-app.spec.ts` — saved path, first selection, canceled selection |
+| 프로젝트 한 개 열기, 검색 숨김, 다른 프로젝트 열기·취소 복귀, 프로젝트별 탭 저장·복원 | `ProjectsApp.test.tsx` — `opens one project at a time`, `restores the last project and stage`, `returns to the opened project`; `project-session.test.ts` — save/load and malformed state | `project-app.spec.ts` — one-at-a-time switch, cancel return, shell reload |
+| 마지막 프로젝트 부재 복구와 고정 앱 막대 항목 | `ProjectsApp.test.tsx` — `shows a recovery notice`, single built-in app registration | `project-app.spec.ts` — one `data-app-id="projects"` entry after discovery and switching |
+| 상대 오류 경로, 밑줄·심볼릭 제외, 행·순회·YAML 크기 상한과 잘림 | `project_catalog.rs` — symlink, invalid metadata, max entries, oversized metadata tests; `project-catalog.test.ts` — response limits and safe source path | `project-app.spec.ts` — metadata error and truncation notices |
+| 키보드 접근성과 좁은 화면 | `ProjectsApp.test.tsx` — accessible tabs and key navigation | `project-app.spec.ts` — narrow viewport and arrow-key tabs |
+
 
 
 

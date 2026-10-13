@@ -15,77 +15,94 @@ mkdirSync(CAPTURE_DIR, { recursive: true });
 const READY_CATALOG = {
 	projects: [
 		{
-			directoryName: "example-app",
+			projectPath: "/fixture/naia-adk/projects/team/projects/example-app",
+			sourcePath: "projects/team/projects/example-app",
 			projectId: "example-app",
 			name: "Example App",
-			repository: "example-org/example-app",
+			repository: "octocat/Hello-World",
 			issueTracker: "github",
-			configErrors: [],
 		},
 		{
-			directoryName: "example-library",
+			projectPath: "/fixture/naia-adk/projects/team/projects/example-library",
+			sourcePath: "projects/team/projects/example-library",
 			projectId: "example-library",
 			name: "Example Library",
-			repository: "example-org/example-library",
+			repository: "octocat/Hello-World",
 			issueTracker: "github",
-			configErrors: [],
 		},
 	],
+	catalogErrors: [],
+	truncation: {
+		maxEntries: 200,
+		scannedEntries: 8,
+		moreEntriesAvailable: false,
+		maxRows: 200,
+		shownRows: 2,
+		moreRowsAvailable: false,
+		maxConfigFileBytes: 65536,
+		oversizedFiles: [],
+	},
 };
 
 const TAURI_MOCK = `
 (function() {
-	window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
-	window.__TAURI_EVENT_PLUGIN_INTERNALS__ = window.__TAURI_EVENT_PLUGIN_INTERNALS__ || {};
-	window.__TAURI_INTERNALS__.metadata = {
-		currentWindow: { label: "main" },
-		currentWebview: { windowLabel: "main", label: "main" },
-	};
-	var callbacks = new Map();
-	var callbackId = 1;
-	window.__TAURI_INTERNALS__.transformCallback = function(fn, once) {
-		var id = callbackId++;
-		callbacks.set(id, function(data) {
-			if (once) callbacks.delete(id);
-			return fn && fn(data);
-		});
-		return id;
-	};
-	window.__TAURI_INTERNALS__.unregisterCallback = function(id) { callbacks.delete(id); };
-	window.__TAURI_INTERNALS__.convertFileSrc = function(path, protocol) {
-		return (protocol || "asset") + "://localhost/" + encodeURIComponent(path);
-	};
-	window.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener = function() {};
-	var state = window.__PROJECT_E2E__ = {
-		calls: [],
-		checkoutPath: "/fixture/example-checkout",
-		result: { projects: [] },
-		pending: false,
-		failuresRemaining: 0,
-	};
-	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
-		state.calls.push({ cmd: cmd, args: args || null });
-		if (cmd === "plugin:event|listen") return args.handler;
-		if (cmd === "plugin:event|emit" || cmd === "plugin:event|unlisten") return null;
-		if (cmd === "plugin:dialog|open") return state.checkoutPath;
-		if (cmd === "projects_scan_checkout") {
-			if (state.pending) return new Promise(function(resolve) { state.resolveScan = resolve; });
-			if (state.failuresRemaining > 0) {
-				state.failuresRemaining--;
-				throw new Error("checkout cannot be read");
-			}
-			return state.result;
-		}
-		if (cmd === "send_to_agent_command" || cmd === "cancel_stream" || cmd === "frontend_log") return null;
-		return undefined;
-	};
+\twindow.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
+\twindow.__TAURI_EVENT_PLUGIN_INTERNALS__ = window.__TAURI_EVENT_PLUGIN_INTERNALS__ || {};
+\twindow.__TAURI_INTERNALS__.metadata = {
+\t\tcurrentWindow: { label: "main" },
+\t\tcurrentWebview: { windowLabel: "main", label: "main" },
+\t};
+\tvar callbacks = new Map();
+\tvar callbackId = 1;
+\twindow.__TAURI_INTERNALS__.transformCallback = function(fn, once) {
+\t\tvar id = callbackId++;
+\t\tcallbacks.set(id, function(data) {
+\t\t\tif (once) callbacks.delete(id);
+\t\t\treturn fn && fn(data);
+\t\t});
+\t\treturn id;
+\t};
+\twindow.__TAURI_INTERNALS__.unregisterCallback = function(id) { callbacks.delete(id); };
+\twindow.__TAURI_INTERNALS__.convertFileSrc = function(path, protocol) {
+\t\treturn (protocol || "asset") + "://localhost/" + encodeURIComponent(path);
+\t};
+\twindow.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener = function() {};
+\tvar state = window.__PROJECT_E2E__ = {
+\t\tcalls: [],
+\t\tdialogPath: "/fixture/naia-adk",
+\t\tdialogCount: 0,
+\t\tresult: { projects: [], catalogErrors: [] },
+\t\tpending: false,
+\t\tfailuresRemaining: 0,
+\t};
+\twindow.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
+\t\tstate.calls.push({ cmd: cmd, args: args || null });
+\t\tif (cmd === "plugin:event|listen") return args.handler;
+\t\tif (cmd === "plugin:event|emit" || cmd === "plugin:event|unlisten") return null;
+\t\tif (cmd === "plugin:dialog|open") { state.dialogCount++; return state.dialogPath; }
+\t\tif (cmd === "write_naia_path_cache") return null;
+\t\tif (cmd === "projects_scan_adk") {
+\t\t\tif (state.pending) return new Promise(function(resolve) { state.resolveScan = resolve; });
+\t\t\tif (state.failuresRemaining > 0) {
+\t\t\t\tstate.failuresRemaining--;
+\t\t\t\tthrow new Error("naia-adk projects cannot be read");
+\t\t\t}
+\t\t\treturn state.result;
+\t\t}
+\t\tif (cmd === "send_to_agent_command" || cmd === "cancel_stream" || cmd === "frontend_log") return null;
+\t\treturn undefined;
+\t};
 })();
 `;
 
-async function boot(page: Page) {
+async function boot(page: Page, seedAdkPath = true) {
 	await page.addInitScript(TAURI_MOCK);
 	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
-	await page.addInitScript({ content: SEED_ADK_PATH });
+	await page.addInitScript({
+		content: seedAdkPath
+			? SEED_ADK_PATH
+			: 'localStorage.removeItem("naia-adk-path");',
+	});
 	await page.addInitScript(() => {
 		localStorage.setItem(
 			"naia-config",
@@ -100,14 +117,19 @@ async function boot(page: Page) {
 	});
 	await page.goto("/");
 	await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
+}
+
+async function setCatalog(page: Page, catalog: unknown) {
+	await page.evaluate((value) => {
+		(window as any).__PROJECT_E2E__.result = value;
+	}, catalog);
+}
+
+async function openProjectApp(page: Page) {
 	await page.locator('button[data-app-id="projects"]').click();
 	await expect(
 		page.getByRole("heading", { name: "Choose a project", level: 1 }),
 	).toBeVisible();
-}
-
-async function chooseCheckout(page: Page) {
-	await page.getByRole("button", { name: "Choose checkout" }).click();
 }
 
 async function capture(page: Page, name: string) {
@@ -116,194 +138,267 @@ async function capture(page: Page, name: string) {
 		.screenshot({ path: resolve(CAPTURE_DIR, name) });
 }
 
-test.describe("Project app — stage 1", () => {
-	test("shows the basic state and a clear checkout action", async ({
+test.describe("Project app — stage 2 single-open flow", () => {
+	test("uses the saved naia-adk path without prompting and shows a single catalog entry point", async ({
 		page,
 	}) => {
 		await boot(page);
+		await setCatalog(page, READY_CATALOG);
+		await openProjectApp(page);
 		await expect(
-			page.getByRole("heading", { name: "Choose a naia-pj-adk checkout" }),
+			page.getByRole("button", { name: /Example App/ }),
 		).toBeVisible();
-		await expect(
-			page.getByRole("button", { name: "Choose checkout" }),
-		).toBeVisible();
-		await capture(page, "project-app-basic.png");
+		await expect(page.locator('button[data-app-id="projects"]')).toHaveCount(1);
+		const calls = await page.evaluate(
+			() => (window as any).__PROJECT_E2E__.calls,
+		);
+		expect(
+			calls.filter(
+				(call: { cmd: string }) => call.cmd === "plugin:dialog|open",
+			),
+		).toHaveLength(0);
+		expect(
+			calls.some((call: { cmd: string }) => call.cmd === "projects_scan_adk"),
+		).toBe(true);
+		await capture(page, "project-app-catalog.png");
 	});
 
-	test("shows loading while the selected checkout is being scanned", async ({
+	test("asks once when the saved ADK path is unreadable, then stores the selected valid path", async ({
 		page,
 	}) => {
+		await boot(page);
+		await setCatalog(page, READY_CATALOG);
+		await page.evaluate(() => {
+			(window as any).__PROJECT_E2E__.failuresRemaining = 1;
+		});
+		await openProjectApp(page);
+		await expect(page.getByRole("button", { name: /Example App/ })).toBeVisible(
+			{ timeout: 30_000 },
+		);
+		await expect
+			.poll(() => page.evaluate(() => localStorage.getItem("naia-adk-path")))
+			.toBe("/fixture/naia-adk");
+		const state = await page.evaluate(() => (window as any).__PROJECT_E2E__);
+		expect(state.dialogCount).toBe(1);
+		expect(
+			state.calls.filter(
+				(call: { cmd: string }) => call.cmd === "projects_scan_adk",
+			),
+		).toHaveLength(2);
+		expect(
+			state.calls.filter(
+				(call: { cmd: string }) => call.cmd === "projects_scan_adk",
+			)[1].args,
+		).toEqual({
+			adkPath: "/fixture/naia-adk",
+		});
+	});
+
+	test("shows loading while scanning the saved catalog", async ({ page }) => {
 		await boot(page);
 		await page.evaluate(() => {
 			(window as any).__PROJECT_E2E__.pending = true;
 		});
-		await chooseCheckout(page);
+		await openProjectApp(page);
 		await expect(
 			page.locator(".projects-app output[aria-live='polite']"),
-		).toContainText("Reading projects and configuration");
+		).toContainText("Reading projects from naia-adk");
 		await capture(page, "project-app-loading.png");
-	});
-
-	test("searches by repository, opens a project, and keeps its title in all three views", async ({
-		page,
-	}) => {
-		await boot(page);
-		await page.evaluate((result) => {
-			(window as any).__PROJECT_E2E__.result = result;
+		await page.evaluate((catalog) => {
+			const state = (window as any).__PROJECT_E2E__;
+			state.pending = false;
+			state.resolveScan(catalog);
 		}, READY_CATALOG);
-		await chooseCheckout(page);
-		const search = page.getByRole("searchbox", { name: "Search projects" });
-		await expect(search).toBeVisible();
-		await search.fill("example-org/example-app");
 		await expect(
 			page.getByRole("button", { name: /Example App/ }),
 		).toBeVisible();
+	});
+
+	test("opens one project, hides search, and restores each project's stage when switching", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, READY_CATALOG);
+		await openProjectApp(page);
+		const search = page.getByRole("searchbox", { name: "Search projects" });
+		await search.fill("octocat/Hello-World");
 		await expect(
 			page.getByRole("button", { name: /Example Library/ }),
-		).toHaveCount(0);
+		).toBeVisible();
 		await page.getByRole("button", { name: /Example App/ }).click();
 		await expect(
 			page.getByRole("heading", { name: "Example App", level: 1 }),
 		).toBeVisible();
-		for (const label of ["Coding Agent", "Dashboard", "Internal Issues"]) {
-			const tab = page.getByRole("tab", { name: label });
-			await tab.click();
-			await expect(tab).toHaveAttribute("aria-selected", "true");
-			await expect(
-				page.getByRole("heading", { name: "Example App", level: 1 }),
-			).toBeVisible();
-			await expect(page.getByRole("tabpanel")).toContainText(
-				"stage 1 placeholder",
-			);
-		}
-		await capture(page, "project-app-success.png");
-		await page.getByRole("tab", { name: "Coding Agent" }).focus();
-		await page.keyboard.press("ArrowRight");
+		await expect(page.getByRole("searchbox")).toHaveCount(0);
+		await expect(
+			page.getByRole("button", { name: "Open another project" }),
+		).toBeVisible();
+		await expect(page.locator(".projects-app").getByRole("tab")).toHaveCount(3);
+		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.getByRole("button", { name: "Open another project" }).click();
+		await expect(page.getByRole("searchbox")).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Back to Example App" }),
+		).toBeVisible();
+		await page.getByRole("button", { name: /Example Library/ }).click();
+		await page.getByRole("tab", { name: "Internal Issues" }).click();
+		await page.getByRole("button", { name: "Open another project" }).click();
+		await page.getByRole("button", { name: /Example App/ }).click();
+		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
+			"aria-selected",
+			"true",
+		);
+		await expect(page.getByRole("tabpanel")).toContainText(
+			"placeholder in stage 2",
+		);
+		await expect(page.locator('button[data-app-id="projects"]')).toHaveCount(1);
+		await capture(page, "project-app-opened.png");
+	});
+
+	test("reopens the last project and its stage after a shell reload", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, READY_CATALOG);
+		await openProjectApp(page);
+		await page.getByRole("button", { name: /Example Library/ }).click();
+		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.reload();
+		await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
+		await setCatalog(page, READY_CATALOG);
+		await page.locator('button[data-app-id="projects"]').click();
+		await expect(
+			page.getByRole("heading", { name: "Example Library", level: 1 }),
+		).toBeVisible();
 		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
 			"aria-selected",
 			"true",
 		);
 	});
 
-	test("shows an actionable empty state when no project exists", async ({
+	test("returns to the current project when the other-project list is canceled", async ({
 		page,
 	}) => {
 		await boot(page);
-		await page.evaluate(() => {
-			(window as any).__PROJECT_E2E__.result = { projects: [] };
+		await setCatalog(page, READY_CATALOG);
+		await openProjectApp(page);
+		await page.getByRole("button", { name: /Example App/ }).click();
+		await page.getByRole("button", { name: "Open another project" }).click();
+		await page.getByRole("button", { name: "Back to Example App" }).click();
+		await expect(
+			page.getByRole("heading", { name: "Example App", level: 1 }),
+		).toBeVisible();
+		await expect(page.getByRole("searchbox")).toHaveCount(0);
+	});
+
+	test("shows the empty catalog and relative metadata errors", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, {
+			projects: [],
+			catalogErrors: [
+				{
+					path: "projects/team/projects/broken/project.yaml",
+					reason: "missing_project_id",
+				},
+			],
 		});
-		await chooseCheckout(page);
+		await openProjectApp(page);
 		await expect(
 			page.getByRole("heading", { name: "No projects found" }),
 		).toBeVisible();
 		await expect(
-			page.getByText(/Check the checkout's projects\//),
+			page.getByText("projects/team/projects/broken/project.yaml"),
 		).toBeVisible();
-		await capture(page, "project-app-empty.png");
+		await expect(page.getByText("The project ID is missing.")).toBeVisible();
+		await capture(page, "project-app-empty-and-error.png");
 	});
 
-	test("shows scan cutoffs as information instead of an error", async ({
+	test("reports scan entry, display-row, and file-size cutoffs", async ({
 		page,
 	}) => {
 		await boot(page);
-		await page.evaluate(
-			(result) => {
-				(window as any).__PROJECT_E2E__.result = result;
-			},
-			{
-				...READY_CATALOG,
-				truncation: {
-					maxEntries: 200,
-					scannedEntries: 200,
-					moreEntriesAvailable: true,
-					maxConfigFileBytes: 65536,
-					oversizedFiles: [
-						{
-							file: "projects/large/project.yaml",
-							observedBytes: 65537,
-						},
-					],
+		await setCatalog(page, {
+			...READY_CATALOG,
+			catalogErrors: [
+				{
+					path: "projects/team/projects/large/project.yaml",
+					reason: "file_too_large",
 				},
+			],
+			truncation: {
+				maxEntries: 200,
+				scannedEntries: 200,
+				moreEntriesAvailable: true,
+				maxRows: 200,
+				shownRows: 3,
+				moreRowsAvailable: true,
+				maxConfigFileBytes: 65536,
+				oversizedFiles: [
+					{
+						file: "projects/team/projects/large/project.yaml",
+						observedBytes: 70000,
+					},
+				],
 			},
-		);
-		await chooseCheckout(page);
-
+		});
+		await openProjectApp(page);
 		const notice = page.getByRole("status", {
 			name: "Some project details were skipped",
 		});
-		await expect(notice).toContainText("200 of 200 project entries");
-		await expect(notice).toContainText("projects/large/project.yaml");
-		await expect(notice).toContainText("65537 bytes");
+		await expect(notice).toContainText("200 of 200 directory entries");
+		await expect(notice).toContainText("3 of 200 project and error rows");
+		await expect(notice).toContainText("70000 bytes");
 		await expect(page.locator(".projects-app [role='alert']")).toHaveCount(0);
 		await capture(page, "project-app-truncated.png");
 	});
 
-	test("blocks a missing nested project ID and recovers after choosing a readable checkout", async ({
+	test("shows a recoverable path error after a canceled folder selection", async ({
 		page,
 	}) => {
 		await boot(page);
 		await page.evaluate(() => {
-			(window as any).__PROJECT_E2E__.result = {
-				projects: [
-					{
-						directoryName: "broken-project",
-						projectId: "broken-project",
-						name: "Broken Project",
-						repository: null,
-						issueTracker: null,
-						configErrors: [
-							{
-								file: "projects/broken-project/project.yaml",
-								reason: "missing_project_id",
-							},
-						],
-					},
-				],
-			};
+			(window as any).__PROJECT_E2E__.dialogPath = null;
+			(window as any).__PROJECT_E2E__.failuresRemaining = 1;
 		});
-		await chooseCheckout(page);
-		await expect(
-			page.getByText("projects/broken-project/project.yaml"),
-		).toBeVisible();
-		await expect(page.getByText("The project ID is missing.")).toBeVisible();
-		await expect(
-			page.getByText(
-				"This project has a configuration problem and cannot be opened.",
-			),
-		).toBeVisible();
-		await capture(page, "project-app-config-error.png");
-
-		await page.evaluate((result) => {
-			(window as any).__PROJECT_E2E__.checkoutPath = "/fixture/second-checkout";
-			(window as any).__PROJECT_E2E__.result = result;
+		await openProjectApp(page);
+		await expect(page.getByRole("alert")).toContainText(
+			"Choose a naia-adk folder containing a readable projects/",
+		);
+		await expect(page.getByRole("alert")).toContainText(
+			"Settings > naia-adk path reset",
+		);
+		await capture(page, "project-app-path-error.png");
+		await page.evaluate((catalog) => {
+			const state = (window as any).__PROJECT_E2E__;
+			state.dialogPath = "/fixture/naia-adk";
+			state.result = catalog;
 		}, READY_CATALOG);
-		await page.getByRole("button", { name: "Change checkout" }).click();
-		await page.getByRole("button", { name: /Example App/ }).click();
+		await page.getByRole("button", { name: "Choose folder again" }).click();
 		await expect(
-			page.getByRole("heading", { name: "Example App", level: 1 }),
+			page.getByRole("button", { name: /Example App/ }),
 		).toBeVisible();
 	});
 
-	test("keeps project selection usable at a narrow viewport", async ({
+	test("keeps the project view usable at a narrow viewport with keyboard tabs", async ({
 		page,
 	}) => {
 		await boot(page);
+		await setCatalog(page, READY_CATALOG);
+		await openProjectApp(page);
 		await page.getByTitle("채팅 숨기기 (Ctrl+B)").click();
 		await expect(page.locator(".naia-overlay")).toHaveCount(0);
 		await page.setViewportSize({ width: 390, height: 844 });
-		await page.evaluate((result) => {
-			(window as any).__PROJECT_E2E__.result = result;
-		}, READY_CATALOG);
-		await chooseCheckout(page);
 		await page.getByRole("button", { name: /Example App/ }).click();
-		await expect(
-			page.getByRole("heading", { name: "Example App", level: 1 }),
-		).toBeVisible();
-		await capture(page, "project-app-narrow.png");
-		await expect(page.locator(".projects-app__layout")).toHaveCSS(
-			"grid-template-columns",
-			/\d+px/,
+		const coding = page.getByRole("tab", { name: "Coding Agent" });
+		await coding.focus();
+		await page.keyboard.press("ArrowRight");
+		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
+			"aria-selected",
+			"true",
 		);
+		await capture(page, "project-app-narrow.png");
 		const overflow = await page
 			.locator(".projects-app")
 			.evaluate((node) => node.scrollWidth > node.clientWidth);

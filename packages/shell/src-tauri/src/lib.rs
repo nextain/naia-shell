@@ -14347,7 +14347,7 @@ pub fn run() {
             ego_host_bridge::ego_host_reconcile_lease, ego_host_bridge::ego_host_ensure_dirs,
             ego_host_bridge::ego_host_write_env_files, ego_host_bridge::ego_host_wait_pid_exit,
             list_skills,
-            project_catalog::projects_scan_checkout,
+            project_catalog::projects_scan_adk,
             frontend_log,
             list_stt_models,
             download_stt_model,

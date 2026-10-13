@@ -2,27 +2,31 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type ProjectConfigIssueReason =
 	| "missing"
-	| "unreadable"
+	| "file_unreadable"
 	| "invalid_yaml"
 	| "missing_project_id"
-	| "unsafe_path";
+	| "unsafe_path"
+	| "directory_unreadable"
+	| "entry_unreadable"
+	| "file_too_large";
 
-export interface ProjectConfigIssue {
-	file: string;
+export interface CatalogIssue {
+	path: string;
 	reason: ProjectConfigIssueReason;
 }
 
 export interface CatalogProject {
-	directoryName: string;
+	projectPath: string;
+	sourcePath: string;
 	projectId: string;
 	name: string;
 	repository: string | null;
 	issueTracker: string | null;
-	configErrors: ProjectConfigIssue[];
 }
 
 export interface ProjectCatalog {
 	projects: CatalogProject[];
+	catalogErrors: CatalogIssue[];
 	truncation?: ProjectCatalogTruncation;
 }
 
@@ -30,6 +34,9 @@ export interface ProjectCatalogTruncation {
 	maxEntries: number;
 	scannedEntries: number;
 	moreEntriesAvailable: boolean;
+	maxRows: number;
+	shownRows: number;
+	moreRowsAvailable: boolean;
 	maxConfigFileBytes: number;
 	oversizedFiles: Array<{
 		file: string;
@@ -37,13 +44,15 @@ export interface ProjectCatalogTruncation {
 	}>;
 }
 
-const TEMPLATE_DIRECTORIES = new Set(["_template", "_template-local"]);
 const ISSUE_REASONS = new Set<ProjectConfigIssueReason>([
 	"missing",
-	"unreadable",
+	"file_unreadable",
 	"invalid_yaml",
 	"missing_project_id",
 	"unsafe_path",
+	"directory_unreadable",
+	"entry_unreadable",
+	"file_too_large",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -54,40 +63,43 @@ function optionalString(value: unknown): string | null {
 	return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function parseIssue(value: unknown): ProjectConfigIssue {
-	if (!isRecord(value)) throw new Error("Invalid project configuration issue.");
-	const file = optionalString(value.file);
+function parseIssue(value: unknown): CatalogIssue {
+	if (!isRecord(value)) throw new Error("Invalid project catalog issue.");
+	const path = optionalString(value.path);
 	const reason = value.reason;
 	if (
-		!file ||
+		!path ||
 		typeof reason !== "string" ||
 		!ISSUE_REASONS.has(reason as ProjectConfigIssueReason)
 	) {
-		throw new Error("Invalid project configuration issue.");
+		throw new Error("Invalid project catalog issue.");
 	}
-	return { file, reason: reason as ProjectConfigIssueReason };
+	return { path, reason: reason as ProjectConfigIssueReason };
 }
 
 function parseProject(value: unknown): CatalogProject {
 	if (!isRecord(value)) throw new Error("Invalid project catalog entry.");
-	const directoryName = optionalString(value.directoryName);
+	const projectPath = optionalString(value.projectPath);
+	const sourcePath = optionalString(value.sourcePath);
 	const projectId = optionalString(value.projectId);
 	const name = optionalString(value.name);
 	if (
-		!directoryName ||
+		!projectPath ||
+		!sourcePath ||
 		!projectId ||
 		!name ||
-		!Array.isArray(value.configErrors)
+		sourcePath.startsWith("/") ||
+		sourcePath.split("/").includes("..")
 	) {
 		throw new Error("Invalid project catalog entry.");
 	}
 	return {
-		directoryName,
+		projectPath,
+		sourcePath,
 		projectId,
 		name,
 		repository: optionalString(value.repository),
 		issueTracker: optionalString(value.issueTracker),
-		configErrors: value.configErrors.map(parseIssue),
 	};
 }
 
@@ -98,6 +110,8 @@ function parseProjectCatalogTruncation(
 	if (!isRecord(value)) throw new Error("Invalid project catalog truncation.");
 	const maxEntries = value.maxEntries;
 	const scannedEntries = value.scannedEntries;
+	const maxRows = value.maxRows;
+	const shownRows = value.shownRows;
 	const maxConfigFileBytes = value.maxConfigFileBytes;
 	if (
 		typeof maxEntries !== "number" ||
@@ -108,6 +122,14 @@ function parseProjectCatalogTruncation(
 		scannedEntries < 0 ||
 		scannedEntries > maxEntries ||
 		typeof value.moreEntriesAvailable !== "boolean" ||
+		typeof maxRows !== "number" ||
+		!Number.isSafeInteger(maxRows) ||
+		maxRows <= 0 ||
+		typeof shownRows !== "number" ||
+		!Number.isSafeInteger(shownRows) ||
+		shownRows < 0 ||
+		shownRows > maxRows ||
+		typeof value.moreRowsAvailable !== "boolean" ||
 		typeof maxConfigFileBytes !== "number" ||
 		!Number.isSafeInteger(maxConfigFileBytes) ||
 		maxConfigFileBytes <= 0 ||
@@ -135,6 +157,9 @@ function parseProjectCatalogTruncation(
 		maxEntries,
 		scannedEntries,
 		moreEntriesAvailable: value.moreEntriesAvailable,
+		maxRows,
+		shownRows,
+		moreRowsAvailable: value.moreRowsAvailable,
 		maxConfigFileBytes,
 		oversizedFiles,
 	};
@@ -146,21 +171,20 @@ export function normalizeProjectCatalog(value: unknown): ProjectCatalog {
 		throw new Error("Invalid project catalog response.");
 	}
 	const projects = value.projects.map(parseProject);
-	const visibleProjects = projects.filter(
-		(project) => !TEMPLATE_DIRECTORIES.has(project.directoryName),
-	);
+	const catalogErrors = Array.isArray(value.catalogErrors)
+		? value.catalogErrors.map(parseIssue)
+		: [];
 	const truncation = parseProjectCatalogTruncation(value.truncation);
 	return {
-		projects: visibleProjects,
+		projects,
+		catalogErrors,
 		...(truncation ? { truncation } : {}),
 	};
 }
 
 export async function scanProjectCatalog(
-	checkoutPath: string,
+	adkPath: string,
 ): Promise<ProjectCatalog> {
-	const response = await invoke<unknown>("projects_scan_checkout", {
-		checkoutPath,
-	});
+	const response = await invoke<unknown>("projects_scan_adk", { adkPath });
 	return normalizeProjectCatalog(response);
 }

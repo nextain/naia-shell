@@ -1,49 +1,86 @@
 // @vitest-environment jsdom
 import { invoke } from "@tauri-apps/api/core";
-import {
-	cleanup,
-	fireEvent,
-	render,
-	screen,
-	waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getAdkPath, setAdkPath } from "../../../lib/adk-store";
 import { appRegistry } from "../../../lib/app-registry";
 import { setLocale } from "../../../lib/i18n";
 import { ProjectsApp } from "../ProjectsApp";
+import {
+	PROJECT_SESSION_STORAGE_KEY,
+	saveProjectSession,
+} from "../project-session";
 import { PROJECT_APP_TRANSLATIONS } from "../translations";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
-	open: vi.fn(async () => "/selected/workspace"),
+	open: vi.fn(async () => "/fixture/naia-adk"),
 }));
+vi.mock("../../../lib/adk-store", () => ({
+	getAdkPath: vi.fn(() => localStorage.getItem("naia-adk-path")),
+	setAdkPath: vi.fn(async (path: string) => {
+		localStorage.setItem("naia-adk-path", path.replace(/[/\\]+$/, ""));
+	}),
+}));
+vi.mock("../project-session", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../project-session")>();
+	return {
+		...actual,
+		saveProjectSession: vi.fn(actual.saveProjectSession),
+	};
+});
+
+const makeProject = (projectId: string, sourceRoot = "naia-pj-adk") => ({
+	projectPath: `/fixture/naia-adk/projects/${sourceRoot}/projects/${projectId}`,
+	sourcePath: `projects/${sourceRoot}/projects/${projectId}`,
+	projectId,
+	name: projectId === "example-app" ? "Example App" : "Example Library",
+	repository: `octocat/${projectId}`,
+	issueTracker: "github",
+});
 
 const readyCatalog = {
-	projects: [
-		{
-			directoryName: "example-app",
-			projectId: "example-app",
-			name: "Example App",
-			repository: "example-org/example-app",
-			issueTracker: "github",
-			configErrors: [],
-		},
-	],
+	projects: [makeProject("example-app"), makeProject("example-library")],
+	catalogErrors: [],
+	truncation: {
+		maxEntries: 200,
+		scannedEntries: 9,
+		moreEntriesAvailable: false,
+		maxRows: 200,
+		shownRows: 2,
+		moreRowsAvailable: false,
+		maxConfigFileBytes: 65536,
+		oversizedFiles: [],
+	},
 };
 
-describe("ProjectsApp — F-01", () => {
-	afterEach(cleanup);
+describe("ProjectsApp — single opened project", () => {
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+	});
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
+		const actualSession =
+			await vi.importActual<typeof import("../project-session")>(
+				"../project-session",
+			);
+		vi.mocked(saveProjectSession).mockImplementation(
+			actualSession.saveProjectSession,
+		);
+		localStorage.clear();
+		localStorage.setItem("naia-adk-path", "/fixture/naia-adk");
 		await setLocale("en");
-		vi.mocked(invoke).mockImplementation(async (command) => {
-			if (command === "projects_scan_checkout") return readyCatalog;
-			return null;
-		});
+		vi.mocked(invoke).mockImplementation(async (command) =>
+			command === "projects_scan_adk" ? readyCatalog : null,
+		);
+		vi.mocked(getAdkPath).mockImplementation(() =>
+			localStorage.getItem("naia-adk-path"),
+		);
 	});
 
-	it("registers a built-in keep-alive app without replacing existing app registrations", async () => {
+	it("keeps one built-in project app entry without registering projects dynamically", async () => {
 		const { useAppStore } = await import("../../../stores/app");
 		const appListVersion = useAppStore.getState().appListVersion;
 		await import("../index");
@@ -73,7 +110,6 @@ describe("ProjectsApp — F-01", () => {
 			"zh",
 		];
 		const keys = Object.keys(PROJECT_APP_TRANSLATIONS.en).sort();
-
 		expect(Object.keys(PROJECT_APP_TRANSLATIONS).sort()).toEqual(locales);
 		for (const locale of locales) {
 			const translations =
@@ -87,49 +123,238 @@ describe("ProjectsApp — F-01", () => {
 		}
 	});
 
-	it("shows a loading state, opens a selected project, and keeps its title across all three views", async () => {
-		let finishScan: ((value: typeof readyCatalog) => void) | undefined;
-		vi.mocked(invoke).mockImplementation(async (command) => {
-			if (command === "projects_scan_checkout") {
-				return new Promise((resolve) => {
-					finishScan = resolve;
-				});
-			}
-			return null;
-		});
+	it("loads the saved ADK catalog directly without asking for another folder", async () => {
 		render(<ProjectsApp />);
-		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
 		expect(
-			await screen.findByText("Reading projects and configuration…"),
+			await screen.findByRole("button", { name: /Example App/ }),
 		).toBeTruthy();
-		finishScan?.(readyCatalog);
-
-		const projectButton = await screen.findByRole("button", {
-			name: /Example App/,
-		});
-		fireEvent.click(projectButton);
-		expect(
-			screen.getByRole("heading", { name: "Example App", level: 1 }),
-		).toBeTruthy();
-		for (const label of ["Coding Agent", "Dashboard", "Internal Issues"]) {
-			const tab = screen.getByRole("tab", { name: label });
-			fireEvent.click(tab);
-			expect(tab.getAttribute("aria-selected")).toBe("true");
-			expect(
-				screen.getByRole("heading", { name: "Example App", level: 1 }),
-			).toBeTruthy();
-			expect(screen.getByRole("tabpanel").textContent).toContain(
-				"stage 1 placeholder",
-			);
-		}
-		expect(invoke).toHaveBeenCalledWith("projects_scan_checkout", {
-			checkoutPath: "/selected/workspace",
+		const { open } = await import("@tauri-apps/plugin-dialog");
+		expect(open).not.toHaveBeenCalled();
+		expect(invoke).toHaveBeenCalledWith("projects_scan_adk", {
+			adkPath: "/fixture/naia-adk",
 		});
 	});
 
-	it("supports arrow and boundary-key navigation between accessible tabs", async () => {
+	it("asks once for naia-adk when its saved key is missing and persists only after scanning", async () => {
+		localStorage.removeItem("naia-adk-path");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ workspaceRoot: "/stale/mirror" }),
+		);
 		render(<ProjectsApp />);
-		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
+		expect(
+			await screen.findByRole("button", { name: /Example App/ }),
+		).toBeTruthy();
+		const { open } = await import("@tauri-apps/plugin-dialog");
+		expect(open).toHaveBeenCalledTimes(1);
+		expect(setAdkPath).toHaveBeenCalledWith("/fixture/naia-adk");
+		expect(getAdkPath).toHaveReturnedWith(null);
+		expect(localStorage.getItem("naia-adk-path")).toBe("/fixture/naia-adk");
+		expect(invoke).toHaveBeenCalledWith("projects_scan_adk", {
+			adkPath: "/fixture/naia-adk",
+		});
+	});
+
+	it("shows path recovery and retries after a saved folder fails and the first selection is canceled", async () => {
+		const { open } = await import("@tauri-apps/plugin-dialog");
+		vi.mocked(open)
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce("/fixture/naia-adk");
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command !== "projects_scan_adk") return null;
+			if (
+				vi.mocked(invoke).mock.calls.filter(([name]) => name === command)
+					.length === 1
+			) {
+				throw new Error("saved folder missing");
+			}
+			return readyCatalog;
+		});
+		render(<ProjectsApp />);
+		expect(await screen.findByRole("alert")).toBeTruthy();
+		expect(screen.getByText(/Settings > naia-adk path reset/)).toBeTruthy();
+		expect(open).toHaveBeenCalledTimes(1);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Choose folder again" }),
+		);
+		expect(
+			await screen.findByRole("button", { name: /Example App/ }),
+		).toBeTruthy();
+		expect(open).toHaveBeenCalledTimes(2);
+	});
+
+	it("shows a path error when selection is canceled and can be retried", async () => {
+		localStorage.removeItem("naia-adk-path");
+		const { open } = await import("@tauri-apps/plugin-dialog");
+		vi.mocked(open)
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce("/fixture/naia-adk");
+		render(<ProjectsApp />);
+		expect(await screen.findByRole("alert")).toBeTruthy();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Choose folder again" }),
+		);
+		expect(
+			await screen.findByRole("button", { name: /Example App/ }),
+		).toBeTruthy();
+		expect(open).toHaveBeenCalledTimes(2);
+	});
+
+	it("opens one project at a time and restores each project's saved stage", async () => {
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		expect(
+			screen.getByRole("heading", { name: "Example App", level: 1 }),
+		).toBeTruthy();
+		expect(screen.queryByRole("searchbox")).toBeNull();
+		fireEvent.click(screen.getByRole("tab", { name: "Dashboard" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open another project" }),
+		);
+		expect(
+			screen.getByRole("searchbox", { name: "Search projects" }),
+		).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: "Back to Example App" }),
+		).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: /Example Library/ }));
+		expect(
+			screen.getByRole("heading", { name: "Example Library", level: 1 }),
+		).toBeTruthy();
+		expect(
+			screen
+				.getByRole("tab", { name: "Coding Agent" })
+				.getAttribute("aria-selected"),
+		).toBe("true");
+		fireEvent.click(screen.getByRole("tab", { name: "Internal Issues" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open another project" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /Example App/ }));
+		expect(
+			screen
+				.getByRole("tab", { name: "Dashboard" })
+				.getAttribute("aria-selected"),
+		).toBe("true");
+		const stored = JSON.parse(
+			localStorage.getItem(PROJECT_SESSION_STORAGE_KEY) ?? "{}",
+		);
+		expect(stored.lastProject).toEqual({
+			id: "example-app",
+			path: "/fixture/naia-adk/projects/naia-pj-adk/projects/example-app",
+		});
+		expect(
+			stored.stagesByProjectPath[
+				"/fixture/naia-adk/projects/naia-pj-adk/projects/example-app"
+			],
+		).toBe("dashboard");
+		expect(
+			stored.stagesByProjectPath[
+				"/fixture/naia-adk/projects/naia-pj-adk/projects/example-library"
+			],
+		).toBe("issues");
+	});
+
+	it("restores the last project and stage after remounting", async () => {
+		const first = render(<ProjectsApp />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /Example Library/ }),
+		);
+		fireEvent.click(screen.getByRole("tab", { name: "Dashboard" }));
+		first.unmount();
+		render(<ProjectsApp />);
+		expect(
+			await screen.findByRole("heading", { name: "Example Library", level: 1 }),
+		).toBeTruthy();
+		expect(
+			screen
+				.getByRole("tab", { name: "Dashboard" })
+				.getAttribute("aria-selected"),
+		).toBe("true");
+	});
+
+	it("shows a status message when project session storage fails", async () => {
+		vi.mocked(saveProjectSession).mockReturnValue(false);
+
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+
+		expect(await screen.findByRole("status")).toHaveTextContent(
+			"Project state could not be saved",
+		);
+	});
+
+	it("returns to the opened project when the other-project catalog is canceled", async () => {
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open another project" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "Back to Example App" }),
+		);
+		expect(
+			screen.getByRole("heading", { name: "Example App", level: 1 }),
+		).toBeTruthy();
+		expect(screen.queryByRole("searchbox")).toBeNull();
+	});
+
+	it("shows metadata errors and catalog truncation as relative-path notices", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) =>
+			command === "projects_scan_adk"
+				? {
+						...readyCatalog,
+						catalogErrors: [
+							{
+								path: "projects/group/projects/broken/project.yaml",
+								reason: "invalid_yaml",
+							},
+						],
+						truncation: {
+							...readyCatalog.truncation,
+							scannedEntries: 200,
+							moreEntriesAvailable: true,
+							shownRows: 3,
+							oversizedFiles: [
+								{
+									file: "projects/group/projects/large/project.yaml",
+									observedBytes: 70000,
+								},
+							],
+						},
+					}
+				: null,
+		);
+		render(<ProjectsApp />);
+		expect(
+			await screen.findByText("projects/group/projects/broken/project.yaml"),
+		).toBeTruthy();
+		expect(
+			screen.getByText("projects/group/projects/large/project.yaml"),
+		).toBeTruthy();
+		expect(
+			screen.getByRole("status", { name: "Some project details were skipped" }),
+		).toBeTruthy();
+	});
+
+	it("shows a recovery notice when the last project is no longer in the catalog", async () => {
+		localStorage.setItem(
+			PROJECT_SESSION_STORAGE_KEY,
+			JSON.stringify({
+				version: 1,
+				lastProject: { id: "gone", path: "/fixture/naia-adk/projects/gone" },
+				stagesByProjectPath: {},
+			}),
+		);
+		render(<ProjectsApp />);
+		expect(
+			await screen.findByText(/last project is no longer in the catalog/),
+		).toBeTruthy();
+		expect(screen.getByRole("button", { name: /Example App/ })).toBeTruthy();
+	});
+
+	it("supports arrow and boundary-key navigation between the accessible tabs", async () => {
+		render(<ProjectsApp />);
 		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
 		const coding = screen.getByRole("tab", { name: "Coding Agent" });
 		coding.focus();
@@ -147,110 +372,5 @@ describe("ProjectsApp — F-01", () => {
 			key: "Home",
 		});
 		expect(coding.getAttribute("aria-selected")).toBe("true");
-	});
-
-	it("shows an empty catalog and a next action", async () => {
-		vi.mocked(invoke).mockImplementation(async (command) =>
-			command === "projects_scan_checkout" ? { projects: [] } : null,
-		);
-		render(<ProjectsApp />);
-		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
-		expect(await screen.findByText("No projects found")).toBeTruthy();
-		expect(screen.getByText(/Check the checkout's projects\//)).toBeTruthy();
-	});
-
-	it("shows scan limits as an informational notice with cutoff evidence", async () => {
-		vi.mocked(invoke).mockImplementation(async (command) =>
-			command === "projects_scan_checkout"
-				? {
-						...readyCatalog,
-						truncation: {
-							maxEntries: 200,
-							scannedEntries: 200,
-							moreEntriesAvailable: true,
-							maxConfigFileBytes: 65536,
-							oversizedFiles: [
-								{
-									file: "projects/large/project.yaml",
-									observedBytes: 65537,
-								},
-							],
-						},
-					}
-				: null,
-		);
-		render(<ProjectsApp />);
-		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
-
-		const notice = await screen.findByRole("status", {
-			name: "Some project details were skipped",
-		});
-		expect(notice.textContent).toContain("200 of 200 project entries");
-		expect(notice.textContent).toContain("projects/large/project.yaml");
-		expect(notice.textContent).toContain("65537 bytes");
-		expect(screen.queryByRole("alert")).toBeNull();
-		expect(
-			screen.getByRole("heading", { name: "Select a project" }),
-		).toBeTruthy();
-	});
-
-	it("does not open a project without its nested ID and tells the user what to fix", async () => {
-		vi.mocked(invoke).mockImplementation(async (command) => {
-			if (command !== "projects_scan_checkout") return null;
-			return {
-				projects: [
-					{
-						directoryName: "broken",
-						projectId: "broken",
-						name: "Broken Project",
-						repository: null,
-						issueTracker: null,
-						configErrors: [
-							{
-								file: "projects/broken/project.yaml",
-								reason: "missing_project_id",
-							},
-						],
-					},
-				],
-			};
-		});
-		render(<ProjectsApp />);
-		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
-		expect(
-			await screen.findByText(
-				"This project has a configuration problem and cannot be opened.",
-			),
-		).toBeTruthy();
-		expect(screen.getByText("projects/broken/project.yaml")).toBeTruthy();
-		expect(screen.getByText(/The project ID is missing\./)).toBeTruthy();
-		expect(screen.getByText(/Check the listed file/)).toBeTruthy();
-		expect(
-			screen.getAllByRole("heading", { name: "Select a project" }),
-		).toHaveLength(1);
-	});
-
-	it("shows a recoverable checkout error and retries with a newly selected folder", async () => {
-		let scans = 0;
-		vi.mocked(invoke).mockImplementation(async (command) => {
-			if (command !== "projects_scan_checkout") return null;
-			scans += 1;
-			if (scans === 1) throw new Error("unreadable");
-			return readyCatalog;
-		});
-		const { open } = await import("@tauri-apps/plugin-dialog");
-		vi.mocked(open)
-			.mockResolvedValueOnce("/bad/checkout")
-			.mockResolvedValueOnce("/next/checkout");
-		render(<ProjectsApp />);
-		fireEvent.click(screen.getByRole("button", { name: "Choose checkout" }));
-		expect(await screen.findByRole("alert")).toBeTruthy();
-		fireEvent.click(
-			screen.getByRole("button", { name: "Choose another checkout" }),
-		);
-		await waitFor(() => expect(screen.getByText("checkout")).toBeTruthy());
-		expect(
-			await screen.findByRole("button", { name: /Example App/ }),
-		).toBeTruthy();
 	});
 });

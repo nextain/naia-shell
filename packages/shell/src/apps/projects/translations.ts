@@ -3,23 +3,23 @@ import { type Locale, getLocale } from "../../lib/i18n";
 const english = {
 	"projects.title": "Projects",
 	"projects.chooseTitle": "Choose a project",
-	"projects.checkoutLabel": "Checkout",
-	"projects.chooseCheckout": "Choose checkout",
-	"projects.changeCheckout": "Change checkout",
-	"projects.noCheckoutTitle": "Choose a naia-pj-adk checkout",
+	"projects.checkoutLabel": "Source",
+	"projects.chooseCheckout": "Choose naia-adk folder",
+	"projects.changeCheckout": "Open another project",
+	"projects.noCheckoutTitle": "Choose your naia-adk folder",
 	"projects.noCheckoutHint":
-		"Select the checkout that contains the projects you want to browse. The project views are placeholders in this stage.",
-	"projects.loading": "Reading projects and configuration…",
-	"projects.checkoutError": "This checkout could not be read",
+		"Select the naia-adk folder to browse its projects. The app reads project metadata only. If the saved folder no longer works, choose it again or use Settings > naia-adk path reset.",
+	"projects.loading": "Reading projects from naia-adk…",
+	"projects.checkoutError": "Could not read the naia-adk projects",
 	"projects.checkoutErrorHint":
-		"Choose a naia-pj-adk checkout with a readable projects folder, then try again.",
-	"projects.chooseAnother": "Choose another checkout",
+		"Choose a naia-adk folder containing a readable projects/ directory. You can recover the saved path in Settings > naia-adk path reset.",
+	"projects.chooseAnother": "Choose folder again",
 	"projects.catalogLabel": "Project catalog",
 	"projects.searchLabel": "Search projects",
-	"projects.searchPlaceholder": "Search by name, ID, or repository",
+	"projects.searchPlaceholder": "Search by name, ID, repository, or source",
 	"projects.emptyTitle": "No projects found",
 	"projects.emptyHint":
-		"Check the checkout's projects/ folder or choose another checkout.",
+		"Check naia-adk/projects and its naia-pj-adk project.yaml files, or choose another naia-adk folder.",
 	"projects.noSearchResults": "No projects match this search.",
 	"projects.unavailable": "Unavailable",
 	"projects.configError":
@@ -31,7 +31,7 @@ const english = {
 	"projects.fileInvalid": "is invalid.",
 	"projects.projectIdMissing": "The project ID is missing.",
 	"projects.unsafePath":
-		"The file points outside the selected checkout and was not read.",
+		"The path points outside the naia-adk folder and was not read.",
 	"projects.selected": "Selected",
 	"projects.selectedProject": "Selected project",
 	"projects.tabsLabel": "Project views",
@@ -39,25 +39,36 @@ const english = {
 	"projects.tabDashboard": "Dashboard",
 	"projects.tabInternalIssues": "Internal Issues",
 	"projects.stageOneEmpty":
-		"This view is a stage 1 placeholder. Runtime and issue data are not connected.",
+		"This view is a placeholder in stage 2. The coding agent, dashboard, and internal issue data are not connected yet.",
 	"projects.selectTitle": "Select a project",
 	"projects.selectHint":
 		"Choose a ready project from the list to open its views.",
 	"projects.projectContent": "Selected project content",
 	"projects.scanLimitedTitle": "Some project details were skipped",
 	"projects.scanEntryLimit":
-		"Scanned {scanned} of {limit} project entries; more entries remain. Choose a smaller checkout to browse the rest.",
+		"Scanned {scanned} of {limit} directory entries under naia-adk/projects; more entries remain.",
+	"projects.scanRowLimit":
+		"Showing {shown} of {limit} project and error rows. More rows were found.",
 	"projects.scanFileLimit":
 		"{count} configuration files exceeded the {limit}-byte limit and were not parsed.",
-	"projects.scanFileObservedBytes": "Read stopped after {bytes} bytes.",
+	"projects.scanFileObservedBytes": "File size: {bytes} bytes.",
 	"projects.scanMoreFiles": "{count} additional files were skipped.",
+	"projects.fileTooLarge": "exceeds the 64 KiB metadata limit.",
+	"projects.catalogErrors": "Catalog entries with problems",
+	"projects.returnToCurrentProject": "Back to {name}",
+	"projects.lastProjectMissing":
+		"The last project is no longer in the catalog. Choose a project to continue.",
+	"projects.sessionInvalid":
+		"Saved project state could not be read. Choose a project to continue.",
+	"projects.sessionSaveFailed":
+		"Project state could not be saved. Changes may be lost when the shell restarts.",
 } as const;
 
 type ProjectTranslationKey = keyof typeof english;
 
-export const PROJECT_APP_TRANSLATIONS: Record<
+const LEGACY_TRANSLATIONS: Record<
 	Locale,
-	Record<ProjectTranslationKey, string>
+	Partial<Record<ProjectTranslationKey, string>>
 > = {
 	en: english,
 	ko: {
@@ -727,6 +738,453 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "Còn {count} tệp khác chưa được đọc.",
 	},
 };
+
+const STAGE_TWO_TRANSLATIONS: Record<
+	Locale,
+	Partial<Record<ProjectTranslationKey, string>>
+> = {
+	en: {},
+	ko: {
+		"projects.checkoutLabel": "출처",
+		"projects.chooseCheckout": "naia-adk 폴더 선택",
+		"projects.changeCheckout": "다른 프로젝트 열기",
+		"projects.noCheckoutTitle": "naia-adk 폴더를 선택하세요",
+		"projects.noCheckoutHint":
+			"프로젝트를 찾을 naia-adk 폴더를 선택하세요. 저장한 폴더를 읽을 수 없으면 다시 선택하거나 설정 > naia-adk 경로 재설정에서 복구할 수 있습니다.",
+		"projects.loading": "naia-adk에서 프로젝트를 읽는 중…",
+		"projects.checkoutError": "naia-adk 프로젝트를 읽지 못했습니다",
+		"projects.checkoutErrorHint":
+			"projects/ 폴더가 있는 naia-adk를 선택하세요. 저장된 경로는 설정 > naia-adk 경로 재설정에서 복구할 수 있습니다.",
+		"projects.chooseAnother": "폴더 다시 선택",
+		"projects.searchPlaceholder": "이름, ID, 저장소, 출처로 검색",
+		"projects.emptyHint":
+			"naia-adk/projects와 각 프로젝트의 project.yaml을 확인하거나 다른 naia-adk 폴더를 선택하세요.",
+		"projects.unsafePath": "naia-adk 폴더 바깥의 경로라 읽지 않았습니다.",
+		"projects.stageOneEmpty":
+			"2단계에서는 빈 화면으로 둡니다. 코딩 에이전트·대시보드·내부 이슈 데이터는 아직 연결하지 않았습니다.",
+		"projects.scanEntryLimit":
+			"naia-adk/projects 아래 항목 {scanned}/{limit}개를 읽었습니다. 더 많은 항목이 있어 일부는 표시되지 않습니다.",
+		"projects.scanRowLimit":
+			"프로젝트와 오류 {shown}/{limit}개를 표시했습니다. 더 많은 행이 있습니다.",
+		"projects.scanFileObservedBytes": "파일 크기: {bytes}바이트.",
+		"projects.fileTooLarge": "메타데이터 64KiB 제한을 초과했습니다.",
+		"projects.catalogErrors": "확인이 필요한 카탈로그 항목",
+		"projects.returnToCurrentProject": "{name}(으)로 돌아가기",
+		"projects.lastProjectMissing":
+			"마지막으로 연 프로젝트가 목록에 없습니다. 프로젝트를 선택하세요.",
+		"projects.sessionInvalid":
+			"저장된 프로젝트 상태를 읽지 못했습니다. 프로젝트를 선택하세요.",
+	},
+	ja: {
+		"projects.checkoutLabel": "場所",
+		"projects.chooseCheckout": "naia-adk フォルダーを選択",
+		"projects.changeCheckout": "別のプロジェクトを開く",
+		"projects.noCheckoutTitle": "naia-adk フォルダーを選択",
+		"projects.noCheckoutHint":
+			"プロジェクトを探す naia-adk フォルダーを選択してください。保存先が読めない場合は再選択するか、設定からパスをリセットしてください。",
+		"projects.loading": "naia-adk のプロジェクトを読み込み中…",
+		"projects.checkoutError": "naia-adk のプロジェクトを読み込めません",
+		"projects.checkoutErrorHint":
+			"projects/ を含む naia-adk を選択してください。保存先は設定からリセットできます。",
+		"projects.chooseAnother": "フォルダーを再選択",
+		"projects.searchPlaceholder": "名前、ID、repository、場所で検索",
+		"projects.emptyHint":
+			"naia-adk/projects と各 project.yaml を確認するか、別の naia-adk を選択してください。",
+		"projects.unsafePath":
+			"naia-adk フォルダー外のパスのため読み込みませんでした。",
+		"projects.stageOneEmpty":
+			"ステージ 2 のプレースホルダーです。コーディングエージェント、ダッシュボード、内部 Issue は未接続です。",
+		"projects.scanEntryLimit":
+			"naia-adk/projects の {scanned}/{limit} 件を確認しました。ほかにも項目があります。",
+		"projects.scanRowLimit":
+			"プロジェクトとエラーを {shown}/{limit} 件表示しています。さらに行があります。",
+		"projects.scanFileObservedBytes": "ファイルサイズ: {bytes} バイト。",
+		"projects.fileTooLarge": "メタデータの 64 KiB 上限を超えています。",
+		"projects.catalogErrors": "確認が必要なカタログ項目",
+		"projects.returnToCurrentProject": "{name} に戻る",
+		"projects.lastProjectMissing":
+			"最後に開いたプロジェクトは一覧にありません。プロジェクトを選択してください。",
+		"projects.sessionInvalid":
+			"保存したプロジェクト状態を読み込めません。プロジェクトを選択してください。",
+	},
+	zh: {
+		"projects.checkoutLabel": "来源",
+		"projects.chooseCheckout": "选择 naia-adk 文件夹",
+		"projects.changeCheckout": "打开其他项目",
+		"projects.noCheckoutTitle": "选择 naia-adk 文件夹",
+		"projects.noCheckoutHint":
+			"选择用于查找项目的 naia-adk 文件夹。保存位置无法读取时，请重新选择或在设置中重置路径。",
+		"projects.loading": "正在读取 naia-adk 项目…",
+		"projects.checkoutError": "无法读取 naia-adk 项目",
+		"projects.checkoutErrorHint":
+			"请选择包含 projects/ 的 naia-adk。可在设置中重置保存的路径。",
+		"projects.chooseAnother": "重新选择文件夹",
+		"projects.searchPlaceholder": "按名称、ID、仓库或来源搜索",
+		"projects.emptyHint":
+			"检查 naia-adk/projects 和项目的 project.yaml，或选择其他 naia-adk 文件夹。",
+		"projects.unsafePath": "路径位于 naia-adk 文件夹之外，因此未读取。",
+		"projects.stageOneEmpty":
+			"这是阶段 2 的占位视图。编码代理、仪表板和内部问题数据尚未连接。",
+		"projects.scanEntryLimit":
+			"已检查 naia-adk/projects 中 {scanned}/{limit} 个条目，仍有更多条目。",
+		"projects.scanRowLimit":
+			"已显示 {shown}/{limit} 个项目和错误条目，仍有更多行。",
+		"projects.scanFileObservedBytes": "文件大小：{bytes} 字节。",
+		"projects.fileTooLarge": "超过了 64 KiB 元数据限制。",
+		"projects.catalogErrors": "需要检查的目录条目",
+		"projects.returnToCurrentProject": "返回 {name}",
+		"projects.lastProjectMissing": "上次打开的项目不在目录中。请选择一个项目。",
+		"projects.sessionInvalid": "无法读取已保存的项目状态。请选择一个项目。",
+	},
+	fr: {
+		"projects.checkoutLabel": "Source",
+		"projects.chooseCheckout": "Choisir le dossier naia-adk",
+		"projects.changeCheckout": "Ouvrir un autre projet",
+		"projects.noCheckoutTitle": "Choisissez votre dossier naia-adk",
+		"projects.noCheckoutHint":
+			"Choisissez le dossier naia-adk contenant les projets. Si le dossier enregistré est inaccessible, choisissez-le à nouveau ou réinitialisez son chemin dans les paramètres.",
+		"projects.loading": "Lecture des projets de naia-adk…",
+		"projects.checkoutError": "Impossible de lire les projets naia-adk",
+		"projects.checkoutErrorHint":
+			"Choisissez un dossier naia-adk contenant projects/. Le chemin enregistré peut être réinitialisé dans les paramètres.",
+		"projects.chooseAnother": "Choisir à nouveau le dossier",
+		"projects.searchPlaceholder": "Rechercher par nom, ID, dépôt ou source",
+		"projects.emptyHint":
+			"Vérifiez naia-adk/projects et les project.yaml, ou choisissez un autre dossier naia-adk.",
+		"projects.unsafePath":
+			"Le chemin sort du dossier naia-adk et n’a pas été lu.",
+		"projects.stageOneEmpty":
+			"Espace réservé de l’étape 2. L’agent de code, le tableau de bord et les incidents internes ne sont pas connectés.",
+		"projects.scanEntryLimit":
+			"{scanned}/{limit} entrées parcourues dans naia-adk/projects ; d’autres entrées existent.",
+		"projects.scanRowLimit":
+			"{shown}/{limit} projets et erreurs affichés ; d’autres lignes existent.",
+		"projects.scanFileObservedBytes": "Taille du fichier : {bytes} octets.",
+		"projects.fileTooLarge": "Dépasse la limite de métadonnées de 64 Kio.",
+		"projects.catalogErrors": "Éléments du catalogue à vérifier",
+		"projects.returnToCurrentProject": "Retour à {name}",
+		"projects.lastProjectMissing":
+			"Le dernier projet ouvert est absent du catalogue. Choisissez un projet.",
+		"projects.sessionInvalid":
+			"L’état enregistré du projet est illisible. Choisissez un projet.",
+	},
+	de: {
+		"projects.checkoutLabel": "Quelle",
+		"projects.chooseCheckout": "naia-adk-Ordner auswählen",
+		"projects.changeCheckout": "Anderes Projekt öffnen",
+		"projects.noCheckoutTitle": "Wähle deinen naia-adk-Ordner",
+		"projects.noCheckoutHint":
+			"Wähle den naia-adk-Ordner mit den Projekten. Wenn der gespeicherte Ordner nicht lesbar ist, wähle ihn erneut oder setze den Pfad in den Einstellungen zurück.",
+		"projects.loading": "Projekte aus naia-adk werden gelesen…",
+		"projects.checkoutError": "naia-adk-Projekte konnten nicht gelesen werden",
+		"projects.checkoutErrorHint":
+			"Wähle einen naia-adk-Ordner mit projects/. Den gespeicherten Pfad kannst du in den Einstellungen zurücksetzen.",
+		"projects.chooseAnother": "Ordner erneut wählen",
+		"projects.searchPlaceholder":
+			"Nach Name, ID, Repository oder Quelle suchen",
+		"projects.emptyHint":
+			"Prüfe naia-adk/projects und die project.yaml-Dateien oder wähle einen anderen naia-adk-Ordner.",
+		"projects.unsafePath":
+			"Der Pfad liegt außerhalb des naia-adk-Ordners und wurde nicht gelesen.",
+		"projects.stageOneEmpty":
+			"Platzhalter in Stufe 2. Programmieragent, Dashboard und interne Issues sind noch nicht verbunden.",
+		"projects.scanEntryLimit":
+			"{scanned} von {limit} Einträgen unter naia-adk/projects geprüft; weitere Einträge sind vorhanden.",
+		"projects.scanRowLimit":
+			"{shown} von {limit} Projekt- und Fehlerzeilen angezeigt; weitere Zeilen sind vorhanden.",
+		"projects.scanFileObservedBytes": "Dateigröße: {bytes} Bytes.",
+		"projects.fileTooLarge": "Überschreitet das Metadatenlimit von 64 KiB.",
+		"projects.catalogErrors": "Katalogeinträge mit Problemen",
+		"projects.returnToCurrentProject": "Zurück zu {name}",
+		"projects.lastProjectMissing":
+			"Das zuletzt geöffnete Projekt ist nicht mehr im Katalog. Wähle ein Projekt.",
+		"projects.sessionInvalid":
+			"Der gespeicherte Projektstatus ist ungültig. Wähle ein Projekt.",
+	},
+	ru: {
+		"projects.checkoutLabel": "Источник",
+		"projects.chooseCheckout": "Выбрать папку naia-adk",
+		"projects.changeCheckout": "Открыть другой проект",
+		"projects.noCheckoutTitle": "Выберите папку naia-adk",
+		"projects.noCheckoutHint":
+			"Выберите папку naia-adk с проектами. Если сохранённая папка недоступна, выберите её снова или сбросьте путь в настройках.",
+		"projects.loading": "Чтение проектов из naia-adk…",
+		"projects.checkoutError": "Не удалось прочитать проекты naia-adk",
+		"projects.checkoutErrorHint":
+			"Выберите naia-adk с доступной папкой projects/. Сохранённый путь можно сбросить в настройках.",
+		"projects.chooseAnother": "Выбрать папку снова",
+		"projects.searchPlaceholder":
+			"Поиск по имени, ID, репозиторию или источнику",
+		"projects.emptyHint":
+			"Проверьте naia-adk/projects и файлы project.yaml или выберите другую папку naia-adk.",
+		"projects.unsafePath":
+			"Путь выходит за пределы naia-adk, поэтому файл не прочитан.",
+		"projects.stageOneEmpty":
+			"Заглушка этапа 2. Кодовый агент, панель и внутренние задачи ещё не подключены.",
+		"projects.scanEntryLimit":
+			"Проверено {scanned} из {limit} записей в naia-adk/projects; есть и другие.",
+		"projects.scanRowLimit":
+			"Показано {shown} из {limit} строк проектов и ошибок; есть ещё строки.",
+		"projects.scanFileObservedBytes": "Размер файла: {bytes} байт.",
+		"projects.fileTooLarge": "Превышен лимит метаданных 64 КиБ.",
+		"projects.catalogErrors": "Проблемные записи каталога",
+		"projects.returnToCurrentProject": "Вернуться к {name}",
+		"projects.lastProjectMissing":
+			"Последнего открытого проекта нет в каталоге. Выберите проект.",
+		"projects.sessionInvalid":
+			"Не удалось прочитать сохранённое состояние. Выберите проект.",
+	},
+	es: {
+		"projects.checkoutLabel": "Origen",
+		"projects.chooseCheckout": "Elegir carpeta naia-adk",
+		"projects.changeCheckout": "Abrir otro proyecto",
+		"projects.noCheckoutTitle": "Elige tu carpeta naia-adk",
+		"projects.noCheckoutHint":
+			"Elige la carpeta naia-adk con los proyectos. Si la carpeta guardada no se puede leer, vuelve a elegirla o restablece la ruta en Configuración.",
+		"projects.loading": "Leyendo proyectos de naia-adk…",
+		"projects.checkoutError": "No se pudieron leer los proyectos de naia-adk",
+		"projects.checkoutErrorHint":
+			"Elige una carpeta naia-adk que contenga projects/. Puedes restablecer la ruta guardada en Configuración.",
+		"projects.chooseAnother": "Elegir carpeta de nuevo",
+		"projects.searchPlaceholder": "Buscar por nombre, ID, repositorio u origen",
+		"projects.emptyHint":
+			"Comprueba naia-adk/projects y los archivos project.yaml, o elige otra carpeta naia-adk.",
+		"projects.unsafePath": "La ruta está fuera de naia-adk y no se leyó.",
+		"projects.stageOneEmpty":
+			"Marcador de la etapa 2. El agente de código, el panel y los asuntos internos aún no están conectados.",
+		"projects.scanEntryLimit":
+			"Se revisaron {scanned} de {limit} entradas en naia-adk/projects; hay más.",
+		"projects.scanRowLimit":
+			"Se muestran {shown} de {limit} filas de proyectos y errores; hay más filas.",
+		"projects.scanFileObservedBytes": "Tamaño del archivo: {bytes} bytes.",
+		"projects.fileTooLarge": "Supera el límite de metadatos de 64 KiB.",
+		"projects.catalogErrors": "Entradas del catálogo con problemas",
+		"projects.returnToCurrentProject": "Volver a {name}",
+		"projects.lastProjectMissing":
+			"El último proyecto abierto ya no está en el catálogo. Elige un proyecto.",
+		"projects.sessionInvalid":
+			"No se pudo leer el estado guardado del proyecto. Elige un proyecto.",
+	},
+	ar: {
+		"projects.checkoutLabel": "المصدر",
+		"projects.chooseCheckout": "اختر مجلد naia-adk",
+		"projects.changeCheckout": "افتح مشروعًا آخر",
+		"projects.noCheckoutTitle": "اختر مجلد naia-adk",
+		"projects.noCheckoutHint":
+			"اختر مجلد naia-adk الذي يحتوي على المشاريع. إذا تعذرت قراءة المجلد المحفوظ، فاختره مجددًا أو أعد ضبط المسار من الإعدادات.",
+		"projects.loading": "جارٍ قراءة مشاريع naia-adk…",
+		"projects.checkoutError": "تعذرت قراءة مشاريع naia-adk",
+		"projects.checkoutErrorHint":
+			"اختر مجلد naia-adk يحتوي على projects/. يمكنك إعادة ضبط المسار المحفوظ من الإعدادات.",
+		"projects.chooseAnother": "اختر المجلد مجددًا",
+		"projects.searchPlaceholder": "ابحث بالاسم أو المعرّف أو المستودع أو المصدر",
+		"projects.emptyHint":
+			"تحقق من naia-adk/projects وملفات project.yaml أو اختر مجلد naia-adk آخر.",
+		"projects.unsafePath": "المسار خارج مجلد naia-adk، لذلك لم تتم قراءته.",
+		"projects.stageOneEmpty":
+			"عنصر نائب للمرحلة 2. لم يتم ربط وكيل البرمجة ولوحة المعلومات والمشكلات الداخلية بعد.",
+		"projects.scanEntryLimit":
+			"تم فحص {scanned} من {limit} مدخلات في naia-adk/projects؛ توجد مدخلات أخرى.",
+		"projects.scanRowLimit":
+			"يتم عرض {shown} من {limit} صفوف المشاريع والأخطاء؛ توجد صفوف أخرى.",
+		"projects.scanFileObservedBytes": "حجم الملف: {bytes} بايت.",
+		"projects.fileTooLarge": "يتجاوز حد بيانات التعريف 64 كيلوبايت.",
+		"projects.catalogErrors": "مدخلات الكتالوج التي تحتاج إلى مراجعة",
+		"projects.returnToCurrentProject": "العودة إلى {name}",
+		"projects.lastProjectMissing":
+			"المشروع الأخير غير موجود في الكتالوج. اختر مشروعًا للمتابعة.",
+		"projects.sessionInvalid":
+			"تعذرت قراءة حالة المشروع المحفوظة. اختر مشروعًا للمتابعة.",
+	},
+	hi: {
+		"projects.checkoutLabel": "स्रोत",
+		"projects.chooseCheckout": "naia-adk फ़ोल्डर चुनें",
+		"projects.changeCheckout": "दूसरा प्रोजेक्ट खोलें",
+		"projects.noCheckoutTitle": "अपना naia-adk फ़ोल्डर चुनें",
+		"projects.noCheckoutHint":
+			"प्रोजेक्ट खोजने के लिए naia-adk फ़ोल्डर चुनें। सहेजा गया फ़ोल्डर न पढ़ा जाए तो उसे फिर चुनें या सेटिंग में पथ रीसेट करें।",
+		"projects.loading": "naia-adk से प्रोजेक्ट पढ़े जा रहे हैं…",
+		"projects.checkoutError": "naia-adk प्रोजेक्ट नहीं पढ़े जा सके",
+		"projects.checkoutErrorHint":
+			"projects/ वाला naia-adk फ़ोल्डर चुनें। सहेजा गया पथ सेटिंग में रीसेट किया जा सकता है।",
+		"projects.chooseAnother": "फ़ोल्डर फिर चुनें",
+		"projects.searchPlaceholder": "नाम, ID, repository या स्रोत से खोजें",
+		"projects.emptyHint":
+			"naia-adk/projects और project.yaml फ़ाइलें जाँचें या दूसरा naia-adk फ़ोल्डर चुनें।",
+		"projects.unsafePath": "पथ naia-adk फ़ोल्डर के बाहर है, इसलिए इसे नहीं पढ़ा गया।",
+		"projects.stageOneEmpty":
+			"चरण 2 का अस्थायी दृश्य। कोडिंग एजेंट, डैशबोर्ड और आंतरिक मुद्दे अभी जुड़े नहीं हैं।",
+		"projects.scanEntryLimit":
+			"naia-adk/projects में {scanned}/{limit} प्रविष्टियाँ जाँची गईं; और प्रविष्टियाँ हैं।",
+		"projects.scanRowLimit":
+			"{shown}/{limit} प्रोजेक्ट और त्रुटि पंक्तियाँ दिखाई गईं; और पंक्तियाँ हैं।",
+		"projects.scanFileObservedBytes": "फ़ाइल का आकार: {bytes} बाइट।",
+		"projects.fileTooLarge": "64 KiB मेटाडेटा सीमा से बड़ा है।",
+		"projects.catalogErrors": "जाँचने के लिए कैटलॉग प्रविष्टियाँ",
+		"projects.returnToCurrentProject": "{name} पर लौटें",
+		"projects.lastProjectMissing":
+			"आख़िरी प्रोजेक्ट कैटलॉग में नहीं है। जारी रखने के लिए प्रोजेक्ट चुनें।",
+		"projects.sessionInvalid":
+			"सहेजी गई प्रोजेक्ट स्थिति पढ़ी नहीं जा सकी। प्रोजेक्ट चुनें।",
+	},
+	bn: {
+		"projects.checkoutLabel": "উৎস",
+		"projects.chooseCheckout": "naia-adk ফোল্ডার বেছে নিন",
+		"projects.changeCheckout": "অন্য প্রকল্প খুলুন",
+		"projects.noCheckoutTitle": "আপনার naia-adk ফোল্ডার বেছে নিন",
+		"projects.noCheckoutHint":
+			"প্রকল্প খুঁজতে naia-adk ফোল্ডার বেছে নিন। সংরক্ষিত ফোল্ডার পড়া না গেলে আবার বেছে নিন বা সেটিংসে পথ রিসেট করুন।",
+		"projects.loading": "naia-adk থেকে প্রকল্প পড়া হচ্ছে…",
+		"projects.checkoutError": "naia-adk প্রকল্প পড়া যায়নি",
+		"projects.checkoutErrorHint":
+			"projects/ থাকা naia-adk ফোল্ডার বেছে নিন। সেটিংসে সংরক্ষিত পথ রিসেট করা যাবে।",
+		"projects.chooseAnother": "ফোল্ডার আবার বেছে নিন",
+		"projects.searchPlaceholder": "নাম, ID, repository বা উৎস দিয়ে খুঁজুন",
+		"projects.emptyHint":
+			"naia-adk/projects ও project.yaml ফাইল দেখুন, অথবা অন্য naia-adk ফোল্ডার বেছে নিন।",
+		"projects.unsafePath": "পথটি naia-adk ফোল্ডারের বাইরে, তাই পড়া হয়নি।",
+		"projects.stageOneEmpty":
+			"ধাপ ২-এর খালি দৃশ্য। কোডিং এজেন্ট, ড্যাশবোর্ড ও অভ্যন্তরীণ ইস্যু এখনো যুক্ত নয়।",
+		"projects.scanEntryLimit":
+			"naia-adk/projects-এর {scanned}/{limit}টি এন্ট্রি দেখা হয়েছে; আরও আছে।",
+		"projects.scanRowLimit":
+			"{shown}/{limit}টি প্রকল্প ও ত্রুটি সারি দেখানো হয়েছে; আরও সারি আছে।",
+		"projects.scanFileObservedBytes": "ফাইলের আকার: {bytes} বাইট।",
+		"projects.fileTooLarge": "64 KiB মেটাডেটা সীমা ছাড়িয়েছে।",
+		"projects.catalogErrors": "সমস্যাযুক্ত ক্যাটালগ এন্ট্রি",
+		"projects.returnToCurrentProject": "{name}-এ ফিরুন",
+		"projects.lastProjectMissing":
+			"শেষ খোলা প্রকল্পটি ক্যাটালগে নেই। চালিয়ে যেতে একটি প্রকল্প বেছে নিন।",
+		"projects.sessionInvalid":
+			"সংরক্ষিত প্রকল্পের অবস্থা পড়া যায়নি। একটি প্রকল্প বেছে নিন।",
+	},
+	pt: {
+		"projects.checkoutLabel": "Origem",
+		"projects.chooseCheckout": "Escolher pasta naia-adk",
+		"projects.changeCheckout": "Abrir outro projeto",
+		"projects.noCheckoutTitle": "Escolha sua pasta naia-adk",
+		"projects.noCheckoutHint":
+			"Escolha a pasta naia-adk com os projetos. Se a pasta salva não puder ser lida, escolha-a novamente ou redefina o caminho nas configurações.",
+		"projects.loading": "Lendo projetos de naia-adk…",
+		"projects.checkoutError": "Não foi possível ler os projetos de naia-adk",
+		"projects.checkoutErrorHint":
+			"Escolha uma pasta naia-adk com projects/. O caminho salvo pode ser redefinido nas configurações.",
+		"projects.chooseAnother": "Escolher pasta novamente",
+		"projects.searchPlaceholder": "Buscar por nome, ID, repositório ou origem",
+		"projects.emptyHint":
+			"Verifique naia-adk/projects e os arquivos project.yaml ou escolha outra pasta naia-adk.",
+		"projects.unsafePath":
+			"O caminho está fora da pasta naia-adk e não foi lido.",
+		"projects.stageOneEmpty":
+			"Espaço reservado da etapa 2. O agente de código, o painel e as issues internas ainda não estão conectados.",
+		"projects.scanEntryLimit":
+			"{scanned} de {limit} entradas em naia-adk/projects foram verificadas; há mais.",
+		"projects.scanRowLimit":
+			"{shown} de {limit} linhas de projetos e erros estão visíveis; há mais linhas.",
+		"projects.scanFileObservedBytes": "Tamanho do arquivo: {bytes} bytes.",
+		"projects.fileTooLarge": "Excede o limite de metadados de 64 KiB.",
+		"projects.catalogErrors": "Entradas do catálogo com problemas",
+		"projects.returnToCurrentProject": "Voltar para {name}",
+		"projects.lastProjectMissing":
+			"O último projeto aberto não está no catálogo. Escolha um projeto.",
+		"projects.sessionInvalid":
+			"Não foi possível ler o estado salvo do projeto. Escolha um projeto.",
+	},
+	id: {
+		"projects.checkoutLabel": "Sumber",
+		"projects.chooseCheckout": "Pilih folder naia-adk",
+		"projects.changeCheckout": "Buka proyek lain",
+		"projects.noCheckoutTitle": "Pilih folder naia-adk Anda",
+		"projects.noCheckoutHint":
+			"Pilih folder naia-adk yang berisi proyek. Jika folder tersimpan tidak dapat dibaca, pilih lagi atau atur ulang jalurnya di Setelan.",
+		"projects.loading": "Membaca proyek dari naia-adk…",
+		"projects.checkoutError": "Proyek naia-adk tidak dapat dibaca",
+		"projects.checkoutErrorHint":
+			"Pilih folder naia-adk yang memiliki projects/. Jalur tersimpan dapat diatur ulang di Setelan.",
+		"projects.chooseAnother": "Pilih folder lagi",
+		"projects.searchPlaceholder":
+			"Cari berdasarkan nama, ID, repositori, atau sumber",
+		"projects.emptyHint":
+			"Periksa naia-adk/projects dan file project.yaml, atau pilih folder naia-adk lain.",
+		"projects.unsafePath":
+			"Jalur berada di luar folder naia-adk sehingga tidak dibaca.",
+		"projects.stageOneEmpty":
+			"Placeholder tahap 2. Agen coding, dasbor, dan data isu internal belum terhubung.",
+		"projects.scanEntryLimit":
+			"Memeriksa {scanned} dari {limit} entri di naia-adk/projects; masih ada entri lain.",
+		"projects.scanRowLimit":
+			"Menampilkan {shown} dari {limit} baris proyek dan error; masih ada baris lain.",
+		"projects.scanFileObservedBytes": "Ukuran file: {bytes} byte.",
+		"projects.fileTooLarge": "Melebihi batas metadata 64 KiB.",
+		"projects.catalogErrors": "Entri katalog yang bermasalah",
+		"projects.returnToCurrentProject": "Kembali ke {name}",
+		"projects.lastProjectMissing":
+			"Proyek terakhir tidak ada di katalog. Pilih proyek untuk melanjutkan.",
+		"projects.sessionInvalid":
+			"Status proyek tersimpan tidak dapat dibaca. Pilih proyek.",
+	},
+	vi: {
+		"projects.checkoutLabel": "Nguồn",
+		"projects.chooseCheckout": "Chọn thư mục naia-adk",
+		"projects.changeCheckout": "Mở dự án khác",
+		"projects.noCheckoutTitle": "Chọn thư mục naia-adk của bạn",
+		"projects.noCheckoutHint":
+			"Chọn thư mục naia-adk chứa các dự án. Nếu không đọc được thư mục đã lưu, hãy chọn lại hoặc đặt lại đường dẫn trong Cài đặt.",
+		"projects.loading": "Đang đọc dự án từ naia-adk…",
+		"projects.checkoutError": "Không thể đọc dự án naia-adk",
+		"projects.checkoutErrorHint":
+			"Chọn thư mục naia-adk có projects/. Có thể đặt lại đường dẫn đã lưu trong Cài đặt.",
+		"projects.chooseAnother": "Chọn lại thư mục",
+		"projects.searchPlaceholder": "Tìm theo tên, ID, kho lưu trữ hoặc nguồn",
+		"projects.emptyHint":
+			"Kiểm tra naia-adk/projects và các tệp project.yaml, hoặc chọn thư mục naia-adk khác.",
+		"projects.unsafePath":
+			"Đường dẫn nằm ngoài thư mục naia-adk nên không được đọc.",
+		"projects.stageOneEmpty":
+			"Màn hình giữ chỗ của giai đoạn 2. Tác nhân lập trình, bảng điều khiển và vấn đề nội bộ chưa được kết nối.",
+		"projects.scanEntryLimit":
+			"Đã quét {scanned}/{limit} mục trong naia-adk/projects; vẫn còn mục khác.",
+		"projects.scanRowLimit":
+			"Hiển thị {shown}/{limit} hàng dự án và lỗi; vẫn còn hàng khác.",
+		"projects.scanFileObservedBytes": "Kích thước tệp: {bytes} byte.",
+		"projects.fileTooLarge": "Vượt giới hạn siêu dữ liệu 64 KiB.",
+		"projects.catalogErrors": "Mục danh mục có lỗi",
+		"projects.returnToCurrentProject": "Quay lại {name}",
+		"projects.lastProjectMissing":
+			"Dự án mở gần nhất không còn trong danh mục. Hãy chọn dự án.",
+		"projects.sessionInvalid":
+			"Không đọc được trạng thái dự án đã lưu. Hãy chọn dự án.",
+	},
+};
+
+const SESSION_SAVE_TRANSLATIONS: Record<Locale, string> = {
+	ar: "تعذر حفظ حالة المشروع. قد تُفقد التغييرات عند إعادة تشغيل الغلاف.",
+	bn: "প্রকল্পের অবস্থা সংরক্ষণ করা যায়নি। শেল পুনরায় চালু হলে পরিবর্তন হারিয়ে যেতে পারে।",
+	de: "Der Projektstatus konnte nicht gespeichert werden. Änderungen können beim Neustart der Shell verloren gehen.",
+	en: english["projects.sessionSaveFailed"],
+	es: "No se pudo guardar el estado del proyecto. Los cambios podrían perderse al reiniciar la shell.",
+	fr: "L’état du projet n’a pas pu être enregistré. Les modifications peuvent être perdues au redémarrage du shell.",
+	hi: "प्रोजेक्ट की स्थिति सहेजी नहीं जा सकी। शेल फिर शुरू होने पर बदलाव खो सकते हैं।",
+	id: "Status proyek tidak dapat disimpan. Perubahan dapat hilang saat shell dimulai ulang.",
+	ja: "プロジェクトの状態を保存できませんでした。シェルの再起動時に変更が失われる可能性があります。",
+	ko: "프로젝트 상태를 저장하지 못했습니다. 셸을 다시 시작하면 변경 사항이 복원되지 않을 수 있습니다.",
+	pt: "Não foi possível salvar o estado do projeto. As alterações podem ser perdidas ao reiniciar o shell.",
+	ru: "Не удалось сохранить состояние проекта. После перезапуска оболочки изменения могут быть потеряны.",
+	vi: "Không thể lưu trạng thái dự án. Thay đổi có thể mất khi khởi động lại shell.",
+	zh: "无法保存项目状态。重启 shell 后，所做更改可能会丢失。",
+};
+
+export const PROJECT_APP_TRANSLATIONS = Object.fromEntries(
+	Object.entries(LEGACY_TRANSLATIONS).map(([locale, messages]) => [
+		locale,
+		{
+			...english,
+			...messages,
+			...STAGE_TWO_TRANSLATIONS[locale as Locale],
+			"projects.sessionSaveFailed": SESSION_SAVE_TRANSLATIONS[locale as Locale],
+		},
+	]),
+) as Record<Locale, Record<ProjectTranslationKey, string>>;
 
 export type { ProjectTranslationKey };
 
