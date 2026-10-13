@@ -36,6 +36,15 @@ describe("normalizeTauriAssetUrl", () => {
 		expect(normalizeTauriAssetUrl(source)).toBe(source);
 	});
 
+	it("consumes the separator slash instead of doubling it", () => {
+		expect(normalizeTauriAssetUrl("asset://localhost/slides/index.html")).toBe(
+			"http://asset.localhost/slides/index.html",
+		);
+		expect(normalizeTauriAssetUrl("asset://localhost")).toBe(
+			"http://asset.localhost/",
+		);
+	});
+
 	it("normalizes the legacy localhost form used by AvatarCanvas", () => {
 		expect(normalizeTauriAssetUrl("http://localhost/model.vrm")).toBe(
 			"http://asset.localhost/model.vrm",
