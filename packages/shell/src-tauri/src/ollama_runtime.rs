@@ -6039,6 +6039,7 @@ mod tests {
         version_status: u16,
         version_body: Vec<u8>,
         delay: Duration,
+        model_pull: Option<Arc<ModelPullApiFixture>>,
     }
 
     impl ApiFixture {
@@ -6053,7 +6054,13 @@ mod tests {
                 version_status: 200,
                 version_body: br#"{"version":"fixture"}"#.to_vec(),
                 delay: Duration::ZERO,
+                model_pull: None,
             }
+        }
+
+        fn with_model_pull(mut self, fixture: Arc<ModelPullApiFixture>) -> Self {
+            self.model_pull = Some(fixture);
+            self
         }
 
         fn malformed() -> Self {
@@ -6154,7 +6161,11 @@ mod tests {
                     match listener.accept() {
                         Ok((mut stream, _)) => {
                             let fixture = worker_fixture.lock().unwrap().clone();
-                            serve_fixture_request(&mut stream, &fixture);
+                            if let Some(model_pull) = fixture.model_pull {
+                                serve_model_pull_fixture(stream, model_pull);
+                            } else {
+                                serve_fixture_request(&mut stream, &fixture);
+                            }
                         }
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                             thread::sleep(Duration::from_millis(2));
@@ -7547,6 +7558,90 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn managed_child_fake_ollama_pulls_exact_qwen_tag_and_releases_reservation() {
+        let _guard = REAL_PROCESS_GROUP_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let model_api = Arc::new(ModelPullApiFixture::new(
+            tag, None, false, false, false, false,
+        ));
+        let api = TestApiServer::reserve_unlistened(
+            std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
+            ApiFixture::ready(0).with_model_pull(model_api.clone()),
+        )
+        .unwrap();
+        let port = api.address.port();
+        let pid_file = anchor.path().join("fake-child.pid");
+        let reaped_file = anchor.path().join("fake-child-reaped");
+        write_fake_executable_install(&root, pin, &pid_file, &reaped_file);
+        let manager = real_process_manager(&anchor, &root, port, pin, &pid_file);
+
+        let start = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_fixture_pid_file(&pid_file);
+        api.listen();
+        let started = wait_for_operation(&manager, &start);
+        assert_eq!(started.server_state, ServerState::ReadyManaged);
+        assert_eq!(started.ownership, RuntimeOwnership::ManagedChild);
+        assert_eq!(started.reservation.status, ReservationStatus::Running);
+        let startup_requests = model_api.request_paths.lock().unwrap().clone();
+        assert_eq!(startup_requests, vec!["GET /api/tags"]);
+        model_api.request_paths.lock().unwrap().clear();
+
+        let model_store = tempfile::tempdir().unwrap();
+        let pull = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(model_store.path()),
+        )
+        .unwrap();
+        assert_eq!(pull.snapshot.state, ModelPullState::Preflight);
+        let pulled = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(pulled.state, ModelPullState::Ready);
+        assert_eq!(
+            pulled.operation_id.as_deref(),
+            Some(pull.operation_id.as_str())
+        );
+        assert_eq!(pulled.digest.as_deref(), Some("sha256:fixture"));
+        assert!(pulled.error.is_none());
+        assert_eq!(model_api.pull_requests.load(Ordering::Acquire), 1);
+        assert_eq!(model_api.show_requests.load(Ordering::Acquire), 1);
+        assert_eq!(
+            model_api.pull_request_bodies.lock().unwrap().as_slice(),
+            &[serde_json::json!({ "name": tag, "stream": true })]
+        );
+        assert_eq!(
+            model_api.request_paths.lock().unwrap().as_slice(),
+            [
+                "GET /api/tags",
+                "POST /api/pull",
+                "GET /api/tags",
+                "POST /api/show",
+                "GET /api/tags",
+            ]
+        );
+
+        let stop = dispatch_stop(&manager, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &stop).server_state,
+            ServerState::Stopped
+        );
+        wait_for_fixture_reap_marker(&reaped_file);
+        assert!(manager.lock().process.is_none());
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn dropping_reaped_child_does_not_signal_a_reused_process_group() {
         use std::os::unix::process::CommandExt;
 
@@ -8277,9 +8372,40 @@ mod tests {
         disconnect_pull_early: bool,
         pull_requests: AtomicUsize,
         tags_requests: AtomicUsize,
+        show_requests: AtomicUsize,
+        pull_request_bodies: Mutex<Vec<Value>>,
+        request_paths: Mutex<Vec<String>>,
         model_available: AtomicBool,
         client_closed_pull: AtomicBool,
         stopped: AtomicBool,
+    }
+
+    impl ModelPullApiFixture {
+        fn new(
+            tag: &str,
+            digest: Option<&str>,
+            hold_pull_open: bool,
+            change_digest_on_recheck: bool,
+            fail_first_pull: bool,
+            disconnect_pull_early: bool,
+        ) -> Self {
+            Self {
+                tag: tag.to_string(),
+                digest: digest.map(str::to_string),
+                hold_pull_open,
+                change_digest_on_recheck,
+                fail_first_pull,
+                disconnect_pull_early,
+                pull_requests: AtomicUsize::new(0),
+                tags_requests: AtomicUsize::new(0),
+                show_requests: AtomicUsize::new(0),
+                pull_request_bodies: Mutex::new(Vec::new()),
+                request_paths: Mutex::new(Vec::new()),
+                model_available: AtomicBool::new(digest.is_some()),
+                client_closed_pull: AtomicBool::new(false),
+                stopped: AtomicBool::new(false),
+            }
+        }
     }
 
     struct ModelPullApiServer {
@@ -8300,19 +8426,14 @@ mod tests {
             let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
             listener.set_nonblocking(true)?;
             let address = listener.local_addr()?;
-            let fixture = Arc::new(ModelPullApiFixture {
-                tag: tag.to_string(),
-                digest: digest.map(str::to_string),
+            let fixture = Arc::new(ModelPullApiFixture::new(
+                tag,
+                digest,
                 hold_pull_open,
                 change_digest_on_recheck,
                 fail_first_pull,
                 disconnect_pull_early,
-                pull_requests: AtomicUsize::new(0),
-                tags_requests: AtomicUsize::new(0),
-                model_available: AtomicBool::new(digest.is_some()),
-                client_closed_pull: AtomicBool::new(false),
-                stopped: AtomicBool::new(false),
-            });
+            ));
             let worker_fixture = fixture.clone();
             let worker = thread::spawn(move || {
                 while !worker_fixture.stopped.load(Ordering::Acquire) {
@@ -8366,7 +8487,37 @@ mod tests {
         let mut request = Vec::new();
         let mut chunk = [0_u8; 2048];
         let request_deadline = Instant::now() + Duration::from_secs(2);
-        while !request.windows(4).any(|window| window == b"\r\n\r\n")
+        let header_end = loop {
+            if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                break position + 4;
+            }
+            if request.len() >= 32 * 1024 || Instant::now() >= request_deadline {
+                return;
+            }
+            match stream.read(&mut chunk) {
+                Ok(0) => return,
+                Ok(read) => request.extend_from_slice(&chunk[..read]),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock
+                            | io::ErrorKind::TimedOut
+                            | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(_) => return,
+            }
+        };
+        let header = String::from_utf8_lossy(&request[..header_end - 4]).into_owned();
+        let content_length = header
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find_map(|(name, value)| {
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+            .unwrap_or_default();
+        while request.len() < header_end.saturating_add(content_length)
             && request.len() < 32 * 1024
             && Instant::now() < request_deadline
         {
@@ -8383,13 +8534,23 @@ mod tests {
                 Err(_) => return,
             }
         }
-        let request_line = String::from_utf8_lossy(&request)
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .to_string();
-        let path = request_line.split_whitespace().nth(1).unwrap_or_default();
+        if request.len() < header_end.saturating_add(content_length) {
+            return;
+        }
+        let request_body = &request[header_end..header_end + content_length];
+        let request_line = header.lines().next().unwrap_or_default().to_string();
+        let mut request_parts = request_line.split_whitespace();
+        let method = request_parts.next().unwrap_or_default();
+        let path = request_parts.next().unwrap_or_default();
+        fixture
+            .request_paths
+            .lock()
+            .unwrap()
+            .push(format!("{method} {path}"));
         match path {
+            "/api/version" => {
+                let _ = write_fixture_response(&mut stream, br#"{"version":"fixture"}"#);
+            }
             "/api/tags" => {
                 let request_index = fixture.tags_requests.fetch_add(1, Ordering::AcqRel);
                 let digest = match fixture.digest.as_deref() {
@@ -8415,11 +8576,14 @@ mod tests {
                 let _ = write_fixture_response(&mut stream, body.as_bytes());
             }
             "/api/show" => {
+                fixture.show_requests.fetch_add(1, Ordering::AcqRel);
                 let body = br#"{"details":{"family":"qwen3","parameter_size":"0.8B","quantization_level":"Q8_0"},"model_info":{"qwen3.context_length":262144}}"#;
                 let _ = write_fixture_response(&mut stream, body);
             }
             "/api/pull" => {
                 let pull_number = fixture.pull_requests.fetch_add(1, Ordering::AcqRel) + 1;
+                let body = serde_json::from_slice(request_body).unwrap_or(Value::Null);
+                fixture.pull_request_bodies.lock().unwrap().push(body);
                 if fixture.fail_first_pull && pull_number == 1 {
                     let _ = stream.write_all(
                         b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",

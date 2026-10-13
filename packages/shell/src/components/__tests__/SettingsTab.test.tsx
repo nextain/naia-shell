@@ -4368,6 +4368,7 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 					confirmedTag: tag,
 				}),
 			);
+			await screen.findByTestId("ollama-pull-state");
 			fireEvent.change(document.getElementById("model-select")!, {
 				target: { value: "custom-after-start" },
 			});
@@ -4395,6 +4396,93 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 				).toBe("llama3.2:8b");
 			});
 			expect(models.fetchMock).toHaveBeenCalled();
+			await act(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 0));
+			});
+		});
+
+		it("does not save a ready pull after Settings unmounts during the model refresh", async () => {
+			cleanup();
+			eventListeners.clear();
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			mockCatalogAndRuntime(policy(true), {
+				operationId: "pull-1",
+				tag,
+				state: "ready",
+				stage: "ready",
+				digest: "sha256:fixture",
+				error: null,
+			});
+			type FakeResponse = {
+				ok: boolean;
+				json: () => Promise<{ models: Array<{ name: string }> }>;
+			};
+			let deferTagFetch = false;
+			const pendingTagFetches: Array<(response: FakeResponse) => void> = [];
+			const fetchMock = vi.fn((input: RequestInfo | URL) => {
+				if (String(input).includes("/api/tags") && deferTagFetch) {
+					return new Promise<FakeResponse>((resolve) =>
+						pendingTagFetches.push(resolve),
+					);
+				}
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({ models: [{ name: "llama3.2:8b" }] }),
+				});
+			});
+			vi.stubGlobal("fetch", fetchMock);
+
+			const view = render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+			await screen.findByTestId("ollama-pull-model-select");
+			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
+				target: { value: tag },
+			});
+			await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+			await waitFor(() =>
+				expect(
+					screen.getByTestId("ollama-pull-request-confirmation"),
+				).toBeEnabled(),
+			);
+			fireEvent.click(screen.getByTestId("ollama-pull-request-confirmation"));
+			deferTagFetch = true;
+			fireEvent.click(screen.getByTestId("ollama-pull-confirm"));
+			await waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("ollama_model_pull_start", {
+					tag,
+					confirmedTag: tag,
+				}),
+			);
+			await waitFor(() => expect(pendingTagFetches.length).toBeGreaterThan(0));
+			const configWritesBeforeResolve = mockInvoke.mock.calls.filter(
+				([command]) => command === "write_naia_config",
+			).length;
+			const modelBeforeResolve = JSON.parse(
+				localStorage.getItem("naia-config") ?? "{}",
+			).model;
+			view.unmount();
+			expect(modelBeforeResolve).toBe("llama3.2:8b");
+
+			await act(async () => {
+				for (const resolve of pendingTagFetches) {
+					resolve({
+						ok: true,
+						json: async () => ({ models: [{ name: tag }] }),
+					});
+				}
+				await Promise.resolve();
+			});
+
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
+			).toBe("llama3.2:8b");
+			expect(
+				mockInvoke.mock.calls.filter(
+					([command]) => command === "write_naia_config",
+				),
+			).toHaveLength(configWritesBeforeResolve);
 		});
 
 		it("shows undecided policy and sends no start or retry IPC", async () => {

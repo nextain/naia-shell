@@ -1,10 +1,17 @@
-<!-- src-sha: d32d5d070ea47a17 -->
+<!-- src-sha: 38d9ec978d00097f -->
 
 ## Qwen3.5 모델 받기 수명주기 — #759 단계 2
 
 - 범위: FR-LLM-PULL.1 단계 2 검증 재개; P01–P03 산출물은 지시서·요구사항에 연결.
 - P04: frozen install/build, focused Cargo 54/54, full parallel Cargo 583/583 twice, and specified Vitest 274/274 passed. Coordinator Playwright name comparison: 55=55, stage-specific 0; no rerun.
 - P05: Muse code review pending. Completion claim: no.
+
+## 가짜 Ollama HTTP 통합 — 2026-10-13 (#759 단계 4)
+
+- 범위는 가짜 loopback Ollama HTTP 서버로 관리 자식 기동, 정확 태그 받기, tags/show/digest 사후 검증, 자식 회수와 LocalLlm 예약 반환을 잇는 통합 확인이다. 실제 Ollama·모델·GPU는 사용하지 않았다.
+- 검증: 설정 화면 집중 Vitest 111 통과/8 제외. 전체 Vitest는 2,344 통과/21 제외/기존 `agent-pairing.test.ts` 임시 경로 필터 실패 1건(TMPDIR가 `/tmp`가 아닌 작업판 아래여서 발생; 범위 밖 수정 없음). `cargo test --lib ollama_runtime` 55 통과, 전체 병렬 Cargo 581 통과/4 기준 환경 시험 제외.
+- Playwright 전체 실행은 193 실패(55개 기준명 + 앱 연결 거부로 보인 138개)였다. 기준 밖 36 specs 재실행은 139 통과/27 기존 기준 실패/7 제외; 실패명 27/27이 기준 목록과 같고 단계 전용 실패는 0개였다. 1421 health 점검 91/91 HTTP 200.
+- Muse 코드 검수 대기, P04 진행 중/P05 대기. 루크 결정과 #759 전체 완료 주장은 남겨 두었다.
 
 ## VRAM 예약과 Ollama 공급자 연결 — 2026-10-13 (#758 단계 4)
 

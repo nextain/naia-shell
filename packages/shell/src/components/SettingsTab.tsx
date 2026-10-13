@@ -2048,6 +2048,7 @@ export function SettingsTab() {
 			return;
 		}
 		void fetchOllamaModels(origin.host).then(({ models, connected }) => {
+			if (!mountedRef.current) return;
 			setOllamaConnected(connected);
 			if (models.length > 0)
 				setDynamicModels((previous) => ({ ...previous, ollama: models }));
