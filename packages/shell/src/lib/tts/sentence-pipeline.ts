@@ -25,11 +25,13 @@
  * output stage, stores, renderer, queue, config, i18n, IPC) through
  * SentenceTtsPipelineDeps and calls the public interface only.
  */
+import { createGatewayAlignedPlanSource } from "../avatar/nva-speech/gateway-aligned-plan";
 import {
 	type AlignedSpeechPlanSource,
 	type AudioPlaybackClock,
 	type AvatarSpeechTiming,
 	type BrowserSpeechPlanSource,
+	type PreparedSpeech,
 	type SpeechPlan,
 	getAlignedSpeechPlanSource,
 	getBrowserSpeechPlanSource,
@@ -48,6 +50,13 @@ import { ttsTextFilter } from "./text-filter";
 import { isVoiceWarmingHold } from "./warming-hold";
 
 const TAG = "tts-pipeline";
+
+/**
+ * Longest a sentence's sound waits for its aligned plan to load before it
+ * plays anyway (idle mouth, never a late or approximate start). Later
+ * sentences usually have their plan ready while the previous one plays.
+ */
+export const ALIGNED_PLAN_WAIT_MS = 3000;
 
 export interface PipelineVoiceConfig {
 	voice?: string;
@@ -76,6 +85,10 @@ export interface CascadeSpeechRenderer {
 	setSpeakingVisual(on: boolean): void;
 	/** Canonical NVA player entry (optional: non-NVA renderers omit it). */
 	playSpeechTiming?(timing: AvatarSpeechTiming): Promise<boolean>;
+	/** Load an aligned plan before its sound starts (sound waits for it). */
+	prepareSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	/** True when the loaded avatar carries the canonical speech set. */
+	canPlaySpeechPlans?(): boolean;
 	updateSpeechPlan?(plan: SpeechPlan): boolean;
 }
 
@@ -96,6 +109,7 @@ export interface OrderedTtsQueue {
 		callbacks: {
 			onPlaybackStart: (playback?: AudioPlaybackClock) => void;
 			onPlaybackUnavailable: () => void;
+			beforePlayback?: () => Promise<unknown>;
 		},
 	): void;
 	skipOrdered(seq: number): void;
@@ -175,46 +189,101 @@ export function createSentenceTtsPipeline(
 	/** Bumped by interrupt(): late plans from a superseded turn never start. */
 	let speechEpoch = 0;
 
+	// Default aligned source: the gateway shell_audio route, using the same
+	// login key and gateway URL as Naia TTS. A registered port wins.
+	const gatewayAlignedSource = createGatewayAlignedPlanSource({
+		getConfig: () => deps.getVoiceConfig(),
+	});
 	const alignedSource = () =>
 		deps.getAlignedSpeechPlanSource
 			? deps.getAlignedSpeechPlanSource()
-			: getAlignedSpeechPlanSource();
+			: (getAlignedSpeechPlanSource() ??
+				(deps.getVoiceConfig()?.naiaKey ? gatewayAlignedSource : null));
 	const browserSource = () =>
 		deps.getBrowserSpeechPlanSource
 			? deps.getBrowserSpeechPlanSource()
 			: getBrowserSpeechPlanSource();
 
 	/**
-	 * Ask the aligned plan port for this exact sound; returns the start hook
-	 * that plays the plan on the sentence's audio clock (null = stay idle).
+	 * Ask the aligned plan port for this exact sound. `beforePlayback` (whole
+	 * sound only) holds the sound until the plan is loaded into the player, so
+	 * mouth and sound start together; `start` then plays it on the sound's own
+	 * clock. Without a plan in time the avatar stays idle (no late start).
 	 */
 	function requestAlignedPlan(
 		renderer: CascadeSpeechRenderer | null | undefined,
 		request: Parameters<AlignedSpeechPlanSource>[0],
-	): ((playback?: AudioPlaybackClock) => void) | null {
+	): {
+		beforePlayback?: () => Promise<unknown>;
+		start: (playback?: AudioPlaybackClock) => void;
+	} | null {
 		const source = alignedSource();
 		if (!renderer?.playSpeechTiming || !source) return null;
 		const epoch = speechEpoch;
-		const plan = source(request).catch((error) => {
-			Logger.warn(TAG, "aligned speech plan failed", { error: String(error) });
-			return null;
-		});
-		return (playback) => {
-			if (!playback) return;
-			void plan.then((resolved) => {
-				if (epoch !== speechEpoch || !resolved) return;
+		const plan = source(request)
+			.catch((error) => {
+				Logger.warn(TAG, "aligned speech plan failed", {
+					error: String(error),
+				});
+				return null;
+			})
+			.then((resolved) => {
 				// SoT 8: an aligned plan runs only on the audio clock of its sound.
-				if (!isAlignedPlan(resolved)) {
+				if (resolved && !isAlignedPlan(resolved)) {
 					Logger.warn(TAG, "aligned port returned a non-aligned plan", {
 						quality_mode: resolved.quality_mode,
 					});
-					return;
+					return null;
 				}
-				void renderer.playSpeechTiming?.({
-					plan: resolved,
-					clock: playback.clock,
-				});
+				return resolved;
 			});
+
+		const prepareSpeech = renderer.prepareSpeechTiming?.bind(renderer);
+		if (prepareSpeech && request.audio.kind === "whole") {
+			let prepared: Promise<PreparedSpeech | null> | null = null;
+			let timedOut = false;
+			const prepare = () => {
+				if (!prepared) {
+					const loaded = plan.then((resolved) =>
+						epoch === speechEpoch && resolved && !timedOut
+							? prepareSpeech(resolved)
+							: null,
+					);
+					prepared = Promise.race([
+						loaded,
+						new Promise<null>((resolve) =>
+							setTimeout(() => {
+								timedOut = true;
+								resolve(null);
+							}, ALIGNED_PLAN_WAIT_MS),
+						),
+					]);
+				}
+				return prepared;
+			};
+			return {
+				beforePlayback: prepare,
+				start: (playback) => {
+					if (!playback) return;
+					void prepare().then((ready) => {
+						if (epoch !== speechEpoch || !ready) return;
+						void ready.play(playback.clock);
+					});
+				},
+			};
+		}
+
+		return {
+			start: (playback) => {
+				if (!playback) return;
+				void plan.then((resolved) => {
+					if (epoch !== speechEpoch || !resolved) return;
+					void renderer.playSpeechTiming?.({
+						plan: resolved,
+						clock: playback.clock,
+					});
+				});
+			},
 		};
 	}
 
@@ -415,15 +484,24 @@ export function createSentenceTtsPipeline(
 		// ordered slot as a PCM stream *now* and feed chunks as they arrive, so
 		// playback starts on the first chunk instead of after the whole WAV.
 		const streamQueue = deps.getQueue();
+		// An aligned plan needs the whole sound before it plays (MFA aligns the
+		// finished bytes), so while an NVA speech avatar and a plan source are
+		// active the local voice is fetched whole instead of streamed.
+		const planBeforeSound = Boolean(
+			cascadeAvatar?.prepareSpeechTiming &&
+				cascadeAvatar.canPlaySpeechPlans?.() &&
+				alignedSource(),
+		);
 		const pcmStream =
 			ttsProviderForCost === "naia-local-voice" &&
-			streamQueue?.enqueueOrderedStream
+			streamQueue?.enqueueOrderedStream &&
+			!planBeforeSound
 				? new PcmStreamSource(24000)
 				: null;
 		const speechLang =
 			typeof document !== "undefined" ? document.documentElement.lang : "";
 		if (pcmStream && streamQueue?.enqueueOrderedStream) {
-			const startPlan = requestAlignedPlan(cascadeAvatar, {
+			const alignedPlan = requestAlignedPlan(cascadeAvatar, {
 				text: clean,
 				lang: speechLang,
 				audio: { kind: "pcm-stream", stream: pcmStream },
@@ -432,7 +510,7 @@ export function createSentenceTtsPipeline(
 			streamQueue.enqueueOrderedStream(seq, pcmStream, {
 				onPlaybackStart: (playback) => {
 					revealText();
-					startPlan?.(playback);
+					alignedPlan?.start(playback);
 				},
 				onPlaybackUnavailable: revealText,
 			});
@@ -559,7 +637,7 @@ export function createSentenceTtsPipeline(
 						pcmStream.end();
 					}
 				} else {
-					const startPlan = requestAlignedPlan(cascadeAvatar, {
+					const alignedPlan = requestAlignedPlan(cascadeAvatar, {
 						text: clean,
 						lang: speechLang,
 						audio: {
@@ -571,9 +649,10 @@ export function createSentenceTtsPipeline(
 					deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
 						onPlaybackStart: (playback) => {
 							revealText();
-							startPlan?.(playback);
+							alignedPlan?.start(playback);
 						},
 						onPlaybackUnavailable: revealText,
+						beforePlayback: alignedPlan?.beforePlayback,
 					});
 				}
 				if (ttsProviderForCost === "naia-local-voice") {

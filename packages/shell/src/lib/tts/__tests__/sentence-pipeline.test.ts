@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioQueue } from "../../voice/audio-queue";
 import { LocalVoiceScheduler } from "../local-voice-scheduler";
 import {
+	ALIGNED_PLAN_WAIT_MS,
 	type SentenceTtsPipelineDeps,
 	createSentenceTtsPipeline,
 } from "../sentence-pipeline";
@@ -639,6 +640,115 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 		resolvePlan(plan("aligned"));
 		await flush();
 		expect(renderer.playSpeechTiming).not.toHaveBeenCalled();
+	});
+
+	function preparingRenderer() {
+		const play = vi.fn(async (_clock: () => number) => true);
+		const renderer = {
+			...nvaRenderer(),
+			canPlaySpeechPlans: () => true,
+			prepareSpeechTiming: vi.fn(async () => ({ play })),
+		};
+		return { renderer, play };
+	}
+
+	type GatedCallbacks = {
+		onPlaybackStart: (p?: { clock: () => number }) => void;
+		beforePlayback?: () => Promise<unknown>;
+	};
+
+	it("loads the aligned plan before the sound starts, then plays it on the sound clock", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const { renderer, play } = preparingRenderer();
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getAlignedSpeechPlanSource: () => async () => plan("aligned"),
+		});
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장입니다.");
+		await flush();
+		const callbacks = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+		expect(callbacks.beforePlayback).toBeTypeOf("function");
+		await callbacks.beforePlayback?.();
+		// Loaded before the sound: nothing left to wait for at the first sound.
+		expect(renderer.prepareSpeechTiming).toHaveBeenCalledWith(
+			expect.objectContaining({ quality_mode: "aligned" }),
+		);
+		expect(play).not.toHaveBeenCalled();
+		const clock = () => 0;
+		callbacks.onPlaybackStart({ clock });
+		await flush();
+		expect(play).toHaveBeenCalledWith(clock);
+		expect(renderer.playSpeechTiming).not.toHaveBeenCalled();
+	});
+
+	it("a plan not ready within the wait lets the sound play idle and never starts late", async () => {
+		vi.useFakeTimers();
+		try {
+			synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+			const { renderer, play } = preparingRenderer();
+			let resolvePlan: (value: unknown) => void = () => {};
+			const { deps, queue } = makeDeps({
+				getRenderer: () => renderer,
+				getAlignedSpeechPlanSource: () => () =>
+					new Promise((resolve) => {
+						resolvePlan = resolve;
+					}) as never,
+			});
+			createSentenceTtsPipeline(deps).sendSentence("문장입니다.");
+			await vi.advanceTimersByTimeAsync(0);
+			const callbacks = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+			const gate = callbacks.beforePlayback?.();
+			await vi.advanceTimersByTimeAsync(ALIGNED_PLAN_WAIT_MS);
+			await gate;
+			callbacks.onPlaybackStart({ clock: () => 0 });
+			resolvePlan(plan("aligned"));
+			await vi.advanceTimersByTimeAsync(0);
+			expect(renderer.prepareSpeechTiming).not.toHaveBeenCalled();
+			expect(play).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("local voice is fetched whole, not streamed, while an NVA plan avatar is active", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const { renderer } = preparingRenderer();
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getVoiceConfig: () => ({ ttsProvider: "naia-local-voice" }),
+			getAlignedSpeechPlanSource: () => async () => plan("aligned"),
+		});
+		const streamQueue = { ...queue, enqueueOrderedStream: vi.fn() };
+		deps.getQueue = () => streamQueue;
+		createSentenceTtsPipeline(deps).sendSentence("문장입니다.");
+		await flush();
+		expect(streamQueue.enqueueOrderedStream).not.toHaveBeenCalled();
+		expect(synthesizeMock).toHaveBeenCalledWith(
+			expect.objectContaining({ streamPcm: false }),
+		);
+		expect(queue.enqueueOrdered.mock.calls[0][2]).toEqual(
+			expect.objectContaining({ beforePlayback: expect.any(Function) }),
+		);
+	});
+
+	it("uses the gateway shell_audio source by default when logged in", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const fetchMock = vi.fn(async () => new Response("{}", { status: 503 }));
+		vi.stubGlobal("fetch", fetchMock);
+		const { renderer } = preparingRenderer();
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getVoiceConfig: () => ({
+				ttsProvider: "nextain",
+				naiaKey: "k",
+				gatewayUrl: "https://gw.example",
+			}),
+		});
+		delete deps.getAlignedSpeechPlanSource;
+		createSentenceTtsPipeline(deps).sendSentence("문장입니다.");
+		await flush();
+		const callbacks = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+		expect(callbacks.beforePlayback).toBeTypeOf("function");
 	});
 
 	it("browser speech: browser-timed plan on the utterance clock, revised on boundary", async () => {

@@ -14,7 +14,11 @@
  * Anything else is refused and the caller keeps the idle clip (SoT 8).
  */
 import type { NvaManifest } from "../../nva";
-import type { AvatarSpeechTiming, SpeechPlan } from "./speech-timing";
+import type {
+	AvatarSpeechTiming,
+	PreparedSpeech,
+	SpeechPlan,
+} from "./speech-timing";
 import {
 	type SpeechMotionManifest,
 	speechBundlePaths,
@@ -122,39 +126,59 @@ export class CanonicalSpeechStage {
 	 * allowed, the load fails, or a newer start/stop superseded this one.
 	 */
 	async start(timing: AvatarSpeechTiming): Promise<boolean> {
-		if (this.disposed) return false;
-		const mode = timing.plan?.quality_mode;
-		if (mode !== "aligned" && mode !== "browser-timed") return false;
 		if (typeof timing.clock !== "function") return false;
+		const prepared = await this.prepare(timing.plan);
+		return prepared ? prepared.play(timing.clock) : false;
+	}
+
+	/**
+	 * Load one plan into the player without starting it, so the first mouth
+	 * frame can appear together with the first sound (no load wait after the
+	 * sound starts). `play(clock)` must be called with the clock of the very
+	 * sound the plan was made for; a newer prepare/start/stop supersedes it.
+	 */
+	async prepare(plan: SpeechPlan): Promise<PreparedSpeech | null> {
+		if (this.disposed) return null;
+		const mode = plan?.quality_mode;
+		if (mode !== "aligned" && mode !== "browser-timed") return null;
 		const generation = ++this.generation;
 		this.player.stop("cancel");
 		this.mode = null;
 		try {
 			const assets = await this.loadAssets();
-			if (generation !== this.generation || this.disposed) return false;
-			const input = {
-				manifest: this.config.manifest,
-				assets,
-				plan: timing.plan,
-			};
+			if (generation !== this.generation || this.disposed) return null;
+			const input = { manifest: this.config.manifest, assets, plan };
 			if (mode === "aligned") await this.player.loadAudioClock(input);
 			else await this.player.loadExternal(input);
 			if (generation !== this.generation || this.disposed) {
 				this.player.stop("cancel");
-				return false;
+				return null;
 			}
-			if (mode === "aligned") await this.player.playAudioClock(timing.clock);
-			else await this.player.playExternal(timing.clock);
-			if (generation !== this.generation || this.disposed) {
-				this.player.stop("cancel");
-				return false;
-			}
-			this.mode = mode;
-			return true;
 		} catch {
 			if (generation === this.generation) this.player.stop("error");
-			return false;
+			return null;
 		}
+		let used = false;
+		return {
+			play: async (clock) => {
+				if (used || typeof clock !== "function") return false;
+				used = true;
+				if (generation !== this.generation || this.disposed) return false;
+				try {
+					if (mode === "aligned") await this.player.playAudioClock(clock);
+					else await this.player.playExternal(clock);
+					if (generation !== this.generation || this.disposed) {
+						this.player.stop("cancel");
+						return false;
+					}
+					this.mode = mode;
+					return true;
+				} catch {
+					if (generation === this.generation) this.player.stop("error");
+					return false;
+				}
+			},
+		};
 	}
 
 	/** Revise the running browser-timed plan (boundary events). */

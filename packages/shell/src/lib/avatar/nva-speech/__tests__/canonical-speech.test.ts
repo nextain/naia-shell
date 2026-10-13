@@ -223,6 +223,36 @@ describe("CanonicalSpeechStage", () => {
 		expect(loadAsset).not.toHaveBeenCalled();
 	});
 
+	it("prepare loads without playing; play starts on the sound clock once", async () => {
+		const player = new FakePlayer();
+		const { stage } = stageWith(player);
+		const prepared = await stage.prepare(plan("aligned"));
+		expect(prepared).not.toBeNull();
+		expect(player.calls).toEqual(["stop", "loadAudioClock"]);
+		expect(stage.speaking).toBe(false);
+		const clock = () => 0;
+		expect(await prepared?.play(clock)).toBe(true);
+		expect(player.calls.at(-1)).toBe("playAudioClock");
+		expect(player.clock).toBe(clock);
+		// A used preparation never starts a second time.
+		expect(await prepared?.play(clock)).toBe(false);
+		expect(player.calls.filter((c) => c === "playAudioClock")).toHaveLength(1);
+	});
+
+	it("a newer prepare or stop makes an earlier preparation unplayable", async () => {
+		const player = new FakePlayer();
+		const { stage } = stageWith(player);
+		const first = await stage.prepare(plan("aligned"));
+		stage.stop();
+		expect(await first?.play(() => 0)).toBe(false);
+		const second = await stage.prepare(plan("aligned"));
+		const third = await stage.prepare(plan("browser-timed"));
+		expect(await second?.play(() => 0)).toBe(false);
+		expect(await third?.play(() => 0)).toBe(true);
+		expect(player.calls).not.toContain("playAudioClock");
+		expect(await stage.prepare(plan("approximate"))).toBeNull();
+	});
+
 	it("a newer start or stop supersedes a pending load", async () => {
 		const player = new FakePlayer();
 		let release = () => {};
