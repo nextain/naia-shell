@@ -2282,7 +2282,7 @@ Test Coverage Map (P02)
 
 ## UC-PROJECT-APP-SINGLE-OPEN-756-S2 — naia-adk에서 프로젝트 하나를 열고 전환한다 (#756 단계 2)
 
-사용자는 셸에 저장된 naia-adk의 `projects/`에서 naia-pj-adk 양식 프로젝트를 검색한다. 경로가 저장되지 않았거나 유효하지 않을 때만 naia-adk 폴더를 한 번 선택하고, `projects/` 검증에 성공한 뒤 경로를 저장한다. 탐색은 `projects/`의 1단계 디렉터리와 각 디렉터리의 직계 하위인 2단계 디렉터리만 프로젝트 루트 후보로 확인하며, 각 후보의 `projects/<이름>/project.yaml`에서 중첩된 `project.id`가 있는 항목을 찾는다. 프로젝트를 열면 검색과 목록이 사라지고 현재 프로젝트 이름과 ‘다른 프로젝트 열기’가 있는 작은 머리줄, 코딩 에이전트·대시보드·내부 이슈의 세 탭만 표시한다. 탭을 바꾸면 프로젝트별 상태를 저장하고, 다른 프로젝트를 열거나 셸을 다시 시작해도 각 프로젝트의 마지막 탭과 마지막 프로젝트를 복원한다. 단계 2의 세 탭은 빈 화면이며 코딩 에이전트·대시보드·내부 이슈 공급원을 연결하지 않는다.
+사용자는 셸에 저장된 naia-adk의 `projects/`에서 naia-pj-adk 양식 프로젝트를 검색한다. 경로가 저장되지 않았거나 유효하지 않을 때만 naia-adk 폴더를 한 번 선택하고, `projects/` 검증에 성공한 뒤 경로를 저장한다. `.agents/context/project-index.yaml`의 `submodules`에서 `type: workspace_adk`로 등록된 루트만 후보로 삼으며, 후보 루트는 `projects/` 바로 아래 또는 그 직계 하위까지만 허용한다. 각 후보의 `projects/<이름>/project.yaml`에서 중첩된 `project.id`가 있는 항목을 찾는다. 일반 프로젝트 저장소·팀 허브·예제 폴더가 자체 `projects/` 카탈로그를 가지고 있어도 workspace ADK로 등록되지 않았으면 검색 결과에 넣지 않는다. 프로젝트를 열면 검색과 목록이 사라지고 현재 프로젝트 이름과 ‘다른 프로젝트 열기’가 있는 작은 머리줄, 코딩 에이전트·대시보드·내부 이슈의 세 탭만 표시한다. 탭을 바꾸면 프로젝트별 상태를 저장하고, 다른 프로젝트를 열거나 셸을 다시 시작해도 각 프로젝트의 마지막 탭과 마지막 프로젝트를 복원한다. 단계 2의 세 탭은 빈 화면이며 코딩 에이전트·대시보드·내부 이슈 공급원을 연결하지 않는다.
 
 | 상태 | 사용자 기대 |
 |---|---|
@@ -2299,7 +2299,7 @@ Test Coverage Map (P02)
 
 | UC 상태·행동 | Vitest·Rust 코드 그룹 | 실 UI Playwright |
 |---|---|---|
-| naia-adk 1·2단 후보 탐색, 중첩 `project.id`, 밑줄 템플릿 및 3단계 이후 제외 | `packages/shell/src-tauri/src/project_catalog.rs` — `discovers_first_and_second_level_candidate_roots_and_skips_deeper_roots`, `lists_only_projects_with_nested_id_and_reports_relative_metadata_errors`; `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — `Project catalog — naia-adk scan` | `packages/shell/e2e/project-app.spec.ts` — saved path / catalog scan; `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts` — `Project catalog native IPC — #756 stage 2` |
+| project-index에 `workspace_adk`로 등록된 1·2단 후보만 탐색, 중첩 `project.id`, 일반 프로젝트·팀 허브·밑줄 템플릿 및 더 깊은 경로 제외 | `packages/shell/src-tauri/src/project_catalog.rs` — `discovers_first_and_second_level_candidate_roots_and_skips_deeper_roots`, `scans_only_roots_registered_as_workspace_adks`, `ignores_workspace_paths_outside_allowed_project_depth_or_under_templates`, `lists_only_projects_with_nested_id_and_reports_relative_metadata_errors`; `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — `Project catalog — naia-adk scan` | `packages/shell/e2e/project-app.spec.ts` — saved path / catalog scan; `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts` — `Project catalog native IPC — #756 stage 2` |
 | 저장 경로 우선, 경로 없음·무효·취소 복구, 검증 후 경로 저장 | `ProjectsApp.test.tsx` — `loads the saved ADK catalog directly`, `asks once for naia-adk`, `shows path recovery`, `shows a path error`; `project-catalog.test.ts` — `scans the configured naia-adk path` | `project-app.spec.ts` — saved path, first selection, canceled selection |
 | 프로젝트 한 개 열기, 검색 숨김, 다른 프로젝트 열기·취소 복귀, 프로젝트별 탭 저장·복원 | `ProjectsApp.test.tsx` — `opens one project at a time`, `restores the last project and stage`, `returns to the opened project`; `project-session.test.ts` — save/load and malformed state | `project-app.spec.ts` — one-at-a-time switch, cancel return, shell reload |
 | 마지막 프로젝트 부재 복구와 고정 앱 막대 항목 | `ProjectsApp.test.tsx` — `shows a recovery notice`, single built-in app registration | `project-app.spec.ts` — one `data-app-id="projects"` entry after discovery and switching |
