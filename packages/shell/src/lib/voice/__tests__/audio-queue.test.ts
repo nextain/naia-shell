@@ -322,3 +322,48 @@ describe("AudioQueue streamed PCM playback", () => {
 		expect(unavailable).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe("AudioQueue sentence audio clock (NVA SoT 8)", () => {
+	beforeEach(() => {
+		FakeAudio.instances = [];
+		FakeAudio.playImpl = () => Promise.resolve();
+		FakeAudioContext.sources = [];
+		FakeAudioContext.now = 0;
+		vi.stubGlobal("Audio", FakeAudio);
+		vi.stubGlobal("AudioContext", FakeAudioContext);
+	});
+
+	it("hands a whole-audio sentence the element's own playback position", () => {
+		const started = vi.fn();
+		const queue = new AudioQueue();
+		queue.enqueue("first", { onPlaybackStart: started });
+		const audio = FakeAudio.instances[0] as FakeAudio & {
+			currentTime?: number;
+		};
+		audio.onplay?.();
+		const { clock } = started.mock.calls[0][0] as { clock: () => number };
+		audio.currentTime = 1.25;
+		expect(clock()).toBe(1.25);
+		audio.currentTime = 2.5;
+		expect(clock()).toBe(2.5);
+	});
+
+	it("maps the PCM context timeline to the sound position and holds through gaps", () => {
+		const started = vi.fn();
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, stream, { onPlaybackStart: started });
+		FakeAudioContext.now = 1;
+		stream.push(new Int16Array(2_400)); // 100 ms, scheduled at 1.04
+		const { clock } = started.mock.calls[0][0] as { clock: () => number };
+		expect(clock()).toBe(0); // not audible yet
+		FakeAudioContext.now = 1.09;
+		expect(clock()).toBeCloseTo(0.05, 6);
+		// Underrun: the next chunk arrives late, after the first has finished.
+		FakeAudioContext.now = 1.3;
+		expect(clock()).toBeCloseTo(0.1, 6); // held at the end of what played
+		stream.push(new Int16Array(2_400)); // starts at 1.3
+		FakeAudioContext.now = 1.35;
+		expect(clock()).toBeCloseTo(0.15, 6);
+	});
+});

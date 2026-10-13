@@ -6,6 +6,7 @@
  * and ordered enqueue for out-of-order TTS responses.
  */
 
+import type { AudioPlaybackClock } from "../avatar/nva-speech/speech-timing";
 import { Logger } from "../logger";
 
 export interface AudioQueueCallbacks {
@@ -16,8 +17,11 @@ export interface AudioQueueCallbacks {
 }
 
 export interface AudioQueueItemCallbacks {
-	/** Fires when this exact sentence starts playing, not merely when queued. */
-	onPlaybackStart?: () => void;
+	/**
+	 * Fires when this exact sentence starts playing, not merely when queued.
+	 * `playback.clock()` is that sound's own playback position (SoT 8 audio clock).
+	 */
+	onPlaybackStart?: (playback: AudioPlaybackClock) => void;
 	/** Fires if this sentence cannot start playback. */
 	onPlaybackUnavailable?: () => void;
 }
@@ -256,6 +260,19 @@ export class AudioQueue {
 		this.currentStream = stream;
 		let nextStart = 0;
 		let started = false;
+		// Scheduled pieces of this sound on the context timeline. The clock maps
+		// ctx.currentTime to a position in the sound, holding through underrun gaps.
+		const pieces: { at: number; offset: number; duration: number }[] = [];
+		let soundSeconds = 0;
+		const clock = () => {
+			const now = ctx.currentTime;
+			let position = 0;
+			for (const piece of pieces) {
+				if (now < piece.at) break;
+				position = piece.offset + Math.min(now - piece.at, piece.duration);
+			}
+			return position;
+		};
 		let advanced = false;
 		let pending = 0;
 		let ended = false;
@@ -285,6 +302,8 @@ export class AudioQueue {
 				const at = Math.max(now + (started ? 0 : 0.04), nextStart);
 				src.start(at);
 				nextStart = at + buf.duration;
+				pieces.push({ at, offset: soundSeconds, duration: buf.duration });
+				soundSeconds += buf.duration;
 				pending++;
 				this.streamSources.add(src);
 				src.onended = () => {
@@ -299,7 +318,7 @@ export class AudioQueue {
 						now: Number(now.toFixed(3)),
 						ctxState: ctx.state,
 					});
-					item.onPlaybackStart?.();
+					item.onPlaybackStart?.({ clock });
 					if (!wasPlaying) this.callbacks.onPlaybackStart?.();
 				}
 			},
@@ -395,7 +414,7 @@ export class AudioQueue {
 		audio.onplay = () => {
 			if (!isCurrent()) return;
 			started = true;
-			item.onPlaybackStart?.();
+			item.onPlaybackStart?.({ clock: () => audio.currentTime || 0 });
 			// Only fire onPlaybackStart for the first chunk in a sequence
 			if (!wasPlaying) {
 				this.callbacks.onPlaybackStart?.();

@@ -10,11 +10,23 @@ import {
 	parseMotionSpec,
 	resolveChestY,
 } from "./nva-procedural-motion";
+import {
+	CanonicalSpeechStage,
+	hasCanonicalSpeechMotion,
+} from "./nva-speech/canonical-speech-stage";
+import type {
+	AvatarSpeechTiming,
+	SpeechPlan,
+} from "./nva-speech/speech-timing";
 
 interface Config {
 	manifest: NvaManifest;
 	locale: string;
 	resolveAssetUrl: (path: string) => Promise<string>;
+	/** Bundle asset bytes for the canonical speech player (defaults to fetch of resolveAssetUrl). */
+	loadAssetBlob?: (path: string) => Promise<Blob>;
+	/** Test seam for the canonical speech stage. */
+	createSpeechStage?: (host: HTMLVideoElement) => CanonicalSpeechStage | null;
 	onSpeaking?: (speaking: boolean) => void;
 }
 
@@ -38,7 +50,10 @@ export function canCarryAlpha(clipPath: string): boolean {
  * 소유자이며, 이 렌더러는 절대 텍스트를 스스로 합성하지 않는다(브라우저
  * speechSynthesis 자동 폴백 없음). 두 가지만 담당한다:
  *   1) 정확히 일치하는 문구의 저작 클립(자체 녹음 음성 포함) 재생
- *   2) Shell의 실제 재생 시작/종료에 맞춘 idle/talking 비주얼 전환
+ *   2) 발화 입 모양 = 정본 SpeechPlayer(vendor) 하나뿐. Shell 음성은 aligned
+ *      계획 + 그 소리의 오디오 시계, 브라우저/시스템 음성은 browser-timed 계획
+ *      (playSpeechTiming/updateSpeechPlan). 계획이 없거나 실패하면 대기 클립
+ *      그대로 — 말하기 반복 클립·아이우에오 순환 같은 근사는 없다(SoT 8).
  *
  * 표시는 숨은 `<video>`(디코드 버퍼)를 매 프레임 `<canvas>`(alpha:true)에 합성한다.
  * WebM 알파 클립은 그대로 drawImage, 알파를 가질 수 없는 컨테이너(mp4 등)는
@@ -64,6 +79,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
+	private speechStage: CanonicalSpeechStage | null = null;
+	private speechKeyColor: string | undefined;
 
 	constructor(private readonly config: Config) {
 		this.motionSpec = parseMotionSpec(config.manifest);
@@ -77,6 +94,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.mountedVideo = video;
 		this.canvas = canvas;
 		this.ctx = canvas.getContext("2d", { alpha: true });
+		this.speechStage = this.createSpeechStage(video);
 		void this.playIdle();
 		this.startDrawLoop();
 	}
@@ -131,22 +149,65 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		}
 	}
 
-	/** Switch idle/talking visual only. Shell owns the actual audio playback. */
+	/**
+	 * Speaking state only. The mouth moves solely through playSpeechTiming
+	 * (canonical player); without a plan the idle clip keeps playing.
+	 */
 	setSpeakingVisual(active: boolean): void {
 		if (!this.video || this.disposed) return;
 		this.generation++;
 		this.config.onSpeaking?.(active);
-		if (active) {
-			const clip =
-				this.config.manifest.vrm_slots?.visemes?.aiueo?.clip ??
-				this.config.manifest.vrm_slots?.motions?.talking?.clip ??
-				this.config.manifest.animations.talking?.clip ??
-				this.config.manifest.animations.speak?.clip ??
-				defaultClipOf(this.config.manifest).video;
-			void this.playClip(clip, true, true);
-		} else {
+		if (!active) {
+			this.speechStage?.stop();
 			void this.playIdle();
 		}
+	}
+
+	/** Play one aligned or browser-timed plan through the canonical player. */
+	async playSpeechTiming(timing: AvatarSpeechTiming): Promise<boolean> {
+		const stage = this.speechStage;
+		if (!stage || this.disposed) return false;
+		this.speechKeyColor = this.keyColorFor(
+			this.config.manifest.animations.talking?.clip ?? "",
+		);
+		return stage.start(timing);
+	}
+
+	/** Revise the running browser-timed plan after a boundary event. */
+	updateSpeechPlan(plan: SpeechPlan): boolean {
+		return this.speechStage?.update(plan) ?? false;
+	}
+
+	private createSpeechStage(
+		host: HTMLVideoElement,
+	): CanonicalSpeechStage | null {
+		if (this.config.createSpeechStage)
+			return this.config.createSpeechStage(host);
+		if (!hasCanonicalSpeechMotion(this.config.manifest)) return null;
+		try {
+			return new CanonicalSpeechStage({
+				manifest: this.config.manifest,
+				host,
+				loadAsset:
+					this.config.loadAssetBlob ??
+					(async (path) => {
+						const response = await fetch(
+							await this.config.resolveAssetUrl(path),
+						);
+						if (!response.ok) throw new Error(`NVA asset ${path} unavailable`);
+						return response.blob();
+					}),
+			});
+		} catch {
+			return null;
+		}
+	}
+
+	private keyColorFor(path: string): string | undefined {
+		return (
+			this.config.manifest.chroma_key ??
+			(canCarryAlpha(path) ? undefined : this.config.manifest.background?.color)
+		);
 	}
 
 	private async playClip(
@@ -157,11 +218,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	): Promise<void> {
 		if (!this.video || !this.mountedVideo)
 			throw new Error("NVA video is not mounted");
-		this.currentKeyColor =
-			this.config.manifest.chroma_key ??
-			(canCarryAlpha(path)
-				? undefined
-				: this.config.manifest.background?.color);
+		this.currentKeyColor = this.keyColorFor(path);
 		const url = await this.config.resolveAssetUrl(path);
 		if (this.disposed || !this.mountedVideo)
 			throw new Error("NVA renderer stopped");
@@ -254,26 +311,34 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.running = true;
 		const draw = () => {
 			if (!this.running) return;
+			const stage = this.speechStage?.speaking ? this.speechStage : null;
 			const video = this.video;
+			const source: HTMLVideoElement | HTMLCanvasElement | null = stage
+				? stage.canvas
+				: video;
+			const sourceWidth = stage ? stage.canvas.width : (video?.videoWidth ?? 0);
+			const sourceHeight = stage
+				? stage.canvas.height
+				: (video?.videoHeight ?? 0);
 			const canvas = this.canvas;
 			const ctx = this.ctx;
 			if (
-				video &&
+				source &&
 				canvas &&
 				ctx &&
-				video.readyState >= 2 &&
-				video.videoWidth > 0 &&
-				video.videoHeight > 0
+				(stage || (video?.readyState ?? 0) >= 2) &&
+				sourceWidth > 0 &&
+				sourceHeight > 0
 			) {
 				const rect = containRect(
 					canvas.width,
 					canvas.height,
-					video.videoWidth,
-					video.videoHeight,
+					sourceWidth,
+					sourceHeight,
 				);
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
 				if (rect.dw > 0 && rect.dh > 0) {
-					const keyColor = this.currentKeyColor;
+					const keyColor = stage ? this.speechKeyColor : this.currentKeyColor;
 					const motionSpec = this.motionSpec;
 					const offscreen = motionSpec
 						? this.ensureOffscreen(canvas.width, canvas.height)
@@ -290,9 +355,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 							if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
 							else this.keyer.setParams({ keyColor });
 							const keyed = this.keyer.process(
-								video,
-								video.videoWidth,
-								video.videoHeight,
+								source,
+								sourceWidth,
+								sourceHeight,
 							);
 							drawTarget.drawImage(keyed, rect.dx, rect.dy, rect.dw, rect.dh);
 							drew = true;
@@ -303,7 +368,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 						}
 					}
 					if (!drew)
-						drawTarget.drawImage(video, rect.dx, rect.dy, rect.dw, rect.dh);
+						drawTarget.drawImage(source, rect.dx, rect.dy, rect.dw, rect.dh);
 
 					if (offscreen) {
 						drawWithMotion(
@@ -323,6 +388,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	interrupt(): void {
 		this.generation++;
+		this.speechStage?.stop();
 		this.config.onSpeaking?.(false);
 		void this.playIdle();
 	}
@@ -337,6 +403,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.offscreenCanvas = null;
 		this.offscreenCtx = null;
 		this.interrupt();
+		this.speechStage?.dispose();
+		this.speechStage = null;
 		for (const v of this.clipVideos.values()) {
 			v.pause();
 			if (v !== this.mountedVideo) v.remove();

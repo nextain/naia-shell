@@ -84,7 +84,7 @@ describe("PrebakedAvatarRenderer", () => {
 		expect((renderer as unknown as { speak?: unknown }).speak).toBeUndefined();
 	});
 
-	it("plays the idle clip on start and the talking clip on setSpeakingVisual(true)", async () => {
+	it("keeps the idle clip on setSpeakingVisual(true) — no talking/aiueo loop (SoT 8)", async () => {
 		const manifest = baseManifest();
 		const resolveAssetUrl = vi.fn(async (path: string) => `blob:${path}`);
 		const onSpeaking = vi.fn();
@@ -105,7 +105,10 @@ describe("PrebakedAvatarRenderer", () => {
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(onSpeaking).toHaveBeenCalledWith(true);
-		expect(resolveAssetUrl).toHaveBeenCalledWith("clips/speech-ko.mp4");
+		expect(resolveAssetUrl).not.toHaveBeenCalledWith("clips/speech-ko.mp4");
+		expect(resolveAssetUrl.mock.calls.map(([path]) => path)).toEqual([
+			"clips/idle.webm",
+		]);
 
 		renderer.setSpeakingVisual(false);
 		await Promise.resolve();
@@ -223,27 +226,35 @@ describe("PrebakedAvatarRenderer", () => {
 			for (let i = 0; i < 6; i++) await Promise.resolve();
 		};
 
-		it("assigns src once per clip across idle→talking round trips", async () => {
+		/** Start the authored greeting clip; returns a function that ends it. */
+		async function beginGreeting(renderer: PrebakedAvatarRenderer) {
+			const done = renderer.playAuthoredClip("안녕하세요");
+			await settleClips();
+			return async () => {
+				videoForUrl("blob:clips/greeting.webm").dispatchEvent(
+					new Event("ended"),
+				);
+				await done;
+				await settleClips();
+			};
+		}
+
+		it("assigns src once per clip across idle→greeting round trips", async () => {
 			const { renderer, video } = await mounted();
 			expect(srcAssignments).toHaveLength(1); // idle
-			renderer.setSpeakingVisual(true);
-			await settleClips();
-			expect(srcAssignments).toHaveLength(2); // talking, on a second element
+			const end = await beginGreeting(renderer);
+			expect(srcAssignments).toHaveLength(2); // greeting, on a second element
+			await end();
 
 			const before = srcAssignments.length;
-			renderer.setSpeakingVisual(false);
-			await settleClips();
-			renderer.setSpeakingVisual(true);
-			await settleClips();
-			renderer.setSpeakingVisual(false);
-			await settleClips();
+			await (await beginGreeting(renderer))();
 			// Every later switch re-uses a decoder that is already loaded.
 			expect(srcAssignments).toHaveLength(before);
 			expect(srcAssignments[0].element).toBe(video);
 			expect(srcAssignments[1].element).not.toBe(video);
 			expect(srcAssignments.map((entry) => entry.url)).toEqual([
 				"blob:clips/idle.webm",
-				"blob:clips/speech-ko.mp4",
+				"blob:clips/greeting.webm",
 			]);
 			renderer.stop();
 		});
@@ -252,20 +263,20 @@ describe("PrebakedAvatarRenderer", () => {
 			const { renderer, video } = await mounted();
 			playCalls.length = 0;
 			pauseCalls.length = 0;
-			renderer.setSpeakingVisual(true);
-			await settleClips();
-			const talking = videoForUrl("blob:clips/speech-ko.mp4");
-			expect(playCalls).toContain(talking);
+			const end = await beginGreeting(renderer);
+			const greeting = videoForUrl("blob:clips/greeting.webm");
+			expect(playCalls).toContain(greeting);
 			expect(playCalls).not.toContain(video);
 			expect(pauseCalls).toContain(video);
+			await end();
 			renderer.stop();
 		});
 
 		it("keeps the extra clip element next to the mounted one and removes it on stop", async () => {
 			const { renderer, host, video } = await mounted();
-			renderer.setSpeakingVisual(true);
-			await settleClips();
-			const talking = videoForUrl("blob:clips/speech-ko.mp4");
+			const end = await beginGreeting(renderer);
+			await end();
+			const talking = videoForUrl("blob:clips/greeting.webm");
 			expect(talking.parentElement).toBe(host);
 			expect(video.nextSibling).toBe(talking);
 			expect(host.querySelectorAll("video")).toHaveLength(2);
