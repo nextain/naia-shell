@@ -137,6 +137,59 @@ class FakeAudioContext {
 
 const pcm = (...samples: number[]) => Int16Array.from(samples);
 
+describe("AudioQueue beforePlayback gate (NVA plan before sound)", () => {
+	beforeEach(() => {
+		FakeAudio.instances = [];
+		FakeAudio.playImpl = () => Promise.resolve();
+		vi.stubGlobal("Audio", FakeAudio);
+	});
+
+	it("does not start the sound until the gate settles", async () => {
+		let release = () => {};
+		const gate = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					release = resolve;
+				}),
+		);
+		const queue = new AudioQueue();
+		queue.enqueue("first", { beforePlayback: gate });
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(gate).toHaveBeenCalledTimes(1);
+		expect(FakeAudio.instances).toHaveLength(0);
+		release();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(FakeAudio.instances).toHaveLength(1);
+		expect(FakeAudio.instances[0].play).toHaveBeenCalledTimes(1);
+	});
+
+	it("a failed gate still plays the sound", async () => {
+		const queue = new AudioQueue();
+		queue.enqueue("first", {
+			beforePlayback: () => Promise.reject(new Error("no plan")),
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(FakeAudio.instances).toHaveLength(1);
+	});
+
+	it("clear() while waiting on the gate cancels that sound", async () => {
+		let release = () => {};
+		const queue = new AudioQueue();
+		queue.enqueue("first", {
+			beforePlayback: () =>
+				new Promise<void>((resolve) => {
+					release = resolve;
+				}),
+		});
+		await Promise.resolve();
+		queue.clear();
+		release();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(FakeAudio.instances).toHaveLength(0);
+	});
+});
+
 describe("PcmStreamSource (streaming TTS contract)", () => {
 	it("replays buffered chunks to a late subscriber and ends exactly once", () => {
 		const stream = new PcmStreamSource(24_000);

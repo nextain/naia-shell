@@ -13,11 +13,12 @@
  *    so the plan is driven by time since the utterance started and revised on
  *    every `boundary` event (`updateSpeechPlan`).
  *
- * Plan generation itself is NOT implemented here. It belongs to the gateway
- * aligned-plan route and the shared browser plan builder (studio work, luna
- * branch studio-104-bvoice). This module only fixes the call sites and the
- * shapes the Shell expects; until a source is registered the avatar stays on
- * its idle clip while speaking (no approximation, no mouth loop).
+ * Plan generation is not done in the Shell. Aligned plans come from the
+ * gateway (`gateway-aligned-plan.ts`: POST /v1/studio/speech-plan, source
+ * kind `shell_audio`, the same MFA route the studio uses). Browser-timed plans
+ * come from the shared browser plan builder (moves to naia-video-avatar after
+ * the web eSpeak correction). Without a plan the avatar stays on its idle
+ * clip while speaking (no approximation, no mouth loop).
  */
 import type { PcmStreamSource } from "../../voice/audio-queue";
 import type { SpeechPlan } from "./vendor/speech-plan.js";
@@ -31,6 +32,12 @@ export type SpeechClock = () => number;
 export interface AudioPlaybackClock {
 	/** Playback position of this sentence's sound (seconds, >= 0). */
 	clock: SpeechClock;
+}
+
+/** A plan already loaded into the canonical player, waiting for its sound. */
+export interface PreparedSpeech {
+	/** Start drawing on `clock`, the playback position of the plan's sound. */
+	play(clock: SpeechClock): Promise<boolean>;
 }
 
 export interface AvatarSpeechTiming {

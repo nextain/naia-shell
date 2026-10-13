@@ -16,6 +16,7 @@ import {
 } from "./nva-speech/canonical-speech-stage";
 import type {
 	AvatarSpeechTiming,
+	PreparedSpeech,
 	SpeechPlan,
 } from "./nva-speech/speech-timing";
 
@@ -171,6 +172,21 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			this.config.manifest.animations.talking?.clip ?? "",
 		);
 		return stage.start(timing);
+	}
+
+	/** True when this avatar carries the canonical speech set. */
+	canPlaySpeechPlans(): boolean {
+		return Boolean(this.speechStage) && !this.disposed;
+	}
+
+	/** Load a plan ahead of its sound; play(clock) once the sound starts. */
+	async prepareSpeechTiming(plan: SpeechPlan): Promise<PreparedSpeech | null> {
+		const stage = this.speechStage;
+		if (!stage || this.disposed) return null;
+		this.speechKeyColor = this.keyColorFor(
+			this.config.manifest.animations.talking?.clip ?? "",
+		);
+		return stage.prepare(plan);
 	}
 
 	/** Revise the running browser-timed plan after a boundary event. */

@@ -1,5 +1,6 @@
 import type {
 	AvatarSpeechTiming,
+	PreparedSpeech,
 	SpeechPlan,
 } from "./nva-speech/speech-timing";
 
@@ -26,6 +27,13 @@ export interface AvatarSpeechRenderer {
 	setSpeakingVisual(active: boolean): void;
 	/** Canonical player: aligned plan + audio clock, or browser-timed plan + utterance clock. */
 	playSpeechTiming?(timing: AvatarSpeechTiming): Promise<boolean>;
+	/**
+	 * Load an aligned plan before its sound starts (the sound waits for this),
+	 * so the first mouth frame and the first sound start together.
+	 */
+	prepareSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	/** True when the loaded avatar carries the canonical speech set. */
+	canPlaySpeechPlans?(): boolean;
 	/** Revise a running browser-timed plan (speechSynthesis boundary). */
 	updateSpeechPlan?(plan: SpeechPlan): boolean;
 	setVoice(refUrl: string | null | undefined): Promise<boolean>;

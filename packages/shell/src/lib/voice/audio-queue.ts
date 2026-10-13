@@ -24,6 +24,13 @@ export interface AudioQueueItemCallbacks {
 	onPlaybackStart?: (playback: AudioPlaybackClock) => void;
 	/** Fires if this sentence cannot start playback. */
 	onPlaybackUnavailable?: () => void;
+	/**
+	 * Awaited when this sentence's turn comes, before its sound starts (whole
+	 * audio only). Lets the avatar load the plan for this exact sound so the
+	 * first mouth frame and the first sound start together. A rejection or a
+	 * newer clear() never blocks the sound: it plays after the gate settles.
+	 */
+	beforePlayback?: () => Promise<unknown>;
 }
 
 interface AudioQueueItem extends AudioQueueItemCallbacks {
@@ -339,6 +346,7 @@ export class AudioQueue {
 							audioBase64: stream.wholeAudioBase64,
 							onPlaybackStart: item.onPlaybackStart,
 							onPlaybackUnavailable: item.onPlaybackUnavailable,
+							beforePlayback: item.beforePlayback,
 						});
 						this.playing = wasPlaying;
 						this.playNext();
@@ -378,6 +386,29 @@ export class AudioQueue {
 			this.playStream(item, item.stream, generation, wasPlaying);
 			return;
 		}
+		if (item.beforePlayback) {
+			const gate = item.beforePlayback;
+			void Promise.resolve()
+				.then(gate)
+				.catch((error) =>
+					Logger.warn("AudioQueue", "beforePlayback failed", {
+						error: String(error),
+					}),
+				)
+				.then(() => {
+					if (generation !== this.generation) return;
+					this.playAudio(item, generation, wasPlaying);
+				});
+			return;
+		}
+		this.playAudio(item, generation, wasPlaying);
+	}
+
+	private playAudio(
+		item: AudioQueueItem,
+		generation: number,
+		wasPlaying: boolean,
+	): void {
 		const mp3Base64 = item.audioBase64 ?? "";
 
 		// WAV base64 starts with "UklGR" (RIFF header); use audio/wav MIME for omni model output
