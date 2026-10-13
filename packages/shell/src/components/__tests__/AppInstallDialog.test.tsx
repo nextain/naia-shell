@@ -26,7 +26,11 @@ vi.mock("../../lib/app-loader", () => ({
 }));
 vi.mock("../../lib/app-store-client", () => ({
 	getStoreGatewayUrl: vi.fn(() => "https://api-dev.naia.land"),
-	getStoreProductName: vi.fn().mockResolvedValue("나이아 슬라이드"),
+	getStoreProductMetadata: vi.fn().mockResolvedValue({
+		name: "Naia Slides",
+		description: "Present and record a deck.",
+		thumbnailUrl: null,
+	}),
 	hasStoreEntitlement: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("../../lib/logger", () => ({
@@ -88,6 +92,7 @@ describe("AppInstallDialog — storefront install (#471)", () => {
 
 		expect(screen.getAllByTestId("app-install-product")).toHaveLength(1);
 		expect(screen.getByText("Naia Slides")).toBeTruthy();
+		expect(await screen.findByText("Present and record a deck.")).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "설치" }));
 		await waitFor(() =>
 			expect(

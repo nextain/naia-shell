@@ -8,6 +8,11 @@ import {
 } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	CAFE_LUA_TAROT_APP_ID,
+	CAFE_LUA_TAROT_ASK_EVENT,
+	CAFE_LUA_TAROT_RESPONSE_EVENT,
+} from "../../apps/generic-installed/cafelua-tarot-host-bridge";
 import { appRegistry } from "../../lib/app-registry";
 import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
 import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
@@ -255,6 +260,120 @@ describe("ChatArea", () => {
 		expect(buttons.length).toBeGreaterThanOrEqual(2);
 	});
 
+	it("routes a Cafe Lua Tarot reveal through the selected local main model and returns Naia's reply", async () => {
+		const tools = [
+			{
+				name: "skill_cafelua_tarot",
+				description: "Control a tarot reading.",
+				parameters: {
+					type: "object" as const,
+					properties: { action: { type: "string" } },
+				},
+				tier: 0,
+			},
+		];
+		appRegistry.register({
+			id: CAFE_LUA_TAROT_APP_ID,
+			name: "Cafe Lua Tarot",
+			center: () => null,
+			tools,
+		});
+		useAppStore.setState({ activeApp: CAFE_LUA_TAROT_APP_ID });
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				ollamaHost: "http://localhost:11434",
+				enableTools: false,
+				locale: "en",
+			}),
+		);
+		const reply = vi.fn();
+		window.addEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+
+		window.dispatchEvent(
+			new CustomEvent(CAFE_LUA_TAROT_ASK_EVENT, {
+				detail: {
+					requestId: "reading-1-card-0",
+					prompt: "You are Naia. Interpret The Fool in the Present position.",
+				},
+			}),
+		);
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		expect(mockSendAppSkills).toHaveBeenCalledWith(
+			CAFE_LUA_TAROT_APP_ID,
+			tools,
+			{ awaitAck: true },
+		);
+		expect(capturedRequests[0].provider).toMatchObject({
+			provider: "ollama",
+			model: "qwen3:8b",
+		});
+		expect(capturedRequests[0].message).toContain("You are Naia");
+		capturedRequests[0].onChunk({
+			type: "text",
+			requestId: capturedRequests[0].requestId,
+			text: "A new path is opening.",
+		});
+		capturedRequests[0].onChunk({
+			type: "finish",
+			requestId: capturedRequests[0].requestId,
+		});
+		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toEqual({
+			requestId: "reading-1-card-0",
+			text: "A new path is opening.",
+		});
+		window.removeEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		appRegistry.unregister(CAFE_LUA_TAROT_APP_ID);
+		localStorage.removeItem("naia-config");
+	});
+
+	it("returns an app error instead of claiming Naia received a reveal when tool registration fails", async () => {
+		appRegistry.register({
+			id: CAFE_LUA_TAROT_APP_ID,
+			name: "Cafe Lua Tarot",
+			center: () => null,
+			tools: [
+				{
+					name: "skill_cafelua_tarot",
+					description: "Control a tarot reading.",
+					parameters: { type: "object", properties: {} },
+					tier: 0,
+				},
+			],
+		});
+		useAppStore.setState({ activeApp: CAFE_LUA_TAROT_APP_ID });
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "ollama", model: "qwen3:8b" }),
+		);
+		mockSendAppSkills.mockResolvedValueOnce(false);
+		const reply = vi.fn();
+		window.addEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+		window.dispatchEvent(
+			new CustomEvent(CAFE_LUA_TAROT_ASK_EVENT, {
+				detail: {
+					requestId: "reading-registration-error",
+					prompt: "Interpret this card.",
+				},
+			}),
+		);
+
+		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+		expect(capturedRequests).toHaveLength(0);
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+			requestId: "reading-registration-error",
+			error: expect.stringContaining("could not register"),
+		});
+		window.removeEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		appRegistry.unregister(CAFE_LUA_TAROT_APP_ID);
+		localStorage.removeItem("naia-config");
+	});
+
 	it("cleans up the pipeline when Web Speech reports a permission error", async () => {
 		localStorage.setItem(
 			"naia-config",
@@ -272,7 +391,9 @@ describe("ChatArea", () => {
 		});
 
 		render(<ChatArea />);
-		fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+		fireEvent.click(
+			document.querySelector(".chat-voice-btn") as HTMLButtonElement,
+		);
 
 		await waitFor(() =>
 			expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledTimes(1),
@@ -460,9 +581,9 @@ describe("ChatArea", () => {
 
 		// #572 — 원문은 답변 본문이 아니라 실패 표시의 접힌 상세로 간다.
 		await waitFor(() =>
-			expect(useChatStore.getState().messages.at(-1)?.failure?.detail).toContain(
-				"provider rejected the API key",
-			),
+			expect(
+				useChatStore.getState().messages.at(-1)?.failure?.detail,
+			).toContain("provider rejected the API key"),
 		);
 		expect(useChatStore.getState().messages.at(-1)?.content).toBe("");
 		expect(useChatStore.getState().isStreaming).toBe(false);
@@ -1220,7 +1341,10 @@ describe("ChatArea", () => {
 		// A resolved test promise can take <1ms. Control elapsed synthesis time
 		// so the intended cold-engine RTF>1 condition does not depend on CPU load.
 		let elapsed = 0;
-		vi.spyOn(performance, "now").mockImplementation(() => (elapsed += 100));
+		vi.spyOn(performance, "now").mockImplementation(() => {
+			elapsed += 100;
+			return elapsed;
+		});
 		const firstTts = deferred<{ audioBase64: string; costUsd: number }>();
 		const secondTts = deferred<{ audioBase64: string; costUsd: number }>();
 		ttsSyncMocks.streamsAvatarPcm.mockReturnValue(false);
@@ -1593,7 +1717,9 @@ describe("ChatArea", () => {
 		});
 		request.onChunk({ type: "finish", requestId: request.requestId });
 
-		await waitFor(() => expect(screen.getByText("Visible answer.")).toBeDefined());
+		await waitFor(() =>
+			expect(screen.getByText("Visible answer.")).toBeDefined(),
+		);
 		const assistants = useChatStore
 			.getState()
 			.messages.filter((message) => message.role === "assistant");
@@ -1956,10 +2082,7 @@ describe("ChatArea", () => {
 
 	it("does not hydrate stale Gateway history over the local conversation", async () => {
 		// A completed first turn must remain the source of the second request.
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({ }),
-		);
+		localStorage.setItem("naia-config", JSON.stringify({}));
 		const { getGatewayHistory } = await import("../../lib/gateway-sessions");
 		(getGatewayHistory as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
 			{
@@ -2022,11 +2145,22 @@ describe("ChatArea", () => {
 	it("restores current conversation messages on mount when stored key and transcript exist", async () => {
 		sessionStorage.setItem("naia-chat-session-id", "chat-mount-restore-test");
 		const jsonl = [
-			JSON.stringify({ role: "user", content: "복원된 메시지", timestamp: 1000 }),
-			JSON.stringify({ role: "assistant", content: "복원된 답변", timestamp: 1001 }),
+			JSON.stringify({
+				role: "user",
+				content: "복원된 메시지",
+				timestamp: 1000,
+			}),
+			JSON.stringify({
+				role: "assistant",
+				content: "복원된 답변",
+				timestamp: 1001,
+			}),
 		].join("\n");
 		mockInvoke.mockImplementation((cmd, args) => {
-			if (cmd === "read_conversation" && args?.sessionId === "chat-mount-restore-test") {
+			if (
+				cmd === "read_conversation" &&
+				args?.sessionId === "chat-mount-restore-test"
+			) {
 				return Promise.resolve(jsonl);
 			}
 			return Promise.resolve(undefined);
@@ -2048,7 +2182,10 @@ describe("ChatArea", () => {
 	});
 
 	it("keeps stored key and shows empty messages on mount when no transcript exists", async () => {
-		sessionStorage.setItem("naia-chat-session-id", "chat-fresh-key-no-transcript");
+		sessionStorage.setItem(
+			"naia-chat-session-id",
+			"chat-fresh-key-no-transcript",
+		);
 		mockInvoke.mockImplementation((cmd) => {
 			if (cmd === "read_conversation") {
 				return Promise.resolve("");
@@ -2091,7 +2228,9 @@ describe("ChatArea", () => {
 		expect(state.messages).toHaveLength(0);
 		expect(state.localSessionId).not.toBe("chat-previous-session");
 		expect(state.localSessionId.startsWith("chat-")).toBe(true);
-		expect(sessionStorage.getItem("naia-chat-session-id")).toBe(state.localSessionId);
+		expect(sessionStorage.getItem("naia-chat-session-id")).toBe(
+			state.localSessionId,
+		);
 		sessionStorage.removeItem("naia-chat-session-id");
 	});
 
@@ -2211,9 +2350,7 @@ describe("ChatArea", () => {
 			expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(3),
 		);
 		expect(
-			ttsSyncMocks.synthesizeTts.mock.calls.map(
-				(call: any[]) => call[0].text,
-			),
+			ttsSyncMocks.synthesizeTts.mock.calls.map((call: any[]) => call[0].text),
 		).toEqual(["첫 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."]);
 		localStorage.removeItem("naia-config");
 	});
@@ -2270,9 +2407,7 @@ describe("ChatArea", () => {
 	});
 
 	it("disables tools on first send when fetchAgentSkills rejects", async () => {
-		vi.mocked(fetchAgentSkills).mockRejectedValue(
-			new Error("Agent offline"),
-		);
+		vi.mocked(fetchAgentSkills).mockRejectedValue(new Error("Agent offline"));
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -2313,7 +2448,9 @@ describe("ChatArea", () => {
 		fireEvent.change(input, { target: { value: "Hello High" } });
 		fireEvent.keyDown(input, { key: "Enter" });
 
-		await waitFor(() => expect(capturedRequests.length).toBeGreaterThanOrEqual(1));
+		await waitFor(() =>
+			expect(capturedRequests.length).toBeGreaterThanOrEqual(1),
+		);
 		const lastReq = capturedRequests[capturedRequests.length - 1];
 		expect(lastReq.thinking).toEqual({ level: "high" });
 		expect(lastReq.enableThinking).toBe(true);
@@ -2337,7 +2474,9 @@ describe("ChatArea", () => {
 		fireEvent.change(input, { target: { value: "Hello Off" } });
 		fireEvent.keyDown(input, { key: "Enter" });
 
-		await waitFor(() => expect(capturedRequests.length).toBeGreaterThanOrEqual(1));
+		await waitFor(() =>
+			expect(capturedRequests.length).toBeGreaterThanOrEqual(1),
+		);
 		const lastReq = capturedRequests[capturedRequests.length - 1];
 		expect(lastReq.thinking).toEqual({ level: "off" });
 		expect(lastReq.enableThinking).toBe(false);
@@ -2346,4 +2485,3 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 });
-

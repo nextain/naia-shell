@@ -14,6 +14,7 @@ vi.mock("../config", () => ({
 
 import {
 	getStoreGatewayUrl,
+	getStoreProductMetadata,
 	getStoreProductName,
 	hasStoreEntitlement,
 } from "../app-store-client";
@@ -74,5 +75,37 @@ describe("app-store-client", () => {
 		);
 
 		await expect(getStoreProductName("land.naia.slides")).resolves.toBeNull();
+	});
+
+	it("uses selected locale, then English, then root metadata and returns the preview", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({
+					data: [
+						{
+							app_id: "land.naia.cafelua-tarot",
+							manifest: {
+								name: "Root name",
+								names: { en: "Cafe Lua Tarot" },
+								description: "Root description",
+								descriptions: { en: "English description" },
+								thumbnailUrl:
+									"/assets/apps/land.naia.cafelua-tarot/thumbnail.png",
+							},
+						},
+					],
+				}),
+			}),
+		);
+
+		await expect(
+			getStoreProductMetadata("land.naia.cafelua-tarot", "fr"),
+		).resolves.toEqual({
+			name: "Cafe Lua Tarot",
+			description: "English description",
+			thumbnailUrl: "/assets/apps/land.naia.cafelua-tarot/thumbnail.png",
+		});
 	});
 });

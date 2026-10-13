@@ -17,6 +17,11 @@ import {
 	startListening as sttStart,
 	stopListening as sttStop,
 } from "tauri-plugin-stt-api";
+import {
+	CAFE_LUA_TAROT_APP_ID,
+	CAFE_LUA_TAROT_ASK_EVENT,
+	CAFE_LUA_TAROT_RESPONSE_EVENT,
+} from "../apps/generic-installed/cafelua-tarot-host-bridge";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
 import {
 	formatAiInterferencePrompt,
@@ -34,6 +39,11 @@ import {
 	shouldActivateRadioDj,
 } from "../lib/bgm-skill";
 import {
+	executeBrowserHostSkill,
+	isBrowserHostTool,
+	liveBrowserHostDeps,
+} from "../lib/browser-host-skill";
+import {
 	type SpeechActivityResume,
 	cancelChat,
 	configureSpeechProfile,
@@ -48,7 +58,6 @@ import {
 	sendChatMessage,
 	yieldSpeechActivity,
 } from "../lib/chat-service";
-import { getConversationHistory } from "../lib/conversation-store";
 import {
 	type AppConfig,
 	DEFAULT_NAIA_LOCAL_URL,
@@ -65,11 +74,16 @@ import {
 	resolveThinkingLevel,
 	saveConfig,
 } from "../lib/config";
+import { getConversationHistory } from "../lib/conversation-store";
 import {
-	executeBrowserHostSkill,
-	isBrowserHostTool,
-	liveBrowserHostDeps,
-} from "../lib/browser-host-skill";
+	formatApproxCredits,
+	formatUsageCost,
+	formatUsageTotal,
+} from "../lib/credits-usage";
+import {
+	paymentLinksHiddenNow,
+	usePaymentLinksHidden,
+} from "../lib/distribution";
 import {
 	ENVIRONMENT_APP_ID,
 	environmentClearNeeded,
@@ -88,7 +102,6 @@ import {
 	isOmniModel,
 } from "../lib/llm";
 import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
-import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import {
@@ -98,7 +111,6 @@ import {
 	makeModelToolBoundary,
 } from "../lib/model-facing-tools";
 import { buildSystemPrompt } from "../lib/persona";
-import { effectiveMainRole } from "../lib/slots/model";
 import {
 	RADIO_DJ_DEFAULT_SETTINGS,
 	normalizeProactiveSpeechSettings,
@@ -110,6 +122,7 @@ import {
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
 	type SlidePresenterSpeechRequest,
 } from "../lib/slide-presenter-events";
+import { effectiveMainRole } from "../lib/slots/model";
 import {
 	activateMicUnlessSpeechActivityOwnsVoice,
 	canSpeakProactiveText,
@@ -125,16 +138,6 @@ import {
 	getSttProvider,
 } from "../lib/stt";
 import { estimateSttCost } from "../lib/tts/cost";
-import { fetchLiveVoiceHourlyRate } from "../lib/voice/live-pricing";
-import {
-	formatApproxCredits,
-	formatUsageCost,
-	formatUsageTotal,
-} from "../lib/credits-usage";
-import {
-	paymentLinksHiddenNow,
-	usePaymentLinksHidden,
-} from "../lib/distribution";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
 	acceptPipelineOutputStage,
@@ -155,6 +158,7 @@ import type {
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
+import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { AudioQueue } from "../lib/voice/audio-queue";
 import {
@@ -174,6 +178,7 @@ import {
 	resolveLiveProvider,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
+import { fetchLiveVoiceHourlyRate } from "../lib/voice/live-pricing";
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { extractExpression, mapServerEmotion } from "../lib/vrm/expression";
@@ -481,6 +486,11 @@ export function ChatArea({
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
+	const pendingCafeLuaTarotRequestRef = useRef<string | null>(null);
+	const cafeLuaTarotTurnActiveRef = useRef(false);
+	const cafeLuaTarotSendRef = useRef<((text: string) => Promise<void>) | null>(
+		null,
+	);
 	// Providers may emit one usage event for each tool round before the final
 	// assistant text. Keep those entries with the live request so usage cannot
 	// finalize an empty assistant message before the terminal finish chunk.
@@ -1643,10 +1653,26 @@ export function ChatArea({
 		// ordinary turn owns the stream. The queued retry will yield when it can
 		// immediately send the profile-bound question.
 		if (shouldQueueBeforeSpeechYield(isChatRequestActive())) {
+			if (pendingCafeLuaTarotRequestRef.current) {
+				window.dispatchEvent(
+					new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
+						detail: {
+							requestId: pendingCafeLuaTarotRequestRef.current,
+							text: "",
+							error:
+								"Naia is busy with another reply. Please try the card again when the current reply finishes.",
+						},
+					}),
+				);
+				pendingCafeLuaTarotRequestRef.current = null;
+				return;
+			}
 			useChatStore.getState().enqueueMessage(text);
 			setInput("");
 			return;
 		}
+		if (pendingCafeLuaTarotRequestRef.current)
+			cafeLuaTarotTurnActiveRef.current = true;
 
 		let activityResume: SpeechActivityResume | undefined;
 		const speechActivity = activeSpeechActivityRef.current;
@@ -1960,6 +1986,7 @@ export function ChatArea({
 			});
 		} catch (err) {
 			const errStr = String(err);
+			settleCafeLuaTarotReply("", errStr);
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
@@ -1974,6 +2001,79 @@ export function ChatArea({
 			}
 		}
 	}
+
+	cafeLuaTarotSendRef.current = handleSend;
+	useEffect(() => {
+		const onTarotRequest = (event: Event) => {
+			const detail = (
+				event as CustomEvent<{ requestId?: string; prompt?: string }>
+			).detail;
+			if (
+				useAppStore.getState().activeApp !== CAFE_LUA_TAROT_APP_ID ||
+				!detail ||
+				typeof detail.requestId !== "string" ||
+				typeof detail.prompt !== "string" ||
+				detail.prompt.length === 0 ||
+				detail.prompt.length > 9_000 ||
+				pendingCafeLuaTarotRequestRef.current !== null
+			)
+				return;
+			pendingCafeLuaTarotRequestRef.current = detail.requestId;
+			cafeLuaTarotTurnActiveRef.current = false;
+			setActiveTab("chat");
+			const send = cafeLuaTarotSendRef.current;
+			const prompt = detail.prompt;
+			const tools = appRegistry.get(CAFE_LUA_TAROT_APP_ID)?.tools ?? [];
+			void (async () => {
+				let toolsReady = false;
+				try {
+					toolsReady = await sendAppSkills(CAFE_LUA_TAROT_APP_ID, tools, {
+						awaitAck: true,
+					});
+				} catch (error) {
+					Logger.warn(
+						"ChatArea",
+						"Cafe Lua Tarot app tools registration failed",
+						{
+							error: String(error),
+						},
+					);
+				}
+				if (pendingCafeLuaTarotRequestRef.current !== detail.requestId) return;
+				if (!toolsReady) {
+					window.dispatchEvent(
+						new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
+							detail: {
+								requestId: detail.requestId,
+								text: "",
+								error:
+									"Naia could not register the tarot app tools. Please retry.",
+							},
+						}),
+					);
+					pendingCafeLuaTarotRequestRef.current = null;
+					return;
+				}
+				if (send) {
+					await send(prompt);
+				} else {
+					window.dispatchEvent(
+						new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
+							detail: {
+								requestId: detail.requestId,
+								text: "",
+								error: "Naia chat is unavailable.",
+							},
+						}),
+					);
+					pendingCafeLuaTarotRequestRef.current = null;
+				}
+			})();
+		};
+		window.addEventListener(CAFE_LUA_TAROT_ASK_EVENT, onTarotRequest);
+		return () =>
+			window.removeEventListener(CAFE_LUA_TAROT_ASK_EVENT, onTarotRequest);
+	}, []);
 
 	async function handleSpeechProfilePhrase(text: string): Promise<boolean> {
 		const command = parseSpeechProfileCommand(text);
@@ -2322,6 +2422,18 @@ export function ChatArea({
 		}
 	}
 
+	function settleCafeLuaTarotReply(text: string, error?: string): void {
+		const requestId = pendingCafeLuaTarotRequestRef.current;
+		if (!requestId || !cafeLuaTarotTurnActiveRef.current) return;
+		window.dispatchEvent(
+			new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
+				detail: { requestId, text, ...(error ? { error } : {}) },
+			}),
+		);
+		pendingCafeLuaTarotRequestRef.current = null;
+		cafeLuaTarotTurnActiveRef.current = false;
+	}
+
 	function flushThinkingStream(): void {
 		const tail = thinkingStreamFilterRef.current.flush();
 		if (tail.thinking) {
@@ -2457,6 +2569,7 @@ export function ChatArea({
 			}
 			case "finish":
 				flushThinkingStream();
+				settleCafeLuaTarotReply(useChatStore.getState().streamingContent);
 				// Flush remaining text to TTS (both pipeline and chat mode)
 				if (sentenceChunkerRef.current) {
 					const remaining = sentenceChunkerRef.current.flush();
@@ -2547,6 +2660,10 @@ export function ChatArea({
 					}
 				}
 				flushThinkingStream();
+				settleCafeLuaTarotReply(
+					"",
+					wireErrorMessage(chunk.code, chunk.message),
+				);
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
 				if (sentenceChunkerRef.current) {
@@ -4139,13 +4256,15 @@ export function ChatArea({
 						<span className="voice-status-spinner" />
 						<span className="voice-status-text">
 							{voiceStatus.phase === "cold-start"
-								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s` +
-									(voiceStatus.queuePosition != null
-										? ` · ${t("chat.voiceColdStartQueue")} ${voiceStatus.queuePosition}`
-										: "") +
-									(voiceStatus.etaSeconds != null
-										? ` · ${t("chat.voiceColdStartEta")} ~${voiceStatus.etaSeconds}s`
-										: "")
+								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s${
+										voiceStatus.queuePosition != null
+											? ` · ${t("chat.voiceColdStartQueue")} ${voiceStatus.queuePosition}`
+											: ""
+									}${
+										voiceStatus.etaSeconds != null
+											? ` · ${t("chat.voiceColdStartEta")} ~${voiceStatus.etaSeconds}s`
+											: ""
+									}`
 								: t("chat.voiceConnecting")}
 						</span>
 						{voiceStatus.phase === "cold-start" && (

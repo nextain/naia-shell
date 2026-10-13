@@ -1,0 +1,83 @@
+{
+	"id": "land.naia.cafelua-tarot",
+	"name": "Cafe Lua Tarot",
+	"nameKo": "카페루아 타로",
+	"nameEn": "Cafe Lua Tarot",
+	"names": {
+		"ar": "تاروت كافيه لوا",
+		"bn": "ক্যাফে লুয়া ট্যারোট",
+		"de": "Cafe Lua Tarot",
+		"en": "Cafe Lua Tarot",
+		"es": "Tarot de Cafe Lua",
+		"fr": "Tarot Cafe Lua",
+		"hi": "कैफ़े लुआ टैरो",
+		"id": "Tarot Cafe Lua",
+		"ja": "カフェルア・タロット",
+		"ko": "카페루아 타로",
+		"pt": "Tarô Cafe Lua",
+		"ru": "Таро Cafe Lua",
+		"vi": "Tarot Cafe Lua",
+		"zh": "Cafe Lua 塔罗"
+	},
+	"version": "0.1.0",
+	"manifest_version": 2,
+	"iconUrl": "icon.svg",
+	"thumbnailUrl": "/assets/apps/land.naia.cafelua-tarot/thumbnail.png",
+	"description": "Cafe Lua’s tarot deck, card guide, and two linked stories in a Naia app. Naia interprets with your chosen default model; a local model stays local.",
+	"descriptionKo": "카페루아의 타로 덱과 카드 안내, 두 편의 연작 소설을 나이아 앱으로 옮겼습니다. 해석은 설정한 나이아 기본 모델이 맡고, 로컬 모델은 로컬에서 동작합니다.",
+	"descriptionEn": "Cafe Lua’s tarot deck, card guide, and two linked stories in a Naia app. Naia interprets with your chosen default model; a local model stays local.",
+	"descriptions": {
+		"ar": "أوراق تاروت كافيه لوا، ودليل البطاقات، وقصتان مترابطتان في تطبيق نايـا. يفسّر نايـا البطاقات بنموذجك الافتراضي؛ ويظل النموذج المحلي محليًا.",
+		"bn": "ক্যাফে লুয়ার ট্যারোট ডেক, কার্ড গাইড এবং পরস্পর-সংযুক্ত দুটি গল্প—এখন নায়া অ্যাপে। নায়া আপনার নির্বাচিত ডিফল্ট মডেল দিয়ে কার্ড পড়ে; স্থানীয় মডেল স্থানীয়ই থাকে।",
+		"de": "Das Tarot-Deck von Cafe Lua, ein Kartenführer und zwei verbundene Geschichten – jetzt als Naia-App. Naia deutet mit deinem Standardmodell; ein lokales Modell bleibt lokal.",
+		"en": "Cafe Lua’s tarot deck, card guide, and two linked stories in a Naia app. Naia interprets with your chosen default model; a local model stays local.",
+		"es": "La baraja de Cafe Lua, una guía de cartas y dos relatos conectados, ahora en una app de Naia. Naia interpreta con tu modelo predeterminado; si usas un modelo local, permanece local.",
+		"fr": "Le jeu de tarot de Cafe Lua, un guide des cartes et deux récits liés, réunis dans une app Naia. Naia interprète avec votre modèle par défaut ; un modèle local reste local.",
+		"hi": "कैफ़े लुआ का टैरो डेक, कार्ड मार्गदर्शिका और जुड़ी दो कहानियाँ—अब नाया ऐप में। नाया आपके चुने हुए डिफ़ॉल्ट मॉडल से व्याख्या करता है; स्थानीय मॉडल स्थानीय ही रहता है।",
+		"id": "Dek tarot Cafe Lua, panduan kartu, dan dua cerita yang saling terhubung—kini di aplikasi Naia. Naia membaca kartu dengan model bawaan pilihan Anda; model lokal tetap lokal.",
+		"ja": "カフェルアのタロットデッキ、カードガイド、つながる二つの物語をナイアアプリに。解釈には設定済みの既定モデルを使い、ローカルモデルはローカルで動作します。",
+		"ko": "카페루아의 타로 덱과 카드 안내, 두 편의 연작 소설을 나이아 앱으로 옮겼습니다. 해석은 설정한 나이아 기본 모델이 맡고, 로컬 모델은 로컬에서 동작합니다.",
+		"pt": "O baralho de Cafe Lua, um guia de cartas e duas histórias conectadas, agora em um app Naia. Naia interpreta com seu modelo padrão; um modelo local continua local.",
+		"ru": "Колода Cafe Lua, справочник карт и два связанных рассказа — теперь в приложении Naia. Naia толкует карты выбранной основной моделью; локальная модель остаётся локальной.",
+		"vi": "Bộ bài tarot Cafe Lua, hướng dẫn lá bài và hai truyện liên kết—nay trong ứng dụng Naia. Naia diễn giải bằng mô hình mặc định bạn chọn; mô hình cục bộ vẫn chạy cục bộ.",
+		"zh": "将 Cafe Lua 塔罗牌组、牌义指南和两部关联故事带入 Naia 应用。Naia 使用你设置的默认模型解读；本地模型仍在本地运行。"
+	},
+	"help": {
+		"ar": "اكتب سؤالًا اختياريًا، واسحب عشر بطاقات، ثم اقلبها واحدة تلو الأخرى ليقرأها نايـا. تصفح البطاقات والقصص في علامتيهما.",
+		"bn": "ঐচ্ছিক প্রশ্ন লিখুন, দশটি কার্ড তুলুন, তারপর একে একে উল্টে নায়াকে পড়তে বলুন। অন্য ট্যাবে কার্ড ও গল্প দেখুন।",
+		"de": "Gib optional eine Frage ein, ziehe zehn Karten und decke sie nacheinander für Naias Deutung auf. Karten und Geschichten findest du in den anderen Ansichten.",
+		"en": "Optionally enter a question, draw ten cards, then reveal them one by one for Naia to interpret. Browse the cards and stories in their tabs.",
+		"es": "Escribe una pregunta si quieres, saca diez cartas y revélalas una a una para que Naia las interprete. Explora las cartas y los relatos en sus pestañas.",
+		"fr": "Saisissez éventuellement une question, tirez dix cartes, puis révélez-les une à une pour que Naia les interprète. Parcourez les cartes et les récits dans leurs onglets.",
+		"hi": "चाहें तो प्रश्न लिखें, दस कार्ड निकालें और नाया से व्याख्या पाने के लिए उन्हें एक-एक करके खोलें। दूसरे टैब में कार्ड और कहानियाँ देखें।",
+		"id": "Tulis pertanyaan bila mau, ambil sepuluh kartu, lalu buka satu per satu agar Naia menafsirkannya. Jelajahi kartu dan cerita di tab masing-masing.",
+		"ja": "質問は任意です。10枚を引き、1枚ずつ公開してナイアに解釈を頼みます。カードと物語は各タブから閲覧できます。",
+		"ko": "질문은 선택입니다. 열 장을 뽑고 한 장씩 공개해 나이아에게 해석을 요청하세요. 다른 탭에서 카드와 이야기를 둘러볼 수 있습니다.",
+		"pt": "Se quiser, escreva uma pergunta, tire dez cartas e revele uma a uma para Naia interpretar. Explore as cartas e histórias nas outras abas.",
+		"ru": "При желании задайте вопрос, вытяните десять карт и открывайте их по одной, чтобы Naia истолковала расклад. Карты и рассказы доступны на соседних вкладках.",
+		"vi": "Bạn có thể nhập câu hỏi, rút mười lá rồi lật từng lá để Naia diễn giải. Xem lá bài và truyện ở các tab tương ứng.",
+		"zh": "可选填问题，抽取十张牌，再逐张翻开请 Naia 解读。可在其他标签页浏览卡牌和故事。"
+	},
+	"publisher": "cafelua.com",
+	"tools": [
+		{
+			"name": "skill_cafelua_tarot",
+			"description": "Control the active Cafe Lua Tarot app. Actions: start_reading (question optional), reveal_next (reveal the next local card), status, get_context. The user controls interpretation; speak as Naia, never Alpha.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": ["start_reading", "reveal_next", "status", "get_context"]
+					},
+					"question": {
+						"type": "string",
+						"description": "Optional question, up to 500 characters"
+					}
+				},
+				"required": ["action"]
+			},
+			"tier": 0
+		}
+	]
+}

@@ -1,9 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type React from "react";
+import {
+	getAppSandboxRoot,
+	openAppSandboxFileInWorkspace,
+} from "./app-sandbox";
 import type { BehaviorEntry, BehaviorFilter } from "./behavior-log";
 import { logBehavior, queryBehavior } from "./behavior-log";
 import { getSecretKey, saveSecretKey } from "./secure-store";
-import { getAppSandboxRoot, openAppSandboxFileInWorkspace } from "./app-sandbox";
 
 export type { BehaviorEntry, BehaviorFilter };
 
@@ -109,7 +112,6 @@ export interface NaiaContextBridge {
 	/** App-private root at data-private/apps/{package-id}. */
 	sandboxRoot?(): Promise<string>;
 	openInWorkspace?(relativePath: string): Promise<string>;
-
 }
 /** No-op bridge used as placeholder until a real bridge is wired. */
 export class NoopContextBridge implements NaiaContextBridge {
@@ -213,10 +215,8 @@ export class ActiveAppBridge implements NaiaContextBridge {
 	openInWorkspace(relativePath: string): Promise<string> {
 		return openAppSandboxFileInWorkspace(this.appId, relativePath);
 	}
-
 }
 // ??? App Props ?????????????????????????????????????????????????????????????
-
 
 export interface AppCenterProps {
 	naia: NaiaContextBridge;
@@ -270,6 +270,8 @@ export interface AppDescriptor {
 	profile?: "legacy" | "v2";
 	/** Localized descriptions (locale -> text) */
 	descriptions?: Record<string, string>;
+	/** Store/listing preview image URL supplied by the app manifest. */
+	thumbnailUrl?: string;
 	/** AI system context declaration or path */
 	context?: string;
 	/** Skills declared by the app */

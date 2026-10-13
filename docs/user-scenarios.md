@@ -2279,3 +2279,30 @@ Test Coverage Map (P02)
 
 
 
+
+## UC-CAFELUA-TAROT-APP — 카페루아 타로를 나이아 앱에서 사용한다
+
+사용자는 설치된 카페루아 타로 앱에서 세 가지 화면을 오간다. 리딩 화면에서 질문을 적고 카페루아 v2.0 메이저 아르카나 22장 중 중복 없이 10장을 켈틱 크로스로 뽑아 한 장씩 펼친다. 카드가 펼쳐질 때 짧은 효과음이 나고, 나이아는 현재 셸에 설정된 기본 모델을 사용해 카드 의미를 대화로 해석한다. 카페루아 서버, 앱 전용 모델, 앱 회사 키는 호출하지 않는다. 사용자가 로컬 모델을 기본값으로 골랐다면 해석도 로컬 모델이 맡는다.
+
+카드 보기 화면에서는 22장 그림, 이름, 정방향·역방향 의미를 살펴본다. 소설 화면에서는 카드마다 연결된 두 편을 `Fable의 이야기 / Astra의 이야기`로 전환하고 작성 모델을 확인한다. Alpha와 Luke는 소설 속 인물로 유지한다. 화면 언어는 셸의 14개 언어를 따르며, 한국어·영어 이외의 언어에서는 소설과 카드 의미를 영어로 보여 주고 번역하지 않았다는 안내를 표시한다. BGM은 카페루아 타로 원본을 사용하고 한 음소거 버튼이 BGM과 카드 효과음을 함께 멈춘다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 카페루아 타로 소개, 리딩 시작, 카드 보기, 소설 보기의 세 영역이 구분된다. 셸에서 선택한 언어와 앱 설명이 보인다. |
+| 빈 상태 | 아직 리딩을 시작하지 않았거나 질문이 비어 있으면 카드가 없는 이유와 다음 행동을 안내한다. 카드 보기에는 로컬 덱 22장이 즉시 나타난다. |
+| 진행 | 10장을 뽑고 한 장씩 펼치는 순서와 현재 포지션이 보인다. 모델 응답 중에는 진행 상태를 알리고 같은 카드의 중복 요청을 막는다. BGM 자동 재생이 차단되어도 첫 사용자 동작에서 재시도한다. |
+| 성공 | 펼친 카드와 정·역방향, 포지션, 나이아의 해석을 대화에서 확인한다. 10장 리딩과 다음 행동이 혼동되지 않는다. 두 이야기 사이를 바꾸면 같은 카드의 다른 원문을 읽는다. |
+| 오류 | 모델 설정·응답 실패와 소리 자동 재생 차단을 성공처럼 표시하지 않는다. 해석은 채팅에서 다시 요청할 수 있고, 오디오 재생은 사용자의 다음 동작으로 재시도한다. 음소거 상태는 버튼과 접근 가능한 이름으로 알린다. |
+| 좁은 폭 | 1100px 이하에서도 카드, 포지션, 탭, 긴 이야기, 채팅 영역이 겹치거나 잘리지 않는다. 버튼은 키보드 포커스와 명확한 이름을 제공한다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest / Rust 파일·그룹 | 실 UI Playwright / 실기 |
+|---|---|---|
+| 로컬 덱에서 10장 선택·중복 없음·역방향·켈틱 포지션 | `packages/shell/src/apps/cafelua-tarot/__tests__/reading.test.ts` — 22장·10장·역방향·포지션·재시작 | `packages/shell/e2e/cafelua-tarot-app.spec.ts` — 리딩 기본·빈 상태와 펼친 카드 |
+| 나이아 도구 호출·화면의 카드 공개 이벤트·기본 모델 채팅 경로 | `packages/shell/src/apps/cafelua-tarot/__tests__/tools.test.ts`; `packages/shell/src/apps/__tests__/generic-installed-cafelua-tarot.test.tsx`; `packages/shell/src/components/__tests__/ChatArea.test.tsx` — 등록, iframe 식별·활성 앱 경계, 기본 모델 요청; Rust `app.rs` — manifest locale metadata 왕복 | `packages/shell/e2e/cafelua-tarot-app.spec.ts` — 독립 앱 화면에서 카드 펼침 뒤 모델 응답 진행/성공/오류·재시도; 실제 설치형 앱 구동은 이번 검증에서 실행하지 않음 |
+| 카드 보기·정/역방향 의미·22장 데이터·CC-BY-NC-SA 표시 | `packages/shell/src/apps/cafelua-tarot/__tests__/content.test.ts` — 카드 수, source id/order, localized fallback | `packages/shell/e2e/cafelua-tarot-app.spec.ts` — 카드 보기와 라이선스 표시 |
+| 두 원문, edition 전환, 모델 표기, 타 언어 영어 fallback 안내 | `packages/shell/src/apps/cafelua-tarot/__tests__/content.test.ts` 및 `i18n.test.ts` — 22장×2편, Fable/Astra 라벨, 14개 locale 키, 원문 fallback | `packages/shell/e2e/cafelua-tarot-app.spec.ts` — 한국어·영어·다른 셸 언어의 전환과 영어 안내 |
+| BGM 자동 재생 차단/첫 사용자 동작 재시도·카드 뒤집기 효과음·함께 음소거 | `packages/shell/src/apps/cafelua-tarot/__tests__/sound.test.ts` — play 거부, gesture 재시도, 효과음 겹침, mute 시 BGM pause와 활성 oscillator 취소 | `packages/shell/e2e/cafelua-tarot-app.spec.ts` — 이벤트 시각 간격·음량·mute·unmute; evidence JSON and audio/UI screenshots in `shots/` |
+| 앱 이름·설명·도움말·thumbnail URL의 locale fallback 및 설치 표시 | `packages/shell/src/lib/__tests__/app-store-client.test.ts`; `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`; `packages/shell/src-tauri/src/app.rs` — manifest media/name aliases round-trip | 독립 앱 패키지 빌드에서 아이콘·썸네일 생성; 앱 설치 UI 표시는 RTL로 검증 |
+| 정보 위계·키보드/ARIA·오류 복구·좁은 화면의 6개 상태 | React Testing Library 접근성 assertions 및 기존 관련 Vitest | `packages/shell/e2e/cafelua-tarot-app.spec.ts` — 탭 키보드 이동·ARIA·기본/빈/진행/성공/오류 상태·390px 폭 overflow 및 스크린샷 |

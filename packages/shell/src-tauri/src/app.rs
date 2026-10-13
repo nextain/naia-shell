@@ -661,12 +661,18 @@ pub struct AppManifest {
     #[serde(default, rename = "manifest_version", alias = "manifestVersion", skip_serializing_if = "Option::is_none")]
     pub manifest_version: Option<u32>,
     pub description: Option<String>,
+    #[serde(default, rename = "descriptionKo", alias = "description_ko", skip_serializing_if = "Option::is_none")]
+    pub description_ko: Option<String>,
+    #[serde(default, rename = "descriptionEn", alias = "description_en", skip_serializing_if = "Option::is_none")]
+    pub description_en: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub descriptions: Option<std::collections::HashMap<String, String>>,
     pub icon: Option<String>,
     /// Path to SVG icon file, relative to app directory (e.g. "icon.svg")
     #[serde(rename = "iconUrl", skip_serializing_if = "Option::is_none")]
     pub icon_url: Option<String>,
+    #[serde(default, rename = "thumbnailUrl", alias = "thumbnail_url", skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
     /// Inline SVG content — populated at load time from iconUrl, not stored in app.json
     #[serde(
         rename = "iconSvg",
@@ -675,6 +681,10 @@ pub struct AppManifest {
     )]
     pub icon_svg: Option<String>,
     pub names: Option<std::collections::HashMap<String, String>>,
+    #[serde(default, rename = "nameKo", alias = "name_ko", skip_serializing_if = "Option::is_none")]
+    pub name_ko: Option<String>,
+    #[serde(default, rename = "nameEn", alias = "name_en", skip_serializing_if = "Option::is_none")]
+    pub name_en: Option<String>,
     pub version: Option<String>,
     #[serde(default, rename = "keepAlive", alias = "keep_alive", skip_serializing_if = "Option::is_none")]
     pub keep_alive: Option<bool>,
@@ -1423,6 +1433,23 @@ mod tests {
         assert!(!issues.iter().any(|i| i.level == IssueLevel::Error));
         assert!(!issues.iter().any(|i| manifest.extra.contains_key(&i.field)));
         assert!(issues.is_empty(), "expected no issues for slides app.json, got: {:?}", issues);
+    }
+
+    #[test]
+    fn cafelua_tarot_manifest_keeps_localized_store_metadata() {
+        let json = include_str!("../../src/apps/cafelua-tarot/package-public/app.json");
+        let manifest: AppManifest = serde_json::from_str(json).expect("Cafe Lua Tarot manifest must deserialize");
+        assert_eq!(manifest.id, "land.naia.cafelua-tarot");
+        assert_eq!(manifest.manifest_version, Some(2));
+        assert_eq!(manifest.thumbnail_url.as_deref(), Some("/assets/apps/land.naia.cafelua-tarot/thumbnail.png"));
+        assert_eq!(manifest.name_ko.as_deref(), Some("카페루아 타로"));
+        assert!(manifest.description_en.as_deref().unwrap().contains("default model"));
+        assert_eq!(manifest.names.as_ref().unwrap().len(), 14);
+        assert_eq!(manifest.descriptions.as_ref().unwrap().len(), 14);
+        assert_eq!(manifest.help.as_ref().unwrap().len(), 14);
+        assert!(manifest.extra.is_empty(), "unknown manifest keys: {:?}", manifest.extra);
+        let issues = validate_manifest(&manifest);
+        assert!(!issues.iter().any(|issue| issue.level == IssueLevel::Error), "manifest errors: {:?}", issues);
     }
 
     #[test]

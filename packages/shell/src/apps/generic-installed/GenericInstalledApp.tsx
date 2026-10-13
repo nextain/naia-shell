@@ -2,8 +2,12 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
-import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
+import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
+import {
+	CAFE_LUA_TAROT_APP_ID,
+	installCafeLuaTarotHostBridge,
+} from "./cafelua-tarot-host-bridge";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -43,6 +47,7 @@ function installedAppFrameSrc(htmlEntry: string): string {
 export function createGenericInstalledApp(
 	htmlEntry?: string,
 	tools: NaiaTool[] = [],
+	appId?: string,
 ) {
 	return function GenericInstalledApp({ naia }: AppCenterProps) {
 		const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -56,11 +61,16 @@ export function createGenericInstalledApp(
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});
+			const disposeTarotBridge =
+				appId === CAFE_LUA_TAROT_APP_ID
+					? installCafeLuaTarotHostBridge(frame, frameSrc)
+					: () => {};
 			return () => {
+				disposeTarotBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
 			};
-		}, [htmlEntry, frameSrc]);
+		}, [appId, htmlEntry, frameSrc]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {

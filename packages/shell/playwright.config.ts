@@ -27,6 +27,7 @@ function readPositiveIntegerEnv(
 const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 const host = process.env.PLAYWRIGHT_HOST || "localhost";
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://${host}:${port}`;
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 const webServerCommand =
 	process.env.PLAYWRIGHT_SERVER_COMMAND || "pnpm -w build && pnpm dev";
 const reuseExistingServer =
@@ -50,6 +51,9 @@ export default defineConfig({
 	use: {
 		baseURL,
 		trace: "on-first-retry",
+		launchOptions: chromiumExecutablePath
+			? { executablePath: chromiumExecutablePath }
+			: undefined,
 	},
 	projects: [
 		{
