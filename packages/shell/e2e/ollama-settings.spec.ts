@@ -351,9 +351,8 @@ test("explicit Ollama thinking unsupported status preserves the saved level and 
 	await expect(page.getByTestId("thinking-level-low")).toHaveAttribute("aria-checked", "true");
 	await page.keyboard.press("ArrowRight");
 	await expect(high).toHaveAttribute("aria-checked", "true");
-	const warning = page
-		.getByRole("status")
-		.filter({ hasText: "This model does not support thinking. Thinking is disabled for this request; your saved setting is unchanged." });
+	const warning = page.getByTestId("ollama-thinking-unsupported");
+	await expect(warning).toHaveAttribute("role", "status");
 	await expect(warning).toBeVisible();
 	await expect(warning).toContainText(
 		"This model does not support thinking. Thinking is disabled for this request; your saved setting is unchanged.",
