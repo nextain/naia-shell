@@ -64,6 +64,10 @@ export class SpeechPlayer {
     this.slotToKey = [null, null];
     this.keyToSlot = new Map();
     this.pending = new Map();
+    // Keys of the clips drawn in the latest frame and slots whose src is being
+    // replaced. A reload never targets a slot that holds a clip on screen.
+    this.onScreenKeys = new Set();
+    this.loadingSlots = new Set();
     this.frameHandle = null;
     this.token = null;
     this.onEnded = () => this.stop("complete");
@@ -276,22 +280,45 @@ export class SpeechPlayer {
     this.keyToSlot.clear();
     this.slotToKey = [null, null];
     this.pending.clear();
+    this.onScreenKeys.clear();
+    this.loadingSlots.clear();
+  }
+
+  // The schedule names one pre-rendered clip per instant (SoT 2). Only two
+  // video elements hold clips, so loading the next clip must not replace the
+  // src of the clip that is on screen: a video whose src is being replaced has
+  // no frame, and the frame would fall back to the neutral head mid-speech.
+  #reloadableSlot() {
+    const start = this.decoder.nextSlot ?? 0;
+    for (const slot of [start, 1 - start]) {
+      if (this.loadingSlots.has(slot)) continue;
+      if (this.onScreenKeys.has(this.slotToKey[slot])) continue;
+      return slot;
+    }
+    return null;
   }
 
   async #ensureTransition(index) {
     const transition = this.schedule.transitions[index];
     if (this.keyToSlot.has(transition.key)) return this.speechVideos[this.keyToSlot.get(transition.key)];
     if (this.pending.has(transition.key)) return this.pending.get(transition.key);
+    const slot = this.#reloadableSlot();
+    if (slot === null) return null; // retried on the next frame once a slot is free
     const entry = this.atlasIndex.entries[transition.key];
+    const replaced = this.slotToKey[slot];
+    if (replaced !== null) this.keyToSlot.delete(replaced);
+    this.slotToKey[slot] = null;
+    this.loadingSlots.add(slot);
     const promise = (async () => {
       const blob = await this.atlasSource.read(entry.offset, entry.offset + entry.length);
-      const loaded = await this.decoder.load(blob);
-      const replaced = this.slotToKey[loaded.slot];
-      if (replaced !== null) this.keyToSlot.delete(replaced);
+      const loaded = await this.decoder.load(blob, slot);
       this.slotToKey[loaded.slot] = transition.key;
       this.keyToSlot.set(transition.key, loaded.slot);
       return loaded.video;
-    })().finally(() => this.pending.delete(transition.key));
+    })().finally(() => {
+      this.pending.delete(transition.key);
+      this.loadingSlots.delete(slot);
+    });
     this.pending.set(transition.key, promise);
     return promise;
   }
@@ -309,6 +336,7 @@ export class SpeechPlayer {
       : (this.audio.currentTime || 0);
     const timeUs = Math.min(this.schedule.duration_us, Math.max(0, Math.round(seconds * 1_000_000)));
     const resolved = resolveSpeechLayers(this.schedule, timeUs);
+    this.onScreenKeys = new Set(resolved.map((layer) => layer.key));
     this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.context.drawImage(this.bodyVideo, 0, 0, this.canvas.width, this.canvas.height);
     const readyLayers = [];

@@ -53,7 +53,7 @@ const TAG = "tts-pipeline";
 
 /**
  * Longest a sentence's sound waits for its aligned plan to load before it
- * plays anyway (idle mouth, never a late or approximate start). Later
+ * plays anyway (idle mouth, never a late or guessed start). Later
  * sentences usually have their plan ready while the previous one plays.
  */
 export const ALIGNED_PLAN_WAIT_MS = 3000;

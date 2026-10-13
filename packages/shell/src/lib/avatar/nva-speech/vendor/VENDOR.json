@@ -1,7 +1,7 @@
 {
   "repository": "nextain/naia-video-avatar",
   "branch": "feat/unified-nva-player-20261013",
-  "commit": "474d7ca",
+  "commit": "1b3d449",
   "source_directory": "src/main",
   "note": "Byte-for-byte copy of the canonical NVA player (alpha-adk docs/developer/product/studio/nva-lipsync-sot.md 4\uc808). Do not edit these files; replace them from the canonical commit and refresh this file from its vendor-manifest.json.",
   "files": {
@@ -22,8 +22,8 @@
       "size": 2006
     },
     "speech-browser-runtime.js": {
-      "sha256": "2acfc258290b7be483d1870c8b95b57b98c126b9e165fffae117f925fc693590",
-      "size": 5026
+      "sha256": "d26bffdbb0d5670fa03dbf948aa1cb8c96fca303e8509bf621458c37e621ddca",
+      "size": 5180
     },
     "speech-bundle.js": {
       "sha256": "d960a89124d9c01022ed3c58737d5770a95b783e67caa86209f34dca4cca33f4",
@@ -34,8 +34,8 @@
       "size": 4568
     },
     "speech-player.js": {
-      "sha256": "ae39a655a2bb526d16b14715807d97a66aa39a8cd95f1e45a89ac5f085aa653d",
-      "size": 14498
+      "sha256": "e8bea0af9fe7569e16055f12a1775bc84434feb65e398eb84b13277aa5ce5df7",
+      "size": 15680
     },
     "speech-runtime.js": {
       "sha256": "8ae992574432194ce8ed354ae8a2cfe5a8e13971d1a091edd6bae46a9a98baa0",

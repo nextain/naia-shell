@@ -75,10 +75,12 @@ export class AlternatingSpeechDecoder {
     this.nextSlot = 0;
   }
 
-  async load(blob) {
+  // slot defaults to alternation; the player passes a slot that holds no
+  // on-screen clip.
+  async load(blob, slot = this.nextSlot) {
     if (!(blob instanceof Blob) || blob.size === 0) throw new TypeError("non-empty WebM Blob is required");
-    const slot = this.nextSlot;
-    this.nextSlot = (this.nextSlot + 1) % 2;
+    if (slot !== 0 && slot !== 1) throw new TypeError("slot must be 0 or 1");
+    this.nextSlot = (slot + 1) % 2;
     const video = this.videos[slot];
     if (this.urls[slot]) this.urlApi.revokeObjectURL(this.urls[slot]);
     const url = this.urlApi.createObjectURL(blob);

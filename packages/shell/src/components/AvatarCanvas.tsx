@@ -641,7 +641,7 @@ export function AvatarCanvas() {
 
 		// Subscribe to isSpeaking changes for lip sync
 		// VRM mouth: no sound-independent vowel loop (naia-shell#760, SoT 8).
-		// The old A-I-U-E-O cycle (lib/vrm/mouth.ts) is quarantined.
+		// The old vowel-cycle controller (lib/vrm/mouth.ts) is quarantined.
 
 		// Subscribe to currentEmotion changes for avatar expression
 		let prevEmotion = "neutral";
