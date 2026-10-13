@@ -337,6 +337,32 @@ describe("ProjectsApp — single opened project", () => {
 		).toBeTruthy();
 	});
 
+	it("shows index repair guidance when no project metadata is found", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) =>
+			command === "projects_scan_adk"
+				? {
+						projects: [],
+						catalogErrors: [
+							{
+								path: ".agents/context/project-index.yaml",
+								reason: "invalid_yaml",
+							},
+						],
+					}
+				: null,
+		);
+		render(<ProjectsApp />);
+
+		expect(
+			await screen.findByRole("heading", { name: "No projects found" }),
+		).toBeTruthy();
+		expect(screen.getByText(".agents/context/project-index.yaml")).toBeTruthy();
+		expect(screen.getByText(/is invalid\./)).toBeTruthy();
+		expect(
+			screen.getByText(/reset its path in Settings/),
+		).toBeTruthy();
+	});
+
 	it("shows a recovery notice when the last project is no longer in the catalog", async () => {
 		localStorage.setItem(
 			PROJECT_SESSION_STORAGE_KEY,

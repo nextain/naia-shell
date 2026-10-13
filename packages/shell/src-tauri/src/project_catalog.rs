@@ -83,12 +83,18 @@ pub fn projects_scan_adk(adk_path: String) -> Result<ProjectCatalog, String> {
         return Err("The configured naia-adk projects folder is outside its root.".to_owned());
     }
 
-    let workspace_adk_paths = read_workspace_adk_paths(&adk_root)?;
-
     let mut state = ScanState::default();
     let mut projects = Vec::new();
     let mut catalog_errors = Vec::new();
     let mut oversized_files = Vec::new();
+    if let Err(reason) = validate_project_index(&adk_root) {
+        push_issue(
+            &mut state,
+            &mut catalog_errors,
+            ".agents/context/project-index.yaml".to_owned(),
+            reason,
+        );
+    }
     let top_level = read_directory_entries(
         &canonical_projects_root,
         &adk_root,
@@ -97,17 +103,10 @@ pub fn projects_scan_adk(adk_path: String) -> Result<ProjectCatalog, String> {
     )
     .map_err(|_| "The configured naia-adk projects folder could not be read.".to_owned())?;
 
-    let mut candidates = Vec::new();
+    let mut first_level_candidates = Vec::new();
     for entry in top_level {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('_') {
-            continue;
-        }
-        let first_level = vec![name.clone()];
-        let has_second_level = workspace_adk_paths
-            .iter()
-            .any(|path| path.len() == 2 && path[0] == name);
-        if !workspace_adk_paths.contains(&first_level) && !has_second_level {
             continue;
         }
         if let Some(candidate) = checked_directory(
@@ -117,40 +116,47 @@ pub fn projects_scan_adk(adk_path: String) -> Result<ProjectCatalog, String> {
             &mut state,
             &mut catalog_errors,
         ) {
-            if workspace_adk_paths.contains(&first_level) {
-                candidates.push(candidate.clone());
-            }
-            if !has_second_level {
+            first_level_candidates.push(candidate);
+        }
+    }
+    first_level_candidates.sort_by_key(|path| (!candidate_has_projects(path), path.clone()));
+
+    let mut second_level_candidates = Vec::new();
+    for candidate in first_level_candidates {
+        if state.scanned_entries >= MAX_SCAN_ENTRIES {
+            state.more_entries_available = true;
+            break;
+        }
+        scan_candidate(
+            &candidate,
+            &adk_root,
+            &mut state,
+            &mut projects,
+            &mut catalog_errors,
+            &mut oversized_files,
+        );
+        for child in
+            read_nested_directory_entries(&candidate, &adk_root, &mut state, &mut catalog_errors)
+        {
+            let child_name = child.file_name().to_string_lossy().into_owned();
+            if child_name.starts_with('_') {
                 continue;
             }
-            for child in read_nested_directory_entries(
+            if let Some(nested) = checked_directory(
+                &child,
                 &candidate,
                 &adk_root,
                 &mut state,
                 &mut catalog_errors,
             ) {
-                let child_name = child.file_name().to_string_lossy().into_owned();
-                if child_name.starts_with('_')
-                    || !workspace_adk_paths.contains(&vec![name.clone(), child_name])
-                {
-                    continue;
-                }
-                if let Some(nested) = checked_directory(
-                    &child,
-                    &candidate,
-                    &adk_root,
-                    &mut state,
-                    &mut catalog_errors,
-                ) {
-                    candidates.push(nested);
-                }
+                second_level_candidates.push(nested);
             }
         }
     }
-    candidates.sort_by_key(|path| (!candidate_has_projects(path), path.clone()));
-    candidates.dedup();
+    second_level_candidates.sort_by_key(|path| (!candidate_has_projects(path), path.clone()));
+    second_level_candidates.dedup();
 
-    for candidate in candidates {
+    for candidate in second_level_candidates {
         if state.scanned_entries >= MAX_SCAN_ENTRIES {
             state.more_entries_available = true;
             break;
@@ -198,80 +204,61 @@ fn candidate_has_projects(candidate: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn read_workspace_adk_paths(root: &Path) -> Result<Vec<Vec<String>>, String> {
+fn validate_project_index(root: &Path) -> Result<(), &'static str> {
     let agents = root.join(".agents");
-    let agents_metadata = fs::symlink_metadata(&agents)
-        .map_err(|_| "The configured naia-adk project index could not be opened.".to_owned())?;
-    if agents_metadata.file_type().is_symlink() || !agents_metadata.is_dir() {
-        return Err("The configured naia-adk project index is not a safe directory.".to_owned());
+    let agents_metadata = fs::symlink_metadata(&agents).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "missing"
+        } else {
+            "directory_unreadable"
+        }
+    })?;
+    if agents_metadata.file_type().is_symlink() {
+        return Err("unsafe_path");
     }
-    let canonical_agents = dunce::canonicalize(&agents)
-        .map_err(|_| "The configured naia-adk project index could not be opened.".to_owned())?;
+    if !agents_metadata.is_dir() {
+        return Err("directory_unreadable");
+    }
+    let canonical_agents = dunce::canonicalize(&agents).map_err(|_| "directory_unreadable")?;
     if canonical_agents.parent() != Some(root) {
-        return Err("The configured naia-adk project index is outside its root.".to_owned());
+        return Err("unsafe_path");
     }
 
     let context = agents.join("context");
-    let context_metadata = fs::symlink_metadata(&context)
-        .map_err(|_| "The configured naia-adk project index could not be opened.".to_owned())?;
-    if context_metadata.file_type().is_symlink() || !context_metadata.is_dir() {
-        return Err("The configured naia-adk project index is not a safe directory.".to_owned());
+    let context_metadata = fs::symlink_metadata(&context).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "missing"
+        } else {
+            "directory_unreadable"
+        }
+    })?;
+    if context_metadata.file_type().is_symlink() {
+        return Err("unsafe_path");
     }
-    let canonical_context = dunce::canonicalize(&context)
-        .map_err(|_| "The configured naia-adk project index could not be opened.".to_owned())?;
+    if !context_metadata.is_dir() {
+        return Err("directory_unreadable");
+    }
+    let canonical_context = dunce::canonicalize(&context).map_err(|_| "directory_unreadable")?;
     if canonical_context.parent() != Some(&canonical_agents) {
-        return Err("The configured naia-adk project index is outside its root.".to_owned());
+        return Err("unsafe_path");
     }
 
     let index_file = canonical_context.join("project-index.yaml");
-    let yaml_text = read_confined(root, &canonical_context, &index_file)
-        .map_err(|_| "The configured naia-adk project index could not be read.".to_owned())?;
-    let yaml: YamlValue = serde_yaml::from_str(&yaml_text)
-        .map_err(|_| "The configured naia-adk project index is invalid.".to_owned())?;
-    let submodules = yaml
+    let yaml_text =
+        read_confined(root, &canonical_context, &index_file).map_err(|error| match error {
+            ProjectReadError::Issue(reason) => reason,
+            ProjectReadError::Oversized { .. } => "file_too_large",
+        })?;
+    let yaml: YamlValue = serde_yaml::from_str(&yaml_text).map_err(|_| "invalid_yaml")?;
+    let has_submodules_mapping = yaml
         .as_mapping()
         .and_then(|mapping| mapping.get(&YamlValue::String("submodules".to_owned())))
         .and_then(YamlValue::as_mapping)
-        .ok_or_else(|| "The configured naia-adk project index has no submodules.".to_owned())?;
-
-    let mut paths = Vec::new();
-    for record in submodules.values().filter_map(YamlValue::as_mapping) {
-        if value_string(record, &["type"]).as_deref() != Some("workspace_adk") {
-            continue;
-        }
-        let Some(path) =
-            value_string(record, &["path"]).and_then(|path| workspace_adk_path_components(&path))
-        else {
-            continue;
-        };
-        if !paths.contains(&path) {
-            paths.push(path);
-        }
+        .is_some();
+    if !has_submodules_mapping {
+        return Err("invalid_yaml");
     }
-    paths.sort();
-    Ok(paths)
-}
-
-fn workspace_adk_path_components(path: &str) -> Option<Vec<String>> {
-    let relative = path.strip_prefix("./").unwrap_or(path);
-    if relative.contains('\\') || relative.starts_with('/') {
-        return None;
-    }
-    let components = relative.split('/').collect::<Vec<_>>();
-    if !(components.len() == 2 || components.len() == 3)
-        || components[0] != "projects"
-        || components
-            .iter()
-            .any(|part| part.is_empty() || *part == "." || *part == ".." || part.starts_with('_'))
-    {
-        return None;
-    }
-    Some(
-        components[1..]
-            .iter()
-            .map(|part| (*part).to_owned())
-            .collect(),
-    )
+    Ok(())
 }
 
 fn read_directory_entries(
@@ -565,7 +552,7 @@ mod tests {
         write(
             &root,
             ".agents/context/project-index.yaml",
-            "version: '2.0'\nsubmodules:\n  naia-pj-adk:\n    path: ./projects/naia-pj-adk\n    type: workspace_adk\n",
+            "version: '2.0'\nsubmodules: {}\nlocal_projects: {}\n",
         );
         (temp, root)
     }
@@ -591,27 +578,22 @@ mod tests {
         let (_temp, root) = adk();
         write(
             &root,
-            ".agents/context/project-index.yaml",
-            "version: '2.0'\nsubmodules:\n  naia-pj-adk:\n    path: ./projects/naia-pj-adk\n    type: workspace_adk\n  grouped-adk:\n    path: ./projects/group/naia-pj-adk\n    type: workspace_adk\n",
-        );
-        write(
-            &root,
-            "projects/naia-pj-adk/projects/aipol/project.yaml",
+            "projects/candidate-one/projects/sample-app/project.yaml",
             &project_yaml("aipol"),
         );
         write(
             &root,
-            "projects/group/naia-pj-adk/projects/blackjack/project.yaml",
+            "projects/group/candidate-two/projects/sample-library/project.yaml",
             &project_yaml("blackjack"),
         );
         write(
             &root,
-            "projects/group/naia-pj-adk/deeper/naia-pj-adk/projects/ignored/project.yaml",
+            "projects/group/candidate-two/deeper/candidate-three/projects/ignored/project.yaml",
             &project_yaml("ignored"),
         );
         write(
             &root,
-            "projects/naia-pj-adk/projects/_template/project.yaml",
+            "projects/candidate-one/projects/_template/project.yaml",
             &project_yaml("template"),
         );
 
@@ -630,55 +612,70 @@ mod tests {
     }
 
     #[test]
-    fn scans_only_roots_registered_as_workspace_adks() {
+    fn finds_unregistered_project_format_in_fresh_public_adk_layout() {
         let (_temp, root) = adk();
         write(
             &root,
-            ".agents/context/project-index.yaml",
-            "version: '2.0'\nsubmodules:\n  registered-workspace:\n    path: ./projects/registered-workspace\n    type: workspace_adk\n  app-repository:\n    path: ./projects/app-repository\n    type: project\n  development-hub:\n    path: ./projects/development-hub\n    type: project\n",
-        );
-        write(
-            &root,
-            "projects/registered-workspace/projects/eligible-project/project.yaml",
-            &project_yaml("eligible-project"),
-        );
-        write(
-            &root,
-            "projects/app-repository/projects/example-project/project.yaml",
-            &project_yaml("example-project"),
-        );
-        write(
-            &root,
-            "projects/development-hub/projects/hub-project/project.yaml",
-            &project_yaml("hub-project"),
+            "projects/unregistered-checkout/projects/sample-project/project.yaml",
+            &project_yaml("sample-project"),
         );
 
         let catalog = scan(&root);
         assert_eq!(catalog.projects.len(), 1);
-        assert_eq!(catalog.projects[0].project_id, "eligible-project");
+        assert_eq!(catalog.projects[0].project_id, "sample-project");
         assert_eq!(
             catalog.projects[0].source_path,
-            "projects/registered-workspace/projects/eligible-project"
+            "projects/unregistered-checkout/projects/sample-project"
         );
+        assert!(catalog.catalog_errors.is_empty());
     }
 
     #[test]
-    fn ignores_workspace_paths_outside_allowed_project_depth_or_under_templates() {
+    fn reports_a_missing_index_without_blocking_data_driven_discovery() {
+        let (_temp, root) = adk();
+        fs::remove_file(root.join(".agents/context/project-index.yaml")).unwrap();
+        write(
+            &root,
+            "projects/unregistered-checkout/projects/sample-project/project.yaml",
+            &project_yaml("sample-project"),
+        );
+
+        let catalog = scan(&root);
+        assert_eq!(catalog.projects.len(), 1);
+        assert_eq!(catalog.projects[0].project_id, "sample-project");
+        assert!(catalog.catalog_errors.iter().any(|error| {
+            error.path == ".agents/context/project-index.yaml" && error.reason == "missing"
+        }));
+    }
+
+    #[test]
+    fn reports_a_malformed_index_when_no_project_candidates_exist() {
         let (_temp, root) = adk();
         write(
             &root,
             ".agents/context/project-index.yaml",
-            "version: '2.0'\nsubmodules:\n  template:\n    path: ./projects/_template\n    type: workspace_adk\n  too-deep:\n    path: ./projects/group/too/deep\n    type: workspace_adk\n  outside:\n    path: ../outside\n    type: workspace_adk\n",
+            "version: '2.0'\nsubmodules: [\n",
+        );
+
+        let catalog = scan(&root);
+        assert!(catalog.projects.is_empty());
+        assert!(catalog.catalog_errors.iter().any(|error| {
+            error.path == ".agents/context/project-index.yaml" && error.reason == "invalid_yaml"
+        }));
+    }
+
+    #[test]
+    fn skips_underscore_candidate_roots_at_both_supported_depths() {
+        let (_temp, root) = adk();
+        write(
+            &root,
+            "projects/_template/projects/hidden-project/project.yaml",
+            &project_yaml("hidden-first-level"),
         );
         write(
             &root,
-            "projects/_template/projects/template-project/project.yaml",
-            &project_yaml("template-project"),
-        );
-        write(
-            &root,
-            "projects/group/too/deep/projects/deep-project/project.yaml",
-            &project_yaml("deep-project"),
+            "projects/group/_local/projects/hidden-project/project.yaml",
+            &project_yaml("hidden-second-level"),
         );
 
         let catalog = scan(&root);
@@ -690,38 +687,38 @@ mod tests {
         let (_temp, root) = adk();
         write(
             &root,
-            "projects/naia-pj-adk/projects/valid/project.yaml",
+            "projects/candidate-checkout/projects/valid/project.yaml",
             &project_yaml("valid"),
         );
         write(
             &root,
-            "projects/naia-pj-adk/projects/malformed/project.yaml",
+            "projects/candidate-checkout/projects/malformed/project.yaml",
             "id: [unterminated\n",
         );
         write(
             &root,
-            "projects/naia-pj-adk/projects/missing-id/project.yaml",
+            "projects/candidate-checkout/projects/missing-id/project.yaml",
             "version: 1\nproject:\n  repository: octocat/Hello-World\n",
         );
-        fs::create_dir_all(root.join("projects/naia-pj-adk/projects/missing-file")).unwrap();
+        fs::create_dir_all(root.join("projects/candidate-checkout/projects/missing-file")).unwrap();
 
         let catalog = scan(&root);
         assert_eq!(catalog.projects.len(), 1);
         assert_eq!(catalog.projects[0].project_id, "valid");
         assert_eq!(
             catalog.projects[0].source_path,
-            "projects/naia-pj-adk/projects/valid"
+            "projects/candidate-checkout/projects/valid"
         );
         assert!(catalog.catalog_errors.iter().any(|error| {
-            error.path == "projects/naia-pj-adk/projects/malformed/project.yaml"
+            error.path == "projects/candidate-checkout/projects/malformed/project.yaml"
                 && error.reason == "invalid_yaml"
         }));
         assert!(catalog.catalog_errors.iter().any(|error| {
-            error.path == "projects/naia-pj-adk/projects/missing-id/project.yaml"
+            error.path == "projects/candidate-checkout/projects/missing-id/project.yaml"
                 && error.reason == "missing_project_id"
         }));
         assert!(catalog.catalog_errors.iter().any(|error| {
-            error.path == "projects/naia-pj-adk/projects/missing-file/project.yaml"
+            error.path == "projects/candidate-checkout/projects/missing-file/project.yaml"
                 && error.reason == "missing"
         }));
     }
@@ -742,7 +739,7 @@ mod tests {
             let id = format!("project-{index:03}");
             write(
                 &root,
-                &format!("projects/naia-pj-adk/projects/{id}/project.yaml"),
+                &format!("projects/candidate-checkout/projects/{id}/project.yaml"),
                 &project_yaml(&id),
             );
         }
@@ -762,7 +759,7 @@ mod tests {
         );
         write(
             &root,
-            "projects/naia-pj-adk/projects/large/project.yaml",
+            "projects/candidate-checkout/projects/large/project.yaml",
             &oversized,
         );
         let catalog = scan(&root);
@@ -776,7 +773,7 @@ mod tests {
             oversized.len()
         );
         assert!(catalog.catalog_errors.iter().any(|error| {
-            error.path == "projects/naia-pj-adk/projects/large/project.yaml"
+            error.path == "projects/candidate-checkout/projects/large/project.yaml"
                 && error.reason == "file_too_large"
         }));
         assert_eq!(
@@ -826,7 +823,7 @@ mod tests {
         write(
             &root,
             ".agents/context/project-index.yaml",
-            "version: '2.0'\nsubmodules:\n  naia-pj-adk:\n    path: ./projects/naia-pj-adk\n    type: workspace_adk\n  linked-candidate:\n    path: ./projects/linked-candidate\n    type: workspace_adk\n",
+            "version: '2.0'\nsubmodules: {}\nlocal_projects: {}\n",
         );
         let outside = tempfile::tempdir().unwrap();
         write(
@@ -839,10 +836,11 @@ mod tests {
             root.join("projects/linked-candidate"),
         )
         .unwrap();
-        fs::create_dir_all(root.join("projects/naia-pj-adk/projects/linked-project")).unwrap();
+        fs::create_dir_all(root.join("projects/candidate-checkout/projects/linked-project"))
+            .unwrap();
         symlink(
             outside.path().join("projects/escape/project.yaml"),
-            root.join("projects/naia-pj-adk/projects/linked-project/project.yaml"),
+            root.join("projects/candidate-checkout/projects/linked-project/project.yaml"),
         )
         .unwrap();
 
@@ -852,7 +850,7 @@ mod tests {
             error.path == "projects/linked-candidate" && error.reason == "unsafe_path"
         }));
         assert!(catalog.catalog_errors.iter().any(|error| {
-            error.path == "projects/naia-pj-adk/projects/linked-project/project.yaml"
+            error.path == "projects/candidate-checkout/projects/linked-project/project.yaml"
                 && error.reason == "unsafe_path"
         }));
     }

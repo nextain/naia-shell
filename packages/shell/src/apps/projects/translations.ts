@@ -19,7 +19,7 @@ const english = {
 	"projects.searchPlaceholder": "Search by name, ID, repository, or source",
 	"projects.emptyTitle": "No projects found",
 	"projects.emptyHint":
-		"Check naia-adk/projects and its naia-pj-adk project.yaml files, or choose another naia-adk folder.",
+		"Check naia-adk/projects for projects/<project>/project.yaml files with a nested, non-empty project.id. To use another naia-adk folder, reset its path in Settings.",
 	"projects.noSearchResults": "No projects match this search.",
 	"projects.unavailable": "Unavailable",
 	"projects.configError":
@@ -758,7 +758,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "폴더 다시 선택",
 		"projects.searchPlaceholder": "이름, ID, 저장소, 출처로 검색",
 		"projects.emptyHint":
-			"naia-adk/projects와 각 프로젝트의 project.yaml을 확인하거나 다른 naia-adk 폴더를 선택하세요.",
+			"naia-adk/projects에서 중첩 project.id가 비어 있지 않은 projects/<프로젝트>/project.yaml을 확인하세요. 다른 naia-adk를 사용하려면 설정에서 경로를 재설정하세요.",
 		"projects.unsafePath": "naia-adk 폴더 바깥의 경로라 읽지 않았습니다.",
 		"projects.stageOneEmpty":
 			"2단계에서는 빈 화면으로 둡니다. 코딩 에이전트·대시보드·내부 이슈 데이터는 아직 연결하지 않았습니다.",
@@ -789,7 +789,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "フォルダーを再選択",
 		"projects.searchPlaceholder": "名前、ID、repository、場所で検索",
 		"projects.emptyHint":
-			"naia-adk/projects と各 project.yaml を確認するか、別の naia-adk を選択してください。",
+			"naia-adk/projects で、空でない入れ子の project.id を持つ projects/<project>/project.yaml を確認してください。別の naia-adk を使うには設定でパスをリセットしてください。",
 		"projects.unsafePath":
 			"naia-adk フォルダー外のパスのため読み込みませんでした。",
 		"projects.stageOneEmpty":
@@ -821,7 +821,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "重新选择文件夹",
 		"projects.searchPlaceholder": "按名称、ID、仓库或来源搜索",
 		"projects.emptyHint":
-			"检查 naia-adk/projects 和项目的 project.yaml，或选择其他 naia-adk 文件夹。",
+			"请检查 naia-adk/projects 中 projects/<project>/project.yaml 是否包含非空的嵌套 project.id。要使用其他 naia-adk 文件夹，请在设置中重置路径。",
 		"projects.unsafePath": "路径位于 naia-adk 文件夹之外，因此未读取。",
 		"projects.stageOneEmpty":
 			"这是阶段 2 的占位视图。编码代理、仪表板和内部问题数据尚未连接。",
@@ -850,7 +850,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "Choisir à nouveau le dossier",
 		"projects.searchPlaceholder": "Rechercher par nom, ID, dépôt ou source",
 		"projects.emptyHint":
-			"Vérifiez naia-adk/projects et les project.yaml, ou choisissez un autre dossier naia-adk.",
+			"Vérifiez dans naia-adk/projects les fichiers projects/<project>/project.yaml avec un project.id imbriqué non vide. Pour utiliser un autre dossier naia-adk, réinitialisez son chemin dans les paramètres.",
 		"projects.unsafePath":
 			"Le chemin sort du dossier naia-adk et n’a pas été lu.",
 		"projects.stageOneEmpty":
@@ -883,7 +883,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.searchPlaceholder":
 			"Nach Name, ID, Repository oder Quelle suchen",
 		"projects.emptyHint":
-			"Prüfe naia-adk/projects und die project.yaml-Dateien oder wähle einen anderen naia-adk-Ordner.",
+			"Prüfe in naia-adk/projects die Dateien projects/<project>/project.yaml auf eine nicht leere, verschachtelte project.id-Angabe. Um einen anderen naia-adk-Ordner zu verwenden, setze den Pfad in den Einstellungen zurück.",
 		"projects.unsafePath":
 			"Der Pfad liegt außerhalb des naia-adk-Ordners und wurde nicht gelesen.",
 		"projects.stageOneEmpty":
@@ -916,7 +916,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.searchPlaceholder":
 			"Поиск по имени, ID, репозиторию или источнику",
 		"projects.emptyHint":
-			"Проверьте naia-adk/projects и файлы project.yaml или выберите другую папку naia-adk.",
+			"Проверьте в naia-adk/projects файлы projects/<project>/project.yaml с непустым вложенным project.id. Чтобы использовать другую папку naia-adk, сбросьте путь в настройках.",
 		"projects.unsafePath":
 			"Путь выходит за пределы naia-adk, поэтому файл не прочитан.",
 		"projects.stageOneEmpty":
@@ -948,7 +948,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "Elegir carpeta de nuevo",
 		"projects.searchPlaceholder": "Buscar por nombre, ID, repositorio u origen",
 		"projects.emptyHint":
-			"Comprueba naia-adk/projects y los archivos project.yaml, o elige otra carpeta naia-adk.",
+			"Revisa en naia-adk/projects los archivos projects/<project>/project.yaml con un project.id anidado y no vacío. Para usar otra carpeta naia-adk, restablece la ruta en Configuración.",
 		"projects.unsafePath": "La ruta está fuera de naia-adk y no se leyó.",
 		"projects.stageOneEmpty":
 			"Marcador de la etapa 2. El agente de código, el panel y los asuntos internos aún no están conectados.",
@@ -979,7 +979,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "اختر المجلد مجددًا",
 		"projects.searchPlaceholder": "ابحث بالاسم أو المعرّف أو المستودع أو المصدر",
 		"projects.emptyHint":
-			"تحقق من naia-adk/projects وملفات project.yaml أو اختر مجلد naia-adk آخر.",
+			"تحقق في naia-adk/projects من ملفات projects/<project>/project.yaml التي تحتوي على project.id متداخل غير فارغ. لاستخدام مجلد naia-adk آخر، أعد تعيين المسار من الإعدادات.",
 		"projects.unsafePath": "المسار خارج مجلد naia-adk، لذلك لم تتم قراءته.",
 		"projects.stageOneEmpty":
 			"عنصر نائب للمرحلة 2. لم يتم ربط وكيل البرمجة ولوحة المعلومات والمشكلات الداخلية بعد.",
@@ -1010,7 +1010,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "फ़ोल्डर फिर चुनें",
 		"projects.searchPlaceholder": "नाम, ID, repository या स्रोत से खोजें",
 		"projects.emptyHint":
-			"naia-adk/projects और project.yaml फ़ाइलें जाँचें या दूसरा naia-adk फ़ोल्डर चुनें।",
+			"naia-adk/projects में ऐसे projects/<project>/project.yaml देखें जिनमें nested project.id खाली न हो। दूसरा naia-adk फ़ोल्डर इस्तेमाल करने के लिए सेटिंग में उसका पथ रीसेट करें।",
 		"projects.unsafePath": "पथ naia-adk फ़ोल्डर के बाहर है, इसलिए इसे नहीं पढ़ा गया।",
 		"projects.stageOneEmpty":
 			"चरण 2 का अस्थायी दृश्य। कोडिंग एजेंट, डैशबोर्ड और आंतरिक मुद्दे अभी जुड़े नहीं हैं।",
@@ -1041,7 +1041,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "ফোল্ডার আবার বেছে নিন",
 		"projects.searchPlaceholder": "নাম, ID, repository বা উৎস দিয়ে খুঁজুন",
 		"projects.emptyHint":
-			"naia-adk/projects ও project.yaml ফাইল দেখুন, অথবা অন্য naia-adk ফোল্ডার বেছে নিন।",
+			"naia-adk/projects-এ projects/<project>/project.yaml দেখুন, যেখানে nested project.id খালি নয়। অন্য naia-adk ফোল্ডার ব্যবহার করতে সেটিংসে পথ রিসেট করুন।",
 		"projects.unsafePath": "পথটি naia-adk ফোল্ডারের বাইরে, তাই পড়া হয়নি।",
 		"projects.stageOneEmpty":
 			"ধাপ ২-এর খালি দৃশ্য। কোডিং এজেন্ট, ড্যাশবোর্ড ও অভ্যন্তরীণ ইস্যু এখনো যুক্ত নয়।",
@@ -1072,7 +1072,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "Escolher pasta novamente",
 		"projects.searchPlaceholder": "Buscar por nome, ID, repositório ou origem",
 		"projects.emptyHint":
-			"Verifique naia-adk/projects e os arquivos project.yaml ou escolha outra pasta naia-adk.",
+			"Verifique em naia-adk/projects os arquivos projects/<project>/project.yaml com um project.id aninhado e não vazio. Para usar outra pasta naia-adk, redefina o caminho nas Configurações.",
 		"projects.unsafePath":
 			"O caminho está fora da pasta naia-adk e não foi lido.",
 		"projects.stageOneEmpty":
@@ -1105,7 +1105,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.searchPlaceholder":
 			"Cari berdasarkan nama, ID, repositori, atau sumber",
 		"projects.emptyHint":
-			"Periksa naia-adk/projects dan file project.yaml, atau pilih folder naia-adk lain.",
+			"Periksa file projects/<project>/project.yaml di naia-adk/projects dan pastikan project.id bertingkat tidak kosong. Untuk memakai folder naia-adk lain, atur ulang jalurnya di Setelan.",
 		"projects.unsafePath":
 			"Jalur berada di luar folder naia-adk sehingga tidak dibaca.",
 		"projects.stageOneEmpty":
@@ -1137,7 +1137,7 @@ const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.chooseAnother": "Chọn lại thư mục",
 		"projects.searchPlaceholder": "Tìm theo tên, ID, kho lưu trữ hoặc nguồn",
 		"projects.emptyHint":
-			"Kiểm tra naia-adk/projects và các tệp project.yaml, hoặc chọn thư mục naia-adk khác.",
+			"Kiểm tra các tệp projects/<project>/project.yaml trong naia-adk/projects để bảo đảm project.id lồng bên trong không rỗng. Để dùng thư mục naia-adk khác, hãy đặt lại đường dẫn trong Cài đặt.",
 		"projects.unsafePath":
 			"Đường dẫn nằm ngoài thư mục naia-adk nên không được đọc.",
 		"projects.stageOneEmpty":

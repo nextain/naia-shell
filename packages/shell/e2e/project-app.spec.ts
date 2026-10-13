@@ -315,6 +315,37 @@ test.describe("Project app — stage 2 single-open flow", () => {
 		await capture(page, "project-app-empty-and-error.png");
 	});
 
+	test("shows index repair guidance when no project metadata candidates exist", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, {
+			projects: [],
+			catalogErrors: [
+				{
+					path: ".agents/context/project-index.yaml",
+					reason: "invalid_yaml",
+				},
+			],
+		});
+		await openProjectApp(page);
+
+		await expect(
+			page.getByRole("heading", { name: "No projects found" }),
+		).toBeVisible();
+		await expect(
+			page.getByText(".agents/context/project-index.yaml"),
+		).toBeVisible();
+		await expect(page.getByText(/is invalid\./)).toBeVisible();
+		await expect(
+			page.getByText(/nested, non-empty project\.id/),
+		).toBeVisible();
+		await expect(
+			page.getByText(/reset its path in Settings/),
+		).toBeVisible();
+		await capture(page, "project-app-empty-index-error.png");
+	});
+
 	test("reports scan entry, display-row, and file-size cutoffs", async ({
 		page,
 	}) => {
