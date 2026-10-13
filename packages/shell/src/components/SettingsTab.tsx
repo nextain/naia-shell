@@ -108,10 +108,23 @@ import {
 	t,
 } from "../lib/i18n";
 import {
+	cancelOllamaModelPull,
+	fetchOllamaModelCatalog,
+	fetchOllamaModelPullStatus,
 	fetchOllamaRuntimeSnapshot,
 	isManagedOllamaHost,
 	ollamaAdmissionMessageKey,
+	ollamaModelPullErrorMessageKey,
+	ollamaModelPullStateMessageKey,
 	ollamaServerStateMessageKey,
+	retryOllamaModelPull,
+	startOllamaModelPull,
+	type ModelPullError,
+	type ModelPullErrorCode,
+	type ModelPullProgress,
+	type ModelPullSnapshot,
+	type ModelPullStartResponse,
+	type QwenModelPolicy,
 	type OllamaRuntimeSnapshot,
 } from "../lib/ollama-runtime";
 import { DevicePairingSection } from "./DevicePairingSection";
@@ -212,6 +225,40 @@ const LLM_PROVIDERS = listLlmProviders();
 
 function vramTierLabelKey(_id: VramTierId) {
 	return "settings.vramTier.windows-voice-6g" as const;
+}
+
+function normalizeOllamaModelPullError(
+	value: unknown,
+	fallbackStage: string,
+): ModelPullError {
+	const record =
+		value && typeof value === "object"
+			? (value as Record<string, unknown>)
+			: {};
+	const code =
+		typeof record.code === "string"
+			? (record.code as ModelPullErrorCode)
+			: "pull_http_failed";
+	return {
+		code,
+		stage: typeof record.stage === "string" ? record.stage : fallbackStage,
+		retryable: record.retryable === true,
+		...(typeof record.operationId === "string"
+			? { operationId: record.operationId }
+			: {}),
+	};
+}
+
+function formatModelBytes(bytes: number): string {
+	if (!Number.isFinite(bytes) || bytes < 0) return "";
+	const units = ["B", "KiB", "MiB", "GiB"];
+	let size = bytes;
+	let unit = 0;
+	while (size >= 1024 && unit < units.length - 1) {
+		size /= 1024;
+		unit += 1;
+	}
+	return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(size)} ${units[unit]}`;
 }
 
 type CodexPreflightStatus =
@@ -869,6 +916,41 @@ export function SettingsTab() {
 	const [ollamaConnected, setOllamaConnected] = useState(false);
 	const [ollamaRuntime, setOllamaRuntime] =
 		useState<OllamaRuntimeSnapshot | null>(null);
+	const [ollamaModelPolicy, setOllamaModelPolicy] =
+		useState<QwenModelPolicy | null>(null);
+	const [ollamaModelPolicyError, setOllamaModelPolicyError] = useState(false);
+	const [ollamaPullTag, setOllamaPullTag] = useState("");
+	const [ollamaPullSnapshot, setOllamaPullSnapshot] =
+		useState<ModelPullSnapshot | null>(null);
+	const [ollamaPullProgress, setOllamaPullProgress] =
+		useState<ModelPullProgress | null>(null);
+	const [ollamaPullError, setOllamaPullError] = useState<ModelPullError | null>(
+		null,
+	);
+	const [ollamaPullConfirming, setOllamaPullConfirming] = useState(false);
+	const [ollamaPullBusy, setOllamaPullBusy] = useState(false);
+	const [ollamaPullCancelBusy, setOllamaPullCancelBusy] = useState(false);
+	const ollamaPullActiveRef = useRef<{
+		operationId: string;
+		tag: string;
+	} | null>(null);
+	const ollamaPullPendingTagRef = useRef<string | null>(null);
+	const ollamaPullQueuedEventsRef = useRef<
+		Array<
+			| { kind: "state"; payload: ModelPullSnapshot }
+			| { kind: "progress"; payload: ModelPullProgress }
+		>
+	>([]);
+	const ollamaPullOriginRef = useRef<{
+		operationId: string | null;
+		tag: string;
+		host: string;
+		model: string;
+		selectionRevision: number;
+	} | null>(null);
+	const ollamaPullSelectionRevisionRef = useRef(0);
+	const ollamaSelectionRef = useRef({ provider, host: ollamaHost, model });
+	ollamaSelectionRef.current = { provider, host: ollamaHost, model };
 	const ollamaThinkingUnsupportedStatus = useSyncExternalStore(
 		subscribeOllamaThinkingUnsupportedStatus,
 		getOllamaThinkingUnsupportedStatus,
@@ -1928,6 +2010,291 @@ export function SettingsTab() {
 	}, [provider, ollamaHost]);
 
 	useEffect(() => {
+		if (provider !== "ollama") return;
+		let disposed = false;
+		setOllamaModelPolicyError(false);
+		void fetchOllamaModelCatalog()
+			.then((policy) => {
+				if (!disposed && Array.isArray(policy?.candidates)) {
+					setOllamaModelPolicy(policy);
+					setOllamaModelPolicyError(false);
+				} else if (!disposed) {
+					setOllamaModelPolicy(null);
+					setOllamaModelPolicyError(true);
+				}
+			})
+			.catch(() => {
+				if (!disposed) {
+					setOllamaModelPolicy(null);
+					setOllamaModelPolicyError(true);
+				}
+			});
+		return () => {
+			disposed = true;
+		};
+	}, [provider]);
+
+	function applyOllamaPullSnapshot(snapshot: ModelPullSnapshot) {
+		setOllamaPullSnapshot(snapshot);
+		setOllamaPullError(snapshot.error);
+		if (snapshot.state !== "ready") return;
+		const origin = ollamaPullOriginRef.current;
+		if (
+			!origin ||
+			!origin.operationId ||
+			origin.operationId !== snapshot.operationId ||
+			origin.tag !== snapshot.tag
+		) {
+			return;
+		}
+		void fetchOllamaModels(origin.host).then(({ models, connected }) => {
+			setOllamaConnected(connected);
+			if (models.length > 0)
+				setDynamicModels((previous) => ({ ...previous, ollama: models }));
+			const current = ollamaSelectionRef.current;
+			if (
+				current.provider === "ollama" &&
+				current.host.trim() === origin.host.trim() &&
+				ollamaPullSelectionRevisionRef.current === origin.selectionRevision &&
+				models.some((candidate) => candidate.id === snapshot.tag)
+			) {
+				setModel(snapshot.tag);
+				const persistedConfig = loadConfig();
+				const legacySelection = applyModelSelectionToConfig(
+					persistedConfig as Record<string, unknown> | null,
+					"ollama",
+					snapshot.tag,
+				);
+				const persistedMainRole = persistedConfig
+					? readConfiguredLlmRoles(persistedConfig).main
+					: undefined;
+				const mainRole: LlmRoleConfig = {
+					provider: "ollama",
+					model: snapshot.tag,
+					...(persistedMainRole?.provider === "ollama" &&
+					persistedMainRole.credentialRef !== undefined
+						? { credentialRef: persistedMainRole.credentialRef }
+						: {}),
+					...(persistedMainRole?.provider === "ollama" &&
+					persistedMainRole.baseUrl !== undefined
+						? { baseUrl: persistedMainRole.baseUrl }
+						: {}),
+				};
+				const nextSelection = writeConfiguredLlmRole(
+					legacySelection as unknown as AppConfig,
+					"main",
+					mainRole,
+				);
+				saveConfig(
+					nextSelection as unknown as Parameters<typeof saveConfig>[0],
+				);
+				void writeNaiaConfig(
+					nextSelection as unknown as Record<string, unknown>,
+				);
+			}
+		});
+	}
+
+	useEffect(() => {
+		if (provider !== "ollama") return;
+		let disposed = false;
+		let unlistenState: (() => void) | undefined;
+		let unlistenProgress: (() => void) | undefined;
+		const handleSnapshot = (payload: ModelPullSnapshot) => {
+			const active = ollamaPullActiveRef.current;
+			if (!active) {
+				if (
+					ollamaPullPendingTagRef.current === payload.tag &&
+					ollamaPullQueuedEventsRef.current.length < 32
+				) {
+					ollamaPullQueuedEventsRef.current.push({ kind: "state", payload });
+				}
+				return;
+			}
+			if (
+				payload.operationId === active.operationId &&
+				payload.tag === active.tag
+			) {
+				applyOllamaPullSnapshot(payload);
+			}
+		};
+		const handleProgress = (payload: ModelPullProgress) => {
+			const active = ollamaPullActiveRef.current;
+			if (!active) {
+				if (
+					ollamaPullPendingTagRef.current === payload.tag &&
+					ollamaPullQueuedEventsRef.current.length < 32
+				) {
+					ollamaPullQueuedEventsRef.current.push({ kind: "progress", payload });
+				}
+				return;
+			}
+			if (
+				payload.operationId === active.operationId &&
+				payload.tag === active.tag
+			) {
+				setOllamaPullProgress(payload);
+			}
+		};
+		void listen<ModelPullSnapshot>(
+			"ollama_model_pull_state_changed",
+			({ payload }) => {
+				if (!disposed) handleSnapshot(payload);
+			},
+		)
+			.then((cleanup) => {
+				if (disposed) cleanup();
+				else unlistenState = cleanup;
+			})
+			.catch(() => undefined);
+		void listen<ModelPullProgress>(
+			"ollama_model_pull_progress",
+			({ payload }) => {
+				if (!disposed) handleProgress(payload);
+			},
+		)
+			.then((cleanup) => {
+				if (disposed) cleanup();
+				else unlistenProgress = cleanup;
+			})
+			.catch(() => undefined);
+		return () => {
+			disposed = true;
+			unlistenState?.();
+			unlistenProgress?.();
+		};
+	}, [provider]);
+
+	useEffect(() => {
+		if (
+			provider !== "ollama" ||
+			!ollamaPullTag ||
+			!isManagedOllamaHost(ollamaHost) ||
+			ollamaRuntime?.serverState !== "ready_managed"
+		) {
+			return;
+		}
+		let disposed = false;
+		void fetchOllamaModelPullStatus(ollamaPullTag)
+			.then((snapshot) => {
+				if (disposed || snapshot.tag !== ollamaPullTag) return;
+				const active = ollamaPullActiveRef.current;
+				if (
+					active &&
+					active.tag === snapshot.tag &&
+					active.operationId !== snapshot.operationId
+				)
+					return;
+				setOllamaPullSnapshot(snapshot);
+				setOllamaPullError(snapshot.error);
+				if (snapshot.operationId) {
+					ollamaPullActiveRef.current = {
+						operationId: snapshot.operationId,
+						tag: snapshot.tag,
+					};
+				}
+			})
+			.catch((error: unknown) => {
+				if (!disposed) {
+					setOllamaPullError(normalizeOllamaModelPullError(error, "status"));
+				}
+			});
+		return () => {
+			disposed = true;
+		};
+	}, [provider, ollamaHost, ollamaPullTag, ollamaRuntime?.serverState]);
+
+	function beginOllamaModelPull(tag: string, retry: boolean) {
+		const policy = ollamaModelPolicy;
+		if (
+			provider !== "ollama" ||
+			!isManagedOllamaHost(ollamaHost) ||
+			ollamaRuntime?.serverState !== "ready_managed" ||
+			!policy ||
+			!policy.pullStartPolicy ||
+			policy.diskMarginBytes === null ||
+			!policy.candidates.some((candidate) => candidate.tag === tag)
+		) {
+			return;
+		}
+		setOllamaPullBusy(true);
+		setOllamaPullError(null);
+		setOllamaPullProgress(null);
+		ollamaPullActiveRef.current = null;
+		ollamaPullQueuedEventsRef.current = [];
+		ollamaPullPendingTagRef.current = tag;
+		ollamaPullOriginRef.current = {
+			operationId: null,
+			tag,
+			host: ollamaHost,
+			model,
+			selectionRevision: ollamaPullSelectionRevisionRef.current,
+		};
+		const request = retry
+			? retryOllamaModelPull(tag)
+			: startOllamaModelPull(tag, tag);
+		void request
+			.then((response: ModelPullStartResponse) => {
+				const origin = ollamaPullOriginRef.current;
+				if (!origin || origin.tag !== tag) return;
+				ollamaPullOriginRef.current = {
+					...origin,
+					operationId: response.operationId,
+				};
+				ollamaPullActiveRef.current = {
+					operationId: response.operationId,
+					tag,
+				};
+				ollamaPullPendingTagRef.current = null;
+				applyOllamaPullSnapshot(response.snapshot);
+				const queued = ollamaPullQueuedEventsRef.current;
+				ollamaPullQueuedEventsRef.current = [];
+				for (const event of queued) {
+					if (event.kind === "state") {
+						if (
+							event.payload.operationId === response.operationId &&
+							event.payload.tag === tag
+						) {
+							applyOllamaPullSnapshot(event.payload);
+						}
+					} else if (
+						event.payload.operationId === response.operationId &&
+						event.payload.tag === tag
+					) {
+						setOllamaPullProgress(event.payload);
+					}
+				}
+			})
+			.catch((error: unknown) => {
+				ollamaPullPendingTagRef.current = null;
+				ollamaPullQueuedEventsRef.current = [];
+				setOllamaPullError(
+					normalizeOllamaModelPullError(error, retry ? "retry" : "start"),
+				);
+			})
+			.finally(() => setOllamaPullBusy(false));
+	}
+
+	function cancelOllamaModelPullNow() {
+		const active = ollamaPullActiveRef.current;
+		if (!active) return;
+		setOllamaPullCancelBusy(true);
+		void cancelOllamaModelPull(active.operationId)
+			.then((snapshot) => {
+				if (
+					snapshot.operationId === active.operationId &&
+					snapshot.tag === active.tag
+				) {
+					applyOllamaPullSnapshot(snapshot);
+				}
+			})
+			.catch((error: unknown) => {
+				setOllamaPullError(normalizeOllamaModelPullError(error, "cancel"));
+			})
+			.finally(() => setOllamaPullCancelBusy(false));
+	}
+
+	useEffect(() => {
 		if (provider !== "vllm") return;
 		fetchVllmModels(vllmHost).then(({ models, connected }) => {
 			setVllmConnected(connected);
@@ -2632,6 +2999,7 @@ export function SettingsTab() {
 	}
 
 	function handleProviderChange(id: ProviderId) {
+		ollamaPullSelectionRevisionRef.current += 1;
 		setProvider(id);
 		// Provider switch resets all CLI readiness state (#605 defect fix).
 		setCodexPreflightStatus("idle");
@@ -3214,6 +3582,28 @@ export function SettingsTab() {
 	const singleProviderModel = selectableProviderModels[0];
 	const selectedModelMeta = availableProviderModels.find((m) => m.id === model);
 	const hasSelectedModel = Boolean(selectedModelMeta);
+	const selectedOllamaPullCandidate = ollamaModelPolicy?.candidates.find(
+		(candidate) => candidate.tag === ollamaPullTag,
+	);
+	const ollamaPullActive = ["preflight", "pulling", "verifying"].includes(
+		ollamaPullSnapshot?.state ?? "",
+	);
+	const ollamaPullPolicyReady = Boolean(
+		ollamaModelPolicy &&
+			ollamaModelPolicy.pullStartPolicy !== null &&
+			ollamaModelPolicy.diskMarginBytes !== null,
+	);
+	const canStartOllamaModelPull = Boolean(
+		provider === "ollama" &&
+			isManagedOllamaHost(ollamaHost) &&
+			ollamaRuntime?.serverState === "ready_managed" &&
+			selectedOllamaPullCandidate &&
+			ollamaPullPolicyReady &&
+			!ollamaPullActive &&
+			!ollamaPullBusy,
+	);
+	const currentOllamaPullError =
+		ollamaPullError ?? ollamaPullSnapshot?.error ?? null;
 	const shouldReplaceUnavailableSelectedModel =
 		provider === "nextain" && Boolean(model) && !hasSelectedModel;
 	useEffect(() => {
@@ -4696,7 +5086,10 @@ export function SettingsTab() {
 								id="ollama-host-input"
 								type="text"
 								value={ollamaHost}
-								onChange={(e) => setOllamaHost(e.target.value)}
+								onChange={(e) => {
+									ollamaPullSelectionRevisionRef.current += 1;
+									setOllamaHost(e.target.value);
+								}}
 								onBlur={(e) => persistConfig({ ollamaHost: e.target.value })}
 								placeholder={DEFAULT_OLLAMA_HOST}
 							/>
@@ -4739,10 +5132,10 @@ export function SettingsTab() {
 										ollamaHost,
 										model,
 									) && (
-									<p role="status" data-testid="ollama-thinking-unsupported">
-										{t("settings.ollamaThinkingUnsupported")}
-									</p>
-								)}
+										<p role="status" data-testid="ollama-thinking-unsupported">
+											{t("settings.ollamaThinkingUnsupported")}
+										</p>
+									)}
 							</div>
 							<div className="settings-field">
 								{isManagedOllamaHost(ollamaHost) &&
@@ -4796,6 +5189,310 @@ export function SettingsTab() {
 									</button>
 								)}
 							</div>
+							<section
+								className="settings-field"
+								aria-labelledby="ollama-model-pull-title"
+								data-testid="ollama-model-pull"
+							>
+								<h3 id="ollama-model-pull-title">
+									{t("settings.ollamaPullTitle")}
+								</h3>
+								<p className="settings-hint">
+									{t("settings.ollamaPullVramNotice")}
+								</p>
+								{ollamaModelPolicyError && (
+									<p role="alert">{t("settings.ollamaPullCatalogFailed")}</p>
+								)}
+								{ollamaModelPolicy && (
+									<>
+										{ollamaModelPolicy.candidates.length === 0 && (
+											<p role="status" data-testid="ollama-pull-no-candidates">
+												{t("settings.ollamaPullNoCandidates")}
+											</p>
+										)}
+										<label htmlFor="ollama-pull-model-select">
+											{t("settings.ollamaPullCandidateLabel")}
+										</label>
+										<select
+											id="ollama-pull-model-select"
+											data-testid="ollama-pull-model-select"
+											value={ollamaPullTag}
+											disabled={ollamaPullActive || ollamaPullBusy}
+											onChange={(event) => {
+												setOllamaPullTag(event.target.value);
+												setOllamaPullConfirming(false);
+												setOllamaPullSnapshot(null);
+												setOllamaPullProgress(null);
+												setOllamaPullError(null);
+												ollamaPullActiveRef.current = null;
+												ollamaPullOriginRef.current = null;
+											}}
+										>
+											<option value="">
+												{t("settings.ollamaPullChooseCandidate")}
+											</option>
+											{ollamaModelPolicy.candidates.map((candidate) => (
+												<option key={candidate.id} value={candidate.tag}>
+													{candidate.displayName} ({candidate.publishedSize})
+												</option>
+											))}
+										</select>
+										{selectedOllamaPullCandidate && (
+											<dl data-testid="ollama-pull-candidate-details">
+												<dt>{t("settings.ollamaPullTagLabel")}</dt>
+												<dd data-testid="ollama-pull-exact-tag">
+													{selectedOllamaPullCandidate.tag}
+												</dd>
+												<dt>{t("settings.ollamaPullSizeLabel")}</dt>
+												<dd>{selectedOllamaPullCandidate.publishedSize}</dd>
+												<dt>{t("settings.ollamaPullSourceLabel")}</dt>
+												<dd>
+													<a
+														href={selectedOllamaPullCandidate.sourceUrl}
+														target="_blank"
+														rel="noreferrer"
+													>
+														{t("settings.ollamaPullSourceLink")}
+													</a>
+												</dd>
+												<dt>{t("settings.ollamaPullQuantizationLabel")}</dt>
+												<dd>{selectedOllamaPullCandidate.quantization}</dd>
+												<dt>{t("settings.ollamaPullContextMaxLabel")}</dt>
+												<dd>
+													{new Intl.NumberFormat().format(
+														selectedOllamaPullCandidate.publishedContextTokens,
+													)}
+												</dd>
+												{ollamaModelPolicy.showLicense === true && (
+													<>
+														<dt>{t("settings.ollamaPullLicenseLabel")}</dt>
+														<dd>
+															<a
+																href={selectedOllamaPullCandidate.licenseUrl}
+																target="_blank"
+																rel="noreferrer"
+															>
+																{selectedOllamaPullCandidate.license}
+															</a>
+														</dd>
+													</>
+												)}
+											</dl>
+										)}
+										{ollamaModelPolicy.showLicense === null && (
+											<p
+												role="status"
+												data-testid="ollama-pull-license-pending"
+											>
+												{t("settings.ollamaPullLicensePolicyPending")}
+											</p>
+										)}
+										{ollamaModelPolicy.defaultModelTag === null && (
+											<p
+												role="status"
+												data-testid="ollama-pull-default-pending"
+											>
+												{t("settings.ollamaPullDefaultPending")}
+											</p>
+										)}
+										{(ollamaModelPolicy.measuredPeakVramBytes === null ||
+											ollamaModelPolicy.selectionHeadroomBytes === null) && (
+											<p role="status" data-testid="ollama-pull-vram-pending">
+												{t("settings.ollamaPullVramSelectionPending")}
+											</p>
+										)}
+										{(!ollamaModelPolicy.pullStartPolicy ||
+											ollamaModelPolicy.diskMarginBytes === null) && (
+											<p role="status" data-testid="ollama-pull-policy-pending">
+												{t("settings.ollamaPullStartPolicyPending")}
+											</p>
+										)}
+									</>
+								)}
+								{!isManagedOllamaHost(ollamaHost) && (
+									<p role="status" data-testid="ollama-pull-managed-only">
+										{t("settings.ollamaPullManagedOnly")}
+									</p>
+								)}
+								{isManagedOllamaHost(ollamaHost) &&
+									ollamaRuntime?.serverState !== "ready_managed" && (
+										<p role="status" data-testid="ollama-pull-server-not-ready">
+											{t("settings.ollamaPullManagedServerNotReady")}
+										</p>
+									)}
+								{ollamaPullSnapshot && (
+									<p
+										role="status"
+										aria-live="polite"
+										data-testid="ollama-pull-state"
+									>
+										{t(
+											ollamaModelPullStateMessageKey(ollamaPullSnapshot.state),
+										)}
+										{ollamaPullSnapshot.stage && (
+											<span>
+												{` · ${t("settings.ollamaPullStageDetail", { stage: ollamaPullSnapshot.stage })}`}
+											</span>
+										)}
+									</p>
+								)}
+								{ollamaPullProgress && (
+									<div
+										data-testid="ollama-pull-progress"
+										role="status"
+										aria-live="polite"
+									>
+										{ollamaPullProgress.total !== null &&
+										ollamaPullProgress.total > 0 &&
+										ollamaPullProgress.completed !== null ? (
+											<>
+												<progress
+													max={100}
+													value={Math.min(
+														100,
+														Math.max(
+															0,
+															(ollamaPullProgress.completed /
+																ollamaPullProgress.total) *
+																100,
+														),
+													)}
+													aria-label={t("settings.ollamaPullOverallProgress")}
+												/>
+												<p>
+													{t("settings.ollamaPullProgressBytes", {
+														completed: formatModelBytes(
+															ollamaPullProgress.completed,
+														),
+														total: formatModelBytes(ollamaPullProgress.total),
+														percent: Math.min(
+															100,
+															Math.max(
+																0,
+																Math.round(
+																	(ollamaPullProgress.completed /
+																		ollamaPullProgress.total) *
+																		100,
+																),
+															),
+														),
+													})}
+												</p>
+											</>
+										) : ollamaPullProgress.layerPercent !== null ? (
+											<>
+												<progress
+													max={100}
+													value={Math.min(
+														100,
+														Math.max(0, ollamaPullProgress.layerPercent),
+													)}
+													aria-label={t(
+														"settings.ollamaPullLayerProgressLabel",
+													)}
+												/>
+												<p>
+													{t("settings.ollamaPullLayerProgress", {
+														percent: Math.min(
+															100,
+															Math.max(
+																0,
+																Math.round(ollamaPullProgress.layerPercent),
+															),
+														),
+													})}
+												</p>
+											</>
+										) : (
+											<p>{t("settings.ollamaPullProgressUnknown")}</p>
+										)}
+										{ollamaPullProgress.phase && (
+											<p>
+												{t("settings.ollamaPullPhaseDetail", {
+													phase: ollamaPullProgress.phase,
+												})}
+											</p>
+										)}
+									</div>
+								)}
+								{currentOllamaPullError && (
+									<p
+										role="alert"
+										aria-live="assertive"
+										data-testid="ollama-pull-error"
+									>
+										{t(
+											ollamaModelPullErrorMessageKey(
+												currentOllamaPullError.code,
+											),
+										)}
+										<span>
+											{` · ${t("settings.ollamaPullErrorStage", { stage: currentOllamaPullError.stage })}`}
+										</span>
+									</p>
+								)}
+								{ollamaPullConfirming ? (
+									<div
+										role="group"
+										aria-label={t("settings.ollamaPullConfirmGroup")}
+									>
+										<p>
+											{t("settings.ollamaPullConfirmExactTag", {
+												tag: ollamaPullTag,
+											})}
+										</p>
+										<button
+											className="voice-preview-btn"
+											data-testid="ollama-pull-confirm"
+											disabled={!canStartOllamaModelPull}
+											onClick={() => {
+												setOllamaPullConfirming(false);
+												beginOllamaModelPull(ollamaPullTag, false);
+											}}
+										>
+											{t("settings.ollamaPullConfirmButton")}
+										</button>
+										<button
+											className="btn-secondary"
+											data-testid="ollama-pull-confirm-dismiss"
+											onClick={() => setOllamaPullConfirming(false)}
+										>
+											{t("settings.ollamaPullKeepUnchanged")}
+										</button>
+									</div>
+								) : (
+									<button
+										className="voice-preview-btn"
+										data-testid="ollama-pull-request-confirmation"
+										disabled={!canStartOllamaModelPull}
+										onClick={() => setOllamaPullConfirming(true)}
+									>
+										{t("settings.ollamaPullReviewButton")}
+									</button>
+								)}
+								{ollamaPullActive && (
+									<button
+										className="btn-secondary"
+										data-testid="ollama-pull-cancel"
+										disabled={ollamaPullCancelBusy}
+										onClick={cancelOllamaModelPullNow}
+									>
+										{t("settings.ollamaPullCancelButton")}
+									</button>
+								)}
+								{(ollamaPullSnapshot?.state === "paused" ||
+									(ollamaPullSnapshot?.state === "failed" &&
+										currentOllamaPullError?.retryable)) && (
+									<button
+										className="btn-secondary"
+										data-testid="ollama-pull-retry"
+										disabled={!canStartOllamaModelPull}
+										onClick={() => beginOllamaModelPull(ollamaPullTag, true)}
+									>
+										{t("settings.ollamaPullRetryButton")}
+									</button>
+								)}
+							</section>
 						</div>
 					)}
 					{provider === "vllm" && (
@@ -4860,7 +5557,10 @@ export function SettingsTab() {
 									id="model-select"
 									list="ollama-model-options"
 									value={model}
-									onChange={(event) => setModel(event.target.value)}
+									onChange={(event) => {
+										ollamaPullSelectionRevisionRef.current += 1;
+										setModel(event.target.value);
+									}}
 								/>
 								<datalist id="ollama-model-options">
 									{displayedProviderModels
@@ -4886,6 +5586,7 @@ export function SettingsTab() {
 								value={hasSelectedModel ? model : "__custom__"}
 								onChange={(e) => {
 									if (e.target.value === "__custom__") return;
+									ollamaPullSelectionRevisionRef.current += 1;
 									setModel(e.target.value);
 									// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
 									// agent loads THIS model. Previously only Save persisted → a stale model

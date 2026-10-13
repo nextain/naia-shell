@@ -4116,4 +4116,315 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 			expect(mockInvoke).toHaveBeenCalledWith("ollama_runtime_stop"),
 		);
 	});
+
+	describe("Qwen model pull settings (#759)", () => {
+		const tag = "huihui_ai/qwen3.5-abliterated:2B";
+		const policy = (decided: boolean) => ({
+			candidates: [
+				{
+					id: "qwen35-abliterated-2b",
+					displayName: "Qwen 3.5 Abliterated 2B",
+					tag,
+					publishedSize: "1.9 GB",
+					publishedSizeBytes: null,
+					quantization: "Q4_K_M",
+					sourceUrl: `https://ollama.com/${tag}`,
+					license: "Apache License 2.0",
+					licenseUrl: "https://www.apache.org/licenses/LICENSE-2.0",
+					publishedContextTokens: 262144,
+					parameterSize: "2B",
+				},
+			],
+			defaultModelTag: null,
+			contextDefaultTokens: null,
+			pullStartPolicy: decided ? "user_confirmed" : null,
+			modelStoreOverride: null,
+			lowVramFallbackTag: null,
+			diskMarginBytes: decided ? 1 : null,
+			showLicense: decided ? true : null,
+			measuredPeakVramBytes: decided ? 4_000_000_000 : null,
+			selectionHeadroomBytes: decided ? 500_000_000 : null,
+		});
+		const readyRuntime = {
+			state: "ready",
+			serverState: "ready_managed",
+			ownership: "managed_child",
+			installedVersion: "0.40.3",
+			installedVersions: ["0.40.3"],
+			modelCount: 1,
+			reservation: {
+				kind: "local_llm",
+				status: "running",
+				bytes: null,
+				reasonCode: null,
+			},
+			operationId: null,
+			phase: null,
+			error: null,
+		};
+		const absentSnapshot = {
+			operationId: null,
+			tag,
+			state: "absent",
+			stage: "status",
+			digest: null,
+			error: null,
+		};
+		const baseConfig = (model = "llama3.2:8b") => ({
+			provider: "ollama",
+			model,
+			llmRoles: { main: { provider: "ollama", model } },
+			ollamaHost: "http://localhost:11434",
+			locale: "en",
+		});
+		const chooseOllamaProvider = () =>
+			fireEvent.change(document.getElementById("provider-select")!, {
+				target: { value: "ollama" },
+			});
+		const mockCatalogAndRuntime = (
+			pullPolicy: ReturnType<typeof policy>,
+			pullStartSnapshot = {
+				operationId: "pull-1",
+				tag,
+				state: "preflight",
+				stage: "preflight",
+				digest: null,
+				error: null,
+			},
+		) => {
+			mockInvoke.mockReset();
+			mockInvoke.mockImplementation((command: string) => {
+				if (command === "ollama_runtime_status")
+					return Promise.resolve(readyRuntime);
+				if (command === "ollama_model_catalog_list") {
+					return Promise.resolve(pullPolicy);
+				}
+				if (command === "ollama_model_pull_status")
+					return Promise.resolve(absentSnapshot);
+				if (command === "ollama_model_pull_start")
+					return Promise.resolve({
+						operationId: "pull-1",
+						snapshot: pullStartSnapshot,
+					});
+				if (command === "ollama_model_pull_cancel")
+					return Promise.resolve({
+						...absentSnapshot,
+						operationId: "pull-1",
+						state: "paused",
+						stage: "cancelled",
+					});
+				if (command === "ollama_model_pull_retry")
+					return Promise.resolve({
+						operationId: "pull-2",
+						snapshot: {
+							...pullStartSnapshot,
+							operationId: "pull-2",
+							state: "failed",
+							stage: "pull",
+							error: {
+								code: "pull_http_failed",
+								stage: "pull",
+								retryable: true,
+							},
+						},
+					});
+				return Promise.resolve([]);
+			});
+		};
+		const stubModels = (initialModels: Array<{ name: string }>) => {
+			let models = initialModels;
+			const fetchMock = vi.fn(async () => ({
+				ok: true,
+				json: async () => ({ models }),
+			}));
+			vi.stubGlobal("fetch", fetchMock);
+			return {
+				fetchMock,
+				setModels: (next: Array<{ name: string }>) => {
+					models = next;
+				},
+			};
+		};
+		it("confirms one exact tag, filters events, then refreshes and saves that model", async () => {
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			mockCatalogAndRuntime(policy(true));
+			const models = stubModels([{ name: "llama3.2:8b" }]);
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+			await screen.findByTestId("ollama-pull-model-select");
+			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
+				target: { value: tag },
+			});
+			await waitFor(() =>
+				expect(
+					screen.getByTestId("ollama-pull-request-confirmation"),
+				).toBeEnabled(),
+			);
+			fireEvent.click(screen.getByTestId("ollama-pull-request-confirmation"));
+			expect(screen.getByText(`Download exactly ${tag}?`)).toBeTruthy();
+			fireEvent.click(screen.getByTestId("ollama-pull-confirm"));
+			await waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("ollama_model_pull_start", {
+					tag,
+					confirmedTag: tag,
+				}),
+			);
+			await waitFor(() =>
+				expect(eventListeners.has("ollama_model_pull_progress")).toBe(true),
+			);
+
+			const progressListener = eventListeners.get("ollama_model_pull_progress");
+			await act(async () => {
+				await progressListener?.({
+					payload: {
+						operationId: "pull-1",
+						tag,
+						phase: "downloading",
+						digest: null,
+						completed: null,
+						total: null,
+						layerPercent: 32,
+					},
+				});
+			});
+			await waitFor(() => {
+				expect(
+					screen.getByTestId("ollama-pull-progress").textContent,
+				).toContain("Current layer: 32%");
+			});
+			await act(async () => {
+				await progressListener?.({
+					payload: {
+						operationId: "stale-operation",
+						tag,
+						phase: "downloading",
+						digest: null,
+						completed: null,
+						total: null,
+						layerPercent: 99,
+					},
+				});
+			});
+			expect(
+				screen.getByTestId("ollama-pull-progress").textContent,
+			).not.toContain("99%");
+
+			models.setModels([{ name: "llama3.2:8b" }, { name: tag }]);
+			const stateListener = eventListeners.get(
+				"ollama_model_pull_state_changed",
+			);
+			await act(async () => {
+				await stateListener?.({
+					payload: {
+						operationId: "pull-1",
+						tag,
+						state: "ready",
+						stage: "ready",
+						digest: "sha256:fixture",
+						error: null,
+					},
+				});
+			});
+			await waitFor(() => {
+				expect(
+					(document.getElementById("model-select") as HTMLInputElement).value,
+				).toBe(tag);
+				expect(
+					JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
+				).toBe(tag);
+				expect(
+					JSON.parse(localStorage.getItem("naia-config") ?? "{}").llmRoles.main,
+				).toMatchObject({ provider: "ollama", model: tag });
+			});
+			expect(models.fetchMock).toHaveBeenCalled();
+		});
+
+		it("does not let an older ready event overwrite a model changed during download", async () => {
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			mockCatalogAndRuntime(policy(true));
+			const models = stubModels([{ name: "llama3.2:8b" }, { name: tag }]);
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+			await screen.findByTestId("ollama-pull-model-select");
+			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
+				target: { value: tag },
+			});
+			await waitFor(() =>
+				expect(
+					screen.getByTestId("ollama-pull-request-confirmation"),
+				).toBeEnabled(),
+			);
+			fireEvent.click(screen.getByTestId("ollama-pull-request-confirmation"));
+			fireEvent.click(screen.getByTestId("ollama-pull-confirm"));
+			await waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("ollama_model_pull_start", {
+					tag,
+					confirmedTag: tag,
+				}),
+			);
+			fireEvent.change(document.getElementById("model-select")!, {
+				target: { value: "custom-after-start" },
+			});
+			const stateListener = eventListeners.get(
+				"ollama_model_pull_state_changed",
+			);
+			await act(async () => {
+				await stateListener?.({
+					payload: {
+						operationId: "pull-1",
+						tag,
+						state: "ready",
+						stage: "ready",
+						digest: "sha256:fixture",
+						error: null,
+					},
+				});
+			});
+			await waitFor(() => {
+				expect(
+					(document.getElementById("model-select") as HTMLInputElement).value,
+				).toBe("custom-after-start");
+				expect(
+					JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
+				).toBe("llama3.2:8b");
+			});
+			expect(models.fetchMock).toHaveBeenCalled();
+		});
+
+		it("shows undecided policy and sends no start or retry IPC", async () => {
+			cleanup();
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			mockCatalogAndRuntime(policy(false));
+			stubModels([{ name: "llama3.2:8b" }]);
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+
+			await screen.findByTestId("ollama-pull-policy-pending");
+			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
+				target: { value: tag },
+			});
+			await screen.findByTestId("ollama-pull-default-pending");
+			expect(screen.getByTestId("ollama-pull-license-pending")).toBeTruthy();
+			expect(screen.getByTestId("ollama-pull-vram-pending")).toBeTruthy();
+			expect(
+				screen.getByTestId("ollama-pull-request-confirmation"),
+			).toBeDisabled();
+			expect(
+				mockInvoke.mock.calls.filter(([command]) =>
+					["ollama_model_pull_start", "ollama_model_pull_retry"].includes(
+						command as string,
+					),
+				),
+			).toHaveLength(0);
+		});
+	});
 });

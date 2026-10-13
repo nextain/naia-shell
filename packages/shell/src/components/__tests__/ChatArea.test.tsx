@@ -299,11 +299,12 @@ describe("ChatArea", () => {
 	});
 
 	it("admits local Ollama chat only with a running LocalLlm lease", async () => {
+		const confirmedTag = "huihui_ai/qwen3.5-abliterated:2B";
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
 				provider: "ollama",
-				model: "qwen3:8b",
+				model: confirmedTag,
 				ollamaHost: "http://localhost:11434",
 			}),
 		);
@@ -327,6 +328,11 @@ describe("ChatArea", () => {
 		fireEvent.keyDown(input, { key: "Enter" });
 
 		await waitFor(() => expect(sendChatMessage).toHaveBeenCalledTimes(1));
+		expect(capturedRequests[0]?.provider).toMatchObject({
+			provider: "ollama",
+			model: confirmedTag,
+			ollamaHost: "http://localhost:11434",
+		});
 	});
 
 	it("cleans up the pipeline when Web Speech reports a permission error", async () => {
