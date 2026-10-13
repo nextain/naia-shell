@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "session_id": "947a953d-e711-4f5d-8189-0e80417500b2",
+  "state": "active",
+  "pid": 1623943,
+  "host_process": null,
+  "host": "bazzite",
+  "updated_at": "2026-09-04T16:28:38.912Z",
+  "event": "PreToolUse"
+}

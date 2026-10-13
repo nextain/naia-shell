@@ -32,6 +32,7 @@ import {
 	REQUIRED_PROTO_SHA256,
 } from "./agent-pairing.mjs";
 import { developmentInstanceEnv } from "./dev-instance.mjs";
+import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
 import { runProjectPnpm } from "./package-manager.mjs";
 
@@ -155,6 +156,7 @@ const env = interactiveLaunchEnv(process.env);
 // development executable is an installed bundle. Rust ignores this override
 // in release builds.
 const devVoxCpm2Bundle = resolve(SHELL, "src-tauri", "voxcpm2-runtime");
+const hostVoxCpm2Profile = voxCpm2Profile();
 const devVoxCpm2DownloadManifest = resolve(
 	SHELL,
 	"scripts",
@@ -166,9 +168,12 @@ if (mode === "dev") {
 	// assets before Tauri snapshots resources so RTX field debugging exercises
 	// the same activation/default-voice contract as a release build.
 	mkdirSync(devVoxCpm2Bundle, { recursive: true });
+	// 설치 스크립트는 운영체제 사실이고, 그 사실은 VOXCPM2_PROFILES 한 곳에만 산다
+	// (#537). 여기에 이름을 다시 적으면 두 번째 플랫폼이 조용히 어긋난다 — 실제로
+	// 리눅스 dev 가 PowerShell 스크립트를 받아 설치가 승격 직전에 죽었다.
 	copyFileSync(
-		resolve(SHELL, "src-tauri/windows/prepare-voxcpm2-model.ps1"),
-		resolve(devVoxCpm2Bundle, "prepare-voxcpm2-model.ps1"),
+		resolve(SHELL, hostVoxCpm2Profile.modelPrep),
+		resolve(devVoxCpm2Bundle, hostVoxCpm2Profile.modelPrepName),
 	);
 	copyFileSync(
 		resolve(SHELL, "src-tauri/voxcpm2-activation-contract.json"),
@@ -193,8 +198,8 @@ if (mode === "dev") {
 	);
 	mkdirSync(devTargetDebugVoxCpm2Bundle, { recursive: true });
 	copyFileSync(
-		resolve(SHELL, "src-tauri/windows/prepare-voxcpm2-model.ps1"),
-		resolve(devTargetDebugVoxCpm2Bundle, "prepare-voxcpm2-model.ps1"),
+		resolve(SHELL, hostVoxCpm2Profile.modelPrep),
+		resolve(devTargetDebugVoxCpm2Bundle, hostVoxCpm2Profile.modelPrepName),
 	);
 	copyFileSync(
 		resolve(SHELL, "src-tauri/voxcpm2-activation-contract.json"),

@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
+import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
 import {
 	parseGitWorktreePaths,
 	REQUIRED_AGENT_COMMIT,
@@ -230,13 +231,10 @@ mkdirSync(e2eVoxCpm2Bundle, { recursive: true });
 // from voice_runtime::layout. Spelling "windows" here staged a PowerShell
 // script next to a Linux binary, so install_voxcpm2_runtime reported the
 // installer missing on this machine (#537).
-const e2eInstaller =
-	process.platform === "win32"
-		? ["windows", "prepare-voxcpm2-model.ps1"]
-		: ["linux", "prepare-voxcpm2-model.sh"];
+const e2eInstaller = voxCpm2Profile();
 copyFileSync(
-	resolve(shellDir, "src-tauri", ...e2eInstaller),
-	resolve(e2eVoxCpm2Bundle, e2eInstaller[1]),
+	resolve(shellDir, e2eInstaller.modelPrep),
+	resolve(e2eVoxCpm2Bundle, e2eInstaller.modelPrepName),
 );
 copyFileSync(
 	resolve(shellDir, "src-tauri", "voxcpm2-activation-contract.json"),

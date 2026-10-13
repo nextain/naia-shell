@@ -17,6 +17,7 @@ import {
 	DEFAULT_VOXCPM2_TRT_DOWNLOAD_URL,
 	readVoxCpm2ActivationContract,
 	stageVoxCpm2Runtime,
+	voxCpm2Profile,
 	verifyVoxCpm2ArchiveActivationContract,
 	voxCpm2ArtifactActivationFailures,
 	voxCpm2PayloadFileActivationFailures,
@@ -260,8 +261,10 @@ describe("stageVoxCpm2Runtime", () => {
 			"utf8",
 		);
 		expect(devLauncher).toContain("devTargetDebugVoxCpm2Bundle");
+		// 스테이징이 일어나는지를 보되 스크립트 이름은 등록부에 맡긴다 — 이름을
+		// 여기 적어 두었더니 리눅스가 PowerShell 스크립트를 받았다 (#537).
 		expect(devLauncher).toContain(
-			'resolve(devTargetDebugVoxCpm2Bundle, "prepare-voxcpm2-model.ps1")',
+			"resolve(devTargetDebugVoxCpm2Bundle, hostVoxCpm2Profile.modelPrepName)",
 		);
 		expect(devLauncher).toContain(
 			'resolve(devTargetDebugVoxCpm2Bundle, "voxcpm2-activation-contract.json")',
@@ -276,10 +279,9 @@ describe("stageVoxCpm2Runtime", () => {
 		// The staged installer follows the host operating system, the same axis
 		// voice_runtime::layout uses. Naming one script here staged PowerShell
 		// beside a Linux binary and made install report "not packaged" (#537).
-		expect(e2eBuilder).toContain('["windows", "prepare-voxcpm2-model.ps1"]');
-		expect(e2eBuilder).toContain('["linux", "prepare-voxcpm2-model.sh"]');
+		expect(e2eBuilder).toContain("voxCpm2Profile()");
 		expect(e2eBuilder).toContain(
-			"resolve(e2eVoxCpm2Bundle, e2eInstaller[1])",
+			"resolve(e2eVoxCpm2Bundle, e2eInstaller.modelPrepName)",
 		);
 		expect(e2eBuilder).toContain(
 			'resolve(e2eVoxCpm2Bundle, "voxcpm2-activation-contract.json")',
@@ -524,5 +526,49 @@ describe("stageVoxCpm2Runtime", () => {
 		expect(() => stageVoxCpm2Runtime(drifted)).toThrow(
 			/package lock SHA-256 mismatch/,
 		);
+	});
+});
+
+
+/**
+ * 설치 스크립트 이름은 운영체제 사실이고, 그 사실이 사는 곳은 VOXCPM2_PROFILES
+ * 한 곳뿐이다 (#537).
+ *
+ * 같은 사실을 두 번 적었더니 두 번째 플랫폼이 조용히 어긋났다. dev 스테이징
+ * (tauri-with-mode.mjs)이 PowerShell 스크립트 이름을 직접 적어 두는 바람에,
+ * 리눅스에서 셸을 띄우면 resource_dir 에 .ps1 만 놓였다. Rust 쪽
+ * voxcpm2_installer_script_path 는 호스트에 맞는 스크립트와 활성화 계약이
+ * 같은 자리에 둘 다 있어야 경로를 내주므로, 설치는 아카이브를 받아 풀고도
+ * 승격 직전에 죽었고 셸은 그 결과를 브라우저 음성으로 조용히 되돌렸다(#507).
+ *
+ * 그래서 이 테스트는 값이 아니라 출처를 지킨다 — 스테이징 스크립트가 스크립트
+ * 이름을 직접 적으면 실패한다.
+ */
+describe("설치 스크립트 이름의 단일 출처 (#537)", () => {
+	const stagingScripts = [
+		"scripts/tauri-with-mode.mjs",
+		"scripts/build-e2e-tauri.mjs",
+	];
+
+	it("등록부가 운영체제마다 제 설치 스크립트를 준다", () => {
+		expect(voxCpm2Profile("win32").modelPrepName).toBe(
+			"prepare-voxcpm2-model.ps1",
+		);
+		expect(voxCpm2Profile("linux").modelPrepName).toBe(
+			"prepare-voxcpm2-model.sh",
+		);
+		expect(voxCpm2Profile("win32").modelPrep).toContain("src-tauri/windows/");
+		expect(voxCpm2Profile("linux").modelPrep).toContain("src-tauri/linux/");
+	});
+
+	it("스테이징 스크립트는 설치 스크립트 이름을 직접 적지 않는다", () => {
+		const shellDir = resolve(import.meta.dirname, "..", "..");
+		for (const relativePath of stagingScripts) {
+			const source = readFileSync(resolve(shellDir, relativePath), "utf8");
+			expect(
+				source,
+				`${relativePath} 가 설치 스크립트 이름을 직접 적었다 — VOXCPM2_PROFILES 를 통하게 하라`,
+			).not.toMatch(/prepare-voxcpm2-model\.(ps1|sh)/);
+		}
 	});
 });
