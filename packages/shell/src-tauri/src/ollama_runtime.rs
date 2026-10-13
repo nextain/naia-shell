@@ -20,7 +20,7 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use zip::ZipArchive;
 
 #[cfg(test)]
@@ -56,6 +56,8 @@ const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_EXTRACTED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MODEL_PULL_CANCEL_TIMEOUT: Duration = Duration::from_secs(30);
 const MODEL_PULL_MAX_LINE_BYTES: usize = 1024 * 1024;
+const DECIMAL_GB_BYTES: u64 = 1_000_000_000;
+const QWEN_DISK_SPACE_MULTIPLIER: u64 = 2;
 
 static OPERATION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -400,6 +402,7 @@ struct QwenModelCandidate {
     tag: &'static str,
     published_size: &'static str,
     published_size_bytes: Option<u64>,
+    minimum_free_bytes: Option<u64>,
     quantization: &'static str,
     source_url: String,
     license: &'static str,
@@ -416,14 +419,38 @@ pub(crate) struct QwenModelPolicy {
     context_default_tokens: Option<u64>,
     pull_start_policy: Option<String>,
     model_store_override: Option<String>,
-    low_vram_fallback_tag: Option<String>,
-    disk_margin_bytes: Option<u64>,
+    automatic_selection_policy: Option<String>,
+    disk_space_multiplier: Option<u64>,
+    model_store_available_bytes: Option<u64>,
     show_license: Option<bool>,
     measured_peak_vram_bytes: Option<u64>,
     selection_headroom_bytes: Option<u64>,
+    #[cfg(test)]
+    #[serde(skip)]
+    available_bytes_override: Option<u64>,
 }
 
 fn qwen_model_policy() -> QwenModelPolicy {
+    qwen_model_policy_with_store(None)
+}
+
+fn app_managed_model_store_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|app_data| app_data.join("ollama").join("models"))
+}
+
+fn qwen_model_policy_for_app(app: &AppHandle) -> QwenModelPolicy {
+    let mut policy = qwen_model_policy_with_store(app_managed_model_store_path(app));
+    policy.model_store_available_bytes = policy
+        .model_store_override
+        .as_deref()
+        .and_then(|path| model_store_available_bytes(Path::new(path)).ok());
+    policy
+}
+
+fn qwen_model_policy_with_store(model_store: Option<PathBuf>) -> QwenModelPolicy {
     let model_page = |tag: &'static str| format!("https://ollama.com/{tag}");
     let candidates = [
         (
@@ -457,44 +484,74 @@ fn qwen_model_policy() -> QwenModelPolicy {
     ]
     .into_iter()
     .map(
-        |(size, tag, published_size, quantization, parameter_size)| QwenModelCandidate {
-            id: match size {
-                "0.8B" => "qwen35-abliterated-08b",
-                "2B" => "qwen35-abliterated-2b",
-                "4B" => "qwen35-abliterated-4b",
-                _ => "qwen35-abliterated-9b",
-            },
-            display_name: match size {
-                "0.8B" => "Qwen 3.5 Abliterated 0.8B",
-                "2B" => "Qwen 3.5 Abliterated 2B",
-                "4B" => "Qwen 3.5 Abliterated 4B",
-                _ => "Qwen 3.5 Abliterated 9B",
-            },
-            tag,
-            published_size,
-            // The publisher gives rounded GB labels, not an exact byte count.
-            published_size_bytes: None,
-            quantization,
-            source_url: model_page(tag),
-            license: "Apache License 2.0",
-            license_url: "https://www.apache.org/licenses/LICENSE-2.0".to_string(),
-            published_context_tokens: 256 * 1024,
-            parameter_size,
+        |(size, tag, published_size, quantization, parameter_size)| {
+            let published_size_bytes = decimal_gb_bytes(published_size);
+            QwenModelCandidate {
+                id: match size {
+                    "0.8B" => "qwen35-abliterated-08b",
+                    "2B" => "qwen35-abliterated-2b",
+                    "4B" => "qwen35-abliterated-4b",
+                    _ => "qwen35-abliterated-9b",
+                },
+                display_name: match size {
+                    "0.8B" => "Qwen 3.5 Abliterated 0.8B",
+                    "2B" => "Qwen 3.5 Abliterated 2B",
+                    "4B" => "Qwen 3.5 Abliterated 4B",
+                    _ => "Qwen 3.5 Abliterated 9B",
+                },
+                tag,
+                published_size,
+                published_size_bytes,
+                minimum_free_bytes: published_size_bytes
+                    .and_then(|bytes| bytes.checked_mul(QWEN_DISK_SPACE_MULTIPLIER)),
+                quantization,
+                source_url: model_page(tag),
+                license: "Apache License 2.0",
+                license_url: "https://www.apache.org/licenses/LICENSE-2.0".to_string(),
+                published_context_tokens: 256 * 1024,
+                parameter_size,
+            }
         },
     )
     .collect();
     QwenModelPolicy {
         candidates,
-        default_model_tag: None,
-        context_default_tokens: None,
-        pull_start_policy: None,
-        model_store_override: None,
-        low_vram_fallback_tag: None,
-        disk_margin_bytes: None,
-        show_license: None,
+        default_model_tag: Some("huihui_ai/qwen3.5-abliterated:4B".to_string()),
+        context_default_tokens: Some(8192),
+        pull_start_policy: Some("user_confirmed_exact_tag".to_string()),
+        model_store_override: model_store.map(|path| path.to_string_lossy().into_owned()),
+        automatic_selection_policy: Some("manual_only_until_measured".to_string()),
+        disk_space_multiplier: Some(QWEN_DISK_SPACE_MULTIPLIER),
+        model_store_available_bytes: None,
+        show_license: Some(true),
         measured_peak_vram_bytes: None,
         selection_headroom_bytes: None,
+        #[cfg(test)]
+        available_bytes_override: None,
     }
+}
+
+fn decimal_gb_bytes(size_label: &str) -> Option<u64> {
+    let amount = size_label.strip_suffix(" GB")?.trim();
+    let mut parts = amount.split('.');
+    let whole = parts.next()?.parse::<u64>().ok()?;
+    let fractional = parts.next().unwrap_or("");
+    if parts.next().is_some()
+        || fractional.len() > 9
+        || !fractional.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let scale = 10_u64.checked_pow(fractional.len() as u32)?;
+    let fraction = if fractional.is_empty() {
+        0
+    } else {
+        fractional
+            .parse::<u64>()
+            .ok()?
+            .checked_mul(DECIMAL_GB_BYTES / scale)?
+    };
+    whole.checked_mul(DECIMAL_GB_BYTES)?.checked_add(fraction)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -526,6 +583,10 @@ pub(crate) struct ModelPullError {
     retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     operation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    required_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    available_bytes: Option<u64>,
 }
 
 impl ModelPullError {
@@ -535,11 +596,19 @@ impl ModelPullError {
             stage: stage.to_string(),
             retryable,
             operation_id: None,
+            required_bytes: None,
+            available_bytes: None,
         }
     }
 
     fn for_operation(mut self, operation_id: &str) -> Self {
         self.operation_id = Some(operation_id.to_string());
+        self
+    }
+
+    fn with_disk_space(mut self, required_bytes: u64, available_bytes: u64) -> Self {
+        self.required_bytes = Some(required_bytes);
+        self.available_bytes = Some(available_bytes);
         self
     }
 }
@@ -3026,25 +3095,13 @@ fn managed_pull_base(manager: &RuntimeManager) -> Result<String, ModelPullError>
     Ok(base)
 }
 
+#[derive(Debug)]
 struct ModelStoreCheck {
     probe_directory: PathBuf,
     available_bytes: u64,
 }
 
-fn check_model_store(policy: &QwenModelPolicy) -> Result<ModelStoreCheck, ModelPullError> {
-    let configured = policy
-        .model_store_override
-        .as_deref()
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("OLLAMA_MODELS")
-                .map(PathBuf::from)
-                .filter(|path| !path.as_os_str().is_empty())
-        })
-        .or_else(|| dirs::home_dir().map(|home| home.join(".ollama").join("models")))
-        .ok_or_else(|| {
-            ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
-        })?;
+fn model_store_probe_directory(configured: &Path) -> Result<PathBuf, ModelPullError> {
     if !configured.is_absolute() {
         return Err(ModelPullError::new(
             ModelPullErrorCode::ModelStoreUnresolved,
@@ -3052,7 +3109,7 @@ fn check_model_store(policy: &QwenModelPolicy) -> Result<ModelStoreCheck, ModelP
             false,
         ));
     }
-    let mut ancestor = configured.as_path();
+    let mut ancestor = configured;
     let existing = loop {
         match fs::metadata(ancestor) {
             Ok(metadata) if metadata.is_dir() => break ancestor.to_path_buf(),
@@ -3081,6 +3138,32 @@ fn check_model_store(policy: &QwenModelPolicy) -> Result<ModelStoreCheck, ModelP
             }
         }
     };
+    Ok(existing)
+}
+
+fn model_store_available_bytes(configured: &Path) -> Result<u64, ModelPullError> {
+    let existing = model_store_probe_directory(configured)?;
+    fs2::available_space(&existing).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+    })
+}
+
+fn check_model_store(policy: &QwenModelPolicy) -> Result<ModelStoreCheck, ModelPullError> {
+    let configured = policy
+        .model_store_override
+        .as_deref()
+        .map(Path::new)
+        .ok_or_else(|| {
+            ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+        })?;
+    if !configured.is_absolute() || fs::create_dir_all(configured).is_err() {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelStoreUnresolved,
+            "preflight",
+            false,
+        ));
+    }
+    let existing = model_store_probe_directory(configured)?;
     let probe = tempfile::Builder::new()
         .prefix("naia-ollama-write-check-")
         .tempfile_in(&existing)
@@ -3090,6 +3173,14 @@ fn check_model_store(policy: &QwenModelPolicy) -> Result<ModelStoreCheck, ModelP
     probe.close().map_err(|_| {
         ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
     })?;
+    #[cfg(test)]
+    let available_bytes = match policy.available_bytes_override {
+        Some(available_bytes) => available_bytes,
+        None => fs2::available_space(&existing).map_err(|_| {
+            ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+        })?,
+    };
+    #[cfg(not(test))]
     let available_bytes = fs2::available_space(&existing).map_err(|_| {
         ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
     })?;
@@ -3730,7 +3821,9 @@ fn start_model_pull_with_policy(
             false,
         ));
     };
-    if confirmed_tag != tag {
+    if policy.pull_start_policy.as_deref() != Some("user_confirmed_exact_tag")
+        || confirmed_tag != tag
+    {
         return Err(ModelPullError::new(
             ModelPullErrorCode::ModelConfirmationRequired,
             "preflight",
@@ -3765,7 +3858,7 @@ fn start_model_pull_with_policy(
             record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
             error.for_operation(&operation_id)
         })?;
-        let margin = policy.disk_margin_bytes.ok_or_else(|| {
+        let multiplier = policy.disk_space_multiplier.ok_or_else(|| {
             let error = model_pull_error(
                 ModelPullErrorCode::DiskMarginUnset,
                 "preflight",
@@ -3785,7 +3878,7 @@ fn start_model_pull_with_policy(
             record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
             error
         })?;
-        let required = size_bytes.checked_add(margin).ok_or_else(|| {
+        let required = size_bytes.checked_mul(multiplier).ok_or_else(|| {
             let error = model_pull_error(
                 ModelPullErrorCode::DiskSpaceLow,
                 "preflight",
@@ -3801,11 +3894,27 @@ fn start_model_pull_with_policy(
                 "preflight",
                 true,
                 Some(&operation_id),
-            );
+            )
+            .with_disk_space(required, store.available_bytes);
             record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
             return Err(error);
         }
         // Recheck against the same filesystem immediately before reserving the operation.
+        #[cfg(test)]
+        let latest_free = match policy.available_bytes_override {
+            Some(available_bytes) => available_bytes,
+            None => fs2::available_space(&store.probe_directory).map_err(|_| {
+                let error = model_pull_error(
+                    ModelPullErrorCode::ModelStoreUnresolved,
+                    "preflight",
+                    false,
+                    Some(&operation_id),
+                );
+                record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+                error
+            })?,
+        };
+        #[cfg(not(test))]
         let latest_free = fs2::available_space(&store.probe_directory).map_err(|_| {
             let error = model_pull_error(
                 ModelPullErrorCode::ModelStoreUnresolved,
@@ -3822,7 +3931,8 @@ fn start_model_pull_with_policy(
                 "preflight",
                 true,
                 Some(&operation_id),
-            );
+            )
+            .with_disk_space(required, latest_free);
             record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
             return Err(error);
         }
@@ -3912,7 +4022,8 @@ fn start_model_pull_with_policy(
                                     "preflight",
                                     true,
                                     Some(&operation_id_worker),
-                                ));
+                                )
+                                .with_disk_space(required_bytes, available_bytes));
                             }
                         }
                         let _ = update_model_pull_snapshot(
@@ -4033,7 +4144,11 @@ fn dispatch_model_pull_start(
     tag: &str,
     confirmed_tag: &str,
 ) -> Result<ModelPullStartResponse, ModelPullError> {
-    start_model_pull_with_policy(manager, app, tag, confirmed_tag, qwen_model_policy())
+    let policy = app
+        .as_ref()
+        .map(qwen_model_policy_for_app)
+        .unwrap_or_else(qwen_model_policy);
+    start_model_pull_with_policy(manager, app, tag, confirmed_tag, policy)
 }
 
 fn dispatch_model_pull_retry(
@@ -4041,7 +4156,11 @@ fn dispatch_model_pull_retry(
     app: Option<AppHandle>,
     tag: &str,
 ) -> Result<ModelPullStartResponse, ModelPullError> {
-    dispatch_model_pull_retry_with_policy(manager, app, tag, qwen_model_policy())
+    let policy = app
+        .as_ref()
+        .map(qwen_model_policy_for_app)
+        .unwrap_or_else(qwen_model_policy);
+    dispatch_model_pull_retry_with_policy(manager, app, tag, policy)
 }
 
 fn dispatch_model_pull_retry_with_policy(
@@ -4419,6 +4538,16 @@ fn perform_start_operation(
         Some(&operation_id),
         &format!("host_scope={:?}", endpoint.scope),
     );
+    let model_store = app.as_ref().and_then(app_managed_model_store_path);
+    if app.is_some() && model_store.is_none() {
+        finish_start_error(
+            &manager,
+            app.as_ref(),
+            &operation_id,
+            RuntimeError::new(RuntimeErrorCode::SpawnFailed, "model_store", false),
+        );
+        return;
+    }
     let existing_managed = {
         let mut state = manager.lock();
         match state.process.as_mut() {
@@ -4848,7 +4977,7 @@ fn perform_start_operation(
             return;
         }
     };
-    let environment = BTreeMap::from([
+    let mut environment = BTreeMap::from([
         (
             std::ffi::OsString::from("OLLAMA_HOST"),
             std::ffi::OsString::from(managed_host),
@@ -4858,6 +4987,12 @@ fn perform_start_operation(
             std::ffi::OsString::from(device_selector),
         ),
     ]);
+    if let Some(model_store) = model_store {
+        environment.insert(
+            std::ffi::OsString::from("OLLAMA_MODELS"),
+            model_store.into_os_string(),
+        );
+    }
     let spec = ProcessSpec {
         executable,
         arguments: vec!["serve".to_string()],
@@ -5740,8 +5875,8 @@ pub(crate) fn ollama_runtime_stop(
 }
 
 #[tauri::command]
-pub(crate) fn ollama_model_catalog_list() -> QwenModelPolicy {
-    qwen_model_policy()
+pub(crate) fn ollama_model_catalog_list(app: AppHandle) -> QwenModelPolicy {
+    qwen_model_policy_for_app(&app)
 }
 
 #[tauri::command]
@@ -8687,10 +8822,29 @@ mod tests {
 
     fn test_model_pull_policy(directory: &Path) -> QwenModelPolicy {
         let mut policy = qwen_model_policy();
-        policy.disk_margin_bytes = Some(1);
+        policy.disk_space_multiplier = Some(2);
         policy.model_store_override = Some(directory.to_string_lossy().into_owned());
+        policy.available_bytes_override = Some(u64::MAX);
         for candidate in &mut policy.candidates {
             candidate.published_size_bytes = Some(1);
+            candidate.minimum_free_bytes = Some(2);
+        }
+        policy
+    }
+
+    fn undecided_qwen_model_policy() -> QwenModelPolicy {
+        let mut policy = qwen_model_policy();
+        policy.default_model_tag = None;
+        policy.context_default_tokens = None;
+        policy.pull_start_policy = None;
+        policy.model_store_override = None;
+        policy.automatic_selection_policy = None;
+        policy.disk_space_multiplier = None;
+        policy.model_store_available_bytes = None;
+        policy.show_license = None;
+        for candidate in &mut policy.candidates {
+            candidate.published_size_bytes = None;
+            candidate.minimum_free_bytes = None;
         }
         policy
     }
@@ -8716,7 +8870,7 @@ mod tests {
 
     #[test]
     fn qwen_model_policy_exposes_fixed_catalog_and_undecided_slots_as_null() {
-        let policy = qwen_model_policy();
+        let policy = undecided_qwen_model_policy();
         assert_eq!(
             policy
                 .candidates
@@ -8733,6 +8887,7 @@ mod tests {
         assert!(policy.candidates.iter().all(|candidate| {
             candidate.published_context_tokens == 256 * 1024
                 && candidate.published_size_bytes.is_none()
+                && candidate.minimum_free_bytes.is_none()
                 && candidate.source_url.starts_with("https://ollama.com/")
                 && candidate.license == "Apache License 2.0"
         }));
@@ -8740,11 +8895,72 @@ mod tests {
         assert!(policy.context_default_tokens.is_none());
         assert!(policy.pull_start_policy.is_none());
         assert!(policy.model_store_override.is_none());
-        assert!(policy.low_vram_fallback_tag.is_none());
-        assert!(policy.disk_margin_bytes.is_none());
+        assert!(policy.automatic_selection_policy.is_none());
+        assert!(policy.disk_space_multiplier.is_none());
         assert!(policy.show_license.is_none());
         assert!(policy.measured_peak_vram_bytes.is_none());
         assert!(policy.selection_headroom_bytes.is_none());
+    }
+
+    #[test]
+    fn qwen_model_policy_contains_coordinator_decisions() {
+        let store = PathBuf::from("/app-data/ollama/models");
+        let policy = qwen_model_policy_with_store(Some(store.clone()));
+        assert_eq!(
+            policy.default_model_tag.as_deref(),
+            Some("huihui_ai/qwen3.5-abliterated:4B")
+        );
+        assert_eq!(policy.context_default_tokens, Some(8192));
+        assert_eq!(
+            policy.pull_start_policy.as_deref(),
+            Some("user_confirmed_exact_tag")
+        );
+        assert_eq!(
+            policy.model_store_override.as_deref(),
+            Some(store.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            policy.automatic_selection_policy.as_deref(),
+            Some("manual_only_until_measured")
+        );
+        assert_eq!(policy.disk_space_multiplier, Some(2));
+        assert_eq!(policy.show_license, Some(true));
+        assert!(policy.measured_peak_vram_bytes.is_none());
+        assert!(policy.selection_headroom_bytes.is_none());
+        let four_b = model_candidate(&policy, "huihui_ai/qwen3.5-abliterated:4B").unwrap();
+        assert_eq!(four_b.quantization, "Q4_K_M");
+        assert_eq!(four_b.published_size_bytes, Some(3_300_000_000));
+        assert_eq!(four_b.minimum_free_bytes, Some(6_600_000_000));
+        let nine_b = model_candidate(&policy, "huihui_ai/qwen3.5-abliterated:9b").unwrap();
+        assert_eq!(nine_b.minimum_free_bytes, Some(13_200_000_000));
+    }
+
+    #[test]
+    fn decimal_gb_labels_are_exact_and_reject_invalid_or_overflowing_values() {
+        assert_eq!(decimal_gb_bytes("1.9 GB"), Some(1_900_000_000));
+        assert_eq!(decimal_gb_bytes("3.3 GB"), Some(3_300_000_000));
+        assert_eq!(decimal_gb_bytes("0.8 GB"), Some(800_000_000));
+        assert_eq!(decimal_gb_bytes("1.25 GB"), Some(1_250_000_000));
+        assert_eq!(decimal_gb_bytes("bad GB"), None);
+        assert_eq!(decimal_gb_bytes("18446744073.709551616 GB"), None);
+    }
+
+    #[test]
+    fn model_store_preflight_creates_and_checks_only_the_configured_path() {
+        let root = tempfile::tempdir().unwrap();
+        let configured = root.path().join("ollama").join("models");
+        let policy = qwen_model_policy_with_store(Some(configured.clone()));
+        let check = check_model_store(&policy).unwrap();
+        assert_eq!(check.probe_directory, configured);
+        assert!(check.probe_directory.is_dir());
+
+        let without_configured_path = qwen_model_policy();
+        assert_eq!(
+            check_model_store(&without_configured_path)
+                .unwrap_err()
+                .code,
+            ModelPullErrorCode::ModelStoreUnresolved
+        );
     }
 
     #[test]
@@ -8887,10 +9103,24 @@ mod tests {
         let (manager, _) = model_pull_test_manager(&server.base_url());
         let directory = tempfile::tempdir().unwrap();
         let mut policy = test_model_pull_policy(directory.path());
-        policy.disk_margin_bytes = None;
+        policy.disk_space_multiplier = None;
         let error = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap_err();
         assert_eq!(error.code, ModelPullErrorCode::DiskMarginUnset);
         assert!(error.operation_id.is_some());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn unknown_published_size_blocks_new_pull_before_post_request() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let mut policy = test_model_pull_policy(directory.path());
+        policy.candidates[0].published_size_bytes = None;
+        policy.candidates[0].minimum_free_bytes = None;
+        let error = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::DiskSpaceLow);
         assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
     }
 
@@ -9049,11 +9279,17 @@ mod tests {
         let (manager, _) = model_pull_test_manager(&server.base_url());
         let directory = tempfile::tempdir().unwrap();
         let mut policy = test_model_pull_policy(directory.path());
-        policy.disk_margin_bytes = Some(1);
+        policy.available_bytes_override = Some(0);
         policy.candidates[0].published_size_bytes =
             Some(fs2::available_space(directory.path()).unwrap() + 1024);
+        policy.candidates[0].minimum_free_bytes = policy.candidates[0]
+            .published_size_bytes
+            .and_then(|bytes| bytes.checked_mul(2));
+        let required_bytes = policy.candidates[0].minimum_free_bytes.unwrap();
         let error = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap_err();
         assert_eq!(error.code, ModelPullErrorCode::DiskSpaceLow);
+        assert_eq!(error.required_bytes, Some(required_bytes));
+        assert_eq!(error.available_bytes, Some(0));
         assert!(!serde_json::to_string(&error)
             .unwrap()
             .contains(&directory.path().to_string_lossy().to_string()));
@@ -9062,6 +9298,31 @@ mod tests {
         let error = check_model_store(&unresolved).err().unwrap();
         assert_eq!(error.code, ModelPullErrorCode::ModelStoreUnresolved);
         assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn disk_space_below_two_times_size_is_blocked_and_exact_threshold_is_allowed() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+
+        let mut too_little = test_model_pull_policy(directory.path());
+        too_little.available_bytes_override = Some(1);
+        let error = start_model_pull_with_policy(&manager, None, tag, tag, too_little).unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::DiskSpaceLow);
+        assert_eq!(error.required_bytes, Some(2));
+        assert_eq!(error.available_bytes, Some(1));
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+
+        let mut exact_threshold = test_model_pull_policy(directory.path());
+        exact_threshold.available_bytes_override = Some(2);
+        let response =
+            start_model_pull_with_policy(&manager, None, tag, tag, exact_threshold).unwrap();
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Ready);
+        assert_eq!(response.snapshot.state, ModelPullState::Preflight);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
     }
 
     #[test]

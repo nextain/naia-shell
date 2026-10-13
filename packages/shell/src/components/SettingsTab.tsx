@@ -246,6 +246,12 @@ function normalizeOllamaModelPullError(
 		...(typeof record.operationId === "string"
 			? { operationId: record.operationId }
 			: {}),
+		...(typeof record.requiredBytes === "number"
+			? { requiredBytes: record.requiredBytes }
+			: {}),
+		...(typeof record.availableBytes === "number"
+			? { availableBytes: record.availableBytes }
+			: {}),
 	};
 }
 
@@ -2017,6 +2023,12 @@ export function SettingsTab() {
 			.then((policy) => {
 				if (!disposed && Array.isArray(policy?.candidates)) {
 					setOllamaModelPolicy(policy);
+					setOllamaPullTag((current) =>
+						current &&
+						policy.candidates.some((candidate) => candidate.tag === current)
+							? current
+							: (policy.defaultModelTag ?? ""),
+					);
 					setOllamaModelPolicyError(false);
 				} else if (!disposed) {
 					setOllamaModelPolicy(null);
@@ -2212,9 +2224,14 @@ export function SettingsTab() {
 			!isManagedOllamaHost(ollamaHost) ||
 			ollamaRuntime?.serverState !== "ready_managed" ||
 			!policy ||
-			!policy.pullStartPolicy ||
-			policy.diskMarginBytes === null ||
-			!policy.candidates.some((candidate) => candidate.tag === tag)
+			policy.pullStartPolicy !== "user_confirmed_exact_tag" ||
+			policy.diskSpaceMultiplier === null ||
+			policy.modelStoreOverride === null ||
+			policy.modelStoreAvailableBytes === null ||
+			!policy.candidates.some(
+				(candidate) =>
+					candidate.tag === tag && candidate.minimumFreeBytes !== null,
+			)
 		) {
 			return;
 		}
@@ -3591,8 +3608,12 @@ export function SettingsTab() {
 	);
 	const ollamaPullPolicyReady = Boolean(
 		ollamaModelPolicy &&
-			ollamaModelPolicy.pullStartPolicy !== null &&
-			ollamaModelPolicy.diskMarginBytes !== null,
+			ollamaModelPolicy.pullStartPolicy === "user_confirmed_exact_tag" &&
+			ollamaModelPolicy.diskSpaceMultiplier !== null &&
+			ollamaModelPolicy.modelStoreOverride !== null &&
+			ollamaModelPolicy.modelStoreAvailableBytes !== null &&
+			selectedOllamaPullCandidate &&
+			selectedOllamaPullCandidate.minimumFreeBytes !== null,
 	);
 	const canStartOllamaModelPull = Boolean(
 		provider === "ollama" &&
@@ -5280,6 +5301,25 @@ export function SettingsTab() {
 												)}
 											</dl>
 										)}
+										{selectedOllamaPullCandidate &&
+											selectedOllamaPullCandidate.minimumFreeBytes !== null &&
+											ollamaModelPolicy.diskSpaceMultiplier !== null &&
+											ollamaModelPolicy.modelStoreAvailableBytes !== null && (
+												<p
+													role="status"
+													data-testid="ollama-pull-disk-requirement"
+												>
+													{t("settings.ollamaPullDiskRequirement", {
+														requiredBytes: new Intl.NumberFormat().format(
+															selectedOllamaPullCandidate.minimumFreeBytes,
+														),
+														multiplier: ollamaModelPolicy.diskSpaceMultiplier,
+														availableBytes: new Intl.NumberFormat().format(
+															ollamaModelPolicy.modelStoreAvailableBytes,
+														),
+													})}
+												</p>
+											)}
 										{ollamaModelPolicy.showLicense === null && (
 											<p
 												role="status"
@@ -5302,8 +5342,25 @@ export function SettingsTab() {
 												{t("settings.ollamaPullVramSelectionPending")}
 											</p>
 										)}
-										{(!ollamaModelPolicy.pullStartPolicy ||
-											ollamaModelPolicy.diskMarginBytes === null) && (
+										{ollamaModelPolicy.automaticSelectionPolicy ===
+											"manual_only_until_measured" && (
+											<p
+												role="status"
+												data-testid="ollama-pull-manual-selection-only"
+											>
+												{t("settings.ollamaPullManualSelectionOnly")}
+											</p>
+										)}
+										{(ollamaModelPolicy.pullStartPolicy !==
+											"user_confirmed_exact_tag" ||
+											ollamaModelPolicy.automaticSelectionPolicy !==
+												"manual_only_until_measured" ||
+											ollamaModelPolicy.diskSpaceMultiplier === null ||
+											ollamaModelPolicy.modelStoreOverride === null ||
+											ollamaModelPolicy.modelStoreAvailableBytes === null ||
+											!selectedOllamaPullCandidate ||
+											selectedOllamaPullCandidate.minimumFreeBytes ===
+												null) && (
 											<p role="status" data-testid="ollama-pull-policy-pending">
 												{t("settings.ollamaPullStartPolicyPending")}
 											</p>
@@ -5427,6 +5484,20 @@ export function SettingsTab() {
 												currentOllamaPullError.code,
 											),
 										)}
+										{currentOllamaPullError.code === "disk_space_low" &&
+											currentOllamaPullError.requiredBytes !== undefined &&
+											currentOllamaPullError.availableBytes !== undefined && (
+												<span data-testid="ollama-pull-disk-error-details">
+													{` · ${t("settings.ollamaPullDiskSpaceObserved", {
+														requiredBytes: new Intl.NumberFormat().format(
+															currentOllamaPullError.requiredBytes,
+														),
+														availableBytes: new Intl.NumberFormat().format(
+															currentOllamaPullError.availableBytes,
+														),
+													})}`}
+												</span>
+											)}
 										<span>
 											{` · ${t("settings.ollamaPullErrorStage", { stage: currentOllamaPullError.stage })}`}
 										</span>

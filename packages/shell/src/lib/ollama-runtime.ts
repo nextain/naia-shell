@@ -31,6 +31,7 @@ export interface QwenModelCandidate {
 	tag: string;
 	publishedSize: string;
 	publishedSizeBytes: number | null;
+	minimumFreeBytes: number | null;
 	quantization: string;
 	sourceUrl: string;
 	license: string;
@@ -45,8 +46,9 @@ export interface QwenModelPolicy {
 	contextDefaultTokens: number | null;
 	pullStartPolicy: string | null;
 	modelStoreOverride: string | null;
-	lowVramFallbackTag: string | null;
-	diskMarginBytes: number | null;
+	automaticSelectionPolicy: string | null;
+	diskSpaceMultiplier: number | null;
+	modelStoreAvailableBytes: number | null;
 	showLicense: boolean | null;
 	measuredPeakVramBytes: number | null;
 	selectionHeadroomBytes: number | null;
@@ -84,6 +86,8 @@ export interface ModelPullError {
 	stage: string;
 	retryable: boolean;
 	operationId?: string;
+	requiredBytes?: number;
+	availableBytes?: number;
 }
 
 export interface ModelPullSnapshot {

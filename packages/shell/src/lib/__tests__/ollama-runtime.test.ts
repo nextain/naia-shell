@@ -33,6 +33,7 @@ const policy: QwenModelPolicy = {
 			tag: "huihui_ai/qwen3.5-abliterated:2B",
 			publishedSize: "1.9 GB",
 			publishedSizeBytes: null,
+			minimumFreeBytes: null,
 			quantization: "Q4_K_M",
 			sourceUrl: "https://ollama.com/huihui_ai/qwen3.5-abliterated:2B",
 			license: "Apache License 2.0",
@@ -45,8 +46,9 @@ const policy: QwenModelPolicy = {
 	contextDefaultTokens: null,
 	pullStartPolicy: null,
 	modelStoreOverride: null,
-	lowVramFallbackTag: null,
-	diskMarginBytes: null,
+	automaticSelectionPolicy: null,
+	diskSpaceMultiplier: null,
+	modelStoreAvailableBytes: null,
 	showLicense: null,
 	measuredPeakVramBytes: null,
 	selectionHeadroomBytes: null,
@@ -62,7 +64,7 @@ describe("Ollama model pull Tauri bridge (#759)", () => {
 		expect(invokeMock).toHaveBeenCalledWith("ollama_model_catalog_list");
 		expect(policy.defaultModelTag).toBeNull();
 		expect(policy.pullStartPolicy).toBeNull();
-		expect(policy.diskMarginBytes).toBeNull();
+		expect(policy.diskSpaceMultiplier).toBeNull();
 	});
 
 	it("preserves exact camelCase command arguments and snapshots", async () => {

@@ -112,6 +112,7 @@ const capturedRequests: {
 	provider?: {
 		provider?: string;
 		model?: string;
+		ollamaNumCtx?: number;
 	};
 	history: { role: "user" | "assistant"; content: string }[];
 	requestId: string;
@@ -308,18 +309,25 @@ describe("ChatArea", () => {
 				ollamaHost: "http://localhost:11434",
 			}),
 		);
-		mockInvoke.mockImplementation((command: string) =>
-			command === "ollama_runtime_status"
-				? Promise.resolve({
-						serverState: "ready_managed",
-						reservation: {
-							kind: "local_llm",
-							status: "running",
-							bytes: null,
-						},
-					})
-				: Promise.resolve(undefined),
-		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "ollama_runtime_status") {
+				return Promise.resolve({
+					serverState: "ready_managed",
+					reservation: {
+						kind: "local_llm",
+						status: "running",
+						bytes: null,
+					},
+				});
+			}
+			if (command === "ollama_model_catalog_list") {
+				return Promise.resolve({
+					candidates: [{ tag: confirmedTag }],
+					contextDefaultTokens: 8192,
+				});
+			}
+			return Promise.resolve(undefined);
+		});
 		const { sendChatMessage } = await import("../../lib/chat-service");
 		vi.mocked(sendChatMessage).mockClear();
 		render(<ChatArea />);
@@ -332,7 +340,50 @@ describe("ChatArea", () => {
 			provider: "ollama",
 			model: confirmedTag,
 			ollamaHost: "http://localhost:11434",
+			ollamaNumCtx: 8192,
 		});
+	});
+
+	it("preserves context settings for a managed noncatalog Ollama model", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				ollamaHost: "http://localhost:11434",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "ollama_runtime_status") {
+				return Promise.resolve({
+					serverState: "ready_managed",
+					reservation: { kind: "local_llm", status: "running", bytes: null },
+				});
+			}
+			if (command === "ollama_model_catalog_list") {
+				return Promise.resolve({
+					candidates: [{ tag: "huihui_ai/qwen3.5-abliterated:4B" }],
+					contextDefaultTokens: 8192,
+				});
+			}
+			return Promise.resolve(undefined);
+		});
+		const { sendChatMessage } = await import("../../lib/chat-service");
+		vi.mocked(sendChatMessage).mockClear();
+		render(<ChatArea />);
+		fireEvent.change(screen.getByPlaceholderText(/메시지|message/i), {
+			target: { value: "hello other local model" },
+		});
+		fireEvent.keyDown(screen.getByPlaceholderText(/메시지|message/i), {
+			key: "Enter",
+		});
+
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		expect(capturedRequests[0]?.provider).toMatchObject({
+			provider: "ollama",
+			model: "qwen3:8b",
+		});
+		expect(capturedRequests[0]?.provider?.ollamaNumCtx).toBeUndefined();
 	});
 
 	it("cleans up the pipeline when Web Speech reports a permission error", async () => {

@@ -4126,7 +4126,8 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 					displayName: "Qwen 3.5 Abliterated 2B",
 					tag,
 					publishedSize: "1.9 GB",
-					publishedSizeBytes: null,
+					publishedSizeBytes: decided ? 1_900_000_000 : null,
+					minimumFreeBytes: decided ? 3_800_000_000 : null,
 					quantization: "Q4_K_M",
 					sourceUrl: `https://ollama.com/${tag}`,
 					license: "Apache License 2.0",
@@ -4135,15 +4136,16 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 					parameterSize: "2B",
 				},
 			],
-			defaultModelTag: null,
-			contextDefaultTokens: null,
-			pullStartPolicy: decided ? "user_confirmed" : null,
-			modelStoreOverride: null,
-			lowVramFallbackTag: null,
-			diskMarginBytes: decided ? 1 : null,
+			defaultModelTag: decided ? tag : null,
+			contextDefaultTokens: decided ? 8192 : null,
+			pullStartPolicy: decided ? "user_confirmed_exact_tag" : null,
+			modelStoreOverride: decided ? "/managed/ollama/models" : null,
+			automaticSelectionPolicy: decided ? "manual_only_until_measured" : null,
+			diskSpaceMultiplier: decided ? 2 : null,
+			modelStoreAvailableBytes: decided ? 4_000_000_000 : null,
 			showLicense: decided ? true : null,
-			measuredPeakVramBytes: decided ? 4_000_000_000 : null,
-			selectionHeadroomBytes: decided ? 500_000_000 : null,
+			measuredPeakVramBytes: null,
+			selectionHeadroomBytes: null,
 		});
 		const readyRuntime = {
 			state: "ready",
@@ -4188,7 +4190,7 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 				tag,
 				state: "preflight",
 				stage: "preflight",
-				digest: null,
+				digest: null as string | null,
 				error: null,
 			},
 		) => {
@@ -4258,10 +4260,13 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
 				target: { value: tag },
 			});
-			await waitFor(() =>
-				expect(
-					screen.getByTestId("ollama-pull-request-confirmation"),
-				).toBeEnabled(),
+			await screen.findByTestId("ollama-pull-disk-requirement");
+			await waitFor(
+				() =>
+					expect(
+						screen.getByTestId("ollama-pull-request-confirmation"),
+					).toBeEnabled(),
+				{ timeout: 5_000 },
 			);
 			fireEvent.click(screen.getByTestId("ollama-pull-request-confirmation"));
 			expect(screen.getByText(`Download exactly ${tag}?`)).toBeTruthy();
@@ -4355,10 +4360,13 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
 				target: { value: tag },
 			});
-			await waitFor(() =>
-				expect(
-					screen.getByTestId("ollama-pull-request-confirmation"),
-				).toBeEnabled(),
+			await screen.findByTestId("ollama-pull-disk-requirement");
+			await waitFor(
+				() =>
+					expect(
+						screen.getByTestId("ollama-pull-request-confirmation"),
+					).toBeEnabled(),
+				{ timeout: 5_000 },
 			);
 			fireEvent.click(screen.getByTestId("ollama-pull-request-confirmation"));
 			fireEvent.click(screen.getByTestId("ollama-pull-confirm"));
@@ -4513,6 +4521,58 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 					),
 				),
 			).toHaveLength(0);
+		});
+
+		it("uses the Rust default candidate without changing the Ollama default or starting a pull", async () => {
+			cleanup();
+			localStorage.clear();
+			eventListeners.clear();
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			const fourBTag = "huihui_ai/qwen3.5-abliterated:4B";
+			const decided = policy(true);
+			const catalog = {
+				...decided,
+				candidates: [
+					{
+						...decided.candidates[0]!,
+						id: "qwen35-abliterated-4b",
+						displayName: "Qwen 3.5 Abliterated 4B",
+						tag: fourBTag,
+						publishedSize: "3.3 GB",
+						publishedSizeBytes: 3_300_000_000,
+						minimumFreeBytes: 6_600_000_000,
+						parameterSize: "4B",
+					},
+				],
+				defaultModelTag: fourBTag,
+			};
+			mockCatalogAndRuntime(catalog);
+			stubModels([{ name: "llama3.2:8b" }]);
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+
+			const selector = await screen.findByTestId("ollama-pull-model-select");
+			await waitFor(() => expect(selector).toHaveValue(fourBTag));
+			expect(screen.getByTestId("ollama-pull-exact-tag")).toHaveTextContent(
+				fourBTag,
+			);
+			expect(
+				screen.getByTestId("ollama-pull-candidate-details"),
+			).toHaveTextContent("Apache License 2.0");
+			expect(
+				screen.getByTestId("ollama-pull-disk-requirement"),
+			).toHaveTextContent("6,600,000,000");
+			expect(
+				mockInvoke.mock.calls.some(
+					([command]) => command === "ollama_model_pull_start",
+				),
+			).toBe(false);
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
+			).toBe("llama3.2:8b");
 		});
 	});
 });

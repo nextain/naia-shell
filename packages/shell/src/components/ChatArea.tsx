@@ -27,6 +27,10 @@ import {
 	parseOllamaThinkingUnsupportedMessage,
 	recordOllamaThinkingUnsupportedStatus,
 } from "../lib/ollama-thinking-status";
+import {
+	fetchOllamaModelCatalog,
+	isManagedOllamaHost,
+} from "../lib/ollama-runtime";
 import { writeAppSandboxFile } from "../lib/app-sandbox";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
@@ -1905,6 +1909,36 @@ export function ChatArea({
 			if (activeProvider === "ollama") {
 				await assertOllamaChatAdmitted(config.ollamaHost);
 			}
+			let ollamaNumCtx: number | undefined;
+			if (
+				activeProvider === "ollama" &&
+				isManagedOllamaHost(config.ollamaHost)
+			) {
+				const looksLikeCatalogQwen = resolvedModel.startsWith(
+					"huihui_ai/qwen3.5-abliterated:",
+				);
+				let policy: Awaited<ReturnType<typeof fetchOllamaModelCatalog>> | null =
+					null;
+				try {
+					policy = await fetchOllamaModelCatalog();
+				} catch {
+					if (looksLikeCatalogQwen) {
+						throw new Error("ollama_context_policy_unavailable");
+					}
+				}
+				if (!policy || !Array.isArray(policy.candidates)) {
+					if (looksLikeCatalogQwen) {
+						throw new Error("ollama_context_policy_unavailable");
+					}
+				} else if (
+					policy.candidates.some((candidate) => candidate.tag === resolvedModel)
+				) {
+					if (policy.contextDefaultTokens === null) {
+						throw new Error("ollama_context_policy_unavailable");
+					}
+					ollamaNumCtx = policy.contextDefaultTokens;
+				}
+			}
 			await sendChatMessage({
 				message: text,
 				provider: {
@@ -1917,6 +1951,7 @@ export function ChatArea({
 						activeProvider === "ollama" ? config.ollamaHost : undefined,
 					ollamaNumGpu:
 						activeProvider === "ollama" ? config.ollamaNumGpu : undefined,
+					ollamaNumCtx,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,
 				},
 				history: history.slice(0, -1),
@@ -1989,7 +2024,11 @@ export function ChatArea({
 					err instanceof OllamaRuntimeAdmissionError
 						? ollamaAdmissionMessageKey(err.reasonCode)
 						: null;
-				const message = admissionKey ? t(admissionKey) : errStr;
+				const message = admissionKey
+					? t(admissionKey)
+					: errStr.includes("ollama_context_policy_unavailable")
+						? t("settings.ollamaContextPolicyUnavailable")
+						: errStr;
 				useChatStore.getState().appendStreamChunk(`
 [${t("chat.error")}] ${message}`);
 				finishStreamingWithVoiceTail();

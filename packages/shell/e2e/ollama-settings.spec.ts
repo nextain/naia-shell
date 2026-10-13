@@ -155,7 +155,8 @@ function qwenModelPolicy(decided = false) {
 				displayName: "Qwen 3.5 Abliterated 2B",
 				tag: QWEN_TAG,
 				publishedSize: "1.9 GB",
-				publishedSizeBytes: null,
+				publishedSizeBytes: decided ? 1_900_000_000 : null,
+				minimumFreeBytes: decided ? 3_800_000_000 : null,
 				quantization: "Q4_K_M",
 				sourceUrl: `https://ollama.com/${QWEN_TAG}`,
 				license: "Apache License 2.0",
@@ -164,15 +165,16 @@ function qwenModelPolicy(decided = false) {
 				parameterSize: "2B",
 			},
 		],
-		defaultModelTag: null,
-		contextDefaultTokens: null,
-		pullStartPolicy: decided ? "user_confirmed" : null,
-		modelStoreOverride: null,
-		lowVramFallbackTag: null,
-		diskMarginBytes: decided ? 1 : null,
+		defaultModelTag: decided ? QWEN_TAG : null,
+		contextDefaultTokens: decided ? 8192 : null,
+		pullStartPolicy: decided ? "user_confirmed_exact_tag" : null,
+		modelStoreOverride: decided ? "/managed/ollama/models" : null,
+		automaticSelectionPolicy: decided ? "manual_only_until_measured" : null,
+		diskSpaceMultiplier: decided ? 2 : null,
+		modelStoreAvailableBytes: decided ? 4_000_000_000 : null,
 		showLicense: decided ? true : null,
-		measuredPeakVramBytes: decided ? 4_000_000_000 : null,
-		selectionHeadroomBytes: decided ? 500_000_000 : null,
+		measuredPeakVramBytes: null,
+		selectionHeadroomBytes: null,
 	};
 }
 
@@ -589,7 +591,7 @@ test("undecided pull policy is visible and blocks automatic start and retry", as
 		"status",
 	);
 	await expect(pullPanel).toContainText(
-		"The download start policy or required disk margin is unset.",
+		"The download policy or storage-space check is unavailable. Start and retry are blocked.",
 	);
 
 	const candidateSelect = page.getByLabel("Model candidate");

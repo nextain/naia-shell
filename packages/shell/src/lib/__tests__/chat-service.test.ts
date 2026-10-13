@@ -98,6 +98,43 @@ describe("chat-service", () => {
 		expect(textCalls[0][0].text).toBe("Hello");
 	});
 
+	it("forwards the Rust-selected Ollama context through the chat request", async () => {
+		const { sendChatMessage } = await import("../chat-service");
+		mockListen.mockImplementation(
+			async (_event: string, handler: (event: { payload: string }) => void) => {
+				setTimeout(() => {
+					handler({
+						payload: JSON.stringify({
+							type: "finish",
+							requestId: "req-qwen-ctx",
+						}),
+					});
+				}, 5);
+				return mockUnlisten;
+			},
+		);
+
+		await sendChatMessage({
+			message: "hello local model",
+			provider: {
+				provider: "ollama",
+				model: "huihui_ai/qwen3.5-abliterated:4B",
+				apiKey: "",
+				ollamaHost: "http://localhost:11434",
+				ollamaNumCtx: 8192,
+			},
+			history: [],
+			onChunk: () => {},
+			requestId: "req-qwen-ctx",
+		});
+
+		const call = mockInvoke.mock.calls.find(
+			(entry) => entry[0] === "send_to_agent_command",
+		);
+		const request = JSON.parse((call?.[1] as { message: string }).message);
+		expect(request.provider.ollamaNumCtx).toBe(8192);
+	});
+
 	it("cancelChat invokes cancel_stream command", async () => {
 		const { cancelChat } = await import("../chat-service");
 		await cancelChat("req-1");
@@ -767,10 +804,16 @@ describe("chat-service", () => {
 			const { sendChatMessage } = await import("../chat-service");
 
 			mockListen.mockImplementation(
-				async (_event: string, handler: (event: { payload: string }) => void) => {
+				async (
+					_event: string,
+					handler: (event: { payload: string }) => void,
+				) => {
 					setTimeout(() => {
 						handler({
-							payload: JSON.stringify({ type: "finish", requestId: "req-think-1" }),
+							payload: JSON.stringify({
+								type: "finish",
+								requestId: "req-think-1",
+							}),
 						});
 					}, 5);
 					return mockUnlisten;
@@ -844,4 +887,3 @@ describe("chat-service", () => {
 		});
 	});
 });
-
