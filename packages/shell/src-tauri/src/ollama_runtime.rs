@@ -5,6 +5,7 @@
 //! shared accelerator reservation manager.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -14,7 +15,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc, Condvar, Mutex, MutexGuard,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -43,6 +44,8 @@ const INTEGRITY_KIND: &str = "official_sha256_manifest";
 const MANIFEST_FILE: &str = "naia-shell-ollama.json";
 const STATE_EVENT: &str = "ollama_runtime_state_changed";
 const PROGRESS_EVENT: &str = "ollama_runtime_install_progress";
+const MODEL_PULL_STATE_EVENT: &str = "ollama_model_pull_state_changed";
+const MODEL_PULL_PROGRESS_EVENT: &str = "ollama_model_pull_progress";
 const DEFAULT_HOST_URL: &str = "http://localhost:11434";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 const READINESS_TIMEOUT: Duration = Duration::from_secs(30);
@@ -51,6 +54,8 @@ const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const FORCE_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_EXTRACTED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+const MODEL_PULL_CANCEL_TIMEOUT: Duration = Duration::from_secs(30);
+const MODEL_PULL_MAX_LINE_BYTES: usize = 1024 * 1024;
 
 static OPERATION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -332,6 +337,19 @@ impl RuntimeError {
     }
 }
 
+#[derive(Serialize)]
+#[serde(untagged)]
+enum StopCommandError {
+    Runtime(RuntimeError),
+    ModelPull(ModelPullError),
+}
+
+impl From<RuntimeError> for StopCommandError {
+    fn from(error: RuntimeError) -> Self {
+        Self::Runtime(error)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RuntimeSnapshot {
@@ -372,6 +390,207 @@ struct InstallProgress {
     phase: String,
     received_bytes: u64,
     total_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QwenModelCandidate {
+    id: &'static str,
+    display_name: &'static str,
+    tag: &'static str,
+    published_size: &'static str,
+    published_size_bytes: Option<u64>,
+    quantization: &'static str,
+    source_url: String,
+    license: &'static str,
+    license_url: String,
+    published_context_tokens: u64,
+    parameter_size: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QwenModelPolicy {
+    candidates: Vec<QwenModelCandidate>,
+    default_model_tag: Option<String>,
+    context_default_tokens: Option<u64>,
+    pull_start_policy: Option<String>,
+    model_store_override: Option<String>,
+    low_vram_fallback_tag: Option<String>,
+    disk_margin_bytes: Option<u64>,
+    show_license: Option<bool>,
+    measured_peak_vram_bytes: Option<u64>,
+    selection_headroom_bytes: Option<u64>,
+}
+
+fn qwen_model_policy() -> QwenModelPolicy {
+    let model_page = |tag: &'static str| format!("https://ollama.com/{tag}");
+    let candidates = [
+        (
+            "0.8B",
+            "huihui_ai/qwen3.5-abliterated:0.8B",
+            "1.0 GB",
+            "Q8_0",
+            "0.8B",
+        ),
+        (
+            "2B",
+            "huihui_ai/qwen3.5-abliterated:2B",
+            "1.9 GB",
+            "Q4_K_M",
+            "2B",
+        ),
+        (
+            "4B",
+            "huihui_ai/qwen3.5-abliterated:4B",
+            "3.3 GB",
+            "Q4_K_M",
+            "4B",
+        ),
+        (
+            "9b",
+            "huihui_ai/qwen3.5-abliterated:9b",
+            "6.6 GB",
+            "Q4_K_M",
+            "9B",
+        ),
+    ]
+    .into_iter()
+    .map(
+        |(size, tag, published_size, quantization, parameter_size)| QwenModelCandidate {
+            id: match size {
+                "0.8B" => "qwen35-abliterated-08b",
+                "2B" => "qwen35-abliterated-2b",
+                "4B" => "qwen35-abliterated-4b",
+                _ => "qwen35-abliterated-9b",
+            },
+            display_name: match size {
+                "0.8B" => "Qwen 3.5 Abliterated 0.8B",
+                "2B" => "Qwen 3.5 Abliterated 2B",
+                "4B" => "Qwen 3.5 Abliterated 4B",
+                _ => "Qwen 3.5 Abliterated 9B",
+            },
+            tag,
+            published_size,
+            // The publisher gives rounded GB labels, not an exact byte count.
+            published_size_bytes: None,
+            quantization,
+            source_url: model_page(tag),
+            license: "Apache License 2.0",
+            license_url: "https://www.apache.org/licenses/LICENSE-2.0".to_string(),
+            published_context_tokens: 256 * 1024,
+            parameter_size,
+        },
+    )
+    .collect();
+    QwenModelPolicy {
+        candidates,
+        default_model_tag: None,
+        context_default_tokens: None,
+        pull_start_policy: None,
+        model_store_override: None,
+        low_vram_fallback_tag: None,
+        disk_margin_bytes: None,
+        show_license: None,
+        measured_peak_vram_bytes: None,
+        selection_headroom_bytes: None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ModelPullErrorCode {
+    ModelTagUnknown,
+    ModelConfirmationRequired,
+    ManagedServerRequired,
+    PullAlreadyActive,
+    ModelStoreUnresolved,
+    DiskSpaceLow,
+    DiskMarginUnset,
+    PullHttpFailed,
+    PullStreamMalformed,
+    ModelTagAbsent,
+    ModelDigestMismatch,
+    ModelDetailsMismatch,
+    PullCancelTimeout,
+    PullOperationUnknown,
+    AcceleratorMappingUnverified,
+    ModelPullActive,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelPullError {
+    code: ModelPullErrorCode,
+    stage: String,
+    retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_id: Option<String>,
+}
+
+impl ModelPullError {
+    fn new(code: ModelPullErrorCode, stage: &str, retryable: bool) -> Self {
+        Self {
+            code,
+            stage: stage.to_string(),
+            retryable,
+            operation_id: None,
+        }
+    }
+
+    fn for_operation(mut self, operation_id: &str) -> Self {
+        self.operation_id = Some(operation_id.to_string());
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ModelPullState {
+    Absent,
+    Preflight,
+    Pulling,
+    Paused,
+    Failed,
+    Verifying,
+    Ready,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelPullSnapshot {
+    operation_id: Option<String>,
+    tag: String,
+    state: ModelPullState,
+    stage: String,
+    digest: Option<String>,
+    error: Option<ModelPullError>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelPullProgress {
+    operation_id: String,
+    tag: String,
+    phase: String,
+    digest: Option<String>,
+    completed: Option<u64>,
+    total: Option<u64>,
+    layer_percent: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelPullStartResponse {
+    operation_id: String,
+    snapshot: ModelPullSnapshot,
+}
+
+struct ActiveModelPull {
+    operation_id: String,
+    tag: String,
+    cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    completion: Arc<(Mutex<bool>, Condvar)>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -421,6 +640,8 @@ struct ManagerState {
     external_reservation_pending: Option<(u64, String)>,
     external_reservation_generation: u64,
     next_process_generation: u64,
+    model_pull_snapshots: BTreeMap<String, ModelPullSnapshot>,
+    active_model_pull: Option<ActiveModelPull>,
     shutdown_requested: bool,
 }
 
@@ -436,6 +657,8 @@ impl Default for ManagerState {
             external_reservation_pending: None,
             external_reservation_generation: 0,
             next_process_generation: 1,
+            model_pull_snapshots: BTreeMap::new(),
+            active_model_pull: None,
             shutdown_requested: false,
         }
     }
@@ -815,7 +1038,10 @@ impl RuntimeManager {
 
     fn begin(&self, id: &str, kind: OperationKind) -> Result<(), RuntimeError> {
         let mut state = self.lock();
-        if state.shutdown_requested || state.operation.is_some() {
+        if state.shutdown_requested
+            || state.operation.is_some()
+            || state.active_model_pull.is_some()
+        {
             return Err(RuntimeError::new(
                 RuntimeErrorCode::RuntimeBusy,
                 "dispatch",
@@ -2678,6 +2904,1299 @@ fn api_error(stage: &str, retryable: bool) -> RuntimeError {
     RuntimeError::new(RuntimeErrorCode::ApiUnreachable, stage, retryable)
 }
 
+fn model_pull_error(
+    code: ModelPullErrorCode,
+    stage: &str,
+    retryable: bool,
+    operation_id: Option<&str>,
+) -> ModelPullError {
+    let error = ModelPullError::new(code, stage, retryable);
+    operation_id.map_or(error.clone(), |id| error.for_operation(id))
+}
+
+fn model_candidate<'a>(policy: &'a QwenModelPolicy, tag: &str) -> Option<&'a QwenModelCandidate> {
+    policy
+        .candidates
+        .iter()
+        .find(|candidate| candidate.tag == tag)
+}
+
+fn model_pull_client(timeout: Duration) -> Result<reqwest::Client, ModelPullError> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(timeout)
+        .build()
+        .map_err(|_| ModelPullError::new(ModelPullErrorCode::PullHttpFailed, "connect", true))
+}
+
+fn model_api_url(base: &str, path: &str) -> Result<url::Url, ModelPullError> {
+    let base = url::Url::parse(base).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ManagedServerRequired, "owner", false)
+    })?;
+    if base.scheme() != "http"
+        || !base.username().is_empty()
+        || base.password().is_some()
+        || base.query().is_some()
+        || base.fragment().is_some()
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    base.join(path)
+        .map_err(|_| ModelPullError::new(ModelPullErrorCode::ManagedServerRequired, "owner", false))
+}
+
+fn managed_pull_base(manager: &RuntimeManager) -> Result<String, ModelPullError> {
+    let mut state = manager.lock();
+    if state.shutdown_requested {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    if state.active_model_pull.is_some() {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::PullAlreadyActive,
+            "preflight",
+            true,
+        ));
+    }
+    if state.operation.is_some() {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::PullAlreadyActive,
+            "preflight",
+            true,
+        ));
+    }
+    if state.snapshot.server_state != ServerState::ReadyManaged
+        || state.snapshot.ownership != RuntimeOwnership::ManagedChild
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    let Some(process) = state.process.as_mut() else {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    };
+    if process.child.has_exited().unwrap_or(true) {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            true,
+        ));
+    }
+    let reservation_is_running = process
+        .reservation
+        .as_ref()
+        .and_then(ReservationSnapshot::from_lease)
+        .is_some_and(|reservation| reservation.status == ReservationStatus::Running);
+    if !reservation_is_running || state.snapshot.reservation.status != ReservationStatus::Running {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::AcceleratorMappingUnverified,
+            "owner",
+            false,
+        ));
+    }
+    let base = manager.settings.managed_base_url.clone();
+    let parsed = url::Url::parse(&base).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ManagedServerRequired, "owner", false)
+    })?;
+    let allowed = if cfg!(test) {
+        is_loopback_endpoint(&parsed)
+    } else {
+        base == DEFAULT_HOST_URL && is_loopback_endpoint(&parsed)
+    };
+    if !allowed {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    Ok(base)
+}
+
+struct ModelStoreCheck {
+    probe_directory: PathBuf,
+    available_bytes: u64,
+}
+
+fn check_model_store(policy: &QwenModelPolicy) -> Result<ModelStoreCheck, ModelPullError> {
+    let configured = policy
+        .model_store_override
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("OLLAMA_MODELS")
+                .map(PathBuf::from)
+                .filter(|path| !path.as_os_str().is_empty())
+        })
+        .or_else(|| dirs::home_dir().map(|home| home.join(".ollama").join("models")))
+        .ok_or_else(|| {
+            ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+        })?;
+    if !configured.is_absolute() {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelStoreUnresolved,
+            "preflight",
+            false,
+        ));
+    }
+    let mut ancestor = configured.as_path();
+    let existing = loop {
+        match fs::metadata(ancestor) {
+            Ok(metadata) if metadata.is_dir() => break ancestor.to_path_buf(),
+            Ok(_) => {
+                return Err(ModelPullError::new(
+                    ModelPullErrorCode::ModelStoreUnresolved,
+                    "preflight",
+                    false,
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                ancestor = ancestor.parent().ok_or_else(|| {
+                    ModelPullError::new(
+                        ModelPullErrorCode::ModelStoreUnresolved,
+                        "preflight",
+                        false,
+                    )
+                })?;
+            }
+            Err(_) => {
+                return Err(ModelPullError::new(
+                    ModelPullErrorCode::ModelStoreUnresolved,
+                    "preflight",
+                    false,
+                ));
+            }
+        }
+    };
+    let probe = tempfile::Builder::new()
+        .prefix("naia-ollama-write-check-")
+        .tempfile_in(&existing)
+        .map_err(|_| {
+            ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+        })?;
+    probe.close().map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+    })?;
+    let available_bytes = fs2::available_space(&existing).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+    })?;
+    Ok(ModelStoreCheck {
+        probe_directory: existing,
+        available_bytes,
+    })
+}
+
+fn installed_model_digest(models: &Value, tag: &str) -> Option<String> {
+    models
+        .get("models")?
+        .as_array()?
+        .iter()
+        .find(|model| {
+            model.get("name").and_then(Value::as_str) == Some(tag)
+                || model.get("model").and_then(Value::as_str) == Some(tag)
+        })?
+        .get("digest")
+        .and_then(Value::as_str)
+        .filter(|digest| !digest.trim().is_empty())
+        .map(str::to_string)
+}
+
+fn model_tag_present(models: &Value, tag: &str) -> bool {
+    models
+        .get("models")
+        .and_then(Value::as_array)
+        .is_some_and(|models| {
+            models.iter().any(|model| {
+                model.get("name").and_then(Value::as_str) == Some(tag)
+                    || model.get("model").and_then(Value::as_str) == Some(tag)
+            })
+        })
+}
+
+fn fetch_tags_sync(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    tag: &str,
+    operation_id: Option<&str>,
+) -> Result<Option<String>, ModelPullError> {
+    let url = model_api_url(base, "/api/tags").map_err(|error| match operation_id {
+        Some(operation_id) => error.for_operation(operation_id),
+        None => error,
+    })?;
+    let response = client
+        .get(url)
+        .send()
+        .and_then(reqwest::blocking::Response::error_for_status)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "tags",
+                true,
+                operation_id,
+            )
+        })?;
+    let value: Value = response.json().map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::PullStreamMalformed,
+            "tags",
+            true,
+            operation_id,
+        )
+    })?;
+    let digest = installed_model_digest(&value, tag);
+    if model_tag_present(&value, tag) && digest.is_none() {
+        return Err(model_pull_error(
+            ModelPullErrorCode::ModelDigestMismatch,
+            "tags",
+            false,
+            operation_id,
+        ));
+    }
+    Ok(digest)
+}
+
+fn verify_show_details(
+    show: &Value,
+    candidate: &QwenModelCandidate,
+) -> Result<(), ModelPullErrorCode> {
+    let details = show
+        .get("details")
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let quantization = details
+        .get("quantization_level")
+        .and_then(Value::as_str)
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let parameters = details
+        .get("parameter_size")
+        .and_then(Value::as_str)
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let model_info = show
+        .get("model_info")
+        .and_then(Value::as_object)
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let context = model_info
+        .iter()
+        .find(|(key, _)| key.ends_with(".context_length"))
+        .and_then(|(_, value)| value.as_u64())
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let is_qwen = model_info
+        .keys()
+        .any(|key| key.to_ascii_lowercase().contains("qwen"))
+        || details
+            .get("family")
+            .and_then(Value::as_str)
+            .is_some_and(|family| family.to_ascii_lowercase().contains("qwen"));
+    if quantization != candidate.quantization
+        || !parameters
+            .to_ascii_lowercase()
+            .starts_with(&candidate.parameter_size.to_ascii_lowercase())
+        || context != candidate.published_context_tokens
+        || !is_qwen
+    {
+        return Err(ModelPullErrorCode::ModelDetailsMismatch);
+    }
+    Ok(())
+}
+
+fn verify_model_sync(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    candidate: &QwenModelCandidate,
+    operation_id: &str,
+) -> Result<String, ModelPullError> {
+    let digest =
+        fetch_tags_sync(client, base, candidate.tag, Some(operation_id))?.ok_or_else(|| {
+            model_pull_error(
+                ModelPullErrorCode::ModelTagAbsent,
+                "verify_tags",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    let show_url = model_api_url(base, "/api/show").map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::PullHttpFailed,
+            "verify_show",
+            true,
+            Some(operation_id),
+        )
+    })?;
+    let show: Value = client
+        .post(show_url)
+        .json(&serde_json::json!({ "name": candidate.tag }))
+        .send()
+        .and_then(reqwest::blocking::Response::error_for_status)
+        .and_then(reqwest::blocking::Response::json)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "verify_show",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    verify_show_details(&show, candidate)
+        .map_err(|code| model_pull_error(code, "verify_show", false, Some(operation_id)))?;
+    let confirmed_digest = fetch_tags_sync(client, base, candidate.tag, Some(operation_id))?
+        .ok_or_else(|| {
+            model_pull_error(
+                ModelPullErrorCode::ModelTagAbsent,
+                "verify_tags_again",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    if digest != confirmed_digest {
+        return Err(model_pull_error(
+            ModelPullErrorCode::ModelDigestMismatch,
+            "verify_tags_again",
+            true,
+            Some(operation_id),
+        ));
+    }
+    Ok(digest)
+}
+
+fn emit_model_pull_snapshot(app: Option<&AppHandle>, snapshot: &ModelPullSnapshot) {
+    if let Some(app) = app {
+        let _ = app.emit(MODEL_PULL_STATE_EVENT, snapshot);
+    }
+}
+
+fn update_model_pull_snapshot(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    operation_id: &str,
+    state_value: ModelPullState,
+    stage: &str,
+    digest: Option<String>,
+    error: Option<ModelPullError>,
+    terminal: bool,
+) -> Option<ModelPullSnapshot> {
+    let snapshot = {
+        let mut state = manager.lock();
+        let active_tag = state
+            .active_model_pull
+            .as_ref()
+            .filter(|active| active.operation_id == operation_id)
+            .map(|active| active.tag.clone());
+        let tag = active_tag.or_else(|| {
+            state
+                .model_pull_snapshots
+                .iter()
+                .find_map(|(tag, snapshot)| {
+                    (snapshot.operation_id.as_deref() == Some(operation_id)).then(|| tag.clone())
+                })
+        })?;
+        let previous = state.model_pull_snapshots.get(&tag)?;
+        if previous.operation_id.as_deref() != Some(operation_id) {
+            return None;
+        }
+        let snapshot = ModelPullSnapshot {
+            operation_id: Some(operation_id.to_string()),
+            tag: tag.clone(),
+            state: state_value,
+            stage: stage.to_string(),
+            digest,
+            error,
+        };
+        state.model_pull_snapshots.insert(tag, snapshot.clone());
+        if terminal {
+            state.active_model_pull = None;
+        }
+        snapshot
+    };
+    emit_model_pull_snapshot(app, &snapshot);
+    Some(snapshot)
+}
+
+fn finish_model_pull(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    operation_id: &str,
+    state_value: ModelPullState,
+    stage: &str,
+    digest: Option<String>,
+    error: Option<ModelPullError>,
+    completion: &Arc<(Mutex<bool>, Condvar)>,
+) {
+    update_model_pull_snapshot(
+        manager,
+        app,
+        operation_id,
+        state_value,
+        stage,
+        digest,
+        error,
+        true,
+    );
+    let (done, changed) = &**completion;
+    *done.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = true;
+    changed.notify_all();
+}
+
+fn wait_for_model_pull(completion: &Arc<(Mutex<bool>, Condvar)>, timeout: Duration) -> bool {
+    let (done, changed) = &**completion;
+    let guard = done.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (guard, _) = changed
+        .wait_timeout_while(guard, timeout, |finished| !*finished)
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *guard
+}
+
+fn emit_model_pull_progress(app: Option<&AppHandle>, progress: &ModelPullProgress) {
+    if let Some(app) = app {
+        let _ = app.emit(MODEL_PULL_PROGRESS_EVENT, progress);
+    }
+}
+
+fn parse_pull_line(
+    line: &[u8],
+) -> Result<Option<(String, Option<String>, Option<u64>, Option<u64>)>, ModelPullErrorCode> {
+    if line.iter().all(u8::is_ascii_whitespace) {
+        return Ok(None);
+    }
+    let value: Value =
+        serde_json::from_slice(line).map_err(|_| ModelPullErrorCode::PullStreamMalformed)?;
+    if value.get("error").and_then(Value::as_str).is_some() {
+        return Err(ModelPullErrorCode::PullHttpFailed);
+    }
+    let status = value
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("pulling")
+        .to_string();
+    let digest = value
+        .get("digest")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let completed = value.get("completed").and_then(Value::as_u64);
+    let total = value.get("total").and_then(Value::as_u64);
+    Ok(Some((status, digest, completed, total)))
+}
+
+fn append_pull_chunk(
+    buffer: &mut Vec<u8>,
+    chunk: &[u8],
+) -> Result<Vec<Option<(String, Option<String>, Option<u64>, Option<u64>)>>, ModelPullErrorCode> {
+    buffer.extend_from_slice(chunk);
+    let mut lines = Vec::new();
+    while let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
+        if newline > MODEL_PULL_MAX_LINE_BYTES {
+            return Err(ModelPullErrorCode::PullStreamMalformed);
+        }
+        let line = buffer.drain(..=newline).collect::<Vec<_>>();
+        lines.push(parse_pull_line(&line[..line.len().saturating_sub(1)])?);
+    }
+    if buffer.len() > MODEL_PULL_MAX_LINE_BYTES {
+        return Err(ModelPullErrorCode::PullStreamMalformed);
+    }
+    Ok(lines)
+}
+
+fn finish_pull_buffer(
+    buffer: &mut Vec<u8>,
+) -> Result<Option<(String, Option<String>, Option<u64>, Option<u64>)>, ModelPullErrorCode> {
+    if buffer.is_empty() {
+        return Ok(None);
+    }
+    parse_pull_line(&std::mem::take(buffer))
+}
+
+fn model_pull_progress_due(
+    last_event: &mut tokio::time::Instant,
+    now: tokio::time::Instant,
+    completed_bytes: Option<u64>,
+) -> bool {
+    if completed_bytes.is_none() || now.duration_since(*last_event) >= Duration::from_millis(250) {
+        *last_event = now;
+        true
+    } else {
+        false
+    }
+}
+
+async fn stream_model_pull(
+    client: reqwest::Client,
+    base: String,
+    operation_id: String,
+    tag: String,
+    app: Option<AppHandle>,
+    mut cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<bool, ModelPullError> {
+    let url = model_api_url(&base, "/api/pull").map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::ManagedServerRequired,
+            "pull",
+            false,
+            Some(&operation_id),
+        )
+    })?;
+    let request = client
+        .post(url)
+        .json(&serde_json::json!({ "name": tag, "stream": true }));
+    let response = tokio::select! {
+        result = request.send() => result.map_err(|_| model_pull_error(ModelPullErrorCode::PullHttpFailed, "pull", true, Some(&operation_id)))?,
+        _ = &mut cancel => return Ok(false),
+    };
+    if !response.status().is_success() {
+        return Err(model_pull_error(
+            ModelPullErrorCode::PullHttpFailed,
+            "pull",
+            true,
+            Some(&operation_id),
+        ));
+    }
+    let mut stream = response.bytes_stream();
+    let mut buffer = Vec::new();
+    let mut saw_success = false;
+    let mut last_progress_event = tokio::time::Instant::now() - Duration::from_secs(1);
+    loop {
+        let chunk = tokio::select! {
+            result = futures_util::StreamExt::next(&mut stream) => result,
+            _ = &mut cancel => return Ok(false),
+        };
+        let Some(chunk) = chunk else { break };
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            // A severed HTTP stream is resumable. Explicit HTTP or JSON errors remain failures.
+            Err(_) => return Ok(false),
+        };
+        let lines = append_pull_chunk(&mut buffer, &chunk)
+            .map_err(|code| model_pull_error(code, "pull", true, Some(&operation_id)))?;
+        for parsed in lines {
+            if let Some((phase, digest, completed, total)) = parsed {
+                saw_success |= phase == "success";
+                let layer_percent = match (completed, total) {
+                    (Some(completed), Some(total)) if total > 0 => {
+                        Some((completed as f64 * 100.0 / total as f64).min(100.0))
+                    }
+                    _ => None,
+                };
+                let progress = ModelPullProgress {
+                    operation_id: operation_id.clone(),
+                    tag: tag.clone(),
+                    phase,
+                    digest,
+                    completed,
+                    total,
+                    layer_percent,
+                };
+                let now = tokio::time::Instant::now();
+                if model_pull_progress_due(&mut last_progress_event, now, completed) {
+                    emit_model_pull_progress(app.as_ref(), &progress);
+                }
+            }
+        }
+    }
+    if let Some(parsed) = finish_pull_buffer(&mut buffer)
+        .map_err(|code| model_pull_error(code, "pull", true, Some(&operation_id)))?
+    {
+        if let Some((phase, digest, completed, total)) = parsed {
+            saw_success |= phase == "success";
+            let layer_percent = match (completed, total) {
+                (Some(completed), Some(total)) if total > 0 => {
+                    Some((completed as f64 * 100.0 / total as f64).min(100.0))
+                }
+                _ => None,
+            };
+            let progress = ModelPullProgress {
+                operation_id: operation_id.clone(),
+                tag: tag.clone(),
+                phase,
+                digest,
+                completed,
+                total,
+                layer_percent,
+            };
+            emit_model_pull_progress(app.as_ref(), &progress);
+        }
+    }
+    Ok(saw_success)
+}
+
+async fn verify_model_async(
+    client: &reqwest::Client,
+    base: &str,
+    candidate: &QwenModelCandidate,
+    operation_id: &str,
+) -> Result<String, ModelPullError> {
+    let tags_url = model_api_url(base, "/api/tags").map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::ManagedServerRequired,
+            "verify_tags",
+            false,
+            Some(operation_id),
+        )
+    })?;
+    let response = client
+        .get(tags_url)
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "verify_tags",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    let tags: Value = response.json().await.map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::PullStreamMalformed,
+            "verify_tags",
+            true,
+            Some(operation_id),
+        )
+    })?;
+    let digest = installed_model_digest(&tags, candidate.tag).ok_or_else(|| {
+        let code = if model_tag_present(&tags, candidate.tag) {
+            ModelPullErrorCode::ModelDigestMismatch
+        } else {
+            ModelPullErrorCode::ModelTagAbsent
+        };
+        model_pull_error(code, "verify_tags", true, Some(operation_id))
+    })?;
+    let show_url = model_api_url(base, "/api/show").map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::ManagedServerRequired,
+            "verify_show",
+            false,
+            Some(operation_id),
+        )
+    })?;
+    let show: Value = client
+        .post(show_url)
+        .json(&serde_json::json!({ "name": candidate.tag }))
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "verify_show",
+                true,
+                Some(operation_id),
+            )
+        })?
+        .json()
+        .await
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullStreamMalformed,
+                "verify_show",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    verify_show_details(&show, candidate)
+        .map_err(|code| model_pull_error(code, "verify_show", false, Some(operation_id)))?;
+    let response = client
+        .get(model_api_url(base, "/api/tags").map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::ManagedServerRequired,
+                "verify_tags_again",
+                false,
+                Some(operation_id),
+            )
+        })?)
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "verify_tags_again",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    let tags: Value = response.json().await.map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::PullStreamMalformed,
+            "verify_tags_again",
+            true,
+            Some(operation_id),
+        )
+    })?;
+    let confirmed_digest = installed_model_digest(&tags, candidate.tag).ok_or_else(|| {
+        let code = if model_tag_present(&tags, candidate.tag) {
+            ModelPullErrorCode::ModelDigestMismatch
+        } else {
+            ModelPullErrorCode::ModelTagAbsent
+        };
+        model_pull_error(code, "verify_tags_again", true, Some(operation_id))
+    })?;
+    if digest != confirmed_digest {
+        return Err(model_pull_error(
+            ModelPullErrorCode::ModelDigestMismatch,
+            "verify_tags_again",
+            true,
+            Some(operation_id),
+        ));
+    }
+    Ok(digest)
+}
+
+fn record_model_pull_failure(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    tag: &str,
+    operation_id: &str,
+    error: ModelPullError,
+) -> ModelPullSnapshot {
+    let snapshot = ModelPullSnapshot {
+        operation_id: Some(operation_id.to_string()),
+        tag: tag.to_string(),
+        state: ModelPullState::Failed,
+        stage: error.stage.clone(),
+        digest: None,
+        error: Some(error),
+    };
+    manager
+        .lock()
+        .model_pull_snapshots
+        .insert(tag.to_string(), snapshot.clone());
+    emit_model_pull_snapshot(app, &snapshot);
+    snapshot
+}
+
+fn managed_owner_for_cancel(manager: &RuntimeManager) -> Result<(), ModelPullError> {
+    let mut state = manager.lock();
+    if state.snapshot.server_state != ServerState::ReadyManaged
+        || state.snapshot.ownership != RuntimeOwnership::ManagedChild
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    let Some(process) = state.process.as_mut() else {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    };
+    if process.child.has_exited().unwrap_or(true) {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            true,
+        ));
+    }
+    let base = url::Url::parse(&manager.settings.managed_base_url).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ManagedServerRequired, "owner", false)
+    })?;
+    if !(cfg!(test) && is_loopback_endpoint(&base)
+        || manager.settings.managed_base_url == DEFAULT_HOST_URL && is_loopback_endpoint(&base))
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    Ok(())
+}
+
+fn start_model_pull_with_policy(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    tag: &str,
+    confirmed_tag: &str,
+    policy: QwenModelPolicy,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    let Some(candidate) = model_candidate(&policy, tag).cloned() else {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelTagUnknown,
+            "preflight",
+            false,
+        ));
+    };
+    if confirmed_tag != tag {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelConfirmationRequired,
+            "preflight",
+            false,
+        ));
+    }
+    let base = managed_pull_base(manager)?;
+    let operation_id = next_operation_id();
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(manager.settings.request_timeout)
+        .timeout(manager.settings.request_timeout)
+        .build()
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "preflight",
+                true,
+                Some(&operation_id),
+            )
+        })?;
+    let already_installed = match fetch_tags_sync(&client, &base, tag, Some(&operation_id)) {
+        Ok(digest) => digest.is_some(),
+        Err(error) => {
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            return Err(error);
+        }
+    };
+    let mut pull_budget: Option<(PathBuf, u64)> = None;
+    if !already_installed {
+        let store = check_model_store(&policy).map_err(|error| {
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error.for_operation(&operation_id)
+        })?;
+        let margin = policy.disk_margin_bytes.ok_or_else(|| {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskMarginUnset,
+                "preflight",
+                false,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error
+        })?;
+        let size_bytes = candidate.published_size_bytes.ok_or_else(|| {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskSpaceLow,
+                "preflight",
+                false,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error
+        })?;
+        let required = size_bytes.checked_add(margin).ok_or_else(|| {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskSpaceLow,
+                "preflight",
+                false,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error
+        })?;
+        if store.available_bytes < required {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskSpaceLow,
+                "preflight",
+                true,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            return Err(error);
+        }
+        // Recheck against the same filesystem immediately before reserving the operation.
+        let latest_free = fs2::available_space(&store.probe_directory).map_err(|_| {
+            let error = model_pull_error(
+                ModelPullErrorCode::ModelStoreUnresolved,
+                "preflight",
+                false,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error
+        })?;
+        if latest_free < required {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskSpaceLow,
+                "preflight",
+                true,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            return Err(error);
+        }
+        pull_budget = Some((store.probe_directory.clone(), required));
+    }
+
+    let initial_snapshot = ModelPullSnapshot {
+        operation_id: Some(operation_id.clone()),
+        tag: tag.to_string(),
+        state: ModelPullState::Preflight,
+        stage: "preflight".to_string(),
+        digest: None,
+        error: None,
+    };
+    let (cancel_sender, cancel_receiver) = tokio::sync::oneshot::channel();
+    let completion = Arc::new((Mutex::new(false), Condvar::new()));
+    {
+        let mut state = manager.lock();
+        if state.shutdown_requested
+            || state.operation.is_some()
+            || state.active_model_pull.is_some()
+        {
+            return Err(model_pull_error(
+                ModelPullErrorCode::PullAlreadyActive,
+                "preflight",
+                true,
+                Some(&operation_id),
+            ));
+        }
+        if state.snapshot.server_state != ServerState::ReadyManaged
+            || state.snapshot.ownership != RuntimeOwnership::ManagedChild
+            || state.process.is_none()
+        {
+            return Err(model_pull_error(
+                ModelPullErrorCode::ManagedServerRequired,
+                "owner",
+                false,
+                Some(&operation_id),
+            ));
+        }
+        state
+            .model_pull_snapshots
+            .insert(tag.to_string(), initial_snapshot.clone());
+        state.active_model_pull = Some(ActiveModelPull {
+            operation_id: operation_id.clone(),
+            tag: tag.to_string(),
+            cancel: Some(cancel_sender),
+            completion: completion.clone(),
+        });
+    }
+    emit_model_pull_snapshot(app.as_ref(), &initial_snapshot);
+
+    let manager_worker = manager.clone();
+    let app_worker = app.clone();
+    let operation_id_worker = operation_id.clone();
+    let tag_worker = tag.to_string();
+    let candidate_worker = candidate.clone();
+    let base_worker = base.clone();
+    let completion_worker = completion.clone();
+    let pull_budget_worker = pull_budget.clone();
+    let worker = thread::Builder::new()
+        .name("ollama-model-pull".to_string())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            let outcome = match runtime {
+                Ok(runtime) => runtime.block_on(async {
+                    let client = match model_pull_client(manager_worker.settings.request_timeout) {
+                        Ok(client) => client,
+                        Err(error) => return Err(error),
+                    };
+                    if !already_installed {
+                        if let Some((directory, required_bytes)) = pull_budget_worker {
+                            let available_bytes =
+                                fs2::available_space(&directory).map_err(|_| {
+                                    model_pull_error(
+                                        ModelPullErrorCode::ModelStoreUnresolved,
+                                        "preflight",
+                                        false,
+                                        Some(&operation_id_worker),
+                                    )
+                                })?;
+                            if available_bytes < required_bytes {
+                                return Err(model_pull_error(
+                                    ModelPullErrorCode::DiskSpaceLow,
+                                    "preflight",
+                                    true,
+                                    Some(&operation_id_worker),
+                                ));
+                            }
+                        }
+                        let _ = update_model_pull_snapshot(
+                            &manager_worker,
+                            app_worker.as_ref(),
+                            &operation_id_worker,
+                            ModelPullState::Pulling,
+                            "pull",
+                            None,
+                            None,
+                            false,
+                        );
+                        match stream_model_pull(
+                            client.clone(),
+                            base_worker.clone(),
+                            operation_id_worker.clone(),
+                            tag_worker.clone(),
+                            app_worker.clone(),
+                            cancel_receiver,
+                        )
+                        .await
+                        {
+                            Ok(false) => return Ok(None),
+                            Ok(true) => {}
+                            Err(error) => return Err(error),
+                        }
+                    }
+                    let _ = update_model_pull_snapshot(
+                        &manager_worker,
+                        app_worker.as_ref(),
+                        &operation_id_worker,
+                        ModelPullState::Verifying,
+                        "verify_tags",
+                        None,
+                        None,
+                        false,
+                    );
+                    verify_model_async(
+                        &client,
+                        &base_worker,
+                        &candidate_worker,
+                        &operation_id_worker,
+                    )
+                    .await
+                    .map(Some)
+                }),
+                Err(_) => Err(model_pull_error(
+                    ModelPullErrorCode::PullHttpFailed,
+                    "pull",
+                    true,
+                    Some(&operation_id_worker),
+                )),
+            };
+            match outcome {
+                Ok(None) => finish_model_pull(
+                    &manager_worker,
+                    app_worker.as_ref(),
+                    &operation_id_worker,
+                    ModelPullState::Paused,
+                    "paused",
+                    None,
+                    None,
+                    &completion_worker,
+                ),
+                Ok(Some(digest)) => finish_model_pull(
+                    &manager_worker,
+                    app_worker.as_ref(),
+                    &operation_id_worker,
+                    ModelPullState::Ready,
+                    "ready",
+                    Some(digest),
+                    None,
+                    &completion_worker,
+                ),
+                Err(error) => finish_model_pull(
+                    &manager_worker,
+                    app_worker.as_ref(),
+                    &operation_id_worker,
+                    ModelPullState::Failed,
+                    &error.stage,
+                    None,
+                    Some(error.for_operation(&operation_id_worker)),
+                    &completion_worker,
+                ),
+            }
+        });
+    if worker.is_err() {
+        let error = model_pull_error(
+            ModelPullErrorCode::PullHttpFailed,
+            "pull",
+            true,
+            Some(&operation_id),
+        );
+        finish_model_pull(
+            manager,
+            app.as_ref(),
+            &operation_id,
+            ModelPullState::Failed,
+            "pull",
+            None,
+            Some(error.clone()),
+            &completion,
+        );
+        return Err(error);
+    }
+    Ok(ModelPullStartResponse {
+        operation_id,
+        snapshot: initial_snapshot,
+    })
+}
+
+fn dispatch_model_pull_start(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    tag: &str,
+    confirmed_tag: &str,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    start_model_pull_with_policy(manager, app, tag, confirmed_tag, qwen_model_policy())
+}
+
+fn dispatch_model_pull_retry(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    tag: &str,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    dispatch_model_pull_retry_with_policy(manager, app, tag, qwen_model_policy())
+}
+
+fn dispatch_model_pull_retry_with_policy(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    tag: &str,
+    policy: QwenModelPolicy,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    let retryable = manager
+        .lock()
+        .model_pull_snapshots
+        .get(tag)
+        .is_some_and(|snapshot| match snapshot.state {
+            ModelPullState::Paused => true,
+            ModelPullState::Failed => snapshot.error.as_ref().is_some_and(|error| error.retryable),
+            _ => false,
+        });
+    if !retryable {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::PullOperationUnknown,
+            "retry",
+            false,
+        ));
+    }
+    start_model_pull_with_policy(manager, app, tag, tag, policy)
+}
+
+fn dispatch_model_pull_cancel(
+    manager: &RuntimeManager,
+    operation_id: &str,
+) -> Result<ModelPullSnapshot, ModelPullError> {
+    managed_owner_for_cancel(manager)?;
+    let (tag, completion, cancel) = {
+        let mut state = manager.lock();
+        let Some(active) = state
+            .active_model_pull
+            .as_mut()
+            .filter(|active| active.operation_id == operation_id)
+        else {
+            if let Some(snapshot) = state
+                .model_pull_snapshots
+                .values()
+                .find(|snapshot| snapshot.operation_id.as_deref() == Some(operation_id))
+                .filter(|snapshot| {
+                    matches!(
+                        snapshot.state,
+                        ModelPullState::Paused | ModelPullState::Ready
+                    )
+                })
+            {
+                return Ok(snapshot.clone());
+            }
+            return Err(model_pull_error(
+                ModelPullErrorCode::PullOperationUnknown,
+                "cancel",
+                false,
+                Some(operation_id),
+            ));
+        };
+        (
+            active.tag.clone(),
+            active.completion.clone(),
+            active.cancel.take(),
+        )
+    };
+    if let Some(cancel) = cancel {
+        let _ = cancel.send(());
+    }
+    if !wait_for_model_pull(&completion, MODEL_PULL_CANCEL_TIMEOUT) {
+        return Err(model_pull_error(
+            ModelPullErrorCode::PullCancelTimeout,
+            "cancel",
+            true,
+            Some(operation_id),
+        ));
+    }
+    manager
+        .lock()
+        .model_pull_snapshots
+        .get(&tag)
+        .cloned()
+        .ok_or_else(|| {
+            model_pull_error(
+                ModelPullErrorCode::PullOperationUnknown,
+                "cancel",
+                false,
+                Some(operation_id),
+            )
+        })
+}
+
+fn dispatch_model_pull_status(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    tag: &str,
+) -> Result<ModelPullSnapshot, ModelPullError> {
+    let policy = qwen_model_policy();
+    let Some(candidate) = model_candidate(&policy, tag) else {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelTagUnknown,
+            "status",
+            false,
+        ));
+    };
+    let current = manager
+        .lock()
+        .model_pull_snapshots
+        .get(tag)
+        .cloned()
+        .unwrap_or_else(|| ModelPullSnapshot {
+            operation_id: None,
+            tag: tag.to_string(),
+            state: ModelPullState::Absent,
+            stage: "absent".to_string(),
+            digest: None,
+            error: None,
+        });
+    if current.state != ModelPullState::Ready || manager.lock().active_model_pull.is_some() {
+        return Ok(current);
+    }
+    let base = managed_pull_base(manager)?;
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(manager.settings.request_timeout)
+        .timeout(manager.settings.request_timeout)
+        .build()
+        .map_err(|_| ModelPullError::new(ModelPullErrorCode::PullHttpFailed, "status", true))?;
+    let operation_id = current.operation_id.as_deref().ok_or_else(|| {
+        ModelPullError::new(ModelPullErrorCode::PullOperationUnknown, "status", false)
+    })?;
+    let result = verify_model_sync(&client, &base, candidate, operation_id);
+    let snapshot = match result {
+        Ok(digest) => ModelPullSnapshot {
+            digest: Some(digest),
+            ..current
+        },
+        Err(error) => ModelPullSnapshot {
+            state: if error.code == ModelPullErrorCode::ModelTagAbsent {
+                ModelPullState::Absent
+            } else {
+                ModelPullState::Failed
+            },
+            stage: error.stage.clone(),
+            digest: None,
+            error: Some(error),
+            ..current
+        },
+    };
+    manager
+        .lock()
+        .model_pull_snapshots
+        .insert(tag.to_string(), snapshot.clone());
+    emit_model_pull_snapshot(app, &snapshot);
+    Ok(snapshot)
+}
+
 fn emit_optional_snapshot(app: Option<&AppHandle>, snapshot: &RuntimeSnapshot) {
     if let Some(app) = app {
         emit_snapshot(app, snapshot);
@@ -3773,7 +5292,7 @@ fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<Str
     log_ollama_debug("stop.enter", None, "managed_or_external_lease_check=true");
     {
         let state = manager.lock();
-        if state.operation.is_some() {
+        if state.operation.is_some() || state.active_model_pull.is_some() {
             return Err(RuntimeError::new(
                 RuntimeErrorCode::RuntimeBusy,
                 "dispatch",
@@ -4071,6 +5590,26 @@ fn status_snapshot(
 
 fn shutdown_manager(manager: &RuntimeManager) {
     log_ollama_debug("shutdown.enter", None, "server_child_check=true");
+    let pull_completion = {
+        let mut state = manager.lock();
+        state.shutdown_requested = true;
+        state.active_model_pull.as_mut().map(|active| {
+            if let Some(cancel) = active.cancel.take() {
+                let _ = cancel.send(());
+            }
+            active.completion.clone()
+        })
+    };
+    if let Some(completion) = pull_completion {
+        if !wait_for_model_pull(&completion, MODEL_PULL_CANCEL_TIMEOUT) {
+            log_ollama_debug(
+                "shutdown.pull_cancel_unconfirmed",
+                None,
+                "managed_child_and_reservation_retained=true",
+            );
+            return;
+        }
+    }
     let (mut processes, external_reservation) = {
         let mut state = manager.lock();
         state.shutdown_requested = true;
@@ -4179,8 +5718,65 @@ pub(crate) fn ollama_runtime_start(
 pub(crate) fn ollama_runtime_stop(
     app: AppHandle,
     manager: State<'_, RuntimeManager>,
-) -> Result<String, RuntimeError> {
-    dispatch_stop(&manager, Some(app))
+) -> Result<String, StopCommandError> {
+    if let Some(active) = manager.lock().active_model_pull.as_ref() {
+        return Err(StopCommandError::ModelPull(
+            ModelPullError::new(ModelPullErrorCode::ModelPullActive, "stop", true)
+                .for_operation(&active.operation_id),
+        ));
+    }
+    dispatch_stop(&manager, Some(app)).map_err(|error| {
+        if error.code == RuntimeErrorCode::RuntimeBusy {
+            if let Some(active) = manager.lock().active_model_pull.as_ref() {
+                return StopCommandError::ModelPull(
+                    ModelPullError::new(ModelPullErrorCode::ModelPullActive, "stop", true)
+                        .for_operation(&active.operation_id),
+                );
+            }
+        }
+        StopCommandError::Runtime(error)
+    })
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_catalog_list() -> QwenModelPolicy {
+    qwen_model_policy()
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_pull_status(
+    tag: String,
+    app: AppHandle,
+    manager: State<'_, RuntimeManager>,
+) -> Result<ModelPullSnapshot, ModelPullError> {
+    dispatch_model_pull_status(&manager, Some(&app), &tag)
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_pull_start(
+    tag: String,
+    confirmed_tag: String,
+    app: AppHandle,
+    manager: State<'_, RuntimeManager>,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    dispatch_model_pull_start(&manager, Some(app), &tag, &confirmed_tag)
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_pull_cancel(
+    operation_id: String,
+    manager: State<'_, RuntimeManager>,
+) -> Result<ModelPullSnapshot, ModelPullError> {
+    dispatch_model_pull_cancel(&manager, &operation_id)
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_pull_retry(
+    tag: String,
+    app: AppHandle,
+    manager: State<'_, RuntimeManager>,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    dispatch_model_pull_retry(&manager, Some(app), &tag)
 }
 
 impl RuntimeManager {
@@ -6587,5 +8183,677 @@ mod tests {
         assert!(is_default_managed_host(Some("http://LOCALHOST:11434/")));
         assert!(!is_default_managed_host(Some("http://localhost:11435")));
         assert!(!is_default_managed_host(Some("https://example.com:11434")));
+    }
+
+    struct ModelPullApiFixture {
+        tag: String,
+        digest: Option<String>,
+        hold_pull_open: bool,
+        change_digest_on_recheck: bool,
+        fail_first_pull: bool,
+        disconnect_pull_early: bool,
+        pull_requests: AtomicUsize,
+        tags_requests: AtomicUsize,
+        model_available: AtomicBool,
+        client_closed_pull: AtomicBool,
+        stopped: AtomicBool,
+    }
+
+    struct ModelPullApiServer {
+        address: std::net::SocketAddr,
+        fixture: Arc<ModelPullApiFixture>,
+        worker: Option<thread::JoinHandle<()>>,
+    }
+
+    impl ModelPullApiServer {
+        fn bind(
+            tag: &str,
+            digest: Option<&str>,
+            hold_pull_open: bool,
+            change_digest_on_recheck: bool,
+            fail_first_pull: bool,
+            disconnect_pull_early: bool,
+        ) -> io::Result<Self> {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+            listener.set_nonblocking(true)?;
+            let address = listener.local_addr()?;
+            let fixture = Arc::new(ModelPullApiFixture {
+                tag: tag.to_string(),
+                digest: digest.map(str::to_string),
+                hold_pull_open,
+                change_digest_on_recheck,
+                fail_first_pull,
+                disconnect_pull_early,
+                pull_requests: AtomicUsize::new(0),
+                tags_requests: AtomicUsize::new(0),
+                model_available: AtomicBool::new(digest.is_some()),
+                client_closed_pull: AtomicBool::new(false),
+                stopped: AtomicBool::new(false),
+            });
+            let worker_fixture = fixture.clone();
+            let worker = thread::spawn(move || {
+                while !worker_fixture.stopped.load(Ordering::Acquire) {
+                    match listener.accept() {
+                        Ok((stream, _)) => serve_model_pull_fixture(stream, worker_fixture.clone()),
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+            Ok(Self {
+                address,
+                fixture,
+                worker: Some(worker),
+            })
+        }
+
+        fn base_url(&self) -> String {
+            format!("http://{}", self.address)
+        }
+    }
+
+    impl Drop for ModelPullApiServer {
+        fn drop(&mut self) {
+            self.fixture.stopped.store(true, Ordering::Release);
+            // Release a nonblocking accept loop even on platforms where the next poll is delayed.
+            let _ = std::net::TcpStream::connect(self.address);
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+
+    fn write_fixture_response(stream: &mut std::net::TcpStream, body: &[u8]) -> io::Result<()> {
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )?;
+        stream.write_all(body)?;
+        stream.flush()
+    }
+
+    fn serve_model_pull_fixture(
+        mut stream: std::net::TcpStream,
+        fixture: Arc<ModelPullApiFixture>,
+    ) {
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 2048];
+        let request_deadline = Instant::now() + Duration::from_secs(2);
+        while !request.windows(4).any(|window| window == b"\r\n\r\n")
+            && request.len() < 32 * 1024
+            && Instant::now() < request_deadline
+        {
+            match stream.read(&mut chunk) {
+                Ok(0) => return,
+                Ok(read) => request.extend_from_slice(&chunk[..read]),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock
+                            | io::ErrorKind::TimedOut
+                            | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(_) => return,
+            }
+        }
+        let request_line = String::from_utf8_lossy(&request)
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        let path = request_line.split_whitespace().nth(1).unwrap_or_default();
+        match path {
+            "/api/tags" => {
+                let request_index = fixture.tags_requests.fetch_add(1, Ordering::AcqRel);
+                let digest = match fixture.digest.as_deref() {
+                    Some(digest) => Some(digest),
+                    None if fixture.model_available.load(Ordering::Acquire) => {
+                        Some("sha256:fixture")
+                    }
+                    None => None,
+                };
+                let digest = match digest {
+                    Some(_) if fixture.change_digest_on_recheck && request_index >= 2 => {
+                        Some("sha256:changed")
+                    }
+                    other => other,
+                };
+                let body = match digest {
+                    Some(digest) => format!(
+                        "{{\"models\":[{{\"name\":\"{}\",\"model\":\"{}\",\"digest\":\"{}\"}}]}}",
+                        fixture.tag, fixture.tag, digest
+                    ),
+                    None => "{\"models\":[]}".to_string(),
+                };
+                let _ = write_fixture_response(&mut stream, body.as_bytes());
+            }
+            "/api/show" => {
+                let body = br#"{"details":{"family":"qwen3","parameter_size":"0.8B","quantization_level":"Q8_0"},"model_info":{"qwen3.context_length":262144}}"#;
+                let _ = write_fixture_response(&mut stream, body);
+            }
+            "/api/pull" => {
+                let pull_number = fixture.pull_requests.fetch_add(1, Ordering::AcqRel) + 1;
+                if fixture.fail_first_pull && pull_number == 1 {
+                    let _ = stream.write_all(
+                        b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    );
+                    return;
+                }
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+                );
+                let first =
+                    br#"{"status":"downloading","digest":"sha256:layer","completed":1,"total":2}"#;
+                let _ = write!(stream, "{:X}\r\n", first.len());
+                let _ = stream.write_all(first);
+                let _ = stream.write_all(b"\r\n");
+                let _ = stream.flush();
+                if fixture.disconnect_pull_early {
+                    return;
+                }
+                if fixture.hold_pull_open {
+                    loop {
+                        match stream.read(&mut chunk) {
+                            Ok(0) => {
+                                fixture.client_closed_pull.store(true, Ordering::Release);
+                                break;
+                            }
+                            Ok(_) => {}
+                            Err(error)
+                                if matches!(
+                                    error.kind(),
+                                    io::ErrorKind::WouldBlock
+                                        | io::ErrorKind::TimedOut
+                                        | io::ErrorKind::Interrupted
+                                ) => {}
+                            Err(_) => {
+                                fixture.client_closed_pull.store(true, Ordering::Release);
+                                break;
+                            }
+                        }
+                        if fixture.stopped.load(Ordering::Acquire) {
+                            break;
+                        }
+                    }
+                } else {
+                    let second = b"\n{\"status\":\"success\"}";
+                    let _ = write!(stream, "{:X}\r\n", second.len());
+                    let _ = stream.write_all(second);
+                    let _ = stream.write_all(b"\r\n0\r\n\r\n");
+                    let _ = stream.flush();
+                    fixture.model_available.store(true, Ordering::Release);
+                }
+            }
+            _ => {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        }
+    }
+
+    fn model_pull_test_manager(base_url: &str) -> (RuntimeManager, Arc<FakeProcessState>) {
+        let mut manager = RuntimeManager::default();
+        manager.reservation_manager = ReservationManager::default();
+        manager.settings.managed_base_url = base_url.to_string();
+        let inventory = e2e_fake_accelerator_inventory();
+        let device_id = inventory.devices[0].provider_id.value.clone();
+        let lease = manager
+            .reservation_manager
+            .try_reserve_with_inventory(
+                LocalModelRequest {
+                    device_id,
+                    kind: LocalModelKind::LocalLlm,
+                    workload_id: next_operation_id(),
+                    reservation_bytes: None,
+                },
+                &inventory,
+            )
+            .expect("synthetic accelerator fixture reservation");
+        assert!(lease.mark_running());
+        let reservation = ReservationSnapshot::from_lease(&lease).expect("running lease snapshot");
+        let fake_process = Arc::new(FakeProcessState::new());
+        {
+            let mut state = manager.lock();
+            state.snapshot.state = RuntimeState::InstalledStopped;
+            state.snapshot.server_state = ServerState::ReadyManaged;
+            state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+            state.snapshot.installed_version = Some(RELEASE_VERSION.to_string());
+            state.snapshot.installed_versions = vec![RELEASE_VERSION.to_string()];
+            state.snapshot.reservation = reservation;
+            state.snapshot.model_count = Some(0);
+            state.process = Some(ManagedProcess {
+                child: Box::new(FakeChild {
+                    state: fake_process.clone(),
+                }),
+                version: RELEASE_VERSION.to_string(),
+                generation: 1,
+                reservation: Some(lease),
+            });
+        }
+        (manager, fake_process)
+    }
+
+    fn test_model_pull_policy(directory: &Path) -> QwenModelPolicy {
+        let mut policy = qwen_model_policy();
+        policy.disk_margin_bytes = Some(1);
+        policy.model_store_override = Some(directory.to_string_lossy().into_owned());
+        for candidate in &mut policy.candidates {
+            candidate.published_size_bytes = Some(1);
+        }
+        policy
+    }
+
+    fn wait_for_model_pull_result(manager: &RuntimeManager, tag: &str) -> ModelPullSnapshot {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(snapshot) = manager.lock().model_pull_snapshots.get(tag).cloned() {
+                if matches!(
+                    snapshot.state,
+                    ModelPullState::Paused | ModelPullState::Failed | ModelPullState::Ready
+                ) {
+                    return snapshot;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "model pull worker did not finish"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn qwen_model_policy_exposes_fixed_catalog_and_undecided_slots_as_null() {
+        let policy = qwen_model_policy();
+        assert_eq!(
+            policy
+                .candidates
+                .iter()
+                .map(|candidate| candidate.tag)
+                .collect::<Vec<_>>(),
+            vec![
+                "huihui_ai/qwen3.5-abliterated:0.8B",
+                "huihui_ai/qwen3.5-abliterated:2B",
+                "huihui_ai/qwen3.5-abliterated:4B",
+                "huihui_ai/qwen3.5-abliterated:9b",
+            ]
+        );
+        assert!(policy.candidates.iter().all(|candidate| {
+            candidate.published_context_tokens == 256 * 1024
+                && candidate.published_size_bytes.is_none()
+                && candidate.source_url.starts_with("https://ollama.com/")
+                && candidate.license == "Apache License 2.0"
+        }));
+        assert!(policy.default_model_tag.is_none());
+        assert!(policy.context_default_tokens.is_none());
+        assert!(policy.pull_start_policy.is_none());
+        assert!(policy.model_store_override.is_none());
+        assert!(policy.low_vram_fallback_tag.is_none());
+        assert!(policy.disk_margin_bytes.is_none());
+        assert!(policy.show_license.is_none());
+        assert!(policy.measured_peak_vram_bytes.is_none());
+        assert!(policy.selection_headroom_bytes.is_none());
+    }
+
+    #[test]
+    fn pull_requires_a_known_exact_tag_and_matching_confirmation() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let policy = qwen_model_policy();
+        assert_eq!(
+            model_candidate(&policy, "huihui_ai/qwen3.5-abliterated:latest"),
+            None
+        );
+        let (manager, _) = model_pull_test_manager("http://127.0.0.1:1");
+        let confirmation = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            "huihui_ai/qwen3.5-abliterated:0.8b",
+            policy,
+        )
+        .unwrap_err();
+        assert_eq!(
+            confirmation.code,
+            ModelPullErrorCode::ModelConfirmationRequired
+        );
+        assert_eq!(confirmation.stage, "preflight");
+    }
+
+    #[test]
+    fn pull_stream_parser_accepts_split_coalesced_optional_and_final_lines() {
+        let mut buffer = Vec::new();
+        assert!(append_pull_chunk(
+            &mut buffer,
+            br#"{"status":"downloading","digest":"sha256:layer","completed":1"#
+        )
+        .unwrap()
+        .is_empty());
+        let parsed =
+            append_pull_chunk(&mut buffer, b",\"total\":2}\n{\"status\":\"success\"}").unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].as_ref().unwrap().0, "downloading");
+        assert_eq!(parsed[0].as_ref().unwrap().2, Some(1));
+        assert_eq!(parsed[0].as_ref().unwrap().3, Some(2));
+        let final_line = finish_pull_buffer(&mut buffer).unwrap().unwrap();
+        assert_eq!(final_line.0, "success");
+        assert_eq!(final_line.1, None);
+        assert_eq!(final_line.2, None);
+        assert_eq!(final_line.3, None);
+        assert_eq!(
+            parse_pull_line(br#"{"status":"verifying"}"#)
+                .unwrap()
+                .unwrap()
+                .2,
+            None
+        );
+        assert_eq!(
+            parse_pull_line(b"{not-json}").unwrap_err(),
+            ModelPullErrorCode::PullStreamMalformed
+        );
+        assert_eq!(
+            parse_pull_line(br#"{"error":"fixture failure"}"#).unwrap_err(),
+            ModelPullErrorCode::PullHttpFailed
+        );
+        assert_eq!(
+            append_pull_chunk(&mut Vec::new(), &vec![b'x'; MODEL_PULL_MAX_LINE_BYTES + 1])
+                .unwrap_err(),
+            ModelPullErrorCode::PullStreamMalformed
+        );
+    }
+
+    #[test]
+    fn pull_progress_throttles_bytes_but_never_delays_phase_events() {
+        let start = tokio::time::Instant::now();
+        let mut last_event = start - Duration::from_secs(1);
+        assert!(model_pull_progress_due(&mut last_event, start, Some(1)));
+        assert!(!model_pull_progress_due(
+            &mut last_event,
+            start + Duration::from_millis(100),
+            Some(2)
+        ));
+        assert!(model_pull_progress_due(
+            &mut last_event,
+            start + Duration::from_millis(250),
+            Some(3)
+        ));
+        assert!(model_pull_progress_due(
+            &mut last_event,
+            start + Duration::from_millis(251),
+            None
+        ));
+    }
+
+    #[test]
+    fn fake_ollama_pull_stream_verifies_exact_tag_details_and_stable_digest() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        assert_eq!(response.snapshot.state, ModelPullState::Preflight);
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Ready);
+        assert_eq!(snapshot.digest.as_deref(), Some("sha256:fixture"));
+        assert!(snapshot.error.is_none());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+        assert_eq!(server.fixture.tags_requests.load(Ordering::Acquire), 3);
+        let status = dispatch_model_pull_status(&manager, None, tag).unwrap();
+        assert_eq!(status.state, ModelPullState::Ready);
+        assert_eq!(status.digest.as_deref(), Some("sha256:fixture"));
+        assert_eq!(server.fixture.tags_requests.load(Ordering::Acquire), 5);
+    }
+
+    #[test]
+    fn exact_installed_tag_is_verified_without_another_pull_even_when_margin_is_unset() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server =
+            ModelPullApiServer::bind(tag, Some("sha256:fixture"), false, false, false, false)
+                .unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let mut policy = qwen_model_policy();
+        policy.model_store_override = None;
+        let response = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap();
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Ready);
+        assert_eq!(snapshot.digest.as_deref(), Some("sha256:fixture"));
+        assert_eq!(response.operation_id, snapshot.operation_id.unwrap());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+        assert_eq!(server.fixture.tags_requests.load(Ordering::Acquire), 3);
+    }
+
+    #[test]
+    fn unset_disk_margin_blocks_new_pull_before_post_request() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let mut policy = test_model_pull_policy(directory.path());
+        policy.disk_margin_bytes = None;
+        let error = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::DiskMarginUnset);
+        assert!(error.operation_id.is_some());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn cancel_waits_for_fake_http_request_close_before_reporting_paused() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, true, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let preserved_fragment = directory.path().join("preserved-model-fragment");
+        fs::write(&preserved_fragment, b"partial Ollama data").unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while server.fixture.pull_requests.load(Ordering::Acquire) == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "fake server did not receive pull request"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let concurrent = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap_err();
+        assert_eq!(concurrent.code, ModelPullErrorCode::PullAlreadyActive);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+        let stop_error = dispatch_stop(&manager, None).unwrap_err();
+        assert_eq!(stop_error.code, RuntimeErrorCode::RuntimeBusy);
+        let snapshot = dispatch_model_pull_cancel(&manager, &response.operation_id).unwrap();
+        assert_eq!(snapshot.state, ModelPullState::Paused);
+        assert!(server.fixture.client_closed_pull.load(Ordering::Acquire));
+        assert_eq!(
+            fs::read(preserved_fragment).unwrap(),
+            b"partial Ollama data"
+        );
+    }
+
+    #[test]
+    fn changed_digest_after_show_never_reaches_ready_and_does_not_delete_model_data() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, true, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Failed);
+        assert_eq!(
+            snapshot.error.unwrap().code,
+            ModelPullErrorCode::ModelDigestMismatch
+        );
+        assert_eq!(
+            snapshot.operation_id.as_deref(),
+            Some(response.operation_id.as_str())
+        );
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn external_ollama_is_rejected_before_any_pull_http_request() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        {
+            let mut state = manager.lock();
+            state.snapshot.server_state = ServerState::ReadyExternalLocal;
+            state.snapshot.ownership = RuntimeOwnership::ExternalLocal;
+            state.process = None;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let error = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::ManagedServerRequired);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+        assert_eq!(server.fixture.tags_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn retry_uses_same_exact_tag_with_a_new_operation_id_and_resumes_pull() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, true, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let policy = test_model_pull_policy(directory.path());
+        let first = start_model_pull_with_policy(&manager, None, tag, tag, policy.clone()).unwrap();
+        let failed = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(failed.state, ModelPullState::Failed);
+        assert_eq!(
+            failed.error.unwrap().code,
+            ModelPullErrorCode::PullHttpFailed
+        );
+        let retry = dispatch_model_pull_retry_with_policy(&manager, None, tag, policy).unwrap();
+        assert_ne!(first.operation_id, retry.operation_id);
+        assert_eq!(retry.snapshot.tag, tag);
+        let ready = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(ready.state, ModelPullState::Ready);
+        assert_eq!(
+            ready.operation_id.as_deref(),
+            Some(retry.operation_id.as_str())
+        );
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 2);
+        assert_eq!(ready.digest.as_deref(), Some("sha256:fixture"));
+    }
+
+    #[test]
+    fn remote_stream_disconnect_becomes_paused_and_keeps_partial_content() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, true).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Paused);
+        assert_eq!(
+            snapshot.operation_id.as_deref(),
+            Some(response.operation_id.as_str())
+        );
+        assert!(snapshot.error.is_none());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn insufficient_space_and_unresolved_store_are_denied_without_exposing_paths() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let mut policy = test_model_pull_policy(directory.path());
+        policy.disk_margin_bytes = Some(1);
+        policy.candidates[0].published_size_bytes =
+            Some(fs2::available_space(directory.path()).unwrap() + 1024);
+        let error = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::DiskSpaceLow);
+        assert!(!serde_json::to_string(&error)
+            .unwrap()
+            .contains(&directory.path().to_string_lossy().to_string()));
+        let mut unresolved = qwen_model_policy();
+        unresolved.model_store_override = Some("relative/models".to_string());
+        let error = check_model_store(&unresolved).err().unwrap();
+        assert_eq!(error.code, ModelPullErrorCode::ModelStoreUnresolved);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn shutdown_cancels_pull_and_waits_for_connection_close_before_reaping_child() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, true, false, false, false).unwrap();
+        let (manager, child) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while server.fixture.pull_requests.load(Ordering::Acquire) == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "fake server did not receive pull request"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        shutdown_manager(&manager);
+        let snapshot = manager
+            .lock()
+            .model_pull_snapshots
+            .get(tag)
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            snapshot.operation_id.as_deref(),
+            Some(response.operation_id.as_str())
+        );
+        assert_eq!(snapshot.state, ModelPullState::Paused);
+        assert!(server.fixture.client_closed_pull.load(Ordering::Acquire));
+        assert!(child.graceful_calls.load(Ordering::Acquire) > 0);
+        assert!(manager.lock().process.is_none());
+        assert!(manager.lock().active_model_pull.is_none());
     }
 }
