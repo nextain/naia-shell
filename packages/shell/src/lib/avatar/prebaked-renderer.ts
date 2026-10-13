@@ -54,7 +54,7 @@ export function canCarryAlpha(clipPath: string): boolean {
  *   2) 발화 입 모양 = 정본 SpeechPlayer(vendor) 하나뿐. Shell 음성은 aligned
  *      계획 + 그 소리의 오디오 시계, 브라우저/시스템 음성은 browser-timed 계획
  *      (playSpeechTiming/updateSpeechPlan). 계획이 없거나 실패하면 대기 클립
- *      그대로 — 말하기 반복 클립·아이우에오 순환 같은 근사는 없다(SoT 8).
+ *      그대로 — 말하기 반복 클립·모음 순환 같은 근사는 없다(SoT 8).
  *
  * 표시는 숨은 `<video>`(디코드 버퍼)를 매 프레임 `<canvas>`(alpha:true)에 합성한다.
  * WebM 알파 클립은 그대로 drawImage, 알파를 가질 수 없는 컨테이너(mp4 등)는

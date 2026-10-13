@@ -136,6 +136,20 @@ describe("vendored canonical player (byte-identical, VENDOR.json)", () => {
 		expect(vendor.repository).toBe("nextain/naia-video-avatar");
 		expect(vendor.commit).toMatch(/^[0-9a-f]{7,40}$/);
 	});
+
+	// The canonical repo is not a Shell dependency, so this pin runs when
+	// NVA_CANONICAL_MANIFEST points at naia-video-avatar's vendor-manifest.json
+	// (checked out at VENDOR.json's commit).
+	it.skipIf(!process.env.NVA_CANONICAL_MANIFEST)(
+		"records exactly the canonical vendor-manifest.json files",
+		() => {
+			const canonical = JSON.parse(
+				readFileSync(process.env.NVA_CANONICAL_MANIFEST as string, "utf8"),
+			) as { source_directory: string; files: typeof vendor.files };
+			expect(canonical.source_directory).toBe("src/main");
+			expect(vendor.files).toEqual(canonical.files);
+		},
+	);
 });
 
 describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => {
@@ -169,6 +183,79 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 					offenders.push(`${relative(shellSrc, file)} ${pattern}`);
 		}
 		expect(offenders).toEqual([]);
+	});
+
+	// SoT 3 drift traces, same patterns as the canonical guard
+	// (naia-video-avatar src/test/drift-patterns.mjs, 097eb15/57a7614).
+	const DRIFT: [string, RegExp][] = [
+		["aiueo loop", /aiueo|a-i-u-e-o|아이우에오/i],
+		[
+			"volume threshold mouth",
+			/createAnalyser|AnalyserNode|get(Byte|Float)(Frequency|TimeDomain)Data|\brms\b|volume[_-]?threshold|amplitude|loudness/i,
+		],
+		[
+			"drawn mouth",
+			/draw[_-]?mouth|mouth[_-]?(open|shape|path|draw)|openness|\.ellipse\(|quadraticCurveTo|bezierCurveTo/i,
+		],
+		["approximate plan", /approximate/i],
+		[
+			"talking loop",
+			/playTalking|SPEECH_SEQUENCE|#show\(\s*this\.talkKey|motions\??\.talking\??\.clip|state\s*=\s*["']talking["']|talking[ _-]?loop/i,
+		],
+	];
+	// Microphone-input files measure the user's voice level (STT silence gate,
+	// echo gate, mic meter) or use "approximate" in an unrelated sense; none of
+	// them drives the avatar mouth. Only those two labels are waived there —
+	// aiueo, drawn mouth and talking loop are still forbidden in every file.
+	const INPUT_SIDE = new Set([
+		"components/ChatArea.tsx",
+		"components/SettingsTab.tsx",
+		"lib/stt/api-stt.ts",
+		"lib/stt/types.ts",
+		"lib/voice/echo-gate.ts",
+		"lib/voice/ref-audio.ts",
+		"lib/voice/ref-recorder.ts",
+		"lib/voice/types.ts",
+		"lib/voice/vllm-omni.ts",
+	]);
+	const INPUT_SIDE_WAIVED = new Set([
+		"volume threshold mouth",
+		"approximate plan",
+	]);
+
+	it("no product line carries an SoT 3 drift trace (volume threshold, drawn mouth, approximate, aiueo, talking loop)", () => {
+		const offenders: string[] = [];
+		for (const file of productFiles(shellSrc)) {
+			const name = relative(shellSrc, file).split("\\").join("/");
+			readFileSync(file, "utf8")
+				.split("\n")
+				.forEach((line, index) => {
+					for (const [label, pattern] of DRIFT) {
+						if (INPUT_SIDE.has(name) && INPUT_SIDE_WAIVED.has(label)) continue;
+						if (pattern.test(line))
+							offenders.push(`${name}:${index + 1} ${label}: ${line.trim()}`);
+					}
+				});
+		}
+		expect(offenders).toEqual([]);
+	});
+
+	it("the drift scan catches each forbidden trace", () => {
+		const samples = [
+			"const AIUEO = ['a','i','u','e','o'];",
+			"const analyser = ctx.createAnalyser();",
+			"if (rms > volumeThreshold) open();",
+			"drawMouth(ctx, openness);",
+			"ctx.ellipse(x, y, w, h, 0, 0, 7);",
+			"quality_mode: 'approximate'",
+			"await player.playTalking();",
+			'this.state = "talking";',
+		];
+		for (const sample of samples)
+			expect(
+				DRIFT.some(([, pattern]) => pattern.test(sample)),
+				sample,
+			).toBe(true);
 	});
 
 	it("the quarantined A-I-U-E-O controller is gone from lib/vrm", () => {
