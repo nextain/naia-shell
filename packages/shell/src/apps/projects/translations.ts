@@ -30,7 +30,6 @@ const english = {
 	"projects.fileUnreadable": "could not be read.",
 	"projects.fileInvalid": "is invalid.",
 	"projects.projectIdMissing": "The project ID is missing.",
-	"projects.profileMissing": "The project profile is missing.",
 	"projects.unsafePath":
 		"The file points outside the selected checkout and was not read.",
 	"projects.selected": "Selected",
@@ -90,7 +89,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "읽을 수 없습니다.",
 		"projects.fileInvalid": "형식이 올바르지 않습니다.",
 		"projects.projectIdMissing": "프로젝트 ID가 없습니다.",
-		"projects.profileMissing": "프로젝트 profile이 없습니다.",
 		"projects.unsafePath":
 			"선택한 체크아웃 바깥을 가리켜 파일을 읽지 않았습니다.",
 		"projects.selected": "선택됨",
@@ -144,7 +142,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "読み込めません。",
 		"projects.fileInvalid": "の形式が正しくありません。",
 		"projects.projectIdMissing": "プロジェクト ID がありません。",
-		"projects.profileMissing": "プロジェクト profile がありません。",
 		"projects.unsafePath":
 			"選択したチェックアウト外を指すため、ファイルを読み込みませんでした。",
 		"projects.selected": "選択済み",
@@ -198,7 +195,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "无法读取。",
 		"projects.fileInvalid": "格式无效。",
 		"projects.projectIdMissing": "缺少项目 ID。",
-		"projects.profileMissing": "缺少项目 profile。",
 		"projects.unsafePath": "文件指向所选检出目录之外，因此未读取该文件。",
 		"projects.selected": "已选择",
 		"projects.selectedProject": "已选项目",
@@ -249,7 +245,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "est illisible.",
 		"projects.fileInvalid": "est invalide.",
 		"projects.projectIdMissing": "L'ID du projet est manquant.",
-		"projects.profileMissing": "Le profil du projet est manquant.",
 		"projects.unsafePath":
 			"Le fichier pointe hors du dépôt sélectionné et n'a pas été lu.",
 		"projects.selected": "Sélectionné",
@@ -304,7 +299,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "konnte nicht gelesen werden.",
 		"projects.fileInvalid": "ist ungültig.",
 		"projects.projectIdMissing": "Die Projekt-ID fehlt.",
-		"projects.profileMissing": "Das Projektprofil fehlt.",
 		"projects.unsafePath":
 			"Die Datei verweist außerhalb des ausgewählten Checkouts und wurde nicht gelesen.",
 		"projects.selected": "Ausgewählt",
@@ -357,7 +351,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "не удалось прочитать.",
 		"projects.fileInvalid": "имеет неверный формат.",
 		"projects.projectIdMissing": "Не указан ID проекта.",
-		"projects.profileMissing": "Не указан профиль проекта.",
 		"projects.unsafePath":
 			"Файл находится вне выбранной копии; он не был прочитан.",
 		"projects.selected": "Выбран",
@@ -409,7 +402,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "no se pudo leer.",
 		"projects.fileInvalid": "no tiene un formato válido.",
 		"projects.projectIdMissing": "Falta el ID del proyecto.",
-		"projects.profileMissing": "Falta el perfil del proyecto.",
 		"projects.unsafePath":
 			"El archivo apunta fuera del checkout seleccionado y no se leyó.",
 		"projects.selected": "Seleccionado",
@@ -461,7 +453,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "تعذرت قراءته.",
 		"projects.fileInvalid": "تنسيقه غير صالح.",
 		"projects.projectIdMissing": "معرّف المشروع غير موجود.",
-		"projects.profileMissing": "ملف profile للمشروع غير موجود.",
 		"projects.unsafePath":
 			"يشير الملف إلى خارج نسخة العمل المحددة، لذلك لم تتم قراءته.",
 		"projects.selected": "محدد",
@@ -512,7 +503,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "पढ़ा नहीं जा सका।",
 		"projects.fileInvalid": "प्रारूप अमान्य है।",
 		"projects.projectIdMissing": "प्रोजेक्ट ID मौजूद नहीं है।",
-		"projects.profileMissing": "प्रोजेक्ट profile मौजूद नहीं है।",
 		"projects.unsafePath": "फ़ाइल चुने गए चेकआउट के बाहर है, इसलिए इसे नहीं पढ़ा गया।",
 		"projects.selected": "चुना गया",
 		"projects.selectedProject": "चुना गया प्रोजेक्ट",
@@ -562,7 +552,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "পড়া যায়নি।",
 		"projects.fileInvalid": "বিন্যাস সঠিক নয়।",
 		"projects.projectIdMissing": "প্রকল্প ID নেই।",
-		"projects.profileMissing": "প্রকল্প profile নেই।",
 		"projects.unsafePath":
 			"ফাইলটি নির্বাচিত চেকআউটের বাইরে নির্দেশ করে, তাই পড়া হয়নি।",
 		"projects.selected": "নির্বাচিত",
@@ -614,7 +603,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "não foi possível ler.",
 		"projects.fileInvalid": "tem um formato inválido.",
 		"projects.projectIdMissing": "O ID do projeto está ausente.",
-		"projects.profileMissing": "O profile do projeto está ausente.",
 		"projects.unsafePath":
 			"O arquivo aponta para fora do checkout selecionado e não foi lido.",
 		"projects.selected": "Selecionado",
@@ -666,7 +654,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "tidak dapat dibaca.",
 		"projects.fileInvalid": "formatnya tidak valid.",
 		"projects.projectIdMissing": "ID proyek tidak ada.",
-		"projects.profileMissing": "Profile proyek tidak ada.",
 		"projects.unsafePath":
 			"File mengarah ke luar checkout terpilih, jadi tidak dibaca.",
 		"projects.selected": "Dipilih",
@@ -718,7 +705,6 @@ export const PROJECT_APP_TRANSLATIONS: Record<
 		"projects.fileUnreadable": "không thể đọc được.",
 		"projects.fileInvalid": "có định dạng không hợp lệ.",
 		"projects.projectIdMissing": "Thiếu ID dự án.",
-		"projects.profileMissing": "Thiếu profile của dự án.",
 		"projects.unsafePath": "Tệp nằm ngoài checkout đã chọn nên không được đọc.",
 		"projects.selected": "Đã chọn",
 		"projects.selectedProject": "Dự án đã chọn",

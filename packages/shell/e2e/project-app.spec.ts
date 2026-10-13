@@ -6,27 +6,28 @@ import {
 	TAURI_BASE_MOCK_FALLBACK,
 } from "./helpers/tauri-base-mock";
 
-const CAPTURE_DIR = resolve(process.cwd(), "test-results/project-app-captures");
+const CAPTURE_DIR = resolve(
+	process.env.PROJECT_APP_CAPTURE_DIR ??
+		resolve(process.cwd(), "test-results/project-app-captures"),
+);
 mkdirSync(CAPTURE_DIR, { recursive: true });
 
 const READY_CATALOG = {
 	projects: [
 		{
-			directoryName: "naia-shell",
-			projectId: "naia-shell",
-			name: "Naia Shell",
-			repository: "nextain/naia-shell",
+			directoryName: "example-app",
+			projectId: "example-app",
+			name: "Example App",
+			repository: "example-org/example-app",
 			issueTracker: "github",
-			profile: "server",
 			configErrors: [],
 		},
 		{
-			directoryName: "naia-adk",
-			projectId: "naia-adk",
-			name: "Naia ADK",
-			repository: "nextain/naia-adk",
+			directoryName: "example-library",
+			projectId: "example-library",
+			name: "Example Library",
+			repository: "example-org/example-library",
 			issueTracker: "github",
-			profile: "server",
 			configErrors: [],
 		},
 	],
@@ -57,7 +58,7 @@ const TAURI_MOCK = `
 	window.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener = function() {};
 	var state = window.__PROJECT_E2E__ = {
 		calls: [],
-		checkoutPath: "/fixture/naia-pj-adk",
+		checkoutPath: "/fixture/example-checkout",
 		result: { projects: [] },
 		pending: false,
 		failuresRemaining: 0,
@@ -153,21 +154,23 @@ test.describe("Project app — stage 1", () => {
 		await chooseCheckout(page);
 		const search = page.getByRole("searchbox", { name: "Search projects" });
 		await expect(search).toBeVisible();
-		await search.fill("nextain/naia-shell");
+		await search.fill("example-org/example-app");
 		await expect(
-			page.getByRole("button", { name: /Naia Shell/ }),
+			page.getByRole("button", { name: /Example App/ }),
 		).toBeVisible();
-		await expect(page.getByRole("button", { name: /Naia ADK/ })).toHaveCount(0);
-		await page.getByRole("button", { name: /Naia Shell/ }).click();
 		await expect(
-			page.getByRole("heading", { name: "Naia Shell", level: 1 }),
+			page.getByRole("button", { name: /Example Library/ }),
+		).toHaveCount(0);
+		await page.getByRole("button", { name: /Example App/ }).click();
+		await expect(
+			page.getByRole("heading", { name: "Example App", level: 1 }),
 		).toBeVisible();
 		for (const label of ["Coding Agent", "Dashboard", "Internal Issues"]) {
 			const tab = page.getByRole("tab", { name: label });
 			await tab.click();
 			await expect(tab).toHaveAttribute("aria-selected", "true");
 			await expect(
-				page.getByRole("heading", { name: "Naia Shell", level: 1 }),
+				page.getByRole("heading", { name: "Example App", level: 1 }),
 			).toBeVisible();
 			await expect(page.getByRole("tabpanel")).toContainText(
 				"stage 1 placeholder",
@@ -235,7 +238,7 @@ test.describe("Project app — stage 1", () => {
 		await capture(page, "project-app-truncated.png");
 	});
 
-	test("blocks invalid local configuration and recovers after choosing a readable checkout", async ({
+	test("blocks a missing nested project ID and recovers after choosing a readable checkout", async ({
 		page,
 	}) => {
 		await boot(page);
@@ -243,21 +246,26 @@ test.describe("Project app — stage 1", () => {
 			(window as any).__PROJECT_E2E__.result = {
 				projects: [
 					{
-						directoryName: "broken-local",
-						projectId: "broken-local",
-						name: "Broken Local Project",
+						directoryName: "broken-project",
+						projectId: "broken-project",
+						name: "Broken Project",
 						repository: null,
 						issueTracker: null,
-						profile: "local",
 						configErrors: [
-							{ file: "profiles/local/profile.yaml", reason: "invalid_yaml" },
+							{
+								file: "projects/broken-project/project.yaml",
+								reason: "missing_project_id",
+							},
 						],
 					},
 				],
 			};
 		});
 		await chooseCheckout(page);
-		await expect(page.getByText("profiles/local/profile.yaml")).toBeVisible();
+		await expect(
+			page.getByText("projects/broken-project/project.yaml"),
+		).toBeVisible();
+		await expect(page.getByText("The project ID is missing.")).toBeVisible();
 		await expect(
 			page.getByText(
 				"This project has a configuration problem and cannot be opened.",
@@ -270,9 +278,9 @@ test.describe("Project app — stage 1", () => {
 			(window as any).__PROJECT_E2E__.result = result;
 		}, READY_CATALOG);
 		await page.getByRole("button", { name: "Change checkout" }).click();
-		await page.getByRole("button", { name: /Naia Shell/ }).click();
+		await page.getByRole("button", { name: /Example App/ }).click();
 		await expect(
-			page.getByRole("heading", { name: "Naia Shell", level: 1 }),
+			page.getByRole("heading", { name: "Example App", level: 1 }),
 		).toBeVisible();
 	});
 
@@ -287,9 +295,9 @@ test.describe("Project app — stage 1", () => {
 			(window as any).__PROJECT_E2E__.result = result;
 		}, READY_CATALOG);
 		await chooseCheckout(page);
-		await page.getByRole("button", { name: /Naia Shell/ }).click();
+		await page.getByRole("button", { name: /Example App/ }).click();
 		await expect(
-			page.getByRole("heading", { name: "Naia Shell", level: 1 }),
+			page.getByRole("heading", { name: "Example App", level: 1 }),
 		).toBeVisible();
 		await capture(page, "project-app-narrow.png");
 		await expect(page.locator(".projects-app__layout")).toHaveCSS(

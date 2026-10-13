@@ -16,7 +16,6 @@ const project = (
 	name: directoryName,
 	repository: null,
 	issueTracker: null,
-	profile: "server",
 	configErrors: [],
 	...extra,
 });
@@ -29,21 +28,21 @@ describe("Project catalog — F-01", () => {
 			projects: [
 				project("_template"),
 				project("_template-local"),
-				project("alpha", {
-					projectId: "alpha-id",
-					repository: "nextain/alpha",
+				project("example-project", {
+					projectId: "example-project-id",
+					repository: "example-org/example-project",
+					issueTracker: "github",
 				}),
 			],
 		});
 
 		expect(result.projects).toEqual([
 			{
-				directoryName: "alpha",
-				projectId: "alpha-id",
-				name: "alpha",
-				repository: "nextain/alpha",
-				issueTracker: null,
-				profile: "server",
+				directoryName: "example-project",
+				projectId: "example-project-id",
+				name: "example-project",
+				repository: "example-org/example-project",
+				issueTracker: "github",
 				configErrors: [],
 			},
 		]);
@@ -71,14 +70,12 @@ describe("Project catalog — F-01", () => {
 		).toEqual(truncation);
 	});
 
-	it("preserves every supported project and local-profile configuration error", () => {
+	it("preserves supported project configuration errors", () => {
 		const reasons = [
 			"missing",
 			"unreadable",
 			"invalid_yaml",
-			"invalid_json",
 			"missing_project_id",
-			"missing_profile",
 			"unsafe_path",
 		] as const;
 		const issues = reasons.map((reason) => ({
@@ -102,12 +99,14 @@ describe("Project catalog — F-01", () => {
 	});
 
 	it("scans only the checkout selected by the user", async () => {
-		vi.mocked(invoke).mockResolvedValue({ projects: [project("alpha")] });
-		const result = await scanProjectCatalog("/selected/naia-pj-adk");
+		vi.mocked(invoke).mockResolvedValue({
+			projects: [project("example-project")],
+		});
+		const result = await scanProjectCatalog("/selected/workspace");
 
 		expect(invoke).toHaveBeenCalledWith("projects_scan_checkout", {
-			checkoutPath: "/selected/naia-pj-adk",
+			checkoutPath: "/selected/workspace",
 		});
-		expect(result.projects[0].projectId).toBe("alpha");
+		expect(result.projects[0].projectId).toBe("example-project");
 	});
 });
