@@ -1,3 +1,4 @@
+import { normalizeTauriAssetUrl } from "./asset-url";
 import { type Locale, setLocale } from "./i18n";
 
 /**
@@ -12,9 +13,8 @@ import { type Locale, setLocale } from "./i18n";
 export const SLIDES_HOST = "naia-slides:host";
 export const SLIDES_HOST_ENVIRONMENT_EVENT = "naia-slides:environment";
 /**
- * The current desktop asset origin.  Frame validation uses the exact URL
- * returned by `convertFileSrc` instead of this constant so Linux's
- * `asset://localhost` form remains valid without accepting arbitrary origins.
+ * The current desktop asset origin. Frame validation uses the exact URL
+ * returned by `convertFileSrc`, normalized to this CSP-compatible origin.
  */
 export const SLIDES_ASSET_ORIGIN = "http://asset.localhost";
 
@@ -170,7 +170,9 @@ function convertedSlidesFrameSrc(htmlEntry: string): string | null {
 	if (typeof internals?.convertFileSrc !== "function") return null;
 	try {
 		const source = internals.convertFileSrc(htmlEntry);
-		return typeof source === "string" && source ? source : null;
+		return typeof source === "string" && source
+			? normalizeTauriAssetUrl(source)
+			: null;
 	} catch {
 		return null;
 	}
@@ -206,7 +208,7 @@ export function isTrustedSlidesFrame(
 	if (!isTrustedSlidesEntry(htmlEntry)) return false;
 	const convertedSource = convertedSlidesFrameSrc(htmlEntry);
 	if (expectedFrameSrc) {
-		// GenericInstalledApp supplies this exact value from convertFileSrc. If
+		// GenericInstalledApp supplies the normalized convertFileSrc value. If
 		// Tauri is available, verify the caller did not substitute another URL.
 		if (convertedSource && convertedSource !== expectedFrameSrc) return false;
 		return frame.src === expectedFrameSrc;

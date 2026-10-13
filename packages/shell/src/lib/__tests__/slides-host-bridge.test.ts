@@ -23,6 +23,13 @@ function setup(
 		stop?: () => Promise<string>;
 	} = {},
 ) {
+	Object.defineProperty(window, "__TAURI_INTERNALS__", {
+		configurable: true,
+		value: {
+			convertFileSrc: (path: string) =>
+				`asset://localhost/${encodeURIComponent(path)}`,
+		},
+	});
 	const frame = document.createElement("iframe");
 	frame.src = FRAME_SRC;
 	document.body.append(frame);
@@ -82,6 +89,10 @@ function setup(
 afterEach(() => {
 	dispose();
 	document.body.innerHTML = "";
+	Object.defineProperty(window, "__TAURI_INTERNALS__", {
+		configurable: true,
+		value: undefined,
+	});
 	vi.restoreAllMocks();
 });
 

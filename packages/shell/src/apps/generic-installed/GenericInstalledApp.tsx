@@ -1,9 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
+import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
-import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
+import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -37,7 +38,7 @@ const TOOL_TIMEOUT_MS = 15_000;
  * (2026-09-11 Linux 실측). AvatarCanvas 와 같은 정규화를 적용한다.
  */
 function installedAppFrameSrc(htmlEntry: string): string {
-	return convertFileSrc(htmlEntry);
+	return normalizeTauriAssetUrl(convertFileSrc(htmlEntry));
 }
 
 export function createGenericInstalledApp(

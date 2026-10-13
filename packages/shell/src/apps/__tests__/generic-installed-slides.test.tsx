@@ -13,7 +13,7 @@ vi.mock("../../lib/slides-host-bridge", () => ({
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn(),
 	convertFileSrc: (path: string) =>
-		`http://asset.localhost/${encodeURIComponent(path)}`,
+		`asset://localhost/${encodeURIComponent(path)}`,
 }));
 afterEach(cleanup);
 
@@ -31,6 +31,10 @@ describe("installed Slides fullscreen delegation", () => {
 					expectedFrameSrc: `http://asset.localhost/${encodeURIComponent(entry)}`,
 				},
 			),
+		);
+		expect(screen.getByTitle("App")).toHaveAttribute(
+			"src",
+			`http://asset.localhost/${encodeURIComponent(entry)}`,
 		);
 	});
 

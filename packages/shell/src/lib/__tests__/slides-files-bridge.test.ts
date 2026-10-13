@@ -11,10 +11,21 @@ let dispose: () => void = () => {};
 beforeEach(() => {
 	vi.mocked(invoke).mockReset();
 	vi.mocked(listen).mockReset();
+	Object.defineProperty(window, "__TAURI_INTERNALS__", {
+		configurable: true,
+		value: {
+			convertFileSrc: (path: string) =>
+				`asset://localhost/${encodeURIComponent(path)}`,
+		},
+	});
 });
 afterEach(() => {
 	dispose();
 	document.body.innerHTML = "";
+	Object.defineProperty(window, "__TAURI_INTERNALS__", {
+		configurable: true,
+		value: undefined,
+	});
 	vi.restoreAllMocks();
 });
 function setup(
@@ -22,7 +33,7 @@ function setup(
 	load = true,
 ) {
 	const frame = document.createElement("iframe");
-	frame.src = "http://asset.localhost/C%3A/apps/land.naia.slides/index.html";
+	frame.src = `http://asset.localhost/${encodeURIComponent(entry)}`;
 	document.body.append(frame);
 	const reply = vi.fn();
 	let activePort: MessagePort | null = null;

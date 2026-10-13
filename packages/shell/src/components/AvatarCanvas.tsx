@@ -16,8 +16,9 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { randFloat } from "three/src/math/MathUtils.js";
-import { avatarEmptyNotice } from "../lib/avatar-notice";
 import { getAdkPath } from "../lib/adk-store";
+import { normalizeTauriAssetUrl } from "../lib/asset-url";
+import { avatarEmptyNotice } from "../lib/avatar-notice";
 import { getCameraActions } from "../lib/avatar/camera-actions";
 import { Logger } from "../lib/logger";
 import {
@@ -32,12 +33,12 @@ import {
 	reAnchorRootPositionTrack,
 } from "../lib/vrm/animation";
 import { loadVrm, loadVrmFromArrayBuffer } from "../lib/vrm/core";
-import { applyRelaxedFists } from "../lib/vrm/hand-pose";
 import {
 	buildExpressionResolver,
 	createEmotionController,
 } from "../lib/vrm/expression";
 import { randomSaccadeInterval } from "../lib/vrm/eye-motions";
+import { applyRelaxedFists } from "../lib/vrm/hand-pose";
 import { createMouthController } from "../lib/vrm/mouth";
 import { useAvatarStore } from "../stores/avatar";
 
@@ -165,9 +166,7 @@ function resolveAssetUrl(path: string): string {
 		return normalized;
 	}
 	const assetUrl = convertFileSrc(normalized);
-	return assetUrl
-		.replace(/^asset:\/\/localhost\/?/, "http://asset.localhost/")
-		.replace(/^http:\/\/localhost\/?/, "http://asset.localhost/");
+	return normalizeTauriAssetUrl(assetUrl);
 }
 
 interface AnimationState {

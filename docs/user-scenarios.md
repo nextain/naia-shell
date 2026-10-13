@@ -89,7 +89,7 @@ UC15 제품 수용 확장(#84):
 | S26 | agent-browser(브라우저 조작) | UC6 | EnvironmentPort.app-surface | 측정 |
 | S27 | browser 앱 | UC6 | EnvironmentPort.app-surface | 측정 |
 | S28 | app 설치(app) | UC9 | skill·EnvironmentPort.app-surface | 측정 |
-| S29 | generic-installed 앱 | UC9 | EnvironmentPort.app-surface | 측정 |
+| S29 | generic-installed 앱: 설치 HTML iframe URL/origin 정규화 (#761) | UC9 | EnvironmentPort.app-surface | 측정 |
 | S30 | sample-note 앱 | UC9 | EnvironmentPort.app-surface | ❌ 제품에서 내림 — `App.tsx` 의 등록 import 가 주석 처리돼 앱바에 뜨지 않는다. 그 UI 를 재던 90번 앱 시스템 스펙도 2026-09-06 에 지웠다(#567 "능력이 죽으면 삭제"). 메모 앱이 들어오면 이 줄과 스펙을 함께 되살린다 |
 | S31 | youtube-bgm | UC8 | EnvironmentPort.space | 측정(YouTube 변동) |
 | S32 | 배경화면/scene | UC8 | EnvironmentPort.space | 측정 |
@@ -360,6 +360,8 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 본 시나리오는 유지된 모델을 선택기 목록에 추가하지 않는다(도구 미지원 모델은 선택기 제외 유지, FR-LLM-DEFAULT.4).
 
 ## Test Coverage Map (P02)
+
+**UC9/S29 설치 앱 iframe (#761):** `packages/shell/src/lib/__tests__/asset-url.test.ts`는 Linux `asset://localhost` 변환, 이미 정규화된 URL, Windows URL, percent-encoded 경로를 검증한다. `packages/shell/src/apps/__tests__/generic-installed-slides.test.tsx`는 실제 컴포넌트 iframe `src`를 확인하고, `packages/shell/src/lib/__tests__/slides-host-bridge.test.ts`와 `slides-files-bridge.test.ts`는 정규화된 프레임 주소와 origin으로 브리지를 검증한다.
 
 **UC-JEONJU-COURSE-WORKER** 의 화면은 지금 없다. 코딩 작업자 패널이 2026-09-05 에 없어졌고(#554, Herdr 창의 agents 탭과 IDE 뷰어가 그 자리를 대신한다), 그 패널을 그려서 재던 단위 테스트와 실기 수용 스펙을 함께 지웠다 — 97-course-worker-guidance 는 2026-09-05 에(6eeb1433), coding-workers 단위 테스트와 91-jeonju-course-worker 스펙은 같은 날 그 뒤에 지웠다. 남은 것은 화면이 아닌 계약이다: `apps/workspace/__tests__/coding-workers-tauri.test.ts` 가 작업자 어댑터의 Tauri 경계를, `src-tauri/src/lib.rs` 가 생성·취소·재개의 네이티브 계약을 재다. 화면을 되살릴지는 #554 에서 정한다. The proposal worker may inherit a read-only parent sandbox, because it no longer writes the course repository: Naia performs the constrained apply and post-apply verification.
 
