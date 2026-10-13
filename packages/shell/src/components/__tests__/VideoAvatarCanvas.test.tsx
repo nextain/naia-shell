@@ -47,4 +47,14 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		await vi.waitFor(() => expect(container.querySelector("[data-video-avatar]")).toHaveAttribute("data-video-avatar-loaded", "true"));
 		expect(new Set(mockInvoke.mock.calls.map(([command]) => command))).toEqual(new Set(["read_local_binary"]));
 	});
+
+	it("a legacy bundle's visemes.aiueo slot is never played, even while speaking (SoT 8)", async () => {
+		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+		await vi.waitFor(() => expect(container.querySelector("[data-video-avatar]")).toHaveAttribute("data-video-avatar-loaded", "true"));
+		useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(true);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const requested = mockToLocalBlobUrl.mock.calls.map(([path]) => String(path));
+		expect(requested.some((path) => path.includes("viseme-aiueo"))).toBe(false);
+		useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
+	});
 });

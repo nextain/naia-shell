@@ -1,4 +1,3 @@
-import type { TtsProviderId } from "../config";
 /**
  * FR-VOICE.16 Phase 2b (#420): the per-sentence TTS orchestration, extracted
  * from ChatArea. The pipeline owns the request lifecycle (active-request set,
@@ -10,6 +9,11 @@ import type { TtsProviderId } from "../config";
  *    authored clip is the one exception: it carries its own recorded voice for
  *    an exact known phrase, so playing it replaces synthesis instead of racing
  *    it. The renderer only ever reacts to real playback via setSpeakingVisual.
+ *  - Mouth motion (naia-shell#760, SoT 8): the canonical NVA player only.
+ *    Shell TTS sentences get an "aligned" plan driven by that sentence's
+ *    audio clock; browser speech gets a "browser-timed" plan driven by time
+ *    since onstart and revised on boundary events. Plan sources are ports
+ *    (speech-timing.ts); with no source the avatar stays idle.
  *  - Client-side providers speak through the browser's speechSynthesis.
  *  - Every other provider is synthesized in the Shell (the new-core agent has
  *    no TTS); the 6GB local path is admitted through LocalVoiceScheduler.
@@ -21,6 +25,18 @@ import type { TtsProviderId } from "../config";
  * output stage, stores, renderer, queue, config, i18n, IPC) through
  * SentenceTtsPipelineDeps and calls the public interface only.
  */
+import {
+	type AlignedSpeechPlanSource,
+	type AudioPlaybackClock,
+	type AvatarSpeechTiming,
+	type BrowserSpeechPlanSource,
+	type SpeechPlan,
+	getAlignedSpeechPlanSource,
+	getBrowserSpeechPlanSource,
+	isAlignedPlan,
+	isBrowserTimedPlan,
+} from "../avatar/nva-speech/speech-timing";
+import type { TtsProviderId } from "../config";
 import { Logger } from "../logger";
 import { PcmStreamSource } from "../voice/audio-queue";
 import { wavDurationSeconds } from "../voice/audio-queue";
@@ -58,6 +74,9 @@ export interface CascadeSpeechRenderer {
 		callbacks: { onPlaybackReady: () => void; onPlaybackFailure: () => void },
 	): Promise<unknown>;
 	setSpeakingVisual(on: boolean): void;
+	/** Canonical NVA player entry (optional: non-NVA renderers omit it). */
+	playSpeechTiming?(timing: AvatarSpeechTiming): Promise<boolean>;
+	updateSpeechPlan?(plan: SpeechPlan): boolean;
 }
 
 export interface OrderedTtsQueue {
@@ -67,7 +86,7 @@ export interface OrderedTtsQueue {
 		seq: number,
 		stream: PcmStreamSource,
 		callbacks: {
-			onPlaybackStart: () => void;
+			onPlaybackStart: (playback?: AudioPlaybackClock) => void;
 			onPlaybackUnavailable: () => void;
 		},
 	): void;
@@ -75,7 +94,7 @@ export interface OrderedTtsQueue {
 		seq: number,
 		audioBase64: string,
 		callbacks: {
-			onPlaybackStart: () => void;
+			onPlaybackStart: (playback?: AudioPlaybackClock) => void;
 			onPlaybackUnavailable: () => void;
 		},
 	): void;
@@ -127,6 +146,10 @@ export interface SentenceTtsPipelineDeps {
 	 * localized message). The once-per-session guard lives in the pipeline.
 	 */
 	notifyLocalVoiceUnavailable(): Promise<void>;
+	/** Aligned plan port for Shell TTS audio (defaults to the speech-timing registry). */
+	getAlignedSpeechPlanSource?(): AlignedSpeechPlanSource | null;
+	/** Browser-timed plan port for speechSynthesis (defaults to the registry). */
+	getBrowserSpeechPlanSource?(): BrowserSpeechPlanSource | null;
 }
 
 export interface SentenceTtsPipeline {
@@ -149,6 +172,51 @@ export function createSentenceTtsPipeline(
 	const abortControllers = new Map<string, AbortController>();
 	const recentTexts: string[] = [];
 	let localVoiceUnavailableNoticed = false;
+	/** Bumped by interrupt(): late plans from a superseded turn never start. */
+	let speechEpoch = 0;
+
+	const alignedSource = () =>
+		deps.getAlignedSpeechPlanSource
+			? deps.getAlignedSpeechPlanSource()
+			: getAlignedSpeechPlanSource();
+	const browserSource = () =>
+		deps.getBrowserSpeechPlanSource
+			? deps.getBrowserSpeechPlanSource()
+			: getBrowserSpeechPlanSource();
+
+	/**
+	 * Ask the aligned plan port for this exact sound; returns the start hook
+	 * that plays the plan on the sentence's audio clock (null = stay idle).
+	 */
+	function requestAlignedPlan(
+		renderer: CascadeSpeechRenderer | null | undefined,
+		request: Parameters<AlignedSpeechPlanSource>[0],
+	): ((playback?: AudioPlaybackClock) => void) | null {
+		const source = alignedSource();
+		if (!renderer?.playSpeechTiming || !source) return null;
+		const epoch = speechEpoch;
+		const plan = source(request).catch((error) => {
+			Logger.warn(TAG, "aligned speech plan failed", { error: String(error) });
+			return null;
+		});
+		return (playback) => {
+			if (!playback) return;
+			void plan.then((resolved) => {
+				if (epoch !== speechEpoch || !resolved) return;
+				// SoT 8: an aligned plan runs only on the audio clock of its sound.
+				if (!isAlignedPlan(resolved)) {
+					Logger.warn(TAG, "aligned port returned a non-aligned plan", {
+						quality_mode: resolved.quality_mode,
+					});
+					return;
+				}
+				void renderer.playSpeechTiming?.({
+					plan: resolved,
+					clock: playback.clock,
+				});
+			});
+		};
+	}
 
 	function sendSentence(sentence: string): void {
 		// Preserve the original Markdown in chat, but send only natural speech
@@ -261,14 +329,51 @@ export function createSentenceTtsPipeline(
 				const utter = new SpeechSynthesisUtterance(clean);
 				utter.lang =
 					voiceCfg?.voice || document.documentElement.lang || "ko-KR";
+				const planSource = browserSource();
+				const session =
+					cascadeAvatar?.playSpeechTiming && planSource
+						? planSource({ text: clean, lang: utter.lang })
+						: null;
+				const epoch = speechEpoch;
+				let startedAt = 0;
+				// browser-timed only: speechSynthesis exposes no readable sound,
+				// so its clock is time since onstart, corrected by boundaries.
+				const elapsedSeconds = () =>
+					startedAt > 0 ? (performance.now() - startedAt) / 1000 : 0;
+				const revise = (plan: SpeechPlan | null) => {
+					if (plan && isBrowserTimedPlan(plan))
+						cascadeAvatar?.updateSpeechPlan?.(plan);
+				};
 				utter.onstart = () => {
 					if (!isCurrentBrowserTurn()) return;
+					startedAt = performance.now();
 					revealText();
 					deps.setSpeaking(true);
 					cascadeAvatar?.setSpeakingVisual(true);
+					void session?.ready
+						.then((plan) => {
+							if (epoch !== speechEpoch || !isCurrentBrowserTurn()) return;
+							if (!plan || !isBrowserTimedPlan(plan)) return;
+							void cascadeAvatar?.playSpeechTiming?.({
+								plan,
+								clock: elapsedSeconds,
+							});
+						})
+						.catch(() => {});
+				};
+				utter.onboundary = (event) => {
+					if (!session || !isCurrentBrowserTurn()) return;
+					revise(
+						session.boundary(
+							event.charIndex,
+							Math.round(elapsedSeconds() * 1_000_000),
+						),
+					);
 				};
 				utter.onend = () => {
 					if (!isCurrentBrowserTurn()) return;
+					if (session)
+						revise(session.end(Math.round(elapsedSeconds() * 1_000_000)));
 					// Settle hooks behind setSpeaking(false) consult hasActiveRequests —
 					// this request must not count itself as still active (#423).
 					activeRequests.delete(reqId);
@@ -315,9 +420,20 @@ export function createSentenceTtsPipeline(
 			streamQueue?.enqueueOrderedStream
 				? new PcmStreamSource(24000)
 				: null;
+		const speechLang =
+			typeof document !== "undefined" ? document.documentElement.lang : "";
 		if (pcmStream && streamQueue?.enqueueOrderedStream) {
+			const startPlan = requestAlignedPlan(cascadeAvatar, {
+				text: clean,
+				lang: speechLang,
+				audio: { kind: "pcm-stream", stream: pcmStream },
+				signal: abort.signal,
+			});
 			streamQueue.enqueueOrderedStream(seq, pcmStream, {
-				onPlaybackStart: revealText,
+				onPlaybackStart: (playback) => {
+					revealText();
+					startPlan?.(playback);
+				},
 				onPlaybackUnavailable: revealText,
 			});
 		}
@@ -443,8 +559,20 @@ export function createSentenceTtsPipeline(
 						pcmStream.end();
 					}
 				} else {
+					const startPlan = requestAlignedPlan(cascadeAvatar, {
+						text: clean,
+						lang: speechLang,
+						audio: {
+							kind: "whole",
+							audioBase64,
+							durationSeconds: audioDurationSeconds,
+						},
+					});
 					deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
-						onPlaybackStart: revealText,
+						onPlaybackStart: (playback) => {
+							revealText();
+							startPlan?.(playback);
+						},
 						onPlaybackUnavailable: revealText,
 					});
 				}
@@ -534,6 +662,7 @@ export function createSentenceTtsPipeline(
 	}
 
 	function interrupt(): void {
+		speechEpoch++;
 		clearRequests();
 		// The pipeline created any live browser utterance (speakViaBrowser), so
 		// cancelling it on barge-in is its lifecycle too — AudioQueue.clear()

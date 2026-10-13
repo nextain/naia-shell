@@ -39,7 +39,6 @@ import {
 } from "../lib/vrm/expression";
 import { randomSaccadeInterval } from "../lib/vrm/eye-motions";
 import { applyRelaxedFists } from "../lib/vrm/hand-pose";
-import { createMouthController } from "../lib/vrm/mouth";
 import { useAvatarStore } from "../stores/avatar";
 
 // 카메라 액션 브리지는 lib/avatar/camera-actions 로 분리(VRM·NVA 공용). 아래에서는
@@ -273,7 +272,6 @@ export function AvatarCanvas() {
 		const createdObjectUrls: string[] = [];
 		let mixer: AnimationMixer | null = null;
 		let emotionCtrl: ReturnType<typeof createEmotionController> | null = null;
-		let mouthCtrl: ReturnType<typeof createMouthController> | null = null;
 		let blinkExprName = "blink";
 
 		// Renderer — WebGL context creation can fail on a host without a usable
@@ -471,7 +469,6 @@ export function AvatarCanvas() {
 				updateBlink(vrm, delta, animState, blinkExprName);
 				updateSaccade(vrm, delta, animState);
 				emotionCtrl?.update(delta);
-				mouthCtrl?.update(delta);
 				vrm.expressionManager?.update();
 				vrm.springBoneManager?.update(delta);
 			}
@@ -580,10 +577,8 @@ export function AvatarCanvas() {
 				controls.update();
 
 				emotionCtrl = createEmotionController(vrm);
-				mouthCtrl = createMouthController(vrm);
 				const avatarState = useAvatarStore.getState();
 				emotionCtrl.setEmotion(avatarState.currentEmotion);
-				mouthCtrl.setSpeaking(avatarState.isSpeaking);
 
 				// Resolve blink expression name for VRM 0.0/1.0 compat
 				if (vrm.expressionManager) {
@@ -645,13 +640,8 @@ export function AvatarCanvas() {
 		}
 
 		// Subscribe to isSpeaking changes for lip sync
-		let prevSpeaking = false;
-		const unsubSpeaking = useAvatarStore.subscribe((state) => {
-			if (state.isSpeaking !== prevSpeaking) {
-				prevSpeaking = state.isSpeaking;
-				mouthCtrl?.setSpeaking(state.isSpeaking);
-			}
-		});
+		// VRM mouth: no sound-independent vowel loop (naia-shell#760, SoT 8).
+		// The old A-I-U-E-O cycle (lib/vrm/mouth.ts) is quarantined.
 
 		// Subscribe to currentEmotion changes for avatar expression
 		let prevEmotion = "neutral";
@@ -686,10 +676,8 @@ export function AvatarCanvas() {
 			ro.disconnect();
 			window.removeEventListener("naia-width-changed", onResize);
 			cancelAnimationFrame(frameId);
-			unsubSpeaking();
 			unsubEmotion();
 			unsubscribeUiPreferences();
-			mouthCtrl?.stop();
 			if (saveTimeout) clearTimeout(saveTimeout);
 			// Save camera position on unmount
 			saveCameraState(camera, controls.target);
