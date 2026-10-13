@@ -86,6 +86,10 @@ import {
 	refreshEnvironment,
 } from "../lib/environment-skill";
 import { resetGatewaySession } from "../lib/gateway-sessions";
+import {
+	isRadioDjLabObserverAttached,
+	recordRadioDjLabEvent,
+} from "../lib/radio-dj-lab-observer";
 import { getLocale, t } from "../lib/i18n";
 import {
 	assertOllamaChatAdmitted,
@@ -606,6 +610,18 @@ export function ChatArea({
 				ttsPlayingRef.current = on;
 				setTtsPlaying(on);
 				useAvatarStore.getState().setSpeaking(on);
+				if (isRadioDjLabObserverAttached()) {
+					const activeConfig = loadConfig();
+					if (
+						activeConfig?.proactiveSpeechProfile === "personal_radio_dj" &&
+						activeConfig.proactiveSpeechPermitted === true
+					) {
+						recordRadioDjLabEvent("radio.voice", {
+							phase: on ? "started" : "ended",
+							source: "tts",
+						});
+					}
+				}
 				// #423: browser speech end/error releases the held expression.
 				if (!on) {
 					settleAvatarEmotionIfIdle();
@@ -1649,6 +1665,15 @@ export function ChatArea({
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
 		if (await handleSpeechProfilePhrase(text)) return;
+		if (isRadioDjLabObserverAttached()) {
+			const activeConfig = loadConfig();
+			if (
+				activeConfig?.proactiveSpeechProfile === "personal_radio_dj" &&
+				activeConfig.proactiveSpeechPermitted === true
+			) {
+				recordRadioDjLabEvent("radio.turn", { phase: "user_started" });
+			}
+		}
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
 		const hist = inputHistoryRef.current;
@@ -2104,6 +2129,7 @@ export function ChatArea({
 						? { proactiveSpeechBgmAutoPlay: true }
 						: {}),
 				});
+				recordRadioDjLabEvent("radio.profile", { profile });
 			}
 			setInput("");
 			useChatStore.getState().addMessage({ role: "user", content: text });
@@ -2164,6 +2190,7 @@ export function ChatArea({
 			proactiveSpeechIntervalMs: settings.intervalMs,
 			proactiveSpeechBgmAutoPlay: true,
 		});
+		recordRadioDjLabEvent("radio.profile", { profile: "personal_radio_dj" });
 	}
 
 	// Shared app-tool dispatch — used by both the streaming-chat handleChunk

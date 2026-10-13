@@ -1,0 +1,271 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://nextain.com/schemas/radio-dj-lab/1.0/schema.json",
+	"title": "Radio DJ Lab event, run manifest, judgement, and checks",
+	"oneOf": [
+		{ "$ref": "#/$defs/event" },
+		{ "$ref": "#/$defs/manifest" },
+		{ "$ref": "#/$defs/judgement" },
+		{ "$ref": "#/$defs/checks" }
+	],
+	"$defs": {
+		"check": {
+			"type": "object",
+			"required": [
+				"check_id",
+				"observed",
+				"threshold_key",
+				"threshold",
+				"unit",
+				"status",
+				"evidence_event_ids",
+				"note"
+			],
+			"properties": {
+				"check_id": { "type": "string" },
+				"observed": { "type": ["boolean", "number", "null"] },
+				"threshold_key": { "type": ["string", "null"] },
+				"threshold": { "type": ["number", "null"] },
+				"unit": { "type": ["string", "null"] },
+				"status": { "enum": ["pass", "fail", "unscored"] },
+				"evidence_event_ids": {
+					"type": "array",
+					"items": { "type": "string" }
+				},
+				"note": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"checks": {
+			"type": "array",
+			"items": { "$ref": "#/$defs/check" }
+		},
+		"judgement": {
+			"type": "object",
+			"required": [
+				"schema_version",
+				"run_id",
+				"mode",
+				"result",
+				"error_count",
+				"metrics",
+				"checks",
+				"judgement_note"
+			],
+			"properties": {
+				"schema_version": { "const": "1.0" },
+				"run_id": { "type": "string" },
+				"mode": { "enum": ["deterministic", "practical"] },
+				"result": { "enum": ["recorded", "observations_incomplete"] },
+				"error_count": { "type": "integer", "minimum": 0 },
+				"metrics": {
+					"type": "object",
+					"additionalProperties": { "type": ["number", "null"] }
+				},
+				"checks": { "$ref": "#/$defs/checks" },
+				"judgement_note": { "type": "string" },
+				"finish_reason": { "type": "string" },
+				"invalid_event_count": { "type": "integer", "minimum": 0 }
+			},
+			"additionalProperties": false
+		},
+		"event": {
+			"type": "object",
+			"required": [
+				"schema_version",
+				"run_id",
+				"event_id",
+				"sequence",
+				"event_type",
+				"source",
+				"mode",
+				"clock_domain",
+				"observation_source",
+				"occurred_at_utc",
+				"elapsed_ms",
+				"data"
+			],
+			"properties": {
+				"schema_version": { "const": "1.0" },
+				"event_id": { "type": "string", "pattern": "^evt-[0-9]{3,}$" },
+				"event_type": {
+					"enum": [
+						"radio.profile",
+						"radio.turn",
+						"radio.activity",
+						"radio.voice",
+						"bgm.tool",
+						"bgm.playback",
+						"bgm.volume",
+						"ui.state"
+					]
+				},
+				"run_id": { "type": "string" },
+				"mode": { "enum": ["deterministic", "practical"] },
+				"clock_domain": { "enum": ["virtual", "monotonic"] },
+				"observation_source": { "enum": ["simulated", "observed"] },
+				"occurred_at_utc": { "type": "string", "format": "date-time" },
+				"elapsed_ms": { "type": "integer", "minimum": 0 },
+				"sequence": { "type": "integer", "minimum": 1 },
+				"source": {
+					"type": "object",
+					"required": ["repo", "commit", "component"],
+					"properties": {
+						"repo": { "const": "naia-shell" },
+						"commit": { "type": ["string", "null"] },
+						"component": { "type": "string" }
+					},
+					"additionalProperties": false
+				},
+				"data": {
+					"oneOf": [
+						{
+							"type": "object",
+							"required": ["profile"],
+							"properties": {
+								"profile": {
+									"enum": ["disabled", "personal_radio_dj", "exhibition_intro"]
+								}
+							},
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"required": ["phase"],
+							"properties": {
+								"phase": {
+									"enum": [
+										"user_started",
+										"assistant_started",
+										"assistant_finished",
+										"cancelled"
+									]
+								}
+							},
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"required": ["state"],
+							"properties": {
+								"state": { "enum": ["started", "stopped", "paused", "resumed"] }
+							},
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"required": ["phase", "source"],
+							"properties": {
+								"phase": { "enum": ["started", "ended", "error"] },
+								"source": { "enum": ["tts", "fixture-tone"] }
+							},
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"required": ["action", "phase"],
+							"properties": {
+								"action": { "type": "string" },
+								"phase": { "enum": ["request", "result"] },
+								"outcome": {
+									"enum": ["accepted", "queued", "rejected", "failed"]
+								}
+							},
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"required": ["status", "source"],
+							"properties": {
+								"status": {
+									"enum": [
+										"requested",
+										"loading",
+										"playing",
+										"paused",
+										"ended",
+										"error",
+										"timeout"
+									]
+								},
+								"source": { "enum": ["local", "youtube"] },
+								"track_id": {
+									"type": "string",
+									"pattern": "^[A-Za-z0-9_-]{11}$"
+								},
+								"current_time_s": { "type": "number", "minimum": 0 },
+								"duration_s": { "type": "number", "minimum": 0 }
+							},
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"required": ["volume"],
+							"properties": {
+								"volume": { "type": "number", "minimum": 0, "maximum": 1 }
+							},
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"required": ["surface", "state", "playback_status"],
+							"properties": {
+								"surface": { "const": "bgm_player" },
+								"state": { "const": "playback_status_refreshed" },
+								"playback_status": {
+									"enum": ["requested", "loading", "playing", "paused", "ended", "error", "timeout"]
+								}
+							},
+							"additionalProperties": false
+						}
+					]
+				}
+			},
+			"additionalProperties": false
+		},
+		"manifest": {
+			"type": "object",
+			"required": [
+				"schema_version",
+				"run_id",
+				"scenario_id",
+				"mode",
+				"clock_domain",
+				"seed",
+				"created_at_utc",
+				"repositories",
+				"protocol_version",
+				"redaction_policy_version",
+				"capture_refs",
+				"external_network_calls",
+				"actual_llm_calls"
+			],
+			"properties": {
+				"schema_version": { "const": "1.0" },
+				"run_id": { "type": "string" },
+				"scenario_id": { "type": "string" },
+				"mode": { "enum": ["deterministic", "practical"] },
+				"clock_domain": { "enum": ["virtual", "monotonic"] },
+				"seed": { "type": ["integer", "null"] },
+				"created_at_utc": { "type": "string", "format": "date-time" },
+				"repositories": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["name", "commit"],
+						"properties": {
+							"name": { "enum": ["naia-shell", "paired-agent"] },
+							"commit": { "type": ["string", "null"] }
+						},
+						"additionalProperties": false
+					}
+				},
+				"protocol_version": { "type": "string" },
+				"redaction_policy_version": { "type": "string" },
+				"capture_refs": { "type": "array", "items": { "type": "string" } },
+				"external_network_calls": { "type": ["integer", "null"], "minimum": 0 },
+				"actual_llm_calls": { "type": ["integer", "null"], "minimum": 0 }
+			}
+		}
+	}
+}

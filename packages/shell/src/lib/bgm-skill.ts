@@ -33,6 +33,7 @@ import {
 } from "./bgm-playback";
 import { bgmSidecarBaseUrl, ensureBgmSidecar } from "./bgm-sidecar-url";
 import { loadConfig } from "./config";
+import { recordRadioDjLabEvent } from "./radio-dj-lab-observer";
 
 /** appExec 등록용 앱 id — 위젯 전용(앱 아님), app_skills_clear 대상 아님(항상 유지). */
 export const BGM_APP_ID = "bgm-widget";
@@ -609,6 +610,52 @@ export function clampVolume(v: unknown): number {
 export async function executeBgmSkill(
 	args: Record<string, unknown>,
 	deps: BgmSkillDeps = defaultDeps,
+): Promise<string> {
+	const action = args?.action;
+	const safeAction =
+		typeof action === "string" &&
+		(BGM_ACTIONS as readonly string[]).includes(action)
+			? (action as BgmAction)
+			: undefined;
+	if (safeAction) {
+		recordRadioDjLabEvent("bgm.tool", {
+			action: safeAction,
+			phase: "request",
+		});
+	}
+	try {
+		const result = await executeBgmSkillCore(args, deps);
+		if (safeAction) {
+			let outcome: "accepted" | "queued" | "rejected" = "accepted";
+			try {
+				const parsed = JSON.parse(result) as { ok?: unknown; queued?: unknown };
+				if (parsed.ok === false) outcome = "rejected";
+				else if (parsed.queued) outcome = "queued";
+			} catch {
+				// A result that is not structured JSON is not exposed to the recorder.
+			}
+			recordRadioDjLabEvent("bgm.tool", {
+				action: safeAction,
+				phase: "result",
+				outcome,
+			});
+		}
+		return result;
+	} catch (error) {
+		if (safeAction) {
+			recordRadioDjLabEvent("bgm.tool", {
+				action: safeAction,
+				phase: "result",
+				outcome: "failed",
+			});
+		}
+		throw error;
+	}
+}
+
+async function executeBgmSkillCore(
+	args: Record<string, unknown>,
+	deps: BgmSkillDeps,
 ): Promise<string> {
 	const action = args?.action;
 	if (

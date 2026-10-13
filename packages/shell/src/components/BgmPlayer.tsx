@@ -33,6 +33,7 @@ import {
 	type BgmPlaybackSnapshot,
 	type BgmPlaybackStatus,
 } from "../lib/bgm-playback";
+import { recordRadioDjLabEvent } from "../lib/radio-dj-lab-observer";
 import {
 	cancelRadioDjRecovery,
 	continueRadioDjRecoveryAfterQueueAdvance,
@@ -527,6 +528,18 @@ export function BgmPlayer({ naia }: Props) {
 		});
 		if (!next) return null;
 		setPlaybackSnapshot(next);
+		recordRadioDjLabEvent("bgm.playback", {
+			status: next.status,
+			source,
+			track_id: next.selected.videoId,
+			current_time_s: next.currentTime,
+			duration_s: next.duration,
+		});
+		recordRadioDjLabEvent("ui.state", {
+			surface: "bgm_player",
+			state: "playback_status_refreshed",
+			playback_status: next.status,
+		});
 		if (status === "playing") {
 			setVideoLive(true);
 		} else if (
@@ -1123,7 +1136,10 @@ export function BgmPlayer({ naia }: Props) {
 					if ((msg.type === "bgm_library_like_add" && !liked) || (msg.type === "bgm_library_like_remove" && liked)) updateLibrary((state) => toggleBgmLike(state, ytVideoToLibraryTrack(video)));
 				} else if (msg.type === "bgm_youtube_volume") {
 					const val = Number(msg.volume ?? 0.5);
-					if (val >= 0 && val <= 1) setVolume(val);
+					if (val >= 0 && val <= 1) {
+						setVolume(val);
+						recordRadioDjLabEvent("bgm.volume", { volume: val });
+					}
 				}
 			} catch (err) {
 				Logger.error("BgmPlayer", "BGM event parse error", {
@@ -1753,7 +1769,11 @@ export function BgmPlayer({ naia }: Props) {
 					max={1}
 					step={0.05}
 					value={volume}
-					onChange={(e) => setVolume(Number(e.target.value))}
+					onChange={(e) => {
+						const nextVolume = Number(e.target.value);
+						setVolume(nextVolume);
+						recordRadioDjLabEvent("bgm.volume", { volume: nextVolume });
+					}}
 					title={t("bgm.volume")}
 				/>
 			</div>

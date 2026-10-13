@@ -75,3 +75,4 @@
 | `qa-qc-numbers.mjs` | 선택된 ADK sidecar에 QA Case Number(`QC-001`...)를 append-only로 부여하고 catalog/round 표시용 매핑을 제공한다. |
 | `qa-batch.mjs` | native batch 계획을 만들고 JSONL 결과를 고정된 회차/기기 매핑으로 가져온다. |
 | `qa-round-transfer.mjs` | 중앙 회차 snapshot과 기기별 결과 receipt를 파일로 export/import한다. |
+| `radio-dj-lab.mjs` (+ `radio-dj-lab-model.mjs`, `radio-dj-lab-contract.mjs`, `radio-dj-lab-observations.mjs`, `radio-dj-lab-render.mjs`, `radio-dj-lab-practical.mjs`, `radio-dj-lab.schema.json`, `radio-dj-lab-example.json`) | Radio DJ Lab 결정적 가상 시간축 기록과 loopback 실기 이벤트 수집기를 실행한다. 제품 동작 없이 deterministic fixture를 재생하고, 실기 설정은 30–60분 외부 실행 진입점으로만 제공한다. |
