@@ -36,6 +36,23 @@
       "remaining": "Muse code review and review response; four Luke decisions remain pending. Keep completion claim at no until review passes.",
       "last_updated": "2026-10-13T07:26:40+09:00"
     },
+    "issue_758_s3_ollama_serve": {
+      "issue": 758,
+      "title": "Ollama 서버 수명주기 (#758 단계 3)",
+      "requirements": "design-758-s1.md 단계 3; 단계 2 설치·찾기 계약 보존",
+      "scenario": "UC-LOCAL-MODEL-VRAM-RESERVATION",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "verification": "Muse code review r1 process-group-after-reap finding addressed. Ollama Rust tests: 31 passed/1 ignored; required Vitest: 209 passed/8 skipped; Shell typecheck/build and Rust build passed. Full Cargo: 557 passed/4 known baseline failures/1 ignored/3 filtered. No Ollama download/install/serve or GPU use. Follow-up Muse review remains pending.",
+      "remaining": "Obtain Muse re-review; keep completion claim at no until review passes.",
+      "last_updated": "2026-10-13T08:59:02+09:00"
+    },
     "issue_724_memory_knowledge_tools": {
       "issue": 724,
       "title": "모델 keep list에 기억·지식 저장 도구를 열고 계약 테스트를 실행한다 (#724)",

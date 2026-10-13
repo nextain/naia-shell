@@ -1,4 +1,10 @@
-<!-- src-sha: 427b91e428f330dd -->
+<!-- src-sha: 3176cbc244067c4a -->
+
+## Ollama 서버 수명주기 — 2026-10-13 (#758 단계 3)
+
+- Muse 코드 검수 r1의 회수 후 PGID 조회·신호 위험을 수정했다. 종료 감지는 비회수 방식으로 수행하고, Linux는 리더 회수 전에 자손 종료를 확인한다. Windows는 열린 Job Object 핸들만 사용한다.
+- 검증: Ollama Rust 31 통과/1 fixture helper 제외, 지정 Vitest 209 통과/8 제외, Shell 타입체크·빌드와 Rust 빌드 통과. 전체 Cargo는 557 통과/4 기준 환경 실패/1 제외/3 하드웨어 시험 제외.
+- 실제 Ollama 다운로드·설치·serve와 GPU 사용은 하지 않았다. Muse 재검수 대기이며 완료 주장은 아니다.
 
 ## Ollama 설치·찾기 — 2026-10-13 (#758 단계 2)
 
@@ -278,5 +284,5 @@
 - 범위: Rust 내부 API와 Vulkan 경로. 기존 사용자 화면·호출부·프로파일 선택은 그대로 둔다.
 - P01/P03: 기존 UC-WIN-NVA-8G와 FR-VRAM.1/FR-CASCADE.11, 승인된 단계 2 지시서를 근거로 한다.
 - P02: fixture 기반 Rust 시험 계획과 구현을 기록한다.
-- P04: accelerator fixture 11/11, UI 150개 통과, Linux build 및 Windows provider compile을 확인했다. 전체 Cargo와 Shell bundle budget의 실패·환경 한계는 `.agy-work/757-s2/evidence.md`에 남겼다.
+- P04: accelerator fixture 11/11, UI 150개 통과, Linux build 및 Windows provider compile을 확인했다. 전체 Cargo와 Shell bundle budget의 실패·환경 한계는 별도 검수 증거에 기록했다.
 - P05: Muse 코드 검수 전이므로 보류. 완료 주장은 아니오.

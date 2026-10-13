@@ -22,7 +22,7 @@ use tauri::{AppHandle, Emitter, State};
 use zip::ZipArchive;
 
 #[cfg(test)]
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use crate::vram_reservation::ReservationLease;
 
@@ -42,6 +42,11 @@ const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_EXTRACTED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 
 static OPERATION_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(all(test, unix))]
+static PROCESS_GROUP_SIGTERM_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(all(test, unix))]
+static PROCESS_GROUP_SIGKILL_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TargetOs {
@@ -398,9 +403,10 @@ struct ProcessSpec {
 
 trait ManagedChild: Send {
     fn has_exited(&mut self) -> io::Result<bool>;
+    fn reap_exited_leader(&mut self) -> io::Result<()>;
     fn request_graceful_shutdown(&mut self) -> io::Result<()>;
     fn force_kill_tree(&mut self) -> io::Result<()>;
-    fn process_tree_alive(&self) -> io::Result<bool>;
+    fn process_tree_alive(&mut self) -> io::Result<bool>;
 }
 
 trait RuntimeProcessRunner: Send + Sync {
@@ -412,23 +418,130 @@ struct SystemProcessRunner;
 struct OwnedChild {
     child: Child,
     ownership: ChildOwnership,
+    reaped: bool,
 }
 
 impl ManagedChild for OwnedChild {
     fn has_exited(&mut self) -> io::Result<bool> {
-        self.child.try_wait().map(|status| status.is_some())
+        self.observe_exit()
+    }
+
+    fn reap_exited_leader(&mut self) -> io::Result<()> {
+        self.reap_leader()
     }
 
     fn request_graceful_shutdown(&mut self) -> io::Result<()> {
+        if self.reaped {
+            return Ok(());
+        }
         self.ownership.request_graceful(self.child.id())
     }
 
     fn force_kill_tree(&mut self) -> io::Result<()> {
+        #[cfg(unix)]
+        if self.reaped {
+            return Ok(());
+        }
         self.ownership.force_kill(&mut self.child)
     }
 
-    fn process_tree_alive(&self) -> io::Result<bool> {
-        self.ownership.is_alive()
+    fn process_tree_alive(&mut self) -> io::Result<bool> {
+        #[cfg(windows)]
+        {
+            // Job Object operations use this still-open, uniquely owned handle;
+            // they do not resolve a possibly reused process id.
+            self.ownership.is_alive()
+        }
+        #[cfg(unix)]
+        {
+            if self.reaped {
+                return Ok(false);
+            }
+            let leader_exited = self.leader_has_exited()?;
+            if !leader_exited {
+                return Ok(true);
+            }
+            has_live_process_group_descendants(
+                self.ownership.process_group,
+                self.child.id() as libc::pid_t,
+            )
+        }
+        #[cfg(all(not(windows), not(unix)))]
+        {
+            Ok(false)
+        }
+    }
+}
+
+impl OwnedChild {
+    fn observe_exit(&mut self) -> io::Result<bool> {
+        if self.reaped {
+            return Ok(true);
+        }
+        #[cfg(unix)]
+        {
+            let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+            let result = unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    self.child.id() as libc::id_t,
+                    &mut info,
+                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                )
+            };
+            if result == 0 {
+                return Ok(unsafe { info.si_pid() } != 0);
+            }
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::ECHILD) {
+                // Another owner or SIGCHLD disposition already reaped it. Its
+                // numeric process-group id can no longer be used safely.
+                self.reaped = true;
+                return Ok(true);
+            }
+            Err(error)
+        }
+        #[cfg(not(unix))]
+        {
+            let status = self.child.try_wait()?;
+            if status.is_some() {
+                self.reaped = true;
+            }
+            Ok(self.reaped)
+        }
+    }
+
+    fn leader_has_exited(&mut self) -> io::Result<bool> {
+        self.observe_exit()
+    }
+
+    fn reap_leader(&mut self) -> io::Result<()> {
+        if self.reaped {
+            return Ok(());
+        }
+        if !self.observe_exit()? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot reap a running managed child",
+            ));
+        }
+        #[cfg(unix)]
+        match self.child.wait() {
+            Ok(_) => {
+                self.reaped = true;
+                Ok(())
+            }
+            Err(error) if error.raw_os_error() == Some(libc::ECHILD) => {
+                self.reaped = true;
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+        #[cfg(not(unix))]
+        {
+            // observe_exit uses try_wait on these platforms, which also reaps.
+            Ok(())
+        }
     }
 }
 
@@ -736,7 +849,11 @@ impl RuntimeProcessRunner for SystemProcessRunner {
             let _ = child.wait();
             return Err(error);
         }
-        Ok(Box::new(OwnedChild { child, ownership }))
+        Ok(Box::new(OwnedChild {
+            child,
+            ownership,
+            reaped: false,
+        }))
     }
 }
 
@@ -834,9 +951,9 @@ impl ChildOwnership {
         }
         #[cfg(unix)]
         {
-            Ok(Self {
-                process_group: child.id() as libc::pid_t,
-            })
+            let process_group = child.id() as libc::pid_t;
+            validate_process_group(process_group)?;
+            Ok(Self { process_group })
         }
         #[cfg(all(not(windows), not(unix)))]
         {
@@ -852,6 +969,9 @@ impl ChildOwnership {
         }
         #[cfg(unix)]
         {
+            validate_process_group(self.process_group)?;
+            #[cfg(test)]
+            PROCESS_GROUP_SIGTERM_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
             let result = unsafe { libc::kill(-self.process_group, libc::SIGTERM) };
             if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
                 Ok(())
@@ -883,6 +1003,9 @@ impl ChildOwnership {
         }
         #[cfg(unix)]
         {
+            validate_process_group(self.process_group)?;
+            #[cfg(test)]
+            PROCESS_GROUP_SIGKILL_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
             let result = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
             if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
                 Ok(())
@@ -898,6 +1021,7 @@ impl ChildOwnership {
         }
     }
 
+    #[cfg(windows)]
     fn is_alive(&self) -> io::Result<bool> {
         #[cfg(windows)]
         {
@@ -922,24 +1046,102 @@ impl ChildOwnership {
                 Err(io::Error::last_os_error())
             }
         }
-        #[cfg(unix)]
-        {
-            let result = unsafe { libc::kill(-self.process_group, 0) };
-            if result == 0 {
-                Ok(true)
-            } else {
-                match io::Error::last_os_error().raw_os_error() {
-                    Some(libc::ESRCH) => Ok(false),
-                    Some(libc::EPERM) => Ok(true),
-                    _ => Err(io::Error::last_os_error()),
+    }
+}
+
+#[cfg(unix)]
+fn validate_process_group(process_group: libc::pid_t) -> io::Result<()> {
+    if process_group <= 0 || process_group == unsafe { libc::getpgrp() } {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "managed process group is not isolated",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn has_live_process_group_descendants(
+    process_group: libc::pid_t,
+    leader_pid: libc::pid_t,
+) -> io::Result<bool> {
+    validate_process_group(process_group)?;
+    #[cfg(target_os = "linux")]
+    {
+        for entry in fs::read_dir("/proc")? {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<libc::pid_t>().ok())
+            else {
+                continue;
+            };
+            if pid == leader_pid {
+                continue;
+            }
+            let stat = match fs::read_to_string(entry.path().join("stat")) {
+                Ok(stat) => stat,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
+            };
+            if let Some((state, group)) = parse_process_stat(&stat) {
+                if group == process_group && state != 'Z' && state != 'X' {
+                    return Ok(true);
                 }
             }
         }
-        #[cfg(all(not(windows), not(unix)))]
-        {
-            Ok(false)
-        }
+        Ok(false)
     }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Keep the leader unreaped while ps enumerates its process group. This
+        // avoids querying or signaling a numeric PGID after it can be reused.
+        let output = Command::new("/bin/ps")
+            .args(["-axo", "pid=,pgid=,stat="])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()?;
+        if !output.status.success() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "could not inspect managed process group",
+            ));
+        }
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let mut columns = line.split_whitespace();
+            let (Some(pid), Some(group), Some(state)) =
+                (columns.next(), columns.next(), columns.next())
+            else {
+                continue;
+            };
+            let (Ok(pid), Ok(group)) = (pid.parse::<libc::pid_t>(), group.parse::<libc::pid_t>())
+            else {
+                continue;
+            };
+            if pid != leader_pid
+                && group == process_group
+                && !state.starts_with('Z')
+                && !state.starts_with('X')
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}
+
+#[cfg(unix)]
+fn parse_process_stat(stat: &str) -> Option<(char, libc::pid_t)> {
+    let fields = stat.rsplit_once(')')?.1.split_whitespace();
+    let mut fields = fields;
+    let state = fields.next()?.chars().next()?;
+    let _parent = fields.next()?;
+    let process_group = fields.next()?.parse().ok()?;
+    Some((state, process_group))
 }
 
 #[cfg(windows)]
@@ -990,17 +1192,9 @@ impl Drop for ChildOwnership {
     }
 }
 
-#[cfg(unix)]
-impl Drop for ChildOwnership {
-    fn drop(&mut self) {
-        let _ = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
-    }
-}
-
 impl Drop for OwnedChild {
     fn drop(&mut self) {
-        let _ = self.ownership.force_kill(&mut self.child);
-        let _ = self.child.try_wait();
+        let _ = stop_managed_child(self, &RuntimeSettings::default());
     }
 }
 
@@ -2137,33 +2331,39 @@ fn update_operation_snapshot(
     state.snapshot.error = None;
 }
 
-fn process_is_stopped(process: &mut ManagedProcess) -> bool {
-    matches!(process.child.has_exited(), Ok(true))
-        && matches!(process.child.process_tree_alive(), Ok(false))
+fn child_is_stopped(child: &mut dyn ManagedChild) -> bool {
+    if !matches!(child.has_exited(), Ok(true)) || !matches!(child.process_tree_alive(), Ok(false)) {
+        return false;
+    }
+    child.reap_exited_leader().is_ok()
+}
+
+fn stop_managed_child(child: &mut dyn ManagedChild, settings: &RuntimeSettings) -> bool {
+    if child_is_stopped(child) {
+        return true;
+    }
+    let _ = child.request_graceful_shutdown();
+    let graceful_deadline = Instant::now() + settings.graceful_stop_timeout;
+    while Instant::now() < graceful_deadline {
+        if child_is_stopped(child) {
+            return true;
+        }
+        thread::sleep(settings.poll_interval.min(Duration::from_millis(50)));
+    }
+
+    let _ = child.force_kill_tree();
+    let force_deadline = Instant::now() + settings.force_stop_timeout;
+    while Instant::now() < force_deadline {
+        if child_is_stopped(child) {
+            return true;
+        }
+        thread::sleep(settings.poll_interval.min(Duration::from_millis(50)));
+    }
+    child_is_stopped(child)
 }
 
 fn stop_managed_process(process: &mut ManagedProcess, settings: &RuntimeSettings) -> bool {
-    if process_is_stopped(process) {
-        return true;
-    }
-    let _ = process.child.request_graceful_shutdown();
-    let graceful_deadline = Instant::now() + settings.graceful_stop_timeout;
-    while Instant::now() < graceful_deadline {
-        if process_is_stopped(process) {
-            return true;
-        }
-        thread::sleep(settings.poll_interval.min(Duration::from_millis(50)));
-    }
-
-    let _ = process.child.force_kill_tree();
-    let force_deadline = Instant::now() + settings.force_stop_timeout;
-    while Instant::now() < force_deadline {
-        if process_is_stopped(process) {
-            return true;
-        }
-        thread::sleep(settings.poll_interval.min(Duration::from_millis(50)));
-    }
-    process_is_stopped(process)
+    stop_managed_child(process.child.as_mut(), settings)
 }
 
 fn update_runtime_snapshot(manager: &RuntimeManager, snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
@@ -3301,8 +3501,13 @@ pub(crate) fn ollama_runtime_remove(
 mod tests {
     use super::*;
     use std::io::Cursor;
-    use std::sync::atomic::AtomicUsize;
     use zip::write::SimpleFileOptions;
+
+    #[cfg(target_os = "linux")]
+    static REAL_PROCESS_GROUP_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[cfg(target_os = "linux")]
+    static FAKE_RUNTIME_CHILD_STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
 
     struct FixtureDownloader {
         bytes: Vec<u8>,
@@ -3621,6 +3826,113 @@ mod tests {
         let _ = stream.write_all(body);
     }
 
+    #[cfg(target_os = "linux")]
+    extern "C" fn fake_runtime_child_term_handler(_: libc::c_int) {
+        FAKE_RUNTIME_CHILD_STOP_REQUESTED.store(true, Ordering::Release);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "spawned only as a fixture executable by process ownership tests"]
+    fn fake_managed_ollama_process_entry() {
+        let (Ok(port), Ok(mode), Ok(pid_file), Ok(reaped_file)) = (
+            std::env::var("NAIA_SHELL_FAKE_OLLAMA_PORT"),
+            std::env::var("NAIA_SHELL_FAKE_OLLAMA_MODE"),
+            std::env::var("NAIA_SHELL_FAKE_OLLAMA_PID_FILE"),
+            std::env::var("NAIA_SHELL_FAKE_OLLAMA_REAPED_FILE"),
+        ) else {
+            return;
+        };
+        FAKE_RUNTIME_CHILD_STOP_REQUESTED.store(false, Ordering::Release);
+        let previous = unsafe {
+            libc::signal(
+                libc::SIGTERM,
+                fake_runtime_child_term_handler as *const () as libc::sighandler_t,
+            )
+        };
+        assert_ne!(previous, libc::SIG_ERR);
+
+        let mut descendant = Command::new("/bin/sleep").arg("60").spawn().unwrap();
+        fs::write(pid_file, descendant.id().to_string()).unwrap();
+        let fixture = if mode == "unready" {
+            ApiFixture::status(503)
+        } else {
+            ApiFixture::ready(0)
+        };
+        let server =
+            TestApiServer::bind(("127.0.0.1", port.parse::<u16>().unwrap()), fixture).unwrap();
+        while !FAKE_RUNTIME_CHILD_STOP_REQUESTED.load(Ordering::Acquire) {
+            thread::sleep(Duration::from_millis(2));
+        }
+        drop(server);
+        let _ = descendant.wait().unwrap();
+        fs::write(reaped_file, b"descendant reaped").unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn shell_quote(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn write_fake_executable_install(
+        root: &Path,
+        pin: ReleasePin,
+        port: u16,
+        mode: &str,
+        pid_file: &Path,
+        reaped_file: &Path,
+    ) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let current_exe = std::env::current_exe().unwrap();
+        let script = format!(
+            "#!/bin/sh\nexport NAIA_SHELL_FAKE_OLLAMA_PORT={}\nexport NAIA_SHELL_FAKE_OLLAMA_MODE={}\nexport NAIA_SHELL_FAKE_OLLAMA_PID_FILE={}\nexport NAIA_SHELL_FAKE_OLLAMA_REAPED_FILE={}\nexec {} --exact ollama_runtime::tests::fake_managed_ollama_process_entry --ignored --nocapture\n",
+            shell_quote(&port.to_string()),
+            shell_quote(mode),
+            shell_quote(&pid_file.to_string_lossy()),
+            shell_quote(&reaped_file.to_string_lossy()),
+            shell_quote(&current_exe.to_string_lossy()),
+        );
+        write_managed_fixture(root, pin.version, pin.os, pin.arch, script.as_bytes());
+        let (_, executable_relative_path) = expected_asset(pin.os, pin.arch);
+        let executable = root.join(pin.version).join(executable_relative_path);
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn real_process_manager(
+        anchor: &tempfile::TempDir,
+        root: &Path,
+        port: u16,
+        pin: ReleasePin,
+    ) -> RuntimeManager {
+        RuntimeManager {
+            inner: Arc::new(Mutex::new(ManagerState::default())),
+            downloader: Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            process_runner: Arc::new(SystemProcessRunner),
+            settings: RuntimeSettings {
+                managed_base_url: format!("http://127.0.0.1:{port}"),
+                request_timeout: Duration::from_millis(30),
+                readiness_timeout: Duration::from_secs(2),
+                poll_interval: Duration::from_millis(5),
+                graceful_stop_timeout: Duration::from_millis(500),
+                force_stop_timeout: Duration::from_millis(500),
+            },
+            locations: Some((anchor.path().to_path_buf(), root.to_path_buf())),
+            release_pin: Some(pin),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn wait_for_fixture_reap_marker(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !path.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(path.exists(), "fake executable did not reap its descendant");
+    }
+
     struct FakeProcessState {
         spawned: AtomicUsize,
         captured_spec: Mutex<Option<ProcessSpec>>,
@@ -3734,6 +4046,17 @@ mod tests {
             Ok(self.state.exited.load(Ordering::Acquire))
         }
 
+        fn reap_exited_leader(&mut self) -> io::Result<()> {
+            if self.state.exited.load(Ordering::Acquire) {
+                Ok(())
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "cannot reap a running fake child",
+                ))
+            }
+        }
+
         fn request_graceful_shutdown(&mut self) -> io::Result<()> {
             self.state.graceful_calls.fetch_add(1, Ordering::Relaxed);
             self.state.stop_listener();
@@ -3760,7 +4083,7 @@ mod tests {
             Ok(())
         }
 
-        fn process_tree_alive(&self) -> io::Result<bool> {
+        fn process_tree_alive(&mut self) -> io::Result<bool> {
             Ok(!self.state.exited.load(Ordering::Acquire)
                 || self.state.descendants_alive.load(Ordering::Acquire))
         }
@@ -4151,6 +4474,135 @@ mod tests {
             ),
             ProbeResult::Ready { model_count: 0 }
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn preparation_failure_cleans_fake_process_group_once_and_reaps_descendant() {
+        let _guard = REAL_PROCESS_GROUP_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        PROCESS_GROUP_SIGTERM_ATTEMPTS.store(0, Ordering::Relaxed);
+        PROCESS_GROUP_SIGKILL_ATTEMPTS.store(0, Ordering::Relaxed);
+
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let pid_file = anchor.path().join("fake-child.pid");
+        let reaped_file = anchor.path().join("fake-child-reaped");
+        write_fake_executable_install(&root, pin, port, "unready", &pid_file, &reaped_file);
+        let mut manager = real_process_manager(&anchor, &root, port, pin);
+        manager.settings.readiness_timeout = Duration::from_secs(1);
+
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        assert_eq!(
+            snapshot.error.unwrap().code,
+            RuntimeErrorCode::ReadinessTimeout
+        );
+        wait_for_fixture_reap_marker(&reaped_file);
+        assert!(pid_file.exists());
+        assert!(manager.lock().process.is_none());
+        assert_eq!(
+            PROCESS_GROUP_SIGTERM_ATTEMPTS.load(Ordering::Relaxed),
+            1,
+            "preparation failure must request cleanup exactly once"
+        );
+        assert_eq!(
+            PROCESS_GROUP_SIGKILL_ATTEMPTS.load(Ordering::Relaxed),
+            0,
+            "the fake server handles graceful shutdown and needs no forced signal"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn normal_stop_reaps_fake_descendant_and_drop_sends_no_second_signal() {
+        let _guard = REAL_PROCESS_GROUP_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        PROCESS_GROUP_SIGTERM_ATTEMPTS.store(0, Ordering::Relaxed);
+        PROCESS_GROUP_SIGKILL_ATTEMPTS.store(0, Ordering::Relaxed);
+
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let pid_file = anchor.path().join("fake-child.pid");
+        let reaped_file = anchor.path().join("fake-child-reaped");
+        write_fake_executable_install(&root, pin, port, "ready", &pid_file, &reaped_file);
+        let manager = real_process_manager(&anchor, &root, port, pin);
+
+        let start = dispatch_start(&manager, None, None, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &start).server_state,
+            ServerState::ReadyManaged
+        );
+        assert!(pid_file.exists());
+        let stop = dispatch_stop(&manager, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &stop).server_state,
+            ServerState::Stopped
+        );
+        wait_for_fixture_reap_marker(&reaped_file);
+        // Let the worker finish dropping its already-reaped OwnedChild.
+        thread::sleep(Duration::from_millis(20));
+        assert!(manager.lock().process.is_none());
+        assert_eq!(
+            PROCESS_GROUP_SIGTERM_ATTEMPTS.load(Ordering::Relaxed),
+            1,
+            "dropping a normally stopped child must not signal its old PGID"
+        );
+        assert_eq!(PROCESS_GROUP_SIGKILL_ATTEMPTS.load(Ordering::Relaxed), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dropping_reaped_child_does_not_signal_a_reused_process_group() {
+        use std::os::unix::process::CommandExt;
+
+        let _guard = REAL_PROCESS_GROUP_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        PROCESS_GROUP_SIGTERM_ATTEMPTS.store(0, Ordering::Relaxed);
+        PROCESS_GROUP_SIGKILL_ATTEMPTS.store(0, Ordering::Relaxed);
+
+        let mut unrelated = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut child = Command::new("/bin/true").spawn().unwrap();
+        child.wait().unwrap();
+        let reused_group = unrelated.id() as libc::pid_t;
+        drop(OwnedChild {
+            child,
+            ownership: ChildOwnership {
+                process_group: reused_group,
+            },
+            reaped: true,
+        });
+
+        let survived = unrelated.try_wait().unwrap().is_none();
+        if survived {
+            unrelated.kill().unwrap();
+            unrelated.wait().unwrap();
+        }
+        assert!(
+            survived,
+            "the unrelated process group received a stale signal"
+        );
+        assert_eq!(PROCESS_GROUP_SIGTERM_ATTEMPTS.load(Ordering::Relaxed), 0);
+        assert_eq!(PROCESS_GROUP_SIGKILL_ATTEMPTS.load(Ordering::Relaxed), 0);
     }
 
     #[test]
