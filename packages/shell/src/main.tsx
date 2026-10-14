@@ -1,9 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import "./apps/browser/index";
-import "./apps/settings/index";
-import "./apps/workspace/index";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
 import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri";
 import { bootstrapShell } from "./lib/bootstrap-shell";

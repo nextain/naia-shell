@@ -16,6 +16,7 @@ const deferredModules = [
 	"src/apps/projects/ProjectAgentPanel.tsx",
 	"src/apps/projects/ProjectAgentTerminal.tsx",
 	"src/apps/projects/ProjectWebViewPanel.tsx",
+	"src/apps/projects/ProjectsApp.tsx",
 	"src/apps/workspace/HerdrWorkspaceCenterArea.tsx",
 	"src/apps/workspace/Terminal.tsx",
 	"src/components/AnnouncementBanner.tsx",
@@ -100,6 +101,14 @@ describe("bundle budget", () => {
 			report.deferredChunks["src/components/OnboardingWizard.tsx"],
 		).toEqual({
 			file: "assets/OnboardingWizard-test.js",
+			dynamicallyImported: true,
+			staticallyImported: false,
+			modulePreloaded: false,
+			passed: true,
+		});
+		expect(
+			report.deferredChunks["src/apps/projects/ProjectsApp.tsx"],
+		).toMatchObject({
 			dynamicallyImported: true,
 			staticallyImported: false,
 			modulePreloaded: false,

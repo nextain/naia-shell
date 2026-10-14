@@ -78,6 +78,9 @@ import {
 	patchUiPreferences,
 	useUiPreference,
 } from "./lib/ui-preferences";
+import "./apps/browser/index"; // register browser app
+import "./apps/workspace/index"; // register workspace app
+import "./apps/settings/index"; // register settings app
 // sample-note app removed — will be replaced by a proper memo app later
 import { useAppStore } from "./stores/app";
 
@@ -375,12 +378,8 @@ export function App() {
 	const appReady = useAppReady(showAdkSetup, showOnboarding, localeHydrated);
 	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
-	const {
-		activeApp,
-		appListVersion,
-		toggleAiInterferenceEnabled,
-		setTtsEnabled,
-	} = useAppStore();
+	const { activeApp, toggleAiInterferenceEnabled, setTtsEnabled } =
+		useAppStore();
 
 	// Initialise ttsEnabled from persisted config on mount
 	useEffect(() => {
@@ -502,7 +501,7 @@ export function App() {
 					});
 			}
 		}
-	}, [appListVersion, configHydrated]);
+	}, [configHydrated]);
 
 	// Load background from naia-settings/background/. May be a video (.mp4) or a
 	// still image (.webp) — getBackgroundMediaType() below resolves which.

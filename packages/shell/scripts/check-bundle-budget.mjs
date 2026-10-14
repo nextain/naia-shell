@@ -16,6 +16,7 @@ const REQUIRED_DEFERRED_MODULES = [
 	"src/apps/projects/ProjectAgentPanel.tsx",
 	"src/apps/projects/ProjectAgentTerminal.tsx",
 	"src/apps/projects/ProjectWebViewPanel.tsx",
+	"src/apps/projects/ProjectsApp.tsx",
 	"src/apps/workspace/HerdrWorkspaceCenterArea.tsx",
 	"src/apps/workspace/Terminal.tsx",
 	"src/components/AnnouncementBanner.tsx",
