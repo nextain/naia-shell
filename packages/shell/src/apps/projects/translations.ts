@@ -1,6 +1,11 @@
 import { type Locale, getLocale } from "../../lib/i18n";
+import {
+	PROJECT_AGENT_ENGLISH_TRANSLATIONS,
+	PROJECT_AGENT_KOREAN_TRANSLATIONS,
+} from "./project-agent-translations";
 
 const english = {
+	...PROJECT_AGENT_ENGLISH_TRANSLATIONS,
 	"projects.title": "Projects",
 	"projects.chooseTitle": "Choose a project",
 	"projects.checkoutLabel": "Source",
@@ -1181,6 +1186,7 @@ export const PROJECT_APP_TRANSLATIONS = Object.fromEntries(
 			...english,
 			...messages,
 			...STAGE_TWO_TRANSLATIONS[locale as Locale],
+			...(locale === "ko" ? PROJECT_AGENT_KOREAN_TRANSLATIONS : {}),
 			"projects.sessionSaveFailed": SESSION_SAVE_TRANSLATIONS[locale as Locale],
 		},
 	]),

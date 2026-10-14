@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 import { invoke } from "@tauri-apps/api/core";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAdkPath, setAdkPath } from "../../../lib/adk-store";
 import { appRegistry } from "../../../lib/app-registry";
 import { setLocale } from "../../../lib/i18n";
 import { ProjectsApp } from "../ProjectsApp";
+import { resetProjectAgentRuntimeForTests } from "../project-agent-runtime";
 import {
 	PROJECT_SESSION_STORAGE_KEY,
 	saveProjectSession,
@@ -15,6 +22,19 @@ import { PROJECT_APP_TRANSLATIONS } from "../translations";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
 	open: vi.fn(async () => "/fixture/naia-adk"),
+}));
+vi.mock("@tauri-apps/api/event", () => ({
+	listen: vi.fn(async () => vi.fn()),
+}));
+vi.mock("../ProjectAgentTerminal", () => ({
+	ProjectAgentTerminal: ({
+		label,
+		output,
+	}: { label: string; output: string }) => (
+		<div aria-label={label} data-project-terminal="true">
+			{output}
+		</div>
+	),
 }));
 vi.mock("../../../lib/adk-store", () => ({
 	getAdkPath: vi.fn(() => localStorage.getItem("naia-adk-path")),
@@ -31,12 +51,15 @@ vi.mock("../project-session", async (importOriginal) => {
 });
 
 const makeProject = (projectId: string, sourceRoot = "naia-pj-adk") => ({
+	adapterRoot: "/fixture/adapter-root",
 	projectPath: `/fixture/naia-adk/projects/${sourceRoot}/projects/${projectId}`,
 	sourcePath: `projects/${sourceRoot}/projects/${projectId}`,
 	projectId,
 	name: projectId === "example-app" ? "Example App" : "Example Library",
 	repository: `octocat/${projectId}`,
 	issueTracker: "github",
+	dashboardUrl: "https://dashboard.example.test/project",
+	issuesUrl: null,
 });
 
 const readyCatalog = {
@@ -70,11 +93,31 @@ describe("ProjectsApp — single opened project", () => {
 			actualSession.saveProjectSession,
 		);
 		localStorage.clear();
+		resetProjectAgentRuntimeForTests();
 		localStorage.setItem("naia-adk-path", "/fixture/naia-adk");
 		await setLocale("en");
-		vi.mocked(invoke).mockImplementation(async (command) =>
-			command === "projects_scan_adk" ? readyCatalog : null,
-		);
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (command === "projects_scan_adk") return readyCatalog;
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			if (
+				command === "project_agent_pty_start" ||
+				command === "project_agent_pty_attach"
+			) {
+				return {
+					appId: (args as { appId: string }).appId,
+					projectPath: (args as { projectPath: string }).projectPath,
+					ptyId: `pty-${(args as { projectPath: string }).projectPath.split("/").at(-1)}`,
+					running: true,
+				};
+			}
+			if (command === "project_webview_open") return false;
+			return null;
+		});
 		vi.mocked(getAdkPath).mockImplementation(() =>
 			localStorage.getItem("naia-adk-path"),
 		);
@@ -255,6 +298,141 @@ describe("ProjectsApp — single opened project", () => {
 		).toBe("issues");
 	});
 
+	it("shows only the four fixed agents and requires an explicit choice before structured start", async () => {
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		const claude = await screen.findByRole("radio", { name: "Claude" });
+		const codex = screen.getByRole("radio", { name: "Codex" });
+		const muse = screen.getByRole("radio", { name: "Muse" });
+		const opencode = screen.getByRole("radio", { name: "OpenCode" });
+		expect([claude, codex, muse, opencode]).toHaveLength(4);
+		expect(screen.queryByRole("radio", { checked: true })).toBeNull();
+
+		fireEvent.click(codex);
+		fireEvent.click(await screen.findByRole("button", { name: "Start Codex" }));
+		await waitFor(() => {
+			expect(invoke).toHaveBeenCalledWith("project_agent_pty_start", {
+				appId: "codex",
+				projectPath: makeProject("example-app").projectPath,
+				adapterRoot: "/fixture/adapter-root",
+			});
+		});
+		expect(invoke).not.toHaveBeenCalledWith("pty_create", expect.anything());
+		expect(localStorage.getItem(PROJECT_SESSION_STORAGE_KEY)).not.toContain(
+			"pty-",
+		);
+	});
+
+	it("keeps unavailable fixed apps visible but disabled with PATH recovery guidance", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "projects_scan_adk") return readyCatalog;
+			if (command === "project_agent_availability") {
+				return [
+					{ appId: "claude", available: true },
+					{ appId: "codex", available: true },
+					{ appId: "muse", available: false },
+					{ appId: "opencode", available: true },
+				];
+			}
+			return null;
+		});
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		const muse = await screen.findByRole("radio", { name: /Muse/ });
+		expect(muse).toBeDisabled();
+		expect(screen.getByText("Not found on PATH")).toBeTruthy();
+		expect(
+			screen.getByText(/Install it and make its executable available on PATH/),
+		).toBeTruthy();
+		expect(invoke).not.toHaveBeenCalledWith(
+			"project_agent_pty_start",
+			expect.objectContaining({ appId: "muse" }),
+		);
+	});
+
+	it("shows only the relative expected checkout path and a recovery step when spawn is blocked", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "projects_scan_adk") return readyCatalog;
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			if (command === "project_agent_pty_start") {
+				throw new Error("checkout_missing:checkouts/example-app");
+			}
+			return null;
+		});
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		fireEvent.click(await screen.findByRole("radio", { name: "Muse" }));
+		fireEvent.click(await screen.findByRole("button", { name: "Start Muse" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("checkouts/example-app");
+		expect(alert).toHaveTextContent(
+			"Create or clone the project checkout there yourself",
+		);
+		expect(alert.textContent).not.toContain("/fixture/");
+	});
+
+	it("reattaches the same in-memory project session after switching A to B and back", async () => {
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		fireEvent.click(await screen.findByRole("radio", { name: "Claude" }));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Start Claude" }),
+		);
+		await waitFor(() => {
+			expect(invoke).toHaveBeenCalledWith(
+				"project_agent_pty_start",
+				expect.objectContaining({ appId: "claude" }),
+			);
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open another project" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /Example Library/ }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open another project" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /Example App/ }));
+
+		await waitFor(() => {
+			expect(invoke).toHaveBeenCalledWith("project_agent_pty_attach", {
+				appId: "claude",
+				projectPath: makeProject("example-app").projectPath,
+			});
+		});
+	});
+
+	it("opens configured project URLs only through the separate WebView command", async () => {
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		fireEvent.click(screen.getByRole("tab", { name: "Dashboard" }));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Open dashboard" }),
+		);
+		expect(
+			await screen.findByText(/not created in this test environment/),
+		).toBeTruthy();
+		expect(invoke).toHaveBeenCalledWith("project_webview_open", {
+			adapterRoot: "/fixture/adapter-root",
+			projectPath: makeProject("example-app").projectPath,
+			view: "dashboard",
+		});
+		fireEvent.click(screen.getByRole("tab", { name: "Internal Issues" }));
+		expect(
+			await screen.findByText("This address is not configured"),
+		).toBeTruthy();
+		expect(
+			vi
+				.mocked(invoke)
+				.mock.calls.filter(([command]) => command === "project_webview_open"),
+		).toHaveLength(1);
+	});
+
 	it("restores the last project and stage after remounting", async () => {
 		const first = render(<ProjectsApp />);
 		fireEvent.click(
@@ -358,9 +536,7 @@ describe("ProjectsApp — single opened project", () => {
 		).toBeTruthy();
 		expect(screen.getByText(".agents/context/project-index.yaml")).toBeTruthy();
 		expect(screen.getByText(/is invalid\./)).toBeTruthy();
-		expect(
-			screen.getByText(/reset its path in Settings/),
-		).toBeTruthy();
+		expect(screen.getByText(/reset its path in Settings/)).toBeTruthy();
 	});
 
 	it("shows a recovery notice when the last project is no longer in the catalog", async () => {

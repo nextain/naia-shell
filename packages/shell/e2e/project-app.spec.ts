@@ -15,20 +15,26 @@ mkdirSync(CAPTURE_DIR, { recursive: true });
 const READY_CATALOG = {
 	projects: [
 		{
+			adapterRoot: "/fixture/adapter-root",
 			projectPath: "/fixture/naia-adk/projects/team/projects/example-app",
 			sourcePath: "projects/team/projects/example-app",
 			projectId: "example-app",
 			name: "Example App",
 			repository: "octocat/Hello-World",
 			issueTracker: "github",
+			dashboardUrl: "https://dashboard.example.test/project",
+			issuesUrl: "https://issues.example.test/project",
 		},
 		{
+			adapterRoot: "/fixture/adapter-root",
 			projectPath: "/fixture/naia-adk/projects/team/projects/example-library",
 			sourcePath: "projects/team/projects/example-library",
 			projectId: "example-library",
 			name: "Example Library",
 			repository: "octocat/Hello-World",
 			issueTracker: "github",
+			dashboardUrl: "javascript:alert(1)",
+			issuesUrl: null,
 		},
 	],
 	catalogErrors: [],
@@ -74,6 +80,7 @@ const TAURI_MOCK = `
 \t\tresult: { projects: [], catalogErrors: [] },
 \t\tpending: false,
 \t\tfailuresRemaining: 0,
+\t\tprojectAgentStartError: null,
 \t};
 \twindow.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
 \t\tstate.calls.push({ cmd: cmd, args: args || null });
@@ -89,6 +96,23 @@ const TAURI_MOCK = `
 \t\t\t}
 \t\t\treturn state.result;
 \t\t}
+\t\tif (cmd === "project_agent_availability") {
+\t\t\treturn ["claude", "codex", "muse", "opencode"].map(function(appId) {
+\t\t\t\treturn { appId: appId, available: true };
+\t\t\t});
+\t\t}
+\t\tif (cmd === "project_agent_pty_start" || cmd === "project_agent_pty_attach") {
+\t\t\tif (cmd === "project_agent_pty_start" && state.projectAgentStartError) {
+\t\t\t\tthrow new Error(state.projectAgentStartError);
+\t\t\t}
+\t\t\treturn {
+\t\t\t\tappId: args.appId,
+\t\t\t\tprojectPath: args.projectPath,
+\t\t\t\tptyId: "project-pty-" + args.projectPath.split("/").pop(),
+\t\t\t\trunning: true,
+\t\t\t};
+\t\t}
+\t\tif (cmd === "project_webview_open") return false;
 \t\tif (cmd === "send_to_agent_command" || cmd === "cancel_stream" || cmd === "frontend_log") return null;
 \t\treturn undefined;
 \t};
@@ -115,8 +139,8 @@ async function boot(page: Page, seedAdkPath = true) {
 			}),
 		);
 	});
-	await page.goto("/");
-	await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
+	await page.goto("/", { waitUntil: "domcontentloaded" });
+	await expect(page.locator(".chat-app")).toBeVisible({ timeout: 30_000 });
 }
 
 async function setCatalog(page: Page, catalog: unknown) {
@@ -138,7 +162,7 @@ async function capture(page: Page, name: string) {
 		.screenshot({ path: resolve(CAPTURE_DIR, name) });
 }
 
-test.describe("Project app — stage 2 single-open flow", () => {
+test.describe("Project app — stage 3 local three-pane flow", () => {
 	test("uses the saved naia-adk path without prompting and shows a single catalog entry point", async ({
 		page,
 	}) => {
@@ -249,7 +273,7 @@ test.describe("Project app — stage 2 single-open flow", () => {
 			"true",
 		);
 		await expect(page.getByRole("tabpanel")).toContainText(
-			"placeholder in stage 2",
+			"This project view opens in a separate window",
 		);
 		await expect(page.locator('button[data-app-id="projects"]')).toHaveCount(1);
 		await capture(page, "project-app-opened.png");
@@ -337,12 +361,8 @@ test.describe("Project app — stage 2 single-open flow", () => {
 			page.getByText(".agents/context/project-index.yaml"),
 		).toBeVisible();
 		await expect(page.getByText(/is invalid\./)).toBeVisible();
-		await expect(
-			page.getByText(/nested, non-empty project\.id/),
-		).toBeVisible();
-		await expect(
-			page.getByText(/reset its path in Settings/),
-		).toBeVisible();
+		await expect(page.getByText(/nested, non-empty project\.id/)).toBeVisible();
+		await expect(page.getByText(/reset its path in Settings/)).toBeVisible();
 		await capture(page, "project-app-empty-index-error.png");
 	});
 
@@ -410,6 +430,116 @@ test.describe("Project app — stage 2 single-open flow", () => {
 		await expect(
 			page.getByRole("button", { name: /Example App/ }),
 		).toBeVisible();
+	});
+
+	test("uses four fixed local agents, reattaches project sessions, and separates project webviews", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, READY_CATALOG);
+		await openProjectApp(page);
+		await page.getByRole("button", { name: /Example App/ }).click();
+		const radios = page.locator(".projects-app__agent input[type=radio]");
+		await expect(radios).toHaveCount(4);
+		await expect(radios.locator(":checked")).toHaveCount(0);
+		await page.getByRole("radio", { name: "Claude" }).check();
+		await page.getByRole("button", { name: "Start Claude" }).click();
+		await expect(page.getByRole("status")).toContainText("Claude is running");
+		let calls = await page.evaluate(
+			() => (window as any).__PROJECT_E2E__.calls,
+		);
+		const start = calls.find(
+			(call: { cmd: string }) => call.cmd === "project_agent_pty_start",
+		);
+		expect(start.args).toEqual({
+			appId: "claude",
+			projectPath: "/fixture/naia-adk/projects/team/projects/example-app",
+			adapterRoot: "/fixture/adapter-root",
+		});
+		expect(JSON.stringify(start.args)).not.toMatch(/shell|argv|command/i);
+
+		await page.getByRole("button", { name: "Open another project" }).click();
+		await page.getByRole("button", { name: /Example Library/ }).click();
+		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await expect(
+			page.getByRole("heading", { name: "The configured address is invalid" }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("button", { name: "Open dashboard" }),
+		).toHaveCount(0);
+		await page.getByRole("tab", { name: "Internal Issues" }).click();
+		await expect(
+			page.getByRole("heading", { name: "This address is not configured" }),
+		).toBeVisible();
+
+		await page.getByRole("button", { name: "Open another project" }).click();
+		await page.getByRole("button", { name: /Example App/ }).click();
+		await expect
+			.poll(async () => {
+				const activeCalls = await page.evaluate(
+					() => (window as any).__PROJECT_E2E__.calls,
+				);
+				return activeCalls.filter(
+					(call: { cmd: string }) => call.cmd === "project_agent_pty_attach",
+				).length;
+			})
+			.toBeGreaterThan(0);
+		await expect(page.getByRole("status")).toContainText("Claude is running");
+
+		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.getByRole("button", { name: "Open dashboard" }).click();
+		await expect(page.getByRole("status")).toContainText(
+			"not created in this test environment",
+		);
+		calls = await page.evaluate(() => (window as any).__PROJECT_E2E__.calls);
+		const webview = calls.find(
+			(call: { cmd: string }) => call.cmd === "project_webview_open",
+		);
+		expect(webview.args).toEqual({
+			adapterRoot: "/fixture/adapter-root",
+			projectPath: "/fixture/naia-adk/projects/team/projects/example-app",
+			view: "dashboard",
+		});
+	});
+
+	test("shows safe checkout recovery guidance when the agent start is rejected", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, READY_CATALOG);
+		await page.evaluate(() => {
+			(window as any).__PROJECT_E2E__.projectAgentStartError =
+				"checkout_missing:checkouts/Hello-World";
+		});
+		await openProjectApp(page);
+		await page.getByRole("button", { name: /Example App/ }).click();
+		await page.getByRole("radio", { name: "Claude" }).check();
+		await page.getByRole("button", { name: "Start Claude" }).click();
+
+		const error = page.getByRole("alert");
+		await expect(error).toContainText("The coding app could not start");
+		await expect(error).toContainText(
+			"The expected project checkout is missing.",
+		);
+		await expect(error).toContainText("checkouts/Hello-World");
+		await expect(error).toContainText(
+			"Create or clone the project checkout there yourself",
+		);
+		const calls = await page.evaluate(
+			() => (window as any).__PROJECT_E2E__.calls,
+		);
+		const starts = calls.filter(
+			(call: { cmd: string }) => call.cmd === "project_agent_pty_start",
+		);
+		expect(starts).toHaveLength(1);
+		expect(starts[0].args).toEqual({
+			appId: "claude",
+			projectPath: READY_CATALOG.projects[0].projectPath,
+			adapterRoot: READY_CATALOG.projects[0].adapterRoot,
+		});
+		expect(
+			calls.some((call: { cmd: string }) => call.cmd === "pty_create"),
+		).toBe(false);
 	});
 
 	test("keeps the project view usable at a narrow viewport with keyboard tabs", async ({

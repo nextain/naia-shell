@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { Logger } from "../../lib/logger";
 
 export type ProjectConfigIssueReason =
 	| "missing"
@@ -16,13 +17,19 @@ export interface CatalogIssue {
 }
 
 export interface CatalogProject {
+	/** Verified project adapter root, supplied by native candidate scanning. */
+	adapterRoot: string;
 	projectPath: string;
 	sourcePath: string;
 	projectId: string;
 	name: string;
 	repository: string | null;
 	issueTracker: string | null;
+	dashboardUrl: string | null;
+	issuesUrl: string | null;
 }
+
+export type ProjectUrlState = "missing" | "invalid" | "configured";
 
 export interface ProjectCatalog {
 	projects: CatalogProject[];
@@ -56,11 +63,61 @@ const ISSUE_REASONS = new Set<ProjectConfigIssueReason>([
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
+	Logger.debug("ProjectCatalog", "checking catalog record shape");
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function optionalString(value: unknown): string | null {
+	Logger.debug("ProjectCatalog", "normalizing optional catalog text");
 	return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function optionalUrlText(value: unknown): string | null {
+	Logger.debug("ProjectCatalog", "reading optional project URL field");
+	if (typeof value !== "string") return null;
+	return value.trim() ? value : null;
+}
+
+/** Classify a configured URL without repairing or replacing its source value. */
+export function classifyProjectUrl(value: string | null): ProjectUrlState {
+	Logger.debug("ProjectCatalog", "classifying project URL", {
+		configured: value !== null,
+	});
+	if (value === null || !value.trim()) return "missing";
+	if (
+		value !== value.trim() ||
+		/\s/.test(value) ||
+		value.includes("\\") ||
+		!/^https?:\/\//i.test(value)
+	) {
+		Logger.debug(
+			"ProjectCatalog",
+			"project URL rejected because source syntax is not absolute http(s)",
+		);
+		return "invalid";
+	}
+	try {
+		const parsed = new URL(value);
+		if (
+			(parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+			!parsed.hostname ||
+			parsed.username.length > 0 ||
+			parsed.password.length > 0
+		) {
+			Logger.debug(
+				"ProjectCatalog",
+				"project URL rejected by protocol or host checks",
+			);
+			return "invalid";
+		}
+		return "configured";
+	} catch {
+		Logger.debug(
+			"ProjectCatalog",
+			"project URL parser rejected configured value",
+		);
+		return "invalid";
+	}
 }
 
 function parseIssue(value: unknown): CatalogIssue {
@@ -78,12 +135,15 @@ function parseIssue(value: unknown): CatalogIssue {
 }
 
 function parseProject(value: unknown): CatalogProject {
+	Logger.debug("ProjectCatalog", "parsing project catalog entry");
 	if (!isRecord(value)) throw new Error("Invalid project catalog entry.");
+	const adapterRoot = optionalString(value.adapterRoot);
 	const projectPath = optionalString(value.projectPath);
 	const sourcePath = optionalString(value.sourcePath);
 	const projectId = optionalString(value.projectId);
 	const name = optionalString(value.name);
 	if (
+		!adapterRoot ||
 		!projectPath ||
 		!sourcePath ||
 		!projectId ||
@@ -94,12 +154,15 @@ function parseProject(value: unknown): CatalogProject {
 		throw new Error("Invalid project catalog entry.");
 	}
 	return {
+		adapterRoot,
 		projectPath,
 		sourcePath,
 		projectId,
 		name,
 		repository: optionalString(value.repository),
 		issueTracker: optionalString(value.issueTracker),
+		dashboardUrl: optionalUrlText(value.dashboardUrl),
+		issuesUrl: optionalUrlText(value.issuesUrl),
 	};
 }
 
@@ -167,6 +230,7 @@ function parseProjectCatalogTruncation(
 
 /** Validate the native catalog response before displaying any entry. */
 export function normalizeProjectCatalog(value: unknown): ProjectCatalog {
+	Logger.debug("ProjectCatalog", "validating native project catalog response");
 	if (!isRecord(value) || !Array.isArray(value.projects)) {
 		throw new Error("Invalid project catalog response.");
 	}
@@ -185,6 +249,7 @@ export function normalizeProjectCatalog(value: unknown): ProjectCatalog {
 export async function scanProjectCatalog(
 	adkPath: string,
 ): Promise<ProjectCatalog> {
+	Logger.debug("ProjectCatalog", "requesting native project scan");
 	const response = await invoke<unknown>("projects_scan_adk", { adkPath });
 	return normalizeProjectCatalog(response);
 }

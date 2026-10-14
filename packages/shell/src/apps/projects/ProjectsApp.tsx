@@ -9,6 +9,8 @@ import {
 } from "react";
 import { getAdkPath, setAdkPath } from "../../lib/adk-store";
 import { Logger } from "../../lib/logger";
+import { ProjectAgentPanel } from "./ProjectAgentPanel";
+import { ProjectWebViewPanel } from "./ProjectWebViewPanel";
 import {
 	type CatalogIssue,
 	type CatalogProject,
@@ -161,6 +163,7 @@ function ProjectRow({
 }
 
 export function ProjectsApp() {
+	Logger.debug("ProjectsApp", "rendering single-project application shell");
 	const [catalog, setCatalog] = useState<ProjectCatalog | null>(null);
 	const [currentProjectPath, setCurrentProjectPath] = useState<string | null>(
 		null,
@@ -294,6 +297,9 @@ export function ProjectsApp() {
 	}, [chooseAdkFolder, scanAndOpen]);
 
 	function openProject(project: CatalogProject) {
+		Logger.debug("ProjectsApp", "opening selected project", {
+			projectId: project.projectId,
+		});
 		const projectPath = normalizeProjectPath(project.projectPath);
 		const stagesByProjectPath = { ...session.stagesByProjectPath };
 		if (currentProjectPath) stagesByProjectPath[currentProjectPath] = activeTab;
@@ -317,10 +323,12 @@ export function ProjectsApp() {
 	}
 
 	function persistSession(nextSession: ProjectSession) {
+		Logger.debug("ProjectsApp", "persisting project selection and tab only");
 		setSessionSaveFailed(!saveProjectSession(nextSession));
 	}
 
 	function changeTab(tab: ProjectStage) {
+		Logger.debug("ProjectsApp", "changing active project view", { tab });
 		setActiveTab(tab);
 		if (!currentProjectPath) return;
 		const nextSession: ProjectSession = {
@@ -335,11 +343,13 @@ export function ProjectsApp() {
 	}
 
 	function showOtherProjects() {
+		Logger.debug("ProjectsApp", "showing project catalog");
 		setSearch("");
 		setShowCatalog(true);
 	}
 
 	function returnToCurrentProject() {
+		Logger.debug("ProjectsApp", "returning to current project");
 		if (!currentProject) return;
 		setActiveTab(stageForProject(session, currentProject.projectPath));
 		setShowCatalog(false);
@@ -349,6 +359,9 @@ export function ProjectsApp() {
 		event: KeyboardEvent<HTMLButtonElement>,
 		index: number,
 	) {
+		Logger.debug("ProjectsApp", "handling project tab keyboard navigation", {
+			key: event.key,
+		});
 		let nextIndex: number | null = null;
 		if (event.key === "ArrowRight") nextIndex = (index + 1) % TABS.length;
 		if (event.key === "ArrowLeft")
@@ -422,7 +435,28 @@ export function ProjectsApp() {
 										TABS[0].label,
 								)}
 							</h2>
-							<p>{projectText("projects.stageOneEmpty")}</p>
+							{activeTab === "agent" && (
+								<ProjectAgentPanel
+									projectPath={currentProject.projectPath}
+									adapterRoot={currentProject.adapterRoot}
+								/>
+							)}
+							{activeTab === "dashboard" && (
+								<ProjectWebViewPanel
+									adapterRoot={currentProject.adapterRoot}
+									projectPath={currentProject.projectPath}
+									view="dashboard"
+									url={currentProject.dashboardUrl}
+								/>
+							)}
+							{activeTab === "issues" && (
+								<ProjectWebViewPanel
+									adapterRoot={currentProject.adapterRoot}
+									projectPath={currentProject.projectPath}
+									view="issues"
+									url={currentProject.issuesUrl}
+								/>
+							)}
 						</div>
 					</section>
 				</>

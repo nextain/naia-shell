@@ -20,6 +20,9 @@ mod memory;
 mod ollama_runtime;
 mod platform;
 mod project_catalog;
+mod project_catalog_runtime;
+mod project_agent_pty;
+mod project_webview;
 mod pty;
 mod voice_runtime;
 mod voice_cache;
@@ -14331,6 +14334,8 @@ pub fn run() {
         .manage(ollama_runtime::RuntimeManager::default())
         .manage(workspace::new_shared_watcher())
         .manage(pty::new_registry())
+        .manage(project_agent_pty::new_project_agent_registry())
+        .manage(project_catalog_runtime::ProjectCatalogAuthority::default())
         .invoke_handler(tauri::generate_handler![
             // #582 S7: 웹뷰에는 효과가 고정된 작업 명령만 낸다. 등급은 명령 이름이 정한다.
             ego_host_bridge::ego_host_ensure, ego_host_bridge::ego_host_stop,
@@ -14466,6 +14471,7 @@ pub fn run() {
             // Multi-webview browser app (replaces Chrome embedding)
             browser_webview::browser_wv_check,
             browser_webview::browser_wv_create,
+            project_webview::project_webview_open,
             browser_webview::browser_wv_resize,
             browser_webview::browser_wv_navigate,
             browser_webview::browser_wv_page_info,
@@ -14540,6 +14546,11 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             pty::pty_execute_sync,
+            project_agent_pty::project_agent_availability,
+            project_agent_pty::project_agent_pty_start,
+            project_agent_pty::project_agent_pty_attach,
+            project_agent_pty::project_agent_pty_write,
+            project_agent_pty::project_agent_pty_resize,
             enable_webview2_ime,
             device_pairing::device_list,
             device_pairing::device_list_requests,

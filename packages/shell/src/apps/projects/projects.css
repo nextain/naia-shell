@@ -253,6 +253,96 @@
 	border-bottom: 1px solid var(--border-color, #263244);
 }
 
+.projects-app__agent,
+.projects-app__webview {
+	display: grid;
+	gap: 12px;
+	min-width: 0;
+}
+
+.projects-app__agent-options {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: 8px;
+	min-width: 0;
+	margin: 0;
+	padding: 12px;
+	border: 1px solid var(--border-color, #263244);
+	border-radius: 10px;
+}
+
+.projects-app__agent-options legend {
+	padding: 0 6px;
+	font-weight: 650;
+}
+
+.projects-app__agent-option {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+	padding: 9px;
+	border: 1px solid var(--border-color, #263244);
+	border-radius: 8px;
+	background: rgba(4, 10, 20, 0.2);
+}
+
+.projects-app__agent-option input {
+	accent-color: #72aaff;
+}
+
+.projects-app__agent-option small {
+	grid-column: 2;
+	color: var(--text-secondary, #aab4c2);
+	font-size: 0.72rem;
+}
+
+.projects-app__primary-button {
+	justify-self: start;
+	min-height: 38px;
+	padding: 8px 14px;
+	border: 1px solid #4f8cff;
+	border-radius: 8px;
+	color: #fff;
+	background: #1b3d69;
+	font: inherit;
+	cursor: pointer;
+}
+
+.projects-app__agent-running {
+	padding: 9px 11px;
+	border-left: 3px solid #60c79b;
+	color: #d6ffed;
+	background: rgba(30, 120, 82, 0.14);
+}
+
+.projects-app__terminal {
+	width: 100%;
+	height: min(52vh, 520px);
+	min-height: 220px;
+	padding: 8px;
+	border: 1px solid #263244;
+	border-radius: 10px;
+	background: #08111f;
+}
+
+.projects-app__terminal .xterm {
+	height: 100%;
+}
+
+.projects-app__webview-action {
+	display: grid;
+	justify-items: start;
+	gap: 8px;
+}
+
+.projects-app__webview-action p {
+	margin: 0;
+	color: var(--text-secondary, #aab4c2);
+	line-height: 1.5;
+}
+
 .projects-app__tab {
 	min-height: 40px;
 	padding: 8px 12px;
@@ -293,5 +383,14 @@
 	.projects-app__tab {
 		padding-inline: 8px;
 		font-size: 0.88rem;
+	}
+
+	.projects-app__agent-options {
+		grid-template-columns: 1fr;
+	}
+
+	.projects-app__terminal {
+		height: 44vh;
+		min-height: 180px;
 	}
 }

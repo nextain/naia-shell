@@ -1,8 +1,10 @@
+use crate::project_catalog_runtime::{project_catalog_fields, ProjectCatalogAuthority};
 use serde::Serialize;
 use serde_yaml::Value as YamlValue;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use tauri::State;
 
 const MAX_SCAN_ENTRIES: usize = 200;
 const MAX_DISPLAY_ROWS: usize = 200;
@@ -43,8 +45,11 @@ struct CatalogProject {
     name: String,
     repository: Option<String>,
     issue_tracker: Option<String>,
+    adapter_root: String,
     project_path: String,
     source_path: String,
+    dashboard_url: Option<String>,
+    issues_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -63,7 +68,37 @@ struct ScanState {
 }
 
 #[tauri::command]
-pub fn projects_scan_adk(adk_path: String) -> Result<ProjectCatalog, String> {
+pub fn projects_scan_adk(
+    authority: State<'_, ProjectCatalogAuthority>,
+    adk_path: String,
+) -> Result<ProjectCatalog, String> {
+    crate::log_verbose("[project_catalog::projects_scan_adk] enter adk_path_supplied=true");
+    let catalog = match scan_adk_catalog(adk_path) {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            authority.clear();
+            crate::log_verbose(
+                "[project_catalog::projects_scan_adk] branch=scan_failed_authority_cleared",
+            );
+            return Err(error);
+        }
+    };
+    authority.replace_projects(catalog.projects.iter().map(|project| {
+        (
+            PathBuf::from(&project.project_path),
+            PathBuf::from(&project.adapter_root),
+        )
+    }));
+    crate::log_verbose(&format!(
+        "[project_catalog::projects_scan_adk] branch=catalog_ready project_count={} error_count={}",
+        catalog.projects.len(),
+        catalog.catalog_errors.len()
+    ));
+    Ok(catalog)
+}
+
+fn scan_adk_catalog(adk_path: String) -> Result<ProjectCatalog, String> {
+    crate::log_verbose("[project_catalog::scan_adk_catalog] enter adk_path_supplied=true");
     let adk_root = dunce::canonicalize(PathBuf::from(adk_path))
         .map_err(|_| "The configured naia-adk folder could not be opened.".to_owned())?;
     if !adk_root.is_dir() {
@@ -350,6 +385,7 @@ fn scan_candidate(
     errors: &mut Vec<CatalogIssue>,
     oversized_files: &mut Vec<OversizedConfigFile>,
 ) {
+    crate::log_verbose("[project_catalog::scan_candidate] enter candidate_supplied=true");
     let candidate_projects = candidate.join("projects");
     let relative = relative_path(root, &candidate_projects);
     let metadata = match fs::symlink_metadata(&candidate_projects) {
@@ -390,7 +426,7 @@ fn scan_candidate(
         };
         let project_file = project_dir.join("project.yaml");
         let project_relative = relative_path(root, &project_file);
-        match read_project(root, &project_dir, &project_file) {
+        match read_project(root, candidate, &project_dir, &project_file) {
             Ok(project) => push_project(state, projects, project),
             Err(ProjectReadError::Issue(reason)) => {
                 push_issue(state, errors, project_relative, reason);
@@ -408,9 +444,11 @@ fn scan_candidate(
 
 fn read_project(
     root: &Path,
+    adapter_root: &Path,
     project_dir: &Path,
     project_file: &Path,
 ) -> Result<CatalogProject, ProjectReadError> {
+    crate::log_verbose("[project_catalog::read_project] enter project_metadata_supplied=true");
     let yaml = read_yaml(root, project_dir, project_file)?;
     let Some(mapping) = yaml.as_mapping() else {
         return Err(ProjectReadError::Issue("invalid_yaml"));
@@ -428,16 +466,22 @@ fn read_project(
     let canonical_project = dunce::canonicalize(project_dir)
         .map_err(|_| ProjectReadError::Issue("directory_unreadable"))?;
     if !canonical_project.starts_with(root) {
+        crate::log_verbose("[project_catalog::read_project] branch=reject_outside_root");
         return Err(ProjectReadError::Issue("unsafe_path"));
     }
+    crate::log_verbose("[project_catalog::read_project] branch=project_metadata_read");
+    let (repository, dashboard_url, issues_url) = project_catalog_fields(project_mapping);
     Ok(CatalogProject {
         project_id: project_id.clone(),
         name: value_string(project_mapping, &["name", "display_name", "title"])
             .unwrap_or(project_id),
-        repository: value_string(project_mapping, &["repository"]),
+        repository,
         issue_tracker: value_string(project_mapping, &["issue_tracker"]),
+        adapter_root: path_string(adapter_root),
         project_path: path_string(&canonical_project),
         source_path: relative_path(root, &canonical_project),
+        dashboard_url,
+        issues_url,
     })
 }
 
@@ -543,6 +587,7 @@ fn path_string(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project_catalog_runtime::validate_project_url;
     use std::fs;
 
     fn adk() -> (tempfile::TempDir, PathBuf) {
@@ -570,7 +615,31 @@ mod tests {
     }
 
     fn scan(root: &Path) -> ProjectCatalog {
-        projects_scan_adk(root.to_string_lossy().into_owned()).unwrap()
+        scan_adk_catalog(root.to_string_lossy().into_owned()).unwrap()
+    }
+
+    #[test]
+    fn returns_project_dashboard_and_internal_issue_urls_from_project_yaml() {
+        let (_temp, root) = adk();
+        write(
+            &root,
+            "projects/candidate/projects/sample/project.yaml",
+            "version: 1\nproject:\n  id: sample\n  repository: owner/sample\n  dashboard_url: ' https://dash.example.test/view '\n  issues_url: http://issues.example.test/board\n",
+        );
+
+        let catalog = scan(&root);
+        assert_eq!(catalog.projects.len(), 1);
+        assert_eq!(
+            catalog.projects[0].dashboard_url.as_deref(),
+            Some(" https://dash.example.test/view ")
+        );
+        assert!(
+            validate_project_url(catalog.projects[0].dashboard_url.as_deref().unwrap()).is_err()
+        );
+        assert_eq!(
+            catalog.projects[0].issues_url.as_deref(),
+            Some("http://issues.example.test/board")
+        );
     }
 
     #[test]
@@ -626,6 +695,10 @@ mod tests {
         assert_eq!(
             catalog.projects[0].source_path,
             "projects/unregistered-checkout/projects/sample-project"
+        );
+        assert_eq!(
+            catalog.projects[0].adapter_root,
+            path_string(&root.join("projects/unregistered-checkout"))
         );
         assert!(catalog.catalog_errors.is_empty());
     }
@@ -797,8 +870,11 @@ mod tests {
                     name: format!("project-{index}"),
                     repository: None,
                     issue_tracker: None,
+                    adapter_root: "/adk/projects/candidate".to_owned(),
                     project_path: format!("/adk/projects/{index}"),
                     source_path: format!("projects/{index}"),
+                    dashboard_url: None,
+                    issues_url: None,
                 },
             );
         }
@@ -858,7 +934,7 @@ mod tests {
     #[test]
     fn rejects_an_adk_path_without_a_projects_directory() {
         let temp = tempfile::tempdir().unwrap();
-        let error = projects_scan_adk(temp.path().to_string_lossy().into_owned()).unwrap_err();
+        let error = scan_adk_catalog(temp.path().to_string_lossy().into_owned()).unwrap_err();
         assert!(error.contains("projects folder"));
     }
 

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	classifyProjectUrl,
 	normalizeProjectCatalog,
 	scanProjectCatalog,
 } from "../project-catalog";
@@ -12,12 +13,15 @@ const project = (
 	sourcePath = `projects/naia-pj-adk/projects/${projectId}`,
 	extra: Record<string, unknown> = {},
 ) => ({
+	adapterRoot: "/fixture/adapter-root",
 	projectPath: `/fixture/naia-adk/${sourcePath}`,
 	sourcePath,
 	projectId,
 	name: projectId,
 	repository: null,
 	issueTracker: null,
+	dashboardUrl: null,
+	issuesUrl: null,
 	...extra,
 });
 
@@ -33,7 +37,10 @@ const truncation = {
 };
 
 describe("Project catalog — naia-adk scan", () => {
-	beforeEach(() => vi.clearAllMocks());
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(invoke).mockResolvedValue(null);
+	});
 
 	it("normalizes discovered projects and keeps source paths relative", () => {
 		const result = normalizeProjectCatalog({
@@ -51,11 +58,14 @@ describe("Project catalog — naia-adk scan", () => {
 		expect(result.projects).toEqual([
 			{
 				projectPath: "/fixture/naia-adk/projects/naia-pj-adk/projects/aipol",
+				adapterRoot: "/fixture/adapter-root",
 				sourcePath: "projects/naia-pj-adk/projects/aipol",
 				projectId: "aipol",
 				name: "AI Policy",
 				repository: "octocat/Hello-World",
 				issueTracker: "github",
+				dashboardUrl: null,
+				issuesUrl: null,
 			},
 		]);
 		expect(result.catalogErrors).toEqual([]);
@@ -137,6 +147,38 @@ describe("Project catalog — naia-adk scan", () => {
 		expect(() => normalizeProjectCatalog({ projects: null })).toThrow(
 			"Invalid project catalog response.",
 		);
+	});
+
+	it("preserves project URL source fields and rejects values that are not absolute web URLs", () => {
+		const result = normalizeProjectCatalog({
+			projects: [
+				project("web", "projects/team/projects/web", {
+					dashboardUrl: "https://dashboard.example.test/work",
+					issuesUrl: "javascript:alert(1)",
+				}),
+			],
+		});
+		expect(result.projects[0].dashboardUrl).toBe(
+			"https://dashboard.example.test/work",
+		);
+		expect(result.projects[0].issuesUrl).toBe("javascript:alert(1)");
+		expect(classifyProjectUrl(result.projects[0].dashboardUrl)).toBe(
+			"configured",
+		);
+		expect(classifyProjectUrl(result.projects[0].issuesUrl)).toBe("invalid");
+		expect(classifyProjectUrl(null)).toBe("missing");
+	});
+
+	it.each([
+		"/relative/path",
+		"file:///tmp/local.html",
+		"data:text/html,hello",
+		"https://",
+		"https://user:secret@example.test/",
+		"https://dashboard.example.test\\path",
+		" https://example.test/",
+	])("does not accept invalid project URL %s", (value) => {
+		expect(classifyProjectUrl(value)).toBe("invalid");
 	});
 
 	it("scans the configured naia-adk path", async () => {
