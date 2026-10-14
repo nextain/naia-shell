@@ -9,6 +9,7 @@ import {
 	selectProjectAgent,
 	startProjectAgent,
 	subscribeProjectAgent,
+	stopProjectAgent,
 	writeProjectAgent,
 } from "../project-agent-runtime";
 
@@ -86,11 +87,17 @@ describe("project agent runtime ownership", () => {
 		expect(seenA.at(-1)).toBe("alpha output");
 		expect(seenB.at(-1)).toBe("");
 
-		await writeProjectAgent(projectB, "codex", "beta input");
-		await writeProjectAgent(projectA, "codex", "cross-project input");
+		await writeProjectAgent(projectB, adapterRoot, "codex", "beta input");
+		await writeProjectAgent(
+			projectA,
+			adapterRoot,
+			"codex",
+			"cross-project input",
+		);
 		expect(invoke).toHaveBeenCalledWith("project_agent_pty_write", {
 			appId: "codex",
 			projectPath: projectB,
+			adapterRoot,
 			data: "beta input",
 		});
 		expect(
@@ -103,10 +110,11 @@ describe("project agent runtime ownership", () => {
 				),
 		).toHaveLength(0);
 
-		await attachProjectAgent(projectA, "claude");
+		await attachProjectAgent(projectA, adapterRoot, "claude");
 		expect(invoke).toHaveBeenCalledWith("project_agent_pty_attach", {
 			appId: "claude",
 			projectPath: projectA,
+			adapterRoot,
 		});
 		unsubscribeA();
 		unsubscribeB();
@@ -117,5 +125,29 @@ describe("project agent runtime ownership", () => {
 			ptyId: null,
 			selectedAppId: null,
 		});
+	});
+
+	it("stops only the selected project's owned PTY and waits for its exit event", async () => {
+		await loadProjectAgentAvailability();
+		await Promise.resolve();
+		selectProjectAgent(projectA, "muse");
+		await startProjectAgent(projectA, adapterRoot, "muse");
+		await stopProjectAgent(projectA, adapterRoot, "muse");
+
+		expect(invoke).toHaveBeenCalledWith("project_agent_pty_stop", {
+			appId: "muse",
+			projectPath: projectA,
+			adapterRoot,
+		});
+		expect(getProjectAgentState(projectA).status).toBe("stopping");
+		eventHandlers.get("project-agent-pty-exit")?.({
+			payload: {
+				appId: "muse",
+				projectPath: projectA,
+				ptyId: "pty-alpha",
+				exitCode: 0,
+			},
+		});
+		expect(getProjectAgentState(projectA).status).toBe("exited");
 	});
 });

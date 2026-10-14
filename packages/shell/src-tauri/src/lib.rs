@@ -14546,11 +14546,12 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             pty::pty_execute_sync,
-            project_agent_pty::project_agent_availability,
-            project_agent_pty::project_agent_pty_start,
-            project_agent_pty::project_agent_pty_attach,
-            project_agent_pty::project_agent_pty_write,
-            project_agent_pty::project_agent_pty_resize,
+            project_agent_pty::commands::project_agent_availability,
+            project_agent_pty::commands::project_agent_pty_start,
+            project_agent_pty::commands::project_agent_pty_attach,
+            project_agent_pty::commands::project_agent_pty_write,
+            project_agent_pty::commands::project_agent_pty_resize,
+            project_agent_pty::commands::project_agent_pty_stop,
             enable_webview2_ime,
             device_pairing::device_list,
             device_pairing::device_list_requests,
@@ -14919,6 +14920,9 @@ pub fn run() {
                     // lease here so e2e "정상 종료 뒤 lease 가 정리된다" is not racing
                     // a driver that never delivers Destroyed.
                     if should_teardown_for_window(window.label()) {
+                        let project_agents: tauri::State<'_, project_agent_pty::ProjectAgentRegistry> =
+                            window.state();
+                        project_agent_pty::shutdown_project_agent_sessions(&project_agents);
                         crate::ego_host_bridge::stop_blocking("cleanup(close-requested)");
                         crate::ego_host::cleanup_current_adk("cleanup(close-requested)");
                     }
@@ -15022,8 +15026,16 @@ pub fn run() {
                 _ => {}
             }
         })
-        .run(context)
-        .expect("error while running tauri application");
+        .build(context)
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                log_verbose("[project_agent_pty::shutdown] branch=application_exit");
+                let project_agents: tauri::State<'_, project_agent_pty::ProjectAgentRegistry> =
+                    app_handle.state();
+                project_agent_pty::shutdown_project_agent_sessions(&project_agents);
+            }
+        });
 }
 
 #[cfg(test)]

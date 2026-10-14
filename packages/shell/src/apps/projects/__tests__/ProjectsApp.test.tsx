@@ -317,6 +317,19 @@ describe("ProjectsApp — single opened project", () => {
 				adapterRoot: "/fixture/adapter-root",
 			});
 		});
+		fireEvent.click(await screen.findByRole("button", { name: "Stop Codex" }));
+		await waitFor(() => {
+			expect(invoke).toHaveBeenCalledWith("project_agent_pty_stop", {
+				appId: "codex",
+				projectPath: makeProject("example-app").projectPath,
+				adapterRoot: "/fixture/adapter-root",
+			});
+		});
+		expect(
+			await screen.findByText("Stopping the coding app…", {
+				selector: "output",
+			}),
+		).toBeTruthy();
 		expect(invoke).not.toHaveBeenCalledWith("pty_create", expect.anything());
 		expect(localStorage.getItem(PROJECT_SESSION_STORAGE_KEY)).not.toContain(
 			"pty-",
@@ -403,6 +416,7 @@ describe("ProjectsApp — single opened project", () => {
 			expect(invoke).toHaveBeenCalledWith("project_agent_pty_attach", {
 				appId: "claude",
 				projectPath: makeProject("example-app").projectPath,
+				adapterRoot: "/fixture/adapter-root",
 			});
 		});
 	});

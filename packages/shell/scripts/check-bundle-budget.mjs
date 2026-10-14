@@ -13,6 +13,9 @@ import { gzipSync } from "node:zlib";
 const REPORT_NAME = "bundle-budget-report.json";
 const REQUIRED_DEFERRED_MODULES = [
 	"src/apps/browser/BrowserCenterArea.tsx",
+	"src/apps/projects/ProjectAgentPanel.tsx",
+	"src/apps/projects/ProjectAgentTerminal.tsx",
+	"src/apps/projects/ProjectWebViewPanel.tsx",
 	"src/apps/workspace/HerdrWorkspaceCenterArea.tsx",
 	"src/apps/workspace/Terminal.tsx",
 	"src/components/AnnouncementBanner.tsx",

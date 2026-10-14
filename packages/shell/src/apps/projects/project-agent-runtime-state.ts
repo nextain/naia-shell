@@ -13,6 +13,7 @@ export type ProjectAgentStatus =
 	| "starting"
 	| "connecting"
 	| "running"
+	| "stopping"
 	| "exited"
 	| "error";
 

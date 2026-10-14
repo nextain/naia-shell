@@ -13,6 +13,9 @@ import { checkBundleBudget } from "../check-bundle-budget.mjs";
 const temporaryDirectories = [];
 const deferredModules = [
 	"src/apps/browser/BrowserCenterArea.tsx",
+	"src/apps/projects/ProjectAgentPanel.tsx",
+	"src/apps/projects/ProjectAgentTerminal.tsx",
+	"src/apps/projects/ProjectWebViewPanel.tsx",
 	"src/apps/workspace/HerdrWorkspaceCenterArea.tsx",
 	"src/apps/workspace/Terminal.tsx",
 	"src/components/AnnouncementBanner.tsx",

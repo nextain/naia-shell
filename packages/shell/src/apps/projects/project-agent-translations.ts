@@ -9,7 +9,9 @@ export const PROJECT_AGENT_ENGLISH_TRANSLATIONS = {
 	"projects.agentChecking": "Checking PATH…",
 	"projects.agentNotInstalled": "Not found on PATH",
 	"projects.agentStart": "Start {app}",
+	"projects.agentStop": "Stop {app}",
 	"projects.agentStarting": "Starting the coding app…",
+	"projects.agentStopping": "Stopping the coding app…",
 	"projects.agentRunning": "{app} is running for this project.",
 	"projects.agentReattaching":
 		"Reconnecting to this project's running session…",
@@ -39,6 +41,7 @@ export const PROJECT_AGENT_ENGLISH_TRANSLATIONS = {
 	"projects.agentAvailabilityFailed":
 		"Could not check which coding apps are available. Retry by reopening this project view.",
 	"projects.agentTerminalLabel": "{app} terminal",
+	"projects.panelLoading": "Loading project view…",
 	"projects.webviewSectionLabel": "Project web view",
 	"projects.webviewNotConfigured": "This address is not configured",
 	"projects.webviewConfigure":
@@ -62,6 +65,8 @@ export const PROJECT_AGENT_ENGLISH_TRANSLATIONS = {
 		"The project web view is unavailable in this environment.",
 	"projects.webviewOpenFailed":
 		"The separate project window could not be opened. Check the project address and try again.",
+	"projects.webviewOriginChanged":
+		"This project's address changed. Close its existing project window, then open it again.",
 } as const;
 
 type ProjectAgentTranslationKey =
@@ -77,7 +82,9 @@ export const PROJECT_AGENT_KOREAN_TRANSLATIONS: Record<
 	"projects.agentChecking": "PATH에서 확인 중…",
 	"projects.agentNotInstalled": "PATH에서 찾을 수 없음",
 	"projects.agentStart": "{app} 시작",
+	"projects.agentStop": "{app} 중단",
 	"projects.agentStarting": "코딩 앱을 시작하는 중…",
+	"projects.agentStopping": "코딩 앱을 중단하는 중…",
 	"projects.agentRunning": "이 프로젝트에서 {app} 실행 중",
 	"projects.agentReattaching":
 		"이 프로젝트의 실행 중인 세션에 다시 연결하는 중…",
@@ -107,6 +114,7 @@ export const PROJECT_AGENT_KOREAN_TRANSLATIONS: Record<
 	"projects.agentAvailabilityFailed":
 		"사용할 수 있는 코딩 앱을 확인하지 못했습니다. 프로젝트 화면을 다시 열어 시도하세요.",
 	"projects.agentTerminalLabel": "{app} 터미널",
+	"projects.panelLoading": "프로젝트 화면을 여는 중…",
 	"projects.webviewSectionLabel": "프로젝트 웹 화면",
 	"projects.webviewNotConfigured": "주소가 설정되지 않았습니다",
 	"projects.webviewConfigure":
@@ -130,4 +138,6 @@ export const PROJECT_AGENT_KOREAN_TRANSLATIONS: Record<
 		"이 환경에서는 프로젝트 웹 화면을 사용할 수 없습니다.",
 	"projects.webviewOpenFailed":
 		"별도 프로젝트 창을 열지 못했습니다. 주소를 확인한 뒤 다시 시도하세요.",
+	"projects.webviewOriginChanged":
+		"프로젝트 주소가 바뀌었습니다. 기존 프로젝트 창을 닫고 다시 여세요.",
 };

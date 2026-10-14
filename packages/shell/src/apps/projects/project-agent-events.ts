@@ -65,7 +65,7 @@ export function ensureProjectAgentEventListeners(
 				return;
 			}
 			state.ptyId = payload.ptyId;
-			state.status = "running";
+			if (state.status !== "stopping") state.status = "running";
 			state.error = null;
 			state.output = `${state.output}${payload.data}`.slice(-MAX_OUTPUT_CHARS);
 			target.publish(payload.projectPath);
@@ -117,4 +117,9 @@ export function ensureProjectAgentEventListeners(
 			throw error;
 		});
 	return eventSetup;
+}
+
+export function resetProjectAgentEventListenersForTests(): void {
+	Logger.debug("ProjectAgentEvents", "resetting cached test listener setup");
+	eventSetup = null;
 }

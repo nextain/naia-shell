@@ -1,6 +1,8 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import {
 	type KeyboardEvent,
+	lazy,
+	Suspense,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -9,8 +11,16 @@ import {
 } from "react";
 import { getAdkPath, setAdkPath } from "../../lib/adk-store";
 import { Logger } from "../../lib/logger";
-import { ProjectAgentPanel } from "./ProjectAgentPanel";
-import { ProjectWebViewPanel } from "./ProjectWebViewPanel";
+const ProjectAgentPanel = lazy(() =>
+	import("./ProjectAgentPanel").then((module) => ({
+		default: module.ProjectAgentPanel,
+	})),
+);
+const ProjectWebViewPanel = lazy(() =>
+	import("./ProjectWebViewPanel").then((module) => ({
+		default: module.ProjectWebViewPanel,
+	})),
+);
 import {
 	type CatalogIssue,
 	type CatalogProject,
@@ -37,6 +47,15 @@ const TABS: Array<{ id: ProjectStage; label: ProjectTranslationKey }> = [
 	{ id: "dashboard", label: "projects.tabDashboard" },
 	{ id: "issues", label: "projects.tabInternalIssues" },
 ];
+
+function ProjectPanelLoading() {
+	Logger.debug("ProjectsApp", "showing deferred project panel progress");
+	return (
+		<output className="projects-app__recovery" aria-live="polite">
+			{projectText("projects.panelLoading")}
+		</output>
+	);
+}
 
 function issueMessage(reason: ProjectConfigIssueReason): ProjectTranslationKey {
 	switch (reason) {
@@ -436,26 +455,32 @@ export function ProjectsApp() {
 								)}
 							</h2>
 							{activeTab === "agent" && (
-								<ProjectAgentPanel
-									projectPath={currentProject.projectPath}
-									adapterRoot={currentProject.adapterRoot}
-								/>
+								<Suspense fallback={<ProjectPanelLoading />}>
+									<ProjectAgentPanel
+										projectPath={currentProject.projectPath}
+										adapterRoot={currentProject.adapterRoot}
+									/>
+								</Suspense>
 							)}
 							{activeTab === "dashboard" && (
-								<ProjectWebViewPanel
-									adapterRoot={currentProject.adapterRoot}
-									projectPath={currentProject.projectPath}
-									view="dashboard"
-									url={currentProject.dashboardUrl}
-								/>
+								<Suspense fallback={<ProjectPanelLoading />}>
+									<ProjectWebViewPanel
+										adapterRoot={currentProject.adapterRoot}
+										projectPath={currentProject.projectPath}
+										view="dashboard"
+										url={currentProject.dashboardUrl}
+									/>
+								</Suspense>
 							)}
 							{activeTab === "issues" && (
-								<ProjectWebViewPanel
-									adapterRoot={currentProject.adapterRoot}
-									projectPath={currentProject.projectPath}
-									view="issues"
-									url={currentProject.issuesUrl}
-								/>
+								<Suspense fallback={<ProjectPanelLoading />}>
+									<ProjectWebViewPanel
+										adapterRoot={currentProject.adapterRoot}
+										projectPath={currentProject.projectPath}
+										view="issues"
+										url={currentProject.issuesUrl}
+									/>
+								</Suspense>
 							)}
 						</div>
 					</section>

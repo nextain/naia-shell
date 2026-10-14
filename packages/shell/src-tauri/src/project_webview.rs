@@ -78,18 +78,19 @@ fn project_webview_identity(
     )
 }
 
-fn project_navigation_allowed(url: &url::Url) -> bool {
+fn project_navigation_allowed(url: &url::Url, expected_origin: &url::Origin) -> bool {
     crate::log_verbose(&format!(
-        "[project_webview::project_navigation_allowed] enter scheme={}",
-        url.scheme()
+        "[project_webview::project_navigation_allowed] enter origin={}",
+        url.origin().ascii_serialization()
     ));
     let allowed = matches!(url.scheme(), "http" | "https")
         && url.host().is_some()
         && url.username().is_empty()
-        && url.password().is_none();
+        && url.password().is_none()
+        && &url.origin() == expected_origin;
     crate::log_verbose(&format!(
-        "[project_webview::project_navigation_allowed] branch=validated allowed={allowed} scheme={}",
-        url.scheme()
+		"[project_webview::project_navigation_allowed] branch=validated allowed={allowed} origin={}",
+		url.origin().ascii_serialization()
     ));
     allowed
 }
@@ -130,6 +131,7 @@ pub async fn project_webview_open(
         ));
         "project_url_invalid".to_owned()
     })?;
+    let origin = url.origin();
 
     if crate::debug_e2e_enabled() {
         crate::log_verbose(&format!(
@@ -145,6 +147,18 @@ pub async fn project_webview_open(
         kind,
     );
     if let Some(existing) = app.get_webview_window(&label) {
+        let current_origin = existing
+            .url()
+            .map_err(|_| "webview_unavailable".to_owned())?
+            .origin();
+        if current_origin != origin {
+            crate::log_verbose(&format!(
+                "[project_webview::project_webview_open] branch=existing_window_origin_changed view={} origin={}",
+                kind.as_key(),
+                origin.ascii_serialization()
+            ));
+            return Err("project_webview_origin_changed".to_owned());
+        }
         existing
             .navigate(url.clone())
             .map_err(|_| "webview_unavailable".to_owned())?;
@@ -180,12 +194,15 @@ pub async fn project_webview_open(
     .inner_size(1100.0, 760.0)
     .resizable(true)
     .on_navigation(move |next| {
-        let allowed = project_navigation_allowed(next);
+        let attempted_origin = next.origin().ascii_serialization();
+        let expected_origin = origin.ascii_serialization();
+        let allowed = project_navigation_allowed(next, &origin);
         crate::log_verbose(&format!(
-            "[project_webview::project_webview_open::on_navigation] branch=checked view={} allowed={} scheme={}",
+			"[project_webview::project_webview_open::on_navigation] branch=checked view={} allowed={} origin={} expected_origin={}",
             kind.as_key(),
             allowed,
-            next.scheme()
+            attempted_origin,
+            expected_origin
         ));
         allowed
     });
@@ -237,16 +254,31 @@ mod project_webview_tests {
     }
 
     #[test]
-    fn project_webview_navigation_allows_only_http_or_https_without_credentials() {
-        for raw in ["http://localhost:3000/", "https://example.test/issues"] {
-            assert!(project_navigation_allowed(&url::Url::parse(raw).unwrap()));
+    fn project_webview_navigation_allows_only_the_configured_origin() {
+        let configured_origin = url::Url::parse("https://example.test/dashboard")
+            .unwrap()
+            .origin();
+        for raw in [
+            "https://example.test/dashboard/summary",
+            "https://example.test:443/issues",
+        ] {
+            assert!(project_navigation_allowed(
+                &url::Url::parse(raw).unwrap(),
+                &configured_origin
+            ));
         }
         for raw in [
+            "https://other.test/",
+            "https://example.test:8443/",
+            "http://example.test/",
             "file:///tmp/page",
             "javascript:alert(1)",
             "https://user:secret@example.test/",
         ] {
-            assert!(!project_navigation_allowed(&url::Url::parse(raw).unwrap()));
+            assert!(!project_navigation_allowed(
+                &url::Url::parse(raw).unwrap(),
+                &configured_origin
+            ));
         }
     }
 

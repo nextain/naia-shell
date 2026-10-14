@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Logger } from "../../lib/logger";
-import { ensureProjectAgentEventListeners } from "./project-agent-events";
+import {
+	ensureProjectAgentEventListeners,
+	resetProjectAgentEventListenersForTests,
+} from "./project-agent-events";
 import { normalizeProjectPath } from "./project-session";
 import {
 	availabilityByApp,
@@ -204,6 +207,7 @@ export async function startProjectAgent(
 
 export async function attachProjectAgent(
 	projectPath: string,
+	adapterRoot: string,
 	appId: ProjectAgentAppId,
 ): Promise<void> {
 	Logger.debug("ProjectAgentRuntime", "reattaching to project PTY", { appId });
@@ -225,6 +229,7 @@ export async function attachProjectAgent(
 		const value = await invoke<unknown>("project_agent_pty_attach", {
 			appId,
 			projectPath,
+			adapterRoot,
 		});
 		const session = parseSession(value, appId, projectPath);
 		if (state.ptyId !== session.ptyId) {
@@ -258,6 +263,7 @@ export async function attachProjectAgent(
 
 export async function writeProjectAgent(
 	projectPath: string,
+	adapterRoot: string,
 	appId: ProjectAgentAppId,
 	data: string,
 ): Promise<void> {
@@ -279,7 +285,12 @@ export async function writeProjectAgent(
 		return;
 	}
 	try {
-		await invoke("project_agent_pty_write", { appId, projectPath, data });
+		await invoke("project_agent_pty_write", {
+			appId,
+			projectPath,
+			adapterRoot,
+			data,
+		});
 	} catch (error) {
 		const mapped = parseAgentError(error);
 		Logger.debug("ProjectAgentRuntime", "PTY input request failed", {
@@ -291,6 +302,7 @@ export async function writeProjectAgent(
 
 export async function resizeProjectAgent(
 	projectPath: string,
+	adapterRoot: string,
 	appId: ProjectAgentAppId,
 	rows: number,
 	cols: number,
@@ -313,6 +325,7 @@ export async function resizeProjectAgent(
 		await invoke("project_agent_pty_resize", {
 			appId,
 			projectPath,
+			adapterRoot,
 			rows,
 			cols,
 		});
@@ -325,8 +338,55 @@ export async function resizeProjectAgent(
 	}
 }
 
+export async function stopProjectAgent(
+	projectPath: string,
+	adapterRoot: string,
+	appId: ProjectAgentAppId,
+): Promise<void> {
+	Logger.debug("ProjectAgentRuntime", "requesting owned project PTY stop", {
+		appId,
+	});
+	if (!isProjectAgentAppId(appId)) {
+		Logger.debug("ProjectAgentRuntime", "stop rejected for unknown app ID");
+		return;
+	}
+	const state = stateFor(projectPath);
+	if (
+		state.selectedAppId !== appId ||
+		state.status !== "running" ||
+		!state.ptyId
+	) {
+		Logger.debug(
+			"ProjectAgentRuntime",
+			"stop skipped without an owned active session",
+		);
+		return;
+	}
+	setState(projectPath, { status: "stopping", error: null });
+	try {
+		await ensureEventListeners();
+		await invoke("project_agent_pty_stop", {
+			appId,
+			projectPath,
+			adapterRoot,
+		});
+		Logger.debug("ProjectAgentRuntime", "project PTY stop requested", {
+			appId,
+		});
+	} catch (error) {
+		const mapped = parseAgentError(error);
+		Logger.debug("ProjectAgentRuntime", "project PTY stop request failed", {
+			code: mapped.code,
+		});
+		if (getProjectAgentState(projectPath).status === "stopping") {
+			setState(projectPath, { status: "running", error: mapped });
+		}
+	}
+}
+
 export function resetProjectAgentRuntimeForTests(): void {
 	Logger.debug("ProjectAgentRuntime", "resetting in-memory test state");
+	resetProjectAgentEventListenersForTests();
 	statesByProject.clear();
 	pathListeners.clear();
 	availabilityByApp.clear();

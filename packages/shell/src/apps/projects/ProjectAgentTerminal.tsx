@@ -11,6 +11,7 @@ import "@xterm/xterm/css/xterm.css";
 
 export interface ProjectAgentTerminalProps {
 	projectPath: string;
+	adapterRoot: string;
 	appId: ProjectAgentAppId;
 	output: string;
 	label: string;
@@ -19,6 +20,7 @@ export interface ProjectAgentTerminalProps {
 
 export function ProjectAgentTerminal({
 	projectPath,
+	adapterRoot,
 	appId,
 	output,
 	label,
@@ -79,6 +81,7 @@ export function ProjectAgentTerminal({
 				fit.fit();
 				void resizeProjectAgent(
 					projectPath,
+					adapterRoot,
 					appId,
 					terminal.rows,
 					terminal.cols,
@@ -101,7 +104,7 @@ export function ProjectAgentTerminal({
 			Logger.debug("ProjectAgentTerminal", "forwarding terminal input", {
 				appId,
 			});
-			void writeProjectAgent(projectPath, appId, data);
+			void writeProjectAgent(projectPath, adapterRoot, appId, data);
 		});
 		return () => {
 			Logger.debug("ProjectAgentTerminal", "disposing project-owned terminal", {
@@ -114,7 +117,7 @@ export function ProjectAgentTerminal({
 			terminalRef.current = null;
 			fitRef.current = null;
 		};
-	}, [appId, projectPath]);
+	}, [adapterRoot, appId, projectPath]);
 
 	useEffect(() => {
 		Logger.debug("ProjectAgentTerminal", "applying buffered project output", {
@@ -169,7 +172,13 @@ export function ProjectAgentTerminal({
 		}
 		try {
 			fit.fit();
-			void resizeProjectAgent(projectPath, appId, terminal.rows, terminal.cols);
+			void resizeProjectAgent(
+				projectPath,
+				adapterRoot,
+				appId,
+				terminal.rows,
+				terminal.cols,
+			);
 		} catch {
 			Logger.debug(
 				"ProjectAgentTerminal",
@@ -177,7 +186,7 @@ export function ProjectAgentTerminal({
 				{ appId },
 			);
 		}
-	}, [appId, projectPath, running]);
+	}, [adapterRoot, appId, projectPath, running]);
 
 	return (
 		<div

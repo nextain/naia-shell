@@ -1,6 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import "./apps/browser/index";
+import "./apps/settings/index";
+import "./apps/workspace/index";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
 import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri";
 import { bootstrapShell } from "./lib/bootstrap-shell";
@@ -50,14 +53,7 @@ async function bootstrap() {
 					);
 			});
 		},
-		registerProjectApp: async () => {
-			await Promise.all([
-				import("./apps/browser/index"),
-				import("./apps/workspace/index"),
-				import("./apps/settings/index"),
-				import("./apps/projects/index"),
-			]);
-		},
+		registerProjectApp: () => import("./apps/projects/index"),
 		onProjectRegistrationFailure: (error) => {
 			Logger.error("Main", "Built-in app registration failed", {
 				error: String(error),

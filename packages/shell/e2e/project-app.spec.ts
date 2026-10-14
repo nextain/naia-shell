@@ -497,6 +497,22 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await expect(
 			page.getByText("Claude is running for this project."),
 		).toBeVisible();
+		await page.getByRole("button", { name: "Stop Claude" }).click();
+		await expect(
+			page.locator(".projects-app output[aria-live='polite']").filter({
+				hasText: "Stopping the coding app…",
+			}),
+		).toBeVisible();
+		await capture(page, "project-app-stopping.png");
+		calls = await page.evaluate(() => (window as any).__PROJECT_E2E__.calls);
+		const stop = calls.find(
+			(call: { cmd: string }) => call.cmd === "project_agent_pty_stop",
+		);
+		expect(stop.args).toEqual({
+			appId: "claude",
+			projectPath: "/fixture/naia-adk/projects/team/projects/example-app",
+			adapterRoot: "/fixture/adapter-root",
+		});
 
 		await page.getByRole("tab", { name: "Dashboard" }).click();
 		await page.getByRole("button", { name: "Open dashboard" }).click();

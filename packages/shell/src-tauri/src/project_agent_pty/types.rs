@@ -1,8 +1,8 @@
-use portable_pty::MasterPty;
+use portable_pty::{ChildKiller, MasterPty};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
@@ -59,8 +59,11 @@ pub(super) struct ProjectAgentKey {
 
 pub(super) struct ProjectAgentHandle {
     pub(super) pty_id: String,
+    pub(super) pid: u32,
     pub(super) master: Box<dyn MasterPty + Send>,
     pub(super) writer: Box<dyn Write + Send>,
+    pub(super) killer: Box<dyn ChildKiller + Send + Sync>,
+    pub(super) termination_requested: bool,
     pub(super) output_attached: bool,
     pub(super) output_backlog: String,
 }

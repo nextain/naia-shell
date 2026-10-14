@@ -37,6 +37,8 @@ function openErrorMessage(error: unknown): string {
 		return projectText("projects.webviewInvalid");
 	if (code === "webview_unavailable")
 		return projectText("projects.webviewUnavailable");
+	if (code === "project_webview_origin_changed")
+		return projectText("projects.webviewOriginChanged");
 	return projectText("projects.webviewOpenFailed");
 }
 

@@ -1,17 +1,18 @@
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::Write;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::project_catalog_runtime::{resolve_project_checkout, ProjectCatalogAuthority};
 
+use super::lifecycle::{authorized_project_session_path, stop_project_agent_handle};
 use super::types::{
     display_path, emit_or_buffer_project_agent_output, find_agent_executable,
-    find_project_agent_handle, find_project_agent_handle_mut, normalize_project_session_path,
-    project_agent_session, safe_app_id_for_log, CodingApp, ProjectAgentAvailability,
-    ProjectAgentExitEvent, ProjectAgentHandle, ProjectAgentKey, ProjectAgentOutputEvent,
-    ProjectAgentRegistry, ProjectAgentSession, CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
+    find_project_agent_handle, find_project_agent_handle_mut, project_agent_session,
+    safe_app_id_for_log, CodingApp, ProjectAgentAvailability, ProjectAgentExitEvent,
+    ProjectAgentHandle, ProjectAgentKey, ProjectAgentOutputEvent, ProjectAgentRegistry,
+    ProjectAgentSession, CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
 };
 
 #[tauri::command]
@@ -114,13 +115,17 @@ pub async fn project_agent_pty_start(
             let _ = child.wait();
             return Err("agent_unavailable".to_owned());
         };
+        let killer = child.clone_killer();
         let session_number = PROJECT_AGENT_SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
         let pty_id = format!("project-pty-{pid}-{session_number}");
         let canonical_display_path = display_path(&key.project_path);
         let handle = ProjectAgentHandle {
             pty_id: pty_id.clone(),
+            pid,
             master: pair.master,
             writer,
+            killer,
+            termination_requested: false,
             // The frontend installs its global event listeners before invoking
             // this command, so output may be emitted immediately.
             output_attached: true,
@@ -222,16 +227,29 @@ pub async fn project_agent_pty_start(
 #[tauri::command]
 pub fn project_agent_pty_attach(
     registry: State<'_, ProjectAgentRegistry>,
+    authority: State<'_, ProjectCatalogAuthority>,
     app: AppHandle,
     app_id: String,
     project_path: String,
+    adapter_root: String,
 ) -> Result<ProjectAgentSession, String> {
     crate::log_verbose(&format!(
         "[project_agent_pty::project_agent_pty_attach] enter app_id={} project_path_supplied=true",
         safe_app_id_for_log(&app_id)
     ));
     let coding_app = CodingApp::parse(&app_id)?;
-    let normalized_path = normalize_project_session_path(&project_path)?;
+    let normalized_path = authorized_project_session_path(
+        &authority,
+        &adapter_root,
+        &project_path,
+    )
+    .map_err(|error| {
+        crate::log_verbose(&format!(
+            "[project_agent_pty::project_agent_pty_attach] branch=project_authority_rejected app_id={}",
+            safe_app_id_for_log(&app_id)
+        ));
+        error
+    })?;
     let key = ProjectAgentKey {
         project_path: normalized_path,
         app: coding_app,
@@ -264,8 +282,10 @@ pub fn project_agent_pty_attach(
 #[tauri::command]
 pub async fn project_agent_pty_write(
     registry: State<'_, ProjectAgentRegistry>,
+    authority: State<'_, ProjectCatalogAuthority>,
     app_id: String,
     project_path: String,
+    adapter_root: String,
     data: String,
 ) -> Result<(), String> {
     crate::log_verbose(&format!(
@@ -274,7 +294,18 @@ pub async fn project_agent_pty_write(
         data.len()
     ));
     let coding_app = CodingApp::parse(&app_id)?;
-    let normalized_path = normalize_project_session_path(&project_path)?;
+    let normalized_path = authorized_project_session_path(
+        &authority,
+        &adapter_root,
+        &project_path,
+    )
+    .map_err(|error| {
+        crate::log_verbose(&format!(
+            "[project_agent_pty::project_agent_pty_write] branch=project_authority_rejected app_id={}",
+            safe_app_id_for_log(&app_id)
+        ));
+        error
+    })?;
     let registry = Arc::clone(&registry);
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         let key = ProjectAgentKey {
@@ -299,8 +330,10 @@ pub async fn project_agent_pty_write(
 #[tauri::command]
 pub async fn project_agent_pty_resize(
     registry: State<'_, ProjectAgentRegistry>,
+    authority: State<'_, ProjectCatalogAuthority>,
     app_id: String,
     project_path: String,
+    adapter_root: String,
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
@@ -311,7 +344,18 @@ pub async fn project_agent_pty_resize(
         cols
     ));
     let coding_app = CodingApp::parse(&app_id)?;
-    let normalized_path = normalize_project_session_path(&project_path)?;
+    let normalized_path = authorized_project_session_path(
+        &authority,
+        &adapter_root,
+        &project_path,
+    )
+    .map_err(|error| {
+        crate::log_verbose(&format!(
+            "[project_agent_pty::project_agent_pty_resize] branch=project_authority_rejected app_id={}",
+            safe_app_id_for_log(&app_id)
+        ));
+        error
+    })?;
     let registry = Arc::clone(&registry);
     tokio::task::spawn_blocking(move || -> Result<(), String> {
         let key = ProjectAgentKey {
@@ -334,6 +378,45 @@ pub async fn project_agent_pty_resize(
                 );
                 "session_missing".to_owned()
             })
+    })
+    .await
+    .map_err(|_| "session_missing".to_owned())?
+}
+
+#[tauri::command]
+pub async fn project_agent_pty_stop(
+    registry: State<'_, ProjectAgentRegistry>,
+    authority: State<'_, ProjectCatalogAuthority>,
+    app_id: String,
+    project_path: String,
+    adapter_root: String,
+) -> Result<(), String> {
+    crate::log_verbose(&format!(
+        "[project_agent_pty::project_agent_pty_stop] enter app_id={} project_path_supplied=true",
+        safe_app_id_for_log(&app_id)
+    ));
+    let coding_app = CodingApp::parse(&app_id)?;
+    let normalized_path = authorized_project_session_path(
+        &authority,
+        &adapter_root,
+        &project_path,
+    )
+    .map_err(|error| {
+        crate::log_verbose(&format!(
+            "[project_agent_pty::project_agent_pty_stop] branch=project_authority_rejected app_id={}",
+            safe_app_id_for_log(&app_id)
+        ));
+        error
+    })?;
+    let registry = Arc::clone(&registry);
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let key = ProjectAgentKey {
+            project_path: normalized_path,
+            app: coding_app,
+        };
+        let mut state = registry.lock().unwrap();
+        let handle = find_project_agent_handle_mut(&mut state, &key)?;
+        stop_project_agent_handle(handle)
     })
     .await
     .map_err(|_| "session_missing".to_owned())?

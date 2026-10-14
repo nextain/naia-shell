@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Logger } from "../../lib/logger";
-import { ProjectAgentTerminal } from "./ProjectAgentTerminal";
 import {
 	PROJECT_AGENT_APPS,
 	type ProjectAgentAppId,
@@ -10,10 +9,17 @@ import {
 	getProjectAgentState,
 	loadProjectAgentAvailability,
 	selectProjectAgent,
+	stopProjectAgent,
 	startProjectAgent,
 	subscribeProjectAgent,
 } from "./project-agent-runtime";
 import { projectText } from "./translations";
+
+const ProjectAgentTerminal = lazy(() =>
+	import("./ProjectAgentTerminal").then((module) => ({
+		default: module.ProjectAgentTerminal,
+	})),
+);
 
 export interface ProjectAgentPanelProps {
 	projectPath: string;
@@ -73,6 +79,7 @@ export function ProjectAgentPanel({
 	);
 	const [availabilityFailed, setAvailabilityFailed] = useState(false);
 	const [startPending, setStartPending] = useState(false);
+	const [stopPending, setStopPending] = useState(false);
 
 	useEffect(() => {
 		Logger.debug(
@@ -102,7 +109,7 @@ export function ProjectAgentPanel({
 					appId: current.selectedAppId,
 				},
 			);
-			void attachProjectAgent(projectPath, current.selectedAppId);
+			void attachProjectAgent(projectPath, adapterRoot, current.selectedAppId);
 		}
 		return () => {
 			Logger.debug(
@@ -112,7 +119,7 @@ export function ProjectAgentPanel({
 			active = false;
 			unsubscribe();
 		};
-	}, [projectPath]);
+	}, [adapterRoot, projectPath]);
 
 	const selectedAppId = state.selectedAppId;
 	const selectedAvailable = selectedAppId
@@ -131,7 +138,7 @@ export function ProjectAgentPanel({
 		startPending ||
 		state.status === "starting" ||
 		state.status === "connecting";
-	const isRunning = state.status === "running";
+	const isRunning = state.status === "running" || state.status === "stopping";
 
 	async function handleStart() {
 		Logger.debug(
@@ -158,6 +165,19 @@ export function ProjectAgentPanel({
 			await startProjectAgent(projectPath, adapterRoot, selectedAppId);
 		} finally {
 			setStartPending(false);
+		}
+	}
+
+	async function handleStop() {
+		Logger.debug("ProjectAgentPanel", "requesting selected project PTY stop", {
+			appId: selectedAppId,
+		});
+		if (!selectedAppId || !isRunning || state.status === "stopping") return;
+		setStopPending(true);
+		try {
+			await stopProjectAgent(projectPath, adapterRoot, selectedAppId);
+		} finally {
+			setStopPending(false);
 		}
 	}
 
@@ -231,6 +251,20 @@ export function ProjectAgentPanel({
 							})}
 				</button>
 			)}
+			{isRunning && selectedAppId && (
+				<button
+					className="projects-app__secondary-button"
+					type="button"
+					disabled={state.status === "stopping" || stopPending}
+					onClick={() => void handleStop()}
+				>
+					{state.status === "stopping" || stopPending
+						? projectText("projects.agentStopping")
+						: projectText("projects.agentStop", {
+								app: appLabel(selectedAppId),
+							})}
+				</button>
+			)}
 			{state.status === "connecting" && (
 				<output className="projects-app__recovery" aria-live="polite">
 					{projectText("projects.agentReattaching")}
@@ -246,6 +280,11 @@ export function ProjectAgentPanel({
 					{projectText("projects.agentRunning", {
 						app: appLabel(selectedAppId),
 					})}
+				</output>
+			)}
+			{state.status === "stopping" && selectedAppId && (
+				<output className="projects-app__recovery" aria-live="polite">
+					{projectText("projects.agentStopping")}
 				</output>
 			)}
 			{state.status === "exited" && (
@@ -280,15 +319,24 @@ export function ProjectAgentPanel({
 				</section>
 			)}
 			{selectedAppId && selectedAvailable === true && (
-				<ProjectAgentTerminal
-					projectPath={projectPath}
-					appId={selectedAppId}
-					output={state.output}
-					running={isRunning}
-					label={projectText("projects.agentTerminalLabel", {
-						app: appLabel(selectedAppId),
-					})}
-				/>
+				<Suspense
+					fallback={
+						<output className="projects-app__recovery" aria-live="polite">
+							{projectText("projects.panelLoading")}
+						</output>
+					}
+				>
+					<ProjectAgentTerminal
+						projectPath={projectPath}
+						adapterRoot={adapterRoot}
+						appId={selectedAppId}
+						output={state.output}
+						running={state.status === "running"}
+						label={projectText("projects.agentTerminalLabel", {
+							app: appLabel(selectedAppId),
+						})}
+					/>
+				</Suspense>
 			)}
 		</section>
 	);
