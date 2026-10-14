@@ -87,6 +87,14 @@ const TAURI_MOCK = `
 \t\tif (cmd === "plugin:event|listen") return args.handler;
 \t\tif (cmd === "plugin:event|emit" || cmd === "plugin:event|unlisten") return null;
 \t\tif (cmd === "plugin:dialog|open") { state.dialogCount++; return state.dialogPath; }
+\t\tif (cmd === "read_naia_config") return JSON.stringify({
+\t\t\tprovider: "gemini",
+\t\t\tmodel: "gemini-2.5-flash",
+\t\t\tapiKey: "project-app-e2e",
+\t\t\tlocale: "en",
+\t\t\tonboardingComplete: true,
+\t\t});
+\t\tif (cmd === "read_naia_ui_config") return "{}";
 \t\tif (cmd === "write_naia_path_cache") return null;
 \t\tif (cmd === "projects_scan_adk") {
 \t\t\tif (state.pending) return new Promise(function(resolve) { state.resolveScan = resolve; });
@@ -444,7 +452,9 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await expect(radios.locator(":checked")).toHaveCount(0);
 		await page.getByRole("radio", { name: "Claude" }).check();
 		await page.getByRole("button", { name: "Start Claude" }).click();
-		await expect(page.getByRole("status")).toContainText("Claude is running");
+		await expect(
+			page.getByText("Claude is running for this project."),
+		).toBeVisible();
 		let calls = await page.evaluate(
 			() => (window as any).__PROJECT_E2E__.calls,
 		);
@@ -484,13 +494,17 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 				).length;
 			})
 			.toBeGreaterThan(0);
-		await expect(page.getByRole("status")).toContainText("Claude is running");
+		await expect(
+			page.getByText("Claude is running for this project."),
+		).toBeVisible();
 
 		await page.getByRole("tab", { name: "Dashboard" }).click();
 		await page.getByRole("button", { name: "Open dashboard" }).click();
-		await expect(page.getByRole("status")).toContainText(
-			"not created in this test environment",
-		);
+		await expect(
+			page.getByText(
+				"The project window was not created in this test environment. The project URL remains configured.",
+			),
+		).toBeVisible();
 		calls = await page.evaluate(() => (window as any).__PROJECT_E2E__.calls);
 		const webview = calls.find(
 			(call: { cmd: string }) => call.cmd === "project_webview_open",

@@ -50,9 +50,16 @@ async function bootstrap() {
 					);
 			});
 		},
-		registerProjectApp: () => import("./apps/projects/index"),
+		registerProjectApp: async () => {
+			await Promise.all([
+				import("./apps/browser/index"),
+				import("./apps/workspace/index"),
+				import("./apps/settings/index"),
+				import("./apps/projects/index"),
+			]);
+		},
 		onProjectRegistrationFailure: (error) => {
-			Logger.error("Main", "Built-in project app registration failed", {
+			Logger.error("Main", "Built-in app registration failed", {
 				error: String(error),
 			});
 		},
