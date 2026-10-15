@@ -1501,9 +1501,9 @@ impl RuntimeProcessRunner for SystemProcessRunner {
             const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
             const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
             const CREATE_SUSPENDED: u32 = 0x0000_0004;
+            // CREATE_NO_WINDOW leaves no console handle for AttachConsole-based shutdown.
             command
-                .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED)
-                .show_window(0);
+                .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED);
         }
         #[cfg(unix)]
         {
@@ -1528,6 +1528,12 @@ impl RuntimeProcessRunner for SystemProcessRunner {
         }
 
         let mut child = command.spawn()?;
+        #[cfg(windows)]
+        if let Err(error) = hide_suspended_child_console(child.id()) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
         let ownership = match ChildOwnership::attach(&child) {
             Ok(ownership) => ownership,
             Err(error) => {
@@ -1549,6 +1555,67 @@ impl RuntimeProcessRunner for SystemProcessRunner {
             reaped: false,
         }))
     }
+}
+
+#[cfg(windows)]
+fn hide_suspended_child_console(child_pid: u32) -> io::Result<()> {
+    use windows_sys::Win32::System::Console::GetConsoleWindow;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+
+    with_attached_child_console(child_pid, || {
+        let window = unsafe { GetConsoleWindow() };
+        if window.is_null() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "managed child console window is unavailable",
+            ));
+        }
+        unsafe { ShowWindow(window, SW_HIDE) };
+        log_ollama_debug(
+            "process.console_hidden",
+            None,
+            "platform=windows child_suspended=true",
+        );
+        Ok(())
+    })
+}
+
+#[cfg(windows)]
+fn with_attached_child_console<T>(
+    child_pid: u32,
+    action: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
+    use windows_sys::Win32::System::Console::{AttachConsole, FreeConsole, GetConsoleProcessList};
+
+    let mut processes = [0u32; 64];
+    let count = unsafe { GetConsoleProcessList(processes.as_mut_ptr(), processes.len() as u32) };
+    let previous_console_process = if count == 0 {
+        None
+    } else {
+        processes[..count.min(processes.len() as u32) as usize]
+            .iter()
+            .copied()
+            .find(|pid| *pid != std::process::id())
+    };
+    if previous_console_process.is_some() {
+        unsafe { FreeConsole() };
+    }
+    if unsafe { AttachConsole(child_pid) } == 0 {
+        let error = io::Error::last_os_error();
+        if let Some(pid) = previous_console_process {
+            unsafe { AttachConsole(pid) };
+        }
+        return Err(error);
+    }
+
+    let result = action();
+    unsafe { FreeConsole() };
+    if let Some(pid) = previous_console_process {
+        if unsafe { AttachConsole(pid) } == 0 && result.is_ok() {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    result
 }
 
 #[cfg(windows)]
@@ -5965,6 +6032,42 @@ mod tests {
     use super::*;
     use std::io::Cursor;
     use zip::write::SimpleFileOptions;
+
+    #[cfg(windows)]
+    #[test]
+    fn suspended_ollama_console_is_hidden_before_child_resumes() {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Console::GetConsoleWindow;
+        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_SUSPENDED: u32 = 0x0000_0004;
+
+        let mut child = std::process::Command::new("cmd.exe")
+            .args(["/C", "exit"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED)
+            .spawn()
+            .expect("spawn suspended console child");
+        let visibility = hide_suspended_child_console(child.id()).and_then(|()| {
+            with_attached_child_console(child.id(), || {
+                let window = unsafe { GetConsoleWindow() };
+                if window.is_null() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "attached child console has no window handle",
+                    ));
+                }
+                Ok(unsafe { IsWindowVisible(window) != 0 })
+            })
+        });
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert!(!visibility.expect("inspect suspended child console"));
+    }
 
     #[cfg(target_os = "linux")]
     static REAL_PROCESS_GROUP_TEST_LOCK: Mutex<()> = Mutex::new(());
