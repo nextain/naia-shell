@@ -9,8 +9,8 @@ import {
 	resetProjectAgentRuntimeForTests,
 	selectProjectAgent,
 	startProjectAgent,
-	subscribeProjectAgent,
 	stopProjectAgent,
+	subscribeProjectAgent,
 	writeProjectAgent,
 } from "../project-agent-runtime";
 
@@ -176,9 +176,11 @@ describe("project agent runtime ownership", () => {
 		await writeProjectAgent(projectA, adapterRoot, "claude", "first\n");
 		await writeProjectAgent(projectA, adapterRoot, "claude", "second\n");
 		expect(
-			vi.mocked(invoke).mock.calls.filter(
-				([command]) => command === "project_agent_pty_write",
-			),
+			vi
+				.mocked(invoke)
+				.mock.calls.filter(
+					([command]) => command === "project_agent_pty_write",
+				),
 		).toHaveLength(0);
 
 		if (!releaseStart) throw new Error("PTY start request did not begin");
@@ -243,11 +245,195 @@ describe("project agent runtime ownership", () => {
 		});
 		await starting;
 		expect(
-			vi.mocked(invoke).mock.calls.filter(
-				([command]) => command === "project_agent_pty_write",
-			),
+			vi
+				.mocked(invoke)
+				.mock.calls.filter(
+					([command]) => command === "project_agent_pty_write",
+				),
 		).toHaveLength(0);
+		expect(getProjectAgentState(projectA).inputError).toBeNull();
 		warn.mockRestore();
+	});
+
+	it("uses the latest adapter root when reusing a queued input drain", async () => {
+		const nextAdapterRoot = "/fixture/next-adapter-root";
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "claude");
+		await startProjectAgent(projectA, adapterRoot, "claude");
+		let releaseFirstWrite: (() => void) | undefined;
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (command === "project_agent_pty_write") {
+				const data = (args as { data: string }).data;
+				if (data === "first\n") {
+					return new Promise((resolve) => {
+						releaseFirstWrite = () => resolve(null);
+					});
+				}
+			}
+			return null;
+		});
+
+		const firstWrite = writeProjectAgent(
+			projectA,
+			adapterRoot,
+			"claude",
+			"first\n",
+		);
+		for (let attempt = 0; attempt < 10 && !releaseFirstWrite; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		const secondWrite = writeProjectAgent(
+			projectA,
+			nextAdapterRoot,
+			"claude",
+			"second\n",
+		);
+		if (!releaseFirstWrite) throw new Error("PTY write did not begin");
+		releaseFirstWrite();
+		await Promise.all([firstWrite, secondWrite]);
+
+		const writes = vi
+			.mocked(invoke)
+			.mock.calls.filter(([command]) => command === "project_agent_pty_write")
+			.map(([, args]) => (args as { adapterRoot: string }).adapterRoot);
+		expect(writes).toEqual([adapterRoot, nextAdapterRoot]);
+	});
+
+	it("buffers input while attaching and drains it after reconnect", async () => {
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "claude");
+		await startProjectAgent(projectA, adapterRoot, "claude");
+		let releaseAttach: ((value: unknown) => void) | undefined;
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_attach") {
+				return new Promise((resolve) => {
+					releaseAttach = resolve;
+				});
+			}
+			return null;
+		});
+
+		const attaching = attachProjectAgent(projectA, adapterRoot, "claude");
+		for (let attempt = 0; attempt < 10 && !releaseAttach; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		await writeProjectAgent(
+			projectA,
+			adapterRoot,
+			"claude",
+			"during reconnect\n",
+		);
+		expect(
+			vi
+				.mocked(invoke)
+				.mock.calls.filter(
+					([command]) => command === "project_agent_pty_write",
+				),
+		).toHaveLength(0);
+
+		if (!releaseAttach) throw new Error("PTY attach request did not begin");
+		releaseAttach({
+			appId: "claude",
+			projectPath: projectA,
+			ptyId: "pty-alpha",
+			running: true,
+		});
+		await attaching;
+
+		expect(invoke).toHaveBeenCalledWith("project_agent_pty_write", {
+			appId: "claude",
+			projectPath: projectA,
+			adapterRoot,
+			data: "during reconnect\n",
+		});
+		expect(getProjectAgentState(projectA).status).toBe("running");
+	});
+
+	it("applies the 64 KiB queue limit while reconnecting", async () => {
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "claude");
+		await startProjectAgent(projectA, adapterRoot, "claude");
+		let releaseAttach: ((value: unknown) => void) | undefined;
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_attach") {
+				return new Promise((resolve) => {
+					releaseAttach = resolve;
+				});
+			}
+			return null;
+		});
+		const attaching = attachProjectAgent(projectA, adapterRoot, "claude");
+		for (let attempt = 0; attempt < 10 && !releaseAttach; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		if (!releaseAttach) throw new Error("PTY attach request did not begin");
+		const warn = vi.spyOn(Logger, "warn").mockImplementation(() => {});
+
+		await writeProjectAgent(
+			projectA,
+			adapterRoot,
+			"claude",
+			"x".repeat(64 * 1024 + 1),
+		);
+
+		expect(warn).toHaveBeenCalledWith(
+			"ProjectAgentRuntime",
+			"PTY input was not queued",
+			expect.objectContaining({
+				reason: "startup_queue_limit",
+				limitBytes: 64 * 1024,
+			}),
+		);
+		expect(getProjectAgentState(projectA).inputError).toEqual({
+			code: "input_failed",
+		});
+		releaseAttach({
+			appId: "claude",
+			projectPath: projectA,
+			ptyId: "pty-alpha",
+			running: true,
+		});
+		await attaching;
+		expect(getProjectAgentState(projectA).inputError).toBeNull();
+		warn.mockRestore();
+	});
+
+	it("clears an overflow banner after a pending input drain succeeds", async () => {
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "claude");
+		await startProjectAgent(projectA, adapterRoot, "claude");
+		let releaseWrite: (() => void) | undefined;
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_write") {
+				return new Promise((resolve) => {
+					releaseWrite = () => resolve(null);
+				});
+			}
+			return null;
+		});
+		const firstWrite = writeProjectAgent(
+			projectA,
+			adapterRoot,
+			"claude",
+			"queued\n",
+		);
+		for (let attempt = 0; attempt < 10 && !releaseWrite; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		if (!releaseWrite) throw new Error("PTY write did not begin");
+		await writeProjectAgent(
+			projectA,
+			adapterRoot,
+			"claude",
+			"x".repeat(64 * 1024),
+		);
+		expect(getProjectAgentState(projectA).inputError).toEqual({
+			code: "input_failed",
+		});
+
+		releaseWrite();
+		await firstWrite;
+		expect(getProjectAgentState(projectA).inputError).toBeNull();
 	});
 
 	it("shows and logs a native write failure instead of swallowing it", async () => {

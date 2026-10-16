@@ -1,7 +1,13 @@
+// platforms: linux
+// Uses an isolated fake CLI and local PTY; it needs no credentials or devices.
+// The fake child records complete input lines so the test checks PTY delivery directly.
+
+import { readFileSync } from "node:fs";
 import { expect } from "@wdio/globals";
 
 const PROJECT_A = "pty-input-756-a";
 const PROJECT_B = "pty-input-756-b";
+const PTY_INPUT_TRACE = process.env.NAIA_E2E_PTY_TRACE;
 
 async function clickInWebView(selector: string): Promise<void> {
 	const clicked = await browser.execute((query: string) => {
@@ -16,9 +22,7 @@ async function clickInWebView(selector: string): Promise<void> {
 async function openProject(projectId: string): Promise<void> {
 	const clicked = await browser.execute((id: string) => {
 		const button = Array.from(
-			document.querySelectorAll<HTMLElement>(
-				".projects-app__project-button",
-			),
+			document.querySelectorAll<HTMLElement>(".projects-app__project-button"),
 		).find((candidate) => candidate.textContent?.includes(id));
 		if (!button) return false;
 		button.click();
@@ -27,9 +31,11 @@ async function openProject(projectId: string): Promise<void> {
 	expect(clicked).toBe(true);
 	await browser.waitUntil(
 		async () =>
-			(await browser.execute((expectedId: string) =>
-				document.querySelector(".projects-app__project-header h1")
-					?.textContent?.includes(expectedId) ?? false,
+			(await browser.execute(
+				(expectedId: string) =>
+					document
+						.querySelector(".projects-app__project-header h1")
+						?.textContent?.includes(expectedId) ?? false,
 				projectId,
 			)) === true,
 		{
@@ -40,6 +46,8 @@ async function openProject(projectId: string): Promise<void> {
 }
 
 async function sendWebDriverLine(line: string): Promise<void> {
+	if (!PTY_INPUT_TRACE)
+		throw new Error("missing isolated PTY input trace path");
 	const focused = await browser.execute(() => {
 		const textarea = document.querySelector(
 			'[data-project-terminal="true"] .xterm-helper-textarea',
@@ -53,39 +61,29 @@ async function sendWebDriverLine(line: string): Promise<void> {
 	);
 	await textarea.setValue(line);
 	await browser.keys("Enter");
-	try {
-		await browser.waitUntil(
-			async () =>
-				(await browser.execute((expected: string) => {
-					const rows = document.querySelector(
-						'[data-project-terminal="true"] .xterm-rows',
-					);
-					return rows?.textContent?.includes(`ECHO:${expected}`) ?? false;
-				}, line)) === true,
-			{
-				timeout: 15_000,
-				timeoutMsg: `terminal did not display ECHO:${line}`,
-			},
-		);
-	} catch (error) {
-		const snapshot = await browser.execute(() => ({
-			terminalText:
-				document.querySelector('[data-project-terminal="true"] .xterm-rows')
-					?.textContent?.slice(-1_200) ?? null,
-				activeElementClass: (document.activeElement as HTMLElement | null)
-					?.className ?? null,
-		}));
-		console.error(`[pty-input-e2e] terminal snapshot ${JSON.stringify(snapshot)}`);
-		throw error;
-	}
+	await browser.waitUntil(
+		async () => {
+			try {
+				return readFileSync(PTY_INPUT_TRACE, "utf8")
+					.split(/\r?\n/)
+					.includes(line);
+			} catch {
+				return false;
+			}
+		},
+		{
+			timeout: 15_000,
+			timeoutMsg: `fake CLI did not receive ${line}`,
+		},
+	);
 }
 
 describe("Project coding-agent PTY input — #756 stage 3", () => {
 	it("round-trips WebDriver keys before and after switching projects", async () => {
 		await browser.waitUntil(
 			async () =>
-				(await browser.execute(() =>
-					document.querySelector('[data-app-id="projects"]') !== null,
+				(await browser.execute(
+					() => document.querySelector('[data-app-id="projects"]') !== null,
 				)) === true,
 			{ timeout: 60_000, timeoutMsg: "Projects app tab did not appear" },
 		);
@@ -93,8 +91,9 @@ describe("Project coding-agent PTY input — #756 stage 3", () => {
 		try {
 			await browser.waitUntil(
 				async () =>
-					(await browser.execute(() =>
-						document.querySelector(".projects-app__project-button") !== null,
+					(await browser.execute(
+						() =>
+							document.querySelector(".projects-app__project-button") !== null,
 					)) === true,
 				{
 					timeout: 20_000,
@@ -107,20 +106,21 @@ describe("Project coding-agent PTY input — #756 stage 3", () => {
 				title: document.title,
 				bodyText: document.body.innerText.slice(0, 1_200),
 				projectAppHtml:
-					document.querySelector('[data-app-id="projects"]')?.outerHTML.slice(0, 500) ??
-					null,
+					document
+						.querySelector('[data-app-id="projects"]')
+						?.outerHTML.slice(0, 500) ?? null,
 				projectPanelHtml:
 					document.querySelector(".projects-app")?.outerHTML.slice(0, 1_200) ??
 					null,
 			}));
-			console.error(`[pty-input-e2e] project catalog snapshot ${JSON.stringify(snapshot)}`);
+			console.error(
+				`[pty-input-e2e] project catalog snapshot ${JSON.stringify(snapshot)}`,
+			);
 			throw error;
 		}
 
 		await openProject(PROJECT_A);
-		await clickInWebView(
-			'input[name="project-coding-agent"][value="claude"]',
-		);
+		await clickInWebView('input[name="project-coding-agent"][value="claude"]');
 		await browser.waitUntil(
 			async () =>
 				(await browser.execute(() =>
@@ -135,21 +135,22 @@ describe("Project coding-agent PTY input — #756 stage 3", () => {
 		await clickInWebView(".projects-app__primary-button");
 		await browser.waitUntil(
 			async () =>
-				(await browser.execute(() =>
-					document.querySelector(".projects-app__agent-running") !== null,
+				(await browser.execute(
+					() => document.querySelector(".projects-app__agent-running") !== null,
 				)) === true,
 			{ timeout: 20_000, timeoutMsg: "PTY session did not start" },
 		);
 		await browser.waitUntil(
 			async () =>
-				(await browser.execute(() =>
-					document
-						.querySelector('[data-project-terminal="true"] .xterm-rows')
-						?.textContent?.includes("PTY_INPUT_READY") ?? false,
+				(await browser.execute(
+					() =>
+						document.querySelector(
+							'[data-project-terminal="true"] .xterm-helper-textarea',
+						) !== null,
 				)) === true,
 			{
-				timeout: 15_000,
-				timeoutMsg: "fake Claude readiness output was not displayed",
+				timeout: 20_000,
+				timeoutMsg: "project terminal did not mount",
 			},
 		);
 
@@ -158,8 +159,9 @@ describe("Project coding-agent PTY input — #756 stage 3", () => {
 		await clickInWebView(".projects-app__project-header button");
 		await browser.waitUntil(
 			async () =>
-				(await browser.execute(() =>
-					document.querySelector(".projects-app__project-button") !== null,
+				(await browser.execute(
+					() =>
+						document.querySelector(".projects-app__project-button") !== null,
 				)) === true,
 			{ timeout: 20_000, timeoutMsg: "project catalog did not reopen" },
 		);
@@ -167,16 +169,17 @@ describe("Project coding-agent PTY input — #756 stage 3", () => {
 		await clickInWebView(".projects-app__project-header button");
 		await browser.waitUntil(
 			async () =>
-				(await browser.execute(() =>
-					document.querySelector(".projects-app__project-button") !== null,
+				(await browser.execute(
+					() =>
+						document.querySelector(".projects-app__project-button") !== null,
 				)) === true,
 			{ timeout: 20_000, timeoutMsg: "project catalog did not reopen" },
 		);
 		await openProject(PROJECT_A);
 		await browser.waitUntil(
 			async () =>
-				(await browser.execute(() =>
-					document.querySelector(".projects-app__agent-running") !== null,
+				(await browser.execute(
+					() => document.querySelector(".projects-app__agent-running") !== null,
 				)) === true,
 			{ timeout: 20_000, timeoutMsg: "PTY session did not reattach" },
 		);

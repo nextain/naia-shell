@@ -1,9 +1,9 @@
 {
 	"generatedFrom": "packages/shell/e2e-tauri/specs",
-	"total": 76,
+	"total": 79,
 	"summary": {
-		"credentialed_live": 52,
-		"deterministic_ci": 18,
+		"credentialed_live": 53,
+		"deterministic_ci": 20,
 		"native_local": 6
 	},
 	"specs": [
@@ -620,6 +620,16 @@
 			"tier": "credentialed_live"
 		},
 		{
+			"spec": "97-ollama-runtime-reservation.spec.ts",
+			"conf": [],
+			"env": [
+				"NAIA_API_KEY",
+				"NAIA_E2E_ADK_PATH",
+				"NAIA_SHELL_E2E_FAKE_ACCELERATOR"
+			],
+			"tier": "credentialed_live"
+		},
+		{
 			"spec": "98-codex-chat-delegation.spec.ts",
 			"conf": [
 				"wdio.conf.codex-delegation.ts"
@@ -708,6 +718,23 @@
 		},
 		{
 			"spec": "orchestration-restart.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "project-agent-pty-input.spec.ts",
+			"conf": [
+				"wdio.conf.project-agent-pty.ts"
+			],
+			"env": [],
+			"platforms": [
+				"linux"
+			],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "project-catalog-native.spec.ts",
 			"conf": [],
 			"env": [],
 			"tier": "deterministic_ci"

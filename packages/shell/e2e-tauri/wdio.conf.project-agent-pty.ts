@@ -1,6 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { delimiter, resolve } from "node:path";
-import { config as codexConfig } from "./wdio.conf.codex.js";
 import {
 	E2E_ROOT,
 	E2E_TARGET_DIR,
@@ -11,19 +10,11 @@ import {
 	startOwnedEmbeddedApp,
 	startOwnedViteServer,
 } from "./codex-e2e-environment.js";
+import { config as codexConfig } from "./wdio.conf.codex.js";
 
 const EXE = process.platform === "win32" ? ".exe" : "";
-const TAURI_BINARY = resolve(
-	E2E_TARGET_DIR,
-	"debug",
-	`naia-shell${EXE}`,
-);
-const ADAPTER_ROOT = resolve(
-	E2E_WORKSPACE,
-	"projects",
-	"group",
-	"naia-pj-adk",
-);
+const TAURI_BINARY = resolve(E2E_TARGET_DIR, "debug", `naia-shell${EXE}`);
+const ADAPTER_ROOT = resolve(E2E_WORKSPACE, "projects", "group", "naia-pj-adk");
 
 function seedProject(projectId: string): void {
 	const projectPath = resolve(ADAPTER_ROOT, "projects", projectId);
@@ -48,7 +39,7 @@ function seedFakeClaude(): void {
 	const executable = resolve(bin, "claude");
 	writeFileSync(
 		executable,
-		"#!/bin/sh\nprintf 'PTY_INPUT_READY\\r\\n'\nwhile IFS= read -r line; do\n  printf 'ECHO:%s\\r\\n' \"$line\"\ndone\n",
+		'#!/bin/sh\nwhile IFS= read -r line; do\n  printf \'%s\\n\' "$line" >> "$NAIA_E2E_PTY_TRACE"\n  printf \'ECHO:%s\\r\\n\' "$line"\ndone\n',
 		"utf8",
 	);
 	chmodSync(executable, 0o755);
@@ -57,7 +48,7 @@ function seedFakeClaude(): void {
 
 export const config = {
 	...codexConfig,
-	specs: ["./pty-input/project-agent-pty-input.spec.ts"],
+	specs: ["./specs/project-agent-pty-input.spec.ts"],
 	async onPrepare() {
 		if (!existsSync(TAURI_BINARY)) {
 			throw new Error(
@@ -75,6 +66,10 @@ export const config = {
 		process.env.NAIA_E2E_HOME = process.env.NAIA_HOME;
 		process.env.NAIA_ADK_PATH = E2E_WORKSPACE;
 		process.env.NAIA_E2E_ADK_PATH = E2E_WORKSPACE;
+		process.env.NAIA_E2E_PTY_TRACE = resolve(
+			E2E_ROOT,
+			"project-agent-pty-input.log",
+		);
 		process.env.NAIA_SETTINGS_DIR = resolve(E2E_WORKSPACE, "naia-settings");
 		process.env.VITE_NAIA_WEB_BASE_URL = "http://127.0.0.1:1422";
 		process.env.VITE_NAIA_DEV_GATEWAY_URL = "http://127.0.0.1:1422";
@@ -84,6 +79,7 @@ export const config = {
 		process.env.VITE_NAIA_OAUTH_CALLBACK_URL = `http://127.0.0.1:${oauthPort}/auth/callback`;
 		seedProject("pty-input-756-a");
 		seedProject("pty-input-756-b");
+		writeFileSync(process.env.NAIA_E2E_PTY_TRACE, "", "utf8");
 		seedFakeClaude();
 		assertCodexE2eIsolation();
 		await startOwnedViteServer();

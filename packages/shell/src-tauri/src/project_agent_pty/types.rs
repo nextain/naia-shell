@@ -483,15 +483,18 @@ mod tests {
     }
 
     #[test]
-    fn project_agent_session_key_uses_one_canonical_path_for_start_and_write() {
+    fn project_agent_session_key_normalizes_all_path_forms() {
         let temp = tempfile::tempdir().unwrap();
         let project = temp.path().join("projects/sample");
         std::fs::create_dir_all(&project).unwrap();
-        let start_key = project_agent_key(&project, CodingApp::Claude).unwrap();
-        let write_key =
-            project_agent_key(&dunce::canonicalize(&project).unwrap(), CodingApp::Claude).unwrap();
+        let canonical_path = dunce::canonicalize(&project).unwrap();
+        let supplied_key = project_agent_key(&project, CodingApp::Claude).unwrap();
+        let canonical_key = project_agent_key(&canonical_path, CodingApp::Claude).unwrap();
+        let simplified_key =
+            project_agent_key(&dunce::simplified(&canonical_path), CodingApp::Claude).unwrap();
 
-        assert_eq!(start_key, write_key);
+        assert_eq!(canonical_key, supplied_key);
+        assert_eq!(simplified_key, supplied_key);
     }
 
     #[cfg(windows)]
@@ -503,10 +506,10 @@ mod tests {
         let canonical = dunce::canonicalize(&project).unwrap();
         let verbatim = PathBuf::from(format!(r"\\?\{}", canonical.display()));
 
-        let start_key = project_agent_key(&canonical, CodingApp::Claude).unwrap();
-        let write_key = project_agent_key(&verbatim, CodingApp::Claude).unwrap();
+        let canonical_key = project_agent_key(&canonical, CodingApp::Claude).unwrap();
+        let verbatim_key = project_agent_key(&verbatim, CodingApp::Claude).unwrap();
 
-        assert_eq!(start_key, write_key);
+        assert_eq!(verbatim_key, canonical_key);
     }
 
     #[test]

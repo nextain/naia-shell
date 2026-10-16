@@ -11,8 +11,8 @@ use super::types::{
     display_path, emit_or_buffer_project_agent_output, find_agent_executable,
     find_project_agent_handle, find_project_agent_handle_mut, project_agent_key,
     project_agent_session, safe_app_id_for_log, CodingApp, ProjectAgentAvailability,
-    ProjectAgentExitEvent, ProjectAgentHandle, ProjectAgentKey, ProjectAgentOutputEvent,
-    ProjectAgentRegistry, ProjectAgentSession, CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
+    ProjectAgentExitEvent, ProjectAgentHandle, ProjectAgentOutputEvent, ProjectAgentRegistry,
+    ProjectAgentSession, CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
 };
 
 #[tauri::command]
@@ -382,12 +382,9 @@ pub async fn project_agent_pty_resize(
         ));
         error
     })?;
+    let key = project_agent_key(&normalized_path, coding_app)?;
     let registry = Arc::clone(&registry);
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let key = ProjectAgentKey {
-            project_path: normalized_path,
-            app: coding_app,
-        };
         let state = registry.lock().unwrap();
         let handle = find_project_agent_handle(&state, &key)?;
         handle
@@ -434,12 +431,9 @@ pub async fn project_agent_pty_stop(
         ));
         error
     })?;
+    let key = project_agent_key(&normalized_path, coding_app)?;
     let registry = Arc::clone(&registry);
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let key = ProjectAgentKey {
-            project_path: normalized_path,
-            app: coding_app,
-        };
         let mut state = registry.lock().unwrap();
         let handle = find_project_agent_handle_mut(&mut state, &key)?;
         stop_project_agent_handle(handle)
@@ -452,6 +446,21 @@ pub async fn project_agent_pty_stop(
 mod tests {
     use super::*;
     use std::io;
+
+    #[test]
+    fn stop_and_resize_session_keys_match_start_and_write_keys() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("projects/sample");
+        std::fs::create_dir_all(&project).unwrap();
+        let resolved = dunce::canonicalize(&project).unwrap();
+
+        let start_write_key = project_agent_key(&project, CodingApp::Claude).unwrap();
+        let resize_key = project_agent_key(&resolved, CodingApp::Claude).unwrap();
+        let stop_key = project_agent_key(&dunce::simplified(&resolved), CodingApp::Claude).unwrap();
+
+        assert_eq!(resize_key, start_write_key);
+        assert_eq!(stop_key, start_write_key);
+    }
 
     struct FaultyWriter {
         write_error: Option<io::ErrorKind>,

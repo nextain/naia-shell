@@ -4,24 +4,24 @@ import {
 	ensureProjectAgentEventListeners,
 	resetProjectAgentEventListenersForTests,
 } from "./project-agent-events";
-import { normalizeProjectPath } from "./project-session";
 import {
+	PROJECT_AGENT_APPS,
+	type ProjectAgentAppId,
+	type ProjectAgentState,
 	availabilityByApp,
 	cloneState,
+	isProjectAgentAppId,
 	parseAgentError,
-	projectAgentDiagnosticCode,
 	parseAvailability,
 	parseSession,
 	pathListeners,
+	projectAgentDiagnosticCode,
 	publish,
-	PROJECT_AGENT_APPS,
+	setState,
 	stateFor,
 	statesByProject,
-	setState,
-	isProjectAgentAppId,
-	type ProjectAgentAppId,
-	type ProjectAgentState,
 } from "./project-agent-runtime-state";
+import { normalizeProjectPath } from "./project-session";
 export { PROJECT_AGENT_APPS } from "./project-agent-runtime-state";
 export type {
 	ProjectAgentAppId,
@@ -73,6 +73,11 @@ function getOrCreateInputQueue(
 			draining: null,
 		};
 		inputQueues.set(key, queue);
+	} else if (queue.adapterRoot !== adapterRoot) {
+		Logger.debug("ProjectAgentRuntime", "refreshing queued PTY adapter root", {
+			appId,
+		});
+		queue.adapterRoot = adapterRoot;
 	}
 	return queue;
 }
@@ -168,6 +173,7 @@ async function drainProjectAgentInput(
 			queue.bytes -= chunk.bytes;
 		}
 		if (inputQueues.get(key) === queue) inputQueues.delete(key);
+		setState(queue.projectPath, { inputError: null });
 	})();
 	queue.draining = draining;
 	return draining;
@@ -335,6 +341,7 @@ export async function startProjectAgent(
 			status: "running",
 			ptyId: session.ptyId,
 			error: null,
+			inputError: null,
 		});
 		Logger.debug("ProjectAgentRuntime", "project agent PTY started", { appId });
 		const queue = inputQueues.get(inputQueueKey(projectPath, appId));
@@ -378,7 +385,10 @@ export async function attachProjectAgent(
 		);
 		return;
 	}
-	setState(projectPath, { status: "connecting", error: null });
+	setState(projectPath, {
+		status: "connecting",
+		error: null,
+	});
 	try {
 		await ensureEventListeners();
 		const value = await invoke<unknown>("project_agent_pty_attach", {
@@ -395,22 +405,43 @@ export async function attachProjectAgent(
 			setState(projectPath, {
 				status: "error",
 				error: { code: "session_mismatch" },
+				inputError: discardQueuedProjectAgentInput(
+					projectPath,
+					appId,
+					"attach_session_mismatch",
+				)
+					? { code: "input_failed" }
+					: stateFor(projectPath).inputError,
 				ptyId: null,
 			});
 			return;
 		}
-		setState(projectPath, { status: "running", error: null });
+		setState(projectPath, {
+			status: "running",
+			error: null,
+			inputError: null,
+		});
 		Logger.debug("ProjectAgentRuntime", "project agent PTY reattached", {
 			appId,
 		});
+		const queue = inputQueues.get(inputQueueKey(projectPath, appId));
+		if (queue) await drainProjectAgentInput(queue);
 	} catch (error) {
 		const mapped = parseAgentError(error);
+		const bufferedInputDropped = discardQueuedProjectAgentInput(
+			projectPath,
+			appId,
+			"attach_failed",
+		);
 		Logger.debug("ProjectAgentRuntime", "project agent PTY reattach failed", {
 			code: mapped.code,
 		});
 		setState(projectPath, {
 			status: mapped.code === "session_missing" ? "idle" : "error",
 			error: mapped.code === "session_missing" ? null : mapped,
+			inputError: bufferedInputDropped
+				? { code: "input_failed" }
+				: stateFor(projectPath).inputError,
 			ptyId: null,
 		});
 	}
@@ -440,7 +471,7 @@ export async function writeProjectAgent(
 		});
 		return;
 	}
-	if (state.status === "starting") {
+	if (state.status === "starting" || state.status === "connecting") {
 		bufferProjectAgentInput(projectPath, adapterRoot, appId, data);
 		return;
 	}

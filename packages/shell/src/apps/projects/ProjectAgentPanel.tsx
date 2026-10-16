@@ -302,7 +302,7 @@ export function ProjectAgentPanel({
 					})}
 				</output>
 			)}
-			{state.error && !state.inputError && (
+			{state.error && (
 				<section
 					className="projects-app__notice projects-app__notice--error"
 					role="alert"

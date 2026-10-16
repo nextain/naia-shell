@@ -354,7 +354,9 @@ describe("ProjectsApp — single opened project", () => {
 		render(<ProjectsApp />);
 		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
 		fireEvent.click(await screen.findByRole("radio", { name: "Claude" }));
-		fireEvent.click(await screen.findByRole("button", { name: "Start Claude" }));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Start Claude" }),
+		);
 		await screen.findByRole("button", { name: "Stop Claude" });
 
 		vi.mocked(invoke).mockImplementation(async (command, args) => {
@@ -377,9 +379,12 @@ describe("ProjectsApp — single opened project", () => {
 			"hello\r",
 		);
 
-		expect(await screen.findByRole("alert")).toHaveTextContent(
-			"Terminal input was not delivered. Start a new session to retry.",
-		);
+		expect(
+			await screen.findAllByText(
+				"Terminal input was not delivered. Start a new session to retry.",
+			),
+		).toHaveLength(2);
+		expect(screen.getAllByRole("alert")).toHaveLength(2);
 		expect(screen.getByRole("button", { name: "Start Claude" })).toBeTruthy();
 	});
 

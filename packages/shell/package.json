@@ -33,6 +33,7 @@
     "test:e2e:tauri:codex": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.codex.ts",
     "test:e2e:tauri:grok": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.grok.ts",
     "test:e2e:tauri:codex-delegation": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.codex-delegation.ts",
+    "test:e2e:tauri:project-agent-pty": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.project-agent-pty.ts",
     "test:e2e:tauri:nva-prebaked": "node scripts/run-nva-prebaked-e2e.mjs",
     "test:e2e:tauri:voice-6g": "node scripts/run-voice-6g-e2e.mjs",
     "test:e2e:tauri:discord-settings": "pnpm run build:e2e:tauri && node scripts/run-discord-settings-e2e.mjs",
