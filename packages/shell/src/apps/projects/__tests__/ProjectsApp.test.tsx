@@ -12,7 +12,10 @@ import { getAdkPath, setAdkPath } from "../../../lib/adk-store";
 import { appRegistry } from "../../../lib/app-registry";
 import { setLocale } from "../../../lib/i18n";
 import { ProjectsApp } from "../ProjectsApp";
-import { resetProjectAgentRuntimeForTests } from "../project-agent-runtime";
+import {
+	loadProjectAgentAvailability,
+	resetProjectAgentRuntimeForTests,
+} from "../project-agent-runtime";
 import {
 	PROJECT_SESSION_STORAGE_KEY,
 	saveProjectSession,
@@ -162,6 +165,9 @@ describe("ProjectsApp — single opened project", () => {
 			expect(Object.keys(translations).sort()).toEqual(keys);
 			expect(Object.values(translations).every((value) => value.trim())).toBe(
 				true,
+			);
+			expect(translations["projects.agentInstallHint"]).toContain(
+				locale === "ko" ? "PATH에서 찾을 수 없음" : "Not found on PATH",
 			);
 		}
 	});
@@ -336,6 +342,118 @@ describe("ProjectsApp — single opened project", () => {
 		);
 	});
 
+	it("keeps a running available app selected when other coding apps are missing", async () => {
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (command === "projects_scan_adk") return readyCatalog;
+			if (command === "project_agent_availability") {
+				return [
+					{ appId: "claude", available: true },
+					{ appId: "codex", available: false },
+					{ appId: "muse", available: false },
+					{ appId: "opencode", available: false },
+				];
+			}
+			if (command === "project_agent_pty_start") {
+				return {
+					appId: (args as { appId: string }).appId,
+					projectPath: (args as { projectPath: string }).projectPath,
+					ptyId: "pty-running-claude",
+					running: true,
+				};
+			}
+			return null;
+		});
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+
+		const claude = await screen.findByRole("radio", { name: "Claude" });
+		fireEvent.click(claude);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Start Claude" }),
+		);
+
+		expect(
+			await screen.findByRole("button", { name: "Stop Claude" }),
+		).toBeTruthy();
+		expect(claude).toBeChecked();
+		expect(claude).toBeDisabled();
+		expect(claude.closest("label")).toHaveClass(
+			"projects-app__agent-option--selected",
+		);
+		expect(
+			screen.getByText(/To use an app marked “Not found on PATH,”/),
+		).toBeTruthy();
+		expect(
+			screen.getByText("Claude is running for this project."),
+		).toBeTruthy();
+		expect(
+			screen.queryByText(/The selected coding app was not found on PATH/),
+		).toBeNull();
+	});
+
+	it("shows the install guidance when every fixed coding app is missing", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "projects_scan_adk") return readyCatalog;
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: false,
+				}));
+			}
+			return null;
+		});
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+
+		expect(
+			await screen.findByText(/To use an app marked “Not found on PATH,”/),
+		).toBeTruthy();
+		for (const appName of ["Claude", "Codex", "Muse", "OpenCode"]) {
+			expect(
+				screen.getByRole("radio", { name: new RegExp(appName) }),
+			).toBeDisabled();
+		}
+		expect(screen.queryByRole("button", { name: /Start/ })).toBeNull();
+		expect(screen.queryByRole("radio", { checked: true })).toBeNull();
+	});
+
+	it("blocks starting a selected app after it disappears from PATH", async () => {
+		let availabilityChecks = 0;
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "projects_scan_adk") return readyCatalog;
+			if (command === "project_agent_availability") {
+				availabilityChecks += 1;
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: availabilityChecks === 1,
+				}));
+			}
+			return null;
+		});
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+
+		const claude = await screen.findByRole("radio", { name: "Claude" });
+		fireEvent.click(claude);
+		expect(
+			await screen.findByRole("button", { name: "Start Claude" }),
+		).toBeTruthy();
+
+		await loadProjectAgentAvailability();
+
+		await waitFor(() => {
+			expect(claude).toBeChecked();
+			expect(claude).toBeDisabled();
+			expect(claude.closest("label")).toHaveClass(
+				"projects-app__agent-option--selected",
+			);
+			expect(screen.queryByRole("button", { name: "Start Claude" })).toBeNull();
+		});
+		expect(
+			screen.getByText(/To use an app marked “Not found on PATH,”/),
+		).toBeTruthy();
+	});
+
 	it("keeps unavailable fixed apps visible but disabled with PATH recovery guidance", async () => {
 		vi.mocked(invoke).mockImplementation(async (command) => {
 			if (command === "projects_scan_adk") return readyCatalog;
@@ -355,7 +473,7 @@ describe("ProjectsApp — single opened project", () => {
 		expect(muse).toBeDisabled();
 		expect(screen.getByText("Not found on PATH")).toBeTruthy();
 		expect(
-			screen.getByText(/Install it and make its executable available on PATH/),
+			screen.getByText(/To use an app marked “Not found on PATH,”/),
 		).toBeTruthy();
 		expect(invoke).not.toHaveBeenCalledWith(
 			"project_agent_pty_start",

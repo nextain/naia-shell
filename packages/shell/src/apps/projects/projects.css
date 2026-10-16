@@ -288,6 +288,12 @@
 	background: rgba(4, 10, 20, 0.2);
 }
 
+.projects-app__agent-option--selected {
+	border-color: #72aaff;
+	background: rgba(36, 80, 142, 0.38);
+	box-shadow: inset 0 0 0 1px rgba(114, 170, 255, 0.18);
+}
+
 .projects-app__agent-option input {
 	accent-color: #72aaff;
 }

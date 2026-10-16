@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Logger } from "../../lib/logger";
 import {
 	PROJECT_AGENT_APPS,
@@ -9,8 +9,8 @@ import {
 	getProjectAgentState,
 	loadProjectAgentAvailability,
 	selectProjectAgent,
-	stopProjectAgent,
 	startProjectAgent,
+	stopProjectAgent,
 	subscribeProjectAgent,
 } from "./project-agent-runtime";
 import { projectText } from "./translations";
@@ -204,13 +204,19 @@ export function ProjectAgentPanel({
 				{PROJECT_AGENT_APPS.map((appId) => {
 					const available = state.availability[appId];
 					const unavailable = available === false;
+					const selected = selectedAppId === appId;
 					return (
-						<label className="projects-app__agent-option" key={appId}>
+						<label
+							className={`projects-app__agent-option${
+								selected ? " projects-app__agent-option--selected" : ""
+							}`}
+							key={appId}
+						>
 							<input
 								type="radio"
 								name="project-coding-agent"
 								value={appId}
-								checked={selectedAppId === appId}
+								checked={selected}
 								disabled={
 									unavailable || available === null || availabilityFailed
 								}
@@ -229,7 +235,7 @@ export function ProjectAgentPanel({
 			</fieldset>
 			{hasUnavailableApp && (
 				<p className="projects-app__hint">
-					{projectText("projects.agentUnavailableHint")}
+					{projectText("projects.agentInstallHint")}
 				</p>
 			)}
 			{availabilityFailed && (

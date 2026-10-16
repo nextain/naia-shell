@@ -81,6 +81,7 @@ const TAURI_MOCK = `
 \t\tpending: false,
 \t\tfailuresRemaining: 0,
 \t\tprojectAgentStartError: null,
+\t\tprojectAgentAvailability: null,
 \t};
 \twindow.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
 \t\tstate.calls.push({ cmd: cmd, args: args || null });
@@ -105,6 +106,7 @@ const TAURI_MOCK = `
 \t\t\treturn state.result;
 \t\t}
 \t\tif (cmd === "project_agent_availability") {
+\t\t\tif (state.projectAgentAvailability) return state.projectAgentAvailability;
 \t\t\treturn ["claude", "codex", "muse", "opencode"].map(function(appId) {
 \t\t\t\treturn { appId: appId, available: true };
 \t\t\t});
@@ -446,6 +448,14 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await boot(page);
 		await setCatalog(page, READY_CATALOG);
 		await openProjectApp(page);
+		await page.evaluate(() => {
+			(window as any).__PROJECT_E2E__.projectAgentAvailability = [
+				{ appId: "claude", available: true },
+				{ appId: "codex", available: false },
+				{ appId: "muse", available: false },
+				{ appId: "opencode", available: false },
+			];
+		});
 		await page.getByRole("button", { name: /Example App/ }).click();
 		const radios = page.locator(".projects-app__agent input[type=radio]");
 		await expect(radios).toHaveCount(4);
@@ -455,6 +465,17 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await expect(
 			page.getByText("Claude is running for this project."),
 		).toBeVisible();
+		await expect(page.getByRole("radio", { name: "Claude" })).toBeChecked();
+		await expect(page.getByRole("radio", { name: "Claude" })).toBeDisabled();
+		await expect(
+			page.locator(".projects-app__agent-option--selected"),
+		).toContainText("Claude");
+		await expect(
+			page.getByText(/To use an app marked “Not found on PATH,”/),
+		).toBeVisible();
+		await expect(
+			page.getByText(/The selected coding app was not found on PATH/),
+		).toHaveCount(0);
 		let calls = await page.evaluate(
 			() => (window as any).__PROJECT_E2E__.calls,
 		);

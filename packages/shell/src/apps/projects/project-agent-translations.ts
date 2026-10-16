@@ -28,7 +28,9 @@ export const PROJECT_AGENT_ENGLISH_TRANSLATIONS = {
 	"projects.agentProjectUnverified":
 		"The selected project source could not be verified. Rescan the project catalog and try again.",
 	"projects.agentUnavailableHint":
-		"This coding app was not found on PATH. Install it and make its executable available on PATH, then reopen the project.",
+		"The selected coding app was not found on PATH. Install it and make its executable available on PATH, then reopen the project.",
+	"projects.agentInstallHint":
+		"To use an app marked “Not found on PATH,” install it and make its executable available on PATH, then reopen the project.",
 	"projects.agentInvalid": "The selected coding app is not supported.",
 	"projects.agentSessionMismatch":
 		"The existing session does not belong to this project and app, so it was not reattached.",
@@ -101,7 +103,9 @@ export const PROJECT_AGENT_KOREAN_TRANSLATIONS: Record<
 	"projects.agentProjectUnverified":
 		"선택한 프로젝트 출처를 확인하지 못했습니다. 프로젝트 목록을 다시 읽고 시도하세요.",
 	"projects.agentUnavailableHint":
-		"PATH에서 이 코딩 앱을 찾지 못했습니다. 앱을 설치하고 실행 파일을 PATH에 추가한 뒤 프로젝트 화면을 다시 여세요.",
+		"선택한 코딩 앱을 PATH에서 찾지 못했습니다. 앱을 설치하고 실행 파일을 PATH에 추가한 뒤 프로젝트 화면을 다시 여세요.",
+	"projects.agentInstallHint":
+		"‘PATH에서 찾을 수 없음’으로 표시된 앱을 사용하려면 해당 앱을 설치하고 실행 파일을 PATH에 추가한 뒤 프로젝트 화면을 다시 여세요.",
 	"projects.agentInvalid": "지원하지 않는 코딩 앱입니다.",
 	"projects.agentSessionMismatch":
 		"기존 세션이 이 프로젝트와 앱에 속하지 않아 다시 연결하지 않았습니다.",
