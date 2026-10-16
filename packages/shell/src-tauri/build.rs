@@ -278,11 +278,29 @@ fn main() {
     #[cfg(target_os = "macos")]
     println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path");
 
-    // Windows MSVC reserves only a 1 MiB main-thread stack by default, and the
-    // synchronous Tauri startup init (setup hook, agent wiring) overflows it
-    // with STATUS_STACK_OVERFLOW (0xC00000FD). Rust's spawned worker threads
-    // already default to a larger stack; reserve a matching 16 MiB for the main
-    // thread so the GUI event loop starts on the main thread as Tauri expects.
-    #[cfg(target_os = "windows")]
-    println!("cargo:rustc-link-arg=/STACK:16777216");
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os == "windows" && target_env == "msvc" {
+        // Windows MSVC reserves only a 1 MiB main-thread stack by default, and
+        // the synchronous Tauri startup init (setup hook, agent wiring)
+        // overflows it with STATUS_STACK_OVERFLOW (0xC00000FD). Rust's spawned
+        // worker threads already default to a larger stack; reserve a matching
+        // 16 MiB for the main thread so the GUI event loop starts on the main
+        // thread as Tauri expects.
+        println!("cargo:rustc-link-arg=/STACK:16777216");
+
+        // Tauri's library test binary needs the Common Controls v6 activation
+        // context for comctl32 imports such as TaskDialogIndirect. The app
+        // manifest emitted by tauri-build does not apply to lib test targets.
+        let test_manifest = PathBuf::from(
+            env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"),
+        )
+        .join("windows/test-manifest.xml");
+        println!("cargo:rerun-if-changed={}", test_manifest.display());
+        println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg-tests=/MANIFESTINPUT:{}",
+            test_manifest.display()
+        );
+    }
 }
