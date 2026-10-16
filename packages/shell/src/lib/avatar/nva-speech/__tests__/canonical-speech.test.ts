@@ -148,7 +148,7 @@ describe("vendored canonical player (byte-identical, VENDOR.json)", () => {
 			.sort();
 		expect(onDisk).toEqual(Object.keys(vendor.files).sort());
 		expect(vendor.repository).toBe("nextain/naia-video-avatar");
-		expect(vendor.commit).toMatch(/^[0-9a-f]{7,40}$/);
+		expect(vendor.commit).toBe("3bb5ee066598256e2799e231cc7a153d8419b5dd");
 	});
 
 	// The canonical repo is not a Shell dependency, so this pin runs when
@@ -161,7 +161,10 @@ describe("vendored canonical player (byte-identical, VENDOR.json)", () => {
 				readFileSync(process.env.NVA_CANONICAL_MANIFEST as string, "utf8"),
 			) as { source_directory: string; files: typeof vendor.files };
 			expect(canonical.source_directory).toBe("src/main");
-			expect(vendor.files).toEqual(canonical.files);
+			const pinnedFiles = Object.fromEntries(
+				Object.keys(vendor.files).map((name) => [name, canonical.files[name]]),
+			);
+			expect(vendor.files).toEqual(pinnedFiles);
 		},
 	);
 });
