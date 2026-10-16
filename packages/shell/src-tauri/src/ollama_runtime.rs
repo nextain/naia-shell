@@ -61,6 +61,16 @@ const QWEN_DISK_SPACE_MULTIPLIER: u64 = 2;
 
 static OPERATION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(windows)]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+#[cfg(windows)]
+const CREATE_SUSPENDED: u32 = 0x0000_0004;
+#[cfg(windows)]
+const OLLAMA_WINDOWS_PROCESS_FLAGS: u32 =
+    CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED;
+
 #[cfg(all(test, unix))]
 static PROCESS_GROUP_SIGTERM_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
 #[cfg(all(test, unix))]
@@ -770,6 +780,11 @@ trait ManagedChild: Send {
     fn request_graceful_shutdown(&mut self) -> io::Result<()>;
     fn force_kill_tree(&mut self) -> io::Result<()>;
     fn process_tree_alive(&mut self) -> io::Result<bool>;
+
+    #[cfg(all(test, windows))]
+    fn child_pid_for_test(&self) -> Option<u32> {
+        None
+    }
 }
 
 trait RuntimeProcessRunner: Send + Sync {
@@ -785,6 +800,11 @@ struct OwnedChild {
 }
 
 impl ManagedChild for OwnedChild {
+    #[cfg(all(test, windows))]
+    fn child_pid_for_test(&self) -> Option<u32> {
+        Some(self.child.id())
+    }
+
     fn has_exited(&mut self) -> io::Result<bool> {
         self.observe_exit()
     }
@@ -1498,12 +1518,8 @@ impl RuntimeProcessRunner for SystemProcessRunner {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
-            const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-            const CREATE_SUSPENDED: u32 = 0x0000_0004;
-            // CREATE_NO_WINDOW leaves no console handle for AttachConsole-based shutdown.
-            command
-                .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED);
+            // Keep the process group available for CTRL_BREAK without creating a console window.
+            command.creation_flags(OLLAMA_WINDOWS_PROCESS_FLAGS);
         }
         #[cfg(unix)]
         {
@@ -1528,12 +1544,6 @@ impl RuntimeProcessRunner for SystemProcessRunner {
         }
 
         let mut child = command.spawn()?;
-        #[cfg(windows)]
-        if let Err(error) = hide_suspended_child_console(child.id()) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(error);
-        }
         let ownership = match ChildOwnership::attach(&child) {
             Ok(ownership) => ownership,
             Err(error) => {
@@ -1557,30 +1567,7 @@ impl RuntimeProcessRunner for SystemProcessRunner {
     }
 }
 
-#[cfg(windows)]
-fn hide_suspended_child_console(child_pid: u32) -> io::Result<()> {
-    use windows_sys::Win32::System::Console::GetConsoleWindow;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
-
-    with_attached_child_console(child_pid, || {
-        let window = unsafe { GetConsoleWindow() };
-        if window.is_null() {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "managed child console window is unavailable",
-            ));
-        }
-        unsafe { ShowWindow(window, SW_HIDE) };
-        log_ollama_debug(
-            "process.console_hidden",
-            None,
-            "platform=windows child_suspended=true",
-        );
-        Ok(())
-    })
-}
-
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 fn with_attached_child_console<T>(
     child_pid: u32,
     action: impl FnOnce() -> io::Result<T>,
@@ -6034,39 +6021,82 @@ mod tests {
     use zip::write::SimpleFileOptions;
 
     #[cfg(windows)]
+    static WINDOWS_CONSOLE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[cfg(windows)]
     #[test]
-    fn suspended_ollama_console_is_hidden_before_child_resumes() {
-        use std::os::windows::process::CommandExt;
+    fn ollama_no_window_child_supports_ctrl_break_shutdown() {
         use windows_sys::Win32::System::Console::GetConsoleWindow;
-        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 
-        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const CREATE_SUSPENDED: u32 = 0x0000_0004;
+        let _guard = WINDOWS_CONSOLE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        let mut child = std::process::Command::new("cmd.exe")
-            .args(["/C", "exit"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED)
-            .spawn()
-            .expect("spawn suspended console child");
-        let visibility = hide_suspended_child_console(child.id()).and_then(|()| {
-            with_attached_child_console(child.id(), || {
-                let window = unsafe { GetConsoleWindow() };
-                if window.is_null() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::NotFound,
-                        "attached child console has no window handle",
-                    ));
+        let spec = ProcessSpec {
+            executable: PathBuf::from("powershell.exe"),
+            arguments: vec![
+                "-NoLogo".to_string(),
+                "-NoProfile".to_string(),
+                "-NonInteractive".to_string(),
+                "-Command".to_string(),
+                "Start-Sleep -Seconds 60".to_string(),
+            ],
+            environment: BTreeMap::new(),
+            inherit_environment: true,
+        };
+        let mut child = SystemProcessRunner
+            .spawn(&spec)
+            .expect("spawn suspended no-window PowerShell child");
+        let child_pid = child.child_pid_for_test().expect("managed child PID");
+        thread::sleep(Duration::from_millis(500));
+
+        let still_running_before_shutdown = child.has_exited().map(|exited| !exited);
+        let parent_had_console = !unsafe { GetConsoleWindow() }.is_null();
+        let windowless =
+            with_attached_child_console(child_pid, || Ok(unsafe { GetConsoleWindow() }.is_null()));
+        let parent_console_restored_after_inspection =
+            !unsafe { GetConsoleWindow() }.is_null() == parent_had_console;
+        let ctrl_break = child.request_graceful_shutdown();
+        let parent_console_restored_after_shutdown =
+            !unsafe { GetConsoleWindow() }.is_null() == parent_had_console;
+        let deadline = Instant::now() + GRACEFUL_STOP_TIMEOUT;
+        let mut exited = false;
+        if ctrl_break.is_ok() {
+            while Instant::now() < deadline {
+                match child.has_exited() {
+                    Ok(true) => {
+                        exited = true;
+                        break;
+                    }
+                    Ok(false) => thread::sleep(Duration::from_millis(25)),
+                    Err(_) => break,
                 }
-                Ok(unsafe { IsWindowVisible(window) != 0 })
-            })
-        });
-        let _ = child.kill();
-        let _ = child.wait();
+            }
+        }
+        if !exited {
+            let _ = child.force_kill_tree();
+        }
 
-        assert!(!visibility.expect("inspect suspended child console"));
+        assert!(
+            matches!(still_running_before_shutdown, Ok(true)),
+            "the PowerShell child exited before the shutdown signal: {still_running_before_shutdown:?}"
+        );
+        assert!(
+            matches!(windowless, Ok(true)),
+            "expected no console window after attaching, got {windowless:?}"
+        );
+        assert!(
+            parent_console_restored_after_inspection && parent_console_restored_after_shutdown,
+            "attaching to or signaling the child changed the test process console state"
+        );
+        assert!(
+            ctrl_break.is_ok(),
+            "existing CTRL_BREAK shutdown path failed: {ctrl_break:?}"
+        );
+        assert!(
+            exited,
+            "the child did not exit within {GRACEFUL_STOP_TIMEOUT:?} after CTRL_BREAK"
+        );
     }
 
     #[cfg(target_os = "linux")]

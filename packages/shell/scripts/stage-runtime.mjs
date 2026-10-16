@@ -628,9 +628,9 @@ async function main() {
 			SHELL,
 			{ NAIA_EMBED_TEST_MANIFEST: "1" },
 		);
-		console.log("[stage-runtime] hidden Ollama console regression gate");
+		console.log("[stage-runtime] Ollama no-window CTRL_BREAK regression gate");
 		run(
-			"cargo test --manifest-path src-tauri/Cargo.toml suspended_ollama_console_is_hidden_before_child_resumes --lib",
+			"cargo test --manifest-path src-tauri/Cargo.toml ollama_no_window_child_supports_ctrl_break_shutdown --lib",
 			SHELL,
 			{ NAIA_EMBED_TEST_MANIFEST: "1" },
 		);

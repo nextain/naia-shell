@@ -49,9 +49,9 @@
         "P05": "pending"
       },
       "status": "in_progress",
-      "verification": "Muse code review r1 process-group-after-reap finding addressed. Ollama Rust tests: 31 passed/1 ignored; required Vitest: 209 passed/8 skipped; Shell typecheck/build and Rust build passed. Full Cargo: 557 passed/4 known baseline failures/1 ignored/3 filtered. 2026-10-16 Windows build follow-up: `cargo test --locked --lib ollama_runtime::tests` passed 60/60; Windows MSVC cross-check stopped in ring before naia-shell compilation because Linux lacks lib.exe; Windows-only hidden-console test awaits branch CI. No Ollama download/install/serve or GPU use. Follow-up Muse review remains pending.",
+      "verification": "Muse code review r1 process-group-after-reap finding addressed. Ollama Rust tests: 31 passed/1 ignored; required Vitest: 209 passed/8 skipped; Shell typecheck/build and Rust build passed. Full Cargo: 557 passed/4 known baseline failures/1 ignored/3 filtered. 2026-10-16 Windows build follow-up: Linux `cargo test --locked --lib ollama_runtime::tests -- --test-threads=1` passed 60/60 with the paired agent contract; rustfmt, stage-runtime syntax, and diff checks passed. The Windows no-window/CTRL_BREAK test is wired into the Windows stage-runtime gate with `NAIA_EMBED_TEST_MANIFEST=1`; branch CI and Windows artifact are pending. No Ollama download/install/serve or GPU use. Follow-up Muse review remains pending.",
       "remaining": "Run branch build-installers CI, then exercise the 0.2.4 client on the RTX2070 Windows device and obtain Muse re-review; keep completion claim at no until those gates pass.",
-      "last_updated": "2026-10-16T08:52:58+09:00"
+      "last_updated": "2026-10-16T11:28:18+09:00"
     },
     "issue_724_memory_knowledge_tools": {
       "issue": 724,
