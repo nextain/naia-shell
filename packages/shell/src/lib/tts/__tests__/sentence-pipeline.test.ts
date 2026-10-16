@@ -4,6 +4,7 @@ import { AudioQueue } from "../../voice/audio-queue";
 import { LocalVoiceScheduler } from "../local-voice-scheduler";
 import {
 	ALIGNED_PLAN_WAIT_MS,
+	type SentenceTtsPipeline,
 	type SentenceTtsPipelineDeps,
 	createSentenceTtsPipeline,
 } from "../sentence-pipeline";
@@ -555,6 +556,128 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 			updateSpeechPlan: vi.fn(() => true),
 		};
 	}
+
+	it("prefetches one page during current playback and reuses its exact audio and canonical plan", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const currentPlay = vi.fn(async () => true);
+		const prefetchedPlay = vi.fn(async () => true);
+		const prefetched = { play: prefetchedPlay };
+		const renderer = {
+			...nvaRenderer(),
+			canPlaySpeechPlans: () => true,
+			prepareSpeechTiming: vi.fn(async () => ({ play: currentPlay })),
+			prefetchSpeechTiming: vi.fn(async () => prefetched),
+		};
+		const aligned = vi.fn(async () => plan("aligned"));
+		const pipelineRef: { current?: SentenceTtsPipeline } = {};
+		let prefetchPromise: Promise<void> | null = null;
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getAlignedSpeechPlanSource: () => aligned,
+			onPlaybackStart: () => {
+				const pipeline = pipelineRef.current;
+				if (!pipeline) return;
+				prefetchPromise = pipeline.prefetchSentence("다음 쪽 문장입니다.", {
+					prefetchId: "slides-prefetch-1/0",
+					prefetchGroupId: "slides-prefetch-1",
+					prepareAvatar: true,
+				});
+			},
+		});
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipelineRef.current = pipeline;
+		pipeline.sendSentence("현재 쪽 문장입니다.");
+		await flush();
+		const current = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+		expect(synthesizeMock).toHaveBeenCalledTimes(1);
+		current.onPlaybackStart({ clock: () => 0.2 });
+		expect(prefetchPromise).toBeInstanceOf(Promise);
+		await prefetchPromise;
+		await flush();
+		const currentPlanLoadCount = renderer.prepareSpeechTiming.mock.calls.length;
+		expect(synthesizeMock).toHaveBeenCalledTimes(2);
+		expect(aligned).toHaveBeenCalledTimes(2);
+		expect(renderer.prefetchSpeechTiming).toHaveBeenCalledTimes(1);
+		// The prefetch holds media and a prepared canonical plan; it never plays or enqueues it.
+		expect(queue.enqueueOrdered).toHaveBeenCalledTimes(1);
+		expect(prefetchedPlay).not.toHaveBeenCalled();
+
+		pipeline.interrupt({ preservePrefetchId: "slides-prefetch-1" });
+		pipeline.sendSentence("다음 쪽 문장입니다.", {
+			prefetchId: "slides-prefetch-1/0",
+		});
+		await flush();
+		expect(synthesizeMock).toHaveBeenCalledTimes(2);
+		expect(aligned).toHaveBeenCalledTimes(2);
+		expect(queue.enqueueOrdered).toHaveBeenCalledTimes(2);
+		const next = queue.enqueueOrdered.mock.calls[1][2] as GatedCallbacks;
+		await next.beforePlayback?.();
+		expect(renderer.prepareSpeechTiming).toHaveBeenCalledTimes(
+			currentPlanLoadCount,
+		);
+		next.onPlaybackStart({ clock: () => 0.1 });
+		await flush();
+		expect(prefetchedPlay).toHaveBeenCalledWith(expect.any(Function));
+	});
+
+	it("discards an in-flight prefetched result after its page generation is cancelled", async () => {
+		let resolveSynthesis!: (result: { audioBase64: string }) => void;
+		synthesizeMock.mockReturnValue(
+			new Promise((resolve) => {
+				resolveSynthesis = resolve;
+			}) as ReturnType<typeof synthesizeTts>,
+		);
+		const { deps, queue } = makeDeps();
+		const pipeline = createSentenceTtsPipeline(deps) as unknown as {
+			prefetchSentence(
+				sentence: string,
+				options: { prefetchId: string; prefetchGroupId: string },
+			): Promise<void>;
+			cancelPrefetch(prefetchId: string): void;
+		};
+		const pending = pipeline.prefetchSentence("폐기할 다음 쪽입니다.", {
+			prefetchId: "slides-prefetch-2/0",
+			prefetchGroupId: "slides-prefetch-2",
+		});
+		pipeline.cancelPrefetch("slides-prefetch-2");
+		resolveSynthesis({ audioBase64: "QUJD" });
+		await pending;
+		await flush();
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
+	});
+
+	it("serializes each next-page prefetch sentence without launching a request burst", async () => {
+		const deferredSynthesis: Array<(value: { audioBase64: string }) => void> =
+			[];
+		synthesizeMock.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					deferredSynthesis.push(resolve);
+				}) as ReturnType<typeof synthesizeTts>,
+		);
+		const { deps, queue } = makeDeps();
+		const pipeline = createSentenceTtsPipeline(deps);
+		const first = pipeline.prefetchSentence("다음 쪽 첫 문장.", {
+			prefetchId: "slides-prefetch-serial/0",
+			prefetchGroupId: "slides-prefetch-serial",
+		});
+		const second = pipeline.prefetchSentence("다음 쪽 둘째 문장.", {
+			prefetchId: "slides-prefetch-serial/1",
+			prefetchGroupId: "slides-prefetch-serial",
+		});
+		await flush();
+		expect(synthesizeMock).toHaveBeenCalledTimes(1);
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
+
+		deferredSynthesis[0]({ audioBase64: "first-audio" });
+		await first;
+		await flush();
+		expect(synthesizeMock).toHaveBeenCalledTimes(2);
+		deferredSynthesis[1]({ audioBase64: "second-audio" });
+		await second;
+		await flush();
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
+	});
 
 	it("plays an aligned plan for Shell TTS on that sentence's audio clock", async () => {
 		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });

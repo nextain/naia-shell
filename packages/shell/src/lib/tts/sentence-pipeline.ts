@@ -87,6 +87,8 @@ export interface CascadeSpeechRenderer {
 	playSpeechTiming?(timing: AvatarSpeechTiming): Promise<boolean>;
 	/** Load an aligned plan before its sound starts (sound waits for it). */
 	prepareSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	prefetchSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	cancelPrefetchedSpeechTiming?(): void;
 	/** True when the loaded avatar carries the canonical speech set. */
 	canPlaySpeechPlans?(): boolean;
 	updateSpeechPlan?(plan: SpeechPlan): boolean;
@@ -151,6 +153,8 @@ export interface SentenceTtsPipelineDeps {
 	getBrowserTurnGeneration(): number;
 	/** Composite speaking state (playing ref + React state + avatar store). */
 	setSpeaking(on: boolean): void;
+	/** Called when one real speech source begins playback. */
+	onPlaybackStart?(): void;
 	getLocalRefAudioB64(): string | null;
 	addCostEntry(entry: TtsCostEntry): void;
 	/** Receives an accepted, non-stale synthesis result for local diagnostics. */
@@ -167,9 +171,23 @@ export interface SentenceTtsPipelineDeps {
 }
 
 export interface SentenceTtsPipeline {
-	sendSentence(sentence: string): void;
+	sendSentence(
+		sentence: string,
+		options?: { prefetchId?: string; reservedSeq?: number },
+	): void;
+	/** Synthesize one future sentence through the normal TTS/plan path without playing it. */
+	prefetchSentence(
+		sentence: string,
+		options: {
+			prefetchId: string;
+			prefetchGroupId?: string;
+			prepareAvatar?: boolean;
+		},
+	): Promise<void>;
+	/** Discard the one prefetched page and any staged canonical plan it owns. */
+	cancelPrefetch(prefetchGroupId?: string): void;
 	/** Barge-in/new turn: drop pending requests and cancel in-flight synthesis. */
-	interrupt(): void;
+	interrupt(options?: { preservePrefetchId?: string }): void;
 	/** Session teardown: interrupt + clear the recent-utterance ring. */
 	dispose(): void;
 	/** Re-arm the one-time local-voice-unavailable notice (new session/turn). */
@@ -179,13 +197,56 @@ export interface SentenceTtsPipeline {
 	recentTexts(): readonly string[];
 }
 
+interface AlignedPlanResolution {
+	plan: SpeechPlan | null;
+	sha: string;
+	arrivalMs: number | null;
+	arrivedAt: string | null;
+}
+
+interface PrefetchVoiceConfig {
+	provider: string;
+	voice?: string;
+	naiaKey?: string;
+	gatewayUrl?: string;
+	vllmHost?: string;
+	vllmTtsHost?: string;
+	localRefAudioBase64: string | null;
+}
+
+interface PrefetchedSpeech {
+	audioBase64: string;
+	costUsd?: number;
+	elapsedMs: number;
+	audioDurationSeconds: number | null;
+	provider: string;
+	voice?: string;
+	localReferenceAudioPresent: boolean;
+	vllmTtsHost?: string;
+	config: PrefetchVoiceConfig;
+	planResult: Promise<AlignedPlanResolution | null> | null;
+	prepared: Promise<PreparedSpeech | null> | null;
+	renderer: CascadeSpeechRenderer | null | undefined;
+}
+
+interface PrefetchEntry {
+	groupId: string;
+	text: string;
+	consumed: boolean;
+	controller: AbortController;
+	promise: Promise<PrefetchedSpeech | null>;
+}
+
 export function createSentenceTtsPipeline(
 	deps: SentenceTtsPipelineDeps,
 ): SentenceTtsPipeline {
 	const activeRequests = new Set<string>();
 	const abortControllers = new Map<string, AbortController>();
+	const prefetched = new Map<string, PrefetchEntry>();
 	const recentTexts: string[] = [];
 	let localVoiceUnavailableNoticed = false;
+	let prefetchTail: Promise<void> = Promise.resolve();
+	let activePrefetchGroup: string | null = null;
 	/** Bumped by interrupt(): late plans from a superseded turn never start. */
 	let speechEpoch = 0;
 
@@ -204,6 +265,120 @@ export function createSentenceTtsPipeline(
 			? deps.getBrowserSpeechPlanSource()
 			: getBrowserSpeechPlanSource();
 
+	function isPrefetchInGroup(prefetchId: string, groupId: string): boolean {
+		return prefetchId === groupId || prefetchId.startsWith(`${groupId}/`);
+	}
+
+	function cancelPrefetch(
+		prefetchGroupId?: string,
+		includeConsumed = true,
+	): void {
+		let cancelled = false;
+		const ownsPreparedStage =
+			!prefetchGroupId || activePrefetchGroup === prefetchGroupId;
+		for (const [id, entry] of prefetched) {
+			if (prefetchGroupId && !isPrefetchInGroup(id, prefetchGroupId)) continue;
+			if (!includeConsumed && entry.consumed) continue;
+			cancelled = true;
+			entry.controller.abort();
+			prefetched.delete(id);
+		}
+		if (!prefetchGroupId || activePrefetchGroup === prefetchGroupId)
+			activePrefetchGroup = null;
+		if (cancelled || ownsPreparedStage)
+			deps.getRenderer()?.cancelPrefetchedSpeechTiming?.();
+	}
+
+	function clearPrefetchesExcept(preservePrefetchId?: string): void {
+		const keepPreparedStage = Boolean(
+			preservePrefetchId && activePrefetchGroup === preservePrefetchId,
+		);
+		for (const [id, entry] of prefetched) {
+			if (preservePrefetchId && isPrefetchInGroup(id, preservePrefetchId))
+				continue;
+			entry.controller.abort();
+			prefetched.delete(id);
+		}
+		if (preservePrefetchId) activePrefetchGroup = preservePrefetchId;
+		else activePrefetchGroup = null;
+		if (!keepPreparedStage)
+			deps.getRenderer()?.cancelPrefetchedSpeechTiming?.();
+	}
+
+	function snapshotPrefetchConfig(
+		voiceCfg: PipelineVoiceConfig | null,
+		provider: string,
+	): PrefetchVoiceConfig {
+		return {
+			provider,
+			voice: voiceCfg?.voice,
+			naiaKey: voiceCfg?.naiaKey,
+			gatewayUrl: voiceCfg?.gatewayUrl,
+			vllmHost: voiceCfg?.vllmHost,
+			vllmTtsHost: voiceCfg?.vllmTtsHost,
+			localRefAudioBase64:
+				provider === "naia-local-voice" ? deps.getLocalRefAudioB64() : null,
+		};
+	}
+
+	function samePrefetchConfig(
+		prepared: PrefetchVoiceConfig,
+		voiceCfg: PipelineVoiceConfig | null,
+	): boolean {
+		const current = snapshotPrefetchConfig(
+			voiceCfg,
+			voiceCfg?.ttsProvider ?? "edge",
+		);
+		return (
+			prepared.provider === current.provider &&
+			prepared.voice === current.voice &&
+			prepared.naiaKey === current.naiaKey &&
+			prepared.gatewayUrl === current.gatewayUrl &&
+			prepared.vllmHost === current.vllmHost &&
+			prepared.vllmTtsHost === current.vllmTtsHost &&
+			prepared.localRefAudioBase64 === current.localRefAudioBase64
+		);
+	}
+
+	function requestAlignedPlanResult(
+		renderer: CascadeSpeechRenderer | null | undefined,
+		request: Parameters<AlignedSpeechPlanSource>[0],
+		seq: number | string,
+	): Promise<AlignedPlanResolution | null> | null {
+		const source = alignedSource();
+		if (!renderer?.playSpeechTiming || !source) return null;
+		const requestedAt = Date.now();
+		return source(request)
+			.catch((error) => {
+				Logger.warn(TAG, "aligned speech plan failed", {
+					seq,
+					error: error instanceof Error ? error.name : "unknown",
+				});
+				return null;
+			})
+			.then((resolved) => {
+				const arrivalMs = Date.now() - requestedAt;
+				const sha = resolved?.audio?.sha256?.slice(0, 8) ?? "unavailable";
+				const arrivedAt = new Date().toISOString();
+				Logger.debug(TAG, "aligned speech plan arrived", {
+					seq,
+					at: arrivedAt,
+					elapsedMs: arrivalMs,
+					available: Boolean(resolved),
+					sha,
+					textLength: request.text.length,
+				});
+				// SoT 8: an aligned plan runs only on the audio clock of its sound.
+				if (resolved && !isAlignedPlan(resolved)) {
+					Logger.warn(TAG, "aligned port returned a non-aligned plan", {
+						quality_mode: resolved.quality_mode,
+					});
+					return { plan: null, sha, arrivalMs, arrivedAt };
+				}
+				return { plan: resolved, sha, arrivalMs, arrivedAt };
+			});
+	}
+
 	/**
 	 * Ask the aligned plan port for this exact sound. `beforePlayback` (whole
 	 * sound only) holds the sound until the plan is loaded into the player, so
@@ -213,45 +388,25 @@ export function createSentenceTtsPipeline(
 	function requestAlignedPlan(
 		renderer: CascadeSpeechRenderer | null | undefined,
 		request: Parameters<AlignedSpeechPlanSource>[0],
-		seq: number,
+		seq: number | string,
+		prefetchedPlan?: Promise<AlignedPlanResolution | null> | null,
+		prefetchedPrepared?: Promise<PreparedSpeech | null> | null,
 	): {
 		beforePlayback?: () => Promise<unknown>;
 		start: (playback?: AudioPlaybackClock) => void;
 	} | null {
-		const source = alignedSource();
-		if (!renderer?.playSpeechTiming || !source) return null;
+		if (!renderer?.playSpeechTiming) return null;
+		const planResult =
+			prefetchedPlan ?? requestAlignedPlanResult(renderer, request, seq);
+		if (!planResult) return null;
 		const epoch = speechEpoch;
-		const requestedAt = Date.now();
 		let planSha = "unavailable";
 		let planArrivalMs: number | null = null;
-		const plan = source(request)
-			.catch((error) => {
-				Logger.warn(TAG, "aligned speech plan failed", {
-					seq,
-					error: error instanceof Error ? error.name : "unknown",
-				});
-				return null;
-			})
-			.then((resolved) => {
-				planArrivalMs = Date.now() - requestedAt;
-				planSha = resolved?.audio?.sha256?.slice(0, 8) ?? "unavailable";
-				Logger.debug(TAG, "aligned speech plan arrived", {
-					seq,
-					at: new Date().toISOString(),
-					elapsedMs: planArrivalMs,
-					available: Boolean(resolved),
-					sha: planSha,
-					textLength: request.text.length,
-				});
-				// SoT 8: an aligned plan runs only on the audio clock of its sound.
-				if (resolved && !isAlignedPlan(resolved)) {
-					Logger.warn(TAG, "aligned port returned a non-aligned plan", {
-						quality_mode: resolved.quality_mode,
-					});
-					return null;
-				}
-				return resolved;
-			});
+		const plan = planResult.then((resolution) => {
+			planArrivalMs = resolution?.arrivalMs ?? null;
+			planSha = resolution?.sha ?? "unavailable";
+			return resolution?.plan ?? null;
+		});
 
 		const prepareSpeech = renderer.prepareSpeechTiming?.bind(renderer);
 		if (prepareSpeech && request.audio.kind === "whole") {
@@ -260,21 +415,20 @@ export function createSentenceTtsPipeline(
 			const prepare = () => {
 				if (!prepared) {
 					const waitStartedAt = Date.now();
-					const loadSpeech = plan.then(async (resolved) => {
+					const loadSpeech = planResult.then(async (resolution) => {
+						const resolved = resolution?.plan ?? null;
 						if (epoch !== speechEpoch || !resolved || timedOut) return null;
 						const prepareStartedAt = Date.now();
 						Logger.debug(TAG, "aligned speech prepare start", {
 							seq,
 							at: new Date(prepareStartedAt).toISOString(),
-							planArrivalAt:
-								planArrivalMs === null
-									? null
-									: new Date(requestedAt + planArrivalMs).toISOString(),
+							planArrivalAt: resolution?.arrivedAt ?? null,
 							sha: planSha,
 						});
 						let result: PreparedSpeech | null = null;
 						try {
-							result = await prepareSpeech(resolved);
+							result = (await prefetchedPrepared) ?? null;
+							if (!result) result = await prepareSpeech(resolved);
 						} catch (error) {
 							Logger.warn(TAG, "aligned speech prepare failed", {
 								seq,
@@ -369,7 +523,284 @@ export function createSentenceTtsPipeline(
 		};
 	}
 
-	function sendSentence(sentence: string): void {
+	function prefetchSentence(
+		sentence: string,
+		options: {
+			prefetchId: string;
+			prefetchGroupId?: string;
+			prepareAvatar?: boolean;
+		},
+	): Promise<void> {
+		const id = options.prefetchId.trim();
+		const groupId = options.prefetchGroupId ?? id.split("/")[0] ?? id;
+		if (!id || !groupId) return Promise.resolve();
+		const voiceCfg = deps.getVoiceConfig();
+		const clean = ttsTextFilter.filter(
+			sentence,
+			voiceCfg?.voice ||
+				(typeof document !== "undefined"
+					? document.documentElement.lang
+					: undefined),
+		);
+		const provider = voiceCfg?.ttsProvider ?? "edge";
+		const renderer = deps.getRenderer();
+		if (
+			!clean ||
+			getTtsProviderMeta(provider)?.isClientSide ||
+			renderer?.hasAuthoredClip(clean)
+		)
+			return Promise.resolve();
+		const existing = prefetched.get(id);
+		if (existing) return existing.promise.then(() => undefined);
+		if (activePrefetchGroup && activePrefetchGroup !== groupId)
+			cancelPrefetch(activePrefetchGroup, false);
+		activePrefetchGroup = groupId;
+
+		const controller = new AbortController();
+		const entry: PrefetchEntry = {
+			groupId,
+			text: clean,
+			consumed: false,
+			controller,
+			promise: Promise.resolve(null),
+		};
+		prefetched.set(id, entry);
+		const isCurrent = () =>
+			prefetched.get(id) === entry && !controller.signal.aborted;
+		const work = prefetchTail.then(
+			async (): Promise<PrefetchedSpeech | null> => {
+				if (!isCurrent()) return null;
+				const latestVoiceCfg = deps.getVoiceConfig();
+				const latestProvider = latestVoiceCfg?.ttsProvider ?? "edge";
+				const config = snapshotPrefetchConfig(latestVoiceCfg, latestProvider);
+				const startedAt = performance.now();
+				const synthesize = () =>
+					synthesizeTts({
+						text: clean,
+						voice: latestVoiceCfg?.voice,
+						provider: latestProvider as TtsProviderId,
+						naiaKey: latestVoiceCfg?.naiaKey,
+						gatewayUrl: latestVoiceCfg?.gatewayUrl,
+						vllmHost: latestVoiceCfg?.vllmHost,
+						vllmTtsHost: latestVoiceCfg?.vllmTtsHost,
+						localRefAudioBase64:
+							latestProvider === "naia-local-voice"
+								? (config.localRefAudioBase64 ?? undefined)
+								: undefined,
+						signal: controller.signal,
+						streamPcm: false,
+					});
+				const localScheduler = deps.getScheduler();
+				const { audioBase64, costUsd } =
+					latestProvider === "naia-local-voice" && localScheduler
+						? await localScheduler.schedule(synthesize)
+						: await synthesize();
+				if (!isCurrent()) return null;
+				const elapsedMs = Math.max(
+					0,
+					Math.round(performance.now() - startedAt),
+				);
+				const audioDurationSeconds = wavDurationSeconds(audioBase64);
+				const speechRenderer = deps.getRenderer();
+				const speechLang =
+					typeof document !== "undefined" ? document.documentElement.lang : "";
+				const planRequest = {
+					text: clean,
+					lang: speechLang,
+					audio: {
+						kind: "whole" as const,
+						audioBase64,
+						durationSeconds: audioDurationSeconds,
+					},
+					signal: controller.signal,
+				};
+				const planResult = requestAlignedPlanResult(
+					speechRenderer,
+					planRequest,
+					`prefetch:${id}`,
+				);
+				let prepared: Promise<PreparedSpeech | null> | null = null;
+				if (
+					options.prepareAvatar &&
+					speechRenderer?.prefetchSpeechTiming &&
+					planResult
+				) {
+					prepared = planResult.then(async (resolution) => {
+						if (!isCurrent() || !resolution?.plan) return null;
+						try {
+				return (
+					(await speechRenderer.prefetchSpeechTiming?.(resolution.plan)) ??
+					null
+				);
+						} catch (error) {
+							Logger.warn(TAG, "aligned speech prefetch prepare failed", {
+								prefetchId: id,
+								error: error instanceof Error ? error.name : "unknown",
+							});
+							return null;
+						}
+					});
+				}
+				if (!isCurrent()) return null;
+
+				const ttsCost =
+					costUsd != null
+						? costUsd
+						: estimateTtsCost(
+								latestProvider,
+								clean.length,
+								latestVoiceCfg?.voice,
+							);
+				if (ttsCost > 0) {
+					const isNaiaTts = latestProvider === "nextain";
+					deps.addCostEntry({
+						inputTokens: 0,
+						outputTokens: 0,
+						cost: ttsCost,
+						provider: latestProvider,
+						model: isNaiaTts ? "tts:nextain" : `tts:${latestProvider}`,
+					});
+				}
+				Logger.info(TAG, "slide narration prefetch audio ready", {
+					prefetchId: id,
+					elapsedMs,
+					planRequested: Boolean(planResult),
+					avatarRequested: Boolean(prepared),
+				});
+				return {
+					audioBase64,
+					costUsd,
+					elapsedMs,
+					audioDurationSeconds,
+					provider: latestProvider,
+					voice: latestVoiceCfg?.voice,
+					localReferenceAudioPresent:
+						latestProvider === "naia-local-voice" &&
+						Boolean(config.localRefAudioBase64),
+					vllmTtsHost: latestVoiceCfg?.vllmTtsHost,
+					config,
+					planResult,
+					prepared,
+					renderer: speechRenderer,
+				} satisfies PrefetchedSpeech;
+			},
+		);
+		entry.promise = work.catch((error) => {
+			if (isCurrent()) {
+				Logger.warn(TAG, "slide narration prefetch failed", {
+					prefetchId: id,
+					error: error instanceof Error ? error.name : "unknown",
+				});
+			}
+			return null;
+		});
+		const readiness = entry.promise.then(async (cached) => {
+			if (!cached) return;
+			if (cached.planResult) await cached.planResult;
+			if (cached.prepared) await cached.prepared;
+		});
+		prefetchTail = readiness.then(
+			() => undefined,
+			() => undefined,
+		);
+		return readiness;
+	}
+
+	function sendPrefetchedSentence(
+		sentence: string,
+		clean: string,
+		prefetchId: string,
+		entry: PrefetchEntry,
+		seq: number,
+		reqId: string,
+		reserved: () => void,
+		revealText: () => void,
+	): void {
+		deps.setOutputStage("tts");
+		activeRequests.add(reqId);
+		void entry.promise.then((prepared) => {
+			if (!activeRequests.has(reqId)) {
+				prefetched.delete(prefetchId);
+				return;
+			}
+			if (entry.controller.signal.aborted) {
+				prefetched.delete(prefetchId);
+				activeRequests.delete(reqId);
+				deps.getQueue()?.skipOrdered(seq);
+				return;
+			}
+			if (
+				!prepared ||
+				!samePrefetchConfig(prepared.config, deps.getVoiceConfig())
+			) {
+				prefetched.delete(prefetchId);
+				activeRequests.delete(reqId);
+				if (entry.controller.signal.aborted) {
+					deps.getQueue()?.skipOrdered(seq);
+					return;
+				}
+				sendSentence(sentence, { reservedSeq: seq, reservedReveal: reserved });
+				return;
+			}
+			const result: TtsSynthesisResult = {
+				reqId,
+				seq,
+				text: clean,
+				provider: prepared.provider,
+				voice: prepared.voice,
+				audioBase64: prepared.audioBase64,
+				elapsedMs: prepared.elapsedMs,
+				audioDurationSeconds: prepared.audioDurationSeconds,
+				localReferenceAudioPresent: prepared.localReferenceAudioPresent,
+				vllmTtsHost: prepared.vllmTtsHost,
+			};
+			void Promise.resolve(deps.onSynthesisResult?.(result)).catch((error) =>
+				Logger.warn(TAG, "TTS diagnostic capture failed", {
+					reqId,
+					error: String(error),
+				}),
+			);
+			activeRequests.delete(reqId);
+			prefetched.delete(prefetchId);
+			const renderer = deps.getRenderer();
+			const alignedPlan = requestAlignedPlan(
+				renderer,
+				{
+					text: clean,
+					lang:
+						typeof document !== "undefined"
+							? document.documentElement.lang
+							: "",
+					audio: {
+						kind: "whole",
+						audioBase64: prepared.audioBase64,
+						durationSeconds: prepared.audioDurationSeconds,
+					},
+				},
+				seq,
+				prepared.planResult,
+				prepared.renderer === renderer ? prepared.prepared : null,
+			);
+			deps.getQueue()?.enqueueOrdered(seq, prepared.audioBase64, {
+				onPlaybackStart: (playback) => {
+					revealText();
+					deps.onPlaybackStart?.();
+					alignedPlan?.start(playback);
+				},
+				onPlaybackUnavailable: revealText,
+				beforePlayback: alignedPlan?.beforePlayback,
+			});
+		});
+	}
+
+	function sendSentence(
+		sentence: string,
+		options: {
+			prefetchId?: string;
+			reservedSeq?: number;
+			reservedReveal?: () => void;
+		} = {},
+	): void {
 		// Preserve the original Markdown in chat, but send only natural speech
 		// text to the selected voice engine.
 		const voiceCfg = deps.getVoiceConfig();
@@ -381,13 +812,13 @@ export function createSentenceTtsPipeline(
 					: undefined),
 		);
 		if (!clean) return;
-		const reserved = deps.reserveReveal(sentence);
+		const reserved = options.reservedReveal ?? deps.reserveReveal(sentence);
 		let revealed = false;
 		const revealText = () => {
+			if (revealed) return;
 			revealed = true;
 			reserved();
 		};
-
 		const cascadeAvatar = deps.getRenderer();
 
 		// 자기발화 텍스트 필터용 — 이 턴에 말한 문장을 기록 (최근 6문장 링버퍼).
@@ -403,7 +834,10 @@ export function createSentenceTtsPipeline(
 			const endCascadeJob = deps.beginCascadeJob();
 			void cascadeAvatar
 				.playAuthoredClip(clean, {
-					onPlaybackReady: revealText,
+					onPlaybackReady: () => {
+						revealText();
+						deps.onPlaybackStart?.();
+					},
 					onPlaybackFailure: revealText,
 				})
 				.finally(endCascadeJob);
@@ -412,7 +846,26 @@ export function createSentenceTtsPipeline(
 
 		const reqId = deps.generateRequestId();
 		// Reserve sequence number BEFORE async request to guarantee order.
-		const seq = deps.getQueue()?.reserveSeq() ?? 0;
+		const seq = options.reservedSeq ?? deps.getQueue()?.reserveSeq() ?? 0;
+		if (options.prefetchId) {
+			const entry = prefetched.get(options.prefetchId);
+			if (entry && entry.text === clean && !entry.consumed) {
+				entry.consumed = true;
+				sendPrefetchedSentence(
+					sentence,
+					clean,
+					options.prefetchId,
+					entry,
+					seq,
+					reqId,
+					reserved,
+					revealText,
+				);
+				return;
+			} else if (entry) {
+				cancelPrefetch(entry.groupId);
+			}
+		}
 		// (2026-08-18) The 2-sentence local-voice cap is GONE. It shielded the
 		// mixed-precision TRT engine whose runaway generation made one sentence
 		// take 30-100s; the pure-FP32 engine measures 2-6s/sentence (0/36
@@ -499,6 +952,7 @@ export function createSentenceTtsPipeline(
 					if (!isCurrentBrowserTurn()) return;
 					startedAt = performance.now();
 					revealText();
+					deps.onPlaybackStart?.();
 					deps.setSpeaking(true);
 					cascadeAvatar?.setSpeakingVisual(true);
 					void session?.ready
@@ -583,15 +1037,20 @@ export function createSentenceTtsPipeline(
 		const speechLang =
 			typeof document !== "undefined" ? document.documentElement.lang : "";
 		if (pcmStream && streamQueue?.enqueueOrderedStream) {
-			const alignedPlan = requestAlignedPlan(cascadeAvatar, {
-				text: clean,
-				lang: speechLang,
-				audio: { kind: "pcm-stream", stream: pcmStream },
-				signal: abort.signal,
-			}, seq);
+			const alignedPlan = requestAlignedPlan(
+				cascadeAvatar,
+				{
+					text: clean,
+					lang: speechLang,
+					audio: { kind: "pcm-stream", stream: pcmStream },
+					signal: abort.signal,
+				},
+				seq,
+			);
 			streamQueue.enqueueOrderedStream(seq, pcmStream, {
 				onPlaybackStart: (playback) => {
 					revealText();
+					deps.onPlaybackStart?.();
 					alignedPlan?.start(playback);
 				},
 				onPlaybackUnavailable: revealText,
@@ -719,18 +1178,23 @@ export function createSentenceTtsPipeline(
 						pcmStream.end();
 					}
 				} else {
-					const alignedPlan = requestAlignedPlan(cascadeAvatar, {
-						text: clean,
-						lang: speechLang,
-						audio: {
-							kind: "whole",
-							audioBase64,
-							durationSeconds: audioDurationSeconds,
+					const alignedPlan = requestAlignedPlan(
+						cascadeAvatar,
+						{
+							text: clean,
+							lang: speechLang,
+							audio: {
+								kind: "whole",
+								audioBase64,
+								durationSeconds: audioDurationSeconds,
+							},
 						},
-					}, seq);
+						seq,
+					);
 					deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
 						onPlaybackStart: (playback) => {
 							revealText();
+							deps.onPlaybackStart?.();
 							alignedPlan?.start(playback);
 						},
 						onPlaybackUnavailable: revealText,
@@ -822,9 +1286,10 @@ export function createSentenceTtsPipeline(
 		abortControllers.clear();
 	}
 
-	function interrupt(): void {
+	function interrupt(options: { preservePrefetchId?: string } = {}): void {
 		speechEpoch++;
 		clearRequests();
+		clearPrefetchesExcept(options.preservePrefetchId);
 		// The pipeline created any live browser utterance (speakViaBrowser), so
 		// cancelling it on barge-in is its lifecycle too — AudioQueue.clear()
 		// cannot stop client-side speech (FR-VOICE.16 Phase 3).
@@ -839,6 +1304,8 @@ export function createSentenceTtsPipeline(
 
 	return {
 		sendSentence,
+		prefetchSentence,
+		cancelPrefetch,
 		interrupt,
 		dispose(): void {
 			// Session teardown drops the pipeline's own requests but deliberately
@@ -846,6 +1313,7 @@ export function createSentenceTtsPipeline(
 			// live utterance. Voice-pipeline cleanup must not silence an ongoing
 			// chat-mode browser reply — original ChatArea behavior preserved.
 			clearRequests();
+			clearPrefetchesExcept();
 			recentTexts.length = 0;
 		},
 		rearmLocalVoiceNotice(): void {

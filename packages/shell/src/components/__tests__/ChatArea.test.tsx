@@ -10,7 +10,10 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
 import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
-import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
+import {
+	SLIDE_PRESENTER_CANCEL_EVENT,
+	SLIDE_PRESENTER_SPEAK_EVENT,
+} from "../../lib/slide-presenter-events";
 import type { AgentResponseChunk } from "../../lib/types";
 import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
@@ -2202,6 +2205,11 @@ describe("ChatArea", () => {
 					generation: 1,
 					page: 3,
 					text: "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다.",
+					nextPrefetch: {
+						id: "slides-prefetch-1",
+						page: 4,
+						text: "다음 쪽 예열 문장입니다.",
+					},
 				},
 			}),
 		);
@@ -2215,6 +2223,43 @@ describe("ChatArea", () => {
 				(call: any[]) => call[0].text,
 			),
 		).toEqual(["첫 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."]);
+		const currentPlayback = ttsSyncMocks.enqueueOrdered.mock.calls[0][2] as {
+			onPlaybackStart?: (playback?: { clock: () => number }) => void;
+		};
+		currentPlayback.onPlaybackStart?.({ clock: () => 0 });
+		await waitFor(() =>
+			expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(4),
+		);
+		expect(ttsSyncMocks.synthesizeTts.mock.calls[3][0].text).toBe(
+			"다음 쪽 예열 문장입니다.",
+		);
+		// Prefetch is a standby cache only; it must not enqueue a second page early.
+		expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(3);
+
+		window.dispatchEvent(
+			new CustomEvent(SLIDE_PRESENTER_CANCEL_EVENT, {
+				detail: {
+					requestId: "slide-speak-1",
+					generation: 1,
+					prefetchId: "slides-prefetch-1",
+					invalidateGeneration: true,
+				},
+			}),
+		);
+		window.dispatchEvent(
+			new CustomEvent(SLIDE_PRESENTER_SPEAK_EVENT, {
+				detail: {
+					requestId: "slide-speak-stale",
+					generation: 1,
+					page: 4,
+					text: "이전 세대의 문장입니다.",
+					prefetchId: "slides-prefetch-1",
+				},
+			}),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(4);
+		expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(3);
 		localStorage.removeItem("naia-config");
 	});
 

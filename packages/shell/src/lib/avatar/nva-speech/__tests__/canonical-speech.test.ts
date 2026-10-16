@@ -63,7 +63,10 @@ class FakePlayer implements SpeechPlayerLike {
 	async loadAudioClock() {
 		this.calls.push("loadAudioClock");
 		this.activeLoads++;
-		this.maxConcurrentLoads = Math.max(this.maxConcurrentLoads, this.activeLoads);
+		this.maxConcurrentLoads = Math.max(
+			this.maxConcurrentLoads,
+			this.activeLoads,
+		);
 		try {
 			await this.loadGate;
 			this.state = "ready";
@@ -74,7 +77,10 @@ class FakePlayer implements SpeechPlayerLike {
 	async loadExternal() {
 		this.calls.push("loadExternal");
 		this.activeLoads++;
-		this.maxConcurrentLoads = Math.max(this.maxConcurrentLoads, this.activeLoads);
+		this.maxConcurrentLoads = Math.max(
+			this.maxConcurrentLoads,
+			this.activeLoads,
+		);
 		try {
 			await this.loadGate;
 			this.state = "ready";
@@ -384,13 +390,17 @@ describe("CanonicalSpeechStage", () => {
 
 		const second = stage.prepare(plan("aligned"));
 		await Promise.resolve();
-		expect(player.calls.filter((call) => call === "loadAudioClock")).toHaveLength(1);
+		expect(
+			player.calls.filter((call) => call === "loadAudioClock"),
+		).toHaveLength(1);
 		expect(player.maxConcurrentLoads).toBe(1);
 
 		releaseFirst();
 		expect(await first).toBeNull();
 		expect(await second).not.toBeNull();
-		expect(player.calls.filter((call) => call === "loadAudioClock")).toHaveLength(2);
+		expect(
+			player.calls.filter((call) => call === "loadAudioClock"),
+		).toHaveLength(2);
 		expect(player.maxConcurrentLoads).toBe(1);
 	});
 
@@ -425,6 +435,94 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		renderer.start(video, document.createElement("canvas"));
 		return renderer;
 	}
+
+	it("preloads the next aligned plan on a standby canonical stage, then promotes it with its sound", async () => {
+		const currentStage = {
+			start: vi.fn(async () => true),
+			prepare: vi.fn(async () => null),
+			stop: vi.fn(),
+			dispose: vi.fn(),
+			speaking: true,
+		};
+		const nextPlay = vi.fn(async () => true);
+		const nextStage = {
+			start: vi.fn(async () => true),
+			prepare: vi.fn(async () => ({ play: nextPlay })),
+			stop: vi.fn(),
+			dispose: vi.fn(),
+			speaking: false,
+		};
+		const stages = [currentStage, nextStage];
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: manifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+			createSpeechStage: () => stages.shift() as never,
+		});
+		const video = document.createElement("video");
+		vi.spyOn(video, "play").mockResolvedValue();
+		renderer.start(video, document.createElement("canvas"));
+		const clock = () => 0.4;
+		await renderer.playSpeechTiming({ plan: plan("aligned"), clock });
+
+		const stagedRenderer = renderer as unknown as {
+			prefetchSpeechTiming(
+				plan: SpeechPlan,
+			): Promise<{ play(clock: () => number): Promise<boolean> } | null>;
+		};
+		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
+		expect(nextStage.prepare).toHaveBeenCalledWith(plan("aligned"));
+		expect(currentStage.stop).not.toHaveBeenCalled();
+		expect(currentStage.dispose).not.toHaveBeenCalled();
+		expect(nextPlay).not.toHaveBeenCalled();
+
+		expect(await prepared?.play(clock)).toBe(true);
+		expect(nextPlay).toHaveBeenCalledWith(clock);
+		expect(currentStage.dispose).toHaveBeenCalledTimes(1);
+		renderer.setSpeakingVisual(false);
+		expect(nextStage.stop).toHaveBeenCalledTimes(1);
+		renderer.stop();
+	});
+
+	it("cancels a standby canonical plan without disturbing the active stage", async () => {
+		const currentStage = {
+			start: vi.fn(async () => true),
+			prepare: vi.fn(async () => null),
+			stop: vi.fn(),
+			dispose: vi.fn(),
+			speaking: true,
+		};
+		const nextStage = {
+			start: vi.fn(async () => true),
+			prepare: vi.fn(async () => ({ play: vi.fn(async () => true) })),
+			stop: vi.fn(),
+			dispose: vi.fn(),
+			speaking: false,
+		};
+		const stages = [currentStage, nextStage];
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: manifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+			createSpeechStage: () => stages.shift() as never,
+		});
+		const video = document.createElement("video");
+		vi.spyOn(video, "play").mockResolvedValue();
+		renderer.start(video, document.createElement("canvas"));
+		const stagedRenderer = renderer as unknown as {
+			prefetchSpeechTiming(
+				plan: SpeechPlan,
+			): Promise<{ play(clock: () => number): Promise<boolean> } | null>;
+			cancelPrefetchedSpeechTiming(): void;
+		};
+		const prepared = await stagedRenderer.prefetchSpeechTiming(plan("aligned"));
+		stagedRenderer.cancelPrefetchedSpeechTiming();
+		expect(await prepared?.play(() => 0)).toBe(false);
+		expect(nextStage.dispose).toHaveBeenCalledTimes(1);
+		expect(currentStage.stop).not.toHaveBeenCalled();
+		expect(currentStage.dispose).not.toHaveBeenCalled();
+		renderer.stop();
+	});
 
 	it("routes playSpeechTiming/updateSpeechPlan to the stage and stops it when speech ends", async () => {
 		const stage = {

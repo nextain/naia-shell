@@ -18,6 +18,7 @@ import type {
 import { setLocale } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
 import {
+	SLIDE_PRESENTER_CANCEL_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
 	type SlidePresenterSpeechRequest,
@@ -549,7 +550,15 @@ describe("SlidesCenterArea", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
 		await waitFor(() => expect(requests).toHaveLength(1));
-		expect(requests[0]).toMatchObject({ page: 1, text: "First narration." });
+		expect(requests[0]).toMatchObject({
+			page: 1,
+			text: "First narration.",
+			nextPrefetch: {
+				page: 2,
+				text: "Second narration.",
+				id: expect.stringMatching(/^slides-prefetch-/),
+			},
+		});
 
 		window.dispatchEvent(
 			new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
@@ -558,7 +567,62 @@ describe("SlidesCenterArea", () => {
 		);
 		await waitFor(() => expect(screen.getByText("2 / 3")).toBeInTheDocument());
 		await waitFor(() => expect(requests).toHaveLength(2));
-		expect(requests[1]).toMatchObject({ page: 2, text: "Second narration." });
+		expect(requests[1]).toMatchObject({
+			page: 2,
+			text: "Second narration.",
+			prefetchId: requests[0].nextPrefetch?.id,
+		});
+	});
+
+	it("cancels only the following-page prefetch when repeat changes, then invalidates on pause", async () => {
+		const requests: SlidePresenterSpeechRequest[] = [];
+		const cancellations: Array<{
+			requestId?: string;
+			generation?: number;
+			prefetchId?: string;
+			invalidateGeneration?: boolean;
+		}> = [];
+		const onSpeak = (event: Event) =>
+			requests.push((event as CustomEvent<SlidePresenterSpeechRequest>).detail);
+		const onCancel = (event: Event) =>
+			cancellations.push(
+				(event as CustomEvent<(typeof cancellations)[number]>).detail,
+			);
+		window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, onSpeak);
+		window.addEventListener(SLIDE_PRESENTER_CANCEL_EVENT, onCancel);
+		try {
+			render(<SlidesCenterArea naia={new MockBridge()} />);
+			fireEvent.change(screen.getByLabelText(/PDF/), {
+				target: { files: [new File(["pdf"], "deck.pdf")] },
+			});
+			await waitFor(() =>
+				expect(screen.getByText("1 / 3")).toBeInTheDocument(),
+			);
+			fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
+			await waitFor(() => expect(requests).toHaveLength(1));
+			const nextPrefetchId = requests[0].nextPrefetch?.id;
+			expect(nextPrefetchId).toBeTruthy();
+
+			fireEvent.click(screen.getByRole("button", { name: "반복 재생" }));
+			expect(cancellations.at(-1)).toMatchObject({
+				prefetchId: nextPrefetchId,
+				invalidateGeneration: false,
+			});
+			expect(cancellations.at(-1)?.requestId).toBeUndefined();
+			expect(
+				screen.getByRole("button", { name: "일시정지" }),
+			).toBeInTheDocument();
+
+			fireEvent.click(screen.getByRole("button", { name: "일시정지" }));
+			expect(cancellations.at(-1)).toMatchObject({
+				requestId: requests[0].requestId,
+				generation: requests[0].generation,
+				invalidateGeneration: true,
+			});
+		} finally {
+			window.removeEventListener(SLIDE_PRESENTER_SPEAK_EVENT, onSpeak);
+			window.removeEventListener(SLIDE_PRESENTER_CANCEL_EVENT, onCancel);
+		}
 	});
 
 	it("plays an authored video without narration and requests the next page as soon as it ends", async () => {
@@ -653,6 +717,10 @@ describe("SlidesCenterArea", () => {
 			);
 			fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
 			await waitFor(() => expect(requests).toHaveLength(1));
+			expect(requests[0].nextPrefetch).toMatchObject({
+				page: 2,
+				text: "Continue the talk.",
+			});
 			window.dispatchEvent(
 				new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
 					detail: { ...requests[0], status: "finished" },

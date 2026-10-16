@@ -182,6 +182,12 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		state.mode === "answering";
 	const [notesVisible, setNotesVisible] = useState(true);
 	const activeSpeechRef = useRef<string | null>(null);
+	const prefetchTicketRef = useRef<{
+		id: string;
+		page: number;
+		text: string;
+	} | null>(null);
+	const prefetchSerialRef = useRef(0);
 	const notesRef = useRef(speakerNotes);
 	const pageTextsRef = useRef(pageTexts);
 	notesRef.current = speakerNotes;
@@ -296,9 +302,24 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const cancelSpeech = useCallback(() => {
 		const requestId = activeSpeechRef.current;
 		activeSpeechRef.current = null;
+		const prefetchId = prefetchTicketRef.current?.id;
+		prefetchTicketRef.current = null;
 		cancelSlidePresenterSpeech({
 			requestId: requestId ?? undefined,
 			generation: stateRef.current.generation,
+			prefetchId,
+			invalidateGeneration: true,
+		});
+	}, []);
+
+	const cancelPrefetch = useCallback(() => {
+		const ticket = prefetchTicketRef.current;
+		prefetchTicketRef.current = null;
+		if (!ticket) return;
+		cancelSlidePresenterSpeech({
+			generation: stateRef.current.generation,
+			prefetchId: ticket.id,
+			invalidateGeneration: false,
 		});
 	}, []);
 
@@ -366,12 +387,44 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			return;
 		}
 		const requestId = `slides-${state.generation}-${state.page}`;
+		let prefetchId: string | undefined;
+		const priorPrefetch = prefetchTicketRef.current;
+		prefetchTicketRef.current = null;
+		if (priorPrefetch?.page === state.page && priorPrefetch.text === text) {
+			prefetchId = priorPrefetch.id;
+		} else if (priorPrefetch) {
+			cancelPrefetch();
+		}
+		const nextPage =
+			state.page < state.rangeEnd
+				? state.page + 1
+				: state.repeat
+					? state.rangeStart
+					: null;
+		let nextPrefetch: { id: string; page: number; text: string } | undefined;
+		if (nextPage !== null) {
+			const nextText = narrationForPage(
+				nextPage,
+				notesRef.current,
+				pageTextsRef.current,
+			).trim();
+			if (nextText) {
+				nextPrefetch = {
+					id: `slides-prefetch-${++prefetchSerialRef.current}`,
+					page: nextPage,
+					text: nextText,
+				};
+				prefetchTicketRef.current = nextPrefetch;
+			}
+		}
 		activeSpeechRef.current = requestId;
 		requestSlidePresenterSpeech({
 			requestId,
 			generation: state.generation,
 			page: state.page,
 			text,
+			prefetchId,
+			nextPrefetch,
 		});
 		dispatch({ type: "speech-requested", generation: state.generation });
 		Logger.info(TAG, "narration requested", {
@@ -384,8 +437,12 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		state.generation,
 		state.mode,
 		state.page,
+		state.rangeEnd,
+		state.rangeStart,
+		state.repeat,
 		state.speech,
 		cancelSpeech,
+		cancelPrefetch,
 	]);
 
 	const activeVideo =
@@ -1076,6 +1133,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				}}
 				onGoto={gotoPage}
 				onToggleRepeat={() => {
+					cancelPrefetch();
 					dispatch({ type: "toggle-repeat" });
 					Logger.info(TAG, "presentation repeat toggled", {
 						enabled: !state.repeat,
