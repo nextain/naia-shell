@@ -620,6 +620,85 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 		expect(prefetchedPlay).toHaveBeenCalledWith(expect.any(Function));
 	});
 
+	it("keeps a consumed prefetched plan playable when the following page is prefetched after video", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		let stagedPlanAvailable = true;
+		const prefetchedPlay = vi.fn(async () => stagedPlanAvailable);
+		const prefetched = { play: prefetchedPlay };
+		const renderer = {
+			...nvaRenderer(),
+			canPlaySpeechPlans: () => true,
+			prepareSpeechTiming: vi.fn(async () => ({
+				play: vi.fn(async () => true),
+			})),
+			prefetchSpeechTiming: vi.fn(async () => prefetched),
+			cancelPrefetchedSpeechTiming: vi.fn(() => {
+				stagedPlanAvailable = false;
+			}),
+		};
+		const aligned = vi.fn(async () => plan("aligned"));
+		const pipelineRef: { current?: SentenceTtsPipeline } = {};
+		let firstPagePrefetch: Promise<void> | null = null;
+		let followingPagePrefetch: Promise<void> | null = null;
+		let playbackStarts = 0;
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getAlignedSpeechPlanSource: () => aligned,
+			onPlaybackStart: () => {
+				const start = playbackStarts++;
+				if (start === 0) {
+					firstPagePrefetch = pipelineRef.current?.prefetchSentence(
+						"영상 뒤 첫 문장입니다.",
+						{
+							prefetchId: "slides-prefetch-video/0",
+							prefetchGroupId: "slides-prefetch-video",
+							prepareAvatar: true,
+						},
+					);
+				} else if (start === 1) {
+					followingPagePrefetch = pipelineRef.current?.prefetchSentence(
+						"다음 페이지 첫 문장입니다.",
+						{
+							prefetchId: "slides-prefetch-following/0",
+							prefetchGroupId: "slides-prefetch-following",
+							prepareAvatar: true,
+						},
+					);
+				}
+			},
+		});
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipelineRef.current = pipeline;
+
+		pipeline.sendSentence("영상 전 페이지 문장입니다.");
+		await flush();
+		const beforeVideo = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+		beforeVideo.onPlaybackStart({ clock: () => 0.1 });
+		await firstPagePrefetch;
+
+		let endVideo!: () => void;
+		const videoEnded = new Promise<void>((resolve) => {
+			endVideo = resolve;
+		});
+		endVideo();
+		await videoEnded;
+
+		pipeline.interrupt({ preservePrefetchId: "slides-prefetch-video" });
+		pipeline.sendSentence("영상 뒤 첫 문장입니다.", {
+			prefetchId: "slides-prefetch-video/0",
+		});
+		await flush();
+		const afterVideo = queue.enqueueOrdered.mock.calls[1][2] as GatedCallbacks;
+		await afterVideo.beforePlayback?.();
+		afterVideo.onPlaybackStart({ clock: () => 0.2 });
+		await flush();
+
+		expect(renderer.cancelPrefetchedSpeechTiming).not.toHaveBeenCalled();
+		expect(prefetchedPlay).toHaveBeenCalledWith(expect.any(Function));
+		expect(await prefetchedPlay.mock.results[0]?.value).toBe(true);
+		await followingPagePrefetch;
+	});
+
 	it("discards an in-flight prefetched result after its page generation is cancelled", async () => {
 		let resolveSynthesis!: (result: { audioBase64: string }) => void;
 		synthesizeMock.mockReturnValue(
@@ -867,7 +946,7 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 				gatewayUrl: "https://gw.example",
 			}),
 		});
-		delete deps.getAlignedSpeechPlanSource;
+		deps.getAlignedSpeechPlanSource = undefined;
 		createSentenceTtsPipeline(deps).sendSentence("문장입니다.");
 		await flush();
 		const callbacks = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;

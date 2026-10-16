@@ -285,7 +285,11 @@ export function createSentenceTtsPipeline(
 		}
 		if (!prefetchGroupId || activePrefetchGroup === prefetchGroupId)
 			activePrefetchGroup = null;
-		if (cancelled || ownsPreparedStage)
+		// Starting the following page's prefetch also retires the previous
+		// group's bookkeeping. Entries already consumed by sendSentence still
+		// own their prepared canonical stage until that sentence's play callback
+		// promotes it; do not cancel it just because the new group is starting.
+		if (ownsPreparedStage && (cancelled || includeConsumed))
 			deps.getRenderer()?.cancelPrefetchedSpeechTiming?.();
 	}
 
@@ -628,10 +632,11 @@ export function createSentenceTtsPipeline(
 					prepared = planResult.then(async (resolution) => {
 						if (!isCurrent() || !resolution?.plan) return null;
 						try {
-				return (
-					(await speechRenderer.prefetchSpeechTiming?.(resolution.plan)) ??
-					null
-				);
+							return (
+								(await speechRenderer.prefetchSpeechTiming?.(
+									resolution.plan,
+								)) ?? null
+							);
 						} catch (error) {
 							Logger.warn(TAG, "aligned speech prefetch prepare failed", {
 								prefetchId: id,
@@ -862,7 +867,8 @@ export function createSentenceTtsPipeline(
 					revealText,
 				);
 				return;
-			} else if (entry) {
+			}
+			if (entry) {
 				cancelPrefetch(entry.groupId);
 			}
 		}
