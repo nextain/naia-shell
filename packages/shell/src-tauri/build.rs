@@ -289,18 +289,22 @@ fn main() {
         // thread as Tauri expects.
         println!("cargo:rustc-link-arg=/STACK:16777216");
 
-        // Tauri's library test binary needs the Common Controls v6 activation
-        // context for comctl32 imports such as TaskDialogIndirect. The app
-        // manifest emitted by tauri-build does not apply to lib test targets.
-        let test_manifest = PathBuf::from(
-            env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"),
-        )
-        .join("windows/test-manifest.xml");
-        println!("cargo:rerun-if-changed={}", test_manifest.display());
-        println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
-        println!(
-            "cargo:rustc-link-arg-tests=/MANIFESTINPUT:{}",
-            test_manifest.display()
-        );
+        println!("cargo:rerun-if-env-changed=NAIA_EMBED_TEST_MANIFEST");
+        if env::var("NAIA_EMBED_TEST_MANIFEST").as_deref() == Ok("1") {
+            // Tauri's library test binary needs the Common Controls v6
+            // activation context for comctl32 imports such as TaskDialogIndirect.
+            // Cargo's test-specific linker flag excludes lib unit-test targets,
+            // so scope these general linker flags to the explicit test-gate env.
+            let test_manifest = PathBuf::from(
+                env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"),
+            )
+            .join("windows/test-manifest.xml");
+            println!("cargo:rerun-if-changed={}", test_manifest.display());
+            println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+            println!(
+                "cargo:rustc-link-arg=/MANIFESTINPUT:{}",
+                test_manifest.display()
+            );
+        }
     }
 }

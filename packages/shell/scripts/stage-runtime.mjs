@@ -626,11 +626,13 @@ async function main() {
 		run(
 			"cargo test --manifest-path src-tauri/Cargo.toml voxcpm2_upgrade_rejects_default_only_payload_control_files --lib",
 			SHELL,
+			{ NAIA_EMBED_TEST_MANIFEST: "1" },
 		);
 		console.log("[stage-runtime] hidden Ollama console regression gate");
 		run(
 			"cargo test --manifest-path src-tauri/Cargo.toml suspended_ollama_console_is_hidden_before_child_resumes --lib",
 			SHELL,
+			{ NAIA_EMBED_TEST_MANIFEST: "1" },
 		);
 	}
 
