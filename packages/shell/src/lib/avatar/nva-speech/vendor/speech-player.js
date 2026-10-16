@@ -1,7 +1,7 @@
 import { derive, validateManifest } from "./nva-core.js";
 import { SpeechAtlasSource } from "./speech-atlas-source.js";
 import { validateSpeechAtlasIndex } from "./speech-atlas-index.js";
-import { AlternatingSpeechDecoder, drawBlendedFactorizedSpeechFrame, drawBlendedWholeHeadSpeechFrame } from "./speech-browser-runtime.js";
+import { SpeechVideoCache, drawBlendedFactorizedSpeechFrame, drawBlendedWholeHeadSpeechFrame } from "./speech-browser-runtime.js";
 import { verifySpeechMotionBundle } from "./speech-bundle.js";
 import { validateSpeechPlan } from "./speech-plan.js";
 import { buildSpeechSchedule, prefetchSpeechRanges, resolveSpeechLayers, SpeechPlaybackState } from "./speech-runtime.js";
@@ -17,16 +17,26 @@ function requiredAsset(assets, path) {
   return blob;
 }
 
-function waitForMedia(element, event = "loadeddata") {
+function abortError() {
+  const error = new Error("SpeechPlayer was disposed during preparation");
+  error.name = "AbortError";
+  return error;
+}
+
+function waitForMedia(element, event = "loadeddata", signal) {
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       element.removeEventListener(event, loaded);
       element.removeEventListener("error", failed);
+      signal?.removeEventListener("abort", aborted);
     };
     const loaded = () => { cleanup(); resolve(); };
     const failed = () => { cleanup(); reject(new Error("NVA media decode failed")); };
+    const aborted = () => { cleanup(); reject(abortError()); };
+    if (signal?.aborted) return aborted();
     element.addEventListener(event, loaded, { once: true });
     element.addEventListener("error", failed, { once: true });
+    signal?.addEventListener("abort", aborted, { once: true });
     element.load();
   });
 }
@@ -36,6 +46,7 @@ export class SpeechPlayer {
     audio, canvas, bodyVideo, speechVideos,
     urlApi = globalThis.URL,
     imageLoader = globalThis.createImageBitmap,
+    videoFactory,
     requestFrame = (callback) => globalThis.requestAnimationFrame(callback),
     cancelFrame = (handle) => globalThis.cancelAnimationFrame(handle),
   }) {
@@ -50,24 +61,43 @@ export class SpeechPlayer {
     if (!this.context) throw new TypeError("canvas must provide a 2D context");
     this.bodyVideo = bodyVideo;
     this.speechVideos = speechVideos;
+    this.seedVideos = [bodyVideo, ...(Array.isArray(speechVideos) ? speechVideos : [])].filter(Boolean);
+    this.usedVideos = new WeakSet();
+    this.mediaContainer = bodyVideo.parentNode || this.seedVideos.find((video) => video.parentNode)?.parentNode || null;
+    this.videoFactory = videoFactory || (() => {
+      const document = bodyVideo.ownerDocument || globalThis.document;
+      if (typeof document?.createElement !== "function") return null;
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      if (video.style) video.style.display = "none";
+      this.mediaContainer?.append?.(video);
+      return video;
+    });
     this.urlApi = urlApi;
     this.imageLoader = imageLoader;
     this.requestFrame = requestFrame;
     this.cancelFrame = cancelFrame;
-    this.decoder = new AlternatingSpeechDecoder(speechVideos, urlApi);
+    this.speechVideoCache = null;
     this.playbackState = new SpeechPlaybackState(
       () => this.state,
       (next) => { this.state = next; },
     );
     this.state = "empty";
     this.urls = [];
-    this.slotToKey = [null, null];
-    this.keyToSlot = new Map();
+    this.audioUrl = null;
+    this.bundleManifest = null;
+    this.bundleAssets = null;
+    this.bundleReady = false;
     this.pending = new Map();
-    // Keys of the clips drawn in the latest frame and slots whose src is being
-    // replaced. A reload never targets a slot that holds a clip on screen.
+    // Keys drawn in the latest frame are pinned while the bounded LRU cache
+    // chooses another clip to release.
     this.onScreenKeys = new Set();
-    this.loadingSlots = new Set();
+    this.transitionLoadQueue = Promise.resolve();
+    this.prepareQueue = Promise.resolve();
+    this.abortController = new AbortController();
+    this.disposed = false;
     this.frameHandle = null;
     this.token = null;
     this.onEnded = () => this.stop("complete");
@@ -76,17 +106,30 @@ export class SpeechPlayer {
     this.externalClock = null;
   }
 
-  async load({ manifest, assets, plan, audioBlob }) {
+  load(options) {
+    return this.#serializePrepare(() => this.#load(options));
+  }
+
+  async #load({ manifest, assets, plan, audioBlob }) {
+    if (this.disposed) throw new Error("SpeechPlayer is disposed");
     if (plan?.quality_mode !== "aligned")
       throw new TypeError("audio playback requires an aligned SpeechPlan");
     if (!(audioBlob instanceof Blob) || audioBlob.size === 0) throw new TypeError("non-empty audio Blob is required");
     if (await sha256Hex(audioBlob) !== plan.audio?.sha256) throw new Error("SpeechPlan audio hash mismatch");
     await this.#loadMotion({ manifest, assets, plan });
+    this.#throwIfDisposed();
 
     const audioUrl = this.#objectUrl(audioBlob);
     this.audio.src = audioUrl;
+    const previousAudioUrl = this.audioUrl;
+    this.audioUrl = audioUrl;
+    if (previousAudioUrl) {
+      const previousIndex = this.urls.indexOf(previousAudioUrl);
+      if (previousIndex >= 0) this.urls.splice(previousIndex, 1);
+      this.urlApi.revokeObjectURL(previousAudioUrl);
+    }
     this.audio.preload = "auto";
-    await waitForMedia(this.audio, "loadedmetadata");
+    await waitForMedia(this.audio, "loadedmetadata", this.abortController.signal);
     const durationUs = Math.round(this.audio.duration * 1_000_000);
     if (!Number.isFinite(durationUs) || Math.abs(durationUs - plan.audio.duration_us) > 20_000)
       throw new Error("SpeechPlan audio duration mismatch");
@@ -99,10 +142,16 @@ export class SpeechPlayer {
     return { quality_mode: plan.quality_mode, transitions: this.schedule.transitions.length };
   }
 
-  async loadExternal({ manifest, assets, plan }) {
+  loadExternal(options) {
+    return this.#serializePrepare(() => this.#loadExternal(options));
+  }
+
+  async #loadExternal({ manifest, assets, plan }) {
+    if (this.disposed) throw new Error("SpeechPlayer is disposed");
     if (plan?.quality_mode !== "browser-timed")
       throw new TypeError("external browser clock requires a browser-timed SpeechPlan");
     await this.#loadMotion({ manifest, assets, plan });
+    this.#throwIfDisposed();
     this.mode = "external";
     this.state = "ready";
     this.#draw();
@@ -113,10 +162,16 @@ export class SpeechPlayer {
   // but its time base is still that sound. An aligned plan is played against
   // the playback position of the sound that is actually playing. Timers and
   // character-count clocks are not audio clocks and must not be passed here.
-  async loadAudioClock({ manifest, assets, plan }) {
+  loadAudioClock(options) {
+    return this.#serializePrepare(() => this.#loadAudioClock(options));
+  }
+
+  async #loadAudioClock({ manifest, assets, plan }) {
+    if (this.disposed) throw new Error("SpeechPlayer is disposed");
     if (plan?.quality_mode !== "aligned")
       throw new TypeError("audio clock playback requires an aligned SpeechPlan");
     await this.#loadMotion({ manifest, assets, plan });
+    this.#throwIfDisposed();
     this.mode = "audio-clock";
     this.state = "ready";
     this.#draw();
@@ -140,63 +195,94 @@ export class SpeechPlayer {
     return { quality_mode: plan.quality_mode, transitions: schedule.transitions.length };
   }
 
+  #serializePrepare(operation) {
+    const result = this.prepareQueue.then(operation, operation);
+    this.prepareQueue = result.catch(() => {});
+    return result;
+  }
+
   async #loadMotion({ manifest, assets, plan }) {
     this.stop("cancel");
     this.audio.removeEventListener?.("ended", this.onEnded);
     this.audio.removeEventListener?.("error", this.onAudioError);
-    this.decoder.dispose();
-    this.decoder = new AlternatingSpeechDecoder(this.speechVideos, this.urlApi);
-    this.neutralHead?.close?.();
-    this.#releaseMedia();
     this.mode = null;
     this.state = "loading";
-    const clipFiles = [...assets.keys()];
-    const manifestValidation = validateManifest(manifest, { clipFiles });
-    if (!manifestValidation.ok) throw new TypeError(`invalid NVA: ${manifestValidation.errors.join("; ")}`);
     const planValidation = validateSpeechPlan(plan);
     if (!planValidation.ok) throw new TypeError(`invalid SpeechPlan: ${planValidation.errors.join("; ")}`);
 
-    const speech = manifest.speech_motion;
-    if (!speech) throw new Error("NVA has no speech_motion extension");
-    const derived = derive(manifest);
-    const talking = derived.talking;
-    if (!talking) throw new Error("talking animation is required");
+    await this.transitionLoadQueue.catch(() => {});
+    this.#throwIfDisposed();
+    this.onScreenKeys.clear();
+    const sameBundle = this.bundleReady && this.bundleManifest === manifest && this.bundleAssets === assets;
 
-    const representation = speech.representation || "factorized-difference-layer";
-    let region;
-    if (representation === "whole-head-layer") {
-      region = speech.region;
+    if (!sameBundle) {
+      this.#releaseMedia();
+      const clipFiles = [...assets.keys()];
+      const manifestValidation = validateManifest(manifest, { clipFiles });
+      if (!manifestValidation.ok) throw new TypeError(`invalid NVA: ${manifestValidation.errors.join("; ")}`);
+
+      const speech = manifest.speech_motion;
+      if (!speech) throw new Error("NVA has no speech_motion extension");
+      const derived = derive(manifest);
+      const talking = derived.talking;
+      if (!talking) throw new Error("talking animation is required");
+
+      const representation = speech.representation || "factorized-difference-layer";
+      let region;
+      if (representation === "whole-head-layer") {
+        region = speech.region;
+      } else {
+        if (!Array.isArray(talking.ditto_region) || talking.ditto_region.length !== 4)
+          throw new Error("talking animation requires ditto_region");
+        region = talking.ditto_region;
+      }
+
+      const { atlasBlob, atlasIndex } = await verifySpeechMotionBundle(speech, assets);
+      this.#throwIfDisposed();
+      const indexValidation = validateSpeechAtlasIndex(atlasIndex, atlasBlob.size);
+      if (!indexValidation.ok) throw new TypeError(`invalid speech atlas index: ${indexValidation.errors.join("; ")}`);
+
+      this.manifest = manifest;
+      this.assets = assets;
+      this.atlasIndex = atlasIndex;
+      this.atlasSource = new SpeechAtlasSource(atlasBlob);
+      this.representation = representation;
+      this.region = region;
+      this.canvas.width = manifest.canvas.width;
+      this.canvas.height = manifest.canvas.height;
+      const neutralHead = await this.imageLoader.call(globalThis, requiredAsset(assets, speech.neutral_head));
+      this.#throwIfDisposed();
+      this.neutralHead = neutralHead;
+
+      const bodyVideo = this.#newVideo();
+      const bodyUrl = this.#objectUrl(requiredAsset(assets, talking.clip));
+      bodyVideo.preload = "auto";
+      bodyVideo.muted = true;
+      bodyVideo.loop = true;
+      bodyVideo.playsInline = true;
+      this.bodyVideo = bodyVideo;
+      bodyVideo.src = bodyUrl;
+      await waitForMedia(bodyVideo, "loadeddata", this.abortController.signal);
+      this.#throwIfDisposed();
+      this.speechVideoCache = new SpeechVideoCache({
+        videoFactory: () => this.#newVideo(),
+        activateVideo: (video) => this.mediaContainer?.append?.(video),
+        urlApi: this.urlApi,
+        maxEntries: Math.max(1, Object.keys(atlasIndex.entries).length),
+        maxActiveEntries: Math.min(3, Math.max(1, Object.keys(atlasIndex.entries).length)),
+        isProtected: (key) => this.onScreenKeys.has(key),
+      });
+      this.bundleManifest = manifest;
+      this.bundleAssets = assets;
+      this.bundleReady = true;
     } else {
-      if (!Array.isArray(talking.ditto_region) || talking.ditto_region.length !== 4)
-        throw new Error("talking animation requires ditto_region");
-      region = talking.ditto_region;
+      this.manifest = manifest;
+      this.assets = assets;
     }
 
-    const { atlasBlob, atlasIndex } = await verifySpeechMotionBundle(speech, assets);
-    const indexValidation = validateSpeechAtlasIndex(atlasIndex, atlasBlob.size);
-    if (!indexValidation.ok) throw new TypeError(`invalid speech atlas index: ${indexValidation.errors.join("; ")}`);
-
-    this.manifest = manifest;
-    this.assets = assets;
     this.plan = plan;
-    this.atlasIndex = atlasIndex;
-    this.atlasSource = new SpeechAtlasSource(atlasBlob);
-    this.schedule = buildSpeechSchedule(plan, { availableKeys: Object.keys(atlasIndex.entries) });
-    this.representation = representation;
-    this.region = region;
-    this.canvas.width = manifest.canvas.width;
-    this.canvas.height = manifest.canvas.height;
-    this.neutralHead = await this.imageLoader.call(globalThis, requiredAsset(assets, speech.neutral_head));
-
-    const bodyUrl = this.#objectUrl(requiredAsset(assets, talking.clip));
-    this.bodyVideo.preload = "auto";
-    this.bodyVideo.muted = true;
-    this.bodyVideo.loop = true;
-    this.bodyVideo.playsInline = true;
-    this.bodyVideo.src = bodyUrl;
-    await waitForMedia(this.bodyVideo);
-
-    for (const range of prefetchSpeechRanges(this.schedule, atlasIndex)) {
+    this.schedule = buildSpeechSchedule(plan, { availableKeys: Object.keys(this.atlasIndex.entries) });
+    for (const range of prefetchSpeechRanges(this.schedule, this.atlasIndex)) {
       const index = this.schedule.transitions.findIndex((item) => item.key === range.key);
       if (index >= 0) await this.#ensureTransition(index);
     }
@@ -260,11 +346,12 @@ export class SpeechPlayer {
   }
 
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.abortController.abort();
     this.stop("cancel");
     this.audio.removeEventListener?.("ended", this.onEnded);
     this.audio.removeEventListener?.("error", this.onAudioError);
-    this.decoder.dispose();
-    this.neutralHead?.close?.();
     this.#releaseMedia();
     this.state = "disposed";
   }
@@ -277,50 +364,72 @@ export class SpeechPlayer {
 
   #releaseMedia() {
     for (const url of this.urls.splice(0)) this.urlApi.revokeObjectURL(url);
-    this.keyToSlot.clear();
-    this.slotToKey = [null, null];
+    this.speechVideoCache?.dispose();
+    this.speechVideoCache = null;
+    if (this.bodyVideo && this.usedVideos.has(this.bodyVideo)) {
+      this.bodyVideo.pause?.();
+      this.#detachVideo(this.bodyVideo);
+    }
+    this.neutralHead?.close?.();
+    this.neutralHead = null;
+    this.bodyVideo = null;
+    this.audioUrl = null;
+    this.bundleManifest = null;
+    this.bundleAssets = null;
+    this.bundleReady = false;
+    this.manifest = null;
+    this.assets = null;
+    this.atlasIndex = null;
+    this.atlasSource = null;
     this.pending.clear();
     this.onScreenKeys.clear();
-    this.loadingSlots.clear();
   }
 
-  // The schedule names one pre-rendered clip per instant (SoT 2). Only two
-  // video elements hold clips, so loading the next clip must not replace the
-  // src of the clip that is on screen: a video whose src is being replaced has
-  // no frame, and the frame would fall back to the neutral head mid-speech.
-  #reloadableSlot() {
-    const start = this.decoder.nextSlot ?? 0;
-    for (const slot of [start, 1 - start]) {
-      if (this.loadingSlots.has(slot)) continue;
-      if (this.onScreenKeys.has(this.slotToKey[slot])) continue;
-      return slot;
+  #newVideo() {
+    while (this.seedVideos.length) {
+      const video = this.seedVideos.shift();
+      if (this.usedVideos.has(video)) continue;
+      this.usedVideos.add(video);
+      return video;
     }
-    return null;
+    const video = this.videoFactory();
+    if (!video || this.usedVideos.has(video))
+      throw new TypeError("videoFactory must return a new video element");
+    this.usedVideos.add(video);
+    return video;
+  }
+
+  #detachVideo(video) {
+    if (typeof video?.remove === "function") video.remove();
+    else if (video?.parentNode && typeof video.parentNode.removeChild === "function")
+      video.parentNode.removeChild(video);
   }
 
   async #ensureTransition(index) {
     const transition = this.schedule.transitions[index];
-    if (this.keyToSlot.has(transition.key)) return this.speechVideos[this.keyToSlot.get(transition.key)];
+    if (!transition || !this.speechVideoCache) return null;
+    const cached = this.speechVideoCache.get(transition.key);
+    if (cached) return cached;
     if (this.pending.has(transition.key)) return this.pending.get(transition.key);
-    const slot = this.#reloadableSlot();
-    if (slot === null) return null; // retried on the next frame once a slot is free
     const entry = this.atlasIndex.entries[transition.key];
-    const replaced = this.slotToKey[slot];
-    if (replaced !== null) this.keyToSlot.delete(replaced);
-    this.slotToKey[slot] = null;
-    this.loadingSlots.add(slot);
-    const promise = (async () => {
+    const load = this.transitionLoadQueue.then(async () => {
+      const alreadyLoaded = this.speechVideoCache.get(transition.key);
+      if (alreadyLoaded) return alreadyLoaded;
+      if (!this.speechVideoCache.canLoad(transition.key)) return null;
       const blob = await this.atlasSource.read(entry.offset, entry.offset + entry.length);
-      const loaded = await this.decoder.load(blob, slot);
-      this.slotToKey[loaded.slot] = transition.key;
-      this.keyToSlot.set(transition.key, loaded.slot);
-      return loaded.video;
-    })().finally(() => {
+      this.#throwIfDisposed();
+      return this.speechVideoCache.load(transition.key, blob);
+    });
+    const promise = load.finally(() => {
       this.pending.delete(transition.key);
-      this.loadingSlots.delete(slot);
     });
     this.pending.set(transition.key, promise);
+    this.transitionLoadQueue = promise.catch(() => {});
     return promise;
+  }
+
+  #throwIfDisposed() {
+    if (this.disposed) throw abortError();
   }
 
   #tick() {
@@ -341,12 +450,17 @@ export class SpeechPlayer {
     this.context.drawImage(this.bodyVideo, 0, 0, this.canvas.width, this.canvas.height);
     const readyLayers = [];
     for (const layer of resolved) {
-      const slot = this.keyToSlot.get(layer.key);
-      if (slot === undefined) {
+      let video;
+      try {
+        video = this.speechVideoCache?.get(layer.key);
+      } catch {
+        this.stop("error");
+        return;
+      }
+      if (!video) {
         void this.#ensureTransition(layer.index).catch(() => this.stop("error"));
         continue;
       }
-      const video = this.speechVideos[slot];
       const targetTime = layer.frame / 25;
       if (Math.abs((video.currentTime || 0) - targetTime) > 0.005) video.currentTime = targetTime;
       readyLayers.push({ image: video, opacity: layer.opacity });
