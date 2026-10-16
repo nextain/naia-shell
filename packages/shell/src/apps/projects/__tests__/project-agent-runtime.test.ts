@@ -472,6 +472,30 @@ describe("project agent runtime ownership", () => {
 		error.mockRestore();
 	});
 
+	it("clears a failed input banner when selecting a different agent", async () => {
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "claude");
+		await startProjectAgent(projectA, adapterRoot, "claude");
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_write")
+				throw "write_failed:BrokenPipe";
+			return null;
+		});
+
+		await writeProjectAgent(projectA, adapterRoot, "claude", "input");
+		expect(getProjectAgentState(projectA).inputError).toEqual({
+			code: "input_failed",
+		});
+
+		selectProjectAgent(projectA, "codex");
+
+		expect(getProjectAgentState(projectA)).toMatchObject({
+			selectedAppId: "codex",
+			status: "idle",
+			inputError: null,
+		});
+	});
+
 	it("stops only the selected project's owned PTY and waits for its exit event", async () => {
 		await loadProjectAgentAvailability();
 		await Promise.resolve();

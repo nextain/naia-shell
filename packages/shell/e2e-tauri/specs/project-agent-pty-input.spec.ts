@@ -76,6 +76,38 @@ async function sendWebDriverLine(line: string): Promise<void> {
 			timeoutMsg: `fake CLI did not receive ${line}`,
 		},
 	);
+	await browser.waitUntil(
+		async () =>
+			(await browser.execute((expectedLine: string) => {
+				const host = document.querySelector('[data-project-terminal="true"]') as
+					| (HTMLDivElement & {
+							__naiaXterm?: {
+								buffer: {
+									active: {
+										length: number;
+										getLine: (
+											index: number,
+										) =>
+											| { translateToString: (trimRight?: boolean) => string }
+											| undefined;
+									};
+								};
+							};
+					  })
+					| null;
+				const buffer = host?.__naiaXterm?.buffer.active;
+				if (!buffer) return false;
+				for (let index = 0; index < buffer.length; index += 1) {
+					const row = buffer.getLine(index)?.translateToString(true) ?? "";
+					if (row.includes(`ECHO:${expectedLine}`)) return true;
+				}
+				return false;
+			}, line)) === true,
+		{
+			timeout: 15_000,
+			timeoutMsg: `project terminal did not render ECHO:${line}`,
+		},
+	);
 }
 
 describe("Project coding-agent PTY input — #756 stage 3", () => {

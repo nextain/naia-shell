@@ -67,6 +67,10 @@ export function ProjectAgentTerminal({
 		const fit = new FitAddon();
 		terminal.loadAddon(fit);
 		terminal.open(container);
+		const terminalHost = container as HTMLDivElement & {
+			__naiaXterm?: XTerminal;
+		};
+		if (import.meta.env.DEV) terminalHost.__naiaXterm = terminal;
 		terminalRef.current = terminal;
 		fitRef.current = fit;
 		lastOutputRef.current = "";
@@ -117,6 +121,8 @@ export function ProjectAgentTerminal({
 			observer?.disconnect();
 			input.dispose();
 			terminal.dispose();
+			if (import.meta.env.DEV && terminalHost.__naiaXterm === terminal)
+				terminalHost.__naiaXterm = undefined;
 			terminalRef.current = null;
 			fitRef.current = null;
 		};

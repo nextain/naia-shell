@@ -278,6 +278,7 @@ export function selectProjectAgent(
 		selectedAppId: appId,
 		status: "idle",
 		error: null,
+		inputError: null,
 		exitCode: null,
 	});
 }
