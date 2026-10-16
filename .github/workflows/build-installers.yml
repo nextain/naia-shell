@@ -30,7 +30,7 @@ jobs:
     # 이 워크플로는 모든 푸시에서 돈다. 회귀 기록을 모든 푸시에 요구하면
     # 설치본 생산이 통째로 막히고, 그러면 게이트는 곧 꺼진다. 나가는 것에만
     # 건다 — 태그를 붙이거나 손으로 돌릴 때다.
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && !inputs.internal_unsigned
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
