@@ -9,10 +9,10 @@ use crate::project_catalog_runtime::{resolve_project_checkout, ProjectCatalogAut
 use super::lifecycle::{authorized_project_session_path, stop_project_agent_handle};
 use super::types::{
     display_path, emit_or_buffer_project_agent_output, find_agent_executable,
-    find_project_agent_handle, find_project_agent_handle_mut, project_agent_session,
-    safe_app_id_for_log, CodingApp, ProjectAgentAvailability, ProjectAgentExitEvent,
-    ProjectAgentHandle, ProjectAgentKey, ProjectAgentOutputEvent, ProjectAgentRegistry,
-    ProjectAgentSession, CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
+    find_project_agent_handle, find_project_agent_handle_mut, project_agent_key,
+    project_agent_session, safe_app_id_for_log, CodingApp, ProjectAgentAvailability,
+    ProjectAgentExitEvent, ProjectAgentHandle, ProjectAgentKey, ProjectAgentOutputEvent,
+    ProjectAgentRegistry, ProjectAgentSession, CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
 };
 
 #[tauri::command]
@@ -47,9 +47,12 @@ pub async fn project_agent_pty_start(
         "[project_agent_pty::project_agent_pty_start] enter app_id={} project_path_supplied=true",
         safe_app_id_for_log(&app_id)
     ));
-    let coding_app = CodingApp::parse(&app_id)?;
+    let coding_app = CodingApp::parse(&app_id).map_err(|error| {
+        log::warn!("[project_agent_pty::project_agent_pty_start] branch=agent_invalid");
+        error
+    })?;
     let resolved = resolve_project_checkout(&authority, &adapter_root, &project_path)?;
-    let normalized_path = resolved.project_path;
+    let key = project_agent_key(&resolved.project_path, coding_app)?;
     let executable = find_agent_executable(coding_app, std::env::var_os("PATH").as_deref())
         .ok_or_else(|| {
             crate::log_verbose(&format!(
@@ -62,10 +65,6 @@ pub async fn project_agent_pty_start(
     let registry = Arc::clone(&registry);
     let session_app_id = coding_app.spec().app_id.to_owned();
     tokio::task::spawn_blocking(move || -> Result<ProjectAgentSession, String> {
-        let key = ProjectAgentKey {
-            project_path: normalized_path,
-            app: coding_app,
-        };
         let mut state = registry.lock().unwrap();
         if let Some(handle) = state.sessions.get(&key) {
             crate::log_verbose(&format!(
@@ -238,7 +237,7 @@ pub fn project_agent_pty_attach(
         safe_app_id_for_log(&app_id)
     ));
     let coding_app = CodingApp::parse(&app_id)?;
-    let normalized_path = authorized_project_session_path(
+    let authorized_path = authorized_project_session_path(
         &authority,
         &adapter_root,
         &project_path,
@@ -250,10 +249,7 @@ pub fn project_agent_pty_attach(
         ));
         error
     })?;
-    let key = ProjectAgentKey {
-        project_path: normalized_path,
-        app: coding_app,
-    };
+    let key = project_agent_key(&authorized_path, coding_app)?;
     let mut state = registry.lock().unwrap();
     let handle = find_project_agent_handle_mut(&mut state, &key)?;
     handle.output_attached = true;
@@ -293,38 +289,68 @@ pub async fn project_agent_pty_write(
         safe_app_id_for_log(&app_id),
         data.len()
     ));
-    let coding_app = CodingApp::parse(&app_id)?;
-    let normalized_path = authorized_project_session_path(
+    let coding_app = CodingApp::parse(&app_id).map_err(|error| {
+        log::warn!("[project_agent_pty::project_agent_pty_write] branch=agent_invalid");
+        error
+    })?;
+    let authorized_path = authorized_project_session_path(
         &authority,
         &adapter_root,
         &project_path,
     )
     .map_err(|error| {
-        crate::log_verbose(&format!(
-            "[project_agent_pty::project_agent_pty_write] branch=project_authority_rejected app_id={}",
-            safe_app_id_for_log(&app_id)
-        ));
+        log::warn!(
+            "[project_agent_pty::project_agent_pty_write] branch=project_authority_rejected error_code=project_unverified"
+        );
+        error
+    })?;
+    let key = project_agent_key(&authorized_path, coding_app).map_err(|error| {
+        log::warn!(
+            "[project_agent_pty::project_agent_pty_write] branch=session_key_normalization_failed error_code=project_unverified"
+        );
         error
     })?;
     let registry = Arc::clone(&registry);
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let key = ProjectAgentKey {
-            project_path: normalized_path,
-            app: coding_app,
-        };
         let mut state = registry.lock().unwrap();
-        let handle = find_project_agent_handle_mut(&mut state, &key)?;
-        handle.writer.write_all(data.as_bytes()).map_err(|_| {
-            crate::log_verbose("[project_agent_pty::project_agent_pty_write] branch=write_failed");
-            "session_missing".to_owned()
-        })?;
-        handle.writer.flush().map_err(|_| {
-            crate::log_verbose("[project_agent_pty::project_agent_pty_write] branch=flush_failed");
-            "session_missing".to_owned()
-        })
+        let handle = match find_project_agent_handle_mut(&mut state, &key) {
+            Ok(handle) => handle,
+            Err(error_code) => {
+                log::warn!("[project_agent_pty::project_agent_pty_write] branch={error_code}");
+                return Err(error_code);
+            }
+        };
+        write_project_agent_input(handle.writer.as_mut(), data.as_bytes())
     })
     .await
-    .map_err(|_| "session_missing".to_owned())?
+    .map_err(map_project_agent_write_join_error)?
+}
+
+fn write_project_agent_input(writer: &mut dyn Write, data: &[u8]) -> Result<(), String> {
+    writer.write_all(data).map_err(|error| {
+        let code = format!("write_failed:{:?}", error.kind());
+        log::warn!(
+            "[project_agent_pty::project_agent_pty_write] branch=write_failed error_kind={:?}",
+            error.kind()
+        );
+        code
+    })?;
+    writer.flush().map_err(|error| {
+        let code = format!("flush_failed:{:?}", error.kind());
+        log::warn!(
+            "[project_agent_pty::project_agent_pty_write] branch=flush_failed error_kind={:?}",
+            error.kind()
+        );
+        code
+    })
+}
+
+fn map_project_agent_write_join_error(error: tokio::task::JoinError) -> String {
+    log::warn!(
+        "[project_agent_pty::project_agent_pty_write] branch=join_failed task_panicked={}",
+        error.is_panic()
+    );
+    "join_failed".to_owned()
 }
 
 #[tauri::command]
@@ -420,4 +446,130 @@ pub async fn project_agent_pty_stop(
     })
     .await
     .map_err(|_| "session_missing".to_owned())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    struct FaultyWriter {
+        write_error: Option<io::ErrorKind>,
+        flush_error: Option<io::ErrorKind>,
+    }
+
+    impl Write for FaultyWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if let Some(kind) = self.write_error {
+                return Err(io::Error::new(kind, "test write failure"));
+            }
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            if let Some(kind) = self.flush_error {
+                return Err(io::Error::new(kind, "test flush failure"));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn project_agent_write_returns_distinct_write_and_flush_error_codes() {
+        let mut write_failure = FaultyWriter {
+            write_error: Some(io::ErrorKind::BrokenPipe),
+            flush_error: None,
+        };
+        let mut flush_failure = FaultyWriter {
+            write_error: None,
+            flush_error: Some(io::ErrorKind::WouldBlock),
+        };
+
+        assert_eq!(
+            write_project_agent_input(&mut write_failure, b"input"),
+            Err("write_failed:BrokenPipe".to_owned())
+        );
+        assert_eq!(
+            write_project_agent_input(&mut flush_failure, b"input"),
+            Err("flush_failed:WouldBlock".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn project_agent_write_returns_a_distinct_join_error_code() {
+        let join_error = tokio::task::spawn_blocking(|| panic!("test worker panic"))
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            map_project_agent_write_join_error(join_error),
+            "join_failed"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn project_agent_conpty_writer_roundtrips_line_without_interactive_session() {
+        use portable_pty::{NativePtySystem, PtySize, PtySystem};
+        use std::io::Read;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        const MARKER: &str = "PTY_INPUT_756_PROBE";
+        let pair = NativePtySystem::default()
+            .openpty(PtySize {
+                rows: 25,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("open Windows ConPTY");
+        let mut command = CommandBuilder::new("powershell.exe");
+        command.args([
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            "$line=[Console]::In.ReadLine(); Write-Output ('ECHO:'+$line)",
+        ]);
+        let mut child = pair.slave.spawn_command(command).expect("spawn PowerShell");
+        let mut reader = pair.master.try_clone_reader().expect("clone ConPTY reader");
+        let mut writer = pair.master.take_writer().expect("take ConPTY writer");
+        let (output_tx, output_rx) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let mut buffer = [0u8; 1024];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => {
+                        let _ = output_tx.send(String::from_utf8_lossy(&bytes).into_owned());
+                        return;
+                    }
+                    Ok(length) => {
+                        bytes.extend_from_slice(&buffer[..length]);
+                        let output = String::from_utf8_lossy(&bytes).into_owned();
+                        if output.contains(&format!("ECHO:{MARKER}")) {
+                            let _ = output_tx.send(output);
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = output_tx.send(format!("reader_error:{:?}", error.kind()));
+                        return;
+                    }
+                }
+            }
+        });
+
+        write_project_agent_input(&mut writer, format!("{MARKER}\r").as_bytes())
+            .expect("write a line through the production ConPTY writer");
+        let output = output_rx.recv_timeout(Duration::from_secs(20));
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(
+            output
+                .expect("receive ConPTY output within 20 seconds")
+                .contains(&format!("ECHO:{MARKER}")),
+            "PowerShell did not echo the line through ConPTY"
+        );
+    }
 }

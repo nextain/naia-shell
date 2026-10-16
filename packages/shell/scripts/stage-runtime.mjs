@@ -634,6 +634,12 @@ async function main() {
 			SHELL,
 			{ NAIA_EMBED_TEST_MANIFEST: "1" },
 		);
+		console.log("[stage-runtime] project agent PTY path and ConPTY input regression gate");
+		run(
+			"cargo test --manifest-path src-tauri/Cargo.toml project_agent_pty --lib",
+			SHELL,
+			{ NAIA_EMBED_TEST_MANIFEST: "1" },
+		);
 	}
 
 	await prepareRuntime(matrix, platform, arch);

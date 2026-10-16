@@ -1,7 +1,7 @@
 use serde_yaml::{Mapping, Value as YamlValue};
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::yaml_helpers::{mapping_raw_string, mapping_url_value};
 use super::{ProjectCatalogAuthority, ProjectRuntimeConfig};
@@ -18,8 +18,11 @@ pub(crate) fn read_project_runtime_config(
     crate::log_verbose(
         "[project_catalog_runtime::read_project_runtime_config] enter adapter_root_supplied=true project_path_supplied=true",
     );
-    let adapter_input = PathBuf::from(adapter_root);
-    let project_input = PathBuf::from(project_path);
+    // `canonicalize` returns Win32 paths without the `\\?\` verbatim prefix.
+    // Strip only that representational prefix before the existing canonical
+    // identity and catalog-authority checks.
+    let adapter_input = dunce::simplified(Path::new(adapter_root)).to_path_buf();
+    let project_input = dunce::simplified(Path::new(project_path)).to_path_buf();
     if !adapter_input.is_absolute() || !project_input.is_absolute() {
         crate::log_verbose(
             "[project_catalog_runtime::read_project_runtime_config] branch=reject_non_absolute_paths",

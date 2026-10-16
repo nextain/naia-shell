@@ -39,6 +39,7 @@ export interface ProjectAgentError {
 		| "agent_invalid"
 		| "session_mismatch"
 		| "session_missing"
+		| "input_failed"
 		| "unknown";
 	expectedPath?: string;
 }
@@ -49,6 +50,7 @@ export interface ProjectAgentState {
 	status: ProjectAgentStatus;
 	output: string;
 	error: ProjectAgentError | null;
+	inputError: ProjectAgentError | null;
 	exitCode: number | null;
 	/** Process identity is memory-only and is never written to browser storage. */
 	ptyId: string | null;
@@ -84,6 +86,7 @@ export function cloneState(state: ProjectAgentState): ProjectAgentState {
 		...state,
 		availability: { ...state.availability },
 		error: state.error ? { ...state.error } : null,
+		inputError: state.inputError ? { ...state.inputError } : null,
 	};
 }
 
@@ -95,6 +98,7 @@ function defaultState(): ProjectAgentState {
 		status: "idle",
 		output: "",
 		error: null,
+		inputError: null,
 		exitCode: null,
 		ptyId: null,
 	};
@@ -220,6 +224,9 @@ export function parseAgentError(error: unknown): ProjectAgentError {
 		if (safeRelativePath) return { code: "checkout_missing", expectedPath };
 		return { code: "checkout_missing" };
 	}
+	if (/^(write_failed|flush_failed):[A-Za-z]+$/.test(message) || message === "join_failed") {
+		return { code: "input_failed" };
+	}
 	const knownCodes: ProjectAgentError["code"][] = [
 		"repository_invalid",
 		"checkout_unsafe",
@@ -231,4 +238,28 @@ export function parseAgentError(error: unknown): ProjectAgentError {
 	];
 	const code = knownCodes.find((known) => message === known) ?? "unknown";
 	return { code };
+}
+
+/** Return only a fixed error code or the Rust I/O operation and ErrorKind. */
+export function projectAgentDiagnosticCode(error: unknown): string {
+	const message =
+		typeof error === "string"
+			? error
+			: error instanceof Error
+				? error.message
+				: "";
+	if (message.startsWith("checkout_missing:")) return "checkout_missing";
+	const ioFailure = message.match(/^(write_failed|flush_failed):([A-Za-z]+)$/);
+	if (ioFailure) return `${ioFailure[1]}:${ioFailure[2]}`;
+	const knownCodes = [
+		"repository_invalid",
+		"checkout_unsafe",
+		"project_unverified",
+		"agent_unavailable",
+		"agent_invalid",
+		"session_mismatch",
+		"session_missing",
+		"join_failed",
+	];
+	return knownCodes.find((code) => message === code) ?? "unknown";
 }

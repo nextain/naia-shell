@@ -57,6 +57,8 @@ function translateAgentError(error: ProjectAgentError): string {
 			return projectText("projects.agentSessionMismatch");
 		case "session_missing":
 			return projectText("projects.agentSessionMissing");
+		case "input_failed":
+			return projectText("projects.agentInputFailed");
 		case "unknown":
 			return projectText("projects.agentUnknownError");
 	}
@@ -300,7 +302,7 @@ export function ProjectAgentPanel({
 					})}
 				</output>
 			)}
-			{state.error && (
+			{state.error && !state.inputError && (
 				<section
 					className="projects-app__notice projects-app__notice--error"
 					role="alert"
@@ -337,6 +339,7 @@ export function ProjectAgentPanel({
 						adapterRoot={adapterRoot}
 						appId={selectedAppId}
 						output={state.output}
+						inputFailed={state.inputError !== null}
 						running={state.status === "running"}
 						label={projectText("projects.agentTerminalLabel", {
 							app: appLabel(selectedAppId),

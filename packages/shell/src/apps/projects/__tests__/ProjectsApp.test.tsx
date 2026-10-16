@@ -15,6 +15,7 @@ import { ProjectsApp } from "../ProjectsApp";
 import {
 	loadProjectAgentAvailability,
 	resetProjectAgentRuntimeForTests,
+	writeProjectAgent,
 } from "../project-agent-runtime";
 import {
 	PROJECT_SESSION_STORAGE_KEY,
@@ -33,8 +34,14 @@ vi.mock("../ProjectAgentTerminal", () => ({
 	ProjectAgentTerminal: ({
 		label,
 		output,
-	}: { label: string; output: string }) => (
+		inputFailed,
+	}: { label: string; output: string; inputFailed: boolean }) => (
 		<div aria-label={label} data-project-terminal="true">
+			{inputFailed && (
+				<output role="alert">
+					{PROJECT_APP_TRANSLATIONS.en["projects.agentInputFailed"]}
+				</output>
+			)}
 			{output}
 		</div>
 	),
@@ -340,6 +347,40 @@ describe("ProjectsApp — single opened project", () => {
 		expect(localStorage.getItem(PROJECT_SESSION_STORAGE_KEY)).not.toContain(
 			"pty-",
 		);
+	});
+
+	it("shows a localized terminal status after native PTY input is rejected", async () => {
+		const project = makeProject("example-app");
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		fireEvent.click(await screen.findByRole("radio", { name: "Claude" }));
+		fireEvent.click(await screen.findByRole("button", { name: "Start Claude" }));
+		await screen.findByRole("button", { name: "Stop Claude" });
+
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (command === "project_agent_pty_write")
+				throw "write_failed:BrokenPipe";
+			if (command === "project_agent_pty_start") {
+				return {
+					appId: (args as { appId: string }).appId,
+					projectPath: (args as { projectPath: string }).projectPath,
+					ptyId: "pty-example-app",
+					running: true,
+				};
+			}
+			return null;
+		});
+		await writeProjectAgent(
+			project.projectPath,
+			project.adapterRoot,
+			"claude",
+			"hello\r",
+		);
+
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Terminal input was not delivered. Start a new session to retry.",
+		);
+		expect(screen.getByRole("button", { name: "Start Claude" })).toBeTruthy();
 	});
 
 	it("keeps a running available app selected when other coding apps are missing", async () => {

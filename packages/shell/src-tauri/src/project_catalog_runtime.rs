@@ -151,6 +151,26 @@ mod tests {
         assert!(project.exists());
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn project_agent_pty_catalog_accepts_verbatim_paths_as_the_same_authorized_paths() {
+        let (_temp, authority, adapter, project) = project_fixture("owner/Hello-World");
+        let expected = read_project_runtime_config(
+            &authority,
+            &adapter.to_string_lossy(),
+            &project.to_string_lossy(),
+        )
+        .unwrap();
+        let verbatim_adapter = format!(r"\\?\{}", dunce::canonicalize(&adapter).unwrap().display());
+        let verbatim_project = format!(r"\\?\{}", dunce::canonicalize(&project).unwrap().display());
+
+        let actual =
+            read_project_runtime_config(&authority, &verbatim_adapter, &verbatim_project).unwrap();
+
+        assert_eq!(actual.adapter_root, expected.adapter_root);
+        assert_eq!(actual.project_path, expected.project_path);
+    }
+
     #[cfg(unix)]
     #[test]
     fn project_pty_rejects_a_symlinked_checkout() {

@@ -36,6 +36,8 @@ export const PROJECT_AGENT_ENGLISH_TRANSLATIONS = {
 		"The existing session does not belong to this project and app, so it was not reattached.",
 	"projects.agentSessionMissing":
 		"The previous session is no longer available. Start a new session when ready.",
+	"projects.agentInputFailed":
+		"Terminal input was not delivered. Start a new session to retry.",
 	"projects.agentUnknownError":
 		"The coding app could not start. Check the project settings and try again.",
 	"projects.agentRecoveryHint":
@@ -111,6 +113,8 @@ export const PROJECT_AGENT_KOREAN_TRANSLATIONS: Record<
 		"기존 세션이 이 프로젝트와 앱에 속하지 않아 다시 연결하지 않았습니다.",
 	"projects.agentSessionMissing":
 		"이전 세션을 더는 사용할 수 없습니다. 준비되면 새 세션을 시작하세요.",
+	"projects.agentInputFailed":
+		"터미널 입력을 전달하지 못했습니다. 새 세션을 시작해 다시 시도하세요.",
 	"projects.agentUnknownError":
 		"코딩 앱을 시작하지 못했습니다. 프로젝트 설정을 확인한 뒤 다시 시도하세요.",
 	"projects.agentRecoveryHint":

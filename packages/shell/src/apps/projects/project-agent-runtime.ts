@@ -9,6 +9,7 @@ import {
 	availabilityByApp,
 	cloneState,
 	parseAgentError,
+	projectAgentDiagnosticCode,
 	parseAvailability,
 	parseSession,
 	pathListeners,
@@ -32,6 +33,145 @@ export type {
 } from "./project-agent-runtime-state";
 
 let availabilityRequest: Promise<void> | null = null;
+
+const MAX_PROJECT_AGENT_QUEUED_INPUT_BYTES = 64 * 1024;
+
+interface ProjectAgentInputChunk {
+	data: string;
+	bytes: number;
+}
+
+interface ProjectAgentInputQueue {
+	projectPath: string;
+	adapterRoot: string;
+	appId: ProjectAgentAppId;
+	chunks: ProjectAgentInputChunk[];
+	bytes: number;
+	draining: Promise<void> | null;
+}
+
+const inputQueues = new Map<string, ProjectAgentInputQueue>();
+
+function inputQueueKey(projectPath: string, appId: ProjectAgentAppId): string {
+	return JSON.stringify([normalizeProjectPath(projectPath), appId]);
+}
+
+function getOrCreateInputQueue(
+	projectPath: string,
+	adapterRoot: string,
+	appId: ProjectAgentAppId,
+): ProjectAgentInputQueue {
+	const key = inputQueueKey(projectPath, appId);
+	let queue = inputQueues.get(key);
+	if (!queue) {
+		queue = {
+			projectPath,
+			adapterRoot,
+			appId,
+			chunks: [],
+			bytes: 0,
+			draining: null,
+		};
+		inputQueues.set(key, queue);
+	}
+	return queue;
+}
+
+function bufferProjectAgentInput(
+	projectPath: string,
+	adapterRoot: string,
+	appId: ProjectAgentAppId,
+	data: string,
+): ProjectAgentInputQueue | null {
+	const key = inputQueueKey(projectPath, appId);
+	const queue = getOrCreateInputQueue(projectPath, adapterRoot, appId);
+	const bytes = new TextEncoder().encode(data).byteLength;
+	if (queue.bytes + bytes > MAX_PROJECT_AGENT_QUEUED_INPUT_BYTES) {
+		Logger.warn("ProjectAgentRuntime", "PTY input was not queued", {
+			appId,
+			reason: "startup_queue_limit",
+			queuedBytes: queue.bytes,
+			inputBytes: bytes,
+			limitBytes: MAX_PROJECT_AGENT_QUEUED_INPUT_BYTES,
+		});
+		setState(projectPath, { inputError: { code: "input_failed" } });
+		if (queue.chunks.length === 0) inputQueues.delete(key);
+		return null;
+	}
+	queue.chunks.push({ data, bytes });
+	queue.bytes += bytes;
+	Logger.debug("ProjectAgentRuntime", "PTY input buffered in order", {
+		appId,
+		bufferedBytes: queue.bytes,
+	});
+	return queue;
+}
+
+function discardQueuedProjectAgentInput(
+	projectPath: string,
+	appId: ProjectAgentAppId,
+	reason: string,
+): boolean {
+	const key = inputQueueKey(projectPath, appId);
+	const queue = inputQueues.get(key);
+	if (!queue || queue.chunks.length === 0) {
+		inputQueues.delete(key);
+		return false;
+	}
+	Logger.warn("ProjectAgentRuntime", "buffered PTY input could not be sent", {
+		appId,
+		reason,
+		droppedChunks: queue.chunks.length,
+		droppedBytes: queue.bytes,
+	});
+	inputQueues.delete(key);
+	return true;
+}
+
+async function drainProjectAgentInput(
+	queue: ProjectAgentInputQueue,
+): Promise<void> {
+	const key = inputQueueKey(queue.projectPath, queue.appId);
+	if (queue.draining) return queue.draining;
+	const draining = (async () => {
+		while (queue.chunks.length > 0) {
+			const chunk = queue.chunks[0];
+			try {
+				await invoke("project_agent_pty_write", {
+					appId: queue.appId,
+					projectPath: queue.projectPath,
+					adapterRoot: queue.adapterRoot,
+					data: chunk.data,
+				});
+			} catch (error) {
+				const mapped = parseAgentError(error);
+				const droppedChunks = queue.chunks.length;
+				const droppedBytes = queue.bytes;
+				Logger.error("ProjectAgentRuntime", "PTY input request failed", {
+					appId: queue.appId,
+					code: projectAgentDiagnosticCode(error),
+					droppedChunks,
+					droppedBytes,
+				});
+				queue.chunks = [];
+				queue.bytes = 0;
+				inputQueues.delete(key);
+				setState(queue.projectPath, {
+					status: "error",
+					error: mapped,
+					inputError: { code: "input_failed" },
+					ptyId: null,
+				});
+				return;
+			}
+			queue.chunks.shift();
+			queue.bytes -= chunk.bytes;
+		}
+		if (inputQueues.get(key) === queue) inputQueues.delete(key);
+	})();
+	queue.draining = draining;
+	return draining;
+}
 
 function ensureEventListeners(): Promise<void> {
 	Logger.debug("ProjectAgentRuntime", "requesting project PTY event listeners");
@@ -178,6 +318,7 @@ export async function startProjectAgent(
 	setState(projectPath, {
 		status: "starting",
 		error: null,
+		inputError: null,
 		output: "",
 		ptyId: null,
 		exitCode: null,
@@ -196,12 +337,26 @@ export async function startProjectAgent(
 			error: null,
 		});
 		Logger.debug("ProjectAgentRuntime", "project agent PTY started", { appId });
+		const queue = inputQueues.get(inputQueueKey(projectPath, appId));
+		if (queue) await drainProjectAgentInput(queue);
 	} catch (error) {
 		const mapped = parseAgentError(error);
-		Logger.debug("ProjectAgentRuntime", "project agent PTY start failed", {
-			code: mapped.code,
+		const bufferedInputDropped = discardQueuedProjectAgentInput(
+			projectPath,
+			appId,
+			"start_failed",
+		);
+		Logger.error("ProjectAgentRuntime", "project agent PTY start failed", {
+			code: projectAgentDiagnosticCode(error),
 		});
-		setState(projectPath, { status: "error", error: mapped, ptyId: null });
+		setState(projectPath, {
+			status: "error",
+			error: mapped,
+			inputError: bufferedInputDropped
+				? { code: "input_failed" }
+				: stateFor(projectPath).inputError,
+			ptyId: null,
+		});
 	}
 }
 
@@ -272,32 +427,39 @@ export async function writeProjectAgent(
 		"writing terminal input to selected project PTY",
 	);
 	const state = stateFor(projectPath);
-	if (
-		!isProjectAgentAppId(appId) ||
-		state.selectedAppId !== appId ||
-		state.status !== "running" ||
-		!state.ptyId
-	) {
-		Logger.debug(
-			"ProjectAgentRuntime",
-			"PTY input dropped because session ownership is not active",
-		);
+	if (!isProjectAgentAppId(appId)) {
+		Logger.warn("ProjectAgentRuntime", "PTY input was not sent", {
+			reason: "invalid_app_id",
+		});
 		return;
 	}
-	try {
-		await invoke("project_agent_pty_write", {
+	if (state.selectedAppId !== appId) {
+		Logger.warn("ProjectAgentRuntime", "PTY input was not sent", {
 			appId,
-			projectPath,
-			adapterRoot,
-			data,
+			reason: "app_not_selected",
 		});
-	} catch (error) {
-		const mapped = parseAgentError(error);
-		Logger.debug("ProjectAgentRuntime", "PTY input request failed", {
-			code: mapped.code,
-		});
-		setState(projectPath, { status: "error", error: mapped, ptyId: null });
+		return;
 	}
+	if (state.status === "starting") {
+		bufferProjectAgentInput(projectPath, adapterRoot, appId, data);
+		return;
+	}
+	if (state.status !== "running") {
+		Logger.warn("ProjectAgentRuntime", "PTY input was not sent", {
+			appId,
+			reason: `session_${state.status}`,
+		});
+		return;
+	}
+	if (!state.ptyId) {
+		Logger.warn("ProjectAgentRuntime", "PTY input was not sent", {
+			appId,
+			reason: "missing_pty_id",
+		});
+		return;
+	}
+	const queue = bufferProjectAgentInput(projectPath, adapterRoot, appId, data);
+	if (queue) await drainProjectAgentInput(queue);
 }
 
 export async function resizeProjectAgent(
@@ -386,6 +548,7 @@ export async function stopProjectAgent(
 
 export function resetProjectAgentRuntimeForTests(): void {
 	Logger.debug("ProjectAgentRuntime", "resetting in-memory test state");
+	inputQueues.clear();
 	resetProjectAgentEventListenersForTests();
 	statesByProject.clear();
 	pathListeners.clear();

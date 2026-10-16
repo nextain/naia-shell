@@ -7,6 +7,7 @@ import {
 	resizeProjectAgent,
 	writeProjectAgent,
 } from "./project-agent-runtime";
+import { projectText } from "./translations";
 import "@xterm/xterm/css/xterm.css";
 
 export interface ProjectAgentTerminalProps {
@@ -14,6 +15,7 @@ export interface ProjectAgentTerminalProps {
 	adapterRoot: string;
 	appId: ProjectAgentAppId;
 	output: string;
+	inputFailed: boolean;
 	label: string;
 	running: boolean;
 }
@@ -23,6 +25,7 @@ export function ProjectAgentTerminal({
 	adapterRoot,
 	appId,
 	output,
+	inputFailed,
 	label,
 	running,
 }: ProjectAgentTerminalProps) {
@@ -189,12 +192,23 @@ export function ProjectAgentTerminal({
 	}, [adapterRoot, appId, projectPath, running]);
 
 	return (
-		<div
-			className="projects-app__terminal"
-			ref={containerRef}
-			role="region"
-			aria-label={label}
-			data-project-terminal="true"
-		/>
+		<div className="projects-app__terminal-slot">
+			{inputFailed && (
+				<output
+					className="projects-app__terminal-input-error"
+					role="alert"
+					aria-live="assertive"
+				>
+					{projectText("projects.agentInputFailed")}
+				</output>
+			)}
+			<div
+				className="projects-app__terminal"
+				ref={containerRef}
+				role="region"
+				aria-label={label}
+				data-project-terminal="true"
+			/>
+		</div>
 	);
 }

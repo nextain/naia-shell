@@ -189,11 +189,26 @@ pub(super) fn display_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
+pub(super) fn project_agent_key(
+    project_path: &Path,
+    app: CodingApp,
+) -> Result<ProjectAgentKey, String> {
+    crate::log_verbose("[project_agent_pty::project_agent_key] enter project_path_supplied=true");
+    Ok(ProjectAgentKey {
+        project_path: normalize_project_session_path(&project_path.to_string_lossy())?,
+        app,
+    })
+}
+
 pub(super) fn normalize_project_session_path(project_path: &str) -> Result<PathBuf, String> {
     crate::log_verbose(
         "[project_agent_pty::normalize_project_session_path] enter project_path_supplied=true",
     );
-    let path = PathBuf::from(project_path);
+    // Windows may spell the same filesystem object with a Win32 verbatim
+    // prefix (`\\?\`). Normalize that spelling before building the session
+    // key so start and write cannot disagree on the PathBuf identity.
+    let supplied_path = PathBuf::from(project_path);
+    let path = dunce::simplified(&supplied_path).to_path_buf();
     if !path.is_absolute() {
         crate::log_verbose(
             "[project_agent_pty::normalize_project_session_path] branch=reject_relative_project_path",
@@ -309,10 +324,14 @@ pub(super) fn find_project_agent_handle<'a>(
         "[project_agent_pty::find_project_agent_handle] branch=session_not_found app_id={} other_app_for_project={exists_for_project}",
         key.app.spec().app_id
     ));
+    Err(project_session_lookup_error(exists_for_project).to_owned())
+}
+
+pub(super) fn project_session_lookup_error(exists_for_project: bool) -> &'static str {
     if exists_for_project {
-        Err("session_mismatch".to_owned())
+        "session_mismatch"
     } else {
-        Err("session_missing".to_owned())
+        "session_missing"
     }
 }
 
@@ -335,11 +354,7 @@ pub(super) fn find_project_agent_handle_mut<'a>(
         "[project_agent_pty::find_project_agent_handle_mut] branch=session_not_found app_id={} other_app_for_project={exists_for_project}",
         key.app.spec().app_id
     ));
-    if exists_for_project {
-        Err("session_mismatch".to_owned())
-    } else {
-        Err("session_missing".to_owned())
-    }
+    Err(project_session_lookup_error(exists_for_project).to_owned())
 }
 
 pub(super) fn emit_or_buffer_project_agent_output(
@@ -465,5 +480,38 @@ mod tests {
             normalize_project_session_path("checkouts/sample"),
             Err("project_unverified".to_owned())
         );
+    }
+
+    #[test]
+    fn project_agent_session_key_uses_one_canonical_path_for_start_and_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("projects/sample");
+        std::fs::create_dir_all(&project).unwrap();
+        let start_key = project_agent_key(&project, CodingApp::Claude).unwrap();
+        let write_key =
+            project_agent_key(&dunce::canonicalize(&project).unwrap(), CodingApp::Claude).unwrap();
+
+        assert_eq!(start_key, write_key);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn project_agent_session_key_normalizes_windows_verbatim_prefix() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("projects/sample");
+        std::fs::create_dir_all(&project).unwrap();
+        let canonical = dunce::canonicalize(&project).unwrap();
+        let verbatim = PathBuf::from(format!(r"\\?\{}", canonical.display()));
+
+        let start_key = project_agent_key(&canonical, CodingApp::Claude).unwrap();
+        let write_key = project_agent_key(&verbatim, CodingApp::Claude).unwrap();
+
+        assert_eq!(start_key, write_key);
+    }
+
+    #[test]
+    fn project_agent_lookup_error_preserves_missing_and_mismatch_codes() {
+        assert_eq!(project_session_lookup_error(false), "session_missing");
+        assert_eq!(project_session_lookup_error(true), "session_mismatch");
     }
 }
