@@ -157,4 +157,51 @@ describe("Slides host client contract", () => {
 			vi.useRealTimers();
 		}
 	});
+
+	it("sends presentation state over the established host capability", async () => {
+		const originalParent = window.parent;
+		const postMessage = vi.fn();
+		const parentWindow = { postMessage } as unknown as Window;
+		Object.defineProperty(window, "parent", {
+			configurable: true,
+			value: parentWindow,
+		});
+		const client = startSlidesHostClientBridge();
+		try {
+			const hello = postMessage.mock.calls[0]?.[0] as { id: string };
+			client.setPresentationActive(true);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: parentWindow,
+					origin: "http://shell.local",
+					data: {
+						type: SLIDES_HOST,
+						action: SLIDES_HOST_ACTIONS.init,
+						id: hello.id,
+						capability: "capability-1",
+						locale: "en",
+						theme: {},
+					},
+				}),
+			);
+			await client.ready;
+			await vi.waitFor(() =>
+				expect(postMessage).toHaveBeenCalledWith(
+					expect.objectContaining({
+						type: SLIDES_HOST,
+						action: SLIDES_HOST_ACTIONS.presentationState,
+						active: true,
+						capability: "capability-1",
+					}),
+					"http://shell.local",
+				),
+			);
+		} finally {
+			client.dispose();
+			Object.defineProperty(window, "parent", {
+				configurable: true,
+				value: originalParent,
+			});
+		}
+	});
 });

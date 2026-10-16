@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { Logger } from "../../../logger";
 import { createGatewayAlignedPlanSource } from "../gateway-aligned-plan";
 
 function wav(seconds: number, rate = 24000): Uint8Array {
@@ -72,6 +73,28 @@ describe("gateway aligned plan source (shell_audio, SoT 8)", () => {
 		expect(body.source.kind).toBe("shell_audio");
 		expect(body.source.audio_base64).toBe(audioBase64);
 		expect(body.text).toBe(TEXT);
+	});
+
+	it("logs one safe result line with reason, elapsed time and only the audio hash prefix", async () => {
+		const debug = vi.spyOn(Logger, "debug").mockImplementation(() => {});
+		const { get } = source({ plan: alignedPlan() });
+		expect(await get({ text: "private sentence", audio: whole })).toBeNull();
+		expect(debug).toHaveBeenCalledTimes(1);
+		expect(debug).toHaveBeenCalledWith(
+			"GatewayAlignedPlan",
+			"aligned plan unavailable",
+			expect.objectContaining({
+				result: "null",
+				reason: "no_hangul",
+				elapsedMs: expect.any(Number),
+				sha: sha.slice(0, 8),
+				textLength: "private sentence".length,
+			}),
+		);
+		const serializedLogs = JSON.stringify(debug.mock.calls);
+		expect(serializedLogs).not.toContain("private sentence");
+		expect(serializedLogs).not.toContain(sha);
+		expect(serializedLogs).not.toContain("key-1");
 	});
 
 	it.each([

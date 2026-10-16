@@ -14631,6 +14631,8 @@ pub fn run() {
 
             // Set window icon explicitly (prevents default yellow WRY icon on Linux)
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(target_os = "linux")]
+                app_sandbox::cache_linux_recording_window(window.clone());
                 let icon_bytes = include_bytes!("../icons/icon.png");
                 if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
                     let _ = window.set_icon(icon);

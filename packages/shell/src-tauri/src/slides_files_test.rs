@@ -77,6 +77,81 @@ fn bounded_reader_rejects_over_limit_and_preserves_empty_script() {
     assert!(!result.script_read_failed);
 }
 
+#[test]
+fn video_names_allow_only_flat_supported_visible_filenames() {
+    assert!(valid_slide_video_name("demo.mp4"));
+    assert!(valid_slide_video_name("시연.webm"));
+    assert!(valid_slide_video_name("DEMO.M4V"));
+    for rejected in [
+        "../demo.mp4",
+        "folder/demo.mp4",
+        "folder\\demo.mp4",
+        ".hidden.mp4",
+        "a..b.mp4",
+        "C:demo.mp4",
+        "quoted\"name.mp4",
+        "control\u{0001}name.mp4",
+        "demo.mov",
+        " demo.mp4",
+    ] {
+        assert!(!valid_slide_video_name(rejected), "accepted {rejected}");
+    }
+}
+
+#[test]
+fn video_reader_loads_only_referenced_same_folder_assets_and_reports_failures() {
+    let temp = tempfile::tempdir().unwrap();
+    let selected = pdf(temp.path(), "deck.pdf");
+    fs::write(temp.path().join("demo.mp4"), b"video bytes").unwrap();
+    fs::create_dir(temp.path().join("nested")).unwrap();
+    fs::write(temp.path().join("nested/other.mp4"), b"outside selection").unwrap();
+
+    let script = "## 1.\nNarration\n## 1-2. [video] missing.webm\nignored body\n## 1-1. [영상] demo.mp4\nignored too\n## 1-3. [video] nested/other.mp4";
+    let (videos, failures) = read_slide_videos(&selected, script);
+    assert_eq!(videos.len(), 1);
+    assert_eq!(videos[0].name, "demo.mp4");
+    assert_eq!(videos[0].mime_type, "video/mp4");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(&videos[0].base64)
+            .unwrap(),
+        b"video bytes"
+    );
+    assert!(failures.contains(&"missing.webm".to_string()));
+    assert!(failures.contains(&"nested/other.mp4".to_string()));
+}
+
+#[test]
+fn oversized_video_is_rejected_before_reading_its_contents() {
+    let temp = tempfile::tempdir().unwrap();
+    let selected = pdf(temp.path(), "deck.pdf");
+    let video = temp.path().join("large.m4v");
+    fs::File::create(&video)
+        .unwrap()
+        .set_len(MAX_VIDEO_BYTES + 1)
+        .unwrap();
+    let (videos, failures) = read_slide_videos(&selected, "## 1-1. [video] large.m4v");
+    assert!(videos.is_empty());
+    assert_eq!(failures, vec!["large.m4v"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn video_symlinks_cannot_escape_the_selected_document_folder() {
+    let temp = tempfile::tempdir().unwrap();
+    let selected = pdf(temp.path(), "deck.pdf");
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("private.mp4"), b"private").unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("private.mp4"),
+        temp.path().join("demo.mp4"),
+    )
+    .unwrap();
+    let (videos, failures) = read_slide_videos(&selected, "## 1-1. [video] demo.mp4");
+    assert!(videos.is_empty());
+    assert_eq!(failures, vec!["demo.mp4"]);
+}
+
 #[cfg(unix)]
 #[test]
 fn symlink_companion_cannot_read_another_file() {

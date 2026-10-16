@@ -96,6 +96,7 @@ export default {
 	"slides.title": "Slide presentation",
 	"slides.repeat": "تكرار العرض التقديمي",
 	"slides.scriptError": "تعذّر قراءة النص البرمجي المرافق. يمكنك اختيار نص العرض يدويًا.",
+	"slides.videoUnavailable": "ملفات الفيديو مفقودة أو غير متاحة:",
 	"slides.subtitle": "Open a PDF and speaker script so Naia can present and answer questions.",
 	"slides.openPdf": "Open PDF",
 	"slides.openScript": "Speaker script",

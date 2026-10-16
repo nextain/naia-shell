@@ -96,6 +96,7 @@ export default {
 	"slides.title": "Slide presentation",
 	"slides.repeat": "Repetir apresentação",
 	"slides.scriptError": "Não foi possível ler o script complementar. Você pode escolher manualmente um script de apresentação.",
+	"slides.videoUnavailable": "Arquivos de vídeo ausentes ou indisponíveis:",
 	"slides.subtitle": "Open a PDF and speaker script so Naia can present and answer questions.",
 	"slides.openPdf": "Open PDF",
 	"slides.openScript": "Speaker script",

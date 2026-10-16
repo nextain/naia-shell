@@ -96,6 +96,7 @@ export default {
 	"slides.title": "Slide presentation",
 	"slides.repeat": "重复播放演示文稿",
 	"slides.scriptError": "无法读取配套脚本。你可以手动选择演讲脚本。",
+	"slides.videoUnavailable": "视频文件缺失或不可用：",
 	"slides.subtitle": "Open a PDF and speaker script so Naia can present and answer questions.",
 	"slides.openPdf": "Open PDF",
 	"slides.openScript": "Speaker script",

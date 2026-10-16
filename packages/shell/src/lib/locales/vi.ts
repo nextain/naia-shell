@@ -96,6 +96,7 @@ export default {
 	"slides.title": "Slide presentation",
 	"slides.repeat": "Lặp lại bài thuyết trình",
 	"slides.scriptError": "Không thể đọc tập lệnh đi kèm. Bạn có thể chọn tập lệnh thuyết trình theo cách thủ công.",
+	"slides.videoUnavailable": "Không tìm thấy hoặc không thể dùng tệp video:",
 	"slides.subtitle": "Open a PDF and speaker script so Naia can present and answer questions.",
 	"slides.openPdf": "Open PDF",
 	"slides.openScript": "Speaker script",

@@ -1,5 +1,5 @@
-import type { SlidePresenterState } from "../../lib/slide-presenter";
 import { t } from "../../lib/i18n";
+import type { SlidePresenterState } from "../../lib/slide-presenter";
 
 export type SlidesControlAction =
 	| "start"
@@ -34,11 +34,15 @@ export function SlidesControls({
 	onToggleFullscreen,
 	onToggleRecording,
 }: SlidesControlsProps) {
+	const activeVideoIndex = state.activeVideoIndex;
+	const hasNextVideo =
+		activeVideoIndex !== null &&
+		state.videoCues.some(
+			(cue, index) =>
+				index > activeVideoIndex && cue.page === state.page && cue.available,
+		);
 	return (
-		<footer
-			className="slides-app__controls"
-			aria-label={t("slides.controls")}
-		>
+		<footer className="slides-app__controls" aria-label={t("slides.controls")}>
 			<label className="slides-app__page-input">
 				{t("slides.rangeStart")}
 				<input
@@ -70,7 +74,11 @@ export function SlidesControls({
 			<button
 				type="button"
 				onClick={() => onAction("previous")}
-				disabled={editing || state.totalPages === 0 || state.page <= 1}
+				disabled={
+					editing ||
+					state.totalPages === 0 ||
+					(state.page <= 1 && state.activeVideoIndex === null)
+				}
 				aria-label={t("slides.previous")}
 			>
 				←
@@ -114,7 +122,11 @@ export function SlidesControls({
 			<button
 				type="button"
 				onClick={() => onAction("next")}
-				disabled={editing || state.totalPages === 0 || state.page >= state.totalPages}
+				disabled={
+					editing ||
+					state.totalPages === 0 ||
+					(state.page >= state.totalPages && !hasNextVideo)
+				}
 				aria-label={t("slides.next")}
 			>
 				→
@@ -142,7 +154,9 @@ export function SlidesControls({
 				type="button"
 				onClick={onToggleRecording}
 				disabled={editing || state.totalPages === 0}
-				aria-label={recording ? t("slides.recordStop") : t("slides.recordStart")}
+				aria-label={
+					recording ? t("slides.recordStop") : t("slides.recordStart")
+				}
 			>
 				{recording ? t("slides.recordStop") : t("slides.recordStart")}
 			</button>

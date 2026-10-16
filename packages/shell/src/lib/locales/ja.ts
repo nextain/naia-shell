@@ -96,6 +96,7 @@ export default {
 	"slides.title": "Slide presentation",
 	"slides.repeat": "プレゼンテーションを繰り返す",
 	"slides.scriptError": "付属スクリプトを読み込めませんでした。発表者スクリプトを手動で選択できます。",
+	"slides.videoUnavailable": "動画ファイルが見つからないか、利用できません:",
 	"slides.subtitle": "Open a PDF and speaker script so Naia can present and answer questions.",
 	"slides.openPdf": "Open PDF",
 	"slides.openScript": "Speaker script",

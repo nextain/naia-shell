@@ -58,15 +58,29 @@ class FakePlayer implements SpeechPlayerLike {
 	calls: string[] = [];
 	clock: (() => number) | null = null;
 	loadGate: Promise<void> = Promise.resolve();
+	activeLoads = 0;
+	maxConcurrentLoads = 0;
 	async loadAudioClock() {
 		this.calls.push("loadAudioClock");
-		await this.loadGate;
-		this.state = "ready";
+		this.activeLoads++;
+		this.maxConcurrentLoads = Math.max(this.maxConcurrentLoads, this.activeLoads);
+		try {
+			await this.loadGate;
+			this.state = "ready";
+		} finally {
+			this.activeLoads--;
+		}
 	}
 	async loadExternal() {
 		this.calls.push("loadExternal");
-		await this.loadGate;
-		this.state = "ready";
+		this.activeLoads++;
+		this.maxConcurrentLoads = Math.max(this.maxConcurrentLoads, this.activeLoads);
+		try {
+			await this.loadGate;
+			this.state = "ready";
+		} finally {
+			this.activeLoads--;
+		}
 	}
 	updateExternalPlan(next: SpeechPlan) {
 		this.calls.push(`update:${next.quality_mode}`);
@@ -353,6 +367,28 @@ describe("CanonicalSpeechStage", () => {
 		release();
 		expect(await first).toBe(false);
 		expect(player.calls).not.toContain("playAudioClock");
+	});
+
+	it("waits for an abandoned in-flight media load before starting the next one", async () => {
+		const player = new FakePlayer();
+		let releaseFirst!: () => void;
+		player.loadGate = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		const { stage } = stageWith(player);
+		const first = stage.prepare(plan("aligned"));
+		await vi.waitFor(() => expect(player.calls).toContain("loadAudioClock"));
+
+		const second = stage.prepare(plan("aligned"));
+		await Promise.resolve();
+		expect(player.calls.filter((call) => call === "loadAudioClock")).toHaveLength(1);
+		expect(player.maxConcurrentLoads).toBe(1);
+
+		releaseFirst();
+		expect(await first).toBeNull();
+		expect(await second).not.toBeNull();
+		expect(player.calls.filter((call) => call === "loadAudioClock")).toHaveLength(2);
+		expect(player.maxConcurrentLoads).toBe(1);
 	});
 
 	it("reads bundle assets once and removes its media on dispose", async () => {

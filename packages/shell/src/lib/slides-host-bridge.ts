@@ -3,6 +3,7 @@ import { Logger } from "./logger";
 import {
 	SLIDES_HOST,
 	SLIDES_HOST_ACTIONS,
+	SLIDES_PRESENTATION_EVENT,
 	type SlidesHostState,
 	SLIDES_RECORDING_LOST,
 	isRecordingLost,
@@ -186,6 +187,7 @@ export function installSlidesHostBridge(
 	let recordingStartPending = false;
 	let recordingActive = false;
 	let recordingStopPending = false;
+	let presentationActive = false;
 	let startPromise: Promise<void> | null = null;
 	let stopPromise: Promise<string> | null = null;
 	let cleanupPromise: Promise<void> | null = null;
@@ -329,6 +331,17 @@ export function installSlidesHostBridge(
 			data.capability !== handshakeCapability
 		)
 			return;
+		if (action === SLIDES_HOST_ACTIONS.presentationState) {
+			if (typeof data.active !== "boolean" || data.active === presentationActive)
+				return;
+			presentationActive = data.active;
+			window.dispatchEvent(
+				new CustomEvent(SLIDES_PRESENTATION_EVENT, {
+					detail: { active: presentationActive },
+				}),
+			);
+			return;
+		}
 		if (action === SLIDES_HOST_ACTIONS.recordingCancelStart) {
 			if (
 				recordingStartRequestId !== requestId ||
@@ -376,6 +389,9 @@ export function installSlidesHostBridge(
 					recordingOwner = null;
 					recordingStartRequestId = null;
 					recordingCancelRequested = false;
+					Logger.warn("SlidesHostBridge", "Slides recording start failed", {
+						error: String(error),
+					});
 					if (!active) {
 						Logger.warn(
 							"SlidesHostBridge",
@@ -492,6 +508,14 @@ export function installSlidesHostBridge(
 	revokeBridge = () => {
 		if (!active) return;
 		active = false;
+		if (presentationActive) {
+			presentationActive = false;
+			window.dispatchEvent(
+				new CustomEvent(SLIDES_PRESENTATION_EVENT, {
+					detail: { active: false },
+				}),
+			);
+		}
 		window.removeEventListener("message", onMessage);
 		window.removeEventListener("naia:locale-change", syncEnvironment);
 		window.removeEventListener("naia-config-changed", syncEnvironment);

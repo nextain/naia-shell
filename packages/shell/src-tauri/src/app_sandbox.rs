@@ -140,46 +140,69 @@ pub fn app_sandbox_open_in_workspace(app: AppHandle, adk_path: String, app_id: S
     app.emit("workspace-open-file-request", granted.clone()).map_err(|error| error.to_string())?;
     Ok(granted)
 }
-/// The shell's own toplevel on Linux: its X11 XID and display, or `NotX11`
-/// when GTK runs as a native Wayland client. Read on the GTK main thread.
 #[cfg(target_os = "linux")]
-fn linux_shell_window(window: &tauri::WebviewWindow) -> Result<crate::slides_recording::LinuxWindow, String> {
-    use crate::slides_recording::LinuxWindow;
-    let (sender, receiver) = std::sync::mpsc::channel();
-    window
-        .with_webview(move |platform| {
-            use gtk::prelude::*;
-            let found = platform
-                .inner()
-                .toplevel()
-                .and_then(|toplevel| toplevel.window())
-                .and_then(|gdk_window| {
+pub(crate) fn cache_linux_recording_window(window: tauri::WebviewWindow) {
+    std::thread::spawn(move || {
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let (sender, receiver) = std::sync::mpsc::channel();
+            if let Err(error) = window.with_webview(move |platform| {
+                use gtk::prelude::*;
+                let gdk_window = platform
+                    .inner()
+                    .toplevel()
+                    .and_then(|toplevel| toplevel.window());
+                let found = gdk_window.map(|gdk_window| {
                     let display = gdk_window.display().name().to_string();
+                    crate::log_verbose(&format!(
+                        "[slides-recording] GDK target type={} display={display}",
+                        gdk_window.type_().name()
+                    ));
                     gdk_window
                         .downcast::<gdkx11::X11Window>()
                         .ok()
-                        .map(|x11| LinuxWindow::X11 { display: Some(display), xid: x11.xid() as u64 })
-                })
-                .unwrap_or(LinuxWindow::NotX11);
-            let _ = sender.send(found);
-        })
-        .map_err(|error| error.to_string())?;
-    receiver
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .map_err(|_| "could not read the shell window for MP4 recording".to_string())
+                        .map(|x11| crate::slides_recording::LinuxWindow::X11 {
+                            display: Some(display),
+                            xid: x11.xid() as u64,
+                        })
+                        .unwrap_or(crate::slides_recording::LinuxWindow::NotX11)
+                });
+                let _ = sender.send(found);
+            }) {
+                crate::log_verbose(&format!(
+                    "[slides-recording] shell target probe failed: {error}"
+                ));
+                continue;
+            }
+            let Ok(Some(found)) = receiver.recv_timeout(std::time::Duration::from_secs(2)) else {
+                continue;
+            };
+            if let crate::slides_recording::LinuxWindow::X11 { xid, .. } = &found {
+                crate::log_verbose(&format!(
+                    "[slides-recording] cached shell X11 target xid={xid}"
+                ));
+            } else {
+                crate::log_verbose("[slides-recording] shell window is not X11");
+            }
+            crate::slides_recording::cache_linux_shell_window(found);
+            return;
+        }
+        crate::log_both("[slides-recording] shell X11 window did not become available");
+    });
 }
 
 #[tauri::command]
-pub async fn slides_recording_start(window: tauri::WebviewWindow, adk_path: String) -> Result<(), String> {
+pub async fn slides_recording_start(adk_path: String) -> Result<(), String> {
     use crate::slides_recording::{audio_input, capture_target, ffmpeg_args, Platform, Recorder, AUDIO_SOURCE_ENV, STARTUP_PROBE};
     let recording = RECORDING.get_or_init(|| Mutex::new(None));
     if recording.lock().map_err(|_| "recording lock poisoned")?.is_some() {
         return Err("recording already active".into());
     }
     #[cfg(target_os = "linux")]
-    let linux = Some(linux_shell_window(&window)?);
+    let linux = Some(crate::slides_recording::cached_linux_shell_window()
+        .ok_or("shell capture target is not initialized")?);
     #[cfg(not(target_os = "linux"))]
-    let linux = { let _ = &window; None };
+    let linux = None;
     let platform = Platform::current();
     let target = capture_target(platform, linux, std::env::var("DISPLAY").ok())?;
     let audio = audio_input(platform, std::env::var(AUDIO_SOURCE_ENV).ok().as_deref());

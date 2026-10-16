@@ -96,6 +96,7 @@ export default {
 	"slides.title": "Slide presentation",
 	"slides.repeat": "Ulangi presentasi",
 	"slides.scriptError": "Skrip pendamping tidak dapat dibaca. Anda dapat memilih skrip pembicara secara manual.",
+	"slides.videoUnavailable": "File video tidak ditemukan atau tidak tersedia:",
 	"slides.subtitle": "Open a PDF and speaker script so Naia can present and answer questions.",
 	"slides.openPdf": "Open PDF",
 	"slides.openScript": "Speaker script",

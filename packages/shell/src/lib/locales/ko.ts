@@ -96,6 +96,7 @@ export default {
 	"slides.title": "슬라이드 발표",
 	"slides.repeat": "반복 재생",
 	"slides.scriptError": "자동 대본을 읽지 못했습니다. 발표 대본을 직접 선택해 주세요.",
+	"slides.videoUnavailable": "영상 파일을 찾을 수 없거나 재생할 수 없습니다:",
 	"slides.subtitle": "PDF와 발표 스크립트를 열면 Naia가 설명하고 질문에 답합니다.",
 	"slides.openPdf": "PDF 열기",
 	"slides.openScript": "발표 스크립트",

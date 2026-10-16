@@ -18,6 +18,7 @@ export interface SlidesErrorNoticeProps {
 	recordingError: string | null;
 	fullscreenError: boolean;
 	fileError: SlidesFileError | null;
+	videoErrors: readonly string[];
 }
 
 export function SlidesErrorNotice({
@@ -25,6 +26,7 @@ export function SlidesErrorNotice({
 	recordingError,
 	fullscreenError,
 	fileError,
+	videoErrors,
 }: SlidesErrorNoticeProps) {
 	return (
 		<>
@@ -55,17 +57,22 @@ export function SlidesErrorNotice({
 									? t("slides.exportError")
 									: fileError === "exportUnsaved"
 										? t("slides.exportUnsaved")
-									: fileError === "converter"
-										? t("slides.converterUnavailable")
-										: fileError === "invalidPptx"
-											? t("slides.invalidPptx")
-											: fileError === "conversionFailed"
-												? t("slides.conversionFailed")
-												: fileError === "conversionTimeout"
-													? t("slides.conversionTimeout")
-													: fileError === "busy"
-														? t("slides.importBusy")
-														: t("slides.loadError")}
+										: fileError === "converter"
+											? t("slides.converterUnavailable")
+											: fileError === "invalidPptx"
+												? t("slides.invalidPptx")
+												: fileError === "conversionFailed"
+													? t("slides.conversionFailed")
+													: fileError === "conversionTimeout"
+														? t("slides.conversionTimeout")
+														: fileError === "busy"
+															? t("slides.importBusy")
+															: t("slides.loadError")}
+				</div>
+			) : null}
+			{videoErrors.length ? (
+				<div className="slides-app__error" role="alert" aria-live="assertive">
+					{t("slides.videoUnavailable")} {videoErrors.join(", ")}
 				</div>
 			) : null}
 		</>

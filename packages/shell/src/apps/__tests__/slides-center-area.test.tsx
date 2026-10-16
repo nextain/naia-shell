@@ -16,6 +16,7 @@ import type {
 	ToolHandler,
 } from "../../lib/app-registry";
 import { setLocale } from "../../lib/i18n";
+import { Logger } from "../../lib/logger";
 import {
 	SLIDE_PRESENTER_SPEAK_EVENT,
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
@@ -29,6 +30,11 @@ vi.mock("../../lib/logger", () => ({
 vi.mock("../../lib/config", () => ({ addAllowedTool: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 const picker = vi.hoisted(() => ({ available: false, open: vi.fn() }));
+const mediaPlayback = vi.hoisted(() => ({
+	play: vi.fn(),
+	pause: vi.fn(),
+	load: vi.fn(),
+}));
 vi.mock("../../lib/slides-files", () => ({
 	openSlidesDocument: picker.open,
 	openSlidesPdf: picker.open,
@@ -124,6 +130,28 @@ class MockBridge implements NaiaContextBridge {
 }
 
 describe("SlidesCenterArea", () => {
+	const originalMediaPlay = Object.getOwnPropertyDescriptor(
+		HTMLMediaElement.prototype,
+		"play",
+	);
+	const originalMediaPause = Object.getOwnPropertyDescriptor(
+		HTMLMediaElement.prototype,
+		"pause",
+	);
+	const originalMediaLoad = Object.getOwnPropertyDescriptor(
+		HTMLMediaElement.prototype,
+		"load",
+	);
+	const originalCreateObjectURL = Object.getOwnPropertyDescriptor(
+		URL,
+		"createObjectURL",
+	);
+	const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(
+		URL,
+		"revokeObjectURL",
+	);
+	let objectUrlId = 0;
+
 	it("rebases the PDF worker under a Tauri asset app path", () => {
 		expect(
 			resolveSlidesPdfWorkerUrl("/assets/pdf.worker.min-hash.mjs", {
@@ -169,6 +197,30 @@ describe("SlidesCenterArea", () => {
 		picker.available = false;
 		picker.open.mockReset();
 		await setLocale("ko");
+		mediaPlayback.play.mockReset().mockResolvedValue(undefined);
+		mediaPlayback.pause.mockReset();
+		mediaPlayback.load.mockReset();
+		Object.defineProperty(HTMLMediaElement.prototype, "play", {
+			configurable: true,
+			value: mediaPlayback.play,
+		});
+		Object.defineProperty(HTMLMediaElement.prototype, "pause", {
+			configurable: true,
+			value: mediaPlayback.pause,
+		});
+		Object.defineProperty(HTMLMediaElement.prototype, "load", {
+			configurable: true,
+			value: mediaPlayback.load,
+		});
+		objectUrlId = 0;
+		Object.defineProperty(URL, "createObjectURL", {
+			configurable: true,
+			value: () => `blob:slides-test/${++objectUrlId}`,
+		});
+		Object.defineProperty(URL, "revokeObjectURL", {
+			configurable: true,
+			value: vi.fn(),
+		});
 		class ResizeObserverMock {
 			observe() {}
 			unobserve() {}
@@ -180,6 +232,22 @@ describe("SlidesCenterArea", () => {
 	afterEach(() => {
 		cleanup();
 		vi.restoreAllMocks();
+		for (const [key, descriptor] of [
+			["play", originalMediaPlay],
+			["pause", originalMediaPause],
+			["load", originalMediaLoad],
+		] as const) {
+			if (descriptor)
+				Object.defineProperty(HTMLMediaElement.prototype, key, descriptor);
+			else Reflect.deleteProperty(HTMLMediaElement.prototype, key);
+		}
+		for (const [key, descriptor] of [
+			["createObjectURL", originalCreateObjectURL],
+			["revokeObjectURL", originalRevokeObjectURL],
+		] as const) {
+			if (descriptor) Object.defineProperty(URL, key, descriptor);
+			else Reflect.deleteProperty(URL, key);
+		}
 		Reflect.deleteProperty(document, "fullscreenElement");
 		Reflect.deleteProperty(document, "exitFullscreen");
 	});
@@ -308,9 +376,7 @@ describe("SlidesCenterArea", () => {
 		expect(screen.getByText("deck.md")).toBeInTheDocument();
 		picker.open.mockResolvedValueOnce(null);
 		fireEvent.click(screen.getByLabelText(/PDF/));
-		await waitFor(() =>
-			expect(screen.getByLabelText(/PDF/)).toBeEnabled(),
-		);
+		await waitFor(() => expect(screen.getByLabelText(/PDF/)).toBeEnabled());
 		expect(screen.getByTestId("slides-current-note")).toHaveTextContent(
 			"Automatic note",
 		);
@@ -493,6 +559,233 @@ describe("SlidesCenterArea", () => {
 		await waitFor(() => expect(screen.getByText("2 / 3")).toBeInTheDocument());
 		await waitFor(() => expect(requests).toHaveLength(2));
 		expect(requests[1]).toMatchObject({ page: 2, text: "Second narration." });
+	});
+
+	it("plays an authored video without narration and requests the next page as soon as it ends", async () => {
+		picker.available = true;
+		picker.open.mockResolvedValue({
+			file: new File(["pdf"], "deck.pdf", { type: "application/pdf" }),
+			script: {
+				name: "deck.md",
+				text: "## 1. Cover\nIntroduce the demo.\n## 1-1. [영상] demo.mp4\nNever narrate this paragraph.\n## 2. Next\nContinue the talk.",
+			},
+			scriptReadFailed: false,
+			videos: [
+				{
+					name: "demo.mp4",
+					file: new File(["video"], "demo.mp4", { type: "video/mp4" }),
+				},
+			],
+			videoReadFailures: [],
+		});
+		const requests: SlidePresenterSpeechRequest[] = [];
+		const onSpeak = (event: Event) =>
+			requests.push((event as CustomEvent<SlidePresenterSpeechRequest>).detail);
+		window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, onSpeak);
+		const srcDescriptor = Object.getOwnPropertyDescriptor(
+			HTMLMediaElement.prototype,
+			"src",
+		);
+		const setAttributeDescriptor = Object.getOwnPropertyDescriptor(
+			Element.prototype,
+			"setAttribute",
+		);
+		const setAttributeNsDescriptor = Object.getOwnPropertyDescriptor(
+			Element.prototype,
+			"setAttributeNS",
+		);
+		const srcWrites: HTMLVideoElement[] = [];
+		const recordSrc = (element: Element, name: string) => {
+			if (element instanceof HTMLVideoElement && name.toLowerCase() === "src")
+				srcWrites.push(element);
+		};
+		if (srcDescriptor?.set)
+			Object.defineProperty(HTMLMediaElement.prototype, "src", {
+				...srcDescriptor,
+				set(this: HTMLMediaElement, value: string) {
+					if (this instanceof HTMLVideoElement) srcWrites.push(this);
+					srcDescriptor.set?.call(this, value);
+				},
+			});
+		if (setAttributeDescriptor?.value)
+			Object.defineProperty(Element.prototype, "setAttribute", {
+				...setAttributeDescriptor,
+				value: function (this: Element, name: string, value: string) {
+					recordSrc(this, name);
+					return setAttributeDescriptor.value.call(this, name, value);
+				},
+			});
+		if (setAttributeNsDescriptor?.value)
+			Object.defineProperty(Element.prototype, "setAttributeNS", {
+				...setAttributeNsDescriptor,
+				value: function (
+					this: Element,
+					namespace: string | null,
+					name: string,
+					value: string,
+				) {
+					recordSrc(this, name);
+					return setAttributeNsDescriptor.value.call(
+						this,
+						namespace,
+						name,
+						value,
+					);
+				},
+			});
+		try {
+			render(<SlidesCenterArea naia={new MockBridge()} />);
+			fireEvent.click(screen.getByLabelText(/PDF/));
+			await waitFor(() =>
+				expect(screen.getByTestId("slides-current-note")).toHaveTextContent(
+					"Introduce the demo.",
+				),
+			);
+			expect(Logger.debug).toHaveBeenCalledWith(
+				"SlidesCenterArea",
+				"demo video directives resolved",
+				expect.objectContaining({
+					loadedFileCount: 1,
+					directives: expect.arrayContaining([
+						expect.objectContaining({ fileName: "demo.mp4", available: true }),
+					]),
+				}),
+			);
+			fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
+			await waitFor(() => expect(requests).toHaveLength(1));
+			window.dispatchEvent(
+				new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
+					detail: { ...requests[0], status: "finished" },
+				}),
+			);
+			await waitFor(() =>
+				expect(screen.getByTestId("slides-video-viewer")).not.toHaveAttribute(
+					"hidden",
+				),
+			);
+			expect(Logger.info).toHaveBeenCalledWith(
+				"SlidesCenterArea",
+				"demo video playback started",
+				expect.objectContaining({
+					fileName: "demo.mp4",
+					volume: 1,
+					muted: false,
+				}),
+			);
+			const video = screen.getByTestId(
+				"slides-video-demo.mp4",
+			) as HTMLVideoElement;
+			expect(screen.getByTestId("slides-video-indicator")).toHaveTextContent(
+				"1-1 / 영상",
+			);
+			expect(screen.getByTestId("slides-viewer")).toHaveAttribute("hidden");
+			expect(video.volume).toBe(1);
+			expect(video.muted).toBe(false);
+			expect(video).toHaveClass("slides-app__video--active");
+			expect(mediaPlayback.play).toHaveBeenCalledTimes(1);
+			expect(requests).toHaveLength(1);
+			fireEvent.ended(video);
+			await waitFor(() => expect(requests).toHaveLength(2));
+			expect(requests[1]).toMatchObject({
+				page: 2,
+				text: "Continue the talk.",
+			});
+			expect(screen.getByTestId("slides-video-demo.mp4")).toBe(video);
+			expect(srcWrites.filter((element) => element === video)).toHaveLength(1);
+			expect(mediaPlayback.load).not.toHaveBeenCalled();
+		} finally {
+			if (srcDescriptor)
+				Object.defineProperty(HTMLMediaElement.prototype, "src", srcDescriptor);
+			if (setAttributeDescriptor)
+				Object.defineProperty(
+					Element.prototype,
+					"setAttribute",
+					setAttributeDescriptor,
+				);
+			if (setAttributeNsDescriptor)
+				Object.defineProperty(
+					Element.prototype,
+					"setAttributeNS",
+					setAttributeNsDescriptor,
+				);
+			window.removeEventListener(SLIDE_PRESENTER_SPEAK_EVENT, onSpeak);
+		}
+	});
+
+	it("announces missing videos and continues without pausing the presentation", async () => {
+		picker.available = true;
+		picker.open.mockResolvedValue({
+			file: new File(["pdf"], "deck.pdf", { type: "application/pdf" }),
+			script: {
+				name: "deck.md",
+				text: "## 1. Cover\nIntro.\n## 1-1. [video] missing.mp4\nSkipped body.\n## 2. Next\nContinue.",
+			},
+			scriptReadFailed: false,
+			videos: [],
+			videoReadFailures: ["missing.mp4"],
+		});
+		const requests: SlidePresenterSpeechRequest[] = [];
+		window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, (event) =>
+			requests.push((event as CustomEvent<SlidePresenterSpeechRequest>).detail),
+		);
+		render(<SlidesCenterArea naia={new MockBridge()} />);
+		fireEvent.click(screen.getByLabelText(/PDF/));
+		await waitFor(() =>
+			expect(screen.getByRole("alert")).toHaveTextContent("missing.mp4"),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
+		await waitFor(() => expect(requests).toHaveLength(1));
+		window.dispatchEvent(
+			new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
+				detail: { ...requests[0], status: "finished" },
+			}),
+		);
+		await waitFor(() => expect(requests).toHaveLength(2));
+		expect(requests[1]).toMatchObject({ page: 2, text: "Continue." });
+		expect(screen.getByTestId("slides-video-viewer")).toHaveAttribute("hidden");
+	});
+
+	it("skips a video when play is rejected", async () => {
+		picker.available = true;
+		mediaPlayback.play.mockRejectedValueOnce(new Error("blocked"));
+		picker.open.mockResolvedValue({
+			file: new File(["pdf"], "deck.pdf", { type: "application/pdf" }),
+			script: {
+				name: "deck.md",
+				text: "## 1. Cover\nIntro.\n## 1-1. [video] blocked.mp4\nSkipped body.\n## 2. Next\nContinue.",
+			},
+			scriptReadFailed: false,
+			videos: [
+				{
+					name: "blocked.mp4",
+					file: new File(["video"], "blocked.mp4", { type: "video/mp4" }),
+				},
+			],
+			videoReadFailures: [],
+		});
+		const requests: SlidePresenterSpeechRequest[] = [];
+		window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, (event) =>
+			requests.push((event as CustomEvent<SlidePresenterSpeechRequest>).detail),
+		);
+		render(<SlidesCenterArea naia={new MockBridge()} />);
+		fireEvent.click(screen.getByLabelText(/PDF/));
+		await waitFor(() =>
+			expect(screen.getByTestId("slides-current-note")).toHaveTextContent(
+				"Intro.",
+			),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
+		await waitFor(() => expect(requests).toHaveLength(1));
+		window.dispatchEvent(
+			new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
+				detail: { ...requests[0], status: "finished" },
+			}),
+		);
+		await waitFor(() => expect(requests).toHaveLength(2));
+		expect(requests[1]).toMatchObject({ page: 2, text: "Continue." });
+		await waitFor(() =>
+			expect(screen.getByRole("alert")).toHaveTextContent("blocked.mp4"),
+		);
 	});
 
 	it("pauses through the Naia tool and publishes bounded deck context", async () => {

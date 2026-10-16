@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isValidSlideVideoFileName } from "./slide-script";
 
 export const SLIDES_FILES = "naia-slides:files";
 export const SLIDES_IMPORT_PROGRESS = "naia-slides:import-progress";
@@ -8,11 +9,15 @@ export interface SlidesPdfPayload {
 	scriptName: string | null;
 	scriptText: string | null;
 	scriptReadFailed: boolean;
+	videos?: Array<{ name: string; mimeType?: string; base64: string }>;
+	videoReadFailures?: string[];
 }
 export interface SlidesOpenedPdf {
 	file: File;
 	script: { name: string; text: string } | null;
 	scriptReadFailed: boolean;
+	videos: Array<{ name: string; file: File }>;
+	videoReadFailures: string[];
 }
 export interface SlidesImportProgress {
 	requestId: string;
@@ -107,6 +112,28 @@ export function decodeSlidesPdf(payload: SlidesPdfPayload): SlidesOpenedPdf {
 	const bytes = Uint8Array.from(atob(payload.pdfBase64), (char) =>
 		char.charCodeAt(0),
 	);
+	const videos: SlidesOpenedPdf["videos"] = [];
+	for (const video of payload.videos ?? []) {
+		if (
+			typeof video?.name !== "string" ||
+			!isValidSlideVideoFileName(video.name) ||
+			typeof video.base64 !== "string"
+		)
+			continue;
+		const videoBytes = Uint8Array.from(atob(video.base64), (char) =>
+			char.charCodeAt(0),
+		);
+		const type =
+			typeof video.mimeType === "string"
+				? video.mimeType
+				: /\.webm$/i.test(video.name)
+					? "video/webm"
+					: "video/mp4";
+		videos.push({
+			name: video.name,
+			file: new File([videoBytes], video.name, { type }),
+		});
+	}
 	return {
 		file: new File([bytes], payload.pdfName, { type: "application/pdf" }),
 		script:
@@ -115,6 +142,10 @@ export function decodeSlidesPdf(payload: SlidesPdfPayload): SlidesOpenedPdf {
 				? { name: payload.scriptName, text: payload.scriptText }
 				: null,
 		scriptReadFailed: payload.scriptReadFailed === true,
+		videos,
+		videoReadFailures: Array.isArray(payload.videoReadFailures)
+			? payload.videoReadFailures.filter((name) => typeof name === "string")
+			: [],
 	};
 }
 
@@ -129,8 +160,7 @@ export async function openSlidesPdf(
 	} else {
 		const capability = parentCapability;
 		const port = parentPort;
-		if (!capability || !port)
-			throw new Error("slides_picker_unavailable");
+		if (!capability || !port) throw new Error("slides_picker_unavailable");
 		const id = requestId();
 		payload = await new Promise<SlidesPdfPayload | null>((resolve, reject) => {
 			const cleanup = () => {
@@ -139,7 +169,12 @@ export async function openSlidesPdf(
 				signal?.removeEventListener("abort", abort);
 			};
 			const abort = () => {
-				port.postMessage({ type: SLIDES_FILES, action: "cancel", id, capability });
+				port.postMessage({
+					type: SLIDES_FILES,
+					action: "cancel",
+					id,
+					capability,
+				});
 				cleanup();
 				reject(new DOMException("Aborted", "AbortError"));
 			};
@@ -155,7 +190,12 @@ export async function openSlidesPdf(
 				else resolve(event.data.selection ?? null);
 			};
 			const timer = setTimeout(() => {
-				port.postMessage({ type: SLIDES_FILES, action: "cancel", id, capability });
+				port.postMessage({
+					type: SLIDES_FILES,
+					action: "cancel",
+					id,
+					capability,
+				});
 				cleanup();
 				reject(new Error("slides_picker_timeout"));
 			}, 300_000);
@@ -176,10 +216,13 @@ async function listenForNativeProgress(
 	if (!onProgress || !nativeWindow()) return () => {};
 	try {
 		const { listen } = await import("@tauri-apps/api/event");
-		return await listen<SlidesImportProgress>(SLIDES_IMPORT_PROGRESS, (event) => {
-			if (event.payload?.requestId === request)
-				onProgress(event.payload.phase);
-		});
+		return await listen<SlidesImportProgress>(
+			SLIDES_IMPORT_PROGRESS,
+			(event) => {
+				if (event.payload?.requestId === request)
+					onProgress(event.payload.phase);
+			},
+		);
 	} catch {
 		// Browser tests and older hosts do not expose the Tauri event bridge.
 		return () => {};
@@ -206,9 +249,12 @@ export async function openSlidesDocument(
 		}
 		let abortHandler: (() => void) | undefined;
 		try {
-			const operation = invoke<SlidesPdfPayload | null>("slides_open_document", {
-				requestId: id,
-			});
+			const operation = invoke<SlidesPdfPayload | null>(
+				"slides_open_document",
+				{
+					requestId: id,
+				},
+			);
 			const cancelled = new Promise<never>((_, reject) => {
 				abortHandler = () => {
 					void invoke("slides_cancel_open", { requestId: id }).catch(() => {});
@@ -227,8 +273,7 @@ export async function openSlidesDocument(
 
 	const capability = parentCapability;
 	const port = parentPort;
-	if (!capability || !port)
-		throw new Error("slides_picker_unavailable");
+	if (!capability || !port) throw new Error("slides_picker_unavailable");
 	return await new Promise<SlidesOpenedPdf | null>((resolve, reject) => {
 		let settled = false;
 		const cleanup = () => {
@@ -243,17 +288,19 @@ export async function openSlidesDocument(
 			callback();
 		};
 		const abort = () => {
-			port.postMessage({ type: SLIDES_FILES, action: "cancel", id, capability });
+			port.postMessage({
+				type: SLIDES_FILES,
+				action: "cancel",
+				id,
+				capability,
+			});
 			finish(() => reject(new DOMException("Aborted", "AbortError")));
 		};
 		const listener = (event: MessageEvent) => {
-			if (
-				event.data?.type !== SLIDES_FILES ||
-				event.data.id !== id
-			)
-				return;
+			if (event.data?.type !== SLIDES_FILES || event.data.id !== id) return;
 			if (event.data.action === "progress") {
-				if (typeof event.data.phase === "string") onProgress?.(event.data.phase);
+				if (typeof event.data.phase === "string")
+					onProgress?.(event.data.phase);
 				return;
 			}
 			if (event.data.action !== "result") return;
@@ -272,7 +319,12 @@ export async function openSlidesDocument(
 			});
 		};
 		const timer = setTimeout(() => {
-			port.postMessage({ type: SLIDES_FILES, action: "cancel", id, capability });
+			port.postMessage({
+				type: SLIDES_FILES,
+				action: "cancel",
+				id,
+				capability,
+			});
 			finish(() => reject(new Error("slides_picker_timeout")));
 		}, 300_000);
 		port.addEventListener("message", listener);

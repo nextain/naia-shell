@@ -35,6 +35,7 @@ export interface AudioQueueItemCallbacks {
 
 interface AudioQueueItem extends AudioQueueItemCallbacks {
 	audioBase64?: string;
+	seq?: number;
 	/** Streaming PCM item (local voice engines that stream `audio/pcm`). */
 	stream?: PcmStreamSource;
 }
@@ -159,7 +160,7 @@ export class AudioQueue {
 			playing: this.playing,
 			paused: this.playbackPaused,
 		});
-		this.pendingOrdered.set(seq, { audioBase64: mp3Base64, ...callbacks });
+		this.pendingOrdered.set(seq, { audioBase64: mp3Base64, ...callbacks, seq });
 		this.flushOrdered();
 	}
 
@@ -176,7 +177,7 @@ export class AudioQueue {
 			seq,
 			cursor: this.flushCursor,
 		});
-		this.pendingOrdered.set(seq, { stream, ...callbacks });
+		this.pendingOrdered.set(seq, { stream, ...callbacks, seq });
 		this.flushOrdered();
 	}
 
@@ -388,12 +389,27 @@ export class AudioQueue {
 		}
 		if (item.beforePlayback) {
 			const gate = item.beforePlayback;
+			const beforePlaybackStartedAt = Date.now();
+			Logger.debug("AudioQueue", "beforePlayback started", {
+				seq: item.seq ?? null,
+			});
 			void Promise.resolve()
 				.then(gate)
-				.catch((error) =>
-					Logger.warn("AudioQueue", "beforePlayback failed", {
-						error: String(error),
-					}),
+				.then(
+					() => {
+						Logger.debug("AudioQueue", "beforePlayback settled", {
+							seq: item.seq ?? null,
+							elapsedMs: Date.now() - beforePlaybackStartedAt,
+							ok: true,
+						});
+					},
+					(error) => {
+						Logger.warn("AudioQueue", "beforePlayback failed", {
+							seq: item.seq ?? null,
+							elapsedMs: Date.now() - beforePlaybackStartedAt,
+							error: error instanceof Error ? error.name : "unknown",
+						});
+					},
 				)
 				.then(() => {
 					if (generation !== this.generation) return;

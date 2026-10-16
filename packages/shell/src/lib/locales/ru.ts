@@ -96,6 +96,7 @@ export default {
 	"slides.title": "Slide presentation",
 	"slides.repeat": "Повторять презентацию",
 	"slides.scriptError": "Не удалось прочитать сопроводительный сценарий. Вы можете выбрать сценарий выступления вручную.",
+	"slides.videoUnavailable": "Видеофайлы отсутствуют или недоступны:",
 	"slides.subtitle": "Open a PDF and speaker script so Naia can present and answer questions.",
 	"slides.openPdf": "Open PDF",
 	"slides.openScript": "Speaker script",

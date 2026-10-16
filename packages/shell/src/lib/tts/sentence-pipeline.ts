@@ -213,6 +213,7 @@ export function createSentenceTtsPipeline(
 	function requestAlignedPlan(
 		renderer: CascadeSpeechRenderer | null | undefined,
 		request: Parameters<AlignedSpeechPlanSource>[0],
+		seq: number,
 	): {
 		beforePlayback?: () => Promise<unknown>;
 		start: (playback?: AudioPlaybackClock) => void;
@@ -220,14 +221,28 @@ export function createSentenceTtsPipeline(
 		const source = alignedSource();
 		if (!renderer?.playSpeechTiming || !source) return null;
 		const epoch = speechEpoch;
+		const requestedAt = Date.now();
+		let planSha = "unavailable";
+		let planArrivalMs: number | null = null;
 		const plan = source(request)
 			.catch((error) => {
 				Logger.warn(TAG, "aligned speech plan failed", {
-					error: String(error),
+					seq,
+					error: error instanceof Error ? error.name : "unknown",
 				});
 				return null;
 			})
 			.then((resolved) => {
+				planArrivalMs = Date.now() - requestedAt;
+				planSha = resolved?.audio?.sha256?.slice(0, 8) ?? "unavailable";
+				Logger.debug(TAG, "aligned speech plan arrived", {
+					seq,
+					at: new Date().toISOString(),
+					elapsedMs: planArrivalMs,
+					available: Boolean(resolved),
+					sha: planSha,
+					textLength: request.text.length,
+				});
 				// SoT 8: an aligned plan runs only on the audio clock of its sound.
 				if (resolved && !isAlignedPlan(resolved)) {
 					Logger.warn(TAG, "aligned port returned a non-aligned plan", {
@@ -244,30 +259,97 @@ export function createSentenceTtsPipeline(
 			let timedOut = false;
 			const prepare = () => {
 				if (!prepared) {
-					const loaded = plan.then((resolved) =>
-						epoch === speechEpoch && resolved && !timedOut
-							? prepareSpeech(resolved)
-							: null,
-					);
-					prepared = Promise.race([
-						loaded,
-						new Promise<null>((resolve) =>
-							setTimeout(() => {
-								timedOut = true;
-								resolve(null);
-							}, ALIGNED_PLAN_WAIT_MS),
-						),
-					]);
+					const waitStartedAt = Date.now();
+					const loadSpeech = plan.then(async (resolved) => {
+						if (epoch !== speechEpoch || !resolved || timedOut) return null;
+						const prepareStartedAt = Date.now();
+						Logger.debug(TAG, "aligned speech prepare start", {
+							seq,
+							at: new Date(prepareStartedAt).toISOString(),
+							planArrivalAt:
+								planArrivalMs === null
+									? null
+									: new Date(requestedAt + planArrivalMs).toISOString(),
+							sha: planSha,
+						});
+						let result: PreparedSpeech | null = null;
+						try {
+							result = await prepareSpeech(resolved);
+						} catch (error) {
+							Logger.warn(TAG, "aligned speech prepare failed", {
+								seq,
+								sha: planSha,
+								error: error instanceof Error ? error.name : "unknown",
+							});
+						}
+						Logger.debug(TAG, "aligned speech prepare end", {
+							seq,
+							elapsedMs: Date.now() - prepareStartedAt,
+							ready: Boolean(result),
+							sha: planSha,
+						});
+						return result;
+					});
+					let timeout: ReturnType<typeof setTimeout> | undefined;
+					const limited = new Promise<null>((resolve) => {
+						timeout = setTimeout(() => {
+							timedOut = true;
+							Logger.debug(TAG, "aligned speech prepare limit reached", {
+								seq,
+								limitMs: ALIGNED_PLAN_WAIT_MS,
+								elapsedMs: Date.now() - waitStartedAt,
+								planArrived: planArrivalMs !== null,
+								sha: planSha,
+							});
+							resolve(null);
+						}, ALIGNED_PLAN_WAIT_MS);
+					});
+					prepared = Promise.race([loadSpeech, limited]).finally(() => {
+						if (timeout !== undefined) clearTimeout(timeout);
+					});
 				}
 				return prepared;
 			};
 			return {
 				beforePlayback: prepare,
 				start: (playback) => {
-					if (!playback) return;
+					if (!playback) {
+						Logger.debug(TAG, "aligned speech play skipped", {
+							seq,
+							reason: "missing_playback_clock",
+							playCalled: false,
+							sha: planSha,
+						});
+						return;
+					}
 					void prepare().then((ready) => {
-						if (epoch !== speechEpoch || !ready) return;
-						void ready.play(playback.clock);
+						if (epoch !== speechEpoch || !ready) {
+							Logger.debug(TAG, "aligned speech play skipped", {
+								seq,
+								reason:
+									epoch !== speechEpoch
+										? "superseded"
+										: timedOut
+											? "prepare_limit"
+											: "prepare_unavailable",
+								playCalled: false,
+								sha: planSha,
+							});
+							return;
+						}
+						Logger.debug(TAG, "aligned speech play called", {
+							seq,
+							at: new Date().toISOString(),
+							playCalled: true,
+							sha: planSha,
+						});
+						void ready.play(playback.clock).then((played) => {
+							Logger.debug(TAG, "aligned speech play settled", {
+								seq,
+								played,
+								sha: planSha,
+							});
+						});
 					});
 				},
 			};
@@ -506,7 +588,7 @@ export function createSentenceTtsPipeline(
 				lang: speechLang,
 				audio: { kind: "pcm-stream", stream: pcmStream },
 				signal: abort.signal,
-			});
+			}, seq);
 			streamQueue.enqueueOrderedStream(seq, pcmStream, {
 				onPlaybackStart: (playback) => {
 					revealText();
@@ -645,7 +727,7 @@ export function createSentenceTtsPipeline(
 							audioBase64,
 							durationSeconds: audioDurationSeconds,
 						},
-					});
+					}, seq);
 					deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
 						onPlaybackStart: (playback) => {
 							revealText();

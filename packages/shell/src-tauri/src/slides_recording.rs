@@ -30,6 +30,16 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+static LINUX_SHELL_WINDOW: std::sync::OnceLock<LinuxWindow> = std::sync::OnceLock::new();
+
+pub(crate) fn cache_linux_shell_window(window: LinuxWindow) {
+    let _ = LINUX_SHELL_WINDOW.set(window);
+}
+
+pub(crate) fn cached_linux_shell_window() -> Option<LinuxWindow> {
+    LINUX_SHELL_WINDOW.get().cloned()
+}
+
 /// How many stderr lines are kept for the failure log.
 pub(crate) const STDERR_TAIL_LINES: usize = 12;
 /// ffmpeg must still be running this long after spawn for a start to count.

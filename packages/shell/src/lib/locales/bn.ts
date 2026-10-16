@@ -96,6 +96,7 @@ export default {
 	"slides.title": "Slide presentation",
 	"slides.repeat": "উপস্থাপনা পুনরাবৃত্তি করুন",
 	"slides.scriptError": "সহায়ক স্ক্রিপ্ট পড়া যায়নি। আপনি হাতে একটি বক্তৃতার স্ক্রিপ্ট বেছে নিতে পারেন।",
+	"slides.videoUnavailable": "ভিডিও ফাইল পাওয়া যায়নি বা ব্যবহার করা যাচ্ছে না:",
 	"slides.subtitle": "Open a PDF and speaker script so Naia can present and answer questions.",
 	"slides.openPdf": "Open PDF",
 	"slides.openScript": "Speaker script",
