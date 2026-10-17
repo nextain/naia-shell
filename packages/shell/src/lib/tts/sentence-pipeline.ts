@@ -103,6 +103,8 @@ export interface OrderedTtsQueue {
 		callbacks: {
 			onPlaybackStart: (playback?: AudioPlaybackClock) => void;
 			onPlaybackUnavailable: () => void;
+			onPlaybackFailure?: () => void;
+			onPlaybackEnd?: () => void;
 		},
 	): void;
 	enqueueOrdered(
@@ -111,6 +113,8 @@ export interface OrderedTtsQueue {
 		callbacks: {
 			onPlaybackStart: (playback?: AudioPlaybackClock) => void;
 			onPlaybackUnavailable: () => void;
+			onPlaybackFailure?: () => void;
+			onPlaybackEnd?: () => void;
 			beforePlayback?: () => Promise<unknown>;
 		},
 	): void;
@@ -173,7 +177,12 @@ export interface SentenceTtsPipelineDeps {
 export interface SentenceTtsPipeline {
 	sendSentence(
 		sentence: string,
-		options?: { prefetchId?: string; reservedSeq?: number },
+		options?: {
+			prefetchId?: string;
+			reservedSeq?: number;
+			onSentenceSettled?: (outcome: SentenceTtsOutcome) => void;
+			onPlaybackStarted?: () => void;
+		},
 	): void;
 	/** Synthesize one future sentence through the normal TTS/plan path without playing it. */
 	prefetchSentence(
@@ -184,6 +193,8 @@ export interface SentenceTtsPipeline {
 			prepareAvatar?: boolean;
 		},
 	): Promise<void>;
+	/** Prepare a prefetched sentence's standby avatar stage after its predecessor starts. */
+	preparePrefetchedSpeechTiming(prefetchId: string): Promise<void>;
 	/** Discard the one prefetched page and any staged canonical plan it owns. */
 	cancelPrefetch(prefetchGroupId?: string): void;
 	/** Barge-in/new turn: drop pending requests and cancel in-flight synthesis. */
@@ -196,6 +207,12 @@ export interface SentenceTtsPipeline {
 	/** Recent spoken sentences (ring of 6) for the STT self-echo filter. */
 	recentTexts(): readonly string[];
 }
+
+export type SentenceTtsOutcome =
+	| "played"
+	| "unavailable"
+	| "failed"
+	| "cancelled";
 
 interface AlignedPlanResolution {
 	plan: SpeechPlan | null;
@@ -237,18 +254,146 @@ interface PrefetchEntry {
 	promise: Promise<PrefetchedSpeech | null>;
 }
 
+interface AlignedStageCandidate {
+	seq: number;
+	epoch: number;
+	stageOwnerId?: string;
+	renderer: CascadeSpeechRenderer;
+	planResult: Promise<AlignedPlanResolution | null>;
+	prepared: Promise<PreparedSpeech | null> | null;
+	started: boolean;
+	cancelled: boolean;
+}
+
+interface PrefetchedStageOwner {
+	id: string;
+	consumed: boolean;
+}
+
 export function createSentenceTtsPipeline(
 	deps: SentenceTtsPipelineDeps,
 ): SentenceTtsPipeline {
 	const activeRequests = new Set<string>();
 	const abortControllers = new Map<string, AbortController>();
 	const prefetched = new Map<string, PrefetchEntry>();
+	const alignedStageCandidates = new Map<number, AlignedStageCandidate>();
+	const activeSentenceSettlements = new Set<
+		(outcome: SentenceTtsOutcome) => void
+	>();
+	let prefetchedStageOwner: PrefetchedStageOwner | null = null;
 	const recentTexts: string[] = [];
 	let localVoiceUnavailableNoticed = false;
 	let prefetchTail: Promise<void> = Promise.resolve();
 	let activePrefetchGroup: string | null = null;
 	/** Bumped by interrupt(): late plans from a superseded turn never start. */
 	let speechEpoch = 0;
+	let lastStartedSpeechSeq: number | null = null;
+
+	function createSentenceSettler(
+		onSettled?: (outcome: SentenceTtsOutcome) => void,
+	): (outcome: SentenceTtsOutcome) => void {
+		let settled = false;
+		const settle = (outcome: SentenceTtsOutcome) => {
+			if (settled) return;
+			settled = true;
+			activeSentenceSettlements.delete(settle);
+			onSettled?.(outcome);
+		};
+		if (onSettled) activeSentenceSettlements.add(settle);
+		return settle;
+	}
+
+	function beginAlignedStagePrefetch(
+		candidate: AlignedStageCandidate,
+	): Promise<PreparedSpeech | null> | null {
+		if (candidate.started || candidate.cancelled) return candidate.prepared;
+		candidate.started = true;
+		candidate.prepared = candidate.planResult.then(async (resolution) => {
+			if (
+				candidate.cancelled ||
+				candidate.epoch !== speechEpoch ||
+				!resolution?.plan
+			)
+				return null;
+			const startedAt = Date.now();
+			Logger.debug(TAG, "aligned speech standby prepare start", {
+				seq: candidate.seq,
+				at: new Date(startedAt).toISOString(),
+				sha: resolution.sha,
+			});
+			const owner = candidate.stageOwnerId
+				? {
+						id: candidate.stageOwnerId,
+						consumed: prefetched.get(candidate.stageOwnerId)?.consumed ?? true,
+					}
+				: null;
+			prefetchedStageOwner = owner;
+			try {
+				const prepared =
+					(await candidate.renderer.prefetchSpeechTiming?.(resolution.plan)) ??
+					null;
+				if (candidate.cancelled || prefetchedStageOwner !== owner) return null;
+				if (!prepared) prefetchedStageOwner = null;
+				Logger.debug(TAG, "aligned speech standby prepare end", {
+					seq: candidate.seq,
+					elapsedMs: Date.now() - startedAt,
+					ready: Boolean(prepared),
+					sha: resolution.sha,
+				});
+				return candidate.epoch === speechEpoch ? prepared : null;
+			} catch (error) {
+				if (prefetchedStageOwner === owner) prefetchedStageOwner = null;
+				Logger.warn(TAG, "aligned speech standby prepare failed", {
+					seq: candidate.seq,
+					sha: resolution.sha,
+					error: error instanceof Error ? error.name : "unknown",
+				});
+				return null;
+			}
+		});
+		return candidate.prepared;
+	}
+
+	function registerAlignedStageCandidate(
+		seq: number | string,
+		renderer: CascadeSpeechRenderer,
+		planResult: Promise<AlignedPlanResolution | null>,
+		stageOwnerId?: string,
+		seededPrepared?: Promise<PreparedSpeech | null> | null,
+	): AlignedStageCandidate | null {
+		if (
+			typeof seq !== "number" ||
+			!Number.isSafeInteger(seq) ||
+			!renderer.prefetchSpeechTiming
+		)
+			return null;
+		const candidate: AlignedStageCandidate = {
+			seq,
+			epoch: speechEpoch,
+			stageOwnerId,
+			renderer,
+			planResult,
+			prepared: seededPrepared ?? null,
+			started: Boolean(seededPrepared),
+			cancelled: false,
+		};
+		alignedStageCandidates.set(seq, candidate);
+		if (lastStartedSpeechSeq === seq - 1) beginAlignedStagePrefetch(candidate);
+		return candidate;
+	}
+
+	function markSpeechSequenceStarted(seq: number | string): void {
+		if (typeof seq !== "number" || !Number.isSafeInteger(seq)) return;
+		lastStartedSpeechSeq = seq;
+		alignedStageCandidates.delete(seq);
+		const next = alignedStageCandidates.get(seq + 1);
+		if (next) beginAlignedStagePrefetch(next);
+	}
+
+	function cancelRendererPrefetchedStage(): void {
+		deps.getRenderer()?.cancelPrefetchedSpeechTiming?.();
+		prefetchedStageOwner = null;
+	}
 
 	// Default aligned source: the gateway shell_audio route, using the same
 	// login key and gateway URL as Naia TTS. A registered port wins.
@@ -274,8 +419,6 @@ export function createSentenceTtsPipeline(
 		includeConsumed = true,
 	): void {
 		let cancelled = false;
-		const ownsPreparedStage =
-			!prefetchGroupId || activePrefetchGroup === prefetchGroupId;
 		for (const [id, entry] of prefetched) {
 			if (prefetchGroupId && !isPrefetchInGroup(id, prefetchGroupId)) continue;
 			if (!includeConsumed && entry.consumed) continue;
@@ -289,13 +432,23 @@ export function createSentenceTtsPipeline(
 		// group's bookkeeping. Entries already consumed by sendSentence still
 		// own their prepared canonical stage until that sentence's play callback
 		// promotes it; do not cancel it just because the new group is starting.
+		const owner = prefetchedStageOwner;
+		const ownsPreparedStage =
+			!prefetchGroupId ||
+			Boolean(
+				owner &&
+					isPrefetchInGroup(owner.id, prefetchGroupId) &&
+					(includeConsumed || !owner.consumed),
+			);
 		if (ownsPreparedStage && (cancelled || includeConsumed))
-			deps.getRenderer()?.cancelPrefetchedSpeechTiming?.();
+			cancelRendererPrefetchedStage();
 	}
 
 	function clearPrefetchesExcept(preservePrefetchId?: string): void {
 		const keepPreparedStage = Boolean(
-			preservePrefetchId && activePrefetchGroup === preservePrefetchId,
+			preservePrefetchId &&
+				prefetchedStageOwner &&
+				isPrefetchInGroup(prefetchedStageOwner.id, preservePrefetchId),
 		);
 		for (const [id, entry] of prefetched) {
 			if (preservePrefetchId && isPrefetchInGroup(id, preservePrefetchId))
@@ -305,8 +458,7 @@ export function createSentenceTtsPipeline(
 		}
 		if (preservePrefetchId) activePrefetchGroup = preservePrefetchId;
 		else activePrefetchGroup = null;
-		if (!keepPreparedStage)
-			deps.getRenderer()?.cancelPrefetchedSpeechTiming?.();
+		if (!keepPreparedStage) cancelRendererPrefetchedStage();
 	}
 
 	function snapshotPrefetchConfig(
@@ -395,9 +547,10 @@ export function createSentenceTtsPipeline(
 		seq: number | string,
 		prefetchedPlan?: Promise<AlignedPlanResolution | null> | null,
 		prefetchedPrepared?: Promise<PreparedSpeech | null> | null,
+		stageOwnerId?: string,
 	): {
 		beforePlayback?: () => Promise<unknown>;
-		start: (playback?: AudioPlaybackClock) => void;
+		start: (playback?: AudioPlaybackClock, onPromoted?: () => void) => void;
 	} | null {
 		if (!renderer?.playSpeechTiming) return null;
 		const planResult =
@@ -414,6 +567,13 @@ export function createSentenceTtsPipeline(
 
 		const prepareSpeech = renderer.prepareSpeechTiming?.bind(renderer);
 		if (prepareSpeech && request.audio.kind === "whole") {
+			const stageCandidate = registerAlignedStageCandidate(
+				seq,
+				renderer,
+				planResult,
+				stageOwnerId,
+				prefetchedPrepared,
+			);
 			let prepared: Promise<PreparedSpeech | null> | null = null;
 			let timedOut = false;
 			const prepare = () => {
@@ -431,7 +591,11 @@ export function createSentenceTtsPipeline(
 						});
 						let result: PreparedSpeech | null = null;
 						try {
-							result = (await prefetchedPrepared) ?? null;
+							result =
+								(await stageCandidate?.prepared) ??
+								(await prefetchedPrepared) ??
+								null;
+							if (epoch !== speechEpoch || timedOut) return null;
 							if (!result) result = await prepareSpeech(resolved);
 						} catch (error) {
 							Logger.warn(TAG, "aligned speech prepare failed", {
@@ -452,6 +616,8 @@ export function createSentenceTtsPipeline(
 					const limited = new Promise<null>((resolve) => {
 						timeout = setTimeout(() => {
 							timedOut = true;
+							if (stageCandidate) stageCandidate.cancelled = true;
+							cancelRendererPrefetchedStage();
 							Logger.debug(TAG, "aligned speech prepare limit reached", {
 								seq,
 								limitMs: ALIGNED_PLAN_WAIT_MS,
@@ -470,7 +636,14 @@ export function createSentenceTtsPipeline(
 			};
 			return {
 				beforePlayback: prepare,
-				start: (playback) => {
+				start: (playback, onPromoted) => {
+					const finishStart = () => {
+						if (epoch !== speechEpoch) return;
+						if (stageOwnerId && prefetchedStageOwner?.id === stageOwnerId)
+							prefetchedStageOwner = null;
+						markSpeechSequenceStarted(seq);
+						onPromoted?.();
+					};
 					if (!playback) {
 						Logger.debug(TAG, "aligned speech play skipped", {
 							seq,
@@ -478,21 +651,19 @@ export function createSentenceTtsPipeline(
 							playCalled: false,
 							sha: planSha,
 						});
+						finishStart();
 						return;
 					}
 					void prepare().then((ready) => {
-						if (epoch !== speechEpoch || !ready) {
+						if (epoch !== speechEpoch) return;
+						if (!ready) {
 							Logger.debug(TAG, "aligned speech play skipped", {
 								seq,
-								reason:
-									epoch !== speechEpoch
-										? "superseded"
-										: timedOut
-											? "prepare_limit"
-											: "prepare_unavailable",
+								reason: timedOut ? "prepare_limit" : "prepare_unavailable",
 								playCalled: false,
 								sha: planSha,
 							});
+							finishStart();
 							return;
 						}
 						Logger.debug(TAG, "aligned speech play called", {
@@ -501,30 +672,119 @@ export function createSentenceTtsPipeline(
 							playCalled: true,
 							sha: planSha,
 						});
-						void ready.play(playback.clock).then((played) => {
-							Logger.debug(TAG, "aligned speech play settled", {
+						try {
+							const playing = ready.play(playback.clock);
+							finishStart();
+							void playing.then(
+								(played) => {
+									Logger.debug(TAG, "aligned speech play settled", {
+										seq,
+										played,
+										sha: planSha,
+									});
+								},
+								(error) =>
+									Logger.warn(TAG, "aligned speech play failed", {
+										seq,
+										sha: planSha,
+										error: error instanceof Error ? error.name : "unknown",
+									}),
+							);
+						} catch (error) {
+							Logger.warn(TAG, "aligned speech play failed", {
 								seq,
-								played,
 								sha: planSha,
+								error: error instanceof Error ? error.name : "unknown",
 							});
-						});
+							finishStart();
+						}
 					});
 				},
 			};
 		}
 
 		return {
-			start: (playback) => {
-				if (!playback) return;
+			start: (playback, onPromoted) => {
+				const finishStart = () => {
+					if (epoch !== speechEpoch) return;
+					if (stageOwnerId && prefetchedStageOwner?.id === stageOwnerId)
+						prefetchedStageOwner = null;
+					markSpeechSequenceStarted(seq);
+					onPromoted?.();
+				};
+				if (!playback) {
+					finishStart();
+					return;
+				}
 				void plan.then((resolved) => {
-					if (epoch !== speechEpoch || !resolved) return;
-					void renderer.playSpeechTiming?.({
+					if (epoch !== speechEpoch) return;
+					if (!resolved) {
+						finishStart();
+						return;
+					}
+					const playing = renderer.playSpeechTiming?.({
 						plan: resolved,
 						clock: playback.clock,
 					});
+					finishStart();
+					void playing?.catch((error) =>
+						Logger.warn(TAG, "aligned speech play failed", {
+							seq,
+							sha: planSha,
+							error: error instanceof Error ? error.name : "unknown",
+						}),
+					);
 				});
 			},
 		};
+	}
+
+	function preparePrefetchedStage(
+		id: string,
+		entry: PrefetchEntry,
+	): Promise<void> {
+		return entry.promise.then(async (cached) => {
+			if (
+				!cached ||
+				entry.controller.signal.aborted ||
+				prefetched.get(id) !== entry
+			)
+				return;
+			if (cached.prepared) {
+				await cached.prepared;
+				return;
+			}
+			const renderer = cached.renderer;
+			if (!renderer?.prefetchSpeechTiming || !cached.planResult) return;
+			cached.prepared = cached.planResult.then(async (resolution) => {
+				if (
+					entry.controller.signal.aborted ||
+					prefetched.get(id) !== entry ||
+					!resolution?.plan
+				)
+					return null;
+				const owner: PrefetchedStageOwner = {
+					id,
+					consumed: entry.consumed,
+				};
+				prefetchedStageOwner = owner;
+				try {
+					const prepared =
+						(await renderer.prefetchSpeechTiming?.(resolution.plan)) ?? null;
+					if (prefetchedStageOwner !== owner) return null;
+					if (!prepared) prefetchedStageOwner = null;
+					return prepared;
+				} catch (error) {
+					if (prefetchedStageOwner === owner) prefetchedStageOwner = null;
+					Logger.warn(TAG, "aligned speech prefetch prepare failed", {
+						prefetchId: id,
+						error: error instanceof Error ? error.name : "unknown",
+					});
+					return null;
+				}
+			});
+			await cached.prepared;
+		});
 	}
 
 	function prefetchSentence(
@@ -555,7 +815,10 @@ export function createSentenceTtsPipeline(
 		)
 			return Promise.resolve();
 		const existing = prefetched.get(id);
-		if (existing) return existing.promise.then(() => undefined);
+		if (existing)
+			return options.prepareAvatar
+				? preparePrefetchedStage(id, existing)
+				: existing.promise.then(() => undefined);
 		if (activePrefetchGroup && activePrefetchGroup !== groupId)
 			cancelPrefetch(activePrefetchGroup, false);
 		activePrefetchGroup = groupId;
@@ -623,29 +886,6 @@ export function createSentenceTtsPipeline(
 					planRequest,
 					`prefetch:${id}`,
 				);
-				let prepared: Promise<PreparedSpeech | null> | null = null;
-				if (
-					options.prepareAvatar &&
-					speechRenderer?.prefetchSpeechTiming &&
-					planResult
-				) {
-					prepared = planResult.then(async (resolution) => {
-						if (!isCurrent() || !resolution?.plan) return null;
-						try {
-							return (
-								(await speechRenderer.prefetchSpeechTiming?.(
-									resolution.plan,
-								)) ?? null
-							);
-						} catch (error) {
-							Logger.warn(TAG, "aligned speech prefetch prepare failed", {
-								prefetchId: id,
-								error: error instanceof Error ? error.name : "unknown",
-							});
-							return null;
-						}
-					});
-				}
 				if (!isCurrent()) return null;
 
 				const ttsCost =
@@ -670,7 +910,7 @@ export function createSentenceTtsPipeline(
 					prefetchId: id,
 					elapsedMs,
 					planRequested: Boolean(planResult),
-					avatarRequested: Boolean(prepared),
+					avatarRequested: options.prepareAvatar === true,
 				});
 				return {
 					audioBase64,
@@ -685,7 +925,7 @@ export function createSentenceTtsPipeline(
 					vllmTtsHost: latestVoiceCfg?.vllmTtsHost,
 					config,
 					planResult,
-					prepared,
+					prepared: null,
 					renderer: speechRenderer,
 				} satisfies PrefetchedSpeech;
 			},
@@ -702,7 +942,7 @@ export function createSentenceTtsPipeline(
 		const readiness = entry.promise.then(async (cached) => {
 			if (!cached) return;
 			if (cached.planResult) await cached.planResult;
-			if (cached.prepared) await cached.prepared;
+			if (options.prepareAvatar) await preparePrefetchedStage(id, entry);
 		});
 		prefetchTail = readiness.then(
 			() => undefined,
@@ -720,18 +960,22 @@ export function createSentenceTtsPipeline(
 		reqId: string,
 		reserved: () => void,
 		revealText: () => void,
+		settleSentence: (outcome: SentenceTtsOutcome) => void,
+		onPlaybackStarted?: () => void,
 	): void {
 		deps.setOutputStage("tts");
 		activeRequests.add(reqId);
 		void entry.promise.then((prepared) => {
 			if (!activeRequests.has(reqId)) {
 				prefetched.delete(prefetchId);
+				settleSentence("cancelled");
 				return;
 			}
 			if (entry.controller.signal.aborted) {
 				prefetched.delete(prefetchId);
 				activeRequests.delete(reqId);
 				deps.getQueue()?.skipOrdered(seq);
+				settleSentence("cancelled");
 				return;
 			}
 			if (
@@ -742,9 +986,18 @@ export function createSentenceTtsPipeline(
 				activeRequests.delete(reqId);
 				if (entry.controller.signal.aborted) {
 					deps.getQueue()?.skipOrdered(seq);
+					settleSentence("cancelled");
 					return;
 				}
-				sendSentence(sentence, { reservedSeq: seq, reservedReveal: reserved });
+				sendSentence(
+					sentence,
+					{
+						reservedSeq: seq,
+						reservedReveal: reserved,
+						onPlaybackStarted,
+					},
+					settleSentence,
+				);
 				return;
 			}
 			const result: TtsSynthesisResult = {
@@ -767,6 +1020,13 @@ export function createSentenceTtsPipeline(
 			);
 			activeRequests.delete(reqId);
 			prefetched.delete(prefetchId);
+			const queue = deps.getQueue();
+			if (!queue || !prepared.audioBase64) {
+				queue?.skipOrdered(seq);
+				markSpeechSequenceStarted(seq);
+				settleSentence("unavailable");
+				return;
+			}
 			const renderer = deps.getRenderer();
 			const alignedPlan = requestAlignedPlan(
 				renderer,
@@ -785,14 +1045,26 @@ export function createSentenceTtsPipeline(
 				seq,
 				prepared.planResult,
 				prepared.renderer === renderer ? prepared.prepared : null,
+				prefetchId,
 			);
-			deps.getQueue()?.enqueueOrdered(seq, prepared.audioBase64, {
+			queue.enqueueOrdered(seq, prepared.audioBase64, {
 				onPlaybackStart: (playback) => {
 					revealText();
 					deps.onPlaybackStart?.();
-					alignedPlan?.start(playback);
+					if (alignedPlan) {
+						alignedPlan.start(playback, onPlaybackStarted);
+					} else {
+						markSpeechSequenceStarted(seq);
+						onPlaybackStarted?.();
+					}
 				},
-				onPlaybackUnavailable: revealText,
+				onPlaybackUnavailable: () => {
+					revealText();
+					markSpeechSequenceStarted(seq);
+					settleSentence("unavailable");
+				},
+				onPlaybackFailure: () => settleSentence("failed"),
+				onPlaybackEnd: () => settleSentence("played"),
 				beforePlayback: alignedPlan?.beforePlayback,
 			});
 		});
@@ -804,7 +1076,10 @@ export function createSentenceTtsPipeline(
 			prefetchId?: string;
 			reservedSeq?: number;
 			reservedReveal?: () => void;
+			onSentenceSettled?: (outcome: SentenceTtsOutcome) => void;
+			onPlaybackStarted?: () => void;
 		} = {},
+		inheritedSettlement?: (outcome: SentenceTtsOutcome) => void,
 	): void {
 		// Preserve the original Markdown in chat, but send only natural speech
 		// text to the selected voice engine.
@@ -816,7 +1091,13 @@ export function createSentenceTtsPipeline(
 					? document.documentElement.lang
 					: undefined),
 		);
-		if (!clean) return;
+		if (!clean) {
+			(inheritedSettlement ?? options.onSentenceSettled)?.("unavailable");
+			return;
+		}
+		const reqId = deps.generateRequestId();
+		const settleSentence =
+			inheritedSettlement ?? createSentenceSettler(options.onSentenceSettled);
 		const reserved = options.reservedReveal ?? deps.reserveReveal(sentence);
 		let revealed = false;
 		const revealText = () => {
@@ -842,20 +1123,29 @@ export function createSentenceTtsPipeline(
 					onPlaybackReady: () => {
 						revealText();
 						deps.onPlaybackStart?.();
+						options.onPlaybackStarted?.();
 					},
-					onPlaybackFailure: revealText,
+					onPlaybackFailure: () => {
+						revealText();
+						settleSentence("unavailable");
+					},
 				})
+				.then(
+					() => settleSentence("played"),
+					() => settleSentence("failed"),
+				)
 				.finally(endCascadeJob);
 			return;
 		}
 
-		const reqId = deps.generateRequestId();
 		// Reserve sequence number BEFORE async request to guarantee order.
 		const seq = options.reservedSeq ?? deps.getQueue()?.reserveSeq() ?? 0;
 		if (options.prefetchId) {
 			const entry = prefetched.get(options.prefetchId);
 			if (entry && entry.text === clean && !entry.consumed) {
 				entry.consumed = true;
+				if (prefetchedStageOwner?.id === options.prefetchId)
+					prefetchedStageOwner.consumed = true;
 				sendPrefetchedSentence(
 					sentence,
 					clean,
@@ -865,6 +1155,8 @@ export function createSentenceTtsPipeline(
 					reqId,
 					reserved,
 					revealText,
+					settleSentence,
+					options.onPlaybackStarted,
 				);
 				return;
 			}
@@ -959,6 +1251,8 @@ export function createSentenceTtsPipeline(
 					startedAt = performance.now();
 					revealText();
 					deps.onPlaybackStart?.();
+					markSpeechSequenceStarted(seq);
+					options.onPlaybackStarted?.();
 					deps.setSpeaking(true);
 					cascadeAvatar?.setSpeakingVisual(true);
 					void session?.ready
@@ -988,6 +1282,7 @@ export function createSentenceTtsPipeline(
 					// Settle hooks behind setSpeaking(false) consult hasActiveRequests —
 					// this request must not count itself as still active (#423).
 					activeRequests.delete(reqId);
+					settleSentence("played");
 					deps.setSpeaking(false);
 					cascadeAvatar?.setSpeakingVisual(false);
 				};
@@ -997,14 +1292,31 @@ export function createSentenceTtsPipeline(
 					if (!isCurrentBrowserTurn()) return;
 					activeRequests.delete(reqId);
 					revealText();
+					settleSentence("failed");
+					markSpeechSequenceStarted(seq);
 					deps.setSpeaking(false);
 					cascadeAvatar?.setSpeakingVisual(false);
 				};
-				window.speechSynthesis.speak(utter);
+				try {
+					window.speechSynthesis.speak(utter);
+				} catch (error) {
+					activeRequests.delete(reqId);
+					revealText();
+					settleSentence("failed");
+					markSpeechSequenceStarted(seq);
+					deps.setSpeaking(false);
+					cascadeAvatar?.setSpeakingVisual(false);
+					Logger.warn(TAG, "Browser TTS could not start", {
+						seq,
+						error: error instanceof Error ? error.name : "unknown",
+					});
+				}
 			} else {
 				Logger.warn(TAG, "Browser TTS not available");
 				activeRequests.delete(reqId);
 				revealText();
+				settleSentence("unavailable");
+				markSpeechSequenceStarted(seq);
 			}
 		};
 
@@ -1057,9 +1369,20 @@ export function createSentenceTtsPipeline(
 				onPlaybackStart: (playback) => {
 					revealText();
 					deps.onPlaybackStart?.();
-					alignedPlan?.start(playback);
+					if (alignedPlan) {
+						alignedPlan.start(playback, options.onPlaybackStarted);
+					} else {
+						markSpeechSequenceStarted(seq);
+						options.onPlaybackStarted?.();
+					}
 				},
-				onPlaybackUnavailable: revealText,
+				onPlaybackUnavailable: () => {
+					revealText();
+					markSpeechSequenceStarted(seq);
+					settleSentence("unavailable");
+				},
+				onPlaybackFailure: () => settleSentence("failed"),
+				onPlaybackEnd: () => settleSentence("played"),
 			});
 		}
 		const synthesize = () => {
@@ -1184,6 +1507,13 @@ export function createSentenceTtsPipeline(
 						pcmStream.end();
 					}
 				} else {
+					const queue = deps.getQueue();
+					if (!queue || !audioBase64) {
+						queue?.skipOrdered(seq);
+						markSpeechSequenceStarted(seq);
+						settleSentence("unavailable");
+						return;
+					}
 					const alignedPlan = requestAlignedPlan(
 						cascadeAvatar,
 						{
@@ -1197,13 +1527,24 @@ export function createSentenceTtsPipeline(
 						},
 						seq,
 					);
-					deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
+					queue.enqueueOrdered(seq, audioBase64, {
 						onPlaybackStart: (playback) => {
 							revealText();
 							deps.onPlaybackStart?.();
-							alignedPlan?.start(playback);
+							if (alignedPlan) {
+								alignedPlan.start(playback, options.onPlaybackStarted);
+							} else {
+								markSpeechSequenceStarted(seq);
+								options.onPlaybackStarted?.();
+							}
 						},
-						onPlaybackUnavailable: revealText,
+						onPlaybackUnavailable: () => {
+							revealText();
+							markSpeechSequenceStarted(seq);
+							settleSentence("unavailable");
+						},
+						onPlaybackFailure: () => settleSentence("failed"),
+						onPlaybackEnd: () => settleSentence("played"),
 						beforePlayback: alignedPlan?.beforePlayback,
 					});
 				}
@@ -1256,6 +1597,8 @@ export function createSentenceTtsPipeline(
 					// expression only when no request is still counted active (#423).
 					activeRequests.delete(reqId);
 					revealText();
+					settleSentence("failed");
+					markSpeechSequenceStarted(seq);
 					Logger.warn(
 						TAG,
 						"Local voice engine unavailable — no free fallback",
@@ -1290,6 +1633,9 @@ export function createSentenceTtsPipeline(
 		activeRequests.clear();
 		for (const ac of abortControllers.values()) ac.abort();
 		abortControllers.clear();
+		for (const settle of [...activeSentenceSettlements]) settle("cancelled");
+		alignedStageCandidates.clear();
+		lastStartedSpeechSeq = null;
 	}
 
 	function interrupt(options: { preservePrefetchId?: string } = {}): void {
@@ -1311,6 +1657,11 @@ export function createSentenceTtsPipeline(
 	return {
 		sendSentence,
 		prefetchSentence,
+		preparePrefetchedSpeechTiming(prefetchId: string): Promise<void> {
+			const id = prefetchId.trim();
+			const entry = prefetched.get(id);
+			return entry ? preparePrefetchedStage(id, entry) : Promise.resolve();
+		},
 		cancelPrefetch,
 		interrupt,
 		dispose(): void {

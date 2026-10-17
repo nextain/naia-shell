@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Logger } from "../../logger";
 import { AudioQueue } from "../../voice/audio-queue";
 import { LocalVoiceScheduler } from "../local-voice-scheduler";
 import {
@@ -620,6 +621,207 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 		expect(prefetchedPlay).toHaveBeenCalledWith(expect.any(Function));
 	});
 
+	it("can defer a page's avatar stage while its audio and aligned plan are prefetched", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const prefetchedPlay = vi.fn(async () => true);
+		const renderer = {
+			...nvaRenderer(),
+			canPlaySpeechPlans: () => true,
+			prepareSpeechTiming: vi.fn(async () => ({
+				play: vi.fn(async () => true),
+			})),
+			prefetchSpeechTiming: vi.fn(async () => ({ play: prefetchedPlay })),
+		};
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getAlignedSpeechPlanSource: () => async () => plan("aligned"),
+		});
+		const pipeline = createSentenceTtsPipeline(deps);
+		await pipeline.prefetchSentence("다음 쪽 첫 문장입니다.", {
+			prefetchId: "slides-prefetch-deferred/0",
+			prefetchGroupId: "slides-prefetch-deferred",
+			prepareAvatar: false,
+		});
+		expect(renderer.prefetchSpeechTiming).not.toHaveBeenCalled();
+
+		await pipeline.preparePrefetchedSpeechTiming("slides-prefetch-deferred/0");
+		expect(renderer.prefetchSpeechTiming).toHaveBeenCalledTimes(1);
+		pipeline.interrupt({ preservePrefetchId: "slides-prefetch-deferred" });
+		pipeline.sendSentence("다음 쪽 첫 문장입니다.", {
+			prefetchId: "slides-prefetch-deferred/0",
+		});
+		await flush();
+		const callbacks = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+		await callbacks.beforePlayback?.();
+		callbacks.onPlaybackStart({ clock: () => 0.2 });
+		await flush();
+
+		expect(renderer.prepareSpeechTiming).not.toHaveBeenCalled();
+		expect(prefetchedPlay).toHaveBeenCalledWith(expect.any(Function));
+		expect(await prefetchedPlay.mock.results[0]?.value).toBe(true);
+	});
+
+	it("1a/1c promotes sentence N before prefetching N+1's canonical stage", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const calls: string[] = [];
+		const currentPlay = vi.fn(async (_clock: () => number) => {
+			calls.push("play-N");
+			return true;
+		});
+		const followingPlay = vi.fn(async () => {
+			calls.push("play-N+1");
+			return true;
+		});
+		const renderer = {
+			...nvaRenderer(),
+			canPlaySpeechPlans: () => true,
+			prepareSpeechTiming: vi.fn(async () => ({
+				play: async (clock: () => number) => {
+					const played = await currentPlay(clock);
+					if (played) calls.push("N-active");
+					return played;
+				},
+			})),
+			prefetchSpeechTiming: vi.fn(async () => {
+				// The real standby renderer cancels its previous standby stage on
+				// entry; the active N stage must already have been promoted by then.
+				if (calls.includes("N-active")) calls.push("clear-standby-after-N");
+				calls.push("prefetch-N+1");
+				return { play: followingPlay };
+			}),
+		};
+		const aligned = vi.fn(async () => plan("aligned"));
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getAlignedSpeechPlanSource: () => aligned,
+		});
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("문장 N입니다.");
+		pipeline.sendSentence("문장 N+1입니다.");
+		await flush();
+		const first = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+		const second = queue.enqueueOrdered.mock.calls[1][2] as GatedCallbacks;
+		expect(aligned).toHaveBeenCalledTimes(2);
+		await first.beforePlayback?.();
+		first.onPlaybackStart({ clock: () => 0.1 });
+		await flush();
+
+		expect(renderer.prefetchSpeechTiming).toHaveBeenCalledTimes(1);
+		expect(calls.indexOf("play-N")).toBeLessThan(calls.indexOf("prefetch-N+1"));
+		expect(calls).toContain("N-active");
+		// N+1's standby preparation is already running before its audio reaches
+		// beforePlayback; it must not replace the plan currently playing for N.
+		await second.beforePlayback?.();
+		second.onPlaybackStart({ clock: () => 0.2 });
+		await flush();
+		expect(currentPlay).toHaveBeenCalledWith(expect.any(Function));
+		expect(followingPlay).toHaveBeenCalledWith(expect.any(Function));
+		expect(await currentPlay.mock.results[0]?.value).toBe(true);
+		expect(await followingPlay.mock.results[0]?.value).toBe(true);
+	});
+
+	it("1b reuses a 2.5-second next-sentence stage after at least 2 seconds of playback", async () => {
+		vi.useFakeTimers();
+		const debugSpy = vi.spyOn(Logger, "debug");
+		try {
+			synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+			const firstPlay = vi.fn(async () => true);
+			const nextPlay = vi.fn(async () => true);
+			const renderer = {
+				...nvaRenderer(),
+				canPlaySpeechPlans: () => true,
+				prepareSpeechTiming: vi.fn(async () => ({ play: firstPlay })),
+				prefetchSpeechTiming: vi.fn(async () => {
+					await new Promise((resolve) => setTimeout(resolve, 2_500));
+					return { play: nextPlay };
+				}),
+			};
+			const { deps, queue } = makeDeps({
+				getRenderer: () => renderer,
+				getAlignedSpeechPlanSource: () => async () => plan("aligned"),
+			});
+			const pipeline = createSentenceTtsPipeline(deps);
+			pipeline.sendSentence("2초 이상 재생할 N입니다.");
+			pipeline.sendSentence("이어지는 N+1입니다.");
+			await vi.advanceTimersByTimeAsync(0);
+			const first = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+			const second = queue.enqueueOrdered.mock.calls[1][2] as GatedCallbacks;
+			await first.beforePlayback?.();
+			first.onPlaybackStart({ clock: () => 0.1 });
+			await vi.advanceTimersByTimeAsync(2_000);
+			expect(renderer.prefetchSpeechTiming).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(500);
+			const prepareCountBeforeNPlus1 =
+				renderer.prepareSpeechTiming.mock.calls.length;
+			await second.beforePlayback?.();
+			second.onPlaybackStart({ clock: () => 0.2 });
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(renderer.prepareSpeechTiming).toHaveBeenCalledTimes(
+				prepareCountBeforeNPlus1,
+			);
+			expect(nextPlay).toHaveBeenCalledWith(expect.any(Function));
+			expect(firstPlay).toHaveBeenCalledWith(expect.any(Function));
+			expect(await nextPlay.mock.results[0]?.value).toBe(true);
+			expect(
+				debugSpy.mock.calls.some(
+					([component, message]) =>
+						component === "tts-pipeline" &&
+						message === "aligned speech prepare limit reached",
+				),
+			).toBe(false);
+		} finally {
+			debugSpy.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("1d discards a same-page stage that finishes after interruption", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		let resolvePrefetch!: (
+			prepared: { play: (clock: () => number) => Promise<boolean> } | null,
+		) => void;
+		const nextPlay = vi.fn(async () => true);
+		const renderer = {
+			...nvaRenderer(),
+			canPlaySpeechPlans: () => true,
+			prepareSpeechTiming: vi.fn(async () => ({
+				play: vi.fn(async () => true),
+			})),
+			prefetchSpeechTiming: vi.fn(
+				() =>
+					new Promise<{
+						play: (clock: () => number) => Promise<boolean>;
+					} | null>((resolve) => {
+						resolvePrefetch = resolve;
+					}),
+			),
+			cancelPrefetchedSpeechTiming: vi.fn(),
+		};
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getAlignedSpeechPlanSource: () => async () => plan("aligned"),
+		});
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("현재 문장입니다.");
+		pipeline.sendSentence("이동 후에는 재생하면 안 되는 문장입니다.");
+		await flush();
+		const first = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+		const second = queue.enqueueOrdered.mock.calls[1][2] as GatedCallbacks;
+		await first.beforePlayback?.();
+		first.onPlaybackStart({ clock: () => 0.1 });
+		await flush();
+		expect(renderer.prefetchSpeechTiming).toHaveBeenCalledTimes(1);
+
+		pipeline.interrupt();
+		expect(renderer.cancelPrefetchedSpeechTiming).toHaveBeenCalled();
+		resolvePrefetch({ play: nextPlay });
+		await flush();
+		second.onPlaybackStart({ clock: () => 0.2 });
+		await flush();
+		expect(nextPlay).not.toHaveBeenCalled();
+	});
+
 	it("keeps a consumed prefetched plan playable when the following page is prefetched after video", async () => {
 		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
 		let stagedPlanAvailable = true;
@@ -647,23 +849,27 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 			onPlaybackStart: () => {
 				const start = playbackStarts++;
 				if (start === 0) {
-					firstPagePrefetch = pipelineRef.current?.prefetchSentence(
-						"영상 뒤 첫 문장입니다.",
-						{
+					firstPagePrefetch = Promise.all([
+						pipelineRef.current?.prefetchSentence("영상 뒤 첫 문장입니다.", {
 							prefetchId: "slides-prefetch-video/0",
 							prefetchGroupId: "slides-prefetch-video",
 							prepareAvatar: true,
-						},
-					);
+						}),
+						pipelineRef.current?.prefetchSentence("영상 뒤 둘째 문장입니다.", {
+							prefetchId: "slides-prefetch-video/1",
+							prefetchGroupId: "slides-prefetch-video",
+						}),
+					]).then(() => undefined);
 				} else if (start === 1) {
-					followingPagePrefetch = pipelineRef.current?.prefetchSentence(
-						"다음 페이지 첫 문장입니다.",
-						{
-							prefetchId: "slides-prefetch-following/0",
-							prefetchGroupId: "slides-prefetch-following",
-							prepareAvatar: true,
-						},
-					);
+					followingPagePrefetch =
+						pipelineRef.current?.prefetchSentence(
+							"다음 페이지 첫 문장입니다.",
+							{
+								prefetchId: "slides-prefetch-following/0",
+								prefetchGroupId: "slides-prefetch-following",
+								prepareAvatar: true,
+							},
+						) ?? Promise.resolve();
 				}
 			},
 		});

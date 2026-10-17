@@ -142,6 +142,7 @@ import {
 } from "../lib/tts/reveal-guard";
 import {
 	type PipelineVoiceConfig,
+	type SentenceTtsOutcome,
 	type SentenceTtsPipeline,
 	type TtsSynthesisResult,
 	createSentenceTtsPipeline,
@@ -566,6 +567,11 @@ export function ChatArea({
 	const sentencePipelineRef = useRef<SentenceTtsPipeline | null>(null);
 	const activeSlidePresenterSpeechRef =
 		useRef<SlidePresenterSpeechRequest | null>(null);
+	const slideSpeechProgressRef = useRef<{
+		requestId: string;
+		total: number;
+		settled: Set<number>;
+	} | null>(null);
 	const queuedSlidePrefetchRef = useRef<{
 		sourceRequestId: string;
 		id: string;
@@ -606,7 +612,6 @@ export function ChatArea({
 				// #423: browser speech end/error releases the held expression.
 				if (!on) {
 					settleAvatarEmotionIfIdle();
-					settleSlidePresenterSpeech("finished");
 				}
 			},
 			onPlaybackStart: () => {
@@ -626,7 +631,7 @@ export function ChatArea({
 					void sentencePipelineRef.current?.prefetchSentence(pieces[index], {
 						prefetchId: `${pending.id}/${index}`,
 						prefetchGroupId: pending.id,
-						prepareAvatar: index === 0,
+						prepareAvatar: false,
 					});
 				}
 			},
@@ -1016,6 +1021,7 @@ export function ChatArea({
 		const active = activeSlidePresenterSpeechRef.current;
 		if (!active) return;
 		activeSlidePresenterSpeechRef.current = null;
+		slideSpeechProgressRef.current = null;
 		window.dispatchEvent(
 			new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
 				detail: { ...active, status, error },
@@ -1026,6 +1032,23 @@ export function ChatArea({
 			generation: active.generation,
 			status,
 		});
+	}
+
+	function settleSlideNarrationSentence(
+		requestId: string,
+		index: number,
+		_outcome: SentenceTtsOutcome,
+	): void {
+		const progress = slideSpeechProgressRef.current;
+		if (
+			!progress ||
+			progress.requestId !== requestId ||
+			activeSlidePresenterSpeechRef.current?.requestId !== requestId
+		)
+			return;
+		progress.settled.add(index);
+		if (progress.settled.size >= progress.total)
+			settleSlidePresenterSpeech("finished");
 	}
 
 	function interruptTts(preservePrefetchId?: string): void {
@@ -1104,7 +1127,6 @@ export function ChatArea({
 				ttsPlayingRef.current = false;
 				setTtsPlaying(false);
 				settleAvatarEmotionIfIdle();
-				settleSlidePresenterSpeech("finished");
 			}
 		};
 	}
@@ -1298,7 +1320,6 @@ export function ChatArea({
 					setTtsPlaying(false);
 					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
 					settleAvatarEmotionIfIdle();
-					settleSlidePresenterSpeech("finished");
 				},
 			});
 		}
@@ -1384,12 +1405,42 @@ export function ChatArea({
 				// 조각으로 나눠 순서대로 넣으면 첫 조각부터 재생된다. 조각 단위는
 				// VITE_NAIA_SLIDES_TTS_CHUNK = word | phrase | sentence (기본 sentence).
 				const pieces = splitSlideNarration(detail.text.trim());
+				slideSpeechProgressRef.current = {
+					requestId: detail.requestId,
+					total: pieces.length,
+					settled: new Set(),
+				};
+				if (pieces.length === 0) {
+					settleSlidePresenterSpeech("finished");
+					return;
+				}
+				const prepareNextPageSpeechStage = () => {
+					const pending = queuedSlidePrefetchRef.current;
+					if (
+						!pending ||
+						pending.cancelled ||
+						!pending.started ||
+						activeSlidePresenterSpeechRef.current?.requestId !==
+							pending.sourceRequestId
+					)
+						return;
+					void sentencePipelineRef.current?.preparePrefetchedSpeechTiming(
+						`${pending.id}/0`,
+					);
+				};
 				for (let index = 0; index < pieces.length; index++) {
+					const lastSentencePlaybackStarted =
+						index === pieces.length - 1
+							? prepareNextPageSpeechStage
+							: undefined;
 					sendSentenceToTts(
 						pieces[index],
-						detail.prefetchId
-							? `${detail.prefetchId}/${index}`
-							: undefined,
+						detail.prefetchId ? `${detail.prefetchId}/${index}` : undefined,
+						{
+							onSentenceSettled: (outcome) =>
+								settleSlideNarrationSentence(detail.requestId, index, outcome),
+							onPlaybackStarted: lastSentencePlaybackStarted,
+						},
 					);
 				}
 				finishLocalVoicePrebuffer();
@@ -2775,11 +2826,21 @@ export function ChatArea({
 	}
 
 	/** Route one sentence to the configured voice output. */
-	function sendSentenceToTts(sentence: string, prefetchId?: string): void {
+	function sendSentenceToTts(
+		sentence: string,
+		prefetchId?: string,
+		callbacks?: {
+			onSentenceSettled?: (outcome: SentenceTtsOutcome) => void;
+			onPlaybackStarted?: () => void;
+		},
+	): void {
 		// FR-VOICE.16 (#420): all synthesized speech goes through the single
 		// sentence TTS pipeline (lib/tts/sentence-pipeline). Do not add speech
 		// side channels here — renderers and skills consume real playback only.
-		sentencePipelineRef.current?.sendSentence(sentence, { prefetchId });
+		sentencePipelineRef.current?.sendSentence(sentence, {
+			prefetchId,
+			...callbacks,
+		});
 	}
 
 	/** Clean up pipeline voice resources. */

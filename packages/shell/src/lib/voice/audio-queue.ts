@@ -24,6 +24,10 @@ export interface AudioQueueItemCallbacks {
 	onPlaybackStart?: (playback: AudioPlaybackClock) => void;
 	/** Fires if this sentence cannot start playback. */
 	onPlaybackUnavailable?: () => void;
+	/** Fires if playback fails after this sentence started. */
+	onPlaybackFailure?: () => void;
+	/** Fires when this exact sentence's audio playback has ended. */
+	onPlaybackEnd?: () => void;
 	/**
 	 * Awaited when this sentence's turn comes, before its sound starts (whole
 	 * audio only). Lets the avatar load the plan for this exact sound so the
@@ -289,6 +293,10 @@ export class AudioQueue {
 		const advance = () => {
 			if (!isCurrent() || advanced) return;
 			advanced = true;
+			if (started) {
+				if (stream.failed) item.onPlaybackFailure?.();
+				else item.onPlaybackEnd?.();
+			}
 			stream.unsubscribe();
 			this.currentStream = null;
 			this.playNext();
@@ -347,6 +355,8 @@ export class AudioQueue {
 							audioBase64: stream.wholeAudioBase64,
 							onPlaybackStart: item.onPlaybackStart,
 							onPlaybackUnavailable: item.onPlaybackUnavailable,
+							onPlaybackFailure: item.onPlaybackFailure,
+							onPlaybackEnd: item.onPlaybackEnd,
 							beforePlayback: item.beforePlayback,
 						});
 						this.playing = wasPlaying;
@@ -469,12 +479,15 @@ export class AudioQueue {
 		};
 
 		audio.onended = () => {
+			if (!isCurrent()) return;
+			item.onPlaybackEnd?.();
 			advance();
 		};
 
 		audio.onerror = (e) => {
 			Logger.warn("AudioQueue", "Audio playback error", { error: String(e) });
-			signalUnavailable();
+			if (started) item.onPlaybackFailure?.();
+			else signalUnavailable();
 			advance();
 		};
 
