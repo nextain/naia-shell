@@ -49,7 +49,8 @@ export function resolveSlidesPdfWorkerUrl(
 	const normalizedAbsolutePath = pathWithoutUrlSlash.replaceAll("\\", "/");
 	const lastSlash = normalizedAbsolutePath.lastIndexOf("/");
 	if (
-		(!normalizedAbsolutePath.startsWith("/") && !/^[A-Za-z]:\//.test(normalizedAbsolutePath)) ||
+		(!normalizedAbsolutePath.startsWith("/") &&
+			!/^[A-Za-z]:\//.test(normalizedAbsolutePath)) ||
 		lastSlash <= 0
 	) {
 		return workerUrl;
@@ -57,7 +58,8 @@ export function resolveSlidesPdfWorkerUrl(
 
 	const appRoot = normalizedAbsolutePath.slice(0, lastSlash);
 	const separator = pathWithoutUrlSlash.includes("\\") ? "\\" : "/";
-	const outputRoot = separator === "\\" ? appRoot.replaceAll("/", "\\") : appRoot;
+	const outputRoot =
+		separator === "\\" ? appRoot.replaceAll("/", "\\") : appRoot;
 	const workerPath = `${outputRoot}${separator}assets${separator}${workerName}`;
 	return `${location.protocol}//${location.host}/${encodeURIComponent(workerPath)}`;
 }
@@ -71,6 +73,7 @@ export interface SlidesViewerProps {
 	viewerRef: RefObject<HTMLDivElement>;
 	viewerWidth: number;
 	totalPages: number;
+	hidden?: boolean;
 	onReady: (file: File, totalPages: number, texts: string[]) => void;
 	onError: (file: File, error: unknown) => void;
 }
@@ -82,11 +85,17 @@ export function SlidesViewer({
 	viewerRef,
 	viewerWidth,
 	totalPages,
+	hidden = false,
 	onReady,
 	onError,
 }: SlidesViewerProps) {
 	return (
-		<div className="slides-app__viewer" ref={viewerRef} data-testid="slides-viewer">
+		<div
+			className="slides-app__viewer"
+			ref={viewerRef}
+			data-testid="slides-viewer"
+			hidden={hidden}
+		>
 			{file ? (
 				<Document
 					file={file}

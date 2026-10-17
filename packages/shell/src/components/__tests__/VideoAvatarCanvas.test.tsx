@@ -2,7 +2,10 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
-import { VideoAvatarCanvas } from "../VideoAvatarCanvas";
+import {
+	presentationAvatarTransform,
+	VideoAvatarCanvas,
+} from "../VideoAvatarCanvas";
 
 const mockInvoke = vi.hoisted(() => vi.fn());
 const mockToLocalBlobUrl = vi.hoisted(() => vi.fn());
@@ -14,7 +17,15 @@ vi.mock("../../lib/adk-store", () => ({
 const manifest = btoa(JSON.stringify({
 	nva_version: "0.2",
 	canvas: { width: 406, height: 720 },
-	animations: { idle: { clip: "clips/body.webm", loop: true, can_talk: false } },
+	animations: {
+		idle: { clip: "clips/body.webm", loop: true, can_talk: false },
+		speak: {
+			clip: "clips/speak.webm",
+			loop: true,
+			can_talk: true,
+			face_bbox: [0.25, 0.08, 0.5, 0.34],
+		},
+	},
 	vrm_slots: {
 		profile: { generation_mode: "prebaked_webm_only", default_locale: "ko-KR" },
 		visemes: { aiueo: { clip: "clips/viseme-aiueo.webm" } },
@@ -46,6 +57,32 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
 		await vi.waitFor(() => expect(container.querySelector("[data-video-avatar]")).toHaveAttribute("data-video-avatar-loaded", "true"));
 		expect(new Set(mockInvoke.mock.calls.map(([command]) => command))).toEqual(new Set(["read_local_binary"]));
+	});
+
+	it("uses the manifest face box for a presentation-only crop", async () => {
+		const crop = presentationAvatarTransform(
+			JSON.parse(atob(manifest)),
+			140,
+			333,
+		);
+		expect(crop.width / crop.height).toBeCloseTo(406 / 720);
+		expect(crop.width).toBeLessThanOrEqual(140);
+		expect(crop.height).toBeLessThanOrEqual(333);
+		expect(crop.zoom).toBeGreaterThan(1);
+
+		const { container } = render(
+			<VideoAvatarCanvas nvaModel="naia" presentationMode />,
+		);
+		await vi.waitFor(() =>
+			expect(container.querySelector("[data-video-avatar-loaded='true']")).toBeTruthy(),
+		);
+		const canvas = container.querySelector(
+			"canvas[data-presentation-crop='face']",
+		) as HTMLCanvasElement;
+		expect(canvas.style.transformOrigin).toBe("50% 25%");
+		expect(canvas.style.transform).toContain("scale(");
+		expect(Number.parseFloat(canvas.style.width)).toBeGreaterThan(0);
+		expect(Number.parseFloat(canvas.style.height)).toBeGreaterThan(0);
 	});
 
 	it("a legacy bundle's visemes.aiueo slot is never played, even while speaking (SoT 8)", async () => {

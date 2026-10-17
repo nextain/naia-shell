@@ -24,6 +24,10 @@ export interface AudioQueueItemCallbacks {
 	onPlaybackStart?: (playback: AudioPlaybackClock) => void;
 	/** Fires if this sentence cannot start playback. */
 	onPlaybackUnavailable?: () => void;
+	/** Fires if playback fails after this sentence started. */
+	onPlaybackFailure?: () => void;
+	/** Fires when this exact sentence's audio playback has ended. */
+	onPlaybackEnd?: () => void;
 	/**
 	 * Awaited when this sentence's turn comes, before its sound starts (whole
 	 * audio only). Lets the avatar load the plan for this exact sound so the
@@ -35,6 +39,7 @@ export interface AudioQueueItemCallbacks {
 
 interface AudioQueueItem extends AudioQueueItemCallbacks {
 	audioBase64?: string;
+	seq?: number;
 	/** Streaming PCM item (local voice engines that stream `audio/pcm`). */
 	stream?: PcmStreamSource;
 }
@@ -159,7 +164,7 @@ export class AudioQueue {
 			playing: this.playing,
 			paused: this.playbackPaused,
 		});
-		this.pendingOrdered.set(seq, { audioBase64: mp3Base64, ...callbacks });
+		this.pendingOrdered.set(seq, { audioBase64: mp3Base64, ...callbacks, seq });
 		this.flushOrdered();
 	}
 
@@ -176,7 +181,7 @@ export class AudioQueue {
 			seq,
 			cursor: this.flushCursor,
 		});
-		this.pendingOrdered.set(seq, { stream, ...callbacks });
+		this.pendingOrdered.set(seq, { stream, ...callbacks, seq });
 		this.flushOrdered();
 	}
 
@@ -288,6 +293,10 @@ export class AudioQueue {
 		const advance = () => {
 			if (!isCurrent() || advanced) return;
 			advanced = true;
+			if (started) {
+				if (stream.failed) item.onPlaybackFailure?.();
+				else item.onPlaybackEnd?.();
+			}
 			stream.unsubscribe();
 			this.currentStream = null;
 			this.playNext();
@@ -346,6 +355,8 @@ export class AudioQueue {
 							audioBase64: stream.wholeAudioBase64,
 							onPlaybackStart: item.onPlaybackStart,
 							onPlaybackUnavailable: item.onPlaybackUnavailable,
+							onPlaybackFailure: item.onPlaybackFailure,
+							onPlaybackEnd: item.onPlaybackEnd,
 							beforePlayback: item.beforePlayback,
 						});
 						this.playing = wasPlaying;
@@ -388,12 +399,27 @@ export class AudioQueue {
 		}
 		if (item.beforePlayback) {
 			const gate = item.beforePlayback;
+			const beforePlaybackStartedAt = Date.now();
+			Logger.debug("AudioQueue", "beforePlayback started", {
+				seq: item.seq ?? null,
+			});
 			void Promise.resolve()
 				.then(gate)
-				.catch((error) =>
-					Logger.warn("AudioQueue", "beforePlayback failed", {
-						error: String(error),
-					}),
+				.then(
+					() => {
+						Logger.debug("AudioQueue", "beforePlayback settled", {
+							seq: item.seq ?? null,
+							elapsedMs: Date.now() - beforePlaybackStartedAt,
+							ok: true,
+						});
+					},
+					(error) => {
+						Logger.warn("AudioQueue", "beforePlayback failed", {
+							seq: item.seq ?? null,
+							elapsedMs: Date.now() - beforePlaybackStartedAt,
+							error: error instanceof Error ? error.name : "unknown",
+						});
+					},
 				)
 				.then(() => {
 					if (generation !== this.generation) return;
@@ -453,12 +479,15 @@ export class AudioQueue {
 		};
 
 		audio.onended = () => {
+			if (!isCurrent()) return;
+			item.onPlaybackEnd?.();
 			advance();
 		};
 
 		audio.onerror = (e) => {
 			Logger.warn("AudioQueue", "Audio playback error", { error: String(e) });
-			signalUnavailable();
+			if (started) item.onPlaybackFailure?.();
+			else signalUnavailable();
 			advance();
 		};
 

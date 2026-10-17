@@ -9,6 +9,270 @@ import {
 } from "../slide-presenter";
 
 describe("slide presenter state", () => {
+	it("plays page videos in order, then requests the next page narration", () => {
+		let state = reduceSlidePresenter(EMPTY_SLIDE_PRESENTER_STATE, {
+			type: "loaded",
+			totalPages: 2,
+			videoCues: [
+				{
+					id: "7-1",
+					page: 1,
+					order: 1,
+					fileName: "first.mp4",
+					available: true,
+				},
+				{
+					id: "7-2",
+					page: 1,
+					order: 2,
+					fileName: "second.webm",
+					available: true,
+				},
+			],
+		});
+		state = reduceSlidePresenter(state, { type: "start" });
+		const speechGeneration = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "speech-requested",
+			generation: speechGeneration,
+		});
+		state = reduceSlidePresenter(state, {
+			type: "speech-finished",
+			generation: speechGeneration,
+		});
+		expect(state).toMatchObject({
+			page: 1,
+			mode: "presenting",
+			speech: "idle",
+			activeVideoIndex: 0,
+		});
+		const firstVideoGeneration = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "video-ended",
+			generation: firstVideoGeneration,
+			index: 0,
+		});
+		expect(state).toMatchObject({
+			page: 1,
+			activeVideoIndex: 1,
+			speech: "idle",
+		});
+		const secondVideoGeneration = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "video-ended",
+			generation: secondVideoGeneration,
+			index: 1,
+		});
+		expect(state).toMatchObject({
+			page: 2,
+			mode: "presenting",
+			speech: "requested",
+			activeVideoIndex: null,
+		});
+	});
+
+	it("waits for a last-range-page video before completion or repeat", () => {
+		for (const repeat of [false, true]) {
+			let state = reduceSlidePresenter(EMPTY_SLIDE_PRESENTER_STATE, {
+				type: "loaded",
+				totalPages: 2,
+				range: { start: 2, end: 2 },
+				videoCues: [
+					{
+						id: "last",
+						page: 2,
+						order: 1,
+						fileName: "last.mp4",
+						available: true,
+					},
+				],
+			});
+			if (repeat)
+				state = reduceSlidePresenter(state, { type: "toggle-repeat" });
+			state = reduceSlidePresenter(state, { type: "start" });
+			const speechGeneration = state.generation;
+			state = reduceSlidePresenter(state, {
+				type: "speech-requested",
+				generation: speechGeneration,
+			});
+			state = reduceSlidePresenter(state, {
+				type: "speech-finished",
+				generation: speechGeneration,
+			});
+			expect(state.activeVideoIndex).toBe(0);
+			state = reduceSlidePresenter(state, {
+				type: "video-ended",
+				generation: state.generation,
+				index: 0,
+			});
+			expect(state).toMatchObject(
+				repeat
+					? { mode: "presenting", page: 2, speech: "requested" }
+					: { mode: "completed", page: 2, speech: "idle" },
+			);
+		}
+	});
+
+	it("pauses and resumes video without creating a narration request", () => {
+		let state = reduceSlidePresenter(EMPTY_SLIDE_PRESENTER_STATE, {
+			type: "loaded",
+			totalPages: 1,
+			videoCues: [
+				{
+					id: "clip",
+					page: 1,
+					order: 1,
+					fileName: "clip.mp4",
+					available: true,
+				},
+			],
+		});
+		state = reduceSlidePresenter(state, { type: "start" });
+		const speechGeneration = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "speech-requested",
+			generation: speechGeneration,
+		});
+		state = reduceSlidePresenter(state, {
+			type: "speech-finished",
+			generation: speechGeneration,
+		});
+		state = reduceSlidePresenter(state, { type: "pause" });
+		expect(state).toMatchObject({
+			mode: "paused",
+			activeVideoIndex: 0,
+			speech: "idle",
+		});
+		state = reduceSlidePresenter(state, { type: "resume" });
+		expect(state).toMatchObject({
+			mode: "presenting",
+			activeVideoIndex: 0,
+			speech: "idle",
+		});
+	});
+
+	it("maps next, previous, goto and question actions around an active video", () => {
+		let state = reduceSlidePresenter(EMPTY_SLIDE_PRESENTER_STATE, {
+			type: "loaded",
+			totalPages: 3,
+			videoCues: [
+				{
+					id: "first",
+					page: 1,
+					order: 1,
+					fileName: "one.mp4",
+					available: true,
+				},
+				{
+					id: "second",
+					page: 1,
+					order: 2,
+					fileName: "two.mp4",
+					available: true,
+				},
+			],
+		});
+		state = reduceSlidePresenter(state, { type: "start" });
+		const generation = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "speech-requested",
+			generation,
+		});
+		state = reduceSlidePresenter(state, {
+			type: "speech-finished",
+			generation,
+		});
+		state = reduceSlidePresenter(state, { type: "next" });
+		expect(state).toMatchObject({
+			page: 1,
+			activeVideoIndex: 1,
+			speech: "idle",
+		});
+		state = reduceSlidePresenter(state, { type: "previous" });
+		expect(state).toMatchObject({
+			page: 1,
+			activeVideoIndex: null,
+			speech: "requested",
+		});
+		const secondSpeechGeneration = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "speech-requested",
+			generation: secondSpeechGeneration,
+		});
+		state = reduceSlidePresenter(state, {
+			type: "speech-finished",
+			generation: secondSpeechGeneration,
+		});
+		state = reduceSlidePresenter(state, { type: "question" });
+		expect(state).toMatchObject({ mode: "answering", activeVideoIndex: 0 });
+		state = reduceSlidePresenter(state, { type: "resume" });
+		expect(state).toMatchObject({
+			mode: "presenting",
+			activeVideoIndex: 0,
+			speech: "idle",
+		});
+		state = reduceSlidePresenter(state, { type: "goto", page: 3 });
+		expect(state).toMatchObject({
+			page: 3,
+			activeVideoIndex: null,
+			speech: "requested",
+		});
+	});
+
+	it("ignores stale video ended and error results and skips a failed clip", () => {
+		let state = reduceSlidePresenter(EMPTY_SLIDE_PRESENTER_STATE, {
+			type: "loaded",
+			totalPages: 2,
+			videoCues: [
+				{ id: "bad", page: 1, order: 1, fileName: "bad.mp4", available: true },
+				{
+					id: "good",
+					page: 1,
+					order: 2,
+					fileName: "good.mp4",
+					available: true,
+				},
+			],
+		});
+		state = reduceSlidePresenter(state, { type: "start" });
+		const speechGeneration = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "speech-requested",
+			generation: speechGeneration,
+		});
+		state = reduceSlidePresenter(state, {
+			type: "speech-finished",
+			generation: speechGeneration,
+		});
+		const staleGeneration = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "video-failed",
+			generation: staleGeneration,
+			index: 0,
+			error: "play_rejected",
+		});
+		expect(state.activeVideoIndex).toBe(1);
+		expect(
+			reduceSlidePresenter(state, {
+				type: "video-ended",
+				generation: staleGeneration,
+				index: 0,
+			}),
+		).toBe(state);
+		const currentGeneration = state.generation;
+		state = reduceSlidePresenter(state, {
+			type: "video-failed",
+			generation: currentGeneration,
+			index: 1,
+			error: "decode_failed",
+		});
+		expect(state).toMatchObject({
+			page: 2,
+			speech: "requested",
+			activeVideoIndex: null,
+		});
+	});
+
 	it("completes or repeats only the configured range, not Appendix pages", () => {
 		for (const repeat of [false, true]) {
 			let state = reduceSlidePresenter(EMPTY_SLIDE_PRESENTER_STATE, {
@@ -88,7 +352,11 @@ describe("slide presenter state", () => {
 		});
 		expect(state).toMatchObject({ rangeStart: 1, rangeEnd: 5 });
 		expect(
-			reduceSlidePresenter(state, { type: "set-range", start: NaN, end: 4 }),
+			reduceSlidePresenter(state, {
+				type: "set-range",
+				start: Number.NaN,
+				end: 4,
+			}),
 		).toBe(state);
 		state = reduceSlidePresenter(state, {
 			type: "set-range",

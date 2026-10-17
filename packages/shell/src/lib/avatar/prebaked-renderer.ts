@@ -81,6 +81,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private raf = 0;
 	private running = false;
 	private speechStage: CanonicalSpeechStage | null = null;
+	private prefetchedSpeechStage: CanonicalSpeechStage | null = null;
 	private speechKeyColor: string | undefined;
 
 	constructor(private readonly config: Config) {
@@ -187,6 +188,49 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			this.config.manifest.animations.talking?.clip ?? "",
 		);
 		return stage.prepare(plan);
+	}
+
+	/**
+	 * Load one future aligned plan on a second canonical stage. Loading a plan
+	 * into the active stage stops its current plan, so the standby stage remains
+	 * invisible until the matching audio starts and its PreparedSpeech is used.
+	 */
+	async prefetchSpeechTiming(plan: SpeechPlan): Promise<PreparedSpeech | null> {
+		const host = this.mountedVideo;
+		if (!this.speechStage || !host || this.disposed) return null;
+		this.cancelPrefetchedSpeechTiming();
+		const stage = this.createSpeechStage(host);
+		if (!stage) return null;
+		this.prefetchedSpeechStage = stage;
+		this.speechKeyColor = this.keyColorFor(
+			this.config.manifest.animations.talking?.clip ?? "",
+		);
+		const ready = await stage.prepare(plan);
+		if (!ready || this.prefetchedSpeechStage !== stage || this.disposed) {
+			if (this.prefetchedSpeechStage === stage)
+				this.cancelPrefetchedSpeechTiming();
+			else stage.dispose();
+			return null;
+		}
+		let used = false;
+		return {
+			play: async (clock) => {
+				if (used || typeof clock !== "function") return false;
+				used = true;
+				if (this.prefetchedSpeechStage !== stage || this.disposed) return false;
+				const previous = this.speechStage;
+				this.speechStage = stage;
+				this.prefetchedSpeechStage = null;
+				previous?.dispose();
+				return ready.play(clock);
+			},
+		};
+	}
+
+	cancelPrefetchedSpeechTiming(): void {
+		const stage = this.prefetchedSpeechStage;
+		this.prefetchedSpeechStage = null;
+		stage?.dispose();
 	}
 
 	/** Revise the running browser-timed plan after a boundary event. */
@@ -419,6 +463,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.offscreenCanvas = null;
 		this.offscreenCtx = null;
 		this.interrupt();
+		this.cancelPrefetchedSpeechTiming();
 		this.speechStage?.dispose();
 		this.speechStage = null;
 		for (const v of this.clipVideos.values()) {

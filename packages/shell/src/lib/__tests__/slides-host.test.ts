@@ -83,6 +83,23 @@ describe("Slides host client contract", () => {
 		expect(stopNative).toHaveBeenCalledExactlyOnceWith();
 	});
 
+	it("keeps a failed stop retryable, but leaves the recording state when the host reports it lost", async () => {
+		await startSlidesRecording();
+		stopNative.mockRejectedValueOnce("recording lock poisoned");
+		await expect(stopSlidesRecording()).rejects.toBe("recording lock poisoned");
+		// Still active: a retry stops the same recording.
+		stopNative.mockRejectedValueOnce(
+			"recording_lost: ffmpeg did not finish within 8s; the MP4 was not finalized",
+		);
+		await expect(stopSlidesRecording()).rejects.toMatch(/^recording_lost/);
+		// Lost: the client is idle again, so a new recording can start.
+		await expect(stopSlidesRecording()).rejects.toThrow("recording_not_active");
+		await startSlidesRecording();
+		await expect(stopSlidesRecording()).resolves.toBe(
+			"recordings/fixture.webm",
+		);
+	});
+
 	it("cancels a timed out iframe start so a late host start is cleaned up", async () => {
 		vi.useFakeTimers();
 		const originalParent = window.parent;
@@ -138,6 +155,53 @@ describe("Slides host client contract", () => {
 				value: originalParent,
 			});
 			vi.useRealTimers();
+		}
+	});
+
+	it("sends presentation state over the established host capability", async () => {
+		const originalParent = window.parent;
+		const postMessage = vi.fn();
+		const parentWindow = { postMessage } as unknown as Window;
+		Object.defineProperty(window, "parent", {
+			configurable: true,
+			value: parentWindow,
+		});
+		const client = startSlidesHostClientBridge();
+		try {
+			const hello = postMessage.mock.calls[0]?.[0] as { id: string };
+			client.setPresentationActive(true);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: parentWindow,
+					origin: "http://shell.local",
+					data: {
+						type: SLIDES_HOST,
+						action: SLIDES_HOST_ACTIONS.init,
+						id: hello.id,
+						capability: "capability-1",
+						locale: "en",
+						theme: {},
+					},
+				}),
+			);
+			await client.ready;
+			await vi.waitFor(() =>
+				expect(postMessage).toHaveBeenCalledWith(
+					expect.objectContaining({
+						type: SLIDES_HOST,
+						action: SLIDES_HOST_ACTIONS.presentationState,
+						active: true,
+						capability: "capability-1",
+					}),
+					"http://shell.local",
+				),
+			);
+		} finally {
+			client.dispose();
+			Object.defineProperty(window, "parent", {
+				configurable: true,
+				value: originalParent,
+			});
 		}
 	});
 });

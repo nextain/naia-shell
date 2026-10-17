@@ -17,6 +17,7 @@ import type {
 	AlignedSpeechPlanSource,
 	SpeechPlan,
 } from "./speech-timing";
+import { Logger } from "../../logger";
 import { validateSpeechPlan } from "./vendor/speech-plan.js";
 
 export interface GatewayAlignedPlanConfig {
@@ -61,22 +62,68 @@ export function createGatewayAlignedPlanSource(
 	const timeoutMs = options.timeoutMs ?? GATEWAY_PLAN_TIMEOUT_MS;
 
 	return async (request: AlignedSpeechPlanRequest): Promise<SpeechPlan | null> => {
-		// Only a whole, known sound can be aligned before it plays.
-		if (request.audio.kind !== "whole") return null;
+		const startedAt = Date.now();
 		const text = request.text.trim();
-		if (!text || !HANGUL.test(text)) return null;
+		let audioSha = "unavailable";
+		const logResult = (reason: string, accepted = false) => {
+			Logger.debug(
+				"GatewayAlignedPlan",
+				accepted ? "aligned plan accepted" : "aligned plan unavailable",
+				{
+					result: accepted ? "ok" : "null",
+					reason,
+					elapsedMs: Date.now() - startedAt,
+					sha: audioSha.slice(0, 8),
+					textLength: text.length,
+				},
+			);
+		};
+		// Only a whole, known sound can be aligned before it plays.
+		if (request.audio.kind !== "whole") {
+			logResult("audio_is_not_whole");
+			return null;
+		}
+
+		let bytes: Uint8Array;
+		try {
+			bytes = base64ToBytes(request.audio.audioBase64);
+		} catch {
+			logResult("invalid_audio_base64");
+			return null;
+		}
+		if (!isRiffWave(bytes)) {
+			logResult("audio_is_not_riff_wave");
+			return null;
+		}
+		try {
+			audioSha = await sha256Hex(bytes);
+		} catch {
+			logResult("audio_hash_failed");
+			return null;
+		}
+		if (!text) {
+			logResult("empty_text");
+			return null;
+		}
+		if (!HANGUL.test(text)) {
+			logResult("no_hangul");
+			return null;
+		}
 		const config = options.getConfig();
 		const base = config?.gatewayUrl?.replace(/\/$/, "");
-		if (!base || !config?.naiaKey) return null;
-
-		const bytes = base64ToBytes(request.audio.audioBase64);
-		if (!isRiffWave(bytes)) return null;
-		const audioSha = await sha256Hex(bytes);
+		if (!base || !config?.naiaKey) {
+			logResult("gateway_config_unavailable");
+			return null;
+		}
 
 		const controller = new AbortController();
 		const onAbort = () => controller.abort();
 		request.signal?.addEventListener("abort", onAbort, { once: true });
-		const timer = setTimeout(() => controller.abort(), timeoutMs);
+		let timedOut = false;
+		const timer = setTimeout(() => {
+			timedOut = true;
+			controller.abort();
+		}, timeoutMs);
 		try {
 			const response = await fetchImpl(
 				`${base}/v1/studio/speech-plan?wait=true`,
@@ -98,20 +145,58 @@ export function createGatewayAlignedPlanSource(
 					signal: controller.signal,
 				},
 			);
-			if (!response.ok) return null;
-			const body = (await response.json()) as { plan?: SpeechPlan };
+			if (!response.ok) {
+				logResult(`http_${response.status}`);
+				return null;
+			}
+			let body: { plan?: SpeechPlan };
+			try {
+				body = (await response.json()) as { plan?: SpeechPlan };
+			} catch {
+				logResult("invalid_response_json");
+				return null;
+			}
 			const plan = body?.plan;
-			if (!plan || plan.quality_mode !== "aligned") return null;
-			if (!validateSpeechPlan(plan).ok) return null;
-			if (plan.audio?.sha256 !== audioSha || plan.text !== text) return null;
+			if (!plan) {
+				logResult("response_missing_plan");
+				return null;
+			}
+			if (plan.quality_mode !== "aligned") {
+				logResult("plan_not_aligned");
+				return null;
+			}
+			if (!validateSpeechPlan(plan).ok) {
+				logResult("plan_validation_failed");
+				return null;
+			}
+			if (plan.audio?.sha256 !== audioSha) {
+				logResult("audio_hash_mismatch");
+				return null;
+			}
+			if (plan.text !== text) {
+				logResult("text_mismatch");
+				return null;
+			}
 			const seconds = request.audio.durationSeconds;
 			if (
 				seconds != null &&
 				Math.abs(plan.audio.duration_us - seconds * 1_000_000) > 50_000
-			)
+			) {
+				logResult("duration_mismatch");
 				return null;
+			}
+			logResult("accepted", true);
 			return plan;
-		} catch {
+		} catch (error) {
+			logResult(
+				timedOut
+					? "timeout"
+					: request.signal?.aborted
+						? "request_aborted"
+						: error instanceof Error && error.name === "AbortError"
+							? "request_aborted"
+							: "request_failed",
+			);
 			return null;
 		} finally {
 			clearTimeout(timer);
