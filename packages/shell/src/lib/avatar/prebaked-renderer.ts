@@ -96,8 +96,18 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.canvas = canvas;
 		this.ctx = canvas.getContext("2d", { alpha: true });
 		this.speechStage = this.createSpeechStage(video);
-		void this.playIdle();
+		// Warm the canonical player once the idle clip is up, so the first
+		// sentence does not wait for bundle verification and the body clip.
+		void this.playIdle().then(() => this.warmSpeech());
 		this.startDrawLoop();
+	}
+
+	/** Once-per-avatar canonical player load (idempotent). */
+	warmSpeech(): Promise<boolean> {
+		const stage = this.speechStage;
+		if (!stage || this.disposed || typeof stage.warm !== "function")
+			return Promise.resolve(false);
+		return stage.warm().catch(() => false);
 	}
 
 	async setVoice(): Promise<boolean> {

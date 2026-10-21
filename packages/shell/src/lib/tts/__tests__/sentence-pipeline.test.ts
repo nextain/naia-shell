@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Logger } from "../../logger";
 import { AudioQueue } from "../../voice/audio-queue";
 import { LocalVoiceScheduler } from "../local-voice-scheduler";
 import {
@@ -710,6 +711,125 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 		}
 	});
 
+	it("keeps the aligned plan wait at 3 s (a drop is logged, never hidden by a longer wait)", () => {
+		expect(ALIGNED_PLAN_WAIT_MS).toBe(3000);
+	});
+
+	it("logs a plan that missed the wait while the plan request was pending, and counts it", async () => {
+		vi.useFakeTimers();
+		const warn = vi.spyOn(Logger, "warn");
+		try {
+			synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+			const { renderer } = preparingRenderer();
+			let resolvePlan: (value: unknown) => void = () => {};
+			const { deps, queue } = makeDeps({
+				getRenderer: () => renderer,
+				getAlignedSpeechPlanSource: () => () =>
+					new Promise((resolve) => {
+						resolvePlan = resolve;
+					}) as never,
+			});
+			const pipeline = createSentenceTtsPipeline(deps);
+			pipeline.sendSentence("문장입니다.");
+			await vi.advanceTimersByTimeAsync(0);
+			const callbacks = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+			const gate = callbacks.beforePlayback?.();
+			await vi.advanceTimersByTimeAsync(ALIGNED_PLAN_WAIT_MS);
+			await gate;
+			expect(warn).toHaveBeenCalledWith(
+				"tts-pipeline",
+				"aligned plan wait exceeded",
+				expect.objectContaining({
+					limitMs: 3000,
+					pendingStage: "plan_request",
+					planArrived: false,
+				}),
+			);
+			expect(pipeline.alignedPlanStats?.()).toEqual(
+				expect.objectContaining({ requested: 1, waitExceeded: 1, played: 0 }),
+			);
+			resolvePlan(plan("aligned"));
+			await vi.advanceTimersByTimeAsync(0);
+			expect(renderer.prepareSpeechTiming).not.toHaveBeenCalled();
+		} finally {
+			warn.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("names the player load as the late stage when the plan arrived but loading ran past the wait", async () => {
+		vi.useFakeTimers();
+		const warn = vi.spyOn(Logger, "warn");
+		try {
+			synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+			const renderer = {
+				...nvaRenderer(),
+				canPlaySpeechPlans: () => true,
+				prepareSpeechTiming: vi.fn(() => new Promise<never>(() => {})),
+			};
+			const { deps, queue } = makeDeps({
+				getRenderer: () => renderer,
+				getAlignedSpeechPlanSource: () => async () => plan("aligned"),
+			});
+			const pipeline = createSentenceTtsPipeline(deps);
+			pipeline.sendSentence("문장입니다.");
+			await vi.advanceTimersByTimeAsync(0);
+			const callbacks = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;
+			const gate = callbacks.beforePlayback?.();
+			await vi.advanceTimersByTimeAsync(ALIGNED_PLAN_WAIT_MS);
+			await gate;
+			expect(warn).toHaveBeenCalledWith(
+				"tts-pipeline",
+				"aligned plan wait exceeded",
+				expect.objectContaining({
+					pendingStage: "player_load",
+					planArrived: true,
+				}),
+			);
+			expect(pipeline.alignedPlanStats?.().waitExceeded).toBe(1);
+		} finally {
+			warn.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("counts played and no-plan sentences", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const { renderer, play } = preparingRenderer();
+		const plans = [plan("aligned"), null];
+		const { deps, queue } = makeDeps({
+			getRenderer: () => renderer,
+			getAlignedSpeechPlanSource: () => async () => plans.shift() as never,
+		});
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("첫 문장입니다.");
+		pipeline.sendSentence("둘째 문장입니다.");
+		await flush();
+		for (const call of queue.enqueueOrdered.mock.calls) {
+			const callbacks = call[2] as GatedCallbacks;
+			await callbacks.beforePlayback?.();
+			callbacks.onPlaybackStart({ clock: () => 0 });
+		}
+		await flush();
+		expect(play).toHaveBeenCalledTimes(1);
+		expect(pipeline.alignedPlanStats?.()).toEqual(
+			expect.objectContaining({ requested: 2, played: 1, noPlan: 1 }),
+		);
+	});
+
+	it("warms the avatar's canonical player when a sentence is sent", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const { renderer } = preparingRenderer();
+		const warmSpeech = vi.fn(async () => true);
+		const { deps } = makeDeps({
+			getRenderer: () => ({ ...renderer, warmSpeech }),
+			getAlignedSpeechPlanSource: () => async () => plan("aligned"),
+		});
+		createSentenceTtsPipeline(deps).sendSentence("문장입니다.");
+		expect(warmSpeech).toHaveBeenCalled();
+		await flush();
+	});
+
 	it("local voice is fetched whole, not streamed, while an NVA plan avatar is active", async () => {
 		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
 		const { renderer } = preparingRenderer();
@@ -744,7 +864,7 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 				gatewayUrl: "https://gw.example",
 			}),
 		});
-		delete deps.getAlignedSpeechPlanSource;
+		deps.getAlignedSpeechPlanSource = undefined;
 		createSentenceTtsPipeline(deps).sendSentence("문장입니다.");
 		await flush();
 		const callbacks = queue.enqueueOrdered.mock.calls[0][2] as GatedCallbacks;

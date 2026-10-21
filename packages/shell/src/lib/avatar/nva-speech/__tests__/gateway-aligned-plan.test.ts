@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { Logger } from "../../../logger";
 import { createGatewayAlignedPlanSource } from "../gateway-aligned-plan";
 
 function wav(seconds: number, rate = 24000): Uint8Array {
@@ -7,7 +8,8 @@ function wav(seconds: number, rate = 24000): Uint8Array {
 	const bytes = new Uint8Array(44 + samples * 2);
 	const view = new DataView(bytes.buffer);
 	const put = (offset: number, text: string) => {
-		for (let i = 0; i < text.length; i++) bytes[offset + i] = text.charCodeAt(i);
+		for (let i = 0; i < text.length; i++)
+			bytes[offset + i] = text.charCodeAt(i);
 	};
 	put(0, "RIFF");
 	view.setUint32(4, 36 + samples * 2, true);
@@ -35,7 +37,11 @@ function alignedPlan(overrides: Record<string, unknown> = {}) {
 		version: "1",
 		quality_mode: "aligned",
 		text: TEXT,
-		aligner: { provider: "mfa", version: "3.3.9", model_sha256: "0".repeat(64) },
+		aligner: {
+			provider: "mfa",
+			version: "3.3.9",
+			model_sha256: "0".repeat(64),
+		},
 		audio: { sha256: sha, duration_us: 500_000 },
 		events: [
 			{ unit: "vowel-open", start_us: 0, end_us: 200_000 },
@@ -63,7 +69,10 @@ describe("gateway aligned plan source (shell_audio, SoT 8)", () => {
 		const { get, fetchImpl } = source({ plan: alignedPlan() });
 		const plan = await get({ text: ` ${TEXT} `, audio: whole });
 		expect(plan?.quality_mode).toBe("aligned");
-		const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+		const [url, init] = fetchImpl.mock.calls[0] as unknown as [
+			string,
+			RequestInit,
+		];
 		expect(url).toBe("https://gw.example/v1/studio/speech-plan?wait=true");
 		expect((init.headers as Record<string, string>)["X-AnyLLM-Key"]).toBe(
 			"Bearer key-1",
@@ -74,8 +83,33 @@ describe("gateway aligned plan source (shell_audio, SoT 8)", () => {
 		expect(body.text).toBe(TEXT);
 	});
 
+	it("logs one safe result line with reason, elapsed time and only the audio hash prefix", async () => {
+		const debug = vi.spyOn(Logger, "debug").mockImplementation(() => {});
+		const { get } = source({ plan: alignedPlan() });
+		expect(await get({ text: "private sentence", audio: whole })).toBeNull();
+		expect(debug).toHaveBeenCalledTimes(1);
+		expect(debug).toHaveBeenCalledWith(
+			"GatewayAlignedPlan",
+			"aligned plan unavailable",
+			expect.objectContaining({
+				result: "null",
+				reason: "no_hangul",
+				elapsedMs: expect.any(Number),
+				sha: sha.slice(0, 8),
+				textLength: "private sentence".length,
+			}),
+		);
+		const serializedLogs = JSON.stringify(debug.mock.calls);
+		expect(serializedLogs).not.toContain("private sentence");
+		expect(serializedLogs).not.toContain(sha);
+		expect(serializedLogs).not.toContain("key-1");
+	});
+
 	it.each([
-		["another sound", { audio: { sha256: "0".repeat(64), duration_us: 500_000 } }],
+		[
+			"another sound",
+			{ audio: { sha256: "0".repeat(64), duration_us: 500_000 } },
+		],
 		["another sentence", { text: "다른 문장." }],
 		["a browser-timed plan", { quality_mode: "browser-timed" }],
 		["an approximate plan", { quality_mode: "approximate" }],
@@ -108,7 +142,11 @@ describe("gateway aligned plan source (shell_audio, SoT 8)", () => {
 		expect(
 			await get({
 				text: TEXT,
-				audio: { kind: "whole", audioBase64: "SUQzAAAA", durationSeconds: null },
+				audio: {
+					kind: "whole",
+					audioBase64: "SUQzAAAA",
+					durationSeconds: null,
+				},
 			}),
 		).toBeNull();
 		const noKey = createGatewayAlignedPlanSource({

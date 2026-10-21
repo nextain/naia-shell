@@ -1,3 +1,4 @@
+import { Logger } from "../../logger";
 /**
  * Shell host for the canonical NVA SpeechPlayer (naia-shell#760).
  *
@@ -12,6 +13,15 @@
  *                         revised by updateExternalPlan on boundary events
  *
  * Anything else is refused and the caller keeps the idle clip (SoT 8).
+ *
+ * Cost per avatar vs per sentence: the canonical player verifies the bundle
+ * (receipt + sha256 of every asset and atlas slice) and decodes the body clip
+ * only when it sees a new manifest/asset map (vendor 3bb5ee0 `sameBundle`).
+ * This stage keeps one manifest object and one asset Map for its lifetime, so
+ * that work happens once per avatar; each sentence only swaps the plan and
+ * primes its first speech clips. `warm()` runs the once-per-avatar part
+ * before the first sentence so the first plan does not pay for it while its
+ * sound is waiting.
  */
 import type { NvaManifest } from "../../nva";
 import type {
@@ -24,6 +34,8 @@ import {
 	speechBundlePaths,
 } from "./vendor/speech-bundle.js";
 import { SpeechPlayer } from "./vendor/speech-player.js";
+
+const TAG = "CanonicalSpeechStage";
 
 export interface CanonicalSpeechStageConfig {
 	manifest: NvaManifest;
@@ -66,6 +78,34 @@ export function hasCanonicalSpeechMotion(manifest: NvaManifest): boolean {
 	return Boolean((manifest as ManifestWithSpeech).speech_motion);
 }
 
+function safeError(error: unknown): string {
+	const message =
+		error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+	return message
+		.replace(/https?:\/\/[^\s"'<>]+/giu, "[url]")
+		.replace(
+			/\b(authorization|api[-_ ]?key|token|secret|password)\b\s*[:=]\s*[^,\s]+/giu,
+			"$1=[redacted]",
+		)
+		.slice(0, 240);
+}
+
+/**
+ * Load-only plan for warm(): one silent unit, no transitions, so the player
+ * runs its once-per-avatar bundle work and decodes no speech clip. It is
+ * never played — the stage never calls playExternal for it and the renderer
+ * only shows the stage while the player state is "speaking".
+ */
+export const WARM_PLAN: SpeechPlan = Object.freeze({
+	version: "1",
+	text: "",
+	quality_mode: "browser-timed",
+	audio: Object.freeze({ duration_us: 1_000_000 }),
+	events: Object.freeze([
+		Object.freeze({ unit: "sil", start_us: 0, end_us: 1_000_000 }),
+	]),
+}) as unknown as SpeechPlan;
+
 /** Every file the canonical player validates or reads. */
 export function canonicalSpeechAssetPaths(manifest: NvaManifest): string[] {
 	const speech = (manifest as ManifestWithSpeech).speech_motion;
@@ -83,6 +123,13 @@ export class CanonicalSpeechStage {
 	private assets: Promise<Map<string, Blob>> | null = null;
 	private mode: "aligned" | "browser-timed" | null = null;
 	private generation = 0;
+	/** Player loads are serialized; the vendored media are never reloaded concurrently. */
+	private prepareQueue: Promise<void> = Promise.resolve();
+	/** Set once the first real plan is asked for; warm() never runs after it. */
+	private prepareIssued = false;
+	private warming: Promise<boolean> | null = null;
+	/** True once the player holds this avatar's verified bundle and body clip. */
+	private bundleLoaded = false;
 	private disposed = false;
 
 	constructor(private readonly config: CanonicalSpeechStageConfig) {
@@ -141,23 +188,100 @@ export class CanonicalSpeechStage {
 		if (this.disposed) return null;
 		const mode = plan?.quality_mode;
 		if (mode !== "aligned" && mode !== "browser-timed") return null;
+		this.prepareIssued = true;
 		const generation = ++this.generation;
-		this.player.stop("cancel");
-		this.mode = null;
-		try {
-			const assets = await this.loadAssets();
-			if (generation !== this.generation || this.disposed) return null;
-			const input = { manifest: this.config.manifest, assets, plan };
-			if (mode === "aligned") await this.player.loadAudioClock(input);
-			else await this.player.loadExternal(input);
-			if (generation !== this.generation || this.disposed) {
+		const operation = this.prepareQueue.then(
+			async (): Promise<PreparedSpeech | null> => {
+				if (generation !== this.generation || this.disposed) return null;
 				this.player.stop("cancel");
-				return null;
+				this.mode = null;
+				const startedAt = Date.now();
+				const firstLoad = !this.bundleLoaded;
+				try {
+					const assets = await this.loadAssets();
+					if (generation !== this.generation || this.disposed) return null;
+					const input = { manifest: this.config.manifest, assets, plan };
+					if (mode === "aligned") await this.player.loadAudioClock(input);
+					else await this.player.loadExternal(input);
+					this.bundleLoaded = true;
+					if (generation !== this.generation || this.disposed) {
+						this.player.stop("cancel");
+						return null;
+					}
+				} catch (error) {
+					Logger.warn(TAG, "speech plan load failed", {
+						generation,
+						error: safeError(error),
+					});
+					if (generation === this.generation) this.player.stop("error");
+					return null;
+				}
+				Logger.info(TAG, "speech plan loaded", {
+					generation,
+					mode,
+					firstLoad,
+					loadMs: Date.now() - startedAt,
+				});
+				return this.preparedFor(generation, mode);
+			},
+		);
+		this.prepareQueue = operation.then(
+			() => undefined,
+			() => undefined,
+		);
+		return operation;
+	}
+
+	/**
+	 * Run the once-per-avatar load (bundle verification, neutral head, body
+	 * clip) before the first sentence. Idempotent; skipped once a real plan
+	 * was asked for, because loading the warm plan then would replace it.
+	 * Resolves true when the bundle is loaded.
+	 */
+	warm(): Promise<boolean> {
+		if (this.disposed) return Promise.resolve(false);
+		if (this.bundleLoaded) return Promise.resolve(true);
+		if (this.warming) return this.warming;
+		if (this.prepareIssued) return Promise.resolve(false);
+		const startedAt = Date.now();
+		const run = this.prepareQueue.then(async (): Promise<boolean> => {
+			try {
+				const assets = await this.loadAssets();
+				// A real plan arrived while the assets were loading: let it do the
+				// first load itself instead of queueing a load it would cancel.
+				if (this.disposed || this.prepareIssued) return this.bundleLoaded;
+				await this.player.loadExternal({
+					manifest: this.config.manifest,
+					assets,
+					plan: WARM_PLAN,
+				});
+				this.bundleLoaded = true;
+				Logger.info(TAG, "speech bundle warmed", {
+					loadMs: Date.now() - startedAt,
+				});
+				return true;
+			} catch (error) {
+				Logger.warn(TAG, "speech bundle warm failed", {
+					error: safeError(error),
+				});
+				return false;
 			}
-		} catch {
-			if (generation === this.generation) this.player.stop("error");
-			return null;
-		}
+		});
+		this.warming = run;
+		this.prepareQueue = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		void run.then((ok) => {
+			if (!ok && this.warming === run) this.warming = null;
+		});
+		return run;
+	}
+
+	private preparedFor(
+		generation: number,
+		mode: "aligned" | "browser-timed",
+	): PreparedSpeech {
 		let used = false;
 		return {
 			play: async (clock) => {
@@ -173,7 +297,11 @@ export class CanonicalSpeechStage {
 					}
 					this.mode = mode;
 					return true;
-				} catch {
+				} catch (error) {
+					Logger.warn(TAG, "speech plan playback failed", {
+						generation,
+						error: safeError(error),
+					});
 					if (generation === this.generation) this.player.stop("error");
 					return false;
 				}

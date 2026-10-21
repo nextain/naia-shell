@@ -117,6 +117,60 @@ describe("PrebakedAvatarRenderer", () => {
 		renderer.stop();
 	});
 
+	it("a bundle carrying aiueo / talking / speak clips still keeps idle while speaking (no fallback loop)", async () => {
+		const manifest = {
+			...baseManifest(),
+			animations: {
+				...baseManifest().animations,
+				speak: { clip: "clips/speak.webm", loop: true, can_talk: true },
+			},
+			vrm_slots: {
+				visemes: { aiueo: { clip: "clips/aiueo.webm" } },
+				motions: { talking: { clip: "clips/vrm-talking.webm" } },
+			},
+		} as unknown as NvaManifest;
+		const resolveAssetUrl = vi.fn(async (path: string) => `blob:${path}`);
+		const renderer = new PrebakedAvatarRenderer({
+			manifest,
+			locale: "ko-KR",
+			resolveAssetUrl,
+		});
+		renderer.start(makeVideo(), document.createElement("canvas"));
+		await Promise.resolve();
+		await Promise.resolve();
+		renderer.setSpeakingVisual(true);
+		for (let i = 0; i < 4; i++) await Promise.resolve();
+		const resolved = resolveAssetUrl.mock.calls.map(([path]) => path);
+		expect(resolved).not.toContain("clips/aiueo.webm");
+		expect(resolved).not.toContain("clips/vrm-talking.webm");
+		expect(resolved).not.toContain("clips/speech-ko.mp4");
+		expect(resolved).not.toContain("clips/speak.webm");
+		expect(new Set(resolved)).toEqual(new Set(["clips/idle.webm"]));
+		renderer.stop();
+	});
+
+	it("warms the canonical speech stage once after the idle clip is up", async () => {
+		const warm = vi.fn(async () => true);
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: baseManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+			createSpeechStage: () =>
+				({
+					warm,
+					start: vi.fn(),
+					stop: vi.fn(),
+					dispose: vi.fn(),
+					speaking: false,
+				}) as never,
+		});
+		renderer.start(makeVideo(), document.createElement("canvas"));
+		await vi.waitFor(() => expect(warm).toHaveBeenCalledTimes(1));
+		expect(await renderer.warmSpeech()).toBe(true);
+		renderer.stop();
+		expect(await renderer.warmSpeech()).toBe(false);
+	});
+
 	it("plays an authored clip end-to-end and returns to idle", async () => {
 		const manifest = baseManifest();
 		const resolveAssetUrl = vi.fn(async (path: string) => `blob:${path}`);

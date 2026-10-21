@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Logger } from "../../../logger";
 import type { NvaManifest } from "../../../nva";
 import { PrebakedAvatarRenderer } from "../../prebaked-renderer";
 import {
@@ -261,6 +262,21 @@ describe("no sound-independent mouth loop in Shell product code (SoT 8)", () => 
 			).toBe(true);
 	});
 
+	it("the scans catch the aiueo/talking fallback that origin/main setSpeakingVisual used", () => {
+		// Verbatim shape of the pre-#760 loop (naia-shell main 12c1f61f).
+		const oldMain = [
+			"this.config.manifest.vrm_slots?.visemes?.aiueo?.clip ??",
+			"this.config.manifest.vrm_slots?.motions?.talking?.clip ??",
+		];
+		for (const line of oldMain)
+			expect(
+				DRIFT.some(([, pattern]) => pattern.test(line)),
+				line,
+			).toBe(true);
+		expect(/visemes\??\.aiueo/.test(oldMain[0])).toBe(true);
+		expect(/motions\??\.talking\??\.clip/.test(oldMain[1])).toBe(true);
+	});
+
 	it("the quarantined A-I-U-E-O controller is gone from lib/vrm", () => {
 		expect(readdirSync(join(shellSrc, "lib", "vrm"))).not.toContain("mouth.ts");
 	});
@@ -356,6 +372,45 @@ describe("CanonicalSpeechStage", () => {
 		release();
 		expect(await first).toBe(false);
 		expect(player.calls).not.toContain("playAudioClock");
+	});
+
+	it("warm() loads the bundle once before any plan, without playing", async () => {
+		const player = new FakePlayer();
+		const { stage, loadAsset } = stageWith(player);
+		const [a, b] = [stage.warm(), stage.warm()];
+		expect(await a).toBe(true);
+		expect(await b).toBe(true);
+		expect(await stage.warm()).toBe(true);
+		expect(player.calls).toEqual(["loadExternal"]);
+		expect(stage.speaking).toBe(false);
+		const info = vi.spyOn(Logger, "info");
+		const prepared = await stage.prepare(plan("aligned"));
+		expect(await prepared?.play(() => 0)).toBe(true);
+		expect(info).toHaveBeenCalledWith(
+			"CanonicalSpeechStage",
+			"speech plan loaded",
+			expect.objectContaining({ firstLoad: false }),
+		);
+		expect(loadAsset).toHaveBeenCalledTimes(
+			canonicalSpeechAssetPaths(manifest()).length,
+		);
+	});
+
+	it("warm() never runs once a real plan was asked for", async () => {
+		const player = new FakePlayer();
+		const { stage } = stageWith(player);
+		const info = vi.spyOn(Logger, "info");
+		const prepared = stage.prepare(plan("aligned"));
+		const warmed = stage.warm();
+		// Skipped (not queued behind the real load it would replace).
+		expect(await warmed).toBe(false);
+		await prepared;
+		expect(player.calls).toEqual(["stop", "loadAudioClock"]);
+		expect(info).toHaveBeenCalledWith(
+			"CanonicalSpeechStage",
+			"speech plan loaded",
+			expect.objectContaining({ firstLoad: true }),
+		);
 	});
 
 	it("reads bundle assets once and removes its media on dispose", async () => {

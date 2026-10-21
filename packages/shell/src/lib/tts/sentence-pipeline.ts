@@ -55,8 +55,26 @@ const TAG = "tts-pipeline";
  * Longest a sentence's sound waits for its aligned plan to load before it
  * plays anyway (idle mouth, never a late or guessed start). Later
  * sentences usually have their plan ready while the previous one plays.
+ * Every sentence that hits this limit is logged ("aligned plan wait
+ * exceeded") with where the time went; the limit is not raised to hide it.
  */
 export const ALIGNED_PLAN_WAIT_MS = 3000;
+
+/** Per-pipeline count of what happened to each whole-sound aligned plan. */
+export interface AlignedPlanStats {
+	/** Sentences whose sound waited for an aligned plan. */
+	requested: number;
+	/** Plan loaded in time and started on the sound's clock. */
+	played: number;
+	/** Plan or its load did not finish within ALIGNED_PLAN_WAIT_MS (idle mouth). */
+	waitExceeded: number;
+	/** The plan source returned no plan (idle mouth). */
+	noPlan: number;
+	/** The plan arrived but the canonical player could not load or play it. */
+	failed: number;
+	/** Interrupted by a newer turn before it could play. */
+	superseded: number;
+}
 
 export interface PipelineVoiceConfig {
 	voice?: string;
@@ -90,6 +108,8 @@ export interface CascadeSpeechRenderer {
 	/** True when the loaded avatar carries the canonical speech set. */
 	canPlaySpeechPlans?(): boolean;
 	updateSpeechPlan?(plan: SpeechPlan): boolean;
+	/** Once-per-avatar player load before the first sentence (idempotent). */
+	warmSpeech?(): Promise<boolean>;
 }
 
 export interface OrderedTtsQueue {
@@ -177,6 +197,8 @@ export interface SentenceTtsPipeline {
 	hasActiveRequests(): boolean;
 	/** Recent spoken sentences (ring of 6) for the STT self-echo filter. */
 	recentTexts(): readonly string[];
+	/** What happened to the aligned plans of this pipeline's sentences. */
+	alignedPlanStats?(): Readonly<AlignedPlanStats>;
 }
 
 export function createSentenceTtsPipeline(
@@ -188,6 +210,14 @@ export function createSentenceTtsPipeline(
 	let localVoiceUnavailableNoticed = false;
 	/** Bumped by interrupt(): late plans from a superseded turn never start. */
 	let speechEpoch = 0;
+	const planStats: AlignedPlanStats = {
+		requested: 0,
+		played: 0,
+		waitExceeded: 0,
+		noPlan: 0,
+		failed: 0,
+		superseded: 0,
+	};
 
 	// Default aligned source: the gateway shell_audio route, using the same
 	// login key and gateway URL as Naia TTS. A registered port wins.
@@ -240,24 +270,87 @@ export function createSentenceTtsPipeline(
 
 		const prepareSpeech = renderer.prepareSpeechTiming?.bind(renderer);
 		if (prepareSpeech && request.audio.kind === "whole") {
+			const requestedAt = Date.now();
+			let planMs: number | null = null;
+			let planArrived = false;
+			const timedPlan = plan.then((resolved) => {
+				planMs = Date.now() - requestedAt;
+				planArrived = Boolean(resolved);
+				return resolved;
+			});
+			const textLength = request.text.length;
 			let prepared: Promise<PreparedSpeech | null> | null = null;
 			let timedOut = false;
+			const record = (
+				outcome: Exclude<keyof AlignedPlanStats, "requested">,
+				data: Record<string, unknown>,
+			) => {
+				planStats[outcome]++;
+				const entry = {
+					outcome,
+					textLength,
+					planMs,
+					...data,
+					stats: { ...planStats },
+				};
+				if (outcome === "played" || outcome === "superseded")
+					Logger.info(TAG, "aligned plan outcome", entry);
+				else Logger.warn(TAG, "aligned plan outcome", entry);
+			};
 			const prepare = () => {
 				if (!prepared) {
-					const loaded = plan.then((resolved) =>
-						epoch === speechEpoch && resolved && !timedOut
-							? prepareSpeech(resolved)
-							: null,
-					);
-					prepared = Promise.race([
-						loaded,
-						new Promise<null>((resolve) =>
-							setTimeout(() => {
-								timedOut = true;
-								resolve(null);
-							}, ALIGNED_PLAN_WAIT_MS),
-						),
-					]);
+					planStats.requested++;
+					const waitStartedAt = Date.now();
+					let loadStartedAt: number | null = null;
+					const loaded = timedPlan.then((resolved) => {
+						if (epoch !== speechEpoch || !resolved || timedOut) return null;
+						loadStartedAt = Date.now();
+						return prepareSpeech(resolved);
+					});
+					let timer: ReturnType<typeof setTimeout> | undefined;
+					const limit = new Promise<"timeout">((resolve) => {
+						timer = setTimeout(() => {
+							timedOut = true;
+							resolve("timeout");
+						}, ALIGNED_PLAN_WAIT_MS);
+					});
+					prepared = Promise.race([loaded, limit]).then((ready) => {
+						clearTimeout(timer);
+						if (ready === "timeout") {
+							const pendingStage =
+								loadStartedAt !== null ? "player_load" : "plan_request";
+							Logger.warn(TAG, "aligned plan wait exceeded", {
+								waitMs: Date.now() - waitStartedAt,
+								limitMs: ALIGNED_PLAN_WAIT_MS,
+								pendingStage,
+								planArrived,
+								planMs,
+								loadMs:
+									loadStartedAt !== null ? Date.now() - loadStartedAt : null,
+							});
+							record("waitExceeded", { pendingStage });
+							// Say how late it was, so the cause is measured (not guessed).
+							void loaded.then(() =>
+								Logger.info(TAG, "aligned plan settled after wait limit", {
+									pendingStage,
+									planArrived,
+									planMs,
+									totalMs: Date.now() - waitStartedAt,
+								}),
+							);
+							return null;
+						}
+						if (!ready) {
+							if (epoch !== speechEpoch) record("superseded", {});
+							else if (!planArrived) record("noPlan", {});
+							else
+								record("failed", {
+									stage: "player_load",
+									waitMs: Date.now() - waitStartedAt,
+								});
+						}
+						return ready;
+					});
 				}
 				return prepared;
 			};
@@ -265,9 +358,16 @@ export function createSentenceTtsPipeline(
 				beforePlayback: prepare,
 				start: (playback) => {
 					if (!playback) return;
-					void prepare().then((ready) => {
-						if (epoch !== speechEpoch || !ready) return;
-						void ready.play(playback.clock);
+					void prepare().then(async (ready) => {
+						if (!ready) return;
+						if (epoch !== speechEpoch) {
+							record("superseded", {});
+							return;
+						}
+						const ok = await ready.play(playback.clock);
+						if (ok) record("played", {});
+						else if (epoch !== speechEpoch) record("superseded", {});
+						else record("failed", { stage: "player_play" });
 					});
 				},
 			};
@@ -307,6 +407,9 @@ export function createSentenceTtsPipeline(
 		};
 
 		const cascadeAvatar = deps.getRenderer();
+		// Before the first sentence's plan arrives, let the canonical player do
+		// its once-per-avatar load (no-op once loaded or when not an NVA avatar).
+		void cascadeAvatar?.warmSpeech?.()?.catch(() => false);
 
 		// 자기발화 텍스트 필터용 — 이 턴에 말한 문장을 기록 (최근 6문장 링버퍼).
 		recentTexts.push(clean);
@@ -774,6 +877,9 @@ export function createSentenceTtsPipeline(
 		},
 		recentTexts(): readonly string[] {
 			return recentTexts;
+		},
+		alignedPlanStats(): Readonly<AlignedPlanStats> {
+			return { ...planStats };
 		},
 	};
 }

@@ -32,6 +32,8 @@ export interface AvatarSpeechRenderer {
 	 * so the first mouth frame and the first sound start together.
 	 */
 	prepareSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	/** Load the canonical player's once-per-avatar assets before the first sentence. */
+	warmSpeech?(): Promise<boolean>;
 	/** True when the loaded avatar carries the canonical speech set. */
 	canPlaySpeechPlans?(): boolean;
 	/** Revise a running browser-timed plan (speechSynthesis boundary). */
