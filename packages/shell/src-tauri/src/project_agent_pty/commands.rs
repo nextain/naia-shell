@@ -542,20 +542,40 @@ mod tests {
         ]);
         let mut child = pair.slave.spawn_command(command).expect("spawn PowerShell");
         let mut reader = pair.master.try_clone_reader().expect("clone ConPTY reader");
-        let mut writer = pair.master.take_writer().expect("take ConPTY writer");
+        let writer = std::sync::Arc::new(std::sync::Mutex::new(
+            pair.master.take_writer().expect("take ConPTY writer"),
+        ));
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let (output_tx, output_rx) = mpsc::sync_channel(1);
+        let reply_writer = std::sync::Arc::clone(&writer);
+        let reader_seen = std::sync::Arc::clone(&seen);
         std::thread::spawn(move || {
-            let mut bytes = Vec::new();
+            // ConPTY starts with a cursor-position request (ESC[6n) and waits
+            // for the terminal's answer. xterm.js answers it in the app; this
+            // test stands in for that terminal so the console does not stall.
+            let mut answered = 0usize;
             let mut buffer = [0u8; 1024];
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => {
+                        let bytes = reader_seen.lock().unwrap().clone();
                         let _ = output_tx.send(String::from_utf8_lossy(&bytes).into_owned());
                         return;
                     }
                     Ok(length) => {
-                        bytes.extend_from_slice(&buffer[..length]);
-                        let output = String::from_utf8_lossy(&bytes).into_owned();
+                        let output = {
+                            let mut bytes = reader_seen.lock().unwrap();
+                            bytes.extend_from_slice(&buffer[..length]);
+                            String::from_utf8_lossy(&bytes).into_owned()
+                        };
+                        let requests = output.matches("\x1b[6n").count();
+                        while answered < requests {
+                            let mut terminal = reply_writer.lock().unwrap();
+                            let _ = write_project_agent_input(&mut **terminal, b"\x1b[1;1R");
+                            answered += 1;
+                        }
+                        let _ = ready_tx.try_send(());
                         if output.contains(&format!("ECHO:{MARKER}")) {
                             let _ = output_tx.send(output);
                             return;
@@ -569,16 +589,27 @@ mod tests {
             }
         });
 
-        write_project_agent_input(&mut writer, format!("{MARKER}\r").as_bytes())
-            .expect("write a line through the production ConPTY writer");
+        // Type the line once the console has produced its first output (or
+        // after a short grace period), like a user typing into a live terminal.
+        let _ = ready_rx.recv_timeout(Duration::from_secs(5));
+        {
+            let mut terminal = writer.lock().unwrap();
+            write_project_agent_input(&mut **terminal, format!("{MARKER}\r").as_bytes())
+                .expect("write a line through the production ConPTY writer");
+        }
         let output = output_rx.recv_timeout(Duration::from_secs(20));
         let _ = child.kill();
         let _ = child.wait();
+        let output = output.unwrap_or_else(|_| {
+            let bytes = seen.lock().unwrap().clone();
+            panic!(
+                "receive ConPTY output within 20 seconds; partial output: {:?}",
+                String::from_utf8_lossy(&bytes)
+            )
+        });
         assert!(
-            output
-                .expect("receive ConPTY output within 20 seconds")
-                .contains(&format!("ECHO:{MARKER}")),
-            "PowerShell did not echo the line through ConPTY"
+            output.contains(&format!("ECHO:{MARKER}")),
+            "PowerShell did not echo the line through ConPTY: {output:?}"
         );
     }
 }

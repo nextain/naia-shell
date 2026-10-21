@@ -68,8 +68,12 @@ mod tests {
     ) -> (tempfile::TempDir, ProjectCatalogAuthority, PathBuf, PathBuf) {
         crate::log_verbose("[project_catalog_runtime::tests::project_fixture] enter");
         let temp = tempfile::tempdir().expect("temporary catalog adapter");
-        let adapter = temp.path().join("projects/adapter");
-        let project = adapter.join("projects/sample");
+        // Windows CI temp dirs can be 8.3 short names (C:\Users\RUNNER~1). The
+        // catalog accepts only canonical paths, so fixtures start from the
+        // canonical temp root.
+        let root = dunce::canonicalize(temp.path()).expect("canonical temporary root");
+        let adapter = root.join("projects").join("adapter");
+        let project = adapter.join("projects").join("sample");
         fs::create_dir_all(&project).unwrap();
         fs::write(
             project.join("project.yaml"),
