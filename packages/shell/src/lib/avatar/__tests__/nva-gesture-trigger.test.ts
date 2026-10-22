@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NvaManifest } from "../nva-core";
-import { driveGestures, parseGestureTriggers } from "../nva-gesture-trigger";
+import {
+	GestureTriggerStream,
+	driveGestures,
+	parseGestureTriggers,
+} from "../nva-gesture-trigger";
 
 const M: NvaManifest = {
 	nva_version: "0.2",
@@ -93,6 +97,54 @@ describe("parseGestureTriggers — LLM 마커 → gesture key", () => {
 			cleanText: "",
 			gestures: [],
 		});
+	});
+});
+
+describe("GestureTriggerStream — split response markers", () => {
+	it("holds a marker across chunks and returns clean display/TTS text once complete", () => {
+		const stream = new GestureTriggerStream([
+			{ key: "wave", label: "Wave" },
+		]);
+		const first = stream.push("Hello [[ges");
+		const second = stream.push("ture:wa");
+		const third = stream.push("ve]] world");
+		const tail = stream.flush();
+
+		expect(first.cleanText).toBe("Hello");
+		expect(second.cleanText).toBe("");
+		expect(third.cleanText).toBe(" world");
+		expect(third.gestures.map(({ key }) => key)).toEqual(["wave"]);
+		expect(tail.cleanText).toBe("");
+		expect([first.cleanText, second.cleanText, third.cleanText, tail.cleanText].join(""))
+			.toBe("Hello world");
+	});
+
+	it("drops an unfinished marker on flush and strips unknown complete markers", () => {
+		const stream = new GestureTriggerStream([
+			{ key: "wave", label: "Wave" },
+		]);
+		const first = stream.push("Keep this [[gesture:wave");
+		const tail = stream.flush();
+		const unknown = stream.push("No [[gesture:missing]] marker");
+
+		expect(first.cleanText).toBe("Keep this");
+		expect(tail.cleanText).toBe("");
+		expect(unknown.cleanText).toBe("No marker");
+		expect(unknown.gestures).toEqual([]);
+	});
+
+	it("does not flush whitespace left before an unfinished marker", () => {
+		const stream = new GestureTriggerStream([
+			{ key: "wave", label: "Wave" },
+		]);
+		expect(stream.push("Keep this [[gesture:wave").cleanText).toBe("Keep this");
+		expect(stream.flush()).toEqual({ cleanText: "", gestures: [] });
+	});
+
+	it("drops a split opening bracket at end of response", () => {
+		const stream = new GestureTriggerStream();
+		expect(stream.push("Keep this [").cleanText).toBe("Keep this");
+		expect(stream.flush()).toEqual({ cleanText: "", gestures: [] });
 	});
 });
 

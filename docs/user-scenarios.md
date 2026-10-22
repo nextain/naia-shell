@@ -2344,3 +2344,25 @@ P02 실행 그룹은 `pnpm exec vitest run src/apps/projects src/apps/workspace/
 
 
 
+
+## UC-NVA-CAMERA-GESTURE-1022 — NVA 화면·동작과 로컬 음성 선택
+
+사용자는 NVA 아바타를 확대·축소하고 이동한 뒤 화면 배치를 저장하거나 초기화한다. NVA 묶음이 제공하는 gesture는 버튼으로 실행하거나 AI 응답의 `[[gesture:key]]` 표기로 실행할 수 있다. gesture 클립은 한 번 무음 재생한 뒤 대기로 돌아가며, Shell 음성이 재생 중이면 gesture 요청은 무시한다. 대기 영상은 발화나 동작이 끝난 뒤 마지막 재생 위치에서 이어진다. gesture가 없는 묶음에는 버튼과 AI 동작 안내를 제공하지 않는다. 사용자가 로컬 음성 엔진 실행 중 TTS 제공자를 Edge로 바꿨다가 다시 local을 선택하면 선택과 저장 설정 모두 local로 돌아간다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | NVA는 1배·이동 0에서 시작한다. 휠과 확대/축소 단추는 0.5~3배에서 작동하고 이동과 함께 적용된다. VRM 카메라 조작은 기존처럼 동작한다. |
+| 빈 목록 | gesture가 없는 묶음에는 동작 단추와 시스템 프롬프트 동작 안내가 없다. NVA가 활성화되지 않았을 때도 gesture 안내는 없다. |
+| 진행 | wheel 확대, 이동·확대 저장, 초기화가 즉시 반영된다. gesture 버튼 또는 AI 표기는 묶음의 gesture key만 한 번 재생한다. 말하는 중 요청은 무시하고 말하기 화면을 유지한다. |
+| 성공 | 저장한 확대·이동은 다시 열어도 복원된다. 발화/gesture 종료 뒤 대기는 직전 재생 위치에서 이어지고, 화면 문장과 TTS 문장에는 gesture 표기가 없다. 로컬 엔진이 이미 실행 중이어도 Edge→local 전환 결과와 저장 설정이 `naia-local-voice`다. |
+| 오류 | 잘못된 확대 저장값은 1배로 정규화한다. 없는 gesture key는 무시한다. 분할되어 도착한 미완성 gesture 표기는 화면이나 TTS에 노출되지 않는다. 설정 저장 실패는 성공으로 표시하지 않는다. |
+| 좁은 폭 | 확대·축소·이동·초기화와 gesture 단추가 겹치거나 잘리지 않고 키보드·스크린리더로 식별된다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest 파일·그룹 | 실 UI Playwright |
+|---|---|---|
+| 기본·휠·0.5~3배 제한·이동 결합·저장·초기화·잘못된 값·좁은 폭 | `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` — NVA zoom/pan actions; `packages/shell/src/lib/__tests__/ui-preferences.test.ts` — nvaZoom hydrate/patch; `packages/shell/src/lib/avatar/__tests__/camera-actions.test.ts` — zoom/action bridge; `AiControlBar.test.tsx` — accessible zoom controls | `packages/shell/e2e/nva-prebaked.spec.ts` — zoom buttons, reset, keyboard and 360px layout |
+| 대기 위치 이어 재생·gesture 목록·무음 1회 재생·ended 복귀·말하기 중 무시·없는 key | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts` — idle resume and gesture action cases | `packages/shell/e2e/nva-prebaked.spec.ts` — action button and clip playback call |
+| AI prompt 조건부 안내·완성/분할 gesture 파싱·표시/TTS 제거·gesture 실행 | `packages/shell/src/lib/__tests__/persona.test.ts`, `persona-disabled.test.ts` — conditional gesture instructions; `packages/shell/src/lib/avatar/__tests__/nva-gesture-trigger.test.ts` — split marker stream; `packages/shell/src/components/__tests__/ChatArea.test.tsx` — response, display and TTS routing | `packages/shell/e2e/nva-prebaked.spec.ts` — visible action list, empty gesture list and narrow layout |
+| 실행 중 로컬 엔진에서 Edge→local 복귀 및 영속 | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — `SettingsTab` running local voice Edge→local case | `packages/shell/e2e/settings-slots.spec.ts` — running local provider change |

@@ -6617,8 +6617,11 @@ body.resizing-row {
 .ai-control-bar {
 	display: flex;
 	flex-direction: row;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 3px;
+	max-width: calc(100% - 8px);
+	box-sizing: border-box;
 	padding: 5px 8px;
 	align-self: flex-start;
 	margin: 4px 0 0 4px;
@@ -6636,6 +6639,14 @@ body.resizing-row {
 	height: 14px;
 	background: rgba(255, 255, 255, 0.12);
 	margin: 0 2px;
+}
+
+.ai-control-bar__gestures {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 3px;
+	min-width: 0;
 }
 
 /* BGM + controls right-side group in AppBar */

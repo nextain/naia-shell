@@ -5,6 +5,7 @@
 //   consumer(shell)가 반환된 cleanText 를 화면/음성에, gestures 를 player.gesture(key) 로 소비.
 
 import { type NvaManifest, animKind } from "./nva-core";
+import type { NvaGestureAction } from "./camera-actions";
 
 export interface ParsedGesture {
 	/** 해석된 gesture 애니 key(매니페스트). */
@@ -27,8 +28,22 @@ const MAX_GESTURES = 16;
 const MAX_VALUE_LEN = 64;
 
 /** gesture-kind 애니의 key/label/intent/triggers 를 소문자 인덱스 → 마커 값 해석용. */
-function buildLookup(m: NvaManifest): Map<string, string> {
+function buildLookup(
+	source: NvaManifest | readonly NvaGestureAction[],
+): Map<string, string> {
 	const map = new Map<string, string>();
+	if (Array.isArray(source)) {
+		for (const action of source) {
+			const add = (value?: string) => {
+				const key = (value || "").trim().toLowerCase();
+				if (key && !map.has(key)) map.set(key, action.key);
+			};
+			add(action.key);
+			add(action.label);
+		}
+		return map;
+	}
+	const m = source as NvaManifest;
 	for (const [key, a] of Object.entries(m.animations || {})) {
 		if (animKind(a) !== "gesture") continue; // gesture 애니만(idle/talk/transition 제외)
 		const add = (s?: string) => {
@@ -49,7 +64,7 @@ function buildLookup(m: NvaManifest): Map<string, string> {
  */
 export function parseGestureTriggers(
 	text: string,
-	m: NvaManifest,
+	m: NvaManifest | readonly NvaGestureAction[],
 ): GestureParseResult {
 	const lookup = buildLookup(m);
 	const gestures: ParsedGesture[] = [];
@@ -67,6 +82,80 @@ export function parseGestureTriggers(
 		.replace(/ +(\n|$)/g, "$1") // 줄끝/문장끝 잉여 공백 제거
 		.trim();
 	return { cleanText, gestures };
+}
+
+function isPartialGestureMarker(value: string): boolean {
+	if (!value.startsWith("[[")) return false;
+	let body = value.slice(2);
+	if (body.includes("[")) return false;
+	if (body.endsWith("]")) body = body.slice(0, -1);
+	else if (body.includes("]")) return false;
+	const colon = body.indexOf(":");
+	if (colon < 0) {
+		const token = body.trim().toLowerCase();
+		return token === "" || "gesture".startsWith(token) || "g".startsWith(token);
+	}
+	const kind = body.slice(0, colon).trim().toLowerCase();
+	return kind === "gesture" || kind === "g";
+}
+
+function pendingMarkerStart(value: string): number {
+	let index = value.indexOf("[[");
+	while (index >= 0) {
+		const close = value.indexOf("]]", index + 2);
+		if (close < 0 && isPartialGestureMarker(value.slice(index))) return index;
+		index = value.indexOf("[[", index + 2);
+	}
+	return value.endsWith("[") ? value.length - 1 : -1;
+}
+
+/** Incrementally strips gesture markers without exposing a split marker to UI or TTS. */
+export class GestureTriggerStream {
+	private pending = "";
+	private pendingBoundary = "";
+	private hasOutput = false;
+
+	constructor(private readonly actions: readonly NvaGestureAction[] = []) {}
+
+	push(chunk: string): GestureParseResult {
+		this.pending += chunk;
+		const markerStart = pendingMarkerStart(this.pending);
+		const safe = markerStart < 0 ? this.pending : this.pending.slice(0, markerStart);
+		this.pending = markerStart < 0 ? "" : this.pending.slice(markerStart);
+		return this.cleanSafeText(safe);
+	}
+
+	flush(): GestureParseResult {
+		const tail = this.pending;
+		this.pending = "";
+		if (tail === "[" || isPartialGestureMarker(tail)) {
+			this.pendingBoundary = "";
+			return { cleanText: "", gestures: [] };
+		}
+		const safe = tail;
+		const result = this.cleanSafeText(safe);
+		const cleanText = result.cleanText;
+		this.pendingBoundary = "";
+		return { cleanText, gestures: result.gestures };
+	}
+
+	private cleanSafeText(source: string): GestureParseResult {
+		if (!source) return { cleanText: "", gestures: [] };
+		const parsed = parseGestureTriggers(source, this.actions);
+		const leading = source.match(/^\s*/)?.[0] ?? "";
+		const trailing = source.match(/\s*$/)?.[0] ?? "";
+		if (!parsed.cleanText) {
+			this.pendingBoundary += `${leading}${trailing}`;
+			return parsed;
+		}
+		const boundary = `${this.pendingBoundary}${leading}`;
+		this.pendingBoundary = trailing;
+		const prefix = this.hasOutput && boundary
+			? boundary.includes("\n") ? "\n" : " "
+			: leading;
+		this.hasOutput = true;
+		return { cleanText: `${prefix}${parsed.cleanText}`, gestures: parsed.gestures };
+	}
 }
 
 /** player.gesture(key) 를 가진 대상. */

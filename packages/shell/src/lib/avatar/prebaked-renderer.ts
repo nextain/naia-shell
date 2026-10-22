@@ -10,6 +10,8 @@ import {
 	parseMotionSpec,
 	resolveChestY,
 } from "./nva-procedural-motion";
+import { animKind } from "./nva-core";
+import type { NvaGestureAction } from "./camera-actions";
 
 interface Config {
 	manifest: NvaManifest;
@@ -61,6 +63,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private offscreenCtx: CanvasRenderingContext2D | null = null;
 	private disposed = false;
 	private generation = 0;
+	private speakingVisual = false;
+	private cancelOneShot: (() => void) | null = null;
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
@@ -113,6 +117,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		);
 		if (!match?.localized.clip) return;
 		const generation = ++this.generation;
+		this.speakingVisual = true;
 		this.config.onSpeaking?.(true);
 		try {
 			await this.playClip(
@@ -120,21 +125,47 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				false,
 				options?.muted ?? false,
 				options,
+				generation,
+				false,
 			);
 		} catch {
 			options?.onPlaybackFailure?.();
 		} finally {
 			if (generation === this.generation && !this.disposed) {
+				this.speakingVisual = false;
 				this.config.onSpeaking?.(false);
 				await this.playIdle();
 			}
 		}
 	}
 
+	/** Manifest gestures are the only clips exposed as manual or AI actions. */
+	getGestureActions(): NvaGestureAction[] {
+		return Object.entries(this.config.manifest.animations)
+			.filter(([, animation]) => animKind(animation) === "gesture")
+			.map(([key, animation]) => ({ key, label: animation.label || key }));
+	}
+
+	/** Play a manifest gesture once, silently. Speech visuals take priority. */
+	async playAction(key: string): Promise<void> {
+		if (!this.video || this.disposed || this.speakingVisual) return;
+		const animation = this.config.manifest.animations[key];
+		if (!animation || animKind(animation) !== "gesture") return;
+		const generation = ++this.generation;
+		try {
+			await this.playClip(animation.clip, false, true, undefined, generation, false);
+		} catch {
+			return;
+		}
+		if (generation === this.generation && !this.disposed && !this.speakingVisual)
+			await this.playIdle();
+	}
+
 	/** Switch idle/talking visual only. Shell owns the actual audio playback. */
 	setSpeakingVisual(active: boolean): void {
 		if (!this.video || this.disposed) return;
-		this.generation++;
+		const generation = ++this.generation;
+		this.speakingVisual = active;
 		this.config.onSpeaking?.(active);
 		if (active) {
 			const clip =
@@ -143,7 +174,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				this.config.manifest.animations.talking?.clip ??
 				this.config.manifest.animations.speak?.clip ??
 				defaultClipOf(this.config.manifest).video;
-			void this.playClip(clip, true, true);
+			void this.playClip(clip, true, true, undefined, generation, false);
 		} else {
 			void this.playIdle();
 		}
@@ -154,36 +185,58 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		loop: boolean,
 		muted: boolean,
 		options?: AvatarPlaybackOptions,
+		expectedGeneration?: number,
+		resumePosition = false,
 	): Promise<void> {
 		if (!this.video || !this.mountedVideo)
 			throw new Error("NVA video is not mounted");
+		const url = await this.config.resolveAssetUrl(path);
+		if (this.disposed || !this.mountedVideo)
+			throw new Error("NVA renderer stopped");
+		if (expectedGeneration !== undefined && expectedGeneration !== this.generation)
+			return;
 		this.currentKeyColor =
 			this.config.manifest.chroma_key ??
 			(canCarryAlpha(path)
 				? undefined
 				: this.config.manifest.background?.color);
-		const url = await this.config.resolveAssetUrl(path);
-		if (this.disposed || !this.mountedVideo)
-			throw new Error("NVA renderer stopped");
 		const video = this.videoForClip(url);
+		this.cancelOneShot?.();
 		if (this.video !== video) {
 			this.video.pause();
 			this.video = video;
 		}
 		video.loop = loop;
 		video.muted = muted;
-		video.currentTime = 0;
+		if (!resumePosition) video.currentTime = 0;
 		if (loop) {
 			await video.play();
 			return;
 		}
 		await new Promise<void>((resolve, reject) => {
+			const cleanup = () => {
+				video.removeEventListener("playing", ready);
+				video.removeEventListener("ended", ended);
+				video.removeEventListener("error", failed);
+				if (this.cancelOneShot === cancel) this.cancelOneShot = null;
+			};
+			const cancel = () => {
+				cleanup();
+				resolve();
+			};
 			const ready = () => options?.onPlaybackReady?.();
-			const ended = () => resolve();
-			const failed = () => reject(new Error("NVA clip playback failed"));
+			const ended = () => {
+				cleanup();
+				resolve();
+			};
+			const failed = () => {
+				cleanup();
+				reject(new Error("NVA clip playback failed"));
+			};
 			video.addEventListener("playing", ready, { once: true });
 			video.addEventListener("ended", ended, { once: true });
 			video.addEventListener("error", failed, { once: true });
+			this.cancelOneShot = cancel;
 			video.play().catch(failed);
 		});
 	}
@@ -220,9 +273,13 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	private async playIdle(): Promise<void> {
 		if (!this.video || this.disposed) return;
+		const generation = this.generation;
 		await this.playClip(
 			defaultClipOf(this.config.manifest).video,
 			true,
+			true,
+			undefined,
+			generation,
 			true,
 		).catch(() => {});
 	}
@@ -323,6 +380,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	interrupt(): void {
 		this.generation++;
+		this.cancelOneShot?.();
+		this.speakingVisual = false;
 		this.config.onSpeaking?.(false);
 		void this.playIdle();
 	}

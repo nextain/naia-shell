@@ -34,6 +34,8 @@ import {
 import { writeAppSandboxFile } from "../lib/app-sandbox";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
+import { getCameraActions } from "../lib/avatar/camera-actions";
+import { GestureTriggerStream } from "../lib/avatar/nva-gesture-trigger";
 import { ensureBgmSidecar } from "../lib/bgm-sidecar-url";
 import {
 	BGM_APP_ID,
@@ -498,6 +500,7 @@ export function ChatArea({
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
+	const gestureTriggerStreamRef = useRef(new GestureTriggerStream());
 	// Providers may emit one usage event for each tool round before the final
 	// assistant text. Keep those entries with the live request so usage cannot
 	// finalize an empty assistant message before the terminal finish chunk.
@@ -1736,6 +1739,9 @@ export function ChatArea({
 		// Request state is isolated even when the previous transport terminated
 		// without a final chunk (cancel, disconnect, provider error).
 		thinkingStreamFilterRef.current.reset();
+		gestureTriggerStreamRef.current = new GestureTriggerStream(
+			getCameraActions().getGestureActions(),
+		);
 		currentRequestId.current = requestId;
 		pendingCostRef.current = null;
 		// #572 — 실패했을 때 "같은 입력을 다시" 를 제안하려면 그 입력을 알아야 한다.
@@ -1838,6 +1844,7 @@ export function ChatArea({
 		}
 
 		const memoryCtx = await buildMemoryContext();
+		memoryCtx.avatarGestures = getCameraActions().getGestureActions();
 		Logger.info("ChatArea", "handleSend → sendChatMessage", {
 			pipelineActive: pipelineActiveRef.current,
 			chatTtsEnabled,
@@ -2384,8 +2391,8 @@ export function ChatArea({
 		}
 	}
 
-	function appendVisibleResponseText(visibleText: string): void {
-		const visible = filterUserVisibleAssistantText(visibleText);
+	function appendCleanVisibleResponseText(cleanText: string): void {
+		const visible = filterUserVisibleAssistantText(cleanText);
 		if (!visible) return;
 		useChatStore.getState().appendStreamChunk(visible);
 		if (ttsTextSyncRef.current.active) {
@@ -2410,6 +2417,32 @@ export function ChatArea({
 				sendSentenceToTts(sentence);
 			}
 		}
+	}
+
+	function appendVisibleResponseText(visibleText: string): void {
+		const parsed = gestureTriggerStreamRef.current.push(visibleText);
+		for (const gesture of parsed.gestures) {
+			void getCameraActions().playAction(gesture.key).catch((error) => {
+				Logger.warn("ChatArea", "NVA gesture playback failed", {
+					key: gesture.key,
+					error: String(error),
+				});
+			});
+		}
+		appendCleanVisibleResponseText(parsed.cleanText);
+	}
+
+	function flushGestureTriggerStream(): void {
+		const parsed = gestureTriggerStreamRef.current.flush();
+		for (const gesture of parsed.gestures) {
+			void getCameraActions().playAction(gesture.key).catch((error) => {
+				Logger.warn("ChatArea", "NVA gesture playback failed", {
+					key: gesture.key,
+					error: String(error),
+				});
+			});
+		}
+		appendCleanVisibleResponseText(parsed.cleanText);
 	}
 
 	function flushThinkingStream(): void {
@@ -2547,6 +2580,7 @@ export function ChatArea({
 			}
 			case "finish":
 				flushThinkingStream();
+				flushGestureTriggerStream();
 				// Flush remaining text to TTS (both pipeline and chat mode)
 				if (sentenceChunkerRef.current) {
 					const remaining = sentenceChunkerRef.current.flush();
@@ -2637,6 +2671,7 @@ export function ChatArea({
 					}
 				}
 				flushThinkingStream();
+				flushGestureTriggerStream();
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
 				if (sentenceChunkerRef.current) {
@@ -3285,9 +3320,10 @@ export function ChatArea({
 			}
 
 			const memoryCtx = await buildMemoryContext();
+			const gestureActions = getCameraActions().getGestureActions();
 			const systemPrompt = buildSystemPrompt(
 				config.persona,
-				memoryCtx,
+				{ ...memoryCtx, avatarGestures: gestureActions },
 				config.personaDisabled,
 			);
 
@@ -3399,6 +3435,7 @@ export function ChatArea({
 			let outputTurnDirty = false;
 			let inputAccum = "";
 			let outputAccum = "";
+			let liveGestureStream = new GestureTriggerStream(gestureActions);
 			// Precedence: a server emotion.updated this turn is authoritative, so the
 			// transcript-derived fallback below must not override it.
 			let serverEmotionSeenThisTurn = false;
@@ -3417,7 +3454,16 @@ export function ChatArea({
 			};
 			session.onOutputTranscript = (text) => {
 				const store = useChatStore.getState();
-				outputAccum += text;
+				const parsed = liveGestureStream.push(text);
+				for (const gesture of parsed.gestures) {
+					void getCameraActions().playAction(gesture.key).catch((error) => {
+						Logger.warn("ChatArea", "NVA gesture playback failed", {
+							key: gesture.key,
+							error: String(error),
+						});
+					});
+				}
+				outputAccum += parsed.cleanText;
 				// Robust fallback: derive the avatar expression from the transcript
 				// itself (uppercase/lowercase tags or a leaked stage direction) when
 				// the server did NOT send emotion.updated this turn — LLM output is
@@ -3446,6 +3492,8 @@ export function ChatArea({
 			};
 			session.onInterrupted = () => {
 				player.clear();
+				liveGestureStream.flush();
+				liveGestureStream = new GestureTriggerStream(gestureActions);
 				inputTurnDirty = false;
 				outputTurnDirty = false;
 				inputAccum = "";
@@ -3457,6 +3505,8 @@ export function ChatArea({
 				noteEnvironmentTurn();
 			};
 			session.onTurnEnd = () => {
+				liveGestureStream.flush();
+				liveGestureStream = new GestureTriggerStream(gestureActions);
 				inputTurnDirty = false;
 				outputTurnDirty = false;
 				inputAccum = "";

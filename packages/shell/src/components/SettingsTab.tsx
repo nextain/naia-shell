@@ -1321,6 +1321,38 @@ export function SettingsTab() {
 			transaction: localVoiceTransactionRef.current,
 		});
 		if (cascadeRunning) {
+			const cfg = loadConfig();
+			if (!cfg) return false;
+			const isLocalHostUrl = /^(https?:\/\/)?(localhost|127\.0\.0\.1)([:/]|$)/i;
+			const currentHost = cfg.vllmTtsHost?.trim();
+			const ttsHost =
+				!currentHost || isLocalHostUrl.test(currentHost)
+					? DEFAULT_LOCAL_VOICE_HOST
+					: currentHost;
+			const voiceConfig = {
+				...cfg,
+				localVoiceEnabled: true,
+				ttsProvider: "naia-local-voice" as const,
+				ttsEnabled: true,
+				vllmTtsHost: ttsHost,
+			};
+			saveConfig(voiceConfig);
+			setTtsProvider("naia-local-voice");
+			setTtsEnabled(true);
+			setVllmTtsHost(ttsHost);
+			try {
+				await writeNaiaConfig({
+					...voiceConfig,
+					...(naiaKey ? { naiaKey } : {}),
+				} as unknown as Record<string, unknown>);
+				await writeSlotsManifest(voiceConfig, detectedVramGb ?? undefined);
+			} catch (error) {
+				Logger.warn("Settings", "ensureLocalVoiceReady:running-config-save-failed", {
+					error: String(error),
+				});
+				setCascadeMsg(`${t("settings.cascadeError")}: ${String(error)}`);
+				return false;
+			}
 			// The engine is already running (auto-start / a prior selection), but the
 			// webview may never have captured its facade URL + per-launch token — then
 			// RefAudioSection, preview, upload and synthesis all 401 (empty palette,

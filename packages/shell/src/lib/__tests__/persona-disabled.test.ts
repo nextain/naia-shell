@@ -23,6 +23,22 @@ describe("페르소나 사용 안 함", () => {
 		expect(p).toMatch(/Respond in/i);
 	});
 
+	it("끄더라도 활성 NVA 동작 안내는 남고 목록이 비면 빠진다", () => {
+		const withGesture = buildSystemPrompt(
+			"아무 페르소나",
+			{ ...ctx, avatarGestures: [{ key: "wave", label: "Wave" }] },
+			true,
+		);
+		expect(withGesture).toContain("wave: Wave");
+		expect(withGesture).toContain("[[gesture:key]]");
+		const empty = buildSystemPrompt(
+			"아무 페르소나",
+			{ ...ctx, avatarGestures: [] },
+			true,
+		);
+		expect(empty).not.toContain("NVA gesture actions");
+	});
+
 	it("켜면 기존대로 페르소나가 들어간다", () => {
 		const p = buildSystemPrompt("You are Naia (낸), a friendly AI.", ctx, false);
 		expect(p).toContain("루크");
