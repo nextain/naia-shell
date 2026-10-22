@@ -237,9 +237,9 @@ entries:
     tests:
       - { tier: deterministic_ci, path: packages/shell/src-tauri/src/studio_nva_apply.rs }
       - { tier: deterministic_ci, path: packages/shell/src/lib/__tests__/studio-nva-apply.test.ts }
-      - { tier: deterministic_ci, path: ../naia-land/src/features/studio-v2/persona/__tests__/studio-nva-apply.test.tsx }
-      - { tier: native_local, path: "2070 installed Shell 0.2.4, off/on delivery" }
-    gap: "The installed Windows 0.2.4 delivery and preview require the 2070 field acceptance; Linux tests cover parsing and apply sequencing."
+      - { tier: deterministic_ci, path: "naia.land repo: src/features/studio-v2/persona/__tests__/studio-nva-apply.test.tsx" }
+      - { tier: native_local, path: "Windows installed Shell 0.2.4, off/on delivery" }
+    gap: "The installed Windows 0.2.4 delivery and preview require Windows field acceptance; Linux tests cover parsing, queue de-duplication, archive/integrity checks, streaming limits and apply sequencing."
 
 critical_regressions:
   - id: naia-shell:regression:host-voice-download-manifest

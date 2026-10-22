@@ -2349,7 +2349,7 @@ P02 실행 그룹은 `pnpm exec vitest run src/apps/projects src/apps/workspace/
 | 상태 | 사용자 기대 |
 |---|---|
 | Studio 카드 | 주 동작은 `쉘에 적용`; 보조 메뉴에는 기존 NVA 다운로드가 남는다. 생성된 `naia://studio-nva-apply` 링크에는 `avatar_id`와 `env`만 있다. |
-| 쉘 꺼짐·켜짐 | OS가 쉘을 실행하거나 기존 창에 요청을 전달한다. 요청은 화면 이벤트 구독 이전에 도착해도 대기열에서 복구된다. |
+| 쉘 꺼짐·켜짐 | 쉘이 꺼져 있으면 링크가 쉘을 새로 실행하고, 시작한 쉘이 그 링크를 바로 처리한다. 켜져 있으면 기존 창에 요청을 전달한다. 요청은 화면 이벤트 구독 이전에 도착해도 대기열에서 복구된다. 같은 아바타·환경 링크가 처리 전에 다시 오면 확인 창은 한 번만 뜬다. |
 | 로그인 없음 | 게이트웨이 요청은 시작하지 않고 로그인 안내와 설정 이동 동작을 보여 준다. |
 | 미리보기·확인 | 쉘은 이름과 썸네일을 표시하고 `이 아바타를 적용할까요?` 확인 전에는 다운로드하지 않는다. |
 | 다운로드·검사·적용 | 고정된 HTTPS 게이트웨이만 사용하고 크기·SHA-256·ZIP 매니페스트를 검사한다. 기존 `parseNvaManifest` 및 prebaked 검사 실패 시 가져오기·선택 변경은 없다. |
@@ -2360,9 +2360,10 @@ Test Coverage Map (P02)
 
 | UC 상태·행동 | Vitest·Rust 파일/그룹 | 로컬·실 UI 증거 |
 |---|---|---|
-| 링크 형식·허용 호스트·비밀 파라미터·ID·환경 검증 | `packages/shell/src-tauri/src/studio_nva_apply.rs` — `parses_valid_studio_nva_apply_link`, `rejects_links_outside_the_registered_host`, `rejects_secret_parameters_and_duplicates`, `rejects_malformed_avatar_ids`; `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts` — confirmed gating and ordered download/inspect/import/apply | Linux `cargo test studio_nva_apply::tests` handler/parser 로그; 2070 Windows 실기기 꺼짐·켜짐 두 경우는 별도 수락 단계 |
-| Studio 주·보조 버튼, 주소 생성, 타임아웃 안내·설치 링크 | `../naia-land/src/features/studio-v2/persona/__tests__/studio-nva-apply.test.tsx` — 문구·production/development 주소·보조 다운로드·안내 문구 | 로컬 개발 서버 headless Chromium 캡처: internal capture 20261022-1355-studio-nva-apply.png |
-| 다운로드 크기·해시·매니페스트 검사 후 적용, 실패 시 적용 차단 | `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts` — `waits for confirmation before downloading`, `does not download or apply until the user confirms`, `does not import or apply when manifest inspection fails`; Rust `inspect_nva_archive` 경계 | 2070 Windows 쉘 0.2.4 설치판 확인이 실제 IPC·OS 전달 증거다. |
+| 링크 형식·허용 호스트·비밀 파라미터·ID·환경 검증, 같은 링크 중복 | `packages/shell/src-tauri/src/studio_nva_apply.rs` — `parses_valid_studio_nva_apply_link`, `rejects_links_outside_the_registered_host`, `rejects_secret_parameters_and_duplicates`, `rejects_malformed_avatar_ids`, `same_link_twice_is_queued_once`, `full_queue_drops_oldest_and_reports_it`; `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts` — confirmed gating, ordered download/inspect/import/apply, duplicate links | Linux `cargo test --lib studio_nva_apply` 로그; Windows 실기기 꺼짐·켜짐 두 경우는 별도 수락 단계 |
+| 쉘 꺼짐 상태에서 링크로 쉘 실행 | `packages/shell/src-tauri/src/main.rs` — 실행 중인 쉘(단일 인스턴스 뮤텍스)이 없으면 대기 파일만 쓰고 끝내지 않고 쉘을 시작한다; `packages/shell/src-tauri/src/lib.rs` — `mutex_name_matches_tauri_identifier` | Windows 실기기 꺼짐 상태 수락 단계 |
+| Studio 주·보조 버튼, 주소 생성, 타임아웃 안내·설치 링크 | `naia.land` 저장소 `src/features/studio-v2/persona/__tests__/studio-nva-apply.test.tsx` — 문구·production/development 주소·보조 다운로드·안내 문구 | 로컬 개발 서버 headless Chromium 화면 확인(내부 기록) |
+| 다운로드 크기·해시·매니페스트 검사 후 적용, 실패 시 적용 차단 | `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts` — `waits for confirmation before downloading`, `does not download or apply until the user confirms`, `does not import or apply when manifest inspection fails`; `packages/shell/src-tauri/src/studio_nva_apply.rs` — `archive_path_escape_is_rejected`, `archive_case_insensitive_duplicate_is_rejected`, `archive_over_uncompressed_limit_is_rejected`, `archive_with_too_many_entries_is_rejected`, `archive_manifest_missing_oversized_or_not_utf8_is_rejected`, `streamed_download_over_size_limit_is_rejected`, `streamed_download_hashes_without_buffering`, `integrity_headers_are_required_and_validated`, `integrity_hash_or_size_mismatch_is_rejected` | Windows 쉘 0.2.4 설치판 확인이 실제 IPC·OS 전달 증거다. |
 
 
 

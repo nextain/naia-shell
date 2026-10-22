@@ -30,6 +30,25 @@ mod voice_cache;
 mod stt_models;
 mod workspace;
 
+/// Named mutex that `tauri-plugin-single-instance` creates on Windows
+/// (`<tauri.conf.json identifier>-sim`). `main.rs` checks it before deciding
+/// whether a deep-link launch should hand off to a running shell or start one.
+pub const SINGLE_INSTANCE_MUTEX_NAME: &str = "com.naia.shell-sim";
+
+#[cfg(test)]
+mod single_instance_mutex_tests {
+    #[test]
+    fn mutex_name_matches_tauri_identifier() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        let identifier = config["identifier"].as_str().expect("identifier");
+        assert_eq!(
+            super::SINGLE_INSTANCE_MUTEX_NAME,
+            format!("{identifier}-sim")
+        );
+    }
+}
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};

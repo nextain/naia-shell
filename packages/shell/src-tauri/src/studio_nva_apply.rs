@@ -3,7 +3,7 @@ use futures_util::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashSet, VecDeque};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -125,26 +125,63 @@ fn next_request_id() -> String {
     format!("studio-{timestamp}-{}", *sequence)
 }
 
+const MAX_PENDING_REQUESTS: usize = 16;
+
+/// Pushes a request unless the same avatar/environment pair is already waiting.
+/// Returns the new request, or `None` when the link was a duplicate. The oldest
+/// requests are dropped (and counted) when the queue is full.
+fn push_pending_request(
+    pending: &mut VecDeque<StudioNvaApplyRequest>,
+    request_id: String,
+    avatar_id: String,
+    environment: StudioNvaEnvironment,
+) -> (Option<StudioNvaApplyRequest>, usize) {
+    if pending
+        .iter()
+        .any(|existing| existing.avatar_id == avatar_id && existing.environment == environment)
+    {
+        return (None, 0);
+    }
+    let mut dropped = 0;
+    while pending.len() >= MAX_PENDING_REQUESTS {
+        pending.pop_front();
+        dropped += 1;
+    }
+    let request = StudioNvaApplyRequest {
+        request_id,
+        avatar_id,
+        environment,
+    };
+    pending.push_back(request.clone());
+    (Some(request), dropped)
+}
+
 pub(crate) fn enqueue_request(
     app: &AppHandle,
     avatar_id: String,
     environment: StudioNvaEnvironment,
 ) {
-    let request = StudioNvaApplyRequest {
-        request_id: next_request_id(),
-        avatar_id,
-        environment,
-    };
-    {
+    let (request, dropped) = {
         let mut pending = pending_requests()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        while pending.len() >= 16 {
-            pending.pop_front();
-        }
-        pending.push_back(request.clone());
+        push_pending_request(&mut pending, next_request_id(), avatar_id, environment)
+    };
+    if dropped > 0 {
+        crate::log_both(&format!(
+            "[Naia] Studio NVA apply queue full: dropped {dropped} oldest request(s)"
+        ));
     }
-    let _ = app.emit("studio_nva_apply_requested", request);
+    match request {
+        Some(request) => {
+            let _ = app.emit("studio_nva_apply_requested", request);
+        }
+        None => {
+            crate::log_both(
+                "[Naia] Studio NVA apply deep link ignored: same request already pending",
+            );
+        }
+    }
 }
 
 #[tauri::command]
@@ -305,10 +342,38 @@ pub(crate) async fn studio_nva_apply_preview(
     })
 }
 
-fn inspect_nva_archive(bytes: &[u8]) -> Result<String, String> {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
-        .map_err(|_| "nva_archive_invalid".to_string())?;
-    if archive.len() == 0 || archive.len() > MAX_NVA_ENTRIES {
+#[derive(Clone, Copy, Debug)]
+struct ArchiveLimits {
+    max_entries: usize,
+    max_uncompressed_bytes: u64,
+    max_manifest_bytes: u64,
+}
+
+const DEFAULT_ARCHIVE_LIMITS: ArchiveLimits = ArchiveLimits {
+    max_entries: MAX_NVA_ENTRIES,
+    max_uncompressed_bytes: MAX_NVA_UNCOMPRESSED_BYTES,
+    max_manifest_bytes: MAX_MANIFEST_BYTES,
+};
+
+fn is_unsafe_entry_name(normalized: &str) -> bool {
+    let path_name = normalized.trim_end_matches('/');
+    let components = path_name.split('/').collect::<Vec<_>>();
+    let has_drive_prefix = components.first().is_some_and(|part| {
+        let bytes = part.as_bytes();
+        bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+    });
+    normalized.starts_with('/')
+        || std::path::Path::new(normalized).is_absolute()
+        || has_drive_prefix
+        || components.iter().any(|part| {
+            part.is_empty() || *part == "." || *part == ".." || part.chars().any(char::is_control)
+        })
+}
+
+fn inspect_nva_archive<R: Read + Seek>(reader: R, limits: ArchiveLimits) -> Result<String, String> {
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|_| "nva_archive_invalid".to_string())?;
+    if archive.len() == 0 || archive.len() > limits.max_entries {
         return Err("nva_archive_invalid".to_string());
     }
     let mut expanded = 0_u64;
@@ -319,40 +384,100 @@ fn inspect_nva_archive(bytes: &[u8]) -> Result<String, String> {
             .map_err(|_| "nva_archive_invalid".to_string())?;
         let normalized = entry.name().replace('\\', "/");
         let path_name = normalized.trim_end_matches('/');
-        let components = path_name.split('/').collect::<Vec<_>>();
-        let has_drive_prefix = components.first().is_some_and(|part| {
-            let bytes = part.as_bytes();
-            bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
-        });
-        if normalized.starts_with('/')
-            || std::path::Path::new(&normalized).is_absolute()
-            || has_drive_prefix
-            || components.iter().any(|part| {
-                part.is_empty()
-                    || *part == "."
-                    || *part == ".."
-                    || part.chars().any(char::is_control)
-            })
-            || !names.insert(path_name.to_ascii_lowercase())
-        {
+        if is_unsafe_entry_name(&normalized) || !names.insert(path_name.to_ascii_lowercase()) {
             return Err("nva_archive_invalid".to_string());
         }
         expanded = expanded.saturating_add(entry.size());
-        if expanded > MAX_NVA_UNCOMPRESSED_BYTES {
+        if expanded > limits.max_uncompressed_bytes {
             return Err("nva_archive_too_large".to_string());
         }
     }
-    let mut manifest = archive
+    let manifest = archive
         .by_name("manifest.json")
         .map_err(|_| "nva_manifest_missing".to_string())?;
-    if manifest.size() == 0 || manifest.size() > MAX_MANIFEST_BYTES {
+    if manifest.size() == 0 || manifest.size() > limits.max_manifest_bytes {
         return Err("nva_manifest_invalid".to_string());
     }
     let mut content = Vec::with_capacity(manifest.size() as usize);
+    // Bound the actual read too: the declared size in the header is not trusted.
     manifest
+        .take(limits.max_manifest_bytes + 1)
         .read_to_end(&mut content)
         .map_err(|_| "nva_manifest_invalid".to_string())?;
+    if content.len() as u64 > limits.max_manifest_bytes {
+        return Err("nva_manifest_invalid".to_string());
+    }
     String::from_utf8(content).map_err(|_| "nva_manifest_invalid".to_string())
+}
+
+/// Reads the integrity headers. The SHA-256 header is mandatory; the size
+/// header is optional but must parse when present.
+fn parse_integrity_headers(
+    sha_header: Option<&str>,
+    size_header: Option<&str>,
+) -> Result<(String, Option<u64>), String> {
+    let expected_sha = sha_header
+        .map(str::to_ascii_lowercase)
+        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| "nva_integrity_metadata_missing".to_string())?;
+    let expected_size = match size_header {
+        None => None,
+        Some(value) => Some(
+            value
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| "nva_integrity_metadata_missing".to_string())?,
+        ),
+    };
+    Ok((expected_sha, expected_size))
+}
+
+fn verify_integrity(
+    expected_sha: &str,
+    expected_size: Option<u64>,
+    actual_sha: &str,
+    actual_size: u64,
+) -> Result<(), String> {
+    if expected_size.is_some_and(|size| size != actual_size) {
+        return Err("nva_integrity_size_mismatch".to_string());
+    }
+    if actual_sha != expected_sha {
+        return Err("nva_integrity_sha_mismatch".to_string());
+    }
+    Ok(())
+}
+
+/// Streams the body into `sink`, hashing as it goes, without holding the whole
+/// archive in memory. Stops as soon as the running total passes `max_bytes`.
+async fn stream_to_sink_hashed<S, B, E, W>(
+    mut stream: S,
+    sink: &mut W,
+    max_bytes: u64,
+) -> Result<(u64, String), String>
+where
+    S: futures_util::Stream<Item = Result<B, E>> + Unpin,
+    B: AsRef<[u8]>,
+    W: Write,
+{
+    let mut hasher = Sha256::new();
+    let mut total = 0_u64;
+    while let Some(chunk) = stream
+        .try_next()
+        .await
+        .map_err(|_| "nva_download_unavailable".to_string())?
+    {
+        let chunk = chunk.as_ref();
+        total = total.saturating_add(chunk.len() as u64);
+        if total > max_bytes {
+            return Err("nva_download_too_large".to_string());
+        }
+        hasher.update(chunk);
+        sink.write_all(chunk)
+            .map_err(|_| "nva_download_storage_unavailable".to_string())?;
+    }
+    sink.flush()
+        .map_err(|_| "nva_download_storage_unavailable".to_string())?;
+    Ok((total, format!("{:x}", hasher.finalize())))
 }
 
 #[tauri::command]
@@ -378,35 +503,25 @@ pub(crate) async fn studio_nva_apply_download(
     if !response.status().is_success() {
         return Err(format!("nva_download_http_{}", response.status().as_u16()));
     }
-    let expected_sha = response
-        .headers()
-        .get("x-nva-sha256")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_ascii_lowercase)
-        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        .ok_or_else(|| "nva_integrity_metadata_missing".to_string())?;
-    let expected_size = response
-        .headers()
-        .get("x-nva-size")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<usize>().ok());
-    let bytes = read_bounded_response(
-        response,
-        MAX_NVA_DOWNLOAD_BYTES,
-        "nva_download_too_large",
-        "nva_download_unavailable",
-    )
-    .await?;
-    if let Some(size) = expected_size {
-        if size != bytes.len() {
-            return Err("nva_integrity_size_mismatch".to_string());
-        }
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+    };
+    let (expected_sha, expected_size) = parse_integrity_headers(
+        header("x-nva-sha256").as_deref(),
+        header("x-nva-size").as_deref(),
+    )?;
+    let max_bytes = MAX_NVA_DOWNLOAD_BYTES as u64;
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes)
+        || expected_size.is_some_and(|size| size > max_bytes)
+    {
+        return Err("nva_download_too_large".to_string());
     }
-    let actual_sha = format!("{:x}", Sha256::digest(&bytes));
-    if actual_sha != expected_sha {
-        return Err("nva_integrity_sha_mismatch".to_string());
-    }
-    let manifest_json = inspect_nva_archive(&bytes)?;
 
     let cache_dir = app
         .path()
@@ -414,17 +529,26 @@ pub(crate) async fn studio_nva_apply_download(
         .map_err(|_| "nva_download_storage_unavailable".to_string())?;
     std::fs::create_dir_all(&cache_dir)
         .map_err(|_| "nva_download_storage_unavailable".to_string())?;
-    let (mut file, path) = tempfile::Builder::new()
+    // The temp file is removed automatically on every early return below; it is
+    // kept only after size, hash and archive checks all pass.
+    let mut staged = tempfile::Builder::new()
         .prefix("naia-studio-")
         .suffix(".nva")
         .tempfile_in(&cache_dir)
-        .map_err(|_| "nva_download_storage_unavailable".to_string())?
+        .map_err(|_| "nva_download_storage_unavailable".to_string())?;
+    let (actual_size, actual_sha) = {
+        let mut writer = std::io::BufWriter::new(staged.as_file_mut());
+        stream_to_sink_hashed(response.bytes_stream(), &mut writer, max_bytes).await?
+    };
+    verify_integrity(&expected_sha, expected_size, &actual_sha, actual_size)?;
+    let file = staged.as_file_mut();
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| "nva_download_storage_unavailable".to_string())?;
+    let manifest_json =
+        inspect_nva_archive(std::io::BufReader::new(&*file), DEFAULT_ARCHIVE_LIMITS)?;
+    let (_, path) = staged
         .keep()
         .map_err(|_| "nva_download_storage_unavailable".to_string())?;
-    if file.write_all(&bytes).is_err() {
-        let _ = std::fs::remove_file(&path);
-        return Err("nva_download_storage_unavailable".to_string());
-    }
     Ok(StudioNvaDownload {
         path: path.to_string_lossy().into_owned(),
         manifest_json,
@@ -458,7 +582,251 @@ pub(crate) fn studio_nva_apply_cleanup(app: AppHandle, path: String) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_deep_link, StudioNvaEnvironment};
+    use super::{
+        inspect_nva_archive, parse_deep_link, parse_integrity_headers, push_pending_request,
+        stream_to_sink_hashed, verify_integrity, ArchiveLimits, StudioNvaEnvironment,
+        DEFAULT_ARCHIVE_LIMITS, MAX_PENDING_REQUESTS,
+    };
+    use sha2::{Digest, Sha256};
+    use std::collections::VecDeque;
+    use std::io::{Cursor, Write};
+
+    fn zip_with(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, body) in entries {
+            writer.start_file(*name, options).expect("start entry");
+            writer.write_all(body).expect("write entry");
+        }
+        writer.finish().expect("finish zip").into_inner()
+    }
+
+    const MANIFEST: &[u8] = br#"{"format":"nva"}"#;
+
+    #[test]
+    fn archive_with_manifest_passes_inspection() {
+        let bytes = zip_with(&[("manifest.json", MANIFEST), ("frames/0001.png", b"png")]);
+        assert_eq!(
+            inspect_nva_archive(Cursor::new(bytes), DEFAULT_ARCHIVE_LIMITS).as_deref(),
+            Ok(r#"{"format":"nva"}"#)
+        );
+    }
+
+    #[test]
+    fn archive_path_escape_is_rejected() {
+        for bad in [
+            "../evil.txt",
+            "frames/../../evil.txt",
+            "/etc/evil.txt",
+            "C:/Windows/evil.txt",
+            "..\\evil.txt",
+            "frames//evil.txt",
+            "./manifest2.json",
+        ] {
+            let bytes = zip_with(&[("manifest.json", MANIFEST), (bad, b"x")]);
+            assert_eq!(
+                inspect_nva_archive(Cursor::new(bytes), DEFAULT_ARCHIVE_LIMITS),
+                Err("nva_archive_invalid".to_string()),
+                "must reject {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn archive_case_insensitive_duplicate_is_rejected() {
+        let bytes = zip_with(&[
+            ("manifest.json", MANIFEST),
+            ("A.png", b"1"),
+            ("a.png", b"2"),
+        ]);
+        assert_eq!(
+            inspect_nva_archive(Cursor::new(bytes), DEFAULT_ARCHIVE_LIMITS),
+            Err("nva_archive_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_over_uncompressed_limit_is_rejected() {
+        let limits = ArchiveLimits {
+            max_uncompressed_bytes: 64,
+            ..DEFAULT_ARCHIVE_LIMITS
+        };
+        let big = vec![b'x'; 65];
+        let bytes = zip_with(&[("manifest.json", MANIFEST), ("frames/big.bin", &big)]);
+        assert_eq!(
+            inspect_nva_archive(Cursor::new(bytes), limits),
+            Err("nva_archive_too_large".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_with_too_many_entries_is_rejected() {
+        let limits = ArchiveLimits {
+            max_entries: 2,
+            ..DEFAULT_ARCHIVE_LIMITS
+        };
+        let bytes = zip_with(&[("manifest.json", MANIFEST), ("a", b"1"), ("b", b"2")]);
+        assert_eq!(
+            inspect_nva_archive(Cursor::new(bytes), limits),
+            Err("nva_archive_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_manifest_missing_oversized_or_not_utf8_is_rejected() {
+        let missing = zip_with(&[("frames/0001.png", b"png")]);
+        assert_eq!(
+            inspect_nva_archive(Cursor::new(missing), DEFAULT_ARCHIVE_LIMITS),
+            Err("nva_manifest_missing".to_string())
+        );
+        let limits = ArchiveLimits {
+            max_manifest_bytes: 4,
+            ..DEFAULT_ARCHIVE_LIMITS
+        };
+        let oversized = zip_with(&[("manifest.json", MANIFEST)]);
+        assert_eq!(
+            inspect_nva_archive(Cursor::new(oversized), limits),
+            Err("nva_manifest_invalid".to_string())
+        );
+        let not_utf8 = zip_with(&[("manifest.json", &[0xff, 0xfe, 0xfd])]);
+        assert_eq!(
+            inspect_nva_archive(Cursor::new(not_utf8), DEFAULT_ARCHIVE_LIMITS),
+            Err("nva_manifest_invalid".to_string())
+        );
+        assert_eq!(
+            inspect_nva_archive(Cursor::new(b"not a zip".to_vec()), DEFAULT_ARCHIVE_LIMITS),
+            Err("nva_archive_invalid".to_string())
+        );
+    }
+
+    fn chunks(
+        parts: &[&'static [u8]],
+    ) -> impl futures_util::Stream<Item = Result<&'static [u8], ()>> + Unpin {
+        futures_util::stream::iter(parts.iter().map(|part| Ok(*part)).collect::<Vec<_>>())
+    }
+
+    #[tokio::test]
+    async fn streamed_download_hashes_without_buffering() {
+        let mut sink = Vec::new();
+        let (size, sha) = stream_to_sink_hashed(chunks(&[b"hello ", b"world"]), &mut sink, 64)
+            .await
+            .expect("stream within limit");
+        assert_eq!(size, 11);
+        assert_eq!(sink, b"hello world");
+        assert_eq!(sha, format!("{:x}", Sha256::digest(b"hello world")));
+    }
+
+    #[tokio::test]
+    async fn streamed_download_over_size_limit_is_rejected() {
+        let mut sink = Vec::new();
+        let result =
+            stream_to_sink_hashed(chunks(&[b"12345", b"67890", b"x"]), &mut sink, 10).await;
+        assert_eq!(result, Err("nva_download_too_large".to_string()));
+        assert!(
+            sink.len() <= 10,
+            "must stop writing before passing the limit"
+        );
+    }
+
+    #[tokio::test]
+    async fn streamed_download_read_error_is_reported() {
+        let stream = futures_util::stream::iter(vec![Ok(&b"part"[..]), Err(())]);
+        let mut sink = Vec::new();
+        assert_eq!(
+            stream_to_sink_hashed(stream, &mut sink, 64).await,
+            Err("nva_download_unavailable".to_string())
+        );
+    }
+
+    #[test]
+    fn integrity_headers_are_required_and_validated() {
+        let sha = "A".repeat(64);
+        assert_eq!(
+            parse_integrity_headers(Some(&sha), Some("42")),
+            Ok(("a".repeat(64), Some(42)))
+        );
+        assert_eq!(
+            parse_integrity_headers(Some(&sha), None),
+            Ok(("a".repeat(64), None))
+        );
+        for bad in [None, Some(""), Some("abc"), Some(&*"g".repeat(64))] {
+            assert_eq!(
+                parse_integrity_headers(bad, None),
+                Err("nva_integrity_metadata_missing".to_string()),
+                "must reject sha header {bad:?}"
+            );
+        }
+        assert_eq!(
+            parse_integrity_headers(Some(&sha), Some("-1")),
+            Err("nva_integrity_metadata_missing".to_string())
+        );
+    }
+
+    #[test]
+    fn integrity_hash_or_size_mismatch_is_rejected() {
+        let actual = format!("{:x}", Sha256::digest(b"archive"));
+        assert_eq!(verify_integrity(&actual, Some(7), &actual, 7), Ok(()));
+        assert_eq!(verify_integrity(&actual, None, &actual, 7), Ok(()));
+        assert_eq!(
+            verify_integrity(&"0".repeat(64), None, &actual, 7),
+            Err("nva_integrity_sha_mismatch".to_string())
+        );
+        assert_eq!(
+            verify_integrity(&actual, Some(8), &actual, 7),
+            Err("nva_integrity_size_mismatch".to_string())
+        );
+    }
+
+    #[test]
+    fn same_link_twice_is_queued_once() {
+        let mut pending = VecDeque::new();
+        let (first, _) = push_pending_request(
+            &mut pending,
+            "r1".into(),
+            "av_1".into(),
+            StudioNvaEnvironment::Production,
+        );
+        assert!(first.is_some());
+        let (second, _) = push_pending_request(
+            &mut pending,
+            "r2".into(),
+            "av_1".into(),
+            StudioNvaEnvironment::Production,
+        );
+        assert!(second.is_none());
+        let (other_env, _) = push_pending_request(
+            &mut pending,
+            "r3".into(),
+            "av_1".into(),
+            StudioNvaEnvironment::Development,
+        );
+        assert!(other_env.is_some());
+        assert_eq!(pending.len(), 2);
+    }
+
+    #[test]
+    fn full_queue_drops_oldest_and_reports_it() {
+        let mut pending = VecDeque::new();
+        for index in 0..MAX_PENDING_REQUESTS {
+            push_pending_request(
+                &mut pending,
+                format!("r{index}"),
+                format!("av{index}"),
+                StudioNvaEnvironment::Production,
+            );
+        }
+        let (request, dropped) = push_pending_request(
+            &mut pending,
+            "new".into(),
+            "avnew".into(),
+            StudioNvaEnvironment::Production,
+        );
+        assert!(request.is_some());
+        assert_eq!(dropped, 1);
+        assert_eq!(pending.len(), MAX_PENDING_REQUESTS);
+        assert_eq!(pending.front().map(|r| r.request_id.as_str()), Some("r1"));
+    }
 
     #[test]
     fn parses_valid_studio_nva_apply_link() {

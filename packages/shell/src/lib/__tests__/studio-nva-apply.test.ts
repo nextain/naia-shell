@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { runStudioNvaApplyFlow } from "../studio-nva-apply";
+import {
+	hasPendingStudioNvaTarget,
+	runStudioNvaApplyFlow,
+} from "../studio-nva-apply";
 
 function makeFlow(confirmed: boolean, inspectManifest: () => void = () => {}) {
 	const steps: string[] = [];
@@ -69,5 +72,35 @@ describe("Studio NVA apply flow", () => {
 		expect(steps).toEqual(["download", "inspect", "cleanup"]);
 		expect(flow.importAsset).not.toHaveBeenCalled();
 		expect(flow.applyModel).not.toHaveBeenCalled();
+	});
+});
+
+describe("Studio NVA apply duplicate links", () => {
+	const pending = [
+		{ requestId: "r1", avatarId: "av_1", environment: "production" },
+	];
+
+	it("treats the same avatar on the same environment as a repeat", () => {
+		expect(
+			hasPendingStudioNvaTarget(pending, {
+				avatarId: "av_1",
+				environment: "production",
+			}),
+		).toBe(true);
+	});
+
+	it("keeps a different avatar or environment as a new request", () => {
+		expect(
+			hasPendingStudioNvaTarget(pending, {
+				avatarId: "av_2",
+				environment: "production",
+			}),
+		).toBe(false);
+		expect(
+			hasPendingStudioNvaTarget(pending, {
+				avatarId: "av_1",
+				environment: "development",
+			}),
+		).toBe(false);
 	});
 });

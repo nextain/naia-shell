@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getAdkPath, writeNaiaConfig } from "../lib/adk-store";
 import { loadConfigWithSecrets, saveConfig } from "../lib/config";
 import { isPrebakedNvaManifest, parseNvaManifest } from "../lib/nva";
-import { runStudioNvaApplyFlow } from "../lib/studio-nva-apply";
+import {
+	hasPendingStudioNvaTarget,
+	runStudioNvaApplyFlow,
+} from "../lib/studio-nva-apply";
 import { useAppStore } from "../stores/app";
 
 type Environment = "production" | "development";
@@ -65,7 +68,11 @@ export function StudioNvaApplyDialog() {
 		)
 			return;
 		seenRequestIds.current.add(candidate.requestId);
-		setRequests((current) => [...current, candidate]);
+		setRequests((current) =>
+			hasPendingStudioNvaTarget(current, candidate)
+				? current
+				: [...current, candidate],
+		);
 	}, []);
 
 	useEffect(() => {

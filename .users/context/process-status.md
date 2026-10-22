@@ -1,11 +1,12 @@
-<!-- src-sha: 249ee0ae4ee9df69 -->
+<!-- src-sha: b86d8de8bdad066d -->
 
 ## Studio NVA 쉘 적용 — 2026-10-22 (#105)
 
 - 기준: Studio `dd69c873213fcfb1912a4116b491fd2c2dc5219d`; Shell `1d590cf2e257d2329e85312a194ad90352907ed1`. Shell은 progress/HANDOFF가 마지막 0.2.4 설치판의 소스로 가리킨 기준이다. 더 최신 canonical-NVA 가지는 마지막 전달 설치판 기준이 아니어서 고르지 않았다.
 - Studio는 아바타 ID와 운영/개발 환경만 담은 `naia://studio-nva-apply` 링크를 만들고, 기존 다운로드는 보조 메뉴에 둔다. Shell은 로그인 자격으로 고정 HTTPS 게이트웨이에서 이름·미리보기를 읽고, 사용자 확인 뒤 크기·SHA-256·ZIP 매니페스트 및 기존 NVA 검사를 거쳐 적용한다.
-- 검증: Studio 관련 테스트 12 통과, Shell 흐름 테스트 3 통과, Rust 딥링크 파서 4 통과, Shell 전체 Vitest 2,405 통과/21 제외. 두 TypeScript 검사와 변경 파일 lint 통과. 개발 서버 headless Chromium 캡처는 internal capture 20261022-1355-studio-nva-apply.png.
-- P04 진행 중: 2070에 설치된 Windows Shell 0.2.4에서 창 꺼짐/켜짐 전달 확인은 조정자 실기 수락으로 남아 있다. 푸시·설치판 배포는 하지 않았다.
+- 검수 2회차 고침: 쉘이 꺼진 윈도에서 링크를 누르면 쉘이 새로 뜨고, 같은 링크가 거듭 와도 한 번만 묻고, 내려받기는 임시 파일로 흘려 쓰며 해시를 계산한다.
+- 검증: Shell 흐름 테스트 5 통과, Rust `studio_nva_apply`·단일 인스턴스 시험 통과(파서·대기열·ZIP 경로 탈출·크기 초과·해시 불일치·스트리밍 상한). Shell TypeScript 검사와 변경 파일 lint 통과. Studio 화면은 로컬 headless 브라우저로 확인(내부 기록).
+- P04 진행 중: Windows 실기기에 설치된 Shell 0.2.4에서 창 꺼짐/켜짐 전달 확인은 조정자 실기 수락으로 남아 있다. 푸시·설치판 배포는 하지 않았다.
 
 ## Qwen3.5 모델 받기 수명주기 — #759 단계 2
 
