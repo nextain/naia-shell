@@ -2342,5 +2342,27 @@ Test Coverage Map (P02)
 
 P02 실행 그룹은 `pnpm exec vitest run src/apps/projects src/apps/workspace/__tests__/workspace-app-registry.test.tsx src/apps/workspace/__tests__/use-herdr-runtime.test.tsx src/apps/__tests__/browser-center-area.test.tsx`, `pnpm exec playwright test e2e/project-app.spec.ts e2e/91-workspace-app.spec.ts e2e/197-browser-login.spec.ts`, `cargo test --manifest-path src-tauri/Cargo.toml project_agent_pty`, `cargo test --manifest-path src-tauri/Cargo.toml herdr::pty`, `cargo test --manifest-path src-tauri/Cargo.toml project_webview`로 묶는다. 새 stage 3 테스트 case명은 구현 중인 test 파일에 정한 실제 그룹명과 결과 문서에서 일치시킨다. Native WebView가 가능한 환경에서 실제 화면 표시를 별도로 실행하지 않았다면, IPC mock·단위 테스트를 표시 증거로 계산하지 않는다.
 
+## UC-SHELL-STUDIO-NVA-APPLY-105 — Studio 아바타를 쉘에 안전하게 적용한다 (#105, S73)
+
+사용자는 Studio의 아바타 탭에서 `쉘에 적용`을 누른다. 링크에는 아바타 ID와 운영/개발 환경만 들어가며 쉘은 이미 로그인한 자기 계정 자격으로 고정된 HTTPS 게이트웨이에서 미리보기와 NVA를 받는다. 쉘은 아바타 이름·미리보기를 보여 주고 사용자가 확인한 뒤에만 파일을 받는다. 기존 NVA 매니페스트 검사가 실패하면 가져오거나 활성 아바타로 바꾸지 않는다. 검사와 적용이 끝나면 성공 또는 실패 이유를 보여 준다. 로그인이 없으면 로그인 안내를 보인다. Studio는 기존 `.nva` 내려받기를 작은 보조 메뉴에 남기며, 쉘이 열리지 않으면 설치 안내를 제공한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| Studio 카드 | 주 동작은 `쉘에 적용`; 보조 메뉴에는 기존 NVA 다운로드가 남는다. 생성된 `naia://studio-nva-apply` 링크에는 `avatar_id`와 `env`만 있다. |
+| 쉘 꺼짐·켜짐 | OS가 쉘을 실행하거나 기존 창에 요청을 전달한다. 요청은 화면 이벤트 구독 이전에 도착해도 대기열에서 복구된다. |
+| 로그인 없음 | 게이트웨이 요청은 시작하지 않고 로그인 안내와 설정 이동 동작을 보여 준다. |
+| 미리보기·확인 | 쉘은 이름과 썸네일을 표시하고 `이 아바타를 적용할까요?` 확인 전에는 다운로드하지 않는다. |
+| 다운로드·검사·적용 | 고정된 HTTPS 게이트웨이만 사용하고 크기·SHA-256·ZIP 매니페스트를 검사한다. 기존 `parseNvaManifest` 및 prebaked 검사 실패 시 가져오기·선택 변경은 없다. |
+| 결과 | 성공한 아바타 이름을 보여 주고 실패하면 사람이 확인할 수 있는 이유를 표시한다. 임시 다운로드 파일은 정리한다. |
+| 링크 미처리 | Studio 페이지가 계속 보이면 “나이아 쉘을 설치하거나 실행해 주세요”와 설치 안내 링크가 나타난다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest·Rust 파일/그룹 | 로컬·실 UI 증거 |
+|---|---|---|
+| 링크 형식·허용 호스트·비밀 파라미터·ID·환경 검증 | `packages/shell/src-tauri/src/studio_nva_apply.rs` — `parses_valid_studio_nva_apply_link`, `rejects_links_outside_the_registered_host`, `rejects_secret_parameters_and_duplicates`, `rejects_malformed_avatar_ids`; `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts` — confirmed gating and ordered download/inspect/import/apply | Linux `cargo test studio_nva_apply::tests` handler/parser 로그; 2070 Windows 실기기 꺼짐·켜짐 두 경우는 별도 수락 단계 |
+| Studio 주·보조 버튼, 주소 생성, 타임아웃 안내·설치 링크 | `../naia-land/src/features/studio-v2/persona/__tests__/studio-nva-apply.test.tsx` — 문구·production/development 주소·보조 다운로드·안내 문구 | 로컬 개발 서버 headless Chromium 캡처: internal capture 20261022-1355-studio-nva-apply.png |
+| 다운로드 크기·해시·매니페스트 검사 후 적용, 실패 시 적용 차단 | `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts` — `waits for confirmation before downloading`, `does not download or apply until the user confirms`, `does not import or apply when manifest inspection fails`; Rust `inspect_nva_archive` 경계 | 2070 Windows 쉘 0.2.4 설치판 확인이 실제 IPC·OS 전달 증거다. |
+
 
 

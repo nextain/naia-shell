@@ -19,6 +19,28 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "studio_nva_apply_105": {
+      "issue": 105,
+      "title": "Studio에서 Shell 0.2.4로 NVA 적용",
+      "requirements": "docs/requirements.md FR-STUDIO-NVA-APPLY.1",
+      "scenario": "docs/user-scenarios.md UC-SHELL-STUDIO-NVA-APPLY-105",
+      "base_commits": {
+        "naia_land": "dd69c873213fcfb1912a4116b491fd2c2dc5219d",
+        "naia_shell": "1d590cf2e257d2329e85312a194ad90352907ed1"
+      },
+      "shell_base_reason": "The 0.2.4 installer handoff and progress record identify this as the last installer source branch; the newer canonical-NVA branch was not the delivered installer base.",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "verification": "Shell full Vitest 2405 passed/21 skipped; focused Shell apply tests 3 passed; Studio apply and related avatar tests 12 passed; Rust deep-link parser 4 passed; both TypeScript checks and changed-file lint passed. Headless Chromium screenshot: internal capture 20261022-1355-studio-nva-apply.png.",
+      "remaining": "P04 remains in progress until the coordinator validates the installed Windows Shell 0.2.4 with the window closed and already open on 2070. No push or installer delivery.",
+      "last_updated": "2026-10-22T14:00:44+09:00"
+    },
     "issue_758_s2_ollama_install": {
       "issue": 758,
       "title": "Ollama 설치·찾기 (#758 단계 2)",

@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceAppApi } from "./apps/workspace/types";
 import { AppShellFrame } from "./components/AppShellFrame";
+import { StudioNvaApplyDialog } from "./components/StudioNvaApplyDialog";
 import { useAgentAuthSync } from "./hooks/useAgentAuthSync";
 import {
 	applyTheme,
@@ -1095,6 +1096,7 @@ export function App() {
 					updateInfo,
 				}}
 			/>
+			<StudioNvaApplyDialog />
 			{globalToast && (
 				<div
 					className="workspace-app__idle-toast"

@@ -1384,3 +1384,9 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 |---|---|---|---|---|
 | **NFR-PROJECT-APP.1** | 탐색과 설정 읽기는 사용자가 선택한 naia-pj-adk 체크아웃 내부로 제한한다. 경로가 루트 밖으로 확장되지 않도록 하고, 누락·잘못된 설정을 성공으로 표시하지 않으며 문제 파일과 복구 다음 조치를 안내한다. 세 탭은 이름·선택 상태·키보드 이동을 접근 가능한 탭 의미로 노출하고, 진행·빈 목록·성공·오류 상태를 좁은 창에서도 읽고 조작할 수 있게 한다. | UC-PROJECT-APP-SELECT-OPEN-756-S1 | `project-catalog.test.ts` (`Project catalog — F-01`), `ProjectsApp.test.tsx` (`ProjectsApp — F-01`); `packages/shell/e2e/project-app.spec.ts` (`Project app — stage 1`) | In progress |
 | **NFR-PROJECT-APP.2** | 카탈로그는 canonical naia-adk 경계와 기대 부모 관계를 검증하고 symlink를 따라가지 않는다. 전체 순회 디렉터리 항목과 표시 행은 각각 200개, YAML은 파일당 64 KiB로 제한하며 잘림·초과 크기·메타데이터 및 디렉터리 오류를 루트 기준 상대 경로와 사유로 표시한다. 프로젝트 상태는 정규화 프로젝트 경로로 분리하고 셸 재시작 때 마지막 프로젝트와 해당 탭을 복원한다. 목록·검색은 프로젝트를 열었을 때 숨기고 세 탭 및 전환·키보드 조작을 좁은 화면에서도 사용할 수 있게 한다. 앱 막대 항목 수는 프로젝트 수와 무관하게 하나로 유지한다. | UC-PROJECT-APP-SINGLE-OPEN-756-S2 | `packages/shell/src-tauri/src/project_catalog.rs` — boundary, symlink, scan/display/YAML limits; `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `project-session.test.ts`; `packages/shell/e2e/project-app.spec.ts` | Pending |
+
+## 기능 요구사항 (FR) — Studio에서 쉘로 NVA 적용 (#105)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-STUDIO-NVA-APPLY.1** | Studio의 아바타 탭은 `쉘에 적용` 링크를 제공하고 기존 NVA 다운로드를 보조 메뉴에 유지한다. 링크에는 검증 가능한 아바타 ID와 production/development 환경만 담는다. 쉘은 허용된 HTTPS 게이트웨이에서 로그인 자격으로 미리보기·NVA를 요청하며 외부 호스트·리다이렉트·비밀 query를 거부한다. 다운로드는 200 MiB 이하이고 SHA-256과 ZIP 매니페스트를 확인한다. 이름·미리보기를 보여 주고 사용자 확인 뒤에만 다운로드하며 기존 NVA 매니페스트 검사가 통과한 경우에만 가져오기·선택을 저장한다. 로그인 필요·성공·실패 이유를 화면에 보이고, 링크 후 Studio가 계속 보이면 설치 안내를 제공한다. | UC-SHELL-STUDIO-NVA-APPLY-105 | `studio-nva-apply.test.tsx`; `packages/shell/src-tauri/src/studio_nva_apply.rs` parser tests; `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts` | In progress |

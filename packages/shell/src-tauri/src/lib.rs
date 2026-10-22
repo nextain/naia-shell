@@ -21,6 +21,7 @@ mod ollama_runtime;
 mod platform;
 mod project_catalog;
 mod project_catalog_runtime;
+mod studio_nva_apply;
 mod project_agent_pty;
 mod project_webview;
 mod pty;
@@ -208,6 +209,14 @@ pub(crate) fn process_deep_link_url(
             "state": state,
         });
         let _ = app_handle.emit("app_install_requested", payload);
+        return;
+    }
+    if parsed.scheme() == "naia" && parsed.host_str() == Some("studio-nva-apply") {
+        if let Some((avatar_id, environment)) = studio_nva_apply::parse_deep_link(url_str) {
+            studio_nva_apply::enqueue_request(app_handle, avatar_id, environment);
+        } else {
+            log_both("[Naia] Studio NVA apply deep link rejected: invalid request");
+        }
         return;
     }
     // Accept both shapes:
@@ -14541,6 +14550,11 @@ pub fn run() {
             fetch_linked_channels,
             // naia-settings asset commands
             list_naia_assets,
+            studio_nva_apply::studio_nva_apply_pending,
+            studio_nva_apply::studio_nva_apply_ack,
+            studio_nva_apply::studio_nva_apply_preview,
+            studio_nva_apply::studio_nva_apply_download,
+            studio_nva_apply::studio_nva_apply_cleanup,
             upload_nva_bundle,
             import_naia_asset,
             delete_naia_asset,
