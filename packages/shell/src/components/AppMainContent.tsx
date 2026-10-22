@@ -13,13 +13,18 @@ import { t } from "../lib/i18n";
 import type { UpdateInfo } from "../lib/updater";
 import { snoozeStartupUpdatePrompt } from "../lib/updater";
 import { useAppStore } from "../stores/app";
-import { AiControlBar } from "./AiControlBar";
 import { AppBar } from "./AppBar";
 import { DeferredAdkSetupScreen } from "./DeferredAdkSetupScreen";
 import { DeferredChatArea } from "./DeferredChatArea";
 import { DeferredOnboardingWizard } from "./DeferredOnboardingWizard";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TitleBar } from "./TitleBar";
+
+const AiControlBar = lazy(() =>
+	import("./AiControlBar").then((module) => ({
+		default: module.AiControlBar,
+	})),
+);
 
 const AnnouncementBanner = lazy(() =>
 	import("./AnnouncementBanner").then((module) => ({
@@ -239,7 +244,9 @@ export function AppMainContent(props: AppMainContentProps) {
 						</div>
 					)}
 					<div className="naia-overlay">
-						<AiControlBar />
+						<Suspense fallback={null}>
+							<AiControlBar />
+						</Suspense>
 						<div className="naia-chat-area">
 							<button
 								type="button"
