@@ -37,9 +37,9 @@
         "P05": "pending"
       },
       "status": "in_progress",
-      "verification": "Review round 2 fixes: a closed-shell Windows deep link now starts the shell; repeated links are queued once; the download streams to a temp file with a running hash. Focused Shell apply tests 5 passed; Rust studio_nva_apply and single-instance tests pass (parser, queue, archive escape/size, integrity mismatch, streaming limit); Shell TypeScript check and changed-file lint passed. Studio screen checked in a local headless browser (internal record).",
+      "verification": "Review round 2 and entry-bundle fix: a closed-shell Windows deep link starts the shell; repeated links are queued once; the download streams to a temp file with a running hash; the Studio apply receiver and dialog are loaded asynchronously after initial render so they stay out of the entry chunk (entryRawBytes 531815 / 540000, entryGzipBytes 166146 / 170000). Focused Shell apply and bundle budget tests pass; Rust studio_nva_apply and single-instance tests pass; Shell TypeScript check and build pass. Studio screen checked in a local headless browser (internal record).",
       "remaining": "P04 remains in progress until the coordinator validates the installed Windows Shell 0.2.4 on a Windows device with the window closed and already open. No push or installer delivery.",
-      "last_updated": "2026-10-22T18:20:00+09:00"
+      "last_updated": "2026-10-22T20:11:00+09:00"
     },
     "issue_758_s2_ollama_install": {
       "issue": 758,

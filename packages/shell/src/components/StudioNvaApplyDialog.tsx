@@ -1,21 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAdkPath, writeNaiaConfig } from "../lib/adk-store";
 import { loadConfigWithSecrets, saveConfig } from "../lib/config";
 import { isPrebakedNvaManifest, parseNvaManifest } from "../lib/nva";
-import {
-	hasPendingStudioNvaTarget,
-	runStudioNvaApplyFlow,
-} from "../lib/studio-nva-apply";
+import { runStudioNvaApplyFlow } from "../lib/studio-nva-apply";
+import type { StudioNvaApplyRequest } from "../lib/studio-nva-apply-request";
 import { useAppStore } from "../stores/app";
 
-type Environment = "production" | "development";
-interface StudioNvaApplyRequest {
-	requestId: string;
-	avatarId: string;
-	environment: Environment;
-}
 interface AvatarPreview {
 	name: string;
 	thumbnailDataUrl: string;
@@ -40,59 +31,23 @@ function messageForError(error: unknown): string {
 	return `아바타 적용에 실패했습니다: ${reason}`;
 }
 
-function isApplyRequest(value: unknown): value is StudioNvaApplyRequest {
-	if (!value || typeof value !== "object") return false;
-	const request = value as Record<string, unknown>;
-	return (
-		typeof request.requestId === "string" &&
-		typeof request.avatarId === "string" &&
-		(request.environment === "production" ||
-			request.environment === "development")
-	);
+interface StudioNvaApplyDialogProps {
+	/** Current request at the head of the host's queue. */
+	request: StudioNvaApplyRequest;
+	/** Removes the current request from the host's queue. */
+	onClose: () => void;
 }
 
-export function StudioNvaApplyDialog() {
-	const [requests, setRequests] = useState<StudioNvaApplyRequest[]>([]);
+export function StudioNvaApplyDialog({
+	request,
+	onClose,
+}: StudioNvaApplyDialogProps) {
 	const [preview, setPreview] = useState<AvatarPreview | null>(null);
 	const [loadingPreview, setLoadingPreview] = useState(false);
 	const [applying, setApplying] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
 	const [result, setResult] = useState<string | null>(null);
-	const seenRequestIds = useRef(new Set<string>());
 	const previewRequestIdRef = useRef<string | null>(null);
-	const request = requests[0] ?? null;
-	const addRequest = useCallback((candidate: unknown) => {
-		if (
-			!isApplyRequest(candidate) ||
-			seenRequestIds.current.has(candidate.requestId)
-		)
-			return;
-		seenRequestIds.current.add(candidate.requestId);
-		setRequests((current) =>
-			hasPendingStudioNvaTarget(current, candidate)
-				? current
-				: [...current, candidate],
-		);
-	}, []);
-
-	useEffect(() => {
-		let active = true;
-		const unlisten = listen<StudioNvaApplyRequest>(
-			"studio_nva_apply_requested",
-			(event) => {
-				if (active) addRequest(event.payload);
-			},
-		);
-		void invoke<StudioNvaApplyRequest[]>("studio_nva_apply_pending")
-			.then((pending) => {
-				if (active) pending.forEach(addRequest);
-			})
-			.catch(() => {});
-		return () => {
-			active = false;
-			void unlisten.then((stop) => stop()).catch(() => {});
-		};
-	}, [addRequest]);
 
 	const loadPreview = useCallback((target: StudioNvaApplyRequest) => {
 		previewRequestIdRef.current = target.requestId;
@@ -120,29 +75,28 @@ export function StudioNvaApplyDialog() {
 	}, []);
 
 	useEffect(() => {
-		if (request) loadPreview(request);
+		loadPreview(request);
 	}, [request, loadPreview]);
 
 	const ackAndClose = useCallback(() => {
-		if (!request) return;
 		void invoke("studio_nva_apply_ack", { requestId: request.requestId }).catch(
 			() => {},
 		);
 		if (previewRequestIdRef.current === request.requestId) {
 			previewRequestIdRef.current = null;
 		}
-		setRequests((current) => current.slice(1));
 		setPreview(null);
 		setMessage(null);
 		setResult(null);
-	}, [request]);
+		onClose();
+	}, [request, onClose]);
 
 	const openLoginSettings = useCallback(() => {
 		useAppStore.getState().setActiveApp("settings");
 	}, []);
 
 	const confirmApply = useCallback(async () => {
-		if (!request || !preview || applying) return;
+		if (!preview || applying) return;
 		const adkPath = getAdkPath();
 		if (!adkPath) {
 			setMessage("먼저 설정에서 나이아 워크스페이스를 선택해 주세요.");
@@ -196,7 +150,6 @@ export function StudioNvaApplyDialog() {
 	}, [request, preview, applying]);
 
 	const dialogTitle = "이 아바타를 적용할까요?";
-	if (!request) return null;
 
 	return (
 		<div

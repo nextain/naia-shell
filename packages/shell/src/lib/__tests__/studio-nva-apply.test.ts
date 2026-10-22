@@ -1,8 +1,73 @@
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
+
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import StudioNvaApplyHost from "../../components/StudioNvaApplyHost";
 import {
 	hasPendingStudioNvaTarget,
 	runStudioNvaApplyFlow,
 } from "../studio-nva-apply";
+import {
+	type StudioNvaApplyRequest,
+	isStudioNvaApplyRequest,
+} from "../studio-nva-apply-request";
+
+const tauriMocks = vi.hoisted(() => ({
+	invoke: vi.fn(),
+	listen: vi.fn(),
+	listener: null as ((event: { payload: unknown }) => void) | null,
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+	invoke: (...args: unknown[]) => tauriMocks.invoke(...args),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+	listen: (
+		event: string,
+		handler: (event: { payload: unknown }) => void,
+	) => {
+		tauriMocks.listen(event, handler);
+		tauriMocks.listener = handler;
+		return Promise.resolve(() => {
+			if (tauriMocks.listener === handler) {
+				tauriMocks.listener = null;
+			}
+		});
+	},
+}));
+
+vi.mock("../../components/StudioNvaApplyDialog", () => ({
+	StudioNvaApplyDialog: ({
+		request,
+		onClose,
+	}: {
+		request: StudioNvaApplyRequest;
+		onClose: () => void;
+	}) =>
+		createElement(
+			"div",
+			{ "data-testid": "studio-nva-apply-dialog" },
+			createElement(
+				"span",
+				null,
+				`${request.requestId}:${request.avatarId}:${request.environment}`,
+			),
+			createElement(
+				"button",
+				{ type: "button", onClick: onClose },
+				"close-dialog",
+			),
+		),
+}));
+
+afterEach(() => {
+	cleanup();
+	tauriMocks.invoke.mockReset();
+	tauriMocks.listen.mockReset();
+	tauriMocks.listener = null;
+});
 
 function makeFlow(confirmed: boolean, inspectManifest: () => void = () => {}) {
 	const steps: string[] = [];
@@ -102,5 +167,90 @@ describe("Studio NVA apply duplicate links", () => {
 				environment: "development",
 			}),
 		).toBe(false);
+	});
+});
+
+describe("isStudioNvaApplyRequest", () => {
+	it("accepts only well-formed deep link requests", () => {
+		expect(
+			isStudioNvaApplyRequest({
+				requestId: "r1",
+				avatarId: "av_1",
+				environment: "development",
+			}),
+		).toBe(true);
+		expect(isStudioNvaApplyRequest(null)).toBe(false);
+		expect(
+			isStudioNvaApplyRequest({
+				requestId: "r1",
+				avatarId: "av_1",
+				environment: "staging",
+			}),
+		).toBe(false);
+		expect(isStudioNvaApplyRequest({ requestId: 1, avatarId: "av_1" })).toBe(
+			false,
+		);
+	});
+});
+
+describe("StudioNvaApplyHost deferred receiver", () => {
+	it("drains queued cold-start requests on late mount, deduplicates repeats, and advances on close", async () => {
+		tauriMocks.invoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "studio_nva_apply_pending") {
+				return [
+					{
+						requestId: "req-cold-1",
+						avatarId: "av_1",
+						environment: "production",
+					},
+					{
+						requestId: "req-cold-dup",
+						avatarId: "av_1",
+						environment: "production",
+					},
+				];
+			}
+			return undefined;
+		});
+
+		render(createElement(StudioNvaApplyHost));
+
+		expect(tauriMocks.listen).toHaveBeenCalledWith(
+			"studio_nva_apply_requested",
+			expect.any(Function),
+		);
+		expect(tauriMocks.invoke).toHaveBeenCalledWith("studio_nva_apply_pending");
+
+		expect(
+			await screen.findByText("req-cold-1:av_1:production"),
+		).toBeInTheDocument();
+
+		act(() => {
+			tauriMocks.listener?.({
+				payload: {
+					requestId: "req-cold-1",
+					avatarId: "av_1",
+					environment: "production",
+				},
+			});
+			tauriMocks.listener?.({
+				payload: {
+					requestId: "req-live-2",
+					avatarId: "av_2",
+					environment: "development",
+				},
+			});
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "close-dialog" }));
+
+		expect(
+			await screen.findByText("req-live-2:av_2:development"),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "close-dialog" }));
+		expect(
+			screen.queryByTestId("studio-nva-apply-dialog"),
+		).not.toBeInTheDocument();
 	});
 });

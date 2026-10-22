@@ -42,19 +42,7 @@ export async function runStudioNvaApplyFlow(
 	}
 }
 
-export interface StudioNvaApplyTarget {
-	avatarId: string;
-	environment: string;
-}
-
-/** Same avatar on the same environment: a repeated click on one link. */
-export function hasPendingStudioNvaTarget(
-	pending: readonly StudioNvaApplyTarget[],
-	candidate: StudioNvaApplyTarget,
-): boolean {
-	return pending.some(
-		(item) =>
-			item.avatarId === candidate.avatarId &&
-			item.environment === candidate.environment,
-	);
-}
+export {
+	hasPendingStudioNvaTarget,
+	type StudioNvaApplyTarget,
+} from "./studio-nva-apply-request";

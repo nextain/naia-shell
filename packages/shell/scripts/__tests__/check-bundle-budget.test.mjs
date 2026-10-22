@@ -29,10 +29,12 @@ const deferredModules = [
 	"src/components/OnboardingWizard.tsx",
 	"src/components/PermissionModal.tsx",
 	"src/components/SettingsTab.tsx",
+	"src/components/StudioNvaApplyDialog.tsx",
 	"src/components/ToolActivity.tsx",
 	"src/components/UpdateBanner.tsx",
 	"src/components/UpdatePrompt.tsx",
 	"src/components/VideoAvatarCanvas.tsx",
+	"src/studio-nva-apply-root.tsx",
 ];
 
 function fixture({
@@ -108,6 +110,22 @@ describe("bundle budget", () => {
 		});
 		expect(
 			report.deferredChunks["src/apps/projects/ProjectsApp.tsx"],
+		).toMatchObject({
+			dynamicallyImported: true,
+			staticallyImported: false,
+			modulePreloaded: false,
+			passed: true,
+		});
+		expect(
+			report.deferredChunks["src/components/StudioNvaApplyDialog.tsx"],
+		).toMatchObject({
+			dynamicallyImported: true,
+			staticallyImported: false,
+			modulePreloaded: false,
+			passed: true,
+		});
+		expect(
+			report.deferredChunks["src/studio-nva-apply-root.tsx"],
 		).toMatchObject({
 			dynamicallyImported: true,
 			staticallyImported: false,
