@@ -273,7 +273,7 @@ describe("registry — fetchNaiaPricing", () => {
 			{ model_key: "upstage:solar-mini", input_price_per_million: 0.165, output_price_per_million: 0.165, cached_price_per_million: null },
 			{ model_key: "clova:HCX-007", input_price_per_million: 0.97, output_price_per_million: 3.88, cached_price_per_million: null },
 			{ model_key: "clova:HCX-DASH-002", input_price_per_million: 0.388, output_price_per_million: 1.552, cached_price_per_million: null },
-			{ model_key: "motif:motif-3", input_price_per_million: 0.22, output_price_per_million: 0.88, cached_price_per_million: 0.044 },
+			{ model_key: "motif:motif-3", input_price_per_million: 0.26, output_price_per_million: 1.04, cached_price_per_million: 0.052 },
 		];
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(JSON.stringify(gatewayResponse), { status: 200 }),
@@ -289,8 +289,8 @@ describe("registry — fetchNaiaPricing", () => {
 			pricing: [0.165, 0.165],
 		});
 		expect(models!.find((m) => m.id === "motif-3")).toMatchObject({
-			pricing: [0.22, 0.88],
-			cachePricing: { read: 0.044, write: null },
+			pricing: [0.26, 1.04],
+			cachePricing: { read: 0.052, write: null },
 		});
 		expect(models!.find((m) => m.id === "HCX-007")).toBeUndefined();
 

@@ -127,9 +127,9 @@ test.describe("Capability-driven settings (#365)", () => {
 				},
 				{
 					model_key: "motif:motif-3",
-					input_price_per_million: 0.22,
-					output_price_per_million: 0.88,
-					cached_price_per_million: 0.044,
+					input_price_per_million: 0.26,
+					output_price_per_million: 1.04,
+					cached_price_per_million: 0.052,
 				},
 			],
 		});
@@ -167,7 +167,7 @@ test.describe("Capability-driven settings (#365)", () => {
 			modelSelect.locator('option[value="gpt-5.6-sol"]'),
 		).toHaveCount(0);
 		await expect(modelSelect.locator('option[value="motif-3"]')).toHaveText(
-			/Motif 3 \(Price per 1M tokens: Input 220 credits \/ Output 880 credits\)/,
+			/Motif 3 \(Price per 1M tokens: Input 260 credits \/ Output 1\.04K credits\)/,
 		);
 		const priceOrder = await modelSelect
 			.locator("option")
@@ -191,7 +191,7 @@ test.describe("Capability-driven settings (#365)", () => {
 		await modelSelect.selectOption("motif-3");
 		await expect(
 			page.locator(".settings-hint").filter({ hasText: "100만 토큰당 가격" }),
-		).toContainText("입력 220 크레딧 · 출력 880 크레딧 · 캐시 읽기 44 크레딧");
+		).toContainText("입력 260 크레딧 · 출력 1.04K 크레딧 · 캐시 읽기 52 크레딧");
 		await modelSelect.selectOption("solar-mini");
 		await expect(modelSelect.locator('option[value="naia-local"]')).toHaveCount(
 			0,

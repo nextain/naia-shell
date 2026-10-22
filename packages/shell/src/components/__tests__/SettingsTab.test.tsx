@@ -826,9 +826,9 @@ describe("SettingsTab", () => {
 			},
 			{
 				model_key: "motif:motif-3",
-				input_price_per_million: 0.22,
-				output_price_per_million: 0.88,
-				cached_price_per_million: 0.044,
+				input_price_per_million: 0.26,
+				output_price_per_million: 1.04,
+				cached_price_per_million: 0.052,
 			},
 		]);
 
@@ -860,8 +860,8 @@ describe("SettingsTab", () => {
 			labels.some(
 				(l) =>
 					l.includes("Motif 3") &&
-					l.includes("220 credits") &&
-					l.includes("880 credits"),
+					l.includes("260 credits") &&
+					l.includes("1.04K credits"),
 			),
 		).toBe(true);
 		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);
@@ -906,9 +906,9 @@ describe("SettingsTab", () => {
 			},
 			{
 				model_key: "motif:motif-3",
-				input_price_per_million: 0.22,
-				output_price_per_million: 0.88,
-				cached_price_per_million: 0.044,
+				input_price_per_million: 0.26,
+				output_price_per_million: 1.04,
+				cached_price_per_million: 0.052,
 			},
 		];
 
@@ -974,8 +974,8 @@ describe("SettingsTab", () => {
 				labels.some(
 					(l) =>
 						l.includes("Motif 3") &&
-						l.includes("220 credits") &&
-						l.includes("880 credits"),
+						l.includes("260 credits") &&
+						l.includes("1.04K credits"),
 				),
 			).toBe(true);
 		});
@@ -983,7 +983,7 @@ describe("SettingsTab", () => {
 			screen.queryByText("가격 정보를 불러올 수 없습니다."),
 		).toBeNull();
 		expect(
-			screen.getByText(/입력 220 크레딧 · 출력 880 크레딧/),
+			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
 		).toBeDefined();
 
 		unmount();
@@ -1034,8 +1034,8 @@ describe("SettingsTab", () => {
 				labels.some(
 					(l) =>
 						l.includes("Motif 3") &&
-						l.includes("220 credits") &&
-						l.includes("880 credits"),
+						l.includes("260 credits") &&
+						l.includes("1.04K credits"),
 				),
 			).toBe(true);
 		});
@@ -1043,7 +1043,7 @@ describe("SettingsTab", () => {
 			screen.queryByText("가격 정보를 불러올 수 없습니다."),
 		).toBeNull();
 		expect(
-			screen.getByText(/입력 220 크레딧 · 출력 880 크레딧/),
+			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
 		).toBeDefined();
 	});
 
