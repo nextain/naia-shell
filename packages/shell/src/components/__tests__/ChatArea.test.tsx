@@ -20,6 +20,8 @@ import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { useChatStore } from "../../stores/chat";
+import * as voiceSessionApi from "../../lib/voice/index";
+import type { VoiceSession } from "../../lib/voice/index";
 import { ChatArea, modelToolBoundary } from "../ChatArea";
 
 const ttsSyncMocks = vi.hoisted(() => ({
@@ -787,7 +789,10 @@ describe("ChatArea", () => {
 	it("strips split NVA gesture markers from chat and TTS and sends active actions to the core", async () => {
 		const playAction = vi.fn().mockResolvedValue(undefined);
 		registerCameraActions({
-			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			getGestureActions: () => [
+				{ key: "wave", label: "Wave" },
+				{ key: "nod", label: "Nod" },
+			],
 			playAction,
 		});
 		localStorage.setItem(
@@ -827,7 +832,7 @@ describe("ChatArea", () => {
 		request.onChunk({
 			type: "text",
 			requestId: request.requestId,
-			text: "ture:wave]] there.",
+			text: "ture:wave]] [[gesture:nod]] there.",
 		});
 		expect(useChatStore.getState().streamingContent).toBe("Hello there.");
 		expect(useChatStore.getState().streamingContent).not.toContain("[[gesture:");
@@ -844,6 +849,73 @@ describe("ChatArea", () => {
 		).toBe("Hello there.");
 		localStorage.removeItem("naia-config");
 	});
+
+	it.each(["onTurnEnd", "onInterrupted"] as const)(
+		"records pending live voice text when %s flushes the response",
+		async (terminalEvent) => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "test-omni",
+					naiaKey: "test-key",
+				}),
+			);
+			const originalAudioContext = globalThis.AudioContext;
+			vi.stubGlobal(
+				"AudioContext",
+				class {
+					sampleRate = 24000;
+					state = "running";
+					currentTime = 0;
+					destination = {};
+					close = vi.fn().mockResolvedValue(undefined);
+				},
+			);
+			const session: VoiceSession = {
+				audioInput: {
+					sampleRate: 24000,
+					autoGainControl: false,
+					gateWhilePlaying: false,
+				},
+				connect: vi.fn().mockResolvedValue(undefined),
+				sendAudio: vi.fn(),
+				sendText: vi.fn(),
+				sendToolResponse: vi.fn(),
+				disconnect: vi.fn(),
+				isConnected: true,
+				onAudio: null,
+				onInputTranscript: null,
+				onOutputTranscript: null,
+				onToolCall: null,
+				onTurnEnd: null,
+				onInterrupted: null,
+				onError: null,
+				onDisconnect: null,
+			};
+			const createSession = vi
+				.spyOn(voiceSessionApi, "createVoiceSession")
+				.mockReturnValue(session);
+			render(<ChatArea />);
+			fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+			await waitFor(() => expect(session.connect).toHaveBeenCalledTimes(1));
+
+			act(() => session.onOutputTranscript?.("Live answer ["));
+			expect(
+				useChatStore.getState().messages.find((message) => message.role === "assistant")
+					?.content,
+			).toBe("Live answer");
+			act(() => session[terminalEvent]?.());
+
+			expect(
+				useChatStore.getState().messages.find((message) => message.role === "assistant")
+					?.content,
+			).toBe("Live answer [");
+			expect(createSession).toHaveBeenCalledTimes(1);
+			vi.stubGlobal("AudioContext", originalAudioContext);
+			localStorage.removeItem("naia-config");
+		},
+	);
 
 	it("never sends textual reasoning to sentence TTS", async () => {
 		localStorage.setItem(

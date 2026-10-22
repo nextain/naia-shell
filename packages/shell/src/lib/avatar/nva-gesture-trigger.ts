@@ -84,77 +84,142 @@ export function parseGestureTriggers(
 	return { cleanText, gestures };
 }
 
-function isPartialGestureMarker(value: string): boolean {
-	if (!value.startsWith("[[")) return false;
-	let body = value.slice(2);
-	if (body.includes("[")) return false;
-	if (body.endsWith("]")) body = body.slice(0, -1);
-	else if (body.includes("]")) return false;
-	const colon = body.indexOf(":");
-	if (colon < 0) {
-		const token = body.trim().toLowerCase();
-		return token === "" || "gesture".startsWith(token) || "g".startsWith(token);
-	}
-	const kind = body.slice(0, colon).trim().toLowerCase();
-	return kind === "gesture" || kind === "g";
-}
+const STREAM_MARKER = /^\[\[[ \t]*(?:gesture|g)[ \t]*:[ \t]*([^\[\]\r\n]+?)[ \t]*\]\]/i;
 
-function pendingMarkerStart(value: string): number {
-	let index = value.indexOf("[[");
-	while (index >= 0) {
-		const close = value.indexOf("]]", index + 2);
-		if (close < 0 && isPartialGestureMarker(value.slice(index))) return index;
-		index = value.indexOf("[[", index + 2);
+type MarkerInspection =
+	| { kind: "complete"; length: number; marker: string }
+	| { kind: "partial" }
+	| { kind: "invalid" };
+
+function inspectStreamMarker(value: string, start: number): MarkerInspection {
+	const candidate = value.slice(start);
+	const complete = STREAM_MARKER.exec(candidate);
+	if (complete) {
+		return {
+			kind: "complete",
+			length: complete[0].length,
+			marker: complete[0],
+		};
 	}
-	return value.endsWith("[") ? value.length - 1 : -1;
+
+	const body = candidate.slice(2);
+	if (/[\[\]\r\n]/.test(body.slice(0, -1))) return { kind: "invalid" };
+	const hasDanglingClose = body.endsWith("]");
+	const prefix = hasDanglingClose ? candidate.slice(0, -1) : candidate;
+	const partial = /^\[\[[ \t]*([a-z]*)[ \t]*(?::([^\[\]\r\n]*))?$/i.exec(prefix);
+	if (!partial) return { kind: "invalid" };
+
+	const kind = partial[1].toLowerCase();
+	const rawValue = partial[2];
+	if (rawValue === undefined) {
+		if (hasDanglingClose || (!"gesture".startsWith(kind) && !"g".startsWith(kind))) {
+			return { kind: "invalid" };
+		}
+		return { kind: "partial" };
+	}
+	if (kind !== "gesture" && kind !== "g") return { kind: "invalid" };
+	if (rawValue.trim().length > MAX_VALUE_LEN) return { kind: "invalid" };
+	if (hasDanglingClose && !rawValue.trim()) return { kind: "invalid" };
+	return { kind: "partial" };
 }
 
 /** Incrementally strips gesture markers without exposing a split marker to UI or TTS. */
 export class GestureTriggerStream {
 	private pending = "";
-	private pendingBoundary = "";
-	private hasOutput = false;
+	private afterRemovedMarker = false;
+	private afterRemovedMarkerSpace = false;
 
 	constructor(private readonly actions: readonly NvaGestureAction[] = []) {}
 
 	push(chunk: string): GestureParseResult {
 		this.pending += chunk;
-		const markerStart = pendingMarkerStart(this.pending);
-		const safe = markerStart < 0 ? this.pending : this.pending.slice(0, markerStart);
-		this.pending = markerStart < 0 ? "" : this.pending.slice(markerStart);
-		return this.cleanSafeText(safe);
+		return this.drain(false);
 	}
 
 	flush(): GestureParseResult {
-		const tail = this.pending;
-		this.pending = "";
-		if (tail === "[" || isPartialGestureMarker(tail)) {
-			this.pendingBoundary = "";
-			return { cleanText: "", gestures: [] };
-		}
-		const safe = tail;
-		const result = this.cleanSafeText(safe);
-		const cleanText = result.cleanText;
-		this.pendingBoundary = "";
-		return { cleanText, gestures: result.gestures };
+		return this.drain(true);
 	}
 
-	private cleanSafeText(source: string): GestureParseResult {
-		if (!source) return { cleanText: "", gestures: [] };
-		const parsed = parseGestureTriggers(source, this.actions);
-		const leading = source.match(/^\s*/)?.[0] ?? "";
-		const trailing = source.match(/\s*$/)?.[0] ?? "";
-		if (!parsed.cleanText) {
-			this.pendingBoundary += `${leading}${trailing}`;
-			return parsed;
+	private drain(flushing: boolean): GestureParseResult {
+		const source = this.pending;
+		this.pending = "";
+		let cleanText = "";
+		const gestures: ParsedGesture[] = [];
+		let cursor = 0;
+
+		while (cursor < source.length) {
+			const start = source.indexOf("[", cursor);
+			if (start < 0) {
+				cleanText = this.appendPlain(source.slice(cursor), cleanText);
+				break;
+			}
+
+			if (source[start + 1] !== "[") {
+				if (start + 1 === source.length && !flushing) {
+					let holdFrom = start;
+					while (holdFrom > cursor && /[ \t]/.test(source[holdFrom - 1])) {
+						holdFrom -= 1;
+					}
+					cleanText = this.appendPlain(source.slice(cursor, holdFrom), cleanText);
+					this.pending = source.slice(holdFrom);
+					break;
+				}
+				cleanText = this.appendPlain(source.slice(cursor, start + 1), cleanText);
+				cursor = start + 1;
+				continue;
+			}
+
+			const marker = inspectStreamMarker(source, start);
+			if (marker.kind === "partial") {
+				if (flushing) {
+					cleanText = this.appendPlain(source.slice(cursor), cleanText);
+					break;
+				}
+				let holdFrom = start;
+				while (holdFrom > cursor && /[ \t]/.test(source[holdFrom - 1])) {
+					holdFrom -= 1;
+				}
+				cleanText = this.appendPlain(source.slice(cursor, holdFrom), cleanText);
+				this.pending = source.slice(holdFrom);
+				break;
+			}
+
+			cleanText = this.appendPlain(source.slice(cursor, start), cleanText);
+			if (marker.kind === "invalid") {
+				cleanText = this.appendPlain("[[", cleanText);
+				cursor = start + 2;
+				continue;
+			}
+
+			const parsed = parseGestureTriggers(marker.marker, this.actions);
+			gestures.push(...parsed.gestures);
+			const leftWhitespace = cleanText.match(/[ \t]+$/)?.[0] ?? "";
+			if (leftWhitespace) {
+				cleanText = `${cleanText.slice(0, -leftWhitespace.length)} `;
+			}
+			this.afterRemovedMarker = true;
+			this.afterRemovedMarkerSpace = leftWhitespace.length > 0;
+			cursor = start + marker.length;
 		}
-		const boundary = `${this.pendingBoundary}${leading}`;
-		this.pendingBoundary = trailing;
-		const prefix = this.hasOutput && boundary
-			? boundary.includes("\n") ? "\n" : " "
-			: leading;
-		this.hasOutput = true;
-		return { cleanText: `${prefix}${parsed.cleanText}`, gestures: parsed.gestures };
+
+		return { cleanText, gestures };
+	}
+
+	private appendPlain(source: string, into: string): string {
+		let result = into;
+		for (const char of source) {
+			if (this.afterRemovedMarker) {
+				if (char === " " || char === "\t") {
+					if (!this.afterRemovedMarkerSpace) result += " ";
+					this.afterRemovedMarkerSpace = true;
+					continue;
+				}
+				this.afterRemovedMarker = false;
+				this.afterRemovedMarkerSpace = false;
+			}
+			result += char;
+		}
+		return result;
 	}
 }
 

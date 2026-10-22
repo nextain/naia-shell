@@ -226,6 +226,46 @@ describe("PrebakedAvatarRenderer", () => {
 		playSpy.mockRestore();
 	});
 
+	it("returns to idle when a gesture clip reports a playback error", async () => {
+		const playSpy = vi
+			.spyOn(HTMLMediaElement.prototype, "play")
+			.mockResolvedValue();
+		const manifest = baseManifest();
+		manifest.animations.wave = {
+			clip: "clips/wave.webm",
+			loop: false,
+			can_talk: false,
+			label: "Wave",
+		};
+		const renderer = new PrebakedAvatarRenderer({
+			manifest,
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+		});
+		const video = makeVideo();
+		document.body.appendChild(video);
+		renderer.start(video, document.createElement("canvas"));
+		await Promise.resolve();
+		await Promise.resolve();
+
+		const action = renderer.playAction("wave");
+		await Promise.resolve();
+		await Promise.resolve();
+		videoForUrl("blob:clips/wave.webm").dispatchEvent(new Event("error"));
+		await action;
+
+		expect(
+			playSpy.mock.contexts.filter(
+				(context) =>
+					(context as HTMLVideoElement).dataset.naiaClipUrl ===
+					"blob:clips/idle.webm",
+			),
+		).toHaveLength(2);
+		renderer.stop();
+		video.remove();
+		playSpy.mockRestore();
+	});
+
 	it("ignores unknown gestures and gestures requested during speech", async () => {
 		const playSpy = vi
 			.spyOn(HTMLMediaElement.prototype, "play")

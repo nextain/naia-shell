@@ -155,6 +155,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		try {
 			await this.playClip(animation.clip, false, true, undefined, generation, false);
 		} catch {
+			if (generation === this.generation && !this.disposed)
+				await this.playIdle();
 			return;
 		}
 		if (generation === this.generation && !this.disposed && !this.speakingVisual)

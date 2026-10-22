@@ -501,6 +501,7 @@ export function ChatArea({
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
 	const gestureTriggerStreamRef = useRef(new GestureTriggerStream());
+	const gestureActionPlayedRef = useRef(false);
 	// Providers may emit one usage event for each tool round before the final
 	// assistant text. Keep those entries with the live request so usage cannot
 	// finalize an empty assistant message before the terminal finish chunk.
@@ -1742,6 +1743,7 @@ export function ChatArea({
 		gestureTriggerStreamRef.current = new GestureTriggerStream(
 			getCameraActions().getGestureActions(),
 		);
+		gestureActionPlayedRef.current = false;
 		currentRequestId.current = requestId;
 		pendingCostRef.current = null;
 		// #572 — 실패했을 때 "같은 입력을 다시" 를 제안하려면 그 입력을 알아야 한다.
@@ -2419,29 +2421,30 @@ export function ChatArea({
 		}
 	}
 
+	function playFirstGestureAction(
+		gestures: readonly { key: string }[],
+		played: { current: boolean },
+	): void {
+		const gesture = gestures[0];
+		if (!gesture || played.current) return;
+		played.current = true;
+		void getCameraActions().playAction(gesture.key).catch((error) => {
+			Logger.warn("ChatArea", "NVA gesture playback failed", {
+				key: gesture.key,
+				error: String(error),
+			});
+		});
+	}
+
 	function appendVisibleResponseText(visibleText: string): void {
 		const parsed = gestureTriggerStreamRef.current.push(visibleText);
-		for (const gesture of parsed.gestures) {
-			void getCameraActions().playAction(gesture.key).catch((error) => {
-				Logger.warn("ChatArea", "NVA gesture playback failed", {
-					key: gesture.key,
-					error: String(error),
-				});
-			});
-		}
+		playFirstGestureAction(parsed.gestures, gestureActionPlayedRef);
 		appendCleanVisibleResponseText(parsed.cleanText);
 	}
 
 	function flushGestureTriggerStream(): void {
 		const parsed = gestureTriggerStreamRef.current.flush();
-		for (const gesture of parsed.gestures) {
-			void getCameraActions().playAction(gesture.key).catch((error) => {
-				Logger.warn("ChatArea", "NVA gesture playback failed", {
-					key: gesture.key,
-					error: String(error),
-				});
-			});
-		}
+		playFirstGestureAction(parsed.gestures, gestureActionPlayedRef);
 		appendCleanVisibleResponseText(parsed.cleanText);
 	}
 
@@ -3436,6 +3439,26 @@ export function ChatArea({
 			let inputAccum = "";
 			let outputAccum = "";
 			let liveGestureStream = new GestureTriggerStream(gestureActions);
+			const liveGestureActionPlayed = { current: false };
+			const appendLiveOutput = (
+				cleanText: string,
+				gestures: readonly { key: string }[],
+				recordEmpty = false,
+			) => {
+				playFirstGestureAction(gestures, liveGestureActionPlayed);
+				if (!cleanText && !recordEmpty) return;
+				outputAccum += cleanText;
+				const { emotion, cleanText: displayText } =
+					extractExpression(outputAccum);
+				if (emotion && !serverEmotionSeenThisTurn) setEmotion(emotion);
+				const store = useChatStore.getState();
+				if (outputTurnDirty) {
+					store.updateLastMessage("assistant", displayText);
+				} else {
+					store.addMessage({ role: "assistant", content: displayText });
+					outputTurnDirty = true;
+				}
+			};
 			// Precedence: a server emotion.updated this turn is authoritative, so the
 			// transcript-derived fallback below must not override it.
 			let serverEmotionSeenThisTurn = false;
@@ -3453,31 +3476,10 @@ export function ChatArea({
 				}
 			};
 			session.onOutputTranscript = (text) => {
-				const store = useChatStore.getState();
 				const parsed = liveGestureStream.push(text);
-				for (const gesture of parsed.gestures) {
-					void getCameraActions().playAction(gesture.key).catch((error) => {
-						Logger.warn("ChatArea", "NVA gesture playback failed", {
-							key: gesture.key,
-							error: String(error),
-						});
-					});
-				}
-				outputAccum += parsed.cleanText;
-				// Robust fallback: derive the avatar expression from the transcript
-				// itself (uppercase/lowercase tags or a leaked stage direction) when
-				// the server did NOT send emotion.updated this turn — LLM output is
-				// imperfect. A present server emotion.updated takes precedence. Also
-				// use the cleaned text for the chat row so tags/stage directions don't
-				// show. emotion=null leaves the current face unchanged (no neutral reset).
-				const { emotion, cleanText } = extractExpression(outputAccum);
-				if (emotion && !serverEmotionSeenThisTurn) setEmotion(emotion);
-				if (outputTurnDirty) {
-					store.updateLastMessage("assistant", cleanText);
-				} else {
-					store.addMessage({ role: "assistant", content: cleanText });
-					outputTurnDirty = true;
-				}
+				// Use cleaned text in the chat row so markers and stage directions do not show.
+				// A server emotion.updated remains authoritative for the turn.
+				appendLiveOutput(parsed.cleanText, parsed.gestures, true);
 			};
 			session.onEmotion = (state) => {
 				// naia-omni emotion.updated (manual §5) → avatar expression. This is
@@ -3492,8 +3494,10 @@ export function ChatArea({
 			};
 			session.onInterrupted = () => {
 				player.clear();
-				liveGestureStream.flush();
+				const flushed = liveGestureStream.flush();
+				appendLiveOutput(flushed.cleanText, flushed.gestures);
 				liveGestureStream = new GestureTriggerStream(gestureActions);
+				liveGestureActionPlayed.current = false;
 				inputTurnDirty = false;
 				outputTurnDirty = false;
 				inputAccum = "";
@@ -3505,8 +3509,10 @@ export function ChatArea({
 				noteEnvironmentTurn();
 			};
 			session.onTurnEnd = () => {
-				liveGestureStream.flush();
+				const flushed = liveGestureStream.flush();
+				appendLiveOutput(flushed.cleanText, flushed.gestures);
 				liveGestureStream = new GestureTriggerStream(gestureActions);
+				liveGestureActionPlayed.current = false;
 				inputTurnDirty = false;
 				outputTurnDirty = false;
 				inputAccum = "";

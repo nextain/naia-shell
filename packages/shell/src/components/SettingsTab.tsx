@@ -1345,12 +1345,38 @@ export function SettingsTab() {
 					...voiceConfig,
 					...(naiaKey ? { naiaKey } : {}),
 				} as unknown as Record<string, unknown>);
-				await writeSlotsManifest(voiceConfig, detectedVramGb ?? undefined);
+				const manifest = await writeSlotsManifest(
+					voiceConfig,
+					detectedVramGb ?? undefined,
+				);
+				if (!manifest) throw new Error("Local voice slots manifest write failed");
 			} catch (error) {
 				Logger.warn("Settings", "ensureLocalVoiceReady:running-config-save-failed", {
 					error: String(error),
 				});
-				setCascadeMsg(`${t("settings.cascadeError")}: ${String(error)}`);
+				// Restore the in-memory and persisted selection before reporting failure.
+				saveConfig(cfg);
+				setTtsProvider(cfg.ttsProvider ?? "edge");
+				setTtsEnabled(cfg.ttsEnabled === true);
+				setVllmTtsHost(cfg.vllmTtsHost ?? DEFAULT_LOCAL_VOICE_HOST);
+				try {
+					await writeNaiaConfig({
+						...cfg,
+						...(naiaKey ? { naiaKey } : {}),
+					} as unknown as Record<string, unknown>);
+					await writeSlotsManifest(cfg, detectedVramGb ?? undefined);
+				} catch (rollbackError) {
+					Logger.warn(
+						"Settings",
+						"ensureLocalVoiceReady:running-config-rollback-failed",
+						{ error: String(rollbackError) },
+					);
+				}
+				surfaceLocalVoiceRevert(
+					`${t("settings.cascadeError")}: ${String(error)} — ${t(
+						"settings.localVoiceSelectionReverted",
+					)}`,
+				);
 				return false;
 			}
 			// The engine is already running (auto-start / a prior selection), but the
