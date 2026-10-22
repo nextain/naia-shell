@@ -736,6 +736,7 @@ describe("SettingsTab", () => {
 			"solar-mini",
 			"deepseek-v4-flash",
 			"solar-pro4",
+			"motif-3",
 			"gpt-5.6-luna",
 		]);
 		expect(
@@ -823,6 +824,12 @@ describe("SettingsTab", () => {
 				output_price_per_million: 0.165,
 				cached_price_per_million: null,
 			},
+			{
+				model_key: "motif:motif-3",
+				input_price_per_million: 0.22,
+				output_price_per_million: 0.88,
+				cached_price_per_million: 0.044,
+			},
 		]);
 
 		render(<SettingsTab />);
@@ -849,10 +856,19 @@ describe("SettingsTab", () => {
 					!l.includes("$"),
 			),
 		).toBe(true);
+		expect(
+			labels.some(
+				(l) =>
+					l.includes("Motif 3") &&
+					l.includes("220 credits") &&
+					l.includes("880 credits"),
+			),
+		).toBe(true);
 		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);
 		const values = [...modelSelect.options].map((o) => o.value);
 		expect(values).toContain("solar-pro4");
 		expect(values).toContain("solar-mini");
+		expect(values).toContain("motif-3");
 		expect(values).not.toContain("HCX-007");
 	});
 

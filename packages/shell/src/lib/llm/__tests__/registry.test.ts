@@ -49,12 +49,14 @@ describe("registry — provider registration", () => {
 		expect(getLlmModel("nextain", "deepseek-v4-flash")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		expect(getLlmModel("nextain", "solar-pro4")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		expect(getLlmModel("nextain", "solar-mini")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
+		expect(getLlmModel("nextain", "motif-3")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		expect(getLlmModel("nextain", "gpt-5.6-luna")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		const selectable = getLlmProvider("nextain")!.models.filter((model) => !model.comingSoon);
 		expect(selectable.map((model) => model.id)).toEqual([
 			"deepseek-v4-flash",
 			"solar-pro4",
 			"solar-mini",
+			"motif-3",
 			"gpt-5.6-luna",
 		]);
 		expect(selectable.every((model) => model.supportsTools === true)).toBe(true);
@@ -263,7 +265,7 @@ describe("registry — fetchNaiaPricing", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("applies live pricing to Korean domestic models (upstage:/clova:)", async () => {
+	it("applies live pricing to Korean domestic models (upstage:/clova:/motif:)", async () => {
 		// Regression: the Naia-route filter previously accepted only azure:/vertexai:,
 		// so Solar and CLOVA prices were silently dropped and shown as no-price.
 		const gatewayResponse = [
@@ -271,6 +273,7 @@ describe("registry — fetchNaiaPricing", () => {
 			{ model_key: "upstage:solar-mini", input_price_per_million: 0.165, output_price_per_million: 0.165, cached_price_per_million: null },
 			{ model_key: "clova:HCX-007", input_price_per_million: 0.97, output_price_per_million: 3.88, cached_price_per_million: null },
 			{ model_key: "clova:HCX-DASH-002", input_price_per_million: 0.388, output_price_per_million: 1.552, cached_price_per_million: null },
+			{ model_key: "motif:motif-3", input_price_per_million: 0.22, output_price_per_million: 0.88, cached_price_per_million: 0.044 },
 		];
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(JSON.stringify(gatewayResponse), { status: 200 }),
@@ -284,6 +287,10 @@ describe("registry — fetchNaiaPricing", () => {
 		});
 		expect(models!.find((m) => m.id === "solar-mini")).toMatchObject({
 			pricing: [0.165, 0.165],
+		});
+		expect(models!.find((m) => m.id === "motif-3")).toMatchObject({
+			pricing: [0.22, 0.88],
+			cachePricing: { read: 0.044, write: null },
 		});
 		expect(models!.find((m) => m.id === "HCX-007")).toBeUndefined();
 
@@ -406,6 +413,7 @@ describe("registry — sortModels", () => {
 			"deepseek-v4-flash",
 			"solar-pro4",
 			"solar-mini",
+			"motif-3",
 			"gpt-5.6-luna",
 		]);
 	});
