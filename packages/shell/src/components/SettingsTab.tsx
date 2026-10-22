@@ -37,6 +37,7 @@ import {
 } from "../lib/avatar-presets";
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import { WEB_DEFAULT_BACKGROUND } from "../lib/web-runtime/web-assets";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
 	isRecommendedLocalValue,
@@ -722,7 +723,10 @@ export function SettingsTab() {
 	const [naiaNvas, setNaiaNvas] = useState<string[]>([]);
 	const [avatarProvider, setAvatarProvider] = useState<
 		"vrm" | "naia-video-avatar"
-	>(existing?.avatarProvider ?? "naia-video-avatar");
+	>(
+		existing?.avatarProvider ??
+			(import.meta.env.MODE === "web" ? "vrm" : "naia-video-avatar"),
+	);
 	const [nvaModel, setNvaModel] = useState(existing?.nvaModel ?? "");
 	const [activeBgPath, setActiveBgPath] = useState<string>("");
 	const [backgroundVideoFilename, setBackgroundVideoFilename] = useState<
@@ -766,6 +770,14 @@ export function SettingsTab() {
 			const cfg = loadConfig();
 			setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
 			setNvaModel(cfg?.nvaModel ?? "");
+			if (cfg?.vrmModel !== undefined) {
+				const nextVrm = normalizeLocalPath(cfg.vrmModel);
+				setVrmModel(nextVrm);
+				setSavedVrmModel(nextVrm);
+			}
+			if (cfg?.backgroundVideo !== undefined) {
+				setBackgroundVideoFilename(cfg.backgroundVideo);
+			}
 		};
 		window.addEventListener("naia-config-changed", syncAvatarFromConfig);
 		return () =>
@@ -2364,7 +2376,12 @@ export function SettingsTab() {
 		setAvatarModelPath(normalized);
 		setSavedVrmModel(normalized);
 		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, vrmModel: normalized || undefined });
+		if (cfg) {
+			saveConfig({ ...cfg, vrmModel: normalized || undefined });
+			if (import.meta.env.MODE === "web") {
+				void writeNaiaUiConfig({ vrmModel: normalized || undefined });
+			}
+		}
 	}
 
 	function handleNaiaBgSelect(path: string) {
@@ -2374,7 +2391,12 @@ export function SettingsTab() {
 		setBackgroundMediaType(getBackgroundMediaType(path));
 		void toLocalBlobUrl(path).then(setBackgroundVideoUrl);
 		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, backgroundVideo: filename || undefined });
+		if (cfg) {
+			saveConfig({ ...cfg, backgroundVideo: filename || undefined });
+			if (import.meta.env.MODE === "web") {
+				void writeNaiaUiConfig({ backgroundVideo: filename || undefined });
+			}
+		}
 	}
 
 	function handleClearNaiaBg() {
@@ -2383,7 +2405,12 @@ export function SettingsTab() {
 		setBackgroundMediaType("");
 		setBackgroundVideoUrl("");
 		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, backgroundVideo: undefined });
+		if (cfg) {
+			saveConfig({ ...cfg, backgroundVideo: undefined });
+			if (import.meta.env.MODE === "web") {
+				void writeNaiaUiConfig({ backgroundVideo: undefined });
+			}
+		}
 	}
 
 	// #12: Import file (Downloads → naia-settings/{subdir}/)
@@ -2632,7 +2659,9 @@ export function SettingsTab() {
 
 	// Load background list from naia-settings
 	useEffect(() => {
-		const savedFilename = existing?.backgroundVideo as string | undefined;
+		const savedFilename =
+			(existing?.backgroundVideo as string | undefined) ??
+			(import.meta.env.MODE === "web" ? WEB_DEFAULT_BACKGROUND : undefined);
 		listNaiaAssets("background").then((paths) => {
 			setNaiaBgs(paths);
 			if (savedFilename) {
@@ -2642,6 +2671,12 @@ export function SettingsTab() {
 		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
+
+	useEffect(() => {
+		if (!backgroundVideoFilename || naiaBgs.length === 0) return;
+		const match = naiaBgs.find((p) => p.endsWith(backgroundVideoFilename));
+		if (match) setActiveBgPath(match);
+	}, [backgroundVideoFilename, naiaBgs]);
 
 	// Load .nva directory list from naia-settings
 	useEffect(() => {
@@ -3376,14 +3411,17 @@ export function SettingsTab() {
 				>
 					{t("settings.tabBrain")}
 				</button>
-				<button
-					type="button"
-					data-settings-tab="voice"
-					className={`settings-tab-btn${activeSettingsTab === "voice" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("voice")}
-				>
-					{t("settings.tabVoice")}
-				</button>
+				{/* WO-03: 웹판은 음성·기억·지식·스킬 데스크톱 전용 탭을 감추고 모델 상태·아바타·페르소나·일반(배경)만 남긴다. */}
+				{import.meta.env.MODE !== "web" && (
+					<button
+						type="button"
+						data-settings-tab="voice"
+						className={`settings-tab-btn${activeSettingsTab === "voice" ? " settings-tab-btn--active" : ""}`}
+						onClick={() => setActiveSettingsTab("voice")}
+					>
+						{t("settings.tabVoice")}
+					</button>
+				)}
 				<button
 					type="button"
 					data-settings-tab="avatar"
@@ -3400,30 +3438,34 @@ export function SettingsTab() {
 				>
 					{t("settings.tabPersona")}
 				</button>
-				<button
-					type="button"
-					data-settings-tab="memory"
-					className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("memory")}
-				>
-					{t("settings.tabMemory")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="knowledge"
-					className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("knowledge")}
-				>
-					{t("settings.tabKnowledge")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="skills"
-					className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("skills")}
-				>
-					{t("settings.tabSkills")}
-				</button>
+				{import.meta.env.MODE !== "web" && (
+					<>
+						<button
+							type="button"
+							data-settings-tab="memory"
+							className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
+							onClick={() => setActiveSettingsTab("memory")}
+						>
+							{t("settings.tabMemory")}
+						</button>
+						<button
+							type="button"
+							data-settings-tab="knowledge"
+							className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
+							onClick={() => setActiveSettingsTab("knowledge")}
+						>
+							{t("settings.tabKnowledge")}
+						</button>
+						<button
+							type="button"
+							data-settings-tab="skills"
+							className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
+							onClick={() => setActiveSettingsTab("skills")}
+						>
+							{t("settings.tabSkills")}
+						</button>
+					</>
+				)}
 				<button
 					type="button"
 					data-settings-tab="general"
@@ -3504,14 +3546,18 @@ export function SettingsTab() {
 									);
 								})}
 							</select>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={() => handleImportAsset("background")}
-							>
-								{t("settings.assetImport")}
-							</button>
-							{activeBgPath &&
+							{/* WO-03: 웹판은 파일 대화상자·Rust 복사가 없어 가져오기·삭제를 감춘다. */}
+							{import.meta.env.MODE !== "web" && (
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={() => handleImportAsset("background")}
+								>
+									{t("settings.assetImport")}
+								</button>
+							)}
+							{import.meta.env.MODE !== "web" &&
+								activeBgPath &&
 								(() => {
 									const fn = activeBgPath.split(/[/\\]/).pop();
 									return fn ? (
@@ -3534,7 +3580,8 @@ export function SettingsTab() {
 							<code style={{ flex: 1, overflowWrap: "anywhere" }}>
 								{workspaceRoot}
 							</code>
-							{adkRestartRequired ? (
+							{/* WO-03: 웹판은 앱 재실행 경로가 없어 초기화 버튼·안내를 감춘다. */}
+							{import.meta.env.MODE === "web" ? null : adkRestartRequired ? (
 								<div
 									className="settings-error"
 									role="alertdialog"
@@ -3642,9 +3689,11 @@ export function SettingsTab() {
 							}}
 						>
 							<option value="vrm">{t("settings.avatarProviderVrm")}</option>
-							<option value="naia-video-avatar">
-								{t("settings.avatarProviderVideo")}
-							</option>
+							{import.meta.env.MODE !== "web" && (
+								<option value="naia-video-avatar">
+									{t("settings.avatarProviderVideo")}
+								</option>
+							)}
 						</select>
 					</div>
 
@@ -3699,30 +3748,32 @@ export function SettingsTab() {
 									);
 								})}
 							</div>
-							{/* #12/#13: 파일 추가 + 삭제 */}
-							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => handleImportAsset("vrm-files")}
-								>
-									{t("settings.assetImport")}
-								</button>
-								{vrmModel &&
-									(() => {
-										const fn = vrmModel.split(/[/\\]/).pop();
-										return fn ? (
-											<button
-												type="button"
-												className="voice-preview-btn"
-												style={{ color: "var(--error-color, #f44)" }}
-												onClick={() => handleDeleteAsset("vrm-files", fn)}
-											>
-												{t("settings.assetDelete")}
-											</button>
-										) : null;
-									})()}
-							</div>
+							{/* #12/#13: 파일 추가 + 삭제 (WO-03: 웹판 감춤 — 번들 카탈로그만 선택) */}
+							{import.meta.env.MODE !== "web" && (
+								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+									<button
+										type="button"
+										className="voice-preview-btn"
+										onClick={() => handleImportAsset("vrm-files")}
+									>
+										{t("settings.assetImport")}
+									</button>
+									{vrmModel &&
+										(() => {
+											const fn = vrmModel.split(/[/\\]/).pop();
+											return fn ? (
+												<button
+													type="button"
+													className="voice-preview-btn"
+													style={{ color: "var(--error-color, #f44)" }}
+													onClick={() => handleDeleteAsset("vrm-files", fn)}
+												>
+													{t("settings.assetDelete")}
+												</button>
+											) : null;
+										})()}
+								</div>
+							)}
 						</div>
 					)}
 
@@ -3750,25 +3801,28 @@ export function SettingsTab() {
 									</button>
 								))}
 							</div>
-							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => handleImportAsset("nva-files")}
-								>
-									{t("settings.folderImport")}
-								</button>
-								{nvaModel && (
+							{/* WO-03: 웹판 감춤 — 번들 선택만 (데스크톱 파일 대화상자 없음) */}
+							{import.meta.env.MODE !== "web" && (
+								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
 									<button
 										type="button"
 										className="voice-preview-btn"
-										style={{ color: "var(--error-color, #f44)" }}
-										onClick={() => handleDeleteAsset("nva-files", nvaModel)}
+										onClick={() => handleImportAsset("nva-files")}
 									>
-										{t("settings.assetDelete")}
+										{t("settings.folderImport")}
 									</button>
-								)}
-							</div>
+									{nvaModel && (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											style={{ color: "var(--error-color, #f44)" }}
+											onClick={() => handleDeleteAsset("nva-files", nvaModel)}
+										>
+											{t("settings.assetDelete")}
+										</button>
+									)}
+								</div>
+							)}
 						</div>
 					)}
 				</>

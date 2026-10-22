@@ -11,6 +11,11 @@ import {
 import { Logger } from "./logger";
 import { SECRET_KEYS, deleteSecretKey, getSecretKey } from "./secure-store";
 import {
+	WEB_BACKGROUND_ASSETS,
+	WEB_VRM_ASSETS,
+	isWebMode,
+} from "./web-runtime/web-assets";
+import {
 	type SlotsManifest,
 	buildSlotsManifest,
 	serializeSlotsManifest,
@@ -117,10 +122,22 @@ export type NaiaAssetSubdir =
 	| "bgm-musics"
 	| "nva-files";
 
-/** Returns absolute file paths inside {adkPath}/naia-settings/{subdir}/ */
+/**
+ * Returns absolute file paths inside {adkPath}/naia-settings/{subdir}/.
+ * 웹판에는 Tauri IPC가 없어 dist 번들 자산 카탈로그(/avatars/*, /backgrounds/*)를
+ * 그대로 돌려준다. 데스크톱 아바타·배경 표시 코드는 URL을 그대로 fetch하므로
+ * 호출자 변경 없이 동작한다 (새 렌더러 없음).
+ */
 export async function listNaiaAssets(
 	subdir: NaiaAssetSubdir,
 ): Promise<string[]> {
+	if (isWebMode()) {
+		if (subdir === "vrm-files")
+			return WEB_VRM_ASSETS.map((asset) => asset.url);
+		if (subdir === "background")
+			return WEB_BACKGROUND_ASSETS.map((asset) => asset.url);
+		return [];
+	}
 	const adkPath = getAdkPath();
 	if (!adkPath) return [];
 	try {
@@ -165,6 +182,18 @@ const BLOB_URL_EXTS = new Set(Object.keys(LOCAL_MIME_TYPES));
  * Caller is responsible for revoking the returned blob URL when done.
  */
 export async function toLocalBlobUrl(filePath: string): Promise<string> {
+	// 웹판: dist 번들 자산·원격·blob/data URL은 fetch 가능한 그대로 둔다.
+	// (웹 convertFileSrc는 identity라 아래 fallback과 결과가 같지만, 실패한
+	//  read_local_binary 왕복 전에 바로 반환해 desktop_only 경고를 남기지 않는다.)
+	if (
+		isWebMode() &&
+		/^(https?:|blob:|data:|\/|avatars\/|assets\/)/.test(filePath)
+	) {
+		return filePath.startsWith("avatars/") ||
+			filePath.startsWith("assets/")
+			? `/${filePath}`
+			: filePath;
+	}
 	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
 	if (!BLOB_URL_EXTS.has(ext)) {
 		// Video or unknown — asset URL (may fail on Windows, no workaround without streaming)

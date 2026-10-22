@@ -370,6 +370,10 @@ export function AppMainContent(props: AppMainContentProps) {
 								className={`content-app${!activeApp ? " content-app--hidden" : ""}`}
 							>
 								{keepAliveApps.map((app) => {
+									// WO-03: 웹판은 브라우저 탭이 꺼져 있어 마운트 자체를 막는다 (browser_wv_create 오류 방지).
+									if (import.meta.env.MODE === "web" && app.id === "browser") {
+										return null;
+									}
 									if (
 										!shouldMountKeepAliveApp(
 											app,

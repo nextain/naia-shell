@@ -46,11 +46,17 @@ import {
 	resetNaiaPersistedSettings,
 	setAdkPath,
 	toAssetUrl,
+	toLocalBlobUrl,
 	writeAgentKeyStrict,
 	writeNaiaConfig,
 	writeNaiaConfigAtPath,
 	writeNaiaUiConfig,
 } from "../adk-store";
+import {
+	WEB_BACKGROUND_ASSETS,
+	WEB_VRM_ASSETS,
+	setWebAssetsModeForTests,
+} from "../web-runtime/web-assets";
 
 // ── UC-MODEL-SELECT cross-seam contract ─────────────────────────────────────────
 // Regression guard for 2026-06-17: UI model selection MUST become the agent's
@@ -408,6 +414,49 @@ describe("listNaiaAssets", () => {
 		const result = await listNaiaAssets("bgm-musics");
 		expect(result[0]).toContain("bgm-musics");
 		expect(result[0]).toContain("Afternoon Whispers.mp3");
+	});
+});
+
+// ── listNaiaAssets / toLocalBlobUrl (웹판: dist 번들 카탈로그) ─────────────────
+// 데스크톱 invoke 경로를 타지 않고 번들 URL을 그대로 돌려준다.
+
+describe("web bundled assets (WO-03)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+	});
+
+	it("lists bundled VRM URLs without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("vrm-files");
+		expect(result).toEqual(WEB_VRM_ASSETS.map((asset) => asset.url));
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("lists bundled background URLs without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("background");
+		expect(result).toEqual(WEB_BACKGROUND_ASSETS.map((asset) => asset.url));
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("returns empty arrays for non-bundled subdirs in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		await expect(listNaiaAssets("bgm-musics")).resolves.toEqual([]);
+		await expect(listNaiaAssets("nva-files")).resolves.toEqual([]);
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("returns bundled/remote URLs as-is in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		await expect(toLocalBlobUrl("/backgrounds/ol-woman-dusk.webp")).resolves
+			.toBe("/backgrounds/ol-woman-dusk.webp");
+		await expect(toLocalBlobUrl("/avatars/03-OL_Woman.vrm")).resolves.toBe(
+			"/avatars/03-OL_Woman.vrm",
+		);
+		await expect(toLocalBlobUrl("avatars/03-OL_Woman.vrm")).resolves.toBe(
+			"/avatars/03-OL_Woman.vrm",
+		);
+		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 });
 

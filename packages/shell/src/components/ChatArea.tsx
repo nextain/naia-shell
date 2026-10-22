@@ -3872,19 +3872,22 @@ export function ChatArea({
 								{TAB_ICONS.chat}
 							</span>
 						</button>
-						<button
-							type="button"
-							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
-							data-chat-tab="history"
-							onClick={() => handleTabChange("history")}
-							title={t("history.tabHistory")}
-							aria-label={t("history.tabHistory")}
-							data-tooltip={t("history.tabHistory")}
-						>
-							<span className="chat-tab-icon" aria-hidden="true">
-								{TAB_ICONS.history}
-							</span>
-						</button>
+						{/* WO-03: 웹판은 대화 기록(read_conversation)이 꺼져 있어 탭을 감춘다. */}
+						{import.meta.env.MODE !== "web" && (
+							<button
+								type="button"
+								className={`chat-tab${activeTab === "history" ? " active" : ""}`}
+								data-chat-tab="history"
+								onClick={() => handleTabChange("history")}
+								title={t("history.tabHistory")}
+								aria-label={t("history.tabHistory")}
+								data-tooltip={t("history.tabHistory")}
+							>
+								<span className="chat-tab-icon" aria-hidden="true">
+									{TAB_ICONS.history}
+								</span>
+							</button>
+						)}
 					</div>
 					<div className="chat-header-right">
 						{totalSessionCost > 0 &&
@@ -3937,8 +3940,8 @@ export function ChatArea({
 
 					{/* Settings tab */}
 
-					{/* History tab */}
-					{activeTab === "history" && (
+					{/* History tab (WO-03: 웹판 감춤 — 패널 마운트 자체를 막는다) */}
+					{import.meta.env.MODE !== "web" && activeTab === "history" && (
 						<HistoryTab onLoadSession={() => setActiveTab("chat")} />
 					)}
 

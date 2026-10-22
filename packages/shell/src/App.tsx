@@ -41,6 +41,7 @@ import type { AppInstallRequest } from "./lib/app-store-client";
 import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
+import { WEB_DEFAULT_BACKGROUND, WEB_DEFAULT_VRM } from "./lib/web-runtime/web-assets";
 import { sendAppSkills, sendAppSkillsClear } from "./lib/chat-service";
 import {
 	addAllowedTool,
@@ -334,7 +335,21 @@ export function App() {
 				if (!active || currentRevision !== revision) return;
 				setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
 				setNvaModel(cfg?.nvaModel ?? "");
-				const nextAvatarModelPath = cfg?.vrmModel ?? "";
+				// WO-03: 웹판은 dist 번들 VRM이 항상 있으므로, VRM 미선택 상태를
+				// 기본 아바타로 채운다 (NVA 선택 provider는 건드리지 않는다).
+				// 공개 config에만 영속한다 (cfg는 secret 복원본일 수 있음).
+				let nextAvatarModelPath = cfg?.vrmModel ?? "";
+				if (
+					import.meta.env.MODE === "web" &&
+					!nextAvatarModelPath &&
+					cfg?.avatarProvider !== "naia-video-avatar"
+				) {
+					nextAvatarModelPath = WEB_DEFAULT_VRM;
+					const pub = loadConfig();
+					if (pub && !pub.vrmModel) {
+						saveConfig({ ...pub, vrmModel: WEB_DEFAULT_VRM });
+					}
+				}
 				if (useAvatarStore.getState().modelPath !== nextAvatarModelPath) {
 					setAvatarModelPath(nextAvatarModelPath);
 				}
@@ -516,8 +531,12 @@ export function App() {
 		void listNaiaAssets("background").then(async (paths) => {
 			if (cancelled || paths.length === 0) return;
 			const config = loadConfig();
+			// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
 			const saved =
-				(config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
+				(config?.backgroundVideo as string | undefined) ??
+				(import.meta.env.MODE === "web"
+					? WEB_DEFAULT_BACKGROUND
+					: DEFAULT_BG_VIDEO);
 			const match = paths.find((p) => p.endsWith(saved));
 			if (!match || cancelled) return;
 			const blobUrl = await toLocalBlobUrl(match);

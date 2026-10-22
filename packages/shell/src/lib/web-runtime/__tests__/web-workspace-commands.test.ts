@@ -18,6 +18,7 @@ describe("web-workspace-commands", () => {
 		const inStorage = await fs.readText("naia-adk/naia-settings/config.json");
 		expect(inStorage).not.toBeNull();
 		const parsedInStorage = JSON.parse(inStorage as string);
+		// WO-03: 초기 config는 번들 아바타·배경 기본값을 함께 seed한다 (리터럴 고정).
 		const expectedConfig = {
 			provider: "webllm",
 			model: "Qwen3-4B-q4f16_1-MLC",
@@ -25,8 +26,16 @@ describe("web-workspace-commands", () => {
 			speechStyle: "casual",
 			persona: "You are Naia, an AI companion. Speak casually and warmly.",
 			onboardingComplete: true,
+			avatarProvider: "vrm",
+			vrmModel: "/avatars/03-OL_Woman.vrm",
+			backgroundVideo: "ol-woman-dusk.webp",
 			NAIA_LOCALE: "en",
 		};
+		expect(INITIAL_WEB_WORKSPACE_CONFIG).toMatchObject({
+			avatarProvider: "vrm",
+			vrmModel: "/avatars/03-OL_Woman.vrm",
+			backgroundVideo: "ol-woman-dusk.webp",
+		});
 		expect(parsedInStorage).toEqual(expectedConfig);
 		expect(JSON.parse(first)).toEqual(expectedConfig);
 
@@ -238,6 +247,9 @@ describe("web-workspace-commands", () => {
 				speechStyle: "casual",
 				persona: "You are Naia, an AI companion. Speak casually and warmly.",
 				onboardingComplete: true,
+				avatarProvider: "vrm",
+				vrmModel: "/avatars/03-OL_Woman.vrm",
+				backgroundVideo: "ol-woman-dusk.webp",
 				NAIA_LOCALE: "ko",
 			};
 			expect(JSON.parse(result)).toEqual(expectedConfig);
