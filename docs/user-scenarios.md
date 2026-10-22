@@ -344,7 +344,8 @@ Naia 계정으로 로그인한 사용자는 설정의 Naia 모델 목록에서
 재시작 후 선택이 복원되며 일반 채팅은
 기존 Shell→Agent provider pipeline과 같은 Naia 키를 통해 선택한 정확한 모델로 전달된다.
 Gateway가 제공한 upstream provenance와 tool 지원 여부는 정직하게 반영한다. Motif 3은
-10개 도구 스키마 실측에서 구조화 tool_calls가 10회 반환된 뒤 목록에 포함한다. Gateway가
+두 차례 실측에서 구조화 tool_calls 9/10, 10/10(요청 함수 일치 8/10, 9/10)을 반환해
+기준(9/10 이상)을 충족한 뒤 목록에 포함한다. Gateway가
 일시적으로 응답하지 않으면 정적 fallback을 사용하되 다른 모델/provider로 바꾸지 않는다.
 Gateway의 가격은 이미 10%가 반영된 고객가이므로 Shell은 다시 가산하지 않는다.
 

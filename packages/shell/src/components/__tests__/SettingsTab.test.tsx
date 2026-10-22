@@ -1440,7 +1440,13 @@ describe("SettingsTab", () => {
 		);
 	});
 
-	it.each(["deepseek-v4-flash", "solar-pro4", "solar-mini", "gpt-5.6-luna"])(
+	it.each([
+		"deepseek-v4-flash",
+		"solar-pro4",
+		"solar-mini",
+		"motif-3",
+		"gpt-5.6-luna",
+	])(
 		"keeps the live Naia-account model %s selectable and persisted",
 		async (modelId) => {
 			localStorage.setItem(

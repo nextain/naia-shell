@@ -693,7 +693,7 @@
         "P05": "done"
       },
       "status": "implemented",
-      "verification": "Gateway/provider contracts passed; 10/10 live tool requests returned structured tool_calls (9/10 selected the requested function); Shell capability-settings E2E passed 6/6. Detailed suite results and baseline failures are in the workspace result.md.",
+      "verification": "Gateway/provider contracts passed; two live probes returned structured tool_calls in 9/10 then 10/10 requests, with requested-function matches in 8/10 then 9/10 (threshold >=9/10); Shell capability-settings E2E passed 6/6. Detailed suite results and baseline failures are in the workspace result.md.",
       "remaining": "No push, deploy, PR, or secret registration per request; await coordinator handoff.",
       "last_updated": "2026-10-22T23:56:24+09:00"
     },

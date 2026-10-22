@@ -636,8 +636,8 @@ registerLlmProvider({
 			lifecycle: "unknown",
 		},
 		{
-			// Motif 3 CBT. The gateway's bounded live probe returned structured
-			// tool_calls on all 10 tested tool requests (2026-10-22).
+			// Motif 3 CBT. Two live probes returned structured tool_calls in 9/10
+			// then 10/10 requests (requested-function matches: 8/10 then 9/10).
 			id: "motif-3",
 			label: "Motif 3",
 			capabilities: ["llm"],
