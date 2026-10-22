@@ -1941,7 +1941,13 @@ export function SettingsTab() {
 						if (mappedProvider) pushModel(mappedProvider);
 					}
 
-					setDynamicModels(grouped);
+					setDynamicModels((prev) => ({
+						...prev,
+						...grouped,
+						...(prev.nextain?.some((m) => m.pricing !== undefined)
+							? { nextain: prev.nextain }
+							: {}),
+					}));
 				}
 			} catch {
 				// Fallback to static registry models
