@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { addTrackToPlaylist, createEmptyBgmLibrary, createPlaylist, findLocalRelink, isSameBgmSong, loadBgmLibrary, movePlaylistTrack, nextPlaylistIndex, removeTrackFromPlaylist, toggleBgmLike, type BgmLibraryTrack } from "../bgm-library";
+import { addTrackToPlaylist, createEmptyBgmLibrary, createPlaylist, extractBgmSongCoreKeys, findLocalRelink, isSameBgmSong, loadBgmLibrary, movePlaylistTrack, nextPlaylistIndex, removeTrackFromPlaylist, toggleBgmLike, type BgmLibraryTrack } from "../bgm-library";
 
 const yt = (id: string): BgmLibraryTrack => ({ id: `youtube:${id}`, source: "youtube", youtubeId: id, title: `YouTube ${id}` });
 const local = (path: string): BgmLibraryTrack => ({ id: `local:${path}`, source: "local", path, title: path.split("/").pop()! });
@@ -70,5 +70,77 @@ describe("BGM persistent library", () => {
 		expect(isSameBgmSong("유재하 - 사랑", "유재하 - 사랑하기 때문에")).toBe(false);
 		expect(isSameBgmSong("아이유 - 밤편지", "10CM - 밤편지")).toBe(false);
 		expect(isSameBgmSong("Through the Night (밤편지)", "[MV] IU(아이유) _ Through the Night(밤편지)")).toBe(true);
+	});
+
+	it("matches bilingual/HQ variant uploads without stripping ambiguous title words globally or mutating global state (#778, FR-RADIO-DJ.14)", async () => {
+		const beforeAliasCall = isSameBgmSong("IU 밤편지", "밤편지");
+		const beforeKoreanAliasCall = isSameBgmSong("아이유 밤편지", "밤편지");
+		expect(isSameBgmSong("아이유(IU) - 좋은 날", "IU - 좋은 날")).toBe(true);
+		expect(isSameBgmSong("IU 밤편지", "밤편지")).toBe(beforeAliasCall);
+		expect(isSameBgmSong("아이유 밤편지", "밤편지")).toBe(beforeKoreanAliasCall);
+		vi.resetModules();
+		const freshModule = await import("../bgm-library");
+		expect(freshModule.isSameBgmSong("IU 밤편지", "밤편지")).toBe(beforeAliasCall);
+		expect(freshModule.isSameBgmSong("아이유 밤편지", "밤편지")).toBe(beforeKoreanAliasCall);
+
+		expect(
+			isSameBgmSong(
+				"Through the Night (밤편지)",
+				"아이유 밤편지 초고음질 IU Through the Night super HQ sound",
+			),
+		).toBe(true);
+		expect(
+			isSameBgmSong(
+				"아이유 밤편지 초고음질 IU Through the Night super HQ sound",
+				"Through the Night (밤편지)",
+			),
+		).toBe(true);
+		expect(
+			isSameBgmSong(
+				"아이유(IU) - 밤편지",
+				"아이유 밤편지 초고음질 IU Through the Night super HQ sound",
+			),
+		).toBe(true);
+
+		expect(isSameBgmSong("Sound of Silence", "The Sound of Music")).toBe(false);
+		expect(isSameBgmSong("Sound of Silence", "Silence")).toBe(false);
+
+		expect(isSameBgmSong("Video Killed the Radio Star", "Radio Star")).toBe(false);
+		expect(
+			isSameBgmSong(
+				"The Buggles - Video Killed the Radio Star (Official Music Video)",
+				"Video Killed the Radio Star",
+			),
+		).toBe(true);
+		expect(extractBgmSongCoreKeys("Video Killed the Radio Star")).toContain(
+			"videokilledtheradiostar",
+		);
+
+		expect(isSameBgmSong("Super Shy", "Shy")).toBe(false);
+		expect(isSameBgmSong("Loop", "Loop (Official Audio)")).toBe(true);
+		expect(isSameBgmSong("Full Moon", "Moon")).toBe(false);
+
+		expect(isSameBgmSong("Love", "Love Story")).toBe(false);
+		expect(isSameBgmSong("사랑", "사랑하기 때문에")).toBe(false);
+		expect(isSameBgmSong("Love (사랑)", "사랑 Love Story")).toBe(false);
+
+		expect(isSameBgmSong("아이유 - 밤편지", "10CM - 밤편지")).toBe(false);
+		expect(
+			isSameBgmSong(
+				"Simon & Garfunkel - The Sound of Silence",
+				"Disturbed - The Sound of Silence",
+			),
+		).toBe(false);
+
+		// A lone ambiguous word at the end or in the body stays part of the title.
+		expect(extractBgmSongCoreKeys("The Sound")).toContain("thesound");
+		expect(extractBgmSongCoreKeys("Mr. Brightside")).toContain("mrbrightside");
+		// Square-bracket label/channel tags are not alternate titles, so two songs sharing one stay distinct.
+		expect(
+			isSameBgmSong(
+				"Mainvocal (메인 보컬)_새하얀 겨울 [PurplePine Entertainment]",
+				"다른 가수 - 봄날의 노래 [PurplePine Entertainment]",
+			),
+		).toBe(false);
 	});
 });
