@@ -949,6 +949,48 @@ describe("executeBgmSkill", () => {
 		expect(deps.playback.queue()).toEqual([]);
 	});
 
+	it("does not drop distinct songs that only share a short prefix or have different artists (Love vs Love Story, 사랑 vs 사랑하기 때문에, different-artist same title) (FR-RADIO-DJ.14)", async () => {
+		const { deps } = mkDeps([
+			{
+				id: "song-love",
+				title: "Keyshia Cole - Love (Official Audio)",
+				duration: "4:15",
+			},
+			{
+				id: "song-love-story",
+				title: "Taylor Swift - Love Story (Official Audio)",
+				duration: "3:55",
+			},
+			{
+				id: "song-sarang",
+				title: "부활 - 사랑 (Official Audio)",
+				duration: "4:05",
+			},
+			{
+				id: "song-sarang-because",
+				title: "유재하 - 사랑하기 때문에 (Official Audio)",
+				duration: "4:40",
+			},
+			{
+				id: "song-love-other-artist",
+				title: "DEAN - Love (Official Audio)",
+				duration: "3:45",
+			},
+		]);
+
+		await executeBgmSkill(
+			{ action: "play", query: "감성 팝 발라드", mode: "radio_dj" },
+			deps,
+		);
+
+		expect(deps.playback.current()?.selected.videoId).toBe("song-love");
+		expect(deps.playback.queue().map((item) => item.selected.videoId)).toEqual([
+			"song-love-story",
+			"song-sarang",
+			"song-sarang-because",
+		]);
+	});
+
 	it("excludes mixes and >450s videos (e.g. 451s 힐링음악) from both primary selection and the pre-queue (FR-RADIO-DJ.14)", async () => {
 		const { deps } = mkDeps([
 			{

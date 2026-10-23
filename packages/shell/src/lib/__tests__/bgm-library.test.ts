@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { addTrackToPlaylist, createEmptyBgmLibrary, createPlaylist, findLocalRelink, loadBgmLibrary, movePlaylistTrack, nextPlaylistIndex, removeTrackFromPlaylist, toggleBgmLike, type BgmLibraryTrack } from "../bgm-library";
+import { addTrackToPlaylist, createEmptyBgmLibrary, createPlaylist, findLocalRelink, isSameBgmSong, loadBgmLibrary, movePlaylistTrack, nextPlaylistIndex, removeTrackFromPlaylist, toggleBgmLike, type BgmLibraryTrack } from "../bgm-library";
 
 const yt = (id: string): BgmLibraryTrack => ({ id: `youtube:${id}`, source: "youtube", youtubeId: id, title: `YouTube ${id}` });
 const local = (path: string): BgmLibraryTrack => ({ id: `local:${path}`, source: "local", path, title: path.split("/").pop()! });
@@ -61,5 +61,14 @@ describe("BGM persistent library", () => {
 			{ path: "/a/song.mp3", fileName: "song.mp3" },
 			{ path: "/b/song.mp3", fileName: "song.mp3" },
 		])).toBeNull();
+	});
+
+	it("distinguishes distinct songs that share a short prefix or have different extracted artists while keeping parenthesized alternate titles (FR-RADIO-DJ.14)", () => {
+		expect(isSameBgmSong("Love", "Love Story")).toBe(false);
+		expect(isSameBgmSong("Taylor Swift - Love", "Taylor Swift - Love Story")).toBe(false);
+		expect(isSameBgmSong("사랑", "사랑하기 때문에")).toBe(false);
+		expect(isSameBgmSong("유재하 - 사랑", "유재하 - 사랑하기 때문에")).toBe(false);
+		expect(isSameBgmSong("아이유 - 밤편지", "10CM - 밤편지")).toBe(false);
+		expect(isSameBgmSong("Through the Night (밤편지)", "[MV] IU(아이유) _ Through the Night(밤편지)")).toBe(true);
 	});
 });
