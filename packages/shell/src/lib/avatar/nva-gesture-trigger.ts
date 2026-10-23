@@ -5,6 +5,7 @@
 //   consumer(shell)가 반환된 cleanText 를 화면/음성에, gestures 를 player.gesture(key) 로 소비.
 
 import { type NvaManifest, animKind } from "./nva-core";
+import type { NvaGestureAction } from "./camera-actions";
 
 export interface ParsedGesture {
 	/** 해석된 gesture 애니 key(매니페스트). */
@@ -27,8 +28,22 @@ const MAX_GESTURES = 16;
 const MAX_VALUE_LEN = 64;
 
 /** gesture-kind 애니의 key/label/intent/triggers 를 소문자 인덱스 → 마커 값 해석용. */
-function buildLookup(m: NvaManifest): Map<string, string> {
+function buildLookup(
+	source: NvaManifest | readonly NvaGestureAction[],
+): Map<string, string> {
 	const map = new Map<string, string>();
+	if (Array.isArray(source)) {
+		for (const action of source) {
+			const add = (value?: string) => {
+				const key = (value || "").trim().toLowerCase();
+				if (key && !map.has(key)) map.set(key, action.key);
+			};
+			add(action.key);
+			add(action.label);
+		}
+		return map;
+	}
+	const m = source as NvaManifest;
 	for (const [key, a] of Object.entries(m.animations || {})) {
 		if (animKind(a) !== "gesture") continue; // gesture 애니만(idle/talk/transition 제외)
 		const add = (s?: string) => {
@@ -49,7 +64,7 @@ function buildLookup(m: NvaManifest): Map<string, string> {
  */
 export function parseGestureTriggers(
 	text: string,
-	m: NvaManifest,
+	m: NvaManifest | readonly NvaGestureAction[],
 ): GestureParseResult {
 	const lookup = buildLookup(m);
 	const gestures: ParsedGesture[] = [];
@@ -67,6 +82,145 @@ export function parseGestureTriggers(
 		.replace(/ +(\n|$)/g, "$1") // 줄끝/문장끝 잉여 공백 제거
 		.trim();
 	return { cleanText, gestures };
+}
+
+const STREAM_MARKER = /^\[\[[ \t]*(?:gesture|g)[ \t]*:[ \t]*([^\[\]\r\n]+?)[ \t]*\]\]/i;
+
+type MarkerInspection =
+	| { kind: "complete"; length: number; marker: string }
+	| { kind: "partial" }
+	| { kind: "invalid" };
+
+function inspectStreamMarker(value: string, start: number): MarkerInspection {
+	const candidate = value.slice(start);
+	const complete = STREAM_MARKER.exec(candidate);
+	if (complete) {
+		return {
+			kind: "complete",
+			length: complete[0].length,
+			marker: complete[0],
+		};
+	}
+
+	const body = candidate.slice(2);
+	if (/[\[\]\r\n]/.test(body.slice(0, -1))) return { kind: "invalid" };
+	const hasDanglingClose = body.endsWith("]");
+	const prefix = hasDanglingClose ? candidate.slice(0, -1) : candidate;
+	const partial = /^\[\[[ \t]*([a-z]*)[ \t]*(?::([^\[\]\r\n]*))?$/i.exec(prefix);
+	if (!partial) return { kind: "invalid" };
+
+	const kind = partial[1].toLowerCase();
+	const rawValue = partial[2];
+	if (rawValue === undefined) {
+		if (hasDanglingClose || (!"gesture".startsWith(kind) && !"g".startsWith(kind))) {
+			return { kind: "invalid" };
+		}
+		return { kind: "partial" };
+	}
+	if (kind !== "gesture" && kind !== "g") return { kind: "invalid" };
+	if (rawValue.trim().length > MAX_VALUE_LEN) return { kind: "invalid" };
+	if (hasDanglingClose && !rawValue.trim()) return { kind: "invalid" };
+	return { kind: "partial" };
+}
+
+/** Incrementally strips gesture markers without exposing a split marker to UI or TTS. */
+export class GestureTriggerStream {
+	private pending = "";
+	private afterRemovedMarker = false;
+	private afterRemovedMarkerSpace = false;
+
+	constructor(private readonly actions: readonly NvaGestureAction[] = []) {}
+
+	push(chunk: string): GestureParseResult {
+		this.pending += chunk;
+		return this.drain(false);
+	}
+
+	flush(): GestureParseResult {
+		return this.drain(true);
+	}
+
+	private drain(flushing: boolean): GestureParseResult {
+		const source = this.pending;
+		this.pending = "";
+		let cleanText = "";
+		const gestures: ParsedGesture[] = [];
+		let cursor = 0;
+
+		while (cursor < source.length) {
+			const start = source.indexOf("[", cursor);
+			if (start < 0) {
+				cleanText = this.appendPlain(source.slice(cursor), cleanText);
+				break;
+			}
+
+			if (source[start + 1] !== "[") {
+				if (start + 1 === source.length && !flushing) {
+					let holdFrom = start;
+					while (holdFrom > cursor && /[ \t]/.test(source[holdFrom - 1])) {
+						holdFrom -= 1;
+					}
+					cleanText = this.appendPlain(source.slice(cursor, holdFrom), cleanText);
+					this.pending = source.slice(holdFrom);
+					break;
+				}
+				cleanText = this.appendPlain(source.slice(cursor, start + 1), cleanText);
+				cursor = start + 1;
+				continue;
+			}
+
+			const marker = inspectStreamMarker(source, start);
+			if (marker.kind === "partial") {
+				if (flushing) {
+					cleanText = this.appendPlain(source.slice(cursor), cleanText);
+					break;
+				}
+				let holdFrom = start;
+				while (holdFrom > cursor && /[ \t]/.test(source[holdFrom - 1])) {
+					holdFrom -= 1;
+				}
+				cleanText = this.appendPlain(source.slice(cursor, holdFrom), cleanText);
+				this.pending = source.slice(holdFrom);
+				break;
+			}
+
+			cleanText = this.appendPlain(source.slice(cursor, start), cleanText);
+			if (marker.kind === "invalid") {
+				cleanText = this.appendPlain("[[", cleanText);
+				cursor = start + 2;
+				continue;
+			}
+
+			const parsed = parseGestureTriggers(marker.marker, this.actions);
+			gestures.push(...parsed.gestures);
+			const leftWhitespace = cleanText.match(/[ \t]+$/)?.[0] ?? "";
+			if (leftWhitespace) {
+				cleanText = `${cleanText.slice(0, -leftWhitespace.length)} `;
+			}
+			this.afterRemovedMarker = true;
+			this.afterRemovedMarkerSpace = leftWhitespace.length > 0;
+			cursor = start + marker.length;
+		}
+
+		return { cleanText, gestures };
+	}
+
+	private appendPlain(source: string, into: string): string {
+		let result = into;
+		for (const char of source) {
+			if (this.afterRemovedMarker) {
+				if (char === " " || char === "\t") {
+					if (!this.afterRemovedMarkerSpace) result += " ";
+					this.afterRemovedMarkerSpace = true;
+					continue;
+				}
+				this.afterRemovedMarker = false;
+				this.afterRemovedMarkerSpace = false;
+			}
+			result += char;
+		}
+		return result;
+	}
 }
 
 /** player.gesture(key) 를 가진 대상. */

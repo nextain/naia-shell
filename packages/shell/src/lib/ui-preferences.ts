@@ -8,6 +8,7 @@ export const UI_PREFERENCE_KEYS = {
 	workspaceRailCollapsed: "workspaceRailCollapsed",
 	avatarCamera: "avatarCamera",
 	nvaPan: "nvaPan",
+	nvaZoom: "nvaZoom",
 	youtubeAppHeight: "youtubeAppHeight",
 	browserToolPerms: "browserToolPerms",
 	browserToolbarCollapsed: "browserToolbarCollapsed",
@@ -23,6 +24,17 @@ export type UiPreferences = Record<string, unknown>;
 
 const LEGACY_OWNER_KEY = "naia-ui-preferences-legacy-owner";
 const UPDATE_PROMPT_SNOOZE_LEGACY_KEY = "naia.updatePromptSnooze";
+const NVA_ZOOM_MIN = 0.5;
+const NVA_ZOOM_MAX = 3;
+
+function normalizeNvaZoom(value: unknown): number {
+	return typeof value === "number" &&
+		Number.isFinite(value) &&
+		value >= NVA_ZOOM_MIN &&
+		value <= NVA_ZOOM_MAX
+		? value
+		: 1;
+}
 
 function readStorage(key: string): string | null {
 	try {
@@ -207,6 +219,11 @@ export async function hydrateUiPreferences(
 	const owner = normalizeAdkPath(readStorage(LEGACY_OWNER_KEY));
 	const canPersist = Boolean(options.canPersist && path);
 	let next = persisted ?? {};
+	if (Object.prototype.hasOwnProperty.call(next, UI_PREFERENCE_KEYS.nvaZoom)) {
+		next[UI_PREFERENCE_KEYS.nvaZoom] = normalizeNvaZoom(
+			next[UI_PREFERENCE_KEYS.nvaZoom],
+		);
+	}
 	let migrated = false;
 
 	if (persisted) {
@@ -282,6 +299,8 @@ export function patchUiPreferences(
 	const next = { ...snapshot };
 	for (const [key, value] of Object.entries(patch)) {
 		if (value === undefined) delete next[key];
+		else if (key === UI_PREFERENCE_KEYS.nvaZoom)
+			next[key] = normalizeNvaZoom(value);
 		else next[key] = value;
 	}
 	publish(next);

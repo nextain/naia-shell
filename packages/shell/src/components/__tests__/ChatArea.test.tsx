@@ -11,11 +11,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
 import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
 import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
-import type { AgentResponseChunk } from "../../lib/types";
+import type { AgentResponseChunk, EnvironmentSegment } from "../../lib/types";
+import {
+	clearCameraActions,
+	registerCameraActions,
+} from "../../lib/avatar/camera-actions";
 import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { useChatStore } from "../../stores/chat";
+import * as voiceSessionApi from "../../lib/voice/index";
+import type { VoiceSession } from "../../lib/voice/index";
 import { ChatArea, modelToolBoundary } from "../ChatArea";
 
 const ttsSyncMocks = vi.hoisted(() => ({
@@ -121,6 +127,7 @@ const capturedRequests: {
 	enableTools?: boolean;
 	enableThinking?: boolean;
 	thinking?: { level: "off" | "low" | "high" };
+	environmentSegments?: EnvironmentSegment[];
 }[] = [];
 vi.mock("../../lib/chat-service", () => ({
 	sendChatMessage: vi.fn().mockImplementation(
@@ -133,6 +140,7 @@ vi.mock("../../lib/chat-service", () => ({
 			enableTools?: boolean;
 			enableThinking?: boolean;
 			thinking?: { level: "off" | "low" | "high" };
+			environmentSegments?: EnvironmentSegment[];
 		}) => {
 			capturedOnChunk = opts.onChunk;
 			capturedRequests.push(opts);
@@ -224,6 +232,7 @@ describe("ChatArea", () => {
 	});
 	afterEach(() => {
 		cleanup();
+		clearCameraActions();
 		Reflect.deleteProperty(window, "SpeechRecognition");
 		Reflect.deleteProperty(window, "webkitSpeechRecognition");
 		FakeSpeechRecognition.latest = null;
@@ -776,6 +785,137 @@ describe("ChatArea", () => {
 		expect(assistant?.content).toBe("Final answer.");
 		localStorage.removeItem("naia-config");
 	});
+
+	it("strips split NVA gesture markers from chat and TTS and sends active actions to the core", async () => {
+		const playAction = vi.fn().mockResolvedValue(undefined);
+		registerCameraActions({
+			getGestureActions: () => [
+				{ key: "wave", label: "Wave" },
+				{ key: "nod", label: "Nod" },
+			],
+			playAction,
+		});
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+				ttsProvider: "edge",
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "say hello" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const request = capturedRequests[0];
+		const actionsSegment = request.environmentSegments?.find(
+			(segment) =>
+				segment.kind === "app" &&
+				segment.entries.some((entry) => entry.type === "NVA gesture actions"),
+		);
+		expect(actionsSegment).toBeDefined();
+		if (actionsSegment?.kind === "app") {
+			const actionData = actionsSegment.entries[0]?.data as
+				| { instructions?: string }
+				| undefined;
+			expect(actionData?.instructions).toContain("[[gesture:key]]");
+		}
+
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "Hello [[ges",
+		});
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "ture:wave]] [[gesture:nod]] there.",
+		});
+		expect(useChatStore.getState().streamingContent).toBe("Hello there.");
+		expect(useChatStore.getState().streamingContent).not.toContain("[[gesture:");
+		expect(playAction).toHaveBeenCalledTimes(1);
+		expect(playAction).toHaveBeenCalledWith("wave");
+
+		request.onChunk({ type: "finish", requestId: request.requestId });
+		await waitFor(() => expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalled());
+		expect(ttsSyncMocks.synthesizeTts.mock.calls.map(([input]) => input.text)).toEqual([
+			"Hello there.",
+		]);
+		expect(
+			useChatStore.getState().messages.find((message) => message.role === "assistant")?.content,
+		).toBe("Hello there.");
+		localStorage.removeItem("naia-config");
+	});
+
+	it.each(["onTurnEnd", "onInterrupted"] as const)(
+		"records pending live voice text when %s flushes the response",
+		async (terminalEvent) => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "test-omni",
+					naiaKey: "test-key",
+				}),
+			);
+			const originalAudioContext = globalThis.AudioContext;
+			vi.stubGlobal(
+				"AudioContext",
+				class {
+					sampleRate = 24000;
+					state = "running";
+					currentTime = 0;
+					destination = {};
+					close = vi.fn().mockResolvedValue(undefined);
+				},
+			);
+			const session: VoiceSession = {
+				audioInput: {
+					sampleRate: 24000,
+					autoGainControl: false,
+					gateWhilePlaying: false,
+				},
+				connect: vi.fn().mockResolvedValue(undefined),
+				sendAudio: vi.fn(),
+				sendText: vi.fn(),
+				sendToolResponse: vi.fn(),
+				disconnect: vi.fn(),
+				isConnected: true,
+				onAudio: null,
+				onInputTranscript: null,
+				onOutputTranscript: null,
+				onToolCall: null,
+				onTurnEnd: null,
+				onInterrupted: null,
+				onError: null,
+				onDisconnect: null,
+			};
+			const createSession = vi
+				.spyOn(voiceSessionApi, "createVoiceSession")
+				.mockReturnValue(session);
+			render(<ChatArea />);
+			fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+			await waitFor(() => expect(session.connect).toHaveBeenCalledTimes(1));
+
+			act(() => session.onOutputTranscript?.("Live answer ["));
+			expect(
+				useChatStore.getState().messages.find((message) => message.role === "assistant")
+					?.content,
+			).toBe("Live answer");
+			act(() => session[terminalEvent]?.());
+
+			expect(
+				useChatStore.getState().messages.find((message) => message.role === "assistant")
+					?.content,
+			).toBe("Live answer [");
+			expect(createSession).toHaveBeenCalledTimes(1);
+			vi.stubGlobal("AudioContext", originalAudioContext);
+			localStorage.removeItem("naia-config");
+		},
+	);
 
 	it("never sends textual reasoning to sentence TTS", async () => {
 		localStorage.setItem(
