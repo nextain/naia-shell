@@ -1065,6 +1065,142 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		controlSpy.mockRestore();
 	});
 
+	it("processes infoDelivery playerState=0 as track_ended without promoting to playing when confirmed while still loading, and pends early numeric onError 150 to current.playbackId even before DOM iframe src updates (FR-RADIO-DJ.2·16)", async () => {
+		const controlSpy = vi
+			.spyOn(chatService, "controlSpeechActivity")
+			.mockResolvedValue(true);
+		chatService.setCurrentSpeechActivityId("dj-activity-1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				proactiveSpeechProfile: "personal_radio_dj",
+				proactiveSpeechPermitted: true,
+			}),
+		);
+
+		render(<BgmPlayer />);
+		await startTrack("v-loading-end", "Loading End Candidate");
+		bgmPlayback.enqueue({ videoId: "v-stale-src-err", title: "Stale Src Error Candidate" });
+		bgmPlayback.enqueue({ videoId: "v-final", title: "Final Candidate" });
+		const firstPlaybackId = bgmPlayback.current()?.playbackId ?? "";
+		const iframe = attachIframeForCurrentPlayback();
+
+		// 1) "v-loading-end" confirms its videoData in initialDelivery (status="loading"), then receives
+		// infoDelivery with playerState=0 and currentTime > 0 while still status="loading".
+		// Must emit track_ended (and advance to "v-stale-src-err") without promoting to "playing".
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "initialDelivery",
+						info: {
+							playerState: -1,
+							currentTime: 0,
+							videoData: {
+								video_id: "v-loading-end",
+								title: "Loading End Candidate",
+							},
+						},
+					}),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.status).toBe("loading");
+		controlSpy.mockClear();
+
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 0,
+							currentTime: 1.2,
+							duration: 1.2,
+							videoData: {
+								video_id: "v-loading-end",
+								title: "Loading End Candidate",
+							},
+						},
+					}),
+					source: null,
+				}),
+			);
+		});
+		const secondPlaybackId = bgmPlayback.current()?.playbackId ?? "";
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-stale-src-err");
+		expect(bgmPlayback.current()?.status).toBe("requested");
+		const firstEvents = controlSpy.mock.calls
+			.filter(([arg]) => String(arg).startsWith("bgm_event:"))
+			.map(([arg]) => JSON.parse(String(arg).slice("bgm_event:".length)));
+		expect(firstEvents).toEqual([
+			expect.objectContaining({
+				kind: "track_ended",
+				playbackId: firstPlaybackId,
+				previousVideoId: "v-loading-end",
+				nextVideoId: "v-stale-src-err",
+				continued: true,
+			}),
+		]);
+
+		// 2) Immediately after advancing to "v-stale-src-err", before DOM iframe.src updates
+		// (iframe.src still has v-loading-end and firstPlaybackId), a null-source onError(150) arrives.
+		// It must be pended to current.playbackId (secondPlaybackId) and, once iframe.src updates and
+		// "v-stale-src-err" confirms its videoData, advance to "v-final" with reason="150".
+		controlSpy.mockClear();
+		expect(iframe.src).toContain("v-loading-end");
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onError", info: 150 }),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-stale-src-err");
+		expect(controlSpy).not.toHaveBeenCalled();
+
+		// Now DOM iframe.src catches up to the new generation and confirms videoData for "v-stale-src-err".
+		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
+		attachIframeForCurrentPlayback();
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "initialDelivery",
+						info: {
+							playerState: -1,
+							currentTime: 0,
+							videoData: {
+								video_id: "v-stale-src-err",
+								title: "Stale Src Error Candidate",
+							},
+						},
+					}),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-final");
+		const secondEvents = controlSpy.mock.calls
+			.filter(([arg]) => String(arg).startsWith("bgm_event:"))
+			.map(([arg]) => JSON.parse(String(arg).slice("bgm_event:".length)));
+		expect(secondEvents).toEqual([
+			expect.objectContaining({
+				kind: "track_error",
+				playbackId: secondPlaybackId,
+				previousVideoId: "v-stale-src-err",
+				nextVideoId: "v-final",
+				reason: "150",
+				continued: true,
+			}),
+		]);
+
+		chatService.setCurrentSpeechActivityId(undefined);
+		controlSpy.mockRestore();
+	});
+
 	it("(4)(6) emits track_error(timeout) and advances to the next candidate once when a load never confirms or plays within PLAYBACK_TIMEOUT_MS, and clears all timers on stop so no timeout fires after stop (FR-RADIO-DJ.2·12·16)", async () => {
 		vi.useFakeTimers({
 			toFake: [
