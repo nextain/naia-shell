@@ -332,17 +332,20 @@ Before starting the Agent, the instructor opens **Coding Workers**, enables Jeon
 
 Success means the visible confirmation identifies the saved target and fixed boundary without exposing a token or raw Git output. A failed save keeps the prior target unchanged and gives only the folder-readiness guidance.
 
-## UC-NAIA-AZURE-MODELS — Naia 계정으로 저가 채팅 모델을 일반 대화에 사용한다
+## UC-NAIA-AZURE-MODELS — Naia 계정으로 호스팅 채팅 모델을 일반 대화에 사용한다
 
 Naia 계정으로 로그인한 사용자는 설정의 Naia 모델 목록에서
-`deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `gpt-5.6-luna`(Naia Luna)만
+`deepseek-v4-flash`, `solar-pro4`, `solar-mini`, `motif-3`(Motif 3),
+`gpt-5.6-luna`(Naia Luna)만
 선택하고 저장할 수 있다. Codex ChatGPT 모델은 Codex 공급자에 그대로 남는다.
 
 선택 가능한 모든 Naia 채팅 모델은 동일한 Shell 스킬 목록을 전달받아 호출할 수 있다. 도구 호출이 검증되지 않았거나 운영 catalog에서 사용할 수 없는 모델은 선택 가능한 모델로 취급하지 않는다.
 목록에서 빠진 이전 Naia 모델 id는 기본값 `deepseek-v4-flash`로 옮긴다.
 재시작 후 선택이 복원되며 일반 채팅은
 기존 Shell→Agent provider pipeline과 같은 Naia 키를 통해 선택한 정확한 모델로 전달된다.
-Gateway가 제공한 Azure provenance와 tool 지원 여부는 정직하게 반영하고, gateway가
+Gateway가 제공한 upstream provenance와 tool 지원 여부는 정직하게 반영한다. Motif 3은
+두 차례 실측에서 구조화 tool_calls 9/10, 10/10(요청 함수 일치 8/10, 9/10)을 반환해
+기준(9/10 이상)을 충족한 뒤 목록에 포함한다. Gateway가
 일시적으로 응답하지 않으면 정적 fallback을 사용하되 다른 모델/provider로 바꾸지 않는다.
 Gateway의 가격은 이미 10%가 반영된 고객가이므로 Shell은 다시 가산하지 않는다.
 
@@ -377,7 +380,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | 실 UI 스펙(95-llm-role-settings)은 #589/#598 이 두뇌 화면의 역할 편집기를 지우며 함께 지웠다 — 실 UI 확인 없음 |
-| UC-NAIA-AZURE-MODELS | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts` · `registry.test.ts`: 나이아 계정 선택기가 `deepseek-v4-flash` · `solar-pro4` · `solar-mini` · `gpt-5.6-luna` 네 개만 노출하고 Codex 목록은 그대로인지. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 가격 순·성능 순과 빠진 모델 숨김. `e2e/capability-settings.spec.ts`: 실 UI 선택기 네 개. | 실 대화 403은 게이트웨이 소유 — 선택기 축소가 고치지 않는다 |
+| UC-NAIA-AZURE-MODELS | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts` · `registry.test.ts`: 나이아 계정 선택기가 `deepseek-v4-flash` · `solar-pro4` · `solar-mini` · `motif-3` · `gpt-5.6-luna` 다섯 개를 노출하고 Codex 목록은 그대로인지, Motif 가격·tool support 메타데이터가 반영되는지. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: 가격 순·성능 순과 빠진 모델 숨김. `e2e/capability-settings.spec.ts`: 실 UI 선택기 다섯 개. | 실 대화 403은 게이트웨이 소유 — 선택기 축소가 고치지 않는다 |
 | UC-NAIA-LEGACY-MAIN-MODEL | `packages/shell/src/lib/llm/__tests__/registry-gateway-models.test.ts`: 선택기 모델 유지, 퇴역 id(#670·#603)는 게이트웨이가 제공해도 기본값으로, 그 밖의 id는 게이트웨이 목록에 있으면 유지(`gpt-5.4-nano`)·없으면 기본값·목록을 못 읽으면 그대로, `gatewayServedModelIds` 가 live·상태 없음만 센다. `packages/shell/src/hooks/__tests__/useAgentAuthSync.test.ts`: 기동 훅이 게이트웨이 제공 모델을 저장하지 않고, 퇴역 id는 즉시 옮기고, 목록 실패 시 건드리지 않고, 확인 중 바뀐 설정을 덮지 않는다. | 실 Shell 기동 확인은 대기 — 화면 변화 없음(설정 값만) |
 | UC-LOCAL-LLM-MODEL-PULL-759 | `packages/shell/src/lib/__tests__/ollama-runtime.test.ts`: Rust camelCase policy/status/start/cancel/retry 인자와 상태·오류 해석; `ChatArea.test.tsx`·`chat-service.test.ts`: 관리형 Qwen에만 정책 context 전달; `ollama-chat-admission.test.ts`: managed/external-local·원격 허용 경계; `SettingsTab.test.tsx`: 초기 후보·확인·2배 공간·라이선스 표시·정책 미결 차단·진행·취소·재시도·오류·ready 목록 저장과 provider/model 변경 보존; `i18n-user-facing.test.ts`: 14개 locale 키 | `packages/shell/e2e/ollama-settings.spec.ts`: 가짜 Tauri만 사용해 기본/정책 대기/확인/진행/취소/재시도/오류/성공, 이벤트 작업 ID·태그 불일치 무시, 원격 host pull 0회, 키보드/ARIA·좁은 폭; Rust fake HTTP tests: decimal GB conversion·exact 2× boundary·same store preflight; paired Agent fake-fetch: `options.num_ctx=8192`; `thinking-settings.spec.ts`: 기존 설정·대화 생각 상태 회귀. 실제 Ollama/GPU는 사용하지 않는다.
 | UC-LOCAL-MODEL-VRAM-RESERVATION | Rust `vram_reservation::tests`: 8 GiB 상호 배타, 다른 장치 독립성, byte reservation의 unknown/insufficient VRAM, 8 GiB 초과 `policy_undecided`, starting/running 계산, 동시 요청 승자 1개, kind-only Voice의 빈 장치·unknown availability 승인, 8 GiB LocalLlm 충돌, 반납 후 retry, 스냅샷 byte `null`, stale 이중 반납 방지, child reap 뒤 lease 반환 및 인벤토리 실패 후 재조회. `ollama_runtime::tests::ollama_no_window_child_supports_ctrl_break_shutdown`: Windows에서 실제 관리형 자식을 `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED`로 띄우고, 창 핸들이 없는 상태와 기존 CTRL_BREAK 종료 및 부모 콘솔 복귀를 확인한다. `lib.rs` fixture는 released 프로파일 예약량을 None으로 유지하고 그 값을 실제 Voice 시작 예약 요청에 전달한다. 명시적 종료·상태 감지의 end-to-end fixture는 P04 진행 중으로 남는다. | 화면·Tauri IPC 변경 없음. 기존 Settings/Onboarding Vitest는 회귀로 실행하고 실제 GPU 경로는 실행하지 않는다. |

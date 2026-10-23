@@ -1981,7 +1981,7 @@ export function SettingsTab() {
 
 						// Models the Naia gateway serves under its own route (Azure:
 						// grok/deepseek/gpt/claude, Vertex: gemini, and the Korean
-						// domestic direct providers Upstage: solar, CLOVA: HCX) all
+						// domestic providers Upstage: solar, CLOVA: HCX, Motif) all
 						// group under the single "nextain" provider — mirrors the
 						// Naia-route set in fetchNaiaPricing.
 						const NAIA_ROUTE_PREFIXES = [
@@ -1989,6 +1989,7 @@ export function SettingsTab() {
 							"vertexai",
 							"upstage",
 							"clova",
+							"motif",
 						];
 						const mappedProvider = NAIA_ROUTE_PREFIXES.includes(
 							m.provider.toLowerCase(),
@@ -1998,7 +1999,13 @@ export function SettingsTab() {
 						if (mappedProvider) pushModel(mappedProvider);
 					}
 
-					setDynamicModels(grouped);
+					setDynamicModels((prev) => ({
+						...prev,
+						...grouped,
+						...(prev.nextain?.some((m) => m.pricing !== undefined)
+							? { nextain: prev.nextain }
+							: {}),
+					}));
 				}
 			} catch {
 				// Fallback to static registry models

@@ -738,6 +738,7 @@ describe("SettingsTab", () => {
 			"solar-mini",
 			"deepseek-v4-flash",
 			"solar-pro4",
+			"motif-3",
 			"gpt-5.6-luna",
 		]);
 		expect(
@@ -825,6 +826,12 @@ describe("SettingsTab", () => {
 				output_price_per_million: 0.165,
 				cached_price_per_million: null,
 			},
+			{
+				model_key: "motif:motif-3",
+				input_price_per_million: 0.26,
+				output_price_per_million: 1.04,
+				cached_price_per_million: 0.052,
+			},
 		]);
 
 		render(<SettingsTab />);
@@ -851,11 +858,195 @@ describe("SettingsTab", () => {
 					!l.includes("$"),
 			),
 		).toBe(true);
+		expect(
+			labels.some(
+				(l) =>
+					l.includes("Motif 3") &&
+					l.includes("260 credits") &&
+					l.includes("1.04K credits"),
+			),
+		).toBe(true);
 		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);
 		const values = [...modelSelect.options].map((o) => o.value);
 		expect(values).toContain("solar-pro4");
 		expect(values).toContain("solar-mini");
+		expect(values).toContain("motif-3");
 		expect(values).not.toContain("HCX-007");
+	});
+
+	it("preserves Naia live pricing on initial open regardless of catalog/pricing completion order", async () => {
+		await setLocale("ko");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "motif-3",
+				apiKey: "",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+
+		const pricingPayload = [
+			{
+				model_key: "azure:deepseek-v4-flash",
+				input_price_per_million: 0.209,
+				output_price_per_million: 0.561,
+				cached_price_per_million: null,
+			},
+			{
+				model_key: "upstage:solar-pro4",
+				input_price_per_million: 0.33,
+				output_price_per_million: 1.32,
+				cached_price_per_million: 0.066,
+			},
+			{
+				model_key: "upstage:solar-mini",
+				input_price_per_million: 0.165,
+				output_price_per_million: 0.165,
+				cached_price_per_million: null,
+			},
+			{
+				model_key: "motif:motif-3",
+				input_price_per_million: 0.26,
+				output_price_per_million: 1.04,
+				cached_price_per_million: 0.052,
+			},
+		];
+
+		const modelsPayload = [
+			{ model_key: "deepseek-v4-flash", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "solar-pro4", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "solar-mini", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "motif-3", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "gpt-5.6-luna", capabilities: ["llm"], supports_tools: true },
+		];
+
+		function makeDeferred<T>() {
+			let resolve!: (val: T) => void;
+			const promise = new Promise<T>((r) => {
+				resolve = r;
+			});
+			return { promise, resolve };
+		}
+
+		// Case 1: Pricing response (2nd /v1/pricing call + /v1/models) resolves BEFORE catalog response (1st /v1/pricing call)
+		const catalogResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const pricingResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const modelsResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		let pricingCalls1 = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((url: string) => {
+				const u = String(url);
+				if (u.includes("/v1/pricing")) {
+					pricingCalls1 += 1;
+					return pricingCalls1 === 1 ? catalogResp1.promise : pricingResp1.promise;
+				}
+				if (u.includes("/v1/models")) {
+					return modelsResp1.promise;
+				}
+				return Promise.resolve({ ok: false, json: async () => [] });
+			}),
+		);
+
+		const { unmount } = render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		// Resolve pricing + models first
+		await act(async () => {
+			pricingResp1.resolve({ ok: true, json: async () => pricingPayload });
+			modelsResp1.resolve({
+				ok: true,
+				json: async () => modelsPayload,
+			});
+		});
+
+		// Then resolve catalog (fetchGatewayModelCatalog)
+		await act(async () => {
+			catalogResp1.resolve({ ok: true, json: async () => pricingPayload });
+		});
+
+		await waitFor(() => {
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			const labels = [...modelSelect.options].map((o) => o.text);
+			expect(
+				labels.some(
+					(l) =>
+						l.includes("Motif 3") &&
+						l.includes("260 credits") &&
+						l.includes("1.04K credits"),
+				),
+			).toBe(true);
+		});
+		expect(
+			screen.queryByText("가격 정보를 불러올 수 없습니다."),
+		).toBeNull();
+		expect(
+			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
+		).toBeDefined();
+
+		unmount();
+
+		// Case 2: Catalog response resolves BEFORE pricing response
+		const catalogResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const pricingResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const modelsResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		let pricingCalls2 = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((url: string) => {
+				const u = String(url);
+				if (u.includes("/v1/pricing")) {
+					pricingCalls2 += 1;
+					return pricingCalls2 === 1 ? catalogResp2.promise : pricingResp2.promise;
+				}
+				if (u.includes("/v1/models")) {
+					return modelsResp2.promise;
+				}
+				return Promise.resolve({ ok: false, json: async () => [] });
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		// Resolve catalog first
+		await act(async () => {
+			catalogResp2.resolve({ ok: true, json: async () => pricingPayload });
+		});
+
+		// Then resolve pricing + models
+		await act(async () => {
+			pricingResp2.resolve({ ok: true, json: async () => pricingPayload });
+			modelsResp2.resolve({
+				ok: true,
+				json: async () => modelsPayload,
+			});
+		});
+
+		await waitFor(() => {
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			const labels = [...modelSelect.options].map((o) => o.text);
+			expect(
+				labels.some(
+					(l) =>
+						l.includes("Motif 3") &&
+						l.includes("260 credits") &&
+						l.includes("1.04K credits"),
+				),
+			).toBe(true);
+		});
+		expect(
+			screen.queryByText("가격 정보를 불러올 수 없습니다."),
+		).toBeNull();
+		expect(
+			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
+		).toBeDefined();
 	});
 
 	it("replaces a stale unavailable Naia selection with the first usable priced model", async () => {
@@ -1426,7 +1617,13 @@ describe("SettingsTab", () => {
 		);
 	});
 
-	it.each(["deepseek-v4-flash", "solar-pro4", "solar-mini", "gpt-5.6-luna"])(
+	it.each([
+		"deepseek-v4-flash",
+		"solar-pro4",
+		"solar-mini",
+		"motif-3",
+		"gpt-5.6-luna",
+	])(
 		"keeps the live Naia-account model %s selectable and persisted",
 		async (modelId) => {
 			localStorage.setItem(
