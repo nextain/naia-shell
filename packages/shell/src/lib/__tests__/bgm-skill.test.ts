@@ -949,6 +949,36 @@ describe("executeBgmSkill", () => {
 		expect(deps.playback.queue()).toEqual([]);
 	});
 
+	it("excludes bilingual super HQ sound variant of Through the Night (밤편지) from the radio_dj queue while keeping a distinct song (#778, FR-RADIO-DJ.14)", async () => {
+		const { deps } = mkDeps([
+			{
+				id: "iu-ttn-1",
+				title: "Through the Night (밤편지)",
+				duration: "4:13",
+			},
+			{
+				id: "iu-ttn-hq",
+				title: "아이유 밤편지 초고음질 IU Through the Night super HQ sound",
+				duration: "4:14",
+			},
+			{
+				id: "other-song",
+				title: "Paul Kim - Every Day, Every Moment (Official Audio)",
+				duration: "3:56",
+			},
+		]);
+
+		await executeBgmSkill(
+			{ action: "play", query: "아이유 밤편지", mode: "radio_dj" },
+			deps,
+		);
+
+		expect(deps.playback.current()?.selected.videoId).toBe("iu-ttn-1");
+		expect(deps.playback.queue().map((item) => item.selected.videoId)).toEqual([
+			"other-song",
+		]);
+	});
+
 	it("does not drop distinct songs that only share a short prefix or have different artists (Love vs Love Story, 사랑 vs 사랑하기 때문에, different-artist same title) (FR-RADIO-DJ.14)", async () => {
 		const { deps } = mkDeps([
 			{
