@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAdkPath, writeNaiaConfig } from "../lib/adk-store";
 import { loadConfigWithSecrets, saveConfig } from "../lib/config";
+import { t } from "../lib/i18n";
 import { isPrebakedNvaManifest, parseNvaManifest } from "../lib/nva";
 import { runStudioNvaApplyFlow } from "../lib/studio-nva-apply";
 import type { StudioNvaApplyRequest } from "../lib/studio-nva-apply-request";
@@ -16,19 +17,23 @@ function errorText(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+function isLoginRequiredError(error: unknown): boolean {
+	return errorText(error).includes("naia_login_required");
+}
+
 function messageForError(error: unknown): string {
 	const reason = errorText(error);
 	if (reason.includes("naia_login_required")) {
-		return "나이아 로그인이 필요합니다. 설정에서 로그인한 뒤 다시 시도해 주세요.";
+		return t("studioNvaApply.loginRequired");
 	}
 	if (
 		reason.includes("invalid_manifest") ||
 		reason.includes("nva_manifest") ||
 		reason.includes("nva_archive")
 	) {
-		return `아바타 파일 검사에 실패했습니다: ${reason}`;
+		return t("studioNvaApply.inspectFailed", { reason });
 	}
-	return `아바타 적용에 실패했습니다: ${reason}`;
+	return t("studioNvaApply.applyFailed", { reason });
 }
 
 interface StudioNvaApplyDialogProps {
@@ -46,6 +51,7 @@ export function StudioNvaApplyDialog({
 	const [loadingPreview, setLoadingPreview] = useState(false);
 	const [applying, setApplying] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
+	const [loginRequired, setLoginRequired] = useState(false);
 	const [result, setResult] = useState<string | null>(null);
 	const previewRequestIdRef = useRef<string | null>(null);
 
@@ -53,6 +59,7 @@ export function StudioNvaApplyDialog({
 		previewRequestIdRef.current = target.requestId;
 		setPreview(null);
 		setMessage(null);
+		setLoginRequired(false);
 		setResult(null);
 		setLoadingPreview(true);
 		void invoke<AvatarPreview>("studio_nva_apply_preview", {
@@ -64,6 +71,7 @@ export function StudioNvaApplyDialog({
 			})
 			.catch((error: unknown) => {
 				if (previewRequestIdRef.current === target.requestId) {
+					setLoginRequired(isLoginRequiredError(error));
 					setMessage(messageForError(error));
 				}
 			})
@@ -87,6 +95,7 @@ export function StudioNvaApplyDialog({
 		}
 		setPreview(null);
 		setMessage(null);
+		setLoginRequired(false);
 		setResult(null);
 		onClose();
 	}, [request, onClose]);
@@ -99,10 +108,12 @@ export function StudioNvaApplyDialog({
 		if (!preview || applying) return;
 		const adkPath = getAdkPath();
 		if (!adkPath) {
-			setMessage("먼저 설정에서 나이아 워크스페이스를 선택해 주세요.");
+			setLoginRequired(false);
+			setMessage(t("studioNvaApply.workspaceRequired"));
 			return;
 		}
 		setApplying(true);
+		setLoginRequired(false);
 		setMessage(null);
 		try {
 			const result = await runStudioNvaApplyFlow({
@@ -140,16 +151,17 @@ export function StudioNvaApplyDialog({
 				cleanup: (path) => invoke("studio_nva_apply_cleanup", { path }),
 			});
 			if (result.status === "applied") {
-				setResult(`“${preview.name}” 아바타를 쉘에 적용했습니다.`);
+				setResult(t("studioNvaApply.applied", { name: preview.name }));
 			}
 		} catch (error) {
+			setLoginRequired(isLoginRequiredError(error));
 			setMessage(messageForError(error));
 		} finally {
 			setApplying(false);
 		}
 	}, [request, preview, applying]);
 
-	const dialogTitle = "이 아바타를 적용할까요?";
+	const dialogTitle = t("studioNvaApply.title");
 
 	return (
 		<div
@@ -184,13 +196,15 @@ export function StudioNvaApplyDialog({
 			>
 				<h2 id="studio-nva-apply-title">{dialogTitle}</h2>
 				{loadingPreview && (
-					<output aria-live="polite">아바타 정보를 불러오는 중입니다…</output>
+					<output aria-live="polite">
+						{t("studioNvaApply.loadingPreview")}
+					</output>
 				)}
 				{preview && (
 					<div className="studio-nva-apply-preview">
 						<img
 							src={preview.thumbnailDataUrl}
-							alt={`${preview.name} 미리보기`}
+							alt={t("studioNvaApply.previewAlt", { name: preview.name })}
 							style={{
 								display: "block",
 								width: 128,
@@ -220,18 +234,18 @@ export function StudioNvaApplyDialog({
 						marginTop: 20,
 					}}
 				>
-					{message?.includes("나이아 로그인이 필요합니다") && (
+					{message && loginRequired && (
 						<button type="button" onClick={openLoginSettings}>
-							설정에서 로그인
+							{t("studioNvaApply.openLoginSettings")}
 						</button>
 					)}
 					{message && !loadingPreview && !result && (
 						<button type="button" onClick={() => loadPreview(request)}>
-							다시 확인
+							{t("studioNvaApply.retryPreview")}
 						</button>
 					)}
 					<button type="button" disabled={applying} onClick={ackAndClose}>
-						{result ? "닫기" : "취소"}
+						{result ? t("studioNvaApply.close") : t("studioNvaApply.cancel")}
 					</button>
 					{!result && (
 						<button
@@ -240,7 +254,9 @@ export function StudioNvaApplyDialog({
 							disabled={!preview || loadingPreview || applying}
 							onClick={() => void confirmApply()}
 						>
-							{applying ? "적용 중…" : "적용"}
+							{applying
+								? t("studioNvaApply.applying")
+								: t("studioNvaApply.confirm")}
 						</button>
 					)}
 				</div>

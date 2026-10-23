@@ -254,3 +254,51 @@ describe("StudioNvaApplyHost deferred receiver", () => {
 		).not.toBeInTheDocument();
 	});
 });
+
+describe("StudioNvaApplyDialog localization and login-required state", () => {
+	it("renders localized strings via t() and shows the login action in non-Korean locales without matching Korean text", async () => {
+		const { setLocale, t } = await import("../i18n");
+		const { StudioNvaApplyDialog: RealStudioNvaApplyDialog } =
+			await vi.importActual<
+				typeof import("../../components/StudioNvaApplyDialog")
+			>("../../components/StudioNvaApplyDialog");
+
+		tauriMocks.invoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "studio_nva_apply_preview") {
+				throw new Error("naia_login_required");
+			}
+			return undefined;
+		});
+
+		await setLocale("en");
+		render(
+			createElement(RealStudioNvaApplyDialog, {
+				request: {
+					requestId: "req-en-login",
+					avatarId: "av_1",
+					environment: "production",
+				},
+				onClose: () => {},
+			}),
+		);
+
+		expect(
+			screen.getByRole("heading", { name: t("studioNvaApply.title") }),
+		).toBeInTheDocument();
+		expect(
+			await screen.findByText(t("studioNvaApply.loginRequired")),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", {
+				name: t("studioNvaApply.openLoginSettings"),
+			}),
+		).toBeInTheDocument();
+
+		cleanup();
+		await setLocale("ko");
+		expect(t("studioNvaApply.title")).toBe("이 아바타를 적용할까요?");
+		expect(t("studioNvaApply.applied", { name: "루나" })).toBe(
+			"“루나” 아바타를 쉘에 적용했습니다.",
+		);
+	});
+});
