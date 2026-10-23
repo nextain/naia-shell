@@ -13,13 +13,38 @@
  const host = parent;
  const origin = window.location.origin;
  const send = (event, info) => host.postMessage(JSON.stringify({ event, info }), origin);
- send('initialDelivery', 0);
- document.querySelector('#report-playing').addEventListener('click', () => send('onStateChange', 1));
- document.querySelector('#report-ended').addEventListener('click', () => send('onStateChange', 0));
+ let handshakeComplete = false;
+ let stateSubscribed = false;
+ let errorSubscribed = false;
+ window.addEventListener('message', (event) => {
+  try {
+   const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+   if (!data || typeof data !== 'object') return;
+   if (data.event === 'listening' && !handshakeComplete) {
+    handshakeComplete = true;
+    send('initialDelivery', 0);
+    send('onReady', null);
+    return;
+   }
+   if (data.event === 'command' && data.func === 'addEventListener' && Array.isArray(data.args)) {
+    if (data.args[0] === 'onStateChange') stateSubscribed = true;
+    if (data.args[0] === 'onError') errorSubscribed = true;
+   }
+  } catch {}
+ });
+ document.querySelector('#report-playing').addEventListener('click', () => {
+  if (!handshakeComplete) return;
+  send('onStateChange', 1);
+ });
+ document.querySelector('#report-ended').addEventListener('click', () => {
+  if (!handshakeComplete) return;
+  send('onStateChange', 0);
+ });
  // Late-error path. The spec grabs this function while the frame is still the
  // active background iframe and calls it after the Shell has moved on, which
  // reproduces "track A reports an error after B took over".
  window.__naiaE2eReportLateError = (reason) => send('onError', reason ?? 'fixture_late_error');
+ window.__naiaE2eHandshakeState = () => ({ handshakeComplete, stateSubscribed, errorSubscribed });
 })();
 </script>
 </body></html>

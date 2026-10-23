@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
 	type BgmObservationCounters,
+	createYoutubeIframeBridgeHandshake,
 	decideIframeMessageSource,
 	diagnoseBgmObservationFailure,
 	emptyBgmObservationCounters,
+	YOUTUBE_WIDGET_LISTENING_MESSAGE,
+	YOUTUBE_WIDGET_SUBSCRIBE_MESSAGES,
 } from "../bgm-observation-diagnosis";
 
 function counters(
@@ -134,5 +137,85 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 				info: 0,
 			}),
 		).toBe("drop_null_terminal");
+	});
+});
+
+describe("createYoutubeIframeBridgeHandshake (#521)", () => {
+	it("initiates listening on start, polls until first message, then subscribes to onStateChange and onError once", () => {
+		const posted: string[] = [];
+		let tickFn: (() => void) | null = null;
+		let cleared = 0;
+
+		const handshake = createYoutubeIframeBridgeHandshake(
+			(payload) => {
+				posted.push(payload);
+				return true;
+			},
+			{
+				intervalMs: 250,
+				maxAttempts: 4,
+				setTimer: (fn) => {
+					tickFn = fn;
+					return 1 as unknown as ReturnType<typeof setInterval>;
+				},
+				clearTimer: () => {
+					cleared += 1;
+					tickFn = null;
+				},
+			},
+		);
+
+		handshake.start();
+		expect(posted).toEqual([YOUTUBE_WIDGET_LISTENING_MESSAGE]);
+		expect(handshake.attempts()).toBe(1);
+		expect(handshake.isSubscribed()).toBe(false);
+
+		tickFn?.();
+		expect(posted).toEqual([
+			YOUTUBE_WIDGET_LISTENING_MESSAGE,
+			YOUTUBE_WIDGET_LISTENING_MESSAGE,
+		]);
+		expect(handshake.attempts()).toBe(2);
+
+		expect(handshake.onFirstMessage()).toBe(true);
+		expect(handshake.isSubscribed()).toBe(true);
+		expect(cleared).toBeGreaterThanOrEqual(1);
+		expect(posted.slice(2)).toEqual([...YOUTUBE_WIDGET_SUBSCRIBE_MESSAGES]);
+
+		// Subsequent messages must not re-send subscriptions.
+		expect(handshake.onFirstMessage()).toBe(false);
+		expect(posted).toHaveLength(2 + YOUTUBE_WIDGET_SUBSCRIBE_MESSAGES.length);
+	});
+
+	it("stops polling after maxAttempts when the iframe never responds", () => {
+		const posted: string[] = [];
+		let tickFn: (() => void) | null = null;
+		let cleared = 0;
+
+		const handshake = createYoutubeIframeBridgeHandshake(
+			(payload) => {
+				posted.push(payload);
+				return true;
+			},
+			{
+				intervalMs: 250,
+				maxAttempts: 3,
+				setTimer: (fn) => {
+					tickFn = fn;
+					return 1 as unknown as ReturnType<typeof setInterval>;
+				},
+				clearTimer: () => {
+					cleared += 1;
+					tickFn = null;
+				},
+			},
+		);
+
+		handshake.start();
+		tickFn?.();
+		tickFn?.();
+		expect(handshake.attempts()).toBe(3);
+		expect(posted).toHaveLength(3);
+		expect(cleared).toBeGreaterThanOrEqual(1);
 	});
 });

@@ -166,20 +166,33 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 					(videoId === "e2evid001" &&
 						iframeRequests.filter((request) => request.videoId === videoId)
 							.length >= 2);
+				const withListeningHandshake = (innerScript: string) => `<!doctype html><script>
+					let __naiaHandshaked = false;
+					window.addEventListener("message", (event) => {
+						if (__naiaHandshaked) return;
+						try {
+							const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+							if (data && data.event === "listening") {
+								__naiaHandshaked = true;
+								${innerScript}
+							}
+						} catch {}
+					});
+				</script>`;
 				const fixtureBody = videoId.startsWith("timeout-")
 					? "<!doctype html><title>Never becomes ready</title>"
 					: videoId.startsWith("error-")
-						? `<!doctype html><script>
+						? withListeningHandshake(`
 					parent.postMessage(JSON.stringify({ event: "onReady" }), "*");
 					setTimeout(() => parent.postMessage(JSON.stringify({ event: "onError", info: 150 }), "*"), 700);
-				</script>`
+				`)
 						: holdPlayback
-							? `<!doctype html><script>
+							? withListeningHandshake(`
 						parent.postMessage(JSON.stringify({ event: "onReady" }), "*");
 						setTimeout(() => parent.postMessage(JSON.stringify({ event: "onStateChange", info: 1 }), "*"), 700);
-					</script>`
+					`)
 							: soakDurationMs > 0
-								? `<!doctype html><script>
+								? withListeningHandshake(`
 					const durationMs = ${soakDurationMs};
 					const mediaDuration = ${logicalDurationSeconds};
 					const send = (event, info) => parent.postMessage(JSON.stringify({ event, info }), "*");
@@ -201,12 +214,12 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 							send("onStateChange", 0);
 						}, durationMs);
 					}, ${readyDelayMs});
-				</script>`
-								: `<!doctype html><script>
+				`)
+								: withListeningHandshake(`
 					parent.postMessage(JSON.stringify({ event: "onReady" }), "*");
 					setTimeout(() => parent.postMessage(JSON.stringify({ event: "onStateChange", info: 1 }), "*"), 700);
 					setTimeout(() => parent.postMessage(JSON.stringify({ event: "onStateChange", info: 0 }), "*"), 1500);
-				</script>`;
+				`);
 				await route.fulfill({
 					contentType: "text/html",
 					body: fixtureBody,

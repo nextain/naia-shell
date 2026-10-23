@@ -855,4 +855,80 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			"Local Two",
 		);
 	});
+
+	it("initiates listening handshake on iframe load and subscribes to onStateChange/onError upon first player message (#521)", async () => {
+		vi.useFakeTimers();
+		render(<BgmPlayer />);
+		await startTrack("v-handshake", "Handshake Song");
+		const iframe = attachIframeForCurrentPlayback();
+		const postMessageSpy = vi.fn();
+		Object.defineProperty(iframe, "contentWindow", {
+			configurable: true,
+			value: { postMessage: postMessageSpy },
+		});
+
+		act(() => {
+			iframe.dispatchEvent(new Event("load"));
+		});
+
+		const postedEvents = () =>
+			postMessageSpy.mock.calls.map(([payload]) => JSON.parse(String(payload)));
+
+		expect(postedEvents()[0]).toEqual({
+			event: "listening",
+			id: 1,
+			channel: "widget",
+		});
+
+		act(() => {
+			vi.advanceTimersByTime(250);
+		});
+		expect(
+			postedEvents().filter((m) => m.event === "listening").length,
+		).toBeGreaterThanOrEqual(2);
+
+		postMessageSpy.mockClear();
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "initialDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 1.5,
+							videoData: { video_id: "v-handshake", title: "Handshake Song" },
+						},
+					}),
+					origin: "https://www.youtube.com",
+					source: iframe.contentWindow,
+				}),
+			);
+		});
+
+		expect(postedEvents()).toEqual(
+			expect.arrayContaining([
+				{
+					event: "command",
+					func: "addEventListener",
+					args: ["onStateChange"],
+					id: 1,
+					channel: "widget",
+				},
+				{
+					event: "command",
+					func: "addEventListener",
+					args: ["onError"],
+					id: 1,
+					channel: "widget",
+				},
+			]),
+		);
+		expect(bgmPlayback.current()?.status).toBe("playing");
+
+		postMessageSpy.mockClear();
+		act(() => {
+			vi.advanceTimersByTime(1_000);
+		});
+		expect(postedEvents().filter((m) => m.event === "listening")).toHaveLength(0);
+	});
 });

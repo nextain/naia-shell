@@ -56,6 +56,92 @@ export interface BgmSearchResult {
 	id: string;
 	title: string;
 	thumbnail?: string;
+	duration?: string | number;
+	channel?: string;
+}
+
+const EXPLICIT_LONG_MIX_QUERY_RE =
+	/\b(?:megamix|nonstop|full\s*album|[1-9]\d*\s*hours?|[1-9]\d*\s*hr|long\s*mix)\b|긴\s*믹스|장시간|[1-9]\d*\s*시간/i;
+const HABITUAL_PLAYLIST_TOKEN_RE =
+	/\b(?:playlists?|radio|mix(?:es)?|compilation|bgm)\b|플레이리스트|플리|라디오|모음집?|연속\s*듣기|브금/gi;
+const SINGLE_TRACK_HINT_RE =
+	/\b(?:official|audio|song|track|mv|lyric)\b|노래|곡|명곡/i;
+const SHORT_TRACK_QUERY_RE =
+	/\b(?:short|brief|1\s*min(?:ute)?|2\s*min(?:ute)?s?)\b|짧은\s*곡|짧은\s*노래|짧게|1분|2분/i;
+const LONG_MIX_TITLE_RE =
+	/\b(?:playlist|megamix|nonstop|compilation|full\s*album|live\s*radio|24\/7|[1-9]\s*hours?|[1-9]\s*hr)\b|플레이리스트|플리|모음집?|연속\s*듣기|[1-9]\s*시간/i;
+
+export function sanitizeRadioDjSearchQuery(query: string): string {
+	const trimmed = query.trim();
+	if (!trimmed || EXPLICIT_LONG_MIX_QUERY_RE.test(trimmed)) {
+		return trimmed;
+	}
+	const stripped = trimmed
+		.replace(HABITUAL_PLAYLIST_TOKEN_RE, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	const base = stripped || "감성 팝";
+	if (SINGLE_TRACK_HINT_RE.test(base)) {
+		return base;
+	}
+	return `${base} 노래 Official Audio`;
+}
+
+export function parseBgmDurationSeconds(
+	raw: string | number | undefined,
+): number | null {
+	if (typeof raw === "number") {
+		return Number.isFinite(raw) && raw > 0 ? raw : null;
+	}
+	if (typeof raw !== "string") return null;
+	const trimmed = raw.trim();
+	if (!/^\d+(?::\d{1,2}){1,2}$/.test(trimmed)) return null;
+	const parts = trimmed.split(":").map((part) => Number(part));
+	if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+	if (parts.length === 2) {
+		return parts[0] * 60 + parts[1];
+	}
+	if (parts.length === 3) {
+		return parts[0] * 3600 + parts[1] * 60 + parts[2];
+	}
+	return null;
+}
+
+export function filterSingleTrackCandidates(
+	results: readonly BgmSearchResult[],
+	query: string,
+): BgmSearchResult[] {
+	if (results.length <= 1 || EXPLICIT_LONG_MIX_QUERY_RE.test(query)) {
+		return [...results];
+	}
+	const wantShort = SHORT_TRACK_QUERY_RE.test(query);
+	const minSec = wantShort ? 30 : 75;
+	const maxSec = wantShort ? 210 : 510;
+
+	const nonMixTitled = results.filter(
+		(item) => !LONG_MIX_TITLE_RE.test(item.title),
+	);
+	const pool = nonMixTitled.length > 0 ? nonMixTitled : [...results];
+
+	const withDuration = pool.filter(
+		(item) => parseBgmDurationSeconds(item.duration) !== null,
+	);
+	if (withDuration.length === 0) {
+		return pool;
+	}
+
+	const preferred = withDuration.filter((item) => {
+		const sec = parseBgmDurationSeconds(item.duration);
+		if (sec === null) return false;
+		return sec >= minSec && sec <= maxSec;
+	});
+	if (preferred.length > 0) return preferred;
+
+	const underFifteenMin = withDuration.filter((item) => {
+		const sec = parseBgmDurationSeconds(item.duration);
+		return sec !== null && sec >= 30 && sec <= 900;
+	});
+	return underFifteenMin.length > 0 ? underFifteenMin : withDuration;
 }
 
 export interface BgmRecentTrack extends BgmSearchResult {
@@ -317,9 +403,18 @@ export async function waitForBgmObservedPlayback(
 		opts.sleep ??
 		((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
 	const deadline = now() + timeoutMs;
+	const navigateRequestDeadline =
+		opts.previousPlaybackId !== undefined ? now() + Math.min(timeoutMs, 1_200) : deadline;
 	while (now() < deadline) {
 		const current = playback.current();
 		if (current && isObservedPlayback(current, opts)) return current;
+		if (
+			opts.previousPlaybackId !== undefined &&
+			now() >= navigateRequestDeadline &&
+			(!current || current.playbackId === opts.previousPlaybackId)
+		) {
+			return current;
+		}
 		await sleep(pollMs);
 	}
 	return playback.current();
@@ -328,7 +423,7 @@ export async function waitForBgmObservedPlayback(
 async function sidecarSearch(query: string): Promise<BgmSearchResult[]> {
 	const base = (await ensureBgmSidecar()) || bgmSidecarBaseUrl();
 	const res = await fetch(
-		`${base}/yt/search?q=${encodeURIComponent(query)}&max=5`,
+		`${base}/yt/search?q=${encodeURIComponent(query)}&max=12`,
 	);
 	if (!res.ok) {
 		const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -491,7 +586,8 @@ export async function recoverRadioDjPlayback(
 			const recentTitles = new Set(
 				recent.map((track) => normalizeBgmTitle(track.title)).filter(Boolean),
 			);
-			const selected = results.find((result) => {
+			const candidateResults = filterSingleTrackCandidates(results, plan.query);
+			const selected = candidateResults.find((result) => {
 				const normalizedTitle = normalizeBgmTitle(result.title);
 				return (
 					!plan.attemptedIds.has(result.id) &&
@@ -670,27 +766,42 @@ async function executeBgmSkillCore(
 			videoId: track.id,
 			title: track.title,
 		}));
+		const observedContext = toBgmObservedContext(
+			deps.playback.current(),
+			deps.now?.() ?? Date.now(),
+			deps.playback.queue(),
+		);
+		const instruction = observedContext.announceTrack && observedContext.currentTrack
+			? `Now playing is confirmed: "${observedContext.currentTrack.title}". Answer with this track title.`
+			: observedContext.pendingTrack
+				? `Track "${observedContext.pendingTrack.title}" was requested and is awaiting playback confirmation (${observedContext.pendingTrack.status}). Tell the user this track was requested and is loading/confirming; do not claim no music was requested and do not call play again.`
+				: "No active track is playing right now.";
 		return JSON.stringify({
 			library: summarizeLibrary(deps.library?.()),
 			ok: true,
 			action: act,
-			...toBgmObservedContext(
-				deps.playback.current(),
-				deps.now?.() ?? Date.now(),
-				deps.playback.queue(),
-			),
+			...observedContext,
 			recentTracks,
 			favoriteTracks,
+			instruction,
 		});
 	}
 
 	if (act === "play") {
 		const radioDjRequested = shouldActivateRadioDj(args);
-		const activeStatus = deps.playback.current()?.status;
+		const preserveActive = args.preserveActive === true;
+		const currentSnapshot = deps.playback.current();
+		const activeStatus = currentSnapshot?.status;
+		const hasActivePlayback =
+			Boolean(currentSnapshot) &&
+			(activeStatus === "playing" ||
+				activeStatus === "requested" ||
+				activeStatus === "loading" ||
+				activeStatus === "timeout");
 		// Replacements and starts own the surface immediately. A queue-preserving
 		// request may be a prepared DJ fallback, so it keeps the current plan.
 		if (
-			radioDjRequested ||
+			(radioDjRequested && !(preserveActive && hasActivePlayback)) ||
 			args.replace === true ||
 			!activeStatus ||
 			["ended", "error", "timeout"].includes(activeStatus)
@@ -704,13 +815,16 @@ async function executeBgmSkillCore(
 					id: videoId,
 					title: typeof args.title === "string" ? args.title : "",
 				},
-				radioDjRequested,
+				radioDjRequested && !(preserveActive && hasActivePlayback),
 			);
 		}
 		const query = args.query;
 		if (typeof query !== "string" || !query.trim())
 			throw new Error("play requires query or videoId");
-		const results = await deps.search(query);
+		const searchQuery = radioDjRequested
+			? sanitizeRadioDjSearchQuery(query)
+			: query;
+		const results = await deps.search(searchQuery);
 		if (results.length === 0)
 			return JSON.stringify({
 				ok: false,
@@ -718,7 +832,7 @@ async function executeBgmSkillCore(
 				reason: "no_search_results",
 				query,
 			});
-		const currentVideoId = deps.playback.current()?.selected.videoId;
+		const currentVideoId = currentSnapshot?.selected.videoId;
 		const recent = deps.recentTracks?.() ?? [];
 		const recentIds = new Set(recent.map((track) => track.id));
 		const recentTitles = new Set(
@@ -738,15 +852,85 @@ async function executeBgmSkillCore(
 				query,
 			});
 		}
+		const candidatePool = radioDjRequested
+			? filterSingleTrackCandidates(freshResults, query)
+			: freshResults;
+		const enqueueAdditionalRadioCandidates = async (
+			candidates: readonly BgmSearchResult[],
+		) => {
+			const seenIds = new Set<string>();
+			const currentId = deps.playback.current()?.selected.videoId;
+			if (currentId) seenIds.add(currentId);
+			for (const queuedItem of deps.playback.queue()) {
+				seenIds.add(queuedItem.selected.videoId);
+			}
+			for (const candidate of candidates) {
+				if (deps.playback.queue().length >= 3) break;
+				if (!candidate.id || seenIds.has(candidate.id)) continue;
+				seenIds.add(candidate.id);
+				const enq = deps.playback.enqueue({
+					videoId: candidate.id,
+					title: candidate.title,
+				});
+				if (enq.disposition === "queued") {
+					await deps.emitBgm({
+						type: "bgm_youtube_enqueue",
+						videoId: candidate.id,
+						title: candidate.title,
+						queueId: enq.queued.queueId,
+						position: enq.queued.position,
+						...(candidate.thumbnail ? { thumbnail: candidate.thumbnail } : {}),
+					});
+				}
+			}
+		};
+
+		if (radioDjRequested && preserveActive && hasActivePlayback && currentSnapshot) {
+			await enqueueAdditionalRadioCandidates(candidatePool.slice(0, 3));
+			configureRadioDjRecovery(
+				query,
+				{
+					id: currentSnapshot.selected.videoId,
+					title: currentSnapshot.selected.title,
+				},
+				deps,
+			);
+			const observed =
+				(await deps.waitForAck?.(currentSnapshot.playbackId)) ?? currentSnapshot;
+			return JSON.stringify({
+				...toBgmPlayToolResult(observed),
+				preservedActive: true,
+			});
+		}
+
 		const selected = radioDjRequested
-			? freshResults[0]
+			? (candidatePool[0] ?? freshResults[0])
 			: args.replace === true
 				? (freshResults[0] ??
 					results.find((result) => result.id !== currentVideoId) ??
 					results[0])
 				: results[0];
-		const output = await enqueueTrack(selected, radioDjRequested);
-		if (radioDjRequested) configureRadioDjRecovery(query, selected, deps);
+		if (radioDjRequested) {
+			const playback = deps.playback.request({
+				videoId: selected.id,
+				title: selected.title,
+			});
+			await deps.emitBgm({
+				type: "bgm_youtube_play",
+				playbackId: playback.playbackId,
+				videoId: selected.id,
+				title: selected.title,
+				...(selected.thumbnail ? { thumbnail: selected.thumbnail } : {}),
+			});
+			if (candidatePool.length > 1) {
+				await enqueueAdditionalRadioCandidates(candidatePool.slice(1, 4));
+			}
+			configureRadioDjRecovery(query, selected, deps);
+			const observed =
+				(await deps.waitForAck?.(playback.playbackId)) ?? playback;
+			return JSON.stringify(toBgmPlayToolResult(observed));
+		}
+		const output = await enqueueTrack(selected, false);
 		return output;
 	}
 
@@ -843,17 +1027,41 @@ async function executeBgmSkillCore(
 	if (act === "next" || act === "prev") {
 		const previousPlaybackId = deps.playback.current()?.playbackId;
 		await deps.emitBgm({ type: `bgm_youtube_${act}` });
+		if (
+			!deps.waitForNavigateAck &&
+			act === "next" &&
+			deps.playback.current()?.playbackId === previousPlaybackId &&
+			deps.playback.queue().length > 0
+		) {
+			deps.playback.advance();
+		}
 		const observed =
 			(await deps.waitForNavigateAck?.(previousPlaybackId)) ??
 			deps.playback.current();
+		const advanced = Boolean(
+			observed &&
+				observed.playbackId !== previousPlaybackId &&
+				!["ended", "error"].includes(observed.status),
+		);
+		const context = toBgmObservedContext(
+			observed,
+			deps.now?.() ?? Date.now(),
+			deps.playback.queue(),
+		);
+		if (!advanced) {
+			return JSON.stringify({
+				ok: false,
+				action: act,
+				reason: "no_next_track",
+				...context,
+				instruction:
+					"No next track was available in the queue or active playlist. Use action=play with a fresh search query to start a new track.",
+			});
+		}
 		return JSON.stringify({
 			ok: true,
 			action: act,
-			...toBgmObservedContext(
-				observed,
-				deps.now?.() ?? Date.now(),
-				deps.playback.queue(),
-			),
+			...context,
 		});
 	}
 	const eventType = `bgm_youtube_${act}`;

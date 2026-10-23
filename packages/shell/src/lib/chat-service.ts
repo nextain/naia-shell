@@ -531,7 +531,8 @@ export type SpeechActivityControl =
 	| "quiet"
 	| "resume"
 	| "restart"
-	| "stop";
+	| "stop"
+	| `bgm_event:${string}`;
 
 export async function controlSpeechActivity(
 	action: SpeechActivityControl,

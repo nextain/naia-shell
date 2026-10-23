@@ -1702,19 +1702,11 @@ export function ChatArea({
 		if (speechActivity) {
 			// This runs before both Live text and ordinary chat routing. A
 			// successful exhibition binding must never be handed to the Live LLM.
+			// Keep activeSpeechActivityRef intact so Radio DJ remains controllable
+			// ("다음 곡", "분위기 바꿔") after the user turn finishes, even if yield
+			// returned ok:false while DJ was confirming playback or in music_only.
 			interruptTts();
 			activityResume = await yieldSpeechActivity(speechActivity.activityId);
-			if (
-				activeSpeechActivityRef.current?.activityId ===
-				speechActivity.activityId
-			) {
-				activeSpeechActivityRef.current = null;
-				window.dispatchEvent(
-					new CustomEvent("naia-proactive-activity-state", {
-						detail: { active: false },
-					}),
-				);
-			}
 		}
 
 		// Omni voice mode: send text via the open Live session so a typed
@@ -2146,11 +2138,15 @@ export function ChatArea({
 		}
 
 		const activity = activeSpeechActivityRef.current;
-		if (!activity) return false;
+		const persistedConfig = loadConfig();
+		const radioDjPermitted =
+			persistedConfig?.proactiveSpeechProfile === "personal_radio_dj" &&
+			persistedConfig.proactiveSpeechPermitted === true;
+		if (!activity && !radioDjPermitted) return false;
 		const { action } = command;
 		interruptTts();
-		await controlSpeechActivity(action, activity.activityId);
-		if (action === "stop") {
+		await controlSpeechActivity(action, activity?.activityId);
+		if (action === "stop" && activity) {
 			retiredSpeechActivityIdsRef.current.add(activity.activityId);
 			activeSpeechActivityRef.current = null;
 			window.dispatchEvent(
@@ -2304,13 +2300,16 @@ export function ChatArea({
 		}
 		if (req.toolName === SKILL_YOUTUBE_BGM.name) {
 			// Activity-owned playback (for example Radio DJ change_vibe) replaces
-			// the current track immediately. Normal chat requests still enqueue.
+			// the current track immediately unless preserveActive is set (autonomous
+			// DJ startup while a user-chosen song is already playing).
 			const radioDjRequested = shouldActivateRadioDj(req.args);
 			Promise.resolve()
 				.then(() => (radioDjRequested ? activateRadioDjFromSkill() : undefined))
 				.then(() =>
 					executeBgmSkill(
-						req.activityId ? { ...req.args, replace: true } : req.args,
+						req.activityId && req.args.preserveActive !== true
+							? { ...req.args, replace: true }
+							: req.args,
 					),
 				)
 				.then((result) => {

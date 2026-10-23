@@ -613,22 +613,149 @@ describe("executeBgmSkill", () => {
 			const out = JSON.parse(await executeBgmSkill({ action }, deps));
 			expect(emitted).toEqual([{ type: `bgm_youtube_${action}` }]);
 			expect(out).toMatchObject({
-				ok: true,
+				ok: false,
 				action,
+				reason: "no_next_track",
 				announceTrack: false,
 				currentTrack: null,
 			});
 		}
 	});
 
-	it("routes next/prev to the active playlist regardless of the likes count", async () => {
+	it("routes next/prev to the active playlist regardless of the likes count and advances queued tracks", async () => {
 		for (const action of ["next", "prev"] as const) {
 			const { deps, emitted } = mkDeps();
 			deps.favoriteCount = () => 0;
 			const out = JSON.parse(await executeBgmSkill({ action }, deps));
-			expect(out).toMatchObject({ ok: true, action, announceTrack: false });
+			expect(out).toMatchObject({
+				ok: false,
+				action,
+				reason: "no_next_track",
+				announceTrack: false,
+			});
 			expect(emitted).toEqual([{ type: `bgm_youtube_${action}` }]);
 		}
+
+		const { deps } = mkDeps();
+		await executeBgmSkill(
+			{ action: "play", videoId: "first", title: "First" },
+			deps,
+		);
+		await executeBgmSkill(
+			{ action: "play", videoId: "second", title: "Second" },
+			deps,
+		);
+		const advanced = JSON.parse(await executeBgmSkill({ action: "next" }, deps));
+		expect(advanced).toMatchObject({
+			ok: true,
+			action: "next",
+			pendingTrack: {
+				videoId: "second",
+				title: "Second",
+				confirmed: false,
+			},
+		});
+	});
+
+	it("filters long mixes into single tracks and pre-queues upcoming candidates in radio_dj mode", async () => {
+		const { deps } = mkDeps([
+			{ id: "mix-1h", title: "Relaxing Jazz 2 Hours Playlist", duration: "2:00:00" },
+			{ id: "song-1", title: "Autumn Leaves", duration: "3:42" },
+			{ id: "song-2", title: "Blue in Green", duration: "4:15" },
+			{ id: "song-3", title: "Misty", duration: "3:18" },
+		]);
+
+		await executeBgmSkill(
+			{ action: "play", query: "저녁 재즈", mode: "radio_dj" },
+			deps,
+		);
+
+		expect(deps.playback.current()?.selected).toEqual({
+			videoId: "song-1",
+			title: "Autumn Leaves",
+		});
+		expect(deps.playback.queue().map((item) => item.selected.videoId)).toEqual([
+			"song-2",
+			"song-3",
+		]);
+	});
+
+	it("sanitizes habitual playlist/radio keywords in radio_dj mode and excludes live streams", async () => {
+		let capturedQuery = "";
+		const { deps } = mkDeps([
+			{ id: "live-1", title: "24/7 Chill Pop Radio", duration: "" },
+			{ id: "pl-1", title: "감성 팝송 플레이리스트 모음", duration: "1:45:00" },
+			{ id: "single-1", title: "Lauv - Paris in the Rain (Official Audio)", duration: "3:25" },
+			{ id: "single-2", title: "Jeremy Zucker - comethru (Official Audio)", duration: "3:01" },
+		]);
+		const origSearch = deps.search;
+		deps.search = async (q) => {
+			capturedQuery = q;
+			return origSearch(q);
+		};
+
+		await executeBgmSkill(
+			{
+				action: "play",
+				query: "잔잔한 감성 팝 라디오 플레이리스트",
+				mode: "radio_dj",
+			},
+			deps,
+		);
+
+		expect(capturedQuery).toBe("잔잔한 감성 팝 노래 Official Audio");
+		expect(deps.playback.current()?.selected.videoId).toBe("single-1");
+		expect(deps.playback.queue().map((item) => item.selected.videoId)).toEqual([
+			"single-2",
+		]);
+	});
+
+	it("preserves an active user-chosen song when preserveActive is set in radio_dj mode", async () => {
+		const { deps, emitted } = mkDeps([
+			{ id: "dj-1", title: "DJ Track 1", duration: "3:20" },
+			{ id: "dj-2", title: "DJ Track 2", duration: "2:55" },
+		]);
+		const userReq = deps.playback.request({
+			videoId: "user-gangnam",
+			title: "PSY - GANGNAM STYLE",
+		});
+		deps.playback.observe({
+			playbackId: userReq.playbackId,
+			sequence: 2,
+			status: "playing",
+		});
+
+		const out = JSON.parse(
+			await executeBgmSkill(
+				{
+					action: "play",
+					query: "신나는 가요",
+					mode: "radio_dj",
+					preserveActive: true,
+				},
+				deps,
+			),
+		);
+
+		expect(out).toMatchObject({
+			ok: true,
+			action: "play",
+			preservedActive: true,
+			announceTrack: true,
+			currentTrack: {
+				videoId: "user-gangnam",
+				title: "PSY - GANGNAM STYLE",
+			},
+		});
+		expect(deps.playback.current()?.selected.videoId).toBe("user-gangnam");
+		expect(deps.playback.queue().map((item) => item.selected.videoId)).toEqual([
+			"dj-1",
+			"dj-2",
+		]);
+		expect(emitted.map((e) => e.type)).toEqual([
+			"bgm_youtube_enqueue",
+			"bgm_youtube_enqueue",
+		]);
 	});
 
 	it("next returns the newly observed track when waitForNavigateAck confirms playing", async () => {

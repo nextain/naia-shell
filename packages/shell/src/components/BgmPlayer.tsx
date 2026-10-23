@@ -1,14 +1,17 @@
 import { listen } from "@tauri-apps/api/event";
 import {
+	createYoutubeIframeBridgeHandshake,
 	decideIframeMessageSource,
 	diagnoseBgmObservationFailure,
 	emptyBgmObservationCounters,
+	YOUTUBE_WIDGET_LISTENING_MESSAGE,
 } from "../lib/bgm-observation-diagnosis";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
+import { controlSpeechActivity } from "../lib/chat-service";
 import { loadConfig, saveConfig } from "../lib/config";
 import {
 	addTrackToPlaylist,
@@ -312,6 +315,8 @@ export function BgmPlayer({ naia }: Props) {
 	// ── Local BGM ─────────────────────────────────────────────────────────────
 	const bgmTrackUrl = useAvatarStore((s) => s.bgmTrackUrl);
 	const setBgmTrackUrl = useAvatarStore((s) => s.setBgmTrackUrl);
+	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
+	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
 	const setBackgroundMediaType = useAvatarStore(
 		(s) => s.setBackgroundMediaType,
@@ -374,10 +379,33 @@ export function BgmPlayer({ naia }: Props) {
 	const [queueVersion, setQueueVersion] = useState(0);
 	const playbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const manuallyStoppedPlaybackRef = useRef<string | null>(null);
+	const lastEndedPlaybackIdRef = useRef<string | null>(null);
+	const lastObservedIframeVideoIdRef = useRef<string | null>(null);
 	const lastProgressObservationRef = useRef<{
 		playbackId?: string;
 		observedAt: number;
 	}>({ observedAt: 0 });
+	const youtubeHandshakeRef = useRef(
+		createYoutubeIframeBridgeHandshake((payload) => {
+			const iframe = document.querySelector(
+				".app-bg-iframe",
+			) as HTMLIFrameElement | null;
+			if (typeof iframe?.contentWindow?.postMessage !== "function") return false;
+			iframe.contentWindow.postMessage(payload, "*");
+			return true;
+		}),
+	);
+
+	function notifyRadioDjBgmEvent(payload: Record<string, unknown>): void {
+		const cfg = loadConfig();
+		if (
+			cfg?.proactiveSpeechProfile !== "personal_radio_dj" ||
+			cfg.proactiveSpeechPermitted !== true
+		) {
+			return;
+		}
+		void controlSpeechActivity(`bgm_event:${JSON.stringify(payload)}`);
+	}
 
 	// ── Unified app state ───────────────────────────────────────────────────
 	// appExpanded: the single app is open or closed
@@ -554,6 +582,13 @@ export function BgmPlayer({ naia }: Props) {
 				action: "music_started",
 				summary: `BGM: internal playback of "${next.selected.title}" is now confirmed playing.`,
 			});
+			notifyRadioDjBgmEvent({
+				kind: "track_playing",
+				playbackId: next.playbackId,
+				videoId: next.selected.videoId,
+				title: next.selected.title,
+				previousStatus: current.status,
+			});
 		}
 
 		if (status === "error" || status === "timeout") {
@@ -623,9 +658,46 @@ export function BgmPlayer({ naia }: Props) {
 		failed: BgmPlaybackSnapshot,
 		reason: "error" | "timeout",
 	): void {
-		if (startNextQueuedTrack(reason)) return;
+		if (startNextQueuedTrack(reason)) {
+			if (reason === "error") {
+				const nextSnap = bgmPlayback.current();
+				notifyRadioDjBgmEvent({
+					kind: "track_error",
+					playbackId: failed.playbackId,
+					previousVideoId: failed.selected.videoId,
+					previousTitle: failed.selected.title,
+					reason: failed.reason ?? "youtube_iframe_error",
+					continued: true,
+					...(nextSnap && nextSnap.playbackId !== failed.playbackId
+						? {
+								nextPlaybackId: nextSnap.playbackId,
+								nextVideoId: nextSnap.selected.videoId,
+								nextTitle: nextSnap.selected.title,
+							}
+						: {}),
+				});
+			}
+			return;
+		}
 		void recoverRadioDjPlayback(failed.playbackId)
 			.then((result) => {
+				if (reason === "error") {
+					notifyRadioDjBgmEvent({
+						kind: "track_error",
+						playbackId: failed.playbackId,
+						previousVideoId: failed.selected.videoId,
+						previousTitle: failed.selected.title,
+						reason: failed.reason ?? "youtube_iframe_error",
+						continued: result.recovered,
+						...(result.recovered
+							? {
+									nextPlaybackId: result.playbackId,
+									nextVideoId: result.selected.id,
+									nextTitle: result.selected.title,
+								}
+							: {}),
+					});
+				}
 				if (!result.recovered) return;
 				Logger.info("BgmPlayer", "recovered Radio DJ playback by search", {
 					reason,
@@ -705,14 +777,101 @@ export function BgmPlayer({ naia }: Props) {
 		}
 	}
 
-	useEffect(() => () => clearPlaybackTimeout(), []);
+	useEffect(
+		() => () => {
+			clearPlaybackTimeout();
+			youtubeHandshakeRef.current.stop();
+		},
+		[],
+	);
+
+	// #521 — Initiate the YouTube widget `listening` handshake as soon as the
+	// background iframe is mounted/loaded, polling until the player responds.
+	useEffect(() => {
+		if (backgroundMediaType !== "iframe" || !backgroundVideoUrl) {
+			youtubeHandshakeRef.current.stop();
+			lastObservedIframeVideoIdRef.current = null;
+			return;
+		}
+		lastObservedIframeVideoIdRef.current = null;
+		const iframe = document.querySelector(
+			".app-bg-iframe",
+		) as HTMLIFrameElement | null;
+		const onLoad = () => {
+			youtubeHandshakeRef.current.start();
+		};
+		const onDocumentCaptureLoad = (e: Event) => {
+			const target = e.target as HTMLElement | null;
+			if (target !== iframe && target?.classList?.contains("app-bg-iframe")) {
+				youtubeHandshakeRef.current.start();
+			}
+		};
+		iframe?.addEventListener("load", onLoad);
+		document.addEventListener("load", onDocumentCaptureLoad, true);
+		youtubeHandshakeRef.current.start();
+		return () => {
+			iframe?.removeEventListener("load", onLoad);
+			document.removeEventListener("load", onDocumentCaptureLoad, true);
+			youtubeHandshakeRef.current.stop();
+		};
+	}, [backgroundMediaType, backgroundVideoUrl]);
 
 	// ── YouTube IFrame API bridge ──────────────────────────────────────────────
-	// YouTube sends `initialDelivery` when the player finishes loading.
-	// We must reply with `{event:"listening"}` to activate the command bridge,
-	// then immediately sync the current volume. Without this handshake
-	// `setVolume` postMessages are silently ignored by the player.
+	// The host window initiates `{event:"listening",id:1,channel:"widget"}` on
+	// iframe load and subscribes to `onStateChange` and `onError` once the player
+	// responds (#521).
 	useEffect(() => {
+		function handleObservedTrackEnd(eventPlaybackId: string | undefined) {
+			setPlaying(false);
+			if (
+				eventPlaybackId &&
+				manuallyStoppedPlaybackRef.current === eventPlaybackId
+			) {
+				manuallyStoppedPlaybackRef.current = null;
+				observePlayback("paused", { playbackId: eventPlaybackId });
+				return;
+			}
+			if (
+				eventPlaybackId &&
+				lastEndedPlaybackIdRef.current === eventPlaybackId
+			) {
+				return;
+			}
+			const ended = observePlayback("ended", {
+				playbackId: eventPlaybackId,
+			});
+			if (!ended) return;
+			lastEndedPlaybackIdRef.current = ended.playbackId;
+			const continued =
+				startNextQueuedTrack("ended") || playNextRef.current();
+			const nextSnap = bgmPlayback.current();
+			const nextTrack =
+				continued && nextSnap && nextSnap.playbackId !== ended.playbackId
+					? nextSnap.selected
+					: null;
+			notifyRadioDjBgmEvent({
+				kind: "track_ended",
+				playbackId: ended.playbackId,
+				previousVideoId: ended.selected.videoId,
+				previousTitle: ended.selected.title,
+				continued,
+				...(nextTrack
+					? {
+							nextPlaybackId: nextSnap?.playbackId,
+							nextVideoId: nextTrack.videoId,
+							nextTitle: nextTrack.title,
+						}
+					: {}),
+			});
+			emitAiInterferenceEvent({
+				source: "bgm",
+				action: "music_ended",
+				summary: continued
+					? `BGM: "${ended.selected.title}" ended; the next queued track is starting now.`
+					: `BGM: "${ended.selected.title}" ended; nothing is queued next.`,
+			});
+		}
+
 		function onYtMessage(e: MessageEvent) {
 			if (!e.data) return;
 			const activeIframe = document.querySelector(
@@ -757,6 +916,7 @@ export function BgmPlayer({ naia }: Props) {
 					return;
 				}
 				observationCountersRef.current.received++; // #521
+				const newlySubscribed = youtubeHandshakeRef.current.onFirstMessage();
 				const eventPlaybackId = activeIframe
 					? (new URL(activeIframe.src, window.location.href).searchParams.get(
 							"naiaPlayback",
@@ -803,6 +963,7 @@ export function BgmPlayer({ naia }: Props) {
 							playbackId: eventPlaybackId,
 						});
 						if (observed) {
+							lastObservedIframeVideoIdRef.current = observed.selected.videoId;
 							const persist = recordBgmPlayedTrack({
 								id: observed.selected.videoId,
 								title: observed.selected.title,
@@ -818,45 +979,36 @@ export function BgmPlayer({ naia }: Props) {
 						setPlaying(false);
 						observePlayback("paused", { playbackId: eventPlaybackId });
 					} else if (state === 0) {
-						setPlaying(false);
-						if (
-							eventPlaybackId &&
-							manuallyStoppedPlaybackRef.current === eventPlaybackId
-						) {
-							manuallyStoppedPlaybackRef.current = null;
-							observePlayback("paused", { playbackId: eventPlaybackId });
-							return;
-						}
-						const ended = observePlayback("ended", {
-							playbackId: eventPlaybackId,
-						});
-						if (!ended) return;
-						const continued =
-							startNextQueuedTrack("ended") || playNextRef.current();
-						// Notify the agent the moment a track genuinely ends (not on a
-						// timer — this is the real onStateChange ENDED event), the same
-						// way a new track start already does via "music_changed". Without
-						// this, the agent only learns a track ended by passively noticing
-						// stale bgm context on some later, unrelated turn — it never gets
-						// an active cue to comment or queue the next song right now.
-						emitAiInterferenceEvent({
-							source: "bgm",
-							action: "music_ended",
-							summary: continued
-								? `BGM: "${ended.selected.title}" ended; the next queued track is starting now.`
-								: `BGM: "${ended.selected.title}" ended; nothing is queued next.`,
-						});
+						handleObservedTrackEnd(eventPlaybackId);
 					} else if (state === -1 || state === 3) {
 						observePlayback("loading", { playbackId: eventPlaybackId });
 					}
-				} else if (msg.event === "infoDelivery") {
-					counters.infoDeliverySeen = true; // #521
+				} else if (
+					msg.event === "infoDelivery" ||
+					msg.event === "initialDelivery"
+				) {
+					if (msg.event === "initialDelivery") {
+						const beforeReady = bgmPlayback.current();
+						if (beforeReady?.status !== "playing") {
+							observePlayback("loading", { playbackId: eventPlaybackId });
+						}
+					} else {
+						counters.infoDeliverySeen = true; // #521
+					}
 					const info = msg.info;
 					if (info && typeof info === "object") {
-						const currentTime = Number(
-							(info as Record<string, unknown>).currentTime,
-						);
-						const duration = Number((info as Record<string, unknown>).duration);
+						const infoRecord = info as Record<string, unknown>;
+						const currentTime = Number(infoRecord.currentTime);
+						const duration = Number(infoRecord.duration);
+						const rawPlayerState = infoRecord.playerState;
+						const playerState =
+							typeof rawPlayerState === "number"
+								? rawPlayerState
+								: Number.NaN;
+						const videoData =
+							infoRecord.videoData && typeof infoRecord.videoData === "object"
+								? (infoRecord.videoData as Record<string, unknown>)
+								: null;
 						const current = bgmPlayback.current();
 						const isSamePlayback =
 							!!current?.playbackId && current.playbackId === eventPlaybackId;
@@ -865,32 +1017,64 @@ export function BgmPlayer({ naia }: Props) {
 							manuallyStoppedPlaybackRef.current === eventPlaybackId
 						)
 							return;
+						if (videoData && isSamePlayback) {
+							const vdId = String(videoData.video_id ?? "").trim();
+							const vdTitle = String(videoData.title ?? "").trim();
+							if (vdId && vdTitle) {
+								const prevId = lastObservedIframeVideoIdRef.current;
+								if (prevId && prevId !== vdId && current?.status === "playing") {
+									const prevTitle =
+										currentYtRef.current?.title ?? current.selected.title;
+									lastObservedIframeVideoIdRef.current = vdId;
+									const nextVideo: YtVideo = {
+										id: vdId,
+										title: vdTitle,
+										channel: String(videoData.author ?? currentYtRef.current?.channel ?? ""),
+										thumbnail: currentYtRef.current?.thumbnail ?? "",
+										duration: "",
+									};
+									setCurrentYt(nextVideo);
+									lastYtRef.current = nextVideo;
+									notifyRadioDjBgmEvent({
+										kind: "track_changed",
+										playbackId: eventPlaybackId,
+										previousVideoId: prevId,
+										previousTitle: prevTitle,
+										nextVideoId: vdId,
+										nextTitle: vdTitle,
+										continued: true,
+									});
+								} else if (!prevId) {
+									lastObservedIframeVideoIdRef.current = vdId;
+								}
+							}
+						}
+						if (playerState === 0 && isSamePlayback && current?.status === "playing") {
+							counters.stateChangeSeen = true;
+							handleObservedTrackEnd(eventPlaybackId);
+							return;
+						}
 						// The iframe bridge can lose the onStateChange "playing" (state=1)
 						// message after a src swap (WebView2 handshake loss — see
 						// sendYtCmd's re-listen comment) even though audio is genuinely
-						// playing. infoDelivery's currentTime is an independent signal —
-						// real progress on the active playback id is itself proof of
-						// playback — so it can also promote out of requested/loading
-						// without waiting for the (possibly lost) onStateChange event.
-						// This is what keeps beginPlaybackTimeout's 12s watchdog from
-						// skipping a track that is actually playing fine.
+						// playing. infoDelivery's currentTime or playerState=1 is an
+						// independent signal that promotes out of requested/loading.
 						const canObservePlaying =
 							isSamePlayback &&
 							(current.status === "playing" ||
+								playerState === 1 ||
 								((current.status === "requested" ||
 									current.status === "loading" ||
 									current.status === "timeout") &&
 									Number.isFinite(currentTime) &&
 									currentTime > 0));
 						if (canObservePlaying) {
-							// The BUTTON state must follow this independent progress signal
-							// too: with onStateChange(1) lost, audio played while the button
-							// still showed "play", so clicking re-sent playVideo and the
-							// video could never be paused (#457 — "정지되지 않음").
 							setPlaying(true);
 							const now = Date.now();
 							const lastProgress = lastProgressObservationRef.current;
+							const wasPlaying = current.status === "playing";
 							if (
+								wasPlaying &&
 								lastProgress.playbackId === eventPlaybackId &&
 								now - lastProgress.observedAt < 1_000
 							)
@@ -899,7 +1083,7 @@ export function BgmPlayer({ naia }: Props) {
 								playbackId: eventPlaybackId,
 								observedAt: now,
 							};
-							observePlayback("playing", {
+							const observed = observePlayback("playing", {
 								playbackId: eventPlaybackId,
 								...(Number.isFinite(currentTime) && currentTime >= 0
 									? { currentTime }
@@ -908,6 +1092,20 @@ export function BgmPlayer({ naia }: Props) {
 									? { duration }
 									: {}),
 							});
+							if (observed && !wasPlaying) {
+								lastObservedIframeVideoIdRef.current =
+									observed.selected.videoId;
+								const persist = recordBgmPlayedTrack({
+									id: observed.selected.videoId,
+									title: observed.selected.title,
+								});
+								const recorded = bgmLibraryCache();
+								if (recorded) {
+									libraryRef.current = recorded;
+									setLibrary(recorded);
+								}
+								void persist;
+							}
 						}
 					}
 				} else if (msg.event === "onError") {
@@ -919,20 +1117,27 @@ export function BgmPlayer({ naia }: Props) {
 					if (!errored) return;
 					recoverAfterQueueExhausted(errored, "error");
 				}
-				if (msg.event === "initialDelivery" || msg.event === "onReady") {
-					observePlayback("loading", { playbackId: eventPlaybackId });
+				if (
+					msg.event === "initialDelivery" ||
+					msg.event === "onReady" ||
+					newlySubscribed
+				) {
+					if (
+						msg.event === "onReady" &&
+						bgmPlayback.current()?.status !== "playing"
+					) {
+						observePlayback("loading", { playbackId: eventPlaybackId });
+					}
 					const iframe = document.querySelector(
 						".app-bg-iframe",
 					) as HTMLIFrameElement | null;
-					if (!iframe?.contentWindow) return;
-					iframe.contentWindow.postMessage(
-						JSON.stringify({ event: "listening" }),
-						"*",
-					);
+					if (typeof iframe?.contentWindow?.postMessage !== "function") return;
 					const current = bgmPlayback.current();
 					if (
-						current && current.playbackId === eventPlaybackId &&
-						["requested", "loading", "timeout"].includes(current.status)
+						current &&
+						current.playbackId === eventPlaybackId &&
+						["requested", "loading", "timeout"].includes(current.status) &&
+						manuallyStoppedPlaybackRef.current !== eventPlaybackId
 					) {
 						iframe.contentWindow.postMessage(
 							JSON.stringify({ event: "command", func: "playVideo", args: [] }),
@@ -967,11 +1172,12 @@ export function BgmPlayer({ naia }: Props) {
 				".app-bg-iframe",
 			) as HTMLIFrameElement | null;
 			if (iframe?.contentWindow) {
-				// Re-send listening before each command in case bridge was reset
-				iframe.contentWindow.postMessage(
-					JSON.stringify({ event: "listening" }),
-					"*",
-				);
+				if (!youtubeHandshakeRef.current.isSubscribed()) {
+					iframe.contentWindow.postMessage(
+						YOUTUBE_WIDGET_LISTENING_MESSAGE,
+						"*",
+					);
+				}
 				iframe.contentWindow.postMessage(
 					JSON.stringify({
 						event: "command",
@@ -1104,7 +1310,9 @@ export function BgmPlayer({ naia }: Props) {
 						);
 					}
 				} else if (msg.type === "bgm_youtube_next") {
-					playNextRef.current();
+					if (!startNextQueuedTrack("ended")) {
+						playNextRef.current();
+					}
 				} else if (msg.type === "bgm_youtube_prev") {
 					playPrevRef.current();
 				} else if (msg.type === "bgm_playlist_create") {
@@ -1314,6 +1522,16 @@ export function BgmPlayer({ naia }: Props) {
 							? (currentYt?.title ?? null)
 							: null
 						: (localNames[localIndex] ?? null),
+				pendingVideoId: observed.pendingTrack?.videoId ?? null,
+				pendingTitle:
+					source === "youtube"
+						? (observed.pendingTrack?.title ?? null)
+						: null,
+				playbackConfirmationState: observed.announceTrack
+					? "confirmed"
+					: observed.pendingTrack
+						? "confirming"
+						: "idle",
 				currentChannel: observed.announceTrack
 					? (currentYt?.channel ?? null)
 					: null,

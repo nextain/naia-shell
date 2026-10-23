@@ -120,3 +120,121 @@ export function decideIframeMessageSource(input: {
 	}
 	return "accept";
 }
+
+export const YOUTUBE_WIDGET_LISTENING_MESSAGE = JSON.stringify({
+	event: "listening",
+	id: 1,
+	channel: "widget",
+});
+
+export const YOUTUBE_WIDGET_SUBSCRIBE_MESSAGES: readonly string[] = [
+	JSON.stringify({
+		event: "command",
+		func: "addEventListener",
+		args: ["onStateChange"],
+		id: 1,
+		channel: "widget",
+	}),
+	JSON.stringify({
+		event: "command",
+		func: "addEventListener",
+		args: ["onError"],
+		id: 1,
+		channel: "widget",
+	}),
+];
+
+export interface YoutubeIframeBridgeHandshakeOptions {
+	intervalMs?: number;
+	maxAttempts?: number;
+	setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setInterval>;
+	clearTimer?: (id: ReturnType<typeof setInterval>) => void;
+}
+
+export interface YoutubeIframeBridgeHandshake {
+	/** Send `listening` immediately and poll until first message or maxAttempts. */
+	start: () => void;
+	/** Call when the first valid message from the iframe arrives; stops `listening` polling and sends `addEventListener` subscriptions once. */
+	onFirstMessage: () => boolean;
+	/** Stop any active polling timer. */
+	stop: () => void;
+	/** Whether the first message has been acknowledged and subscriptions sent. */
+	isSubscribed: () => boolean;
+	/** Number of `listening` messages sent so far. */
+	attempts: () => number;
+}
+
+/**
+ * YouTube IFrame Player API bridge handshake (#521).
+ *
+ * The embedded player will not emit `initialDelivery`, `onReady`, `infoDelivery`,
+ * `onStateChange`, or `onError` until the host window first posts
+ * `{"event":"listening","id":1,"channel":"widget"}`. Once the player replies,
+ * the host stops polling `listening` and registers `onStateChange` and `onError`
+ * via `addEventListener`.
+ */
+export function createYoutubeIframeBridgeHandshake(
+	postToIframe: (payload: string) => boolean,
+	options: YoutubeIframeBridgeHandshakeOptions = {},
+): YoutubeIframeBridgeHandshake {
+	const intervalMs = options.intervalMs ?? 250;
+	const maxAttempts = options.maxAttempts ?? 48;
+	const setTimer = options.setTimer ?? ((fn, ms) => setInterval(fn, ms));
+	const clearTimer = options.clearTimer ?? ((id) => clearInterval(id));
+
+	let timer: ReturnType<typeof setInterval> | null = null;
+	let attemptCount = 0;
+	let subscribed = false;
+
+	const stop = () => {
+		if (timer !== null) {
+			clearTimer(timer);
+			timer = null;
+		}
+	};
+
+	const sendListeningTick = () => {
+		if (subscribed) {
+			stop();
+			return;
+		}
+		if (attemptCount >= maxAttempts) {
+			stop();
+			return;
+		}
+		attemptCount += 1;
+		postToIframe(YOUTUBE_WIDGET_LISTENING_MESSAGE);
+		if (attemptCount >= maxAttempts) {
+			stop();
+		}
+	};
+
+	const start = () => {
+		stop();
+		attemptCount = 0;
+		subscribed = false;
+		sendListeningTick();
+		if (!subscribed && attemptCount < maxAttempts) {
+			timer = setTimer(sendListeningTick, intervalMs);
+		}
+	};
+
+	const onFirstMessage = () => {
+		stop();
+		if (subscribed) return false;
+		subscribed = true;
+		for (const msg of YOUTUBE_WIDGET_SUBSCRIBE_MESSAGES) {
+			postToIframe(msg);
+		}
+		return true;
+	};
+
+	return {
+		start,
+		onFirstMessage,
+		stop,
+		isSubscribed: () => subscribed,
+		attempts: () => attemptCount,
+	};
+}
+
