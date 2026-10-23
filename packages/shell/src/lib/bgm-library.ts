@@ -97,33 +97,21 @@ const BGM_DEFINITE_DECORATION_SINGLE_TOKENS = new Set([
 	"mbc",
 	"sbs",
 	"mnet",
-	"가사",
-	"뮤직비디오",
-	"뮤비",
-	"오디오",
-	"직캠",
-	"원곡",
-	"수록곡",
-	"음원",
-	"초고음질",
-	"고음질",
-	"음질",
-	"초고화질",
-	"고화질",
-	"유희열의스케치북",
-	"킬링보이스",
-	"비긴어게인",
 ]);
+
+/** Korean definite decoration tokens, matched as one whole token (algorithmic vocabulary, not UI text). */
+const BGM_DEFINITE_DECORATION_HANGUL_TOKEN_RE =
+	/^(?:가사|뮤직비디오|뮤비|오디오|직캠|원곡|수록곡|음원|초고음질|고음질|음질|초고화질|고화질|유희열의스케치북|킬링보이스|비긴어게인)$/u;
 
 const BGM_DEFINITE_DECORATION_TOKEN_PAIRS: readonly (readonly [string, string])[] = [
 	["killing", "voice"],
 	["its", "live"],
 	["begin", "again"],
-	["뮤직", "비디오"],
-	["유희열의", "스케치북"],
-	["킬링", "보이스"],
-	["비긴", "어게인"],
 ];
+
+/** Korean definite decoration token pairs, matched against `${first} ${second}`. */
+const BGM_DEFINITE_DECORATION_HANGUL_PAIR_RE =
+	/^(?:뮤직 비디오|유희열의 스케치북|킬링 보이스|비긴 어게인)$/u;
 
 const BGM_DEFINITE_DECORATION_RE =
 	/\b(?:m\/v|mv|official|lyrics?|hd|4k|1080p|720p|hq|remastered|remaster|fancam|karaoke|tj|ky|visualizer|1thek|dingo|sketchbook|kbs|mbc|sbs|mnet|killing\s*voice|its\s*live|begin\s*again)\b|가사|뮤직\s*비디오|뮤비|오디오|직캠|원곡|수록곡|음원|초고음질|고음질|음질|초고화질|고화질|유희열의\s*스케치북|킬링\s*보이스|비긴\s*어게인/giu;
@@ -149,24 +137,19 @@ const BGM_AMBIGUOUS_DECORATION_SINGLE_TOKENS = new Set([
 	"sound",
 	"super",
 	"loop",
-	"반복",
-	"무한반복",
-	"연속재생",
-	"연속듣기",
-	"라이브",
-	"세로라이브",
-	"콘서트",
-	"커버",
-	"방송",
 ]);
+
+/** Korean ambiguous decoration tokens, matched as one whole token (algorithmic vocabulary, not UI text). */
+const BGM_AMBIGUOUS_DECORATION_HANGUL_TOKEN_RE =
+	/^(?:반복|무한반복|연속재생|연속듣기|라이브|세로라이브|콘서트|커버|방송)$/u;
 
 const BGM_AMBIGUOUS_DECORATION_TOKEN_PAIRS: readonly (readonly [string, string])[] = [
 	["music", "video"],
-	["무한", "반복"],
-	["연속", "재생"],
-	["연속", "듣기"],
-	["세로", "라이브"],
 ];
+
+/** Korean ambiguous decoration token pairs, matched against `${first} ${second}`. */
+const BGM_AMBIGUOUS_DECORATION_HANGUL_PAIR_RE =
+	/^(?:무한 반복|연속 재생|연속 듣기|세로 라이브)$/u;
 
 function splitInitialBgmTokens(raw: string): string[] {
 	return raw
@@ -183,9 +166,15 @@ function splitInitialBgmTokens(raw: string): string[] {
 function matchSingleDecorationToken(
 	token: string,
 ): "definite" | "ambiguous" | null {
-	if (BGM_DEFINITE_DECORATION_SINGLE_TOKENS.has(token)) return "definite";
+	if (
+		BGM_DEFINITE_DECORATION_SINGLE_TOKENS.has(token) ||
+		BGM_DEFINITE_DECORATION_HANGUL_TOKEN_RE.test(token)
+	) {
+		return "definite";
+	}
 	if (
 		BGM_AMBIGUOUS_DECORATION_SINGLE_TOKENS.has(token) ||
+		BGM_AMBIGUOUS_DECORATION_HANGUL_TOKEN_RE.test(token) ||
 		/^\d+(?:hours?|hrs?|시간)$/u.test(token)
 	) {
 		return "ambiguous";
@@ -200,9 +189,12 @@ function matchPairDecorationTokens(
 	for (const [a, b] of BGM_DEFINITE_DECORATION_TOKEN_PAIRS) {
 		if (first === a && second === b) return "definite";
 	}
+	const pair = `${first} ${second}`;
+	if (BGM_DEFINITE_DECORATION_HANGUL_PAIR_RE.test(pair)) return "definite";
 	for (const [a, b] of BGM_AMBIGUOUS_DECORATION_TOKEN_PAIRS) {
 		if (first === a && second === b) return "ambiguous";
 	}
+	if (BGM_AMBIGUOUS_DECORATION_HANGUL_PAIR_RE.test(pair)) return "ambiguous";
 	if (/^\d+$/u.test(first) && /^(?:hours?|hrs?|시간)$/u.test(second)) {
 		return "ambiguous";
 	}
