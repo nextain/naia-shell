@@ -29,10 +29,12 @@ const REQUIRED_DEFERRED_MODULES = [
 	"src/components/OnboardingWizard.tsx",
 	"src/components/PermissionModal.tsx",
 	"src/components/SettingsTab.tsx",
+	"src/components/StudioNvaApplyDialog.tsx",
 	"src/components/ToolActivity.tsx",
 	"src/components/UpdateBanner.tsx",
 	"src/components/UpdatePrompt.tsx",
 	"src/components/VideoAvatarCanvas.tsx",
+	"src/studio-nva-apply-root.tsx",
 ];
 
 function directoryBytes(directory) {

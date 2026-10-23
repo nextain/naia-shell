@@ -155,6 +155,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-PROJECT-APP-SELECT-OPEN-756-S1",
   "UC-PROJECT-APP-SINGLE-OPEN-756-S2",
   "UC-PROJECT-APP-LOCAL-756-S3",
+  // Studio에서 쉘로 NVA 아바타 적용 딥링크(#105). OS 링크 전달·다운로드 검사·아바타 적용이다.
+  "UC-SHELL-STUDIO-NVA-APPLY-105",
 ];
 
 export function ownedByEpic(uc: string): boolean {

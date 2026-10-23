@@ -19,6 +19,28 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "studio_nva_apply_105": {
+      "issue": 105,
+      "title": "Studio에서 Shell 0.2.4로 NVA 적용",
+      "requirements": "docs/requirements.md FR-STUDIO-NVA-APPLY.1",
+      "scenario": "docs/user-scenarios.md UC-SHELL-STUDIO-NVA-APPLY-105",
+      "base_commits": {
+        "naia_land": "dd69c873213fcfb1912a4116b491fd2c2dc5219d",
+        "naia_shell": "1d590cf2e257d2329e85312a194ad90352907ed1"
+      },
+      "shell_base_reason": "The 0.2.4 installer handoff and progress record identify this as the last installer source branch; the newer canonical-NVA branch was not the delivered installer base.",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "verification": "Review round 2 and entry-bundle fix: a closed-shell Windows deep link starts the shell; repeated links are queued once; the download streams to a temp file with a running hash; the Studio apply receiver and dialog are loaded asynchronously after initial render so they stay out of the entry chunk (entryRawBytes 531815 / 540000, entryGzipBytes 166146 / 170000). Focused Shell apply and bundle budget tests pass; Rust studio_nva_apply and single-instance tests pass; Shell TypeScript check and build pass. Studio screen checked in a local headless browser (internal record).",
+      "remaining": "P04 remains in progress until the coordinator validates the installed Windows Shell 0.2.4 on a Windows device with the window closed and already open. No push or installer delivery.",
+      "last_updated": "2026-10-22T20:11:00+09:00"
+    },
     "issue_758_s2_ollama_install": {
       "issue": 758,
       "title": "Ollama 설치·찾기 (#758 단계 2)",

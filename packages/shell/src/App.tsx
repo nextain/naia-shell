@@ -70,7 +70,6 @@ import {
 	checkForUpdate,
 	shouldShowStartupUpdatePrompt,
 } from "./lib/updater";
-import { hydrateLocalRefAudioB64 } from "./lib/voice/ref-audio-api";
 import { useAvatarStore } from "./stores/avatar";
 import {
 	UI_PREFERENCE_KEYS,
@@ -555,11 +554,13 @@ export function App() {
 		// ref-audio.wav). Hydrate the synchronous synthesis cache here at boot so
 		// the restored voice applies even if the settings screen is never opened.
 		// Fire-and-forget — restoring the voice must never block boot.
-		hydrateLocalRefAudioB64().catch((error: unknown) => {
-			Logger.warn("App", "reference audio hydration failed", {
-				error: error instanceof Error ? error.message : String(error),
+		void import("./lib/voice/ref-audio-api")
+			.then(({ hydrateLocalRefAudioB64 }) => hydrateLocalRefAudioB64())
+			.catch((error: unknown) => {
+				Logger.warn("App", "reference audio hydration failed", {
+					error: error instanceof Error ? error.message : String(error),
+				});
 			});
-		});
 		let cancelled = false;
 		const adkPathAtRead = getAdkPath();
 		Promise.all([
