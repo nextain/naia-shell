@@ -16,6 +16,7 @@ import { emit } from "@tauri-apps/api/event";
 import {
 	type BgmLibraryState,
 	type BgmLibraryTrack,
+	isSameBgmSong,
 	loadBgmLibrary,
 	mergeBgmHistory,
 	normalizeBgmTitle,
@@ -69,7 +70,7 @@ const SINGLE_TRACK_HINT_RE =
 const SHORT_TRACK_QUERY_RE =
 	/\b(?:short|brief|[1-3]\s*min(?:ute)?s?)\b|짧은\s*곡|짧은\s*노래|짧게|[1-3]\s*분/i;
 const LONG_MIX_TITLE_RE =
-	/\b(?:playlists?|megamix|nonstop|compilation|full\s*album|live|radio|24\/7|\d+\s*hours?|\d+\s*hrs?)\b|플레이리스트|플리|모음집?|연속\s*듣기|\d+\s*시간|라이브|생방송|라디오/i;
+	/\b(?:playlists?|megamix|nonstop|compilation|full\s*album|live|radio|24\/7|\d+\s*hours?|\d+\s*hrs?|relaxing\s*music|meditation\s*music|stress\s*relief|sleep\s*music|healing\s*music)\b|플레이리스트|플리|모음집?|노래\s*모음|곡\s*모음|연속\s*듣기|연속\s*재생|\d+\s*시간|라이브|생방송|라디오|힐링\s*음악|수면\s*음악|명상\s*음악/i;
 
 export function sanitizeRadioDjSearchQuery(query: string): string {
 	const trimmed = query.trim();
@@ -85,6 +86,22 @@ export function sanitizeRadioDjSearchQuery(query: string): string {
 		return base;
 	}
 	return `${base} song Official Audio`;
+}
+
+export function buildSingleTrackRetryQuery(searchQuery: string): string {
+	const trimmed = searchQuery.trim();
+	if (!trimmed) return "pop single track Official Audio MV";
+	if (/\bsingle\s+track\b/i.test(trimmed)) {
+		return `${trimmed} Official MV`;
+	}
+	if (/\bofficial\s+audio\b/i.test(trimmed)) {
+		const stripped = trimmed
+			.replace(/\bsong\s+official\s+audio\b/i, "")
+			.replace(/\s+/g, " ")
+			.trim();
+		return `${stripped || trimmed} single track Official MV`;
+	}
+	return `${trimmed} single track Official Audio`;
 }
 
 export function parseBgmDurationSeconds(
@@ -111,40 +128,68 @@ export function parseBgmDurationSeconds(
 	return null;
 }
 
+export interface SingleTrackRejectionCounts {
+	mix_title: number;
+	no_duration: number;
+	too_long: number;
+	too_short: number;
+}
+
+export interface SingleTrackCandidateInspection {
+	candidates: BgmSearchResult[];
+	rejectedCounts: SingleTrackRejectionCounts;
+}
+
+export function inspectSingleTrackCandidates(
+	results: readonly BgmSearchResult[],
+	query: string,
+): SingleTrackCandidateInspection {
+	const rejectedCounts: SingleTrackRejectionCounts = {
+		mix_title: 0,
+		no_duration: 0,
+		too_long: 0,
+		too_short: 0,
+	};
+	if (results.length === 0) {
+		return { candidates: [], rejectedCounts };
+	}
+	if (EXPLICIT_LONG_MIX_QUERY_RE.test(query)) {
+		return { candidates: [...results], rejectedCounts };
+	}
+	const wantShort = SHORT_TRACK_QUERY_RE.test(query);
+	const minSec = wantShort ? 30 : 75;
+	const maxSec = wantShort ? 210 : 450;
+
+	const candidates: BgmSearchResult[] = [];
+	for (const item of results) {
+		if (LONG_MIX_TITLE_RE.test(item.title)) {
+			rejectedCounts.mix_title += 1;
+			continue;
+		}
+		const sec = parseBgmDurationSeconds(item.duration);
+		if (sec === null) {
+			rejectedCounts.no_duration += 1;
+			continue;
+		}
+		if (sec < minSec) {
+			rejectedCounts.too_short += 1;
+			continue;
+		}
+		if (sec > maxSec) {
+			rejectedCounts.too_long += 1;
+			continue;
+		}
+		candidates.push(item);
+	}
+
+	return { candidates, rejectedCounts };
+}
+
 export function filterSingleTrackCandidates(
 	results: readonly BgmSearchResult[],
 	query: string,
 ): BgmSearchResult[] {
-	if (results.length === 0) {
-		return [];
-	}
-	if (EXPLICIT_LONG_MIX_QUERY_RE.test(query)) {
-		return [...results];
-	}
-	const wantShort = SHORT_TRACK_QUERY_RE.test(query);
-	const minSec = wantShort ? 30 : 75;
-	const maxSec = wantShort ? 210 : 510;
-
-	const nonMixWithDuration = results.filter(
-		(item) =>
-			!LONG_MIX_TITLE_RE.test(item.title) &&
-			parseBgmDurationSeconds(item.duration) !== null,
-	);
-	if (nonMixWithDuration.length === 0) {
-		return [];
-	}
-
-	const preferred = nonMixWithDuration.filter((item) => {
-		const sec = parseBgmDurationSeconds(item.duration);
-		if (sec === null) return false;
-		return sec >= minSec && sec <= maxSec;
-	});
-	if (preferred.length > 0) return preferred;
-
-	return nonMixWithDuration.filter((item) => {
-		const sec = parseBgmDurationSeconds(item.duration);
-		return sec !== null && sec >= 30 && sec <= 900;
-	});
+	return inspectSingleTrackCandidates(results, query).candidates;
 }
 
 export interface BgmRecentTrack extends BgmSearchResult {
@@ -156,7 +201,11 @@ const RECENT_TRACK_LIMIT = 20;
 let legacyRecentMigration: Promise<boolean> | null = null;
 
 /** Keep the skill's existing public export while sharing the library rule. */
-export { normalizeBgmTitle } from "./bgm-library";
+export {
+	extractBgmSongCoreKeys,
+	isSameBgmSong,
+	normalizeBgmTitle,
+} from "./bgm-library";
 
 function readLegacyRecentTracks(): BgmRecentTrack[] {
 	try {
@@ -589,12 +638,23 @@ export async function recoverRadioDjPlayback(
 			const recentTitles = new Set(
 				recent.map((track) => normalizeBgmTitle(track.title)).filter(Boolean),
 			);
-			const candidateResults = filterSingleTrackCandidates(results, plan.query);
+			const candidateResults = filterSingleTrackCandidates(
+				results,
+				sanitizeRadioDjSearchQuery(plan.query),
+			);
 			const selected = candidateResults.find((result) => {
 				const normalizedTitle = normalizeBgmTitle(result.title);
+				const matchesRecentSong = recent.some((track) =>
+					isSameBgmSong(result.title, track.title),
+				);
+				const matchesAttemptedSong = [...plan.attemptedTitles].some(
+					(attemptedTitle) => isSameBgmSong(result.title, attemptedTitle),
+				);
 				return (
 					!plan.attemptedIds.has(result.id) &&
 					!recentIds.has(result.id) &&
+					!matchesRecentSong &&
+					!matchesAttemptedSong &&
 					(!normalizedTitle ||
 						(!plan.attemptedTitles.has(normalizedTitle) &&
 							!recentTitles.has(normalizedTitle)))
@@ -835,17 +895,24 @@ async function executeBgmSkillCore(
 				query,
 			});
 		const currentVideoId = currentSnapshot?.selected.videoId;
+		const currentTitle = currentSnapshot?.selected.title ?? "";
 		const recent = deps.recentTracks?.() ?? [];
 		const recentIds = new Set(recent.map((track) => track.id));
 		const recentTitles = new Set(
 			recent.map((track) => normalizeBgmTitle(track.title)).filter(Boolean),
 		);
-		const freshResults = results.filter(
-			(result) =>
-				result.id !== currentVideoId &&
-				!recentIds.has(result.id) &&
-				!recentTitles.has(normalizeBgmTitle(result.title)),
-		);
+		const isFreshCandidate = (result: BgmSearchResult): boolean =>
+			result.id !== currentVideoId &&
+			!(
+				(radioDjRequested || args.replace === true) &&
+				currentTitle &&
+				isSameBgmSong(result.title, currentTitle)
+			) &&
+			!recentIds.has(result.id) &&
+			!recentTitles.has(normalizeBgmTitle(result.title)) &&
+			!recent.some((track) => isSameBgmSong(result.title, track.title));
+
+		const freshResults = results.filter(isFreshCandidate);
 		if (radioDjRequested && freshResults.length === 0) {
 			return JSON.stringify({
 				ok: false,
@@ -854,27 +921,90 @@ async function executeBgmSkillCore(
 				query,
 			});
 		}
-		const candidatePool = radioDjRequested
-			? filterSingleTrackCandidates(freshResults, query)
-			: freshResults;
+
+		let activeSearchQuery = searchQuery;
+		let retriedSearchQuery: string | undefined;
+		let inspection = radioDjRequested
+			? inspectSingleTrackCandidates(freshResults, searchQuery)
+			: {
+					candidates: [...freshResults],
+					rejectedCounts: {
+						mix_title: 0,
+						no_duration: 0,
+						too_long: 0,
+						too_short: 0,
+					},
+				};
+		let rejectedCounts = inspection.rejectedCounts;
+
+		if (
+			radioDjRequested &&
+			inspection.candidates.length === 0 &&
+			!EXPLICIT_LONG_MIX_QUERY_RE.test(searchQuery)
+		) {
+			const retryQuery = buildSingleTrackRetryQuery(searchQuery);
+			if (retryQuery !== searchQuery) {
+				retriedSearchQuery = retryQuery;
+				activeSearchQuery = retryQuery;
+				const retryResults = await deps.search(retryQuery);
+				const retryFreshResults = retryResults.filter(isFreshCandidate);
+				const retryInspection = inspectSingleTrackCandidates(
+					retryFreshResults,
+					retryQuery,
+				);
+				if (retryInspection.candidates.length > 0) {
+					inspection = retryInspection;
+					rejectedCounts = retryInspection.rejectedCounts;
+				} else if (retryFreshResults.length > 0) {
+					rejectedCounts = retryInspection.rejectedCounts;
+				}
+			}
+		}
+
+		const candidatePool = inspection.candidates;
 		const enqueueAdditionalRadioCandidates = async (
 			candidates: readonly BgmSearchResult[],
-		) => {
+		): Promise<number> => {
+			const filteredCandidates = filterSingleTrackCandidates(
+				candidates,
+				activeSearchQuery,
+			);
 			const seenIds = new Set<string>();
-			const currentId = deps.playback.current()?.selected.videoId;
-			if (currentId) seenIds.add(currentId);
+			const seenTitles: string[] = [];
+			const currentSel = deps.playback.current()?.selected;
+			if (currentSel?.videoId) seenIds.add(currentSel.videoId);
+			if (currentSel?.title) seenTitles.push(currentSel.title);
 			for (const queuedItem of deps.playback.queue()) {
 				seenIds.add(queuedItem.selected.videoId);
+				if (queuedItem.selected.title) {
+					seenTitles.push(queuedItem.selected.title);
+				}
 			}
-			for (const candidate of candidates) {
+			for (const recentTrack of recent) {
+				seenIds.add(recentTrack.id);
+				if (recentTrack.title) {
+					seenTitles.push(recentTrack.title);
+				}
+			}
+			let queuedCount = 0;
+			for (const candidate of filteredCandidates) {
 				if (deps.playback.queue().length >= 3) break;
 				if (!candidate.id || seenIds.has(candidate.id)) continue;
+				if (
+					seenTitles.some((existingTitle) =>
+						isSameBgmSong(candidate.title, existingTitle),
+					)
+				) {
+					continue;
+				}
 				seenIds.add(candidate.id);
+				seenTitles.push(candidate.title);
 				const enq = deps.playback.enqueue({
 					videoId: candidate.id,
 					title: candidate.title,
 				});
 				if (enq.disposition === "queued") {
+					queuedCount += 1;
 					await deps.emitBgm({
 						type: "bgm_youtube_enqueue",
 						videoId: candidate.id,
@@ -885,23 +1015,30 @@ async function executeBgmSkillCore(
 					});
 				}
 			}
+			return queuedCount;
 		};
 
 		if (radioDjRequested && preserveActive && hasActivePlayback && currentSnapshot) {
-			await enqueueAdditionalRadioCandidates(candidatePool.slice(0, 3));
-			configureRadioDjRecovery(
-				query,
-				{
-					id: currentSnapshot.selected.videoId,
-					title: currentSnapshot.selected.title,
-				},
-				deps,
-			);
+			const queuedCount = await enqueueAdditionalRadioCandidates(candidatePool);
+			if (queuedCount > 0) {
+				configureRadioDjRecovery(
+					activeSearchQuery,
+					{
+						id: currentSnapshot.selected.videoId,
+						title: currentSnapshot.selected.title,
+					},
+					deps,
+				);
+			}
 			const observed =
 				(await deps.waitForAck?.(currentSnapshot.playbackId)) ?? currentSnapshot;
 			return JSON.stringify({
 				...toBgmPlayToolResult(observed),
 				preservedActive: true,
+				queuedCount,
+				nextPrepared: queuedCount > 0,
+				searchQuery: activeSearchQuery,
+				...(queuedCount === 0 ? { rejectedCounts } : {}),
 			});
 		}
 
@@ -911,6 +1048,9 @@ async function executeBgmSkillCore(
 				action: act,
 				reason: "no_single_track_candidates",
 				query,
+				searchQuery,
+				...(retriedSearchQuery ? { retrySearchQuery: retriedSearchQuery } : {}),
+				rejectedCounts,
 			});
 		}
 
@@ -934,9 +1074,9 @@ async function executeBgmSkillCore(
 				...(selected.thumbnail ? { thumbnail: selected.thumbnail } : {}),
 			});
 			if (candidatePool.length > 1) {
-				await enqueueAdditionalRadioCandidates(candidatePool.slice(1, 4));
+				await enqueueAdditionalRadioCandidates(candidatePool.slice(1));
 			}
-			configureRadioDjRecovery(query, selected, deps);
+			configureRadioDjRecovery(activeSearchQuery, selected, deps);
 			const observed =
 				(await deps.waitForAck?.(playback.playbackId)) ?? playback;
 			return JSON.stringify(toBgmPlayToolResult(observed));

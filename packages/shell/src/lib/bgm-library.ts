@@ -73,6 +73,125 @@ export function normalizeBgmTitle(title: string): string {
 		.trim();
 }
 
+const BGM_SONG_DECORATION_RE =
+	/\b(?:m\/v|mv|official|music\s*video|video|audio|lyrics?|lyric\s*video|live|clip|ver(?:sion)?|full|hd|4k|hq|remastered|remaster|ost|stage|performance|concert|fancam|cover|acoustic|inst(?:rumental)?|karaoke|mr|tj|ky|visualizer|topic|sketchbook|kbs|mbc|sbs|mnet|1thek|dingo|killing\s*voice|its\s*live|begin\s*again)\b|가사|뮤직\s*비디오|뮤비|오디오|라이브|세로\s*라이브|콘서트|방송|직캠|커버|원곡|수록곡|음원|고음질|유희열의\s*스케치북|킬링\s*보이스|비긴\s*어게인/giu;
+
+function compactBgmCoreKey(raw: string): string {
+	return raw
+		.normalize("NFKC")
+		.toLocaleLowerCase()
+		.replace(/m\s*\/\s*v/giu, " ")
+		.replace(BGM_SONG_DECORATION_RE, " ")
+		.replace(/[^\p{L}\p{N}]+/gu, "")
+		.trim();
+}
+
+/**
+ * Extract normalized core song title keys from a YouTube title (FR-RADIO-DJ.14).
+ * Strips channel/show suffixes, leading tags (`[MV]`), artist prefixes (`Artist - ` / `Artist _ `),
+ * bracketed/parenthesized decorations, and punctuation/whitespace, while retaining
+ * parenthesized alternate-language song titles such as `Through the Night (밤편지)`.
+ */
+export function extractBgmSongCoreKeys(title: string): string[] {
+	const cleaned = title
+		.normalize("NFKC")
+		.toLocaleLowerCase()
+		.replace(/\s*[|｜].*$/gu, " ")
+		.replace(/(?:^|\s)#[^\s#]+/gu, " ")
+		.trim();
+	if (!cleaned) return [];
+
+	const withoutLeadingBrackets = cleaned
+		.replace(/^\s*(?:[\[(【〈《][^\]）】〉》]*[\])】〉》]\s*)+/gu, "")
+		.trim();
+	const target = withoutLeadingBrackets || cleaned;
+
+	const separatorParts = target
+		.split(/\s+[-–—_~:]\s+|_\s+|\s+_/u)
+		.map((part) => part.trim())
+		.filter(Boolean);
+	const songSegment =
+		separatorParts.length >= 2
+			? separatorParts.slice(1).join(" ")
+			: target;
+
+	const keys = new Set<string>();
+	const withoutSquareBrackets = songSegment
+		.replace(/[\[【〈《][^\]】〉》]*[\]】〉》]/gu, " ")
+		.trim();
+
+	for (const match of withoutSquareBrackets.matchAll(/\(([^()[\]]+)\)/gu)) {
+		const inner = match[1]?.trim() ?? "";
+		if (!inner || inner.includes("/")) continue;
+		if (/^(?:feat|ft|prod|ver|version|ost)\b/iu.test(inner)) continue;
+		const innerKey = compactBgmCoreKey(inner);
+		if (innerKey && !/^\d+$/u.test(innerKey) && innerKey.length >= 2) {
+			keys.add(innerKey);
+		}
+	}
+
+	const strippedSongSegment = withoutSquareBrackets
+		.replace(/\([^()]*\)/gu, " ")
+		.trim();
+	const primaryKey = compactBgmCoreKey(strippedSongSegment);
+	if (primaryKey) {
+		keys.add(primaryKey);
+	}
+
+	if (keys.size === 0) {
+		const fallbackKey = compactBgmCoreKey(
+			target.replace(/[\[(【〈《][^\]）】〉》]*[\])】〉》]/gu, " "),
+		);
+		if (fallbackKey) keys.add(fallbackKey);
+	}
+
+	return [...keys];
+}
+
+function isCoreSongKeyContained(shorter: string, longer: string): boolean {
+	if (shorter === longer) return true;
+	const isAsciiOnly = /^[a-z0-9]+$/u.test(shorter);
+	if (isAsciiOnly ? shorter.length < 4 : shorter.length < 2) {
+		return false;
+	}
+	let searchFrom = 0;
+	while (searchFrom <= longer.length - shorter.length) {
+		const idx = longer.indexOf(shorter, searchFrom);
+		if (idx === -1) return false;
+		const nextChar = longer[idx + shorter.length] ?? "";
+		if (/\d$/u.test(shorter) && /^\d/u.test(nextChar)) {
+			searchFrom = idx + 1;
+			continue;
+		}
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Determine whether two YouTube titles refer to the same song across alternate uploads,
+ * bilingual titles, live stages, or lyric videos (FR-RADIO-DJ.14).
+ */
+export function isSameBgmSong(titleA: string, titleB: string): boolean {
+	const keysA = extractBgmSongCoreKeys(titleA);
+	const keysB = extractBgmSongCoreKeys(titleB);
+	if (keysA.length === 0 || keysB.length === 0) {
+		const normA = normalizeBgmTitle(titleA);
+		const normB = normalizeBgmTitle(titleB);
+		return Boolean(normA && normA === normB);
+	}
+	for (const a of keysA) {
+		for (const b of keysB) {
+			if (a === b) return true;
+			const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+			if (isCoreSongKeyContained(shorter, longer)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 export function trackIdentity(track: Pick<BgmLibraryTrack, "source" | "youtubeId" | "path" | "id">): string {
 	if (track.source === "youtube" && track.youtubeId) return `youtube:${track.youtubeId}`;
 	if (track.source === "local" && track.path) return `local:${track.path.toLocaleLowerCase()}`;

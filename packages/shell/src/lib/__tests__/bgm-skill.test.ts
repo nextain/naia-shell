@@ -826,10 +826,13 @@ describe("executeBgmSkill", () => {
 		).toHaveLength(candidates.length);
 	});
 
-	it("returns ok:false (no_single_track_candidates) in radio_dj mode when all candidates are filtered out instead of falling back to mixes or live streams", async () => {
-		const { deps, emitted } = mkDeps([
+	it("returns ok:false (no_single_track_candidates) with searchQuery and rejectedCounts after one single-track hint retry when all candidates are filtered out (FR-RADIO-DJ.14·16)", async () => {
+		const { deps, emitted, searched } = mkDeps([
 			{ id: "live-only", title: "lofi hip hop radio - beats to relax/study to", duration: "" },
 			{ id: "mix-only", title: "10 hours chill jazz playlist", duration: "10:00:00" },
+			{ id: "no-dur", title: "Unknown Duration Song", duration: "" },
+			{ id: "too-long", title: "Extended Instrumental Version", duration: "7:31" },
+			{ id: "too-short", title: "Intro Teaser", duration: "0:25" },
 		]);
 
 		const out = JSON.parse(
@@ -843,12 +846,200 @@ describe("executeBgmSkill", () => {
 			),
 		);
 
+		expect(searched).toEqual([
+			"잔잔한 로파이 song Official Audio",
+			"잔잔한 로파이 single track Official MV",
+		]);
 		expect(out).toEqual({
 			ok: false,
 			action: "play",
 			reason: "no_single_track_candidates",
 			query: "잔잔한 로파이",
+			searchQuery: "잔잔한 로파이 song Official Audio",
+			retrySearchQuery: "잔잔한 로파이 single track Official MV",
+			rejectedCounts: {
+				mix_title: 2,
+				no_duration: 1,
+				too_long: 1,
+				too_short: 1,
+			},
 		});
+		expect(emitted).toEqual([]);
+	});
+
+	it("retries once with an English single-track hint when the first mood search is all mixes and succeeds if the retry finds a single track", async () => {
+		const searched: string[] = [];
+		const emitted: Record<string, unknown>[] = [];
+		const deps: BgmSkillDeps = {
+			search: async (q) => {
+				searched.push(q);
+				if (searched.length === 1) {
+					return [
+						{
+							id: "mix-1",
+							title: "오후에 듣기 좋은 감성 노래 모음 플레이리스트",
+							duration: "1:20:00",
+						},
+					];
+				}
+				return [
+					{
+						id: "single-ok",
+						title: "Paul Kim - Every Day, Every Moment (Official Audio)",
+						duration: "3:56",
+					},
+				];
+			},
+			emitBgm: async (payload) => {
+				emitted.push(payload);
+			},
+			playback: createBgmPlaybackPort(),
+		};
+
+		const out = JSON.parse(
+			await executeBgmSkill(
+				{
+					action: "play",
+					query: "오후 듣기 좋은 감성 노래",
+					mode: "radio_dj",
+				},
+				deps,
+			),
+		);
+
+		expect(searched).toEqual([
+			"오후 듣기 좋은 감성 노래",
+			"오후 듣기 좋은 감성 노래 single track Official Audio",
+		]);
+		expect(out.ok).toBe(true);
+		expect(deps.playback.current()?.selected.videoId).toBe("single-ok");
+		expect(emitted).toHaveLength(1);
+	});
+
+	it("excludes alternate uploads of the same song (밤편지 4 variants) from the queue and recent-track filter (FR-RADIO-DJ.14)", async () => {
+		const { deps } = mkDeps([
+			{
+				id: "iu-1",
+				title: "Through the Night (밤편지)",
+				duration: "4:13",
+			},
+			{
+				id: "iu-2",
+				title: "아이유(IU) - 밤편지 [가사/Lyrics]",
+				duration: "4:14",
+			},
+			{
+				id: "iu-3",
+				title: "[MV] IU(아이유) _ Through the Night(밤편지)",
+				duration: "4:45",
+			},
+			{
+				id: "iu-4",
+				title: "아이유 - 밤편지 [유희열의 스케치북/You Heeyeol’s Sketchbook] | KBS 200918 방송",
+				duration: "4:20",
+			},
+		]);
+
+		await executeBgmSkill(
+			{ action: "play", query: "아이유 밤편지", mode: "radio_dj" },
+			deps,
+		);
+
+		expect(deps.playback.current()?.selected.videoId).toBe("iu-1");
+		expect(deps.playback.queue()).toEqual([]);
+	});
+
+	it("excludes mixes and >450s videos (e.g. 451s 힐링음악) from both primary selection and the pre-queue (FR-RADIO-DJ.14)", async () => {
+		const { deps } = mkDeps([
+			{
+				id: "valid-1",
+				title: "AKMU - How can I love the heartbreak, you're the one I love",
+				duration: "4:50",
+			},
+			{
+				id: "healing-451",
+				title: "🎧4K🌳나홀로나무에서 듣는 감성촉촉 어쿠스틱 팝송 힐링음악 Emotional pop song,Relaxing Music, Stress Relief, Meditation Music",
+				duration: "451",
+			},
+			{
+				id: "over-450",
+				title: "Long Acoustic Ballad Session",
+				duration: "7:31",
+			},
+			{
+				id: "mix-title",
+				title: "Relaxing Music for Stress Relief",
+				duration: "3:40",
+			},
+		]);
+
+		await executeBgmSkill(
+			{ action: "play", query: "어쿠스틱 감성 노래", mode: "radio_dj" },
+			deps,
+		);
+
+		expect(deps.playback.current()?.selected.videoId).toBe("valid-1");
+		expect(deps.playback.queue()).toEqual([]);
+	});
+
+	it("reports queuedCount:0 and nextPrepared:false when preserveActive finds 0 single-track candidates while keeping the active user song playing (FR-RADIO-DJ.5·11)", async () => {
+		const { deps, emitted, searched } = mkDeps([
+			{
+				id: "mix-only",
+				title: "오후에 듣기 좋은 감성 노래 모음 플레이리스트",
+				duration: "1:15:00",
+			},
+			{
+				id: "over-450",
+				title: "힐링음악 Relaxing Music",
+				duration: "451",
+			},
+		]);
+		const userReq = deps.playback.request({
+			videoId: "user-gangnam",
+			title: "PSY - GANGNAM STYLE",
+		});
+		deps.playback.observe({
+			playbackId: userReq.playbackId,
+			sequence: 2,
+			status: "playing",
+		});
+
+		const out = JSON.parse(
+			await executeBgmSkill(
+				{
+					action: "play",
+					query: "오후 듣기 좋은 감성 노래",
+					mode: "radio_dj",
+					preserveActive: true,
+				},
+				deps,
+			),
+		);
+
+		expect(searched).toEqual([
+			"오후 듣기 좋은 감성 노래",
+			"오후 듣기 좋은 감성 노래 single track Official Audio",
+		]);
+		expect(out).toMatchObject({
+			ok: true,
+			action: "play",
+			preservedActive: true,
+			queuedCount: 0,
+			nextPrepared: false,
+			rejectedCounts: {
+				mix_title: 2,
+				no_duration: 0,
+				too_long: 0,
+				too_short: 0,
+			},
+			currentTrack: {
+				videoId: "user-gangnam",
+				title: "PSY - GANGNAM STYLE",
+			},
+		});
+		expect(deps.playback.current()?.selected.videoId).toBe("user-gangnam");
+		expect(deps.playback.queue()).toEqual([]);
 		expect(emitted).toEqual([]);
 	});
 

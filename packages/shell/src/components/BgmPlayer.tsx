@@ -390,6 +390,7 @@ export function BgmPlayer({ naia }: Props) {
 	const observedIframeStateRef = useRef<{
 		playbackId: string | null;
 		confirmedVideoId: string | null;
+		hasPlayed: boolean;
 		lastMessageVideoId: string | null;
 		lastMismatchedVideoId: string | null;
 		lastCurrentTime: number | null;
@@ -398,6 +399,7 @@ export function BgmPlayer({ naia }: Props) {
 	}>({
 		playbackId: null,
 		confirmedVideoId: null,
+		hasPlayed: false,
 		lastMessageVideoId: null,
 		lastMismatchedVideoId: null,
 		lastCurrentTime: null,
@@ -411,7 +413,7 @@ export function BgmPlayer({ naia }: Props) {
 	const pendingNullTerminalRef = useRef<{
 		playbackId: string;
 		eventPlaybackId?: string;
-		kind: "error" | "ended";
+		kind: "error";
 		reason?: string;
 	} | null>(null);
 	const lastProgressObservationRef = useRef<{
@@ -610,6 +612,9 @@ export function BgmPlayer({ naia }: Props) {
 			playback_status: next.status,
 		});
 		if (status === "playing") {
+			if (observedIframeStateRef.current.playbackId === next.playbackId) {
+				observedIframeStateRef.current.hasPlayed = true;
+			}
 			setVideoLive(true);
 		} else if (
 			status === "error" ||
@@ -669,6 +674,7 @@ export function BgmPlayer({ naia }: Props) {
 		observedIframeStateRef.current = {
 			playbackId,
 			confirmedVideoId: null,
+			hasPlayed: false,
 			lastMessageVideoId: null,
 			lastMismatchedVideoId: null,
 			lastCurrentTime: null,
@@ -715,31 +721,18 @@ export function BgmPlayer({ naia }: Props) {
 	function pendTerminalForCurrentGeneration(
 		playbackId: string,
 		eventPlaybackId: string | undefined,
-		kind: "error" | "ended",
 		reason: string | undefined,
 		iframe: HTMLIFrameElement | null,
 	) {
 		if (observedIframeStateRef.current.playbackId !== playbackId) {
 			beginPlaybackTimeout(playbackId);
 		}
-		const existing = pendingNullTerminalRef.current;
-		if (
-			existing &&
-			existing.playbackId === playbackId &&
-			existing.kind === "error" &&
-			kind === "ended"
-		) {
-			// Keep an already-pended error on this generation; do not overwrite with ended.
-		} else {
-			pendingNullTerminalRef.current = {
-				playbackId,
-				...(eventPlaybackId !== undefined ? { eventPlaybackId } : {}),
-				kind,
-				...(kind === "error"
-					? { reason: reason ?? "youtube_iframe_error" }
-					: {}),
-			};
-		}
+		pendingNullTerminalRef.current = {
+			playbackId,
+			...(eventPlaybackId !== undefined ? { eventPlaybackId } : {}),
+			kind: "error",
+			reason: reason ?? "youtube_iframe_error",
+		};
 		if (!observedIframeStateRef.current.requerySentForPending) {
 			observedIframeStateRef.current.requerySentForPending = true;
 			queryActiveIframeState(iframe);
@@ -1114,7 +1107,8 @@ export function BgmPlayer({ naia }: Props) {
 				const iframeVideoId = extractYoutubeIframeVideoId(activeIframe.src);
 				const observedState = observedIframeStateRef.current;
 				const msgPayload = msg.info ?? msg.data;
-				const msgVideoId = extractMessageVideoId(msgPayload);
+				const msgVideoId =
+					extractMessageVideoId(msgPayload) ?? extractMessageVideoId(msg);
 				const sourceDecision = decideIframeMessageSource({
 					eventSource: e.source,
 					activeContentWindow: activeIframe.contentWindow,
@@ -1145,27 +1139,15 @@ export function BgmPlayer({ naia }: Props) {
 						!isCurrentFrameConfirmed(
 							currentForSource,
 							currentForSource.playbackId,
-						)
+						) &&
+						String(msg.event ?? "") === "onError"
 					) {
-						const eventName = String(msg.event ?? "");
-						const kind =
-							eventName === "onError"
-								? "error"
-								: eventName === "onStateChange" &&
-									  Number(msgPayload) === 0
-									? "ended"
-									: null;
-						if (kind) {
-							pendTerminalForCurrentGeneration(
-								currentForSource.playbackId,
-								eventPlaybackId,
-								kind,
-								kind === "error"
-									? String(msgPayload ?? "youtube_iframe_error")
-									: undefined,
-								activeIframe,
-							);
-						}
+						pendTerminalForCurrentGeneration(
+							currentForSource.playbackId,
+							eventPlaybackId,
+							String(msgPayload ?? "youtube_iframe_error"),
+							activeIframe,
+						);
 					}
 					return;
 				}
@@ -1174,6 +1156,7 @@ export function BgmPlayer({ naia }: Props) {
 					currentForSource &&
 					msgVideoId !== currentForSource.selected.videoId
 				) {
+					observationCountersRef.current.filteredOut++;
 					observedIframeStateRef.current.lastMismatchedVideoId = msgVideoId;
 					Logger.debug(
 						"BgmPlayer",
@@ -1234,6 +1217,7 @@ export function BgmPlayer({ naia }: Props) {
 						manuallyStoppedPlaybackRef.current = null;
 						pendingNullTerminalRef.current = null;
 						observedIframeStateRef.current.requerySentForPending = false;
+						observedIframeStateRef.current.hasPlayed = true;
 						setPlaying(true);
 						const observed = observePlayback("playing", {
 							playbackId: eventPlaybackId,
@@ -1259,28 +1243,8 @@ export function BgmPlayer({ naia }: Props) {
 						setPlaying(false);
 						observePlayback("paused", { playbackId: eventPlaybackId });
 					} else if (state === 0) {
-						if (!confirmed) {
-							if (
-								eventPlaybackId &&
-								current &&
-								eventPlaybackId !== current.playbackId
-							) {
-								counters.filteredOut++;
-								return;
-							}
-							if (
-								current &&
-								!msgVideoId &&
-								(!eventPlaybackId || eventPlaybackId === current.playbackId)
-							) {
-								pendTerminalForCurrentGeneration(
-									current.playbackId,
-									eventPlaybackId,
-									"ended",
-									undefined,
-									activeIframe,
-								);
-							}
+						if (!confirmed || !observedIframeStateRef.current.hasPlayed) {
+							counters.filteredOut++;
 							return;
 						}
 						handleObservedTrackEnd(eventPlaybackId);
@@ -1334,6 +1298,7 @@ export function BgmPlayer({ naia }: Props) {
 							const vdId = extractMessageVideoId(info) ?? "";
 							if (vdId) {
 								if (vdId !== current.selected.videoId) {
+									counters.filteredOut++;
 									observedIframeStateRef.current.lastMismatchedVideoId = vdId;
 									return;
 								}
@@ -1357,6 +1322,13 @@ export function BgmPlayer({ naia }: Props) {
 							if (confirmed) {
 								observedIframeStateRef.current.lastMessageVideoId =
 									current.selected.videoId;
+								if (
+									playerState !== 0 &&
+									Number.isFinite(currentTime) &&
+									currentTime > 0
+								) {
+									observedIframeStateRef.current.hasPlayed = true;
+								}
 								const pendingTerminal = pendingNullTerminalRef.current;
 								if (
 									pendingTerminal &&
@@ -1366,31 +1338,20 @@ export function BgmPlayer({ naia }: Props) {
 								) {
 									pendingNullTerminalRef.current = null;
 									observedIframeStateRef.current.requerySentForPending = false;
-									if (pendingTerminal.kind === "error") {
-										handleObservedTrackError(
-											eventPlaybackId,
-											pendingTerminal.reason ?? "youtube_iframe_error",
-										);
-										return;
-									}
-									counters.stateChangeSeen = true;
-									handleObservedTrackEnd(eventPlaybackId);
+									handleObservedTrackError(
+										eventPlaybackId,
+										pendingTerminal.reason ?? "youtube_iframe_error",
+									);
 									return;
 								}
 							}
 							if (playerState === 0) {
-								if (confirmed) {
+								if (confirmed && observedIframeStateRef.current.hasPlayed) {
 									counters.stateChangeSeen = true;
 									handleObservedTrackEnd(eventPlaybackId);
 									return;
 								}
-								pendTerminalForCurrentGeneration(
-									current.playbackId,
-									eventPlaybackId,
-									"ended",
-									undefined,
-									activeIframe,
-								);
+								counters.filteredOut++;
 								return;
 							}
 							const canObservePlaying =
@@ -1401,11 +1362,13 @@ export function BgmPlayer({ naia }: Props) {
 									((current.status === "requested" ||
 										current.status === "loading" ||
 										current.status === "timeout") &&
+										Number.isNaN(playerState) &&
 										Number.isFinite(currentTime) &&
 										currentTime > 0));
 							if (canObservePlaying) {
 								pendingNullTerminalRef.current = null;
 								observedIframeStateRef.current.requerySentForPending = false;
+								observedIframeStateRef.current.hasPlayed = true;
 								setPlaying(true);
 								const now = Date.now();
 								const lastProgress = lastProgressObservationRef.current;
@@ -1445,6 +1408,15 @@ export function BgmPlayer({ naia }: Props) {
 									}
 									void persist;
 								}
+							} else if (confirmed && playerState === 2) {
+								setPlaying(false);
+								observePlayback("paused", { playbackId: eventPlaybackId });
+							} else if (
+								confirmed &&
+								(playerState === -1 || playerState === 3) &&
+								current.status === "requested"
+							) {
+								observePlayback("loading", { playbackId: eventPlaybackId });
 							} else if (
 								!confirmed &&
 								current.status !== "playing" &&
@@ -1475,7 +1447,6 @@ export function BgmPlayer({ naia }: Props) {
 							pendTerminalForCurrentGeneration(
 								current.playbackId,
 								eventPlaybackId,
-								"error",
 								reason,
 								activeIframe,
 							);

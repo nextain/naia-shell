@@ -319,6 +319,7 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		await startTrack("v1", "Song One (ended)");
 		attachIframeForCurrentPlayback();
 		confirmCurrentFrame("v1", "Song One (ended)");
+		postYtMessage({ event: "onStateChange", info: 1 });
 
 		const events: { action: string; summary?: string }[] = [];
 		const unlisten = onAiInterferenceEvent((event) =>
@@ -652,6 +653,7 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		await startTrack("first", "First");
 		attachIframeForCurrentPlayback();
 		confirmCurrentFrame("first", "First");
+		postYtObjectMessage({ event: "onStateChange", info: 1 });
 		postYtObjectMessage({ event: "onStateChange", info: 0 });
 		expect(bgmPlayback.current()?.selected.videoId).toBe("second");
 	});
@@ -1065,7 +1067,7 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		controlSpy.mockRestore();
 	});
 
-	it("processes infoDelivery playerState=0 as track_ended without promoting to playing when confirmed while still loading, and does not pend onError 150 arriving before DOM iframe src updates so the new track plays when confirmed or falls back to timeout track_error once if never confirmed (FR-RADIO-DJ.2·16)", async () => {
+	it("ignores playerState=0 before the generation has played, processes infoDelivery playerState=0 as track_ended after hasPlayed is set even while loading/buffering/paused, and does not pend onError 150 arriving before DOM iframe src updates (FR-RADIO-DJ.2·16, FR-BGM.18)", async () => {
 		vi.useFakeTimers({
 			toFake: [
 				"setTimeout",
@@ -1101,9 +1103,8 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		const firstPlaybackId = bgmPlayback.current()?.playbackId ?? "";
 		const iframe = attachIframeForCurrentPlayback();
 
-		// 1) "v-loading-end" confirms its videoData in initialDelivery (status="loading"), then receives
-		// infoDelivery with playerState=0 and currentTime > 0 while still status="loading".
-		// Must emit track_ended (and advance to "v-stale-src-err") without promoting to "playing".
+		// 1a) "v-loading-end" confirms its videoData in initialDelivery (status="loading", currentTime=0).
+		// Before hasPlayed is set, any playerState=0 / onStateChange(0) must be ignored without advancing.
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
@@ -1112,6 +1113,54 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 						info: {
 							playerState: -1,
 							currentTime: 0,
+							videoData: {
+								video_id: "v-loading-end",
+								title: "Loading End Candidate",
+							},
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 0,
+							currentTime: 0,
+							videoData: {
+								video_id: "v-loading-end",
+								title: "Loading End Candidate",
+							},
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-loading-end");
+		expect(bgmPlayback.current()?.status).toBe("loading");
+		expect(controlSpy).not.toHaveBeenCalled();
+
+		// 1b) Now the confirmed frame reports currentTime > 0 while still buffering (playerState=3, status="loading"),
+		// which marks hasPlayed=true for this generation without promoting status to "playing".
+		// When infoDelivery playerState=0 subsequently arrives while status is still "loading", it emits track_ended.
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 3,
+							currentTime: 0.8,
+							duration: 1.2,
 							videoData: {
 								video_id: "v-loading-end",
 								title: "Loading End Candidate",
@@ -1381,6 +1430,129 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 			),
 		).toHaveLength(0);
 		expect(eventsForB).toEqual([
+			expect.objectContaining({
+				kind: "track_playing",
+				playbackId: bPlaybackId,
+				videoId: "v-track-b",
+				title: "Track B",
+			}),
+		]);
+
+		chatService.setCurrentSpeechActivityId(undefined);
+		controlSpy.mockRestore();
+	});
+
+	it("does not skip queued track B when a late null-source infoDelivery {playerState:0} from track A arrives after iframe src updates to B and before B confirms videoData with playerState:3 (FR-RADIO-DJ.2, FR-BGM.18)", async () => {
+		const controlSpy = vi
+			.spyOn(chatService, "controlSpeechActivity")
+			.mockResolvedValue(true);
+		chatService.setCurrentSpeechActivityId("dj-activity-1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				proactiveSpeechProfile: "personal_radio_dj",
+				proactiveSpeechPermitted: true,
+			}),
+		);
+
+		render(<BgmPlayer />);
+		await startTrack("v-track-a", "Track A");
+		bgmPlayback.enqueue({ videoId: "v-track-b", title: "Track B" });
+		bgmPlayback.enqueue({ videoId: "v-track-c", title: "Track C" });
+		attachIframeForCurrentPlayback();
+
+		// 1) Track A confirms and plays, then ends -> advances to queued Track B.
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 25,
+							duration: 180,
+							videoData: { video_id: "v-track-a", title: "Track A" },
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+		});
+		const bPlaybackId = bgmPlayback.current()?.playbackId ?? "";
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-track-b");
+		expect(bgmPlayback.queue().map((item) => item.selected.videoId)).toEqual([
+			"v-track-c",
+		]);
+
+		// 2) DOM iframe.src updates to B, and right after that a late null-source infoDelivery {playerState:0}
+		// (or onStateChange 0) from old video A arrives, followed by B confirming videoData with playerState:3.
+		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
+		attachIframeForCurrentPlayback();
+		controlSpy.mockClear();
+
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: { playerState: 0 },
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 3,
+							currentTime: 0,
+							videoData: { video_id: "v-track-b", title: "Track B" },
+						},
+					}),
+					source: null,
+				}),
+			);
+		});
+
+		// B must NOT be ended or skipped; queue ("v-track-c") remains intact.
+		expect(bgmPlayback.current()?.playbackId).toBe(bPlaybackId);
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-track-b");
+		expect(bgmPlayback.current()?.status).toBe("loading");
+		expect(bgmPlayback.queue().map((item) => item.selected.videoId)).toEqual([
+			"v-track-c",
+		]);
+		expect(controlSpy).not.toHaveBeenCalled();
+
+		// 3) When B transitions to playing, track_playing is emitted once.
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 1.4,
+							duration: 210,
+							videoData: { video_id: "v-track-b", title: "Track B" },
+						},
+					}),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		const bEvents = controlSpy.mock.calls
+			.filter(([arg]) => String(arg).startsWith("bgm_event:"))
+			.map(([arg]) => JSON.parse(String(arg).slice("bgm_event:".length)));
+		expect(bEvents.filter((ev) => ev.kind === "track_ended")).toHaveLength(0);
+		expect(bEvents).toEqual([
 			expect.objectContaining({
 				kind: "track_playing",
 				playbackId: bPlaybackId,
