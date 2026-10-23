@@ -114,7 +114,7 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 | **FR-NAIA-AZURE.5** | Gateway 가격은 이미 원가의 1.1배인 최종 고객가이며 Shell은 추가 가산 없이 그대로 표시한다. | exact pricing unit |
 | **FR-NAIA-AZURE.6** | OpenAI-compatible 모델과 Anthropic Messages 모델의 protocol/운영 상태를 구분하며 quota가 없는 Opus를 선택 가능하다고 오표시하지 않는다. | metadata + disabled apply unit |
 | **FR-NAIA-AZURE.7** | 기동 시 예전 평면 `model`(구조화 `llmRoles.main` 없음)의 nextain id 는 선택기 모델이면 그대로, 퇴역 id(`RETIRED_NEXTAIN_MODEL_IDS`, #670·#603)면 기본값으로 옮긴다. 그 밖의 id 는 게이트웨이 `GET /v1/models` 에서 상태가 없거나 `live` 로 나오면 유지하고, 목록에 없으면 기본값으로 옮기며, 목록을 못 읽으면 바꾸지 않는다. 확인 중 사용자가 바꾼 설정은 덮지 않는다. (#707) Status: Done | UC-NAIA-LEGACY-MAIN-MODEL · `registry-gateway-models.test.ts` · `useAgentAuthSync.test.ts` |
-| **FR-NAIA-MOTIF.1** | Motif 3은 나이아 공개 ID `motif-3`와 gateway key `motif:motif-3`를 사용한다. Shell은 gateway 가격(입력 $0.22, 출력 $0.88, 캐시 $0.044 / 1M tokens)을 가산 없이 표시하고, 실측 기준(10회 중 구조화 tool_calls 9회 이상)을 넘은 경우 `supportsTools: true`로 노출한다. Status: Done | registry + SettingsTab contract; capability-settings E2E |
+| **FR-NAIA-MOTIF.1** | Motif 3은 나이아 공개 ID `motif-3`와 gateway key `motif:motif-3`를 사용한다. Shell은 gateway 가격(입력 $0.26, 출력 $1.04, 캐시 $0.052 / 1M tokens)을 가산 없이 표시하고, 실측 기준(10회 중 구조화 tool_calls 9회 이상)을 넘은 경우 `supportsTools: true`로 노출한다. Status: Done | registry + SettingsTab contract; capability-settings E2E |
 
 **Deferred**: Coding Workers, Pi lifecycle, Workspace coding UX and role eligibility are not part of #396.
 
