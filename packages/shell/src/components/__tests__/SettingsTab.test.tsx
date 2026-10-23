@@ -134,6 +134,7 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
 import { setLocale } from "../../lib/i18n";
+import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { SettingsTab } from "../SettingsTab";
 
 // SettingsTab order:
@@ -183,6 +184,7 @@ describe("SettingsTab", () => {
 		secureStoreMock.get.mockResolvedValue(null);
 		vi.unstubAllGlobals();
 		Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+		useCascadeAvatarStore.getState().setLocalFacadeUrl(null);
 		await setLocale("en");
 	});
 
@@ -3130,6 +3132,187 @@ describe("SettingsTab — memory tab (#298)", () => {
 			});
 		});
 	});
+
+	it("persists Edge-to-local selection while the local engine is already running", async () => {
+		localStorage.setItem("naia-adk-path", "D:\\test-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "test-key",
+				ttsProvider: "edge",
+				ttsEnabled: false,
+				localVoiceEnabled: false,
+				vllmTtsHost: "https://voice.example.test/tts",
+			}),
+		);
+		useCascadeAvatarStore
+			.getState()
+			.setLocalFacadeUrl("https://voice.example.test/facade");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({
+				ok: true,
+				json: async () => ({
+					ok: true,
+					tts: true,
+					avatar: true,
+					tts_enabled: true,
+					avatar_enabled: true,
+				}),
+			})),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(true);
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: "ready",
+					ready: true,
+					canStart: true,
+					summary: "Local runtime is running.",
+					steps: [],
+				});
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		const selector = screen.getByTestId("gateway-tts-provider") as HTMLSelectElement;
+		await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"));
+		await act(async () => { await Promise.resolve(); });
+		await vi.waitFor(() =>
+			expect(
+				selector.querySelector('option[value="naia-local-voice"]'),
+			).not.toBeDisabled(),
+		);
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+		await waitFor(() => {
+			expect(selector.value).toBe("naia-local-voice");
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved).toMatchObject({
+				ttsProvider: "naia-local-voice",
+				ttsEnabled: true,
+				localVoiceEnabled: true,
+				vllmTtsHost: "https://voice.example.test/tts",
+			});
+		});
+		expect(mockInvoke).toHaveBeenCalledWith(
+			"write_naia_ui_config",
+			expect.objectContaining({
+				json: expect.stringMatching(
+					/"ttsEnabled": true[\s\S]*"ttsProvider": "naia-local-voice"/,
+				),
+			}),
+		);
+		const manifestWrite = mockInvoke.mock.calls
+			.filter(([command]) => command === "write_slots_manifest")
+			.at(-1);
+		const manifest = JSON.parse(manifestWrite?.[1]?.json as string);
+		expect(manifest.slots.tts.provider).toBe("naia-local-voice");
+		expect(mockInvoke).not.toHaveBeenCalledWith("start_voxcpm2", expect.anything());
+	});
+
+	it.each(["write_naia_config", "write_slots_manifest"] as const)(
+		"restores the prior voice selection if %s fails while the engine is running",
+		async (failedCommand) => {
+			localStorage.setItem("naia-adk-path", "D:\\test-adk");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "gemini-3.5-flash",
+					naiaKey: "test-key",
+					ttsProvider: "edge",
+					ttsEnabled: false,
+					localVoiceEnabled: false,
+					vllmTtsHost: "https://voice.example.test/tts",
+				}),
+			);
+			useCascadeAvatarStore
+				.getState()
+				.setLocalFacadeUrl("https://voice.example.test/facade");
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => ({
+					ok: true,
+					json: async () => ({
+						ok: true,
+						tts: true,
+						avatar: true,
+						tts_enabled: true,
+						avatar_enabled: true,
+					}),
+				})),
+			);
+			let failNextWrite = false;
+			let failedOnce = false;
+			let matchingWriteCount = 0;
+			mockInvoke.mockImplementation((command: string) => {
+				if (command === "detect_gpu_vram") return Promise.resolve(8);
+				if (command === "voxcpm2_status") return Promise.resolve(true);
+				if (command === "voxcpm2_installation_status")
+					return Promise.resolve({
+						phase: "ready",
+						ready: true,
+						canStart: true,
+						summary: "Local runtime is running.",
+						steps: [],
+					});
+				if (failNextWrite && command === failedCommand) {
+					matchingWriteCount += 1;
+					// writeNaiaConfig also attempts a best-effort manifest sync; fail
+					// the explicit SettingsTab manifest write after that attempt.
+					const failureAttempt =
+						failedCommand === "write_slots_manifest" ? 2 : 1;
+					if (matchingWriteCount === failureAttempt) {
+						failedOnce = true;
+						return Promise.reject(new Error("config persistence failed"));
+					}
+				}
+				return Promise.resolve([]);
+			});
+
+			render(<SettingsTab />);
+			gotoSettingsTab("voice");
+			const selector = screen.getByTestId(
+				"gateway-tts-provider",
+			) as HTMLSelectElement;
+			await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"));
+			await vi.waitFor(() =>
+				expect(
+					selector.querySelector('option[value="naia-local-voice"]'),
+				).not.toBeDisabled(),
+			);
+			failNextWrite = true;
+			fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+			await waitFor(() => {
+				const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+				expect(failedOnce).toBe(true);
+				expect(selector.value).toBe("edge");
+				expect(saved).toMatchObject({
+					ttsProvider: "edge",
+					ttsEnabled: false,
+					localVoiceEnabled: false,
+					vllmTtsHost: "https://voice.example.test/tts",
+				});
+				expect(
+					(document.getElementById("tts-toggle") as HTMLInputElement).checked,
+				).toBe(false);
+				expect(screen.getByTestId("voxcpm2-install-error")).toHaveAttribute(
+					"role",
+					"alert",
+				);
+				expect(screen.getByTestId("voxcpm2-install-error")).toHaveTextContent(
+					"config persistence failed",
+				);
+			});
+			expect(mockInvoke).not.toHaveBeenCalledWith("start_voxcpm2", expect.anything());
+		},
+	);
 
 	it("does not auto-restore a local provider when voice is disabled", async () => {
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");

@@ -9,6 +9,7 @@ import {
 } from "../lib/config";
 import { t } from "../lib/i18n";
 import { useAppStore } from "../stores/app";
+import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
 /**
  * AiControlBar — fixed overlay on the avatar area (top-left of naia column).
@@ -22,6 +23,10 @@ export function AiControlBar() {
 		ttsEnabled,
 		toggleTtsEnabled,
 	} = useAppStore();
+	const activeAvatarRenderer = useCascadeAvatarStore((state) => state.renderer);
+	const gestureActions = activeAvatarRenderer
+		? getCameraActions().getGestureActions()
+		: [];
 
 	const [joystickActive, setJoystickActive] = useState(false);
 	const joystickActiveRef = useRef(false);
@@ -170,6 +175,7 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className={`bgm-ai-toggle${joystickActive ? " bgm-ai-toggle--active" : ""}`}
+				aria-label={t("ai.avatarRotate")}
 				title={t("ai.avatarRotate")}
 				style={{
 					cursor: joystickActive ? "grabbing" : "grab",
@@ -202,6 +208,7 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className={`bgm-ai-toggle${panActive ? " bgm-ai-toggle--active" : ""}`}
+				aria-label={t("ai.avatarPan")}
 				title={t("ai.avatarPan")}
 				style={{ cursor: panActive ? "grabbing" : "grab", touchAction: "none" }}
 				onPointerDown={(e) => {
@@ -231,11 +238,64 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className="bgm-ai-toggle"
+				aria-label={t("ai.avatarZoomIn")}
+				title={t("ai.avatarZoomIn")}
+				onClick={() => {
+					const camera = getCameraActions();
+					camera.zoom(0.1);
+					camera.save();
+				}}
+			>
+				<span className="bgm-ai-toggle__dot" />+
+			</button>
+
+			<button
+				type="button"
+				className="bgm-ai-toggle"
+				aria-label={t("ai.avatarZoomOut")}
+				title={t("ai.avatarZoomOut")}
+				onClick={() => {
+					const camera = getCameraActions();
+					camera.zoom(-0.1);
+					camera.save();
+				}}
+			>
+				<span className="bgm-ai-toggle__dot" />−
+			</button>
+
+			<button
+				type="button"
+				className="bgm-ai-toggle"
+				aria-label={t("ai.avatarReset")}
 				title={t("ai.avatarReset")}
 				onClick={() => getCameraActions().reset()}
 			>
 				<span className="bgm-ai-toggle__dot" />⌂
 			</button>
+
+			{gestureActions.length > 0 && (
+				<div
+					className="ai-control-bar__gestures"
+					role="group"
+					aria-label={t("ai.avatarGestures")}
+				>
+					{gestureActions.map((action) => (
+						<button
+							key={action.key}
+							type="button"
+							className="bgm-ai-toggle"
+							aria-label={action.label}
+							title={action.label}
+							data-nva-gesture-key={action.key}
+							onClick={() => {
+								void getCameraActions().playAction(action.key);
+							}}
+						>
+							<span className="bgm-ai-toggle__dot" />{action.label}
+						</button>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }

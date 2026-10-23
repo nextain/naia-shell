@@ -2,7 +2,7 @@ import { loadConfig } from "../lib/config";
 import { environmentSession } from "../lib/environment-skill";
 import { getLocale } from "../lib/i18n";
 import { Logger } from "../lib/logger";
-import type { MemoryContext } from "../lib/persona";
+import { getGestureInstructions, type MemoryContext } from "../lib/persona";
 import type { EnvironmentSegment } from "../lib/types";
 import { selectPromptAppContexts, useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
@@ -44,6 +44,22 @@ export function buildEnvironmentSegments(
 				type,
 				data,
 			})),
+		});
+	}
+	if (memoryContext.avatarGestures?.length) {
+		segments.push({
+			kind: "app",
+			entries: [
+				{
+					type: "NVA gesture actions",
+					data: {
+						actions: memoryContext.avatarGestures,
+						instructions: getGestureInstructions(
+							memoryContext.avatarGestures,
+						).trim(),
+					},
+				},
+			],
 		});
 	}
 	const awareness = loadConfig()?.environmentAwareness ?? "auto";

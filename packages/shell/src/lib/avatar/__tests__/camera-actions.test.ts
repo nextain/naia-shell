@@ -14,14 +14,17 @@ describe("camera-actions bridge", () => {
 		expect(getCameraActions()).toBe(getCameraActions());
 	});
 
-	it("defaults to no-ops that do not throw", () => {
+	it("defaults to no-ops that do not throw", async () => {
 		const a = getCameraActions();
 		expect(() => {
 			a.rotate(1, 2);
 			a.pan(3, 4);
+			a.zoom(0.1);
 			a.reset();
 			a.save();
 		}).not.toThrow();
+		expect(a.getGestureActions()).toEqual([]);
+		await expect(a.playAction("missing")).resolves.toBeUndefined();
 	});
 
 	it("registers an implementation that the singleton delegates to", () => {
@@ -34,6 +37,24 @@ describe("camera-actions bridge", () => {
 
 		expect(pan).toHaveBeenCalledWith(5, -3);
 		expect(reset).toHaveBeenCalledTimes(1);
+	});
+
+	it("registers zoom and NVA gesture actions through the same bridge", async () => {
+		const zoom = vi.fn();
+		const playAction = vi.fn().mockResolvedValue(undefined);
+		const actions = [{ key: "wave", label: "Wave" }];
+		registerCameraActions({
+			zoom,
+			playAction,
+			getGestureActions: () => actions,
+		});
+
+		getCameraActions().zoom(0.1);
+		await getCameraActions().playAction("wave");
+
+		expect(zoom).toHaveBeenCalledWith(0.1);
+		expect(playAction).toHaveBeenCalledWith("wave");
+		expect(getCameraActions().getGestureActions()).toBe(actions);
 	});
 
 	it("partial register leaves untouched fields as prior value", () => {
