@@ -1065,7 +1065,16 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		controlSpy.mockRestore();
 	});
 
-	it("processes infoDelivery playerState=0 as track_ended without promoting to playing when confirmed while still loading, and pends early numeric onError 150 to current.playbackId even before DOM iframe src updates (FR-RADIO-DJ.2·16)", async () => {
+	it("processes infoDelivery playerState=0 as track_ended without promoting to playing when confirmed while still loading, and does not pend onError 150 arriving before DOM iframe src updates so the new track plays when confirmed or falls back to timeout track_error once if never confirmed (FR-RADIO-DJ.2·16)", async () => {
+		vi.useFakeTimers({
+			toFake: [
+				"setTimeout",
+				"clearTimeout",
+				"setInterval",
+				"clearInterval",
+				"Date",
+			],
+		});
 		const controlSpy = vi
 			.spyOn(chatService, "controlSpeechActivity")
 			.mockResolvedValue(true);
@@ -1080,7 +1089,14 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 
 		render(<BgmPlayer />);
 		await startTrack("v-loading-end", "Loading End Candidate");
-		bgmPlayback.enqueue({ videoId: "v-stale-src-err", title: "Stale Src Error Candidate" });
+		bgmPlayback.enqueue({
+			videoId: "v-stale-src-err",
+			title: "Stale Src Error Candidate",
+		});
+		bgmPlayback.enqueue({
+			videoId: "v-unconfirmed-err",
+			title: "Unconfirmed Error Candidate",
+		});
 		bgmPlayback.enqueue({ videoId: "v-final", title: "Final Candidate" });
 		const firstPlaybackId = bgmPlayback.current()?.playbackId ?? "";
 		const iframe = attachIframeForCurrentPlayback();
@@ -1146,8 +1162,8 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 
 		// 2) Immediately after advancing to "v-stale-src-err", before DOM iframe.src updates
 		// (iframe.src still has v-loading-end and firstPlaybackId), a null-source onError(150) arrives.
-		// It must be pended to current.playbackId (secondPlaybackId) and, once iframe.src updates and
-		// "v-stale-src-err" confirms its videoData, advance to "v-final" with reason="150".
+		// Because eventPlaybackId (firstPlaybackId) !== current.playbackId (secondPlaybackId),
+		// that error must NOT be pended; when "v-stale-src-err" confirms and plays, it plays normally.
 		controlSpy.mockClear();
 		expect(iframe.src).toContain("v-loading-end");
 		act(() => {
@@ -1161,17 +1177,18 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		expect(bgmPlayback.current()?.selected.videoId).toBe("v-stale-src-err");
 		expect(controlSpy).not.toHaveBeenCalled();
 
-		// Now DOM iframe.src catches up to the new generation and confirms videoData for "v-stale-src-err".
+		// Now DOM iframe.src catches up to the new generation and confirms + plays "v-stale-src-err".
 		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
-		attachIframeForCurrentPlayback();
+		const secondIframe = attachIframeForCurrentPlayback();
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
 					data: JSON.stringify({
-						event: "initialDelivery",
+						event: "infoDelivery",
 						info: {
-							playerState: -1,
-							currentTime: 0,
+							playerState: 1,
+							currentTime: 1.5,
+							duration: 180,
 							videoData: {
 								video_id: "v-stale-src-err",
 								title: "Stale Src Error Candidate",
@@ -1182,18 +1199,193 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 				}),
 			);
 		});
-		expect(bgmPlayback.current()?.selected.videoId).toBe("v-final");
+		expect(bgmPlayback.current()?.playbackId).toBe(secondPlaybackId);
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-stale-src-err");
+		expect(bgmPlayback.current()?.status).toBe("playing");
 		const secondEvents = controlSpy.mock.calls
 			.filter(([arg]) => String(arg).startsWith("bgm_event:"))
 			.map(([arg]) => JSON.parse(String(arg).slice("bgm_event:".length)));
 		expect(secondEvents).toEqual([
 			expect.objectContaining({
-				kind: "track_error",
+				kind: "track_playing",
 				playbackId: secondPlaybackId,
-				previousVideoId: "v-stale-src-err",
+				videoId: "v-stale-src-err",
+			}),
+		]);
+
+		// Now end "v-stale-src-err" so it advances to "v-unconfirmed-err", and test the case where
+		// an early onError(150) arrives before DOM iframe.src updates and then neither confirmation
+		// nor playing ever arrives -> timeout path emits track_error(timeout) once and advances to "v-final".
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+		});
+		const thirdPlaybackId = bgmPlayback.current()?.playbackId ?? "";
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-unconfirmed-err");
+		expect(secondIframe.src).toContain("v-stale-src-err");
+		controlSpy.mockClear();
+
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onError", info: 150 }),
+					source: null,
+				}),
+			);
+		});
+		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
+		attachIframeForCurrentPlayback();
+
+		await act(async () => {
+			vi.advanceTimersByTime(12_500);
+			await Promise.resolve();
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-final");
+		const thirdEvents = controlSpy.mock.calls
+			.filter(([arg]) => String(arg).startsWith("bgm_event:"))
+			.map(([arg]) => JSON.parse(String(arg).slice("bgm_event:".length)));
+		expect(thirdEvents).toEqual([
+			expect.objectContaining({
+				kind: "track_error",
+				playbackId: thirdPlaybackId,
+				previousVideoId: "v-unconfirmed-err",
 				nextVideoId: "v-final",
-				reason: "150",
+				reason: "timeout",
 				continued: true,
+			}),
+		]);
+
+		chatService.setCurrentSpeechActivityId(undefined);
+		controlSpy.mockRestore();
+	});
+
+	it("ignores delayed onStateChange(0) and onError from track A while DOM iframe src is still A after advancing to track B, keeping B playing without skipping to C (FR-RADIO-DJ.2)", async () => {
+		const controlSpy = vi
+			.spyOn(chatService, "controlSpeechActivity")
+			.mockResolvedValue(true);
+		chatService.setCurrentSpeechActivityId("dj-activity-1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				proactiveSpeechProfile: "personal_radio_dj",
+				proactiveSpeechPermitted: true,
+			}),
+		);
+
+		render(<BgmPlayer />);
+		await startTrack("v-track-a", "Track A");
+		bgmPlayback.enqueue({ videoId: "v-track-b", title: "Track B" });
+		bgmPlayback.enqueue({ videoId: "v-track-c", title: "Track C" });
+		const aPlaybackId = bgmPlayback.current()?.playbackId ?? "";
+		const iframeA = attachIframeForCurrentPlayback();
+
+		// Track A confirms and plays, then ends -> advances to generation B while DOM iframe.src is still A.
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 10,
+							duration: 180,
+							videoData: { video_id: "v-track-a", title: "Track A" },
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+		});
+		const bPlaybackId = bgmPlayback.current()?.playbackId ?? "";
+		expect(bPlaybackId).not.toBe(aPlaybackId);
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-track-b");
+		expect(iframeA.src).toContain(aPlaybackId);
+		controlSpy.mockClear();
+
+		// Delayed onStateChange(0) and onError from A (both null-source and activeWindow-source)
+		// arrive while iframe.src still has A's playbackId.
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onError", info: 150 }),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: iframeA.contentWindow,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onError", info: 150 }),
+					source: iframeA.contentWindow,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-track-b");
+		expect(controlSpy).not.toHaveBeenCalled();
+
+		// Now DOM iframe.src updates to B and B confirms its videoData and transitions to playing.
+		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
+		attachIframeForCurrentPlayback();
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "initialDelivery",
+						info: {
+							playerState: -1,
+							currentTime: 0,
+							videoData: { video_id: "v-track-b", title: "Track B" },
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 1 }),
+					source: null,
+				}),
+			);
+		});
+
+		expect(bgmPlayback.current()?.playbackId).toBe(bPlaybackId);
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v-track-b");
+		expect(bgmPlayback.current()?.status).toBe("playing");
+
+		const eventsForB = controlSpy.mock.calls
+			.filter(([arg]) => String(arg).startsWith("bgm_event:"))
+			.map(([arg]) => JSON.parse(String(arg).slice("bgm_event:".length)));
+		expect(
+			eventsForB.filter(
+				(ev) => ev.kind === "track_ended" || ev.kind === "track_error",
+			),
+		).toHaveLength(0);
+		expect(eventsForB).toEqual([
+			expect.objectContaining({
+				kind: "track_playing",
+				playbackId: bPlaybackId,
+				videoId: "v-track-b",
+				title: "Track B",
 			}),
 		]);
 
