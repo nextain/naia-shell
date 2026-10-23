@@ -4,6 +4,7 @@ import {
 	decideIframeMessageSource,
 	diagnoseBgmObservationFailure,
 	emptyBgmObservationCounters,
+	extractYoutubeIframeVideoId,
 	YOUTUBE_WIDGET_LISTENING_MESSAGE,
 } from "../lib/bgm-observation-diagnosis";
 import { useEffect, useRef, useState } from "react";
@@ -11,7 +12,10 @@ import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
-import { controlSpeechActivity } from "../lib/chat-service";
+import {
+	controlSpeechActivity,
+	getCurrentSpeechActivityId,
+} from "../lib/chat-service";
 import { loadConfig, saveConfig } from "../lib/config";
 import {
 	addTrackToPlaylist,
@@ -404,7 +408,15 @@ export function BgmPlayer({ naia }: Props) {
 		) {
 			return;
 		}
-		void controlSpeechActivity(`bgm_event:${JSON.stringify(payload)}`);
+		const activityId = getCurrentSpeechActivityId();
+		const fullPayload = {
+			...(activityId ? { activityId } : {}),
+			...payload,
+		};
+		void controlSpeechActivity(
+			`bgm_event:${JSON.stringify(fullPayload)}`,
+			activityId,
+		);
 	}
 
 	// ── Unified app state ───────────────────────────────────────────────────
@@ -585,6 +597,7 @@ export function BgmPlayer({ naia }: Props) {
 			notifyRadioDjBgmEvent({
 				kind: "track_playing",
 				playbackId: next.playbackId,
+				sequence: next.sequence,
 				videoId: next.selected.videoId,
 				title: next.selected.title,
 				previousStatus: current.status,
@@ -664,6 +677,7 @@ export function BgmPlayer({ naia }: Props) {
 				notifyRadioDjBgmEvent({
 					kind: "track_error",
 					playbackId: failed.playbackId,
+					sequence: failed.sequence,
 					previousVideoId: failed.selected.videoId,
 					previousTitle: failed.selected.title,
 					reason: failed.reason ?? "youtube_iframe_error",
@@ -685,6 +699,7 @@ export function BgmPlayer({ naia }: Props) {
 					notifyRadioDjBgmEvent({
 						kind: "track_error",
 						playbackId: failed.playbackId,
+						sequence: failed.sequence,
 						previousVideoId: failed.selected.videoId,
 						previousTitle: failed.selected.title,
 						reason: failed.reason ?? "youtube_iframe_error",
@@ -852,6 +867,7 @@ export function BgmPlayer({ naia }: Props) {
 			notifyRadioDjBgmEvent({
 				kind: "track_ended",
 				playbackId: ended.playbackId,
+				sequence: ended.sequence,
 				previousVideoId: ended.selected.videoId,
 				previousTitle: ended.selected.title,
 				continued,
@@ -905,11 +921,23 @@ export function BgmPlayer({ naia }: Props) {
 				const msg = (typeof e.data === "string"
 					? JSON.parse(e.data)
 					: e.data) as Record<string, unknown>;
+				const currentForSource = bgmPlayback.current();
+				const eventPlaybackId = activeIframe
+					? (new URL(activeIframe.src, window.location.href).searchParams.get(
+							"naiaPlayback",
+						) ?? undefined)
+					: undefined;
+				const iframeVideoId = extractYoutubeIframeVideoId(activeIframe.src);
 				const sourceDecision = decideIframeMessageSource({
 					eventSource: e.source,
 					activeContentWindow: activeIframe.contentWindow,
 					event: String(msg.event ?? ""),
 					info: msg.info ?? msg.data,
+					expectedVideoId: currentForSource?.selected.videoId,
+					observedVideoId: lastObservedIframeVideoIdRef.current,
+					iframeVideoId,
+					expectedPlaybackId: currentForSource?.playbackId,
+					iframePlaybackId: eventPlaybackId,
 				});
 				if (sourceDecision !== "accept") {
 					observationCountersRef.current.filteredOut++; // #521
@@ -917,11 +945,6 @@ export function BgmPlayer({ naia }: Props) {
 				}
 				observationCountersRef.current.received++; // #521
 				const newlySubscribed = youtubeHandshakeRef.current.onFirstMessage();
-				const eventPlaybackId = activeIframe
-					? (new URL(activeIframe.src, window.location.href).searchParams.get(
-							"naiaPlayback",
-						) ?? undefined)
-					: undefined;
 				const counters = observationCountersRef.current; // #521
 				if (
 					counters.expectedPlaybackId &&
@@ -1020,9 +1043,22 @@ export function BgmPlayer({ naia }: Props) {
 						if (videoData && isSamePlayback) {
 							const vdId = String(videoData.video_id ?? "").trim();
 							const vdTitle = String(videoData.title ?? "").trim();
-							if (vdId && vdTitle) {
+							if (vdId) {
 								const prevId = lastObservedIframeVideoIdRef.current;
-								if (prevId && prevId !== vdId && current?.status === "playing") {
+								if (
+									!e.source &&
+									current?.status !== "playing" &&
+									vdId !== current?.selected.videoId
+								) {
+									lastObservedIframeVideoIdRef.current = vdId;
+									return;
+								}
+								if (
+									vdTitle &&
+									prevId &&
+									prevId !== vdId &&
+									current?.status === "playing"
+								) {
 									const prevTitle =
 										currentYtRef.current?.title ?? current.selected.title;
 									lastObservedIframeVideoIdRef.current = vdId;
@@ -1037,14 +1073,26 @@ export function BgmPlayer({ naia }: Props) {
 									lastYtRef.current = nextVideo;
 									notifyRadioDjBgmEvent({
 										kind: "track_changed",
-										playbackId: eventPlaybackId,
+										playbackId: eventPlaybackId ?? current?.playbackId,
+										sequence: current?.sequence,
 										previousVideoId: prevId,
 										previousTitle: prevTitle,
+										nextPlaybackId: eventPlaybackId ?? current?.playbackId,
 										nextVideoId: vdId,
 										nextTitle: vdTitle,
 										continued: true,
 									});
-								} else if (!prevId) {
+									if (playerState === 1) {
+										notifyRadioDjBgmEvent({
+											kind: "track_playing",
+											playbackId: eventPlaybackId ?? current?.playbackId,
+											sequence: current?.sequence,
+											videoId: vdId,
+											title: vdTitle,
+											previousStatus: "playing",
+										});
+									}
+								} else if (!prevId || vdId === current?.selected.videoId) {
 									lastObservedIframeVideoIdRef.current = vdId;
 								}
 							}

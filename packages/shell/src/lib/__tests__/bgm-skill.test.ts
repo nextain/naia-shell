@@ -1,6 +1,7 @@
 // UC8 / FR-BGM.1 — skill_youtube_bgm 앱 도구 단위 테스트 (deps 주입 = 사이드카/Tauri 헤르메틱).
 // 위젯(BgmPlayer) 리스너가 소비하는 bgm_youtube_* payload 형상이 계약이다.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mapYoutubeSearchVideo } from "../../../../bgm-sidecar/src/youtube-server";
 import { createBgmPlaybackPort } from "../bgm-playback";
 import {
 	BGM_ACTIONS,
@@ -11,10 +12,12 @@ import {
 	clampVolume,
 	continueRadioDjRecoveryAfterQueueAdvance,
 	executeBgmSkill,
+	filterSingleTrackCandidates,
 	getBgmRecentTracks,
 	normalizeBgmTitle,
 	recordBgmPlayedTrack,
 	recoverRadioDjPlayback,
+	sanitizeRadioDjSearchQuery,
 	shouldActivateRadioDj,
 	waitForBgmObservedPlayback,
 } from "../bgm-skill";
@@ -74,8 +77,8 @@ describe("Radio DJ semantic mode boundary", () => {
 
 	it("replaces an active ordinary track and selects a fresh search result", async () => {
 		const { deps, emitted } = mkDeps([
-			{ id: "current", title: "Current Song" },
-			{ id: "fresh", title: "Fresh Song" },
+			{ id: "current", title: "Current Song", duration: "3:20" },
+			{ id: "fresh", title: "Fresh Song", duration: "3:40" },
 		]);
 		await executeBgmSkill(
 			{ action: "play", videoId: "current", title: "Current Song" },
@@ -131,10 +134,10 @@ describe("Radio DJ bounded playback recovery", () => {
 			search: async () => {
 				searchCall += 1;
 				return searchCall === 1
-					? [{ id: "failed", title: "Unavailable Song" }]
+					? [{ id: "failed", title: "Unavailable Song", duration: "3:15" }]
 					: [
-							{ id: "mirror", title: "Unavailable Song (Official Video)" },
-							{ id: "recovered", title: "Fresh Recovery" },
+							{ id: "mirror", title: "Unavailable Song (Official Video)", duration: "3:15" },
+							{ id: "recovered", title: "Fresh Recovery", duration: "3:30" },
 						];
 			},
 			emitBgm: async (payload) => {
@@ -175,8 +178,8 @@ describe("Radio DJ bounded playback recovery", () => {
 			search: async () => {
 				searchCall += 1;
 				return searchCall === 1
-					? [{ id: "first", title: "First Candidate" }]
-					: [{ id: "dynamic", title: "Dynamic Candidate" }];
+					? [{ id: "first", title: "First Candidate", duration: "3:10" }]
+					: [{ id: "dynamic", title: "Dynamic Candidate", duration: "3:25" }];
 			},
 			emitBgm: async () => {},
 			playback: createBgmPlaybackPort(),
@@ -219,7 +222,7 @@ describe("Radio DJ bounded playback recovery", () => {
 		const deps: BgmSkillDeps = {
 			search: async () => {
 				searchCall += 1;
-				return [{ id: "same", title: "Same Song" }];
+				return [{ id: "same", title: "Same Song", duration: "3:20" }];
 			},
 			emitBgm: async () => {},
 			playback: createBgmPlaybackPort(),
@@ -255,7 +258,7 @@ describe("Radio DJ bounded playback recovery", () => {
 		const deps: BgmSkillDeps = {
 			search: async () => {
 				searchCall += 1;
-				if (searchCall === 1) return [{ id: "failed", title: "Failed" }];
+				if (searchCall === 1) return [{ id: "failed", title: "Failed", duration: "3:15" }];
 				return new Promise<BgmSearchResult[]>((resolve) => {
 					releaseSearch = resolve;
 				});
@@ -278,7 +281,7 @@ describe("Radio DJ bounded playback recovery", () => {
 		const recovery = recoverRadioDjPlayback(failed?.playbackId ?? "");
 		await vi.waitFor(() => expect(releaseSearch).toBeTypeOf("function"));
 		await executeBgmSkill({ action: "stop" }, deps);
-		releaseSearch?.([{ id: "must-not-play", title: "Must Not Play" }]);
+		releaseSearch?.([{ id: "must-not-play", title: "Must Not Play", duration: "3:15" }]);
 
 		expect(await recovery).toMatchObject({
 			recovered: false,
@@ -756,6 +759,131 @@ describe("executeBgmSkill", () => {
 			"bgm_youtube_enqueue",
 			"bgm_youtube_enqueue",
 		]);
+	});
+
+	it("does not treat a timed-out track as active when preserveActive is set in radio_dj mode", async () => {
+		const { deps, emitted } = mkDeps([
+			{ id: "fresh-1", title: "Fresh Song 1", duration: "3:20" },
+			{ id: "fresh-2", title: "Fresh Song 2", duration: "3:05" },
+		]);
+		const timedOut = deps.playback.request({
+			videoId: "stalled-track",
+			title: "Stalled Track",
+		});
+		deps.playback.observe({
+			playbackId: timedOut.playbackId,
+			sequence: 2,
+			status: "timeout",
+			reason: "iframe_playing_not_observed",
+		});
+
+		await executeBgmSkill(
+			{
+				action: "play",
+				query: "집중 재즈",
+				mode: "radio_dj",
+				preserveActive: true,
+			},
+			deps,
+		);
+
+		expect(deps.playback.current()?.selected.videoId).toBe("fresh-1");
+		expect(emitted[0]).toMatchObject({
+			type: "bgm_youtube_play",
+			videoId: "fresh-1",
+		});
+	});
+
+	it("filters multi-digit hour mixes (10 hours, 24시간, 12 hrs), live/radio/24-7 streams, and durationless candidates unless explicitly requested", () => {
+		const candidates: BgmSearchResult[] = [
+			{ id: "mix-10h", title: "Relaxing Jazz Piano 10 hours", duration: "3:30" },
+			{ id: "mix-24kr", title: "비 오는 날 카페 음악 24시간 연속", duration: "3:40" },
+			{ id: "mix-12hrs", title: "Study Beats 12 hrs Nonstop", duration: "3:20" },
+			{ id: "live-radio", title: "lofi hip hop radio - beats to relax/study to", duration: "3:30" },
+			{ id: "live-kr", title: "서울 야경 재즈 라이브 생방송", duration: "3:30" },
+			{ id: "no-dur", title: "Durationless Stream", duration: "" },
+			{ id: "single-ok", title: "백예린 - Square (2017)", duration: "4:12" },
+			{ id: "short-3m", title: "짧은 피아노 소품곡", duration: "3:05" },
+		];
+
+		expect(
+			filterSingleTrackCandidates(candidates, "잔잔한 카페 음악").map((c) => c.id),
+		).toEqual(["single-ok", "short-3m"]);
+
+		// SHORT_TRACK_QUERY_RE: "3분" 류 짧은 곡 요청은 210초(3분 30초) 이하 후보만 남긴다
+		expect(
+			filterSingleTrackCandidates(candidates, "3분 짧은 피아노 곡").map((c) => c.id),
+		).toEqual(["short-3m"]);
+
+		// EXPLICIT_LONG_MIX_QUERY_RE: "hrs", "24/7" 등 사용자가 명시 요청한 경우에는 필터링하지 않는다
+		expect(sanitizeRadioDjSearchQuery("lofi 12 hrs mix")).toBe("lofi 12 hrs mix");
+		expect(sanitizeRadioDjSearchQuery("24/7 chill radio")).toBe("24/7 chill radio");
+		expect(
+			filterSingleTrackCandidates(candidates, "lofi 12 hrs").map((c) => c.id),
+		).toHaveLength(candidates.length);
+		expect(
+			filterSingleTrackCandidates(candidates, "24/7 chill stream").map((c) => c.id),
+		).toHaveLength(candidates.length);
+	});
+
+	it("returns ok:false (no_single_track_candidates) in radio_dj mode when all candidates are filtered out instead of falling back to mixes or live streams", async () => {
+		const { deps, emitted } = mkDeps([
+			{ id: "live-only", title: "lofi hip hop radio - beats to relax/study to", duration: "" },
+			{ id: "mix-only", title: "10 hours chill jazz playlist", duration: "10:00:00" },
+		]);
+
+		const out = JSON.parse(
+			await executeBgmSkill(
+				{
+					action: "play",
+					query: "잔잔한 로파이",
+					mode: "radio_dj",
+				},
+				deps,
+			),
+		);
+
+		expect(out).toEqual({
+			ok: false,
+			action: "play",
+			reason: "no_single_track_candidates",
+			query: "잔잔한 로파이",
+		});
+		expect(emitted).toEqual([]);
+	});
+
+	it("pins the bgm-sidecar mapYoutubeSearchVideo duration field shape with filterSingleTrackCandidates", () => {
+		const sidecarMapped = [
+			mapYoutubeSearchVideo({
+				id: "yt-live",
+				title: { text: "Lofi Live Stream" },
+				duration: { text: undefined, seconds: 0 },
+				thumbnails: [{ url: "https://i.ytimg.com/vi/yt-live/hqdefault.jpg" }],
+				author: { name: "Chilled" },
+			}),
+			mapYoutubeSearchVideo({
+				id: "yt-single-text",
+				title: { text: "AKMU - Love Lee (Official Audio)" },
+				duration: { text: "3:00", seconds: 180 },
+				thumbnails: [{ url: "https://i.ytimg.com/vi/yt-single-text/hqdefault.jpg" }],
+				author: { name: "AKMU" },
+			}),
+			mapYoutubeSearchVideo({
+				id: "yt-single-sec",
+				title: "IU - Through the Night",
+				duration: { seconds: 253 },
+				thumbnail: [{ url: "https://i.ytimg.com/vi/yt-single-sec/hqdefault.jpg" }],
+				channel: { name: "IU Official" },
+			}),
+		];
+
+		expect(sidecarMapped[0]?.duration).toBe("");
+		expect(sidecarMapped[1]?.duration).toBe("3:00");
+		expect(sidecarMapped[2]?.duration).toBe("253");
+
+		expect(
+			filterSingleTrackCandidates(sidecarMapped, "감성 가요").map((c) => c.id),
+		).toEqual(["yt-single-text", "yt-single-sec"]);
 	});
 
 	it("next returns the newly observed track when waitForNavigateAck confirms playing", async () => {

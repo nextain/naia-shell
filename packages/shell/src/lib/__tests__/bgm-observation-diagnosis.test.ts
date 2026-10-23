@@ -5,6 +5,7 @@ import {
 	decideIframeMessageSource,
 	diagnoseBgmObservationFailure,
 	emptyBgmObservationCounters,
+	extractYoutubeIframeVideoId,
 	YOUTUBE_WIDGET_LISTENING_MESSAGE,
 	YOUTUBE_WIDGET_SUBSCRIBE_MESSAGES,
 } from "../bgm-observation-diagnosis";
@@ -120,7 +121,7 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 		).toBe("accept");
 	});
 
-	it("drops null-source error and ended so a detached track cannot fail the next one", () => {
+	it("drops null-source error and ended when videoId is missing or from a detached track, and accepts when videoId matches the expected playback (FR-RADIO-DJ.16 + FR-BGM.18)", () => {
 		expect(
 			decideIframeMessageSource({
 				eventSource: null,
@@ -137,13 +138,76 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 				info: 0,
 			}),
 		).toBe("drop_null_terminal");
+
+		// Detached frame A ("v-old") while expecting track B ("v-current") -> drop
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onError",
+				info: 150,
+				expectedVideoId: "v-current",
+				observedVideoId: "v-old",
+				iframeVideoId: "v-current",
+			}),
+		).toBe("drop_null_terminal");
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onStateChange",
+				info: 0,
+				expectedVideoId: "v-current",
+				observedVideoId: "v-old",
+				iframeVideoId: "v-current",
+			}),
+		).toBe("drop_null_terminal");
+
+		// Active frame B ("v-current") with matching videoId -> accept null-source error & ended
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onError",
+				info: 150,
+				expectedVideoId: "v-current",
+				observedVideoId: "v-current",
+				iframeVideoId: "v-current",
+				expectedPlaybackId: "bgm-2",
+				iframePlaybackId: "bgm-2",
+			}),
+		).toBe("accept");
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onStateChange",
+				info: 0,
+				expectedVideoId: "v-current",
+				observedVideoId: "v-current",
+				iframeVideoId: "v-current",
+				expectedPlaybackId: "bgm-2",
+				iframePlaybackId: "bgm-2",
+			}),
+		).toBe("accept");
+
+		expect(
+			extractYoutubeIframeVideoId(
+				"https://www.youtube-nocookie.com/embed/v-current?autoplay=1&enablejsapi=1&naiaPlayback=bgm-2",
+			),
+		).toBe("v-current");
+		expect(
+			extractYoutubeIframeVideoId(
+				"http://localhost:1420/e2e-bgm.html?videoId=v-fixture&naiaPlayback=bgm-3",
+			),
+		).toBe("v-fixture");
 	});
 });
 
 describe("createYoutubeIframeBridgeHandshake (#521)", () => {
 	it("initiates listening on start, polls until first message, then subscribes to onStateChange and onError once", () => {
 		const posted: string[] = [];
-		let tickFn: (() => void) | null = null;
+		let tickFn = null as (() => void) | null;
 		let cleared = 0;
 
 		const handshake = createYoutubeIframeBridgeHandshake(
@@ -189,7 +253,7 @@ describe("createYoutubeIframeBridgeHandshake (#521)", () => {
 
 	it("stops polling after maxAttempts when the iframe never responds", () => {
 		const posted: string[] = [];
-		let tickFn: (() => void) | null = null;
+		let tickFn = null as (() => void) | null;
 		let cleared = 0;
 
 		const handshake = createYoutubeIframeBridgeHandshake(

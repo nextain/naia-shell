@@ -55,6 +55,23 @@ const YT_ID_RE = /^[A-Za-z0-9_-]{1,20}$/;
 
 // ── Route handlers ────────────────────────────────────────────────────────────
 
+// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
+export function mapYoutubeSearchVideo(v: any) {
+	return {
+		id: v?.id ?? v?.video_id ?? "",
+		title: typeof v?.title === "string" ? v.title : (v?.title?.text ?? ""),
+		thumbnail: v?.thumbnails?.[0]?.url ?? v?.thumbnail?.[0]?.url ?? "",
+		duration:
+			typeof v?.duration === "string"
+				? v.duration
+				: (v?.duration?.text ??
+					(typeof v?.duration?.seconds === "number" && v.duration.seconds > 0
+						? String(v.duration.seconds)
+						: "")),
+		channel: v?.author?.name ?? v?.channel?.name ?? "",
+	};
+}
+
 async function handleSearch(req: IncomingMessage, res: ServerResponse, params: URLSearchParams) {
 	const q = params.get("q")?.trim() ?? "";
 	if (!q) { json(req, res, 400, { error: "q required" }); return; }
@@ -68,14 +85,7 @@ async function handleSearch(req: IncomingMessage, res: ServerResponse, params: U
 	const yt = await getInnertube();
 	const search = await yt.search(searchQuery, { type: "video" });
 
-	// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
-	const results = (search.videos ?? []).slice(0, max).map((v: any) => ({
-		id: v.id ?? v.video_id ?? "",
-		title: typeof v.title === "string" ? v.title : (v.title?.text ?? ""),
-		thumbnail: v.thumbnails?.[0]?.url ?? v.thumbnail?.[0]?.url ?? "",
-		duration: typeof v.duration === "string" ? v.duration : (v.duration?.text ?? ""),
-		channel: v.author?.name ?? v.channel?.name ?? "",
-	}));
+	const results = (search.videos ?? []).slice(0, max).map(mapYoutubeSearchVideo);
 
 	json(req, res, 200, { results });
 }

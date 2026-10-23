@@ -122,7 +122,7 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 	}> = [];
 	const sidecarSearchRequests: string[] = [];
 	let sidecarSearchResponses: Array<
-		Array<{ id: string; title: string; thumbnail?: string }>
+		Array<{ id: string; title: string; thumbnail?: string; duration?: string }>
 	> = [];
 	test.beforeEach(async ({ page }) => {
 		iframeRequests.length = 0;
@@ -492,13 +492,24 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 		page,
 	}) => {
 		sidecarSearchResponses = [
-			[{ id: "error-dynamic-initial", title: "Unavailable Dynamic Track" }],
+			[
+				{
+					id: "error-dynamic-initial",
+					title: "Unavailable Dynamic Track",
+					duration: "3:20",
+				},
+			],
 			[
 				{
 					id: "duplicate-dynamic",
 					title: "Unavailable Dynamic Track (Official Video)",
+					duration: "3:20",
 				},
-				{ id: "hold-dynamic-recovered", title: "Dynamically Recovered Track" },
+				{
+					id: "hold-dynamic-recovered",
+					title: "Dynamically Recovered Track",
+					duration: "3:25",
+				},
 			],
 		];
 		await page.evaluate(() => {

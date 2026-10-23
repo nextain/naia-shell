@@ -61,15 +61,15 @@ export interface BgmSearchResult {
 }
 
 const EXPLICIT_LONG_MIX_QUERY_RE =
-	/\b(?:megamix|nonstop|full\s*album|[1-9]\d*\s*hours?|[1-9]\d*\s*hr|long\s*mix)\b|긴\s*믹스|장시간|[1-9]\d*\s*시간/i;
+	/\b(?:megamix|nonstop|full\s*album|\d+\s*hours?|\d+\s*hrs?|long\s*mix|24\/7|live(?:\s*stream|\s*radio)?)\b|긴\s*믹스|장시간|\d+\s*시간|라이브|생방송/i;
 const HABITUAL_PLAYLIST_TOKEN_RE =
 	/\b(?:playlists?|radio|mix(?:es)?|compilation|bgm)\b|플레이리스트|플리|라디오|모음집?|연속\s*듣기|브금/gi;
 const SINGLE_TRACK_HINT_RE =
 	/\b(?:official|audio|song|track|mv|lyric)\b|노래|곡|명곡/i;
 const SHORT_TRACK_QUERY_RE =
-	/\b(?:short|brief|1\s*min(?:ute)?|2\s*min(?:ute)?s?)\b|짧은\s*곡|짧은\s*노래|짧게|1분|2분/i;
+	/\b(?:short|brief|[1-3]\s*min(?:ute)?s?)\b|짧은\s*곡|짧은\s*노래|짧게|[1-3]\s*분/i;
 const LONG_MIX_TITLE_RE =
-	/\b(?:playlist|megamix|nonstop|compilation|full\s*album|live\s*radio|24\/7|[1-9]\s*hours?|[1-9]\s*hr)\b|플레이리스트|플리|모음집?|연속\s*듣기|[1-9]\s*시간/i;
+	/\b(?:playlists?|megamix|nonstop|compilation|full\s*album|live|radio|24\/7|\d+\s*hours?|\d+\s*hrs?)\b|플레이리스트|플리|모음집?|연속\s*듣기|\d+\s*시간|라이브|생방송|라디오/i;
 
 export function sanitizeRadioDjSearchQuery(query: string): string {
 	const trimmed = query.trim();
@@ -95,6 +95,10 @@ export function parseBgmDurationSeconds(
 	}
 	if (typeof raw !== "string") return null;
 	const trimmed = raw.trim();
+	if (/^\d+$/.test(trimmed)) {
+		const sec = Number(trimmed);
+		return Number.isFinite(sec) && sec > 0 ? sec : null;
+	}
 	if (!/^\d+(?::\d{1,2}){1,2}$/.test(trimmed)) return null;
 	const parts = trimmed.split(":").map((part) => Number(part));
 	if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
@@ -111,37 +115,36 @@ export function filterSingleTrackCandidates(
 	results: readonly BgmSearchResult[],
 	query: string,
 ): BgmSearchResult[] {
-	if (results.length <= 1 || EXPLICIT_LONG_MIX_QUERY_RE.test(query)) {
+	if (results.length === 0) {
+		return [];
+	}
+	if (EXPLICIT_LONG_MIX_QUERY_RE.test(query)) {
 		return [...results];
 	}
 	const wantShort = SHORT_TRACK_QUERY_RE.test(query);
 	const minSec = wantShort ? 30 : 75;
 	const maxSec = wantShort ? 210 : 510;
 
-	const nonMixTitled = results.filter(
-		(item) => !LONG_MIX_TITLE_RE.test(item.title),
+	const nonMixWithDuration = results.filter(
+		(item) =>
+			!LONG_MIX_TITLE_RE.test(item.title) &&
+			parseBgmDurationSeconds(item.duration) !== null,
 	);
-	const pool = nonMixTitled.length > 0 ? nonMixTitled : [...results];
-
-	const withDuration = pool.filter(
-		(item) => parseBgmDurationSeconds(item.duration) !== null,
-	);
-	if (withDuration.length === 0) {
-		return pool;
+	if (nonMixWithDuration.length === 0) {
+		return [];
 	}
 
-	const preferred = withDuration.filter((item) => {
+	const preferred = nonMixWithDuration.filter((item) => {
 		const sec = parseBgmDurationSeconds(item.duration);
 		if (sec === null) return false;
 		return sec >= minSec && sec <= maxSec;
 	});
 	if (preferred.length > 0) return preferred;
 
-	const underFifteenMin = withDuration.filter((item) => {
+	return nonMixWithDuration.filter((item) => {
 		const sec = parseBgmDurationSeconds(item.duration);
 		return sec !== null && sec >= 30 && sec <= 900;
 	});
-	return underFifteenMin.length > 0 ? underFifteenMin : withDuration;
 }
 
 export interface BgmRecentTrack extends BgmSearchResult {
@@ -796,8 +799,7 @@ async function executeBgmSkillCore(
 			Boolean(currentSnapshot) &&
 			(activeStatus === "playing" ||
 				activeStatus === "requested" ||
-				activeStatus === "loading" ||
-				activeStatus === "timeout");
+				activeStatus === "loading");
 		// Replacements and starts own the surface immediately. A queue-preserving
 		// request may be a prepared DJ fallback, so it keeps the current plan.
 		if (
@@ -903,8 +905,17 @@ async function executeBgmSkillCore(
 			});
 		}
 
+		if (radioDjRequested && candidatePool.length === 0) {
+			return JSON.stringify({
+				ok: false,
+				action: act,
+				reason: "no_single_track_candidates",
+				query,
+			});
+		}
+
 		const selected = radioDjRequested
-			? (candidatePool[0] ?? freshResults[0])
+			? candidatePool[0]
 			: args.replace === true
 				? (freshResults[0] ??
 					results.find((result) => result.id !== currentVideoId) ??

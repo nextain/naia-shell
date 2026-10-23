@@ -36,6 +36,7 @@ vi.mock("../../lib/bgm-sidecar-url", () => ({
 	BGM_SIDECAR_BASE_URL: "http://localhost:18791",
 }));
 
+import * as chatService from "../../lib/chat-service";
 import { Logger } from "../../lib/logger";
 import { BgmPlayer } from "../BgmPlayer";
 
@@ -753,11 +754,25 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		);
 	});
 
-	it("ignores a null-source error so a detached frame cannot fail the active track (#557)", async () => {
+	it("ignores a null-source error/ended from a detached frame while accepting null-source error and ended for the active track (FR-RADIO-DJ.16 + FR-BGM.18)", async () => {
 		render(<BgmPlayer />);
 		await startTrack("v1", "Protected Song");
 		attachIframeForCurrentPlayback();
+		// 1) Detached frame A ("v-detached") sends infoDelivery + onError with source=null -> ignored for "v1"
 		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: -1,
+							currentTime: 0,
+							videoData: { video_id: "v-detached", title: "Old Track" },
+						},
+					}),
+					source: null,
+				}),
+			);
 			window.dispatchEvent(
 				new MessageEvent("message", {
 					data: JSON.stringify({ event: "onError", info: 150 }),
@@ -766,6 +781,102 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 			);
 		});
 		expect(bgmPlayback.current()?.status).toBe("requested");
+
+		// 2) Active frame ("v1") confirms video_id="v1" and then sends null-source onError -> accepted!
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: -1,
+							currentTime: 0,
+							videoData: { video_id: "v1", title: "Protected Song" },
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onError", info: 150 }),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.status).toBe("error");
+
+		// 3) Active frame ("v2") plays and ends with source=null -> accepted as ended!
+		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
+		await startTrack("v2", "Ending Song");
+		attachIframeForCurrentPlayback();
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 1 }),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.status).toBe("ended");
+	});
+
+	it("forwards bgm_event with activityId, playbackId, and sequence matching the Agent contract shape", async () => {
+		const controlSpy = vi
+			.spyOn(chatService, "controlSpeechActivity")
+			.mockResolvedValue(true);
+		chatService.setCurrentSpeechActivityId("dj-activity-1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				proactiveSpeechProfile: "personal_radio_dj",
+				proactiveSpeechPermitted: true,
+			}),
+		);
+
+		render(<BgmPlayer />);
+		await startTrack("v-1", "첫 곡");
+		const playbackId = bgmPlayback.current()?.playbackId ?? "";
+		attachIframeForCurrentPlayback();
+
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 1 }),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+		});
+
+		expect(controlSpy).toHaveBeenLastCalledWith(
+			`bgm_event:${JSON.stringify({
+				activityId: "dj-activity-1",
+				kind: "track_ended",
+				playbackId,
+				sequence: 3,
+				previousVideoId: "v-1",
+				previousTitle: "첫 곡",
+				continued: false,
+			})}`,
+			"dj-activity-1",
+		);
+		chatService.setCurrentSpeechActivityId(undefined);
+		controlSpy.mockRestore();
 	});
 });
 

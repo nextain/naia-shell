@@ -56,6 +56,7 @@ import {
 	sendAppToolResult,
 	sendApprovalResponse,
 	sendChatMessage,
+	setCurrentSpeechActivityId,
 	yieldSpeechActivity,
 } from "../lib/chat-service";
 import { getConversationHistory } from "../lib/conversation-store";
@@ -1419,6 +1420,7 @@ export function ChatArea({
 			const active = activeSpeechActivityRef.current;
 			if (active) retiredSpeechActivityIdsRef.current.add(active.activityId);
 			activeSpeechActivityRef.current = null;
+			setCurrentSpeechActivityId(undefined);
 			window.dispatchEvent(
 				new CustomEvent("naia-proactive-activity-state", {
 					detail: { active: false },
@@ -1520,9 +1522,10 @@ export function ChatArea({
 				}
 			}
 			activeSpeechActivityRef.current = { activityId, profileGeneration };
+			setCurrentSpeechActivityId(activityId);
 			window.dispatchEvent(
 				new CustomEvent("naia-proactive-activity-state", {
-					detail: { active: true },
+					detail: { active: true, activityId },
 				}),
 			);
 			// A direct Live/omni model would answer visitor audio outside the
@@ -1614,6 +1617,7 @@ export function ChatArea({
 				if (activeSpeechActivityRef.current?.activityId === activityId) {
 					retiredSpeechActivityIdsRef.current.add(activityId);
 					activeSpeechActivityRef.current = null;
+					setCurrentSpeechActivityId(undefined);
 					window.dispatchEvent(
 						new CustomEvent("naia-proactive-activity-state", {
 							detail: { active: false },
@@ -2078,6 +2082,7 @@ export function ChatArea({
 				);
 			}
 			activeSpeechActivityRef.current = null;
+			setCurrentSpeechActivityId(undefined);
 			const disabled = await configureSpeechProfile({
 				profile: "disabled",
 				timezone: config?.proactiveSpeechTimezone ?? "UTC",
@@ -2149,6 +2154,7 @@ export function ChatArea({
 		if (action === "stop" && activity) {
 			retiredSpeechActivityIdsRef.current.add(activity.activityId);
 			activeSpeechActivityRef.current = null;
+			setCurrentSpeechActivityId(undefined);
 			window.dispatchEvent(
 				new CustomEvent("naia-proactive-activity-state", {
 					detail: { active: false },

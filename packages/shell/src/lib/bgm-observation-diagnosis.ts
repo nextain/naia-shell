@@ -91,18 +91,69 @@ export type IframeMessageSourceDecision =
 	| "drop_foreign_window"
 	| "drop_null_terminal";
 
+export function extractYoutubeIframeVideoId(
+	src: string | null | undefined,
+): string | undefined {
+	const raw = src?.trim();
+	if (!raw) return undefined;
+	try {
+		const url = new URL(raw, "http://localhost");
+		const queryVideoId = url.searchParams.get("videoId")?.trim();
+		if (queryVideoId) return queryVideoId;
+		const embedMatch = /\/embed\/([^/?#]+)/i.exec(url.pathname);
+		if (embedMatch?.[1]?.trim()) {
+			return decodeURIComponent(embedMatch[1].trim());
+		}
+	} catch {
+		const embedMatch = /\/embed\/([^/?#]+)/i.exec(raw);
+		if (embedMatch?.[1]?.trim()) {
+			return embedMatch[1].trim();
+		}
+	}
+	return undefined;
+}
+
+function extractMessageVideoId(info: unknown): string | undefined {
+	if (!info || typeof info !== "object") return undefined;
+	const record = info as Record<string, unknown>;
+	if (typeof record.video_id === "string" && record.video_id.trim()) {
+		return record.video_id.trim();
+	}
+	if (typeof record.videoId === "string" && record.videoId.trim()) {
+		return record.videoId.trim();
+	}
+	if (record.videoData && typeof record.videoData === "object") {
+		const vd = record.videoData as Record<string, unknown>;
+		if (typeof vd.video_id === "string" && vd.video_id.trim()) {
+			return vd.video_id.trim();
+		}
+		if (typeof vd.videoId === "string" && vd.videoId.trim()) {
+			return vd.videoId.trim();
+		}
+	}
+	return undefined;
+}
+
 /**
- * Tauri WebView often delivers YouTube postMessage with `source=null`.
+ * Tauri WebView often delivers YouTube postMessage with `source=null` (FR-BGM.18).
  * Dropping every null-source event makes audible playback look like
- * `iframe_playing_not_observed` (#671). Still drop a *different* window
- * (#557), and drop null-source error/ended so a detached track A cannot
- * fail track B.
+ * `iframe_playing_not_observed` (#671) and hides real track end/error events.
+ * Still drop a *different* window (#557), and for null-source terminal events
+ * (`onError`, `onStateChange(0)`), accept only when the videoId matches the
+ * currently expected playback (via message `videoData.video_id`, observed
+ * iframe videoId, or active iframe URL videoId) and drop detached-frame events
+ * for a different video (FR-RADIO-DJ.16 + FR-BGM.18).
  */
 export function decideIframeMessageSource(input: {
 	eventSource: MessageEventSource | null | undefined;
 	activeContentWindow: Window | null;
 	event?: string;
 	info?: unknown;
+	expectedVideoId?: string | null;
+	observedVideoId?: string | null;
+	iframeVideoId?: string | null;
+	expectedPlaybackId?: string | null;
+	iframePlaybackId?: string | null;
 }): IframeMessageSourceDecision {
 	if (
 		input.eventSource &&
@@ -113,9 +164,38 @@ export function decideIframeMessageSource(input: {
 	}
 	if (!input.eventSource) {
 		const event = String(input.event ?? "");
-		if (event === "onError") return "drop_null_terminal";
-		if (event === "onStateChange" && Number(input.info) === 0) {
-			return "drop_null_terminal";
+		const isTerminal =
+			event === "onError" ||
+			(event === "onStateChange" && Number(input.info) === 0);
+		if (isTerminal) {
+			const expectedVideoId = input.expectedVideoId?.trim() || "";
+			if (!expectedVideoId) {
+				return "drop_null_terminal";
+			}
+			const expectedPlaybackId = input.expectedPlaybackId?.trim() || "";
+			const iframePlaybackId = input.iframePlaybackId?.trim() || "";
+			if (
+				expectedPlaybackId &&
+				iframePlaybackId &&
+				expectedPlaybackId !== iframePlaybackId
+			) {
+				return "drop_null_terminal";
+			}
+			const msgVideoId = extractMessageVideoId(input.info);
+			if (msgVideoId) {
+				return msgVideoId === expectedVideoId
+					? "accept"
+					: "drop_null_terminal";
+			}
+			const observedVideoId = input.observedVideoId?.trim() || "";
+			if (observedVideoId && observedVideoId !== expectedVideoId) {
+				return "drop_null_terminal";
+			}
+			const candidateVideoId =
+				observedVideoId || (input.iframeVideoId?.trim() || "");
+			if (!candidateVideoId || candidateVideoId !== expectedVideoId) {
+				return "drop_null_terminal";
+			}
 		}
 	}
 	return "accept";
