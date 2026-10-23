@@ -31,6 +31,11 @@ vi.mock("../../lib/adk-store", () => ({
 }));
 
 import { useAppStore } from "../../stores/app";
+import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
+import {
+	clearCameraActions,
+	registerCameraActions,
+} from "../../lib/avatar/camera-actions";
 import { AiControlBar } from "../AiControlBar";
 
 const baseConfig = {
@@ -44,12 +49,53 @@ const baseConfig = {
 describe("AiControlBar proactive cost control", () => {
 	beforeEach(() => {
 		useAppStore.setState({ ttsEnabled: true });
+		useCascadeAvatarStore.getState().setRenderer(null);
+		clearCameraActions();
 		mockWriteNaiaUiConfig.mockResolvedValue(true);
 	});
 
 	afterEach(() => {
 		cleanup();
+		useCascadeAvatarStore.getState().setRenderer(null);
+		clearCameraActions();
 		vi.clearAllMocks();
+	});
+
+	it("exposes accessible zoom controls and active NVA gestures", async () => {
+		const zoom = vi.fn();
+		const save = vi.fn();
+		const playAction = vi.fn().mockResolvedValue(undefined);
+		registerCameraActions({
+			zoom,
+			save,
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({} as never);
+		mockLoadConfigWithSecrets.mockResolvedValue(baseConfig);
+
+		render(<AiControlBar />);
+		const zoomIn = screen.getByRole("button", { name: "Zoom in" });
+		const zoomOut = screen.getByRole("button", { name: "Zoom out" });
+		fireEvent.click(zoomIn);
+		fireEvent.click(zoomOut);
+		expect(zoom).toHaveBeenNthCalledWith(1, 0.1);
+		expect(zoom).toHaveBeenNthCalledWith(2, -0.1);
+		expect(save).toHaveBeenCalledTimes(2);
+		fireEvent.click(screen.getByRole("button", { name: "Wave" }));
+		expect(playAction).toHaveBeenCalledWith("wave");
+	});
+
+	it("omits the gesture group when the active NVA has no gestures", async () => {
+		registerCameraActions({ getGestureActions: () => [] });
+		useCascadeAvatarStore.getState().setRenderer({} as never);
+		mockLoadConfigWithSecrets.mockResolvedValue(baseConfig);
+
+		render(<AiControlBar />);
+
+		expect(screen.getByRole("button", { name: "Zoom in" })).toBeVisible();
+		expect(screen.queryByRole("group", { name: "Avatar gestures" })).toBeNull();
+		expect(document.querySelector("[data-nva-gesture-key]")).toBeNull();
 	});
 
 	it("shows a blocked control when no profile is configured", async () => {

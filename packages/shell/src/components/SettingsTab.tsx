@@ -1321,6 +1321,64 @@ export function SettingsTab() {
 			transaction: localVoiceTransactionRef.current,
 		});
 		if (cascadeRunning) {
+			const cfg = loadConfig();
+			if (!cfg) return false;
+			const isLocalHostUrl = /^(https?:\/\/)?(localhost|127\.0\.0\.1)([:/]|$)/i;
+			const currentHost = cfg.vllmTtsHost?.trim();
+			const ttsHost =
+				!currentHost || isLocalHostUrl.test(currentHost)
+					? DEFAULT_LOCAL_VOICE_HOST
+					: currentHost;
+			const voiceConfig = {
+				...cfg,
+				localVoiceEnabled: true,
+				ttsProvider: "naia-local-voice" as const,
+				ttsEnabled: true,
+				vllmTtsHost: ttsHost,
+			};
+			saveConfig(voiceConfig);
+			setTtsProvider("naia-local-voice");
+			setTtsEnabled(true);
+			setVllmTtsHost(ttsHost);
+			try {
+				await writeNaiaConfig({
+					...voiceConfig,
+					...(naiaKey ? { naiaKey } : {}),
+				} as unknown as Record<string, unknown>);
+				const manifest = await writeSlotsManifest(
+					voiceConfig,
+					detectedVramGb ?? undefined,
+				);
+				if (!manifest) throw new Error("Local voice slots manifest write failed");
+			} catch (error) {
+				Logger.warn("Settings", "ensureLocalVoiceReady:running-config-save-failed", {
+					error: String(error),
+				});
+				// Restore the in-memory and persisted selection before reporting failure.
+				saveConfig(cfg);
+				setTtsProvider(cfg.ttsProvider ?? "edge");
+				setTtsEnabled(cfg.ttsEnabled === true);
+				setVllmTtsHost(cfg.vllmTtsHost ?? DEFAULT_LOCAL_VOICE_HOST);
+				try {
+					await writeNaiaConfig({
+						...cfg,
+						...(naiaKey ? { naiaKey } : {}),
+					} as unknown as Record<string, unknown>);
+					await writeSlotsManifest(cfg, detectedVramGb ?? undefined);
+				} catch (rollbackError) {
+					Logger.warn(
+						"Settings",
+						"ensureLocalVoiceReady:running-config-rollback-failed",
+						{ error: String(rollbackError) },
+					);
+				}
+				surfaceLocalVoiceRevert(
+					`${t("settings.cascadeError")}: ${String(error)} — ${t(
+						"settings.localVoiceSelectionReverted",
+					)}`,
+				);
+				return false;
+			}
 			// The engine is already running (auto-start / a prior selection), but the
 			// webview may never have captured its facade URL + per-launch token — then
 			// RefAudioSection, preview, upload and synthesis all 401 (empty palette,
