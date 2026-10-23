@@ -134,35 +134,14 @@ export function extractMessageVideoId(info: unknown): string | undefined {
 	return undefined;
 }
 
-export function isNearTrackEnd(
-	currentTime?: number | null,
-	duration?: number | null,
-): boolean {
-	if (
-		typeof currentTime !== "number" ||
-		!Number.isFinite(currentTime) ||
-		currentTime <= 0 ||
-		typeof duration !== "number" ||
-		!Number.isFinite(duration) ||
-		duration <= 0
-	) {
-		return false;
-	}
-	return (
-		currentTime >= Math.max(0, duration - 2) ||
-		currentTime / duration >= 0.95
-	);
-}
-
 /**
  * Tauri WebView often delivers YouTube postMessage with `source=null` (FR-BGM.18).
  * Dropping every null-source event makes audible playback look like
  * `iframe_playing_not_observed` (#671) and hides real track end/error events.
  * Still drop a *different* window (#557), and for null-source terminal events
- * (`onError`, `onStateChange(0)`), immediately accept a numeric terminal only
- * after the current iframe load (`expectedPlaybackId`) has already observed a
- * matching `videoData` (`observedVideoId === expectedVideoId`) or, for `ended`,
- * `infoDelivery` progress near the end of `duration` (FR-RADIO-DJ.2·16 + FR-BGM.18).
+ * (`onStateChange(0)` ended, `onError`), immediately accept only after the
+ * current iframe load (`expectedPlaybackId`) has already confirmed the expected
+ * `videoData` (`observedVideoId === expectedVideoId`) (FR-RADIO-DJ.2·5·16 + FR-BGM.18).
  */
 export function decideIframeMessageSource(input: {
 	eventSource: MessageEventSource | null | undefined;
@@ -175,8 +154,6 @@ export function decideIframeMessageSource(input: {
 	iframeVideoId?: string | null;
 	expectedPlaybackId?: string | null;
 	iframePlaybackId?: string | null;
-	lastCurrentTime?: number | null;
-	lastDuration?: number | null;
 }): IframeMessageSourceDecision {
 	if (
 		input.eventSource &&
@@ -185,57 +162,46 @@ export function decideIframeMessageSource(input: {
 	) {
 		return "drop_foreign_window";
 	}
-	if (!input.eventSource) {
-		const event = String(input.event ?? "");
-		const isEnded = event === "onStateChange" && Number(input.info) === 0;
-		const isTerminal = event === "onError" || isEnded;
-		if (isTerminal) {
-			const expectedVideoId = input.expectedVideoId?.trim() || "";
-			if (!expectedVideoId) {
-				return "drop_null_terminal";
-			}
-			const expectedPlaybackId = input.expectedPlaybackId?.trim() || "";
-			const iframePlaybackId = input.iframePlaybackId?.trim() || "";
-			if (
-				expectedPlaybackId &&
-				iframePlaybackId &&
-				expectedPlaybackId !== iframePlaybackId
-			) {
-				return "drop_null_terminal";
-			}
-			const iframeVideoId = input.iframeVideoId?.trim() || "";
-			if (iframeVideoId && iframeVideoId !== expectedVideoId) {
-				return "drop_null_terminal";
-			}
-			const msgVideoId = extractMessageVideoId(input.info);
-			if (msgVideoId) {
-				return msgVideoId === expectedVideoId
-					? "accept"
-					: "drop_null_terminal";
-			}
-			const observedPlaybackId = input.observedPlaybackId?.trim() || "";
-			const sameObservedPlayback =
-				!expectedPlaybackId ||
-				!observedPlaybackId ||
-				expectedPlaybackId === observedPlaybackId;
-			const observedVideoId = sameObservedPlayback
-				? input.observedVideoId?.trim() || ""
-				: "";
-			if (observedVideoId && observedVideoId !== expectedVideoId) {
-				return "drop_null_terminal";
-			}
-			if (observedVideoId === expectedVideoId) {
-				return "accept";
-			}
-			if (
-				isEnded &&
-				sameObservedPlayback &&
-				isNearTrackEnd(input.lastCurrentTime, input.lastDuration)
-			) {
-				return "accept";
-			}
+	const event = String(input.event ?? "");
+	const stateNum = event === "onStateChange" ? Number(input.info) : Number.NaN;
+	const isEnded = event === "onStateChange" && stateNum === 0;
+	const isTerminal = event === "onError" || isEnded;
+	if (!input.eventSource && isTerminal) {
+		const expectedVideoId = input.expectedVideoId?.trim() || "";
+		if (!expectedVideoId) {
 			return "drop_null_terminal";
 		}
+		const expectedPlaybackId = input.expectedPlaybackId?.trim() || "";
+		const iframePlaybackId = input.iframePlaybackId?.trim() || "";
+		if (
+			expectedPlaybackId &&
+			iframePlaybackId &&
+			expectedPlaybackId !== iframePlaybackId
+		) {
+			return "drop_null_terminal";
+		}
+		const iframeVideoId = input.iframeVideoId?.trim() || "";
+		if (iframeVideoId && iframeVideoId !== expectedVideoId) {
+			return "drop_null_terminal";
+		}
+		const msgVideoId = extractMessageVideoId(input.info);
+		if (msgVideoId) {
+			return msgVideoId === expectedVideoId
+				? "accept"
+				: "drop_null_terminal";
+		}
+		const observedPlaybackId = input.observedPlaybackId?.trim() || "";
+		const sameObservedPlayback =
+			!expectedPlaybackId ||
+			!observedPlaybackId ||
+			expectedPlaybackId === observedPlaybackId;
+		const observedVideoId = sameObservedPlayback
+			? input.observedVideoId?.trim() || ""
+			: "";
+		if (observedVideoId === expectedVideoId) {
+			return "accept";
+		}
+		return "drop_null_terminal";
 	}
 	return "accept";
 }
