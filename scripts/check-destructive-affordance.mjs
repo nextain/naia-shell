@@ -215,6 +215,10 @@ const ACKNOWLEDGED = new Map([
 		"화면을 찍어 돌려주는 명령이다. 본문의 remove_file 은 자기가 방금 만든 임시 PNG 를 지우는 것이라 사용자 자산을 없애지 않는다 — 이름이 아니라 하는 일로 판정하기 시작하면서 후보가 됐다",
 	],
 	[
+		"packages/shell/src/components/StudioNvaApplyDialog.tsx:studio_nva_apply_cleanup",
+		"스튜디오 아바타 적용(#105)이 방금 받은 임시 .nva 를 지운다. Rust 쪽이 앱 캐시 폴더 안의 `naia-studio-*.nva` 만 지우고 다른 경로는 nva_cleanup_path_rejected 로 거절하므로 사용자 자산을 없애지 않는다. 부르는 confirmApply 자체도 \"이 아바타를 적용할까요?\" 확인 창의 적용 단추 뒤에서만 돈다",
+	],
+	[
 		"packages/shell/src/lib/secure-store.ts:secure_store_delete",
 		"로그인 자격 하나를 지운다. 부르는 곳은 연결 해제 확인 화면(setShowLabDisconnect) 뒤의 로그아웃, 서버가 거절한 자격의 정리, 초기화 확인 화면 뒤의 초기화이고, 다시 로그인하면 돌아온다. 감싼 함수(deleteSecretKey·deleteSecretKeyAtPath)를 거쳐 여러 흐름에서 불려 이 검사기가 각 흐름의 확인을 따라가지 못한다",
 	],
