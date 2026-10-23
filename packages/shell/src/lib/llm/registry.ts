@@ -255,14 +255,15 @@ export async function fetchNaiaPricing(
 		>();
 		for (const entry of entries) {
 			// Naia serves several upstreams under the nextain provider: Azure
-			// (grok/deepseek/gpt), Vertex (gemini), and the Korean domestic direct
-			// providers Upstage (solar) and CLOVA (HCX). All must pick up live
+			// (grok/deepseek/gpt), Vertex (gemini), and Korean domestic providers
+			// Upstage (solar), CLOVA (HCX), and Motif. All must pick up live
 			// pricing here, else domestic models show no price.
 			const isNaiaRoute =
 				entry.model_key.startsWith("vertexai:") ||
 				entry.model_key.startsWith("azure:") ||
 				entry.model_key.startsWith("upstage:") ||
-				entry.model_key.startsWith("clova:");
+				entry.model_key.startsWith("clova:") ||
+				entry.model_key.startsWith("motif:");
 			if (!isNaiaRoute) continue;
 			const modelId = entry.model_key.slice(entry.model_key.indexOf(":") + 1);
 			const read = entry.cached_price_per_million;
@@ -520,6 +521,7 @@ const NAIA_GENERAL_CHAT_RECOMMENDATION: Readonly<Record<string, number>> = {
 	"gemini-3.6-flash": 2,
 	"gemini-3.5-flash": 2,
 	"solar-pro4": 2,
+	"motif-3": 3,
 	"HCX-007": 2,
 	"gpt-5.6-luna": 3,
 	"solar-mini": 3,
@@ -599,7 +601,7 @@ registerLlmProvider({
 	requiresApiKey: false,
 	requiresNaiaKey: true,
 	defaultModel: "deepseek-v4-flash",
-	// #670: Naia-account / nextain picker is the four cheap chat models.
+	// #670: Naia-account / nextain picker is the affordable hosted chat lineup.
 	// Codex ChatGPT models stay on the codex provider below. Retired ids
 	// migrate via shouldMigrateNextainModel and other gateway-served ids are
 	// kept (#707).
@@ -628,6 +630,16 @@ registerLlmProvider({
 		{
 			id: "solar-mini",
 			label: "Solar Mini",
+			capabilities: ["llm"],
+			supportsTools: true,
+			upstreamProvider: "unknown",
+			lifecycle: "unknown",
+		},
+		{
+			// Motif 3 CBT. Two live probes returned structured tool_calls in 9/10
+			// then 10/10 requests (requested-function matches: 8/10 then 9/10).
+			id: "motif-3",
+			label: "Motif 3",
 			capabilities: ["llm"],
 			supportsTools: true,
 			upstreamProvider: "unknown",

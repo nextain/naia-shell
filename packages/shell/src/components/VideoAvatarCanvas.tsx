@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { getAdkPath, toLocalBlobUrl } from "../lib/adk-store";
 import {
 	clearCameraActions,
+	getCameraActions,
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
 import { PrebakedAvatarRenderer } from "../lib/avatar/prebaked-renderer";
@@ -30,8 +31,20 @@ interface NvaPan {
 	y: number;
 }
 const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
-function videoTransform(pan: NvaPan): string {
-	return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px)`;
+function videoTransform(pan: NvaPan, zoom = 1): string {
+	return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px) scale(${zoom})`;
+}
+const MIN_NVA_ZOOM = 0.5;
+const MAX_NVA_ZOOM = 3;
+const NVA_ZOOM_STEP = 0.1;
+function clampNvaZoom(value: number): number {
+	return Math.min(MAX_NVA_ZOOM, Math.max(MIN_NVA_ZOOM, value));
+}
+function normalizeNvaZoom(value: unknown): number {
+	return typeof value === "number" && Number.isFinite(value) &&
+		value >= MIN_NVA_ZOOM && value <= MAX_NVA_ZOOM
+		? value
+		: 1;
 }
 const VIDEO_STYLE = {
 	maxWidth: "min(100%, 56vh)",
@@ -48,30 +61,76 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	const [bundleDir, setBundleDir] = useState("");
 	const [video, setVideo] = useState<HTMLVideoElement | null>(null);
 	const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+	const avatarAreaRef = useRef<HTMLDivElement>(null);
+	const rendererRef = useRef<PrebakedAvatarRenderer | null>(null);
 	const persistedPan = useUiPreference<NvaPan>(
 		UI_PREFERENCE_KEYS.nvaPan,
 		DEFAULT_NVA_PAN,
 	);
+	const persistedZoom = useUiPreference<number>(UI_PREFERENCE_KEYS.nvaZoom, 1);
 	const [pan, setPan] = useState<NvaPan>(persistedPan);
+	const [zoom, setZoom] = useState(() => normalizeNvaZoom(persistedZoom));
 	useEffect(() => setPan(persistedPan), [persistedPan]);
+	useEffect(() => {
+		const value = normalizeNvaZoom(persistedZoom);
+		setZoom(value);
+		zoomRef.current = value;
+	}, [persistedZoom]);
 	const panRef = useRef(pan);
 	panRef.current = pan;
+	const zoomRef = useRef(zoom);
+	zoomRef.current = zoom;
 
 	useEffect(() => {
 		registerCameraActions({
 			rotate: () => {},
-			pan: (dx, dy) =>
-				setPan((current) => ({ x: current.x + dx, y: current.y + dy })),
+			pan: (dx, dy) => {
+				const next = { x: panRef.current.x + dx, y: panRef.current.y + dy };
+				panRef.current = next;
+				setPan(next);
+			},
+			zoom: (delta) => {
+				const next = clampNvaZoom(zoomRef.current + delta);
+				zoomRef.current = next;
+				setZoom(next);
+			},
 			reset: () => {
 				setPan({ x: 0, y: 0 });
-				void patchUiPreferences({ [UI_PREFERENCE_KEYS.nvaPan]: undefined });
+				panRef.current = DEFAULT_NVA_PAN;
+				setZoom(1);
+				zoomRef.current = 1;
+				void patchUiPreferences({
+					[UI_PREFERENCE_KEYS.nvaPan]: undefined,
+					[UI_PREFERENCE_KEYS.nvaZoom]: undefined,
+				});
 			},
 			save: () =>
 				void patchUiPreferences({
 					[UI_PREFERENCE_KEYS.nvaPan]: panRef.current,
+					[UI_PREFERENCE_KEYS.nvaZoom]:
+						zoomRef.current === 1 ? undefined : zoomRef.current,
 				}),
+			getGestureActions: () => rendererRef.current?.getGestureActions() ?? [],
+			playAction: (key) => rendererRef.current?.playAction(key) ?? Promise.resolve(),
 		});
 		return () => clearCameraActions();
+	}, []);
+
+	useEffect(() => {
+		const area = avatarAreaRef.current;
+		if (!area) return;
+		let saveTimer: ReturnType<typeof setTimeout> | undefined;
+		const onWheel = (event: WheelEvent) => {
+			event.preventDefault();
+			getCameraActions().zoom(event.deltaY < 0 ? NVA_ZOOM_STEP : -NVA_ZOOM_STEP);
+			if (saveTimer) clearTimeout(saveTimer);
+			saveTimer = setTimeout(() => getCameraActions().save(), 180);
+		};
+		area.addEventListener("wheel", onWheel, { passive: false });
+		return () => {
+			area.removeEventListener("wheel", onWheel);
+			if (saveTimer) clearTimeout(saveTimer);
+		};
 	}, []);
 
 	useEffect(() => {
@@ -142,12 +201,14 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			onSpeaking: (speaking) => useAvatarStore.getState().setSpeaking(speaking),
 		});
 		renderer.start(video, canvas);
+		rendererRef.current = renderer;
 		useCascadeAvatarStore.getState().setRenderer(renderer);
 		useCascadeAvatarStore.getState().setNvaLoadError(null);
 		setMode("prebaked");
 		setLoaded(true);
 		return () => {
 			renderer.stop();
+			if (rendererRef.current === renderer) rendererRef.current = null;
 			if (useCascadeAvatarStore.getState().renderer === renderer)
 				useCascadeAvatarStore.getState().setRenderer(null);
 			for (const url of urls.values())
@@ -157,6 +218,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 
 	return (
 		<div
+			ref={avatarAreaRef}
 			data-video-avatar
 			data-nva-model={nvaModel ?? ""}
 			data-video-avatar-mode={mode}
@@ -182,7 +244,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			<canvas
 				ref={setCanvas}
 				data-video-avatar-prebaked
-				style={{ ...VIDEO_STYLE, transform: videoTransform(pan) }}
+				style={{ ...VIDEO_STYLE, transform: videoTransform(pan, zoom) }}
 			/>
 			{mode !== "prebaked" && (
 				<output data-video-avatar-status={mode} aria-live="polite">

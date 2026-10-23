@@ -39,7 +39,7 @@ import {
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
 import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
-import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill";
+import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
 import { sendAppSkills, sendAppSkillsClear } from "./lib/chat-service";
 import {

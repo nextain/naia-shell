@@ -591,14 +591,14 @@ describe("executeBgmSkill", () => {
 	it("play — 사이드카 검색 실패 → reject (dispatch 가 실패로 보고)", async () => {
 		const deps: BgmSkillDeps = {
 			search: async () => {
-				throw new Error("BGM 검색 서버 오류 (HTTP 503)");
+				throw new Error("BGM search server error (HTTP 503)");
 			},
 			emitBgm: async () => {},
 			playback: createBgmPlaybackPort(),
 		};
 		await expect(
 			executeBgmSkill({ action: "play", query: "x" }, deps),
-		).rejects.toThrow(/503/);
+		).rejects.toThrow("BGM search server error (HTTP 503)");
 	});
 
 	it("stop/pause/resume/next/prev → 위젯 리스너 타입 1:1 이벤트", async () => {

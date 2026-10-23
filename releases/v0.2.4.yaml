@@ -1,0 +1,49 @@
+version: "0.2.4"
+date: "2026-10-23"
+# 이번 배포가 나가는 운영체제. 배포 전 회귀(scripts/check-regression-complete.mjs)가
+# 이 운영체제의 기계와 스펙만 조건으로 삼는다 — scripts/lib/release-target.mjs.
+targets: [windows]
+summary:
+  en: "v0.2.4 targets Steam support (distribution detection, sign-in and account linking, and Steam credit pack top-ups), a project app with coding agent, dashboard and issue panes for public sector projects, and Blackjack education through that app. Windows signing and installer/updater artifacts remain release foundations. Generic usage-cost and K credit display, the separate terminal/docs/board workspace, and knowledge recall move to v0.2.5 or later. Existing code for out-of-scope items remains."
+  ko: "0.2.4는 Steam 지원(배포 판별·로그인과 계정 연결·Steam 크레딧 팩 충전), 공공기관 프로젝트를 위한 코딩 에이전트·대시보드·이슈 칸의 프로젝트 앱, 그 앱을 이용한 블랙잭 교육을 목표로 합니다. Windows 서명과 설치·업데이트 산출물은 출시 기반으로 둡니다. 일반 사용 비용·크레딧 K 표기, 터미널·문서·작업판으로 이뤄진 별도 3분할 작업 공간, 지식 회상은 0.2.5 이후로 옮깁니다. 범위 밖 항목의 기존 코드는 제거하지 않고 남깁니다."
+changes:
+  - type: fix
+    scope: release
+    issue: 725
+    description:
+      en: "Sign naia-shell.exe after Tauri patches the bundle type so the installed app no longer fails Authenticode with HashMismatch; verify the app, MSI and Steam depot executables in CI."
+      ko: "Tauri 가 번들 형식을 고친 뒤에 naia-shell.exe 를 서명해 설치된 앱이 Authenticode HashMismatch 로 실패하지 않게 하고, CI 에서 앱·MSI·Steam 디포 실행 파일 서명을 확인합니다."
+  - type: fix
+    scope: shell
+    issue: 727
+    # #727 분할: Steam판 링크 숨김은 0.2.4, 크레딧 K 표기는 0.2.5 이후 범위입니다.
+    description:
+      en: "Hide top-up, donation, sponsor and store links on the Steam build, and treat an unknown distribution channel as hidden."
+      ko: "Steam 판에서 충전·후원·스폰서·스토어 링크를 숨기고, 배포 채널을 알 수 없으면 숨김으로 처리합니다."
+  - type: feature
+    scope: steam
+    issue: 729
+    description:
+      en: "Support Steam distribution detection, sign-in and consent-based account linking; allow Steam credit pack purchases, finalize approvals exactly once, refresh the balance, and verify the flow in the Steam sandbox."
+      ko: "Steam 배포를 판별하고 로그인·동의 기반 계정 연결을 지원합니다. Steam 크레딧 팩을 충전하고 승인 결과를 한 번만 확정해 잔액을 갱신하며, Steam 샌드박스에서 흐름을 확인합니다."
+  - type: feature
+    scope: workspace
+    issue: 756
+    description:
+      en: "Open a public sector project in the project app with coding agent, dashboard and issue panes."
+      ko: "프로젝트 앱에서 코딩 에이전트·대시보드·이슈 칸으로 공공기관 프로젝트를 엽니다."
+  - type: feature
+    scope: education
+    description:
+      en: "Open the Blackjack education example in the same project app and teach with its coding agent, preferring Claude and supporting OpenCode."
+      ko: "같은 프로젝트 앱에서 블랙잭 교육 예제를 열고, Claude를 우선하며 OpenCode를 지원하는 코딩 에이전트로 교육합니다."
+  - type: feature
+    scope: naia
+    description:
+      en: "Add Motif 3 (motif-3) to the Naia gateway models; tool calls stream correctly when chunks carry a null type, and chat usage shows the gateway price."
+      ko: "Naia 게이트웨이 모델에 Motif 3(motif-3)를 더합니다. 도구 호출 조각의 형식이 비어 있어도 도구가 실행되고, 대화 사용량에 게이트웨이 가격이 반영됩니다."
+  - type: fix
+    scope: avatar
+    description:
+      en: "Zoom and pan the video avatar (saved), resume the idle clip where it stopped instead of restarting it after each reply, play avatar gestures from the control bar or when the AI asks, and keep the local voice selected after Edge TTS while the local engine is running."
+      ko: "영상 아바타를 확대·축소·이동하고 저장하며, 답변이 끝날 때마다 대기 영상을 처음부터 다시 틀지 않고 멈춘 자리에서 잇고, 조작 막대나 AI 요청으로 아바타 동작을 재생하며, 로컬 음성 엔진이 실행 중일 때 Edge 음성 뒤 로컬 음성 선택이 유지되게 합니다."

@@ -157,6 +157,20 @@ describe("ui preferences persistence", () => {
 		expect(getUiPreferencesSnapshot()).toEqual({});
 	});
 
+	it("keeps NVA zoom at one for invalid saved values and persists only valid zoom", async () => {
+		await hydrateUiPreferences(
+			{ uiPreferences: { [UI_PREFERENCE_KEYS.nvaZoom]: 4 } },
+			{ adkPath: ADK_ONE, canPersist: false },
+		);
+		expect(getUiPreferencesSnapshot()[UI_PREFERENCE_KEYS.nvaZoom]).toBe(1);
+
+		await patchUiPreferences({ [UI_PREFERENCE_KEYS.nvaZoom]: 2.25 });
+		expect(getUiPreferencesSnapshot()[UI_PREFERENCE_KEYS.nvaZoom]).toBe(2.25);
+
+		await patchUiPreferences({ [UI_PREFERENCE_KEYS.nvaZoom]: Number.NaN });
+		expect(getUiPreferencesSnapshot()[UI_PREFERENCE_KEYS.nvaZoom]).toBe(1);
+	});
+
 	it("keeps object fallbacks stable before an ADK preference is hydrated", () => {
 		const fallback = { x: 0, y: 0 };
 		const { result, rerender } = renderHook(() =>

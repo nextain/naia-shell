@@ -134,6 +134,7 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
 import { setLocale } from "../../lib/i18n";
+import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { SettingsTab } from "../SettingsTab";
 
 // SettingsTab order:
@@ -183,6 +184,7 @@ describe("SettingsTab", () => {
 		secureStoreMock.get.mockResolvedValue(null);
 		vi.unstubAllGlobals();
 		Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+		useCascadeAvatarStore.getState().setLocalFacadeUrl(null);
 		await setLocale("en");
 	});
 
@@ -736,6 +738,7 @@ describe("SettingsTab", () => {
 			"solar-mini",
 			"deepseek-v4-flash",
 			"solar-pro4",
+			"motif-3",
 			"gpt-5.6-luna",
 		]);
 		expect(
@@ -823,6 +826,12 @@ describe("SettingsTab", () => {
 				output_price_per_million: 0.165,
 				cached_price_per_million: null,
 			},
+			{
+				model_key: "motif:motif-3",
+				input_price_per_million: 0.26,
+				output_price_per_million: 1.04,
+				cached_price_per_million: 0.052,
+			},
 		]);
 
 		render(<SettingsTab />);
@@ -849,11 +858,195 @@ describe("SettingsTab", () => {
 					!l.includes("$"),
 			),
 		).toBe(true);
+		expect(
+			labels.some(
+				(l) =>
+					l.includes("Motif 3") &&
+					l.includes("260 credits") &&
+					l.includes("1.04K credits"),
+			),
+		).toBe(true);
 		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);
 		const values = [...modelSelect.options].map((o) => o.value);
 		expect(values).toContain("solar-pro4");
 		expect(values).toContain("solar-mini");
+		expect(values).toContain("motif-3");
 		expect(values).not.toContain("HCX-007");
+	});
+
+	it("preserves Naia live pricing on initial open regardless of catalog/pricing completion order", async () => {
+		await setLocale("ko");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "motif-3",
+				apiKey: "",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+
+		const pricingPayload = [
+			{
+				model_key: "azure:deepseek-v4-flash",
+				input_price_per_million: 0.209,
+				output_price_per_million: 0.561,
+				cached_price_per_million: null,
+			},
+			{
+				model_key: "upstage:solar-pro4",
+				input_price_per_million: 0.33,
+				output_price_per_million: 1.32,
+				cached_price_per_million: 0.066,
+			},
+			{
+				model_key: "upstage:solar-mini",
+				input_price_per_million: 0.165,
+				output_price_per_million: 0.165,
+				cached_price_per_million: null,
+			},
+			{
+				model_key: "motif:motif-3",
+				input_price_per_million: 0.26,
+				output_price_per_million: 1.04,
+				cached_price_per_million: 0.052,
+			},
+		];
+
+		const modelsPayload = [
+			{ model_key: "deepseek-v4-flash", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "solar-pro4", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "solar-mini", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "motif-3", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "gpt-5.6-luna", capabilities: ["llm"], supports_tools: true },
+		];
+
+		function makeDeferred<T>() {
+			let resolve!: (val: T) => void;
+			const promise = new Promise<T>((r) => {
+				resolve = r;
+			});
+			return { promise, resolve };
+		}
+
+		// Case 1: Pricing response (2nd /v1/pricing call + /v1/models) resolves BEFORE catalog response (1st /v1/pricing call)
+		const catalogResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const pricingResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const modelsResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		let pricingCalls1 = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((url: string) => {
+				const u = String(url);
+				if (u.includes("/v1/pricing")) {
+					pricingCalls1 += 1;
+					return pricingCalls1 === 1 ? catalogResp1.promise : pricingResp1.promise;
+				}
+				if (u.includes("/v1/models")) {
+					return modelsResp1.promise;
+				}
+				return Promise.resolve({ ok: false, json: async () => [] });
+			}),
+		);
+
+		const { unmount } = render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		// Resolve pricing + models first
+		await act(async () => {
+			pricingResp1.resolve({ ok: true, json: async () => pricingPayload });
+			modelsResp1.resolve({
+				ok: true,
+				json: async () => modelsPayload,
+			});
+		});
+
+		// Then resolve catalog (fetchGatewayModelCatalog)
+		await act(async () => {
+			catalogResp1.resolve({ ok: true, json: async () => pricingPayload });
+		});
+
+		await waitFor(() => {
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			const labels = [...modelSelect.options].map((o) => o.text);
+			expect(
+				labels.some(
+					(l) =>
+						l.includes("Motif 3") &&
+						l.includes("260 credits") &&
+						l.includes("1.04K credits"),
+				),
+			).toBe(true);
+		});
+		expect(
+			screen.queryByText("가격 정보를 불러올 수 없습니다."),
+		).toBeNull();
+		expect(
+			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
+		).toBeDefined();
+
+		unmount();
+
+		// Case 2: Catalog response resolves BEFORE pricing response
+		const catalogResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const pricingResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const modelsResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		let pricingCalls2 = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((url: string) => {
+				const u = String(url);
+				if (u.includes("/v1/pricing")) {
+					pricingCalls2 += 1;
+					return pricingCalls2 === 1 ? catalogResp2.promise : pricingResp2.promise;
+				}
+				if (u.includes("/v1/models")) {
+					return modelsResp2.promise;
+				}
+				return Promise.resolve({ ok: false, json: async () => [] });
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		// Resolve catalog first
+		await act(async () => {
+			catalogResp2.resolve({ ok: true, json: async () => pricingPayload });
+		});
+
+		// Then resolve pricing + models
+		await act(async () => {
+			pricingResp2.resolve({ ok: true, json: async () => pricingPayload });
+			modelsResp2.resolve({
+				ok: true,
+				json: async () => modelsPayload,
+			});
+		});
+
+		await waitFor(() => {
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			const labels = [...modelSelect.options].map((o) => o.text);
+			expect(
+				labels.some(
+					(l) =>
+						l.includes("Motif 3") &&
+						l.includes("260 credits") &&
+						l.includes("1.04K credits"),
+				),
+			).toBe(true);
+		});
+		expect(
+			screen.queryByText("가격 정보를 불러올 수 없습니다."),
+		).toBeNull();
+		expect(
+			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
+		).toBeDefined();
 	});
 
 	it("replaces a stale unavailable Naia selection with the first usable priced model", async () => {
@@ -1424,7 +1617,13 @@ describe("SettingsTab", () => {
 		);
 	});
 
-	it.each(["deepseek-v4-flash", "solar-pro4", "solar-mini", "gpt-5.6-luna"])(
+	it.each([
+		"deepseek-v4-flash",
+		"solar-pro4",
+		"solar-mini",
+		"motif-3",
+		"gpt-5.6-luna",
+	])(
 		"keeps the live Naia-account model %s selectable and persisted",
 		async (modelId) => {
 			localStorage.setItem(
@@ -2933,6 +3132,187 @@ describe("SettingsTab — memory tab (#298)", () => {
 			});
 		});
 	});
+
+	it("persists Edge-to-local selection while the local engine is already running", async () => {
+		localStorage.setItem("naia-adk-path", "D:\\test-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "test-key",
+				ttsProvider: "edge",
+				ttsEnabled: false,
+				localVoiceEnabled: false,
+				vllmTtsHost: "https://voice.example.test/tts",
+			}),
+		);
+		useCascadeAvatarStore
+			.getState()
+			.setLocalFacadeUrl("https://voice.example.test/facade");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({
+				ok: true,
+				json: async () => ({
+					ok: true,
+					tts: true,
+					avatar: true,
+					tts_enabled: true,
+					avatar_enabled: true,
+				}),
+			})),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(true);
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: "ready",
+					ready: true,
+					canStart: true,
+					summary: "Local runtime is running.",
+					steps: [],
+				});
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		const selector = screen.getByTestId("gateway-tts-provider") as HTMLSelectElement;
+		await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"));
+		await act(async () => { await Promise.resolve(); });
+		await vi.waitFor(() =>
+			expect(
+				selector.querySelector('option[value="naia-local-voice"]'),
+			).not.toBeDisabled(),
+		);
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+		await waitFor(() => {
+			expect(selector.value).toBe("naia-local-voice");
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved).toMatchObject({
+				ttsProvider: "naia-local-voice",
+				ttsEnabled: true,
+				localVoiceEnabled: true,
+				vllmTtsHost: "https://voice.example.test/tts",
+			});
+		});
+		expect(mockInvoke).toHaveBeenCalledWith(
+			"write_naia_ui_config",
+			expect.objectContaining({
+				json: expect.stringMatching(
+					/"ttsEnabled": true[\s\S]*"ttsProvider": "naia-local-voice"/,
+				),
+			}),
+		);
+		const manifestWrite = mockInvoke.mock.calls
+			.filter(([command]) => command === "write_slots_manifest")
+			.at(-1);
+		const manifest = JSON.parse(manifestWrite?.[1]?.json as string);
+		expect(manifest.slots.tts.provider).toBe("naia-local-voice");
+		expect(mockInvoke).not.toHaveBeenCalledWith("start_voxcpm2", expect.anything());
+	});
+
+	it.each(["write_naia_config", "write_slots_manifest"] as const)(
+		"restores the prior voice selection if %s fails while the engine is running",
+		async (failedCommand) => {
+			localStorage.setItem("naia-adk-path", "D:\\test-adk");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "gemini-3.5-flash",
+					naiaKey: "test-key",
+					ttsProvider: "edge",
+					ttsEnabled: false,
+					localVoiceEnabled: false,
+					vllmTtsHost: "https://voice.example.test/tts",
+				}),
+			);
+			useCascadeAvatarStore
+				.getState()
+				.setLocalFacadeUrl("https://voice.example.test/facade");
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => ({
+					ok: true,
+					json: async () => ({
+						ok: true,
+						tts: true,
+						avatar: true,
+						tts_enabled: true,
+						avatar_enabled: true,
+					}),
+				})),
+			);
+			let failNextWrite = false;
+			let failedOnce = false;
+			let matchingWriteCount = 0;
+			mockInvoke.mockImplementation((command: string) => {
+				if (command === "detect_gpu_vram") return Promise.resolve(8);
+				if (command === "voxcpm2_status") return Promise.resolve(true);
+				if (command === "voxcpm2_installation_status")
+					return Promise.resolve({
+						phase: "ready",
+						ready: true,
+						canStart: true,
+						summary: "Local runtime is running.",
+						steps: [],
+					});
+				if (failNextWrite && command === failedCommand) {
+					matchingWriteCount += 1;
+					// writeNaiaConfig also attempts a best-effort manifest sync; fail
+					// the explicit SettingsTab manifest write after that attempt.
+					const failureAttempt =
+						failedCommand === "write_slots_manifest" ? 2 : 1;
+					if (matchingWriteCount === failureAttempt) {
+						failedOnce = true;
+						return Promise.reject(new Error("config persistence failed"));
+					}
+				}
+				return Promise.resolve([]);
+			});
+
+			render(<SettingsTab />);
+			gotoSettingsTab("voice");
+			const selector = screen.getByTestId(
+				"gateway-tts-provider",
+			) as HTMLSelectElement;
+			await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"));
+			await vi.waitFor(() =>
+				expect(
+					selector.querySelector('option[value="naia-local-voice"]'),
+				).not.toBeDisabled(),
+			);
+			failNextWrite = true;
+			fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+			await waitFor(() => {
+				const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+				expect(failedOnce).toBe(true);
+				expect(selector.value).toBe("edge");
+				expect(saved).toMatchObject({
+					ttsProvider: "edge",
+					ttsEnabled: false,
+					localVoiceEnabled: false,
+					vllmTtsHost: "https://voice.example.test/tts",
+				});
+				expect(
+					(document.getElementById("tts-toggle") as HTMLInputElement).checked,
+				).toBe(false);
+				expect(screen.getByTestId("voxcpm2-install-error")).toHaveAttribute(
+					"role",
+					"alert",
+				);
+				expect(screen.getByTestId("voxcpm2-install-error")).toHaveTextContent(
+					"config persistence failed",
+				);
+			});
+			expect(mockInvoke).not.toHaveBeenCalledWith("start_voxcpm2", expect.anything());
+		},
+	);
 
 	it("does not auto-restore a local provider when voice is disabled", async () => {
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
