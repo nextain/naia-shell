@@ -706,7 +706,7 @@ describe("executeBgmSkill", () => {
 			deps,
 		);
 
-		expect(capturedQuery).toBe("잔잔한 감성 팝 노래 Official Audio");
+		expect(capturedQuery).toBe("잔잔한 감성 팝 song Official Audio");
 		expect(deps.playback.current()?.selected.videoId).toBe("single-1");
 		expect(deps.playback.queue().map((item) => item.selected.videoId)).toEqual([
 			"single-2",

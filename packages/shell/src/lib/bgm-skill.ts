@@ -80,11 +80,11 @@ export function sanitizeRadioDjSearchQuery(query: string): string {
 		.replace(HABITUAL_PLAYLIST_TOKEN_RE, " ")
 		.replace(/\s+/g, " ")
 		.trim();
-	const base = stripped || "감성 팝";
+	const base = stripped || "mood pop";
 	if (SINGLE_TRACK_HINT_RE.test(base)) {
 		return base;
 	}
-	return `${base} 노래 Official Audio`;
+	return `${base} song Official Audio`;
 }
 
 export function parseBgmDurationSeconds(
