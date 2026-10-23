@@ -28,6 +28,12 @@ describe("BGM playback observation contract", () => {
 		expect(toBgmPlayToolResult(requested)).not.toHaveProperty("currentTrack");
 		expect(toBgmObservedContext(requested)).toMatchObject({
 			currentTrack: null,
+			pendingTrack: {
+				videoId: "track-a",
+				title: "Track A",
+				confirmed: false,
+				status: "requested",
+			},
 			announceTrack: false,
 		});
 	});
@@ -49,6 +55,7 @@ describe("BGM playback observation contract", () => {
 		expect(playing).not.toBeNull();
 		expect(toBgmObservedContext(playing!, clock)).toMatchObject({
 			currentTrack: { videoId: "track-a", title: "Track A" },
+			pendingTrack: null,
 			announceTrack: true,
 		});
 		expect(toBgmPlayToolResult(playing!).instruction).toContain(

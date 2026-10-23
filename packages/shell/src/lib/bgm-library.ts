@@ -73,6 +73,221 @@ export function normalizeBgmTitle(title: string): string {
 		.trim();
 }
 
+const BGM_SONG_DECORATION_RE =
+	/\b(?:m\/v|mv|official|music\s*video|video|audio|lyrics?|lyric\s*video|live|clip|ver(?:sion)?|full|hd|4k|hq|remastered|remaster|ost|stage|performance|concert|fancam|cover|acoustic|inst(?:rumental)?|karaoke|mr|tj|ky|visualizer|topic|sketchbook|kbs|mbc|sbs|mnet|1thek|dingo|killing\s*voice|its\s*live|begin\s*again)\b|가사|뮤직\s*비디오|뮤비|오디오|라이브|세로\s*라이브|콘서트|방송|직캠|커버|원곡|수록곡|음원|고음질|유희열의\s*스케치북|킬링\s*보이스|비긴\s*어게인/giu;
+
+function compactBgmCoreKey(raw: string): string {
+	return raw
+		.normalize("NFKC")
+		.toLocaleLowerCase()
+		.replace(/m\s*\/\s*v/giu, " ")
+		.replace(BGM_SONG_DECORATION_RE, " ")
+		.replace(/[^\p{L}\p{N}]+/gu, "")
+		.trim();
+}
+
+function tokenizeBgmCorePhrase(raw: string): string {
+	return raw
+		.normalize("NFKC")
+		.toLocaleLowerCase()
+		.replace(/m\s*\/\s*v/giu, " ")
+		.replace(BGM_SONG_DECORATION_RE, " ")
+		.replace(/[^\p{L}\p{N}]+/gu, " ")
+		.replace(/\s+/gu, " ")
+		.trim();
+}
+
+function extractBgmSongArtistKeys(artistSegment: string): string[] {
+	const withoutSquareBrackets = artistSegment
+		.replace(/[\[【〈《][^\]】〉》]*[\]】〉》]/gu, " ")
+		.trim();
+	if (!withoutSquareBrackets) return [];
+
+	const keys = new Set<string>();
+	for (const match of withoutSquareBrackets.matchAll(/\(([^()[\]]+)\)/gu)) {
+		const inner = match[1]?.trim() ?? "";
+		if (!inner || inner.includes("/")) continue;
+		if (/^(?:feat|ft|prod|ver|version|ost)\b/iu.test(inner)) continue;
+		const innerKey = compactBgmCoreKey(inner);
+		if (innerKey && !/^\d+$/u.test(innerKey) && innerKey.length >= 2) {
+			keys.add(innerKey);
+		}
+	}
+
+	const outer = withoutSquareBrackets
+		.replace(/\([^()]*\)/gu, " ")
+		.split(/\s*(?:,|&|\/|\bfeat\.?|\bft\.?|\bx\b|\bwith\b)\s*/giu)[0]
+		?.trim() ?? "";
+	const outerKey = compactBgmCoreKey(outer);
+	if (outerKey && !/^\d+$/u.test(outerKey) && outerKey.length >= 2) {
+		keys.add(outerKey);
+	}
+	return [...keys];
+}
+
+interface ParsedBgmSongIdentity {
+	readonly coreKeys: string[];
+	readonly tokenPhrases: string[];
+	readonly artistKeys: string[];
+}
+
+function parseBgmSongIdentity(title: string): ParsedBgmSongIdentity {
+	const cleaned = title
+		.normalize("NFKC")
+		.toLocaleLowerCase()
+		.replace(/\s*[|｜].*$/gu, " ")
+		.replace(/(?:^|\s)#[^\s#]+/gu, " ")
+		.trim();
+	if (!cleaned) return { coreKeys: [], tokenPhrases: [], artistKeys: [] };
+
+	const withoutLeadingBrackets = cleaned
+		.replace(/^\s*(?:[\[(【〈《][^\]）】〉》]*[\])】〉》]\s*)+/gu, "")
+		.trim();
+	const target = withoutLeadingBrackets || cleaned;
+
+	const separatorParts = target
+		.split(/\s+[-–—_~:]\s+|_\s+|\s+_/u)
+		.map((part) => part.trim())
+		.filter(Boolean);
+	const artistSegment = separatorParts.length >= 2 ? separatorParts[0]! : "";
+	const songSegment =
+		separatorParts.length >= 2
+			? separatorParts.slice(1).join(" ")
+			: target;
+
+	const artistKeys = artistSegment ? extractBgmSongArtistKeys(artistSegment) : [];
+	const keys = new Set<string>();
+	const phrases = new Set<string>();
+	const withoutSquareBrackets = songSegment
+		.replace(/[\[【〈《][^\]】〉》]*[\]】〉》]/gu, " ")
+		.trim();
+
+	for (const match of withoutSquareBrackets.matchAll(/\(([^()[\]]+)\)/gu)) {
+		const inner = match[1]?.trim() ?? "";
+		if (!inner || inner.includes("/")) continue;
+		if (/^(?:feat|ft|prod|ver|version|ost)\b/iu.test(inner)) continue;
+		const innerKey = compactBgmCoreKey(inner);
+		if (innerKey && !/^\d+$/u.test(innerKey) && innerKey.length >= 2) {
+			keys.add(innerKey);
+			const innerPhrase = tokenizeBgmCorePhrase(inner);
+			if (innerPhrase) phrases.add(innerPhrase);
+		}
+	}
+
+	const strippedSongSegment = withoutSquareBrackets
+		.replace(/\([^()]*\)/gu, " ")
+		.trim();
+	const primaryKey = compactBgmCoreKey(strippedSongSegment);
+	if (primaryKey) {
+		keys.add(primaryKey);
+		const primaryPhrase = tokenizeBgmCorePhrase(strippedSongSegment);
+		if (primaryPhrase) phrases.add(primaryPhrase);
+	}
+
+	if (keys.size === 0) {
+		const fallbackRaw = target.replace(/[\[(【〈《][^\]）】〉》]*[\])】〉》]/gu, " ");
+		const fallbackKey = compactBgmCoreKey(fallbackRaw);
+		if (fallbackKey) {
+			keys.add(fallbackKey);
+			const fallbackPhrase = tokenizeBgmCorePhrase(fallbackRaw);
+			if (fallbackPhrase) phrases.add(fallbackPhrase);
+		}
+	}
+
+	return {
+		coreKeys: [...keys],
+		tokenPhrases: [...phrases],
+		artistKeys,
+	};
+}
+
+/**
+ * Extract normalized core song title keys from a YouTube title (FR-RADIO-DJ.14).
+ * Strips channel/show suffixes, leading tags (`[MV]`), artist prefixes (`Artist - ` / `Artist _ `),
+ * bracketed/parenthesized decorations, and punctuation/whitespace, while retaining
+ * parenthesized alternate-language song titles such as `Through the Night (밤편지)`.
+ */
+export function extractBgmSongCoreKeys(title: string): string[] {
+	return parseBgmSongIdentity(title).coreKeys;
+}
+
+const BGM_CORE_KEY_CONTAINMENT_MIN_RATIO = 0.6;
+
+function isTokenPhraseContainedAtBoundary(
+	shorterPhrase: string,
+	longerPhrase: string,
+): boolean {
+	const shorterTokens = shorterPhrase.split(" ").filter(Boolean);
+	const longerTokens = longerPhrase.split(" ").filter(Boolean);
+	if (shorterTokens.length === 0 || shorterTokens.length > longerTokens.length) {
+		return false;
+	}
+	const shorterCompact = shorterTokens.join("");
+	const longerCompact = longerTokens.join("");
+	if (!shorterCompact || !longerCompact) return false;
+	if (shorterCompact === longerCompact) return true;
+	const isAsciiOnly = /^[a-z0-9]+$/u.test(shorterCompact);
+	if (isAsciiOnly ? shorterCompact.length < 4 : shorterCompact.length < 2) {
+		return false;
+	}
+	if (shorterCompact.length / longerCompact.length < BGM_CORE_KEY_CONTAINMENT_MIN_RATIO) {
+		return false;
+	}
+	for (let start = 0; start <= longerTokens.length - shorterTokens.length; start += 1) {
+		let matches = true;
+		for (let offset = 0; offset < shorterTokens.length; offset += 1) {
+			if (longerTokens[start + offset] !== shorterTokens[offset]) {
+				matches = false;
+				break;
+			}
+		}
+		if (matches) return true;
+	}
+	return false;
+}
+
+function areExtractedArtistsCompatible(
+	artistsA: readonly string[],
+	artistsB: readonly string[],
+): boolean {
+	if (artistsA.length === 0 || artistsB.length === 0) return true;
+	return artistsA.some((a) => artistsB.includes(a));
+}
+
+/**
+ * Determine whether two YouTube titles refer to the same song across alternate uploads,
+ * bilingual titles, live stages, or lyric videos (FR-RADIO-DJ.14).
+ */
+export function isSameBgmSong(titleA: string, titleB: string): boolean {
+	const parsedA = parseBgmSongIdentity(titleA);
+	const parsedB = parseBgmSongIdentity(titleB);
+	if (!areExtractedArtistsCompatible(parsedA.artistKeys, parsedB.artistKeys)) {
+		return false;
+	}
+	const keysA = parsedA.coreKeys;
+	const keysB = parsedB.coreKeys;
+	if (keysA.length === 0 || keysB.length === 0) {
+		const normA = normalizeBgmTitle(titleA);
+		const normB = normalizeBgmTitle(titleB);
+		return Boolean(normA && normA === normB);
+	}
+	for (const a of keysA) {
+		for (const b of keysB) {
+			if (a === b) return true;
+		}
+	}
+	for (const phraseA of parsedA.tokenPhrases) {
+		for (const phraseB of parsedB.tokenPhrases) {
+			const [shorter, longer] =
+				phraseA.length <= phraseB.length ? [phraseA, phraseB] : [phraseB, phraseA];
+			if (isTokenPhraseContainedAtBoundary(shorter, longer)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 export function trackIdentity(track: Pick<BgmLibraryTrack, "source" | "youtubeId" | "path" | "id">): string {
 	if (track.source === "youtube" && track.youtubeId) return `youtube:${track.youtubeId}`;
 	if (track.source === "local" && track.path) return `local:${track.path.toLocaleLowerCase()}`;

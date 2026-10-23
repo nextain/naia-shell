@@ -522,6 +522,18 @@ export async function stopSpeechActivity(
 	);
 }
 
+let currentSpeechActivityId: string | undefined;
+
+export function setCurrentSpeechActivityId(
+	activityId: string | null | undefined,
+): void {
+	currentSpeechActivityId = activityId?.trim() || undefined;
+}
+
+export function getCurrentSpeechActivityId(): string | undefined {
+	return currentSpeechActivityId;
+}
+
 export type SpeechActivityControl =
 	| "music_only"
 	| "talk_less"
@@ -531,7 +543,8 @@ export type SpeechActivityControl =
 	| "quiet"
 	| "resume"
 	| "restart"
-	| "stop";
+	| "stop"
+	| `bgm_event:${string}`;
 
 export async function controlSpeechActivity(
 	action: SpeechActivityControl,

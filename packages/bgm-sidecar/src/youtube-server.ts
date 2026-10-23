@@ -55,26 +55,37 @@ const YT_ID_RE = /^[A-Za-z0-9_-]{1,20}$/;
 
 // ── Route handlers ────────────────────────────────────────────────────────────
 
+// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
+export function mapYoutubeSearchVideo(v: any) {
+	return {
+		id: v?.id ?? v?.video_id ?? "",
+		title: typeof v?.title === "string" ? v.title : (v?.title?.text ?? ""),
+		thumbnail: v?.thumbnails?.[0]?.url ?? v?.thumbnail?.[0]?.url ?? "",
+		duration:
+			typeof v?.duration === "string"
+				? v.duration
+				: (v?.duration?.text ??
+					(typeof v?.duration?.seconds === "number" && v.duration.seconds > 0
+						? String(v.duration.seconds)
+						: "")),
+		channel: v?.author?.name ?? v?.channel?.name ?? "",
+	};
+}
+
 async function handleSearch(req: IncomingMessage, res: ServerResponse, params: URLSearchParams) {
 	const q = params.get("q")?.trim() ?? "";
 	if (!q) { json(req, res, 400, { error: "q required" }); return; }
 	const max = Math.min(Number(params.get("max") ?? "12"), 20);
 
-	// BGM 음악 검색은 playlist/믹스 결과를 선호(요즘 음악이 플레이리스트로 많이 올라옴)
-	// → 쿼리에 "playlist" 태그 부가. 이미 들어있으면 중복 안 함.
-	const searchQuery = /\bplaylist\b/i.test(q) ? q : `${q} playlist`;
+	// Do not force "playlist" onto every search query: Radio DJ and default BGM
+	// playback prefer individual songs so track-end transitions happen naturally.
+	// Explicit playlist/mix queries still keep the user's terms intact.
+	const searchQuery = q;
 
 	const yt = await getInnertube();
 	const search = await yt.search(searchQuery, { type: "video" });
 
-	// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
-	const results = (search.videos ?? []).slice(0, max).map((v: any) => ({
-		id: v.id ?? v.video_id ?? "",
-		title: typeof v.title === "string" ? v.title : (v.title?.text ?? ""),
-		thumbnail: v.thumbnails?.[0]?.url ?? v.thumbnail?.[0]?.url ?? "",
-		duration: typeof v.duration === "string" ? v.duration : (v.duration?.text ?? ""),
-		channel: v.author?.name ?? v.channel?.name ?? "",
-	}));
+	const results = (search.videos ?? []).slice(0, max).map(mapYoutubeSearchVideo);
 
 	json(req, res, 200, { results });
 }
