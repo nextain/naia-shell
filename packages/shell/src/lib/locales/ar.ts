@@ -1446,7 +1446,7 @@ export default {
 	"studioNvaApply.loginRequired": "يلزم تسجيل الدخول إلى Naia. سجّل الدخول من الإعدادات ثم أعد المحاولة.",
 	"studioNvaApply.inspectFailed": "فشل التحقق من ملف الصورة الرمزية: {reason}",
 	"studioNvaApply.applyFailed": "فشل تطبيق الصورة الرمزية: {reason}",
-	"studioNvaApply.applied": "تم تطبيق الصورة الرمزية “{name}” على الصدفة.",
+	"studioNvaApply.applied": "تم تطبيق الصورة الرمزية “{name}” على Shell.",
 	"studioNvaApply.openLoginSettings": "تسجيل الدخول من الإعدادات",
 	"studioNvaApply.retryPreview": "التحقق مرة أخرى",
 	"studioNvaApply.close": "إغلاق",

@@ -1446,7 +1446,7 @@ export default {
 	"studioNvaApply.loginRequired": "Naia লগইন প্রয়োজন। সেটিংস থেকে লগইন করে আবার চেষ্টা করুন।",
 	"studioNvaApply.inspectFailed": "অ্যাভাটার ফাইল যাচাই ব্যর্থ হয়েছে: {reason}",
 	"studioNvaApply.applyFailed": "অ্যাভাটার প্রয়োগ ব্যর্থ হয়েছে: {reason}",
-	"studioNvaApply.applied": "“{name}” অ্যাভাটার শেলে প্রয়োগ করা হয়েছে।",
+	"studioNvaApply.applied": "“{name}” অ্যাভাটার Shell-এ প্রয়োগ করা হয়েছে।",
 	"studioNvaApply.openLoginSettings": "সেটিংসে লগইন করুন",
 	"studioNvaApply.retryPreview": "আবার পরীক্ষা করুন",
 	"studioNvaApply.close": "বন্ধ করুন",
