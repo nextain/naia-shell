@@ -121,7 +121,7 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 		).toBe("accept");
 	});
 
-	it("drops null-source error and ended when videoId is missing or from a detached track, and accepts when videoId matches the expected playback (FR-RADIO-DJ.16 + FR-BGM.18)", () => {
+	it("drops null-source error and ended when videoId is unconfirmed or from a detached track, and accepts when videoData or near-end progress matches the expected playback (FR-RADIO-DJ.2·16 + FR-BGM.18)", () => {
 		expect(
 			decideIframeMessageSource({
 				eventSource: null,
@@ -136,6 +136,38 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 				activeContentWindow: active,
 				event: "onStateChange",
 				info: 0,
+			}),
+		).toBe("drop_null_terminal");
+
+		// Before videoData is observed on the new iframe load, a bare numeric terminal
+		// must NOT fall back to iframeVideoId (since a detached previous frame's numeric
+		// terminal has no sender video_id).
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onError",
+				info: 150,
+				expectedVideoId: "v-current",
+				observedVideoId: null,
+				observedPlaybackId: "bgm-2",
+				iframeVideoId: "v-current",
+				expectedPlaybackId: "bgm-2",
+				iframePlaybackId: "bgm-2",
+			}),
+		).toBe("drop_null_terminal");
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onStateChange",
+				info: 0,
+				expectedVideoId: "v-current",
+				observedVideoId: null,
+				observedPlaybackId: "bgm-2",
+				iframeVideoId: "v-current",
+				expectedPlaybackId: "bgm-2",
+				iframePlaybackId: "bgm-2",
 			}),
 		).toBe("drop_null_terminal");
 
@@ -148,6 +180,7 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 				info: 150,
 				expectedVideoId: "v-current",
 				observedVideoId: "v-old",
+				observedPlaybackId: "bgm-2",
 				iframeVideoId: "v-current",
 			}),
 		).toBe("drop_null_terminal");
@@ -159,11 +192,12 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 				info: 0,
 				expectedVideoId: "v-current",
 				observedVideoId: "v-old",
+				observedPlaybackId: "bgm-2",
 				iframeVideoId: "v-current",
 			}),
 		).toBe("drop_null_terminal");
 
-		// Active frame B ("v-current") with matching videoId -> accept null-source error & ended
+		// Active frame B ("v-current") with confirmed videoData matching expectedVideoId -> accept
 		expect(
 			decideIframeMessageSource({
 				eventSource: null,
@@ -172,6 +206,7 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 				info: 150,
 				expectedVideoId: "v-current",
 				observedVideoId: "v-current",
+				observedPlaybackId: "bgm-2",
 				iframeVideoId: "v-current",
 				expectedPlaybackId: "bgm-2",
 				iframePlaybackId: "bgm-2",
@@ -185,9 +220,29 @@ describe("decideIframeMessageSource (#671 / #557)", () => {
 				info: 0,
 				expectedVideoId: "v-current",
 				observedVideoId: "v-current",
+				observedPlaybackId: "bgm-2",
 				iframeVideoId: "v-current",
 				expectedPlaybackId: "bgm-2",
 				iframePlaybackId: "bgm-2",
+			}),
+		).toBe("accept");
+
+		// Ended ("onStateChange" 0) is also accepted when the last infoDelivery for the
+		// current playbackId had currentTime near duration end.
+		expect(
+			decideIframeMessageSource({
+				eventSource: null,
+				activeContentWindow: active,
+				event: "onStateChange",
+				info: 0,
+				expectedVideoId: "v-current",
+				observedVideoId: null,
+				observedPlaybackId: "bgm-2",
+				iframeVideoId: "v-current",
+				expectedPlaybackId: "bgm-2",
+				iframePlaybackId: "bgm-2",
+				lastCurrentTime: 179.4,
+				lastDuration: 180,
 			}),
 		).toBe("accept");
 

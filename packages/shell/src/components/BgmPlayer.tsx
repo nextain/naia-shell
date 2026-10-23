@@ -4,7 +4,9 @@ import {
 	decideIframeMessageSource,
 	diagnoseBgmObservationFailure,
 	emptyBgmObservationCounters,
+	extractMessageVideoId,
 	extractYoutubeIframeVideoId,
+	isNearTrackEnd,
 	YOUTUBE_WIDGET_LISTENING_MESSAGE,
 } from "../lib/bgm-observation-diagnosis";
 import { useEffect, useRef, useState } from "react";
@@ -384,7 +386,30 @@ export function BgmPlayer({ naia }: Props) {
 	const playbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const manuallyStoppedPlaybackRef = useRef<string | null>(null);
 	const lastEndedPlaybackIdRef = useRef<string | null>(null);
-	const lastObservedIframeVideoIdRef = useRef<string | null>(null);
+	const lastErroredPlaybackIdRef = useRef<string | null>(null);
+	const failedVideoIdsRef = useRef<Set<string>>(new Set());
+	const observedIframeStateRef = useRef<{
+		playbackId: string | null;
+		confirmedVideoId: string | null;
+		lastMessageVideoId: string | null;
+		lastCurrentTime: number | null;
+		lastDuration: number | null;
+	}>({
+		playbackId: null,
+		confirmedVideoId: null,
+		lastMessageVideoId: null,
+		lastCurrentTime: null,
+		lastDuration: null,
+	});
+	const lastConfirmedPlayingTrackRef = useRef<{
+		videoId: string;
+		title: string;
+	} | null>(null);
+	const pendingNullTerminalRef = useRef<{
+		playbackId: string;
+		kind: "error" | "ended";
+		reason?: string;
+	} | null>(null);
 	const lastProgressObservationRef = useRef<{
 		playbackId?: string;
 		observedAt: number;
@@ -635,11 +660,50 @@ export function BgmPlayer({ naia }: Props) {
 		return next;
 	}
 
+	function resetObservedIframeState(playbackId: string | null = null) {
+		observedIframeStateRef.current = {
+			playbackId,
+			confirmedVideoId: null,
+			lastMessageVideoId: null,
+			lastCurrentTime: null,
+			lastDuration: null,
+		};
+		pendingNullTerminalRef.current = null;
+	}
+
+	function queryActiveIframeState(iframe: HTMLIFrameElement | null) {
+		if (typeof iframe?.contentWindow?.postMessage !== "function") return;
+		iframe.contentWindow.postMessage(
+			JSON.stringify({ event: "listening" }),
+			"*",
+		);
+		iframe.contentWindow.postMessage(
+			JSON.stringify({ event: "command", func: "getPlayerState", args: [] }),
+			"*",
+		);
+		iframe.contentWindow.postMessage(
+			JSON.stringify({ event: "command", func: "getVideoData", args: [] }),
+			"*",
+		);
+	}
+
 	function startNextQueuedTrack(
 		reason: "ended" | "error" | "timeout",
 	): boolean {
+		const hasPlayableQueued = bgmPlayback
+			.queue()
+			.some((item) => !failedVideoIdsRef.current.has(item.selected.videoId));
+		if (!hasPlayableQueued) {
+			if (bgmPlayback.queue().length > 0) {
+				bgmPlayback.clearQueue();
+			}
+			return false;
+		}
 		const previousPlaybackId = bgmPlayback.current()?.playbackId;
-		const next = bgmPlayback.advance();
+		let next = bgmPlayback.advance();
+		while (next && failedVideoIdsRef.current.has(next.selected.videoId)) {
+			next = bgmPlayback.advance();
+		}
 		if (!next) return false;
 		if (previousPlaybackId) {
 			continueRadioDjRecoveryAfterQueueAdvance(
@@ -730,6 +794,81 @@ export function BgmPlayer({ naia }: Props) {
 			});
 	}
 
+	function handleObservedTrackEnd(eventPlaybackId: string | undefined) {
+		setPlaying(false);
+		if (
+			eventPlaybackId &&
+			manuallyStoppedPlaybackRef.current === eventPlaybackId
+		) {
+			manuallyStoppedPlaybackRef.current = null;
+			observePlayback("paused", { playbackId: eventPlaybackId });
+			return;
+		}
+		if (
+			eventPlaybackId &&
+			lastEndedPlaybackIdRef.current === eventPlaybackId
+		) {
+			return;
+		}
+		const ended = observePlayback("ended", {
+			playbackId: eventPlaybackId,
+		});
+		if (!ended) return;
+		lastEndedPlaybackIdRef.current = ended.playbackId;
+		pendingNullTerminalRef.current = null;
+		const continued =
+			startNextQueuedTrack("ended") || playNextRef.current();
+		const nextSnap = bgmPlayback.current();
+		const nextTrack =
+			continued && nextSnap && nextSnap.playbackId !== ended.playbackId
+				? nextSnap.selected
+				: null;
+		notifyRadioDjBgmEvent({
+			kind: "track_ended",
+			playbackId: ended.playbackId,
+			sequence: ended.sequence,
+			previousVideoId: ended.selected.videoId,
+			previousTitle: ended.selected.title,
+			continued,
+			...(nextTrack
+				? {
+						nextPlaybackId: nextSnap?.playbackId,
+						nextVideoId: nextTrack.videoId,
+						nextTitle: nextTrack.title,
+					}
+				: {}),
+		});
+		emitAiInterferenceEvent({
+			source: "bgm",
+			action: "music_ended",
+			summary: continued
+				? `BGM: "${ended.selected.title}" ended; the next queued track is starting now.`
+				: `BGM: "${ended.selected.title}" ended; nothing is queued next.`,
+		});
+	}
+
+	function handleObservedTrackError(
+		eventPlaybackId: string | undefined,
+		reason: string,
+	) {
+		setPlaying(false);
+		if (
+			eventPlaybackId &&
+			lastErroredPlaybackIdRef.current === eventPlaybackId
+		) {
+			return;
+		}
+		const errored = observePlayback("error", {
+			playbackId: eventPlaybackId,
+			reason,
+		});
+		if (!errored) return;
+		lastErroredPlaybackIdRef.current = errored.playbackId;
+		pendingNullTerminalRef.current = null;
+		failedVideoIdsRef.current.add(errored.selected.videoId);
+		recoverAfterQueueExhausted(errored, "error");
+	}
+
 	// 12s watchdog: only a diagnostic mark, never an automatic track skip. The
 	// only hard evidence of "this track genuinely failed" is the iframe's own
 	// onError event (handled separately below) or the user's own action — a
@@ -745,12 +884,32 @@ export function BgmPlayer({ naia }: Props) {
 
 	function beginPlaybackTimeout(playbackId: string) {
 		clearPlaybackTimeout();
+		if (observedIframeStateRef.current.playbackId !== playbackId) {
+			resetObservedIframeState(playbackId);
+		} else {
+			pendingNullTerminalRef.current = null;
+		}
 		observationCountersRef.current = emptyBgmObservationCounters();
 		observationCountersRef.current.expectedPlaybackId = playbackId;
 		playbackTimeoutRef.current = setTimeout(() => {
 			const current = bgmPlayback.current();
 			if (current?.playbackId !== playbackId || current.status === "playing")
 				return;
+			const pendingTerminal = pendingNullTerminalRef.current;
+			if (pendingTerminal && pendingTerminal.playbackId === playbackId) {
+				pendingNullTerminalRef.current = null;
+				if (pendingTerminal.kind === "error") {
+					handleObservedTrackError(
+						playbackId,
+						pendingTerminal.reason ?? "youtube_iframe_error",
+					);
+					return;
+				}
+				if (pendingTerminal.kind === "ended") {
+					handleObservedTrackEnd(playbackId);
+					return;
+				}
+			}
 			const counters = observationCountersRef.current;
 			counters.activePlaybackId = activeIframePlaybackId();
 			const diagnosis = diagnoseBgmObservationFailure(counters);
@@ -805,10 +964,10 @@ export function BgmPlayer({ naia }: Props) {
 	useEffect(() => {
 		if (backgroundMediaType !== "iframe" || !backgroundVideoUrl) {
 			youtubeHandshakeRef.current.stop();
-			lastObservedIframeVideoIdRef.current = null;
+			resetObservedIframeState(null);
 			return;
 		}
-		lastObservedIframeVideoIdRef.current = null;
+		resetObservedIframeState(bgmPlayback.current()?.playbackId ?? null);
 		const iframe = document.querySelector(
 			".app-bg-iframe",
 		) as HTMLIFrameElement | null;
@@ -836,58 +995,6 @@ export function BgmPlayer({ naia }: Props) {
 	// iframe load and subscribes to `onStateChange` and `onError` once the player
 	// responds (#521).
 	useEffect(() => {
-		function handleObservedTrackEnd(eventPlaybackId: string | undefined) {
-			setPlaying(false);
-			if (
-				eventPlaybackId &&
-				manuallyStoppedPlaybackRef.current === eventPlaybackId
-			) {
-				manuallyStoppedPlaybackRef.current = null;
-				observePlayback("paused", { playbackId: eventPlaybackId });
-				return;
-			}
-			if (
-				eventPlaybackId &&
-				lastEndedPlaybackIdRef.current === eventPlaybackId
-			) {
-				return;
-			}
-			const ended = observePlayback("ended", {
-				playbackId: eventPlaybackId,
-			});
-			if (!ended) return;
-			lastEndedPlaybackIdRef.current = ended.playbackId;
-			const continued =
-				startNextQueuedTrack("ended") || playNextRef.current();
-			const nextSnap = bgmPlayback.current();
-			const nextTrack =
-				continued && nextSnap && nextSnap.playbackId !== ended.playbackId
-					? nextSnap.selected
-					: null;
-			notifyRadioDjBgmEvent({
-				kind: "track_ended",
-				playbackId: ended.playbackId,
-				sequence: ended.sequence,
-				previousVideoId: ended.selected.videoId,
-				previousTitle: ended.selected.title,
-				continued,
-				...(nextTrack
-					? {
-							nextPlaybackId: nextSnap?.playbackId,
-							nextVideoId: nextTrack.videoId,
-							nextTitle: nextTrack.title,
-						}
-					: {}),
-			});
-			emitAiInterferenceEvent({
-				source: "bgm",
-				action: "music_ended",
-				summary: continued
-					? `BGM: "${ended.selected.title}" ended; the next queued track is starting now.`
-					: `BGM: "${ended.selected.title}" ended; nothing is queued next.`,
-			});
-		}
-
 		function onYtMessage(e: MessageEvent) {
 			if (!e.data) return;
 			const activeIframe = document.querySelector(
@@ -928,19 +1035,57 @@ export function BgmPlayer({ naia }: Props) {
 						) ?? undefined)
 					: undefined;
 				const iframeVideoId = extractYoutubeIframeVideoId(activeIframe.src);
+				const observedState = observedIframeStateRef.current;
 				const sourceDecision = decideIframeMessageSource({
 					eventSource: e.source,
 					activeContentWindow: activeIframe.contentWindow,
 					event: String(msg.event ?? ""),
 					info: msg.info ?? msg.data,
 					expectedVideoId: currentForSource?.selected.videoId,
-					observedVideoId: lastObservedIframeVideoIdRef.current,
+					observedVideoId: observedState.lastMessageVideoId,
+					observedPlaybackId: observedState.playbackId,
 					iframeVideoId,
 					expectedPlaybackId: currentForSource?.playbackId,
 					iframePlaybackId: eventPlaybackId,
+					lastCurrentTime: observedState.lastCurrentTime,
+					lastDuration: observedState.lastDuration,
 				});
 				if (sourceDecision !== "accept") {
 					observationCountersRef.current.filteredOut++; // #521
+					if (
+						sourceDecision === "drop_null_terminal" &&
+						currentForSource &&
+						eventPlaybackId &&
+						currentForSource.playbackId === eventPlaybackId &&
+						(!iframeVideoId ||
+							iframeVideoId === currentForSource.selected.videoId) &&
+						!extractMessageVideoId(msg.info ?? msg.data) &&
+						(observedState.playbackId !== currentForSource.playbackId ||
+							!observedState.lastMessageVideoId)
+					) {
+						const eventName = String(msg.event ?? "");
+						const kind =
+							eventName === "onError"
+								? "error"
+								: eventName === "onStateChange" &&
+									  Number(msg.info ?? msg.data) === 0
+									? "ended"
+									: null;
+						if (kind) {
+							pendingNullTerminalRef.current = {
+								playbackId: currentForSource.playbackId,
+								kind,
+								...(kind === "error"
+									? {
+											reason: String(
+												msg.info ?? msg.data ?? "youtube_iframe_error",
+											),
+										}
+									: {}),
+							};
+							queryActiveIframeState(activeIframe);
+						}
+					}
 					return;
 				}
 				observationCountersRef.current.received++; // #521
@@ -981,12 +1126,16 @@ export function BgmPlayer({ naia }: Props) {
 							return;
 						}
 						manuallyStoppedPlaybackRef.current = null;
+						pendingNullTerminalRef.current = null;
 						setPlaying(true);
 						const observed = observePlayback("playing", {
 							playbackId: eventPlaybackId,
 						});
 						if (observed) {
-							lastObservedIframeVideoIdRef.current = observed.selected.videoId;
+							lastConfirmedPlayingTrackRef.current = {
+								videoId: observed.selected.videoId,
+								title: observed.selected.title,
+							};
 							const persist = recordBgmPlayedTrack({
 								id: observed.selected.videoId,
 								title: observed.selected.title,
@@ -1040,32 +1189,46 @@ export function BgmPlayer({ naia }: Props) {
 							manuallyStoppedPlaybackRef.current === eventPlaybackId
 						)
 							return;
-						if (videoData && isSamePlayback) {
+						if (
+							isSamePlayback &&
+							current &&
+							observedIframeStateRef.current.playbackId !== current.playbackId
+						) {
+							resetObservedIframeState(current.playbackId);
+						}
+						if (videoData && isSamePlayback && current) {
 							const vdId = String(videoData.video_id ?? "").trim();
 							const vdTitle = String(videoData.title ?? "").trim();
 							if (vdId) {
-								const prevId = lastObservedIframeVideoIdRef.current;
-								if (
-									!e.source &&
-									current?.status !== "playing" &&
-									vdId !== current?.selected.videoId
-								) {
-									lastObservedIframeVideoIdRef.current = vdId;
+								if (vdId !== current.selected.videoId) {
+									observedIframeStateRef.current.lastMessageVideoId = vdId;
 									return;
 								}
+								const prevId =
+									lastConfirmedPlayingTrackRef.current?.videoId ??
+									observedIframeStateRef.current.confirmedVideoId;
+								const prevTitle =
+									lastConfirmedPlayingTrackRef.current?.title ??
+									currentYtRef.current?.title ??
+									current.selected.title;
+								observedIframeStateRef.current.confirmedVideoId = vdId;
+								observedIframeStateRef.current.lastMessageVideoId = vdId;
 								if (
 									vdTitle &&
 									prevId &&
 									prevId !== vdId &&
-									current?.status === "playing"
+									current.status === "playing"
 								) {
-									const prevTitle =
-										currentYtRef.current?.title ?? current.selected.title;
-									lastObservedIframeVideoIdRef.current = vdId;
+									lastConfirmedPlayingTrackRef.current = {
+										videoId: vdId,
+										title: vdTitle,
+									};
 									const nextVideo: YtVideo = {
 										id: vdId,
 										title: vdTitle,
-										channel: String(videoData.author ?? currentYtRef.current?.channel ?? ""),
+										channel: String(
+											videoData.author ?? currentYtRef.current?.channel ?? "",
+										),
 										thumbnail: currentYtRef.current?.thumbnail ?? "",
 										duration: "",
 									};
@@ -1073,11 +1236,11 @@ export function BgmPlayer({ naia }: Props) {
 									lastYtRef.current = nextVideo;
 									notifyRadioDjBgmEvent({
 										kind: "track_changed",
-										playbackId: eventPlaybackId ?? current?.playbackId,
-										sequence: current?.sequence,
+										playbackId: eventPlaybackId ?? current.playbackId,
+										sequence: current.sequence,
 										previousVideoId: prevId,
 										previousTitle: prevTitle,
-										nextPlaybackId: eventPlaybackId ?? current?.playbackId,
+										nextPlaybackId: eventPlaybackId ?? current.playbackId,
 										nextVideoId: vdId,
 										nextTitle: vdTitle,
 										continued: true,
@@ -1085,21 +1248,115 @@ export function BgmPlayer({ naia }: Props) {
 									if (playerState === 1) {
 										notifyRadioDjBgmEvent({
 											kind: "track_playing",
-											playbackId: eventPlaybackId ?? current?.playbackId,
-											sequence: current?.sequence,
+											playbackId: eventPlaybackId ?? current.playbackId,
+											sequence: current.sequence,
 											videoId: vdId,
 											title: vdTitle,
 											previousStatus: "playing",
 										});
 									}
-								} else if (!prevId || vdId === current?.selected.videoId) {
-									lastObservedIframeVideoIdRef.current = vdId;
 								}
 							}
 						}
-						if (playerState === 0 && isSamePlayback && current?.status === "playing") {
-							counters.stateChangeSeen = true;
-							handleObservedTrackEnd(eventPlaybackId);
+						if (isSamePlayback && current) {
+							if (Number.isFinite(currentTime) && currentTime >= 0) {
+								observedIframeStateRef.current.lastCurrentTime = currentTime;
+							}
+							if (Number.isFinite(duration) && duration > 0) {
+								observedIframeStateRef.current.lastDuration = duration;
+							}
+							if (
+								!videoData &&
+								observedIframeStateRef.current.confirmedVideoId ===
+									current.selected.videoId &&
+								Number.isFinite(currentTime) &&
+								currentTime > 0
+							) {
+								observedIframeStateRef.current.lastMessageVideoId =
+									current.selected.videoId;
+							}
+							const pendingTerminal = pendingNullTerminalRef.current;
+							if (
+								pendingTerminal &&
+								pendingTerminal.playbackId === current.playbackId
+							) {
+								if (pendingTerminal.kind === "ended") {
+									const confirmedByVideoOrProgress =
+										observedIframeStateRef.current.confirmedVideoId ===
+											current.selected.videoId ||
+										isNearTrackEnd(
+											observedIframeStateRef.current.lastCurrentTime,
+											observedIframeStateRef.current.lastDuration,
+										);
+									if (
+										confirmedByVideoOrProgress &&
+										(playerState === 0 ||
+											isNearTrackEnd(
+												observedIframeStateRef.current.lastCurrentTime,
+												observedIframeStateRef.current.lastDuration,
+											))
+									) {
+										pendingNullTerminalRef.current = null;
+										counters.stateChangeSeen = true;
+										handleObservedTrackEnd(eventPlaybackId);
+										return;
+									}
+									if (
+										observedIframeStateRef.current.confirmedVideoId ===
+											current.selected.videoId &&
+										(playerState === 1 ||
+											playerState === 2 ||
+											playerState === 3 ||
+											(playerState === -1 &&
+												!isNearTrackEnd(
+													observedIframeStateRef.current.lastCurrentTime,
+													observedIframeStateRef.current.lastDuration,
+												)))
+									) {
+										pendingNullTerminalRef.current = null;
+									}
+								} else if (pendingTerminal.kind === "error") {
+									const explicitError =
+										videoData?.isPlayable === false ||
+										infoRecord.errorCode !== undefined ||
+										infoRecord.error !== undefined;
+									if (explicitError) {
+										const reason = String(
+											infoRecord.errorCode ??
+												infoRecord.error ??
+												pendingTerminal.reason ??
+												"youtube_iframe_error",
+										);
+										pendingNullTerminalRef.current = null;
+										handleObservedTrackError(eventPlaybackId, reason);
+										return;
+									}
+								}
+							}
+						}
+						if (
+							playerState === 0 &&
+							isSamePlayback &&
+							current?.status === "playing"
+						) {
+							const canAcceptEnded =
+								Boolean(e.source) ||
+								observedIframeStateRef.current.confirmedVideoId ===
+									current.selected.videoId ||
+								isNearTrackEnd(
+									observedIframeStateRef.current.lastCurrentTime,
+									observedIframeStateRef.current.lastDuration,
+								);
+							if (canAcceptEnded) {
+								counters.stateChangeSeen = true;
+								handleObservedTrackEnd(eventPlaybackId);
+								return;
+							}
+							pendingNullTerminalRef.current = {
+								playbackId: current.playbackId,
+								kind: "ended",
+							};
+							queryActiveIframeState(activeIframe);
 							return;
 						}
 						// The iframe bridge can lose the onStateChange "playing" (state=1)
@@ -1117,6 +1374,7 @@ export function BgmPlayer({ naia }: Props) {
 									Number.isFinite(currentTime) &&
 									currentTime > 0));
 						if (canObservePlaying) {
+							pendingNullTerminalRef.current = null;
 							setPlaying(true);
 							const now = Date.now();
 							const lastProgress = lastProgressObservationRef.current;
@@ -1141,8 +1399,10 @@ export function BgmPlayer({ naia }: Props) {
 									: {}),
 							});
 							if (observed && !wasPlaying) {
-								lastObservedIframeVideoIdRef.current =
-									observed.selected.videoId;
+								lastConfirmedPlayingTrackRef.current = {
+									videoId: observed.selected.videoId,
+									title: observed.selected.title,
+								};
 								const persist = recordBgmPlayedTrack({
 									id: observed.selected.videoId,
 									title: observed.selected.title,
@@ -1157,13 +1417,10 @@ export function BgmPlayer({ naia }: Props) {
 						}
 					}
 				} else if (msg.event === "onError") {
-					setPlaying(false);
-					const errored = observePlayback("error", {
-						playbackId: eventPlaybackId,
-						reason: String(msg.info ?? msg.data ?? "youtube_iframe_error"),
-					});
-					if (!errored) return;
-					recoverAfterQueueExhausted(errored, "error");
+					handleObservedTrackError(
+						eventPlaybackId,
+						String(msg.info ?? msg.data ?? "youtube_iframe_error"),
+					);
 				}
 				if (
 					msg.event === "initialDelivery" ||
@@ -1303,6 +1560,8 @@ export function BgmPlayer({ naia }: Props) {
 					cancelRadioDjRecovery();
 					audioRef.current?.pause();
 					setPlaying(false);
+					resetObservedIframeState(null);
+					lastConfirmedPlayingTrackRef.current = null;
 					if (useAvatarStore.getState().backgroundMediaType === "iframe") {
 						setBackgroundVideoUrl(prevBgVideoRef.current);
 						setBackgroundMediaType(prevBgMediaRef.current);
@@ -1634,13 +1893,17 @@ export function BgmPlayer({ naia }: Props) {
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
 	function handleYtSelect(video: YtVideo, requestedPlaybackId?: string) {
-		if (!requestedPlaybackId) cancelRadioDjRecovery();
+		if (!requestedPlaybackId) {
+			cancelRadioDjRecovery();
+			failedVideoIdsRef.current.delete(video.id);
+		}
 		audioRef.current?.pause();
 		const current = bgmPlayback.current();
 		const snapshot =
 			requestedPlaybackId && current?.playbackId === requestedPlaybackId
 				? current
 				: bgmPlayback.request({ videoId: video.id, title: video.title });
+		resetObservedIframeState(snapshot.playbackId);
 		setPlaybackSnapshot(snapshot);
 		beginPlaybackTimeout(snapshot.playbackId);
 		setCurrentYt(video);

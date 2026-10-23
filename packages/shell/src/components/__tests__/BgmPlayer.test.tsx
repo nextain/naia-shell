@@ -754,44 +754,74 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		);
 	});
 
-	it("ignores a null-source error/ended from a detached frame while accepting null-source error and ended for the active track (FR-RADIO-DJ.16 + FR-BGM.18)", async () => {
+	it("ignores a late null-source numeric error/ended from a detached frame without skipping the new track, immediately advances on the current track's normal onError 150 (tried once), and immediately emits track_ended on normal ended (FR-RADIO-DJ.2·16 + FR-BGM.18)", async () => {
+		const controlSpy = vi
+			.spyOn(chatService, "controlSpeechActivity")
+			.mockResolvedValue(true);
+		chatService.setCurrentSpeechActivityId("dj-activity-1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				proactiveSpeechProfile: "personal_radio_dj",
+				proactiveSpeechPermitted: true,
+			}),
+		);
+
 		render(<BgmPlayer />);
-		await startTrack("v1", "Protected Song");
-		attachIframeForCurrentPlayback();
-		// 1) Detached frame A ("v-detached") sends infoDelivery + onError with source=null -> ignored for "v1"
+		await startTrack("v1", "First Candidate");
+		bgmPlayback.enqueue({ videoId: "v2", title: "Second Candidate" });
+		bgmPlayback.enqueue({ videoId: "v3", title: "Third Candidate" });
+		const iframe = attachIframeForCurrentPlayback();
+		const postMessage = vi.fn();
+		Object.defineProperty(iframe, "contentWindow", {
+			configurable: true,
+			value: { postMessage },
+		});
+
+		// 1) Late bare numeric onError(150) and onStateChange(0) from a previous detached frame
+		// arrive BEFORE "v1" has reported its own videoData -> must NOT skip "v1" to "v2",
+		// and instead queries the active iframe with getPlayerState/getVideoData.
 		act(() => {
-			window.dispatchEvent(
-				new MessageEvent("message", {
-					data: JSON.stringify({
-						event: "infoDelivery",
-						info: {
-							playerState: -1,
-							currentTime: 0,
-							videoData: { video_id: "v-detached", title: "Old Track" },
-						},
-					}),
-					source: null,
-				}),
-			);
 			window.dispatchEvent(
 				new MessageEvent("message", {
 					data: JSON.stringify({ event: "onError", info: 150 }),
 					source: null,
 				}),
 			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
 		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v1");
 		expect(bgmPlayback.current()?.status).toBe("requested");
+		expect(
+			postMessage.mock.calls.some(([payload]: unknown[]) =>
+				String(payload).includes('"func":"getPlayerState"'),
+			),
+		).toBe(true);
+		expect(
+			postMessage.mock.calls.some(([payload]: unknown[]) =>
+				String(payload).includes('"func":"getVideoData"'),
+			),
+		).toBe(true);
 
-		// 2) Active frame ("v1") confirms video_id="v1" and then sends null-source onError -> accepted!
+		// 2) Current track ("v1") reports its matching videoData via initialDelivery and then
+		// emits a normal numeric onError 150 -> immediately advances to next candidate ("v2"),
+		// and even if "v1" was queued again or a duplicate onError arrives, "v1" is tried only once.
+		bgmPlayback.enqueue({ videoId: "v1", title: "First Candidate" });
+		const v1PlaybackId = bgmPlayback.current()?.playbackId;
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
 					data: JSON.stringify({
-						event: "infoDelivery",
+						event: "initialDelivery",
 						info: {
 							playerState: -1,
 							currentTime: 0,
-							videoData: { video_id: "v1", title: "Protected Song" },
+							videoData: { video_id: "v1", title: "First Candidate" },
 						},
 					}),
 					source: null,
@@ -804,21 +834,43 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 				}),
 			);
 		});
-		expect(bgmPlayback.current()?.status).toBe("error");
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v2");
+		expect(bgmPlayback.current()?.playbackId).not.toBe(v1PlaybackId);
 
-		// 3) Active frame ("v2") plays and ends with source=null -> accepted as ended!
+		// 3) For the new track ("v2"), a late numeric onError/ended before "v2" videoData does not skip "v2" to "v3".
 		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
-		await startTrack("v2", "Ending Song");
 		attachIframeForCurrentPlayback();
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
-					data: JSON.stringify({ event: "onStateChange", info: 1 }),
+					data: JSON.stringify({ event: "onError", info: 150 }),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v2");
+
+		// "v2" confirms playing and near-end progress, then emits normal numeric ended (0) -> immediately emits track_ended and advances to "v3" (skipping failed "v1" if reached).
+		const v2PlaybackId = bgmPlayback.current()?.playbackId ?? "";
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 179.2,
+							duration: 180,
+							videoData: { video_id: "v2", title: "Second Candidate" },
+						},
+					}),
 					source: null,
 				}),
 			);
 		});
 		expect(bgmPlayback.current()?.status).toBe("playing");
+		controlSpy.mockClear();
+
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
@@ -827,7 +879,187 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 				}),
 			);
 		});
+		// "v2" ended -> immediately advanced to "v3" and emitted track_ended
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v3");
+		expect(
+			controlSpy.mock.calls.some(([arg]) => {
+				if (!String(arg).startsWith("bgm_event:")) return false;
+				const parsed = JSON.parse(String(arg).slice("bgm_event:".length));
+				return (
+					parsed.kind === "track_ended" &&
+					parsed.playbackId === v2PlaybackId &&
+					parsed.previousVideoId === "v2" &&
+					parsed.nextVideoId === "v3" &&
+					parsed.continued === true
+				);
+			}),
+		).toBe(true);
+
+		// If "v3" also ends, the duplicate queued "v1" (which already failed once) is skipped!
+		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
+		attachIframeForCurrentPlayback();
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 120,
+							duration: 120,
+							videoData: { video_id: "v3", title: "Third Candidate" },
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v3");
 		expect(bgmPlayback.current()?.status).toBe("ended");
+
+		chatService.setCurrentSpeechActivityId(undefined);
+		controlSpy.mockRestore();
+	});
+
+	it("ignores mismatched infoDelivery videoData while playing, and when advancing the queue updates expected videoId first before emitting track_playing on observed playing (FR-RADIO-DJ.2·5)", async () => {
+		const controlSpy = vi
+			.spyOn(chatService, "controlSpeechActivity")
+			.mockResolvedValue(true);
+		chatService.setCurrentSpeechActivityId("dj-activity-1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				proactiveSpeechProfile: "personal_radio_dj",
+				proactiveSpeechPermitted: true,
+			}),
+		);
+
+		render(<BgmPlayer />);
+		await startTrack("v1", "첫 곡");
+		bgmPlayback.enqueue({ videoId: "v2", title: "다음 곡" });
+		attachIframeForCurrentPlayback();
+
+		// Confirm "v1" is playing
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 12,
+							duration: 180,
+							videoData: { video_id: "v1", title: "첫 곡" },
+						},
+					}),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		controlSpy.mockClear();
+
+		// 1) While "v1" is playing, a detached frame sends infoDelivery with videoData.video_id="v-detached" (mismatching expected "v1"):
+		// Must record and ignore without emitting track_changed or track_playing!
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 5,
+							duration: 200,
+							videoData: { video_id: "v-detached", title: "엉뚱한 이전 곡" },
+						},
+					}),
+					source: null,
+				}),
+			);
+		});
+		expect(controlSpy).not.toHaveBeenCalled();
+		expect(bgmPlayback.current()?.selected.videoId).toBe("v1");
+
+		// 2) When "v1" ends and the shell advances to queued "v2", expected videoId becomes "v2" first (emitting track_ended),
+		// and track_playing is emitted only when "v2" is observed playing.
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 179.5,
+							duration: 180,
+							videoData: { video_id: "v1", title: "첫 곡" },
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({ event: "onStateChange", info: 0 }),
+					source: null,
+				}),
+			);
+		});
+		const nextSnap = bgmPlayback.current();
+		expect(nextSnap?.selected.videoId).toBe("v2");
+		expect(nextSnap?.status).toBe("requested");
+		const eventsAfterEnd = controlSpy.mock.calls.map(([arg]) =>
+			JSON.parse(String(arg).slice("bgm_event:".length)),
+		);
+		expect(eventsAfterEnd).toEqual([
+			expect.objectContaining({
+				kind: "track_ended",
+				previousVideoId: "v1",
+				nextVideoId: "v2",
+				nextTitle: "다음 곡",
+				continued: true,
+			}),
+		]);
+
+		controlSpy.mockClear();
+		for (const f of document.querySelectorAll(".app-bg-iframe")) f.remove();
+		attachIframeForCurrentPlayback();
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "infoDelivery",
+						info: {
+							playerState: 1,
+							currentTime: 1.5,
+							duration: 210,
+							videoData: { video_id: "v2", title: "다음 곡" },
+						},
+					}),
+					source: null,
+				}),
+			);
+		});
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		const eventsAfterNextPlaying = controlSpy.mock.calls.map(([arg]) =>
+			JSON.parse(String(arg).slice("bgm_event:".length)),
+		);
+		expect(eventsAfterNextPlaying).toEqual([
+			expect.objectContaining({
+				kind: "track_playing",
+				playbackId: nextSnap?.playbackId,
+				videoId: "v2",
+				title: "다음 곡",
+			}),
+		]);
+
+		chatService.setCurrentSpeechActivityId(undefined);
+		controlSpy.mockRestore();
 	});
 
 	it("forwards bgm_event with activityId, playbackId, and sequence matching the Agent contract shape", async () => {
@@ -851,6 +1083,19 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					data: JSON.stringify({
+						event: "initialDelivery",
+						info: {
+							playerState: -1,
+							currentTime: 0,
+							videoData: { video_id: "v-1", title: "첫 곡" },
+						},
+					}),
+					source: null,
+				}),
+			);
+			window.dispatchEvent(
+				new MessageEvent("message", {
 					data: JSON.stringify({ event: "onStateChange", info: 1 }),
 					source: null,
 				}),
@@ -868,7 +1113,7 @@ describe("BgmPlayer 재생 관측 실패 진단 (#521)", () => {
 				activityId: "dj-activity-1",
 				kind: "track_ended",
 				playbackId,
-				sequence: 3,
+				sequence: 4,
 				previousVideoId: "v-1",
 				previousTitle: "첫 곡",
 				continued: false,
