@@ -150,6 +150,11 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-CREDITS-DISPLAY",
   // NVA 플레이어의 몸 움직임(#714). 아바타 렌더링이다.
   "UC-NVA-",
+  // 앱 매니페스트 스키마(#735)와 프로젝트 앱 카탈로그·세션(#756 단계 1~3). 앱 표면 기능이다.
+  "UC-APP-MANIFEST-V2",
+  "UC-PROJECT-APP-SELECT-OPEN-756-S1",
+  "UC-PROJECT-APP-SINGLE-OPEN-756-S2",
+  "UC-PROJECT-APP-LOCAL-756-S3",
 ];
 
 export function ownedByEpic(uc: string): boolean {

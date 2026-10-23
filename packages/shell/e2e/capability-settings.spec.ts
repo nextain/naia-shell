@@ -125,6 +125,12 @@ test.describe("Capability-driven settings (#365)", () => {
 					output_price_per_million: 0.165,
 					cached_price_per_million: null,
 				},
+				{
+					model_key: "motif:motif-3",
+					input_price_per_million: 0.26,
+					output_price_per_million: 1.04,
+					cached_price_per_million: 0.052,
+				},
 			],
 		});
 
@@ -136,9 +142,9 @@ test.describe("Capability-driven settings (#365)", () => {
 			page.locator('[data-testid="model-price-sort-basis"]'),
 		).toContainText(/3\s*:\s*.*1/);
 		await expect(modelSelect.locator('option[value="solar-mini"]')).toHaveText(
-			/Solar Mini \((?:Pricing:|Price per 1M tokens: Input) \$0\.165 \/ (?:Output )?\$0\.165\)/,
+			/Solar Mini \(Price per 1M tokens: Input 165 credits \/ Output 165 credits\)/,
 		);
-		await expect(modelSelect.locator("option")).toHaveCount(4);
+		await expect(modelSelect.locator("option")).toHaveCount(5);
 		await expect(
 			modelSelect.locator('option[value="deepseek-v4-flash"]'),
 		).toHaveCount(1);
@@ -160,6 +166,9 @@ test.describe("Capability-driven settings (#365)", () => {
 		await expect(
 			modelSelect.locator('option[value="gpt-5.6-sol"]'),
 		).toHaveCount(0);
+		await expect(modelSelect.locator('option[value="motif-3"]')).toHaveText(
+			/Motif 3 \(Price per 1M tokens: Input 260 credits \/ Output 1\.04K credits\)/,
+		);
 		const priceOrder = await modelSelect
 			.locator("option")
 			.evaluateAll((options) =>
@@ -179,12 +188,17 @@ test.describe("Capability-driven settings (#365)", () => {
 			);
 		expect(performanceOrder).not.toEqual(priceOrder);
 		await expect(modelSelect).toHaveValue("solar-mini");
+		await modelSelect.selectOption("motif-3");
+		await expect(
+			page.locator(".settings-hint").filter({ hasText: "100만 토큰당 가격" }),
+		).toContainText("입력 260 크레딧 · 출력 1.04K 크레딧 · 캐시 읽기 52 크레딧");
+		await modelSelect.selectOption("solar-mini");
 		await expect(modelSelect.locator('option[value="naia-local"]')).toHaveCount(
 			0,
 		);
 		await expect(
 			page.locator(".settings-hint").filter({ hasText: "100만 토큰당 가격" }),
-		).toContainText("입력 $0.165 · 출력 $0.165");
+		).toContainText("입력 165 크레딧 · 출력 165 크레딧");
 
 		const proactiveButton = page.locator("button[data-proactive-state]");
 		await expect(proactiveButton).toHaveAttribute(

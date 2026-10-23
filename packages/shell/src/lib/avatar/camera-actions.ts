@@ -13,15 +13,26 @@
 export type CameraActions = {
 	rotate: (dx: number, dy: number) => void;
 	pan: (dx: number, dy: number) => void;
+	zoom: (delta: number) => void;
 	reset: () => void;
 	save: () => void;
+	getGestureActions: () => NvaGestureAction[];
+	playAction: (key: string) => Promise<void>;
 };
+
+export interface NvaGestureAction {
+	key: string;
+	label: string;
+}
 
 const _cameraActions: CameraActions = {
 	rotate: () => {},
 	pan: () => {},
+	zoom: () => {},
 	reset: () => {},
 	save: () => {},
+	getGestureActions: () => [],
+	playAction: async () => {},
 };
 
 /** 활성 아바타의 이동/회전 액션. 반환 객체는 안정적(싱글턴) — 등록 측이 필드를 교체한다. */
@@ -38,6 +49,9 @@ export function registerCameraActions(actions: Partial<CameraActions>): void {
 export function clearCameraActions(): void {
 	_cameraActions.rotate = () => {};
 	_cameraActions.pan = () => {};
+	_cameraActions.zoom = () => {};
 	_cameraActions.reset = () => {};
 	_cameraActions.save = () => {};
+	_cameraActions.getGestureActions = () => [];
+	_cameraActions.playAction = async () => {};
 }

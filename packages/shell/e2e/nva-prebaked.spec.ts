@@ -6,13 +6,18 @@ import {
 
 const NVA_MOCK = `
 (function () {
+  const query = new URLSearchParams(window.location.search);
+  const animations = {
+    idle: { clip: "clips/idle.webm", loop: true },
+    speak: { clip: "clips/talk.webm", loop: true },
+  };
+  if (!query.has("nvaNoGesture")) {
+    animations.wave = { clip: "clips/wave.webm", loop: false, can_talk: false, label: "Wave" };
+  }
   const manifest = {
     nva_version: "0.2",
     canvas: { width: 406, height: 720, fps: 25 },
-    animations: {
-      idle: { clip: "clips/idle.webm", loop: true },
-      speak: { clip: "clips/talk.webm", loop: true }
-    },
+    animations,
     vrm_slots: {
       profile: {
         generation_mode: "prebaked_webm_only",
@@ -35,6 +40,7 @@ const NVA_MOCK = `
     }
   };
   window.__nvaInvokes = [];
+  window.__nvaPlayedClips = [];
   window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = window.__TAURI_EVENT_PLUGIN_INTERNALS__ || {};
   window.__TAURI_INTERNALS__.metadata = { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } };
@@ -46,7 +52,12 @@ const NVA_MOCK = `
     if (cmd === "detect_gpu_vram") return null;
     if (cmd === "read_local_binary") {
       if (String(args && args.path).endsWith("manifest.json")) {
-        return btoa(unescape(encodeURIComponent(JSON.stringify(manifest))));
+        if (query.has("nvaManifestError")) throw new Error("Fixture manifest unavailable");
+        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(manifest))));
+        if (query.has("holdNvaManifest")) {
+          return new Promise((resolve) => { window.__releaseNvaManifest = () => resolve(encoded); });
+        }
+        return encoded;
       }
       return "AA==";
     }
@@ -54,7 +65,10 @@ const NVA_MOCK = `
   };
   Object.defineProperty(HTMLMediaElement.prototype, "play", {
     configurable: true,
-    value: function () { return Promise.resolve(); }
+    value: function () {
+      window.__nvaPlayedClips.push(this.dataset.naiaClipUrl || "");
+      return Promise.resolve();
+    }
   });
   HTMLMediaElement.prototype.pause = function () {};
 })();
@@ -95,6 +109,27 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		expect(videoBox?.width).toBeGreaterThan(0);
 		expect(videoBox?.height).toBeGreaterThan(0);
 		await expect(page.locator("[data-video-avatar-status]")).toHaveCount(0);
+		const zoomIn = page.getByRole("button", { name: "Zoom in" });
+		const zoomOut = page.getByRole("button", { name: "Zoom out" });
+		const wave = page.getByRole("button", { name: "Wave" });
+		await expect(zoomIn).toBeVisible();
+		await expect(zoomOut).toBeVisible();
+		await expect(wave).toBeVisible();
+		if (process.env.NVA_CAPTURE_BEFORE)
+			await page.screenshot({ path: process.env.NVA_CAPTURE_BEFORE });
+		await zoomIn.click();
+		await expect(video).toHaveAttribute("style", /scale\(1\.1\)/);
+		if (process.env.NVA_CAPTURE_AFTER)
+			await page.screenshot({ path: process.env.NVA_CAPTURE_AFTER });
+		const initialPlayCount = await page.evaluate(
+			() => (window as any).__nvaPlayedClips.length,
+		);
+		await wave.click();
+		await expect
+			.poll(() => page.evaluate(() => (window as any).__nvaPlayedClips.length))
+			.toBeGreaterThan(initialPlayCount);
+		await zoomOut.click();
+		await expect(video).toHaveAttribute("style", /scale\(1\)/);
 
 		await page.locator(".app-bar-settings").click();
 		await page.locator('[data-settings-tab="avatar"]').click();
@@ -115,6 +150,7 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 
 		const result = await page.evaluate(() => ({
 			commands: (window as any).__nvaInvokes.map((entry) => entry.cmd),
+			playedClips: (window as any).__nvaPlayedClips,
 			config: JSON.parse(localStorage.getItem("naia-config") || "{}"),
 		}));
 		expect(result.commands).not.toContain("start_voxcpm2");
@@ -123,5 +159,62 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		expect(result.config.local8gFocus).toBeUndefined();
 		expect(result.config.localAvatarVoiceFocus).toBeUndefined();
 		expect(result.config.avatarProvider).toBe("naia-video-avatar");
+		expect(result.playedClips.length).toBeGreaterThan(1);
+	});
+
+	test("keeps loading, empty gesture, error, and narrow controls understandable", async ({
+		page,
+	}) => {
+		await page.addInitScript(NVA_MOCK);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
+		await page.addInitScript(() => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "gemini",
+					model: "gemini-3.5-flash",
+					locale: "en",
+					onboardingComplete: true,
+					avatarProvider: "naia-video-avatar",
+					nvaModel: "naia-prebaked",
+				}),
+			);
+		});
+
+		await page.goto("/?holdNvaManifest=1&nvaNoGesture=1");
+		const avatar = page.locator("[data-video-avatar]");
+		await expect(avatar).toHaveAttribute("data-video-avatar-mode", "loading");
+		await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
+		await expect(page.getByRole("button", { name: "Wave" })).toHaveCount(0);
+		await page.evaluate(() => (window as any).__releaseNvaManifest?.());
+		await expect(avatar).toHaveAttribute("data-video-avatar-mode", "prebaked");
+		await expect(page.getByRole("button", { name: "Wave" })).toHaveCount(0);
+
+		await page.setViewportSize({ width: 360, height: 800 });
+		for (const name of ["Zoom in", "Zoom out", "Reset avatar view"]) {
+			const button = page.getByRole("button", { name });
+			await expect(button).toBeVisible();
+			const box = await button.boundingBox();
+			expect(box?.x).toBeGreaterThanOrEqual(0);
+			expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
+		}
+		const zoomIn = page.getByRole("button", { name: "Zoom in" });
+		await zoomIn.focus();
+		await expect(zoomIn).toBeFocused();
+		await page.keyboard.press("Enter");
+		await expect(page.locator("[data-video-avatar-prebaked]")).toHaveAttribute(
+			"style",
+			/scale\(1\.1\)/,
+		);
+
+		await page.goto("/?nvaManifestError=1");
+		await expect(page.locator("[data-video-avatar]")).toHaveAttribute(
+			"data-video-avatar-mode",
+			"error",
+		);
+		await expect(page.locator("[data-video-avatar-status]")).toContainText(
+			/Unable to|failed/i,
+		);
 	});
 });

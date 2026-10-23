@@ -1,6 +1,8 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
 	type MouseEvent,
+	Suspense,
+	lazy,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -28,7 +30,11 @@ import { getBridgeForApp } from "../lib/active-bridge";
 import { removeInstalledApp } from "../lib/app-loader";
 import { appRegistry } from "../lib/app-registry";
 import { useAppStore } from "../stores/app";
-import { BgmPlayer } from "./BgmPlayer";
+const BgmPlayer = lazy(() =>
+	import("./BgmPlayer").then((module) => ({
+		default: module.BgmPlayer,
+	})),
+);
 
 // BGM player lives in the always-on app-bar (not a switchable app), so it
 // needs its own persistent bridge to push BGM context (favorites, current
@@ -749,7 +755,9 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					document.body,
 				)}
 			{/* ── BGM (right side of app-bar) ─── */}
-			<BgmPlayer naia={bgmBridge} />
+			<Suspense fallback={null}>
+				<BgmPlayer naia={bgmBridge} />
+			</Suspense>
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}

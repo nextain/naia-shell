@@ -25,10 +25,11 @@ function buildMock(
 	vramGb: number | null,
 	cascadeReady = false,
 	cascadeBlocked = false,
+	initiallyRunning = false,
 ): string {
 	return `
 (function() {
-	var cascadeStarted = false;
+	var cascadeStarted = ${initiallyRunning};
 	var cascadeInstalled = false;
 	window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
 	window.__TAURI_EVENT_PLUGIN_INTERNALS__ = window.__TAURI_EVENT_PLUGIN_INTERNALS__ || {};
@@ -81,6 +82,8 @@ interface SetupOpts {
 	cascadeReady?: boolean;
 	/** 클린 설치에서 VoxCPM2 런타임이 없는 환경. */
 	cascadeBlocked?: boolean;
+	/** Provider를 바꿀 때 이미 실행 중인 로컬 음성 엔진. */
+	cascadeRunning?: boolean;
 }
 
 async function openSlotSettings(
@@ -92,6 +95,7 @@ async function openSlotSettings(
 			opts.vramGb ?? null,
 			opts.cascadeReady === true,
 			opts.cascadeBlocked === true,
+			opts.cascadeRunning === true,
 		),
 	);
 	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
@@ -247,6 +251,40 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		await expect(
 			page.locator('[data-testid="slot-apply-defaults"]'),
 		).toHaveCount(0);
+	});
+
+	test("FR-VOICE-LOCAL-RETURN: Edge returns to local while the engine is running", async ({
+		page,
+	}) => {
+		await openSlotSettings(page, {
+			vramGb: 8,
+			cascadeReady: true,
+			cascadeRunning: true,
+			config: {
+				naiaKey: "e2e-voice-fixture",
+				ttsProvider: "edge",
+				ttsEnabled: false,
+				localVoiceEnabled: false,
+				vllmTtsHost: "https://voice.example.test/tts",
+			},
+		});
+		await page.locator('[data-settings-tab="voice"]').click();
+		const provider = page.getByTestId("gateway-tts-provider");
+		await expect(provider).toHaveValue("edge");
+		await expect(provider.locator('option[value="naia-local-voice"]')).toBeEnabled();
+		await provider.selectOption("naia-local-voice");
+
+		await expect
+			.poll(() =>
+				page.evaluate(() => JSON.parse(localStorage.getItem("naia-config") || "{}")),
+			)
+			.toMatchObject({
+				ttsProvider: "naia-local-voice",
+				ttsEnabled: true,
+				localVoiceEnabled: true,
+				vllmTtsHost: "https://voice.example.test/tts",
+			});
+		await expect(provider).toHaveValue("naia-local-voice");
 	});
 
 	test("FR-SLOT.3: apply Gemini defaults fills unset slots (non-destructive, §9 #5)", async ({
