@@ -448,8 +448,9 @@ describe("web bundled assets (WO-03)", () => {
 
 	it("returns bundled/remote URLs as-is in web mode", async () => {
 		setWebAssetsModeForTests(true);
-		await expect(toLocalBlobUrl("/backgrounds/ol-woman-dusk.webp")).resolves
-			.toBe("/backgrounds/ol-woman-dusk.webp");
+		await expect(
+			toLocalBlobUrl("/backgrounds/naia-dawn-city-uhd.webp"),
+		).resolves.toBe("/backgrounds/naia-dawn-city-uhd.webp");
 		await expect(toLocalBlobUrl("/avatars/03-OL_Woman.vrm")).resolves.toBe(
 			"/avatars/03-OL_Woman.vrm",
 		);

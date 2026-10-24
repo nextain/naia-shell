@@ -2,11 +2,13 @@ import { getStartableAgentBridge } from "./agent-bridge";
 import { installWebRuntime } from "./install";
 import { startWebModel } from "./model-start";
 import { checkWebAdkStartup } from "./web-adk";
+import { consumeWebAuthCallbackFromLocation } from "./web-auth";
 import { getWebFs } from "./web-fs";
 import { readNavigatorGpu } from "./webgpu-check";
 
 if (import.meta.env.MODE === "web") {
 	installWebRuntime();
+	void consumeWebAuthCallbackFromLocation();
 	void checkWebAdkStartup({
 		fs: getWebFs(),
 	});

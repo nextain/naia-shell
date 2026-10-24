@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createAgentBridge, type WorkerLike } from "../agent-bridge";
+import { type WorkerLike, createAgentBridge } from "../agent-bridge";
+import { createMemoryWebFs } from "../web-fs";
 import {
 	getWebModelStatus,
 	resetWebModelStatusForTests,
@@ -222,5 +223,62 @@ describe("agent-bridge", () => {
 			errorKind: "load-failed",
 			errorMessage: "Worker runtime fatal error",
 		});
+	});
+
+	it("persists user and assistant turns to WebFs conversations when finish arrives", async () => {
+		let workerInstance: FakeWorker | null = null;
+		const fs = createMemoryWebFs();
+		const bridge = createAgentBridge({
+			createWorker: () => {
+				workerInstance = new FakeWorker();
+				return workerInstance;
+			},
+			emit: () => {},
+			getFs: () => fs,
+		});
+
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		const workerPort = workerInstance!.posted[0].transfer![0] as MessagePort;
+		workerPort.start?.();
+
+		bridge.sendLine(
+			JSON.stringify({
+				type: "chat_request",
+				requestId: "req-1",
+				sessionId: "sess_test_1",
+				messages: [{ role: "user", content: "안녕 나이아" }],
+			}),
+		);
+
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-1",
+				content: "반가워요!",
+			}),
+		);
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "finish",
+				requestId: "req-1",
+			}),
+		);
+
+		await new Promise((r) => setTimeout(r, 80));
+
+		const saved = await fs.readText("naia-adk/conversations/sess_test_1.jsonl");
+		expect(saved).not.toBeNull();
+		const lines = (saved ?? "").trim().split("\n");
+		expect(lines).toHaveLength(2);
+		expect(JSON.parse(lines[0])).toMatchObject({
+			role: "user",
+			content: "안녕 나이아",
+		});
+		expect(JSON.parse(lines[1])).toMatchObject({
+			role: "assistant",
+			content: "반가워요!",
+		});
+
+		workerPort.close();
 	});
 });

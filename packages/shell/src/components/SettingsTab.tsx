@@ -37,7 +37,24 @@ import {
 } from "../lib/avatar-presets";
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
-import { WEB_DEFAULT_BACKGROUND } from "../lib/web-runtime/web-assets";
+import {
+	isRetiredWebBackground,
+	isWebMode,
+	WEB_DEFAULT_BACKGROUND,
+} from "../lib/web-runtime/web-assets";
+import {
+	getWebAuthenticatedUserId,
+	isWebAuthenticated,
+	logoutWebSession,
+	startWebLoginRedirect,
+} from "../lib/web-runtime/web-auth";
+import {
+	formatWebStorageSummaryLine,
+	getWebStoragePersistState,
+	requestWebPersistentStorage,
+	subscribeWebStoragePersistState,
+} from "../lib/web-runtime/web-storage-persist";
+import { isWebSpeechAvailable } from "../lib/stt";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
 	isRecommendedLocalValue,
@@ -750,13 +767,66 @@ export function SettingsTab() {
 	);
 	// 기본값은 `effectiveTtsProvider` 한 곳에서 정한다 — 프로파일 카드도 같은 함수를
 	// 읽는다. 여기에만 두면 카드가 "미설정" 이라 적는 동안 이 드롭다운은 Edge 를
-	// 보여 준다(#575).
+	// 보여 준다(#575). 웹판은 브라우저 내장 합성("browser")으로 고정한다.
 	const [ttsProvider, setTtsProvider] = useState<TtsProviderId>(
-		effectiveTtsProvider((existing ?? {}) as AppConfig),
+		isWebMode() ? "browser" : effectiveTtsProvider((existing ?? {}) as AppConfig),
 	);
 	const [sttProvider, setSttProvider] = useState<SttProviderId>(
-		existing?.sttProvider ?? "",
+		existing?.sttProvider ?? (isWebMode() ? "web-speech" : ""),
 	);
+	const [browserSpeechVoices, setBrowserSpeechVoices] = useState<
+		SpeechSynthesisVoice[]
+	>([]);
+	const [webStorageState, setWebStorageState] = useState(() =>
+		getWebStoragePersistState(),
+	);
+	const [webAuthLoggedIn, setWebAuthLoggedIn] = useState(() =>
+		isWebAuthenticated(),
+	);
+	const [webAuthUserId, setWebAuthUserId] = useState(() =>
+		getWebAuthenticatedUserId(),
+	);
+	useEffect(() => {
+		if (!isWebMode()) return;
+		const unsubStorage = subscribeWebStoragePersistState(() => {
+			setWebStorageState(getWebStoragePersistState());
+		});
+		void requestWebPersistentStorage();
+		const syncAuth = () => {
+			setWebAuthLoggedIn(isWebAuthenticated());
+			setWebAuthUserId(getWebAuthenticatedUserId());
+		};
+		window.addEventListener("naia_auth_ready", syncAuth);
+		window.addEventListener("naia-web-auth-changed", syncAuth);
+		return () => {
+			unsubStorage();
+			window.removeEventListener("naia_auth_ready", syncAuth);
+			window.removeEventListener("naia-web-auth-changed", syncAuth);
+		};
+	}, []);
+	useEffect(() => {
+		if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+		const synth = window.speechSynthesis;
+		if (!synth || typeof synth.getVoices !== "function") return;
+		const refreshVoices = () => {
+			try {
+				setBrowserSpeechVoices(synth.getVoices() ?? []);
+			} catch {
+				setBrowserSpeechVoices([]);
+			}
+		};
+		refreshVoices();
+		const prevHandler = synth.onvoiceschanged;
+		synth.onvoiceschanged = (ev) => {
+			refreshVoices();
+			if (typeof prevHandler === "function") prevHandler.call(synth, ev);
+		};
+		return () => {
+			if (synth.onvoiceschanged !== prevHandler) {
+				synth.onvoiceschanged = prevHandler;
+			}
+		};
+	}, []);
 	const [sttModel, setSttModel] = useState(existing?.sttModel ?? "");
 	const [sttModels, setSttModels] = useState<SttModelInfo[]>([]);
 	const [sttDownloading, setSttDownloading] = useState<string | null>(null);
@@ -2659,9 +2729,12 @@ export function SettingsTab() {
 
 	// Load background list from naia-settings
 	useEffect(() => {
+		const rawSavedFilename = existing?.backgroundVideo as string | undefined;
 		const savedFilename =
-			(existing?.backgroundVideo as string | undefined) ??
-			(import.meta.env.MODE === "web" ? WEB_DEFAULT_BACKGROUND : undefined);
+			isWebMode() && isRetiredWebBackground(rawSavedFilename)
+				? WEB_DEFAULT_BACKGROUND
+				: (rawSavedFilename ??
+					(isWebMode() ? WEB_DEFAULT_BACKGROUND : undefined));
 		listNaiaAssets("background").then((paths) => {
 			setNaiaBgs(paths);
 			if (savedFilename) {
@@ -2734,6 +2807,29 @@ export function SettingsTab() {
 			// Resolve the effective TTS provider / voice / credentials, then
 			// synthesize shell-side (#363). The agent's skill_tts was never a real
 			// synthesizer, so preview routes through the same path as live voice.
+			if (isWebMode() || ttsProvider === "browser") {
+				if (
+					typeof window === "undefined" ||
+					!("speechSynthesis" in window) ||
+					typeof SpeechSynthesisUtterance === "undefined"
+				) {
+					throw new Error("이 브라우저는 음성 합성을 지원하지 않습니다");
+				}
+				window.speechSynthesis.cancel();
+				const utter = new SpeechSynthesisUtterance(getPreviewText(ttsVoice));
+				if (ttsVoice && typeof window.speechSynthesis.getVoices === "function") {
+					const matched = window.speechSynthesis
+						.getVoices()
+						.find((v) => v.voiceURI === ttsVoice || v.name === ttsVoice);
+					if (matched) {
+						utter.voice = matched;
+						if (matched.lang) utter.lang = matched.lang;
+					}
+				}
+				window.speechSynthesis.speak(utter);
+				return;
+			}
+
 			let synthProvider: TtsProviderId;
 			let synthVoice: string | undefined;
 
@@ -3411,17 +3507,14 @@ export function SettingsTab() {
 				>
 					{t("settings.tabBrain")}
 				</button>
-				{/* WO-03: 웹판은 음성·기억·지식·스킬 데스크톱 전용 탭을 감추고 모델 상태·아바타·페르소나·일반(배경)만 남긴다. */}
-				{import.meta.env.MODE !== "web" && (
-					<button
-						type="button"
-						data-settings-tab="voice"
-						className={`settings-tab-btn${activeSettingsTab === "voice" ? " settings-tab-btn--active" : ""}`}
-						onClick={() => setActiveSettingsTab("voice")}
-					>
-						{t("settings.tabVoice")}
-					</button>
-				)}
+				<button
+					type="button"
+					data-settings-tab="voice"
+					className={`settings-tab-btn${activeSettingsTab === "voice" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("voice")}
+				>
+					{t("settings.tabVoice")}
+				</button>
 				<button
 					type="button"
 					data-settings-tab="avatar"
@@ -3652,6 +3745,69 @@ export function SettingsTab() {
 							저장된 카메라 위치를 지우고 기본값으로 돌아갑니다
 						</div>
 					</div>
+
+					{isWebMode() && (
+						<>
+							<div
+								className="settings-field"
+								data-testid="web-storage-persist-section"
+							>
+								<label>브라우저 저장소</label>
+								<div
+									className="settings-hint"
+									data-testid="web-storage-persist-status"
+								>
+									{formatWebStorageSummaryLine(webStorageState)}
+								</div>
+							</div>
+
+							<div className="settings-field" data-testid="web-account-section">
+								<label>나이아 웹 계정</label>
+								<div
+									style={{
+										display: "flex",
+										gap: 8,
+										alignItems: "center",
+										flexWrap: "wrap",
+									}}
+								>
+									<span
+										className="settings-hint"
+										data-testid="web-account-status"
+									>
+										{webAuthLoggedIn
+											? `로그인됨${webAuthUserId ? ` (${webAuthUserId})` : ""}`
+											: "로그아웃 상태"}
+									</span>
+									{webAuthLoggedIn ? (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="web-logout-btn"
+											onClick={() => {
+												logoutWebSession();
+												setWebAuthLoggedIn(false);
+												setWebAuthUserId("");
+												setNaiaKeyState("");
+												setNaiaUserIdState("");
+											}}
+										>
+											{t("settings.labDisconnect")}
+										</button>
+									) : (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="web-login-btn"
+											onClick={() => startWebLoginRedirect({ lang: locale })}
+										>
+											{t("settings.labConnect")}
+										</button>
+									)}
+								</div>
+							</div>
+						</>
+					)}
 				</>
 			)}
 			{activeSettingsTab === "avatar" && (
@@ -5143,30 +5299,59 @@ export function SettingsTab() {
 								data-testid="stt-provider-section"
 							>
 								<label>{t("settings.sttProvider")}</label>
-								<select
-									value={sttProvider}
-									onChange={(e) => {
-										const next = e.target.value as SttProviderId;
-										setSttProvider(next);
-										setSttModel("");
-										persistConfig({ sttProvider: next, sttModel: "" });
-									}}
-								>
-									<option value="">{t("settings.sttNone")}</option>
-									{listSttProviders().map((p) => (
-										<option
-											key={p.id}
-											value={p.id}
-											disabled={p.requiresNaiaKey && !naiaKey}
+								{isWebMode() ? (
+									<>
+										<select
+											data-testid="web-stt-provider-select"
+											value={sttProvider ? "web-speech" : ""}
+											disabled={!isWebSpeechAvailable()}
+											onChange={(e) => {
+												const next = e.target.value as SttProviderId;
+												setSttProvider(next);
+												setSttModel("");
+												persistConfig({ sttProvider: next, sttModel: "" });
+											}}
 										>
-											{p.name}
-											{p.pricing ? ` - ${p.pricing}` : ""}
-											{p.requiresNaiaKey && !naiaKey
-												? ` (${t("settings.ttsNaiaRequired")})`
-												: ""}
-										</option>
-									))}
-								</select>
+											<option value="web-speech">
+												Web Speech (브라우저 내장 · 무료)
+											</option>
+											<option value="">{t("settings.sttNone")}</option>
+										</select>
+										{!isWebSpeechAvailable() && (
+											<div
+												className="settings-hint"
+												data-testid="web-stt-unsupported-hint"
+											>
+												이 브라우저는 음성 인식을 지원하지 않습니다
+											</div>
+										)}
+									</>
+								) : (
+									<select
+										value={sttProvider}
+										onChange={(e) => {
+											const next = e.target.value as SttProviderId;
+											setSttProvider(next);
+											setSttModel("");
+											persistConfig({ sttProvider: next, sttModel: "" });
+										}}
+									>
+										<option value="">{t("settings.sttNone")}</option>
+										{listSttProviders().map((p) => (
+											<option
+												key={p.id}
+												value={p.id}
+												disabled={p.requiresNaiaKey && !naiaKey}
+											>
+												{p.name}
+												{p.pricing ? ` - ${p.pricing}` : ""}
+												{p.requiresNaiaKey && !naiaKey
+													? ` (${t("settings.ttsNaiaRequired")})`
+													: ""}
+											</option>
+										))}
+									</select>
+								)}
 							</div>
 							{/* STT Model — current selection + manage button (offline engines only) */}
 							{/* vLLM ASR: endpoint URL + ASR model picker */}
@@ -5258,58 +5443,91 @@ export function SettingsTab() {
 						<label htmlFor="tts-provider-select">
 							{t("settings.ttsProvider")}
 						</label>
-						<select
-							id="tts-provider-select"
-							data-testid="gateway-tts-provider"
-							value={ttsProvider}
-							onChange={async (e) => {
-								const next = e.target.value as TtsProviderId;
-								if (next === "naia-local-voice") {
-									await selectProfileTtsProvider(next);
-									return;
-								}
-								setTtsProvider(next);
-								setDynamicTtsVoices([]);
-								persistConfig({ ttsProvider: next });
-								setGatewayTtsApiKey("");
-								// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
-								// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
-								// Reset voice to provider default
-								const meta = listTtsProviderMetas().find((p) => p.id === next);
-								if (meta?.voices?.[0]) {
-									persistTtsVoice(meta.voices[0].id);
-								} else if (next === "edge") {
-									// Edge voice will be selected from gateway/hardcoded list
-									persistTtsVoice("");
-								} else if (next === "vllm") {
-									// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
-									// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
-									persistTtsVoice("default");
-								}
-							}}
-						>
-							{listTtsProviderMetas().map((p) => (
-								<option
-									key={p.id}
-									value={p.id}
+						{isWebMode() ? (
+							<>
+								<select
+									id="tts-provider-select"
+									data-testid="gateway-tts-provider"
+									value="browser"
 									disabled={
-										(p.requiresNaiaKey && !naiaKey) ||
-										(p.id === "naia-local-voice" &&
-											(detectedVramGb == null || detectedVramGb < 6))
+										typeof window === "undefined" ||
+										!("speechSynthesis" in window)
 									}
+									onChange={() => {
+										setTtsProvider("browser");
+										persistConfig({ ttsProvider: "browser" });
+									}}
 								>
-									{p.name}
-									{p.pricing ? ` - ${p.pricing}` : ""}
-									{p.requiresNaiaKey && !naiaKey
-										? ` (${t("settings.ttsNaiaRequired")})`
-										: ""}
-									{isRecommendedLocalValue(activeLocalTier, "tts", p.id)
-										? ` · ${t("settings.tierRecommendBadge")}`
-										: ""}
-								</option>
-							))}
-						</select>
-						{slotRecommendation(activeLocalTier, "tts") && (
+									<option value="browser">
+										Browser SpeechSynthesis (브라우저 내장 · 무료)
+									</option>
+								</select>
+								{(typeof window === "undefined" ||
+									!("speechSynthesis" in window)) && (
+									<div
+										className="settings-hint"
+										data-testid="web-tts-unsupported-hint"
+									>
+										이 브라우저는 음성 합성을 지원하지 않습니다
+									</div>
+								)}
+							</>
+						) : (
+							<select
+								id="tts-provider-select"
+								data-testid="gateway-tts-provider"
+								value={ttsProvider}
+								onChange={async (e) => {
+									const next = e.target.value as TtsProviderId;
+									if (next === "naia-local-voice") {
+										await selectProfileTtsProvider(next);
+										return;
+									}
+									setTtsProvider(next);
+									setDynamicTtsVoices([]);
+									persistConfig({ ttsProvider: next });
+									setGatewayTtsApiKey("");
+									// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
+									// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
+									// Reset voice to provider default
+									const meta = listTtsProviderMetas().find(
+										(p) => p.id === next,
+									);
+									if (meta?.voices?.[0]) {
+										persistTtsVoice(meta.voices[0].id);
+									} else if (next === "edge") {
+										// Edge voice will be selected from gateway/hardcoded list
+										persistTtsVoice("");
+									} else if (next === "vllm") {
+										// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
+										// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
+										persistTtsVoice("default");
+									}
+								}}
+							>
+								{listTtsProviderMetas().map((p) => (
+									<option
+										key={p.id}
+										value={p.id}
+										disabled={
+											(p.requiresNaiaKey && !naiaKey) ||
+											(p.id === "naia-local-voice" &&
+												(detectedVramGb == null || detectedVramGb < 6))
+										}
+									>
+										{p.name}
+										{p.pricing ? ` - ${p.pricing}` : ""}
+										{p.requiresNaiaKey && !naiaKey
+											? ` (${t("settings.ttsNaiaRequired")})`
+											: ""}
+										{isRecommendedLocalValue(activeLocalTier, "tts", p.id)
+											? ` · ${t("settings.tierRecommendBadge")}`
+											: ""}
+									</option>
+								))}
+							</select>
+						)}
+						{!isWebMode() && slotRecommendation(activeLocalTier, "tts") && (
 							<div className="settings-hint" data-testid="tts-tier-hint">
 								{t("settings.tierRecommendSummary")}: naia-local-voice (
 								{t("settings.tierRecommendLocalTag")})
@@ -5493,6 +5711,57 @@ export function SettingsTab() {
 
 					{/* TTS Voice picker — dynamic based on provider */}
 					{(() => {
+						if (isWebMode() || ttsProvider === "browser") {
+							const synthSupported =
+								typeof window !== "undefined" && "speechSynthesis" in window;
+							const langPrefix = locale.slice(0, 2).toLowerCase();
+							const sortedVoices = [...browserSpeechVoices].sort((a, b) => {
+								const aMatch = a.lang?.toLowerCase().startsWith(langPrefix)
+									? 0
+									: 1;
+								const bMatch = b.lang?.toLowerCase().startsWith(langPrefix)
+									? 0
+									: 1;
+								return aMatch - bMatch;
+							});
+							return (
+								<div className="settings-field">
+									<label htmlFor="tts-voice-select">
+										{t("settings.ttsVoice")}
+									</label>
+									<div className="voice-picker">
+										<select
+											id="tts-voice-select"
+											data-testid="browser-tts-voice"
+											value={ttsVoice}
+											disabled={!synthSupported}
+											onChange={(e) => persistTtsVoice(e.target.value)}
+										>
+											<option value="">기본 브라우저 목소리</option>
+											{sortedVoices.map((v) => (
+												<option
+													key={v.voiceURI || v.name}
+													value={v.voiceURI || v.name}
+												>
+													{v.name} ({v.lang})
+												</option>
+											))}
+										</select>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="browser-tts-preview-btn"
+											onClick={handleVoicePreview}
+											disabled={isPreviewing || !synthSupported}
+										>
+											{isPreviewing
+												? t("settings.voicePreviewing")
+												: t("settings.voicePreview")}
+										</button>
+									</div>
+								</div>
+							);
+						}
 						const providerMeta = listTtsProviderMetas().find(
 							(p) => p.id === ttsProvider,
 						);

@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceAppApi } from "./apps/workspace/types";
 import { AppShellFrame } from "./components/AppShellFrame";
+import { WebLoginScreen } from "./components/WebLoginScreen";
 import { useAgentAuthSync } from "./hooks/useAgentAuthSync";
 import {
 	applyTheme,
@@ -41,7 +42,16 @@ import type { AppInstallRequest } from "./lib/app-store-client";
 import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
-import { WEB_DEFAULT_BACKGROUND, WEB_DEFAULT_VRM } from "./lib/web-runtime/web-assets";
+import {
+	WEB_DEFAULT_BACKGROUND,
+	WEB_DEFAULT_VRM,
+	isWebMode,
+} from "./lib/web-runtime/web-assets";
+import {
+	consumeWebAuthCallbackFromLocation,
+	isWebAuthenticated,
+	isWebLoginRequired,
+} from "./lib/web-runtime/web-auth";
 import { sendAppSkills, sendAppSkillsClear } from "./lib/chat-service";
 import {
 	addAllowedTool,
@@ -207,6 +217,31 @@ export function App() {
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [configHydrated, setConfigHydrated] = useState(false);
 	const [configSaveError, setConfigSaveError] = useState<string | null>(null);
+	const [webAuthenticated, setWebAuthenticated] = useState(() =>
+		isWebAuthenticated(),
+	);
+	const [webAuthError, setWebAuthError] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (!isWebMode()) return;
+		const syncAuth = () => setWebAuthenticated(isWebAuthenticated());
+		window.addEventListener("naia-web-auth-changed", syncAuth);
+		void consumeWebAuthCallbackFromLocation().then((res) => {
+			if (res.handled) {
+				if (res.ok) {
+					setWebAuthError(null);
+					setWebAuthenticated(true);
+				} else if (res.error === "state_mismatch") {
+					setWebAuthError("로그인 검증(state)에 실패했습니다. 다시 시도해 주세요.");
+				} else if (res.error === "invalid_key") {
+					setWebAuthError("유효하지 않은 로그인 키가 전달되었습니다.");
+				}
+			}
+		});
+		return () => {
+			window.removeEventListener("naia-web-auth-changed", syncAuth);
+		};
+	}, []);
 	// Start the E2E native bind after commit. Starting it during render lets
 	// React StrictMode invoke the native command twice before the ref from the
 	// first render is retained.
@@ -498,6 +533,7 @@ export function App() {
 		}
 		const all = appRegistry.list();
 		for (const descriptor of all) {
+			if (isWebMode() && descriptor.id === "browser") continue;
 			if (
 				descriptor.keepAlive &&
 				descriptor.tools &&
@@ -1062,6 +1098,9 @@ export function App() {
 		: showAdkSetup
 			? "setup"
 			: chatModeOverride;
+	if (isWebLoginRequired() && !webAuthenticated) {
+		return <WebLoginScreen authError={webAuthError} />;
+	}
 	return (
 		<>
 			<AppShellFrame

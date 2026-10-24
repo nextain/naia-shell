@@ -93,6 +93,45 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 		expect(synthesizeMock).not.toHaveBeenCalled();
 	});
 
+	it("selects matching SpeechSynthesisVoice when browser voice is configured", () => {
+		const utterances: Array<{
+			text: string;
+			lang: string;
+			voice: unknown;
+		}> = [];
+		const koVoice = {
+			voiceURI: "ko-KR-SunHi",
+			name: "Microsoft SunHi",
+			lang: "ko-KR",
+		};
+		vi.stubGlobal("speechSynthesis", {
+			speak: vi.fn((u) => utterances.push(u)),
+			cancel: vi.fn(),
+			getVoices: () => [koVoice],
+		});
+		vi.stubGlobal(
+			"SpeechSynthesisUtterance",
+			class {
+				lang = "";
+				voice: unknown = null;
+				onstart: (() => void) | null = null;
+				onend: (() => void) | null = null;
+				onerror: (() => void) | null = null;
+				constructor(public text: string) {}
+			},
+		);
+		const { deps } = makeDeps({
+			getVoiceConfig: () => ({
+				ttsProvider: "browser",
+				voice: "ko-KR-SunHi",
+			}),
+		});
+		createSentenceTtsPipeline(deps).sendSentence("안녕하세요.");
+		expect(utterances).toHaveLength(1);
+		expect(utterances[0].voice).toBe(koVoice);
+		expect(utterances[0].lang).toBe("ko-KR");
+	});
+
 	it("sends the same normalized text to browser and remote providers", async () => {
 		const utterances: Array<{ text: string }> = [];
 		vi.stubGlobal("speechSynthesis", {

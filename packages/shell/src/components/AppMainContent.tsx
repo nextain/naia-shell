@@ -12,6 +12,7 @@ import type { AppInstallRequest } from "../lib/app-store-client";
 import { t } from "../lib/i18n";
 import type { UpdateInfo } from "../lib/updater";
 import { snoozeStartupUpdatePrompt } from "../lib/updater";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
 import { AiControlBar } from "./AiControlBar";
 import { AppBar } from "./AppBar";
@@ -370,8 +371,8 @@ export function AppMainContent(props: AppMainContentProps) {
 								className={`content-app${!activeApp ? " content-app--hidden" : ""}`}
 							>
 								{keepAliveApps.map((app) => {
-									// WO-03: 웹판은 브라우저 탭이 꺼져 있어 마운트 자체를 막는다 (browser_wv_create 오류 방지).
-									if (import.meta.env.MODE === "web" && app.id === "browser") {
+									// WO-03 / 지시서 #3: 웹판은 브라우저 탭이 꺼져 있어 마운트 자체를 막는다 (browser_wv_create 오류 방지).
+									if (isWebMode() && app.id === "browser") {
 										return null;
 									}
 									if (
@@ -395,6 +396,7 @@ export function AppMainContent(props: AppMainContentProps) {
 									);
 								})}
 								{activeApp &&
+									!(isWebMode() && activeApp === "browser") &&
 									!keepAliveApps.some((app) => app.id === activeApp) && (
 										<div className="content-app__slot content-app__slot--active">
 											<ErrorBoundary scope={`App(${activeApp})`}>

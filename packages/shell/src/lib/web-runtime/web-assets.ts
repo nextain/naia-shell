@@ -56,19 +56,20 @@ export const WEB_VRM_ASSETS: readonly WebBundledAsset[] = [
 ];
 
 /**
- * 웹판 배경 카탈로그 — dist /backgrounds/*.webp (번들 아바타 프리뷰를
- * 16:9로 중앙 크롭한 파생본. 원본 추가 없이 재사용).
+ * 웹판 배경 카탈로그 — dist /backgrounds/*.webp (naia-settings/background 정식 UHD 배경).
+ * 이전의 아바타 썸네일 16:9 확대 파생본(ol-woman-dusk.webp, shino-uniform-dusk.webp)은
+ * 화면에 얼굴만 거대하게 보이는 원인이므로 폐기하고 정식 배경으로 교체했다.
  */
 export const WEB_BACKGROUND_ASSETS: readonly WebBundledAsset[] = [
 	{
-		filename: "ol-woman-dusk.webp",
-		label: "ol-woman-dusk",
-		url: "/backgrounds/ol-woman-dusk.webp",
+		filename: "naia-dawn-city-uhd.webp",
+		label: "naia-dawn-city-uhd",
+		url: "/backgrounds/naia-dawn-city-uhd.webp",
 	},
 	{
-		filename: "shino-uniform-dusk.webp",
-		label: "shino-uniform-dusk",
-		url: "/backgrounds/shino-uniform-dusk.webp",
+		filename: "naia-jina-minho-war-room-uhd.webp",
+		label: "naia-jina-minho-war-room-uhd",
+		url: "/backgrounds/naia-jina-minho-war-room-uhd.webp",
 	},
 ];
 
@@ -78,6 +79,45 @@ export const WEB_DEFAULT_VRM = WEB_VRM_ASSETS[0].url;
 export const WEB_DEFAULT_BACKGROUND = WEB_BACKGROUND_ASSETS[0].filename;
 /** 웹판 배경 기본값 URL. */
 export const WEB_DEFAULT_BACKGROUND_URL = WEB_BACKGROUND_ASSETS[0].url;
+
+/**
+ * 아바타 썸네일을 16:9로 잘라 얼굴만 크게 보이던 폐기 웹판 배경 파일명.
+ * 기존 사용자 설정(localStorage `naia-config`, OPFS `ui-config.json`·`config.json`)에
+ * 남아 있으면 새 기본 배경(`WEB_DEFAULT_BACKGROUND`)으로 마이그레이션한다.
+ */
+export const RETIRED_WEB_BACKGROUND_FILENAMES: readonly string[] = [
+	"ol-woman-dusk.webp",
+	"shino-uniform-dusk.webp",
+];
+
+export function isRetiredWebBackground(value: unknown): boolean {
+	if (typeof value !== "string" || value.length === 0) return false;
+	const trimmed = value.trim();
+	return RETIRED_WEB_BACKGROUND_FILENAMES.some(
+		(name) => trimmed === name || trimmed.endsWith(`/${name}`),
+	);
+}
+
+/**
+ * 설정 레코드(`backgroundVideo`, `backgroundImage`)에 폐기된 웹 배경 파일명이 있으면
+ * 새 기본값(`WEB_DEFAULT_BACKGROUND`)으로 치환하고 변경 여부를 돌려준다.
+ */
+export function normalizeRetiredWebBackgroundInRecord(
+	record: Record<string, unknown>,
+): boolean {
+	let changed = false;
+	if (isRetiredWebBackground(record.backgroundVideo)) {
+		record.backgroundVideo = WEB_DEFAULT_BACKGROUND;
+		changed = true;
+	}
+	if (isRetiredWebBackground(record.backgroundImage)) {
+		record.backgroundImage = String(record.backgroundImage).startsWith("/")
+			? WEB_DEFAULT_BACKGROUND_URL
+			: WEB_DEFAULT_BACKGROUND;
+		changed = true;
+	}
+	return changed;
+}
 
 /** 웹판 번들 자산 URL인가 (/avatars/*, /backgrounds/*, /assets/* …). */
 export function isWebBundledAssetUrl(path: string): boolean {

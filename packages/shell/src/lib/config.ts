@@ -23,6 +23,10 @@ import {
 	naiaLaunchMode,
 	resolveNaiaInstance,
 } from "./naia-instance-urls";
+import {
+	isWebMode,
+	normalizeRetiredWebBackgroundInRecord,
+} from "./web-runtime/web-assets";
 
 const STORAGE_KEY = "naia-config";
 
@@ -135,6 +139,9 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 	}
 
 	for (const key of RETIRED_VOICE_CONFIG_KEYS) remove(key);
+	if (normalizeRetiredWebBackgroundInRecord(raw)) {
+		changed = true;
+	}
 	return { config, changed };
 }
 
@@ -677,9 +684,22 @@ export function loadConfig(): AppConfig | null {
 		if (normalized.changed) {
 			localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
 		}
-		// Default STT provider: web-speech on Windows/macOS (Chromium WebView),
-		// vosk on Linux (WebKitGTK doesn't support Web Speech API)
-		if (!config.sttProvider) {
+		// Default STT/TTS provider:
+		// - In web mode: browser built-in SpeechRecognition ("web-speech") and speechSynthesis ("browser").
+		// - On desktop: web-speech on Windows/macOS (Chromium WebView), vosk on Linux (WebKitGTK).
+		if (isWebMode()) {
+			if (
+				!config.sttProvider ||
+				config.sttProvider === "vosk" ||
+				config.sttProvider === "whisper" ||
+				config.sttProvider === "vllm"
+			) {
+				config.sttProvider = "web-speech";
+			}
+			if (!config.ttsProvider || config.ttsProvider !== "browser") {
+				config.ttsProvider = "browser";
+			}
+		} else if (!config.sttProvider) {
 			const isLinux = navigator.userAgent.includes("Linux");
 			config.sttProvider = isLinux ? "vosk" : "web-speech";
 		}
@@ -762,17 +782,28 @@ export function isReadyToChat(): boolean {
 		config.provider === "claude-code-cli" ||
 		config.provider === "grok" ||
 		config.provider === "ollama" ||
-		config.provider === "vllm";
+		config.provider === "vllm" ||
+		config.provider === "webllm";
 	return noKeyNeeded || !!config.apiKey || !!config.naiaKey;
 }
 
 export function hasNaiaKey(): boolean {
 	const config = loadConfig();
-	return !!config?.naiaKey;
+	if (config?.naiaKey) return true;
+	if (isWebMode() && typeof localStorage !== "undefined") {
+		return Boolean(localStorage.getItem("naia-remote-key")?.trim());
+	}
+	return false;
 }
 
 export function getNaiaKey(): string | undefined {
-	return loadConfig()?.naiaKey;
+	const fromConfig = loadConfig()?.naiaKey;
+	if (fromConfig) return fromConfig;
+	if (isWebMode() && typeof localStorage !== "undefined") {
+		const remote = localStorage.getItem("naia-remote-key")?.trim();
+		return remote || undefined;
+	}
+	return undefined;
 }
 
 export function resolveGatewayUrl(
@@ -835,6 +866,20 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 			? (await getSecretKeyAtPath(key, securePath)) ?? undefined
 			: undefined;
 		assertSelectedAdkPath(securePath, "Loading configuration");
+	}
+	if (
+		isWebMode() &&
+		!config.naiaKey &&
+		typeof localStorage !== "undefined"
+	) {
+		const webKey = localStorage.getItem("naia-remote-key")?.trim();
+		if (webKey) {
+			config.naiaKey = webKey;
+		}
+		const webUserId = localStorage.getItem("naia-remote-user-id")?.trim();
+		if (webUserId && !config.naiaUserId) {
+			config.naiaUserId = webUserId;
+		}
 	}
 	assertSelectedAdkPath(securePath, "Loading configuration");
 	if (!publicConfig && !config.naiaKey) return null;

@@ -1,11 +1,11 @@
 import { Logger } from "../logger";
+import { getAgentBridge } from "./agent-bridge";
 import { COMMAND_TABLE, STUB_RESPONSES } from "./command-table";
 import {
 	handleEventEmit,
 	handleEventListen,
 	handleEventUnlisten,
 } from "./event-bus";
-import { getAgentBridge } from "./agent-bridge";
 import { getWebFs } from "./web-fs";
 import { handleWebWorkspaceCommand } from "./web-workspace-commands";
 
@@ -25,14 +25,10 @@ export async function routeCommand(
 			);
 		}
 		if (cmd === "plugin:event|unlisten") {
-			return handleEventUnlisten(
-				args as { event?: string; eventId?: number },
-			);
+			return handleEventUnlisten(args as { event?: string; eventId?: number });
 		}
 		if (cmd === "plugin:event|emit") {
-			return handleEventEmit(
-				args as { event: string; payload: unknown },
-			);
+			return handleEventEmit(args as { event: string; payload: unknown });
 		}
 		if (cmd === "send_to_agent_command") {
 			const message = (args as { message?: string })?.message ?? "";
@@ -76,7 +72,10 @@ export async function routeCommand(
 			cmd === "read_naia_ui_config" ||
 			cmd === "write_naia_ui_config" ||
 			cmd === "write_naia_path_cache" ||
-			cmd === "reload_agent_settings"
+			cmd === "reload_agent_settings" ||
+			cmd === "list_conversations" ||
+			cmd === "read_conversation" ||
+			cmd === "delete_conversation"
 		) {
 			return handleWebWorkspaceCommand(cmd, args, getWebFs());
 		}

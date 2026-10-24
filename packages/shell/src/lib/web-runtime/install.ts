@@ -4,8 +4,10 @@ import {
 	unregisterCallback,
 	unregisterEventListener,
 } from "./event-bus";
-import { routeCommand } from "./router";
 import { registerWebLlmProvider } from "./llm-provider";
+import { routeCommand } from "./router";
+import { normalizeRetiredWebBackgroundInRecord } from "./web-assets";
+import { requestWebPersistentStorage } from "./web-storage-persist";
 import { WEB_LLM_MODEL_ID } from "./webllm-model";
 
 export const WEB_RUNTIME_MARKER = "naia-web-runtime";
@@ -69,13 +71,27 @@ export function installWebRuntime(): void {
 
 	registerWebLlmProvider();
 
-	if (
-		typeof localStorage !== "undefined" &&
-		!localStorage.getItem("naia-config")
-	) {
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID }),
-		);
+	if (typeof localStorage !== "undefined") {
+		const rawConfig = localStorage.getItem("naia-config");
+		if (!rawConfig) {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({ provider: "webllm", model: WEB_LLM_MODEL_ID }),
+			);
+		} else {
+			try {
+				const parsed: unknown = JSON.parse(rawConfig);
+				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+					const record = parsed as Record<string, unknown>;
+					if (normalizeRetiredWebBackgroundInRecord(record)) {
+						localStorage.setItem("naia-config", JSON.stringify(record));
+					}
+				}
+			} catch {
+				// ignore malformed localStorage config
+			}
+		}
 	}
+
+	void requestWebPersistentStorage();
 }

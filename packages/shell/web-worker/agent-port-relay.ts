@@ -14,7 +14,7 @@ export interface RelayPortLike {
 export function relayAgentPort(deps: {
 	outer: RelayPortLike;
 	inner: RelayPortLike;
-	beforeChatRequest: () => Promise<void>;
+	beforeChatRequest: (rawLine: string) => Promise<void>;
 	diag: { log(message: string, ctx?: unknown): void };
 }): { stop(): void } {
 	let chain: Promise<void> = Promise.resolve();
@@ -48,7 +48,7 @@ export function relayAgentPort(deps: {
 
 				if (isChatRequest) {
 					try {
-						await deps.beforeChatRequest();
+						await deps.beforeChatRequest(line);
 					} catch (error) {
 						deps.diag.log("adk snapshot refresh failed", { error });
 					}

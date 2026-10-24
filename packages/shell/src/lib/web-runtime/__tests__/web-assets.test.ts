@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	RETIRED_WEB_BACKGROUND_FILENAMES,
 	WEB_BACKGROUND_ASSETS,
 	WEB_DEFAULT_BACKGROUND,
 	WEB_DEFAULT_BACKGROUND_URL,
 	WEB_DEFAULT_VRM,
 	WEB_VRM_ASSETS,
+	isRetiredWebBackground,
 	isWebBundledAssetUrl,
 	isWebMode,
+	normalizeRetiredWebBackgroundInRecord,
 	setWebAssetsModeForTests,
 } from "../web-assets";
 
@@ -58,7 +61,7 @@ describe("web bundled catalogs", () => {
 describe("isWebBundledAssetUrl", () => {
 	it("accepts dist asset URLs", () => {
 		expect(isWebBundledAssetUrl("/avatars/03-OL_Woman.vrm")).toBe(true);
-		expect(isWebBundledAssetUrl("/backgrounds/ol-woman-dusk.webp")).toBe(
+		expect(isWebBundledAssetUrl("/backgrounds/naia-dawn-city-uhd.webp")).toBe(
 			true,
 		);
 		expect(isWebBundledAssetUrl("avatars/03-OL_Woman.vrm")).toBe(true);
@@ -70,5 +73,32 @@ describe("isWebBundledAssetUrl", () => {
 		);
 		expect(isWebBundledAssetUrl("https://example.com/a.vrm")).toBe(false);
 		expect(isWebBundledAssetUrl("blob:https://x/y")).toBe(false);
+	});
+});
+
+describe("retired face-crop web backgrounds", () => {
+	it("identifies retired ol-woman-dusk and shino-uniform-dusk filenames and paths", () => {
+		for (const retired of RETIRED_WEB_BACKGROUND_FILENAMES) {
+			expect(isRetiredWebBackground(retired)).toBe(true);
+			expect(isRetiredWebBackground(`/backgrounds/${retired}`)).toBe(true);
+		}
+		expect(isRetiredWebBackground("naia-dawn-city-uhd.webp")).toBe(false);
+		expect(isRetiredWebBackground("/backgrounds/naia-dawn-city-uhd.webp")).toBe(
+			false,
+		);
+		expect(isRetiredWebBackground("")).toBe(false);
+		expect(isRetiredWebBackground(null)).toBe(false);
+	});
+
+	it("replaces retired backgroundVideo and backgroundImage in stored records with default background", () => {
+		const record: Record<string, unknown> = {
+			backgroundVideo: "ol-woman-dusk.webp",
+			backgroundImage: "/backgrounds/shino-uniform-dusk.webp",
+		};
+		expect(normalizeRetiredWebBackgroundInRecord(record)).toBe(true);
+		expect(record.backgroundVideo).toBe(WEB_DEFAULT_BACKGROUND);
+		expect(record.backgroundImage).toBe(WEB_DEFAULT_BACKGROUND_URL);
+
+		expect(normalizeRetiredWebBackgroundInRecord(record)).toBe(false);
 	});
 });

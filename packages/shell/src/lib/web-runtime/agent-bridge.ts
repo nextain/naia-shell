@@ -1,11 +1,13 @@
 import { createAgentWorker } from "virtual:naia-agent-worker";
 import { Logger } from "../logger";
 import { emitWebEvent } from "./event-bus";
+import { type WebFs, getWebFs } from "./web-fs";
 import {
 	errorKindFromEngineErrorName,
 	getWebModelStatus,
 	setWebModelStatus,
 } from "./web-model-status";
+import { appendWebConversationMessages } from "./web-workspace-commands";
 import { isWebLlmModelId } from "./webllm-model";
 
 export interface WorkerLike {
@@ -27,11 +29,79 @@ export interface StartableAgentBridge extends AgentBridge {
 export function createAgentBridge(deps: {
 	createWorker: () => WorkerLike;
 	emit: (event: string, payload: unknown) => void;
+	getFs?: () => WebFs;
 }): StartableAgentBridge {
+	const resolveFs = deps.getFs ?? getWebFs;
 	let worker: WorkerLike | null = null;
 	let channelPort: MessagePort | null = null;
 	let started = false;
 	const pendingLines: string[] = [];
+	const activeTurns = new Map<
+		string,
+		{
+			sessionId: string;
+			userContent: string;
+			userTimestamp: number;
+			assistantReply: string;
+		}
+	>();
+
+	function trackOutgoingLine(line: string): void {
+		try {
+			const parsed = JSON.parse(line) as {
+				type?: unknown;
+				requestId?: unknown;
+				sessionId?: unknown;
+				messages?: unknown;
+				message?: unknown;
+				prompt?: unknown;
+			};
+			if (!parsed || typeof parsed !== "object") return;
+			if (
+				parsed.type === "chat_request" &&
+				typeof parsed.requestId === "string" &&
+				parsed.requestId.length > 0
+			) {
+				const sessionId =
+					typeof parsed.sessionId === "string" &&
+					parsed.sessionId.trim().length > 0
+						? parsed.sessionId
+						: "default";
+				let userContent = "";
+				if (Array.isArray(parsed.messages)) {
+					for (let i = parsed.messages.length - 1; i >= 0; i--) {
+						const msg = parsed.messages[i] as {
+							role?: unknown;
+							content?: unknown;
+						} | null;
+						if (msg && msg.role === "user" && typeof msg.content === "string") {
+							userContent = msg.content;
+							break;
+						}
+					}
+				} else if (typeof parsed.message === "string") {
+					userContent = parsed.message;
+				} else if (typeof parsed.prompt === "string") {
+					userContent = parsed.prompt;
+				}
+				if (userContent.length > 0) {
+					activeTurns.set(parsed.requestId, {
+						sessionId,
+						userContent,
+						userTimestamp: Date.now(),
+						assistantReply: "",
+					});
+				}
+			} else if (
+				parsed.type === "cancel_stream" &&
+				typeof parsed.requestId === "string"
+			) {
+				activeTurns.delete(parsed.requestId);
+			}
+		} catch {
+			// 비 JSON 제어 라인은 무시
+		}
+	}
 
 	function start(opts: { model: string | null }): void {
 		if (started) {
@@ -45,9 +115,64 @@ export function createAgentBridge(deps: {
 		channelPort = channel.port1;
 
 		channel.port1.onmessage = (event: MessageEvent) => {
-			if (typeof event.data === "string") {
-				deps.emit("agent_response", event.data);
+			if (typeof event.data !== "string") return;
+			const rawLine = event.data;
+			try {
+				const chunk = JSON.parse(rawLine) as {
+					type?: unknown;
+					requestId?: unknown;
+					content?: unknown;
+				};
+				if (
+					chunk &&
+					typeof chunk === "object" &&
+					typeof chunk.requestId === "string"
+				) {
+					const turn = activeTurns.get(chunk.requestId);
+					if (turn) {
+						if (chunk.type === "text" && typeof chunk.content === "string") {
+							turn.assistantReply += chunk.content;
+						} else if (chunk.type === "error") {
+							activeTurns.delete(chunk.requestId);
+						} else if (chunk.type === "finish") {
+							activeTurns.delete(chunk.requestId);
+							if (turn.assistantReply.length > 0) {
+								const now = Math.max(Date.now(), turn.userTimestamp);
+								void appendWebConversationMessages(
+									turn.sessionId,
+									[
+										{
+											role: "user",
+											content: turn.userContent,
+											timestamp: turn.userTimestamp,
+										},
+										{
+											role: "assistant",
+											content: turn.assistantReply,
+											timestamp: now,
+										},
+									],
+									resolveFs(),
+								)
+									.catch((err) => {
+										Logger.warn(
+											"WebAgent",
+											"failed to persist conversation turn",
+											{ error: String(err) },
+										);
+									})
+									.finally(() => {
+										deps.emit("agent_response", rawLine);
+									});
+								return;
+							}
+						}
+					}
+				}
+			} catch {
+				// 비 JSON 응답은 그대로 전달
 			}
+			deps.emit("agent_response", rawLine);
 		};
 		channel.port1.start?.();
 
@@ -132,6 +257,7 @@ export function createAgentBridge(deps: {
 	return {
 		start,
 		sendLine(line: string): void {
+			trackOutgoingLine(line);
 			if (!channelPort) {
 				pendingLines.push(line);
 				return;

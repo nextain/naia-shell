@@ -1,19 +1,20 @@
 /// <reference lib="webworker" />
 import {
 	BROWSER_READ_TOOL_NAMES,
+	type WebLLMChatRequest,
+	type WebLLMEngineLike,
 	makeBrowserReadTools,
 	makePersonaSourceStore,
-	makeWorkspaceContextStore,
 	makeWebLLMProvider,
+	makeWorkspaceContextStore,
 	startBrowserAgent,
-	type WebLLMEngineLike,
 } from "@naia-agent/composition/browser-agent.js";
 import type { DiagnosticLog } from "@naia-agent/ports/uc1.js";
 import { WEB_ADK_PATH } from "../src/lib/web-runtime/web-adk-path";
 import {
-	isWebLlmModelId,
 	WEB_LLM_MODEL_ID,
 	type WebLlmModelId,
+	isWebLlmModelId,
 } from "../src/lib/web-runtime/webllm-model";
 import {
 	EMPTY_ADK_SNAPSHOT,
@@ -22,6 +23,11 @@ import {
 } from "./adk-snapshot-fs";
 import { relayAgentPort } from "./agent-port-relay";
 import { makeOpfsReadFs } from "./opfs-read-fs";
+import {
+	type WebThinkingLevel,
+	applyThinkingLevelToWebLLMRequest,
+	resolveChatTurnThinkingLevel,
+} from "./thinking-level";
 
 const diag: DiagnosticLog = {
 	log(message: string, ctx?: unknown) {
@@ -159,16 +165,39 @@ self.addEventListener("message", (event: MessageEvent) => {
 			getEngine().catch(() => {});
 		}
 
+		let snapshot = EMPTY_ADK_SNAPSHOT;
+		let activeThinkingLevel: WebThinkingLevel = "off";
+		const refresh = async (rawLine: string) => {
+			snapshot = await readAdkSnapshot(() => navigator.storage.getDirectory());
+			activeThinkingLevel = resolveChatTurnThinkingLevel(
+				rawLine,
+				snapshot.configText,
+			);
+		};
+
+		const getEngineWithThinking = async (): Promise<WebLLMEngineLike> => {
+			const baseEngine = await getEngine();
+			return {
+				chat: {
+					completions: {
+						create(req: WebLLMChatRequest) {
+							return baseEngine.chat.completions.create(
+								applyThinkingLevelToWebLLMRequest(req, activeThinkingLevel),
+							);
+						},
+					},
+				},
+				interruptGenerate() {
+					return baseEngine.interruptGenerate();
+				},
+			};
+		};
+
 		const provider = makeWebLLMProvider({
-			getEngine,
+			getEngine: getEngineWithThinking,
 			model: selectedModel ?? WEB_LLM_MODEL_ID,
 			toolNames: BROWSER_READ_TOOL_NAMES,
 		});
-
-		let snapshot = EMPTY_ADK_SNAPSHOT;
-		const refresh = async () => {
-			snapshot = await readAdkSnapshot(() => navigator.storage.getDirectory());
-		};
 
 		const toolExecutor = makeBrowserReadTools({
 			fs: makeOpfsReadFs(() => navigator.storage.getDirectory()),

@@ -23,6 +23,7 @@ import { Logger } from "../lib/logger";
 import { getBridgeForApp } from "../lib/active-bridge";
 import { removeInstalledApp } from "../lib/app-loader";
 import { appRegistry } from "../lib/app-registry";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
 import { BgmPlayer } from "./BgmPlayer";
 
@@ -71,8 +72,8 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const [iconEditing, setIconEditing] = useState<BrowserLink | null>(null);
 	const [iconInput, setIconInput] = useState("");
 	const [removeError, setRemoveError] = useState("");
-	// WO-03: 웹판은 브라우저 탭·바로가기·설치 앱이 꺼져 있어 해당 메뉴를 감춘다.
-	const isWeb = import.meta.env.MODE === "web";
+	// WO-03 / 지시서 #3: 웹판은 브라우저 탭·바로가기·설치 앱이 꺼져 있어 해당 메뉴와 진입점을 완전히 막는다.
+	const isWeb = isWebMode();
 
 	// Hide browser native webview while any dialog is open (webview renders above HTML z-index).
 	// Use a single boolean so transitioning between dialogs (addUrlDialog→urlInputDialog)
@@ -99,6 +100,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	);
 
 	useEffect(() => {
+		if (isWeb) {
+			setBrowserShortcuts([]);
+			return;
+		}
 		let alive = true;
 		const load = () => {
 			loadBrowserShortcuts()
@@ -117,7 +122,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			alive = false;
 			off();
 		};
-	}, []);
+	}, [isWeb]);
 
 	async function handleRemoveApp(
 		e: MouseEvent<HTMLButtonElement>,
@@ -161,6 +166,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	}
 
 	function openBrowserShortcut(url: string) {
+		if (isWebMode()) return;
 		setActiveApp("browser");
 		const navigate = () => {
 			appRegistry
@@ -231,6 +237,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const handleTabBarContextMenu = useCallback(
 		(e: React.MouseEvent) => {
 			e.preventDefault();
+			if (isWeb) return;
 			const target = e.target as HTMLElement;
 			const shortcutEl = target.closest("[data-browser-shortcut]");
 			if (shortcutEl) {

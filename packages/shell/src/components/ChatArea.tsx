@@ -131,7 +131,9 @@ import {
 	createApiSttSession,
 	createWebSpeechSttSession,
 	getSttProvider,
+	isWebSpeechAvailable,
 } from "../lib/stt";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { estimateSttCost } from "../lib/tts/cost";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
@@ -600,8 +602,40 @@ export function ChatArea({
 				ttsPlayingRef.current = on;
 				setTtsPlaying(on);
 				useAvatarStore.getState().setSpeaking(on);
-				// #423: browser speech end/error releases the held expression.
-				if (!on) {
+				if (on) {
+					if (sttCooldownTimerRef.current) {
+						clearTimeout(sttCooldownTimerRef.current);
+						sttCooldownTimerRef.current = null;
+					}
+					if (pipelineActiveRef.current) {
+						try {
+							if (
+								shouldPauseSttForTts(activeSpeechActivityRef.current !== null)
+							)
+								sttPauseRef.current?.();
+						} catch {
+							// 마이크 일시정지 실패는 2차 텍스트 필터가 방어
+						}
+					}
+				} else {
+					if (pipelineActiveRef.current) {
+						ttsCooldownUntilRef.current = Date.now() + 800;
+						setSttState("initializing");
+						if (sttCooldownTimerRef.current)
+							clearTimeout(sttCooldownTimerRef.current);
+						sttCooldownTimerRef.current = setTimeout(() => {
+							setSttState("listening");
+							sttCooldownTimerRef.current = null;
+							if (pipelineActiveRef.current) {
+								try {
+									sttResumeRef.current?.();
+								} catch {
+									// 재개 실패 시 다음 발화 토글로 복구
+								}
+							}
+						}, 800);
+					}
+					// #423: browser speech end/error releases the held expression.
 					settleAvatarEmotionIfIdle();
 					settleSlidePresenterSpeech("finished");
 				}
@@ -1235,7 +1269,7 @@ export function ChatArea({
 		sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
 		pipelineVoiceConfigRef.current = {
 			voice: resolveTtsVoiceId(config),
-			ttsProvider: config.ttsProvider || "edge",
+			ttsProvider: isWebMode() ? "browser" : config.ttsProvider || "edge",
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
 			ttsApiKey: undefined,
 			naiaKey: config.naiaKey,
@@ -2125,6 +2159,23 @@ export function ChatArea({
 			readonly watchOwner?: string;
 		} = {},
 	) {
+		if (
+			isWebMode() &&
+			(req.toolName.startsWith("skill_browser_") ||
+				isBrowserHostTool(req.toolName))
+		) {
+			Logger.warn("ChatArea", "blocked browser tool in web mode", {
+				tool: req.toolName,
+			});
+			void sendAppToolResult(
+				req.requestId,
+				req.toolCallId,
+				`Tool is not available in web mode: ${req.toolName}`,
+				false,
+				req.activityId,
+			);
+			return;
+		}
 		if (!isModelFacingToolAllowed(req.toolName)) {
 			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
 				tool: req.toolName,
@@ -2265,6 +2316,9 @@ export function ChatArea({
 	}
 
 	function dispatchAppControl(req: { action: string; appId?: string }) {
+		if (isWebMode() && req.action === "switch" && req.appId === "browser") {
+			return;
+		}
 		const { setActiveApp } = useAppStore.getState();
 		if (req.action === "switch" && req.appId) {
 			setActiveApp(req.appId);
@@ -2867,7 +2921,7 @@ export function ChatArea({
 				sentencePipelineRef.current?.rearmLocalVoiceNotice();
 				pipelineVoiceConfigRef.current = {
 					voice: resolveTtsVoiceId(config) ?? config.voice,
-					ttsProvider: config.ttsProvider || "edge",
+					ttsProvider: isWebMode() ? "browser" : config.ttsProvider || "edge",
 					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
 					naiaKey: config.naiaKey,
@@ -2880,7 +2934,11 @@ export function ChatArea({
 				setSttState("initializing");
 				try {
 					const sttLang = localeToSttLanguage(getLocale());
-					const sttEngine = isAsrModel ? "vllm" : config.sttProvider || "vosk";
+					const sttEngine = isWebMode()
+						? "web-speech"
+						: isAsrModel
+							? "vllm"
+							: config.sttProvider || "vosk";
 					const sttMeta = getSttProvider(sttEngine);
 					const isApiBased =
 						sttMeta?.engineType === "api" || sttMeta?.engineType === "vllm";
@@ -3872,22 +3930,20 @@ export function ChatArea({
 								{TAB_ICONS.chat}
 							</span>
 						</button>
-						{/* WO-03: 웹판은 대화 기록(read_conversation)이 꺼져 있어 탭을 감춘다. */}
-						{import.meta.env.MODE !== "web" && (
-							<button
-								type="button"
-								className={`chat-tab${activeTab === "history" ? " active" : ""}`}
-								data-chat-tab="history"
-								onClick={() => handleTabChange("history")}
-								title={t("history.tabHistory")}
-								aria-label={t("history.tabHistory")}
-								data-tooltip={t("history.tabHistory")}
-							>
-								<span className="chat-tab-icon" aria-hidden="true">
-									{TAB_ICONS.history}
-								</span>
-							</button>
-						)}
+						{/* 지시서 #4: 웹판에서도 OPFS 영구 대화 기록 목록 탭을 노출한다. */}
+						<button
+							type="button"
+							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
+							data-chat-tab="history"
+							onClick={() => handleTabChange("history")}
+							title={t("history.tabHistory")}
+							aria-label={t("history.tabHistory")}
+							data-tooltip={t("history.tabHistory")}
+						>
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.history}
+							</span>
+						</button>
 					</div>
 					<div className="chat-header-right">
 						{totalSessionCost > 0 &&
@@ -3940,8 +3996,8 @@ export function ChatArea({
 
 					{/* Settings tab */}
 
-					{/* History tab (WO-03: 웹판 감춤 — 패널 마운트 자체를 막는다) */}
-					{import.meta.env.MODE !== "web" && activeTab === "history" && (
+					{/* History tab (지시서 #4: 웹판에서도 OPFS 영구 대화 기록 마운트) */}
+					{activeTab === "history" && (
 						<HistoryTab onLoadSession={() => setActiveTab("chat")} />
 					)}
 
@@ -4160,15 +4216,25 @@ export function ChatArea({
 						type="button"
 						className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
 						onClick={handleVoiceToggle}
-						disabled={voiceMode === "connecting"}
+						disabled={
+							voiceMode === "connecting" ||
+							(isWebMode() && !isWebSpeechAvailable())
+						}
+						aria-label={
+							isWebMode() && !isWebSpeechAvailable()
+								? "이 브라우저는 음성 인식을 지원하지 않습니다"
+								: undefined
+						}
 						title={
-							voiceMode === "off"
-								? t("chat.voiceStart")
-								: voiceMode === "connecting"
-									? t("chat.voiceConnecting")
-									: ttsPlaying
-										? "끼어들기 (TTS 중단)"
-										: t("chat.voiceEnd")
+							isWebMode() && !isWebSpeechAvailable()
+								? "이 브라우저는 음성 인식을 지원하지 않습니다"
+								: voiceMode === "off"
+									? t("chat.voiceStart")
+									: voiceMode === "connecting"
+										? t("chat.voiceConnecting")
+										: ttsPlaying
+											? "끼어들기 (TTS 중단)"
+											: t("chat.voiceEnd")
 						}
 					>
 						<span className="voice-bar" />

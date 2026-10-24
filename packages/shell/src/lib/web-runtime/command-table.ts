@@ -1,7 +1,7 @@
 export type CommandClassification = "web" | "stub" | "desktop-only";
 
 export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
-	// Web implemented (exact 11 commands)
+	// Web implemented (exact 14 commands)
 	"plugin:event|listen": "web",
 	"plugin:event|unlisten": "web",
 	"plugin:event|emit": "web",
@@ -13,6 +13,9 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	write_naia_ui_config: "web",
 	write_naia_path_cache: "web",
 	reload_agent_settings: "web",
+	list_conversations: "web",
+	read_conversation: "web",
+	delete_conversation: "web",
 
 	// Plugin stubs (from tauri-base-mock.ts)
 	"plugin:store|load": "stub",
@@ -84,7 +87,6 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	clone_naia_adk: "desktop-only",
 	compile_knowledge: "desktop-only",
 	copy_bundled_assets: "desktop-only",
-	delete_conversation: "desktop-only",
 	delete_naia_adk: "desktop-only",
 	delete_naia_asset: "desktop-only",
 	delete_naia_ref_audio: "desktop-only",
@@ -142,7 +144,6 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	install_voxcpm2_runtime: "desktop-only",
 	list_audio_output_devices: "desktop-only",
 	list_coding_jobs: "desktop-only",
-	list_conversations: "desktop-only",
 	list_naia_assets: "desktop-only",
 	list_stt_models: "desktop-only",
 	memory_delete_fact: "desktop-only",
@@ -156,7 +157,6 @@ export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
 	pty_kill: "desktop-only",
 	pty_resize: "desktop-only",
 	pty_write: "desktop-only",
-	read_conversation: "desktop-only",
 	read_jeonju_course_target: "desktop-only",
 	read_local_binary: "desktop-only",
 	read_naia_knowledge_config: "desktop-only",
