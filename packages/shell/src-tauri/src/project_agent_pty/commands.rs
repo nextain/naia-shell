@@ -1,4 +1,4 @@
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use portable_pty::{NativePtySystem, PtySize, PtySystem};
 use std::io::Write;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use crate::project_catalog_runtime::{resolve_project_checkout, ProjectCatalogAut
 
 use super::lifecycle::{authorized_project_session_path, stop_project_agent_handle};
 use super::types::{
-    display_path, emit_or_buffer_project_agent_output, find_agent_executable,
+    build_agent_command, display_path, emit_or_buffer_project_agent_output, find_agent_executable,
     find_project_agent_handle, find_project_agent_handle_mut, project_agent_key,
     project_agent_session, safe_app_id_for_log, CodingApp, ProjectAgentAvailability,
     ProjectAgentExitEvent, ProjectAgentHandle, ProjectAgentOutputEvent, ProjectAgentRegistry,
@@ -53,18 +53,33 @@ pub async fn project_agent_pty_start(
     })?;
     let resolved = resolve_project_checkout(&authority, &adapter_root, &project_path)?;
     let key = project_agent_key(&resolved.project_path, coding_app)?;
-    let executable = find_agent_executable(coding_app, std::env::var_os("PATH").as_deref())
-        .ok_or_else(|| {
-            crate::log_verbose(&format!(
-                "[project_agent_pty::project_agent_pty_start] branch=agent_not_available app_id={}",
-                coding_app.spec().app_id
-            ));
-            "agent_unavailable".to_owned()
-        })?;
+    let path_value = std::env::var_os("PATH");
+    let launch = find_agent_executable(coding_app, path_value.as_deref()).ok_or_else(|| {
+        crate::log_verbose(&format!(
+            "[project_agent_pty::project_agent_pty_start] branch=agent_not_available app_id={}",
+            coding_app.spec().app_id
+        ));
+        "agent_unavailable".to_owned()
+    })?;
     let checkout_path = resolved.checkout_path;
+    let system_root = std::env::var_os("SystemRoot");
     let registry = Arc::clone(&registry);
     let session_app_id = coding_app.spec().app_id.to_owned();
     tokio::task::spawn_blocking(move || -> Result<ProjectAgentSession, String> {
+        let command = build_agent_command(
+            &launch,
+            coding_app.spec().argv,
+            &checkout_path,
+            path_value.as_deref(),
+            system_root.as_deref(),
+        )
+        .map_err(|reason| {
+            crate::log_verbose(&format!(
+                "[project_agent_pty::project_agent_pty_start] branch={reason} app_id={session_app_id}"
+            ));
+            "agent_unavailable".to_owned()
+        })?;
+
         let mut state = registry.lock().unwrap();
         if let Some(handle) = state.sessions.get(&key) {
             crate::log_verbose(&format!(
@@ -73,7 +88,6 @@ pub async fn project_agent_pty_start(
             ));
             return Ok(project_agent_session(&key, handle));
         }
-
         let pty_system = NativePtySystem::default();
         let pair = pty_system
             .openpty(PtySize {
@@ -94,13 +108,6 @@ pub async fn project_agent_pty_start(
             crate::log_verbose("[project_agent_pty::project_agent_pty_start] branch=reader_unavailable");
             "agent_unavailable".to_owned()
         })?;
-        let mut command = CommandBuilder::new(&executable);
-        for argument in coding_app.spec().argv {
-            command.arg(argument);
-        }
-        command.cwd(&checkout_path);
-        command.env("TERM", "xterm-256color");
-        command.env("COLORTERM", "truecolor");
         let mut child = pair.slave.spawn_command(command).map_err(|_| {
             crate::log_verbose(&format!(
                 "[project_agent_pty::project_agent_pty_start] branch=spawn_failed app_id={}",
@@ -519,7 +526,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn project_agent_conpty_writer_roundtrips_line_without_interactive_session() {
-        use portable_pty::{NativePtySystem, PtySize, PtySystem};
+        use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
         use std::io::Read;
         use std::sync::mpsc;
         use std::time::Duration;
@@ -610,6 +617,105 @@ mod tests {
         assert!(
             output.contains(&format!("ECHO:{MARKER}")),
             "PowerShell did not echo the line through ConPTY: {output:?}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn project_agent_conpty_spawns_windows_batch_shuttle_from_special_char_dir() {
+        use crate::project_agent_pty::types::AgentLaunch;
+        use portable_pty::{NativePtySystem, PtySize, PtySystem};
+        use std::io::Read;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let temp = tempfile::tempdir().unwrap();
+        let batch_dir = temp.path().join("Program Files & (x86) %PATH% ^!");
+        let checkout_dir = temp.path().join("checkout");
+        std::fs::create_dir_all(&batch_dir).unwrap();
+        std::fs::create_dir_all(&checkout_dir).unwrap();
+        let batch_path = batch_dir.join("naia-test.cmd");
+        std::fs::write(&batch_path, "@echo off\r\necho naia-batch-ok %*\r\n").unwrap();
+
+        let canonical_batch = dunce::canonicalize(&batch_path).unwrap();
+        let canonical_checkout = dunce::canonicalize(&checkout_dir).unwrap();
+        let command = build_agent_command(
+            &AgentLaunch::WindowsBatch(canonical_batch),
+            &["arg-one"],
+            &canonical_checkout,
+            std::env::var_os("PATH").as_deref(),
+            std::env::var_os("SystemRoot").as_deref(),
+        )
+        .expect("build Windows batch command");
+
+        let pair = NativePtySystem::default()
+            .openpty(PtySize {
+                rows: 25,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("open Windows ConPTY");
+        let mut child = pair
+            .slave
+            .spawn_command(command)
+            .expect("spawn cmd.exe batch shuttle");
+        let mut reader = pair.master.try_clone_reader().expect("clone ConPTY reader");
+        let writer = std::sync::Arc::new(std::sync::Mutex::new(
+            pair.master.take_writer().expect("take ConPTY writer"),
+        ));
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let (output_tx, output_rx) = mpsc::sync_channel(1);
+        let reply_writer = std::sync::Arc::clone(&writer);
+        let reader_seen = std::sync::Arc::clone(&seen);
+        std::thread::spawn(move || {
+            let mut answered = 0usize;
+            let mut buffer = [0u8; 1024];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => {
+                        let bytes = reader_seen.lock().unwrap().clone();
+                        let _ = output_tx.send(String::from_utf8_lossy(&bytes).into_owned());
+                        return;
+                    }
+                    Ok(length) => {
+                        let output = {
+                            let mut bytes = reader_seen.lock().unwrap();
+                            bytes.extend_from_slice(&buffer[..length]);
+                            String::from_utf8_lossy(&bytes).into_owned()
+                        };
+                        let requests = output.matches("\x1b[6n").count();
+                        while answered < requests {
+                            let mut terminal = reply_writer.lock().unwrap();
+                            let _ = write_project_agent_input(&mut **terminal, b"\x1b[1;1R");
+                            answered += 1;
+                        }
+                        if output.contains("naia-batch-ok arg-one") {
+                            let _ = output_tx.send(output);
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = output_tx.send(format!("reader_error:{:?}", error.kind()));
+                        return;
+                    }
+                }
+            }
+        });
+
+        let output = output_rx.recv_timeout(Duration::from_secs(20));
+        let _ = child.kill();
+        let _ = child.wait();
+        let output = output.unwrap_or_else(|_| {
+            let bytes = seen.lock().unwrap().clone();
+            panic!(
+                "receive ConPTY batch output within 20 seconds; partial output: {:?}",
+                String::from_utf8_lossy(&bytes)
+            )
+        });
+        assert!(
+            output.contains("naia-batch-ok arg-one"),
+            "batch shuttle did not produce expected output through ConPTY: {output:?}"
         );
     }
 }
