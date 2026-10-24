@@ -73,14 +73,20 @@ export function resolveWebConversationsDir(
 /**
  * 웹판 대화 턴을 `{conversationsDir}/{session}.jsonl` 에 영구 기록한다.
  * 데스크톱 `naia-agent` 의 `FileConversationLogStore` 와 동일한 JSONL 줄 형식을 쓴다.
+ * `conversationsDirOverride` 가 주어지면 호출 시점의 로그인 상태와 무관하게 고정된 폴더에 기록한다.
  */
 export function appendWebConversationMessages(
 	sessionId: string,
 	entries: readonly WebConversationEntry[],
 	fs: WebFs,
+	conversationsDirOverride?: string,
 ): Promise<void> {
 	if (entries.length === 0) return Promise.resolve();
-	const convDir = resolveWebConversationsDir();
+	const convDir =
+		typeof conversationsDirOverride === "string" &&
+		conversationsDirOverride.trim().length > 0
+			? conversationsDirOverride.trim()
+			: resolveWebConversationsDir();
 	const filePath = `${convDir}/${safeSessionBase(sessionId)}.jsonl`;
 	const linesToAppend = entries
 		.map((entry) =>

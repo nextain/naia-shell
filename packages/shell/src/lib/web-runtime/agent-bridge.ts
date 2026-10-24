@@ -8,7 +8,10 @@ import {
 	getWebModelStatus,
 	setWebModelStatus,
 } from "./web-model-status";
-import { appendWebConversationMessages } from "./web-workspace-commands";
+import {
+	appendWebConversationMessages,
+	resolveWebConversationsDir,
+} from "./web-workspace-commands";
 import { isWebLlmModelId } from "./webllm-model";
 
 export interface WorkerLike {
@@ -41,6 +44,7 @@ export function createAgentBridge(deps: {
 		string,
 		{
 			sessionId: string;
+			conversationsDir: string;
 			userContent: string;
 			userTimestamp: number;
 			assistantReply: string;
@@ -91,6 +95,7 @@ export function createAgentBridge(deps: {
 				if (userContent.length > 0) {
 					activeTurns.set(parsed.requestId, {
 						sessionId,
+						conversationsDir: resolveWebConversationsDir(),
 						userContent,
 						userTimestamp: Date.now(),
 						assistantReply: "",
@@ -166,6 +171,7 @@ export function createAgentBridge(deps: {
 										},
 									],
 									resolveFs(),
+									turn.conversationsDir,
 								)
 									.catch((err) => {
 										Logger.warn(

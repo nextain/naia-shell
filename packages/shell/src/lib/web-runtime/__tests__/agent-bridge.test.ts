@@ -1,12 +1,22 @@
-import { beforeEach, describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useChatStore } from "../../../stores/chat";
 import { type WorkerLike, createAgentBridge } from "../agent-bridge";
+import { setWebAssetsModeForTests } from "../web-assets";
+import {
+	completeWebNaiaLogin,
+	logoutWebSession,
+	setWebLoginRequiredForTests,
+} from "../web-auth";
 import { createMemoryWebFs } from "../web-fs";
 import {
 	getWebModelStatus,
 	resetWebModelStatusForTests,
 } from "../web-model-status";
-import { handleWebWorkspaceCommand } from "../web-workspace-commands";
+import {
+	handleWebWorkspaceCommand,
+	resolveWebConversationsDir,
+} from "../web-workspace-commands";
 import { WEB_LLM_MODEL_ID } from "../webllm-model";
 
 class FakeWorker implements WorkerLike {
@@ -40,6 +50,13 @@ class FakeWorker implements WorkerLike {
 describe("agent-bridge", () => {
 	beforeEach(() => {
 		resetWebModelStatusForTests();
+	});
+
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		setWebLoginRequiredForTests(null);
+		localStorage.clear();
+		sessionStorage.clear();
 	});
 
 	it("creates worker only on start and buffers lines sent before start", async () => {
@@ -366,6 +383,142 @@ describe("agent-bridge", () => {
 		expect(JSON.parse(lines[1])).toMatchObject({
 			role: "assistant",
 			content: "첫 대답이에요",
+		});
+
+		workerPort.close();
+	});
+
+	it("pins the turn's conversation directory at chat_request time so an in-flight turn finishing after A logs out and B logs in saves to A's folder and never pollutes B's folder", async () => {
+		setWebAssetsModeForTests(true);
+		let workerInstance: FakeWorker | null = null;
+		const fs = createMemoryWebFs();
+
+		const bridge = createAgentBridge({
+			createWorker: () => {
+				workerInstance = new FakeWorker();
+				return workerInstance;
+			},
+			emit: () => {},
+			getFs: () => fs,
+		});
+
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		const workerPort = workerInstance!.posted[0].transfer![0] as MessagePort;
+		workerPort.start?.();
+
+		// 1. User A logs in
+		await completeWebNaiaLogin("naia_live_key_user_a_12345", "user-alpha");
+		expect(resolveWebConversationsDir()).toBe(
+			"naia-adk/conversations/u-user-alpha",
+		);
+
+		// 2. User A sends chat_request
+		bridge.sendLine(
+			JSON.stringify({
+				type: "chat_request",
+				requestId: "req-inflight-a",
+				sessionId: "chat-a-inflight",
+				messages: [{ role: "user", content: "A의 진행 중 비밀 질문" }],
+			}),
+		);
+
+		// 3. Partial response chunk arrives while User A is still logged in
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-inflight-a",
+				text: "A에게 가는 ",
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 30));
+
+		// 4. User A logs out and User B logs in before the response finishes
+		logoutWebSession();
+		await completeWebNaiaLogin("naia_live_key_user_b_67890", "user-beta");
+		expect(resolveWebConversationsDir()).toBe(
+			"naia-adk/conversations/u-user-beta",
+		);
+
+		// 5. Remaining chunk and finish arrive while User B is logged in
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-inflight-a",
+				text: "답변 완료",
+			}),
+		);
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "finish",
+				requestId: "req-inflight-a",
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 80));
+
+		// 6. User B's folder and list_conversations must NOT contain User A's conversation
+		const listBRaw = (await handleWebWorkspaceCommand(
+			"list_conversations",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		const listedB = JSON.parse(listBRaw) as {
+			sessions: Array<{ key: string; label: string }>;
+		};
+		expect(listedB.sessions).toEqual([]);
+		expect(
+			await fs.exists(
+				"naia-adk/conversations/u-user-beta/chat-a-inflight.jsonl",
+			),
+		).toBe(false);
+		expect(
+			await fs.exists("naia-adk/conversations/chat-a-inflight.jsonl"),
+		).toBe(false);
+
+		const readFromB = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{ adkPath: "opfs://naia-adk", sessionId: "chat-a-inflight" },
+			fs,
+		)) as string;
+		expect(readFromB).toBe("");
+
+		// 7. User A's conversation was saved into User A's pinned folder
+		expect(
+			await fs.exists(
+				"naia-adk/conversations/u-user-alpha/chat-a-inflight.jsonl",
+			),
+		).toBe(true);
+
+		logoutWebSession();
+		await completeWebNaiaLogin("naia_live_key_user_a_12345", "user-alpha");
+		const listARaw = (await handleWebWorkspaceCommand(
+			"list_conversations",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		const listedA = JSON.parse(listARaw) as {
+			sessions: Array<{ key: string; label: string; messageCount: number }>;
+		};
+		expect(listedA.sessions).toHaveLength(1);
+		expect(listedA.sessions[0]).toMatchObject({
+			key: "chat-a-inflight",
+			label: "A의 진행 중 비밀 질문",
+			messageCount: 2,
+		});
+
+		const readFromA = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{ adkPath: "opfs://naia-adk", sessionId: "chat-a-inflight" },
+			fs,
+		)) as string;
+		const linesA = readFromA.trim().split("\n");
+		expect(linesA).toHaveLength(2);
+		expect(JSON.parse(linesA[0])).toMatchObject({
+			role: "user",
+			content: "A의 진행 중 비밀 질문",
+		});
+		expect(JSON.parse(linesA[1])).toMatchObject({
+			role: "assistant",
+			content: "A에게 가는 답변 완료",
 		});
 
 		workerPort.close();

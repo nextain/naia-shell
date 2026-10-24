@@ -525,5 +525,24 @@ describe("web-workspace-commands", () => {
 		// 5. When login gate is disabled (VITE_NAIA_WEB_LOGIN_REQUIRED=0), uses shared path
 		setWebLoginRequiredForTests(false);
 		expect(resolveWebConversationsDir()).toBe("naia-adk/conversations");
+
+		// 6. Optional conversationsDirOverride writes to the pinned folder regardless of current login state
+		setWebLoginRequiredForTests(null);
+		await completeWebNaiaLogin("naia_live_key_user_b_67890", "user-beta");
+		await appendWebConversationMessages(
+			"chat-a-pinned",
+			[
+				{ role: "user", content: "A의 고정 폴더 질문", timestamp: 1700000020000 },
+				{ role: "assistant", content: "A의 고정 폴더 답변", timestamp: 1700000021000 },
+			],
+			fs,
+			"naia-adk/conversations/u-user-alpha",
+		);
+		expect(
+			await fs.exists("naia-adk/conversations/u-user-beta/chat-a-pinned.jsonl"),
+		).toBe(false);
+		expect(
+			await fs.exists("naia-adk/conversations/u-user-alpha/chat-a-pinned.jsonl"),
+		).toBe(true);
 	});
 });
