@@ -204,8 +204,8 @@ export interface WebAuthCallbackResult {
 }
 
 /**
- * `/auth/callback` 으로 돌아왔을 때 `state` 확인 뒤 `key`(`code=gw-*` 폴백)·`user_id`를 받아
- * 브라우저 저장소에 저장하고 주소창을 `/` 로 정리한다.
+ * `/auth/callback` 으로 돌아왔을 때 `#`(hash) 우선·쿼리 폴백으로 `state` 확인 뒤
+ * `key`(`code=gw-*` 폴백)·`user_id`를 받아 브라우저 저장소에 저장하고 주소창을 `/` 로 정리한다.
  */
 export async function consumeWebAuthCallbackFromLocation(
 	loc?: { pathname: string; search: string; hash?: string },
@@ -230,8 +230,19 @@ export async function consumeWebAuthCallbackFromLocation(
 		return { handled: false, ok: false };
 	}
 
-	const params = new URLSearchParams(currentLoc.search);
-	const returnedState = (params.get("state") ?? "").trim();
+	const hashParams = new URLSearchParams(
+		(currentLoc.hash ?? "").replace(/^#/, ""),
+	);
+	const queryParams = new URLSearchParams(currentLoc.search);
+	const getCallbackParam = (
+		name: "state" | "key" | "code" | "user_id",
+	): string => {
+		const fromHash = hashParams.get(name)?.trim();
+		if (fromHash) return fromHash;
+		return queryParams.get(name)?.trim() ?? "";
+	};
+
+	const returnedState = getCallbackParam("state");
 
 	let expectedState = "";
 	try {
@@ -272,16 +283,16 @@ export async function consumeWebAuthCallbackFromLocation(
 		return { handled: true, ok: false, error: "state_mismatch" };
 	}
 
-	const codeParam = params.get("code")?.trim() ?? "";
+	const codeParam = getCallbackParam("code");
 	const rawKey = (
-		params.get("key")?.trim() || (codeParam.startsWith("gw-") ? codeParam : "")
+		getCallbackParam("key") || (codeParam.startsWith("gw-") ? codeParam : "")
 	).trim();
 	if (!isValidWebAuthKey(rawKey)) {
 		Logger.warn("WebAuth", "OAuth callback invalid key format");
 		return { handled: true, ok: false, error: "invalid_key" };
 	}
 
-	const userId = params.get("user_id")?.trim() || undefined;
+	const userId = getCallbackParam("user_id") || undefined;
 	await completeWebNaiaLogin(rawKey, userId);
 	return {
 		handled: true,

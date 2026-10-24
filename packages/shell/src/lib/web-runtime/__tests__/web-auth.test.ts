@@ -182,4 +182,87 @@ describe("web-auth (item 5)", () => {
 		expect(noGateRes.startedImmediately).toBe(true);
 		expect(startModelNoGate).toHaveBeenCalledTimes(1);
 	});
+
+	it("consumes key, state, and user_id from URL hash (#) on /auth/callback and cleans URL to '/'", async () => {
+		startWebLoginRedirect({
+			origin: "https://web.naia.land",
+			lang: "ko",
+			state: "hash-state-ok",
+			navigate: () => {},
+		});
+		window.history.replaceState(
+			{},
+			"",
+			"/auth/callback#key=naia_live_hash_key_777&user_id=usr_hash_7&state=hash-state-ok",
+		);
+
+		const res = await consumeWebAuthCallbackFromLocation();
+
+		expect(res).toEqual({
+			handled: true,
+			ok: true,
+			naiaKey: "naia_live_hash_key_777",
+			naiaUserId: "usr_hash_7",
+		});
+		expect(isWebAuthenticated()).toBe(true);
+		expect(getWebAuthenticatedUserId()).toBe("usr_hash_7");
+		expect(await getNaiaKey()).toBe("naia_live_hash_key_777");
+		expect(window.location.pathname).toBe("/");
+		expect(window.location.search).toBe("");
+		expect(window.location.hash).toBe("");
+	});
+
+	it("returns state_mismatch when URL hash (#) state does not match pending state and cleans URL to '/'", async () => {
+		startWebLoginRedirect({
+			origin: "https://web.naia.land",
+			lang: "ko",
+			state: "expected-hash-state",
+			navigate: () => {},
+		});
+		window.history.replaceState(
+			{},
+			"",
+			"/auth/callback#key=naia_live_hash_key_777&user_id=usr_hash_7&state=wrong-hash-state",
+		);
+
+		const res = await consumeWebAuthCallbackFromLocation();
+
+		expect(res).toEqual({
+			handled: true,
+			ok: false,
+			error: "state_mismatch",
+		});
+		expect(isWebAuthenticated()).toBe(false);
+		expect(window.location.pathname).toBe("/");
+		expect(window.location.search).toBe("");
+		expect(window.location.hash).toBe("");
+	});
+
+	it("prefers URL hash (#) over query (?) when both contain callback parameters and cleans URL to '/'", async () => {
+		startWebLoginRedirect({
+			origin: "https://web.naia.land",
+			lang: "ko",
+			state: "hash-priority-state",
+			navigate: () => {},
+		});
+		window.history.replaceState(
+			{},
+			"",
+			"/auth/callback?key=naia_live_query_key_111&code=gw-query-code-111&user_id=usr_query_1&state=query-wrong-state#key=naia_live_hash_key_222&code=gw-hash-code-222&user_id=usr_hash_2&state=hash-priority-state",
+		);
+
+		const res = await consumeWebAuthCallbackFromLocation();
+
+		expect(res).toEqual({
+			handled: true,
+			ok: true,
+			naiaKey: "naia_live_hash_key_222",
+			naiaUserId: "usr_hash_2",
+		});
+		expect(await getNaiaKey()).toBe("naia_live_hash_key_222");
+		expect(getWebAuthenticatedUserId()).toBe("usr_hash_2");
+		expect(window.location.pathname).toBe("/");
+		expect(window.location.search).toBe("");
+		expect(window.location.hash).toBe("");
+	});
 });
