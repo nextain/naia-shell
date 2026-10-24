@@ -407,4 +407,51 @@ describe("web-auth (item 5)", () => {
 			});
 		}
 	});
+	it.each([
+		["key", "#key=naia_live_hash_only_key_111"],
+		["user_id", "#user_id=usr_hash_only"],
+		["code", "#code=gw-hash-only-code"],
+	])(
+		"reads only the hash when hash (#) has just %s, ignoring a valid query callback",
+		async (_name, hash) => {
+			startWebLoginRedirect({
+				origin: "https://web.naia.land",
+				lang: "ko",
+				state: "query-valid-state",
+				navigate: () => {},
+			});
+			window.history.replaceState(
+				{},
+				"",
+				`/auth/callback?state=query-valid-state&key=naia_live_query_valid_key_777&user_id=usr_query${hash}`,
+			);
+
+			const res = await consumeWebAuthCallbackFromLocation();
+
+			expect(res).toEqual({
+				handled: true,
+				ok: false,
+				error: "state_mismatch",
+			});
+			expect(isWebAuthenticated()).toBe(false);
+			expect(await getNaiaKey()).toBeUndefined();
+			expect(window.location.pathname).toBe("/");
+			expect(window.location.search).toBe("");
+			expect(window.location.hash).toBe("");
+		},
+	);
+
+	it("generateWebOAuthState asks getRandomValues for exactly 32 bytes", () => {
+		const spy = vi.spyOn(globalThis.crypto, "getRandomValues");
+		try {
+			const s = generateWebOAuthState();
+			expect(s).toMatch(/^[0-9a-f]{64}$/);
+			expect(spy).toHaveBeenCalledTimes(1);
+			const arg = spy.mock.calls[0][0] as Uint8Array;
+			expect(arg).toBeInstanceOf(Uint8Array);
+			expect(arg.length).toBe(32);
+		} finally {
+			spy.mockRestore();
+		}
+	});
 });

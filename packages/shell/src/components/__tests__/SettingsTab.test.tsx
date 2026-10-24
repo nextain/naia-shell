@@ -4157,3 +4157,36 @@ describe("web mode brain tab (r4)", () => {
 });
 
 
+
+describe("web mode account login error (r6)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("shows web-login-error when starting login throws because crypto.getRandomValues is missing", () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		const origCrypto = globalThis.crypto;
+		Object.defineProperty(globalThis, "crypto", {
+			value: {},
+			configurable: true,
+		});
+		try {
+			fireEvent.click(screen.getByTestId("web-login-btn"));
+			expect(screen.getByTestId("web-login-error").textContent).toMatch(
+				/crypto\.getRandomValues/,
+			);
+		} finally {
+			Object.defineProperty(globalThis, "crypto", {
+				value: origCrypto,
+				configurable: true,
+			});
+		}
+	});
+});
