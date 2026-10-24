@@ -814,6 +814,7 @@ export function SettingsTab() {
 	const [webAuthUserId, setWebAuthUserId] = useState(() =>
 		getWebAuthenticatedUserId(),
 	);
+	const [webAuthError, setWebAuthError] = useState<string | null>(null);
 	useEffect(() => {
 		if (!isWebMode()) return;
 		const unsubStorage = subscribeWebStoragePersistState(() => {
@@ -3863,12 +3864,33 @@ export function SettingsTab() {
 											type="button"
 											className="voice-preview-btn"
 											data-testid="web-login-btn"
-											onClick={() => startWebLoginRedirect({ lang: locale })}
+											onClick={() => {
+												setWebAuthError(null);
+												try {
+													startWebLoginRedirect({ lang: locale });
+												} catch (err) {
+													setWebAuthError(
+														err instanceof Error && err.message
+															? err.message
+															: "로그인을 시작하지 못했습니다.",
+													);
+												}
+											}}
 										>
 											{t("settings.labConnect")}
 										</button>
 									)}
 								</div>
+								{webAuthError && (
+									<div
+										role="alert"
+										data-testid="web-login-error"
+										className="settings-hint"
+										style={{ color: "var(--color-error, #fc8181)" }}
+									>
+										{webAuthError}
+									</div>
+								)}
 							</div>
 						</>
 					)}

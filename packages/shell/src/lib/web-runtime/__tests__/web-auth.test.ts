@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
+import { createElement } from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WebLoginScreen } from "../../../components/WebLoginScreen";
 import { getNaiaKey, hasNaiaKey, loadConfig } from "../../config";
 import { bootWebRuntimeAndModel } from "../auto-install";
 import { setWebAssetsModeForTests } from "../web-assets";
@@ -8,6 +11,7 @@ import {
 	buildWebLoginRedirectUrl,
 	completeWebNaiaLogin,
 	consumeWebAuthCallbackFromLocation,
+	generateWebOAuthState,
 	getWebAuthenticatedUserId,
 	getWebLoginBaseUrl,
 	isWebAuthenticated,
@@ -264,5 +268,143 @@ describe("web-auth (item 5)", () => {
 		expect(window.location.pathname).toBe("/");
 		expect(window.location.search).toBe("");
 		expect(window.location.hash).toBe("");
+	});
+
+	it("returns invalid_key and does not fall back to query key when hash (#) has valid state and empty key=", async () => {
+		startWebLoginRedirect({
+			origin: "https://web.naia.land",
+			lang: "ko",
+			state: "hash-empty-key-state",
+			navigate: () => {},
+		});
+		window.history.replaceState(
+			{},
+			"",
+			"/auth/callback?key=naia_live_query_valid_key_888#state=hash-empty-key-state&key=",
+		);
+
+		const res = await consumeWebAuthCallbackFromLocation();
+
+		expect(res).toEqual({
+			handled: true,
+			ok: false,
+			error: "invalid_key",
+		});
+		expect(isWebAuthenticated()).toBe(false);
+		expect(await getNaiaKey()).toBeUndefined();
+		expect(window.location.pathname).toBe("/");
+		expect(window.location.search).toBe("");
+		expect(window.location.hash).toBe("");
+	});
+
+	it("returns invalid_key and does not read query key when hash (#) contains only state", async () => {
+		startWebLoginRedirect({
+			origin: "https://web.naia.land",
+			lang: "ko",
+			state: "hash-only-state",
+			navigate: () => {},
+		});
+		window.history.replaceState(
+			{},
+			"",
+			"/auth/callback?key=naia_live_query_valid_key_999&user_id=usr_query_9#state=hash-only-state",
+		);
+
+		const res = await consumeWebAuthCallbackFromLocation();
+
+		expect(res).toEqual({
+			handled: true,
+			ok: false,
+			error: "invalid_key",
+		});
+		expect(isWebAuthenticated()).toBe(false);
+		expect(await getNaiaKey()).toBeUndefined();
+		expect(window.location.pathname).toBe("/");
+		expect(window.location.search).toBe("");
+		expect(window.location.hash).toBe("");
+	});
+
+	it("succeeds when hash (#) contains code=gw-... without key and cleans URL to '/'", async () => {
+		startWebLoginRedirect({
+			origin: "https://web.naia.land",
+			lang: "ko",
+			state: "hash-code-only-state",
+			navigate: () => {},
+		});
+		window.history.replaceState(
+			{},
+			"",
+			"/auth/callback#code=gw-live-hash-token-55555&user_id=usr_code_5&state=hash-code-only-state",
+		);
+
+		const res = await consumeWebAuthCallbackFromLocation();
+
+		expect(res).toEqual({
+			handled: true,
+			ok: true,
+			naiaKey: "gw-live-hash-token-55555",
+			naiaUserId: "usr_code_5",
+		});
+		expect(isWebAuthenticated()).toBe(true);
+		expect(await getNaiaKey()).toBe("gw-live-hash-token-55555");
+		expect(getWebAuthenticatedUserId()).toBe("usr_code_5");
+		expect(window.location.pathname).toBe("/");
+		expect(window.location.search).toBe("");
+		expect(window.location.hash).toBe("");
+	});
+
+	it("cleans URL to '/' even when callback key format is invalid", async () => {
+		startWebLoginRedirect({
+			origin: "https://web.naia.land",
+			lang: "ko",
+			state: "invalid-key-state",
+			navigate: () => {},
+		});
+		window.history.replaceState(
+			{},
+			"",
+			"/auth/callback#key=bad!&state=invalid-key-state",
+		);
+
+		const res = await consumeWebAuthCallbackFromLocation();
+
+		expect(res).toEqual({
+			handled: true,
+			ok: false,
+			error: "invalid_key",
+		});
+		expect(isWebAuthenticated()).toBe(false);
+		expect(window.location.pathname).toBe("/");
+		expect(window.location.search).toBe("");
+		expect(window.location.hash).toBe("");
+	});
+
+	it("generateWebOAuthState returns a 64-char lowercase hex string, differs across calls, and throws without getRandomValues (surfacing error on WebLoginScreen)", () => {
+		const s1 = generateWebOAuthState();
+		const s2 = generateWebOAuthState();
+		expect(s1).toMatch(/^[0-9a-f]{64}$/);
+		expect(s2).toMatch(/^[0-9a-f]{64}$/);
+		expect(s1).not.toBe(s2);
+
+		const origCrypto = globalThis.crypto;
+		Object.defineProperty(globalThis, "crypto", {
+			value: {},
+			configurable: true,
+		});
+		try {
+			expect(() => generateWebOAuthState()).toThrow(
+				/crypto\.getRandomValues/,
+			);
+
+			render(createElement(WebLoginScreen));
+			fireEvent.click(screen.getByTestId("web-login-submit"));
+			const errAlert = screen.getByTestId("web-login-error");
+			expect(errAlert.textContent).toMatch(/crypto\.getRandomValues/);
+		} finally {
+			Object.defineProperty(globalThis, "crypto", {
+				value: origCrypto,
+				configurable: true,
+			});
+		}
 	});
 });

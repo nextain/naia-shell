@@ -15,15 +15,28 @@ export function WebLoginScreen({
 	onLoginClick,
 }: WebLoginScreenProps) {
 	const [redirecting, setRedirecting] = useState(false);
+	const [localError, setLocalError] = useState<string | null>(null);
 
 	const handleLogin = () => {
+		setLocalError(null);
 		setRedirecting(true);
-		if (onLoginClick) {
-			onLoginClick();
-			return;
+		try {
+			if (onLoginClick) {
+				onLoginClick();
+				return;
+			}
+			startWebLoginRedirect();
+		} catch (err) {
+			setRedirecting(false);
+			setLocalError(
+				err instanceof Error && err.message
+					? err.message
+					: "로그인을 시작하지 못했습니다.",
+			);
 		}
-		startWebLoginRedirect();
 	};
+
+	const displayedError = localError || authError;
 
 	return (
 		<div
@@ -76,7 +89,7 @@ export function WebLoginScreen({
 				>
 					{t("settings.labDisconnected")}
 				</p>
-				{authError && (
+				{displayedError && (
 					<div
 						role="alert"
 						data-testid="web-login-error"
@@ -85,7 +98,7 @@ export function WebLoginScreen({
 							color: "var(--color-error, #fc8181)",
 						}}
 					>
-						{authError}
+						{displayedError}
 					</div>
 				)}
 				<button

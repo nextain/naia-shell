@@ -64,15 +64,17 @@ export function isValidWebAuthKey(key: string): boolean {
 	);
 }
 
-/** CSRF 방어용 무작위 OAuth state 생성. */
+/** CSRF 방어용 무작위 OAuth state 생성 (소문자 16진수 64자리 `/^[0-9a-f]{64}$/`). */
 export function generateWebOAuthState(): string {
 	if (
-		typeof crypto !== "undefined" &&
-		typeof crypto.randomUUID === "function"
+		typeof crypto === "undefined" ||
+		typeof crypto.getRandomValues !== "function"
 	) {
-		return crypto.randomUUID().replace(/-/g, "");
+		throw new Error("crypto.getRandomValues is required for OAuth state");
 	}
-	return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`;
+	const bytes = new Uint8Array(32);
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /**
@@ -234,13 +236,14 @@ export async function consumeWebAuthCallbackFromLocation(
 		(currentLoc.hash ?? "").replace(/^#/, ""),
 	);
 	const queryParams = new URLSearchParams(currentLoc.search);
+	const callbackParamNames = ["state", "key", "code", "user_id"] as const;
+	const hasAnyHashParam = callbackParamNames.some((name) =>
+		hashParams.has(name),
+	);
+	const sourceParams = hasAnyHashParam ? hashParams : queryParams;
 	const getCallbackParam = (
-		name: "state" | "key" | "code" | "user_id",
-	): string => {
-		const fromHash = hashParams.get(name)?.trim();
-		if (fromHash) return fromHash;
-		return queryParams.get(name)?.trim() ?? "";
-	};
+		name: (typeof callbackParamNames)[number],
+	): string => sourceParams.get(name)?.trim() ?? "";
 
 	const returnedState = getCallbackParam("state");
 
