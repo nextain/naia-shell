@@ -130,6 +130,7 @@ import {
 import {
 	WEB_LLM_FALLBACK_F32,
 	WEB_LLM_MODEL_ID,
+	WEB_LLM_MODEL_PREF_KEY,
 	formatWebLlmModelLabel,
 } from "../../lib/web-runtime/webllm-model";
 import { SettingsTab } from "../SettingsTab";
@@ -4107,6 +4108,51 @@ describe("web mode brain tab (r4)", () => {
 		expect(modelHint?.textContent).toBe(expectedF16Label);
 		expect(statusBar.getAttribute("data-model")).toBe(updatedSourceModel);
 		expect(statusBar.textContent).toContain(expectedF16Label);
+	});
+
+	it("switches the running engine on web model select (save choice + reload) instead of only rewriting runtime status", () => {
+		registerWebLlmProvider();
+		setWebAssetsModeForTests(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				llmRoles: { main: { provider: "webllm", model: WEB_LLM_MODEL_ID } },
+			}),
+		);
+		setWebModelStatus({ phase: "ready", progress: 1, model: WEB_LLM_FALLBACK_F32 });
+		const originalLocation = window.location;
+		const reload = vi.fn();
+		Object.defineProperty(window, "location", {
+			configurable: true,
+			value: { ...originalLocation, reload },
+		});
+		vi.useFakeTimers();
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			expect(modelSelect.value).toBe(WEB_LLM_FALLBACK_F32);
+
+			fireEvent.change(modelSelect, { target: { value: WEB_LLM_MODEL_ID } });
+
+			// 실행 중 엔진은 아직 f32 이므로 상태를 미리 f16 으로 바꾸지 않는다.
+			expect(getWebModelStatus().model).toBe(WEB_LLM_FALLBACK_F32);
+			expect(localStorage.getItem(WEB_LLM_MODEL_PREF_KEY)).toBe(WEB_LLM_MODEL_ID);
+			act(() => {
+				vi.runAllTimers();
+			});
+			expect(reload).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+			Object.defineProperty(window, "location", {
+				configurable: true,
+				value: originalLocation,
+			});
+		}
 	});
 });
 

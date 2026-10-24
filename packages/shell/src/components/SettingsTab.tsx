@@ -54,10 +54,7 @@ import {
 	requestWebPersistentStorage,
 	subscribeWebStoragePersistState,
 } from "../lib/web-runtime/web-storage-persist";
-import {
-	getWebModelStatus,
-	setWebModelStatus,
-} from "../lib/web-runtime/web-model-status";
+import { getWebModelStatus } from "../lib/web-runtime/web-model-status";
 import {
 	WEB_LLM_MODEL_IDS,
 	WEB_LLM_MODEL_PREF_KEY,
@@ -4954,12 +4951,14 @@ export function SettingsTab() {
 										provider === "webllm" &&
 										isWebLlmModelId(nextModel)
 									) {
-										setWebModelStatus({ model: nextModel });
+										// 실행 중인 worker 는 처음 받은 모델로만 돈다. 상태만 바꾸면 화면과 실제 엔진이
+										// 어긋나므로, 상태 표시줄의 모델 전환과 같게 선택을 저장하고 다시 불러온다.
 										try {
 											localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, nextModel);
 										} catch {
 											// ignore storage errors
 										}
+										setTimeout(() => window.location.reload(), 0);
 									}
 									// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
 									// agent loads THIS model. Previously only Save persisted → a stale model
