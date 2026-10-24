@@ -1,12 +1,27 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "../../i18n";
+import { setWebAssetsModeForTests } from "../web-assets";
+import {
+	completeWebNaiaLogin,
+	logoutWebSession,
+	setWebLoginRequiredForTests,
+} from "../web-auth";
 import { type WebFs, createMemoryWebFs } from "../web-fs";
 import {
 	INITIAL_WEB_WORKSPACE_CONFIG,
 	appendWebConversationMessages,
 	handleWebWorkspaceCommand,
+	resolveWebConversationsDir,
 	safeSessionBase,
 } from "../web-workspace-commands";
+
+afterEach(() => {
+	setWebAssetsModeForTests(null);
+	setWebLoginRequiredForTests(null);
+	localStorage.clear();
+	sessionStorage.clear();
+});
 
 describe("web-workspace-commands", () => {
 	it("read_naia_config writes initial config on first read and returns identical string on second read", async () => {
@@ -435,5 +450,80 @@ describe("web-workspace-commands", () => {
 				fs,
 			),
 		).rejects.toThrow("web_invalid_args:delete_conversation");
+	});
+
+	it("isolates conversations per logged-in user and preserves OPFS files across logout and user switches", async () => {
+		setWebAssetsModeForTests(true);
+		const fs = createMemoryWebFs();
+
+		// 1. User A logs in and saves a conversation
+		await completeWebNaiaLogin("naia_live_key_user_a_12345", "user-alpha");
+		expect(resolveWebConversationsDir()).toBe(
+			"naia-adk/conversations/u-user-alpha",
+		);
+		await appendWebConversationMessages(
+			"chat-a-1",
+			[
+				{ role: "user", content: "A의 비밀 질문", timestamp: 1700000010000 },
+				{ role: "assistant", content: "A의 답변", timestamp: 1700000011000 },
+			],
+			fs,
+		);
+
+		const listA1 = JSON.parse(
+			(await handleWebWorkspaceCommand(
+				"list_conversations",
+				{ adkPath: "opfs://naia-adk" },
+				fs,
+			)) as string,
+		) as { sessions: Array<{ key: string; label: string }> };
+		expect(listA1.sessions.map((s) => s.key)).toEqual(["chat-a-1"]);
+
+		// 2. User A logs out -> OPFS file is preserved
+		logoutWebSession();
+		expect(
+			await fs.exists("naia-adk/conversations/u-user-alpha/chat-a-1.jsonl"),
+		).toBe(true);
+
+		// 3. User B logs in -> User A's conversation is not visible in list or read
+		await completeWebNaiaLogin("naia_live_key_user_b_67890", "user-beta");
+		expect(resolveWebConversationsDir()).toBe(
+			"naia-adk/conversations/u-user-beta",
+		);
+		const listB = JSON.parse(
+			(await handleWebWorkspaceCommand(
+				"list_conversations",
+				{ adkPath: "opfs://naia-adk" },
+				fs,
+			)) as string,
+		) as { sessions: Array<{ key: string }> };
+		expect(listB.sessions).toEqual([]);
+
+		const readAFromB = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{ adkPath: "opfs://naia-adk", sessionId: "chat-a-1" },
+			fs,
+		)) as string;
+		expect(readAFromB).toBe("");
+
+		// 4. User A logs back in -> User A's conversation is visible again
+		logoutWebSession();
+		await completeWebNaiaLogin("naia_live_key_user_a_12345", "user-alpha");
+		const listA2 = JSON.parse(
+			(await handleWebWorkspaceCommand(
+				"list_conversations",
+				{ adkPath: "opfs://naia-adk" },
+				fs,
+			)) as string,
+		) as { sessions: Array<{ key: string; label: string }> };
+		expect(listA2.sessions).toHaveLength(1);
+		expect(listA2.sessions[0]).toMatchObject({
+			key: "chat-a-1",
+			label: "A의 비밀 질문",
+		});
+
+		// 5. When login gate is disabled (VITE_NAIA_WEB_LOGIN_REQUIRED=0), uses shared path
+		setWebLoginRequiredForTests(false);
+		expect(resolveWebConversationsDir()).toBe("naia-adk/conversations");
 	});
 });

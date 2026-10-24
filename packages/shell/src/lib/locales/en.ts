@@ -345,6 +345,7 @@ const englishCore = {
 	"settings.environmentTerminalInput": "Allow typing into your terminal",
 	"settings.thinkingLevel": "Thinking Level",
 	"settings.thinkingLevelOff": "Off",
+	"settings.thinkingLevelOn": "On",
 	"settings.thinkingLevelLow": "Low",
 	"settings.thinkingLevelHigh": "High",
 	"settings.thinkingLevelHint": "Enabling thinking slows down responses and increases token cost.",

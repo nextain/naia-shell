@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "Permitir escribir en tu terminal",
 	"settings.thinkingLevel": "Nivel de pensamiento",
 	"settings.thinkingLevelOff": "Desactivado",
+	"settings.thinkingLevelOn": "Activado",
 	"settings.thinkingLevelLow": "Bajo",
 	"settings.thinkingLevelHigh": "Alto",
 	"settings.thinkingLevelHint": "Activar el pensamiento ralentiza las respuestas y aumenta el coste de tokens.",

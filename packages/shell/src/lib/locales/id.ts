@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "Izinkan mengetik di terminal Anda",
 	"settings.thinkingLevel": "Tingkat Pemikiran",
 	"settings.thinkingLevelOff": "Mati",
+	"settings.thinkingLevelOn": "Aktif",
 	"settings.thinkingLevelLow": "Rendah",
 	"settings.thinkingLevelHigh": "Tinggi",
 	"settings.thinkingLevelHint": "Mengaktifkan pemikiran memperlambat respons dan meningkatkan biaya token.",

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { useChatStore } from "../../../stores/chat";
 import { type WorkerLike, createAgentBridge } from "../agent-bridge";
 import { createMemoryWebFs } from "../web-fs";
 import {
 	getWebModelStatus,
 	resetWebModelStatusForTests,
 } from "../web-model-status";
+import { handleWebWorkspaceCommand } from "../web-workspace-commands";
 import { WEB_LLM_MODEL_ID } from "../webllm-model";
 
 class FakeWorker implements WorkerLike {
@@ -225,7 +227,7 @@ describe("agent-bridge", () => {
 		});
 	});
 
-	it("persists user and assistant turns to WebFs conversations when finish arrives", async () => {
+	it("persists user and assistant turns from AgentResponseChunk.text when finish arrives", async () => {
 		let workerInstance: FakeWorker | null = null;
 		const fs = createMemoryWebFs();
 		const bridge = createAgentBridge({
@@ -254,7 +256,14 @@ describe("agent-bridge", () => {
 			JSON.stringify({
 				type: "text",
 				requestId: "req-1",
-				content: "반가워요!",
+				text: "반가",
+			}),
+		);
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-1",
+				text: "워요!",
 			}),
 		);
 		workerPort.postMessage(
@@ -277,6 +286,86 @@ describe("agent-bridge", () => {
 		expect(JSON.parse(lines[1])).toMatchObject({
 			role: "assistant",
 			content: "반가워요!",
+		});
+
+		workerPort.close();
+	});
+
+	it("chains bridge -> appendWebConversationMessages -> list_conversations -> read_conversation with ChatArea localSessionId fallback", async () => {
+		let workerInstance: FakeWorker | null = null;
+		const fs = createMemoryWebFs();
+		useChatStore.getState().setLocalSessionId("chat-1792849265763-abcde");
+
+		const bridge = createAgentBridge({
+			createWorker: () => {
+				workerInstance = new FakeWorker();
+				return workerInstance;
+			},
+			emit: () => {},
+			getFs: () => fs,
+		});
+
+		bridge.start({ model: WEB_LLM_MODEL_ID });
+		const workerPort = workerInstance!.posted[0].transfer![0] as MessagePort;
+		workerPort.start?.();
+
+		// chat_request without explicit sessionId falls back to ChatArea's localSessionId
+		bridge.sendLine(
+			JSON.stringify({
+				type: "chat_request",
+				requestId: "req-chain-1",
+				message: "첫 질문이에요",
+			}),
+		);
+
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "text",
+				requestId: "req-chain-1",
+				text: "첫 대답이에요",
+			}),
+		);
+		workerPort.postMessage(
+			JSON.stringify({
+				type: "finish",
+				requestId: "req-chain-1",
+			}),
+		);
+
+		await new Promise((r) => setTimeout(r, 80));
+
+		const listRaw = (await handleWebWorkspaceCommand(
+			"list_conversations",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		const listed = JSON.parse(listRaw) as {
+			sessions: Array<{ key: string; label: string; messageCount: number }>;
+		};
+		expect(listed.sessions).toHaveLength(1);
+		expect(listed.sessions[0]).toMatchObject({
+			key: "chat-1792849265763-abcde",
+			label: "첫 질문이에요",
+			messageCount: 2,
+		});
+
+		const readRaw = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{
+				adkPath: "opfs://naia-adk",
+				sessionId: listed.sessions[0].key,
+			},
+			fs,
+		)) as string;
+		const lines = readRaw.trim().split("\n");
+		expect(lines).toHaveLength(2);
+		expect(JSON.parse(lines[0])).toMatchObject({
+			role: "user",
+			content: "첫 질문이에요",
+		});
+		expect(JSON.parse(lines[1])).toMatchObject({
+			role: "assistant",
+			content: "첫 대답이에요",
 		});
 
 		workerPort.close();

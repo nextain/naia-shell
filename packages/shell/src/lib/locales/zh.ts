@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "允许直接在终端输入",
 	"settings.thinkingLevel": "思考强度",
 	"settings.thinkingLevelOff": "关闭",
+	"settings.thinkingLevelOn": "开启",
 	"settings.thinkingLevelLow": "低",
 	"settings.thinkingLevelHigh": "高",
 	"settings.thinkingLevelHint": "启用思考会减慢回答速度并增加 Token 费用。",

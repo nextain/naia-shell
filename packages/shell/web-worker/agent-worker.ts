@@ -1,7 +1,6 @@
 /// <reference lib="webworker" />
 import {
 	BROWSER_READ_TOOL_NAMES,
-	type WebLLMChatRequest,
 	type WebLLMEngineLike,
 	makeBrowserReadTools,
 	makePersonaSourceStore,
@@ -21,13 +20,12 @@ import {
 	makeSnapshotFs,
 	readAdkSnapshot,
 } from "./adk-snapshot-fs";
-import { relayAgentPort } from "./agent-port-relay";
-import { makeOpfsReadFs } from "./opfs-read-fs";
 import {
-	type WebThinkingLevel,
-	applyThinkingLevelToWebLLMRequest,
-	resolveChatTurnThinkingLevel,
-} from "./thinking-level";
+	relayAgentPort,
+	resolveWebChatTurnEnableThinking,
+	wrapEngineWithEnableThinking,
+} from "./agent-port-relay";
+import { makeOpfsReadFs } from "./opfs-read-fs";
 
 const diag: DiagnosticLog = {
 	log(message: string, ctx?: unknown) {
@@ -166,10 +164,10 @@ self.addEventListener("message", (event: MessageEvent) => {
 		}
 
 		let snapshot = EMPTY_ADK_SNAPSHOT;
-		let activeThinkingLevel: WebThinkingLevel = "off";
+		let activeEnableThinking = false;
 		const refresh = async (rawLine: string) => {
 			snapshot = await readAdkSnapshot(() => navigator.storage.getDirectory());
-			activeThinkingLevel = resolveChatTurnThinkingLevel(
+			activeEnableThinking = resolveWebChatTurnEnableThinking(
 				rawLine,
 				snapshot.configText,
 			);
@@ -177,20 +175,10 @@ self.addEventListener("message", (event: MessageEvent) => {
 
 		const getEngineWithThinking = async (): Promise<WebLLMEngineLike> => {
 			const baseEngine = await getEngine();
-			return {
-				chat: {
-					completions: {
-						create(req: WebLLMChatRequest) {
-							return baseEngine.chat.completions.create(
-								applyThinkingLevelToWebLLMRequest(req, activeThinkingLevel),
-							);
-						},
-					},
-				},
-				interruptGenerate() {
-					return baseEngine.interruptGenerate();
-				},
-			};
+			return wrapEngineWithEnableThinking(
+				baseEngine,
+				() => activeEnableThinking,
+			);
 		};
 
 		const provider = makeWebLLMProvider({

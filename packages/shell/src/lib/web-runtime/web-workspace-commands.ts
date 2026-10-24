@@ -6,6 +6,10 @@ import {
 	WEB_DEFAULT_VRM,
 	normalizeRetiredWebBackgroundInRecord,
 } from "./web-assets";
+import {
+	getWebAuthenticatedUserId,
+	isWebLoginGateDisabled,
+} from "./web-auth";
 import type { WebFs } from "./web-fs";
 import { WEB_LLM_MODEL_ID } from "./webllm-model";
 
@@ -46,7 +50,28 @@ export interface WebConversationEntry {
 let conversationWriteTail: Promise<void> = Promise.resolve();
 
 /**
- * 웹판 대화 턴을 `{adkPath}/conversations/{session}.jsonl` 에 영구 기록한다.
+ * 로그인한 사용자 ID가 있으면 사용자별 대화 폴더(`naia-adk/conversations/u-<safeUserId>`)를 반환하고,
+ * 로그인 문을 끈 빌드(`VITE_NAIA_WEB_LOGIN_REQUIRED=0`)이거나 사용자 ID가 없으면 공용 경로(`naia-adk/conversations`)를 반환한다.
+ */
+export function resolveWebConversationsDir(
+	userIdOverride?: string | null,
+): string {
+	if (isWebLoginGateDisabled()) {
+		return webAdkOpfsPath("conversations");
+	}
+	const rawUserId =
+		userIdOverride !== undefined
+			? userIdOverride
+			: getWebAuthenticatedUserId();
+	const trimmed = typeof rawUserId === "string" ? rawUserId.trim() : "";
+	if (trimmed.length > 0) {
+		return webAdkOpfsPath(`conversations/u-${safeSessionBase(trimmed)}`);
+	}
+	return webAdkOpfsPath("conversations");
+}
+
+/**
+ * 웹판 대화 턴을 `{conversationsDir}/{session}.jsonl` 에 영구 기록한다.
  * 데스크톱 `naia-agent` 의 `FileConversationLogStore` 와 동일한 JSONL 줄 형식을 쓴다.
  */
 export function appendWebConversationMessages(
@@ -55,9 +80,8 @@ export function appendWebConversationMessages(
 	fs: WebFs,
 ): Promise<void> {
 	if (entries.length === 0) return Promise.resolve();
-	const filePath = webAdkOpfsPath(
-		`conversations/${safeSessionBase(sessionId)}.jsonl`,
-	);
+	const convDir = resolveWebConversationsDir();
+	const filePath = `${convDir}/${safeSessionBase(sessionId)}.jsonl`;
 	const linesToAppend = entries
 		.map((entry) =>
 			JSON.stringify({
@@ -229,7 +253,7 @@ export async function handleWebWorkspaceCommand(
 	}
 
 	if (cmd === "list_conversations") {
-		const convDir = webAdkOpfsPath("conversations");
+		const convDir = resolveWebConversationsDir();
 		const entries = (await fs.listEntries?.(convDir)) ?? [];
 		const sessions: Array<{
 			key: string;
@@ -295,9 +319,8 @@ export async function handleWebWorkspaceCommand(
 		if (typeof parsed.sessionId !== "string") {
 			throw new Error("web_invalid_args:read_conversation");
 		}
-		const filePath = webAdkOpfsPath(
-			`conversations/${safeSessionBase(parsed.sessionId)}.jsonl`,
-		);
+		const convDir = resolveWebConversationsDir();
+		const filePath = `${convDir}/${safeSessionBase(parsed.sessionId)}.jsonl`;
 		const content = await fs.readText(filePath);
 		return content ?? "";
 	}
@@ -306,9 +329,8 @@ export async function handleWebWorkspaceCommand(
 		if (typeof parsed.sessionId !== "string") {
 			throw new Error("web_invalid_args:delete_conversation");
 		}
-		const filePath = webAdkOpfsPath(
-			`conversations/${safeSessionBase(parsed.sessionId)}.jsonl`,
-		);
+		const convDir = resolveWebConversationsDir();
+		const filePath = `${convDir}/${safeSessionBase(parsed.sessionId)}.jsonl`;
 		await fs.removeFile?.(filePath);
 		return null;
 	}

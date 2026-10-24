@@ -139,7 +139,7 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 	}
 
 	for (const key of RETIRED_VOICE_CONFIG_KEYS) remove(key);
-	if (normalizeRetiredWebBackgroundInRecord(raw)) {
+	if (isWebMode() && normalizeRetiredWebBackgroundInRecord(raw)) {
 		changed = true;
 	}
 	return { config, changed };
@@ -256,6 +256,24 @@ export function resolveThinkingLevel(
 		return config.thinkingLevel;
 	}
 	return config?.enableThinking === true ? "low" : "off";
+}
+
+/**
+ * 웹판 WebLLM Qwen3는 `enable_thinking` 켬/끔 두 단계만 제공한다(결정 정본 D39).
+ * 옛 저장값 `low`·`high` 는 켬(`true`)으로 읽고, `off` 는 끔(`false`)으로 읽는다.
+ */
+export function resolveWebThinkingEnabled(
+	config?: Partial<Pick<AppConfig, "thinkingLevel" | "enableThinking">> | null,
+): boolean {
+	if (config?.thinkingLevel === "off") return false;
+	if (
+		config?.thinkingLevel === "low" ||
+		config?.thinkingLevel === "high" ||
+		(config as { thinkingLevel?: unknown } | null)?.thinkingLevel === "on"
+	) {
+		return true;
+	}
+	return config?.enableThinking === true;
 }
 
 /** Development tiers are expert/main/sub; memory remains orthogonal. */
@@ -783,7 +801,7 @@ export function isReadyToChat(): boolean {
 		config.provider === "grok" ||
 		config.provider === "ollama" ||
 		config.provider === "vllm" ||
-		config.provider === "webllm";
+		(isWebMode() && config.provider === "webllm");
 	return noKeyNeeded || !!config.apiKey || !!config.naiaKey;
 }
 

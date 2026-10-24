@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getNaiaKey, hasNaiaKey, loadConfig } from "../../config";
+import { bootWebRuntimeAndModel } from "../auto-install";
 import { setWebAssetsModeForTests } from "../web-assets";
 import {
 	WEB_OAUTH_STATE_STORAGE_KEY,
 	buildWebLoginRedirectUrl,
+	completeWebNaiaLogin,
 	consumeWebAuthCallbackFromLocation,
 	getWebAuthenticatedUserId,
 	getWebLoginBaseUrl,
@@ -148,5 +150,36 @@ describe("web-auth (item 5)", () => {
 		expect(isWebAuthenticated()).toBe(false);
 		expect(getWebAuthenticatedUserId()).toBeUndefined();
 		expect(loadConfig()?.naiaUserId).toBeUndefined();
+	});
+
+	it("defers startWebModel until login completes when login gate is enabled, and starts immediately when disabled", async () => {
+		const startModel = vi.fn(async () => {});
+
+		// 1. Login required and not authenticated -> does not start model at boot
+		const bootRes = await bootWebRuntimeAndModel({
+			installRuntime: () => {},
+			consumeAuthCallback: async () => ({ handled: false, ok: false }),
+			checkAdkStartup: async () => {},
+			startModel,
+		});
+		expect(bootRes.startedImmediately).toBe(false);
+		expect(startModel).not.toHaveBeenCalled();
+
+		// 2. Completing login dispatches naia-web-auth-changed and starts model once
+		await completeWebNaiaLogin("naia_live_after_login_key_123", "usr_boot");
+		expect(startModel).toHaveBeenCalledTimes(1);
+
+		// 3. When login gate is disabled (VITE_NAIA_WEB_LOGIN_REQUIRED=0), starts immediately even when logged out
+		logoutWebSession();
+		setWebLoginRequiredForTests(false);
+		const startModelNoGate = vi.fn(async () => {});
+		const noGateRes = await bootWebRuntimeAndModel({
+			installRuntime: () => {},
+			consumeAuthCallback: async () => ({ handled: false, ok: false }),
+			checkAdkStartup: async () => {},
+			startModel: startModelNoGate,
+		});
+		expect(noGateRes.startedImmediately).toBe(true);
+		expect(startModelNoGate).toHaveBeenCalledTimes(1);
 	});
 });

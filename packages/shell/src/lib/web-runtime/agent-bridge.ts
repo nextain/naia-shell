@@ -1,4 +1,5 @@
 import { createAgentWorker } from "virtual:naia-agent-worker";
+import { getStoredLocalSessionId, useChatStore } from "../../stores/chat";
 import { Logger } from "../logger";
 import { emitWebEvent } from "./event-bus";
 import { type WebFs, getWebFs } from "./web-fs";
@@ -62,11 +63,14 @@ export function createAgentBridge(deps: {
 				typeof parsed.requestId === "string" &&
 				parsed.requestId.length > 0
 			) {
+				const explicitSessionId =
+					typeof parsed.sessionId === "string" ? parsed.sessionId.trim() : "";
 				const sessionId =
-					typeof parsed.sessionId === "string" &&
-					parsed.sessionId.trim().length > 0
-						? parsed.sessionId
-						: "default";
+					explicitSessionId.length > 0
+						? explicitSessionId
+						: getStoredLocalSessionId() ||
+							useChatStore.getState().localSessionId ||
+							"default";
 				let userContent = "";
 				if (Array.isArray(parsed.messages)) {
 					for (let i = parsed.messages.length - 1; i >= 0; i--) {
@@ -121,6 +125,7 @@ export function createAgentBridge(deps: {
 				const chunk = JSON.parse(rawLine) as {
 					type?: unknown;
 					requestId?: unknown;
+					text?: unknown;
 					content?: unknown;
 				};
 				if (
@@ -130,8 +135,16 @@ export function createAgentBridge(deps: {
 				) {
 					const turn = activeTurns.get(chunk.requestId);
 					if (turn) {
-						if (chunk.type === "text" && typeof chunk.content === "string") {
-							turn.assistantReply += chunk.content;
+						if (chunk.type === "text") {
+							const delta =
+								typeof chunk.text === "string"
+									? chunk.text
+									: typeof chunk.content === "string"
+										? chunk.content
+										: "";
+							if (delta.length > 0) {
+								turn.assistantReply += delta;
+							}
 						} else if (chunk.type === "error") {
 							activeTurns.delete(chunk.requestId);
 						} else if (chunk.type === "finish") {

@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "আপনার টার্মিনালে টাইপ করার অনুমতি",
 	"settings.thinkingLevel": "থিংকিং স্তর",
 	"settings.thinkingLevelOff": "বন্ধ",
+	"settings.thinkingLevelOn": "চালু",
 	"settings.thinkingLevelLow": "কম",
 	"settings.thinkingLevelHigh": "বেশি",
 	"settings.thinkingLevelHint": "থিংকিং সক্রিয় করলে প্রতিক্রিয়া ধীর হয় এবং টোকেন খরচ বাড়ে।",

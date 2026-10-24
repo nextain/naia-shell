@@ -805,7 +805,12 @@ export function SettingsTab() {
 		};
 	}, []);
 	useEffect(() => {
-		if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+		if (
+			!isWebMode() ||
+			typeof window === "undefined" ||
+			!("speechSynthesis" in window)
+		)
+			return;
 		const synth = window.speechSynthesis;
 		if (!synth || typeof synth.getVoices !== "function") return;
 		const refreshVoices = () => {
@@ -2807,7 +2812,7 @@ export function SettingsTab() {
 			// Resolve the effective TTS provider / voice / credentials, then
 			// synthesize shell-side (#363). The agent's skill_tts was never a real
 			// synthesizer, so preview routes through the same path as live voice.
-			if (isWebMode() || ttsProvider === "browser") {
+			if (isWebMode()) {
 				if (
 					typeof window === "undefined" ||
 					!("speechSynthesis" in window) ||
@@ -5078,52 +5083,117 @@ export function SettingsTab() {
 								marginTop: "4px",
 							}}
 						>
-							{THINKING_LEVELS.map((level) => {
-								const active = thinkingLevel === level;
-								const label =
-									level === "off"
-										? t("settings.thinkingLevelOff")
-										: level === "low"
-											? t("settings.thinkingLevelLow")
-											: t("settings.thinkingLevelHigh");
-								return (
-									<button
-										key={level}
-										type="button"
-										role="radio"
-										aria-checked={active}
-										tabIndex={active ? 0 : -1}
-										data-testid={`thinking-level-${level}`}
-										onClick={() => handleThinkingChange(level)}
-										onKeyDown={(e) => handleThinkingKeyDown(e, level)}
-										style={{
-											flex: "1 1 0",
-											minWidth: 0,
-											padding: "6px 8px",
-											borderRadius: "4px",
-											border: active
-												? "1px solid var(--accent, #2563eb)"
-												: "1px solid var(--border-color, #e2e8f0)",
-											backgroundColor: active
-												? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
-												: "var(--bg-surface, var(--espresso, #ffffff))",
-											color: active
-												? "var(--accent, #2563eb)"
-												: "var(--text-primary, var(--cream, #0f172a))",
-											fontWeight: active ? 600 : 400,
-											fontSize: "13px",
-											cursor: "pointer",
-											textAlign: "center",
-											whiteSpace: "nowrap",
-											overflow: "hidden",
-											textOverflow: "ellipsis",
-											transition: "all 0.15s ease",
-										}}
-									>
-										{label}
-									</button>
-								);
-							})}
+							{isWebMode()
+								? (["off", "on"] as const).map((webStage) => {
+										const isOff = webStage === "off";
+										const active = isOff
+											? thinkingLevel === "off"
+											: thinkingLevel !== "off";
+										const label = isOff
+											? t("settings.thinkingLevelOff")
+											: t("settings.thinkingLevelOn");
+										const targetLevel: ThinkingLevel = isOff ? "off" : "high";
+										return (
+											<button
+												key={webStage}
+												type="button"
+												role="radio"
+												aria-checked={active}
+												tabIndex={active ? 0 : -1}
+												data-testid={`thinking-level-${webStage}`}
+												onClick={() => handleThinkingChange(targetLevel)}
+												onKeyDown={(e) => {
+													if (
+														e.key === "ArrowRight" ||
+														e.key === "ArrowDown" ||
+														e.key === "ArrowLeft" ||
+														e.key === "ArrowUp"
+													) {
+														e.preventDefault();
+														const nextStage = isOff ? "on" : "off";
+														handleThinkingChange(isOff ? "high" : "off");
+														const parent = e.currentTarget.parentElement;
+														parent
+															?.querySelector<HTMLButtonElement>(
+																`[data-testid="thinking-level-${nextStage}"]`,
+															)
+															?.focus();
+													}
+												}}
+												style={{
+													flex: "1 1 0",
+													minWidth: 0,
+													padding: "6px 8px",
+													borderRadius: "4px",
+													border: active
+														? "1px solid var(--accent, #2563eb)"
+														: "1px solid var(--border-color, #e2e8f0)",
+													backgroundColor: active
+														? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+														: "var(--bg-surface, var(--espresso, #ffffff))",
+													color: active
+														? "var(--accent, #2563eb)"
+														: "var(--text-primary, var(--cream, #0f172a))",
+													fontWeight: active ? 600 : 400,
+													fontSize: "13px",
+													cursor: "pointer",
+													textAlign: "center",
+													whiteSpace: "nowrap",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													transition: "all 0.15s ease",
+												}}
+											>
+												{label}
+											</button>
+										);
+									})
+								: THINKING_LEVELS.map((level) => {
+										const active = thinkingLevel === level;
+										const label =
+											level === "off"
+												? t("settings.thinkingLevelOff")
+												: level === "low"
+													? t("settings.thinkingLevelLow")
+													: t("settings.thinkingLevelHigh");
+										return (
+											<button
+												key={level}
+												type="button"
+												role="radio"
+												aria-checked={active}
+												tabIndex={active ? 0 : -1}
+												data-testid={`thinking-level-${level}`}
+												onClick={() => handleThinkingChange(level)}
+												onKeyDown={(e) => handleThinkingKeyDown(e, level)}
+												style={{
+													flex: "1 1 0",
+													minWidth: 0,
+													padding: "6px 8px",
+													borderRadius: "4px",
+													border: active
+														? "1px solid var(--accent, #2563eb)"
+														: "1px solid var(--border-color, #e2e8f0)",
+													backgroundColor: active
+														? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+														: "var(--bg-surface, var(--espresso, #ffffff))",
+													color: active
+														? "var(--accent, #2563eb)"
+														: "var(--text-primary, var(--cream, #0f172a))",
+													fontWeight: active ? 600 : 400,
+													fontSize: "13px",
+													cursor: "pointer",
+													textAlign: "center",
+													whiteSpace: "nowrap",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													transition: "all 0.15s ease",
+												}}
+											>
+												{label}
+											</button>
+										);
+									})}
 						</div>
 						<div className="settings-hint" style={{ marginTop: "4px" }}>
 							{t("settings.thinkingLevelHint")}
@@ -5711,7 +5781,7 @@ export function SettingsTab() {
 
 					{/* TTS Voice picker — dynamic based on provider */}
 					{(() => {
-						if (isWebMode() || ttsProvider === "browser") {
+						if (isWebMode()) {
 							const synthSupported =
 								typeof window !== "undefined" && "speechSynthesis" in window;
 							const langPrefix = locale.slice(0, 2).toLowerCase();

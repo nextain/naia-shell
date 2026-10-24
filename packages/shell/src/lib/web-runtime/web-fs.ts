@@ -265,7 +265,7 @@ export function createOpfsWebFs(
 					names.push(name);
 				}
 			}
-			return names;
+			return names.sort();
 		},
 
 		async removeFile(path: string): Promise<void> {

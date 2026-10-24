@@ -1,3 +1,4 @@
+import { useChatStore } from "../../stores/chat";
 import { loadConfig, saveConfig } from "../config";
 import { getLocale } from "../i18n";
 import { Logger } from "../logger";
@@ -32,18 +33,25 @@ export function getWebLoginBaseUrl(envOverride?: string): string {
 }
 
 /**
+ * 빌드/테스트 설정상 로그인 문이 명시적으로 꺼져(`VITE_NAIA_WEB_LOGIN_REQUIRED=0`) 있는가.
+ */
+export function isWebLoginGateDisabled(envOverride?: string): boolean {
+	if (webLoginRequiredOverride !== null) return !webLoginRequiredOverride;
+	const raw =
+		envOverride ??
+		(import.meta.env.VITE_NAIA_WEB_LOGIN_REQUIRED as string | undefined);
+	const trimmed = raw?.trim();
+	return trimmed === "0" || trimmed === "false";
+}
+
+/**
  * 웹판 로그인 첫 화면 강제 여부.
  * 기본은 켬(`true`)이며, `VITE_NAIA_WEB_LOGIN_REQUIRED=0` 이면 로그인 문을 끈다.
  */
 export function isWebLoginRequired(envOverride?: string): boolean {
 	if (webLoginRequiredOverride !== null) return webLoginRequiredOverride;
 	if (!isWebMode()) return false;
-	const raw =
-		envOverride ??
-		(import.meta.env.VITE_NAIA_WEB_LOGIN_REQUIRED as string | undefined);
-	const trimmed = raw?.trim();
-	if (trimmed === "0" || trimmed === "false") return false;
-	return true;
+	return !isWebLoginGateDisabled(envOverride);
 }
 
 /** 데스크톱 Rust 콜백(`lib.rs:256-260`)과 동일한 키 형식 검증. */
@@ -153,10 +161,12 @@ export async function completeWebNaiaLogin(
 		// 웹판에서는 write_agent_key가 desktop-only이므로 실패를 무시하고 브라우저 저장소에 보관한다.
 	}
 
+	const previousUserId = getWebAuthenticatedUserId();
+	const nextUserId = naiaUserId?.trim() || undefined;
 	if (typeof localStorage !== "undefined") {
 		localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, naiaKey);
-		if (naiaUserId && naiaUserId.trim().length > 0) {
-			localStorage.setItem(WEB_REMOTE_USER_ID_STORAGE_KEY, naiaUserId.trim());
+		if (nextUserId) {
+			localStorage.setItem(WEB_REMOTE_USER_ID_STORAGE_KEY, nextUserId);
 		} else {
 			localStorage.removeItem(WEB_REMOTE_USER_ID_STORAGE_KEY);
 		}
@@ -168,9 +178,13 @@ export async function completeWebNaiaLogin(
 		model: existing?.model || WEB_LLM_MODEL_ID,
 		apiKey: existing?.apiKey ?? "",
 		...(existing ?? {}),
-		naiaUserId: naiaUserId?.trim() || existing?.naiaUserId || undefined,
+		naiaUserId: nextUserId,
 		onboardingComplete: true,
 	});
+
+	if (previousUserId !== nextUserId) {
+		useChatStore.getState().newConversation();
+	}
 
 	emitWebEvent("naia_auth_complete", {
 		naiaKey,
@@ -322,6 +336,7 @@ export function logoutWebSession(): void {
 			naiaUserId: undefined,
 		});
 	}
+	useChatStore.getState().newConversation();
 	if (typeof window !== "undefined") {
 		window.dispatchEvent(new CustomEvent("naia-web-auth-changed"));
 	}

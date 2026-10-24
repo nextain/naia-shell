@@ -230,6 +230,37 @@ const WorkProgressArea = lazy(() =>
 		default: WorkProgressArea,
 	})),
 );
+
+export interface WebSpeakingSttHooks {
+	isSpeaking: boolean;
+	pipelineActive: boolean;
+	hasActiveSpeechActivity: boolean;
+	clearCooldownTimer: () => void;
+	pauseStt: () => void;
+	scheduleResumeStt: (delayMs: number) => void;
+}
+
+/**
+ * 웹판 브라우저 TTS 발화 시작·종료 시에만 마이크(Web Speech STT)를 일시 정지·재개한다.
+ * 데스크톱(`!isWebMode()`)에서는 기준 동작(`4f06f040`)과 같게 아무 동작도 하지 않는다.
+ */
+export function syncWebSttOnSpeakingChange(hooks: WebSpeakingSttHooks): void {
+	if (!isWebMode()) return;
+	if (hooks.isSpeaking) {
+		hooks.clearCooldownTimer();
+		if (hooks.pipelineActive) {
+			try {
+				if (shouldPauseSttForTts(hooks.hasActiveSpeechActivity)) {
+					hooks.pauseStt();
+				}
+			} catch {
+				// 마이크 일시정지 실패는 2차 텍스트 필터가 방어
+			}
+		}
+	} else if (hooks.pipelineActive) {
+		hooks.scheduleResumeStt(800);
+	}
+}
 const ChatMarkdown = lazy(() =>
 	import("./ChatMarkdown").then(({ ChatMarkdown }) => ({
 		default: ChatMarkdown,
@@ -602,24 +633,21 @@ export function ChatArea({
 				ttsPlayingRef.current = on;
 				setTtsPlaying(on);
 				useAvatarStore.getState().setSpeaking(on);
-				if (on) {
-					if (sttCooldownTimerRef.current) {
-						clearTimeout(sttCooldownTimerRef.current);
-						sttCooldownTimerRef.current = null;
-					}
-					if (pipelineActiveRef.current) {
-						try {
-							if (
-								shouldPauseSttForTts(activeSpeechActivityRef.current !== null)
-							)
-								sttPauseRef.current?.();
-						} catch {
-							// 마이크 일시정지 실패는 2차 텍스트 필터가 방어
+				syncWebSttOnSpeakingChange({
+					isSpeaking: on,
+					pipelineActive: pipelineActiveRef.current,
+					hasActiveSpeechActivity: activeSpeechActivityRef.current !== null,
+					clearCooldownTimer: () => {
+						if (sttCooldownTimerRef.current) {
+							clearTimeout(sttCooldownTimerRef.current);
+							sttCooldownTimerRef.current = null;
 						}
-					}
-				} else {
-					if (pipelineActiveRef.current) {
-						ttsCooldownUntilRef.current = Date.now() + 800;
+					},
+					pauseStt: () => {
+						sttPauseRef.current?.();
+					},
+					scheduleResumeStt: (delayMs) => {
+						ttsCooldownUntilRef.current = Date.now() + delayMs;
 						setSttState("initializing");
 						if (sttCooldownTimerRef.current)
 							clearTimeout(sttCooldownTimerRef.current);
@@ -633,8 +661,10 @@ export function ChatArea({
 									// 재개 실패 시 다음 발화 토글로 복구
 								}
 							}
-						}, 800);
-					}
+						}, delayMs);
+					},
+				});
+				if (!on) {
 					// #423: browser speech end/error releases the held expression.
 					settleAvatarEmotionIfIdle();
 					settleSlidePresenterSpeech("finished");

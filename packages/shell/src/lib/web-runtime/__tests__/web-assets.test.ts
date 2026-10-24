@@ -1,4 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { syncWebSttOnSpeakingChange } from "../../../components/ChatArea";
+import {
+	isReadyToChat,
+	loadConfig,
+	resolveThinkingLevel,
+	resolveWebThinkingEnabled,
+	saveConfig,
+} from "../../config";
 import {
 	RETIRED_WEB_BACKGROUND_FILENAMES,
 	WEB_BACKGROUND_ASSETS,
@@ -15,6 +24,7 @@ import {
 
 afterEach(() => {
 	setWebAssetsModeForTests(null);
+	localStorage.clear();
 });
 
 describe("isWebMode", () => {
@@ -100,5 +110,94 @@ describe("retired face-crop web backgrounds", () => {
 		expect(record.backgroundImage).toBe(WEB_DEFAULT_BACKGROUND_URL);
 
 		expect(normalizeRetiredWebBackgroundInRecord(record)).toBe(false);
+	});
+
+	it("preserves desktop background filenames and provider readiness in loadConfig/saveConfig when isWebMode() is false", () => {
+		setWebAssetsModeForTests(false);
+		saveConfig({
+			provider: "webllm",
+			model: "Qwen3-4B-q4f16_1-MLC",
+			apiKey: "",
+			backgroundVideo: "ol-woman-dusk.webp",
+			backgroundImage: "/backgrounds/shino-uniform-dusk.webp",
+		});
+
+		const desktopLoaded = loadConfig();
+		expect(desktopLoaded?.backgroundVideo).toBe("ol-woman-dusk.webp");
+		expect(desktopLoaded?.backgroundImage).toBe(
+			"/backgrounds/shino-uniform-dusk.webp",
+		);
+		expect(isReadyToChat()).toBe(false);
+
+		// In web mode, retired face-crop backgrounds are migrated and webllm needs no API key
+		setWebAssetsModeForTests(true);
+		const webLoaded = loadConfig();
+		expect(webLoaded?.backgroundVideo).toBe(WEB_DEFAULT_BACKGROUND);
+		expect(webLoaded?.backgroundImage).toBe(WEB_DEFAULT_BACKGROUND_URL);
+		expect(isReadyToChat()).toBe(true);
+	});
+
+	it("does not pause or schedule resume of STT on desktop when setSpeaking fires, and only pauses/resumes in web mode", () => {
+		const clearCooldownTimer = vi.fn();
+		const pauseStt = vi.fn();
+		const scheduleResumeStt = vi.fn();
+
+		// Desktop mode: no STT pause or resume side effects
+		setWebAssetsModeForTests(false);
+		syncWebSttOnSpeakingChange({
+			isSpeaking: true,
+			pipelineActive: true,
+			hasActiveSpeechActivity: false,
+			clearCooldownTimer,
+			pauseStt,
+			scheduleResumeStt,
+		});
+		syncWebSttOnSpeakingChange({
+			isSpeaking: false,
+			pipelineActive: true,
+			hasActiveSpeechActivity: false,
+			clearCooldownTimer,
+			pauseStt,
+			scheduleResumeStt,
+		});
+		expect(clearCooldownTimer).not.toHaveBeenCalled();
+		expect(pauseStt).not.toHaveBeenCalled();
+		expect(scheduleResumeStt).not.toHaveBeenCalled();
+
+		// Web mode: pauses on speaking start and schedules 800ms resume on speaking end
+		setWebAssetsModeForTests(true);
+		syncWebSttOnSpeakingChange({
+			isSpeaking: true,
+			pipelineActive: true,
+			hasActiveSpeechActivity: false,
+			clearCooldownTimer,
+			pauseStt,
+			scheduleResumeStt,
+		});
+		expect(clearCooldownTimer).toHaveBeenCalledTimes(1);
+		expect(pauseStt).toHaveBeenCalledTimes(1);
+
+		syncWebSttOnSpeakingChange({
+			isSpeaking: false,
+			pipelineActive: true,
+			hasActiveSpeechActivity: false,
+			clearCooldownTimer,
+			pauseStt,
+			scheduleResumeStt,
+		});
+		expect(scheduleResumeStt).toHaveBeenCalledWith(800);
+	});
+
+	it("maps legacy thinkingLevel low/high to on (true) in resolveWebThinkingEnabled while preserving desktop resolveThinkingLevel", () => {
+		expect(resolveWebThinkingEnabled({ thinkingLevel: "off" })).toBe(false);
+		expect(resolveWebThinkingEnabled({ thinkingLevel: "low" })).toBe(true);
+		expect(resolveWebThinkingEnabled({ thinkingLevel: "high" })).toBe(true);
+		expect(resolveWebThinkingEnabled({ enableThinking: true })).toBe(true);
+		expect(resolveWebThinkingEnabled({ enableThinking: false })).toBe(false);
+
+		expect(resolveThinkingLevel({ thinkingLevel: "off" })).toBe("off");
+		expect(resolveThinkingLevel({ thinkingLevel: "low" })).toBe("low");
+		expect(resolveThinkingLevel({ thinkingLevel: "high" })).toBe("high");
+		expect(resolveThinkingLevel({ enableThinking: true })).toBe("low");
 	});
 });
