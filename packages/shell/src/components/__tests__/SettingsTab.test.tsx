@@ -67,8 +67,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 			nativeSecrets.delete(args!.name!);
 			return secureStoreMock.delete(args?.name);
 		}
-		if (command === "device_list" || command === "device_list_requests") return [];
 		const result = await mockInvoke(...call);
+		if (command === "device_list" || command === "device_list_requests") {
+			return Array.isArray(result) ? result : [];
+		}
 		// Older fixtures use [] as their catch-all. Native config reads return
 		// JSON text; CLI discovery returns a snapshot, never a bare array.
 		if (Array.isArray(result) && result.length === 0) {
@@ -118,7 +120,20 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
 import { setLocale } from "../../lib/i18n";
+import { registerWebLlmProvider } from "../../lib/web-runtime/llm-provider";
+import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
+import {
+	getWebModelStatus,
+	resetWebModelStatusForTests,
+	setWebModelStatus,
+} from "../../lib/web-runtime/web-model-status";
+import {
+	WEB_LLM_FALLBACK_F32,
+	WEB_LLM_MODEL_ID,
+	formatWebLlmModelLabel,
+} from "../../lib/web-runtime/webllm-model";
 import { SettingsTab } from "../SettingsTab";
+import { WebModelStatusBar } from "../WebModelStatusBar";
 
 // SettingsTab order:
 // profile | brain | voice | avatar | persona | memory | knowledge | skills | connections | general
@@ -3962,4 +3977,137 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 		});
 	});
 });
+
+describe("web mode brain tab (r4)", () => {
+	beforeEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+		mockInvoke.mockResolvedValue([]);
+		resetWebModelStatusForTests();
+	});
+
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		resetWebModelStatusForTests();
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("hides DevicePairingSection and does not call device_list in web mode, while keeping both in desktop mode", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+				enableTools: true,
+			}),
+		);
+
+		setWebAssetsModeForTests(true);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		expect(screen.queryByTestId("device-section")).toBeNull();
+		expect(
+			screen.queryByText(/디바이스 페어링|Device Pairing/i),
+		).toBeNull();
+		expect(mockInvoke).not.toHaveBeenCalledWith("device_list");
+		expect(mockInvoke).not.toHaveBeenCalledWith("device_list_requests");
+
+		cleanup();
+		vi.clearAllMocks();
+
+		setWebAssetsModeForTests(false);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		expect(await screen.findByTestId("device-section")).toBeTruthy();
+		expect(
+			await screen.findByText(/디바이스 페어링|Device Pairing/i),
+		).toBeTruthy();
+		await waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith("device_list");
+			expect(mockInvoke).toHaveBeenCalledWith("device_list_requests");
+		});
+	});
+
+	it("derives both SettingsTab brain model label and WebModelStatusBar text from the single runtime getWebModelStatus().model source", async () => {
+		registerWebLlmProvider();
+		setWebAssetsModeForTests(true);
+		// Seed initial config with the default f16 model ID, simulating bootstrap
+		// before startWebModel auto-selects f32 on a GPU without shader-f16.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				llmRoles: {
+					main: {
+						provider: "webllm",
+						model: WEB_LLM_MODEL_ID,
+					},
+				},
+			}),
+		);
+		setWebModelStatus({
+			phase: "loading",
+			progress: 0.05,
+			model: WEB_LLM_FALLBACK_F32,
+		});
+
+		render(
+			<>
+				<WebModelStatusBar />
+				<SettingsTab />
+			</>,
+		);
+		gotoSettingsTab("brain");
+
+		const activeSourceModel = getWebModelStatus().model;
+		expect(activeSourceModel).toBe(WEB_LLM_FALLBACK_F32);
+		const expectedF32Label = formatWebLlmModelLabel(activeSourceModel);
+		expect(expectedF32Label).toBe("Qwen3 4B (4bit f32)");
+
+		const modelSelect = document.getElementById(
+			"model-select",
+		) as HTMLSelectElement;
+		expect(modelSelect).toBeTruthy();
+		expect(modelSelect.value).toBe(activeSourceModel);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF32Label);
+
+		const modelHint = modelSelect
+			.closest(".settings-field")
+			?.querySelector(".settings-hint");
+		expect(modelHint?.textContent).toBe(expectedF32Label);
+
+		const statusBar = screen.getByTestId("web-model-status");
+		expect(statusBar.getAttribute("data-model")).toBe(activeSourceModel);
+		expect(statusBar.textContent).toContain(expectedF32Label);
+		expect(statusBar.textContent).not.toContain("Qwen3 4B (4bit f16)");
+
+		// When the single runtime source changes to f16, both UI places update together.
+		act(() => {
+			setWebModelStatus({
+				phase: "ready",
+				progress: 1,
+				model: WEB_LLM_MODEL_ID,
+			});
+		});
+
+		const updatedSourceModel = getWebModelStatus().model;
+		expect(updatedSourceModel).toBe(WEB_LLM_MODEL_ID);
+		const expectedF16Label = formatWebLlmModelLabel(updatedSourceModel);
+		expect(expectedF16Label).toBe("Qwen3 4B (4bit f16)");
+
+		expect(modelSelect.value).toBe(updatedSourceModel);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF16Label);
+		expect(modelHint?.textContent).toBe(expectedF16Label);
+		expect(statusBar.getAttribute("data-model")).toBe(updatedSourceModel);
+		expect(statusBar.textContent).toContain(expectedF16Label);
+	});
+});
+
 

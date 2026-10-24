@@ -54,6 +54,16 @@ import {
 	requestWebPersistentStorage,
 	subscribeWebStoragePersistState,
 } from "../lib/web-runtime/web-storage-persist";
+import {
+	getWebModelStatus,
+	setWebModelStatus,
+} from "../lib/web-runtime/web-model-status";
+import {
+	WEB_LLM_MODEL_IDS,
+	WEB_LLM_MODEL_PREF_KEY,
+	formatWebLlmModelLabel,
+	isWebLlmModelId,
+} from "../lib/web-runtime/webllm-model";
 import { isWebSpeechAvailable } from "../lib/stt";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
@@ -199,6 +209,7 @@ import {
 	RadioDjSettingsCard,
 } from "./ProactiveSpeechSettingsSection";
 import { RefAudioSection } from "./RefAudioSection";
+import { useWebModelStatus } from "./WebModelStatusBar";
 
 const SkillsTab = lazy(() =>
 	import("./SkillsTab").then(({ SkillsTab }) => ({ default: SkillsTab })),
@@ -688,6 +699,7 @@ export function SettingsTab() {
 	const initProvider = (initialMainRole.provider ?? "") as ProviderId;
 	const savedModel = initialMainRole.model;
 	const [provider, setProvider] = useState<ProviderId>(initProvider);
+	const webModelStatus = useWebModelStatus();
 	const modelValid =
 		savedModel &&
 		(initProvider === "ollama" ||
@@ -695,8 +707,17 @@ export function SettingsTab() {
 			(getLlmProvider(initProvider)?.models.some((m) => m.id === savedModel) ??
 				false));
 	const [model, setModel] = useState(
-		modelValid ? savedModel : getDefaultLlmModel(initProvider),
+		isWebMode() && initProvider === "webllm" && webModelStatus.model
+			? webModelStatus.model
+			: modelValid
+				? savedModel
+				: getDefaultLlmModel(initProvider),
 	);
+	useEffect(() => {
+		if (isWebMode() && provider === "webllm" && webModelStatus.model) {
+			setModel(webModelStatus.model);
+		}
+	}, [provider, webModelStatus.model]);
 	const [configSecretsSettled, setConfigSecretsSettled] = useState(false);
 	// SettingsTab remains mounted while the Shell starts.  The workspace config
 	// hydrates asynchronously, so its initial state can otherwise keep showing
@@ -712,6 +733,16 @@ export function SettingsTab() {
 			if (!mainRole.provider) return;
 			const nextProvider = mainRole.provider as ProviderId;
 			setProvider(nextProvider);
+			if (isWebMode() && nextProvider === "webllm") {
+				const runtimeModel = getWebModelStatus().model;
+				setModel(
+					runtimeModel ||
+						(typeof mainRole.model === "string" && mainRole.model.trim()
+							? mainRole.model
+							: getDefaultLlmModel(nextProvider)),
+				);
+				return;
+			}
 			setModel(
 				typeof mainRole.model === "string" && mainRole.model.trim()
 					? mainRole.model
@@ -3015,10 +3046,14 @@ export function SettingsTab() {
 		}
 		const defaultVrm = DEFAULT_AVATAR_MODEL;
 		const savedAvatarProvider: AppConfig["avatarProvider"] = avatarProvider;
+		const savedModelId =
+			isWebMode() && provider === "webllm" && webModelStatus.model
+				? webModelStatus.model
+				: model;
 		let newConfig: AppConfig = {
 			...existing,
 			provider,
-			model,
+			model: savedModelId,
 			modelSortMode,
 			apiKey: isNextainProvider ? "" : resolvedApiKey,
 			naiaKey: naiaKey || undefined,
@@ -3064,7 +3099,7 @@ export function SettingsTab() {
 			vllmHost:
 				provider === "vllm" ? vllmHost.trim() || undefined : existing?.vllmHost,
 			naiaLocalUrl: naiaLocalUrl.trim() || undefined,
-			voice: isOmniModel(provider, model) ? voice : existing?.voice,
+			voice: isOmniModel(provider, savedModelId) ? voice : existing?.voice,
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
 			// Memory settings
@@ -3103,7 +3138,7 @@ export function SettingsTab() {
 		const mainProviderUnchanged = persistedMainRole?.provider === provider;
 		const mainRole: LlmRoleConfig = {
 			provider,
-			model,
+			model: savedModelId,
 			...(mainProviderUnchanged && persistedMainRole?.credentialRef !== undefined
 				? { credentialRef: persistedMainRole.credentialRef }
 				: {}),
@@ -3213,7 +3248,25 @@ export function SettingsTab() {
 		}
 	}
 
-	const providerModels = dynamicModels[provider] ?? [];
+	const activeBrainModel =
+		isWebMode() && provider === "webllm" && webModelStatus.model
+			? webModelStatus.model
+			: model;
+	const providerModels = useMemo<LlmModelMeta[]>(() => {
+		const base = dynamicModels[provider] ?? [];
+		if (base.length > 0) return base;
+		if (isWebMode() && provider === "webllm") {
+			return (
+				getLlmProvider("webllm")?.models ??
+				WEB_LLM_MODEL_IDS.map((id) => ({
+					id,
+					label: formatWebLlmModelLabel(id),
+					capabilities: ["llm"],
+				}))
+			);
+		}
+		return base;
+	}, [dynamicModels, provider]);
 	const availableProviderModels = useMemo(
 		() =>
 			provider === "nextain"
@@ -3238,10 +3291,12 @@ export function SettingsTab() {
 	const hideModelPicker =
 		provider !== "ollama" && shouldHideModelPicker(displayedProviderModels);
 	const singleProviderModel = selectableProviderModels[0];
-	const selectedModelMeta = availableProviderModels.find((m) => m.id === model);
+	const selectedModelMeta = availableProviderModels.find(
+		(m) => m.id === activeBrainModel,
+	);
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const shouldReplaceUnavailableSelectedModel =
-		provider === "nextain" && Boolean(model) && !hasSelectedModel;
+		provider === "nextain" && Boolean(activeBrainModel) && !hasSelectedModel;
 	useEffect(() => {
 		if (
 			provider === "nextain" &&
@@ -3282,7 +3337,7 @@ export function SettingsTab() {
 	]);
 	const isSelectedOmni =
 		selectedModelMeta?.capabilities.includes("omni") ?? false;
-	const modelIdLower = model?.toLowerCase() ?? "";
+	const modelIdLower = activeBrainModel?.toLowerCase() ?? "";
 	const isSelectedAsr =
 		(selectedModelMeta?.capabilities.includes("asr") ?? false) ||
 		(provider === "vllm" &&
@@ -3355,8 +3410,15 @@ export function SettingsTab() {
 
 	function slotValueDisplay(id: SlotId): string {
 		switch (id) {
-			case "main":
-				return `${slotSnapshot.main.provider || "—"} / ${slotSnapshot.main.model || model || "—"}`;
+			case "main": {
+				const effectiveMainModel =
+					isWebMode() &&
+					(slotSnapshot.main.provider === "webllm" || provider === "webllm") &&
+					webModelStatus.model
+						? webModelStatus.model
+						: slotSnapshot.main.model || activeBrainModel || "—";
+				return `${slotSnapshot.main.provider || "—"} / ${effectiveMainModel}`;
+			}
 			case "sub":
 				return slotSnapshot.sub.provider && slotSnapshot.sub.provider !== "none"
 					? `${slotSnapshot.sub.provider}${slotSnapshot.sub.model ? ` / ${slotSnapshot.sub.model}` : ""}`
@@ -4882,10 +4944,23 @@ export function SettingsTab() {
 							<select
 								key={`model-select-${modelSortMode}-${displayedProviderModels.map((candidate) => candidate.id).join(":")}`}
 								id="model-select"
-								value={hasSelectedModel ? model : "__custom__"}
+								value={hasSelectedModel ? activeBrainModel : "__custom__"}
 								onChange={(e) => {
 									if (e.target.value === "__custom__") return;
-									setModel(e.target.value);
+									const nextModel = e.target.value;
+									setModel(nextModel);
+									if (
+										isWebMode() &&
+										provider === "webllm" &&
+										isWebLlmModelId(nextModel)
+									) {
+										setWebModelStatus({ model: nextModel });
+										try {
+											localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, nextModel);
+										} catch {
+											// ignore storage errors
+										}
+									}
 									// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
 									// agent loads THIS model. Previously only Save persisted → a stale model
 									// (e.g. an omni gemini-2.5-flash-live from a prior voice session) survived.
@@ -4895,14 +4970,14 @@ export function SettingsTab() {
 										const legacySelection = applyModelSelectionToConfig(
 											persistedConfig as Record<string, unknown> | null,
 											provider,
-											e.target.value,
+											nextModel,
 										);
 										const persistedMainRole = persistedConfig
 											? readConfiguredLlmRoles(persistedConfig).main
 											: undefined;
 										const mainRole: LlmRoleConfig = {
 											provider,
-											model: e.target.value,
+											model: nextModel,
 											...(persistedMainRole?.provider === provider &&
 											persistedMainRole.credentialRef !== undefined
 												? { credentialRef: persistedMainRole.credentialRef }
@@ -4926,7 +5001,7 @@ export function SettingsTab() {
 									}
 									// When switching to an omni model, set default voice if not already set
 									const newMeta = providerModels.find(
-										(m) => m.id === e.target.value,
+										(m) => m.id === nextModel,
 									);
 									if (
 										newMeta?.capabilities.includes("omni") &&
@@ -4941,8 +5016,8 @@ export function SettingsTab() {
 									}
 								}}
 							>
-								{!hasSelectedModel && model ? (
-									<option value="__custom__">{`${model}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
+								{!hasSelectedModel && activeBrainModel ? (
+									<option value="__custom__">{`${activeBrainModel}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
 								) : null}
 								{displayedProviderModels
 									.filter((m) => !m.capabilities.includes("asr"))
@@ -4978,8 +5053,10 @@ export function SettingsTab() {
 								</span>
 							) : provider === "nextain" ? (
 								t("settings.pricingUnavailable")
+							) : isWebMode() && provider === "webllm" ? (
+								formatWebLlmModelLabel(activeBrainModel)
 							) : (
-								(selectedModelMeta?.label ?? model)
+								(selectedModelMeta?.label ?? activeBrainModel)
 							)}
 						</div>
 					</div>
@@ -5068,7 +5145,7 @@ export function SettingsTab() {
 							}}
 						/>
 					</div>
-					{enableTools && <DevicePairingSection />}
+					{!isWebMode() && enableTools && <DevicePairingSection />}
 					<div className="settings-field" data-testid="thinking-level-section">
 						<label id="thinking-level-label">
 							{t("settings.thinkingLevel")}

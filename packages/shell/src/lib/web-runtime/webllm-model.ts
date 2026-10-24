@@ -52,3 +52,7 @@ export const WEB_LLM_MODEL_LABELS: Record<WebLlmModelId, string> = {
 	"Qwen3-4B-q4f16_1-MLC": "Qwen3 4B (4bit f16)",
 	"Qwen3-4B-q4f32_1-MLC": "Qwen3 4B (4bit f32)",
 };
+
+export function formatWebLlmModelLabel(modelId: string): string {
+	return isWebLlmModelId(modelId) ? WEB_LLM_MODEL_LABELS[modelId] : modelId;
+}
