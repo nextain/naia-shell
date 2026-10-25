@@ -1,9 +1,9 @@
 // #499 취소·타임아웃 계약 테스트 (P02) — FR-ENV-TOOL.1·9.
 // 취소가 실제로 멈추는가, 부분 실행이 남는가, 재전송이 두 번 실행하지 않는가.
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { EnvironmentToolService } from "../main/app/control/env-tool.js";
+import { EnvironmentToolService, UNWIND_GRACE_MS } from "../main/app/control/env-tool.js";
 import { EnvOperationFailure, terminate, type BrowserEvidence } from "../main/domain/env-tool.js";
-import type { BrowserOperationPort, CancellationPort } from "../main/ports/env-tool.js";
+import type { BrowserOperationPort, BrowserWorkspacePort, CancellationPort } from "../main/ports/env-tool.js";
 import { BROWSER_EVIDENCE, envRequest, fakeBrowser, fakeCancellation, fakeTerminal } from "./helpers/env-tool-fixture.js";
 
 function service() {
@@ -289,6 +289,146 @@ describe("실제 deadline (FR-ENV-TOOL.9, #582 4.7) [UC-ENV-TOOL-CANCEL]", () =>
 
     expect(outcome.ok).toBe(true);
     expect(svc.stateOf("op1")).toBe("completed");
+  });
+
+  // 상한이 먼저 돌려준 뒤에도 포트는 감독자 정리(세션·타깃 lease 해제)를 하는 중이다.
+  // 다음 작업이 그 정리를 앞지르면 실제 감독자에서 EGO_TARGET_BUSY 로 막힌다(CI 40174641008).
+  it("상한 뒤 다음 작업은 앞 작업의 정리가 끝난 뒤에 포트로 내려간다", async () => {
+    vi.useFakeTimers();
+    const browser = controllableBrowser();
+    const svc = new EnvironmentToolService(browser, fakeTerminal(), fakeCancellation(), ["observe", "workspace-write"]);
+    const first = svc.click(envRequest({ timeoutMs: 1_000 }), REF);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await first).ok).toBe(false);
+
+    const second = svc.click(envRequest({ operationId: "op-2", idempotencyKey: "k-2" }), REF);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(browser.calls, "앞 작업이 정리 중인데 다음 작업이 포트에 내려갔다").toEqual(["click"]);
+
+    browser.finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(browser.calls).toEqual(["click", "click"]);
+    browser.finish();
+    expect((await second).ok).toBe(true);
+    expect(svc.stateOf("op1"), "늦게 끝난 앞 작업이 완료로 승격됐다").toBe("failed");
+  });
+
+  // 활성 보증(liveness): 고침이 없어도 통과한다. 고침 증거는 앞뒤 시험이다.
+  it("앞 작업의 정리가 끝나지 않아도 다음 작업은 유한하게만 기다린다", async () => {
+    vi.useFakeTimers();
+    const browser = controllableBrowser();
+    const svc = new EnvironmentToolService(browser, fakeTerminal(), fakeCancellation(), ["observe", "workspace-write"]);
+    const first = svc.click(envRequest({ timeoutMs: 1_000 }), REF);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await first;
+
+    const second = svc.click(envRequest({ operationId: "op-2", idempotencyKey: "k-2", timeoutMs: 60_000 }), REF);
+    await vi.advanceTimersByTimeAsync(UNWIND_GRACE_MS);
+    expect(browser.calls, "끝나지 않는 정리에 다음 작업이 영영 묶였다").toEqual(["click", "click"]);
+    browser.finish();
+    expect((await second).ok).toBe(true);
+  });
+
+  it("앞 작업의 정리를 기다리는 동안 다음 작업의 상한이 오면 그 사유로 끝나고 포트를 부르지 않는다", async () => {
+    vi.useFakeTimers();
+    const browser = controllableBrowser();
+    const svc = new EnvironmentToolService(browser, fakeTerminal(), fakeCancellation(), ["observe", "workspace-write"]);
+    const first = svc.click(envRequest({ timeoutMs: 1_000 }), REF);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await first;
+
+    const second = svc.click(envRequest({ operationId: "op-2", idempotencyKey: "k-2", timeoutMs: 500 }), REF);
+    await vi.advanceTimersByTimeAsync(500);
+    const outcome = await second;
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejections.map((r) => r.code)).toEqual(["timeout"]);
+    expect(browser.calls, "상한이 지난 작업이 포트를 불렀다").toEqual(["click"]);
+    browser.finish();
+  });
+
+  it("상한을 넘겨도 안 끝나는 몸통은 한 번만 기다리고, 그 뒤 작업은 바로 내려간다", async () => {
+    vi.useFakeTimers();
+    const browser = controllableBrowser();
+    const svc = new EnvironmentToolService(browser, fakeTerminal(), fakeCancellation(), ["observe", "workspace-write"]);
+    const first = svc.click(envRequest({ timeoutMs: 1_000 }), REF);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await first;
+
+    const second = svc.click(envRequest({ operationId: "op-2", idempotencyKey: "k-2", timeoutMs: 60_000 }), REF);
+    await vi.advanceTimersByTimeAsync(UNWIND_GRACE_MS);
+    expect(browser.calls).toEqual(["click", "click"]);
+
+    // 매달린 첫 몸통은 장부에서 내렸다. 셋째 작업은 상한만큼 늦지 않는다.
+    const third = svc.click(envRequest({ operationId: "op-3", idempotencyKey: "k-3", timeoutMs: 60_000 }), REF);
+    await Promise.resolve();
+    expect(browser.calls, "끝나지 않는 몸통 하나가 뒤의 모든 작업을 늦췄다").toEqual(["click", "click", "click"]);
+    browser.finish();
+    expect((await second).ok).toBe(true);
+    expect((await third).ok).toBe(true);
+  });
+
+  it("앞 작업의 정리를 기다리는 동안 취소되면 cancelled 로 끝나고 포트에 취소를 지어내지 않는다", async () => {
+    vi.useFakeTimers();
+    const browser = controllableBrowser();
+    const cancelled: string[] = [];
+    const cancellation: CancellationPort = {
+      async cancel(operationId) {
+        cancelled.push(operationId);
+        return ["포트가 지운 것"];
+      },
+    };
+    const svc = new EnvironmentToolService(browser, fakeTerminal(), cancellation, ["observe", "workspace-write"]);
+    const first = svc.click(envRequest({ timeoutMs: 1_000 }), REF);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await first;
+
+    const second = svc.click(envRequest({ operationId: "op-2", idempotencyKey: "k-2", timeoutMs: 60_000 }), REF);
+    await vi.advanceTimersByTimeAsync(10);
+    const termination = await svc.cancel("op-2");
+    const outcome = await second;
+
+    expect(termination.state).toBe("cancelled");
+    expect(termination.partialEffects, "포트에 닿지 않은 작업에 효과를 지어냈다").toEqual([]);
+    expect(cancelled, "포트에 내려가지 않은 작업의 취소를 포트에 보냈다").toEqual([]);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.rejections.map((r) => r.code)).toEqual(["cancelled"]);
+    expect(browser.calls, "취소된 작업이 포트를 불렀다").toEqual(["click"]);
+    browser.finish();
+  });
+
+  it("자원 RPC 도 상한 뒤 앞 작업의 정리가 끝난 뒤에 포트로 내려간다", async () => {
+    vi.useFakeTimers();
+    const lists: { resolve: (value: readonly never[]) => void }[] = [];
+    const workspaces: BrowserWorkspacePort = {
+      async create() {
+        throw new Error("쓰지 않는다");
+      },
+      list() {
+        return new Promise((resolve) => lists.push({ resolve }));
+      },
+      async close() {},
+    };
+    const svc = new EnvironmentToolService(fakeBrowser(), fakeTerminal(), fakeCancellation(), ["observe", "workspace-write"], workspaces);
+    const first = svc.listWorkspaces(envRequest({ timeoutMs: 1_000 }));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await first).ok).toBe(false);
+
+    const second = svc.listWorkspaces(envRequest({ operationId: "op-2", idempotencyKey: "k-2" }));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(lists, "앞 자원 작업이 정리 중인데 다음 작업이 포트에 내려갔다").toHaveLength(1);
+
+    lists[0]?.resolve([]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lists).toHaveLength(2);
+    lists[1]?.resolve([]);
+    expect((await second).ok).toBe(true);
   });
 });
 

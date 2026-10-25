@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveLiveProvider } from "../resolve-live-provider";
+import {
+	liveVoiceRequiresNaiaKey,
+	resolveLiveProvider,
+} from "../resolve-live-provider";
 
 describe("resolveLiveProvider (#603)", () => {
 	it("routes azure-realtime omni to azure-voice-live", () => {
@@ -43,5 +46,44 @@ describe("resolveLiveProvider (#603)", () => {
 				hasNaiaKey: false,
 			}),
 		).toBe("vllm-omni");
+	});
+});
+
+describe("liveVoiceRequiresNaiaKey", () => {
+	it("requires the Naia key for Azure Voice Live", () => {
+		expect(
+			liveVoiceRequiresNaiaKey({
+				liveProvider: "azure-voice-live",
+				provider: "nextain",
+			}),
+		).toBe(true);
+	});
+
+	it("requires the Naia key for the cloud naia-omni gateway", () => {
+		expect(
+			liveVoiceRequiresNaiaKey({
+				liveProvider: "naia-omni",
+				provider: "nextain",
+			}),
+		).toBe(true);
+	});
+
+	it("keeps a user's own vLLM omni server keyless (FR-VOICE-CLOUD-OFF.1)", () => {
+		const liveProvider = resolveLiveProvider({
+			isOmni: true,
+			provider: "vllm",
+			model: "naia-0.9-omni-24g",
+			hasNaiaKey: false,
+		});
+		expect(liveProvider).toBe("naia-omni");
+		expect(liveVoiceRequiresNaiaKey({ liveProvider, provider: "vllm" })).toBe(
+			false,
+		);
+	});
+
+	it("does not gate the vllm-omni route", () => {
+		expect(
+			liveVoiceRequiresNaiaKey({ liveProvider: "vllm-omni", provider: "vllm" }),
+		).toBe(false);
 	});
 });

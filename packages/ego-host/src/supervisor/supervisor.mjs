@@ -130,6 +130,9 @@ export async function startSupervisor({
   async function stop({ graceMs = STOP_GRACE_MS } = {}) {
     if (stopped) return { alreadyStopped: true };
     stopped = true;
+    // 브라우저를 닫기 전에 연결의 새 요청을 끊김으로 돌린다. 진행 중 작업은 정책 거부가 아니라
+    // disconnected 로 끝나야 한다(#582 계약 4.8, ADK 전환 중 작업).
+    server.mux.beginShutdown();
     let closeRequested = false;
     if (!browserExited) {
       try {

@@ -236,6 +236,16 @@ test("deadline: 짧은 시한의 작업은 EGO_OPERATION_TIMEOUT 으로 끝나�
   assert.equal(timedOut.error.code, CODES.OPERATION_TIMEOUT, JSON.stringify(timedOut));
   assert.match(timedOut.error.message, /시한 900ms/);
 
+  // 시한이 먼저 종결한 뒤 어댑터가 늦게 보내는 종결 요청은 **정리가 끝난 뒤에** 돌아와야
+  // 한다. 그래야 그 직후의 다음 작업이 아직 놓이지 않은 lease 에 걸리지 않는다.
+  const late = await live.server.operations.complete(op.operationId, {
+    status: "failed",
+    reason: "timeout",
+  });
+  assert.equal(late.changed, false);
+  assert.ok(late.cleanup, "늦은 종결 요청이 정리가 끝나기 전에 돌아왔다");
+  assert.ok(late.cleanup.stopLoading.includes(sessionId), "늦은 종결 요청이 본 정리에 이동 멈춤이 없다");
+
   // 종결(상태)과 정리(CDP 왕복)는 다른 시점이다. **정리가 끝난 뒤**를 봐야 한다 —
   // 상태만 보고 읽으면 아직 걷히는 중인 자원을 "안 걷혔다"로 읽는다.
   const record = await waitFor(() => {

@@ -154,12 +154,33 @@ jobs:
         run: |
           node scripts/builds/uc1-outbound-probe.mjs
           node scripts/builds/uc1-variant-probe.mjs
+      # 페어드 agent 는 저장소 밖에 있다. 코어 계약(wire-union·environment-wire 표본 대조)이
+      # 이 체크아웃을 읽으므로 core tests 보다 먼저 세운다 — 뒤에 두면 그 계약이 늘 붉다.
+      # agent-pairing 해석기는 워크트리가 이미 있는 개발 기계를 전제하므로 깨끗한 러너에서는
+      # 예외를 던진다.
+      # build-installers 가 쓰는 방식(핀 커밋을 얕게 받아 detach)을 그대로 쓴다.
+      - name: clone paired naia-agent
+        run: |
+          git init ../naia-agent
+          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
+          git -C ../naia-agent fetch --depth 1 origin 65ac63ae72bba17304cacaa302fcf21af8b0f7f1
+          git -C ../naia-agent checkout --detach FETCH_HEAD
+      # 코어의 실브라우저 계약(env-tool-browser-host·adk-switch)은 Playwright chromium 을
+      # 기본 후보로 고른다(packages/ego-host browser-discovery). 그 바이너리를 core tests 앞에 둔다.
+      - name: install Playwright Chromium
+        run: pnpm -C packages/shell exec playwright install --with-deps chromium
+      # Ubuntu 24.04 러너는 AppArmor 로 비특권 user namespace 를 막는다
+      # (kernel.apparmor_restrict_unprivileged_userns=1). ego-host 감독자는 Chromium 샌드박스를
+      # 끄지 않으므로(--no-sandbox 없음) 이 제한 아래서는 브라우저가 뜨지 못하고 첫 CDP 요청
+      # (Target.createBrowserContext)이 상한 초과로 끝난다. 샌드박스를 끄는 대신 러너의 제한을 푼다.
+      - name: allow Chromium sandbox on runner (unprivileged userns)
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: core tests (vitest)
         run: pnpm test
       - name: shell tests (vitest — unit/contract/integration)
         run: pnpm -C packages/shell test
-      - name: install Playwright Chromium
-        run: pnpm -C packages/shell exec playwright install --with-deps chromium
       - name: shell browser regression (Playwright)
         run: NAIA_E2E_USE_EXISTING_BUILD=1 pnpm -C packages/shell test:e2e
 
@@ -172,16 +193,15 @@ jobs:
       - name: system deps for tauri
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf
-      # 페어드 agent 는 저장소 밖에 있다. agent-pairing 해석기는 워크트리가
-      # 이미 있는 개발 기계를 전제하므로 깨끗한 러너에서는 예외를 던진다.
-      # build-installers 가 쓰는 방식(핀 커밋을 얕게 받아 detach)을 그대로 쓴다.
-      - name: clone paired naia-agent
-        run: |
-          git init ../naia-agent
-          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
-          git -C ../naia-agent fetch --depth 1 origin 65ac63ae72bba17304cacaa302fcf21af8b0f7f1
-          git -C ../naia-agent checkout --detach FETCH_HEAD
+          # 설치판 리눅스 빌드(build-installers.yml)와 같은 빌드 라이브러리. 이 단계는 그동안
+          # 앞 단계에 가려 한 번도 닿지 않았고, 처음 닿자 alsa-sys 가 libasound2 를 못 찾아 멈췄다.
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libappindicator3-dev libasound2-dev libssl-dev libxdo-dev libudev-dev
+      # tauri.conf.json 이 벤더 ego-browser dist/ 를 자원으로 묶는다. dist/ 는 빌드 산출물이라
+      # 깨끗한 체크아웃에는 없고, 없으면 tauri-build 가 `resource path ... doesn't exist` 로 멈춘다.
+      # Tauri 크레이트를 컴파일하는 다른 경로(설치판·dev·네이티브 e2e)와 같은 준비 스크립트를 쓴다(#587).
+      - name: build vendored ego-browser SDK (tauri resource)
+        run: node packages/shell/scripts/ego-browser-vendor.mjs
       - name: native tests (cargo)
         run: |
           NAIA_AGENT_SCRIPT="$(cd .. && pwd)/naia-agent/scripts/builds/agent-stdio-entry.mjs" \

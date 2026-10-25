@@ -81,6 +81,10 @@ const PROACTIVE_MOCK = `
 		return audio;
 	};
 	window.__TAURI_INTERNALS__.invoke = async function(command, args) {
+		// FR-BGM.16 (2ebc781d): the Shell asks Rust for the BGM/media sidecar
+		// port before any sidecar call, including edge TTS (synthesize.ts
+		// edgeTtsSidecarUrl). The /edge-tts request itself is routed below.
+		if (command === "ensure_bgm_server") return { ready: true, port: 18791 };
 		if (command === "ollama_runtime_status") {
 			return {
 				serverState: "ready_managed",
@@ -249,7 +253,12 @@ test.describe("PA-DJ-05 proactive speech product acceptance", () => {
 			.toContain("첫 번째 DJ 멘트입니다.");
 	});
 
-	test("keeps proactive text masked until playback and survives immediate finish", async ({
+	// FR-VOICE.8 as revised by #571 (be28a151): reply text renders as it
+	// arrives and is never held back until playback; proactive activity text
+	// goes into the transcript immediately (ChatArea.tsx
+	// beginProactiveTtsTextSync). What must survive is the speech: an activity
+	// finish that arrives right after the text must not cancel it.
+	test("shows proactive text without waiting for playback and survives immediate finish", async ({
 		page,
 	}) => {
 		await setup(page, "browser");
@@ -273,7 +282,7 @@ test.describe("PA-DJ-05 proactive speech product acceptance", () => {
 			},
 		]);
 		const assistant = page.locator(".chat-message.assistant .message-content").last();
-		await expect(assistant).toHaveText("");
+		await expect(assistant).toHaveText(text);
 		await expect
 			.poll(async () => (await telemetry(page)).speakTexts)
 			.toContain(text);

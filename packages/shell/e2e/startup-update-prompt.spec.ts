@@ -37,7 +37,10 @@ const TAURI_UPDATE_MOCK = `
 				rawJson: {},
 			};
 		}
-		if (cmd === "plugin:updater|download_and_install") return null;
+		// #551(355d173d): installFn 은 download → prepare_app_relaunch → install →
+		// relaunch 순서다(updater.ts installFn). Rust prepare_app_relaunch 는 () 를 돌려준다.
+		if (cmd === "plugin:updater|download" || cmd === "plugin:updater|install") return null;
+		if (cmd === "prepare_app_relaunch" || cmd === "cancel_app_relaunch") return null;
 		if (cmd === "plugin:process|restart") return null;
 		return undefined;
 	};
@@ -53,6 +56,11 @@ localStorage.setItem("naia-config", JSON.stringify({
 	locale: "ko"
 }));
 `;
+
+// Anything that fetches or applies the update package. #551 split the old
+// download_and_install into download + install; neither may run before consent.
+const UPDATE_PAYLOAD_COMMAND =
+	/^plugin:updater\|(download|install|download_and_install)$/;
 
 async function openReadyApp(page: import("@playwright/test").Page) {
 	await page.addInitScript({ content: TAURI_UPDATE_MOCK });
@@ -85,15 +93,15 @@ test("startup update requires consent and Later preserves the existing banner", 
 			(command) => command === "plugin:updater|check",
 		),
 	).toHaveLength(1);
-	expect(await page.evaluate(() => window.__UPDATE_INVOKES__)).not.toContain(
-		"plugin:updater|download_and_install",
+	expect(await page.evaluate(() => window.__UPDATE_INVOKES__)).not.toEqual(
+		expect.arrayContaining([expect.stringMatching(UPDATE_PAYLOAD_COMMAND)]),
 	);
 
 	await page.getByRole("button", { name: "나중에" }).click();
 	await expect(page.getByRole("dialog")).toBeHidden();
 	await expect(page.locator(".update-banner")).toBeVisible();
-	expect(await page.evaluate(() => window.__UPDATE_INVOKES__)).not.toContain(
-		"plugin:updater|download_and_install",
+	expect(await page.evaluate(() => window.__UPDATE_INVOKES__)).not.toEqual(
+		expect.arrayContaining([expect.stringMatching(UPDATE_PAYLOAD_COMMAND)]),
 	);
 });
 
@@ -125,14 +133,25 @@ test("explicit confirmation installs and relaunches", async ({ page }) => {
 	await openReadyApp(page);
 
 	await page.getByRole("button", { name: "지금 업데이트" }).click();
+	// #551(355d173d): the package is downloaded while the Agent stays alive, the
+	// relaunch guard is claimed, then install and relaunch run in that order.
+	const ordered = [
+		"plugin:updater|download",
+		"prepare_app_relaunch",
+		"plugin:updater|install",
+		"plugin:process|restart",
+	];
 	await expect
-		.poll(() => page.evaluate(() => window.__UPDATE_INVOKES__))
-		.toEqual(
-			expect.arrayContaining([
-				"plugin:updater|download_and_install",
-				"plugin:process|restart",
-			]),
-		);
+		.poll(() =>
+			page.evaluate(
+				(wanted) =>
+					window.__UPDATE_INVOKES__.filter((command) => wanted.includes(command)),
+				ordered,
+			),
+		)
+		.toEqual(ordered);
+	const invokes = await page.evaluate(() => window.__UPDATE_INVOKES__);
+	expect(invokes).not.toContain("cancel_app_relaunch");
 });
 
 declare global {

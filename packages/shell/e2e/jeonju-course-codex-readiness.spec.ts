@@ -54,6 +54,10 @@ const COURSE_CODEX_TAURI_MOCK = `
 				}],
 			}],
 		};
+		// Rust device_pairing.rs device_list/device_list_requests always resolve
+		// to arrays. With tools enabled (the default) Settings mounts
+		// DevicePairingSection, which crashes the Settings app on undefined.
+		if (cmd === "device_list" || cmd === "device_list_requests") return [];
 		if (cmd === "cli_detect_one") return {
 			status: "ready",
 			output: "Logged in as codex-user@example.com",

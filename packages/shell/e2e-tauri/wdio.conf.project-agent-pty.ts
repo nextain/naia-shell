@@ -10,6 +10,7 @@ import {
 	startOwnedEmbeddedApp,
 	startOwnedViteServer,
 } from "./codex-e2e-environment.js";
+import { transformRequest } from "./node26-request.js";
 import { config as codexConfig } from "./wdio.conf.codex.js";
 
 const EXE = process.platform === "win32" ? ".exe" : "";
@@ -48,6 +49,9 @@ function seedFakeClaude(): void {
 
 export const config = {
 	...codexConfig,
+	// After the spread so the shared Node 26 fix (node26-request.ts) is the
+	// one in effect, not a copy inherited from the base config.
+	transformRequest,
 	specs: ["./specs/project-agent-pty-input.spec.ts"],
 	async onPrepare() {
 		if (!existsSync(TAURI_BINARY)) {

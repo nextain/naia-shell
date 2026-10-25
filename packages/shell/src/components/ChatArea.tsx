@@ -191,6 +191,7 @@ import {
 	type VoiceSession,
 	attachAppContextBridge,
 	createVoiceSession,
+	liveVoiceRequiresNaiaKey,
 	resolveLiveProvider,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
@@ -3315,7 +3316,7 @@ export function ChatArea({
 			});
 
 			if (
-				(liveProvider === "azure-voice-live" || liveProvider === "naia-omni") &&
+				liveVoiceRequiresNaiaKey({ liveProvider, provider: config.provider }) &&
 				!naiaKey
 			) {
 				Logger.warn("ChatArea", "Live voice requires Naia key");

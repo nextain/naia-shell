@@ -69,7 +69,14 @@ export const TAURI_BASE_MOCK_FALLBACK = `
 		// Lists
 		if (cmd === "list_skills" || cmd === "list_stt_models" || cmd === "list_audio_output_devices" || cmd === "list_audio_input_devices" || cmd === "list_naia_assets") return [];
 		// Naia/ADK
-		if (cmd === "read_naia_config") return null;
+		// Rust contract (src-tauri lib.rs read_naia_settings_file): both reads
+		// always resolve to a string, "" when the file is missing. Since the
+		// ADK file became the boot source of truth (f2527994, b554435a), a
+		// non-string reply is a hydration error that keeps the app gated. Specs
+		// seed the render cache in localStorage, so emulate an ADK config.json
+		// holding that same snapshot; an unseeded spec gets the clean first run.
+		if (cmd === "read_naia_config") return localStorage.getItem("naia-config") || "";
+		if (cmd === "read_naia_ui_config") return "";
 		// Apps
 		if (cmd === "app_list_installed") return [];
 		// Memory
