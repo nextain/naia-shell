@@ -10,6 +10,7 @@ import {
 	startOwnedEmbeddedApp,
 	startOwnedViteServer,
 } from "./codex-e2e-environment.js";
+import { transformRequest } from "./node26-request.js";
 import { config as codexConfig } from "./wdio.conf.codex.js";
 
 const EXE = process.platform === "win32" ? ".exe" : "";
@@ -47,6 +48,7 @@ function seedFakeClaude(): void {
 }
 
 export const config = {
+	transformRequest,
 	...codexConfig,
 	specs: ["./specs/project-agent-pty-input.spec.ts"],
 	async onPrepare() {
