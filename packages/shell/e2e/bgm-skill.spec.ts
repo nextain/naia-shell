@@ -851,6 +851,18 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 				{ action: "favorites_play" },
 			];
 		});
+		const countToolResults = () =>
+			page.evaluate(
+				() =>
+					(
+						window as unknown as {
+							__E2E_OUTBOUND__?: Array<Record<string, unknown>>;
+						}
+					).__E2E_OUTBOUND__?.filter(
+						(message) => message.type === "app_tool_result",
+					).length ?? 0,
+			);
+		const resultCountBeforeSecondTurn = await countToolResults();
 		await input.fill("두 번째 음악 명령을 실행해줘");
 		await input.press("Enter");
 		await expect(page.locator(".bgm-player")).toHaveAttribute(
@@ -858,17 +870,13 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 			"Favorite Track",
 			{ timeout: 15_000 },
 		);
-
-		const resultCountBeforeRemoval = await page.evaluate(
-			() =>
-				(
-					window as unknown as {
-						__E2E_OUTBOUND__?: Array<Record<string, unknown>>;
-					}
-				).__E2E_OUTBOUND__?.filter(
-					(message) => message.type === "app_tool_result",
-				).length ?? 0,
-		);
+		// The player can show the favorite before the second turn's two tool
+		// results (play, favorites_play) are sent. Count from after both, so the
+		// removal turn's slice below holds only its own results.
+		await expect
+			.poll(countToolResults, { timeout: 10_000 })
+			.toBe(resultCountBeforeSecondTurn + 2);
+		const resultCountBeforeRemoval = await countToolResults();
 		await page.evaluate(() => {
 			(
 				window as typeof window & {
