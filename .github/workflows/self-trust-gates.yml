@@ -169,6 +169,14 @@ jobs:
       # 기본 후보로 고른다(packages/ego-host browser-discovery). 그 바이너리를 core tests 앞에 둔다.
       - name: install Playwright Chromium
         run: pnpm -C packages/shell exec playwright install --with-deps chromium
+      # Ubuntu 24.04 러너는 AppArmor 로 비특권 user namespace 를 막는다
+      # (kernel.apparmor_restrict_unprivileged_userns=1). ego-host 감독자는 Chromium 샌드박스를
+      # 끄지 않으므로(--no-sandbox 없음) 이 제한 아래서는 브라우저가 뜨지 못하고 첫 CDP 요청
+      # (Target.createBrowserContext)이 상한 초과로 끝난다. 샌드박스를 끄는 대신 러너의 제한을 푼다.
+      - name: allow Chromium sandbox on runner (unprivileged userns)
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: core tests (vitest)
         run: pnpm test
       - name: shell tests (vitest — unit/contract/integration)
@@ -186,6 +194,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf
+      # tauri.conf.json 이 벤더 ego-browser dist/ 를 자원으로 묶는다. dist/ 는 빌드 산출물이라
+      # 깨끗한 체크아웃에는 없고, 없으면 tauri-build 가 `resource path ... doesn't exist` 로 멈춘다.
+      # Tauri 크레이트를 컴파일하는 다른 경로(설치판·dev·네이티브 e2e)와 같은 준비 스크립트를 쓴다(#587).
+      - name: build vendored ego-browser SDK (tauri resource)
+        run: node packages/shell/scripts/ego-browser-vendor.mjs
       - name: native tests (cargo)
         run: |
           NAIA_AGENT_SCRIPT="$(cd .. && pwd)/naia-agent/scripts/builds/agent-stdio-entry.mjs" \
