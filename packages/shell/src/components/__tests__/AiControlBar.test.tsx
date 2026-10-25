@@ -30,12 +30,12 @@ vi.mock("../../lib/adk-store", () => ({
 	writeNaiaUiConfig: (...args: unknown[]) => mockWriteNaiaUiConfig(...args),
 }));
 
-import { useAppStore } from "../../stores/app";
-import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import {
 	clearCameraActions,
 	registerCameraActions,
 } from "../../lib/avatar/camera-actions";
+import { useAppStore } from "../../stores/app";
+import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { AiControlBar } from "../AiControlBar";
 
 const baseConfig = {
@@ -61,10 +61,10 @@ describe("AiControlBar proactive cost control", () => {
 		vi.clearAllMocks();
 	});
 
-	it("exposes accessible zoom controls and active NVA gestures", async () => {
+	it("keeps zoom controls in the avatar overlay and excludes NVA gestures", async () => {
 		const zoom = vi.fn();
 		const save = vi.fn();
-		const playAction = vi.fn().mockResolvedValue(undefined);
+		const playAction = vi.fn().mockResolvedValue(true);
 		registerCameraActions({
 			zoom,
 			save,
@@ -82,12 +82,15 @@ describe("AiControlBar proactive cost control", () => {
 		expect(zoom).toHaveBeenNthCalledWith(1, 0.1);
 		expect(zoom).toHaveBeenNthCalledWith(2, -0.1);
 		expect(save).toHaveBeenCalledTimes(2);
-		fireEvent.click(screen.getByRole("button", { name: "Wave" }));
-		expect(playAction).toHaveBeenCalledWith("wave");
+		expect(screen.queryByRole("button", { name: "Wave" })).toBeNull();
+		expect(document.querySelector("[data-nva-gesture-key]")).toBeNull();
+		expect(playAction).not.toHaveBeenCalled();
 	});
 
-	it("omits the gesture group when the active NVA has no gestures", async () => {
-		registerCameraActions({ getGestureActions: () => [] });
+	it("does not duplicate active NVA gestures over the avatar", async () => {
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+		});
 		useCascadeAvatarStore.getState().setRenderer({} as never);
 		mockLoadConfigWithSecrets.mockResolvedValue(baseConfig);
 
@@ -183,9 +186,7 @@ describe("AiControlBar proactive cost control", () => {
 		mockLoadConfigWithSecrets.mockResolvedValue(baseConfig);
 		const states: boolean[] = [];
 		window.addEventListener("naia:tts-enabled-change", (event) => {
-			states.push(
-				(event as CustomEvent<{ enabled: boolean }>).detail.enabled,
-			);
+			states.push((event as CustomEvent<{ enabled: boolean }>).detail.enabled);
 		});
 		render(<AiControlBar />);
 		fireEvent.click(screen.getByRole("button", { name: "TTS" }));

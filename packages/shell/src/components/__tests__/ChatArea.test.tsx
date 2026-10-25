@@ -9,19 +9,19 @@ import {
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
-import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
-import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
-import type { AgentResponseChunk, EnvironmentSegment } from "../../lib/types";
 import {
 	clearCameraActions,
 	registerCameraActions,
 } from "../../lib/avatar/camera-actions";
+import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
+import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
+import type { AgentResponseChunk, EnvironmentSegment } from "../../lib/types";
+import * as voiceSessionApi from "../../lib/voice/index";
+import type { VoiceSession } from "../../lib/voice/index";
 import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { useChatStore } from "../../stores/chat";
-import * as voiceSessionApi from "../../lib/voice/index";
-import type { VoiceSession } from "../../lib/voice/index";
 import { ChatArea, modelToolBoundary } from "../ChatArea";
 
 const ttsSyncMocks = vi.hoisted(() => ({
@@ -469,6 +469,103 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
+	it("drops a deferred AI gesture when the global TTS toggle turns off", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "first request" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const request = capturedRequests[0];
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "Hello [[gesture:wave]]",
+		});
+		request.onChunk({ type: "finish", requestId: request.requestId });
+		await waitFor(() => expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalled());
+		window.dispatchEvent(
+			new CustomEvent("naia:tts-enabled-change", {
+				detail: { enabled: false },
+			}),
+		);
+		act(() => {
+			ttsSyncMocks.audioQueueActive = false;
+			ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.();
+		});
+		expect(playAction).not.toHaveBeenCalled();
+		localStorage.removeItem("naia-config");
+	});
+
+	it("drops a deferred AI gesture when slide narration interrupts TTS", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "first request" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const request = capturedRequests[0];
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "Hello [[gesture:wave]]",
+		});
+		request.onChunk({ type: "finish", requestId: request.requestId });
+		await waitFor(() => expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalled());
+		window.dispatchEvent(
+			new CustomEvent(SLIDE_PRESENTER_SPEAK_EVENT, {
+				detail: {
+					requestId: "slide-speak-gesture",
+					generation: 1,
+					page: 1,
+					text: "Slide narration",
+				},
+			}),
+		);
+		act(() => {
+			ttsSyncMocks.audioQueueActive = false;
+			ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.();
+		});
+		expect(playAction).not.toHaveBeenCalled();
+		localStorage.removeItem("naia-config");
+	});
+
 	it("shows think while waiting and returns to neutral when a silent turn finishes", async () => {
 		localStorage.setItem(
 			"naia-config",
@@ -787,7 +884,7 @@ describe("ChatArea", () => {
 	});
 
 	it("strips split NVA gesture markers from chat and TTS and sends active actions to the core", async () => {
-		const playAction = vi.fn().mockResolvedValue(undefined);
+		const playAction = vi.fn().mockResolvedValue(true);
 		registerCameraActions({
 			getGestureActions: () => [
 				{ key: "wave", label: "Wave" },
@@ -795,6 +892,11 @@ describe("ChatArea", () => {
 			],
 			playAction,
 		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -835,18 +937,307 @@ describe("ChatArea", () => {
 			text: "ture:wave]] [[gesture:nod]] there.",
 		});
 		expect(useChatStore.getState().streamingContent).toBe("Hello there.");
-		expect(useChatStore.getState().streamingContent).not.toContain("[[gesture:");
-		expect(playAction).toHaveBeenCalledTimes(1);
-		expect(playAction).toHaveBeenCalledWith("wave");
+		expect(useChatStore.getState().streamingContent).not.toContain(
+			"[[gesture:",
+		);
+		expect(playAction).not.toHaveBeenCalled();
 
 		request.onChunk({ type: "finish", requestId: request.requestId });
 		await waitFor(() => expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalled());
-		expect(ttsSyncMocks.synthesizeTts.mock.calls.map(([input]) => input.text)).toEqual([
-			"Hello there.",
-		]);
+		await waitFor(() => expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalled());
+		expect(playAction).not.toHaveBeenCalled();
+		act(() => ttsSyncMocks.audioQueueCallbacks?.onPlaybackStart?.());
+		expect(playAction).not.toHaveBeenCalled();
+		act(() => {
+			ttsSyncMocks.audioQueueActive = false;
+			ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.();
+		});
+		await waitFor(() => expect(playAction).toHaveBeenCalledTimes(1));
+		expect(playAction).toHaveBeenCalledWith("wave");
 		expect(
-			useChatStore.getState().messages.find((message) => message.role === "assistant")?.content,
+			ttsSyncMocks.synthesizeTts.mock.calls.map(([input]) => input.text),
+		).toEqual(["Hello there."]);
+		expect(
+			useChatStore
+				.getState()
+				.messages.find((message) => message.role === "assistant")?.content,
 		).toBe("Hello there.");
+		localStorage.removeItem("naia-config");
+	});
+
+	it("keeps a deferred AI gesture while the user edits a draft", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "first request" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const request = capturedRequests[0];
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "Hello [[gesture:wave]]",
+		});
+		expect(playAction).not.toHaveBeenCalled();
+
+		fireEvent.change(input, { target: { value: "new user draft" } });
+		request.onChunk({ type: "finish", requestId: request.requestId });
+		await waitFor(() => expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalled());
+		act(() => {
+			ttsSyncMocks.audioQueueActive = false;
+			ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.();
+		});
+		await waitFor(() => expect(playAction).toHaveBeenCalledWith("wave"));
+		localStorage.removeItem("naia-config");
+	});
+
+	it("drops a deferred AI gesture after a new message is sent", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "first request" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const first = capturedRequests[0];
+		first.onChunk({
+			type: "text",
+			requestId: first.requestId,
+			text: "Hello [[gesture:wave]]",
+		});
+		first.onChunk({ type: "finish", requestId: first.requestId });
+		await waitFor(() => expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalled());
+
+		fireEvent.change(input, { target: { value: "new submitted message" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(2));
+		capturedRequests[1].onChunk({
+			type: "finish",
+			requestId: capturedRequests[1].requestId,
+		});
+		act(() => {
+			ttsSyncMocks.audioQueueActive = false;
+			ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.();
+		});
+		expect(playAction).not.toHaveBeenCalled();
+		localStorage.removeItem("naia-config");
+	});
+
+	it("does not record a manual hotkey when the renderer refuses playback", async () => {
+		const playAction = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: false,
+			}),
+		);
+		render(<ChatArea />);
+
+		const hotkey = new KeyboardEvent("keydown", {
+			bubbles: true,
+			cancelable: true,
+			key: "¡",
+			code: "Digit1",
+			altKey: true,
+		});
+		window.dispatchEvent(hotkey);
+		expect(hotkey.defaultPrevented).toBe(true);
+		await waitFor(() => expect(playAction).toHaveBeenCalledTimes(1));
+
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "another response" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		capturedRequests[0].onChunk({
+			type: "text",
+			requestId: capturedRequests[0].requestId,
+			text: "[[gesture:wave]]",
+		});
+		await waitFor(() => expect(playAction).toHaveBeenCalledTimes(2));
+		expect(playAction).toHaveBeenLastCalledWith("wave");
+		localStorage.removeItem("naia-config");
+	});
+
+	it("discards a deferred gesture when its active avatar is replaced", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "first request" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const request = capturedRequests[0];
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "Hello [[gesture:wave]]",
+		});
+		act(() =>
+			useCascadeAvatarStore.getState().setRenderer({
+				interrupt: vi.fn(),
+				hasAuthoredClip: vi.fn(() => false),
+				setSpeakingVisual: vi.fn(),
+			} as never),
+		);
+		request.onChunk({ type: "finish", requestId: request.requestId });
+		await waitFor(() => expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalled());
+		act(() => {
+			ttsSyncMocks.audioQueueActive = false;
+			ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.();
+		});
+		expect(playAction).not.toHaveBeenCalled();
+		localStorage.removeItem("naia-config");
+	});
+
+	it("discards a deferred gesture when the response is cancelled", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "first request" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const request = capturedRequests[0];
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "Hello [[gesture:wave]]",
+		});
+		fireEvent.keyDown(window, { key: "Escape" });
+		expect(playAction).not.toHaveBeenCalled();
+		localStorage.removeItem("naia-config");
+	});
+
+	it("plays AI gestures immediately with TTS off and limits the next response", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [
+				{ key: "wave", label: "Wave" },
+				{ key: "cheer", label: "Cheer" },
+			],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: false,
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "first response" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const first = capturedRequests[0];
+		first.onChunk({
+			type: "text",
+			requestId: first.requestId,
+			text: "Hello [[gesture:wave]]",
+		});
+		expect(playAction).toHaveBeenCalledTimes(1);
+		expect(playAction).toHaveBeenCalledWith("wave");
+		first.onChunk({ type: "finish", requestId: first.requestId });
+
+		fireEvent.change(input, { target: { value: "second response" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(2));
+		const second = capturedRequests[1];
+		second.onChunk({
+			type: "text",
+			requestId: second.requestId,
+			text: "Great [[gesture:cheer]]",
+		});
+		expect(playAction).toHaveBeenCalledTimes(1);
+		second.onChunk({ type: "finish", requestId: second.requestId });
 		localStorage.removeItem("naia-config");
 	});
 
@@ -897,25 +1288,102 @@ describe("ChatArea", () => {
 				.spyOn(voiceSessionApi, "createVoiceSession")
 				.mockReturnValue(session);
 			render(<ChatArea />);
-			fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+			fireEvent.click(
+				document.querySelector(".chat-voice-btn") as HTMLButtonElement,
+			);
 			await waitFor(() => expect(session.connect).toHaveBeenCalledTimes(1));
 
 			act(() => session.onOutputTranscript?.("Live answer ["));
 			expect(
-				useChatStore.getState().messages.find((message) => message.role === "assistant")
-					?.content,
+				useChatStore
+					.getState()
+					.messages.find((message) => message.role === "assistant")?.content,
 			).toBe("Live answer");
 			act(() => session[terminalEvent]?.());
 
 			expect(
-				useChatStore.getState().messages.find((message) => message.role === "assistant")
-					?.content,
+				useChatStore
+					.getState()
+					.messages.find((message) => message.role === "assistant")?.content,
 			).toBe("Live answer [");
 			expect(createSession).toHaveBeenCalledTimes(1);
 			vi.stubGlobal("AudioContext", originalAudioContext);
 			localStorage.removeItem("naia-config");
 		},
 	);
+
+	it("refreshes live gesture actions at the next voice turn boundary", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Wave" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({
+			interrupt: vi.fn(),
+			hasAuthoredClip: vi.fn(() => false),
+			setSpeakingVisual: vi.fn(),
+		} as never);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "test-omni",
+				naiaKey: "test-key",
+			}),
+		);
+		const originalAudioContext = globalThis.AudioContext;
+		vi.stubGlobal(
+			"AudioContext",
+			class {
+				sampleRate = 24000;
+				state = "running";
+				currentTime = 0;
+				destination = {};
+				close = vi.fn().mockResolvedValue(undefined);
+			},
+		);
+		const session: VoiceSession = {
+			audioInput: {
+				sampleRate: 24000,
+				autoGainControl: false,
+				gateWhilePlaying: false,
+			},
+			connect: vi.fn().mockResolvedValue(undefined),
+			sendAudio: vi.fn(),
+			sendText: vi.fn(),
+			sendToolResponse: vi.fn(),
+			disconnect: vi.fn(),
+			isConnected: true,
+			onAudio: null,
+			onInputTranscript: null,
+			onOutputTranscript: null,
+			onToolCall: null,
+			onTurnEnd: null,
+			onInterrupted: null,
+			onError: null,
+			onDisconnect: null,
+		};
+		vi.spyOn(voiceSessionApi, "createVoiceSession").mockReturnValue(session);
+		render(<ChatArea />);
+		fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+		await waitFor(() => expect(session.connect).toHaveBeenCalledTimes(1));
+
+		registerCameraActions({
+			getGestureActions: () => [{ key: "cheer", label: "Cheer" }],
+		});
+		act(() => session.onTurnEnd?.());
+		act(() => session.onOutputTranscript?.("Hello [[gesture:cheer]]"));
+		act(() => session.onTurnEnd?.());
+
+		await waitFor(() => expect(playAction).toHaveBeenCalledWith("cheer"));
+		expect(
+			useChatStore
+				.getState()
+				.messages.find((message) => message.role === "assistant")?.content,
+		).not.toContain("[[gesture:cheer]]");
+		vi.stubGlobal("AudioContext", originalAudioContext);
+		localStorage.removeItem("naia-config");
+	});
 
 	it("never sends textual reasoning to sentence TTS", async () => {
 		localStorage.setItem(

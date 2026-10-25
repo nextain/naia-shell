@@ -202,7 +202,9 @@ describe("PrebakedAvatarRenderer", () => {
 		renderer.start(video, document.createElement("canvas"));
 		await Promise.resolve();
 		await Promise.resolve();
-		expect(renderer.getGestureActions()).toEqual([{ key: "wave", label: "Wave" }]);
+		expect(renderer.getGestureActions()).toEqual([
+			{ key: "wave", label: "Wave" },
+		]);
 
 		const action = renderer.playAction("wave");
 		await Promise.resolve();
@@ -211,7 +213,7 @@ describe("PrebakedAvatarRenderer", () => {
 		expect(wave.loop).toBe(false);
 		expect(wave.muted).toBe(true);
 		wave.dispatchEvent(new Event("ended"));
-		await action;
+		expect(await action).toBe(true);
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(
@@ -252,18 +254,53 @@ describe("PrebakedAvatarRenderer", () => {
 		await Promise.resolve();
 		await Promise.resolve();
 		videoForUrl("blob:clips/wave.webm").dispatchEvent(new Event("error"));
-		await action;
+		expect(await action).toBe(true);
 
-		expect(
-			playSpy.mock.contexts.filter(
-				(context) =>
-					(context as HTMLVideoElement).dataset.naiaClipUrl ===
-					"blob:clips/idle.webm",
-			),
-		).toHaveLength(2);
+		await vi.waitFor(() => {
+			expect(
+				playSpy.mock.contexts.filter(
+					(context) =>
+						(context as HTMLVideoElement).dataset.naiaClipUrl ===
+						"blob:clips/idle.webm",
+				),
+			).toHaveLength(2);
+		});
 		renderer.stop();
 		video.remove();
 		playSpy.mockRestore();
+	});
+
+	it("confirms that TTS speaking visuals interrupt a gesture clip", async () => {
+		vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+		const manifest = baseManifest();
+		manifest.animations.wave = {
+			clip: "clips/wave.webm",
+			loop: false,
+			can_talk: false,
+			label: "Wave",
+		};
+		const renderer = new PrebakedAvatarRenderer({
+			manifest,
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+		});
+		const video = makeVideo();
+		document.body.appendChild(video);
+		renderer.start(video, document.createElement("canvas"));
+		await Promise.resolve();
+		await Promise.resolve();
+
+		const action = renderer.playAction("wave");
+		await Promise.resolve();
+		await Promise.resolve();
+		const wave = videoForUrl("blob:clips/wave.webm");
+		const pauseWave = vi.spyOn(wave, "pause").mockImplementation(() => {});
+		renderer.setSpeakingVisual(true);
+		await action;
+
+		expect(pauseWave).toHaveBeenCalled();
+		renderer.stop();
+		video.remove();
 	});
 
 	it("ignores unknown gestures and gestures requested during speech", async () => {
@@ -289,9 +326,9 @@ describe("PrebakedAvatarRenderer", () => {
 		await Promise.resolve();
 		const loadedAssets = resolveAssetUrl.mock.calls.length;
 
-		await renderer.playAction("missing");
+		expect(await renderer.playAction("missing")).toBe(false);
 		renderer.setSpeakingVisual(true);
-		await renderer.playAction("wave");
+		expect(await renderer.playAction("wave")).toBe(false);
 
 		expect(resolveAssetUrl).toHaveBeenCalledTimes(loadedAssets + 1);
 		expect(resolveAssetUrl).not.toHaveBeenCalledWith("clips/wave.webm");

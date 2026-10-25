@@ -13,6 +13,7 @@ const NVA_MOCK = `
   };
   if (!query.has("nvaNoGesture")) {
     animations.wave = { clip: "clips/wave.webm", loop: false, can_talk: false, label: "Wave" };
+    animations.cheer = { clip: "clips/cheer.webm", loop: false, can_talk: false, label: "Starry cheer" };
   }
   const manifest = {
     nva_version: "0.2",
@@ -111,10 +112,23 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		await expect(page.locator("[data-video-avatar-status]")).toHaveCount(0);
 		const zoomIn = page.getByRole("button", { name: "Zoom in" });
 		const zoomOut = page.getByRole("button", { name: "Zoom out" });
-		const wave = page.getByRole("button", { name: "Wave" });
+		const gestureGroup = page.getByRole("group", { name: "Avatar gestures" });
+		const wave = page.getByRole("button", { name: "Wave (Alt+1)" });
+		const cheer = page.getByRole("button", { name: "Starry cheer (Alt+2)" });
 		await expect(zoomIn).toBeVisible();
 		await expect(zoomOut).toBeVisible();
+		await expect(gestureGroup).toBeVisible();
 		await expect(wave).toBeVisible();
+		await expect(cheer).toBeVisible();
+		await expect(wave).toHaveAttribute("title", "Wave (Alt+1)");
+		await expect(page.locator(".ai-control-bar__gestures")).toHaveCount(0);
+		const groupBox = await gestureGroup.boundingBox();
+		const inputBarBox = await page.locator(".chat-input-bar").boundingBox();
+		expect(groupBox).not.toBeNull();
+		expect(inputBarBox).not.toBeNull();
+		expect(groupBox!.y + groupBox!.height).toBeLessThanOrEqual(
+			inputBarBox!.y + 1,
+		);
 		if (process.env.NVA_CAPTURE_BEFORE)
 			await page.screenshot({ path: process.env.NVA_CAPTURE_BEFORE });
 		await zoomIn.click();
@@ -128,6 +142,62 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		await expect
 			.poll(() => page.evaluate(() => (window as any).__nvaPlayedClips.length))
 			.toBeGreaterThan(initialPlayCount);
+
+		const input = page.locator("textarea.chat-input");
+		await input.fill("keep this draft");
+		const beforeAlt1 = await page.evaluate(
+			() => (window as any).__nvaPlayedClips.length,
+		);
+		await input.press("Alt+1");
+		await expect(input).toHaveValue("keep this draft");
+		await expect
+			.poll(() => page.evaluate(() => (window as any).__nvaPlayedClips.length))
+			.toBeGreaterThan(beforeAlt1);
+		const beforeAlt2 = await page.evaluate(
+			() => (window as any).__nvaPlayedClips.length,
+		);
+		await input.press("Alt+2");
+		await expect(input).toHaveValue("keep this draft");
+		await expect
+			.poll(() => page.evaluate(() => (window as any).__nvaPlayedClips.length))
+			.toBeGreaterThan(beforeAlt2);
+
+		await page.setViewportSize({ width: 360, height: 800 });
+		const narrowButtons = await page
+			.locator(".nva-gesture-actions__button")
+			.evaluateAll((buttons) =>
+				buttons.map((button) => {
+					const { x, y, width, height } = button.getBoundingClientRect();
+					return { x, y, width, height };
+				}),
+			);
+		expect(narrowButtons).toHaveLength(2);
+		for (let i = 0; i < narrowButtons.length; i += 1) {
+			const current = narrowButtons[i];
+			expect(current.x).toBeGreaterThanOrEqual(0);
+			expect(current.x + current.width).toBeLessThanOrEqual(360);
+			for (let j = i + 1; j < narrowButtons.length; j += 1) {
+				const next = narrowButtons[j];
+				const overlaps =
+					current.x < next.x + next.width &&
+					current.x + current.width > next.x &&
+					current.y < next.y + next.height &&
+					current.y + current.height > next.y;
+				expect(overlaps).toBe(false);
+			}
+		}
+		const narrowGroupBox = await page
+			.locator(".nva-gesture-actions")
+			.boundingBox();
+		const narrowInputBox = await page.locator(".chat-input-bar").boundingBox();
+		expect(narrowGroupBox).not.toBeNull();
+		expect(narrowInputBox).not.toBeNull();
+		expect(narrowGroupBox!.y + narrowGroupBox!.height).toBeLessThanOrEqual(
+			narrowInputBox!.y + 1,
+		);
+		if (process.env.NVA_CAPTURE_NARROW)
+			await page.screenshot({ path: process.env.NVA_CAPTURE_NARROW });
+		await page.setViewportSize({ width: 1280, height: 720 });
 		await zoomOut.click();
 		await expect(video).toHaveAttribute("style", /scale\(1\)/);
 
@@ -186,10 +256,22 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		const avatar = page.locator("[data-video-avatar]");
 		await expect(avatar).toHaveAttribute("data-video-avatar-mode", "loading");
 		await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
-		await expect(page.getByRole("button", { name: "Wave" })).toHaveCount(0);
+		await expect(page.locator(".nva-gesture-actions")).toHaveCount(0);
+		await expect(page.locator("[data-nva-gesture-key]")).toHaveCount(0);
 		await page.evaluate(() => (window as any).__releaseNvaManifest?.());
 		await expect(avatar).toHaveAttribute("data-video-avatar-mode", "prebaked");
-		await expect(page.getByRole("button", { name: "Wave" })).toHaveCount(0);
+		await expect(page.locator(".nva-gesture-actions")).toHaveCount(0);
+		await expect(page.locator("[data-nva-gesture-key]")).toHaveCount(0);
+		const input = page.locator("textarea.chat-input");
+		await input.fill("unchanged draft");
+		const clipsBeforeHotkey = await page.evaluate(
+			() => (window as any).__nvaPlayedClips.length,
+		);
+		await input.press("Alt+1");
+		await expect(input).toHaveValue("unchanged draft");
+		expect(
+			await page.evaluate(() => (window as any).__nvaPlayedClips.length),
+		).toBe(clipsBeforeHotkey);
 
 		await page.setViewportSize({ width: 360, height: 800 });
 		for (const name of ["Zoom in", "Zoom out", "Reset avatar view"]) {

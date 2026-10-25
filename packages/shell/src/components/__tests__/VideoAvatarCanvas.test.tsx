@@ -118,5 +118,7 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		expect(container.querySelector("[data-video-avatar-prebaked]")?.getAttribute("style"))
 			.toContain("scale(1.1)");
 		expect(getCameraActions().getGestureActions()).toEqual([{ key: "wave", label: "Wave" }]);
+		await expect(getCameraActions().playAction("missing")).resolves.toBe(false);
+		await expect(getCameraActions().playAction("wave")).resolves.toBe(true);
 	});
 });

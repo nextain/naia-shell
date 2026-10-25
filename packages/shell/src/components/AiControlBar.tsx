@@ -9,7 +9,6 @@ import {
 } from "../lib/config";
 import { t } from "../lib/i18n";
 import { useAppStore } from "../stores/app";
-import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
 /**
  * AiControlBar — fixed overlay on the avatar area (top-left of naia column).
@@ -23,11 +22,6 @@ export function AiControlBar() {
 		ttsEnabled,
 		toggleTtsEnabled,
 	} = useAppStore();
-	const activeAvatarRenderer = useCascadeAvatarStore((state) => state.renderer);
-	const gestureActions = activeAvatarRenderer
-		? getCameraActions().getGestureActions()
-		: [];
-
 	const [joystickActive, setJoystickActive] = useState(false);
 	const joystickActiveRef = useRef(false);
 	const [panActive, setPanActive] = useState(false);
@@ -272,30 +266,6 @@ export function AiControlBar() {
 			>
 				<span className="bgm-ai-toggle__dot" />⌂
 			</button>
-
-			{gestureActions.length > 0 && (
-				<div
-					className="ai-control-bar__gestures"
-					role="group"
-					aria-label={t("ai.avatarGestures")}
-				>
-					{gestureActions.map((action) => (
-						<button
-							key={action.key}
-							type="button"
-							className="bgm-ai-toggle"
-							aria-label={action.label}
-							title={action.label}
-							data-nva-gesture-key={action.key}
-							onClick={() => {
-								void getCameraActions().playAction(action.key);
-							}}
-						>
-							<span className="bgm-ai-toggle__dot" />{action.label}
-						</button>
-					))}
-				</div>
-			)}
 		</div>
 	);
 }

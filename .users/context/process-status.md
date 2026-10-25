@@ -1,4 +1,12 @@
-<!-- src-sha: cd9d6458915f5893 -->
+<!-- src-sha: df88cf4ea6dc4abc -->
+
+## NVA 동작 Alt 단축키·채팅 배치 — 2026-10-25
+
+- P01–P05 완료: `UC-NVA-ACTION-HOTKEYS-20261025`, FR-NVA-GESTURE.2~3, Alt+1~9/입력 근처 단추/AI 사용 제한과 TTS idle 지연을 구현했다.
+- 검증: 루트·Shell TypeScript 검사 통과, 집중 Vitest 157/157, Shell 전체 Vitest 2,497 통과/1 실패/21 제외(유일한 실패 `platform-matrix.test.ts` ELF payload mode 0644 기대/0755 실제; 수정 전 `origin/main` 09e30c2b 기준도 2,463 통과/같은 1 실패/21 제외라 새 실패 0), Playwright `nva-prebaked.spec.ts` 2/2 통과.
+- `verify-visual-ux`: 데스크톱과 360px 화면에서 입력 옆 단추, 입력 초안 보존, 키 표시·비겹침, 빈 목록, 로딩·오류 상태를 확인했다. 캡처는 `/var/mnt/hdd/tmp/nva-hotkeys/evidence/`에 저장했다.
+- 단축키 판정은 `event.code`의 `Digit1`~`Digit9`만 사용하고 키패드는 제외한다. xterm 포커스는 통과시키고 CodeMirror는 허용한다. AI 제한은 최소 15초/같은 key 60초이며 수동 동작은 제한하지 않고 기록한다. TTS가 동작 영상을 끊는 renderer 회귀를 재현해 AI 동작을 idle까지 미루도록 했다.
+- `check-assembly-coverage.mjs` 통과. `enforce-root-structure.sh`는 기존 미등록 `tmp/`와 `tsconfig.build.json` 2건을 보고했다. 둘은 이 작업에서 수정하지 않았다. 커밋하지 않았다.
 
 ## Studio NVA 쉘 적용 — 2026-10-22 (#105)
 
