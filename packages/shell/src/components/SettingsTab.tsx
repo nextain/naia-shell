@@ -40,6 +40,7 @@ import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import {
 	isRetiredWebBackground,
 	isWebMode,
+	WEB_BACKGROUND_ASSETS,
 	WEB_DEFAULT_BACKGROUND,
 } from "../lib/web-runtime/web-assets";
 import {
@@ -2482,7 +2483,7 @@ export function SettingsTab() {
 		const cfg = loadConfig();
 		if (cfg) {
 			saveConfig({ ...cfg, vrmModel: normalized || undefined });
-			if (import.meta.env.MODE === "web") {
+			if (isWebMode()) {
 				void writeNaiaUiConfig({ vrmModel: normalized || undefined });
 			}
 		}
@@ -2497,7 +2498,7 @@ export function SettingsTab() {
 		const cfg = loadConfig();
 		if (cfg) {
 			saveConfig({ ...cfg, backgroundVideo: filename || undefined });
-			if (import.meta.env.MODE === "web") {
+			if (isWebMode()) {
 				void writeNaiaUiConfig({ backgroundVideo: filename || undefined });
 			}
 		}
@@ -2511,7 +2512,7 @@ export function SettingsTab() {
 		const cfg = loadConfig();
 		if (cfg) {
 			saveConfig({ ...cfg, backgroundVideo: undefined });
-			if (import.meta.env.MODE === "web") {
+			if (isWebMode()) {
 				void writeNaiaUiConfig({ backgroundVideo: undefined });
 			}
 		}
@@ -3693,10 +3694,14 @@ export function SettingsTab() {
 							>
 								<option value="">{t("settings.bgNone")}</option>
 								{naiaBgs.map((path) => {
-									const label = (path.split(/[/\\]/).pop() ?? path).replace(
-										/\.[^.]+$/,
-										"",
-									);
+									const filename = path.split(/[/\\]/).pop() ?? path;
+									const webLabel = isWebMode()
+										? WEB_BACKGROUND_ASSETS.find(
+												(asset) =>
+													asset.url === path || asset.filename === filename,
+											)?.label
+										: undefined;
+									const label = webLabel ?? filename.replace(/\.[^.]+$/, "");
 									return (
 										<option key={path} value={path}>
 											{label}
@@ -3931,11 +3936,9 @@ export function SettingsTab() {
 							}}
 						>
 							<option value="vrm">{t("settings.avatarProviderVrm")}</option>
-							{import.meta.env.MODE !== "web" && (
-								<option value="naia-video-avatar">
-									{t("settings.avatarProviderVideo")}
-								</option>
-							)}
+							<option value="naia-video-avatar">
+								{t("settings.avatarProviderVideo")}
+							</option>
 						</select>
 					</div>
 
@@ -4044,7 +4047,7 @@ export function SettingsTab() {
 								))}
 							</div>
 							{/* WO-03: 웹판 감춤 — 번들 선택만 (데스크톱 파일 대화상자 없음) */}
-							{import.meta.env.MODE !== "web" && (
+							{!isWebMode() && (
 								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
 									<button
 										type="button"

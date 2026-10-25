@@ -7,16 +7,29 @@
 /** 테스트에서 웹 모드를 강제하기 위한 오버라이드 (vitest의 MODE는 "test"). */
 let webModeOverride: boolean | null = null;
 
-/** 단위 시험용 오버라이드. null이면 실제 빌드 모드로 복귀. */
-export function setWebAssetsModeForTests(value: boolean | null): void {
-	webModeOverride = value;
-}
-
 /** 웹판 빌드인가. 데스크톱 조건부 감춤·웹 기본값의 단일 판별점. */
 export function isWebMode(): boolean {
 	if (webModeOverride !== null) return webModeOverride;
 	return import.meta.env.MODE === "web";
 }
+
+/** 최상위 documentElement에 웹판 여부(data-naia-web="true")를 동기화한다. */
+export function syncWebModeRootAttribute(): void {
+	if (typeof document === "undefined" || !document.documentElement) return;
+	if (isWebMode()) {
+		document.documentElement.setAttribute("data-naia-web", "true");
+	} else {
+		document.documentElement.removeAttribute("data-naia-web");
+	}
+}
+
+/** 단위 시험용 오버라이드. null이면 실제 빌드 모드로 복귀. */
+export function setWebAssetsModeForTests(value: boolean | null): void {
+	webModeOverride = value;
+	syncWebModeRootAttribute();
+}
+
+export type WebBackgroundAssetKind = "image" | "video";
 
 export interface WebBundledAsset {
 	/** bare 파일명 (config backgroundVideo·라벨 표시용). */
@@ -25,6 +38,12 @@ export interface WebBundledAsset {
 	label: string;
 	/** dist 기준 절대 URL (/avatars/*, /backgrounds/*). */
 	url: string;
+	/** 미디어 종류 (배경 그림/영상 구분). */
+	kind?: WebBackgroundAssetKind;
+}
+
+export interface WebBackgroundAsset extends WebBundledAsset {
+	kind: WebBackgroundAssetKind;
 }
 
 /**
@@ -56,22 +75,75 @@ export const WEB_VRM_ASSETS: readonly WebBundledAsset[] = [
 ];
 
 /**
- * 웹판 배경 카탈로그 — dist /backgrounds/*.webp (naia-settings/background 정식 UHD 배경).
+ * 웹판 배경 카탈로그 — dist /backgrounds/* (정식 배경 그림 6종 + 반복 재생 영상 2종).
  * 이전의 아바타 썸네일 16:9 확대 파생본(ol-woman-dusk.webp, shino-uniform-dusk.webp)은
  * 화면에 얼굴만 거대하게 보이는 원인이므로 폐기하고 정식 배경으로 교체했다.
  */
-export const WEB_BACKGROUND_ASSETS: readonly WebBundledAsset[] = [
+export const WEB_BACKGROUND_ASSETS: readonly WebBackgroundAsset[] = [
 	{
 		filename: "naia-dawn-city-uhd.webp",
-		label: "naia-dawn-city-uhd",
+		label: "새벽 도시",
 		url: "/backgrounds/naia-dawn-city-uhd.webp",
+		kind: "image",
 	},
 	{
 		filename: "naia-jina-minho-war-room-uhd.webp",
-		label: "naia-jina-minho-war-room-uhd",
+		label: "작전실 — 나이아·지나·민호",
 		url: "/backgrounds/naia-jina-minho-war-room-uhd.webp",
+		kind: "image",
+	},
+	{
+		filename: "naia-sunrise-river.webp",
+		label: "강변 해돋이",
+		url: "/backgrounds/naia-sunrise-river.webp",
+		kind: "image",
+	},
+	{
+		filename: "naia-rainy-studio.webp",
+		label: "비 오는 작업실",
+		url: "/backgrounds/naia-rainy-studio.webp",
+		kind: "image",
+	},
+	{
+		filename: "naia-starlight-lake.webp",
+		label: "별빛 호수",
+		url: "/backgrounds/naia-starlight-lake.webp",
+		kind: "image",
+	},
+	{
+		filename: "naia-sky-garden.webp",
+		label: "하늘 정원",
+		url: "/backgrounds/naia-sky-garden.webp",
+		kind: "image",
+	},
+	{
+		filename: "naia-starlight-lake-live.mp4",
+		label: "별빛 호수 (움직이는 배경)",
+		url: "/backgrounds/naia-starlight-lake-live.mp4",
+		kind: "video",
+	},
+	{
+		filename: "naia-rainy-studio-live.mp4",
+		label: "비 오는 작업실 (움직이는 배경)",
+		url: "/backgrounds/naia-rainy-studio-live.mp4",
+		kind: "video",
 	},
 ];
+
+/**
+ * 웹판 NVA 번들 카탈로그 — dist /nva/<묶음>/ 에 실린 6종 이름 목록 (기본: naia).
+ */
+export const WEB_NVA_ASSETS: readonly string[] = [
+	"naia",
+	"naia-anime",
+	"jina",
+	"jina-anime",
+	"minho",
+	"minho-anime",
+];
+
+/** 웹판 NVA 기본값 (번들 이름). */
+export const WEB_DEFAULT_NVA = WEB_NVA_ASSETS[0];
 
 /** 웹판 아바타 기본값 (config vrmModel이 비었을 때). */
 export const WEB_DEFAULT_VRM = WEB_VRM_ASSETS[0].url;

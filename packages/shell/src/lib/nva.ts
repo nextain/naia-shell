@@ -75,6 +75,11 @@ export interface NvaManifest {
 	};
 	/** NVA v0.2 compatibility: authored utterance clips shipped by the ADK. */
 	speech_clips?: Record<string, NvaSpeechSlot>;
+	/** Safari 등 VP9 알파 미지원 환경을 위한 상하 분리(color-top-alpha-bottom) MP4 매핑. */
+	stacked_alpha?: {
+		layout?: string;
+		clips?: Record<string, string>;
+	};
 }
 
 export interface NvaLocalizedSpeech {

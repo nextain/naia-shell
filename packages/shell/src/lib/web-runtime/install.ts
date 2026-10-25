@@ -6,7 +6,10 @@ import {
 } from "./event-bus";
 import { registerWebLlmProvider } from "./llm-provider";
 import { routeCommand } from "./router";
-import { normalizeRetiredWebBackgroundInRecord } from "./web-assets";
+import {
+	normalizeRetiredWebBackgroundInRecord,
+	syncWebModeRootAttribute,
+} from "./web-assets";
 import { requestWebPersistentStorage } from "./web-storage-persist";
 import { WEB_LLM_MODEL_ID } from "./webllm-model";
 
@@ -39,6 +42,7 @@ declare global {
 
 export function installWebRuntime(): void {
 	Logger.info("WebRuntime", WEB_RUNTIME_MARKER);
+	syncWebModeRootAttribute();
 
 	if (typeof window !== "undefined") {
 		window.__TAURI_INTERNALS__ = {

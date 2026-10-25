@@ -12,6 +12,7 @@ import { Logger } from "./logger";
 import { SECRET_KEYS, deleteSecretKey, getSecretKey } from "./secure-store";
 import {
 	WEB_BACKGROUND_ASSETS,
+	WEB_NVA_ASSETS,
 	WEB_VRM_ASSETS,
 	isWebMode,
 } from "./web-runtime/web-assets";
@@ -136,6 +137,7 @@ export async function listNaiaAssets(
 			return WEB_VRM_ASSETS.map((asset) => asset.url);
 		if (subdir === "background")
 			return WEB_BACKGROUND_ASSETS.map((asset) => asset.url);
+		if (subdir === "nva-files") return [...WEB_NVA_ASSETS];
 		return [];
 	}
 	const adkPath = getAdkPath();
@@ -748,6 +750,7 @@ async function writeSlotsManifestNow(
 	detectedVramGb?: number,
 	adkPathOverride?: string | null,
 ): Promise<SlotsManifest | null> {
+	if (isWebMode()) return null;
 	const adkPath = resolveAdkPath(adkPathOverride);
 	if (!adkPath) return null;
 	// ★tier 해석(buildSlotsManifest 가 "auto" → 해석된 id 로)에 VRAM 이 필요.

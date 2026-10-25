@@ -4190,3 +4190,115 @@ describe("web mode account login error (r6)", () => {
 		}
 	});
 });
+
+describe("web mode backgrounds and NVA (r7)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("renders Korean catalog labels in settings-bg-select in web mode and sets video media type when selecting a live MP4 background", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				backgroundVideo: "naia-dawn-city-uhd.webp",
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		const bgSelect = (await screen.findByTestId(
+			"settings-bg-select",
+		)) as HTMLSelectElement;
+		await waitFor(() => {
+			expect(bgSelect.options.length).toBe(9); // "없음" + 8 catalog entries
+		});
+		const labels = Array.from(bgSelect.options)
+			.slice(1)
+			.map((opt) => opt.textContent);
+		expect(labels).toEqual([
+			"새벽 도시",
+			"작전실 — 나이아·지나·민호",
+			"강변 해돋이",
+			"비 오는 작업실",
+			"별빛 호수",
+			"하늘 정원",
+			"별빛 호수 (움직이는 배경)",
+			"비 오는 작업실 (움직이는 배경)",
+		]);
+
+		fireEvent.change(bgSelect, {
+			target: { value: "/backgrounds/naia-starlight-lake-live.mp4" },
+		});
+
+		const { useAvatarStore } = await import("../../stores/avatar");
+		await waitFor(() => {
+			expect(useAvatarStore.getState().backgroundMediaType).toBe("video");
+			expect(useAvatarStore.getState().backgroundVideoUrl).toBe(
+				"/backgrounds/naia-starlight-lake-live.mp4",
+			);
+		});
+		const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(saved.backgroundVideo).toBe("naia-starlight-lake-live.mp4");
+	});
+
+	it("exposes naia-video-avatar option and 6 NVA bundles in web mode without calling desktop-only invoke commands", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				avatarProvider: "vrm",
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("avatar");
+
+		const providerSelect = document.getElementById(
+			"avatar-provider",
+		) as HTMLSelectElement;
+		expect(providerSelect).toBeTruthy();
+		const optionValues = Array.from(providerSelect.options).map((o) => o.value);
+		expect(optionValues).toEqual(["vrm", "naia-video-avatar"]);
+
+		mockInvoke.mockClear();
+		fireEvent.change(providerSelect, {
+			target: { value: "naia-video-avatar" },
+		});
+
+		for (const bundle of [
+			"naia",
+			"naia-anime",
+			"jina",
+			"jina-anime",
+			"minho",
+			"minho-anime",
+		]) {
+			expect(await screen.findByRole("button", { name: bundle })).toBeTruthy();
+		}
+
+		fireEvent.click(screen.getByRole("button", { name: "jina-anime" }));
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(saved.avatarProvider).toBe("naia-video-avatar");
+		expect(saved.nvaModel).toBe("jina-anime");
+
+		const invokedCommands = mockInvoke.mock.calls.map(([cmd]) => cmd);
+		expect(invokedCommands).not.toContain("list_naia_assets");
+		expect(invokedCommands).not.toContain("detect_gpu_vram");
+		expect(invokedCommands).not.toContain("write_slots_manifest");
+		expect(invokedCommands).not.toContain("read_local_binary");
+	});
+});

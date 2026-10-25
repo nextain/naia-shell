@@ -13,7 +13,9 @@ import {
 	WEB_BACKGROUND_ASSETS,
 	WEB_DEFAULT_BACKGROUND,
 	WEB_DEFAULT_BACKGROUND_URL,
+	WEB_DEFAULT_NVA,
 	WEB_DEFAULT_VRM,
+	WEB_NVA_ASSETS,
 	WEB_VRM_ASSETS,
 	isRetiredWebBackground,
 	isWebBundledAssetUrl,
@@ -52,15 +54,58 @@ describe("web bundled catalogs", () => {
 		}
 	});
 
-	it("exposes at least 2 background entries with absolute dist URLs", () => {
-		expect(WEB_BACKGROUND_ASSETS.length).toBeGreaterThanOrEqual(2);
+	it("exposes 8 background entries in catalog order with Korean labels and image/video kinds", () => {
+		expect(WEB_BACKGROUND_ASSETS).toHaveLength(8);
+		expect(WEB_BACKGROUND_ASSETS.map((asset) => asset.filename)).toEqual([
+			"naia-dawn-city-uhd.webp",
+			"naia-jina-minho-war-room-uhd.webp",
+			"naia-sunrise-river.webp",
+			"naia-rainy-studio.webp",
+			"naia-starlight-lake.webp",
+			"naia-sky-garden.webp",
+			"naia-starlight-lake-live.mp4",
+			"naia-rainy-studio-live.mp4",
+		]);
+		expect(WEB_BACKGROUND_ASSETS.map((asset) => asset.label)).toEqual([
+			"새벽 도시",
+			"작전실 — 나이아·지나·민호",
+			"강변 해돋이",
+			"비 오는 작업실",
+			"별빛 호수",
+			"하늘 정원",
+			"별빛 호수 (움직이는 배경)",
+			"비 오는 작업실 (움직이는 배경)",
+		]);
+		expect(WEB_BACKGROUND_ASSETS.map((asset) => asset.kind)).toEqual([
+			"image",
+			"image",
+			"image",
+			"image",
+			"image",
+			"image",
+			"video",
+			"video",
+		]);
 		for (const asset of WEB_BACKGROUND_ASSETS) {
 			expect(asset.url).toBe(`/backgrounds/${asset.filename}`);
 		}
 	});
 
+	it("exposes 6 NVA bundle names with naia as default", () => {
+		expect(WEB_NVA_ASSETS).toEqual([
+			"naia",
+			"naia-anime",
+			"jina",
+			"jina-anime",
+			"minho",
+			"minho-anime",
+		]);
+		expect(WEB_DEFAULT_NVA).toBe("naia");
+	});
+
 	it("defaults point at the first catalog entries", () => {
 		expect(WEB_DEFAULT_VRM).toBe(WEB_VRM_ASSETS[0].url);
+		expect(WEB_DEFAULT_BACKGROUND).toBe("naia-dawn-city-uhd.webp");
 		expect(WEB_DEFAULT_BACKGROUND).toBe(WEB_BACKGROUND_ASSETS[0].filename);
 		expect(WEB_DEFAULT_BACKGROUND_URL).toBe(
 			`/backgrounds/${WEB_DEFAULT_BACKGROUND}`,

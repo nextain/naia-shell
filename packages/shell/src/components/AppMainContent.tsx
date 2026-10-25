@@ -12,7 +12,10 @@ import type { AppInstallRequest } from "../lib/app-store-client";
 import { t } from "../lib/i18n";
 import type { UpdateInfo } from "../lib/updater";
 import { snoozeStartupUpdatePrompt } from "../lib/updater";
-import { isWebMode } from "../lib/web-runtime/web-assets";
+import {
+	isWebMode,
+	syncWebModeRootAttribute,
+} from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
 import { AiControlBar } from "./AiControlBar";
 import { AppBar } from "./AppBar";
@@ -154,26 +157,32 @@ export function AppMainContent(props: AppMainContentProps) {
 	);
 	const activatedKeepAliveAppsRef = useRef(new Set<string>());
 	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
+	const webMode = isWebMode();
+	syncWebModeRootAttribute();
 
 	if (showAdkSetup)
 		return (
 			<>
-				<TitleBar
-					appVisible={naiaVisible}
-					onToggleApp={toggleNaia}
-					title={appTitle}
-				/>
+				{!webMode && (
+					<TitleBar
+						appVisible={naiaVisible}
+						onToggleApp={toggleNaia}
+						title={appTitle}
+					/>
+				)}
 				<DeferredAdkSetupScreen onComplete={onAdkSetupComplete} />
 			</>
 		);
 
 	return (
 		<>
-			<TitleBar
-				appVisible={naiaVisible}
-				onToggleApp={toggleNaia}
-				title={appTitle}
-			/>
+			{!webMode && (
+				<TitleBar
+					appVisible={naiaVisible}
+					onToggleApp={toggleNaia}
+					title={appTitle}
+				/>
+			)}
 			{configSaveError && (
 				<div role="alert" className="app-bar__remove-error">
 					{configSaveError}

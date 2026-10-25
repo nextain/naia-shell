@@ -570,9 +570,7 @@ export function App() {
 			// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
 			const saved =
 				(config?.backgroundVideo as string | undefined) ??
-				(import.meta.env.MODE === "web"
-					? WEB_DEFAULT_BACKGROUND
-					: DEFAULT_BG_VIDEO);
+				(isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
 			const match = paths.find((p) => p.endsWith(saved));
 			if (!match || cancelled) return;
 			const blobUrl = await toLocalBlobUrl(match);

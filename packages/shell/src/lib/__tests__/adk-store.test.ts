@@ -54,6 +54,7 @@ import {
 } from "../adk-store";
 import {
 	WEB_BACKGROUND_ASSETS,
+	WEB_NVA_ASSETS,
 	WEB_VRM_ASSETS,
 	setWebAssetsModeForTests,
 } from "../web-runtime/web-assets";
@@ -432,17 +433,33 @@ describe("web bundled assets (WO-03)", () => {
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 
-	it("lists bundled background URLs without invoke in web mode", async () => {
+	it("lists bundled background URLs (including live MP4 videos) without invoke in web mode", async () => {
 		setWebAssetsModeForTests(true);
 		const result = await listNaiaAssets("background");
 		expect(result).toEqual(WEB_BACKGROUND_ASSETS.map((asset) => asset.url));
+		expect(result).toContain("/backgrounds/naia-starlight-lake-live.mp4");
+		expect(result).toContain("/backgrounds/naia-rainy-studio-live.mp4");
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("lists 6 bundled NVA names without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("nva-files");
+		expect(result).toEqual([
+			"naia",
+			"naia-anime",
+			"jina",
+			"jina-anime",
+			"minho",
+			"minho-anime",
+		]);
+		expect(result).toEqual(WEB_NVA_ASSETS);
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 
 	it("returns empty arrays for non-bundled subdirs in web mode", async () => {
 		setWebAssetsModeForTests(true);
 		await expect(listNaiaAssets("bgm-musics")).resolves.toEqual([]);
-		await expect(listNaiaAssets("nva-files")).resolves.toEqual([]);
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 
