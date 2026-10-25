@@ -99,24 +99,27 @@ const NAIA_WIDTH_DEFAULT = 320;
 const NAIA_WIDTH_MIN = 120;
 const NAIA_WIDTH_MAX = 1200;
 const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
+let startupBackgroundRestoreSeq = 0;
 
 export async function restoreStartupBackground(options: {
 	isCancelled?: () => boolean;
 	setBackgroundMediaType: (type: "iframe" | "image" | "video" | "") => void;
 	setBackgroundVideoUrl: (url: string) => void;
 }): Promise<void> {
-	const isCancelled = options.isCancelled ?? (() => false);
+	const seq = ++startupBackgroundRestoreSeq;
+	const isStale = () =>
+		(options.isCancelled?.() ?? false) || seq !== startupBackgroundRestoreSeq;
 	const paths = await listNaiaAssets("background");
-	if (isCancelled() || paths.length === 0) return;
+	if (isStale() || paths.length === 0) return;
 	const config = loadConfig();
 	// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
 	const saved =
 		(config?.backgroundVideo as string | undefined) ??
 		(isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
 	const match = paths.find((p) => p.endsWith(saved));
-	if (!match || isCancelled()) return;
+	if (!match || isStale()) return;
 	const blobUrl = await toLocalBlobUrl(match);
-	if (isCancelled()) return;
+	if (isStale()) return;
 	options.setBackgroundMediaType(getBackgroundMediaType(match));
 	options.setBackgroundVideoUrl(blobUrl);
 }
@@ -742,6 +745,16 @@ export function App() {
 					error: error instanceof Error ? error.message : String(error),
 				});
 				setLocaleHydrated(true);
+				if (isWebMode() && !configHydratedRef.current) {
+					void restoreStartupBackground({
+						isCancelled: () =>
+							cancelled ||
+							configHydratedRef.current ||
+							getAdkPath() !== adkPathAtRead,
+						setBackgroundMediaType,
+						setBackgroundVideoUrl,
+					});
+				}
 			});
 		return () => {
 			cancelled = true;
