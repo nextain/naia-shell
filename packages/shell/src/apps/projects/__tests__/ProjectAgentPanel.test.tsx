@@ -28,6 +28,7 @@ vi.mock("../project-agent-runtime", () => ({
 		},
 	),
 	loadProjectAgentAvailability: vi.fn(async () => {}),
+	preselectProjectAgentIfUnset: vi.fn(),
 	selectProjectAgent: vi.fn(),
 	startProjectAgent: vi.fn(async () => {}),
 	stopProjectAgent: vi.fn(async () => {}),

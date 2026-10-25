@@ -60,7 +60,11 @@ vi.mock("../project-session", async (importOriginal) => {
 	};
 });
 
-const makeProject = (projectId: string, sourceRoot = "naia-pj-adk") => ({
+const makeProject = (
+	projectId: string,
+	sourceRoot = "naia-pj-adk",
+	extra: Record<string, unknown> = {},
+) => ({
 	adapterRoot: "/fixture/adapter-root",
 	projectPath: `/fixture/naia-adk/projects/${sourceRoot}/projects/${projectId}`,
 	sourcePath: `projects/${sourceRoot}/projects/${projectId}`,
@@ -69,7 +73,8 @@ const makeProject = (projectId: string, sourceRoot = "naia-pj-adk") => ({
 	repository: `octocat/${projectId}`,
 	issueTracker: "github",
 	dashboardUrl: "https://dashboard.example.test/project",
-	issuesUrl: null,
+	issuesUrl: "https://issues.example.test/project",
+	...extra,
 });
 
 const readyCatalog = {
@@ -137,11 +142,15 @@ describe("ProjectsApp — single opened project", () => {
 		const { useAppStore } = await import("../../../stores/app");
 		const appListVersion = useAppStore.getState().appListVersion;
 		await import("../index");
-		expect(appRegistry.get("projects")?.builtIn).toBe(true);
-		expect(appRegistry.get("projects")?.keepAlive).toBe(true);
-		expect(appRegistry.get("projects")?.deferMountUntilActive).toBe(true);
-		expect(appRegistry.get("projects")?.id).toBe("projects");
-		expect(appRegistry.get("projects")?.icon).toBe("🤖");
+		const entry = appRegistry.get("projects");
+		expect(entry?.builtIn).toBe(true);
+		expect(entry?.keepAlive).toBe(true);
+		expect(entry?.deferMountUntilActive).toBe(true);
+		expect(entry?.id).toBe("projects");
+		expect(entry?.icon).not.toBe("🤖");
+		expect(entry?.iconSvg).toContain("<svg");
+		expect(entry?.iconSvg).toContain('viewBox="0 0 24 24"');
+		expect(entry?.iconSvg).toContain("currentColor");
 		expect(useAppStore.getState().appListVersion).toBe(appListVersion + 1);
 	});
 
@@ -263,7 +272,7 @@ describe("ProjectsApp — single opened project", () => {
 			screen.getByRole("heading", { name: "Example App", level: 1 }),
 		).toBeTruthy();
 		expect(screen.queryByRole("searchbox")).toBeNull();
-		fireEvent.click(screen.getByRole("tab", { name: "Dashboard" }));
+		fireEvent.click(screen.getByRole("tab", { name: "Docs" }));
 		fireEvent.click(
 			screen.getByRole("button", { name: "Open another project" }),
 		);
@@ -282,15 +291,13 @@ describe("ProjectsApp — single opened project", () => {
 				.getByRole("tab", { name: "Coding Agent" })
 				.getAttribute("aria-selected"),
 		).toBe("true");
-		fireEvent.click(screen.getByRole("tab", { name: "Internal Issues" }));
+		fireEvent.click(screen.getByRole("tab", { name: "Tasks" }));
 		fireEvent.click(
 			screen.getByRole("button", { name: "Open another project" }),
 		);
 		fireEvent.click(screen.getByRole("button", { name: /Example App/ }));
 		expect(
-			screen
-				.getByRole("tab", { name: "Dashboard" })
-				.getAttribute("aria-selected"),
+			screen.getByRole("tab", { name: "Docs" }).getAttribute("aria-selected"),
 		).toBe("true");
 		const stored = JSON.parse(
 			localStorage.getItem(PROJECT_SESSION_STORAGE_KEY) ?? "{}",
@@ -588,10 +595,8 @@ describe("ProjectsApp — single opened project", () => {
 	it("opens configured project URLs only through the separate WebView command", async () => {
 		render(<ProjectsApp />);
 		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
-		fireEvent.click(screen.getByRole("tab", { name: "Dashboard" }));
-		fireEvent.click(
-			await screen.findByRole("button", { name: "Open dashboard" }),
-		);
+		fireEvent.click(screen.getByRole("tab", { name: "Docs" }));
+		fireEvent.click(await screen.findByRole("button", { name: "Open docs" }));
 		expect(
 			await screen.findByText(/not created in this test environment/),
 		).toBeTruthy();
@@ -600,15 +605,18 @@ describe("ProjectsApp — single opened project", () => {
 			projectPath: makeProject("example-app").projectPath,
 			view: "dashboard",
 		});
-		fireEvent.click(screen.getByRole("tab", { name: "Internal Issues" }));
-		expect(
-			await screen.findByText("This address is not configured"),
-		).toBeTruthy();
+		fireEvent.click(screen.getByRole("tab", { name: "Tasks" }));
+		fireEvent.click(await screen.findByRole("button", { name: "Open tasks" }));
+		expect(invoke).toHaveBeenCalledWith("project_webview_open", {
+			adapterRoot: "/fixture/adapter-root",
+			projectPath: makeProject("example-app").projectPath,
+			view: "issues",
+		});
 		expect(
 			vi
 				.mocked(invoke)
 				.mock.calls.filter(([command]) => command === "project_webview_open"),
-		).toHaveLength(1);
+		).toHaveLength(2);
 	});
 
 	it("restores the last project and stage after remounting", async () => {
@@ -616,16 +624,14 @@ describe("ProjectsApp — single opened project", () => {
 		fireEvent.click(
 			await screen.findByRole("button", { name: /Example Library/ }),
 		);
-		fireEvent.click(screen.getByRole("tab", { name: "Dashboard" }));
+		fireEvent.click(screen.getByRole("tab", { name: "Docs" }));
 		first.unmount();
 		render(<ProjectsApp />);
 		expect(
 			await screen.findByRole("heading", { name: "Example Library", level: 1 }),
 		).toBeTruthy();
 		expect(
-			screen
-				.getByRole("tab", { name: "Dashboard" })
-				.getAttribute("aria-selected"),
+			screen.getByRole("tab", { name: "Docs" }).getAttribute("aria-selected"),
 		).toBe("true");
 	});
 
@@ -739,18 +745,641 @@ describe("ProjectsApp — single opened project", () => {
 		const coding = screen.getByRole("tab", { name: "Coding Agent" });
 		coding.focus();
 		fireEvent.keyDown(coding, { key: "ArrowRight" });
-		const dashboard = screen.getByRole("tab", { name: "Dashboard" });
-		expect(dashboard.getAttribute("aria-selected")).toBe("true");
-		expect(document.activeElement).toBe(dashboard);
-		fireEvent.keyDown(dashboard, { key: "End" });
+		const docs = screen.getByRole("tab", { name: "Docs" });
+		expect(docs.getAttribute("aria-selected")).toBe("true");
+		expect(document.activeElement).toBe(docs);
+		fireEvent.keyDown(docs, { key: "End" });
 		expect(
-			screen
-				.getByRole("tab", { name: "Internal Issues" })
-				.getAttribute("aria-selected"),
+			screen.getByRole("tab", { name: "Tasks" }).getAttribute("aria-selected"),
 		).toBe("true");
-		fireEvent.keyDown(screen.getByRole("tab", { name: "Internal Issues" }), {
+		fireEvent.keyDown(screen.getByRole("tab", { name: "Tasks" }), {
 			key: "Home",
 		});
 		expect(coding.getAttribute("aria-selected")).toBe("true");
+	});
+
+	it("renders renamed Korean and English labels for Docs and Tasks tabs and actions", async () => {
+		expect(PROJECT_APP_TRANSLATIONS.en["projects.tabDashboard"]).toBe("Docs");
+		expect(PROJECT_APP_TRANSLATIONS.en["projects.tabInternalIssues"]).toBe(
+			"Tasks",
+		);
+		expect(PROJECT_APP_TRANSLATIONS.en["projects.webviewOpenDashboard"]).toBe(
+			"Open docs",
+		);
+		expect(PROJECT_APP_TRANSLATIONS.en["projects.webviewOpenIssues"]).toBe(
+			"Open tasks",
+		);
+		expect(PROJECT_APP_TRANSLATIONS.ko["projects.tabDashboard"]).toBe("문서");
+		expect(PROJECT_APP_TRANSLATIONS.ko["projects.tabInternalIssues"]).toBe(
+			"작업",
+		);
+		expect(PROJECT_APP_TRANSLATIONS.ko["projects.webviewOpenDashboard"]).toBe(
+			"문서 열기",
+		);
+		expect(PROJECT_APP_TRANSLATIONS.ko["projects.webviewOpenIssues"]).toBe(
+			"작업 열기",
+		);
+
+		await setLocale("ko");
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		expect(screen.getByRole("tab", { name: "코딩 에이전트" })).toBeTruthy();
+		expect(screen.getByRole("tab", { name: "문서" })).toBeTruthy();
+		expect(screen.getByRole("tab", { name: "작업" })).toBeTruthy();
+	});
+
+	it("hides empty tabs, omits the tablist when only Coding Agent is visible, and falls back when a saved tab is hidden", async () => {
+		const agentOnlyProject = makeProject("agent-only", "naia-pj-adk", {
+			name: "Agent Only",
+			dashboardUrl: null,
+			issuesUrl: null,
+			docsDirs: [],
+		});
+		const docsOnlyProject = makeProject("docs-only", "naia-pj-adk", {
+			name: "Docs Only",
+			dashboardUrl: null,
+			issuesUrl: null,
+			docsDirs: ["domain"],
+		});
+		localStorage.setItem(
+			PROJECT_SESSION_STORAGE_KEY,
+			JSON.stringify({
+				version: 1,
+				lastProject: {
+					id: "agent-only",
+					path: agentOnlyProject.projectPath,
+				},
+				stagesByProjectPath: {
+					[agentOnlyProject.projectPath]: "issues",
+				},
+			}),
+		);
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "projects_scan_adk") {
+				return {
+					...readyCatalog,
+					projects: [agentOnlyProject, docsOnlyProject],
+				};
+			}
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			if (command === "project_docs_list") return [];
+			return null;
+		});
+
+		render(<ProjectsApp />);
+		expect(
+			await screen.findByRole("heading", { name: "Agent Only", level: 1 }),
+		).toBeTruthy();
+		expect(screen.queryByRole("tablist")).toBeNull();
+		expect(
+			screen.getByRole("heading", { name: "Coding Agent", level: 2 }),
+		).toBeTruthy();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open another project" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /Docs Only/ }));
+		expect(screen.getByRole("tablist")).toBeTruthy();
+		const tabs = screen.getAllByRole("tab");
+		expect(tabs.map((tab) => tab.textContent)).toEqual([
+			"Coding Agent",
+			"Docs",
+		]);
+		expect(screen.queryByRole("tab", { name: "Tasks" })).toBeNull();
+
+		tabs[0].focus();
+		fireEvent.keyDown(tabs[0], { key: "ArrowRight" });
+		expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+		fireEvent.keyDown(tabs[1], { key: "ArrowRight" });
+		expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+	});
+
+	it("rescans the saved naia-adk path via the Reload button, keeps current project, and handles reload errors", async () => {
+		let scanCalls = 0;
+		const addedProject = makeProject("newly-added", "naia-pj-adk", {
+			name: "Newly Added Project",
+		});
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "projects_scan_adk") {
+				scanCalls += 1;
+				if (scanCalls === 1) return readyCatalog;
+				if (scanCalls === 2) {
+					return {
+						...readyCatalog,
+						projects: [...readyCatalog.projects, addedProject],
+					};
+				}
+				throw new Error("reload scan failed");
+			}
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			return null;
+		});
+
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Example App/ }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open another project" }),
+		);
+		expect(
+			screen.queryByRole("button", { name: /Newly Added Project/ }),
+		).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+		expect(
+			await screen.findByRole("button", { name: /Newly Added Project/ }),
+		).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: "Back to Example App" }),
+		).toBeTruthy();
+
+		fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Could not read the naia-adk projects",
+		);
+	});
+
+	it("preselects coding_app when the project has no selection yet and still allows changing it", async () => {
+		const classProject = makeProject("class-app", "naia-pj-adk", {
+			name: "Class App",
+			codingApp: "opencode",
+		});
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "projects_scan_adk") {
+				return { ...readyCatalog, projects: [classProject] };
+			}
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			return null;
+		});
+
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Class App/ }));
+		const opencode = await screen.findByRole("radio", { name: "OpenCode" });
+		const claude = screen.getByRole("radio", { name: "Claude" });
+		await waitFor(() => {
+			expect(opencode).toBeChecked();
+		});
+		expect(
+			await screen.findByRole("button", { name: "Start OpenCode" }),
+		).toBeTruthy();
+
+		fireEvent.click(claude);
+		expect(claude).toBeChecked();
+		expect(
+			await screen.findByRole("button", { name: "Start Claude" }),
+		).toBeTruthy();
+	});
+
+	it("renders the docs panel with grouped files, markdown preview, refresh, empty, and error states", async () => {
+		let docListMode: "populated" | "empty" | "error" = "populated";
+		let readErrorMode = false;
+		const docsProject = makeProject("class-docs", "naia-pj-adk", {
+			name: "Class Docs",
+			dashboardUrl: "https://docs.example.test/portal",
+			issuesUrl: null,
+			docsDirs: ["domain", "자료"],
+		});
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (command === "projects_scan_adk") {
+				return { ...readyCatalog, projects: [docsProject] };
+			}
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			if (command === "project_docs_list") {
+				if (docListMode === "error")
+					throw new Error("checkout_missing:checkouts/x");
+				if (docListMode === "empty") return [];
+				return [
+					{
+						dir: "domain",
+						relativePath: "domain/overview.md",
+						sizeBytes: 64,
+					},
+					{
+						dir: "자료",
+						relativePath: "자료/day1.md",
+						sizeBytes: 120,
+					},
+				];
+			}
+			if (command === "project_docs_read") {
+				if (readErrorMode) throw new Error("doc_too_large");
+				const rel = (args as { relativePath: string }).relativePath;
+				return rel === "자료/day1.md"
+					? "# Day 1 Lesson\n\nPractice content."
+					: "# Domain Overview\n\nWelcome to the class.";
+			}
+			return null;
+		});
+
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Class Docs/ }));
+		fireEvent.click(screen.getByRole("tab", { name: "Docs" }));
+
+		expect(
+			await screen.findByRole("button", { name: "Open docs" }),
+		).toBeTruthy();
+		expect(
+			await screen.findByRole("heading", { name: "Domain Overview" }),
+		).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "domain" })).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "자료" })).toBeTruthy();
+
+		fireEvent.click(screen.getByRole("button", { name: "day1.md" }));
+		expect(
+			await screen.findByRole("heading", { name: "Day 1 Lesson" }),
+		).toBeTruthy();
+
+		readErrorMode = true;
+		fireEvent.click(screen.getByRole("button", { name: "overview.md" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"This document exceeds the 1 MiB preview limit.",
+		);
+
+		readErrorMode = false;
+		docListMode = "empty";
+		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+		expect(
+			await screen.findByRole("heading", { name: "No documents found" }),
+		).toBeTruthy();
+
+		docListMode = "error";
+		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+		const listAlert = await screen.findByRole("alert");
+		expect(listAlert).toHaveTextContent(
+			"The expected project checkout is missing.",
+		);
+		expect(listAlert).toHaveTextContent("checkouts/x");
+	});
+
+	it("shows Reset class only for class projects, handles Cancel/Escape, stops running agent before resetting, and surfaces errors", async () => {
+		let resetShouldFail: string | null = null;
+		const classProject = makeProject("practice-class", "naia-pj-adk", {
+			name: "Practice Class",
+			codingApp: "opencode",
+			docsDirs: ["domain"],
+			class: { baselineRef: "1234567890abcdef" },
+		});
+		const regularProject = makeProject("regular-app", "naia-pj-adk", {
+			name: "Regular App",
+		});
+		const callOrder: string[] = [];
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (
+				command === "project_agent_pty_stop" ||
+				command === "project_agent_pty_attach" ||
+				command === "project_class_reset"
+			) {
+				callOrder.push(command);
+			}
+			if (command === "projects_scan_adk") {
+				return {
+					...readyCatalog,
+					projects: [classProject, regularProject],
+				};
+			}
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			if (command === "project_agent_pty_start") {
+				return {
+					appId: (args as { appId: string }).appId,
+					projectPath: (args as { projectPath: string }).projectPath,
+					ptyId: "pty-class",
+					running: true,
+				};
+			}
+			if (command === "project_agent_pty_stop") {
+				return null;
+			}
+			if (command === "project_docs_list") {
+				return [
+					{
+						dir: "domain",
+						relativePath: "domain/lesson.md",
+						sizeBytes: 42,
+					},
+				];
+			}
+			if (command === "project_docs_read") {
+				return "# Lesson";
+			}
+			if (command === "project_class_reset") {
+				if (resetShouldFail) throw new Error(resetShouldFail);
+				return {
+					backupRelativePath: "class-backups/practice-class-20261025-150000",
+					backedUpFiles: 3,
+					deletedFiles: 1,
+				};
+			}
+			return null;
+		});
+
+		render(<ProjectsApp />);
+		fireEvent.click(await screen.findByRole("button", { name: /Regular App/ }));
+		expect(screen.queryByRole("button", { name: "Reset class" })).toBeNull();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open another project" }),
+		);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /Practice Class/ }),
+		);
+		const resetButton = screen.getByRole("button", { name: "Reset class" });
+		expect(resetButton).toBeTruthy();
+
+		fireEvent.click(resetButton);
+		const dialog = screen.getByRole("dialog");
+		expect(dialog.getAttribute("aria-modal")).toBe("true");
+		const header = document.querySelector(".projects-app__project-header");
+		const projectView = document.querySelector(".projects-app__project-view");
+		expect(header?.hasAttribute("inert")).toBe(true);
+		expect(header?.getAttribute("aria-hidden")).toBe("true");
+		expect(projectView?.hasAttribute("inert")).toBe(true);
+		expect(projectView?.getAttribute("aria-hidden")).toBe("true");
+
+		const cancelButton = screen.getByRole("button", { name: "Cancel" });
+		const confirmButton = screen.getByRole("button", { name: "Reset" });
+		expect(document.activeElement).toBe(cancelButton);
+
+		// Tab cycles Cancel -> Reset -> Cancel (last -> first)
+		fireEvent.keyDown(window, { key: "Tab" });
+		expect(document.activeElement).toBe(confirmButton);
+		fireEvent.keyDown(window, { key: "Tab" });
+		expect(document.activeElement).toBe(cancelButton);
+
+		// Shift+Tab cycles Cancel -> Reset (first -> last) -> Cancel
+		fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+		expect(document.activeElement).toBe(confirmButton);
+		fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+		expect(document.activeElement).toBe(cancelButton);
+
+		fireEvent.keyDown(window, { key: "Escape" });
+		expect(screen.queryByRole("dialog")).toBeNull();
+		expect(header?.hasAttribute("inert")).toBe(false);
+		expect(projectView?.hasAttribute("inert")).toBe(false);
+		expect(document.activeElement).toBe(resetButton);
+
+		fireEvent.click(resetButton);
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		expect(screen.queryByRole("dialog")).toBeNull();
+		expect(document.activeElement).toBe(resetButton);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Start OpenCode" }),
+		);
+		await screen.findByRole("button", { name: "Stop OpenCode" });
+
+		callOrder.length = 0;
+		fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
+		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+		expect(
+			await screen.findByText(/Class checkout reset complete/),
+		).toBeTruthy();
+		expect(document.activeElement).toBe(
+			screen.getByRole("button", { name: "Reset class" }),
+		);
+		expect(
+			screen.getByText(
+				/Backed up 3 file\(s\) to class-backups\/practice-class-20261025-150000\/files\./,
+			),
+		).toBeTruthy();
+		expect(callOrder.indexOf("project_agent_pty_stop")).toBeGreaterThanOrEqual(
+			0,
+		);
+		expect(callOrder.indexOf("project_class_reset")).toBeGreaterThan(
+			callOrder.indexOf("project_agent_pty_stop"),
+		);
+
+		resetShouldFail = "checkout_missing:checkouts/x";
+		fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
+		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+		const checkoutAlert = await screen.findByRole("alert");
+		expect(checkoutAlert).toHaveTextContent(
+			"The expected project checkout is missing.",
+		);
+		expect(checkoutAlert).toHaveTextContent("checkouts/x");
+
+		resetShouldFail = "baseline_missing";
+		fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
+		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"The configured class.baseline_ref commit was not found in the checkout repository.",
+		);
+	});
+
+	it("polls after stopProjectAgent for a delayed stop before calling project_class_reset", async () => {
+		const classProject = makeProject("delayed-stop", "naia-pj-adk", {
+			name: "Delayed Stop Class",
+			codingApp: "opencode",
+			class: { baselineRef: "1234567890abcdef" },
+		});
+		let attachPollCount = 0;
+		const callOrder: string[] = [];
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (
+				command === "project_agent_pty_stop" ||
+				command === "project_agent_pty_attach" ||
+				command === "project_class_reset"
+			) {
+				callOrder.push(command);
+			}
+			if (command === "projects_scan_adk") {
+				return { ...readyCatalog, projects: [classProject] };
+			}
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			if (command === "project_agent_pty_start") {
+				return {
+					appId: (args as { appId: string }).appId,
+					projectPath: (args as { projectPath: string }).projectPath,
+					ptyId: "pty-delayed",
+					running: true,
+				};
+			}
+			if (command === "project_agent_pty_stop") {
+				return null;
+			}
+			if (command === "project_agent_pty_attach") {
+				attachPollCount += 1;
+				if (attachPollCount < 3) {
+					return {
+						appId: "opencode",
+						projectPath: classProject.projectPath,
+						ptyId: "pty-delayed",
+						running: true,
+					};
+				}
+				throw new Error("session_missing");
+			}
+			if (command === "project_class_reset") {
+				return {
+					backupRelativePath: "class-backups/delayed-stop-20261025-160000",
+					backedUpFiles: 1,
+					deletedFiles: 0,
+				};
+			}
+			return null;
+		});
+
+		render(<ProjectsApp />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /Delayed Stop Class/ }),
+		);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Start OpenCode" }),
+		);
+		await screen.findByRole("button", { name: "Stop OpenCode" });
+
+		callOrder.length = 0;
+		fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
+		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+		expect(
+			await screen.findByText(/Class checkout reset complete/),
+		).toBeTruthy();
+		expect(attachPollCount).toBe(3);
+		expect(callOrder.indexOf("project_agent_pty_stop")).toBe(0);
+		expect(callOrder.lastIndexOf("project_agent_pty_attach")).toBeLessThan(
+			callOrder.indexOf("project_class_reset"),
+		);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Start OpenCode" }),
+		);
+		await screen.findByRole("button", { name: "Stop OpenCode" });
+		callOrder.length = 0;
+		const nowSpy = vi.spyOn(Date, "now");
+		let fakeNow = 1_000_000;
+		nowSpy.mockImplementation(() => {
+			fakeNow += 3_000;
+			return fakeNow;
+		});
+		attachPollCount = -100;
+		try {
+			fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
+			fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+			expect(await screen.findByRole("alert")).toHaveTextContent(
+				"A coding agent session is still running. Stop the coding agent and try again.",
+			);
+			expect(callOrder).not.toContain("project_class_reset");
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("disables the coding agent start button while class reset is in progress and maps class_reset_in_progress in ko/en with English fallback", async () => {
+		expect(
+			PROJECT_APP_TRANSLATIONS.en["projects.agentClassResetInProgress"],
+		).toContain("Class checkout reset is in progress");
+		expect(
+			PROJECT_APP_TRANSLATIONS.ko["projects.agentClassResetInProgress"],
+		).toContain("수업 체크아웃 초기화가 진행 중입니다");
+		expect(
+			PROJECT_APP_TRANSLATIONS.fr["projects.agentClassResetInProgress"],
+		).toBe(PROJECT_APP_TRANSLATIONS.en["projects.agentClassResetInProgress"]);
+
+		const classProject = makeProject("reset-race", "naia-pj-adk", {
+			name: "Reset Race Class",
+			codingApp: "opencode",
+			class: { baselineRef: "1234567890abcdef" },
+		});
+		let resolveReset: (value: unknown) => void = () => {};
+		let startCallCount = 0;
+
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "projects_scan_adk") {
+				return { ...readyCatalog, projects: [classProject] };
+			}
+			if (command === "project_agent_availability") {
+				return ["claude", "codex", "muse", "opencode"].map((appId) => ({
+					appId,
+					available: true,
+				}));
+			}
+			if (command === "project_agent_pty_start") {
+				startCallCount += 1;
+				throw new Error("class_reset_in_progress");
+			}
+			if (command === "project_class_reset") {
+				return await new Promise((resolve) => {
+					resolveReset = resolve;
+				});
+			}
+			return null;
+		});
+
+		render(<ProjectsApp />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /Reset Race Class/ }),
+		);
+		const startButton = await screen.findByRole("button", {
+			name: "Start OpenCode",
+		});
+		expect((startButton as HTMLButtonElement).disabled).toBe(false);
+
+		fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
+		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+		expect(await screen.findByText("Resetting class checkout…")).toBeTruthy();
+		const disabledStartButton = screen.getByRole("button", {
+			name: "Start OpenCode",
+		}) as HTMLButtonElement;
+		expect(disabledStartButton.disabled).toBe(true);
+		const fieldset = document.querySelector(
+			".projects-app__agent-options",
+		) as HTMLFieldSetElement | null;
+		expect(fieldset?.disabled).toBe(true);
+
+		fireEvent.click(disabledStartButton);
+		expect(startCallCount).toBe(0);
+
+		resolveReset({
+			backupRelativePath: "class-backups/reset-race-20261025-170000",
+			backedUpFiles: 1,
+			deletedFiles: 0,
+		});
+		expect(
+			await screen.findByText(/Class checkout reset complete/),
+		).toBeTruthy();
+		expect(
+			(
+				screen.getByRole("button", {
+					name: "Start OpenCode",
+				}) as HTMLButtonElement
+			).disabled,
+		).toBe(false);
+
+		// Verify backend class_reset_in_progress error is surfaced in UI when returned by start
+		fireEvent.click(screen.getByRole("button", { name: "Start OpenCode" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			PROJECT_APP_TRANSLATIONS.en["projects.agentClassResetInProgress"],
+		);
 	});
 });

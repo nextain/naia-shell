@@ -1,4 +1,7 @@
-use crate::project_catalog_runtime::{project_catalog_fields, ProjectCatalogAuthority};
+use crate::project_catalog_runtime::{
+    parse_project_catalog_fields, resolve_checkout_from_parts, ProjectCatalogAuthority,
+    ProjectClassConfig,
+};
 use serde::Serialize;
 use serde_yaml::Value as YamlValue;
 use std::fs;
@@ -50,6 +53,9 @@ struct CatalogProject {
     source_path: String,
     dashboard_url: Option<String>,
     issues_url: Option<String>,
+    coding_app: Option<String>,
+    docs_dirs: Vec<String>,
+    class: Option<ProjectClassConfig>,
 }
 
 #[derive(Debug, Serialize)]
@@ -470,18 +476,36 @@ fn read_project(
         return Err(ProjectReadError::Issue("unsafe_path"));
     }
     crate::log_verbose("[project_catalog::read_project] branch=project_metadata_read");
-    let (repository, dashboard_url, issues_url) = project_catalog_fields(project_mapping);
+    let raw_repository = value_string(project_mapping, &["repository"]);
+    let checkout_resolution = resolve_checkout_from_parts(
+        adapter_root,
+        &canonical_project,
+        raw_repository.as_deref(),
+    );
+    let checkout_path = match &checkout_resolution {
+        Ok(resolved) => Some(resolved.checkout_path.as_path()),
+        Err(_) => None,
+    };
+    let mut fields = parse_project_catalog_fields(project_mapping, checkout_path);
+    if matches!(&checkout_resolution, Err(err) if err == "checkout_unsafe" || err == "repository_invalid")
+        && raw_repository.is_some()
+    {
+        fields.docs_dirs.clear();
+    }
     Ok(CatalogProject {
         project_id: project_id.clone(),
         name: value_string(project_mapping, &["name", "display_name", "title"])
             .unwrap_or(project_id),
-        repository,
+        repository: fields.repository,
         issue_tracker: value_string(project_mapping, &["issue_tracker"]),
         adapter_root: path_string(adapter_root),
         project_path: path_string(&canonical_project),
         source_path: relative_path(root, &canonical_project),
-        dashboard_url,
-        issues_url,
+        dashboard_url: fields.dashboard_url,
+        issues_url: fields.issues_url,
+        coding_app: fields.coding_app,
+        docs_dirs: fields.docs_dirs,
+        class: fields.class,
     })
 }
 
@@ -875,6 +899,9 @@ mod tests {
                     source_path: format!("projects/{index}"),
                     dashboard_url: None,
                     issues_url: None,
+                    coding_app: None,
+                    docs_dirs: Vec::new(),
+                    class: None,
                 },
             );
         }
@@ -947,5 +974,64 @@ mod tests {
 
         assert!(read_directory_entries(&unreadable, &root, &mut state, &mut errors).is_err());
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn prefers_docs_and_tasks_url_aliases_and_reads_class_project_fields() {
+        let (_temp, root) = adk();
+        fs::create_dir_all(root.join("projects/adapter/checkouts/practice-repo/domain")).unwrap();
+        fs::create_dir_all(root.join("projects/adapter/checkouts/practice-repo/자료")).unwrap();
+        write(
+            &root,
+            "projects/adapter/projects/class-one/project.yaml",
+            "version: 1\nproject:\n  id: class-one\n  name: Class One\n  repository: org/practice-repo\n  dashboard_url: https://legacy.example.test/dashboard\n  docs_url: https://docs.example.test/class\n  issues_url: https://legacy.example.test/issues\n  tasks_url: https://tasks.example.test/class\n  coding_app: opencode\n  docs_dirs:\n    - domain\n    - 자료\n    - guides\n    - /abs/path\n    - ../outside\n    - back\\slash\n    - ''\n  class:\n    baseline_ref: 0123456789abcdef\n",
+        );
+        write(
+            &root,
+            "projects/adapter/projects/invalid-fields/project.yaml",
+            "version: 1\nproject:\n  id: invalid-fields\n  repository: org/practice-repo\n  dashboard_url: https://legacy.example.test/only-dashboard\n  issues_url: https://legacy.example.test/only-issues\n  coding_app: unknown-tool\n  class:\n    baseline_ref: not-a-hex-ref\n",
+        );
+
+        let catalog = scan(&root);
+        assert_eq!(catalog.projects.len(), 2);
+
+        let class_one = catalog
+            .projects
+            .iter()
+            .find(|project| project.project_id == "class-one")
+            .unwrap();
+        assert_eq!(
+            class_one.dashboard_url.as_deref(),
+            Some("https://docs.example.test/class")
+        );
+        assert_eq!(
+            class_one.issues_url.as_deref(),
+            Some("https://tasks.example.test/class")
+        );
+        assert_eq!(class_one.coding_app.as_deref(), Some("opencode"));
+        assert_eq!(class_one.docs_dirs, vec!["domain", "자료", "guides"]);
+        assert_eq!(
+            class_one
+                .class
+                .as_ref()
+                .map(|config| config.baseline_ref.as_str()),
+            Some("0123456789abcdef")
+        );
+
+        let invalid = catalog
+            .projects
+            .iter()
+            .find(|project| project.project_id == "invalid-fields")
+            .unwrap();
+        assert_eq!(
+            invalid.dashboard_url.as_deref(),
+            Some("https://legacy.example.test/only-dashboard")
+        );
+        assert_eq!(
+            invalid.issues_url.as_deref(),
+            Some("https://legacy.example.test/only-issues")
+        );
+        assert_eq!(invalid.coding_app, None);
+        assert_eq!(invalid.class, None);
     }
 }

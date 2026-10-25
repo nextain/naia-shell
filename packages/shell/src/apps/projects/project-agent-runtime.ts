@@ -283,6 +283,26 @@ export function selectProjectAgent(
 	});
 }
 
+export function preselectProjectAgentIfUnset(
+	projectPath: string,
+	candidateAppId: unknown,
+): void {
+	if (candidateAppId === null || candidateAppId === undefined) return;
+	if (!isProjectAgentAppId(candidateAppId)) {
+		Logger.debug(
+			"ProjectAgentRuntime",
+			"ignoring invalid coding_app preselect",
+		);
+		return;
+	}
+	const state = stateFor(projectPath);
+	if (state.selectedAppId !== null) return;
+	Logger.debug("ProjectAgentRuntime", "preselecting configured coding_app", {
+		appId: candidateAppId,
+	});
+	state.selectedAppId = candidateAppId;
+}
+
 export async function startProjectAgent(
 	projectPath: string,
 	adapterRoot: string,
@@ -545,11 +565,10 @@ export async function stopProjectAgent(
 		return;
 	}
 	const state = stateFor(projectPath);
-	if (
-		state.selectedAppId !== appId ||
-		state.status !== "running" ||
-		!state.ptyId
-	) {
+	const isRunningWithPty = state.status === "running" && Boolean(state.ptyId);
+	const isStarting =
+		state.status === "starting" || state.status === "connecting";
+	if (state.selectedAppId !== appId || (!isRunningWithPty && !isStarting)) {
 		Logger.debug(
 			"ProjectAgentRuntime",
 			"stop skipped without an owned active session",
@@ -564,6 +583,9 @@ export async function stopProjectAgent(
 			projectPath,
 			adapterRoot,
 		});
+		if (isStarting && !stateFor(projectPath).ptyId) {
+			setState(projectPath, { status: "idle", ptyId: null, error: null });
+		}
 		Logger.debug("ProjectAgentRuntime", "project PTY stop requested", {
 			appId,
 		});
@@ -573,8 +595,74 @@ export async function stopProjectAgent(
 			code: mapped.code,
 		});
 		if (getProjectAgentState(projectPath).status === "stopping") {
-			setState(projectPath, { status: "running", error: mapped });
+			setState(projectPath, {
+				status: isStarting ? "idle" : "running",
+				error: mapped,
+			});
 		}
+	}
+}
+
+export async function waitForProjectAgentStopped(
+	projectPath: string,
+	adapterRoot: string,
+	appId: ProjectAgentAppId,
+	options?: { timeoutMs?: number; intervalMs?: number },
+): Promise<boolean> {
+	const timeoutMs = options?.timeoutMs ?? 5000;
+	const intervalMs = options?.intervalMs ?? 200;
+	const deadline = Date.now() + timeoutMs;
+	Logger.debug(
+		"ProjectAgentRuntime",
+		"waiting for project PTY session to stop",
+		{
+			appId,
+			timeoutMs,
+			intervalMs,
+		},
+	);
+	if (!isProjectAgentAppId(appId)) {
+		return true;
+	}
+	while (true) {
+		const state = stateFor(projectPath);
+		if (state.status === "exited") {
+			return true;
+		}
+		try {
+			const response = await invoke<unknown>("project_agent_pty_attach", {
+				appId,
+				projectPath,
+				adapterRoot,
+			});
+			const stillRunning =
+				typeof response === "object" &&
+				response !== null &&
+				(response as { running?: unknown }).running === true;
+			if (!stillRunning) {
+				setState(projectPath, { status: "idle", ptyId: null, error: null });
+				return true;
+			}
+		} catch (error) {
+			const mapped = parseAgentError(error);
+			if (mapped.code === "session_missing") {
+				setState(projectPath, { status: "idle", ptyId: null, error: null });
+				return true;
+			}
+			return false;
+		}
+		if (Date.now() >= deadline) {
+			if (stateFor(projectPath).status === "stopping") {
+				setState(projectPath, { status: "running" });
+			}
+			Logger.warn(
+				"ProjectAgentRuntime",
+				"project PTY session remained running after stop timeout",
+				{ appId },
+			);
+			return false;
+		}
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
 	}
 }
 

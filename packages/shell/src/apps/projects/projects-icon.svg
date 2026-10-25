@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+	<!-- Left agent figure (behind) -->
+	<circle cx="5.5" cy="10" r="2.2" />
+	<path d="M1.8 18.2c0-2.1 1.6-3.7 3.7-3.7.7 0 1.4.2 2 .5" />
+	<!-- Right agent figure (behind) -->
+	<circle cx="18.5" cy="10" r="2.2" />
+	<path d="M22.2 18.2c0-2.1-1.6-3.7-3.7-3.7-.7 0-1.4.2-2 .5" />
+	<!-- Center agent figure (slightly larger, in front) -->
+	<circle cx="12" cy="8.5" r="3" />
+	<path d="M6.8 19.5c0-2.9 2.3-5.2 5.2-5.2s5.2 2.3 5.2 5.2" />
+	<!-- Four-point sparkle top-right -->
+	<path d="M19.5 2.2 L20.2 4 L22 4.7 L20.2 5.4 L19.5 7.2 L18.8 5.4 L17 4.7 L18.8 4 Z" fill="currentColor" stroke="none" />
+</svg>

@@ -392,9 +392,10 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 | UC-SHELL-APP-EXPOSURE-024 — 진행 | 외부 시스템 브라우저를 여는 한 번 동작에는 셸 안의 진행 UI가 없다. 열기 Promise가 끝나기 전에도 셸 화면은 유지되고 중복 클릭을 별도 상태로 가장하지 않는다. | opener 호출·rejection 단위 확인 |
 | UC-SHELL-APP-EXPOSURE-024 — 성공·오류 | 성공 시 앱스토어 또는 NVA 제작 경로를 시스템 브라우저에 전달하고 활성 앱은 바꾸지 않는다. opener 거부는 `Logger.warn`으로 기록하며 AppBar/Settings 화면을 유지한다. Steam은 앱스토어 고정 버튼과 `+` 항목을 모두 숨긴다. | `AppBar.test.tsx`, `SettingsTab.test.tsx` |
 | UC-SHELL-APP-EXPOSURE-024 — 좁은 폭·키보드 | AppBar 탭 줄은 기존 가로 스크롤 안에서 고정 버튼에 키보드 초점을 주고 Enter/Space로 실행한다. 360px 화면에서도 아바타 탭 버튼과 설명은 설정 콘텐츠 경계 안에 남는다. | `e2e/app-store-nva-entry.spec.ts`: Chromium 360px, 키보드·bounding box·수평 overflow |
-| UC-PROJECT-APP-SELECT-OPEN-756-S1 | `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`: 선택된 체크아웃의 중첩 `project.yaml` 메타데이터 읽기와 템플릿(`_template`, `_template-local`) 제외, 빈 목록·설정 오류 복구 안내, 프로젝트 선택 후 세 탭 유지 및 키보드 접근성 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts`: 프로젝트 검색·선택·열기, 세 탭 빈 상태, 빈 목록·설정 오류 복구 조치, 키보드 조작·좁은 화면 및 네이티브 카탈로그 IPC 확인 |
+| UC-PROJECT-APP-SELECT-OPEN-756-S1 | `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`: 선택된 체크아웃의 중첩 `project.yaml` 메타데이터 읽기와 템플릿(`_template`, `_template-local`) 제외, 빈 목록·설정 오류 복구 안내, 프로젝트 선택 후 탭 유지 및 키보드 접근성 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts`: 프로젝트 검색·선택·열기, 탭 빈 상태, 빈 목록·설정 오류 복구 조치, 키보드 조작·좁은 화면 및 네이티브 카탈로그 IPC 확인 |
 | UC-PROJECT-APP-SINGLE-OPEN-756-S2 | `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-session.test.ts`: 1·2단 후보 탐색과 밑줄·심볼릭 링크 제외, 저장된 naia-adk 경로 우선 조회·복구, 프로젝트 단일 열기·전환·취소 복귀, 프로젝트별 마지막 탭 저장·복원 및 행·YAML 크기 상한 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts`: 저장된 경로 카탈로그 스캔, 단일 프로젝트 전환·취소 복귀·셸 재시작 복원, 단일 앱 막대 항목 유지, 메타데이터 오류·잘림 안내 및 키보드·좁은 화면 확인 |
-| UC-PROJECT-APP-LOCAL-756-S3 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/project-agent-runtime.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-session.test.ts`, `packages/shell/src-tauri/src/project_catalog_runtime.rs`, `packages/shell/src-tauri/src/project_agent_pty.rs`, `packages/shell/src-tauri/src/project_agent_pty/lifecycle.rs`, `packages/shell/src-tauri/src/project_agent_pty/commands.rs`, `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src-tauri/src/project_webview.rs`, `packages/shell/src-tauri/src/herdr/pty.rs`, `packages/shell/src/apps/__tests__/browser-center-area.test.tsx`: checkout 경로 경계 검증, 네 고정 에이전트(`claude`·`codex`·`muse`·`opencode`) PATH 탐색·고정 argv·PTY 프로젝트별 격리·중단·종료 정리, `dashboard_url`·`issues_url` 주소 검증과 프로젝트 전용 WebView 동일 출처 분리 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e/91-workspace-app.spec.ts`, `packages/shell/e2e/197-browser-login.spec.ts`: 단계 3 checkout 복구 안내, 에이전트 라디오 선택·설치 안내, 프로젝트 전환(A→B→A)·중단, 대시보드·이슈 주소 상태와 프로젝트 WebView IPC 경계 및 기존 Workspace·Browser 회귀 확인 |
+| UC-PROJECT-APP-LOCAL-756-S3 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src/apps/projects/__tests__/project-agent-runtime.test.ts`, `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-session.test.ts`, `packages/shell/src-tauri/src/project_catalog_runtime.rs`, `packages/shell/src-tauri/src/project_agent_pty.rs`, `packages/shell/src-tauri/src/project_agent_pty/lifecycle.rs`, `packages/shell/src-tauri/src/project_agent_pty/commands.rs`, `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src-tauri/src/project_webview.rs`, `packages/shell/src-tauri/src/herdr/pty.rs`, `packages/shell/src/apps/__tests__/browser-center-area.test.tsx`: checkout 경로 경계 검증, 네 고정 에이전트(`claude`·`codex`·`muse`·`opencode`) PATH 탐색·고정 argv·PTY 프로젝트별 격리·중단·종료 정리, `docs_url`(`dashboard_url`)·`tasks_url`(`issues_url`) 주소 검증과 프로젝트 전용 WebView 동일 출처 분리 확인 | `packages/shell/e2e/project-app.spec.ts`, `packages/shell/e2e/91-workspace-app.spec.ts`, `packages/shell/e2e/197-browser-login.spec.ts`: 단계 3 checkout 복구 안내, 에이전트 라디오 선택·설치 안내, 프로젝트 전환(A→B→A)·중단, 문서·작업 주소 상태와 프로젝트 WebView IPC 경계 및 기존 Workspace·Browser 회귀 확인 |
+| UC-PROJECT-APP-PANELS-CLASS-20261025 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`, `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src-tauri/src/project_catalog_runtime.rs`: 문서·작업 탭 이름 변경(14개 로케일), `docs_url`·`tasks_url` 별칭 우선 적용, 미설정 탭 숨김 및 단일 탭 시 탭 목록 숨김·숨겨진 저장 탭의 `agent` 폴백·표시 탭 전용 키보드 순환, 카탈로그 다시 읽기, 수업용 프로젝트 설정(`coding_app`, `docs_dirs`, `class.baseline_ref`) 정규화·검증, `project_docs_list`/`project_docs_read` 경계·상한, `ProjectDocsPanel` 목록·미리보기·새로고침·빈 상태·오류 복구, `project_class_reset` 백업·복원·외부 git 차단·에이전트 중지 선행·오류 매핑, 에이전트 SVG 아이콘 확인 | `packages/shell/e2e/project-app.spec.ts`: 문서·작업 탭 레이블과 설정된 탭만 노출되는 동작, 단일 탭 시 탭 목록 숨김 및 표시 탭 간 키보드 이동, 카탈로그 다시 읽기와 좁은 화면 반응형 배치 확인 |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
 1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.
@@ -2275,40 +2276,40 @@ Test Coverage Map (P02)
 
 ## UC-PROJECT-APP-SELECT-OPEN-756-S1 — 체크아웃의 프로젝트를 찾아 앱에서 연다 (#756 단계 1)
 
-사용자는 naia-pj-adk 체크아웃을 선택하고 셸의 프로젝트 앱에서 그 체크아웃의 `projects/*`를 확인한다. `_template`과 `_template-local`은 목록에서 제외한다. 이름·ID·repository로 검색할 수 있다. 각 프로젝트의 `project.yaml`에서 중첩된 `project.id`, `project.repository`, `project.issue_tracker`를 읽고, 표시 이름이 없으면 ID를 이름으로 사용한다. 다른 최상위 설정은 목록 읽기에 영향을 주지 않으며 별도 profile 설정 파일을 요구하지 않는다. 사용자가 프로젝트를 선택하면 앱 안에서 프로젝트 제목을 확인하고 세 탭(코딩 에이전트·대시보드·내부 이슈)을 오가며 각 화면의 빈 상태를 볼 수 있다. 목록이 비었거나 설정을 읽지 못하면 무엇이 비었거나 잘못됐는지와 다음 조치를 안내한다. 모든 발견·읽기는 선택한 체크아웃 경계 안에서만 이뤄진다. 단계 1은 프로젝트 앱의 화면 뼈대만 제공하며 Workspace/Herdr 런타임, PTY, 코딩 작업자 API를 시작하거나 연결하지 않는다.
+사용자는 naia-pj-adk 체크아웃을 선택하고 셸의 프로젝트 앱에서 그 체크아웃의 `projects/*`를 확인한다. `_template`과 `_template-local`은 목록에서 제외한다. 이름·ID·repository로 검색할 수 있다. 각 프로젝트의 `project.yaml`에서 중첩된 `project.id`, `project.repository`, `project.issue_tracker`를 읽고, 표시 이름이 없으면 ID를 이름으로 사용한다. 다른 최상위 설정은 목록 읽기에 영향을 주지 않으며 별도 profile 설정 파일을 요구하지 않는다. 사용자가 프로젝트를 선택하면 앱 안에서 프로젝트 제목을 확인하고 탭(코딩 에이전트·문서(구 대시보드)·작업(구 내부 이슈); `UC-PROJECT-APP-PANELS-CLASS-20261025`부터는 설정된 탭만 표시)을 오가며 각 화면의 빈 상태를 볼 수 있다. 목록이 비었거나 설정을 읽지 못하면 무엇이 비었거나 잘못됐는지와 다음 조치를 안내한다. 모든 발견·읽기는 선택한 체크아웃 경계 안에서만 이뤄진다. 단계 1은 프로젝트 앱의 화면 뼈대만 제공하며 Workspace/Herdr 런타임, PTY, 코딩 작업자 API를 시작하거나 연결하지 않는다.
 
 | 상태 | 사용자 기대 |
 |---|---|
-| 기본 | 선택된 체크아웃과 프로젝트 선택 안내가 보인다. 프로젝트를 선택하면 프로젝트 제목과 세 탭이 표시된다. |
+| 기본 | 선택된 체크아웃과 프로젝트 선택 안내가 보인다. 프로젝트를 선택하면 프로젝트 제목과 설정된 탭이 표시된다. |
 | 빈 목록 | 유효한 프로젝트가 없으면 빈 상태와 다른 체크아웃 선택 또는 프로젝트 설정 확인이라는 다음 조치가 표시된다. 템플릿 프로젝트는 목록에 나타나지 않는다. |
 | 진행 | 체크아웃 안의 프로젝트와 필요한 설정 파일을 읽는 중임을 표시하며 중복 선택이나 빈 성공 화면으로 오인시키지 않는다. |
-| 성공 | 선택한 프로젝트 제목이 세 탭 모두에서 유지되고, 각 탭은 단계 1의 접근 가능한 빈 상태를 표시한다. |
+| 성공 | 선택한 프로젝트 제목이 모든 표시 탭에서 유지되고, 각 탭은 단계 1의 접근 가능한 빈 상태를 표시한다. |
 | 오류 | `project.yaml`이 없거나 잘못되었거나 `project.id`가 없거나 읽히지 않으면 영향을 받은 프로젝트를 열지 않고 파일과 복구 조치를 안내한다. |
-| 좁은 폭 | 체크아웃 선택·프로젝트 목록·세 탭과 상태 안내가 좁은 창에서도 잘리지 않으며 키보드로 탐색할 수 있다. |
+| 좁은 폭 | 체크아웃 선택·프로젝트 목록·탭과 상태 안내가 좁은 창에서도 잘리지 않으며 키보드로 탐색할 수 있다. |
 
 Test Coverage Map (P02)
 
 | UC 상태·행동 | Vitest 파일·그룹 | 실 UI Playwright 파일·그룹 |
 |---|---|---|
 | 선택된 체크아웃에서 중첩 메타데이터를 읽고 `_template`, `_template-local` 제외 | `packages/shell/src-tauri/src/project_catalog.rs` — `lists_projects_and_excludes_both_templates`; `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — `describe("Project catalog — F-01")`의 유효 목록 사례 | `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts` — `reads nested project metadata, ignores unrelated settings, and excludes templates`; `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 검색·선택 사례 |
-| 읽는 중 표시, 프로젝트 열기, 세 탭에서 선택 유지 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` — `describe("ProjectsApp — F-01")`의 로딩·선택·열기 사례 | `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 프로젝트 열기·세 탭 빈 상태 사례 |
+| 읽는 중 표시, 프로젝트 열기, 탭에서 선택 유지 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` — `describe("ProjectsApp — F-01")`의 로딩·선택·열기 사례 | `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 프로젝트 열기·탭 상태 사례 |
 | 빈 목록, 누락·잘못된 설정, 복구를 위한 다음 조치 | `packages/shell/src-tauri/src/project_catalog.rs` — `empty_projects_directory_returns_an_empty_catalog`, `reports_missing_and_malformed_project_configuration`; `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — `describe("Project catalog — F-01")`의 빈 목록·각 설정 오류 사례 | `packages/shell/e2e-tauri/specs/project-catalog-native.spec.ts` — `reads nested project metadata, ignores unrelated settings, and excludes templates`; `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 빈 목록·설정 오류와 다음 조치 사례 |
 | 키보드 조작, 탭 의미·상태, 좁은 화면 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` — `describe("ProjectsApp — F-01")`의 탭 키보드·접근성 사례 | `packages/shell/e2e/project-app.spec.ts` — `test.describe("Project app — stage 1")`의 키보드·좁은 화면 사례 |
 
 ## UC-PROJECT-APP-SINGLE-OPEN-756-S2 — naia-adk에서 프로젝트 하나를 열고 전환한다 (#756 단계 2)
 
-사용자는 셸에 저장된 naia-adk의 `projects/`에서 프로젝트를 검색한다. 경로가 저장되지 않았거나 유효하지 않을 때만 naia-adk 폴더를 한 번 선택하고, `projects/` 검증에 성공한 뒤 경로를 저장한다. 카탈로그는 1단계와 직계 2단계 후보 루트를 이름이나 색인 등록 여부로 거르지 않고 탐색하며 밑줄로 시작하는 디렉터리와 심볼릭 링크는 제외한다. `projects/<프로젝트>/project.yaml`의 중첩 `project.id`가 비어 있지 않은 항목을 프로젝트로 표시한다. 색인이 없거나 읽을 수 없고 형식이 잘못된 경우에도 탐색을 계속하며 색인 경로와 사유를 오류 행으로 보인다. 후보가 없으면 필요한 프로젝트 메타데이터와 설정에서 naia-adk 경로를 재설정하는 방법을 안내한다. 프로젝트를 열면 검색과 목록이 사라지고 현재 프로젝트 이름과 ‘다른 프로젝트 열기’가 있는 작은 머리줄, 코딩 에이전트·대시보드·내부 이슈의 세 탭만 표시한다. 탭을 바꾸면 프로젝트별 상태를 저장하고, 다른 프로젝트를 열거나 셸을 다시 시작해도 각 프로젝트의 마지막 탭과 마지막 프로젝트를 복원한다. 단계 2의 세 탭은 빈 화면이며 코딩 에이전트·대시보드·내부 이슈 공급원을 연결하지 않는다.
+사용자는 셸에 저장된 naia-adk의 `projects/`에서 프로젝트를 검색한다. 경로가 저장되지 않았거나 유효하지 않을 때만 naia-adk 폴더를 한 번 선택하고, `projects/` 검증에 성공한 뒤 경로를 저장한다. 카탈로그는 1단계와 직계 2단계 후보 루트를 이름이나 색인 등록 여부로 거르지 않고 탐색하며 밑줄로 시작하는 디렉터리와 심볼릭 링크는 제외한다. `projects/<프로젝트>/project.yaml`의 중첩 `project.id`가 비어 있지 않은 항목을 프로젝트로 표시한다. 색인이 없거나 읽을 수 없고 형식이 잘못된 경우에도 탐색을 계속하며 색인 경로와 사유를 오류 행으로 보인다. 후보가 없으면 필요한 프로젝트 메타데이터와 설정에서 naia-adk 경로를 재설정하는 방법을 안내한다. 프로젝트를 열면 검색과 목록이 사라지고 현재 프로젝트 이름과 ‘다른 프로젝트 열기’가 있는 작은 머리줄, 코딩 에이전트·문서(구 대시보드)·작업(구 내부 이슈) 중 설정된 탭만 표시한다. 탭을 바꾸면 프로젝트별 상태를 저장하고, 다른 프로젝트를 열거나 셸을 다시 시작해도 각 프로젝트의 마지막 유효 탭과 마지막 프로젝트를 복원한다. 단계 2의 탭은 빈 화면이며 코딩 에이전트·문서·작업 공급원을 연결하지 않는다.
 
 | 상태 | 사용자 기대 |
 |---|---|
 | 기본 | 저장된 naia-adk 경로가 있으면 폴더 질문 없이 카탈로그를 읽는다. 경로가 없거나 열리지 않을 때는 폴더를 한 번 묻고, 성공적으로 검증한 뒤에만 저장한다. |
 | 목록 | 프로젝트 ID와 naia-adk 기준 상대 출처를 보여 주고 이름·ID·repository·출처로 검색한다. 체크아웃을 선택하거나 바꾸는 단계는 없다. |
 | 진행 | 카탈로그를 읽는 중임을 알리고 중복 선택을 막는다. |
-| 프로젝트 열기 | 목록과 검색이 사라지고 작은 머리줄, 세 탭과 현재 탭의 빈 화면만 표시한다. 프로젝트별 탭 상태를 저장한다. |
+| 프로젝트 열기 | 목록과 검색이 사라지고 작은 머리줄, 표시 탭과 현재 탭 화면만 표시한다. 프로젝트별 탭 상태를 저장한다. |
 | 전환 | ‘다른 프로젝트 열기’에서 목록을 다시 열고 선택 즉시 전환한다. 목록에서 돌아오기를 선택하거나 목록을 취소하면 현재 프로젝트와 탭으로 복귀한다. |
 | 재시작·복구 | 셸 재시작 때 마지막 프로젝트와 탭을 복원한다. 프로젝트가 없어졌거나 상태를 읽지 못하면 없는 앱 항목을 만들지 않고 목록에서 다시 고르게 한다. 저장 경로 오류는 다시 선택과 설정의 naia-adk 경로 재설정 안내를 제공한다. |
 | 오류·잘림 | 상대 경로와 사유를 표시한다. 전체 순회 항목 및 표시 행 200개, `project.yaml` 64 KiB 상한을 알리고 초과 파일 수와 크기를 표시한다. |
-| 좁은 폭·키보드 | 목록 검색과 세 탭을 읽고 조작할 수 있으며 탭은 방향키·Home·End를 지원한다. 앱 막대의 프로젝트 앱 항목은 하나다. |
+| 좁은 폭·키보드 | 목록 검색과 표시 탭을 읽고 조작할 수 있으며 탭은 방향키·Home·End를 지원한다. 앱 막대의 프로젝트 앱 항목은 하나다. |
 
 Test Coverage Map (P02)
 
@@ -2323,24 +2324,24 @@ Test Coverage Map (P02)
 
 ## UC-PROJECT-APP-LOCAL-756-S3 — 선택 프로젝트의 세 칸을 로컬에서 사용한다 (#756 단계 3)
 
-사용자는 프로젝트 앱에서 한 번에 프로젝트 하나를 열고, 코딩 에이전트·대시보드·내부 이슈를 사용한다. 코딩 에이전트 작업 폴더는 카탈로그가 확인한 프로젝트 어댑터 루트와 `project.repository`의 마지막 경로 조각으로 계산한 `<project-adapter root>/checkouts/<repository-name>/`로 한정한다. 경로·출처·clone을 정확히 검증할 수 없거나 checkout이 없으면 시작하지 않고, 개인 절대 경로가 아닌 기대 상대 경로·원인·복구 안내를 보여준다. 다른 프로젝트나 현재 셸 작업 디렉터리로 폴백하거나 clone을 자동 생성하지 않는다.
+사용자는 프로젝트 앱에서 한 번에 프로젝트 하나를 열고, 코딩 에이전트·문서(구 대시보드)·작업(구 내부 이슈)을 사용한다. 코딩 에이전트 작업 폴더는 카탈로그가 확인한 프로젝트 어댑터 루트와 `project.repository`의 마지막 경로 조각으로 계산한 `<project-adapter root>/checkouts/<repository-name>/`로 한정한다. 경로·출처·clone을 정확히 검증할 수 없거나 checkout이 없으면 시작하지 않고, 개인 절대 경로가 아닌 기대 상대 경로·원인·복구 안내를 보여준다. 다른 프로젝트나 현재 셸 작업 디렉터리로 폴백하거나 clone을 자동 생성하지 않는다.
 
 사용자는 `claude`, `codex`, `muse`, `opencode` 네 고정 앱 중 실행할 것을 고른다. 셸은 고정된 실행 파일 이름을 현재 기기의 `PATH`에서 찾고 앱 ID별 고정 인자만 사용한다. 사용자 입력·프로젝트 경로·메타데이터를 실행 파일이나 인자로 전달하지 않는다. 앱을 시작하면 확인된 checkout에서 전용 PTY를 연다. 실행 중에는 중단 버튼으로 해당 프로젝트와 앱의 PTY를 종료할 수 있다. 창을 닫거나 앱이 종료될 때도 모든 프로젝트 PTY와 자식 프로세스를 정리한다. 프로젝트 A에서 B로 전환하면 A의 PTY를 숨겨 계속 실행하고 B의 PTY만 표시·입력 대상으로 삼는다. A로 돌아오면 A 세션에 다시 붙는다. 다른 프로젝트의 PTY ID·입력·출력은 섞이지 않는다. 셸 재시작 뒤 생존과 소유권을 확인하지 못한 PTY는 실행 중으로 표시하거나 입력 대상으로 쓰지 않는다. 재시작 뒤 복구 방식은 D48의 미확정으로 둔다.
 
-대시보드와 내부 이슈 주소는 선택 프로젝트의 `project.yaml`에 있는 `dashboard_url`과 `issues_url`에서 각각 읽는다. 값이 없거나 비면 해당 칸은 빈 상태와 설정 안내를 보여준다. 절대 `http://` 또는 `https://`가 아닌 주소와 형식이 잘못된 주소는 열지 않고 오류·설정 안내를 표시한다. `repository`, GitHub, 제품 URL이나 고정 주소로 대체하지 않는다. 유효한 주소는 Browser 앱의 WebView와 분리된 프로젝트 전용 WebView에서 연다. 탐색은 처음 검증한 scheme·host·port 출처 안으로 제한하며 다른 출처의 링크와 리다이렉트는 차단한다. Browser의 기존 URL·로그인·표시는 프로젝트 탭을 오가도 유지된다.
+문서와 작업 주소는 선택 프로젝트의 `project.yaml`에 있는 `docs_url`(또는 `dashboard_url`)과 `tasks_url`(또는 `issues_url`)에서 각각 읽는다. 값이 없거나 비면(문서 탭은 `docs_dirs`도 없을 때) 해당 탭은 숨겨진다(`UC-PROJECT-APP-PANELS-CLASS-20261025`). 절대 `http://` 또는 `https://`가 아닌 주소와 형식이 잘못된 주소는 탭은 노출하되 열지 않고 오류·설정 안내를 표시한다. `repository`, GitHub, 제품 URL이나 고정 주소로 대체하지 않는다. 유효한 주소는 Browser 앱의 WebView와 분리된 프로젝트 전용 WebView에서 연다. 탐색은 처음 검증한 scheme·host·port 출처 안으로 제한하며 다른 출처의 링크와 리다이렉트는 차단한다. Browser의 기존 URL·로그인·표시는 프로젝트 탭을 오가도 유지된다.
 
 | 상태 | 사용자 기대 |
 |---|---|
-| 기본·선택 | 선택 프로젝트와 세 칸이 유지된다. 코딩 에이전트에는 네 고정 선택지만 있고, 사용자가 선택한 앱을 명시적으로 시작한다. 프로젝트 앱은 앱 막대에 하나만 있다. |
+| 기본·선택 | 선택 프로젝트와 설정된 탭이 유지된다. 코딩 에이전트에는 네 고정 선택지만 있고, 사용자가 선택한 앱을 명시적으로 시작한다. 프로젝트 앱은 앱 막대에 하나만 있다. |
 | checkout 오류 | 출처·루트·repository 이름 또는 checkout의 안전한 연결을 검증할 수 없거나 checkout이 없으면 agent spawn이 없다. 기대 상대 경로, 오류 이유, 프로젝트 설정 또는 checkout 복구 방법을 안내한다. 다른 폴더·clone으로 대체하지 않는다. |
 | 앱 실행 오류 | 고정 실행 파일을 `PATH`에서 찾을 수 없거나 실행 경계를 검증할 수 없으면 시작하지 않는다. 설치 안내는 `PATH에서 찾을 수 없음`으로 표시된 앱을 가리키며, 실행 가능하거나 실행 중인 선택 앱이 없다고 읽히지 않는다. UI·프로젝트 메타데이터·임의 앱 ID·임의 인자·셸 문자열은 실행 입력이 되지 않는다. |
 | 진행·실행·중단 | 시작 중에는 진행 상태를 보인다. 실행 후 선택 프로젝트의 전용 PTY에서 출력·키 입력·크기 변경이 동작한다. 중단 버튼은 현재 프로젝트 세션만 정지하고 종료 이벤트 뒤 종료 상태를 보인다. 창 닫기·앱 종료는 남은 프로젝트 PTY와 자식 프로세스를 정리한다. 실행 오류는 다시 시도할 수 있는 상태로 안내한다. |
 | 프로젝트 전환 | A→B에서 A는 숨긴 채 유지되고 B만 현재 연결된다. A→B→A 복귀 시 A 세션에 다시 연결되며 프로젝트 간 출력과 입력이 섞이지 않는다. |
 | 셸 재시작 | 검증되지 않은 세션은 실행 중으로 보이지 않고 입력도 받지 않는다. 세션 재부착 또는 새 세션 결정은 D48 미확정에 남긴다. |
-| 주소 누락·빈 값 | 각 칸에 빈 상태와 해당 `project.yaml` 키 설정 안내를 표시한다. 대체 주소나 자동 보정은 없다. |
+| 주소 누락·빈 값 | URL(및 문서 탭의 `docs_dirs`)이 비어 있는 탭은 숨기고, `ProjectWebViewPanel`이 단독으로 빈 주소를 받을 때만 해당 `project.yaml` 키 설정 안내를 표시한다. 대체 주소나 자동 보정은 없다. |
 | 주소 오류 | 상대 경로·호스트 없는 URL·`file:`·`javascript:`·`data:`·기타 잘못된 주소는 열리지 않고 오류·복구 안내를 표시한다. |
 | WebView·Browser | 설정한 주소와 같은 scheme·host·port 출처만 프로젝트 전용 WebView에서 탐색한다. 다른 출처는 차단하고 출처만 기록한다. Browser 앱의 URL·로그인·표시와 iframe/CSP 동작은 바뀌지 않는다. |
-| 키보드·좁은 폭 | 세 칸과 오류·빈 상태를 좁은 창에서 읽고 조작할 수 있고 탭·버튼의 키보드 조작과 선택·진행·오류의 접근성 상태를 확인할 수 있다. |
+| 키보드·좁은 폭 | 표시 탭과 오류·빈 상태를 좁은 창에서 읽고 조작할 수 있고 탭·버튼의 키보드 조작과 선택·진행·오류의 접근성 상태를 확인할 수 있다. |
 
 Test Coverage Map (P02)
 
@@ -2349,11 +2350,37 @@ Test Coverage Map (P02)
 | 선택 프로젝트의 adapter root와 `project.repository` 마지막 조각으로 checkout 계산; 누락·모호한 루트·빈 조각·traversal·절대 경로·없음·symlink·경계 이탈 차단; 상대 경로 오류와 복구 안내, backend spawn 0건 | `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts` — 기존 프로젝트 카탈로그 그룹과 stage 3 checkout 사례; `packages/shell/src-tauri/src/project_catalog_runtime.rs` — `resolve_project_checkout` 단위 사례; `packages/shell/src-tauri/src/project_agent_pty.rs` — checkout 검증 실패 뒤 PTY spawn 차단 사례 | `packages/shell/e2e/project-app.spec.ts` — `shows safe checkout recovery guidance when the agent start is rejected` mock IPC 오류 표시 사례; 이 mock은 backend spawn 부재의 증거가 아니다 |
 | 네 고정 앱 ID→실행 파일·고정 argv, `PATH` 탐색, 미설치·알 수 없는 ID·임의 인자·셸 메타문자 거부, `pty_create` 문자열 경로 미사용, 설치 안내와 선택 앱 상태 구분 | `packages/shell/src/apps/projects/__tests__/project-agent-runtime.test.ts` — 고정 앱 목록·선택·시작 계약; `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` — 앱 일부·전체 미설치, 선택 앱의 PATH 상태 변경, 실행 중 선택 표시와 설치 안내 사례; `packages/shell/src-tauri/src/project_agent_pty.rs` — PATH 탐색·허용 목록·고정 argv 및 무효 입력 차단 사례 (`cargo test --manifest-path src-tauri/Cargo.toml pty`) | `packages/shell/e2e/project-app.spec.ts` — Claude만 사용 가능한 상태에서 실행 중 라디오 선택 및 설치 안내 문구 검증 |
 | 프로젝트별 PTY 소유권, 각 attach/write/resize의 현재 카탈로그 authority 재확인, A→B→A 숨김·재접속·출력/입력 격리, 중단 버튼·창 닫기·앱 종료 시 프로세스 정리, 재시작 뒤 미검증 세션 비표시·입력 차단 | `packages/shell/src/apps/projects/__tests__/project-agent-runtime.test.ts` — 프로젝트별 세션·중단·종료 이벤트; `ProjectsApp.test.tsx` — 프로젝트 전환·중단 버튼; `packages/shell/src-tauri/src/project_agent_pty/lifecycle.rs` — 카탈로그 권한·중단·앱 종료 후 child/process group 소멸; `commands.rs` — authority-gated attach/write/resize/stop; 기존 `project-session.test.ts` — 프로젝트 및 탭 상태 복원 | `e2e/project-app.spec.ts` — stage 3 A→B→A·중단 UI/IPC 모의 시나리오; 실제 PTY 프로세스 소멸은 Cargo 시험으로 구분한다. |
-| `dashboard_url`·`issues_url` 각각의 정상 http/https·누락·빈 값·malformed·상대/경로·`file:`·`javascript:`·`data:` 처리; 잘못된 주소의 열기 0건·대체 URL 0건 | `project-catalog.test.ts` — URL 필드 정규화·주소 분류; `packages/shell/src-tauri/src/project_catalog.rs` — `project.yaml` 키 읽기·주소 검사; `ProjectsApp.test.tsx` — 각 칸의 빈 상태·설정 안내·오류 | `e2e/project-app.spec.ts` — stage 3 두 주소의 정상·빈 값·오류 상태와 열기 호출 확인 |
+| `docs_url`(`dashboard_url`)·`tasks_url`(`issues_url`) 각각의 정상 http/https·누락·빈 값·malformed·상대/경로·`file:`·`javascript:`·`data:` 처리; 잘못된 주소의 열기 0건·대체 URL 0건 | `project-catalog.test.ts` — URL 필드 정규화·주소 분류; `packages/shell/src-tauri/src/project_catalog.rs` — `project.yaml` 키 읽기·주소 검사; `ProjectsApp.test.tsx` — 각 칸의 빈 탭 숨김·설정 안내·오류 | `e2e/project-app.spec.ts` — stage 3 두 주소의 정상·빈 값·오류 상태와 열기 호출 확인 |
 | 프로젝트 전용 WebView와 Browser WebView 분리, 프로젝트별 수명주기, open URL과 같은 scheme·host·port 출처만 허용, 다른 출처 차단·출처만 로그, iframe/CSP 변경 없음 | `packages/shell/src-tauri/src/project_webview.rs` — 프로젝트 WebView 분리·동일 출처 URL 경계 단위 사례 (`cargo test project_webview`); `packages/shell/src/apps/__tests__/browser-center-area.test.tsx` — Browser 화면 회귀 | `e2e/project-app.spec.ts` — 프로젝트 WebView IPC 경계만 검증하는 mock 기반 사례; `e2e/197-browser-login.spec.ts` — `#197 Chrome Embedding + Login E2E` Browser 회귀. **Playwright의 mock은 실제 WebView 생성·화면 표시 증거가 아니다.** 실제 native WebView 실행이 없으면 표시 검증은 미확인으로 기록한다. |
 | 기본·빈 목록·진행·성공·오류·복구·키보드/ARIA·좁은 폭, 단일 프로젝트 항목과 기존 Workspace/Browser 보존 | `ProjectsApp.test.tsx` — `ProjectsApp — single opened project`; `workspace-app-registry.test.tsx`; `use-herdr-runtime.test.tsx`; `browser-center-area.test.tsx`; `packages/shell/src-tauri/src/herdr/pty.rs` — `herdr::pty` 필터의 기존 Herdr PTY 회귀 | `e2e/project-app.spec.ts` — stage 3 상태·접근성·좁은 폭; `e2e/91-workspace-app.spec.ts` — `Herdr Workspace integration`; `e2e/197-browser-login.spec.ts` — Browser 회귀 |
 
 P02 실행 그룹은 `packages/shell` 에서 vitest 로 `packages/shell/src/apps/projects`·`packages/shell/src/apps/workspace/__tests__/workspace-app-registry.test.tsx`·`packages/shell/src/apps/workspace/__tests__/use-herdr-runtime.test.tsx`·`packages/shell/src/apps/__tests__/browser-center-area.test.tsx` 를, Playwright 로 `packages/shell/e2e/project-app.spec.ts`·`packages/shell/e2e/91-workspace-app.spec.ts`·`packages/shell/e2e/197-browser-login.spec.ts` 를 실행하고, `cargo test --manifest-path src-tauri/Cargo.toml project_agent_pty`, `cargo test --manifest-path src-tauri/Cargo.toml herdr::pty`, `cargo test --manifest-path src-tauri/Cargo.toml project_webview`로 묶는다. 새 stage 3 테스트 case명은 구현 중인 test 파일에 정한 실제 그룹명과 결과 문서에서 일치시킨다. Native WebView가 가능한 환경에서 실제 화면 표시를 별도로 실행하지 않았다면, IPC mock·단위 테스트를 표시 증거로 계산하지 않는다.
+
+## UC-PROJECT-APP-PANELS-CLASS-20261025 — 문서·작업 탭 정리와 수업용 프로젝트(문서 미리보기·수업 초기화)
+
+사용자는 프로젝트 앱에서 정돈된 탭 이름(**코딩 에이전트 / 문서 / 작업**, 영문 **Coding Agent / Docs / Tasks**)으로 프로젝트를 사용한다. 탭 식별자(`agent` | `dashboard` | `issues`)와 저장 세션 형식은 그대로 유지한다. `project.yaml`은 기존 `dashboard_url`·`issues_url`뿐 아니라 `docs_url`·`tasks_url` 별칭(둘 다 있으면 별칭 우선)을 카탈로그 조회와 런타임 설정 읽기 양쪽에서 지원한다. 문서 URL이나 `docs_dirs`가 없으면 문서 탭을 숨기고, 작업 URL이 없으면 작업 탭을 숨기며, 코딩 에이전트 탭은 항상 표시한다. 보이는 탭이 하나뿐이면 탭 목록(`role="tablist"`)을 숨기고 접근 가능한 제목(`<h2>`)만 유지한다. 저장된 탭이 현재 프로젝트에서 숨겨진 탭이면 `agent`로 폴백하고, 방향키·Home·End는 보이는 탭 사이에서만 이동한다. 카탈로그 화면의 **다시 읽기(Reload)** 버튼은 저장된 `naia-adk` 경로를 다시 스캔해 새 `project.yaml`을 재시작 없이 반영하며 현재 프로젝트가 여전히 존재하면 선택을 유지한다.
+
+수업·실습 프로젝트(`project.yaml`의 `project:` 아래 선택 키 `coding_app`, `docs_dirs`, `class.baseline_ref`)를 열면:
+1. `coding_app`(`claude | codex | muse | opencode`)이 유효하고 프로젝트에 아직 선택된 에이전트가 없을 때 코딩 에이전트 패널에서 해당 앱을 기본 선택한다(사용자가 변경 가능, 무효 값은 무시하고 디버그 로그 기록).
+2. `docs_dirs`(체크아웃 내부 상대 디렉터리 최대 16개; 절대 경로, `..`, 역슬래시, 빈 문자열, 심볼릭 링크·체크아웃 외부 경로 거부)가 설정되면 문서 탭에서 `project_docs_list`와 `project_docs_read`로 `.md` 파일(대소문자 무관, 숨김 항목·심볼릭 링크 제외, 깊이 8·방문 항목 20000개·결과 2000개·1 MiB 상한)을 폴더별로 묶어 보여주고 `MarkdownPreview`로 읽기 전용 미리보기를 제공한다. 문서 URL도 함께 설정되어 있으면 상단에 별도 창 열기 영역을 함께 표시한다.
+3. `class.baseline_ref`(`^[0-9a-fA-F]{7,40}$`)가 설정된 수업 프로젝트는 머리줄에 **수업 초기화(Reset class)** 보조 버튼을 표시한다. 누르면 확인 대화상자(`role="dialog"`, `aria-modal="true"`, 초기 포커스 취소, `Tab`/`Shift+Tab` 창 내 순환, 배경 `inert`/`aria-hidden` 비활성화, 취소·Escape·완료 시 ‘수업 초기화’ 버튼으로 포커스 복귀)를 열어 실행 중인 코딩 에이전트 중지, `class-backups/<checkout-name>-<YYYYMMDD-HHMMSS>/files/` 백업, 수업 시작 상태로 복원됨을 안내한다. 확인 시 실행/시작 중인 에이전트가 있으면 먼저 `stopProjectAgent`를 호출해 완료를 기다린 뒤 `project_class_reset`을 호출하며, 초기화 진행 중에는 UI에서 에이전트 시작을 비활성화하고 백엔드에서도 같은 잠금 안에서 활성 PTY 검사와 체크아웃 초기화 키 등록(Drop 가드로 해제)을 수행해 초기화 중 새 에이전트 시작을 `class_reset_in_progress`로 거부한다. 백엔드는 카탈로그 권한·체크아웃·`baseline_ref`·활성 PTY 부재·자체 `.git` 저장소(`GIT_CEILING_DIRECTORIES` 및 git 환경변수 제거로 상위 저장소 오염 차단)·커밋 존재를 검증한 뒤 변경·미추적 일반 파일을 `files/<relative path>` 아래로 백업(나란히 `manifest.json` 기록)하고 `git reset --hard <ref>`와 `git clean -fd`(ignored 파일 유지)를 수행한다. 5단계 이전 실패 시 체크아웃은 변경되지 않는다. 완료 시 백업 상대 경로와 파일 수를 표시하고 문서 패널을 새로 고친다. 앱 막대 아이콘은 로봇 이모지 대신 세 명의 에이전트와 반짝임을 그린 전용 SVG(`projects-icon.svg?raw`)를 사용한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 14개 로케일에서 탭 이름이 문서/Docs, 작업/Tasks로 표시된다. 설정된 탭만 노출되고 단일 탭이면 탭 목록이 숨겨진다. 수업 프로젝트는 `coding_app`이 기본 선택되고 머리줄에 ‘수업 초기화’ 버튼이 보인다. 앱 막대에는 새 에이전트 SVG 아이콘이 렌더링된다. |
+| 빈 목록 | `docs_dirs` 아래에 `.md` 파일이 없거나 대상 폴더가 아직 없으면 문서 패널에 빈 상태 안내와 새로 고침 버튼을 표시한다. |
+| 진행 | 카탈로그 다시 읽기, 문서 목록·본문 읽기, 수업 초기화(에이전트 정지 및 백업·복원) 진행 중 상태를 표시하고 에이전트 시작을 포함한 중복 조작을 막는다. |
+| 성공 | 다시 읽기 후 새 프로젝트가 반영되고 기존 열린 프로젝트가 유지된다. 문서 선택 시 마크다운 미리보기가 표시된다. 수업 초기화 완료 시 백업 상대 경로와 백업 파일 수를 알리고 열려 있는 문서 패널을 갱신한다. |
+| 오류 | 잘못된 URL은 탭을 유지한 채 오류를 표시한다. 문서 목록·본문 읽기 실패나 수업 초기화 및 에이전트 시작 오류 코드(`not_class_project`, `agent_running`, `class_reset_in_progress`, `not_git_repo`, `baseline_missing`, `git_unavailable`, `backup_exists`, `backup_failed`, `reset_failed`, `project_unverified`, `unknown`)에 대해 복원 전 실패 시 체크아웃을 건드리지 않고 원인과 복구 안내를 표시한다. |
+| 좁은 폭 | 좁은 창(390px)에서도 머리줄, 보이는 탭, `docs_dirs` 문서 패널(목록이 미리보기 위에 한 열로 세로 배치, 가로 넘침 없음), 수업 초기화 대화상자가 가로 잘림 없이 읽히고 키보드로 조작된다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest·Rust 파일/그룹 | 실 UI Playwright 파일/그룹 |
+|---|---|---|
+| 탭 이름(문서/Docs, 작업/Tasks) 14개 로케일 번역, `docs_url`·`tasks_url` 별칭 우선, 빈 탭 숨김·단일 탭 `tablist` 숨김·숨겨진 저장 탭 `agent` 폴백·보이는 탭 전용 키보드 이동, 카탈로그 다시 읽기 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`; `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src-tauri/src/project_catalog_runtime.rs` | `packages/shell/e2e/project-app.spec.ts` |
+| 수업 프로젝트 필드(`coding_app`, `docs_dirs`, `class.baseline_ref`) 파싱·검증, `coding_app` 기본 선택, `project_docs_list`/`project_docs_read` 경계·상한, `ProjectDocsPanel` 목록·미리보기·새로고침·빈 상태·오류·390px 좁은 폭 한 열 적층 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`, `packages/shell/src/apps/projects/__tests__/project-catalog.test.ts`; `packages/shell/src-tauri/src/project_catalog.rs`, `packages/shell/src-tauri/src/project_catalog_runtime.rs` | `packages/shell/e2e/project-app.spec.ts` |
+| 수업 초기화 대화상자(확인·취소·Escape·초기 포커스·`Tab`/`Shift+Tab` 순환·배경 `inert`·포커스 복귀), 에이전트 정지 후 초기화 순서·초기화 중 에이전트 재시작 차단(`class_reset_in_progress`), 백업(`manifest.json`·삭제 목록·무시 파일 보존)·복원, 외부 git 오염 차단·오류 코드 매핑, 에이전트 SVG 아이콘 | `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx`; `packages/shell/src-tauri/src/project_catalog_runtime.rs` | `packages/shell/e2e/project-app.spec.ts` |
 
 ## UC-SHELL-STUDIO-NVA-APPLY-105 — Studio 아바타를 쉘에 안전하게 적용한다 (#105, S73)
 

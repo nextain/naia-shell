@@ -1,15 +1,28 @@
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { type Page, expect, test } from "@playwright/test";
 import {
 	SEED_ADK_PATH,
 	TAURI_BASE_MOCK_FALLBACK,
 } from "./helpers/tauri-base-mock";
 
-const CAPTURE_DIR = resolve(
-	process.env.PROJECT_APP_CAPTURE_DIR ??
-		resolve(process.cwd(), "test-results/project-app-captures"),
+const DEFAULT_CAPTURE_DIR = resolve(
+	process.cwd(),
+	"test-results/project-app-captures",
 );
+const CAPTURE_DIR = (() => {
+	const raw = process.env.PROJECT_APP_CAPTURE_DIR?.trim();
+	if (!raw) return DEFAULT_CAPTURE_DIR;
+	const candidate = resolve(raw);
+	const rel = relative(resolve(process.cwd()), candidate);
+	return rel &&
+		rel !== ".." &&
+		!rel.startsWith("../") &&
+		!rel.startsWith("..\\") &&
+		!isAbsolute(rel)
+		? candidate
+		: DEFAULT_CAPTURE_DIR;
+})();
 mkdirSync(CAPTURE_DIR, { recursive: true });
 
 const READY_CATALOG = {
@@ -123,6 +136,24 @@ const TAURI_MOCK = `
 \t\t\t};
 \t\t}
 \t\tif (cmd === "project_webview_open") return false;
+\t\tif (cmd === "project_docs_list") {
+\t\t\treturn [
+\t\t\t\t{ dir: "domain", relativePath: "domain/overview.md", sizeBytes: 64 },
+\t\t\t\t{ dir: "자료", relativePath: "자료/lesson1.md", sizeBytes: 96 },
+\t\t\t];
+\t\t}
+\t\tif (cmd === "project_docs_read") {
+\t\t\treturn args.relativePath === "자료/lesson1.md"
+\t\t\t\t? "# Lesson 1\\n\\nClass exercise steps."
+\t\t\t\t: "# Domain Guide\\n\\nOverview of the practice repository.";
+\t\t}
+\t\tif (cmd === "project_class_reset") {
+\t\t\treturn {
+\t\t\t\tbackupRelativePath: "class-backups/practice-repo-20261025-150000",
+\t\t\t\tbackedUpFiles: 2,
+\t\t\t\tdeletedFiles: 0,
+\t\t\t};
+\t\t}
 \t\tif (cmd === "send_to_agent_command" || cmd === "cancel_stream" || cmd === "frontend_log") return null;
 \t\treturn undefined;
 \t};
@@ -268,17 +299,19 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			page.getByRole("button", { name: "Open another project" }),
 		).toBeVisible();
 		await expect(page.locator(".projects-app").getByRole("tab")).toHaveCount(3);
-		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
 		await page.getByRole("button", { name: "Open another project" }).click();
 		await expect(page.getByRole("searchbox")).toBeVisible();
 		await expect(
 			page.getByRole("button", { name: "Back to Example App" }),
 		).toBeVisible();
 		await page.getByRole("button", { name: /Example Library/ }).click();
-		await page.getByRole("tab", { name: "Internal Issues" }).click();
+		await expect(page.locator(".projects-app").getByRole("tab")).toHaveCount(2);
+		await expect(page.getByRole("tab", { name: "Tasks" })).toHaveCount(0);
+		await page.getByRole("tab", { name: "Docs" }).click();
 		await page.getByRole("button", { name: "Open another project" }).click();
 		await page.getByRole("button", { name: /Example App/ }).click();
-		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
+		await expect(page.getByRole("tab", { name: "Docs" })).toHaveAttribute(
 			"aria-selected",
 			"true",
 		);
@@ -296,7 +329,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await setCatalog(page, READY_CATALOG);
 		await openProjectApp(page);
 		await page.getByRole("button", { name: /Example Library/ }).click();
-		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
 		await page.reload();
 		await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
 		await setCatalog(page, READY_CATALOG);
@@ -304,7 +337,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await expect(
 			page.getByRole("heading", { name: "Example Library", level: 1 }),
 		).toBeVisible();
-		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
+		await expect(page.getByRole("tab", { name: "Docs" })).toHaveAttribute(
 			"aria-selected",
 			"true",
 		);
@@ -491,17 +524,14 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 
 		await page.getByRole("button", { name: "Open another project" }).click();
 		await page.getByRole("button", { name: /Example Library/ }).click();
-		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
 		await expect(
 			page.getByRole("heading", { name: "The configured address is invalid" }),
 		).toBeVisible();
-		await expect(
-			page.getByRole("button", { name: "Open dashboard" }),
-		).toHaveCount(0);
-		await page.getByRole("tab", { name: "Internal Issues" }).click();
-		await expect(
-			page.getByRole("heading", { name: "This address is not configured" }),
-		).toBeVisible();
+		await expect(page.getByRole("button", { name: "Open docs" })).toHaveCount(
+			0,
+		);
+		await expect(page.getByRole("tab", { name: "Tasks" })).toHaveCount(0);
 
 		await page.getByRole("button", { name: "Open another project" }).click();
 		await page.getByRole("button", { name: /Example App/ }).click();
@@ -535,8 +565,8 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			adapterRoot: "/fixture/adapter-root",
 		});
 
-		await page.getByRole("tab", { name: "Dashboard" }).click();
-		await page.getByRole("button", { name: "Open dashboard" }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
+		await page.getByRole("button", { name: "Open docs" }).click();
 		await expect(
 			page.getByText(
 				"The project window was not created in this test environment. The project URL remains configured.",
@@ -606,7 +636,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		const coding = page.getByRole("tab", { name: "Coding Agent" });
 		await coding.focus();
 		await page.keyboard.press("ArrowRight");
-		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
+		await expect(page.getByRole("tab", { name: "Docs" })).toHaveAttribute(
 			"aria-selected",
 			"true",
 		);
@@ -615,5 +645,120 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			.locator(".projects-app")
 			.evaluate((node) => node.scrollWidth > node.clientWidth);
 		expect(overflow).toBe(false);
+	});
+
+	test("supports class project preselection, docs panel preview, catalog reload, and class reset", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, {
+			...READY_CATALOG,
+			projects: [
+				{
+					adapterRoot: "/fixture/adapter-root",
+					projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+					sourcePath: "projects/team/projects/class-demo",
+					projectId: "class-demo",
+					name: "Practice Class",
+					repository: "your-org/your-practice-repo",
+					issueTracker: null,
+					dashboardUrl: null,
+					issuesUrl: null,
+					codingApp: "opencode",
+					docsDirs: ["domain", "자료"],
+					class: { baselineRef: "0123456789abcdef" },
+				},
+			],
+		});
+		await openProjectApp(page);
+		await expect(
+			page.locator('button[data-app-id="projects"] svg'),
+		).toBeVisible();
+		await page.getByRole("button", { name: "Reload" }).click();
+		await page.getByRole("button", { name: /Practice Class/ }).click();
+		await expect(page.getByRole("radio", { name: "OpenCode" })).toBeChecked();
+		await expect(page.locator(".projects-app").getByRole("tab")).toHaveCount(2);
+		await page.getByRole("tab", { name: "Docs" }).click();
+		await expect(
+			page.getByRole("heading", { name: "Domain Guide" }),
+		).toBeVisible();
+		await page.getByRole("button", { name: "lesson1.md" }).click();
+		await expect(page.getByRole("heading", { name: "Lesson 1" })).toBeVisible();
+		await page.getByRole("button", { name: "Reset class" }).click();
+		await expect(page.getByRole("dialog")).toBeVisible();
+		await page
+			.getByRole("dialog")
+			.getByRole("button", { name: "Reset", exact: true })
+			.click();
+		await expect(page.getByText(/Class checkout reset complete/)).toBeVisible();
+		await capture(page, "project-app-class-docs-reset.png");
+	});
+
+	test("stacks class project docs_dirs list and preview in one column without horizontal overflow at 390px", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, {
+			...READY_CATALOG,
+			projects: [
+				{
+					adapterRoot: "/fixture/adapter-root",
+					projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+					sourcePath: "projects/team/projects/class-demo",
+					projectId: "class-demo",
+					name: "Practice Class",
+					repository: "your-org/your-practice-repo",
+					issueTracker: null,
+					dashboardUrl: null,
+					issuesUrl: null,
+					codingApp: "opencode",
+					docsDirs: ["domain", "자료"],
+					class: { baselineRef: "0123456789abcdef" },
+				},
+			],
+		});
+		await openProjectApp(page);
+		await page.getByTitle("채팅 숨기기 (Ctrl+B)").click();
+		await expect(page.locator(".naia-overlay")).toHaveCount(0);
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.getByRole("button", { name: /Practice Class/ }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
+
+		const docsList = page.locator(".projects-app__docs-list");
+		const docsPreview = page.locator(".projects-app__docs-preview");
+		await expect(docsList).toBeVisible();
+		await expect(docsPreview).toBeVisible();
+		await expect(
+			page.getByRole("heading", { name: "Domain Guide" }),
+		).toBeVisible();
+
+		const listBox = await docsList.boundingBox();
+		const previewBox = await docsPreview.boundingBox();
+		expect(listBox).not.toBeNull();
+		expect(previewBox).not.toBeNull();
+		expect(previewBox!.y).toBeGreaterThanOrEqual(
+			listBox!.y + listBox!.height - 1,
+		);
+
+		const overflow = await page.evaluate(() => {
+			const scrolling = document.scrollingElement ?? document.documentElement;
+			const app = document.querySelector(".projects-app") as HTMLElement | null;
+			const docsLayout = document.querySelector(
+				".projects-app__docs-layout",
+			) as HTMLElement | null;
+			return {
+				scrollingOverflow: scrolling.scrollWidth > scrolling.clientWidth,
+				appOverflow: app ? app.scrollWidth > app.clientWidth : true,
+				docsOverflow: docsLayout
+					? docsLayout.scrollWidth > docsLayout.clientWidth
+					: true,
+			};
+		});
+		expect(overflow).toEqual({
+			scrollingOverflow: false,
+			appOverflow: false,
+			docsOverflow: false,
+		});
+		await capture(page, "project-app-class-docs-narrow.png");
 	});
 });
