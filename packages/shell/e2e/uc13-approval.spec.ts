@@ -34,7 +34,9 @@ const MOCK_SCRIPT = `
         var rid = p.requestId;
         // 승인 필요 도구 호출 — approval_request emit(턴 열어둠, finish 안 함). 승인 응답은 outbound 로 캡처.
         setTimeout(function () { emitEvent("agent_response", JSON.stringify({ type: "tool_use", requestId: rid, toolCallId: "call-x", toolName: "danger", args: {} })); }, 60);
-        setTimeout(function () { emitEvent("agent_response", JSON.stringify({ type: "approval_request", requestId: rid, toolCallId: "call-x", toolName: "danger", tier: "ask" })); }, 120);
+        // tier 는 Rust/gRPC wire 형식인 nonnegative int32 숫자다(499358c6, src/main/adapters/message-router.ts
+        // reqApprovalTier). 그 밖의 문자열("ask" 등)은 손상 신호로 드롭돼 승인 창이 뜨지 않는다.
+        setTimeout(function () { emitEvent("agent_response", JSON.stringify({ type: "approval_request", requestId: rid, toolCallId: "call-x", toolName: "danger", tier: 1 })); }, 120);
       }
       if (p && p.type === "approval_response") {
         // 승인/거부 후 턴 종결(현실 agent 처럼)
