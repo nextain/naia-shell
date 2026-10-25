@@ -1400,3 +1400,11 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
 | **FR-STUDIO-NVA-APPLY.1** | Studio의 아바타 탭은 `쉘에 적용` 링크를 제공하고 기존 NVA 다운로드를 보조 메뉴에 유지한다. 링크에는 검증 가능한 아바타 ID와 production/development 환경만 담는다. 쉘은 허용된 HTTPS 게이트웨이에서 로그인 자격으로 미리보기·NVA를 요청하며 외부 호스트·리다이렉트·비밀 query를 거부한다. 다운로드는 메모리에 통째로 올리지 않고 임시 파일로 받으며 200 MiB 이하이고 SHA-256과 ZIP 매니페스트를 확인한다. 쉘이 꺼져 있으면 링크가 쉘을 실행하고, 같은 아바타·환경 링크가 처리 전에 다시 오면 한 번만 묻는다. 이름·미리보기를 보여 주고 사용자 확인 뒤에만 다운로드하며 기존 NVA 매니페스트 검사가 통과한 경우에만 가져오기·선택을 저장한다. 로그인 필요·성공·실패 이유를 화면에 보이고, 링크 후 Studio가 계속 보이면 설치 안내를 제공한다. | UC-SHELL-STUDIO-NVA-APPLY-105 | `naia.land` 저장소 `src/features/studio-v2/persona/__tests__/studio-nva-apply.test.tsx`; `packages/shell/src-tauri/src/studio_nva_apply.rs` parser·queue·archive·integrity·streaming tests; `packages/shell/src-tauri/src/lib.rs` `mutex_name_matches_tauri_identifier`; `packages/shell/src/lib/__tests__/studio-nva-apply.test.ts` | In progress |
+
+## 기능 요구사항 (FR) — 0.2.4 앱 노출 정리 (2026-10-25)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-APP-STORE-ENTRY.1** | 앱 막대에 앱 레지스트리와 독립된 고정 앱스토어 버튼을 표시한다. 버튼과 기존 `+` 대화상자 항목은 한 URL/열기 함수를 공유해 현재 로케일의 `${NAIA_WEB_BASE_URL}/{locale}/apps`를 시스템 브라우저에서 연다. 앱 전환은 하지 않는다. Steam 판에서는 두 진입점을 숨긴다. 버튼은 번역된 접근 가능한 이름과 툴팁을 제공하며 내장 앱 삭제·편집 모드와 무관하게 유지한다. | UC-SHELL-APP-EXPOSURE-024 | `AppBar.test.tsx` 기본/Steam/URL/활성 앱; `e2e/app-store-nva-entry.spec.ts`; `i18n-user-facing.test.ts` | Done |
+| **FR-AVATAR-NVA-CREATE.1** | Settings Avatar 탭은 NVA 제공자 선택 근처에 NVA 제작 버튼과 짧은 설명을 표시한다. 버튼은 `naiaWebUrl(`${getLocale()}/studio/nva/create`, NAIA_WEB_BASE_URL)`를 시스템 브라우저에서 열며, 실패는 Logger 경고로 기록하고 설정 화면을 유지한다. Studio의 기존 `naia://` 쉘 적용 흐름은 변경하지 않는다. 모든 로케일에 라벨과 설명을 둔다. | UC-SHELL-APP-EXPOSURE-024 | `SettingsTab.test.tsx` URL/실패; `e2e/app-store-nva-entry.spec.ts`; `i18n-user-facing.test.ts` | Done |
+| **FR-SLIDES-ART.1** | Slides `package-public/icon.svg`는 512×512 둥근 앱 아이콘으로 작은 크기에서도 발표를 알아보게 한다. 같은 공개 폴더의 `thumbnail.svg`는 1280×720 데스크톱 발표 장면, `Naia Slides / 나이아 슬라이드`, 핵심 기능을 보여 준다. Vite slides 빌드의 `publicDir` 복사 산출물에 두 파일을 포함한다. 현재 앱 매니페스트 스키마에 미리보기 필드가 없으므로 `app.json`은 변경하지 않는다. | UC-SHELL-APP-EXPOSURE-024 | SVG 소스 검토·크기 확인; `pnpm build:slides` 산출물 확인; PNG 렌더 미리보기 | Done |

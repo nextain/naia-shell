@@ -194,6 +194,8 @@ export default {
 	"settings.avatarProvider": "アバター種別",
 	"settings.avatarProviderVrm": "3Dアバター (VRM)",
 	"settings.avatarProviderVideo": "ビデオアバター (.nva)",
+	"settings.nvaCreate": "NVAアバターを作成",
+	"settings.nvaCreateDesc": "Naia Video Studioで自分だけのビデオアバターを作成します。",
 	"settings.cascadeUrlLabel": "トーキングランタイム URL（任意）",
 	"settings.cascadeUrlHint": "設定すると発話時に口が動きます（リモートGPU必要）。空欄=静止再生。",
 	"settings.nvaEmpty": "naia-settings/nva-files/ に .nva フォルダを追加してください",

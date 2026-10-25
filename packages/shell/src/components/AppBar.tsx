@@ -10,6 +10,9 @@ import {
 	useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { getBridgeForApp } from "../lib/active-bridge";
+import { removeInstalledApp } from "../lib/app-loader";
+import { appRegistry } from "../lib/app-registry";
 import {
 	type BrowserLink,
 	addBrowserShortcut,
@@ -26,10 +29,9 @@ import {
 } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
-import { getBridgeForApp } from "../lib/active-bridge";
-import { removeInstalledApp } from "../lib/app-loader";
-import { appRegistry } from "../lib/app-registry";
 import { useAppStore } from "../stores/app";
+import { AppStoreIcon } from "./AppStoreIcon";
+
 const BgmPlayer = lazy(() =>
 	import("./BgmPlayer").then((module) => ({
 		default: module.BgmPlayer,
@@ -384,6 +386,20 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				>
 					<span className="app-bar-tab-icon">📁</span>
 				</button>
+				{/* External utility, not a switchable/removable app-registry entry. */}
+				{!paymentLinksHidden && (
+					<button
+						type="button"
+						className="app-bar-tab app-bar-tab--utility"
+						aria-label={t("appbar.appStore")}
+						title={t("appbar.appStore")}
+						onClick={() => void openAppStore()}
+					>
+						<span className="app-bar-tab-icon app-bar-tab-icon--svg">
+							<AppStoreIcon />
+						</span>
+					</button>
+				)}
 				{modes.map((mode) => (
 					<div
 						key={mode.id}
@@ -583,57 +599,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 										className="app-bar-url-dialog__section-icon"
 										aria-hidden="true"
 									>
-										<svg viewBox="0 0 32 32">
-											<rect
-												x="4"
-												y="9"
-												width="24"
-												height="19"
-												rx="5"
-												fill="#5b67f1"
-											/>
-											<path
-												d="M11 10V8a5 5 0 0 1 10 0v2"
-												fill="none"
-												stroke="white"
-												strokeWidth="2.5"
-												strokeLinecap="round"
-											/>
-											<rect
-												x="9"
-												y="15"
-												width="5"
-												height="5"
-												rx="1.2"
-												fill="white"
-											/>
-											<rect
-												x="18"
-												y="15"
-												width="5"
-												height="5"
-												rx="1.2"
-												fill="white"
-											/>
-											<rect
-												x="9"
-												y="22"
-												width="5"
-												height="3"
-												rx="1.2"
-												fill="white"
-												opacity=".85"
-											/>
-											<rect
-												x="18"
-												y="22"
-												width="5"
-												height="3"
-												rx="1.2"
-												fill="white"
-												opacity=".85"
-											/>
-										</svg>
+										<AppStoreIcon />
 									</span>
 									<div className="app-bar-url-dialog__section-text">
 										<strong>{t("appbar.appStore")}</strong>

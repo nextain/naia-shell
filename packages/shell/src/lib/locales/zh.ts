@@ -194,6 +194,8 @@ export default {
 	"settings.avatarProvider": "头像类型",
 	"settings.avatarProviderVrm": "3D头像 (VRM)",
 	"settings.avatarProviderVideo": "视频头像 (.nva)",
+	"settings.nvaCreate": "创建 NVA 头像",
+	"settings.nvaCreateDesc": "在 Naia Video Studio 中创建专属视频头像。",
 	"settings.cascadeUrlLabel": "说话运行时 URL（可选）",
 	"settings.cascadeUrlHint": "设置后说话时嘴部会动（需远程GPU）。留空=静态播放。",
 	"settings.nvaEmpty": "将 .nva 文件夹添加到 naia-settings/nva-files/",

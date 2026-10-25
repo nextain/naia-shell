@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="backdrop" x1="112" y1="38" x2="1127" y2="706" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#171a3b"/>
+      <stop offset=".55" stop-color="#282047"/>
+      <stop offset="1" stop-color="#52265d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(481 198 -195 474 1019 229)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#bd5ed2" stop-opacity=".52"/>
+      <stop offset="1" stop-color="#bd5ed2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="window" x1="593" y1="140" x2="1185" y2="577" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fcfbff"/>
+      <stop offset="1" stop-color="#e8e5f4"/>
+    </linearGradient>
+    <linearGradient id="slide" x1="693" y1="234" x2="1041" y2="478" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#594cc7"/>
+      <stop offset=".6" stop-color="#8c4ebd"/>
+      <stop offset="1" stop-color="#dc5db8"/>
+    </linearGradient>
+    <linearGradient id="cta" x1="92" y1="500" x2="383" y2="566" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8970ff"/>
+      <stop offset="1" stop-color="#d858c4"/>
+    </linearGradient>
+    <filter id="window-shadow" x="510" y="84" width="738" height="553" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="19"/>
+      <feOffset dy="18"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".36"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="628" y="178" width="520" height="352" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#backdrop)"/>
+  <rect width="1280" height="720" fill="url(#glow)"/>
+  <circle cx="1080" cy="162" r="190" fill="#f17bcf" opacity=".09"/>
+  <circle cx="122" cy="653" r="240" fill="#705bec" opacity=".12"/>
+  <path d="M0 594c200-77 337-83 535-10v136H0V594Z" fill="#15172f" opacity=".32"/>
+
+  <g font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <g transform="translate(84 81)">
+      <rect width="44" height="44" rx="14" fill="url(#cta)"/>
+      <rect x="10" y="12" width="24" height="19" rx="5" fill="#fff" opacity=".96"/>
+      <path d="M19 35h7m-3.5-4v4" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+      <path d="m20 17 8 5-8 5V17Z" fill="#a157de"/>
+    </g>
+    <text x="145" y="108" fill="#e7ddff" font-size="17" font-weight="700" letter-spacing="2.4">NAIA  /  CREATIVE TOOLS</text>
+    <text x="84" y="218" fill="#fff" font-size="72" font-weight="750" letter-spacing="-2.7">Naia Slides</text>
+    <text x="88" y="267" fill="#e9c9f1" font-size="31" font-weight="600">나이아 슬라이드</text>
+    <text x="88" y="324" fill="#d4d0e7" font-size="22">A calmer stage for every idea.</text>
+    <text x="88" y="357" fill="#d4d0e7" font-size="22">Present, guide, and capture your story.</text>
+
+    <g transform="translate(88 406)">
+      <rect width="330" height="58" rx="16" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".14"/>
+      <circle cx="29" cy="29" r="12" fill="#c87aff"/>
+      <path d="m24 29 4 4 7-8" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="54" y="36" fill="#f7f3ff" font-size="19" font-weight="600">PDF + PPTX presentations</text>
+    </g>
+    <g transform="translate(88 477)">
+      <rect width="330" height="58" rx="16" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".14"/>
+      <circle cx="29" cy="29" r="12" fill="#c87aff"/>
+      <path d="m24 29 4 4 7-8" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="54" y="36" fill="#f7f3ff" font-size="19" font-weight="600">Speaker notes + focus mode</text>
+    </g>
+    <g transform="translate(88 548)">
+      <rect width="330" height="58" rx="16" fill="#fff" fill-opacity=".08" stroke="#fff" stroke-opacity=".14"/>
+      <circle cx="29" cy="29" r="12" fill="#c87aff"/>
+      <path d="m24 29 4 4 7-8" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="54" y="36" fill="#f7f3ff" font-size="19" font-weight="600">Window recording to MP4</text>
+    </g>
+
+    <g filter="url(#window-shadow)">
+      <rect x="574" y="125" width="636" height="445" rx="24" fill="url(#window)"/>
+      <path d="M598 125h588a24 24 0 0 1 24 24v44H574v-44a24 24 0 0 1 24-24Z" fill="#f4f2fa"/>
+      <circle cx="603" cy="154" r="6" fill="#f17a89"/>
+      <circle cx="624" cy="154" r="6" fill="#eabf64"/>
+      <circle cx="645" cy="154" r="6" fill="#69c49a"/>
+      <rect x="675" y="145" width="28" height="20" rx="5" fill="url(#cta)"/>
+      <rect x="682" y="150" width="14" height="10" rx="2" fill="#fff"/>
+      <text x="714" y="161" fill="#38314f" font-size="16" font-weight="700">Naia Slides</text>
+      <rect x="1041" y="141" width="101" height="27" rx="8" fill="#fff" stroke="#ded9ec"/>
+      <text x="1058" y="160" fill="#615a77" font-size="12" font-weight="600">Open PDF</text>
+      <rect x="1152" y="143" width="8" height="8" rx="4" fill="#bbb5c9"/>
+      <rect x="1170" y="143" width="8" height="8" rx="4" fill="#bbb5c9"/>
+
+      <rect x="590" y="207" width="402" height="284" rx="14" fill="url(#slide)"/>
+      <circle cx="935" cy="246" r="88" fill="#ffb8df" opacity=".15"/>
+      <path d="M590 412c96-77 141-44 226 4 57 32 112 13 176-58v119H590V412Z" fill="#262555" opacity=".32"/>
+      <path d="M590 448c80-59 142-49 219-4 58 34 113 34 183-24v71H590v-43Z" fill="#ec80cc" opacity=".48"/>
+      <text x="622" y="267" fill="#f6eaff" font-size="13" font-weight="700" letter-spacing="2">THE NEXT CHAPTER</text>
+      <text x="622" y="316" fill="#fff" font-size="37" font-weight="750" letter-spacing="-.8">Ideas into</text>
+      <text x="622" y="357" fill="#fff" font-size="37" font-weight="750" letter-spacing="-.8">action.</text>
+      <rect x="624" y="382" width="116" height="5" rx="2.5" fill="#f4c2f2" opacity=".82"/>
+      <rect x="624" y="397" width="84" height="5" rx="2.5" fill="#f4c2f2" opacity=".5"/>
+      <g transform="translate(777 369)">
+        <rect x="0" y="38" width="28" height="44" rx="8" fill="#dab4ff"/>
+        <rect x="42" y="19" width="28" height="63" rx="8" fill="#f5b1de"/>
+        <rect x="84" y="0" width="28" height="82" rx="8" fill="#fff" opacity=".88"/>
+      </g>
+
+      <rect x="1007" y="207" width="184" height="284" rx="14" fill="#fff"/>
+      <text x="1027" y="239" fill="#453d5e" font-size="15" font-weight="700">Speaker notes</text>
+      <rect x="1027" y="256" width="132" height="6" rx="3" fill="#d8d3e5"/>
+      <rect x="1027" y="270" width="145" height="6" rx="3" fill="#e7e3ef"/>
+      <rect x="1027" y="284" width="117" height="6" rx="3" fill="#e7e3ef"/>
+      <rect x="1027" y="314" width="145" height="1" fill="#eeeaf4"/>
+      <text x="1027" y="341" fill="#766b91" font-size="11" font-weight="700" letter-spacing="1">TALKING POINT</text>
+      <rect x="1027" y="355" width="128" height="6" rx="3" fill="#d8d3e5"/>
+      <rect x="1027" y="369" width="143" height="6" rx="3" fill="#e7e3ef"/>
+      <rect x="1027" y="383" width="94" height="6" rx="3" fill="#e7e3ef"/>
+      <rect x="1027" y="420" width="141" height="34" rx="9" fill="#f2eff9"/>
+      <circle cx="1045" cy="437" r="6" fill="#a05bdb"/>
+      <rect x="1058" y="434" width="87" height="5" rx="2.5" fill="#c9c2d9"/>
+
+      <path d="M590 506h603" stroke="#ded9e8"/>
+      <circle cx="626" cy="535" r="13" fill="#f0edf7"/>
+      <path d="m630 529-8 6 8 6v-12Z" fill="#786f8f"/>
+      <circle cx="663" cy="535" r="16" fill="url(#cta)"/>
+      <path d="m659 527 11 8-11 8v-16Z" fill="#fff"/>
+      <circle cx="701" cy="535" r="13" fill="#f0edf7"/>
+      <path d="m697 529 8 6-8 6v-12Z" fill="#786f8f"/>
+      <text x="750" y="540" fill="#766e86" font-size="13" font-weight="600">SLIDE  04  /  12</text>
+      <rect x="1057" y="522" width="115" height="27" rx="8" fill="#eeeaf7"/>
+      <circle cx="1074" cy="535" r="5" fill="#de5cbe"/>
+      <text x="1086" y="540" fill="#615a77" font-size="11" font-weight="600">Record MP4</text>
+    </g>
+    <path d="M807 574h170l27 25H780l27-25Z" fill="#c7c2d8" opacity=".88"/>
+    <path d="M747 599h290c8 0 15 6 15 14v3H732v-3c0-8 7-14 15-14Z" fill="#f2eff9" opacity=".92"/>
+    <text x="88" y="662" fill="#aaa4c7" font-size="13" font-weight="600" letter-spacing="1.3">PRESENT WITH CONFIDENCE</text>
+  </g>
+</svg>

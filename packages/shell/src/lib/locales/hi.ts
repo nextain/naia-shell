@@ -194,6 +194,8 @@ export default {
 	"settings.avatarProvider": "अवतार प्रकार",
 	"settings.avatarProviderVrm": "3D अवतार (VRM)",
 	"settings.avatarProviderVideo": "वीडियो अवतार (.nva)",
+	"settings.nvaCreate": "NVA अवतार बनाएँ",
+	"settings.nvaCreateDesc": "Naia Video Studio में अपना वीडियो अवतार बनाएँ।",
 	"settings.cascadeUrlLabel": "टॉकिंग रनटाइम URL (वैकल्पिक)",
 	"settings.cascadeUrlHint": "सेट करने पर बोलते समय मुँह हिलता है (रिमोट GPU आवश्यक)। खाली = स्थिर प्लेबैक।",
 	"settings.nvaEmpty": "naia-settings/nva-files/ में .nva फ़ोल्डर जोड़ें",
