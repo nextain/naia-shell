@@ -2568,38 +2568,35 @@ mod tests {
 
     #[test]
     fn test_resolve_cache_root() {
+        // 이 함수는 절대 경로 판정(is_absolute)과 결합(join)에 호스트 Path 규칙을 쓴다. 그래서
+        // CacheOs::Windows 분기의 선택 규칙은 호스트의 절대 경로로 잰다(test_e2e_user_cache_root 와 같은 방식).
+        #[cfg(windows)]
+        let (env_dir, known_dir, override_dir) =
+            (r"C:\Users\Default\AppData\Local", r"C:\Custom\DataLocal", r"C:\TestCacheRoot");
+        #[cfg(not(windows))]
+        let (env_dir, known_dir, override_dir) =
+            ("/users/default/appdata/local", "/custom/datalocal", "/test-cache-root");
+
         // Windows uses LOCALAPPDATA env over known folder
-        let win_env = Some(OsString::from(r"C:\Users\Default\AppData\Local"));
-        let known = Some(PathBuf::from(r"C:\Custom\DataLocal"));
+        let win_env = Some(OsString::from(env_dir));
+        let known = Some(PathBuf::from(known_dir));
         let resolved = resolve_cache_root_with(CacheOs::Windows, false, None, win_env.clone(), known.clone());
-        assert_eq!(
-            resolved,
-            Some(PathBuf::from(r"C:\Users\Default\AppData\Local\NaiaRuntimeCache"))
-        );
+        assert_eq!(resolved, Some(Path::new(env_dir).join("NaiaRuntimeCache")));
         let path = resolved.unwrap();
         assert_eq!(path.file_name().unwrap(), "NaiaRuntimeCache");
-        assert_eq!(path.parent().unwrap(), Path::new(r"C:\Users\Default\AppData\Local"));
+        assert_eq!(path.parent().unwrap(), Path::new(env_dir));
 
         // Falls back to known folder when env missing
         let fallback_missing = resolve_cache_root_with(CacheOs::Windows, false, None, None, known.clone());
-        assert_eq!(
-            fallback_missing,
-            Some(PathBuf::from(r"C:\Custom\DataLocal\NaiaRuntimeCache"))
-        );
+        assert_eq!(fallback_missing, Some(Path::new(known_dir).join("NaiaRuntimeCache")));
 
         // Falls back to known folder when env empty
         let fallback_empty = resolve_cache_root_with(CacheOs::Windows, false, None, Some(OsString::from("")), known.clone());
-        assert_eq!(
-            fallback_empty,
-            Some(PathBuf::from(r"C:\Custom\DataLocal\NaiaRuntimeCache"))
-        );
+        assert_eq!(fallback_empty, Some(Path::new(known_dir).join("NaiaRuntimeCache")));
 
         // Falls back to known folder when env relative
         let fallback_rel = resolve_cache_root_with(CacheOs::Windows, false, None, Some(OsString::from(r"relative\path")), known.clone());
-        assert_eq!(
-            fallback_rel,
-            Some(PathBuf::from(r"C:\Custom\DataLocal\NaiaRuntimeCache"))
-        );
+        assert_eq!(fallback_rel, Some(Path::new(known_dir).join("NaiaRuntimeCache")));
 
         // Linux uses known folder + naia-runtime-cache
         let linux_known = Some(PathBuf::from("/home/user/.local/share"));
@@ -2610,24 +2607,18 @@ mod tests {
         );
 
         // Override honoured only when overrides_allowed = true
-        let override_abs = Some(OsString::from(r"C:\TestCacheRoot"));
+        let override_abs = Some(OsString::from(override_dir));
         let overridden = resolve_cache_root_with(CacheOs::Windows, true, override_abs.clone(), win_env.clone(), known.clone());
-        assert_eq!(overridden, Some(PathBuf::from(r"C:\TestCacheRoot")));
+        assert_eq!(overridden, Some(PathBuf::from(override_dir)));
 
         // Relative override ignored
         let override_rel = Some(OsString::from(r"rel\cache"));
         let ignore_rel_override = resolve_cache_root_with(CacheOs::Windows, true, override_rel, win_env.clone(), known.clone());
-        assert_eq!(
-            ignore_rel_override,
-            Some(PathBuf::from(r"C:\Users\Default\AppData\Local\NaiaRuntimeCache"))
-        );
+        assert_eq!(ignore_rel_override, Some(Path::new(env_dir).join("NaiaRuntimeCache")));
 
         // Release-style call (overrides_allowed = false) ignores the override
         let release_ignored = resolve_cache_root_with(CacheOs::Windows, false, override_abs, win_env, known);
-        assert_eq!(
-            release_ignored,
-            Some(PathBuf::from(r"C:\Users\Default\AppData\Local\NaiaRuntimeCache"))
-        );
+        assert_eq!(release_ignored, Some(Path::new(env_dir).join("NaiaRuntimeCache")));
 
         // None when nothing resolves
         assert_eq!(resolve_cache_root_with(CacheOs::Windows, false, None, None, None), None);
@@ -2944,28 +2935,32 @@ mod tests {
     #[test]
     fn test_migration_excluded() {
         assert!(migration_excluded(Path::new("state/x")));
-        assert!(migration_excluded(Path::new(r"state\x")));
         assert!(migration_excluded(Path::new("hf-cache/a")));
-        assert!(migration_excluded(Path::new(r"hf-cache\a")));
         assert!(migration_excluded(Path::new("payload.pending/x")));
-        assert!(migration_excluded(Path::new(r"payload.pending\x")));
         assert!(migration_excluded(Path::new("python-packages.backup/y")));
-        assert!(migration_excluded(Path::new(r"python-packages.backup\y")));
         assert!(migration_excluded(Path::new("checkpoints/voxcpm2_trt.pending/z")));
-        assert!(migration_excluded(Path::new(r"checkpoints\voxcpm2_trt.pending\z")));
         assert!(migration_excluded(Path::new("slot.pending-migration/x")));
-        assert!(migration_excluded(Path::new(r"slot.pending-migration\x")));
         assert!(migration_excluded(Path::new("slot.mig/x")));
-        assert!(migration_excluded(Path::new(r"slot.mig\x")));
         assert!(migration_excluded(Path::new("voices/a.wav")));
-        assert!(migration_excluded(Path::new(r"voices\a.wav")));
-
         assert!(!migration_excluded(Path::new("payload/artifact/python/python.exe")));
-        assert!(!migration_excluded(Path::new(r"payload\artifact\python\python.exe")));
         assert!(!migration_excluded(Path::new("python-packages/tensorrt/x.dll")));
-        assert!(!migration_excluded(Path::new(r"python-packages\tensorrt\x.dll")));
         assert!(!migration_excluded(Path::new("models/VoxCPM2/config.json")));
-        assert!(!migration_excluded(Path::new(r"models\VoxCPM2\config.json")));
+
+        // 역슬래시는 Windows 에서만 경로 구분자다. 다른 호스트에서는 파일 이름의 한 글자라 한 성분으로 남는다.
+        #[cfg(windows)]
+        {
+            assert!(migration_excluded(Path::new(r"state\x")));
+            assert!(migration_excluded(Path::new(r"hf-cache\a")));
+            assert!(migration_excluded(Path::new(r"payload.pending\x")));
+            assert!(migration_excluded(Path::new(r"python-packages.backup\y")));
+            assert!(migration_excluded(Path::new(r"checkpoints\voxcpm2_trt.pending\z")));
+            assert!(migration_excluded(Path::new(r"slot.pending-migration\x")));
+            assert!(migration_excluded(Path::new(r"slot.mig\x")));
+            assert!(migration_excluded(Path::new(r"voices\a.wav")));
+            assert!(!migration_excluded(Path::new(r"payload\artifact\python\python.exe")));
+            assert!(!migration_excluded(Path::new(r"python-packages\tensorrt\x.dll")));
+            assert!(!migration_excluded(Path::new(r"models\VoxCPM2\config.json")));
+        }
     }
 
     #[test]
