@@ -105,6 +105,9 @@ export const BROWSER_RPCS_REQUIRING_APPROVAL: ReadonlySet<BrowserRpc> = new Set<
  */
 export const TERMINAL_EXEC_TIER_FLOOR: CapabilityTier = "workspace-write";
 
+/** 앞 작업의 정리를 기다리는 상한. 감독자 정리(세션 detach·가로채기 해제)는 실측 수십 ms 다. */
+export const UNWIND_GRACE_MS = 5_000;
+
 export type EnvOutcome =
   | { readonly ok: true; readonly operation: CompletedOperation }
   | { readonly ok: false; readonly rejections: readonly EnvRejection[] };
@@ -143,6 +146,13 @@ export class EnvironmentToolService {
   private readonly byIdempotencyKey = new Map<string, CompletedOperation>();
   /** 아직 돌고 있는 작업. 같은 키가 동시에 오면 포트를 두 번 부르지 않는다 (FR-ENV-TOOL.9). */
   private readonly inflight = new Map<string, Promise<EnvOutcome>>();
+  /**
+   * 상한·취소로 호출자에게 먼저 돌려준 뒤에도 몸통이 아직 풀리는 중인 작업 (#582 4.7·4.8).
+   * 포트(어댑터)는 신호를 받은 뒤 감독자 장부 종결·세션 정리·연결 닫기를 마쳐야 끝난다.
+   * 다음 작업은 이 정리가 끝난 뒤에 포트로 내려간다 — 안 그러면 앞 작업이 아직 쥔 타깃
+   * lease 에 부딪혀 EGO_TARGET_BUSY 로 막힌다. 기다림은 UNWIND_GRACE_MS 를 넘지 않는다.
+   */
+  private readonly unwinding = new Set<Promise<void>>();
 
   constructor(
     private readonly browser: BrowserOperationPort,
@@ -362,11 +372,15 @@ export class EnvironmentToolService {
     const record = this.begin(fixed);
     const deadline = this.armDeadline(fixed, record);
     let value: T;
+    let work: Promise<T> | undefined;
     try {
-      const work = body(fixed, record.controller.signal);
+      // 기다릴 것이 없으면 await 하지 않는다 — 몸통은 지금처럼 같은 틱에 포트로 내려간다.
+      if (this.unwinding.size > 0) await this.afterUnwinding(record.controller.signal);
+      work = body(fixed, record.controller.signal);
       void work.catch(() => undefined);
       value = await Promise.race([work, deadline.promise]);
     } catch (e) {
+      if (work && record.controller.signal.aborted) this.trackUnwinding(work);
       return { ok: false, rejections: this.failFrom(fixed.operationId, record, e) };
     } finally {
       deadline.disarm();
@@ -385,12 +399,17 @@ export class EnvironmentToolService {
     const deadline = this.armDeadline(request, record);
 
     let result: { evidence: Evidence; notes: readonly string[]; result?: string };
+    let work: Promise<{ evidence: Evidence; notes: readonly string[]; result?: string }> | undefined;
     try {
-      const work = body(record.controller.signal);
+      // 기다릴 것이 없으면 await 하지 않는다 — 몸통은 지금처럼 같은 틱에 포트로 내려간다.
+      if (this.unwinding.size > 0) await this.afterUnwinding(record.controller.signal);
+      work = body(record.controller.signal);
       // 경주에서 진 쪽이 나중에 실패해도 프로세스를 흔들지 않는다.
       void work.catch(() => undefined);
       result = await Promise.race([work, deadline.promise]);
     } catch (e) {
+      // 상한·취소가 먼저 돌려줬다면 몸통은 아직 정리 중이다. 다음 작업이 그 정리를 기다린다.
+      if (work && record.controller.signal.aborted) this.trackUnwinding(work);
       return { ok: false, rejections: this.failFrom(request.operationId, record, e) };
     } finally {
       deadline.disarm();
@@ -429,6 +448,40 @@ export class EnvironmentToolService {
   }
 
   /** 실제 상한. 만료하면 신호를 끊고 failed(timeout) 으로 종결한다 — 완료로 승격되지 않는다. */
+  private trackUnwinding(work: Promise<unknown>): void {
+    const done = work.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.unwinding.add(done);
+    void done.then(() => this.unwinding.delete(done));
+  }
+
+  /**
+   * 앞 작업의 정리를 기다린다. 이 작업의 상한·취소가 먼저 오면 그 사유로 끝낸다.
+   * 정리가 끝나지 않는 포트라도 UNWIND_GRACE_MS 뒤에는 진행한다 — 그때 남은 충돌은 포트가 형식 있는 오류로 돌려준다.
+   */
+  private async afterUnwinding(signal: AbortSignal): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    try {
+      await Promise.race([
+        Promise.all([...this.unwinding]),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, UNWIND_GRACE_MS);
+        }),
+        new Promise<void>((resolve) => {
+          onAbort = resolve;
+          signal.addEventListener("abort", onAbort, { once: true });
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    }
+    if (signal.aborted) throw signal.reason;
+  }
+
   private armDeadline(request: EnvOperationRequest, record: OperationRecord): { promise: Promise<never>; disarm: () => void } {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const promise = new Promise<never>((_, reject) => {
