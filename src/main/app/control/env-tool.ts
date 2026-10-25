@@ -136,6 +136,8 @@ interface OperationRecord {
   partialEffects: string[];
   lateTerminations: string[];
   readonly controller: AbortController;
+  /** 몸통이 포트로 내려갔는가. 앞 작업 정리를 기다리던 중에 취소되면 포트에 취소를 내리지 않는다. */
+  started: boolean;
 }
 
 /** 사유를 못 읽은 실패. 지어내지 않되 한 칸은 채워야 하므로 "사유를 받지 못했다"로 남긴다. */
@@ -303,10 +305,13 @@ export class EnvironmentToolService {
     this.settle(operationId, "cancelled", "cancelled");
     record.controller.abort(new EnvOperationFailure("cancelled", `작업 ${operationId} 취소`));
     let partial: readonly string[] = [];
-    try {
-      partial = await this.cancellation.cancel(operationId);
-    } catch (e) {
-      record.lateTerminations.push(`취소 포트 실패: ${describe(e)}`);
+    // 포트에 내려가기 전(앞 작업 정리를 기다리던 중)이면 일어난 일이 없다. 포트에 취소를 지어내지 않는다.
+    if (record.started) {
+      try {
+        partial = await this.cancellation.cancel(operationId);
+      } catch (e) {
+        record.lateTerminations.push(`취소 포트 실패: ${describe(e)}`);
+      }
     }
     record.partialEffects.push(...partial);
     return terminate("cancelled", partial, true);
@@ -376,6 +381,7 @@ export class EnvironmentToolService {
     try {
       // 기다릴 것이 없으면 await 하지 않는다 — 몸통은 지금처럼 같은 틱에 포트로 내려간다.
       if (this.unwinding.size > 0) await this.afterUnwinding(record.controller.signal);
+      record.started = true;
       work = body(fixed, record.controller.signal);
       void work.catch(() => undefined);
       value = await Promise.race([work, deadline.promise]);
@@ -403,6 +409,7 @@ export class EnvironmentToolService {
     try {
       // 기다릴 것이 없으면 await 하지 않는다 — 몸통은 지금처럼 같은 틱에 포트로 내려간다.
       if (this.unwinding.size > 0) await this.afterUnwinding(record.controller.signal);
+      record.started = true;
       work = body(record.controller.signal);
       // 경주에서 진 쪽이 나중에 실패해도 프로세스를 흔들지 않는다.
       void work.catch(() => undefined);
@@ -442,6 +449,7 @@ export class EnvironmentToolService {
       partialEffects: [],
       lateTerminations: [],
       controller: new AbortController(),
+      started: false,
     };
     this.operations.set(request.operationId, record);
     return record;
@@ -462,21 +470,35 @@ export class EnvironmentToolService {
    * 정리가 끝나지 않는 포트라도 UNWIND_GRACE_MS 뒤에는 진행한다 — 그때 남은 충돌은 포트가 형식 있는 오류로 돌려준다.
    */
   private async afterUnwinding(signal: AbortSignal): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    const until = Date.now() + UNWIND_GRACE_MS;
     let onAbort: (() => void) | undefined;
+    const aborted = new Promise<void>((resolve) => {
+      onAbort = resolve;
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
     try {
-      await Promise.race([
-        Promise.all([...this.unwinding]),
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, UNWIND_GRACE_MS);
-        }),
-        new Promise<void>((resolve) => {
-          onAbort = resolve;
-          signal.addEventListener("abort", onAbort, { once: true });
-        }),
-      ]);
+      // 기다리는 사이 다른 작업이 새로 만료돼 들어올 수 있으므로 비거나 상한에 닿을 때까지 다시 본다.
+      while (this.unwinding.size > 0 && !signal.aborted) {
+        const remaining = until - Date.now();
+        if (remaining <= 0) {
+          // 상한을 넘긴 몸통은 더 기다리지 않는다. 남겨 두면 뒤의 모든 작업이 상한만큼 늦는다.
+          this.unwinding.clear();
+          break;
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            Promise.all([...this.unwinding]),
+            new Promise<void>((resolve) => {
+              timer = setTimeout(resolve, remaining);
+            }),
+            aborted,
+          ]);
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      }
     } finally {
-      if (timer !== undefined) clearTimeout(timer);
       if (onAbort) signal.removeEventListener("abort", onAbort);
     }
     if (signal.aborted) throw signal.reason;

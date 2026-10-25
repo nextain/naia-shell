@@ -12,8 +12,10 @@ import {
 let permissionPoller: { dispose: () => void } | undefined;
 
 export const config = {
-	transformRequest,
 	...base,
+	// After the spread so the shared Node 26 fix (node26-request.ts) is the
+	// one in effect, not a copy inherited from the base config.
+	transformRequest,
 	specs: ["./specs/90-glm-newcore-chat.spec.ts"],
 	// hook/test 여유 — 간헐 workspace_set_root(IPC 경합) 대비. 단일 refresh 면 보통 빠름(dev 53ms).
 	mochaOpts: {
