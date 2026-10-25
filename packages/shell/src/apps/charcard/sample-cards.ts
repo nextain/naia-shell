@@ -1,9 +1,10 @@
 import { Logger } from "../../lib/logger";
 import {
-	parseCharacterCardBytes,
 	parseCharacterCardJsonText,
+	parsePngOrJsonCardBytes,
 } from "./card-parser";
 import type { StoredCardRecord } from "./card-store";
+import clockworkTinkerV3Json from "./package-public/samples/clockwork-tinker-v3.json";
 import clockworkTinkerPngInline from "./package-public/samples/clockwork-tinker.png?inline";
 import greenhouseKeeperPngInline from "./package-public/samples/greenhouse-keeper.png?inline";
 import starlightArchivistV2 from "./package-public/samples/starlight-archivist-v2.json";
@@ -32,13 +33,13 @@ export function getBundledSampleCardRecords(): StoredCardRecord[] {
 		{
 			id: "sample:greenhouse-keeper-png",
 			fileName: "greenhouse-keeper.png",
-			importedAt: 3,
+			importedAt: 4,
 			inlineDataUrl: greenhouseKeeperPngInline,
 		},
 		{
 			id: "sample:clockwork-tinker-v3",
 			fileName: "clockwork-tinker.png",
-			importedAt: 2,
+			importedAt: 3,
 			inlineDataUrl: clockworkTinkerPngInline,
 		},
 	];
@@ -46,7 +47,7 @@ export function getBundledSampleCardRecords(): StoredCardRecord[] {
 	const out: StoredCardRecord[] = [];
 	for (const sample of pngSamples) {
 		const pngBytes = decodeDataUrlBytes(sample.inlineDataUrl);
-		const parsed = parseCharacterCardBytes(pngBytes, sample.fileName);
+		const parsed = parsePngOrJsonCardBytes(pngBytes, sample.fileName);
 		if (parsed.ok) {
 			out.push({
 				id: sample.id,
@@ -64,6 +65,22 @@ export function getBundledSampleCardRecords(): StoredCardRecord[] {
 				detail: parsed.detail,
 			});
 		}
+	}
+
+	const v3JsonSampleParsed = parseCharacterCardJsonText(
+		JSON.stringify(clockworkTinkerV3Json),
+		"json",
+	);
+	if (v3JsonSampleParsed.ok) {
+		out.push({
+			id: "sample:clockwork-tinker-json-v3",
+			fileName: "clockwork-tinker-v3.json",
+			importedAt: 2,
+			card: v3JsonSampleParsed.card,
+			rawJson: v3JsonSampleParsed.card.rawJson,
+			imageBlob: null,
+			builtIn: true,
+		});
 	}
 
 	const jsonSampleParsed = parseCharacterCardJsonText(

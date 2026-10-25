@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -10,6 +11,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CharCardApp } from "../CharCardApp";
+import { parseCharacterCardJsonText } from "../card-parser";
 import {
 	type CardStorageAdapter,
 	type StoredCardRecord,
@@ -22,11 +24,15 @@ afterEach(() => {
 });
 
 describe("CharCardApp UI", () => {
-	it("loads bundled PNG sample cards via PNG parser with image and name, imports JSON card, starts/stops roleplay, and confirms/cancels deletion via alertdialog", async () => {
+	it("loads 4 bundled sample cards, imports JSON card, starts/stops roleplay, handles naia-app:context-cleared from parent, and moves focus after deletion", async () => {
 		const postMessageSpy = vi.spyOn(window.parent, "postMessage");
 		const storage = createMemoryCardStorage();
 
 		render(<CharCardApp storage={storage} localeOverride="ko" />);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("charcard-import-button")).not.toBeDisabled();
+		});
 
 		// Bundled sample PNG card (온새미) is selected initially and parsed as PNG with an <img> avatar
 		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
@@ -35,11 +41,23 @@ describe("CharCardApp UI", () => {
 		const sampleImg = screen.getByTestId("charcard-avatar-img");
 		expect(sampleImg).toBeInTheDocument();
 		expect(sampleImg).toHaveAttribute("alt", "온새미");
-		expect(screen.getByText("V3 · PNG")).toBeInTheDocument();
+		expect(screen.getAllByText("V3 · PNG").length).toBeGreaterThanOrEqual(1);
 		expect(screen.getByText("한도윤")).toBeInTheDocument();
+		expect(screen.getByText("백하진")).toBeInTheDocument();
 		expect(screen.getByText("서윤하")).toBeInTheDocument();
 
-		// Selecting JSON sample card (서윤하) renders initial-letter avatar fallback
+		// Selecting V3 JSON sample card (백하진) renders initial-letter avatar fallback
+		fireEvent.click(
+			screen.getByTestId("charcard-item-sample:clockwork-tinker-json-v3"),
+		);
+		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
+			"백하진",
+		);
+		expect(screen.getByTestId("charcard-avatar-letter")).toHaveTextContent(
+			"백",
+		);
+
+		// Selecting V2 JSON sample card (서윤하) renders initial-letter avatar fallback
 		fireEvent.click(
 			screen.getByTestId("charcard-item-sample:starlight-archivist-v2"),
 		);
@@ -114,7 +132,34 @@ describe("CharCardApp UI", () => {
 			"강하늘 연기 중",
 		);
 
-		// Stop roleplay -> posts context: null
+		// Spoofed naia-app:context-cleared from another source is ignored
+		const fakeSource = {} as Window;
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: fakeSource,
+					data: { type: "naia-app:context-cleared" },
+				}),
+			);
+		});
+		expect(screen.getByTestId("charcard-active-banner")).toHaveTextContent(
+			"강하늘 연기 중",
+		);
+
+		// Valid naia-app:context-cleared from window.parent ends roleplay UI state
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: window.parent,
+					data: { type: "naia-app:context-cleared" },
+				}),
+			);
+		});
+		expect(screen.queryByTestId("charcard-active-banner")).toBeNull();
+
+		// Start roleplay again, then stop manually -> posts context: null
+		fireEvent.click(screen.getByTestId("charcard-start-button"));
+		expect(screen.getByTestId("charcard-active-banner")).toBeInTheDocument();
 		fireEvent.click(screen.getByTestId("charcard-stop-button"));
 		expect(postMessageSpy).toHaveBeenCalledWith(
 			{ type: "naia-app:context", context: null },
@@ -158,12 +203,89 @@ describe("CharCardApp UI", () => {
 		);
 		expect(document.activeElement).toBe(deleteBtn);
 
-		// 3) Clicking Confirm removes the card
+		// 3) Clicking Confirm removes the card and moves focus to the next card in the list (온새미)
 		fireEvent.click(deleteBtn);
 		fireEvent.click(screen.getByTestId("charcard-delete-confirm"));
 
 		await waitFor(() => {
 			expect(screen.queryByText("강하늘")).toBeNull();
+		});
+		const nextCardBtn = screen.getByTestId(
+			"charcard-item-sample:greenhouse-keeper-png",
+		);
+		await waitFor(() => {
+			expect(document.activeElement).toBe(nextCardBtn);
+		});
+	});
+
+	it("gates import button during initial storage load and merges cards without overwriting", async () => {
+		let resolveListCards!: (records: StoredCardRecord[]) => void;
+		const listCardsPromise = new Promise<StoredCardRecord[]>((resolve) => {
+			resolveListCards = resolve;
+		});
+		const savedRecords: StoredCardRecord[] = [];
+
+		const delayedStorage: CardStorageAdapter = {
+			mode: "indexeddb",
+			listCards: () => listCardsPromise,
+			async saveCard(record) {
+				savedRecords.push(record);
+			},
+			async removeCard() {},
+		};
+
+		render(<CharCardApp storage={delayedStorage} localeOverride="ko" />);
+
+		// While listCards is pending, import button is disabled / aria-busy
+		const importBtn = screen.getByTestId("charcard-import-button");
+		expect(importBtn).toBeDisabled();
+		expect(importBtn).toHaveAttribute("aria-busy", "true");
+		expect(importBtn).toHaveTextContent("보관함 준비 중…");
+
+		// If a file is queued on file input before listCards resolves, it waits for listCards and merges both
+		const earlyCard = {
+			spec: "chara_card_v3",
+			spec_version: "3.0",
+			data: { name: "초기합류캐릭터", description: "합류", first_mes: "안녕" },
+		};
+		const file = new File([JSON.stringify(earlyCard)], "early.json", {
+			type: "application/json",
+		});
+		fireEvent.change(screen.getByTestId("charcard-file-input"), {
+			target: { files: [file] },
+		});
+
+		const storedParsed = parseCharacterCardJsonText(
+			JSON.stringify({
+				spec: "chara_card_v3",
+				spec_version: "3.0",
+				data: {
+					name: "기존보관함캐릭터",
+					description: "기존",
+					first_mes: "반가워",
+				},
+			}),
+		);
+		if (!storedParsed.ok) throw new Error("unexpected");
+
+		await act(async () => {
+			resolveListCards([
+				{
+					id: "stored-existing-1",
+					fileName: "existing.json",
+					importedAt: 1000,
+					card: storedParsed.card,
+					rawJson: storedParsed.card.rawJson,
+					imageBlob: null,
+				},
+			]);
+		});
+
+		await waitFor(() => {
+			expect(screen.getByTestId("charcard-import-button")).not.toBeDisabled();
+			const listEl = screen.getByTestId("charcard-list");
+			expect(within(listEl).getByText("기존보관함캐릭터")).toBeInTheDocument();
+			expect(within(listEl).getByText("초기합류캐릭터")).toBeInTheDocument();
 		});
 	});
 

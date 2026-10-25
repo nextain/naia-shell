@@ -3,9 +3,29 @@ import { Logger } from "../../lib/logger";
 import { PERSISTENT_CONTEXT_TYPES, useAppStore } from "../../stores/app";
 
 const APP_CONTEXT_MESSAGE = "naia-app:context";
+export const APP_CONTEXT_CLEARED_MESSAGE = "naia-app:context-cleared";
 const MAX_TYPE_LENGTH = 64;
 const MAX_CONTEXT_JSON_CHARS = 32_000;
 const TAG = "InstalledAppContextBridge";
+
+function resolveFrameTargetOrigin(
+	frame: HTMLIFrameElement,
+	htmlEntry?: string | null,
+): string {
+	const candidates = [frame.src, frame.getAttribute("src"), htmlEntry];
+	for (const candidate of candidates) {
+		if (!candidate) continue;
+		try {
+			const origin = new URL(candidate, window.location.href).origin;
+			if (origin && origin !== "null") {
+				return origin;
+			}
+		} catch {
+			// Try next candidate
+		}
+	}
+	return "*";
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -77,6 +97,7 @@ export function installInstalledAppContextBridge(
 	const ownerAppId =
 		appId?.trim() || inferInstalledAppIdFromEntry(htmlEntry) || null;
 	let lastPushedType: string | null = null;
+	let clearingLocally = false;
 
 	const isOwnedByThisBridge = (): boolean => {
 		const state = useAppStore.getState();
@@ -88,6 +109,56 @@ export function installInstalledAppContextBridge(
 			lastPushedType !== null && state.activeAppContext.type === lastPushedType
 		);
 	};
+
+	const clearOwnedContextLocally = () => {
+		clearingLocally = true;
+		try {
+			lastPushedType = null;
+			useAppStore.getState().setActiveAppContext(null);
+		} finally {
+			clearingLocally = false;
+		}
+	};
+
+	const notifyFrameContextCleared = () => {
+		const contentWindow = frame.contentWindow;
+		if (!contentWindow) return;
+		const targetOrigin = resolveFrameTargetOrigin(frame, htmlEntry);
+		try {
+			contentWindow.postMessage(
+				{ type: APP_CONTEXT_CLEARED_MESSAGE },
+				targetOrigin,
+			);
+		} catch {
+			// Ignore if detached frame rejects postMessage
+		}
+	};
+
+	const unsubscribeStore = useAppStore.subscribe((state, prevState) => {
+		if (clearingLocally) return;
+		const prevOwned =
+			prevState.activeAppContext !== null &&
+			((ownerAppId !== null &&
+				prevState.activeAppContextOwnerId === ownerAppId) ||
+				(lastPushedType !== null &&
+					prevState.activeAppContext.type === lastPushedType));
+		if (!prevOwned) return;
+
+		const stillOwned =
+			state.activeAppContext !== null &&
+			state.activeApp === ownerAppId &&
+			((ownerAppId !== null && state.activeAppContextOwnerId === ownerAppId) ||
+				(lastPushedType !== null &&
+					state.activeAppContext.type === lastPushedType));
+
+		if (!stillOwned) {
+			Logger.debug(TAG, "notifying installed app that shell cleared context", {
+				appId: ownerAppId,
+			});
+			lastPushedType = null;
+			notifyFrameContextCleared();
+		}
+	});
 
 	const onMessage = (event: MessageEvent) => {
 		const contentWindow = frame.contentWindow;
@@ -119,8 +190,7 @@ export function installInstalledAppContextBridge(
 				reason: check.reason,
 			});
 			if (isOwnedByThisBridge()) {
-				lastPushedType = null;
-				useAppStore.getState().setActiveAppContext(null);
+				clearOwnedContextLocally();
 			}
 			return;
 		}
@@ -129,9 +199,10 @@ export function installInstalledAppContextBridge(
 				appId: ownerAppId,
 			});
 			if (isOwnedByThisBridge()) {
-				useAppStore.getState().setActiveAppContext(null);
+				clearOwnedContextLocally();
+			} else {
+				lastPushedType = null;
 			}
-			lastPushedType = null;
 			return;
 		}
 		Logger.debug(TAG, "applying installed app context", {
@@ -146,12 +217,13 @@ export function installInstalledAppContextBridge(
 
 	return () => {
 		window.removeEventListener("message", onMessage);
+		unsubscribeStore();
 		if (isOwnedByThisBridge()) {
 			Logger.debug(TAG, "clearing context on installed app unmount", {
 				appId: ownerAppId,
 				type: lastPushedType,
 			});
-			useAppStore.getState().setActiveAppContext(null);
+			clearOwnedContextLocally();
 		}
 		lastPushedType = null;
 	};

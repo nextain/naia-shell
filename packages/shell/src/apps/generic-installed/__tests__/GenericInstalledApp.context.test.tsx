@@ -181,11 +181,19 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 			"land.naia.charcard",
 		);
 
-		// User switches activeApp to land.naia.other
+		// User switches activeApp to land.naia.other -> clears context AND notifies charcard iframe with naia-app:context-cleared
+		const charcardPostMessageSpy = vi.spyOn(
+			charcardIframe.contentWindow as Window,
+			"postMessage",
+		);
 		act(() => {
 			useAppStore.getState().setActiveApp("land.naia.other");
 		});
 		expect(useAppStore.getState().activeAppContext).toBeNull();
+		expect(charcardPostMessageSpy).toHaveBeenCalledWith(
+			{ type: "naia-app:context-cleared" },
+			"http://asset.localhost",
+		);
 
 		// Previous app (land.naia.charcard) posts delayed message after switch -> ignored!
 		act(() => {

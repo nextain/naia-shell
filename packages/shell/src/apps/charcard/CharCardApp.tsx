@@ -107,34 +107,80 @@ export function CharCardApp({
 	const [pendingDeleteRecord, setPendingDeleteRecord] =
 		useState<StoredCardRecord | null>(null);
 	const [dragOver, setDragOver] = useState<boolean>(false);
+	const [storageReady, setStorageReady] = useState<boolean>(false);
 
 	const storageRef = useRef<CardStorageAdapter | null>(injectedStorage ?? null);
+	const storageInitPromiseRef = useRef<Promise<CardStorageAdapter> | null>(
+		null,
+	);
+	const deletedIdsRef = useRef<Set<string>>(new Set());
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const importButtonRef = useRef<HTMLButtonElement>(null);
+	const cardListRef = useRef<HTMLUListElement>(null);
+	const cardRowButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
 	const deleteTriggerButtonRef = useRef<HTMLButtonElement>(null);
 	const cancelDeleteButtonRef = useRef<HTMLButtonElement>(null);
 
 	useEffect(() => {
 		let cancelled = false;
-		async function initStorage() {
+		setStorageReady(false);
+		const initPromise = (async () => {
 			const store = injectedStorage ?? (await createCardStorage());
-			if (cancelled) return;
-			storageRef.current = store;
-			setStorageMode(store.mode);
+			if (!cancelled) {
+				storageRef.current = store;
+				setStorageMode(store.mode);
+			}
 			try {
 				const saved = await store.listCards();
-				if (cancelled) return;
-				setImportedCards(saved);
+				if (!cancelled) {
+					setImportedCards((prev) => {
+						const seen = new Set(prev.map((item) => item.id));
+						const merged = [...prev];
+						for (const item of saved) {
+							if (!seen.has(item.id) && !deletedIdsRef.current.has(item.id)) {
+								merged.push(item);
+								seen.add(item.id);
+							}
+						}
+						return merged.sort((a, b) => b.importedAt - a.importedAt);
+					});
+				}
 			} catch (err) {
 				Logger.warn(TAG, "failed to load stored cards", {
 					error: String(err),
 				});
+			} finally {
+				if (!cancelled) {
+					setStorageReady(true);
+				}
 			}
-		}
-		void initStorage();
+			return store;
+		})();
+		storageInitPromiseRef.current = initPromise;
 		return () => {
 			cancelled = true;
 		};
 	}, [injectedStorage]);
+
+	useEffect(() => {
+		const onMessage = (event: MessageEvent) => {
+			if (event.source !== window.parent) return;
+			const data = event.data;
+			if (
+				typeof data === "object" &&
+				data !== null &&
+				(data as { type?: unknown }).type === "naia-app:context-cleared"
+			) {
+				Logger.info(TAG, "roleplay context cleared by shell");
+				setActiveCardId(null);
+				setActiveResult(null);
+			}
+		};
+		window.addEventListener("message", onMessage);
+		return () => {
+			window.removeEventListener("message", onMessage);
+		};
+	}, []);
 
 	useEffect(() => {
 		if (!pendingDeleteRecord) return;
@@ -238,9 +284,13 @@ export function CharCardApp({
 	}, [selectedRecord]);
 
 	async function persistImportedRecord(record: StoredCardRecord) {
-		if (storageRef.current) {
+		let store = storageRef.current;
+		if (!store && storageInitPromiseRef.current) {
+			store = await storageInitPromiseRef.current;
+		}
+		if (store) {
 			try {
-				await storageRef.current.saveCard(record);
+				await store.saveCard(record);
 			} catch (err) {
 				Logger.warn(TAG, "failed saving card to storage", {
 					error: String(err),
@@ -249,6 +299,7 @@ export function CharCardApp({
 				return;
 			}
 		}
+		deletedIdsRef.current.delete(record.id);
 		setStorageError(null);
 		setImportedCards((prev) => [
 			record,
@@ -277,7 +328,7 @@ export function CharCardApp({
 			setErrorCode("NOT_PNG_OR_JSON");
 			return;
 		}
-		const result = parseCharacterCardBytes(bytes, file.name);
+		const result = await parseCharacterCardBytes(bytes, file.name);
 		if (!result.ok) {
 			Logger.warn(TAG, "card parse rejected", {
 				fileName: file.name,
@@ -292,7 +343,11 @@ export function CharCardApp({
 		const imageBlob =
 			result.card.sourceFormat === "png"
 				? new Blob([new Uint8Array(bytes)], { type: "image/png" })
-				: null;
+				: result.imageBytes && result.imageMimeType
+					? new Blob([new Uint8Array(result.imageBytes)], {
+							type: result.imageMimeType,
+						})
+					: null;
 
 		const record: StoredCardRecord = {
 			id,
@@ -308,6 +363,7 @@ export function CharCardApp({
 	}
 
 	function triggerFilePicker() {
+		if (!storageReady) return;
 		setErrorCode(null);
 		if (fileInputRef.current) {
 			fileInputRef.current.value = "";
@@ -365,9 +421,13 @@ export function CharCardApp({
 			name: record.card.name,
 		});
 		setPendingDeleteRecord(null);
-		if (storageRef.current) {
+		let store = storageRef.current;
+		if (!store && storageInitPromiseRef.current) {
+			store = await storageInitPromiseRef.current;
+		}
+		if (store) {
 			try {
-				await storageRef.current.removeCard(record.id);
+				await store.removeCard(record.id);
 			} catch (err) {
 				Logger.warn(TAG, "failed removing card from storage", {
 					error: String(err),
@@ -377,19 +437,45 @@ export function CharCardApp({
 				return;
 			}
 		}
+		deletedIdsRef.current.add(record.id);
 		setStorageError(null);
 		if (activeCardId === record.id) {
 			bridge.pushContext(null);
 			setActiveCardId(null);
 			setActiveResult(null);
 		}
+		const deletedIndex = allCards.findIndex((item) => item.id === record.id);
+		const remainingAll = allCards.filter((item) => item.id !== record.id);
+		const nextFocusRecord =
+			deletedIndex >= 0 && deletedIndex < remainingAll.length
+				? remainingAll[deletedIndex]
+				: remainingAll.length > 0
+					? remainingAll[remainingAll.length - 1]
+					: null;
+
 		const remaining = importedCards.filter((item) => item.id !== record.id);
 		setImportedCards(remaining);
 		if (selectedCardId === record.id) {
-			const next = remaining[0] ?? samples[0];
-			setSelectedCardId(next?.id ?? "");
+			setSelectedCardId(nextFocusRecord?.id ?? "");
 			setGreetingIndex(0);
 		}
+
+		const applyPostDeleteFocus = () => {
+			if (nextFocusRecord) {
+				const btn = cardRowButtonsRef.current.get(nextFocusRecord.id);
+				if (btn) {
+					btn.focus();
+					return;
+				}
+			}
+			if (importButtonRef.current && !importButtonRef.current.disabled) {
+				importButtonRef.current.focus();
+				return;
+			}
+			cardListRef.current?.focus();
+		};
+		applyPostDeleteFocus();
+		queueMicrotask(applyPostDeleteFocus);
 	}
 
 	async function handleRetryStorageAction() {
@@ -418,17 +504,22 @@ export function CharCardApp({
 				</div>
 				<div className="charcard-app__header-actions">
 					<button
+						ref={importButtonRef}
 						type="button"
 						className="charcard-app__btn charcard-app__btn--primary"
+						disabled={!storageReady}
+						aria-busy={!storageReady}
 						onClick={triggerFilePicker}
 						data-testid="charcard-import-button"
 					>
-						{msg("charcard.importButton")}
+						{storageReady
+							? msg("charcard.importButton")
+							: msg("charcard.importPreparing")}
 					</button>
 					<input
 						ref={fileInputRef}
 						type="file"
-						accept=".png,.json,image/png,application/json"
+						accept=".png,.json,.charx,image/png,application/json,application/zip"
 						className="charcard-app__file-input"
 						data-testid="charcard-file-input"
 						onChange={(e) => {
@@ -479,6 +570,7 @@ export function CharCardApp({
 					aria-label={msg("charcard.cardListLabel")}
 					onDragOver={(e) => {
 						e.preventDefault();
+						if (!storageReady) return;
 						setDragOver(true);
 					}}
 					onDragLeave={() => setDragOver(false)}
@@ -492,18 +584,36 @@ export function CharCardApp({
 					<button
 						type="button"
 						className="charcard-app__dropzone"
+						disabled={!storageReady}
+						aria-busy={!storageReady}
 						onClick={triggerFilePicker}
 					>
-						<span>{msg("charcard.importDropHint")}</span>
+						<span>
+							{storageReady
+								? msg("charcard.importDropHint")
+								: msg("charcard.importPreparing")}
+						</span>
 					</button>
 
-					<ul className="charcard-app__list" data-testid="charcard-list">
+					<ul
+						ref={cardListRef}
+						tabIndex={-1}
+						className="charcard-app__list"
+						data-testid="charcard-list"
+					>
 						{allCards.map((item) => {
 							const isSelected = item.id === selectedRecord?.id;
 							const isPlaying = item.id === activeCardId;
 							return (
 								<li key={item.id} className="charcard-app__list-item">
 									<button
+										ref={(el) => {
+											if (el) {
+												cardRowButtonsRef.current.set(item.id, el);
+											} else {
+												cardRowButtonsRef.current.delete(item.id);
+											}
+										}}
 										type="button"
 										className={`charcard-app__card-row ${isSelected ? "charcard-app__card-row--selected" : ""}`}
 										onClick={() => {

@@ -5,15 +5,16 @@ Logger.debug("CharCardLocale", "loading character card app locale strings");
 export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.title": "Character Card Roleplay",
 	"charcard.subtitle":
-		"Import PNG or JSON character cards (V2/V3) and roleplay with Naia. Cards stay on this device.",
+		"Import PNG, JSON, or CHARX character cards (V2/V3) and roleplay with Naia. Cards stay on this device, and starting roleplay sends the card content to your Naia chat model.",
 	"charcard.importButton": "Import Card",
+	"charcard.importPreparing": "Preparing storage…",
 	"charcard.importDropHint":
-		"Drop a .png or .json card file here, or click Import Card",
+		"Drop a .png, .json, or .charx card file here, or click Import Card",
 	"charcard.cardListLabel": "Character Cards",
 	"charcard.sampleBadge": "Sample",
 	"charcard.importedBadge": "Imported",
 	"charcard.emptyList":
-		"No character cards yet. Import a .png or .json card to start.",
+		"No character cards yet. Import a .png, .json, or .charx card to start.",
 	"charcard.memoryOnlyBanner":
 		"Stored for this session only (IndexedDB is unavailable in this environment).",
 	"charcard.activeBanner": "Roleplaying as {name}",
@@ -64,17 +65,27 @@ export const CHARCARD_ENGLISH_MESSAGES = {
 	"charcard.errorChooseAnother": "Choose Another File",
 	"charcard.errorDismiss": "Back to Card",
 	"charcard.error.FILE_TOO_LARGE":
-		"This file exceeds the 20 MB size limit. Please choose a smaller PNG or JSON card.",
+		"This file exceeds the 20 MB size limit. Please choose a smaller PNG, JSON, or CHARX card.",
 	"charcard.error.JSON_TOO_LARGE":
 		"The card JSON data exceeds the 2 MB text limit.",
 	"charcard.error.TOO_MANY_LOREBOOK_ENTRIES":
 		"This card contains more than 1,000 lorebook entries and cannot be loaded.",
-	"charcard.error.CHARX_NOT_SUPPORTED":
-		"CHARX (.charx / ZIP) archives will be supported in a future release. Please import a PNG or JSON card.",
+	"charcard.error.CHARX_UNSUPPORTED_ENV":
+		"This device cannot open CHARX archives. Please export the card as PNG or JSON.",
+	"charcard.error.CHARX_CORRUPT_ZIP":
+		"This CHARX (ZIP) archive is corrupted or uses an unsupported compression method.",
+	"charcard.error.CHARX_MISSING_CARD_JSON":
+		"This CHARX archive does not contain a root card.json file.",
+	"charcard.error.CHARX_ZIP64_NOT_SUPPORTED":
+		"ZIP64 CHARX archives are not supported.",
+	"charcard.error.CHARX_ENCRYPTED":
+		"Encrypted CHARX (ZIP) archives cannot be opened.",
+	"charcard.error.CHARX_DECOMPRESSION_BOMB":
+		"The CHARX archive exceeds decompression limits (2,000 entries, 10 MB image, 50 MB total) or has mismatched entry sizes.",
 	"charcard.error.NOT_PNG_OR_JSON":
-		"Unsupported file format. Please select a Character Card PNG (.png) or JSON (.json) file.",
+		"Unsupported file format. Please select a Character Card PNG (.png), JSON (.json), or CHARX (.charx) file.",
 	"charcard.error.PNG_CORRUPT_CHUNK":
-		"This PNG file has a damaged or out-of-bounds chunk structure and cannot be read.",
+		"This PNG file has a damaged chunk structure or CRC32 mismatch and cannot be read.",
 	"charcard.error.PNG_NO_CARD_CHUNK":
 		"This PNG image does not contain character card data (no 'ccv3' or 'chara' text chunk found).",
 	"charcard.error.INVALID_BASE64":
@@ -96,15 +107,16 @@ export type CharCardMessageKey = keyof typeof CHARCARD_ENGLISH_MESSAGES;
 export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.title": "캐릭터 카드 설정놀이",
 	"charcard.subtitle":
-		"PNG·JSON 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화합니다. 카드와 대화 설정은 기기 안에만 보관됩니다.",
+		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화합니다. 카드는 기기 안에만 보관되며, 연기를 시작하면 카드 내용이 나이아 대화 모델에 함께 보내집니다.",
 	"charcard.importButton": "카드 불러오기",
+	"charcard.importPreparing": "보관함 준비 중…",
 	"charcard.importDropHint":
-		".png 또는 .json 카드 파일을 여기에 끌어다 놓거나 카드 불러오기를 누르세요",
+		".png, .json, .charx 카드 파일을 여기에 끌어다 놓거나 카드 불러오기를 누르세요",
 	"charcard.cardListLabel": "캐릭터 카드 목록",
 	"charcard.sampleBadge": "예시",
 	"charcard.importedBadge": "불러옴",
 	"charcard.emptyList":
-		"아직 카드가 없습니다. .png 또는 .json 카드를 불러오세요.",
+		"아직 카드가 없습니다. .png, .json, .charx 카드를 불러오세요.",
 	"charcard.memoryOnlyBanner":
 		"이번 실행 동안만 보관됩니다 (이 환경에서 IndexedDB를 쓸 수 없습니다).",
 	"charcard.activeBanner": "{name} 연기 중",
@@ -153,17 +165,27 @@ export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
 	"charcard.errorChooseAnother": "다른 파일 고르기",
 	"charcard.errorDismiss": "돌아가기",
 	"charcard.error.FILE_TOO_LARGE":
-		"파일 크기가 20MB 상한을 넘었습니다. 더 작은 PNG 또는 JSON 카드를 골라 주세요.",
+		"파일 크기가 20MB 상한을 넘었습니다. 더 작은 PNG, JSON, CHARX 카드를 골라 주세요.",
 	"charcard.error.JSON_TOO_LARGE":
 		"카드 JSON 글자 길이가 2MB 상한을 넘었습니다.",
 	"charcard.error.TOO_MANY_LOREBOOK_ENTRIES":
 		"로어북 항목이 1,000개를 넘어 불러올 수 없습니다.",
-	"charcard.error.CHARX_NOT_SUPPORTED":
-		"CHARX(.charx) 압축 카드는 다음 판에서 지원합니다. PNG 또는 JSON 카드를 불러와 주세요.",
+	"charcard.error.CHARX_UNSUPPORTED_ENV":
+		"이 기기에서는 CHARX를 열 수 없습니다. PNG 또는 JSON으로 내보내 불러와 주세요.",
+	"charcard.error.CHARX_CORRUPT_ZIP":
+		"CHARX(ZIP) 파일 구조나 압축 데이터가 손상되어 읽을 수 없습니다.",
+	"charcard.error.CHARX_MISSING_CARD_JSON":
+		"CHARX 파일 안에 루트 card.json이 들어 있지 않습니다.",
+	"charcard.error.CHARX_ZIP64_NOT_SUPPORTED":
+		"ZIP64 형식의 CHARX 파일은 지원하지 않습니다.",
+	"charcard.error.CHARX_ENCRYPTED":
+		"암호화된 CHARX(ZIP) 파일은 열 수 없습니다.",
+	"charcard.error.CHARX_DECOMPRESSION_BOMB":
+		"CHARX 압축 해제 상한(항목 2,000개, 그림 10MB, 전체 50MB)을 넘었거나 선언 크기와 실제 크기가 다릅니다.",
 	"charcard.error.NOT_PNG_OR_JSON":
-		"PNG 또는 JSON 캐릭터 카드 파일이 아닙니다. .png 또는 .json 파일을 골라 주세요.",
+		"PNG, JSON 또는 CHARX 캐릭터 카드 파일이 아닙니다. .png, .json, .charx 파일을 골라 주세요.",
 	"charcard.error.PNG_CORRUPT_CHUNK":
-		"PNG 파일의 덩어리(chunk) 길이가 파일 밖을 가리키거나 손상되어 읽을 수 없습니다.",
+		"PNG 파일의 덩어리(chunk) 길이 또는 CRC32가 손상되어 읽을 수 없습니다.",
 	"charcard.error.PNG_NO_CARD_CHUNK":
 		"이 PNG 그림 파일 안에는 캐릭터 카드 설정(ccv3 또는 chara 덩어리)이 들어 있지 않습니다.",
 	"charcard.error.INVALID_BASE64":

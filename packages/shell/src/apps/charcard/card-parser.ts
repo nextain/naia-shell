@@ -5,12 +5,20 @@ const TAG = "CharCardParser";
 export const MAX_CARD_FILE_BYTES = 20 * 1024 * 1024; // 20 MB
 export const MAX_CARD_JSON_CHARS = 2 * 1024 * 1024; // 2 MB characters
 export const MAX_LOREBOOK_ENTRIES = 1000;
+export const MAX_CHARX_ENTRIES = 2000;
+export const MAX_CHARX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+export const MAX_CHARX_TOTAL_UNCOMPRESSED_BYTES = 50 * 1024 * 1024; // 50 MB
 
 export type CardParseErrorCode =
 	| "FILE_TOO_LARGE"
 	| "JSON_TOO_LARGE"
 	| "TOO_MANY_LOREBOOK_ENTRIES"
-	| "CHARX_NOT_SUPPORTED"
+	| "CHARX_UNSUPPORTED_ENV"
+	| "CHARX_CORRUPT_ZIP"
+	| "CHARX_MISSING_CARD_JSON"
+	| "CHARX_ZIP64_NOT_SUPPORTED"
+	| "CHARX_ENCRYPTED"
+	| "CHARX_DECOMPRESSION_BOMB"
 	| "NOT_PNG_OR_JSON"
 	| "PNG_CORRUPT_CHUNK"
 	| "PNG_NO_CARD_CHUNK"
@@ -21,7 +29,7 @@ export type CardParseErrorCode =
 	| "MISSING_NAME";
 
 export type CardSpecVersion = "v1" | "v2" | "v3";
-export type CardSourceFormat = "png" | "json";
+export type CardSourceFormat = "png" | "json" | "charx";
 
 export interface NormalizedLorebookEntry {
 	id: string;
@@ -63,11 +71,37 @@ export interface NormalizedCharacterCard {
 }
 
 export type CardParseResult =
-	| { ok: true; card: NormalizedCharacterCard }
+	| {
+			ok: true;
+			card: NormalizedCharacterCard;
+			imageBytes?: Uint8Array;
+			imageMimeType?: string;
+	  }
 	| { ok: false; code: CardParseErrorCode; detail?: string };
 
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 const ZIP_PK_SIGNATURE = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+const ZIP_EMPTY_EOCD_SIGNATURE = new Uint8Array([0x50, 0x4b, 0x05, 0x06]);
+
+const CRC32_TABLE: Uint32Array = (() => {
+	const table = new Uint32Array(256);
+	for (let i = 0; i < 256; i++) {
+		let c = i;
+		for (let k = 0; k < 8; k++) {
+			c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+		}
+		table[i] = c >>> 0;
+	}
+	return table;
+})();
+
+export function computeCrc32(bytes: Uint8Array): number {
+	let crc = 0xffffffff;
+	for (let i = 0; i < bytes.byteLength; i++) {
+		crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+	}
+	return (crc ^ 0xffffffff) >>> 0;
+}
 
 function startsWithBytes(bytes: Uint8Array, prefix: Uint8Array): boolean {
 	if (bytes.byteLength < prefix.byteLength) return false;
@@ -197,6 +231,16 @@ export function extractPngCardChunk(bytes: Uint8Array):
 		}
 
 		const data = bytes.subarray(dataStart, dataEnd);
+		const expectedCrc = view.getUint32(dataEnd, false);
+		const actualCrc = computeCrc32(bytes.subarray(offset + 4, dataEnd));
+		if (actualCrc !== expectedCrc) {
+			return {
+				ok: false,
+				code: "PNG_CORRUPT_CHUNK",
+				detail: `chunk ${type} CRC mismatch`,
+			};
+		}
+
 		if (type === "tEXt") {
 			const nullIdx = data.indexOf(0);
 			if (nullIdx > 0) {
@@ -386,7 +430,7 @@ export function normalizeCardJsonObject(
 
 	if (specVersion === "v2" || specVersion === "v3") {
 		const rawSpecVersion = rawObj.spec_version;
-		if (rawSpecVersion !== undefined && rawSpecVersion !== null) {
+		if (rawSpecVersion !== undefined) {
 			if (typeof rawSpecVersion !== "string") {
 				return {
 					ok: false,
@@ -502,26 +546,528 @@ export function parseCharacterCardJsonText(
 	return normalizeCardJsonObject(parsed, sourceFormat, chunkKeyword);
 }
 
-export function parseCharacterCardBytes(
+interface ZipCentralDirEntry {
+	path: string;
+	method: number;
+	flags: number;
+	crc32: number;
+	compressedSize: number;
+	uncompressedSize: number;
+	localHeaderOffset: number;
+}
+
+function isUnsafeZipPath(path: string): boolean {
+	if (!path) return true;
+	if (
+		path.includes("\0") ||
+		path.includes("\\") ||
+		path.startsWith("/") ||
+		/^[A-Za-z]:/.test(path) ||
+		path.includes("..")
+	) {
+		return true;
+	}
+	const segments = path.split("/");
+	return segments.some((seg) => seg === "" || seg === "." || seg === "..");
+}
+
+function hasZip64ExtraField(extra: Uint8Array): boolean {
+	if (extra.byteLength < 4) return false;
+	const view = new DataView(extra.buffer, extra.byteOffset, extra.byteLength);
+	let offset = 0;
+	while (offset + 4 <= extra.byteLength) {
+		const headerId = view.getUint16(offset, true);
+		const dataSize = view.getUint16(offset + 2, true);
+		if (headerId === 0x0001) return true;
+		offset += 4 + dataSize;
+	}
+	return false;
+}
+
+async function inflateRawWithSizeCheck(
+	compressed: Uint8Array,
+	expectedUncompressedSize: number,
+	maxAllowedBytes: number,
+): Promise<
+	| { ok: true; bytes: Uint8Array }
+	| {
+			ok: false;
+			code:
+				| "CHARX_UNSUPPORTED_ENV"
+				| "CHARX_DECOMPRESSION_BOMB"
+				| "CHARX_CORRUPT_ZIP";
+			detail?: string;
+	  }
+> {
+	if (typeof DecompressionStream !== "function") {
+		return { ok: false, code: "CHARX_UNSUPPORTED_ENV" };
+	}
+	let ds: DecompressionStream;
+	try {
+		ds = new DecompressionStream("deflate-raw");
+	} catch {
+		return { ok: false, code: "CHARX_UNSUPPORTED_ENV" };
+	}
+
+	const writer = ds.writable.getWriter();
+	const reader = ds.readable.getReader();
+	const writeTask = (async () => {
+		try {
+			await writer.write(new Uint8Array(compressed));
+			await writer.close();
+		} catch {
+			// Reader cancellation or stream error is handled on the reader side
+		}
+	})();
+
+	const chunks: Uint8Array[] = [];
+	let totalBytes = 0;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value && value.byteLength > 0) {
+				totalBytes += value.byteLength;
+				if (
+					totalBytes > expectedUncompressedSize ||
+					totalBytes > maxAllowedBytes
+				) {
+					await reader.cancel().catch(() => {});
+					await writeTask;
+					return {
+						ok: false,
+						code: "CHARX_DECOMPRESSION_BOMB",
+						detail: "decompressed stream exceeded declared or maximum size",
+					};
+				}
+				chunks.push(value);
+			}
+		}
+		await writeTask;
+	} catch (err) {
+		await reader.cancel().catch(() => {});
+		await writeTask;
+		return {
+			ok: false,
+			code: "CHARX_CORRUPT_ZIP",
+			detail: err instanceof Error ? err.message : String(err),
+		};
+	}
+
+	if (totalBytes !== expectedUncompressedSize) {
+		return {
+			ok: false,
+			code: "CHARX_DECOMPRESSION_BOMB",
+			detail: `declared size ${expectedUncompressedSize} != actual ${totalBytes}`,
+		};
+	}
+
+	const out = new Uint8Array(totalBytes);
+	let offset = 0;
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return { ok: true, bytes: out };
+}
+
+function resolveImageMimeFromPathOrExt(
+	path: string,
+	extHint?: string,
+): "image/png" | "image/jpeg" | "image/webp" | null {
+	const lowerPath = path.toLowerCase();
+	const lowerExt = (extHint ?? "").trim().toLowerCase().replace(/^\./, "");
+	if (lowerPath.endsWith(".png") || lowerExt === "png") {
+		return "image/png";
+	}
+	if (
+		lowerPath.endsWith(".jpg") ||
+		lowerPath.endsWith(".jpeg") ||
+		lowerExt === "jpg" ||
+		lowerExt === "jpeg"
+	) {
+		return "image/jpeg";
+	}
+	if (lowerPath.endsWith(".webp") || lowerExt === "webp") {
+		return "image/webp";
+	}
+	return null;
+}
+
+export async function parseCharxBytes(
+	bytes: Uint8Array,
+): Promise<CardParseResult> {
+	if (bytes.byteLength > MAX_CARD_FILE_BYTES) {
+		return { ok: false, code: "FILE_TOO_LARGE" };
+	}
+	if (bytes.byteLength < 22) {
+		return {
+			ok: false,
+			code: "CHARX_CORRUPT_ZIP",
+			detail: "archive shorter than EOCD",
+		};
+	}
+
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const minEocdOffset = Math.max(0, bytes.byteLength - 22 - 0xffff);
+	let eocdPos = -1;
+	for (let pos = bytes.byteLength - 22; pos >= minEocdOffset; pos--) {
+		if (view.getUint32(pos, true) === 0x06054b50) {
+			const commentLen = view.getUint16(pos + 20, true);
+			if (pos + 22 + commentLen === bytes.byteLength) {
+				eocdPos = pos;
+				break;
+			}
+		}
+	}
+
+	if (eocdPos < 0) {
+		return {
+			ok: false,
+			code: "CHARX_CORRUPT_ZIP",
+			detail: "EOCD record not found",
+		};
+	}
+
+	if (eocdPos >= 20 && view.getUint32(eocdPos - 20, true) === 0x07064b50) {
+		return {
+			ok: false,
+			code: "CHARX_ZIP64_NOT_SUPPORTED",
+			detail: "ZIP64 EOCD locator present",
+		};
+	}
+
+	const diskNumber = view.getUint16(eocdPos + 4, true);
+	const cdStartDisk = view.getUint16(eocdPos + 6, true);
+	const entriesOnDisk = view.getUint16(eocdPos + 8, true);
+	const totalEntries = view.getUint16(eocdPos + 10, true);
+	const cdSize = view.getUint32(eocdPos + 12, true);
+	const cdOffset = view.getUint32(eocdPos + 16, true);
+
+	if (
+		diskNumber === 0xffff ||
+		cdStartDisk === 0xffff ||
+		entriesOnDisk === 0xffff ||
+		totalEntries === 0xffff ||
+		cdSize === 0xffffffff ||
+		cdOffset === 0xffffffff
+	) {
+		return {
+			ok: false,
+			code: "CHARX_ZIP64_NOT_SUPPORTED",
+			detail: "ZIP64 sentinel in EOCD",
+		};
+	}
+
+	if (diskNumber !== 0 || cdStartDisk !== 0 || entriesOnDisk !== totalEntries) {
+		return {
+			ok: false,
+			code: "CHARX_CORRUPT_ZIP",
+			detail: "multi-disk ZIP not supported",
+		};
+	}
+
+	if (totalEntries > MAX_CHARX_ENTRIES) {
+		return {
+			ok: false,
+			code: "CHARX_DECOMPRESSION_BOMB",
+			detail: `too many ZIP entries: ${totalEntries}`,
+		};
+	}
+
+	if (cdOffset > eocdPos || cdSize > eocdPos - cdOffset) {
+		return {
+			ok: false,
+			code: "CHARX_CORRUPT_ZIP",
+			detail: "central directory out of bounds",
+		};
+	}
+
+	const validEntries: ZipCentralDirEntry[] = [];
+	let declaredTotalUncompressed = 0;
+	let cdPtr = cdOffset;
+	const cdEnd = cdOffset + cdSize;
+
+	for (let i = 0; i < totalEntries; i++) {
+		if (cdPtr + 46 > cdEnd) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "truncated central directory entry",
+			};
+		}
+		if (view.getUint32(cdPtr, true) !== 0x02014b50) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "invalid central directory signature",
+			};
+		}
+
+		const flags = view.getUint16(cdPtr + 8, true);
+		const method = view.getUint16(cdPtr + 10, true);
+		const crc32 = view.getUint32(cdPtr + 16, true);
+		const compressedSize = view.getUint32(cdPtr + 20, true);
+		const uncompressedSize = view.getUint32(cdPtr + 24, true);
+		const fileNameLen = view.getUint16(cdPtr + 28, true);
+		const extraLen = view.getUint16(cdPtr + 30, true);
+		const commentLen = view.getUint16(cdPtr + 32, true);
+		const localHeaderOffset = view.getUint32(cdPtr + 42, true);
+
+		const entryEnd = cdPtr + 46 + fileNameLen + extraLen + commentLen;
+		if (entryEnd > cdEnd) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "central directory entry exceeds bounds",
+			};
+		}
+
+		if ((flags & 0x0001) !== 0 || (flags & 0x0040) !== 0 || method === 99) {
+			return {
+				ok: false,
+				code: "CHARX_ENCRYPTED",
+				detail: "encrypted ZIP entry is not supported",
+			};
+		}
+
+		const extraBytes = bytes.subarray(
+			cdPtr + 46 + fileNameLen,
+			cdPtr + 46 + fileNameLen + extraLen,
+		);
+		if (
+			compressedSize === 0xffffffff ||
+			uncompressedSize === 0xffffffff ||
+			localHeaderOffset === 0xffffffff ||
+			hasZip64ExtraField(extraBytes)
+		) {
+			return {
+				ok: false,
+				code: "CHARX_ZIP64_NOT_SUPPORTED",
+				detail: "ZIP64 entry is not supported",
+			};
+		}
+
+		const nameBytes = bytes.subarray(cdPtr + 46, cdPtr + 46 + fileNameLen);
+		cdPtr = entryEnd;
+
+		let entryPath: string;
+		try {
+			entryPath = readUtf8(nameBytes);
+		} catch {
+			continue;
+		}
+
+		// Ignore directories and unsafe paths (.., absolute path, backslash)
+		if (entryPath.endsWith("/") || isUnsafeZipPath(entryPath)) {
+			continue;
+		}
+
+		if (method !== 0 && method !== 8) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: `unsupported compression method ${method}`,
+			};
+		}
+
+		declaredTotalUncompressed += uncompressedSize;
+		if (declaredTotalUncompressed > MAX_CHARX_TOTAL_UNCOMPRESSED_BYTES) {
+			return {
+				ok: false,
+				code: "CHARX_DECOMPRESSION_BOMB",
+				detail: "total declared uncompressed size exceeds 50MB",
+			};
+		}
+
+		validEntries.push({
+			path: entryPath,
+			method,
+			flags,
+			crc32,
+			compressedSize,
+			uncompressedSize,
+			localHeaderOffset,
+		});
+	}
+
+	const extractedMap = new Map<string, Uint8Array>();
+	let actualTotalUncompressed = 0;
+
+	for (const entry of validEntries) {
+		const lhOffset = entry.localHeaderOffset;
+		if (lhOffset + 30 > cdOffset) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "local file header out of bounds",
+			};
+		}
+		if (view.getUint32(lhOffset, true) !== 0x04034b50) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "invalid local file header signature",
+			};
+		}
+		const lfFlags = view.getUint16(lhOffset + 6, true);
+		const lfMethod = view.getUint16(lhOffset + 8, true);
+		const lfNameLen = view.getUint16(lhOffset + 26, true);
+		const lfExtraLen = view.getUint16(lhOffset + 28, true);
+
+		if ((lfFlags & 0x0001) !== 0 || (lfFlags & 0x0040) !== 0) {
+			return {
+				ok: false,
+				code: "CHARX_ENCRYPTED",
+				detail: "encrypted local header",
+			};
+		}
+		if (lfMethod !== entry.method) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "compression method mismatch between CD and local header",
+			};
+		}
+
+		const dataStart = lhOffset + 30 + lfNameLen + lfExtraLen;
+		const dataEnd = dataStart + entry.compressedSize;
+		if (dataStart < 0 || dataEnd > cdOffset || dataEnd < dataStart) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "entry data out of bounds",
+			};
+		}
+
+		const remainingTotalBudget =
+			MAX_CHARX_TOTAL_UNCOMPRESSED_BYTES - actualTotalUncompressed;
+		if (entry.uncompressedSize > remainingTotalBudget) {
+			return {
+				ok: false,
+				code: "CHARX_DECOMPRESSION_BOMB",
+				detail: "uncompressed size exceeds 50MB total budget",
+			};
+		}
+
+		let content: Uint8Array;
+		if (entry.method === 0) {
+			if (entry.compressedSize !== entry.uncompressedSize) {
+				return {
+					ok: false,
+					code: "CHARX_DECOMPRESSION_BOMB",
+					detail: "stored entry compressed size != uncompressed size",
+				};
+			}
+			content = bytes.subarray(dataStart, dataEnd);
+			actualTotalUncompressed += content.byteLength;
+		} else {
+			const inflated = await inflateRawWithSizeCheck(
+				bytes.subarray(dataStart, dataEnd),
+				entry.uncompressedSize,
+				remainingTotalBudget,
+			);
+			if (!inflated.ok) {
+				return inflated;
+			}
+			content = inflated.bytes;
+			actualTotalUncompressed += content.byteLength;
+		}
+
+		if (computeCrc32(content) !== entry.crc32) {
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: `CRC32 mismatch on ${entry.path}`,
+			};
+		}
+
+		extractedMap.set(entry.path, content);
+	}
+
+	const cardJsonBytes = extractedMap.get("card.json");
+	if (!cardJsonBytes) {
+		return { ok: false, code: "CHARX_MISSING_CARD_JSON" };
+	}
+
+	let cardJsonText: string;
+	try {
+		cardJsonText = readUtf8(cardJsonBytes).trim();
+	} catch {
+		return {
+			ok: false,
+			code: "INVALID_JSON",
+			detail: "card.json is not valid UTF-8",
+		};
+	}
+
+	const cleanCardJson = cardJsonText.startsWith("\uFEFF")
+		? cardJsonText.slice(1).trim()
+		: cardJsonText;
+	const parsedCard = parseCharacterCardJsonText(cleanCardJson, "charx");
+	if (!parsedCard.ok) {
+		return parsedCard;
+	}
+
+	const rawObj = parsedCard.card.rawJson;
+	const dataLayer = isPlainRecord(rawObj.data) ? rawObj.data : null;
+	const rawAssets = Array.isArray(dataLayer?.assets)
+		? dataLayer.assets
+		: Array.isArray(rawObj.assets)
+			? rawObj.assets
+			: [];
+
+	let selectedIconBytes: Uint8Array | undefined;
+	let selectedIconMime: string | undefined;
+
+	for (const item of rawAssets) {
+		if (!isPlainRecord(item)) continue;
+		const type = typeof item.type === "string" ? item.type.toLowerCase() : "";
+		const uri = typeof item.uri === "string" ? item.uri.trim() : "";
+		if (type !== "icon" || !/^embedd?ed:\/\//i.test(uri)) {
+			continue;
+		}
+		const relPath = uri.replace(/^embedd?ed:\/\//i, "").replace(/^\.\//, "");
+		if (isUnsafeZipPath(relPath)) continue;
+		const mime = resolveImageMimeFromPathOrExt(
+			relPath,
+			typeof item.ext === "string" ? item.ext : undefined,
+		);
+		if (!mime) continue;
+		const assetBytes = extractedMap.get(relPath);
+		if (!assetBytes) continue;
+		if (assetBytes.byteLength > MAX_CHARX_IMAGE_BYTES) {
+			return {
+				ok: false,
+				code: "CHARX_DECOMPRESSION_BOMB",
+				detail: "embedded icon image exceeds 10MB limit",
+			};
+		}
+		selectedIconBytes = assetBytes;
+		selectedIconMime = mime;
+		if (typeof item.name === "string" && item.name.toLowerCase() === "main") {
+			break;
+		}
+	}
+
+	return {
+		ok: true,
+		card: parsedCard.card,
+		...(selectedIconBytes && selectedIconMime
+			? { imageBytes: selectedIconBytes, imageMimeType: selectedIconMime }
+			: {}),
+	};
+}
+
+export function parsePngOrJsonCardBytes(
 	bytes: Uint8Array,
 	fileName = "",
 ): CardParseResult {
-	Logger.debug(TAG, "parsing character card bytes", {
-		fileName,
-		byteLength: bytes.byteLength,
-	});
-
 	if (bytes.byteLength > MAX_CARD_FILE_BYTES) {
 		return { ok: false, code: "FILE_TOO_LARGE" };
 	}
 
 	const lowerName = fileName.trim().toLowerCase();
-	if (
-		lowerName.endsWith(".charx") ||
-		startsWithBytes(bytes, ZIP_PK_SIGNATURE)
-	) {
-		return { ok: false, code: "CHARX_NOT_SUPPORTED" };
-	}
 
 	if (startsWithBytes(bytes, PNG_SIGNATURE)) {
 		const chunkResult = extractPngCardChunk(bytes);
@@ -564,4 +1110,29 @@ export function parseCharacterCardBytes(
 	}
 
 	return parseCharacterCardJsonText(cleanText, "json");
+}
+
+export async function parseCharacterCardBytes(
+	bytes: Uint8Array,
+	fileName = "",
+): Promise<CardParseResult> {
+	Logger.debug(TAG, "parsing character card bytes", {
+		fileName,
+		byteLength: bytes.byteLength,
+	});
+
+	if (bytes.byteLength > MAX_CARD_FILE_BYTES) {
+		return { ok: false, code: "FILE_TOO_LARGE" };
+	}
+
+	const lowerName = fileName.trim().toLowerCase();
+	if (
+		lowerName.endsWith(".charx") ||
+		startsWithBytes(bytes, ZIP_PK_SIGNATURE) ||
+		startsWithBytes(bytes, ZIP_EMPTY_EOCD_SIGNATURE)
+	) {
+		return parseCharxBytes(bytes);
+	}
+
+	return parsePngOrJsonCardBytes(bytes, fileName);
 }

@@ -4,6 +4,7 @@ import {
 	DEFAULT_PROMPT_CHAR_BUDGET,
 	MAX_SERIALIZED_CONTEXT_CHARS,
 	buildRoleplayPrompt,
+	expandOriginalWithBudget,
 	measureSerializedContextLength,
 } from "../prompt-builder";
 
@@ -214,6 +215,64 @@ describe("prompt-builder", () => {
 			DEFAULT_PROMPT_CHAR_BUDGET,
 		);
 		expect(measureSerializedContextLength(bombRes.context)).toBeLessThanOrEqual(
+			MAX_SERIALIZED_CONTEXT_CHARS,
+		);
+	});
+
+	it("stops expanding repeated {{original}} macros immediately once budget is filled without creating huge intermediate strings", () => {
+		const repeatedSystemPrompt = "{{original}}\n".repeat(2_000);
+		const longBody = "장문의캐릭터본문설정입니다.".repeat(1_200); // ~16,800 chars
+
+		const directExpansion = expandOriginalWithBudget(
+			repeatedSystemPrompt,
+			longBody,
+			DEFAULT_PROMPT_CHAR_BUDGET,
+		);
+		expect(directExpansion.truncated).toBe(true);
+		expect(directExpansion.expandedCount).toBeLessThanOrEqual(2);
+		expect(directExpansion.peakLength).toBeLessThanOrEqual(
+			DEFAULT_PROMPT_CHAR_BUDGET,
+		);
+		expect(directExpansion.text.length).toBeLessThanOrEqual(
+			DEFAULT_PROMPT_CHAR_BUDGET,
+		);
+
+		const maxLoreEntries = Array.from({ length: 1_000 }, (_, idx) => ({
+			id: `lore-${idx}`,
+			name: `항목${idx}`,
+			comment: "",
+			keys: [`키워드${idx}`],
+			secondary_keys: [],
+			content: "세계관상세설명문장입니다.".repeat(20),
+			enabled: true,
+			constant: idx < 20,
+			insertion_order: idx,
+			priority: 10,
+		}));
+
+		const card = makeBaseCard({
+			system_prompt: repeatedSystemPrompt,
+			description: "설명문장입니다.".repeat(2_000),
+			personality: "성격문장입니다.".repeat(2_000),
+			scenario: "상황문장입니다.".repeat(2_000),
+			character_book: {
+				name: "대형로어북",
+				description: "",
+				entries: maxLoreEntries,
+			},
+		});
+
+		const res = buildRoleplayPrompt(card, {
+			userName: "검증자",
+			maxChars: DEFAULT_PROMPT_CHAR_BUDGET,
+		});
+
+		expect(res.roleplay.length).toBeLessThanOrEqual(DEFAULT_PROMPT_CHAR_BUDGET);
+		expect(res.peakIntermediateChars).toBeLessThanOrEqual(
+			DEFAULT_PROMPT_CHAR_BUDGET,
+		);
+		expect(res.truncated).toBe(true);
+		expect(measureSerializedContextLength(res.context)).toBeLessThanOrEqual(
 			MAX_SERIALIZED_CONTEXT_CHARS,
 		);
 	});

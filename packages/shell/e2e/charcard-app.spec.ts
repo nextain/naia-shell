@@ -1,4 +1,55 @@
+import { deflateRawSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
+
+function buildSingleEntryCharxZip(cardJsonText: string): Buffer {
+	const nameBytes = Buffer.from("card.json", "utf8");
+	const rawData = Buffer.from(cardJsonText, "utf8");
+	const compressedData = deflateRawSync(rawData);
+
+	// Compute IEEE 802.3 CRC32
+	let crc = 0xffffffff;
+	for (let i = 0; i < rawData.length; i++) {
+		crc ^= rawData[i] ?? 0;
+		for (let bit = 0; bit < 8; bit++) {
+			crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+		}
+	}
+	crc = (crc ^ 0xffffffff) >>> 0;
+
+	const lfh = Buffer.alloc(30 + nameBytes.length);
+	lfh.writeUInt32LE(0x04034b50, 0);
+	lfh.writeUInt16LE(20, 4);
+	lfh.writeUInt16LE(0, 6);
+	lfh.writeUInt16LE(8, 8);
+	lfh.writeUInt32LE(crc, 14);
+	lfh.writeUInt32LE(compressedData.length, 18);
+	lfh.writeUInt32LE(rawData.length, 22);
+	lfh.writeUInt16LE(nameBytes.length, 26);
+	nameBytes.copy(lfh, 30);
+
+	const cdh = Buffer.alloc(46 + nameBytes.length);
+	cdh.writeUInt32LE(0x02014b50, 0);
+	cdh.writeUInt16LE(20, 4);
+	cdh.writeUInt16LE(20, 6);
+	cdh.writeUInt16LE(0, 8);
+	cdh.writeUInt16LE(8, 10);
+	cdh.writeUInt32LE(crc, 16);
+	cdh.writeUInt32LE(compressedData.length, 20);
+	cdh.writeUInt32LE(rawData.length, 24);
+	cdh.writeUInt16LE(nameBytes.length, 28);
+	cdh.writeUInt32LE(0, 42);
+	nameBytes.copy(cdh, 46);
+
+	const cdOffset = lfh.length + compressedData.length;
+	const eocd = Buffer.alloc(22);
+	eocd.writeUInt32LE(0x06054b50, 0);
+	eocd.writeUInt16LE(1, 8);
+	eocd.writeUInt16LE(1, 10);
+	eocd.writeUInt32LE(cdh.length, 12);
+	eocd.writeUInt32LE(cdOffset, 16);
+
+	return Buffer.concat([lfh, compressedData, cdh, eocd]);
+}
 
 declare global {
 	interface Window {
@@ -64,7 +115,7 @@ test.describe("Character Card Roleplay app (charcard.html)", () => {
 	}) => {
 		await page.goto("/charcard.html");
 
-		// 1. Initial sample cards list & PNG sample card avatar + name
+		// 1. Initial 4 sample cards list & PNG sample card avatar + name
 		await expect(page.getByTestId("charcard-detail-name")).toHaveText("온새미");
 		const avatarImg = page.getByTestId("charcard-avatar-img");
 		await expect(avatarImg).toBeVisible();
@@ -72,6 +123,9 @@ test.describe("Character Card Roleplay app (charcard.html)", () => {
 		await expect(
 			page.getByTestId("charcard-item-sample:clockwork-tinker-v3"),
 		).toContainText("한도윤");
+		await expect(
+			page.getByTestId("charcard-item-sample:clockwork-tinker-json-v3"),
+		).toContainText("백하진");
 		await expect(
 			page.getByTestId("charcard-item-sample:starlight-archivist-v2"),
 		).toContainText("서윤하");
@@ -101,7 +155,22 @@ test.describe("Character Card Roleplay app (charcard.html)", () => {
 		expect(startMsg?.context?.data.user).toBe("다정");
 		expect(startMsg?.context?.data.roleplay).toContain("한도윤");
 
-		// 4. End roleplay -> verify parent receives context: null
+		// 3b. Shell context-cleared postMessage ends active roleplay banner
+		await page.evaluate(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: window.parent,
+					data: { type: "naia-app:context-cleared" },
+				}),
+			);
+		});
+		await expect(page.getByTestId("charcard-active-banner")).toHaveCount(0);
+
+		// 4. Start again and manually end roleplay -> verify parent receives context: null
+		await page.getByTestId("charcard-start-button").click();
+		await expect(page.getByTestId("charcard-active-banner")).toContainText(
+			"한도윤 연기 중",
+		);
 		await page.getByTestId("charcard-stop-button").click();
 		await expect(page.getByTestId("charcard-active-banner")).toHaveCount(0);
 		const stopMsg = await page.evaluate(
@@ -112,7 +181,7 @@ test.describe("Character Card Roleplay app (charcard.html)", () => {
 			context: null,
 		});
 
-		// 5. Upload JSON card file
+		// 5. Upload CHARX (.charx) archive card file
 		const uploadedCard = {
 			spec: "chara_card_v3",
 			spec_version: "3.0",
@@ -130,15 +199,15 @@ test.describe("Character Card Roleplay app (charcard.html)", () => {
 			},
 		};
 		await page.getByTestId("charcard-file-input").setInputFiles({
-			name: "navigator.json",
-			mimeType: "application/json",
-			buffer: Buffer.from(JSON.stringify(uploadedCard), "utf8"),
+			name: "navigator.charx",
+			mimeType: "application/zip",
+			buffer: buildSingleEntryCharxZip(JSON.stringify(uploadedCard)),
 		});
 		await expect(page.getByTestId("charcard-detail-name")).toHaveText(
 			"별빛항해사",
 		);
 
-		// 6. Delete confirmation dialog: Cancel keeps card, Confirm removes card
+		// 6. Delete confirmation dialog: Cancel keeps card, Confirm removes card and focuses next card
 		await page.getByTestId("charcard-delete-button").click();
 		const dialog = page.getByRole("alertdialog");
 		await expect(dialog).toBeVisible();
@@ -155,6 +224,9 @@ test.describe("Character Card Roleplay app (charcard.html)", () => {
 		await page.getByTestId("charcard-delete-confirm").click();
 		await expect(dialog).toHaveCount(0);
 		await expect(page.getByTestId("charcard-detail-name")).toHaveText("온새미");
+		await expect(
+			page.getByTestId("charcard-item-sample:greenhouse-keeper-png"),
+		).toBeFocused();
 
 		// 7. Invalid file -> error message + recovery button returns cleanly
 		await page.getByTestId("charcard-file-input").setInputFiles({
