@@ -11,7 +11,8 @@ export type NvaGestureShortcutEvent = Pick<
 	| "keyCode"
 	| "code"
 	| "key"
->;
+> &
+	Partial<Pick<KeyboardEvent, "getModifierState">>;
 
 /**
  * Return the zero-based active gesture index for an Alt+1..Alt+9 keydown.
@@ -29,6 +30,7 @@ export function nvaGestureActionIndexFromKeyboardEvent(
 		terminalFocused ||
 		!event.altKey ||
 		event.ctrlKey ||
+		event.getModifierState?.("AltGraph") ||
 		event.metaKey ||
 		event.shiftKey ||
 		event.repeat ||

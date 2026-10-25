@@ -884,9 +884,11 @@ export function ChatArea({
 			if (!action) return;
 
 			event.preventDefault();
-			recordManualNvaGestureAction(action.key);
 			void getCameraActions()
 				.playAction(action.key)
+				.then((started) => {
+					if (started) recordManualNvaGestureAction(action.key);
+				})
 				.catch(() => {});
 		};
 		window.addEventListener("keydown", onGestureHotkey);
@@ -1084,6 +1086,7 @@ export function ChatArea({
 	}
 
 	function interruptTts(): void {
+		pendingAiGestureActionRef.current = null;
 		settleSlidePresenterSpeech("cancelled");
 		// Reveal the canonical response immediately on interruption and invalidate
 		// late playback callbacks from the superseded turn.
@@ -3547,7 +3550,9 @@ export function ChatArea({
 			let outputTurnDirty = false;
 			let inputAccum = "";
 			let outputAccum = "";
-			let liveGestureStream = new GestureTriggerStream(gestureActions);
+			const createLiveGestureStream = () =>
+				new GestureTriggerStream(getCameraActions().getGestureActions());
+			let liveGestureStream = createLiveGestureStream();
 			const liveGestureActionPlayed = { current: false };
 			const appendLiveOutput = (
 				cleanText: string,
@@ -3609,7 +3614,7 @@ export function ChatArea({
 				player.clear();
 				const flushed = liveGestureStream.flush();
 				appendLiveOutput(flushed.cleanText, []);
-				liveGestureStream = new GestureTriggerStream(gestureActions);
+				liveGestureStream = createLiveGestureStream();
 				liveGestureActionPlayed.current = false;
 				inputTurnDirty = false;
 				outputTurnDirty = false;
@@ -3624,7 +3629,7 @@ export function ChatArea({
 			session.onTurnEnd = () => {
 				const flushed = liveGestureStream.flush();
 				appendLiveOutput(flushed.cleanText, flushed.gestures);
-				liveGestureStream = new GestureTriggerStream(gestureActions);
+				liveGestureStream = createLiveGestureStream();
 				liveGestureActionPlayed.current = false;
 				inputTurnDirty = false;
 				outputTurnDirty = false;
@@ -3989,7 +3994,6 @@ export function ChatArea({
 	const handleInputChange = useCallback(
 		(e: React.ChangeEvent<HTMLTextAreaElement>) => {
 			const value = e.target.value;
-			if (value.length > 0) pendingAiGestureActionRef.current = null;
 			setInput(value);
 
 			// Detect @ trigger

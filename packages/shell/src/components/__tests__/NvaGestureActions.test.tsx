@@ -5,6 +5,7 @@ import {
 	fireEvent,
 	render,
 	screen,
+	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -54,8 +55,8 @@ describe("NvaGestureActions", () => {
 		).toBeDefined();
 	});
 
-	it("records and plays a manual action", () => {
-		const playAction = vi.fn().mockResolvedValue(undefined);
+	it("records a manual action only after playback starts", async () => {
+		const playAction = vi.fn().mockResolvedValue(true);
 		const onManualAction = vi.fn();
 		registerCameraActions({
 			getGestureActions: () => [{ key: "wave", label: "Welcome" }],
@@ -65,8 +66,24 @@ describe("NvaGestureActions", () => {
 		render(<NvaGestureActions onManualAction={onManualAction} />);
 
 		fireEvent.click(screen.getByRole("button", { name: "Welcome (Alt+1)" }));
+		await waitFor(() => expect(onManualAction).toHaveBeenCalledWith("wave"));
 		expect(onManualAction).toHaveBeenCalledWith("wave");
 		expect(playAction).toHaveBeenCalledWith("wave");
+	});
+
+	it("does not record a manual action refused by the renderer", async () => {
+		const playAction = vi.fn().mockResolvedValue(false);
+		const onManualAction = vi.fn();
+		registerCameraActions({
+			getGestureActions: () => [{ key: "wave", label: "Welcome" }],
+			playAction,
+		});
+		useCascadeAvatarStore.getState().setRenderer({} as never);
+		render(<NvaGestureActions onManualAction={onManualAction} />);
+
+		fireEvent.click(screen.getByRole("button", { name: "Welcome (Alt+1)" }));
+		await waitFor(() => expect(playAction).toHaveBeenCalledWith("wave"));
+		expect(onManualAction).not.toHaveBeenCalled();
 	});
 
 	it("updates the action list when the active renderer changes", () => {

@@ -64,7 +64,7 @@ describe("AiControlBar proactive cost control", () => {
 	it("keeps zoom controls in the avatar overlay and excludes NVA gestures", async () => {
 		const zoom = vi.fn();
 		const save = vi.fn();
-		const playAction = vi.fn().mockResolvedValue(undefined);
+		const playAction = vi.fn().mockResolvedValue(true);
 		registerCameraActions({
 			zoom,
 			save,

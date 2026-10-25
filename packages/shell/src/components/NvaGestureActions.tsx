@@ -40,8 +40,12 @@ export function NvaGestureActions({ onManualAction }: Props) {
 									.some((currentAction) => currentAction.key === action.key)
 							)
 								return;
-							onManualAction?.(action.key);
-							void cameraActions.playAction(action.key).catch(() => {});
+							void cameraActions
+								.playAction(action.key)
+								.then((started) => {
+									if (started) onManualAction?.(action.key);
+								})
+								.catch(() => {});
 						}}
 					>
 						<span className="nva-gesture-actions__label">{action.label}</span>

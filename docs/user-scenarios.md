@@ -2413,7 +2413,7 @@ Test Coverage Map (P02)
 | 빈 목록 | 동작 없는 NVA와 NVA가 아닌 아바타에는 동작 묶음과 AI 동작 안내가 없다. Alt+1~Alt+9는 입력을 막지 않고 아무 동작도 재생하지 않는다. |
 | 진행 | 입력 textarea에 글을 입력 중이어도 Alt+1~Alt+9는 `event.code`의 `Digit1`~`Digit9`와 동작 개수로 판정하고 입력을 바꾸지 않는다. 키패드 숫자는 제외한다. 터미널 `.xterm` 포커스에서는 단축키를 넘기고, 기본 Alt+숫자 동작이 없는 CodeMirror에서는 허용한다. 반복 키·조합 키·IME 입력·Ctrl/Meta/Shift/AltGr 조합은 무시한다. |
 | 성공 | 음성이 꺼진 응답의 AI 동작은 바로 한 번 재생한다. 음성이 켜진 응답은 TTS와 음성 출력이 모두 끝나고 대화가 idle인 뒤 한 번 재생한다. 직전 동작과의 제한 시간 안에는 AI가 동작을 재생하지 않으며, 수동 단추·단축키는 제한하지 않는다. |
-| 오류 | 범위를 벗어난 번호, 미등록 gesture key, 없는 NVA 동작은 조용히 무시한다. 새 사용자 입력·취소·활성 아바타 교체 시 대기하던 AI 동작을 버린다. gesture 표기는 스트림이 나뉘어도 화면·TTS에 노출하지 않는다. |
+| 오류 | 범위를 벗어난 번호, 미등록 gesture key, 없는 NVA 동작은 조용히 무시한다. 새 메시지를 실제 전송할 때(`handleSend`), 취소, 활성 아바타 교체, TTS 또는 슬라이드 낭독 인터럽트 때 대기하던 AI 동작을 버린다. 입력 초안 편집만으로는 대기 동작을 버리지 않는다. 실시간 음성 transcript는 전송된 사용자 입력으로 취급한다. gesture 표기는 스트림이 나뉘어도 화면·TTS에 노출하지 않는다. |
 | 좁은 폭 | 360px 폭에서 동작 단추는 입력 막대와 겹치거나 화면 밖으로 잘리지 않고 줄바꿈한다. 동작 이름·단축키를 키보드와 스크린리더로 식별할 수 있다. |
 
 Test Coverage Map (P02)
@@ -2423,4 +2423,4 @@ Test Coverage Map (P02)
 | `Digit1`~`Digit9` 판정, Option 문자 `¡`와 code 사용, modifier/repeat/IME/AltGr/범위/키패드/xterm 경계 | `packages/shell/src/lib/avatar/__tests__/nva-action-hotkeys.test.ts` — keyboard action index and platform labels | `packages/shell/e2e/nva-prebaked.spec.ts` — focused textarea Alt+1/Alt+2 and unchanged input |
 | 활성 NVA 목록 갱신, 채팅 탭 위치, 툴팁·ARIA 이름, 빈 목록, 오버레이에서 gesture 제거 | `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `AiControlBar.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — input-adjacent buttons, no duplicate overlay group, empty actions and 360px non-overlap |
 | 조건부 AI 권장 문구·label/key/단축키, 응답당 하나, 반복 제한과 수동 실행 기록 | `packages/shell/src/lib/__tests__/persona.test.ts`, `persona-disabled.test.ts`; `packages/shell/src/lib/avatar/__tests__/nva-gesture-rate-limiter.test.ts` | `packages/shell/e2e/nva-prebaked.spec.ts` — active/empty NVA action availability |
-| 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 취소·새 입력·아바타 교체 폐기, 말하는 중 수동 실행 무시 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`; `packages/shell/src/components/__tests__/ChatArea.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
+| 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |

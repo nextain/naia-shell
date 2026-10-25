@@ -65,6 +65,15 @@ describe("NVA action shortcuts", () => {
 		).toBeNull();
 	});
 
+	it("ignores Linux AltGraph when Ctrl is not reported", () => {
+		expect(
+			nvaGestureActionIndexFromKeyboardEvent(
+				keyEvent({ getModifierState: (modifier) => modifier === "AltGraph" }),
+				9,
+			),
+		).toBeNull();
+	});
+
 	it("ignores non-Alt, AltGr and terminal input", () => {
 		expect(
 			nvaGestureActionIndexFromKeyboardEvent(keyEvent({ altKey: false }), 9),
