@@ -13,7 +13,9 @@ function requestBrowserVisibilitySync() {
  * bucket so a transient app push can never overwrite them. See
  * `selectPromptAppContexts` for how they are merged into the system prompt.
  */
-const PERSISTENT_CONTEXT_TYPES = new Set<string>(["bgm"]);
+export const PERSISTENT_CONTEXT_TYPES: ReadonlySet<string> = new Set<string>([
+	"bgm",
+]);
 
 interface AppState {
 	/** Currently active app id. null = default avatar view. */

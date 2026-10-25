@@ -1,0 +1,15 @@
+{
+	"id": "land.naia.charcard",
+	"name": "Character Card Roleplay",
+	"names": {
+		"ko": "캐릭터 카드 설정놀이",
+		"en": "Character Card Roleplay"
+	},
+	"iconUrl": "icon.svg",
+	"version": "0.1.0",
+	"description": "PNG·JSON 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화하며, 카드와 대화 설정은 기기 안에만 보관합니다.",
+	"descriptions": {
+		"ko": "PNG·JSON 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화하며, 카드와 대화 설정은 기기 안에만 보관합니다.",
+		"en": "Import PNG and JSON character cards (V2 and V3) so Naia roleplays as that character. Cards and roleplay settings stay on your device."
+	}
+}

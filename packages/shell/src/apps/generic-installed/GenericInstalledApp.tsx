@@ -5,6 +5,7 @@ import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
+import { installInstalledAppContextBridge } from "./installed-app-context-bridge";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -53,6 +54,7 @@ export function createGenericInstalledApp(
 		useLayoutEffect(() => {
 			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
 			const frame = iframeRef.current;
+			const disposeContextBridge = installInstalledAppContextBridge(frame);
 			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
@@ -60,6 +62,7 @@ export function createGenericInstalledApp(
 			return () => {
 				disposeHostBridge();
 				disposeFilesBridge();
+				disposeContextBridge();
 			};
 		}, [htmlEntry, frameSrc]);
 
@@ -122,7 +125,9 @@ export function createGenericInstalledApp(
 				}),
 			);
 
-			return () => unsubs.forEach((u) => u());
+			return () => {
+				for (const u of unsubs) u();
+			};
 		}, [naia, htmlEntry, tools]);
 
 		if (htmlEntry) {
