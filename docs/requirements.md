@@ -1401,6 +1401,15 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-NVA-GESTURE.1** | NVA renderer는 `animKind`가 gesture인 항목의 key·label 목록을 제공하고 `playAction(key)`로 존재하는 동작만 무음 1회 재생 후 `ended`에서 대기로 복귀한다. 말하는 중에는 무시하고 없는 key도 무시한다. gesture가 있을 때만 label 단추와 AI 안내를 제공한다. AI 표기는 `[[gesture:key]]`이며 적합한 경우 한 번만 사용한다. 응답의 gesture 표기는 스트림 경계와 무관하게 화면·TTS에서 제거한다. 새 클립, 립싱크 및 layered player 연결은 하지 않는다. | UC-NVA-CAMERA-GESTURE-1022 | `prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `persona.test.ts`, `persona-disabled.test.ts`, `ChatArea.test.tsx`, `AiControlBar.test.tsx`, `e2e/nva-prebaked.spec.ts` | Done |
 | **FR-VOICE-LOCAL-RETURN.1** | 로컬 음성 엔진이 이미 실행 중인 상태에서 Edge 뒤 local 제공자를 다시 선택하면 provider=`naia-local-voice`, TTS와 local voice가 활성화된 설정을 상태·저장소·Naia 설정에 기록한다. 비어 있거나 loopback 호스트일 때만 local 기본 호스트로 정규화하고, 원격 TTS 호스트는 보존한다. | UC-NVA-CAMERA-GESTURE-1022 | `SettingsTab.test.tsx` — running local voice Edge→local; `e2e/settings-slots.spec.ts` — running local provider change | Done |
 
+## 2026-10-25 NVA 동작 단축키·채팅 배치·AI 활용
+
+아래 FR-NVA-GESTURE.2~3은 FR-NVA-GESTURE.1의 발견성·AI 사용 시점에 관한 상충 문구를 대체한다. `.1`의 NVA gesture 목록, `playAction`, 무음 1회 재생, 알 수 없는 key 무시, 응답 표기 제거, 새 클립·립싱크·layered player 금지 계약은 계속 적용한다.
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-NVA-GESTURE.2** | 활성 renderer의 gesture 순서 1~9번을 Alt+1~Alt+9로 실행한다. 판정은 `event.code`의 `Digit1`~`Digit9`를 사용하며 키패드 숫자는 제외한다. 입력 textarea에서도 일치하는 동작은 `preventDefault`해 문자가 들어가지 않게 한다. 동작이 없거나 번호가 범위를 벗어난 경우에는 이벤트를 막지 않는다. Alt 단독만 허용하고 Ctrl/Meta/Shift, repeat, `isComposing`, keyCode 229, AltGr를 제외한다. `.xterm` 포커스에서는 readline 입력을 보호해 통과시키고 기본 Alt+숫자 동작이 없는 CodeMirror에서는 허용한다. gesture 단추는 채팅 탭에서만 입력 막대 바로 위에 표시하고 아바타 오버레이의 중복 묶음을 제거한다. 각 단추의 `title`과 접근성 이름에 플랫폼 표기 `Alt+n` 또는 `⌥n`을 넣는다. 확대·이동·초기화 단추는 오버레이에 유지하고, 활성 아바타 교체 때 목록을 갱신한다. | UC-NVA-ACTION-HOTKEYS-20261025 | `nva-action-hotkeys.test.ts`, `NvaGestureActions.test.tsx`, `AiControlBar.test.tsx`, `e2e/nva-prebaked.spec.ts` | Done |
+| **FR-NVA-GESTURE.3** | 동작이 있을 때만 AI 안내를 제공하고 각 동작 label·key와 사용자 단축키를 전달한다. 인사·반가움·기쁨·축하·응원 등 의미가 맞는 경우 적극 활용을 권장하되 응답당 최대 하나, 연속 응답에서 같은 key 반복 금지, 정보 전달·진지함·슬픔에는 사용 금지로 안내한다. 기존 `[[gesture:key]]` 표기를 유지하고 화면·TTS에서 제거한다. AI 재생은 어떤 AI/수동 gesture든 직전 재생과 최소 15초 간격을 두고 같은 key는 60초 동안 다시 재생하지 않는다. 단추·단축키의 수동 재생은 제한하지 않지만 실제 요청 key/time을 제한기에 기록해 AI의 즉시 반복을 막는다. TTS/음성 출력이 켜져 있으면 AI gesture를 최대 하나 대기시키고 응답 생성·TTS pipeline·audio queue·cascade TTS job·audio player가 모두 idle인 뒤 재생한다. 음성이 꺼져 있으면 표기 수신 즉시 재생한다. 새 사용자 입력·취소·renderer 교체 시 대기 동작은 버린다. 수동 gesture는 기존처럼 말하는 중 재생 요청을 무시한다. | UC-NVA-ACTION-HOTKEYS-20261025 | `persona.test.ts`, `persona-disabled.test.ts`, `nva-gesture-rate-limiter.test.ts`, `prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `ChatArea.test.tsx`, `e2e/nva-prebaked.spec.ts` | Done |
+
 ## 기능 요구사항 (FR) — Studio에서 쉘로 NVA 적용 (#105)
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |

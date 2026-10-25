@@ -202,7 +202,9 @@ describe("PrebakedAvatarRenderer", () => {
 		renderer.start(video, document.createElement("canvas"));
 		await Promise.resolve();
 		await Promise.resolve();
-		expect(renderer.getGestureActions()).toEqual([{ key: "wave", label: "Wave" }]);
+		expect(renderer.getGestureActions()).toEqual([
+			{ key: "wave", label: "Wave" },
+		]);
 
 		const action = renderer.playAction("wave");
 		await Promise.resolve();
@@ -264,6 +266,38 @@ describe("PrebakedAvatarRenderer", () => {
 		renderer.stop();
 		video.remove();
 		playSpy.mockRestore();
+	});
+
+	it("confirms that TTS speaking visuals interrupt a gesture clip", async () => {
+		const manifest = baseManifest();
+		manifest.animations.wave = {
+			clip: "clips/wave.webm",
+			loop: false,
+			can_talk: false,
+			label: "Wave",
+		};
+		const renderer = new PrebakedAvatarRenderer({
+			manifest,
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+		});
+		const video = makeVideo();
+		document.body.appendChild(video);
+		renderer.start(video, document.createElement("canvas"));
+		await Promise.resolve();
+		await Promise.resolve();
+
+		const action = renderer.playAction("wave");
+		await Promise.resolve();
+		await Promise.resolve();
+		const wave = videoForUrl("blob:clips/wave.webm");
+		const pauseWave = vi.spyOn(wave, "pause").mockImplementation(() => {});
+		renderer.setSpeakingVisual(true);
+		await action;
+
+		expect(pauseWave).toHaveBeenCalled();
+		renderer.stop();
+		video.remove();
 	});
 
 	it("ignores unknown gestures and gestures requested during speech", async () => {

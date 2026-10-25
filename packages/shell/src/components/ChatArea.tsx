@@ -23,18 +23,15 @@ import {
 	onAiInterferenceEvent,
 } from "../lib/ai-interference";
 import { appRegistry } from "../lib/app-registry";
-import {
-	parseOllamaThinkingUnsupportedMessage,
-	recordOllamaThinkingUnsupportedStatus,
-} from "../lib/ollama-thinking-status";
-import {
-	fetchOllamaModelCatalog,
-	isManagedOllamaHost,
-} from "../lib/ollama-runtime";
 import { writeAppSandboxFile } from "../lib/app-sandbox";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import { getCameraActions } from "../lib/avatar/camera-actions";
+import {
+	isNvaGestureTerminalTarget,
+	nvaGestureActionIndexFromKeyboardEvent,
+} from "../lib/avatar/nva-action-hotkeys";
+import { NvaGestureRateLimiter } from "../lib/avatar/nva-gesture-rate-limiter";
 import { GestureTriggerStream } from "../lib/avatar/nva-gesture-trigger";
 import { ensureBgmSidecar } from "../lib/bgm-sidecar-url";
 import {
@@ -43,6 +40,11 @@ import {
 	executeBgmSkill,
 	shouldActivateRadioDj,
 } from "../lib/bgm-skill";
+import {
+	executeBrowserHostSkill,
+	isBrowserHostTool,
+	liveBrowserHostDeps,
+} from "../lib/browser-host-skill";
 import {
 	type SpeechActivityResume,
 	cancelChat,
@@ -59,7 +61,6 @@ import {
 	setCurrentSpeechActivityId,
 	yieldSpeechActivity,
 } from "../lib/chat-service";
-import { getConversationHistory } from "../lib/conversation-store";
 import {
 	type AppConfig,
 	DEFAULT_NAIA_LOCAL_URL,
@@ -76,11 +77,16 @@ import {
 	resolveThinkingLevel,
 	saveConfig,
 } from "../lib/config";
+import { getConversationHistory } from "../lib/conversation-store";
 import {
-	executeBrowserHostSkill,
-	isBrowserHostTool,
-	liveBrowserHostDeps,
-} from "../lib/browser-host-skill";
+	formatApproxCredits,
+	formatUsageCost,
+	formatUsageTotal,
+} from "../lib/credits-usage";
+import {
+	paymentLinksHiddenNow,
+	usePaymentLinksHidden,
+} from "../lib/distribution";
 import {
 	ENVIRONMENT_APP_ID,
 	environmentClearNeeded,
@@ -89,16 +95,7 @@ import {
 	refreshEnvironment,
 } from "../lib/environment-skill";
 import { resetGatewaySession } from "../lib/gateway-sessions";
-import {
-	isRadioDjLabObserverAttached,
-	recordRadioDjLabEvent,
-} from "../lib/radio-dj-lab-observer";
 import { getLocale, t } from "../lib/i18n";
-import {
-	assertOllamaChatAdmitted,
-	OllamaRuntimeAdmissionError,
-	ollamaAdmissionMessageKey,
-} from "../lib/ollama-chat-admission";
 import { markNaiaKeyUnauthorized } from "../lib/lab-balance";
 import {
 	getDefaultLlmModel,
@@ -108,7 +105,6 @@ import {
 	isOmniModel,
 } from "../lib/llm";
 import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
-import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import {
@@ -117,19 +113,36 @@ import {
 	isModelFacingToolAllowed,
 	makeModelToolBoundary,
 } from "../lib/model-facing-tools";
+import {
+	OllamaRuntimeAdmissionError,
+	assertOllamaChatAdmitted,
+	ollamaAdmissionMessageKey,
+} from "../lib/ollama-chat-admission";
+import {
+	fetchOllamaModelCatalog,
+	isManagedOllamaHost,
+} from "../lib/ollama-runtime";
+import {
+	parseOllamaThinkingUnsupportedMessage,
+	recordOllamaThinkingUnsupportedStatus,
+} from "../lib/ollama-thinking-status";
 import { buildSystemPrompt } from "../lib/persona";
-import { effectiveMainRole } from "../lib/slots/model";
 import {
 	RADIO_DJ_DEFAULT_SETTINGS,
 	normalizeProactiveSpeechSettings,
 	toSpeechProfileCommandInput,
 } from "../lib/proactive-speech-settings";
 import {
+	isRadioDjLabObserverAttached,
+	recordRadioDjLabEvent,
+} from "../lib/radio-dj-lab-observer";
+import {
 	SLIDE_PRESENTER_CANCEL_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
 	type SlidePresenterSpeechRequest,
 } from "../lib/slide-presenter-events";
+import { effectiveMainRole } from "../lib/slots/model";
 import {
 	activateMicUnlessSpeechActivityOwnsVoice,
 	canSpeakProactiveText,
@@ -145,16 +158,6 @@ import {
 	getSttProvider,
 } from "../lib/stt";
 import { estimateSttCost } from "../lib/tts/cost";
-import { fetchLiveVoiceHourlyRate } from "../lib/voice/live-pricing";
-import {
-	formatApproxCredits,
-	formatUsageCost,
-	formatUsageTotal,
-} from "../lib/credits-usage";
-import {
-	paymentLinksHiddenNow,
-	usePaymentLinksHidden,
-} from "../lib/distribution";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
 	acceptPipelineOutputStage,
@@ -175,6 +178,7 @@ import type {
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
+import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { AudioQueue } from "../lib/voice/audio-queue";
 import {
@@ -195,6 +199,7 @@ import {
 	resolveLiveProvider,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
+import { fetchLiveVoiceHourlyRate } from "../lib/voice/live-pricing";
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { extractExpression, mapServerEmotion } from "../lib/vrm/expression";
@@ -207,6 +212,7 @@ import { useLogsStore } from "../stores/logs";
 import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
 import type { AtMentionHandle, AtMentionResult } from "./AtMentionPopover";
+import { NvaGestureActions } from "./NvaGestureActions";
 import { formatStructuredAgentChunk } from "./chat-presentation";
 import {
 	buildEnvironmentSegments,
@@ -504,6 +510,9 @@ export function ChatArea({
 	const currentRequestId = useRef<string | null>(null);
 	const gestureTriggerStreamRef = useRef(new GestureTriggerStream());
 	const gestureActionPlayedRef = useRef(false);
+	const pendingAiGestureActionRef = useRef<string | null>(null);
+	const aiGestureRateLimiterRef = useRef(new NvaGestureRateLimiter());
+	const liveResponseActiveRef = useRef(false);
 	// Providers may emit one usage event for each tool round before the final
 	// assistant text. Keep those entries with the live request so usage cannot
 	// finalize an empty assistant message before the terminal finish chunk.
@@ -762,16 +771,23 @@ export function ChatArea({
 		);
 	}
 
-	function settleAvatarEmotionIfIdle(): void {
-		const speechOwnsExpression =
+	function isAvatarSpeechIdle(): boolean {
+		return !(
 			currentRequestId.current !== null ||
 			useChatStore.getState().isStreaming ||
 			sentencePipelineRef.current?.hasActiveRequests() === true ||
 			audioQueueRef.current?.isActive === true ||
 			ttsPlayingRef.current ||
 			cascadeTtsJobsRef.current > 0 ||
-			audioPlayerRef.current?.isPlaying === true;
-		if (!speechOwnsExpression) setEmotion("neutral");
+			audioPlayerRef.current?.isPlaying === true ||
+			liveResponseActiveRef.current
+		);
+	}
+
+	function settleAvatarEmotionIfIdle(): void {
+		if (!isAvatarSpeechIdle()) return;
+		setEmotion("neutral");
+		flushPendingAiGestureAction();
 	}
 
 	function scheduleNextQueuedMessage() {
@@ -801,6 +817,7 @@ export function ChatArea({
 	}
 
 	function handleCancelStreaming() {
+		pendingAiGestureActionRef.current = null;
 		const store = useChatStore.getState();
 		const ttsActive =
 			ttsTextSyncRef.current.active ||
@@ -852,10 +869,44 @@ export function ChatArea({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, []);
 
+	useEffect(() => {
+		if (activeTab !== "chat") return;
+		const onGestureHotkey = (event: KeyboardEvent) => {
+			if (!useCascadeAvatarStore.getState().renderer) return;
+			const actions = getCameraActions().getGestureActions();
+			const index = nvaGestureActionIndexFromKeyboardEvent(
+				event,
+				actions.length,
+				isNvaGestureTerminalTarget(event.target),
+			);
+			if (index === null) return;
+			const action = actions[index];
+			if (!action) return;
+
+			event.preventDefault();
+			recordManualNvaGestureAction(action.key);
+			void getCameraActions()
+				.playAction(action.key)
+				.catch(() => {});
+		};
+		window.addEventListener("keydown", onGestureHotkey);
+		return () => window.removeEventListener("keydown", onGestureHotkey);
+	}, [activeTab]);
+
+	useEffect(() => {
+		let activeRenderer = useCascadeAvatarStore.getState().renderer;
+		return useCascadeAvatarStore.subscribe((state) => {
+			if (state.renderer === activeRenderer) return;
+			activeRenderer = state.renderer;
+			pendingAiGestureActionRef.current = null;
+		});
+	}, []);
+
 	// Receive "Ask AI" requests from NaiaMetaArea (Skills, Channels tabs)
 	useEffect(() => {
 		const handler = (e: Event) => {
 			const message = (e as CustomEvent<string>).detail;
+			pendingAiGestureActionRef.current = null;
 			setInput(message);
 			setActiveTab("chat");
 			if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
@@ -1673,6 +1724,7 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		pendingAiGestureActionRef.current = null;
 		if (await handleSpeechProfilePhrase(text)) return;
 		if (isRadioDjLabObserverAttached()) {
 			const activeConfig = loadConfig();
@@ -2427,6 +2479,56 @@ export function ChatArea({
 		}
 	}
 
+	function recordManualNvaGestureAction(key: string): void {
+		if (!useCascadeAvatarStore.getState().renderer) return;
+		if (
+			!getCameraActions()
+				.getGestureActions()
+				.some((action) => action.key === key)
+		)
+			return;
+		aiGestureRateLimiterRef.current.recordManualAction(key, Date.now());
+	}
+
+	function playAiGestureAction(key: string): void {
+		if (!useCascadeAvatarStore.getState().renderer) return;
+		if (
+			!getCameraActions()
+				.getGestureActions()
+				.some((action) => action.key === key)
+		)
+			return;
+		if (!aiGestureRateLimiterRef.current.tryRecordAiAction(key, Date.now()))
+			return;
+		void getCameraActions()
+			.playAction(key)
+			.catch((error) => {
+				Logger.warn("ChatArea", "NVA gesture playback failed", {
+					key,
+					error: String(error),
+				});
+			});
+	}
+
+	function flushPendingAiGestureAction(): void {
+		const key = pendingAiGestureActionRef.current;
+		if (!key || !isAvatarSpeechIdle()) return;
+		pendingAiGestureActionRef.current = null;
+		playAiGestureAction(key);
+	}
+
+	function shouldDeferAiGestureForSpeech(): boolean {
+		return (
+			voiceMode === "active" ||
+			loadConfig()?.ttsEnabled === true ||
+			sentencePipelineRef.current?.hasActiveRequests() === true ||
+			audioQueueRef.current?.isActive === true ||
+			ttsPlayingRef.current ||
+			cascadeTtsJobsRef.current > 0 ||
+			audioPlayerRef.current?.isPlaying === true
+		);
+	}
+
 	function playFirstGestureAction(
 		gestures: readonly { key: string }[],
 		played: { current: boolean },
@@ -2434,12 +2536,12 @@ export function ChatArea({
 		const gesture = gestures[0];
 		if (!gesture || played.current) return;
 		played.current = true;
-		void getCameraActions().playAction(gesture.key).catch((error) => {
-			Logger.warn("ChatArea", "NVA gesture playback failed", {
-				key: gesture.key,
-				error: String(error),
-			});
-		});
+		if (shouldDeferAiGestureForSpeech()) {
+			pendingAiGestureActionRef.current = gesture.key;
+			flushPendingAiGestureAction();
+			return;
+		}
+		playAiGestureAction(gesture.key);
 	}
 
 	function appendVisibleResponseText(visibleText: string): void {
@@ -2866,6 +2968,7 @@ export function ChatArea({
 	}
 
 	async function handleVoiceToggle() {
+		if (voiceMode !== "off") pendingAiGestureActionRef.current = null;
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
 			Logger.info("ChatArea", "Barge-in via button: stopping TTS");
@@ -3471,6 +3574,7 @@ export function ChatArea({
 
 			session.onAudio = (pcmBase64) => player.enqueue(pcmBase64);
 			session.onInputTranscript = (text) => {
+				pendingAiGestureActionRef.current = null;
 				const store = useChatStore.getState();
 				if (!inputTurnDirty) setEmotion("think");
 				inputAccum += text;
@@ -3482,6 +3586,7 @@ export function ChatArea({
 				}
 			};
 			session.onOutputTranscript = (text) => {
+				liveResponseActiveRef.current = true;
 				const parsed = liveGestureStream.push(text);
 				// Use cleaned text in the chat row so markers and stage directions do not show.
 				// A server emotion.updated remains authoritative for the turn.
@@ -3499,9 +3604,11 @@ export function ChatArea({
 				}
 			};
 			session.onInterrupted = () => {
+				pendingAiGestureActionRef.current = null;
+				liveResponseActiveRef.current = false;
 				player.clear();
 				const flushed = liveGestureStream.flush();
-				appendLiveOutput(flushed.cleanText, flushed.gestures);
+				appendLiveOutput(flushed.cleanText, []);
 				liveGestureStream = new GestureTriggerStream(gestureActions);
 				liveGestureActionPlayed.current = false;
 				inputTurnDirty = false;
@@ -3524,6 +3631,7 @@ export function ChatArea({
 				inputAccum = "";
 				outputAccum = "";
 				serverEmotionSeenThisTurn = false;
+				liveResponseActiveRef.current = false;
 				settleAvatarEmotionIfIdle();
 				// #502 (FR-ENV-ATTENTION.7): 실시간 음성도 대화 턴이다.
 				//
@@ -3881,6 +3989,7 @@ export function ChatArea({
 	const handleInputChange = useCallback(
 		(e: React.ChangeEvent<HTMLTextAreaElement>) => {
 			const value = e.target.value;
+			if (value.length > 0) pendingAiGestureActionRef.current = null;
 			setInput(value);
 
 			// Detect @ trigger
@@ -4310,6 +4419,10 @@ export function ChatArea({
 							</button>
 						)}
 					</div>
+				)}
+
+				{activeTab === "chat" && (
+					<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
 				)}
 
 				{/* Input (chat tab only) */}

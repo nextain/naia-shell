@@ -2402,3 +2402,25 @@ Test Coverage Map (P02)
 | 대기 위치 이어 재생·gesture 목록·무음 1회 재생·ended 복귀·말하기 중 무시·없는 key | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts` — idle resume and gesture action cases | `packages/shell/e2e/nva-prebaked.spec.ts` — action button and clip playback call |
 | AI prompt 조건부 안내·완성/분할 gesture 파싱·표시/TTS 제거·gesture 실행 | `packages/shell/src/lib/__tests__/persona.test.ts`, `persona-disabled.test.ts` — conditional gesture instructions; `packages/shell/src/lib/avatar/__tests__/nva-gesture-trigger.test.ts` — split marker stream; `packages/shell/src/components/__tests__/ChatArea.test.tsx` — response, display and TTS routing | `packages/shell/e2e/nva-prebaked.spec.ts` — visible action list, empty gesture list and narrow layout |
 | 실행 중 로컬 엔진에서 Edge→local 복귀 및 영속 | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — `SettingsTab` running local voice Edge→local case | `packages/shell/e2e/settings-slots.spec.ts` — running local provider change |
+
+## UC-NVA-ACTION-HOTKEYS-20261025 — 채팅 입력 근처에서 NVA 동작 실행
+
+사용자는 활성 NVA 동작을 채팅 입력창 근처의 단추나 Alt+1~Alt+9로 실행한다. 단축키는 목록의 순서와 현재 아바타 동작 수에 맞춰 동작하며, 입력창에 포커스가 있어도 입력 문자를 소비한다. AI는 동작의 뜻과 대화 분위기가 맞을 때만 `[[gesture:key]]`를 응답 앞에 한 번 내보낸다. Shell은 반복을 제한하고, 음성이 켜진 응답의 AI 동작은 응답 말하기가 모두 끝난 뒤 재생한다. 이 시나리오는 UC-NVA-CAMERA-GESTURE-1022의 확대·이동·저장 및 NVA 재생 계약을 보존하면서 입력 위치·단축키·AI 사용 시점을 구체화한다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 활성 NVA의 gesture 목록 순서대로 1~9번 단추를 채팅 입력 막대 바로 위에 표시한다. 각 단추의 툴팁과 접근성 이름에 플랫폼에 맞는 `Alt+n` 또는 `⌥n`을 표시한다. 확대·이동·초기화 단추는 아바타 오버레이에 남는다. |
+| 빈 목록 | 동작 없는 NVA와 NVA가 아닌 아바타에는 동작 묶음과 AI 동작 안내가 없다. Alt+1~Alt+9는 입력을 막지 않고 아무 동작도 재생하지 않는다. |
+| 진행 | 입력 textarea에 글을 입력 중이어도 Alt+1~Alt+9는 `event.code`의 `Digit1`~`Digit9`와 동작 개수로 판정하고 입력을 바꾸지 않는다. 키패드 숫자는 제외한다. 터미널 `.xterm` 포커스에서는 단축키를 넘기고, 기본 Alt+숫자 동작이 없는 CodeMirror에서는 허용한다. 반복 키·조합 키·IME 입력·Ctrl/Meta/Shift/AltGr 조합은 무시한다. |
+| 성공 | 음성이 꺼진 응답의 AI 동작은 바로 한 번 재생한다. 음성이 켜진 응답은 TTS와 음성 출력이 모두 끝나고 대화가 idle인 뒤 한 번 재생한다. 직전 동작과의 제한 시간 안에는 AI가 동작을 재생하지 않으며, 수동 단추·단축키는 제한하지 않는다. |
+| 오류 | 범위를 벗어난 번호, 미등록 gesture key, 없는 NVA 동작은 조용히 무시한다. 새 사용자 입력·취소·활성 아바타 교체 시 대기하던 AI 동작을 버린다. gesture 표기는 스트림이 나뉘어도 화면·TTS에 노출하지 않는다. |
+| 좁은 폭 | 360px 폭에서 동작 단추는 입력 막대와 겹치거나 화면 밖으로 잘리지 않고 줄바꿈한다. 동작 이름·단축키를 키보드와 스크린리더로 식별할 수 있다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest 파일·그룹 | 실 UI Playwright |
+|---|---|---|
+| `Digit1`~`Digit9` 판정, Option 문자 `¡`와 code 사용, modifier/repeat/IME/AltGr/범위/키패드/xterm 경계 | `packages/shell/src/lib/avatar/__tests__/nva-action-hotkeys.test.ts` — keyboard action index and platform labels | `packages/shell/e2e/nva-prebaked.spec.ts` — focused textarea Alt+1/Alt+2 and unchanged input |
+| 활성 NVA 목록 갱신, 채팅 탭 위치, 툴팁·ARIA 이름, 빈 목록, 오버레이에서 gesture 제거 | `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `AiControlBar.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — input-adjacent buttons, no duplicate overlay group, empty actions and 360px non-overlap |
+| 조건부 AI 권장 문구·label/key/단축키, 응답당 하나, 반복 제한과 수동 실행 기록 | `packages/shell/src/lib/__tests__/persona.test.ts`, `persona-disabled.test.ts`; `packages/shell/src/lib/avatar/__tests__/nva-gesture-rate-limiter.test.ts` | `packages/shell/e2e/nva-prebaked.spec.ts` — active/empty NVA action availability |
+| 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 취소·새 입력·아바타 교체 폐기, 말하는 중 수동 실행 무시 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`; `packages/shell/src/components/__tests__/ChatArea.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
