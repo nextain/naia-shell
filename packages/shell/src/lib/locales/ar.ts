@@ -194,6 +194,8 @@ export default {
 	"settings.avatarProvider": "نوع الصورة الرمزية",
 	"settings.avatarProviderVrm": "صورة ثلاثية الأبعاد (VRM)",
 	"settings.avatarProviderVideo": "صورة فيديو (.nva)",
+	"settings.nvaCreate": "إنشاء صورة NVA رمزية",
+	"settings.nvaCreateDesc": "أنشئ صورتك الرمزية للفيديو في استوديو Naia Video Studio.",
 	"settings.cascadeUrlLabel": "عنوان تشغيل الكلام (اختياري)",
 	"settings.cascadeUrlHint": "عند التعيين يتحرك الفم أثناء الكلام (يتطلب GPU بعيدة). فارغ = تشغيل ثابت.",
 	"settings.nvaEmpty": "أضف مجلد .nva إلى naia-settings/nva-files/",

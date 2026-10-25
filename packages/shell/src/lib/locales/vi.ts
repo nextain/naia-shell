@@ -194,6 +194,8 @@ export default {
 	"settings.avatarProvider": "Loại avatar",
 	"settings.avatarProviderVrm": "Avatar 3D (VRM)",
 	"settings.avatarProviderVideo": "Avatar video (.nva)",
+	"settings.nvaCreate": "Tạo avatar NVA",
+	"settings.nvaCreateDesc": "Tạo avatar video của riêng bạn trong Naia Video Studio.",
 	"settings.cascadeUrlLabel": "URL runtime nói (tùy chọn)",
 	"settings.cascadeUrlHint": "Khi đặt, miệng cử động khi nói (cần GPU từ xa). Trống = phát tĩnh.",
 	"settings.nvaEmpty": "Thêm thư mục .nva vào naia-settings/nva-files/",

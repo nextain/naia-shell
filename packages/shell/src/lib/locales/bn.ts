@@ -194,6 +194,8 @@ export default {
 	"settings.avatarProvider": "অবতার ধরন",
 	"settings.avatarProviderVrm": "3D অবতার (VRM)",
 	"settings.avatarProviderVideo": "ভিডিও অবতার (.nva)",
+	"settings.nvaCreate": "NVA অবতার তৈরি করুন",
+	"settings.nvaCreateDesc": "Naia Video Studio-তে নিজের ভিডিও অবতার তৈরি করুন।",
 	"settings.cascadeUrlLabel": "টকিং রানটাইম URL (ঐচ্ছিক)",
 	"settings.cascadeUrlHint": "সেট করলে কথা বলার সময় মুখ নড়ে (রিমোট GPU প্রয়োজন)। খালি = স্থির প্লেব্যাক।",
 	"settings.nvaEmpty": "naia-settings/nva-files/-এ একটি .nva ফোল্ডার যোগ করুন",

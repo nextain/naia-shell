@@ -134,6 +134,7 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
 import { setLocale } from "../../lib/i18n";
+import { Logger } from "../../lib/logger";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { SettingsTab } from "../SettingsTab";
 
@@ -264,6 +265,50 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		expect(screen.getByTestId("profile-naia-login")).toBeInTheDocument();
 		expect(screen.getByTestId("profile-login-naia")).toBeEnabled();
+	});
+
+	it("opens the localized NVA creator from the Avatar tab", async () => {
+		await setLocale("en");
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("avatar");
+
+		const createAvatar = screen.getByRole("button", {
+			name: "Create NVA avatar",
+		});
+		expect(createAvatar).toHaveAttribute("title", "Create NVA avatar");
+		expect(
+			screen.getByText("Make a personal video avatar in Naia Video Studio."),
+		).toBeInTheDocument();
+		fireEvent.click(createAvatar);
+
+		await waitFor(() =>
+			expect(mockOpenUrl).toHaveBeenCalledWith(
+				expect.stringMatching(/\/en\/studio\/nva\/create$/),
+			),
+		);
+	});
+
+	it("keeps the Avatar tab usable and logs an NVA creator opener failure", async () => {
+		await setLocale("en");
+		mockInvoke.mockResolvedValue([]);
+		mockOpenUrl.mockRejectedValueOnce(new Error("opener unavailable"));
+		const warn = vi.spyOn(Logger, "warn").mockImplementation(() => {});
+		render(<SettingsTab />);
+		gotoSettingsTab("avatar");
+		fireEvent.click(screen.getByRole("button", { name: "Create NVA avatar" }));
+
+		await waitFor(() =>
+			expect(warn).toHaveBeenCalledWith(
+				"SettingsTab",
+				"Failed to open NVA avatar creator",
+				expect.objectContaining({ error: "Error: opener unavailable" }),
+			),
+		);
+		expect(
+			screen.getByRole("button", { name: "Create NVA avatar" }),
+		).toBeInTheDocument();
+		warn.mockRestore();
 	});
 
 	it("loads the Naia credit balance after the StrictMode effect replay", async () => {
