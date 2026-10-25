@@ -12,9 +12,10 @@ use super::lifecycle::{authorized_project_session_path, stop_project_agent_handl
 use super::types::{
     build_agent_command, display_path, emit_or_buffer_project_agent_output, find_agent_executable,
     find_project_agent_handle, find_project_agent_handle_mut, project_agent_key,
-    project_agent_session, safe_app_id_for_log, CodingApp, ProjectAgentAvailability,
-    ProjectAgentExitEvent, ProjectAgentHandle, ProjectAgentOutputEvent, ProjectAgentRegistry,
-    ProjectAgentSession, CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
+    project_agent_session, project_checkout_reset_key, safe_app_id_for_log, CodingApp,
+    ProjectAgentAvailability, ProjectAgentExitEvent, ProjectAgentHandle, ProjectAgentKey,
+    ProjectAgentOutputEvent, ProjectAgentRegistry, ProjectAgentSession, ProjectAgentState,
+    CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
 };
 
 const OPENCODE_NAIA_FALLBACK_MODEL: &str = "deepseek-v4-flash";
@@ -229,6 +230,75 @@ fn apply_project_agent_naia_environment(
     environment.naia_login_required
 }
 
+#[derive(Debug)]
+pub(crate) struct ResolvedProjectAgentStartTarget {
+    coding_app: CodingApp,
+    pub(crate) key: ProjectAgentKey,
+    pub(crate) checkout_key: std::path::PathBuf,
+    pub(crate) checkout_path: std::path::PathBuf,
+}
+
+pub(crate) fn resolve_project_agent_start_target(
+    authority: &ProjectCatalogAuthority,
+    adapter_root: &str,
+    project_path: &str,
+    app_id: &str,
+) -> Result<ResolvedProjectAgentStartTarget, String> {
+    let coding_app = CodingApp::parse(app_id).map_err(|error| {
+        log::warn!("[project_agent_pty::project_agent_pty_start] branch=agent_invalid");
+        error
+    })?;
+    let resolved = resolve_project_checkout(authority, adapter_root, project_path)?;
+    let key = project_agent_key(&resolved.project_path, coding_app)?;
+    let checkout_key = project_checkout_reset_key(&resolved.checkout_path)?;
+    Ok(ResolvedProjectAgentStartTarget {
+        coding_app,
+        key,
+        checkout_key,
+        checkout_path: resolved.checkout_path,
+    })
+}
+
+pub(crate) fn check_project_agent_start_in_state(
+    state: &ProjectAgentState,
+    key: &ProjectAgentKey,
+    checkout_key: &std::path::Path,
+) -> Result<Option<ProjectAgentSession>, String> {
+    if state.resetting_checkouts.contains(checkout_key) {
+        crate::log_verbose(&format!(
+            "[project_agent_pty::project_agent_pty_start] branch=reject_class_reset_in_progress app_id={}",
+            key.app.spec().app_id
+        ));
+        return Err("class_reset_in_progress".to_owned());
+    }
+    if let Some(handle) = state.sessions.get(key) {
+        crate::log_verbose(&format!(
+            "[project_agent_pty::project_agent_pty_start] branch=reuse_existing app_id={}",
+            key.app.spec().app_id
+        ));
+        return Ok(Some(project_agent_session(key, handle)));
+    }
+    Ok(None)
+}
+
+pub(crate) fn prepare_project_agent_start(
+    registry: &ProjectAgentRegistry,
+    authority: &ProjectCatalogAuthority,
+    adapter_root: &str,
+    project_path: &str,
+    app_id: &str,
+) -> Result<ResolvedProjectAgentStartTarget, String> {
+    let target =
+        resolve_project_agent_start_target(authority, adapter_root, project_path, app_id)?;
+    let state = match registry.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let _ = check_project_agent_start_in_state(&state, &target.key, &target.checkout_key)?;
+    Ok(target)
+}
+
+
 #[tauri::command]
 pub fn project_agent_availability() -> Vec<ProjectAgentAvailability> {
     crate::log_verbose("[project_agent_pty::project_agent_availability] enter");
@@ -264,12 +334,10 @@ pub async fn project_agent_pty_start(
         "[project_agent_pty::project_agent_pty_start] enter app_id={} project_path_supplied=true",
         safe_app_id_for_log(&app_id)
     ));
-    let coding_app = CodingApp::parse(&app_id).map_err(|error| {
-        log::warn!("[project_agent_pty::project_agent_pty_start] branch=agent_invalid");
-        error
-    })?;
-    let resolved = resolve_project_checkout(&authority, &adapter_root, &project_path)?;
-    let key = project_agent_key(&resolved.project_path, coding_app)?;
+    let target = prepare_project_agent_start(&registry, &authority, &adapter_root, &project_path, &app_id)?;
+    let coding_app = target.coding_app;
+    let key = target.key;
+    let checkout_key = target.checkout_key;
     let path_value = std::env::var_os("PATH");
     let launch = find_agent_executable(coding_app, path_value.as_deref()).ok_or_else(|| {
         crate::log_verbose(&format!(
@@ -278,7 +346,7 @@ pub async fn project_agent_pty_start(
         ));
         "agent_unavailable".to_owned()
     })?;
-    let checkout_path = resolved.checkout_path;
+    let checkout_path = target.checkout_path;
     let system_root = std::env::var_os("SystemRoot");
     let registry = Arc::clone(&registry);
     let session_app_id = coding_app.spec().app_id.to_owned();
@@ -319,6 +387,9 @@ pub async fn project_agent_pty_start(
         );
 
         let mut state = registry.lock().unwrap();
+        if state.resetting_checkouts.contains(&checkout_key) {
+            return Err("class_reset_in_progress".to_owned());
+        }
         if let Some(handle) = state.sessions.get(&key) {
             let credential_changed = coding_app == CodingApp::OpenCode
                 && open_code_credential_changed(

@@ -645,6 +645,70 @@ export async function stopProjectAgent(
 	}
 }
 
+export async function waitForProjectAgentStopped(
+	projectPath: string,
+	adapterRoot: string,
+	appId: ProjectAgentAppId,
+	options?: { timeoutMs?: number; intervalMs?: number },
+): Promise<boolean> {
+	const timeoutMs = options?.timeoutMs ?? 5000;
+	const intervalMs = options?.intervalMs ?? 200;
+	const deadline = Date.now() + timeoutMs;
+	Logger.debug(
+		"ProjectAgentRuntime",
+		"waiting for project PTY session to stop",
+		{
+			appId,
+			timeoutMs,
+			intervalMs,
+		},
+	);
+	if (!isProjectAgentAppId(appId)) {
+		return true;
+	}
+	while (true) {
+		const state = stateFor(projectPath);
+		if (state.status === "exited") {
+			return true;
+		}
+		try {
+			const response = await invoke<unknown>("project_agent_pty_attach", {
+				appId,
+				projectPath,
+				adapterRoot,
+			});
+			const stillRunning =
+				typeof response === "object" &&
+				response !== null &&
+				(response as { running?: unknown }).running === true;
+			if (!stillRunning) {
+				setState(projectPath, { status: "idle", ptyId: null, error: null });
+				return true;
+			}
+		} catch (error) {
+			const mapped = parseAgentError(error);
+			if (mapped.code === "session_missing") {
+				setState(projectPath, { status: "idle", ptyId: null, error: null });
+				return true;
+			}
+			return false;
+		}
+		if (Date.now() >= deadline) {
+			if (stateFor(projectPath).status === "stopping") {
+				setState(projectPath, { status: "running" });
+			}
+			Logger.warn(
+				"ProjectAgentRuntime",
+				"project PTY session remained running after stop timeout",
+				{ appId },
+			);
+			return false;
+		}
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+	}
+}
+
+
 /** Stop only OpenCode sessions because their inherited Naia key changed. */
 export async function stopOpenCodeProjectAgentSessions(): Promise<void> {
 	Logger.debug(

@@ -667,4 +667,119 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		});
 		await capture(page, "project-app-opencode-naia-login-narrow.png");
 	});
+
+	test("supports class project preselection, docs panel preview, catalog reload, and class reset", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, {
+			...READY_CATALOG,
+			projects: [
+				{
+					adapterRoot: "/fixture/adapter-root",
+					projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+					sourcePath: "projects/team/projects/class-demo",
+					projectId: "class-demo",
+					name: "Practice Class",
+					repository: "your-org/your-practice-repo",
+					issueTracker: null,
+					dashboardUrl: null,
+					issuesUrl: null,
+					codingApp: "opencode",
+					docsDirs: ["domain", "자료"],
+					class: { baselineRef: "0123456789abcdef" },
+				},
+			],
+		});
+		await openProjectApp(page);
+		await expect(
+			page.locator('button[data-app-id="projects"] svg'),
+		).toBeVisible();
+		await page.getByRole("button", { name: "Reload" }).click();
+		await page.getByRole("button", { name: /Practice Class/ }).click();
+		await expect(page.getByRole("radio", { name: "OpenCode" })).toBeChecked();
+		await expect(page.locator(".projects-app").getByRole("tab")).toHaveCount(2);
+		await page.getByRole("tab", { name: "Docs" }).click();
+		await expect(
+			page.getByRole("heading", { name: "Domain Guide" }),
+		).toBeVisible();
+		await page.getByRole("button", { name: "lesson1.md" }).click();
+		await expect(page.getByRole("heading", { name: "Lesson 1" })).toBeVisible();
+		await page.getByRole("button", { name: "Reset class" }).click();
+		await expect(page.getByRole("dialog")).toBeVisible();
+		await page
+			.getByRole("dialog")
+			.getByRole("button", { name: "Reset", exact: true })
+			.click();
+		await expect(page.getByText(/Class checkout reset complete/)).toBeVisible();
+		await capture(page, "project-app-class-docs-reset.png");
+	});
+
+	test("stacks class project docs_dirs list and preview in one column without horizontal overflow at 390px", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, {
+			...READY_CATALOG,
+			projects: [
+				{
+					adapterRoot: "/fixture/adapter-root",
+					projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+					sourcePath: "projects/team/projects/class-demo",
+					projectId: "class-demo",
+					name: "Practice Class",
+					repository: "your-org/your-practice-repo",
+					issueTracker: null,
+					dashboardUrl: null,
+					issuesUrl: null,
+					codingApp: "opencode",
+					docsDirs: ["domain", "자료"],
+					class: { baselineRef: "0123456789abcdef" },
+				},
+			],
+		});
+		await openProjectApp(page);
+		await page.getByTitle("채팅 숨기기 (Ctrl+B)").click();
+		await expect(page.locator(".naia-overlay")).toHaveCount(0);
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.getByRole("button", { name: /Practice Class/ }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
+
+		const docsList = page.locator(".projects-app__docs-list");
+		const docsPreview = page.locator(".projects-app__docs-preview");
+		await expect(docsList).toBeVisible();
+		await expect(docsPreview).toBeVisible();
+		await expect(
+			page.getByRole("heading", { name: "Domain Guide" }),
+		).toBeVisible();
+
+		const listBox = await docsList.boundingBox();
+		const previewBox = await docsPreview.boundingBox();
+		expect(listBox).not.toBeNull();
+		expect(previewBox).not.toBeNull();
+		expect(previewBox!.y).toBeGreaterThanOrEqual(
+			listBox!.y + listBox!.height - 1,
+		);
+
+		const overflow = await page.evaluate(() => {
+			const scrolling = document.scrollingElement ?? document.documentElement;
+			const app = document.querySelector(".projects-app") as HTMLElement | null;
+			const docsLayout = document.querySelector(
+				".projects-app__docs-layout",
+			) as HTMLElement | null;
+			return {
+				scrollingOverflow: scrolling.scrollWidth > scrolling.clientWidth,
+				appOverflow: app ? app.scrollWidth > app.clientWidth : true,
+				docsOverflow: docsLayout
+					? docsLayout.scrollWidth > docsLayout.clientWidth
+					: true,
+			};
+		});
+		expect(overflow).toEqual({
+			scrollingOverflow: false,
+			appOverflow: false,
+			docsOverflow: false,
+		});
+		await capture(page, "project-app-class-docs-narrow.png");
+	});
 });

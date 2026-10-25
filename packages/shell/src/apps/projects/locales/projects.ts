@@ -2,7 +2,10 @@ import type { Locale } from "../../../lib/i18n";
 import { Logger } from "../../../lib/logger";
 import { PROJECT_AGENT_ENGLISH_TRANSLATIONS } from "./project-agent";
 
-Logger.debug("ProjectsLocale", "loading project catalog and session locale strings");
+Logger.debug(
+	"ProjectsLocale",
+	"loading project catalog and session locale strings",
+);
 
 export const PROJECT_APP_NAMES: Partial<Record<Locale, string>> = {
 	ko: "프로젝트",
@@ -45,10 +48,10 @@ export const PROJECT_BASE_ENGLISH_TRANSLATIONS = {
 	"projects.selectedProject": "Selected project",
 	"projects.tabsLabel": "Project views",
 	"projects.tabCodingAgent": "Coding Agent",
-	"projects.tabDashboard": "Dashboard",
-	"projects.tabInternalIssues": "Internal Issues",
+	"projects.tabDashboard": "Docs",
+	"projects.tabInternalIssues": "Tasks",
 	"projects.stageOneEmpty":
-		"This view is a placeholder in stage 2. The coding agent, dashboard, and internal issue data are not connected yet.",
+		"This view is a placeholder in stage 2. The coding agent, docs, and tasks data are not connected yet.",
 	"projects.selectTitle": "Select a project",
 	"projects.selectHint":
 		"Choose a ready project from the list to open its views.",
@@ -73,7 +76,8 @@ export const PROJECT_BASE_ENGLISH_TRANSLATIONS = {
 		"Project state could not be saved. Changes may be lost when the shell restarts.",
 } as const;
 
-export type ProjectTranslationKey = keyof typeof PROJECT_BASE_ENGLISH_TRANSLATIONS;
+export type ProjectTranslationKey =
+	keyof typeof PROJECT_BASE_ENGLISH_TRANSLATIONS;
 
 export const LEGACY_TRANSLATIONS: Record<
 	Locale,
@@ -115,10 +119,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "선택한 프로젝트",
 		"projects.tabsLabel": "프로젝트 화면",
 		"projects.tabCodingAgent": "코딩 에이전트",
-		"projects.tabDashboard": "대시보드",
-		"projects.tabInternalIssues": "내부 이슈",
+		"projects.tabDashboard": "문서",
+		"projects.tabInternalIssues": "작업",
 		"projects.stageOneEmpty":
-			"1단계 빈 화면입니다. 실행 환경과 이슈 데이터는 연결하지 않았습니다.",
+			"1단계 빈 화면입니다. 실행 환경과 작업 데이터는 연결하지 않았습니다.",
 		"projects.selectTitle": "프로젝트를 선택하세요",
 		"projects.selectHint":
 			"목록에서 설정이 올바른 프로젝트를 선택하면 화면을 엽니다.",
@@ -168,10 +172,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "選択中のプロジェクト",
 		"projects.tabsLabel": "プロジェクト画面",
 		"projects.tabCodingAgent": "コーディングエージェント",
-		"projects.tabDashboard": "ダッシュボード",
-		"projects.tabInternalIssues": "内部 Issue",
+		"projects.tabDashboard": "ドキュメント",
+		"projects.tabInternalIssues": "タスク",
 		"projects.stageOneEmpty":
-			"ステージ 1 のプレースホルダーです。実行環境や Issue データは接続されていません。",
+			"ステージ 1 のプレースホルダーです。実行環境やタスクデータは接続されていません。",
 		"projects.selectTitle": "プロジェクトを選択",
 		"projects.selectHint":
 			"一覧から設定に問題のないプロジェクトを選ぶと画面を開きます。",
@@ -220,10 +224,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "已选项目",
 		"projects.tabsLabel": "项目视图",
 		"projects.tabCodingAgent": "编码代理",
-		"projects.tabDashboard": "仪表板",
-		"projects.tabInternalIssues": "内部问题",
+		"projects.tabDashboard": "文档",
+		"projects.tabInternalIssues": "任务",
 		"projects.stageOneEmpty":
-			"这是阶段 1 的占位视图。尚未连接运行环境或问题数据。",
+			"这是阶段 1 的占位视图。尚未连接运行环境或任务数据。",
 		"projects.selectTitle": "选择一个项目",
 		"projects.selectHint": "从列表中选择配置有效的项目以打开其视图。",
 		"projects.projectContent": "所选项目内容",
@@ -271,10 +275,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "Projet sélectionné",
 		"projects.tabsLabel": "Vues du projet",
 		"projects.tabCodingAgent": "Agent de code",
-		"projects.tabDashboard": "Tableau de bord",
-		"projects.tabInternalIssues": "Incidents internes",
+		"projects.tabDashboard": "Documents",
+		"projects.tabInternalIssues": "Tâches",
 		"projects.stageOneEmpty":
-			"Espace réservé de l'étape 1. L'exécution et les données d'incidents ne sont pas connectées.",
+			"Espace réservé de l'étape 1. L'exécution et les données de tâches ne sont pas connectées.",
 		"projects.selectTitle": "Sélectionnez un projet",
 		"projects.selectHint":
 			"Choisissez un projet valide dans la liste pour ouvrir ses vues.",
@@ -325,10 +329,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "Ausgewähltes Projekt",
 		"projects.tabsLabel": "Projektansichten",
 		"projects.tabCodingAgent": "Programmieragent",
-		"projects.tabDashboard": "Dashboard",
-		"projects.tabInternalIssues": "Interne Issues",
+		"projects.tabDashboard": "Dokumente",
+		"projects.tabInternalIssues": "Aufgaben",
 		"projects.stageOneEmpty":
-			"Platzhalter der Stufe 1. Laufzeit und Issue-Daten sind nicht verbunden.",
+			"Platzhalter der Stufe 1. Laufzeit und Aufgabendaten sind nicht verbunden.",
 		"projects.selectTitle": "Projekt auswählen",
 		"projects.selectHint":
 			"Wähle ein gültig konfiguriertes Projekt aus der Liste.",
@@ -377,8 +381,8 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "Выбранный проект",
 		"projects.tabsLabel": "Представления проекта",
 		"projects.tabCodingAgent": "Агент-кодировщик",
-		"projects.tabDashboard": "Панель",
-		"projects.tabInternalIssues": "Внутренние задачи",
+		"projects.tabDashboard": "Документы",
+		"projects.tabInternalIssues": "Задачи",
 		"projects.stageOneEmpty":
 			"Заглушка этапа 1. Среда выполнения и данные задач не подключены.",
 		"projects.selectTitle": "Выберите проект",
@@ -428,10 +432,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "Proyecto seleccionado",
 		"projects.tabsLabel": "Vistas del proyecto",
 		"projects.tabCodingAgent": "Agente de código",
-		"projects.tabDashboard": "Panel",
-		"projects.tabInternalIssues": "Incidencias internas",
+		"projects.tabDashboard": "Documentos",
+		"projects.tabInternalIssues": "Tareas",
 		"projects.stageOneEmpty":
-			"Vista provisional de la etapa 1. El entorno de ejecución y los datos de incidencias no están conectados.",
+			"Vista provisional de la etapa 1. El entorno de ejecución y los datos de tareas no están conectados.",
 		"projects.selectTitle": "Selecciona un proyecto",
 		"projects.selectHint":
 			"Elige un proyecto válido de la lista para abrir sus vistas.",
@@ -479,10 +483,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "المشروع المحدد",
 		"projects.tabsLabel": "واجهات المشروع",
 		"projects.tabCodingAgent": "وكيل البرمجة",
-		"projects.tabDashboard": "لوحة المعلومات",
-		"projects.tabInternalIssues": "المشكلات الداخلية",
+		"projects.tabDashboard": "المستندات",
+		"projects.tabInternalIssues": "المهام",
 		"projects.stageOneEmpty":
-			"واجهة مؤقتة للمرحلة الأولى. لم يتم ربط بيئة التشغيل أو بيانات المشكلات.",
+			"واجهة مؤقتة للمرحلة الأولى. لم يتم ربط بيئة التشغيل أو بيانات المهام.",
 		"projects.selectTitle": "اختر مشروعًا",
 		"projects.selectHint":
 			"اختر مشروعًا بإعدادات سليمة من القائمة لفتح واجهاته.",
@@ -528,10 +532,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "चुना गया प्रोजेक्ट",
 		"projects.tabsLabel": "प्रोजेक्ट दृश्य",
 		"projects.tabCodingAgent": "कोडिंग एजेंट",
-		"projects.tabDashboard": "डैशबोर्ड",
-		"projects.tabInternalIssues": "आंतरिक समस्याएँ",
+		"projects.tabDashboard": "दस्तावेज़",
+		"projects.tabInternalIssues": "कार्य",
 		"projects.stageOneEmpty":
-			"चरण 1 का प्रारंभिक दृश्य। रनटाइम और समस्या डेटा कनेक्ट नहीं हैं।",
+			"चरण 1 का प्रारंभिक दृश्य। रनटाइम और कार्य डेटा कनेक्ट नहीं हैं।",
 		"projects.selectTitle": "प्रोजेक्ट चुनें",
 		"projects.selectHint": "दृश्य खोलने के लिए सूची से सही कॉन्फ़िगरेशन वाला प्रोजेक्ट चुनें।",
 		"projects.projectContent": "चुने गए प्रोजेक्ट की सामग्री",
@@ -578,9 +582,9 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "নির্বাচিত প্রকল্প",
 		"projects.tabsLabel": "প্রকল্পের দৃশ্য",
 		"projects.tabCodingAgent": "কোডিং এজেন্ট",
-		"projects.tabDashboard": "ড্যাশবোর্ড",
-		"projects.tabInternalIssues": "অভ্যন্তরীণ সমস্যা",
-		"projects.stageOneEmpty": "ধাপ ১-এর প্রাথমিক দৃশ্য। রানটাইম ও সমস্যার তথ্য সংযুক্ত নয়।",
+		"projects.tabDashboard": "নথি",
+		"projects.tabInternalIssues": "কাজ",
+		"projects.stageOneEmpty": "ধাপ ১-এর প্রাথমিক দৃশ্য। রানটাইম ও কাজের তথ্য সংযুক্ত নয়।",
 		"projects.selectTitle": "একটি প্রকল্প বেছে নিন",
 		"projects.selectHint":
 			"দৃশ্য খুলতে তালিকা থেকে সঠিক কনফিগারেশনের প্রকল্প বেছে নিন।",
@@ -629,10 +633,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "Projeto selecionado",
 		"projects.tabsLabel": "Telas do projeto",
 		"projects.tabCodingAgent": "Agente de programação",
-		"projects.tabDashboard": "Painel",
-		"projects.tabInternalIssues": "Problemas internos",
+		"projects.tabDashboard": "Documentos",
+		"projects.tabInternalIssues": "Tarefas",
 		"projects.stageOneEmpty":
-			"Estrutura da etapa 1. O ambiente de execução e os dados de problemas não estão conectados.",
+			"Estrutura da etapa 1. O ambiente de execução e os dados de tarefas não estão conectados.",
 		"projects.selectTitle": "Selecione um projeto",
 		"projects.selectHint":
 			"Escolha na lista um projeto com configuração válida para abrir suas telas.",
@@ -680,10 +684,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "Proyek terpilih",
 		"projects.tabsLabel": "Tampilan proyek",
 		"projects.tabCodingAgent": "Agen pengodean",
-		"projects.tabDashboard": "Dasbor",
-		"projects.tabInternalIssues": "Masalah internal",
+		"projects.tabDashboard": "Dokumen",
+		"projects.tabInternalIssues": "Tugas",
 		"projects.stageOneEmpty":
-			"Kerangka tahap 1. Runtime dan data masalah belum terhubung.",
+			"Kerangka tahap 1. Runtime dan data tugas belum terhubung.",
 		"projects.selectTitle": "Pilih proyek",
 		"projects.selectHint":
 			"Pilih proyek dengan konfigurasi valid dari daftar untuk membuka tampilannya.",
@@ -730,10 +734,10 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.selectedProject": "Dự án đã chọn",
 		"projects.tabsLabel": "Màn hình dự án",
 		"projects.tabCodingAgent": "Tác nhân lập trình",
-		"projects.tabDashboard": "Bảng điều khiển",
-		"projects.tabInternalIssues": "Vấn đề nội bộ",
+		"projects.tabDashboard": "Tài liệu",
+		"projects.tabInternalIssues": "Công việc",
 		"projects.stageOneEmpty":
-			"Khung của giai đoạn 1. Runtime và dữ liệu vấn đề chưa được kết nối.",
+			"Khung của giai đoạn 1. Runtime và dữ liệu công việc chưa được kết nối.",
 		"projects.selectTitle": "Chọn một dự án",
 		"projects.selectHint":
 			"Chọn dự án có cấu hình hợp lệ trong danh sách để mở các màn hình.",
@@ -770,7 +774,7 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 			"naia-adk/projects에서 중첩 project.id가 비어 있지 않은 projects/<프로젝트>/project.yaml을 확인하세요. 다른 naia-adk를 사용하려면 설정에서 경로를 재설정하세요.",
 		"projects.unsafePath": "naia-adk 폴더 바깥의 경로라 읽지 않았습니다.",
 		"projects.stageOneEmpty":
-			"2단계에서는 빈 화면으로 둡니다. 코딩 에이전트·대시보드·내부 이슈 데이터는 아직 연결하지 않았습니다.",
+			"2단계에서는 빈 화면으로 둡니다. 코딩 에이전트·문서·작업 데이터는 아직 연결하지 않았습니다.",
 		"projects.scanEntryLimit":
 			"naia-adk/projects 아래 항목 {scanned}/{limit}개를 읽었습니다. 더 많은 항목이 있어 일부는 표시되지 않습니다.",
 		"projects.scanRowLimit":
@@ -802,7 +806,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.unsafePath":
 			"naia-adk フォルダー外のパスのため読み込みませんでした。",
 		"projects.stageOneEmpty":
-			"ステージ 2 のプレースホルダーです。コーディングエージェント、ダッシュボード、内部 Issue は未接続です。",
+			"ステージ 2 のプレースホルダーです。コーディングエージェント、ドキュメント、タスクは未接続です。",
+		"projects.webviewOpenDashboard": "ドキュメントを開く",
+		"projects.webviewOpenIssues": "タスクを開く",
 		"projects.scanEntryLimit":
 			"naia-adk/projects の {scanned}/{limit} 件を確認しました。ほかにも項目があります。",
 		"projects.scanRowLimit":
@@ -833,7 +839,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 			"请检查 naia-adk/projects 中 projects/<project>/project.yaml 是否包含非空的嵌套 project.id。要使用其他 naia-adk 文件夹，请在设置中重置路径。",
 		"projects.unsafePath": "路径位于 naia-adk 文件夹之外，因此未读取。",
 		"projects.stageOneEmpty":
-			"这是阶段 2 的占位视图。编码代理、仪表板和内部问题数据尚未连接。",
+			"这是阶段 2 的占位视图。编码代理、文档和任务数据尚未连接。",
+		"projects.webviewOpenDashboard": "打开文档",
+		"projects.webviewOpenIssues": "打开任务",
 		"projects.scanEntryLimit":
 			"已检查 naia-adk/projects 中 {scanned}/{limit} 个条目，仍有更多条目。",
 		"projects.scanRowLimit":
@@ -863,7 +871,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.unsafePath":
 			"Le chemin sort du dossier naia-adk et n’a pas été lu.",
 		"projects.stageOneEmpty":
-			"Espace réservé de l’étape 2. L’agent de code, le tableau de bord et les incidents internes ne sont pas connectés.",
+			"Espace réservé de l’étape 2. L’agent de code, les documents et les tâches ne sont pas connectés.",
+		"projects.webviewOpenDashboard": "Ouvrir les documents",
+		"projects.webviewOpenIssues": "Ouvrir les tâches",
 		"projects.scanEntryLimit":
 			"{scanned}/{limit} entrées parcourues dans naia-adk/projects ; d’autres entrées existent.",
 		"projects.scanRowLimit":
@@ -896,7 +906,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.unsafePath":
 			"Der Pfad liegt außerhalb des naia-adk-Ordners und wurde nicht gelesen.",
 		"projects.stageOneEmpty":
-			"Platzhalter in Stufe 2. Programmieragent, Dashboard und interne Issues sind noch nicht verbunden.",
+			"Platzhalter in Stufe 2. Programmieragent, Dokumente und Aufgaben sind noch nicht verbunden.",
+		"projects.webviewOpenDashboard": "Dokumente öffnen",
+		"projects.webviewOpenIssues": "Aufgaben öffnen",
 		"projects.scanEntryLimit":
 			"{scanned} von {limit} Einträgen unter naia-adk/projects geprüft; weitere Einträge sind vorhanden.",
 		"projects.scanRowLimit":
@@ -929,7 +941,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.unsafePath":
 			"Путь выходит за пределы naia-adk, поэтому файл не прочитан.",
 		"projects.stageOneEmpty":
-			"Заглушка этапа 2. Кодовый агент, панель и внутренние задачи ещё не подключены.",
+			"Заглушка этапа 2. Кодовый агент, документы и задачи ещё не подключены.",
+		"projects.webviewOpenDashboard": "Открыть документы",
+		"projects.webviewOpenIssues": "Открыть задачи",
 		"projects.scanEntryLimit":
 			"Проверено {scanned} из {limit} записей в naia-adk/projects; есть и другие.",
 		"projects.scanRowLimit":
@@ -960,7 +974,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 			"Revisa en naia-adk/projects los archivos projects/<project>/project.yaml con un project.id anidado y no vacío. Para usar otra carpeta naia-adk, restablece la ruta en Configuración.",
 		"projects.unsafePath": "La ruta está fuera de naia-adk y no se leyó.",
 		"projects.stageOneEmpty":
-			"Marcador de la etapa 2. El agente de código, el panel y los asuntos internos aún no están conectados.",
+			"Marcador de la etapa 2. El agente de código, los documentos y las tareas aún no están conectados.",
+		"projects.webviewOpenDashboard": "Abrir documentos",
+		"projects.webviewOpenIssues": "Abrir tareas",
 		"projects.scanEntryLimit":
 			"Se revisaron {scanned} de {limit} entradas en naia-adk/projects; hay más.",
 		"projects.scanRowLimit":
@@ -991,7 +1007,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 			"تحقق في naia-adk/projects من ملفات projects/<project>/project.yaml التي تحتوي على project.id متداخل غير فارغ. لاستخدام مجلد naia-adk آخر، أعد تعيين المسار من الإعدادات.",
 		"projects.unsafePath": "المسار خارج مجلد naia-adk، لذلك لم تتم قراءته.",
 		"projects.stageOneEmpty":
-			"عنصر نائب للمرحلة 2. لم يتم ربط وكيل البرمجة ولوحة المعلومات والمشكلات الداخلية بعد.",
+			"عنصر نائب للمرحلة 2. لم يتم ربط وكيل البرمجة والمستندات والمهام بعد.",
+		"projects.webviewOpenDashboard": "فتح المستندات",
+		"projects.webviewOpenIssues": "فتح المهام",
 		"projects.scanEntryLimit":
 			"تم فحص {scanned} من {limit} مدخلات في naia-adk/projects؛ توجد مدخلات أخرى.",
 		"projects.scanRowLimit":
@@ -1022,7 +1040,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 			"naia-adk/projects में ऐसे projects/<project>/project.yaml देखें जिनमें nested project.id खाली न हो। दूसरा naia-adk फ़ोल्डर इस्तेमाल करने के लिए सेटिंग में उसका पथ रीसेट करें।",
 		"projects.unsafePath": "पथ naia-adk फ़ोल्डर के बाहर है, इसलिए इसे नहीं पढ़ा गया।",
 		"projects.stageOneEmpty":
-			"चरण 2 का अस्थायी दृश्य। कोडिंग एजेंट, डैशबोर्ड और आंतरिक मुद्दे अभी जुड़े नहीं हैं।",
+			"चरण 2 का अस्थायी दृश्य। कोडिंग एजेंट, दस्तावेज़ और कार्य अभी जुड़े नहीं हैं।",
+		"projects.webviewOpenDashboard": "दस्तावेज़ खोलें",
+		"projects.webviewOpenIssues": "कार्य खोलें",
 		"projects.scanEntryLimit":
 			"naia-adk/projects में {scanned}/{limit} प्रविष्टियाँ जाँची गईं; और प्रविष्टियाँ हैं।",
 		"projects.scanRowLimit":
@@ -1053,7 +1073,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 			"naia-adk/projects-এ projects/<project>/project.yaml দেখুন, যেখানে nested project.id খালি নয়। অন্য naia-adk ফোল্ডার ব্যবহার করতে সেটিংসে পথ রিসেট করুন।",
 		"projects.unsafePath": "পথটি naia-adk ফোল্ডারের বাইরে, তাই পড়া হয়নি।",
 		"projects.stageOneEmpty":
-			"ধাপ ২-এর খালি দৃশ্য। কোডিং এজেন্ট, ড্যাশবোর্ড ও অভ্যন্তরীণ ইস্যু এখনো যুক্ত নয়।",
+			"ধাপ ২-এর খালি দৃশ্য। কোডিং এজেন্ট, নথি ও কাজ এখনো যুক্ত নয়।",
+		"projects.webviewOpenDashboard": "নথি খুলুন",
+		"projects.webviewOpenIssues": "কাজ খুলুন",
 		"projects.scanEntryLimit":
 			"naia-adk/projects-এর {scanned}/{limit}টি এন্ট্রি দেখা হয়েছে; আরও আছে।",
 		"projects.scanRowLimit":
@@ -1085,7 +1107,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.unsafePath":
 			"O caminho está fora da pasta naia-adk e não foi lido.",
 		"projects.stageOneEmpty":
-			"Espaço reservado da etapa 2. O agente de código, o painel e as issues internas ainda não estão conectados.",
+			"Espaço reservado da etapa 2. O agente de código, os documentos e as tarefas ainda não estão conectados.",
+		"projects.webviewOpenDashboard": "Abrir documentos",
+		"projects.webviewOpenIssues": "Abrir tarefas",
 		"projects.scanEntryLimit":
 			"{scanned} de {limit} entradas em naia-adk/projects foram verificadas; há mais.",
 		"projects.scanRowLimit":
@@ -1118,7 +1142,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.unsafePath":
 			"Jalur berada di luar folder naia-adk sehingga tidak dibaca.",
 		"projects.stageOneEmpty":
-			"Placeholder tahap 2. Agen coding, dasbor, dan data isu internal belum terhubung.",
+			"Placeholder tahap 2. Agen coding, dokumen, dan data tugas belum terhubung.",
+		"projects.webviewOpenDashboard": "Buka dokumen",
+		"projects.webviewOpenIssues": "Buka tugas",
 		"projects.scanEntryLimit":
 			"Memeriksa {scanned} dari {limit} entri di naia-adk/projects; masih ada entri lain.",
 		"projects.scanRowLimit":
@@ -1150,7 +1176,9 @@ export const STAGE_TWO_TRANSLATIONS: Record<
 		"projects.unsafePath":
 			"Đường dẫn nằm ngoài thư mục naia-adk nên không được đọc.",
 		"projects.stageOneEmpty":
-			"Màn hình giữ chỗ của giai đoạn 2. Tác nhân lập trình, bảng điều khiển và vấn đề nội bộ chưa được kết nối.",
+			"Màn hình giữ chỗ của giai đoạn 2. Tác nhân lập trình, tài liệu và công việc chưa được kết nối.",
+		"projects.webviewOpenDashboard": "Mở tài liệu",
+		"projects.webviewOpenIssues": "Mở công việc",
 		"projects.scanEntryLimit":
 			"Đã quét {scanned}/{limit} mục trong naia-adk/projects; vẫn còn mục khác.",
 		"projects.scanRowLimit":
