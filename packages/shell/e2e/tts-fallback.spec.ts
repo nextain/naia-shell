@@ -163,9 +163,18 @@ test.describe("TTS provider path wiring (real module, no mock)", () => {
 		expect(r.error).toContain("naiaKey");
 	});
 
-	test("google REST path reaches the API (no CORS/wiring break)", async ({
+	// #603(0f7b6cc4): 타사 클라우드 TTS(google·openai·elevenlabs)는 제거됐다. 옛 시험은
+	// 실제 Google REST 까지 나가 4xx 를 받는지 봤다. 이제 같은 배선 자리에서 지켜야 할 것은
+	// 옛 설정의 google 이 명확한 오류로 거절되고 Google 로는 한 번도 나가지 않는 것이다
+	// (synthesize.ts:674, 단위 시험 synthesize.test.ts:189 와 같은 계약을 실제 모듈로 확인).
+	test("retired google provider is rejected without reaching Google", async ({
 		page,
 	}) => {
+		let googleRequests = 0;
+		await page.route("**/texttospeech.googleapis.com/**", (route) => {
+			googleRequests++;
+			return route.abort();
+		});
 		await page.addInitScript(CHAT_TTS_MOCK);
 		await page.goto("/");
 		const r = await page.evaluate(async () => {
@@ -183,6 +192,7 @@ test.describe("TTS provider path wiring (real module, no mock)", () => {
 			}
 		});
 		expect(r.ok).toBe(false);
-		expect(r.error).toMatch(/Google TTS 실패|4\d\d/);
+		expect(r.error).toMatch(/지원하지 않는 TTS provider: google/);
+		expect(googleRequests).toBe(0);
 	});
 });
