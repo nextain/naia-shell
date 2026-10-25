@@ -1,86 +1,86 @@
 import { Logger } from "../../lib/logger";
-import { parseCharacterCardJsonText } from "./card-parser";
-import type { StoredCardRecord } from "./card-store";
 import {
-	CHARCARD_SAMPLE_CLOCKWORK_TINKER_V3,
-	CHARCARD_SAMPLE_GREENHOUSE_KEEPER_V3,
-	CHARCARD_SAMPLE_STARLIGHT_ARCHIVIST_V2,
-} from "./locales/messages";
+	parseCharacterCardBytes,
+	parseCharacterCardJsonText,
+} from "./card-parser";
+import type { StoredCardRecord } from "./card-store";
+import clockworkTinkerPngInline from "./package-public/samples/clockwork-tinker.png?inline";
+import greenhouseKeeperPngInline from "./package-public/samples/greenhouse-keeper.png?inline";
+import starlightArchivistV2 from "./package-public/samples/starlight-archivist-v2.json";
 
 const TAG = "CharCardSampleCards";
 
-function createLanternPreviewSvgBlob(): Blob {
-	const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-  <defs>
-    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#fde68a"/>
-      <stop offset="60%" stop-color="#34d399"/>
-      <stop offset="100%" stop-color="#115e59"/>
-    </radialGradient>
-  </defs>
-  <rect width="160" height="160" rx="24" fill="url(#glow)"/>
-  <circle cx="80" cy="76" r="28" fill="#fef3c7" opacity="0.9"/>
-  <path d="M56 122c10-18 38-18 48 0" stroke="#ecfdf5" stroke-width="8" stroke-linecap="round" fill="none"/>
-</svg>`;
-	return new Blob([svg], { type: "image/svg+xml" });
+export function decodeDataUrlBytes(dataUrl: string): Uint8Array {
+	const commaIdx = dataUrl.indexOf(",");
+	const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+	const binary = atob(base64.trim());
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return bytes;
 }
 
 export function getBundledSampleCardRecords(): StoredCardRecord[] {
 	Logger.debug(TAG, "building bundled sample character cards");
-	const entries: Array<{
+	const pngSamples: Array<{
 		id: string;
 		fileName: string;
 		importedAt: number;
-		raw: unknown;
-		sourceFormat: "json" | "png";
-		chunkKeyword?: "ccv3" | "chara";
-		imageBlob: Blob | null;
+		inlineDataUrl: string;
 	}> = [
 		{
 			id: "sample:greenhouse-keeper-png",
 			fileName: "greenhouse-keeper.png",
 			importedAt: 3,
-			raw: CHARCARD_SAMPLE_GREENHOUSE_KEEPER_V3,
-			sourceFormat: "png",
-			chunkKeyword: "ccv3",
-			imageBlob: createLanternPreviewSvgBlob(),
+			inlineDataUrl: greenhouseKeeperPngInline,
 		},
 		{
 			id: "sample:clockwork-tinker-v3",
-			fileName: "clockwork-tinker-v3.json",
+			fileName: "clockwork-tinker.png",
 			importedAt: 2,
-			raw: CHARCARD_SAMPLE_CLOCKWORK_TINKER_V3,
-			sourceFormat: "json",
-			imageBlob: null,
-		},
-		{
-			id: "sample:starlight-archivist-v2",
-			fileName: "starlight-archivist-v2.json",
-			importedAt: 1,
-			raw: CHARCARD_SAMPLE_STARLIGHT_ARCHIVIST_V2,
-			sourceFormat: "json",
-			imageBlob: null,
+			inlineDataUrl: clockworkTinkerPngInline,
 		},
 	];
 
 	const out: StoredCardRecord[] = [];
-	for (const item of entries) {
-		const parsed = parseCharacterCardJsonText(
-			JSON.stringify(item.raw),
-			item.sourceFormat,
-			item.chunkKeyword,
-		);
+	for (const sample of pngSamples) {
+		const pngBytes = decodeDataUrlBytes(sample.inlineDataUrl);
+		const parsed = parseCharacterCardBytes(pngBytes, sample.fileName);
 		if (parsed.ok) {
 			out.push({
-				id: item.id,
-				fileName: item.fileName,
-				importedAt: item.importedAt,
+				id: sample.id,
+				fileName: sample.fileName,
+				importedAt: sample.importedAt,
 				card: parsed.card,
 				rawJson: parsed.card.rawJson,
-				imageBlob: item.imageBlob,
+				imageBlob: new Blob([new Uint8Array(pngBytes)], { type: "image/png" }),
 				builtIn: true,
+			});
+		} else {
+			Logger.warn(TAG, "failed to parse bundled sample PNG card", {
+				fileName: sample.fileName,
+				code: parsed.code,
+				detail: parsed.detail,
 			});
 		}
 	}
+
+	const jsonSampleParsed = parseCharacterCardJsonText(
+		JSON.stringify(starlightArchivistV2),
+		"json",
+	);
+	if (jsonSampleParsed.ok) {
+		out.push({
+			id: "sample:starlight-archivist-v2",
+			fileName: "starlight-archivist-v2.json",
+			importedAt: 1,
+			card: jsonSampleParsed.card,
+			rawJson: jsonSampleParsed.card.rawJson,
+			imageBlob: null,
+			builtIn: true,
+		});
+	}
+
 	return out;
 }

@@ -25,6 +25,7 @@ beforeEach(() => {
 	useAppStore.setState({
 		activeApp: "land.naia.charcard",
 		activeAppContext: null,
+		activeAppContextOwnerId: null,
 		persistentAppContexts: {},
 	});
 });
@@ -35,9 +36,9 @@ afterEach(() => {
 });
 
 describe("GenericInstalledApp naia-app:context bridge", () => {
-	it("accepts context from matching iframe contentWindow, ignores other sources, clears on null and unmount", () => {
+	it("accepts context from active app iframe, ignores other sources, clears on null and unmount", () => {
 		const entry = "/home/user/.naia/apps/land.naia.charcard/index.html";
-		const App = createGenericInstalledApp(entry);
+		const App = createGenericInstalledApp(entry, [], "land.naia.charcard");
 		const { unmount } = render(<App naia={{} as NaiaContextBridge} />);
 
 		const iframe = screen.getByTitle("App") as HTMLIFrameElement;
@@ -76,6 +77,9 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 			type: "charcard",
 			data: { character: "온새미", roleplay: "온실의 식물학자" },
 		});
+		expect(useAppStore.getState().activeAppContextOwnerId).toBe(
+			"land.naia.charcard",
+		);
 
 		// 3. Null context clears activeAppContext
 		act(() => {
@@ -112,10 +116,124 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		expect(useAppStore.getState().activeAppContext).toBeNull();
 	});
 
-	it("rejects persistent context types (e.g. bgm) and oversized payloads (>32,000 chars) with Logger.warn", () => {
+	it("ignores messages from hidden keep-alive apps, ignores previous app after switch, and unmounts without clearing another app's context", () => {
+		const charcardEntry = "/home/user/.naia/apps/land.naia.charcard/index.html";
+		const otherEntry = "/home/user/.naia/apps/land.naia.other/index.html";
+		const CharCardInstalled = createGenericInstalledApp(
+			charcardEntry,
+			[],
+			"land.naia.charcard",
+		);
+		const OtherInstalled = createGenericInstalledApp(
+			otherEntry,
+			[],
+			"land.naia.other",
+		);
+
+		const { unmount: unmountCharcard } = render(
+			<CharCardInstalled naia={{} as NaiaContextBridge} />,
+		);
+		const { unmount: unmountOther } = render(
+			<OtherInstalled naia={{} as NaiaContextBridge} />,
+		);
+
+		const iframes = screen.getAllByTitle("App") as HTMLIFrameElement[];
+		const charcardIframe = iframes[0];
+		const otherIframe = iframes[1];
+
+		// Active app is land.naia.charcard -> message from charcard is accepted
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: charcardIframe.contentWindow,
+					data: {
+						type: "naia-app:context",
+						context: {
+							type: "charcard",
+							data: { character: "온새미", roleplay: "활성 앱 문맥" },
+						},
+					},
+				}),
+			);
+		});
+		expect(useAppStore.getState().activeAppContext?.data).toEqual({
+			character: "온새미",
+			roleplay: "활성 앱 문맥",
+		});
+
+		// Hidden keep-alive app (land.naia.other) posts message -> ignored!
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: otherIframe.contentWindow,
+					data: {
+						type: "naia-app:context",
+						context: {
+							type: "other",
+							data: { hijack: true },
+						},
+					},
+				}),
+			);
+		});
+		expect(useAppStore.getState().activeAppContext?.type).toBe("charcard");
+		expect(useAppStore.getState().activeAppContextOwnerId).toBe(
+			"land.naia.charcard",
+		);
+
+		// User switches activeApp to land.naia.other
+		act(() => {
+			useAppStore.getState().setActiveApp("land.naia.other");
+		});
+		expect(useAppStore.getState().activeAppContext).toBeNull();
+
+		// Previous app (land.naia.charcard) posts delayed message after switch -> ignored!
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: charcardIframe.contentWindow,
+					data: {
+						type: "naia-app:context",
+						context: {
+							type: "charcard",
+							data: { character: "온새미", roleplay: "이전 앱 지연 문맥" },
+						},
+					},
+				}),
+			);
+		});
+		expect(useAppStore.getState().activeAppContext).toBeNull();
+
+		// Now active app (land.naia.other) posts context -> accepted
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: otherIframe.contentWindow,
+					data: {
+						type: "naia-app:context",
+						context: {
+							type: "other",
+							data: { active: "other-context" },
+						},
+					},
+				}),
+			);
+		});
+		expect(useAppStore.getState().activeAppContext?.type).toBe("other");
+
+		// Unmounting charcard does NOT clear other's active context
+		unmountCharcard();
+		expect(useAppStore.getState().activeAppContext?.type).toBe("other");
+
+		// Unmounting other clears its own context
+		unmountOther();
+		expect(useAppStore.getState().activeAppContext).toBeNull();
+	});
+
+	it("rejects persistent context types (e.g. bgm) and oversized payloads (>32,000 chars) and clears stale context of that app on rejection", () => {
 		const warnSpy = vi.spyOn(Logger, "warn");
 		const entry = "/home/user/.naia/apps/land.naia.charcard/index.html";
-		const App = createGenericInstalledApp(entry);
+		const App = createGenericInstalledApp(entry, [], "land.naia.charcard");
 		render(<App naia={{} as NaiaContextBridge} />);
 
 		const iframe = screen.getByTitle("App") as HTMLIFrameElement;
@@ -145,7 +263,26 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 			}),
 		);
 
-		// Reject oversized context (>32,000 JSON chars)
+		// First push a valid context from charcard
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: iframe.contentWindow,
+					data: {
+						type: "naia-app:context",
+						context: {
+							type: "charcard",
+							data: { roleplay: "이전 정상 문맥" },
+						},
+					},
+				}),
+			);
+		});
+		expect(useAppStore.getState().activeAppContext?.data).toEqual({
+			roleplay: "이전 정상 문맥",
+		});
+
+		// Reject oversized context (>32,000 JSON chars) and verify previous stale context is cleared
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {

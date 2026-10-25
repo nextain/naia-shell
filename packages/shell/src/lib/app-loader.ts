@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createGenericInstalledApp } from "../apps/generic-installed/GenericInstalledApp";
 import { useAppStore } from "../stores/app";
-import { Logger } from "./logger";
 import { appRegistry } from "./app-registry";
 import type { AppDataUseSpec, AppSkillSpec, NaiaTool } from "./app-registry";
+import { Logger } from "./logger";
 
 export interface InstalledAppManifest {
 	id: string;
@@ -82,7 +82,10 @@ export function invalidateInstalledApps(): void {
 	for (const descriptor of installed) {
 		appRegistry.unregister(descriptor.id);
 	}
-	if (activeApp && installed.some((descriptor) => descriptor.id === activeApp)) {
+	if (
+		activeApp &&
+		installed.some((descriptor) => descriptor.id === activeApp)
+	) {
 		useAppStore.getState().setActiveApp(null);
 	}
 	useAppStore.getState().bumpAppListVersion();
@@ -116,7 +119,9 @@ export async function loadInstalledApps(): Promise<void> {
 	// descriptor from the previous root can have the same id but an old
 	// htmlEntry. Drop only installed descriptors whose current manifest is gone
 	// or points at a different root; built-ins and live unchanged apps remain.
-	const currentById = new Map(manifests.map((manifest) => [manifest.id, manifest]));
+	const currentById = new Map(
+		manifests.map((manifest) => [manifest.id, manifest]),
+	);
 	for (const registered of appRegistry.list()) {
 		if (registered.source !== "installed") continue;
 		const current = currentById.get(registered.id);
@@ -141,7 +146,8 @@ export async function loadInstalledApps(): Promise<void> {
 			continue;
 		}
 
-		const manifestVersion = manifest.manifest_version ?? manifest.manifestVersion;
+		const manifestVersion =
+			manifest.manifest_version ?? manifest.manifestVersion;
 		const profile: "legacy" | "v2" =
 			manifestVersion != null && manifestVersion >= 2 ? "v2" : "legacy";
 		const hostPermissions =
@@ -179,7 +185,11 @@ export async function loadInstalledApps(): Promise<void> {
 			// round-trip to another app and back. An app may opt out with
 			// keepAlive:false in its manifest.
 			keepAlive: manifest.keepAlive ?? true,
-			center: createGenericInstalledApp(manifest.htmlEntry, manifest.tools),
+			center: createGenericInstalledApp(
+				manifest.htmlEntry,
+				manifest.tools,
+				manifest.id,
+			),
 		});
 
 		Logger.info("AppLoader", `Registered installed app: ${manifest.id}`);

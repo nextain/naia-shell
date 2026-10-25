@@ -6,10 +6,15 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CharCardApp } from "../CharCardApp";
-import { createMemoryCardStorage } from "../card-store";
+import {
+	type CardStorageAdapter,
+	type StoredCardRecord,
+	createMemoryCardStorage,
+} from "../card-store";
 
 afterEach(() => {
 	cleanup();
@@ -17,17 +22,33 @@ afterEach(() => {
 });
 
 describe("CharCardApp UI", () => {
-	it("imports a JSON card, sends naia-app:context on start, sends null on stop, and deletes after confirm", async () => {
+	it("loads bundled PNG sample cards via PNG parser with image and name, imports JSON card, starts/stops roleplay, and confirms/cancels deletion via alertdialog", async () => {
 		const postMessageSpy = vi.spyOn(window.parent, "postMessage");
-		const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 		const storage = createMemoryCardStorage();
 
 		render(<CharCardApp storage={storage} localeOverride="ko" />);
 
-		// Bundled sample cards appear initially
-		expect(screen.getAllByText("온새미").length).toBeGreaterThanOrEqual(1);
+		// Bundled sample PNG card (온새미) is selected initially and parsed as PNG with an <img> avatar
+		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
+			"온새미",
+		);
+		const sampleImg = screen.getByTestId("charcard-avatar-img");
+		expect(sampleImg).toBeInTheDocument();
+		expect(sampleImg).toHaveAttribute("alt", "온새미");
+		expect(screen.getByText("V3 · PNG")).toBeInTheDocument();
 		expect(screen.getByText("한도윤")).toBeInTheDocument();
 		expect(screen.getByText("서윤하")).toBeInTheDocument();
+
+		// Selecting JSON sample card (서윤하) renders initial-letter avatar fallback
+		fireEvent.click(
+			screen.getByTestId("charcard-item-sample:starlight-archivist-v2"),
+		);
+		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
+			"서윤하",
+		);
+		expect(screen.getByTestId("charcard-avatar-letter")).toHaveTextContent(
+			"서",
+		);
 
 		// Import a new JSON card
 		const customCard = {
@@ -101,10 +122,45 @@ describe("CharCardApp UI", () => {
 		);
 		expect(screen.queryByTestId("charcard-active-banner")).toBeNull();
 
-		// Delete imported card -> asks confirmation, then removes from list
+		// Delete imported card -> opens in-app role="alertdialog" with initial focus on Cancel
 		const deleteBtn = screen.getByTestId("charcard-delete-button");
 		fireEvent.click(deleteBtn);
-		expect(confirmSpy).toHaveBeenCalled();
+
+		const dialog = screen.getByRole("alertdialog");
+		expect(dialog).toBeInTheDocument();
+		expect(dialog).toHaveAttribute(
+			"aria-labelledby",
+			"charcard-delete-dialog-title",
+		);
+		expect(dialog).toHaveAttribute(
+			"aria-describedby",
+			"charcard-delete-dialog-desc",
+		);
+		expect(within(dialog).getByText("캐릭터 카드 지우기")).toBeInTheDocument();
+		const cancelBtn = screen.getByTestId("charcard-delete-cancel");
+		expect(document.activeElement).toBe(cancelBtn);
+
+		// 1) Clicking Cancel closes dialog, keeps card, and returns focus to delete button
+		fireEvent.click(cancelBtn);
+		expect(screen.queryByRole("alertdialog")).toBeNull();
+		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
+			"강하늘",
+		);
+		expect(document.activeElement).toBe(deleteBtn);
+
+		// 2) Pressing Escape also cancels and keeps the card
+		fireEvent.click(deleteBtn);
+		expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+		fireEvent.keyDown(window, { key: "Escape" });
+		expect(screen.queryByRole("alertdialog")).toBeNull();
+		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
+			"강하늘",
+		);
+		expect(document.activeElement).toBe(deleteBtn);
+
+		// 3) Clicking Confirm removes the card
+		fireEvent.click(deleteBtn);
+		fireEvent.click(screen.getByTestId("charcard-delete-confirm"));
 
 		await waitFor(() => {
 			expect(screen.queryByText("강하늘")).toBeNull();
@@ -131,5 +187,85 @@ describe("CharCardApp UI", () => {
 		// Dismissing returns cleanly
 		fireEvent.click(screen.getByTestId("charcard-error-dismiss"));
 		expect(screen.queryByTestId("charcard-error-panel")).toBeNull();
+	});
+
+	it("handles storage save/delete failures without mutating card list until retry succeeds", async () => {
+		let shouldFailSave = true;
+		let shouldFailDelete = true;
+		const savedMap = new Map<string, StoredCardRecord>();
+		const flakyStorage: CardStorageAdapter = {
+			mode: "indexeddb",
+			async listCards() {
+				return Array.from(savedMap.values());
+			},
+			async saveCard(record) {
+				if (shouldFailSave) {
+					throw new Error("IndexedDB QuotaExceededError");
+				}
+				savedMap.set(record.id, record);
+			},
+			async removeCard(id) {
+				if (shouldFailDelete) {
+					throw new Error("IndexedDB TransactionInactiveError");
+				}
+				savedMap.delete(id);
+			},
+		};
+
+		render(<CharCardApp storage={flakyStorage} localeOverride="ko" />);
+
+		const cardJson = {
+			spec: "chara_card_v3",
+			spec_version: "3.0",
+			data: {
+				name: "저장시험캐릭터",
+				description: "설명",
+				first_mes: "인사",
+			},
+		};
+		const file = new File([JSON.stringify(cardJson)], "retry-card.json", {
+			type: "application/json",
+		});
+		fireEvent.change(screen.getByTestId("charcard-file-input"), {
+			target: { files: [file] },
+		});
+
+		// Save fails -> error banner shown, card NOT added to list
+		const saveErrorBanner = await screen.findByTestId("charcard-storage-error");
+		expect(saveErrorBanner).toHaveTextContent(
+			"캐릭터 카드를 보관함에 저장하지 못했습니다.",
+		);
+		expect(screen.queryByText("저장시험캐릭터")).toBeNull();
+
+		// Retry save -> succeeds and adds card to list
+		shouldFailSave = false;
+		fireEvent.click(screen.getByTestId("charcard-storage-retry"));
+		await waitFor(() => {
+			expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
+				"저장시험캐릭터",
+			);
+		});
+		expect(screen.queryByTestId("charcard-storage-error")).toBeNull();
+
+		// Now try deleting -> fails first, card stays in list
+		fireEvent.click(screen.getByTestId("charcard-delete-button"));
+		fireEvent.click(screen.getByTestId("charcard-delete-confirm"));
+
+		const deleteErrorBanner = await screen.findByTestId(
+			"charcard-storage-error",
+		);
+		expect(deleteErrorBanner).toHaveTextContent(
+			"캐릭터 카드를 보관함에서 지우지 못했습니다.",
+		);
+		expect(screen.getByTestId("charcard-detail-name")).toHaveTextContent(
+			"저장시험캐릭터",
+		);
+
+		// Retry delete -> succeeds and removes card from list
+		shouldFailDelete = false;
+		fireEvent.click(screen.getByTestId("charcard-storage-retry"));
+		await waitFor(() => {
+			expect(screen.queryByText("저장시험캐릭터")).toBeNull();
+		});
 	});
 });

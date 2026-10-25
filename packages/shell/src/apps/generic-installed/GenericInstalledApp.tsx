@@ -45,6 +45,7 @@ function installedAppFrameSrc(htmlEntry: string): string {
 export function createGenericInstalledApp(
 	htmlEntry?: string,
 	tools: NaiaTool[] = [],
+	appId?: string,
 ) {
 	return function GenericInstalledApp({ naia }: AppCenterProps) {
 		const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -54,7 +55,11 @@ export function createGenericInstalledApp(
 		useLayoutEffect(() => {
 			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
 			const frame = iframeRef.current;
-			const disposeContextBridge = installInstalledAppContextBridge(frame);
+			const disposeContextBridge = installInstalledAppContextBridge(
+				frame,
+				appId,
+				htmlEntry,
+			);
 			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
@@ -64,7 +69,7 @@ export function createGenericInstalledApp(
 				disposeFilesBridge();
 				disposeContextBridge();
 			};
-		}, [htmlEntry, frameSrc]);
+		}, [htmlEntry, frameSrc, appId]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {

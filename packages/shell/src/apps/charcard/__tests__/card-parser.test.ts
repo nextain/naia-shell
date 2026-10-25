@@ -261,7 +261,7 @@ describe("card-parser", () => {
 		expect(unknownSpec.ok).toBe(false);
 		if (!unknownSpec.ok) expect(unknownSpec.code).toBe("UNKNOWN_SPEC");
 
-		// 7. Missing name
+		// 7. Missing name or missing V2/V3 data envelope
 		const missingName = parseCharacterCardJsonText(
 			JSON.stringify({ spec: "chara_card_v2", data: { name: "   " } }),
 		);
@@ -269,6 +269,103 @@ describe("card-parser", () => {
 			ok: false,
 			code: "MISSING_NAME",
 		});
+
+		const topLevelOnlyV2 = parseCharacterCardJsonText(
+			JSON.stringify({ spec: "chara_card_v2", name: "최상위만있는V2" }),
+		);
+		expect(topLevelOnlyV2.ok).toBe(false);
+		if (!topLevelOnlyV2.ok) expect(topLevelOnlyV2.code).toBe("INVALID_JSON");
+
+		const topLevelOnlyV3 = parseCharacterCardJsonText(
+			JSON.stringify({
+				spec: "chara_card_v3",
+				spec_version: "3.0",
+				name: "최상위만있는V3",
+			}),
+		);
+		expect(topLevelOnlyV3.ok).toBe(false);
+		if (!topLevelOnlyV3.ok) expect(topLevelOnlyV3.code).toBe("INVALID_JSON");
+
+		// 7b. Invalid spec_version for V2 / V3
+		const badV2Version = parseCharacterCardJsonText(
+			JSON.stringify({
+				spec: "chara_card_v2",
+				spec_version: "1.0",
+				data: { name: "버전불일치V2" },
+			}),
+		);
+		expect(badV2Version.ok).toBe(false);
+		if (!badV2Version.ok)
+			expect(badV2Version.code).toBe("INVALID_SPEC_VERSION");
+
+		const badV3Version = parseCharacterCardJsonText(
+			JSON.stringify({
+				spec: "chara_card_v3",
+				spec_version: "2.0",
+				data: { name: "버전불일치V3" },
+			}),
+		);
+		expect(badV3Version.ok).toBe(false);
+		if (!badV3Version.ok)
+			expect(badV3Version.code).toBe("INVALID_SPEC_VERSION");
+
+		// 7c. PNG without IEND chunk (exact byte boundary)
+		const ihdrOnly = concatBytes([
+			PNG_SIG,
+			makeChunk("IHDR", new Uint8Array(13)),
+			makeTextChunk(
+				"chara",
+				toBase64Utf8({ spec: "chara_card_v2", data: { name: "IEND없음" } }),
+			),
+		]);
+		const noIendRes = parseCharacterCardBytes(ihdrOnly, "no-iend.png");
+		expect(noIendRes.ok).toBe(false);
+		if (!noIendRes.ok) expect(noIendRes.code).toBe("PNG_CORRUPT_CHUNK");
+
+		// 7d. Corrupted ccv3 chunk must NOT fall back to valid chara chunk
+		const validCharaChunk = makeTextChunk(
+			"chara",
+			toBase64Utf8({ spec: "chara_card_v2", data: { name: "하위호환" } }),
+		);
+		const brokenCcv3Base64Png = buildPngWithChunks([
+			validCharaChunk,
+			makeTextChunk("ccv3", "%%%invalid_base64%%%"),
+		]);
+		const brokenCcv3B64Res = parseCharacterCardBytes(
+			brokenCcv3Base64Png,
+			"broken-ccv3-b64.png",
+		);
+		expect(brokenCcv3B64Res).toEqual({
+			ok: false,
+			code: "INVALID_BASE64",
+		});
+
+		const brokenCcv3JsonPng = buildPngWithChunks([
+			validCharaChunk,
+			makeTextChunk("ccv3", Buffer.from("{broken", "utf8").toString("base64")),
+		]);
+		const brokenCcv3JsonRes = parseCharacterCardBytes(
+			brokenCcv3JsonPng,
+			"broken-ccv3-json.png",
+		);
+		expect(brokenCcv3JsonRes.ok).toBe(false);
+		if (!brokenCcv3JsonRes.ok)
+			expect(brokenCcv3JsonRes.code).toBe("INVALID_JSON");
+
+		const badUtf8ItxtData = new Uint8Array([
+			0x63, 0x63, 0x76, 0x33, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xfe,
+		]);
+		const brokenCcv3Utf8Png = buildPngWithChunks([
+			validCharaChunk,
+			makeChunk("iTXt", badUtf8ItxtData),
+		]);
+		const brokenCcv3Utf8Res = parseCharacterCardBytes(
+			brokenCcv3Utf8Png,
+			"broken-ccv3-utf8.png",
+		);
+		expect(brokenCcv3Utf8Res.ok).toBe(false);
+		if (!brokenCcv3Utf8Res.ok)
+			expect(brokenCcv3Utf8Res.code).toBe("INVALID_BASE64");
 
 		// 8. CHARX (.charx extension or ZIP magic bytes)
 		const zipBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
@@ -362,6 +459,23 @@ describe("card-parser", () => {
 			expect(pngRes.card.character_book.entries.length).toBeGreaterThanOrEqual(
 				1,
 			);
+		}
+
+		const tinkerPngBytes = new Uint8Array(
+			readFileSync(resolve(samplesDir, "clockwork-tinker.png")),
+		);
+		const tinkerPngRes = parseCharacterCardBytes(
+			tinkerPngBytes,
+			"clockwork-tinker.png",
+		);
+		expect(tinkerPngRes.ok).toBe(true);
+		if (tinkerPngRes.ok) {
+			expect(tinkerPngRes.card.sourceFormat).toBe("png");
+			expect(tinkerPngRes.card.specVersion).toBe("v3");
+			expect(tinkerPngRes.card.name).toBe("한도윤");
+			expect(
+				tinkerPngRes.card.character_book.entries.length,
+			).toBeGreaterThanOrEqual(2);
 		}
 	});
 });

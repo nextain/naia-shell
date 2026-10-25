@@ -2397,3 +2397,15 @@ Test Coverage Map (P02)
 | 대기 위치 이어 재생·gesture 목록·무음 1회 재생·ended 복귀·말하기 중 무시·없는 key | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts` — idle resume and gesture action cases | `packages/shell/e2e/nva-prebaked.spec.ts` — action button and clip playback call |
 | AI prompt 조건부 안내·완성/분할 gesture 파싱·표시/TTS 제거·gesture 실행 | `packages/shell/src/lib/__tests__/persona.test.ts`, `persona-disabled.test.ts` — conditional gesture instructions; `packages/shell/src/lib/avatar/__tests__/nva-gesture-trigger.test.ts` — split marker stream; `packages/shell/src/components/__tests__/ChatArea.test.tsx` — response, display and TTS routing | `packages/shell/e2e/nva-prebaked.spec.ts` — visible action list, empty gesture list and narrow layout |
 | 실행 중 로컬 엔진에서 Edge→local 복귀 및 영속 | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — `SettingsTab` running local voice Edge→local case | `packages/shell/e2e/settings-slots.spec.ts` — running local provider change |
+
+### 2026-10-25 캐릭터 카드 설정놀이 설치 앱 (`land.naia.charcard`, D81)
+
+| Scenario | User-observable outcome | Coverage |
+|---|---|---|
+| **UC-CHARCARD-ROLEPLAY** | 사용자가 PNG(`ccv3`·`chara`) 또는 JSON(V3·V2·V1) 캐릭터 카드를 불러와 목록에서 고르고, 첫 인사와 내 이름을 정해 대화를 시작하면 나이아가 해당 캐릭터로 연기한다. 연기 끝내기는 문맥을 비우고, 가져온 카드는 앱 안 `role="alertdialog"` 확인 뒤에만 지운다. 잘못된 파일·손상된 PNG·저장소 실패는 복구·재시도 단추로 안내하며 좁은 폭(390px)에서도 가로 넘침 없이 키보드로 조작한다. | `packages/shell/src/apps/charcard/__tests__/card-parser.test.ts`, `packages/shell/src/apps/charcard/__tests__/prompt-builder.test.ts`, `packages/shell/src/apps/charcard/__tests__/CharCardApp.test.tsx`, `packages/shell/src/apps/generic-installed/__tests__/GenericInstalledApp.context.test.tsx`, `packages/shell/e2e/charcard-app.spec.ts` |
+
+Test Coverage Map (P02) — `UC-CHARCARD-ROLEPLAY`
+
+| UC | 단위·계약 | 실 UI Playwright | 비고 |
+|---|---|---|---|
+| UC-CHARCARD-ROLEPLAY | `packages/shell/src/apps/charcard/__tests__/card-parser.test.ts`, `packages/shell/src/apps/charcard/__tests__/prompt-builder.test.ts`, `packages/shell/src/apps/charcard/__tests__/CharCardApp.test.tsx`, `packages/shell/src/apps/generic-installed/__tests__/GenericInstalledApp.context.test.tsx` | `packages/shell/e2e/charcard-app.spec.ts` | 기본(예시 PNG/JSON 카드 목록)·진행/성공(대화 시작·연기 끝내기·카드 불러오기·확인 후 지우기)·오류(잘못된 파일·저장 실패 재시도)·키보드/ARIA(`role="alertdialog"`, Esc)·좁은 폭(390px 가로 넘침 없음) |

@@ -16,14 +16,18 @@ import {
 } from "./locales/messages";
 import {
 	type BuildRoleplayPromptResult,
+	MAX_SERIALIZED_CONTEXT_CHARS,
 	type RoleplayContextPayload,
 	buildRoleplayPrompt,
+	measureSerializedContextLength,
 	replaceCardMacros,
 } from "./prompt-builder";
 import { getBundledSampleCardRecords } from "./sample-cards";
 import "./charcard.css";
 
 const TAG = "CharCardApp";
+
+export type CharCardUiErrorCode = CardParseErrorCode | "CONTEXT_TOO_LARGE";
 
 export interface CharCardContextBridge {
 	pushContext: (context: RoleplayContextPayload | null) => void;
@@ -33,6 +37,11 @@ export interface CharCardAppProps {
 	bridge?: CharCardContextBridge;
 	storage?: CardStorageAdapter;
 	localeOverride?: string;
+}
+
+interface PendingStorageError {
+	kind: "save" | "delete";
+	record: StoredCardRecord;
 }
 
 const defaultBridge: CharCardContextBridge = {
@@ -91,11 +100,18 @@ export function CharCardApp({
 	const [activeCardId, setActiveCardId] = useState<string | null>(null);
 	const [activeResult, setActiveResult] =
 		useState<BuildRoleplayPromptResult | null>(null);
-	const [errorCode, setErrorCode] = useState<CardParseErrorCode | null>(null);
+	const [errorCode, setErrorCode] = useState<CharCardUiErrorCode | null>(null);
+	const [storageError, setStorageError] = useState<PendingStorageError | null>(
+		null,
+	);
+	const [pendingDeleteRecord, setPendingDeleteRecord] =
+		useState<StoredCardRecord | null>(null);
 	const [dragOver, setDragOver] = useState<boolean>(false);
 
 	const storageRef = useRef<CardStorageAdapter | null>(injectedStorage ?? null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const deleteTriggerButtonRef = useRef<HTMLButtonElement>(null);
+	const cancelDeleteButtonRef = useRef<HTMLButtonElement>(null);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -120,6 +136,25 @@ export function CharCardApp({
 		};
 	}, [injectedStorage]);
 
+	useEffect(() => {
+		if (!pendingDeleteRecord) return;
+		cancelDeleteButtonRef.current?.focus();
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				setPendingDeleteRecord(null);
+				deleteTriggerButtonRef.current?.focus();
+				queueMicrotask(() => {
+					deleteTriggerButtonRef.current?.focus();
+				});
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => {
+			window.removeEventListener("keydown", onKeyDown);
+		};
+	}, [pendingDeleteRecord]);
+
 	const allCards = useMemo(
 		() => [...importedCards, ...samples],
 		[importedCards, samples],
@@ -136,8 +171,12 @@ export function CharCardApp({
 	const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 	useEffect(() => {
 		const blob = selectedRecord?.imageBlob ?? null;
-		if (!blob || typeof URL.createObjectURL !== "function") {
+		if (!blob) {
 			setAvatarUrl(null);
+			return;
+		}
+		if (typeof URL.createObjectURL !== "function") {
+			setAvatarUrl(`blob:charcard-${selectedRecord?.id ?? "preview"}`);
 			return;
 		}
 		let url = "";
@@ -145,7 +184,7 @@ export function CharCardApp({
 			url = URL.createObjectURL(blob);
 			setAvatarUrl(url);
 		} catch {
-			setAvatarUrl(null);
+			setAvatarUrl(`blob:charcard-${selectedRecord?.id ?? "preview"}`);
 		}
 		return () => {
 			if (url && typeof URL.revokeObjectURL === "function") {
@@ -198,12 +237,34 @@ export function CharCardApp({
 		).length;
 	}, [selectedRecord]);
 
+	async function persistImportedRecord(record: StoredCardRecord) {
+		if (storageRef.current) {
+			try {
+				await storageRef.current.saveCard(record);
+			} catch (err) {
+				Logger.warn(TAG, "failed saving card to storage", {
+					error: String(err),
+				});
+				setStorageError({ kind: "save", record });
+				return;
+			}
+		}
+		setStorageError(null);
+		setImportedCards((prev) => [
+			record,
+			...prev.filter((item) => item.id !== record.id),
+		]);
+		setSelectedCardId(record.id);
+		setGreetingIndex(0);
+	}
+
 	async function handleFileImport(file: File) {
 		Logger.info(TAG, "importing card file", {
 			fileName: file.name,
 			size: file.size,
 		});
 		setErrorCode(null);
+		setStorageError(null);
 		if (file.size > 20 * 1024 * 1024) {
 			setErrorCode("FILE_TOO_LARGE");
 			return;
@@ -243,19 +304,7 @@ export function CharCardApp({
 			builtIn: false,
 		};
 
-		if (storageRef.current) {
-			try {
-				await storageRef.current.saveCard(record);
-			} catch (err) {
-				Logger.warn(TAG, "failed saving card to storage", {
-					error: String(err),
-				});
-			}
-		}
-
-		setImportedCards((prev) => [record, ...prev]);
-		setSelectedCardId(record.id);
-		setGreetingIndex(0);
+		await persistImportedRecord(record);
 	}
 
 	function triggerFilePicker() {
@@ -268,10 +317,21 @@ export function CharCardApp({
 
 	function handleStartRoleplay() {
 		if (!selectedRecord || !previewPromptResult) return;
+		const serializedLength = measureSerializedContextLength(
+			previewPromptResult.context,
+		);
+		if (serializedLength > MAX_SERIALIZED_CONTEXT_CHARS) {
+			Logger.warn(TAG, "roleplay context exceeds shell limit", {
+				serializedLength,
+			});
+			setErrorCode("CONTEXT_TOO_LARGE");
+			return;
+		}
 		Logger.info(TAG, "starting character roleplay", {
 			cardId: selectedRecord.id,
 			character: selectedRecord.card.name,
 		});
+		setErrorCode(null);
 		bridge.pushContext(previewPromptResult.context);
 		setActiveCardId(selectedRecord.id);
 		setActiveResult(previewPromptResult);
@@ -284,17 +344,27 @@ export function CharCardApp({
 		setActiveResult(null);
 	}
 
-	async function handleDeleteCard(record: StoredCardRecord) {
+	function requestDeleteCard(record: StoredCardRecord) {
 		if (record.builtIn) return;
-		const confirmed = window.confirm(
-			msg("charcard.deleteConfirm", { name: record.card.name }),
-		);
-		if (!confirmed) return;
+		setStorageError(null);
+		setPendingDeleteRecord(record);
+	}
 
+	function cancelDeleteCard() {
+		setPendingDeleteRecord(null);
+		deleteTriggerButtonRef.current?.focus();
+		queueMicrotask(() => {
+			deleteTriggerButtonRef.current?.focus();
+		});
+	}
+
+	async function executeDeleteCard(record: StoredCardRecord) {
+		if (record.builtIn) return;
 		Logger.info(TAG, "deleting imported card", {
 			cardId: record.id,
 			name: record.card.name,
 		});
+		setPendingDeleteRecord(null);
 		if (storageRef.current) {
 			try {
 				await storageRef.current.removeCard(record.id);
@@ -302,8 +372,12 @@ export function CharCardApp({
 				Logger.warn(TAG, "failed removing card from storage", {
 					error: String(err),
 				});
+				setStorageError({ kind: "delete", record });
+				deleteTriggerButtonRef.current?.focus();
+				return;
 			}
 		}
+		setStorageError(null);
 		if (activeCardId === record.id) {
 			bridge.pushContext(null);
 			setActiveCardId(null);
@@ -315,6 +389,16 @@ export function CharCardApp({
 			const next = remaining[0] ?? samples[0];
 			setSelectedCardId(next?.id ?? "");
 			setGreetingIndex(0);
+		}
+	}
+
+	async function handleRetryStorageAction() {
+		if (!storageError) return;
+		const { kind, record } = storageError;
+		if (kind === "save") {
+			await persistImportedRecord(record);
+		} else {
+			await executeDeleteCard(record);
 		}
 	}
 
@@ -489,6 +573,40 @@ export function CharCardApp({
 						</div>
 					) : null}
 
+					{storageError ? (
+						<div
+							className="charcard-app__error-panel"
+							role="alert"
+							data-testid="charcard-storage-error"
+						>
+							<p>
+								{msg(
+									storageError.kind === "save"
+										? "charcard.storageErrorSave"
+										: "charcard.storageErrorDelete",
+								)}
+							</p>
+							<div className="charcard-app__error-actions">
+								<button
+									type="button"
+									className="charcard-app__btn charcard-app__btn--primary"
+									onClick={() => void handleRetryStorageAction()}
+									data-testid="charcard-storage-retry"
+								>
+									{msg("charcard.storageErrorRetry")}
+								</button>
+								<button
+									type="button"
+									className="charcard-app__btn"
+									onClick={() => setStorageError(null)}
+									data-testid="charcard-storage-dismiss"
+								>
+									{msg("charcard.storageErrorDismiss")}
+								</button>
+							</div>
+						</div>
+					) : null}
+
 					{selectedRecord ? (
 						<div className="charcard-app__detail-content">
 							<div className="charcard-app__profile">
@@ -501,9 +619,13 @@ export function CharCardApp({
 											src={avatarUrl}
 											alt={selectedRecord.card.name}
 											className="charcard-app__avatar-img"
+											data-testid="charcard-avatar-img"
 										/>
 									) : (
-										<span className="charcard-app__avatar-letter">
+										<span
+											className="charcard-app__avatar-letter"
+											data-testid="charcard-avatar-letter"
+										>
 											{getInitialChar(selectedRecord.card.name)}
 										</span>
 									)}
@@ -605,9 +727,10 @@ export function CharCardApp({
 
 									{!selectedRecord.builtIn ? (
 										<button
+											ref={deleteTriggerButtonRef}
 											type="button"
 											className="charcard-app__btn charcard-app__btn--secondary"
-											onClick={() => void handleDeleteCard(selectedRecord)}
+											onClick={() => requestDeleteCard(selectedRecord)}
 											data-testid="charcard-delete-button"
 										>
 											{msg("charcard.deleteCard")}
@@ -730,6 +853,50 @@ export function CharCardApp({
 					)}
 				</main>
 			</div>
+
+			{pendingDeleteRecord ? (
+				<div
+					className="charcard-app__modal-backdrop"
+					data-testid="charcard-delete-dialog-backdrop"
+				>
+					<div
+						className="charcard-app__modal"
+						role="alertdialog"
+						aria-modal="true"
+						aria-labelledby="charcard-delete-dialog-title"
+						aria-describedby="charcard-delete-dialog-desc"
+						data-testid="charcard-delete-dialog"
+					>
+						<h2 id="charcard-delete-dialog-title">
+							{msg("charcard.deleteConfirmTitle")}
+						</h2>
+						<p id="charcard-delete-dialog-desc">
+							{msg("charcard.deleteConfirm", {
+								name: pendingDeleteRecord.card.name,
+							})}
+						</p>
+						<div className="charcard-app__modal-actions">
+							<button
+								ref={cancelDeleteButtonRef}
+								type="button"
+								className="charcard-app__btn"
+								onClick={cancelDeleteCard}
+								data-testid="charcard-delete-cancel"
+							>
+								{msg("charcard.deleteCancelAction")}
+							</button>
+							<button
+								type="button"
+								className="charcard-app__btn charcard-app__btn--danger"
+								onClick={() => void executeDeleteCard(pendingDeleteRecord)}
+								data-testid="charcard-delete-confirm"
+							>
+								{msg("charcard.deleteConfirmAction")}
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 		</section>
 	);
 }

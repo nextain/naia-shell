@@ -17,6 +17,7 @@ export type CardParseErrorCode =
 	| "INVALID_BASE64"
 	| "INVALID_JSON"
 	| "UNKNOWN_SPEC"
+	| "INVALID_SPEC_VERSION"
 	| "MISSING_NAME";
 
 export type CardSpecVersion = "v1" | "v2" | "v3";
@@ -152,7 +153,7 @@ export function extractPngCardChunk(bytes: Uint8Array):
 	| { ok: true; chunk: ExtractedPngCardChunk }
 	| {
 			ok: false;
-			code: "PNG_CORRUPT_CHUNK" | "PNG_NO_CARD_CHUNK";
+			code: "PNG_CORRUPT_CHUNK" | "PNG_NO_CARD_CHUNK" | "INVALID_BASE64";
 			detail?: string;
 	  } {
 	if (!startsWithBytes(bytes, PNG_SIGNATURE)) {
@@ -165,6 +166,7 @@ export function extractPngCardChunk(bytes: Uint8Array):
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 	let offset = 8;
 	let ccv3Payload: string | null = null;
+	let ccv3CorruptEncoding = false;
 	let charaPayload: string | null = null;
 	let sawIend = false;
 
@@ -203,6 +205,7 @@ export function extractPngCardChunk(bytes: Uint8Array):
 					const textValue = readLatin1(data.subarray(nullIdx + 1));
 					if (keyword === "ccv3") {
 						ccv3Payload = textValue;
+						ccv3CorruptEncoding = false;
 					} else if (charaPayload === null) {
 						charaPayload = textValue;
 					}
@@ -217,31 +220,34 @@ export function extractPngCardChunk(bytes: Uint8Array):
 			// translated keyword + 0x00
 			// text (UTF-8)
 			const kwEnd = data.indexOf(0);
-			if (kwEnd > 0 && kwEnd + 3 <= data.byteLength) {
+			if (kwEnd > 0) {
 				const keyword = readLatin1(data.subarray(0, kwEnd)).toLowerCase();
-				const compressionFlag = data[kwEnd + 1];
-				if (
-					compressionFlag === 0 &&
-					(keyword === "ccv3" || keyword === "chara")
-				) {
-					const langStart = kwEnd + 3;
-					const langEnd = data.indexOf(0, langStart);
-					if (langEnd >= langStart) {
-						const transStart = langEnd + 1;
-						const transEnd = data.indexOf(0, transStart);
-						if (transEnd >= transStart) {
+				if (keyword === "ccv3" || keyword === "chara") {
+					if (kwEnd + 3 <= data.byteLength && data[kwEnd + 1] === 0) {
+						const langStart = kwEnd + 3;
+						const langEnd = data.indexOf(0, langStart);
+						const transStart = langEnd >= langStart ? langEnd + 1 : -1;
+						const transEnd = transStart >= 0 ? data.indexOf(0, transStart) : -1;
+						if (transEnd >= transStart && transStart >= 0) {
 							const textBytes = data.subarray(transEnd + 1);
 							try {
 								const textValue = readUtf8(textBytes);
 								if (keyword === "ccv3") {
 									ccv3Payload = textValue;
+									ccv3CorruptEncoding = false;
 								} else if (charaPayload === null) {
 									charaPayload = textValue;
 								}
 							} catch {
-								// Ignore malformed UTF-8 in non-matching or broken iTXt
+								if (keyword === "ccv3") {
+									ccv3CorruptEncoding = true;
+								}
 							}
+						} else if (keyword === "ccv3") {
+							ccv3CorruptEncoding = true;
 						}
+					} else if (keyword === "ccv3") {
+						ccv3CorruptEncoding = true;
 					}
 				}
 			}
@@ -254,8 +260,16 @@ export function extractPngCardChunk(bytes: Uint8Array):
 		offset = chunkEnd;
 	}
 
-	if (!sawIend && offset !== bytes.byteLength) {
+	if (!sawIend) {
 		return { ok: false, code: "PNG_CORRUPT_CHUNK", detail: "unterminated PNG" };
+	}
+
+	if (ccv3CorruptEncoding) {
+		return {
+			ok: false,
+			code: "INVALID_BASE64",
+			detail: "corrupted ccv3 iTXt chunk",
+		};
 	}
 
 	if (ccv3Payload !== null) {
@@ -350,7 +364,9 @@ export function normalizeCardJsonObject(
 	}
 
 	let specVersion: CardSpecVersion = "v1";
-	if ("spec" in rawObj && rawObj.spec !== undefined && rawObj.spec !== null) {
+	const hasExplicitSpec =
+		"spec" in rawObj && rawObj.spec !== undefined && rawObj.spec !== null;
+	if (hasExplicitSpec) {
 		if (rawObj.spec === "chara_card_v3") {
 			specVersion = "v3";
 		} else if (rawObj.spec === "chara_card_v2") {
@@ -368,11 +384,40 @@ export function normalizeCardJsonObject(
 		specVersion = "v2";
 	}
 
+	if (specVersion === "v2" || specVersion === "v3") {
+		const rawSpecVersion = rawObj.spec_version;
+		if (rawSpecVersion !== undefined && rawSpecVersion !== null) {
+			if (typeof rawSpecVersion !== "string") {
+				return {
+					ok: false,
+					code: "INVALID_SPEC_VERSION",
+					detail: String(rawSpecVersion),
+				};
+			}
+			const validPrefix =
+				specVersion === "v2"
+					? rawSpecVersion.startsWith("2.0")
+					: rawSpecVersion.startsWith("3.");
+			if (!validPrefix) {
+				return {
+					ok: false,
+					code: "INVALID_SPEC_VERSION",
+					detail: rawSpecVersion,
+				};
+			}
+		}
+	}
+
 	const dataLayer = isPlainRecord(rawObj.data) ? rawObj.data : null;
-	if ((specVersion === "v2" || specVersion === "v3") && !dataLayer) {
-		// V2/V3 spec requires `data` object, though some cards also mirror fields at top-level.
-		// If neither `data` nor top-level `name` exists, fail cleanly.
-		if (typeof rawObj.name !== "string") {
+	if (specVersion === "v2" || specVersion === "v3") {
+		if (!dataLayer) {
+			return {
+				ok: false,
+				code: "INVALID_JSON",
+				detail: "V2/V3 card requires a data object",
+			};
+		}
+		if (typeof dataLayer.name !== "string" || !dataLayer.name.trim()) {
 			return { ok: false, code: "MISSING_NAME" };
 		}
 	}

@@ -23,6 +23,8 @@ interface AppState {
 	setActiveApp: (id: string | null) => void;
 	/** Latest context pushed by the active (switchable) app. Cleared on switch. */
 	activeAppContext: AppContext | null;
+	/** App id that owns the current activeAppContext. Cleared on switch or null push. */
+	activeAppContextOwnerId: string | null;
 	/**
 	 * Persistent contexts keyed by type (e.g. "bgm"). Survive app switches and
 	 * are never overwritten by transient app pushes.
@@ -33,7 +35,10 @@ interface AppState {
 	 * everything else replaces the single active-app slot. Passing null clears
 	 * only the active slot (persistent contexts are unaffected).
 	 */
-	setActiveAppContext: (ctx: AppContext | null) => void;
+	setActiveAppContext: (
+		ctx: AppContext | null,
+		ownerAppId?: string | null,
+	) => void;
 	/**
 	 * Incremented whenever apps are installed or removed at runtime.
 	 * AppBar and other consumers subscribe to rebuild their app list.
@@ -66,14 +71,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 		}
 		// Clear only the transient active-app slot; persistent contexts (bgm)
 		// must survive the switch so background music favorites stay available.
-		set({ activeApp: id, activeAppContext: null });
+		set({
+			activeApp: id,
+			activeAppContext: null,
+			activeAppContextOwnerId: null,
+		});
 		if (id === "browser" && current !== "browser") {
 			requestBrowserVisibilitySync();
 		}
 	},
 	activeAppContext: null,
+	activeAppContextOwnerId: null,
 	persistentAppContexts: {},
-	setActiveAppContext: (ctx) => {
+	setActiveAppContext: (ctx, ownerAppId) => {
 		if (ctx && PERSISTENT_CONTEXT_TYPES.has(ctx.type)) {
 			set((s) => ({
 				persistentAppContexts: {
@@ -83,7 +93,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 			}));
 			return;
 		}
-		set({ activeAppContext: ctx });
+		if (ctx === null) {
+			set({ activeAppContext: null, activeAppContextOwnerId: null });
+			return;
+		}
+		set({
+			activeAppContext: ctx,
+			activeAppContextOwnerId:
+				ownerAppId !== undefined ? ownerAppId : get().activeApp,
+		});
 	},
 	appListVersion: 0,
 	bumpAppListVersion: () =>

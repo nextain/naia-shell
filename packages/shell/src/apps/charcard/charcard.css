@@ -9,13 +9,21 @@
 	--font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
+.charcard-app,
+.charcard-app *,
+.charcard-app *::before,
+.charcard-app *::after {
+	box-sizing: border-box;
+}
+
 .charcard-app {
 	display: flex;
 	flex-direction: column;
 	width: 100%;
 	height: 100%;
 	min-width: 0;
-	overflow: hidden;
+	overflow-x: hidden;
+	overflow-y: hidden;
 	color: var(--text-primary);
 	background: var(--bg-primary);
 	font-family: var(--font-family);
@@ -452,12 +460,69 @@
 
 .charcard-app__error-actions {
 	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.charcard-app__modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: rgb(0 0 0 / 62%);
+}
+
+.charcard-app__modal {
+	width: min(420px, 100%);
+	padding: 20px;
+	border: 1px solid var(--border-color);
+	border-radius: 14px;
+	background: var(--bg-secondary);
+	color: var(--text-primary);
+	box-shadow: 0 18px 40px rgb(0 0 0 / 45%);
+}
+
+.charcard-app__modal h2 {
+	margin: 0 0 8px;
+	font-size: 17px;
+}
+
+.charcard-app__modal p {
+	margin: 0 0 16px;
+	color: var(--text-secondary);
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.charcard-app__modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	flex-wrap: wrap;
 	gap: 8px;
 }
 
 @media (max-width: 760px) {
+	.charcard-app__header {
+		flex-wrap: wrap;
+		padding: 12px 14px;
+	}
+
+	.charcard-app__notice,
+	.charcard-app__active-bar {
+		margin: 8px 14px 0;
+	}
+
 	.charcard-app__body {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
+		padding: 12px 14px 16px;
+		overflow-x: hidden;
 		overflow-y: auto;
+	}
+
+	.charcard-app__profile {
+		flex-wrap: wrap;
 	}
 }

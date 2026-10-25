@@ -8,6 +8,9 @@ import { charCardText } from "./locales/messages";
 const TAG = "CharCardPromptBuilder";
 
 export const DEFAULT_PROMPT_CHAR_BUDGET = 24_000;
+export const MAX_SERIALIZED_CONTEXT_CHARS = 32_000;
+export const MAX_NAME_CHARS = 200;
+export const MAX_FIELD_INPUT_CHARS = 48_000;
 
 export interface BuildRoleplayPromptOptions {
 	userName?: string;
@@ -28,7 +31,6 @@ export interface RoleplayContextPayload {
 		roleplay: string;
 		character: string;
 		user: string;
-		greeting: string;
 		specVersion: string;
 		truncated: boolean;
 		truncatedParts: TruncatedPart[];
@@ -45,17 +47,42 @@ export interface BuildRoleplayPromptResult {
 	truncatedParts: TruncatedPart[];
 }
 
+const MACRO_PATTERN =
+	/\{\{\s*char\s*\}\}|<\s*bot\s*>|\{\{\s*user\s*\}\}|<\s*user\s*>/gi;
+
 export function replaceCardMacros(
 	text: string,
 	charName: string,
 	userName: string,
+	maxOutputChars = MAX_FIELD_INPUT_CHARS,
 ): string {
 	if (!text) return "";
-	return text
-		.replace(/\{\{\s*char\s*\}\}/gi, charName)
-		.replace(/<\s*bot\s*>/gi, charName)
-		.replace(/\{\{\s*user\s*\}\}/gi, userName)
-		.replace(/<\s*user\s*>/gi, userName);
+	const boundedInput =
+		text.length > maxOutputChars ? text.slice(0, maxOutputChars) : text;
+	const safeChar =
+		charName.length > MAX_NAME_CHARS
+			? charName.slice(0, MAX_NAME_CHARS)
+			: charName;
+	const safeUser =
+		userName.length > MAX_NAME_CHARS
+			? userName.slice(0, MAX_NAME_CHARS)
+			: userName;
+	const replaced = boundedInput.replace(MACRO_PATTERN, (match) => {
+		const lower = match.toLowerCase();
+		if (lower.includes("char") || lower.includes("bot")) {
+			return safeChar;
+		}
+		return safeUser;
+	});
+	return replaced.length > maxOutputChars
+		? replaced.slice(0, maxOutputChars)
+		: replaced;
+}
+
+export function measureSerializedContextLength(
+	context: RoleplayContextPayload,
+): number {
+	return JSON.stringify({ type: context.type, data: context.data }).length;
 }
 
 export function splitMesExamples(
@@ -158,46 +185,64 @@ export function buildRoleplayPrompt(
 		512,
 		options.maxChars ?? DEFAULT_PROMPT_CHAR_BUDGET,
 	);
-	const charName = card.name.trim() || "Character";
+	const rawCharName = card.name.trim() || "Character";
+	const charName = clipText(rawCharName, MAX_NAME_CHARS);
 	const defaultUser = charCardText(
 		"charcard.defaultUserName",
 		undefined,
 		options.locale ?? "ko",
 	);
-	const userName = (options.userName ?? "").trim() || defaultUser;
+	const rawUserName = (options.userName ?? "").trim() || defaultUser;
+	const userName = clipText(rawUserName, MAX_NAME_CHARS);
 
 	Logger.debug(TAG, "building roleplay prompt", {
 		character: charName,
 		maxChars,
 	});
 
+	const fieldCap = Math.min(MAX_FIELD_INPUT_CHARS, maxChars);
+
 	let description = replaceCardMacros(
 		card.description,
 		charName,
 		userName,
+		fieldCap,
 	).trim();
 	let personality = replaceCardMacros(
 		card.personality,
 		charName,
 		userName,
+		fieldCap,
 	).trim();
-	let scenario = replaceCardMacros(card.scenario, charName, userName).trim();
+	let scenario = replaceCardMacros(
+		card.scenario,
+		charName,
+		userName,
+		fieldCap,
+	).trim();
 	let systemPromptRaw = replaceCardMacros(
 		card.system_prompt,
 		charName,
 		userName,
+		fieldCap,
 	).trim();
 	let postHistory = replaceCardMacros(
 		card.post_history_instructions,
 		charName,
 		userName,
+		fieldCap,
 	).trim();
 
 	const rawGreeting =
 		options.selectedGreeting !== undefined
 			? options.selectedGreeting
 			: card.first_mes;
-	let greeting = replaceCardMacros(rawGreeting, charName, userName).trim();
+	let greeting = replaceCardMacros(
+		rawGreeting,
+		charName,
+		userName,
+		fieldCap,
+	).trim();
 
 	const examples = splitMesExamples(card.mes_example, charName, userName);
 
@@ -225,25 +270,36 @@ export function buildRoleplayPrompt(
 		`The user's name in this roleplay is "${userName}".`,
 	].join("\n");
 
+	const safetyFooter = charCardText(
+		"charcard.promptSafetyFooter",
+		{ name: charName },
+		options.locale ?? "ko",
+	);
+
 	const assemblePrompt = (): string => {
-		const sections: string[] = [roleplayHeader];
+		const sections: string[] = [];
 		const coreBody = buildCoreBody(description, personality, scenario);
 
 		if (systemPromptRaw) {
 			if (/\{\{\s*original\s*\}\}/i.test(systemPromptRaw)) {
-				const merged = systemPromptRaw.replace(
-					/\{\{\s*original\s*\}\}/gi,
-					coreBody,
+				const merged = clipText(
+					systemPromptRaw.replace(/\{\{\s*original\s*\}\}/gi, () => coreBody),
+					maxChars,
 				);
 				sections.push(`[System Prompt]\n${merged.trim()}`);
+				sections.push(roleplayHeader);
 			} else {
 				sections.push(`[System Prompt]\n${systemPromptRaw}`);
+				sections.push(roleplayHeader);
 				if (coreBody) {
 					sections.push(coreBody);
 				}
 			}
-		} else if (coreBody) {
-			sections.push(coreBody);
+		} else {
+			sections.push(roleplayHeader);
+			if (coreBody) {
+				sections.push(coreBody);
+			}
 		}
 
 		if (constantLoreLines.length > 0) {
@@ -277,7 +333,28 @@ export function buildRoleplayPrompt(
 			);
 		}
 
+		sections.push(safetyFooter);
+
 		return sections.join("\n\n");
+	};
+
+	const clipPromptPreservingSafetyFooter = (
+		fullPrompt: string,
+		targetMax: number,
+	): string => {
+		if (fullPrompt.length <= targetMax) return fullPrompt;
+		const footerBlock = `\n\n${safetyFooter}`;
+		if (targetMax <= footerBlock.length + 32) {
+			return clipText(fullPrompt, targetMax);
+		}
+		const bodyWithoutFooter = fullPrompt.endsWith(footerBlock)
+			? fullPrompt.slice(0, fullPrompt.length - footerBlock.length)
+			: fullPrompt;
+		const clippedBody = clipText(
+			bodyWithoutFooter,
+			targetMax - footerBlock.length,
+		);
+		return `${clippedBody}${footerBlock}`;
 	};
 
 	let prompt = assemblePrompt();
@@ -362,23 +439,43 @@ export function buildRoleplayPrompt(
 		}
 
 		if (prompt.length > maxChars) {
-			prompt = clipText(prompt, maxChars);
+			prompt = clipPromptPreservingSafetyFooter(prompt, maxChars);
 		}
 	}
 
-	const truncated = truncatedParts.length > 0;
-	const context: RoleplayContextPayload = {
+	const buildContextPayload = (
+		roleplayText: string,
+	): RoleplayContextPayload => ({
 		type: "charcard",
 		data: {
-			roleplay: prompt,
+			roleplay: roleplayText,
 			character: charName,
 			user: userName,
-			greeting,
 			specVersion: card.specVersion,
-			truncated,
-			truncatedParts,
+			truncated: truncatedParts.length > 0,
+			truncatedParts: [...truncatedParts],
 		},
-	};
+	});
+
+	let context = buildContextPayload(prompt);
+	let guard = 0;
+	while (
+		measureSerializedContextLength(context) > MAX_SERIALIZED_CONTEXT_CHARS &&
+		guard < 16
+	) {
+		guard++;
+		markTruncated("long_fields");
+		const overage =
+			measureSerializedContextLength(context) - MAX_SERIALIZED_CONTEXT_CHARS;
+		const nextMax = Math.max(
+			512,
+			prompt.length - Math.max(256, Math.ceil(overage * 0.6)),
+		);
+		prompt = clipPromptPreservingSafetyFooter(prompt, nextMax);
+		context = buildContextPayload(prompt);
+	}
+
+	const truncated = truncatedParts.length > 0;
 
 	return {
 		context,

@@ -15,6 +15,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return proto === Object.prototype || proto === null;
 }
 
+export function inferInstalledAppIdFromEntry(
+	htmlEntry?: string | null,
+): string | null {
+	if (!htmlEntry) return null;
+	const normalized = htmlEntry.replace(/\\/g, "/");
+	const match = /\/apps\/([^/]+)\/[^/]+$/.exec(normalized);
+	return match?.[1]?.trim() || null;
+}
+
 export function validateInstalledAppContext(
 	rawContext: unknown,
 ): { ok: true; context: AppContext | null } | { ok: false; reason: string } {
@@ -62,8 +71,23 @@ export function validateInstalledAppContext(
 
 export function installInstalledAppContextBridge(
 	frame: HTMLIFrameElement,
+	appId?: string | null,
+	htmlEntry?: string | null,
 ): () => void {
+	const ownerAppId =
+		appId?.trim() || inferInstalledAppIdFromEntry(htmlEntry) || null;
 	let lastPushedType: string | null = null;
+
+	const isOwnedByThisBridge = (): boolean => {
+		const state = useAppStore.getState();
+		if (!state.activeAppContext) return false;
+		if (ownerAppId !== null && state.activeAppContextOwnerId !== null) {
+			return state.activeAppContextOwnerId === ownerAppId;
+		}
+		return (
+			lastPushedType !== null && state.activeAppContext.type === lastPushedType
+		);
+	};
 
 	const onMessage = (event: MessageEvent) => {
 		const contentWindow = frame.contentWindow;
@@ -76,41 +100,59 @@ export function installInstalledAppContextBridge(
 		) {
 			return;
 		}
+
+		const currentActiveApp = useAppStore.getState().activeApp;
+		if (!ownerAppId || currentActiveApp !== ownerAppId) {
+			Logger.debug(TAG, "ignoring context from inactive installed app", {
+				ownerAppId,
+				activeApp: currentActiveApp,
+			});
+			return;
+		}
+
 		const check = validateInstalledAppContext(
 			(payload as Record<string, unknown>).context,
 		);
 		if (!check.ok) {
 			Logger.warn(TAG, "rejected installed app context", {
+				appId: ownerAppId,
 				reason: check.reason,
 			});
+			if (isOwnedByThisBridge()) {
+				lastPushedType = null;
+				useAppStore.getState().setActiveAppContext(null);
+			}
 			return;
 		}
 		if (check.context === null) {
-			Logger.debug(TAG, "clearing installed app context");
+			Logger.debug(TAG, "clearing installed app context", {
+				appId: ownerAppId,
+			});
+			if (isOwnedByThisBridge()) {
+				useAppStore.getState().setActiveAppContext(null);
+			}
 			lastPushedType = null;
-			useAppStore.getState().setActiveAppContext(null);
 			return;
 		}
 		Logger.debug(TAG, "applying installed app context", {
+			appId: ownerAppId,
 			type: check.context.type,
 		});
 		lastPushedType = check.context.type;
-		useAppStore.getState().setActiveAppContext(check.context);
+		useAppStore.getState().setActiveAppContext(check.context, ownerAppId);
 	};
 
 	window.addEventListener("message", onMessage);
 
 	return () => {
 		window.removeEventListener("message", onMessage);
-		if (lastPushedType !== null) {
-			const current = useAppStore.getState().activeAppContext;
-			if (current && current.type === lastPushedType) {
-				Logger.debug(TAG, "clearing context on installed app unmount", {
-					type: lastPushedType,
-				});
-				useAppStore.getState().setActiveAppContext(null);
-			}
-			lastPushedType = null;
+		if (isOwnedByThisBridge()) {
+			Logger.debug(TAG, "clearing context on installed app unmount", {
+				appId: ownerAppId,
+				type: lastPushedType,
+			});
+			useAppStore.getState().setActiveAppContext(null);
 		}
+		lastPushedType = null;
 	};
 }
