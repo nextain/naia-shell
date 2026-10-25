@@ -126,7 +126,7 @@ async function openSlotSettings(
 }
 
 test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
-	test("Youtube Radio DJ precedes memo and expands populated settings", async ({
+	test("Youtube Radio DJ sits in the YouTube gesture card and expands populated settings", async ({
 		page,
 	}) => {
 		await openSlotSettings(page, {
@@ -140,27 +140,30 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		await expect(card).not.toContainText("skill_youtube_bgm");
 		await expect(page.getByTestId("proactive-speech-profile")).toHaveCount(0);
 
-		const columns = await card
+		// #605 (9cbe1d1e, 2026-09-17): the Skills tab draws only detected CLI
+		// checkboxes and the YouTube gesture toggle; the agent tool list
+		// (skill_memo, ...) is gone and the Radio DJ card is the YouTube gesture
+		// card's child (SkillsTab.tsx `gesture.id === "youtube" && children`,
+		// SkillsTab.test.tsx "injected Radio DJ child"). The list stays a
+		// two-column grid on a desktop-width window.
+		const youtubeGesture = page.locator(
+			'[data-testid="gesture-skill-card"][data-gesture-id="youtube"]',
+		);
+		await expect(youtubeGesture).toBeVisible();
+		await expect(
+			youtubeGesture.getByTestId("youtube-bgm-skill-settings"),
+		).toHaveCount(1);
+		const columns = await youtubeGesture
 			.locator("..")
 			.evaluate(
 				(element) =>
+					element.classList.contains("skills-list") &&
 					getComputedStyle(element).gridTemplateColumns.split(" ").length,
 			);
 		expect(columns).toBe(2);
-
-		const memoCard = page.locator(".skill-card", { hasText: "skill_memo" });
-		await expect(memoCard).toBeVisible();
-		expect(
-			await card.evaluate((radio) => {
-				const cards = Array.from(
-					document.querySelectorAll(".skills-list > .skill-card"),
-				);
-				const memoIndex = cards.findIndex((item) =>
-					item.textContent?.includes("skill_memo"),
-				);
-				return cards.indexOf(radio) === memoIndex - 1;
-			}),
-		).toBe(true);
+		await expect(
+			page.locator(".skill-card", { hasText: "skill_memo" }),
+		).toHaveCount(0);
 
 		await card.getByRole("button", { name: /Youtube Radio DJ/ }).click();
 		await expect(card).toContainText("skill_youtube_bgm");
@@ -187,8 +190,25 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 			)
 			.toBe(true);
 
+		// b80cb7e1 (2026-09-07) keeps the exhibition parameters under General
+		// (SettingsTab.test.tsx "keeps radio DJ parameters under skills and
+		// exhibition parameters under General"); the DJ-only profile and timers
+		// never appear there (#643).
 		await page.locator('[data-settings-tab="general"]').click();
-		await expect(page.getByTestId("proactive-speech-settings")).toHaveCount(0);
+		const general = page.getByTestId("proactive-speech-settings");
+		await expect(general).toHaveCount(1);
+		await expect(
+			general.getByTestId("proactive-speech-profile").locator("option"),
+		).toHaveText([/.+/, /.+/]);
+		expect(
+			await general
+				.getByTestId("proactive-speech-profile")
+				.locator("option")
+				.evaluateAll((options) =>
+					options.map((option) => (option as HTMLOptionElement).value),
+				),
+		).toEqual(["disabled", "exhibition_intro"]);
+		await expect(page.getByTestId("proactive-idle-ms")).toHaveCount(0);
 		await page.locator('[data-settings-tab="skills"]').click();
 		await card.getByRole("button", { name: /Youtube Radio DJ/ }).click();
 		await expect(page.getByTestId("proactive-speech-settings")).toHaveCount(1);
@@ -310,7 +330,13 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		expect(saved.model).toBe("deepseek-v4-flash"); // 보존(비파괴)
 		expect(saved.subLlmProvider).toBe("naia");
 		expect(saved.subLlmModel).toBe("gemini-3.1-flash-lite");
-		expect(saved.memoryLlmProvider).toBeUndefined();
+		// #692 (b821f05f): Naia defaults now set the small memory LLM to the
+		// Naia account's gpt-5.4-nano unless a memory role was chosen directly
+		// (surfacing.ts NAIA_SMALL_LLM_DEFAULT, SettingsTab.test.tsx FR-SLOT.3).
+		expect(saved.memoryLlmProvider).toBe("nextain");
+		expect(
+			(saved.llmRoles as Record<string, unknown> | undefined)?.memory,
+		).toMatchObject({ provider: "nextain", model: "gpt-5.4-nano" });
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
