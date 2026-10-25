@@ -41,6 +41,9 @@ const CHAT_TTS_MOCK = `
 	window.Audio = function(src){ var a={src:src||"",paused:true}; a.play=function(){ if(src&&src.startsWith("data:audio")) window.__TTS_E2E__.audioPlayed++; setTimeout(function(){ if(a.onended) a.onended(); },10); return Promise.resolve(); }; a.pause=function(){}; Object.defineProperty(a,"currentTime",{get:function(){return 0;},set:function(){}}); return a; };
 
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args){
+		// FR-BGM.16 (2ebc781d): edge TTS asks Rust for the sidecar port first
+		// (synthesize.ts edgeTtsSidecarUrl). Each test routes /edge-tts itself.
+		if (cmd === "ensure_bgm_server") return { ready: true, port: 18791 };
 		if (cmd === "plugin:event|listen"){ if(!listeners.has(args.event)) listeners.set(args.event, []); listeners.get(args.event).push(args.handler); return args.handler; }
 		if (cmd === "plugin:event|emit"){ emit(args.event, args.payload); return null; }
 		if (cmd === "plugin:event|unlisten") return;
