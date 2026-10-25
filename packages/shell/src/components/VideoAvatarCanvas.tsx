@@ -15,6 +15,7 @@ import {
 } from "../lib/ui-preferences";
 import {
 	type NvaManifest,
+	collectNvaManifestClipPaths,
 	isPrebakedNvaManifest,
 	parseNvaManifest,
 	resolveNvaAssetPath,
@@ -110,20 +111,8 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					const parsed = parseNvaManifest(raw);
 					if (!isPrebakedNvaManifest(parsed))
 						throw new Error("NVA requires vrm_slots prebaked WebM assets");
-					for (const anim of Object.values(parsed.animations ?? {})) {
-						if (anim?.clip) resolveNvaAssetPath(directory, anim.clip);
-					}
-					for (const viseme of Object.values(parsed.vrm_slots?.visemes ?? {})) {
-						if (viseme?.clip) resolveNvaAssetPath(directory, viseme.clip);
-					}
-					for (const motion of Object.values(parsed.vrm_slots?.motions ?? {})) {
-						if (motion?.clip) resolveNvaAssetPath(directory, motion.clip);
-					}
-					for (const [clipKey, stackedClip] of Object.entries(
-						parsed.stacked_alpha?.clips ?? {},
-					)) {
-						resolveNvaAssetPath(directory, clipKey);
-						resolveNvaAssetPath(directory, stackedClip);
+					for (const clipPath of collectNvaManifestClipPaths(parsed)) {
+						resolveNvaAssetPath(directory, clipPath);
 					}
 					if (!disposed) {
 						setBundleDir(directory);

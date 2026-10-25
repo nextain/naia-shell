@@ -257,4 +257,94 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 			"Invalid NVA asset path",
 		);
 	});
+
+	it("rejects manifest speech clip paths containing '..' across speech_clips, prebaked_speech, and vrm_slots.speech (default and by_locale) in web mode without calling invoke or registering renderer", async () => {
+		setWebAssetsModeForTests(true);
+		mockGetAdkPath.mockReturnValue(null as unknown as string);
+		const speechTraversalManifests = [
+			{
+				speech_clips: {
+					"speech-ko": { clip: "clips/../../escape-speech-clips.webm", text: "안녕" },
+				},
+			},
+			{
+				speech_clips: {
+					"speech-ko": {
+						clip: "clips/talking-ko.webm",
+						by_locale: { "en-US": { clip: "../escape-speech-clips-locale.webm" } },
+					},
+				},
+			},
+			{
+				prebaked_speech: {
+					utterances: {
+						hello: { clip: "clips/../escape-prebaked.webm", text: "안녕" },
+					},
+				},
+			},
+			{
+				prebaked_speech: {
+					utterances: {
+						hello: {
+							clip: "clips/talking-ko.webm",
+							by_locale: { "ko-KR": { clip: "clips/../../escape-prebaked-locale.webm" } },
+						},
+					},
+				},
+			},
+			{
+				vrm_slots: {
+					speech: {
+						hello: { clip: "../escape-vrm-speech.webm", text: "안녕" },
+					},
+				},
+			},
+			{
+				vrm_slots: {
+					speech: {
+						hello: {
+							clip: "clips/talking-ko.webm",
+							by_locale: { "ko-KR": { clip: "clips/../../escape-vrm-speech-locale.webm" } },
+						},
+					},
+				},
+			},
+		];
+
+		for (const extra of speechTraversalManifests) {
+			cleanup();
+			useCascadeAvatarStore.getState().setRenderer(null);
+			useCascadeAvatarStore.getState().setNvaLoadError(null);
+			const payload = JSON.stringify({
+				nva_version: "0.2",
+				canvas: { width: 720, height: 1280 },
+				animations: {
+					idle: { clip: "clips/idle.webm", loop: true, can_talk: false },
+				},
+				...extra,
+			});
+			vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+				new Response(payload, { status: 200 }),
+			);
+
+			const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+			await vi.waitFor(() =>
+				expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
+					"data-video-avatar-mode",
+					"error",
+				),
+			);
+			expect(
+				container.querySelector("output[data-video-avatar-status='error']"),
+			).toBeTruthy();
+			expect(
+				container.querySelector("video")?.dataset.naiaClipUrl,
+			).toBeUndefined();
+			expect(useCascadeAvatarStore.getState().renderer).toBeNull();
+			expect(useCascadeAvatarStore.getState().nvaLoadError).toContain(
+				"Invalid NVA asset path",
+			);
+		}
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
 });

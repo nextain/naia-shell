@@ -647,8 +647,25 @@ export function App() {
 				if (!fileConfig && !uiConfig) {
 					setTtsEnabled(false);
 					if (adkPath) {
-						if (!isWebMode()) {
-							localStorage.removeItem("naia-config");
+						const preservedWebBackgroundVideo = isWebMode()
+							? (() => {
+									const cached = loadConfig() as unknown as Record<
+										string,
+										unknown
+									> | null;
+									return typeof cached?.backgroundVideo === "string"
+										? cached.backgroundVideo
+										: undefined;
+								})()
+							: undefined;
+						localStorage.removeItem("naia-config");
+						if (isWebMode() && preservedWebBackgroundVideo) {
+							localStorage.setItem(
+								"naia-config",
+								JSON.stringify({
+									backgroundVideo: preservedWebBackgroundVideo,
+								}),
+							);
 						}
 						await hydrateUiPreferences(null, {
 							adkPath,
@@ -663,11 +680,7 @@ export function App() {
 							canPersist: true,
 						});
 						if (cancelled || getAdkPath() !== adkPath) return;
-						setShowOnboarding(
-							isWebMode()
-								? loadConfig()?.onboardingComplete !== true
-								: true,
-						);
+						setShowOnboarding(true);
 					}
 					if (cancelled || getAdkPath() !== adkPath) return;
 					setLocaleHydrated(true);

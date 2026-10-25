@@ -6,10 +6,13 @@ const mockSendAppSkills = vi.fn().mockResolvedValue(true);
 const mockSendAppSkillsClear = vi.fn().mockResolvedValue(true);
 const mockAddAllowedTool = vi.fn();
 const mockFetchUnreadAnnouncements = vi.fn().mockResolvedValue([]);
+const mockLastMainContentProps = vi.hoisted(() => ({
+	current: null as Record<string, unknown> | null,
+}));
 const mockListNaiaAssets = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<string[]>>());
 const mockToLocalBlobUrl = vi.hoisted(() => vi.fn<(p: string) => Promise<string>>());
-const mockReadNaiaConfig = vi.hoisted(() => vi.fn<() => Promise<Record<string, unknown>>>());
-const mockReadNaiaUiConfig = vi.hoisted(() => vi.fn<() => Promise<Record<string, unknown>>>());
+const mockReadNaiaConfig = vi.hoisted(() => vi.fn<() => Promise<Record<string, unknown> | null>>());
+const mockReadNaiaUiConfig = vi.hoisted(() => vi.fn<() => Promise<Record<string, unknown> | null>>());
 const mockWriteNaiaConfig = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<void>>());
 const mockWriteNaiaUiConfig = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<boolean>>());
 
@@ -39,7 +42,10 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 vi.mock("../components/AppMainContent", () => ({
-	AppMainContent: () => null,
+	AppMainContent: (props: Record<string, unknown>) => {
+		mockLastMainContentProps.current = props;
+		return null;
+	},
 }));
 vi.mock("../components/SplashScreen", () => ({
 	SplashScreen: () => null,
@@ -83,17 +89,7 @@ vi.mock("../lib/config", async (importOriginal) => {
 		...actual,
 		addAllowedTool: (...args: unknown[]) => mockAddAllowedTool(...args),
 		isOnboardingComplete: vi.fn().mockReturnValue(true),
-		loadConfig: vi.fn(() => {
-			const raw = localStorage.getItem("naia-config");
-			if (raw) {
-				try {
-					return JSON.parse(raw);
-				} catch {
-					// fall through
-				}
-			}
-			return { onboardingComplete: true };
-		}),
+		loadConfig: vi.fn(() => actual.loadConfig()),
 		loadConfigWithSecrets: vi
 			.fn()
 			.mockResolvedValue({ onboardingComplete: true }),
@@ -106,9 +102,7 @@ vi.mock("../lib/config", async (importOriginal) => {
 		migrateLiveProviderToUnifiedModel: vi.fn(),
 		migrateSpeechStyleValues: vi.fn(),
 		reconcileExplicitLocalProfile: vi.fn((c) => c || {}),
-		saveConfig: vi.fn((cfg) => {
-			localStorage.setItem("naia-config", JSON.stringify(cfg));
-		}),
+		saveConfig: vi.fn((cfg) => actual.saveConfig(cfg)),
 		isToolAllowed: vi.fn().mockReturnValue(true),
 	};
 });
@@ -255,6 +249,7 @@ describe("App startup BGM skill registration, allowed tools, and announcements",
 describe("App startup background video restoration (r8)", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockLastMainContentProps.current = null;
 		mockListNaiaAssets.mockReset();
 		mockToLocalBlobUrl.mockReset();
 		mockReadNaiaConfig.mockReset();
@@ -404,6 +399,7 @@ describe("App startup background video restoration (r8)", () => {
 		});
 
 		window.dispatchEvent(new CustomEvent("naia-config-changed"));
+		await new Promise((resolve) => setTimeout(resolve, 900));
 		unmount();
 
 		expect(mockWriteNaiaConfig).not.toHaveBeenCalled();
@@ -412,6 +408,97 @@ describe("App startup background video restoration (r8)", () => {
 		expect(invokedCommands).not.toContain("write_naia_config");
 		expect(invokedCommands).not.toContain("write_naia_ui_config");
 		expect(invokedCommands).not.toContain("write_slots_manifest");
+	});
+
+	it("clears stale cache except backgroundVideo and shows onboarding in web mode when workspace has no config files, without writing stale fields after 800ms boot sync", async () => {
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-remote-key", "test-web-key");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				onboardingComplete: true,
+				provider: "openai",
+				model: "gpt-4o",
+				agentName: "StalePersona",
+				backgroundVideo: "naia-starlight-lake-live.mp4",
+			}),
+		);
+		mockReadNaiaConfig.mockImplementation(() => Promise.resolve(null));
+		mockReadNaiaUiConfig.mockImplementation(() => Promise.resolve(null));
+		mockWriteNaiaConfig.mockImplementation(async (cfg) => {
+			await invoke("write_naia_config", {
+				adkPath: "/test/adk",
+				json: JSON.stringify(cfg),
+			});
+		});
+
+		const { container, unmount } = render(<App />);
+
+		await waitFor(() => {
+			expect(container.querySelector(".app-root")).toHaveAttribute(
+				"data-ui-mode",
+				"onboarding",
+			);
+			expect(mockLastMainContentProps.current?.showOnboarding).toBe(true);
+		});
+
+		const rawCache = localStorage.getItem("naia-config");
+		expect(rawCache).toBeTruthy();
+		const parsedCache = JSON.parse(rawCache ?? "{}") as Record<string, unknown>;
+		expect(parsedCache.backgroundVideo).toBe("naia-starlight-lake-live.mp4");
+		expect(parsedCache.onboardingComplete).toBeUndefined();
+		expect(parsedCache.provider).toBeUndefined();
+		expect(parsedCache.model).toBeUndefined();
+		expect(parsedCache.agentName).toBeUndefined();
+
+		await waitFor(() => {
+			const video = container.querySelector(
+				"video.app-bg-video",
+			) as HTMLVideoElement | null;
+			expect(video?.getAttribute("src")).toBe(
+				"/backgrounds/naia-starlight-lake-live.mp4",
+			);
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 900));
+		unmount();
+
+		expect(mockWriteNaiaConfig).toHaveBeenCalled();
+		for (const call of mockWriteNaiaConfig.mock.calls) {
+			const written = (call[0] ?? {}) as Record<string, unknown>;
+			expect(written.provider).toBeUndefined();
+			expect(written.model).toBeUndefined();
+			expect(written.agentName).toBeUndefined();
+			expect(written.onboardingComplete).toBeUndefined();
+		}
+	});
+
+	it("removes entire naia-config cache and shows onboarding in desktop mode when workspace has no config files", async () => {
+		setWebAssetsModeForTests(false);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				onboardingComplete: true,
+				provider: "openai",
+				model: "gpt-4o",
+				backgroundVideo: "naia-starlight-lake-live.mp4",
+			}),
+		);
+		mockReadNaiaConfig.mockImplementation(() => Promise.resolve(null));
+		mockReadNaiaUiConfig.mockImplementation(() => Promise.resolve(null));
+
+		const { container, unmount } = render(<App />);
+
+		await waitFor(() => {
+			expect(container.querySelector(".app-root")).toHaveAttribute(
+				"data-ui-mode",
+				"onboarding",
+			);
+			expect(mockLastMainContentProps.current?.showOnboarding).toBe(true);
+		});
+
+		expect(localStorage.getItem("naia-config")).toBeNull();
+		unmount();
 	});
 
 	it("does not restore startup background in desktop mode when workspace config hydration fails (desktop invariant)", async () => {
