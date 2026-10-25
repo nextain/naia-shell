@@ -100,6 +100,15 @@ const MOCK_SCRIPT = `
 		  d += step;
         }
       }
+      // Agent contract (chat-service.ts fetchAgentSkills): skill_list is answered
+      // with skill_list_response. Leaving it unanswered makes every turn wait out
+      // the 1.5s model-tool boundary timeout (model-facing-tools.ts, #611) and
+      // then send the chat with tools fail-closed.
+      if (payload && payload.type === "skill_list") {
+        setTimeout(function () {
+          emitEvent("agent_response", JSON.stringify({ type: "skill_list_response", requestId: payload.requestId, tools: [] }));
+        }, 0);
+      }
       return null;
     }
     if (cmd === "cancel_stream" || cmd === "send_approval_response") return null;
@@ -166,6 +175,13 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 					(videoId === "e2evid001" &&
 						iframeRequests.filter((request) => request.videoId === videoId)
 							.length >= 2);
+				// #521 (9213310b): the Shell starts the IFrame API with "listening"
+				// and only trusts state for a generation after the player's
+				// initialDelivery/infoDelivery names the expected video
+				// (videoData.video_id, BgmPlayer.tsx isCurrentFrameConfirmed). The
+				// real embed sends initialDelivery with videoData right after the
+				// handshake; the unit contract is confirmCurrentFrame in
+				// BgmPlayer.test.tsx.
 				const withListeningHandshake = (innerScript: string) => `<!doctype html><script>
 					let __naiaHandshaked = false;
 					window.addEventListener("message", (event) => {
@@ -174,6 +190,10 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 							const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
 							if (data && data.event === "listening") {
 								__naiaHandshaked = true;
+								parent.postMessage(JSON.stringify({
+									event: "initialDelivery",
+									info: { playerState: -1, currentTime: 0, videoData: { video_id: ${JSON.stringify(videoId)} } },
+								}), "*");
 								${innerScript}
 							}
 						} catch {}
@@ -285,6 +305,21 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 		await input.fill("잔잔한 음악 틀어줘");
 		await input.press("Enter");
 
+		// The turn first refreshes app descriptors, then sends chat_request
+		// asynchronously; wait for the request before checking the order.
+		await expect
+			.poll(() =>
+				page.evaluate(() =>
+					(
+						(
+							window as unknown as {
+								__E2E_OUTBOUND__?: Array<Record<string, unknown>>;
+							}
+						).__E2E_OUTBOUND__ ?? []
+					).some((message) => message.type === "chat_request"),
+				),
+			)
+			.toBe(true);
 		const registrationOrder = await page.evaluate(() => {
 			const out =
 				(
@@ -584,9 +619,12 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 				timeout: 15_000,
 			},
 		);
+		// #521 (9213310b): Radio DJ searches go through
+		// sanitizeRadioDjSearchQuery, which appends the ASCII single-track
+		// suffix " song Official Audio" (bgm-skill.ts:88).
 		expect(sidecarSearchRequests).toEqual([
-			"dynamic recovery jazz",
-			"dynamic recovery jazz",
+			"dynamic recovery jazz song Official Audio",
+			"dynamic recovery jazz song Official Audio",
 		]);
 		expect(iframeRequests.map((request) => request.videoId)).toEqual([
 			"error-dynamic-initial",
@@ -594,17 +632,20 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 		]);
 	});
 
-	test("재생 관측 시간초과만으로는 재생 중인 곡을 다른 곡으로 바꾸지 않는다", async ({
+	test("재생 확인이 없는 후보만 시간초과로 다음 후보에 한 번 넘기고, 재생 중인 곡은 시간초과로 바꾸지 않는다", async ({
 		page,
 	}) => {
-		// 2026-08-08 field review: the 12s watchdog used to force-skip to the
-		// queued track on elapsed time alone. That is exactly what caused songs
-		// to change before they had actually ended — the "playing" *message* can
-		// be lost (documented WebView2 handshake risk) even though the track
-		// itself is fine. Only a real onError (see the next test) is now treated
-		// as failure evidence; a pure timeout is diagnostic-only and must leave
-		// the current track and the queue untouched.
-		test.setTimeout(45_000);
+		// #521 (9213310b, "unify iframe playback observation around
+		// per-generation videoData confirmation" / "timeout cleanup"): the
+		// lost-message risk behind the 2026-08-08 diagnostic-only watchdog is
+		// now handled by the listening handshake plus videoData/infoDelivery
+		// confirmation, and a load that confirms nothing within
+		// PLAYBACK_TIMEOUT_MS is finalized as track_error(timeout) and advances
+		// to the prepared next candidate once (FR-RADIO-DJ.2, FR-RADIO-DJ.16;
+		// BgmPlayer.tsx beginPlaybackTimeout; BgmPlayer.test.tsx "finalizes an
+		// unresponsive load on timeout ..."). The watchdog still never touches
+		// a track whose playback is confirmed (status "playing" early return).
+		test.setTimeout(60_000);
 		await page.evaluate(() => {
 			(
 				window as typeof window & {
@@ -633,23 +674,38 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 			"Silent Candidate",
 		);
 		await expect(player).toHaveAttribute("data-bgm-queue-length", "1");
-		// The watchdog marks a diagnostic "timeout" status once its window
-		// elapses, but must not touch the current track or the queue.
-		await expect(player).toHaveAttribute(
+		// The never-ready candidate is never reported as playing.
+		await expect(player).not.toHaveAttribute(
 			"data-bgm-playback-status",
-			"timeout",
-			{
-				timeout: 25_000,
-			},
+			"playing",
 		);
-		await page.waitForTimeout(2_000);
+		// Once the watchdog window elapses without confirmation, it advances
+		// to the prepared candidate exactly once.
 		await expect(player).toHaveAttribute(
 			"data-bgm-current-title",
-			"Silent Candidate",
+			"Timeout Fallback",
+			{ timeout: 25_000 },
 		);
-		await expect(player).toHaveAttribute("data-bgm-queue-length", "1");
+		await expect(player).toHaveAttribute(
+			"data-bgm-playback-status",
+			"playing",
+			{ timeout: 10_000 },
+		);
+		await expect(player).toHaveAttribute("data-bgm-queue-length", "0");
+		// A confirmed playing track outlives another full watchdog window
+		// unchanged: elapsed time alone never replaces it.
+		await page.waitForTimeout(14_000);
+		await expect(player).toHaveAttribute(
+			"data-bgm-current-title",
+			"Timeout Fallback",
+		);
+		await expect(player).toHaveAttribute(
+			"data-bgm-playback-status",
+			"playing",
+		);
 		expect(iframeRequests.map((request) => request.videoId)).toEqual([
 			"timeout-silent",
+			"hold-timeout-fallback",
 		]);
 	});
 
@@ -1126,15 +1182,41 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 			new URL(request.url).searchParams.get("naiaPlayback"),
 		);
 		expect(new Set(playbackIds).size).toBe(tracks.length);
-		const recentTracks = await page.evaluate(
-			() =>
-				JSON.parse(localStorage.getItem("yt-bgm-recent-v1") ?? "[]") as Array<{
-					id: string;
-				}>,
+		// Recent-play history SoT is the BGM library in the app sandbox
+		// (bgm-library-store.ts, #540/#543). Since b4a7bc35 ("preserve BGM
+		// history across queued writes") recordBgmPlayedTrack persists every
+		// confirmed track there and drops the legacy yt-bgm-recent-v1 copy once
+		// the sandbox write lands (bgm-skill.ts recordBgmPlayedTrack /
+		// removeLegacyRecentTracksIfUnchanged). The skill-facing recent window
+		// is the newest 20 of that history (getBgmRecentTracks).
+		const readHistory = () =>
+			page.evaluate(() => {
+				const sandbox = (
+					window as unknown as {
+						__E2E_SANDBOX_FS__?: Record<string, number[]>;
+					}
+				).__E2E_SANDBOX_FS__;
+				const bytes = sandbox?.["land.naia.shell/bgm/library.json"];
+				if (!bytes) return [] as string[];
+				const library = JSON.parse(
+					new TextDecoder().decode(Uint8Array.from(bytes)),
+				) as { history?: Array<{ youtubeId?: string }> };
+				return (library.history ?? []).map((track) => track.youtubeId ?? "");
+			});
+		await expect
+			.poll(async () => (await readHistory())[0], { timeout: 10_000 })
+			.toBe(tracks.at(-1)?.videoId);
+		const history = await readHistory();
+		// 60 confirmed tracks, capped at BGM_HISTORY_LIMIT (50), no duplicates.
+		expect(history).toHaveLength(50);
+		expect(new Set(history).size).toBe(50);
+		const recentTracks = history.slice(0, 20);
+		expect(recentTracks).toEqual(
+			tracks
+				.slice(-20)
+				.reverse()
+				.map((track) => track.videoId),
 		);
-		expect(recentTracks).toHaveLength(20);
-		expect(new Set(recentTracks.map((track) => track.id)).size).toBe(20);
-		expect(recentTracks[0].id).toBe(tracks.at(-1)?.videoId);
 		const bgmRuntimeErrors = runtimeErrors.filter(
 			(error) =>
 				!error.includes("BrowserCenterArea.tsx") &&
