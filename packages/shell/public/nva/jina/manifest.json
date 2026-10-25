@@ -1,0 +1,102 @@
+{
+  "nva_version": "0.2",
+  "meta": {
+    "name": "Jina",
+    "tagline": "밝은 배려와 빈틈없는 실행",
+    "author": "nextain",
+    "owner": "nextain",
+    "license": "CC-BY-4.0 — synthetic avatar generated with Vertex AI © 2026 Nextain Inc.",
+    "created": "2026-08-05",
+    "description": "밝고 사랑스럽지만 업무에서는 빈틈없는 외유내강형 비서·기획 실무자. 실제 인물을 바탕으로 하지 않은 성인 합성 캐릭터입니다.",
+    "persona": {
+      "role": "대기업 임원 비서 겸 기획 실무자",
+      "archetype": "외유내강형 토끼상 오피스 로맨스 여주인공",
+      "voice": "자연스럽고 따뜻한 한국어 존댓말. 간결하지만 사무적이지 않게 말한다.",
+      "traits": [
+        "낯선 사람도 편안하게 만드는 밝은 에너지",
+        "권력이나 지위에 주눅 들지 않는 단단함",
+        "빠른 상황 판단과 세심한 배려",
+        "불확실한 내용은 솔직하게 확인하는 신뢰성"
+      ]
+    },
+    "note": "알파 채널을 포함해 배경을 자유롭게 합성하는 대기·발화·동작 NVA 예제.",
+    "style_label": "기본 화풍"
+  },
+  "canvas": {
+    "width": 720,
+    "height": 1280,
+    "fps": 25
+  },
+  "background": {
+    "type": "transparent"
+  },
+  "animations": {
+    "idle": {
+      "clip": "clips/idle.webm",
+      "loop": true,
+      "can_talk": false,
+      "face_bbox": [
+        0.35,
+        0.025,
+        0.3,
+        0.2
+      ],
+      "label": "Idle",
+      "description": "Use while waiting or listening. A restrained continuous micro-idle loop provides subtle life without an isolated blink-only effect or pose drift."
+    },
+    "talking": {
+      "clip": "clips/talking-ko.webm",
+      "loop": true,
+      "can_talk": true,
+      "label": "말하기 영상"
+    },
+    "motion": {
+      "loop": false,
+      "can_talk": false,
+      "label": "부드러운 움직임",
+      "clip": "clips/motion.webm"
+    }
+  },
+  "speech_clips": {
+    "speech-ko": {
+      "clip": "clips/talking-ko.webm",
+      "label": "한국어 발화 · Jina voice profile",
+      "audio": "embedded",
+      "locale": "ko-KR",
+      "text": "안녕하세요. 오늘은 미리 생성한 발화 자산을 자연스럽게 연결해서, 그래픽 카드가 없는 컴퓨터에서도 비디오 아바타가 긴 문장을 안정적으로 말할 수 있는지 확인하겠습니다. 모음과 자음이 빠르게 바뀌는 구간, 잠시 숨을 고르는 구간, 그리고 문장이 길게 이어지는 구간까지 차례로 살펴보겠습니다."
+    }
+  },
+  "expressions": {
+    "neutral": "idle",
+    "speaking": "talking",
+    "idle": "idle",
+    "talking": "talking",
+    "motion": "motion"
+  },
+  "scenario": {
+    "nodes": {
+      "start": {
+        "type": "start"
+      },
+      "idle": {
+        "type": "scene",
+        "animation": "idle",
+        "label": "대기"
+      }
+    },
+    "edges": [
+      {
+        "from": "start",
+        "to": "idle"
+      }
+    ]
+  },
+  "stacked_alpha": {
+    "layout": "color-top-alpha-bottom",
+    "clips": {
+      "clips/idle.webm": "clips/idle.stacked.mp4",
+      "clips/motion.webm": "clips/motion.stacked.mp4",
+      "clips/talking-ko.webm": "clips/talking-ko.stacked.mp4"
+    }
+  }
+}

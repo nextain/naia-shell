@@ -1,0 +1,104 @@
+{
+  "nva_version": "0.2",
+  "meta": {
+    "name": "Naia (기본 캐릭터)",
+    "tagline": "Naia — The Liquid Cat",
+    "author": "nextain",
+    "owner": "nextain",
+    "license": "CC-BY-4.0 — Naia mascot © Nextain",
+    "created": "2026-08-05",
+    "description": "액체 탄소로 이루어진 디지털 고양이 Naia 캐릭터입니다.",
+    "note": "알파 채널을 포함해 배경을 자유롭게 합성하는 대기·발화·동작 NVA 예제.",
+    "style_label": "2D 셀 애니"
+  },
+  "canvas": {
+    "width": 720,
+    "height": 1280,
+    "fps": 24
+  },
+  "background": {
+    "type": "transparent"
+  },
+  "animations": {
+    "idle": {
+      "clip": "clips/idle.webm",
+      "loop": true,
+      "can_talk": false,
+      "face_bbox": [
+        0.2,
+        0.13,
+        0.6,
+        0.29
+      ],
+      "label": "대기"
+    },
+    "talking": {
+      "clip": "clips/talking-ko.webm",
+      "loop": true,
+      "can_talk": true,
+      "face_bbox": [
+        0.2,
+        0.13,
+        0.6,
+        0.29
+      ],
+      "label": "말하기"
+    },
+    "greeting": {
+      "loop": false,
+      "can_talk": false,
+      "label": "반가운 인사",
+      "clip": "clips/greeting.webm"
+    },
+    "happy": {
+      "loop": false,
+      "can_talk": false,
+      "label": "별빛 환호",
+      "clip": "clips/happy.webm"
+    }
+  },
+  "speech_clips": {
+    "speech-ko": {
+      "clip": "clips/talking-ko.webm",
+      "label": "한국어 발화 · Naia voice profile",
+      "audio": "embedded",
+      "locale": "ko-KR"
+    }
+  },
+  "expressions": {
+    "neutral": "idle",
+    "listening": "idle",
+    "speaking": "talking",
+    "idle": "idle",
+    "talking": "talking",
+    "greeting": "greeting",
+    "happy": "happy"
+  },
+  "scenario": {
+    "nodes": {
+      "start": {
+        "type": "start"
+      },
+      "idle": {
+        "type": "scene",
+        "animation": "idle",
+        "label": "대기"
+      }
+    },
+    "edges": [
+      {
+        "from": "start",
+        "to": "idle"
+      }
+    ]
+  },
+  "stacked_alpha": {
+    "layout": "color-top-alpha-bottom",
+    "clips": {
+      "clips/greeting.webm": "clips/greeting.stacked.mp4",
+      "clips/happy.webm": "clips/happy.stacked.mp4",
+      "clips/idle.webm": "clips/idle.stacked.mp4",
+      "clips/talking-ko.webm": "clips/talking-ko.stacked.mp4"
+    }
+  }
+}
