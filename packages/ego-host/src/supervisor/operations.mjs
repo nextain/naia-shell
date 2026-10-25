@@ -153,6 +153,8 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
       domains: new Set(),
       evidence: [],
       cleanup: null,
+      /** 진행 중인 정리. 늦게 온 종결 요청이 이 정리가 끝날 때까지 기다린다. */
+      cleaning: null,
     };
   }
 
@@ -626,10 +628,18 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
 
   async function finish(op, status, reason, { code, message }) {
     const first = settle(op, status, reason);
-    if (!first) return { changed: false, status: op.status, cleanup: op.cleanup };
+    if (!first) {
+      // 먼저 종결한 쪽(시한 타이머 등)의 정리가 아직 돌고 있으면 끝날 때까지 기다린다.
+      // 기다리지 않으면 늦게 온 종결 요청이 "끝났다"를 먼저 돌려받고, 정리가 세션·타깃
+      // lease 를 놓기 전에 다음 작업이 같은 타깃에 붙으려다 EGO_TARGET_BUSY 를 받는다
+      // (계약 4.3.1·4.7, env-tool-browser-host 계약의 "만료 뒤 정리" 경합).
+      if (op.cleaning) await op.cleaning.catch(() => null);
+      return { changed: false, status: op.status, cleanup: op.cleanup };
+    }
     // 판정을 먼저 바꾸고(그래야 뒤따라 오는 CDP 가 장벽에 걸린다) 그 다음 정리한다.
     rejectPending(op.id, code, message);
-    const cleanup = await cleanupOperation(op);
+    op.cleaning = cleanupOperation(op);
+    const cleanup = await op.cleaning;
     return { changed: true, status: op.status, cleanup };
   }
 
