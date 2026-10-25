@@ -125,4 +125,136 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		expect(fetchSpy).toHaveBeenCalledWith("/nva/naia/manifest.json");
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
+
+	it("rejects invalid bundle names in web mode without calling fetch or invoke", async () => {
+		setWebAssetsModeForTests(true);
+		mockGetAdkPath.mockReturnValue(null as unknown as string);
+		const fetchSpy = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(webManifestJson, { status: 200 }));
+
+		for (const badModel of ["", "Naia", "../etc", "naia/Bad_Name", "naia$"]) {
+			cleanup();
+			useCascadeAvatarStore.getState().setRenderer(null);
+			useCascadeAvatarStore.getState().setNvaLoadError(null);
+			const { container } = render(<VideoAvatarCanvas nvaModel={badModel} />);
+			await vi.waitFor(() =>
+				expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
+					"data-video-avatar-mode",
+					"error",
+				),
+			);
+			expect(
+				container.querySelector("output[data-video-avatar-status='error']"),
+			).toBeTruthy();
+			expect(
+				container.querySelector("video")?.dataset.naiaClipUrl,
+			).toBeUndefined();
+			expect(useCascadeAvatarStore.getState().renderer).toBeNull();
+			expect(useCascadeAvatarStore.getState().nvaLoadError).toBe(
+				badModel === "" ? "missing-nva-model" : "invalid-nva-model",
+			);
+		}
+		expect(fetchSpy).not.toHaveBeenCalled();
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("enters error state in web mode when manifest fetch returns 404 without calling invoke or passing clips to renderer", async () => {
+		setWebAssetsModeForTests(true);
+		mockGetAdkPath.mockReturnValue(null as unknown as string);
+		const fetchSpy = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response("Not Found", { status: 404 }));
+
+		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+		await vi.waitFor(() =>
+			expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
+				"data-video-avatar-mode",
+				"error",
+			),
+		);
+		expect(fetchSpy).toHaveBeenCalledWith("/nva/naia/manifest.json");
+		expect(mockInvoke).not.toHaveBeenCalled();
+		expect(
+			container.querySelector("output[data-video-avatar-status='error']"),
+		).toBeTruthy();
+		expect(
+			container.querySelector("video")?.dataset.naiaClipUrl,
+		).toBeUndefined();
+		expect(useCascadeAvatarStore.getState().renderer).toBeNull();
+		expect(useCascadeAvatarStore.getState().nvaLoadError).toContain("HTTP 404");
+	});
+
+	it("enters error state in web mode when manifest JSON is malformed or missing required fields without calling invoke", async () => {
+		setWebAssetsModeForTests(true);
+		mockGetAdkPath.mockReturnValue(null as unknown as string);
+		const invalidPayloads = [
+			"{not-valid-json",
+			JSON.stringify({ nva_version: "0.2" }),
+		];
+
+		for (const payload of invalidPayloads) {
+			cleanup();
+			useCascadeAvatarStore.getState().setRenderer(null);
+			useCascadeAvatarStore.getState().setNvaLoadError(null);
+			vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+				new Response(payload, { status: 200 }),
+			);
+
+			const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+			await vi.waitFor(() =>
+				expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
+					"data-video-avatar-mode",
+					"error",
+				),
+			);
+			expect(
+				container.querySelector("output[data-video-avatar-status='error']"),
+			).toBeTruthy();
+			expect(
+				container.querySelector("video")?.dataset.naiaClipUrl,
+			).toBeUndefined();
+			expect(useCascadeAvatarStore.getState().renderer).toBeNull();
+			expect(useCascadeAvatarStore.getState().nvaLoadError).toBeTruthy();
+		}
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("rejects manifest clip relative paths containing '..' in web mode without calling invoke or passing clips to renderer", async () => {
+		setWebAssetsModeForTests(true);
+		mockGetAdkPath.mockReturnValue(null as unknown as string);
+		const traversalManifest = JSON.stringify({
+			nva_version: "0.2",
+			canvas: { width: 720, height: 1280 },
+			animations: {
+				idle: {
+					clip: "clips/../../secret.webm",
+					loop: true,
+					can_talk: false,
+				},
+			},
+		});
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			new Response(traversalManifest, { status: 200 }),
+		);
+
+		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+		await vi.waitFor(() =>
+			expect(container.querySelector("[data-video-avatar]")).toHaveAttribute(
+				"data-video-avatar-mode",
+				"error",
+			),
+		);
+		expect(mockInvoke).not.toHaveBeenCalled();
+		expect(
+			container.querySelector("output[data-video-avatar-status='error']"),
+		).toBeTruthy();
+		expect(
+			container.querySelector("video")?.dataset.naiaClipUrl,
+		).toBeUndefined();
+		expect(useCascadeAvatarStore.getState().renderer).toBeNull();
+		expect(useCascadeAvatarStore.getState().nvaLoadError).toContain(
+			"Invalid NVA asset path",
+		);
+	});
 });

@@ -1,6 +1,7 @@
 import { Logger } from "../logger";
 import { getAgentBridge } from "./agent-bridge";
 import { COMMAND_TABLE, STUB_RESPONSES } from "./command-table";
+export { COMMAND_TABLE };
 import {
 	handleEventEmit,
 	handleEventListen,

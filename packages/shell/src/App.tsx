@@ -98,6 +98,28 @@ import { useAppStore } from "./stores/app";
 const NAIA_WIDTH_DEFAULT = 320;
 const NAIA_WIDTH_MIN = 120;
 const NAIA_WIDTH_MAX = 1200;
+const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
+
+export async function restoreStartupBackground(options: {
+	isCancelled?: () => boolean;
+	setBackgroundMediaType: (type: "iframe" | "image" | "video" | "") => void;
+	setBackgroundVideoUrl: (url: string) => void;
+}): Promise<void> {
+	const isCancelled = options.isCancelled ?? (() => false);
+	const paths = await listNaiaAssets("background");
+	if (isCancelled() || paths.length === 0) return;
+	const config = loadConfig();
+	// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
+	const saved =
+		(config?.backgroundVideo as string | undefined) ??
+		(isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
+	const match = paths.find((p) => p.endsWith(saved));
+	if (!match || isCancelled()) return;
+	const blobUrl = await toLocalBlobUrl(match);
+	if (isCancelled()) return;
+	options.setBackgroundMediaType(getBackgroundMediaType(match));
+	options.setBackgroundVideoUrl(blobUrl);
+}
 
 function applyPersistedPresentationConfig(
 	config: ReturnType<typeof loadConfig>,
@@ -560,23 +582,13 @@ export function App() {
 	// still image (.webp) — getBackgroundMediaType() below resolves which.
 	// #342 / #447-3: default to the naia-dawn-city still when no saved preference
 	// (this default had regressed back to morning-coffee).
-	const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
 	useEffect(() => {
 		if (showAdkSetup || !configHydrated) return;
 		let cancelled = false;
-		void listNaiaAssets("background").then(async (paths) => {
-			if (cancelled || paths.length === 0) return;
-			const config = loadConfig();
-			// WO-03: 웹판 저장값이 없으면 번들 배경 기본값을 쓴다.
-			const saved =
-				(config?.backgroundVideo as string | undefined) ??
-				(isWebMode() ? WEB_DEFAULT_BACKGROUND : DEFAULT_BG_VIDEO);
-			const match = paths.find((p) => p.endsWith(saved));
-			if (!match || cancelled) return;
-			const blobUrl = await toLocalBlobUrl(match);
-			if (cancelled) return;
-			setBackgroundMediaType(getBackgroundMediaType(match));
-			setBackgroundVideoUrl(blobUrl);
+		void restoreStartupBackground({
+			isCancelled: () => cancelled,
+			setBackgroundMediaType,
+			setBackgroundVideoUrl,
 		});
 		return () => {
 			cancelled = true;
@@ -632,7 +644,9 @@ export function App() {
 				if (!fileConfig && !uiConfig) {
 					setTtsEnabled(false);
 					if (adkPath) {
-						localStorage.removeItem("naia-config");
+						if (!isWebMode()) {
+							localStorage.removeItem("naia-config");
+						}
 						await hydrateUiPreferences(null, {
 							adkPath,
 							canPersist: false,
@@ -646,7 +660,11 @@ export function App() {
 							canPersist: true,
 						});
 						if (cancelled || getAdkPath() !== adkPath) return;
-						setShowOnboarding(true);
+						setShowOnboarding(
+							isWebMode()
+								? loadConfig()?.onboardingComplete !== true
+								: true,
+						);
 					}
 					if (cancelled || getAdkPath() !== adkPath) return;
 					setLocaleHydrated(true);
@@ -659,17 +677,30 @@ export function App() {
 					canPersist: false,
 				});
 				if (cancelled || getAdkPath() !== adkPath) return;
+				const localBeforeMerge = loadConfig() as unknown as Record<
+					string,
+					unknown
+				> | null;
 				const merged = mergeBootConfig(
-					loadConfig() as unknown as Record<string, unknown> | null,
+					localBeforeMerge,
 					fileConfig ?? null,
 					uiConfig ?? null,
 				);
 				if (merged) {
+					const mergedForBoot =
+						isWebMode() &&
+						typeof localBeforeMerge?.backgroundVideo === "string" &&
+						merged.backgroundVideo === undefined
+							? {
+									...merged,
+									backgroundVideo: localBeforeMerge.backgroundVideo,
+								}
+							: merged;
 					// `naia-adk-path` is the only authoritative bootstrap pointer.
 					// Never let a stale render-cache workspaceRoot redirect the next
 					// file read/write cycle to another workspace.
 					const reconciled = reconcileExplicitLocalProfile({
-						...merged,
+						...mergedForBoot,
 						...(adkPath ? { workspaceRoot: adkPath } : {}),
 					} as unknown as Parameters<typeof reconcileExplicitLocalProfile>[0]);
 					if (reconciled.locale) await setLocale(reconciled.locale);

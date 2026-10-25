@@ -121,6 +121,7 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 
 import { setLocale } from "../../lib/i18n";
 import { registerWebLlmProvider } from "../../lib/web-runtime/llm-provider";
+import { COMMAND_TABLE } from "../../lib/web-runtime/router";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 import {
 	getWebModelStatus,
@@ -4295,7 +4296,21 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(saved.avatarProvider).toBe("naia-video-avatar");
 		expect(saved.nvaModel).toBe("jina-anime");
 
-		const invokedCommands = mockInvoke.mock.calls.map(([cmd]) => cmd);
+		await waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
+		});
+
+		const invokedCommands = mockInvoke.mock.calls.map(([cmd]) => String(cmd));
+		const disallowedCommands = invokedCommands.filter(
+			(c) => COMMAND_TABLE[c] !== "web" && COMMAND_TABLE[c] !== "stub",
+		);
+		expect(disallowedCommands).toEqual([]);
+		expect(
+			invokedCommands.every(
+				(c) => COMMAND_TABLE[c] === "web" || COMMAND_TABLE[c] === "stub",
+			),
+			`Disallowed desktop-only commands invoked in web mode: ${disallowedCommands.join(", ")}`,
+		).toBe(true);
 		expect(invokedCommands).not.toContain("list_naia_assets");
 		expect(invokedCommands).not.toContain("detect_gpu_vram");
 		expect(invokedCommands).not.toContain("write_slots_manifest");

@@ -84,9 +84,13 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		setLoaded(false);
 		useCascadeAvatarStore.getState().setNvaLoadError(null);
 		if (isWebMode()) {
-			const bundleName =
-				nvaModel?.split(/[/\\]/).filter(Boolean).pop() ?? "";
-			if (!bundleName || !/^[a-z0-9-]+$/.test(bundleName)) {
+			const segments = nvaModel?.split(/[/\\]/).filter(Boolean) ?? [];
+			const bundleName = segments.at(-1) ?? "";
+			if (
+				!bundleName ||
+				segments.includes("..") ||
+				!/^[a-z0-9-]+$/.test(bundleName)
+			) {
 				const err = !bundleName ? "missing-nva-model" : "invalid-nva-model";
 				setError(err);
 				setMode("error");
@@ -106,6 +110,21 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					const parsed = parseNvaManifest(raw);
 					if (!isPrebakedNvaManifest(parsed))
 						throw new Error("NVA requires vrm_slots prebaked WebM assets");
+					for (const anim of Object.values(parsed.animations ?? {})) {
+						if (anim?.clip) resolveNvaAssetPath(directory, anim.clip);
+					}
+					for (const viseme of Object.values(parsed.vrm_slots?.visemes ?? {})) {
+						if (viseme?.clip) resolveNvaAssetPath(directory, viseme.clip);
+					}
+					for (const motion of Object.values(parsed.vrm_slots?.motions ?? {})) {
+						if (motion?.clip) resolveNvaAssetPath(directory, motion.clip);
+					}
+					for (const [clipKey, stackedClip] of Object.entries(
+						parsed.stacked_alpha?.clips ?? {},
+					)) {
+						resolveNvaAssetPath(directory, clipKey);
+						resolveNvaAssetPath(directory, stackedClip);
+					}
 					if (!disposed) {
 						setBundleDir(directory);
 						setManifest(parsed);
