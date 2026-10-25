@@ -1161,7 +1161,7 @@ P02 상태 매트릭스: 업데이트 없음, v0.2.0 발견, 다운로드·설�
 
 | Scenario | User-observable outcome | Coverage |
 |---|---|---|
-| **UC-V021-APP-INSTALL-LIFECYCLE** | 깨끗한 프로필에서 앱 설치 후 즉시 목록과 탭에 나타나고 재시작 뒤에도 유지되며, 제거 성공 뒤 `~/.naia/apps/{id}`와 목록에서 함께 사라진다. 예전 `~/.naia/apps` 설치는 안전한 경우 한 번만 이동한다. | isolated filesystem lifecycle + loader tests |
+| **UC-V021-APP-INSTALL-LIFECYCLE** | 깨끗한 프로필에서 앱 설치 후 서명 검증을 통과해 즉시 목록과 탭에 나타나고 재시작 뒤에도 유지되며, 제거 성공 뒤 `~/.naia/apps/{id}`와 목록에서 함께 사라진다. 잘못된 서명은 거부한다. 예전 `~/.naia/apps` 설치는 안전한 경우 한 번만 이동한다. | isolated filesystem lifecycle + loader tests + `packages/shell/src-tauri/src/app.rs::store_signature_tests` (debug/release: published-key default, blank fallback, override, Ed25519 key parsing, and tampered-signature rejection) |
 | **UC-V021-APP-REMOVE-HONESTY** | 삭제 권한·파일시스템 오류가 나면 앱은 목록에 남고 실패 알림이 표시된다. symlink, 경로 탈출, 잘못된/중복 id는 외부 파일을 변경하지 않는다. | Rust boundary mutations + AppBar alert contract |
 | **UC-SLIDES-PDF-ASSET-RECOVERY** | 기존 설치 Slides를 일반 `pnpm run tauri:prod`로 다시 불러오면 PDF worker가 앱의 assets 디렉터리에서 로드된다. 설치 HTML 원본은 한 번 보관하며, 경로 수정은 반복 호출에 멱등이고 외부 파일·URL은 변경하지 않는다. | `app_assets_test.rs` + installed-worker URL/browser regression; native startup evidence tracked separately |
 | **UC-SLIDES-SIDECAR** | PDF 선택 시 같은 폴더·같은 파일명의 `.md` 대본을 우선 연결한다. 없는 경우 수동 대본 선택을 유지한다. 취소하면 현재 문서를 보존하며, 새 문서에 이전 대본이나 늦게 완료된 읽기 결과가 섞이지 않는다. 경로를 직접 입력받아 임의 파일을 읽지 않는다. | `slides_files_test.rs`, `slides-files.test.ts`, `slides-files-bridge.test.ts`, `slides-center-area.test.tsx`, `slides-sidecar.spec.ts`: native sibling bounds, installed iframe identity, 기본/누락/선택 중/성공/오류/취소/좁은 폭 및 키보드/ARIA |
