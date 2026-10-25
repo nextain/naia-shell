@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
 import { resetDistributionChannelForTests } from "../../lib/distribution";
@@ -150,6 +156,7 @@ describe("AppBar — add dialog", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
+		mockLoadBrowserShortcuts.mockResolvedValue([]);
 		registeredApps.value = [];
 		appListVersion.value = 0;
 		vi.mocked(appRegistry.list).mockImplementation(() => registeredApps.value);
@@ -177,7 +184,42 @@ describe("AppBar — add dialog", () => {
 			"browser",
 			"workspace",
 		]);
-		expect(screen.queryByLabelText("앱스토어")).toBeNull();
+	});
+
+	it("shows a fixed App Store action and opens it without switching apps", async () => {
+		channel.value = "standard";
+		resetDistributionChannelForTests();
+		render(<AppBar />);
+
+		const appStore = await screen.findByRole("button", {
+			name: "appbar.appStore",
+		});
+		expect(appStore).toHaveAttribute("title", "appbar.appStore");
+		expect(appStore).not.toHaveAttribute("data-app-id");
+		fireEvent.click(appStore);
+
+		await waitFor(() =>
+			expect(mockOpenUrl).toHaveBeenCalledWith("https://dev.naia.land/ko/apps"),
+		);
+		expect(mockSetActiveApp).not.toHaveBeenCalled();
+		expect(mockNavigate).not.toHaveBeenCalled();
+	});
+
+	it("keeps the fixed App Store action outside app edit and removal controls", async () => {
+		channel.value = "standard";
+		resetDistributionChannelForTests();
+		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
+		render(<AppBar />);
+		await act(async () => {});
+		const appStore = await screen.findByRole("button", {
+			name: "appbar.appStore",
+		});
+
+		fireEvent.click(document.querySelector(".app-bar-edit")!);
+
+		expect(appStore).toBeInTheDocument();
+		expect(appStore.closest(".app-bar-tab-wrapper")).toBeNull();
+		expect(appStore).not.toHaveAttribute("data-app-id");
 	});
 
 	it("shows a built-in app registered after the first render and keeps the first tabs", async () => {
@@ -239,6 +281,10 @@ describe("AppBar — add dialog", () => {
 		resetDistributionChannelForTests();
 		try {
 			render(<AppBar />);
+			await new Promise((r) => setTimeout(r, 20));
+			expect(
+				screen.queryByRole("button", { name: "appbar.appStore" }),
+			).toBeNull();
 			fireEvent.click(screen.getByTitle("appbar.addItem"));
 			await new Promise((r) => setTimeout(r, 20));
 			expect(screen.queryByText("appbar.appStore")).toBeNull();

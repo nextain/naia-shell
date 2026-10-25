@@ -194,6 +194,8 @@ export default {
 	"settings.avatarProvider": "Avatar-Typ",
 	"settings.avatarProviderVrm": "3D-Avatar (VRM)",
 	"settings.avatarProviderVideo": "Video-Avatar (.nva)",
+	"settings.nvaCreate": "NVA-Avatar erstellen",
+	"settings.nvaCreateDesc": "Erstellen Sie Ihren eigenen Video-Avatar in Naia Video Studio.",
 	"settings.cascadeUrlLabel": "Sprech-Runtime-URL (optional)",
 	"settings.cascadeUrlHint": "Wenn gesetzt, bewegt sich der Mund beim Sprechen (Remote-GPU nötig). Leer = statische Wiedergabe.",
 	"settings.nvaEmpty": "Füge einen .nva-Ordner zu naia-settings/nva-files/ hinzu",

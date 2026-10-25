@@ -107,6 +107,7 @@ import {
 	setLocale,
 	t,
 } from "../lib/i18n";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import {
 	cancelOllamaModelPull,
 	fetchOllamaModelCatalog,
@@ -699,6 +700,18 @@ function DeviceSelect({
 /** Localized provider price tag; the Naia credit tag follows the UI language. */
 function ttsPricingLabel(p: { id: string; pricing?: string }): string {
 	return p.id === "nextain" ? t("tts.pricingNaiaCredits") : (p.pricing ?? "");
+}
+
+async function openNvaAvatarCreator(): Promise<void> {
+	const url = naiaWebUrl(`${getLocale()}/studio/nva/create`, NAIA_WEB_BASE_URL);
+	Logger.debug("SettingsTab", "Opening NVA avatar creator", { url });
+	try {
+		await openUrl(url);
+	} catch (error) {
+		Logger.warn("SettingsTab", "Failed to open NVA avatar creator", {
+			error: String(error),
+		});
+	}
 }
 
 export function SettingsTab() {
@@ -4232,6 +4245,20 @@ export function SettingsTab() {
 								{t("settings.avatarProviderVideo")}
 							</option>
 						</select>
+						<div className="settings-nva-create">
+							<p className="settings-nva-create__description">
+								{t("settings.nvaCreateDesc")}
+							</p>
+							<button
+								type="button"
+								className="voice-preview-btn settings-nva-create__button"
+								aria-label={t("settings.nvaCreate")}
+								title={t("settings.nvaCreate")}
+								onClick={() => void openNvaAvatarCreator()}
+							>
+								{t("settings.nvaCreate")}
+							</button>
+						</div>
 					</div>
 
 					{/* VRM picker — shown when avatarProvider === "vrm" */}

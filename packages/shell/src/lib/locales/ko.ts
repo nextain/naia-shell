@@ -194,6 +194,8 @@ export default {
 	"settings.avatarProvider": "아바타 유형",
 	"settings.avatarProviderVrm": "3D 아바타 (VRM)",
 	"settings.avatarProviderVideo": "비디오 아바타 (.nva)",
+	"settings.nvaCreate": "NVA 아바타 만들기",
+	"settings.nvaCreateDesc": "나이아 비디오 스튜디오에서 나만의 영상 아바타를 만듭니다.",
 	"settings.cascadeUrlLabel": "토킹 런타임 URL (선택)",
 	"settings.cascadeUrlHint": "설정하면 발화 시 입이 움직입니다(원격 GPU 필요). 비우면 정적 재생.",
 	"settings.nvaEmpty": "naia-settings/nva-files/ 에 .nva 파일을 추가하세요",
