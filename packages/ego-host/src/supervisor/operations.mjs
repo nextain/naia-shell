@@ -46,6 +46,11 @@ import { CODES } from "../errors.mjs";
 
 /** 작업 하나가 들 수 있는 자원 수 상한. 넘으면 오래된 것부터 버린다(메모리 상한). */
 export const MAX_TRACKED_PER_KIND = 4096;
+/**
+ * 늦게 온 종결 요청이 먼저 시작된 정리를 기다리는 상한. 정리는 실측 수십 ms 다.
+ * 백엔드가 매달려도 늦은 요청과 연결 해제가 영영 묶이지 않게 한다. 넘기면 정리 결과는 아직 null 이다.
+ */
+export const LATE_FINISH_CLEANUP_WAIT_MS = 5_000;
 
 /** 자원 종류. 오류 문구가 종류 이름을 그대로 쓴다. */
 export const RESOURCE_KINDS = Object.freeze([
@@ -107,7 +112,12 @@ function addCappedWithSession(map, value, sessionId) {
  * @param {object} options.ledger 타깃·세션 장부(S2c)
  * @param {(message:string)=>void} [options.log]
  */
-export function createOperations({ hostRequest = null, ledger = null, log = () => {} } = {}) {
+export function createOperations({
+  hostRequest = null,
+  ledger = null,
+  log = () => {},
+  lateFinishWaitMs = LATE_FINISH_CLEANUP_WAIT_MS,
+} = {}) {
   /** operationId -> op */
   const operations = new Map();
   /** sessionId -> [operationId...] — 마지막 원소가 그 세션을 가장 최근에 쓴 작업이다. */
@@ -633,7 +643,16 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
       // 기다리지 않으면 늦게 온 종결 요청이 "끝났다"를 먼저 돌려받고, 정리가 세션·타깃
       // lease 를 놓기 전에 다음 작업이 같은 타깃에 붙으려다 EGO_TARGET_BUSY 를 받는다
       // (계약 4.3.1·4.7, env-tool-browser-host 계약의 "만료 뒤 정리" 경합).
-      if (op.cleaning) await op.cleaning.catch(() => null);
+      if (op.cleaning) {
+        let timer;
+        await Promise.race([
+          op.cleaning.catch(() => null),
+          new Promise((resolve) => {
+            timer = setTimeout(resolve, lateFinishWaitMs);
+          }),
+        ]);
+        clearTimeout(timer);
+      }
       return { changed: false, status: op.status, cleanup: op.cleanup };
     }
     // 판정을 먼저 바꾸고(그래야 뒤따라 오는 CDP 가 장벽에 걸린다) 그 다음 정리한다.
