@@ -62,7 +62,7 @@ function buildMockScript(opts: { readDelayMs?: number } = {}) {
 			${delay > 0 ? `await new Promise(function(r){ setTimeout(r, ${delay}); });` : ""}
 			return FILE_CONFIG;
 		}
-		if (cmd === "read_naia_ui_config") return null;
+		if (cmd === "read_naia_ui_config") return "";
 		if (cmd === "write_naia_config") {
 			try { window.__SOT_E2E__.writes.push(JSON.parse(args.json)); } catch (e) {}
 			return;

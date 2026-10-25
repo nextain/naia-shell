@@ -52,7 +52,7 @@ const GROK_TAURI_MOCK = `
 		}
 		if (cmd === "plugin:event|unlisten") return null;
 		if (cmd === "read_naia_config") {
-			return window.__E2E_CONFIG__ ? JSON.stringify(window.__E2E_CONFIG__) : null;
+			return window.__E2E_CONFIG__ ? JSON.stringify(window.__E2E_CONFIG__) : "";
 		}
 		if (cmd === "cli_detect_one") {
 			return window.__GROK_PREFLIGHT__ || {

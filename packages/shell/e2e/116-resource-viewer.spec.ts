@@ -199,7 +199,8 @@ const TAURI_MOCK_SCRIPT = `
 		if (cmd === "list_audio_output_devices") return [];
 		if (cmd === "list_audio_input_devices") return [];
 		if (cmd === "sync_gateway_config") return null;
-		if (cmd === "read_naia_config") return null;
+		if (cmd === "read_naia_config") return localStorage.getItem("naia-config") || "";
+		if (cmd === "read_naia_ui_config") return "";
 		if (cmd === "browser_wv_hide") return null;
 		if (cmd === "browser_wv_show") return null;
 		if (cmd === "plugin:app|version") return "0.1.3";

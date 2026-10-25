@@ -164,7 +164,8 @@ const TAURI_MOCK_SCRIPT = `
 		if (cmd === "frontend_log") return null;
 		if (cmd === "app_list_installed") return [];
 		if (cmd === "list_skills" || cmd === "list_stt_models") return [];
-		if (cmd === "read_naia_config") return null;
+		if (cmd === "read_naia_config") return localStorage.getItem("naia-config") || "";
+		if (cmd === "read_naia_ui_config") return "";
 		return undefined;
 	};
 })();
