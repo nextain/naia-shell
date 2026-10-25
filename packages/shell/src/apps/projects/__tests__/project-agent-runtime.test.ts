@@ -125,7 +125,7 @@ describe("project agent runtime ownership", () => {
 		await loadProjectAgentAvailability();
 		selectProjectAgent(projectA, "opencode");
 		let releaseStart: ((value: unknown) => void) | undefined;
-		vi.mocked(invoke).mockImplementation(async (command, args) => {
+		vi.mocked(invoke).mockImplementation(async (command) => {
 			if (command === "project_agent_pty_start") {
 				return new Promise((resolve) => {
 					releaseStart = resolve;
