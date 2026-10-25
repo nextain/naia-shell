@@ -164,6 +164,12 @@ fn build_opencode_naia_environment(
         },
         "model": format!("naia/{selected_model}"),
         "small_model": format!("naia/{OPENCODE_NAIA_FALLBACK_MODEL}"),
+        "agent": {
+            "build": { "model": format!("naia/{selected_model}") },
+            "plan": { "model": format!("naia/{selected_model}") },
+            "general": { "model": format!("naia/{selected_model}") },
+            "explore": { "model": format!("naia/{selected_model}") },
+        },
     });
     let config_content = match serde_json::to_string(&config) {
         Ok(value) => value,
@@ -715,6 +721,24 @@ mod tests {
     use std::io;
     use std::path::PathBuf;
 
+    fn assert_builtin_agent_models(config: &serde_json::Value, expected_model: &str) {
+        let agents = config["agent"].as_object().expect("built-in agent config");
+        assert_eq!(
+            agents.len(),
+            4,
+            "only the four built-in agents are injected"
+        );
+        for name in ["build", "plan", "general", "explore"] {
+            let agent = agents.get(name).expect("built-in agent");
+            assert_eq!(agent["model"], expected_model, "agent {name}");
+            assert_eq!(
+                agent.as_object().map(serde_json::Map::len),
+                Some(1),
+                "only the model field is injected for agent {name}"
+            );
+        }
+    }
+
     fn sanitize_test_command(command: &mut portable_pty::CommandBuilder) {
         command.env("PATH", "C:\\opencode-key-test-path");
         for name in ["HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH"] {
@@ -741,6 +765,8 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(config).unwrap();
         assert_eq!(parsed["model"], "naia/gpt-5.6-luna");
         assert_eq!(parsed["small_model"], "naia/deepseek-v4-flash");
+        assert_builtin_agent_models(&parsed, "naia/gpt-5.6-luna");
+        assert!(!config.contains(TEST_KEY));
         assert_eq!(
             parsed["provider"]["naia"]["npm"],
             "@ai-sdk/openai-compatible"
@@ -772,6 +798,7 @@ mod tests {
         let config: serde_json::Value =
             serde_json::from_str(vars.get(OPENCODE_CONFIG_ENV).unwrap()).unwrap();
         assert_eq!(config["model"], "naia/deepseek-v4-flash");
+        assert_builtin_agent_models(&config, "naia/deepseek-v4-flash");
     }
 
     #[test]
