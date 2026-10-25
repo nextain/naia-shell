@@ -889,6 +889,12 @@ unrelated direct TRT service on port 8910.
 | **FR-APP-STORAGE.2** | App ids are strict single path segments. Symlinks, traversal, malformed ids, duplicate ids, and canonical-path escapes cannot delete or replace data outside the canonical app store. | Rust adversarial filesystem tests |
 | **FR-APP-STORAGE.3** | A disk removal failure preserves the registered app and is surfaced as an accessible UI error; the Shell never reports removal by hiding only its in-memory entry. | app-loader and AppBar component tests |
 
+## Published app artifact signature verification (2026-10-25)
+
+| ID | Normative requirement | Source scenario | Verification | Status |
+|---|---|---|---|---|
+| **FR-APP-SIGNING.1** | Before installation, every published app artifact's digest is verified with Ed25519. Debug and release builds default to the gateway's Ed25519 verification key for published artifact signatures; a nonblank compile-time `NAIA_APP_SIGNING_PUBLIC_KEY` replaces that default. Missing, empty, or whitespace-only overrides keep the default, and signature verification is never disabled. | UC-V021-APP-INSTALL-LIFECYCLE | `packages/shell/src-tauri/src/app.rs::store_signature_tests`; debug and release `cargo test app::store_signature_tests` (5/5 each) | Done |
+
 ## v0.2.1 Workspace Markdown viewer (#474)
 
 | ID | Normative requirement | Verification |

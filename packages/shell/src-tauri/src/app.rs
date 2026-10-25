@@ -25,18 +25,19 @@ struct StoreEntitlement {
     artifact: StoreArtifact,
 }
 
-// The Ed25519 public key the published app artifacts are actually signed with —
-// the gateway's configured APP_SIGNING_PUBLIC_KEY (it verifies at seed time, so
-// a served artifact is guaranteed signed by this key's private half). The prior
-// stale placeholder ("Zs6y…") failed verification for the real Naia Slides
-// artifact ("Artifact signature verification failed", 2026-08-31 rehearsal).
-// Release builds should still inject NAIA_APP_SIGNING_PUBLIC_KEY explicitly.
-const DEVELOPMENT_SIGNING_PUBLIC_KEY: &str = "GCqIQ1dXU07erJixc6UjAaDMgnSfh+GB3ZSRxb+VH2g=";
+// Ed25519 verification key paired with the private key the gateway uses to sign
+// published app artifacts. It is safe to embed in every build; rotate it by
+// setting compile-time NAIA_APP_SIGNING_PUBLIC_KEY (CI uses the same repository variable).
+const PUBLISHED_APP_SIGNING_PUBLIC_KEY: &str = "GCqIQ1dXU07erJixc6UjAaDMgnSfh+GB3ZSRxb+VH2g=";
+
+fn resolve_signing_public_key(override_key: Option<&str>) -> &str {
+    override_key
+        .filter(|key| !key.trim().is_empty())
+        .unwrap_or(PUBLISHED_APP_SIGNING_PUBLIC_KEY)
+}
 
 fn verify_artifact_signature(digest: &[u8], value: &str) -> Result<(), String> {
-    let encoded_key = option_env!("NAIA_APP_SIGNING_PUBLIC_KEY")
-        .or_else(|| cfg!(debug_assertions).then_some(DEVELOPMENT_SIGNING_PUBLIC_KEY))
-        .ok_or_else(|| "App signing public key is not configured".to_string())?;
+    let encoded_key = resolve_signing_public_key(option_env!("NAIA_APP_SIGNING_PUBLIC_KEY"));
     verify_artifact_signature_with_key(encoded_key, digest, value)
 }
 
@@ -72,6 +73,50 @@ fn verify_artifact_signature_with_key(
 #[cfg(test)]
 mod store_signature_tests {
     use super::*;
+
+    #[test]
+    fn uses_published_key_without_override() {
+        assert_eq!(
+            resolve_signing_public_key(None),
+            PUBLISHED_APP_SIGNING_PUBLIC_KEY
+        );
+    }
+
+    #[test]
+    fn empty_or_whitespace_override_uses_published_key() {
+        for override_key in ["", " \t\n"] {
+            assert_eq!(
+                resolve_signing_public_key(Some(override_key)),
+                PUBLISHED_APP_SIGNING_PUBLIC_KEY
+            );
+        }
+    }
+
+    #[test]
+    fn uses_a_valid_override() {
+        use ed25519_dalek::SigningKey;
+
+        let signing_key = SigningKey::from_bytes(&[9u8; 32]);
+        let override_key = base64::engine::general_purpose::STANDARD
+            .encode(signing_key.verifying_key().to_bytes());
+
+        assert_eq!(
+            resolve_signing_public_key(Some(&override_key)),
+            override_key
+        );
+    }
+
+    #[test]
+    fn published_key_is_a_32_byte_ed25519_verifying_key() {
+        let key_bytes = base64::engine::general_purpose::STANDARD
+            .decode(PUBLISHED_APP_SIGNING_PUBLIC_KEY)
+            .expect("published key must be valid base64");
+        let key_array: [u8; 32] = key_bytes
+            .try_into()
+            .expect("published Ed25519 key must be 32 bytes");
+
+        VerifyingKey::from_bytes(&key_array).expect("published key must parse as Ed25519");
+    }
 
     /// 검증 경로가 옳은 서명을 받고 건드려진 것을 거절하는가.
     ///
