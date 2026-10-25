@@ -54,6 +54,10 @@ const GROK_TAURI_MOCK = `
 		if (cmd === "read_naia_config") {
 			return window.__E2E_CONFIG__ ? JSON.stringify(window.__E2E_CONFIG__) : "";
 		}
+		// Rust device_pairing.rs device_list/device_list_requests always resolve
+		// to arrays. With tools enabled (the default) Settings mounts
+		// DevicePairingSection, which crashes the Settings app on undefined.
+		if (cmd === "device_list" || cmd === "device_list_requests") return [];
 		if (cmd === "cli_detect_one") {
 			return window.__GROK_PREFLIGHT__ || {
 				status: "ready",
@@ -92,14 +96,16 @@ async function boot(
 	preflight?: { status: string; output?: string },
 	catalog?: Array<Record<string, unknown>>,
 ) {
+	const pricing = { requests: 0 };
 	if (catalog) {
-		await page.route("**/v1/pricing", (route) =>
-			route.fulfill({
+		await page.route("**/v1/pricing", (route) => {
+			pricing.requests += 1;
+			return route.fulfill({
 				status: 200,
 				contentType: "application/json",
 				body: JSON.stringify(catalog),
-			}),
-		);
+			});
+		});
 	}
 	await page.addInitScript({ content: GROK_TAURI_MOCK });
 	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
@@ -107,6 +113,7 @@ async function boot(
 	await page.addInitScript({ content: seedConfig(cfg, preflight) });
 	await page.goto("/");
 	await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
+	return pricing;
 }
 
 async function openBrain(page: import("@playwright/test").Page) {
@@ -119,12 +126,28 @@ async function grokPreflightCount(page: import("@playwright/test").Page) {
 		() =>
 			(
 				window as unknown as {
-					__GROK_INVOKES__: Array<{ cmd: string }>;
+					__GROK_INVOKES__: Array<{ cmd: string; args?: unknown }>;
 				}
-			).__GROK_INVOKES__.filter((call) => call.cmd === "cli_detect_one")
-				.length,
+			).__GROK_INVOKES__.filter(
+				(call) =>
+					call.cmd === "cli_detect_one" &&
+					(call as { args?: { id?: string } | null }).args?.id === "grok",
+			).length,
 	);
 }
+
+// #602 (0221930f, 2026-09-16) removed the xAI API-key provider together with
+// every other third-party cloud LLM API (third-party-providers-absent.test.ts).
+// The only remaining provider with an API-key field is a remote Ollama
+// (OpenAI-compatible key, adk-store.ts resolveAgentEnvKey), so it now stands in
+// for "an API-key provider" next to the Grok subscription CLI.
+const API_KEY_CFG = {
+	onboardingComplete: true,
+	provider: "ollama",
+	model: "qwen3",
+	apiKey: "remote-ollama-key",
+	locale: "ko",
+};
 
 const GROK_CFG = {
 	onboardingComplete: true,
@@ -146,7 +169,8 @@ test.describe("UC-GROK-SUBSCRIPTION", () => {
 		const provider = page.locator("#provider-select");
 		await expect(provider).toHaveValue("grok");
 		await expect(provider.locator('option[value="grok"]')).toHaveCount(1);
-		await expect(provider.locator('option[value="xai"]')).toHaveCount(1);
+		// #602: the xAI API-key provider no longer exists next to Grok.
+		await expect(provider.locator('option[value="xai"]')).toHaveCount(0);
 		await expect(page.locator("#model-select")).toHaveValue("grok-4.6");
 		await expect(page.locator("#apikey-input")).toHaveCount(0);
 
@@ -172,15 +196,10 @@ test.describe("UC-GROK-SUBSCRIPTION", () => {
 		expect(JSON.stringify(saved)).not.toContain("You are logged in as");
 	});
 
-	test("xAI에서 Grok로 바꾸면 API 키 칸이 사라지고 준비 확인이 나온다", async ({ page }) => {
-		await boot(page, {
-			onboardingComplete: true,
-			provider: "xai",
-			model: "grok-4.3",
-			apiKey: "xai-secret",
-			locale: "ko",
-		});
+	test("API 키 공급자에서 Grok로 바꾸면 API 키 칸이 사라지고 준비 확인이 나온다", async ({ page }) => {
+		await boot(page, API_KEY_CFG);
 		await openBrain(page);
+		await expect(page.locator("#provider-select")).toHaveValue("ollama");
 		await expect(page.locator("#apikey-input")).toHaveCount(1);
 		await page.locator("#provider-select").selectOption("grok");
 		await expect(page.locator("#provider-select")).toHaveValue("grok");
@@ -230,51 +249,56 @@ test.describe("UC-GROK-SUBSCRIPTION", () => {
 		await expect(page.getByTestId("grok-readiness-status")).toContainText(/Ready|준비됨/);
 	});
 
-	test("xAI API-key provider는 Grok 구독 화면과 섞이지 않는다", async ({ page }) => {
-		await boot(page, {
-			onboardingComplete: true,
-			provider: "xai",
-			model: "grok-4.3",
-			apiKey: "xai-secret",
-			locale: "ko",
-		});
+	test("API 키 공급자는 Grok 구독 화면과 섞이지 않는다", async ({ page }) => {
+		await boot(page, API_KEY_CFG);
 		await openBrain(page);
-		await expect(page.locator("#provider-select")).toHaveValue("xai");
+		await expect(page.locator("#provider-select")).toHaveValue("ollama");
 		await expect(page.getByTestId("grok-readiness")).toHaveCount(0);
 		await expect(page.locator("#apikey-input")).toHaveCount(1);
 		expect(await grokPreflightCount(page)).toBe(0);
 	});
 
-	test("게이트웨이 grok: prefix는 xAI API 경로로 남고 구독 화면과 섞이지 않는다", async ({
+	test("게이트웨이 grok: prefix는 Grok 구독 화면의 모델로 섞이지 않는다", async ({
 		page,
 	}) => {
-		await boot(
-			page,
+		// #602 (0221930f) removed the xAI API path that used to own the gateway's
+		// grok: prefix. The gateway catalog now maps only nextain routes and the
+		// remaining CLI/local aliases (SettingsTab.tsx fetchModels providerAlias),
+		// so a grok: entry must be dropped instead of reaching the Grok
+		// subscription CLI's model list. A claude-code-cli: probe proves the
+		// catalog itself was applied.
+		const pricing = await boot(page, GROK_CFG, undefined, [
 			{
-				onboardingComplete: true,
-				provider: "xai",
-				model: "grok-4.3",
-				apiKey: "xai-secret",
-				locale: "ko",
+				model_key: "grok:grok-4.3",
+				input_price_per_million: 0.4,
+				output_price_per_million: 1.2,
+				cached_price_per_million: null,
 			},
-			undefined,
-			[
-				{
-					model_key: "grok:grok-4.3",
-					input_price_per_million: 0.4,
-					output_price_per_million: 1.2,
-					cached_price_per_million: null,
-				},
-			],
-		);
+			{
+				model_key: "claude-code-cli:claude-e2e-catalog-probe",
+				input_price_per_million: 1,
+				output_price_per_million: 2,
+				cached_price_per_million: null,
+			},
+		]);
 		await openBrain(page);
-		await expect(page.locator("#provider-select")).toHaveValue("xai");
-		await expect(page.locator("#model-select")).toHaveValue("grok-4.3");
-		await expect(page.getByTestId("grok-readiness")).toHaveCount(0);
-		await expect(page.locator("#apikey-input")).toHaveCount(1);
-		await expect(page.locator("#provider-select option[value='grok']")).toHaveCount(
-			1,
-		);
+		await expect.poll(() => pricing.requests).toBeGreaterThan(0);
+
+		const provider = page.locator("#provider-select");
+		const model = page.locator("#model-select");
+		await provider.selectOption("claude-code-cli");
+		await expect(
+			model.locator("option[value='claude-e2e-catalog-probe']"),
+		).toHaveCount(1);
+
+		await provider.selectOption("grok");
+		await expect(provider).toHaveValue("grok");
+		await expect(model).toHaveValue("grok-4.6");
+		await expect(model.locator("option[value='grok-4.3']")).toHaveCount(0);
+		await expect(provider.locator("option[value='grok']")).toHaveCount(1);
+		await expect(provider.locator("option[value='xai']")).toHaveCount(0);
+		await expect(page.locator("#apikey-input")).toHaveCount(0);
+		await expect(page.getByTestId("grok-readiness")).toBeVisible();
 		expect(await grokPreflightCount(page)).toBe(0);
 	});
 
