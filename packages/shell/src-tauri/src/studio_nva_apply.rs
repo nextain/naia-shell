@@ -79,7 +79,11 @@ pub(crate) fn parse_deep_link(value: &str) -> Option<(String, StudioNvaEnvironme
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port().is_some()
-        || !url.path().is_empty()
+        // Windows shell launches (Start-Process, browser protocol handler while
+        // the shell is running) normalize `naia://host?q` to `naia://host/?q`.
+        // Accept only the empty path and the bare root "/"; any other path
+        // is still rejected.
+        || !matches!(url.path(), "" | "/")
         || url.fragment().is_some()
     {
         return None;
@@ -834,6 +838,46 @@ mod tests {
             parse_deep_link("naia://studio-nva-apply?avatar_id=av_123&env=development"),
             Some(("av_123".to_string(), StudioNvaEnvironment::Development))
         );
+    }
+
+    #[test]
+    fn parses_link_with_trailing_root_slash() {
+        // Windows passes `naia://studio-nva-apply/?...` to a running shell.
+        assert_eq!(
+            parse_deep_link("naia://studio-nva-apply/?avatar_id=av_123&env=production"),
+            Some(("av_123".to_string(), StudioNvaEnvironment::Production))
+        );
+        assert_eq!(
+            parse_deep_link("naia://studio-nva-apply?avatar_id=av_123&env=production"),
+            Some(("av_123".to_string(), StudioNvaEnvironment::Production))
+        );
+    }
+
+    #[test]
+    fn rejects_links_with_non_root_paths() {
+        for link in [
+            "naia://studio-nva-apply/x?avatar_id=av_123&env=production",
+            "naia://studio-nva-apply//?avatar_id=av_123&env=production",
+            "naia://studio-nva-apply/apply/?avatar_id=av_123&env=production",
+            "naia://studio-nva-apply/%2F?avatar_id=av_123&env=production",
+        ] {
+            assert_eq!(parse_deep_link(link), None, "must reject {link:?}");
+        }
+    }
+
+    #[test]
+    fn trailing_slash_does_not_relax_other_checks() {
+        for link in [
+            "naia://evil/?avatar_id=av_123&env=production",
+            "naia://studio-nva-apply/?avatar_id=av_123&env=production&token=secret",
+            "naia://studio-nva-apply/?avatar_id=../avatar&env=production",
+            "naia://studio-nva-apply/?avatar_id=av_123&env=staging",
+            "naia://studio-nva-apply/?avatar_id=av_123&env=production#frag",
+            "naia://user@studio-nva-apply/?avatar_id=av_123&env=production",
+            "naia://studio-nva-apply:1/?avatar_id=av_123&env=production",
+        ] {
+            assert_eq!(parse_deep_link(link), None, "must reject {link:?}");
+        }
     }
 
     #[test]
