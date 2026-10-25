@@ -153,6 +153,9 @@ const TAURI_MOCK_SCRIPT = `
 		if (cmd === "get_progress_data") return { events: [], stats: { totalCost: 0, messageCount: 0, toolCount: 0, errorCount: 0 } };
 		if (cmd === "send_to_agent_command") {
 			var req = JSON.parse(args.message);
+			// 대화 요청만 답한다. 새 core 는 creds_update·app_skills 같은 messages 없는 송신도
+			// 같은 명령으로 보내므로, 그 송신은 받기만 한다.
+			if (!req || req.type !== "chat_request" || !Array.isArray(req.messages)) return null;
 			var rid = req.requestId;
 			var lastMsg = req.messages[req.messages.length - 1];
 			var text = (lastMsg.content || "").toLowerCase().indexOf("deeplink") !== -1
@@ -457,6 +460,11 @@ test.describe("Resource Viewer — Editor (#116)", () => {
 
 test.describe("Chat File Deeplinks (#116)", () => {
 	test.beforeEach(async ({ page }) => {
+		// 설치본은 새 core 로 빌드된다(scripts/__tests__/platform-matrix.test.ts
+		// "builds installers through the new core by default"). 옛 경로는 localStorage 의
+		// apiKey 를 게이트로 쓰는데, 09bbe62b(persist credentials in selected ADK) 이후 비밀값은
+		// ADK 바인딩 뒤 localStorage 에서 지워진다. 그래서 출시 경로인 새 core 로 대화를 보낸다.
+		await page.addInitScript("window.__NAIA_NEW_CORE__ = true;");
 		await page.addInitScript(TAURI_MOCK_SCRIPT);
 		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
 		await page.addInitScript({ content: SEED_ADK_PATH });
