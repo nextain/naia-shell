@@ -68,9 +68,6 @@ jobs:
             artifact: darwin-x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
-    env:
-      # 저장소 변수로 앱 서명 공개 키를 덮어쓸 수 있다.
-      NAIA_APP_SIGNING_PUBLIC_KEY: ${{ vars.NAIA_APP_SIGNING_PUBLIC_KEY }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

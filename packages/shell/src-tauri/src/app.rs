@@ -27,7 +27,7 @@ struct StoreEntitlement {
 
 // Ed25519 verification key paired with the private key the gateway uses to sign
 // published app artifacts. It is safe to embed in every build; rotate it by
-// setting compile-time NAIA_APP_SIGNING_PUBLIC_KEY (CI uses the same repository variable).
+// setting compile-time NAIA_APP_SIGNING_PUBLIC_KEY in the build environment.
 const PUBLISHED_APP_SIGNING_PUBLIC_KEY: &str = "GCqIQ1dXU07erJixc6UjAaDMgnSfh+GB3ZSRxb+VH2g=";
 
 fn resolve_signing_public_key(override_key: Option<&str>) -> &str {
