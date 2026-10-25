@@ -1254,6 +1254,43 @@ describe("SettingsTab", () => {
 		window.removeEventListener("naia_auth_ready", authReady);
 	});
 
+	it("continues Naia login when OpenCode sessions fail to stop", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		mockInvoke.mockResolvedValue([]);
+		projectAgentMocks.stopOpenCodeProjectAgentSessions.mockRejectedValueOnce(
+			new Error("stop failed"),
+		);
+		const authReady = vi.fn();
+		window.addEventListener("naia_auth_ready", authReady);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ credits: 10 }),
+			}),
+		);
+
+		render(<SettingsTab />);
+
+		await vi.waitFor(() => {
+			expect(eventListeners.get("naia_auth_complete")).toBeDefined();
+		});
+
+		await act(async () => {
+			await eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
+			});
+		});
+
+		expect(secureStoreMock.set).toHaveBeenCalledWith("naiaKey", "gw-test-key");
+		expect(
+			JSON.parse(localStorage.getItem("naia-config") || "{}").naiaKey,
+		).toBe("gw-test-key");
+		expect(authReady).toHaveBeenCalledTimes(1);
+		window.removeEventListener("naia_auth_ready", authReady);
+	});
+
 	it("replaces a stale Gemini main role when logging in to Naia from Settings", async () => {
 		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
 		localStorage.setItem(

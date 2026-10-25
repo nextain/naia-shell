@@ -2831,7 +2831,18 @@ export function SettingsTab() {
 				setLabWaiting(true);
 				setError("");
 				try {
-					await stopOpenCodeProjectAgentSessions();
+					try {
+						await stopOpenCodeProjectAgentSessions();
+					} catch (error) {
+						Logger.warn(
+							"Settings",
+							"Failed to stop OpenCode sessions before Naia login",
+							{
+								reason:
+									error instanceof Error ? error.message : "stop_failed",
+							},
+						);
+					}
 					const nextConfig = buildNaiaLoginConfig(
 						loadConfig(),
 						nextNaiaKey,
