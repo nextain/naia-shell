@@ -1,26 +1,30 @@
 /// <reference lib="webworker" />
 import {
 	BROWSER_READ_TOOL_NAMES,
+	type WebLLMEngineLike,
 	makeBrowserReadTools,
 	makePersonaSourceStore,
-	makeWorkspaceContextStore,
 	makeWebLLMProvider,
+	makeWorkspaceContextStore,
 	startBrowserAgent,
-	type WebLLMEngineLike,
 } from "@naia-agent/composition/browser-agent.js";
 import type { DiagnosticLog } from "@naia-agent/ports/uc1.js";
 import { WEB_ADK_PATH } from "../src/lib/web-runtime/web-adk-path";
 import {
-	isWebLlmModelId,
 	WEB_LLM_MODEL_ID,
 	type WebLlmModelId,
+	isWebLlmModelId,
 } from "../src/lib/web-runtime/webllm-model";
 import {
 	EMPTY_ADK_SNAPSHOT,
 	makeSnapshotFs,
 	readAdkSnapshot,
 } from "./adk-snapshot-fs";
-import { relayAgentPort } from "./agent-port-relay";
+import {
+	relayAgentPort,
+	resolveWebChatTurnEnableThinking,
+	wrapEngineWithEnableThinking,
+} from "./agent-port-relay";
 import { makeOpfsReadFs } from "./opfs-read-fs";
 
 const diag: DiagnosticLog = {
@@ -159,16 +163,29 @@ self.addEventListener("message", (event: MessageEvent) => {
 			getEngine().catch(() => {});
 		}
 
+		let snapshot = EMPTY_ADK_SNAPSHOT;
+		let activeEnableThinking = false;
+		const refresh = async (rawLine: string) => {
+			snapshot = await readAdkSnapshot(() => navigator.storage.getDirectory());
+			activeEnableThinking = resolveWebChatTurnEnableThinking(
+				rawLine,
+				snapshot.configText,
+			);
+		};
+
+		const getEngineWithThinking = async (): Promise<WebLLMEngineLike> => {
+			const baseEngine = await getEngine();
+			return wrapEngineWithEnableThinking(
+				baseEngine,
+				() => activeEnableThinking,
+			);
+		};
+
 		const provider = makeWebLLMProvider({
-			getEngine,
+			getEngine: getEngineWithThinking,
 			model: selectedModel ?? WEB_LLM_MODEL_ID,
 			toolNames: BROWSER_READ_TOOL_NAMES,
 		});
-
-		let snapshot = EMPTY_ADK_SNAPSHOT;
-		const refresh = async () => {
-			snapshot = await readAdkSnapshot(() => navigator.storage.getDirectory());
-		};
 
 		const toolExecutor = makeBrowserReadTools({
 			fs: makeOpfsReadFs(() => navigator.storage.getDirectory()),

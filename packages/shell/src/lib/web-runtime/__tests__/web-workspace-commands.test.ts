@@ -1,10 +1,27 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "../../i18n";
-import { createMemoryWebFs, type WebFs } from "../web-fs";
+import { setWebAssetsModeForTests } from "../web-assets";
 import {
-	handleWebWorkspaceCommand,
+	completeWebNaiaLogin,
+	logoutWebSession,
+	setWebLoginRequiredForTests,
+} from "../web-auth";
+import { type WebFs, createMemoryWebFs } from "../web-fs";
+import {
 	INITIAL_WEB_WORKSPACE_CONFIG,
+	appendWebConversationMessages,
+	handleWebWorkspaceCommand,
+	resolveWebConversationsDir,
+	safeSessionBase,
 } from "../web-workspace-commands";
+
+afterEach(() => {
+	setWebAssetsModeForTests(null);
+	setWebLoginRequiredForTests(null);
+	localStorage.clear();
+	sessionStorage.clear();
+});
 
 describe("web-workspace-commands", () => {
 	it("read_naia_config writes initial config on first read and returns identical string on second read", async () => {
@@ -18,6 +35,7 @@ describe("web-workspace-commands", () => {
 		const inStorage = await fs.readText("naia-adk/naia-settings/config.json");
 		expect(inStorage).not.toBeNull();
 		const parsedInStorage = JSON.parse(inStorage as string);
+		// WO-03: 초기 config는 번들 아바타·배경 기본값을 함께 seed한다 (리터럴 고정).
 		const expectedConfig = {
 			provider: "webllm",
 			model: "Qwen3-4B-q4f16_1-MLC",
@@ -25,8 +43,16 @@ describe("web-workspace-commands", () => {
 			speechStyle: "casual",
 			persona: "You are Naia, an AI companion. Speak casually and warmly.",
 			onboardingComplete: true,
+			avatarProvider: "vrm",
+			vrmModel: "/avatars/03-OL_Woman.vrm",
+			backgroundVideo: "naia-dawn-city-uhd.webp",
 			NAIA_LOCALE: "en",
 		};
+		expect(INITIAL_WEB_WORKSPACE_CONFIG).toMatchObject({
+			avatarProvider: "vrm",
+			vrmModel: "/avatars/03-OL_Woman.vrm",
+			backgroundVideo: "naia-dawn-city-uhd.webp",
+		});
 		expect(parsedInStorage).toEqual(expectedConfig);
 		expect(JSON.parse(first)).toEqual(expectedConfig);
 
@@ -50,6 +76,10 @@ describe("web-workspace-commands", () => {
 				return false;
 			},
 			async ensureDir() {},
+			async listEntries() {
+				return [];
+			},
+			async removeFile() {},
 		};
 
 		await expect(
@@ -118,6 +148,10 @@ describe("web-workspace-commands", () => {
 				return false;
 			},
 			async ensureDir() {},
+			async listEntries() {
+				return [];
+			},
+			async removeFile() {},
 		};
 
 		const validJson = JSON.stringify({ key: "value" });
@@ -168,20 +202,16 @@ describe("web-workspace-commands", () => {
 		];
 
 		for (const { cmd, args } of commands) {
-			await expect(
-				handleWebWorkspaceCommand(cmd, args, fs),
-			).rejects.toThrow(`web_adk_path_mismatch:${mismatchPath}`);
+			await expect(handleWebWorkspaceCommand(cmd, args, fs)).rejects.toThrow(
+				`web_adk_path_mismatch:${mismatchPath}`,
+			);
 		}
 	});
 
 	it("rejects empty adkPath in write_naia_path_cache with 'adk_path is empty'", async () => {
 		const fs = createMemoryWebFs();
 		await expect(
-			handleWebWorkspaceCommand(
-				"write_naia_path_cache",
-				{ adkPath: "" },
-				fs,
-			),
+			handleWebWorkspaceCommand("write_naia_path_cache", { adkPath: "" }, fs),
 		).rejects.toThrow("adk_path is empty");
 	});
 
@@ -238,6 +268,9 @@ describe("web-workspace-commands", () => {
 				speechStyle: "casual",
 				persona: "You are Naia, an AI companion. Speak casually and warmly.",
 				onboardingComplete: true,
+				avatarProvider: "vrm",
+				vrmModel: "/avatars/03-OL_Woman.vrm",
+				backgroundVideo: "naia-dawn-city-uhd.webp",
 				NAIA_LOCALE: "ko",
 			};
 			expect(JSON.parse(result)).toEqual(expectedConfig);
@@ -267,5 +300,249 @@ describe("web-workspace-commands", () => {
 		expect(result).toBe(rawConfig);
 		const inStorage = await fs.readText("naia-adk/naia-settings/config.json");
 		expect(inStorage).toBe(rawConfig);
+	});
+
+	it("migrates retired face-crop background filenames in read_naia_config and read_naia_ui_config", async () => {
+		const fs = createMemoryWebFs();
+		await fs.writeBytes(
+			"naia-adk/naia-settings/config.json",
+			JSON.stringify({
+				provider: "webllm",
+				backgroundVideo: "ol-woman-dusk.webp",
+			}),
+		);
+		await fs.writeBytes(
+			"naia-adk/naia-settings/ui-config.json",
+			JSON.stringify({
+				backgroundVideo: "shino-uniform-dusk.webp",
+			}),
+		);
+
+		const cfgRaw = (await handleWebWorkspaceCommand(
+			"read_naia_config",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		expect(JSON.parse(cfgRaw).backgroundVideo).toBe("naia-dawn-city-uhd.webp");
+
+		const uiRaw = (await handleWebWorkspaceCommand(
+			"read_naia_ui_config",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		expect(JSON.parse(uiRaw).backgroundVideo).toBe("naia-dawn-city-uhd.webp");
+	});
+
+	it("persists, lists, reads, and deletes web conversations in OPFS JSONL format", async () => {
+		const fs = createMemoryWebFs();
+
+		await appendWebConversationMessages(
+			"session_alpha",
+			[
+				{
+					role: "user",
+					content: "첫 번째 질문입니다",
+					timestamp: 1700000001000,
+				},
+				{
+					role: "assistant",
+					content: "첫 번째 답변입니다",
+					timestamp: 1700000002000,
+				},
+			],
+			fs,
+		);
+		await appendWebConversationMessages(
+			"session_beta",
+			[
+				{
+					role: "user",
+					content: "두 번째 대화 제목",
+					timestamp: 1700000003000,
+				},
+				{
+					role: "assistant",
+					content: "두 번째 답변",
+					timestamp: 1700000004000,
+				},
+			],
+			fs,
+		);
+
+		const listRaw = (await handleWebWorkspaceCommand(
+			"list_conversations",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		const parsedList = JSON.parse(listRaw) as {
+			sessions: Array<{
+				key: string;
+				label: string;
+				messageCount: number;
+				createdAt: number;
+				updatedAt: number;
+			}>;
+		};
+
+		expect(parsedList.sessions).toHaveLength(2);
+		expect(parsedList.sessions[0]).toMatchObject({
+			key: "session_beta",
+			label: "두 번째 대화 제목",
+			messageCount: 2,
+		});
+		expect(parsedList.sessions[1]).toMatchObject({
+			key: "session_alpha",
+			label: "첫 번째 질문입니다",
+			messageCount: 2,
+		});
+
+		const readRaw = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{ adkPath: "opfs://naia-adk", sessionId: "session_alpha" },
+			fs,
+		)) as string;
+		const readLines = readRaw.trim().split("\n");
+		expect(readLines).toHaveLength(2);
+		expect(JSON.parse(readLines[0])).toMatchObject({
+			role: "user",
+			content: "첫 번째 질문입니다",
+		});
+		expect(JSON.parse(readLines[1])).toMatchObject({
+			role: "assistant",
+			content: "첫 번째 답변입니다",
+		});
+
+		await handleWebWorkspaceCommand(
+			"delete_conversation",
+			{ adkPath: "opfs://naia-adk", sessionId: "session_alpha" },
+			fs,
+		);
+
+		const afterDeleteRaw = (await handleWebWorkspaceCommand(
+			"list_conversations",
+			{ adkPath: "opfs://naia-adk" },
+			fs,
+		)) as string;
+		const afterDelete = JSON.parse(afterDeleteRaw) as {
+			sessions: Array<{ key: string }>;
+		};
+		expect(afterDelete.sessions.map((c) => c.key)).toEqual(["session_beta"]);
+	});
+
+	it("sanitizes sessionId via safeSessionBase and rejects non-string sessionId", async () => {
+		const fs = createMemoryWebFs();
+		expect(safeSessionBase("../secret")).toBe("secret");
+		expect(safeSessionBase("a/b")).toBe("a_b");
+		expect(safeSessionBase("...")).toBe("default");
+
+		await expect(
+			handleWebWorkspaceCommand(
+				"read_conversation",
+				{ adkPath: "opfs://naia-adk", sessionId: 123 },
+				fs,
+			),
+		).rejects.toThrow("web_invalid_args:read_conversation");
+
+		await expect(
+			handleWebWorkspaceCommand(
+				"delete_conversation",
+				{ adkPath: "opfs://naia-adk" },
+				fs,
+			),
+		).rejects.toThrow("web_invalid_args:delete_conversation");
+	});
+
+	it("isolates conversations per logged-in user and preserves OPFS files across logout and user switches", async () => {
+		setWebAssetsModeForTests(true);
+		const fs = createMemoryWebFs();
+
+		// 1. User A logs in and saves a conversation
+		await completeWebNaiaLogin("naia_live_key_user_a_12345", "user-alpha");
+		expect(resolveWebConversationsDir()).toBe(
+			"naia-adk/conversations/u-user-alpha",
+		);
+		await appendWebConversationMessages(
+			"chat-a-1",
+			[
+				{ role: "user", content: "A의 비밀 질문", timestamp: 1700000010000 },
+				{ role: "assistant", content: "A의 답변", timestamp: 1700000011000 },
+			],
+			fs,
+		);
+
+		const listA1 = JSON.parse(
+			(await handleWebWorkspaceCommand(
+				"list_conversations",
+				{ adkPath: "opfs://naia-adk" },
+				fs,
+			)) as string,
+		) as { sessions: Array<{ key: string; label: string }> };
+		expect(listA1.sessions.map((s) => s.key)).toEqual(["chat-a-1"]);
+
+		// 2. User A logs out -> OPFS file is preserved
+		logoutWebSession();
+		expect(
+			await fs.exists("naia-adk/conversations/u-user-alpha/chat-a-1.jsonl"),
+		).toBe(true);
+
+		// 3. User B logs in -> User A's conversation is not visible in list or read
+		await completeWebNaiaLogin("naia_live_key_user_b_67890", "user-beta");
+		expect(resolveWebConversationsDir()).toBe(
+			"naia-adk/conversations/u-user-beta",
+		);
+		const listB = JSON.parse(
+			(await handleWebWorkspaceCommand(
+				"list_conversations",
+				{ adkPath: "opfs://naia-adk" },
+				fs,
+			)) as string,
+		) as { sessions: Array<{ key: string }> };
+		expect(listB.sessions).toEqual([]);
+
+		const readAFromB = (await handleWebWorkspaceCommand(
+			"read_conversation",
+			{ adkPath: "opfs://naia-adk", sessionId: "chat-a-1" },
+			fs,
+		)) as string;
+		expect(readAFromB).toBe("");
+
+		// 4. User A logs back in -> User A's conversation is visible again
+		logoutWebSession();
+		await completeWebNaiaLogin("naia_live_key_user_a_12345", "user-alpha");
+		const listA2 = JSON.parse(
+			(await handleWebWorkspaceCommand(
+				"list_conversations",
+				{ adkPath: "opfs://naia-adk" },
+				fs,
+			)) as string,
+		) as { sessions: Array<{ key: string; label: string }> };
+		expect(listA2.sessions).toHaveLength(1);
+		expect(listA2.sessions[0]).toMatchObject({
+			key: "chat-a-1",
+			label: "A의 비밀 질문",
+		});
+
+		// 5. When login gate is disabled (VITE_NAIA_WEB_LOGIN_REQUIRED=0), uses shared path
+		setWebLoginRequiredForTests(false);
+		expect(resolveWebConversationsDir()).toBe("naia-adk/conversations");
+
+		// 6. Optional conversationsDirOverride writes to the pinned folder regardless of current login state
+		setWebLoginRequiredForTests(null);
+		await completeWebNaiaLogin("naia_live_key_user_b_67890", "user-beta");
+		await appendWebConversationMessages(
+			"chat-a-pinned",
+			[
+				{ role: "user", content: "A의 고정 폴더 질문", timestamp: 1700000020000 },
+				{ role: "assistant", content: "A의 고정 폴더 답변", timestamp: 1700000021000 },
+			],
+			fs,
+			"naia-adk/conversations/u-user-alpha",
+		);
+		expect(
+			await fs.exists("naia-adk/conversations/u-user-beta/chat-a-pinned.jsonl"),
+		).toBe(false);
+		expect(
+			await fs.exists("naia-adk/conversations/u-user-alpha/chat-a-pinned.jsonl"),
+		).toBe(true);
 	});
 });

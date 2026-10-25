@@ -427,5 +427,169 @@ describe("PrebakedAvatarRenderer", () => {
 			expect((renderer as any).motionSpec?.chest_y).toBeCloseTo(0.84, 5);
 			renderer.stop();
 		});
+
+		it("composites .stacked.mp4 clips via stacked-alpha compositor with half videoHeight and skips compositor for .webm clips", async () => {
+			const stackedCanvas = document.createElement("canvas");
+			const mockCompositor = {
+				canvas: stackedCanvas,
+				draw: vi.fn(() => true),
+				dispose: vi.fn(),
+			};
+			const createStackedAlpha = vi.fn(() => mockCompositor);
+
+			const manifest = { ...baseManifest(), motion: false };
+			let resolvedUrl = "/nva/naia/clips/idle.stacked.mp4";
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async () => resolvedUrl,
+				createStackedAlpha,
+			});
+
+			const host = document.createElement("div");
+			const video = makeVideo();
+			host.appendChild(video);
+			document.body.appendChild(host);
+			Object.defineProperty(video, "readyState", {
+				value: 4,
+				configurable: true,
+			});
+			Object.defineProperty(video, "videoWidth", {
+				value: 720,
+				configurable: true,
+			});
+			Object.defineProperty(video, "videoHeight", {
+				value: 2560,
+				configurable: true,
+			});
+
+			const mockCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+				save: vi.fn(),
+				restore: vi.fn(),
+				translate: vi.fn(),
+				rotate: vi.fn(),
+			};
+			const canvas = document.createElement("canvas");
+			canvas.width = 720;
+			canvas.height = 1280;
+			vi.spyOn(canvas, "getContext").mockReturnValue(mockCtx as any);
+
+			renderer.start(video, canvas);
+			await Promise.resolve();
+			await Promise.resolve();
+			const [firstFrame] = rafCallbacks;
+			firstFrame?.(100);
+
+			// .stacked.mp4 (720x2560) uses half height (720x1280) for containRect -> full 720x1280 target
+			expect(createStackedAlpha).toHaveBeenCalledTimes(1);
+			expect(mockCompositor.draw).toHaveBeenCalledWith(video);
+			expect(mockCtx.drawImage).toHaveBeenCalledWith(
+				stackedCanvas,
+				0,
+				0,
+				720,
+				1280,
+			);
+
+			// Regular .webm clip does not pass through stacked-alpha compositor
+			mockCompositor.draw.mockClear();
+			mockCtx.drawImage.mockClear();
+			resolvedUrl = "/nva/naia/clips/idle.webm";
+			const webmRenderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async () => resolvedUrl,
+				createStackedAlpha,
+			});
+			const webmVideo = makeVideo();
+			Object.defineProperty(webmVideo, "readyState", {
+				value: 4,
+				configurable: true,
+			});
+			Object.defineProperty(webmVideo, "videoWidth", {
+				value: 720,
+				configurable: true,
+			});
+			Object.defineProperty(webmVideo, "videoHeight", {
+				value: 1280,
+				configurable: true,
+			});
+			webmRenderer.start(webmVideo, canvas);
+			await Promise.resolve();
+			await Promise.resolve();
+			const lastFrame = rafCallbacks[rafCallbacks.length - 1];
+			lastFrame?.(200);
+			expect(mockCompositor.draw).not.toHaveBeenCalled();
+			expect(mockCtx.drawImage).toHaveBeenCalledWith(
+				webmVideo,
+				0,
+				0,
+				720,
+				1280,
+			);
+
+			renderer.stop();
+			expect(mockCompositor.dispose).toHaveBeenCalledTimes(1);
+			webmRenderer.stop();
+			host.remove();
+		});
+
+		it("draws only the top half of a .stacked.mp4 clip without falling back to chromakey when WebGL fails", async () => {
+			const manifest = {
+				...baseManifest(),
+				chroma_key: "#00ff00",
+				motion: false,
+			};
+			const renderer = new PrebakedAvatarRenderer({
+				manifest,
+				locale: "ko-KR",
+				resolveAssetUrl: async () => "/nva/naia/clips/idle.stacked.mp4",
+				createStackedAlpha: () => {
+					throw new Error("WebGL unavailable");
+				},
+			});
+			const video = makeVideo();
+			Object.defineProperty(video, "readyState", {
+				value: 4,
+				configurable: true,
+			});
+			Object.defineProperty(video, "videoWidth", {
+				value: 720,
+				configurable: true,
+			});
+			Object.defineProperty(video, "videoHeight", {
+				value: 2560,
+				configurable: true,
+			});
+			const mockCtx = {
+				clearRect: vi.fn(),
+				drawImage: vi.fn(),
+			};
+			const canvas = document.createElement("canvas");
+			canvas.width = 720;
+			canvas.height = 1280;
+			vi.spyOn(canvas, "getContext").mockReturnValue(mockCtx as any);
+
+			renderer.start(video, canvas);
+			await Promise.resolve();
+			await Promise.resolve();
+			const [firstFrame] = rafCallbacks;
+			firstFrame?.(100);
+
+			expect(mockCtx.drawImage).toHaveBeenCalledWith(
+				video,
+				0,
+				0,
+				720,
+				1280,
+				0,
+				0,
+				720,
+				1280,
+			);
+			renderer.stop();
+		});
 	});
 });

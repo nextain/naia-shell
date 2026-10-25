@@ -2,7 +2,7 @@ import { registerLlmProvider } from "../llm/registry";
 import {
 	WEB_LLM_MODEL_ID,
 	WEB_LLM_MODEL_IDS,
-	WEB_LLM_MODEL_LABELS,
+	formatWebLlmModelLabel,
 } from "./webllm-model";
 
 export function registerWebLlmProvider(): void {
@@ -15,7 +15,7 @@ export function registerWebLlmProvider(): void {
 		defaultModel: WEB_LLM_MODEL_ID,
 		models: WEB_LLM_MODEL_IDS.map((id) => ({
 			id,
-			label: WEB_LLM_MODEL_LABELS[id],
+			label: formatWebLlmModelLabel(id),
 			capabilities: ["llm"],
 		})),
 	});

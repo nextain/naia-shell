@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "Разрешить ввод в ваш терминал",
 	"settings.thinkingLevel": "Уровень размышлений",
 	"settings.thinkingLevelOff": "Выкл",
+	"settings.thinkingLevelOn": "Вкл",
 	"settings.thinkingLevelLow": "Низкий",
 	"settings.thinkingLevelHigh": "Высокий",
 	"settings.thinkingLevelHint": "Включение размышлений замедляет ответы и увеличивает расход токенов.",

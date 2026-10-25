@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "Permitir digitar no seu terminal",
 	"settings.thinkingLevel": "Nível de raciocínio",
 	"settings.thinkingLevelOff": "Desativado",
+	"settings.thinkingLevelOn": "Ativado",
 	"settings.thinkingLevelLow": "Baixo",
 	"settings.thinkingLevelHigh": "Alto",
 	"settings.thinkingLevelHint": "Ativar o raciocínio torna as respostas mais lentas e aumenta o custo de tokens.",

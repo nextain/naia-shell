@@ -7,6 +7,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { Logger } from "../logger";
+import { isWebMode } from "../web-runtime/web-assets";
 
 /**
  * Coerce the Rust `detect_gpu_vram` result to a positive GB number, or null.
@@ -24,6 +25,7 @@ export function parseVramResult(raw: unknown): number | null {
  * back to manual tier selection.
  */
 export async function detectGpuVramGb(): Promise<number | null> {
+	if (isWebMode()) return null;
 	try {
 		return parseVramResult(await invoke("detect_gpu_vram"));
 	} catch (err) {

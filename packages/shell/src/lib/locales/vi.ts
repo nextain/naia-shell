@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "Cho phép gõ vào terminal của bạn",
 	"settings.thinkingLevel": "Mức độ suy nghĩ",
 	"settings.thinkingLevelOff": "Tắt",
+	"settings.thinkingLevelOn": "Bật",
 	"settings.thinkingLevelLow": "Thấp",
 	"settings.thinkingLevelHigh": "Cao",
 	"settings.thinkingLevelHint": "Bật suy nghĩ sẽ làm chậm phản hồi và tăng chi phí token.",

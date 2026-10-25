@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "Autoriser la saisie dans votre terminal",
 	"settings.thinkingLevel": "Niveau de réflexion",
 	"settings.thinkingLevelOff": "Désactivé",
+	"settings.thinkingLevelOn": "Activé",
 	"settings.thinkingLevelLow": "Faible",
 	"settings.thinkingLevelHigh": "Élevé",
 	"settings.thinkingLevelHint": "Activer la réflexion ralentit les réponses et augmente le coût en jetons.",

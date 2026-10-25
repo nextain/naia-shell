@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "السماح بالكتابة في طرفيتك",
 	"settings.thinkingLevel": "مستوى التفكير",
 	"settings.thinkingLevelOff": "إيقاف",
+	"settings.thinkingLevelOn": "تشغيل",
 	"settings.thinkingLevelLow": "منخفض",
 	"settings.thinkingLevelHigh": "عالي",
 	"settings.thinkingLevelHint": "تفعيل التفكير يؤدي إلى إبطاء الردود وزيادة تكلفة الرموز.",

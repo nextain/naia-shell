@@ -1,3 +1,4 @@
+import { Logger } from "../logger";
 import { type NvaManifest, defaultClipOf, findPrebakedSpeech } from "../nva";
 import type {
 	AvatarPlaybackOptions,
@@ -10,12 +11,21 @@ import {
 	parseMotionSpec,
 	resolveChestY,
 } from "./nva-procedural-motion";
+import { isStackedAlphaClipUrl } from "./nva-stacked-alpha";
+import { NvaStackedAlphaGL } from "./nva-stacked-alpha-gl";
+
+export interface StackedAlphaCompositorLike {
+	readonly canvas: HTMLCanvasElement;
+	draw(video: HTMLVideoElement): boolean;
+	dispose(): void;
+}
 
 interface Config {
 	manifest: NvaManifest;
 	locale: string;
 	resolveAssetUrl: (path: string) => Promise<string>;
 	onSpeaking?: (speaking: boolean) => void;
+	createStackedAlpha?: () => StackedAlphaCompositorLike;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -53,6 +63,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private clipVideos = new Map<string, HTMLVideoElement>();
 	private canvas: HTMLCanvasElement | null = null;
 	private ctx: CanvasRenderingContext2D | null = null;
+	private stackedAlpha: StackedAlphaCompositorLike | null = null;
+	private stackedAlphaFailed = false;
+	private currentClipUrl = "";
 	private keyer: NvaChromakeyGL | null = null;
 	private keyerFailed = false;
 	private currentKeyColor: string | undefined;
@@ -165,6 +178,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		const url = await this.config.resolveAssetUrl(path);
 		if (this.disposed || !this.mountedVideo)
 			throw new Error("NVA renderer stopped");
+		this.currentClipUrl = url;
+		if (isStackedAlphaClipUrl(url)) {
+			this.currentKeyColor = undefined;
+		}
 		const video = this.videoForClip(url);
 		if (this.video !== video) {
 			this.video.pause();
@@ -265,11 +282,22 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				video.videoWidth > 0 &&
 				video.videoHeight > 0
 			) {
+				const clipUrl =
+					video.dataset.naiaClipUrl ||
+					this.currentClipUrl ||
+					video.getAttribute("src") ||
+					video.src ||
+					"";
+				const isStacked = isStackedAlphaClipUrl(clipUrl);
+				const sourceWidth = video.videoWidth;
+				const sourceHeight = isStacked
+					? Math.max(1, Math.floor(video.videoHeight / 2))
+					: video.videoHeight;
 				const rect = containRect(
 					canvas.width,
 					canvas.height,
-					video.videoWidth,
-					video.videoHeight,
+					sourceWidth,
+					sourceHeight,
 				);
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
 				if (rect.dw > 0 && rect.dh > 0) {
@@ -285,7 +313,51 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					}
 
 					let drew = false;
-					if (keyColor && !this.keyerFailed) {
+					if (isStacked) {
+						if (!this.stackedAlphaFailed) {
+							try {
+								if (!this.stackedAlpha) {
+									this.stackedAlpha = this.config.createStackedAlpha
+										? this.config.createStackedAlpha()
+										: new NvaStackedAlphaGL();
+								}
+								if (!this.stackedAlpha.draw(video)) {
+									throw new Error("stacked-alpha context lost");
+								}
+								drawTarget.drawImage(
+									this.stackedAlpha.canvas,
+									rect.dx,
+									rect.dy,
+									rect.dw,
+									rect.dh,
+								);
+								drew = true;
+							} catch (error) {
+								this.stackedAlphaFailed = true;
+								this.stackedAlpha?.dispose();
+								this.stackedAlpha = null;
+								Logger.warn(
+									"PrebakedAvatarRenderer",
+									"stacked-alpha WebGL failed; drawing top half only",
+									{ error: String(error) },
+								);
+							}
+						}
+						if (!drew) {
+							drawTarget.drawImage(
+								video,
+								0,
+								0,
+								sourceWidth,
+								sourceHeight,
+								rect.dx,
+								rect.dy,
+								rect.dw,
+								rect.dh,
+							);
+							drew = true;
+						}
+					} else if (keyColor && !this.keyerFailed) {
 						try {
 							if (!this.keyer) this.keyer = new NvaChromakeyGL({ keyColor });
 							else this.keyer.setParams({ keyColor });
@@ -332,6 +404,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.running = false;
 		if (this.raf) cancelAnimationFrame(this.raf);
 		this.raf = 0;
+		this.stackedAlpha?.dispose();
+		this.stackedAlpha = null;
 		this.keyer?.dispose();
 		this.keyer = null;
 		this.offscreenCanvas = null;

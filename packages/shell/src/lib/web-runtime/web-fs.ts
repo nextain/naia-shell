@@ -3,6 +3,10 @@ export interface WebFs {
 	writeBytes(path: string, data: string | Uint8Array): Promise<void>; // 중간 폴더를 만든다
 	exists(path: string): Promise<boolean>; // 파일이나 폴더
 	ensureDir(path: string): Promise<void>;
+	/** 디렉토리 직속 항목 이름 목록. 디렉토리가 없으면 빈 배열. */
+	listEntries?(path: string): Promise<string[]>;
+	/** 파일 삭제. 이미 없으면 무시. */
+	removeFile?(path: string): Promise<void>;
 }
 
 export function validateAndSplitPath(path: string): string[] {
@@ -60,6 +64,9 @@ export interface WebFsDirectoryHandle {
 		options?: { create?: boolean },
 	): Promise<WebFsFileHandle>;
 	removeEntry(name: string): Promise<void>;
+	keys?(): AsyncIterable<string>;
+	entries?(): AsyncIterable<[string, unknown]>;
+	[Symbol.asyncIterator]?(): AsyncIterableIterator<[string, unknown]>;
 }
 
 export function createOpfsWebFs(
@@ -222,6 +229,72 @@ export function createOpfsWebFs(
 				});
 			}
 		},
+
+		async listEntries(path: string): Promise<string[]> {
+			const segs = validateAndSplitPath(path);
+			let currentDir: WebFsDirectoryHandle;
+			try {
+				currentDir = await getRoot();
+			} catch (e) {
+				if (isNotFoundError(e)) return [];
+				throw e;
+			}
+			for (let i = 0; i < segs.length; i++) {
+				try {
+					currentDir = await currentDir.getDirectoryHandle(segs[i], {
+						create: false,
+					});
+				} catch (e) {
+					if (isNotFoundError(e)) return [];
+					throw e;
+				}
+			}
+			const names: string[] = [];
+			if (typeof currentDir.keys === "function") {
+				for await (const name of currentDir.keys()) {
+					names.push(name);
+				}
+			} else if (typeof currentDir.entries === "function") {
+				for await (const [name] of currentDir.entries()) {
+					names.push(name);
+				}
+			} else if (typeof currentDir[Symbol.asyncIterator] === "function") {
+				for await (const [name] of currentDir as AsyncIterable<
+					[string, unknown]
+				>) {
+					names.push(name);
+				}
+			}
+			return names.sort();
+		},
+
+		async removeFile(path: string): Promise<void> {
+			const segs = validateAndSplitPath(path);
+			let currentDir: WebFsDirectoryHandle;
+			try {
+				currentDir = await getRoot();
+			} catch (e) {
+				if (isNotFoundError(e)) return;
+				throw e;
+			}
+			for (let i = 0; i < segs.length - 1; i++) {
+				try {
+					currentDir = await currentDir.getDirectoryHandle(segs[i], {
+						create: false,
+					});
+				} catch (e) {
+					if (isNotFoundError(e)) return;
+					throw e;
+				}
+			}
+			const fileName = segs[segs.length - 1];
+			try {
+				await currentDir.removeEntry(fileName);
+			} catch (e) {
+				if (isNotFoundError(e)) return;
+				throw e;
+			}
+		},
 	};
 }
 
@@ -261,6 +334,33 @@ export function createMemoryWebFs(): WebFs & {
 			for (let i = 1; i <= segs.length; i++) {
 				dirs.add(segs.slice(0, i).join("/"));
 			}
+		},
+
+		async listEntries(path: string): Promise<string[]> {
+			const segs = validateAndSplitPath(path);
+			const prefix = `${segs.join("/")}/`;
+			const entries = new Set<string>();
+			for (const filePath of files.keys()) {
+				if (filePath.startsWith(prefix)) {
+					const rest = filePath.slice(prefix.length);
+					const firstSeg = rest.split("/")[0];
+					if (firstSeg) entries.add(firstSeg);
+				}
+			}
+			for (const dirPath of dirs) {
+				if (dirPath.startsWith(prefix)) {
+					const rest = dirPath.slice(prefix.length);
+					const firstSeg = rest.split("/")[0];
+					if (firstSeg) entries.add(firstSeg);
+				}
+			}
+			return [...entries];
+		},
+
+		async removeFile(path: string): Promise<void> {
+			const segs = validateAndSplitPath(path);
+			const norm = segs.join("/");
+			files.delete(norm);
 		},
 
 		snapshot(): Record<string, string | "<dir>"> {

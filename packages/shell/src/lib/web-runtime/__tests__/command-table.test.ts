@@ -327,10 +327,7 @@ function extractFromSource(
 				const init = unwrap(varDecl.initializer);
 				if (ts.isElementAccessExpression(init)) {
 					const objExpr = unwrap(init.expression);
-					if (
-						ts.isIdentifier(objExpr) &&
-						topLevelObjects.has(objExpr.text)
-					) {
+					if (ts.isIdentifier(objExpr) && topLevelObjects.has(objExpr.text)) {
 						const topObj = topLevelObjects.get(objExpr.text)!;
 						if (isVarConst && topObj.isConst) {
 							for (const v of topObj.values) commands.add(v);
@@ -497,7 +494,7 @@ describe("command-table", () => {
 		).toEqual([]);
 	});
 
-	it("has exactly 11 keys classified as 'web'", () => {
+	it("has exactly 14 keys classified as 'web'", () => {
 		const webKeys = Object.entries(COMMAND_TABLE)
 			.filter(([_, value]) => value === "web")
 			.map(([key]) => key)
@@ -505,9 +502,12 @@ describe("command-table", () => {
 
 		expect(webKeys).toEqual([
 			"cancel_stream",
+			"delete_conversation",
+			"list_conversations",
 			"plugin:event|emit",
 			"plugin:event|listen",
 			"plugin:event|unlisten",
+			"read_conversation",
 			"read_naia_config",
 			"read_naia_ui_config",
 			"reload_agent_settings",
@@ -669,7 +669,7 @@ describe("command-table", () => {
 			expect(res.uninterpretable.length).toBe(1);
 		});
 
-		it("reports uninterpretable when top-level object is not const: let OPS = { a: \"s\" }", () => {
+		it('reports uninterpretable when top-level object is not const: let OPS = { a: "s" }', () => {
 			const res = runSnippet(
 				'import { invoke } from "@tauri-apps/api/core"; let OPS = { a: "s" }; function f(x: string) { const cmd = OPS[x]; invoke(cmd); }',
 			);

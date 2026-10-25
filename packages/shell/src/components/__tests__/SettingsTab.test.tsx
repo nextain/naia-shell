@@ -67,8 +67,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 			nativeSecrets.delete(args!.name!);
 			return secureStoreMock.delete(args?.name);
 		}
-		if (command === "device_list" || command === "device_list_requests") return [];
 		const result = await mockInvoke(...call);
+		if (command === "device_list" || command === "device_list_requests") {
+			return Array.isArray(result) ? result : [];
+		}
 		// Older fixtures use [] as their catch-all. Native config reads return
 		// JSON text; CLI discovery returns a snapshot, never a bare array.
 		if (Array.isArray(result) && result.length === 0) {
@@ -118,7 +120,22 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
 import { setLocale } from "../../lib/i18n";
+import { registerWebLlmProvider } from "../../lib/web-runtime/llm-provider";
+import { COMMAND_TABLE } from "../../lib/web-runtime/router";
+import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
+import {
+	getWebModelStatus,
+	resetWebModelStatusForTests,
+	setWebModelStatus,
+} from "../../lib/web-runtime/web-model-status";
+import {
+	WEB_LLM_FALLBACK_F32,
+	WEB_LLM_MODEL_ID,
+	WEB_LLM_MODEL_PREF_KEY,
+	formatWebLlmModelLabel,
+} from "../../lib/web-runtime/webllm-model";
 import { SettingsTab } from "../SettingsTab";
+import { WebModelStatusBar } from "../WebModelStatusBar";
 
 // SettingsTab order:
 // profile | brain | voice | avatar | persona | memory | knowledge | skills | connections | general
@@ -3963,3 +3980,340 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 	});
 });
 
+describe("web mode brain tab (r4)", () => {
+	beforeEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+		mockInvoke.mockResolvedValue([]);
+		resetWebModelStatusForTests();
+	});
+
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		resetWebModelStatusForTests();
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("hides DevicePairingSection and does not call device_list in web mode, while keeping both in desktop mode", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+				enableTools: true,
+			}),
+		);
+
+		setWebAssetsModeForTests(true);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		expect(screen.queryByTestId("device-section")).toBeNull();
+		expect(
+			screen.queryByText(/디바이스 페어링|Device Pairing/i),
+		).toBeNull();
+		expect(mockInvoke).not.toHaveBeenCalledWith("device_list");
+		expect(mockInvoke).not.toHaveBeenCalledWith("device_list_requests");
+
+		cleanup();
+		vi.clearAllMocks();
+
+		setWebAssetsModeForTests(false);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		expect(await screen.findByTestId("device-section")).toBeTruthy();
+		expect(
+			await screen.findByText(/디바이스 페어링|Device Pairing/i),
+		).toBeTruthy();
+		await waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith("device_list");
+			expect(mockInvoke).toHaveBeenCalledWith("device_list_requests");
+		});
+	});
+
+	it("derives both SettingsTab brain model label and WebModelStatusBar text from the single runtime getWebModelStatus().model source", async () => {
+		registerWebLlmProvider();
+		setWebAssetsModeForTests(true);
+		// Seed initial config with the default f16 model ID, simulating bootstrap
+		// before startWebModel auto-selects f32 on a GPU without shader-f16.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				llmRoles: {
+					main: {
+						provider: "webllm",
+						model: WEB_LLM_MODEL_ID,
+					},
+				},
+			}),
+		);
+		setWebModelStatus({
+			phase: "loading",
+			progress: 0.05,
+			model: WEB_LLM_FALLBACK_F32,
+		});
+
+		render(
+			<>
+				<WebModelStatusBar />
+				<SettingsTab />
+			</>,
+		);
+		gotoSettingsTab("brain");
+
+		const activeSourceModel = getWebModelStatus().model;
+		expect(activeSourceModel).toBe(WEB_LLM_FALLBACK_F32);
+		const expectedF32Label = formatWebLlmModelLabel(activeSourceModel);
+		expect(expectedF32Label).toBe("Qwen3 4B (4bit f32)");
+
+		const modelSelect = document.getElementById(
+			"model-select",
+		) as HTMLSelectElement;
+		expect(modelSelect).toBeTruthy();
+		expect(modelSelect.value).toBe(activeSourceModel);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF32Label);
+
+		const modelHint = modelSelect
+			.closest(".settings-field")
+			?.querySelector(".settings-hint");
+		expect(modelHint?.textContent).toBe(expectedF32Label);
+
+		const statusBar = screen.getByTestId("web-model-status");
+		expect(statusBar.getAttribute("data-model")).toBe(activeSourceModel);
+		expect(statusBar.textContent).toContain(expectedF32Label);
+		expect(statusBar.textContent).not.toContain("Qwen3 4B (4bit f16)");
+
+		// When the single runtime source changes to f16, both UI places update together.
+		act(() => {
+			setWebModelStatus({
+				phase: "ready",
+				progress: 1,
+				model: WEB_LLM_MODEL_ID,
+			});
+		});
+
+		const updatedSourceModel = getWebModelStatus().model;
+		expect(updatedSourceModel).toBe(WEB_LLM_MODEL_ID);
+		const expectedF16Label = formatWebLlmModelLabel(updatedSourceModel);
+		expect(expectedF16Label).toBe("Qwen3 4B (4bit f16)");
+
+		expect(modelSelect.value).toBe(updatedSourceModel);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF16Label);
+		expect(modelHint?.textContent).toBe(expectedF16Label);
+		expect(statusBar.getAttribute("data-model")).toBe(updatedSourceModel);
+		expect(statusBar.textContent).toContain(expectedF16Label);
+	});
+
+	it("switches the running engine on web model select (save choice + reload) instead of only rewriting runtime status", () => {
+		registerWebLlmProvider();
+		setWebAssetsModeForTests(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				llmRoles: { main: { provider: "webllm", model: WEB_LLM_MODEL_ID } },
+			}),
+		);
+		setWebModelStatus({ phase: "ready", progress: 1, model: WEB_LLM_FALLBACK_F32 });
+		const originalLocation = window.location;
+		const reload = vi.fn();
+		Object.defineProperty(window, "location", {
+			configurable: true,
+			value: { ...originalLocation, reload },
+		});
+		vi.useFakeTimers();
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			expect(modelSelect.value).toBe(WEB_LLM_FALLBACK_F32);
+
+			fireEvent.change(modelSelect, { target: { value: WEB_LLM_MODEL_ID } });
+
+			// 실행 중 엔진은 아직 f32 이므로 상태를 미리 f16 으로 바꾸지 않는다.
+			expect(getWebModelStatus().model).toBe(WEB_LLM_FALLBACK_F32);
+			expect(localStorage.getItem(WEB_LLM_MODEL_PREF_KEY)).toBe(WEB_LLM_MODEL_ID);
+			act(() => {
+				vi.runAllTimers();
+			});
+			expect(reload).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+			Object.defineProperty(window, "location", {
+				configurable: true,
+				value: originalLocation,
+			});
+		}
+	});
+});
+
+
+
+describe("web mode account login error (r6)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("shows web-login-error when starting login throws because crypto.getRandomValues is missing", () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		const origCrypto = globalThis.crypto;
+		Object.defineProperty(globalThis, "crypto", {
+			value: {},
+			configurable: true,
+		});
+		try {
+			fireEvent.click(screen.getByTestId("web-login-btn"));
+			expect(screen.getByTestId("web-login-error").textContent).toMatch(
+				/crypto\.getRandomValues/,
+			);
+		} finally {
+			Object.defineProperty(globalThis, "crypto", {
+				value: origCrypto,
+				configurable: true,
+			});
+		}
+	});
+});
+
+describe("web mode backgrounds and NVA (r7)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("renders Korean catalog labels in settings-bg-select in web mode and sets video media type when selecting a live MP4 background", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				backgroundVideo: "naia-dawn-city-uhd.webp",
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		const bgSelect = (await screen.findByTestId(
+			"settings-bg-select",
+		)) as HTMLSelectElement;
+		await waitFor(() => {
+			expect(bgSelect.options.length).toBe(9); // "없음" + 8 catalog entries
+		});
+		const labels = Array.from(bgSelect.options)
+			.slice(1)
+			.map((opt) => opt.textContent);
+		expect(labels).toEqual([
+			"새벽 도시",
+			"작전실 — 나이아·지나·민호",
+			"강변 해돋이",
+			"비 오는 작업실",
+			"별빛 호수",
+			"하늘 정원",
+			"별빛 호수 (움직이는 배경)",
+			"비 오는 작업실 (움직이는 배경)",
+		]);
+
+		fireEvent.change(bgSelect, {
+			target: { value: "/backgrounds/naia-starlight-lake-live.mp4" },
+		});
+
+		const { useAvatarStore } = await import("../../stores/avatar");
+		await waitFor(() => {
+			expect(useAvatarStore.getState().backgroundMediaType).toBe("video");
+			expect(useAvatarStore.getState().backgroundVideoUrl).toBe(
+				"/backgrounds/naia-starlight-lake-live.mp4",
+			);
+		});
+		const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(saved.backgroundVideo).toBe("naia-starlight-lake-live.mp4");
+	});
+
+	it("exposes naia-video-avatar option and 6 NVA bundles in web mode without calling desktop-only invoke commands", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "webllm",
+				model: WEB_LLM_MODEL_ID,
+				avatarProvider: "vrm",
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("avatar");
+
+		const providerSelect = document.getElementById(
+			"avatar-provider",
+		) as HTMLSelectElement;
+		expect(providerSelect).toBeTruthy();
+		const optionValues = Array.from(providerSelect.options).map((o) => o.value);
+		expect(optionValues).toEqual(["vrm", "naia-video-avatar"]);
+
+		mockInvoke.mockClear();
+		fireEvent.change(providerSelect, {
+			target: { value: "naia-video-avatar" },
+		});
+
+		for (const bundle of [
+			"naia",
+			"naia-anime",
+			"jina",
+			"jina-anime",
+			"minho",
+			"minho-anime",
+		]) {
+			expect(await screen.findByRole("button", { name: bundle })).toBeTruthy();
+		}
+
+		fireEvent.click(screen.getByRole("button", { name: "jina-anime" }));
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(saved.avatarProvider).toBe("naia-video-avatar");
+		expect(saved.nvaModel).toBe("jina-anime");
+
+		await waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
+		});
+
+		const invokedCommands = mockInvoke.mock.calls.map(([cmd]) => String(cmd));
+		const disallowedCommands = invokedCommands.filter(
+			(c) => COMMAND_TABLE[c] !== "web" && COMMAND_TABLE[c] !== "stub",
+		);
+		expect(disallowedCommands).toEqual([]);
+		expect(
+			invokedCommands.every(
+				(c) => COMMAND_TABLE[c] === "web" || COMMAND_TABLE[c] === "stub",
+			),
+			`Disallowed desktop-only commands invoked in web mode: ${disallowedCommands.join(", ")}`,
+		).toBe(true);
+		expect(invokedCommands).not.toContain("list_naia_assets");
+		expect(invokedCommands).not.toContain("detect_gpu_vram");
+		expect(invokedCommands).not.toContain("write_slots_manifest");
+		expect(invokedCommands).not.toContain("read_local_binary");
+	});
+});

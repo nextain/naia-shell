@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "Eingabe in Ihr Terminal erlauben",
 	"settings.thinkingLevel": "Denkstufe",
 	"settings.thinkingLevelOff": "Aus",
+	"settings.thinkingLevelOn": "Ein",
 	"settings.thinkingLevelLow": "Niedrig",
 	"settings.thinkingLevelHigh": "Hoch",
 	"settings.thinkingLevelHint": "Das Aktivieren des Denkens verlangsamt Antworten und erhöht die Token-Kosten.",

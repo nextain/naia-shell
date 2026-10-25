@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "ターミナルへの直接入力を許可",
 	"settings.thinkingLevel": "思考の強さ",
 	"settings.thinkingLevelOff": "オフ",
+	"settings.thinkingLevelOn": "オン",
 	"settings.thinkingLevelLow": "低",
 	"settings.thinkingLevelHigh": "高",
 	"settings.thinkingLevelHint": "思考を有効にすると回答が遅くなり、トークン費用が増加します。",

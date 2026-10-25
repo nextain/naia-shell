@@ -7,7 +7,11 @@ import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri
 import { probeNvaCapabilities } from "./lib/avatar/nva-capability";
 import { initializeI18n } from "./lib/i18n";
 import { Logger } from "./lib/logger";
+import { syncWebModeRootAttribute } from "./lib/web-runtime/web-assets";
 import "./styles/global.css";
+import "./styles/web-mode.css";
+
+syncWebModeRootAttribute();
 
 if (
 	import.meta.env.DEV &&

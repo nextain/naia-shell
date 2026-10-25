@@ -450,5 +450,126 @@ describe("web-fs", () => {
 			expect(closeCalls).toBe(1);
 			expect(await fs.exists("new-file-close-fail.txt")).toBe(false);
 		});
+
+		it("implements listEntries and removeFile through OpfsWebFs directory handles", async () => {
+			interface InMemoryDirNode {
+				dirs: Map<string, InMemoryDirNode>;
+				files: Map<string, string>;
+			}
+			const makeDirNode = (): InMemoryDirNode => ({
+				dirs: new Map(),
+				files: new Map(),
+			});
+			const rootNode = makeDirNode();
+
+			const toHandle = (
+				node: InMemoryDirNode,
+				dirName: string,
+			): MockDirHandle => ({
+				kind: "directory",
+				name: dirName,
+				async getDirectoryHandle(
+					subName: string,
+					options?: { create?: boolean },
+				) {
+					let child = node.dirs.get(subName);
+					if (!child) {
+						if (options?.create) {
+							child = makeDirNode();
+							node.dirs.set(subName, child);
+						} else {
+							throw new DOMException("Not found", "NotFoundError");
+						}
+					}
+					return toHandle(child, subName);
+				},
+				async getFileHandle(fileName: string, options?: { create?: boolean }) {
+					if (!node.files.has(fileName)) {
+						if (options?.create) {
+							node.files.set(fileName, "");
+						} else {
+							throw new DOMException("Not found", "NotFoundError");
+						}
+					}
+					return {
+						kind: "file",
+						name: fileName,
+						async getFile() {
+							const textVal = node.files.get(fileName);
+							if (textVal === undefined) {
+								throw new DOMException("Not found", "NotFoundError");
+							}
+							return {
+								async text() {
+									return textVal;
+								},
+							};
+						},
+						async createWritable() {
+							return {
+								async write(data: unknown) {
+									if (data instanceof Blob) {
+										node.files.set(fileName, await data.text());
+									} else {
+										node.files.set(fileName, String(data));
+									}
+								},
+								async close() {},
+							};
+						},
+					};
+				},
+				async removeEntry(entryName: string) {
+					if (node.files.has(entryName)) {
+						node.files.delete(entryName);
+						return;
+					}
+					if (node.dirs.has(entryName)) {
+						node.dirs.delete(entryName);
+						return;
+					}
+					throw new DOMException("Not found", "NotFoundError");
+				},
+				async *keys() {
+					for (const k of node.dirs.keys()) yield k;
+					for (const k of node.files.keys()) yield k;
+				},
+			});
+
+			const opfs = createOpfsWebFs(() =>
+				Promise.resolve(toHandle(rootNode, "root")),
+			);
+
+			// Missing directory returns empty array
+			expect(await opfs.listEntries?.("naia-adk/conversations")).toEqual([]);
+
+			// Write two conversation files via OpfsWebFs and list them
+			await opfs.writeBytes(
+				"naia-adk/conversations/chat-b.jsonl",
+				'{"role":"user","content":"b"}\n',
+			);
+			await opfs.writeBytes(
+				"naia-adk/conversations/chat-a.jsonl",
+				'{"role":"user","content":"a"}\n',
+			);
+			expect(await opfs.listEntries?.("naia-adk/conversations")).toEqual([
+				"chat-a.jsonl",
+				"chat-b.jsonl",
+			]);
+
+			// Remove one file and verify listEntries + exists
+			await opfs.removeFile?.("naia-adk/conversations/chat-a.jsonl");
+			expect(await opfs.exists("naia-adk/conversations/chat-a.jsonl")).toBe(
+				false,
+			);
+			expect(await opfs.listEntries?.("naia-adk/conversations")).toEqual([
+				"chat-b.jsonl",
+			]);
+
+			// Removing an already-missing file does not throw
+			await expect(
+				opfs.removeFile?.("naia-adk/conversations/chat-a.jsonl"),
+			).resolves.toBeUndefined();
+		});
 	});
 });

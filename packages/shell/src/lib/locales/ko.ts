@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "터미널에 직접 입력 허용",
 	"settings.thinkingLevel": "생각 세기",
 	"settings.thinkingLevelOff": "끔",
+	"settings.thinkingLevelOn": "켬",
 	"settings.thinkingLevelLow": "낮음",
 	"settings.thinkingLevelHigh": "높음",
 	"settings.thinkingLevelHint": "생각을 켜면 답변 생성이 느려지고 토큰 비용이 늘어납니다.",

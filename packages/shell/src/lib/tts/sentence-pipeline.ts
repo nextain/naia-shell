@@ -22,6 +22,7 @@ import type { TtsProviderId } from "../config";
  * SentenceTtsPipelineDeps and calls the public interface only.
  */
 import { Logger } from "../logger";
+import { isWebMode } from "../web-runtime/web-assets";
 import { PcmStreamSource } from "../voice/audio-queue";
 import { wavDurationSeconds } from "../voice/audio-queue";
 import { estimateTtsCost } from "./cost";
@@ -259,8 +260,29 @@ export function createSentenceTtsPipeline(
 				const isCurrentBrowserTurn = () =>
 					browserGeneration === deps.getBrowserTurnGeneration();
 				const utter = new SpeechSynthesisUtterance(clean);
-				utter.lang =
-					voiceCfg?.voice || document.documentElement.lang || "ko-KR";
+				if (isWebMode()) {
+					const requestedVoice = voiceCfg?.voice?.trim();
+					const voices =
+						typeof window.speechSynthesis.getVoices === "function"
+							? window.speechSynthesis.getVoices()
+							: [];
+					const matchedVoice = requestedVoice
+						? voices.find(
+								(v) =>
+									v.voiceURI === requestedVoice || v.name === requestedVoice,
+							)
+						: undefined;
+					if (matchedVoice) {
+						utter.voice = matchedVoice;
+						utter.lang =
+							matchedVoice.lang || document.documentElement.lang || "ko-KR";
+					} else {
+						utter.lang =
+							requestedVoice || document.documentElement.lang || "ko-KR";
+					}
+				} else {
+					utter.lang = voiceCfg?.voice || document.documentElement.lang || "ko-KR";
+				}
 				utter.onstart = () => {
 					if (!isCurrentBrowserTurn()) return;
 					revealText();

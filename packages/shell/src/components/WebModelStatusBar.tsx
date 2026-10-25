@@ -8,8 +8,8 @@ import {
 } from "../lib/web-runtime/web-model-status";
 import {
 	WEB_LLM_MODEL_ID,
-	WEB_LLM_MODEL_LABELS,
 	WEB_LLM_MODEL_PREF_KEY,
+	formatWebLlmModelLabel,
 	type WebLlmModelId,
 } from "../lib/web-runtime/webllm-model";
 
@@ -48,7 +48,7 @@ export function WebModelStatusBar(props: {
 		window.location.reload();
 	};
 
-	const modelLabel = WEB_LLM_MODEL_LABELS[status.model] ?? status.model;
+	const modelLabel = formatWebLlmModelLabel(status.model);
 
 	const formatAdapterLine = () => {
 		if (!status.adapter) return null;
@@ -101,7 +101,7 @@ export function WebModelStatusBar(props: {
 							onClick={() => handleSwitchModel(fallbackModel)}
 						>
 							{t("webModel.useFallback", {
-								model: WEB_LLM_MODEL_LABELS[fallbackModel] ?? fallbackModel,
+								model: formatWebLlmModelLabel(fallbackModel),
 							})}
 						</button>
 					)}
@@ -163,7 +163,7 @@ export function WebModelStatusBar(props: {
 								onClick={() => handleSwitchModel(WEB_LLM_MODEL_ID)}
 							>
 								{t("webModel.backToDefault", {
-									model: WEB_LLM_MODEL_LABELS[WEB_LLM_MODEL_ID],
+									model: formatWebLlmModelLabel(WEB_LLM_MODEL_ID),
 								})}
 							</button>
 						</div>

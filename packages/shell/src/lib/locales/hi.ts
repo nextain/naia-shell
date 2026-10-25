@@ -340,6 +340,7 @@ export default {
 	"settings.environmentTerminalInput": "आपके टर्मिनल में टाइप करने की अनुमति",
 	"settings.thinkingLevel": "थिंकिंग स्तर",
 	"settings.thinkingLevelOff": "बंद",
+	"settings.thinkingLevelOn": "चालू",
 	"settings.thinkingLevelLow": "कम",
 	"settings.thinkingLevelHigh": "उच्च",
 	"settings.thinkingLevelHint": "थिंकिंग सक्षम करने से प्रतिक्रिया धीमी होती है और टोकन लागत बढ़ती है।",

@@ -1,0 +1,14 @@
+/* 웹판 전용 레이아웃 덮어쓰기 — 상단 TitleBar(32px) 제거에 따른 위치 보정 */
+[data-naia-web="true"] .naia-overlay,
+[data-naia-web="true"] .avatar-canvas-layer,
+[data-naia-web="true"] .app-layout {
+	top: 0;
+}
+
+[data-naia-web="true"] .naia-work-rail {
+	top: 40px;
+}
+
+[data-naia-web="true"] .ws-rail-toggle {
+	top: 8px;
+}
