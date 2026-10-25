@@ -226,6 +226,10 @@ const ACKNOWLEDGED = new Map([
 		"packages/shell/src/components/AppInstallDialog.tsx:app_install",
 		"이 대화상자 자체가 확인이다. 사용자가 주소를 적고 설치를 눌러야 이 자리에 온다. 확인 화면의 이름이 ConfirmDialog 가 아니라 AppInstallDialog 라서 표시로 잡히지 않는다",
 	],
+	[
+		"packages/shell/src/apps/projects/project-catalog.ts:project_class_reset",
+		"수업 초기화. ProjectsApp 의 \"수업 초기화\" 단추는 setShowResetDialog(true) 로 role=dialog 확인 창만 띄우고, 확인 창의 \"초기화\" 단추를 눌러야 resetProjectClass 가 돈다. Rust 쪽은 되돌리기 전에 학생 작업을 class-backups/<이름>-<시각>/files/ 로 모두 백업하고 하나라도 실패하면 체크아웃을 건드리지 않는다. 확인 상태와 실행 함수가 서로 다른 함수에 있고 감싼 함수를 거쳐 이 검사기가 못 따라간다",
+	],
 ]);
 
 function tracked(dir, extension) {

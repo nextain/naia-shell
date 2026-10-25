@@ -157,6 +157,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-PROJECT-APP-SELECT-OPEN-756-S1",
   "UC-PROJECT-APP-SINGLE-OPEN-756-S2",
   "UC-PROJECT-APP-LOCAL-756-S3",
+  // 프로젝트 앱 문서·작업 칸 정리와 수업 프로젝트 문서 칸·수업 초기화. 앱 표면 기능이다.
+  "UC-PROJECT-APP-PANELS-CLASS-20261025",
   // Studio에서 쉘로 NVA 아바타 적용 딥링크(#105). OS 링크 전달·다운로드 검사·아바타 적용이다.
   "UC-SHELL-STUDIO-NVA-APPLY-105",
 ];
