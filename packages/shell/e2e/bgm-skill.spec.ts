@@ -383,17 +383,23 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 		});
 		expect(JSON.parse(toolResult)).not.toHaveProperty("title");
 
-		const toolResults = await page.evaluate(() => {
-			const out =
-				(
-					window as unknown as {
-						__E2E_OUTBOUND__?: Array<Record<string, unknown>>;
-					}
-				).__E2E_OUTBOUND__ ?? [];
-			return out
-				.filter((message) => message.type === "app_tool_result")
-				.map((message) => JSON.parse(String(message.result)));
-		});
+		const readToolResults = () =>
+			page.evaluate(() => {
+				const out =
+					(
+						window as unknown as {
+							__E2E_OUTBOUND__?: Array<Record<string, unknown>>;
+						}
+					).__E2E_OUTBOUND__ ?? [];
+				return out
+					.filter((message) => message.type === "app_tool_result")
+					.map((message) => JSON.parse(String(message.result)));
+			});
+		// The play and queue tool calls are answered one after another; the
+		// first result can be observed before the second is sent, so wait for
+		// the pair instead of sampling once.
+		await expect.poll(readToolResults, { timeout: 10_000 }).toHaveLength(2);
+		const toolResults = await readToolResults();
 		expect(toolResults).toHaveLength(2);
 		expect(toolResults[1]).toMatchObject({
 			queued: { position: 1, selected: { videoId: "e2evid001" } },
