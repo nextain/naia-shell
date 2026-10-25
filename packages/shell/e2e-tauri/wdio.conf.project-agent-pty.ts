@@ -48,8 +48,10 @@ function seedFakeClaude(): void {
 }
 
 export const config = {
-	transformRequest,
 	...codexConfig,
+	// After the spread so the shared Node 26 fix (node26-request.ts) is the
+	// one in effect, not a copy inherited from the base config.
+	transformRequest,
 	specs: ["./specs/project-agent-pty-input.spec.ts"],
 	async onPrepare() {
 		if (!existsSync(TAURI_BINARY)) {

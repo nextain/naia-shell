@@ -460,7 +460,7 @@ test.describe("Resource Viewer — Editor (#116)", () => {
 
 test.describe("Chat File Deeplinks (#116)", () => {
 	test.beforeEach(async ({ page }) => {
-		// 설치본은 새 core 로 빌드된다(scripts/__tests__/platform-matrix.test.ts
+		// 설치본은 새 core 로 빌드된다(packages/shell/scripts/__tests__/platform-matrix.test.ts
 		// "builds installers through the new core by default"). 옛 경로는 localStorage 의
 		// apiKey 를 게이트로 쓰는데, 09bbe62b(persist credentials in selected ADK) 이후 비밀값은
 		// ADK 바인딩 뒤 localStorage 에서 지워진다. 그래서 출시 경로인 새 core 로 대화를 보낸다.

@@ -18,8 +18,10 @@ const baseReporters = Array.isArray(baseConfig.reporters)
 	: ["spec"];
 
 export const config = {
-	transformRequest,
 	...base,
+	// After the spread so the shared Node 26 fix (node26-request.ts) is the
+	// one in effect, not a copy inherited from the base config.
+	transformRequest,
 	// WDIO accepts a nested group as one worker's explicit spec list. Do not
 	// flatten it: the one session is part of the batch contract.
 	specs: plan.specs,
