@@ -13,6 +13,7 @@ const runtime = vi.hoisted(() => ({
 		output: "",
 		error: { code: "agent_unavailable" },
 		inputError: { code: "input_failed" },
+		naiaLoginRequired: false,
 		exitCode: null,
 		ptyId: null,
 	},
@@ -86,5 +87,30 @@ describe("ProjectAgentPanel error notices", () => {
 			),
 		).toBeTruthy();
 		expect(screen.getAllByRole("alert")).toHaveLength(2);
+	});
+
+	it("announces Naia login recovery while OpenCode remains running", async () => {
+		Object.assign(runtime.state, {
+			selectedAppId: "opencode",
+			status: "running",
+			error: null,
+			inputError: null,
+			naiaLoginRequired: true,
+		});
+
+		render(
+			<ProjectAgentPanel
+				projectPath="/fixture/project"
+				adapterRoot="/fixture/adapter"
+			/>,
+		);
+
+		const loginMessage = screen.getByText("Naia login required.");
+		expect(loginMessage.closest('[role="status"]')).toHaveTextContent(
+			"Sign in to Naia in Settings, then restart OpenCode to use your account.",
+		);
+		expect(
+			screen.getByText("OpenCode is running for this project."),
+		).toBeTruthy();
 	});
 });

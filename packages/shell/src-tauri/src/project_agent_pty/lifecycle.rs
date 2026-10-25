@@ -330,6 +330,8 @@ mod tests {
                 termination_requested: false,
                 output_attached: false,
                 output_backlog: String::new(),
+                naia_login_required: false,
+                credential_fingerprint: None,
             },
         );
         RunningProcessFixture {

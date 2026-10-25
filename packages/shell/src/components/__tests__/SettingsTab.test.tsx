@@ -37,6 +37,10 @@ function setHostMachine(next: typeof ONE_CARD_WINDOWS) {
 const loggedOutMocks = vi.hoisted(() => ({
 	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
 }));
+const projectAgentMocks = vi.hoisted(() => ({
+	stopOpenCodeProjectAgentSessions: vi.fn(async () => {}),
+}));
+vi.mock("../../apps/projects/project-agent-runtime", () => projectAgentMocks);
 vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
 	...(await importOriginal<
 		typeof import("../../lib/llm/logged-out-default")
@@ -229,6 +233,9 @@ describe("SettingsTab", () => {
 				model: "qwen3:8b",
 			});
 			await logout();
+			expect(
+				projectAgentMocks.stopOpenCodeProjectAgentSessions,
+			).toHaveBeenCalledTimes(1);
 			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
 			expect(saved().provider).toBe("ollama");
 			expect(saved().model).toBe("qwen3:8b");
@@ -245,6 +252,9 @@ describe("SettingsTab", () => {
 				model: "",
 			});
 			await logout();
+			expect(
+				projectAgentMocks.stopOpenCodeProjectAgentSessions,
+			).toHaveBeenCalledTimes(1);
 			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
 			expect(saved().provider).toBe("");
 			expect(JSON.stringify(saved())).not.toContain('"gemini');
@@ -1209,6 +1219,9 @@ describe("SettingsTab", () => {
 				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
 			});
 		});
+		expect(
+			projectAgentMocks.stopOpenCodeProjectAgentSessions,
+		).toHaveBeenCalledTimes(1);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");
@@ -1274,6 +1287,9 @@ describe("SettingsTab", () => {
 				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
 			});
 		});
+		expect(
+			projectAgentMocks.stopOpenCodeProjectAgentSessions,
+		).toHaveBeenCalledTimes(1);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");

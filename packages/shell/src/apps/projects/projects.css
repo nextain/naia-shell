@@ -339,6 +339,7 @@
 
 .projects-app__terminal {
 	width: 100%;
+	min-width: 0;
 	height: min(52vh, 520px);
 	min-height: 220px;
 	padding: 8px;

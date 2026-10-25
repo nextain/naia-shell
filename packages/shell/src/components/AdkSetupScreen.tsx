@@ -203,6 +203,11 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 								naiaKey: event.payload.naiaKey,
 							}),
 						});
+						window.dispatchEvent(
+							new CustomEvent("naia_auth_ready", {
+								detail: { source: "auth-complete" },
+							}),
+						);
 						onComplete();
 					} catch (error) {
 						setError(String(error));

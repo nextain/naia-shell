@@ -10,6 +10,7 @@ import {
 	selectProjectAgent,
 	startProjectAgent,
 	stopProjectAgent,
+	stopOpenCodeProjectAgentSessions,
 	subscribeProjectAgent,
 	writeProjectAgent,
 } from "../project-agent-runtime";
@@ -18,7 +19,26 @@ const eventHandlers = vi.hoisted(
 	() => new Map<string, (event: { payload: unknown }) => void>(),
 );
 
+const opencodeConfigMocks = vi.hoisted(() => ({
+	loadConfig: vi.fn(() => ({})),
+	effectiveMainRole: vi.fn(() => ({
+		provider: "nextain",
+		model: "solar-pro4",
+	})),
+	selectOpenCodeNaiaModel: vi.fn(() => "solar-pro4"),
+}));
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
+vi.mock("../../../lib/config", () => ({
+	LAB_GATEWAY_URL: "https://api.nextain.io",
+	loadConfig: opencodeConfigMocks.loadConfig,
+}));
+vi.mock("../../../lib/slots/model", () => ({
+	effectiveMainRole: opencodeConfigMocks.effectiveMainRole,
+}));
+vi.mock("../../../lib/llm/registry", () => ({
+	selectOpenCodeNaiaModel: opencodeConfigMocks.selectOpenCodeNaiaModel,
+}));
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: vi.fn(
 		async (name: string, handler: (event: { payload: unknown }) => void) => {
@@ -37,6 +57,12 @@ describe("project agent runtime ownership", () => {
 		vi.clearAllMocks();
 		eventHandlers.clear();
 		resetProjectAgentRuntimeForTests();
+		opencodeConfigMocks.loadConfig.mockReturnValue({});
+		opencodeConfigMocks.effectiveMainRole.mockReturnValue({
+			provider: "nextain",
+			model: "solar-pro4",
+		});
+		opencodeConfigMocks.selectOpenCodeNaiaModel.mockReturnValue("solar-pro4");
 		vi.mocked(invoke).mockImplementation(async (command, args) => {
 			if (command === "project_agent_availability") {
 				return PROJECT_AGENT_APPS.map((appId) => ({ appId, available: true }));
@@ -54,6 +80,134 @@ describe("project agent runtime ownership", () => {
 				};
 			}
 			return null;
+		});
+	});
+
+	it("passes cached Naia selection context only to OpenCode and stops only OpenCode on credential changes", async () => {
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "opencode");
+		selectProjectAgent(projectB, "codex");
+		await startProjectAgent(projectA, adapterRoot, "opencode");
+		await startProjectAgent(projectB, adapterRoot, "codex");
+
+		expect(invoke).toHaveBeenCalledWith("project_agent_pty_start", {
+			appId: "opencode",
+			projectPath: projectA,
+			adapterRoot,
+			naiaGatewayUrl: "https://api.nextain.io",
+			naiaModelProvider: "nextain",
+			naiaModel: "solar-pro4",
+		});
+		expect(invoke).toHaveBeenCalledWith("project_agent_pty_start", {
+			appId: "codex",
+			projectPath: projectB,
+			adapterRoot,
+		});
+
+		await stopOpenCodeProjectAgentSessions();
+		expect(invoke).toHaveBeenCalledWith("project_agent_pty_stop", {
+			appId: "opencode",
+			projectPath: projectA,
+			adapterRoot,
+		});
+		expect(
+			vi
+				.mocked(invoke)
+				.mock.calls.filter(
+					([command, args]) =>
+						command === "project_agent_pty_stop" &&
+						(args as { appId?: string }).appId === "codex",
+				),
+		).toHaveLength(0);
+	});
+
+	it("waits for an OpenCode start in flight before a Naia credential change completes", async () => {
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "opencode");
+		let releaseStart: ((value: unknown) => void) | undefined;
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (command === "project_agent_pty_start") {
+				return new Promise((resolve) => {
+					releaseStart = resolve;
+				});
+			}
+			if (command === "project_agent_availability") {
+				return PROJECT_AGENT_APPS.map((appId) => ({ appId, available: true }));
+			}
+			return null;
+		});
+
+		const starting = startProjectAgent(projectA, adapterRoot, "opencode");
+		for (let attempt = 0; attempt < 10 && !releaseStart; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		if (!releaseStart) throw new Error("OpenCode start request did not begin");
+		let credentialChangeFinished = false;
+		const changingCredential = stopOpenCodeProjectAgentSessions().then(() => {
+			credentialChangeFinished = true;
+		});
+		await Promise.resolve();
+		expect(credentialChangeFinished).toBe(false);
+
+		releaseStart({
+			appId: "opencode",
+			projectPath: projectA,
+			ptyId: "pty-alpha",
+			running: true,
+			naiaLoginRequired: false,
+		});
+		await Promise.all([starting, changingCredential]);
+		expect(credentialChangeFinished).toBe(true);
+		expect(invoke).toHaveBeenCalledWith("project_agent_pty_stop", {
+			appId: "opencode",
+			projectPath: projectA,
+			adapterRoot,
+		});
+	});
+
+	it("waits for an OpenCode attach in flight before a Naia credential change completes", async () => {
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "opencode");
+		await startProjectAgent(projectA, adapterRoot, "opencode");
+		const ptyId = getProjectAgentState(projectA).ptyId;
+		if (!ptyId) throw new Error("OpenCode start did not return a PTY identity");
+
+		let releaseAttach: ((value: unknown) => void) | undefined;
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_attach") {
+				return new Promise((resolve) => {
+					releaseAttach = resolve;
+				});
+			}
+			return null;
+		});
+
+		const attaching = attachProjectAgent(projectA, adapterRoot, "opencode");
+		for (let attempt = 0; attempt < 10 && !releaseAttach; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		if (!releaseAttach)
+			throw new Error("OpenCode attach request did not begin");
+		let credentialChangeFinished = false;
+		const changingCredential = stopOpenCodeProjectAgentSessions().then(() => {
+			credentialChangeFinished = true;
+		});
+		await Promise.resolve();
+		expect(credentialChangeFinished).toBe(false);
+
+		releaseAttach({
+			appId: "opencode",
+			projectPath: projectA,
+			ptyId,
+			running: true,
+			naiaLoginRequired: false,
+		});
+		await Promise.all([attaching, changingCredential]);
+		expect(credentialChangeFinished).toBe(true);
+		expect(invoke).toHaveBeenCalledWith("project_agent_pty_stop", {
+			appId: "opencode",
+			projectPath: projectA,
+			adapterRoot,
 		});
 	});
 

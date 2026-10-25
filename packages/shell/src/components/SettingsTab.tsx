@@ -13,6 +13,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from "react";
+import { stopOpenCodeProjectAgentSessions } from "../apps/projects/project-agent-runtime";
 import { resetAdkPathWithRelaunch } from "../lib/adk-path-reset";
 import {
 	agentKeyExists,
@@ -2830,6 +2831,7 @@ export function SettingsTab() {
 				setLabWaiting(true);
 				setError("");
 				try {
+					await stopOpenCodeProjectAgentSessions();
 					const nextConfig = buildNaiaLoginConfig(
 						loadConfig(),
 						nextNaiaKey,
@@ -4641,6 +4643,22 @@ export function SettingsTab() {
 														const sourceAdkPath = getAdkPath();
 														const sourceSecureStorePath = getSecureStorePath();
 														if (!sourceAdkPath) return;
+														try {
+															await stopOpenCodeProjectAgentSessions();
+														} catch (error) {
+															Logger.warn(
+																"Settings",
+																"Naia logout stopped before changing credentials",
+																{
+																	reason:
+																		error instanceof Error
+																			? error.message
+																			: "stop_failed",
+																},
+															);
+															setError(t("settings.saveFailed"));
+															return;
+														}
 														try {
 															clearLocalVoiceAccessToken();
 															await invoke("stop_voxcpm2");

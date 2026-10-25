@@ -1,4 +1,6 @@
 use portable_pty::{NativePtySystem, PtySize, PtySystem};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -14,6 +16,212 @@ use super::types::{
     ProjectAgentExitEvent, ProjectAgentHandle, ProjectAgentOutputEvent, ProjectAgentRegistry,
     ProjectAgentSession, CODING_APPS, PROJECT_AGENT_SESSION_COUNTER,
 };
+
+const OPENCODE_NAIA_FALLBACK_MODEL: &str = "deepseek-v4-flash";
+const OPENCODE_NAIA_KEY_ENV: &str = "NAIA_GATEWAY_KEY";
+const OPENCODE_CONFIG_ENV: &str = "OPENCODE_CONFIG_CONTENT";
+
+#[derive(Clone, Copy)]
+struct OpenCodeNaiaModelLimit {
+    id: &'static str,
+    name: &'static str,
+    context: u64,
+    output: u64,
+}
+
+// The gateway catalog currently exposes capabilities and status, not token
+// limits. DeepSeek publishes its limit; the other Naia aliases use conservative
+// per-model defaults until the catalog gains authoritative limit fields.
+const OPENCODE_NAIA_MODEL_LIMITS: &[OpenCodeNaiaModelLimit] = &[
+    OpenCodeNaiaModelLimit {
+        id: "deepseek-v4-flash",
+        name: "DeepSeek V4 Flash",
+        context: 1_048_576,
+        output: 32_768,
+    },
+    OpenCodeNaiaModelLimit {
+        id: "solar-pro4",
+        name: "Solar Pro 4",
+        context: 131_072,
+        output: 8_192,
+    },
+    OpenCodeNaiaModelLimit {
+        id: "solar-mini",
+        name: "Solar Mini",
+        context: 131_072,
+        output: 8_192,
+    },
+    OpenCodeNaiaModelLimit {
+        id: "gpt-5.6-luna",
+        name: "Naia Luna",
+        context: 131_072,
+        output: 8_192,
+    },
+];
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct OpenCodeNaiaEnvironment {
+    vars: Vec<(String, String)>,
+    naia_login_required: bool,
+    credential_fingerprint: Option<u64>,
+}
+
+fn credential_fingerprint(credential: Option<&str>) -> Option<u64> {
+    credential
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| {
+            let mut hasher = DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        })
+}
+
+fn open_code_credential_changed(spawned: Option<u64>, current: Option<u64>) -> bool {
+    spawned != current
+}
+
+fn opencode_naia_base_url(gateway_url: &str) -> Option<String> {
+    let mut endpoint = crate::naia_balance_endpoint(gateway_url).ok()?;
+    if !endpoint.username().is_empty() || endpoint.password().is_some() {
+        return None;
+    }
+    endpoint.set_path("/v1");
+    endpoint.set_query(None);
+    endpoint.set_fragment(None);
+    Some(endpoint.to_string().trim_end_matches('/').to_owned())
+}
+
+fn opencode_naia_selected_model(provider: &str, model: &str) -> &'static str {
+    if matches!(provider, "nextain" | "naia")
+        && OPENCODE_NAIA_MODEL_LIMITS
+            .iter()
+            .any(|candidate| candidate.id == model)
+    {
+        return OPENCODE_NAIA_MODEL_LIMITS
+            .iter()
+            .find(|candidate| candidate.id == model)
+            .map(|candidate| candidate.id)
+            .unwrap_or(OPENCODE_NAIA_FALLBACK_MODEL);
+    }
+    OPENCODE_NAIA_FALLBACK_MODEL
+}
+
+fn build_opencode_naia_environment(
+    gateway_url: &str,
+    model_provider: &str,
+    model: &str,
+    credential: Option<&str>,
+) -> OpenCodeNaiaEnvironment {
+    crate::log_verbose(&format!(
+        "[project_agent_pty::build_opencode_naia_environment] enter credential_present={} gateway_supplied={}",
+        credential.is_some_and(|value| !value.trim().is_empty()),
+        !gateway_url.trim().is_empty()
+    ));
+    let Some(key) = credential.filter(|value| !value.trim().is_empty()) else {
+        crate::log_verbose(
+            "[project_agent_pty::build_opencode_naia_environment] branch=credential_missing",
+        );
+        return OpenCodeNaiaEnvironment {
+            naia_login_required: true,
+            ..OpenCodeNaiaEnvironment::default()
+        };
+    };
+    let Some(base_url) = opencode_naia_base_url(gateway_url) else {
+        crate::log_verbose(
+            "[project_agent_pty::build_opencode_naia_environment] branch=gateway_rejected",
+        );
+        return OpenCodeNaiaEnvironment::default();
+    };
+
+    let selected_model = opencode_naia_selected_model(model_provider, model);
+    let models = OPENCODE_NAIA_MODEL_LIMITS
+        .iter()
+        .map(|limit| {
+            (
+                limit.id.to_owned(),
+                serde_json::json!({
+                    "name": limit.name,
+                    "limit": {
+                        "context": limit.context,
+                        "output": limit.output,
+                    }
+                }),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    let config = serde_json::json!({
+        "$schema": "https://opencode.ai/config.json",
+        "provider": {
+            "naia": {
+                "name": "Naia",
+                "npm": "@ai-sdk/openai-compatible",
+                "options": {
+                    "baseURL": base_url,
+                    "apiKey": "{env:NAIA_GATEWAY_KEY}",
+                },
+                "models": models,
+            }
+        },
+        "model": format!("naia/{selected_model}"),
+        "small_model": format!("naia/{OPENCODE_NAIA_FALLBACK_MODEL}"),
+    });
+    let config_content = match serde_json::to_string(&config) {
+        Ok(value) => value,
+        Err(_) => {
+            crate::log_verbose(
+                "[project_agent_pty::build_opencode_naia_environment] branch=config_serialization_failed",
+            );
+            return OpenCodeNaiaEnvironment::default();
+        }
+    };
+
+    crate::log_verbose(
+        "[project_agent_pty::build_opencode_naia_environment] branch=naia_environment_ready",
+    );
+
+    OpenCodeNaiaEnvironment {
+        vars: vec![
+            (OPENCODE_NAIA_KEY_ENV.to_owned(), key.to_owned()),
+            (OPENCODE_CONFIG_ENV.to_owned(), config_content),
+        ],
+        naia_login_required: false,
+        credential_fingerprint: credential_fingerprint(Some(key)),
+    }
+}
+
+fn apply_project_agent_naia_environment(
+    command: &mut portable_pty::CommandBuilder,
+    coding_app: CodingApp,
+    environment: &OpenCodeNaiaEnvironment,
+) -> bool {
+    crate::log_verbose(&format!(
+        "[project_agent_pty::apply_project_agent_naia_environment] enter app_id={}",
+        coding_app.spec().app_id
+    ));
+    command.env_remove(OPENCODE_NAIA_KEY_ENV);
+    command.env_remove(OPENCODE_CONFIG_ENV);
+    if coding_app != CodingApp::OpenCode {
+        crate::log_verbose(
+            "[project_agent_pty::apply_project_agent_naia_environment] branch=non_opencode_environment_removed",
+        );
+        return false;
+    }
+    for (name, value) in &environment.vars {
+        command.env(name, value);
+    }
+    crate::log_verbose(&format!(
+        "[project_agent_pty::apply_project_agent_naia_environment] branch=opencode_configured credential_present={} config_present={}",
+        environment
+            .vars
+            .iter()
+            .any(|(name, _)| name == OPENCODE_NAIA_KEY_ENV),
+        environment
+            .vars
+            .iter()
+            .any(|(name, _)| name == OPENCODE_CONFIG_ENV)
+    ));
+    environment.naia_login_required
+}
 
 #[tauri::command]
 pub fn project_agent_availability() -> Vec<ProjectAgentAvailability> {
@@ -42,6 +250,9 @@ pub async fn project_agent_pty_start(
     app_id: String,
     project_path: String,
     adapter_root: String,
+    naia_gateway_url: Option<String>,
+    naia_model_provider: Option<String>,
+    naia_model: Option<String>,
 ) -> Result<ProjectAgentSession, String> {
     crate::log_verbose(&format!(
         "[project_agent_pty::project_agent_pty_start] enter app_id={} project_path_supplied=true",
@@ -66,7 +277,23 @@ pub async fn project_agent_pty_start(
     let registry = Arc::clone(&registry);
     let session_app_id = coding_app.spec().app_id.to_owned();
     tokio::task::spawn_blocking(move || -> Result<ProjectAgentSession, String> {
-        let command = build_agent_command(
+        let opencode_naia = if coding_app == CodingApp::OpenCode {
+            let credential = crate::read_secure_naia_credential(&app);
+            build_opencode_naia_environment(
+                naia_gateway_url.as_deref().unwrap_or_default(),
+                naia_model_provider.as_deref().unwrap_or_default(),
+                naia_model.as_deref().unwrap_or_default(),
+                credential.as_deref(),
+            )
+        } else {
+            OpenCodeNaiaEnvironment::default()
+        };
+        let current_credential_fingerprint = if coding_app == CodingApp::OpenCode {
+            opencode_naia.credential_fingerprint
+        } else {
+            None
+        };
+        let mut command = build_agent_command(
             &launch,
             coding_app.spec().argv,
             &checkout_path,
@@ -79,14 +306,42 @@ pub async fn project_agent_pty_start(
             ));
             "agent_unavailable".to_owned()
         })?;
+        let naia_login_required = apply_project_agent_naia_environment(
+            &mut command,
+            coding_app,
+            &opencode_naia,
+        );
 
         let mut state = registry.lock().unwrap();
         if let Some(handle) = state.sessions.get(&key) {
-            crate::log_verbose(&format!(
-                "[project_agent_pty::project_agent_pty_start] branch=reuse_existing app_id={}",
-                session_app_id
-            ));
-            return Ok(project_agent_session(&key, handle));
+            let credential_changed = coding_app == CodingApp::OpenCode
+                && open_code_credential_changed(
+                    handle.credential_fingerprint,
+                    current_credential_fingerprint,
+                );
+            if !credential_changed {
+                crate::log_verbose(&format!(
+                    "[project_agent_pty::project_agent_pty_start] branch=reuse_existing app_id={}",
+                    session_app_id
+                ));
+                return Ok(project_agent_session(&key, handle));
+            }
+        }
+        if state.sessions.contains_key(&key) {
+            let mut previous = state
+                .sessions
+                .remove(&key)
+                .expect("session presence was checked above");
+            if stop_project_agent_handle(&mut previous).is_err() {
+                state.sessions.insert(key.clone(), previous);
+                crate::log_verbose(
+                    "[project_agent_pty::project_agent_pty_start] branch=credential_change_stop_failed",
+                );
+                return Err("session_missing".to_owned());
+            }
+            crate::log_verbose(
+                "[project_agent_pty::project_agent_pty_start] branch=credential_changed_respawn",
+            );
         }
         let pty_system = NativePtySystem::default();
         let pair = pty_system
@@ -136,6 +391,8 @@ pub async fn project_agent_pty_start(
             // this command, so output may be emitted immediately.
             output_attached: true,
             output_backlog: String::new(),
+            naia_login_required,
+            credential_fingerprint: current_credential_fingerprint,
         };
         state.sessions.insert(key.clone(), handle);
         drop(state);
@@ -224,6 +481,7 @@ pub async fn project_agent_pty_start(
             project_path: canonical_display_path,
             pty_id,
             running: true,
+            naia_login_required,
         })
     })
     .await
@@ -452,7 +710,212 @@ pub async fn project_agent_pty_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use std::ffi::OsStr;
     use std::io;
+    use std::path::PathBuf;
+
+    fn sanitize_test_command(command: &mut portable_pty::CommandBuilder) {
+        command.env("PATH", "C:\\opencode-key-test-path");
+        for name in ["HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH"] {
+            command.env_remove(name);
+        }
+    }
+
+    #[test]
+    fn opencode_naia_environment_uses_selected_model_and_key_reference() {
+        const TEST_KEY: &str = "fake-key-for-opencode-tests";
+        let environment = build_opencode_naia_environment(
+            "https://api.nextain.io",
+            "nextain",
+            "gpt-5.6-luna",
+            Some(TEST_KEY),
+        );
+        assert!(!environment.naia_login_required);
+        let vars = environment.vars.iter().cloned().collect::<HashMap<_, _>>();
+        assert_eq!(
+            vars.get(OPENCODE_NAIA_KEY_ENV).map(String::as_str),
+            Some(TEST_KEY)
+        );
+        let config = vars.get(OPENCODE_CONFIG_ENV).expect("OpenCode config JSON");
+        let parsed: serde_json::Value = serde_json::from_str(config).unwrap();
+        assert_eq!(parsed["model"], "naia/gpt-5.6-luna");
+        assert_eq!(parsed["small_model"], "naia/deepseek-v4-flash");
+        assert_eq!(
+            parsed["provider"]["naia"]["npm"],
+            "@ai-sdk/openai-compatible"
+        );
+        assert_eq!(
+            parsed["provider"]["naia"]["options"]["baseURL"],
+            "https://api.nextain.io/v1"
+        );
+        assert_eq!(
+            parsed["provider"]["naia"]["options"]["apiKey"],
+            "{env:NAIA_GATEWAY_KEY}"
+        );
+        assert_eq!(
+            parsed["provider"]["naia"]["models"]["gpt-5.6-luna"]["limit"]["context"],
+            131_072
+        );
+    }
+
+    #[test]
+    fn opencode_naia_environment_uses_fallback_for_local_provider() {
+        const TEST_KEY: &str = "fake-local-provider-test-key";
+        let environment = build_opencode_naia_environment(
+            "https://api.nextain.io",
+            "ollama",
+            "llama3.2",
+            Some(TEST_KEY),
+        );
+        let vars = environment.vars.iter().cloned().collect::<HashMap<_, _>>();
+        let config: serde_json::Value =
+            serde_json::from_str(vars.get(OPENCODE_CONFIG_ENV).unwrap()).unwrap();
+        assert_eq!(config["model"], "naia/deepseek-v4-flash");
+    }
+
+    #[test]
+    fn opencode_naia_environment_without_key_has_no_auth_environment_and_requires_login() {
+        let environment = build_opencode_naia_environment(
+            "https://api.nextain.io",
+            "nextain",
+            "gpt-5.6-luna",
+            None,
+        );
+        assert!(environment.naia_login_required);
+        assert!(environment.vars.is_empty());
+        assert_eq!(environment.credential_fingerprint, None);
+    }
+
+    #[test]
+    fn opencode_naia_environment_rejects_untrusted_gateway_without_auth_environment() {
+        const TEST_KEY: &str = "fake-untrusted-gateway-test-key";
+        let environment = build_opencode_naia_environment(
+            "https://gateway.example.test",
+            "nextain",
+            "gpt-5.6-luna",
+            Some(TEST_KEY),
+        );
+        assert!(!environment.naia_login_required);
+        assert!(environment.vars.is_empty());
+        assert_eq!(environment.credential_fingerprint, None);
+    }
+
+    #[test]
+    fn opencode_config_json_never_contains_the_credential_value() {
+        const TEST_KEY: &str = "fake-json-exclusion-test-key";
+        let environment = build_opencode_naia_environment(
+            "https://api.nextain.io",
+            "nextain",
+            "gpt-5.6-luna",
+            Some(TEST_KEY),
+        );
+        let config = environment
+            .vars
+            .iter()
+            .find(|(name, _)| name == OPENCODE_CONFIG_ENV)
+            .map(|(_, value)| value)
+            .expect("OpenCode config JSON");
+        assert!(!config.contains(TEST_KEY));
+        assert!(config.contains("{env:NAIA_GATEWAY_KEY}"));
+    }
+
+    #[test]
+    fn opencode_environment_reaches_direct_and_windows_batch_commands_without_argv_json() {
+        use super::super::types::{build_agent_command, AgentLaunch};
+
+        const TEST_KEY: &str = "fake-command-env-test-key";
+        let temp = tempfile::tempdir().unwrap();
+        let checkout = temp.path().join("checkout");
+        let bin = temp.path().join("bin");
+        std::fs::create_dir_all(&checkout).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        let batch_path = bin.join("opencode.cmd");
+        std::fs::write(&batch_path, "@echo off\r\n").unwrap();
+        let launches = [
+            AgentLaunch::Direct(PathBuf::from("opencode.exe")),
+            AgentLaunch::WindowsBatch(batch_path),
+        ];
+        let environment = build_opencode_naia_environment(
+            "https://api.nextain.io",
+            "nextain",
+            "gpt-5.6-luna",
+            Some(TEST_KEY),
+        );
+        let no_key_environment = build_opencode_naia_environment(
+            "https://api.nextain.io",
+            "nextain",
+            "gpt-5.6-luna",
+            None,
+        );
+
+        for launch in &launches {
+            let mut command = build_agent_command(
+                launch,
+                &[],
+                &checkout,
+                Some(OsStr::new("C:\\test-bin")),
+                Some(OsStr::new("C:\\Win")),
+            )
+            .expect("build isolated test command");
+            sanitize_test_command(&mut command);
+            command.env(OPENCODE_NAIA_KEY_ENV, "parent-test-key");
+            command.env(OPENCODE_CONFIG_ENV, "parent-test-config");
+            assert!(!apply_project_agent_naia_environment(
+                &mut command,
+                CodingApp::OpenCode,
+                &environment,
+            ));
+
+            assert_eq!(
+                command.get_env(OPENCODE_NAIA_KEY_ENV),
+                Some(OsStr::new(TEST_KEY))
+            );
+            let config = command
+                .get_env(OPENCODE_CONFIG_ENV)
+                .expect("OpenCode config env");
+            assert!(!config.to_string_lossy().contains(TEST_KEY));
+            assert!(command
+                .get_argv()
+                .iter()
+                .all(|argument| argument.as_os_str() != config));
+            assert!(command
+                .get_argv()
+                .iter()
+                .all(|argument| !argument.to_string_lossy().contains(TEST_KEY)));
+
+            let mut no_key_command = build_agent_command(
+                launch,
+                &[],
+                &checkout,
+                Some(OsStr::new("C:\\test-bin")),
+                Some(OsStr::new("C:\\Win")),
+            )
+            .expect("build no-key isolated test command");
+            sanitize_test_command(&mut no_key_command);
+            no_key_command.env(OPENCODE_NAIA_KEY_ENV, "parent-test-key");
+            no_key_command.env(OPENCODE_CONFIG_ENV, "parent-test-config");
+            assert!(apply_project_agent_naia_environment(
+                &mut no_key_command,
+                CodingApp::OpenCode,
+                &no_key_environment,
+            ));
+            assert!(no_key_command.get_env(OPENCODE_NAIA_KEY_ENV).is_none());
+            assert!(no_key_command.get_env(OPENCODE_CONFIG_ENV).is_none());
+        }
+    }
+
+    #[test]
+    fn open_code_credential_change_triggers_respawn_decision() {
+        let first = credential_fingerprint(Some("fake-key-first"));
+        let second = credential_fingerprint(Some("fake-key-second"));
+        assert_ne!(first, second);
+        assert!(open_code_credential_changed(None, first));
+        assert!(open_code_credential_changed(first, None));
+        assert!(open_code_credential_changed(first, second));
+        assert!(!open_code_credential_changed(first, first));
+        assert!(!open_code_credential_changed(None, None));
+    }
 
     #[test]
     fn stop_and_resize_session_keys_match_start_and_write_keys() {

@@ -290,6 +290,18 @@ export function ProjectAgentPanel({
 					})}
 				</output>
 			)}
+			{state.status === "running" &&
+				selectedAppId === "opencode" &&
+				state.naiaLoginRequired && (
+					<output
+						className="projects-app__recovery"
+						role="status"
+						aria-live="polite"
+					>
+						<strong>{projectText("projects.agentNaiaLoginRequired")}</strong>{" "}
+						{projectText("projects.agentNaiaLoginHint")}
+					</output>
+				)}
 			{state.status === "stopping" && selectedAppId && (
 				<output className="projects-app__recovery" aria-live="polite">
 					{projectText("projects.agentStopping")}
