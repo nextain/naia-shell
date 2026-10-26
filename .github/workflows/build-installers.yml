@@ -201,15 +201,20 @@ jobs:
             --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
             if grep -q "bundle_dmg" "$LOG_FILE"; then
               echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
-              hdiutil info | awk '
+              DMG_DIR_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/dmg"
+              DMG_DIR_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/dmg 2>/dev/null && pwd -P || printf '%s\n' "$DMG_DIR_LOGICAL")"
+              hdiutil info | awk -v dmg_dir="$DMG_DIR_PHYS" -v dmg_dir_logical="$DMG_DIR_LOGICAL" '
                 /^====/ { dmg=0 }
-                /bundle\/dmg|\/Volumes\/dmg\./ { dmg=1 }
+                /^image-path[[:space:]]*:/ {
+                  path=$0
+                  sub(/^image-path[[:space:]]*:[[:space:]]*/, "", path)
+                  dir=path
+                  sub(/\/[^\/]+$/, "", dir)
+                  dmg=(dir == dmg_dir || dir == dmg_dir_logical)
+                }
                 /^\/dev\/disk/ && dmg { print $1 }
               ' | sort -u | while read -r dev; do
                 hdiutil detach -force "$dev" || true
-              done
-              for vol in /Volumes/dmg.*; do
-                [ -e "$vol" ] && hdiutil detach -force "$vol" || true
               done
               rm -f packages/shell/src-tauri/target/release/bundle/dmg/*.dmg
               pnpm -C packages/shell exec tauri bundle --verbose \
