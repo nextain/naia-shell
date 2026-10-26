@@ -201,22 +201,37 @@ jobs:
             --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
             if grep -q "bundle_dmg" "$LOG_FILE"; then
               echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
+              BUNDLE_MACOS_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/macos"
+              BUNDLE_MACOS_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/macos 2>/dev/null && pwd -P || printf '%s\n' "$BUNDLE_MACOS_LOGICAL")"
               DMG_DIR_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/dmg"
               DMG_DIR_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/dmg 2>/dev/null && pwd -P || printf '%s\n' "$DMG_DIR_LOGICAL")"
-              hdiutil info | awk -v dmg_dir="$DMG_DIR_PHYS" -v dmg_dir_logical="$DMG_DIR_LOGICAL" '
+              hdiutil info | awk \
+                -v macos_dir="$BUNDLE_MACOS_PHYS" \
+                -v macos_dir_logical="$BUNDLE_MACOS_LOGICAL" \
+                -v dmg_dir="$DMG_DIR_PHYS" \
+                -v dmg_dir_logical="$DMG_DIR_LOGICAL" '
                 /^====/ { dmg=0 }
                 /^image-path[[:space:]]*:/ {
                   path=$0
                   sub(/^image-path[[:space:]]*:[[:space:]]*/, "", path)
                   dir=path
                   sub(/\/[^\/]+$/, "", dir)
-                  dmg=(dir == dmg_dir || dir == dmg_dir_logical)
+                  base=path
+                  sub(/^.*\//, "", base)
+                  in_macos=(dir == macos_dir || dir == macos_dir_logical)
+                  in_dmg=(dir == dmg_dir || dir == dmg_dir_logical)
+                  is_rw_dmg=(base ~ /^rw\..*\.dmg$/)
+                  dmg=((in_macos && is_rw_dmg) || in_dmg)
                 }
                 /^\/dev\/disk/ && dmg { print $1 }
               ' | sort -u | while read -r dev; do
                 hdiutil detach -force "$dev" || true
               done
-              rm -f packages/shell/src-tauri/target/release/bundle/dmg/*.dmg
+              rm -f \
+                packages/shell/src-tauri/target/release/bundle/macos/rw.*.dmg \
+                packages/shell/src-tauri/target/release/bundle/macos/Naia_*.dmg \
+                packages/shell/src-tauri/target/release/bundle/dmg/rw.*.dmg \
+                packages/shell/src-tauri/target/release/bundle/dmg/Naia_*.dmg
               pnpm -C packages/shell exec tauri bundle --verbose \
                 --config src-tauri/tauri.conf.generated.json
             else
