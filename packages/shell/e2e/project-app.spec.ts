@@ -81,6 +81,7 @@ const TAURI_MOCK = `
 \t\tpending: false,
 \t\tfailuresRemaining: 0,
 \t\tprojectAgentStartError: null,
+\t\tprojectAgentNaiaLoginRequired: false,
 \t\tprojectAgentAvailability: null,
 \t};
 \twindow.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
@@ -120,6 +121,8 @@ const TAURI_MOCK = `
 \t\t\t\tprojectPath: args.projectPath,
 \t\t\t\tptyId: "project-pty-" + args.projectPath.split("/").pop(),
 \t\t\t\trunning: true,
+\t\t\t\tnaiaLoginRequired:
+\t\t\t\t\targs.appId === "opencode" && state.projectAgentNaiaLoginRequired,
 \t\t\t};
 \t\t}
 \t\tif (cmd === "project_webview_open") return false;
@@ -130,6 +133,10 @@ const TAURI_MOCK = `
 `;
 
 async function boot(page: Page, seedAdkPath = true) {
+	await page.route(
+		/^https:\/\/(?:api\.nextain\.io|api-dev\.naia\.land)(?::\d+)?(?:\/|$)/,
+		(route) => route.abort(),
+	);
 	await page.addInitScript(TAURI_MOCK);
 	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
 	await page.addInitScript({
@@ -615,5 +622,49 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			.locator(".projects-app")
 			.evaluate((node) => node.scrollWidth > node.clientWidth);
 		expect(overflow).toBe(false);
+	});
+
+	test("shows OpenCode's Naia login recovery status at a narrow viewport", async ({
+		page,
+	}) => {
+		await boot(page);
+		await setCatalog(page, READY_CATALOG);
+		await openProjectApp(page);
+		await page.getByTitle("채팅 숨기기 (Ctrl+B)").click();
+		await expect(page.locator(".naia-overlay")).toHaveCount(0);
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.getByRole("button", { name: /Example App/ }).click();
+		await page.getByRole("radio", { name: "OpenCode" }).check();
+		await page.evaluate(() => {
+			(window as any).__PROJECT_E2E__.projectAgentNaiaLoginRequired = true;
+		});
+		await page.getByRole("button", { name: "Start OpenCode" }).click();
+
+		const notice = page.locator('.projects-app output[role="status"]');
+		await notice.scrollIntoViewIfNeeded();
+		await expect(notice).toContainText("Naia login required.");
+		await expect(notice).toContainText("Sign in to Naia in Settings");
+		await expect(
+			page.getByText("OpenCode is running for this project."),
+		).toBeVisible();
+		const overflow = await page
+			.locator(".projects-app")
+			.evaluate((node) => node.scrollWidth > node.clientWidth);
+		expect(overflow).toBe(false);
+		const calls = await page.evaluate(
+			() => (window as any).__PROJECT_E2E__.calls,
+		);
+		const start = calls.find(
+			(call: { cmd: string }) => call.cmd === "project_agent_pty_start",
+		);
+		expect(start.args).toEqual({
+			appId: "opencode",
+			projectPath: READY_CATALOG.projects[0].projectPath,
+			adapterRoot: READY_CATALOG.projects[0].adapterRoot,
+			naiaGatewayUrl: "https://api-dev.naia.land",
+			naiaModelProvider: "gemini",
+			naiaModel: "deepseek-v4-flash",
+		});
+		await capture(page, "project-app-opencode-naia-login-narrow.png");
 	});
 });

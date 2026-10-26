@@ -66,6 +66,9 @@ pub(super) struct ProjectAgentHandle {
     pub(super) termination_requested: bool,
     pub(super) output_attached: bool,
     pub(super) output_backlog: String,
+    pub(super) naia_login_required: bool,
+    /// Non-reversible, memory-only identity of the credential used at spawn.
+    pub(super) credential_fingerprint: Option<u64>,
 }
 
 #[derive(Default)]
@@ -94,6 +97,7 @@ pub struct ProjectAgentSession {
     pub(super) project_path: String,
     pub(super) pty_id: String,
     pub(super) running: bool,
+    pub(super) naia_login_required: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -181,6 +185,7 @@ pub(super) fn project_agent_session(
         project_path: display_path(&key.project_path),
         pty_id: handle.pty_id.clone(),
         running: true,
+        naia_login_required: handle.naia_login_required,
     }
 }
 

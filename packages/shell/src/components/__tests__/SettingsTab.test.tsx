@@ -37,6 +37,10 @@ function setHostMachine(next: typeof ONE_CARD_WINDOWS) {
 const loggedOutMocks = vi.hoisted(() => ({
 	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
 }));
+const projectAgentMocks = vi.hoisted(() => ({
+	stopOpenCodeProjectAgentSessions: vi.fn(async () => {}),
+}));
+vi.mock("../../apps/projects/project-agent-runtime", () => projectAgentMocks);
 vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
 	...(await importOriginal<
 		typeof import("../../lib/llm/logged-out-default")
@@ -229,6 +233,9 @@ describe("SettingsTab", () => {
 				model: "qwen3:8b",
 			});
 			await logout();
+			expect(
+				projectAgentMocks.stopOpenCodeProjectAgentSessions,
+			).toHaveBeenCalledTimes(1);
 			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
 			expect(saved().provider).toBe("ollama");
 			expect(saved().model).toBe("qwen3:8b");
@@ -245,6 +252,9 @@ describe("SettingsTab", () => {
 				model: "",
 			});
 			await logout();
+			expect(
+				projectAgentMocks.stopOpenCodeProjectAgentSessions,
+			).toHaveBeenCalledTimes(1);
 			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
 			expect(saved().provider).toBe("");
 			expect(JSON.stringify(saved())).not.toContain('"gemini');
@@ -1209,6 +1219,9 @@ describe("SettingsTab", () => {
 				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
 			});
 		});
+		expect(
+			projectAgentMocks.stopOpenCodeProjectAgentSessions,
+		).toHaveBeenCalledTimes(1);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");
@@ -1237,6 +1250,43 @@ describe("SettingsTab", () => {
 			"nextain",
 			expect.any(String),
 		);
+		expect(authReady).toHaveBeenCalledTimes(1);
+		window.removeEventListener("naia_auth_ready", authReady);
+	});
+
+	it("continues Naia login when OpenCode sessions fail to stop", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		mockInvoke.mockResolvedValue([]);
+		projectAgentMocks.stopOpenCodeProjectAgentSessions.mockRejectedValueOnce(
+			new Error("stop failed"),
+		);
+		const authReady = vi.fn();
+		window.addEventListener("naia_auth_ready", authReady);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ credits: 10 }),
+			}),
+		);
+
+		render(<SettingsTab />);
+
+		await vi.waitFor(() => {
+			expect(eventListeners.get("naia_auth_complete")).toBeDefined();
+		});
+
+		await act(async () => {
+			await eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
+			});
+		});
+
+		expect(secureStoreMock.set).toHaveBeenCalledWith("naiaKey", "gw-test-key");
+		expect(
+			JSON.parse(localStorage.getItem("naia-config") || "{}").naiaKey,
+		).toBe("gw-test-key");
 		expect(authReady).toHaveBeenCalledTimes(1);
 		window.removeEventListener("naia_auth_ready", authReady);
 	});
@@ -1274,6 +1324,9 @@ describe("SettingsTab", () => {
 				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
 			});
 		});
+		expect(
+			projectAgentMocks.stopOpenCodeProjectAgentSessions,
+		).toHaveBeenCalledTimes(1);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");

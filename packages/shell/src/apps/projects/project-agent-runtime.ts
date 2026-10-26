@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { effectiveMainRole } from "../../lib/slots/model";
+import { LAB_GATEWAY_URL, loadConfig } from "../../lib/config";
+import { selectOpenCodeNaiaModel } from "../../lib/llm/registry";
 import { Logger } from "../../lib/logger";
 import {
 	ensureProjectAgentEventListeners,
@@ -51,6 +54,22 @@ interface ProjectAgentInputQueue {
 }
 
 const inputQueues = new Map<string, ProjectAgentInputQueue>();
+const adapterRootsByProject = new Map<string, string>();
+const pendingOpenCodeOperations = new Set<Promise<void>>();
+let opencodeCredentialEpoch = 0;
+
+function trackOpenCodeOperation(appId: ProjectAgentAppId): (() => void) | null {
+	if (appId !== "opencode") return null;
+	let finish: (() => void) | null = null;
+	const completion = new Promise<void>((resolve) => {
+		finish = resolve;
+	});
+	pendingOpenCodeOperations.add(completion);
+	return () => {
+		pendingOpenCodeOperations.delete(completion);
+		finish?.();
+	};
+}
 
 function inputQueueKey(projectPath: string, appId: ProjectAgentAppId): string {
 	return JSON.stringify([normalizeProjectPath(projectPath), appId]);
@@ -279,6 +298,7 @@ export function selectProjectAgent(
 		status: "idle",
 		error: null,
 		inputError: null,
+		naiaLoginRequired: false,
 		exitCode: null,
 	});
 }
@@ -326,25 +346,51 @@ export async function startProjectAgent(
 		status: "starting",
 		error: null,
 		inputError: null,
+		naiaLoginRequired: false,
 		output: "",
 		ptyId: null,
 		exitCode: null,
 	});
+	const projectKey = normalizeProjectPath(projectPath);
+	adapterRootsByProject.set(projectKey, adapterRoot);
+	const authEpochAtStart = opencodeCredentialEpoch;
+	const finishOpenCodeStart = trackOpenCodeOperation(appId);
 	try {
 		await ensureEventListeners();
+		const config = appId === "opencode" ? loadConfig() : null;
+		const mainRole = config ? effectiveMainRole(config) : {};
 		const value = await invoke<unknown>("project_agent_pty_start", {
 			appId,
 			projectPath,
 			adapterRoot,
+			...(appId === "opencode"
+				? {
+						naiaGatewayUrl: LAB_GATEWAY_URL,
+						naiaModelProvider: mainRole.provider ?? "",
+						naiaModel: selectOpenCodeNaiaModel(
+							mainRole.provider,
+							mainRole.model,
+						),
+					}
+				: {}),
 		});
 		const session = parseSession(value, appId, projectPath);
 		setState(projectPath, {
 			status: "running",
 			ptyId: session.ptyId,
+			naiaLoginRequired: session.naiaLoginRequired,
 			error: null,
 			inputError: null,
 		});
 		Logger.debug("ProjectAgentRuntime", "project agent PTY started", { appId });
+		if (appId === "opencode" && authEpochAtStart !== opencodeCredentialEpoch) {
+			Logger.debug(
+				"ProjectAgentRuntime",
+				"stopping OpenCode started across a Naia credential change",
+			);
+			await stopProjectAgent(projectPath, adapterRoot, appId);
+			return;
+		}
 		const queue = inputQueues.get(inputQueueKey(projectPath, appId));
 		if (queue) await drainProjectAgentInput(queue);
 	} catch (error) {
@@ -364,7 +410,10 @@ export async function startProjectAgent(
 				? { code: "input_failed" }
 				: stateFor(projectPath).inputError,
 			ptyId: null,
+			naiaLoginRequired: false,
 		});
+	} finally {
+		finishOpenCodeStart?.();
 	}
 }
 
@@ -390,6 +439,9 @@ export async function attachProjectAgent(
 		status: "connecting",
 		error: null,
 	});
+	adapterRootsByProject.set(normalizeProjectPath(projectPath), adapterRoot);
+	const authEpochAtAttach = opencodeCredentialEpoch;
+	const finishOpenCodeAttach = trackOpenCodeOperation(appId);
 	try {
 		await ensureEventListeners();
 		const value = await invoke<unknown>("project_agent_pty_attach", {
@@ -419,12 +471,21 @@ export async function attachProjectAgent(
 		}
 		setState(projectPath, {
 			status: "running",
+			naiaLoginRequired: session.naiaLoginRequired,
 			error: null,
 			inputError: null,
 		});
 		Logger.debug("ProjectAgentRuntime", "project agent PTY reattached", {
 			appId,
 		});
+		if (appId === "opencode" && authEpochAtAttach !== opencodeCredentialEpoch) {
+			Logger.debug(
+				"ProjectAgentRuntime",
+				"stopping OpenCode reattached across a Naia credential change",
+			);
+			await stopProjectAgent(projectPath, adapterRoot, appId);
+			return;
+		}
 		const queue = inputQueues.get(inputQueueKey(projectPath, appId));
 		if (queue) await drainProjectAgentInput(queue);
 	} catch (error) {
@@ -445,6 +506,8 @@ export async function attachProjectAgent(
 				: stateFor(projectPath).inputError,
 			ptyId: null,
 		});
+	} finally {
+		finishOpenCodeAttach?.();
 	}
 }
 
@@ -547,7 +610,7 @@ export async function stopProjectAgent(
 	const state = stateFor(projectPath);
 	if (
 		state.selectedAppId !== appId ||
-		state.status !== "running" ||
+		(state.status !== "running" && state.status !== "connecting") ||
 		!state.ptyId
 	) {
 		Logger.debug(
@@ -556,7 +619,11 @@ export async function stopProjectAgent(
 		);
 		return;
 	}
-	setState(projectPath, { status: "stopping", error: null });
+	setState(projectPath, {
+		status: "stopping",
+		naiaLoginRequired: false,
+		error: null,
+	});
 	try {
 		await ensureEventListeners();
 		await invoke("project_agent_pty_stop", {
@@ -578,9 +645,45 @@ export async function stopProjectAgent(
 	}
 }
 
+/** Stop only OpenCode sessions because their inherited Naia key changed. */
+export async function stopOpenCodeProjectAgentSessions(): Promise<void> {
+	Logger.debug(
+		"ProjectAgentRuntime",
+		"stopping OpenCode sessions after Naia credential change",
+	);
+	opencodeCredentialEpoch += 1;
+	await Promise.all([...pendingOpenCodeOperations]);
+	const sessions = [...statesByProject.entries()].filter(
+		([, state]) =>
+			state.selectedAppId === "opencode" &&
+			state.ptyId !== null &&
+			(state.status === "running" || state.status === "connecting"),
+	);
+	await Promise.all(
+		sessions.map(async ([projectPath]) => {
+			const adapterRoot = adapterRootsByProject.get(projectPath);
+			if (!adapterRoot) {
+				Logger.warn(
+					"ProjectAgentRuntime",
+					"OpenCode session could not be stopped after Naia credential change",
+					{ reason: "adapter_root_unavailable" },
+				);
+				throw new Error("OpenCode session adapter path is unavailable.");
+			}
+			await stopProjectAgent(projectPath, adapterRoot, "opencode");
+			if (getProjectAgentState(projectPath).status === "running") {
+				throw new Error("OpenCode session could not be stopped.");
+			}
+		}),
+	);
+}
+
 export function resetProjectAgentRuntimeForTests(): void {
 	Logger.debug("ProjectAgentRuntime", "resetting in-memory test state");
 	inputQueues.clear();
+	adapterRootsByProject.clear();
+	pendingOpenCodeOperations.clear();
+	opencodeCredentialEpoch = 0;
 	resetProjectAgentEventListenersForTests();
 	statesByProject.clear();
 	pathListeners.clear();

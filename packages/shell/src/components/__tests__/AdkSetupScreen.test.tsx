@@ -262,6 +262,8 @@ describe("AdkSetupScreen operation locking", () => {
 			selectedOnly: "selected-workspace-value",
 		});
 		const onComplete = vi.fn();
+		const authReady = vi.fn();
+		window.addEventListener("naia_auth_ready", authReady);
 		render(<AdkSetupScreen onComplete={onComplete} />);
 		await waitFor(() =>
 			expect(mocks.listeners.get("naia_auth_complete")).toBeDefined(),
@@ -309,7 +311,12 @@ describe("AdkSetupScreen operation locking", () => {
 		expect(mocks.saveConfigSecure.mock.invocationCallOrder[0]).toBeLessThan(
 			mocks.writeNaiaConfigAtPath.mock.invocationCallOrder[0],
 		);
+		await waitFor(() => expect(authReady).toHaveBeenCalledTimes(1));
+		expect(mocks.writeNaiaConfigAtPath.mock.invocationCallOrder[0]).toBeLessThan(
+			authReady.mock.invocationCallOrder[0],
+		);
 		await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+		window.removeEventListener("naia_auth_ready", authReady);
 	});
 
 	it("does not complete setup when selected ADK public persistence fails", async () => {

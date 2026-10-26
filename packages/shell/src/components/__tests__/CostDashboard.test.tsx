@@ -2,8 +2,18 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../lib/types";
+import { listen } from "@tauri-apps/api/event";
 
 const mockOpenUrl = vi.fn().mockResolvedValue(undefined);
+const tauriEventMocks = vi.hoisted(() => ({
+	listeners: new Map<string, Set<(event: unknown) => void>>(),
+}));
+
+function emitTauriEvent(eventName: string, payload: unknown) {
+	for (const listener of tauriEventMocks.listeners.get(eventName) ?? []) {
+		listener({ payload });
+	}
+}
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn(async (cmd: string) =>
 		cmd === "get_distribution_channel" ? "standard" : undefined,
@@ -15,7 +25,12 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-	listen: vi.fn().mockResolvedValue(() => {}),
+	listen: vi.fn((event: string, callback: (event: unknown) => void) => {
+		const listeners = tauriEventMocks.listeners.get(event) ?? new Set();
+		listeners.add(callback);
+		tauriEventMocks.listeners.set(event, listeners);
+		return Promise.resolve(() => listeners.delete(callback));
+	}),
 }));
 
 vi.mock("../../lib/config", () => ({
@@ -32,6 +47,7 @@ import { CostDashboard, groupCosts } from "../CostDashboard";
 describe("CostDashboard", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		tauriEventMocks.listeners.clear();
 		// The balance cache is module-level state shared across every test in
 		// this file; a test that primes it (a successful fetch) would otherwise
 		// leak a fresh value into the next test and skip its own fetch (#402).
@@ -195,6 +211,32 @@ describe("CostDashboard", () => {
 		await waitFor(() => {
 			expect(screen.getByText(/12\.50/)).toBeDefined();
 		});
+	});
+
+	it("waits for naia_auth_ready before fetching after naia_auth_complete", async () => {
+		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-new-key");
+		vi.mocked(hasNaiaKeySecure).mockResolvedValue(false);
+
+		render(<CostDashboard messages={[]} />);
+		await waitFor(() => expect(hasNaiaKeySecure).toHaveBeenCalled());
+
+		emitTauriEvent("naia_auth_complete", {
+			naiaKey: "new-auth-key",
+			naiaUserId: "new-user",
+		});
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(listen).not.toHaveBeenCalledWith(
+			"naia_auth_complete",
+			expect.any(Function),
+		);
+		expect(fetch).not.toHaveBeenCalled();
+		expect(screen.queryByTestId("lab-balance-expired")).toBeNull();
+
+		window.dispatchEvent(new CustomEvent("naia_auth_ready"));
+		await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(screen.getByText(/12\.50/)).toBeDefined());
 	});
 
 	it("formats Lab balance >= 1000 with K and title attribute", async () => {

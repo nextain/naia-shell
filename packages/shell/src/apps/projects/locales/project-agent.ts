@@ -14,6 +14,9 @@ export const PROJECT_AGENT_ENGLISH_TRANSLATIONS = {
 	"projects.agentStarting": "Starting the coding app…",
 	"projects.agentStopping": "Stopping the coding app…",
 	"projects.agentRunning": "{app} is running for this project.",
+	"projects.agentNaiaLoginRequired": "Naia login required.",
+	"projects.agentNaiaLoginHint":
+		"Sign in to Naia in Settings, then restart OpenCode to use your account.",
 	"projects.agentReattaching":
 		"Reconnecting to this project's running session…",
 	"projects.agentExited": "The coding app exited with code {code}.",
@@ -91,6 +94,9 @@ export const PROJECT_AGENT_KOREAN_TRANSLATIONS: Record<
 	"projects.agentStarting": "코딩 앱을 시작하는 중…",
 	"projects.agentStopping": "코딩 앱을 중단하는 중…",
 	"projects.agentRunning": "이 프로젝트에서 {app} 실행 중",
+	"projects.agentNaiaLoginRequired": "Naia 로그인이 필요합니다.",
+	"projects.agentNaiaLoginHint":
+		"Settings에서 Naia에 로그인한 뒤 OpenCode를 다시 시작하세요.",
 	"projects.agentReattaching":
 		"이 프로젝트의 실행 중인 세션에 다시 연결하는 중…",
 	"projects.agentExited": "코딩 앱이 종료되었습니다. 종료 코드: {code}.",
