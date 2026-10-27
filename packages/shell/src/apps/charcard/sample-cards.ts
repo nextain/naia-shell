@@ -55,7 +55,10 @@ export function getBundledSampleCardRecords(): StoredCardRecord[] {
 				importedAt: sample.importedAt,
 				card: parsed.card,
 				rawJson: parsed.card.rawJson,
-				imageBlob: new Blob([new Uint8Array(pngBytes)], { type: "image/png" }),
+				imageBlob: parsed.imageOmitted
+					? null
+					: new Blob([new Uint8Array(pngBytes)], { type: "image/png" }),
+				imageOmitted: parsed.imageOmitted,
 				builtIn: true,
 			});
 		} else {

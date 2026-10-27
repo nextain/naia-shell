@@ -3,6 +3,7 @@ import { Logger } from "../../../lib/logger";
 Logger.debug("CharCardLocale", "loading character card app locale strings");
 
 export const CHARCARD_ENGLISH_MESSAGES = {
+	"charcard.imageOmitted": "Image not shown because it is too large.",
 	"charcard.title": "Character Card Roleplay",
 	"charcard.subtitle":
 		"Import PNG, JSON, or CHARX character cards (V2/V3) and roleplay with Naia. Cards stay on this device, and starting roleplay sends the card content to your Naia chat model.",
@@ -105,6 +106,7 @@ export const CHARCARD_ENGLISH_MESSAGES = {
 export type CharCardMessageKey = keyof typeof CHARCARD_ENGLISH_MESSAGES;
 
 export const CHARCARD_KOREAN_MESSAGES: Record<CharCardMessageKey, string> = {
+	"charcard.imageOmitted": "그림이 너무 커서 표시하지 않음",
 	"charcard.title": "캐릭터 카드 설정놀이",
 	"charcard.subtitle":
 		"PNG·JSON·CHARX 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화합니다. 카드는 기기 안에만 보관되며, 연기를 시작하면 카드 내용이 나이아 대화 모델에 함께 보내집니다.",
@@ -208,9 +210,61 @@ export const CHARCARD_MESSAGES_BY_LOCALE: Record<
 > = {
 	ko: CHARCARD_KOREAN_MESSAGES,
 	en: CHARCARD_ENGLISH_MESSAGES,
+	ar: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted": "لم تُعرض الصورة لأنها كبيرة جدًا.",
+	},
+	bn: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted": "ছবিটি অতিরিক্ত বড় হওয়ায় দেখানো হচ্ছে না।",
+	},
+	de: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted":
+			"Das Bild wird nicht angezeigt, weil es zu groß ist.",
+	},
+	es: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted":
+			"La imagen no se muestra porque es demasiado grande.",
+	},
+	fr: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted":
+			"L’image ne s’affiche pas car elle est trop grande.",
+	},
+	hi: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted": "चित्र बहुत बड़ा होने के कारण नहीं दिखाया गया।",
+	},
+	id: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted": "Gambar tidak ditampilkan karena terlalu besar.",
+	},
+	ja: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted": "画像が大きすぎるため表示しません。",
+	},
+	pt: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted": "A imagem não é exibida porque é grande demais.",
+	},
+	ru: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted":
+			"Изображение не показано, потому что оно слишком большое.",
+	},
+	vi: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted": "Không hiển thị ảnh vì ảnh quá lớn.",
+	},
+	zh: {
+		...CHARCARD_ENGLISH_MESSAGES,
+		"charcard.imageOmitted": "图片过大，无法显示。",
+	},
 };
 
-export function resolveCharCardLocale(rawLang?: string): "ko" | "en" {
+export function resolveCharCardLocale(rawLang?: string): string {
 	const candidate = (
 		rawLang ?? (typeof navigator !== "undefined" ? navigator.language : "ko")
 	)
@@ -218,7 +272,7 @@ export function resolveCharCardLocale(rawLang?: string): "ko" | "en" {
 		.toLowerCase();
 	const prefix = candidate.split("-")[0];
 	if (prefix in CHARCARD_MESSAGES_BY_LOCALE) {
-		return prefix as "ko" | "en";
+		return prefix;
 	}
 	return "en";
 }

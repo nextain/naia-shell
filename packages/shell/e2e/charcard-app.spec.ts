@@ -1,4 +1,4 @@
-import { deflateRawSync } from "node:zlib";
+import { deflateRawSync, deflateSync } from "node:zlib";
 import { expect, test } from "@playwright/test";
 
 function buildSingleEntryCharxZip(cardJsonText: string): Buffer {
@@ -49,6 +49,38 @@ function buildSingleEntryCharxZip(cardJsonText: string): Buffer {
 	eocd.writeUInt32LE(cdOffset, 16);
 
 	return Buffer.concat([lfh, compressedData, cdh, eocd]);
+}
+
+function cardPng(width: number, height: number): Buffer {
+	const chunk = (type: string, data: Buffer) => {
+		const body = Buffer.concat([Buffer.from(type), data]);
+		let crc = 0xffffffff;
+		for (const byte of body) {
+			crc ^= byte;
+			for (let i = 0; i < 8; i++)
+				crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+		}
+		const length = Buffer.alloc(4);
+		length.writeUInt32BE(data.length);
+		const checksum = Buffer.alloc(4);
+		checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+		return Buffer.concat([length, body, checksum]);
+	};
+	const ihdr = Buffer.alloc(13);
+	ihdr.writeUInt32BE(width, 0);
+	ihdr.writeUInt32BE(height, 4);
+	ihdr[8] = 8;
+	ihdr[9] = 6;
+	const text = Buffer.from(
+		`chara\0${Buffer.from(JSON.stringify({ name: "큰 그림 카드", first_mes: "안녕하세요" })).toString("base64")}`,
+	);
+	return Buffer.concat([
+		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+		chunk("IHDR", ihdr),
+		chunk("tEXt", text),
+		chunk("IDAT", deflateSync(Buffer.from([0, 0, 0, 0, 0]))),
+		chunk("IEND", Buffer.alloc(0)),
+	]);
 }
 
 declare global {
@@ -240,6 +272,70 @@ test.describe("Character Card Roleplay app (charcard.html)", () => {
 		await page.getByTestId("charcard-error-dismiss").click();
 		await expect(errorPanel).toHaveCount(0);
 		await expect(page.getByTestId("charcard-detail-name")).toHaveText("온새미");
+	});
+
+	test("saves and roleplays an oversized image card with a persistent warning at narrow width", async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.goto("/charcard.html");
+		await expect(page.getByTestId("charcard-import-button")).toBeEnabled();
+		await page.getByTestId("charcard-file-input").setInputFiles({
+			name: "large.png",
+			mimeType: "image/png",
+			buffer: cardPng(100000, 100000),
+		});
+		await expect(page.getByTestId("charcard-detail-name")).toHaveText(
+			"큰 그림 카드",
+		);
+		await expect(page.getByTestId("charcard-image-warning")).toHaveText(
+			"그림이 너무 커서 표시하지 않음",
+		);
+		await expect(
+			page
+				.getByRole("status")
+				.filter({ hasText: "그림이 너무 커서 표시하지 않음" }),
+		).toBeVisible();
+		await expect(page.getByTestId("charcard-avatar-img")).toHaveCount(0);
+		await page.getByTestId("charcard-start-button").click();
+		await expect(page.getByTestId("charcard-active-banner")).toContainText(
+			"큰 그림 카드",
+		);
+		await page.reload();
+		await expect(page.getByTestId("charcard-detail-name")).toHaveText("온새미");
+		await page.getByText("큰 그림 카드", { exact: true }).first().click();
+		await expect(page.getByTestId("charcard-image-warning")).toBeVisible();
+		expect(
+			await page.evaluate(
+				() =>
+					document.documentElement.scrollWidth -
+					document.documentElement.clientWidth,
+			),
+		).toBeLessThanOrEqual(1);
+	});
+
+	test("creates images only inside PNG dimension limits", async ({ page }) => {
+		await page.goto("/charcard.html");
+		await expect(page.getByTestId("charcard-import-button")).toBeEnabled();
+		for (const [width, height, omitted] of [
+			[8192, 4096, false],
+			[8193, 1, true],
+		] as const) {
+			await page.getByTestId("charcard-file-input").setInputFiles({
+				name: `${width}.png`,
+				mimeType: "image/png",
+				buffer: cardPng(width, height),
+			});
+			await expect(page.getByTestId("charcard-detail-name")).toHaveText(
+				"큰 그림 카드",
+			);
+			await expect(page.getByTestId("charcard-image-warning")).toHaveCount(
+				omitted ? 1 : 0,
+			);
+			await expect(page.getByTestId("charcard-avatar-img")).toHaveCount(
+				omitted ? 0 : 1,
+			);
+		}
 	});
 
 	test("has no horizontal overflow at narrow width (390px) and reaches Start Roleplay button via keyboard", async ({

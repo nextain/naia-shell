@@ -5,9 +5,15 @@ const TAG = "CharCardParser";
 export const MAX_CARD_FILE_BYTES = 20 * 1024 * 1024; // 20 MB
 export const MAX_CARD_JSON_CHARS = 2 * 1024 * 1024; // 2 MB characters
 export const MAX_LOREBOOK_ENTRIES = 1000;
+// D81 §15–16; keep in sync with FR-CHARCARD.1.
 export const MAX_CHARX_ENTRIES = 2000;
 export const MAX_CHARX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 export const MAX_CHARX_TOTAL_UNCOMPRESSED_BYTES = 50 * 1024 * 1024; // 50 MB
+
+export const MAX_IMAGE_DIMENSION = 8192;
+export const MAX_IMAGE_PIXELS = 33554432;
+
+export type ImageDimensions = { width: number; height: number };
 
 export type CardParseErrorCode =
 	| "FILE_TOO_LARGE"
@@ -76,6 +82,8 @@ export type CardParseResult =
 			card: NormalizedCharacterCard;
 			imageBytes?: Uint8Array;
 			imageMimeType?: string;
+			imageDimensions?: ImageDimensions | null;
+			imageOmitted?: boolean;
 	  }
 	| { ok: false; code: CardParseErrorCode; detail?: string };
 
@@ -109,6 +117,99 @@ function startsWithBytes(bytes: Uint8Array, prefix: Uint8Array): boolean {
 		if (bytes[i] !== prefix[i]) return false;
 	}
 	return true;
+}
+
+// Read only image headers: no decoder is invoked for untrusted card images.
+export function readImageDimensions(
+	bytes: Uint8Array,
+	mime: string,
+): ImageDimensions | null {
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	let width = 0;
+	let height = 0;
+	if (mime === "image/png") {
+		if (
+			bytes.length < 33 ||
+			!startsWithBytes(bytes, PNG_SIGNATURE) ||
+			view.getUint32(8) !== 13 ||
+			readLatin1(bytes.subarray(12, 16)) !== "IHDR"
+		)
+			return null;
+		width = view.getUint32(16);
+		height = view.getUint32(20);
+	} else if (mime === "image/jpeg") {
+		if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+		let offset = 2;
+		while (offset < bytes.length) {
+			if (bytes[offset++] !== 0xff) return null;
+			while (offset < bytes.length && bytes[offset] === 0xff) offset++;
+			if (offset >= bytes.length) return null;
+			const marker = bytes[offset++];
+			if (marker === 0xd9 || marker === 0xda || marker === 0x00) return null;
+			if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+			if (offset + 2 > bytes.length) return null;
+			const length = view.getUint16(offset);
+			if (length < 2 || offset + length > bytes.length) return null;
+			if (
+				marker >= 0xc0 &&
+				marker <= 0xcf &&
+				marker !== 0xc4 &&
+				marker !== 0xc8 &&
+				marker !== 0xcc
+			) {
+				if (length < 8) return null;
+				height = view.getUint16(offset + 3);
+				width = view.getUint16(offset + 5);
+				break;
+			}
+			offset += length;
+		}
+	} else if (mime === "image/webp") {
+		if (
+			bytes.length < 20 ||
+			readLatin1(bytes.subarray(0, 4)) !== "RIFF" ||
+			readLatin1(bytes.subarray(8, 12)) !== "WEBP"
+		)
+			return null;
+		const size = view.getUint32(16, true);
+		if (
+			size > bytes.length - 20 ||
+			view.getUint32(4, true) < 12 + size ||
+			view.getUint32(4, true) + 8 > bytes.length
+		)
+			return null;
+		const kind = readLatin1(bytes.subarray(12, 16));
+		if (kind === "VP8X" && size >= 10) {
+			width = 1 + bytes[24] + (bytes[25] << 8) + (bytes[26] << 16);
+			height = 1 + bytes[27] + (bytes[28] << 8) + (bytes[29] << 16);
+		} else if (
+			kind === "VP8 " &&
+			size >= 10 &&
+			(bytes[20] & 1) === 0 &&
+			bytes[23] === 0x9d &&
+			bytes[24] === 0x01 &&
+			bytes[25] === 0x2a
+		) {
+			width = view.getUint16(26, true) & 0x3fff;
+			height = view.getUint16(28, true) & 0x3fff;
+		} else if (kind === "VP8L" && size >= 5 && bytes[20] === 0x2f) {
+			const packed = view.getUint32(21, true);
+			width = (packed & 0x3fff) + 1;
+			height = ((packed >>> 14) & 0x3fff) + 1;
+		}
+	}
+	return width > 0 && height > 0 ? { width, height } : null;
+}
+
+export function isImageWithinLimits(
+	dimensions: ImageDimensions | null,
+): boolean {
+	return (
+		dimensions !== null &&
+		dimensions.width <= MAX_IMAGE_DIMENSION &&
+		dimensions.height <= MAX_IMAGE_DIMENSION &&
+		dimensions.width * dimensions.height <= MAX_IMAGE_PIXELS
+	);
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -184,7 +285,11 @@ interface ExtractedPngCardChunk {
 }
 
 export function extractPngCardChunk(bytes: Uint8Array):
-	| { ok: true; chunk: ExtractedPngCardChunk }
+	| {
+			ok: true;
+			chunk: ExtractedPngCardChunk;
+			dimensions: ImageDimensions | null;
+	  }
 	| {
 			ok: false;
 			code: "PNG_CORRUPT_CHUNK" | "PNG_NO_CARD_CHUNK" | "INVALID_BASE64";
@@ -215,6 +320,13 @@ export function extractPngCardChunk(bytes: Uint8Array):
 		const length = view.getUint32(offset, false);
 		const typeBytes = bytes.subarray(offset + 4, offset + 8);
 		const type = readLatin1(typeBytes);
+		if (offset === 8 && (type !== "IHDR" || length !== 13)) {
+			return {
+				ok: false,
+				code: "PNG_CORRUPT_CHUNK",
+				detail: "invalid first IHDR",
+			};
+		}
 		const dataStart = offset + 8;
 		const dataEnd = dataStart + length;
 		const chunkEnd = dataEnd + 4; // +4 for CRC
@@ -320,12 +432,14 @@ export function extractPngCardChunk(bytes: Uint8Array):
 		return {
 			ok: true,
 			chunk: { keyword: "ccv3", base64Payload: ccv3Payload },
+			dimensions: readImageDimensions(bytes, "image/png"),
 		};
 	}
 	if (charaPayload !== null) {
 		return {
 			ok: true,
 			chunk: { keyword: "chara", base64Payload: charaPayload },
+			dimensions: readImageDimensions(bytes, "image/png"),
 		};
 	}
 	return { ok: false, code: "PNG_NO_CARD_CHUNK" };
@@ -850,6 +964,35 @@ export async function parseCharxBytes(
 
 		const nameBytes = bytes.subarray(cdPtr + 46, cdPtr + 46 + fileNameLen);
 		cdPtr = entryEnd;
+		// Compare all local headers, including entries whose paths will be ignored.
+		const lh = localHeaderOffset;
+		if (lh + 30 > cdOffset || view.getUint32(lh, true) !== 0x04034b50)
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "invalid local header",
+			};
+		const localFlags = view.getUint16(lh + 6, true);
+		if ((localFlags & 0x41) !== 0)
+			return { ok: false, code: "CHARX_ENCRYPTED" };
+		const localNameLen = view.getUint16(lh + 26, true);
+		const localExtraLen = view.getUint16(lh + 28, true);
+		if (
+			lh + 30 + localNameLen + localExtraLen > cdOffset ||
+			localNameLen !== nameBytes.length ||
+			!nameBytes.every((b, i) => b === bytes[lh + 30 + i]) ||
+			view.getUint16(lh + 8, true) !== method ||
+			(localFlags & 8) !== (flags & 8) ||
+			(!(flags & 8) &&
+				(view.getUint32(lh + 14, true) !== crc32 ||
+					view.getUint32(lh + 18, true) !== compressedSize ||
+					view.getUint32(lh + 22, true) !== uncompressedSize))
+		)
+			return {
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+				detail: "local and central headers differ",
+			};
 
 		let entryPath: string;
 		try {
@@ -1050,10 +1193,16 @@ export async function parseCharxBytes(
 		}
 	}
 
+	const dimensions =
+		selectedIconBytes && selectedIconMime
+			? readImageDimensions(selectedIconBytes, selectedIconMime)
+			: null;
+	const imageOmitted = !!selectedIconBytes && !isImageWithinLimits(dimensions);
 	return {
 		ok: true,
 		card: parsedCard.card,
-		...(selectedIconBytes && selectedIconMime
+		...(selectedIconBytes ? { imageDimensions: dimensions, imageOmitted } : {}),
+		...(selectedIconBytes && selectedIconMime && !imageOmitted
 			? { imageBytes: selectedIconBytes, imageMimeType: selectedIconMime }
 			: {}),
 	};
@@ -1082,11 +1231,18 @@ export function parsePngOrJsonCardBytes(
 		if (!decoded.ok) {
 			return { ok: false, code: "INVALID_BASE64" };
 		}
-		return parseCharacterCardJsonText(
+		const parsed = parseCharacterCardJsonText(
 			decoded.text,
 			"png",
 			chunkResult.chunk.keyword,
 		);
+		return parsed.ok
+			? {
+					...parsed,
+					imageDimensions: chunkResult.dimensions,
+					imageOmitted: !isImageWithinLimits(chunkResult.dimensions),
+				}
+			: parsed;
 	}
 
 	if (lowerName.endsWith(".png")) {

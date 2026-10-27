@@ -24,6 +24,34 @@ afterEach(() => {
 });
 
 describe("CharCardApp UI", () => {
+	it("hides unsafe images saved by an earlier version", async () => {
+		const storage = createMemoryCardStorage();
+		const parsed = parseCharacterCardJsonText(
+			JSON.stringify({ name: "Stored unsafe" }),
+			"json",
+		);
+		if (!parsed.ok) throw new Error("fixture card invalid");
+		await storage.saveCard({
+			id: "old",
+			fileName: "old.png",
+			importedAt: 1,
+			card: parsed.card,
+			rawJson: parsed.card.rawJson,
+			imageBlob: new Blob([new Uint8Array([137, 80, 78, 71])], {
+				type: "image/png",
+			}),
+		});
+		render(<CharCardApp storage={storage} localeOverride="ko" />);
+		await waitFor(() =>
+			expect(screen.getByTestId("charcard-import-button")).not.toBeDisabled(),
+		);
+		fireEvent.click(screen.getByTestId("charcard-item-old"));
+		expect(screen.getByTestId("charcard-image-warning")).toHaveTextContent(
+			"그림이 너무 커서 표시하지 않음",
+		);
+		expect(screen.queryByTestId("charcard-avatar-img")).not.toBeInTheDocument();
+	});
+
 	it("loads 4 bundled sample cards, imports JSON card, starts/stops roleplay, handles naia-app:context-cleared from parent, and moves focus after deletion", async () => {
 		const postMessageSpy = vi.spyOn(window.parent, "postMessage");
 		const storage = createMemoryCardStorage();

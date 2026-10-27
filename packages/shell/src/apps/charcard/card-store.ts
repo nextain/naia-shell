@@ -14,6 +14,7 @@ export interface StoredCardRecord {
 	card: NormalizedCharacterCard;
 	rawJson: Record<string, unknown>;
 	imageBlob: Blob | null;
+	imageOmitted?: boolean;
 	builtIn?: boolean;
 }
 

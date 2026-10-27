@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Logger } from "../../lib/logger";
 import {
 	type CardParseErrorCode,
+	isImageWithinLimits,
 	parseCharacterCardBytes,
+	readImageDimensions,
 } from "./card-parser";
 import {
 	type CardStorageAdapter,
@@ -56,7 +58,7 @@ function getInitialChar(name: string): string {
 	return Array.from(trimmed)[0]?.toUpperCase() ?? "?";
 }
 
-async function readFileBytes(file: File): Promise<Uint8Array> {
+async function readFileBytes(file: Blob): Promise<Uint8Array> {
 	if (typeof file.arrayBuffer === "function") {
 		const buf = await file.arrayBuffer();
 		return new Uint8Array(buf);
@@ -131,7 +133,25 @@ export function CharCardApp({
 				setStorageMode(store.mode);
 			}
 			try {
-				const saved = await store.listCards();
+				const saved = await Promise.all(
+					(await store.listCards()).map(async (record) => {
+						if (!record.imageBlob) return record;
+						try {
+							const bytes = await readFileBytes(record.imageBlob);
+							if (
+								isImageWithinLimits(
+									readImageDimensions(bytes, record.imageBlob.type),
+								)
+							)
+								return record;
+						} catch (error) {
+							Logger.warn(TAG, "failed to inspect stored card image", {
+								error: String(error),
+							});
+						}
+						return { ...record, imageBlob: null, imageOmitted: true };
+					}),
+				);
 				if (!cancelled) {
 					setImportedCards((prev) => {
 						const seen = new Set(prev.map((item) => item.id));
@@ -341,7 +361,7 @@ export function CharCardApp({
 
 		const id = `card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const imageBlob =
-			result.card.sourceFormat === "png"
+			result.card.sourceFormat === "png" && !result.imageOmitted
 				? new Blob([new Uint8Array(bytes)], { type: "image/png" })
 				: result.imageBytes && result.imageMimeType
 					? new Blob([new Uint8Array(result.imageBytes)], {
@@ -356,6 +376,7 @@ export function CharCardApp({
 			card: result.card,
 			rawJson: result.card.rawJson,
 			imageBlob,
+			imageOmitted: result.imageOmitted,
 			builtIn: false,
 		};
 
@@ -719,6 +740,14 @@ export function CharCardApp({
 
 					{selectedRecord ? (
 						<div className="charcard-app__detail-content">
+							{selectedRecord.imageOmitted ? (
+								<output
+									className="charcard-app__notice charcard-app__notice--warn"
+									data-testid="charcard-image-warning"
+								>
+									{msg("charcard.imageOmitted")}
+								</output>
+							) : null}
 							<div className="charcard-app__profile">
 								<div
 									className="charcard-app__avatar"

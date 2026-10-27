@@ -7,9 +7,12 @@ import {
 	MAX_CARD_JSON_CHARS,
 	MAX_LOREBOOK_ENTRIES,
 	computeCrc32,
+	isImageWithinLimits,
 	parseCharacterCardBytes,
 	parseCharacterCardJsonText,
+	readImageDimensions,
 } from "../card-parser";
+import { CHARCARD_MESSAGES_BY_LOCALE, charCardText } from "../locales/messages";
 import { getBundledSampleCardRecords } from "../sample-cards";
 
 const PNG_SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -76,7 +79,10 @@ function concatBytes(arrays: Uint8Array[]): Uint8Array {
 }
 
 function buildPngWithChunks(chunks: Uint8Array[]): Uint8Array {
-	const ihdr = makeChunk("IHDR", new Uint8Array(13));
+	const header = new Uint8Array(13);
+	new DataView(header.buffer).setUint32(0, 1);
+	new DataView(header.buffer).setUint32(4, 1);
+	const ihdr = makeChunk("IHDR", header);
 	const iend = makeChunk("IEND", new Uint8Array(0));
 	return concatBytes([PNG_SIG, ihdr, ...chunks, iend]);
 }
@@ -169,7 +175,207 @@ function buildZipArchive(entries: ZipTestEntry[]): Uint8Array {
 	return concatBytes([...localChunks, cdData, eocd]);
 }
 
+function dimensionPng(width: number, height: number): Uint8Array {
+	const header = new Uint8Array(13);
+	const view = new DataView(header.buffer);
+	view.setUint32(0, width);
+	view.setUint32(4, height);
+	return concatBytes([
+		PNG_SIG,
+		makeChunk("IHDR", header),
+		makeTextChunk("chara", toBase64Utf8({ name: "Large", first_mes: "Hello" })),
+		makeChunk("IEND", new Uint8Array()),
+	]);
+}
+
+function dimensionJpeg(width: number, height: number): Uint8Array {
+	return new Uint8Array([
+		0xff,
+		0xd8,
+		0xff,
+		0xc0,
+		0,
+		8,
+		8,
+		height >> 8,
+		height & 255,
+		width >> 8,
+		width & 255,
+		1,
+	]);
+}
+
+function dimensionWebp(
+	kind: "VP8X" | "VP8L" | "VP8 ",
+	width: number,
+	height: number,
+): Uint8Array {
+	const size = kind === "VP8L" ? 5 : 10;
+	const b = new Uint8Array(20 + size);
+	const view = new DataView(b.buffer);
+	b.set(new TextEncoder().encode("RIFF"), 0);
+	view.setUint32(4, b.length - 8, true);
+	b.set(new TextEncoder().encode("WEBP"), 8);
+	b.set(new TextEncoder().encode(kind), 12);
+	view.setUint32(16, size, true);
+	if (kind === "VP8X") {
+		const w = width - 1;
+		const h = height - 1;
+		b.set(
+			[w & 255, (w >> 8) & 255, w >> 16, h & 255, (h >> 8) & 255, h >> 16],
+			24,
+		);
+	} else if (kind === "VP8L") {
+		b[20] = 0x2f;
+		view.setUint32(21, (width - 1) | ((height - 1) << 14), true);
+	} else {
+		b.set([0x9d, 1, 0x2a], 23);
+		view.setUint16(26, width, true);
+		view.setUint16(28, height, true);
+	}
+	return b;
+}
+
 describe("card-parser", () => {
+	it("provides the image warning in all 14 app locales", () => {
+		const languages = [
+			"ar",
+			"bn",
+			"de",
+			"en",
+			"es",
+			"fr",
+			"hi",
+			"id",
+			"ja",
+			"ko",
+			"pt",
+			"ru",
+			"vi",
+			"zh",
+		];
+		expect(Object.keys(CHARCARD_MESSAGES_BY_LOCALE).sort()).toEqual(languages);
+		for (const language of languages)
+			expect(charCardText("charcard.imageOmitted", undefined, language)).toBe(
+				CHARCARD_MESSAGES_BY_LOCALE[language]["charcard.imageOmitted"],
+			);
+	});
+
+	it("enforces PNG IHDR limits without rejecting the card", async () => {
+		for (const [width, height, omitted] of [
+			[100000, 100000, true],
+			[8192, 4096, false],
+			[8193, 1, true],
+			[8192, 4097, true],
+		] as const) {
+			const result = await parseCharacterCardBytes(
+				dimensionPng(width, height),
+				"test.png",
+			);
+			expect(result.ok).toBe(true);
+			if (result.ok) {
+				expect(result.card.name).toBe("Large");
+				expect(result.imageDimensions).toEqual({ width, height });
+				expect(result.imageOmitted).toBe(omitted);
+			}
+		}
+		for (const invalid of [
+			concatBytes([
+				PNG_SIG,
+				makeChunk("tEXt", new Uint8Array()),
+				makeChunk("IEND", new Uint8Array()),
+			]),
+			concatBytes([
+				PNG_SIG,
+				makeChunk("IHDR", new Uint8Array(12)),
+				makeChunk("IEND", new Uint8Array()),
+			]),
+		]) {
+			expect(await parseCharacterCardBytes(invalid, "bad.png")).toMatchObject({
+				ok: false,
+				code: "PNG_CORRUPT_CHUNK",
+			});
+		}
+	});
+
+	it("reads JPEG and WebP headers and omits unsafe or truncated CHARX icons", async () => {
+		const examples = [
+			["jpg", "image/jpeg", dimensionJpeg],
+			[
+				"webp",
+				"image/webp",
+				(w: number, h: number) => dimensionWebp("VP8X", w, h),
+			],
+			[
+				"webp",
+				"image/webp",
+				(w: number, h: number) => dimensionWebp("VP8L", w, h),
+			],
+			[
+				"webp",
+				"image/webp",
+				(w: number, h: number) => dimensionWebp("VP8 ", w, h),
+			],
+		] as const;
+		for (const [ext, mime, make] of examples) {
+			for (const [w, h, omitted] of [
+				[8192, 4096, false],
+				[8193, 1, true],
+			] as const) {
+				const image = make(w, h);
+				expect(readImageDimensions(image, mime)).toEqual({
+					width: w,
+					height: h,
+				});
+				expect(isImageWithinLimits(readImageDimensions(image, mime))).toBe(
+					!omitted,
+				);
+				const card = new TextEncoder().encode(
+					JSON.stringify({
+						name: "Icon",
+						assets: [
+							{ type: "icon", uri: `embedded://icon.${ext}`, name: "main" },
+						],
+					}),
+				);
+				for (const [bytes, shouldOmit] of [
+					[image, omitted],
+					[image.slice(0, 10), true],
+				] as const) {
+					const zip = buildZipArchive([
+						{ name: "card.json", data: card },
+						{ name: `icon.${ext}`, data: bytes },
+					]);
+					const result = await parseCharacterCardBytes(zip, "icon.charx");
+					expect(result.ok).toBe(true);
+					if (result.ok) {
+						expect(result.card.name).toBe("Icon");
+						expect(result.imageOmitted).toBe(shouldOmit);
+						expect(result.imageBytes).toEqual(shouldOmit ? undefined : bytes);
+					}
+				}
+			}
+		}
+	});
+
+	it("rejects mismatched local CRC, sizes and name and accepts a data descriptor", async () => {
+		const card = new TextEncoder().encode(JSON.stringify({ name: "Zip" }));
+		for (const offset of [14, 18, 22, 30]) {
+			const zip = buildZipArchive([{ name: "card.json", data: card }]);
+			zip[offset] ^= 1;
+			expect(await parseCharacterCardBytes(zip, "card.charx")).toMatchObject({
+				ok: false,
+				code: "CHARX_CORRUPT_ZIP",
+			});
+		}
+		const zip = buildZipArchive([{ name: "card.json", data: card, flags: 8 }]);
+		zip.fill(0, 14, 26);
+		expect(await parseCharacterCardBytes(zip, "card.charx")).toMatchObject({
+			ok: true,
+			card: { name: "Zip" },
+		});
+	});
+
 	it("parses V2 PNG card with tEXt chara chunk", async () => {
 		const v2Obj = {
 			spec: "chara_card_v2",
