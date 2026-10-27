@@ -396,4 +396,28 @@ describe("emotion tag stripping preserves line boundaries (chat-stream-join)", (
 			"있어요 음악은",
 		);
 	});
+
+	it("keeps a word boundary when a mid-sentence tag follows non-whitespace", () => {
+		expect(extractExpression("있어요[HAPPY] 음악은").cleanText).toBe(
+			"있어요 음악은",
+		);
+		expect(extractExpression("🌿[HAPPY] ---\n\n만약 중간에").cleanText).toBe(
+			"🌿 ---\n\n만약 중간에",
+		);
+	});
+
+	it("leaves no leading space for start / line-start / consecutive tags", () => {
+		// Consecutive mixed tags at text start (unknown tags strip silently).
+		expect(extractExpression("[HAPPY][unknown] 안녕").cleanText).toBe("안녕");
+		// Line-start known tag + following space vanish.
+		expect(extractExpression("첫줄\n[HAPPY] 안녕").cleanText).toBe(
+			"첫줄\n안녕",
+		);
+		// Line-start unknown/lowercase tag + following space vanish too.
+		expect(extractExpression("첫줄\n[unknown] 안녕").cleanText).toBe(
+			"첫줄\n안녕",
+		);
+		// Consecutive known tags leave a single clean text.
+		expect(extractExpression("[HAPPY][SAD] 안녕").cleanText).toBe("안녕");
+	});
 });

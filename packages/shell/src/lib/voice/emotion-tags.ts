@@ -45,9 +45,24 @@ const TAG_RE = /\[([a-z][a-z_-]{1,15})\]( ?)/g;
 export function emotionTagsToChatText(text: string): string {
 	if (!text) return text;
 	return text
-		.replace(TAG_RE, (_m, tag: string, space: string) =>
-			EMOTION_EMOJI[tag] ? EMOTION_EMOJI[tag] + space : "",
+		.replace(
+			TAG_RE,
+			(match, tag: string, space: string, offset: number, source: string) => {
+				const emoji = EMOTION_EMOJI[tag] ?? "";
+				const boundary = wordBoundaryForRemovedMarker(
+					source,
+					offset,
+					offset + match.length,
+				);
+				// A stripped tag takes its trailing space with it (1-B: at text /
+				// line start the tag + following horizontal space vanish); only a
+				// tag rendered as emoji keeps that space.
+				if (!emoji) return boundary;
+				return `${boundary}${emoji}${space}`;
+			},
 		)
 		.replace(/[ \t]{2,}/g, " ") // collapse runs left by a stripped tag
 		.replace(/[ \t]+([.,!?。、！？])/g, "$1"); // " ." -> "." after a strip (never eats a newline)
 }
+import { wordBoundaryForRemovedMarker } from "../text-boundary";
+

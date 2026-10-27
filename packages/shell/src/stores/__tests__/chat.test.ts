@@ -138,10 +138,10 @@ describe("useChatStore", () => {
 
 	it("commits tool-interleaved text once (chat-stream-join 2026-10-27)", () => {
 		// 가짜 모델 순서: 글 → 도구 호출 → 결과 → 글 → 끝.
-		// 셸은 앞뒤 글을 한 메시지로 1회만 확정한다 (되풀이는 셸 중복이 아님).
+		// 도구 경계에는 빈 줄을 한 번 넣고 앞뒤 글을 한 메시지로 확정한다.
 		const store = useChatStore.getState();
 		store.startStreaming();
-		store.appendStreamChunk("Summer Morning Jazz 틀어드릴게요. ");
+		store.appendStreamChunk("Summer Morning Jazz 틀어드릴게요");
 		store.addStreamingToolUse("tc1", "skill_youtube_bgm", {});
 		store.updateStreamingToolResult("tc1", true, "playing");
 		store.appendStreamChunk("음악은 계속 흘러가고 있어요.");
@@ -150,10 +150,32 @@ describe("useChatStore", () => {
 		const state = useChatStore.getState();
 		expect(state.messages).toHaveLength(1);
 		expect(state.messages[0].content).toBe(
-			"Summer Morning Jazz 틀어드릴게요. 음악은 계속 흘러가고 있어요.",
+			"Summer Morning Jazz 틀어드릴게요\n\n음악은 계속 흘러가고 있어요.",
 		);
 		expect(state.messages[0].toolCalls).toHaveLength(1);
 		expect(state.streamingContent).toBe("");
+	});
+
+	it("separates a tool round before a Markdown divider when the prior text ends in emoji", () => {
+		const store = useChatStore.getState();
+		store.startStreaming();
+		store.appendStreamChunk("느긋하게 즐겨주세요 ｡•ᴗ•｡☕🌿");
+		store.addStreamingToolUse("tc2", "radio_dj", {});
+		store.updateStreamingToolResult("tc2", true, "queued");
+		store.appendStreamChunk("---\n\n만약 중간에 다른 장르가 듣고 싶다면");
+
+		expect(useChatStore.getState().streamingContent).toBe(
+			"느긋하게 즐겨주세요 ｡•ᴗ•｡☕🌿\n\n---\n\n만약 중간에 다른 장르가 듣고 싶다면",
+		);
+	});
+
+	it("does not add separators between ordinary text chunks", () => {
+		const store = useChatStore.getState();
+		store.startStreaming();
+		store.appendStreamChunk("토큰 중간 ");
+		store.appendStreamChunk("조각");
+
+		expect(useChatStore.getState().streamingContent).toBe("토큰 중간 조각");
 	});
 
 	it("finishStreaming does nothing when not streaming", () => {

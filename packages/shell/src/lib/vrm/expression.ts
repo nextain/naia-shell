@@ -1,4 +1,5 @@
 import type { VRM } from "@pixiv/three-vrm";
+import { wordBoundaryForRemovedMarker } from "../text-boundary";
 
 export type EmotionName =
 	| "happy"
@@ -113,13 +114,7 @@ const EMOTION_STATES: Record<EmotionName, EmotionState> = {
 	},
 };
 
-/**
- * Trailing match is horizontal whitespace only (`[ \t]*`, never `\s*`): a tag
- * at the end of a line must not swallow the newline — that glued
- * "있어요[HAPPY]\n음악은" into "있어요음악은" and "🌿[HAPPY]\n---" into "🌿---"
- * on screen (chat-stream-join 2026-10-27). Leading trim + mid-line collapse
- * below still tidy the rest.
- */
+/** Never consume a line ending; the replacement callback restores inline word boundaries. */
 const EMOTION_TAG_RE = /\[(HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)][ \t]*/gi;
 
 const KNOWN_EMOTIONS: readonly EmotionName[] = [
@@ -184,7 +179,8 @@ export function mapServerEmotion(state: string): EmotionName | null {
 	return SERVER_PROSODY_TO_EMOTION[key] ?? null;
 }
 
-const LOWER_PROSODY_TAG_RE = /\[([a-z][a-z_-]{1,15})\]/g;
+/** Same 1-B rule as EMOTION_TAG_RE: never consume a newline, drop trailing blanks. */
+const LOWER_PROSODY_TAG_RE = /\[([a-z][a-z_-]{1,15})\][ \t]*/g;
 
 /**
  * Action words inside (parentheses) or *asterisks* → emotion. The cascade
@@ -282,32 +278,52 @@ export function extractExpression(text: string): {
 	);
 
 	// 1) uppercase emotion tag (highest-intent, persona-style)
-	let clean = protectedText.replace(EMOTION_TAG_RE, (_m, tag: string) => {
-		take(tag.toLowerCase() as EmotionName);
-		return "";
-	});
+	let clean = protectedText.replace(
+		EMOTION_TAG_RE,
+		(match, tag: string, offset: number, source: string) => {
+			take(tag.toLowerCase() as EmotionName);
+			return wordBoundaryForRemovedMarker(source, offset, offset + match.length);
+		},
+	);
 	// 2) lowercase server prosody tag
-	clean = clean.replace(LOWER_PROSODY_TAG_RE, (_m, tag: string) => {
-		take(mapServerEmotion(tag));
-		return "";
-	});
+	clean = clean.replace(
+		LOWER_PROSODY_TAG_RE,
+		(match, tag: string, offset: number, source: string) => {
+			take(mapServerEmotion(tag));
+			return wordBoundaryForRemovedMarker(source, offset, offset + match.length);
+		},
+	);
 	// 3) leaked stage direction (forbidden by server, but tolerate + strip)
-	clean = clean.replace(PAREN_DIRECTION_RE, (match, inner: string) => {
-		const cue = stageDirectionEmotion(inner);
-		if (cue) {
-			take(cue);
-			return "";
-		}
-		return match;
-	});
-	clean = clean.replace(STAR_DIRECTION_RE, (match, inner: string) => {
-		const cue = stageDirectionEmotion(inner);
-		if (cue) {
-			take(cue);
-			return "";
-		}
-		return match;
-	});
+	clean = clean.replace(
+		PAREN_DIRECTION_RE,
+		(match, inner: string, offset: number, source: string) => {
+			const cue = stageDirectionEmotion(inner);
+			if (cue) {
+				take(cue);
+				return wordBoundaryForRemovedMarker(
+					source,
+					offset,
+					offset + match.length,
+				);
+			}
+			return match;
+		},
+	);
+	clean = clean.replace(
+		STAR_DIRECTION_RE,
+		(match, inner: string, offset: number, source: string) => {
+			const cue = stageDirectionEmotion(inner);
+			if (cue) {
+				take(cue);
+				return wordBoundaryForRemovedMarker(
+					source,
+					offset,
+					offset + match.length,
+				);
+			}
+			return match;
+		},
+	);
 
 	clean = clean
 		.replace(/(?<=\S)[ \t]{2,}(?=\S)/g, " ")
@@ -326,12 +342,15 @@ export function parseEmotion(text: string): {
 } {
 	let firstEmotion: EmotionName | null = null;
 	const cleanText = text
-		.replace(EMOTION_TAG_RE, (_, tag) => {
-			if (!firstEmotion) {
-				firstEmotion = tag.toLowerCase() as EmotionName;
-			}
-			return "";
-		})
+		.replace(
+			EMOTION_TAG_RE,
+			(match, tag: string, offset: number, source: string) => {
+				if (!firstEmotion) {
+					firstEmotion = tag.toLowerCase() as EmotionName;
+				}
+				return wordBoundaryForRemovedMarker(source, offset, offset + match.length);
+			},
+		)
 		.trim();
 	return {
 		emotion: firstEmotion ?? "neutral",

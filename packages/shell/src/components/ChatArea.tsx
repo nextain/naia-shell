@@ -2304,6 +2304,9 @@ export function ChatArea({
 			readonly watchOwner?: string;
 		} = {},
 	) {
+		// App tools use the same answer stream as model tool rounds. Preserve a
+		// boundary even for tools that do not expose a streaming tool-call row.
+		useChatStore.getState().markStreamingToolBoundary();
 		if (!isModelFacingToolAllowed(req.toolName)) {
 			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
 				tool: req.toolName,
@@ -2631,6 +2634,7 @@ export function ChatArea({
 				);
 				break;
 			case "approval_request":
+				store.markStreamingToolBoundary();
 				if (isToolAllowed(chunk.toolName)) {
 					sendApprovalResponse(chunk.requestId, chunk.toolCallId, "once");
 				} else {
