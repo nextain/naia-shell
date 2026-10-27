@@ -2432,3 +2432,22 @@ Test Coverage Map (P02)
 | 활성 NVA 목록 갱신, 채팅 탭 위치, 툴팁·ARIA 이름, 빈 목록, 오버레이에서 gesture 제거 | `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `AiControlBar.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — input-adjacent buttons, no duplicate overlay group, empty actions and 360px non-overlap |
 | 조건부 AI 권장 문구·label/key/단축키, 응답당 하나, 반복 제한과 수동 실행 기록 | `packages/shell/src/lib/__tests__/persona.test.ts`, `persona-disabled.test.ts`; `packages/shell/src/lib/avatar/__tests__/nva-gesture-rate-limiter.test.ts` | `packages/shell/e2e/nva-prebaked.spec.ts` — active/empty NVA action availability |
 | 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
+## UC-CAFELUA-TAROT-APP — 설치형 타로의 나이아 해석
+
+사용자가 설치된 카페루아 타로에서 카드를 펼치고 나이아 해석을 요청하면, 셸은 카드·포지션·질문을 현재 설정된 기본 모델의 대화로 전달하고 답을 해당 앱에 돌려준다. 앱 전용 모델이나 회사 키는 사용하지 않는다.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본·빈 상태 | 앱에서 리딩을 시작하고 카드를 펼쳐 해석을 요청할 수 있다. |
+| 진행 | 나이아가 해석하는 동안 앱이 진행 상태를 보여 준다. |
+| 성공 | 펼친 카드의 나이아 해석을 앱과 대화에서 확인한다. |
+| 오류 | 모델 또는 도구 등록 실패를 알리고 다시 요청할 수 있다. |
+| 좁은 폭 | 앱과 셸의 기존 입력·상태·결과를 읽고 조작할 수 있다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | 검증 |
+|---|---|
+| 활성 iframe 식별, origin 및 길이 제한, 요청과 답변 왕복 | `packages/shell/src/apps/__tests__/generic-installed-cafelua-tarot.test.tsx` |
+| 기본 모델 채팅, 도구 등록, 진행·성공·오류 | `packages/shell/src/components/__tests__/ChatArea.test.tsx` |
+| 기본·빈·진행·성공·오류·좁은 폭, 키보드/ARIA | 설치 앱과 셸의 실제 UI 경로에서 검증 필요. 기존 앱 패키지는 이 이식 범위 밖이다. |

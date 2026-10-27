@@ -17,6 +17,11 @@ import {
 	startListening as sttStart,
 	stopListening as sttStop,
 } from "tauri-plugin-stt-api";
+import {
+	CAFE_LUA_TAROT_APP_ID,
+	CAFE_LUA_TAROT_ASK_EVENT,
+	CAFE_LUA_TAROT_RESPONSE_EVENT,
+} from "../apps/generic-installed/cafelua-tarot-host-bridge";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
 import {
 	formatAiInterferencePrompt,
@@ -512,6 +517,16 @@ export function ChatArea({
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
+	const tarotRequestRef = useRef<string | null>(null);
+	const tarotTurnRef = useRef(false);
+	const tarotSendRef = useRef<((prompt: string) => Promise<void>) | null>(null);
+	const tarotVoiceBlockedRef = useRef(false);
+	const tarotConfig = loadConfig();
+	const tarotMainRole = tarotConfig ? effectiveMainRole(tarotConfig) : {};
+	const tarotProvider = tarotMainRole.provider ?? tarotConfig?.provider;
+	const tarotModel = tarotMainRole.model ?? tarotConfig?.model;
+	tarotVoiceBlockedRef.current = voiceMode !== "off" ||
+		(tarotProvider === "nextain" && !!tarotModel && isOmniModel(tarotProvider, tarotModel));
 	const gestureTriggerStreamRef = useRef(new GestureTriggerStream());
 	const gestureActionPlayedRef = useRef(false);
 	const pendingAiGestureActionRef = useRef<string | null>(null);
@@ -833,6 +848,7 @@ export function ChatArea({
 		// cannot block the next turn forever.
 		const ttsVisualStateActive = outputStage !== null;
 		if (!store.isStreaming && !ttsActive && !ttsVisualStateActive) return;
+		settleTarotReply("", "Naia 응답이 취소되었습니다. 다시 눌러 주세요.");
 		// A cancelled response may never deliver its terminal `finish` chunk.
 		// Do not let an unfinished reasoning block hide the next request.
 		thinkingStreamFilterRef.current.reset();
@@ -1728,11 +1744,16 @@ export function ChatArea({
 		}
 	}
 
-	async function handleSend(overrideText?: string) {
+	async function handleSend(overrideText?: string, tarotTurn = false) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		if (tarotTurn && tarotVoiceBlockedRef.current) {
+			tarotTurnRef.current = true;
+			settleTarotReply("", "음성 대화 중에는 타로 해석을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.");
+			return;
+		}
 		pendingAiGestureActionRef.current = null;
-		if (await handleSpeechProfilePhrase(text)) return;
+		if (!tarotTurn && await handleSpeechProfilePhrase(text)) return;
 		if (isRadioDjLabObserverAttached()) {
 			const activeConfig = loadConfig();
 			if (
@@ -1756,10 +1777,16 @@ export function ChatArea({
 		// ordinary turn owns the stream. The queued retry will yield when it can
 		// immediately send the profile-bound question.
 		if (shouldQueueBeforeSpeechYield(isChatRequestActive())) {
+			if (tarotTurn) {
+				tarotTurnRef.current = true;
+				settleTarotReply("", "Naia is busy with another reply. Please retry.");
+				return;
+			}
 			useChatStore.getState().enqueueMessage(text);
 			setInput("");
 			return;
 		}
+		if (tarotTurn) tarotTurnRef.current = true;
 
 		let activityResume: SpeechActivityResume | undefined;
 		const speechActivity = activeSpeechActivityRef.current;
@@ -1827,6 +1854,7 @@ export function ChatArea({
 		// FR-LLM-LOGOUT.2: 제공자가 없으면 보내지 않고 세 갈래 안내를 답변 자리에 보인다.
 		// 채팅 저장소의 기본 제공자로 대신 보내면 지원하지 않는 곳으로 나갈 수 있다.
 		if (config && !configuredProvider) {
+			settleTarotReply("", t("chat.noLlm"));
 			useChatStore.getState().appendStreamChunk(t("chat.noLlm"));
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
@@ -1834,6 +1862,7 @@ export function ChatArea({
 		}
 		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
 		if (!isNewCore() && configuredProvider === "nextain" && !config?.naiaKey) {
+			settleTarotReply("", "Naia 계정 로그인이 필요합니다. 설정에서 로그인해주세요.");
 			useChatStore
 				.getState()
 				.appendStreamChunk(
@@ -1858,6 +1887,12 @@ export function ChatArea({
 			configuredModel &&
 			isOmniModel(configuredProvider, configuredModel)
 		) {
+			if (tarotTurnRef.current) {
+				settleTarotReply("", "음성 대화 중에는 타로 해석을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.");
+				useChatStore.getState().finishStreaming();
+				completeCurrentRequest(requestId);
+				return;
+			}
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
 			await handleVoiceToggle();
@@ -1872,6 +1907,7 @@ export function ChatArea({
 			!config?.apiKey &&
 			!config?.naiaKey
 		) {
+			settleTarotReply("", t("chat.noApiKey"));
 			useChatStore.getState().appendStreamChunk(t("chat.noApiKey"));
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
@@ -1880,6 +1916,7 @@ export function ChatArea({
 		// config 없음 = 설정/온보딩 전 신규 유저. 새 core 라도 다운스트림(provider/model/tts)이 config 필드를
 		// 요구하므로 여기서 안전 종료(우회 시 null 참조). 신규 유저의 config 생성 = 온보딩/모델셋팅 슬라이스 범위.
 		if (!config) {
+			settleTarotReply("", "Naia 설정이 필요합니다. 설정 후 다시 눌러 주세요.");
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
 			return;
@@ -2105,6 +2142,7 @@ export function ChatArea({
 			});
 		} catch (err) {
 			const errStr = String(err);
+			settleTarotReply("", errStr);
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
@@ -2128,6 +2166,65 @@ export function ChatArea({
 			}
 		}
 	}
+
+	function settleTarotReply(text: string, error?: string) {
+		const requestId = tarotRequestRef.current;
+		if (!requestId || !tarotTurnRef.current) return;
+		tarotRequestRef.current = null;
+		tarotTurnRef.current = false;
+		Logger.debug("ChatArea", "Tarot request settled", { requestId, error: !!error });
+		window.dispatchEvent(new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
+			detail: { requestId, text, ...(error ? { error } : {}) },
+		}));
+	}
+
+	tarotSendRef.current = (prompt) => handleSend(prompt, true);
+	useEffect(() => {
+		const onRequest = (event: Event) => {
+			const detail = (event as CustomEvent<{ requestId?: string; prompt?: string }>).detail;
+			if (useAppStore.getState().activeApp !== CAFE_LUA_TAROT_APP_ID ||
+				!detail || typeof detail.requestId !== "string" ||
+				typeof detail.prompt !== "string" || !detail.prompt.trim() || detail.prompt.length > 9_000) return;
+			const respondError = (error: string) => window.dispatchEvent(new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
+				detail: { requestId: detail.requestId, text: "", error },
+			}));
+			Logger.debug("ChatArea", "Tarot request received", { requestId: detail.requestId });
+			if (tarotVoiceBlockedRef.current) {
+				respondError("음성 대화 중에는 타로 해석을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.");
+				return;
+			}
+			if (tarotRequestRef.current) {
+				respondError("Naia is busy with another reply. Please retry.");
+				return;
+			}
+			tarotRequestRef.current = detail.requestId;
+			setActiveTab("chat");
+			void (async () => {
+				let ready = false;
+				try {
+					ready = await sendAppSkills(CAFE_LUA_TAROT_APP_ID, appRegistry.get(CAFE_LUA_TAROT_APP_ID)?.tools ?? [], { awaitAck: true });
+				} catch (error) {
+					Logger.warn("ChatArea", "Cafe Lua Tarot app tools registration failed", { error: String(error) });
+				}
+				if (tarotRequestRef.current !== detail.requestId) return;
+				if (!ready || !tarotSendRef.current || tarotVoiceBlockedRef.current) {
+					tarotTurnRef.current = true;
+					settleTarotReply("", tarotVoiceBlockedRef.current
+						? "음성 대화 중에는 타로 해석을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요."
+						: ready ? "Naia chat is unavailable." : "Naia could not register the tarot app tools. Please retry.");
+					return;
+				}
+				try {
+					await tarotSendRef.current(detail.prompt!);
+				} catch (error) {
+					tarotTurnRef.current = true;
+					settleTarotReply("", String(error));
+				}
+			})();
+		};
+		window.addEventListener(CAFE_LUA_TAROT_ASK_EVENT, onRequest);
+		return () => window.removeEventListener(CAFE_LUA_TAROT_ASK_EVENT, onRequest);
+	}, []);
 
 	async function handleSpeechProfilePhrase(text: string): Promise<boolean> {
 		const command = parseSpeechProfileCommand(text);
@@ -2704,6 +2801,7 @@ export function ChatArea({
 			case "finish":
 				flushThinkingStream();
 				flushGestureTriggerStream();
+				settleTarotReply(useChatStore.getState().streamingContent);
 				// Flush remaining text to TTS (both pipeline and chat mode)
 				if (sentenceChunkerRef.current) {
 					const remaining = sentenceChunkerRef.current.flush();
@@ -2795,6 +2893,7 @@ export function ChatArea({
 				}
 				flushThinkingStream();
 				flushGestureTriggerStream();
+				settleTarotReply("", wireErrorMessage(chunk.code, chunk.message));
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
 				if (sentenceChunkerRef.current) {
