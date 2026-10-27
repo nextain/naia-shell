@@ -68,6 +68,8 @@ jobs:
             artifact: darwin-x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
+    env:
+      NAIA_UNSIGNED: ${{ inputs.internal_unsigned == true || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.ref, 'refs/tags/')) }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -191,9 +193,51 @@ jobs:
 
       - name: Bundle macOS application from preserved app build
         if: matrix.platform == 'darwin'
-        run: >-
-          pnpm -C packages/shell exec tauri bundle --verbose
-          --config src-tauri/tauri.conf.generated.json
+        shell: bash
+        run: |
+          set -o pipefail
+          LOG_FILE="$RUNNER_TEMP/tauri-macos-bundle.log"
+          if ! pnpm -C packages/shell exec tauri bundle --verbose \
+            --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
+            if grep -q "bundle_dmg" "$LOG_FILE"; then
+              echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
+              BUNDLE_MACOS_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/macos"
+              BUNDLE_MACOS_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/macos 2>/dev/null && pwd -P || printf '%s\n' "$BUNDLE_MACOS_LOGICAL")"
+              DMG_DIR_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/dmg"
+              DMG_DIR_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/dmg 2>/dev/null && pwd -P || printf '%s\n' "$DMG_DIR_LOGICAL")"
+              hdiutil info | awk \
+                -v macos_dir="$BUNDLE_MACOS_PHYS" \
+                -v macos_dir_logical="$BUNDLE_MACOS_LOGICAL" \
+                -v dmg_dir="$DMG_DIR_PHYS" \
+                -v dmg_dir_logical="$DMG_DIR_LOGICAL" '
+                /^====/ { dmg=0 }
+                /^image-path[[:space:]]*:/ {
+                  path=$0
+                  sub(/^image-path[[:space:]]*:[[:space:]]*/, "", path)
+                  dir=path
+                  sub(/\/[^\/]+$/, "", dir)
+                  base=path
+                  sub(/^.*\//, "", base)
+                  in_macos=(dir == macos_dir || dir == macos_dir_logical)
+                  in_dmg=(dir == dmg_dir || dir == dmg_dir_logical)
+                  is_rw_dmg=(base ~ /^rw\..*\.dmg$/)
+                  dmg=((in_macos && is_rw_dmg) || in_dmg)
+                }
+                /^\/dev\/disk/ && dmg { print $1 }
+              ' | sort -u | while read -r dev; do
+                hdiutil detach -force "$dev" || true
+              done
+              rm -f \
+                packages/shell/src-tauri/target/release/bundle/macos/rw.*.dmg \
+                packages/shell/src-tauri/target/release/bundle/macos/Naia_*.dmg \
+                packages/shell/src-tauri/target/release/bundle/dmg/rw.*.dmg \
+                packages/shell/src-tauri/target/release/bundle/dmg/Naia_*.dmg
+              pnpm -C packages/shell exec tauri bundle --verbose \
+                --config src-tauri/tauri.conf.generated.json
+            else
+              exit 1
+            fi
+          fi
 
       - name: Preserve macOS outputs after bundle attempt
         if: always() && matrix.platform == 'darwin'
@@ -207,7 +251,7 @@ jobs:
           retention-days: 7
 
       - name: Authenticate to Azure for Artifact Signing
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_ARTIFACT_SIGNING_CLIENT_ID }}
@@ -215,7 +259,7 @@ jobs:
           subscription-id: ${{ vars.AZURE_ARTIFACT_SIGNING_SUBSCRIPTION_ID }}
 
       - name: Publicly sign Windows application payload
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: https://krc.codesigning.azure.net/
@@ -233,7 +277,7 @@ jobs:
           batch-size: 30000
 
       - name: Verify signed Windows application payload
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         shell: pwsh
         run: |
           $app = Get-Item "packages/shell/src-tauri/target/release/naia-shell.exe"
@@ -259,7 +303,7 @@ jobs:
           }
 
       - name: Bundle signed Windows application payload
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -269,7 +313,7 @@ jobs:
           --config src-tauri/tauri.conf.generated.json
 
       - name: Bundle Windows application payload for internal testing
-        if: matrix.platform == 'win32' && inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED == 'true'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -278,7 +322,7 @@ jobs:
           --config src-tauri/tauri.conf.generated.json
 
       - name: Verify application executable signature inside bundled MSI
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         shell: pwsh
         run: |
           # Tauri bundler restores target/release/naia-shell.exe from a pre-bundle copy after bundling,
@@ -317,7 +361,7 @@ jobs:
           }
 
       - name: Publicly sign Windows installers
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
         with:
           endpoint: https://krc.codesigning.azure.net/
@@ -331,7 +375,7 @@ jobs:
           timestamp-digest: SHA256
 
       - name: Verify Authenticode and refresh updater signatures
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -514,7 +558,7 @@ jobs:
 
       - name: Prepare and verify Steam portable depot
         id: steam
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         shell: pwsh
         run: |
           $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
@@ -657,7 +701,7 @@ jobs:
             --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
 
       - name: Upload installer outputs
-        if: ${{ !inputs.internal_unsigned || matrix.platform != 'win32' }}
+        if: ${{ env.NAIA_UNSIGNED != 'true' || matrix.platform != 'win32' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: naia-shell-${{ matrix.artifact }}-${{ github.sha }}
@@ -676,7 +720,7 @@ jobs:
           retention-days: 14
 
       - name: Upload unsigned internal Windows installers
-        if: matrix.platform == 'win32' && inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: naia-shell-win32-UNSIGNED-INTERNAL-${{ github.sha }}
@@ -687,7 +731,7 @@ jobs:
           retention-days: 3
 
       - name: Upload Steam portable depot
-        if: matrix.platform == 'win32' && !inputs.internal_unsigned
+        if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: naia-shell-steam-win32-${{ github.sha }}
