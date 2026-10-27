@@ -8681,36 +8681,64 @@ mod tests {
         }
 
         fn assert_pull_connection_closed(&self) {
+            const PULL_CLOSE_VERIFY_TIMEOUT: Duration = Duration::from_millis(25);
+            const PULL_CLOSE_VERIFY_POLL: Duration = Duration::from_millis(1);
+
+            let deadline = Instant::now() + PULL_CLOSE_VERIFY_TIMEOUT;
             let stream = self
                 .active_pull_stream
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .as_ref()
                 .and_then(|stream| stream.try_clone().ok())
-                .expect("pull connection stream should be captured before pull_requests increments");
+                .expect(
+                    "pull connection stream should be captured before pull_requests increments",
+                );
             stream
                 .set_nonblocking(true)
                 .expect("set_nonblocking on cloned pull stream");
             let mut probe = [0_u8; 1];
-            match stream.peek(&mut probe) {
-                Ok(0) => {}
-                Ok(bytes) => panic!(
-                    "expected pull stream EOF (Ok(0)) immediately upon Paused/reap, but peek returned Ok({bytes})"
-                ),
-                Err(error) if error.kind() == io::ErrorKind::ConnectionReset => {}
-                Err(error) => assert!(
-                    self.client_closed_pull.load(Ordering::Acquire)
-                        && !matches!(
+            loop {
+                match stream.peek(&mut probe) {
+                    Ok(0) => {
+                        self.client_closed_pull.store(true, Ordering::Release);
+                        break;
+                    }
+                    Ok(bytes) => panic!(
+                        "expected pull stream EOF (Ok(0)) upon Paused/reap, but peek returned Ok({bytes})"
+                    ),
+                    Err(error) if is_pull_connection_closed_error(error.kind()) => {
+                        self.client_closed_pull.store(true, Ordering::Release);
+                        break;
+                    }
+                    Err(error)
+                        if matches!(
                             error.kind(),
                             io::ErrorKind::WouldBlock
                                 | io::ErrorKind::TimedOut
                                 | io::ErrorKind::Interrupted
-                        ),
-                    "expected pull stream EOF (Ok(0)), got Err({error:?}) with client_closed_pull={}",
-                    self.client_closed_pull.load(Ordering::Acquire)
-                ),
+                        ) =>
+                    {
+                        assert!(
+                            Instant::now() < deadline,
+                            "expected pull stream EOF within {PULL_CLOSE_VERIFY_TIMEOUT:?} from Paused report, last peek returned Err({error:?})"
+                        );
+                        thread::sleep(PULL_CLOSE_VERIFY_POLL);
+                    }
+                    Err(error) => panic!(
+                        "expected pull stream EOF (Ok(0)) or connection-close error, got non-close Err({error:?})"
+                    ),
+                }
             }
+            assert!(self.client_closed_pull.load(Ordering::Acquire));
         }
+    }
+
+    fn is_pull_connection_closed_error(kind: io::ErrorKind) -> bool {
+        matches!(
+            kind,
+            io::ErrorKind::ConnectionReset | io::ErrorKind::BrokenPipe
+        )
     }
 
     struct ModelPullApiServer {
@@ -8926,17 +8954,19 @@ mod tests {
                                 break;
                             }
                             Ok(_) => {}
-                            Err(error)
-                                if matches!(
-                                    error.kind(),
-                                    io::ErrorKind::WouldBlock
-                                        | io::ErrorKind::TimedOut
-                                        | io::ErrorKind::Interrupted
-                                ) => {}
-                            Err(_) => {
+                            Err(error) if is_pull_connection_closed_error(error.kind()) => {
                                 fixture.client_closed_pull.store(true, Ordering::Release);
                                 break;
                             }
+                            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                                thread::sleep(Duration::from_millis(2));
+                            }
+                            Err(error)
+                                if matches!(
+                                    error.kind(),
+                                    io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+                                ) => {}
+                            Err(_) => break,
                         }
                         if fixture.stopped.load(Ordering::Acquire) {
                             break;
@@ -9346,6 +9376,7 @@ mod tests {
         let snapshot = dispatch_model_pull_cancel(&manager, &response.operation_id).unwrap();
         assert_eq!(snapshot.state, ModelPullState::Paused);
         server.fixture.assert_pull_connection_closed();
+        assert!(server.fixture.client_closed_pull.load(Ordering::Acquire));
         assert_eq!(
             fs::read(preserved_fragment).unwrap(),
             b"partial Ollama data"
@@ -9543,6 +9574,7 @@ mod tests {
         );
         assert_eq!(snapshot.state, ModelPullState::Paused);
         server.fixture.assert_pull_connection_closed();
+        assert!(server.fixture.client_closed_pull.load(Ordering::Acquire));
         assert!(child.graceful_calls.load(Ordering::Acquire) > 0);
         assert!(manager.lock().process.is_none());
         assert!(manager.lock().active_model_pull.is_none());
