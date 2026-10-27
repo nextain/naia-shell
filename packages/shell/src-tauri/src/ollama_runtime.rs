@@ -6636,6 +6636,7 @@ mod tests {
         exited: AtomicBool,
         descendants_alive: AtomicBool,
         graceful_calls: AtomicUsize,
+        graceful_shutdown_gate: Mutex<Option<Arc<(Mutex<bool>, Condvar)>>>,
         force_calls: AtomicUsize,
         graceful_exits: AtomicBool,
         graceful_reaps_descendants: AtomicBool,
@@ -6655,6 +6656,7 @@ mod tests {
                 exited: AtomicBool::new(false),
                 descendants_alive: AtomicBool::new(false),
                 graceful_calls: AtomicUsize::new(0),
+                graceful_shutdown_gate: Mutex::new(None),
                 force_calls: AtomicUsize::new(0),
                 graceful_exits: AtomicBool::new(true),
                 graceful_reaps_descendants: AtomicBool::new(true),
@@ -6783,6 +6785,11 @@ mod tests {
         }
 
         fn request_graceful_shutdown(&mut self) -> io::Result<()> {
+            if let Some(gate) = self.state.graceful_shutdown_gate.lock().unwrap().clone() {
+                let (released, changed) = &*gate;
+                let released = released.lock().unwrap();
+                let _released = changed.wait_while(released, |released| !*released).unwrap();
+            }
             self.state.graceful_calls.fetch_add(1, Ordering::Relaxed);
             self.state.stop_listener();
             if self.state.graceful_exits.load(Ordering::Acquire) {
@@ -8647,9 +8654,37 @@ mod tests {
         pull_request_bodies: Mutex<Vec<Value>>,
         request_paths: Mutex<Vec<String>>,
         model_available: AtomicBool,
-        client_closed_pull: AtomicBool,
         active_pull_stream: Mutex<Option<std::net::TcpStream>>,
+        pull_connection_addresses: Mutex<Option<PullConnectionAddresses>>,
         stopped: AtomicBool,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct PullConnectionAddresses {
+        client: std::net::SocketAddr,
+        server: std::net::SocketAddr,
+    }
+
+    #[derive(Debug)]
+    struct PullConnectionObservation {
+        closed: bool,
+        evidence: String,
+    }
+
+    struct FakeShutdownGateReleaseOnDrop(Arc<(Mutex<bool>, Condvar)>);
+
+    impl FakeShutdownGateReleaseOnDrop {
+        fn release(&self) {
+            let (released, changed) = &*self.0;
+            *released.lock().unwrap() = true;
+            changed.notify_all();
+        }
+    }
+
+    impl Drop for FakeShutdownGateReleaseOnDrop {
+        fn drop(&mut self) {
+            self.release();
+        }
     }
 
     impl ModelPullApiFixture {
@@ -8674,69 +8709,152 @@ mod tests {
                 pull_request_bodies: Mutex::new(Vec::new()),
                 request_paths: Mutex::new(Vec::new()),
                 model_available: AtomicBool::new(digest.is_some()),
-                client_closed_pull: AtomicBool::new(false),
                 active_pull_stream: Mutex::new(None),
+                pull_connection_addresses: Mutex::new(None),
                 stopped: AtomicBool::new(false),
             }
         }
 
-        fn assert_pull_connection_closed(&self, reported_at: Instant) {
-            const PULL_CLOSE_VERIFY_TIMEOUT: Duration = Duration::from_millis(25);
-            const PULL_CLOSE_VERIFY_POLL: Duration = Duration::from_millis(1);
+        fn observe_pull_connection_closed(&self) -> PullConnectionObservation {
+            #[cfg(target_os = "linux")]
+            let observation = {
+                let addresses = self
+                    .pull_connection_addresses
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .as_ref()
+                    .copied()
+                    .expect("pull connection addresses captured before pull_requests increments");
+                let state = linux_pull_connection_state(addresses)
+                    .unwrap_or_else(|error| panic!("read Linux pull TCP state: {error}"));
+                let closed = state.is_none() || matches!(state, Some(0x04 | 0x05 | 0x06 | 0x07));
+                let evidence = match state {
+                    Some(state) => format!(
+                        "/proc TCP state {:02X} ({})",
+                        state,
+                        linux_tcp_state_name(state)
+                    ),
+                    None => "no matching /proc TCP row".to_string(),
+                };
+                PullConnectionObservation { closed, evidence }
+            };
 
-            let stream = self
-                .active_pull_stream
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .as_ref()
-                .and_then(|stream| stream.try_clone().ok())
-                .expect(
-                    "pull connection stream should be captured before pull_requests increments",
-                );
-            stream
-                .set_nonblocking(true)
-                .expect("set_nonblocking on cloned pull stream");
-            let mut probe = [0_u8; 1];
-            loop {
-                let peek_result = stream.peek(&mut probe);
-                let elapsed = reported_at.elapsed();
-                assert!(
-                    elapsed <= PULL_CLOSE_VERIFY_TIMEOUT,
-                    "expected pull stream close within {PULL_CLOSE_VERIFY_TIMEOUT:?} from Paused report, but {elapsed:?} elapsed (peek={peek_result:?})"
-                );
-                match peek_result {
-                    Ok(0) => {
-                        self.client_closed_pull.store(true, Ordering::Release);
-                        break;
-                    }
-                    Ok(bytes) => panic!(
-                        "expected pull stream EOF (Ok(0)) upon Paused/reap, but peek returned Ok({bytes})"
-                    ),
+            #[cfg(not(target_os = "linux"))]
+            let observation = {
+                // One server-side peek is retained for non-Linux builds, but peer FIN delivery is
+                // asynchronous there, so this is not evidence of close-before-report ordering.
+                let stream = self
+                    .active_pull_stream
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .as_ref()
+                    .and_then(|stream| stream.try_clone().ok())
+                    .expect("pull stream captured before pull_requests increments");
+                stream
+                    .set_nonblocking(true)
+                    .expect("set_nonblocking on cloned pull stream");
+                let mut probe = [0_u8; 1];
+                match stream.peek(&mut probe) {
+                    Ok(0) => PullConnectionObservation {
+                        closed: true,
+                        evidence: "server peek EOF".to_string(),
+                    },
                     Err(error) if is_pull_connection_closed_error(error.kind()) => {
-                        self.client_closed_pull.store(true, Ordering::Release);
-                        break;
+                        PullConnectionObservation {
+                            closed: true,
+                            evidence: format!("server peek close error: {error:?}"),
+                        }
                     }
-                    Err(error)
-                        if matches!(
-                            error.kind(),
-                            io::ErrorKind::WouldBlock
-                                | io::ErrorKind::TimedOut
-                                | io::ErrorKind::Interrupted
-                        ) =>
-                    {
-                        let remaining = PULL_CLOSE_VERIFY_TIMEOUT.saturating_sub(elapsed);
-                        assert!(
-                            !remaining.is_zero(),
-                            "expected pull stream close within {PULL_CLOSE_VERIFY_TIMEOUT:?} from Paused report, last peek at {elapsed:?} returned Err({error:?})"
-                        );
-                        thread::sleep(PULL_CLOSE_VERIFY_POLL.min(remaining));
-                    }
-                    Err(error) => panic!(
-                        "expected pull stream EOF (Ok(0)) or connection-close error, got non-close Err({error:?})"
-                    ),
+                    Ok(bytes) => PullConnectionObservation {
+                        closed: false,
+                        evidence: format!("server peek returned {bytes} bytes"),
+                    },
+                    Err(error) => PullConnectionObservation {
+                        closed: false,
+                        evidence: format!("server peek error: {error:?}"),
+                    },
                 }
+            };
+
+            observation
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_pull_connection_state(addresses: PullConnectionAddresses) -> io::Result<Option<u8>> {
+        // Read the client-local tuple: its TCP state changes in close(), while the accepted
+        // server socket only learns about FIN asynchronously.
+        let (table_path, client_ip, server_ip) = match (addresses.client, addresses.server) {
+            (std::net::SocketAddr::V4(client), std::net::SocketAddr::V4(server)) => (
+                "/proc/net/tcp",
+                linux_proc_ip_hex(std::net::IpAddr::V4(*client.ip())),
+                linux_proc_ip_hex(std::net::IpAddr::V4(*server.ip())),
+            ),
+            (std::net::SocketAddr::V6(client), std::net::SocketAddr::V6(server)) => (
+                "/proc/net/tcp6",
+                linux_proc_ip_hex(std::net::IpAddr::V6(*client.ip())),
+                linux_proc_ip_hex(std::net::IpAddr::V6(*server.ip())),
+            ),
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "client and server address families differ",
+                ));
             }
-            assert!(self.client_closed_pull.load(Ordering::Acquire));
+        };
+        let local = format!("{client_ip}:{:04X}", addresses.client.port());
+        let remote = format!("{server_ip}:{:04X}", addresses.server.port());
+        let table = fs::read_to_string(table_path)?;
+        for line in table.lines().skip(1) {
+            let mut fields = line.split_whitespace();
+            let _slot = fields.next();
+            let local_address = fields.next();
+            let remote_address = fields.next();
+            let state = fields.next();
+            if local_address == Some(local.as_str()) && remote_address == Some(remote.as_str()) {
+                let state = state.ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "TCP row has no state")
+                })?;
+                return u8::from_str_radix(state, 16).map(Some).map_err(|error| {
+                    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
+                });
+            }
+        }
+        Ok(None)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_proc_ip_hex(address: std::net::IpAddr) -> String {
+        match address {
+            std::net::IpAddr::V4(address) => {
+                format!("{:08X}", u32::from_ne_bytes(address.octets()))
+            }
+            std::net::IpAddr::V6(address) => address
+                .octets()
+                .chunks_exact(4)
+                .map(|word| {
+                    let bytes: [u8; 4] = word.try_into().expect("IPv6 word is four bytes");
+                    format!("{:08X}", u32::from_ne_bytes(bytes))
+                })
+                .collect(),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_tcp_state_name(state: u8) -> &'static str {
+        match state {
+            0x01 => "ESTABLISHED",
+            0x02 => "SYN_SENT",
+            0x03 => "SYN_RECV",
+            0x04 => "FIN_WAIT1",
+            0x05 => "FIN_WAIT2",
+            0x06 => "TIME_WAIT",
+            0x07 => "CLOSE",
+            0x08 => "CLOSE_WAIT",
+            0x09 => "LAST_ACK",
+            0x0A => "LISTEN",
+            0x0B => "CLOSING",
+            _ => "UNKNOWN",
         }
     }
 
@@ -8920,6 +9038,14 @@ mod tests {
                 let _ = write_fixture_response(&mut stream, body);
             }
             "/api/pull" => {
+                let addresses = PullConnectionAddresses {
+                    client: stream.peer_addr().expect("pull client address"),
+                    server: stream.local_addr().expect("pull server address"),
+                };
+                *fixture
+                    .pull_connection_addresses
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(addresses);
                 let pull_number = fixture.pull_requests.load(Ordering::Acquire) + 1;
                 let body = serde_json::from_slice(request_body).unwrap_or(Value::Null);
                 fixture.pull_request_bodies.lock().unwrap().push(body);
@@ -8956,14 +9082,10 @@ mod tests {
                     loop {
                         match stream.read(&mut chunk) {
                             Ok(0) => {
-                                fixture.client_closed_pull.store(true, Ordering::Release);
                                 break;
                             }
                             Ok(_) => {}
-                            Err(error) if is_pull_connection_closed_error(error.kind()) => {
-                                fixture.client_closed_pull.store(true, Ordering::Release);
-                                break;
-                            }
+                            Err(error) if is_pull_connection_closed_error(error.kind()) => break,
                             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                                 thread::sleep(Duration::from_millis(2));
                             }
@@ -9379,15 +9501,14 @@ mod tests {
         assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
         let stop_error = dispatch_stop(&manager, None).unwrap_err();
         assert_eq!(stop_error.code, RuntimeErrorCode::RuntimeBusy);
-        let (snapshot, paused_reported_at) = (
-            dispatch_model_pull_cancel(&manager, &response.operation_id).unwrap(),
-            Instant::now(),
-        );
+        let snapshot = dispatch_model_pull_cancel(&manager, &response.operation_id).unwrap();
         assert_eq!(snapshot.state, ModelPullState::Paused);
-        server
-            .fixture
-            .assert_pull_connection_closed(paused_reported_at);
-        assert!(server.fixture.client_closed_pull.load(Ordering::Acquire));
+        let connection_observation = server.fixture.observe_pull_connection_closed();
+        assert!(
+            connection_observation.closed,
+            "pull connection was open when Paused was observed: {}",
+            connection_observation.evidence
+        );
         assert_eq!(
             fs::read(preserved_fragment).unwrap(),
             b"partial Ollama data"
@@ -9572,22 +9693,54 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(5));
         }
-        let (_, paused_reported_at) = (shutdown_manager(&manager), Instant::now());
-        let snapshot = manager
-            .lock()
-            .model_pull_snapshots
-            .get(tag)
-            .cloned()
-            .unwrap();
+        let shutdown_gate = Arc::new((Mutex::new(false), Condvar::new()));
+        *child.graceful_shutdown_gate.lock().unwrap() = Some(shutdown_gate.clone());
+        let shutdown_gate_release = FakeShutdownGateReleaseOnDrop(shutdown_gate);
+        let manager_for_shutdown = manager.clone();
+        let shutdown_worker = thread::spawn(move || shutdown_manager(&manager_for_shutdown));
+        let report_deadline = Instant::now() + Duration::from_secs(3);
+        let (snapshot, child_unreaped_when_report_observed) = loop {
+            let state = manager.lock();
+            let snapshot = state.model_pull_snapshots.get(tag).cloned();
+            if let Some(snapshot) = snapshot.filter(|snapshot| {
+                snapshot.operation_id.as_deref() == Some(response.operation_id.as_str())
+                    && snapshot.state == ModelPullState::Paused
+            }) {
+                let child_unreaped = !child.exited.load(Ordering::Acquire)
+                    && child.graceful_calls.load(Ordering::Acquire) == 0;
+                break (Some(snapshot), child_unreaped);
+            }
+            drop(state);
+            if Instant::now() >= report_deadline {
+                break (None, false);
+            }
+            thread::yield_now();
+        };
+        let connection_observation = if snapshot.is_some() {
+            server.fixture.observe_pull_connection_closed()
+        } else {
+            PullConnectionObservation {
+                closed: false,
+                evidence: "Paused report was not observed".to_string(),
+            }
+        };
+        shutdown_gate_release.release();
+        shutdown_worker.join().unwrap();
+        let snapshot = snapshot.expect("shutdown worker must report Paused within deadline");
         assert_eq!(
             snapshot.operation_id.as_deref(),
             Some(response.operation_id.as_str())
         );
         assert_eq!(snapshot.state, ModelPullState::Paused);
-        server
-            .fixture
-            .assert_pull_connection_closed(paused_reported_at);
-        assert!(server.fixture.client_closed_pull.load(Ordering::Acquire));
+        assert!(
+            child_unreaped_when_report_observed,
+            "managed child was already reaped or graceful shutdown had started when Paused was observed"
+        );
+        assert!(
+            connection_observation.closed,
+            "pull connection was open when shutdown observed Paused: {}",
+            connection_observation.evidence
+        );
         assert!(child.graceful_calls.load(Ordering::Acquire) > 0);
         assert!(manager.lock().process.is_none());
         assert!(manager.lock().active_model_pull.is_none());
