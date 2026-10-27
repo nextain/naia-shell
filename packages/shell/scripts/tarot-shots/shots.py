@@ -5,7 +5,8 @@ from urllib.parse import unquote
 from playwright.sync_api import sync_playwright
 
 root=Path(__file__).resolve().parents[2]/'dist-cafelua-tarot'
-out=Path('/var/home/luke/alpha-adk/.agents/progress/naia-appstore-dev-demo-20261027/shots-tarot-012')
+out=Path(os.environ.get('TAROT_SHOTS_OUT') or Path(__file__).resolve().parents[2]/'tarot-shots-out')
+out.mkdir(parents=True,exist_ok=True)
 class Handler(SimpleHTTPRequestHandler):
  def translate_path(self,path):
   decoded=unquote(path).split('?',1)[0]
