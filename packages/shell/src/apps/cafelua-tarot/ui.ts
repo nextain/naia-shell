@@ -366,3 +366,33 @@ export function ui(locale: AppLocale, key: Key): string {
 	return rows[locale][keys.indexOf(key)];
 }
 export { keys as UI_KEYS, rows as UI_TRANSLATIONS };
+
+const bookParts: Record<AppLocale, readonly [string, string]> = {
+	ko: ["1부", "2부"],
+	en: ["Part I", "Part II"],
+	ar: ["الجزء الأول", "الجزء الثاني"],
+	bn: ["প্রথম পর্ব", "দ্বিতীয় পর্ব"],
+	de: ["Teil I", "Teil II"],
+	es: ["Parte I", "Parte II"],
+	fr: ["Partie I", "Partie II"],
+	hi: ["भाग १", "भाग २"],
+	id: ["Bagian I", "Bagian II"],
+	ja: ["第1部", "第2部"],
+	pt: ["Parte I", "Parte II"],
+	ru: ["Часть I", "Часть II"],
+	vi: ["Phần I", "Phần II"],
+	zh: ["第一部", "第二部"],
+};
+
+export function bookLocation(
+	locale: AppLocale,
+	path: string,
+	title: string,
+): string {
+	const part = path.startsWith("fable/")
+		? bookParts[locale][0]
+		: path.startsWith("astra/")
+			? bookParts[locale][1]
+			: "";
+	return [part, title].filter(Boolean).join(" · ");
+}

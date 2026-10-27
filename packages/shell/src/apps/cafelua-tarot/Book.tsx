@@ -16,7 +16,7 @@ import {
 	type MeasuredReaderPage,
 } from "./library-dom-pagination";
 import { assetUrl } from "./assets";
-import { ui } from "./ui";
+import { bookLocation, ui } from "./ui";
 import type { AppLocale } from "./i18n";
 import "./LibraryPage.css";
 
@@ -295,7 +295,11 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 						♫
 					</span>
 				</button>
-				<span>{edition.title}</span>
+				<span>
+					{edition.title}
+					{pages[index] &&
+						` · ${bookLocation(locale, edition.chapters[pages[index].chapterIndex].path, pages[index].chapterTitle)}`}
+				</span>
 			</header>
 			{toc && (
 				<aside className="book-toc">
