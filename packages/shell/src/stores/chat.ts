@@ -145,17 +145,28 @@ function getInitialLocalSessionId(): string {
  * path / voice `recordEmpty`) are UI state, not conversation: sending them as
  * empty assistant turns hands the model a truncated/broken context, which is
  * what makes it re-introduce itself or continue mid-sentence after a retry.
+ *
+ * The failed attempt's partial assistant row (committed by `finishStreaming`
+ * on the error path, sitting right before the failure notice) goes with it:
+ * resending a mid-sentence fragment makes the model continue mid-sentence
+ * on retry ("는건 …" — 2026-10-27). Displayed messages are untouched.
  */
 export function toSendHistory(
 	messages: readonly ChatMessage[],
 ): { role: "user" | "assistant"; content: string }[] {
+	const failureAt = new Set(
+		messages.map((m, i) => (m.failure ? i : -1)).filter((i) => i >= 0),
+	);
 	return messages
-		.filter(
-			(m) =>
-				(m.role === "user" || m.role === "assistant") &&
-				!m.failure &&
-				m.content.trim() !== "",
-		)
+		.filter((m, i) => {
+			if (m.role !== "user" && m.role !== "assistant") return false;
+			// Failure notice itself, or the failed attempt's partial assistant
+			// sitting right before it (error path always commits an assistant
+			// row then appends the notice adjacently — user rows never match).
+			if (m.failure || (m.role === "assistant" && failureAt.has(i + 1)))
+				return false;
+			return m.content.trim() !== "";
+		})
 		.map((m) => ({ role: m.role, content: m.content }));
 }
 
