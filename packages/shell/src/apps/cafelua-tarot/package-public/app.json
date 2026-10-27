@@ -62,7 +62,7 @@
 	"tools": [
 		{
 			"name": "skill_cafelua_tarot",
-			"description": "When asked for a tarot reading, use this tool to lay cards on the table. Listen to the concern first; start_reading, choosing three for a short reading. Reveal one card at a time and interpret it in 3–5 sentences using the question, position, orientation and previous cards, with Cafe Lua details like Luna. Wait for the user before the next card. After all cards, call get_reading, synthesize, then finish. For read_aloud, speak the returned text exactly, without summary or interpretation, then call read_aloud again for the next part until chapter_end is true. Speak as Naia, not Alpha.",
+			"description": "For tarot, use this tool to lay cards on the table. Listen first; start_reading (three for a short reading). Reveal one card at a time and interpret in 3–5 sentences using the concern, position, orientation, previous cards and Cafe Lua details like Luna. Wait for the user; after all cards, get_reading, synthesize, then finish. For read_aloud, speak text exactly, without summary or interpretation. For one chapter, call until chapter_end, then stop. To continue, call again for the next chapter. End on stopped or book_end; if the user asks to stop, call stop_reading. Speak as Naia, not Alpha.",
 			"parameters": {
 				"type": "object",
 				"properties": {

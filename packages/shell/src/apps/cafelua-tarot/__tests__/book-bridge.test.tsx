@@ -94,6 +94,43 @@ describe("book read button bridge", () => {
 		fireEvent.click(button);
 		expect(post).toHaveBeenCalledTimes(2);
 	});
+	it("ignores late and mismatched acceptance without disturbing a retry", () => {
+		render(<Book locale="en" onBack={() => {}} />);
+		const button = screen.getByRole("button", { name: "Naia reads" });
+		fireEvent.click(button);
+		const firstId = post.mock.calls[0][0].id;
+		act(() => vi.advanceTimersByTime(3000));
+		expect(screen.getByRole("status").textContent).toBe(
+			"Ask Naia to read aloud.",
+		);
+		reply("naia-cafelua-tarot:accepted", firstId);
+		expect(screen.getByRole("status").textContent).toBe(
+			"Ask Naia to read aloud.",
+		);
+		fireEvent.click(button);
+		const nextId = post.mock.calls[1][0].id;
+		reply("naia-cafelua-tarot:accepted", firstId);
+		reply("naia-cafelua-tarot:accepted", "different-id");
+		act(() => vi.advanceTimersByTime(3000));
+		expect(screen.getByRole("status").textContent).toBe(
+			"Ask Naia to read aloud.",
+		);
+		fireEvent.click(button);
+		expect(post).toHaveBeenCalledTimes(3);
+		expect(nextId).not.toBe(firstId);
+	});
+	it("clears the pending acceptance timer on unmount", () => {
+		const { unmount } = render(<Book locale="en" onBack={() => {}} />);
+		fireEvent.click(screen.getByRole("button", { name: "Naia reads" }));
+		const id = post.mock.calls[0][0].id;
+		unmount();
+		expect(vi.getTimerCount()).toBe(0);
+		act(() => vi.advanceTimersByTime(4000));
+		reply("naia-cafelua-tarot:accepted", id);
+		reply("naia-cafelua-tarot:response", id, "failure");
+		expect(screen.queryByRole("status")).toBeNull();
+		expect(vi.getTimerCount()).toBe(0);
+	});
 	it("shows the hint immediately in standalone mode", () => {
 		Object.defineProperty(window, "parent", {
 			configurable: true,

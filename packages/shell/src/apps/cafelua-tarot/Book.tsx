@@ -316,7 +316,7 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 				}
 				setReading(false);
 				setHighlight(null);
-				throw Error("End of book");
+				return { book_end: true, total_pages: all.length };
 			},
 			stop() {
 				stopped.current = true;
