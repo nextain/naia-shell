@@ -4131,6 +4131,10 @@ fn start_model_pull_with_policy(
                     Some(&operation_id_worker),
                 )),
             };
+            #[cfg(test)]
+            if matches!(outcome, Ok(None)) {
+                tests::wait_for_test_pull_stream_close(&base_worker);
+            }
             match outcome {
                 Ok(None) => finish_model_pull(
                     &manager_worker,
@@ -6442,7 +6446,7 @@ mod tests {
                     }
                 }
             });
-            Ok(Self {
+            let server = Self {
                 address,
                 stopped,
                 listening,
@@ -6450,7 +6454,11 @@ mod tests {
                 listen_fd,
                 fixture,
                 worker: Some(worker),
-            })
+            };
+            if let Some(model_pull) = server.fixture.lock().unwrap().model_pull.clone() {
+                register_test_pull_fixture(server.base_url(), model_pull);
+            }
+            Ok(server)
         }
 
         fn base_url(&self) -> String {
@@ -6459,9 +6467,18 @@ mod tests {
 
         fn stop(&self) {
             self.stopped.store(true, Ordering::Release);
+            if let Some(model_pull) = self.fixture.lock().unwrap().model_pull.clone() {
+                model_pull.stopped.store(true, Ordering::Release);
+                model_pull.notify_pull_waiters();
+            }
         }
 
         fn set_fixture(&self, fixture: ApiFixture) {
+            if let Some(model_pull) = fixture.model_pull.clone() {
+                register_test_pull_fixture(self.base_url(), model_pull);
+            } else {
+                unregister_test_pull_fixture(&self.base_url());
+            }
             *self.fixture.lock().unwrap() = fixture;
         }
 
@@ -6478,6 +6495,7 @@ mod tests {
 
     impl Drop for TestApiServer {
         fn drop(&mut self) {
+            unregister_test_pull_fixture(&self.base_url());
             self.stop();
             if let Some(worker) = self.worker.take() {
                 let _ = worker.join();
@@ -8645,6 +8663,7 @@ mod tests {
         request_paths: Mutex<Vec<String>>,
         model_available: AtomicBool,
         client_closed_pull: AtomicBool,
+        client_closed_pull_wait: (Mutex<bool>, Condvar),
         stopped: AtomicBool,
     }
 
@@ -8671,7 +8690,65 @@ mod tests {
                 request_paths: Mutex::new(Vec::new()),
                 model_available: AtomicBool::new(digest.is_some()),
                 client_closed_pull: AtomicBool::new(false),
+                client_closed_pull_wait: (Mutex::new(false), Condvar::new()),
                 stopped: AtomicBool::new(false),
+            }
+        }
+
+        fn record_client_closed_pull(&self) {
+            let (lock, changed) = &self.client_closed_pull_wait;
+            let mut closed = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            self.client_closed_pull.store(true, Ordering::Release);
+            *closed = true;
+            changed.notify_all();
+        }
+
+        fn notify_pull_waiters(&self) {
+            let (_, changed) = &self.client_closed_pull_wait;
+            changed.notify_all();
+        }
+
+        fn wait_for_client_closed_pull(&self, timeout: Duration) -> bool {
+            let (lock, changed) = &self.client_closed_pull_wait;
+            let guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let (guard, _) = changed
+                .wait_timeout_while(guard, timeout, |closed| {
+                    !*closed && !self.stopped.load(Ordering::Acquire)
+                })
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            *guard && self.client_closed_pull.load(Ordering::Acquire)
+        }
+    }
+
+    fn test_pull_fixtures() -> &'static Mutex<BTreeMap<String, Arc<ModelPullApiFixture>>> {
+        static FIXTURES: std::sync::OnceLock<Mutex<BTreeMap<String, Arc<ModelPullApiFixture>>>> =
+            std::sync::OnceLock::new();
+        FIXTURES.get_or_init(|| Mutex::new(BTreeMap::new()))
+    }
+
+    fn register_test_pull_fixture(base_url: String, fixture: Arc<ModelPullApiFixture>) {
+        test_pull_fixtures()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(base_url, fixture);
+    }
+
+    fn unregister_test_pull_fixture(base_url: &str) {
+        test_pull_fixtures()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(base_url);
+    }
+
+    pub(super) fn wait_for_test_pull_stream_close(base_url: &str) {
+        let fixture = test_pull_fixtures()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(base_url)
+            .cloned();
+        if let Some(fixture) = fixture {
+            if fixture.hold_pull_open && fixture.pull_requests.load(Ordering::Acquire) > 0 {
+                let _ = fixture.wait_for_client_closed_pull(MODEL_PULL_CANCEL_TIMEOUT);
             }
         }
     }
@@ -8714,11 +8791,13 @@ mod tests {
                     }
                 }
             });
-            Ok(Self {
+            let server = Self {
                 address,
                 fixture,
                 worker: Some(worker),
-            })
+            };
+            register_test_pull_fixture(server.base_url(), server.fixture.clone());
+            Ok(server)
         }
 
         fn base_url(&self) -> String {
@@ -8728,7 +8807,9 @@ mod tests {
 
     impl Drop for ModelPullApiServer {
         fn drop(&mut self) {
+            unregister_test_pull_fixture(&self.base_url());
             self.fixture.stopped.store(true, Ordering::Release);
+            self.fixture.notify_pull_waiters();
             // Release a nonblocking accept loop even on platforms where the next poll is delayed.
             let _ = std::net::TcpStream::connect(self.address);
             if let Some(worker) = self.worker.take() {
@@ -8849,13 +8930,15 @@ mod tests {
                 let _ = write_fixture_response(&mut stream, body);
             }
             "/api/pull" => {
-                let pull_number = fixture.pull_requests.fetch_add(1, Ordering::AcqRel) + 1;
+                let pull_number = fixture.pull_requests.load(Ordering::Acquire) + 1;
                 let body = serde_json::from_slice(request_body).unwrap_or(Value::Null);
                 fixture.pull_request_bodies.lock().unwrap().push(body);
                 if fixture.fail_first_pull && pull_number == 1 {
                     let _ = stream.write_all(
                         b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                     );
+                    let _ = stream.flush();
+                    fixture.pull_requests.fetch_add(1, Ordering::AcqRel);
                     return;
                 }
                 let _ = stream.write_all(
@@ -8867,6 +8950,7 @@ mod tests {
                 let _ = stream.write_all(first);
                 let _ = stream.write_all(b"\r\n");
                 let _ = stream.flush();
+                fixture.pull_requests.fetch_add(1, Ordering::AcqRel);
                 if fixture.disconnect_pull_early {
                     return;
                 }
@@ -8874,7 +8958,7 @@ mod tests {
                     loop {
                         match stream.read(&mut chunk) {
                             Ok(0) => {
-                                fixture.client_closed_pull.store(true, Ordering::Release);
+                                fixture.record_client_closed_pull();
                                 break;
                             }
                             Ok(_) => {}
@@ -8886,21 +8970,22 @@ mod tests {
                                         | io::ErrorKind::Interrupted
                                 ) => {}
                             Err(_) => {
-                                fixture.client_closed_pull.store(true, Ordering::Release);
+                                fixture.record_client_closed_pull();
                                 break;
                             }
                         }
                         if fixture.stopped.load(Ordering::Acquire) {
+                            fixture.notify_pull_waiters();
                             break;
                         }
                     }
                 } else {
+                    fixture.model_available.store(true, Ordering::Release);
                     let second = b"\n{\"status\":\"success\"}";
                     let _ = write!(stream, "{:X}\r\n", second.len());
                     let _ = stream.write_all(second);
                     let _ = stream.write_all(b"\r\n0\r\n\r\n");
                     let _ = stream.flush();
-                    fixture.model_available.store(true, Ordering::Release);
                 }
             }
             _ => {
