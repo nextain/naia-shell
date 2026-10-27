@@ -66,8 +66,16 @@ vi.mock("../library-dom-pagination", () => ({
 }));
 
 describe("book read-aloud progression", () => {
+	let parent: Window;
+	let post: ReturnType<typeof vi.fn>;
 	beforeEach(() => {
 		vi.useFakeTimers();
+		parent = window.parent;
+		post = vi.fn();
+		Object.defineProperty(window, "parent", {
+			configurable: true,
+			value: { postMessage: post },
+		});
 		vi.stubGlobal("matchMedia", () => ({
 			matches: false,
 			addEventListener: vi.fn(),
@@ -87,6 +95,10 @@ describe("book read-aloud progression", () => {
 	});
 	afterEach(() => {
 		cleanup();
+		Object.defineProperty(window, "parent", {
+			configurable: true,
+			value: parent,
+		});
 		vi.unstubAllGlobals();
 		vi.useRealTimers();
 	});
@@ -109,45 +121,94 @@ describe("book read-aloud progression", () => {
 			});
 			return result;
 		};
-		return { read };
+		return { read, ref };
 	}
-	it("continues across chapters, enforces batch limits, and returns book_end", async () => {
-		const { read } = await setup();
-		const first = await read();
-		expect(first.text).toBe(`${"A".repeat(240)}\n\n${"B".repeat(240)}`);
-		expect((first.text as string).length).toBeLessThanOrEqual(600);
-		expect(first.chapter_end).toBe(false);
-		expect(await read()).toMatchObject({
-			text: "C".repeat(240),
-			chapter_end: false,
-		});
-		expect(await read()).toMatchObject({
-			text: "D".repeat(240),
-			chapter_end: true,
-		});
-		const next = await read();
-		expect(next).toMatchObject({
-			text: "E\n\nF\n\nG",
-			chapter_title: "Second",
-			chapter_end: false,
-		});
-		expect((next.text as string).split("\n\n")).toHaveLength(3);
-		expect(await read()).toMatchObject({ text: "H", chapter_end: true });
-		expect(await read()).toEqual({ book_end: true, total_pages: 3 });
-		expect(document.querySelectorAll(".naia-reading-highlight")).toHaveLength(
-			0,
+	function sent() {
+		return post.mock.calls.filter(
+			([m]) => m.type === "naia-cafelua-tarot:speak",
 		);
+	}
+	function reply(status: string) {
+		const id = sent().at(-1)![0].id;
+		act(() =>
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					source: window.parent,
+					data: { type: "naia-cafelua-tarot:speech-result", id, status },
+				}),
+			),
+		);
+	}
+	it("waits for completion, reads one paragraph at a time and stops at the chapter boundary", async () => {
+		const { read, ref } = await setup();
+		expect(await read()).toMatchObject({
+			started: true,
+			chapter_title: "First",
+		});
+		expect(await read()).toMatchObject({ already_reading: true });
+		act(() => vi.advanceTimersByTime(0));
+		expect(sent()).toHaveLength(1);
+		expect(sent()[0][0].text).toBe("A".repeat(240));
+		expect(document.querySelectorAll(".naia-reading-highlight")).toHaveLength(
+			1,
+		);
+		reply("finished");
+		expect(sent()).toHaveLength(2);
+		expect(sent()[1][0].text).toBe("B".repeat(240));
+		reply("finished");
+		expect(sent()).toHaveLength(3);
+		expect(sent()[2][0].text).toBe("C".repeat(240));
+		reply("finished");
+		expect(sent()).toHaveLength(4);
+		expect(sent()[3][0].text).toBe("D".repeat(240));
+		reply("finished");
+		expect(sent()).toHaveLength(4);
+		expect(screen.getByRole("status").textContent).toContain(
+			"chapter is finished",
+		);
+		await act(async () => {
+			await ref.current!.open(1);
+		});
+		expect(await read()).toMatchObject({
+			started: true,
+			chapter_title: "Second",
+		});
+		act(() => vi.advanceTimersByTime(0));
+		for (const [index, value] of ["E", "F", "G", "H"].entries()) {
+			expect(sent()[4 + index][0].text).toBe(value);
+			reply("finished");
+		}
+		expect(await read()).toMatchObject({ book_end: true });
 	});
-	it("stops reading when the read button is pressed during playback", async () => {
+	it("stops reading when the read button is pressed during playback and retries the same batch", async () => {
 		const { read } = await setup();
 		await read();
-		expect(
-			document.querySelectorAll(".naia-reading-highlight").length,
-		).toBeGreaterThan(0);
+		act(() => vi.advanceTimersByTime(0));
+		const first = sent()[0][0];
 		fireEvent.click(screen.getByRole("button", { name: "Naia reads" }));
-		expect(await read()).toEqual({ stopped: true });
+		expect(post).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "naia-cafelua-tarot:cancel",
+				id: first.id,
+			}),
+			"*",
+		);
 		expect(document.querySelectorAll(".naia-reading-highlight")).toHaveLength(
 			0,
 		);
+		await read();
+		act(() => vi.advanceTimersByTime(0));
+		expect(sent()[1][0].text).toBe(first.text);
+		reply("failed");
+		expect(screen.getByRole("status").textContent).toContain("Could not start");
+		await read();
+		act(() => vi.advanceTimersByTime(0));
+		expect(sent()[2][0].text).toBe(first.text);
+		act(() => {
+			refStop();
+		});
 	});
+	function refStop() {
+		fireEvent.click(screen.getByRole("button", { name: "Naia reads" }));
+	}
 });

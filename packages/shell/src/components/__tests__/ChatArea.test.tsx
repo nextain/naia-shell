@@ -12,6 +12,8 @@ import {
 	CAFE_LUA_TAROT_APP_ID,
 	CAFE_LUA_TAROT_ASK_EVENT,
 	CAFE_LUA_TAROT_RESPONSE_EVENT,
+	CAFE_LUA_TAROT_SPEAK_EVENT,
+	CAFE_LUA_TAROT_SPEECH_RESULT_EVENT,
 } from "../../apps/generic-installed/cafelua-tarot-host-bridge";
 import { appRegistry } from "../../lib/app-registry";
 import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
@@ -2320,6 +2322,48 @@ describe("ChatArea", () => {
 		fireEvent.keyDown(input, { key: "ArrowDown" });
 		// Value should remain unchanged
 		expect(input.value).toBe("some text");
+	});
+
+	it("reads a tarot paragraph as one utterance and ignores playback end before start", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+				ttsProvider: "nextain",
+			}),
+		);
+		const results = vi.fn();
+		window.addEventListener(CAFE_LUA_TAROT_SPEECH_RESULT_EVENT, results);
+		render(<ChatArea />);
+		const paragraph = "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다.";
+		window.dispatchEvent(
+			new CustomEvent(CAFE_LUA_TAROT_SPEAK_EVENT, {
+				detail: {
+					requestId: "tarot-one",
+					generation: 0,
+					page: 1,
+					text: paragraph,
+				},
+			}),
+		);
+		await waitFor(() =>
+			expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(1),
+		);
+		expect(ttsSyncMocks.synthesizeTts.mock.calls[0][0].text).toBe(paragraph);
+		act(() => ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.());
+		expect(results).not.toHaveBeenCalled();
+		act(() => ttsSyncMocks.audioQueueCallbacks?.onPlaybackStart?.());
+		act(() => ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.());
+		expect(results).toHaveBeenCalledTimes(1);
+		expect(results.mock.calls[0][0].detail).toMatchObject({
+			requestId: "tarot-one",
+			status: "finished",
+		});
+		window.removeEventListener(CAFE_LUA_TAROT_SPEECH_RESULT_EVENT, results);
+		localStorage.removeItem("naia-config");
 	});
 
 	it("splits slide narration into sentences instead of one page-sized request", async () => {

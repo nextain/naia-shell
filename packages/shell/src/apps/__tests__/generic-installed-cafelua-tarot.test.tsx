@@ -106,3 +106,82 @@ describe("installed Cafe Lua Tarot host bridge", () => {
 		window.removeEventListener(CAFE_LUA_TAROT_ASK_EVENT, forwarded);
 	});
 });
+
+it("routes authorized tarot speech, cancellation and matching results without slide leaks", () => {
+	const frame = document.createElement("iframe");
+	const other = document.createElement("iframe");
+	frame.src = "http://asset.localhost/apps/tarot";
+	other.src = "http://asset.localhost/apps/other";
+	document.body.append(frame, other);
+	const target = frame.contentWindow!;
+	const origin = new URL(frame.src).origin;
+	const post = vi.spyOn(target, "postMessage");
+	const otherPost = vi.spyOn(other.contentWindow!, "postMessage");
+	const speak = vi.fn();
+	const cancel = vi.fn();
+	window.addEventListener("naia:cafelua-tarot:speak", speak);
+	window.addEventListener("naia:cafelua-tarot:cancel", cancel);
+	useAppStore.setState({ activeApp: CAFE_LUA_TAROT_APP_ID });
+	const dispose = installCafeLuaTarotHostBridge(frame, frame.src);
+	const send = (source: Window, eventOrigin: string, data: object) =>
+		window.dispatchEvent(
+			new MessageEvent("message", { source, origin: eventOrigin, data }),
+		);
+	const data = {
+		type: "naia-cafelua-tarot:speak",
+		appId: CAFE_LUA_TAROT_APP_ID,
+		id: "book-1",
+		page: 1,
+		text: "Original",
+	};
+	send(other.contentWindow!, origin, data);
+	send(target, "https://wrong.example", data);
+	send(target, origin, { ...data, text: "x".repeat(2001) });
+	useAppStore.setState({ activeApp: "other" });
+	send(target, origin, data);
+	expect(speak).not.toHaveBeenCalled();
+	useAppStore.setState({ activeApp: CAFE_LUA_TAROT_APP_ID });
+	send(target, origin, data);
+	expect(speak).toHaveBeenCalledOnce();
+	expect((speak.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+		requestId: "book-1",
+		text: "Original",
+	});
+	window.dispatchEvent(
+		new CustomEvent("naia:slide-presenter-speech-result", {
+			detail: { requestId: "book-1", status: "finished" },
+		}),
+	);
+	window.dispatchEvent(
+		new CustomEvent("naia:cafelua-tarot:speech-result", {
+			detail: { requestId: "other", status: "finished" },
+		}),
+	);
+	expect(
+		post.mock.calls.some(
+			([m]) => m.type === "naia-cafelua-tarot:speech-result",
+		),
+	).toBe(false);
+	send(target, origin, { ...data, type: "naia-cafelua-tarot:cancel" });
+	expect(cancel).toHaveBeenCalledOnce();
+	window.dispatchEvent(
+		new CustomEvent("naia:cafelua-tarot:speech-result", {
+			detail: { requestId: "book-1", status: "cancelled" },
+		}),
+	);
+	expect(post).toHaveBeenCalledWith(
+		{
+			type: "naia-cafelua-tarot:speech-result",
+			id: "book-1",
+			status: "cancelled",
+		},
+		origin,
+	);
+	expect(otherPost).not.toHaveBeenCalled();
+	dispose();
+	window.removeEventListener("naia:cafelua-tarot:speak", speak);
+	window.removeEventListener("naia:cafelua-tarot:cancel", cancel);
+	document.body.replaceChildren();
+	useAppStore.setState({ activeApp: null });
+	vi.restoreAllMocks();
+});

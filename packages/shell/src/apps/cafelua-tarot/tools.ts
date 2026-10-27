@@ -50,12 +50,16 @@ export function createTarotToolHandler(state: TarotToolState) {
 			)
 				throw new Error("Invalid spread");
 			const spread = args.spread === "three" ? "three" : "celtic";
-			const reading = state.startReading(
+			const question =
 				typeof args.question === "string"
 					? args.question.trim().slice(0, 500)
-					: "",
-				spread,
-			);
+					: "";
+			if (!question)
+				return {
+					need_question: true,
+					note: "Ask the user what their concern is and wait for their answer before starting.",
+				};
+			const reading = state.startReading(question, spread);
 			return {
 				spread,
 				total: reading.cards.length,
@@ -75,10 +79,17 @@ export function createTarotToolHandler(state: TarotToolState) {
 				typeof args.card !== "number"
 			)
 				throw new Error("Invalid card");
-			return state.openStory(
+			const result = state.openStory(
 				args.card as string | number | undefined,
 				args.part === 2 ? 2 : 1,
 			);
+			const addNote = (value: TarotToolResult) => ({
+				...value,
+				note: "To read it, call read_aloud. Never write story text from memory.",
+			});
+			return result instanceof Promise
+				? (result.then(addNote) as unknown as TarotToolResult)
+				: addNote(result);
 		}
 		if (action === "read_aloud") return state.readAloud();
 		if (action === "stop_reading") return state.stopReading();
@@ -92,11 +103,22 @@ export function createTarotToolHandler(state: TarotToolState) {
 			state.setReading(next);
 			state.onReveal?.();
 			const shown = revealedCards(next);
-			return cardResult(
-				shown[shown.length - 1],
-				shown.length - 1,
-				next.cards.length,
-			);
+			const remaining = next.cards.length - shown.length;
+			return {
+				...cardResult(
+					shown[shown.length - 1],
+					shown.length - 1,
+					next.cards.length,
+				),
+				revealed: shown.length,
+				remaining,
+				all_revealed: remaining === 0,
+				...(remaining > 0
+					? {
+							note: "Interpret only this card. Do not name, guess, or interpret unrevealed cards. Wait for the user before the next reveal.",
+						}
+					: {}),
+			};
 		}
 		if (action === "get_reading" || action === "finish") {
 			if (action === "finish") {
@@ -104,7 +126,17 @@ export function createTarotToolHandler(state: TarotToolState) {
 					throw new Error("Reveal all cards before finishing");
 				state.finish();
 			}
+			const revealed = revealedCards(current).length;
+			const remaining = current.cards.length - revealed;
 			return {
+				...(remaining
+					? {
+							incomplete: true,
+							revealed,
+							remaining,
+							note: "Not all cards are revealed. Do not synthesize; reveal the next card when the user is ready.",
+						}
+					: { all_revealed: true }),
 				cards: revealedCards(current).map((item, index) =>
 					cardResult(item, index, current.cards.length),
 				),

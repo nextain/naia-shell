@@ -26,23 +26,6 @@ export interface BookHandle {
 	stop: () => Record<string, unknown>;
 }
 type Props = { locale: AppLocale; onBack: () => void };
-const stopHint: Record<AppLocale, string> = {
-	ko: "나이아에게 '그만'이라고 말해 보세요.",
-	en: "Ask Naia to stop.",
-	ar: "اطلب من نايا التوقف.",
-	bn: "নায়াকে থামতে বলুন।",
-	de: "Bitte Naia aufzuhören.",
-	es: "Pídele a Naia que pare.",
-	fr: "Demandez à Naia de s'arrêter.",
-	hi: "नाया से रुकने को कहें।",
-	id: "Minta Naia berhenti.",
-	ja: "ナイアに「やめて」と言ってみましょう。",
-	pt: "Peça a Naia para parar.",
-	ru: "Попросите Naia остановиться.",
-	vi: "Hãy bảo Naia dừng lại.",
-	zh: "请对 Naia 说“停止”。",
-};
-
 export const readRequests: Record<AppLocale, string> = {
 	ko: "나이아, 카페루아 타로 이야기 지금 장을 그대로 읽어 줘.",
 	en: "Naia, please read the current chapter of the Cafe Lua tarot story aloud, just as it is written.",
@@ -75,6 +58,22 @@ export const readErrors: Record<AppLocale, string> = {
 	vi: "Không thể bắt đầu đọc. Hãy thử lại.",
 	zh: "无法开始朗读，请重试。",
 };
+export const chapterDone: Record<AppLocale, string> = {
+	ko: "이 장을 다 읽었어요. 다음 장을 열어 주세요.",
+	en: "This chapter is finished. Open the next chapter to continue.",
+	ar: "انتهى هذا الفصل. افتح الفصل التالي للمتابعة.",
+	bn: "এই অধ্যায় শেষ। চালিয়ে যেতে পরের অধ্যায় খুলুন।",
+	de: "Dieses Kapitel ist zu Ende. Öffne das nächste Kapitel.",
+	es: "Este capítulo ha terminado. Abre el siguiente para continuar.",
+	fr: "Ce chapitre est terminé. Ouvrez le suivant pour continuer.",
+	hi: "यह अध्याय पूरा हुआ। आगे पढ़ने के लिए अगला अध्याय खोलें।",
+	id: "Bab ini selesai. Buka bab berikutnya untuk melanjutkan.",
+	ja: "この章は終わりました。続けるには次の章を開いてください。",
+	pt: "Este capítulo terminou. Abra o próximo para continuar.",
+	ru: "Глава закончена. Откройте следующую главу, чтобы продолжить.",
+	vi: "Chương này đã hết. Hãy mở chương tiếp theo để tiếp tục.",
+	zh: "本章已读完。请打开下一章继续。",
+};
 let requestSequence = 0;
 
 export const Book = forwardRef<BookHandle, Props>(function Book(
@@ -100,14 +99,15 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 	const [notice, setNotice] = useState("");
 	const request = useRef<{
 		id: string;
-		timer: number | null;
-		accepted: boolean;
+		timer: number;
+		finish: (status: string) => void;
 	} | null>(null);
+	const readingRef = useRef(false);
+	const readingGeneration = useRef(0);
 	const localeRef = useRef(locale);
 	localeRef.current = locale;
 	const cursor = useRef({ page: 0 });
 	const consumed = useRef(new Set<string>());
-	const stopped = useRef(false);
 	const source = useRef<HTMLDivElement>(null);
 	const template = useRef<HTMLElement>(null);
 	const panel = useRef<HTMLElement>(null);
@@ -118,71 +118,63 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 			if (
 				event.source !== window.parent ||
 				!current ||
-				event.data?.id !== current.id
+				event.data?.id !== current.id ||
+				event.data?.type !== "naia-cafelua-tarot:speech-result"
 			)
 				return;
-			if (event.data.type === "naia-cafelua-tarot:accepted") {
-				current.accepted = true;
-				if (current.timer !== null) clearTimeout(current.timer);
-				current.timer = null;
-			} else if (
-				event.data.type === "naia-cafelua-tarot:response" &&
-				current.accepted
-			) {
-				request.current = null;
-				if (event.data.error) setNotice(readErrors[localeRef.current]);
-			}
+			current.finish(event.data.status);
 		};
 		window.addEventListener("message", onMessage);
 		return () => {
 			window.removeEventListener("message", onMessage);
-			if (
-				request.current?.timer !== null &&
-				request.current?.timer !== undefined
-			)
+			if (request.current) {
+				window.parent.postMessage(
+					{
+						type: "naia-cafelua-tarot:cancel",
+						appId: "land.naia.cafelua-tarot",
+						id: request.current.id,
+					},
+					"*",
+				);
 				clearTimeout(request.current.timer);
+				request.current = null;
+			}
+			readingRef.current = false;
 		};
 	}, []);
 	function stopReading() {
-		stopped.current = true;
+		readingGeneration.current++;
+		readingRef.current = false;
+		const current = request.current;
+		if (current) {
+			window.parent.postMessage(
+				{
+					type: "naia-cafelua-tarot:cancel",
+					appId: "land.naia.cafelua-tarot",
+					id: current.id,
+				},
+				"*",
+			);
+			clearTimeout(current.timer);
+			request.current = null;
+		}
 		setReading(false);
 		setAuto(false);
 		setHighlight(null);
-		setNotice(stopHint[locale]);
-		window.setTimeout(() => setNotice(""), 3500);
 	}
 	function requestReading() {
-		if (reading) {
+		if (readingRef.current) {
 			stopReading();
 			return;
 		}
-		if (request.current) return;
 		if (window.parent === window) {
 			setNotice(ui(locale, "readHint"));
 			return;
 		}
-		stopped.current = false;
-		setAuto(false);
-		setNotice("");
-		const id = `read-${Date.now()}-${++requestSequence}`;
-		const timer = window.setTimeout(() => {
-			if (request.current?.id === id && !request.current.accepted) {
-				request.current = null;
-				setNotice(ui(locale, "readHint"));
-			}
-		}, 3000);
-		request.current = { id, timer, accepted: false };
-		window.parent.postMessage(
-			{
-				type: "naia-cafelua-tarot:ask",
-				appId: "land.naia.cafelua-tarot",
-				id,
-				prompt: readRequests[locale],
-			},
-			"*",
-		);
+		void startReading();
 	}
 	function move(i: number) {
+		if (readingRef.current) stopReading();
 		indexRef.current = Math.max(0, Math.min(i, pagesRef.current.length - 1));
 		setIndex(indexRef.current);
 		cursor.current = { page: indexRef.current };
@@ -239,6 +231,154 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 		pagesRef.current.length
 			? Promise.resolve()
 			: new Promise<void>((resolve) => pending.current.push(resolve));
+	async function startReading(): Promise<Record<string, unknown>> {
+		if (readingRef.current)
+			return {
+				already_reading: true,
+				chapter_title: pagesRef.current[cursor.current.page]?.chapterTitle,
+				page: cursor.current.page + 1,
+			};
+		if (window.parent === window) {
+			setNotice(ui(localeRef.current, "readHint"));
+			return { started: false };
+		}
+		readingRef.current = true;
+		const generation = ++readingGeneration.current;
+		await wait();
+		if (!readingRef.current || readingGeneration.current !== generation)
+			return { stopped: true };
+		const all = pagesRef.current;
+		const chapter = all[cursor.current.page]?.chapterIndex;
+		if (chapter === undefined) {
+			readingRef.current = false;
+			return { book_end: true };
+		}
+		const paragraphsOn = (p: MeasuredReaderPage) => {
+			const el = document.createElement("div");
+			el.innerHTML = p.html;
+			return Array.from(
+				el.querySelectorAll<HTMLElement>("p[data-reader-paragraph]"),
+				(p) => p.dataset.readerParagraph!,
+			);
+		};
+		const findBatch = () => {
+			for (
+				let page = cursor.current.page;
+				page < all.length && all[page].chapterIndex === chapter;
+				page++
+			) {
+				const ids = paragraphsOn(all[page]).filter(
+					(id) => !consumed.current.has(id),
+				);
+				const picked: string[] = [],
+					text: string[] = [];
+				for (const id of ids) {
+					const value =
+						source.current?.querySelector<HTMLElement>(
+							`p[data-reader-paragraph="${id}"]`,
+						)?.textContent ?? "";
+					if (!value) continue;
+					if (value.length > 2000) return { error: true } as const;
+					text.push(value);
+					picked.push(id);
+					break;
+				}
+				if (text.length)
+					return { page, picked, text: text.join("\n\n") } as const;
+			}
+			return null;
+		};
+		const first = findBatch();
+		if (first && "error" in first) {
+			readingRef.current = false;
+			setNotice(readErrors[localeRef.current]);
+			return { started: false };
+		}
+		if (!first) {
+			readingRef.current = false;
+			const later = all.findIndex(
+				(p, i) => i > cursor.current.page && p.chapterIndex !== chapter,
+			);
+			if (later < 0) return { book_end: true };
+			setNotice(chapterDone[localeRef.current]);
+			return {
+				chapter_end: true,
+				chapter_title: all[cursor.current.page].chapterTitle,
+				page: cursor.current.page + 1,
+			};
+		}
+		setNotice("");
+		setAuto(false);
+		setReading(true);
+		const sendNext = () => {
+			if (!readingRef.current || readingGeneration.current !== generation)
+				return;
+			const batch = findBatch();
+			if (!batch) {
+				readingRef.current = false;
+				setReading(false);
+				setHighlight(null);
+				setNotice(chapterDone[localeRef.current]);
+				return;
+			}
+			if ("error" in batch) {
+				readingRef.current = false;
+				setReading(false);
+				setHighlight(null);
+				setNotice(readErrors[localeRef.current]);
+				return;
+			}
+			cursor.current = { page: batch.page };
+			indexRef.current = compact ? batch.page : Math.floor(batch.page / 2) * 2;
+			setIndex(indexRef.current);
+			setHighlight({ page: batch.page, ids: batch.picked });
+			const id = `tarot-read-${Date.now()}-${++requestSequence}`;
+			const finish = (status: string) => {
+				if (request.current?.id !== id) return;
+				clearTimeout(request.current.timer);
+				request.current = null;
+				if (!readingRef.current) return;
+				if (status !== "finished") {
+					readingRef.current = false;
+					setReading(false);
+					setHighlight(null);
+					if (status !== "cancelled") setNotice(readErrors[localeRef.current]);
+					return;
+				}
+				batch.picked.forEach((id) => consumed.current.add(id));
+				sendNext();
+			};
+			const timer = window.setTimeout(() => {
+				window.parent.postMessage(
+					{
+						type: "naia-cafelua-tarot:cancel",
+						appId: "land.naia.cafelua-tarot",
+						id,
+					},
+					"*",
+				);
+				finish("failed");
+			}, 120000);
+			request.current = { id, timer, finish };
+			window.parent.postMessage(
+				{
+					type: "naia-cafelua-tarot:speak",
+					appId: "land.naia.cafelua-tarot",
+					id,
+					page: batch.page + 1,
+					text: batch.text,
+				},
+				"*",
+			);
+		};
+		window.setTimeout(sendNext, 0);
+		return {
+			started: true,
+			chapter_title: all[cursor.current.page].chapterTitle,
+			page: cursor.current.page + 1,
+			note: "Naia's voice is now reading the original text aloud in the app. Do not recite, summarize, or continue the story yourself; reply in at most one short sentence.",
+		};
+	}
 	useImperativeHandle(
 		ref,
 		() => ({
@@ -248,82 +388,19 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 					(p) => p.chapterIndex === chapter && !p.blank,
 				);
 				if (i < 0) throw Error("Chapter not found");
-				stopped.current = false;
+				stopReading();
 				move(i);
-				setReading(false);
 				setAuto(false);
 				return { chapter_title: pagesRef.current[i].chapterTitle, page: i + 1 };
 			},
-			async read() {
-				await wait();
-				if (stopped.current) return { stopped: true };
-				setAuto(false);
-				setReading(true);
-				let { page } = cursor.current;
-				const all = pagesRef.current;
-				const paragraphsOn = (p: MeasuredReaderPage) => {
-					const el = document.createElement("div");
-					el.innerHTML = p.html;
-					return Array.from(
-						el.querySelectorAll<HTMLElement>("p[data-reader-paragraph]"),
-					).map((p) => p.dataset.readerParagraph!);
-				};
-				while (page < all.length) {
-					const ids = paragraphsOn(all[page]).filter(
-						(id) => !consumed.current.has(id),
-					);
-					if (!ids.length) {
-						page++;
-						continue;
-					}
-					const text: string[] = [];
-					const picked: string[] = [];
-					let length = 0;
-					for (const id of ids) {
-						const value =
-							source.current?.querySelector<HTMLElement>(
-								`p[data-reader-paragraph="${id}"]`,
-							)?.textContent ?? "";
-						if (!value) continue;
-						if (text.length && length + value.length + 2 > 600) break;
-						text.push(value);
-						picked.push(id);
-						length += value.length + 2;
-						if (text.length === 3) break;
-					}
-					if (!text.length) {
-						page++;
-						continue;
-					}
-					picked.forEach((id) => consumed.current.add(id));
-					cursor.current = { page };
-					indexRef.current = compact ? page : Math.floor(page / 2) * 2;
-					setIndex(indexRef.current);
-					setHighlight({ page, ids: picked });
-					const last = !all
-						.slice(page)
-						.filter((p) => p.chapterIndex === all[page].chapterIndex)
-						.some((p) =>
-							paragraphsOn(p).some((id) => !consumed.current.has(id)),
-						);
-					return {
-						text: text.join("\n\n"),
-						chapter_title: all[page].chapterTitle,
-						page: page + 1,
-						total_pages: all.length,
-						chapter_end: last,
-					};
-				}
-				setReading(false);
-				setHighlight(null);
-				return { book_end: true, total_pages: all.length };
-			},
+			read: startReading,
 			stop() {
-				stopped.current = true;
-				setReading(false);
-				setAuto(false);
-				setHighlight(null);
-				return { page: cursor.current.page + 1 };
+				stopReading();
+				return {
+					stopped: true,
+					page: cursor.current.page + 1,
+					note: "Reading stopped. Reply in one short sentence and do not add any story text.",
+				};
 			},
 		}),
 		[compact, edition],
@@ -351,7 +428,13 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 	return (
 		<section className="library-reader-panel tarot-book" ref={panel}>
 			<header className="book-toolbar">
-				<button onClick={onBack} aria-label={ui(locale, "back")}>
+				<button
+					onClick={() => {
+						stopReading();
+						onBack();
+					}}
+					aria-label={ui(locale, "back")}
+				>
 					<span className="book-wide">{ui(locale, "back")}</span>
 					<span className="book-icon" aria-hidden="true">
 						←
@@ -388,8 +471,7 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 					aria-label={ui(locale, "auto")}
 					aria-pressed={auto}
 					onClick={() => {
-						setReading(false);
-						setHighlight(null);
+						stopReading();
 						setAuto(!auto);
 					}}
 				>

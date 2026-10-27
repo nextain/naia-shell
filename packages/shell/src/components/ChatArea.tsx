@@ -117,6 +117,11 @@ import {
 	toSpeechProfileCommandInput,
 } from "../lib/proactive-speech-settings";
 import {
+	CAFE_LUA_TAROT_SPEAK_EVENT,
+	CAFE_LUA_TAROT_CANCEL_EVENT,
+	CAFE_LUA_TAROT_SPEECH_RESULT_EVENT,
+} from "../apps/generic-installed/cafelua-tarot-host-bridge";
+import {
 	SLIDE_PRESENTER_CANCEL_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
 	SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
@@ -574,8 +579,14 @@ export function ChatArea({
 	// calls the public interface. The pipeline owns the request lifecycle, the
 	// one-time local-voice notice, and the recent-utterance ring (echo filter).
 	const sentencePipelineRef = useRef<SentenceTtsPipeline | null>(null);
-	const activeSlidePresenterSpeechRef =
-		useRef<SlidePresenterSpeechRequest | null>(null);
+	const activeSlidePresenterSpeechRef = useRef<
+		| (SlidePresenterSpeechRequest & {
+				tarot?: boolean;
+				entered?: boolean;
+				started?: boolean;
+		  })
+		| null
+	>(null);
 	if (!sentencePipelineRef.current) {
 		sentencePipelineRef.current = createSentenceTtsPipeline({
 			generateRequestId,
@@ -604,6 +615,7 @@ export function ChatArea({
 				setTtsPlaying(on);
 				useAvatarStore.getState().setSpeaking(on);
 				// #423: browser speech end/error releases the held expression.
+				if (on) markTarotPlaybackStarted();
 				if (!on) {
 					settleAvatarEmotionIfIdle();
 					settleSlidePresenterSpeech("finished");
@@ -617,7 +629,7 @@ export function ChatArea({
 				}),
 			onSynthesisResult: (result) => {
 				const slide = activeSlidePresenterSpeechRef.current;
-				if (result.provider !== "naia-local-voice") return;
+				if (result.provider !== "naia-local-voice" || slide?.tarot) return;
 				return writeVoiceDiagnostic(
 					slide ? "land.naia.slides" : "land.naia.shell",
 					slide,
@@ -988,17 +1000,28 @@ export function ChatArea({
 			);
 	}
 
+	function markTarotPlaybackStarted(): void {
+		const active = activeSlidePresenterSpeechRef.current;
+		if (active?.tarot && active.entered) active.started = true;
+	}
+
 	function settleSlidePresenterSpeech(
 		status: "finished" | "cancelled" | "failed",
 		error?: string,
 	): void {
 		const active = activeSlidePresenterSpeechRef.current;
-		if (!active) return;
+		if (!active || (status === "finished" && active.tarot && !active.started))
+			return;
 		activeSlidePresenterSpeechRef.current = null;
 		window.dispatchEvent(
-			new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
-				detail: { ...active, status, error },
-			}),
+			new CustomEvent(
+				active.tarot
+					? CAFE_LUA_TAROT_SPEECH_RESULT_EVENT
+					: SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
+				{
+					detail: { ...active, status, error },
+				},
+			),
 		);
 		Logger.info("ChatArea", "slide narration settled", {
 			page: active.page,
@@ -1249,6 +1272,7 @@ export function ChatArea({
 			audioQueueRef.current = new AudioQueue({
 				outputDeviceId: config.ttsOutputDeviceId || undefined,
 				onPlaybackStart: () => {
+					markTarotPlaybackStarted();
 					useAvatarStore.getState().setSpeaking(true);
 					ttsPlayingRef.current = true;
 					setTtsPlaying(true);
@@ -1292,7 +1316,10 @@ export function ChatArea({
 				return;
 			}
 			interruptTts();
-			activeSlidePresenterSpeechRef.current = detail;
+			activeSlidePresenterSpeechRef.current = {
+				...detail,
+				tarot: event.type === CAFE_LUA_TAROT_SPEAK_EVENT,
+			};
 			void (async () => {
 				for (
 					let attempt = 0;
@@ -1316,6 +1343,10 @@ export function ChatArea({
 					return;
 				}
 				const config = await loadConfigWithSecrets();
+				if (
+					activeSlidePresenterSpeechRef.current?.requestId !== detail.requestId
+				)
+					return;
 				if (!config || config.ttsEnabled !== true) {
 					settleSlidePresenterSpeech("failed", "tts_disabled");
 					return;
@@ -1326,8 +1357,14 @@ export function ChatArea({
 				// 장 전체 합성 시간을 기다렸다(로컬 VoxCPM2 RTF 0.48 → 8~50초 무음). 채팅 경로처럼
 				// 조각으로 나눠 순서대로 넣으면 첫 조각부터 재생된다. 조각 단위는
 				// VITE_NAIA_SLIDES_TTS_CHUNK = word | phrase | sentence (기본 sentence).
-				for (const piece of splitSlideNarration(detail.text.trim())) {
-					sendSentenceToTts(piece);
+				const active = activeSlidePresenterSpeechRef.current;
+				if (active?.tarot) {
+					active.entered = true;
+					sendSentenceToTts(detail.text.trim());
+				} else {
+					for (const piece of splitSlideNarration(detail.text.trim())) {
+						sendSentenceToTts(piece);
+					}
 				}
 				finishLocalVoicePrebuffer();
 				Logger.info("ChatArea", "slide narration entered TTS pipeline", {
@@ -1348,17 +1385,25 @@ export function ChatArea({
 				event as CustomEvent<{ requestId?: string; generation?: number }>
 			).detail;
 			const active = activeSlidePresenterSpeechRef.current;
-			if (!active) return;
+			if (
+				!active ||
+				Boolean(active.tarot) !== (event.type === CAFE_LUA_TAROT_CANCEL_EVENT)
+			)
+				return;
 			if (detail?.requestId && detail.requestId !== active.requestId) return;
 			if (detail?.generation != null && detail.generation !== active.generation)
 				return;
 			interruptTts();
 		};
 		window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, handleSpeak);
+		window.addEventListener(CAFE_LUA_TAROT_SPEAK_EVENT, handleSpeak);
+		window.addEventListener(CAFE_LUA_TAROT_CANCEL_EVENT, handleCancel);
 		window.addEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handleCancel);
 		return () => {
 			disposed = true;
 			window.removeEventListener(SLIDE_PRESENTER_SPEAK_EVENT, handleSpeak);
+			window.removeEventListener(CAFE_LUA_TAROT_SPEAK_EVENT, handleSpeak);
+			window.removeEventListener(CAFE_LUA_TAROT_CANCEL_EVENT, handleCancel);
 			window.removeEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handleCancel);
 			if (activeSlidePresenterSpeechRef.current) interruptTts();
 		};

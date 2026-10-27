@@ -7,11 +7,18 @@ import {
 	screen,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Book, readErrors, readRequests } from "../Book";
+import { Book, chapterDone, readErrors, readRequests } from "../Book";
 import { APP_LOCALES } from "../i18n";
 vi.mock("../library-dom-pagination", () => ({
-	alignChapterStartsToSpreads: () => [],
-	measureRenderedReaderPages: () => [],
+	alignChapterStartsToSpreads: (pages: unknown[]) => pages,
+	measureRenderedReaderPages: (source: HTMLElement) => [
+		{
+			chapterIndex: 0,
+			chapterTitle: "First",
+			pageInChapter: 0,
+			html: source.querySelector("p[data-reader-paragraph]")?.outerHTML ?? "",
+		},
+	],
 }));
 describe("book read button bridge", () => {
 	let parent: Window;
@@ -50,105 +57,98 @@ describe("book read button bridge", () => {
 		vi.unstubAllGlobals();
 		vi.useRealTimers();
 	});
-	function reply(type: string, id: string, error?: string) {
+	async function setup() {
+		const result = render(<Book locale="en" onBack={() => {}} />);
+		await act(async () => {
+			await Promise.resolve();
+			vi.advanceTimersByTime(50);
+		});
+		return result;
+	}
+	async function click() {
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: "Naia reads" }));
+			await Promise.resolve();
+			vi.advanceTimersByTime(0);
+		});
+	}
+	function reply(id: string, status: string, source = window.parent) {
 		act(() =>
 			window.dispatchEvent(
 				new MessageEvent("message", {
-					source: window.parent,
-					data: { type, id, error },
+					source,
+					data: { type: "naia-cafelua-tarot:speech-result", id, status },
 				}),
 			),
 		);
 	}
-	it("sends one request, waits for acceptance and response, reports failure and permits retry", () => {
-		render(<Book locale="ko" onBack={() => {}} />);
-		const button = screen.getByRole("button", { name: "나이아 낭독" });
-		fireEvent.click(button);
-		fireEvent.click(button);
-		expect(post).toHaveBeenCalledTimes(1);
-		const ask = post.mock.calls[0][0];
-		expect(ask).toMatchObject({
-			type: "naia-cafelua-tarot:ask",
+	it("sends a speech request and permits retry after failure", async () => {
+		await setup();
+		await click();
+		const m = post.mock.calls[0][0];
+		expect(m).toMatchObject({
+			type: "naia-cafelua-tarot:speak",
 			appId: "land.naia.cafelua-tarot",
-			prompt: readRequests.ko,
+			page: 1,
 		});
-		expect(ask.id).toMatch(/^[\w-]{1,100}$/);
-		reply("naia-cafelua-tarot:accepted", ask.id);
-		act(() => vi.advanceTimersByTime(4000));
-		fireEvent.click(button);
-		expect(post).toHaveBeenCalledTimes(1);
-		reply("naia-cafelua-tarot:response", ask.id, "failure");
-		expect(screen.getByRole("status").textContent).toBe(readErrors.ko);
-		fireEvent.click(button);
-		expect(post).toHaveBeenCalledTimes(2);
+		reply(m.id, "failed");
+		expect(screen.getByRole("status").textContent).toBe(readErrors.en);
+		await click();
+		expect(post.mock.calls[1][0].text).toBe(m.text);
 	});
-	it("falls back after an unaccepted request and allows retry", () => {
-		render(<Book locale="en" onBack={() => {}} />);
-		const button = screen.getByRole("button", { name: "Naia reads" });
-		fireEvent.click(button);
-		reply("naia-cafelua-tarot:accepted", "different-id");
-		act(() => vi.advanceTimersByTime(3000));
-		expect(screen.getByRole("status").textContent).toBe(
-			"Ask Naia to read aloud.",
-		);
-		fireEvent.click(button);
-		expect(post).toHaveBeenCalledTimes(2);
+	it("times out and allows retry", async () => {
+		await setup();
+		await click();
+		act(() => vi.advanceTimersByTime(120000));
+		expect(screen.getByRole("status").textContent).toBe(readErrors.en);
+		await click();
+		expect(
+			post.mock.calls.filter(([m]) => m.type === "naia-cafelua-tarot:speak"),
+		).toHaveLength(2);
 	});
-	it("ignores late and mismatched acceptance without disturbing a retry", () => {
-		render(<Book locale="en" onBack={() => {}} />);
-		const button = screen.getByRole("button", { name: "Naia reads" });
-		fireEvent.click(button);
-		const firstId = post.mock.calls[0][0].id;
-		act(() => vi.advanceTimersByTime(3000));
-		expect(screen.getByRole("status").textContent).toBe(
-			"Ask Naia to read aloud.",
+	it("ignores late and mismatched results without disturbing a retry", async () => {
+		await setup();
+		await click();
+		const first = post.mock.calls[0][0].id;
+		await click();
+		await click();
+		const next = post.mock.calls.at(-1)![0].id;
+		reply(first, "finished");
+		reply(next, "finished", window);
+		expect(post.mock.calls.at(-1)![0].id).toBe(next);
+		reply(next, "finished");
+		expect(screen.getByRole("status").textContent).toContain(
+			"chapter is finished",
 		);
-		reply("naia-cafelua-tarot:accepted", firstId);
-		expect(screen.getByRole("status").textContent).toBe(
-			"Ask Naia to read aloud.",
-		);
-		fireEvent.click(button);
-		const nextId = post.mock.calls[1][0].id;
-		reply("naia-cafelua-tarot:accepted", firstId);
-		reply("naia-cafelua-tarot:accepted", "different-id");
-		act(() => vi.advanceTimersByTime(3000));
-		expect(screen.getByRole("status").textContent).toBe(
-			"Ask Naia to read aloud.",
-		);
-		fireEvent.click(button);
-		expect(post).toHaveBeenCalledTimes(3);
-		expect(nextId).not.toBe(firstId);
 	});
-	it("clears the pending acceptance timer on unmount", () => {
-		const { unmount } = render(<Book locale="en" onBack={() => {}} />);
-		fireEvent.click(screen.getByRole("button", { name: "Naia reads" }));
+	it("cancels pending speech on unmount", async () => {
+		const { unmount } = await setup();
+		await click();
 		const id = post.mock.calls[0][0].id;
 		unmount();
-		expect(vi.getTimerCount()).toBe(0);
-		act(() => vi.advanceTimersByTime(4000));
-		reply("naia-cafelua-tarot:accepted", id);
-		reply("naia-cafelua-tarot:response", id, "failure");
-		expect(screen.queryByRole("status")).toBeNull();
+		expect(post).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "naia-cafelua-tarot:cancel", id }),
+			"*",
+		);
 		expect(vi.getTimerCount()).toBe(0);
 	});
-	it("shows the hint immediately in standalone mode", () => {
+	it("shows the hint immediately in standalone mode", async () => {
 		Object.defineProperty(window, "parent", {
 			configurable: true,
 			value: window,
 		});
-		render(<Book locale="en" onBack={() => {}} />);
-		fireEvent.click(screen.getByRole("button", { name: "Naia reads" }));
+		await setup();
+		await click();
 		expect(screen.getByRole("status").textContent).toBe(
 			"Ask Naia to read aloud.",
 		);
 		expect(post).not.toHaveBeenCalled();
 	});
-	it("provides requests and failure messages in all 14 languages", () => {
+	it("provides requests, chapter completion and failure messages in all 14 languages", () => {
 		for (const locale of APP_LOCALES) {
-			// The request is shown in chat as the user's message: no tool names.
 			expect(readRequests[locale].trim()).not.toBe("");
-			expect(readRequests[locale]).not.toMatch(/skill_|read_aloud|_/);
 			expect(readErrors[locale].trim()).not.toBe("");
+			expect(chapterDone[locale].trim()).not.toBe("");
 		}
 	});
 });

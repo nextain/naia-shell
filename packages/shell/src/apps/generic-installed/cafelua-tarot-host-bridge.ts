@@ -4,6 +4,10 @@ import { useAppStore } from "../../stores/app";
 export const CAFE_LUA_TAROT_APP_ID = "land.naia.cafelua-tarot";
 export const CAFE_LUA_TAROT_ASK_EVENT = "naia:cafelua-tarot:ask";
 export const CAFE_LUA_TAROT_RESPONSE_EVENT = "naia:cafelua-tarot:response";
+export const CAFE_LUA_TAROT_SPEAK_EVENT = "naia:cafelua-tarot:speak";
+export const CAFE_LUA_TAROT_CANCEL_EVENT = "naia:cafelua-tarot:cancel";
+export const CAFE_LUA_TAROT_SPEECH_RESULT_EVENT =
+	"naia:cafelua-tarot:speech-result";
 const CHILD_ASK = "naia-cafelua-tarot:ask";
 const CHILD_REPLY = "naia-cafelua-tarot:response";
 const CHILD_LOCALE = "naia-app:locale";
@@ -27,6 +31,7 @@ export function installCafeLuaTarotHostBridge(
 		return () => {};
 	}
 	const pendingReplies = new Set<string>();
+	const pendingSpeech = new Set<string>();
 
 	const postLocale = () =>
 		target.postMessage({ type: CHILD_LOCALE, locale: getLocale() }, origin);
@@ -39,8 +44,48 @@ export function installCafeLuaTarotHostBridge(
 		)
 			return;
 		const message = event.data;
-		if (!message || typeof message !== "object" || message.type !== CHILD_ASK)
+		if (!message || typeof message !== "object") return;
+		if (
+			message.type === "naia-cafelua-tarot:speak" ||
+			message.type === "naia-cafelua-tarot:cancel"
+		) {
+			if (
+				message.appId !== CAFE_LUA_TAROT_APP_ID ||
+				!validRequestId(message.id)
+			)
+				return;
+			if (message.type === "naia-cafelua-tarot:cancel") {
+				if (pendingSpeech.has(message.id))
+					window.dispatchEvent(
+						new CustomEvent(CAFE_LUA_TAROT_CANCEL_EVENT, {
+							detail: { requestId: message.id },
+						}),
+					);
+				return;
+			}
+			if (
+				pendingSpeech.has(message.id) ||
+				typeof message.text !== "string" ||
+				!message.text.trim() ||
+				message.text.length > 2000 ||
+				!Number.isSafeInteger(message.page) ||
+				message.page < 1
+			)
+				return;
+			pendingSpeech.add(message.id);
+			window.dispatchEvent(
+				new CustomEvent(CAFE_LUA_TAROT_SPEAK_EVENT, {
+					detail: {
+						requestId: message.id,
+						generation: 0,
+						page: message.page,
+						text: message.text,
+					},
+				}),
+			);
 			return;
+		}
+		if (message.type !== CHILD_ASK) return;
 		if (message.appId !== CAFE_LUA_TAROT_APP_ID || !validRequestId(message.id))
 			return;
 		if (
@@ -87,11 +132,31 @@ export function installCafeLuaTarotHostBridge(
 		);
 	};
 
+	const onSpeechResult = (event: Event) => {
+		const detail = (
+			event as CustomEvent<{ requestId?: string; status?: string }>
+		).detail;
+		if (
+			!detail ||
+			!validRequestId(detail.requestId) ||
+			!pendingSpeech.delete(detail.requestId)
+		)
+			return;
+		target.postMessage(
+			{
+				type: "naia-cafelua-tarot:speech-result",
+				id: detail.requestId,
+				status: detail.status,
+			},
+			origin,
+		);
+	};
 	frame.addEventListener("load", onLoad);
 	window.addEventListener("message", onMessage);
 	window.addEventListener("naia:locale-change", onShellLocale);
 	window.addEventListener("naia-config-changed", onShellLocale);
 	window.addEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, onReply);
+	window.addEventListener(CAFE_LUA_TAROT_SPEECH_RESULT_EVENT, onSpeechResult);
 	postLocale();
 	return () => {
 		frame.removeEventListener("load", onLoad);
@@ -99,6 +164,15 @@ export function installCafeLuaTarotHostBridge(
 		window.removeEventListener("naia:locale-change", onShellLocale);
 		window.removeEventListener("naia-config-changed", onShellLocale);
 		window.removeEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, onReply);
+		window.removeEventListener(
+			CAFE_LUA_TAROT_SPEECH_RESULT_EVENT,
+			onSpeechResult,
+		);
+		for (const requestId of pendingSpeech)
+			window.dispatchEvent(
+				new CustomEvent(CAFE_LUA_TAROT_CANCEL_EVENT, { detail: { requestId } }),
+			);
+		pendingSpeech.clear();
 		pendingReplies.clear();
 	};
 }
