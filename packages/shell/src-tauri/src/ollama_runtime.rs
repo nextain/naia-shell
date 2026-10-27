@@ -8680,11 +8680,10 @@ mod tests {
             }
         }
 
-        fn assert_pull_connection_closed(&self) {
+        fn assert_pull_connection_closed(&self, reported_at: Instant) {
             const PULL_CLOSE_VERIFY_TIMEOUT: Duration = Duration::from_millis(25);
             const PULL_CLOSE_VERIFY_POLL: Duration = Duration::from_millis(1);
 
-            let deadline = Instant::now() + PULL_CLOSE_VERIFY_TIMEOUT;
             let stream = self
                 .active_pull_stream
                 .lock()
@@ -8699,7 +8698,13 @@ mod tests {
                 .expect("set_nonblocking on cloned pull stream");
             let mut probe = [0_u8; 1];
             loop {
-                match stream.peek(&mut probe) {
+                let peek_result = stream.peek(&mut probe);
+                let elapsed = reported_at.elapsed();
+                assert!(
+                    elapsed <= PULL_CLOSE_VERIFY_TIMEOUT,
+                    "expected pull stream close within {PULL_CLOSE_VERIFY_TIMEOUT:?} from Paused report, but {elapsed:?} elapsed (peek={peek_result:?})"
+                );
+                match peek_result {
                     Ok(0) => {
                         self.client_closed_pull.store(true, Ordering::Release);
                         break;
@@ -8719,11 +8724,12 @@ mod tests {
                                 | io::ErrorKind::Interrupted
                         ) =>
                     {
+                        let remaining = PULL_CLOSE_VERIFY_TIMEOUT.saturating_sub(elapsed);
                         assert!(
-                            Instant::now() < deadline,
-                            "expected pull stream EOF within {PULL_CLOSE_VERIFY_TIMEOUT:?} from Paused report, last peek returned Err({error:?})"
+                            !remaining.is_zero(),
+                            "expected pull stream close within {PULL_CLOSE_VERIFY_TIMEOUT:?} from Paused report, last peek at {elapsed:?} returned Err({error:?})"
                         );
-                        thread::sleep(PULL_CLOSE_VERIFY_POLL);
+                        thread::sleep(PULL_CLOSE_VERIFY_POLL.min(remaining));
                     }
                     Err(error) => panic!(
                         "expected pull stream EOF (Ok(0)) or connection-close error, got non-close Err({error:?})"
@@ -9373,9 +9379,14 @@ mod tests {
         assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
         let stop_error = dispatch_stop(&manager, None).unwrap_err();
         assert_eq!(stop_error.code, RuntimeErrorCode::RuntimeBusy);
-        let snapshot = dispatch_model_pull_cancel(&manager, &response.operation_id).unwrap();
+        let (snapshot, paused_reported_at) = (
+            dispatch_model_pull_cancel(&manager, &response.operation_id).unwrap(),
+            Instant::now(),
+        );
         assert_eq!(snapshot.state, ModelPullState::Paused);
-        server.fixture.assert_pull_connection_closed();
+        server
+            .fixture
+            .assert_pull_connection_closed(paused_reported_at);
         assert!(server.fixture.client_closed_pull.load(Ordering::Acquire));
         assert_eq!(
             fs::read(preserved_fragment).unwrap(),
@@ -9561,7 +9572,7 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(5));
         }
-        shutdown_manager(&manager);
+        let (_, paused_reported_at) = (shutdown_manager(&manager), Instant::now());
         let snapshot = manager
             .lock()
             .model_pull_snapshots
@@ -9573,7 +9584,9 @@ mod tests {
             Some(response.operation_id.as_str())
         );
         assert_eq!(snapshot.state, ModelPullState::Paused);
-        server.fixture.assert_pull_connection_closed();
+        server
+            .fixture
+            .assert_pull_connection_closed(paused_reported_at);
         assert!(server.fixture.client_closed_pull.load(Ordering::Acquire));
         assert!(child.graceful_calls.load(Ordering::Acquire) > 0);
         assert!(manager.lock().process.is_none());
