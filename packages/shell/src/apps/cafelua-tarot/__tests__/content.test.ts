@@ -78,6 +78,79 @@ describe("Cafe Lua v2.0 packaged content", () => {
 		).toBe(expected);
 	});
 
+	it.each([
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_spring_day_sunny.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_spring_day_sunny.webp",
+			"a373dcfab1fdb1466433ae01b4e596defad54e57ebe2fbe7b6cbf94c9cf74bca",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_spring_sunset_clear.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_spring_sunset_clear.webp",
+			"551eb49951638aebe98ed18fd0ffd6bf23b12c0d1142ec208c90ef34b43ee4f2",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_spring_night_closed.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_spring_night_closed.webp",
+			"e1083bb831ff87bef6c4ea7094830658547a5e3b4dd082e28e3c11bcfdbefb51",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_summer_day_sunny.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_summer_day_sunny.webp",
+			"c34c81ad2c10700c5ecef81d5a58f06c161c6e96f1b0b67ac7a919ba65527376",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_summer_sunset_clear.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_summer_sunset_clear.webp",
+			"5745f239840ee76476dcd99eb68656f21e2254ef25308cc726c12a53e105d2b4",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_summer_night_closed.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_summer_night_closed.webp",
+			"5fa4385fe891713c2b5268545b2763d029f7d82443d0c981bd0d9e6d0923884b",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_autumn_day_sunny.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_autumn_day_sunny.webp",
+			"9096e9d6fa2cc3591fa02768e59f603f70059b6ad029bc657488e989c7547b5f",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_autumn_sunset_clear.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_autumn_sunset_clear.webp",
+			"279745daa3ea15a37f62215994866613d466ca1f917880e4d38e38f254cbf7ba",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_autumn_night_closed.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_autumn_night_closed.webp",
+			"de96170792f6722d21405151fe6c5655a85efeb03fc4a0609719556b3923b6fa",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_winter_day_sunny.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_winter_day_sunny.webp",
+			"db5ba9dc96be5cb6756de5151faa9e820674afd1e54d9a03ed7b04715a35e6d8",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_winter_sunset_clear.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_winter_sunset_clear.webp",
+			"75a98b2468fc33cd39baf09a90e08675c49d24988aef4c5859e84982c0d058b0",
+		],
+		// cafelua.com/public-home, public/lounge-background-img/lounge_bg_winter_night_closed.webp, origin/main: 02d48f6
+		[
+			"lounge_bg_winter_night_closed.webp",
+			"c713b61b43d1b6bfb1255d471aa96614ff055b21d555d2185681b823341b922b",
+		],
+	])("keeps the exact upstream lounge background %s", (name, expected) => {
+		expect(
+			createHash("sha256")
+				.update(
+					readFileSync(
+						resolve(appRoot, "package-public/lounge-background-img", name),
+					),
+				)
+				.digest("hex"),
+		).toBe(expected);
+	});
+
 	it("shows the current book part and chapter for all 14 languages", () => {
 		for (const locale of APP_LOCALES) {
 			const edition = tarotLibraryBook.editions.find(

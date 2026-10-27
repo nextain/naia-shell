@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Book, type BookHandle } from "./Book";
 import { assetUrl } from "./assets";
+import { loungeBackground } from "./lounge-background";
 import {
 	createBrowserAudioController,
 	type TarotAudioController,
@@ -154,7 +155,7 @@ function TarotApp() {
 		<main
 			className="tarot-app"
 			style={{
-				backgroundImage: `linear-gradient(180deg,rgba(0,0,0,.34),rgba(0,0,0,.12) 45%,rgba(0,0,0,.52)),url('${assetUrl("lounge-background-img/lounge-night.webp")}')`,
+				backgroundImage: `linear-gradient(180deg,rgba(0,0,0,.34),rgba(0,0,0,.12) 45%,rgba(0,0,0,.52)),url('${assetUrl(loungeBackground(new Date()))}')`,
 			}}
 		>
 			<div
