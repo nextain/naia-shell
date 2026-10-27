@@ -6,6 +6,7 @@ export interface TarotReading {
 	question: string;
 	cards: DrawnCard[];
 	createdAt: number;
+	spread?: "celtic" | "three";
 }
 
 export type RandomSource = () => number;
@@ -22,6 +23,7 @@ export function drawCelticCross(
 	question: string,
 	random: RandomSource = Math.random,
 	createdAt = Date.now(),
+	spread: "celtic" | "three" = "celtic",
 ): TarotReading {
 	if (FALLBACK_TAROT_CARDS.length !== 22 || SPREAD_POSITIONS.length !== 10) {
 		throw new Error(
@@ -33,7 +35,8 @@ export function drawCelticCross(
 		const swap = randomIndex(random, index + 1);
 		[deck[index], deck[swap]] = [deck[swap], deck[index]];
 	}
-	const cards = SPREAD_POSITIONS.map((position, index) => ({
+	const positions = spread === "three" ? [SPREAD_POSITIONS[4], SPREAD_POSITIONS[0], SPREAD_POSITIONS[5]] : [SPREAD_POSITIONS[0], SPREAD_POSITIONS[1], SPREAD_POSITIONS[3], SPREAD_POSITIONS[4], SPREAD_POSITIONS[2], ...SPREAD_POSITIONS.slice(5)];
+	const cards = positions.map((position, index) => ({
 		card: deck[index],
 		position,
 		isReversed: randomIndex(random, 2) === 1,
@@ -44,6 +47,7 @@ export function drawCelticCross(
 		question: question.trim().slice(0, 500),
 		cards,
 		createdAt,
+		spread,
 	};
 }
 

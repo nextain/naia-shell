@@ -629,6 +629,23 @@
       "verification": "Installed Tarot app, Naia host bridge, store metadata/localization and UI, original card/story/audio assets, intro/design, and P01-P03 deliverables complete. Shell Vitest: 237 files passed/1 skipped; 2347 tests passed/21 skipped. Standalone Playwright: 1/1 passed with screenshots and audio event evidence. Rust localized manifest test: 1/1 passed. Tarot production build and repository root tsc -p tsconfig.json --noEmit passed. Focused changed-TypeScript Biome check passed at error level; repository-wide read-only Biome check reports 507 errors and 39 warnings over 772 files. Assembly coverage passed. Root structure dry-run reports unregistered tmp/ and tsconfig.build.json.",
       "remaining": "Native installed-app launch was not exercised; no product listing was published. Pre-existing root structure entries and repository-wide Biome diagnostics remain.",
       "last_updated": "2026-10-13T10:39:24+09:00"
+    },
+    "cafelua_tarot_naia_reader_20261028": {
+      "title": "카페루아 타로 나이아 앱 0.1.2",
+      "P01": "docs/user-scenarios.md UC-CAFELUA-TAROT-APP",
+      "P02": "UC-CAFELUA-TAROT-APP Test Coverage Map",
+      "P03": "docs/requirements.md FR-CAFELUA-TAROT-* 및 NFR-CAFELUA-TAROT-*",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "verification": "Tarot Vitest 13/13, related host Vitest 2/2, standalone Playwright 1/1, production build and shell TypeScript passed; nine iframe screenshots report zero console and HTTP errors. Shell suite: 2346 passed, 1 failed, 21 skipped (agent-pairing). Assembly coverage passed; root structure reports the two documented pre-existing entries.",
+      "remaining": "Full visual UX and accessibility state matrix and native installed-app verification remain incomplete; book features differ from upstream as documented in the result report.",
+      "last_updated": "2026-10-28T02:16:00+09:00"
     }
   },
   "sdlc_gates": {

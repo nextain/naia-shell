@@ -1384,17 +1384,17 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
-| **FR-CAFELUA-TAROT-READING.1** | 앱 패키지 안의 카페루아 메이저 아르카나 22장과 의미 데이터만 사용해 켈틱 크로스 10장을 중복 없이 뽑고 각 카드의 정·역방향을 표시한다. 카드 뽑기는 로컬 결정론 코드가 하며 서버 카드 API에 맡기지 않는다. | UC-CAFELUA-TAROT-APP | `reading.test.ts`; `cafelua-tarot-app.spec.ts` — 초기·빈 상태와 펼친 카드 | Done |
-| **FR-CAFELUA-TAROT-NAIA.1** | 사용자가 카드를 펼치면 설치 앱은 검증된 활성 iframe 메시지를 통해 해당 카드·포지션·질문을 Shell 채팅 경로에 보낸다. Shell은 현재 사용자 설정의 기본 모델로 나이아 대화를 수행하고, 앱 도구 호출은 app.json의 `skill_` 도구 등록/응답 경로를 사용한다. `/api/tarot/*`, `NAIA_KEY`, 앱 전용 모델·회사 키를 사용하지 않으며 리더 페르소나는 나이아다. | UC-CAFELUA-TAROT-APP | `tools.test.ts`, `generic-installed-cafelua-tarot.test.tsx`, `ChatArea.test.tsx`; Rust localized manifest test; standalone `cafelua-tarot-app.spec.ts` | Done |
-| **FR-CAFELUA-TAROT-CARDS.1** | 카드 보기 화면은 원본 v2.0 메이저 아르카나 22장 그림과 fallback 카드 의미(상징·키워드·정/역방향)를 보여 주고 카드 그림·데이터의 CC-BY-NC-SA-4.0 출처를 앱 패키지와 화면에서 알린다. | UC-CAFELUA-TAROT-APP | `content.test.ts`; `cafelua-tarot-app.spec.ts` — 카드 보기·라이선스 | Done |
-| **FR-CAFELUA-TAROT-STORIES.1** | v2.0 카드 순서에 따라 각 카드에 Fable/Astra 이야기를 연결한다. `Fable의 이야기 / Astra의 이야기` 전환, Claude Fable 5.1 / GPT-6 Astra 저자 표시, 원문 덱 안내를 제공하고 Alpha·Luke를 소설 속 인물로 보존한다. 한국어·영어 외 화면 언어에는 영어 원문과 기계 번역하지 않았다는 안내를 표시한다. | UC-CAFELUA-TAROT-APP | `content.test.ts`, `i18n.test.ts`; `cafelua-tarot-app.spec.ts` — edition 전환·영어 fallback | Done |
-| **FR-CAFELUA-TAROT-LOCALE.1** | 앱 이름·소개·도움말·모든 화면 문구는 Shell의 14 locale(ar, bn, de, en, es, fr, hi, id, ja, ko, pt, ru, vi, zh)을 지원하고 Shell 언어 변경을 앱 화면에 반영한다. Store product metadata는 선택 locale→영어→root name 순으로 대체한다. | UC-CAFELUA-TAROT-APP | `i18n.test.ts`, `app-store-client.test.ts`, `AppInstallDialog.test.tsx`; `cafelua-tarot-app.spec.ts` — live locale change | Done |
-| **FR-CAFELUA-TAROT-AUDIO.1** | Cafe Lua `taro-bgm.mp3`를 BackgroundMusic 동작에 맞춰 반복 재생하고 재생 차단은 복구 가능하게 알린다. 카드 공개 효과음은 외부 파일 없이 Web Audio로 생성한다. 하나의 음소거 제어가 BGM을 멈추고 진행 중인 효과음을 취소하며, 출처·라이선스와 검증 결과를 앱 안에서 확인할 수 있다. | UC-CAFELUA-TAROT-APP | `sound.test.ts`; `cafelua-tarot-app.spec.ts`; `shots/audio-events.json` and `audio-verification.md` | Done |
-| **FR-CAFELUA-TAROT-STORE.1** | app.json은 모든 locale의 `names`, `descriptions`, `help`와 `iconUrl`, 16:9 `thumbnailUrl`을 선언한다. Shell 매니페스트는 스토어 별칭(`nameKo`/`nameEn`, `descriptionKo`/`descriptionEn`)과 `thumbnailUrl`을 보존하며, 설치 화면은 선택 언어의 설명과 상품 썸네일을 표시한다. | UC-CAFELUA-TAROT-APP | Rust `cafelua_tarot_manifest_keeps_localized_store_metadata`; `app-store-client.test.ts`, `AppInstallDialog.test.tsx`; package icon/thumbnail build | Done |
+| **FR-CAFELUA-TAROT-READING.1** | 켈틱 열 장 또는 세 장을 중복 없이 뽑아 도구 호출마다 한 장씩 공개하고 정·역방향을 표시한다. | UC-CAFELUA-TAROT-APP | `reading.test.ts, tools.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-NAIA.1** | 나이아 도구로 시작·공개·조회·종합·책 열기·낭독·중지·상태를 지원하며 앱에서 셸 대화로 질문을 보내지 않는다. | UC-CAFELUA-TAROT-APP | `tools.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-CARDS.1** | 덮인 카드는 직접 뒤집히지 않으며 공개된 카드의 자리와 사전 뜻을 볼 수 있다. | UC-CAFELUA-TAROT-APP | `cafelua-tarot-app.spec.ts` | In progress |
+| **FR-CAFELUA-TAROT-STORIES.1** | 카페루아 책의 한국어·영어 원문과 목차·쪽 넘김을 보존하고 나이아 낭독을 문단 단위로 제공한다. | UC-CAFELUA-TAROT-APP | `content.test.ts`, `tools.test.ts`, `cafelua-tarot-app.spec.ts` | In progress |
+| **FR-CAFELUA-TAROT-LOCALE.1** | 셸의 14개 화면 언어와 책의 한국어·영어 선택을 지원한다. | UC-CAFELUA-TAROT-APP | `i18n.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-AUDIO.1** | 배경음과 공개 효과음을 음소거할 수 있으며 낭독은 나이아가 수행한다. | UC-CAFELUA-TAROT-APP | `sound.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-STORE.1** | 0.1.2 소개와 도움말을 14개 언어로 제공한다. | UC-CAFELUA-TAROT-APP | `i18n.test.ts` | In progress |
 ## 비기능 요구사항 (NFR) — 카페루아 타로 앱 경험
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
-| **NFR-CAFELUA-TAROT-UX.1** | Cafe Lua 타로의 색·카드 뒷면·뒤집기 인상을 유지하면서 여백·정렬·글자 크기·겹침만 정돈한다. 기본·빈·진행·성공·오류·좁은 폭의 상태, 탭/버튼의 키보드·ARIA 의미, 안내와 재시도, 1100px 이하의 레이아웃을 Playwright와 시각 증거로 검토한다. | UC-CAFELUA-TAROT-APP | `cafelua-tarot-app.spec.ts`; screenshots and review record in `/var/home/luke/.cache/claude-tarot/app/shots/` | Done |
+| **NFR-CAFELUA-TAROT-UX.1** | 탁자와 책의 기본·빈 상태·진행·성공·오류·좁은 폭, 키보드와 접근성을 시각 검토한다. | UC-CAFELUA-TAROT-APP | `cafelua-tarot-app.spec.ts` | In progress |
 
 git diff --stat -- docs/user-scenarios.md docs/requirements.md && tail -n 12 docs/user-scenarios.md && tail -n 12 docs/requirements.md

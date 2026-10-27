@@ -1,966 +1,149 @@
-export const APP_LOCALES = [
-	"ar",
-	"bn",
-	"de",
-	"en",
-	"es",
-	"fr",
-	"hi",
-	"id",
-	"ja",
-	"ko",
-	"pt",
-	"ru",
-	"vi",
-	"zh",
-] as const;
+export const APP_LOCALES = ["ar","bn","de","en","es","fr","hi","id","ja","ko","pt","ru","vi","zh"] as const;
 export type AppLocale = (typeof APP_LOCALES)[number];
-
-export const UI_LABELS: Record<
-	AppLocale,
-	{
-		brand: string;
-		deck: string;
-		gallery: string;
-		stories: string;
-		bgmLicense: string;
-	}
-> = {
-	ar: {
-		brand: "كافيه لوا · الأركانا الكبرى",
-		deck: "كافيه لوا · الإصدار 2.0",
-		gallery: "الإصدار 2.0 · الأركانا الكبرى",
-		stories: "الإصدار 2.0 · قصتان",
-		bgmLicense: "لا يذكر المشروع الأصلي ترخيص موسيقى الخلفية.",
-	},
-	bn: {
-		brand: "ক্যাফে লুয়া · মেজর আর্কানা",
-		deck: "ক্যাফে লুয়া · সংস্করণ ২.০",
-		gallery: "সংস্করণ ২.০ · মেজর আর্কানা",
-		stories: "সংস্করণ ২.০ · দুটি গল্প",
-		bgmLicense: "মূল প্রকল্পে ব্যাকগ্রাউন্ড মিউজিকের লাইসেন্স উল্লেখ করা নেই।",
-	},
-	de: {
-		brand: "Cafe Lua · Große Arkana",
-		deck: "Cafe Lua · Version 2.0",
-		gallery: "Version 2.0 · Große Arkana",
-		stories: "Version 2.0 · Zwei Geschichten",
-		bgmLicense: "Das Quellprojekt nennt keine Lizenz für die Hintergrundmusik.",
-	},
-	en: {
-		brand: "CAFE LUA · MAJOR ARCANA",
-		deck: "CAFE LUA · VERSION 2.0",
-		gallery: "VERSION 2.0 · MAJOR ARCANA",
-		stories: "VERSION 2.0 · TWO STORIES",
-		bgmLicense:
-			"The source project does not specify a license for the background music.",
-	},
-	es: {
-		brand: "Cafe Lua · Arcanos mayores",
-		deck: "Cafe Lua · Versión 2.0",
-		gallery: "Versión 2.0 · Arcanos mayores",
-		stories: "Versión 2.0 · Dos historias",
-		bgmLicense:
-			"El proyecto de origen no especifica una licencia para la música de fondo.",
-	},
-	fr: {
-		brand: "Cafe Lua · Arcanes majeurs",
-		deck: "Cafe Lua · Version 2.0",
-		gallery: "Version 2.0 · Arcanes majeurs",
-		stories: "Version 2.0 · Deux récits",
-		bgmLicense:
-			"Le projet source ne précise pas de licence pour la musique de fond.",
-	},
-	hi: {
-		brand: "कैफ़े लुआ · मेजर अर्काना",
-		deck: "कैफ़े लुआ · संस्करण 2.0",
-		gallery: "संस्करण 2.0 · मेजर अर्काना",
-		stories: "संस्करण 2.0 · दो कहानियाँ",
-		bgmLicense: "मूल प्रोजेक्ट में बैकग्राउंड संगीत का लाइसेंस निर्दिष्ट नहीं है।",
-	},
-	id: {
-		brand: "Cafe Lua · Arkana Mayor",
-		deck: "Cafe Lua · Versi 2.0",
-		gallery: "Versi 2.0 · Arkana Mayor",
-		stories: "Versi 2.0 · Dua Cerita",
-		bgmLicense: "Proyek sumber tidak mencantumkan lisensi untuk musik latar.",
-	},
-	ja: {
-		brand: "Cafe Lua · 大アルカナ",
-		deck: "Cafe Lua · バージョン2.0",
-		gallery: "バージョン2.0 · 大アルカナ",
-		stories: "バージョン2.0 · 2つの物語",
-		bgmLicense: "元のプロジェクトにはBGMのライセンスが記載されていません。",
-	},
-	ko: {
-		brand: "카페루아 · 메이저 아르카나",
-		deck: "카페루아 · v2.0",
-		gallery: "v2.0 · 메이저 아르카나",
-		stories: "v2.0 · 두 편의 이야기",
-		bgmLicense:
-			"원본 프로젝트에는 배경 음악의 라이선스가 표기되어 있지 않습니다.",
-	},
-	pt: {
-		brand: "Cafe Lua · Arcanos Maiores",
-		deck: "Cafe Lua · Versão 2.0",
-		gallery: "Versão 2.0 · Arcanos Maiores",
-		stories: "Versão 2.0 · Duas histórias",
-		bgmLicense:
-			"O projeto de origem não especifica uma licença para a música de fundo.",
-	},
-	ru: {
-		brand: "Cafe Lua · Старшие арканы",
-		deck: "Cafe Lua · Версия 2.0",
-		gallery: "Версия 2.0 · Старшие арканы",
-		stories: "Версия 2.0 · Две истории",
-		bgmLicense: "В исходном проекте не указана лицензия фоновой музыки.",
-	},
-	vi: {
-		brand: "Cafe Lua · Bộ Ẩn chính",
-		deck: "Cafe Lua · Phiên bản 2.0",
-		gallery: "Phiên bản 2.0 · Bộ Ẩn chính",
-		stories: "Phiên bản 2.0 · Hai câu chuyện",
-		bgmLicense: "Dự án nguồn không nêu giấy phép cho nhạc nền.",
-	},
-	zh: {
-		brand: "Cafe Lua · 大阿尔卡那",
-		deck: "Cafe Lua · 2.0 版",
-		gallery: "2.0 版 · 大阿尔卡那",
-		stories: "2.0 版 · 两个故事",
-		bgmLicense: "源项目未注明背景音乐的许可。",
-	},
-};
-
-const en = {
-	title: "Cafe Lua Tarot",
-	intro:
-		"Cafe Lua’s tarot deck, card guide, and two linked stories—now in a Naia app. Naia reads the cards with your selected default model; a local model stays local.",
-	reading: "Reading",
-	cards: "Cards",
-	stories: "Stories",
-	credits: "Credits",
-	question: "What would you like to reflect on?",
-	questionHint: "A question is optional. The cards are drawn on this device.",
-	questionPlaceholder: "Write a question or leave it blank",
-	begin: "Lay out ten cards",
-	emptyReading: "Start with a question, or begin without one.",
-	readingTitle: "Celtic Cross",
-	revealedCount: "{shown} of 10 revealed",
-	revealNext: "Turn over the next card",
-	askNaia: "Ask Naia to read the spread",
-	readingAgain: "Start another reading",
-	questionLabel: "Question",
-	naiaReading: "Naia is considering this card…",
-	naiaError: "Naia’s reply did not arrive. You can retry the interpretation.",
-	retry: "Retry",
-	noReply: "No reply has arrived yet.",
-	position: "Position",
-	keywords: "Keywords",
-	upright: "Upright",
-	reversed: "Reversed",
-	symbols: "Cafe Lua symbols",
-	meaning: "Card meaning",
-	deckIntro:
-		"The v2.0 deck carries traditional Major Arcana symbols into Cafe Lua’s rooms, people, creative work, and technology.",
-	cardCount: "22 Major Arcana cards",
-	storyFable: "Fable’s story",
-	storyAstra: "Astra’s story",
-	storyAuthors:
-		"Two AI models read the same 22 card illustrations and the same Cafe Lua setting, and each wrote its own story. Fable's story was written by Anthropic's Claude Fable 5.1 and Astra's story by OpenAI's GPT-6 Astra; each model lightly edited the other's text.",
-	storyDeckNote:
-		"These stories follow the v2.0 Major Arcana in order. Alpha and Luke are characters in the stories.",
-	englishOnly:
-		"This card meaning and story are shown in English. They have not been machine translated.",
-	storyChapter: "Card {number}",
-	storySummary: "Summary",
-	volumeFable: "Alpha’s First Year",
-	volumeAstra: "Days Yet Unwritten",
-	mute: "Mute music and card sound",
-	unmute: "Turn on music and card sound",
-	audioBlocked:
-		"Your device blocked automatic playback. Use the sound button to start the Cafe Lua music.",
-	license: "Credits & license",
-	licenseText:
-		"Cafe Lua Tarot v2.0 card art, card meanings, and stories are from Cafe Lua, commit 3461f7d, under CC BY-NC-SA 4.0. The Cafe Lua tarot BGM is included from the same project. The card-turn cue is synthesized in this app with Web Audio; it uses no external sound recording.",
-	licenseLink: "CC BY-NC-SA 4.0 license",
-	naiaNote: "Naia interprets with your configured default model.",
-	toolError:
-		"The app could not update this reading. Try opening a new reading.",
-};
-
-type Copy = typeof en;
-const copies: Record<AppLocale, Copy> = {
-	ar: {
-		title: "تاروت كافيه لوا",
-		intro:
-			"أوراق تاروت كافيه لوا، ودليل البطاقات، وقصتان مترابطتان في تطبيق نايـا. يفسّر نايـا البطاقات بنموذجك الافتراضي؛ ويظل النموذج المحلي محليًا.",
-		reading: "قراءة",
-		cards: "البطاقات",
-		stories: "القصص",
-		credits: "المصادر والترخيص",
-		question: "ما الموضوع الذي تريد التأمل فيه؟",
-		questionHint: "السؤال اختياري. تُسحب البطاقات على هذا الجهاز.",
-		questionPlaceholder: "اكتب سؤالًا أو اتركه فارغًا",
-		begin: "اسحب عشر بطاقات",
-		emptyReading: "ابدأ بسؤال أو تابع من دونه.",
-		readingTitle: "الصليب السلتي",
-		revealedCount: "كُشفت {shown} من 10",
-		revealNext: "اقلب البطاقة التالية",
-		askNaia: "اطلب من نايـا قراءة البطاقات",
-		readingAgain: "ابدأ قراءة أخرى",
-		questionLabel: "السؤال",
-		naiaReading: "نايا تتأمل هذه البطاقة…",
-		naiaError: "لم يصل رد نايـا. يمكنك إعادة طلب التفسير.",
-		retry: "إعادة المحاولة",
-		noReply: "لم يصل رد بعد.",
-		position: "الموضع",
-		keywords: "الكلمات المفتاحية",
-		upright: "مستقيمة",
-		reversed: "مقلوبة",
-		symbols: "رموز كافيه لوا",
-		meaning: "معنى البطاقة",
-		deckIntro:
-			"ينقل إصدار 2.0 رموز الأركانا الكبرى التقليدية إلى أجواء كافيه لوا وشخصياته وإبداعه وتقنيته.",
-		cardCount: "22 بطاقة من الأركانا الكبرى",
-		storyFable: "قصة فيبل",
-		storyAstra: "قصة أسترا",
-		storyAuthors:
-			"فيبل: Claude Fable 5.1 · أسترا: GPT-6 Astra. استخدم النموذجان الرسوم والإطار القصصي نفسيهما؛ ونقّح كل منهما نص الآخر قليلًا.",
-		storyDeckNote:
-			"تتبع القصتان بطاقات الأركانا الكبرى لإصدار 2.0. ألفا ولوك شخصيتان في القصتين.",
-		englishOnly:
-			"يُعرض معنى البطاقة والقصة باللغة الإنجليزية، من دون ترجمة آلية.",
-		storyChapter: "البطاقة {number}",
-		storySummary: "ملخص",
-		volumeFable: "عام ألفا الأول",
-		volumeAstra: "أيام لم تُكتب بعد",
-		mute: "كتم الموسيقى وصوت البطاقة",
-		unmute: "تشغيل الموسيقى وصوت البطاقة",
-		audioBlocked:
-			"منع جهازك التشغيل التلقائي. استخدم زر الصوت لبدء موسيقى كافيه لوا.",
-		license: "المصادر والترخيص",
-		licenseText:
-			"رسوم تاروت كافيه لوا 2.0 ومعاني البطاقات والقصص من كافيه لوا، الإصدار 3461f7d، بترخيص CC BY-NC-SA 4.0. أُدرجت موسيقى التاروت من المشروع نفسه. يُركّب صوت قلب البطاقة داخل التطبيق عبر Web Audio ولا يستخدم تسجيلًا خارجيًا.",
-		licenseLink: "ترخيص CC BY-NC-SA 4.0",
-		naiaNote: "يفسّر نايـا باستخدام النموذج الافتراضي الذي ضبطته.",
-		toolError: "تعذر تحديث القراءة. حاول بدء قراءة جديدة.",
-	},
-	bn: {
-		title: "ক্যাফে লুয়া ট্যারোট",
-		intro:
-			"ক্যাফে লুয়ার ট্যারোট ডেক, কার্ড গাইড এবং পরস্পর-সংযুক্ত দুটি গল্প—এখন নায়া অ্যাপে। নায়া আপনার নির্বাচিত ডিফল্ট মডেল দিয়ে কার্ড পড়ে; স্থানীয় মডেল স্থানীয়ই থাকে।",
-		reading: "রিডিং",
-		cards: "কার্ড",
-		stories: "গল্প",
-		credits: "স্বীকৃতি ও লাইসেন্স",
-		question: "কোন বিষয়টি নিয়ে ভাবতে চান?",
-		questionHint: "প্রশ্ন ঐচ্ছিক। কার্ড এই ডিভাইসেই তোলা হয়।",
-		questionPlaceholder: "প্রশ্ন লিখুন অথবা ফাঁকা রাখুন",
-		begin: "দশটি কার্ড সাজান",
-		emptyReading: "প্রশ্ন দিয়ে শুরু করুন, অথবা প্রশ্ন ছাড়াই এগিয়ে যান।",
-		readingTitle: "সেল্টিক ক্রস",
-		revealedCount: "১০টির মধ্যে {shown}টি খোলা",
-		revealNext: "পরের কার্ডটি উল্টান",
-		askNaia: "নায়াকে কার্ড পড়তে বলুন",
-		readingAgain: "আরেকটি রিডিং শুরু করুন",
-		questionLabel: "প্রশ্ন",
-		naiaReading: "নায়া এই কার্ডটি বিবেচনা করছে…",
-		naiaError: "নায়ার উত্তর আসেনি। ব্যাখ্যাটি আবার চাইতে পারেন।",
-		retry: "আবার চেষ্টা করুন",
-		noReply: "এখনও কোনো উত্তর আসেনি।",
-		position: "অবস্থান",
-		keywords: "মূল শব্দ",
-		upright: "সোজা",
-		reversed: "উল্টো",
-		symbols: "ক্যাফে লুয়ার প্রতীক",
-		meaning: "কার্ডের অর্থ",
-		deckIntro:
-			"v2.0 ডেকটি ঐতিহ্যবাহী মেজর আর্কানার প্রতীককে ক্যাফে লুয়ার স্থান, মানুষ, সৃজনশীল কাজ ও প্রযুক্তির সঙ্গে যুক্ত করে।",
-		cardCount: "২২টি মেজর আর্কানা কার্ড",
-		storyFable: "ফেবলের গল্প",
-		storyAstra: "অ্যাস্ট্রার গল্প",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra। একই ২২টি কার্ডচিত্র ও ক্যাফে লুয়ার প্রেক্ষাপট ব্যবহার করে; প্রত্যেকে অপরের লেখা সামান্য সম্পাদনা করেছে।",
-		storyDeckNote:
-			"গল্প দুটি v2.0 মেজর আর্কানার ক্রম অনুসরণ করে। আলফা ও লুক গল্পের চরিত্র।",
-		englishOnly: "কার্ডের অর্থ ও গল্প ইংরেজিতে দেখানো হচ্ছে; যান্ত্রিক অনুবাদ করা হয়নি।",
-		storyChapter: "কার্ড {number}",
-		storySummary: "সারাংশ",
-		volumeFable: "আলফার প্রথম বছর",
-		volumeAstra: "এখনও না-লেখা দিনগুলি",
-		mute: "সঙ্গীত ও কার্ডের শব্দ বন্ধ করুন",
-		unmute: "সঙ্গীত ও কার্ডের শব্দ চালু করুন",
-		audioBlocked:
-			"ডিভাইস স্বয়ংক্রিয় চালানো আটকেছে। ক্যাফে লুয়ার সঙ্গীত চালাতে শব্দ বোতাম ব্যবহার করুন।",
-		license: "স্বীকৃতি ও লাইসেন্স",
-		licenseText:
-			"ক্যাফে লুয়া ট্যারোট v2.0-এর চিত্র, অর্থ ও গল্প Cafe Lua-এর commit 3461f7d থেকে CC BY-NC-SA 4.0 লাইসেন্সে নেওয়া। একই প্রকল্পের BGM অন্তর্ভুক্ত। কার্ড উল্টানোর শব্দ অ্যাপে Web Audio দিয়ে তৈরি; বাইরের রেকর্ডিং ব্যবহার করা হয়নি।",
-		licenseLink: "CC BY-NC-SA 4.0 লাইসেন্স",
-		naiaNote: "নায়া আপনার সেট করা ডিফল্ট মডেল দিয়ে ব্যাখ্যা করে।",
-		toolError: "রিডিং আপডেট করা যায়নি। নতুন রিডিং খুলে চেষ্টা করুন।",
-	},
-	de: {
-		title: "Cafe Lua Tarot",
-		intro:
-			"Das Tarot-Deck von Cafe Lua, ein Kartenführer und zwei verbundene Geschichten – jetzt als Naia-App. Naia deutet mit deinem Standardmodell; ein lokales Modell bleibt lokal.",
-		reading: "Legung",
-		cards: "Karten",
-		stories: "Geschichten",
-		credits: "Quellen & Lizenz",
-		question: "Worüber möchtest du nachdenken?",
-		questionHint:
-			"Eine Frage ist optional. Die Karten werden auf diesem Gerät gezogen.",
-		questionPlaceholder: "Frage eingeben oder leer lassen",
-		begin: "Zehn Karten auslegen",
-		emptyReading: "Beginne mit einer Frage oder ohne Frage.",
-		readingTitle: "Keltisches Kreuz",
-		revealedCount: "{shown} von 10 aufgedeckt",
-		revealNext: "Nächste Karte umdrehen",
-		askNaia: "Naia um eine Deutung bitten",
-		readingAgain: "Neue Legung beginnen",
-		questionLabel: "Frage",
-		naiaReading: "Naia betrachtet diese Karte…",
-		naiaError:
-			"Naias Antwort ist nicht angekommen. Du kannst die Deutung erneut anfragen.",
-		retry: "Erneut versuchen",
-		noReply: "Noch keine Antwort eingetroffen.",
-		position: "Position",
-		keywords: "Stichwörter",
-		upright: "Aufrecht",
-		reversed: "Umgekehrt",
-		symbols: "Cafe-Lua-Symbole",
-		meaning: "Kartenbedeutung",
-		deckIntro:
-			"Das Deck v2.0 überträgt traditionelle Symbole der Großen Arkana in die Räume, Menschen, Kreativität und Technik von Cafe Lua.",
-		cardCount: "22 Karten der Großen Arkana",
-		storyFable: "Fables Geschichte",
-		storyAstra: "Astras Geschichte",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra. Beide Geschichten verwenden dieselben 22 Illustrationen und dasselbe Cafe-Lua-Setting; jedes Modell hat den Text des anderen leicht überarbeitet.",
-		storyDeckNote:
-			"Die Geschichten folgen der Reihenfolge der Großen Arkana v2.0. Alpha und Luke sind Figuren der Geschichten.",
-		englishOnly:
-			"Kartenbedeutung und Geschichte werden auf Englisch angezeigt. Sie wurden nicht maschinell übersetzt.",
-		storyChapter: "Karte {number}",
-		storySummary: "Zusammenfassung",
-		volumeFable: "Alphas erstes Jahr",
-		volumeAstra: "Noch ungeschriebene Tage",
-		mute: "Musik und Kartenton stummschalten",
-		unmute: "Musik und Kartenton einschalten",
-		audioBlocked:
-			"Dein Gerät hat die automatische Wiedergabe blockiert. Starte die Cafe-Lua-Musik über die Klangtaste.",
-		license: "Quellen & Lizenz",
-		licenseText:
-			"Kartenkunst, Bedeutungen und Geschichten aus Cafe Lua Tarot v2.0 stammen von Cafe Lua, Commit 3461f7d, unter CC BY-NC-SA 4.0. Die Tarot-Hintergrundmusik stammt aus demselben Projekt. Der Kartenklang wird in dieser App mit Web Audio erzeugt und nutzt keine externe Aufnahme.",
-		licenseLink: "Lizenz CC BY-NC-SA 4.0",
-		naiaNote: "Naia deutet mit deinem eingestellten Standardmodell.",
-		toolError:
-			"Die Legung konnte nicht aktualisiert werden. Öffne eine neue Legung.",
-	},
-	en,
-	es: {
-		title: "Tarot de Cafe Lua",
-		intro:
-			"La baraja de Cafe Lua, una guía de cartas y dos relatos conectados, ahora en una app de Naia. Naia interpreta con tu modelo predeterminado; si usas un modelo local, permanece local.",
-		reading: "Lectura",
-		cards: "Cartas",
-		stories: "Relatos",
-		credits: "Créditos y licencia",
-		question: "¿Sobre qué te gustaría reflexionar?",
-		questionHint:
-			"La pregunta es opcional. Las cartas se extraen en este dispositivo.",
-		questionPlaceholder: "Escribe una pregunta o déjala en blanco",
-		begin: "Colocar diez cartas",
-		emptyReading: "Empieza con una pregunta o sin ella.",
-		readingTitle: "Cruz Celta",
-		revealedCount: "{shown} de 10 reveladas",
-		revealNext: "Voltear la siguiente carta",
-		askNaia: "Pedir a Naia que interprete la tirada",
-		readingAgain: "Empezar otra lectura",
-		questionLabel: "Pregunta",
-		naiaReading: "Naia está considerando esta carta…",
-		naiaError:
-			"No llegó la respuesta de Naia. Puedes volver a pedir la interpretación.",
-		retry: "Reintentar",
-		noReply: "Aún no ha llegado ninguna respuesta.",
-		position: "Posición",
-		keywords: "Palabras clave",
-		upright: "Al derecho",
-		reversed: "Invertida",
-		symbols: "Símbolos de Cafe Lua",
-		meaning: "Significado de la carta",
-		deckIntro:
-			"La baraja v2.0 traslada los símbolos tradicionales de los Arcanos Mayores a los espacios, las personas, la creatividad y la tecnología de Cafe Lua.",
-		cardCount: "22 cartas de los Arcanos Mayores",
-		storyFable: "Relato de Fable",
-		storyAstra: "Relato de Astra",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra. Ambos relatos usan las mismas 22 ilustraciones y el mismo entorno de Cafe Lua; cada modelo editó ligeramente el texto del otro.",
-		storyDeckNote:
-			"Los relatos siguen el orden de los Arcanos Mayores v2.0. Alpha y Luke son personajes de las historias.",
-		englishOnly:
-			"El significado y el relato se muestran en inglés. No se han traducido automáticamente.",
-		storyChapter: "Carta {number}",
-		storySummary: "Resumen",
-		volumeFable: "El primer año de Alpha",
-		volumeAstra: "Los días aún no escritos",
-		mute: "Silenciar música y sonido de carta",
-		unmute: "Activar música y sonido de carta",
-		audioBlocked:
-			"Tu dispositivo bloqueó la reproducción automática. Usa el botón de sonido para iniciar la música de Cafe Lua.",
-		license: "Créditos y licencia",
-		licenseText:
-			"Las ilustraciones, significados y relatos de Cafe Lua Tarot v2.0 proceden de Cafe Lua, commit 3461f7d, bajo CC BY-NC-SA 4.0. La música de fondo también procede del proyecto. El sonido al voltear se sintetiza en esta app con Web Audio y no usa grabaciones externas.",
-		licenseLink: "Licencia CC BY-NC-SA 4.0",
-		naiaNote: "Naia interpreta con tu modelo predeterminado configurado.",
-		toolError: "No se pudo actualizar la lectura. Prueba a abrir una nueva.",
-	},
-	fr: {
-		title: "Tarot Cafe Lua",
-		intro:
-			"Le jeu de tarot de Cafe Lua, un guide des cartes et deux récits liés, réunis dans une app Naia. Naia interprète les cartes avec votre modèle par défaut ; un modèle local reste local.",
-		reading: "Tirage",
-		cards: "Cartes",
-		stories: "Récits",
-		credits: "Crédits et licence",
-		question: "Sur quoi souhaitez-vous réfléchir ?",
-		questionHint:
-			"La question est facultative. Le tirage est effectué sur cet appareil.",
-		questionPlaceholder: "Écrivez une question ou laissez vide",
-		begin: "Tirer dix cartes",
-		emptyReading: "Commencez avec ou sans question.",
-		readingTitle: "Croix celtique",
-		revealedCount: "{shown} sur 10 révélées",
-		revealNext: "Retourner la carte suivante",
-		askNaia: "Demander à Naia d’interpréter le tirage",
-		readingAgain: "Nouveau tirage",
-		questionLabel: "Question",
-		naiaReading: "Naia examine cette carte…",
-		naiaError:
-			"La réponse de Naia n’est pas arrivée. Vous pouvez redemander l’interprétation.",
-		retry: "Réessayer",
-		noReply: "Aucune réponse pour le moment.",
-		position: "Position",
-		keywords: "Mots-clés",
-		upright: "À l’endroit",
-		reversed: "Renversée",
-		symbols: "Symboles de Cafe Lua",
-		meaning: "Sens de la carte",
-		deckIntro:
-			"Le jeu v2.0 transpose les symboles traditionnels des arcanes majeurs dans les lieux, les personnages, la création et la technologie de Cafe Lua.",
-		cardCount: "22 arcanes majeurs",
-		storyFable: "Récit de Fable",
-		storyAstra: "Récit d’Astra",
-		storyAuthors:
-			"Fable : Claude Fable 5.1 · Astra : GPT-6 Astra. Les deux récits utilisent les mêmes 22 illustrations et le même univers ; chaque modèle a légèrement retouché le texte de l’autre.",
-		storyDeckNote:
-			"Les récits suivent l’ordre des arcanes majeurs v2.0. Alpha et Luke sont des personnages des récits.",
-		englishOnly:
-			"Le sens et le récit sont affichés en anglais. Ils n’ont pas été traduits automatiquement.",
-		storyChapter: "Carte {number}",
-		storySummary: "Résumé",
-		volumeFable: "La première année d’Alpha",
-		volumeAstra: "Les jours encore à écrire",
-		mute: "Couper la musique et le son de carte",
-		unmute: "Activer la musique et le son de carte",
-		audioBlocked:
-			"Votre appareil a bloqué la lecture automatique. Utilisez le bouton son pour lancer la musique de Cafe Lua.",
-		license: "Crédits et licence",
-		licenseText:
-			"Les illustrations, les sens et les récits de Cafe Lua Tarot v2.0 proviennent de Cafe Lua, commit 3461f7d, sous licence CC BY-NC-SA 4.0. La musique de fond provient du même projet. Le son de retournement est synthétisé dans l’app avec Web Audio, sans enregistrement externe.",
-		licenseLink: "Licence CC BY-NC-SA 4.0",
-		naiaNote: "Naia interprète avec votre modèle par défaut configuré.",
-		toolError:
-			"Impossible de mettre à jour le tirage. Essayez d’en ouvrir un nouveau.",
-	},
-	hi: {
-		title: "कैफ़े लुआ टैरो",
-		intro:
-			"कैफ़े लुआ का टैरो डेक, कार्ड मार्गदर्शिका और आपस में जुड़ी दो कहानियाँ—अब नाया ऐप में। नाया आपके चुने हुए डिफ़ॉल्ट मॉडल से व्याख्या करता है; स्थानीय मॉडल स्थानीय ही रहता है।",
-		reading: "रीडिंग",
-		cards: "कार्ड",
-		stories: "कहानियाँ",
-		credits: "श्रेय और लाइसेंस",
-		question: "आप किस विषय पर विचार करना चाहेंगे?",
-		questionHint: "प्रश्न देना वैकल्पिक है। कार्ड इसी डिवाइस पर निकाले जाते हैं।",
-		questionPlaceholder: "प्रश्न लिखें या खाली छोड़ें",
-		begin: "दस कार्ड रखें",
-		emptyReading: "प्रश्न के साथ या बिना शुरू करें।",
-		readingTitle: "सेल्टिक क्रॉस",
-		revealedCount: "10 में से {shown} खुले",
-		revealNext: "अगला कार्ड पलटें",
-		askNaia: "नाया से कार्ड पढ़ने को कहें",
-		readingAgain: "नई रीडिंग शुरू करें",
-		questionLabel: "प्रश्न",
-		naiaReading: "नाया इस कार्ड पर विचार कर रहा है…",
-		naiaError: "नाया का जवाब नहीं आया। आप व्याख्या फिर से माँग सकते हैं।",
-		retry: "फिर कोशिश करें",
-		noReply: "अभी जवाब नहीं आया।",
-		position: "स्थान",
-		keywords: "मुख्य शब्द",
-		upright: "सीधा",
-		reversed: "उल्टा",
-		symbols: "कैफ़े लुआ के प्रतीक",
-		meaning: "कार्ड का अर्थ",
-		deckIntro:
-			"v2.0 डेक पारंपरिक मेजर अर्काना के प्रतीकों को कैफ़े लुआ के स्थानों, लोगों, रचनात्मक काम और तकनीक में लाता है।",
-		cardCount: "22 मेजर अर्काना कार्ड",
-		storyFable: "फेबल की कहानी",
-		storyAstra: "एस्ट्रा की कहानी",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra। दोनों ने वही 22 चित्र और कैफ़े लुआ का परिवेश इस्तेमाल किया; प्रत्येक मॉडल ने दूसरे के पाठ को थोड़ा संपादित किया।",
-		storyDeckNote:
-			"कहानियाँ v2.0 मेजर अर्काना के क्रम का पालन करती हैं। Alpha और Luke कहानियों के पात्र हैं।",
-		englishOnly:
-			"कार्ड का अर्थ और कहानी अंग्रेज़ी में दिखाई जाती है। मशीन अनुवाद नहीं किया गया है।",
-		storyChapter: "कार्ड {number}",
-		storySummary: "सारांश",
-		volumeFable: "अल्फ़ा का पहला साल",
-		volumeAstra: "वे दिन जो अभी लिखे नहीं गए",
-		mute: "संगीत और कार्ड की ध्वनि बंद करें",
-		unmute: "संगीत और कार्ड की ध्वनि चालू करें",
-		audioBlocked:
-			"डिवाइस ने स्वतः चलना रोक दिया। कैफ़े लुआ संगीत शुरू करने के लिए ध्वनि बटन दबाएँ।",
-		license: "श्रेय और लाइसेंस",
-		licenseText:
-			"Cafe Lua Tarot v2.0 की कला, अर्थ और कहानियाँ Cafe Lua, commit 3461f7d से CC BY-NC-SA 4.0 के अंतर्गत हैं। BGM भी उसी प्रोजेक्ट से है। कार्ड पलटने की ध्वनि ऐप में Web Audio से बनाई जाती है; कोई बाहरी रिकॉर्डिंग नहीं।",
-		licenseLink: "CC BY-NC-SA 4.0 लाइसेंस",
-		naiaNote: "नाया आपके चुने हुए डिफ़ॉल्ट मॉडल से व्याख्या करता है।",
-		toolError: "रीडिंग अपडेट नहीं हुई। नई रीडिंग खोलकर प्रयास करें।",
-	},
-	id: {
-		title: "Tarot Cafe Lua",
-		intro:
-			"Dek tarot Cafe Lua, panduan kartu, dan dua cerita yang saling terhubung—kini di aplikasi Naia. Naia membaca kartu dengan model bawaan pilihan Anda; model lokal tetap lokal.",
-		reading: "Pembacaan",
-		cards: "Kartu",
-		stories: "Cerita",
-		credits: "Kredit & lisensi",
-		question: "Apa yang ingin Anda renungkan?",
-		questionHint:
-			"Pertanyaan boleh dikosongkan. Kartu diambil di perangkat ini.",
-		questionPlaceholder: "Tulis pertanyaan atau biarkan kosong",
-		begin: "Buka sepuluh kartu",
-		emptyReading: "Mulai dengan pertanyaan atau tanpa pertanyaan.",
-		readingTitle: "Salib Keltik",
-		revealedCount: "{shown} dari 10 terbuka",
-		revealNext: "Balik kartu berikutnya",
-		askNaia: "Minta Naia membaca sebaran",
-		readingAgain: "Mulai pembacaan baru",
-		questionLabel: "Pertanyaan",
-		naiaReading: "Naia sedang mempertimbangkan kartu ini…",
-		naiaError:
-			"Balasan Naia belum diterima. Anda dapat meminta interpretasi lagi.",
-		retry: "Coba lagi",
-		noReply: "Belum ada balasan.",
-		position: "Posisi",
-		keywords: "Kata kunci",
-		upright: "Tegak",
-		reversed: "Terbalik",
-		symbols: "Simbol Cafe Lua",
-		meaning: "Arti kartu",
-		deckIntro:
-			"Dek v2.0 membawa simbol tradisional Arkana Mayor ke ruang, tokoh, karya kreatif, dan teknologi Cafe Lua.",
-		cardCount: "22 kartu Arkana Mayor",
-		storyFable: "Cerita Fable",
-		storyAstra: "Cerita Astra",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra. Keduanya memakai 22 ilustrasi dan latar Cafe Lua yang sama; setiap model menyunting sedikit tulisan model lainnya.",
-		storyDeckNote:
-			"Kedua cerita mengikuti urutan Arkana Mayor v2.0. Alpha dan Luke adalah tokoh di dalam cerita.",
-		englishOnly:
-			"Arti kartu dan cerita ditampilkan dalam bahasa Inggris. Tidak diterjemahkan mesin.",
-		storyChapter: "Kartu {number}",
-		storySummary: "Ringkasan",
-		volumeFable: "Tahun Pertama Alpha",
-		volumeAstra: "Hari-hari yang Belum Ditulis",
-		mute: "Bisukan musik dan bunyi kartu",
-		unmute: "Nyalakan musik dan bunyi kartu",
-		audioBlocked:
-			"Perangkat memblokir pemutaran otomatis. Gunakan tombol suara untuk memulai musik Cafe Lua.",
-		license: "Kredit & lisensi",
-		licenseText:
-			"Ilustrasi, arti, dan cerita Cafe Lua Tarot v2.0 berasal dari Cafe Lua, commit 3461f7d, berlisensi CC BY-NC-SA 4.0. BGM juga disertakan dari proyek itu. Bunyi kartu dibuat di aplikasi dengan Web Audio tanpa rekaman suara eksternal.",
-		licenseLink: "Lisensi CC BY-NC-SA 4.0",
-		naiaNote: "Naia menafsirkan dengan model bawaan yang Anda atur.",
-		toolError: "Pembacaan tidak dapat diperbarui. Coba mulai pembacaan baru.",
-	},
-	ja: {
-		title: "カフェルア・タロット",
-		intro:
-			"カフェルアのタロットデッキ、カードガイド、つながる二つの物語をナイアアプリにまとめました。解釈には設定済みの既定モデルを使い、ローカルモデルはローカルで動作します。",
-		reading: "リーディング",
-		cards: "カード",
-		stories: "物語",
-		credits: "クレジットとライセンス",
-		question: "何について考えてみたいですか？",
-		questionHint: "質問は任意です。カードはこの端末で引きます。",
-		questionPlaceholder: "質問を入力するか、空欄のままにします",
-		begin: "10枚を並べる",
-		emptyReading: "質問を入力して始めるか、質問なしで始めます。",
-		readingTitle: "ケルト十字",
-		revealedCount: "10枚中{shown}枚を公開",
-		revealNext: "次のカードをめくる",
-		askNaia: "ナイアに展開を読んでもらう",
-		readingAgain: "新しいリーディングを始める",
-		questionLabel: "質問",
-		naiaReading: "ナイアがこのカードを考えています…",
-		naiaError: "ナイアの返答が届きませんでした。解釈を再度依頼できます。",
-		retry: "再試行",
-		noReply: "まだ返答がありません。",
-		position: "位置",
-		keywords: "キーワード",
-		upright: "正位置",
-		reversed: "逆位置",
-		symbols: "カフェルアの象徴",
-		meaning: "カードの意味",
-		deckIntro:
-			"v2.0デッキは大アルカナの伝統的な象徴を、カフェルアの空間・人々・創作・技術に重ねています。",
-		cardCount: "大アルカナ22枚",
-		storyFable: "Fableの物語",
-		storyAstra: "Astraの物語",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra。同じ22枚の絵とカフェルアの設定を使い、互いの文章を少しずつ推敲しました。",
-		storyDeckNote:
-			"物語はv2.0大アルカナの順に進みます。AlphaとLukeは物語の登場人物です。",
-		englishOnly:
-			"カードの意味と物語は英語で表示します。機械翻訳はしていません。",
-		storyChapter: "カード {number}",
-		storySummary: "あらすじ",
-		volumeFable: "アルファの最初の一年",
-		volumeAstra: "まだ書かれていない日々",
-		mute: "音楽とカード音をミュート",
-		unmute: "音楽とカード音を再生",
-		audioBlocked:
-			"自動再生は端末にブロックされました。音声ボタンでカフェルアの音楽を再生してください。",
-		license: "クレジットとライセンス",
-		licenseText:
-			"Cafe Lua Tarot v2.0の絵、意味、物語はCafe Luaのcommit 3461f7dからCC BY-NC-SA 4.0で収録しています。BGMも同プロジェクトのものです。カード音はWeb Audioでアプリ内合成し、外部録音は使っていません。",
-		licenseLink: "CC BY-NC-SA 4.0ライセンス",
-		naiaNote: "設定された既定モデルでナイアが解釈します。",
-		toolError:
-			"リーディングを更新できませんでした。新しいリーディングを開いてください。",
-	},
-	ko: {
-		title: "카페루아 타로",
-		intro:
-			"카페루아 타로 덱과 카드 안내, 두 편의 연작 소설을 나이아 앱으로 옮겼습니다. 해석은 설정한 나이아 기본 모델이 맡고, 로컬 모델은 로컬에서 동작합니다.",
-		reading: "타로점",
-		cards: "카드 보기",
-		stories: "소설",
-		credits: "출처와 라이선스",
-		question: "어떤 일을 생각해 보고 싶나요?",
-		questionHint: "질문은 비워도 됩니다. 카드는 이 기기에서 뽑습니다.",
-		questionPlaceholder: "질문을 쓰거나 비워 두세요",
-		begin: "열 장 펼치기",
-		emptyReading: "질문을 쓰거나 빈 채로 시작하세요.",
-		readingTitle: "켈틱 크로스",
-		revealedCount: "10장 중 {shown}장 공개",
-		revealNext: "다음 카드 뒤집기",
-		askNaia: "나이아에게 카드 해석 요청",
-		readingAgain: "새 타로점 시작",
-		questionLabel: "질문",
-		naiaReading: "나이아가 이 카드를 살펴보고 있어요…",
-		naiaError:
-			"나이아의 답이 도착하지 않았어요. 해석을 다시 요청할 수 있습니다.",
-		retry: "다시 요청",
-		noReply: "아직 답이 없습니다.",
-		position: "자리",
-		keywords: "키워드",
-		upright: "정방향",
-		reversed: "역방향",
-		symbols: "카페루아의 상징",
-		meaning: "카드 의미",
-		deckIntro:
-			"v2.0 덱은 메이저 아르카나의 전통 상징을 카페루아의 공간·사람·창작·기술로 옮겼습니다.",
-		cardCount: "메이저 아르카나 22장",
-		storyFable: "Fable의 이야기",
-		storyAstra: "Astra의 이야기",
-		storyAuthors:
-			"같은 22장의 카드 그림과 같은 카페루아 설정을 두 AI 모델이 각자 읽고, 서로 다른 이야기 두 편을 썼습니다. Fable의 이야기는 Anthropic의 Claude Fable 5.1이, Astra의 이야기는 OpenAI의 GPT-6 Astra가 썼고, 두 모델이 서로의 글을 가볍게 다듬었습니다.",
-		storyDeckNote:
-			"두 이야기는 v2.0 메이저 아르카나 순서를 따릅니다. 알파와 루크는 소설 속 인물입니다.",
-		englishOnly:
-			"카드 의미와 소설은 영어 원문으로 표시합니다. 기계 번역하지 않았습니다.",
-		storyChapter: "{number}번 카드",
-		storySummary: "줄거리",
-		volumeFable: "알파의 첫 해",
-		volumeAstra: "아직 쓰지 않은 날들",
-		mute: "배경음악과 카드 소리 끄기",
-		unmute: "배경음악과 카드 소리 켜기",
-		audioBlocked:
-			"기기에서 자동 재생을 막았습니다. 소리 단추를 눌러 카페루아 음악을 시작하세요.",
-		license: "출처와 라이선스",
-		licenseText:
-			"카페루아 타로 v2.0 카드 그림·의미·소설은 Cafe Lua 커밋 3461f7d에서 가져왔으며 CC BY-NC-SA 4.0입니다. 타로 배경음악도 같은 프로젝트의 파일입니다. 카드 뒤집기 소리는 외부 녹음 없이 이 앱이 Web Audio로 합성합니다.",
-		licenseLink: "CC BY-NC-SA 4.0 라이선스",
-		naiaNote: "설정한 기본 모델로 나이아가 해석합니다.",
-		toolError: "타로점을 갱신하지 못했습니다. 새 타로점을 시작해 주세요.",
-	},
-	pt: {
-		title: "Tarô Cafe Lua",
-		intro:
-			"O baralho de Cafe Lua, um guia de cartas e duas histórias conectadas, agora em um app Naia. Naia interpreta com seu modelo padrão; um modelo local continua local.",
-		reading: "Leitura",
-		cards: "Cartas",
-		stories: "Histórias",
-		credits: "Créditos e licença",
-		question: "Sobre o que você gostaria de refletir?",
-		questionHint:
-			"A pergunta é opcional. As cartas são tiradas neste dispositivo.",
-		questionPlaceholder: "Escreva uma pergunta ou deixe em branco",
-		begin: "Abrir dez cartas",
-		emptyReading: "Comece com uma pergunta ou sem ela.",
-		readingTitle: "Cruz Céltica",
-		revealedCount: "{shown} de 10 reveladas",
-		revealNext: "Virar a próxima carta",
-		askNaia: "Pedir à Naia para interpretar a tiragem",
-		readingAgain: "Iniciar outra leitura",
-		questionLabel: "Pergunta",
-		naiaReading: "Naia está considerando esta carta…",
-		naiaError:
-			"A resposta da Naia não chegou. Você pode pedir a interpretação novamente.",
-		retry: "Tentar novamente",
-		noReply: "Ainda não chegou nenhuma resposta.",
-		position: "Posição",
-		keywords: "Palavras-chave",
-		upright: "Em pé",
-		reversed: "Invertida",
-		symbols: "Símbolos de Cafe Lua",
-		meaning: "Significado da carta",
-		deckIntro:
-			"O baralho v2.0 leva os símbolos tradicionais dos Arcanos Maiores aos espaços, às pessoas, à criação e à tecnologia de Cafe Lua.",
-		cardCount: "22 cartas dos Arcanos Maiores",
-		storyFable: "História de Fable",
-		storyAstra: "História de Astra",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra. As duas usam as mesmas 22 ilustrações e o cenário de Cafe Lua; cada modelo revisou levemente o texto do outro.",
-		storyDeckNote:
-			"As histórias seguem a ordem dos Arcanos Maiores v2.0. Alpha e Luke são personagens das histórias.",
-		englishOnly:
-			"O significado e a história são exibidos em inglês. Não foram traduzidos automaticamente.",
-		storyChapter: "Carta {number}",
-		storySummary: "Resumo",
-		volumeFable: "O primeiro ano de Alpha",
-		volumeAstra: "Dias ainda não escritos",
-		mute: "Silenciar música e som da carta",
-		unmute: "Ativar música e som da carta",
-		audioBlocked:
-			"Seu dispositivo bloqueou a reprodução automática. Use o botão de som para iniciar a música de Cafe Lua.",
-		license: "Créditos e licença",
-		licenseText:
-			"As ilustrações, os significados e as histórias de Cafe Lua Tarot v2.0 são de Cafe Lua, commit 3461f7d, sob CC BY-NC-SA 4.0. A música de fundo também vem do projeto. O som de virar a carta é sintetizado no app via Web Audio, sem gravação externa.",
-		licenseLink: "Licença CC BY-NC-SA 4.0",
-		naiaNote: "Naia interpreta usando o modelo padrão que você configurou.",
-		toolError: "Não foi possível atualizar a leitura. Tente iniciar outra.",
-	},
-	ru: {
-		title: "Таро Cafe Lua",
-		intro:
-			"Колода Cafe Lua, справочник карт и два связанных рассказа — теперь в приложении Naia. Naia толкует карты выбранной основной моделью; локальная модель остаётся локальной.",
-		reading: "Расклад",
-		cards: "Карты",
-		stories: "Рассказы",
-		credits: "Источники и лицензия",
-		question: "О чём вы хотели бы поразмышлять?",
-		questionHint: "Вопрос необязателен. Карты выбираются на этом устройстве.",
-		questionPlaceholder: "Введите вопрос или оставьте поле пустым",
-		begin: "Разложить десять карт",
-		emptyReading: "Начните с вопроса или без него.",
-		readingTitle: "Кельтский крест",
-		revealedCount: "Открыто {shown} из 10",
-		revealNext: "Перевернуть следующую карту",
-		askNaia: "Попросить Naia истолковать расклад",
-		readingAgain: "Начать новый расклад",
-		questionLabel: "Вопрос",
-		naiaReading: "Naia рассматривает эту карту…",
-		naiaError: "Ответ Naia не пришёл. Можно запросить толкование ещё раз.",
-		retry: "Повторить",
-		noReply: "Ответа пока нет.",
-		position: "Позиция",
-		keywords: "Ключевые слова",
-		upright: "Прямая",
-		reversed: "Перевёрнутая",
-		symbols: "Символы Cafe Lua",
-		meaning: "Значение карты",
-		deckIntro:
-			"Колода v2.0 переносит традиционные символы Старших арканов в пространство, людей, творчество и технологии Cafe Lua.",
-		cardCount: "22 карты Старших арканов",
-		storyFable: "Рассказ Fable",
-		storyAstra: "Рассказ Astra",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra. Для обоих использованы те же 22 иллюстрации и мир Cafe Lua; каждая модель слегка отредактировала текст другой.",
-		storyDeckNote:
-			"Рассказы следуют порядку Старших арканов v2.0. Alpha и Luke — персонажи рассказов.",
-		englishOnly:
-			"Значение карты и рассказ показаны на английском. Машинный перевод не использовался.",
-		storyChapter: "Карта {number}",
-		storySummary: "Кратко",
-		volumeFable: "Первый год Альфы",
-		volumeAstra: "Ещё не написанные дни",
-		mute: "Выключить музыку и звук карты",
-		unmute: "Включить музыку и звук карты",
-		audioBlocked:
-			"Устройство заблокировало автовоспроизведение. Нажмите кнопку звука, чтобы включить музыку Cafe Lua.",
-		license: "Источники и лицензия",
-		licenseText:
-			"Иллюстрации, значения и рассказы Cafe Lua Tarot v2.0 взяты у Cafe Lua, commit 3461f7d, по лицензии CC BY-NC-SA 4.0. Фоновая музыка также из этого проекта. Звук переворота создаётся в приложении через Web Audio без внешней записи.",
-		licenseLink: "Лицензия CC BY-NC-SA 4.0",
-		naiaNote: "Naia использует заданную вами основную модель.",
-		toolError: "Не удалось обновить расклад. Попробуйте начать новый.",
-	},
-	vi: {
-		title: "Tarot Cafe Lua",
-		intro:
-			"Bộ bài tarot Cafe Lua, hướng dẫn lá bài và hai truyện liên kết—nay trong ứng dụng Naia. Naia diễn giải bằng mô hình mặc định bạn chọn; mô hình cục bộ vẫn chạy cục bộ.",
-		reading: "Trải bài",
-		cards: "Lá bài",
-		stories: "Truyện",
-		credits: "Ghi công & giấy phép",
-		question: "Bạn muốn suy ngẫm về điều gì?",
-		questionHint:
-			"Câu hỏi không bắt buộc. Lá bài được rút ngay trên thiết bị này.",
-		questionPlaceholder: "Viết câu hỏi hoặc để trống",
-		begin: "Trải mười lá",
-		emptyReading: "Bắt đầu với câu hỏi hoặc không cần câu hỏi.",
-		readingTitle: "Thập tự Celtic",
-		revealedCount: "Đã lật {shown}/10 lá",
-		revealNext: "Lật lá tiếp theo",
-		askNaia: "Nhờ Naia luận trải bài",
-		readingAgain: "Bắt đầu lượt mới",
-		questionLabel: "Câu hỏi",
-		naiaReading: "Naia đang suy ngẫm về lá bài này…",
-		naiaError:
-			"Chưa nhận được phản hồi từ Naia. Bạn có thể yêu cầu diễn giải lại.",
-		retry: "Thử lại",
-		noReply: "Chưa có phản hồi.",
-		position: "Vị trí",
-		keywords: "Từ khóa",
-		upright: "Xuôi",
-		reversed: "Ngược",
-		symbols: "Biểu tượng Cafe Lua",
-		meaning: "Ý nghĩa lá bài",
-		deckIntro:
-			"Bộ bài v2.0 đưa biểu tượng Ẩn chính truyền thống vào không gian, con người, sáng tạo và công nghệ của Cafe Lua.",
-		cardCount: "22 lá Ẩn chính",
-		storyFable: "Truyện của Fable",
-		storyAstra: "Truyện của Astra",
-		storyAuthors:
-			"Fable: Claude Fable 5.1 · Astra: GPT-6 Astra. Cả hai dùng cùng 22 minh họa và bối cảnh Cafe Lua; mỗi mô hình biên tập nhẹ văn bản của mô hình kia.",
-		storyDeckNote:
-			"Hai truyện theo thứ tự Ẩn chính v2.0. Alpha và Luke là nhân vật trong truyện.",
-		englishOnly:
-			"Ý nghĩa lá bài và truyện được hiển thị bằng tiếng Anh, không dịch máy.",
-		storyChapter: "Lá {number}",
-		storySummary: "Tóm tắt",
-		volumeFable: "Năm đầu của Alpha",
-		volumeAstra: "Những ngày chưa viết",
-		mute: "Tắt nhạc và âm thanh lá bài",
-		unmute: "Bật nhạc và âm thanh lá bài",
-		audioBlocked:
-			"Thiết bị đã chặn tự phát. Dùng nút âm thanh để bật nhạc Cafe Lua.",
-		license: "Ghi công & giấy phép",
-		licenseText:
-			"Hình minh họa, ý nghĩa và truyện Cafe Lua Tarot v2.0 lấy từ Cafe Lua, commit 3461f7d, theo CC BY-NC-SA 4.0. Nhạc nền cũng từ dự án đó. Âm thanh lật bài được tổng hợp trong ứng dụng bằng Web Audio, không dùng bản ghi bên ngoài.",
-		licenseLink: "Giấy phép CC BY-NC-SA 4.0",
-		naiaNote: "Naia diễn giải bằng mô hình mặc định bạn đã cấu hình.",
-		toolError: "Không cập nhật được lượt xem. Hãy mở lượt mới.",
-	},
-	zh: {
-		title: "Cafe Lua 塔罗",
-		intro:
-			"将 Cafe Lua 塔罗牌组、牌义指南和两部关联故事带入 Naia 应用。Naia 使用你设置的默认模型解读；本地模型仍在本地运行。",
-		reading: "占卜",
-		cards: "卡牌",
-		stories: "故事",
-		credits: "来源与许可",
-		question: "你想思考什么？",
-		questionHint: "问题可留空。抽牌在此设备上完成。",
-		questionPlaceholder: "输入问题或留空",
-		begin: "铺开十张牌",
-		emptyReading: "输入问题开始，也可以不写问题。",
-		readingTitle: "凯尔特十字",
-		revealedCount: "已翻开 {shown}/10 张",
-		revealNext: "翻开下一张牌",
-		askNaia: "请 Naia 解读牌阵",
-		readingAgain: "开始新占卜",
-		questionLabel: "问题",
-		naiaReading: "Naia 正在思考这张牌…",
-		naiaError: "尚未收到 Naia 的回复。你可以重新请求解读。",
-		retry: "重试",
-		noReply: "暂时没有回复。",
-		position: "位置",
-		keywords: "关键词",
-		upright: "正位",
-		reversed: "逆位",
-		symbols: "Cafe Lua 象征",
-		meaning: "牌义",
-		deckIntro:
-			"v2.0 牌组将传统大阿卡那象征融入 Cafe Lua 的空间、人物、创作与技术。",
-		cardCount: "22 张大阿卡那",
-		storyFable: "Fable 的故事",
-		storyAstra: "Astra 的故事",
-		storyAuthors:
-			"Fable：Claude Fable 5.1 · Astra：GPT-6 Astra。两部故事采用相同的22张插图和 Cafe Lua 背景；两个模型互相轻微润色了对方的文字。",
-		storyDeckNote:
-			"故事按 v2.0 大阿卡那顺序展开。Alpha 和 Luke 是故事中的人物。",
-		englishOnly: "牌义和故事以英文显示，没有进行机器翻译。",
-		storyChapter: "第 {number} 张",
-		storySummary: "简介",
-		volumeFable: "Alpha 的第一年",
-		volumeAstra: "尚未写下的日子",
-		mute: "静音音乐和翻牌声",
-		unmute: "开启音乐和翻牌声",
-		audioBlocked: "设备阻止了自动播放。请使用声音按钮播放 Cafe Lua 音乐。",
-		license: "来源与许可",
-		licenseText:
-			"Cafe Lua Tarot v2.0 的插图、牌义和故事来自 Cafe Lua，commit 3461f7d，采用 CC BY-NC-SA 4.0。背景音乐也来自该项目。翻牌声由本应用使用 Web Audio 合成，不使用外部录音。",
-		licenseLink: "CC BY-NC-SA 4.0 许可",
-		naiaNote: "Naia 使用你设置的默认模型解读。",
-		toolError: "无法更新牌阵。请开始新的占卜。",
-	},
-};
-
-export const LANGUAGE_NAMES: Record<AppLocale, string> = {
-	ar: "Arabic",
-	bn: "Bengali",
-	de: "German",
-	en: "English",
-	es: "Spanish",
-	fr: "French",
-	hi: "Hindi",
-	id: "Indonesian",
-	ja: "Japanese",
-	ko: "Korean",
-	pt: "Portuguese",
-	ru: "Russian",
-	vi: "Vietnamese",
-	zh: "Chinese",
-};
-
-export function normalizeAppLocale(
-	value: string | null | undefined,
-): AppLocale {
-	return APP_LOCALES.includes(value as AppLocale) ? (value as AppLocale) : "en";
-}
-
-export function copy(locale: AppLocale) {
-	return copies[locale];
-}
-
-export function appText(
-	locale: AppLocale,
-	key: keyof Copy,
-	params?: Record<string, string | number>,
-): string {
-	const text = copies[locale][key];
-	return params
-		? text.replace(/\{(\w+)\}/g, (match, name: string) =>
-				String(params[name] ?? match),
-			)
-		: text;
-}
-
-export function contentLocale(locale: AppLocale): "ko" | "en" {
-	return locale === "ko" ? "ko" : "en";
-}
+const copies = {
+  "ar": {
+    "title": "تاروت كافيه لوا",
+    "stories": "القصص",
+    "mute": "كتم الموسيقى وصوت البطاقة",
+    "unmute": "تشغيل الموسيقى وصوت البطاقة",
+    "upright": "مستقيمة",
+    "reversed": "مقلوبة",
+    "intro": "تصبح نايا قارئة تاروت كافيه لوا: أخبرها بما يشغلك فتقرأ البطاقات واحدة تلو الأخرى. ويضم التطبيق كتاب حكايات التاروت الذي تقرؤه نايا بصوت عالٍ.",
+    "help": "أخبر نايا بما يشغلك في المحادثة، فتضع البطاقات وتقرأها واحدة تلو الأخرى. افتح الكتاب من الزر أعلى اليمين واطلب منها القراءة بصوت عالٍ."
+  },
+  "bn": {
+    "title": "ক্যাফে লুয়া ট্যারোট",
+    "stories": "গল্প",
+    "mute": "সঙ্গীত ও কার্ডের শব্দ বন্ধ করুন",
+    "unmute": "সঙ্গীত ও কার্ডের শব্দ চালু করুন",
+    "upright": "সোজা",
+    "reversed": "উল্টো",
+    "intro": "নায়া ক্যাফে লুয়ার ট্যারোট পাঠক হয়ে আপনার কথা শোনে এবং একে একে কার্ড পড়ে। অ্যাপে ক্যাফে লুয়ার ট্যারোট গল্পের বইও আছে, যা নায়া পড়ে শোনায়।",
+    "help": "কথোপকথনে নায়াকে আপনার চিন্তার কথা বলুন। সে একে একে কার্ড পড়বে। উপরের ডান দিকের বই বোতামে গল্প খুলে নায়াকে পড়ে শোনাতে বলুন।"
+  },
+  "de": {
+    "title": "Cafe Lua Tarot",
+    "stories": "Geschichten",
+    "mute": "Musik und Kartenton stummschalten",
+    "unmute": "Musik und Kartenton einschalten",
+    "upright": "Aufrecht",
+    "reversed": "Umgekehrt",
+    "intro": "Naia wird zur Tarotleserin von Cafe Lua: Erzähle ihr, was dich beschäftigt, und sie deutet die Karten einzeln. Das Buch Cafe Lua Tarot Stories kann Naia auch vorlesen.",
+    "help": "Erzähle Naia im Gespräch von deinem Anliegen. Sie legt die Karten aus und deutet sie einzeln. Öffne das Buch oben rechts und bitte sie vorzulesen."
+  },
+  "en": {
+    "title": "Cafe Lua Tarot",
+    "stories": "Stories",
+    "mute": "Mute music and card sound",
+    "unmute": "Turn on music and card sound",
+    "upright": "Upright",
+    "reversed": "Reversed",
+    "intro": "Naia becomes Cafe Lua's tarot reader: tell her what's on your mind and she reads the cards one by one. The app also holds the Cafe Lua Tarot Stories book, and Naia can read it aloud to you.",
+    "help": "Tell Naia what is on your mind in the shell conversation. She lays out the cards and reads them one by one. Open the story book with the book button at the top right and ask her to read aloud."
+  },
+  "es": {
+    "title": "Tarot de Cafe Lua",
+    "stories": "Relatos",
+    "mute": "Silenciar música y sonido de carta",
+    "unmute": "Activar música y sonido de carta",
+    "upright": "Al derecho",
+    "reversed": "Invertida",
+    "intro": "Naia es la tarotista de Cafe Lua: cuéntale lo que te preocupa y leerá las cartas una a una. También puede leer en voz alta el libro de historias del tarot de Cafe Lua.",
+    "help": "Cuéntale tu inquietud a Naia en la conversación. Ella extenderá y leerá las cartas una a una. Abre el libro arriba a la derecha y pídele que lea en voz alta."
+  },
+  "fr": {
+    "title": "Tarot Cafe Lua",
+    "stories": "Récits",
+    "mute": "Couper la musique et le son de carte",
+    "unmute": "Activer la musique et le son de carte",
+    "upright": "À l’endroit",
+    "reversed": "Renversée",
+    "intro": "Naia devient la lectrice de tarot de Cafe Lua : confiez-lui vos soucis et elle interprète les cartes une à une. Elle peut aussi lire à voix haute le livre des histoires du tarot de Cafe Lua.",
+    "help": "Confiez votre souci à Naia dans la conversation. Elle étale et interprète les cartes une à une. Ouvrez le livre en haut à droite et demandez-lui de lire à voix haute."
+  },
+  "hi": {
+    "title": "कैफ़े लुआ टैरो",
+    "stories": "कहानियाँ",
+    "mute": "संगीत और कार्ड की ध्वनि बंद करें",
+    "unmute": "संगीत और कार्ड की ध्वनि चालू करें",
+    "upright": "सीधा",
+    "reversed": "उल्टा",
+    "intro": "नाया कैफ़े लुआ की टैरो पाठक बनकर आपकी चिंता सुनती है और एक-एक कार्ड पढ़ती है। ऐप में कैफ़े लुआ की टैरो कहानियों की किताब भी है जिसे नाया सुनाती है।",
+    "help": "बातचीत में नाया को अपनी चिंता बताएं। वह कार्ड बिछाकर एक-एक पढ़ेगी। ऊपर दाईं ओर किताब खोलें और नाया से पढ़कर सुनाने को कहें।"
+  },
+  "id": {
+    "title": "Tarot Cafe Lua",
+    "stories": "Cerita",
+    "mute": "Bisukan musik dan bunyi kartu",
+    "unmute": "Nyalakan musik dan bunyi kartu",
+    "upright": "Tegak",
+    "reversed": "Terbalik",
+    "intro": "Naia menjadi pembaca tarot Cafe Lua: ceritakan isi pikiranmu dan ia membaca kartu satu per satu. Naia juga dapat membacakan buku Kisah Tarot Cafe Lua.",
+    "help": "Ceritakan pikiranmu kepada Naia di percakapan. Ia membuka dan membaca kartu satu per satu. Buka buku di kanan atas dan minta Naia membacakannya."
+  },
+  "ja": {
+    "title": "カフェルア・タロット",
+    "stories": "物語",
+    "mute": "音楽とカード音をミュート",
+    "unmute": "音楽とカード音を再生",
+    "upright": "正位置",
+    "reversed": "逆位置",
+    "intro": "ナイアがカフェルアのタロットリーダーになり、悩みを聞いてカードを一枚ずつ読み解きます。カフェルアのタロット物語の本もナイアが朗読します。",
+    "help": "会話欄でナイアに悩みを話してください。ナイアがカードを並べて一枚ずつ読み解きます。右上の本を開き、読んでと頼むと朗読します。"
+  },
+  "ko": {
+    "title": "카페루아 타로",
+    "stories": "이야기 책",
+    "mute": "배경음악과 카드 소리 끄기",
+    "unmute": "배경음악과 카드 소리 켜기",
+    "upright": "정방향",
+    "reversed": "역방향",
+    "intro": "나이아가 카페루아의 타로 리더가 되어 고민을 듣고 카드를 한 장씩 풀어 줍니다. 카페루아 타로 이야기 한 권도 함께 들어 있어, 나이아가 소리 내어 읽어 줍니다.",
+    "help": "셸 대화창에서 나이아에게 고민을 말하세요. 나이아가 카드를 펼치고 한 장씩 풀어 줍니다. 이야기 책은 오른쪽 위 책 단추로 열고, '읽어 줘'라고 하면 나이아가 읽어 줍니다."
+  },
+  "pt": {
+    "title": "Tarô Cafe Lua",
+    "stories": "Histórias",
+    "mute": "Silenciar música e som da carta",
+    "unmute": "Ativar música e som da carta",
+    "upright": "Em pé",
+    "reversed": "Invertida",
+    "intro": "Naia é a leitora de tarô do Cafe Lua: conte o que está pensando e ela interpreta as cartas uma a uma. Naia também pode ler em voz alta o livro de histórias de tarô do Cafe Lua.",
+    "help": "Conte sua preocupação a Naia na conversa. Ela abrirá e interpretará as cartas uma a uma. Abra o livro no canto superior direito e peça que leia em voz alta."
+  },
+  "ru": {
+    "title": "Таро Cafe Lua",
+    "stories": "Рассказы",
+    "mute": "Выключить музыку и звук карты",
+    "unmute": "Включить музыку и звук карты",
+    "upright": "Прямая",
+    "reversed": "Перевёрнутая",
+    "intro": "Naia становится тарологом Cafe Lua: расскажите о своих заботах, и она истолкует карты по одной. Naia также может прочитать вслух книгу историй таро Cafe Lua.",
+    "help": "Расскажите Naia о своей заботе в беседе. Она разложит карты и истолкует их по одной. Откройте книгу кнопкой справа вверху и попросите прочитать вслух."
+  },
+  "vi": {
+    "title": "Tarot Cafe Lua",
+    "stories": "Truyện",
+    "mute": "Tắt nhạc và âm thanh lá bài",
+    "unmute": "Bật nhạc và âm thanh lá bài",
+    "upright": "Xuôi",
+    "reversed": "Ngược",
+    "intro": "Naia trở thành người đọc tarot của Cafe Lua: hãy kể điều bạn băn khoăn để cô ấy giải từng lá bài. Naia cũng có thể đọc to cuốn truyện tarot Cafe Lua.",
+    "help": "Hãy kể điều bạn băn khoăn với Naia trong cuộc trò chuyện. Cô ấy trải và giải từng lá bài. Mở sách ở góc trên bên phải và nhờ Naia đọc to."
+  },
+  "zh": {
+    "title": "Cafe Lua 塔罗",
+    "stories": "故事",
+    "mute": "静音音乐和翻牌声",
+    "unmute": "开启音乐和翻牌声",
+    "upright": "正位",
+    "reversed": "逆位",
+    "intro": "Naia 化身 Cafe Lua 的塔罗解读者，倾听你的烦恼并逐张解读卡牌。应用还收录 Cafe Lua 塔罗故事，Naia 可以为你朗读。",
+    "help": "在对话中告诉 Naia 你的烦恼。她会摆开卡牌并逐张解读。点击右上角的书打开故事，然后请 Naia 朗读。"
+  }
+} as const;
+export type CopyKey = keyof typeof copies.en;
+export function normalizeAppLocale(value: string): AppLocale { const language=value.toLowerCase().split('-')[0]; return APP_LOCALES.includes(language as AppLocale) ? language as AppLocale : 'en'; }
+export function copy(locale: AppLocale) { return copies[locale]; }
+export function appText(locale: AppLocale, key: CopyKey): string { return copies[locale][key]; }
+export function contentLocale(locale: AppLocale): 'ko' | 'en' { return locale === 'ko' ? 'ko' : 'en'; }
