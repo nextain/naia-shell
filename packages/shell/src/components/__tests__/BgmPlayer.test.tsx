@@ -1915,6 +1915,11 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			),
 		);
 		await startTrack("first", "YouTube One");
+		expect(useAvatarStore.getState().backgroundMediaType).toBe("iframe");
+		expect(useAvatarStore.getState().backgroundVideoUrl).toMatch(
+			/^https:\/\/www\.youtube-nocookie\.com\/embed\/first\?/,
+		);
+		expect(container.querySelector("audio")?.hasAttribute("src")).toBe(false);
 		bgmCommandHandler()({
 			payload: JSON.stringify({ type: "bgm_youtube_next" }),
 		});
@@ -1929,6 +1934,9 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 		expect(container.querySelector(".bgm-player")).toHaveAttribute(
 			"data-bgm-announced-title",
 			"Local Two",
+		);
+		expect(container.querySelector("audio")?.getAttribute("src")).toBe(
+			"blob:local-two",
 		);
 	});
 

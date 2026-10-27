@@ -1,5 +1,12 @@
 <!-- src-sha: df88cf4ea6dc4abc -->
 
+## 0.2.4 설치판 YouTube 스트림 추출 제거 — 2026-10-27
+
+- P01–P05 완료: `/yt/stream` 처리기와 URL 추출·형식 선택·decipher 제거. `/yt/search` 메타데이터 검색과 공식 iframe 재생은 유지하며 `<audio>`는 로컬 파일만 받는다.
+- 설치 리소스 검증: staged sidecar 검색은 HTTP 200으로 메타데이터 2건(각각 id/title/thumbnail/duration/channel)을 반환했고 `/yt/stream`은 HTTP 404 `not found`를 반환했다. staged `dist`에는 추출 코드가 없다.
+- 검증: sidecar build, root/Shell TypeScript, BGM Vitest 102/102, BGM Playwright 12/12, 실제 YouTube iframe 미디어 시계 30.1초 진행. 전체 Shell Vitest는 2,518 통과/21 제외/기존 agent-pairing assertion 1 실패.
+- process-status.json 이번 가지 갱신은 조정자(민호)가 승인했다(대표님 상시 원문: “운영 배포 빼고는 내 승인은 필요 없어”).
+
 ## NVA 동작 Alt 단축키·채팅 배치 — 2026-10-25
 
 - P01–P05 완료: `UC-NVA-ACTION-HOTKEYS-20261025`, FR-NVA-GESTURE.2~3, Alt+1~9/입력 근처 단추/AI 사용 제한과 TTS idle 지연을 구현했다.
