@@ -41,6 +41,17 @@
       "remaining": "P04 remains in progress until the coordinator validates the installed Windows Shell 0.2.4 on a Windows device with the window closed and already open. No push or installer delivery.",
       "last_updated": "2026-10-22T20:11:00+09:00"
     },
+    "bgm_drop_yt_stream_20261027": {
+      "issue": null,
+      "title": "0.2.4 설치판 YouTube 스트림 추출 제거",
+      "branch": "fix/bgm-drop-yt-stream-20261027",
+      "requirements": "docs/requirements.md FR-BGM.1 — 검색 메타데이터·공식 iframe·로컬 audio 경계",
+      "scenario": "docs/user-scenarios.md UC8 / S31 / S-BGM-SKILL",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done", "P05": "done" },
+      "status": "done",
+      "verification": "Sidecar build, staged sidecar search 200 / stream 404, staged dist scan, root and Shell TypeScript, BGM Vitest 102/102, Playwright 12/12, live YouTube iframe media clock 30.1s. Full Shell Vitest: 2,518 passed / 21 skipped / 1 unrelated existing agent-pairing assertion failure. See docs/progress/bgm-drop-yt-stream-20261027/result-01.md.",
+      "last_updated": "2026-10-27T11:57:00+09:00"
+    },
     "issue_758_s2_ollama_install": {
       "issue": 758,
       "title": "Ollama 설치·찾기 (#758 단계 2)",
@@ -277,7 +288,7 @@
     "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",
     "github_issue": null,
     "started": "2026-06-08T00:00:00Z",
-    "last_updated": "2026-09-04T03:25:00+09:00",
+    "last_updated": "2026-10-27T11:57:00+09:00",
     "status": "in_progress",
     "epic_497_universal_agent": {
       "issue": 497,
@@ -698,9 +709,9 @@
         "P05": "pending"
       },
       "status": "in_progress",
-      "verification": "Build chain and SettingsTab focus passed (111 passed/8 skipped). Full Vitest: 2,344 passed/21 skipped/1 existing agent-pairing.test.ts temp-path-filter failure because required TMPDIR was under the worktree rather than /tmp; no out-of-scope fix. Rust focused Cargo 55 passed/0 failed; full parallel Cargo 581 passed/0 failed/4 documented baseline filtered. Initial full Playwright 193 failed (55 baseline names plus 138 connection-refused failures); targeted 36-spec rerun 139 passed/27 failed/7 skipped, all 27 names matched the S2 baseline and stage-specific failures are 0. Port 1421 health returned HTTP 200 on all 91 checks.",
+      "verification": "Build chain and SettingsTab focus passed (111 passed/8 skipped). Full Vitest: 2,344 passed/21 skipped/1 existing agent-pairing.test.ts temp-path-filter failure because required TMPDIR was under the worktree rather than /tmp; no out-of-scope fix. Rust focused Cargo 55 passed/0 failed; full parallel Cargo 581 passed/0 failed/4 documented baseline filtered. Initial full Playwright 193 failed (55 baseline names plus 138 connection-refused failures); targeted 36-spec rerun 139 passed/27 failed/7 skipped, all 27 names matched the S2 baseline and stage-specific failures are 0. Port 1421 health returned HTTP 200 on all 91 checks. 2026-10-27 close-order tests: Linux Cargo-built harness, cancel and shutdown each 100/100 unloaded and 50/50 under 32 yes CPU workers; report-then-close 0ms injection passed both because immediate close may precede the test thread observation, while 50ms injection failed both. See coordinator progress record naia-shell-ollama-test-race-20261027 result-05.",
       "remaining": "Muse code review and P05 remain pending. Keep completion claim no; candidate measurement, Luke decisions, and platform field validation belong to later #759 stages.",
-      "last_updated": "2026-10-14T00:01:00+09:00"
+      "last_updated": "2026-10-27T13:09:08+09:00"
     },
     "motif_3_provider_20261022": {
       "issue": null,
