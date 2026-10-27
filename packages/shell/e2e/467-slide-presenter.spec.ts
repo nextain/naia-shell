@@ -56,7 +56,7 @@ const SPEECH_MOCK = `
 			id: "land.naia.slides",
 			name: "Naia Slides",
 			description: "Present PDF and PPTX decks with Naia voice and avatar.",
-			version: "0.1.0",
+			version: "0.1.1",
 			icon: "📽️",
 			htmlEntry: "/tmp/naia-e2e/apps/land.naia.slides/index.html",
 			tools: [{ name: "slides_presenter", description: "Control the slide presentation" }]

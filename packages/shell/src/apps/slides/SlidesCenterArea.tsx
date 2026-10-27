@@ -31,13 +31,13 @@ import {
 	type SlidesOpenedPdf,
 } from "../../lib/slides-files";
 import { replaceSlideScriptPage } from "../../lib/slide-script";
-import { startSlidesRecording, stopSlidesRecording } from "../../lib/slides-host";
+import {
+	startSlidesRecording,
+	stopSlidesRecording,
+} from "../../lib/slides-host";
 import { useAppStore } from "../../stores/app";
 import { SlidesControls } from "./SlidesControls";
-import {
-	SlidesErrorNotice,
-	type SlidesFileError,
-} from "./SlidesErrorNotice";
+import { SlidesErrorNotice, type SlidesFileError } from "./SlidesErrorNotice";
 import { SlidesFileActions } from "./SlidesFileActions";
 import { SlidesScriptPanel } from "./SlidesScriptPanel";
 import { SlidesStatus } from "./SlidesStatus";
@@ -68,7 +68,10 @@ function scriptDownloadName(scriptName: string, pdfName: string): string {
 	return `${base || "slides"}.edited.md`;
 }
 
-export function SlidesCenterArea({ naia }: AppCenterProps) {
+export function SlidesCenterArea({
+	naia,
+	sampleDeck,
+}: AppCenterProps & { sampleDeck?: { pdfUrl: string; scriptUrl: string } }) {
 	const [state, dispatch] = useReducer(
 		reduceSlidePresenter,
 		EMPTY_SLIDE_PRESENTER_STATE,
@@ -83,6 +86,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const [importPhase, setImportPhase] = useState<string | null>(null);
 	const [fileError, setFileError] = useState<SlidesFileError | null>(null);
 	const selectedFileRef = useRef<File | null>(null);
+	const samplePromiseRef = useRef<Promise<SlidesOpenedPdf | null> | null>(null);
 	const scriptRevisionRef = useRef(0);
 	const pickerAbortRef = useRef<AbortController | null>(null);
 	const [scriptMarkdown, setScriptMarkdown] = useState("");
@@ -165,12 +169,15 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	}
 
 	function documentErrorKey(error: unknown): SlidesFileError {
-		const code = String(error).replace(/^Error:\s*/u, "").toLowerCase();
+		const code = String(error)
+			.replace(/^Error:\s*/u, "")
+			.toLowerCase();
 		if (code.includes("converter_unavailable")) return "converter";
 		if (code.includes("invalid_pptx")) return "invalidPptx";
 		if (code.includes("conversion_timeout")) return "conversionTimeout";
 		if (code.includes("conversion_failed")) return "conversionFailed";
-		if (code.includes("picker_busy") || code.includes("import_busy")) return "busy";
+		if (code.includes("picker_busy") || code.includes("import_busy"))
+			return "busy";
 		return "import";
 	}
 
@@ -503,6 +510,46 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		});
 	}
 
+	useEffect(() => {
+		if (!sampleDeck || selectedFileRef.current) return;
+		if (!samplePromiseRef.current) {
+			const nameFromUrl = (url: string) =>
+				new URL(url, window.location.href).pathname.split("/").pop() || "";
+			samplePromiseRef.current = (async () => {
+				const scriptPromise = fetch(sampleDeck.scriptUrl)
+					.then(async (response) =>
+						response.ok
+							? {
+									name: nameFromUrl(sampleDeck.scriptUrl),
+									text: await response.text(),
+								}
+							: null,
+					)
+					.catch(() => null);
+				try {
+					const response = await fetch(sampleDeck.pdfUrl);
+					if (!response.ok) return null;
+					const file = new File(
+						[await response.blob()],
+						nameFromUrl(sampleDeck.pdfUrl),
+						{ type: "application/pdf" },
+					);
+					return { file, script: await scriptPromise, scriptReadFailed: false };
+				} catch {
+					return null;
+				}
+			})();
+		}
+		let cancelled = false;
+		void samplePromiseRef.current.then((sample) => {
+			if (!cancelled && sample && !selectedFileRef.current)
+				loadPdf(sample.file, sample);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
 	async function pickPdf() {
 		if (pickerAbortRef.current) return;
 		const abort = new AbortController();
@@ -570,7 +617,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		cancelSpeech();
 		if (stateRef.current.mode === "presenting") dispatch({ type: "pause" });
 		const initial = speakerNotes.has(state.page)
-			? speakerNotes.get(state.page) ?? ""
+			? (speakerNotes.get(state.page) ?? "")
 			: currentNarration;
 		draftOriginalRef.current = initial;
 		setEditingPage(state.page);
@@ -628,7 +675,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			setFileError(null);
 		} catch (error) {
 			setFileError("export");
-			Logger.warn(TAG, "edited script download failed", { error: String(error) });
+			Logger.warn(TAG, "edited script download failed", {
+				error: String(error),
+			});
 		} finally {
 			if (url) window.setTimeout(() => URL.revokeObjectURL(url), 0);
 		}

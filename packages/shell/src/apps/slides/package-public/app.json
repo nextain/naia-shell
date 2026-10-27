@@ -1,36 +1,47 @@
 {
-  "id": "land.naia.slides",
-  "name": "Naia Slides",
-  "names": {
-    "ko": "나이아 슬라이드",
-    "en": "Naia Slides"
-  },
-  "iconUrl": "icon.svg",
-  "version": "0.1.0",
-  "description": "PDF·PPTX 발표, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원하는 슬라이드 앱",
-  "descriptions": {
-    "ko": "PDF·PPTX 발표, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원합니다. 녹화는 data-private/apps/land.naia.slides/video/에 저장됩니다.",
-    "en": "Present PDF and PPTX decks from any page in focus or full-screen mode, collapse presenter notes, record the Naia window to MP4, and open recordings in Workspace. Recordings are stored under data-private/apps/land.naia.slides/video/."
-  },
-  "tools": [
-    {
-      "name": "skill_slide_presenter",
-      "description": "Control the active Slides app. It supports starting at a selected page, focus/full-screen presentation, collapsible notes, and MP4 recording of the Naia window saved in the app sandbox and opened in Workspace. Actions: start, pause, resume, stop, next, previous, goto, question, status, get_context.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string",
-            "enum": ["start", "pause", "resume", "stop", "next", "previous", "goto", "question", "status", "get_context"]
-          },
-          "page": {
-            "type": "number",
-            "description": "1-based slide number for goto"
-          }
-        },
-        "required": ["action"]
-      },
-      "tier": 0
-    }
-  ]
+	"id": "land.naia.slides",
+	"name": "Naia Slides",
+	"names": {
+		"ko": "나이아 슬라이드",
+		"en": "Naia Slides"
+	},
+	"iconUrl": "icon.svg",
+	"version": "0.1.1",
+	"description": "PDF·PPTX 발표, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원하는 슬라이드 앱",
+	"descriptions": {
+		"ko": "PDF·PPTX 발표, 특정 페이지 시작, 집중·전체 화면, 발표자 메모 접기, 나이아 창 MP4 녹화와 Workspace 재생을 지원합니다. 녹화는 data-private/apps/land.naia.slides/video/에 저장됩니다.",
+		"en": "Present PDF and PPTX decks from any page in focus or full-screen mode, collapse presenter notes, record the Naia window to MP4, and open recordings in Workspace. Recordings are stored under data-private/apps/land.naia.slides/video/."
+	},
+	"tools": [
+		{
+			"name": "skill_slide_presenter",
+			"description": "Control the active Slides app. It supports starting at a selected page, focus/full-screen presentation, collapsible notes, and MP4 recording of the Naia window saved in the app sandbox and opened in Workspace. Actions: start, pause, resume, stop, next, previous, goto, question, status, get_context.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"action": {
+						"type": "string",
+						"enum": [
+							"start",
+							"pause",
+							"resume",
+							"stop",
+							"next",
+							"previous",
+							"goto",
+							"question",
+							"status",
+							"get_context"
+						]
+					},
+					"page": {
+						"type": "number",
+						"description": "1-based slide number for goto"
+					}
+				},
+				"required": ["action"]
+			},
+			"tier": 0
+		}
+	]
 }
