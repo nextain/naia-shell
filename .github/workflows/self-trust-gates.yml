@@ -163,7 +163,7 @@ jobs:
         run: |
           git init ../naia-agent
           git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
-          git -C ../naia-agent fetch --depth 1 origin 010748107fee6d39822864afc61bda076277836e
+          git -C ../naia-agent fetch --depth 1 origin fdc6fcb5c34ea453612d968a0259a41aa1ef46ed
           git -C ../naia-agent checkout --detach FETCH_HEAD
       # 코어의 실브라우저 계약(env-tool-browser-host·adk-switch)은 Playwright chromium 을
       # 기본 후보로 고른다(packages/ego-host browser-discovery). 그 바이너리를 core tests 앞에 둔다.

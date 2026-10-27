@@ -44,6 +44,8 @@ interface ChatState {
 	messages: ChatMessage[];
 	isStreaming: boolean;
 	streamingContent: string;
+	/** A tool event occurred; separate the next visible text round once. */
+	streamingToolBoundaryPending: boolean;
 	streamingThinking: string;
 	streamingToolCalls: ToolCall[];
 	provider: ProviderId;
@@ -70,6 +72,7 @@ interface ChatState {
 	updateLastMessage: (role: ChatMessage["role"], content: string) => void;
 	startStreaming: () => void;
 	appendStreamChunk: (text: string) => void;
+	markStreamingToolBoundary: () => void;
 	appendThinkingChunk: (text: string) => void;
 	addStreamingToolUse: (
 		toolCallId: string,
@@ -138,6 +141,45 @@ function getInitialLocalSessionId(): string {
 	return fresh;
 }
 
+/**
+ * History rows the shell sends with a chat turn (chat-stream-join 2026-10-27).
+ *
+ * Failure notices (`#572` retry affordances) and blank assistant rows (error
+ * path / voice `recordEmpty`) are UI state, not conversation: sending them as
+ * empty assistant turns hands the model a truncated/broken context, which is
+ * what makes it re-introduce itself or continue mid-sentence after a retry.
+ *
+ * The failed attempt's user row and any partial assistant rows before the
+ * failure notice go with it. Replaying either the question or a mid-sentence
+ * fragment can duplicate or continue the failed turn (2026-10-27). Displayed
+ * messages are untouched.
+ */
+export function toSendHistory(
+	messages: readonly ChatMessage[],
+): { role: "user" | "assistant"; content: string }[] {
+	const failedTurnRows = new Set<number>();
+	for (let failureIndex = 0; failureIndex < messages.length; failureIndex++) {
+		if (!messages[failureIndex].failure) continue;
+		// A failed turn can have partial assistant rows (with tool-call metadata)
+		// between its user row and failure notice. Walk back to that user and
+		// exclude the whole failed turn while retaining earlier completed turns.
+		for (let i = failureIndex - 1; i >= 0; i--) {
+			if (messages[i].role === "user") {
+				failedTurnRows.add(i);
+				break;
+			}
+			if (messages[i].role === "assistant") failedTurnRows.add(i);
+		}
+	}
+	return messages
+		.filter((m, i) => {
+			if (m.role !== "user" && m.role !== "assistant") return false;
+			if (m.failure || failedTurnRows.has(i)) return false;
+			return m.content.trim() !== "";
+		})
+		.map((m) => ({ role: m.role, content: m.content }));
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
 	sessionId: null,
 	localSessionId: getInitialLocalSessionId(),
@@ -145,6 +187,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	messages: [],
 	isStreaming: false,
 	streamingContent: "",
+	streamingToolBoundaryPending: false,
 	streamingThinking: "",
 	streamingToolCalls: [],
 	// FR-LLM-LOGOUT.2: 초기 제공자는 비어 있다. 설정이 제공자를 정한다.
@@ -267,12 +310,28 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		set({
 			isStreaming: true,
 			streamingContent: "",
+			streamingToolBoundaryPending: false,
 			streamingThinking: "",
 			streamingToolCalls: [],
 		}),
 
-	appendStreamChunk: (text) =>
-		set((s) => ({ streamingContent: s.streamingContent + text })),
+	appendStreamChunk: (text) => {
+		if (!text) return;
+		set((s) => {
+			const addRoundBoundary =
+				s.streamingToolBoundaryPending &&
+				s.streamingContent.length > 0 &&
+				!s.streamingContent.endsWith("\n");
+			return {
+				streamingContent:
+					s.streamingContent + (addRoundBoundary ? "\n\n" : "") + text,
+				streamingToolBoundaryPending: false,
+			};
+		});
+	},
+
+	markStreamingToolBoundary: () =>
+		set((s) => (s.isStreaming ? { streamingToolBoundaryPending: true } : s)),
 
 	appendThinkingChunk: (text) =>
 		set((s) => ({ streamingThinking: s.streamingThinking + text })),
@@ -280,9 +339,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	addStreamingToolUse: (toolCallId, toolName, args) =>
 		set((s) => {
 			if (s.streamingToolCalls.some((tc) => tc.toolCallId === toolCallId)) {
-				return s;
+				return s.streamingToolBoundaryPending
+					? s
+					: { ...s, streamingToolBoundaryPending: true };
 			}
 			return {
+				streamingToolBoundaryPending: true,
 				streamingToolCalls: [
 					...s.streamingToolCalls,
 					{ toolCallId, toolName, args, status: "running" as const },
@@ -299,9 +361,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 				Logger.warn("ChatStore", "tool_result for unknown toolCallId", {
 					toolCallId,
 				});
-				return s;
+				return { ...s, streamingToolBoundaryPending: true };
 			}
 			return {
+				streamingToolBoundaryPending: true,
 				streamingToolCalls: s.streamingToolCalls.map((tc) =>
 					tc.toolCallId === toolCallId
 						? {
@@ -332,6 +395,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		set((s) => ({
 			isStreaming: false,
 			streamingContent: "",
+			streamingToolBoundaryPending: false,
 			streamingThinking: "",
 			streamingToolCalls: [],
 			pendingApproval: null,
@@ -440,6 +504,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			messages: [],
 			isStreaming: false,
 			streamingContent: "",
+			streamingToolBoundaryPending: false,
 			streamingThinking: "",
 			streamingToolCalls: [],
 			totalSessionCost: 0,
