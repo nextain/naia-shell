@@ -207,7 +207,11 @@ import { isNaiaAuthWireError, wireErrorMessage } from "../lib/wire-errors";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
-import { getStoredLocalSessionId, useChatStore } from "../stores/chat";
+import {
+	getStoredLocalSessionId,
+	toSendHistory,
+	useChatStore,
+} from "../stores/chat";
 import { useLogsStore } from "../stores/logs";
 import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
@@ -1881,9 +1885,10 @@ export function ChatArea({
 			return;
 		}
 
-		const history = store.messages
-			.filter((m) => m.role === "user" || m.role === "assistant")
-			.map((m) => ({ role: m.role, content: m.content }));
+		// Failure notices and blank assistant rows are UI state, not
+		// conversation — toSendHistory drops them so a retry never hands the
+		// model empty assistant turns (chat-stream-join 2026-10-27).
+		const history = toSendHistory(store.messages);
 
 		// TTS is handled by Shell via SentenceChunker (both chat and pipeline mode).
 		// Agent auto-TTS disabled — Shell controls TTS directly via requestTts IPC.

@@ -138,6 +138,27 @@ function getInitialLocalSessionId(): string {
 	return fresh;
 }
 
+/**
+ * History rows the shell sends with a chat turn (chat-stream-join 2026-10-27).
+ *
+ * Failure notices (`#572` retry affordances) and blank assistant rows (error
+ * path / voice `recordEmpty`) are UI state, not conversation: sending them as
+ * empty assistant turns hands the model a truncated/broken context, which is
+ * what makes it re-introduce itself or continue mid-sentence after a retry.
+ */
+export function toSendHistory(
+	messages: readonly ChatMessage[],
+): { role: "user" | "assistant"; content: string }[] {
+	return messages
+		.filter(
+			(m) =>
+				(m.role === "user" || m.role === "assistant") &&
+				!m.failure &&
+				m.content.trim() !== "",
+		)
+		.map((m) => ({ role: m.role, content: m.content }));
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
 	sessionId: null,
 	localSessionId: getInitialLocalSessionId(),

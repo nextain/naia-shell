@@ -375,3 +375,25 @@ describe("createEmotionController", () => {
 		expect(vrm._values.get("happy")).toBe(1);
 	});
 });
+
+describe("emotion tag stripping preserves line boundaries (chat-stream-join)", () => {
+	it("keeps the newline after a tag at a tool-boundary seam", () => {
+		expect(
+			extractExpression("있어요[HAPPY]\n음악은 계속해서 흘러가고 있어요")
+				.cleanText,
+		).toBe("있어요\n음악은 계속해서 흘러가고 있어요");
+	});
+
+	it("keeps a markdown divider on its own line after a tag", () => {
+		expect(extractExpression("즐겨주세요[HAPPY]\n---\n\n다음").cleanText).toBe(
+			"즐겨주세요\n---\n\n다음",
+		);
+	});
+
+	it("still trims a leading tag and collapses mid-line spaces", () => {
+		expect(extractExpression("[HAPPY] 좋아!").cleanText).toBe("좋아!");
+		expect(extractExpression("있어요 [HAPPY] 음악은").cleanText).toBe(
+			"있어요 음악은",
+		);
+	});
+});

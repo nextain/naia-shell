@@ -49,5 +49,5 @@ export function emotionTagsToChatText(text: string): string {
 			EMOTION_EMOJI[tag] ? EMOTION_EMOJI[tag] + space : "",
 		)
 		.replace(/[ \t]{2,}/g, " ") // collapse runs left by a stripped tag
-		.replace(/\s+([.,!?。、！？])/g, "$1"); // " ." -> "." after a strip
+		.replace(/[ \t]+([.,!?。、！？])/g, "$1"); // " ." -> "." after a strip (never eats a newline)
 }

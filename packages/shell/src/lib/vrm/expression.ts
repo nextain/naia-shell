@@ -113,7 +113,14 @@ const EMOTION_STATES: Record<EmotionName, EmotionState> = {
 	},
 };
 
-const EMOTION_TAG_RE = /\[(HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)]\s*/gi;
+/**
+ * Trailing match is horizontal whitespace only (`[ \t]*`, never `\s*`): a tag
+ * at the end of a line must not swallow the newline — that glued
+ * "있어요[HAPPY]\n음악은" into "있어요음악은" and "🌿[HAPPY]\n---" into "🌿---"
+ * on screen (chat-stream-join 2026-10-27). Leading trim + mid-line collapse
+ * below still tidy the rest.
+ */
+const EMOTION_TAG_RE = /\[(HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)][ \t]*/gi;
 
 const KNOWN_EMOTIONS: readonly EmotionName[] = [
 	"happy",

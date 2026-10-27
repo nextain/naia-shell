@@ -50,7 +50,8 @@ export const ttsTextFilter = Object.freeze({
 			.replace(/```[\s\S]*?(?:```|$)/g, " ")
 			.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
 			.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-			.replace(/\[(?:HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)]\s*/gi, "")
+			// Horizontal whitespace only after the tag (same rule as lib/vrm/expression.ts).
+			.replace(/\[(?:HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)][ \t]*/gi, "")
 			.replace(/`([^`]*)`/g, (_match, content: string) =>
 				rule.transformInlineCode(content),
 			)

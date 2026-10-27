@@ -39,4 +39,10 @@ describe("emotionTagsToChatText", () => {
 	it("returns empty/falsy input as-is", () => {
 		expect(emotionTagsToChatText("")).toBe("");
 	});
+
+	it("preserves newlines (chat-stream-join: stripping must not join lines)", () => {
+		expect(emotionTagsToChatText("있어요\n다음")).toBe("있어요\n다음");
+		// Punctuation tidy-up collapses horizontal space only, never a newline.
+		expect(emotionTagsToChatText("좋아요\n.")).toBe("좋아요\n.");
+	});
 });
