@@ -35,7 +35,17 @@ export function drawCelticCross(
 		const swap = randomIndex(random, index + 1);
 		[deck[index], deck[swap]] = [deck[swap], deck[index]];
 	}
-	const positions = spread === "three" ? [SPREAD_POSITIONS[4], SPREAD_POSITIONS[0], SPREAD_POSITIONS[5]] : [SPREAD_POSITIONS[0], SPREAD_POSITIONS[1], SPREAD_POSITIONS[3], SPREAD_POSITIONS[4], SPREAD_POSITIONS[2], ...SPREAD_POSITIONS.slice(5)];
+	const positions =
+		spread === "three"
+			? [SPREAD_POSITIONS[4], SPREAD_POSITIONS[0], SPREAD_POSITIONS[5]]
+			: [
+					SPREAD_POSITIONS[0],
+					SPREAD_POSITIONS[1],
+					SPREAD_POSITIONS[3],
+					SPREAD_POSITIONS[4],
+					SPREAD_POSITIONS[2],
+					...SPREAD_POSITIONS.slice(5),
+				];
 	const cards = positions.map((position, index) => ({
 		card: deck[index],
 		position,
