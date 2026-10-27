@@ -2,6 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { makeModelToolBoundary } from "../model-facing-tools";
 
 describe("makeModelToolBoundary", () => {
+	it("does not disable the Cafe Lua tarot app skill", async () => {
+		const boundary = makeModelToolBoundary({
+			fetchTools: async () => [{ name: "skill_cafelua_tarot" }],
+		});
+		expect((await boundary.resolve()).disabledSkills).not.toContain(
+			"skill_cafelua_tarot",
+		);
+	});
 	it("turn 1 and turn 2 return the same disabledSkills for the same agent list", async () => {
 		const agentTools = [
 			{ name: "get_time" },
@@ -168,7 +176,8 @@ describe("makeModelToolBoundary", () => {
 		const warn = vi.fn();
 		// Not an array
 		const boundaryNotArray = makeModelToolBoundary({
-			fetchTools: async () => "invalid" as unknown as readonly { name: string }[],
+			fetchTools: async () =>
+				"invalid" as unknown as readonly { name: string }[],
 			warn,
 		});
 		const resNotArray = await boundaryNotArray.resolve();

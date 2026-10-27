@@ -1385,7 +1385,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
 | **FR-CAFELUA-TAROT-READING.1** | 켈틱 열 장 또는 세 장을 중복 없이 뽑아 도구 호출마다 한 장씩 공개하고 정·역방향을 표시한다. | UC-CAFELUA-TAROT-APP | `reading.test.ts, tools.test.ts` | In progress |
-| **FR-CAFELUA-TAROT-NAIA.1** | 나이아 도구로 시작·공개·조회·종합·책 열기·낭독·중지·상태를 지원하며 앱에서 셸 대화로 질문을 보내지 않는다. | UC-CAFELUA-TAROT-APP | `tools.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-NAIA.1** | 나이아 도구로 시작·공개·조회·종합·책 열기·낭독·중지·상태를 지원한다. 앱에서 셸 대화로는 ‘나이아 낭독’ 단추의 정해진 낭독 요청만 보내고 그 밖의 질문은 보내지 않는다. | UC-CAFELUA-TAROT-APP | `tools.test.ts`, `book-bridge.test.tsx`, `generic-installed-cafelua-tarot.test.tsx`, `chat-service.test.ts`, `model-tool-boundary.test.ts` | In progress |
 | **FR-CAFELUA-TAROT-CARDS.1** | 덮인 카드는 직접 뒤집히지 않으며 공개된 카드의 자리와 사전 뜻을 볼 수 있다. | UC-CAFELUA-TAROT-APP | `cafelua-tarot-app.spec.ts` | In progress |
 | **FR-CAFELUA-TAROT-STORIES.1** | 카페루아 책의 한국어·영어 원문과 목차·쪽 넘김을 보존하고 나이아 낭독을 문단 단위로 제공한다. | UC-CAFELUA-TAROT-APP | `content.test.ts`, `tools.test.ts`, `cafelua-tarot-app.spec.ts` | In progress |
 | **FR-CAFELUA-TAROT-LOCALE.1** | 셸의 14개 화면 언어와 책의 한국어·영어 선택을 지원한다. | UC-CAFELUA-TAROT-APP | `i18n.test.ts` | In progress |

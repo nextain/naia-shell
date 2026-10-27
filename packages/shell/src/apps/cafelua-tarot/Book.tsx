@@ -42,6 +42,41 @@ const stopHint: Record<AppLocale, string> = {
 	vi: "Hãy bảo Naia dừng lại.",
 	zh: "请对 Naia 说“停止”。",
 };
+
+export const readRequests: Record<AppLocale, string> = {
+	ko: "나이아, 카페루아 타로 이야기 지금 장을 그대로 읽어 줘.",
+	en: "Naia, please read the current chapter of the Cafe Lua tarot story aloud, just as it is written.",
+	ar: "نايا، اقرئي الفصل الحالي من حكاية تاروت كافيه لوا بصوت عالٍ كما هو مكتوب.",
+	bn: "নাইয়া, ক্যাফে লুয়া ট্যারোট গল্পের এই অধ্যায়টা যেমন লেখা আছে তেমনই পড়ে শোনাও।",
+	de: "Naia, lies bitte das aktuelle Kapitel der Cafe-Lua-Tarotgeschichte so vor, wie es geschrieben ist.",
+	es: "Naia, lee en voz alta el capítulo actual de la historia de tarot de Cafe Lua tal como está escrito.",
+	fr: "Naia, lis à voix haute le chapitre actuel de l'histoire de tarot Cafe Lua, tel qu'il est écrit.",
+	hi: "नाइया, कैफ़े लुआ टैरो कहानी का यह अध्याय जैसा लिखा है वैसा ही पढ़कर सुनाओ।",
+	id: "Naia, tolong bacakan bab ini dari kisah tarot Cafe Lua persis seperti yang tertulis.",
+	ja: "ナイア、カフェルアのタロット物語の今の章を、書かれているとおりに読んで。",
+	pt: "Naia, leia em voz alta o capítulo atual da história de tarô Cafe Lua exatamente como está escrito.",
+	ru: "Найя, прочитай вслух текущую главу истории таро Cafe Lua так, как она написана.",
+	vi: "Naia ơi, đọc to chương hiện tại của truyện tarot Cafe Lua đúng như được viết nhé.",
+	zh: "Naia，请把 Cafe Lua 塔罗故事的当前章节按原文读出来。",
+};
+export const readErrors: Record<AppLocale, string> = {
+	ko: "낭독을 시작하지 못했어요. 다시 시도해 주세요.",
+	en: "Could not start reading. Please try again.",
+	ar: "تعذرت بدء القراءة. حاول مجددًا.",
+	bn: "পাঠ শুরু করা যায়নি। আবার চেষ্টা করুন।",
+	de: "Vorlesen konnte nicht starten. Bitte erneut versuchen.",
+	es: "No se pudo iniciar la lectura. Inténtalo de nuevo.",
+	fr: "La lecture n’a pas démarré. Réessayez.",
+	hi: "पाठ शुरू नहीं हो सका। फिर कोशिश करें।",
+	id: "Pembacaan gagal dimulai. Coba lagi.",
+	ja: "朗読を始められませんでした。もう一度お試しください。",
+	pt: "Não foi possível iniciar a leitura. Tente novamente.",
+	ru: "Не удалось начать чтение. Попробуйте ещё раз.",
+	vi: "Không thể bắt đầu đọc. Hãy thử lại.",
+	zh: "无法开始朗读，请重试。",
+};
+let requestSequence = 0;
+
 export const Book = forwardRef<BookHandle, Props>(function Book(
 	{ locale, onBack },
 	ref,
@@ -63,6 +98,13 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 		ids: string[];
 	} | null>(null);
 	const [notice, setNotice] = useState("");
+	const request = useRef<{
+		id: string;
+		timer: number | null;
+		accepted: boolean;
+	} | null>(null);
+	const localeRef = useRef(locale);
+	localeRef.current = locale;
 	const cursor = useRef({ page: 0 });
 	const consumed = useRef(new Set<string>());
 	const stopped = useRef(false);
@@ -70,6 +112,76 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 	const template = useRef<HTMLElement>(null);
 	const panel = useRef<HTMLElement>(null);
 	const pending = useRef<(() => void)[]>([]);
+	useEffect(() => {
+		const onMessage = (event: MessageEvent) => {
+			const current = request.current;
+			if (
+				event.source !== window.parent ||
+				!current ||
+				event.data?.id !== current.id
+			)
+				return;
+			if (event.data.type === "naia-cafelua-tarot:accepted") {
+				current.accepted = true;
+				if (current.timer !== null) clearTimeout(current.timer);
+				current.timer = null;
+			} else if (
+				event.data.type === "naia-cafelua-tarot:response" &&
+				current.accepted
+			) {
+				request.current = null;
+				if (event.data.error) setNotice(readErrors[localeRef.current]);
+			}
+		};
+		window.addEventListener("message", onMessage);
+		return () => {
+			window.removeEventListener("message", onMessage);
+			if (
+				request.current?.timer !== null &&
+				request.current?.timer !== undefined
+			)
+				clearTimeout(request.current.timer);
+		};
+	}, []);
+	function stopReading() {
+		stopped.current = true;
+		setReading(false);
+		setAuto(false);
+		setHighlight(null);
+		setNotice(stopHint[locale]);
+		window.setTimeout(() => setNotice(""), 3500);
+	}
+	function requestReading() {
+		if (reading) {
+			stopReading();
+			return;
+		}
+		if (request.current) return;
+		if (window.parent === window) {
+			setNotice(ui(locale, "readHint"));
+			return;
+		}
+		stopped.current = false;
+		setAuto(false);
+		setNotice("");
+		const id = `read-${Date.now()}-${++requestSequence}`;
+		const timer = window.setTimeout(() => {
+			if (request.current?.id === id && !request.current.accepted) {
+				request.current = null;
+				setNotice(ui(locale, "readHint"));
+			}
+		}, 3000);
+		request.current = { id, timer, accepted: false };
+		window.parent.postMessage(
+			{
+				type: "naia-cafelua-tarot:ask",
+				appId: "land.naia.cafelua-tarot",
+				id,
+				prompt: readRequests[locale],
+			},
+			"*",
+		);
+	}
 	function move(i: number) {
 		indexRef.current = Math.max(0, Math.min(i, pagesRef.current.length - 1));
 		setIndex(indexRef.current);
@@ -286,10 +398,7 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 						▶
 					</span>
 				</button>
-				<button
-					aria-label={ui(locale, "read")}
-					onClick={() => setNotice(ui(locale, "readHint"))}
-				>
+				<button aria-label={ui(locale, "read")} onClick={requestReading}>
 					<span className="book-wide">{ui(locale, "read")}</span>
 					<span className="book-icon" aria-hidden="true">
 						♫
@@ -423,18 +532,7 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 			{reading && (
 				<div className="book-reading">
 					{ui(locale, "reading")}{" "}
-					<button
-						onClick={() => {
-							stopped.current = true;
-							setReading(false);
-							setAuto(false);
-							setHighlight(null);
-							setNotice(stopHint[locale]);
-							window.setTimeout(() => setNotice(""), 3500);
-						}}
-					>
-						{ui(locale, "stop")}
-					</button>
+					<button onClick={stopReading}>{ui(locale, "stop")}</button>
 				</div>
 			)}
 		</section>

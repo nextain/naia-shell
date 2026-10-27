@@ -50,6 +50,10 @@ export function installCafeLuaTarotHostBridge(
 		)
 			return;
 		pendingReplies.add(message.id);
+		target.postMessage(
+			{ type: "naia-cafelua-tarot:accepted", id: message.id },
+			origin,
+		);
 		window.dispatchEvent(
 			new CustomEvent(CAFE_LUA_TAROT_ASK_EVENT, {
 				detail: { requestId: message.id, prompt: message.prompt },

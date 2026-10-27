@@ -24,6 +24,8 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"list_dir",
 	"read_file",
 	"skill_youtube_bgm",
+	// Tier 0 tool of land.naia.cafelua-tarot; 4060 device test 2026-10-28.
+	"skill_cafelua_tarot",
 	"skill_browser_navigate",
 	"skill_browser_back",
 	"skill_browser_forward",
@@ -49,9 +51,7 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"delegate_agent",
 ] as const;
 
-const MODEL_FACING_TOOL_KEEP_SET = new Set<string>(
-	MODEL_FACING_TOOL_KEEP_LIST,
-);
+const MODEL_FACING_TOOL_KEEP_SET = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
 
 export type ModelFacingToolName = (typeof MODEL_FACING_TOOL_KEEP_LIST)[number];
 
@@ -152,4 +152,3 @@ export function makeModelToolBoundary(deps: {
 
 	return { resolve, prefetch, reset };
 }
-

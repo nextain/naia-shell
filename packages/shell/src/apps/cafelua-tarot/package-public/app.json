@@ -19,7 +19,7 @@
 		"vi": "Tarot Cafe Lua",
 		"zh": "Cafe Lua 塔罗"
 	},
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"manifest_version": 2,
 	"iconUrl": "icon.svg",
 	"thumbnailUrl": "/assets/apps/land.naia.cafelua-tarot/thumbnail.png",
@@ -62,7 +62,7 @@
 	"tools": [
 		{
 			"name": "skill_cafelua_tarot",
-			"description": "Listen to the user's concern first, then start_reading; choose three for a short reading. Reveal only one card at a time and interpret it in 3–5 sentences in relation to the question, position, orientation and previous cards, naturally weaving in Cafe Lua details such as Luna the black cat. Wait for the user; on 'next' or 'continue', reveal the next card. Once all cards are revealed, call get_reading, give a synthesis, then call finish. For reading aloud, speak the exact text returned by read_aloud without changing, summarizing or adding interpretation. Speak as Naia, never as Alpha.",
+			"description": "When asked for a tarot reading, use this tool to lay cards on the table. Listen to the concern first; start_reading, choosing three for a short reading. Reveal one card at a time and interpret it in 3–5 sentences using the question, position, orientation and previous cards, with Cafe Lua details like Luna. Wait for the user before the next card. After all cards, call get_reading, synthesize, then finish. For read_aloud, speak the returned text exactly, without summary or interpretation, then call read_aloud again for the next part until chapter_end is true. Speak as Naia, not Alpha.",
 			"parameters": {
 				"type": "object",
 				"properties": {

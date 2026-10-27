@@ -26,6 +26,7 @@ describe("model-facing tool contract", () => {
 			"list_dir",
 			"read_file",
 			"skill_youtube_bgm",
+			"skill_cafelua_tarot",
 			"skill_browser_navigate",
 			"skill_browser_back",
 			"skill_browser_forward",

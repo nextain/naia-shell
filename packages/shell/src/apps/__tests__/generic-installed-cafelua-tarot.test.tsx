@@ -41,6 +41,10 @@ describe("installed Cafe Lua Tarot host bridge", () => {
 				source: target,
 			}),
 		);
+		expect(posted[posted.length - 1]).toEqual({
+			type: "naia-cafelua-tarot:accepted",
+			id: "reading-1",
+		});
 		expect(forwarded).toHaveBeenCalledOnce();
 		expect((forwarded.mock.calls[0][0] as CustomEvent).detail).toEqual({
 			requestId: "reading-1",
@@ -69,6 +73,7 @@ describe("installed Cafe Lua Tarot host bridge", () => {
 		other.src = "http://asset.localhost/apps/other/index.html";
 		document.body.append(frame, other);
 		const origin = new URL(frame.src).origin;
+		const posted = vi.spyOn(frame.contentWindow!, "postMessage");
 		useAppStore.setState({ activeApp: "another-app" });
 		const dispose = installCafeLuaTarotHostBridge(frame, frame.src);
 		const forwarded = vi.fn();
@@ -92,6 +97,11 @@ describe("installed Cafe Lua Tarot host bridge", () => {
 		ask(frame.contentWindow!, "https://attacker.example", "wrong origin");
 		ask(frame.contentWindow!, origin, "x".repeat(9_001));
 		expect(forwarded).not.toHaveBeenCalled();
+		expect(
+			posted.mock.calls.some(
+				([message]) => message.type === "naia-cafelua-tarot:accepted",
+			),
+		).toBe(false);
 		dispose();
 		window.removeEventListener(CAFE_LUA_TAROT_ASK_EVENT, forwarded);
 	});

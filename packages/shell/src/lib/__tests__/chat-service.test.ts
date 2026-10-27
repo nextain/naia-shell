@@ -31,6 +31,26 @@ describe("chat-service", () => {
 		vi.resetModules();
 	});
 
+	it("sends the Cafe Lua tarot app skill through the real model-facing filter", async () => {
+		const { sendAppSkills } = await import("../chat-service");
+		await sendAppSkills("land.naia.cafelua-tarot", [
+			{
+				name: "skill_cafelua_tarot",
+				description: "Tarot",
+				parameters: { type: "object", properties: {} },
+				tier: 0,
+			},
+		]);
+		const args = mockInvoke.mock.calls.find(
+			(call) => call[0] === "send_to_agent_command",
+		)?.[1];
+		expect(JSON.parse(args.message)).toMatchObject({
+			type: "app_skills",
+			appId: "land.naia.cafelua-tarot",
+			tools: [{ name: "skill_cafelua_tarot", tier: 0 }],
+		});
+	});
+
 	it("sendChatMessage invokes Tauri command and listens for events", async () => {
 		const { sendChatMessage } = await import("../chat-service");
 
@@ -767,10 +787,16 @@ describe("chat-service", () => {
 			const { sendChatMessage } = await import("../chat-service");
 
 			mockListen.mockImplementation(
-				async (_event: string, handler: (event: { payload: string }) => void) => {
+				async (
+					_event: string,
+					handler: (event: { payload: string }) => void,
+				) => {
 					setTimeout(() => {
 						handler({
-							payload: JSON.stringify({ type: "finish", requestId: "req-think-1" }),
+							payload: JSON.stringify({
+								type: "finish",
+								requestId: "req-think-1",
+							}),
 						});
 					}, 5);
 					return mockUnlisten;
@@ -844,4 +870,3 @@ describe("chat-service", () => {
 		});
 	});
 });
-
