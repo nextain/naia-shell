@@ -4,13 +4,12 @@ import type {
 	PointerEvent,
 	SetStateAction,
 } from "react";
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useMemo, useRef } from "react";
 import { getBridgeForApp } from "../lib/active-bridge";
 import type { Announcement } from "../lib/announcements";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
 import type { AppInstallRequest } from "../lib/app-store-client";
 import { t } from "../lib/i18n";
-import { SLIDES_PRESENTATION_EVENT } from "../lib/slides-host";
 import type { UpdateInfo } from "../lib/updater";
 import { snoozeStartupUpdatePrompt } from "../lib/updater";
 import { useAppStore } from "../stores/app";
@@ -153,17 +152,7 @@ export function AppMainContent(props: AppMainContentProps) {
 		[appListVersion],
 	);
 	const activatedKeepAliveAppsRef = useRef(new Set<string>());
-	const [slidesPresentationActive, setSlidesPresentationActive] = useState(false);
 	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
-	useEffect(() => {
-		const onPresentationState = (event: Event) => {
-			const detail = (event as CustomEvent<{ active?: unknown }>).detail;
-			setSlidesPresentationActive(detail?.active === true);
-		};
-		window.addEventListener(SLIDES_PRESENTATION_EVENT, onPresentationState);
-		return () =>
-			window.removeEventListener(SLIDES_PRESENTATION_EVENT, onPresentationState);
-	}, []);
 
 	if (showAdkSetup)
 		return (
@@ -237,22 +226,11 @@ export function AppMainContent(props: AppMainContentProps) {
 			{naiaVisible && (
 				<>
 					{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
-						<div
-							className="avatar-canvas-layer"
-							data-slides-presentation={
-								slidesPresentationActive &&
-								avatarProvider === "naia-video-avatar"
-									? "true"
-									: "false"
-							}
-						>
+						<div className="avatar-canvas-layer">
 							<Suspense fallback={null}>
 								{avatarProvider === "naia-video-avatar" ? (
 									<Suspense fallback={<AvatarCanvas />}>
-										<VideoAvatarCanvas
-											nvaModel={nvaModel}
-											presentationMode={slidesPresentationActive}
-										/>
+										<VideoAvatarCanvas nvaModel={nvaModel} />
 									</Suspense>
 								) : (
 									<AvatarCanvas />

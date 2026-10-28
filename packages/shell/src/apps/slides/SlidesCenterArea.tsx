@@ -37,7 +37,6 @@ import {
 } from "../../lib/slides-files";
 import {
 	isRecordingLost,
-	setSlidesPresentationActive,
 	startSlidesRecording,
 	stopSlidesRecording,
 } from "../../lib/slides-host";
@@ -175,11 +174,6 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const [recording, setRecording] = useState(false);
 	const [recordingError, setRecordingError] = useState<string | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
-	const slidePresentationActive =
-		focusMode ||
-		state.mode === "presenting" ||
-		state.mode === "paused" ||
-		state.mode === "answering";
 	const [notesVisible, setNotesVisible] = useState(true);
 	const activeSpeechRef = useRef<string | null>(null);
 	const prefetchTicketRef = useRef<{
@@ -216,11 +210,6 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	);
 
 	useTabSkills(viewerRef, naia);
-
-	useEffect(() => {
-		setSlidesPresentationActive(slidePresentationActive);
-		return () => setSlidesPresentationActive(false);
-	}, [slidePresentationActive]);
 
 	useEffect(() => {
 		const onChange = () =>

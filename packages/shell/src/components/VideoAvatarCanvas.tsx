@@ -23,7 +23,6 @@ import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
 interface VideoAvatarCanvasProps {
 	nvaModel?: string;
-	presentationMode?: boolean;
 }
 type Mode = "loading" | "prebaked" | "error";
 interface NvaPan {
@@ -34,62 +33,6 @@ const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
 function videoTransform(pan: NvaPan): string {
 	return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px)`;
 }
-function presentationFace(manifest: NvaManifest | null) {
-	const animation = manifest
-		? Object.values(manifest.animations ?? {}).find(
-				(candidate) => candidate.can_talk && candidate.face_bbox,
-				) ??
-				Object.values(manifest.animations ?? {}).find(
-					(candidate) => candidate.face_bbox,
-				)
-		: undefined;
-	const bbox = animation?.face_bbox;
-	if (
-		!bbox ||
-		(bbox.length !== 3 && bbox.length !== 4) ||
-		bbox.some((value) => !Number.isFinite(value) || value < 0 || value > 1)
-	)
-		return { x: 0.5, y: 0.28, width: 0.42, height: 0.44 };
-	return {
-		x: bbox[0],
-		y: bbox[1],
-		width: bbox[2],
-		height: bbox.length === 3 ? bbox[2] : bbox[3],
-	};
-}
-
-export function presentationAvatarTransform(
-	manifest: NvaManifest | null,
-	viewportWidth = 320,
-	viewportHeight = 360,
-) {
-	const face = presentationFace(manifest);
-	const centerX = face.x + face.width / 2;
-	const centerY = face.y + face.height / 2;
-	const canvasWidth = manifest?.canvas.width ?? 1;
-	const canvasHeight = manifest?.canvas.height ?? 1;
-	const fitScale = Math.min(
-		viewportWidth / canvasWidth,
-		viewportHeight / canvasHeight,
-	);
-	const width = canvasWidth * fitScale;
-	const height = canvasHeight * fitScale;
-	const zoom = Math.max(
-		1,
-		Math.min(
-			0.62 * viewportHeight / Math.max(face.height * height, 1),
-			0.9 * viewportWidth / Math.max(face.width * width, 1),
-		),
-	);
-	return {
-		width,
-		height,
-		transform: `translate(${(0.5 - centerX) * width}px, ${(0.43 - centerY) * height}px) scale(${zoom})`,
-		transformOrigin: `${centerX * 100}% ${centerY * 100}%`,
-		zoom,
-		face,
-	};
-}
 const VIDEO_STYLE = {
 	maxWidth: "min(100%, 56vh)",
 	maxHeight: "92%",
@@ -99,20 +42,14 @@ const VIDEO_STYLE = {
 /** GPU 없는 pre-baked NVA player. retired server-side avatar/cascade를 시작하지 않는다. */
 export function VideoAvatarCanvas({
 	nvaModel,
-	presentationMode = false,
 }: VideoAvatarCanvasProps) {
 	const setLoaded = useAvatarStore((state) => state.setLoaded);
 	const [mode, setMode] = useState<Mode>("loading");
 	const [error, setError] = useState("");
 	const [manifest, setManifest] = useState<NvaManifest | null>(null);
 	const [bundleDir, setBundleDir] = useState("");
-	const [presentationViewport, setPresentationViewport] = useState({
-		width: 320,
-		height: 360,
-	});
 	const [video, setVideo] = useState<HTMLVideoElement | null>(null);
 	const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
-	const avatarViewportRef = useRef<HTMLDivElement | null>(null);
 	const persistedPan = useUiPreference<NvaPan>(
 		UI_PREFERENCE_KEYS.nvaPan,
 		DEFAULT_NVA_PAN,
@@ -121,27 +58,6 @@ export function VideoAvatarCanvas({
 	useEffect(() => setPan(persistedPan), [persistedPan]);
 	const panRef = useRef(pan);
 	panRef.current = pan;
-	const presentationCrop = presentationAvatarTransform(
-		manifest,
-		presentationViewport.width,
-		presentationViewport.height,
-	);
-
-	useEffect(() => {
-		if (!presentationMode || !avatarViewportRef.current) return;
-		const element = avatarViewportRef.current;
-		const updateSize = () => {
-			const bounds = element.getBoundingClientRect();
-			if (bounds.width > 0 && bounds.height > 0) {
-				setPresentationViewport({ width: bounds.width, height: bounds.height });
-			}
-		};
-		updateSize();
-		if (typeof ResizeObserver === "undefined") return;
-		const observer = new ResizeObserver(updateSize);
-		observer.observe(element);
-		return () => observer.disconnect();
-	}, [presentationMode]);
 
 	useEffect(() => {
 		registerCameraActions({
@@ -243,7 +159,6 @@ export function VideoAvatarCanvas({
 
 	return (
 		<div
-			ref={avatarViewportRef}
 			data-video-avatar
 			data-nva-model={nvaModel ?? ""}
 			data-video-avatar-mode={mode}
@@ -269,20 +184,7 @@ export function VideoAvatarCanvas({
 			<canvas
 				ref={setCanvas}
 				data-video-avatar-prebaked
-				data-presentation-crop={presentationMode ? "face" : undefined}
-				style={
-					presentationMode
-						? {
-							...VIDEO_STYLE,
-							width: `${presentationCrop.width}px`,
-							height: `${presentationCrop.height}px`,
-							maxWidth: "none",
-							maxHeight: "none",
-							transform: presentationCrop.transform,
-							transformOrigin: presentationCrop.transformOrigin,
-						}
-						: { ...VIDEO_STYLE, transform: videoTransform(pan) }
-				}
+				style={{ ...VIDEO_STYLE, transform: videoTransform(pan) }}
 			/>
 			{mode !== "prebaked" && (
 				<output data-video-avatar-status={mode} aria-live="polite">

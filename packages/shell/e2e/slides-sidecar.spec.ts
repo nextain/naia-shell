@@ -85,8 +85,7 @@ async function openInstalledHost(page: Page, locale = "en") {
 			body: `<!doctype html><html><head><style>html,body,#host{height:100%;margin:0}.generic-installed-app__iframe{width:100%;height:100%;border:0}</style></head><body><div id="host"></div><script type="module">
 import RefreshRuntime from '/@react-refresh';
 RefreshRuntime.injectIntoGlobalHook(window); window.$RefreshReg$=()=>{}; window.$RefreshSig$=()=>type=>type; window.__vite_plugin_react_preamble_installed__=true;
-window.fixture={selection:${JSON.stringify(payload)},calls:[],speeches:[],presentationStates:[],callbacks:{},nextCallback:1};
-window.addEventListener('naia-slides:presentation-state',event=>window.fixture.presentationStates.push(event.detail.active));
+window.fixture={selection:${JSON.stringify(payload)},calls:[],speeches:[],callbacks:{},nextCallback:1};
 window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:(_event,id)=>{delete window.fixture.callbacks[id];}};
 localStorage.setItem('naia-adk-path','C:/fixture-workspace');
 localStorage.setItem('naia-config',JSON.stringify({locale:${JSON.stringify(locale)}}));
@@ -323,9 +322,6 @@ test("installed video segment keeps one source, pauses/resumes, and returns to n
 	await frame.getByRole("button", { name: "Focus presentation" }).click();
 	await expect(frame.getByTestId("slides-video-viewer")).toBeVisible();
 	await expect(frame.getByTestId("slides-viewer")).toHaveAttribute("hidden");
-	await expect
-		.poll(() => page.evaluate(() => (window as any).fixture.presentationStates))
-		.toEqual([true]);
 	await frame.getByRole("button", { name: "Exit focus" }).click();
 	await page.screenshot({
 		path: testInfo.outputPath("video-segment-narrow.png"),
@@ -345,13 +341,7 @@ test("installed video segment keeps one source, pauses/resumes, and returns to n
 	await expect
 		.poll(() => page.evaluate(() => (window as any).fixture.speeches.length))
 		.toBe(4);
-	await expect
-		.poll(() => page.evaluate(() => (window as any).fixture.presentationStates))
-		.toEqual([true]);
 	await frame.getByRole("button", { name: "Stop" }).click();
-	await expect
-		.poll(() => page.evaluate(() => (window as any).fixture.presentationStates))
-		.toEqual([true, false]);
 	const size = await frame.getByRole("region").evaluate((element) => ({
 		width: element.clientWidth,
 		scroll: element.scrollWidth,
@@ -359,43 +349,48 @@ test("installed video segment keeps one source, pauses/resumes, and returns to n
 	expect(size.scroll).toBeLessThanOrEqual(size.width + 1);
 });
 
-test("presentation avatar viewport stays anchored in the lower-right quarter at narrow width", async ({
+test("avatar remains in its left panel at narrow width when Slides focus is active", async ({
 	page,
 }, testInfo) => {
 	await page.setViewportSize({ width: 560, height: 900 });
 	await page.route("**/slides-avatar-layout-e2e", (route) =>
 		route.fulfill({
 			contentType: "text/html",
-				body: `<!doctype html><html><head><link rel="stylesheet" href="/src/styles/global.css"><style>body{margin:0;background:#17283d}.avatar-canvas-layer[data-slides-presentation="true"]{background:linear-gradient(145deg,#416682,#13293b)}</style></head><body><div class="avatar-canvas-layer" data-slides-presentation="false"><div data-video-avatar><canvas data-presentation-crop="face"></canvas></div></div></body></html>`,
+			body: `<!doctype html><html><head><link rel="stylesheet" href="/src/styles/global.css"><style>body{margin:0;background:#17283d;--naia-width:320px}.avatar-canvas-layer{background:linear-gradient(145deg,#416682,#13293b)}[data-video-avatar]{position:relative;width:100%;height:100%;display:grid;place-items:center;overflow:hidden}canvas{width:200px;height:300px;transform:translate(calc(var(--naia-width, 320px) / 2 - 50vw + 0px),0px)}</style></head><body><button type="button" id="focus">Focus presentation</button><div id="slides" data-focus="false"></div><div class="avatar-canvas-layer"><div data-video-avatar><canvas data-video-avatar-prebaked></canvas></div></div><script>document.querySelector('#focus').addEventListener('click',()=>document.querySelector('#slides').setAttribute('data-focus','true'))</script></body></html>`,
 		}),
 	);
 	await page.goto("/slides-avatar-layout-e2e");
-	const avatarLayer = page.locator(".avatar-canvas-layer");
-	await expect(avatarLayer).toBeVisible();
-	await avatarLayer.evaluate((element) => {
-		element.setAttribute("data-slides-presentation", "true");
-	});
-	const layout = await avatarLayer.evaluate((element) => {
+	const avatar = page.locator("canvas[data-video-avatar-prebaked]");
+	await expect(avatar).toBeVisible();
+	const layoutBefore = await avatar.evaluate((element) => {
 		const rect = element.getBoundingClientRect();
-		const style = getComputedStyle(element);
 		return {
-			x: rect.x,
-			y: rect.y,
+			left: rect.left,
+			right: rect.right,
 			width: rect.width,
 			height: rect.height,
-			right: rect.right,
-			bottom: rect.bottom,
-			zIndex: style.zIndex,
-			cropMarker: element.querySelector("canvas")?.getAttribute("data-presentation-crop"),
+			transform: getComputedStyle(element).transform,
 		};
 	});
-	expect(layout.x).toBeGreaterThan(0);
-	expect(layout.right).toBeCloseTo(560, 0);
-	expect(layout.bottom).toBeCloseTo(900, 0);
-	expect(layout.width).toBeLessThanOrEqual(0.26 * 560);
-	expect(layout.zIndex).toBe("7");
-	expect(layout.cropMarker).toBe("face");
-	await page.screenshot({ path: testInfo.outputPath("avatar-presentation-narrow.png") });
+	expect(layoutBefore.left).toBeGreaterThanOrEqual(0);
+	expect(layoutBefore.right).toBeLessThanOrEqual(320);
+	expect(layoutBefore.width).toBe(200);
+	expect(layoutBefore.height).toBe(300);
+	await page.getByRole("button", { name: "Focus presentation" }).click();
+	await expect(page.locator("#slides")).toHaveAttribute("data-focus", "true");
+	const layoutDuring = await avatar.evaluate((element) => {
+		const rect = element.getBoundingClientRect();
+		return {
+			left: rect.left,
+			right: rect.right,
+			width: rect.width,
+			height: rect.height,
+			transform: getComputedStyle(element).transform,
+			cropMarker: element.getAttribute("data-presentation-crop"),
+		};
+	});
+	expect(layoutDuring).toEqual({ ...layoutBefore, cropMarker: null });
+	await page.screenshot({ path: testInfo.outputPath("avatar-panel-focus-narrow.png") });
 });
 
 test("cancel, missing sidecar and narrow-screen script controls preserve the PDF workflow", async ({

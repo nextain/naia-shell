@@ -2,10 +2,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
-import {
-	presentationAvatarTransform,
-	VideoAvatarCanvas,
-} from "../VideoAvatarCanvas";
+import { VideoAvatarCanvas } from "../VideoAvatarCanvas";
 
 const mockInvoke = vi.hoisted(() => vi.fn());
 const mockToLocalBlobUrl = vi.hoisted(() => vi.fn());
@@ -59,30 +56,18 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		expect(new Set(mockInvoke.mock.calls.map(([command]) => command))).toEqual(new Set(["read_local_binary"]));
 	});
 
-	it("uses the manifest face box for a presentation-only crop", async () => {
-		const crop = presentationAvatarTransform(
-			JSON.parse(atob(manifest)),
-			140,
-			333,
-		);
-		expect(crop.width / crop.height).toBeCloseTo(406 / 720);
-		expect(crop.width).toBeLessThanOrEqual(140);
-		expect(crop.height).toBeLessThanOrEqual(333);
-		expect(crop.zoom).toBeGreaterThan(1);
-
-		const { container } = render(
-			<VideoAvatarCanvas nvaModel="naia" presentationMode />,
-		);
+	it("keeps the default full-body canvas transform during Slides presentation", async () => {
+		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
 		await vi.waitFor(() =>
 			expect(container.querySelector("[data-video-avatar-loaded='true']")).toBeTruthy(),
 		);
-		const canvas = container.querySelector(
-			"canvas[data-presentation-crop='face']",
-		) as HTMLCanvasElement;
-		expect(canvas.style.transformOrigin).toBe("50% 25%");
-		expect(canvas.style.transform).toContain("scale(");
-		expect(Number.parseFloat(canvas.style.width)).toBeGreaterThan(0);
-		expect(Number.parseFloat(canvas.style.height)).toBeGreaterThan(0);
+		const canvas = container.querySelector("canvas[data-video-avatar-prebaked]") as HTMLCanvasElement;
+		expect(canvas.getAttribute("data-presentation-crop")).toBeNull();
+		expect(canvas.style.transform).toContain("--naia-width, 320px");
+		expect(canvas.style.transform).not.toContain("scale(");
+		expect(canvas.style.transformOrigin).toBe("");
+		expect(canvas.style.maxWidth).toBe("min(100%, 56vh)");
+		expect(canvas.style.maxHeight).toBe("92%");
 	});
 
 	it("a legacy bundle's visemes.aiueo slot is never played, even while speaking (SoT 8)", async () => {

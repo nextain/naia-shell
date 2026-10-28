@@ -261,13 +261,18 @@ describe("SlidesCenterArea", () => {
 			scriptReadFailed: false,
 		});
 		const bridge = new MockBridge();
-		render(<SlidesCenterArea naia={bridge} />);
+		const { container } = render(<SlidesCenterArea naia={bridge} />);
 		fireEvent.click(screen.getByLabelText(/PDF/));
 		await waitFor(() =>
 			expect(screen.getByTestId("slides-current-note")).toHaveTextContent(
 				"Keep this narration",
 			),
 		);
+		const slides = screen.getByRole("region", { name: "슬라이드 발표" });
+		fireEvent.click(screen.getByRole("button", { name: "발표 집중 모드" }));
+		expect(slides).toHaveAttribute("data-focus", "true");
+		fireEvent.click(container.querySelector(".slides-app__focus-exit")!);
+		expect(slides).toHaveAttribute("data-focus", "false");
 		fireEvent.click(screen.getByRole("button", { name: "발표 시작" }));
 		fireEvent.click(screen.getByRole("button", { name: "발표문 닫기" }));
 		expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
