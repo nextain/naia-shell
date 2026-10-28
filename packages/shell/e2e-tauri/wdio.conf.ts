@@ -191,6 +191,8 @@ if (IS_WINDOWS) {
 	// 없어 85 가 `NotAllowedError` 로 실패했다(2026-09-26 win-rtx4060, 사람이
 	// 허용을 누른 단독 실행만 통과). 카메라·마이크 요청만 자동 수락하고 실제
 	// 장치는 그대로 쓴다(화면 캡처 권한까지 건드리는 fake-ui 스위치는 쓰지 않는다).
+	// 단, 브라우저 스위치만으로는 WebView2 자체 프롬프트가 억제되지 않아(2026-10-28
+	// win-rtx4060 스크린샷), 앱의 E2E 모드에서 PermissionRequested 로 마이크를 자동 허용한다(#545).
 	// 이 변수는 앱의 인자를 대신하므로 wry 기본 인자(wry 0.55 webview2/mod.rs)를
 	// 함께 싣는다.
 	process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = [
