@@ -19,6 +19,7 @@ export interface SpeechPlayerOptions {
 	speechVideos: [HTMLVideoElement, HTMLVideoElement];
 	urlApi?: { createObjectURL(blob: Blob): string; revokeObjectURL(url: string): void };
 	imageLoader?: (blob: Blob) => Promise<unknown>;
+	videoFactory?: () => HTMLVideoElement;
 	requestFrame?: (callback: () => void) => number;
 	cancelFrame?: (handle: number) => void;
 }

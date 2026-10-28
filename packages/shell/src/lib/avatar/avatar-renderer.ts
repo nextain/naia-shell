@@ -32,6 +32,10 @@ export interface AvatarSpeechRenderer {
 	 * so the first mouth frame and the first sound start together.
 	 */
 	prepareSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	/** Load a future plan on a standby canonical stage without interrupting speech. */
+	prefetchSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	/** Drop the single staged future plan when its presentation generation expires. */
+	cancelPrefetchedSpeechTiming?(): void;
 	/** True when the loaded avatar carries the canonical speech set. */
 	canPlaySpeechPlans?(): boolean;
 	/** Revise a running browser-timed plan (speechSynthesis boundary). */

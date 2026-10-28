@@ -59,6 +59,26 @@ describe("AudioQueue sentence callbacks", () => {
 		expect(unavailable).not.toHaveBeenCalled();
 	});
 
+	it("settles playback as failed when audio errors after it starts", () => {
+		const unavailable = vi.fn();
+		const failure = vi.fn();
+		const ended = vi.fn();
+		const queue = new AudioQueue();
+		queue.enqueue("first", {
+			onPlaybackUnavailable: unavailable,
+			onPlaybackFailure: failure,
+			onPlaybackEnd: ended,
+		});
+		const first = FakeAudio.instances[0];
+
+		first.onplay?.();
+		first.onerror?.(new Event("error"));
+
+		expect(unavailable).not.toHaveBeenCalled();
+		expect(failure).toHaveBeenCalledTimes(1);
+		expect(ended).not.toHaveBeenCalled();
+	});
+
 	it("prebuffers queued sentences until playback is resumed", () => {
 		const queue = new AudioQueue();
 		queue.pauseBeforePlayback();

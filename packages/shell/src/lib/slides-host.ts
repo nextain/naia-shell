@@ -11,6 +11,7 @@ import { type Locale, setLocale } from "./i18n";
  */
 export const SLIDES_HOST = "naia-slides:host";
 export const SLIDES_HOST_ENVIRONMENT_EVENT = "naia-slides:environment";
+export const SLIDES_PRESENTATION_EVENT = "naia-slides:presentation-state";
 /**
  * The current desktop asset origin.  Frame validation uses the exact URL
  * returned by `convertFileSrc` instead of this constant so Linux's
@@ -22,6 +23,7 @@ export const SLIDES_HOST_ACTIONS = {
 	hello: "hello",
 	init: "init",
 	sync: "sync",
+	presentationState: "presentation-state",
 	recordingStart: "recording-start",
 	recordingStop: "recording-stop",
 	recordingCancelStart: "recording-cancel-start",
@@ -50,6 +52,7 @@ export interface SlidesHostState {
 
 export interface SlidesHostClientHandle {
 	readonly ready: Promise<void>;
+	setPresentationActive(active: boolean): void;
 	request(
 		action:
 			| typeof SLIDES_HOST_ACTIONS.recordingStart
@@ -78,6 +81,7 @@ const MAX_MESSAGE_ID_LENGTH = 128;
 const CLIENT_HANDSHAKE_ATTEMPTS = 8;
 const CLIENT_HANDSHAKE_INTERVAL_MS = 250;
 const CLIENT_REQUEST_TIMEOUT_MS = 15_000;
+const RECORDING_START_TIMEOUT_MS = 30_000;
 const MAX_CAPABILITY_LENGTH = 128;
 
 let installedClient: SlidesHostClientHandle | null = null;
@@ -238,6 +242,7 @@ function randomId(): string {
 function immediateClientHandle(): SlidesHostClientHandle {
 	return {
 		ready: Promise.resolve(),
+		setPresentationActive() {},
 		request: async () => {
 			throw new Error("slides_host_unavailable");
 		},
@@ -258,6 +263,7 @@ function installClientBridge(): SlidesHostClientHandle {
 	const helloId = randomId();
 	let parentOrigin: string | null = null;
 	let capability: string | null = null;
+	let presentationActive = false;
 	let disposed = false;
 	let handshakeAttempts = 0;
 	let handshakeTimer: number | undefined;
@@ -389,6 +395,19 @@ function installClientBridge(): SlidesHostClientHandle {
 
 	const handle: SlidesHostClientHandle = {
 		ready,
+		setPresentationActive(active) {
+			presentationActive = active;
+			void ready.then(() => {
+				if (disposed || parentOrigin === null || capability === null) return;
+				postToParent({
+					type: SLIDES_HOST,
+					action: SLIDES_HOST_ACTIONS.presentationState,
+					id: randomId(),
+					capability,
+					active: presentationActive,
+				});
+			});
+		},
 		request(action) {
 			return new Promise((resolve, reject) => {
 				if (disposed) {
@@ -412,7 +431,9 @@ function installClientBridge(): SlidesHostClientHandle {
 							});
 						}
 						reject(new Error("slides_host_timeout"));
-					}, CLIENT_REQUEST_TIMEOUT_MS);
+					}, action === SLIDES_HOST_ACTIONS.recordingStart
+						? RECORDING_START_TIMEOUT_MS
+						: CLIENT_REQUEST_TIMEOUT_MS);
 					pending.set(id, { resolve, reject, timer });
 					postToParent({ type: SLIDES_HOST, action, id, capability });
 				});
@@ -438,6 +459,11 @@ function installClientBridge(): SlidesHostClientHandle {
 export function startSlidesHostClientBridge(): SlidesHostClientHandle {
 	if (!installedClient) installedClient = installClientBridge();
 	return installedClient;
+}
+
+/** Notify the trusted shell host so its avatar overlay can follow Slides presentation mode. */
+export function setSlidesPresentationActive(active: boolean): void {
+	installedClient?.setPresentationActive(active);
 }
 
 /** Alias matching the Shell's other `install*Bridge` helpers. */
@@ -485,8 +511,20 @@ export async function stopSlidesRecording(): Promise<string> {
 		return typeof output === "string" ? output : "";
 	} catch (error) {
 		// A failed stop leaves the host recording owned and retryable. Keep the
-		// client in the same state so a second stop can complete it safely.
-		localRecordingState = "active";
+		// client in the same state so a second stop can complete it safely —
+		// unless the host says the recording is gone (ffmpeg died or had to be
+		// killed): then there is nothing left to stop.
+		localRecordingState = isRecordingLost(error) ? "idle" : "active";
 		throw error;
 	}
+}
+
+/**
+ * Stop error code: the host recording ended without a usable MP4 and the host
+ * no longer owns a recording, so the client must leave the recording state.
+ */
+export const SLIDES_RECORDING_LOST = "recording_lost";
+
+export function isRecordingLost(error: unknown): boolean {
+	return String(error).includes(SLIDES_RECORDING_LOST);
 }

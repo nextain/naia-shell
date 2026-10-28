@@ -1340,6 +1340,25 @@ body.resizing-col .naia-work-rail::before {
 	z-index: 1;
 }
 
+/* During Slides, keep the NVA's face visible over the captured slide canvas. */
+.avatar-canvas-layer[data-slides-presentation="true"] {
+	left: auto;
+	right: 0;
+	top: auto;
+	bottom: 0;
+	width: clamp(144px, 25vw, 420px);
+	height: clamp(180px, 37vh, 360px);
+	z-index: 7;
+	min-width: 0;
+	min-height: 0;
+	pointer-events: none;
+	contain: layout paint;
+}
+
+.avatar-canvas-layer[data-slides-presentation="true"]::after {
+	display: none;
+}
+
 /* naia-avatar-area is no longer used — kept for compatibility */
 .naia-avatar-area {
 	display: none;

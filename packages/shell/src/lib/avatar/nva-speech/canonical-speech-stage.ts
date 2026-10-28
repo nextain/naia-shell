@@ -24,6 +24,7 @@ import {
 	speechBundlePaths,
 } from "./vendor/speech-bundle.js";
 import { SpeechPlayer } from "./vendor/speech-player.js";
+import { Logger } from "../../logger";
 
 export interface CanonicalSpeechStageConfig {
 	manifest: NvaManifest;
@@ -66,6 +67,14 @@ export function hasCanonicalSpeechMotion(manifest: NvaManifest): boolean {
 	return Boolean((manifest as ManifestWithSpeech).speech_motion);
 }
 
+function safeError(error: unknown): string {
+	const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+	return message
+		.replace(/https?:\/\/[^\s"'<>]+/giu, "[url]")
+		.replace(/\b(authorization|api[-_ ]?key|token|secret|password)\b\s*[:=]\s*[^,\s]+/giu, "$1=[redacted]")
+		.slice(0, 240);
+}
+
 /** Every file the canonical player validates or reads. */
 export function canonicalSpeechAssetPaths(manifest: NvaManifest): string[] {
 	const speech = (manifest as ManifestWithSpeech).speech_motion;
@@ -83,6 +92,8 @@ export class CanonicalSpeechStage {
 	private assets: Promise<Map<string, Blob>> | null = null;
 	private mode: "aligned" | "browser-timed" | null = null;
 	private generation = 0;
+	/** Player loads are serialized; the vendored media elements are not reloaded concurrently. */
+	private prepareQueue: Promise<void> = Promise.resolve();
 	private disposed = false;
 
 	constructor(private readonly config: CanonicalSpeechStageConfig) {
@@ -142,43 +153,59 @@ export class CanonicalSpeechStage {
 		const mode = plan?.quality_mode;
 		if (mode !== "aligned" && mode !== "browser-timed") return null;
 		const generation = ++this.generation;
-		this.player.stop("cancel");
-		this.mode = null;
-		try {
-			const assets = await this.loadAssets();
+		const operation = this.prepareQueue.then(async (): Promise<PreparedSpeech | null> => {
 			if (generation !== this.generation || this.disposed) return null;
-			const input = { manifest: this.config.manifest, assets, plan };
-			if (mode === "aligned") await this.player.loadAudioClock(input);
-			else await this.player.loadExternal(input);
-			if (generation !== this.generation || this.disposed) {
-				this.player.stop("cancel");
+			this.player.stop("cancel");
+			this.mode = null;
+			try {
+				const assets = await this.loadAssets();
+				if (generation !== this.generation || this.disposed) return null;
+				const input = { manifest: this.config.manifest, assets, plan };
+				if (mode === "aligned") await this.player.loadAudioClock(input);
+				else await this.player.loadExternal(input);
+				if (generation !== this.generation || this.disposed) {
+					this.player.stop("cancel");
+					return null;
+				}
+			} catch (error) {
+				Logger.warn("CanonicalSpeechStage", "speech plan load failed", {
+					generation,
+					error: safeError(error),
+				});
+				if (generation === this.generation) this.player.stop("error");
 				return null;
 			}
-		} catch {
-			if (generation === this.generation) this.player.stop("error");
-			return null;
-		}
-		let used = false;
-		return {
-			play: async (clock) => {
-				if (used || typeof clock !== "function") return false;
-				used = true;
-				if (generation !== this.generation || this.disposed) return false;
-				try {
-					if (mode === "aligned") await this.player.playAudioClock(clock);
-					else await this.player.playExternal(clock);
-					if (generation !== this.generation || this.disposed) {
-						this.player.stop("cancel");
+			let used = false;
+			return {
+				play: async (clock) => {
+					if (used || typeof clock !== "function") return false;
+					used = true;
+					if (generation !== this.generation || this.disposed) return false;
+					try {
+						if (mode === "aligned") await this.player.playAudioClock(clock);
+						else await this.player.playExternal(clock);
+						if (generation !== this.generation || this.disposed) {
+							this.player.stop("cancel");
+							return false;
+						}
+						this.mode = mode;
+						return true;
+					} catch (error) {
+						Logger.warn("CanonicalSpeechStage", "speech plan playback failed", {
+							generation,
+							error: safeError(error),
+						});
+						if (generation === this.generation) this.player.stop("error");
 						return false;
 					}
-					this.mode = mode;
-					return true;
-				} catch {
-					if (generation === this.generation) this.player.stop("error");
-					return false;
-				}
-			},
-		};
+				},
+			};
+		});
+		this.prepareQueue = operation.then(
+			() => undefined,
+			() => undefined,
+		);
+		return operation;
 	}
 
 	/** Revise the running browser-timed plan (boundary events). */

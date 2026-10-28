@@ -17,7 +17,8 @@ vi.mock("../../lib/logger", () => ({
 }));
 vi.mock("../../lib/config", () => ({ addAllowedTool: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("../../lib/slides-host", () => ({
+vi.mock("../../lib/slides-host", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/slides-host")>()),
 	startSlidesRecording: vi.fn(),
 	stopSlidesRecording: vi.fn(),
 }));
@@ -133,6 +134,24 @@ describe("Slides script editor", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
 		await waitFor(() => expect(screen.getByRole("button", { name: "Record MP4" })).toBeEnabled());
 		expect(stopSlidesRecording).toHaveBeenCalledTimes(2);
+	});
+
+	it("shows a recording failure and offers Record again when the host lost the recording", async () => {
+		vi.mocked(stopSlidesRecording).mockClear();
+		vi.mocked(startSlidesRecording).mockResolvedValueOnce(undefined);
+		vi.mocked(stopSlidesRecording).mockRejectedValueOnce(
+			"recording_lost: ffmpeg stopped during recording (exit status: 1): pulse: connection refused",
+		);
+		render(<SlidesCenterArea naia={new EditorBridge()} />);
+		openPdf();
+		await waitForDeck();
+		fireEvent.click(screen.getByRole("button", { name: "Record MP4" }));
+		await waitFor(() => expect(screen.getByRole("button", { name: "Stop recording" })).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("MP4 recording failed"));
+		expect(screen.getByRole("alert")).toHaveTextContent("connection refused");
+		expect(screen.getByRole("button", { name: "Record MP4" })).toBeEnabled();
+		expect(stopSlidesRecording).toHaveBeenCalledTimes(1);
 	});
 
 	beforeEach(async () => {

@@ -2,8 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { installSlidesFilesBridge } from "../slides-files-bridge";
 import { SLIDES_FILES } from "../slides-files";
+import { installSlidesFilesBridge } from "../slides-files-bridge";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("../logger", () => ({ Logger: { debug: vi.fn(), warn: vi.fn() } }));
@@ -17,10 +17,7 @@ afterEach(() => {
 	document.body.innerHTML = "";
 	vi.restoreAllMocks();
 });
-function setup(
-	entry = "C:/apps/land.naia.slides/index.html",
-	load = true,
-) {
+function setup(entry = "C:/apps/land.naia.slides/index.html", load = true) {
 	const frame = document.createElement("iframe");
 	frame.src = "http://asset.localhost/C%3A/apps/land.naia.slides/index.html";
 	document.body.append(frame);
@@ -132,15 +129,36 @@ describe("installed Slides picker bridge", () => {
 			expect.objectContaining({ requestId: "request-1" }),
 		);
 	});
+	it("forwards selected same-folder video bytes to the installed iframe", async () => {
+		const selection = {
+			pdfName: "deck.pdf",
+			pdfBase64: "JVBERg==",
+			scriptName: "deck.md",
+			scriptText: "## 1-1. [video] demo.mp4",
+			scriptReadFailed: false,
+			videos: [{ name: "demo.mp4", mimeType: "video/mp4", base64: "dmlkZW8=" }],
+			videoReadFailures: [],
+		};
+		vi.mocked(invoke).mockResolvedValue(selection);
+		const { send, reply, waitForCapability } = setup();
+		send("probe");
+		await waitForCapability();
+		send("open");
+		await vi.waitFor(() =>
+			expect(reply).toHaveBeenCalledWith(
+				expect.objectContaining({ action: "result", selection }),
+				"http://asset.localhost",
+			),
+		);
+	});
 	it("forwards cancellation to the active native request", async () => {
 		let resolve!: (value: unknown) => void;
-		vi.mocked(invoke).mockImplementation(
-			(command) =>
-				command === "slides_open_document"
-					? new Promise((r) => {
-							resolve = r;
-						})
-					: Promise.resolve(),
+		vi.mocked(invoke).mockImplementation((command) =>
+			command === "slides_open_document"
+				? new Promise((r) => {
+						resolve = r;
+					})
+				: Promise.resolve(),
 		);
 		const { send, waitForCapability } = setup();
 		send("probe");
@@ -166,7 +184,7 @@ describe("installed Slides picker bridge", () => {
 			command === "slides_open_document"
 				? new Promise((r) => {
 						resolve = r;
-				  })
+					})
 				: Promise.resolve(),
 		);
 		const { send, reply, waitForCapability } = setup();
@@ -211,9 +229,9 @@ describe("installed Slides picker bridge", () => {
 		send("open");
 		await vi.waitFor(() =>
 			expect(invoke).toHaveBeenCalledWith(
-			"slides_open_document",
-			expect.objectContaining({ requestId: "request-1" }),
-		),
+				"slides_open_document",
+				expect.objectContaining({ requestId: "request-1" }),
+			),
 		);
 		frame.dispatchEvent(new Event("load"));
 		expect(invoke).toHaveBeenCalledWith("slides_cancel_open", {

@@ -63,52 +63,174 @@ export function drawBlendedWholeHeadSpeechFrame(context, neutralHead, layers, re
   context.globalAlpha = previousAlpha;
 }
 
-export class AlternatingSpeechDecoder {
-  constructor(videos, urlApi = globalThis.URL) {
-    if (!Array.isArray(videos) || videos.length !== 2 || videos.some((video) => !video))
-      throw new TypeError("exactly two video elements are required");
+function detachVideo(video) {
+  if (typeof video?.remove === "function") {
+    video.remove();
+  } else if (video?.parentNode && typeof video.parentNode.removeChild === "function") {
+    video.parentNode.removeChild(video);
+  }
+}
+
+function abortError() {
+  const error = new Error("speech video load was cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+export class SpeechVideoCache {
+  constructor({
+    videoFactory,
+    activateVideo = () => {},
+    urlApi = globalThis.URL,
+    maxEntries = 3,
+    maxActiveEntries = maxEntries,
+    isProtected = () => false,
+  } = {}) {
+    if (typeof videoFactory !== "function") throw new TypeError("videoFactory is required");
+    if (typeof activateVideo !== "function") throw new TypeError("activateVideo must be a function");
     if (typeof urlApi?.createObjectURL !== "function" || typeof urlApi?.revokeObjectURL !== "function")
       throw new TypeError("object URL API is required");
-    this.videos = videos;
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1)
+      throw new TypeError("maxEntries must be a positive integer");
+    if (!Number.isSafeInteger(maxActiveEntries) || maxActiveEntries < 1 || maxActiveEntries > maxEntries)
+      throw new TypeError("maxActiveEntries must be a positive integer no greater than maxEntries");
+    if (typeof isProtected !== "function") throw new TypeError("isProtected must be a function");
+    this.videoFactory = videoFactory;
+    this.activateVideo = activateVideo;
     this.urlApi = urlApi;
-    this.urls = [null, null];
-    this.nextSlot = 0;
+    this.maxEntries = maxEntries;
+    this.maxActiveEntries = maxActiveEntries;
+    this.isProtected = isProtected;
+    this.entries = new Map();
+    this.videoKeys = new WeakMap();
+    this.useSequence = 0;
   }
 
-  // slot defaults to alternation; the player passes a slot that holds no
-  // on-screen clip.
-  async load(blob, slot = this.nextSlot) {
+  get(key) {
+    const entry = this.entries.get(key);
+    if (!entry || entry.loading) return null;
+    if (entry.failed) throw entry.failed;
+    if (!this.#activate(entry)) return null;
+    entry.lastUsed = ++this.useSequence;
+    return entry.video;
+  }
+
+  has(key) {
+    return this.entries.has(key);
+  }
+
+  canLoad(key) {
+    const existing = this.entries.get(key);
+    if (existing) return !existing.failed && (existing.active || this.#canActivate());
+    return this.entries.size < this.maxEntries && this.#canActivate();
+  }
+
+  async load(key, blob) {
+    if (typeof key !== "string" || !key) throw new TypeError("speech clip key is required");
     if (!(blob instanceof Blob) || blob.size === 0) throw new TypeError("non-empty WebM Blob is required");
-    if (slot !== 0 && slot !== 1) throw new TypeError("slot must be 0 or 1");
-    this.nextSlot = (slot + 1) % 2;
-    const video = this.videos[slot];
-    if (this.urls[slot]) this.urlApi.revokeObjectURL(this.urls[slot]);
+    const existing = this.entries.get(key);
+    if (existing) {
+      if (existing.failed) throw existing.failed;
+      if (existing.loading) return existing.promise;
+      if (!this.#activate(existing)) return null;
+      existing.lastUsed = ++this.useSequence;
+      return existing.video;
+    }
+
+    if (this.entries.size >= this.maxEntries || !this.#makeActiveSlot()) return null;
+
+    const video = this.videoFactory();
+    if (!video) throw new TypeError("videoFactory did not return a video element");
+    if (this.videoKeys.has(video)) throw new TypeError("each speech clip requires a distinct video element");
+    this.videoKeys.set(video, key);
     const url = this.urlApi.createObjectURL(blob);
-    this.urls[slot] = url;
+    const entry = {
+      key, video, url, lastUsed: ++this.useSequence, loading: true,
+      promise: null, cancel: null, active: true, failed: null, urlRevoked: false, released: false,
+    };
+    this.entries.set(key, entry);
     video.preload = "auto";
     video.muted = true;
     video.playsInline = true;
     video.src = url;
-    await new Promise((resolve, reject) => {
+    entry.promise = new Promise((resolve, reject) => {
       const cleanup = () => {
         video.removeEventListener("loadeddata", loaded);
         video.removeEventListener("error", failed);
+        entry.cancel = null;
       };
-      const loaded = () => { cleanup(); resolve(); };
+      const loaded = () => { cleanup(); resolve(video); };
       const failed = () => { cleanup(); reject(new Error("speech unit decode failed")); };
+      entry.cancel = () => { cleanup(); reject(abortError()); };
       video.addEventListener("loadeddata", loaded, { once: true });
       video.addEventListener("error", failed, { once: true });
       video.load();
+    }).then((loadedVideo) => {
+      entry.loading = false;
+      entry.promise = null;
+      return loadedVideo;
+    }).catch((error) => {
+      entry.loading = false;
+      entry.promise = null;
+      entry.failed = error;
+      this.#deactivate(entry);
+      this.#revoke(entry);
+      throw error;
     });
-    return { slot, video, url };
+    this.entries.set(key, entry);
+    return entry.promise;
   }
 
   dispose() {
-    for (let slot = 0; slot < this.urls.length; slot++) {
-      if (this.urls[slot]) this.urlApi.revokeObjectURL(this.urls[slot]);
-      this.urls[slot] = null;
-      this.videos[slot].removeAttribute?.("src");
-      this.videos[slot].load?.();
+    for (const entry of this.entries.values()) {
+      entry.cancel?.();
+      this.#release(entry);
     }
+    this.entries.clear();
+  }
+
+  #release(entry) {
+    if (entry.released) return;
+    entry.released = true;
+    this.#deactivate(entry);
+    this.#revoke(entry);
+  }
+
+  #revoke(entry) {
+    if (entry.urlRevoked) return;
+    entry.urlRevoked = true;
+    this.urlApi.revokeObjectURL(entry.url);
+  }
+
+  #deactivate(entry) {
+    if (!entry.active) return;
+    entry.video.pause?.();
+    detachVideo(entry.video);
+    entry.active = false;
+  }
+
+  #activate(entry) {
+    if (entry.active) return true;
+    if (!this.#makeActiveSlot()) return false;
+    this.activateVideo(entry.video);
+    entry.active = true;
+    return true;
+  }
+
+  #canActivate() {
+    const activeEntries = [...this.entries.values()].filter((entry) => entry.active);
+    return activeEntries.length < this.maxActiveEntries
+      || activeEntries.some((entry) => !entry.loading && !this.isProtected(entry.key));
+  }
+
+  #makeActiveSlot() {
+    while ([...this.entries.values()].filter((entry) => entry.active).length >= this.maxActiveEntries) {
+      const victim = [...this.entries.values()]
+        .filter((entry) => entry.active && !entry.loading && !this.isProtected(entry.key))
+        .sort((left, right) => left.lastUsed - right.lastUsed)[0];
+      if (!victim) return false;
+      this.#deactivate(victim);
+    }
+    return true;
   }
 }

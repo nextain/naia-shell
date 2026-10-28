@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	SLIDES_HOST,
 	SLIDES_HOST_ACTIONS,
+	SLIDES_PRESENTATION_EVENT,
 	type SlidesHostState,
 } from "../slides-host";
 import { installSlidesHostBridge } from "../slides-host-bridge";
@@ -43,6 +44,7 @@ function setup(
 		action: string,
 		id = "request-1",
 		init: MessageEventInit = {},
+		payload: Record<string, unknown> = {},
 	) => {
 		const dispatched = window.dispatchEvent(
 			new MessageEvent("message", {
@@ -52,6 +54,7 @@ function setup(
 					type: SLIDES_HOST,
 					action,
 					id,
+					...payload,
 					...(action !== SLIDES_HOST_ACTIONS.hello && capability
 						? { capability }
 						: {}),
@@ -86,6 +89,25 @@ afterEach(() => {
 });
 
 describe("installed Slides host bridge", () => {
+	it("accepts capability-bound presentation state and clears it when the frame is disposed", () => {
+		const host = setup();
+		const states: boolean[] = [];
+		const onState = (event: Event) =>
+			states.push((event as CustomEvent<{ active: boolean }>).detail.active);
+		window.addEventListener(SLIDES_PRESENTATION_EVENT, onState);
+		host.send(SLIDES_HOST_ACTIONS.hello, "presentation-hello");
+		host.send(SLIDES_HOST_ACTIONS.presentationState, "presentation-on", {}, {
+			active: true,
+		});
+		host.send(SLIDES_HOST_ACTIONS.presentationState, "presentation-invalid", {}, {
+			active: "true",
+		});
+		expect(states).toEqual([true]);
+		host.dispose();
+		expect(states).toEqual([true, false]);
+		window.removeEventListener(SLIDES_PRESENTATION_EVENT, onState);
+	});
+
 	it("requires the exact convertFileSrc URL and exact frame/origin source", () => {
 		const frame = document.createElement("iframe");
 		frame.src = FRAME_SRC;
@@ -234,6 +256,54 @@ describe("installed Slides host bridge", () => {
 			),
 		);
 		expect(host.reply.mock.calls.at(-1)?.[0]).not.toHaveProperty("capability");
+	});
+
+	it("releases ownership and reports recording_lost when the host recording is gone", async () => {
+		const start = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+		const stop = vi
+			.fn<() => Promise<string>>()
+			.mockRejectedValueOnce(
+				"recording_lost: ffmpeg finished with exit status: 1",
+			)
+			.mockResolvedValue("video/next.mp4");
+		const host = setup({ start, stop });
+		host.send(SLIDES_HOST_ACTIONS.hello, "hello-lost");
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "start-lost");
+		await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+		host.send(SLIDES_HOST_ACTIONS.recordingStop, "stop-lost");
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({
+					id: "stop-lost",
+					ok: false,
+					error: "recording_lost",
+				}),
+				ORIGIN,
+			),
+		);
+		// Ownership is released: the same frame can start a new recording.
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "start-again");
+		await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+		await vi.waitFor(() =>
+			expect(host.reply).toHaveBeenCalledWith(
+				expect.objectContaining({ id: "start-again", ok: true }),
+				ORIGIN,
+			),
+		);
+	});
+
+	it("stops a start that succeeds after the client cancels its timed out request", async () => {
+		let resolveStart!: () => void;
+		const start = vi.fn(() => new Promise<void>((resolve) => { resolveStart = resolve; }));
+		const stop = vi.fn<() => Promise<string>>().mockResolvedValue("recordings/fixture.mp4");
+		const host = setup({ start, stop });
+		host.send(SLIDES_HOST_ACTIONS.hello, "hello-cancel");
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "cancelled-start");
+		await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+		host.send(SLIDES_HOST_ACTIONS.recordingCancelStart, "cancelled-start");
+		resolveStart();
+		await vi.waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
+		expect(host.reply).not.toHaveBeenCalledWith(expect.objectContaining({ id: "cancelled-start", ok: true }), ORIGIN);
 	});
 
 	it("stops a recording whose start resolves after iframe disposal", async () => {
