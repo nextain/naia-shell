@@ -29,6 +29,7 @@ describe("makeModelToolBoundary", () => {
 			{ name: "skill_knowledge_graph" },
 			{ name: "skill_knowledge_scope" },
 			{ name: "skill_memory_recall" },
+			{ name: "skill_blackjack_tutor" },
 			{ name: "shell_exec" },
 			{ name: "write_file" },
 			{ name: "skill_example_from_adk" },
@@ -48,6 +49,7 @@ describe("makeModelToolBoundary", () => {
 		expect(res.disabledSkills).not.toContain("skill_knowledge_graph");
 		expect(res.disabledSkills).not.toContain("skill_knowledge_scope");
 		expect(res.disabledSkills).not.toContain("skill_memory_recall");
+		expect(res.disabledSkills).not.toContain("skill_blackjack_tutor");
 	});
 
 	it("fetch rejects on the very first call → toolsAllowed:false, disabledSkills: [] and warn called", async () => {
@@ -168,7 +170,8 @@ describe("makeModelToolBoundary", () => {
 		const warn = vi.fn();
 		// Not an array
 		const boundaryNotArray = makeModelToolBoundary({
-			fetchTools: async () => "invalid" as unknown as readonly { name: string }[],
+			fetchTools: async () =>
+				"invalid" as unknown as readonly { name: string }[],
 			warn,
 		});
 		const resNotArray = await boundaryNotArray.resolve();

@@ -48,6 +48,7 @@ describe("model-facing tool contract", () => {
 			"skill_workspace_terminal_exec",
 			"skill_workspace_get_terminal_output",
 			"delegate_agent",
+			"skill_blackjack_tutor",
 		]);
 	});
 
@@ -89,6 +90,10 @@ describe("model-facing tool contract", () => {
 		expect(isModelFacingToolAllowed("memory_save")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_memory_delete")).toBe(false);
 		expect(isModelFacingToolAllowed("delegate_agent")).toBe(true);
+		expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(true);
+		expect(isModelFacingToolAllowed("skill_blackjack_delete_everything")).toBe(
+			false,
+		);
 	});
 
 	it("workspace app tools stay inside the keep list", async () => {

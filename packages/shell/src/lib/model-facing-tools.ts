@@ -47,11 +47,11 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"skill_workspace_terminal_exec",
 	"skill_workspace_get_terminal_output",
 	"delegate_agent",
+	// Tier 0 tool of land.naia.blackjack
+	"skill_blackjack_tutor",
 ] as const;
 
-const MODEL_FACING_TOOL_KEEP_SET = new Set<string>(
-	MODEL_FACING_TOOL_KEEP_LIST,
-);
+const MODEL_FACING_TOOL_KEEP_SET = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
 
 export type ModelFacingToolName = (typeof MODEL_FACING_TOOL_KEEP_LIST)[number];
 
@@ -152,4 +152,3 @@ export function makeModelToolBoundary(deps: {
 
 	return { resolve, prefetch, reset };
 }
-
