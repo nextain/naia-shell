@@ -1319,6 +1319,7 @@ export default {
 	"slides.focusExit": "Exit focus",
 	"slides.notesShow": "Show notes",
 	"slides.notesHide": "Hide notes",
+	"slides.recordPreparing": "Preparing recording…",
 	"slides.recordStart": "Record MP4",
 	"slides.recordStop": "Stop recording",
 	"slides.openPresentation": "PDF または PPTX を開く",

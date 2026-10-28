@@ -193,7 +193,7 @@ pub(crate) fn cache_linux_recording_window(window: tauri::WebviewWindow) {
 
 #[tauri::command]
 pub async fn slides_recording_start(adk_path: String) -> Result<(), String> {
-    use crate::slides_recording::{audio_input, capture_target, ffmpeg_args, Platform, Recorder, AUDIO_SOURCE_ENV, STARTUP_PROBE};
+    use crate::slides_recording::{audio_input, capture_target, ffmpeg_args, Platform, Recorder, AUDIO_SOURCE_ENV, STARTUP_TIMEOUT};
     let recording = RECORDING.get_or_init(|| Mutex::new(None));
     if recording.lock().map_err(|_| "recording lock poisoned")?.is_some() {
         return Err("recording already active".into());
@@ -217,7 +217,7 @@ pub async fn slides_recording_start(adk_path: String) -> Result<(), String> {
         let recording = RECORDING.get_or_init(|| Mutex::new(None));
         let mut recording = recording.lock().map_err(|_| "recording lock poisoned")?;
         if recording.is_some() { return Err("recording already active".into()); }
-        *recording = Some(Recorder::start(&ffmpeg, &args, output, STARTUP_PROBE)?);
+        *recording = Some(Recorder::start(&ffmpeg, &args, output, STARTUP_TIMEOUT)?);
         Ok(())
     })
     .await

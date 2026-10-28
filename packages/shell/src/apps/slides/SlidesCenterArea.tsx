@@ -173,6 +173,8 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const [fullscreen, setFullscreen] = useState(false);
 	const [fullscreenError, setFullscreenError] = useState(false);
 	const [recording, setRecording] = useState(false);
+	const [recordingPreparing, setRecordingPreparing] = useState(false);
+	const recordingBusyRef = useRef(false);
 	const [recordingError, setRecordingError] = useState<string | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
 	const slidePresentationActive =
@@ -956,6 +958,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	}
 
 	async function toggleRecording() {
+		if (recordingBusyRef.current) return;
+		recordingBusyRef.current = true;
+		if (!recording) setRecordingPreparing(true);
 		try {
 			setRecordingError(null);
 			if (!recording) {
@@ -974,6 +979,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			setRecordingError(
 				`${t("slides.recordingFailed")} (${String(error).replace(/^Error: /, "")})`,
 			);
+		} finally {
+			recordingBusyRef.current = false;
+			setRecordingPreparing(false);
 		}
 	}
 
@@ -1124,6 +1132,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				state={state}
 				fullscreen={fullscreen}
 				recording={recording}
+				recordingPreparing={recordingPreparing}
 				editing={scriptEditorOpen}
 				onAction={runAction}
 				onRangeChange={(start, end) => {
