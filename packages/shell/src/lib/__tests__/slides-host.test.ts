@@ -137,7 +137,7 @@ describe("Slides host client contract", () => {
 					SLIDES_HOST_ACTIONS.recordingStart,
 			)![0] as { id: string };
 			const timedOut = expect(start).rejects.toThrow("slides_host_timeout");
-			await vi.advanceTimersByTimeAsync(15_000);
+			await vi.advanceTimersByTimeAsync(30_000);
 			await timedOut;
 			expect(postMessage).toHaveBeenCalledWith(
 				expect.objectContaining({

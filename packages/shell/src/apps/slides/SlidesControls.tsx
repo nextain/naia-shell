@@ -13,6 +13,7 @@ export interface SlidesControlsProps {
 	state: SlidePresenterState;
 	fullscreen: boolean;
 	recording: boolean;
+	recordingPreparing: boolean;
 	editing: boolean;
 	onAction: (action: SlidesControlAction) => void;
 	onRangeChange: (start: number, end: number) => void;
@@ -26,6 +27,7 @@ export function SlidesControls({
 	state,
 	fullscreen,
 	recording,
+	recordingPreparing,
 	editing,
 	onAction,
 	onRangeChange,
@@ -153,12 +155,11 @@ export function SlidesControls({
 			<button
 				type="button"
 				onClick={onToggleRecording}
-				disabled={editing || state.totalPages === 0}
-				aria-label={
-					recording ? t("slides.recordStop") : t("slides.recordStart")
-				}
+				disabled={editing || state.totalPages === 0 || recordingPreparing}
+				aria-busy={recordingPreparing}
+				aria-live="polite"
 			>
-				{recording ? t("slides.recordStop") : t("slides.recordStart")}
+				{recordingPreparing ? t("slides.recordPreparing") : recording ? t("slides.recordStop") : t("slides.recordStart")}
 			</button>
 		</footer>
 	);

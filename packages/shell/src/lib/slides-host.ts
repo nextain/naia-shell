@@ -81,6 +81,7 @@ const MAX_MESSAGE_ID_LENGTH = 128;
 const CLIENT_HANDSHAKE_ATTEMPTS = 8;
 const CLIENT_HANDSHAKE_INTERVAL_MS = 250;
 const CLIENT_REQUEST_TIMEOUT_MS = 15_000;
+const RECORDING_START_TIMEOUT_MS = 30_000;
 const MAX_CAPABILITY_LENGTH = 128;
 
 let installedClient: SlidesHostClientHandle | null = null;
@@ -430,7 +431,9 @@ function installClientBridge(): SlidesHostClientHandle {
 							});
 						}
 						reject(new Error("slides_host_timeout"));
-					}, CLIENT_REQUEST_TIMEOUT_MS);
+					}, action === SLIDES_HOST_ACTIONS.recordingStart
+						? RECORDING_START_TIMEOUT_MS
+						: CLIENT_REQUEST_TIMEOUT_MS);
 					pending.set(id, { resolve, reject, timer });
 					postToParent({ type: SLIDES_HOST, action, id, capability });
 				});

@@ -97,7 +97,7 @@ document.documentElement.style.setProperty('--text-secondary','#526175');
 document.documentElement.style.setProperty('--border-color','#ccd5df');
 document.documentElement.style.setProperty('--accent-color','#1765a1');
 document.documentElement.style.setProperty('--font-family','Arial, sans-serif');
-window.__TAURI_INTERNALS__={convertFileSrc:()=>${JSON.stringify(assetOrigin)}+'/slides.html',invoke:async(command,args)=>{window.fixture.calls.push({command,args});if(command==='slides_open_pdf'||command==='slides_open_document'){if(window.fixture.delay)await new Promise(resolve=>window.fixture.complete=resolve);if(window.fixture.error)throw window.fixture.error;return window.fixture.selection;}if(command==='slides_recording_stop')return 'recordings/fixture.webm';if(command==='plugin:event|listen')return args.handler;return null;},transformCallback:(callback)=>{const id=window.fixture.nextCallback++;window.fixture.callbacks[id]=callback;return id;},unregisterCallback:(id)=>{delete window.fixture.callbacks[id];}};
+window.__TAURI_INTERNALS__={convertFileSrc:()=>${JSON.stringify(assetOrigin)}+'/slides.html',invoke:async(command,args)=>{window.fixture.calls.push({command,args});if(command==='slides_open_pdf'||command==='slides_open_document'){if(window.fixture.delay)await new Promise(resolve=>window.fixture.complete=resolve);if(window.fixture.error)throw window.fixture.error;return window.fixture.selection;}if(command==='slides_recording_start'&&window.fixture.delayRecording)await new Promise(resolve=>window.fixture.finishRecordingStart=resolve);if(command==='slides_recording_stop')return 'recordings/fixture.webm';if(command==='plugin:event|listen')return args.handler;return null;},transformCallback:(callback)=>{const id=window.fixture.nextCallback++;window.fixture.callbacks[id]=callback;return id;},unregisterCallback:(id)=>{delete window.fixture.callbacks[id];}};
 await import('/e2e/fixtures/slides-installed-host.tsx');
 </script></body></html>`,
 		}),
@@ -493,7 +493,14 @@ test("installed Slides follows live host language and theme and records through 
 	await expect(frame.getByTestId("slides-current-note")).toHaveText(
 		"First authored note",
 	);
+	await page.setViewportSize({ width: 1000, height: 720 });
+	await page.evaluate(() => { (window as any).fixture.delayRecording = true; });
 	await frame.getByRole("button", { name: /Record MP4/ }).click();
+	const preparing = frame.getByRole("button", { name: "Preparing recording…" });
+	await expect(preparing).toBeDisabled();
+	await expect(preparing).toHaveAttribute("aria-busy", "true");
+	const box = await preparing.boundingBox();
+	expect(box && box.x >= 0 && box.x + box.width <= 1000).toBeTruthy();
 	await expect
 		.poll(() =>
 			page.evaluate(() =>
@@ -508,6 +515,8 @@ test("installed Slides follows live host language and theme and records through 
 				args: { adkPath: "C:/fixture-workspace" },
 			},
 		]);
+	await page.evaluate(() => (window as any).fixture.finishRecordingStart());
+	await expect(frame.getByRole("button", { name: /Stop recording/ })).toBeEnabled();
 	await frame.getByRole("button", { name: /Stop recording/ }).click();
 	await expect
 		.poll(() =>

@@ -18,7 +18,7 @@
 //! disables audio everywhere; any other value replaces the Linux source.
 //!
 //! Lifecycle: ffmpeg's stderr is kept (last lines) instead of discarded, a
-//! start only succeeds when ffmpeg is still running after a short probe, and a
+//! start succeeds only after ffmpeg reports video output, and a
 //! stop sends `q` on stdin so ffmpeg writes the MP4 index; it is killed only
 //! when it does not finish within the grace period.
 use std::collections::VecDeque;
@@ -42,8 +42,8 @@ pub(crate) fn cached_linux_shell_window() -> Option<LinuxWindow> {
 
 /// How many stderr lines are kept for the failure log.
 pub(crate) const STDERR_TAIL_LINES: usize = 12;
-/// ffmpeg must still be running this long after spawn for a start to count.
-pub(crate) const STARTUP_PROBE: Duration = Duration::from_millis(1500);
+/// Maximum time to wait for a video output progress report.
+pub(crate) const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a graceful stop may take before ffmpeg is killed.
 pub(crate) const STOP_GRACE: Duration = Duration::from_secs(8);
 /// PulseAudio / pipewire-pulse name for the default sink's monitor source.
@@ -135,7 +135,15 @@ pub(crate) fn ffmpeg_args(
 ) -> Vec<OsString> {
     let mut args: Vec<OsString> = Vec::new();
     let mut push = |items: &[&str]| args.extend(items.iter().map(OsString::from));
-    push(&["-hide_banner", "-nostats", "-loglevel", "warning", "-y"]);
+    push(&[
+        "-hide_banner",
+        "-nostats",
+        "-loglevel",
+        "warning",
+        "-progress",
+        "pipe:1",
+        "-y",
+    ]);
     match target {
         CaptureTarget::X11Window { display, window_id } => {
             let id = window_id.to_string();
@@ -225,27 +233,36 @@ fn log_tail(context: &str, lines: &[String]) {
     }
 }
 
+#[derive(Default)]
+struct Progress {
+    first_report: Option<Duration>,
+    video_ready: Option<Duration>,
+}
+
 /// One running ffmpeg recording.
 pub(crate) struct Recorder {
     child: Child,
     stdin: Option<ChildStdin>,
     tail: Tail,
     reader: Option<JoinHandle<()>>,
+    progress_reader: Option<JoinHandle<()>>,
+    progress: Arc<Mutex<Progress>>,
     output: PathBuf,
 }
 
 impl Recorder {
-    /// Spawn ffmpeg and confirm it is still running after `probe`.
+    /// Spawn ffmpeg and wait for video output, bounded by `timeout`.
     pub(crate) fn start(
         ffmpeg: &OsStr,
         args: &[OsString],
         output: PathBuf,
-        probe: Duration,
+        timeout: Duration,
     ) -> Result<Self, String> {
+        let spawned = Instant::now();
         let mut child = Command::new(ffmpeg)
             .args(args)
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| format!("could not start ffmpeg for MP4 recording: {error}"))?;
@@ -264,36 +281,106 @@ impl Recorder {
                 }
             })
         });
+        let progress = Arc::new(Mutex::new(Progress::default()));
+        let progress_reader = child.stdout.take().map(|stdout| {
+            let progress = Arc::clone(&progress);
+            std::thread::spawn(move || {
+                let mut frame = 0_u64;
+                let mut output_us = 0_i64;
+                for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                    let Some((key, value)) = line.split_once('=') else {
+                        continue;
+                    };
+                    match key {
+                        "frame" => frame = value.trim().parse().unwrap_or(0),
+                        // Older ffmpeg builds only print out_time_ms (also in
+                        // microseconds despite the name).
+                        "out_time_us" | "out_time_ms" => {
+                            output_us = output_us.max(value.trim().parse().unwrap_or(0))
+                        }
+                        "progress" => {
+                            if let Ok(mut state) = progress.lock() {
+                                let elapsed = spawned.elapsed();
+                                state.first_report.get_or_insert(elapsed);
+                                if frame > 0 && output_us > 0 {
+                                    state.video_ready.get_or_insert(elapsed);
+                                }
+                            }
+                            frame = 0;
+                            output_us = 0;
+                        }
+                        _ => {}
+                    }
+                }
+            })
+        });
+        // ffmpeg's aggregate progress has no per-stream audio packet signal.
+        // Video readiness does not independently prove audio has been muxed.
         let mut recorder = Recorder {
             stdin: child.stdin.take(),
             child,
             tail,
             reader,
+            progress_reader,
+            progress,
             output,
         };
-        let deadline = Instant::now() + probe;
-        while Instant::now() < deadline {
+        let deadline = spawned + timeout;
+        loop {
             if let Ok(Some(status)) = recorder.child.try_wait() {
                 let lines = recorder.finish_reader();
                 log_tail(&format!("ffmpeg exited during startup ({status})"), &lines);
+                let _ = std::fs::remove_file(&recorder.output);
                 return Err(format!(
                     "MP4 recording failed to start: ffmpeg exited ({status}): {}",
                     last_line(&lines)
                 ));
             }
+            if recorder
+                .progress
+                .lock()
+                .map(|p| p.video_ready.is_some_and(|elapsed| elapsed <= timeout))
+                .unwrap_or(false)
+            {
+                crate::log_both(&format!(
+                    "[slides-recording] video output ready after {:?}",
+                    spawned.elapsed()
+                ));
+                return Ok(recorder);
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(50));
         }
-        crate::log_both(&format!(
-            "[slides-recording] recording to {}",
-            recorder.output.display()
-        ));
-        Ok(recorder)
+        let _ = recorder.child.kill();
+        let _ = recorder.child.wait();
+        let lines = recorder.finish_reader();
+        log_tail("ffmpeg startup timed out", &lines);
+        let _ = std::fs::remove_file(&recorder.output);
+        Err(format!(
+            "MP4 recording failed to start: ffmpeg output not ready within {}s",
+            timeout.as_secs()
+        ))
+    }
+
+    fn log_progress(&self) {
+        if let Ok(progress) = self.progress.lock() {
+            crate::log_both(&format!(
+                "[slides-recording] spawn→first progress {:?}; spawn→video output {:?}",
+                progress.first_report, progress.video_ready
+            ));
+        }
     }
 
     fn finish_reader(&mut self) -> Vec<String> {
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
         }
+        if let Some(reader) = self.progress_reader.take() {
+            let _ = reader.join();
+        }
+        self.log_progress();
         tail_text(&self.tail)
     }
 
@@ -356,6 +443,7 @@ impl Recorder {
                 last_line(&lines)
             ));
         }
+        log_tail("ffmpeg finished successfully", &lines);
         crate::log_both(&format!(
             "[slides-recording] finished {} ({size} bytes)",
             self.output.display()

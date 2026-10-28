@@ -17,6 +17,7 @@ import type {
 } from "../../lib/app-registry";
 import { setLocale } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
+import * as slidesHost from "../../lib/slides-host";
 import {
 	SLIDE_PRESENTER_CANCEL_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
@@ -287,6 +288,35 @@ describe("SlidesCenterArea", () => {
 				}),
 			).currentSpeakerNote,
 		).toBe("Keep this narration");
+	});
+
+	it("keeps recording disabled while preparing and enables stop only after success", async () => {
+		let finish!: () => void;
+		const start = vi.spyOn(slidesHost, "startSlidesRecording").mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+		render(<SlidesCenterArea naia={new MockBridge()} />);
+		expect(screen.getByRole("button", { name: "MP4 녹화" })).toBeDisabled();
+		fireEvent.change(screen.getByLabelText(/PDF/), { target: { files: [new File(["pdf"], "deck.pdf")] } });
+		await waitFor(() => expect(screen.getByRole("button", { name: "MP4 녹화" })).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "MP4 녹화" }));
+		const pending = screen.getByRole("button", { name: "녹화 준비 중…" });
+		expect(pending).toBeDisabled();
+		expect(pending).toHaveAttribute("aria-busy", "true");
+		fireEvent.click(pending);
+		expect(start).toHaveBeenCalledTimes(1);
+		finish();
+		await waitFor(() => expect(screen.getByRole("button", { name: "녹화 종료" })).toBeEnabled());
+		start.mockRestore();
+	});
+
+	it("returns to the start button when recording preparation fails", async () => {
+		const start = vi.spyOn(slidesHost, "startSlidesRecording").mockRejectedValue(new Error("unavailable"));
+		render(<SlidesCenterArea naia={new MockBridge()} />);
+		fireEvent.change(screen.getByLabelText(/PDF/), { target: { files: [new File(["pdf"], "deck.pdf")] } });
+		await waitFor(() => expect(screen.getByRole("button", { name: "MP4 녹화" })).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "MP4 녹화" }));
+		await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("unavailable"));
+		expect(screen.getByRole("button", { name: "MP4 녹화" })).toBeEnabled();
+		start.mockRestore();
 	});
 
 	it("enters fullscreen on the entire app, retains controls and tracks exit", async () => {

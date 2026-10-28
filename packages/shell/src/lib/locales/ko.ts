@@ -1319,6 +1319,7 @@ export default {
 	"slides.focusExit": "집중 모드 종료",
 	"slides.notesShow": "발표문 열기",
 	"slides.notesHide": "발표문 닫기",
+	"slides.recordPreparing": "녹화 준비 중…",
 	"slides.recordStart": "MP4 녹화",
 	"slides.recordStop": "녹화 종료",
 	"slides.openPresentation": "PDF 또는 PPTX 열기",

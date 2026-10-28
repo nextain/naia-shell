@@ -292,6 +292,20 @@ describe("installed Slides host bridge", () => {
 		);
 	});
 
+	it("stops a start that succeeds after the client cancels its timed out request", async () => {
+		let resolveStart!: () => void;
+		const start = vi.fn(() => new Promise<void>((resolve) => { resolveStart = resolve; }));
+		const stop = vi.fn<() => Promise<string>>().mockResolvedValue("recordings/fixture.mp4");
+		const host = setup({ start, stop });
+		host.send(SLIDES_HOST_ACTIONS.hello, "hello-cancel");
+		host.send(SLIDES_HOST_ACTIONS.recordingStart, "cancelled-start");
+		await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+		host.send(SLIDES_HOST_ACTIONS.recordingCancelStart, "cancelled-start");
+		resolveStart();
+		await vi.waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
+		expect(host.reply).not.toHaveBeenCalledWith(expect.objectContaining({ id: "cancelled-start", ok: true }), ORIGIN);
+	});
+
 	it("stops a recording whose start resolves after iframe disposal", async () => {
 		let resolveStart!: () => void;
 		const start = vi.fn(
