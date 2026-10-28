@@ -1,3 +1,8 @@
+// E2E-only hooks (WebDriver plugin, WebView2 microphone auto-allow) must never ship.
+// The E2E build scripts use the dev profile; an optimized build with this feature is a release mistake.
+#[cfg(all(feature = "webdriver-e2e", not(debug_assertions)))]
+compile_error!("the `webdriver-e2e` feature is test-only and must not be enabled in a release (non-debug_assertions) build");
+
 pub(crate) mod accelerator;
 pub(crate) mod vram_reservation;
 mod agent_grpc;
@@ -14949,13 +14954,15 @@ pub fn run() {
                             COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
                             COREWEBVIEW2_PERMISSION_STATE_ALLOW,
                             ICoreWebView2PermissionRequestedEventArgs,
+                            ICoreWebView2PermissionRequestedEventArgs3,
                         };
+                        use windows::core::Interface;
 
                         let controller = webview.controller();
                         let core = match unsafe { controller.CoreWebView2() } {
                             Ok(core) => core,
                             Err(err) => {
-                                log_verbose(&format!(
+                                log_both(&format!(
                                     "[Naia] E2E: failed to get CoreWebView2: {err}"
                                 ));
                                 return;
@@ -14970,17 +14977,32 @@ pub fn run() {
                                         Ok(()) => {
                                             let is_microphone = kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE;
                                             if e2e_should_auto_allow_permission(debug_e2e_enabled(), is_microphone) {
-                                                if let Err(err) = unsafe {
-                                                    args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)
-                                                } {
-                                                    log_verbose(&format!(
-                                                        "[Naia] E2E: failed to set microphone permission allow: {err}"
-                                                    ));
+                                                match args.cast::<ICoreWebView2PermissionRequestedEventArgs3>() {
+                                                    Ok(args3) => {
+                                                        if let Err(err) = unsafe {
+                                                            args3.SetSavesInProfile(false)
+                                                        } {
+                                                            log_both(&format!(
+                                                                "[Naia] E2E: failed to set SetSavesInProfile(false): {err}"
+                                                            ));
+                                                        } else if let Err(err) = unsafe {
+                                                            args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)
+                                                        } {
+                                                            log_both(&format!(
+                                                                "[Naia] E2E: failed to set microphone permission allow: {err}"
+                                                            ));
+                                                        }
+                                                    }
+                                                    Err(err) => {
+                                                        log_both(&format!(
+                                                            "[Naia] E2E: failed to cast to ICoreWebView2PermissionRequestedEventArgs3: {err}"
+                                                        ));
+                                                    }
                                                 }
                                             }
                                         }
                                         Err(err) => {
-                                            log_verbose(&format!(
+                                            log_both(&format!(
                                                 "[Naia] E2E: failed to read permission kind: {err}"
                                             ));
                                             return Ok(());
@@ -14999,17 +15021,17 @@ pub fn run() {
                                 );
                             }
                             Err(err) => {
-                                log_verbose(&format!(
+                                log_both(&format!(
                                     "[Naia] E2E: failed to register PermissionRequested handler: {err}"
                                 ));
                             }
                         }
                     });
                     if let Err(err) = res {
-                        log_verbose(&format!("[Naia] E2E: with_webview failed: {err}"));
+                        log_both(&format!("[Naia] E2E: with_webview failed: {err}"));
                     }
                 } else {
-                    log_verbose("[Naia] E2E: main webview window not found for permission setup");
+                    log_both("[Naia] E2E: main webview window not found for permission setup");
                 }
             }
 
