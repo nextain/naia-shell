@@ -27,7 +27,13 @@ describe("28 — skills install", () => {
 	});
 
 	it("should not show gateway skill cards or install buttons", async () => {
-		await browser.pause(1_000);
+		await browser.waitUntil(
+			() => browser.execute(() =>
+				!document.querySelector(".skills-loading") &&
+				!!document.querySelector('[data-testid="skills-cli-section"]'),
+			),
+			{ timeout: 30_000, timeoutMsg: "Skills CLI section did not appear after loading" },
+		);
 		const gatewayCardCount = await browser.execute(
 			() =>
 				document.querySelectorAll('[data-testid="gateway-skill-card"]').length,

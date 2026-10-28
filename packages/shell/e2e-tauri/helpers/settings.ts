@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { S } from "./selectors.js";
 
 /**
@@ -798,7 +799,23 @@ export async function persistConfigPatch(
 		localStorage.setItem("naia-config", JSON.stringify(config));
 		window.dispatchEvent(new CustomEvent("naia-config-changed"));
 	}, patch);
-	// 디바운스 800ms + 파일 쓰기 여유. 이 기다림을 빼면 새로 고침이 먼저 일어나
-	// 값이 사라진다.
+	// 디바운스(800ms)가 먼저 돌게 둔다. 그다음 두 설정 파일에 patch 값이 실제로
+	// 들어갔는지 확인한다 — 느린 기기에서 고정 대기만으로는 새로 고침이 먼저 일어났다.
 	await browser.pause(1500);
+	const adkPath = await browser.execute(() => localStorage.getItem("naia-adk-path"));
+	if (!adkPath) throw new Error("ADK pointer unavailable for config persistence");
+	await browser.waitUntil(
+		async () => {
+			const configRaw = await tauriInvokeInPage<string>("read_naia_config", { adkPath });
+			const uiRaw = await tauriInvokeInPage<string>("read_naia_ui_config", { adkPath });
+			const config = {
+				...(configRaw ? JSON.parse(configRaw) : {}),
+				...(uiRaw ? JSON.parse(uiRaw) : {}),
+			} as Record<string, unknown>;
+			return Object.entries(patch).every(
+				([key, value]) => Object.hasOwn(config, key) && isDeepStrictEqual(config[key], value),
+			);
+		},
+		{ timeout: 30_000, timeoutMsg: `Config files did not persist patch keys: ${Object.keys(patch).join(", ")}` },
+	);
 }
