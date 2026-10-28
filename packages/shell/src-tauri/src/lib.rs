@@ -14995,7 +14995,7 @@ pub fn run() {
                                                     }
                                                     Err(err) => {
                                                         log_both(&format!(
-                                                            "[Naia] E2E: failed to cast to ICoreWebView2PermissionRequestedEventArgs3: {err}"
+                                                            "[Naia] E2E: failed to cast permission args to v3 (SetSavesInProfile): {err}"
                                                         ));
                                                     }
                                                 }
