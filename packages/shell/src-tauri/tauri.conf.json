@@ -46,9 +46,6 @@
 	},
 	"bundle": {
 		"active": true,
-		"macOS": {
-			"entitlements": "entitlements.plist"
-		},
 		"resources": {
 			"../../ego-host/package.json": "ego-host/package.json",
 			"../../ego-host/bin/": "ego-host/bin/",
