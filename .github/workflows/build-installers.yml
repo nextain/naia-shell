@@ -317,9 +317,6 @@ jobs:
         if: matrix.platform == 'darwin'
         shell: bash
         env:
-          APPLE_CERTIFICATE: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
           APPLE_API_KEY: ''
           APPLE_API_ISSUER: ''
           # Tauri must not sign/notarize the DMG implicitly; explicit steps below own that lifecycle.
