@@ -253,10 +253,7 @@ jobs:
           APPLE_CERTIFICATE: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
           APPLE_CERTIFICATE_PASSWORD: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
           APPLE_SIGNING_IDENTITY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_API_KEY: ''
-          APPLE_API_ISSUER: ''
-          APPLE_API_KEY_PATH: ''
-        run: pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json
+        run: env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json
 
       - name: Sign every macOS app Mach-O with hardened runtime
         if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
@@ -319,8 +316,6 @@ jobs:
         if: matrix.platform == 'darwin'
         shell: bash
         env:
-          APPLE_API_KEY: ''
-          APPLE_API_ISSUER: ''
           # Tauri must not sign/notarize the DMG implicitly; explicit steps below own that lifecycle.
           APPLE_CERTIFICATE: ''
           APPLE_CERTIFICATE_PASSWORD: ''
@@ -328,9 +323,8 @@ jobs:
         run: |
           set -euo pipefail
           set -o pipefail
-          unset APPLE_API_KEY_PATH
           LOG_FILE="$RUNNER_TEMP/tauri-macos-dmg.log"
-          if ! pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
+          if ! env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
             --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
             if grep -q "bundle_dmg" "$LOG_FILE"; then
               echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
@@ -365,7 +359,7 @@ jobs:
                 packages/shell/src-tauri/target/release/bundle/macos/Naia_*.dmg \
                 packages/shell/src-tauri/target/release/bundle/dmg/rw.*.dmg \
                 packages/shell/src-tauri/target/release/bundle/dmg/Naia_*.dmg
-              pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
+              env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
                 --config src-tauri/tauri.conf.generated.json
             else
               exit 1
