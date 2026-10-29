@@ -13,8 +13,12 @@ import {
  * select.value 를 직접 넣어 React onChange 도 돌지 않았다. 지금 설정에서 API
  * 키 칸이 뜨는 공급자는 ollama 다. 닫힌 포트를 호스트로 주면 공급자 실패가
  * 결정적으로 난다.
+ *
+ * 127.0.0.1/localhost/::1 은 로컬 Ollama 예약 게이트(assertOllamaChatAdmitted)가
+ * 공급자에 닿기 전에 막아 오류 공지 대신 안내 메시지만 남긴다. 게이트가 로컬로
+ * 보지 않는 루프백 127.0.0.2 의 닫힌 포트를 써서 연결이 즉시 거절되게 한다.
  */
-const DEAD_OLLAMA_HOST = "http://127.0.0.1:9";
+const DEAD_OLLAMA_HOST = "http://127.0.0.2:9";
 
 describe("Store certification native journey", () => {
 	it("applies a provider key through Settings and exposes provider failure", async () => {
