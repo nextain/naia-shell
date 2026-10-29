@@ -204,6 +204,9 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/naia-signing.keychain-db"
           CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          KEYCHAIN_PASSWORD_PATH="$RUNNER_TEMP/naia-keychain-password"
+          (umask 077; printf '%s' "$KEYCHAIN_PASSWORD" > "$KEYCHAIN_PASSWORD_PATH")
+          echo "MACOS_KEYCHAIN_PASSWORD_PATH=$KEYCHAIN_PASSWORD_PATH" >> "$GITHUB_ENV"
           ORIGINAL_KEYCHAINS_PATH="$RUNNER_TEMP/naia-original-keychains.txt"
           security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' > "$ORIGINAL_KEYCHAINS_PATH"
           chmod 600 "$ORIGINAL_KEYCHAINS_PATH"
@@ -211,7 +214,7 @@ jobs:
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
           chmod 600 "$CERTIFICATE_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
+          security set-keychain-settings -t 21600 -u "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           # macOS bash 3.2 has no mapfile.
           ORIGINAL_KEYCHAINS=()
@@ -468,6 +471,7 @@ jobs:
           set -euo pipefail
           DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
           test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
+          security unlock-keychain -p "$(< "$MACOS_KEYCHAIN_PASSWORD_PATH")" "$MACOS_SIGNING_KEYCHAIN"
           codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "${DMG_PATHS[0]}"
 
       - name: Notarize and staple macOS DMG
@@ -607,6 +611,7 @@ jobs:
             if [ "${#ORIGINAL_KEYCHAINS[@]}" -gt 0 ]; then security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}"; fi
             rm -f "$MACOS_ORIGINAL_KEYCHAINS_PATH"
           fi
+          if [ -n "${MACOS_KEYCHAIN_PASSWORD_PATH:-}" ]; then rm -f "$MACOS_KEYCHAIN_PASSWORD_PATH"; fi
           if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
             security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
           fi
@@ -1163,7 +1168,7 @@ jobs:
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
           chmod 600 "$CERTIFICATE_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
+          security set-keychain-settings -t 21600 -u "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           # macOS bash 3.2 has no mapfile.
           ORIGINAL_KEYCHAINS=()

@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	cpSync,
+	chmodSync,
+	mkdtempSync,
 	existsSync,
 	lstatSync,
 	mkdirSync,
@@ -12,6 +14,7 @@ import {
 	rmSync,
 	symlinkSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -22,6 +25,9 @@ const REQUIRED_ARCHS = ["x86_64", "arm64"];
 // 통째로 배제한다 — 동일성 검증의 예외가 아니라 어느 쪽 사본도 신뢰본이 아니기 때문.
 export const PNPM_INSTALL_STATE =
 	/(^|\/)node_modules\/(\.modules\.yaml|\.pnpm-workspace-state[^/]*\.json|\.pnpm\/lock\.yaml)$/;
+
+const signatureMetadata = (path) =>
+	path.split("/").includes("_CodeSignature") || /(^|\/)Contents\/CodeResources$/.test(path);
 
 function walk(root, current = root, files = []) {
 	for (const entry of readdirSync(current, { withFileTypes: true })) {
@@ -35,6 +41,26 @@ function walk(root, current = root, files = []) {
 
 const sha256 = (path) =>
 	createHash("sha256").update(readFileSync(path)).digest("hex");
+
+function unsignedHash(path, exec) {
+	const temp = mkdtempSync(resolve(tmpdir(), "naia-unsigned-"));
+	const copy = resolve(temp, "binary");
+	try {
+		cpSync(path, copy);
+		chmodSync(copy, 0o600);
+		try {
+			exec("codesign", ["--remove-signature", copy], { stdio: "pipe" });
+		} catch (error) {
+			if (!String(error.stderr ?? "").includes("code object is not signed at all")) throw error;
+		}
+		return sha256(copy);
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
+}
+
+const sameMachO = (a, b, exec) =>
+	sha256(a) === sha256(b) || unsignedHash(a, exec) === unsignedHash(b, exec);
 
 export function classifyFile(path, exec = execFileSync) {
 	const description = String(exec("file", ["-b", path], { encoding: "utf8" }));
@@ -66,8 +92,8 @@ const archesOf = (path, exec) =>
 		.sort();
 
 export function classifyFileSets(x64App, arm64App) {
-	const x64 = walk(x64App);
-	const arm64 = walk(arm64App);
+	const x64 = walk(x64App).filter((path) => !signatureMetadata(path));
+	const arm64 = walk(arm64App).filter((path) => !signatureMetadata(path));
 	const x64Set = new Set(x64);
 	const arm64Set = new Set(arm64);
 	const onlyX64 = x64.filter((path) => !arm64Set.has(path));
@@ -121,7 +147,10 @@ export function assembleUniversalApp(
 	const { common, onlyX64, onlyArm64 } = classifyFileSets(x64App, arm64App);
 	rmSync(outputApp, { recursive: true, force: true });
 	mkdirSync(dirname(outputApp), { recursive: true });
-	cpSync(arm64App, outputApp, { recursive: true, preserveTimestamps: true });
+	cpSync(arm64App, outputApp, {
+		recursive: true, preserveTimestamps: true,
+		filter: (source) => !signatureMetadata(relative(arm64App, source).replaceAll("\\", "/")),
+	});
 	for (const path of [...common, ...onlyArm64]) {
 		if (PNPM_INSTALL_STATE.test(path))
 			rmSync(resolve(outputApp, path), { force: true });
@@ -166,7 +195,7 @@ export function assembleUniversalApp(
 				scope !== null &&
 				(x64List !== scope ||
 					arm64List !== scope ||
-					sha256(x64) !== sha256(arm64))
+					!sameMachO(x64, arm64, exec))
 			)
 				throw new Error(`[macos-universal] scoped Mach-O mismatch: ${path}`);
 			if (
@@ -179,7 +208,7 @@ export function assembleUniversalApp(
 				throw new Error(
 					`[macos-universal] input Mach-O architecture mismatch: ${path}`,
 				);
-			if (x64List === arm64List && sha256(x64) !== sha256(arm64))
+			if (x64List === arm64List && !sameMachO(x64, arm64, exec))
 				throw new Error(`[macos-universal] common Mach-O differs: ${path}`);
 			if (x64Arches.join(" ") === arm64Arches.join(" ")) {
 				const scope = scopedArch(path);

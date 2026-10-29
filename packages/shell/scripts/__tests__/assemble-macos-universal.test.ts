@@ -187,6 +187,37 @@ describe("macOS Universal Binary assembly", () => {
 		).toThrow("input Mach-O architecture mismatch");
 	});
 
+	it("ignores signature metadata and compares common Mach-O without signatures", () => {
+		const { x64, arm64 } = fixture();
+		const binary = "Contents/MacOS/naia-shell";
+		for (const [app, signature] of [[x64, "one"], [arm64, "two"]] as const) {
+			writeFileSync(resolve(app, binary), `payload|${signature}`);
+			for (const dir of ["Contents/_CodeSignature", "Contents/Frameworks/F.framework/_CodeSignature"]) {
+				mkdirSync(resolve(app, dir), { recursive: true });
+				writeFileSync(resolve(app, dir, "CodeResources"), signature);
+			}
+		}
+		writeFileSync(resolve(x64, "Contents/CodeResources"), "legacy signature");
+		const output = resolve(x64, "../signed.app");
+		const exec = (command: string, args: string[]) => {
+			if (command === "file") return Buffer.from(args[1].endsWith("naia-shell") ? "Mach-O" : "data");
+			if (command === "lipo") return Buffer.from("x86_64 arm64");
+			if (command === "codesign") {
+				const file = args[1];
+				writeFileSync(file, readFileSync(file, "utf8").split("|")[0]);
+				return Buffer.alloc(0);
+			}
+			throw new Error(`unexpected ${command}`);
+		};
+		assembleUniversalApp({ x64App: x64, arm64App: arm64, outputApp: output }, exec as never);
+		expect(existsSync(resolve(output, "Contents/_CodeSignature"))).toBe(false);
+		expect(existsSync(resolve(output, "Contents/Frameworks/F.framework/_CodeSignature"))).toBe(false);
+		expect(existsSync(resolve(output, "Contents/CodeResources"))).toBe(false);
+		expect(readFileSync(resolve(output, binary), "utf8")).toBe("payload|two");
+		writeFileSync(resolve(x64, binary), "different|one");
+		expect(() => assembleUniversalApp({ x64App: x64, arm64App: arm64, outputApp: output }, exec as never)).toThrow("common Mach-O differs");
+	});
+
 	it("rejects divergent common Mach-O files with identical architecture lists", () => {
 		const { x64, arm64 } = fixture();
 		writeFileSync(resolve(x64, "Contents/MacOS/naia-shell"), "universal-a");
@@ -200,6 +231,9 @@ describe("macOS Universal Binary assembly", () => {
 				);
 			if (command === "lipo" && args[0] === "-archs")
 				return Buffer.from("x86_64 arm64");
+			if (command === "codesign") {
+				throw Object.assign(new Error("unsigned"), { stderr: "code object is not signed at all" });
+			}
 			throw new Error("unexpected command");
 		};
 		expect(() =>
