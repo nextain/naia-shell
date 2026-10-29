@@ -60,7 +60,9 @@ fn has_verified_store_signature_with_key(
     app_id: &str,
     public_key: &str,
 ) -> bool {
-    let receipt_path = app_dir.join(STORE_SIGNATURE_RECEIPT);
+    let Some(receipt_path) = safe_app_file(app_dir, STORE_SIGNATURE_RECEIPT) else {
+        return false;
+    };
     let Ok(receipt) = std::fs::read(receipt_path).and_then(|bytes| {
         serde_json::from_slice::<StoreSignatureReceipt>(&bytes)
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
@@ -70,10 +72,16 @@ fn has_verified_store_signature_with_key(
     let Some(digest) = decode_sha256_hex(&receipt.sha256) else {
         return false;
     };
-    let Ok(manifest_bytes) = std::fs::read(app_dir.join("app.json")) else {
+    let Some(manifest_path) = safe_app_file(app_dir, "app.json") else {
         return false;
     };
-    let Ok(artifact_bytes) = std::fs::read(app_dir.join(STORE_SIGNATURE_ARTIFACT)) else {
+    let Ok(manifest_bytes) = std::fs::read(manifest_path) else {
+        return false;
+    };
+    let Some(artifact_path) = safe_app_file(app_dir, STORE_SIGNATURE_ARTIFACT) else {
+        return false;
+    };
+    let Ok(artifact_bytes) = std::fs::read(artifact_path) else {
         return false;
     };
     if receipt.app_id != app_id || Sha256::digest(&artifact_bytes).as_slice() != digest.as_slice() {
@@ -91,6 +99,20 @@ fn has_verified_store_signature_with_key(
     let mut signed_manifest_bytes = Vec::new();
     std::io::Read::read_to_end(&mut signed_manifest, &mut signed_manifest_bytes).is_ok()
         && signed_manifest_bytes == manifest_bytes
+}
+
+fn safe_app_file(app_dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    let path = app_dir.join(name);
+    let metadata = std::fs::symlink_metadata(&path).ok()?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return None;
+    }
+    let root = dunce::canonicalize(app_dir).ok()?;
+    let canonical = dunce::canonicalize(path).ok()?;
+    if canonical.parent() != Some(root.as_path()) {
+        return None;
+    }
+    Some(canonical)
 }
 
 fn set_store_signature_status(
@@ -827,6 +849,8 @@ pub struct AppManifest {
     /// A value in app.json is ignored.
     #[serde(default, skip_deserializing, skip_serializing_if = "is_false")]
     pub store_signature_verified: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_signature_issued_at_ms: Option<u64>,
     /// Absolute path to index.html if present — used for iframe rendering
     #[serde(
         rename = "htmlEntry",
@@ -1055,6 +1079,12 @@ fn list_installed_from_root_with_signing_key(
             return Err(format!("Invalid app entry: {}", entry.path().display()));
         }
         let manifest_path = entry.path().join("app.json");
+        let Some(manifest_path) = safe_app_file(&entry.path(), "app.json") else {
+            return Err(format!(
+                "Invalid app manifest path: {}",
+                manifest_path.display()
+            ));
+        };
         let data = std::fs::read_to_string(&manifest_path)
             .map_err(|e| format!("Failed to read {}: {}", manifest_path.display(), e))?;
         let mut manifest: AppManifest = serde_json::from_str(&data)
@@ -1068,6 +1098,12 @@ fn list_installed_from_root_with_signing_key(
         }
 
         set_store_signature_status(&mut manifest, &entry.path(), public_key);
+        manifest.store_signature_issued_at_ms =
+            safe_app_file(&entry.path(), STORE_SIGNATURE_RECEIPT)
+            .and_then(|path| std::fs::metadata(path).ok())
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64);
 
         // Load inline SVG if iconUrl is specified
         if let Some(ref icon_url) = manifest.icon_url.clone() {
@@ -1123,7 +1159,9 @@ pub fn app_verify_installed_store_app(app_id: String) -> Result<bool, String> {
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err("Installed app not found".to_string());
     }
-    let manifest_bytes = std::fs::read(app_dir.join("app.json"))
+    let manifest_path = safe_app_file(&app_dir, "app.json")
+        .ok_or_else(|| "Installed app manifest unavailable".to_string())?;
+    let manifest_bytes = std::fs::read(manifest_path)
         .map_err(|_| "Installed app manifest unavailable".to_string())?;
     let manifest: AppManifest = serde_json::from_slice(&manifest_bytes)
         .map_err(|_| "Installed app manifest invalid".to_string())?;
@@ -1339,6 +1377,18 @@ fn remove_installed_from_with_legacy_home(
 mod tests {
     use super::*;
 
+    #[test]
+    fn runtime_verifier_resolves_the_production_published_key() {
+        let selected = resolve_signing_public_key(option_env!("NAIA_APP_SIGNING_PUBLIC_KEY"));
+        assert_eq!(selected, PUBLISHED_APP_SIGNING_PUBLIC_KEY);
+        let key_bytes = base64::engine::general_purpose::STANDARD
+            .decode(selected)
+            .expect("production key must decode");
+        assert_eq!(key_bytes.len(), 32);
+        VerifyingKey::from_bytes(key_bytes.as_slice().try_into().unwrap())
+            .expect("production key must be a valid Ed25519 key");
+    }
+
     fn write_app(root: &std::path::Path, dir: &str, id: &str) -> std::path::PathBuf {
         let app_dir = root.join(dir);
         std::fs::create_dir_all(&app_dir).unwrap();
@@ -1368,6 +1418,39 @@ mod tests {
 
         remove_installed_from(home.path(), "slides").unwrap();
         assert!(list_installed_from(home.path()).unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_and_signature_verification_reject_symlinked_app_manifest() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let apps = apps_root(home.path());
+        std::fs::create_dir_all(&apps).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(
+            outside.path().join("app.json"),
+            r#"{"id":"linked","name":"Outside"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(apps.join("linked")).unwrap();
+        symlink(outside.path().join("app.json"), apps.join("linked").join("app.json")).unwrap();
+
+        let public_key = PUBLISHED_APP_SIGNING_PUBLIC_KEY;
+        assert!(list_installed_from_root_with_signing_key(home.path(), apps, public_key).is_err());
+        assert!(safe_app_file(&apps_root(home.path()).join("linked"), "app.json").is_none());
+
+        let app_dir = apps_root(home.path()).join("linked");
+        for name in [STORE_SIGNATURE_RECEIPT, STORE_SIGNATURE_ARTIFACT] {
+            let link = app_dir.join(name);
+            symlink(outside.path().join("app.json"), &link).unwrap();
+            assert!(
+                safe_app_file(&app_dir, name).is_none(),
+                "{name} symlink must be rejected"
+            );
+            std::fs::remove_file(link).unwrap();
+        }
     }
 
     #[test]

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../stores/app";
 import {
 	ensureStoreAppVerificationFresh,
+	invalidateInstalledApps,
 	loadInstalledApps,
 	removeInstalledApp,
 } from "../app-loader";
@@ -10,9 +11,13 @@ import {
 	appRegistry,
 	resolveAppToolTargetOrigin,
 	validateAppToolArgs,
+	validateAppToolParameters,
 } from "../app-registry";
 import { Logger } from "../logger";
-import { isModelFacingToolAllowed, makeModelToolBoundary } from "../model-facing-tools";
+import {
+	isModelFacingToolAllowed,
+	makeModelToolBoundary,
+} from "../model-facing-tools";
 
 // Mock Tauri invoke
 const mockInvoke = vi.fn();
@@ -33,10 +38,17 @@ const FakeCenterapp = () => null;
 
 describe("app-loader", () => {
 	let appsSnapshot: ReturnType<typeof appRegistry.list>;
+	let storage: Map<string, string>;
 
 	beforeEach(() => {
 		appsSnapshot = appRegistry.list();
 		mockInvoke.mockReset();
+		storage = new Map();
+		vi.stubGlobal("localStorage", {
+			getItem: (key: string) => storage.get(key) ?? null,
+			setItem: (key: string, value: string) => storage.set(key, value),
+			removeItem: (key: string) => storage.delete(key),
+		});
 		useAppStore.setState({ activeApp: null, activeAppContext: null });
 	});
 
@@ -49,6 +61,7 @@ describe("app-loader", () => {
 		}
 		useAppStore.setState({ activeApp: null, activeAppContext: null });
 		vi.clearAllMocks();
+		vi.unstubAllGlobals();
 	});
 
 	describe("loadInstalledApps", () => {
@@ -267,16 +280,15 @@ describe("app-loader", () => {
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
 					? Promise.resolve([
-						{
-							id: "store-trust-refresh",
-							name: "Store app",
-							store_signature_verified: true,
-							tools: [
-								{ name: "skill_store_refresh", description: "Refresh" },
-							],
-						},
-						],
-					)
+							{
+								id: "store-trust-refresh",
+								name: "Store app",
+								store_signature_verified: true,
+								tools: [
+									{ name: "skill_store_refresh", description: "Refresh" },
+								],
+							},
+						])
 					: Promise.resolve(true),
 			);
 			await loadInstalledApps();
@@ -287,16 +299,15 @@ describe("app-loader", () => {
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
 					? Promise.resolve([
-						{
-							id: "store-trust-refresh",
-							name: "Store app",
-							store_signature_verified: false,
-							tools: [
-								{ name: "skill_store_refresh", description: "Refresh" },
-							],
-						},
-						],
-					)
+							{
+								id: "store-trust-refresh",
+								name: "Store app",
+								store_signature_verified: false,
+								tools: [
+									{ name: "skill_store_refresh", description: "Refresh" },
+								],
+							},
+						])
 					: Promise.resolve(true),
 			);
 			await loadInstalledApps();
@@ -405,7 +416,9 @@ describe("app-loader", () => {
 			await loadInstalledApps();
 			const signed = appRegistry.get("signed-owner-test");
 			const unsigned = appRegistry.get("unsigned-squatter-test");
-			expect(signed?.tools?.map((tool) => tool.name)).toContain("skill_signed_unique");
+			expect(signed?.tools?.map((tool) => tool.name)).toContain(
+				"skill_signed_unique",
+			);
 			expect(unsigned?.tools?.map((tool) => tool.name)).toEqual([
 				"skill_signed_unique",
 			]);
@@ -427,10 +440,14 @@ describe("app-loader", () => {
 				},
 			];
 			mockInvoke.mockImplementation((command: string) =>
-				command === "app_list_installed" ? Promise.resolve(list) : Promise.resolve(true),
+				command === "app_list_installed"
+					? Promise.resolve(list)
+					: Promise.resolve(true),
 			);
 			await loadInstalledApps();
-			expect(appRegistry.get("refresh-tools-test")?.storeSignatureVerified).toBe(true);
+			expect(
+				appRegistry.get("refresh-tools-test")?.storeSignatureVerified,
+			).toBe(true);
 			list = [
 				{
 					id: "refresh-tools-test",
@@ -440,38 +457,200 @@ describe("app-loader", () => {
 				},
 			];
 			await loadInstalledApps();
-			expect(appRegistry.get("refresh-tools-test")?.storeSignatureVerified).toBe(false);
-			expect(appRegistry.get("refresh-tools-test")?.tools?.map((tool) => tool.name)).toEqual([
-				"skill_after_refresh",
-			]);
+			expect(
+				appRegistry.get("refresh-tools-test")?.storeSignatureVerified,
+			).toBe(false);
+			expect(
+				appRegistry.get("refresh-tools-test")?.tools?.map((tool) => tool.name),
+			).toEqual(["skill_after_refresh"]);
 			expect(isModelFacingToolAllowed("skill_after_refresh")).toBe(false);
 		});
 
-		it("revokes a signed app for explicit entitlement loss and preserves it offline", async () => {
-			const manifest = (id: string) => [{
-				id,
-				name: id,
-				store_signature_verified: true,
-				tools: [{ name: `skill_${id}`, description: id }],
-			}];
-			mockInvoke.mockImplementation((command: string, args: { appId?: string }) => {
-				if (command === "app_list_installed") return Promise.resolve(manifest("entitlement-denied-test"));
-				if (args.appId === "entitlement-denied-test") return Promise.resolve(false);
-				return Promise.reject(new Error("offline"));
-			});
-			await loadInstalledApps();
-			expect(appRegistry.get("entitlement-denied-test")?.storeSignatureVerified).toBe(false);
-
+		it("refreshes displayed app fields even when its tool declaration is unchanged", async () => {
+			let label = "Old label";
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
-					? Promise.resolve(manifest("entitlement-offline-test"))
+					? Promise.resolve([
+							{
+								id: "display-refresh-test",
+								name: label,
+								store_signature_verified: true,
+								store_signature_issued_at_ms: Date.now(),
+								tools: [{ name: "skill_display_refresh", description: "same" }],
+							},
+						])
+					: Promise.resolve(true),
+			);
+			await loadInstalledApps();
+			label = "New label";
+			await loadInstalledApps();
+			expect(appRegistry.get("display-refresh-test")?.name).toBe("New label");
+		});
+
+		it("revokes on denial, then promotes again when entitlement is re-granted on the next list", async () => {
+			let granted = false;
+			const listing = [
+				{
+					id: "entitlement-transition-test",
+					name: "Transition",
+					store_signature_verified: true,
+					store_signature_issued_at_ms: Date.now(),
+					tools: [
+						{ name: "skill_entitlement_transition", description: "Tool" },
+					],
+				},
+			];
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve(listing.map((app) => ({ ...app })))
+					: Promise.resolve(granted),
+			);
+			await loadInstalledApps();
+			expect(
+				appRegistry.get("entitlement-transition-test")?.storeSignatureVerified,
+			).toBe(false);
+			expect(appRegistry.get("entitlement-transition-test")?.tools).toEqual([]);
+			expect(isModelFacingToolAllowed("skill_entitlement_transition")).toBe(
+				false,
+			);
+			granted = true;
+			await loadInstalledApps();
+			expect(
+				appRegistry.get("entitlement-transition-test")?.storeSignatureVerified,
+			).toBe(true);
+			expect(
+				appRegistry
+					.get("entitlement-transition-test")
+					?.tools?.map((tool) => tool.name),
+			).toContain("skill_entitlement_transition");
+			useAppStore.getState().setActiveApp("entitlement-transition-test");
+			expect(isModelFacingToolAllowed("skill_entitlement_transition")).toBe(
+				true,
+			);
+		});
+
+		it("allows offline grace through 72 hours from receipt and blocks after it", async () => {
+			const now = Date.now();
+			const dateNow = vi.spyOn(Date, "now").mockReturnValue(now);
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve([
+							{
+								id: "grace-test",
+								name: "Grace",
+								store_signature_verified: true,
+								store_signature_issued_at_ms: now - 71 * 60 * 60 * 1000,
+							},
+						])
 					: Promise.reject(new Error("offline")),
 			);
 			await loadInstalledApps();
-			expect(appRegistry.get("entitlement-offline-test")?.storeSignatureVerified).toBe(true);
+			expect(appRegistry.get("grace-test")?.storeSignatureVerified).toBe(true);
+			dateNow.mockReturnValue(now + 73 * 60 * 60 * 1000);
+			await loadInstalledApps();
+			expect(appRegistry.get("grace-test")?.storeSignatureVerified).toBe(false);
+			dateNow.mockRestore();
 		});
 
-		it("rechecks one Store app in Rust after the 60 second dispatch window", async () => {
+		it("persists the last positive entitlement timestamp across a loader restart", async () => {
+			const now = Date.now();
+			let offline = false;
+			const listing = () => [
+				{
+					id: "persisted-grace-test",
+					name: "Persisted",
+					store_signature_verified: true,
+					store_signature_issued_at_ms: now - 100 * 60 * 60 * 1000,
+				},
+			];
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve(listing())
+					: offline
+						? Promise.reject(new Error("offline"))
+						: Promise.resolve(true),
+			);
+			await loadInstalledApps();
+			const saved = JSON.parse(
+				storage.get("naia.store.entitlement.last-granted.v1") ?? "{}",
+			);
+			expect(saved["persisted-grace-test"]).toBe(now);
+			invalidateInstalledApps();
+			offline = true;
+			const dateNow = vi
+				.spyOn(Date, "now")
+				.mockReturnValue(now + 71 * 60 * 60 * 1000);
+			await loadInstalledApps();
+			expect(
+				appRegistry.get("persisted-grace-test")?.storeSignatureVerified,
+			).toBe(true);
+			dateNow.mockRestore();
+		});
+
+		it("applies the same bounded grace to entitlement timeouts", async () => {
+			vi.useFakeTimers();
+			const issuedAt = Date.now();
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve([
+							{
+								id: "timeout-grace-test",
+								name: "Timeout",
+								store_signature_verified: true,
+								store_signature_issued_at_ms: issuedAt,
+							},
+						])
+					: new Promise(() => {}),
+			);
+			const loading = loadInstalledApps();
+			await vi.advanceTimersByTimeAsync(2_001);
+			await loading;
+			expect(
+				appRegistry.get("timeout-grace-test")?.storeSignatureVerified,
+			).toBe(true);
+			vi.useRealTimers();
+		});
+
+		it("revokes a signed app for explicit entitlement loss and blocks offline without a valid grace start", async () => {
+			const manifest = (id: string) => [
+				{
+					id,
+					name: id,
+					store_signature_verified: true,
+					tools: [{ name: `skill_${id}`, description: id }],
+				},
+			];
+			mockInvoke.mockImplementation(
+				(command: string, args: { appId?: string }) => {
+					if (command === "app_list_installed")
+						return Promise.resolve(manifest("entitlement-denied-test"));
+					if (args.appId === "entitlement-denied-test")
+						return Promise.resolve(false);
+					return Promise.reject(new Error("offline"));
+				},
+			);
+			await loadInstalledApps();
+			expect(
+				appRegistry.get("entitlement-denied-test")?.storeSignatureVerified,
+			).toBe(false);
+
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve([
+							{
+								...manifest("entitlement-offline-test")[0],
+								store_signature_issued_at_ms: Date.now() - 73 * 60 * 60 * 1000,
+							},
+						])
+					: Promise.reject(new Error("offline")),
+			);
+			await loadInstalledApps();
+			expect(
+				appRegistry.get("entitlement-offline-test")?.storeSignatureVerified,
+			).toBe(false);
+		});
+
+		it("rechecks one Store app in Rust and the entitlement after the ten-minute dispatch window", async () => {
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
 					? Promise.resolve([
@@ -479,59 +658,119 @@ describe("app-loader", () => {
 								id: "dispatch-refresh-test",
 								name: "Dispatch refresh",
 								store_signature_verified: true,
-								tools: [{ name: "skill_dispatch_refresh", description: "Tool" }],
+								tools: [
+									{ name: "skill_dispatch_refresh", description: "Tool" },
+								],
 							},
 						])
 					: Promise.resolve(true),
 			);
 			await loadInstalledApps();
 			const now = Date.now();
-			const dateNow = vi.spyOn(Date, "now").mockReturnValue(now + 61_000);
+			const dateNow = vi
+				.spyOn(Date, "now")
+				.mockReturnValue(now + 10 * 60_000 + 1);
 			mockInvoke.mockImplementation((command: string) =>
-				command === "app_verify_installed_store_app" ? Promise.resolve(false) : Promise.resolve(true),
+				command === "app_verify_installed_store_app"
+					? Promise.resolve(false)
+					: Promise.resolve(true),
 			);
 			try {
-				expect(await ensureStoreAppVerificationFresh("dispatch-refresh-test")).toBe(false);
-				expect(mockInvoke).toHaveBeenCalledWith("app_verify_installed_store_app", {
-					appId: "dispatch-refresh-test",
-				});
-				expect(appRegistry.get("dispatch-refresh-test")?.storeSignatureVerified).toBe(false);
+				expect(
+					await ensureStoreAppVerificationFresh("dispatch-refresh-test"),
+				).toBe(false);
+				expect(mockInvoke).toHaveBeenCalledWith(
+					"app_verify_installed_store_app",
+					{
+						appId: "dispatch-refresh-test",
+					},
+				);
+				expect(
+					appRegistry.get("dispatch-refresh-test")?.storeSignatureVerified,
+				).toBe(false);
 			} finally {
 				dateNow.mockRestore();
 			}
 		});
 
+		it("blocks execution and downgrades the tool when entitlement is denied at dispatch", async () => {
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve([
+							{
+								id: "dispatch-entitlement-denied",
+								name: "Dispatch denial",
+								store_signature_verified: true,
+								store_signature_issued_at_ms: Date.now(),
+								tools: [
+									{ name: "skill_dispatch_entitlement", description: "Tool" },
+								],
+							},
+						])
+					: Promise.resolve(true),
+			);
+			await loadInstalledApps();
+			vi.spyOn(Date, "now").mockReturnValue(Date.now() + 10 * 60_000 + 1);
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_verify_installed_store_app"
+					? Promise.resolve(true)
+					: Promise.resolve(false),
+			);
+			expect(
+				await ensureStoreAppVerificationFresh("dispatch-entitlement-denied"),
+			).toBe(false);
+			expect(
+				appRegistry.get("dispatch-entitlement-denied")?.storeSignatureVerified,
+			).toBe(false);
+			vi.restoreAllMocks();
+		});
+
 		it("connects Rust list output through loader, model boundary, and deletion", async () => {
-			mockInvoke.mockImplementation((command: string, args: { appId?: string }) => {
-				if (command === "app_list_installed") {
-					return Promise.resolve([
-						{
-							id: "integration-store-test",
-							name: "Integration Store",
-							store_signature_verified: true,
-							tools: [{ name: "skill_integration_store", description: "Signed" }],
-						},
-						{
-							id: "integration-squatter-test",
-							name: "Unsigned",
-							tools: [{ name: "skill_integration_store", description: "Squat" }],
-						},
-					]);
-				}
-				if (command === "app_store_has_entitlement") return Promise.resolve(true);
-				if (command === "app_remove_installed" && args.appId === "integration-store-test") return Promise.resolve();
-				return Promise.resolve(false);
-			});
+			mockInvoke.mockImplementation(
+				(command: string, args: { appId?: string }) => {
+					if (command === "app_list_installed") {
+						return Promise.resolve([
+							{
+								id: "integration-store-test",
+								name: "Integration Store",
+								store_signature_verified: true,
+								tools: [
+									{ name: "skill_integration_store", description: "Signed" },
+								],
+							},
+							{
+								id: "integration-squatter-test",
+								name: "Unsigned",
+								tools: [
+									{ name: "skill_integration_store", description: "Squat" },
+								],
+							},
+						]);
+					}
+					if (command === "app_store_has_entitlement")
+						return Promise.resolve(true);
+					if (
+						command === "app_remove_installed" &&
+						args.appId === "integration-store-test"
+					)
+						return Promise.resolve();
+					return Promise.resolve(false);
+				},
+			);
 			await loadInstalledApps();
 			useAppStore.getState().setActiveApp("integration-store-test");
-			const boundary = makeModelToolBoundary({ fetchTools: async () => [{ name: "skill_integration_store" }] });
+			const boundary = makeModelToolBoundary({
+				fetchTools: async () => [{ name: "skill_integration_store" }],
+			});
 			expect((await boundary.resolve()).disabledSkills).toEqual([]);
 			expect(appRegistry.get("integration-squatter-test")?.tools).toEqual([
 				{ name: "skill_integration_store", description: "Squat" },
 			]);
 			await removeInstalledApp("integration-store-test");
 			expect(isModelFacingToolAllowed("skill_integration_store")).toBe(false);
-			expect(mockInvoke).toHaveBeenCalledWith("app_remove_installed", { appId: "integration-store-test" });
+			expect(mockInvoke).toHaveBeenCalledWith("app_remove_installed", {
+				appId: "integration-store-test",
+			});
 		});
 	});
 
@@ -624,12 +863,31 @@ describe("app-loader", () => {
 });
 
 describe("app tool IPC argument guard", () => {
+	it("checks declared required parameters and top-level value types", () => {
+		const tool = {
+			name: "skill_schema_test",
+			description: "Schema",
+			parameters: {
+				type: "object" as const,
+				required: ["query"],
+				properties: { query: { type: "string" }, limit: { type: "integer" } },
+			},
+		};
+		expect(validateAppToolParameters(tool, {})).toContain("required");
+		expect(validateAppToolParameters(tool, { query: 2 })).toContain("type");
+		expect(
+			validateAppToolParameters(tool, { query: "search", limit: 2 }),
+		).toBeNull();
+	});
+
 	it("accepts plain JSON objects and rejects invalid or oversized arguments", async () => {
 		expect(validateAppToolArgs({ answer: 42 })).toBeNull();
 		expect(validateAppToolArgs(null)).toContain("JSON object");
 		expect(validateAppToolArgs([1, 2])).toContain("JSON object");
 		expect(validateAppToolArgs(new Date())).toContain("plain JSON object");
-		expect(validateAppToolArgs({ value: "x".repeat(65 * 1024) })).toContain("64 KB");
+		expect(validateAppToolArgs({ value: "x".repeat(65 * 1024) })).toContain(
+			"64 KB",
+		);
 		const cyclic: Record<string, unknown> = {};
 		cyclic.self = cyclic;
 		expect(validateAppToolArgs(cyclic)).toContain("serializable");
@@ -644,7 +902,9 @@ describe("app tool IPC argument guard", () => {
 	});
 
 	it("stops target-origin parsing failures instead of using wildcard", () => {
-		expect(resolveAppToolTargetOrigin("https://apps.example.test/index.html")).toBe("https://apps.example.test");
+		expect(
+			resolveAppToolTargetOrigin("https://apps.example.test/index.html"),
+		).toBe("https://apps.example.test");
 		expect(resolveAppToolTargetOrigin("not a url")).toBeNull();
 		expect(resolveAppToolTargetOrigin("data:text/html,hello")).toBeNull();
 	});

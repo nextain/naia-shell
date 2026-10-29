@@ -22,7 +22,7 @@ import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
 } from "../lib/ai-interference";
-import { appRegistry } from "../lib/app-registry";
+import { appRegistry, validateAppToolParameters } from "../lib/app-registry";
 import { writeAppSandboxFile } from "../lib/app-sandbox";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
@@ -2324,13 +2324,21 @@ export function ChatArea({
 		// boundary even for tools that do not expose a streaming tool-call row.
 		useChatStore.getState().markStreamingToolBoundary();
 		if (!isModelFacingToolAllowed(req.toolName)) {
+			const unavailableStoreApp = appRegistry.list().find(
+				(app) =>
+					app.source === "installed" &&
+					(app.tools?.some((tool) => tool.name === req.toolName) ||
+						app.revokedStoreToolNames?.includes(req.toolName)),
+			);
 			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
 				tool: req.toolName,
 			});
 			void sendAppToolResult(
 				req.requestId,
 				req.toolCallId,
-				unavailableModelToolMessage(req.toolName),
+				unavailableStoreApp
+					? `Store app 권리를 확인할 수 없습니다. 인터넷에 연결한 뒤 다시 시도해 주세요.`
+					: unavailableModelToolMessage(req.toolName),
 				false,
 				req.activityId,
 			);
@@ -2352,7 +2360,7 @@ export function ChatArea({
 				void sendAppToolResult(
 					req.requestId,
 					req.toolCallId,
-					`Tool is not available: ${req.toolName}. 앱을 먼저 여세요.`,
+					`Tool is not available: ${req.toolName}. 권리 확인에 실패했거나 권리가 만료되었습니다. 인터넷에 연결한 뒤 다시 시도해 주세요.`,
 					false,
 					req.activityId,
 				);
@@ -2468,6 +2476,17 @@ export function ChatArea({
 			});
 		}
 		const bridge = ownerApp ? getBridgeForApp(ownerApp.id) : activeBridge;
+		const declaredTool = ownerApp?.tools?.find((tool) => tool.name === req.toolName);
+		const parameterError = validateAppToolParameters(declaredTool, req.args);
+		if (parameterError) {
+			Logger.warn("ChatArea", "blocked app tool with invalid declared parameters", {
+				appId: ownerApp?.id,
+				tool: req.toolName,
+				error: parameterError,
+			});
+			void sendAppToolResult(req.requestId, req.toolCallId, parameterError, false, req.activityId);
+			return;
+		}
 		Logger.info("ChatArea", "app_tool_call dispatch", {
 			tool: req.toolName,
 			owner: ownerApp?.id ?? "(none→activeBridge)",
