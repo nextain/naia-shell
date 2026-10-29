@@ -58,6 +58,15 @@ export function preselectProjectAgentIfUnset(
 let availabilityRequest: Promise<void> | null = null;
 
 const MAX_PROJECT_AGENT_QUEUED_INPUT_BYTES = 64 * 1024;
+// Fixed ownership/path/availability validation codes cannot change by polling.
+const PERMANENT_PROJECT_AGENT_ATTACH_ERRORS = new Set([
+	"repository_invalid",
+	"checkout_unsafe",
+	"project_unverified",
+	"agent_unavailable",
+	"agent_invalid",
+	"session_mismatch",
+]);
 
 interface ProjectAgentInputChunk {
 	data: string;
@@ -672,7 +681,7 @@ export async function waitForProjectAgentStopped(
 	options?: { timeoutMs?: number; intervalMs?: number },
 ): Promise<boolean | "unknown"> {
 	const timeoutMs = options?.timeoutMs ?? 5000;
-	const intervalMs = options?.intervalMs ?? 200;
+	const intervalMs = Math.max(50, options?.intervalMs ?? 200);
 	const deadline = Date.now() + timeoutMs;
 	Logger.debug(
 		"ProjectAgentRuntime",
@@ -710,6 +719,17 @@ export async function waitForProjectAgentStopped(
 			if (mapped.code === "session_missing") {
 				setState(projectPath, { status: "idle", ptyId: null, error: null });
 				return true;
+			}
+			if (PERMANENT_PROJECT_AGENT_ATTACH_ERRORS.has(mapped.code)) {
+				if (stateFor(projectPath).status === "stopping") {
+					setState(projectPath, { status: "running" });
+				}
+				Logger.warn(
+					"ProjectAgentRuntime",
+					"project PTY stop status could not be checked",
+					{ appId, code: mapped.code },
+				);
+				return "unknown";
 			}
 			if (Date.now() >= deadline) {
 				if (stateFor(projectPath).status === "stopping") {

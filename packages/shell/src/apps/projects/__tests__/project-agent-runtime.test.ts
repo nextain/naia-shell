@@ -143,12 +143,61 @@ describe("project agent runtime ownership", () => {
 			"opencode",
 			{
 				timeoutMs: 100,
-				intervalMs: 10,
+				intervalMs: 50,
 			},
 		);
-		await vi.advanceTimersByTimeAsync(10);
+		await vi.advanceTimersByTimeAsync(50);
 		await expect(stopped).resolves.toBe(true);
 		expect(attachAttempts).toBe(2);
+	});
+
+	it("clamps PTY status polling intervals to at least 50ms", async () => {
+		vi.useFakeTimers();
+		let attachAttempts = 0;
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_attach") {
+				attachAttempts += 1;
+				if (attachAttempts === 1) throw new Error("ipc_unavailable");
+				return { running: false };
+			}
+			return null;
+		});
+
+		const stopped = waitForProjectAgentStopped(
+			projectA,
+			adapterRoot,
+			"opencode",
+			{ timeoutMs: 200, intervalMs: 0 },
+		);
+		await vi.advanceTimersByTimeAsync(49);
+		expect(attachAttempts).toBe(1);
+		await vi.advanceTimersByTimeAsync(1);
+		await expect(stopped).resolves.toBe(true);
+		expect(attachAttempts).toBe(2);
+	});
+
+	it("returns unknown immediately for permanent PTY attach errors", async () => {
+		vi.useFakeTimers();
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_attach") {
+				throw new Error("agent_invalid");
+			}
+			return null;
+		});
+
+		await expect(
+			waitForProjectAgentStopped(projectA, adapterRoot, "opencode", {
+				timeoutMs: 5000,
+				intervalMs: 50,
+			}),
+		).resolves.toBe("unknown");
+		expect(
+			vi
+				.mocked(invoke)
+				.mock.calls.filter(
+					([command]) => command === "project_agent_pty_attach",
+				),
+		).toHaveLength(1);
 	});
 
 	it("restores running when repeated PTY attach errors make status unknown", async () => {
@@ -170,10 +219,10 @@ describe("project agent runtime ownership", () => {
 			"opencode",
 			{
 				timeoutMs: 25,
-				intervalMs: 10,
+				intervalMs: 50,
 			},
 		);
-		await vi.advanceTimersByTimeAsync(30);
+		await vi.advanceTimersByTimeAsync(51);
 		await expect(status).resolves.toBe("unknown");
 		expect(getProjectAgentState(projectA).status).toBe("running");
 	});
@@ -192,11 +241,11 @@ describe("project agent runtime ownership", () => {
 			adapterRoot,
 			"opencode",
 			{
-				timeoutMs: 20,
-				intervalMs: 5,
+				timeoutMs: 200,
+				intervalMs: 50,
 			},
 		);
-		await vi.advanceTimersByTimeAsync(21);
+		await vi.advanceTimersByTimeAsync(201);
 		await expect(status).resolves.toBe("unknown");
 		expect(
 			vi

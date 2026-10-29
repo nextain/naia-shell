@@ -455,7 +455,7 @@ fn read_project(
     project_file: &Path,
 ) -> Result<CatalogProject, ProjectReadError> {
     crate::log_verbose("[project_catalog::read_project] enter project_metadata_supplied=true");
-    let yaml = read_yaml(root, project_dir, project_file)?;
+    let (yaml, yaml_source) = read_yaml(root, project_dir, project_file)?;
     let Some(mapping) = yaml.as_mapping() else {
         return Err(ProjectReadError::Issue("invalid_yaml"));
     };
@@ -477,16 +477,13 @@ fn read_project(
     }
     crate::log_verbose("[project_catalog::read_project] branch=project_metadata_read");
     let raw_repository = value_string(project_mapping, &["repository"]);
-    let checkout_resolution = resolve_checkout_from_parts(
-        adapter_root,
-        &canonical_project,
-        raw_repository.as_deref(),
-    );
+    let checkout_resolution =
+        resolve_checkout_from_parts(adapter_root, &canonical_project, raw_repository.as_deref());
     let checkout_path = match &checkout_resolution {
         Ok(resolved) => Some(resolved.checkout_path.as_path()),
         Err(_) => None,
     };
-    let mut fields = parse_project_catalog_fields(project_mapping, checkout_path);
+    let mut fields = parse_project_catalog_fields(project_mapping, checkout_path, &yaml_source);
     if matches!(&checkout_resolution, Err(err) if err == "checkout_unsafe" || err == "repository_invalid")
         && raw_repository.is_some()
     {
@@ -552,9 +549,14 @@ enum ProjectReadError {
     Oversized { observed_bytes: usize },
 }
 
-fn read_yaml(root: &Path, project_dir: &Path, path: &Path) -> Result<YamlValue, ProjectReadError> {
+fn read_yaml(
+    root: &Path,
+    project_dir: &Path,
+    path: &Path,
+) -> Result<(YamlValue, String), ProjectReadError> {
     let text = read_confined(root, project_dir, path)?;
-    serde_yaml::from_str(&text).map_err(|_| ProjectReadError::Issue("invalid_yaml"))
+    let value = serde_yaml::from_str(&text).map_err(|_| ProjectReadError::Issue("invalid_yaml"))?;
+    Ok((value, text))
 }
 
 fn read_confined(root: &Path, project_dir: &Path, path: &Path) -> Result<String, ProjectReadError> {
