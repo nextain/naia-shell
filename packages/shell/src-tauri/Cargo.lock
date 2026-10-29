@@ -3363,6 +3363,8 @@ dependencies = [
  "ureq",
  "url",
  "webkit2gtk",
+ "webview2-com",
+ "windows 0.61.3",
  "windows-sys 0.59.0",
  "x11rb",
  "zeroize",
