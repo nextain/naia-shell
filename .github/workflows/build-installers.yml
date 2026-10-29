@@ -205,7 +205,7 @@ jobs:
           CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
           ORIGINAL_KEYCHAINS_PATH="$RUNNER_TEMP/naia-original-keychains.txt"
-          security list-keychains -d user | sed 's/^"//; s/"$//' > "$ORIGINAL_KEYCHAINS_PATH"
+          security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' > "$ORIGINAL_KEYCHAINS_PATH"
           chmod 600 "$ORIGINAL_KEYCHAINS_PATH"
           echo "MACOS_ORIGINAL_KEYCHAINS_PATH=$ORIGINAL_KEYCHAINS_PATH" >> "$GITHUB_ENV"
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
@@ -213,8 +213,10 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          mapfile -t ORIGINAL_KEYCHAINS < "$ORIGINAL_KEYCHAINS_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" "${ORIGINAL_KEYCHAINS[@]}"
+          # macOS bash 3.2 has no mapfile.
+          ORIGINAL_KEYCHAINS=()
+          while IFS= read -r keychain; do if [ -n "$keychain" ]; then ORIGINAL_KEYCHAINS+=("$keychain"); fi; done < "$ORIGINAL_KEYCHAINS_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" ${ORIGINAL_KEYCHAINS[@]+"${ORIGINAL_KEYCHAINS[@]}"}
           # `security import` only accepts a PKCS#12 password through -P; it has no stdin option.
           security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
@@ -450,7 +452,9 @@ jobs:
             "$RUNNER_TEMP/Naia-dmg-notary-result.json" "$RUNNER_TEMP/Naia-dmg-notary-log.txt" \
             "$RUNNER_TEMP/Naia-dmg-notary-error.txt"
           if [ -n "${MACOS_ORIGINAL_KEYCHAINS_PATH:-}" ] && [ -f "$MACOS_ORIGINAL_KEYCHAINS_PATH" ]; then
-            mapfile -t ORIGINAL_KEYCHAINS < "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+            # macOS bash 3.2 has no mapfile.
+            ORIGINAL_KEYCHAINS=()
+            while IFS= read -r keychain; do if [ -n "$keychain" ]; then ORIGINAL_KEYCHAINS+=("$keychain"); fi; done < "$MACOS_ORIGINAL_KEYCHAINS_PATH"
             if [ "${#ORIGINAL_KEYCHAINS[@]}" -gt 0 ]; then security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}"; fi
             rm -f "$MACOS_ORIGINAL_KEYCHAINS_PATH"
           fi
@@ -1004,7 +1008,7 @@ jobs:
           CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
           ORIGINAL_KEYCHAINS_PATH="$RUNNER_TEMP/naia-original-keychains.txt"
-          security list-keychains -d user | sed 's/^"//; s/"$//' > "$ORIGINAL_KEYCHAINS_PATH"
+          security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' > "$ORIGINAL_KEYCHAINS_PATH"
           chmod 600 "$ORIGINAL_KEYCHAINS_PATH"
           echo "MACOS_ORIGINAL_KEYCHAINS_PATH=$ORIGINAL_KEYCHAINS_PATH" >> "$GITHUB_ENV"
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
@@ -1012,8 +1016,10 @@ jobs:
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          mapfile -t ORIGINAL_KEYCHAINS < "$ORIGINAL_KEYCHAINS_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" "${ORIGINAL_KEYCHAINS[@]}"
+          # macOS bash 3.2 has no mapfile.
+          ORIGINAL_KEYCHAINS=()
+          while IFS= read -r keychain; do if [ -n "$keychain" ]; then ORIGINAL_KEYCHAINS+=("$keychain"); fi; done < "$ORIGINAL_KEYCHAINS_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" ${ORIGINAL_KEYCHAINS[@]+"${ORIGINAL_KEYCHAINS[@]}"}
           # `security import` only accepts a PKCS#12 password through -P; it has no stdin option.
           security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
@@ -1104,7 +1110,9 @@ jobs:
             "$RUNNER_TEMP/Naia-universal-notarization.zip" "$RUNNER_TEMP/Naia-universal-notary-result.json" \
             "$RUNNER_TEMP/Naia-universal-notary-log.txt" "$RUNNER_TEMP/Naia-universal-notary-error.txt"
           if [ -n "${MACOS_ORIGINAL_KEYCHAINS_PATH:-}" ] && [ -f "$MACOS_ORIGINAL_KEYCHAINS_PATH" ]; then
-            mapfile -t ORIGINAL_KEYCHAINS < "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+            # macOS bash 3.2 has no mapfile.
+            ORIGINAL_KEYCHAINS=()
+            while IFS= read -r keychain; do if [ -n "$keychain" ]; then ORIGINAL_KEYCHAINS+=("$keychain"); fi; done < "$MACOS_ORIGINAL_KEYCHAINS_PATH"
             if [ "${#ORIGINAL_KEYCHAINS[@]}" -gt 0 ]; then security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}"; fi
             rm -f "$MACOS_ORIGINAL_KEYCHAINS_PATH"
           fi
