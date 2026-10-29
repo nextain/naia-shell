@@ -253,7 +253,23 @@ jobs:
           APPLE_CERTIFICATE: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
           APPLE_CERTIFICATE_PASSWORD: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
           APPLE_SIGNING_IDENTITY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-        run: env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json
+        run: |
+          set -euo pipefail
+          LOG_FILE="$RUNNER_TEMP/tauri-macos-app-bundle.log"
+          for attempt in 1 2 3; do
+            if env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json >"$LOG_FILE" 2>&1; then
+              cat "$LOG_FILE"
+              exit 0
+            else
+              BUNDLE_EXIT=$?
+            fi
+            cat "$LOG_FILE"
+            if ! grep -Fq "A timestamp was expected but was not found." "$LOG_FILE" || [ "$attempt" -eq 3 ]; then
+              exit "$BUNDLE_EXIT"
+            fi
+            echo "Tauri app bundle timestamp failure; retrying ($((attempt + 1))/3) in 30 seconds."
+            sleep 30
+          done
 
       - name: Sign every macOS app Mach-O with hardened runtime
         if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
@@ -267,21 +283,40 @@ jobs:
           test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
           APP="${APP_PATHS[0]}"
           ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
+          codesign_with_timestamp_retry() {
+            local attempt=1
+            local log_file="$RUNNER_TEMP/codesign-timestamp-retry.log"
+            while [ "$attempt" -le 3 ]; do
+              if codesign "$@" >"$log_file" 2>&1; then
+                cat "$log_file"
+                return 0
+              else
+                local sign_exit=$?
+              fi
+              cat "$log_file"
+              if ! grep -Fq "A timestamp was expected but was not found." "$log_file" || [ "$attempt" -eq 3 ]; then
+                return "$sign_exit"
+              fi
+              echo "codesign timestamp failure; retrying ($((attempt + 1))/3) in 30 seconds."
+              sleep 30
+              attempt=$((attempt + 1))
+            done
+          }
           SIGNED=0
           while IFS= read -r -d '' path; do
             if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
             SIGNED=$((SIGNED + 1))
             if [[ "$path" == "$APP/Contents/Resources/node" ]]; then
-              codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
+              codesign_with_timestamp_retry --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
             else
-              codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
+              codesign_with_timestamp_retry --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
             fi
           # NUL-delimited to match read -d ''; reverse lexical order signs deeper paths first.
           done < <(find "$APP/Contents" -type f -print0 | LC_ALL=C sort -rz)
           # The app binary, node and the agent's native modules are all nested Mach-O files.
           test "$SIGNED" -gt 2
           echo "signed nested Mach-O files: $SIGNED"
-          codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          codesign_with_timestamp_retry --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Notarize and staple macOS app
@@ -296,20 +331,82 @@ jobs:
           NOTARY_RESULT="$RUNNER_TEMP/Naia-app-notary-result.json"
           NOTARY_LOG="$RUNNER_TEMP/Naia-app-notary-log.txt"
           NOTARY_ERROR="$RUNNER_TEMP/Naia-app-notary-error.txt"
-          NOTARY_EXIT=0
-          xcrun notarytool submit "$ZIP" --wait --output-format json \
-            --key "$APPLE_API_KEY_PATH" \
-            --key-id "$APPLE_API_KEY" \
-            --issuer "$APPLE_API_ISSUER" > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
-          NOTARY_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
-          if [ "$NOTARY_EXIT" -ne 0 ] || [ "$NOTARY_STATUS" != "Accepted" ]; then
-            NOTARY_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+          NOTARY_INFO="$RUNNER_TEMP/Naia-app-notary-info.json"
+          NOTARY_INFO_ERROR="$RUNNER_TEMP/Naia-app-notary-info-error.txt"
+          notary_status() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$1" 2>/dev/null || true; }
+          notary_id() {
+            local id
+            id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$id" ]; then printf '%s\n' "$id"; return; fi
+            # Apple submission IDs are UUIDs; scan both captured streams when JSON is absent.
+            { cat "$NOTARY_RESULT" 2>/dev/null || true; cat "$NOTARY_ERROR" 2>/dev/null || true; } | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n 1 || true
+          }
+          redact_file() {
+            python3 - "$1" "$2" <<'PY'
+          import os, sys
+          path, label = sys.argv[1:]
+          try:
+              value = open(path, encoding="utf-8", errors="replace").read()
+          except OSError:
+              value = "<file unavailable>"
+          for secret_name in ("APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8"):
+              secret = os.environ.get(secret_name, "")
+              if secret:
+                  value = value.replace(secret, "[REDACTED]")
+          print(f"--- {label} ---")
+          print(value if value else "<empty>")
+          PY
+          }
+          accepted_from_info() {
+            local submission_id="$1"
+            local poll
+            for poll in 1 2 3 4 5 6 7 8 9 10; do
+              : > "$NOTARY_INFO"
+              : > "$NOTARY_INFO_ERROR"
+              xcrun notarytool info "$submission_id" --output-format json \
+                --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+                > "$NOTARY_INFO" 2> "$NOTARY_INFO_ERROR" || true
+              INFO_STATUS="$(notary_status "$NOTARY_INFO")"
+              if [ "$INFO_STATUS" = "Accepted" ]; then return 0; fi
+              if [ "$INFO_STATUS" = "Invalid" ] || [ "$INFO_STATUS" = "Rejected" ]; then return 1; fi
+              if [ "$poll" -lt 10 ]; then sleep 30; fi
+            done
+            return 1
+          }
+          NOTARY_ACCEPTED=0
+          for submit_attempt in 1 2; do
+            : > "$NOTARY_RESULT"
+            : > "$NOTARY_ERROR"
+            NOTARY_EXIT=0
+            xcrun notarytool submit "$ZIP" --wait --timeout 45m --output-format json \
+              --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+            NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
+            if [ "$NOTARY_STATUS" = "Accepted" ]; then NOTARY_ACCEPTED=1; break; fi
+            NOTARY_ID="$(notary_id)"
             if [ -n "$NOTARY_ID" ]; then
+              echo "Notarization submission $NOTARY_ID is not yet Accepted; polling notarytool info (up to 5 minutes)."
+              if accepted_from_info "$NOTARY_ID"; then NOTARY_ACCEPTED=1; break; fi
+              NOTARY_STATUS="${INFO_STATUS:-$NOTARY_STATUS}"
+              break
+            fi
+            if [ "$submit_attempt" -eq 1 ] && { grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_ERROR" || grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_RESULT"; }; then
+              echo "Transient notarytool submit network error; retrying once."
+              continue
+            fi
+            break
+          done
+          if [ "$NOTARY_ACCEPTED" -ne 1 ]; then
+            redact_file "$NOTARY_ERROR" "notarytool stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_RESULT" "notarytool submit output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO_ERROR" "notarytool info stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO" "last notarytool info output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            if [ -n "${NOTARY_ID:-}" ]; then
               xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
                 --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
-              cat "$NOTARY_LOG"
+              redact_file "$NOTARY_LOG" "notarytool log"
             fi
-            echo "App notarization failed (status: ${NOTARY_STATUS:-unavailable})."
+            echo "App notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
             exit 1
           fi
           xcrun stapler staple "${APP_PATHS[0]}"
@@ -393,20 +490,80 @@ jobs:
           NOTARY_RESULT="$RUNNER_TEMP/Naia-dmg-notary-result.json"
           NOTARY_LOG="$RUNNER_TEMP/Naia-dmg-notary-log.txt"
           NOTARY_ERROR="$RUNNER_TEMP/Naia-dmg-notary-error.txt"
-          NOTARY_EXIT=0
-          xcrun notarytool submit "${DMG_PATHS[0]}" --wait --output-format json \
-            --key "$APPLE_API_KEY_PATH" \
-            --key-id "$APPLE_API_KEY" \
-            --issuer "$APPLE_API_ISSUER" > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
-          NOTARY_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
-          if [ "$NOTARY_EXIT" -ne 0 ] || [ "$NOTARY_STATUS" != "Accepted" ]; then
-            NOTARY_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+          NOTARY_INFO="$RUNNER_TEMP/Naia-dmg-notary-info.json"
+          NOTARY_INFO_ERROR="$RUNNER_TEMP/Naia-dmg-notary-info-error.txt"
+          notary_status() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$1" 2>/dev/null || true; }
+          notary_id() {
+            local id
+            id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$id" ]; then printf '%s\n' "$id"; return; fi
+            { cat "$NOTARY_RESULT" 2>/dev/null || true; cat "$NOTARY_ERROR" 2>/dev/null || true; } | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n 1 || true
+          }
+          redact_file() {
+            python3 - "$1" "$2" <<'PY'
+          import os, sys
+          path, label = sys.argv[1:]
+          try:
+              value = open(path, encoding="utf-8", errors="replace").read()
+          except OSError:
+              value = "<file unavailable>"
+          for secret_name in ("APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8"):
+              secret = os.environ.get(secret_name, "")
+              if secret:
+                  value = value.replace(secret, "[REDACTED]")
+          print(f"--- {label} ---")
+          print(value if value else "<empty>")
+          PY
+          }
+          accepted_from_info() {
+            local submission_id="$1" poll
+            for poll in 1 2 3 4 5 6 7 8 9 10; do
+              : > "$NOTARY_INFO"
+              : > "$NOTARY_INFO_ERROR"
+              xcrun notarytool info "$submission_id" --output-format json \
+                --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+                > "$NOTARY_INFO" 2> "$NOTARY_INFO_ERROR" || true
+              INFO_STATUS="$(notary_status "$NOTARY_INFO")"
+              if [ "$INFO_STATUS" = "Accepted" ]; then return 0; fi
+              if [ "$INFO_STATUS" = "Invalid" ] || [ "$INFO_STATUS" = "Rejected" ]; then return 1; fi
+              if [ "$poll" -lt 10 ]; then sleep 30; fi
+            done
+            return 1
+          }
+          NOTARY_ACCEPTED=0
+          for submit_attempt in 1 2; do
+            : > "$NOTARY_RESULT"
+            : > "$NOTARY_ERROR"
+            NOTARY_EXIT=0
+            xcrun notarytool submit "${DMG_PATHS[0]}" --wait --timeout 45m --output-format json \
+              --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+            NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
+            if [ "$NOTARY_STATUS" = "Accepted" ]; then NOTARY_ACCEPTED=1; break; fi
+            NOTARY_ID="$(notary_id)"
             if [ -n "$NOTARY_ID" ]; then
+              echo "Notarization submission $NOTARY_ID is not yet Accepted; polling notarytool info (up to 5 minutes)."
+              if accepted_from_info "$NOTARY_ID"; then NOTARY_ACCEPTED=1; break; fi
+              NOTARY_STATUS="${INFO_STATUS:-$NOTARY_STATUS}"
+              break
+            fi
+            if [ "$submit_attempt" -eq 1 ] && { grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_ERROR" || grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_RESULT"; }; then
+              echo "Transient notarytool submit network error; retrying once."
+              continue
+            fi
+            break
+          done
+          if [ "$NOTARY_ACCEPTED" -ne 1 ]; then
+            redact_file "$NOTARY_ERROR" "notarytool stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_RESULT" "notarytool submit output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO_ERROR" "notarytool info stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO" "last notarytool info output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            if [ -n "${NOTARY_ID:-}" ]; then
               xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
                 --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
-              cat "$NOTARY_LOG"
+              redact_file "$NOTARY_LOG" "notarytool log"
             fi
-            echo "DMG notarization failed (status: ${NOTARY_STATUS:-unavailable})."
+            echo "DMG notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
             exit 1
           fi
           xcrun stapler staple "${DMG_PATHS[0]}"
@@ -448,8 +605,10 @@ jobs:
           rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" \
             "$RUNNER_TEMP/Naia-app-notarization.zip" "$RUNNER_TEMP/Naia-app-notary-result.json" \
             "$RUNNER_TEMP/Naia-app-notary-log.txt" "$RUNNER_TEMP/Naia-app-notary-error.txt" \
+            "$RUNNER_TEMP/Naia-app-notary-info.json" "$RUNNER_TEMP/Naia-app-notary-info-error.txt" \
             "$RUNNER_TEMP/Naia-dmg-notary-result.json" "$RUNNER_TEMP/Naia-dmg-notary-log.txt" \
-            "$RUNNER_TEMP/Naia-dmg-notary-error.txt"
+            "$RUNNER_TEMP/Naia-dmg-notary-error.txt" "$RUNNER_TEMP/Naia-dmg-notary-info.json" \
+            "$RUNNER_TEMP/Naia-dmg-notary-info-error.txt"
           if [ -n "${MACOS_ORIGINAL_KEYCHAINS_PATH:-}" ] && [ -f "$MACOS_ORIGINAL_KEYCHAINS_PATH" ]; then
             # macOS bash 3.2 has no mapfile.
             ORIGINAL_KEYCHAINS=()
@@ -1057,21 +1216,40 @@ jobs:
           set -euo pipefail
           APP="universal-output/Naia.app"
           ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
+          codesign_with_timestamp_retry() {
+            local attempt=1
+            local log_file="$RUNNER_TEMP/codesign-timestamp-retry.log"
+            while [ "$attempt" -le 3 ]; do
+              if codesign "$@" >"$log_file" 2>&1; then
+                cat "$log_file"
+                return 0
+              else
+                local sign_exit=$?
+              fi
+              cat "$log_file"
+              if ! grep -Fq "A timestamp was expected but was not found." "$log_file" || [ "$attempt" -eq 3 ]; then
+                return "$sign_exit"
+              fi
+              echo "codesign timestamp failure; retrying ($((attempt + 1))/3) in 30 seconds."
+              sleep 30
+              attempt=$((attempt + 1))
+            done
+          }
           SIGNED=0
           while IFS= read -r -d '' path; do
             if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
             SIGNED=$((SIGNED + 1))
             if [[ "$path" == "$APP/Contents/Resources/node" ]]; then
-              codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
+              codesign_with_timestamp_retry --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
             else
-              codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
+              codesign_with_timestamp_retry --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
             fi
           # NUL-delimited to match read -d ''; reverse lexical order signs deeper paths first.
           done < <(find "$APP/Contents" -type f -print0 | LC_ALL=C sort -rz)
           # The app binary, node and the agent's native modules are all nested Mach-O files.
           test "$SIGNED" -gt 2
           echo "signed nested Mach-O files: $SIGNED"
-          codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          codesign_with_timestamp_retry --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Notarize and staple Universal app
@@ -1085,20 +1263,80 @@ jobs:
           NOTARY_RESULT="$RUNNER_TEMP/Naia-universal-notary-result.json"
           NOTARY_LOG="$RUNNER_TEMP/Naia-universal-notary-log.txt"
           NOTARY_ERROR="$RUNNER_TEMP/Naia-universal-notary-error.txt"
-          NOTARY_EXIT=0
-          xcrun notarytool submit "$ZIP" --wait --output-format json \
-            --key "$APPLE_API_KEY_PATH" \
-            --key-id "$APPLE_API_KEY" \
-            --issuer "$APPLE_API_ISSUER" > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
-          NOTARY_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
-          if [ "$NOTARY_EXIT" -ne 0 ] || [ "$NOTARY_STATUS" != "Accepted" ]; then
-            NOTARY_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+          NOTARY_INFO="$RUNNER_TEMP/Naia-universal-notary-info.json"
+          NOTARY_INFO_ERROR="$RUNNER_TEMP/Naia-universal-notary-info-error.txt"
+          notary_status() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$1" 2>/dev/null || true; }
+          notary_id() {
+            local id
+            id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$id" ]; then printf '%s\n' "$id"; return; fi
+            { cat "$NOTARY_RESULT" 2>/dev/null || true; cat "$NOTARY_ERROR" 2>/dev/null || true; } | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n 1 || true
+          }
+          redact_file() {
+            python3 - "$1" "$2" <<'PY'
+          import os, sys
+          path, label = sys.argv[1:]
+          try:
+              value = open(path, encoding="utf-8", errors="replace").read()
+          except OSError:
+              value = "<file unavailable>"
+          for secret_name in ("APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8"):
+              secret = os.environ.get(secret_name, "")
+              if secret:
+                  value = value.replace(secret, "[REDACTED]")
+          print(f"--- {label} ---")
+          print(value if value else "<empty>")
+          PY
+          }
+          accepted_from_info() {
+            local submission_id="$1" poll
+            for poll in 1 2 3 4 5 6 7 8 9 10; do
+              : > "$NOTARY_INFO"
+              : > "$NOTARY_INFO_ERROR"
+              xcrun notarytool info "$submission_id" --output-format json \
+                --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+                > "$NOTARY_INFO" 2> "$NOTARY_INFO_ERROR" || true
+              INFO_STATUS="$(notary_status "$NOTARY_INFO")"
+              if [ "$INFO_STATUS" = "Accepted" ]; then return 0; fi
+              if [ "$INFO_STATUS" = "Invalid" ] || [ "$INFO_STATUS" = "Rejected" ]; then return 1; fi
+              if [ "$poll" -lt 10 ]; then sleep 30; fi
+            done
+            return 1
+          }
+          NOTARY_ACCEPTED=0
+          for submit_attempt in 1 2; do
+            : > "$NOTARY_RESULT"
+            : > "$NOTARY_ERROR"
+            NOTARY_EXIT=0
+            xcrun notarytool submit "$ZIP" --wait --timeout 45m --output-format json \
+              --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+            NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
+            if [ "$NOTARY_STATUS" = "Accepted" ]; then NOTARY_ACCEPTED=1; break; fi
+            NOTARY_ID="$(notary_id)"
             if [ -n "$NOTARY_ID" ]; then
+              echo "Notarization submission $NOTARY_ID is not yet Accepted; polling notarytool info (up to 5 minutes)."
+              if accepted_from_info "$NOTARY_ID"; then NOTARY_ACCEPTED=1; break; fi
+              NOTARY_STATUS="${INFO_STATUS:-$NOTARY_STATUS}"
+              break
+            fi
+            if [ "$submit_attempt" -eq 1 ] && { grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_ERROR" || grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_RESULT"; }; then
+              echo "Transient notarytool submit network error; retrying once."
+              continue
+            fi
+            break
+          done
+          if [ "$NOTARY_ACCEPTED" -ne 1 ]; then
+            redact_file "$NOTARY_ERROR" "notarytool stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_RESULT" "notarytool submit output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO_ERROR" "notarytool info stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO" "last notarytool info output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            if [ -n "${NOTARY_ID:-}" ]; then
               xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
                 --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
-              cat "$NOTARY_LOG"
+              redact_file "$NOTARY_LOG" "notarytool log"
             fi
-            echo "Universal app notarization failed (status: ${NOTARY_STATUS:-unavailable})."
+            echo "Universal app notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
             exit 1
           fi
           xcrun stapler staple "$APP"
@@ -1112,7 +1350,8 @@ jobs:
         run: |
           rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" \
             "$RUNNER_TEMP/Naia-universal-notarization.zip" "$RUNNER_TEMP/Naia-universal-notary-result.json" \
-            "$RUNNER_TEMP/Naia-universal-notary-log.txt" "$RUNNER_TEMP/Naia-universal-notary-error.txt"
+            "$RUNNER_TEMP/Naia-universal-notary-log.txt" "$RUNNER_TEMP/Naia-universal-notary-error.txt" \
+            "$RUNNER_TEMP/Naia-universal-notary-info.json" "$RUNNER_TEMP/Naia-universal-notary-info-error.txt"
           if [ -n "${MACOS_ORIGINAL_KEYCHAINS_PATH:-}" ] && [ -f "$MACOS_ORIGINAL_KEYCHAINS_PATH" ]; then
             # macOS bash 3.2 has no mapfile.
             ORIGINAL_KEYCHAINS=()
