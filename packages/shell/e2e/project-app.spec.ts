@@ -640,7 +640,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		});
 		await page.getByRole("button", { name: "Start OpenCode" }).click();
 
-		const notice = page.locator('.projects-app output[role="status"]');
+		const notice = page.locator(".projects-app output");
 		await notice.scrollIntoViewIfNeeded();
 		await expect(notice).toContainText("Naia login required.");
 		await expect(notice).toContainText("Sign in to Naia in Settings");

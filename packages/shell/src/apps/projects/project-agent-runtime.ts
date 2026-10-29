@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { effectiveMainRole } from "../../lib/slots/model";
 import { LAB_GATEWAY_URL, loadConfig } from "../../lib/config";
 import { selectOpenCodeNaiaModel } from "../../lib/llm/registry";
 import { Logger } from "../../lib/logger";
+import { effectiveMainRole } from "../../lib/slots/model";
 import {
 	ensureProjectAgentEventListeners,
 	resetProjectAgentEventListenersForTests,
@@ -34,6 +34,26 @@ export type {
 	ProjectAgentState,
 	ProjectAgentStatus,
 } from "./project-agent-runtime-state";
+
+export function preselectProjectAgentIfUnset(
+	projectPath: string,
+	candidateAppId: unknown,
+): void {
+	if (candidateAppId === null || candidateAppId === undefined) return;
+	if (!isProjectAgentAppId(candidateAppId)) {
+		Logger.debug(
+			"ProjectAgentRuntime",
+			"ignoring invalid coding_app preselect",
+		);
+		return;
+	}
+	const state = stateFor(projectPath);
+	if (state.selectedAppId !== null) return;
+	Logger.debug("ProjectAgentRuntime", "preselecting configured coding_app", {
+		appId: candidateAppId,
+	});
+	state.selectedAppId = candidateAppId;
+}
 
 let availabilityRequest: Promise<void> | null = null;
 
@@ -707,7 +727,6 @@ export async function waitForProjectAgentStopped(
 		await new Promise((resolve) => setTimeout(resolve, intervalMs));
 	}
 }
-
 
 /** Stop only OpenCode sessions because their inherited Naia key changed. */
 export async function stopOpenCodeProjectAgentSessions(): Promise<void> {
