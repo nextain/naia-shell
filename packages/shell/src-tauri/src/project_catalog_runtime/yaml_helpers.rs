@@ -100,9 +100,15 @@ pub(crate) fn parse_class_config(
     let baseline_value = class_mapping.get(YamlValue::String("baseline_ref".to_owned()))?;
     let raw_scalar = class_baseline_ref_scalar(yaml_source)?;
     let baseline_ref = match baseline_value {
-        YamlValue::String(value) => value.to_owned(),
+        YamlValue::String(value) => {
+            if !is_quoted_yaml_scalar(raw_scalar) && is_noncanonical_numeric_scalar(raw_scalar) {
+                return None;
+            }
+            value.to_owned()
+        }
         YamlValue::Number(number) if number.is_i64() || number.is_u64() => {
-            if !is_decimal_integer_scalar(raw_scalar) || number.to_string() != raw_scalar {
+            if !is_canonical_decimal_integer_scalar(raw_scalar) || number.to_string() != raw_scalar
+            {
                 return None;
             }
             raw_scalar.to_owned()
@@ -168,8 +174,25 @@ fn is_empty_yaml_value(rest: &str) -> bool {
     rest.is_empty() || rest.starts_with('#')
 }
 
+fn is_canonical_decimal_integer_scalar(raw_scalar: &str) -> bool {
+    is_decimal_integer_scalar(raw_scalar) && !raw_scalar.starts_with('0')
+}
+
 fn is_decimal_integer_scalar(raw_scalar: &str) -> bool {
     (7..=40).contains(&raw_scalar.len()) && raw_scalar.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_quoted_yaml_scalar(raw_scalar: &str) -> bool {
+    (raw_scalar.starts_with('"') && raw_scalar.ends_with('"'))
+        || (raw_scalar.starts_with('\'') && raw_scalar.ends_with('\''))
+}
+
+fn is_noncanonical_numeric_scalar(raw_scalar: &str) -> bool {
+    let unsigned = raw_scalar.strip_prefix('+').unwrap_or(raw_scalar);
+    is_decimal_integer_scalar(unsigned)
+        || ["0x", "0X", "0o", "0O", "0b", "0B"]
+            .iter()
+            .any(|prefix| raw_scalar.starts_with(prefix))
 }
 
 #[cfg(test)]
@@ -234,7 +257,6 @@ mod tests {
     fn rejects_ambiguous_and_duplicate_yaml_baseline_ref_forms() {
         for yaml in [
             "class: {baseline_ref: 1234567}\n",
-            "class: # inline class comment\n  baseline_ref: 1234567\n",
             "class:\n  baseline_ref : 1234567\n",
             "class:\n  baseline_ref: 1234567\n  baseline_ref: 7654321\n",
             "class:\n  baseline_ref: 1234567\nclass:\n  baseline_ref: 7654321\n",
@@ -243,6 +265,23 @@ mod tests {
                 assert!(parse_class_config(&mapping, yaml).is_none(), "{yaml}");
             }
         }
+    }
+
+    #[test]
+    fn accepts_inline_class_comment_when_serde_and_source_resolve_the_same_value() {
+        let yaml = "class: # inline class comment\n  baseline_ref: 1234567\n";
+        let mapping = project_mapping(yaml);
+        let parsed_value = mapping
+            .get(&YamlValue::String("class".to_owned()))
+            .and_then(YamlValue::as_mapping)
+            .and_then(|class| class.get(&YamlValue::String("baseline_ref".to_owned())))
+            .and_then(YamlValue::as_u64);
+
+        assert_eq!(parsed_value, Some(1_234_567));
+        assert_eq!(
+            parse_class_config(&mapping, yaml).map(|config| config.baseline_ref),
+            Some("1234567".to_owned())
+        );
     }
 
     #[test]
