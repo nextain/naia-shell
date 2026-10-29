@@ -878,9 +878,16 @@ mod tests {
             ("자료/한글 연습.md", "korean content"),
             ("student notes.txt", "space content"),
         ];
+        let mut created_special_files = Vec::new();
         for (rel, body) in special_files {
-            fs::write(checkout.join(rel), body).unwrap();
+            match fs::write(checkout.join(rel), body) {
+                Ok(()) => created_special_files.push((rel, body)),
+                // NTFS-backed FUSE mounts reject names that Linux filesystems accept.
+                Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {}
+                Err(error) => panic!("could not create test file {rel:?}: {error}"),
+            }
         }
+        assert!(!created_special_files.is_empty());
 
         let registry = crate::project_agent_pty::new_project_agent_registry();
         let result = reset_class_project(
@@ -892,9 +899,9 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.backed_up_files, special_files.len());
+        assert_eq!(result.backed_up_files, created_special_files.len());
         let files_dir = adapter.join(&result.backup_relative_path).join("files");
-        for (rel, body) in special_files {
+        for (rel, body) in created_special_files {
             assert_eq!(
                 fs::read_to_string(files_dir.join(rel)).unwrap(),
                 body,

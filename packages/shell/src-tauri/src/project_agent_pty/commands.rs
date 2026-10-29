@@ -288,8 +288,7 @@ pub(crate) fn prepare_project_agent_start(
     project_path: &str,
     app_id: &str,
 ) -> Result<ResolvedProjectAgentStartTarget, String> {
-    let target =
-        resolve_project_agent_start_target(authority, adapter_root, project_path, app_id)?;
+    let target = resolve_project_agent_start_target(authority, adapter_root, project_path, app_id)?;
     let state = match registry.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -297,7 +296,6 @@ pub(crate) fn prepare_project_agent_start(
     let _ = check_project_agent_start_in_state(&state, &target.key, &target.checkout_key)?;
     Ok(target)
 }
-
 
 #[tauri::command]
 pub fn project_agent_availability() -> Vec<ProjectAgentAvailability> {
@@ -334,7 +332,8 @@ pub async fn project_agent_pty_start(
         "[project_agent_pty::project_agent_pty_start] enter app_id={} project_path_supplied=true",
         safe_app_id_for_log(&app_id)
     ));
-    let target = prepare_project_agent_start(&registry, &authority, &adapter_root, &project_path, &app_id)?;
+    let target =
+        prepare_project_agent_start(&registry, &authority, &adapter_root, &project_path, &app_id)?;
     let coding_app = target.coding_app;
     let key = target.key;
     let checkout_key = target.checkout_key;

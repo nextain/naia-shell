@@ -148,6 +148,8 @@ pub(crate) fn register_test_session_via_spawn_key_derivation(
             termination_requested: false,
             output_attached: true,
             output_backlog: String::new(),
+            naia_login_required: false,
+            credential_fingerprint: None,
         },
     );
     Ok(())
