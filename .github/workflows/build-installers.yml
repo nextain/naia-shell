@@ -196,6 +196,10 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          if [[ "$(uname -m)" == "x86_64" ]]; then
+            echo "Disabling Spotlight indexing on the ephemeral Intel runner before mounting the DMG"
+            sudo mdutil -a -i off
+          fi
           LOG_FILE="$RUNNER_TEMP/tauri-macos-bundle.log"
           if ! pnpm -C packages/shell exec tauri bundle --verbose \
             --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
