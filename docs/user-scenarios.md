@@ -2004,6 +2004,16 @@ Exception #687: `skill_workspace_edit_open_file` (open editor file only, per-edi
 
 #724 (2026-09-28): 기억·지식 저장 도구(`skill_memory_save`, `skill_knowledge_store`)를 모델 keep list에 추가. 개인 사실은 `skill_memory_save`, 워크스페이스 지식은 `skill_knowledge_store`, 명시적 메모 요청만 `memo_save`로 라우팅하며 기억 부탁이 `memo_save`로 가지 않는다. `shell_exec`, `write_file` 등 제거된 작업 도구는 계속 거절된다.
 
+### UC-APPSTORE-DYNAMIC-TOOLS-20261029 — 서명된 스토어 앱 도구
+
+사용자가 서명을 검증한 앱스토어 앱을 설치하고 해당 앱을 열면, 그 앱의 `app.json`에 선언된 `skill_*` 도구를 셸 재배포 없이 Naia가 사용할 수 있다. 셸의 Rust 설치 경로가 서명 검증을 통과한 스토어 설치임을 확인한 경우에만 동적 허용한다. 서명되지 않은 앱, 내장 도구와 충돌하는 이름, 다른 설치 앱이 이미 선언한 이름은 허용하지 않고 로그를 남긴다. 앱 전환·삭제·ADK 전환 뒤에는 직전 앱의 도구가 더는 모델 경계에 남지 않는다. 기존 개발자 모드 사이드로드 앱과 `skill_blackjack_tutor`의 호환 동작은 보존한다.
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI / Rust |
+|---|---|---|
+| UC-APPSTORE-DYNAMIC-TOOLS-20261029 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: 서명된 활성 앱 도구만 동적 허용, 비서명/비활성/충돌 거부, 사이드로드 및 블랙잭 호환; `packages/shell/src-tauri/src/app.rs` 앱 목록 단위 시험: 서명 ZIP·app.json 일치 검증, 변조/영수증 제거 시 신뢰 해제; `app-loader.test.ts`: 앱 목록 제거 시 등록 해제 | Rust 앱 목록 응답과 `loadInstalledApps` 계약에서 전환·삭제 후 도구 경계 제외 확인. UI 표현은 바뀌지 않는다. |
+
 | 상태 | 사용자 기대 |
 |---|---|
 | 기본 | 도구 목록을 열면 남긴 도구만 표시되고 작업 도구는 표시되지 않는다. |

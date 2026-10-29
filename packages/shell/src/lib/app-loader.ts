@@ -1,9 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createGenericInstalledApp } from "../apps/generic-installed/GenericInstalledApp";
 import { useAppStore } from "../stores/app";
-import { Logger } from "./logger";
 import { appRegistry } from "./app-registry";
 import type { AppDataUseSpec, AppSkillSpec, NaiaTool } from "./app-registry";
+import { Logger } from "./logger";
+import {
+	LEGACY_APP_TOOL_KEEP_LIST,
+	SHELL_RESERVED_TOOL_NAMES,
+} from "./model-facing-tools";
 
 export interface InstalledAppManifest {
 	id: string;
@@ -31,6 +35,8 @@ export interface InstalledAppManifest {
 	publisher?: string;
 	/** Tools the app exposes to Naia (declared in app.json). */
 	tools?: NaiaTool[];
+	/** True only when the Rust installer verifies its persisted Store signature receipt. */
+	store_signature_verified?: boolean;
 	/** Absolute path to index.html if present */
 	htmlEntry?: string;
 	/**
@@ -82,7 +88,10 @@ export function invalidateInstalledApps(): void {
 	for (const descriptor of installed) {
 		appRegistry.unregister(descriptor.id);
 	}
-	if (activeApp && installed.some((descriptor) => descriptor.id === activeApp)) {
+	if (
+		activeApp &&
+		installed.some((descriptor) => descriptor.id === activeApp)
+	) {
 		useAppStore.getState().setActiveApp(null);
 	}
 	useAppStore.getState().bumpAppListVersion();
@@ -111,12 +120,24 @@ export async function loadInstalledApps(): Promise<void> {
 	if (loadGeneration !== installedAppsLoadGeneration) return;
 
 	Logger.info("AppLoader", `Found ${manifests.length} installed app(s)`);
+	const builtInToolNames = SHELL_RESERVED_TOOL_NAMES;
+	const legacyAppToolNames = new Set<string>(LEGACY_APP_TOOL_KEEP_LIST);
+	const declaredToolOwners = new Map<string, string[]>();
+	for (const manifest of manifests) {
+		for (const tool of manifest.tools ?? []) {
+			const owners = declaredToolOwners.get(tool.name) ?? [];
+			owners.push(manifest.id);
+			declaredToolOwners.set(tool.name, owners);
+		}
+	}
 
 	// The selected ADK is the source of truth. On an ADK switch, an installed
 	// descriptor from the previous root can have the same id but an old
 	// htmlEntry. Drop only installed descriptors whose current manifest is gone
 	// or points at a different root; built-ins and live unchanged apps remain.
-	const currentById = new Map(manifests.map((manifest) => [manifest.id, manifest]));
+	const currentById = new Map(
+		manifests.map((manifest) => [manifest.id, manifest]),
+	);
 	for (const registered of appRegistry.list()) {
 		if (registered.source !== "installed") continue;
 		const current = currentById.get(registered.id);
@@ -134,6 +155,10 @@ export async function loadInstalledApps(): Promise<void> {
 
 	for (const manifest of manifests) {
 		if (appRegistry.get(manifest.id)) {
+			appRegistry.updateStoreSignatureVerified(
+				manifest.id,
+				manifest.store_signature_verified === true,
+			);
 			Logger.debug(
 				"AppLoader",
 				`App already registered, skipping: ${manifest.id}`,
@@ -141,7 +166,8 @@ export async function loadInstalledApps(): Promise<void> {
 			continue;
 		}
 
-		const manifestVersion = manifest.manifest_version ?? manifest.manifestVersion;
+		const manifestVersion =
+			manifest.manifest_version ?? manifest.manifestVersion;
 		const profile: "legacy" | "v2" =
 			manifestVersion != null && manifestVersion >= 2 ? "v2" : "legacy";
 		const hostPermissions =
@@ -149,6 +175,30 @@ export async function loadInstalledApps(): Promise<void> {
 		const optionalPermissions =
 			manifest.optional_permissions ?? manifest.optionalPermissions;
 		const dataUse = manifest.data_use ?? manifest.dataUse;
+		const storeSignatureVerified = manifest.store_signature_verified === true;
+		let appTools = manifest.tools;
+		if (storeSignatureVerified && appTools) {
+			appTools = appTools.filter((tool) => {
+				const owners = declaredToolOwners.get(tool.name) ?? [];
+				const legacyCompat = legacyAppToolNames.has(tool.name);
+				const rejection = !tool.name.startsWith("skill_")
+					? "tool name must start with skill_"
+					: builtInToolNames.has(tool.name) && !legacyCompat
+						? "tool name conflicts with a Shell built-in"
+						: owners.some((ownerId) => ownerId !== manifest.id)
+							? "tool name is declared by another installed app"
+							: null;
+				if (rejection) {
+					Logger.warn("AppLoader", "Rejected Store app tool declaration", {
+						appId: manifest.id,
+						tool: tool.name,
+						reason: rejection,
+					});
+					return false;
+				}
+				return true;
+			});
+		}
 
 		appRegistry.register({
 			id: manifest.id,
@@ -169,8 +219,9 @@ export async function loadInstalledApps(): Promise<void> {
 			help: manifest.help,
 			dataUse,
 			publisher: manifest.publisher,
-			tools: manifest.tools,
+			tools: appTools,
 			source: "installed",
+			storeSignatureVerified,
 			// Keep installed apps mounted across app switches — same treatment as
 			// built-ins (browser/workspace/settings). An installed app renders an
 			// iframe whose in-page state (e.g. a Slides deck's open PDF) is DOM
@@ -179,7 +230,7 @@ export async function loadInstalledApps(): Promise<void> {
 			// round-trip to another app and back. An app may opt out with
 			// keepAlive:false in its manifest.
 			keepAlive: manifest.keepAlive ?? true,
-			center: createGenericInstalledApp(manifest.htmlEntry, manifest.tools),
+			center: createGenericInstalledApp(manifest.htmlEntry, appTools),
 		});
 
 		Logger.info("AppLoader", `Registered installed app: ${manifest.id}`);
@@ -206,6 +257,9 @@ export async function removeInstalledApp(appId: string): Promise<void> {
 		throw err;
 	}
 
+	// Prevent a list request that started before disk deletion from resurrecting
+	// the app (and its model-facing tools) when its response arrives late.
+	installedAppsLoadGeneration += 1;
 	appRegistry.unregister(appId);
 	if (useAppStore.getState().activeApp === appId) {
 		useAppStore.getState().setActiveApp(null);

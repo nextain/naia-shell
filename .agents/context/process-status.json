@@ -102,6 +102,17 @@
       "verification": "packages/shell/src-tauri/src/lib.rs naia_adk_source_tests, naia_adk_source_network_tests; packages/shell/e2e-tauri/specs/24-adk-setup-flow.spec.ts",
       "last_updated": "2026-10-03T20:08:00+09:00"
     },
+    "appstore_dynamic_tools_20261029": {
+      "issue": null,
+      "title": "서명 검증된 스토어 설치 앱의 skill_* 도구 동적 허용",
+      "requirements": "docs/requirements.md FR-TOOLS-SURFACE.6",
+      "scenario": "docs/user-scenarios.md UC-APPSTORE-DYNAMIC-TOOLS-20261029",
+      "branch": "feat/appstore-dynamic-tools-20261029",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done", "P05": "done" },
+      "status": "done",
+      "verification": "Focused Shell Vitest: 3 files / 35 tests passed; Biome check on 6 changed Shell TS files passed; pnpm build passed; Shell tsc -b passed; Rust app::tests passed 23/23 (including signed receipt, tampering, and removal coverage); git diff --check passed. UI-visible states unchanged, so visual review was not applicable. Native Store-install E2E against a live entitlement Gateway was not run.",
+      "last_updated": "2026-10-29T10:45:00+09:00"
+    },
     "issue_724_memory_knowledge_tools": {
       "issue": 724,
       "title": "모델 keep list에 기억·지식 저장 도구를 열고 계약 테스트를 실행한다 (#724)",
@@ -288,7 +299,7 @@
     "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",
     "github_issue": null,
     "started": "2026-06-08T00:00:00Z",
-    "last_updated": "2026-10-27T11:57:00+09:00",
+    "last_updated": "2026-10-29T10:45:00+09:00",
     "status": "in_progress",
     "epic_497_universal_agent": {
       "issue": 497,

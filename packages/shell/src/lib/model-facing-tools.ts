@@ -1,3 +1,6 @@
+import { useAppStore } from "../stores/app";
+import { appRegistry } from "./app-registry";
+
 /**
  * The only tools the model may see from the Shell boundary.
  * Memory save stays automatic; the only memory tool the model sees is the
@@ -47,16 +50,72 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 	"skill_workspace_terminal_exec",
 	"skill_workspace_get_terminal_output",
 	"delegate_agent",
-	// Tier 0 tool of land.naia.blackjack
-	"skill_blackjack_tutor",
 ] as const;
 
 const MODEL_FACING_TOOL_KEEP_SET = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
+/**
+ * Names owned by the Shell or its paired Agent, including built-ins deliberately
+ * excluded from model-facing tools. Keep in sync with lib.rs built_in_skills().
+ */
+export const SHELL_RESERVED_TOOL_NAMES = new Set<string>([
+	...MODEL_FACING_TOOL_KEEP_LIST,
+	"skill_time",
+	"skill_system_status",
+	"skill_memo",
+	"skill_weather",
+	"skill_notify_slack",
+	"skill_notify_google_chat",
+	"skill_agents",
+	"skill_approvals",
+	"skill_botmadang",
+	"skill_channels",
+	"skill_config",
+	"skill_device",
+	"skill_diagnostics",
+	"skill_sessions",
+	"skill_tts",
+	"skill_voicewake",
+	"skill_app",
+	// This old environment tool must remain outside app-owned model tools too.
+	"skill_environment",
+]);
+// Backward compatibility for the pre-dynamic Store tool and existing developer
+// mode side-loads. New Store apps are authorized from Rust-verified manifests.
+export const LEGACY_APP_TOOL_KEEP_LIST = ["skill_blackjack_tutor"] as const;
+const LEGACY_APP_TOOL_KEEP_SET = new Set<string>(LEGACY_APP_TOOL_KEEP_LIST);
 
 export type ModelFacingToolName = (typeof MODEL_FACING_TOOL_KEEP_LIST)[number];
 
 export function isModelFacingToolAllowed(name: string): boolean {
-	return MODEL_FACING_TOOL_KEEP_SET.has(name);
+	if (MODEL_FACING_TOOL_KEEP_SET.has(name)) return true;
+	if (LEGACY_APP_TOOL_KEEP_SET.has(name)) {
+		// Keep the pre-existing side-load contract while the owning app is
+		// installed. A verified Store install follows the new active-app gate.
+		// The legacy exception is removed from the shell-wide keep list, so
+		// removal immediately closes it.
+		const activeAppId = useAppStore.getState().activeApp;
+		return appRegistry.list().some((app) => {
+			if (
+				app.source !== "installed" ||
+				!app.tools?.some((tool) => tool.name === name)
+			) {
+				return false;
+			}
+			return app.storeSignatureVerified === true
+				? app.id === activeAppId
+				: true;
+		});
+	}
+	if (!name.startsWith("skill_")) return false;
+	if (SHELL_RESERVED_TOOL_NAMES.has(name)) return false;
+	const activeAppId = useAppStore.getState().activeApp;
+	if (!activeAppId) return false;
+	const app = appRegistry.get(activeAppId);
+	return (
+		app?.source === "installed" &&
+		app.storeSignatureVerified === true &&
+		app.tools?.some((tool) => tool.name === name) === true
+	);
 }
 
 export function filterModelFacingTools<T extends { name: string }>(

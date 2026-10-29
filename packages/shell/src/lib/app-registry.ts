@@ -1,9 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type React from "react";
+import {
+	getAppSandboxRoot,
+	openAppSandboxFileInWorkspace,
+} from "./app-sandbox";
 import type { BehaviorEntry, BehaviorFilter } from "./behavior-log";
 import { logBehavior, queryBehavior } from "./behavior-log";
 import { getSecretKey, saveSecretKey } from "./secure-store";
-import { getAppSandboxRoot, openAppSandboxFileInWorkspace } from "./app-sandbox";
 
 export type { BehaviorEntry, BehaviorFilter };
 
@@ -109,7 +112,6 @@ export interface NaiaContextBridge {
 	/** App-private root at data-private/apps/{package-id}. */
 	sandboxRoot?(): Promise<string>;
 	openInWorkspace?(relativePath: string): Promise<string>;
-
 }
 /** No-op bridge used as placeholder until a real bridge is wired. */
 export class NoopContextBridge implements NaiaContextBridge {
@@ -213,10 +215,8 @@ export class ActiveAppBridge implements NaiaContextBridge {
 	openInWorkspace(relativePath: string): Promise<string> {
 		return openAppSandboxFileInWorkspace(this.appId, relativePath);
 	}
-
 }
 // ??? App Props ?????????????????????????????????????????????????????????????
-
 
 export interface AppCenterProps {
 	naia: NaiaContextBridge;
@@ -312,6 +312,8 @@ export interface AppDescriptor {
 	 * AppBar uses this to decide whether to also delete from disk on remove.
 	 */
 	source?: "installed" | "code";
+	/** Rust asserted that this installed manifest came from a verified Store artifact. */
+	storeSignatureVerified?: boolean;
 	/** Center component ??owns the entire right area layout. */
 	center: React.ComponentType<AppCenterProps>;
 	/**
@@ -349,6 +351,13 @@ class AppRegistryImpl {
 
 	register(app: AppDescriptor): void {
 		this.apps.set(app.id, app);
+	}
+
+	updateStoreSignatureVerified(id: string, verified: boolean): void {
+		const app = this.apps.get(id);
+		if (app?.source === "installed") {
+			app.storeSignatureVerified = verified;
+		}
 	}
 
 	unregister(id: string): void {

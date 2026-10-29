@@ -108,6 +108,7 @@ import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import {
+	LEGACY_APP_TOOL_KEEP_LIST,
 	MODEL_FACING_TOOL_KEEP_LIST,
 	filterModelFacingTools,
 	isModelFacingToolAllowed,
@@ -321,7 +322,10 @@ const ttsChunkerOptions = {
 
 // Built-in skills are always available in UI (non-toggle). Prevent hidden config drift
 // from disabling them via chat-originated config_update events.
-const BUILTIN_SKILLS = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
+const BUILTIN_SKILLS = new Set<string>([
+	...MODEL_FACING_TOOL_KEEP_LIST,
+	...LEGACY_APP_TOOL_KEEP_LIST,
+]);
 
 function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 	if (!disabled || disabled.length === 0) return undefined;

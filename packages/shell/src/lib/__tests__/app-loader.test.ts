@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../stores/app";
 import { loadInstalledApps, removeInstalledApp } from "../app-loader";
 import { appRegistry } from "../app-registry";
+import { Logger } from "../logger";
 
 // Mock Tauri invoke
 const mockInvoke = vi.fn();
@@ -122,9 +123,7 @@ describe("app-loader", () => {
 		});
 
 		it("assigns profile 'legacy' when manifest_version is absent", async () => {
-			mockInvoke.mockResolvedValue([
-				{ id: "legacy-app", name: "Legacy App" },
-			]);
+			mockInvoke.mockResolvedValue([{ id: "legacy-app", name: "Legacy App" }]);
 
 			await loadInstalledApps();
 
@@ -141,13 +140,22 @@ describe("app-loader", () => {
 					manifest_version: 2,
 					descriptions: { ko: "설명", en: "desc" },
 					context: "context.md",
-					skills: [{ id: "test-skill", version: "1.0.0", path: "skills/test/SKILL.md" }],
+					skills: [
+						{
+							id: "test-skill",
+							version: "1.0.0",
+							path: "skills/test/SKILL.md",
+						},
+					],
 					permissions: ["speech", "browser"],
 					host_permissions: ["https://example.com/*"],
 					optional_permissions: ["modals"],
 					requires: ["land.naia.slides@>=0.2"],
 					help: { ko: "help/ko.md" },
-					data_use: { leaves_device: ["https://api.example.com"], note: "telemetry" },
+					data_use: {
+						leaves_device: ["https://api.example.com"],
+						note: "telemetry",
+					},
 					publisher: "nextain",
 					tools: [
 						{
@@ -177,6 +185,89 @@ describe("app-loader", () => {
 			expect(app?.dataUse?.leaves_device).toEqual(["https://api.example.com"]);
 			expect(app?.publisher).toBe("nextain");
 			expect(app?.tools?.[0].exported).toBe(true);
+		});
+
+		it("rejects signed Store tool declarations that collide with built-ins or another app", async () => {
+			mockInvoke.mockResolvedValue([
+				{
+					id: "signed-store-collision",
+					name: "Signed Store app",
+					store_signature_verified: true,
+					tools: [
+						{ name: "skill_memory_save", description: "built-in collision" },
+						{ name: "skill_config", description: "paired Agent built-in" },
+						{ name: "skill_environment", description: "reserved Shell tool" },
+						{ name: "skill_shared_collision", description: "duplicate" },
+						{ name: "skill_unique_store", description: "allowed" },
+					],
+				},
+				{
+					id: "other-installed-collision",
+					name: "Other app",
+					tools: [{ name: "skill_shared_collision", description: "duplicate" }],
+				},
+			]);
+
+			await loadInstalledApps();
+
+			expect(
+				appRegistry
+					.get("signed-store-collision")
+					?.tools?.map((tool) => tool.name),
+			).toEqual(["skill_unique_store"]);
+			expect(
+				appRegistry.get("signed-store-collision")?.storeSignatureVerified,
+			).toBe(true);
+			expect(
+				appRegistry
+					.get("other-installed-collision")
+					?.tools?.map((tool) => tool.name),
+			).toEqual(["skill_shared_collision"]);
+			expect(Logger.warn).toHaveBeenCalledWith(
+				"AppLoader",
+				"Rejected Store app tool declaration",
+				expect.objectContaining({
+					appId: "signed-store-collision",
+					tool: "skill_memory_save",
+				}),
+			);
+			expect(Logger.warn).toHaveBeenCalledWith(
+				"AppLoader",
+				"Rejected Store app tool declaration",
+				expect.objectContaining({
+					appId: "signed-store-collision",
+					tool: "skill_config",
+					reason: "tool name conflicts with a Shell built-in",
+				}),
+			);
+		});
+
+		it("revokes Store tool trust when Rust no longer verifies the installed receipt", async () => {
+			mockInvoke.mockResolvedValue([
+				{
+					id: "store-trust-refresh",
+					name: "Store app",
+					store_signature_verified: true,
+					tools: [{ name: "skill_store_refresh", description: "Refresh" }],
+				},
+			]);
+			await loadInstalledApps();
+			expect(
+				appRegistry.get("store-trust-refresh")?.storeSignatureVerified,
+			).toBe(true);
+
+			mockInvoke.mockResolvedValue([
+				{
+					id: "store-trust-refresh",
+					name: "Store app",
+					store_signature_verified: false,
+					tools: [{ name: "skill_store_refresh", description: "Refresh" }],
+				},
+			]);
+			await loadInstalledApps();
+			expect(
+				appRegistry.get("store-trust-refresh")?.storeSignatureVerified,
+			).toBe(false);
 		});
 
 		it("replaces an installed registration when the same app id moves roots", async () => {
@@ -239,9 +330,7 @@ describe("app-loader", () => {
 			});
 			mockInvoke
 				.mockImplementationOnce(() => olderResult)
-				.mockResolvedValueOnce([
-					{ id: "new-root-app", name: "New root" },
-				]);
+				.mockResolvedValueOnce([{ id: "new-root-app", name: "New root" }]);
 
 			const olderLoad = loadInstalledApps();
 			const newerLoad = loadInstalledApps();
@@ -283,6 +372,30 @@ describe("app-loader", () => {
 			await removeInstalledApp("to-remove-2");
 
 			expect(appRegistry.get("to-remove-2")).toBeUndefined();
+		});
+
+		it("does not resurrect a removed app from a pending list response", async () => {
+			let resolvePending!: (manifests: unknown[]) => void;
+			const pendingList = new Promise<unknown[]>((resolve) => {
+				resolvePending = resolve;
+			});
+			mockInvoke
+				.mockImplementationOnce(() => pendingList)
+				.mockResolvedValueOnce(undefined);
+
+			const loading = loadInstalledApps();
+			await removeInstalledApp("removed-before-list-completes");
+			resolvePending([
+				{
+					id: "removed-before-list-completes",
+					name: "Removed",
+					store_signature_verified: true,
+					tools: [{ name: "skill_removed_store_tool", description: "Removed" }],
+				},
+			]);
+			await loading;
+
+			expect(appRegistry.get("removed-before-list-completes")).toBeUndefined();
 		});
 
 		it("bumps appListVersion after remove", async () => {
