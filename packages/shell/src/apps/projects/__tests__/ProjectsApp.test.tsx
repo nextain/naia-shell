@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { invoke } from "@tauri-apps/api/core";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -1033,6 +1034,7 @@ describe("ProjectsApp — single opened project", () => {
 	it("shows Reset class only for class projects, handles Cancel/Escape, stops running agent before resetting, and surfaces errors", async () => {
 		let resetShouldFail: string | null = null;
 		let attachShouldFail: string | null = null;
+		let resolveAttachAttemptStarted: (() => void) | null = null;
 		const classProject = makeProject("practice-class", "naia-pj-adk", {
 			name: "Practice Class",
 			codingApp: "opencode",
@@ -1075,6 +1077,7 @@ describe("ProjectsApp — single opened project", () => {
 				return null;
 			}
 			if (command === "project_agent_pty_attach" && attachShouldFail) {
+				resolveAttachAttemptStarted?.();
 				throw new Error(attachShouldFail);
 			}
 			if (command === "project_docs_list") {
@@ -1193,16 +1196,32 @@ describe("ProjectsApp — single opened project", () => {
 			"The configured class.baseline_ref commit was not found in the checkout repository.",
 		);
 
-		fireEvent.click(await screen.findByRole("button", { name: "Start OpenCode" }));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Start OpenCode" }),
+		);
 		await screen.findByRole("button", { name: "Stop OpenCode" });
 		attachShouldFail = "ipc_unavailable";
 		callOrder.length = 0;
-		fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
-		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-		expect(await screen.findByRole("alert")).toHaveTextContent(
-			"Could not confirm whether the coding agent stopped.",
-		);
-		expect(callOrder).not.toContain("project_class_reset");
+		const attachAttemptStarted = new Promise<void>((resolve) => {
+			resolveAttachAttemptStarted = resolve;
+		});
+		vi.useFakeTimers();
+		vi.setSystemTime(0);
+		try {
+			fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
+			fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+			await attachAttemptStarted;
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5_000);
+			});
+			expect(screen.getByRole("alert")).toHaveTextContent(
+				"Could not confirm whether the coding agent stopped.",
+			);
+			expect(callOrder).not.toContain("project_class_reset");
+		} finally {
+			resolveAttachAttemptStarted = null;
+			vi.useRealTimers();
+		}
 	});
 
 	it("polls after stopProjectAgent for a delayed stop before calling project_class_reset", async () => {
@@ -1212,6 +1231,7 @@ describe("ProjectsApp — single opened project", () => {
 			class: { baselineRef: "1234567890abcdef" },
 		});
 		let attachPollCount = 0;
+		let resolveAttachAttemptStarted: (() => void) | null = null;
 		const callOrder: string[] = [];
 		vi.mocked(invoke).mockImplementation(async (command, args) => {
 			if (
@@ -1242,6 +1262,7 @@ describe("ProjectsApp — single opened project", () => {
 				return null;
 			}
 			if (command === "project_agent_pty_attach") {
+				resolveAttachAttemptStarted?.();
 				attachPollCount += 1;
 				if (attachPollCount < 3) {
 					return {
@@ -1290,22 +1311,26 @@ describe("ProjectsApp — single opened project", () => {
 		);
 		await screen.findByRole("button", { name: "Stop OpenCode" });
 		callOrder.length = 0;
-		const nowSpy = vi.spyOn(Date, "now");
-		let fakeNow = 1_000_000;
-		nowSpy.mockImplementation(() => {
-			fakeNow += 3_000;
-			return fakeNow;
-		});
 		attachPollCount = -100;
+		const attachAttemptStarted = new Promise<void>((resolve) => {
+			resolveAttachAttemptStarted = resolve;
+		});
+		vi.useFakeTimers();
+		vi.setSystemTime(0);
 		try {
 			fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
 			fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-			expect(await screen.findByRole("alert")).toHaveTextContent(
+			await attachAttemptStarted;
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(5_000);
+			});
+			expect(screen.getByRole("alert")).toHaveTextContent(
 				"A coding agent session is still running. Stop the coding agent and try again.",
 			);
 			expect(callOrder).not.toContain("project_class_reset");
 		} finally {
-			nowSpy.mockRestore();
+			resolveAttachAttemptStarted = null;
+			vi.useRealTimers();
 		}
 	});
 
@@ -1363,6 +1388,12 @@ describe("ProjectsApp — single opened project", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
 
 		expect(await screen.findByText("Resetting class checkout…")).toBeTruthy();
+		await waitFor(() => {
+			expect(invoke).toHaveBeenCalledWith("project_class_reset", {
+				adapterRoot: "/fixture/adapter-root",
+				projectPath: classProject.projectPath,
+			});
+		});
 		const disabledStartButton = screen.getByRole("button", {
 			name: "Start OpenCode",
 		}) as HTMLButtonElement;
