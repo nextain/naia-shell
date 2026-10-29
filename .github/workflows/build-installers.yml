@@ -267,15 +267,20 @@ jobs:
           test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
           APP="${APP_PATHS[0]}"
           ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
+          SIGNED=0
           while IFS= read -r -d '' path; do
             if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
+            SIGNED=$((SIGNED + 1))
             if [[ "$path" == "$APP/Contents/Resources/node" ]]; then
               codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
             else
               codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
             fi
-          # Bundled paths contain no newlines; reverse lexical order signs deeper paths first.
-          done < <(find "$APP/Contents" -type f -print | LC_ALL=C sort -r)
+          # NUL-delimited to match read -d ''; reverse lexical order signs deeper paths first.
+          done < <(find "$APP/Contents" -type f -print0 | LC_ALL=C sort -rz)
+          # The app binary, node and the agent's native modules are all nested Mach-O files.
+          test "$SIGNED" -gt 2
+          echo "signed nested Mach-O files: $SIGNED"
           codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
@@ -1052,15 +1057,20 @@ jobs:
           set -euo pipefail
           APP="universal-output/Naia.app"
           ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
+          SIGNED=0
           while IFS= read -r -d '' path; do
             if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
+            SIGNED=$((SIGNED + 1))
             if [[ "$path" == "$APP/Contents/Resources/node" ]]; then
               codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
             else
               codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
             fi
-          # Bundled paths contain no newlines; reverse lexical order signs deeper paths first.
-          done < <(find "$APP/Contents" -type f -print | LC_ALL=C sort -r)
+          # NUL-delimited to match read -d ''; reverse lexical order signs deeper paths first.
+          done < <(find "$APP/Contents" -type f -print0 | LC_ALL=C sort -rz)
+          # The app binary, node and the agent's native modules are all nested Mach-O files.
+          test "$SIGNED" -gt 2
+          echo "signed nested Mach-O files: $SIGNED"
           codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
