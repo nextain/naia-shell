@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "Tiến độ",
 	"chat.newConversation": "Trò chuyện mới",
 	"settings.saved": "Đã lưu!",
+	"settings.saving": "Đang lưu…",
 	"skills.tabSkills": "Kỹ năng",
 	"skills.loading": "Đang tải kỹ năng...",
 	"skills.empty": "Không có kỹ năng nào được đăng ký.",

@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "অগ্রগতি",
 	"chat.newConversation": "নতুন চ্যাট",
 	"settings.saved": "সংরক্ষিত !",
+	"settings.saving": "সংরক্ষণ করা হচ্ছে…",
 	"skills.tabSkills": "দক্ষতা",
 	"skills.loading": "দক্ষতা লোড হচ্ছে...",
 	"skills.empty": "কোন দক্ষতা নিবন্ধিত.",

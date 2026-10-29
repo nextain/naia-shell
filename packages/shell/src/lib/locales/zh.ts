@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "进展",
 	"chat.newConversation": "新聊天",
 	"settings.saved": "得救了！",
+	"settings.saving": "正在保存…",
 	"skills.tabSkills": "技能",
 	"skills.loading": "技能加载中...",
 	"skills.empty": "没有注册技能。",

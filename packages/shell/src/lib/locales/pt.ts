@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "Progresso",
 	"chat.newConversation": "Novo bate-papo",
 	"settings.saved": "Salvo!",
+	"settings.saving": "Salvando…",
 	"skills.tabSkills": "Habilidades",
 	"skills.loading": "Carregando habilidades...",
 	"skills.empty": "Nenhuma habilidade cadastrada.",

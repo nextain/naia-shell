@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "Progrès",
 	"chat.newConversation": "Nouvelle discussion",
 	"settings.saved": "Sauvé !",
+	"settings.saving": "Enregistrement…",
 	"skills.tabSkills": "Compétences",
 	"skills.loading": "Chargement des compétences...",
 	"skills.empty": "Aucune compétence enregistrée.",

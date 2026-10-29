@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "Kemajuan",
 	"chat.newConversation": "Obrolan Baru",
 	"settings.saved": "Disimpan!",
+	"settings.saving": "Menyimpan…",
 	"skills.tabSkills": "Keterampilan",
 	"skills.loading": "Memuat keterampilan...",
 	"skills.empty": "Tidak ada keterampilan yang terdaftar.",

@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "Прогресс",
 	"chat.newConversation": "Новый чат",
 	"settings.saved": "Спасено!",
+	"settings.saving": "Сохранение…",
 	"skills.tabSkills": "Навыки",
 	"skills.loading": "Загрузка навыков...",
 	"skills.empty": "Навыки не зарегистрированы.",

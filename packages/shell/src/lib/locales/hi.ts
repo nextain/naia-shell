@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "प्रगति",
 	"chat.newConversation": "नई चैट",
 	"settings.saved": "सहेजा गया!",
+	"settings.saving": "सहेजा जा रहा है…",
 	"skills.tabSkills": "कौशल",
 	"skills.loading": "कौशल लोड हो रहा है...",
 	"skills.empty": "कोई कौशल पंजीकृत नहीं.",

@@ -24,13 +24,27 @@ const ADK_PATH_KEY = "naia-adk-path";
 // Standalone utility/test callers never begin this gate and retain the normal
 // immediate-write behavior.
 let configHydrationPending = false;
+const configHydrationListeners = new Set<() => void>();
+
+export function subscribeNaiaConfigHydration(listener: () => void): () => void {
+	configHydrationListeners.add(listener);
+	return () => configHydrationListeners.delete(listener);
+}
+
+function notifyConfigHydrationChanged(): void {
+	for (const listener of configHydrationListeners) listener();
+}
 
 export function beginNaiaConfigHydration(): void {
+	if (configHydrationPending) return;
 	configHydrationPending = true;
+	notifyConfigHydrationChanged();
 }
 
 export function completeNaiaConfigHydration(): void {
+	if (!configHydrationPending) return;
 	configHydrationPending = false;
+	notifyConfigHydrationChanged();
 }
 
 export function isNaiaConfigHydrationPending(): boolean {
@@ -633,6 +647,7 @@ function mergeUiConfigPatch(
 async function writeNaiaUiConfigNow(
 	config: Record<string, unknown>,
 	adkPathOverride?: string | null,
+	agentConfigHasLocale = false,
 ): Promise<boolean> {
 	const adkPath = resolveAdkPath(adkPathOverride);
 	if (!adkPath) return false;
@@ -645,9 +660,8 @@ async function writeNaiaUiConfigNow(
 			config,
 		);
 		// Older Shell versions incorrectly stored locale in ui-config.json.
-		// Agent config is now authoritative, so remove the stale duplicate on the
-		// next successful UI/config save.
-		delete uiConfig.locale;
+		// Keep that only copy until the agent config actually has its replacement.
+		if (agentConfigHasLocale) uiConfig.locale = undefined;
 		const json = JSON.stringify(uiConfig, null, 2);
 		await invoke("write_naia_ui_config", {
 			adkPath,
@@ -668,7 +682,19 @@ export function writeNaiaUiConfig(
 	const configSnapshot = snapshotConfig(config);
 	const adkPath = resolveAdkPath(adkPathOverride);
 	const operation = naiaConfigWriteTail.then(() =>
-		writeNaiaUiConfigNow(configSnapshot, adkPath),
+		(async () => {
+			let agentConfigHasLocale = false;
+			try {
+				agentConfigHasLocale = !!(await readNaiaConfig(adkPath))?.locale;
+			} catch {
+				// Preserve a legacy UI-only locale if the agent config is unreadable.
+			}
+			return writeNaiaUiConfigNow(
+				configSnapshot,
+				adkPath,
+				agentConfigHasLocale,
+			);
+		})(),
 	);
 	naiaConfigWriteTail = operation.then(
 		() => undefined,
@@ -803,7 +829,14 @@ async function writeNaiaConfigNow(
 		json: normalizedAgentConfigJson,
 	});
 	// UI 정체성(VRM/배경/BGM)은 agent 가 안 읽으므로 별도 ui-config.json 에 — 워크스페이스 전환 복원용(FR-WS.2).
-	if (!(await writeNaiaUiConfigNow(config, adkPath))) {
+	if (
+		!(await writeNaiaUiConfigNow(
+			config,
+			adkPath,
+			typeof normalizedAgentConfig.locale === "string" &&
+				normalizedAgentConfig.locale.length > 0,
+		))
+	) {
 		throw new Error("ui-config write failed");
 	}
 	// R2.2a: 로컬 cascade 구동 결정용 slots-manifest.json 동기화(windows-manager loader 가 read).
@@ -838,7 +871,19 @@ async function writeNaiaConfigNow(
 	// 정상 반환하며, 다음 SetWorkspace가 저장 파일을 읽는다.
 	// Do not deduplicate this acknowledgement by config text: the Agent may
 	// have restarted or retained an old memory instance since the prior write.
-	await invoke("reload_agent_settings");
+	try {
+		await invoke("reload_agent_settings");
+	} catch (error) {
+		// The file is already committed. A stopped agent has nothing to reload;
+		// the next spawn reads config.json. Do not report this as a disk failure.
+		Logger.warn(
+			"adk-store",
+			"Agent settings reload deferred until next spawn",
+			{
+				error: error instanceof Error ? error.message : String(error),
+			},
+		);
+	}
 }
 
 /**

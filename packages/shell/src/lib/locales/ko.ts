@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "작업",
 	"chat.newConversation": "새 대화",
 	"settings.saved": "적용됨!",
+	"settings.saving": "저장 중…",
 	"skills.tabSkills": "스킬",
 	"skills.loading": "스킬 로딩 중...",
 	"skills.empty": "등록된 스킬이 없습니다.",

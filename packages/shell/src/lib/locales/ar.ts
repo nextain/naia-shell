@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "التقدم",
 	"chat.newConversation": "دردشة جديدة",
 	"settings.saved": "تم الحفظ!",
+	"settings.saving": "جارٍ الحفظ…",
 	"skills.tabSkills": "المهارات",
 	"skills.loading": "تحميل المهارات...",
 	"skills.empty": "لم يتم تسجيل أي مهارات.",

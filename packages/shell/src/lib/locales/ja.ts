@@ -405,6 +405,7 @@ export default {
 	"progress.tabProgress": "進捗状況",
 	"chat.newConversation": "新しいチャット",
 	"settings.saved": "保存しました！",
+	"settings.saving": "保存中…",
 	"skills.tabSkills": "スキル",
 	"skills.loading": "スキルを読み込んでいます...",
 	"skills.empty": "スキルが登録されていません。",
