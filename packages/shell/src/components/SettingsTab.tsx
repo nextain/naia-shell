@@ -3273,7 +3273,8 @@ export function SettingsTab() {
 	}
 
 	async function retryLocaleAgentReload() {
-		if (localeRetrying) return;
+		if (localeSavingRef.current) return;
+		localeSavingRef.current = true;
 		setLocaleRetrying(true);
 		try {
 			await reloadPersistedAgentSettings();
@@ -3282,6 +3283,7 @@ export function SettingsTab() {
 		} catch {
 			setError(t("settings.agentReloadFailed"));
 		} finally {
+			localeSavingRef.current = false;
 			setLocaleRetrying(false);
 		}
 	}
@@ -4152,7 +4154,7 @@ export function SettingsTab() {
 						<button
 							type="button"
 							onClick={retryLocaleAgentReload}
-							disabled={localeRetrying}
+							disabled={localeRetrying || localeSaving}
 						>
 							{localeRetrying ? t("settings.saving") : t("common.retry")}
 						</button>
@@ -4174,7 +4176,7 @@ export function SettingsTab() {
 							<LocalePicker
 								value={locale}
 								onChange={handleLocaleChange}
-								disabled={localeSaving || localeHydrating}
+								disabled={localeSaving || localeRetrying || localeHydrating}
 							/>
 							<span
 								className="settings-hint"
