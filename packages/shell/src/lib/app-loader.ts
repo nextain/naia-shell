@@ -179,7 +179,7 @@ export async function loadInstalledApps(): Promise<void> {
 			// round-trip to another app and back. An app may opt out with
 			// keepAlive:false in its manifest.
 			keepAlive: manifest.keepAlive ?? true,
-			center: createGenericInstalledApp(manifest.htmlEntry, manifest.tools),
+			center: createGenericInstalledApp(manifest.htmlEntry, manifest.tools, manifest.id),
 		});
 
 		Logger.info("AppLoader", `Registered installed app: ${manifest.id}`);

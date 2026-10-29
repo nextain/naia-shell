@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CAFE_LUA_TAROT_APP_ID, CAFE_LUA_TAROT_ASK_EVENT, CAFE_LUA_TAROT_RESPONSE_EVENT } from "../../apps/generic-installed/cafelua-tarot-host-bridge";
 import { appRegistry } from "../../lib/app-registry";
 import {
 	clearCameraActions,
@@ -263,6 +264,147 @@ describe("ChatArea", () => {
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBeDefined();
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("routes a Cafe Lua Tarot reveal through the selected local main model and returns Naia's reply", async () => {
+		const tools = [
+			{
+				name: "skill_cafelua_tarot",
+				description: "Control a tarot reading.",
+				parameters: {
+					type: "object" as const,
+					properties: { action: { type: "string" } },
+				},
+				tier: 0,
+			},
+		];
+		appRegistry.register({
+			id: CAFE_LUA_TAROT_APP_ID,
+			name: "Cafe Lua Tarot",
+			center: () => null,
+			tools,
+		});
+		useAppStore.setState({ activeApp: CAFE_LUA_TAROT_APP_ID });
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "openai",
+				model: "gpt-4o",
+				apiKey: "test-key",
+				ttsEnabled: true,
+				ttsProvider: "nextain",
+				
+				enableTools: false,
+				locale: "en",
+			}),
+		);
+		const reply = vi.fn();
+		window.addEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+
+		window.dispatchEvent(
+			new CustomEvent(CAFE_LUA_TAROT_ASK_EVENT, {
+				detail: {
+					requestId: "reading-1-card-0",
+					prompt: "You are Naia. Interpret The Fool in the Present position.",
+				},
+			}),
+		);
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		expect(mockSendAppSkills).toHaveBeenCalledWith(
+			CAFE_LUA_TAROT_APP_ID,
+			tools,
+			{ awaitAck: true },
+		);
+		expect(capturedRequests[0].provider).toMatchObject({
+			provider: "openai",
+			model: "gpt-4o",
+				apiKey: "test-key",
+		});
+		expect(capturedRequests[0].message).toContain("You are Naia");
+		capturedRequests[0].onChunk({
+			type: "text",
+			requestId: capturedRequests[0].requestId,
+			text: "A new path.",
+		});
+		capturedRequests[0].onChunk({ type: "tool_use", requestId: capturedRequests[0].requestId, toolCallId: "call-1", toolName: "skill_cafelua_tarot", args: {} });
+		capturedRequests[0].onChunk({ type: "text", requestId: capturedRequests[0].requestId, text: "A door opens." });
+		capturedRequests[0].onChunk({
+			type: "finish",
+			requestId: capturedRequests[0].requestId,
+		});
+		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toEqual({
+			requestId: "reading-1-card-0",
+			text: "A new path.\n\nA door opens.",
+		});
+		await waitFor(() => expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalled());
+		window.removeEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		appRegistry.unregister(CAFE_LUA_TAROT_APP_ID);
+		localStorage.removeItem("naia-config");
+	});
+
+	it("returns an app error instead of claiming Naia received a reveal when tool registration fails", async () => {
+		appRegistry.register({
+			id: CAFE_LUA_TAROT_APP_ID,
+			name: "Cafe Lua Tarot",
+			center: () => null,
+			tools: [
+				{
+					name: "skill_cafelua_tarot",
+					description: "Control a tarot reading.",
+					parameters: { type: "object", properties: {} },
+					tier: 0,
+				},
+			],
+		});
+		useAppStore.setState({ activeApp: CAFE_LUA_TAROT_APP_ID });
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "openai", model: "gpt-4o" }),
+		);
+		mockSendAppSkills.mockResolvedValueOnce(false);
+		const reply = vi.fn();
+		window.addEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+		window.dispatchEvent(
+			new CustomEvent(CAFE_LUA_TAROT_ASK_EVENT, {
+				detail: {
+					requestId: "reading-registration-error",
+					prompt: "Interpret this card.",
+				},
+			}),
+		);
+
+		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+		expect(capturedRequests).toHaveLength(0);
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+			requestId: "reading-registration-error",
+			error: expect.stringContaining("could not register"),
+		});
+		window.removeEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		appRegistry.unregister(CAFE_LUA_TAROT_APP_ID);
+		localStorage.removeItem("naia-config");
+	});
+
+	it("rejects a tarot request when the default model requires realtime voice", async () => {
+		useAppStore.setState({ activeApp: CAFE_LUA_TAROT_APP_ID });
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "naia-0.9-omni-24g" }));
+		const reply = vi.fn();
+		window.addEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+		act(() => window.dispatchEvent(new CustomEvent(CAFE_LUA_TAROT_ASK_EVENT, {
+			detail: { requestId: "voice-reading", prompt: "Interpret this card." },
+		})));
+		expect(reply).toHaveBeenCalledOnce();
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toEqual({
+			requestId: "voice-reading", text: "",
+			error: "음성 대화 중에는 타로 해석을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.",
+		});
+		expect(capturedRequests).toHaveLength(0);
+		expect(mockSendAppSkills).not.toHaveBeenCalled();
+		window.removeEventListener(CAFE_LUA_TAROT_RESPONSE_EVENT, reply);
+		localStorage.removeItem("naia-config");
 	});
 
 	it("blocks local Ollama chat when its fresh runtime status is unreserved", async () => {

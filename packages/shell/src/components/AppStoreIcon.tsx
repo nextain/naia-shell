@@ -1,7 +1,10 @@
 /** Shared icon for the fixed App Store action and the AppBar add dialog. */
 export function AppStoreIcon() {
+	// The bag spans x 4–28 and y 1.75–28 (handle stroke). A 0 0 32 32 box left a
+	// quarter of the 16px app-bar slot empty, so the icon read smaller than the
+	// emoji and favicon tabs beside it. Crop the box to the drawing.
 	return (
-		<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+		<svg viewBox="2.5 1.5 27 27" aria-hidden="true" focusable="false">
 			<rect x="4" y="9" width="24" height="19" rx="5" fill="#5b67f1" />
 			<path
 				d="M11 10V8a5 5 0 0 1 10 0v2"

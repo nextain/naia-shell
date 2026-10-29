@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
 	screen,
 	waitFor,
 } from "@testing-library/react";
+import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
 	AppContext,
@@ -180,8 +182,125 @@ describe("SlidesCenterArea", () => {
 	afterEach(() => {
 		cleanup();
 		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
 		Reflect.deleteProperty(document, "fullscreenElement");
 		Reflect.deleteProperty(document, "exitFullscreen");
+	});
+
+	const sampleDeck = {
+		pdfUrl: "./sample/naia-team-intro.pdf",
+		scriptUrl: "./sample/naia-team-intro.md",
+	};
+	const sampleNote =
+		"안녕하세요, 나이아입니다. 오늘은 우리 팀이 AI 와 함께 일하는 방식을 소개할게요. 궁금한 점은 언제든 물어보세요.";
+
+	it("opens the sample PDF and first page script once on mount", async () => {
+		const fetchMock = vi.fn(async (url: string) =>
+			url === sampleDeck.pdfUrl
+				? { ok: true, blob: async () => new Blob(["pdf"]) }
+				: { ok: true, text: async () => `## 1\n${sampleNote}\n\n## 2\nNext` },
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		render(
+			<React.StrictMode>
+				<SlidesCenterArea naia={new MockBridge()} sampleDeck={sampleDeck} />
+			</React.StrictMode>,
+		);
+		await waitFor(() =>
+			expect(screen.getByTestId("slides-current-note")).toHaveTextContent(
+				sampleNote,
+			),
+		);
+		expect(screen.getByText("naia-team-intro.pdf")).toBeInTheDocument();
+		expect(screen.getByText("naia-team-intro.md")).toBeInTheDocument();
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock).toHaveBeenCalledWith(sampleDeck.pdfUrl);
+		expect(fetchMock).toHaveBeenCalledWith(sampleDeck.scriptUrl);
+	});
+
+	it("does not fetch a sample when no sample deck is supplied", () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		render(<SlidesCenterArea naia={new MockBridge()} />);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(screen.getByText("자료 없음")).toBeInTheDocument();
+	});
+
+	it("keeps the empty screen without an alert when the sample PDF fetch fails", async () => {
+		const fetchMock = vi.fn(async (url: string) =>
+			url === sampleDeck.pdfUrl
+				? { ok: false }
+				: { ok: true, text: async () => `## 1\n${sampleNote}` },
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		render(
+			<SlidesCenterArea naia={new MockBridge()} sampleDeck={sampleDeck} />,
+		);
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+		expect(screen.getByText("자료 없음")).toBeInTheDocument();
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+	});
+
+	it("opens the sample PDF without an alert when its script fetch fails", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) =>
+				url === sampleDeck.pdfUrl
+					? { ok: true, blob: async () => new Blob(["pdf"]) }
+					: Promise.reject(new Error("missing script")),
+			),
+		);
+		render(
+			<SlidesCenterArea naia={new MockBridge()} sampleDeck={sampleDeck} />,
+		);
+		await waitFor(() =>
+			expect(screen.getByText("naia-team-intro.pdf")).toBeInTheDocument(),
+		);
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(screen.queryByText("naia-team-intro.md")).not.toBeInTheDocument();
+	});
+
+	it("does not replace a PDF selected while the sample is loading", async () => {
+		let resolvePdf!: (value: {
+			ok: boolean;
+			blob: () => Promise<Blob>;
+		}) => void;
+		const pdfResponse = new Promise<{ ok: boolean; blob: () => Promise<Blob> }>(
+			(resolve) => {
+				resolvePdf = resolve;
+			},
+		);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((url: string) =>
+				url === sampleDeck.pdfUrl
+					? pdfResponse
+					: Promise.resolve({
+							ok: true,
+							text: async () => `## 1\n${sampleNote}`,
+						}),
+			),
+		);
+		render(
+			<SlidesCenterArea naia={new MockBridge()} sampleDeck={sampleDeck} />,
+		);
+		fireEvent.change(screen.getByLabelText(/PDF/), {
+			target: { files: [new File(["pdf"], "mine.pdf")] },
+		});
+		await waitFor(() =>
+			expect(screen.getByText("mine.pdf")).toBeInTheDocument(),
+		);
+		await act(async () => {
+			resolvePdf({ ok: true, blob: async () => new Blob(["sample"]) });
+			await pdfResponse;
+		});
+		await waitFor(() =>
+			expect(screen.getByTestId("slides-current-note")).toHaveTextContent(
+				"PDF text 1",
+			),
+		);
+		expect(screen.getByText("mine.pdf")).toBeInTheDocument();
+		expect(screen.queryByText("naia-team-intro.pdf")).not.toBeInTheDocument();
 	});
 
 	it("closes and restores notes without interrupting presentation or discarding the script", async () => {
@@ -308,9 +427,7 @@ describe("SlidesCenterArea", () => {
 		expect(screen.getByText("deck.md")).toBeInTheDocument();
 		picker.open.mockResolvedValueOnce(null);
 		fireEvent.click(screen.getByLabelText(/PDF/));
-		await waitFor(() =>
-			expect(screen.getByLabelText(/PDF/)).toBeEnabled(),
-		);
+		await waitFor(() => expect(screen.getByLabelText(/PDF/)).toBeEnabled());
 		expect(screen.getByTestId("slides-current-note")).toHaveTextContent(
 			"Automatic note",
 		);
