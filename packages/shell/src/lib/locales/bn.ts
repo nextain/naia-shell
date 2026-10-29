@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "সেটিং নিরাপদে সংরক্ষণ করা যায়নি, তাই সক্রিয় বক্তৃতা নিষ্ক্রিয় করা হয়েছে।",
 	"settings.save": "সংরক্ষণ করুন",
 	"settings.saveFailed": "সেটিং সংরক্ষণ করা যায়নি",
+	"settings.agentReloadFailed": "সেটিং সংরক্ষিত হয়েছে, কিন্তু চলমান এজেন্টে নতুন ভাষা প্রয়োগ করা যায়নি। আবার চেষ্টা করুন।",
 	"settings.cancel": "বাতিল করুন",
 	"chat.placeholder": "একটি বার্তা টাইপ করুন...",
 	"chat.noApiKey": "কোন API কী কনফিগার করা নেই। সেটিংসে আপনার API কী লিখুন।",

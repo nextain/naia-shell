@@ -631,6 +631,118 @@ describe("SettingsTab", () => {
 		});
 	});
 
+	it("keeps screen and config locale aligned when the secondary UI file write fails", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "write_naia_config") return Promise.resolve(undefined);
+			if (command === "write_naia_ui_config")
+				return Promise.reject(new Error("ui disk full"));
+			if (command === "reload_agent_settings")
+				return Promise.resolve({ available: false });
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		await waitFor(() => expect(picker).toHaveTextContent("English"));
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+		const configWrite = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_config",
+		);
+		expect(JSON.parse((configWrite?.[1] as { json: string }).json).locale).toBe(
+			"en",
+		);
+	});
+
+	it("uses a synchronous ref guard for two locale changes in one React tick", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			if (command === "reload_agent_settings")
+				return Promise.resolve({ available: false });
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: "English" }));
+			fireEvent.click(screen.getByRole("button", { name: "日本語" }));
+		});
+		await waitFor(() => expect(picker).toHaveTextContent("English"));
+		expect(
+			mockInvoke.mock.calls.filter(
+				([command]) => command === "write_naia_config",
+			),
+		).toHaveLength(1);
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+	});
+
+	it("keeps a committed locale and exposes retry after a running-agent reload error", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		let reloadAttempts = 0;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			if (command === "reload_agent_settings") {
+				reloadAttempts += 1;
+				return reloadAttempts === 1
+					? Promise.reject(new Error("agent connection refused"))
+					: Promise.resolve({ available: true });
+			}
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("running agent");
+		expect(picker).toHaveTextContent("English");
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+		await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+		expect(reloadAttempts).toBe(2);
+	});
+
 	it("rejects a locale selection while config hydration is pending", async () => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		localStorage.setItem(
@@ -2049,7 +2161,10 @@ describe("SettingsTab", () => {
 		);
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "reload_agent_settings") {
-				return Promise.reject(new Error("memory reload rejected"));
+				return Promise.resolve({
+					available: false,
+					memoryStatus: "next_start",
+				});
 			}
 			if (command === "read_naia_ui_config") return Promise.resolve("{}");
 			return Promise.resolve([]);

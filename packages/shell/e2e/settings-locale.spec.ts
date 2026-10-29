@@ -8,6 +8,7 @@ function localeWriteMock(failFirstWrite = false): string {
 	return `
 (function() {
 	window.__localeConfigWrites = [];
+	window.__localeConfigFile = sessionStorage.getItem("locale-test-config-file") || "";
 	window.__localeReloads = 0;
 	window.__localeEvents = [];
 	window.addEventListener("naia:locale-change", function(event) {
@@ -30,13 +31,20 @@ function localeWriteMock(failFirstWrite = false): string {
 				resolve();
 			};
 		});
+			window.__localeConfigFile = args.json;
+			sessionStorage.setItem("locale-test-config-file", args.json);
 			window.__localeConfigWrites.push(JSON.parse(args.json));
 			return null;
 		}
+		if (cmd === "read_naia_config") {
+			return window.__localeConfigFile || localStorage.getItem("naia-config") || "";
+		}
+		if (cmd === "write_naia_ui_config") throw new Error("ui-config write failed");
+		if (cmd === "read_naia_ui_config") return "";
 		if (cmd === "reload_agent_settings") {
 			window.__localeReloads += 1;
-			if (window.__failLocaleReload) throw new Error("agent not running");
-			return null;
+			if (window.__failLocaleReload) throw new Error("agent connection refused");
+			return { available: false, memoryReloaded: false, memoryStatus: "next_start" };
 		}
 		return undefined;
 	};
@@ -75,7 +83,7 @@ async function openSettings(
 }
 
 test.describe("Settings locale persistence", () => {
-	test("persists the detected locale once for a first-run workspace", async ({
+	test("keeps detected locale out of the partial first-run config snapshot", async ({
 		page,
 	}) => {
 		await page.addInitScript(
@@ -87,11 +95,7 @@ test.describe("Settings locale persistence", () => {
 			.poll(() =>
 				page.evaluate(() => (window as any).__localeConfigWrites.length),
 			)
-			.toBeGreaterThan(0);
-		const writes = await page.evaluate(
-			() => (window as any).__localeConfigWrites,
-		);
-		expect(writes[0].locale).toBe("en");
+			.toBe(0);
 	});
 
 	test("updates the screen, config cache and agent config immediately, including at narrow width", async ({
@@ -191,6 +195,30 @@ test.describe("Settings locale persistence", () => {
 		expect(bounds.right).toBeLessThanOrEqual(bounds.viewport);
 	});
 
+	test("reads the virtual config file back and restores locale after a page boot", async ({
+		page,
+	}) => {
+		await openSettings(page);
+		const picker = page.locator("#locale-select");
+		await picker.click();
+		await page.getByRole("button", { name: "English" }).click();
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() => JSON.parse((window as any).__localeConfigFile).locale,
+				),
+			)
+			.toBe("en");
+		await page.reload();
+		await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
+		await page.locator(".app-bar-settings").click();
+		await page.locator('[data-settings-tab="general"]').click();
+		await expect(page.locator("#locale-select")).toHaveAttribute(
+			"data-value",
+			"en",
+		);
+	});
+
 	test("shows a retryable save error and succeeds when the locale is selected again", async ({
 		page,
 	}) => {
@@ -235,9 +263,6 @@ test.describe("Settings locale persistence", () => {
 		page,
 	}) => {
 		await openSettings(page);
-		await page.evaluate(() => {
-			(window as any).__failLocaleReload = true;
-		});
 		const picker = page.locator("#locale-select");
 		await picker.click();
 		await page.getByRole("button", { name: "English" }).click();
@@ -253,5 +278,33 @@ test.describe("Settings locale persistence", () => {
 		await expect
 			.poll(() => page.evaluate(() => (window as any).__localeEvents))
 			.toEqual(["en"]);
+	});
+
+	test("shows a retry action when a running agent reload fails", async ({
+		page,
+	}) => {
+		await openSettings(page);
+		await page.evaluate(() => {
+			(window as any).__failLocaleReload = true;
+		});
+		const picker = page.locator("#locale-select");
+		await picker.click();
+		await page.getByRole("button", { name: "English" }).click();
+		await expect(picker).toHaveAttribute("data-value", "en");
+		await expect(page.locator(".settings-error")).toContainText(
+			"running agent",
+		);
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() => JSON.parse((window as any).__localeConfigFile).locale,
+				),
+			)
+			.toBe("en");
+		await page.evaluate(() => {
+			(window as any).__failLocaleReload = false;
+		});
+		await page.getByRole("button", { name: "Retry" }).click();
+		await expect(page.locator(".settings-error")).toHaveCount(0);
 	});
 });

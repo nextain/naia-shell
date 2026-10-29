@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "Не удалось безопасно сохранить настройки, поэтому активная речь отключена.",
 	"settings.save": "Сохранить",
 	"settings.saveFailed": "Не удалось сохранить настройки",
+	"settings.agentReloadFailed": "Настройки сохранены, но новый язык не применён к работающему агенту. Повторите попытку.",
 	"settings.cancel": "Отмена",
 	"chat.placeholder": "Введите сообщение...",
 	"chat.noApiKey": "Ключ API не настроен. Пожалуйста, введите свой ключ API в настройках.",

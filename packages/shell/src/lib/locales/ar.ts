@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "تعذر حفظ الإعدادات بأمان، لذلك تم تعطيل الكلام الاستباقي.",
 	"settings.save": "حفظ",
 	"settings.saveFailed": "تعذر حفظ الإعدادات",
+	"settings.agentReloadFailed": "حُفظت الإعدادات، لكن تعذر تطبيق اللغة الجديدة على الوكيل قيد التشغيل. أعد المحاولة.",
 	"settings.cancel": "إلغاء",
 	"chat.placeholder": "اكتب رسالة...",
 	"chat.noApiKey": "لم يتم تكوين مفتاح API. الرجاء إدخال مفتاح API الخاص بك في الإعدادات.",

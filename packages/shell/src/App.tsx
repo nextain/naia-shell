@@ -45,6 +45,7 @@ import { detectGpuVramGb } from "./lib/capabilities/gpu";
 import { sendAppSkills, sendAppSkillsClear } from "./lib/chat-service";
 import {
 	addAllowedTool,
+	type AppConfig,
 	isOnboardingComplete,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -591,16 +592,10 @@ export function App() {
 						completeNaiaConfigHydration();
 						setConfigHydrated(true);
 						// Preserve the locale detected from the OS/browser as the new
-						// workspace's first config value so the Agent receives it too.
+						// onboarding seed. The wizard's eventual complete config write
+						// persists it; never write a partial config snapshot here.
 						const detectedLocale = getLocale();
-						try {
-							await writeNaiaConfigAtPath({ locale: detectedLocale }, adkPath);
-						} catch (error) {
-							Logger.warn("App", "Could not persist first-run locale", {
-								locale: detectedLocale,
-								error: error instanceof Error ? error.message : String(error),
-							});
-						}
+						saveConfig({ locale: detectedLocale } as AppConfig);
 						await hydrateUiPreferences(null, {
 							adkPath,
 							canPersist: true,

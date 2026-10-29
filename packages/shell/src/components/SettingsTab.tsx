@@ -30,6 +30,8 @@ import {
 	writeAgentSecretAtPath,
 	writeNaiaConfig,
 	writeNaiaConfigAtPath,
+	AgentSettingsReloadError,
+	reloadAgentSettings as reloadPersistedAgentSettings,
 	writeNaiaUiConfig,
 	writeSlotsManifest,
 } from "../lib/adk-store";
@@ -3196,12 +3198,18 @@ export function SettingsTab() {
 	}
 
 	const [localeSaving, setLocaleSaving] = useState(false);
+	const localeSavingRef = useRef(false);
+	const [localeReloadPending, setLocaleReloadPending] = useState(false);
+	const [localeRetrying, setLocaleRetrying] = useState(false);
 
 	async function handleLocaleChange(id: Locale) {
-		if (localeSaving) return;
+		if (localeSavingRef.current) return;
+		localeSavingRef.current = true;
 		setError("");
+		setLocaleReloadPending(false);
 		if (isNaiaConfigHydrationPending()) {
 			setError(t("settings.saveFailed"));
+			localeSavingRef.current = false;
 			return;
 		}
 		const previousLocale = locale;
@@ -3209,6 +3217,7 @@ export function SettingsTab() {
 		const adkPath = getAdkPath();
 		if (!current || !adkPath) {
 			setError(t("settings.saveFailed"));
+			localeSavingRef.current = false;
 			return;
 		}
 		const updated = { ...current, locale: id };
@@ -3227,6 +3236,16 @@ export function SettingsTab() {
 				new CustomEvent("naia:locale-change", { detail: id }),
 			);
 		} catch (error) {
+			if (error instanceof AgentSettingsReloadError) {
+				// config.json is already committed. Keep UI/cache/voice aligned with it
+				// and expose an explicit retry for the running Agent.
+				window.dispatchEvent(
+					new CustomEvent("naia:locale-change", { detail: id }),
+				);
+				setLocaleReloadPending(true);
+				setError(t("settings.agentReloadFailed"));
+				return;
+			}
 			await setLocale(previousLocale).catch((rollbackError: unknown) => {
 				Logger.warn(
 					"SettingsTab",
@@ -3248,7 +3267,22 @@ export function SettingsTab() {
 			});
 			setError(t("settings.saveFailed"));
 		} finally {
+			localeSavingRef.current = false;
 			setLocaleSaving(false);
+		}
+	}
+
+	async function retryLocaleAgentReload() {
+		if (localeRetrying) return;
+		setLocaleRetrying(true);
+		try {
+			await reloadPersistedAgentSettings();
+			setLocaleReloadPending(false);
+			setError("");
+		} catch {
+			setError(t("settings.agentReloadFailed"));
+		} finally {
+			setLocaleRetrying(false);
 		}
 	}
 
@@ -4114,6 +4148,15 @@ export function SettingsTab() {
 			{error && (
 				<div className="settings-error" role="alert">
 					{error}
+					{localeReloadPending && (
+						<button
+							type="button"
+							onClick={retryLocaleAgentReload}
+							disabled={localeRetrying}
+						>
+							{localeRetrying ? t("settings.saving") : t("common.retry")}
+						</button>
+					)}
 				</div>
 			)}
 			{activeSettingsTab === "general" && (

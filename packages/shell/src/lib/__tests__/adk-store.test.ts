@@ -617,7 +617,7 @@ describe("writeNaiaConfig", () => {
 		expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
 	});
 
-	it("keeps a committed config when the running agent cannot apply memory settings", async () => {
+	it("reports running-agent reload failure after committing the config", async () => {
 		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "{}";
@@ -630,7 +630,9 @@ describe("writeNaiaConfig", () => {
 
 		await expect(
 			writeNaiaConfig({ provider: "openai", model: "gpt-4o" }),
-		).resolves.toBeUndefined();
+		).rejects.toThrow(
+			"Settings were saved, but the running Agent could not reload them",
+		);
 		expect(mockInvoke).toHaveBeenCalledWith(
 			"write_naia_config",
 			expect.objectContaining({
@@ -639,13 +641,17 @@ describe("writeNaiaConfig", () => {
 		);
 	});
 
-	it("treats a stopped agent reload as saved config for the next spawn", async () => {
+	it("treats native available:false as a normal stopped-agent state", async () => {
 		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "{}";
 			if (command === "detect_gpu_vram") return null;
 			if (command === "reload_agent_settings")
-				throw new Error("agent not running");
+				return {
+					available: false,
+					memoryReloaded: false,
+					memoryStatus: "next_start",
+				};
 			return undefined;
 		});
 
@@ -684,7 +690,7 @@ describe("writeNaiaConfig", () => {
 		).toEqual(["write_naia_config"]);
 	});
 
-	it("rejects visibly when the paired UI config write fails", async () => {
+	it("keeps the committed config when the paired UI config write fails", async () => {
 		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "";
@@ -696,7 +702,7 @@ describe("writeNaiaConfig", () => {
 
 		await expect(
 			writeNaiaConfig({ provider: "openai", model: "gpt-4o" }),
-		).rejects.toThrow("ui-config write failed");
+		).resolves.toBeUndefined();
 		expect(
 			mockInvoke.mock.calls
 				.filter(([command]) => command !== "write_naia_path_cache")
@@ -705,6 +711,10 @@ describe("writeNaiaConfig", () => {
 			"write_naia_config",
 			"read_naia_ui_config",
 			"write_naia_ui_config",
+			"frontend_log",
+			"detect_gpu_vram",
+			"write_slots_manifest",
+			"reload_agent_settings",
 		]);
 	});
 

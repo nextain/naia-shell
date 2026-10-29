@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "설정을 적용하지 못해 능동 발화를 안전하게 차단했습니다.",
 	"settings.save": "적용",
 	"settings.saveFailed": "설정을 저장하지 못했습니다",
+	"settings.agentReloadFailed": "설정은 저장했지만 실행 중인 에이전트에 새 언어를 적용하지 못했습니다. 다시 시도해 주세요.",
 	"settings.cancel": "취소",
 	"chat.placeholder": "메시지를 입력하세요...",
 	"chat.noApiKey": "API 키가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.",

@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "設定を安全に保存できなかったため、能動発話を無効にしました。",
 	"settings.save": "保存",
 	"settings.saveFailed": "設定を保存できませんでした",
+	"settings.agentReloadFailed": "設定は保存されましたが、起動中のエージェントに新しい言語を適用できませんでした。再試行してください。",
 	"settings.cancel": "キャンセル",
 	"chat.placeholder": "メッセージを入力してください...",
 	"chat.noApiKey": "API キーが設定されていません。設定に API キーを入力してください。",

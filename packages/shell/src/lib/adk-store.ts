@@ -837,7 +837,11 @@ async function writeNaiaConfigNow(
 				normalizedAgentConfig.locale.length > 0,
 		))
 	) {
-		throw new Error("ui-config write failed");
+		// config.json is the locale source of truth. A secondary UI preference
+		// write must not make callers roll back a locale already committed there.
+		Logger.warn("adk-store", "ui-config write failed after config commit", {
+			adkPath,
+		});
 	}
 	// R2.2a: 로컬 cascade 구동 결정용 slots-manifest.json 동기화(windows-manager loader 가 read).
 	// 비밀 0(buildSlotsManifest 가 provider/model 만 직렬화). 항상 config 와 동기.
@@ -871,18 +875,31 @@ async function writeNaiaConfigNow(
 	// 정상 반환하며, 다음 SetWorkspace가 저장 파일을 읽는다.
 	// Do not deduplicate this acknowledgement by config text: the Agent may
 	// have restarted or retained an old memory instance since the prior write.
-	try {
-		await invoke("reload_agent_settings");
-	} catch (error) {
-		// The file is already committed. A stopped agent has nothing to reload;
-		// the next spawn reads config.json. Do not report this as a disk failure.
-		Logger.warn(
-			"adk-store",
-			"Agent settings reload deferred until next spawn",
-			{
-				error: error instanceof Error ? error.message : String(error),
-			},
+	await reloadAgentSettings();
+}
+
+/** Config is committed, but a running Agent did not acknowledge the reload. */
+export class AgentSettingsReloadError extends Error {
+	constructor(cause: unknown) {
+		super(
+			`Settings were saved, but the running Agent could not reload them: ${cause instanceof Error ? cause.message : String(cause)}`,
 		);
+		this.name = "AgentSettingsReloadError";
+	}
+}
+
+/** Native returns available:false when no Agent is running; that is normal. */
+export async function reloadAgentSettings(): Promise<void> {
+	try {
+		const result = await invoke<{ available?: boolean }>(
+			"reload_agent_settings",
+		);
+		if (result && result.available === false) return;
+	} catch (error) {
+		Logger.warn("adk-store", "Agent settings reload failed", {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw new AgentSettingsReloadError(error);
 	}
 }
 

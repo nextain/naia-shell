@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "Não foi possível salvar as configurações com segurança; a fala proativa foi desativada.",
 	"settings.save": "Salvar",
 	"settings.saveFailed": "Não foi possível salvar as configurações",
+	"settings.agentReloadFailed": "As configurações foram salvas, mas não foi possível aplicar o novo idioma ao agente em execução. Tente novamente.",
 	"settings.cancel": "Cancelar",
 	"chat.placeholder": "Digite uma mensagem...",
 	"chat.noApiKey": "Nenhuma chave de API configurada. Por favor, insira sua chave API nas configurações.",

@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "सेटिंग सुरक्षित रूप से सहेजी नहीं जा सकी, इसलिए सक्रिय वाणी अक्षम कर दी गई।",
 	"settings.save": "सहेजें",
 	"settings.saveFailed": "सेटिंग सहेजी नहीं जा सकी",
+	"settings.agentReloadFailed": "सेटिंग सहेजी गईं, लेकिन चल रहे एजेंट पर नई भाषा लागू नहीं हुई। फिर से प्रयास करें।",
 	"settings.cancel": "रद्द करें",
 	"chat.placeholder": "एक संदेश टाइप करें...",
 	"chat.noApiKey": "कोई API कुंजी कॉन्फ़िगर नहीं की गई. कृपया सेटिंग्स में अपनी एपीआई कुंजी दर्ज करें।",

@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "无法安全保存设置，因此已禁用主动发言。",
 	"settings.save": "保存",
 	"settings.saveFailed": "无法保存设置",
+	"settings.agentReloadFailed": "设置已保存，但未能将新语言应用到正在运行的智能体。请重试。",
 	"settings.cancel": "取消",
 	"chat.placeholder": "输入消息...",
 	"chat.noApiKey": "未配置 API 密钥。请在设置中输入您的 API 密钥。",

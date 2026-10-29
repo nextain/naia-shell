@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "Les réglages n’ont pas pu être enregistrés en toute sécurité ; la parole proactive a été désactivée.",
 	"settings.save": "Enregistrer",
 	"settings.saveFailed": "Impossible d’enregistrer les paramètres",
+	"settings.agentReloadFailed": "Les paramètres sont enregistrés, mais la langue n’a pas été appliquée à l’agent actif. Réessayez.",
 	"settings.cancel": "Annuler",
 	"chat.placeholder": "Tapez un message...",
 	"chat.noApiKey": "Aucune clé API configurée. Veuillez saisir votre clé API dans les paramètres.",

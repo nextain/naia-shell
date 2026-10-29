@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "The settings could not be applied, so proactive speech was safely blocked.",
 	"settings.save": "Apply",
 	"settings.saveFailed": "Could not save settings",
+	"settings.agentReloadFailed": "Settings were saved, but the running agent did not apply the new language. Retry to apply it.",
 	"settings.cancel": "Cancel",
 	"chat.placeholder": "Type a message...",
 	"chat.noApiKey": "No API key configured. Please enter your API key in settings.",

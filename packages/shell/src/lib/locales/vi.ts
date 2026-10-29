@@ -223,6 +223,7 @@ export default {
 	"settings.proactiveSaveError": "Không thể lưu cài đặt an toàn nên lời nói chủ động đã bị tắt.",
 	"settings.save": "Lưu",
 	"settings.saveFailed": "Không thể lưu cài đặt",
+	"settings.agentReloadFailed": "Đã lưu cài đặt nhưng chưa thể áp dụng ngôn ngữ mới cho tác tử đang chạy. Hãy thử lại.",
 	"settings.cancel": "Hủy bỏ",
 	"chat.placeholder": "Nhập tin nhắn...",
 	"chat.noApiKey": "Không có khóa API nào được định cấu hình. Vui lòng nhập khóa API của bạn trong cài đặt.",
