@@ -289,17 +289,22 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			page.getByRole("button", { name: "Open another project" }),
 		).toBeVisible();
 		await expect(page.locator(".projects-app").getByRole("tab")).toHaveCount(3);
-		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
 		await page.getByRole("button", { name: "Open another project" }).click();
 		await expect(page.getByRole("searchbox")).toBeVisible();
 		await expect(
 			page.getByRole("button", { name: "Back to Example App" }),
 		).toBeVisible();
 		await page.getByRole("button", { name: /Example Library/ }).click();
-		await page.getByRole("tab", { name: "Internal Issues" }).click();
+		await expect(page.locator(".projects-app").getByRole("tab")).toHaveCount(2);
+		await expect(page.getByRole("tab", { name: "Tasks" })).toHaveCount(0);
+		await expect(page.getByRole("tab", { name: "Coding Agent" })).toHaveAttribute(
+			"aria-selected",
+			"true",
+		);
 		await page.getByRole("button", { name: "Open another project" }).click();
 		await page.getByRole("button", { name: /Example App/ }).click();
-		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
+		await expect(page.getByRole("tab", { name: "Docs" })).toHaveAttribute(
 			"aria-selected",
 			"true",
 		);
@@ -317,7 +322,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await setCatalog(page, READY_CATALOG);
 		await openProjectApp(page);
 		await page.getByRole("button", { name: /Example Library/ }).click();
-		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
 		await page.reload();
 		await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
 		await setCatalog(page, READY_CATALOG);
@@ -325,7 +330,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await expect(
 			page.getByRole("heading", { name: "Example Library", level: 1 }),
 		).toBeVisible();
-		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
+		await expect(page.getByRole("tab", { name: "Docs" })).toHaveAttribute(
 			"aria-selected",
 			"true",
 		);
@@ -512,17 +517,15 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 
 		await page.getByRole("button", { name: "Open another project" }).click();
 		await page.getByRole("button", { name: /Example Library/ }).click();
-		await page.getByRole("tab", { name: "Dashboard" }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
 		await expect(
 			page.getByRole("heading", { name: "The configured address is invalid" }),
 		).toBeVisible();
 		await expect(
-			page.getByRole("button", { name: "Open dashboard" }),
+			page.getByRole("button", { name: "Open docs" }),
 		).toHaveCount(0);
-		await page.getByRole("tab", { name: "Internal Issues" }).click();
-		await expect(
-			page.getByRole("heading", { name: "This address is not configured" }),
-		).toBeVisible();
+		await expect(page.locator(".projects-app").getByRole("tab")).toHaveCount(2);
+		await expect(page.getByRole("tab", { name: "Tasks" })).toHaveCount(0);
 
 		await page.getByRole("button", { name: "Open another project" }).click();
 		await page.getByRole("button", { name: /Example App/ }).click();
@@ -556,8 +559,8 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			adapterRoot: "/fixture/adapter-root",
 		});
 
-		await page.getByRole("tab", { name: "Dashboard" }).click();
-		await page.getByRole("button", { name: "Open dashboard" }).click();
+		await page.getByRole("tab", { name: "Docs" }).click();
+		await page.getByRole("button", { name: "Open docs" }).click();
 		await expect(
 			page.getByText(
 				"The project window was not created in this test environment. The project URL remains configured.",
@@ -627,7 +630,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		const coding = page.getByRole("tab", { name: "Coding Agent" });
 		await coding.focus();
 		await page.keyboard.press("ArrowRight");
-		await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute(
+		await expect(page.getByRole("tab", { name: "Docs" })).toHaveAttribute(
 			"aria-selected",
 			"true",
 		);
@@ -707,7 +710,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		});
 		await openProjectApp(page);
 		await expect(
-			page.locator('button[data-app-id="projects"] svg'),
+			page.locator('button[data-app-id="projects"] img.app-bar-tab-icon--svg'),
 		).toBeVisible();
 		await page.getByRole("button", { name: "Reload" }).click();
 		await page.getByRole("button", { name: /Practice Class/ }).click();
@@ -747,6 +750,11 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 				adapterRoot: "/fixture/adapter-root",
 				projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
 				relativePath: "domain/guide.md",
+			},
+			{
+				adapterRoot: "/fixture/adapter-root",
+				projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+				relativePath: "자료/lesson1.md",
 			},
 			{
 				adapterRoot: "/fixture/adapter-root",
