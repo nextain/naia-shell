@@ -9,6 +9,14 @@ on:
         required: false
         type: boolean
         default: false
+      instance:
+        description: Naia instance the internal build talks to (dev needs internal_unsigned)
+        required: false
+        type: choice
+        options:
+          - prod
+          - dev
+        default: prod
 
 concurrency:
   group: build-installers-${{ github.workflow }}-${{ github.ref }}
@@ -182,6 +190,23 @@ jobs:
             if [ -f packages/shell/scripts/voxcpm2-profile-registry.json ]; then
               echo "NAIA_VOXCPM2_PROFILE_REGISTRY=$(realpath packages/shell/scripts/voxcpm2-profile-registry.json)"
             fi
+          } >> "$GITHUB_ENV"
+
+      # 개발 서버 시연·실기용. 앱 화면·로그인·게이트웨이가 dev.naia.land·
+      # api-dev.naia.land 를 보게 한다. 서명·배포되는 판에 섞이지 않도록
+      # 서명 없는 내부 빌드에서만 허용한다.
+      - name: Point internal build at the dev instance
+        if: inputs.instance == 'dev'
+        shell: bash
+        run: |
+          if [ "${{ inputs.internal_unsigned }}" != "true" ]; then
+            echo "::error::instance=dev requires internal_unsigned=true"
+            exit 1
+          fi
+          {
+            echo "VITE_NAIA_USE_DEV_GATEWAY=1"
+            echo "VITE_NAIA_DEV_GATEWAY_URL=https://api-dev.naia.land"
+            echo "VITE_NAIA_WEB_BASE_URL=https://dev.naia.land"
           } >> "$GITHUB_ENV"
 
       - name: Build installer bundle from platform matrix
