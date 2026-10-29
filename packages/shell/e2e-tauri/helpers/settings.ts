@@ -235,20 +235,20 @@ export async function openSettingsSection(id: string): Promise<void> {
 /** Navigate to Settings via the app-bar button and wait for render (#541). */
 export async function navigateToSettings(): Promise<void> {
 	// 앱바 설정 버튼은 토글이다 — 이미 열려 있으면 다시 누르지 않는다(닫혀 버림).
-	// keepAlive 앱은 opacity:0 슬롯으로 숨겨서 offsetParent 로는 판별 불가 —
-	// 슬롯의 active 클래스가 유일한 진실이다.
-	const alreadyOpen = await browser.execute(() => {
-		const panel = document.querySelector(".settings-tab") as HTMLElement | null;
-		if (!panel) return false;
-		const slot = panel.closest(".content-app__slot");
-		if (slot) return slot.classList.contains("content-app__slot--active");
-		return true; // keepAlive 슬롯 밖에서 렌더 = 실제로 열린 화면
-	});
-	if (alreadyOpen) return;
-	// querySelector 클릭은 요소가 없으면 무음 no-op 라 실패를 숨긴다 —
-	// 버튼 표시를 기다렸다가 실제 클릭으로 연다.
-	await clickElement(S.settingsTabBtn, 15_000);
-	await browser.pause(500);
+	// 설정 화면은 lazy()+Suspense(fallback null) 라 열린 직후 잠깐 `.settings-tab`
+	// 이 DOM 에 없다. 패널 유무로 "닫힘"을 판단하면 열리는 중인 설정을 다시 눌러
+	// 닫아 버린다 — 앱바 버튼의 active 클래스(activeApp === "settings")가 진실이다.
+	const alreadyOpen = await browser.execute(
+		() => !!document.querySelector(".app-bar-settings--active"),
+	);
+	if (!alreadyOpen) {
+		// querySelector 클릭은 요소가 없으면 무음 no-op 라 실패를 숨긴다 —
+		// 버튼 표시를 기다렸다가 실제 클릭으로 연다.
+		await clickElement(S.settingsTabBtn, 15_000);
+	}
+	// lazy 청크가 늦게 와도 패널이 실제로 보일 때까지 기다린다.
+	await (await $(S.settingsTab)).waitForDisplayed({ timeout: 15_000 });
+	await browser.pause(300);
 }
 
 /** Scroll a specific element into view. */
