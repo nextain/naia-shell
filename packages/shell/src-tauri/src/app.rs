@@ -1109,6 +1109,34 @@ pub fn app_list_installed(app_handle: tauri::AppHandle) -> Result<Vec<AppManifes
     list_installed_from_selected(&adk)
 }
 
+/// Recheck a single installed app's signature receipt immediately before a
+/// model-facing Store tool is dispatched. The frontend throttles this to once
+/// per app per 60 seconds; the command always reads the current files.
+#[tauri::command]
+pub fn app_verify_installed_store_app(app_id: String) -> Result<bool, String> {
+    validate_store_app_id(&app_id)?;
+    let adk = selected_adk_path()?;
+    let apps_root = prepare_apps_root(&adk)?;
+    let app_dir = apps_root.join(&app_id);
+    let metadata = std::fs::symlink_metadata(&app_dir)
+        .map_err(|_| "Installed app not found".to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Installed app not found".to_string());
+    }
+    let manifest_bytes = std::fs::read(app_dir.join("app.json"))
+        .map_err(|_| "Installed app manifest unavailable".to_string())?;
+    let manifest: AppManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|_| "Installed app manifest invalid".to_string())?;
+    if manifest.id != app_id {
+        return Ok(false);
+    }
+    Ok(has_verified_store_signature_with_key(
+        &app_dir,
+        &app_id,
+        resolve_signing_public_key(option_env!("NAIA_APP_SIGNING_PUBLIC_KEY")),
+    ))
+}
+
 /// Read a file on behalf of an iframe panel.
 /// Restricted to files inside the selected ADK's installed-app root (max 1 MB).
 /// Called from iframe-bridge.ts → Tauri invoke("app_read_file").
@@ -2352,6 +2380,15 @@ fn store_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+fn store_entitlement_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(1))
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
 fn store_key(app: &tauri::AppHandle) -> Result<String, String> {
     crate::read_secure_naia_credential(app).ok_or_else(|| "Naia login required".to_string())
 }
@@ -2366,7 +2403,7 @@ pub fn app_store_has_entitlement(
     let endpoint = validated_store_gateway(&gateway_url)?
         .join(&format!("v1/apps/entitlements/{app_id}"))
         .map_err(|_| "Invalid entitlement endpoint".to_string())?;
-    let response = store_client()?
+    let response = store_entitlement_client()?
         .get(endpoint)
         .bearer_auth(store_key(&app)?)
         .send()

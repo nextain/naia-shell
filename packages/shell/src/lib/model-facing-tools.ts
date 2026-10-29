@@ -55,7 +55,8 @@ export const MODEL_FACING_TOOL_KEEP_LIST = [
 const MODEL_FACING_TOOL_KEEP_SET = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
 /**
  * Names owned by the Shell or its paired Agent, including built-ins deliberately
- * excluded from model-facing tools. Keep in sync with lib.rs built_in_skills().
+ * excluded from model-facing tools. Keep in sync with the inline skill-name
+ * array returned by `list_skills` in src-tauri/src/lib.rs.
  */
 export const SHELL_RESERVED_TOOL_NAMES = new Set<string>([
 	...MODEL_FACING_TOOL_KEEP_LIST,
@@ -79,8 +80,9 @@ export const SHELL_RESERVED_TOOL_NAMES = new Set<string>([
 	// This old environment tool must remain outside app-owned model tools too.
 	"skill_environment",
 ]);
-// Backward compatibility for the pre-dynamic Store tool and existing developer
-// mode side-loads. New Store apps are authorized from Rust-verified manifests.
+// The built-in skill allowlist omits this historical Store app tool because it
+// is registered by the app iframe. Keep its legacy name here so the app can be
+// invoked when its signed Store manifest owns it.
 export const LEGACY_APP_TOOL_KEEP_LIST = ["skill_blackjack_tutor"] as const;
 const LEGACY_APP_TOOL_KEEP_SET = new Set<string>(LEGACY_APP_TOOL_KEEP_LIST);
 
@@ -89,21 +91,19 @@ export type ModelFacingToolName = (typeof MODEL_FACING_TOOL_KEEP_LIST)[number];
 export function isModelFacingToolAllowed(name: string): boolean {
 	if (MODEL_FACING_TOOL_KEEP_SET.has(name)) return true;
 	if (LEGACY_APP_TOOL_KEEP_SET.has(name)) {
-		// Keep the pre-existing side-load contract while the owning app is
-		// installed. A verified Store install follows the new active-app gate.
-		// The legacy exception is removed from the shell-wide keep list, so
-		// removal immediately closes it.
+		// This compatibility exception belongs only to a verified Store owner;
+		// an unsigned iframe must not compete for the legacy dispatch name.
 		const activeAppId = useAppStore.getState().activeApp;
 		return appRegistry.list().some((app) => {
 			if (
 				app.source !== "installed" ||
+				app.storeSignatureVerified !== true ||
+				app.id !== activeAppId ||
 				!app.tools?.some((tool) => tool.name === name)
 			) {
 				return false;
 			}
-			return app.storeSignatureVerified === true
-				? app.id === activeAppId
-				: true;
+			return true;
 		});
 	}
 	if (!name.startsWith("skill_")) return false;

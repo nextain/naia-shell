@@ -54,6 +54,38 @@ export type ToolHandler = (
 	args: Record<string, unknown>,
 ) => Promise<string | undefined> | string | undefined;
 
+export const MAX_APP_TOOL_ARGS_BYTES = 64 * 1024;
+
+/** Validate model arguments before any app bridge can receive them. */
+export function validateAppToolArgs(args: unknown): string | null {
+	if (args === null || typeof args !== "object" || Array.isArray(args)) {
+		return "Tool arguments must be a JSON object";
+	}
+	const prototype = Object.getPrototypeOf(args);
+	if (prototype !== Object.prototype && prototype !== null) {
+		return "Tool arguments must be a plain JSON object";
+	}
+	try {
+		const serialized = JSON.stringify(args);
+		if (serialized === undefined) return "Tool arguments are not JSON serializable";
+		if (new TextEncoder().encode(serialized).byteLength > MAX_APP_TOOL_ARGS_BYTES) {
+			return "Tool arguments exceed the 64 KB limit";
+		}
+	} catch {
+		return "Tool arguments are not JSON serializable";
+	}
+	return null;
+}
+
+export function resolveAppToolTargetOrigin(src: string): string | null {
+	try {
+		const origin = new URL(src).origin;
+		return origin && origin !== "null" ? origin : null;
+	} catch {
+		return null;
+	}
+}
+
 export interface ShellResult {
 	stdout: string;
 	stderr: string;
@@ -178,6 +210,8 @@ export class ActiveAppBridge implements NaiaContextBridge {
 		toolName: string,
 		args: Record<string, unknown>,
 	): Promise<string> {
+		const validationError = validateAppToolArgs(args);
+		if (validationError) throw new Error(validationError);
 		const handler = this.handlers.get(toolName);
 		if (!handler) return `No handler registered for tool: ${toolName}`;
 		const result = await handler(args);

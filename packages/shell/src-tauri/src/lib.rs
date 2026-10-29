@@ -14674,6 +14674,7 @@ pub fn run() {
             // Common tab skills
             capture::capture_screen_region,
             app::app_list_installed,
+            app::app_verify_installed_store_app,
             app::app_remove_installed,
             app::app_read_file,
             app::app_run_shell,

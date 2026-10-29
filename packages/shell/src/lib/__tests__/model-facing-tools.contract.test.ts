@@ -157,7 +157,7 @@ describe("model-facing tool contract", () => {
 		}
 	});
 
-	it("keeps legacy blackjack and developer side-load compatibility", () => {
+	it("does not let unsigned side-loads own the legacy blackjack tool", () => {
 		const sideLoadedTool = {
 			name: "skill_side_loaded_game",
 			description: "Side loaded game tool",
@@ -177,7 +177,7 @@ describe("model-facing tool contract", () => {
 		try {
 			useAppStore.getState().setActiveApp("side-loaded-contract-test");
 			expect(filterModelFacingTools([sideLoadedTool])).toEqual([]);
-			expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(true);
+			expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(false);
 		} finally {
 			useAppStore.getState().setActiveApp(null);
 			appRegistry.unregister("side-loaded-contract-test");

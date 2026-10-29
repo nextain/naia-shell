@@ -1,8 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../stores/app";
-import { loadInstalledApps, removeInstalledApp } from "../app-loader";
-import { appRegistry } from "../app-registry";
+import {
+	ensureStoreAppVerificationFresh,
+	loadInstalledApps,
+	removeInstalledApp,
+} from "../app-loader";
+import {
+	ActiveAppBridge,
+	appRegistry,
+	resolveAppToolTargetOrigin,
+	validateAppToolArgs,
+} from "../app-registry";
 import { Logger } from "../logger";
+import { isModelFacingToolAllowed, makeModelToolBoundary } from "../model-facing-tools";
 
 // Mock Tauri invoke
 const mockInvoke = vi.fn();
@@ -133,7 +143,7 @@ describe("app-loader", () => {
 		});
 
 		it("assigns profile 'v2' and maps v2 fields when manifest_version is 2", async () => {
-			mockInvoke.mockResolvedValue([
+			const collisionManifests = [
 				{
 					id: "v2-app",
 					name: "V2 App",
@@ -165,7 +175,12 @@ describe("app-loader", () => {
 						},
 					],
 				},
-			]);
+			];
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve(collisionManifests)
+					: Promise.resolve(true),
+			);
 
 			await loadInstalledApps();
 
@@ -188,7 +203,7 @@ describe("app-loader", () => {
 		});
 
 		it("rejects signed Store tool declarations that collide with built-ins or another app", async () => {
-			mockInvoke.mockResolvedValue([
+			const signedManifest = [
 				{
 					id: "signed-store-collision",
 					name: "Signed Store app",
@@ -204,9 +219,15 @@ describe("app-loader", () => {
 				{
 					id: "other-installed-collision",
 					name: "Other app",
+					store_signature_verified: true,
 					tools: [{ name: "skill_shared_collision", description: "duplicate" }],
 				},
-			]);
+			];
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve(signedManifest)
+					: Promise.resolve(true),
+			);
 
 			await loadInstalledApps();
 
@@ -222,7 +243,7 @@ describe("app-loader", () => {
 				appRegistry
 					.get("other-installed-collision")
 					?.tools?.map((tool) => tool.name),
-			).toEqual(["skill_shared_collision"]);
+			).toEqual([]);
 			expect(Logger.warn).toHaveBeenCalledWith(
 				"AppLoader",
 				"Rejected Store app tool declaration",
@@ -243,27 +264,41 @@ describe("app-loader", () => {
 		});
 
 		it("revokes Store tool trust when Rust no longer verifies the installed receipt", async () => {
-			mockInvoke.mockResolvedValue([
-				{
-					id: "store-trust-refresh",
-					name: "Store app",
-					store_signature_verified: true,
-					tools: [{ name: "skill_store_refresh", description: "Refresh" }],
-				},
-			]);
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve([
+						{
+							id: "store-trust-refresh",
+							name: "Store app",
+							store_signature_verified: true,
+							tools: [
+								{ name: "skill_store_refresh", description: "Refresh" },
+							],
+						},
+						],
+					)
+					: Promise.resolve(true),
+			);
 			await loadInstalledApps();
 			expect(
 				appRegistry.get("store-trust-refresh")?.storeSignatureVerified,
 			).toBe(true);
 
-			mockInvoke.mockResolvedValue([
-				{
-					id: "store-trust-refresh",
-					name: "Store app",
-					store_signature_verified: false,
-					tools: [{ name: "skill_store_refresh", description: "Refresh" }],
-				},
-			]);
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve([
+						{
+							id: "store-trust-refresh",
+							name: "Store app",
+							store_signature_verified: false,
+							tools: [
+								{ name: "skill_store_refresh", description: "Refresh" },
+							],
+						},
+						],
+					)
+					: Promise.resolve(true),
+			);
 			await loadInstalledApps();
 			expect(
 				appRegistry.get("store-trust-refresh")?.storeSignatureVerified,
@@ -340,6 +375,163 @@ describe("app-loader", () => {
 
 			expect(appRegistry.get("new-root-app")).toBeDefined();
 			expect(appRegistry.get("old-root-app")).toBeUndefined();
+		});
+
+		it("ignores unsigned declarations when building signed owners and legacy dispatch", async () => {
+			mockInvoke.mockImplementation((command: string) => {
+				if (command === "app_list_installed") {
+					return Promise.resolve([
+						{
+							id: "signed-owner-test",
+							name: "Signed owner",
+							store_signature_verified: true,
+							tools: [
+								{ name: "skill_signed_unique", description: "Signed" },
+								{ name: "skill_blackjack_tutor", description: "Legacy" },
+							],
+						},
+						{
+							id: "unsigned-squatter-test",
+							name: "Unsigned side load",
+							tools: [
+								{ name: "skill_signed_unique", description: "Squat" },
+								{ name: "skill_blackjack_tutor", description: "Legacy squat" },
+							],
+						},
+					]);
+				}
+				return Promise.resolve(true);
+			});
+			await loadInstalledApps();
+			const signed = appRegistry.get("signed-owner-test");
+			const unsigned = appRegistry.get("unsigned-squatter-test");
+			expect(signed?.tools?.map((tool) => tool.name)).toContain("skill_signed_unique");
+			expect(unsigned?.tools?.map((tool) => tool.name)).toEqual([
+				"skill_signed_unique",
+			]);
+			useAppStore.getState().setActiveApp("signed-owner-test");
+			expect(isModelFacingToolAllowed("skill_signed_unique")).toBe(true);
+			expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(true);
+			useAppStore.getState().setActiveApp("unsigned-squatter-test");
+			expect(isModelFacingToolAllowed("skill_signed_unique")).toBe(false);
+			expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(false);
+		});
+
+		it("replaces tools and verification state on every installed app refresh", async () => {
+			let list = [
+				{
+					id: "refresh-tools-test",
+					name: "Refresh",
+					store_signature_verified: true,
+					tools: [{ name: "skill_before_refresh", description: "Before" }],
+				},
+			];
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed" ? Promise.resolve(list) : Promise.resolve(true),
+			);
+			await loadInstalledApps();
+			expect(appRegistry.get("refresh-tools-test")?.storeSignatureVerified).toBe(true);
+			list = [
+				{
+					id: "refresh-tools-test",
+					name: "Refresh",
+					store_signature_verified: false,
+					tools: [{ name: "skill_after_refresh", description: "After" }],
+				},
+			];
+			await loadInstalledApps();
+			expect(appRegistry.get("refresh-tools-test")?.storeSignatureVerified).toBe(false);
+			expect(appRegistry.get("refresh-tools-test")?.tools?.map((tool) => tool.name)).toEqual([
+				"skill_after_refresh",
+			]);
+			expect(isModelFacingToolAllowed("skill_after_refresh")).toBe(false);
+		});
+
+		it("revokes a signed app for explicit entitlement loss and preserves it offline", async () => {
+			const manifest = (id: string) => [{
+				id,
+				name: id,
+				store_signature_verified: true,
+				tools: [{ name: `skill_${id}`, description: id }],
+			}];
+			mockInvoke.mockImplementation((command: string, args: { appId?: string }) => {
+				if (command === "app_list_installed") return Promise.resolve(manifest("entitlement-denied-test"));
+				if (args.appId === "entitlement-denied-test") return Promise.resolve(false);
+				return Promise.reject(new Error("offline"));
+			});
+			await loadInstalledApps();
+			expect(appRegistry.get("entitlement-denied-test")?.storeSignatureVerified).toBe(false);
+
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve(manifest("entitlement-offline-test"))
+					: Promise.reject(new Error("offline")),
+			);
+			await loadInstalledApps();
+			expect(appRegistry.get("entitlement-offline-test")?.storeSignatureVerified).toBe(true);
+		});
+
+		it("rechecks one Store app in Rust after the 60 second dispatch window", async () => {
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve([
+							{
+								id: "dispatch-refresh-test",
+								name: "Dispatch refresh",
+								store_signature_verified: true,
+								tools: [{ name: "skill_dispatch_refresh", description: "Tool" }],
+							},
+						])
+					: Promise.resolve(true),
+			);
+			await loadInstalledApps();
+			const now = Date.now();
+			const dateNow = vi.spyOn(Date, "now").mockReturnValue(now + 61_000);
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_verify_installed_store_app" ? Promise.resolve(false) : Promise.resolve(true),
+			);
+			try {
+				expect(await ensureStoreAppVerificationFresh("dispatch-refresh-test")).toBe(false);
+				expect(mockInvoke).toHaveBeenCalledWith("app_verify_installed_store_app", {
+					appId: "dispatch-refresh-test",
+				});
+				expect(appRegistry.get("dispatch-refresh-test")?.storeSignatureVerified).toBe(false);
+			} finally {
+				dateNow.mockRestore();
+			}
+		});
+
+		it("connects Rust list output through loader, model boundary, and deletion", async () => {
+			mockInvoke.mockImplementation((command: string, args: { appId?: string }) => {
+				if (command === "app_list_installed") {
+					return Promise.resolve([
+						{
+							id: "integration-store-test",
+							name: "Integration Store",
+							store_signature_verified: true,
+							tools: [{ name: "skill_integration_store", description: "Signed" }],
+						},
+						{
+							id: "integration-squatter-test",
+							name: "Unsigned",
+							tools: [{ name: "skill_integration_store", description: "Squat" }],
+						},
+					]);
+				}
+				if (command === "app_store_has_entitlement") return Promise.resolve(true);
+				if (command === "app_remove_installed" && args.appId === "integration-store-test") return Promise.resolve();
+				return Promise.resolve(false);
+			});
+			await loadInstalledApps();
+			useAppStore.getState().setActiveApp("integration-store-test");
+			const boundary = makeModelToolBoundary({ fetchTools: async () => [{ name: "skill_integration_store" }] });
+			expect((await boundary.resolve()).disabledSkills).toEqual([]);
+			expect(appRegistry.get("integration-squatter-test")?.tools).toEqual([
+				{ name: "skill_integration_store", description: "Squat" },
+			]);
+			await removeInstalledApp("integration-store-test");
+			expect(isModelFacingToolAllowed("skill_integration_store")).toBe(false);
+			expect(mockInvoke).toHaveBeenCalledWith("app_remove_installed", { appId: "integration-store-test" });
 		});
 	});
 
@@ -428,5 +620,32 @@ describe("app-loader", () => {
 
 			expect(appRegistry.get("to-remove-4")).toBeDefined();
 		});
+	});
+});
+
+describe("app tool IPC argument guard", () => {
+	it("accepts plain JSON objects and rejects invalid or oversized arguments", async () => {
+		expect(validateAppToolArgs({ answer: 42 })).toBeNull();
+		expect(validateAppToolArgs(null)).toContain("JSON object");
+		expect(validateAppToolArgs([1, 2])).toContain("JSON object");
+		expect(validateAppToolArgs(new Date())).toContain("plain JSON object");
+		expect(validateAppToolArgs({ value: "x".repeat(65 * 1024) })).toContain("64 KB");
+		const cyclic: Record<string, unknown> = {};
+		cyclic.self = cyclic;
+		expect(validateAppToolArgs(cyclic)).toContain("serializable");
+
+		const bridge = new ActiveAppBridge("args-test");
+		const handler = vi.fn(() => "delivered");
+		bridge.onToolCall("skill_args_test", handler);
+		await expect(
+			bridge.callTool("skill_args_test", { value: "x".repeat(65 * 1024) }),
+		).rejects.toThrow("64 KB");
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("stops target-origin parsing failures instead of using wildcard", () => {
+		expect(resolveAppToolTargetOrigin("https://apps.example.test/index.html")).toBe("https://apps.example.test");
+		expect(resolveAppToolTargetOrigin("not a url")).toBeNull();
+		expect(resolveAppToolTargetOrigin("data:text/html,hello")).toBeNull();
 	});
 });

@@ -2006,13 +2006,13 @@ Exception #687: `skill_workspace_edit_open_file` (open editor file only, per-edi
 
 ### UC-APPSTORE-DYNAMIC-TOOLS-20261029 — 서명된 스토어 앱 도구
 
-사용자가 서명을 검증한 앱스토어 앱을 설치하고 해당 앱을 열면, 그 앱의 `app.json`에 선언된 `skill_*` 도구를 셸 재배포 없이 Naia가 사용할 수 있다. 셸의 Rust 설치 경로가 서명 검증을 통과한 스토어 설치임을 확인한 경우에만 동적 허용한다. 서명되지 않은 앱, 내장 도구와 충돌하는 이름, 다른 설치 앱이 이미 선언한 이름은 허용하지 않고 로그를 남긴다. 앱 전환·삭제·ADK 전환 뒤에는 직전 앱의 도구가 더는 모델 경계에 남지 않는다. 기존 개발자 모드 사이드로드 앱과 `skill_blackjack_tutor`의 호환 동작은 보존한다.
+사용자가 서명을 검증한 앱스토어 앱을 설치하고 해당 앱을 열면, 그 앱의 `app.json`에 선언된 `skill_*` 도구를 셸 재배포 없이 Naia가 사용할 수 있다. 셸의 Rust 설치 경로가 서명 검증을 통과한 스토어 설치임을 확인한 경우에만 동적 허용한다. 서명되지 않은 앱, 내장 도구와 충돌하는 이름, 다른 서명 설치 앱이 이미 선언한 이름은 허용하지 않고 로그를 남긴다. 미서명 앱 선언은 서명 앱 도구를 가로채거나 레거시 `skill_blackjack_tutor` 소유자 경쟁에 참여할 수 없다. 목록을 다시 읽으면 검증 상태와 도구 목록을 함께 교체한다. 권리 대상 앱은 목록에서 10분 캐시로 권리를 확인하고 명시적 권리 없음이면 강등하며, 네트워크 실패 시 영수증 기반 검증을 유지한다. 실행 전 Rust 영수증 확인은 최대 60초까지만 재사용한다. 앱 전환·삭제·ADK 전환 뒤에는 직전 앱의 도구가 더는 모델 경계에 남지 않는다. 개발자 모드 사이드로드 화면 동작은 유지하고, 그 도구는 모델에 노출하지 않는다. `skill_blackjack_tutor` 예외는 활성 서명 소유자가 있을 때만 적용한다.
 
 Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI / Rust |
 |---|---|---|
-| UC-APPSTORE-DYNAMIC-TOOLS-20261029 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: 서명된 활성 앱 도구만 동적 허용, 비서명/비활성/충돌 거부, 사이드로드 및 블랙잭 호환; `packages/shell/src-tauri/src/app.rs` 앱 목록 단위 시험: 서명 ZIP·app.json 일치 검증, 변조/영수증 제거 시 신뢰 해제; `app-loader.test.ts`: 앱 목록 제거 시 등록 해제 | Rust 앱 목록 응답과 `loadInstalledApps` 계약에서 전환·삭제 후 도구 경계 제외 확인. UI 표현은 바뀌지 않는다. |
+| UC-APPSTORE-DYNAMIC-TOOLS-20261029 | `model-facing-tools.contract.test.ts`: 서명 활성 도구·unsigned legacy 차단; `app-loader.test.ts`: signed owner 맵·목록 갱신·권리 없음/오프라인·삭제→boundary 통합; 같은 파일: 64 KB/JSON object 및 origin 단위 계약; `packages/shell/src-tauri/src/app.rs` 앱 목록 단위 시험: 서명 ZIP·app.json 일치 및 변조/영수증 삭제 판정 | Vitest에서 Rust 목록 invoke 응답→TS loader→model boundary→삭제 뒤 차단 흐름, Rust app tests, Rust 실행 직전 단일 앱 확인 명령. 화면 표현은 변경하지 않음. |
 
 | 상태 | 사용자 기대 |
 |---|---|
