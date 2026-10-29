@@ -17,7 +17,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 | UC | 시나리오 (실제 기능) | 인지흐름 경로 | 관통 슬라이스/포트 |
 |---|---|---|---|
-| **UC1 텍스트 대화** | ChatApp 에 입력→응답 | Chat(ingress) → 사고(llm) → 표현(speech-intent) | ChatPort·llm·ExpressionPort |
+| **UC1 텍스트 대화** | ChatApp 에 입력→응답. 좁은 폭에서도 한글 응답은 낱말 단위로 줄을 바꾸고, 공백 없는 긴 문자열은 말풍선 밖으로 넘치지 않는다. | Chat(ingress) → 사고(llm) → 표현(speech-intent) | ChatPort·llm·ExpressionPort |
 | **UC2 음성 대화** | wake→말하기→음성응답+아바타 | 감각(audio→STT) → 지각 → 사고 → 표현(음성+emote) | SensoryPort·voice(provider)·affect·ExpressionPort(avatar) |
 | **UC3 기억하는 대화** ★ | "지난번 그거 기억해?" | 감각/Chat → 지각 → **장기기억 recall** → 사고 → 표현 | memory(naia-memory)·conversation·llm |
 | **UC4 경험→능동 회상** ★ | 기념일·시간 앵커에 naia가 *먼저* 말 검 | (시간 trigger) → 장기기억 → 동기 → 표현 | temporal(cron)·memory·motivation·ExpressionPort |
@@ -375,6 +375,8 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 작업자 입력 양식은 2026-09-05 까지 제어 루트와 실행 대상을 따로 보여 주었고, 수업 모드를 고르면 대상 라벨과 안내 문구가 바뀌었다. 그 양식이 없어졌으므로 이것을 재던 단위 테스트도, 수업 저장소를 만들던 실기 스펙도 남아 있지 않다. 수업 대상을 다시 사람이 고를 수 있게 할 것인지는 #554 에서 정한다.
 
 **시각 검토 게이트:** 기능 UI 변경은 구현 전 상태 매트릭스(기본·빈 목록·진행·성공·오류·좁은 폭)를 P02에 기록한다. P04에서는 해당 상태를 컴포넌트/Playwright와 실제 Tauri Shell에서 확인하고, 스크린샷 또는 동등한 DOM·레이아웃 증거를 남긴다. 기능 계약 테스트만 통과한 경우에는 P05 완료로 선언하지 않는다.
+
+**UC1 채팅 응답의 한글 줄바꿈 (2026-10-29):** `ChatArea.test.tsx`는 빈 전송·스트리밍 표시·복구 가능한 오류를 확인하고, `packages/shell/e2e/chat-korean-keepall.spec.ts`는 성공 응답을 실제 셸에서 확인한다. Chromium 360px 화면 안에서 말풍선을 105px로 좁혀 `그냥… 우연히 여기 있었을 뿐이야.`의 `뿐이야.`가 한 줄에 놓이고, 80자 공백 없는 주소가 말풍선 너비를 넘지 않는지 측정한다. 이 변경은 빈 상태·진행·오류 동작을 바꾸지 않는다.
 
 | UC | 단위/계약 | UI 통합 |
 |---|---|---|
