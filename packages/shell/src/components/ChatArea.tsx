@@ -342,7 +342,7 @@ function unavailableModelToolMessage(toolName: string): string {
 			app.id !== useAppStore.getState().activeApp &&
 			app.tools?.some((tool) => tool.name === toolName),
 	);
-	return `Tool is not available: ${toolName}${inactiveSignedOwner ? ". 앱을 먼저 여세요." : ""}`;
+	return `Tool is not available: ${toolName}${inactiveSignedOwner ? ". Open the app first." : ""}`;
 }
 
 function generateRequestId(): string {
@@ -2337,7 +2337,7 @@ export function ChatArea({
 				req.requestId,
 				req.toolCallId,
 				unavailableStoreApp
-					? `Store app 권리를 확인할 수 없습니다. 인터넷에 연결한 뒤 다시 시도해 주세요.`
+					? "Store app entitlement could not be verified. Connect to the internet and try again."
 					: unavailableModelToolMessage(req.toolName),
 				false,
 				req.activityId,
@@ -2360,7 +2360,7 @@ export function ChatArea({
 				void sendAppToolResult(
 					req.requestId,
 					req.toolCallId,
-					`Tool is not available: ${req.toolName}. 권리 확인에 실패했거나 권리가 만료되었습니다. 인터넷에 연결한 뒤 다시 시도해 주세요.`,
+					`Tool is not available: ${req.toolName}. Entitlement verification failed or the entitlement expired. Connect to the internet and try again.`,
 					false,
 					req.activityId,
 				);
