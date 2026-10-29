@@ -40,6 +40,7 @@ export interface ProjectAgentError {
 		| "agent_invalid"
 		| "session_mismatch"
 		| "session_missing"
+		| "class_reset_in_progress"
 		| "input_failed"
 		| "unknown";
 	expectedPath?: string;
@@ -247,6 +248,7 @@ export function parseAgentError(error: unknown): ProjectAgentError {
 		"agent_invalid",
 		"session_mismatch",
 		"session_missing",
+		"class_reset_in_progress",
 	];
 	const code = knownCodes.find((known) => message === known) ?? "unknown";
 	return { code };
@@ -271,6 +273,7 @@ export function projectAgentDiagnosticCode(error: unknown): string {
 		"agent_invalid",
 		"session_mismatch",
 		"session_missing",
+		"class_reset_in_progress",
 		"join_failed",
 	];
 	return knownCodes.find((code) => message === code) ?? "unknown";

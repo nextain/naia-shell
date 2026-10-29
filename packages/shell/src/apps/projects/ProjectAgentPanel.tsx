@@ -8,6 +8,7 @@ import {
 	attachProjectAgent,
 	getProjectAgentState,
 	loadProjectAgentAvailability,
+	preselectProjectAgentIfUnset,
 	selectProjectAgent,
 	startProjectAgent,
 	stopProjectAgent,
@@ -24,6 +25,8 @@ const ProjectAgentTerminal = lazy(() =>
 export interface ProjectAgentPanelProps {
 	projectPath: string;
 	adapterRoot: string;
+	codingApp?: string | null;
+	resetting?: boolean;
 }
 
 const APP_LABELS: Record<ProjectAgentAppId, string> = {
@@ -57,6 +60,8 @@ function translateAgentError(error: ProjectAgentError): string {
 			return projectText("projects.agentSessionMismatch");
 		case "session_missing":
 			return projectText("projects.agentSessionMissing");
+		case "class_reset_in_progress":
+			return projectText("projects.agentClassResetInProgress");
 		case "input_failed":
 			return projectText("projects.agentInputFailed");
 		case "unknown":
@@ -74,11 +79,14 @@ function appLabel(appId: ProjectAgentAppId): string {
 export function ProjectAgentPanel({
 	projectPath,
 	adapterRoot,
+	codingApp,
+	resetting = false,
 }: ProjectAgentPanelProps) {
 	Logger.debug("ProjectAgentPanel", "rendering coding agent controls");
-	const [state, setState] = useState<ProjectAgentState>(() =>
-		getProjectAgentState(projectPath),
-	);
+	const [state, setState] = useState<ProjectAgentState>(() => {
+		if (codingApp) preselectProjectAgentIfUnset(projectPath, codingApp);
+		return getProjectAgentState(projectPath);
+	});
 	const [availabilityFailed, setAvailabilityFailed] = useState(false);
 	const [startPending, setStartPending] = useState(false);
 	const [stopPending, setStopPending] = useState(false);
@@ -89,6 +97,7 @@ export function ProjectAgentPanel({
 			"subscribing to selected project runtime",
 		);
 		let active = true;
+		if (codingApp) preselectProjectAgentIfUnset(projectPath, codingApp);
 		const unsubscribe = subscribeProjectAgent(projectPath, (nextState) => {
 			if (active) setState(nextState);
 		});
@@ -121,7 +130,7 @@ export function ProjectAgentPanel({
 			active = false;
 			unsubscribe();
 		};
-	}, [adapterRoot, projectPath]);
+	}, [adapterRoot, codingApp, projectPath]);
 
 	const selectedAppId = state.selectedAppId;
 	const selectedAvailable = selectedAppId
@@ -154,7 +163,8 @@ export function ProjectAgentPanel({
 			!selectedAppId ||
 			selectedAvailable !== true ||
 			isStarting ||
-			isRunning
+			isRunning ||
+			resetting
 		) {
 			Logger.debug(
 				"ProjectAgentPanel",
@@ -200,7 +210,7 @@ export function ProjectAgentPanel({
 			</p>
 			<fieldset
 				className="projects-app__agent-options"
-				disabled={isStarting || isRunning}
+				disabled={isStarting || isRunning || resetting}
 			>
 				<legend>{projectText("projects.agentChoicesLabel")}</legend>
 				{PROJECT_AGENT_APPS.map((appId) => {
@@ -249,7 +259,7 @@ export function ProjectAgentPanel({
 				<button
 					className="projects-app__primary-button"
 					type="button"
-					disabled={isStarting}
+					disabled={isStarting || resetting}
 					onClick={() => void handleStart()}
 				>
 					{isStarting
@@ -294,8 +304,8 @@ export function ProjectAgentPanel({
 				selectedAppId === "opencode" &&
 				state.naiaLoginRequired && (
 					<output
+						data-testid="project-agent-naia-login-notice"
 						className="projects-app__recovery"
-						role="status"
 						aria-live="polite"
 					>
 						<strong>{projectText("projects.agentNaiaLoginRequired")}</strong>{" "}

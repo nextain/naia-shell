@@ -29,6 +29,7 @@ vi.mock("../project-agent-runtime", () => ({
 		},
 	),
 	loadProjectAgentAvailability: vi.fn(async () => {}),
+	preselectProjectAgentIfUnset: vi.fn(),
 	selectProjectAgent: vi.fn(),
 	startProjectAgent: vi.fn(async () => {}),
 	stopProjectAgent: vi.fn(async () => {}),
@@ -106,7 +107,7 @@ describe("ProjectAgentPanel error notices", () => {
 		);
 
 		const loginMessage = screen.getByText("Naia login required.");
-		expect(loginMessage.closest('[role="status"]')).toHaveTextContent(
+		expect(loginMessage.closest("output")).toHaveTextContent(
 			"Sign in to Naia in Settings, then restart OpenCode to use your account.",
 		);
 		expect(

@@ -4,9 +4,156 @@ use std::time::Duration;
 
 use crate::project_catalog_runtime::{read_project_runtime_config, ProjectCatalogAuthority};
 
-use super::types::{ProjectAgentHandle, ProjectAgentRegistry};
+use super::types::{
+    normalize_project_session_path, project_checkout_reset_key, ProjectAgentHandle,
+    ProjectAgentKey, ProjectAgentRegistry,
+};
 
 const PROCESS_GROUP_GRACE: Duration = Duration::from_millis(150);
+
+pub(crate) struct ProjectClassResetGuard {
+    registry: ProjectAgentRegistry,
+    checkout_key: PathBuf,
+}
+
+impl Drop for ProjectClassResetGuard {
+    fn drop(&mut self) {
+        let mut state = match self.registry.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        state.resetting_checkouts.remove(&self.checkout_key);
+        crate::log_verbose(
+            "[project_agent_pty::ProjectClassResetGuard::drop] branch=released_reset_guard",
+        );
+    }
+}
+
+pub(crate) fn acquire_project_class_reset_guard(
+    registry: &ProjectAgentRegistry,
+    project_path: &std::path::Path,
+    checkout_path: &std::path::Path,
+) -> Result<ProjectClassResetGuard, String> {
+    crate::log_verbose("[project_agent_pty::acquire_project_class_reset_guard] enter");
+    let checkout_key = project_checkout_reset_key(checkout_path)?;
+    let deadline = std::time::Instant::now() + Duration::from_millis(500);
+    loop {
+        {
+            let mut state = match registry.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if state.resetting_checkouts.contains(&checkout_key) {
+                crate::log_verbose(
+                    "[project_agent_pty::acquire_project_class_reset_guard] branch=reject_reset_already_in_progress",
+                );
+                return Err("class_reset_in_progress".to_owned());
+            }
+            let (has_live, has_terminating) = session_activity_for_project(
+                state
+                    .sessions
+                    .iter()
+                    .map(|(key, handle)| (key, handle.termination_requested)),
+                project_path,
+            );
+            if has_live {
+                crate::log_verbose(
+                    "[project_agent_pty::acquire_project_class_reset_guard] branch=alive_session_found",
+                );
+                return Err("agent_running".to_owned());
+            }
+            if !has_terminating {
+                state.resetting_checkouts.insert(checkout_key.clone());
+                crate::log_verbose(
+                    "[project_agent_pty::acquire_project_class_reset_guard] branch=guard_acquired",
+                );
+                return Ok(ProjectClassResetGuard {
+                    registry: std::sync::Arc::clone(registry),
+                    checkout_key,
+                });
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            crate::log_verbose(
+                "[project_agent_pty::acquire_project_class_reset_guard] branch=terminating_session_still_alive",
+            );
+            return Err("agent_running".to_owned());
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+pub(crate) fn session_activity_for_project<'a, I>(
+    sessions: I,
+    project_path: &std::path::Path,
+) -> (bool, bool)
+where
+    I: IntoIterator<Item = (&'a ProjectAgentKey, bool)>,
+{
+    let expected_path = normalize_project_session_path(&project_path.to_string_lossy())
+        .unwrap_or_else(|_| project_path.to_path_buf());
+    let mut live = false;
+    let mut terminating = false;
+    for (key, termination_requested) in sessions {
+        if key.project_path == expected_path {
+            if termination_requested {
+                terminating = true;
+            } else {
+                live = true;
+            }
+        }
+    }
+    (live, terminating)
+}
+
+#[cfg(test)]
+pub(crate) fn register_test_session_via_spawn_key_derivation(
+    registry: &ProjectAgentRegistry,
+    authority: &ProjectCatalogAuthority,
+    adapter_root: &str,
+    project_path: &str,
+    app_id: &str,
+) -> Result<(), String> {
+    use crate::project_catalog_runtime::resolve_project_checkout;
+    use super::types::{project_agent_key, CodingApp};
+    use portable_pty::{native_pty_system, ChildKiller, PtySize};
+    use std::io;
+
+    #[derive(Debug)]
+    struct InertChildKiller;
+    impl ChildKiller for InertChildKiller {
+        fn kill(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+        fn clone_killer(&self) -> Box<dyn ChildKiller + Send + Sync> {
+            Box::new(InertChildKiller)
+        }
+    }
+
+    let coding_app = CodingApp::parse(app_id)?;
+    let resolved = resolve_project_checkout(authority, adapter_root, project_path)?;
+    let key = project_agent_key(&resolved.project_path, coding_app)?;
+    let pair = native_pty_system()
+        .openpty(PtySize::default())
+        .map_err(|err| err.to_string())?;
+    let mut state = registry.lock().unwrap();
+    state.sessions.insert(
+        key,
+        ProjectAgentHandle {
+            pty_id: "test-spawn-derived-pty".to_owned(),
+            pid: 1,
+            master: pair.master,
+            writer: Box::new(io::sink()),
+            killer: Box::new(InertChildKiller),
+            termination_requested: false,
+            output_attached: true,
+            output_backlog: String::new(),
+            naia_login_required: false,
+            credential_fingerprint: None,
+        },
+    );
+    Ok(())
+}
 
 pub(super) fn authorized_project_session_path(
     authority: &ProjectCatalogAuthority,
@@ -202,7 +349,6 @@ pub(crate) fn shutdown_project_agent_sessions(registry: &ProjectAgentRegistry) {
 mod tests {
     use super::*;
     use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-    use std::collections::HashMap;
     use std::fs;
     use std::sync::{mpsc, Arc, Mutex};
     use std::time::Instant;
@@ -316,9 +462,7 @@ mod tests {
             project_path,
             app: CodingApp::Claude,
         };
-        let registry = Arc::new(Mutex::new(ProjectAgentState {
-            sessions: HashMap::new(),
-        }));
+        let registry = Arc::new(Mutex::new(ProjectAgentState::default()));
         registry.lock().unwrap().sessions.insert(
             key.clone(),
             ProjectAgentHandle {

@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { effectiveMainRole } from "../../lib/slots/model";
 import { LAB_GATEWAY_URL, loadConfig } from "../../lib/config";
 import { selectOpenCodeNaiaModel } from "../../lib/llm/registry";
 import { Logger } from "../../lib/logger";
+import { effectiveMainRole } from "../../lib/slots/model";
 import {
 	ensureProjectAgentEventListeners,
 	resetProjectAgentEventListenersForTests,
@@ -35,9 +35,38 @@ export type {
 	ProjectAgentStatus,
 } from "./project-agent-runtime-state";
 
+export function preselectProjectAgentIfUnset(
+	projectPath: string,
+	candidateAppId: unknown,
+): void {
+	if (candidateAppId === null || candidateAppId === undefined) return;
+	if (!isProjectAgentAppId(candidateAppId)) {
+		Logger.debug(
+			"ProjectAgentRuntime",
+			"ignoring invalid coding_app preselect",
+		);
+		return;
+	}
+	const state = stateFor(projectPath);
+	if (state.selectedAppId !== null) return;
+	Logger.debug("ProjectAgentRuntime", "preselecting configured coding_app", {
+		appId: candidateAppId,
+	});
+	state.selectedAppId = candidateAppId;
+}
+
 let availabilityRequest: Promise<void> | null = null;
 
 const MAX_PROJECT_AGENT_QUEUED_INPUT_BYTES = 64 * 1024;
+// Fixed ownership/path/availability validation codes cannot change by polling.
+const PERMANENT_PROJECT_AGENT_ATTACH_ERRORS = new Set([
+	"repository_invalid",
+	"checkout_unsafe",
+	"project_unverified",
+	"agent_unavailable",
+	"agent_invalid",
+	"session_mismatch",
+]);
 
 interface ProjectAgentInputChunk {
 	data: string;
@@ -642,6 +671,92 @@ export async function stopProjectAgent(
 		if (getProjectAgentState(projectPath).status === "stopping") {
 			setState(projectPath, { status: "running", error: mapped });
 		}
+	}
+}
+
+export async function waitForProjectAgentStopped(
+	projectPath: string,
+	adapterRoot: string,
+	appId: ProjectAgentAppId,
+	options?: { timeoutMs?: number; intervalMs?: number },
+): Promise<boolean | "unknown"> {
+	const timeoutMs = options?.timeoutMs ?? 5000;
+	const intervalMs = Math.max(50, options?.intervalMs ?? 200);
+	const deadline = Date.now() + timeoutMs;
+	Logger.debug(
+		"ProjectAgentRuntime",
+		"waiting for project PTY session to stop",
+		{
+			appId,
+			timeoutMs,
+			intervalMs,
+		},
+	);
+	if (!isProjectAgentAppId(appId)) {
+		return true;
+	}
+	while (true) {
+		const state = stateFor(projectPath);
+		if (state.status === "exited") {
+			return true;
+		}
+		try {
+			const response = await invoke<unknown>("project_agent_pty_attach", {
+				appId,
+				projectPath,
+				adapterRoot,
+			});
+			const stillRunning =
+				typeof response === "object" &&
+				response !== null &&
+				(response as { running?: unknown }).running === true;
+			if (!stillRunning) {
+				setState(projectPath, { status: "idle", ptyId: null, error: null });
+				return true;
+			}
+		} catch (error) {
+			const mapped = parseAgentError(error);
+			if (mapped.code === "session_missing") {
+				setState(projectPath, { status: "idle", ptyId: null, error: null });
+				return true;
+			}
+			if (PERMANENT_PROJECT_AGENT_ATTACH_ERRORS.has(mapped.code)) {
+				if (stateFor(projectPath).status === "stopping") {
+					setState(projectPath, { status: "running" });
+				}
+				Logger.warn(
+					"ProjectAgentRuntime",
+					"project PTY stop status could not be checked",
+					{ appId, code: mapped.code },
+				);
+				return "unknown";
+			}
+			if (Date.now() >= deadline) {
+				if (stateFor(projectPath).status === "stopping") {
+					setState(projectPath, { status: "running" });
+				}
+				Logger.warn(
+					"ProjectAgentRuntime",
+					"project PTY stop status is unknown",
+					{
+						appId,
+					},
+				);
+				return "unknown";
+			}
+		}
+		if (Date.now() >= deadline) {
+			if (stateFor(projectPath).status === "stopping") {
+				setState(projectPath, { status: "running" });
+			}
+			Logger.warn(
+				"ProjectAgentRuntime",
+				"project PTY session remained running after stop timeout",
+				{ appId },
+			);
+			return false;
+		}
+		await new Promise((resolve) => setTimeout(resolve, intervalMs));
 	}
 }
 

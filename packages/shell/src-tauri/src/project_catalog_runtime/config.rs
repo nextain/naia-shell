@@ -3,7 +3,10 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use super::yaml_helpers::{mapping_raw_string, mapping_url_value};
+use super::yaml_helpers::{
+    mapping_raw_string, parse_class_config, parse_coding_app, parse_docs_dirs,
+    resolve_docs_url_field, resolve_tasks_url_field,
+};
 use super::{ProjectCatalogAuthority, ProjectRuntimeConfig};
 
 const MAX_PROJECT_CONFIG_BYTES: usize = 64 * 1024;
@@ -89,7 +92,7 @@ pub(crate) fn read_project_runtime_config(
         );
         return Err("project_unverified".to_owned());
     }
-    let yaml = read_project_yaml(&project_file)?;
+    let (yaml, yaml_source) = read_project_yaml(&project_file)?;
     let project_mapping = yaml
         .as_mapping()
         .and_then(|mapping| mapping.get(&YamlValue::String("project".to_owned())))
@@ -98,8 +101,11 @@ pub(crate) fn read_project_runtime_config(
     let _project_id =
         runtime_string(project_mapping, "id").ok_or_else(|| "project_unverified".to_owned())?;
     let repository = mapping_raw_string(project_mapping, "repository");
-    let dashboard_url = mapping_url_value(project_mapping, "dashboard_url");
-    let issues_url = mapping_url_value(project_mapping, "issues_url");
+    let dashboard_url = resolve_docs_url_field(project_mapping);
+    let issues_url = resolve_tasks_url_field(project_mapping);
+    let coding_app = parse_coding_app(project_mapping);
+    let docs_dirs = parse_docs_dirs(project_mapping, None);
+    let class = parse_class_config(project_mapping, &yaml_source);
 
     crate::log_verbose(
         "[project_catalog_runtime::read_project_runtime_config] branch=project_verified",
@@ -110,6 +116,9 @@ pub(crate) fn read_project_runtime_config(
         repository,
         dashboard_url,
         issues_url,
+        coding_app,
+        docs_dirs,
+        class,
     })
 }
 
@@ -156,7 +165,7 @@ fn looks_like_catalog_candidate(adapter_root: &Path) -> bool {
     candidate
 }
 
-fn read_project_yaml(path: &Path) -> Result<YamlValue, String> {
+fn read_project_yaml(path: &Path) -> Result<(YamlValue, String), String> {
     crate::log_verbose(
         "[project_catalog_runtime::read_project_yaml] enter project_file_supplied=true",
     );
@@ -188,10 +197,11 @@ fn read_project_yaml(path: &Path) -> Result<YamlValue, String> {
         );
         return Err("project_unverified".to_owned());
     }
-    serde_yaml::from_str(&text).map_err(|_| {
+    let yaml = serde_yaml::from_str(&text).map_err(|_| {
         crate::log_verbose("[project_catalog_runtime::read_project_yaml] branch=invalid_yaml");
         "project_unverified".to_owned()
-    })
+    })?;
+    Ok((yaml, text))
 }
 
 fn runtime_string(mapping: &Mapping, key: &str) -> Option<String> {

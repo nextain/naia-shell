@@ -1,0 +1,33 @@
+# Example class/practice project configuration for naia-shell Projects app
+#
+# Expected layout inside your naia-adk workspace:
+#   Metadata: <naia-adk>/projects/<adapter>/projects/<project>/project.yaml
+#   Checkout: <adapter>/checkouts/<repo-name>
+#
+# When `repository` is `your-org/your-practice-repo`, the practice checkout must
+# exist at `<adapter>/checkouts/your-practice-repo` as its own Git repository.
+
+project:
+  id: class-practice-example
+  name: AX Class Practice Example
+  repository: your-org/your-practice-repo
+
+  # Preselects one of: claude | codex | muse | opencode when no agent has been chosen yet.
+  coding_app: opencode
+
+  # Relative markdown directories inside `<adapter>/checkouts/<repo-name>` (max 16).
+  # Enables the read-only Docs preview panel even when `docs_url` is omitted.
+  docs_dirs:
+    - docs
+    - guides
+    - student-notes
+
+  # Optional external web links (`docs_url` / `tasks_url` are preferred aliases
+  # for `dashboard_url` / `issues_url`). Leave omitted to hide unused tabs.
+  # docs_url: https://docs.example.com/class
+  # tasks_url: https://tasks.example.com/class
+
+  # Marks this project as a resettable class project.
+  # `baseline_ref` must be a 7-40 hex character commit SHA present in the checkout.
+  class:
+    baseline_ref: 0123456789abcdef0123456789abcdef01234567

@@ -2,7 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	classifyProjectUrl,
+	listProjectDocs,
 	normalizeProjectCatalog,
+	parseProjectCommandError,
+	readProjectDoc,
+	resetProjectClass,
 	scanProjectCatalog,
 } from "../project-catalog";
 
@@ -66,6 +70,9 @@ describe("Project catalog — naia-adk scan", () => {
 				issueTracker: "github",
 				dashboardUrl: null,
 				issuesUrl: null,
+				codingApp: null,
+				docsDirs: [],
+				class: null,
 			},
 		]);
 		expect(result.catalogErrors).toEqual([]);
@@ -192,5 +199,116 @@ describe("Project catalog — naia-adk scan", () => {
 			adkPath: "/selected/naia-adk",
 		});
 		expect(result.projects[0].projectId).toBe("example");
+	});
+
+	it("normalizes docsUrl/tasksUrl aliases, codingApp, docsDirs, and class config", () => {
+		const result = normalizeProjectCatalog({
+			projects: [
+				project("class-demo", "projects/team/projects/class-demo", {
+					dashboardUrl: "https://legacy-dashboard.example.test/",
+					docsUrl: "https://docs.example.test/guide",
+					issuesUrl: "https://legacy-issues.example.test/",
+					tasksUrl: "https://tasks.example.test/board",
+					codingApp: "opencode",
+					docsDirs: ["domain", "자료", "../escape", "/abs", "domain"],
+					class: { baselineRef: "0123456789abcdef" },
+				}),
+				project("invalid-meta", "projects/team/projects/invalid-meta", {
+					codingApp: "unknown-app",
+					docsDirs: ["bad\\path"],
+					class: { baselineRef: "not-hex!" },
+				}),
+			],
+		});
+
+		expect(result.projects[0].dashboardUrl).toBe(
+			"https://docs.example.test/guide",
+		);
+		expect(result.projects[0].issuesUrl).toBe(
+			"https://tasks.example.test/board",
+		);
+		expect(result.projects[0].codingApp).toBe("opencode");
+		expect(result.projects[0].docsDirs).toEqual(["domain", "자료"]);
+		expect(result.projects[0].class).toEqual({
+			baselineRef: "0123456789abcdef",
+		});
+		expect(result.projects[1].codingApp).toBeNull();
+		expect(result.projects[1].docsDirs).toEqual([]);
+		expect(result.projects[1].class).toBeNull();
+	});
+
+	it("invokes project docs and class reset commands with normalized responses", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_docs_list") {
+				return [
+					{
+						dir: "domain",
+						relativePath: "domain/guide.md",
+						sizeBytes: 128,
+					},
+				];
+			}
+			if (command === "project_docs_read") {
+				return "# Guide";
+			}
+			if (command === "project_class_reset") {
+				return {
+					backupRelativePath: "class-backups/practice-20261025-120000",
+					backedUpFiles: 2,
+					deletedFiles: 1,
+				};
+			}
+			return null;
+		});
+
+		const docs = await listProjectDocs(
+			"/fixture/adapter",
+			"/fixture/naia-adk/projects/team/projects/class-demo",
+		);
+		expect(docs).toEqual([
+			{
+				dir: "domain",
+				relativePath: "domain/guide.md",
+				sizeBytes: 128,
+			},
+		]);
+		const markdown = await readProjectDoc(
+			"/fixture/adapter",
+			"/fixture/naia-adk/projects/team/projects/class-demo",
+			"domain/guide.md",
+		);
+		expect(markdown).toBe("# Guide");
+		const reset = await resetProjectClass(
+			"/fixture/adapter",
+			"/fixture/naia-adk/projects/team/projects/class-demo",
+		);
+		expect(reset).toEqual({
+			backupRelativePath: "class-backups/practice-20261025-120000",
+			backedUpFiles: 2,
+			deletedFiles: 1,
+		});
+	});
+
+	it("parses code:detail errors and keeps only safe relative path details", () => {
+		expect(
+			parseProjectCommandError(new Error("checkout_missing:checkouts/x")),
+		).toEqual({
+			code: "checkout_missing",
+			relativePathDetail: "checkouts/x",
+		});
+		expect(parseProjectCommandError("checkout_missing:/abs/secret")).toEqual({
+			code: "checkout_missing",
+			relativePathDetail: null,
+		});
+		expect(parseProjectCommandError("checkout_missing:../escape/path")).toEqual(
+			{
+				code: "checkout_missing",
+				relativePathDetail: null,
+			},
+		);
+		expect(parseProjectCommandError("baseline_missing")).toEqual({
+			code: "baseline_missing",
+			relativePathDetail: null,
+		});
 	});
 });
