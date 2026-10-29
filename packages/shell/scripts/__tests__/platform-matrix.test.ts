@@ -959,6 +959,27 @@ describe("installer workflow integration contracts", () => {
 		"utf8",
 	).replace(/\r\n/g, "\n");
 
+	it("macOS app and DMG signing stays explicit, least-privilege, and portable", () => {
+		const tauriConfig = readJson(
+			resolve(SHELL, "src-tauri/tauri.conf.json"),
+		) as { bundle: { macOS?: { entitlements?: string } } };
+		expect(workflow).not.toContain("sort -z");
+		expect(workflow.match(/--output-format json/g)).toHaveLength(3);
+		expect(workflow.match(/\[ \"\$NOTARY_STATUS\" != \"Accepted\" \]/g)).toHaveLength(3);
+		expect(workflow).toContain("- name: Sign macOS DMG with Developer ID");
+		expect(workflow).toContain("- name: Notarize and staple macOS DMG");
+		expect(workflow).toContain('codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY"');
+		expect(workflow).toContain('xcrun stapler staple "${DMG_PATHS[0]}"');
+		expect(workflow).not.toContain(
+			"APPLE_API_KEY_PATH: ${{ env.NAIA_UNSIGNED != 'true'",
+		);
+		expect(workflow).toContain("unset APPLE_API_KEY_PATH");
+		expect(tauriConfig.bundle.macOS?.entitlements).toBeUndefined();
+		expect(workflow).toContain('[[ "$path" == "$APP/Contents/Resources/node" ]]');
+		expect(workflow).toContain("security list-keychains -d user -s \"${ORIGINAL_KEYCHAINS[@]}\"");
+		expect(workflow).toContain("timeout-minutes: 150");
+	});
+
 	it("clones the exact Agent revision declared by the pairing manifest", () => {
 		const pairing = readJson("agent-pairing.json") as {
 			agentCommit: string;

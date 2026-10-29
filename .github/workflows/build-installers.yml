@@ -204,12 +204,18 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/naia-signing.keychain-db"
           CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          ORIGINAL_KEYCHAINS_PATH="$RUNNER_TEMP/naia-original-keychains.txt"
+          security list-keychains -d user | sed 's/^"//; s/"$//' > "$ORIGINAL_KEYCHAINS_PATH"
+          chmod 600 "$ORIGINAL_KEYCHAINS_PATH"
+          echo "MACOS_ORIGINAL_KEYCHAINS_PATH=$ORIGINAL_KEYCHAINS_PATH" >> "$GITHUB_ENV"
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
           chmod 600 "$CERTIFICATE_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          mapfile -t ORIGINAL_KEYCHAINS < "$ORIGINAL_KEYCHAINS_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${ORIGINAL_KEYCHAINS[@]}"
+          # `security import` only accepts a PKCS#12 password through -P; it has no stdin option.
           security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
           rm -f "$CERTIFICATE_PATH"
@@ -264,13 +270,14 @@ jobs:
           ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
           while IFS= read -r -d '' path; do
             if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
-            if [[ "$path" == "$APP/Contents/MacOS/"* || "$path" == "$APP/Contents/Resources/node" ]]; then
+            if [[ "$path" == "$APP/Contents/Resources/node" ]]; then
               codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
             else
               codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
             fi
-          done < <(find "$APP/Contents" -type f -print0 | sort -z -r)
-          codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          # Bundled paths contain no newlines; reverse lexical order signs deeper paths first.
+          done < <(find "$APP/Contents" -type f -print | LC_ALL=C sort -r)
+          codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Notarize and staple macOS app
@@ -282,28 +289,47 @@ jobs:
           test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
           ZIP="$RUNNER_TEMP/Naia-app-notarization.zip"
           ditto -c -k --keepParent "${APP_PATHS[0]}" "$ZIP"
-          xcrun notarytool submit "$ZIP" --wait \
+          NOTARY_RESULT="$RUNNER_TEMP/Naia-app-notary-result.json"
+          NOTARY_LOG="$RUNNER_TEMP/Naia-app-notary-log.txt"
+          NOTARY_ERROR="$RUNNER_TEMP/Naia-app-notary-error.txt"
+          NOTARY_EXIT=0
+          xcrun notarytool submit "$ZIP" --wait --output-format json \
             --key "$APPLE_API_KEY_PATH" \
             --key-id "$APPLE_API_KEY" \
-            --issuer "$APPLE_API_ISSUER"
+            --issuer "$APPLE_API_ISSUER" > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+          NOTARY_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+          if [ "$NOTARY_EXIT" -ne 0 ] || [ "$NOTARY_STATUS" != "Accepted" ]; then
+            NOTARY_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$NOTARY_ID" ]; then
+              xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
+                --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
+              cat "$NOTARY_LOG"
+            fi
+            echo "App notarization failed (status: ${NOTARY_STATUS:-unavailable})."
+            exit 1
+          fi
           xcrun stapler staple "${APP_PATHS[0]}"
           spctl -a -vv -t exec "${APP_PATHS[0]}"
           xcrun stapler validate "${APP_PATHS[0]}"
           rm -f "$ZIP"
 
-      - name: Build and notarize macOS DMG
+      - name: Build macOS DMG
         if: matrix.platform == 'darwin'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
           APPLE_CERTIFICATE_PASSWORD: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
           APPLE_SIGNING_IDENTITY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_API_KEY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true' && secrets.APPLE_API_KEY || '' }}
-          APPLE_API_ISSUER: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true' && secrets.APPLE_API_ISSUER || '' }}
-          APPLE_API_KEY_PATH: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true' && env.APPLE_API_KEY_PATH || '' }}
+          APPLE_API_KEY: ''
+          APPLE_API_ISSUER: ''
+          # Tauri must not sign/notarize the DMG implicitly; explicit steps below own that lifecycle.
+          APPLE_CERTIFICATE: ''
+          APPLE_CERTIFICATE_PASSWORD: ''
+          APPLE_SIGNING_IDENTITY: ''
         run: |
           set -euo pipefail
           set -o pipefail
+          unset APPLE_API_KEY_PATH
           LOG_FILE="$RUNNER_TEMP/tauri-macos-dmg.log"
           if ! pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
             --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
@@ -347,6 +373,47 @@ jobs:
             fi
           fi
 
+      - name: Sign macOS DMG with Developer ID
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
+          test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "${DMG_PATHS[0]}"
+
+      - name: Notarize and staple macOS DMG
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
+          test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
+          codesign --verify --strict --verbose=2 "${DMG_PATHS[0]}"
+          NOTARY_RESULT="$RUNNER_TEMP/Naia-dmg-notary-result.json"
+          NOTARY_LOG="$RUNNER_TEMP/Naia-dmg-notary-log.txt"
+          NOTARY_ERROR="$RUNNER_TEMP/Naia-dmg-notary-error.txt"
+          NOTARY_EXIT=0
+          xcrun notarytool submit "${DMG_PATHS[0]}" --wait --output-format json \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+          NOTARY_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+          if [ "$NOTARY_EXIT" -ne 0 ] || [ "$NOTARY_STATUS" != "Accepted" ]; then
+            NOTARY_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$NOTARY_ID" ]; then
+              xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
+                --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
+              cat "$NOTARY_LOG"
+            fi
+            echo "DMG notarization failed (status: ${NOTARY_STATUS:-unavailable})."
+            exit 1
+          fi
+          xcrun stapler staple "${DMG_PATHS[0]}"
+          xcrun stapler validate "${DMG_PATHS[0]}"
+
       - name: Verify macOS code signature
         if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
         shell: bash
@@ -380,7 +447,16 @@ jobs:
         if: always() && matrix.platform == 'darwin'
         shell: bash
         run: |
-          rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" "$RUNNER_TEMP/Naia-app-notarization.zip"
+          rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" \
+            "$RUNNER_TEMP/Naia-app-notarization.zip" "$RUNNER_TEMP/Naia-app-notary-result.json" \
+            "$RUNNER_TEMP/Naia-app-notary-log.txt" "$RUNNER_TEMP/Naia-app-notary-error.txt" \
+            "$RUNNER_TEMP/Naia-dmg-notary-result.json" "$RUNNER_TEMP/Naia-dmg-notary-log.txt" \
+            "$RUNNER_TEMP/Naia-dmg-notary-error.txt"
+          if [ -n "${MACOS_ORIGINAL_KEYCHAINS_PATH:-}" ] && [ -f "$MACOS_ORIGINAL_KEYCHAINS_PATH" ]; then
+            mapfile -t ORIGINAL_KEYCHAINS < "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+            if [ "${#ORIGINAL_KEYCHAINS[@]}" -gt 0 ]; then security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}"; fi
+            rm -f "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+          fi
           if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
             security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
           fi
@@ -889,6 +965,7 @@ jobs:
   macos-universal:
     needs: build
     runs-on: macos-15
+    timeout-minutes: 150
     permissions:
       contents: read
     env:
@@ -929,12 +1006,18 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/naia-signing.keychain-db"
           CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          ORIGINAL_KEYCHAINS_PATH="$RUNNER_TEMP/naia-original-keychains.txt"
+          security list-keychains -d user | sed 's/^"//; s/"$//' > "$ORIGINAL_KEYCHAINS_PATH"
+          chmod 600 "$ORIGINAL_KEYCHAINS_PATH"
+          echo "MACOS_ORIGINAL_KEYCHAINS_PATH=$ORIGINAL_KEYCHAINS_PATH" >> "$GITHUB_ENV"
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
           chmod 600 "$CERTIFICATE_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          mapfile -t ORIGINAL_KEYCHAINS < "$ORIGINAL_KEYCHAINS_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${ORIGINAL_KEYCHAINS[@]}"
+          # `security import` only accepts a PKCS#12 password through -P; it has no stdin option.
           security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
           rm -f "$CERTIFICATE_PATH"
@@ -974,13 +1057,14 @@ jobs:
           ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
           while IFS= read -r -d '' path; do
             if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
-            if [[ "$path" == "$APP/Contents/MacOS/"* || "$path" == "$APP/Contents/Resources/node" ]]; then
+            if [[ "$path" == "$APP/Contents/Resources/node" ]]; then
               codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
             else
               codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
             fi
-          done < <(find "$APP/Contents" -type f -print0 | sort -z -r)
-          codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          # Bundled paths contain no newlines; reverse lexical order signs deeper paths first.
+          done < <(find "$APP/Contents" -type f -print | LC_ALL=C sort -r)
+          codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Notarize and staple Universal app
@@ -991,10 +1075,25 @@ jobs:
           APP="universal-output/Naia.app"
           ZIP="$RUNNER_TEMP/Naia-universal-notarization.zip"
           ditto -c -k --keepParent "$APP" "$ZIP"
-          xcrun notarytool submit "$ZIP" --wait \
+          NOTARY_RESULT="$RUNNER_TEMP/Naia-universal-notary-result.json"
+          NOTARY_LOG="$RUNNER_TEMP/Naia-universal-notary-log.txt"
+          NOTARY_ERROR="$RUNNER_TEMP/Naia-universal-notary-error.txt"
+          NOTARY_EXIT=0
+          xcrun notarytool submit "$ZIP" --wait --output-format json \
             --key "$APPLE_API_KEY_PATH" \
             --key-id "$APPLE_API_KEY" \
-            --issuer "$APPLE_API_ISSUER"
+            --issuer "$APPLE_API_ISSUER" > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+          NOTARY_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+          if [ "$NOTARY_EXIT" -ne 0 ] || [ "$NOTARY_STATUS" != "Accepted" ]; then
+            NOTARY_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$NOTARY_ID" ]; then
+              xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
+                --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
+              cat "$NOTARY_LOG"
+            fi
+            echo "Universal app notarization failed (status: ${NOTARY_STATUS:-unavailable})."
+            exit 1
+          fi
           xcrun stapler staple "$APP"
           spctl -a -vv -t exec "$APP"
           xcrun stapler validate "$APP"
@@ -1004,7 +1103,14 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" "$RUNNER_TEMP/Naia-universal-notarization.zip"
+          rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" \
+            "$RUNNER_TEMP/Naia-universal-notarization.zip" "$RUNNER_TEMP/Naia-universal-notary-result.json" \
+            "$RUNNER_TEMP/Naia-universal-notary-log.txt" "$RUNNER_TEMP/Naia-universal-notary-error.txt"
+          if [ -n "${MACOS_ORIGINAL_KEYCHAINS_PATH:-}" ] && [ -f "$MACOS_ORIGINAL_KEYCHAINS_PATH" ]; then
+            mapfile -t ORIGINAL_KEYCHAINS < "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+            if [ "${#ORIGINAL_KEYCHAINS[@]}" -gt 0 ]; then security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}"; fi
+            rm -f "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+          fi
           if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
             security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
           fi
