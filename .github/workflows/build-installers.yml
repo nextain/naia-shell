@@ -67,7 +67,7 @@ jobs:
             uname_arch: x86_64
             artifact: darwin-x64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 150
+    timeout-minutes: 300
     env:
       NAIA_UNSIGNED: ${{ inputs.internal_unsigned == true || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.ref, 'refs/tags/')) }}
       MACOS_SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' }}
@@ -256,8 +256,12 @@ jobs:
         run: |
           set -euo pipefail
           LOG_FILE="$RUNNER_TEMP/tauri-macos-app-bundle.log"
+          BUNDLE_ENV=(-u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH)
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; do
+            if [ -z "${!name:-}" ]; then BUNDLE_ENV+=(-u "$name"); fi
+          done
           for attempt in 1 2 3; do
-            if env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json >"$LOG_FILE" 2>&1; then
+            if env "${BUNDLE_ENV[@]}" pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json >"$LOG_FILE" 2>&1; then
               cat "$LOG_FILE"
               exit 0
             else
@@ -378,7 +382,7 @@ jobs:
             : > "$NOTARY_RESULT"
             : > "$NOTARY_ERROR"
             NOTARY_EXIT=0
-            xcrun notarytool submit "$ZIP" --wait --timeout 45m --output-format json \
+            xcrun notarytool submit "$ZIP" --wait --timeout 90m --output-format json \
               --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
               > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
             NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
@@ -414,63 +418,11 @@ jobs:
           xcrun stapler validate "${APP_PATHS[0]}"
           rm -f "$ZIP"
 
-      - name: Build macOS DMG
-        if: matrix.platform == 'darwin' && matrix.arch != 'x64'
+      - name: Create macOS DMG without mounting an image
+        if: matrix.platform == 'darwin'
         shell: bash
         env:
-          # Tauri must not sign/notarize the DMG implicitly; explicit steps below own that lifecycle.
-          APPLE_CERTIFICATE: ''
-          APPLE_CERTIFICATE_PASSWORD: ''
-          APPLE_SIGNING_IDENTITY: ''
-        run: |
-          set -euo pipefail
-          set -o pipefail
-          LOG_FILE="$RUNNER_TEMP/tauri-macos-dmg.log"
-          if ! env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
-            --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
-            if grep -q "bundle_dmg" "$LOG_FILE"; then
-              echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
-              BUNDLE_MACOS_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/macos"
-              BUNDLE_MACOS_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/macos 2>/dev/null && pwd -P || printf '%s\n' "$BUNDLE_MACOS_LOGICAL")"
-              DMG_DIR_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/dmg"
-              DMG_DIR_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/dmg 2>/dev/null && pwd -P || printf '%s\n' "$DMG_DIR_LOGICAL")"
-              hdiutil info | awk \
-                -v macos_dir="$BUNDLE_MACOS_PHYS" \
-                -v macos_dir_logical="$BUNDLE_MACOS_LOGICAL" \
-                -v dmg_dir="$DMG_DIR_PHYS" \
-                -v dmg_dir_logical="$DMG_DIR_LOGICAL" '
-                /^====/ { dmg=0 }
-                /^image-path[[:space:]]*:/ {
-                  path=$0
-                  sub(/^image-path[[:space:]]*:[[:space:]]*/, "", path)
-                  dir=path
-                  sub(/\/[^\/]+$/, "", dir)
-                  base=path
-                  sub(/^.*\//, "", base)
-                  in_macos=(dir == macos_dir || dir == macos_dir_logical)
-                  in_dmg=(dir == dmg_dir || dir == dmg_dir_logical)
-                  is_rw_dmg=(base ~ /^rw\..*\.dmg$/)
-                  dmg=((in_macos && is_rw_dmg) || in_dmg)
-                }
-                /^\/dev\/disk/ && dmg { print $1 }
-              ' | sort -u | while read -r dev; do
-                hdiutil detach -force "$dev" || true
-              done
-              rm -f \
-                packages/shell/src-tauri/target/release/bundle/macos/rw.*.dmg \
-                packages/shell/src-tauri/target/release/bundle/macos/Naia_*.dmg \
-                packages/shell/src-tauri/target/release/bundle/dmg/rw.*.dmg \
-                packages/shell/src-tauri/target/release/bundle/dmg/Naia_*.dmg
-              env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
-                --config src-tauri/tauri.conf.generated.json
-            else
-              exit 1
-            fi
-          fi
-
-      - name: Create Intel macOS DMG without mounting an image
-        if: matrix.platform == 'darwin' && matrix.arch == 'x64'
-        shell: bash
+          DMG_ARCH: ${{ matrix.arch == 'arm64' && 'aarch64' || 'x64' }}
         run: |
           set -euo pipefail
           BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
@@ -486,8 +438,8 @@ jobs:
           PRODUCT_NAME="$(node -p "require('./packages/shell/src-tauri/tauri.conf.json').productName")"
           VERSION="$(node -p "require('./packages/shell/package.json').version")"
           DMG_DIR="$BUNDLE_DIR/dmg"
-          DMG_PATH="$DMG_DIR/${PRODUCT_NAME}_${VERSION}_x64.dmg"
-          DMG_STAGE="$RUNNER_TEMP/intel-dmg-stage"
+          DMG_PATH="$DMG_DIR/${PRODUCT_NAME}_${VERSION}_${DMG_ARCH}.dmg"
+          DMG_STAGE="$RUNNER_TEMP/macos-dmg-stage"
           mkdir -p "$DMG_DIR"
           rm -rf "$DMG_STAGE"
           mkdir -p "$DMG_STAGE"
@@ -500,10 +452,10 @@ jobs:
             fi
             rm -f "$DMG_PATH"
             if [[ "$attempt" -eq 2 ]]; then
-              echo "::error::Intel DMG creation failed after one retry"
+              echo "::error::macOS DMG creation failed after one retry"
               exit 1
             fi
-            echo "::warning::Intel DMG creation failed; retrying once"
+            echo "::warning::macOS DMG creation failed; retrying once"
           done
           hdiutil verify "$DMG_PATH"
 
@@ -574,7 +526,7 @@ jobs:
             : > "$NOTARY_RESULT"
             : > "$NOTARY_ERROR"
             NOTARY_EXIT=0
-            xcrun notarytool submit "${DMG_PATHS[0]}" --wait --timeout 45m --output-format json \
+            xcrun notarytool submit "${DMG_PATHS[0]}" --wait --timeout 90m --output-format json \
               --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
               > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
             NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
@@ -1163,7 +1115,7 @@ jobs:
   macos-universal:
     needs: build
     runs-on: macos-15
-    timeout-minutes: 150
+    timeout-minutes: 300
     permissions:
       contents: read
     env:
@@ -1347,7 +1299,7 @@ jobs:
             : > "$NOTARY_RESULT"
             : > "$NOTARY_ERROR"
             NOTARY_EXIT=0
-            xcrun notarytool submit "$ZIP" --wait --timeout 45m --output-format json \
+            xcrun notarytool submit "$ZIP" --wait --timeout 90m --output-format json \
               --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
               > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
             NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
