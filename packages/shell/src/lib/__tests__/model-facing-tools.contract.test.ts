@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { useAppStore } from "../../stores/app";
+import { appRegistry } from "../app-registry";
 import {
+	MODEL_FACING_TOOL_KEEP_LIST,
 	filterModelFacingTools,
 	isModelFacingToolAllowed,
-	MODEL_FACING_TOOL_KEEP_LIST,
+	makeModelToolBoundary,
 } from "../model-facing-tools";
+
+const TestCenter = () => null;
 
 describe("model-facing tool contract", () => {
 	it("keeps one exact, duplicate-free model-facing list", () => {
@@ -48,7 +53,6 @@ describe("model-facing tool contract", () => {
 			"skill_workspace_terminal_exec",
 			"skill_workspace_get_terminal_output",
 			"delegate_agent",
-			"skill_blackjack_tutor",
 		]);
 	});
 
@@ -90,10 +94,95 @@ describe("model-facing tool contract", () => {
 		expect(isModelFacingToolAllowed("memory_save")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_memory_delete")).toBe(false);
 		expect(isModelFacingToolAllowed("delegate_agent")).toBe(true);
-		expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(true);
+		expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(false);
 		expect(isModelFacingToolAllowed("skill_blackjack_delete_everything")).toBe(
 			false,
 		);
+	});
+
+	it("allows only the active Rust-verified installed app's declared skill tools", async () => {
+		const tool = {
+			name: "skill_store_tarot",
+			description: "Tarot",
+			parameters: { type: "object" as const },
+		};
+		const storeBlackjackTool = {
+			name: "skill_blackjack_tutor",
+			description: "Blackjack tutor",
+		};
+		appRegistry.register({
+			id: "signed-tarot-contract-test",
+			name: "Tarot",
+			center: TestCenter,
+			source: "installed",
+			storeSignatureVerified: true,
+			tools: [tool, storeBlackjackTool],
+		});
+		try {
+			useAppStore.getState().setActiveApp("signed-tarot-contract-test");
+			expect(filterModelFacingTools([tool]).map(({ name }) => name)).toEqual([
+				"skill_store_tarot",
+			]);
+			expect(isModelFacingToolAllowed(storeBlackjackTool.name)).toBe(true);
+			const activeBoundary = makeModelToolBoundary({
+				fetchTools: async () => [tool],
+			});
+			expect((await activeBoundary.resolve()).disabledSkills).toEqual([]);
+			useAppStore.getState().setActiveApp(null);
+			expect(filterModelFacingTools([tool])).toEqual([]);
+			expect(isModelFacingToolAllowed(storeBlackjackTool.name)).toBe(false);
+			const inactiveBoundary = makeModelToolBoundary({
+				fetchTools: async () => [tool],
+			});
+			expect((await inactiveBoundary.resolve()).disabledSkills).toEqual([
+				"skill_store_tarot",
+			]);
+			useAppStore.getState().setActiveApp("signed-tarot-contract-test");
+			appRegistry.unregister("signed-tarot-contract-test");
+			expect(filterModelFacingTools([tool])).toEqual([]);
+			useAppStore.getState().setActiveApp("unsigned-test");
+			appRegistry.register({
+				id: "unsigned-test",
+				name: "Unsigned",
+				center: TestCenter,
+				source: "installed",
+				storeSignatureVerified: false,
+				tools: [tool],
+			});
+			expect(filterModelFacingTools([tool])).toEqual([]);
+		} finally {
+			useAppStore.getState().setActiveApp(null);
+			appRegistry.unregister("signed-tarot-contract-test");
+			appRegistry.unregister("unsigned-test");
+		}
+	});
+
+	it("does not let unsigned side-loads own the legacy blackjack tool", () => {
+		const sideLoadedTool = {
+			name: "skill_side_loaded_game",
+			description: "Side loaded game tool",
+		};
+		const legacyBlackjackTool = {
+			name: "skill_blackjack_tutor",
+			description: "Blackjack tutor",
+		};
+		appRegistry.register({
+			id: "side-loaded-contract-test",
+			name: "Side loaded",
+			center: TestCenter,
+			source: "installed",
+			storeSignatureVerified: false,
+			tools: [sideLoadedTool, legacyBlackjackTool],
+		});
+		try {
+			useAppStore.getState().setActiveApp("side-loaded-contract-test");
+			expect(filterModelFacingTools([sideLoadedTool])).toEqual([]);
+			expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(false);
+		} finally {
+			useAppStore.getState().setActiveApp(null);
+			appRegistry.unregister("side-loaded-contract-test");
+		}
+		expect(isModelFacingToolAllowed("skill_blackjack_tutor")).toBe(false);
 	});
 
 	it("workspace app tools stay inside the keep list", async () => {

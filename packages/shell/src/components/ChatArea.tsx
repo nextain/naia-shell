@@ -22,7 +22,7 @@ import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
 } from "../lib/ai-interference";
-import { appRegistry } from "../lib/app-registry";
+import { appRegistry, validateAppToolParameters } from "../lib/app-registry";
 import { writeAppSandboxFile } from "../lib/app-sandbox";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
@@ -108,6 +108,7 @@ import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import {
+	LEGACY_APP_TOOL_KEEP_LIST,
 	MODEL_FACING_TOOL_KEEP_LIST,
 	filterModelFacingTools,
 	isModelFacingToolAllowed,
@@ -319,14 +320,29 @@ const ttsChunkerOptions = {
 	speakableLength: (sentence: string) => ttsTextFilter.filter(sentence).length,
 };
 
-// Built-in skills are always available in UI (non-toggle). Prevent hidden config drift
-// from disabling them via chat-originated config_update events.
-const BUILTIN_SKILLS = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
+// Built-in skills are always available in UI (non-toggle). The legacy Store
+// blackjack tool stays here because old agent configs treat it as a built-in;
+// its execution authorization still requires the active signed app owner.
+const BUILTIN_SKILLS = new Set<string>([
+	...MODEL_FACING_TOOL_KEEP_LIST,
+	...LEGACY_APP_TOOL_KEEP_LIST,
+]);
 
 function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 	if (!disabled || disabled.length === 0) return undefined;
 	const filtered = disabled.filter((name) => !BUILTIN_SKILLS.has(name));
 	return filtered.length > 0 ? filtered : undefined;
+}
+
+function unavailableModelToolMessage(toolName: string): string {
+	const inactiveSignedOwner = appRegistry.list().some(
+		(app) =>
+			app.source === "installed" &&
+			app.storeSignatureVerified === true &&
+			app.id !== useAppStore.getState().activeApp &&
+			app.tools?.some((tool) => tool.name === toolName),
+	);
+	return `Tool is not available: ${toolName}${inactiveSignedOwner ? ". Open the app first." : ""}`;
 }
 
 function generateRequestId(): string {
@@ -2285,7 +2301,7 @@ export function ChatArea({
 		environmentSession.noteTurn();
 	}
 
-	function dispatchAppToolCall(
+	async function dispatchAppToolCall(
 		req: {
 			requestId: string;
 			toolCallId: string;
@@ -2308,17 +2324,48 @@ export function ChatArea({
 		// boundary even for tools that do not expose a streaming tool-call row.
 		useChatStore.getState().markStreamingToolBoundary();
 		if (!isModelFacingToolAllowed(req.toolName)) {
+			const unavailableStoreApp = appRegistry.list().find(
+				(app) =>
+					app.source === "installed" &&
+					(app.tools?.some((tool) => tool.name === req.toolName) ||
+						app.revokedStoreToolNames?.includes(req.toolName)),
+			);
 			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
 				tool: req.toolName,
 			});
 			void sendAppToolResult(
 				req.requestId,
 				req.toolCallId,
-				`Tool is not available: ${req.toolName}`,
+				unavailableStoreApp
+					? "Store app entitlement could not be verified. Connect to the internet and try again."
+					: unavailableModelToolMessage(req.toolName),
 				false,
 				req.activityId,
 			);
 			return;
+		}
+		const signedStoreOwner = appRegistry.list().find(
+			(app) =>
+				app.source === "installed" &&
+				app.storeSignatureVerified === true &&
+				app.tools?.some((tool) => tool.name === req.toolName),
+		);
+		if (signedStoreOwner) {
+			const { ensureStoreAppVerificationFresh } = await import("../lib/app-loader");
+			if (!(await ensureStoreAppVerificationFresh(signedStoreOwner.id))) {
+				Logger.warn("ChatArea", "blocked Store app tool after Rust verification", {
+					appId: signedStoreOwner.id,
+					tool: req.toolName,
+				});
+				void sendAppToolResult(
+					req.requestId,
+					req.toolCallId,
+					`Tool is not available: ${req.toolName}. Entitlement verification failed or the entitlement expired. Connect to the internet and try again.`,
+					false,
+					req.activityId,
+				);
+				return;
+			}
 		}
 		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 appRegistry 소유자
 		// 탐색으로 못 찾는다 — 전용 분기. executeBgmSkill 이 위젯이 이미 듣는
@@ -2404,9 +2451,21 @@ export function ChatArea({
 				});
 			return;
 		}
-		const ownerApp = appRegistry
-			.list()
-			.find((p) => p.tools?.some((t) => t.name === req.toolName));
+		const isLegacyAppTool = LEGACY_APP_TOOL_KEEP_LIST.some(
+			(name) => name === req.toolName,
+		);
+		const isShellModelTool = MODEL_FACING_TOOL_KEEP_LIST.some(
+			(name) => name === req.toolName,
+		);
+		const ownerApp = appRegistry.list().find(
+			(p) =>
+				p.tools?.some((t) => t.name === req.toolName) &&
+				(isLegacyAppTool
+					? p.storeSignatureVerified === true
+					: isShellModelTool
+						? p.source !== "installed"
+						: p.storeSignatureVerified === true),
+		);
 		// Tool-level auto app switch (user request): if the tool belongs to a
 		// app that isn't currently active, bring it forward before running.
 		if (ownerApp && useAppStore.getState().activeApp !== ownerApp.id) {
@@ -2417,6 +2476,17 @@ export function ChatArea({
 			});
 		}
 		const bridge = ownerApp ? getBridgeForApp(ownerApp.id) : activeBridge;
+		const declaredTool = ownerApp?.tools?.find((tool) => tool.name === req.toolName);
+		const parameterError = validateAppToolParameters(declaredTool, req.args);
+		if (parameterError) {
+			Logger.warn("ChatArea", "blocked app tool with invalid declared parameters", {
+				appId: ownerApp?.id,
+				tool: req.toolName,
+				error: parameterError,
+			});
+			void sendAppToolResult(req.requestId, req.toolCallId, parameterError, false, req.activityId);
+			return;
+		}
 		Logger.info("ChatArea", "app_tool_call dispatch", {
 			tool: req.toolName,
 			owner: ownerApp?.id ?? "(none→activeBridge)",
@@ -3662,7 +3732,7 @@ export function ChatArea({
 					});
 					session.sendToolResponse(
 						callId,
-						`Tool is not available: ${toolName}`,
+						unavailableModelToolMessage(toolName),
 					);
 					return;
 				}

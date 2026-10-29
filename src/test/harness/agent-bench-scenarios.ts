@@ -50,6 +50,8 @@ const FAMILIES: readonly {
   // 2026-09-25 (#712) — 앞 단계가 붉어 드러나지 않던 사이 들어온 능력 축 UC.
   // 모델이 받는 도구 목록(#611)은 실제 대화·음성 세션이 무엇을 싣는지로 본다.
   { prefix: "UC-TOOLS-SURFACE-611", gate: "protocol", requiredEvidence: ["native"] },
+  // 서명된 스토어 앱 도구는 모델 도구 경계와 Rust의 설치 영수증 검증을 함께 거친다.
+  { prefix: "UC-APPSTORE-DYNAMIC-TOOLS-20261029", gate: "protocol", requiredEvidence: ["mock", "native"] },
   // 도구 루트 결속(#651)은 실제 Codex app-server 의 cwd·샌드박스로만 확인된다.
   { prefix: "UC-WORKSPACE-BIND-651", gate: "integration", requiredEvidence: ["native"] },
   // 열린 문서·터미널 인지와 제어(#680), 승인 편집(#687)은 실 UI 의 표시·승인과

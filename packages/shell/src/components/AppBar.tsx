@@ -416,10 +416,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 							}
 						>
 							{mode.iconSvg ? (
-								<span
+								<img
 									className="app-bar-tab-icon app-bar-tab-icon--svg"
-									// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted app SVG
-									dangerouslySetInnerHTML={{ __html: mode.iconSvg }}
+									alt=""
+									src={`data:image/svg+xml,${encodeURIComponent(mode.iconSvg)}`}
 								/>
 							) : mode.icon ? (
 								<span className="app-bar-tab-icon">{mode.icon}</span>

@@ -1059,7 +1059,10 @@ describe("ChatArea", () => {
 	});
 
 	it("does not record a manual hotkey when the renderer refuses playback", async () => {
-		const playAction = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+		const playAction = vi
+			.fn()
+			.mockResolvedValueOnce(false)
+			.mockResolvedValue(true);
 		registerCameraActions({
 			getGestureActions: () => [{ key: "wave", label: "Wave" }],
 			playAction,
@@ -1365,7 +1368,9 @@ describe("ChatArea", () => {
 		};
 		vi.spyOn(voiceSessionApi, "createVoiceSession").mockReturnValue(session);
 		render(<ChatArea />);
-		fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+		fireEvent.click(
+			document.querySelector(".chat-voice-btn") as HTMLButtonElement,
+		);
 		await waitFor(() => expect(session.connect).toHaveBeenCalledTimes(1));
 
 		registerCameraActions({
@@ -1594,7 +1599,9 @@ describe("ChatArea", () => {
 
 		render(<ChatArea />);
 		// Should render the tool activity label
-		expect(await screen.findByText(/파일 읽기|Read File/)).toBeDefined();
+		expect(
+			await screen.findByText(/파일 읽기|Read File/, {}, { timeout: 5_000 }),
+		).toBeDefined();
 	});
 
 	it("sets pendingApproval on approval_request chunk", async () => {

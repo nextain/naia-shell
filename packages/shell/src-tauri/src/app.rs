@@ -3,6 +3,7 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
+use tauri::Manager;
 
 use crate::data_home::{self, DataHomeChild};
 
@@ -23,6 +24,106 @@ struct StoreEntitlement {
     status: String,
     download_path: String,
     artifact: StoreArtifact,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct StoreSignatureReceipt {
+    app_id: String,
+    sha256: String,
+    signature: String,
+}
+
+const STORE_SIGNATURE_RECEIPT: &str = ".naia-store-signature.json";
+const STORE_SIGNATURE_ARTIFACT: &str = ".naia-store-artifact.zip";
+const STORE_ENTITLEMENT_GRANTS_DIR: &str = "store-entitlement-grants";
+
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
+fn decode_sha256_hex(value: &str) -> Option<[u8; 32]> {
+    if value.len() != 64 {
+        return None;
+    }
+    let bytes = value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            std::str::from_utf8(pair)
+                .ok()
+                .and_then(|digits| u8::from_str_radix(digits, 16).ok())
+        })
+        .collect::<Option<Vec<_>>>()?;
+    bytes.try_into().ok()
+}
+
+fn has_verified_store_signature_with_key(
+    app_dir: &std::path::Path,
+    app_id: &str,
+    public_key: &str,
+) -> bool {
+    let Some(receipt_path) = safe_app_file(app_dir, STORE_SIGNATURE_RECEIPT) else {
+        return false;
+    };
+    let Ok(receipt) = std::fs::read(receipt_path).and_then(|bytes| {
+        serde_json::from_slice::<StoreSignatureReceipt>(&bytes)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+    }) else {
+        return false;
+    };
+    let Some(digest) = decode_sha256_hex(&receipt.sha256) else {
+        return false;
+    };
+    let Some(manifest_path) = safe_app_file(app_dir, "app.json") else {
+        return false;
+    };
+    let Ok(manifest_bytes) = std::fs::read(manifest_path) else {
+        return false;
+    };
+    let Some(artifact_path) = safe_app_file(app_dir, STORE_SIGNATURE_ARTIFACT) else {
+        return false;
+    };
+    let Ok(artifact_bytes) = std::fs::read(artifact_path) else {
+        return false;
+    };
+    if receipt.app_id != app_id || Sha256::digest(&artifact_bytes).as_slice() != digest.as_slice() {
+        return false;
+    }
+    if verify_artifact_signature_with_key(public_key, &digest, &receipt.signature).is_err() {
+        return false;
+    }
+    let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(artifact_bytes)) else {
+        return false;
+    };
+    let Ok(mut signed_manifest) = archive.by_name("app.json") else {
+        return false;
+    };
+    let mut signed_manifest_bytes = Vec::new();
+    std::io::Read::read_to_end(&mut signed_manifest, &mut signed_manifest_bytes).is_ok()
+        && signed_manifest_bytes == manifest_bytes
+}
+
+fn safe_app_file(app_dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    let path = app_dir.join(name);
+    let metadata = std::fs::symlink_metadata(&path).ok()?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return None;
+    }
+    let root = dunce::canonicalize(app_dir).ok()?;
+    let canonical = dunce::canonicalize(path).ok()?;
+    if canonical.parent() != Some(root.as_path()) {
+        return None;
+    }
+    Some(canonical)
+}
+
+fn set_store_signature_status(
+    manifest: &mut AppManifest,
+    app_dir: &std::path::Path,
+    public_key: &str,
+) {
+    manifest.store_signature_verified =
+        has_verified_store_signature_with_key(app_dir, &manifest.id, public_key);
 }
 
 // Ed25519 verification key paired with the private key the gateway uses to sign
@@ -746,6 +847,12 @@ pub struct AppManifest {
     /// to the app iframe via postMessage (GenericInstalledApp).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<AppToolSpec>>,
+    /// Set only by Rust after verifying a persisted store artifact receipt.
+    /// A value in app.json is ignored.
+    #[serde(default, skip_deserializing, skip_serializing_if = "is_false")]
+    pub store_signature_verified: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_signature_issued_at_ms: Option<u64>,
     /// Absolute path to index.html if present — used for iframe rendering
     #[serde(
         rename = "htmlEntry",
@@ -936,10 +1043,21 @@ fn list_installed_from_with_legacy_home(
 }
 
 fn list_installed_from_root(
-    _home: &std::path::Path,
+    home: &std::path::Path,
     apps_dir: std::path::PathBuf,
 ) -> Result<Vec<AppManifest>, String> {
+    list_installed_from_root_with_signing_key(
+        home,
+        apps_dir,
+        resolve_signing_public_key(option_env!("NAIA_APP_SIGNING_PUBLIC_KEY")),
+    )
+}
 
+fn list_installed_from_root_with_signing_key(
+    _home: &std::path::Path,
+    apps_dir: std::path::PathBuf,
+    public_key: &str,
+) -> Result<Vec<AppManifest>, String> {
     let mut apps: Vec<AppManifest> = Vec::new();
 
     let entries = match std::fs::read_dir(&apps_dir) {
@@ -963,6 +1081,12 @@ fn list_installed_from_root(
             return Err(format!("Invalid app entry: {}", entry.path().display()));
         }
         let manifest_path = entry.path().join("app.json");
+        let Some(manifest_path) = safe_app_file(&entry.path(), "app.json") else {
+            return Err(format!(
+                "Invalid app manifest path: {}",
+                manifest_path.display()
+            ));
+        };
         let data = std::fs::read_to_string(&manifest_path)
             .map_err(|e| format!("Failed to read {}: {}", manifest_path.display(), e))?;
         let mut manifest: AppManifest = serde_json::from_str(&data)
@@ -975,11 +1099,20 @@ fn list_installed_from_root(
             ));
         }
 
+        set_store_signature_status(&mut manifest, &entry.path(), public_key);
+        manifest.store_signature_issued_at_ms =
+            safe_app_file(&entry.path(), STORE_SIGNATURE_RECEIPT)
+            .and_then(|path| std::fs::metadata(path).ok())
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64);
+
         // Load inline SVG if iconUrl is specified
         if let Some(ref icon_url) = manifest.icon_url.clone() {
-            let svg_path = entry.path().join(icon_url);
-            if let Ok(svg) = std::fs::read_to_string(&svg_path) {
-                manifest.icon_svg = Some(svg);
+            if let Some(svg_path) = safe_app_file(&entry.path(), icon_url) {
+                if let Ok(svg) = std::fs::read_to_string(svg_path) {
+                    manifest.icon_svg = Some(svg);
+                }
             }
         }
 
@@ -1013,6 +1146,36 @@ pub fn app_list_installed(app_handle: tauri::AppHandle) -> Result<Vec<AppManifes
     let apps_root = prepare_apps_root(&adk)?;
     crate::allow_installed_app_asset_scope(&app_handle, &apps_root);
     list_installed_from_selected(&adk)
+}
+
+/// Recheck a single installed app's signature receipt immediately before a
+/// model-facing Store tool is dispatched. The frontend throttles this to once
+/// per app per 60 seconds; the command always reads the current files.
+#[tauri::command]
+pub fn app_verify_installed_store_app(app_id: String) -> Result<bool, String> {
+    validate_store_app_id(&app_id)?;
+    let adk = selected_adk_path()?;
+    let apps_root = prepare_apps_root(&adk)?;
+    let app_dir = apps_root.join(&app_id);
+    let metadata = std::fs::symlink_metadata(&app_dir)
+        .map_err(|_| "Installed app not found".to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Installed app not found".to_string());
+    }
+    let manifest_path = safe_app_file(&app_dir, "app.json")
+        .ok_or_else(|| "Installed app manifest unavailable".to_string())?;
+    let manifest_bytes = std::fs::read(manifest_path)
+        .map_err(|_| "Installed app manifest unavailable".to_string())?;
+    let manifest: AppManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|_| "Installed app manifest invalid".to_string())?;
+    if manifest.id != app_id {
+        return Ok(false);
+    }
+    Ok(has_verified_store_signature_with_key(
+        &app_dir,
+        &app_id,
+        resolve_signing_public_key(option_env!("NAIA_APP_SIGNING_PUBLIC_KEY")),
+    ))
 }
 
 /// Read a file on behalf of an iframe panel.
@@ -1217,6 +1380,18 @@ fn remove_installed_from_with_legacy_home(
 mod tests {
     use super::*;
 
+    #[test]
+    fn runtime_verifier_resolves_the_production_published_key() {
+        let selected = resolve_signing_public_key(option_env!("NAIA_APP_SIGNING_PUBLIC_KEY"));
+        assert_eq!(selected, PUBLISHED_APP_SIGNING_PUBLIC_KEY);
+        let key_bytes = base64::engine::general_purpose::STANDARD
+            .decode(selected)
+            .expect("production key must decode");
+        assert_eq!(key_bytes.len(), 32);
+        VerifyingKey::from_bytes(key_bytes.as_slice().try_into().unwrap())
+            .expect("production key must be a valid Ed25519 key");
+    }
+
     fn write_app(root: &std::path::Path, dir: &str, id: &str) -> std::path::PathBuf {
         let app_dir = root.join(dir);
         std::fs::create_dir_all(&app_dir).unwrap();
@@ -1246,6 +1421,214 @@ mod tests {
 
         remove_installed_from(home.path(), "slides").unwrap();
         assert!(list_installed_from(home.path()).unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_and_signature_verification_reject_symlinked_app_manifest() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let apps = apps_root(home.path());
+        std::fs::create_dir_all(&apps).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(
+            outside.path().join("app.json"),
+            r#"{"id":"linked","name":"Outside"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(apps.join("linked")).unwrap();
+        symlink(outside.path().join("app.json"), apps.join("linked").join("app.json")).unwrap();
+
+        let public_key = PUBLISHED_APP_SIGNING_PUBLIC_KEY;
+        assert!(list_installed_from_root_with_signing_key(home.path(), apps, public_key).is_err());
+        assert!(safe_app_file(&apps_root(home.path()).join("linked"), "app.json").is_none());
+
+        let app_dir = apps_root(home.path()).join("linked");
+        for name in [STORE_SIGNATURE_RECEIPT, STORE_SIGNATURE_ARTIFACT] {
+            let link = app_dir.join(name);
+            symlink(outside.path().join("app.json"), &link).unwrap();
+            assert!(
+                safe_app_file(&app_dir, name).is_none(),
+                "{name} symlink must be rejected"
+            );
+            std::fs::remove_file(link).unwrap();
+        }
+    }
+
+    #[test]
+    fn entitlement_grant_timestamp_is_persisted_and_future_values_are_rejected() {
+        let app_data = tempfile::tempdir().unwrap();
+        persist_store_entitlement_grant(app_data.path(), "signed-game", 1_000).unwrap();
+        assert_eq!(load_store_entitlement_grant(app_data.path(), "signed-game", 1_000), Some(1_000));
+        assert_eq!(load_store_entitlement_grant(app_data.path(), "signed-game", 999), None);
+        assert_eq!(load_store_entitlement_grant(app_data.path(), "never-approved", 1_000), None);
+    }
+
+    #[test]
+    fn entitlement_grant_filename_cannot_escape_app_data() {
+        let app_data = tempfile::tempdir().unwrap();
+        assert!(persist_store_entitlement_grant(app_data.path(), "../outside", 1_000).is_err());
+        assert!(!app_data.path().parent().unwrap().join("outside.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn installed_icon_loading_rejects_parent_and_symlink_paths() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let apps = apps_root(home.path());
+        let app_dir = write_app(&apps, "icon-check", "icon-check");
+        let outside = home.path().join("outside.svg");
+        std::fs::write(&outside, "<svg>outside</svg>").unwrap();
+        std::fs::write(
+            app_dir.join("app.json"),
+            r#"{"id":"icon-check","name":"Icon check","iconUrl":"../../../outside.svg"}"#,
+        )
+        .unwrap();
+        let manifest = list_installed_from_root_with_signing_key(
+            home.path(),
+            apps.clone(),
+            PUBLISHED_APP_SIGNING_PUBLIC_KEY,
+        )
+        .unwrap()
+        .remove(0);
+        assert!(manifest.icon_svg.is_none());
+
+        std::fs::write(
+            app_dir.join("app.json"),
+            r#"{"id":"icon-check","name":"Icon check","iconUrl":"icon.svg"}"#,
+        )
+        .unwrap();
+        symlink(&outside, app_dir.join("icon.svg")).unwrap();
+        let manifest = list_installed_from_root_with_signing_key(
+            home.path(),
+            apps,
+            PUBLISHED_APP_SIGNING_PUBLIC_KEY,
+        )
+        .unwrap()
+        .remove(0);
+        assert!(manifest.icon_svg.is_none());
+    }
+
+    #[test]
+    fn only_a_valid_store_signature_receipt_marks_an_app_as_store_installed() {
+        use ed25519_dalek::{Signer as _, SigningKey};
+
+        assert_eq!(decode_sha256_hex(&"💥".repeat(16)), None);
+        let home = tempfile::tempdir().unwrap();
+        let app_dir = write_app(&apps_root(home.path()), "signed-game", "signed-game");
+        std::fs::write(
+            app_dir.join("app.json"),
+            r#"{"id":"signed-game","name":"Test App","store_signature_verified":true}"#,
+        )
+        .unwrap();
+        let signing_key = SigningKey::from_bytes(&[41_u8; 32]);
+        let public_key = base64::engine::general_purpose::STANDARD
+            .encode(signing_key.verifying_key().to_bytes());
+        assert!(
+            !list_installed_from_root_with_signing_key(
+                home.path(),
+                apps_root(home.path()),
+                &public_key
+            )
+            .unwrap()[0]
+                .store_signature_verified
+        );
+        let signed_manifest =
+            br#"{"id":"signed-game","name":"Test App","store_signature_verified":true}"#;
+        let mut artifact_bytes = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut artifact_bytes));
+            writer
+                .start_file("app.json", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            std::io::Write::write_all(&mut writer, signed_manifest).unwrap();
+            writer.finish().unwrap();
+        }
+        let digest = Sha256::digest(&artifact_bytes);
+        let signature = format!(
+            "ed25519:{}",
+            base64::engine::general_purpose::STANDARD.encode(signing_key.sign(&digest).to_bytes())
+        );
+        let receipt = StoreSignatureReceipt {
+            app_id: "signed-game".to_string(),
+            sha256: format!("{:x}", digest),
+            signature: signature.clone(),
+        };
+        let receipt_path = app_dir.join(STORE_SIGNATURE_RECEIPT);
+        std::fs::write(app_dir.join(STORE_SIGNATURE_ARTIFACT), &artifact_bytes).unwrap();
+        std::fs::write(&receipt_path, serde_json::to_vec(&receipt).unwrap()).unwrap();
+
+        let listed = list_installed_from_root_with_signing_key(
+            home.path(),
+            apps_root(home.path()),
+            &public_key,
+        )
+        .unwrap();
+        assert!(listed[0].store_signature_verified);
+        let serialized = serde_json::to_value(&listed[0]).unwrap();
+        assert_eq!(serialized["store_signature_verified"], true);
+
+        let mut invalid_signature = StoreSignatureReceipt {
+            app_id: "signed-game".to_string(),
+            sha256: format!("{:x}", digest),
+            signature: "ed25519:AA==".to_string(),
+        };
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec(&invalid_signature).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            !list_installed_from_root_with_signing_key(
+                home.path(),
+                apps_root(home.path()),
+                &public_key
+            )
+            .unwrap()[0]
+                .store_signature_verified
+        );
+        invalid_signature.signature = signature;
+        std::fs::write(
+            &receipt_path,
+            serde_json::to_vec(&invalid_signature).unwrap(),
+        )
+        .unwrap();
+
+        std::fs::write(
+            app_dir.join("app.json"),
+            r#"{"id":"signed-game","name":"Replaced manifest"}"#,
+        )
+        .unwrap();
+        assert!(
+            !list_installed_from_root_with_signing_key(
+                home.path(),
+                apps_root(home.path()),
+                &public_key
+            )
+            .unwrap()[0]
+                .store_signature_verified
+        );
+        let mut tampered = receipt;
+        tampered.sha256 = format!("{:x}", Sha256::digest(b"tampered artifact"));
+        std::fs::write(&receipt_path, serde_json::to_vec(&tampered).unwrap()).unwrap();
+        assert!(
+            !list_installed_from_root_with_signing_key(
+                home.path(),
+                apps_root(home.path()),
+                &public_key
+            )
+            .unwrap()[0]
+                .store_signature_verified
+        );
+        std::fs::remove_file(&receipt_path).unwrap();
+        assert!(!has_verified_store_signature_with_key(
+            &app_dir,
+            "signed-game",
+            &public_key
+        ));
     }
 
     #[test]
@@ -2139,6 +2522,15 @@ fn store_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+fn store_entitlement_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(1))
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
 fn store_key(app: &tauri::AppHandle) -> Result<String, String> {
     crate::read_secure_naia_credential(app).ok_or_else(|| "Naia login required".to_string())
 }
@@ -2153,7 +2545,7 @@ pub fn app_store_has_entitlement(
     let endpoint = validated_store_gateway(&gateway_url)?
         .join(&format!("v1/apps/entitlements/{app_id}"))
         .map_err(|_| "Invalid entitlement endpoint".to_string())?;
-    let response = store_client()?
+    let response = store_entitlement_client()?
         .get(endpoint)
         .bearer_auth(store_key(&app)?)
         .send()
@@ -2167,7 +2559,63 @@ pub fn app_store_has_entitlement(
     let entitlement: StoreEntitlement = response
         .json()
         .map_err(|e| format!("Invalid entitlement: {e}"))?;
-    Ok(entitlement.app_id == app_id && entitlement.status == "GRANTED")
+    let granted = entitlement.app_id == app_id && entitlement.status == "GRANTED";
+    if granted {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "System clock is before Unix epoch".to_string())?
+            .as_millis()
+            .min(u64::MAX as u128) as u64;
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        persist_store_entitlement_grant(&app_data, &app_id, now_ms)?;
+    }
+    Ok(granted)
+}
+
+#[tauri::command]
+pub fn app_store_last_entitlement_grant(
+    app: tauri::AppHandle,
+    app_id: String,
+) -> Result<Option<u64>, String> {
+    validate_store_app_id(&app_id)?;
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "System clock is before Unix epoch".to_string())?
+        .as_millis()
+        .min(u64::MAX as u128) as u64;
+    Ok(load_store_entitlement_grant(&app_data, &app_id, now_ms))
+}
+
+fn store_entitlement_grant_path(app_data: &std::path::Path, app_id: &str) -> std::path::PathBuf {
+    app_data
+        .join(STORE_ENTITLEMENT_GRANTS_DIR)
+        .join(format!("{app_id}.json"))
+}
+
+fn persist_store_entitlement_grant(
+    app_data: &std::path::Path,
+    app_id: &str,
+    timestamp_ms: u64,
+) -> Result<(), String> {
+    validate_store_app_id(app_id)?;
+    let dir = app_data.join(STORE_ENTITLEMENT_GRANTS_DIR);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not save entitlement grant: {e}"))?;
+    let path = store_entitlement_grant_path(app_data, app_id);
+    let bytes = serde_json::to_vec(&timestamp_ms).map_err(|e| e.to_string())?;
+    std::fs::write(path, bytes).map_err(|e| format!("Could not save entitlement grant: {e}"))
+}
+
+fn load_store_entitlement_grant(
+    app_data: &std::path::Path,
+    app_id: &str,
+    now_ms: u64,
+) -> Option<u64> {
+    let timestamp = serde_json::from_slice::<u64>(
+        &std::fs::read(store_entitlement_grant_path(app_data, app_id)).ok()?,
+    )
+    .ok()?;
+    (timestamp <= now_ms).then_some(timestamp)
 }
 
 fn validate_store_app_id(app_id: &str) -> Result<(), String> {
@@ -2268,6 +2716,8 @@ pub fn app_install_store(
         .prefix(".store-install-")
         .tempdir_in(&apps_root)
         .map_err(|e| e.to_string())?;
+    std::fs::write(temp.path().join(STORE_SIGNATURE_ARTIFACT), &bytes)
+        .map_err(|e| format!("Failed to preserve verified Store artifact: {}", e))?;
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| format!("Invalid app ZIP: {}", e))?;
     if archive.len() > MAX_ARCHIVE_ENTRIES {
@@ -2326,6 +2776,16 @@ pub fn app_install_store(
     if destination.exists() {
         return Err("App is already installed; remove it before reinstalling".to_string());
     }
+    let receipt = StoreSignatureReceipt {
+        app_id: manifest.id.clone(),
+        sha256: digest,
+        signature: artifact.signature,
+    };
+    std::fs::write(
+        temp.path().join(STORE_SIGNATURE_RECEIPT),
+        serde_json::to_vec(&receipt).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("Failed to record verified Store install: {}", e))?;
     let kept = temp.keep();
     std::fs::rename(&kept, &destination).map_err(|e| format!("Install finalize failed: {}", e))?;
     // Absolutize relative asset URLs so the iframe renders (see fn docs).

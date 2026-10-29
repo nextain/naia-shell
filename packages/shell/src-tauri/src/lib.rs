@@ -14674,6 +14674,7 @@ pub fn run() {
             // Common tab skills
             capture::capture_screen_region,
             app::app_list_installed,
+            app::app_verify_installed_store_app,
             app::app_remove_installed,
             app::app_read_file,
             app::app_run_shell,
@@ -14688,6 +14689,7 @@ pub fn run() {
             app_sandbox::slides_recording_start,
             app_sandbox::slides_recording_stop,
             app::app_store_has_entitlement,
+            app::app_store_last_entitlement_grant,
             app::app_install_store,
             workspace::workspace_list_dirs,
             workspace::workspace_list_files_recursive,

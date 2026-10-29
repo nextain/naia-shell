@@ -1,9 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createGenericInstalledApp } from "../apps/generic-installed/GenericInstalledApp";
 import { useAppStore } from "../stores/app";
-import { Logger } from "./logger";
 import { appRegistry } from "./app-registry";
 import type { AppDataUseSpec, AppSkillSpec, NaiaTool } from "./app-registry";
+import { hasStoreEntitlement } from "./app-store-client";
+import { Logger } from "./logger";
+import {
+	LEGACY_APP_TOOL_KEEP_LIST,
+	SHELL_RESERVED_TOOL_NAMES,
+} from "./model-facing-tools";
 
 export interface InstalledAppManifest {
 	id: string;
@@ -31,6 +36,10 @@ export interface InstalledAppManifest {
 	publisher?: string;
 	/** Tools the app exposes to Naia (declared in app.json). */
 	tools?: NaiaTool[];
+	/** True only when the Rust installer verifies its persisted Store signature receipt. */
+	store_signature_verified?: boolean;
+	/** Receipt file creation time supplied by Rust for first-install grace. */
+	store_signature_issued_at_ms?: number;
 	/** Absolute path to index.html if present */
 	htmlEntry?: string;
 	/**
@@ -45,7 +54,7 @@ export interface InstalledAppManifest {
  * Read manifests from ~/.naia/apps/ via Tauri command and register each
  * as a GenericInstalledApp. Bumps appListVersion so AppBar re-renders.
  *
- * Skips apps already registered (e.g. built-ins or re-loaded after restart).
+ * Preserves built-ins and refreshes installed descriptors from each Rust list.
  */
 /**
  * 설치된 앱 목록을 다 읽었는가.
@@ -57,12 +66,144 @@ export interface InstalledAppManifest {
  */
 let installedAppsSettled = false;
 let installedAppsLoadGeneration = 0;
+const ENTITLEMENT_CACHE_MS = 10 * 60 * 1000;
+const EXECUTION_RECHECK_CACHE_MS = 60 * 1000;
+const ENTITLEMENT_CHECK_TIMEOUT_MS = 2_000;
+const ENTITLEMENT_GRACE_MS = 72 * 60 * 60 * 1000;
+const entitlementCache = new Map<
+	string,
+	{ value: boolean; checkedAt: number }
+>();
+const storeSignatureCheckedAt = new Map<string, number>();
+const executionEntitlementCheckedAt = new Map<string, number>();
+
+/** Verify cached Store trust against current Rust filesystem state before dispatch. */
+export async function ensureStoreAppVerificationFresh(
+	appId: string,
+): Promise<boolean> {
+	const lastChecked = executionEntitlementCheckedAt.get(appId) ?? 0;
+	if (Date.now() - lastChecked < EXECUTION_RECHECK_CACHE_MS) {
+		return appRegistry.get(appId)?.storeSignatureVerified === true;
+	}
+	try {
+		const lastSignatureCheck = storeSignatureCheckedAt.get(appId) ?? 0;
+		if (Date.now() - lastSignatureCheck >= EXECUTION_RECHECK_CACHE_MS) {
+			const verified = await invoke<boolean>("app_verify_installed_store_app", {
+				appId,
+			});
+			if (!verified) {
+				appRegistry.updateStoreSignatureVerified(appId, false);
+				storeSignatureCheckedAt.delete(appId);
+				executionEntitlementCheckedAt.delete(appId);
+				return false;
+			}
+			storeSignatureCheckedAt.set(appId, Date.now());
+		}
+		const app = appRegistry.get(appId);
+		if (!app || app.storeSignatureVerified !== true) return false;
+		const entitled = await recheckStoreEntitlement(
+			{
+				id: appId,
+				store_signature_verified: true,
+				store_signature_issued_at_ms: app.storeSignatureIssuedAtMs,
+			},
+			EXECUTION_RECHECK_CACHE_MS,
+		);
+		if (!entitled) {
+			appRegistry.updateStoreSignatureVerified(appId, false);
+			storeSignatureCheckedAt.delete(appId);
+			executionEntitlementCheckedAt.delete(appId);
+			return false;
+		}
+		executionEntitlementCheckedAt.set(appId, Date.now());
+		return true;
+	} catch (err) {
+		Logger.warn("AppLoader", "Store app execution recheck failed", {
+			appId,
+			error: String(err),
+		});
+		return false;
+	}
+}
 export function areInstalledAppsSettled(): boolean {
 	return installedAppsSettled;
 }
 /** 테스트가 부팅을 다시 재기 위해 되돌린다. */
 export function resetInstalledAppsSettled(): void {
 	installedAppsSettled = false;
+}
+
+async function recheckStoreEntitlement(
+	manifest: Pick<
+		InstalledAppManifest,
+		"id" | "store_signature_verified" | "store_signature_issued_at_ms"
+	>,
+	cacheTtlMs = ENTITLEMENT_CACHE_MS,
+): Promise<boolean> {
+	if (manifest.store_signature_verified !== true) return false;
+	const cached = entitlementCache.get(manifest.id);
+	if (cached && Date.now() - cached.checkedAt < cacheTtlMs) {
+		return cached.value;
+	}
+	let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+	try {
+		const timeout = new Promise<never>((_, reject) => {
+			timeoutHandle = setTimeout(
+				() => reject(new Error("Entitlement check timed out")),
+				ENTITLEMENT_CHECK_TIMEOUT_MS,
+			);
+		});
+		const entitled = await Promise.race([
+			hasStoreEntitlement(manifest.id),
+			timeout,
+		]);
+		if (entitled) {
+			entitlementCache.set(manifest.id, { value: true, checkedAt: Date.now() });
+		} else {
+			entitlementCache.delete(manifest.id);
+		}
+		if (!entitled) {
+			Logger.warn("AppLoader", "Store entitlement missing; trust revoked", {
+				appId: manifest.id,
+			});
+		}
+		return entitled;
+	} catch (err) {
+		const lastGrantedAt = await loadLastEntitlementSuccess(manifest.id);
+		const graceStartedAt = lastGrantedAt;
+		const graceAge =
+			graceStartedAt == null ? undefined : Date.now() - graceStartedAt;
+		const graceAllowed =
+			graceAge != null && graceAge >= 0 && graceAge <= ENTITLEMENT_GRACE_MS;
+		Logger.warn(
+			"AppLoader",
+			graceAllowed
+				? "Store entitlement unavailable; allowing app within 72-hour grace"
+				: "Store entitlement unavailable; blocking app until a Gateway approval is recorded",
+			{ appId: manifest.id, error: String(err), graceStartedAt, graceAllowed },
+		);
+		return graceAllowed;
+	} finally {
+		if (timeoutHandle) clearTimeout(timeoutHandle);
+	}
+}
+
+async function loadLastEntitlementSuccess(
+	appId: string,
+): Promise<number | undefined> {
+	try {
+		const value = await invoke<number | null>(
+			"app_store_last_entitlement_grant",
+			{
+				appId,
+			},
+		);
+		return typeof value === "number" && Number.isFinite(value)
+			? value
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /**
@@ -80,9 +221,15 @@ export function invalidateInstalledApps(): void {
 
 	const activeApp = useAppStore.getState().activeApp;
 	for (const descriptor of installed) {
+		entitlementCache.delete(descriptor.id);
+		storeSignatureCheckedAt.delete(descriptor.id);
+		executionEntitlementCheckedAt.delete(descriptor.id);
 		appRegistry.unregister(descriptor.id);
 	}
-	if (activeApp && installed.some((descriptor) => descriptor.id === activeApp)) {
+	if (
+		activeApp &&
+		installed.some((descriptor) => descriptor.id === activeApp)
+	) {
 		useAppStore.getState().setActiveApp(null);
 	}
 	useAppStore.getState().bumpAppListVersion();
@@ -109,14 +256,64 @@ export async function loadInstalledApps(): Promise<void> {
 	// pending. The older result belongs to the previous ADK and must not mutate
 	// the registry after the newer request has started.
 	if (loadGeneration !== installedAppsLoadGeneration) return;
+	const listedIds = new Set(manifests.map((manifest) => manifest.id));
+	for (const appId of entitlementCache.keys()) {
+		if (!listedIds.has(appId)) entitlementCache.delete(appId);
+	}
+	for (const appId of storeSignatureCheckedAt.keys()) {
+		if (!listedIds.has(appId)) storeSignatureCheckedAt.delete(appId);
+	}
+	for (const appId of executionEntitlementCheckedAt.keys()) {
+		if (!listedIds.has(appId)) executionEntitlementCheckedAt.delete(appId);
+	}
+	const entitlementResults = await Promise.all(
+		manifests.map(
+			async (manifest) =>
+				[manifest.id, await recheckStoreEntitlement(manifest)] as const,
+		),
+	);
+	if (loadGeneration !== installedAppsLoadGeneration) return;
+	const entitledById = new Map(entitlementResults);
+	const revokedToolsById = new Map<string, string[]>();
+	for (const manifest of manifests) {
+		if (
+			manifest.store_signature_verified === true &&
+			!entitledById.get(manifest.id)
+		) {
+			revokedToolsById.set(
+				manifest.id,
+				(manifest.tools ?? []).map((tool) => tool.name),
+			);
+			manifest.store_signature_verified = false;
+			manifest.tools = [];
+		}
+		if (manifest.store_signature_verified === true) {
+			storeSignatureCheckedAt.set(manifest.id, Date.now());
+		} else {
+			storeSignatureCheckedAt.delete(manifest.id);
+		}
+	}
 
 	Logger.info("AppLoader", `Found ${manifests.length} installed app(s)`);
+	const builtInToolNames = SHELL_RESERVED_TOOL_NAMES;
+	const legacyAppToolNames = new Set<string>(LEGACY_APP_TOOL_KEEP_LIST);
+	const declaredToolOwners = new Map<string, string[]>();
+	for (const manifest of manifests) {
+		if (manifest.store_signature_verified !== true) continue;
+		for (const tool of manifest.tools ?? []) {
+			const owners = declaredToolOwners.get(tool.name) ?? [];
+			owners.push(manifest.id);
+			declaredToolOwners.set(tool.name, owners);
+		}
+	}
 
 	// The selected ADK is the source of truth. On an ADK switch, an installed
 	// descriptor from the previous root can have the same id but an old
 	// htmlEntry. Drop only installed descriptors whose current manifest is gone
 	// or points at a different root; built-ins and live unchanged apps remain.
-	const currentById = new Map(manifests.map((manifest) => [manifest.id, manifest]));
+	const currentById = new Map(
+		manifests.map((manifest) => [manifest.id, manifest]),
+	);
 	for (const registered of appRegistry.list()) {
 		if (registered.source !== "installed") continue;
 		const current = currentById.get(registered.id);
@@ -133,15 +330,8 @@ export async function loadInstalledApps(): Promise<void> {
 	}
 
 	for (const manifest of manifests) {
-		if (appRegistry.get(manifest.id)) {
-			Logger.debug(
-				"AppLoader",
-				`App already registered, skipping: ${manifest.id}`,
-			);
-			continue;
-		}
-
-		const manifestVersion = manifest.manifest_version ?? manifest.manifestVersion;
+		const manifestVersion =
+			manifest.manifest_version ?? manifest.manifestVersion;
 		const profile: "legacy" | "v2" =
 			manifestVersion != null && manifestVersion >= 2 ? "v2" : "legacy";
 		const hostPermissions =
@@ -149,6 +339,76 @@ export async function loadInstalledApps(): Promise<void> {
 		const optionalPermissions =
 			manifest.optional_permissions ?? manifest.optionalPermissions;
 		const dataUse = manifest.data_use ?? manifest.dataUse;
+		const storeSignatureVerified = manifest.store_signature_verified === true;
+		let appTools = manifest.tools;
+		if (
+			!storeSignatureVerified &&
+			appTools?.some((tool) => legacyAppToolNames.has(tool.name))
+		) {
+			Logger.warn(
+				"AppLoader",
+				"Rejected unsigned legacy app tool declaration",
+				{
+					appId: manifest.id,
+					tools: appTools
+						.filter((tool) => legacyAppToolNames.has(tool.name))
+						.map((tool) => tool.name),
+				},
+			);
+			appTools = appTools.filter((tool) => !legacyAppToolNames.has(tool.name));
+		}
+		if (storeSignatureVerified && appTools) {
+			appTools = appTools.filter((tool) => {
+				const owners = declaredToolOwners.get(tool.name) ?? [];
+				const legacyCompat = legacyAppToolNames.has(tool.name);
+				const rejection = !tool.name.startsWith("skill_")
+					? "tool name must start with skill_"
+					: builtInToolNames.has(tool.name) && !legacyCompat
+						? "tool name conflicts with a Shell built-in"
+						: owners.some((ownerId) => ownerId !== manifest.id)
+							? "tool name is declared by another installed app"
+							: null;
+				if (rejection) {
+					Logger.warn("AppLoader", "Rejected Store app tool declaration", {
+						appId: manifest.id,
+						tool: tool.name,
+						reason: rejection,
+					});
+					return false;
+				}
+				return true;
+			});
+		}
+
+		const previous = appRegistry.get(manifest.id);
+		if (previous && previous.source !== "installed") {
+			Logger.debug(
+				"AppLoader",
+				`App already registered, skipping: ${manifest.id}`,
+			);
+			continue;
+		}
+		if (previous?.source === "installed") {
+			if (
+				previous.storeSignatureVerified === storeSignatureVerified &&
+				JSON.stringify(previous.tools ?? []) ===
+					JSON.stringify(appTools ?? []) &&
+				previous.name === manifest.name &&
+				JSON.stringify(previous.names ?? {}) ===
+					JSON.stringify(manifest.names ?? {}) &&
+				JSON.stringify(previous.descriptions ?? {}) ===
+					JSON.stringify(manifest.descriptions ?? {}) &&
+				previous.icon === manifest.icon &&
+				previous.htmlEntry === manifest.htmlEntry
+			) {
+				continue;
+			}
+			// A fresh Rust list is authoritative for both the signed manifest and
+			// its filtered tool set. Replace the descriptor so revocations and
+			// manifest edits take effect without restarting the shell.
+			appRegistry.unregister(manifest.id);
+			Logger.debug("AppLoader", `Refreshing installed app: ${manifest.id}`);
+		}
 
 		appRegistry.register({
 			id: manifest.id,
@@ -169,8 +429,11 @@ export async function loadInstalledApps(): Promise<void> {
 			help: manifest.help,
 			dataUse,
 			publisher: manifest.publisher,
-			tools: manifest.tools,
+			storeSignatureIssuedAtMs: manifest.store_signature_issued_at_ms,
+			tools: appTools,
 			source: "installed",
+			storeSignatureVerified,
+			revokedStoreToolNames: revokedToolsById.get(manifest.id),
 			// Keep installed apps mounted across app switches — same treatment as
 			// built-ins (browser/workspace/settings). An installed app renders an
 			// iframe whose in-page state (e.g. a Slides deck's open PDF) is DOM
@@ -179,7 +442,7 @@ export async function loadInstalledApps(): Promise<void> {
 			// round-trip to another app and back. An app may opt out with
 			// keepAlive:false in its manifest.
 			keepAlive: manifest.keepAlive ?? true,
-			center: createGenericInstalledApp(manifest.htmlEntry, manifest.tools),
+			center: createGenericInstalledApp(manifest.htmlEntry, appTools),
 		});
 
 		Logger.info("AppLoader", `Registered installed app: ${manifest.id}`);
@@ -206,6 +469,12 @@ export async function removeInstalledApp(appId: string): Promise<void> {
 		throw err;
 	}
 
+	// Prevent a list request that started before disk deletion from resurrecting
+	// the app (and its model-facing tools) when its response arrives late.
+	installedAppsLoadGeneration += 1;
+	entitlementCache.delete(appId);
+	storeSignatureCheckedAt.delete(appId);
+	executionEntitlementCheckedAt.delete(appId);
 	appRegistry.unregister(appId);
 	if (useAppStore.getState().activeApp === appId) {
 		useAppStore.getState().setActiveApp(null);

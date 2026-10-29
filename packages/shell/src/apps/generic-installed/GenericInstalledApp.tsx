@@ -1,5 +1,9 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import {
+	resolveAppToolTargetOrigin,
+	validateAppToolParameters,
+} from "../../lib/app-registry";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
 import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
@@ -69,16 +73,16 @@ export function createGenericInstalledApp(
 
 			const unsubs = tools.map((tool) =>
 				naia.onToolCall(tool.name, async (args) => {
+					const invalidArgs = validateAppToolParameters(tool, args);
+					if (invalidArgs) throw new Error(invalidArgs);
 					const iframe = iframeRef.current;
 					const contentWindow = iframe?.contentWindow;
 					if (!iframe || !contentWindow) {
 						return "(app not loaded yet)";
 					}
-					let targetOrigin = "*";
-					try {
-						targetOrigin = new URL(iframe.src).origin;
-					} catch {
-						// fall back to "*" — the app replies to its own loader origin
+					const targetOrigin = resolveAppToolTargetOrigin(iframe.src);
+					if (!targetOrigin) {
+						throw new Error("Cannot send app tool call: invalid target origin");
 					}
 					const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 					const target = contentWindow;

@@ -49,7 +49,7 @@ describe("makeModelToolBoundary", () => {
 		expect(res.disabledSkills).not.toContain("skill_knowledge_graph");
 		expect(res.disabledSkills).not.toContain("skill_knowledge_scope");
 		expect(res.disabledSkills).not.toContain("skill_memory_recall");
-		expect(res.disabledSkills).not.toContain("skill_blackjack_tutor");
+		expect(res.disabledSkills).toContain("skill_blackjack_tutor");
 	});
 
 	it("fetch rejects on the very first call → toolsAllowed:false, disabledSkills: [] and warn called", async () => {
