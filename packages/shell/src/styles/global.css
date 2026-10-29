@@ -1853,6 +1853,8 @@ body.resizing-row {
 
 .chat-message.user .message-content {
 	color: var(--tech-blue);
+	word-break: keep-all;
+	overflow-wrap: anywhere;
 }
 
 .chat-message.user .message-content::before {
@@ -1863,7 +1865,9 @@ body.resizing-row {
 .chat-message.assistant .message-content {
 	color: var(--cream);
 	line-height: 1.5;
-	word-break: break-word;
+	/* Korean words stay whole on narrow bubbles ("뿐이 / 야." split, 2026-10-29). */
+	word-break: keep-all;
+	overflow-wrap: anywhere;
 }
 
 /* Thinking block — inline collapsible */
@@ -4993,7 +4997,8 @@ body.resizing-row {
 	border-radius: 8px;
 	font-size: 12px;
 	line-height: 1.4;
-	word-break: break-word;
+	word-break: keep-all;
+	overflow-wrap: anywhere;
 }
 
 .dm-message.inbound .dm-message-bubble {

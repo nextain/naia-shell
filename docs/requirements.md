@@ -1332,6 +1332,12 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 |---|---|---|---|---|
 | **FR-CHAT-MARKDOWN.4** | 감정 태그·무대 지시 정리는 채팅 본문 마크다운을 바꾸지 않는다. 괄호·별표 구간은 한 줄 안의 영어 단어만으로 이루어지고 알려진 동작 단어를 포함할 때만 무대 지시로 지우며, `**굵게**`, 따옴표, 괄호 내용, 목록 항목, 줄 앞 들여쓰기와 줄바꿈은 보존한다. | UC-CHAT-MARKDOWN-FIDELITY-683 | `expression.test.ts`, `ChatMarkdown.test.tsx`, `e2e/chat-tools.spec.ts` | Done |
 
+## 기능 요구사항 (FR) — 채팅 말풍선 줄바꿈
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-CHAT-LAYOUT.1** | 채팅 말풍선은 한글 낱말을 줄 중간에서 나누지 않고 좁은 폭에서 다음 줄로 옮긴다. 공백 없는 긴 문자열은 말풍선 너비 안에서 줄바꿈해 가로로 넘치지 않게 한다. | UC1 텍스트 대화 | `packages/shell/e2e/chat-korean-keepall.spec.ts`: 360px 폭 낱말 Range 위치·80자 URL의 `scrollWidth ≤ clientWidth` | Done |
+
 ## 기능 요구사항 (FR) — 작은 LLM 떠오름 설정 (#692)
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
