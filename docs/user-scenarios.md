@@ -2012,7 +2012,7 @@ Test Coverage Map (P02)
 
 | UC | 단위·계약 | 실 UI / Rust |
 |---|---|---|
-| UC-APPSTORE-DYNAMIC-TOOLS-20261029 | `model-facing-tools.contract.test.ts`: 서명 활성 도구·unsigned legacy 차단; `app-loader.test.ts`: signed owner 맵·목록 갱신·권리 없음/오프라인·삭제→boundary 통합; 같은 파일: 64 KB/JSON object 및 origin 단위 계약; `packages/shell/src-tauri/src/app.rs` 앱 목록 단위 시험: 서명 ZIP·app.json 일치 및 변조/영수증 삭제 판정 | Vitest에서 Rust 목록 invoke 응답→TS loader→model boundary→삭제 뒤 차단 흐름, Rust app tests, Rust 실행 직전 단일 앱 확인 명령. 화면 표현은 변경하지 않음. |
+| UC-APPSTORE-DYNAMIC-TOOLS-20261029 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: 서명 활성 도구·unsigned legacy 차단; `packages/shell/src/lib/__tests__/app-loader.test.ts`: signed owner 맵·목록 갱신·권리 없음/오프라인·삭제→boundary 통합 및 64 KB/JSON object·origin 단위 계약; `packages/shell/src-tauri/src/app.rs` 앱 목록 단위 시험: 서명 ZIP·app.json 일치 및 변조/영수증 삭제 판정 | Vitest에서 Rust 목록 invoke 응답→TS loader→model boundary→삭제 뒤 차단 흐름, Rust app tests, Rust 실행 직전 단일 앱 확인 명령. 화면 표현은 변경하지 않음. |
 
 | 상태 | 사용자 기대 |
 |---|---|
