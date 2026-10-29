@@ -77,7 +77,10 @@ export function installInstalledAppHostBridge(
 					);
 				return;
 			}
-			if (pendingSpeech.has(message.id)) return;
+			if (pendingSpeech.has(message.id)) {
+				send({ type: "naia-app:speech-result", id: message.id, status: "failed", error: "duplicate_id" });
+				return;
+			}
 			if (
 				typeof message.text !== "string" ||
 				!message.text.trim() ||
@@ -111,7 +114,10 @@ export function installInstalledAppHostBridge(
 			send({ type: CHILD_REPLY, id: message.id, text: "", error: "permission_denied" });
 			return;
 		}
-		if (pendingReplies.has(message.id)) return;
+		if (pendingReplies.has(message.id)) {
+			send({ type: CHILD_REPLY, id: message.id, text: "", error: "duplicate_id" });
+			return;
+		}
 		if (
 			typeof message.prompt !== "string" ||
 			message.prompt.trim().length === 0 ||

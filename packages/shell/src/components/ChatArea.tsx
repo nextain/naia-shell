@@ -1867,9 +1867,12 @@ export function ChatArea({
 		lastSentTextRef.current = text;
 
 		setInput("");
-		useChatStore.getState().addMessage({ role: "user", content: text });
+		const appName = installedAppTurn && installedAppRequestRef.current
+			? appRegistry.get(installedAppRequestRef.current.appId)?.name || installedAppRequestRef.current.appId
+			: undefined;
+		useChatStore.getState().addMessage({ role: "user", content: text, appName });
 
-		useChatStore.getState().startStreaming();
+		useChatStore.getState().startStreaming(appName);
 		// New turn supersedes any in-flight TTS: stop the previous response's
 		// audio (queue + browser speechSynthesis) instead of letting it finish.
 		// clear() also resets the ordering sequence for the new response.
@@ -2116,7 +2119,7 @@ export function ChatArea({
 					ollamaNumCtx,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,
 				},
-				history: history.slice(0, -1),
+				history: installedAppTurn ? [] : history.slice(0, -1),
 				onChunk: (chunk) => handleChunk(chunk, activeProvider),
 				requestId,
 				// A validated exhibition resume is bound to the proactive profile
@@ -4493,6 +4496,7 @@ export function ChatArea({
 						})
 						.map((msg) => (
 							<div key={msg.id} className={`chat-message ${msg.role}`}>
+								{msg.appName && <small>{msg.appName}</small>}
 								{msg.thinking && (
 									<details className="thinking-inline">
 										<summary className="thinking-inline-summary">

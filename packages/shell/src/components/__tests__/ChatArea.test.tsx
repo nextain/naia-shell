@@ -298,6 +298,8 @@ describe("ChatArea", () => {
 				locale: "en",
 			}),
 		);
+		useChatStore.getState().addMessage({ role: "user", content: "Private previous conversation" });
+		useChatStore.getState().addMessage({ role: "assistant", content: "Private previous reply" });
 		const reply = vi.fn();
 		window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
 		render(<ChatArea />);
@@ -323,6 +325,7 @@ describe("ChatArea", () => {
 				apiKey: "test-key",
 		});
 		expect(capturedRequests[0].message).toContain("You are Naia");
+		expect(capturedRequests[0].history).toEqual([]);
 		capturedRequests[0].onChunk({
 			type: "text",
 			requestId: capturedRequests[0].requestId,
@@ -341,6 +344,17 @@ describe("ChatArea", () => {
 			text: "A new path.\n\nA door opens.",
 		});
 		await waitFor(() => expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalled());
+		const messages = useChatStore.getState().messages;
+		expect(messages.filter((m) => m.appName === "Cafe Lua Tarot").map((m) => m.role)).toEqual(["user", "assistant"]);
+		expect(screen.getAllByText("Cafe Lua Tarot").length).toBeGreaterThanOrEqual(1);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "Next user question" } });
+		fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(2));
+		expect(capturedRequests[1].history).toEqual([
+			{ role: "user", content: "Private previous conversation" },
+			{ role: "assistant", content: "Private previous reply" },
+		]);
 		window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
 		appRegistry.unregister("test.app");
 		localStorage.removeItem("naia-config");

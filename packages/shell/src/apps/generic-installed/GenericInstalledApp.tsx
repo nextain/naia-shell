@@ -70,7 +70,7 @@ export function createGenericInstalledApp(
 				disposeHostBridge();
 				disposeFilesBridge();
 			};
-		}, [htmlEntry, frameSrc]);
+		}, [htmlEntry, frameSrc, appId, permissions]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {

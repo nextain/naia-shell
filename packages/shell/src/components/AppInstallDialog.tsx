@@ -11,6 +11,7 @@ import {
 	getStoreProductMetadata,
 	hasStoreEntitlement,
 } from "../lib/app-store-client";
+import { isKnownPermission } from "../lib/app-permissions";
 import { type Locale, getLocale, t } from "../lib/i18n";
 import { useAppStore } from "../stores/app";
 
@@ -41,6 +42,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 		request?.name || request?.appId || "",
 	);
 	const [productDescription, setProductDescription] = useState("");
+	const [permissions, setPermissions] = useState<string[]>([]);
 	const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
 	const [locale, setLocale] = useState<Locale>(getLocale());
 	const [permissionExpansion, setPermissionExpansion] = useState<string[] | null>(null);
@@ -86,12 +88,14 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 					}
 				}
 				setThumbnailUrl(image);
+				setPermissions(metadata?.permissions ?? []);
 			})
 			.catch(() => {
 				if (!cancelled) {
 					setDisplayName(request.name || request.appId);
 					setProductDescription(t("apps.defaultDescription"));
 					setThumbnailUrl(null);
+					setPermissions([]);
 				}
 			});
 		return () => {
@@ -203,6 +207,12 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 								<p>{productDescription || t("apps.defaultDescription")}</p>
 							</div>
 						</div>
+						{permissions.length > 0 && (
+							<section className="app-install-permissions" aria-label={t("apps.permissions")}>
+								<strong>{t("apps.permissions")}</strong>
+								<ul>{permissions.map((permission) => <li key={permission}>{isKnownPermission(permission) ? t(`apps.permission.${permission}`) : permission}</li>)}</ul>
+							</section>
+						)}
 					</div>
 				) : mode === "git" ? (
 					<div className="app-install-body">

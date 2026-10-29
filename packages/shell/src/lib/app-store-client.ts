@@ -48,6 +48,7 @@ interface StoreProductsResponse {
 			descriptions?: Record<string, string>;
 			thumbnailUrl?: string;
 			thumbnail_url?: string;
+			permissions?: unknown;
 		};
 	}>;
 }
@@ -56,6 +57,7 @@ export interface StoreProductMetadata {
 	name: string | null;
 	description: string | null;
 	thumbnailUrl: string | null;
+	permissions: string[] | null;
 }
 
 function pickLocalized(
@@ -88,6 +90,7 @@ export async function getStoreProductMetadata(
 			manifest.description,
 		),
 		thumbnailUrl: manifest.thumbnailUrl || manifest.thumbnail_url || null,
+		permissions: Array.isArray(manifest.permissions) && manifest.permissions.every((p) => typeof p === "string") ? manifest.permissions : null,
 	};
 }
 

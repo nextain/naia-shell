@@ -38,9 +38,9 @@
       "title": "설치 앱 공용 연결 및 설치 화면 다국어·썸네일",
       "status": "done",
       "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done", "P05": "done" },
-      "verification": "Shell Vitest 2558 passed, 0 failed, 21 skipped; focused Vitest 122 passed and multi-sentence ChatArea 84 passed; Playwright 2 passed including narrow layout and recovery; native Tauri manifest IPC 1 passed; Rust check and manifest roundtrip 1 passed. Root and Shell TypeScript and assembly coverage passed. Root structure reported existing tmp and tsconfig.build.json. Conform gate inactive on existing main, outside this change.",
-      "remaining": "Live provider account and physical audio hardware were not used; external store app integration follows the documented protocol.",
-      "last_updated": "2026-10-29T09:57:45+09:00"
+      "verification": "Review fix: final Shell Vitest 2565 passed, 0 failed, 21 skipped; Playwright 2 passed on alternate port; native Tauri metadata 1 passed; Rust thumbnail and metadata tests 1 each passed; cargo check and root/Shell TypeScript passed. Assembly coverage passed; root structure reports existing tmp and tsconfig.build.json. Conform gate inactive on existing main.",
+      "remaining": "Agent memory recall follows ordinary chat; restored agent transcript lacks app attribution and may enter later user history. Live model account and physical audio hardware were not used.",
+      "last_updated": "2026-10-29T10:27:02+09:00"
     },
     "studio_nva_apply_105": {
       "issue": 105,

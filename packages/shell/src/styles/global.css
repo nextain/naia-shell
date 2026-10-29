@@ -1044,6 +1044,12 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	line-height: 1.55;
 }
 
+.app-install-permissions ul {
+	margin: 4px 0 0;
+	padding-inline-start: 1.5em;
+	overflow-wrap: anywhere;
+}
+
 @media (max-width: 620px) {
 	.app-install-notice {
 		flex-direction: column;

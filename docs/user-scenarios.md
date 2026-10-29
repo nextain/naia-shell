@@ -2470,3 +2470,7 @@ Test Coverage Map (P02)
 | 설치 화면 다국어 이름·설명·썸네일, 빈 정보, 설치 진행/성공/오류 복구, 좁은 폭·ARIA | `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: store metadata/install states; `packages/shell/src/lib/__tests__/app-store-client.test.ts`: localized product metadata; `packages/shell/src-tauri/src/app.rs`: manifest metadata roundtrip | `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: native manifest metadata; `packages/shell/e2e/467-slide-presenter.spec.ts`: UI install flow |
 
 P04 증거: Shell Vitest 전체 2,558 통과 / 0 실패 / 21 제외, 관련 집중 시험 122 통과 및 다중 문장 ChatArea 84 통과. Playwright 설치 흐름 2 통과(기본·빈 정보·오류 후 재시도·진행·성공·360px·키보드/ARIA), 실 Tauri 매니페스트 IPC 1 통과, Rust 매니페스트 왕복 1 통과. 스크린샷에서 정보 위계와 좁은 폭 배치를 확인했다. 음성 장치·실 모델 계정은 모의했다.
+
+검수 1차 P01/P02: 앱의 중복 요청은 즉시 오류를 받고 기존 요청은 정산된다. 앱 질문에는 이전 대화가 전달되지 않고 앱 이름이 채팅에 표시된다. 권한이 알려진 스토어 상품은 설치 전 사람이 읽는 권한 목록을 표시하며 정보가 없으면 목록을 생략한다. 기본·빈 권한 목록·설치 진행·성공·오류 및 재시도·좁은 폭을 설치 Playwright와 컴포넌트 시험으로 확인하고, iframe 권한 거부·중복 ID·기록 격리·악성 썸네일은 Vitest, 매니페스트 썸네일은 Rust 및 native IPC로 확인한다.
+
+검수 1차 P04: 최종 Shell Vitest 2,565 통과/0 실패/21 제외, Playwright 2 통과(권한 목록·오류 복구·진행·성공·360px 및 포커스), 실제 Tauri 매니페스트 IPC 1 통과, Rust 썸네일 필터와 매니페스트 왕복 각 1 통과. 좁은 폭 스크린샷에서 정보 위계와 목록 간격을 확인했다. 실 모델 계정·음성 장치는 모의했다. 복원 원본에는 앱 표시가 없어 복원 뒤 앱 턴이 후속 기록에 들어갈 수 있다.

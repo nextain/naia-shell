@@ -24,6 +24,9 @@ describe("installed app host bridge", () => {
   expect(ask).not.toHaveBeenCalled();
   message(a.target, {type:"naia-app:ask", appId:"app.a", id:"same", prompt:"question"});
   message(b.target, {type:"naia-app:ask", appId:"app.b", id:"same", prompt:"question"});
+  expect(ask).toHaveBeenCalledTimes(2);
+  expect((ask.mock.calls[0][0] as CustomEvent).detail).toMatchObject({appId:"app.a", requestId:"same", prompt:"question"});
+  expect((ask.mock.calls[1][0] as CustomEvent).detail).toMatchObject({appId:"app.b", requestId:"same", prompt:"question"});
   window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, { detail: {appId:"app.a", requestId:"same", text:"answer"} }));
   expect(a.post).toHaveBeenCalledWith(expect.objectContaining({ type:"naia-app:response", id:"same", text:"answer" }), "https://asset.localhost");
   expect(b.post).not.toHaveBeenCalledWith(expect.objectContaining({ type:"naia-app:response" }), expect.anything());
@@ -47,10 +50,26 @@ describe("installed app host bridge", () => {
   expect(a.post).toHaveBeenCalledWith({type:"naia-app:locale", locale:"ko"}, expect.anything());
   locale.current = "en"; window.dispatchEvent(new Event("naia:locale-change"));
   expect(a.post).toHaveBeenLastCalledWith({type:"naia-app:locale", locale:"en"}, expect.anything());
-  message(a.target, {type:"naia-app:speak", appId:"app.a", id:"1", text:"hello"}); expect(speak).toHaveBeenCalledOnce();
+  message(a.target, {type:"naia-app:speak", appId:"app.a", id:"1", text:"hello"}); expect(speak).toHaveBeenCalledOnce(); expect((speak.mock.calls[0][0] as CustomEvent).detail).toMatchObject({appId:"app.a", requestId:"1", text:"hello"});
   message(a.target, {type:"naia-app:speak-cancel", appId:"app.a", id:"1"}); expect(cancel).toHaveBeenCalledOnce();
   window.dispatchEvent(new CustomEvent(INSTALLED_APP_SPEECH_RESULT_EVENT, {detail: { appId:"app.a", requestId:"1", status:"cancelled" }}));
   expect(a.post).toHaveBeenCalledWith(expect.objectContaining({ type:"naia-app:speech-result", id:"1", status:"cancelled" }), expect.anything());
+ });
+ it("rejects duplicate ids while allowing the original ask and speech to finish", () => {
+  const a = frame("app.a", ["model.ask", "speech"]);
+  const ask = vi.fn(), speak = vi.fn();
+  window.addEventListener(INSTALLED_APP_ASK_EVENT, ask); window.addEventListener(INSTALLED_APP_SPEAK_EVENT, speak);
+  disposers.push(() => { window.removeEventListener(INSTALLED_APP_ASK_EVENT, ask); window.removeEventListener(INSTALLED_APP_SPEAK_EVENT, speak); });
+  const question = {type:"naia-app:ask", appId:"app.a", id:"same", prompt:"question"};
+  const speech = {type:"naia-app:speak", appId:"app.a", id:"same", text:"hello"};
+  message(a.target, question); message(a.target, question); message(a.target, speech); message(a.target, speech);
+  expect(ask).toHaveBeenCalledOnce(); expect(speak).toHaveBeenCalledOnce();
+  expect(a.post).toHaveBeenCalledWith({type:"naia-app:response", id:"same", text:"", error:"duplicate_id"}, expect.anything());
+  expect(a.post).toHaveBeenCalledWith({type:"naia-app:speech-result", id:"same", status:"failed", error:"duplicate_id"}, expect.anything());
+  window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, { detail: {appId:"app.a", requestId:"same", text:"answer"} }));
+  window.dispatchEvent(new CustomEvent(INSTALLED_APP_SPEECH_RESULT_EVENT, { detail: {appId:"app.a", requestId:"same", status:"finished"} }));
+  expect(a.post).toHaveBeenCalledWith(expect.objectContaining({type:"naia-app:response", text:"answer"}), expect.anything());
+  expect(a.post).toHaveBeenCalledWith(expect.objectContaining({type:"naia-app:speech-result", status:"finished"}), expect.anything());
  });
  it("settles a missing consumer with an empty timeout response", () => {
   vi.useFakeTimers(); const a = frame("app.a", ["model.ask"]);

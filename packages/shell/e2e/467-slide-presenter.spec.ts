@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { type Page, expect, test } from "@playwright/test";
 import {
 	SEED_ADK_PATH,
@@ -307,7 +308,7 @@ test.describe("#467 slide presenter", () => {
 		});
 		await page.waitForTimeout(5_000);
 		await page.screenshot({
-			path: "test-results/issue-471-installed-naia-slides.png",
+			path: join(process.env.TMPDIR || "test-results", "issue-471-installed-naia-slides.png"),
 			fullPage: true,
 		});
 		await page.route("http://localhost:3000/thumbnail.png", (route) => route.fulfill({
@@ -321,7 +322,7 @@ test.describe("#467 slide presenter", () => {
 					data: [
 						{
 							app_id: "land.naia.slides",
-							manifest: { name: "Slides", nameKo: "나이아 슬라이드", descriptionKo: "나이아와 발표합니다", thumbnailUrl: "/thumbnail.png" },
+							manifest: { name: "Slides", nameKo: "나이아 슬라이드", descriptionKo: "나이아와 발표합니다", thumbnailUrl: "/thumbnail.png", permissions: ["model.ask", "speech", "locale"] },
 						},
 					],
 				}),
@@ -337,6 +338,7 @@ test.describe("#467 slide presenter", () => {
 		});
 		await expect(page.locator(".app-install-dialog")).toBeVisible();
 		await expect(page.getByTestId("app-install-product")).toHaveCount(1);
+		await expect(page.getByRole("region", { name: /App permissions|앱 권한/ })).toBeVisible();
 		await expect(
 			page.getByTestId("app-install-product").locator("strong"),
 		).toHaveText("나이아 슬라이드");
@@ -349,11 +351,14 @@ test.describe("#467 slide presenter", () => {
 		expect(bounds).not.toBeNull();
 		expect(bounds!.x).toBeGreaterThanOrEqual(0);
 		expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
+		const permissions = dialog.getByRole("region", { name: /App permissions|앱 권한/ });
+		const list = permissions.locator("ul");
+		expect(await list.evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingInlineStart))).toBeGreaterThan(0);
 		const install = dialog.getByRole("button", { name: "설치" });
 		await install.focus();
 		await expect(install).toBeFocused();
 		await page.screenshot({
-			path: "test-results/issue-471-single-install-confirmation.png",
+			path: join(process.env.TMPDIR || "test-results", "issue-471-single-install-confirmation.png"),
 			fullPage: true,
 		});
 	});

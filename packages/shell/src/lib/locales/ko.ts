@@ -8,6 +8,22 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"apps.permissions": "앱 권한",
+	"apps.permission.fullscreen": "전체 화면 사용",
+	"apps.permission.downloads": "파일 다운로드",
+	"apps.permission.modals": "대화상자 표시",
+	"apps.permission.speech": "텍스트 낭독",
+	"apps.permission.model.ask": "선택한 AI 모델에 질문",
+	"apps.permission.locale": "셸 언어 확인",
+	"apps.permission.environment": "환경 정보 접근",
+	"apps.permission.files.pick": "파일 선택",
+	"apps.permission.media.record": "미디어 녹화",
+	"apps.permission.character.read": "캐릭터 정보 읽기",
+	"apps.permission.character.write": "캐릭터 정보 변경",
+	"apps.permission.browser": "브라우저 사용",
+	"apps.permission.browser.upload": "브라우저에서 파일 업로드",
+	"apps.permission.login-handoff": "로그인 연결",
+	"apps.permission.shell.command": "셸 명령 실행",
 	"apps.loading": "앱 목록을 불러오는 중…",
 	"apps.empty": "등록된 앱이 없습니다.",
 	"apps.loginRequired": "Naia 로그인이 필요합니다.",

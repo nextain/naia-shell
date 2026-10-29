@@ -79,7 +79,7 @@ describe("app-store-client", () => {
 
 	it("selects catalog copy for the requested language before the default and preserves the thumbnail", async () => {
 		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ app_id: "app", manifest: { name: "Default", nameKo: "한국어", nameEn: "English", description: "Default description", descriptionKo: "설명", descriptionEn: "Description", thumbnailUrl: "/thumb.png" } }] }) }));
-		await expect(getStoreProductMetadata("app", "ko")).resolves.toEqual({ name: "한국어", description: "설명", thumbnailUrl: "/thumb.png" });
-		await expect(getStoreProductMetadata("app", "en")).resolves.toEqual({ name: "English", description: "Description", thumbnailUrl: "/thumb.png" });
+		await expect(getStoreProductMetadata("app", "ko")).resolves.toEqual({ name: "한국어", description: "설명", thumbnailUrl: "/thumb.png", permissions: null });
+		await expect(getStoreProductMetadata("app", "en")).resolves.toEqual({ name: "English", description: "Description", thumbnailUrl: "/thumb.png", permissions: null });
 	});
 });

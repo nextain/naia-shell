@@ -9,7 +9,7 @@ describe("installed app metadata", () => {
 		mkdirSync(app, { recursive: true });
 		writeFileSync(join(app, "app.json"), JSON.stringify({
 			id: "test.bridge", name: "Bridge", nameKo: "연결", descriptionEn: "Description",
-			thumbnailUrl: "preview.png", permissions: ["model.ask", "speech", "locale"],
+			thumbnailUrl: "https://example.com/preview.png", permissions: ["model.ask", "speech", "locale"],
 		}));
 		const apps = await browser.execute(async () => {
 			const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<unknown> } }).__TAURI_INTERNALS__;
@@ -17,7 +17,7 @@ describe("installed app metadata", () => {
 		});
 		expect(apps).toEqual(expect.arrayContaining([expect.objectContaining({
 			id: "test.bridge", nameKo: "연결", descriptionEn: "Description",
-			thumbnailUrl: "preview.png", permissions: ["model.ask", "speech", "locale"],
+			thumbnailUrl: "https://example.com/preview.png", permissions: ["model.ask", "speech", "locale"],
 		})]));
 	});
 });
