@@ -125,6 +125,7 @@ export async function ensureStoreAppVerificationFresh(
 		return false;
 	}
 }
+let installedManifestSignature: string | null = null;
 export function areInstalledAppsSettled(): boolean {
 	return installedAppsSettled;
 }
@@ -213,7 +214,7 @@ async function loadLastEntitlementSuccess(
  * must not leave an old app (or its active context) visible during the async
  * replacement.
  */
-export function invalidateInstalledApps(): void {
+export function invalidateInstalledApps(preserveActiveApp = false): void {
 	const installed = appRegistry
 		.list()
 		.filter((descriptor) => descriptor.source === "installed");
@@ -227,6 +228,7 @@ export function invalidateInstalledApps(): void {
 		appRegistry.unregister(descriptor.id);
 	}
 	if (
+		!preserveActiveApp &&
 		activeApp &&
 		installed.some((descriptor) => descriptor.id === activeApp)
 	) {
@@ -256,6 +258,7 @@ export async function loadInstalledApps(): Promise<void> {
 	// pending. The older result belongs to the previous ADK and must not mutate
 	// the registry after the newer request has started.
 	if (loadGeneration !== installedAppsLoadGeneration) return;
+	installedManifestSignature = JSON.stringify(manifests);
 	const listedIds = new Set(manifests.map((manifest) => manifest.id));
 	for (const appId of entitlementCache.keys()) {
 		if (!listedIds.has(appId)) entitlementCache.delete(appId);
@@ -450,6 +453,17 @@ export async function loadInstalledApps(): Promise<void> {
 
 	useAppStore.getState().bumpAppListVersion();
 	installedAppsSettled = true;
+}
+
+/** Re-read the native list after store events, and rebuild only on a real manifest change. */
+export async function refreshInstalledAppsIfChanged(): Promise<boolean> {
+	const manifests = await invoke<InstalledAppManifest[]>("app_list_installed");
+	const signature = JSON.stringify(manifests);
+	if (installedManifestSignature === signature) return false;
+	installedManifestSignature = signature;
+	invalidateInstalledApps(true);
+	await loadInstalledApps();
+	return true;
 }
 
 /**

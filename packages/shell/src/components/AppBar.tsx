@@ -1,4 +1,4 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
 import {
 	type MouseEvent,
 	Suspense,
@@ -43,6 +43,7 @@ const BgmPlayer = lazy(() =>
 // track) into Naia's system prompt. Without a bridge the push is dead code
 // (`if (!naia) return` in BgmPlayer) and the AI never sees favoritesList.
 const bgmBridge = getBridgeForApp("bgm");
+let appStoreOpening: Promise<void> | null = null;
 
 function extractInitial(shortcut: BrowserLink): string {
 	const source = shortcut.title || shortcut.url;
@@ -188,11 +189,14 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		// The web app store sells apps for credits: not reachable from the Steam build.
 		if (paymentLinksHiddenNow()) return;
 		try {
-			await openUrl(storeUrl);
+			if (!appStoreOpening) appStoreOpening = invoke("focus_or_create_app_store_window", { url: storeUrl });
+			await appStoreOpening;
 		} catch (error) {
-			Logger.warn("AppBar", "Failed to open app store in system browser", {
+			Logger.warn("AppBar", "Failed to open app store window", {
 				error: String(error),
 			});
+		} finally {
+			appStoreOpening = null;
 		}
 	}
 

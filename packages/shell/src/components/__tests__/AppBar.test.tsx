@@ -13,7 +13,8 @@ import { resetDistributionChannelForTests } from "../../lib/distribution";
 const {
 	mockNavigate,
 	mockSetActiveApp,
-	mockOpenUrl,
+	mockEmit,
+	mockInvoke,
 	channel,
 	registeredApps,
 	appListVersion,
@@ -21,7 +22,8 @@ const {
 	channel: { value: "standard" },
 	mockNavigate: vi.fn(),
 	mockSetActiveApp: vi.fn(),
-	mockOpenUrl: vi.fn().mockResolvedValue(undefined),
+	mockEmit: vi.fn().mockResolvedValue(undefined),
+	mockInvoke: vi.fn(),
 	registeredApps: {
 		value: [] as Array<{
 			id: string;
@@ -38,19 +40,17 @@ const {
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn(async (cmd: string) =>
-		cmd === "get_distribution_channel" ? channel.value : undefined,
-	),
+	invoke: (...args: unknown[]) => {
+		mockInvoke(...args);
+		return Promise.resolve(args[0] === "get_distribution_channel" ? channel.value : undefined);
+	},
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: vi.fn().mockResolvedValue(() => {}),
-	emit: vi.fn().mockResolvedValue(undefined),
+	emit: mockEmit,
 }));
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-	openUrl: mockOpenUrl,
-}));
 
 const mockLoadBrowserShortcuts = vi.fn().mockResolvedValue([]);
 const mockRemoveBrowserShortcut = vi.fn();
@@ -156,6 +156,8 @@ describe("AppBar — add dialog", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
+		mockInvoke.mockReset();
+		mockEmit.mockReset().mockResolvedValue(undefined);
 		mockLoadBrowserShortcuts.mockResolvedValue([]);
 		registeredApps.value = [];
 		appListVersion.value = 0;
@@ -198,9 +200,7 @@ describe("AppBar — add dialog", () => {
 		expect(appStore).not.toHaveAttribute("data-app-id");
 		fireEvent.click(appStore);
 
-		await waitFor(() =>
-			expect(mockOpenUrl).toHaveBeenCalledWith("https://dev.naia.land/ko/apps"),
-		);
+		await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("focus_or_create_app_store_window", expect.any(Object)));
 		expect(mockSetActiveApp).not.toHaveBeenCalled();
 		expect(mockNavigate).not.toHaveBeenCalled();
 	});
@@ -260,18 +260,23 @@ describe("AppBar — add dialog", () => {
 		fireEvent.click(screen.getByText("appbar.addApp").closest("button")!);
 
 		expect(onAddApp).toHaveBeenCalledTimes(1);
-		expect(mockOpenUrl).not.toHaveBeenCalled();
+		expect(mockInvoke).not.toHaveBeenCalledWith("focus_or_create_app_store_window", expect.anything());
 	});
 
-	it("opens the third app-store item in the system browser", async () => {
+	it("routes repeated app-store clicks through the single backend window command", async () => {
+		channel.value = "standard";
 		resetDistributionChannelForTests();
 		render(<AppBar />);
-		fireEvent.click(screen.getByTitle("appbar.addItem"));
-		fireEvent.click(
-			(await screen.findByText("appbar.appStore")).closest("button")!,
-		);
-
-		expect(mockOpenUrl).toHaveBeenCalledWith("https://dev.naia.land/ko/apps");
+		const storeButton = await screen.findByRole("button", {
+			name: "appbar.appStore",
+		});
+		fireEvent.click(storeButton);
+		fireEvent.click(storeButton);
+		const storeCalls = () => mockInvoke.mock.calls.filter(([command]) => command === "focus_or_create_app_store_window");
+		await waitFor(() => expect(storeCalls()).toHaveLength(1));
+		fireEvent.click(storeButton);
+		await waitFor(() => expect(storeCalls()).toHaveLength(2));
+		expect(mockInvoke).toHaveBeenCalledWith("focus_or_create_app_store_window", { url: "https://dev.naia.land/ko/apps" });
 		expect(mockSetActiveApp).not.toHaveBeenCalledWith("browser");
 		expect(mockNavigate).not.toHaveBeenCalled();
 	});

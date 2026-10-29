@@ -8,13 +8,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn().mockResolvedValue({
+const { mockInvoke } = vi.hoisted(() => ({ mockInvoke: vi.fn().mockResolvedValue({
 		id: "land.naia.slides",
 		name: "Naia Slides",
 		path: "/tmp/apps/land.naia.slides",
-	}),
-}));
+}) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => mockInvoke(...args) }));
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: vi.fn().mockResolvedValue(() => {}),
 }));
@@ -23,6 +22,7 @@ vi.mock("../../lib/chat-service", () => ({
 }));
 vi.mock("../../lib/app-loader", () => ({
 	loadInstalledApps: vi.fn().mockResolvedValue(undefined),
+	refreshInstalledAppsIfChanged: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("../../lib/app-store-client", () => ({
 	getStoreGatewayUrl: vi.fn(() => "https://api-dev.naia.land"),
@@ -94,5 +94,17 @@ describe("AppInstallDialog — storefront install (#471)", () => {
 				screen.getByText(/(?:설치 완료|Installed): Naia Slides/),
 			).toBeTruthy(),
 		);
+	});
+
+	it("shows expanded permissions and retries only after explicit confirmation", async () => {
+		mockInvoke.mockRejectedValueOnce('PERMISSION_EXPANSION:["permissions: browser","host_permissions: https://example.com/*"]');
+		mockInvoke.mockResolvedValueOnce({ id: "land.naia.slides", name: "Naia Slides", path: "/tmp/apps/land.naia.slides" });
+		render(<AppInstallDialog request={{ appId: "land.naia.slides", name: "Naia Slides", state: "state", storeOrigin: "https://dev.naia.land" }} onClose={() => {}} />);
+		fireEvent.click(screen.getByRole("button", { name: "설치" }));
+		const warning = await screen.findByTestId("permission-expansion");
+		expect(warning.textContent).toContain("permissions: browser");
+		expect(mockInvoke).toHaveBeenCalledWith("app_install_store", expect.objectContaining({ allowPermissionExpansion: false }));
+		fireEvent.click(screen.getByRole("button", { name: /Allow these permissions/ }));
+		await waitFor(() => expect(mockInvoke).toHaveBeenLastCalledWith("app_install_store", expect.objectContaining({ allowPermissionExpansion: true })));
 	});
 });

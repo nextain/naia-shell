@@ -1,7 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { Logger } from "../lib/logger";
-import { loadInstalledApps } from "../lib/app-loader";
+import {
+	loadInstalledApps,
+	refreshInstalledAppsIfChanged,
+} from "../lib/app-loader";
 import {
 	getStoreGatewayUrl,
 	getStoreProductName,
@@ -35,6 +38,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 	const [loading, setLoading] = useState(false);
 	const [result, setResult] = useState<InstallResult | null>(null);
 	const [displayName, setDisplayName] = useState(request?.name || request?.appId || "");
+	const [permissionExpansion, setPermissionExpansion] = useState<string[] | null>(null);
 	const pushModal = useAppStore((s) => s.pushModal);
 	const popModal = useAppStore((s) => s.popModal);
 
@@ -51,10 +55,11 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 			.catch(() => {});
 	}, [request]);
 
-	async function handleInstall() {
+	async function handleInstall(allowPermissionExpansion = false) {
 		if (request) {
 			setLoading(true);
 			setResult(null);
+			setPermissionExpansion(null);
 			try {
 				if (!(await hasStoreEntitlement(request.appId))) {
 					throw new Error(t("apps.loginRequired"));
@@ -62,8 +67,9 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 				const res = await invoke<AppInstallResult>("app_install_store", {
 					appId: request.appId,
 					gatewayUrl: getStoreGatewayUrl(),
+					allowPermissionExpansion,
 				});
-				await loadInstalledApps();
+				await refreshInstalledAppsIfChanged();
 				setResult({
 					success: true,
 					message: t("apps.installed").replace("{name}", res.name),
@@ -75,7 +81,13 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 				await new Promise((r) => setTimeout(r, 650));
 				onClose();
 			} catch (err) {
-				setResult({ success: false, message: String(err) });
+				const message = String(err);
+				const prefix = "PERMISSION_EXPANSION:";
+				if (message.includes(prefix)) {
+					const encoded = message.slice(message.indexOf(prefix) + prefix.length).split(/[\r\n]/u)[0];
+					try { setPermissionExpansion(JSON.parse(encoded) as string[]); }
+					catch { setResult({ success: false, message }); }
+				} else setResult({ success: false, message });
 			} finally {
 				setLoading(false);
 			}
@@ -173,6 +185,16 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 						{result.message}
 					</div>
 				)}
+				{permissionExpansion && (
+					<div className="app-install-result error" role="alert" data-testid="permission-expansion">
+						<strong>{t("apps.permissionExpansionTitle")}</strong>
+						<ul>{permissionExpansion.map((item) => <li key={item}>{item}</li>)}</ul>
+						<p>{t("apps.permissionExpansionDescription")}</p>
+						<button type="button" className="app-install-confirm-btn" disabled={loading} onClick={() => void handleInstall(true)}>
+							{t("apps.permissionExpansionConfirm")}
+						</button>
+					</div>
+				)}
 
 				<div className="app-install-footer">
 					{!request && <div className="app-install-tabs">
@@ -202,7 +224,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 					<button
 						type="button"
 						className="app-install-confirm-btn"
-						onClick={handleInstall}
+						onClick={() => void handleInstall()}
 						disabled={loading || (!request && (mode !== "git" || !gitUrl.trim()))}
 					>
 						{loading ? "설치 중..." : request ? "설치" : "추가"}
