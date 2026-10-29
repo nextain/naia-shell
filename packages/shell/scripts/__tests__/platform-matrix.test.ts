@@ -964,8 +964,10 @@ describe("installer workflow integration contracts", () => {
 			resolve(SHELL, "src-tauri/tauri.conf.json"),
 		) as { bundle: { macOS?: { entitlements?: string } } };
 		expect(workflow).not.toContain("sort -z");
-		expect(workflow.match(/--output-format json/g)).toHaveLength(3);
-		expect(workflow.match(/\[ \"\$NOTARY_STATUS\" != \"Accepted\" \]/g)).toHaveLength(3);
+		expect(workflow.match(/xcrun notarytool submit/g)).toHaveLength(3);
+		expect(workflow.match(/xcrun notarytool info/g)).toHaveLength(3);
+		expect(workflow.match(/\[ "\$NOTARY_ACCEPTED" -ne 1 \]/g)).toHaveLength(3);
+		expect(workflow.match(/\[ "\$NOTARY_STATUS" = "Accepted" \]/g)).toHaveLength(3);
 		expect(workflow).toContain("- name: Sign macOS DMG with Developer ID");
 		expect(workflow).toContain("- name: Notarize and staple macOS DMG");
 		expect(workflow).toContain('codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY"');
@@ -973,7 +975,7 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow).not.toContain(
 			"APPLE_API_KEY_PATH: ${{ env.NAIA_UNSIGNED != 'true'",
 		);
-		expect(workflow).toContain("unset APPLE_API_KEY_PATH");
+		expect(workflow).toContain("env -u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH");
 		expect(tauriConfig.bundle.macOS?.entitlements).toBeUndefined();
 		expect(workflow).toContain('[[ "$path" == "$APP/Contents/Resources/node" ]]');
 		expect(workflow).toContain("security list-keychains -d user -s \"${ORIGINAL_KEYCHAINS[@]}\"");
