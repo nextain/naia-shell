@@ -9,6 +9,10 @@ import {
 import { StrictMode } from "react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	beginNaiaConfigHydration,
+	completeNaiaConfigHydration,
+} from "../../lib/adk-store";
 
 const eventListeners = vi.hoisted(
 	() =>
@@ -593,8 +597,21 @@ describe("SettingsTab", () => {
 	});
 
 	it("renders locale choices in the webview and applies Korean", async () => {
-		localStorage.setItem("naia-config", JSON.stringify({ locale: "en" }));
-		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "",
+				locale: "en",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			return Promise.resolve(undefined);
+		});
 		render(<SettingsTab />);
 		gotoSettingsTab("general");
 
@@ -605,13 +622,174 @@ describe("SettingsTab", () => {
 
 		await waitFor(() => expect(picker).toHaveTextContent("한국어"));
 		expect(screen.getByText("언어")).toBeDefined();
-		// Settings keeps the established transaction boundary: the language is
-		// previewed immediately, then persisted with the page's Save action.
+		// The language picker has no Save action in General, so its locale is
+		// persisted immediately with the previewed screen language.
 		expect(
 			JSON.parse(localStorage.getItem("naia-config") ?? "{}"),
 		).toMatchObject({
-			locale: "en",
+			locale: "ko",
 		});
+	});
+
+	it("keeps screen and config locale aligned when the secondary UI file write fails", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "write_naia_config") return Promise.resolve(undefined);
+			if (command === "write_naia_ui_config")
+				return Promise.reject(new Error("ui disk full"));
+			if (command === "reload_agent_settings")
+				return Promise.resolve({ available: false });
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		await waitFor(() => expect(picker).toHaveTextContent("English"));
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+		const configWrite = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_config",
+		);
+		expect(JSON.parse((configWrite?.[1] as { json: string }).json).locale).toBe(
+			"en",
+		);
+	});
+
+	it("uses a synchronous ref guard for two locale changes in one React tick", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			if (command === "reload_agent_settings")
+				return Promise.resolve({ available: false });
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: "English" }));
+			fireEvent.click(screen.getByRole("button", { name: "日本語" }));
+		});
+		await waitFor(() => expect(picker).toHaveTextContent("English"));
+		expect(
+			mockInvoke.mock.calls.filter(
+				([command]) => command === "write_naia_config",
+			),
+		).toHaveLength(1);
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+	});
+
+	it("keeps a committed locale and exposes retry after a running-agent reload error", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		let reloadAttempts = 0;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			if (command === "reload_agent_settings") {
+				reloadAttempts += 1;
+				return reloadAttempts === 1
+					? Promise.reject(new Error("agent connection refused"))
+					: Promise.resolve({ available: true });
+			}
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("running agent");
+		expect(picker).toHaveTextContent("English");
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+		await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+		expect(reloadAttempts).toBe(2);
+	});
+
+	it("rejects a locale selection while config hydration is pending", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "",
+				locale: "en",
+			}),
+		);
+		mockInvoke.mockResolvedValue("");
+		beginNaiaConfigHydration();
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("general");
+			expect(screen.getByLabelText("Language")).toBeDisabled();
+			expect(screen.getByLabelText("Language")).toHaveTextContent("English");
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale,
+			).toBe("en");
+			expect(mockInvoke).not.toHaveBeenCalledWith(
+				"write_naia_config",
+				expect.anything(),
+			);
+		} finally {
+			completeNaiaConfigHydration();
+		}
+	});
+
+	it("shows an error instead of dropping a locale when the render cache is empty", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.removeItem("naia-config");
+		mockInvoke.mockResolvedValue("");
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		fireEvent.click(screen.getByLabelText("Language"));
+		fireEvent.click(screen.getByRole("button", { name: "한국어" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Could not save settings",
+		);
+		expect(screen.getByLabelText("Language")).toHaveTextContent("English");
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"write_naia_config",
+			expect.anything(),
+		);
 	});
 
 	// config(models) 정상화: 구 skill_config directToolCall → 게이트웨이 `GET /v1/pricing` 셸-직결(E1).
@@ -970,11 +1148,19 @@ describe("SettingsTab", () => {
 		];
 
 		const modelsPayload = [
-			{ model_key: "deepseek-v4-flash", capabilities: ["llm"], supports_tools: true },
+			{
+				model_key: "deepseek-v4-flash",
+				capabilities: ["llm"],
+				supports_tools: true,
+			},
 			{ model_key: "solar-pro4", capabilities: ["llm"], supports_tools: true },
 			{ model_key: "solar-mini", capabilities: ["llm"], supports_tools: true },
 			{ model_key: "motif-3", capabilities: ["llm"], supports_tools: true },
-			{ model_key: "gpt-5.6-luna", capabilities: ["llm"], supports_tools: true },
+			{
+				model_key: "gpt-5.6-luna",
+				capabilities: ["llm"],
+				supports_tools: true,
+			},
 		];
 
 		function makeDeferred<T>() {
@@ -986,9 +1172,18 @@ describe("SettingsTab", () => {
 		}
 
 		// Case 1: Pricing response (2nd /v1/pricing call + /v1/models) resolves BEFORE catalog response (1st /v1/pricing call)
-		const catalogResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
-		const pricingResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
-		const modelsResp1 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const catalogResp1 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		const pricingResp1 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		const modelsResp1 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
 		let pricingCalls1 = 0;
 		vi.stubGlobal(
 			"fetch",
@@ -996,7 +1191,9 @@ describe("SettingsTab", () => {
 				const u = String(url);
 				if (u.includes("/v1/pricing")) {
 					pricingCalls1 += 1;
-					return pricingCalls1 === 1 ? catalogResp1.promise : pricingResp1.promise;
+					return pricingCalls1 === 1
+						? catalogResp1.promise
+						: pricingResp1.promise;
 				}
 				if (u.includes("/v1/models")) {
 					return modelsResp1.promise;
@@ -1036,9 +1233,7 @@ describe("SettingsTab", () => {
 				),
 			).toBe(true);
 		});
-		expect(
-			screen.queryByText("가격 정보를 불러올 수 없습니다."),
-		).toBeNull();
+		expect(screen.queryByText("가격 정보를 불러올 수 없습니다.")).toBeNull();
 		expect(
 			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
 		).toBeDefined();
@@ -1046,9 +1241,18 @@ describe("SettingsTab", () => {
 		unmount();
 
 		// Case 2: Catalog response resolves BEFORE pricing response
-		const catalogResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
-		const pricingResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
-		const modelsResp2 = makeDeferred<{ ok: boolean; json: () => Promise<unknown> }>();
+		const catalogResp2 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		const pricingResp2 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		const modelsResp2 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
 		let pricingCalls2 = 0;
 		vi.stubGlobal(
 			"fetch",
@@ -1056,7 +1260,9 @@ describe("SettingsTab", () => {
 				const u = String(url);
 				if (u.includes("/v1/pricing")) {
 					pricingCalls2 += 1;
-					return pricingCalls2 === 1 ? catalogResp2.promise : pricingResp2.promise;
+					return pricingCalls2 === 1
+						? catalogResp2.promise
+						: pricingResp2.promise;
 				}
 				if (u.includes("/v1/models")) {
 					return modelsResp2.promise;
@@ -1096,9 +1302,7 @@ describe("SettingsTab", () => {
 				),
 			).toBe(true);
 		});
-		expect(
-			screen.queryByText("가격 정보를 불러올 수 없습니다."),
-		).toBeNull();
+		expect(screen.queryByText("가격 정보를 불러올 수 없습니다.")).toBeNull();
 		expect(
 			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
 		).toBeDefined();
@@ -1949,7 +2153,7 @@ describe("SettingsTab", () => {
 		expect(screen.getByText(/입력해주세요|enter.*api/i)).toBeDefined();
 	});
 
-	it("shows the native reload failure instead of a saved badge", async () => {
+	it("keeps a saved config when the Agent is stopped during reload", async () => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		localStorage.setItem(
 			"naia-config",
@@ -1957,7 +2161,10 @@ describe("SettingsTab", () => {
 		);
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "reload_agent_settings") {
-				return Promise.reject(new Error("memory reload rejected"));
+				return Promise.resolve({
+					available: false,
+					memoryStatus: "next_start",
+				});
 			}
 			if (command === "read_naia_ui_config") return Promise.resolve("{}");
 			return Promise.resolve([]);
@@ -1967,10 +2174,14 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 		fireEvent.click(document.querySelector(".settings-save-btn")!);
 
-		expect(await screen.findByText(/memory reload rejected/)).toBeDefined();
-		expect(
-			document.querySelector(".settings-save-btn")?.textContent,
-		).not.toMatch(/Saved/i);
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"write_naia_config",
+				expect.objectContaining({ adkPath: "/home/user/naia-adk" }),
+			),
+		);
+		expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
+		expect(screen.queryByText(/memory reload rejected/)).toBeNull();
 	});
 
 	it("shows a reset failure on the general tab", async () => {
@@ -3277,9 +3488,15 @@ describe("SettingsTab — memory tab (#298)", () => {
 
 		render(<SettingsTab />);
 		gotoSettingsTab("voice");
-		const selector = screen.getByTestId("gateway-tts-provider") as HTMLSelectElement;
-		await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"));
-		await act(async () => { await Promise.resolve(); });
+		const selector = screen.getByTestId(
+			"gateway-tts-provider",
+		) as HTMLSelectElement;
+		await vi.waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"),
+		);
+		await act(async () => {
+			await Promise.resolve();
+		});
 		await vi.waitFor(() =>
 			expect(
 				selector.querySelector('option[value="naia-local-voice"]'),
@@ -3310,7 +3527,10 @@ describe("SettingsTab — memory tab (#298)", () => {
 			.at(-1);
 		const manifest = JSON.parse(manifestWrite?.[1]?.json as string);
 		expect(manifest.slots.tts.provider).toBe("naia-local-voice");
-		expect(mockInvoke).not.toHaveBeenCalledWith("start_voxcpm2", expect.anything());
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"start_voxcpm2",
+			expect.anything(),
+		);
 	});
 
 	it.each(["write_naia_config", "write_slots_manifest"] as const)(
@@ -3378,7 +3598,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 			const selector = screen.getByTestId(
 				"gateway-tts-provider",
 			) as HTMLSelectElement;
-			await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"));
+			await vi.waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"),
+			);
 			await vi.waitFor(() =>
 				expect(
 					selector.querySelector('option[value="naia-local-voice"]'),
@@ -3408,7 +3630,10 @@ describe("SettingsTab — memory tab (#298)", () => {
 					"config persistence failed",
 				);
 			});
-			expect(mockInvoke).not.toHaveBeenCalledWith("start_voxcpm2", expect.anything());
+			expect(mockInvoke).not.toHaveBeenCalledWith(
+				"start_voxcpm2",
+				expect.anything(),
+			);
 		},
 	);
 
@@ -4513,6 +4738,52 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
 			expect(saved.thinkingLevel).toBe("high");
 			expect(saved.enableThinking).toBe(true);
+		});
+	});
+
+	it("immediately persists the selected screen locale to the agent config", async () => {
+		await setLocale("ko");
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		fireEvent.click(screen.getByRole("button", { name: "언어" }));
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		await waitFor(() =>
+			expect(document.getElementById("locale-select")).toHaveAttribute(
+				"data-value",
+				"en",
+			),
+		);
+
+		await waitFor(() => {
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale,
+			).toBe("en");
+			const configWrite = mockInvoke.mock.calls.find(
+				([command]) => command === "write_naia_config",
+			);
+			expect(configWrite).toBeTruthy();
+			const payload = JSON.parse((configWrite?.[1] as { json: string }).json);
+			expect(payload.locale).toBe("en");
+			expect(payload.NAIA_LOCALE).toBe("en");
+			const uiConfigWrite = mockInvoke.mock.calls.find(
+				([command]) => command === "write_naia_ui_config",
+			);
+			expect(uiConfigWrite).toBeTruthy();
+			expect(
+				JSON.parse((uiConfigWrite?.[1] as { json: string }).json),
+			).not.toHaveProperty("locale");
 		});
 	});
 

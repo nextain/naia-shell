@@ -25,6 +25,7 @@ import {
 	setAdkPath,
 	toLocalBlobUrl,
 	writeNaiaConfig,
+	writeNaiaConfigAtPath,
 } from "./lib/adk-store";
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import {
@@ -45,6 +46,7 @@ import { detectGpuVramGb } from "./lib/capabilities/gpu";
 import { sendAppSkills, sendAppSkillsClear } from "./lib/chat-service";
 import {
 	addAllowedTool,
+	type AppConfig,
 	isOnboardingComplete,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -61,8 +63,11 @@ import {
 	noteEnvironmentClear,
 	refreshEnvironment,
 } from "./lib/environment-skill";
-import { BROWSER_HOST_APP_ID, browserHostTools } from "./lib/browser-host-skill";
-import { setLocale, t } from "./lib/i18n";
+import {
+	BROWSER_HOST_APP_ID,
+	browserHostTools,
+} from "./lib/browser-host-skill";
+import { getLocale, setLocale, t } from "./lib/i18n";
 import { startIframeBridge } from "./lib/iframe-bridge";
 import { Logger } from "./lib/logger";
 import { startSlidePresenterIframeBridge } from "./lib/slide-presenter-iframe-bridge";
@@ -97,8 +102,7 @@ function applyPersistedPresentationConfig(
 	if (config?.deletedApps?.length) {
 		for (const id of config.deletedApps) appRegistry.unregister(id);
 	}
-	if (typeof config?.appVisible === "boolean")
-		setVisible(config.appVisible);
+	if (typeof config?.appVisible === "boolean") setVisible(config.appVisible);
 	if (typeof config?.appSize === "number" && Number.isFinite(config.appSize)) {
 		// appSize is stored as a percentage (15–80) and rendered as fixed pixels.
 		const px = Math.round((config.appSize / 100) * 1200);
@@ -192,7 +196,8 @@ export function App() {
 	const [globalToast, setGlobalToast] = useState<string | null>(null);
 	const toastTimerRef = useRef<number | undefined>();
 	const showGlobalToast = useCallback((msg: string) => {
-		if (toastTimerRef.current !== undefined) window.clearTimeout(toastTimerRef.current);
+		if (toastTimerRef.current !== undefined)
+			window.clearTimeout(toastTimerRef.current);
 		setGlobalToast(msg);
 		toastTimerRef.current = window.setTimeout(() => setGlobalToast(null), 4000);
 	}, []);
@@ -210,12 +215,7 @@ export function App() {
 	// React StrictMode invoke the native command twice before the ref from the
 	// first render is retained.
 	useEffect(() => {
-		if (
-			!e2eAdkPath ||
-			!e2eAdkNeedsBinding ||
-			e2eAdkBindingRef.current
-		)
-			return;
+		if (!e2eAdkPath || !e2eAdkNeedsBinding || e2eAdkBindingRef.current) return;
 		const promise = setAdkPath(e2eAdkPath).catch((error) => {
 			Logger.error("App", "E2E workspace binding failed", {
 				error: String(error),
@@ -332,7 +332,9 @@ export function App() {
 			try {
 				const cfg = await loadConfigWithSecrets();
 				if (!active || currentRevision !== revision) return;
-				setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
+				setAvatarProvider(
+					effectiveAvatarProviderFromConfig(cfg, detectedVramGb),
+				);
 				setNvaModel(cfg?.nvaModel ?? "");
 				const nextAvatarModelPath = cfg?.vrmModel ?? "";
 				if (useAvatarStore.getState().modelPath !== nextAvatarModelPath) {
@@ -476,7 +478,9 @@ export function App() {
 		const browserHost = browserHostTools();
 		if (browserHost.length > 0) {
 			sendAppSkills(BROWSER_HOST_APP_ID, [...browserHost]).catch((err) =>
-				Logger.warn("App", "startup browser host skills failed", { error: String(err) }),
+				Logger.warn("App", "startup browser host skills failed", {
+					error: String(err),
+				}),
 			);
 		}
 		const all = appRegistry.list();
@@ -588,6 +592,11 @@ export function App() {
 						configHydratedRef.current = true;
 						completeNaiaConfigHydration();
 						setConfigHydrated(true);
+						// Preserve the locale detected from the OS/browser as the new
+						// onboarding seed. The wizard's eventual complete config write
+						// persists it; never write a partial config snapshot here.
+						const detectedLocale = getLocale();
+						saveConfig({ locale: detectedLocale } as AppConfig);
 						await hydrateUiPreferences(null, {
 							adkPath,
 							canPersist: true,
@@ -611,6 +620,7 @@ export function App() {
 					fileConfig ?? null,
 					uiConfig ?? null,
 				);
+				let detectedLocaleConfig: Record<string, unknown> | null = null;
 				if (merged) {
 					// `naia-adk-path` is the only authoritative bootstrap pointer.
 					// Never let a stale render-cache workspaceRoot redirect the next
@@ -619,6 +629,13 @@ export function App() {
 						...merged,
 						...(adkPath ? { workspaceRoot: adkPath } : {}),
 					} as unknown as Parameters<typeof reconcileExplicitLocalProfile>[0]);
+					if (!reconciled.locale) {
+						reconciled.locale = getLocale();
+						detectedLocaleConfig = reconciled as unknown as Record<
+							string,
+							unknown
+						>;
+					}
 					if (reconciled.locale) await setLocale(reconciled.locale);
 					if (cancelled || getAdkPath() !== adkPath) return;
 					saveConfig(reconciled);
@@ -637,6 +654,16 @@ export function App() {
 				configHydratedRef.current = true;
 				completeNaiaConfigHydration();
 				setConfigHydrated(true);
+				if (detectedLocaleConfig && adkPath) {
+					try {
+						await writeNaiaConfigAtPath(detectedLocaleConfig, adkPath);
+					} catch (error) {
+						Logger.warn("App", "Could not persist detected locale", {
+							locale: detectedLocaleConfig.locale,
+							error: error instanceof Error ? error.message : String(error),
+						});
+					}
+				}
 				// Run legacy migration only after the complete config snapshot is
 				// safely cached and the ADK write gate is open.
 				await hydrateUiPreferences(uiConfig, {
@@ -648,10 +675,10 @@ export function App() {
 				// Re-run the gateway-mode sync now that the file value is in cache
 				// (the immediate sync on mount was gated off until this point).
 				window.dispatchEvent(new CustomEvent("naia-config-changed"));
-				})
-				.catch((error: unknown) => {
-					if (cancelled || getAdkPath() !== adkPathAtRead) return;
-					// Keep the writeback gate closed when workspace hydration fails. The
+			})
+			.catch((error: unknown) => {
+				if (cancelled || getAdkPath() !== adkPathAtRead) return;
+				// Keep the writeback gate closed when workspace hydration fails. The
 				// provider/model are intentionally omitted from the log; this is a
 				// seam diagnostic, not configuration telemetry.
 				Logger.error("App", "workspace config hydration failed", {
@@ -765,7 +792,10 @@ export function App() {
 
 		if (showAdkSetup || !configHydratedRef.current) {
 			return () => {
-				window.removeEventListener("naia-adk-path-changed", handleAdkPathChanged);
+				window.removeEventListener(
+					"naia-adk-path-changed",
+					handleAdkPathChanged,
+				);
 			};
 		}
 
@@ -1000,12 +1030,17 @@ export function App() {
 		const unlisten = listen<string>("workspace-open-file-request", (event) => {
 			queueFile(event.payload);
 		});
-		const notFoundUnlisten = listen<string>("workspace-file-not-found", (event) => {
-			if (useAppStore.getState().activeApp !== "workspace") {
-				useAppStore.getState().setActiveApp("workspace");
-			}
-			showGlobalToast(t("workspace.fileNotFound", { path: String(event.payload) }));
-		});
+		const notFoundUnlisten = listen<string>(
+			"workspace-file-not-found",
+			(event) => {
+				if (useAppStore.getState().activeApp !== "workspace") {
+					useAppStore.getState().setActiveApp("workspace");
+				}
+				showGlobalToast(
+					t("workspace.fileNotFound", { path: String(event.payload) }),
+				);
+			},
+		);
 		void invoke<string | null>("get_startup_open_file")
 			.then(queueFile)
 			.catch(() => {});
@@ -1028,12 +1063,16 @@ export function App() {
 							Logger.warn("App", "open-grant register failed (#543)", {
 								error: String(error),
 							});
-							showGlobalToast(t("workspace.fileOpenFailed", { path: String(dropped) }));
+							showGlobalToast(
+								t("workspace.fileOpenFailed", { path: String(dropped) }),
+							);
 						});
 				}
 			});
 		} catch (error) {
-			Logger.warn("App", "drag-drop subscribe failed (#543)", { error: String(error) });
+			Logger.warn("App", "drag-drop subscribe failed (#543)", {
+				error: String(error),
+			});
 		}
 		return () => {
 			unlisten.then((fn) => fn());
@@ -1058,7 +1097,9 @@ export function App() {
 			}
 			Logger.info("App", "opening queued file in workspace (#543)", { next });
 			workspace.openFile(next);
-			setPendingOpenFiles((queue) => (queue[0] === next ? queue.slice(1) : queue));
+			setPendingOpenFiles((queue) =>
+				queue[0] === next ? queue.slice(1) : queue,
+			);
 		};
 		openWhenReady();
 		return () => window.clearTimeout(retryTimer);

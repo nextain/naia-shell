@@ -51,6 +51,8 @@ import {
 	writeNaiaConfigAtPath,
 	writeNaiaUiConfig,
 } from "../adk-store";
+import { mergeBootConfig } from "../config";
+import { buildSystemPrompt } from "../persona";
 
 // ── UC-MODEL-SELECT cross-seam contract ─────────────────────────────────────────
 // Regression guard for 2026-06-17: UI model selection MUST become the agent's
@@ -220,7 +222,9 @@ describe("setAdkPath native binding", () => {
 			resolveRebind();
 			await rebinding;
 			expect(getAdkPath()).toBe(WIN_ADK);
-			expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}")).toMatchObject({
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}"),
+			).toMatchObject({
 				workspaceRoot: WIN_ADK,
 				provider: "ollama",
 				model: "existing-model",
@@ -475,7 +479,11 @@ describe("writeNaiaConfig", () => {
 			command === "read_naia_ui_config" ? "" : undefined,
 		);
 
-		await writeNaiaConfig({ provider: "openai", model: "gpt-4o" });
+		await writeNaiaConfig({
+			provider: "openai",
+			model: "gpt-4o",
+			locale: "en",
+		});
 
 		expect(mockInvoke).toHaveBeenCalledWith("write_naia_config", {
 			adkPath: WIN_ADK,
@@ -483,13 +491,96 @@ describe("writeNaiaConfig", () => {
 				{
 					provider: "openai",
 					model: "gpt-4o",
+					locale: "en",
 					NAIA_MAIN_PROVIDER: "openai",
 					NAIA_MAIN_MODEL: "gpt-4o",
+					NAIA_LOCALE: "en",
 				},
 				null,
 				2,
 			),
 		});
+	});
+
+	it("migrates a stale locale out of ui-config when saving agent locale", async () => {
+		await setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_ui_config") return '{"locale":"ko"}';
+			if (command === "detect_gpu_vram") return null;
+			return undefined;
+		});
+
+		await writeNaiaConfig({ provider: "gemini", locale: "en" });
+
+		const configCall = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_config",
+		)!;
+		const uiCall = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_ui_config",
+		)!;
+		expect(JSON.parse((configCall[1] as { json: string }).json).locale).toBe(
+			"en",
+		);
+		expect(JSON.parse((uiCall[1] as { json: string }).json)).not.toHaveProperty(
+			"locale",
+		);
+	});
+
+	it("keeps the legacy UI locale until an agent locale replaces it", async () => {
+		await setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_ui_config") return '{"locale":"ko"}';
+			if (command === "detect_gpu_vram") return null;
+			return undefined;
+		});
+
+		await writeNaiaConfig({ provider: "gemini" });
+
+		const uiCall = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_ui_config",
+		)!;
+		expect(JSON.parse((uiCall[1] as { json: string }).json).locale).toBe("ko");
+	});
+
+	it("removes a legacy UI locale only when the agent config has its locale", async () => {
+		await setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_config") return '{"locale":"en"}';
+			if (command === "read_naia_ui_config") return '{"locale":"ko"}';
+			return undefined;
+		});
+
+		await writeNaiaUiConfig({ theme: "dark" });
+
+		const uiCall = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_ui_config",
+		)!;
+		expect(JSON.parse((uiCall[1] as { json: string }).json)).not.toHaveProperty(
+			"locale",
+		);
+	});
+
+	it("round-trips the locale save payload through boot merge and persona language", async () => {
+		await setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_ui_config") return '{"locale":"ko"}';
+			if (command === "detect_gpu_vram") return null;
+			return undefined;
+		});
+
+		await writeNaiaConfig({ provider: "gemini", locale: "en" });
+
+		const writeCall = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_config",
+		)!;
+		const persistedPayload = JSON.parse(
+			(writeCall[1] as { json: string }).json,
+		) as Record<string, unknown>;
+		const boot = mergeBootConfig(null, persistedPayload, { locale: "ko" });
+		expect(boot?.locale).toBe("en");
+		expect(
+			buildSystemPrompt(undefined, { locale: String(boot?.locale) }),
+		).toContain("IMPORTANT: Respond in English.");
 	});
 
 	it("persists config, UI config, slots manifest, then reloads the agent in order", async () => {
@@ -526,7 +617,7 @@ describe("writeNaiaConfig", () => {
 		expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
 	});
 
-	it("rejects visibly when the running agent cannot apply memory settings", async () => {
+	it("reports running-agent reload failure after committing the config", async () => {
 		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "{}";
@@ -539,7 +630,44 @@ describe("writeNaiaConfig", () => {
 
 		await expect(
 			writeNaiaConfig({ provider: "openai", model: "gpt-4o" }),
-		).rejects.toThrow("previous memory retained");
+		).rejects.toThrow(
+			"Settings were saved, but the running Agent could not reload them",
+		);
+		expect(mockInvoke).toHaveBeenCalledWith(
+			"write_naia_config",
+			expect.objectContaining({
+				json: expect.stringContaining('"model": "gpt-4o"'),
+			}),
+		);
+	});
+
+	it("treats native available:false as a normal stopped-agent state", async () => {
+		await setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_ui_config") return "{}";
+			if (command === "detect_gpu_vram") return null;
+			if (command === "reload_agent_settings")
+				return {
+					available: false,
+					memoryReloaded: false,
+					memoryStatus: "next_start",
+				};
+			return undefined;
+		});
+
+		await expect(
+			writeNaiaConfig({ provider: "gemini", locale: "en" }),
+		).resolves.toBeUndefined();
+		const configWrite = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_config",
+		);
+		const persisted = JSON.parse(
+			(configWrite?.[1] as { json: string }).json,
+		) as Record<string, unknown>;
+		expect(persisted.locale).toBe("en");
+		// The next Agent spawn reads this file through the same boot merge path.
+		expect(mergeBootConfig(null, persisted, null)?.locale).toBe("en");
+		expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
 	});
 
 	it("rejects visibly when the primary config write fails and stops the transaction", async () => {
@@ -559,12 +687,10 @@ describe("writeNaiaConfig", () => {
 			mockInvoke.mock.calls
 				.filter(([command]) => command !== "write_naia_path_cache")
 				.map(([command]) => command),
-		).toEqual([
-			"write_naia_config",
-		]);
+		).toEqual(["write_naia_config"]);
 	});
 
-	it("rejects visibly when the paired UI config write fails", async () => {
+	it("keeps the committed config when the paired UI config write fails", async () => {
 		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "";
@@ -576,7 +702,7 @@ describe("writeNaiaConfig", () => {
 
 		await expect(
 			writeNaiaConfig({ provider: "openai", model: "gpt-4o" }),
-		).rejects.toThrow("ui-config write failed");
+		).resolves.toBeUndefined();
 		expect(
 			mockInvoke.mock.calls
 				.filter(([command]) => command !== "write_naia_path_cache")
@@ -585,6 +711,10 @@ describe("writeNaiaConfig", () => {
 			"write_naia_config",
 			"read_naia_ui_config",
 			"write_naia_ui_config",
+			"frontend_log",
+			"detect_gpu_vram",
+			"write_slots_manifest",
+			"reload_agent_settings",
 		]);
 	});
 
@@ -617,17 +747,19 @@ describe("writeNaiaConfig", () => {
 			([command]) => command === "write_naia_config",
 		);
 		expect(configWrites).toHaveLength(2);
-		expect(configWrites.map(([, args]) => (args as { adkPath: string }).adkPath)).toEqual([
-			WIN_ADK,
-			WIN_ADK,
-		]);
 		expect(
-			configWrites.map(([, args]) => JSON.parse((args as { json: string }).json).model),
+			configWrites.map(([, args]) => (args as { adkPath: string }).adkPath),
+		).toEqual([WIN_ADK, WIN_ADK]);
+		expect(
+			configWrites.map(
+				([, args]) => JSON.parse((args as { json: string }).json).model,
+			),
 		).toEqual(["first", "second"]);
 
 		const pairedWrites = mockInvoke.mock.calls.filter(
 			([command]) =>
-				command === "write_naia_ui_config" || command === "write_slots_manifest",
+				command === "write_naia_ui_config" ||
+				command === "write_slots_manifest",
 		);
 		expect(pairedWrites).toHaveLength(4);
 		expect(
@@ -645,7 +777,9 @@ describe("writeNaiaConfig", () => {
 		completeNaiaConfigHydration();
 		await pendingWrite;
 		expect(
-			mockInvoke.mock.calls.some(([command]) => command === "write_naia_config"),
+			mockInvoke.mock.calls.some(
+				([command]) => command === "write_naia_config",
+			),
 		).toBe(false);
 	});
 
@@ -945,7 +1079,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 			vllmTtsHost: "http://localhost:22600", // 로컬 보이스 호스트 → 저장(회귀 대상)
 			appPosition: "left", // 앱 레이아웃 → 저장
 			bgmVolume: 0.5, // BGM 볼륨 → 저장
-			locale: "ko", // 로케일 → 저장
+			locale: "ko", // agent config 에서 관리
 			uiPreferences: { chatMode: "app" }, // grouped shell preferences → 저장
 		});
 		const [, arg] = mockInvoke.mock.calls.find(
@@ -958,7 +1092,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		expect(written.vllmTtsHost).toBe("http://localhost:22600");
 		expect(written.appPosition).toBe("left");
 		expect(written.bgmVolume).toBe(0.5);
-		expect(written.locale).toBe("ko");
+		expect(written).not.toHaveProperty("locale");
 		expect(written.uiPreferences).toEqual({ chatMode: "app" });
 		// agent 키·시크릿은 ui-config 에 안 들어간다
 		expect(written).not.toHaveProperty("provider");

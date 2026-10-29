@@ -24,13 +24,27 @@ const ADK_PATH_KEY = "naia-adk-path";
 // Standalone utility/test callers never begin this gate and retain the normal
 // immediate-write behavior.
 let configHydrationPending = false;
+const configHydrationListeners = new Set<() => void>();
+
+export function subscribeNaiaConfigHydration(listener: () => void): () => void {
+	configHydrationListeners.add(listener);
+	return () => configHydrationListeners.delete(listener);
+}
+
+function notifyConfigHydrationChanged(): void {
+	for (const listener of configHydrationListeners) listener();
+}
 
 export function beginNaiaConfigHydration(): void {
+	if (configHydrationPending) return;
 	configHydrationPending = true;
+	notifyConfigHydrationChanged();
 }
 
 export function completeNaiaConfigHydration(): void {
+	if (!configHydrationPending) return;
 	configHydrationPending = false;
+	notifyConfigHydrationChanged();
 }
 
 export function isNaiaConfigHydrationPending(): boolean {
@@ -269,8 +283,6 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	// Gateway TTS routing (UI-side routing, not agent)
 	"gatewayTtsAuto",
 	"gatewayTtsMode",
-	// Locale (agent receives per-request via IPC systemPrompt)
-	"locale",
 	// User display ID (not used by agent directly)
 	"naiaUserId",
 ]);
@@ -635,6 +647,7 @@ function mergeUiConfigPatch(
 async function writeNaiaUiConfigNow(
 	config: Record<string, unknown>,
 	adkPathOverride?: string | null,
+	agentConfigHasLocale = false,
 ): Promise<boolean> {
 	const adkPath = resolveAdkPath(adkPathOverride);
 	if (!adkPath) return false;
@@ -642,11 +655,14 @@ async function writeNaiaUiConfigNow(
 		// Preserve existing selections when a caller supplies only the UI fields it
 		// owns. An empty file is a valid first-run state; I/O and malformed data
 		// return false here so the enclosing config transaction can reject it.
-		const json = JSON.stringify(
-			mergeUiConfigPatch(await readNaiaUiConfig(adkPath), config),
-			null,
-			2,
+		const uiConfig = mergeUiConfigPatch(
+			await readNaiaUiConfig(adkPath),
+			config,
 		);
+		// Older Shell versions incorrectly stored locale in ui-config.json.
+		// Keep that only copy until the agent config actually has its replacement.
+		if (agentConfigHasLocale) uiConfig.locale = undefined;
+		const json = JSON.stringify(uiConfig, null, 2);
 		await invoke("write_naia_ui_config", {
 			adkPath,
 			json,
@@ -666,7 +682,19 @@ export function writeNaiaUiConfig(
 	const configSnapshot = snapshotConfig(config);
 	const adkPath = resolveAdkPath(adkPathOverride);
 	const operation = naiaConfigWriteTail.then(() =>
-		writeNaiaUiConfigNow(configSnapshot, adkPath),
+		(async () => {
+			let agentConfigHasLocale = false;
+			try {
+				agentConfigHasLocale = !!(await readNaiaConfig(adkPath))?.locale;
+			} catch {
+				// Preserve a legacy UI-only locale if the agent config is unreadable.
+			}
+			return writeNaiaUiConfigNow(
+				configSnapshot,
+				adkPath,
+				agentConfigHasLocale,
+			);
+		})(),
 	);
 	naiaConfigWriteTail = operation.then(
 		() => undefined,
@@ -801,8 +829,19 @@ async function writeNaiaConfigNow(
 		json: normalizedAgentConfigJson,
 	});
 	// UI 정체성(VRM/배경/BGM)은 agent 가 안 읽으므로 별도 ui-config.json 에 — 워크스페이스 전환 복원용(FR-WS.2).
-	if (!(await writeNaiaUiConfigNow(config, adkPath))) {
-		throw new Error("ui-config write failed");
+	if (
+		!(await writeNaiaUiConfigNow(
+			config,
+			adkPath,
+			typeof normalizedAgentConfig.locale === "string" &&
+				normalizedAgentConfig.locale.length > 0,
+		))
+	) {
+		// config.json is the locale source of truth. A secondary UI preference
+		// write must not make callers roll back a locale already committed there.
+		Logger.warn("adk-store", "ui-config write failed after config commit", {
+			adkPath,
+		});
 	}
 	// R2.2a: 로컬 cascade 구동 결정용 slots-manifest.json 동기화(windows-manager loader 가 read).
 	// 비밀 0(buildSlotsManifest 가 provider/model 만 직렬화). 항상 config 와 동기.
@@ -836,7 +875,32 @@ async function writeNaiaConfigNow(
 	// 정상 반환하며, 다음 SetWorkspace가 저장 파일을 읽는다.
 	// Do not deduplicate this acknowledgement by config text: the Agent may
 	// have restarted or retained an old memory instance since the prior write.
-	await invoke("reload_agent_settings");
+	await reloadAgentSettings();
+}
+
+/** Config is committed, but a running Agent did not acknowledge the reload. */
+export class AgentSettingsReloadError extends Error {
+	constructor(cause: unknown) {
+		super(
+			`Settings were saved, but the running Agent could not reload them: ${cause instanceof Error ? cause.message : String(cause)}`,
+		);
+		this.name = "AgentSettingsReloadError";
+	}
+}
+
+/** Native returns available:false when no Agent is running; that is normal. */
+export async function reloadAgentSettings(): Promise<void> {
+	try {
+		const result = await invoke<{ available?: boolean }>(
+			"reload_agent_settings",
+		);
+		if (result && result.available === false) return;
+	} catch (error) {
+		Logger.warn("adk-store", "Agent settings reload failed", {
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw new AgentSettingsReloadError(error);
+	}
 }
 
 /**
