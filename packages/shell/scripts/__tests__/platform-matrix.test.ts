@@ -959,6 +959,30 @@ describe("installer workflow integration contracts", () => {
 		"utf8",
 	).replace(/\r\n/g, "\n");
 
+	it("macOS app and DMG signing stays explicit, least-privilege, and portable", () => {
+		const tauriConfig = readJson(
+			resolve(SHELL, "src-tauri/tauri.conf.json"),
+		) as { bundle: { macOS?: { entitlements?: string } } };
+		expect(workflow).not.toContain("sort -z");
+		expect(workflow.match(/xcrun notarytool submit/g)).toHaveLength(3);
+		expect(workflow.match(/--wait --timeout 90m/g)).toHaveLength(3);
+		expect(workflow.match(/xcrun notarytool info/g)).toHaveLength(3);
+		expect(workflow.match(/\[ "\$NOTARY_ACCEPTED" -ne 1 \]/g)).toHaveLength(3);
+		expect(workflow.match(/\[ "\$NOTARY_STATUS" = "Accepted" \]/g)).toHaveLength(3);
+		expect(workflow).toContain("- name: Sign macOS DMG with Developer ID");
+		expect(workflow).toContain("- name: Notarize and staple macOS DMG");
+		expect(workflow).toContain('codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY"');
+		expect(workflow).toContain('xcrun stapler staple "${DMG_PATHS[0]}"');
+		expect(workflow).not.toContain(
+			"APPLE_API_KEY_PATH: ${{ env.NAIA_UNSIGNED != 'true'",
+		);
+		expect(workflow).toContain("BUNDLE_ENV=(-u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH)");
+		expect(tauriConfig.bundle.macOS?.entitlements).toBeUndefined();
+		expect(workflow).toContain('[[ "$path" == "$APP/Contents/Resources/node" ]]');
+		expect(workflow).toContain("security list-keychains -d user -s \"${ORIGINAL_KEYCHAINS[@]}\"");
+		expect(workflow).toContain("timeout-minutes: 300");
+	});
+
 	it("clones the exact Agent revision declared by the pairing manifest", () => {
 		const pairing = readJson("agent-pairing.json") as {
 			agentCommit: string;
@@ -1056,6 +1080,11 @@ describe("installer workflow integration contracts", () => {
 		expect(bundle).toContain("if: matrix.platform == 'darwin'");
 		expect(bundle).toContain("tauri bundle --verbose");
 		expect(bundle).toContain("--config src-tauri/tauri.conf.generated.json");
+		expect(bundle).toContain("--bundles app");
+		expect(bundle).toContain("for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY");
+		expect(bundle).toContain('if [ -z "${!name:-}" ]; then BUNDLE_ENV+=(-u "$name"); fi');
+		expect(bundle).toContain('env "${BUNDLE_ENV[@]}" pnpm');
+		expect(bundle).not.toContain("mdutil");
 		expect(bundle).not.toContain("tauri:build:bundle");
 		expect(bundle).not.toMatch(/\btauri build\b/);
 		expect(preserve).toContain("if: always() && matrix.platform == 'darwin'");
@@ -1068,6 +1097,44 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow.indexOf(bundleMarker)).toBeLessThan(
 			workflow.indexOf(preserveMarker),
 		);
+	});
+
+	it("creates each macOS DMG directly from the app after app bundling", () => {
+		const bundleMarker =
+			"      - name: Bundle macOS application from preserved app build\n";
+		const dmgMarker =
+			"      - name: Create macOS DMG without mounting an image\n";
+		const preserveMarker =
+			"      - name: Preserve macOS outputs after bundle attempt\n";
+		const section = (marker: string) => {
+			const start = workflow.indexOf(marker);
+			expect(start).toBeGreaterThan(-1);
+			const end = workflow.indexOf("\n      - name:", start + marker.length);
+			return workflow.slice(start, end === -1 ? workflow.length : end);
+		};
+		const dmg = section(dmgMarker);
+
+		expect(dmg).toContain("if: matrix.platform == 'darwin'");
+		expect(dmg).toContain("matrix.arch == 'arm64' && 'aarch64' || 'x64'");
+		expect(dmg).toContain('ln -s /Applications "$DMG_STAGE/Applications"');
+		expect(dmg).toContain('hdiutil create -volname "$PRODUCT_NAME" -srcfolder "$DMG_STAGE"');
+		expect(dmg).toContain("-fs HFS+ -format UDZO -ov \"$DMG_PATH\"");
+		expect(dmg).toContain('hdiutil verify "$DMG_PATH"');
+		expect(dmg.match(/hdiutil create/g)).toHaveLength(1);
+		expect(dmg).toContain("for attempt in 1 2");
+		expect(dmg).toContain('DMG_PATH="$DMG_DIR/${PRODUCT_NAME}_${VERSION}_${DMG_ARCH}.dmg"');
+		expect(workflow.indexOf(bundleMarker)).toBeLessThan(workflow.indexOf(dmgMarker));
+		expect(workflow.indexOf(dmgMarker)).toBeLessThan(workflow.indexOf(preserveMarker));
+		const appNotary = workflow.indexOf("      - name: Notarize and staple macOS app");
+		const signDmg = workflow.indexOf("      - name: Sign macOS DMG with Developer ID");
+		const notarizeDmg = workflow.indexOf("      - name: Notarize and staple macOS DMG");
+		expect(appNotary).toBeGreaterThan(-1);
+		expect(appNotary).toBeLessThan(workflow.indexOf(dmgMarker));
+		expect(workflow.indexOf(dmgMarker)).toBeLessThan(signDmg);
+		expect(signDmg).toBeLessThan(notarizeDmg);
+		expect(workflow).not.toContain("tauri bundle --bundles dmg");
+		expect(section("      - name: Sign macOS DMG with Developer ID\n")).toContain('bundle/dmg"/*.dmg');
+		expect(section("      - name: Notarize and staple macOS DMG\n")).toContain('bundle/dmg"/*.dmg');
 	});
 
 	it("builds a directly launchable Steam depot without the NSIS uninstaller", () => {

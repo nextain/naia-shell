@@ -538,8 +538,8 @@
       "scenario": "docs/user-scenarios.md S-INSTALL macOS Universal 항목",
       "operator_context": "docs/progress/macos-universal-launch-readiness.md#ai-operator-handoff",
       "status": "implementation_verified",
-      "last_updated": "2026-09-04T03:25:00+09:00",
-      "validation_evidence": "Intel x86_64 앱 빌드·설치 번들 스모크 통과; 통합 main 스냅샷에서 Universal 조립 및 플랫폼 계약 61개와 루트 계약 231개 통과, Shell production build 통과; 전체 셸은 1,689개 통과·21개 제외, 기존 Windows 전용 tar.exe VoxCPM2 테스트 5개가 macOS에서 status=null로 실패; 동일 기능 snapshot 적대 리뷰 연속 CLEAN 2회",
+      "last_updated": "2026-10-29T14:38:49+09:00",
+      "validation_evidence": "Intel x86_64 앱 빌드·설치 번들 스모크 통과; 통합 main 스냅샷에서 Universal 조립 및 플랫폼 계약 61개와 루트 계약 231개 통과, Shell production build 통과; 전체 셸은 1,689개 통과·21개 제외, 기존 Windows 전용 tar.exe VoxCPM2 테스트 5개가 macOS에서 status=null로 실패; 동일 기능 snapshot 적대 리뷰 연속 CLEAN 2회; Round 3 follow-up: macOS signing CI run 40809471455 reached successful codesign but Tauri CLI 2.11.2 treated empty APPLE_API_* values as configured notarization credentials; workflow removes the three variables for app/DMG bundling. YAML parsed and diff check passed; rerun CI pending.",
       "external_boundary": "실제 CI 실행, Apple Silicon 런타임, 코드 서명, 공증, App Sandbox, App Store Connect 업로드는 별도 증거와 자격 증명이 필요"
     },
     "windows_trt_latency_14": {

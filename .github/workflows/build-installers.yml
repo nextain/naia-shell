@@ -67,9 +67,11 @@ jobs:
             uname_arch: x86_64
             artifact: darwin-x64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 150
+    timeout-minutes: 300
     env:
       NAIA_UNSIGNED: ${{ inputs.internal_unsigned == true || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.ref, 'refs/tags/')) }}
+      MACOS_SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+      MACOS_NOTARIZATION_CONFIGURED: ${{ secrets.APPLE_API_KEY_P8 != '' }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -191,52 +193,427 @@ jobs:
           NAIA_TAURI_NO_BUNDLE: ${{ (matrix.platform == 'win32' || matrix.platform == 'darwin') && '1' || '0' }}
         run: pnpm -C packages/shell run tauri:build:bundle
 
+      - name: Prepare macOS Developer ID keychain
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/naia-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          KEYCHAIN_PASSWORD_PATH="$RUNNER_TEMP/naia-keychain-password"
+          (umask 077; printf '%s' "$KEYCHAIN_PASSWORD" > "$KEYCHAIN_PASSWORD_PATH")
+          echo "MACOS_KEYCHAIN_PASSWORD_PATH=$KEYCHAIN_PASSWORD_PATH" >> "$GITHUB_ENV"
+          ORIGINAL_KEYCHAINS_PATH="$RUNNER_TEMP/naia-original-keychains.txt"
+          security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' > "$ORIGINAL_KEYCHAINS_PATH"
+          chmod 600 "$ORIGINAL_KEYCHAINS_PATH"
+          echo "MACOS_ORIGINAL_KEYCHAINS_PATH=$ORIGINAL_KEYCHAINS_PATH" >> "$GITHUB_ENV"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          chmod 600 "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -t 21600 -u "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # macOS bash 3.2 has no mapfile.
+          ORIGINAL_KEYCHAINS=()
+          while IFS= read -r keychain; do if [ -n "$keychain" ]; then ORIGINAL_KEYCHAINS+=("$keychain"); fi; done < "$ORIGINAL_KEYCHAINS_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" ${ORIGINAL_KEYCHAINS[@]+"${ORIGINAL_KEYCHAINS[@]}"}
+          # `security import` only accepts a PKCS#12 password through -P; it has no stdin option.
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          rm -f "$CERTIFICATE_PATH"
+          echo "MACOS_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Prepare macOS notarization key
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          API_KEY_PATH="$RUNNER_TEMP/naia-app-store-connect.p8"
+          umask 077
+          printf '%s' "$APPLE_API_KEY_P8" > "$API_KEY_PATH"
+          chmod 600 "$API_KEY_PATH"
+          {
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$API_KEY_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Report macOS signing mode
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED != 'true'
+        run: echo "공증 열쇠 없음, 서명만"
+
       - name: Bundle macOS application from preserved app build
         if: matrix.platform == 'darwin'
         shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
         run: |
-          set -o pipefail
-          LOG_FILE="$RUNNER_TEMP/tauri-macos-bundle.log"
-          if ! pnpm -C packages/shell exec tauri bundle --verbose \
-            --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
-            if grep -q "bundle_dmg" "$LOG_FILE"; then
-              echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
-              BUNDLE_MACOS_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/macos"
-              BUNDLE_MACOS_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/macos 2>/dev/null && pwd -P || printf '%s\n' "$BUNDLE_MACOS_LOGICAL")"
-              DMG_DIR_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/dmg"
-              DMG_DIR_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/dmg 2>/dev/null && pwd -P || printf '%s\n' "$DMG_DIR_LOGICAL")"
-              hdiutil info | awk \
-                -v macos_dir="$BUNDLE_MACOS_PHYS" \
-                -v macos_dir_logical="$BUNDLE_MACOS_LOGICAL" \
-                -v dmg_dir="$DMG_DIR_PHYS" \
-                -v dmg_dir_logical="$DMG_DIR_LOGICAL" '
-                /^====/ { dmg=0 }
-                /^image-path[[:space:]]*:/ {
-                  path=$0
-                  sub(/^image-path[[:space:]]*:[[:space:]]*/, "", path)
-                  dir=path
-                  sub(/\/[^\/]+$/, "", dir)
-                  base=path
-                  sub(/^.*\//, "", base)
-                  in_macos=(dir == macos_dir || dir == macos_dir_logical)
-                  in_dmg=(dir == dmg_dir || dir == dmg_dir_logical)
-                  is_rw_dmg=(base ~ /^rw\..*\.dmg$/)
-                  dmg=((in_macos && is_rw_dmg) || in_dmg)
-                }
-                /^\/dev\/disk/ && dmg { print $1 }
-              ' | sort -u | while read -r dev; do
-                hdiutil detach -force "$dev" || true
-              done
-              rm -f \
-                packages/shell/src-tauri/target/release/bundle/macos/rw.*.dmg \
-                packages/shell/src-tauri/target/release/bundle/macos/Naia_*.dmg \
-                packages/shell/src-tauri/target/release/bundle/dmg/rw.*.dmg \
-                packages/shell/src-tauri/target/release/bundle/dmg/Naia_*.dmg
-              pnpm -C packages/shell exec tauri bundle --verbose \
-                --config src-tauri/tauri.conf.generated.json
+          set -euo pipefail
+          LOG_FILE="$RUNNER_TEMP/tauri-macos-app-bundle.log"
+          BUNDLE_ENV=(-u APPLE_API_KEY -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH)
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; do
+            if [ -z "${!name:-}" ]; then BUNDLE_ENV+=(-u "$name"); fi
+          done
+          for attempt in 1 2 3; do
+            if env "${BUNDLE_ENV[@]}" pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json >"$LOG_FILE" 2>&1; then
+              cat "$LOG_FILE"
+              exit 0
             else
+              BUNDLE_EXIT=$?
+            fi
+            cat "$LOG_FILE"
+            if ! grep -Fq "A timestamp was expected but was not found." "$LOG_FILE" || [ "$attempt" -eq 3 ]; then
+              exit "$BUNDLE_EXIT"
+            fi
+            echo "Tauri app bundle timestamp failure; retrying ($((attempt + 1))/3) in 30 seconds."
+            sleep 30
+          done
+
+      - name: Sign every macOS app Mach-O with hardened runtime
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle/macos"
+          APP_PATHS=("$BUNDLE_DIR"/*.app)
+          test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
+          APP="${APP_PATHS[0]}"
+          ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
+          codesign_with_timestamp_retry() {
+            local attempt=1
+            local log_file="$RUNNER_TEMP/codesign-timestamp-retry.log"
+            while [ "$attempt" -le 3 ]; do
+              if codesign "$@" >"$log_file" 2>&1; then
+                cat "$log_file"
+                return 0
+              else
+                local sign_exit=$?
+              fi
+              cat "$log_file"
+              if ! grep -Fq "A timestamp was expected but was not found." "$log_file" || [ "$attempt" -eq 3 ]; then
+                return "$sign_exit"
+              fi
+              echo "codesign timestamp failure; retrying ($((attempt + 1))/3) in 30 seconds."
+              sleep 30
+              attempt=$((attempt + 1))
+            done
+          }
+          SIGNED=0
+          while IFS= read -r -d '' path; do
+            if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
+            SIGNED=$((SIGNED + 1))
+            if [[ "$path" == "$APP/Contents/Resources/node" ]]; then
+              codesign_with_timestamp_retry --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
+            else
+              codesign_with_timestamp_retry --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
+            fi
+          # NUL-delimited to match read -d ''; reverse lexical order signs deeper paths first.
+          done < <(find "$APP/Contents" -type f -print0 | LC_ALL=C sort -rz)
+          # The app binary, node and the agent's native modules are all nested Mach-O files.
+          test "$SIGNED" -gt 2
+          echo "signed nested Mach-O files: $SIGNED"
+          codesign_with_timestamp_retry --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Notarize and staple macOS app
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATHS=("packages/shell/src-tauri/target/release/bundle/macos"/*.app)
+          test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
+          ZIP="$RUNNER_TEMP/Naia-app-notarization.zip"
+          ditto -c -k --keepParent "${APP_PATHS[0]}" "$ZIP"
+          NOTARY_RESULT="$RUNNER_TEMP/Naia-app-notary-result.json"
+          NOTARY_LOG="$RUNNER_TEMP/Naia-app-notary-log.txt"
+          NOTARY_ERROR="$RUNNER_TEMP/Naia-app-notary-error.txt"
+          NOTARY_INFO="$RUNNER_TEMP/Naia-app-notary-info.json"
+          NOTARY_INFO_ERROR="$RUNNER_TEMP/Naia-app-notary-info-error.txt"
+          notary_status() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$1" 2>/dev/null || true; }
+          notary_id() {
+            local id
+            id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$id" ]; then printf '%s\n' "$id"; return; fi
+            # Apple submission IDs are UUIDs; scan both captured streams when JSON is absent.
+            { cat "$NOTARY_RESULT" 2>/dev/null || true; cat "$NOTARY_ERROR" 2>/dev/null || true; } | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n 1 || true
+          }
+          redact_file() {
+            python3 - "$1" "$2" <<'PY'
+          import os, sys
+          path, label = sys.argv[1:]
+          try:
+              value = open(path, encoding="utf-8", errors="replace").read()
+          except OSError:
+              value = "<file unavailable>"
+          for secret_name in ("APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8"):
+              secret = os.environ.get(secret_name, "")
+              if secret:
+                  value = value.replace(secret, "[REDACTED]")
+          print(f"--- {label} ---")
+          print(value if value else "<empty>")
+          PY
+          }
+          accepted_from_info() {
+            local submission_id="$1"
+            local poll
+            for poll in 1 2 3 4 5 6 7 8 9 10; do
+              : > "$NOTARY_INFO"
+              : > "$NOTARY_INFO_ERROR"
+              xcrun notarytool info "$submission_id" --output-format json \
+                --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+                > "$NOTARY_INFO" 2> "$NOTARY_INFO_ERROR" || true
+              INFO_STATUS="$(notary_status "$NOTARY_INFO")"
+              if [ "$INFO_STATUS" = "Accepted" ]; then return 0; fi
+              if [ "$INFO_STATUS" = "Invalid" ] || [ "$INFO_STATUS" = "Rejected" ]; then return 1; fi
+              if [ "$poll" -lt 10 ]; then sleep 30; fi
+            done
+            return 1
+          }
+          NOTARY_ACCEPTED=0
+          for submit_attempt in 1 2; do
+            : > "$NOTARY_RESULT"
+            : > "$NOTARY_ERROR"
+            NOTARY_EXIT=0
+            xcrun notarytool submit "$ZIP" --wait --timeout 90m --output-format json \
+              --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+            NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
+            if [ "$NOTARY_STATUS" = "Accepted" ]; then NOTARY_ACCEPTED=1; break; fi
+            NOTARY_ID="$(notary_id)"
+            if [ -n "$NOTARY_ID" ]; then
+              echo "Notarization submission $NOTARY_ID is not yet Accepted; polling notarytool info (up to 5 minutes)."
+              if accepted_from_info "$NOTARY_ID"; then NOTARY_ACCEPTED=1; break; fi
+              NOTARY_STATUS="${INFO_STATUS:-$NOTARY_STATUS}"
+              break
+            fi
+            if [ "$submit_attempt" -eq 1 ] && { grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_ERROR" || grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_RESULT"; }; then
+              echo "Transient notarytool submit network error; retrying once."
+              continue
+            fi
+            break
+          done
+          if [ "$NOTARY_ACCEPTED" -ne 1 ]; then
+            redact_file "$NOTARY_ERROR" "notarytool stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_RESULT" "notarytool submit output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO_ERROR" "notarytool info stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO" "last notarytool info output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            if [ -n "${NOTARY_ID:-}" ]; then
+              xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
+                --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
+              redact_file "$NOTARY_LOG" "notarytool log"
+            fi
+            echo "App notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
+            exit 1
+          fi
+          xcrun stapler staple "${APP_PATHS[0]}"
+          spctl -a -vv -t exec "${APP_PATHS[0]}"
+          xcrun stapler validate "${APP_PATHS[0]}"
+          rm -f "$ZIP"
+
+      - name: Create macOS DMG without mounting an image
+        if: matrix.platform == 'darwin'
+        shell: bash
+        env:
+          DMG_ARCH: ${{ matrix.arch == 'arm64' && 'aarch64' || 'x64' }}
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APP_PATHS=()
+          while IFS= read -r path; do APP_PATHS+=("$path"); done < <(
+            find "$BUNDLE_DIR/macos" -maxdepth 1 -type d -name '*.app' -print
+          )
+          test "${#APP_PATHS[@]}" -eq 1 || {
+            echo "::error::Expected exactly one macOS app bundle, found ${#APP_PATHS[@]}"
+            exit 1
+          }
+          APP_PATH="${APP_PATHS[0]}"
+          PRODUCT_NAME="$(node -p "require('./packages/shell/src-tauri/tauri.conf.json').productName")"
+          VERSION="$(node -p "require('./packages/shell/package.json').version")"
+          DMG_DIR="$BUNDLE_DIR/dmg"
+          DMG_PATH="$DMG_DIR/${PRODUCT_NAME}_${VERSION}_${DMG_ARCH}.dmg"
+          DMG_STAGE="$RUNNER_TEMP/macos-dmg-stage"
+          mkdir -p "$DMG_DIR"
+          rm -rf "$DMG_STAGE"
+          mkdir -p "$DMG_STAGE"
+          ditto "$APP_PATH" "$DMG_STAGE/$(basename "$APP_PATH")"
+          ln -s /Applications "$DMG_STAGE/Applications"
+          for attempt in 1 2; do
+            if hdiutil create -volname "$PRODUCT_NAME" -srcfolder "$DMG_STAGE" \
+              -fs HFS+ -format UDZO -ov "$DMG_PATH"; then
+              break
+            fi
+            rm -f "$DMG_PATH"
+            if [[ "$attempt" -eq 2 ]]; then
+              echo "::error::macOS DMG creation failed after one retry"
               exit 1
             fi
+            echo "::warning::macOS DMG creation failed; retrying once"
+          done
+          hdiutil verify "$DMG_PATH"
+
+      - name: Sign macOS DMG with Developer ID
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
+          test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
+          security unlock-keychain -p "$(< "$MACOS_KEYCHAIN_PASSWORD_PATH")" "$MACOS_SIGNING_KEYCHAIN"
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "${DMG_PATHS[0]}"
+
+      - name: Notarize and staple macOS DMG
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
+          test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
+          codesign --verify --strict --verbose=2 "${DMG_PATHS[0]}"
+          NOTARY_RESULT="$RUNNER_TEMP/Naia-dmg-notary-result.json"
+          NOTARY_LOG="$RUNNER_TEMP/Naia-dmg-notary-log.txt"
+          NOTARY_ERROR="$RUNNER_TEMP/Naia-dmg-notary-error.txt"
+          NOTARY_INFO="$RUNNER_TEMP/Naia-dmg-notary-info.json"
+          NOTARY_INFO_ERROR="$RUNNER_TEMP/Naia-dmg-notary-info-error.txt"
+          notary_status() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$1" 2>/dev/null || true; }
+          notary_id() {
+            local id
+            id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$id" ]; then printf '%s\n' "$id"; return; fi
+            { cat "$NOTARY_RESULT" 2>/dev/null || true; cat "$NOTARY_ERROR" 2>/dev/null || true; } | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n 1 || true
+          }
+          redact_file() {
+            python3 - "$1" "$2" <<'PY'
+          import os, sys
+          path, label = sys.argv[1:]
+          try:
+              value = open(path, encoding="utf-8", errors="replace").read()
+          except OSError:
+              value = "<file unavailable>"
+          for secret_name in ("APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8"):
+              secret = os.environ.get(secret_name, "")
+              if secret:
+                  value = value.replace(secret, "[REDACTED]")
+          print(f"--- {label} ---")
+          print(value if value else "<empty>")
+          PY
+          }
+          accepted_from_info() {
+            local submission_id="$1" poll
+            for poll in 1 2 3 4 5 6 7 8 9 10; do
+              : > "$NOTARY_INFO"
+              : > "$NOTARY_INFO_ERROR"
+              xcrun notarytool info "$submission_id" --output-format json \
+                --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+                > "$NOTARY_INFO" 2> "$NOTARY_INFO_ERROR" || true
+              INFO_STATUS="$(notary_status "$NOTARY_INFO")"
+              if [ "$INFO_STATUS" = "Accepted" ]; then return 0; fi
+              if [ "$INFO_STATUS" = "Invalid" ] || [ "$INFO_STATUS" = "Rejected" ]; then return 1; fi
+              if [ "$poll" -lt 10 ]; then sleep 30; fi
+            done
+            return 1
+          }
+          NOTARY_ACCEPTED=0
+          for submit_attempt in 1 2; do
+            : > "$NOTARY_RESULT"
+            : > "$NOTARY_ERROR"
+            NOTARY_EXIT=0
+            xcrun notarytool submit "${DMG_PATHS[0]}" --wait --timeout 90m --output-format json \
+              --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+            NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
+            if [ "$NOTARY_STATUS" = "Accepted" ]; then NOTARY_ACCEPTED=1; break; fi
+            NOTARY_ID="$(notary_id)"
+            if [ -n "$NOTARY_ID" ]; then
+              echo "Notarization submission $NOTARY_ID is not yet Accepted; polling notarytool info (up to 5 minutes)."
+              if accepted_from_info "$NOTARY_ID"; then NOTARY_ACCEPTED=1; break; fi
+              NOTARY_STATUS="${INFO_STATUS:-$NOTARY_STATUS}"
+              break
+            fi
+            if [ "$submit_attempt" -eq 1 ] && { grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_ERROR" || grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_RESULT"; }; then
+              echo "Transient notarytool submit network error; retrying once."
+              continue
+            fi
+            break
+          done
+          if [ "$NOTARY_ACCEPTED" -ne 1 ]; then
+            redact_file "$NOTARY_ERROR" "notarytool stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_RESULT" "notarytool submit output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO_ERROR" "notarytool info stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO" "last notarytool info output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            if [ -n "${NOTARY_ID:-}" ]; then
+              xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
+                --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
+              redact_file "$NOTARY_LOG" "notarytool log"
+            fi
+            echo "DMG notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
+            exit 1
+          fi
+          xcrun stapler staple "${DMG_PATHS[0]}"
+          xcrun stapler validate "${DMG_PATHS[0]}"
+
+      - name: Verify macOS code signature
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle/macos"
+          APP_PATHS=("$BUNDLE_DIR"/*.app)
+          test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
+          APP="${APP_PATHS[0]}"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          while IFS= read -r -d '' path; do
+            if file -b "$path" | grep -q 'Mach-O'; then
+              codesign --verify --strict --verbose=2 "$path"
+            fi
+          done < <(find "$APP/Contents" -type f -print0)
+
+      - name: Verify macOS notarization and stapling
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATHS=("packages/shell/src-tauri/target/release/bundle/macos"/*.app)
+          test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
+          spctl -a -vv -t exec "${APP_PATHS[0]}"
+          xcrun stapler validate "${APP_PATHS[0]}"
+          DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
+          test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
+          xcrun stapler validate "${DMG_PATHS[0]}"
+
+      - name: Clean macOS signing credentials
+        if: always() && matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" \
+            "$RUNNER_TEMP/Naia-app-notarization.zip" "$RUNNER_TEMP/Naia-app-notary-result.json" \
+            "$RUNNER_TEMP/Naia-app-notary-log.txt" "$RUNNER_TEMP/Naia-app-notary-error.txt" \
+            "$RUNNER_TEMP/Naia-app-notary-info.json" "$RUNNER_TEMP/Naia-app-notary-info-error.txt" \
+            "$RUNNER_TEMP/Naia-dmg-notary-result.json" "$RUNNER_TEMP/Naia-dmg-notary-log.txt" \
+            "$RUNNER_TEMP/Naia-dmg-notary-error.txt" "$RUNNER_TEMP/Naia-dmg-notary-info.json" \
+            "$RUNNER_TEMP/Naia-dmg-notary-info-error.txt"
+          if [ -n "${MACOS_ORIGINAL_KEYCHAINS_PATH:-}" ] && [ -f "$MACOS_ORIGINAL_KEYCHAINS_PATH" ]; then
+            # macOS bash 3.2 has no mapfile.
+            ORIGINAL_KEYCHAINS=()
+            while IFS= read -r keychain; do if [ -n "$keychain" ]; then ORIGINAL_KEYCHAINS+=("$keychain"); fi; done < "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+            if [ "${#ORIGINAL_KEYCHAINS[@]}" -gt 0 ]; then security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}"; fi
+            rm -f "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+          fi
+          if [ -n "${MACOS_KEYCHAIN_PASSWORD_PATH:-}" ]; then rm -f "$MACOS_KEYCHAIN_PASSWORD_PATH"; fi
+          if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
           fi
 
       - name: Preserve macOS outputs after bundle attempt
@@ -743,8 +1120,13 @@ jobs:
   macos-universal:
     needs: build
     runs-on: macos-15
+    timeout-minutes: 300
     permissions:
       contents: read
+    env:
+      NAIA_UNSIGNED: ${{ inputs.internal_unsigned == true || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.ref, 'refs/tags/')) }}
+      MACOS_SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+      MACOS_NOTARIZATION_CONFIGURED: ${{ secrets.APPLE_API_KEY_P8 != '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -767,6 +1149,215 @@ jobs:
           --x64-app universal-input/x64-app/Naia.app
           --arm64-app universal-input/arm64-app/Naia.app
           --output-app universal-output/Naia.app
+
+      - name: Prepare Universal macOS Developer ID keychain
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/naia-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          ORIGINAL_KEYCHAINS_PATH="$RUNNER_TEMP/naia-original-keychains.txt"
+          security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' > "$ORIGINAL_KEYCHAINS_PATH"
+          chmod 600 "$ORIGINAL_KEYCHAINS_PATH"
+          echo "MACOS_ORIGINAL_KEYCHAINS_PATH=$ORIGINAL_KEYCHAINS_PATH" >> "$GITHUB_ENV"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          chmod 600 "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -t 21600 -u "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # macOS bash 3.2 has no mapfile.
+          ORIGINAL_KEYCHAINS=()
+          while IFS= read -r keychain; do if [ -n "$keychain" ]; then ORIGINAL_KEYCHAINS+=("$keychain"); fi; done < "$ORIGINAL_KEYCHAINS_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" ${ORIGINAL_KEYCHAINS[@]+"${ORIGINAL_KEYCHAINS[@]}"}
+          # `security import` only accepts a PKCS#12 password through -P; it has no stdin option.
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          rm -f "$CERTIFICATE_PATH"
+          echo "MACOS_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Prepare Universal macOS notarization key
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          API_KEY_PATH="$RUNNER_TEMP/naia-app-store-connect.p8"
+          umask 077
+          printf '%s' "$APPLE_API_KEY_P8" > "$API_KEY_PATH"
+          chmod 600 "$API_KEY_PATH"
+          {
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$API_KEY_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Report Universal macOS signing mode
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED != 'true'
+        run: echo "공증 열쇠 없음, 서명만"
+
+      - name: Sign every Universal Mach-O with hardened runtime
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP="universal-output/Naia.app"
+          ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
+          codesign_with_timestamp_retry() {
+            local attempt=1
+            local log_file="$RUNNER_TEMP/codesign-timestamp-retry.log"
+            while [ "$attempt" -le 3 ]; do
+              if codesign "$@" >"$log_file" 2>&1; then
+                cat "$log_file"
+                return 0
+              else
+                local sign_exit=$?
+              fi
+              cat "$log_file"
+              if ! grep -Fq "A timestamp was expected but was not found." "$log_file" || [ "$attempt" -eq 3 ]; then
+                return "$sign_exit"
+              fi
+              echo "codesign timestamp failure; retrying ($((attempt + 1))/3) in 30 seconds."
+              sleep 30
+              attempt=$((attempt + 1))
+            done
+          }
+          SIGNED=0
+          while IFS= read -r -d '' path; do
+            if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
+            SIGNED=$((SIGNED + 1))
+            if [[ "$path" == "$APP/Contents/Resources/node" ]]; then
+              codesign_with_timestamp_retry --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
+            else
+              codesign_with_timestamp_retry --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
+            fi
+          # NUL-delimited to match read -d ''; reverse lexical order signs deeper paths first.
+          done < <(find "$APP/Contents" -type f -print0 | LC_ALL=C sort -rz)
+          # The app binary, node and the agent's native modules are all nested Mach-O files.
+          test "$SIGNED" -gt 2
+          echo "signed nested Mach-O files: $SIGNED"
+          codesign_with_timestamp_retry --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Notarize and staple Universal app
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="universal-output/Naia.app"
+          ZIP="$RUNNER_TEMP/Naia-universal-notarization.zip"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          NOTARY_RESULT="$RUNNER_TEMP/Naia-universal-notary-result.json"
+          NOTARY_LOG="$RUNNER_TEMP/Naia-universal-notary-log.txt"
+          NOTARY_ERROR="$RUNNER_TEMP/Naia-universal-notary-error.txt"
+          NOTARY_INFO="$RUNNER_TEMP/Naia-universal-notary-info.json"
+          NOTARY_INFO_ERROR="$RUNNER_TEMP/Naia-universal-notary-info-error.txt"
+          notary_status() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$1" 2>/dev/null || true; }
+          notary_id() {
+            local id
+            id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$NOTARY_RESULT" 2>/dev/null || true)"
+            if [ -n "$id" ]; then printf '%s\n' "$id"; return; fi
+            { cat "$NOTARY_RESULT" 2>/dev/null || true; cat "$NOTARY_ERROR" 2>/dev/null || true; } | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n 1 || true
+          }
+          redact_file() {
+            python3 - "$1" "$2" <<'PY'
+          import os, sys
+          path, label = sys.argv[1:]
+          try:
+              value = open(path, encoding="utf-8", errors="replace").read()
+          except OSError:
+              value = "<file unavailable>"
+          for secret_name in ("APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8"):
+              secret = os.environ.get(secret_name, "")
+              if secret:
+                  value = value.replace(secret, "[REDACTED]")
+          print(f"--- {label} ---")
+          print(value if value else "<empty>")
+          PY
+          }
+          accepted_from_info() {
+            local submission_id="$1" poll
+            for poll in 1 2 3 4 5 6 7 8 9 10; do
+              : > "$NOTARY_INFO"
+              : > "$NOTARY_INFO_ERROR"
+              xcrun notarytool info "$submission_id" --output-format json \
+                --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+                > "$NOTARY_INFO" 2> "$NOTARY_INFO_ERROR" || true
+              INFO_STATUS="$(notary_status "$NOTARY_INFO")"
+              if [ "$INFO_STATUS" = "Accepted" ]; then return 0; fi
+              if [ "$INFO_STATUS" = "Invalid" ] || [ "$INFO_STATUS" = "Rejected" ]; then return 1; fi
+              if [ "$poll" -lt 10 ]; then sleep 30; fi
+            done
+            return 1
+          }
+          NOTARY_ACCEPTED=0
+          for submit_attempt in 1 2; do
+            : > "$NOTARY_RESULT"
+            : > "$NOTARY_ERROR"
+            NOTARY_EXIT=0
+            xcrun notarytool submit "$ZIP" --wait --timeout 90m --output-format json \
+              --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              > "$NOTARY_RESULT" 2> "$NOTARY_ERROR" || NOTARY_EXIT=$?
+            NOTARY_STATUS="$(notary_status "$NOTARY_RESULT")"
+            if [ "$NOTARY_STATUS" = "Accepted" ]; then NOTARY_ACCEPTED=1; break; fi
+            NOTARY_ID="$(notary_id)"
+            if [ -n "$NOTARY_ID" ]; then
+              echo "Notarization submission $NOTARY_ID is not yet Accepted; polling notarytool info (up to 5 minutes)."
+              if accepted_from_info "$NOTARY_ID"; then NOTARY_ACCEPTED=1; break; fi
+              NOTARY_STATUS="${INFO_STATUS:-$NOTARY_STATUS}"
+              break
+            fi
+            if [ "$submit_attempt" -eq 1 ] && { grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_ERROR" || grep -Eiq 'network|timed out|timeout|connection (reset|refused|closed)|could not connect|unable to connect|temporary failure|name resolution|DNS|socket|transport endpoint|NSURLErrorDomain|URLError' "$NOTARY_RESULT"; }; then
+              echo "Transient notarytool submit network error; retrying once."
+              continue
+            fi
+            break
+          done
+          if [ "$NOTARY_ACCEPTED" -ne 1 ]; then
+            redact_file "$NOTARY_ERROR" "notarytool stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_RESULT" "notarytool submit output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO_ERROR" "notarytool info stderr (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            redact_file "$NOTARY_INFO" "last notarytool info output (APPLE_API_KEY and APPLE_API_ISSUER redacted)"
+            if [ -n "${NOTARY_ID:-}" ]; then
+              xcrun notarytool log "$NOTARY_ID" --key "$APPLE_API_KEY_PATH" \
+                --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" > "$NOTARY_LOG" 2>&1 || true
+              redact_file "$NOTARY_LOG" "notarytool log"
+            fi
+            echo "Universal app notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
+            exit 1
+          fi
+          xcrun stapler staple "$APP"
+          spctl -a -vv -t exec "$APP"
+          xcrun stapler validate "$APP"
+          rm -f "$ZIP"
+
+      - name: Clean Universal macOS signing credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" \
+            "$RUNNER_TEMP/Naia-universal-notarization.zip" "$RUNNER_TEMP/Naia-universal-notary-result.json" \
+            "$RUNNER_TEMP/Naia-universal-notary-log.txt" "$RUNNER_TEMP/Naia-universal-notary-error.txt" \
+            "$RUNNER_TEMP/Naia-universal-notary-info.json" "$RUNNER_TEMP/Naia-universal-notary-info-error.txt"
+          if [ -n "${MACOS_ORIGINAL_KEYCHAINS_PATH:-}" ] && [ -f "$MACOS_ORIGINAL_KEYCHAINS_PATH" ]; then
+            # macOS bash 3.2 has no mapfile.
+            ORIGINAL_KEYCHAINS=()
+            while IFS= read -r keychain; do if [ -n "$keychain" ]; then ORIGINAL_KEYCHAINS+=("$keychain"); fi; done < "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+            if [ "${#ORIGINAL_KEYCHAINS[@]}" -gt 0 ]; then security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}"; fi
+            rm -f "$MACOS_ORIGINAL_KEYCHAINS_PATH"
+          fi
+          if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
+          fi
       - name: Archive Universal app bundle
         shell: bash
         run: tar -C universal-output -czf universal-output/Naia_universal.app.tar.gz Naia.app
