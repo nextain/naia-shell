@@ -67,7 +67,12 @@ describe("app-loader", () => {
 	describe("loadInstalledApps", () => {
 		it("registers apps returned by app_list_installed", async () => {
 			mockInvoke.mockResolvedValue([
-				{ id: "test-app", name: "Test app", icon: "?㎦" },
+				{
+					id: "test-app",
+					name: "Test app",
+					icon: "?㎦",
+					iconSvg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+				},
 			]);
 
 			await loadInstalledApps();
@@ -76,6 +81,7 @@ describe("app-loader", () => {
 			expect(app).toBeDefined();
 			expect(app?.name).toBe("Test app");
 			expect(app?.source).toBe("installed");
+			expect(app?.iconSvg).toBe('<svg xmlns="http://www.w3.org/2000/svg"/>');
 		});
 
 		it("bumps appListVersion after loading", async () => {

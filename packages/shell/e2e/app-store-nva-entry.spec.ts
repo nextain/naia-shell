@@ -138,7 +138,7 @@ test.describe("0.2.4 App Store and NVA entry points", () => {
 				id: "visual-store-icon",
 				name: "Visual Store Icon",
 				store_signature_verified: true,
-				icon_svg:
+				iconSvg:
 					'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="red"/></svg>',
 			},
 		]);
