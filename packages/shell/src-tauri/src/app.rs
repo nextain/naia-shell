@@ -262,6 +262,8 @@ fn install_store_artifact(
         .prefix(".store-install-")
         .tempdir_in(apps_root)
         .map_err(|e| e.to_string())?;
+    std::fs::write(temp.path().join(STORE_SIGNATURE_ARTIFACT), bytes)
+        .map_err(|e| format!("Failed to preserve verified Store artifact: {e}"))?;
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| format!("Invalid app ZIP: {e}"))?;
     if archive.len() > MAX_ARCHIVE_ENTRIES {
@@ -329,6 +331,16 @@ fn install_store_artifact(
     if !temp.path().join("index.html").is_file() {
         return Err("index.html missing".to_string());
     }
+    let receipt = StoreSignatureReceipt {
+        app_id: manifest.id.clone(),
+        sha256: digest,
+        signature: artifact.signature.clone(),
+    };
+    std::fs::write(
+        temp.path().join(STORE_SIGNATURE_RECEIPT),
+        serde_json::to_vec(&receipt).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("Failed to record verified Store install: {e}"))?;
     let destination = apps_root.join(app_id);
     let installed_manifest = if destination.is_dir() {
         std::fs::File::open(destination.join("app.json"))
@@ -2036,6 +2048,14 @@ mod tests {
             std::fs::read_to_string(destination.join("index.html")).unwrap(),
             "new package"
         );
+        let installed = list_installed_from_root_with_signing_key(
+            root.path(),
+            root.path().to_path_buf(),
+            &key,
+        )
+        .unwrap();
+        assert_eq!(installed.len(), 1);
+        assert!(installed[0].store_signature_verified);
     }
 
     #[test]
