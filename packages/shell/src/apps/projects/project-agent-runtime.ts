@@ -670,7 +670,7 @@ export async function waitForProjectAgentStopped(
 	adapterRoot: string,
 	appId: ProjectAgentAppId,
 	options?: { timeoutMs?: number; intervalMs?: number },
-): Promise<boolean> {
+): Promise<boolean | "unknown"> {
 	const timeoutMs = options?.timeoutMs ?? 5000;
 	const intervalMs = options?.intervalMs ?? 200;
 	const deadline = Date.now() + timeoutMs;
@@ -711,7 +711,11 @@ export async function waitForProjectAgentStopped(
 				setState(projectPath, { status: "idle", ptyId: null, error: null });
 				return true;
 			}
-			return false;
+			Logger.warn("ProjectAgentRuntime", "project PTY stop status is unknown", {
+				appId,
+				code: mapped.code,
+			});
+			return "unknown";
 		}
 		if (Date.now() >= deadline) {
 			if (stateFor(projectPath).status === "stopping") {

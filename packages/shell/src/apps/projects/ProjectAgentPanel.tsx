@@ -303,7 +303,11 @@ export function ProjectAgentPanel({
 			{state.status === "running" &&
 				selectedAppId === "opencode" &&
 				state.naiaLoginRequired && (
-					<output className="projects-app__recovery" aria-live="polite">
+					<output
+						data-testid="project-agent-naia-login-notice"
+						className="projects-app__recovery"
+						aria-live="polite"
+					>
 						<strong>{projectText("projects.agentNaiaLoginRequired")}</strong>{" "}
 						{projectText("projects.agentNaiaLoginHint")}
 					</output>

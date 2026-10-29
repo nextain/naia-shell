@@ -106,6 +106,20 @@ const TAURI_MOCK = `
 \t\t\t}
 \t\t\treturn state.result;
 \t\t}
+\t\tif (cmd === "project_docs_list") return [
+\t\t\t{ dir: "domain", relativePath: "domain/guide.md", sizeBytes: 48 },
+\t\t\t{ dir: "자료", relativePath: "자료/lesson1.md", sizeBytes: 32 },
+\t\t];
+\t\tif (cmd === "project_docs_read") {
+\t\t\tif (args.relativePath === "domain/guide.md") return "# Domain Guide\\n\\nPractice concepts.";
+\t\t\tif (args.relativePath === "자료/lesson1.md") return "# Lesson 1\\n\\nExercise.";
+\t\t\tthrow new Error("doc_not_found");
+\t\t}
+\t\tif (cmd === "project_class_reset") return {
+\t\t\tbackupRelativePath: "class-backups/class-demo-20261029-120000",
+\t\t\tbackedUpFiles: 2,
+\t\t\tdeletedFiles: 0,
+\t\t};
 \t\tif (cmd === "project_agent_availability") {
 \t\t\tif (state.projectAgentAvailability) return state.projectAgentAvailability;
 \t\t\treturn ["claude", "codex", "muse", "opencode"].map(function(appId) {
@@ -640,7 +654,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		});
 		await page.getByRole("button", { name: "Start OpenCode" }).click();
 
-		const notice = page.locator(".projects-app output");
+		const notice = page.getByTestId("project-agent-naia-login-notice");
 		await notice.scrollIntoViewIfNeeded();
 		await expect(notice).toContainText("Naia login required.");
 		await expect(notice).toContainText("Sign in to Naia in Settings");
@@ -703,6 +717,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await expect(
 			page.getByRole("heading", { name: "Domain Guide" }),
 		).toBeVisible();
+		await expect(page.getByRole("button", { name: "guide.md" })).toBeVisible();
 		await page.getByRole("button", { name: "lesson1.md" }).click();
 		await expect(page.getByRole("heading", { name: "Lesson 1" })).toBeVisible();
 		await page.getByRole("button", { name: "Reset class" }).click();
@@ -712,6 +727,23 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			.getByRole("button", { name: "Reset", exact: true })
 			.click();
 		await expect(page.getByText(/Class checkout reset complete/)).toBeVisible();
+		const calls = await page.evaluate(
+			() => (window as any).__PROJECT_E2E__.calls,
+		);
+		expect(
+			calls.some((call: { cmd: string }) => call.cmd === "project_docs_list"),
+		).toBe(true);
+		expect(
+			calls.some((call: { cmd: string }) => call.cmd === "project_docs_read"),
+		).toBe(true);
+		expect(
+			calls.find((call: { cmd: string }) => call.cmd === "project_class_reset"),
+		).toMatchObject({
+			args: {
+				adapterRoot: "/fixture/adapter-root",
+				projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+			},
+		});
 		await capture(page, "project-app-class-docs-reset.png");
 	});
 
@@ -752,6 +784,7 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 		await expect(
 			page.getByRole("heading", { name: "Domain Guide" }),
 		).toBeVisible();
+		await expect(page.getByRole("button", { name: "guide.md" })).toBeVisible();
 
 		const listBox = await docsList.boundingBox();
 		const previewBox = await docsPreview.boundingBox();

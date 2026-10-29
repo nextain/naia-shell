@@ -13,6 +13,8 @@ import { type ProjectTranslationKey, projectText } from "./translations";
 
 function docsErrorMessageKey(code: string): ProjectTranslationKey {
 	switch (code) {
+		case "timeout":
+			return "projects.docsErrorTimeout";
 		case "project_unverified":
 			return "projects.agentProjectUnverified";
 		case "repository_invalid":
@@ -42,6 +44,25 @@ function displayPathWithinDir(entry: ProjectDocEntry): string {
 	return entry.relativePath.startsWith(prefix)
 		? entry.relativePath.slice(prefix.length)
 		: entry.relativePath;
+}
+
+const PROJECT_DOCS_REQUEST_TIMEOUT_MS = 10_000;
+
+async function withDocsTimeout<T>(request: Promise<T>): Promise<T> {
+	let timeout: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			request,
+			new Promise<T>((_, reject) => {
+				timeout = setTimeout(
+					() => reject(new Error("timeout")),
+					PROJECT_DOCS_REQUEST_TIMEOUT_MS,
+				);
+			}),
+		]);
+	} finally {
+		if (timeout !== undefined) clearTimeout(timeout);
+	}
 }
 
 export function ProjectDocsPanel({
@@ -84,10 +105,8 @@ export function ProjectDocsPanel({
 			setLoadingFile(true);
 			setReadError(null);
 			try {
-				const text = await readProjectDoc(
-					adapterRoot,
-					projectPath,
-					relativePath,
+				const text = await withDocsTimeout(
+					readProjectDoc(adapterRoot, projectPath, relativePath),
 				);
 				if (fileRequestSeqRef.current !== fileSeq) return;
 				setContent(text);
@@ -111,7 +130,9 @@ export function ProjectDocsPanel({
 		setLoadingList(true);
 		setListError(null);
 		try {
-			const nextEntries = await listProjectDocs(adapterRoot, projectPath);
+			const nextEntries = await withDocsTimeout(
+				listProjectDocs(adapterRoot, projectPath),
+			);
 			if (requestSeqRef.current !== seq) return;
 			setEntries(nextEntries);
 			setLoadingList(false);

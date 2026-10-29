@@ -1032,6 +1032,7 @@ describe("ProjectsApp — single opened project", () => {
 
 	it("shows Reset class only for class projects, handles Cancel/Escape, stops running agent before resetting, and surfaces errors", async () => {
 		let resetShouldFail: string | null = null;
+		let attachShouldFail: string | null = null;
 		const classProject = makeProject("practice-class", "naia-pj-adk", {
 			name: "Practice Class",
 			codingApp: "opencode",
@@ -1072,6 +1073,9 @@ describe("ProjectsApp — single opened project", () => {
 			}
 			if (command === "project_agent_pty_stop") {
 				return null;
+			}
+			if (command === "project_agent_pty_attach" && attachShouldFail) {
+				throw new Error(attachShouldFail);
 			}
 			if (command === "project_docs_list") {
 				return [
@@ -1188,6 +1192,17 @@ describe("ProjectsApp — single opened project", () => {
 		expect(await screen.findByRole("alert")).toHaveTextContent(
 			"The configured class.baseline_ref commit was not found in the checkout repository.",
 		);
+
+		fireEvent.click(await screen.findByRole("button", { name: "Start OpenCode" }));
+		await screen.findByRole("button", { name: "Stop OpenCode" });
+		attachShouldFail = "ipc_unavailable";
+		callOrder.length = 0;
+		fireEvent.click(screen.getByRole("button", { name: "Reset class" }));
+		fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Could not confirm whether the coding agent stopped.",
+		);
+		expect(callOrder).not.toContain("project_class_reset");
 	});
 
 	it("polls after stopProjectAgent for a delayed stop before calling project_class_reset", async () => {

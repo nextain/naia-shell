@@ -100,6 +100,8 @@ export const PROJECT_AGENT_ENGLISH_TRANSLATIONS = {
 		"This document exceeds the 1 MiB preview limit.",
 	"projects.docsErrorNotFound":
 		"The selected document was not found. Refresh the document list and try again.",
+	"projects.docsErrorTimeout":
+		"Loading project documents took too long. Check the project checkout and press Refresh to try again.",
 	"projects.docsErrorOutside":
 		"The document path is outside the configured docs_dirs folders or uses a symlink.",
 	"projects.docsErrorRecovery":
@@ -123,6 +125,8 @@ export const PROJECT_AGENT_ENGLISH_TRANSLATIONS = {
 		"This project does not have a valid class.baseline_ref setting in project.yaml.",
 	"projects.classResetErrorAgentRunning":
 		"A coding agent session is still running. Stop the coding agent and try again.",
+	"projects.classResetErrorAgentStatusUnknown":
+		"Could not confirm whether the coding agent stopped. Check the agent status and try again.",
 	"projects.classResetErrorNotGitRepo":
 		"The project checkout is not its own Git repository (.git is missing or invalid).",
 	"projects.classResetErrorBaselineMissing":
@@ -238,6 +242,8 @@ export const PROJECT_AGENT_KOREAN_TRANSLATIONS: Record<
 	"projects.docsErrorTooLarge": "이 문서는 1 MiB 미리보기 제한을 초과합니다.",
 	"projects.docsErrorNotFound":
 		"선택한 문서를 찾을 수 없습니다. 문서 목록을 새로 고친 뒤 다시 시도하세요.",
+	"projects.docsErrorTimeout":
+		"프로젝트 문서를 불러오는 데 시간이 너무 오래 걸렸습니다. 체크아웃을 확인하고 새로 고침을 눌러 다시 시도하세요.",
 	"projects.docsErrorOutside":
 		"문서 경로가 설정된 docs_dirs 폴더 바깥이거나 심볼릭 링크를 포함합니다.",
 	"projects.docsErrorRecovery":
@@ -261,6 +267,8 @@ export const PROJECT_AGENT_KOREAN_TRANSLATIONS: Record<
 		"이 프로젝트의 project.yaml에 올바른 class.baseline_ref 설정이 없습니다.",
 	"projects.classResetErrorAgentRunning":
 		"코딩 에이전트 세션이 아직 실행 중입니다. 에이전트를 중단한 뒤 다시 시도하세요.",
+	"projects.classResetErrorAgentStatusUnknown":
+		"코딩 에이전트가 종료됐는지 확인하지 못했습니다. 상태를 확인한 뒤 다시 시도하세요.",
 	"projects.classResetErrorNotGitRepo":
 		"프로젝트 체크아웃이 독립된 Git 저장소가 아닙니다(.git 폴더를 확인하세요).",
 	"projects.classResetErrorBaselineMissing":

@@ -93,6 +93,8 @@ function classResetErrorMessageKey(code: string): ProjectTranslationKey {
 			return "projects.classResetErrorNotClass";
 		case "agent_running":
 			return "projects.classResetErrorAgentRunning";
+		case "agent_status_unknown":
+			return "projects.classResetErrorAgentStatusUnknown";
 		case "class_reset_in_progress":
 			return "projects.agentClassResetInProgress";
 		case "not_git_repo":
@@ -649,6 +651,9 @@ export function ProjectsApp() {
 					currentProject.adapterRoot,
 					agentState.selectedAppId,
 				);
+				if (stopped === "unknown") {
+					throw new Error("agent_status_unknown");
+				}
 				if (!stopped) {
 					throw new Error("agent_running");
 				}

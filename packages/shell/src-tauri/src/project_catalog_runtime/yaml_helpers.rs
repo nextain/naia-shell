@@ -93,10 +93,16 @@ pub(crate) fn parse_class_config(mapping: &Mapping) -> Option<ProjectClassConfig
     let class_mapping = mapping
         .get(YamlValue::String("class".to_owned()))?
         .as_mapping()?;
-    let baseline_ref = class_mapping
-        .get(YamlValue::String("baseline_ref".to_owned()))?
-        .as_str()?
-        .trim();
+    let baseline_value = class_mapping.get(YamlValue::String("baseline_ref".to_owned()))?;
+    let baseline_ref =
+        baseline_value
+            .as_str()
+            .map(str::to_owned)
+            .or_else(|| match baseline_value {
+                YamlValue::Number(number) => Some(number.to_string()),
+                _ => None,
+            })?;
+    let baseline_ref = baseline_ref.trim();
     if is_valid_baseline_ref(baseline_ref) {
         Some(ProjectClassConfig {
             baseline_ref: baseline_ref.to_owned(),
@@ -106,6 +112,34 @@ pub(crate) fn parse_class_config(mapping: &Mapping) -> Option<ProjectClassConfig
             "[project_catalog_runtime::parse_class_config] branch=ignore_invalid_baseline_ref",
         );
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_class_config;
+    use serde_yaml::Mapping;
+
+    fn project_mapping(yaml: &str) -> Mapping {
+        serde_yaml::from_str(yaml).expect("valid fixture YAML")
+    }
+
+    #[test]
+    fn parses_unquoted_numeric_baseline_ref_as_a_string() {
+        let mapping = project_mapping("class:\n  baseline_ref: 1234567\n");
+        assert_eq!(
+            parse_class_config(&mapping).map(|config| config.baseline_ref),
+            Some("1234567".to_owned())
+        );
+    }
+
+    #[test]
+    fn retains_quoted_baseline_ref() {
+        let mapping = project_mapping("class:\n  baseline_ref: \"abcdef0\"\n");
+        assert_eq!(
+            parse_class_config(&mapping).map(|config| config.baseline_ref),
+            Some("abcdef0".to_owned())
+        );
     }
 }
 

@@ -11,6 +11,7 @@ import {
 	startProjectAgent,
 	stopProjectAgent,
 	stopOpenCodeProjectAgentSessions,
+	waitForProjectAgentStopped,
 	subscribeProjectAgent,
 	writeProjectAgent,
 } from "../project-agent-runtime";
@@ -119,6 +120,24 @@ describe("project agent runtime ownership", () => {
 						(args as { appId?: string }).appId === "codex",
 				),
 		).toHaveLength(0);
+	});
+
+	it("reports an unknown status when PTY attach fails for a non-missing-session reason", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_attach") {
+				throw new Error("ipc_unavailable");
+			}
+			return null;
+		});
+
+		await expect(
+			waitForProjectAgentStopped(projectA, adapterRoot, "opencode"),
+		).resolves.toBe("unknown");
+		expect(invoke).toHaveBeenCalledWith("project_agent_pty_attach", {
+			appId: "opencode",
+			projectPath: projectA,
+			adapterRoot,
+		});
 	});
 
 	it("waits for an OpenCode start in flight before a Naia credential change completes", async () => {
