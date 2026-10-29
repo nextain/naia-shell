@@ -7,6 +7,8 @@ export const KNOWN_PERMISSIONS = [
 	"downloads",
 	"modals",
 	"speech",
+	"model.ask",
+	"locale",
 	"environment",
 	"files.pick",
 	"media.record",

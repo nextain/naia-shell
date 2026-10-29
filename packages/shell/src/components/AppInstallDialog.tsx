@@ -6,12 +6,12 @@ import {
 	refreshInstalledAppsIfChanged,
 } from "../lib/app-loader";
 import {
-	getStoreGatewayUrl,
-	getStoreProductName,
-	hasStoreEntitlement,
 	type AppInstallRequest,
+	getStoreGatewayUrl,
+	getStoreProductMetadata,
+	hasStoreEntitlement,
 } from "../lib/app-store-client";
-import { t } from "../lib/i18n";
+import { type Locale, getLocale, t } from "../lib/i18n";
 import { useAppStore } from "../stores/app";
 
 interface AppInstallDialogProps {
@@ -37,7 +37,12 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 	const [gitUrl, setGitUrl] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [result, setResult] = useState<InstallResult | null>(null);
-	const [displayName, setDisplayName] = useState(request?.name || request?.appId || "");
+	const [displayName, setDisplayName] = useState(
+		request?.name || request?.appId || "",
+	);
+	const [productDescription, setProductDescription] = useState("");
+	const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+	const [locale, setLocale] = useState<Locale>(getLocale());
 	const [permissionExpansion, setPermissionExpansion] = useState<string[] | null>(null);
 	const pushModal = useAppStore((s) => s.pushModal);
 	const popModal = useAppStore((s) => s.popModal);
@@ -49,11 +54,50 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 	}, [pushModal, popModal]);
 
 	useEffect(() => {
-		if (!request || request.name) return;
-		void getStoreProductName(request.appId)
-			.then((name) => name && setDisplayName(name))
-			.catch(() => {});
-	}, [request]);
+		const onLocale = (event: Event) => {
+			const requested = (event as CustomEvent<string>).detail;
+			setLocale((requested as Locale | undefined) || getLocale());
+		};
+		window.addEventListener("naia:locale-change", onLocale);
+		return () => window.removeEventListener("naia:locale-change", onLocale);
+	}, []);
+
+	useEffect(() => {
+		if (!request) return;
+		let cancelled = false;
+		void getStoreProductMetadata(request.appId, locale)
+			.then((metadata) => {
+				if (cancelled) return;
+				setDisplayName(metadata?.name || request.name || request.appId);
+				setProductDescription(
+					metadata?.description || t("apps.defaultDescription"),
+				);
+				let image: string | null = null;
+				if (metadata?.thumbnailUrl) {
+					try {
+						const url = new URL(metadata.thumbnailUrl, request.storeOrigin);
+						if (
+							url.protocol === "https:" ||
+							url.origin === new URL(request.storeOrigin).origin
+						)
+							image = url.href;
+					} catch {
+						image = null;
+					}
+				}
+				setThumbnailUrl(image);
+			})
+			.catch(() => {
+				if (!cancelled) {
+					setDisplayName(request.name || request.appId);
+					setProductDescription(t("apps.defaultDescription"));
+					setThumbnailUrl(null);
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [locale, request]);
 
 	async function handleInstall(allowPermissionExpansion = false) {
 		if (request) {
@@ -122,32 +166,42 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 	}
 
 	return (
-		<div
-			className="app-install-overlay"
-			onClick={onClose}
-			onKeyDown={() => {}}
-		>
+		<div className="app-install-overlay" onClick={onClose} onKeyDown={() => {}}>
 			<div
 				className="app-install-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="app-install-title"
 				onClick={(e) => e.stopPropagation()}
 				onKeyDown={() => {}}
 			>
 				<div className="app-install-header">
-					<span className="app-install-title">{request ? "Naia Apps" : "앱 추가"}</span>
-					<button
-						type="button"
-						className="app-install-close"
-						onClick={onClose}
-					>
+					<span id="app-install-title" className="app-install-title">
+						{request ? "Naia Apps" : "앱 추가"}
+					</span>
+					<button type="button" className="app-install-close" aria-label={t("apps.close")} onClick={onClose}>
 						✕
 					</button>
 				</div>
 
 				{request ? (
 					<div className="app-install-body">
-						<div className="app-install-notice" data-testid="app-install-product">
-							<strong>{displayName}</strong>
-							<p>{t("apps.defaultDescription")}</p>
+						<div
+							className="app-install-notice"
+							data-testid="app-install-product"
+						>
+							{thumbnailUrl && (
+								<img
+									className="app-install-product-thumbnail"
+									src={thumbnailUrl}
+									alt=""
+									onError={() => setThumbnailUrl(null)}
+								/>
+							)}
+							<div className="app-install-product-copy">
+								<strong>{displayName}</strong>
+								<p>{productDescription || t("apps.defaultDescription")}</p>
+							</div>
 						</div>
 					</div>
 				) : mode === "git" ? (
@@ -181,6 +235,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 				{result && (
 					<div
 						className={`app-install-result ${result.success ? "success" : "error"}`}
+						role={result.success ? "status" : "alert"}
 					>
 						{result.message}
 					</div>
@@ -195,24 +250,27 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 						</button>
 					</div>
 				)}
+				{loading && <div className="app-install-result" role="status">{t("apps.installing")}</div>}
 
 				<div className="app-install-footer">
-					{!request && <div className="app-install-tabs">
-						<button
-							type="button"
-							className={`app-install-tab${mode === "git" ? " active" : ""}`}
-							onClick={() => setMode("git")}
-						>
-							Git URL
-						</button>
-						<button
-							type="button"
-							className={`app-install-tab${mode === "file" ? " active" : ""}`}
-							onClick={() => setMode("file")}
-						>
-							파일 (Zip · 준비 중)
-						</button>
-					</div>}
+					{!request && (
+						<div className="app-install-tabs">
+							<button
+								type="button"
+								className={`app-install-tab${mode === "git" ? " active" : ""}`}
+								onClick={() => setMode("git")}
+							>
+								Git URL
+							</button>
+							<button
+								type="button"
+								className={`app-install-tab${mode === "file" ? " active" : ""}`}
+								onClick={() => setMode("file")}
+							>
+								파일 (Zip · 준비 중)
+							</button>
+						</div>
+					)}
 					<button
 						type="button"
 						className="app-install-cancel-btn"
@@ -225,7 +283,9 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 						type="button"
 						className="app-install-confirm-btn"
 						onClick={() => void handleInstall()}
-						disabled={loading || (!request && (mode !== "git" || !gitUrl.trim()))}
+						disabled={
+							loading || (!request && (mode !== "git" || !gitUrl.trim()))
+						}
 					>
 						{loading ? "설치 중..." : request ? "설치" : "추가"}
 					</button>

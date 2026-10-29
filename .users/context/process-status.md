@@ -6,6 +6,11 @@
 - `skill_blackjack_tutor`는 정적 Shell 목록에서 제거했다. Rust 확인된 Store 설치는 활성 앱 조건을 적용하고, 개발자 사이드로드는 설치 중인 기존 호환 경로를 유지한다.
 - 검증: focused Vitest 35/35, Biome 6개 TS 파일, 코어 build, Shell tsc, Rust `app::tests` 23/23 통과. UI 표현 변경이 없어 visual UX 검토는 해당하지 않는다. 실 Gateway entitlement 설치를 통한 native Store E2E는 실행하지 않았다.
 
+## 설치 앱 공용 연결·설치 화면 — 2026-10-29
+
+- P01–P05: 설치 앱의 권한별 모델 질의·낭독·언어 전달, 설치 상품 다국어 정보와 썸네일을 구현했다.
+- 검증: 전체 Shell Vitest 2,558 통과/0 실패/21 제외, Playwright 2 통과, 실제 Tauri 매니페스트 IPC 1 통과, Rust 검사와 매니페스트 왕복 시험 통과. 실 계정·음성 장치는 모의했다. 기존 conform 게이트 비활성은 범위 밖이다.
+
 ## 0.2.4 설치판 YouTube 스트림 추출 제거 — 2026-10-27
 
 - P01–P05 완료: `/yt/stream` 처리기와 URL 추출·형식 선택·decipher 제거. `/yt/search` 메타데이터 검색과 공식 iframe 재생은 유지하며 `<audio>`는 로컬 파일만 받는다.

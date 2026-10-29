@@ -349,6 +349,7 @@ export interface AppDescriptor {
 	profile?: "legacy" | "v2";
 	/** Localized descriptions (locale -> text) */
 	descriptions?: Record<string, string>;
+	thumbnailUrl?: string;
 	/** AI system context declaration or path */
 	context?: string;
 	/** Skills declared by the app */

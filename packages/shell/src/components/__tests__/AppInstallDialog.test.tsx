@@ -26,7 +26,7 @@ vi.mock("../../lib/app-loader", () => ({
 }));
 vi.mock("../../lib/app-store-client", () => ({
 	getStoreGatewayUrl: vi.fn(() => "https://api-dev.naia.land"),
-	getStoreProductName: vi.fn().mockResolvedValue("나이아 슬라이드"),
+	getStoreProductMetadata: vi.fn().mockResolvedValue({ name: "Naia Slides", description: "Present slides", thumbnailUrl: "/thumbnail.png" }),
 	hasStoreEntitlement: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("../../lib/logger", () => ({
@@ -72,6 +72,12 @@ describe("AppInstallDialog — zip gating (#358 / #359)", () => {
 describe("AppInstallDialog — storefront install (#471)", () => {
 	beforeEach(() => vi.clearAllMocks());
 	afterEach(() => cleanup());
+
+	it("shows localized catalog copy and the product thumbnail", async () => {
+		render(<AppInstallDialog request={{appId: "land.naia.slides", state: "state", storeOrigin: "https://dev.naia.land"}} onClose={() => {}} />);
+		await waitFor(() => expect(screen.getByText("Present slides")).toBeTruthy());
+		expect(screen.getByAltText("").getAttribute("src")).toBe("https://dev.naia.land/thumbnail.png");
+	});
 
 	it("shows exactly one requested app and installs only after confirmation", async () => {
 		render(

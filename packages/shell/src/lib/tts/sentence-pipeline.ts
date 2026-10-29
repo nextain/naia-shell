@@ -122,6 +122,7 @@ export interface SentenceTtsPipelineDeps {
 	addCostEntry(entry: TtsCostEntry): void;
 	/** Receives an accepted, non-stale synthesis result for local diagnostics. */
 	onSynthesisResult?(result: TtsSynthesisResult): void | Promise<void>;
+	onPlaybackFailure?(): void;
 	/**
 	 * Surface the one-time local-voice-unavailable notice (runtime status +
 	 * localized message). The once-per-session guard lives in the pipeline.
@@ -185,7 +186,7 @@ export function createSentenceTtsPipeline(
 			void cascadeAvatar
 				.playAuthoredClip(clean, {
 					onPlaybackReady: revealText,
-					onPlaybackFailure: revealText,
+					onPlaybackFailure: () => { deps.onPlaybackFailure?.(); revealText(); },
 				})
 				.finally(endCascadeJob);
 			return;
@@ -280,6 +281,7 @@ export function createSentenceTtsPipeline(
 				utter.onerror = () => {
 					if (!isCurrentBrowserTurn()) return;
 					activeRequests.delete(reqId);
+					deps.onPlaybackFailure?.();
 					revealText();
 					deps.setSpeaking(false);
 					cascadeAvatar?.setSpeakingVisual(false);
@@ -288,6 +290,7 @@ export function createSentenceTtsPipeline(
 			} else {
 				Logger.warn(TAG, "Browser TTS not available");
 				activeRequests.delete(reqId);
+				deps.onPlaybackFailure?.();
 				revealText();
 			}
 		};
@@ -318,7 +321,7 @@ export function createSentenceTtsPipeline(
 		if (pcmStream && streamQueue?.enqueueOrderedStream) {
 			streamQueue.enqueueOrderedStream(seq, pcmStream, {
 				onPlaybackStart: revealText,
-				onPlaybackUnavailable: revealText,
+				onPlaybackUnavailable: () => { deps.onPlaybackFailure?.(); revealText(); },
 			});
 		}
 		const synthesize = () => {
@@ -445,7 +448,7 @@ export function createSentenceTtsPipeline(
 				} else {
 					deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
 						onPlaybackStart: revealText,
-						onPlaybackUnavailable: revealText,
+						onPlaybackUnavailable: () => { deps.onPlaybackFailure?.(); revealText(); },
 					});
 				}
 				if (ttsProviderForCost === "naia-local-voice") {
@@ -496,6 +499,7 @@ export function createSentenceTtsPipeline(
 					// Delete before reveal: the reveal wrapper settles the held
 					// expression only when no request is still counted active (#423).
 					activeRequests.delete(reqId);
+					deps.onPlaybackFailure?.();
 					revealText();
 					Logger.warn(
 						TAG,

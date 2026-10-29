@@ -11,7 +11,7 @@ vi.mock("../../lib/slides-host-bridge", () => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn(),
+	invoke: vi.fn().mockResolvedValue(undefined),
 	convertFileSrc: (path: string) =>
 		`asset://localhost/${encodeURIComponent(path)}`,
 }));

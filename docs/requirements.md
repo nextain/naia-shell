@@ -1446,3 +1446,10 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-SLIDES-ART.1** | Slides `package-public/icon.svg`는 512×512 둥근 앱 아이콘으로 작은 크기에서도 발표를 알아보게 한다. 같은 공개 폴더의 `thumbnail.svg`는 1280×720 데스크톱 발표 장면, `Naia Slides / 나이아 슬라이드`, 핵심 기능을 보여 준다. Vite slides 빌드의 `publicDir` 복사 산출물에 두 파일을 포함한다. 현재 앱 매니페스트 스키마에 미리보기 필드가 없으므로 `app.json`은 변경하지 않는다. | UC-SHELL-APP-EXPOSURE-024 | SVG 소스 검토·크기 확인; `pnpm build:slides` 산출물 확인; PNG 렌더 미리보기 | Done |
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
+### 설치 앱 공용 연결 및 설치 화면 (UC-INSTALLED-APP-HOST)
+
+| ID | 요구사항 | 상태 |
+|----|----------|------|
+| FR-INSTALLED-HOST.1 | 선언된 권한과 iframe 출처를 확인하여 설치 앱 질문을 선택 모델로 전달하고 앱 ID·요청 ID에 맞는 응답 또는 모든 조기 종료 사유를 돌려준다. 질문 길이를 제한한다. | Done |
+| FR-INSTALLED-HOST.2 | 권한을 선언한 설치 앱의 낭독·취소와 결과 및 셸 언어의 초기·변경 전달을 지원한다. Slides 연결을 유지한다. | Done |
+| FR-INSTALLED-HOST.3 | 설치 대화상자에서 스토어 다국어 이름·설명과 썸네일을 표시하고 매니페스트에 보존한다. 기본·빈 정보·진행·성공·오류·좁은 폭에서 상태, 복구, 키보드 접근성을 확인한다. | Done |

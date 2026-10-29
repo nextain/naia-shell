@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { INSTALLED_APP_ASK_EVENT, INSTALLED_APP_RESPONSE_EVENT, INSTALLED_APP_SPEAK_EVENT, INSTALLED_APP_CANCEL_EVENT, INSTALLED_APP_SPEECH_RESULT_EVENT } from "../../apps/generic-installed/installed-app-host-bridge";
 import { appRegistry } from "../../lib/app-registry";
 import {
 	clearCameraActions,
@@ -263,6 +264,229 @@ describe("ChatArea", () => {
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBeDefined();
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("routes a Cafe Lua Tarot reveal through the selected local main model and returns Naia's reply", async () => {
+		const tools = [
+			{
+				name: "skill_cafelua_tarot",
+				description: "Control a tarot reading.",
+				parameters: {
+					type: "object" as const,
+					properties: { action: { type: "string" } },
+				},
+				tier: 0,
+			},
+		];
+		appRegistry.register({
+			id: "test.app",
+			name: "Cafe Lua Tarot",
+			center: () => null,
+			tools,
+		});
+		useAppStore.setState({ activeApp: "test.app" });
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "openai",
+				model: "gpt-4o",
+				apiKey: "test-key",
+				ttsEnabled: true,
+				ttsProvider: "nextain",
+
+				enableTools: false,
+				locale: "en",
+			}),
+		);
+		const reply = vi.fn();
+		window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+
+		window.dispatchEvent(
+			new CustomEvent(INSTALLED_APP_ASK_EVENT, {
+				detail: {
+					appId: "test.app",
+					requestId: "reading-1-card-0",
+					prompt: "You are Naia. Interpret The Fool in the Present position.",
+				},
+			}),
+		);
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		expect(mockSendAppSkills).toHaveBeenCalledWith(
+			"test.app",
+			tools,
+			{ awaitAck: true },
+		);
+		expect(capturedRequests[0].provider).toMatchObject({
+			provider: "openai",
+			model: "gpt-4o",
+				apiKey: "test-key",
+		});
+		expect(capturedRequests[0].message).toContain("You are Naia");
+		capturedRequests[0].onChunk({
+			type: "text",
+			requestId: capturedRequests[0].requestId,
+			text: "A new path.",
+		});
+		capturedRequests[0].onChunk({ type: "tool_use", requestId: capturedRequests[0].requestId, toolCallId: "call-1", toolName: "skill_cafelua_tarot", args: {} });
+		capturedRequests[0].onChunk({ type: "text", requestId: capturedRequests[0].requestId, text: "A door opens." });
+		capturedRequests[0].onChunk({
+			type: "finish",
+			requestId: capturedRequests[0].requestId,
+		});
+		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toEqual({
+			appId: "test.app",
+			requestId: "reading-1-card-0",
+			text: "A new path.\n\nA door opens.",
+		});
+		await waitFor(() => expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalled());
+		window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		appRegistry.unregister("test.app");
+		localStorage.removeItem("naia-config");
+	});
+
+	it("returns an app error instead of claiming Naia received a reveal when tool registration fails", async () => {
+		appRegistry.register({
+			id: "test.app",
+			name: "Cafe Lua Tarot",
+			center: () => null,
+			tools: [
+				{
+					name: "skill_cafelua_tarot",
+					description: "Control a tarot reading.",
+					parameters: { type: "object", properties: {} },
+					tier: 0,
+				},
+			],
+		});
+		useAppStore.setState({ activeApp: "test.app" });
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "openai", model: "gpt-4o" }),
+		);
+		mockSendAppSkills.mockResolvedValueOnce(false);
+		const reply = vi.fn();
+		window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+		window.dispatchEvent(
+			new CustomEvent(INSTALLED_APP_ASK_EVENT, {
+				detail: {
+					appId: "test.app",
+					requestId: "reading-registration-error",
+					prompt: "Interpret this card.",
+				},
+			}),
+		);
+
+		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+		expect(capturedRequests).toHaveLength(0);
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+			requestId: "reading-registration-error",
+			error: expect.stringContaining("could not register"),
+		});
+		window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		appRegistry.unregister("test.app");
+		localStorage.removeItem("naia-config");
+	});
+
+	it("rejects a tarot request when the default model requires realtime voice", async () => {
+		useAppStore.setState({ activeApp: "test.app" });
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "naia-0.9-omni-24g" }));
+		const reply = vi.fn();
+		window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+		act(() => window.dispatchEvent(new CustomEvent(INSTALLED_APP_ASK_EVENT, {
+			detail: { appId: "test.app", requestId: "voice-reading", prompt: "Interpret this card." },
+		})));
+		expect(reply).toHaveBeenCalledOnce();
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toEqual({
+			appId: "test.app", requestId: "voice-reading", text: "",
+			error: "음성 대화 중에는 앱 응답을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.",
+		});
+		expect(capturedRequests).toHaveLength(0);
+		expect(mockSendAppSkills).not.toHaveBeenCalled();
+		window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		localStorage.removeItem("naia-config");
+	});
+
+	it.each([
+		["missing model", { provider: "openai", apiKey: "test-key" }],
+		["not logged in", { provider: "nextain", model: "model" }],
+		["missing API key", { provider: "openai", model: "model" }],
+	])("returns an empty app response for %s", async (_label, config) => {
+		localStorage.setItem("naia-config", JSON.stringify(config));
+		const reply = vi.fn();
+		window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+		act(() => window.dispatchEvent(new CustomEvent(INSTALLED_APP_ASK_EVENT, { detail: { appId: "test.app", requestId: "early", prompt: "Question" } })));
+		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ appId: "test.app", requestId: "early", text: "", error: expect.any(String) });
+		expect(capturedRequests).toHaveLength(0);
+		window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		localStorage.removeItem("naia-config");
+	});
+
+	it("settles an app request when its stream is cancelled", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "openai", model: "gpt-4o", apiKey: "test-key" }));
+		const reply = vi.fn();
+		window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		render(<ChatArea />);
+		act(() => window.dispatchEvent(new CustomEvent(INSTALLED_APP_ASK_EVENT, { detail: { appId: "test.app", requestId: "cancel", prompt: "Question" } })));
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		fireEvent.click(screen.getByTitle("ESC"));
+		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+		expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ appId: "test.app", requestId: "cancel", text: "", error: expect.any(String) });
+		window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+		localStorage.removeItem("naia-config");
+	});
+
+	it.each(["finished", "cancelled", "failed"])("reports installed app narration %s", async (status) => {
+		const originalSpeech = globalThis.speechSynthesis;
+		const originalUtterance = globalThis.SpeechSynthesisUtterance;
+		const utterances: Array<{ onstart: (() => void) | null; onend: (() => void) | null; onerror: (() => void) | null }> = [];
+		vi.stubGlobal("speechSynthesis", { speak: (utterance: typeof utterances[number]) => utterances.push(utterance), cancel: vi.fn() });
+		vi.stubGlobal("SpeechSynthesisUtterance", class { lang = ""; onstart: (() => void) | null = null; onend: (() => void) | null = null; onerror: (() => void) | null = null; });
+		localStorage.setItem("naia-config", JSON.stringify({ ttsEnabled: true, ttsProvider: "browser" }));
+		const result = vi.fn();
+		window.addEventListener(INSTALLED_APP_SPEECH_RESULT_EVENT, result);
+		render(<ChatArea />);
+		act(() => window.dispatchEvent(new CustomEvent(INSTALLED_APP_SPEAK_EVENT, { detail: { appId: "test.app", requestId: "speech", generation: 0, page: 1, text: "Hello." } })));
+		await waitFor(() => expect(utterances).toHaveLength(1));
+		act(() => {
+			utterances[0].onstart?.();
+			if (status === "finished") utterances[0].onend?.();
+			else if (status === "failed") utterances[0].onerror?.();
+			else window.dispatchEvent(new CustomEvent(INSTALLED_APP_CANCEL_EVENT, { detail: { appId: "test.app", requestId: "speech" } }));
+		});
+		expect(result).toHaveBeenCalledOnce();
+		expect((result.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ appId: "test.app", requestId: "speech", status });
+		window.removeEventListener(INSTALLED_APP_SPEECH_RESULT_EVENT, result);
+		localStorage.removeItem("naia-config");
+		vi.stubGlobal("speechSynthesis", originalSpeech);
+		vi.stubGlobal("SpeechSynthesisUtterance", originalUtterance);
+	});
+
+	it("waits for every sentence before reporting narration finished", async () => {
+		const originalSpeech = globalThis.speechSynthesis;
+		const originalUtterance = globalThis.SpeechSynthesisUtterance;
+		const utterances: Array<{ onstart: (() => void) | null; onend: (() => void) | null }> = [];
+		vi.stubGlobal("speechSynthesis", { speak: (utterance: typeof utterances[number]) => utterances.push(utterance), cancel: vi.fn() });
+		vi.stubGlobal("SpeechSynthesisUtterance", class { lang = ""; onstart: (() => void) | null = null; onend: (() => void) | null = null; onerror = null; });
+		localStorage.setItem("naia-config", JSON.stringify({ ttsEnabled: true, ttsProvider: "browser" }));
+		const result = vi.fn();
+		window.addEventListener(INSTALLED_APP_SPEECH_RESULT_EVENT, result);
+		render(<ChatArea />);
+		act(() => window.dispatchEvent(new CustomEvent(INSTALLED_APP_SPEAK_EVENT, { detail: { appId: "test.app", requestId: "multi", generation: 0, page: 1, text: "First sentence. Second sentence." } })));
+		await waitFor(() => expect(utterances).toHaveLength(2));
+		act(() => { utterances[0].onstart?.(); utterances[0].onend?.(); });
+		expect(result).not.toHaveBeenCalled();
+		act(() => { utterances[1].onstart?.(); utterances[1].onend?.(); });
+		expect((result.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ appId: "test.app", requestId: "multi", status: "finished" });
+		window.removeEventListener(INSTALLED_APP_SPEECH_RESULT_EVENT, result);
+		localStorage.removeItem("naia-config");
+		vi.stubGlobal("speechSynthesis", originalSpeech);
+		vi.stubGlobal("SpeechSynthesisUtterance", originalUtterance);
 	});
 
 	it("blocks local Ollama chat when its fresh runtime status is unreserved", async () => {
