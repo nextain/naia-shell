@@ -269,8 +269,6 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	// Gateway TTS routing (UI-side routing, not agent)
 	"gatewayTtsAuto",
 	"gatewayTtsMode",
-	// Locale (agent receives per-request via IPC systemPrompt)
-	"locale",
 	// User display ID (not used by agent directly)
 	"naiaUserId",
 ]);
@@ -642,11 +640,15 @@ async function writeNaiaUiConfigNow(
 		// Preserve existing selections when a caller supplies only the UI fields it
 		// owns. An empty file is a valid first-run state; I/O and malformed data
 		// return false here so the enclosing config transaction can reject it.
-		const json = JSON.stringify(
-			mergeUiConfigPatch(await readNaiaUiConfig(adkPath), config),
-			null,
-			2,
+		const uiConfig = mergeUiConfigPatch(
+			await readNaiaUiConfig(adkPath),
+			config,
 		);
+		// Older Shell versions incorrectly stored locale in ui-config.json.
+		// Agent config is now authoritative, so remove the stale duplicate on the
+		// next successful UI/config save.
+		delete uiConfig.locale;
+		const json = JSON.stringify(uiConfig, null, 2);
 		await invoke("write_naia_ui_config", {
 			adkPath,
 			json,

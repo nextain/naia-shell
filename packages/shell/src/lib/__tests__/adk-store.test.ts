@@ -475,7 +475,7 @@ describe("writeNaiaConfig", () => {
 			command === "read_naia_ui_config" ? "" : undefined,
 		);
 
-		await writeNaiaConfig({ provider: "openai", model: "gpt-4o" });
+		await writeNaiaConfig({ provider: "openai", model: "gpt-4o", locale: "en" });
 
 		expect(mockInvoke).toHaveBeenCalledWith("write_naia_config", {
 			adkPath: WIN_ADK,
@@ -483,13 +483,37 @@ describe("writeNaiaConfig", () => {
 				{
 					provider: "openai",
 					model: "gpt-4o",
+					locale: "en",
 					NAIA_MAIN_PROVIDER: "openai",
 					NAIA_MAIN_MODEL: "gpt-4o",
+					NAIA_LOCALE: "en",
 				},
 				null,
 				2,
 			),
 		});
+	});
+
+	it("migrates a stale locale out of ui-config when saving agent locale", async () => {
+		await setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_ui_config") return '{"locale":"ko"}';
+			if (command === "detect_gpu_vram") return null;
+			return undefined;
+		});
+
+		await writeNaiaConfig({ provider: "gemini", locale: "en" });
+
+		const configCall = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_config",
+		)!;
+		const uiCall = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_ui_config",
+		)!;
+		expect(JSON.parse((configCall[1] as { json: string }).json).locale).toBe("en");
+		expect(JSON.parse((uiCall[1] as { json: string }).json)).not.toHaveProperty(
+			"locale",
+		);
 	});
 
 	it("persists config, UI config, slots manifest, then reloads the agent in order", async () => {
@@ -945,7 +969,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 			vllmTtsHost: "http://localhost:22600", // 로컬 보이스 호스트 → 저장(회귀 대상)
 			appPosition: "left", // 앱 레이아웃 → 저장
 			bgmVolume: 0.5, // BGM 볼륨 → 저장
-			locale: "ko", // 로케일 → 저장
+			locale: "ko", // agent config 에서 관리
 			uiPreferences: { chatMode: "app" }, // grouped shell preferences → 저장
 		});
 		const [, arg] = mockInvoke.mock.calls.find(
@@ -958,7 +982,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		expect(written.vllmTtsHost).toBe("http://localhost:22600");
 		expect(written.appPosition).toBe("left");
 		expect(written.bgmVolume).toBe(0.5);
-		expect(written.locale).toBe("ko");
+		expect(written).not.toHaveProperty("locale");
 		expect(written.uiPreferences).toEqual({ chatMode: "app" });
 		// agent 키·시크릿은 ui-config 에 안 들어간다
 		expect(written).not.toHaveProperty("provider");

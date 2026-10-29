@@ -3181,10 +3181,29 @@ export function SettingsTab() {
 	}
 
 	async function handleLocaleChange(id: Locale) {
+		setError("");
 		await setLocale(id);
 		setLocaleState(id);
 		// 활성 음성 세션(naia-omni)에 새 인식 언어를 즉시 핀(재연결 없음). ChatArea 이 수신.
 		window.dispatchEvent(new CustomEvent("naia:locale-change", { detail: id }));
+		// The locale picker changes the screen immediately and has no Apply button
+		// on this tab. Persist the same choice now so the agent's config.json and
+		// the next boot cannot keep an older locale.
+		const current = loadConfig();
+		if (!current) return;
+		const updated = { ...current, locale: id };
+		saveConfig(updated);
+		try {
+			await writeNaiaConfig(updated as unknown as Record<string, unknown>);
+		} catch (error) {
+			Logger.error("SettingsTab", "Failed to persist locale selection", {
+				locale: id,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			setError(
+				`${t("settings.saveFailed")}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 	}
 
 	function handleThemeChange(id: ThemeId) {

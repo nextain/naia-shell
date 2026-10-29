@@ -605,12 +605,12 @@ describe("SettingsTab", () => {
 
 		await waitFor(() => expect(picker).toHaveTextContent("한국어"));
 		expect(screen.getByText("언어")).toBeDefined();
-		// Settings keeps the established transaction boundary: the language is
-		// previewed immediately, then persisted with the page's Save action.
+		// The language picker has no Save action in General, so its locale is
+		// persisted immediately with the previewed screen language.
 		expect(
 			JSON.parse(localStorage.getItem("naia-config") ?? "{}"),
 		).toMatchObject({
-			locale: "en",
+			locale: "ko",
 		});
 	});
 
@@ -4513,6 +4513,54 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 			const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
 			expect(saved.thinkingLevel).toBe("high");
 			expect(saved.enableThinking).toBe(true);
+		});
+	});
+
+	it("immediately persists the selected screen locale to the agent config", async () => {
+		await setLocale("ko");
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		fireEvent.click(screen.getByRole("button", { name: "언어" }));
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		await waitFor(() =>
+			expect(document.getElementById("locale-select")).toHaveAttribute(
+				"data-value",
+				"en",
+			),
+		);
+
+		await waitFor(() => {
+			expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+				"en",
+			);
+			const configWrite = mockInvoke.mock.calls.find(
+				([command]) => command === "write_naia_config",
+			);
+			expect(configWrite).toBeTruthy();
+			const payload = JSON.parse(
+				(configWrite?.[1] as { json: string }).json,
+			);
+			expect(payload.locale).toBe("en");
+			expect(payload.NAIA_LOCALE).toBe("en");
+			const uiConfigWrite = mockInvoke.mock.calls.find(
+				([command]) => command === "write_naia_ui_config",
+			);
+			expect(uiConfigWrite).toBeTruthy();
+			expect(
+				JSON.parse((uiConfigWrite?.[1] as { json: string }).json),
+			).not.toHaveProperty("locale");
 		});
 	});
 
