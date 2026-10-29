@@ -70,6 +70,8 @@ jobs:
     timeout-minutes: 150
     env:
       NAIA_UNSIGNED: ${{ inputs.internal_unsigned == true || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.ref, 'refs/tags/')) }}
+      MACOS_SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+      MACOS_NOTARIZATION_CONFIGURED: ${{ secrets.APPLE_API_KEY_P8 != '' }}
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -191,13 +193,119 @@ jobs:
           NAIA_TAURI_NO_BUNDLE: ${{ (matrix.platform == 'win32' || matrix.platform == 'darwin') && '1' || '0' }}
         run: pnpm -C packages/shell run tauri:build:bundle
 
+      - name: Prepare macOS Developer ID keychain
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/naia-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          chmod 600 "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          rm -f "$CERTIFICATE_PATH"
+          echo "MACOS_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Prepare macOS notarization key
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          API_KEY_PATH="$RUNNER_TEMP/naia-app-store-connect.p8"
+          umask 077
+          printf '%s' "$APPLE_API_KEY_P8" > "$API_KEY_PATH"
+          chmod 600 "$API_KEY_PATH"
+          {
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$API_KEY_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Report macOS signing mode
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED != 'true'
+        run: echo "공증 열쇠 없음, 서명만"
+
       - name: Bundle macOS application from preserved app build
         if: matrix.platform == 'darwin'
         shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_KEY: ''
+          APPLE_API_ISSUER: ''
+          APPLE_API_KEY_PATH: ''
+        run: pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json
+
+      - name: Sign every macOS app Mach-O with hardened runtime
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
+          set -euo pipefail
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle/macos"
+          APP_PATHS=("$BUNDLE_DIR"/*.app)
+          test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
+          APP="${APP_PATHS[0]}"
+          ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
+          while IFS= read -r -d '' path; do
+            if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
+            if [[ "$path" == "$APP/Contents/MacOS/"* || "$path" == "$APP/Contents/Resources/node" ]]; then
+              codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
+            else
+              codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
+            fi
+          done < <(find "$APP/Contents" -type f -print0 | sort -z -r)
+          codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Notarize and staple macOS app
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATHS=("packages/shell/src-tauri/target/release/bundle/macos"/*.app)
+          test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
+          ZIP="$RUNNER_TEMP/Naia-app-notarization.zip"
+          ditto -c -k --keepParent "${APP_PATHS[0]}" "$ZIP"
+          xcrun notarytool submit "$ZIP" --wait \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER"
+          xcrun stapler staple "${APP_PATHS[0]}"
+          spctl -a -vv -t exec "${APP_PATHS[0]}"
+          xcrun stapler validate "${APP_PATHS[0]}"
+          rm -f "$ZIP"
+
+      - name: Build and notarize macOS DMG
+        if: matrix.platform == 'darwin'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_KEY: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true' && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_ISSUER: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY_PATH: ${{ env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true' && env.APPLE_API_KEY_PATH || '' }}
+        run: |
+          set -euo pipefail
           set -o pipefail
-          LOG_FILE="$RUNNER_TEMP/tauri-macos-bundle.log"
-          if ! pnpm -C packages/shell exec tauri bundle --verbose \
+          LOG_FILE="$RUNNER_TEMP/tauri-macos-dmg.log"
+          if ! pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
             --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
             if grep -q "bundle_dmg" "$LOG_FILE"; then
               echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
@@ -232,11 +340,49 @@ jobs:
                 packages/shell/src-tauri/target/release/bundle/macos/Naia_*.dmg \
                 packages/shell/src-tauri/target/release/bundle/dmg/rw.*.dmg \
                 packages/shell/src-tauri/target/release/bundle/dmg/Naia_*.dmg
-              pnpm -C packages/shell exec tauri bundle --verbose \
+              pnpm -C packages/shell exec tauri bundle --bundles dmg --verbose \
                 --config src-tauri/tauri.conf.generated.json
             else
               exit 1
             fi
+          fi
+
+      - name: Verify macOS code signature
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle/macos"
+          APP_PATHS=("$BUNDLE_DIR"/*.app)
+          test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
+          APP="${APP_PATHS[0]}"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          while IFS= read -r -d '' path; do
+            if file -b "$path" | grep -q 'Mach-O'; then
+              codesign --verify --strict --verbose=2 "$path"
+            fi
+          done < <(find "$APP/Contents" -type f -print0)
+
+      - name: Verify macOS notarization and stapling
+        if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATHS=("packages/shell/src-tauri/target/release/bundle/macos"/*.app)
+          test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
+          spctl -a -vv -t exec "${APP_PATHS[0]}"
+          xcrun stapler validate "${APP_PATHS[0]}"
+          DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
+          test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
+          xcrun stapler validate "${DMG_PATHS[0]}"
+
+      - name: Clean macOS signing credentials
+        if: always() && matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" "$RUNNER_TEMP/Naia-app-notarization.zip"
+          if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
           fi
 
       - name: Preserve macOS outputs after bundle attempt
@@ -745,6 +891,10 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: read
+    env:
+      NAIA_UNSIGNED: ${{ inputs.internal_unsigned == true || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.ref, 'refs/tags/')) }}
+      MACOS_SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+      MACOS_NOTARIZATION_CONFIGURED: ${{ secrets.APPLE_API_KEY_P8 != '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -767,6 +917,97 @@ jobs:
           --x64-app universal-input/x64-app/Naia.app
           --arm64-app universal-input/arm64-app/Naia.app
           --output-app universal-output/Naia.app
+
+      - name: Prepare Universal macOS Developer ID keychain
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/naia-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/naia-signing.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          chmod 600 "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          rm -f "$CERTIFICATE_PATH"
+          echo "MACOS_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Prepare Universal macOS notarization key
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          API_KEY_PATH="$RUNNER_TEMP/naia-app-store-connect.p8"
+          umask 077
+          printf '%s' "$APPLE_API_KEY_P8" > "$API_KEY_PATH"
+          chmod 600 "$API_KEY_PATH"
+          {
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$API_KEY_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Report Universal macOS signing mode
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED != 'true'
+        run: echo "공증 열쇠 없음, 서명만"
+
+      - name: Sign every Universal Mach-O with hardened runtime
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP="universal-output/Naia.app"
+          ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
+          while IFS= read -r -d '' path; do
+            if ! file -b "$path" | grep -q 'Mach-O'; then continue; fi
+            if [[ "$path" == "$APP/Contents/MacOS/"* || "$path" == "$APP/Contents/Resources/node" ]]; then
+              codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$path"
+            else
+              codesign --force --timestamp --options runtime --sign "$APPLE_SIGNING_IDENTITY" "$path"
+            fi
+          done < <(find "$APP/Contents" -type f -print0 | sort -z -r)
+          codesign --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Notarize and staple Universal app
+        if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true' && env.MACOS_NOTARIZATION_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="universal-output/Naia.app"
+          ZIP="$RUNNER_TEMP/Naia-universal-notarization.zip"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          xcrun notarytool submit "$ZIP" --wait \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER"
+          xcrun stapler staple "$APP"
+          spctl -a -vv -t exec "$APP"
+          xcrun stapler validate "$APP"
+          rm -f "$ZIP"
+
+      - name: Clean Universal macOS signing credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/naia-app-store-connect.p8" "$RUNNER_TEMP/naia-signing.p12" "$RUNNER_TEMP/Naia-universal-notarization.zip"
+          if [ -n "${MACOS_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$MACOS_SIGNING_KEYCHAIN" || true
+          fi
       - name: Archive Universal app bundle
         shell: bash
         run: tar -C universal-output -czf universal-output/Naia_universal.app.tar.gz Naia.app
