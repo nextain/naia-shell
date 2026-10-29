@@ -3,6 +3,7 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
+use tauri::Manager;
 
 use crate::data_home::{self, DataHomeChild};
 
@@ -34,6 +35,7 @@ struct StoreSignatureReceipt {
 
 const STORE_SIGNATURE_RECEIPT: &str = ".naia-store-signature.json";
 const STORE_SIGNATURE_ARTIFACT: &str = ".naia-store-artifact.zip";
+const STORE_ENTITLEMENT_GRANTS_DIR: &str = "store-entitlement-grants";
 
 fn is_false(value: &bool) -> bool {
     !value
@@ -1107,9 +1109,10 @@ fn list_installed_from_root_with_signing_key(
 
         // Load inline SVG if iconUrl is specified
         if let Some(ref icon_url) = manifest.icon_url.clone() {
-            let svg_path = entry.path().join(icon_url);
-            if let Ok(svg) = std::fs::read_to_string(&svg_path) {
-                manifest.icon_svg = Some(svg);
+            if let Some(svg_path) = safe_app_file(&entry.path(), icon_url) {
+                if let Ok(svg) = std::fs::read_to_string(svg_path) {
+                    manifest.icon_svg = Some(svg);
+                }
             }
         }
 
@@ -1451,6 +1454,62 @@ mod tests {
             );
             std::fs::remove_file(link).unwrap();
         }
+    }
+
+    #[test]
+    fn entitlement_grant_timestamp_is_persisted_and_future_values_are_rejected() {
+        let app_data = tempfile::tempdir().unwrap();
+        persist_store_entitlement_grant(app_data.path(), "signed-game", 1_000).unwrap();
+        assert_eq!(load_store_entitlement_grant(app_data.path(), "signed-game", 1_000), Some(1_000));
+        assert_eq!(load_store_entitlement_grant(app_data.path(), "signed-game", 999), None);
+        assert_eq!(load_store_entitlement_grant(app_data.path(), "never-approved", 1_000), None);
+    }
+
+    #[test]
+    fn entitlement_grant_filename_cannot_escape_app_data() {
+        let app_data = tempfile::tempdir().unwrap();
+        assert!(persist_store_entitlement_grant(app_data.path(), "../outside", 1_000).is_err());
+        assert!(!app_data.path().parent().unwrap().join("outside.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn installed_icon_loading_rejects_parent_and_symlink_paths() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let apps = apps_root(home.path());
+        let app_dir = write_app(&apps, "icon-check", "icon-check");
+        let outside = home.path().join("outside.svg");
+        std::fs::write(&outside, "<svg>outside</svg>").unwrap();
+        std::fs::write(
+            app_dir.join("app.json"),
+            r#"{"id":"icon-check","name":"Icon check","iconUrl":"../../../outside.svg"}"#,
+        )
+        .unwrap();
+        let manifest = list_installed_from_root_with_signing_key(
+            home.path(),
+            apps.clone(),
+            PUBLISHED_APP_SIGNING_PUBLIC_KEY,
+        )
+        .unwrap()
+        .remove(0);
+        assert!(manifest.icon_svg.is_none());
+
+        std::fs::write(
+            app_dir.join("app.json"),
+            r#"{"id":"icon-check","name":"Icon check","iconUrl":"icon.svg"}"#,
+        )
+        .unwrap();
+        symlink(&outside, app_dir.join("icon.svg")).unwrap();
+        let manifest = list_installed_from_root_with_signing_key(
+            home.path(),
+            apps,
+            PUBLISHED_APP_SIGNING_PUBLIC_KEY,
+        )
+        .unwrap()
+        .remove(0);
+        assert!(manifest.icon_svg.is_none());
     }
 
     #[test]
@@ -2500,7 +2559,63 @@ pub fn app_store_has_entitlement(
     let entitlement: StoreEntitlement = response
         .json()
         .map_err(|e| format!("Invalid entitlement: {e}"))?;
-    Ok(entitlement.app_id == app_id && entitlement.status == "GRANTED")
+    let granted = entitlement.app_id == app_id && entitlement.status == "GRANTED";
+    if granted {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "System clock is before Unix epoch".to_string())?
+            .as_millis()
+            .min(u64::MAX as u128) as u64;
+        let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        persist_store_entitlement_grant(&app_data, &app_id, now_ms)?;
+    }
+    Ok(granted)
+}
+
+#[tauri::command]
+pub fn app_store_last_entitlement_grant(
+    app: tauri::AppHandle,
+    app_id: String,
+) -> Result<Option<u64>, String> {
+    validate_store_app_id(&app_id)?;
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "System clock is before Unix epoch".to_string())?
+        .as_millis()
+        .min(u64::MAX as u128) as u64;
+    Ok(load_store_entitlement_grant(&app_data, &app_id, now_ms))
+}
+
+fn store_entitlement_grant_path(app_data: &std::path::Path, app_id: &str) -> std::path::PathBuf {
+    app_data
+        .join(STORE_ENTITLEMENT_GRANTS_DIR)
+        .join(format!("{app_id}.json"))
+}
+
+fn persist_store_entitlement_grant(
+    app_data: &std::path::Path,
+    app_id: &str,
+    timestamp_ms: u64,
+) -> Result<(), String> {
+    validate_store_app_id(app_id)?;
+    let dir = app_data.join(STORE_ENTITLEMENT_GRANTS_DIR);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not save entitlement grant: {e}"))?;
+    let path = store_entitlement_grant_path(app_data, app_id);
+    let bytes = serde_json::to_vec(&timestamp_ms).map_err(|e| e.to_string())?;
+    std::fs::write(path, bytes).map_err(|e| format!("Could not save entitlement grant: {e}"))
+}
+
+fn load_store_entitlement_grant(
+    app_data: &std::path::Path,
+    app_id: &str,
+    now_ms: u64,
+) -> Option<u64> {
+    let timestamp = serde_json::from_slice::<u64>(
+        &std::fs::read(store_entitlement_grant_path(app_data, app_id)).ok()?,
+    )
+    .ok()?;
+    (timestamp <= now_ms).then_some(timestamp)
 }
 
 fn validate_store_app_id(app_id: &str) -> Result<(), String> {

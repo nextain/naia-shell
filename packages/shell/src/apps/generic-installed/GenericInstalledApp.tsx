@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import {
 	resolveAppToolTargetOrigin,
-	validateAppToolArgs,
+	validateAppToolParameters,
 } from "../../lib/app-registry";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
 import { normalizeTauriAssetUrl } from "../../lib/asset-url";
@@ -73,7 +73,7 @@ export function createGenericInstalledApp(
 
 			const unsubs = tools.map((tool) =>
 				naia.onToolCall(tool.name, async (args) => {
-					const invalidArgs = validateAppToolArgs(args);
+					const invalidArgs = validateAppToolParameters(tool, args);
 					if (invalidArgs) throw new Error(invalidArgs);
 					const iframe = iframeRef.current;
 					const contentWindow = iframe?.contentWindow;

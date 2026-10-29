@@ -20,7 +20,11 @@ const TAURI_MOCK = `
   window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
     if (cmd === "plugin:event|listen") { if(!eventListeners.has(args.event)) eventListeners.set(args.event, []); eventListeners.get(args.event).push(args.handler); return args.handler; }
     if (cmd === "plugin:event|emit" || cmd === "plugin:event|unlisten") return null;
+    if (cmd === "plugin:store|get") return args && args.key === "naiaKey" ? ["e2e-mock-key", true] : [null, false];
     if (cmd === "get_distribution_channel") return "standard";
+    if (cmd === "app_list_installed") return window.__NAIA_INSTALLED_APPS || [];
+    if (cmd === "app_store_has_entitlement") return true;
+    if (cmd === "app_verify_installed_store_app") return true;
     if (cmd === "plugin:opener|open_url") { window.__NAIA_OPENED_URLS.push(args.url); return null; }
     if (cmd === "write_naia_config") return null;
     return undefined;
@@ -28,16 +32,26 @@ const TAURI_MOCK = `
 })();
 `;
 
-async function openShell(page: Page): Promise<void> {
+async function openShell(
+	page: Page,
+	installedApps: Array<Record<string, unknown>> = [],
+): Promise<void> {
 	await page.addInitScript(TAURI_MOCK);
 	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
 	await page.addInitScript({ content: SEED_ADK_PATH });
+	await page.addInitScript((apps) => {
+		(
+			window as Window & { __NAIA_INSTALLED_APPS?: unknown[] }
+		).__NAIA_INSTALLED_APPS = apps;
+	}, installedApps);
 	await page.addInitScript(() => {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
 				provider: "nextain",
 				model: "deepseek-v4-flash",
+				naiaKey: "e2e-mock-key",
+				apiKey: "e2e-mock-key",
 				enableTools: false,
 				ttsEnabled: false,
 				locale: "en",
@@ -51,7 +65,7 @@ async function openShell(page: Page): Promise<void> {
 	await page.route("**/v1/models", (route) =>
 		route.fulfill({ status: 503, contentType: "application/json", body: "[]" }),
 	);
-	await page.goto("/");
+	await page.goto("/", { waitUntil: "commit" });
 	await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
 }
 
@@ -114,5 +128,31 @@ test.describe("0.2.4 App Store and NVA entry points", () => {
 		expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewportWidth);
 		expect(layout.actionLeft).toBeGreaterThanOrEqual(0);
 		expect(layout.actionRight).toBeLessThanOrEqual(layout.viewportWidth);
+	});
+
+	test("renders a Store app SVG icon as a contained image at narrow width", async ({
+		page,
+	}) => {
+		await openShell(page, [
+			{
+				id: "visual-store-icon",
+				name: "Visual Store Icon",
+				store_signature_verified: true,
+				icon_svg:
+					'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="red"/></svg>',
+			},
+		]);
+		const button = page.locator(
+			'.app-bar-tab[data-app-id="visual-store-icon"]',
+		);
+		const icon = button.locator("img.app-bar-tab-icon--svg");
+		await expect(button).toBeVisible();
+		await expect(icon).toHaveAttribute("alt", "");
+		await expect(icon).toHaveAttribute("src", /^data:image\/svg\+xml,/);
+		await page.setViewportSize({ width: 360, height: 800 });
+		const bounds = await icon.boundingBox();
+		expect(bounds).not.toBeNull();
+		expect(bounds!.width).toBe(16);
+		expect(bounds!.height).toBe(16);
 	});
 });

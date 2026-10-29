@@ -252,7 +252,10 @@ export class ActiveAppBridge implements NaiaContextBridge {
 		toolName: string,
 		args: Record<string, unknown>,
 	): Promise<string> {
-		const validationError = validateAppToolArgs(args);
+		const tool = appRegistry
+			.get(this.appId)
+			?.tools?.find((item) => item.name === toolName);
+		const validationError = validateAppToolParameters(tool, args);
 		if (validationError) throw new Error(validationError);
 		const handler = this.handlers.get(toolName);
 		if (!handler) return `No handler registered for tool: ${toolName}`;

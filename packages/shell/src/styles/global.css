@@ -628,16 +628,10 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 }
 
 .app-bar-tab-icon--svg {
-	display: flex;
-	align-items: center;
-	justify-content: center;
+	display: block;
 	width: 16px;
 	height: 16px;
-}
-
-.app-bar-tab-icon--svg svg {
-	width: 16px;
-	height: 16px;
+	object-fit: contain;
 }
 
 .app-bar-tab-favicon {

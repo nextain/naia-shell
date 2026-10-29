@@ -529,7 +529,7 @@ describe("app-loader", () => {
 			);
 		});
 
-		it("allows offline grace through 72 hours from receipt and blocks after it", async () => {
+		it("blocks first-install offline use without a prior Gateway grant, regardless of receipt time", async () => {
 			const now = Date.now();
 			const dateNow = vi.spyOn(Date, "now").mockReturnValue(now);
 			mockInvoke.mockImplementation((command: string) =>
@@ -544,9 +544,6 @@ describe("app-loader", () => {
 						])
 					: Promise.reject(new Error("offline")),
 			);
-			await loadInstalledApps();
-			expect(appRegistry.get("grace-test")?.storeSignatureVerified).toBe(true);
-			dateNow.mockReturnValue(now + 73 * 60 * 60 * 1000);
 			await loadInstalledApps();
 			expect(appRegistry.get("grace-test")?.storeSignatureVerified).toBe(false);
 			dateNow.mockRestore();
@@ -566,15 +563,13 @@ describe("app-loader", () => {
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
 					? Promise.resolve(listing())
-					: offline
-						? Promise.reject(new Error("offline"))
-						: Promise.resolve(true),
+					: command === "app_store_last_entitlement_grant"
+						? Promise.resolve(now)
+						: offline
+							? Promise.reject(new Error("offline"))
+							: Promise.resolve(true),
 			);
 			await loadInstalledApps();
-			const saved = JSON.parse(
-				storage.get("naia.store.entitlement.last-granted.v1") ?? "{}",
-			);
-			expect(saved["persisted-grace-test"]).toBe(now);
 			invalidateInstalledApps();
 			offline = true;
 			const dateNow = vi
@@ -587,7 +582,7 @@ describe("app-loader", () => {
 			dateNow.mockRestore();
 		});
 
-		it("applies the same bounded grace to entitlement timeouts", async () => {
+		it("blocks entitlement timeouts when Rust has no previous Gateway grant", async () => {
 			vi.useFakeTimers();
 			const issuedAt = Date.now();
 			mockInvoke.mockImplementation((command: string) =>
@@ -600,14 +595,16 @@ describe("app-loader", () => {
 								store_signature_issued_at_ms: issuedAt,
 							},
 						])
-					: new Promise(() => {}),
+					: command === "app_store_last_entitlement_grant"
+						? Promise.resolve(null)
+						: new Promise(() => {}),
 			);
 			const loading = loadInstalledApps();
 			await vi.advanceTimersByTimeAsync(2_001);
 			await loading;
 			expect(
 				appRegistry.get("timeout-grace-test")?.storeSignatureVerified,
-			).toBe(true);
+			).toBe(false);
 			vi.useRealTimers();
 		});
 
@@ -650,7 +647,7 @@ describe("app-loader", () => {
 			).toBe(false);
 		});
 
-		it("rechecks one Store app in Rust and the entitlement after the ten-minute dispatch window", async () => {
+		it("rechecks signature and entitlement after the 60-second execution window", async () => {
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
 					? Promise.resolve([
@@ -667,9 +664,7 @@ describe("app-loader", () => {
 			);
 			await loadInstalledApps();
 			const now = Date.now();
-			const dateNow = vi
-				.spyOn(Date, "now")
-				.mockReturnValue(now + 10 * 60_000 + 1);
+			const dateNow = vi.spyOn(Date, "now").mockReturnValue(now + 60_000 + 1);
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_verify_installed_store_app"
 					? Promise.resolve(false)
@@ -693,6 +688,38 @@ describe("app-loader", () => {
 			}
 		});
 
+		it("does not let a ten-minute list cache refresh the execution entitlement window", async () => {
+			let entitled = true;
+			mockInvoke.mockImplementation((command: string) =>
+				command === "app_list_installed"
+					? Promise.resolve([
+							{
+								id: "list-cache-execution-test",
+								name: "Cached list result",
+								store_signature_verified: true,
+								tools: [{ name: "skill_list_cache_test", description: "Tool" }],
+							},
+						])
+					: command === "app_store_has_entitlement"
+						? Promise.resolve(entitled)
+						: Promise.resolve(true),
+			);
+			await loadInstalledApps();
+			const firstCheck = Date.now();
+			const dateNow = vi
+				.spyOn(Date, "now")
+				.mockReturnValue(firstCheck + 2 * 60_000);
+			await loadInstalledApps();
+			entitled = false;
+			expect(
+				await ensureStoreAppVerificationFresh("list-cache-execution-test"),
+			).toBe(false);
+			expect(
+				appRegistry.get("list-cache-execution-test")?.storeSignatureVerified,
+			).toBe(false);
+			dateNow.mockRestore();
+		});
+
 		it("blocks execution and downgrades the tool when entitlement is denied at dispatch", async () => {
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_list_installed"
@@ -710,7 +737,7 @@ describe("app-loader", () => {
 					: Promise.resolve(true),
 			);
 			await loadInstalledApps();
-			vi.spyOn(Date, "now").mockReturnValue(Date.now() + 10 * 60_000 + 1);
+			vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000 + 1);
 			mockInvoke.mockImplementation((command: string) =>
 				command === "app_verify_installed_store_app"
 					? Promise.resolve(true)
@@ -894,11 +921,34 @@ describe("app tool IPC argument guard", () => {
 
 		const bridge = new ActiveAppBridge("args-test");
 		const handler = vi.fn(() => "delivered");
+		appRegistry.register({
+			id: "args-test",
+			name: "Args test",
+			center: FakeCenterapp,
+			tools: [
+				{
+					name: "skill_args_test",
+					description: "Requires a string query",
+					parameters: {
+						type: "object",
+						required: ["query"],
+						properties: { query: { type: "string" } },
+					},
+				},
+			],
+		});
 		bridge.onToolCall("skill_args_test", handler);
+		await expect(bridge.callTool("skill_args_test", {})).rejects.toThrow(
+			"required",
+		);
+		await expect(
+			bridge.callTool("skill_args_test", { query: 42 }),
+		).rejects.toThrow("type");
 		await expect(
 			bridge.callTool("skill_args_test", { value: "x".repeat(65 * 1024) }),
 		).rejects.toThrow("64 KB");
 		expect(handler).not.toHaveBeenCalled();
+		appRegistry.unregister("args-test");
 	});
 
 	it("stops target-origin parsing failures instead of using wildcard", () => {

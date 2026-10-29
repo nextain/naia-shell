@@ -67,45 +67,55 @@ export interface InstalledAppManifest {
 let installedAppsSettled = false;
 let installedAppsLoadGeneration = 0;
 const ENTITLEMENT_CACHE_MS = 10 * 60 * 1000;
+const EXECUTION_RECHECK_CACHE_MS = 60 * 1000;
 const ENTITLEMENT_CHECK_TIMEOUT_MS = 2_000;
 const ENTITLEMENT_GRACE_MS = 72 * 60 * 60 * 1000;
-const ENTITLEMENT_SUCCESS_KEY = "naia.store.entitlement.last-granted.v1";
 const entitlementCache = new Map<
 	string,
 	{ value: boolean; checkedAt: number }
 >();
 const storeSignatureCheckedAt = new Map<string, number>();
+const executionEntitlementCheckedAt = new Map<string, number>();
 
 /** Verify cached Store trust against current Rust filesystem state before dispatch. */
 export async function ensureStoreAppVerificationFresh(
 	appId: string,
 ): Promise<boolean> {
-	const lastChecked = storeSignatureCheckedAt.get(appId) ?? 0;
-	if (Date.now() - lastChecked < ENTITLEMENT_CACHE_MS) {
+	const lastChecked = executionEntitlementCheckedAt.get(appId) ?? 0;
+	if (Date.now() - lastChecked < EXECUTION_RECHECK_CACHE_MS) {
 		return appRegistry.get(appId)?.storeSignatureVerified === true;
 	}
 	try {
-		const verified = await invoke<boolean>("app_verify_installed_store_app", {
-			appId,
-		});
-		if (!verified) {
-			appRegistry.updateStoreSignatureVerified(appId, false);
-			storeSignatureCheckedAt.delete(appId);
-			return false;
+		const lastSignatureCheck = storeSignatureCheckedAt.get(appId) ?? 0;
+		if (Date.now() - lastSignatureCheck >= EXECUTION_RECHECK_CACHE_MS) {
+			const verified = await invoke<boolean>("app_verify_installed_store_app", {
+				appId,
+			});
+			if (!verified) {
+				appRegistry.updateStoreSignatureVerified(appId, false);
+				storeSignatureCheckedAt.delete(appId);
+				executionEntitlementCheckedAt.delete(appId);
+				return false;
+			}
+			storeSignatureCheckedAt.set(appId, Date.now());
 		}
 		const app = appRegistry.get(appId);
 		if (!app || app.storeSignatureVerified !== true) return false;
-		const entitled = await recheckStoreEntitlement({
-			id: appId,
-			store_signature_verified: true,
-			store_signature_issued_at_ms: app.storeSignatureIssuedAtMs,
-		});
+		const entitled = await recheckStoreEntitlement(
+			{
+				id: appId,
+				store_signature_verified: true,
+				store_signature_issued_at_ms: app.storeSignatureIssuedAtMs,
+			},
+			EXECUTION_RECHECK_CACHE_MS,
+		);
 		if (!entitled) {
 			appRegistry.updateStoreSignatureVerified(appId, false);
 			storeSignatureCheckedAt.delete(appId);
+			executionEntitlementCheckedAt.delete(appId);
 			return false;
 		}
-		storeSignatureCheckedAt.set(appId, Date.now());
+		executionEntitlementCheckedAt.set(appId, Date.now());
 		return true;
 	} catch (err) {
 		Logger.warn("AppLoader", "Store app execution recheck failed", {
@@ -128,10 +138,11 @@ async function recheckStoreEntitlement(
 		InstalledAppManifest,
 		"id" | "store_signature_verified" | "store_signature_issued_at_ms"
 	>,
+	cacheTtlMs = ENTITLEMENT_CACHE_MS,
 ): Promise<boolean> {
 	if (manifest.store_signature_verified !== true) return false;
 	const cached = entitlementCache.get(manifest.id);
-	if (cached && Date.now() - cached.checkedAt < ENTITLEMENT_CACHE_MS) {
+	if (cached && Date.now() - cached.checkedAt < cacheTtlMs) {
 		return cached.value;
 	}
 	let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -148,7 +159,6 @@ async function recheckStoreEntitlement(
 		]);
 		if (entitled) {
 			entitlementCache.set(manifest.id, { value: true, checkedAt: Date.now() });
-			saveLastEntitlementSuccess(manifest.id, Date.now());
 		} else {
 			entitlementCache.delete(manifest.id);
 		}
@@ -159,9 +169,8 @@ async function recheckStoreEntitlement(
 		}
 		return entitled;
 	} catch (err) {
-		const lastGrantedAt = loadLastEntitlementSuccess(manifest.id);
-		const graceStartedAt =
-			lastGrantedAt ?? manifest.store_signature_issued_at_ms;
+		const lastGrantedAt = await loadLastEntitlementSuccess(manifest.id);
+		const graceStartedAt = lastGrantedAt;
 		const graceAge =
 			graceStartedAt == null ? undefined : Date.now() - graceStartedAt;
 		const graceAllowed =
@@ -170,7 +179,7 @@ async function recheckStoreEntitlement(
 			"AppLoader",
 			graceAllowed
 				? "Store entitlement unavailable; allowing app within 72-hour grace"
-				: "Store entitlement unavailable; blocking app after grace expired",
+				: "Store entitlement unavailable; blocking app until a Gateway approval is recorded",
 			{ appId: manifest.id, error: String(err), graceStartedAt, graceAllowed },
 		);
 		return graceAllowed;
@@ -179,33 +188,21 @@ async function recheckStoreEntitlement(
 	}
 }
 
-function loadLastEntitlementSuccess(appId: string): number | undefined {
+async function loadLastEntitlementSuccess(
+	appId: string,
+): Promise<number | undefined> {
 	try {
-		const stored = localStorage.getItem(ENTITLEMENT_SUCCESS_KEY);
-		if (!stored) return undefined;
-		const values = JSON.parse(stored) as Record<string, unknown>;
-		const value = values[appId];
+		const value = await invoke<number | null>(
+			"app_store_last_entitlement_grant",
+			{
+				appId,
+			},
+		);
 		return typeof value === "number" && Number.isFinite(value)
 			? value
 			: undefined;
 	} catch {
 		return undefined;
-	}
-}
-
-function saveLastEntitlementSuccess(appId: string, timestamp: number): void {
-	try {
-		const stored = localStorage.getItem(ENTITLEMENT_SUCCESS_KEY);
-		const values = stored
-			? (JSON.parse(stored) as Record<string, unknown>)
-			: {};
-		values[appId] = timestamp;
-		localStorage.setItem(ENTITLEMENT_SUCCESS_KEY, JSON.stringify(values));
-	} catch (err) {
-		Logger.warn("AppLoader", "Could not persist Store entitlement check time", {
-			appId,
-			error: String(err),
-		});
 	}
 }
 
@@ -226,6 +223,7 @@ export function invalidateInstalledApps(): void {
 	for (const descriptor of installed) {
 		entitlementCache.delete(descriptor.id);
 		storeSignatureCheckedAt.delete(descriptor.id);
+		executionEntitlementCheckedAt.delete(descriptor.id);
 		appRegistry.unregister(descriptor.id);
 	}
 	if (
@@ -264,6 +262,9 @@ export async function loadInstalledApps(): Promise<void> {
 	}
 	for (const appId of storeSignatureCheckedAt.keys()) {
 		if (!listedIds.has(appId)) storeSignatureCheckedAt.delete(appId);
+	}
+	for (const appId of executionEntitlementCheckedAt.keys()) {
+		if (!listedIds.has(appId)) executionEntitlementCheckedAt.delete(appId);
 	}
 	const entitlementResults = await Promise.all(
 		manifests.map(
@@ -473,6 +474,7 @@ export async function removeInstalledApp(appId: string): Promise<void> {
 	installedAppsLoadGeneration += 1;
 	entitlementCache.delete(appId);
 	storeSignatureCheckedAt.delete(appId);
+	executionEntitlementCheckedAt.delete(appId);
 	appRegistry.unregister(appId);
 	if (useAppStore.getState().activeApp === appId) {
 		useAppStore.getState().setActiveApp(null);
