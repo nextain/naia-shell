@@ -6147,6 +6147,24 @@ body.resizing-row {
 	pointer-events: auto;
 }
 
+@media (max-width: 500px) {
+	.bgm-player {
+		width: 72px;
+		padding: 3px 4px;
+	}
+
+	.bgm-player-sep,
+	.bgm-player-controls > .bgm-btn:not(.bgm-btn--play),
+	.bgm-track-toggle,
+	.bgm-volume {
+		display: none;
+	}
+
+	.bgm-player-controls {
+		justify-content: center;
+	}
+}
+
 /* Fixed BGM icon */
 .bgm-icon {
 	font-size: 15px;

@@ -1,5 +1,4 @@
-import { emit } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
 import {
 	type MouseEvent,
 	Suspense,
@@ -44,8 +43,7 @@ const BgmPlayer = lazy(() =>
 // track) into Naia's system prompt. Without a bridge the push is dead code
 // (`if (!naia) return` in BgmPlayer) and the AI never sees favoritesList.
 const bgmBridge = getBridgeForApp("bgm");
-let appStoreOpening: Promise<WebviewWindow | null> | null = null;
-let appStoreCloseListenerInstalled = false;
+let appStoreOpening: Promise<void> | null = null;
 
 function extractInitial(shortcut: BrowserLink): string {
 	const source = shortcut.title || shortcut.url;
@@ -191,46 +189,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		// The web app store sells apps for credits: not reachable from the Steam build.
 		if (paymentLinksHiddenNow()) return;
 		try {
-			if (appStoreOpening) {
-				const existing = await appStoreOpening;
-				if (existing) {
-					await existing.show();
-					await existing.setFocus();
-				}
-				return;
-			}
-			appStoreOpening = (async () => {
-				let storeWindow = await WebviewWindow.getByLabel("app-store");
-				if (!storeWindow) {
-					const createdWindow = new WebviewWindow("app-store", {
-						url: storeUrl,
-						title: "Naia App Store",
-						width: 1180,
-						height: 820,
-						minWidth: 760,
-						minHeight: 600,
-						center: true,
-						focus: true,
-					});
-					storeWindow = createdWindow;
-					await new Promise<void>((resolve, reject) => {
-						createdWindow.once("tauri://created", () => resolve());
-						createdWindow.once("tauri://error", (event) =>
-							reject(new Error(String(event.payload))),
-						);
-					});
-				}
-				if (!appStoreCloseListenerInstalled) {
-					appStoreCloseListenerInstalled = true;
-					storeWindow.once("tauri://destroyed", () => {
-						appStoreCloseListenerInstalled = false;
-						void emit("app-store-closed");
-					});
-				}
-				await storeWindow.show();
-				await storeWindow.setFocus();
-				return storeWindow;
-			})();
+			if (!appStoreOpening) appStoreOpening = invoke("focus_or_create_app_store_window", { url: storeUrl });
 			await appStoreOpening;
 		} catch (error) {
 			Logger.warn("AppBar", "Failed to open app store window", {

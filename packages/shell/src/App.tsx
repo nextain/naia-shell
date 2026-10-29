@@ -35,6 +35,7 @@ import {
 	areInstalledAppsSettled,
 	invalidateInstalledApps,
 	loadInstalledApps,
+	refreshInstalledAppsIfChanged,
 } from "./lib/app-loader";
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
@@ -679,15 +680,18 @@ export function App() {
 
 	useEffect(() => {
 		let disposed = false;
+		let refreshTimer: number | undefined;
 		let unlistenStoreChanged: (() => void) | undefined;
 		let unlistenStoreClosed: (() => void) | undefined;
 		const refreshAfterStoreChange = () => {
-			invalidateInstalledApps();
-			void loadInstalledApps().catch((error: unknown) => {
-				Logger.warn("App", "Failed to reload installed apps after App Store change", {
-					error: error instanceof Error ? error.message : String(error),
+			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+			refreshTimer = window.setTimeout(() => {
+				void refreshInstalledAppsIfChanged().catch((error: unknown) => {
+					Logger.warn("App", "Failed to reload installed apps after App Store change", {
+						error: error instanceof Error ? error.message : String(error),
+					});
 				});
-			});
+			}, 300);
 		};
 		void listen("installed-apps-changed", refreshAfterStoreChange).then((unlisten) => {
 			if (disposed) unlisten();
@@ -699,6 +703,7 @@ export function App() {
 		});
 		return () => {
 			disposed = true;
+			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
 			unlistenStoreChanged?.();
 			unlistenStoreClosed?.();
 		};

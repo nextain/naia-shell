@@ -14690,6 +14690,7 @@ pub fn run() {
             app_sandbox::slides_recording_stop,
             app::app_store_has_entitlement,
             app::app_store_last_entitlement_grant,
+            app::focus_or_create_app_store_window,
             app::app_install_store,
             workspace::workspace_list_dirs,
             workspace::workspace_list_files_recursive,
@@ -15171,6 +15172,9 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             match event {
+                tauri::WindowEvent::Destroyed if window.label() == "app-store" => {
+                    let _ = window.app_handle().emit("app-store-closed", ());
+                }
                 tauri::WindowEvent::Moved(pos) if window.label() == "main" => {
                     if let Ok(size) = window.outer_size() {
                         save_window_state(&window.app_handle(), &WindowState {

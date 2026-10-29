@@ -4,6 +4,12 @@ Every app-store app receives a private root at
 `data-private/apps/{package-id}/`. An app must only address files below that
 root with a relative path; absolute paths and traversal segments are rejected.
 
+That private root is the durable user-data location. Shell upgrades replace the
+installed package directory and preserve only old files whose relative paths
+are absent from the new package. Apps must keep user-created state under their
+private root instead of relying on files bundled beside `index.html`; bundled
+files shipped by an update always take precedence at matching paths.
+
 Use the Shell bridge, not direct filesystem APIs:
 
 - `sandboxRoot()` returns the app's private root.
