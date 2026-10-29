@@ -678,6 +678,33 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
+		let disposed = false;
+		let unlistenStoreChanged: (() => void) | undefined;
+		let unlistenStoreClosed: (() => void) | undefined;
+		const refreshAfterStoreChange = () => {
+			invalidateInstalledApps();
+			void loadInstalledApps().catch((error: unknown) => {
+				Logger.warn("App", "Failed to reload installed apps after App Store change", {
+					error: error instanceof Error ? error.message : String(error),
+				});
+			});
+		};
+		void listen("installed-apps-changed", refreshAfterStoreChange).then((unlisten) => {
+			if (disposed) unlisten();
+			else unlistenStoreChanged = unlisten;
+		});
+		void listen("app-store-closed", refreshAfterStoreChange).then((unlisten) => {
+			if (disposed) unlisten();
+			else unlistenStoreClosed = unlisten;
+		});
+		return () => {
+			disposed = true;
+			unlistenStoreChanged?.();
+			unlistenStoreClosed?.();
+		};
+	}, []);
+
+	useEffect(() => {
 		migrateLegacyDna3OllamaModel();
 		migrateSpeechStyleValues();
 		migrateLiveProviderToUnifiedModel();

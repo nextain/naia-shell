@@ -1321,12 +1321,15 @@ pub fn app_run_shell(cmd: String, args: Vec<String>) -> Result<AppShellResult, S
 /// Removes exactly `<selected-adk>/.naia/apps/{id}` after validating that its manifest id
 /// matches its canonical directory name.
 #[tauri::command]
-pub fn app_remove_installed(app_id: String) -> Result<(), String> {
+pub fn app_remove_installed(app: tauri::AppHandle, app_id: String) -> Result<(), String> {
     // The frontend invokes this with { appId } (removeInstalledApp). Tauri binds
     // by exact camelCase name, so the old `panel_id` (→ panelId) never received
     // the value and every removal failed ("제거하지 못했습니다", 2026-08-31).
     let adk = selected_adk_path()?;
-    remove_installed_from_selected(&adk, &app_id)
+    remove_installed_from_selected(&adk, &app_id)?;
+    use tauri::Emitter;
+    let _ = app.emit("installed-apps-changed", ());
+    Ok(())
 }
 
 fn remove_installed_from(home: &std::path::Path, panel_id: &str) -> Result<(), String> {
@@ -1390,6 +1393,127 @@ mod tests {
         assert_eq!(key_bytes.len(), 32);
         VerifyingKey::from_bytes(key_bytes.as_slice().try_into().unwrap())
             .expect("production key must be a valid Ed25519 key");
+    }
+
+    fn make_store_app(
+        root: &std::path::Path,
+        id: &str,
+        version: &str,
+        payload: &str,
+    ) -> std::path::PathBuf {
+        let app = root.join(id);
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(
+            app.join("app.json"),
+            serde_json::json!({"id": id, "name": "Store app", "version": version}).to_string(),
+        )
+        .unwrap();
+        std::fs::write(app.join("index.html"), payload).unwrap();
+        app
+    }
+
+    #[test]
+    fn store_update_replaces_new_version_and_preserves_unbundled_user_files() {
+        let root = tempfile::tempdir().unwrap();
+        let old = make_store_app(root.path(), "land.naia.demo", "1.0.0", "old");
+        std::fs::create_dir_all(old.join("data")).unwrap();
+        std::fs::write(old.join("data/preferences.json"), "user settings").unwrap();
+        let staged = make_store_app(root.path(), ".stage", "1.1.0", "new");
+        std::fs::create_dir_all(staged.join("data")).unwrap();
+        std::fs::write(staged.join("data/preferences.json"), "new defaults").unwrap();
+
+        let destination = replace_store_install(
+            root.path(),
+            &staged,
+            "land.naia.demo",
+            Some("1.0.0"),
+            Some("1.1.0"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(destination.join("index.html")).unwrap(),
+            "new"
+        );
+        assert_eq!(
+            std::fs::read_to_string(destination.join("data/preferences.json")).unwrap(),
+            "user settings"
+        );
+        assert!(!staged.exists());
+    }
+
+    #[test]
+    fn same_store_version_can_repair_install_but_downgrade_is_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let old = make_store_app(root.path(), "land.naia.demo", "1.2.0", "corrupt");
+        let staged = make_store_app(root.path(), ".stage", "1.2.0", "repaired");
+        let destination = replace_store_install(
+            root.path(), &staged, "land.naia.demo", Some("1.2.0"), Some("1.2.0"),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(destination.join("index.html")).unwrap(),
+            "repaired"
+        );
+        assert_eq!(old, destination);
+        assert!(compare_store_versions(Some("1.2.0"), Some("1.1.9")).is_err());
+    }
+
+    #[test]
+    fn store_update_failure_restores_previous_install() {
+        let root = tempfile::tempdir().unwrap();
+        let old = make_store_app(root.path(), "land.naia.demo", "1.0.0", "old");
+        let staged = make_store_app(root.path(), ".stage", "1.1.0", "new");
+
+        let error = replace_store_install_with(
+            root.path(),
+            &staged,
+            "land.naia.demo",
+            Some("1.0.0"),
+            Some("1.1.0"),
+            |_, _| Err(std::io::Error::other("injected commit failure")),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("previous version restored"));
+        assert_eq!(
+            std::fs::read_to_string(old.join("index.html")).unwrap(),
+            "old"
+        );
+        assert!(!std::fs::read_dir(root.path())
+            .unwrap()
+            .any(|entry| entry.unwrap().file_name().to_string_lossy().starts_with(".store-backup-")));
+    }
+
+    #[test]
+    fn store_signature_mismatch_keeps_previous_install() {
+        let root = tempfile::tempdir().unwrap();
+        let old = make_store_app(root.path(), "land.naia.demo", "1.0.0", "old");
+        let digest = Sha256::digest(b"tampered artifact");
+        use ed25519_dalek::Signer;
+        let other_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let other_signature = other_key.sign(digest.as_slice());
+        let encoded = base64::engine::general_purpose::STANDARD.encode(other_signature.to_bytes());
+
+        assert!(verify_artifact_signature(digest.as_slice(), &format!("ed25519:{encoded}")).is_err());
+        assert_eq!(
+            std::fs::read_to_string(old.join("index.html")).unwrap(),
+            "old"
+        );
+    }
+
+    #[test]
+    fn lower_store_version_keeps_previous_install() {
+        let root = tempfile::tempdir().unwrap();
+        let old = make_store_app(root.path(), "land.naia.demo", "2.0.0", "old");
+        let staged = make_store_app(root.path(), ".stage", "1.9.0", "downgrade");
+
+        assert!(replace_store_install(
+            root.path(), &staged, "land.naia.demo", Some("2.0.0"), Some("1.9.0")
+        )
+        .is_err());
+        assert_eq!(std::fs::read_to_string(old.join("index.html")).unwrap(), "old");
+        assert_eq!(std::fs::read_to_string(staged.join("index.html")).unwrap(), "downgrade");
     }
 
     fn write_app(root: &std::path::Path, dir: &str, id: &str) -> std::path::PathBuf {
@@ -2631,6 +2755,177 @@ fn validate_store_app_id(app_id: &str) -> Result<(), String> {
     }
 }
 
+fn compare_store_versions(installed: Option<&str>, incoming: Option<&str>) -> Result<(), String> {
+    let Some(incoming) = incoming else {
+        if installed.is_some() {
+            return Err("Store app has no version for update comparison".to_string());
+        }
+        return Ok(());
+    };
+    let Some(installed) = installed else {
+        return Ok(());
+    };
+    let installed = semver::Version::parse(installed.trim_start_matches('v'))
+        .map_err(|_| "Installed app has an invalid version".to_string())?;
+    let incoming = semver::Version::parse(incoming.trim_start_matches('v'))
+        .map_err(|_| "Store app has an invalid version".to_string())?;
+    // Same-version reinstall repairs a damaged install; only a downgrade risks silently replacing newer app state.
+    if incoming < installed {
+        return Err("A lower app version cannot replace the installed version".to_string());
+    }
+    Ok(())
+}
+
+fn preserve_unbundled_app_files(
+    old: &std::path::Path,
+    staged: &std::path::Path,
+) -> Result<(), String> {
+    // App settings belong in the per-app sandbox; retain any legacy user files that were left beside the bundle.
+    fn is_user_data_path(relative: &std::path::Path) -> bool {
+        relative.components().any(|component| {
+            matches!(
+                component.as_os_str().to_string_lossy().to_ascii_lowercase().as_str(),
+                "data" | "config" | "settings" | "storage" | "user-data"
+            )
+        }) || relative.file_name().is_some_and(|name| {
+            let name = name.to_string_lossy().to_ascii_lowercase();
+            name.contains("setting") || name.contains("preference")
+        })
+    }
+
+    fn copy_tree(old: &std::path::Path, staged: &std::path::Path) -> Result<(), String> {
+        std::fs::create_dir_all(staged).map_err(|e| e.to_string())?;
+        for entry in std::fs::read_dir(old).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let source = entry.path();
+            let target = staged.join(entry.file_name());
+            let file_type = entry.file_type().map_err(|e| e.to_string())?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                copy_tree(&source, &target)?;
+            } else if file_type.is_file() {
+                std::fs::copy(&source, &target).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn copy_missing(
+        old: &std::path::Path,
+        staged: &std::path::Path,
+        relative: &std::path::Path,
+    ) -> Result<(), String> {
+        for entry in std::fs::read_dir(old).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let source = entry.path();
+            let target = staged.join(entry.file_name());
+            let relative_target = relative.join(entry.file_name());
+            let file_type = entry.file_type().map_err(|e| e.to_string())?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                if is_user_data_path(&relative_target) {
+                    if target.is_dir() {
+                        std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+                    } else if target.exists() {
+                        std::fs::remove_file(&target).map_err(|e| e.to_string())?;
+                    }
+                    copy_tree(&source, &target)?;
+                    continue;
+                }
+                if target.exists() {
+                    if target.is_dir() {
+                        copy_missing(&source, &target, &relative_target)?;
+                    }
+                } else {
+                    copy_tree(&source, &target)?;
+                }
+            } else if file_type.is_file()
+                && (!target.exists() || is_user_data_path(&relative_target))
+            {
+                if target.is_dir() {
+                    std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+                } else if target.exists() {
+                    std::fs::remove_file(&target).map_err(|e| e.to_string())?;
+                }
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                std::fs::copy(&source, &target).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+    copy_missing(old, staged, std::path::Path::new(""))
+}
+
+fn replace_store_install(
+    apps_root: &std::path::Path,
+    staged: &std::path::Path,
+    app_id: &str,
+    installed_version: Option<&str>,
+    incoming_version: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    replace_store_install_with(
+        apps_root,
+        staged,
+        app_id,
+        installed_version,
+        incoming_version,
+        |from, to| std::fs::rename(from, to),
+    )
+}
+
+fn replace_store_install_with(
+    apps_root: &std::path::Path,
+    staged: &std::path::Path,
+    app_id: &str,
+    installed_version: Option<&str>,
+    incoming_version: Option<&str>,
+    commit_staged: impl FnOnce(&std::path::Path, &std::path::Path) -> std::io::Result<()>,
+) -> Result<std::path::PathBuf, String> {
+    compare_store_versions(installed_version, incoming_version)?;
+    if !staged.is_dir() {
+        return Err("Staged app directory is missing".to_string());
+    }
+    let destination = apps_root.join(app_id);
+    if !destination.exists() {
+        commit_staged(staged, &destination)
+            .map_err(|e| format!("Install finalize failed: {e}"))?;
+        return Ok(destination);
+    }
+    let metadata = std::fs::symlink_metadata(&destination).map_err(|e| e.to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Installed app path is not a safe directory".to_string());
+    }
+
+    preserve_unbundled_app_files(&destination, staged)?;
+    let backup_dir = tempfile::Builder::new()
+        .prefix(&format!(".store-backup-{app_id}-"))
+        .tempdir_in(apps_root)
+        .map_err(|e| e.to_string())?;
+    let backup = backup_dir.keep();
+    std::fs::remove_dir(&backup).map_err(|e| e.to_string())?;
+    std::fs::rename(&destination, &backup).map_err(|e| e.to_string())?;
+    if let Err(install_error) = commit_staged(staged, &destination) {
+        return match std::fs::rename(&backup, &destination) {
+            Ok(()) => Err(format!(
+                "Install finalize failed; previous version restored: {install_error}"
+            )),
+            Err(restore_error) => Err(format!(
+                "Install finalize failed ({install_error}); previous version restore failed ({restore_error})"
+            )),
+        };
+    }
+    if let Err(error) = std::fs::remove_dir_all(&backup) {
+        log::warn!("Updated app {} but could not remove backup {}: {}", app_id, backup.display(), error);
+    }
+    Ok(destination)
+}
+
 /// Install a reviewed Store ZIP only after the Gateway confirms ownership.
 #[tauri::command]
 pub fn app_install_store(
@@ -2773,9 +3068,6 @@ pub fn app_install_store(
         return Err("index.html missing".to_string());
     }
     let destination = apps_root.join(&app_id);
-    if destination.exists() {
-        return Err("App is already installed; remove it before reinstalling".to_string());
-    }
     let receipt = StoreSignatureReceipt {
         app_id: manifest.id.clone(),
         sha256: digest,
@@ -2786,10 +3078,33 @@ pub fn app_install_store(
         serde_json::to_vec(&receipt).map_err(|e| e.to_string())?,
     )
     .map_err(|e| format!("Failed to record verified Store install: {}", e))?;
-    let kept = temp.keep();
-    std::fs::rename(&kept, &destination).map_err(|e| format!("Install finalize failed: {}", e))?;
+    let installed_version = if destination.is_dir() {
+        std::fs::File::open(destination.join("app.json"))
+            .ok()
+            .and_then(|file| serde_json::from_reader::<_, AppManifest>(file).ok())
+            .and_then(|installed| installed.version)
+    } else {
+        None
+    };
+    let staged = temp.keep();
+    let destination_result = replace_store_install(
+        &apps_root,
+        &staged,
+        &app_id,
+        installed_version.as_deref(),
+        manifest.version.as_deref(),
+    );
+    let destination = match destination_result {
+        Ok(destination) => destination,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&staged);
+            return Err(error);
+        }
+    };
     // Absolutize relative asset URLs so the iframe renders (see fn docs).
     rewrite_installed_app_asset_urls(&destination);
+    use tauri::Emitter;
+    let _ = app.emit("installed-apps-changed", ());
     Ok(AppInstallResult {
         id: app_id,
         name: manifest.name,

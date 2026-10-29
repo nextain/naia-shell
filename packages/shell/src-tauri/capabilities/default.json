@@ -8,6 +8,8 @@
 		"core:event:default",
 		"core:event:allow-listen",
 		"core:event:allow-emit",
+		"core:webview:allow-create-webview-window",
+		"core:webview:allow-get-all-webviews",
 		"core:window:default",
 		"core:window:allow-close",
 		"core:window:allow-destroy",
@@ -18,6 +20,7 @@
 		"core:window:allow-start-dragging",
 		"core:window:allow-start-resize-dragging",
 		"core:window:allow-show",
+		"core:window:allow-set-focus",
 		"opener:default",
 		{
 			"identifier": "opener:allow-open-path",

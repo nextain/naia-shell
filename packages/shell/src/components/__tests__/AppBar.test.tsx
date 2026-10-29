@@ -13,7 +13,10 @@ import { resetDistributionChannelForTests } from "../../lib/distribution";
 const {
 	mockNavigate,
 	mockSetActiveApp,
-	mockOpenUrl,
+	mockEmit,
+	mockGetByLabel,
+	mockCreateStoreWindow,
+	mockStoreWindow,
 	channel,
 	registeredApps,
 	appListVersion,
@@ -21,7 +24,14 @@ const {
 	channel: { value: "standard" },
 	mockNavigate: vi.fn(),
 	mockSetActiveApp: vi.fn(),
-	mockOpenUrl: vi.fn().mockResolvedValue(undefined),
+	mockEmit: vi.fn().mockResolvedValue(undefined),
+	mockGetByLabel: vi.fn(),
+	mockCreateStoreWindow: vi.fn(),
+	mockStoreWindow: {
+		once: vi.fn(),
+		show: vi.fn().mockResolvedValue(undefined),
+		setFocus: vi.fn().mockResolvedValue(undefined),
+	},
 	registeredApps: {
 		value: [] as Array<{
 			id: string;
@@ -45,11 +55,19 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: vi.fn().mockResolvedValue(() => {}),
-	emit: vi.fn().mockResolvedValue(undefined),
+	emit: mockEmit,
 }));
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-	openUrl: mockOpenUrl,
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+	WebviewWindow: class {
+		static getByLabel = mockGetByLabel;
+		once = mockStoreWindow.once;
+		show = mockStoreWindow.show;
+		setFocus = mockStoreWindow.setFocus;
+		constructor(...args: unknown[]) {
+			mockCreateStoreWindow(...args);
+		}
+	},
 }));
 
 const mockLoadBrowserShortcuts = vi.fn().mockResolvedValue([]);
@@ -156,6 +174,16 @@ describe("AppBar — add dialog", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
+		mockGetByLabel.mockReset().mockResolvedValue(null);
+		mockCreateStoreWindow.mockReset();
+		mockStoreWindow.once.mockReset().mockImplementation((event, callback) => {
+			if (event === "tauri://created") {
+				queueMicrotask(() => callback({ payload: null }));
+			}
+		});
+		mockStoreWindow.show.mockReset().mockResolvedValue(undefined);
+		mockStoreWindow.setFocus.mockReset().mockResolvedValue(undefined);
+		mockEmit.mockReset().mockResolvedValue(undefined);
 		mockLoadBrowserShortcuts.mockResolvedValue([]);
 		registeredApps.value = [];
 		appListVersion.value = 0;
@@ -198,11 +226,12 @@ describe("AppBar — add dialog", () => {
 		expect(appStore).not.toHaveAttribute("data-app-id");
 		fireEvent.click(appStore);
 
-		await waitFor(() =>
-			expect(mockOpenUrl).toHaveBeenCalledWith("https://dev.naia.land/ko/apps"),
-		);
+		await waitFor(() => expect(mockCreateStoreWindow).toHaveBeenCalledTimes(1));
 		expect(mockSetActiveApp).not.toHaveBeenCalled();
 		expect(mockNavigate).not.toHaveBeenCalled();
+		mockStoreWindow.once.mock.calls.find(
+			([event]) => event === "tauri://destroyed",
+		)?.[1]?.({ payload: null });
 	});
 
 	it("keeps the fixed App Store action outside app edit and removal controls", async () => {
@@ -260,18 +289,42 @@ describe("AppBar — add dialog", () => {
 		fireEvent.click(screen.getByText("appbar.addApp").closest("button")!);
 
 		expect(onAddApp).toHaveBeenCalledTimes(1);
-		expect(mockOpenUrl).not.toHaveBeenCalled();
+		expect(mockCreateStoreWindow).not.toHaveBeenCalled();
 	});
 
-	it("opens the third app-store item in the system browser", async () => {
+	it("opens one app-store window and focuses it on repeated clicks", async () => {
+		channel.value = "standard";
 		resetDistributionChannelForTests();
+		let existingWindow: typeof mockStoreWindow | null = null;
+		mockGetByLabel.mockImplementation(async () => existingWindow);
+		mockCreateStoreWindow.mockImplementation(() => {
+			existingWindow = mockStoreWindow;
+		});
 		render(<AppBar />);
-		fireEvent.click(screen.getByTitle("appbar.addItem"));
-		fireEvent.click(
-			(await screen.findByText("appbar.appStore")).closest("button")!,
+		const storeButton = await screen.findByRole("button", {
+			name: "appbar.appStore",
+		});
+		fireEvent.click(storeButton);
+		fireEvent.click(storeButton);
+		await waitFor(() => expect(mockCreateStoreWindow).toHaveBeenCalledTimes(1));
+		fireEvent.click(storeButton);
+		await waitFor(() =>
+			expect(mockStoreWindow.setFocus).toHaveBeenCalledTimes(3),
 		);
+		expect(mockCreateStoreWindow).toHaveBeenCalledTimes(1);
+		const closedHandler = mockStoreWindow.once.mock.calls.find(
+			([event]) => event === "tauri://destroyed",
+		)?.[1];
+		closedHandler?.({ payload: null });
+		expect(mockEmit).toHaveBeenCalledWith("app-store-closed");
 
-		expect(mockOpenUrl).toHaveBeenCalledWith("https://dev.naia.land/ko/apps");
+		expect(mockCreateStoreWindow).toHaveBeenCalledWith(
+			"app-store",
+			expect.objectContaining({
+				url: "https://dev.naia.land/ko/apps",
+			}),
+		);
+		expect(mockGetByLabel).toHaveBeenCalledWith("app-store");
 		expect(mockSetActiveApp).not.toHaveBeenCalledWith("browser");
 		expect(mockNavigate).not.toHaveBeenCalled();
 	});
