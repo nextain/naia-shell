@@ -50,6 +50,7 @@ const PROJECT_DOCS_REQUEST_TIMEOUT_MS = 10_000;
 
 async function withDocsTimeout<T>(request: Promise<T>): Promise<T> {
 	let timeout: ReturnType<typeof setTimeout> | undefined;
+	void request.catch(() => undefined);
 	try {
 		return await Promise.race([
 			request,

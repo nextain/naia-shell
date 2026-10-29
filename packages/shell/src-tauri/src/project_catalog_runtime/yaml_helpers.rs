@@ -89,19 +89,25 @@ pub(crate) fn is_valid_baseline_ref(raw: &str) -> bool {
     (7..=40).contains(&len) && raw.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-pub(crate) fn parse_class_config(mapping: &Mapping) -> Option<ProjectClassConfig> {
+pub(crate) fn parse_class_config(
+    mapping: &Mapping,
+    yaml_source: &str,
+) -> Option<ProjectClassConfig> {
     let class_mapping = mapping
         .get(YamlValue::String("class".to_owned()))?
         .as_mapping()?;
     let baseline_value = class_mapping.get(YamlValue::String("baseline_ref".to_owned()))?;
-    let baseline_ref =
-        baseline_value
-            .as_str()
-            .map(str::to_owned)
-            .or_else(|| match baseline_value {
-                YamlValue::Number(number) => Some(number.to_string()),
-                _ => None,
-            })?;
+    let baseline_ref = match baseline_value {
+        YamlValue::String(value) => value.to_owned(),
+        YamlValue::Number(number) if number.is_i64() || number.is_u64() => {
+            let raw_scalar = class_baseline_ref_scalar(yaml_source)?;
+            if has_non_decimal_integer_prefix(raw_scalar) {
+                return None;
+            }
+            number.to_string()
+        }
+        _ => return None,
+    };
     let baseline_ref = baseline_ref.trim();
     if is_valid_baseline_ref(baseline_ref) {
         Some(ProjectClassConfig {
@@ -115,6 +121,36 @@ pub(crate) fn parse_class_config(mapping: &Mapping) -> Option<ProjectClassConfig
     }
 }
 
+fn class_baseline_ref_scalar(yaml_source: &str) -> Option<&str> {
+    let mut class_indent = None;
+    for line in yaml_source.lines() {
+        let indentation = line.len() - line.trim_start().len();
+        let content = line.trim();
+        if content == "class:" {
+            class_indent = Some(indentation);
+            continue;
+        }
+        let Some(parent_indent) = class_indent else {
+            continue;
+        };
+        if !content.is_empty() && !content.starts_with('#') && indentation <= parent_indent {
+            class_indent = None;
+            continue;
+        }
+        if indentation > parent_indent {
+            if let Some(value) = content.strip_prefix("baseline_ref:") {
+                return Some(value.trim().split('#').next()?.trim());
+            }
+        }
+    }
+    None
+}
+
+fn has_non_decimal_integer_prefix(raw_scalar: &str) -> bool {
+    let scalar = raw_scalar.strip_prefix('+').unwrap_or(raw_scalar);
+    scalar.starts_with("0x") || scalar.starts_with("0o") || scalar.starts_with("0b")
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_class_config;
@@ -126,20 +162,55 @@ mod tests {
 
     #[test]
     fn parses_unquoted_numeric_baseline_ref_as_a_string() {
-        let mapping = project_mapping("class:\n  baseline_ref: 1234567\n");
+        let yaml = "class:\n  baseline_ref: 1234567\n";
+        let mapping = project_mapping(yaml);
         assert_eq!(
-            parse_class_config(&mapping).map(|config| config.baseline_ref),
+            parse_class_config(&mapping, yaml).map(|config| config.baseline_ref),
             Some("1234567".to_owned())
         );
     }
 
     #[test]
     fn retains_quoted_baseline_ref() {
-        let mapping = project_mapping("class:\n  baseline_ref: \"abcdef0\"\n");
+        let yaml = "class:\n  baseline_ref: \"abcdef0\"\n";
+        let mapping = project_mapping(yaml);
         assert_eq!(
-            parse_class_config(&mapping).map(|config| config.baseline_ref),
+            parse_class_config(&mapping, yaml).map(|config| config.baseline_ref),
             Some("abcdef0".to_owned())
         );
+    }
+
+    #[test]
+    fn rejects_floating_point_baseline_refs() {
+        for scalar in ["1e6", "1.5"] {
+            let yaml = format!("class:\n  baseline_ref: {scalar}\n");
+            let mapping = project_mapping(&yaml);
+            assert!(parse_class_config(&mapping, &yaml).is_none(), "{scalar}");
+        }
+    }
+
+    #[test]
+    fn accepts_decimal_integer_baseline_ref() {
+        let yaml = "class:\n  baseline_ref: 1234567\n";
+        let mapping = project_mapping(yaml);
+        assert_eq!(
+            parse_class_config(&mapping, yaml).map(|config| config.baseline_ref),
+            Some("1234567".to_owned())
+        );
+    }
+
+    #[test]
+    fn rejects_non_decimal_prefixed_integer_baseline_refs() {
+        for scalar in ["0xabcdef0", "0o12345670"] {
+            let yaml = format!("class:\n  baseline_ref: {scalar}\n");
+            let mapping = project_mapping(&yaml);
+            let value = mapping["class"]["baseline_ref"].as_number();
+            assert!(
+                value.is_some(),
+                "serde_yaml should parse {scalar} as a number"
+            );
+            assert!(parse_class_config(&mapping, &yaml).is_none(), "{scalar}");
+        }
     }
 }
 

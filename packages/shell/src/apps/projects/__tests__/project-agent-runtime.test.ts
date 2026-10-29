@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../../lib/logger";
 import {
 	PROJECT_AGENT_APPS,
@@ -9,10 +9,10 @@ import {
 	resetProjectAgentRuntimeForTests,
 	selectProjectAgent,
 	startProjectAgent,
-	stopProjectAgent,
 	stopOpenCodeProjectAgentSessions,
-	waitForProjectAgentStopped,
+	stopProjectAgent,
 	subscribeProjectAgent,
+	waitForProjectAgentStopped,
 	writeProjectAgent,
 } from "../project-agent-runtime";
 
@@ -83,6 +83,9 @@ describe("project agent runtime ownership", () => {
 			return null;
 		});
 	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
 
 	it("passes cached Naia selection context only to OpenCode and stops only OpenCode on credential changes", async () => {
 		await loadProjectAgentAvailability();
@@ -122,7 +125,38 @@ describe("project agent runtime ownership", () => {
 		).toHaveLength(0);
 	});
 
-	it("reports an unknown status when PTY attach fails for a non-missing-session reason", async () => {
+	it("retries transient PTY attach errors until the status deadline", async () => {
+		vi.useFakeTimers();
+		let attachAttempts = 0;
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_attach") {
+				attachAttempts += 1;
+				if (attachAttempts === 1) throw new Error("ipc_unavailable");
+				return { running: false };
+			}
+			return null;
+		});
+
+		const stopped = waitForProjectAgentStopped(
+			projectA,
+			adapterRoot,
+			"opencode",
+			{
+				timeoutMs: 100,
+				intervalMs: 10,
+			},
+		);
+		await vi.advanceTimersByTimeAsync(10);
+		await expect(stopped).resolves.toBe(true);
+		expect(attachAttempts).toBe(2);
+	});
+
+	it("restores running when repeated PTY attach errors make status unknown", async () => {
+		vi.useFakeTimers();
+		await loadProjectAgentAvailability();
+		selectProjectAgent(projectA, "opencode");
+		await startProjectAgent(projectA, adapterRoot, "opencode");
+		await stopProjectAgent(projectA, adapterRoot, "opencode");
 		vi.mocked(invoke).mockImplementation(async (command) => {
 			if (command === "project_agent_pty_attach") {
 				throw new Error("ipc_unavailable");
@@ -130,9 +164,47 @@ describe("project agent runtime ownership", () => {
 			return null;
 		});
 
-		await expect(
-			waitForProjectAgentStopped(projectA, adapterRoot, "opencode"),
-		).resolves.toBe("unknown");
+		const status = waitForProjectAgentStopped(
+			projectA,
+			adapterRoot,
+			"opencode",
+			{
+				timeoutMs: 25,
+				intervalMs: 10,
+			},
+		);
+		await vi.advanceTimersByTimeAsync(30);
+		await expect(status).resolves.toBe("unknown");
+		expect(getProjectAgentState(projectA).status).toBe("running");
+	});
+
+	it("reports unknown only after the PTY status deadline", async () => {
+		vi.useFakeTimers();
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "project_agent_pty_attach") {
+				throw new Error("ipc_unavailable");
+			}
+			return null;
+		});
+
+		const status = waitForProjectAgentStopped(
+			projectA,
+			adapterRoot,
+			"opencode",
+			{
+				timeoutMs: 20,
+				intervalMs: 5,
+			},
+		);
+		await vi.advanceTimersByTimeAsync(21);
+		await expect(status).resolves.toBe("unknown");
+		expect(
+			vi
+				.mocked(invoke)
+				.mock.calls.filter(
+					([command]) => command === "project_agent_pty_attach",
+				),
+		).toHaveLength(5);
 		expect(invoke).toHaveBeenCalledWith("project_agent_pty_attach", {
 			appId: "opencode",
 			projectPath: projectA,

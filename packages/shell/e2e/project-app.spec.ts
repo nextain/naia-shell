@@ -731,11 +731,29 @@ test.describe("Project app — stage 3 local three-pane flow", () => {
 			() => (window as any).__PROJECT_E2E__.calls,
 		);
 		expect(
-			calls.some((call: { cmd: string }) => call.cmd === "project_docs_list"),
-		).toBe(true);
+			calls.find((call: { cmd: string }) => call.cmd === "project_docs_list"),
+		).toMatchObject({
+			args: {
+				adapterRoot: "/fixture/adapter-root",
+				projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+			},
+		});
 		expect(
-			calls.some((call: { cmd: string }) => call.cmd === "project_docs_read"),
-		).toBe(true);
+			calls
+				.filter((call: { cmd: string }) => call.cmd === "project_docs_read")
+				.map((call: { args: unknown }) => call.args),
+		).toEqual([
+			{
+				adapterRoot: "/fixture/adapter-root",
+				projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+				relativePath: "domain/guide.md",
+			},
+			{
+				adapterRoot: "/fixture/adapter-root",
+				projectPath: "/fixture/naia-adk/projects/team/projects/class-demo",
+				relativePath: "자료/lesson1.md",
+			},
+		]);
 		expect(
 			calls.find((call: { cmd: string }) => call.cmd === "project_class_reset"),
 		).toMatchObject({

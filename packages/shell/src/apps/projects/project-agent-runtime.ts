@@ -711,11 +711,19 @@ export async function waitForProjectAgentStopped(
 				setState(projectPath, { status: "idle", ptyId: null, error: null });
 				return true;
 			}
-			Logger.warn("ProjectAgentRuntime", "project PTY stop status is unknown", {
-				appId,
-				code: mapped.code,
-			});
-			return "unknown";
+			if (Date.now() >= deadline) {
+				if (stateFor(projectPath).status === "stopping") {
+					setState(projectPath, { status: "running" });
+				}
+				Logger.warn(
+					"ProjectAgentRuntime",
+					"project PTY stop status is unknown",
+					{
+						appId,
+					},
+				);
+				return "unknown";
+			}
 		}
 		if (Date.now() >= deadline) {
 			if (stateFor(projectPath).status === "stopping") {

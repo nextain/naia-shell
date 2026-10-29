@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../../../lib/i18n";
 import { ProjectDocsPanel } from "../ProjectDocsPanel";
@@ -36,8 +42,14 @@ describe("ProjectDocsPanel request timeouts", () => {
 	});
 
 	it("shows a recoverable list error and re-enables Refresh after ten seconds", async () => {
+		let rejectLateRequest: ((reason?: unknown) => void) | undefined;
 		vi.mocked(listProjectDocs)
-			.mockImplementationOnce(() => new Promise(() => {}))
+			.mockImplementationOnce(
+				() =>
+					new Promise((_, reject) => {
+						rejectLateRequest = reject;
+					}),
+			)
 			.mockResolvedValueOnce([]);
 		render(
 			<ProjectDocsPanel
@@ -52,6 +64,13 @@ describe("ProjectDocsPanel request timeouts", () => {
 		expect(refresh).toBeDisabled();
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(10_001);
+		});
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"Loading project documents took too long",
+		);
+		await act(async () => {
+			rejectLateRequest?.(new Error("late IPC rejection"));
+			await Promise.resolve();
 		});
 		expect(screen.getByRole("alert")).toHaveTextContent(
 			"Loading project documents took too long",
