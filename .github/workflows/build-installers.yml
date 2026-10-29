@@ -197,51 +197,92 @@ jobs:
         run: |
           set -o pipefail
           if [[ "$(uname -m)" == "x86_64" ]]; then
-            echo "Disabling Spotlight indexing on the ephemeral Intel runner before mounting the DMG"
-            sudo mdutil -a -i off
-          fi
-          LOG_FILE="$RUNNER_TEMP/tauri-macos-bundle.log"
-          if ! pnpm -C packages/shell exec tauri bundle --verbose \
-            --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
-            if grep -q "bundle_dmg" "$LOG_FILE"; then
-              echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
-              BUNDLE_MACOS_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/macos"
-              BUNDLE_MACOS_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/macos 2>/dev/null && pwd -P || printf '%s\n' "$BUNDLE_MACOS_LOGICAL")"
-              DMG_DIR_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/dmg"
-              DMG_DIR_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/dmg 2>/dev/null && pwd -P || printf '%s\n' "$DMG_DIR_LOGICAL")"
-              hdiutil info | awk \
-                -v macos_dir="$BUNDLE_MACOS_PHYS" \
-                -v macos_dir_logical="$BUNDLE_MACOS_LOGICAL" \
-                -v dmg_dir="$DMG_DIR_PHYS" \
-                -v dmg_dir_logical="$DMG_DIR_LOGICAL" '
-                /^====/ { dmg=0 }
-                /^image-path[[:space:]]*:/ {
-                  path=$0
-                  sub(/^image-path[[:space:]]*:[[:space:]]*/, "", path)
-                  dir=path
-                  sub(/\/[^\/]+$/, "", dir)
-                  base=path
-                  sub(/^.*\//, "", base)
-                  in_macos=(dir == macos_dir || dir == macos_dir_logical)
-                  in_dmg=(dir == dmg_dir || dir == dmg_dir_logical)
-                  is_rw_dmg=(base ~ /^rw\..*\.dmg$/)
-                  dmg=((in_macos && is_rw_dmg) || in_dmg)
-                }
-                /^\/dev\/disk/ && dmg { print $1 }
-              ' | sort -u | while read -r dev; do
-                hdiutil detach -force "$dev" || true
-              done
-              rm -f \
-                packages/shell/src-tauri/target/release/bundle/macos/rw.*.dmg \
-                packages/shell/src-tauri/target/release/bundle/macos/Naia_*.dmg \
-                packages/shell/src-tauri/target/release/bundle/dmg/rw.*.dmg \
-                packages/shell/src-tauri/target/release/bundle/dmg/Naia_*.dmg
-              pnpm -C packages/shell exec tauri bundle --verbose \
-                --config src-tauri/tauri.conf.generated.json
-            else
-              exit 1
+            node -e 'const fs = require("node:fs"); const path = "packages/shell/src-tauri/tauri.conf.generated.json"; const config = JSON.parse(fs.readFileSync(path, "utf8")); config.bundle.targets = ["app"]; fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);'
+            pnpm -C packages/shell exec tauri bundle --verbose \
+              --config src-tauri/tauri.conf.generated.json
+          else
+            LOG_FILE="$RUNNER_TEMP/tauri-macos-bundle.log"
+            if ! pnpm -C packages/shell exec tauri bundle --verbose \
+              --config src-tauri/tauri.conf.generated.json 2>&1 | tee "$LOG_FILE"; then
+              if grep -q "bundle_dmg" "$LOG_FILE"; then
+                echo "::warning::bundle_dmg failed on first attempt; detaching leftover hdiutil devices and retrying once"
+                BUNDLE_MACOS_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/macos"
+                BUNDLE_MACOS_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/macos 2>/dev/null && pwd -P || printf '%s\n' "$BUNDLE_MACOS_LOGICAL")"
+                DMG_DIR_LOGICAL="$PWD/packages/shell/src-tauri/target/release/bundle/dmg"
+                DMG_DIR_PHYS="$(cd packages/shell/src-tauri/target/release/bundle/dmg 2>/dev/null && pwd -P || printf '%s\n' "$DMG_DIR_LOGICAL")"
+                hdiutil info | awk \
+                  -v macos_dir="$BUNDLE_MACOS_PHYS" \
+                  -v macos_dir_logical="$BUNDLE_MACOS_LOGICAL" \
+                  -v dmg_dir="$DMG_DIR_PHYS" \
+                  -v dmg_dir_logical="$DMG_DIR_LOGICAL" '
+                  /^====/ { dmg=0 }
+                  /^image-path[[:space:]]*:/ {
+                    path=$0
+                    sub(/^image-path[[:space:]]*:[[:space:]]*/, "", path)
+                    dir=path
+                    sub(/\/[^\/]+$/, "", dir)
+                    base=path
+                    sub(/^.*\//, "", base)
+                    in_macos=(dir == macos_dir || dir == macos_dir_logical)
+                    in_dmg=(dir == dmg_dir || dir == dmg_dir_logical)
+                    is_rw_dmg=(base ~ /^rw\..*\.dmg$/)
+                    dmg=((in_macos && is_rw_dmg) || in_dmg)
+                  }
+                  /^\/dev\/disk/ && dmg { print $1 }
+                ' | sort -u | while read -r dev; do
+                  hdiutil detach -force "$dev" || true
+                done
+                rm -f \
+                  packages/shell/src-tauri/target/release/bundle/macos/rw.*.dmg \
+                  packages/shell/src-tauri/target/release/bundle/macos/Naia_*.dmg \
+                  packages/shell/src-tauri/target/release/bundle/dmg/rw.*.dmg \
+                  packages/shell/src-tauri/target/release/bundle/dmg/Naia_*.dmg
+                pnpm -C packages/shell exec tauri bundle --verbose \
+                  --config src-tauri/tauri.conf.generated.json
+              else
+                exit 1
+              fi
             fi
           fi
+
+      - name: Create Intel macOS DMG without mounting an image
+        if: matrix.platform == 'darwin' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APP_PATHS=()
+          while IFS= read -r path; do APP_PATHS+=("$path"); done < <(
+            find "$BUNDLE_DIR/macos" -maxdepth 1 -type d -name '*.app' -print
+          )
+          test "${#APP_PATHS[@]}" -eq 1 || {
+            echo "::error::Expected exactly one macOS app bundle, found ${#APP_PATHS[@]}"
+            exit 1
+          }
+          APP_PATH="${APP_PATHS[0]}"
+          PRODUCT_NAME="$(node -p "require('./packages/shell/src-tauri/tauri.conf.json').productName")"
+          VERSION="$(node -p "require('./packages/shell/package.json').version")"
+          DMG_DIR="$BUNDLE_DIR/dmg"
+          DMG_PATH="$DMG_DIR/${PRODUCT_NAME}_${VERSION}_x64.dmg"
+          DMG_STAGE="$RUNNER_TEMP/intel-dmg-stage"
+          mkdir -p "$DMG_DIR"
+          rm -rf "$DMG_STAGE"
+          mkdir -p "$DMG_STAGE"
+          ditto "$APP_PATH" "$DMG_STAGE/$(basename "$APP_PATH")"
+          ln -s /Applications "$DMG_STAGE/Applications"
+          for attempt in 1 2; do
+            if hdiutil create -volname "$PRODUCT_NAME" -srcfolder "$DMG_STAGE" \
+              -fs HFS+ -format UDZO -ov "$DMG_PATH"; then
+              break
+            fi
+            rm -f "$DMG_PATH"
+            if [[ "$attempt" -eq 2 ]]; then
+              echo "::error::Intel DMG creation failed after one retry"
+              exit 1
+            fi
+            echo "::warning::Intel DMG creation failed; retrying once"
+          done
+          hdiutil verify "$DMG_PATH"
 
       - name: Preserve macOS outputs after bundle attempt
         if: always() && matrix.platform == 'darwin'

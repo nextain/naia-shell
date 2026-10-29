@@ -1056,6 +1056,8 @@ describe("installer workflow integration contracts", () => {
 		expect(bundle).toContain("if: matrix.platform == 'darwin'");
 		expect(bundle).toContain("tauri bundle --verbose");
 		expect(bundle).toContain("--config src-tauri/tauri.conf.generated.json");
+		expect(bundle).toContain('config.bundle.targets = ["app"]');
+		expect(bundle).not.toContain("mdutil");
 		expect(bundle).not.toContain("tauri:build:bundle");
 		expect(bundle).not.toMatch(/\btauri build\b/);
 		expect(preserve).toContain("if: always() && matrix.platform == 'darwin'");
@@ -1068,6 +1070,33 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow.indexOf(bundleMarker)).toBeLessThan(
 			workflow.indexOf(preserveMarker),
 		);
+	});
+
+	it("creates the Intel DMG directly from the app after app bundling", () => {
+		const bundleMarker =
+			"      - name: Bundle macOS application from preserved app build\n";
+		const dmgMarker =
+			"      - name: Create Intel macOS DMG without mounting an image\n";
+		const preserveMarker =
+			"      - name: Preserve macOS outputs after bundle attempt\n";
+		const section = (marker: string) => {
+			const start = workflow.indexOf(marker);
+			expect(start).toBeGreaterThan(-1);
+			const end = workflow.indexOf("\n      - name:", start + marker.length);
+			return workflow.slice(start, end === -1 ? workflow.length : end);
+		};
+		const dmg = section(dmgMarker);
+
+		expect(dmg).toContain("if: matrix.platform == 'darwin' && matrix.arch == 'x64'");
+		expect(dmg).toContain('ln -s /Applications "$DMG_STAGE/Applications"');
+		expect(dmg).toContain('hdiutil create -volname "$PRODUCT_NAME" -srcfolder "$DMG_STAGE"');
+		expect(dmg).toContain("-fs HFS+ -format UDZO -ov \"$DMG_PATH\"");
+		expect(dmg).toContain('hdiutil verify "$DMG_PATH"');
+		expect(dmg.match(/hdiutil create/g)).toHaveLength(1);
+		expect(dmg).toContain("for attempt in 1 2");
+		expect(dmg).toContain('DMG_PATH="$DMG_DIR/${PRODUCT_NAME}_${VERSION}_x64.dmg"');
+		expect(workflow.indexOf(bundleMarker)).toBeLessThan(workflow.indexOf(dmgMarker));
+		expect(workflow.indexOf(dmgMarker)).toBeLessThan(workflow.indexOf(preserveMarker));
 	});
 
 	it("builds a directly launchable Steam depot without the NSIS uninstaller", () => {
