@@ -1,0 +1,1217 @@
+name: build steam linux
+
+on:
+  push:
+    branches:
+      - 'release/*-steam'
+  workflow_dispatch:
+
+concurrency:
+  group: build-steam-linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-steam-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    outputs:
+      voxcpm2_manifest_sha256: ${{ steps.voxcpm2-origin.outputs.voxcpm2_manifest_sha256 }}
+      voxcpm2_artifact_manifest_sha256: ${{ steps.voxcpm2-origin.outputs.voxcpm2_artifact_manifest_sha256 }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Clone required public runtime sources
+        run: |
+          git init ../naia-agent
+          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
+          git -C ../naia-agent fetch --depth 1 origin fdc6fcb5c34ea453612d968a0259a41aa1ef46ed
+          git -C ../naia-agent checkout --detach FETCH_HEAD
+          git init ../naia-kb-compiler
+          git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
+          git -C ../naia-kb-compiler fetch --depth 1 origin 24f52c14ea906c250304f39d48866c7a47e1b596
+          git -C ../naia-kb-compiler checkout --detach FETCH_HEAD
+          git init ../naia-memory
+          git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
+          git -C ../naia-memory fetch --depth 1 origin e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf
+          git -C ../naia-memory checkout --detach FETCH_HEAD
+          git init ../voxcpm2-tensorrt
+          git -C ../voxcpm2-tensorrt remote add origin https://github.com/nextain/voxcpm2-tensorrt.git
+          git -C ../voxcpm2-tensorrt fetch --depth 1 origin 6fdf26e018612db9910fce4161094a10af07013b || true
+          git -C ../voxcpm2-tensorrt checkout --detach FETCH_HEAD || true
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.1"
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: "1.97.0"
+
+      - name: Install Linux build and smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+             libasound2-dev libssl-dev libxdo-dev libudev-dev \
+             pipewire-alsa xvfb rpm libarchive-tools xdotool \
+             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Provision verified Linux VoxCPM2 release input
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip"
+          archive="${RUNNER_TEMP}/voxcpm2-runtime-linux-trt6g-r1.zip"
+          runtime="${RUNNER_TEMP}/voxcpm2-runtime"
+          archive_bytes=2935215844
+          archive_sha256="e6e6a76f970a1311cc868ba38aa95bd7654a60d7f77f6c6274c9433ab62b642d"
+          manifest_sha256="43a80742df8828465f7df05f72519c412111bcdd5b727d113280e8112dc51778"
+          curl --location --fail --retry 4 --retry-all-errors --output "$archive" "$url"
+          test "$(stat -c '%s' "$archive")" = "$archive_bytes"
+          printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --status
+          rm -rf "$runtime"
+          mkdir -p "$runtime"
+          bsdtar -xf "$archive" -C "$runtime"
+          test -f "$runtime/artifact-manifest.json"
+          test "$(sha256sum "$runtime/artifact-manifest.json" | cut -d' ' -f1)" = "$manifest_sha256"
+          {
+            echo "NAIA_VOXCPM2_TARGET_PLATFORM=linux"
+            echo "NAIA_SYSTEM_TAR=bsdtar"
+            echo "NAIA_VOXCPM2_TRT_RUNTIME_DIR=$runtime"
+            echo "NAIA_VOXCPM2_TRT_ARCHIVE=$archive"
+            echo "NAIA_VOXCPM2_TRT_ARTIFACT_SHA256=$manifest_sha256"
+            if [ -f packages/shell/scripts/voxcpm2-profile-registry.json ]; then
+              echo "NAIA_VOXCPM2_PROFILE_REGISTRY=$(realpath packages/shell/scripts/voxcpm2-profile-registry.json)"
+            fi
+          } >> "$GITHUB_ENV"
+
+      - name: Build Steam bundle from platform matrix
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          NAIA_TAURI_NO_BUNDLE: '0'
+        run: pnpm -C packages/shell run tauri:build:bundle
+
+      - name: Record VoxCPM2 download manifest origin SHA-256
+        id: voxcpm2-origin
+        shell: bash
+        run: |
+          ORIG_PATH="packages/shell/src-tauri/voxcpm2-runtime/download-manifest.json"
+          test -f "$ORIG_PATH" || {
+            echo "::error::Missing origin download-manifest.json at $ORIG_PATH"
+            exit 1
+          }
+          ORIG_SHA="$(sha256sum "$ORIG_PATH" | awk '{print $1}')"
+          echo "Origin download-manifest.json SHA-256: $ORIG_SHA"
+          echo "ORIG_VOXCPM2_MANIFEST_SHA256=$ORIG_SHA" >> "$GITHUB_ENV"
+          echo "voxcpm2_manifest_sha256=$ORIG_SHA" >> "$GITHUB_OUTPUT"
+          echo "voxcpm2_artifact_manifest_sha256=$NAIA_VOXCPM2_TRT_ARTIFACT_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Archive executable Linux AppImage
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APPIMAGE_PATHS=()
+          while IFS= read -r path; do APPIMAGE_PATHS+=("$path"); done < <(
+            find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print
+          )
+          test "${#APPIMAGE_PATHS[@]}" -eq 1 || {
+            echo "::error::Expected exactly one Linux AppImage, found ${#APPIMAGE_PATHS[@]}"
+            exit 1
+          }
+          APPIMAGE_PATH="${APPIMAGE_PATHS[0]}"
+          test -x "$APPIMAGE_PATH" || {
+            echo "::error::Linux AppImage is not executable: $APPIMAGE_PATH"
+            exit 1
+          }
+          APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
+          tar -C "$BUNDLE_DIR/appimage" -czf "$BUNDLE_DIR/appimage/${APPIMAGE_NAME}.tar.gz" "$APPIMAGE_NAME"
+
+      - name: Verify installer artifacts
+        run: node packages/shell/scripts/verify-artifacts.mjs
+
+      - name: Validate Linux package structures
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          RPM="$(find "$BUNDLE_DIR/rpm" -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+          APPIMAGE_TAR="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage.tar.gz' -print -quit)"
+          test -n "$RPM" && rpm -K --nosignature "$RPM"
+          test -n "$APPIMAGE_TAR" && tar -tzf "$APPIMAGE_TAR" >/dev/null
+          EXTRACTED="$(mktemp -d)"
+          trap 'rm -rf "$EXTRACTED"' EXIT
+          tar -xzf "$APPIMAGE_TAR" -C "$EXTRACTED"
+          EXTRACTED_APPIMAGE="$(find "$EXTRACTED" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$EXTRACTED_APPIMAGE" && test -x "$EXTRACTED_APPIMAGE"
+          (
+            cd "$EXTRACTED"
+            "$EXTRACTED_APPIMAGE" --appimage-extract >/dev/null
+          )
+          test -x "$EXTRACTED/squashfs-root/AppRun"
+          find "$EXTRACTED/squashfs-root" -type f -name 'naia-shell' -perm -111 -print -quit | grep -q .
+          find "$EXTRACTED/squashfs-root" -type f -name 'node' -perm -111 -print -quit | grep -q .
+
+      - name: Prepare Steam portable Linux depot
+        id: steam-depot
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APPIMAGE="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$APPIMAGE" && test -x "$APPIMAGE"
+          APPIMAGE="$(realpath "$APPIMAGE")"
+
+          APPIMAGE_SHA="$(sha256sum "$APPIMAGE" | awk '{print $1}')"
+          echo "Built AppImage: $APPIMAGE (SHA-256: $APPIMAGE_SHA)"
+          echo "appimage_sha256=$APPIMAGE_SHA" >> "$GITHUB_OUTPUT"
+
+          EXTRACT_DIR="$(mktemp -d)"
+          (
+            cd "$EXTRACT_DIR"
+            "$APPIMAGE" --appimage-extract >/dev/null
+          )
+          rm -rf steam-depot-linux
+          mv "$EXTRACT_DIR/squashfs-root" steam-depot-linux
+          rm -rf "$EXTRACT_DIR"
+
+          # The native channel detector reads the marker alongside the executable.
+          SHELL_BINARY="$(find steam-depot-linux -type f -name naia-shell -perm -111 -print -quit)"
+          test -n "$SHELL_BINARY"
+          printf "steam\n" > "$(dirname "$SHELL_BINARY")/naia-distribution.txt"
+          chmod +x steam-depot-linux/AppRun
+          test -f steam-depot-linux/AppRun.wrapped && chmod 755 steam-depot-linux/AppRun.wrapped
+
+          # Normalize known AppImage extraction links (.DirIcon etc.) to relative targets inside depot,
+          # and generate deterministic (sorted) manifest with lstat
+          node --input-type=module << 'EOF'
+          import fs from "node:fs";
+          import path from "node:path";
+          import crypto from "node:crypto";
+
+          function normalizeSymlinks(depotDir) {
+            depotDir = path.resolve(depotDir);
+            const queue = [depotDir];
+            const symlinks = [];
+            while (queue.length > 0) {
+              const cur = queue.pop();
+              const entries = fs.readdirSync(cur, { withFileTypes: true });
+              for (const ent of entries) {
+                const full = path.join(cur, ent.name);
+                if (ent.isSymbolicLink()) {
+                  symlinks.push(full);
+                } else if (ent.isDirectory()) {
+                  queue.push(full);
+                }
+              }
+            }
+
+            // Explicit mapping of known absolute symlinks created during AppImage build/extraction
+            // to their valid depot-relative target paths. Only entries in this map are permitted.
+            const KNOWN_ABSOLUTE_SYMLINKS = new Map([
+              [".DirIcon", "Naia.png"],
+              ["usr/lib/im-fcitx5.so", "usr/lib64/gtk-3.0/3.0.0/immodules/im-fcitx5.so"],
+              ["usr/lib/im-ibus.so", "usr/lib64/gtk-3.0/3.0.0/immodules/im-ibus.so"],
+              ["usr/lib/libprintbackend-cups.so", "usr/lib64/gtk-3.0/3.0.0/printbackends/libprintbackend-cups.so"],
+              ["usr/lib/libprintbackend-file.so", "usr/lib64/gtk-3.0/3.0.0/printbackends/libprintbackend-file.so"],
+              ["usr/lib/libprintbackend-lpr.so", "usr/lib64/gtk-3.0/3.0.0/printbackends/libprintbackend-lpr.so"],
+            ]);
+
+            for (const symlink of symlinks) {
+              const rel = path.relative(depotDir, symlink);
+              const target = fs.readlinkSync(symlink);
+              if (path.isAbsolute(target)) {
+                if (!KNOWN_ABSOLUTE_SYMLINKS.has(rel)) {
+                  throw new Error(`Absolute symlink not in known mapping: ${rel} -> ${target}`);
+                }
+                const internalRel = KNOWN_ABSOLUTE_SYMLINKS.get(rel);
+                const internal = path.join(depotDir, internalRel);
+                if (!fs.existsSync(internal)) {
+                  throw new Error(`Known symlink target does not exist inside depot: ${rel} -> ${internalRel}`);
+                }
+
+                const newRelTarget = path.relative(path.dirname(symlink), internal);
+                fs.unlinkSync(symlink);
+                fs.symlinkSync(newRelTarget, symlink);
+                console.log(`[normalize] ${rel} -> ${newRelTarget} (was ${target})`);
+              }
+            }
+
+            for (const symlink of symlinks) {
+              const rel = path.relative(depotDir, symlink);
+              const target = fs.readlinkSync(symlink);
+              if (path.isAbsolute(target)) {
+                throw new Error(`Absolute symlink remains: ${rel} -> ${target}`);
+              }
+              const resolved = path.resolve(path.dirname(symlink), target);
+              const relToDepot = path.relative(depotDir, resolved);
+              if (relToDepot.startsWith("..") || path.isAbsolute(relToDepot)) {
+                throw new Error(`Symlink escapes depot: ${rel} -> ${target}`);
+              }
+              if (!fs.existsSync(resolved)) {
+                throw new Error(`Broken symlink: ${rel} -> ${target}`);
+              }
+            }
+          }
+
+          function sha256File(file) {
+            const hash = crypto.createHash("sha256");
+            const fd = fs.openSync(file, "r");
+            const buf = Buffer.alloc(1024 * 1024);
+            let bytesRead;
+            while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+              hash.update(buf.subarray(0, bytesRead));
+            }
+            fs.closeSync(fd);
+            return hash.digest("hex");
+          }
+
+          function generateManifest(depotDir) {
+            depotDir = path.resolve(depotDir);
+            const items = [];
+
+            function walk(current) {
+              const entries = fs.readdirSync(current);
+              for (const name of entries) {
+                const full = path.join(current, name);
+                const rel = path.relative(depotDir, full);
+                const stat = fs.lstatSync(full);
+                let type, mode, target = "-", fileSha = "-";
+                mode = (stat.mode & 0o7777).toString(8).padStart(4, "0");
+
+                if (stat.isSymbolicLink()) {
+                  type = "symlink";
+                  const linkTarget = fs.readlinkSync(full);
+                  if (path.isAbsolute(linkTarget)) throw new Error(`Absolute symlink: ${rel} -> ${linkTarget}`);
+                  const resolved = path.resolve(current, linkTarget);
+                  const relToRoot = path.relative(depotDir, resolved);
+                  if (relToRoot.startsWith("..") || path.isAbsolute(relToRoot)) {
+                    throw new Error(`Symlink escapes depot: ${rel} -> ${linkTarget}`);
+                  }
+                  if (!fs.existsSync(resolved)) throw new Error(`Broken symlink: ${rel} -> ${linkTarget}`);
+                  target = JSON.stringify(linkTarget);
+                } else if (stat.isDirectory()) {
+                  type = "dir";
+                } else if (stat.isFile()) {
+                  type = "file";
+                  fileSha = sha256File(full);
+                } else {
+                  throw new Error(`Unsupported file type: ${rel}`);
+                }
+
+                items.push({
+                  rel,
+                  line: `${JSON.stringify(rel)}\t${type}\t${mode}\t${target}\t${fileSha}`
+                });
+
+                if (stat.isDirectory() && !stat.isSymbolicLink()) {
+                  walk(full);
+                }
+              }
+            }
+
+            walk(depotDir);
+            items.sort((a, b) => a.rel.localeCompare(b.rel));
+            return items.map(i => i.line).join("\n") + "\n";
+          }
+
+          const depotDir = "steam-depot-linux";
+          normalizeSymlinks(depotDir);
+          const manifest = generateManifest(depotDir);
+          fs.writeFileSync("steam-depot-linux-manifest.tsv", manifest);
+          const count = manifest.trim().split("\n").length;
+          console.log(`Generated deterministic depot manifest: ${count} items`);
+          EOF
+
+          DEPOT_FILE_COUNT="$(wc -l < steam-depot-linux-manifest.tsv)"
+          echo "Final Steam depot prepared with $DEPOT_FILE_COUNT items in manifest"
+          echo "file_count=$DEPOT_FILE_COUNT" >> "$GITHUB_OUTPUT"
+
+          # Verify essential entrypoints
+          test -x steam-depot-linux/AppRun || {
+            echo "::error::steam-depot-linux/AppRun is not executable"
+            exit 1
+          }
+          find steam-depot-linux -type f -name 'node' -perm -111 -print -quit | grep -q . || {
+            echo "::error::bundled node is not executable"
+            exit 1
+          }
+          find steam-depot-linux -type f -name 'naia-shell' -perm -111 -print -quit | grep -q . || {
+            echo "::error::bundled naia-shell is not executable"
+            exit 1
+          }
+
+      - name: Verify bundled Node mutation probe on depot
+        shell: bash
+        run: |
+          DEPOT_DIR="$PWD/steam-depot-linux"
+          BIN="$DEPOT_DIR/AppRun"
+          NODE_PATH="$(find "$DEPOT_DIR" -type f -name 'node' -perm -111 -print -quit)"
+          test -n "$NODE_PATH"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+
+          mv "$NODE_PATH" "${NODE_PATH}.mutation-disabled"
+          set +e
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+          MUTATION_STATUS=$?
+          set -e
+          mv "${NODE_PATH}.mutation-disabled" "$NODE_PATH"
+          test "$MUTATION_STATUS" -ne 0 || {
+            echo "::error::mutation probe unexpectedly passed without bundled Node"
+            exit 1
+          }
+          echo "mutation probe: expected RED confirmed"
+
+      - name: Verify normal agent and BGM execution on depot
+        shell: bash
+        run: |
+          DEPOT_DIR="$PWD/steam-depot-linux"
+          BIN="$DEPOT_DIR/AppRun"
+          NODE_PATH="$(find "$DEPOT_DIR" -type f -name 'node' -perm -111 -print -quit)"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+
+      - name: Verify Claude wrapper concurrency, repair, and tamper rejection
+        shell: bash
+        run: |
+          DEPOT_DIR="$PWD/steam-depot-linux"
+          NODE_PATH="$(find "$DEPOT_DIR" -type f -name 'node' -perm -111 -print -quit)"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+
+          WRAPPED_CLAUDE="$RESOURCE_DIR/agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
+          WRAPPED_PAYLOAD="$WRAPPED_CLAUDE.payload.gz"
+          WRAPPER_CACHE="$RUNNER_TEMP/naia-wrapper-cache"
+          test -x "$WRAPPED_CLAUDE"
+
+          # 1) Two simultaneous launches
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version &
+          WRAPPER_PID_1=$!
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version &
+          WRAPPER_PID_2=$!
+          wait "$WRAPPER_PID_1"
+          wait "$WRAPPER_PID_2"
+          sleep 1
+          RESTORED_CLAUDE="$(find "$WRAPPER_CACHE/naia/embedded-cli" -name 'claude-*' -type f -perm -u+x -print -quit)"
+          test -n "$RESTORED_CLAUDE" || {
+            echo "::error::wrapped Claude executable was not restored into the user cache"
+            exit 1
+          }
+
+          # 2) Executable-but-corrupt cache repair
+          rm -f "$RESTORED_CLAUDE"
+          printf 'corrupt cache' > "$RESTORED_CLAUDE"
+          chmod 700 "$RESTORED_CLAUDE"
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version
+
+          # 3) Tamper rejection on a disposable copy
+          TAMPER_TMP="$(mktemp -d)"
+          cp -a "$DEPOT_DIR" "$TAMPER_TMP/depot-copy"
+          REL_CLAUDE="${WRAPPED_CLAUDE#$DEPOT_DIR/}"
+          TAMPER_CLAUDE="$TAMPER_TMP/depot-copy/$REL_CLAUDE"
+          TAMPER_PAYLOAD="$TAMPER_CLAUDE.payload.gz"
+
+          node -e 'const fs=require("node:fs"),z=require("node:zlib");fs.writeFileSync(process.argv[1],z.gzipSync(Buffer.from("#!/bin/sh\nexit 0\n")))' "$TAMPER_TMP/tampered.gz"
+          cp "$TAMPER_TMP/tampered.gz" "$TAMPER_PAYLOAD"
+          rm -f "$RESTORED_CLAUDE"
+          set +e
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$TAMPER_CLAUDE" --version
+          TAMPER_STATUS=$?
+          set -e
+          rm -rf "$TAMPER_TMP"
+          test "$TAMPER_STATUS" -ne 0 || {
+            echo "::error::tampered wrapped payload unexpectedly executed"
+            exit 1
+          }
+          echo "wrapped payload tamper probe: expected RED confirmed"
+
+      - name: Write process group cleanup helper
+        shell: bash
+        run: |
+          cat << 'EOF' > /tmp/cleanup-process-group.mjs
+          export async function cleanupProcessGroup(pgid, { timeoutMs = 5000, pollIntervalMs = 100 } = {}) {
+            if (!pgid || typeof pgid !== "number" || pgid <= 1) {
+              throw new Error(`Invalid pgid for cleanupProcessGroup: ${pgid}`);
+            }
+
+            function isGroupAlive() {
+              try {
+                process.kill(-pgid, 0);
+                return true;
+              } catch (err) {
+                if (err && err.code === "ESRCH") {
+                  return false;
+                }
+                throw err;
+              }
+            }
+
+            function sendSignal(sig) {
+              try {
+                process.kill(-pgid, sig);
+              } catch (err) {
+                if (err && err.code === "ESRCH") {
+                  return;
+                }
+                throw err;
+              }
+            }
+
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            if (!isGroupAlive()) {
+              return;
+            }
+
+            sendSignal("SIGTERM");
+            const termDeadline = Date.now() + timeoutMs;
+            while (Date.now() < termDeadline) {
+              if (!isGroupAlive()) {
+                return;
+              }
+              await sleep(pollIntervalMs);
+            }
+
+            if (isGroupAlive()) {
+              sendSignal("SIGKILL");
+              const killDeadline = Date.now() + timeoutMs;
+              while (Date.now() < killDeadline) {
+                if (!isGroupAlive()) {
+                  return;
+                }
+                await sleep(pollIntervalMs);
+              }
+            }
+
+            if (isGroupAlive()) {
+              throw new Error(`Process group ${pgid} still alive after SIGKILL and timeout`);
+            }
+          }
+          EOF
+
+      - name: Verify relocated depot execution via AppRun
+        shell: bash
+        run: |
+          RELOCATED_DEPOT="$RUNNER_TEMP/relocated-steam-depot-linux"
+          rm -rf "$RELOCATED_DEPOT"
+          mv steam-depot-linux "$RELOCATED_DEPOT"
+
+          RELOCATED_ENTRY="$RELOCATED_DEPOT/AppRun"
+          test -x "$RELOCATED_ENTRY"
+          NODE_PATH="$(find "$RELOCATED_DEPOT" -type f -name 'node' -perm -111 -print -quit)"
+          test -n "$NODE_PATH"
+          RESOURCE_DIR="$(dirname "$NODE_PATH")"
+
+          # 1) Re-generate manifest on relocated depot and assert identical match
+          node --input-type=module << 'EOF'
+          import fs from "node:fs";
+          import path from "node:path";
+          import crypto from "node:crypto";
+
+          function sha256File(file) {
+            const hash = crypto.createHash("sha256");
+            const fd = fs.openSync(file, "r");
+            const buf = Buffer.alloc(1024 * 1024);
+            let bytesRead;
+            while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+              hash.update(buf.subarray(0, bytesRead));
+            }
+            fs.closeSync(fd);
+            return hash.digest("hex");
+          }
+
+          function generateManifest(depotDir) {
+            depotDir = path.resolve(depotDir);
+            const items = [];
+            function walk(current) {
+              const entries = fs.readdirSync(current);
+              for (const name of entries) {
+                const full = path.join(current, name);
+                const rel = path.relative(depotDir, full);
+                const stat = fs.lstatSync(full);
+                let type, mode, target = "-", fileSha = "-";
+                mode = (stat.mode & 0o7777).toString(8).padStart(4, "0");
+                if (stat.isSymbolicLink()) {
+                  type = "symlink";
+                  const linkTarget = fs.readlinkSync(full);
+                  if (path.isAbsolute(linkTarget)) throw new Error(`Absolute symlink: ${rel} -> ${linkTarget}`);
+                  const resolved = path.resolve(current, linkTarget);
+                  const relToRoot = path.relative(depotDir, resolved);
+                  if (relToRoot.startsWith("..") || path.isAbsolute(relToRoot)) throw new Error(`Symlink escapes depot: ${rel}`);
+                  if (!fs.existsSync(resolved)) throw new Error(`Broken symlink: ${rel}`);
+                  target = JSON.stringify(linkTarget);
+                } else if (stat.isDirectory()) {
+                  type = "dir";
+                } else if (stat.isFile()) {
+                  type = "file";
+                  fileSha = sha256File(full);
+                } else {
+                  throw new Error(`Unsupported file type: ${rel}`);
+                }
+                items.push({ rel, line: `${JSON.stringify(rel)}\t${type}\t${mode}\t${target}\t${fileSha}` });
+                if (stat.isDirectory() && !stat.isSymbolicLink()) walk(full);
+              }
+            }
+            walk(depotDir);
+            items.sort((a, b) => a.rel.localeCompare(b.rel));
+            return items.map(i => i.line).join("\n") + "\n";
+          }
+
+          const relocated = process.env.RUNNER_TEMP + "/relocated-steam-depot-linux";
+          const m = generateManifest(relocated);
+          fs.writeFileSync("relocated-manifest.tsv", m);
+          EOF
+
+          diff -u steam-depot-linux-manifest.tsv relocated-manifest.tsv || {
+            echo "::error::Relocated depot manifest differed from original depot"
+            exit 1
+          }
+          echo "PASS: Relocated depot manifest matches 100%"
+
+          # 2) Directly owned AppRun execution under xvfb-run with window display and 30s survival check
+          xvfb-run -a node --input-type=module << 'EOF'
+          import { spawn, execFileSync } from "node:child_process";
+          import fs from "node:fs";
+          import os from "node:os";
+          import path from "node:path";
+          import { inspectInstalledSession } from "./packages/shell/scripts/verify-installed-smoke.mjs";
+          import { cleanupProcessGroup } from "/tmp/cleanup-process-group.mjs";
+
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const binary = process.env.RUNNER_TEMP + "/relocated-steam-depot-linux/AppRun";
+          const depotDir = process.env.RUNNER_TEMP + "/relocated-steam-depot-linux";
+          const logPath = path.resolve(os.homedir(), ".naia", "logs", "naia.log");
+
+          function findNodeDir(dir) {
+            const queue = [dir];
+            while (queue.length > 0) {
+              const cur = queue.pop();
+              for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
+                const full = path.join(cur, ent.name);
+                if (ent.isDirectory()) queue.push(full);
+                else if (ent.isFile() && ent.name === "node") {
+                  try { fs.accessSync(full, fs.constants.X_OK); return cur; } catch {}
+                }
+              }
+            }
+            throw new Error("Could not find bundled node executable");
+          }
+          const resourceDir = findNodeDir(depotDir);
+
+          const priorSessions = fs.existsSync(logPath)
+            ? fs.readFileSync(logPath, "utf8").split(/\r?\n/).filter((l) => l.includes("[Naia] === Session started ===")).length
+            : 0;
+
+          console.log(`[smoke] Launching ${binary} (prior sessions: ${priorSessions})`);
+          const child = spawn(binary, [], {
+            cwd: path.dirname(binary),
+            env: { ...process.env },
+            stdio: "ignore",
+            detached: true,
+          });
+
+          async function cleanup() {
+            console.log("[smoke] Cleaning up process group...");
+            if (child && child.pid) {
+              await cleanupProcessGroup(child.pid, { timeoutMs: 5000 });
+            }
+          }
+
+          try {
+            const deadline = Date.now() + 120_000;
+            let sessionResult = null;
+            while (Date.now() < deadline) {
+              if (child.exitCode !== null) {
+                throw new Error(`Process exited early with code ${child.exitCode}`);
+              }
+              if (fs.existsSync(logPath)) {
+                const res = inspectInstalledSession(fs.readFileSync(logPath, "utf8"), resourceDir, priorSessions);
+                if (res.ok) {
+                  sessionResult = res;
+                  break;
+                }
+              }
+              await sleep(1000);
+            }
+            if (!sessionResult) throw new Error("Timed out waiting for session marker");
+            const markerTime = Date.now();
+            console.log("[smoke] PASS: Session markers confirmed:", sessionResult);
+
+            // Assert displayed window for process or its children via xdotool
+            let visibleWindows = [];
+            const winDeadline = Date.now() + 15_000;
+            while (Date.now() < winDeadline && visibleWindows.length === 0) {
+              const pids = [child.pid];
+              try {
+                const pgrep = execFileSync("pgrep", ["-P", String(child.pid)], { encoding: "utf8" });
+                for (const line of pgrep.split(/\r?\n/)) {
+                  const p = parseInt(line.trim(), 10);
+                  if (!isNaN(p)) pids.push(p);
+                }
+              } catch {}
+              for (const p of pids) {
+                try {
+                  const out = execFileSync("xdotool", ["search", "--onlyvisible", "--pid", String(p)], { encoding: "utf8" });
+                  for (const line of out.split(/\r?\n/)) {
+                    const w = line.trim();
+                    if (w && !visibleWindows.includes(w)) visibleWindows.push(w);
+                  }
+                } catch {}
+              }
+              if (visibleWindows.length === 0) await sleep(500);
+            }
+
+            if (visibleWindows.length === 0) {
+              throw new Error("No visible window found for app process tree");
+            }
+            for (const win of visibleWindows) {
+              let title = "", geom = "";
+              try { title = execFileSync("xdotool", ["getwindowname", win], { encoding: "utf8" }).trim(); } catch {}
+              try { geom = execFileSync("xdotool", ["getwindowgeometry", win], { encoding: "utf8" }).trim().replace(/\n/g, " "); } catch {}
+              console.log(`[smoke] PASS: Visible window confirmed: ID=${win}, title="${title}", ${geom}`);
+            }
+
+            // 30s survival check
+            const survivalTarget = markerTime + 30_000;
+            console.log(`[smoke] Checking 30s continuous survival from marker time...`);
+            while (Date.now() < survivalTarget) {
+              if (child.exitCode !== null) {
+                throw new Error(`Process exited early at ${Math.round((Date.now() - markerTime) / 1000)}s with code ${child.exitCode}`);
+              }
+              try {
+                process.kill(child.pid, 0);
+              } catch {
+                throw new Error(`Process ${child.pid} unexpectedly terminated before 30s`);
+              }
+              await sleep(1000);
+            }
+            console.log("[smoke] PASS: Process and window survived >= 30s continuously after session marker.");
+          } finally {
+            await cleanup();
+          }
+          EOF
+
+          # 3) Verify VoxCPM2 bundled runtime resources and manifest integrity (Item 1)
+          node --input-type=module << 'EOF'
+          import fs from "node:fs";
+          import path from "node:path";
+          import crypto from "node:crypto";
+
+          function sha256File(file) {
+            const hash = crypto.createHash("sha256");
+            const fd = fs.openSync(file, "r");
+            const buf = Buffer.alloc(1024 * 1024);
+            let bytesRead;
+            while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+              hash.update(buf.subarray(0, bytesRead));
+            }
+            fs.closeSync(fd);
+            return hash.digest("hex");
+          }
+
+          const depotDir = process.env.RUNNER_TEMP + "/relocated-steam-depot-linux";
+          function findNodeDir(dir) {
+            const queue = [dir];
+            while (queue.length > 0) {
+              const cur = queue.pop();
+              for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
+                const full = path.join(cur, ent.name);
+                if (ent.isDirectory()) queue.push(full);
+                else if (ent.isFile() && ent.name === "node") {
+                  try { fs.accessSync(full, fs.constants.X_OK); return cur; } catch {}
+                }
+              }
+            }
+            throw new Error("Could not find bundled node executable");
+          }
+          const resourceDir = findNodeDir(depotDir);
+          const voxRuntimeDir = path.join(resourceDir, "voxcpm2-runtime");
+
+          console.log(`[voxcpm2] Checking bundled download resources in: ${voxRuntimeDir}`);
+
+          const downloadManifestPath = path.join(voxRuntimeDir, "download-manifest.json");
+          const modelPrepPath = path.join(voxRuntimeDir, "prepare-voxcpm2-model.sh");
+          const contractPath = path.join(voxRuntimeDir, "voxcpm2-activation-contract.json");
+
+          if (!fs.existsSync(downloadManifestPath)) throw new Error("Missing voxcpm2-runtime/download-manifest.json");
+          if (!fs.existsSync(modelPrepPath)) throw new Error("Missing voxcpm2-runtime/prepare-voxcpm2-model.sh");
+          if (!fs.existsSync(contractPath)) throw new Error("Missing voxcpm2-runtime/voxcpm2-activation-contract.json");
+
+          const origContractPath = "packages/shell/src-tauri/voxcpm2-activation-contract.json";
+          const origModelPrepPath = "packages/shell/src-tauri/linux/prepare-voxcpm2-model.sh";
+
+          const contractSha = sha256File(contractPath);
+          const origContractSha = sha256File(origContractPath);
+          if (contractSha !== origContractSha) throw new Error("Contract SHA-256 mismatch with repository source");
+          console.log(`[voxcpm2] PASS: Contract SHA-256 matches repository source (${contractSha})`);
+
+          const modelPrepSha = sha256File(modelPrepPath);
+          const origModelPrepSha = sha256File(origModelPrepPath);
+          if (modelPrepSha !== origModelPrepSha) throw new Error("Model prep script SHA-256 mismatch with repository source");
+          console.log(`[voxcpm2] PASS: Model prep script SHA-256 matches repository source (${modelPrepSha})`);
+
+          const downloadManifestSha = sha256File(downloadManifestPath);
+          const expectedManifestSha = process.env.ORIG_VOXCPM2_MANIFEST_SHA256;
+          if (!expectedManifestSha) {
+            throw new Error("Missing ORIG_VOXCPM2_MANIFEST_SHA256 environment variable");
+          }
+          if (downloadManifestSha !== expectedManifestSha) {
+            throw new Error(`download-manifest.json SHA-256 mismatch: got ${downloadManifestSha}, expected ${expectedManifestSha}`);
+          }
+          console.log(`[voxcpm2] PASS: download-manifest.json whole-file SHA-256 matches origin (${downloadManifestSha})`);
+
+          const manifest = JSON.parse(fs.readFileSync(downloadManifestPath, "utf8"));
+          const expectedArtifactManifestSha = process.env.NAIA_VOXCPM2_TRT_ARTIFACT_SHA256;
+          if (!expectedArtifactManifestSha) {
+            throw new Error("Missing NAIA_VOXCPM2_TRT_ARTIFACT_SHA256 environment variable");
+          }
+          const EXPECTED_ARCHIVE_URL = "https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip";
+          const EXPECTED_ARCHIVE_SHA256 = "e6e6a76f970a1311cc868ba38aa95bd7654a60d7f77f6c6274c9433ab62b642d";
+          const EXPECTED_ARCHIVE_BYTES = 2935215844;
+
+          if (manifest.profile !== "linux_trt_6g") throw new Error(`Unexpected manifest profile: ${manifest.profile}`);
+          if (manifest.artifactManifestSha256?.toLowerCase() !== expectedArtifactManifestSha.toLowerCase()) {
+            throw new Error(`artifactManifestSha256 mismatch: ${manifest.artifactManifestSha256} vs ${expectedArtifactManifestSha}`);
+          }
+          if (manifest.archive?.url !== EXPECTED_ARCHIVE_URL) {
+            throw new Error(`archive.url mismatch: ${manifest.archive?.url}`);
+          }
+          if (manifest.archive?.sha256?.toLowerCase() !== EXPECTED_ARCHIVE_SHA256.toLowerCase()) {
+            throw new Error(`archive.sha256 mismatch: ${manifest.archive?.sha256}`);
+          }
+          if (manifest.archive?.bytes !== EXPECTED_ARCHIVE_BYTES) {
+            throw new Error(`archive.bytes mismatch: ${manifest.archive?.bytes}`);
+          }
+          console.log("[voxcpm2] PASS: download-manifest.json verified against origin SHA-256 and NAIA_VOXCPM2_TRT_ARTIFACT_SHA256.");
+          EOF
+
+          # Move back for archiving
+          mv "$RELOCATED_DEPOT" steam-depot-linux
+
+      - name: Archive Steam portable Linux depot
+        shell: bash
+        run: |
+          tar -czf naia-shell-steam-linux.tar.gz steam-depot-linux
+          # Verify tar integrity
+          tar -tzf naia-shell-steam-linux.tar.gz >/dev/null
+
+      - name: Upload Steam portable Linux depot artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: naia-shell-steam-linux-${{ github.sha }}
+          path: |
+            naia-shell-steam-linux.tar.gz
+            steam-depot-linux-manifest.tsv
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-steam-depot-download:
+    needs: build-steam-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ORIG_VOXCPM2_MANIFEST_SHA256: ${{ needs.build-steam-linux.outputs.voxcpm2_manifest_sha256 }}
+      NAIA_VOXCPM2_TRT_ARTIFACT_SHA256: ${{ needs.build-steam-linux.outputs.voxcpm2_artifact_manifest_sha256 }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.1"
+
+      - name: Install runtime and smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-0 libgtk-3-0 pipewire-alsa libasound2t64 xvfb xdotool
+
+      - name: Download Steam Linux depot artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: naia-shell-steam-linux-${{ github.sha }}
+          path: downloaded-artifact
+
+      - name: Extract downloaded depot and verify integrity, symlinks, and permissions
+        shell: bash
+        run: |
+          test -f downloaded-artifact/naia-shell-steam-linux.tar.gz
+          test -f downloaded-artifact/steam-depot-linux-manifest.tsv
+
+          mkdir -p steam-depot-linux
+          tar -xzpf downloaded-artifact/naia-shell-steam-linux.tar.gz -C steam-depot-linux --strip-components=1
+
+          # 1) Generate manifest for extracted depot and assert 100% exact match
+          node --input-type=module << 'EOF'
+          import fs from "node:fs";
+          import path from "node:path";
+          import crypto from "node:crypto";
+
+          function sha256File(file) {
+            const hash = crypto.createHash("sha256");
+            const fd = fs.openSync(file, "r");
+            const buf = Buffer.alloc(1024 * 1024);
+            let bytesRead;
+            while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+              hash.update(buf.subarray(0, bytesRead));
+            }
+            fs.closeSync(fd);
+            return hash.digest("hex");
+          }
+
+          function generateManifest(depotDir) {
+            depotDir = path.resolve(depotDir);
+            const items = [];
+            function walk(current) {
+              const entries = fs.readdirSync(current);
+              for (const name of entries) {
+                const full = path.join(current, name);
+                const rel = path.relative(depotDir, full);
+                const stat = fs.lstatSync(full);
+                let type, mode, target = "-", fileSha = "-";
+                mode = (stat.mode & 0o7777).toString(8).padStart(4, "0");
+                if (stat.isSymbolicLink()) {
+                  type = "symlink";
+                  const linkTarget = fs.readlinkSync(full);
+                  if (path.isAbsolute(linkTarget)) throw new Error(`Absolute symlink: ${rel} -> ${linkTarget}`);
+                  const resolved = path.resolve(current, linkTarget);
+                  const relToRoot = path.relative(depotDir, resolved);
+                  if (relToRoot.startsWith("..") || path.isAbsolute(relToRoot)) throw new Error(`Symlink escapes depot: ${rel}`);
+                  if (!fs.existsSync(resolved)) throw new Error(`Broken symlink: ${rel}`);
+                  target = JSON.stringify(linkTarget);
+                } else if (stat.isDirectory()) {
+                  type = "dir";
+                } else if (stat.isFile()) {
+                  type = "file";
+                  fileSha = sha256File(full);
+                } else {
+                  throw new Error(`Unsupported file type: ${rel}`);
+                }
+                items.push({ rel, line: `${JSON.stringify(rel)}\t${type}\t${mode}\t${target}\t${fileSha}` });
+                if (stat.isDirectory() && !stat.isSymbolicLink()) walk(full);
+              }
+            }
+            walk(depotDir);
+            items.sort((a, b) => a.rel.localeCompare(b.rel));
+            return items.map(i => i.line).join("\n") + "\n";
+          }
+
+          const extracted = "steam-depot-linux";
+          const m = generateManifest(extracted);
+          fs.writeFileSync("extracted-manifest.tsv", m);
+          EOF
+
+          diff -u downloaded-artifact/steam-depot-linux-manifest.tsv extracted-manifest.tsv || {
+            echo "::error::Extracted depot manifest differs from artifact manifest"
+            exit 1
+          }
+          echo "PASS: Extracted depot manifest matches artifact manifest 100%"
+
+          # 2) Verify executable permissions and essential entrypoints
+          test -x steam-depot-linux/AppRun || {
+            echo "::error::steam-depot-linux/AppRun is not executable"
+            exit 1
+          }
+
+          find steam-depot-linux -type f -name 'node' -perm -111 -print -quit | grep -q . || {
+            echo "::error::bundled node is not executable"
+            exit 1
+          }
+
+          find steam-depot-linux -type f -name 'naia-shell' -perm -111 -print -quit | grep -q . || {
+            echo "::error::bundled naia-shell is not executable"
+            exit 1
+          }
+
+      - name: Verify VoxCPM2 runtime resources in downloaded depot
+        shell: bash
+        run: |
+          node --input-type=module << 'EOF'
+          import fs from "node:fs";
+          import path from "node:path";
+          import crypto from "node:crypto";
+
+          function sha256File(file) {
+            const hash = crypto.createHash("sha256");
+            const fd = fs.openSync(file, "r");
+            const buf = Buffer.alloc(1024 * 1024);
+            let bytesRead;
+            while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+              hash.update(buf.subarray(0, bytesRead));
+            }
+            fs.closeSync(fd);
+            return hash.digest("hex");
+          }
+
+          const depotDir = path.resolve("steam-depot-linux");
+          function findNodeDir(dir) {
+            const queue = [dir];
+            while (queue.length > 0) {
+              const cur = queue.pop();
+              for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
+                const full = path.join(cur, ent.name);
+                if (ent.isDirectory()) queue.push(full);
+                else if (ent.isFile() && ent.name === "node") {
+                  try { fs.accessSync(full, fs.constants.X_OK); return cur; } catch {}
+                }
+              }
+            }
+            throw new Error("Could not find bundled node executable");
+          }
+          const resourceDir = findNodeDir(depotDir);
+          const voxRuntimeDir = path.join(resourceDir, "voxcpm2-runtime");
+
+          console.log(`[voxcpm2] Checking bundled download resources in: ${voxRuntimeDir}`);
+
+          const downloadManifestPath = path.join(voxRuntimeDir, "download-manifest.json");
+          const modelPrepPath = path.join(voxRuntimeDir, "prepare-voxcpm2-model.sh");
+          const contractPath = path.join(voxRuntimeDir, "voxcpm2-activation-contract.json");
+
+          if (!fs.existsSync(downloadManifestPath)) throw new Error("Missing voxcpm2-runtime/download-manifest.json");
+          if (!fs.existsSync(modelPrepPath)) throw new Error("Missing voxcpm2-runtime/prepare-voxcpm2-model.sh");
+          if (!fs.existsSync(contractPath)) throw new Error("Missing voxcpm2-runtime/voxcpm2-activation-contract.json");
+
+          const origContractPath = "packages/shell/src-tauri/voxcpm2-activation-contract.json";
+          const origModelPrepPath = "packages/shell/src-tauri/linux/prepare-voxcpm2-model.sh";
+
+          const contractSha = sha256File(contractPath);
+          const origContractSha = sha256File(origContractPath);
+          if (contractSha !== origContractSha) throw new Error("Contract SHA-256 mismatch with repository source");
+          console.log(`[voxcpm2] PASS: Contract SHA-256 matches repository source (${contractSha})`);
+
+          const modelPrepSha = sha256File(modelPrepPath);
+          const origModelPrepSha = sha256File(origModelPrepPath);
+          if (modelPrepSha !== origModelPrepSha) throw new Error("Model prep script SHA-256 mismatch with repository source");
+          console.log(`[voxcpm2] PASS: Model prep script SHA-256 matches repository source (${modelPrepSha})`);
+
+          const downloadManifestSha = sha256File(downloadManifestPath);
+          const expectedManifestSha = process.env.ORIG_VOXCPM2_MANIFEST_SHA256;
+          if (!expectedManifestSha) {
+            throw new Error("Missing ORIG_VOXCPM2_MANIFEST_SHA256 environment variable");
+          }
+          if (downloadManifestSha !== expectedManifestSha) {
+            throw new Error(`download-manifest.json SHA-256 mismatch: got ${downloadManifestSha}, expected ${expectedManifestSha}`);
+          }
+          console.log(`[voxcpm2] PASS: download-manifest.json whole-file SHA-256 matches origin (${downloadManifestSha})`);
+
+          const manifest = JSON.parse(fs.readFileSync(downloadManifestPath, "utf8"));
+          const expectedArtifactManifestSha = process.env.NAIA_VOXCPM2_TRT_ARTIFACT_SHA256;
+          if (!expectedArtifactManifestSha) {
+            throw new Error("Missing NAIA_VOXCPM2_TRT_ARTIFACT_SHA256 environment variable");
+          }
+          const EXPECTED_ARCHIVE_URL = "https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip";
+          const EXPECTED_ARCHIVE_SHA256 = "e6e6a76f970a1311cc868ba38aa95bd7654a60d7f77f6c6274c9433ab62b642d";
+          const EXPECTED_ARCHIVE_BYTES = 2935215844;
+
+          if (manifest.profile !== "linux_trt_6g") throw new Error(`Unexpected manifest profile: ${manifest.profile}`);
+          if (manifest.artifactManifestSha256?.toLowerCase() !== expectedArtifactManifestSha.toLowerCase()) {
+            throw new Error(`artifactManifestSha256 mismatch: ${manifest.artifactManifestSha256} vs ${expectedArtifactManifestSha}`);
+          }
+          if (manifest.archive?.url !== EXPECTED_ARCHIVE_URL) {
+            throw new Error(`archive.url mismatch: ${manifest.archive?.url}`);
+          }
+          if (manifest.archive?.sha256?.toLowerCase() !== EXPECTED_ARCHIVE_SHA256.toLowerCase()) {
+            throw new Error(`archive.sha256 mismatch: ${manifest.archive?.sha256}`);
+          }
+          if (manifest.archive?.bytes !== EXPECTED_ARCHIVE_BYTES) {
+            throw new Error(`archive.bytes mismatch: ${manifest.archive?.bytes}`);
+          }
+          console.log("[voxcpm2] PASS: download-manifest.json verified in downloaded depot.");
+          EOF
+
+      - name: Write process group cleanup helper
+        shell: bash
+        run: |
+          cat << 'EOF' > /tmp/cleanup-process-group.mjs
+          export async function cleanupProcessGroup(pgid, { timeoutMs = 5000, pollIntervalMs = 100 } = {}) {
+            if (!pgid || typeof pgid !== "number" || pgid <= 1) {
+              throw new Error(`Invalid pgid for cleanupProcessGroup: ${pgid}`);
+            }
+
+            function isGroupAlive() {
+              try {
+                process.kill(-pgid, 0);
+                return true;
+              } catch (err) {
+                if (err && err.code === "ESRCH") {
+                  return false;
+                }
+                throw err;
+              }
+            }
+
+            function sendSignal(sig) {
+              try {
+                process.kill(-pgid, sig);
+              } catch (err) {
+                if (err && err.code === "ESRCH") {
+                  return;
+                }
+                throw err;
+              }
+            }
+
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            if (!isGroupAlive()) {
+              return;
+            }
+
+            sendSignal("SIGTERM");
+            const termDeadline = Date.now() + timeoutMs;
+            while (Date.now() < termDeadline) {
+              if (!isGroupAlive()) {
+                return;
+              }
+              await sleep(pollIntervalMs);
+            }
+
+            if (isGroupAlive()) {
+              sendSignal("SIGKILL");
+              const killDeadline = Date.now() + timeoutMs;
+              while (Date.now() < killDeadline) {
+                if (!isGroupAlive()) {
+                  return;
+                }
+                await sleep(pollIntervalMs);
+              }
+            }
+
+            if (isGroupAlive()) {
+              throw new Error(`Process group ${pgid} still alive after SIGKILL and timeout`);
+            }
+          }
+          EOF
+
+      - name: Smoke verified depot with AppRun in xvfb
+        shell: bash
+        run: |
+          xvfb-run -a node --input-type=module << 'EOF'
+          import { spawn, execFileSync } from "node:child_process";
+          import fs from "node:fs";
+          import os from "node:os";
+          import path from "node:path";
+          import { inspectInstalledSession } from "./packages/shell/scripts/verify-installed-smoke.mjs";
+          import { cleanupProcessGroup } from "/tmp/cleanup-process-group.mjs";
+
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const binary = path.resolve("steam-depot-linux/AppRun");
+          const depotDir = path.resolve("steam-depot-linux");
+          const logPath = path.resolve(os.homedir(), ".naia", "logs", "naia.log");
+
+          function findNodeDir(dir) {
+            const queue = [dir];
+            while (queue.length > 0) {
+              const cur = queue.pop();
+              for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
+                const full = path.join(cur, ent.name);
+                if (ent.isDirectory()) queue.push(full);
+                else if (ent.isFile() && ent.name === "node") {
+                  try { fs.accessSync(full, fs.constants.X_OK); return cur; } catch {}
+                }
+              }
+            }
+            throw new Error("Could not find bundled node executable");
+          }
+          const resourceDir = findNodeDir(depotDir);
+
+          const priorSessions = fs.existsSync(logPath)
+            ? fs.readFileSync(logPath, "utf8").split(/\r?\n/).filter((l) => l.includes("[Naia] === Session started ===")).length
+            : 0;
+
+          console.log(`[smoke] Launching downloaded depot ${binary} (prior sessions: ${priorSessions})`);
+          const child = spawn(binary, [], {
+            cwd: path.dirname(binary),
+            env: { ...process.env },
+            stdio: "ignore",
+            detached: true,
+          });
+
+          async function cleanup() {
+            console.log("[smoke] Cleaning up process group...");
+            if (child && child.pid) {
+              await cleanupProcessGroup(child.pid, { timeoutMs: 5000 });
+            }
+          }
+
+          try {
+            const deadline = Date.now() + 120_000;
+            let sessionResult = null;
+            while (Date.now() < deadline) {
+              if (child.exitCode !== null) {
+                throw new Error(`Process exited early with code ${child.exitCode}`);
+              }
+              if (fs.existsSync(logPath)) {
+                const res = inspectInstalledSession(fs.readFileSync(logPath, "utf8"), resourceDir, priorSessions);
+                if (res.ok) {
+                  sessionResult = res;
+                  break;
+                }
+              }
+              await sleep(1000);
+            }
+            if (!sessionResult) throw new Error("Timed out waiting for session marker");
+            const markerTime = Date.now();
+            console.log("[smoke] PASS: Session markers confirmed:", sessionResult);
+
+            let visibleWindows = [];
+            const winDeadline = Date.now() + 15_000;
+            while (Date.now() < winDeadline && visibleWindows.length === 0) {
+              const pids = [child.pid];
+              try {
+                const pgrep = execFileSync("pgrep", ["-P", String(child.pid)], { encoding: "utf8" });
+                for (const line of pgrep.split(/\r?\n/)) {
+                  const p = parseInt(line.trim(), 10);
+                  if (!isNaN(p)) pids.push(p);
+                }
+              } catch {}
+              for (const p of pids) {
+                try {
+                  const out = execFileSync("xdotool", ["search", "--onlyvisible", "--pid", String(p)], { encoding: "utf8" });
+                  for (const line of out.split(/\r?\n/)) {
+                    const w = line.trim();
+                    if (w && !visibleWindows.includes(w)) visibleWindows.push(w);
+                  }
+                } catch {}
+              }
+              if (visibleWindows.length === 0) await sleep(500);
+            }
+
+            if (visibleWindows.length === 0) {
+              throw new Error("No visible window found for app process tree");
+            }
+            for (const win of visibleWindows) {
+              let title = "", geom = "";
+              try { title = execFileSync("xdotool", ["getwindowname", win], { encoding: "utf8" }).trim(); } catch {}
+              try { geom = execFileSync("xdotool", ["getwindowgeometry", win], { encoding: "utf8" }).trim().replace(/\n/g, " "); } catch {}
+              console.log(`[smoke] PASS: Visible window confirmed: ID=${win}, title="${title}", ${geom}`);
+            }
+
+            const survivalTarget = markerTime + 30_000;
+            console.log(`[smoke] Checking 30s continuous survival from marker time...`);
+            while (Date.now() < survivalTarget) {
+              if (child.exitCode !== null) {
+                throw new Error(`Process exited early at ${Math.round((Date.now() - markerTime) / 1000)}s with code ${child.exitCode}`);
+              }
+              try {
+                process.kill(child.pid, 0);
+              } catch {
+                throw new Error(`Process ${child.pid} unexpectedly terminated before 30s`);
+              }
+              await sleep(1000);
+            }
+            console.log("[smoke] PASS: Process and window survived >= 30s continuously after session marker.");
+          } finally {
+            await cleanup();
+          }
+          EOF
