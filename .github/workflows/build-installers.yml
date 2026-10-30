@@ -127,6 +127,11 @@ jobs:
             exit 1
           }
 
+      - name: Test macOS stapler retry policy
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: TMPDIR="$RUNNER_TEMP" bash packages/shell/scripts/__tests__/stapler-retry.test.sh
+
       - run: pnpm install --frozen-lockfile
 
       - name: Provision verified Windows VoxCPM2 release input
@@ -416,9 +421,8 @@ jobs:
             echo "App notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
             exit 1
           fi
-          xcrun stapler staple "${APP_PATHS[0]}"
-          spctl -a -vv -t exec "${APP_PATHS[0]}"
-          xcrun stapler validate "${APP_PATHS[0]}"
+          source packages/shell/scripts/stapler-retry.sh
+          staple_accepted_app "${APP_PATHS[0]}" "${{ matrix.arch }}"
           rm -f "$ZIP"
 
       - name: Create macOS DMG without mounting an image
@@ -561,8 +565,14 @@ jobs:
             echo "DMG notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
             exit 1
           fi
-          xcrun stapler staple "${DMG_PATHS[0]}"
-          xcrun stapler validate "${DMG_PATHS[0]}"
+          source packages/shell/scripts/stapler-retry.sh
+          stapler_accepted staple "${DMG_PATHS[0]}" "${{ matrix.arch }}" DMG
+          if [ "$STAPLER_SKIPPED" = 1 ]; then
+            echo 'MACOS_DMG_STAPLE_SKIPPED=true' >> "$GITHUB_ENV"
+            echo 'DMG stapler validation was skipped because the ticket was not embedded.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            stapler_accepted validate "${DMG_PATHS[0]}" "${{ matrix.arch }}" DMG
+          fi
 
       - name: Verify macOS code signature
         if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
@@ -587,11 +597,20 @@ jobs:
           set -euo pipefail
           APP_PATHS=("packages/shell/src-tauri/target/release/bundle/macos"/*.app)
           test "${#APP_PATHS[@]}" -eq 1 && test -d "${APP_PATHS[0]}"
-          spctl -a -vv -t exec "${APP_PATHS[0]}"
-          xcrun stapler validate "${APP_PATHS[0]}"
+          source packages/shell/scripts/stapler-retry.sh
+          if [ "${MACOS_APP_STAPLE_SKIPPED:-false}" != true ]; then
+            spctl -a -vv -t exec "${APP_PATHS[0]}"
+            stapler_accepted validate "${APP_PATHS[0]}" "${{ matrix.arch }}" app
+          else
+            echo "::warning::Skipping Intel app spctl and staple validation after recorded network failure."
+          fi
           DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
           test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
-          xcrun stapler validate "${DMG_PATHS[0]}"
+          if [ "${MACOS_DMG_STAPLE_SKIPPED:-false}" != true ]; then
+            stapler_accepted validate "${DMG_PATHS[0]}" "${{ matrix.arch }}" DMG
+          else
+            echo '::warning::Skipping Intel DMG staple validation after recorded network failure.'
+          fi
 
       - name: Clean macOS signing credentials
         if: always() && matrix.platform == 'darwin'
@@ -1335,9 +1354,10 @@ jobs:
             echo "Universal app notarization failed (status: ${NOTARY_STATUS:-unavailable}, submit exit: ${NOTARY_EXIT:-unknown})."
             exit 1
           fi
-          xcrun stapler staple "$APP"
+          source packages/shell/scripts/stapler-retry.sh
+          stapler_retry staple "$APP"
           spctl -a -vv -t exec "$APP"
-          xcrun stapler validate "$APP"
+          stapler_retry validate "$APP"
           rm -f "$ZIP"
 
       - name: Clean Universal macOS signing credentials
