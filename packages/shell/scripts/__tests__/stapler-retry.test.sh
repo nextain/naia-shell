@@ -38,4 +38,18 @@ reset_case
 scenario=fatal
 if staple_accepted_app app x64; then exit 1; else [ "$?" = 3 ]; fi
 [ ! -f "$work/summary" ]
+for action in staple validate; do
+  reset_case
+  scenario=network
+  stapler_accepted "$action" image.dmg x64 DMG > "$work/output"
+  [ "$STAPLER_SKIPPED" = 1 ] && [ "$(cat "$work/count")" = 6 ]
+  grep -q '::warning::' "$work/output" && grep -q "DMG: $action skipped" "$work/summary"
+  reset_case
+  if stapler_accepted "$action" image.dmg arm64 DMG; then exit 1; else [ "$?" = 68 ]; fi
+  [ "$(cat "$work/count")" = 6 ] && [ ! -f "$work/summary" ]
+  reset_case
+  scenario=fatal
+  if stapler_accepted "$action" image.dmg x64 DMG; then exit 1; else [ "$?" = 3 ]; fi
+  [ "$(cat "$work/count")" = 1 ] && [ ! -f "$work/summary" ]
+done
 echo 'stapler retry tests passed'

@@ -28,20 +28,32 @@ stapler_retry() {
   done
 }
 
-staple_accepted_app() {
-  local app=$1 arch=$2 status
-  if stapler_retry staple "$app"; then
-    spctl -a -vv -t exec "$app"
-    stapler_retry validate "$app"
+stapler_accepted() {
+  local action=$1 target=$2 arch=$3 kind=$4 status
+  STAPLER_SKIPPED=0
+  if stapler_retry "$action" "$target"; then
+    return 0
   else
     status=$?
-    if [ "$arch" = x64 ] && [ "$STAPLER_NETWORK_EXHAUSTED" = 1 ]; then
-      echo '::warning::Accepted Intel app could not be stapled after six network failures; app spctl and stapler validation are skipped.'
-      echo '### Intel macOS app: staple skipped' >> "$GITHUB_STEP_SUMMARY"
-      echo 'Apple accepted notarization, but staple failed six times with network errors. The app has no embedded ticket; online Gatekeeper verification depends on Apple availability. App spctl and stapler validation were skipped. The DMG remains subject to notarization and stapling.' >> "$GITHUB_STEP_SUMMARY"
-      echo 'MACOS_APP_STAPLE_SKIPPED=true' >> "$GITHUB_ENV"
-    else
-      return "$status"
-    fi
+  fi
+  if [ "$arch" = x64 ] && [ "$STAPLER_NETWORK_EXHAUSTED" = 1 ]; then
+    STAPLER_SKIPPED=1
+    echo "::warning::Accepted Intel $kind $action failed after six network errors."
+    echo "### Intel macOS $kind: $action skipped" >> "$GITHUB_STEP_SUMMARY"
+    echo "Apple accepted notarization, but $action failed six times with network errors. Ticket availability and online Gatekeeper verification depend on Apple availability." >> "$GITHUB_STEP_SUMMARY"
+    return 0
+  fi
+  return "$status"
+}
+
+staple_accepted_app() {
+  local app=$1 arch=$2
+  stapler_accepted staple "$app" "$arch" app || return $?
+  if [ "$STAPLER_SKIPPED" = 0 ]; then
+    spctl -a -vv -t exec "$app"
+    stapler_accepted validate "$app" "$arch" app
+  else
+    echo 'App spctl and stapler validation were skipped because the ticket was not embedded.' >> "$GITHUB_STEP_SUMMARY"
+    echo 'MACOS_APP_STAPLE_SKIPPED=true' >> "$GITHUB_ENV"
   fi
 }

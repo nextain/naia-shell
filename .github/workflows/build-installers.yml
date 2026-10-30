@@ -566,8 +566,13 @@ jobs:
             exit 1
           fi
           source packages/shell/scripts/stapler-retry.sh
-          stapler_retry staple "${DMG_PATHS[0]}"
-          stapler_retry validate "${DMG_PATHS[0]}"
+          stapler_accepted staple "${DMG_PATHS[0]}" "${{ matrix.arch }}" DMG
+          if [ "$STAPLER_SKIPPED" = 1 ]; then
+            echo 'MACOS_DMG_STAPLE_SKIPPED=true' >> "$GITHUB_ENV"
+            echo 'DMG stapler validation was skipped because the ticket was not embedded.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            stapler_accepted validate "${DMG_PATHS[0]}" "${{ matrix.arch }}" DMG
+          fi
 
       - name: Verify macOS code signature
         if: matrix.platform == 'darwin' && env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
@@ -595,13 +600,17 @@ jobs:
           source packages/shell/scripts/stapler-retry.sh
           if [ "${MACOS_APP_STAPLE_SKIPPED:-false}" != true ]; then
             spctl -a -vv -t exec "${APP_PATHS[0]}"
-            stapler_retry validate "${APP_PATHS[0]}"
+            stapler_accepted validate "${APP_PATHS[0]}" "${{ matrix.arch }}" app
           else
             echo "::warning::Skipping Intel app spctl and staple validation after recorded network failure."
           fi
           DMG_PATHS=("packages/shell/src-tauri/target/release/bundle/dmg"/*.dmg)
           test "${#DMG_PATHS[@]}" -eq 1 && test -f "${DMG_PATHS[0]}"
-          stapler_retry validate "${DMG_PATHS[0]}"
+          if [ "${MACOS_DMG_STAPLE_SKIPPED:-false}" != true ]; then
+            stapler_accepted validate "${DMG_PATHS[0]}" "${{ matrix.arch }}" DMG
+          else
+            echo '::warning::Skipping Intel DMG staple validation after recorded network failure.'
+          fi
 
       - name: Clean macOS signing credentials
         if: always() && matrix.platform == 'darwin'
