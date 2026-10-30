@@ -69,6 +69,17 @@ function pickLocalized(
 	return localized?.[locale] || legacy || localized?.en || root || null;
 }
 
+function mergeLegacyLanguages(
+	localized: Record<string, string> | undefined,
+	korean: string | undefined,
+	english: string | undefined,
+): Record<string, string> {
+	const merged = { ...localized };
+	if (!merged.ko && korean) merged.ko = korean;
+	if (!merged.en && english) merged.en = english;
+	return merged;
+}
+
 export async function getStoreProductMetadata(
 	appId: string,
 	locale = getLocale(),
@@ -79,14 +90,18 @@ export async function getStoreProductMetadata(
 	const product = body.data?.find((item) => item.app_id === appId);
 	const manifest = product?.manifest;
 	if (!manifest) return null;
-	const legacyName = locale === "ko" ? manifest.nameKo || manifest.nameEn : manifest.nameEn || manifest.nameKo;
-	const legacyDescription = locale === "ko" ? manifest.descriptionKo || manifest.descriptionEn : manifest.descriptionEn || manifest.descriptionKo;
+	const names = mergeLegacyLanguages(manifest.names, manifest.nameKo, manifest.nameEn);
+	const descriptions = mergeLegacyLanguages(
+		manifest.descriptions,
+		manifest.descriptionKo,
+		manifest.descriptionEn,
+	);
 	return {
-		name: pickLocalized(manifest.names, locale, legacyName, manifest.name),
+		name: pickLocalized(names, locale, manifest.nameEn || manifest.nameKo, manifest.name),
 		description: pickLocalized(
-			manifest.descriptions,
+			descriptions,
 			locale,
-			legacyDescription,
+			manifest.descriptionEn || manifest.descriptionKo,
 			manifest.description,
 		),
 		thumbnailUrl: manifest.thumbnailUrl || manifest.thumbnail_url || null,

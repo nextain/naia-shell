@@ -2466,6 +2466,7 @@ Test Coverage Map (P02)
 
 | UC 상태·행동 | Vitest·Rust 파일/그룹 | 실 UI·Tauri e2e |
 |---|---|---|
+| UC-INSTALLED-APP-HOST | `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`: 권한·출처·질의·낭독·언어 브리지 계약; `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: 상품 정보와 설치 상태; `packages/shell/src-tauri/src/app.rs`: 매니페스트 메타데이터 왕복 | `packages/shell/e2e/467-slide-presenter.spec.ts`: 설치 앱 UI 브리지·Slides 회귀; `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: 네이티브 매니페스트 정보 |
 | 앱 질문·낭독 요청의 권한/출처, 정상·조기 종료·취소, 앱/요청 ID 분리, 언어 초기화·변경 | `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`: `installed app host bridge`; `packages/shell/src/components/__tests__/ChatArea.test.tsx`: installed app question/speech cases | `packages/shell/e2e/467-slide-presenter.spec.ts`: installed app bridge and Slides regression |
 | 설치 화면 다국어 이름·설명·썸네일, 빈 정보, 설치 진행/성공/오류 복구, 좁은 폭·ARIA | `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: store metadata/install states; `packages/shell/src/lib/__tests__/app-store-client.test.ts`: localized product metadata; `packages/shell/src-tauri/src/app.rs`: manifest metadata roundtrip | `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: native manifest metadata; `packages/shell/e2e/467-slide-presenter.spec.ts`: UI install flow |
 

@@ -873,7 +873,7 @@ export function ChatArea({
 		// cannot block the next turn forever.
 		const ttsVisualStateActive = outputStage !== null;
 		if (!store.isStreaming && !ttsActive && !ttsVisualStateActive) return;
-		settleInstalledAppReply("", "Naia 응답이 취소되었습니다. 다시 눌러 주세요.");
+		settleInstalledAppReply("", t("apps.requestCancelled"));
 		// A cancelled response may never deliver its terminal `finish` chunk.
 		// Do not let an unfinished reasoning block hide the next request.
 		thinkingStreamFilterRef.current.reset();
@@ -1783,7 +1783,7 @@ export function ChatArea({
 		if (!text) return;
 		if (installedAppTurn && installedAppVoiceBlockedRef.current) {
 			installedAppTurnRef.current = true;
-			settleInstalledAppReply("", "음성 대화 중에는 앱 응답을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.");
+			settleInstalledAppReply("", t("apps.voiceModeBlocked"));
 			return;
 		}
 		pendingAiGestureActionRef.current = null;
@@ -1899,11 +1899,11 @@ export function ChatArea({
 		}
 		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
 		if (!isNewCore() && configuredProvider === "nextain" && !config?.naiaKey) {
-			settleInstalledAppReply("", "Naia 계정 로그인이 필요합니다. 설정에서 로그인해주세요.");
+			settleInstalledAppReply("", t("apps.loginRequired"));
 			useChatStore
 				.getState()
 				.appendStreamChunk(
-					"Naia 계정 로그인이 필요합니다. 설정에서 로그인해주세요.",
+					t("apps.loginRequired"),
 				);
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
@@ -1925,7 +1925,7 @@ export function ChatArea({
 			isOmniModel(configuredProvider, configuredModel)
 		) {
 			if (installedAppTurnRef.current) {
-				settleInstalledAppReply("", "음성 대화 중에는 앱 응답을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.");
+				settleInstalledAppReply("", t("apps.voiceModeBlocked"));
 				useChatStore.getState().finishStreaming();
 				completeCurrentRequest(requestId);
 				return;
@@ -1953,7 +1953,7 @@ export function ChatArea({
 		// config 없음 = 설정/온보딩 전 신규 유저. 새 core 라도 다운스트림(provider/model/tts)이 config 필드를
 		// 요구하므로 여기서 안전 종료(우회 시 null 참조). 신규 유저의 config 생성 = 온보딩/모델셋팅 슬라이스 범위.
 		if (!config) {
-			settleInstalledAppReply("", "Naia 설정이 필요합니다. 설정 후 다시 눌러 주세요.");
+			settleInstalledAppReply("", t("apps.settingsRequired"));
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
 			return;
@@ -2234,7 +2234,7 @@ export function ChatArea({
 			}));
 			Logger.debug("ChatArea", "Installed app request received", { requestId: detail.requestId });
 			if (installedAppVoiceBlockedRef.current) {
-				respondError("음성 대화 중에는 앱 응답을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.");
+				respondError(t("apps.voiceModeBlocked"));
 				return;
 			}
 			if (installedAppRequestRef.current) {
@@ -2254,7 +2254,7 @@ export function ChatArea({
 				if (!ready || !installedAppSendRef.current || installedAppVoiceBlockedRef.current) {
 					installedAppTurnRef.current = true;
 					settleInstalledAppReply("", installedAppVoiceBlockedRef.current
-						? "음성 대화 중에는 앱 응답을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요."
+						? t("apps.voiceModeBlocked")
 						: ready ? "Naia chat is unavailable." : "Naia could not register the app tools. Please retry.");
 					return;
 				}
