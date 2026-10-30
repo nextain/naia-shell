@@ -75,7 +75,7 @@ const scopedArch = (path) => {
 	const architecturePackage =
 		/\/node_modules\/(?:@[^/]+\/)?(?:[^/]+[_.-])?(darwin|macos)[_.-](x64|x86_64|arm64|aarch64)(?:\/|$)/;
 	const architecturePrebuild =
-		/\/(?:prebuilds|native|bin)\/(?:[^/]+\/)*(darwin|macos)[_.-]?(x64|x86_64|arm64|aarch64)(?:\/|$)/;
+		/\/(?:prebuilds|native|bin)\/(?:[^/]+\/)*(darwin|macos)[_./-]?(x64|x86_64|arm64|aarch64)(?:\/|$)/;
 	const match =
 		normalized.match(architecturePackage) ??
 		normalized.match(architecturePrebuild);

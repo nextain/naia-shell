@@ -90,6 +90,28 @@ describe("macOS Universal Binary assembly", () => {
 		);
 	});
 
+	it("accepts matching slash-separated prebuild slices in both input apps", () => {
+		const { x64, arm64 } = fixture();
+		const paths = ["darwin/arm64", "darwin/x64"].map(
+			arch => `Contents/Resources/agent/node_modules/onnxruntime-node/bin/napi-v3/${arch}/x.dylib`,
+		);
+		for (const app of [x64, arm64]) for (const path of paths) {
+			const file = resolve(app, path);
+			mkdirSync(resolve(file, ".."), { recursive: true });
+			writeFileSync(file, path.includes("/arm64/") ? "arm64" : "x86_64");
+		}
+		const exec = (command: string, args: string[]) => {
+			if (command === "file") return Buffer.from(args[1].endsWith(".dylib") ? "Mach-O" : "data");
+			if (command === "lipo") return Buffer.from(readFileSync(args[1], "utf8"));
+			throw new Error(`unexpected ${command}`);
+		};
+		const output = resolve(x64, "../scoped.app");
+		assembleUniversalApp({ x64App: x64, arm64App: arm64, outputApp: output }, exec as never);
+		expect(assertUniversalAppMachO(output, exec as never)).toEqual(expect.arrayContaining(paths));
+		writeFileSync(resolve(arm64, paths[0]), "x86_64");
+		expect(() => assembleUniversalApp({ x64App: x64, arm64App: arm64, outputApp: output }, exec as never)).toThrow("scoped Mach-O mismatch");
+	});
+
 	it("classifies only file(1) Mach-O output as native", () => {
 		const exec = (_command: string, args: string[]) =>
 			Buffer.from(args[1]?.endsWith("native") ? "Mach-O 64-bit" : "JSON data");
