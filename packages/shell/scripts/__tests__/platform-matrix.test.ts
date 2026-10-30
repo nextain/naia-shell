@@ -972,7 +972,7 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow).toContain("- name: Sign macOS DMG with Developer ID");
 		expect(workflow).toContain("- name: Notarize and staple macOS DMG");
 		expect(workflow).toContain('codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY"');
-		expect(workflow).toContain('xcrun stapler staple "${DMG_PATHS[0]}"');
+		expect(workflow).toContain('stapler_retry staple "${DMG_PATHS[0]}"');
 		expect(workflow).not.toContain(
 			"APPLE_API_KEY_PATH: ${{ env.NAIA_UNSIGNED != 'true'",
 		);
