@@ -4,8 +4,8 @@ date: "2026-10-31"
 # 이 운영체제의 기계와 스펙만 조건으로 삼는다 — scripts/lib/release-target.mjs.
 targets: [windows]
 summary:
-  en: "v0.2.5 replaces v0.2.4 and ships the same scope with the Windows fixes found before release. It targets Steam support (distribution detection, hiding top-up links on the Steam build, and Windows Steam depot artifacts), a project app with coding agent, dashboard and issue panes for public sector projects, and Blackjack education through that app. Windows signing and installer/updater artifacts remain release foundations. Steam sign-in, account linking, and Steam credit pack top-ups (#729), generic usage-cost and K credit display, the separate terminal/docs/board workspace, and knowledge recall move to a later release. Existing code for out-of-scope items remains."
-  ko: "0.2.5는 0.2.4를 대신하며, 같은 범위에 출시 전에 찾은 Windows 고침을 더합니다. Steam 지원(배포 판별·Steam 판 충전 링크 숨김·Windows Steam 디포 산출물), 공공기관 프로젝트를 위한 코딩 에이전트·대시보드·이슈 칸의 프로젝트 앱, 그 앱을 이용한 블랙잭 교육을 목표로 합니다. Windows 서명과 설치·업데이트 산출물은 출시 기반으로 둡니다. Steam 로그인·계정 연결·Steam 크레딧 팩 충전(#729), 일반 사용 비용·크레딧 K 표기, 터미널·문서·작업판으로 이뤄진 별도 3분할 작업 공간, 지식 회상은 다음 판 이후로 옮깁니다. 범위 밖 항목의 기존 코드는 제거하지 않고 남깁니다."
+  en: "v0.2.5 replaces v0.2.4 and ships the same scope with the Windows fixes found before release. It targets Steam support (distribution detection, hiding top-up links on the Steam build, and Windows Steam depot artifacts), a personal assistant dashboard with coding agent, dashboard and issue panes, and Blackjack education through the same dashboard app. Windows signing and installer/updater artifacts remain release foundations. Steam sign-in, account linking, and Steam credit pack top-ups (#729), generic usage-cost and K credit display, the separate terminal/docs/board workspace, and knowledge recall move to a later release. Existing code for out-of-scope items remains."
+  ko: "0.2.5는 0.2.4를 대신하며, 같은 범위에 출시 전에 찾은 Windows 고침을 더합니다. Steam 지원(배포 판별·Steam 판 충전 링크 숨김·Windows Steam 디포 산출물), 개인 비서가 일하는 코딩 에이전트·대시보드·이슈 칸의 대시보드 앱, 같은 대시보드 앱을 이용한 블랙잭 교육을 목표로 합니다. Windows 서명과 설치·업데이트 산출물은 출시 기반으로 둡니다. Steam 로그인·계정 연결·Steam 크레딧 팩 충전(#729), 일반 사용 비용·크레딧 K 표기, 터미널·문서·작업판으로 이뤄진 별도 3분할 작업 공간, 지식 회상은 다음 판 이후로 옮깁니다. 범위 밖 항목의 기존 코드는 제거하지 않고 남깁니다."
 changes:
   - type: fix
     scope: app-store
@@ -35,13 +35,13 @@ changes:
     scope: workspace
     issue: 756
     description:
-      en: "Open a public sector project in the project app with coding agent, dashboard and issue panes."
-      ko: "프로젝트 앱에서 코딩 에이전트·대시보드·이슈 칸으로 공공기관 프로젝트를 엽니다."
+      en: "Open a personal assistant dashboard with coding agent, dashboard and issue panes."
+      ko: "개인 비서가 일하는 대시보드에서 코딩 에이전트·대시보드·이슈 칸을 엽니다."
   - type: feature
     scope: education
     description:
-      en: "Open the Blackjack education example in the same project app and teach with its coding agent, preferring Claude and supporting OpenCode."
-      ko: "같은 프로젝트 앱에서 블랙잭 교육 예제를 열고, Claude를 우선하며 OpenCode를 지원하는 코딩 에이전트로 교육합니다."
+      en: "Open the Blackjack education example in the same dashboard app and teach with its coding agent, preferring Claude and supporting OpenCode."
+      ko: "같은 대시보드 앱에서 블랙잭 교육 예제를 열고, Claude를 우선하며 OpenCode를 지원하는 코딩 에이전트로 교육합니다."
   - type: feature
     scope: naia
     description:
@@ -74,5 +74,30 @@ changes:
     scope: workspace
     issue: 781
     description:
-      en: "Allow OpenCode and Codex installed via npm on Windows (.cmd executables) to start in the project app coding pane."
-      ko: "Windows 에서 npm 으로 설치한 OpenCode·Codex(.cmd 실행 파일)를 프로젝트 앱 코딩 칸에서 시작할 수 있게 합니다."
+      en: "Allow OpenCode and Codex installed via npm on Windows (.cmd executables) to start in the dashboard app coding pane."
+      ko: "Windows 에서 npm 으로 설치한 OpenCode·Codex(.cmd 실행 파일)를 대시보드 앱 코딩 칸에서 시작할 수 있게 합니다."
+  - type: fix
+    scope: bgm
+    description:
+      en: "Keep YouTube captions off by default and add a captions toggle. Music controls accept keyboard shortcuts when focused, including on narrow screens."
+      ko: "YouTube 자막을 기본으로 끄고 켜기 단추를 더합니다. 좁은 화면을 포함해 음악 조작 막대에 초점이 있을 때 키보드로 조작합니다."
+  - type: fix
+    scope: avatar
+    description:
+      en: "Let users fold avatar controls, expose video avatar zoom controls, and show AI and TTS state with icons."
+      ko: "아바타 조작을 접을 수 있고 영상 아바타 확대·축소 단추와 AI·TTS 상태 아이콘을 표시합니다."
+  - type: fix
+    scope: bgm
+    description:
+      en: "Add three Korean radio track names to the default asset list."
+      ko: "기본 자산 목록에 한국어 라디오 곡 세 개의 이름을 추가합니다."
+  - type: fix
+    scope: workspace
+    description:
+      en: "Rename the Projects app to Dashboard and give it a dashboard icon."
+      ko: "프로젝트 앱 이름을 대시보드로 바꾸고 대시보드 아이콘을 적용합니다."
+  - type: fix
+    scope: browser
+    description:
+      en: "Save browser downloads in the selected ADK folder's downloads directory, with numbered names for collisions."
+      ko: "브라우저 다운로드를 선택한 ADK 폴더의 downloads에 저장하고 같은 이름에는 번호를 붙입니다."
