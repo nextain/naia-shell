@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "../../i18n";
+import { setWebAssetsModeForTests } from "../../web-runtime/web-assets";
 import { AudioQueue } from "../../voice/audio-queue";
 import { LocalVoiceScheduler } from "../local-voice-scheduler";
 import {
@@ -43,6 +45,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 	afterEach(() => {
+		setWebAssetsModeForTests(null);
 		vi.clearAllMocks();
 		vi.unstubAllGlobals();
 	});
@@ -91,6 +94,121 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 		createSentenceTtsPipeline(deps).sendSentence("Hello there.");
 		expect(speak).toHaveBeenCalledTimes(1);
 		expect(synthesizeMock).not.toHaveBeenCalled();
+	});
+
+	it("selects matching SpeechSynthesisVoice when browser voice is configured in web mode", () => {
+		setWebAssetsModeForTests(true);
+		const utterances: Array<{
+			text: string;
+			lang: string;
+			voice: unknown;
+		}> = [];
+		const koVoice = {
+			voiceURI: "ko-KR-SunHi",
+			name: "Microsoft SunHi",
+			lang: "ko-KR",
+		};
+		vi.stubGlobal("speechSynthesis", {
+			speak: vi.fn((u) => utterances.push(u)),
+			cancel: vi.fn(),
+			getVoices: () => [koVoice],
+		});
+		vi.stubGlobal(
+			"SpeechSynthesisUtterance",
+			class {
+				lang = "";
+				voice: unknown = null;
+				onstart: (() => void) | null = null;
+				onend: (() => void) | null = null;
+				onerror: (() => void) | null = null;
+				constructor(public text: string) {}
+			},
+		);
+		const { deps } = makeDeps({
+			getVoiceConfig: () => ({
+				ttsProvider: "browser",
+				voice: "ko-KR-SunHi",
+			}),
+		});
+		createSentenceTtsPipeline(deps).sendSentence("안녕하세요.");
+		expect(utterances).toHaveLength(1);
+		expect(utterances[0].voice).toBe(koVoice);
+		expect(utterances[0].lang).toBe("ko-KR");
+	});
+
+	it("automatically chooses a voice in the current UI language", async () => {
+		setWebAssetsModeForTests(true);
+		await setLocale("ja");
+		const japanese = { voiceURI: "ja-voice", name: "Japanese", lang: "ja-JP" };
+		const speak = vi.fn();
+		vi.stubGlobal("speechSynthesis", {
+			speak,
+			cancel: vi.fn(),
+			getVoices: () => [
+				{ voiceURI: "ko-voice", name: "Korean", lang: "ko-KR" },
+				japanese,
+			],
+		});
+		vi.stubGlobal(
+			"SpeechSynthesisUtterance",
+			class {
+				lang = "";
+				voice: unknown = null;
+				constructor(public text: string) {}
+			},
+		);
+		const { deps } = makeDeps({
+			getVoiceConfig: () => ({ ttsProvider: "browser" }),
+		});
+		createSentenceTtsPipeline(deps).sendSentence("こんにちは。");
+		expect(speak.mock.calls[0][0]).toMatchObject({
+			voice: japanese,
+			lang: "ja-JP",
+		});
+		await setLocale("en");
+	});
+
+	it("keeps desktop baseline behavior (sets utter.lang directly without utter.voice lookup) when isWebMode() is false", () => {
+		setWebAssetsModeForTests(false);
+		const utterances: Array<{
+			text: string;
+			lang: string;
+			voice: unknown;
+		}> = [];
+		const getVoices = vi.fn(() => [
+			{
+				voiceURI: "ko-KR-SunHi",
+				name: "Microsoft SunHi",
+				lang: "ko-KR",
+			},
+		]);
+		vi.stubGlobal("speechSynthesis", {
+			speak: vi.fn((u) => utterances.push(u)),
+			cancel: vi.fn(),
+			getVoices,
+		});
+		vi.stubGlobal(
+			"SpeechSynthesisUtterance",
+			class {
+				lang = "";
+				voice: unknown = null;
+				onstart: (() => void) | null = null;
+				onend: (() => void) | null = null;
+				onerror: (() => void) | null = null;
+				constructor(public text: string) {}
+			},
+		);
+		const { deps } = makeDeps({
+			getVoiceConfig: () => ({
+				ttsProvider: "browser",
+				voice: "ko-KR-SunHi",
+			}),
+		});
+		createSentenceTtsPipeline(deps).sendSentence("안녕하세요.");
+		expect(utterances).toHaveLength(1);
+		expect(getVoices).not.toHaveBeenCalled();
+		expect(utterances[0].voice).toBeNull();
+		expect(utterances[0].lang).toBe("ko-KR-SunHi");
 	});
 
 	it("sends the same normalized text to browser and remote providers", async () => {
@@ -163,7 +281,11 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 				audioDurationSeconds: null,
 			}),
 		);
-		expect(queue.enqueueOrdered).toHaveBeenCalledWith(0, "QUJD", expect.any(Object));
+		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
+			0,
+			"QUJD",
+			expect.any(Object),
+		);
 	});
 
 	it("local engine failure: one notice, no browser fallback, slot released", async () => {
@@ -272,6 +394,7 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 
 describe("sentence TTS pipeline — local voice streaming slot", () => {
 	afterEach(() => {
+		setWebAssetsModeForTests(null);
 		vi.clearAllMocks();
 		vi.unstubAllGlobals();
 	});
@@ -301,9 +424,9 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(1);
 		// The slot is claimed before the request leaves — that is what removes
 		// the whole-page wait before the first sound.
-		expect(
-			queue.enqueueOrderedStream.mock.invocationCallOrder[0],
-		).toBeLessThan(synthesizeMock.mock.invocationCallOrder[0]);
+		expect(queue.enqueueOrderedStream.mock.invocationCallOrder[0]).toBeLessThan(
+			synthesizeMock.mock.invocationCallOrder[0],
+		);
 		await flush();
 		expect(synthesizeMock).toHaveBeenCalledWith(
 			expect.objectContaining({ streamPcm: true }),
@@ -373,7 +496,10 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 	it("FR-VOICE.20: the first chunk resumes playback before the sentence finishes", async () => {
 		const pausePlayback = vi.fn();
 		const resumePlayback = vi.fn();
-		const scheduler = new LocalVoiceScheduler({ pausePlayback, resumePlayback });
+		const scheduler = new LocalVoiceScheduler({
+			pausePlayback,
+			resumePlayback,
+		});
 		let sendChunk!: (chunk: Int16Array) => void;
 		let finish!: (value: { audioBase64: string }) => void;
 		synthesizeMock.mockImplementation((opts: any) => {
@@ -408,7 +534,10 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 	it("FR-VOICE.20: a host that sends no chunks still releases through the enqueue path", async () => {
 		const pausePlayback = vi.fn();
 		const resumePlayback = vi.fn();
-		const scheduler = new LocalVoiceScheduler({ pausePlayback, resumePlayback });
+		const scheduler = new LocalVoiceScheduler({
+			pausePlayback,
+			resumePlayback,
+		});
 		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
 		const { deps, queue } = makeStreamingDeps(scheduler);
 		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
@@ -481,7 +610,10 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		try {
 			const pausePlayback = vi.fn();
 			const resumePlayback = vi.fn();
-			const scheduler = new LocalVoiceScheduler({ pausePlayback, resumePlayback });
+			const scheduler = new LocalVoiceScheduler({
+				pausePlayback,
+				resumePlayback,
+			});
 			let resolveFirst!: (val: { audioBase64: string }) => void;
 			const firstPromise = new Promise<{ audioBase64: string }>((resolve) => {
 				resolveFirst = resolve;
@@ -516,5 +648,4 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 			vi.useRealTimers();
 		}
 	});
-
 });

@@ -738,6 +738,12 @@
 			"conf": [],
 			"env": [],
 			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "web-adk-read-tools.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
 		}
 	]
 }

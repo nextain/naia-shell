@@ -1,13 +1,30 @@
 import { Suspense, lazy } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { appRegistry } from "../../lib/app-registry";
+import { getAdkPath } from "../../lib/adk-store";
+import { t } from "../../lib/i18n";
+import { WEB_ADK_PATH } from "../../lib/web-runtime/web-adk-path";
+import { isWebMode } from "../../lib/web-runtime/web-assets";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
 
 const HerdrWorkspaceCenterArea = lazy(() =>
 	import("./HerdrWorkspaceCenterArea"),
 );
 
-function DeferredHerdrWorkspaceCenterArea(props: AppCenterProps) {
+export function DeferredHerdrWorkspaceCenterArea(props: AppCenterProps) {
+	if (isWebMode()) {
+		const path = getAdkPath();
+		return (
+			<section className="herdr-workspace__files" aria-label={t("workspace.herdrFileTree")}>
+				<header className="herdr-workspace__section-title">{t("workspace.herdrFileTree")}</header>
+				{path === WEB_ADK_PATH ? (
+					<code data-testid="web-workspace-path" style={{ display: "block", padding: "10px", overflowWrap: "anywhere" }}>{path}</code>
+				) : (
+					<div className="herdr-workspace__empty">{t("workspace.herdrWaiting")}</div>
+				)}
+			</section>
+		);
+	}
 	return (
 		<Suspense fallback={null}>
 			<HerdrWorkspaceCenterArea {...props} />
@@ -166,10 +183,12 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 ];
 
 function startWorkspaceWatcher() {
+	if (isWebMode()) return;
 	invoke("workspace_start_watch").catch(() => {});
 }
 
 function stopWorkspaceWatcher() {
+	if (isWebMode()) return;
 	invoke("workspace_stop_watch").catch(() => {});
 }
 

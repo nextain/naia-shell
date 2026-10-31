@@ -41,12 +41,10 @@ describe("isLabBalanceUnauthorized", () => {
 		expect(isLabBalanceUnauthorized(new Error("Naia balance HTTP 503"))).toBe(
 			false,
 		);
-		expect(isLabBalanceUnauthorized(new Error("Failed to fetch"))).toBe(
-			false,
-		);
-		expect(isLabBalanceUnauthorized(new DOMException("The operation was aborted"))).toBe(
-			false,
-		);
+		expect(isLabBalanceUnauthorized(new Error("Failed to fetch"))).toBe(false);
+		expect(
+			isLabBalanceUnauthorized(new DOMException("The operation was aborted")),
+		).toBe(false);
 	});
 });
 
@@ -72,5 +70,40 @@ describe("markNaiaKeyUnauthorized / onNaiaKeyUnauthorized", () => {
 		markNaiaKeyUnauthorized();
 
 		expect(handler).not.toHaveBeenCalled();
+	});
+});
+
+describe("web balance routing", () => {
+	it("uses browser HTTP even when the web runtime installs the Tauri shim", async () => {
+		const { setWebAssetsModeForTests } = await import(
+			"../web-runtime/web-assets"
+		);
+		const { fetchLabBalancePayload } = await import("../lab-balance");
+		setWebAssetsModeForTests(true);
+		const invoke = vi.fn();
+		Object.defineProperty(window, "__TAURI_INTERNALS__", {
+			configurable: true,
+			value: { invoke },
+		});
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue({ ok: true, json: async () => ({ balance: 200000 }) });
+		vi.stubGlobal("fetch", fetchMock);
+		try {
+			expect(
+				await fetchLabBalancePayload("https://example.test/", "test-key"),
+			).toEqual({ balance: 200000 });
+			expect(fetchMock).toHaveBeenCalledWith(
+				"https://example.test/v1/profile/balance",
+				expect.objectContaining({
+					headers: { "X-AnyLLM-Key": "Bearer test-key" },
+				}),
+			);
+			expect(invoke).not.toHaveBeenCalled();
+		} finally {
+			setWebAssetsModeForTests(null);
+			Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+			vi.unstubAllGlobals();
+		}
 	});
 });

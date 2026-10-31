@@ -48,6 +48,32 @@ import {
 } from "../lib/ollama-thinking-status";
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import {
+	isRetiredWebBackground,
+	isWebMode,
+	WEB_BACKGROUND_ASSETS,
+	WEB_DEFAULT_BACKGROUND,
+} from "../lib/web-runtime/web-assets";
+import {
+	getWebAuthenticatedUserId,
+	isWebAuthenticated,
+	logoutWebSession,
+	startWebLoginRedirect,
+} from "../lib/web-runtime/web-auth";
+import {
+	formatWebStorageSummaryLine,
+	getWebStoragePersistState,
+	requestWebPersistentStorage,
+	subscribeWebStoragePersistState,
+} from "../lib/web-runtime/web-storage-persist";
+import { getWebModelStatus } from "../lib/web-runtime/web-model-status";
+import {
+	WEB_LLM_MODEL_IDS,
+	WEB_LLM_MODEL_PREF_KEY,
+	formatWebLlmModelLabel,
+	isWebLlmModelId,
+} from "../lib/web-runtime/webllm-model";
+import { isWebSpeechAvailable } from "../lib/stt";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
 	isRecommendedLocalValue,
@@ -222,12 +248,12 @@ import {
 	RadioDjSettingsCard,
 } from "./ProactiveSpeechSettingsSection";
 import { RefAudioSection } from "./RefAudioSection";
+import { useWebModelStatus } from "./WebModelStatusBar";
 
 const SkillsTab = lazy(() =>
 	import("./SkillsTab").then(({ SkillsTab }) => ({ default: SkillsTab })),
 );
 
-const LLM_PROVIDERS = listLlmProviders();
 
 function vramTierLabelKey(_id: VramTierId) {
 	return "settings.vramTier.windows-voice-6g" as const;
@@ -723,6 +749,14 @@ async function openNvaAvatarCreator(): Promise<void> {
 	}
 }
 
+export async function reloadAfterWebProviderWrite(
+	write: Promise<void>,
+	reload: () => void,
+): Promise<void> {
+	await write;
+	reload();
+}
+
 export function SettingsTab() {
 	const localeHydrating = useSyncExternalStore(
 		subscribeNaiaConfigHydration,
@@ -778,6 +812,7 @@ export function SettingsTab() {
 	const initProvider = (initialMainRole.provider ?? "") as ProviderId;
 	const savedModel = initialMainRole.model;
 	const [provider, setProvider] = useState<ProviderId>(initProvider);
+	const webModelStatus = useWebModelStatus();
 	const modelValid =
 		savedModel &&
 		(initProvider === "ollama" ||
@@ -785,8 +820,17 @@ export function SettingsTab() {
 			(getLlmProvider(initProvider)?.models.some((m) => m.id === savedModel) ??
 				false));
 	const [model, setModel] = useState(
-		modelValid ? savedModel : getDefaultLlmModel(initProvider),
+		isWebMode() && initProvider === "webllm" && webModelStatus.model
+			? webModelStatus.model
+			: modelValid
+				? savedModel
+				: getDefaultLlmModel(initProvider),
 	);
+	useEffect(() => {
+		if (isWebMode() && provider === "webllm" && webModelStatus.model) {
+			setModel(webModelStatus.model);
+		}
+	}, [provider, webModelStatus.model]);
 	const [configSecretsSettled, setConfigSecretsSettled] = useState(false);
 	// SettingsTab remains mounted while the Shell starts.  The workspace config
 	// hydrates asynchronously, so its initial state can otherwise keep showing
@@ -802,6 +846,16 @@ export function SettingsTab() {
 			if (!mainRole.provider) return;
 			const nextProvider = mainRole.provider as ProviderId;
 			setProvider(nextProvider);
+			if (isWebMode() && nextProvider === "webllm") {
+				const runtimeModel = getWebModelStatus().model;
+				setModel(
+					runtimeModel ||
+						(typeof mainRole.model === "string" && mainRole.model.trim()
+							? mainRole.model
+							: getDefaultLlmModel(nextProvider)),
+				);
+				return;
+			}
 			setModel(
 				typeof mainRole.model === "string" && mainRole.model.trim()
 					? mainRole.model
@@ -830,7 +884,10 @@ export function SettingsTab() {
 	const [naiaNvas, setNaiaNvas] = useState<string[]>([]);
 	const [avatarProvider, setAvatarProvider] = useState<
 		"vrm" | "naia-video-avatar"
-	>(existing?.avatarProvider ?? "naia-video-avatar");
+	>(
+		existing?.avatarProvider ??
+			(import.meta.env.MODE === "web" ? "vrm" : "naia-video-avatar"),
+	);
 	const [nvaModel, setNvaModel] = useState(existing?.nvaModel ?? "");
 	const [activeBgPath, setActiveBgPath] = useState<string>("");
 	const [backgroundVideoFilename, setBackgroundVideoFilename] = useState<
@@ -850,17 +907,78 @@ export function SettingsTab() {
 		existing?.vrmModel,
 	);
 	const [ttsVoice, setTtsVoice] = useState(
-		existing?.ttsVoice ?? defaultVoiceForProvider,
+		existing?.ttsVoice ?? (isWebMode() ? "" : defaultVoiceForProvider),
 	);
 	// 기본값은 `effectiveTtsProvider` 한 곳에서 정한다 — 프로파일 카드도 같은 함수를
 	// 읽는다. 여기에만 두면 카드가 "미설정" 이라 적는 동안 이 드롭다운은 Edge 를
-	// 보여 준다(#575).
+	// 보여 준다(#575). 웹판은 브라우저 내장 합성("browser")으로 고정한다.
 	const [ttsProvider, setTtsProvider] = useState<TtsProviderId>(
-		effectiveTtsProvider((existing ?? {}) as AppConfig),
+		isWebMode()
+			? "browser"
+			: effectiveTtsProvider((existing ?? {}) as AppConfig),
 	);
 	const [sttProvider, setSttProvider] = useState<SttProviderId>(
-		existing?.sttProvider ?? "",
+		existing?.sttProvider ?? (isWebMode() ? "web-speech" : ""),
 	);
+	const [browserSpeechVoices, setBrowserSpeechVoices] = useState<
+		SpeechSynthesisVoice[]
+	>([]);
+	const [webStorageState, setWebStorageState] = useState(() =>
+		getWebStoragePersistState(),
+	);
+	const [webAuthLoggedIn, setWebAuthLoggedIn] = useState(() =>
+		isWebAuthenticated(),
+	);
+	const [webAuthUserId, setWebAuthUserId] = useState(() =>
+		getWebAuthenticatedUserId(),
+	);
+	const [webAuthError, setWebAuthError] = useState<string | null>(null);
+	useEffect(() => {
+		if (!isWebMode()) return;
+		const unsubStorage = subscribeWebStoragePersistState(() => {
+			setWebStorageState(getWebStoragePersistState());
+		});
+		void requestWebPersistentStorage();
+		const syncAuth = () => {
+			setWebAuthLoggedIn(isWebAuthenticated());
+			setWebAuthUserId(getWebAuthenticatedUserId());
+		};
+		window.addEventListener("naia_auth_ready", syncAuth);
+		window.addEventListener("naia-web-auth-changed", syncAuth);
+		return () => {
+			unsubStorage();
+			window.removeEventListener("naia_auth_ready", syncAuth);
+			window.removeEventListener("naia-web-auth-changed", syncAuth);
+		};
+	}, []);
+	useEffect(() => {
+		if (
+			!isWebMode() ||
+			typeof window === "undefined" ||
+			!("speechSynthesis" in window)
+		)
+			return;
+		const synth = window.speechSynthesis;
+		if (!synth || typeof synth.getVoices !== "function") return;
+		const refreshVoices = () => {
+			try {
+				setBrowserSpeechVoices(synth.getVoices() ?? []);
+			} catch {
+				setBrowserSpeechVoices([]);
+			}
+		};
+		refreshVoices();
+		const prevHandler = synth.onvoiceschanged;
+		synth.onvoiceschanged = (ev) => {
+			refreshVoices();
+			if (typeof prevHandler === "function") prevHandler.call(synth, ev);
+		};
+		return () => {
+			if (synth.onvoiceschanged !== prevHandler) {
+				synth.onvoiceschanged = prevHandler;
+			}
+		};
+	}, []);
 	const [sttModel, setSttModel] = useState(existing?.sttModel ?? "");
 	const [sttModels, setSttModels] = useState<SttModelInfo[]>([]);
 	const [sttDownloading, setSttDownloading] = useState<string | null>(null);
@@ -874,6 +992,14 @@ export function SettingsTab() {
 			const cfg = loadConfig();
 			setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
 			setNvaModel(cfg?.nvaModel ?? "");
+			if (cfg?.vrmModel !== undefined) {
+				const nextVrm = normalizeLocalPath(cfg.vrmModel);
+				setVrmModel(nextVrm);
+				setSavedVrmModel(nextVrm);
+			}
+			if (cfg?.backgroundVideo !== undefined) {
+				setBackgroundVideoFilename(cfg.backgroundVideo);
+			}
 		};
 		window.addEventListener("naia-config-changed", syncAvatarFromConfig);
 		return () =>
@@ -2959,7 +3085,12 @@ export function SettingsTab() {
 		setAvatarModelPath(normalized);
 		setSavedVrmModel(normalized);
 		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, vrmModel: normalized || undefined });
+		if (cfg) {
+			saveConfig({ ...cfg, vrmModel: normalized || undefined });
+			if (isWebMode()) {
+				void writeNaiaUiConfig({ vrmModel: normalized || undefined });
+			}
+		}
 	}
 
 	function handleNaiaBgSelect(path: string) {
@@ -2969,7 +3100,12 @@ export function SettingsTab() {
 		setBackgroundMediaType(getBackgroundMediaType(path));
 		void toLocalBlobUrl(path).then(setBackgroundVideoUrl);
 		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, backgroundVideo: filename || undefined });
+		if (cfg) {
+			saveConfig({ ...cfg, backgroundVideo: filename || undefined });
+			if (isWebMode()) {
+				void writeNaiaUiConfig({ backgroundVideo: filename || undefined });
+			}
+		}
 	}
 
 	function handleClearNaiaBg() {
@@ -2978,7 +3114,12 @@ export function SettingsTab() {
 		setBackgroundMediaType("");
 		setBackgroundVideoUrl("");
 		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, backgroundVideo: undefined });
+		if (cfg) {
+			saveConfig({ ...cfg, backgroundVideo: undefined });
+			if (isWebMode()) {
+				void writeNaiaUiConfig({ backgroundVideo: undefined });
+			}
+		}
 	}
 
 	// #12: Import file (Downloads → naia-settings/{subdir}/)
@@ -3125,6 +3266,10 @@ export function SettingsTab() {
 	}
 
 	function handleProviderChange(id: ProviderId) {
+		if (isWebMode() && isNaiaConfigHydrationPending()) {
+			setError(t("settings.saveFailed"));
+			return;
+		}
 		ollamaPullSelectionRevisionRef.current += 1;
 		setProvider(id);
 		// Provider switch resets all CLI readiness state (#605 defect fix).
@@ -3142,10 +3287,25 @@ export function SettingsTab() {
 		}
 		// UC-MODEL-SELECT contract: persist the provider/model switch so the gRPC
 		// agent reloads with it (prev. only Save persisted → stale provider/model).
-		const selectedModel =
+		let selectedModel =
 			id !== "ollama"
 				? getDefaultLlmModel(id)
 				: ((loadConfig()?.model as string | undefined) ?? "");
+		if (isWebMode() && id !== provider) {
+			try {
+				if (provider === "nextain" && model)
+					localStorage.setItem("naia-web-nextain-model", model);
+				if (id === "nextain")
+					selectedModel =
+						localStorage.getItem("naia-web-nextain-model") || selectedModel;
+				if (id === "webllm") {
+					const saved = localStorage.getItem(WEB_LLM_MODEL_PREF_KEY);
+					if (isWebLlmModelId(saved)) selectedModel = saved;
+				}
+			} catch {
+				/* Storage can be unavailable. */
+			}
+		}
 		const legacySelection = applyModelSelectionToConfig(
 			loadConfig() as Record<string, unknown> | null,
 			id,
@@ -3157,7 +3317,24 @@ export function SettingsTab() {
 			{ provider: id, model: selectedModel },
 		);
 		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
-		void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
+		const write = writeNaiaConfig(
+			provSel as unknown as Record<string, unknown>,
+		);
+		if (
+			isWebMode() &&
+			id !== provider &&
+			(id === "webllm" || provider === "webllm")
+		) {
+			void reloadAfterWebProviderWrite(write, () => window.location.reload())
+				.catch((error) => {
+					Logger.warn("SettingsTab", "Provider switch could not be saved", {
+						error: String(error),
+					});
+					setError(t("settings.saveFailed"));
+				});
+		} else {
+			void write;
+		}
 	}
 
 	async function checkCliReadiness(
@@ -3313,7 +3490,12 @@ export function SettingsTab() {
 
 	// Load background list from naia-settings
 	useEffect(() => {
-		const savedFilename = existing?.backgroundVideo as string | undefined;
+		const rawSavedFilename = existing?.backgroundVideo as string | undefined;
+		const savedFilename =
+			isWebMode() && isRetiredWebBackground(rawSavedFilename)
+				? WEB_DEFAULT_BACKGROUND
+				: (rawSavedFilename ??
+					(isWebMode() ? WEB_DEFAULT_BACKGROUND : undefined));
 		listNaiaAssets("background").then((paths) => {
 			setNaiaBgs(paths);
 			if (savedFilename) {
@@ -3323,6 +3505,12 @@ export function SettingsTab() {
 		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
+
+	useEffect(() => {
+		if (!backgroundVideoFilename || naiaBgs.length === 0) return;
+		const match = naiaBgs.find((p) => p.endsWith(backgroundVideoFilename));
+		if (match) setActiveBgPath(match);
+	}, [backgroundVideoFilename, naiaBgs]);
 
 	// Load .nva directory list from naia-settings
 	useEffect(() => {
@@ -3380,6 +3568,32 @@ export function SettingsTab() {
 			// Resolve the effective TTS provider / voice / credentials, then
 			// synthesize shell-side (#363). The agent's skill_tts was never a real
 			// synthesizer, so preview routes through the same path as live voice.
+			if (isWebMode()) {
+				if (
+					typeof window === "undefined" ||
+					!("speechSynthesis" in window) ||
+					typeof SpeechSynthesisUtterance === "undefined"
+				) {
+					throw new Error("이 브라우저는 음성 합성을 지원하지 않습니다");
+				}
+				window.speechSynthesis.cancel();
+				const utter = new SpeechSynthesisUtterance(getPreviewText(ttsVoice));
+				if (
+					ttsVoice &&
+					typeof window.speechSynthesis.getVoices === "function"
+				) {
+					const matched = window.speechSynthesis
+						.getVoices()
+						.find((v) => v.voiceURI === ttsVoice || v.name === ttsVoice);
+					if (matched) {
+						utter.voice = matched;
+						if (matched.lang) utter.lang = matched.lang;
+					}
+				}
+				window.speechSynthesis.speak(utter);
+				return;
+			}
+
 			let synthProvider: TtsProviderId;
 			let synthVoice: string | undefined;
 
@@ -3560,10 +3774,14 @@ export function SettingsTab() {
 		}
 		const defaultVrm = DEFAULT_AVATAR_MODEL;
 		const savedAvatarProvider: AppConfig["avatarProvider"] = avatarProvider;
+		const savedModelId =
+			isWebMode() && provider === "webllm" && webModelStatus.model
+				? webModelStatus.model
+				: model;
 		let newConfig: AppConfig = {
 			...existing,
 			provider,
-			model,
+			model: savedModelId,
 			modelSortMode,
 			apiKey: isNextainProvider ? "" : resolvedApiKey,
 			naiaKey: naiaKey || undefined,
@@ -3609,7 +3827,7 @@ export function SettingsTab() {
 			vllmHost:
 				provider === "vllm" ? vllmHost.trim() || undefined : existing?.vllmHost,
 			naiaLocalUrl: naiaLocalUrl.trim() || undefined,
-			voice: isOmniModel(provider, model) ? voice : existing?.voice,
+			voice: isOmniModel(provider, savedModelId) ? voice : existing?.voice,
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
 			// Memory settings
@@ -3648,7 +3866,7 @@ export function SettingsTab() {
 		const mainProviderUnchanged = persistedMainRole?.provider === provider;
 		const mainRole: LlmRoleConfig = {
 			provider,
-			model,
+			model: savedModelId,
 			...(mainProviderUnchanged &&
 			persistedMainRole?.credentialRef !== undefined
 				? { credentialRef: persistedMainRole.credentialRef }
@@ -3765,7 +3983,25 @@ export function SettingsTab() {
 		}
 	}
 
-	const providerModels = dynamicModels[provider] ?? [];
+	const activeBrainModel =
+		isWebMode() && provider === "webllm" && webModelStatus.model
+			? webModelStatus.model
+			: model;
+	const providerModels = useMemo<LlmModelMeta[]>(() => {
+		const base = dynamicModels[provider] ?? [];
+		if (base.length > 0) return base;
+		if (isWebMode() && provider === "webllm") {
+			return (
+				getLlmProvider("webllm")?.models ??
+				WEB_LLM_MODEL_IDS.map((id) => ({
+					id,
+					label: formatWebLlmModelLabel(id),
+					capabilities: ["llm"],
+				}))
+			);
+		}
+		return base;
+	}, [dynamicModels, provider]);
 	const availableProviderModels = useMemo(
 		() =>
 			provider === "nextain"
@@ -3790,7 +4026,9 @@ export function SettingsTab() {
 	const hideModelPicker =
 		provider !== "ollama" && shouldHideModelPicker(displayedProviderModels);
 	const singleProviderModel = selectableProviderModels[0];
-	const selectedModelMeta = availableProviderModels.find((m) => m.id === model);
+	const selectedModelMeta = availableProviderModels.find(
+		(m) => m.id === activeBrainModel,
+	);
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const selectedOllamaPullCandidate = ollamaModelPolicy?.candidates.find(
 		(candidate) => candidate.tag === ollamaPullTag,
@@ -3819,7 +4057,7 @@ export function SettingsTab() {
 	const currentOllamaPullError =
 		ollamaPullError ?? ollamaPullSnapshot?.error ?? null;
 	const shouldReplaceUnavailableSelectedModel =
-		provider === "nextain" && Boolean(model) && !hasSelectedModel;
+		provider === "nextain" && Boolean(activeBrainModel) && !hasSelectedModel;
 	useEffect(() => {
 		if (
 			provider === "nextain" &&
@@ -3860,7 +4098,7 @@ export function SettingsTab() {
 	]);
 	const isSelectedOmni =
 		selectedModelMeta?.capabilities.includes("omni") ?? false;
-	const modelIdLower = model?.toLowerCase() ?? "";
+	const modelIdLower = activeBrainModel?.toLowerCase() ?? "";
 	const isSelectedAsr =
 		(selectedModelMeta?.capabilities.includes("asr") ?? false) ||
 		(provider === "vllm" &&
@@ -3933,8 +4171,15 @@ export function SettingsTab() {
 
 	function slotValueDisplay(id: SlotId): string {
 		switch (id) {
-			case "main":
-				return `${slotSnapshot.main.provider || "—"} / ${slotSnapshot.main.model || model || "—"}`;
+			case "main": {
+				const effectiveMainModel =
+					isWebMode() &&
+					(slotSnapshot.main.provider === "webllm" || provider === "webllm") &&
+					webModelStatus.model
+						? webModelStatus.model
+						: slotSnapshot.main.model || activeBrainModel || "—";
+				return `${slotSnapshot.main.provider || "—"} / ${effectiveMainModel}`;
+			}
 			case "sub":
 				return slotSnapshot.sub.provider && slotSnapshot.sub.provider !== "none"
 					? `${slotSnapshot.sub.provider}${slotSnapshot.sub.model ? ` / ${slotSnapshot.sub.model}` : ""}`
@@ -4114,30 +4359,34 @@ export function SettingsTab() {
 				>
 					{t("settings.tabPersona")}
 				</button>
-				<button
-					type="button"
-					data-settings-tab="memory"
-					className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("memory")}
-				>
-					{t("settings.tabMemory")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="knowledge"
-					className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("knowledge")}
-				>
-					{t("settings.tabKnowledge")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="skills"
-					className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("skills")}
-				>
-					{t("settings.tabSkills")}
-				</button>
+				{import.meta.env.MODE !== "web" && (
+					<>
+						<button
+							type="button"
+							data-settings-tab="memory"
+							className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
+							onClick={() => setActiveSettingsTab("memory")}
+						>
+							{t("settings.tabMemory")}
+						</button>
+						<button
+							type="button"
+							data-settings-tab="knowledge"
+							className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
+							onClick={() => setActiveSettingsTab("knowledge")}
+						>
+							{t("settings.tabKnowledge")}
+						</button>
+						<button
+							type="button"
+							data-settings-tab="skills"
+							className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
+							onClick={() => setActiveSettingsTab("skills")}
+						>
+							{t("settings.tabSkills")}
+						</button>
+					</>
+				)}
 				<button
 					type="button"
 					data-settings-tab="general"
@@ -4228,10 +4477,14 @@ export function SettingsTab() {
 							>
 								<option value="">{t("settings.bgNone")}</option>
 								{naiaBgs.map((path) => {
-									const label = (path.split(/[/\\]/).pop() ?? path).replace(
-										/\.[^.]+$/,
-										"",
-									);
+									const filename = path.split(/[/\\]/).pop() ?? path;
+									const webLabel = isWebMode()
+										? WEB_BACKGROUND_ASSETS.find(
+												(asset) =>
+													asset.url === path || asset.filename === filename,
+											)?.label
+										: undefined;
+									const label = webLabel ?? filename.replace(/\.[^.]+$/, "");
 									return (
 										<option key={path} value={path}>
 											{label}
@@ -4239,14 +4492,18 @@ export function SettingsTab() {
 									);
 								})}
 							</select>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={() => handleImportAsset("background")}
-							>
-								{t("settings.assetImport")}
-							</button>
-							{activeBgPath &&
+							{/* WO-03: 웹판은 파일 대화상자·Rust 복사가 없어 가져오기·삭제를 감춘다. */}
+							{import.meta.env.MODE !== "web" && (
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={() => handleImportAsset("background")}
+								>
+									{t("settings.assetImport")}
+								</button>
+							)}
+							{import.meta.env.MODE !== "web" &&
+								activeBgPath &&
 								(() => {
 									const fn = activeBgPath.split(/[/\\]/).pop();
 									return fn ? (
@@ -4269,7 +4526,8 @@ export function SettingsTab() {
 							<code style={{ flex: 1, overflowWrap: "anywhere" }}>
 								{workspaceRoot}
 							</code>
-							{adkRestartRequired ? (
+							{/* WO-03: 웹판은 앱 재실행 경로가 없어 초기화 버튼·안내를 감춘다. */}
+							{import.meta.env.MODE === "web" ? null : adkRestartRequired ? (
 								<div
 									className="settings-error"
 									role="alertdialog"
@@ -4339,6 +4597,90 @@ export function SettingsTab() {
 							저장된 카메라 위치를 지우고 기본값으로 돌아갑니다
 						</div>
 					</div>
+
+					{isWebMode() && (
+						<>
+							<div
+								className="settings-field"
+								data-testid="web-storage-persist-section"
+							>
+								<label>브라우저 저장소</label>
+								<div
+									className="settings-hint"
+									data-testid="web-storage-persist-status"
+								>
+									{formatWebStorageSummaryLine(webStorageState)}
+								</div>
+							</div>
+
+							<div className="settings-field" data-testid="web-account-section">
+								<label>나이아 웹 계정</label>
+								<div
+									style={{
+										display: "flex",
+										gap: 8,
+										alignItems: "center",
+										flexWrap: "wrap",
+									}}
+								>
+									<span
+										className="settings-hint"
+										data-testid="web-account-status"
+									>
+										{webAuthLoggedIn
+											? `로그인됨${webAuthUserId ? ` (${webAuthUserId})` : ""}`
+											: "로그아웃 상태"}
+									</span>
+									{webAuthLoggedIn ? (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="web-logout-btn"
+											onClick={() => {
+												logoutWebSession();
+												setWebAuthLoggedIn(false);
+												setWebAuthUserId("");
+												setNaiaKeyState("");
+												setNaiaUserIdState("");
+											}}
+										>
+											{t("settings.labDisconnect")}
+										</button>
+									) : (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="web-login-btn"
+											onClick={() => {
+												setWebAuthError(null);
+												try {
+													startWebLoginRedirect({ lang: locale });
+												} catch (err) {
+													setWebAuthError(
+														err instanceof Error && err.message
+															? err.message
+															: "로그인을 시작하지 못했습니다.",
+													);
+												}
+											}}
+										>
+											{t("settings.labConnect")}
+										</button>
+									)}
+								</div>
+								{webAuthError && (
+									<div
+										role="alert"
+										data-testid="web-login-error"
+										className="settings-hint"
+										style={{ color: "var(--color-error, #fc8181)" }}
+									>
+										{webAuthError}
+									</div>
+								)}
+							</div>
+						</>
+					)}
 				</>
 			)}
 			{activeSettingsTab === "avatar" && (
@@ -4447,30 +4789,32 @@ export function SettingsTab() {
 									);
 								})}
 							</div>
-							{/* #12/#13: 파일 추가 + 삭제 */}
-							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => handleImportAsset("vrm-files")}
-								>
-									{t("settings.assetImport")}
-								</button>
-								{vrmModel &&
-									(() => {
-										const fn = vrmModel.split(/[/\\]/).pop();
-										return fn ? (
-											<button
-												type="button"
-												className="voice-preview-btn"
-												style={{ color: "var(--error-color, #f44)" }}
-												onClick={() => handleDeleteAsset("vrm-files", fn)}
-											>
-												{t("settings.assetDelete")}
-											</button>
-										) : null;
-									})()}
-							</div>
+							{/* #12/#13: 파일 추가 + 삭제 (WO-03: 웹판 감춤 — 번들 카탈로그만 선택) */}
+							{import.meta.env.MODE !== "web" && (
+								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+									<button
+										type="button"
+										className="voice-preview-btn"
+										onClick={() => handleImportAsset("vrm-files")}
+									>
+										{t("settings.assetImport")}
+									</button>
+									{vrmModel &&
+										(() => {
+											const fn = vrmModel.split(/[/\\]/).pop();
+											return fn ? (
+												<button
+													type="button"
+													className="voice-preview-btn"
+													style={{ color: "var(--error-color, #f44)" }}
+													onClick={() => handleDeleteAsset("vrm-files", fn)}
+												>
+													{t("settings.assetDelete")}
+												</button>
+											) : null;
+										})()}
+								</div>
+							)}
 						</div>
 					)}
 
@@ -4498,25 +4842,28 @@ export function SettingsTab() {
 									</button>
 								))}
 							</div>
-							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => handleImportAsset("nva-files")}
-								>
-									{t("settings.folderImport")}
-								</button>
-								{nvaModel && (
+							{/* WO-03: 웹판 감춤 — 번들 선택만 (데스크톱 파일 대화상자 없음) */}
+							{!isWebMode() && (
+								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
 									<button
 										type="button"
 										className="voice-preview-btn"
-										style={{ color: "var(--error-color, #f44)" }}
-										onClick={() => handleDeleteAsset("nva-files", nvaModel)}
+										onClick={() => handleImportAsset("nva-files")}
 									>
-										{t("settings.assetDelete")}
+										{t("settings.folderImport")}
 									</button>
-								)}
-							</div>
+									{nvaModel && (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											style={{ color: "var(--error-color, #f44)" }}
+											onClick={() => handleDeleteAsset("nva-files", nvaModel)}
+										>
+											{t("settings.assetDelete")}
+										</button>
+									)}
+								</div>
+							)}
 						</div>
 					)}
 				</>
@@ -5236,7 +5583,7 @@ export function SettingsTab() {
 								handleProviderChange(e.target.value as ProviderId)
 							}
 						>
-							{LLM_PROVIDERS.map((p) => (
+							{listLlmProviders().map((p) => (
 								<option key={p.id} value={p.id} disabled={p.disabled}>
 									{p.name}
 									{isRecommendedLocalValue(activeLocalTier, "main", p.id)
@@ -5898,11 +6245,26 @@ export function SettingsTab() {
 							<select
 								key={`model-select-${modelSortMode}-${displayedProviderModels.map((candidate) => candidate.id).join(":")}`}
 								id="model-select"
-								value={hasSelectedModel ? model : "__custom__"}
+								value={hasSelectedModel ? activeBrainModel : "__custom__"}
 								onChange={(e) => {
 									if (e.target.value === "__custom__") return;
 									ollamaPullSelectionRevisionRef.current += 1;
-									setModel(e.target.value);
+									const nextModel = e.target.value;
+									setModel(nextModel);
+									if (
+										isWebMode() &&
+										provider === "webllm" &&
+										isWebLlmModelId(nextModel)
+									) {
+										// 실행 중인 worker 는 처음 받은 모델로만 돈다. 상태만 바꾸면 화면과 실제 엔진이
+										// 어긋나므로, 상태 표시줄의 모델 전환과 같게 선택을 저장하고 다시 불러온다.
+										try {
+											localStorage.setItem(WEB_LLM_MODEL_PREF_KEY, nextModel);
+										} catch {
+											// ignore storage errors
+										}
+										setTimeout(() => window.location.reload(), 0);
+									}
 									// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
 									// agent loads THIS model. Previously only Save persisted → a stale model
 									// (e.g. an omni gemini-2.5-flash-live from a prior voice session) survived.
@@ -5912,14 +6274,14 @@ export function SettingsTab() {
 										const legacySelection = applyModelSelectionToConfig(
 											persistedConfig as Record<string, unknown> | null,
 											provider,
-											e.target.value,
+											nextModel,
 										);
 										const persistedMainRole = persistedConfig
 											? readConfiguredLlmRoles(persistedConfig).main
 											: undefined;
 										const mainRole: LlmRoleConfig = {
 											provider,
-											model: e.target.value,
+											model: nextModel,
 											...(persistedMainRole?.provider === provider &&
 											persistedMainRole.credentialRef !== undefined
 												? { credentialRef: persistedMainRole.credentialRef }
@@ -5943,7 +6305,7 @@ export function SettingsTab() {
 									}
 									// When switching to an omni model, set default voice if not already set
 									const newMeta = providerModels.find(
-										(m) => m.id === e.target.value,
+										(m) => m.id === nextModel,
 									);
 									if (
 										newMeta?.capabilities.includes("omni") &&
@@ -5958,8 +6320,8 @@ export function SettingsTab() {
 									}
 								}}
 							>
-								{!hasSelectedModel && model ? (
-									<option value="__custom__">{`${model}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
+								{!hasSelectedModel && activeBrainModel ? (
+									<option value="__custom__">{`${activeBrainModel}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
 								) : null}
 								{displayedProviderModels
 									.filter((m) => !m.capabilities.includes("asr"))
@@ -5996,8 +6358,10 @@ export function SettingsTab() {
 								</span>
 							) : provider === "nextain" ? (
 								t("settings.pricingUnavailable")
+							) : isWebMode() && provider === "webllm" ? (
+								formatWebLlmModelLabel(activeBrainModel)
 							) : (
-								(selectedModelMeta?.label ?? model)
+								(selectedModelMeta?.label ?? activeBrainModel)
 							)}
 						</div>
 					</div>
@@ -6086,7 +6450,7 @@ export function SettingsTab() {
 							}}
 						/>
 					</div>
-					{enableTools && <DevicePairingSection />}
+					{!isWebMode() && enableTools && <DevicePairingSection />}
 					<div className="settings-field" data-testid="thinking-level-section">
 						<label id="thinking-level-label">
 							{t("settings.thinkingLevel")}
@@ -6101,52 +6465,117 @@ export function SettingsTab() {
 								marginTop: "4px",
 							}}
 						>
-							{THINKING_LEVELS.map((level) => {
-								const active = thinkingLevel === level;
-								const label =
-									level === "off"
-										? t("settings.thinkingLevelOff")
-										: level === "low"
-											? t("settings.thinkingLevelLow")
-											: t("settings.thinkingLevelHigh");
-								return (
-									<button
-										key={level}
-										type="button"
-										role="radio"
-										aria-checked={active}
-										tabIndex={active ? 0 : -1}
-										data-testid={`thinking-level-${level}`}
-										onClick={() => handleThinkingChange(level)}
-										onKeyDown={(e) => handleThinkingKeyDown(e, level)}
-										style={{
-											flex: "1 1 0",
-											minWidth: 0,
-											padding: "6px 8px",
-											borderRadius: "4px",
-											border: active
-												? "1px solid var(--accent, #2563eb)"
-												: "1px solid var(--border-color, #e2e8f0)",
-											backgroundColor: active
-												? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
-												: "var(--bg-surface, var(--espresso, #ffffff))",
-											color: active
-												? "var(--accent, #2563eb)"
-												: "var(--text-primary, var(--cream, #0f172a))",
-											fontWeight: active ? 600 : 400,
-											fontSize: "13px",
-											cursor: "pointer",
-											textAlign: "center",
-											whiteSpace: "nowrap",
-											overflow: "hidden",
-											textOverflow: "ellipsis",
-											transition: "all 0.15s ease",
-										}}
-									>
-										{label}
-									</button>
-								);
-							})}
+							{isWebMode()
+								? (["off", "on"] as const).map((webStage) => {
+										const isOff = webStage === "off";
+										const active = isOff
+											? thinkingLevel === "off"
+											: thinkingLevel !== "off";
+										const label = isOff
+											? t("settings.thinkingLevelOff")
+											: t("settings.thinkingLevelOn");
+										const targetLevel: ThinkingLevel = isOff ? "off" : "high";
+										return (
+											<button
+												key={webStage}
+												type="button"
+												role="radio"
+												aria-checked={active}
+												tabIndex={active ? 0 : -1}
+												data-testid={`thinking-level-${webStage}`}
+												onClick={() => handleThinkingChange(targetLevel)}
+												onKeyDown={(e) => {
+													if (
+														e.key === "ArrowRight" ||
+														e.key === "ArrowDown" ||
+														e.key === "ArrowLeft" ||
+														e.key === "ArrowUp"
+													) {
+														e.preventDefault();
+														const nextStage = isOff ? "on" : "off";
+														handleThinkingChange(isOff ? "high" : "off");
+														const parent = e.currentTarget.parentElement;
+														parent
+															?.querySelector<HTMLButtonElement>(
+																`[data-testid="thinking-level-${nextStage}"]`,
+															)
+															?.focus();
+													}
+												}}
+												style={{
+													flex: "1 1 0",
+													minWidth: 0,
+													padding: "6px 8px",
+													borderRadius: "4px",
+													border: active
+														? "1px solid var(--accent, #2563eb)"
+														: "1px solid var(--border-color, #e2e8f0)",
+													backgroundColor: active
+														? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+														: "var(--bg-surface, var(--espresso, #ffffff))",
+													color: active
+														? "var(--accent, #2563eb)"
+														: "var(--text-primary, var(--cream, #0f172a))",
+													fontWeight: active ? 600 : 400,
+													fontSize: "13px",
+													cursor: "pointer",
+													textAlign: "center",
+													whiteSpace: "nowrap",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													transition: "all 0.15s ease",
+												}}
+											>
+												{label}
+											</button>
+										);
+									})
+								: THINKING_LEVELS.map((level) => {
+										const active = thinkingLevel === level;
+										const label =
+											level === "off"
+												? t("settings.thinkingLevelOff")
+												: level === "low"
+													? t("settings.thinkingLevelLow")
+													: t("settings.thinkingLevelHigh");
+										return (
+											<button
+												key={level}
+												type="button"
+												role="radio"
+												aria-checked={active}
+												tabIndex={active ? 0 : -1}
+												data-testid={`thinking-level-${level}`}
+												onClick={() => handleThinkingChange(level)}
+												onKeyDown={(e) => handleThinkingKeyDown(e, level)}
+												style={{
+													flex: "1 1 0",
+													minWidth: 0,
+													padding: "6px 8px",
+													borderRadius: "4px",
+													border: active
+														? "1px solid var(--accent, #2563eb)"
+														: "1px solid var(--border-color, #e2e8f0)",
+													backgroundColor: active
+														? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+														: "var(--bg-surface, var(--espresso, #ffffff))",
+													color: active
+														? "var(--accent, #2563eb)"
+														: "var(--text-primary, var(--cream, #0f172a))",
+													fontWeight: active ? 600 : 400,
+													fontSize: "13px",
+													cursor: "pointer",
+													textAlign: "center",
+													whiteSpace: "nowrap",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													transition: "all 0.15s ease",
+												}}
+											>
+												{label}
+											</button>
+										);
+									})}
 						</div>
 						<div className="settings-hint" style={{ marginTop: "4px" }}>
 							{t("settings.thinkingLevelHint")}
@@ -6320,30 +6749,59 @@ export function SettingsTab() {
 								data-testid="stt-provider-section"
 							>
 								<label>{t("settings.sttProvider")}</label>
-								<select
-									value={sttProvider}
-									onChange={(e) => {
-										const next = e.target.value as SttProviderId;
-										setSttProvider(next);
-										setSttModel("");
-										persistConfig({ sttProvider: next, sttModel: "" });
-									}}
-								>
-									<option value="">{t("settings.sttNone")}</option>
-									{listSttProviders().map((p) => (
-										<option
-											key={p.id}
-											value={p.id}
-											disabled={p.requiresNaiaKey && !naiaKey}
+								{isWebMode() ? (
+									<>
+										<select
+											data-testid="web-stt-provider-select"
+											value={sttProvider ? "web-speech" : ""}
+											disabled={!isWebSpeechAvailable()}
+											onChange={(e) => {
+												const next = e.target.value as SttProviderId;
+												setSttProvider(next);
+												setSttModel("");
+												persistConfig({ sttProvider: next, sttModel: "" });
+											}}
 										>
-											{p.name}
-											{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
-											{p.requiresNaiaKey && !naiaKey
-												? ` (${t("settings.ttsNaiaRequired")})`
-												: ""}
-										</option>
-									))}
-								</select>
+											<option value="web-speech">
+												Web Speech (브라우저 내장 · 무료)
+											</option>
+											<option value="">{t("settings.sttNone")}</option>
+										</select>
+										{!isWebSpeechAvailable() && (
+											<div
+												className="settings-hint"
+												data-testid="web-stt-unsupported-hint"
+											>
+												이 브라우저는 음성 인식을 지원하지 않습니다
+											</div>
+										)}
+									</>
+								) : (
+									<select
+										value={sttProvider}
+										onChange={(e) => {
+											const next = e.target.value as SttProviderId;
+											setSttProvider(next);
+											setSttModel("");
+											persistConfig({ sttProvider: next, sttModel: "" });
+										}}
+									>
+										<option value="">{t("settings.sttNone")}</option>
+										{listSttProviders().map((p) => (
+											<option
+												key={p.id}
+												value={p.id}
+												disabled={p.requiresNaiaKey && !naiaKey}
+											>
+												{p.name}
+												{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
+												{p.requiresNaiaKey && !naiaKey
+													? ` (${t("settings.ttsNaiaRequired")})`
+													: ""}
+											</option>
+										))}
+									</select>
+								)}
 							</div>
 							{/* STT Model — current selection + manage button (offline engines only) */}
 							{/* vLLM ASR: endpoint URL + ASR model picker */}
@@ -6435,58 +6893,91 @@ export function SettingsTab() {
 						<label htmlFor="tts-provider-select">
 							{t("settings.ttsProvider")}
 						</label>
-						<select
-							id="tts-provider-select"
-							data-testid="gateway-tts-provider"
-							value={ttsProvider}
-							onChange={async (e) => {
-								const next = e.target.value as TtsProviderId;
-								if (next === "naia-local-voice") {
-									await selectProfileTtsProvider(next);
-									return;
-								}
-								setTtsProvider(next);
-								setDynamicTtsVoices([]);
-								persistConfig({ ttsProvider: next });
-								setGatewayTtsApiKey("");
-								// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
-								// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
-								// Reset voice to provider default
-								const meta = listTtsProviderMetas().find((p) => p.id === next);
-								if (meta?.voices?.[0]) {
-									persistTtsVoice(meta.voices[0].id);
-								} else if (next === "edge") {
-									// Edge voice will be selected from gateway/hardcoded list
-									persistTtsVoice("");
-								} else if (next === "vllm") {
-									// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
-									// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
-									persistTtsVoice("default");
-								}
-							}}
-						>
-							{listTtsProviderMetas().map((p) => (
-								<option
-									key={p.id}
-									value={p.id}
+						{isWebMode() ? (
+							<>
+								<select
+									id="tts-provider-select"
+									data-testid="gateway-tts-provider"
+									value="browser"
 									disabled={
-										(p.requiresNaiaKey && !naiaKey) ||
-										(p.id === "naia-local-voice" &&
-											(detectedVramGb == null || detectedVramGb < 6))
+										typeof window === "undefined" ||
+										!("speechSynthesis" in window)
 									}
+									onChange={() => {
+										setTtsProvider("browser");
+										persistConfig({ ttsProvider: "browser" });
+									}}
 								>
-									{p.name}
-									{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
-									{p.requiresNaiaKey && !naiaKey
-										? ` (${t("settings.ttsNaiaRequired")})`
-										: ""}
-									{isRecommendedLocalValue(activeLocalTier, "tts", p.id)
-										? ` · ${t("settings.tierRecommendBadge")}`
-										: ""}
-								</option>
-							))}
-						</select>
-						{slotRecommendation(activeLocalTier, "tts") && (
+									<option value="browser">
+										Browser SpeechSynthesis (브라우저 내장 · 무료)
+									</option>
+								</select>
+								{(typeof window === "undefined" ||
+									!("speechSynthesis" in window)) && (
+									<div
+										className="settings-hint"
+										data-testid="web-tts-unsupported-hint"
+									>
+										이 브라우저는 음성 합성을 지원하지 않습니다
+									</div>
+								)}
+							</>
+						) : (
+							<select
+								id="tts-provider-select"
+								data-testid="gateway-tts-provider"
+								value={ttsProvider}
+								onChange={async (e) => {
+									const next = e.target.value as TtsProviderId;
+									if (next === "naia-local-voice") {
+										await selectProfileTtsProvider(next);
+										return;
+									}
+									setTtsProvider(next);
+									setDynamicTtsVoices([]);
+									persistConfig({ ttsProvider: next });
+									setGatewayTtsApiKey("");
+									// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
+									// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
+									// Reset voice to provider default
+									const meta = listTtsProviderMetas().find(
+										(p) => p.id === next,
+									);
+									if (meta?.voices?.[0]) {
+										persistTtsVoice(meta.voices[0].id);
+									} else if (next === "edge") {
+										// Edge voice will be selected from gateway/hardcoded list
+										persistTtsVoice("");
+									} else if (next === "vllm") {
+										// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
+										// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
+										persistTtsVoice("default");
+									}
+								}}
+							>
+								{listTtsProviderMetas().map((p) => (
+									<option
+										key={p.id}
+										value={p.id}
+										disabled={
+											(p.requiresNaiaKey && !naiaKey) ||
+											(p.id === "naia-local-voice" &&
+												(detectedVramGb == null || detectedVramGb < 6))
+										}
+									>
+										{p.name}
+										{p.pricing ? ` - ${ttsPricingLabel(p)}` : ""}
+										{p.requiresNaiaKey && !naiaKey
+											? ` (${t("settings.ttsNaiaRequired")})`
+											: ""}
+										{isRecommendedLocalValue(activeLocalTier, "tts", p.id)
+											? ` · ${t("settings.tierRecommendBadge")}`
+											: ""}
+									</option>
+								))}
+							</select>
+						)}
+						{!isWebMode() && slotRecommendation(activeLocalTier, "tts") && (
 							<div className="settings-hint" data-testid="tts-tier-hint">
 								{t("settings.tierRecommendSummary")}: naia-local-voice (
 								{t("settings.tierRecommendLocalTag")})
@@ -6672,6 +7163,57 @@ export function SettingsTab() {
 
 					{/* TTS Voice picker — dynamic based on provider */}
 					{(() => {
+						if (isWebMode()) {
+							const synthSupported =
+								typeof window !== "undefined" && "speechSynthesis" in window;
+							const langPrefix = locale.slice(0, 2).toLowerCase();
+							const sortedVoices = [...browserSpeechVoices].sort((a, b) => {
+								const aMatch = a.lang?.toLowerCase().startsWith(langPrefix)
+									? 0
+									: 1;
+								const bMatch = b.lang?.toLowerCase().startsWith(langPrefix)
+									? 0
+									: 1;
+								return aMatch - bMatch;
+							});
+							return (
+								<div className="settings-field">
+									<label htmlFor="tts-voice-select">
+										{t("settings.ttsVoice")}
+									</label>
+									<div className="voice-picker">
+										<select
+											id="tts-voice-select"
+											data-testid="browser-tts-voice"
+											value={ttsVoice}
+											disabled={!synthSupported}
+											onChange={(e) => persistTtsVoice(e.target.value)}
+										>
+											<option value="">기본 브라우저 목소리</option>
+											{sortedVoices.map((v) => (
+												<option
+													key={v.voiceURI || v.name}
+													value={v.voiceURI || v.name}
+												>
+													{v.name} ({v.lang})
+												</option>
+											))}
+										</select>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid="browser-tts-preview-btn"
+											onClick={handleVoicePreview}
+											disabled={isPreviewing || !synthSupported}
+										>
+											{isPreviewing
+												? t("settings.voicePreviewing")
+												: t("settings.voicePreview")}
+										</button>
+									</div>
+								</div>
+							);
+						}
 						const providerMeta = listTtsProviderMetas().find(
 							(p) => p.id === ttsProvider,
 						);

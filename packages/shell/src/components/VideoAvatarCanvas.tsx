@@ -6,6 +6,7 @@ import {
 	getCameraActions,
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
+import { shouldUseStackedAlpha } from "../lib/avatar/nva-stacked-alpha";
 import { PrebakedAvatarRenderer } from "../lib/avatar/prebaked-renderer";
 import { getLocale, t } from "../lib/i18n";
 import {
@@ -15,10 +16,12 @@ import {
 } from "../lib/ui-preferences";
 import {
 	type NvaManifest,
+	collectNvaManifestClipPaths,
 	isPrebakedNvaManifest,
 	parseNvaManifest,
 	resolveNvaAssetPath,
 } from "../lib/nva";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
@@ -140,6 +143,52 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		setManifest(null);
 		setLoaded(false);
 		useCascadeAvatarStore.getState().setNvaLoadError(null);
+		if (isWebMode()) {
+			const segments = nvaModel?.split(/[/\\]/).filter(Boolean) ?? [];
+			const bundleName = segments.at(-1) ?? "";
+			if (
+				!bundleName ||
+				segments.includes("..") ||
+				!/^[a-z0-9-]+$/.test(bundleName)
+			) {
+				const err = !bundleName ? "missing-nva-model" : "invalid-nva-model";
+				setError(err);
+				setMode("error");
+				useCascadeAvatarStore.getState().setNvaLoadError(err);
+				return;
+			}
+			const directory = `/nva/${bundleName}`;
+			void fetch(`${directory}/manifest.json`)
+				.then(async (res) => {
+					if (!res.ok) {
+						throw new Error(`HTTP ${res.status}`);
+					}
+					const raw =
+						typeof res.text === "function"
+							? await res.text()
+							: JSON.stringify(await res.json());
+					const parsed = parseNvaManifest(raw);
+					if (!isPrebakedNvaManifest(parsed))
+						throw new Error("NVA requires vrm_slots prebaked WebM assets");
+					for (const clipPath of collectNvaManifestClipPaths(parsed)) {
+						resolveNvaAssetPath(directory, clipPath);
+					}
+					if (!disposed) {
+						setBundleDir(directory);
+						setManifest(parsed);
+					}
+				})
+				.catch((cause) => {
+					if (!disposed) {
+						setError(String(cause));
+						setMode("error");
+						useCascadeAvatarStore.getState().setNvaLoadError(String(cause));
+					}
+				});
+			return () => {
+				disposed = true;
+			};
+		}
 		const adkPath = getAdkPath();
 		if (!adkPath || !nvaModel) {
 			setError("missing-nva-model");
@@ -192,6 +241,21 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			resolveAssetUrl: async (relativePath) => {
 				const cached = urls.get(relativePath);
 				if (cached) return cached;
+				if (isWebMode()) {
+					const validatedBase = resolveNvaAssetPath(bundleDir, relativePath);
+					const normalizedRel = relativePath
+						.replace(/\\/g, "/")
+						.replace(/^\/+/, "");
+					const stackedRel = shouldUseStackedAlpha()
+						? (manifest.stacked_alpha?.clips?.[normalizedRel] ??
+							manifest.stacked_alpha?.clips?.[relativePath])
+						: undefined;
+					const url = stackedRel
+						? resolveNvaAssetPath(bundleDir, stackedRel)
+						: validatedBase;
+					urls.set(relativePath, url);
+					return url;
+				}
 				const url = await toLocalBlobUrl(
 					resolveNvaAssetPath(bundleDir, relativePath),
 				);

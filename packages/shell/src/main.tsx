@@ -1,3 +1,4 @@
+import "./lib/web-runtime/auto-install";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -6,7 +7,11 @@ import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri
 import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
 import { Logger } from "./lib/logger";
+import { syncWebModeRootAttribute } from "./lib/web-runtime/web-assets";
 import "./styles/global.css";
+import "./styles/web-mode.css";
+
+syncWebModeRootAttribute();
 
 if (
 	import.meta.env.DEV &&

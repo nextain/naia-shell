@@ -10,9 +10,6 @@ import {
 	useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { getBridgeForApp } from "../lib/active-bridge";
-import { removeInstalledApp } from "../lib/app-loader";
-import { appRegistry } from "../lib/app-registry";
 import {
 	type BrowserLink,
 	addBrowserShortcut,
@@ -29,6 +26,10 @@ import {
 } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
+import { getBridgeForApp } from "../lib/active-bridge";
+import { removeInstalledApp } from "../lib/app-loader";
+import { appRegistry } from "../lib/app-registry";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
 import { AppStoreIcon } from "./AppStoreIcon";
 
@@ -85,6 +86,8 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const [iconEditing, setIconEditing] = useState<BrowserLink | null>(null);
 	const [iconInput, setIconInput] = useState("");
 	const [removeError, setRemoveError] = useState("");
+	// WO-03 / 지시서 #3: 웹판은 브라우저 탭·바로가기·설치 앱이 꺼져 있어 해당 메뉴와 진입점을 완전히 막는다.
+	const isWeb = isWebMode();
 
 	// Hide browser native webview while any dialog is open (webview renders above HTML z-index).
 	// Use a single boolean so transitioning between dialogs (addUrlDialog→urlInputDialog)
@@ -111,6 +114,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	);
 
 	useEffect(() => {
+		if (isWeb) {
+			setBrowserShortcuts([]);
+			return;
+		}
 		let alive = true;
 		const load = () => {
 			loadBrowserShortcuts()
@@ -129,7 +136,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 			alive = false;
 			off();
 		};
-	}, []);
+	}, [isWeb]);
 
 	async function handleRemoveApp(
 		e: MouseEvent<HTMLButtonElement>,
@@ -173,6 +180,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	}
 
 	function openBrowserShortcut(url: string) {
+		if (isWebMode()) return;
 		setActiveApp("browser");
 		const navigate = () => {
 			appRegistry
@@ -248,6 +256,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	const handleTabBarContextMenu = useCallback(
 		(e: React.MouseEvent) => {
 			e.preventDefault();
+			if (isWeb) return;
 			const target = e.target as HTMLElement;
 			const shortcutEl = target.closest("[data-browser-shortcut]");
 			if (shortcutEl) {
@@ -372,15 +381,17 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				>
 					<span className="app-bar-tab-icon">🖥️</span>
 				</button>
-				<button
-					type="button"
-					className={`app-bar-tab${activeApp === "browser" ? " app-bar-tab--active" : ""}`}
-					data-app-id="browser"
-					aria-label={t("appbar.browser")}
-					onClick={() => setActiveApp("browser")}
-				>
-					<span className="app-bar-tab-icon">🌐</span>
-				</button>
+				{!isWeb && (
+					<button
+						type="button"
+						className={`app-bar-tab${activeApp === "browser" ? " app-bar-tab--active" : ""}`}
+						data-app-id="browser"
+						aria-label={t("appbar.browser")}
+						onClick={() => setActiveApp("browser")}
+					>
+						<span className="app-bar-tab-icon">🌐</span>
+					</button>
+				)}
 				<button
 					type="button"
 					className={`app-bar-tab${activeApp === "workspace" ? " app-bar-tab--active" : ""}`}
@@ -441,7 +452,9 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						)}
 					</div>
 				))}
-				{browserShortcuts.map((shortcut) => (
+				{/* WO-03: 웹판은 브라우저 바로가기가 꺼져 있어 목록을 감춘다. */}
+				{!isWeb &&
+					browserShortcuts.map((shortcut) => (
 					<div
 						key={shortcut.url}
 						className={`app-bar-tab-wrapper${dragOverUrl === shortcut.url ? " app-bar-tab-wrapper--drag-over" : ""}`}
@@ -656,15 +669,18 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					</div>,
 					document.body,
 				)}
-			<button
-				type="button"
-				className="app-bar-add"
-				onClick={() => setAddUrlDialog(true)}
-				title={t("appbar.addItem")}
-			>
-				+
-			</button>
-			{(editMode || browserShortcuts.length > 0) && (
+			{/* WO-03: 웹판은 설치 앱·바로가기 추가가 꺼져 있어 버튼을 감춘다. */}
+			{!isWeb && (
+				<button
+					type="button"
+					className="app-bar-add"
+					onClick={() => setAddUrlDialog(true)}
+					title={t("appbar.addItem")}
+				>
+					+
+				</button>
+			)}
+			{!isWeb && (editMode || browserShortcuts.length > 0) && (
 				<button
 					type="button"
 					className={`app-bar-edit${editMode ? " app-bar-edit--active" : ""}`}
@@ -725,9 +741,9 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					document.body,
 				)}
 			{/* ── BGM (right side of app-bar) ─── */}
-			<Suspense fallback={null}>
-				<BgmPlayer naia={bgmBridge} />
-			</Suspense>
+			{import.meta.env.MODE !== "web" && (
+				<Suspense fallback={null}><BgmPlayer naia={bgmBridge} /></Suspense>
+			)}
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}

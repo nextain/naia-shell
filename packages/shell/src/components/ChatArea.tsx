@@ -18,6 +18,14 @@ import {
 	stopListening as sttStop,
 } from "tauri-plugin-stt-api";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
+import { WebModelStatusBar, useWebModelStatus } from "./WebModelStatusBar";
+import { WebWorkspaceSetup, useWebAdkStatus } from "./WebWorkspaceSetup";
+import {
+	getWebModelStatus,
+	isWebSendBlocked,
+} from "../lib/web-runtime/web-model-status";
+import { getWebAdkStatus } from "../lib/web-runtime/web-adk-status";
+
 import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
@@ -157,7 +165,9 @@ import {
 	createApiSttSession,
 	createWebSpeechSttSession,
 	getSttProvider,
+	isWebSpeechAvailable,
 } from "../lib/stt";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 import { estimateSttCost } from "../lib/tts/cost";
 import { LocalVoiceScheduler } from "../lib/tts/local-voice-scheduler";
 import {
@@ -262,6 +272,37 @@ const WorkProgressArea = lazy(() =>
 		default: WorkProgressArea,
 	})),
 );
+
+export interface WebSpeakingSttHooks {
+	isSpeaking: boolean;
+	pipelineActive: boolean;
+	hasActiveSpeechActivity: boolean;
+	clearCooldownTimer: () => void;
+	pauseStt: () => void;
+	scheduleResumeStt: (delayMs: number) => void;
+}
+
+/**
+ * 웹판 브라우저 TTS 발화 시작·종료 시에만 마이크(Web Speech STT)를 일시 정지·재개한다.
+ * 데스크톱(`!isWebMode()`)에서는 기준 동작(`4f06f040`)과 같게 아무 동작도 하지 않는다.
+ */
+export function syncWebSttOnSpeakingChange(hooks: WebSpeakingSttHooks): void {
+	if (!isWebMode()) return;
+	if (hooks.isSpeaking) {
+		hooks.clearCooldownTimer();
+		if (hooks.pipelineActive) {
+			try {
+				if (shouldPauseSttForTts(hooks.hasActiveSpeechActivity)) {
+					hooks.pauseStt();
+				}
+			} catch {
+				// 마이크 일시정지 실패는 2차 텍스트 필터가 방어
+			}
+		}
+	} else if (hooks.pipelineActive) {
+		hooks.scheduleResumeStt(800);
+	}
+}
 const ChatMarkdown = lazy(() =>
 	import("./ChatMarkdown").then(({ ChatMarkdown }) => ({
 		default: ChatMarkdown,
@@ -459,6 +500,11 @@ export async function loadOrCreateSession(): Promise<void> {
 export function ChatArea({
 	variant = "floating",
 }: { variant?: ChatVariant } = {}) {
+	const webModelStatus = useWebModelStatus();
+	const webAdkStatus = useWebAdkStatus();
+	const webSendBlocked =
+		import.meta.env.MODE === "web" &&
+		isWebSendBlocked(webModelStatus, webAdkStatus, loadConfig()?.provider);
 	const [input, setInput] = useState("");
 	type OutputStage = "thinking" | "tts" | "render" | null;
 	const [outputStage, setOutputStage] = useState<OutputStage>(null);
@@ -657,8 +703,39 @@ export function ChatArea({
 						});
 					}
 				}
-				// #423: browser speech end/error releases the held expression.
+				syncWebSttOnSpeakingChange({
+					isSpeaking: on,
+					pipelineActive: pipelineActiveRef.current,
+					hasActiveSpeechActivity: activeSpeechActivityRef.current !== null,
+					clearCooldownTimer: () => {
+						if (sttCooldownTimerRef.current) {
+							clearTimeout(sttCooldownTimerRef.current);
+							sttCooldownTimerRef.current = null;
+						}
+					},
+					pauseStt: () => {
+						sttPauseRef.current?.();
+					},
+					scheduleResumeStt: (delayMs) => {
+						ttsCooldownUntilRef.current = Date.now() + delayMs;
+						setSttState("initializing");
+						if (sttCooldownTimerRef.current)
+							clearTimeout(sttCooldownTimerRef.current);
+						sttCooldownTimerRef.current = setTimeout(() => {
+							setSttState("listening");
+							sttCooldownTimerRef.current = null;
+							if (pipelineActiveRef.current) {
+								try {
+									sttResumeRef.current?.();
+								} catch {
+									// 재개 실패 시 다음 발화 토글로 복구
+								}
+							}
+						}, delayMs);
+					},
+				});
 				if (!on) {
+					// #423: browser speech end/error releases the held expression.
 					settleAvatarEmotionIfIdle();
 					settleSlidePresenterSpeech("finished");
 				}
@@ -700,6 +777,7 @@ export function ChatArea({
 	const [bgmSidecarError, setBgmSidecarError] = useState<string | null>(null);
 
 	useEffect(() => {
+		if (import.meta.env.MODE === "web") return;
 		let cancelled = false;
 		void ensureBgmSidecar()
 			.then(() => {
@@ -1366,7 +1444,7 @@ export function ChatArea({
 		sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
 		pipelineVoiceConfigRef.current = {
 			voice: resolveTtsVoiceId(config),
-			ttsProvider: config.ttsProvider || "edge",
+			ttsProvider: isWebMode() ? "browser" : config.ttsProvider || "edge",
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
 			ttsApiKey: undefined,
 			naiaKey: config.naiaKey,
@@ -1747,6 +1825,11 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		if (
+			import.meta.env.MODE === "web" &&
+			isWebSendBlocked(getWebModelStatus(), getWebAdkStatus(), loadConfig()?.provider)
+		)
+			return;
 		pendingAiGestureActionRef.current = null;
 		if (await handleSpeechProfilePhrase(text)) return;
 		if (isRadioDjLabObserverAttached()) {
@@ -1968,15 +2051,17 @@ export function ChatArea({
 			// Startup registration can race the agent process. Refresh the
 			// idempotent descriptor immediately before every turn so semantic
 			// requests such as Radio DJ cannot degrade into text-only claims.
-			const bgmSkillReady = await sendAppSkills(BGM_APP_ID, [
-				SKILL_YOUTUBE_BGM,
-			]);
-			Logger.info("ChatArea", "turn bgm skill registration", {
-				ready: bgmSkillReady,
-				requestId,
-			});
-			if (!bgmSkillReady) {
-				throw new Error("skill_youtube_bgm_registration_failed");
+			if (import.meta.env.MODE !== "web") {
+				const bgmSkillReady = await sendAppSkills(BGM_APP_ID, [
+					SKILL_YOUTUBE_BGM,
+				]);
+				Logger.info("ChatArea", "turn bgm skill registration", {
+					ready: bgmSkillReady,
+					requestId,
+				});
+				if (!bgmSkillReady) {
+					throw new Error("skill_youtube_bgm_registration_failed");
+				}
 			}
 			// #502 (FR-ENV-ATTENTION.5): 싣기 직전에 관측을 갱신한다.
 			//
@@ -2323,6 +2408,23 @@ export function ChatArea({
 		// App tools use the same answer stream as model tool rounds. Preserve a
 		// boundary even for tools that do not expose a streaming tool-call row.
 		useChatStore.getState().markStreamingToolBoundary();
+		if (
+			isWebMode() &&
+			(req.toolName.startsWith("skill_browser_") ||
+				isBrowserHostTool(req.toolName))
+		) {
+			Logger.warn("ChatArea", "blocked browser tool in web mode", {
+				tool: req.toolName,
+			});
+			void sendAppToolResult(
+				req.requestId,
+				req.toolCallId,
+				`Tool is not available in web mode: ${req.toolName}`,
+				false,
+				req.activityId,
+			);
+			return;
+		}
 		if (!isModelFacingToolAllowed(req.toolName)) {
 			const unavailableStoreApp = appRegistry.list().find(
 				(app) =>
@@ -2522,6 +2624,9 @@ export function ChatArea({
 	}
 
 	function dispatchAppControl(req: { action: string; appId?: string }) {
+		if (isWebMode() && req.action === "switch" && req.appId === "browser") {
+			return;
+		}
 		const { setActiveApp } = useAppStore.getState();
 		if (req.action === "switch" && req.appId) {
 			setActiveApp(req.appId);
@@ -3207,7 +3312,7 @@ export function ChatArea({
 				sentencePipelineRef.current?.rearmLocalVoiceNotice();
 				pipelineVoiceConfigRef.current = {
 					voice: resolveTtsVoiceId(config) ?? config.voice,
-					ttsProvider: config.ttsProvider || "edge",
+					ttsProvider: isWebMode() ? "browser" : config.ttsProvider || "edge",
 					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
 					naiaKey: config.naiaKey,
@@ -3220,7 +3325,11 @@ export function ChatArea({
 				setSttState("initializing");
 				try {
 					const sttLang = localeToSttLanguage(getLocale());
-					const sttEngine = isAsrModel ? "vllm" : config.sttProvider || "vosk";
+					const sttEngine = isWebMode()
+						? "web-speech"
+						: isAsrModel
+							? "vllm"
+							: config.sttProvider || "vosk";
 					const sttMeta = getSttProvider(sttEngine);
 					const isApiBased =
 						sttMeta?.engineType === "api" || sttMeta?.engineType === "vllm";
@@ -3294,6 +3403,13 @@ export function ChatArea({
 											"Skipping duplicate send (already streaming)",
 											{ text },
 										);
+										return;
+									}
+									if (
+										import.meta.env.MODE === "web" &&
+										isWebSendBlocked(getWebModelStatus(), getWebAdkStatus(), loadConfig()?.provider)
+									) {
+										setInput(text);
 										return;
 									}
 									handleSend(text);
@@ -4234,6 +4350,7 @@ export function ChatArea({
 								{TAB_ICONS.chat}
 							</span>
 						</button>
+						{/* 지시서 #4: 웹판에서도 OPFS 영구 대화 기록 목록 탭을 노출한다. */}
 						<button
 							type="button"
 							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
@@ -4302,7 +4419,7 @@ export function ChatArea({
 
 					{/* Settings tab */}
 
-					{/* History tab */}
+					{/* History tab (지시서 #4: 웹판에서도 OPFS 영구 대화 기록 마운트) */}
 					{activeTab === "history" && (
 						<HistoryTab onLoadSession={() => setActiveTab("chat")} />
 					)}
@@ -4349,7 +4466,12 @@ export function ChatArea({
 					className="chat-messages"
 					style={{ display: activeTab === "chat" ? "flex" : "none" }}
 				>
-					{messages
+					{import.meta.env.MODE === "web" &&
+					webAdkStatus.phase !== "ready" ? (
+						<WebWorkspaceSetup status={webAdkStatus} />
+					) : (
+						<>
+							{messages
 						.filter((msg) => {
 							if (
 								msg.role === "user" &&
@@ -4461,6 +4583,8 @@ export function ChatArea({
 							</span>
 						</output>
 					)}
+						</>
+					)}
 
 					<div ref={messagesEndRef} />
 				</div>
@@ -4508,6 +4632,10 @@ export function ChatArea({
 					<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
 				)}
 
+				{import.meta.env.MODE === "web" && activeTab === "chat" && loadConfig()?.provider === "webllm" && (
+					<WebModelStatusBar />
+				)}
+
 				{/* Input (chat tab only) */}
 				<div
 					className="chat-input-bar"
@@ -4517,15 +4645,25 @@ export function ChatArea({
 						type="button"
 						className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
 						onClick={handleVoiceToggle}
-						disabled={voiceMode === "connecting"}
+						disabled={
+							voiceMode === "connecting" ||
+							(isWebMode() && !isWebSpeechAvailable())
+						}
+						aria-label={
+							isWebMode() && !isWebSpeechAvailable()
+								? "이 브라우저는 음성 인식을 지원하지 않습니다"
+								: undefined
+						}
 						title={
-							voiceMode === "off"
-								? t("chat.voiceStart")
-								: voiceMode === "connecting"
-									? t("chat.voiceConnecting")
-									: ttsPlaying
-										? "끼어들기 (TTS 중단)"
-										: t("chat.voiceEnd")
+							isWebMode() && !isWebSpeechAvailable()
+								? "이 브라우저는 음성 인식을 지원하지 않습니다"
+								: voiceMode === "off"
+									? t("chat.voiceStart")
+									: voiceMode === "connecting"
+										? t("chat.voiceConnecting")
+										: ttsPlaying
+											? "끼어들기 (TTS 중단)"
+											: t("chat.voiceEnd")
 						}
 					>
 						<span className="voice-bar" />
@@ -4588,7 +4726,8 @@ export function ChatArea({
 						<button
 							type="button"
 							onClick={() => handleSend()}
-							disabled={!input.trim()}
+							disabled={!input.trim() || webSendBlocked}
+							aria-describedby={webSendBlocked ? "web-model-status" : undefined}
 							className="chat-send-btn"
 						>
 							↑
