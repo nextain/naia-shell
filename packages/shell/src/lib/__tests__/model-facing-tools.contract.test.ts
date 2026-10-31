@@ -116,7 +116,7 @@ describe("model-facing tool contract", () => {
 			center: TestCenter,
 			source: "installed",
 			storeSignatureVerified: true,
-			tools: [tool, storeBlackjackTool],
+			tools: [tool, storeBlackjackTool, { name: "skill_cafelua_tarot", description: "Tarot" }],
 		});
 		try {
 			useAppStore.getState().setActiveApp("signed-tarot-contract-test");
@@ -124,6 +124,7 @@ describe("model-facing tool contract", () => {
 				"skill_store_tarot",
 			]);
 			expect(isModelFacingToolAllowed(storeBlackjackTool.name)).toBe(true);
+			expect(isModelFacingToolAllowed("skill_cafelua_tarot")).toBe(true);
 			const activeBoundary = makeModelToolBoundary({
 				fetchTools: async () => [tool],
 			});
@@ -131,6 +132,7 @@ describe("model-facing tool contract", () => {
 			useAppStore.getState().setActiveApp(null);
 			expect(filterModelFacingTools([tool])).toEqual([]);
 			expect(isModelFacingToolAllowed(storeBlackjackTool.name)).toBe(false);
+			expect(isModelFacingToolAllowed("skill_cafelua_tarot")).toBe(false);
 			const inactiveBoundary = makeModelToolBoundary({
 				fetchTools: async () => [tool],
 			});

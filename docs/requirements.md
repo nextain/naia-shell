@@ -1302,7 +1302,7 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-TOOLS-SURFACE.3** | 도구 목록 로딩 실패는 빈 성공 목록으로 가장하지 않으며, 목록을 사용하는 UI는 로딩·빈 목록·성공·오류·좁은 폭에서 기존 접근 가능한 상태 표현과 재시도 경계를 유지한다. | UC-TOOLS-SURFACE-611 | `SkillsTab.test.tsx`; `packages/shell/e2e/naia-omni-voice-tools.spec.ts` | Done |
 | **FR-TOOLS-SURFACE.4** | #687 좁은 예외 — 출처: 루크 2026-09-22 「쓰기 가능하게 해줘」. 모델은 워크스페이스 에디터에 현재 열린 파일 한 개에만 `skill_workspace_edit_open_file` 로 수정을 제안할 수 있다. 에디터 안 변경 미리보기에서 사용자가 매번 승인해야 저장되고, 거절·시간초과(50초, 에이전트 60초 한도 미만)·열린 파일 전환 시 아무것도 쓰지 않고 rejected 를 돌려준다. 미리보기 뒤 디스크(sha256)나 에디터 내용이 바뀌면 stale 로 거부한다. 민감 경로·naia-settings 쓰기·1MB 초과는 denied. tier 0(에이전트 일반 승인 없음 — naia-agent grpc-server.ts:489, chat-turn-handler.ts:436·635). 유일한 승인은 편집기 diff 승인이며 '항상 허용'이 없고, 남은 시간을 표시한다. | UC-WORKSPACE-OPEN-FILE-EDIT-687 | `open-file-edit.test.ts`, `herdr-workspace-bridge.test.tsx`, `open-file-edit-review.test.tsx`, Rust `agent_open_file_tests`, `e2e/687-open-file-edit.spec.ts`; attended E2E in the real shell pending | Done |
 | **FR-TOOLS-SURFACE.5** | 텍스트 채팅은 도구가 켜진 모든 전송 전에 에이전트 도구 목록으로 제외 목록을 새로 받아(최대 1.5초) 첫 턴과 이후 턴의 도구 목록이 같다. 받지 못하면(시간 초과·실패) 그 턴은 도구 없이 보낸다. 이전 목록을 재사용하지 않는다(새로 등록된 도구가 열리는 것을 막기 위해). | UC-TOOLS-SURFACE-611 | `model-tool-boundary.test.ts`, `ChatArea.test.tsx`, `e2e/chat-tools.spec.ts` P04(2026-09-23): Vitest 전체 통과(실패 0), Playwright e2e/chat-tools.spec.ts 11 통과(1·2턴 도구 목록 동일, 지식 도구 유지). 실 셸 E2E(도구 이름 기록)는 루크 확인 대기. | Done |
-| **FR-TOOLS-SURFACE.6** | 앱스토어 `skill_*` 도구는 셸 Rust가 서명 검증 성공을 기록한 설치 앱에서만 동적으로 허용한다. 도구를 모델에 넘길 때 그 소유 앱이 현재 설치·등록되고 활성 앱이어야 하며, 프런트가 읽은 `app.json` 선언만으로 허용하지 않는다. 충돌 소유자 판정은 서명 검증된 manifest만 사용하며 셸 내장 도구와 다른 서명 앱의 중복 선언은 거부하고 기록한다. 미서명 도구는 모델에 노출하지 않고, 미서명 선언은 서명 도구를 가로채거나 자를 수 없다. 목록 갱신은 검증 상태와 도구를 함께 교체한다. 유료/권리 대상 앱은 목록 갱신 때 권리를 10분 캐시로 확인하고 명시적 권리 없음이면 강등하며, 네트워크 실패는 로컬 영수증 상태를 유지한다. 도구 실행 전 60초가 지나면 Rust가 해당 앱 영수증을 다시 확인한다. 앱 삭제·비활성화·ADK 변경 뒤에는 즉시 제외한다. `skill_blackjack_tutor` 레거시 예외는 활성 서명 소유자에게만 적용한다. | UC-APPSTORE-DYNAMIC-TOOLS-20261029 | `packages/shell/src/lib/__tests__/app-loader.test.ts` 목록/갱신/권리·가로채기 통합; `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`; Rust `packages/shell/src-tauri/src/app.rs` 서명·변조·영수증 시험; IPC 인자·오리진 시험 | In progress |
+| **FR-TOOLS-SURFACE.6** | 앱스토어 `skill_*` 도구는 셸 Rust가 서명 검증 성공을 기록한 설치 앱에서만 동적으로 허용한다. 도구를 모델에 넘길 때 그 소유 앱이 현재 설치·등록되고 활성 앱이어야 하며, 프런트가 읽은 `app.json` 선언만으로 허용하지 않는다. 충돌 소유자 판정은 서명 검증된 manifest만 사용하며 셸 내장 도구와 다른 서명 앱의 중복 선언은 거부하고 기록한다. 미서명 도구는 모델에 노출하지 않고, 미서명 선언은 서명 도구를 가로채거나 자를 수 없다. 목록 갱신은 검증 상태와 도구를 함께 교체한다. 유료/권리 대상 앱은 목록 갱신 때 권리를 10분 캐시로 확인하고 명시적 권리 없음이면 강등하며, 네트워크 실패는 로컬 영수증 상태를 유지한다. 도구 실행 전 60초가 지나면 Rust가 해당 앱 영수증을 다시 확인한다. 앱 삭제·비활성화·ADK 변경 뒤에는 즉시 제외한다. `skill_blackjack_tutor`와 `skill_cafelua_tarot` 레거시 예외는 활성 서명 소유자에게만 적용한다. | UC-APPSTORE-DYNAMIC-TOOLS-20261029 | `packages/shell/src/lib/__tests__/app-loader.test.ts` 목록/갱신/권리·가로채기 통합; `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`; Rust `packages/shell/src-tauri/src/app.rs` 서명·변조·영수증 시험; IPC 인자·오리진 시험 | In progress |
 
 ## 기능 요구사항 (FR) — 개발 인스턴스 URL과 워크스페이스 바인드 (#651 / #653)
 
@@ -1463,7 +1463,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-025.6** | 새 ADK 기본 자산의 기대 목록은 입체 아바타 2, NVA 3, 배경 6, 음악 3이며 음악에 한국어 라디오 한 곡과 영어 한 곡이 포함된다. 기존 사용자 선택과 추가 자산을 보존한다. | S-ADK-SOURCE, UC-025-05 | T5; `adk-assets-e2e.test.ts` | 후보·실기 미검증 |
 | **FR-025.7** | 0.2.5 소개 글은 판번호와 자막·음악·아바타·대시보드·내려받기 변경 및 나이아 라디오 노래 한국어 한 곡·영어 한 곡을 후보에 맞게 설명한다. 뺀 교육 앱인 블랙잭 코딩 수업·공공 인공지능 전환(AX) 강의가 출시 대상으로 소개되면 실패다. | UC-025-06 | T11; `releases/v0.2.5.yaml` 대조 | 후보·검토 필요 |
 | **FR-025.8** | 슬라이드 0.1.2를 설치해 PDF 페이지 이동·발표 음성 시작/정지·녹화 및 재생을 할 수 있다. | UC-025-07 | UT-01, IT-01, E2E-01, T8 | 통합·실기 미검증 |
-| **FR-025.10** | 타로 0.1.4는 공개한 카드 순서에 맞춰 답하고 원문 낭독을 완료·취소하며 닫은 뒤 소리를 멈춘다. | UC-025-09 | UT-02, IT-02, E2E-02, E2E-05 | 후보에 낭독 연결 미구현·실기 미검증 |
+| **FR-025.10** | 타로 0.1.4는 공개한 카드 순서에 맞춰 답하고 원문 낭독을 완료·취소하며 닫은 뒤 소리를 멈춘다. | UC-025-09 | UT-02, IT-02, E2E-02, E2E-05 | UT·IT 구현; 실기 미검증 |
 | **FR-025.11** | 이음오피스 0.1.0 소개 앱은 표시된 내려받기 주소를 복사하고 나이아 연결 준비 중을 표시한다. | UC-025-10 | UT-03, IT-03, E2E-03 | 통합·실기 미검증 |
 | **FR-025.12** | 캐릭터 카드 0.1.0의 선택 설정을 역할극에 전달하고 카드 → 슬라이드 → 일반 대화 전환과 닫기 때 문맥을 교체·해제하며 전환 뒤에도 열린 슬라이드 자료를 보존한다. | UC-025-11 | UT-04, IT-04, E2E-04, UT-06, IT-06, E2E-06 | 후보에 문맥 연결 미구현·실기 미검증 |
 | **FR-025.13** | 같은 후보에서 기기별 기존 기능과 네 앱의 서명·판·설치 및 회귀 결과를 확인하고 실패·미실시를 구분한다. 공용 연결의 질문·언어·낭독 취소를 확인한다. 교육 앱인 블랙잭 코딩 수업과 공공 인공지능 전환(AX) 강의는 이번 판에서 뺀다. | UC-025-12 | T8, T9, UT-05, IT-05, E2E-05, UT-07, IT-07, E2E-07; `installed-app-host-bridge.test.ts`, `ChatArea.installed-app.test.tsx`, `generic-installed-slides.test.tsx`, `installed-app-loader-boundary.test.tsx` | 실기 미검증 |
@@ -1478,3 +1478,20 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 시험: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx` — 설치 앱 질문·낭독과 실시간 음성 모델 거절 한국어·영어; 설치 앱 iframe과 대화창을 함께 렌더해 질문·응답, 낭독 취소, 언어 변경과 위조 창 거절을 확인한다(모델·음성 장치는 모의); `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts` — 공용 연결 권한·출처·메시지; `packages/shell/src/apps/__tests__/installed-app-loader-boundary.test.tsx` — 필터된 도구 등록 및 권한 변경 반영.
 
 검수 1차 (UC-INSTALLED-APP-HOST): 중복 ask/speak ID에 duplicate_id를 즉시 반환하고 기존 요청을 유지한다. 앱 질문은 기존 채팅 기록 없이 전송하고 채팅에 앱 이름을 표시하며 이후 사용자 기록에서 앱 턴을 제외한다. 설치 가능한 권한 정보를 다국어로 고지하며 미제공이면 생략한다. 매니페스트 썸네일은 HTTPS만 보존한다. 상태: Done.
+
+## 기능 요구사항 (FR) — 카페루아 타로 설치형 나이아 앱
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-CAFELUA-TAROT-READING.1** | 켈틱 열 장 또는 세 장을 중복 없이 뽑아 도구 호출마다 한 장씩 공개하고 정·역방향을 표시한다. 도구 결과의 카드는 공개 순서와 일치하며 미공개 카드는 결과에 포함하지 않는다 (UT-02). | UC-CAFELUA-TAROT-APP | `tools.test.ts` (UT-02), `reading.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-NAIA.1** | 나이아 도구로 시작·공개·조회·종합·책 열기·낭독·중지·상태를 지원한다. 낭독은 공용 `naia-app:speak`, `naia-app:speak-cancel`, `naia-app:speech-result` 메시지와 `speech` 권한을 사용한다. 셸 언어는 `locale` 권한으로 받는다. 타로 도구는 서명 검증된 활성 설치 앱에 속할 때만 모델에 제공하며 `model.ask` 권한을 요구하지 않는다. | UC-CAFELUA-TAROT-APP | `tools.test.ts`, `book-bridge.test.tsx`, `installed-app-loader-boundary.test.tsx`, `chat-service.test.ts`, `model-tool-boundary.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-CARDS.1** | 덮인 카드는 직접 뒤집히지 않으며 공개된 카드의 자리와 사전 뜻을 볼 수 있다. | UC-CAFELUA-TAROT-APP | `cafelua-tarot-app.spec.ts` | In progress |
+| **FR-CAFELUA-TAROT-STORIES.1** | 카페루아 책의 한국어·영어 원문과 목차·쪽 넘김을 보존하고 나이아 낭독을 문단 단위로 제공한다. `completed`를 받은 문단만 읽은 것으로 기록하고 다음 문단으로 진행한다. 실패·취소·시간 초과·권한 거절 또는 2,001자 이상 문단은 읽지 않은 상태로 남긴다 (UT-02, IT-02). | UC-CAFELUA-TAROT-APP | `book-read.test.tsx` (UT-02), `book-host-integration.test.tsx` (IT-02), `content.test.ts`, `tools.test.ts`, `cafelua-tarot-app.spec.ts` | In progress |
+| **FR-CAFELUA-TAROT-LOCALE.1** | 셸의 14개 화면 언어와 책의 한국어·영어 선택을 지원한다. | UC-CAFELUA-TAROT-APP | `i18n.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-AUDIO.1** | 배경음과 공개 효과음을 음소거할 수 있으며 낭독은 나이아가 수행한다. | UC-CAFELUA-TAROT-APP | `sound.test.ts` | In progress |
+| **FR-CAFELUA-TAROT-STORE.1** | 0.1.2 소개와 도움말을 14개 언어로 제공한다. | UC-CAFELUA-TAROT-APP | `i18n.test.ts` | In progress |
+## 비기능 요구사항 (NFR) — 카페루아 타로 앱 경험
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **NFR-CAFELUA-TAROT-UX.1** | 탁자와 책의 기본·빈 상태·진행·성공·오류·좁은 폭, 키보드와 접근성을 시각 검토한다. | UC-CAFELUA-TAROT-APP | `cafelua-tarot-app.spec.ts` | In progress |

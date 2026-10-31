@@ -186,7 +186,7 @@ export function installInstalledAppHostBridge(
 			{
 				type: "naia-app:speech-result",
 				id: detail.requestId,
-				status: detail.status,
+				status: detail.status === "finished" ? "completed" : detail.status,
 				error: detail.error,
 			},
 			origin,

@@ -14,8 +14,8 @@ vi.mock("../config", () => ({
 
 import {
 	getStoreGatewayUrl,
-	getStoreProductName,
 	getStoreProductMetadata,
+	getStoreProductName,
 	hasStoreEntitlement,
 } from "../app-store-client";
 

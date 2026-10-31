@@ -1,7 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeModelToolBoundary } from "../model-facing-tools";
+import { appRegistry } from "../app-registry";
+import { useAppStore } from "../../stores/app";
 
 describe("makeModelToolBoundary", () => {
+	it("does not disable the Cafe Lua tarot app skill", async () => {
+		appRegistry.register({ id: "tarot-boundary", name: "Tarot", center: () => null, source: "installed", storeSignatureVerified: true, tools: [{ name: "skill_cafelua_tarot", description: "Tarot" }] });
+		useAppStore.getState().setActiveApp("tarot-boundary");
+		const boundary = makeModelToolBoundary({
+			fetchTools: async () => [{ name: "skill_cafelua_tarot" }],
+		});
+		expect((await boundary.resolve()).disabledSkills).not.toContain(
+			"skill_cafelua_tarot",
+		);
+		useAppStore.getState().setActiveApp(null);
+		appRegistry.unregister("tarot-boundary");
+	});
 	it("turn 1 and turn 2 return the same disabledSkills for the same agent list", async () => {
 		const agentTools = [
 			{ name: "get_time" },

@@ -30,6 +30,20 @@ describe("installed app loader bridge boundaries", () => {
     expect(onToolCall.mock.calls.map((call) => call[0])).toEqual(["skill_boundary_allowed"]);
   });
 
+  it("registers the signed tarot tool and rejects an unsigned declaration", async () => {
+    let verified = true;
+    vi.mocked(invoke).mockImplementation(async (command) => command === "app_list_installed" ? [{
+      id: "boundary-test", name: "Tarot", htmlEntry: "/apps/tarot/index.html",
+      store_signature_verified: verified,
+      tools: [{ name: "skill_cafelua_tarot", description: "Tarot" }],
+    }] : true);
+    await loadInstalledApps();
+    expect(appRegistry.get("boundary-test")!.tools?.map((tool) => tool.name)).toEqual(["skill_cafelua_tarot"]);
+    verified = false;
+    await loadInstalledApps();
+    expect(appRegistry.get("boundary-test")!.tools ?? []).toEqual([]);
+  });
+
   it("refreshes the app bridge when a permission is revoked", async () => {
     let permissions = ["model.ask"];
     vi.mocked(invoke).mockImplementation(async (command) => command === "app_list_installed" ? [{

@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build && node scripts/check-bundle-budget.mjs",
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "build:slides": "vite build --config vite.slides.config.ts",
+    "build:cafelua-tarot": "vite build --config vite.cafelua-tarot.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "node scripts/dev-setup.mjs && node scripts/tauri-with-mode.mjs dev",

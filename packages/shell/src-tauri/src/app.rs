@@ -2632,6 +2632,23 @@ mod tests {
     }
 
     #[test]
+    fn cafelua_tarot_manifest_keeps_localized_store_metadata() {
+        let json = include_str!("../../src/apps/cafelua-tarot/package-public/app.json");
+        let manifest: AppManifest = serde_json::from_str(json).expect("Cafe Lua Tarot manifest must deserialize");
+        assert_eq!(manifest.id, "land.naia.cafelua-tarot");
+        assert_eq!(manifest.manifest_version, Some(2));
+        assert_eq!(manifest.thumbnail_url, None);
+        assert_eq!(manifest.name_ko.as_deref(), Some("카페루아 타로"));
+        assert!(manifest.description_en.as_deref().unwrap().contains("default model"));
+        assert_eq!(manifest.names.as_ref().unwrap().len(), 14);
+        assert_eq!(manifest.descriptions.as_ref().unwrap().len(), 14);
+        assert_eq!(manifest.help.as_ref().unwrap().len(), 14);
+        assert!(manifest.extra.is_empty(), "unknown manifest keys: {:?}", manifest.extra);
+        let issues = validate_manifest(&manifest);
+        assert!(!issues.iter().any(|issue| issue.level == IssueLevel::Error), "manifest errors: {:?}", issues);
+    }
+
+    #[test]
     fn manifest_v2_full_fields_roundtrip() {
         let original_json = r#"{
             "manifest_version": 2,

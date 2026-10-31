@@ -31,6 +31,32 @@ describe("chat-service", () => {
 		vi.resetModules();
 	});
 
+	it("sends the Cafe Lua tarot app skill through the real model-facing filter", async () => {
+		const { sendAppSkills } = await import("../chat-service");
+		const { appRegistry } = await import("../app-registry");
+		const { useAppStore } = await import("../../stores/app");
+		appRegistry.register({ id: "land.naia.cafelua-tarot", name: "Tarot", center: () => null, source: "installed", storeSignatureVerified: true, tools: [{ name: "skill_cafelua_tarot", description: "Tarot" }] });
+		useAppStore.getState().setActiveApp("land.naia.cafelua-tarot");
+		await sendAppSkills("land.naia.cafelua-tarot", [
+			{
+				name: "skill_cafelua_tarot",
+				description: "Tarot",
+				parameters: { type: "object", properties: {} },
+				tier: 0,
+			},
+		]);
+		const args = mockInvoke.mock.calls.find(
+			(call) => call[0] === "send_to_agent_command",
+		)?.[1];
+		expect(JSON.parse(args.message)).toMatchObject({
+			type: "app_skills",
+			appId: "land.naia.cafelua-tarot",
+			tools: [{ name: "skill_cafelua_tarot", tier: 0 }],
+		});
+		useAppStore.getState().setActiveApp(null);
+		appRegistry.unregister("land.naia.cafelua-tarot");
+	});
+
 	it("sendChatMessage invokes Tauri command and listens for events", async () => {
 		const { sendChatMessage } = await import("../chat-service");
 

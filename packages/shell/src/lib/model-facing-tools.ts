@@ -83,7 +83,7 @@ export const SHELL_RESERVED_TOOL_NAMES = new Set<string>([
 // The built-in skill allowlist omits this historical Store app tool because it
 // is registered by the app iframe. Keep its legacy name here so the app can be
 // invoked when its signed Store manifest owns it.
-export const LEGACY_APP_TOOL_KEEP_LIST = ["skill_blackjack_tutor"] as const;
+export const LEGACY_APP_TOOL_KEEP_LIST = ["skill_blackjack_tutor", "skill_cafelua_tarot"] as const;
 const LEGACY_APP_TOOL_KEEP_SET = new Set<string>(LEGACY_APP_TOOL_KEEP_LIST);
 
 export type ModelFacingToolName = (typeof MODEL_FACING_TOOL_KEEP_LIST)[number];

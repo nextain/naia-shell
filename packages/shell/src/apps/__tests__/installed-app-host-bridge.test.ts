@@ -69,7 +69,7 @@ describe("installed app host bridge", () => {
   window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, { detail: {appId:"app.a", requestId:"same", text:"answer"} }));
   window.dispatchEvent(new CustomEvent(INSTALLED_APP_SPEECH_RESULT_EVENT, { detail: {appId:"app.a", requestId:"same", status:"finished"} }));
   expect(a.post).toHaveBeenCalledWith(expect.objectContaining({type:"naia-app:response", text:"answer"}), expect.anything());
-  expect(a.post).toHaveBeenCalledWith(expect.objectContaining({type:"naia-app:speech-result", status:"finished"}), expect.anything());
+  expect(a.post).toHaveBeenCalledWith(expect.objectContaining({type:"naia-app:speech-result", status:"completed"}), expect.anything());
  });
  it("settles a missing consumer with an empty timeout response", () => {
   vi.useFakeTimers(); const a = frame("app.a", ["model.ask"]);
