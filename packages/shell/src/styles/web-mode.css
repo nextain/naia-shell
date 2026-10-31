@@ -218,9 +218,15 @@
 	[data-naia-web="true"] .app-layout:has([data-app-id="workspace"].app-bar-tab--active) .app-bar { height: 0; min-height: 0; padding: 0; }
 }
 @media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
-	[data-naia-web="true"] .app-root [data-mobile-sheet="half"] .naia-chat-wrapper:has(.chat-messages > div:only-child:empty) { height: calc(30dvh - 28px) !important; }
-}
-@media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
-	[data-naia-web="true"] [data-video-avatar-prebaked] { height: 130%; top: 0; }
-	[data-naia-web="true"] .app-root:has([data-mobile-sheet="collapsed"]) [data-video-avatar-prebaked] { height: 145%; top: -8%; }
+	[data-naia-web="true"] .avatar-canvas-layer { bottom: 42dvh; transition: bottom 0.25s cubic-bezier(0.4, 0, 0.2, 1); --nva-center-offset: 0px; }
+	[data-naia-web="true"] .app-root:has([data-mobile-sheet="collapsed"]) .avatar-canvas-layer { bottom: 136px; }
+	[data-naia-web="true"] .app-root:has([data-mobile-sheet="expanded"]) .avatar-canvas-layer { bottom: 91dvh; }
+	[data-naia-web="true"] .avatar-canvas-layer::after { display: none; }
+	[data-naia-web="true"] [data-video-avatar-prebaked] { top: 50%; left: 50%; translate: -50% -50%; height: 150%; max-height: none !important; max-width: none !important; }
+	[data-naia-web="true"] .app-root .naia-chat-wrapper { height: calc(var(--mobile-sheet-drag-height, 42dvh) - 28px) !important; }
+	[data-naia-web="true"] .app-root [data-mobile-sheet="collapsed"] .naia-chat-wrapper { height: calc(var(--mobile-sheet-drag-height, 136px) - 28px) !important; }
+	[data-naia-web="true"] .app-root [data-mobile-sheet="expanded"] .naia-chat-wrapper { height: calc(var(--mobile-sheet-drag-height, 91dvh) - 28px) !important; }
+	[data-naia-web="true"] .app-root .avatar-canvas-layer { bottom: var(--mobile-sheet-drag-height, 42dvh); }
+	[data-naia-web="true"] .app-root:has([data-mobile-sheet="collapsed"]) .avatar-canvas-layer { bottom: var(--mobile-sheet-drag-height, 136px); }
+	[data-naia-web="true"] .app-root:has([data-mobile-sheet="expanded"]) .avatar-canvas-layer { bottom: var(--mobile-sheet-drag-height, 91dvh); }
 }

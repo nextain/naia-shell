@@ -35,7 +35,7 @@ interface NvaPan {
 }
 const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
 function videoTransform(pan: NvaPan, zoom = 1): string {
-	return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px) scale(${zoom})`;
+	return `translate(calc(var(--nva-center-offset, var(--naia-width, 320px) / 2 - 50vw) + ${pan.x}px), ${pan.y}px) scale(${zoom})`;
 }
 const MIN_NVA_ZOOM = 0.5;
 const MAX_NVA_ZOOM = 3;

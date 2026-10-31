@@ -17,6 +17,7 @@ import {
 	syncWebModeRootAttribute,
 } from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
+import { useChatStore } from "../stores/chat";
 import { AppBar } from "./AppBar";
 import { DeferredAdkSetupScreen } from "./DeferredAdkSetupScreen";
 import { DeferredChatArea } from "./DeferredChatArea";
@@ -70,6 +71,10 @@ interface ChatDragState {
 	startY: number;
 	startH: number;
 	moved: boolean;
+}
+
+export function mobileSheetDragHeight(startHeight: number, delta: number, viewportHeight: number): number {
+	return Math.max(136, Math.min(viewportHeight * 0.91, startHeight + delta));
 }
 
 export interface AppMainContentProps {
@@ -163,9 +168,18 @@ export function AppMainContent(props: AppMainContentProps) {
 	const activatedKeepAliveAppsRef = useRef(new Set<string>());
 	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
 	const webMode = isWebMode();
-	const [mobileSheet, setMobileSheet] = useState<"collapsed" | "half" | "expanded">("half");
+	const hasMessages = useChatStore((state) => state.messages.length > 0);
+	const [mobileSheet, setMobileSheet] = useState<"collapsed" | "half" | "expanded">(hasMessages ? "half" : "collapsed");
+	const previousHasMessages = useRef(hasMessages);
+	useEffect(() => {
+		if (hasMessages !== previousHasMessages.current) {
+			setMobileSheet(hasMessages ? "half" : "collapsed");
+			previousHasMessages.current = hasMessages;
+		}
+	}, [hasMessages]);
+	const ttsEnabled = useAppStore((state) => state.ttsEnabled);
 	const [mobileMenu, setMobileMenu] = useState(false);
-	const mobileStart = useRef<number | null>(null);
+	const mobileStart = useRef<{ y: number; height: number } | null>(null);
 	const setActiveApp = useAppStore((state) => state.setActiveApp);
 	useEffect(() => {
 		if (!webMode || !window.visualViewport) return;
@@ -258,7 +272,7 @@ export function AppMainContent(props: AppMainContentProps) {
 						<button type="button" className="web-mobile-menu-trigger" aria-label="Menu" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
 						{mobileMenu && <div className="web-mobile-menu-list">
 							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button")?.click(); setMobileMenu(false); }}>AI</button>
-							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t("ai.ttsOn")} / {t("ai.ttsOff")}</button>
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}</button>
 							{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map((key) => <button type="button" key={key} onClick={() => { const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".ai-control-bar button")).find((item) => item.getAttribute("aria-label") === t(key)); button?.click(); setMobileMenu(false); }}>{t(key)}</button>)}
 							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".new-chat-btn")?.click(); setMobileMenu(false); setActiveApp(null); }}>{t("chat.newConversation")}</button>
 							<button type="button" onClick={() => { setActiveApp("workspace"); setMobileMenu(false); }}>📁 {t("appbar.workspace")}</button>
@@ -283,7 +297,7 @@ export function AppMainContent(props: AppMainContentProps) {
 							<AiControlBar />
 						</Suspense>
 						<div className="naia-chat-area" data-mobile-sheet={mobileSheet}>
-							<button type="button" className="web-mobile-sheet-handle" aria-label="Resize conversation" onPointerDown={(event) => { mobileStart.current = event.clientY; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerUp={(event) => { const delta = (mobileStart.current ?? event.clientY) - event.clientY; setMobileSheet((state) => delta > 30 ? (state === "collapsed" ? "half" : "expanded") : delta < -30 ? (state === "expanded" ? "half" : "collapsed") : state === "half" ? "expanded" : state === "expanded" ? "collapsed" : "half"); mobileStart.current = null; }}><span /></button>
+							<button type="button" className="web-mobile-sheet-handle" aria-label="Resize conversation" onPointerDown={(event) => { mobileStart.current = { y: event.clientY, height: event.currentTarget.parentElement?.getBoundingClientRect().height ?? 136 }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { const start = mobileStart.current; if (!start || Math.abs(start.y - event.clientY) < 4) return; document.documentElement.style.setProperty("--mobile-sheet-drag-height", `${mobileSheetDragHeight(start.height, start.y - event.clientY, window.innerHeight)}px`); }} onPointerCancel={() => { mobileStart.current = null; document.documentElement.style.removeProperty("--mobile-sheet-drag-height"); }} onPointerUp={(event) => { const delta = (mobileStart.current?.y ?? event.clientY) - event.clientY; setMobileSheet((state) => delta > 30 ? (state === "collapsed" ? "half" : "expanded") : delta < -30 ? (state === "expanded" ? "half" : "collapsed") : state === "half" ? "expanded" : state === "expanded" ? "collapsed" : "half"); mobileStart.current = null; document.documentElement.style.removeProperty("--mobile-sheet-drag-height"); }}><span /></button>
 							<button
 								type="button"
 								className="naia-chat-toggle"

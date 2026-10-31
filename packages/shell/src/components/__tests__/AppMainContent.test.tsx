@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
-import { AppMainContent, type AppMainContentProps } from "../AppMainContent";
+import { AppMainContent, mobileSheetDragHeight, type AppMainContentProps } from "../AppMainContent";
+import { AppShellFrame } from "../AppShellFrame";
+import { useChatStore } from "../../stores/chat";
+import { useAppStore } from "../../stores/app";
+import { t } from "../../lib/i18n";
 
 const mockGetCurrentWindow = vi.hoisted(() =>
 	vi.fn(() => ({
@@ -88,6 +92,7 @@ function baseProps(
 describe("AppMainContent titlebar web/desktop mode", () => {
 	beforeEach(() => {
 		mockGetCurrentWindow.mockClear();
+		useChatStore.setState({ messages: [] });
 	});
 
 	afterEach(() => {
@@ -113,5 +118,43 @@ describe("AppMainContent titlebar web/desktop mode", () => {
 		expect(container.querySelector(".titlebar")).not.toBeNull();
 		expect(mockGetCurrentWindow).toHaveBeenCalled();
 		expect(document.documentElement.getAttribute("data-naia-web")).toBeNull();
+	});
+
+	it("starts collapsed for an empty conversation and opens to half when messages arrive", () => {
+		setWebAssetsModeForTests(true);
+		const { container } = render(<AppMainContent {...baseProps({ naiaVisible: true })} />);
+		const sheet = container.querySelector("[data-mobile-sheet]");
+		expect(sheet?.getAttribute("data-mobile-sheet")).toBe("collapsed");
+		act(() => useChatStore.setState({ messages: [{ id: "1", role: "user", content: "Hello", timestamp: 1 }] }));
+		expect(sheet?.getAttribute("data-mobile-sheet")).toBe("half");
+		act(() => useChatStore.setState({ messages: [] }));
+		expect(sheet?.getAttribute("data-mobile-sheet")).toBe("collapsed");
+	});
+
+	it("clamps drag height to preserve the input and viewport bounds", () => {
+		expect(mobileSheetDragHeight(350, 100, 800)).toBe(450);
+		expect(mobileSheetDragHeight(350, -500, 800)).toBe(136);
+		expect(mobileSheetDragHeight(350, 500, 800)).toBe(728);
+	});
+
+	it("shows only the speech action for the current state", () => {
+		setWebAssetsModeForTests(true);
+		useAppStore.setState({ ttsEnabled: false });
+		render(<AppMainContent {...baseProps({ naiaVisible: true })} />);
+		fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+		expect(screen.getByRole("button", { name: t("ai.ttsOff") })).toBeTruthy();
+		expect(screen.queryByRole("button", { name: t("ai.ttsOn") })).toBeNull();
+		act(() => useAppStore.setState({ ttsEnabled: true }));
+		expect(screen.getByRole("button", { name: t("ai.ttsOn") })).toBeTruthy();
+		expect(screen.queryByRole("button", { name: t("ai.ttsOff") })).toBeNull();
+	});
+
+	it("renders one background media layer and restores the fallback on video failure", () => {
+		setWebAssetsModeForTests(true);
+		const { container } = render(<AppShellFrame appReady bootComplete backgroundFallback={{ url: "/fallback.webp", type: "image" }} backgroundMediaType="video" backgroundVideoUrl="/scene.mp4" mainContent={baseProps()} onSplashDone={vi.fn()} setNaiaWidth={vi.fn()} />);
+		expect(container.querySelectorAll(".app-bg-image, .app-bg-video, .app-bg-fallback")).toHaveLength(1);
+		fireEvent.error(container.querySelector("video.app-bg-video")!);
+		expect(container.querySelectorAll(".app-bg-image, .app-bg-video, .app-bg-fallback")).toHaveLength(1);
+		expect(container.querySelector("img.app-bg-image")?.getAttribute("src")).toBe("/fallback.webp");
 	});
 });

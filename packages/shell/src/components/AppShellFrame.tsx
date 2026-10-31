@@ -121,7 +121,7 @@ export function AppShellFrame({
 					isMediaFile(backgroundVideoUrl, VIDEO_EXTENSIONS))) ? (
 			failedVideoUrl === backgroundVideoUrl && autumnVideo ? (
 				<img className="app-bg-image" src="/backgrounds/naia-autumn-office.webp" alt="" style={{ zIndex: 1 }} />
-			) : <video
+			) : failedVideoUrl === backgroundVideoUrl ? null : <video
 				key={backgroundVideoUrl}
 				className="app-bg-video"
 				src={backgroundVideoUrl}
@@ -171,7 +171,7 @@ export function AppShellFrame({
 				{ "--naia-width": `${mainContent.naiaWidth}px` } as React.CSSProperties
 			}
 		>
-			{backgroundFallback?.url === "/backgrounds/naia-autumn-office-live.mp4" ? (
+			{(!foreground || backgroundMediaType === "iframe") && (backgroundFallback?.url === "/backgrounds/naia-autumn-office-live.mp4" ? (
 				<img className="app-bg-image" src="/backgrounds/naia-autumn-office.webp" alt="" style={{ zIndex: 0 }} />
 			) : backgroundFallback?.type === "video" ? (
 				<video
@@ -192,7 +192,7 @@ export function AppShellFrame({
 				/>
 			) : (
 				<div className="app-bg-fallback" aria-hidden="true" />
-			)}
+			))}
 			{foreground}
 			{mainContent.showSplash && (
 				<SplashScreen onDone={onSplashDone} ready={appReady} />
