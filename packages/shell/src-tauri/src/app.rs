@@ -1018,6 +1018,8 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
     "downloads",
     "modals",
     "speech",
+    "model.ask",
+    "locale",
     "environment",
     "files.pick",
     "media.record",
@@ -1058,6 +1060,12 @@ pub struct AppDataUseSpec {
 }
 
 /// Panel manifest stored in ~/.naia/apps/{id}/app.json
+fn deserialize_https_thumbnail<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where D: serde::Deserializer<'de> {
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(value.filter(|raw| url::Url::parse(raw).is_ok_and(|url| url.scheme() == "https" && url.host_str().is_some())))
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppManifest {
     pub id: String,
@@ -1070,12 +1078,18 @@ pub struct AppManifest {
     )]
     pub manifest_version: Option<u32>,
     pub description: Option<String>,
+    #[serde(default, rename = "descriptionKo", alias = "description_ko", skip_serializing_if = "Option::is_none")]
+    pub description_ko: Option<String>,
+    #[serde(default, rename = "descriptionEn", alias = "description_en", skip_serializing_if = "Option::is_none")]
+    pub description_en: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub descriptions: Option<std::collections::HashMap<String, String>>,
     pub icon: Option<String>,
     /// Path to SVG icon file, relative to app directory (e.g. "icon.svg")
     #[serde(rename = "iconUrl", skip_serializing_if = "Option::is_none")]
     pub icon_url: Option<String>,
+    #[serde(default, rename = "thumbnailUrl", alias = "thumbnail_url", deserialize_with = "deserialize_https_thumbnail", skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
     /// Inline SVG content — populated at load time from iconUrl, not stored in app.json
     #[serde(
         rename = "iconSvg",
@@ -1084,6 +1098,10 @@ pub struct AppManifest {
     )]
     pub icon_svg: Option<String>,
     pub names: Option<std::collections::HashMap<String, String>>,
+    #[serde(default, rename = "nameKo", alias = "name_ko", skip_serializing_if = "Option::is_none")]
+    pub name_ko: Option<String>,
+    #[serde(default, rename = "nameEn", alias = "name_en", skip_serializing_if = "Option::is_none")]
+    pub name_en: Option<String>,
     pub version: Option<String>,
     #[serde(
         default,
@@ -2588,6 +2606,29 @@ mod tests {
             "expected no issues for slides app.json, got: {:?}",
             issues
         );
+    }
+
+    #[test]
+    fn localized_store_metadata_survives_roundtrip() {
+        let input = r#"{"id":"example.app","name":"Example","names":{"ko":"이름"},"descriptions":{"en":"Description"},"nameKo":"이름","descriptionEn":"Description","thumbnailUrl":"https://example.com/preview.png"}"#;
+        let manifest: AppManifest = serde_json::from_str(input).unwrap();
+        assert!(manifest.extra.is_empty());
+        let json = serde_json::to_value(manifest).unwrap();
+        assert_eq!(json["names"]["ko"], "이름");
+        assert_eq!(json["descriptions"]["en"], "Description");
+        assert_eq!(json["nameKo"], "이름");
+        assert_eq!(json["descriptionEn"], "Description");
+        assert_eq!(json["thumbnailUrl"], "https://example.com/preview.png");
+    }
+
+    #[test]
+    fn thumbnail_url_drops_non_https_values() {
+        for raw in ["javascript:alert(1)", "data:image/png;base64,AAAA", "file:///tmp/image.png", "http://example.com/x", "/preview.png"] {
+            let input = serde_json::json!({"id": "example.app", "name": "Example", "thumbnailUrl": raw});
+            let manifest: AppManifest = serde_json::from_value(input).unwrap();
+            assert_eq!(manifest.thumbnail_url, None, "{raw}");
+            assert!(serde_json::to_value(manifest).unwrap().get("thumbnailUrl").is_none());
+        }
     }
 
     #[test]

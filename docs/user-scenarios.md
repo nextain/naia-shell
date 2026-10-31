@@ -2593,3 +2593,22 @@ P02: Rust 소스의 창 생성 명령 async 검사(동기 부정 사례 포함),
 - 순서: 윈도우 2070·4060과 리눅스 각각에서 사용자가 채팅을 보내고 음성을 듣고 아바타·설정을 바꾼다. 슬라이드를 열고 닫는다. 시험 담당자는 같은 후보의 회귀 묶음을 실행해 기기별 결과를 기록한다. 네 앱이 준비되면 각 설치 목록의 앱 이름·판과 서명 확인도 대조한다. 공용 연결이 준비되면 서명된 시험 앱에서 질문 한 번과 언어 전환을 하고 타로 낭독을 취소한다.
 - 보여야 할 것: 기존 동작이 직전 공개판과 같고 새 오류가 없다. 회귀 기록에 실패와 원인이 남으며 네 앱의 설치·핵심 동작이 같은 후보에서 확인된다. 시험 앱의 질문에 응답하고 언어 전환이 전달되며 낭독 취소가 작동한다.
 - 실패: 기존 기능 회귀, 공용 연결의 질문·언어·취소 실패, 다른 후보의 결과를 가져옴, 실패나 미실시를 통과로 기록함. 요구 FR-025.13, FR-APP-STORE-UPDATE.1; 시험 T8, T9, UT-05, IT-05, E2E-05, UT-07, IT-07, E2E-07. 이 문서의 시험은 실행 전 계획이다.
+### UC-INSTALLED-APP-HOST: 설치 앱 공용 연결과 설치 정보
+
+설치 앱 사용자는 선언된 권한에 따라 셸의 선택 모델로 질문하고 응답 또는 종료 사유를 받으며, 셸 음성으로 문장을 읽거나 취소하고 결과를 받는다. 앱은 셸 언어를 초기 로드와 변경 시 전달받는다. 스토어 설치 대화상자는 현재 언어의 이름·설명과 썸네일을 보여주며 설치 후에도 매니페스트 정보가 보존된다. 다른 앱이나 권한 없는 프레임은 요청·응답을 가로챌 수 없다. Slides 기존 연결은 유지한다.
+
+P02 테스트 매핑: bridge Vitest는 정상 응답, 스트리밍 취소, 음성 모드, 모델 미설정, 비로그인 등 조기 종료, 권한 거부, 앱·요청 분리, 낭독 완료·취소·실패, 초기·변경 언어를 검증한다. 설치 대화상자 Vitest와 Playwright는 다국어·썸네일 및 기본, 빈 정보, 진행, 성공, 오류·재시도, 좁은 폭의 정보 위계·키보드/ARIA를 검증한다. Rust 매니페스트 테스트 및 native Tauri e2e는 설치 정보 보존을 확인한다. 기존 Slides Vitest와 UI 시험은 회귀를 확인한다.
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest·Rust 파일/그룹 | 실 UI·Tauri e2e |
+|---|---|---|
+| UC-INSTALLED-APP-HOST | `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`: 권한·출처·질의·낭독·언어 브리지 계약; `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: 상품 정보와 설치 상태; `packages/shell/src-tauri/src/app.rs`: 매니페스트 메타데이터 왕복 | `packages/shell/e2e/467-slide-presenter.spec.ts`: 설치 앱 UI 브리지·Slides 회귀; `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: 네이티브 매니페스트 정보 |
+| 앱 질문·낭독 요청의 권한/출처, 정상·조기 종료·취소, 앱/요청 ID 분리, 언어 초기화·변경 | `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`: `installed app host bridge`; `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: installed app question/speech cases, 실시간 음성 모델에서 질문 거절 오류의 한국어·영어 문구 | `packages/shell/e2e/467-slide-presenter.spec.ts`: installed app bridge and Slides regression |
+| 설치 화면 다국어 이름·설명·썸네일, 빈 정보, 설치 진행/성공/오류 복구, 좁은 폭·ARIA | `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: store metadata/install states; `packages/shell/src/lib/__tests__/app-store-client.test.ts`: localized product metadata; `packages/shell/src-tauri/src/app.rs`: manifest metadata roundtrip | `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: native manifest metadata; `packages/shell/e2e/467-slide-presenter.spec.ts`: UI install flow |
+
+P04 증거: Shell Vitest 전체 2,558 통과 / 0 실패 / 21 제외, 관련 집중 시험 122 통과 및 다중 문장 ChatArea 84 통과. Playwright 설치 흐름 2 통과(기본·빈 정보·오류 후 재시도·진행·성공·360px·키보드/ARIA), 실 Tauri 매니페스트 IPC 1 통과, Rust 매니페스트 왕복 1 통과. 스크린샷에서 정보 위계와 좁은 폭 배치를 확인했다. 음성 장치·실 모델 계정은 모의했다.
+
+검수 1차 P01/P02: 앱의 중복 요청은 즉시 오류를 받고 기존 요청은 정산된다. 앱 질문에는 이전 대화가 전달되지 않고 앱 이름이 채팅에 표시된다. 권한이 알려진 스토어 상품은 설치 전 사람이 읽는 권한 목록을 표시하며 정보가 없으면 목록을 생략한다. 기본·빈 권한 목록·설치 진행·성공·오류 및 재시도·좁은 폭을 설치 Playwright와 컴포넌트 시험으로 확인하고, iframe 권한 거부·중복 ID·기록 격리·악성 썸네일은 Vitest, 매니페스트 썸네일은 Rust 및 native IPC로 확인한다.
+
+검수 1차 P04: 최종 Shell Vitest 2,565 통과/0 실패/21 제외, Playwright 2 통과(권한 목록·오류 복구·진행·성공·360px 및 포커스), 실제 Tauri 매니페스트 IPC 1 통과, Rust 썸네일 필터와 매니페스트 왕복 각 1 통과. 좁은 폭 스크린샷에서 정보 위계와 목록 간격을 확인했다. 실 모델 계정·음성 장치는 모의했다. 복원 원본에는 앱 표시가 없어 복원 뒤 앱 턴이 후속 기록에 들어갈 수 있다.
