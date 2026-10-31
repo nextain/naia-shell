@@ -9,8 +9,82 @@ import { useAvatarStore } from "../../stores/avatar";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { useChatStore } from "../../stores/chat";
 import { ChatArea } from "../ChatArea";
+import { CharCardApp } from "../../apps/charcard/CharCardApp";
+import { createMemoryCardStorage } from "../../apps/charcard/card-store";
+import { installInstalledAppContextBridge } from "../../apps/generic-installed/installed-app-context-bridge";
+import { useAppStore } from "../../stores/app";
+import { buildMemoryContext } from "../chat-runtime-utils";
 
 export function registerChatAreaCases01() {
+	it("IT-04 sends the selected sample card exactly once in the mocked model request and clears it on switch and close", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "ollama", model: "qwen3:8b", ollamaHost: "http://localhost:11434" }));
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "ollama_runtime_status") return Promise.resolve({ serverState: "ready_managed", reservation: { kind: "local_llm", status: "running", bytes: null } });
+			if (command === "ollama_model_catalog_list") return Promise.resolve({ candidates: [{ tag: "qwen3:8b" }], contextDefaultTokens: 8192 });
+			return Promise.resolve(undefined);
+		});
+		useAppStore.setState({ activeApp: "land.naia.charcard", activeAppContext: null, activeAppContextOwnerId: null, persistentAppContexts: {} });
+		const frame = document.createElement("iframe");
+		document.body.appendChild(frame);
+		const dispose = installInstalledAppContextBridge(frame, "land.naia.charcard", "http://asset.localhost/apps/land.naia.charcard/index.html");
+		vi.spyOn(window.parent, "postMessage").mockImplementation((message) => {
+			window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, origin: "http://asset.localhost", data: message }));
+		});
+		const { unmount } = render(<CharCardApp storage={createMemoryCardStorage()} localeOverride="ko" />);
+		await waitFor(() => expect((screen.getByTestId("charcard-import-button") as HTMLButtonElement).disabled).toBe(false));
+		fireEvent.click(screen.getByTestId("charcard-item-sample:clockwork-tinker-json-v3"));
+		fireEvent.click(screen.getByTestId("charcard-start-button"));
+		expect(useAppStore.getState().activeAppContextOwnerId).toBe("land.naia.charcard");
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "안녕" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const entries = capturedRequests[0].environmentSegments?.flatMap((segment) => segment.kind === "app" ? segment.entries : []) ?? [];
+		const cards = entries.filter((entry) => entry.type === "charcard");
+		expect(cards).toHaveLength(1);
+		expect(cards[0]).toMatchObject({ data: { character: "백하진", roleplay: expect.stringContaining("다실지기") } });
+		act(() => useAppStore.getState().setActiveApp("land.naia.slides"));
+		expect((await buildMemoryContext()).appContexts?.some((entry) => entry.type === "charcard") ?? false).toBe(false);
+		act(() => useAppStore.getState().setActiveApp("land.naia.charcard"));
+		fireEvent.click(screen.getByTestId("charcard-start-button"));
+		expect(useAppStore.getState().activeAppContext?.type).toBe("charcard");
+		dispose();
+		expect(useAppStore.getState().activeAppContext).toBeNull();
+		unmount();
+		frame.remove();
+	});
+
+	it("IT-06 rejects tool requests after signature failure and revocation", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "ollama", model: "qwen3:8b", ollamaHost: "http://localhost:11434" }));
+		mockInvoke.mockImplementation((command: string) => command === "ollama_runtime_status"
+			? Promise.resolve({ serverState: "ready_managed", reservation: { kind: "local_llm", status: "running", bytes: null } })
+			: command === "ollama_model_catalog_list" ? Promise.resolve({ candidates: [{ tag: "qwen3:8b" }], contextDefaultTokens: 8192 }) : Promise.resolve(undefined));
+		const appId = "it06-unverified";
+		appRegistry.register({ id: appId, name: "Test", center: () => null, source: "installed", storeSignatureVerified: false,
+			tools: [{ name: "skill_it06_bad_sig", description: "test" }], revokedStoreToolNames: ["skill_it06_revoked"] });
+		useAppStore.getState().setActiveApp(appId);
+		try {
+			const { sendAppToolResult } = await import("../../lib/chat-service");
+			vi.mocked(sendAppToolResult).mockClear();
+			render(<ChatArea />);
+			const input = screen.getByPlaceholderText(/메시지|message/i);
+			fireEvent.change(input, { target: { value: "test" } });
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests).toHaveLength(1));
+			const request = capturedRequests[0];
+			act(() => {
+				request.onChunk({ type: "app_tool_call", requestId: request.requestId, toolCallId: "bad-signature", toolName: "skill_it06_bad_sig", args: {} });
+				request.onChunk({ type: "app_tool_call", requestId: request.requestId, toolCallId: "revoked", toolName: "skill_it06_revoked", args: {} });
+			});
+			await waitFor(() => expect(sendAppToolResult).toHaveBeenCalledTimes(2));
+			expect(sendAppToolResult).toHaveBeenCalledWith(request.requestId, "bad-signature", expect.any(String), false, undefined);
+			expect(sendAppToolResult).toHaveBeenCalledWith(request.requestId, "revoked", expect.any(String), false, undefined);
+		} finally {
+			appRegistry.unregister(appId);
+		}
+	});
+
 	it("renders input field and buttons", () => {
 		render(<ChatArea />);
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBeDefined();

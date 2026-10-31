@@ -6,6 +6,7 @@ import type { NaiaContextBridge } from "../../../lib/app-registry";
 import { Logger } from "../../../lib/logger";
 import { useAppStore } from "../../../stores/app";
 import { createGenericInstalledApp } from "../GenericInstalledApp";
+import { installInstalledAppContextBridge } from "../installed-app-context-bridge";
 
 vi.mock("../../../lib/slides-host-bridge", () => ({
 	installSlidesHostBridge: vi.fn(() => vi.fn()),
@@ -36,7 +37,7 @@ afterEach(() => {
 });
 
 describe("GenericInstalledApp naia-app:context bridge", () => {
-	it("accepts context from active app iframe, ignores other sources, clears on null and unmount", () => {
+	it("UT-06 accepts context from active app iframe, ignores other sources, clears on null and unmount", () => {
 		const entry = "/home/user/.naia/apps/land.naia.charcard/index.html";
 		const App = createGenericInstalledApp(entry, [], "land.naia.charcard");
 		const { unmount } = render(<App naia={{} as NaiaContextBridge} />);
@@ -62,6 +63,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: iframe.contentWindow,
 					data: {
 						type: "naia-app:context",
@@ -85,6 +87,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: iframe.contentWindow,
 					data: {
 						type: "naia-app:context",
@@ -99,6 +102,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: iframe.contentWindow,
 					data: {
 						type: "naia-app:context",
@@ -116,9 +120,9 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		expect(useAppStore.getState().activeAppContext).toBeNull();
 	});
 
-	it("ignores messages from hidden keep-alive apps, ignores previous app after switch, and unmounts without clearing another app's context", () => {
+	it("IT-06 ignores messages from hidden keep-alive apps, ignores previous app after switch, and unmounts without clearing another app's context", () => {
 		const charcardEntry = "/home/user/.naia/apps/land.naia.charcard/index.html";
-		const otherEntry = "/home/user/.naia/apps/land.naia.other/index.html";
+		const otherEntry = "/home/user/.naia/apps/land.naia.slides/index.html";
 		const CharCardInstalled = createGenericInstalledApp(
 			charcardEntry,
 			[],
@@ -127,7 +131,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		const OtherInstalled = createGenericInstalledApp(
 			otherEntry,
 			[],
-			"land.naia.other",
+			"land.naia.slides",
 		);
 
 		const { unmount: unmountCharcard } = render(
@@ -145,6 +149,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: charcardIframe.contentWindow,
 					data: {
 						type: "naia-app:context",
@@ -161,15 +166,16 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 			roleplay: "활성 앱 문맥",
 		});
 
-		// Hidden keep-alive app (land.naia.other) posts message -> ignored!
+		// Hidden keep-alive app (land.naia.slides) posts message -> ignored!
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: otherIframe.contentWindow,
 					data: {
 						type: "naia-app:context",
 						context: {
-							type: "other",
+							type: "slides",
 							data: { hijack: true },
 						},
 					},
@@ -181,13 +187,13 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 			"land.naia.charcard",
 		);
 
-		// User switches activeApp to land.naia.other -> clears context AND notifies charcard iframe with naia-app:context-cleared
+		// User switches activeApp to land.naia.slides -> clears context AND notifies charcard iframe with naia-app:context-cleared
 		const charcardPostMessageSpy = vi.spyOn(
 			charcardIframe.contentWindow as Window,
 			"postMessage",
 		);
 		act(() => {
-			useAppStore.getState().setActiveApp("land.naia.other");
+			useAppStore.getState().setActiveApp("land.naia.slides");
 		});
 		expect(useAppStore.getState().activeAppContext).toBeNull();
 		expect(charcardPostMessageSpy).toHaveBeenCalledWith(
@@ -199,6 +205,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: charcardIframe.contentWindow,
 					data: {
 						type: "naia-app:context",
@@ -212,33 +219,34 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		});
 		expect(useAppStore.getState().activeAppContext).toBeNull();
 
-		// Now active app (land.naia.other) posts context -> accepted
+		// Now active app (land.naia.slides) posts context -> accepted
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: otherIframe.contentWindow,
 					data: {
 						type: "naia-app:context",
 						context: {
-							type: "other",
+							type: "slides",
 							data: { active: "other-context" },
 						},
 					},
 				}),
 			);
 		});
-		expect(useAppStore.getState().activeAppContext?.type).toBe("other");
+		expect(useAppStore.getState().activeAppContext?.type).toBe("slides");
 
 		// Unmounting charcard does NOT clear other's active context
 		unmountCharcard();
-		expect(useAppStore.getState().activeAppContext?.type).toBe("other");
+		expect(useAppStore.getState().activeAppContext?.type).toBe("slides");
 
 		// Unmounting other clears its own context
 		unmountOther();
 		expect(useAppStore.getState().activeAppContext).toBeNull();
 	});
 
-	it("rejects persistent context types (e.g. bgm) and oversized payloads (>32,000 chars) and clears stale context of that app on rejection", () => {
+	it("UT-06 rejects persistent context types (e.g. bgm) and oversized payloads (>32,000 chars) and clears stale context of that app on rejection", () => {
 		const warnSpy = vi.spyOn(Logger, "warn");
 		const entry = "/home/user/.naia/apps/land.naia.charcard/index.html";
 		const App = createGenericInstalledApp(entry, [], "land.naia.charcard");
@@ -250,6 +258,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: iframe.contentWindow,
 					data: {
 						type: "naia-app:context",
@@ -275,6 +284,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: iframe.contentWindow,
 					data: {
 						type: "naia-app:context",
@@ -294,6 +304,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		act(() => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
+					origin: "http://asset.localhost",
 					source: iframe.contentWindow,
 					data: {
 						type: "naia-app:context",
@@ -314,4 +325,46 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 			}),
 		);
 	});
+	it("UT-06 rejects a forged origin even from the app window", () => {
+		const App = createGenericInstalledApp("/apps/land.naia.charcard/index.html", [], "land.naia.charcard");
+		render(<App naia={{} as NaiaContextBridge} />);
+		const iframe = screen.getByTitle("App") as HTMLIFrameElement;
+		act(() => window.dispatchEvent(new MessageEvent("message", {
+			source: iframe.contentWindow,
+			origin: "https://evil.example",
+			data: { type: "naia-app:context", context: { type: "charcard", data: { roleplay: "forged" } } },
+		})));
+		expect(useAppStore.getState().activeAppContext).toBeNull();
+	});
+
+	it("UT-06 rejects an unresolvable origin without a wildcard notification", () => {
+		const frame = document.createElement("iframe");
+		document.body.appendChild(frame);
+		const send = vi.spyOn(frame.contentWindow!, "postMessage");
+		const dispose = installInstalledAppContextBridge(frame, "land.naia.charcard", "not a valid URL");
+		act(() => window.dispatchEvent(new MessageEvent("message", {
+			source: frame.contentWindow, origin: "null",
+			data: { type: "naia-app:context", context: { type: "charcard", data: { roleplay: "forged" } } },
+		})));
+		expect(useAppStore.getState().activeAppContext).toBeNull();
+		act(() => useAppStore.getState().setActiveApp("land.naia.slides"));
+		expect(send).not.toHaveBeenCalled();
+		dispose();
+		frame.remove();
+	});
+
+	it("IT-06 installs and removes both message bridges once per mount", () => {
+		const add = vi.spyOn(window, "addEventListener");
+		const remove = vi.spyOn(window, "removeEventListener");
+		const App = createGenericInstalledApp("/apps/land.naia.charcard/index.html", [], "land.naia.charcard");
+		const { unmount } = render(<App naia={{} as NaiaContextBridge} />);
+		const listeners = add.mock.calls.filter(([type]) => type === "message").map(([, listener]) => listener);
+		expect(listeners).toHaveLength(2);
+		expect(new Set(listeners).size).toBe(2);
+		unmount();
+		for (const listener of listeners) {
+			expect(remove.mock.calls.filter(([type, handler]) => type === "message" && handler === listener)).toHaveLength(1);
+		}
+	});
+
 });

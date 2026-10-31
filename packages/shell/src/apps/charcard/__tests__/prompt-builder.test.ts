@@ -87,7 +87,7 @@ function makeBaseCard(
 }
 
 describe("prompt-builder", () => {
-	it("replaces {{char}}/<BOT> and {{user}}/<USER> case-insensitively and expands {{original}}", () => {
+	it("UT-04 replaces {{char}}/<BOT> and {{user}}/<USER> case-insensitively and expands {{original}}", () => {
 		const card = makeBaseCard();
 		const res = buildRoleplayPrompt(card, {
 			userName: "민수",

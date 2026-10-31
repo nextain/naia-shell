@@ -8,25 +8,6 @@ const MAX_TYPE_LENGTH = 64;
 const MAX_CONTEXT_JSON_CHARS = 32_000;
 const TAG = "InstalledAppContextBridge";
 
-function resolveFrameTargetOrigin(
-	frame: HTMLIFrameElement,
-	htmlEntry?: string | null,
-): string {
-	const candidates = [frame.src, frame.getAttribute("src"), htmlEntry];
-	for (const candidate of candidates) {
-		if (!candidate) continue;
-		try {
-			const origin = new URL(candidate, window.location.href).origin;
-			if (origin && origin !== "null") {
-				return origin;
-			}
-		} catch {
-			// Try next candidate
-		}
-	}
-	return "*";
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) {
 		return false;
@@ -91,11 +72,17 @@ export function validateInstalledAppContext(
 
 export function installInstalledAppContextBridge(
 	frame: HTMLIFrameElement,
-	appId?: string | null,
-	htmlEntry?: string | null,
+	appId: string | null | undefined,
+	frameSrc: string,
 ): () => void {
-	const ownerAppId =
-		appId?.trim() || inferInstalledAppIdFromEntry(htmlEntry) || null;
+	const ownerAppId = appId?.trim() || inferInstalledAppIdFromEntry(frameSrc) || null;
+	let origin: string;
+	try {
+		origin = new URL(frameSrc).origin;
+		if (origin === "null") return () => {};
+	} catch {
+		return () => {};
+	}
 	let lastPushedType: string | null = null;
 	let clearingLocally = false;
 
@@ -123,11 +110,10 @@ export function installInstalledAppContextBridge(
 	const notifyFrameContextCleared = () => {
 		const contentWindow = frame.contentWindow;
 		if (!contentWindow) return;
-		const targetOrigin = resolveFrameTargetOrigin(frame, htmlEntry);
 		try {
 			contentWindow.postMessage(
 				{ type: APP_CONTEXT_CLEARED_MESSAGE },
-				targetOrigin,
+				origin,
 			);
 		} catch {
 			// Ignore if detached frame rejects postMessage
@@ -162,7 +148,7 @@ export function installInstalledAppContextBridge(
 
 	const onMessage = (event: MessageEvent) => {
 		const contentWindow = frame.contentWindow;
-		if (!contentWindow || event.source !== contentWindow) return;
+		if (!contentWindow || event.source !== contentWindow || event.origin !== origin) return;
 		const payload = event.data;
 		if (
 			typeof payload !== "object" ||

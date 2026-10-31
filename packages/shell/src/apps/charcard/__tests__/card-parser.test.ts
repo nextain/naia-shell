@@ -923,7 +923,7 @@ describe("card-parser", () => {
 		});
 	});
 
-	it("parses all 4 bundled sample files (including PNG CRC32 check) and returns 4 distinct sample cards", async () => {
+	it("UT-04 parses all 4 bundled sample files (including PNG CRC32 check) and returns 4 distinct sample cards", async () => {
 		const samplesDir = resolve(__dirname, "../package-public/samples");
 		const v2Bytes = new Uint8Array(
 			readFileSync(resolve(samplesDir, "starlight-archivist-v2.json")),

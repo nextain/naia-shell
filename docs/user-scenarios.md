@@ -396,7 +396,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 | UC-025-07 | UT-01 쪽 이동, IT-01 파일 연결: 기존 `packages/shell/src/lib/__tests__/slides-files-bridge.test.ts` 연결 확인, 각 시험의 전체 범위는 파일 지정 예정; 리눅스 | T8, E2E-01 설치·쪽 이동·음성·녹화: 직접 시험, 윈도우 2070·4060, 리눅스 |
 | UC-025-09 | UT-02 카드 순서, IT-02 낭독 경계: 시험 파일 지정 예정; 리눅스 | E2E-02 카드·낭독, E2E-05 공용 낭독·취소: 직접 시험, 윈도우 2070·4060과 리눅스 각각 |
 | UC-025-10 | UT-03 탭·복사 안내, IT-03 설치 화면·복사: 시험 파일 지정 예정; 리눅스 | E2E-03 주소 복사: 직접 시험, 윈도우 2070·4060, 리눅스 |
-| UC-025-11 | UT-04 카드 문맥, IT-04 전달·해제, UT-06 문맥 경계, IT-06 앱 전환: 시험 파일 지정 예정; 리눅스 | E2E-04 역할극·닫기, E2E-06 카드 → 슬라이드 → 일반 대화 문맥 전환·슬라이드 자료 보존: 직접 시험, 윈도우 2070·4060, 리눅스 각각 |
+| UC-025-11 | UT-04: `charcard/__tests__/card-parser.test.ts`, `prompt-builder.test.ts`; IT-04: `components/__tests__/ChatArea.test.tsx` (`chat-area-cases-01.tsx`); UT-06·IT-06: `generic-installed/__tests__/GenericInstalledApp.context.test.tsx`, `lib/__tests__/app-loader.test.ts`, `components/__tests__/ChatArea.test.tsx` (`chat-area-cases-01.tsx`); 리눅스 | E2E-04 역할극·닫기, E2E-06 카드 → 슬라이드 → 일반 대화 문맥 전환·슬라이드 자료 보존: 직접 시험, 윈도우 2070·4060, 리눅스 각각 |
 | UC-025-12 | UT-05 권한·출처: `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`, IT-05 질문·낭독·언어: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`; UT-07 서명 목록, IT-07 설치·복구: 시험 파일 지정 예정; 리눅스 | T8 기존 기능, T9 `run-regression.mjs` 회귀 기록, E2E-05 공용 연결, E2E-07 네 앱 설치: 윈도우 2070·4060과 리눅스 각각 |
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
@@ -2598,7 +2598,7 @@ P02: Rust 소스의 창 생성 명령 async 검사(동기 부정 사례 포함),
 
 - 순서: 윈도우 2070·4060과 리눅스 각각에서 지정 판이 등록되면 설치해 예시 카드 하나를 고르고 역할극을 시작해 질문한다. 슬라이드 앱으로 전환해 두 쪽 이상인 시험 자료를 열고 질문한 뒤 일반 대화로 전환해 다시 질문한다. 슬라이드 앱으로 돌아가 열린 자료가 남았는지 확인한다. 카드를 닫은 뒤에도 일반 대화에서 질문한다.
 - 보여야 할 것: 역할극 답은 카드의 이름·설정과 맞는다. 슬라이드로 전환하면 카드 문맥이 슬라이드 문맥으로 바뀌고 일반 대화로 전환하면 앱 문맥이 해제된다. 카드 닫기 뒤 일반 대화에도 카드 역할이 남지 않는다. 앱을 전환한 뒤 슬라이드로 돌아가도 열었던 자료가 유지된다.
-- 실패: 카드 설정이 전달되지 않음, 전환할 때 이전 앱 문맥이 남거나 새 문맥으로 바뀌지 않음, 일반 대화나 카드 닫기 뒤 카드 역할이 남음, 슬라이드 자료가 사라짐. 요구 FR-025.12; 시험 UT-04, IT-04, E2E-04, UT-06, IT-06, E2E-06. 기준 후보에는 카드 문맥 수신과 상품 등록이 아직 없다.
+- 실패: 카드 설정이 전달되지 않음, 전환할 때 이전 앱 문맥이 남거나 새 문맥으로 바뀌지 않음, 일반 대화나 카드 닫기 뒤 카드 역할이 남음, 슬라이드 자료가 사라짐. 요구 FR-025.12; 시험 UT-04, IT-04, E2E-04, UT-06, IT-06, E2E-06. 카드 문맥 수신은 자동 시험으로 확인하며 상품 등록과 실기는 아직 대기 중이다.
 
 ### UC-025-12 — 기존 기능과 회귀 기록
 
