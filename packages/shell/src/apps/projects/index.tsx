@@ -16,7 +16,7 @@ function ProjectsCenterArea() {
 
 appRegistry.register({
 	id: "projects",
-	name: "Projects",
+	name: "Dashboard",
 	names: PROJECT_APP_NAMES,
 	icon: "✦",
 	iconSvg: projectsIconSvg,

@@ -7,13 +7,26 @@ Logger.debug(
 	"loading project catalog and session locale strings",
 );
 
-export const PROJECT_APP_NAMES: Partial<Record<Locale, string>> = {
-	ko: "프로젝트",
+export const PROJECT_APP_NAMES: Record<Locale, string> = {
+	en: "Dashboard",
+	ko: "대시보드",
+	ja: "ダッシュボード",
+	zh: "仪表板",
+	fr: "Tableau de bord",
+	de: "Dashboard",
+	ru: "Панель управления",
+	es: "Panel de control",
+	ar: "لوحة التحكم",
+	hi: "डैशबोर्ड",
+	bn: "ড্যাশবোর্ড",
+	pt: "Painel",
+	id: "Dasbor",
+	vi: "Bảng điều khiển",
 };
 
 export const PROJECT_BASE_ENGLISH_TRANSLATIONS = {
 	...PROJECT_AGENT_ENGLISH_TRANSLATIONS,
-	"projects.title": "Projects",
+	"projects.title": "Dashboard",
 	"projects.chooseTitle": "Choose a project",
 	"projects.checkoutLabel": "Source",
 	"projects.chooseCheckout": "Choose naia-adk folder",
@@ -85,7 +98,7 @@ export const LEGACY_TRANSLATIONS: Record<
 > = {
 	en: PROJECT_BASE_ENGLISH_TRANSLATIONS,
 	ko: {
-		"projects.title": "프로젝트",
+		"projects.title": "대시보드",
 		"projects.chooseTitle": "프로젝트 선택",
 		"projects.checkoutLabel": "체크아웃",
 		"projects.chooseCheckout": "체크아웃 선택",
@@ -136,7 +149,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "그 밖에 {count}개 파일도 읽지 않았습니다.",
 	},
 	ja: {
-		"projects.title": "プロジェクト",
+		"projects.title": "ダッシュボード",
 		"projects.chooseTitle": "プロジェクトを選択",
 		"projects.checkoutLabel": "チェックアウト",
 		"projects.chooseCheckout": "チェックアウトを選択",
@@ -191,7 +204,7 @@ export const LEGACY_TRANSLATIONS: Record<
 			"ほかに {count} 件のファイルを読み取りませんでした。",
 	},
 	zh: {
-		"projects.title": "项目",
+		"projects.title": "仪表板",
 		"projects.chooseTitle": "选择项目",
 		"projects.checkoutLabel": "检出目录",
 		"projects.chooseCheckout": "选择检出目录",
@@ -240,7 +253,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "另有 {count} 个文件未读取。",
 	},
 	fr: {
-		"projects.title": "Projets",
+		"projects.title": "Tableau de bord",
 		"projects.chooseTitle": "Choisir un projet",
 		"projects.checkoutLabel": "Dépôt",
 		"projects.chooseCheckout": "Choisir un dépôt",
@@ -294,7 +307,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "{count} autres fichiers n’ont pas été lus.",
 	},
 	de: {
-		"projects.title": "Projekte",
+		"projects.title": "Dashboard",
 		"projects.chooseTitle": "Projekt auswählen",
 		"projects.checkoutLabel": "Checkout",
 		"projects.chooseCheckout": "Checkout auswählen",
@@ -347,7 +360,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "{count} weitere Dateien wurden übersprungen.",
 	},
 	ru: {
-		"projects.title": "Проекты",
+		"projects.title": "Панель управления",
 		"projects.chooseTitle": "Выберите проект",
 		"projects.checkoutLabel": "Рабочая копия",
 		"projects.chooseCheckout": "Выбрать рабочую копию",
@@ -398,7 +411,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "Не прочитано ещё файлов: {count}.",
 	},
 	es: {
-		"projects.title": "Proyectos",
+		"projects.title": "Panel de control",
 		"projects.chooseTitle": "Elegir proyecto",
 		"projects.checkoutLabel": "Checkout",
 		"projects.chooseCheckout": "Elegir checkout",
@@ -450,7 +463,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "Se omitieron {count} archivos más.",
 	},
 	ar: {
-		"projects.title": "المشاريع",
+		"projects.title": "لوحة التحكم",
 		"projects.chooseTitle": "اختر مشروعًا",
 		"projects.checkoutLabel": "نسخة العمل",
 		"projects.chooseCheckout": "اختيار نسخة العمل",
@@ -500,7 +513,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "تم تخطي {count} ملفات إضافية.",
 	},
 	hi: {
-		"projects.title": "प्रोजेक्ट",
+		"projects.title": "डैशबोर्ड",
 		"projects.chooseTitle": "प्रोजेक्ट चुनें",
 		"projects.checkoutLabel": "चेकआउट",
 		"projects.chooseCheckout": "चेकआउट चुनें",
@@ -548,7 +561,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "{count} अतिरिक्त फ़ाइलें भी नहीं पढ़ी गईं।",
 	},
 	bn: {
-		"projects.title": "প্রকল্প",
+		"projects.title": "ড্যাশবোর্ড",
 		"projects.chooseTitle": "প্রকল্প বেছে নিন",
 		"projects.checkoutLabel": "চেকআউট",
 		"projects.chooseCheckout": "চেকআউট বেছে নিন",
@@ -598,7 +611,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "আরও {count}টি ফাইল পড়া হয়নি।",
 	},
 	pt: {
-		"projects.title": "Projetos",
+		"projects.title": "Painel",
 		"projects.chooseTitle": "Escolher projeto",
 		"projects.checkoutLabel": "Checkout",
 		"projects.chooseCheckout": "Escolher checkout",
@@ -650,7 +663,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "{count} arquivos adicionais foram ignorados.",
 	},
 	id: {
-		"projects.title": "Proyek",
+		"projects.title": "Dasbor",
 		"projects.chooseTitle": "Pilih proyek",
 		"projects.checkoutLabel": "Checkout",
 		"projects.chooseCheckout": "Pilih checkout",
@@ -702,7 +715,7 @@ export const LEGACY_TRANSLATIONS: Record<
 		"projects.scanMoreFiles": "{count} file tambahan juga dilewati.",
 	},
 	vi: {
-		"projects.title": "Dự án",
+		"projects.title": "Bảng điều khiển",
 		"projects.chooseTitle": "Chọn dự án",
 		"projects.checkoutLabel": "Bản checkout",
 		"projects.chooseCheckout": "Chọn checkout",

@@ -148,10 +148,13 @@ describe("ProjectsApp — single opened project", () => {
 		expect(entry?.keepAlive).toBe(true);
 		expect(entry?.deferMountUntilActive).toBe(true);
 		expect(entry?.id).toBe("projects");
+		expect(entry?.name).toBe("Dashboard");
+		expect(entry?.names?.ko).toBe("대시보드");
+		expect(appRegistry.list().some((app) => app.id === "projects" && app.name === "Dashboard")).toBe(true);
 		expect(entry?.icon).not.toBe("🤖");
 		expect(entry?.iconSvg).toContain("<svg");
 		expect(entry?.iconSvg).toContain('viewBox="0 0 24 24"');
-		expect(entry?.iconSvg).toContain("currentColor");
+		expect(entry?.iconSvg).toContain('fill="#235caa"');
 		expect(useAppStore.getState().appListVersion).toBe(appListVersion + 1);
 	});
 
