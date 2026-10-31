@@ -126,27 +126,8 @@ export type NextainModelMigrationDecision =
 	| { migrate: false; needsCatalog: true }
 	| { migrate: true; to: string };
 
-/**
- * Migrate a saved config model that is no longer registered on the Naia provider.
- *
- * Scoped intentionally to the "nextain" provider; other providers may accept
- * dynamic or provider-side model IDs that are not present in this UI catalogue.
- *
- * Rules (#248, #670, #707):
- * 1. providerId !== "nextain" → { migrate: false }
- * 2. provider not registered → { migrate: false }
- * 3. modelId is in the static nextain model list → { migrate: false }
- * 4. modelId is in RETIRED_NEXTAIN_MODEL_IDS →
- *    { migrate: true, to: provider.defaultModel }
- *    (regardless of gatewayServed)
- * 5. gatewayServed === undefined
- *    (caller has not looked at the gateway yet) →
- *    { migrate: false, needsCatalog: true }
- * 6. gatewayServed === null (catalog fetch failed) → { migrate: false }
- *    (never rewrite a user choice on missing information)
- * 7. gatewayServed.has(modelId) → { migrate: false }
- * 8. otherwise → { migrate: true, to: provider.defaultModel }
- */
+/** Keep an existing selection if availability is unknown; migrate only to a
+ * recommended route positively reported live by the gateway. */
 export function shouldMigrateNextainModel(
 	providerId: string,
 	modelId: string,
@@ -155,20 +136,22 @@ export function shouldMigrateNextainModel(
 	if (providerId !== "nextain") return { migrate: false };
 	const provider = providers.get(providerId);
 	if (!provider) return { migrate: false };
-	if (provider.models.some((m) => m.id === modelId)) return { migrate: false };
-	if (RETIRED_NEXTAIN_MODEL_IDS.has(modelId)) {
-		return { migrate: true, to: provider.defaultModel };
-	}
-	if (gatewayServed === undefined) {
+	const isTerra = modelId === "gpt-6.1-terra";
+	const retired = RETIRED_NEXTAIN_MODEL_IDS.has(modelId);
+	if (!isTerra && !retired && provider.models.some((m) => m.id === modelId))
+		return { migrate: false };
+	if (gatewayServed === undefined)
 		return { migrate: false, needsCatalog: true };
-	}
-	if (gatewayServed === null) {
+	if (gatewayServed === null || (!retired && gatewayServed.has(modelId)))
 		return { migrate: false };
-	}
-	if (gatewayServed.has(modelId)) {
-		return { migrate: false };
-	}
-	return { migrate: true, to: provider.defaultModel };
+	const fallback = [
+		"gpt-6.1-terra",
+		"solar-pro4",
+		"gpt-5.6-luna",
+		"solar-mini",
+		"motif-3",
+	].find((id) => gatewayServed.has(id));
+	return fallback ? { migrate: true, to: fallback } : { migrate: false };
 }
 
 /** Check if a provider does not require either a provider key or a Naia key. */
@@ -547,6 +530,15 @@ export function applyCapabilityOverrides(
 // Intelligence Index 52, #3/101 open-weight models (median 26) —
 // https://artificialanalysis.ai/models/deepseek-v4-flash . Tiered alongside
 // deepseek-v4-pro rather than the lighter gemini-3.1-flash-lite/gpt-5.6-luna tier.
+// Product recommendation order; the remaining models keep catalog order.
+const NAIA_PRODUCT_ORDER: Readonly<Record<string, number>> = {
+	"gpt-6.1-terra": 1,
+	"solar-pro4": 2,
+	"gpt-5.6-luna": 3,
+	"solar-mini": 4,
+	"motif-3": 5,
+};
+
 const NAIA_GENERAL_CHAT_RECOMMENDATION: Readonly<Record<string, number>> = {
 	"gpt-5.6-sol": 1,
 	"gemini-3.7-flash": 1,
@@ -588,7 +580,11 @@ export function sortModels(
 				return left.model.comingSoon ? 1 : -1;
 			}
 			let delta = 0;
-			if (mode === "price") {
+			if (mode === "recommended") {
+				delta =
+					(NAIA_PRODUCT_ORDER[left.model.id] ?? Number.POSITIVE_INFINITY) -
+					(NAIA_PRODUCT_ORDER[right.model.id] ?? Number.POSITIVE_INFINITY);
+			} else if (mode === "price") {
 				delta =
 					getModelPriceScore(left.model) - getModelPriceScore(right.model);
 			} else {
@@ -636,12 +632,17 @@ registerLlmProvider({
 	descKey: "onboard.lab.description",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	defaultModel: "deepseek-v4-flash",
+	defaultModel: "gpt-6.1-terra",
 	// #670: Naia-account / nextain picker is the affordable hosted chat lineup.
 	// Codex ChatGPT models stay on the codex provider below. Retired ids
 	// migrate via shouldMigrateNextainModel and other gateway-served ids are
 	// kept (#707).
 	models: [
+		{
+			id: "gpt-6.1-terra",
+			label: "GPT-6.1 Terra",
+			capabilities: ["llm"],
+		},
 		{
 			// Gateway routes/prices this model and advertises verified tool calling.
 			// Keep the offline fallback aligned so a transient catalog outage cannot

@@ -1018,16 +1018,12 @@ describe("SettingsTab", () => {
 		) as HTMLSelectElement;
 		const labels = [...modelSelect.options].map((option) => option.text);
 		expect(labels).toContain(
-			"Solar Mini (Price per 1M tokens: Input 165 credits / Output 165 credits)",
+			"Solar Mini (Cost saving) (Price per 1M tokens: Input 165 credits / Output 165 credits)",
 		);
 		expect(labels.some((label) => label.includes("(Naia)"))).toBe(false);
 		expect(labels.some((label) => label.includes("Analysis only"))).toBe(false);
 		expect([...modelSelect.options].map((option) => option.value)).toEqual([
-			"solar-mini",
-			"deepseek-v4-flash",
-			"solar-pro4",
-			"motif-3",
-			"gpt-5.6-luna",
+			"gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "solar-mini", "motif-3", "deepseek-v4-flash",
 		]);
 		expect(
 			[...modelSelect.options].map((option) => option.value),
@@ -1048,11 +1044,13 @@ describe("SettingsTab", () => {
 		const sortSelect = screen.getByTestId(
 			"model-sort-mode",
 		) as HTMLSelectElement;
-		expect(sortSelect.value).toBe("price");
+		expect(sortSelect.value).toBe("recommended");
 		expect([...sortSelect.options].map((option) => option.value)).toEqual([
-			"price",
+			"recommended", "price",
 			"performance",
 		]);
+		fireEvent.change(sortSelect, { target: { value: "price" } });
+		modelSelect = document.getElementById("model-select") as HTMLSelectElement;
 		expect(screen.getByTestId("model-price-sort-basis").textContent).toContain(
 			"3 uncached input tokens",
 		);
@@ -1390,7 +1388,7 @@ describe("SettingsTab", () => {
 			const modelSelect = document.getElementById(
 				"model-select",
 			) as HTMLSelectElement;
-			expect(modelSelect.value).toBe("deepseek-v4-flash");
+			expect(modelSelect.value).toBe("gpt-6.1-terra");
 			expect(
 				[...modelSelect.options].map((option) => option.value),
 			).not.toContain("claude-opus-5");
@@ -1589,10 +1587,10 @@ describe("SettingsTab", () => {
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");
-		expect(saved.model).toBe("deepseek-v4-flash");
+		expect(saved.model).toBe("gpt-6.1-terra");
 		expect(saved.llmRoles.main).toEqual({
 			provider: "nextain",
-			model: "deepseek-v4-flash",
+			model: "gpt-6.1-terra",
 		});
 		expect(saved.llmRoles.sub).toEqual({
 			provider: "openai",
@@ -1601,7 +1599,7 @@ describe("SettingsTab", () => {
 		expect(chatServiceMocks.activateNaiaLlm).toHaveBeenCalledWith(
 			"gw-test-key",
 			"nextain",
-			"deepseek-v4-flash",
+			"gpt-6.1-terra",
 		);
 	});
 
@@ -5479,7 +5477,7 @@ describe("web mode brain tab (r4)", () => {
 		) as HTMLSelectElement;
 		expect(modelSelect).toBeTruthy();
 		expect(modelSelect.value).toBe(activeSourceModel);
-		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF32Label);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(`${expectedF32Label} (8 GB or more PC)`);
 
 		const modelHint = modelSelect
 			.closest(".settings-field")
@@ -5506,7 +5504,7 @@ describe("web mode brain tab (r4)", () => {
 		expect(expectedF16Label).toBe("Qwen3 4B (4bit f16)");
 
 		expect(modelSelect.value).toBe(updatedSourceModel);
-		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF16Label);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(`${expectedF16Label} (8 GB or more PC)`);
 		expect(modelHint?.textContent).toBe(expectedF16Label);
 		expect(statusBar.getAttribute("data-model")).toBe(updatedSourceModel);
 		expect(statusBar.textContent).toContain(expectedF16Label);

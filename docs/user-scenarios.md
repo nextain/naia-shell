@@ -808,6 +808,12 @@ When a development task is delegated, Shell hands the saved workspace configurat
 
 ## UC-NAIA-MODEL-ORDER — Compare only usable Naia models
 
+### UC-RECOMMENDED-MODELS-ICON-WEB-PATH
+
+The user compares available account models in recommended, price, or performance order; a new account prefers Terra 6.1 with xhigh reasoning when served, otherwise the next served recommendation. Local Qwen models are explicitly selected and show the requested PC memory guidance. Cost-saving recommendations are labelled. The app uses the transparent three-dot mark. In a browser, activating the file tree reveals the ADK workspace path; desktop behavior is preserved.
+
+Coverage: unit tests cover the three orders, default, unavailable Terra fallback, labels, and browser-versus-desktop path behavior. Browser verification covers settings, model selection, and the file tree, including narrow layout and unavailable data. Icon previews cover app and tray sizes.
+
 A signed-in Naia user opens the AI model picker. The picker contains only
 currently usable routes; models marked `comingSoon` or otherwise unavailable
 are not offered. The default view is price order and there is no separate

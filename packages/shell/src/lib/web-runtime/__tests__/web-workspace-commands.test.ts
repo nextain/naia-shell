@@ -38,7 +38,7 @@ describe("web-workspace-commands", () => {
 		// WO-03: 초기 config는 번들 아바타·배경 기본값을 함께 seed한다 (리터럴 고정).
 		const expectedConfig = {
 			provider: "nextain",
-			model: "deepseek-v4-flash",
+			model: "gpt-6.1-terra",
 			agentName: "Naia",
 			speechStyle: "casual",
 			persona: "You are Naia, an AI companion. Speak casually and warmly.",
@@ -263,7 +263,7 @@ describe("web-workspace-commands", () => {
 
 			const expectedConfig = {
 				provider: "nextain",
-				model: "deepseek-v4-flash",
+				model: "gpt-6.1-terra",
 				agentName: "Naia",
 				speechStyle: "casual",
 				persona: "You are Naia, an AI companion. Speak casually and warmly.",

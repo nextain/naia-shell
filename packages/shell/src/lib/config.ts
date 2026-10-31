@@ -293,7 +293,7 @@ export interface AppConfig {
 	provider: ProviderId;
 	model: string;
 	/** Settings-only model catalog ordering. Persisted in ui-config.json. */
-	modelSortMode?: "price" | "performance";
+	modelSortMode?: "recommended" | "price" | "performance";
 	/** UI preferences are persisted with the selected ADK's ui-config.json. */
 	uiPreferences?: Record<string, unknown>;
 	apiKey: string;

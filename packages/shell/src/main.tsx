@@ -13,6 +13,21 @@ import "./styles/web-mode.css";
 
 syncWebModeRootAttribute();
 
+if (import.meta.env.MODE === "web" && "serviceWorker" in navigator) {
+	void navigator.serviceWorker.register("/sw.js").then(async () => {
+		const registration = await navigator.serviceWorker.ready;
+		const cacheAssets = (entries: PerformanceEntry[]) => {
+			registration.active?.postMessage({ type: "CACHE_PUBLIC_ASSETS", urls: entries.map((entry) => entry.name) });
+		};
+		cacheAssets(performance.getEntriesByType("resource"));
+		if (typeof PerformanceObserver !== "undefined") {
+			new PerformanceObserver((list) => cacheAssets(list.getEntries())).observe({ type: "resource" });
+		}
+	}).catch((error: unknown) => {
+		Logger.warn("PWA", "Service worker registration failed", { error: String(error) });
+	});
+}
+
 if (
 	import.meta.env.DEV &&
 	new URLSearchParams(window.location.search).has("reset")

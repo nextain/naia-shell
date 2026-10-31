@@ -60,9 +60,14 @@ describe("선택기 숨김 규칙 · 나이아 계정 단일 모델 전환", () 
 		expect(shouldHideModelPicker(singleAccountModel)).toBe(true);
 	});
 
-	it("나이아 계정 기본 모델은 deepseek-v4-flash 하나다", () => {
-		// 등록부의 나이아 계정 제공자 기본값이 단일 대화 모델임을 못박는다.
+	it("나이아 계정 기본 모델은 Terra이며 등록된 대화 모델이다", () => {
 		const nextain = getLlmProvider("nextain");
-		expect(nextain?.defaultModel).toBe("deepseek-v4-flash");
+		expect(nextain?.defaultModel).toBe("gpt-6.1-terra");
+		expect(
+			nextain?.models.some(
+				(item) =>
+					item.id === nextain.defaultModel && item.capabilities.includes("llm"),
+			),
+		).toBe(true);
 	});
 });

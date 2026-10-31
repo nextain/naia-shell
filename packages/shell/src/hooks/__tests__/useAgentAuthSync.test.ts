@@ -85,17 +85,51 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			provider: "nextain",
 			model: "retired-flat-model",
 		});
-		mocks.fetchNaiaModelMetadata.mockResolvedValue(new Map());
+		mocks.fetchNaiaModelMetadata.mockResolvedValue(
+			new Map([
+				["solar-pro4", { capabilities: ["llm"], operationalStatus: "live" }],
+			]),
+		);
 
 		renderHook(() => useAgentAuthSync(false, false, true));
 
 		await vi.waitFor(() => {
 			expect(mocks.saveConfig).toHaveBeenCalledWith(
-				expect.objectContaining({ model: "deepseek-v4-flash" }),
+				expect.objectContaining({ model: "solar-pro4" }),
 			);
 		});
 		expect(mocks.fetchNaiaModelMetadata).toHaveBeenCalledWith(
 			"https://gateway.test",
+		);
+	});
+
+	it("waits for Terra catalog migration before restoring authentication", async () => {
+		let resolveCatalog!: (value: Map<string, unknown>) => void;
+		mocks.fetchNaiaModelMetadata.mockReturnValue(
+			new Promise((resolve) => {
+				resolveCatalog = resolve;
+			}),
+		);
+		mocks.loadConfig.mockReturnValue({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+		});
+		renderHook(() => useAgentAuthSync(false, false, true));
+		expect(mocks.loadConfigWithSecrets).not.toHaveBeenCalled();
+		resolveCatalog(
+			new Map([
+				["solar-pro4", { capabilities: ["llm"], operationalStatus: "live" }],
+			]),
+		);
+		await vi.waitFor(() =>
+			expect(mocks.loadConfigWithSecrets).toHaveBeenCalled(),
+		);
+		expect(mocks.saveConfig).toHaveBeenCalledWith(
+			expect.objectContaining({
+				model: "solar-pro4",
+				llmRoles: { main: { provider: "nextain", model: "solar-pro4" } },
+			}),
 		);
 	});
 
@@ -125,18 +159,22 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(mocks.saveConfig).not.toHaveBeenCalled();
 	});
 
-	it("migrates a #670-retired id at once without asking the gateway", () => {
+	it("migrates a retired id only to a live recommendation", async () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
 			model: "grok-4.3",
 		});
-
-		renderHook(() => useAgentAuthSync(false, false, true));
-
-		expect(mocks.saveConfig).toHaveBeenCalledWith(
-			expect.objectContaining({ model: "deepseek-v4-flash" }),
+		mocks.fetchNaiaModelMetadata.mockResolvedValue(
+			new Map([
+				["solar-pro4", { capabilities: ["llm"], operationalStatus: "live" }],
+			]),
 		);
-		expect(mocks.fetchNaiaModelMetadata).not.toHaveBeenCalled();
+		renderHook(() => useAgentAuthSync(false, false, true));
+		await vi.waitFor(() =>
+			expect(mocks.saveConfig).toHaveBeenCalledWith(
+				expect.objectContaining({ model: "solar-pro4" }),
+			),
+		);
 	});
 
 	it("leaves the model alone when the gateway catalog is unavailable", async () => {
@@ -198,9 +236,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			model: "retired-flat-model",
 		});
 		mocks.getAdkPath.mockImplementation(() =>
-			mocks.fetchNaiaModelMetadata.mock.calls.length === 0
-				? "adk-a"
-				: "adk-b",
+			mocks.fetchNaiaModelMetadata.mock.calls.length === 0 ? "adk-a" : "adk-b",
 		);
 		mocks.fetchNaiaModelMetadata.mockResolvedValue(new Map());
 
@@ -219,7 +255,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			model: "test-model",
 			apiKey: "direct-key",
 			naiaKey: "naia-key",
-												gatewayToken: "gateway-token",
+			gatewayToken: "gateway-token",
 		});
 
 		renderHook(() => useAgentAuthSync(false, false, true));
@@ -231,8 +267,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(mocks.sendCredsUpdate).toHaveBeenCalledWith(
 			{
 				keys: {},
-				ttsKeys: {
-				},
+				ttsKeys: {},
 				gatewayToken: "gateway-token",
 			},
 			null,
@@ -248,8 +283,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(startupMessages).toContainEqual({
 			type: "creds_update",
 			keys: {},
-			ttsKeys: {
-			},
+			ttsKeys: {},
 			gatewayToken: "gateway-token",
 		});
 	});
@@ -259,7 +293,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			provider: "openai",
 			model: "test-model",
 			apiKey: "direct-key",
-											});
+		});
 
 		renderHook(() => useAgentAuthSync(false, false, true));
 
@@ -269,8 +303,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(mocks.sendCredsUpdate).toHaveBeenCalledWith(
 			{
 				keys: { openai: "direct-key" },
-				ttsKeys: {
-				},
+				ttsKeys: {},
 			},
 			null,
 		);

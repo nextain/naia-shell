@@ -8969,6 +8969,12 @@ body.resizing-row {
 	white-space: nowrap;
 }
 
+.herdr-workspace__web-path {
+	padding: 4px 8px;
+	overflow-wrap: anywhere;
+	user-select: text;
+}
+
 .herdr-workspace__toggle-btn {
 	background: var(--surface-2, #333);
 	border: 1px solid var(--border-color, #444);

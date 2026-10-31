@@ -120,6 +120,7 @@ export default function WebWorkspace() {
 	const [root, setRoot] = useState<FileSystemDirectoryHandle | null>(null);
 	const [error, setError] = useState(false);
 	const [online, setOnline] = useState(false);
+	const [showPath, setShowPath] = useState(false);
 	const [file, setFile] = useState("");
 	useEffect(() => {
 		let active = true;
@@ -156,7 +157,9 @@ export default function WebWorkspace() {
 		<div className="web-workspace">
 			<aside className="herdr-workspace__files web-workspace-tree">
 				<header className="herdr-workspace__section-title">
-					{ko ? "파일 탐색기" : "File explorer"}
+					<button type="button" className="herdr-workspace__toggle-btn" aria-expanded={showPath} onClick={() => setShowPath(!showPath)}>
+						{ko ? "파일 탐색기" : "File explorer"}
+					</button>
 				</header>
 				<div className="web-workspace-tabs">
 					<button
@@ -182,7 +185,7 @@ export default function WebWorkspace() {
 					</p>
 				) : (
 					<>
-						<code data-testid="web-workspace-path">{WEB_ADK_PATH}</code>
+						{showPath && <code data-testid="web-workspace-path">{WEB_ADK_PATH}</code>}
 						{error && (
 							<p role="alert">
 								{ko ? "파일을 읽지 못했습니다." : "Could not read files."}

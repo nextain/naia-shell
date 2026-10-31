@@ -167,7 +167,7 @@ describe("web-auth (item 5)", () => {
 		await completeWebNaiaLogin("naia_test_key_for_login_123", "test-user");
 		expect(loadConfig()).toMatchObject({
 			provider: "nextain",
-			model: "deepseek-v4-flash",
+			model: "gpt-6.1-terra",
 		});
 		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
 	});

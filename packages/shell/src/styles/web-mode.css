@@ -85,7 +85,7 @@
 @media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
 	[data-naia-web="true"] .app-layout:not(:has(.right-content--onboarding)) {
 		left: 0 !important;
-		top: 38%;
+		top: 49%;
 	}
 	[data-naia-web="true"] .avatar-canvas-layer {
 		bottom: 62%;
@@ -100,16 +100,17 @@
 	}
 	[data-naia-web="true"] .naia-overlay {
 		width: 100%;
-		bottom: 62%;
+		bottom: 51%;
 	}
 	[data-naia-web="true"] .app-root .naia-chat-area {
 		top: auto;
 		left: 0;
 		width: 100%;
-		max-height: 48%;
+		max-height: none;
+		bottom: 0;
 	}
 	[data-naia-web="true"] .app-root .naia-chat-wrapper {
-		height: 120px !important;
+		height: 200px !important;
 		flex: none;
 	}
 	[data-naia-web="true"] .app-root .naia-chat-wrapper--hidden {
@@ -161,4 +162,17 @@
 	[data-naia-web="true"] .web-workspace-viewer {
 		min-height: 280px;
 	}
+}
+
+@media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
+	[data-naia-web="true"] .chat-input { min-width: 0; width: 0; }
+	[data-naia-web="true"] .chat-send-btn,
+	[data-naia-web="true"] .chat-voice-btn { min-width: 40px; min-height: 40px; }
+	[data-naia-web="true"] .ai-control-bar { flex-wrap: nowrap; overflow-x: auto; }
+	[data-naia-web="true"] .ai-control-bar button { flex: 0 0 auto; min-width: 40px; min-height: 40px; }
+	[data-naia-web="true"] .app-bar { height: 48px; padding-block: 4px; }
+	[data-naia-web="true"] .app-bar-tab,
+	[data-naia-web="true"] .app-bar-settings,
+	[data-naia-web="true"] .app-bar-add,
+	[data-naia-web="true"] .app-bar-edit { min-width: 40px; min-height: 40px; }
 }

@@ -1,3 +1,4 @@
+import { WebPushSettings } from "./WebPushSettings";
 import type { EnvironmentAwareness } from "@nextain/naia-os-core/composition";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -1067,7 +1068,7 @@ export function SettingsTab() {
 	>(getStaticModelsRecord);
 	const [naiaModelsSettled, setNaiaModelsSettled] = useState(false);
 	const [modelSortMode, setModelSortMode] = useState<ModelSortMode>(
-		existing?.modelSortMode ?? "price",
+		existing?.modelSortMode ?? "recommended",
 	);
 	const [ollamaHost, setOllamaHost] = useState(
 		existing?.ollamaHost ?? DEFAULT_OLLAMA_HOST,
@@ -4412,6 +4413,7 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "general" && (
 				<>
+					{isWebMode() && <WebPushSettings />}
 					<ProactiveSpeechSettingsSection
 						mode="exhibition"
 						value={proactiveSpeechSettings}
@@ -6191,6 +6193,7 @@ export function SettingsTab() {
 										persistConfig({ modelSortMode: nextMode });
 									}}
 								>
+									<option value="recommended">{t("settings.modelSortRecommended")}</option>
 									<option value="price">{t("settings.modelSortPrice")}</option>
 									<option value="performance">
 										{t("settings.modelSortPerformance")}
@@ -6203,14 +6206,14 @@ export function SettingsTab() {
 									>
 										{t("settings.modelSortPriceBasis")}
 									</div>
-								) : (
+								) : modelSortMode === "performance" ? (
 									<div
 										className="settings-hint"
 										data-testid="model-performance-sort-basis"
 									>
 										{t("settings.modelSortPerformanceBasis")}
 									</div>
-								)}
+								) : null}
 							</>
 						) : null}
 						{provider === "ollama" ? (
@@ -6230,7 +6233,7 @@ export function SettingsTab() {
 											(candidate) => !candidate.capabilities.includes("asr"),
 										)
 										.map((candidate) => (
-											<option key={candidate.id} value={candidate.id} />
+											<option key={candidate.id} value={candidate.id} label={formatModelLabel(candidate)} />
 										))}
 								</datalist>
 							</>
