@@ -89,8 +89,8 @@ changes:
   - type: fix
     scope: bgm
     description:
-      en: "Add three Korean radio track names to the default asset list."
-      ko: "기본 자산 목록에 한국어 라디오 곡 세 개의 이름을 추가합니다."
+      en: "Add one Korean radio track, “It’s Okay to Turn Off the Light,” to the default asset list."
+      ko: "기본 자산 목록에 한국어 라디오 곡 한 곡(“불을 꺼도 돼요”)을 추가합니다."
   - type: fix
     scope: workspace
     description:
