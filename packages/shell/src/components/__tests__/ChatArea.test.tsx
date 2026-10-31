@@ -15,6 +15,7 @@ import {
 	registerCameraActions,
 } from "../../lib/avatar/camera-actions";
 import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
+import { getLocale, setLocale } from "../../lib/i18n";
 import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
 import type { AgentResponseChunk, EnvironmentSegment } from "../../lib/types";
 import * as voiceSessionApi from "../../lib/voice/index";
@@ -404,24 +405,33 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
-	it("rejects a tarot request when the default model requires realtime voice", async () => {
-		useAppStore.setState({ activeApp: "test.app" });
-		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "naia-0.9-omni-24g" }));
+	it.each([
+		["ko", "음성 대화 중에는 앱 응답을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요."],
+		["en", "The app cannot receive a reply during voice chat. Turn off voice chat and try again."],
+	] as const)("rejects a tarot request when the default model requires realtime voice (%s)", async (locale, error) => {
+		const previousLocale = getLocale();
+		await setLocale(locale);
 		const reply = vi.fn();
-		window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
-		render(<ChatArea />);
-		act(() => window.dispatchEvent(new CustomEvent(INSTALLED_APP_ASK_EVENT, {
-			detail: { appId: "test.app", requestId: "voice-reading", prompt: "Interpret this card." },
-		})));
-		expect(reply).toHaveBeenCalledOnce();
-		expect((reply.mock.calls[0][0] as CustomEvent).detail).toEqual({
-			appId: "test.app", requestId: "voice-reading", text: "",
-			error: "음성 대화 중에는 앱 응답을 받을 수 없어요. 음성 대화를 끄고 다시 눌러 주세요.",
-		});
-		expect(capturedRequests).toHaveLength(0);
-		expect(mockSendAppSkills).not.toHaveBeenCalled();
-		window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
-		localStorage.removeItem("naia-config");
+		try {
+			useAppStore.setState({ activeApp: "test.app" });
+			localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "naia-0.9-omni-24g" }));
+			window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+			render(<ChatArea />);
+			act(() => window.dispatchEvent(new CustomEvent(INSTALLED_APP_ASK_EVENT, {
+				detail: { appId: "test.app", requestId: "voice-reading", prompt: "Interpret this card." },
+			})));
+			expect(reply).toHaveBeenCalledOnce();
+			expect((reply.mock.calls[0][0] as CustomEvent).detail).toEqual({
+				appId: "test.app", requestId: "voice-reading", text: "",
+				error,
+			});
+			expect(capturedRequests).toHaveLength(0);
+			expect(mockSendAppSkills).not.toHaveBeenCalled();
+		} finally {
+			window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+			localStorage.removeItem("naia-config");
+			await setLocale(previousLocale);
+		}
 	});
 
 	it.each([
