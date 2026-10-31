@@ -843,10 +843,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				);
 				setBackgrounds(bgs);
 				if (bgs.length > 0) {
-					// #447-3: default to naia-dawn-city (matches App DEFAULT_BG_VIDEO).
+					// Default to sunrise river (matches App DEFAULT_BG_VIDEO).
 					// Fall back to the first available background if not found.
 					const defaultBg =
-						bgs.find((b) => b.path.toLowerCase().includes("dawn-city")) ??
+						bgs.find((b) => b.path.toLowerCase().includes("naia-sunrise-river.webp")) ??
 						bgs[0];
 					setSelectedBg(defaultBg.url);
 				}

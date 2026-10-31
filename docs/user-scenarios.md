@@ -2456,3 +2456,11 @@ Test Coverage Map (P02)
 | 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
+
+### UC-FIX-024-I1 — Windows 스토어 창과 설치 갱신
+
+- 사용자가 앱스토어를 열면 `app-store` 창이 열리거나 기존 창에 포커스하고, 메인 창과 스토어 창이 응답해야 한다.
+- 설치 또는 삭제 전에 설치 경로 안의 실행 중인 구성 요소가 종료되어 파일 잠금을 풀고, 경로 밖 프로세스와 사용자 작업 공간은 유지된다.
+- 새 작업 공간은 지정된 기본 아바타와 배경, 음악을 제공한다. 이전 버전의 기본 배경과 기존 사용자 선택을 읽을 수 있다.
+
+P02: Rust 소스의 창 생성 명령 async 검사(동기 부정 사례 포함), 설치 훅 경로 경계 및 실패 처리 검사, 자산 목록·바이트 확인. P04: Windows NSIS 실 설치·갱신·삭제와 WebView2 실제 창 열기·닫기, Playwright 기본·빈 목록·진행·성공·오류·좁은 폭 및 키보드/ARIA 확인. CI에서 실제 환경으로 검증 전까지 P04 진행 중.

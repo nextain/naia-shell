@@ -3478,7 +3478,7 @@ fn load_store_entitlement_grant(
 }
 
 #[tauri::command]
-pub fn focus_or_create_app_store_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
+pub async fn focus_or_create_app_store_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
     use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
     let parsed = url::Url::parse(&url).map_err(|_| "Invalid App Store URL".to_string())?;
     let segments = parsed

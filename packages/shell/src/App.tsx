@@ -509,9 +509,8 @@ export function App() {
 
 	// Load background from naia-settings/background/. May be a video (.mp4) or a
 	// still image (.webp) — getBackgroundMediaType() below resolves which.
-	// #342 / #447-3: default to the naia-dawn-city still when no saved preference
-	// (this default had regressed back to morning-coffee).
-	const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
+	// Keep saved background paths intact; use the new still for fresh settings.
+	const DEFAULT_BG_VIDEO = "naia-sunrise-river.webp";
 	useEffect(() => {
 		if (showAdkSetup || !configHydrated) return;
 		let cancelled = false;
@@ -520,7 +519,8 @@ export function App() {
 			const config = loadConfig();
 			const saved =
 				(config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
-			const match = paths.find((p) => p.endsWith(saved));
+			const match = paths.find((p) => p.endsWith(saved)) ??
+				(config?.backgroundVideo ? undefined : paths.find((p) => p.endsWith("naia-dawn-city-uhd.webp")));
 			if (!match || cancelled) return;
 			const blobUrl = await toLocalBlobUrl(match);
 			if (cancelled) return;

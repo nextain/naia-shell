@@ -1446,3 +1446,5 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-SLIDES-ART.1** | Slides `package-public/icon.svg`는 512×512 둥근 앱 아이콘으로 작은 크기에서도 발표를 알아보게 한다. 같은 공개 폴더의 `thumbnail.svg`는 1280×720 데스크톱 발표 장면, `Naia Slides / 나이아 슬라이드`, 핵심 기능을 보여 준다. Vite slides 빌드의 `publicDir` 복사 산출물에 두 파일을 포함한다. 현재 앱 매니페스트 스키마에 미리보기 필드가 없으므로 `app.json`은 변경하지 않는다. | UC-SHELL-APP-EXPOSURE-024 | SVG 소스 검토·크기 확인; `pnpm build:slides` 산출물 확인; PNG 렌더 미리보기 | Done |
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
+
+| **FR-FIX-024-I1** | Windows 스토어 창 생성 Tauri 명령은 비동기로 실행하고 기존 URL 검증과 단일 창 동작을 유지한다. NSIS 설치/삭제는 설치 경로 내부의 실행 파일만 종료한 뒤 파일을 교체한다. 새 기본 배경은 강변 해돋이이며 저장된 기존 배경 선택을 보존한다. 옛 버전의 기본 배경은 ADK에서 유지한다. | UC-FIX-024-I1 | 소스 회귀 검사, Windows 설치 및 native UI 검증 | P04 진행 중 |

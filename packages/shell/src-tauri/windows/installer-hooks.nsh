@@ -1,6 +1,26 @@
+!define NAIA_HOOK_DIR "${__FILEDIR__}"
+
+; Stop only executables below the installation root before touching files.
+!macro StopInstalledProcesses
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\naia-stop-installed.ps1 "${NAIA_HOOK_DIR}\stop-installed-processes.ps1"
+  System::Call 'Kernel32::SetEnvironmentVariableW(w "NAIA_INSTALL_ROOT", w "$INSTDIR") i .r0'
+  ${If} $0 == 0
+    Abort "Could not set installation directory for process cleanup."
+  ${EndIf}
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\naia-stop-installed.ps1"'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP "Could not stop processes in the installation directory. Close Naia and retry. $1"
+    Abort
+  ${EndIf}
+!macroend
+
 ; A full uninstall is a clean application reinstall boundary. Updates pass
 ; /UPDATE and preserve state. User ADK/workspace files are outside BUNDLEID.
 !macro NSIS_HOOK_PREINSTALL
+  !insertmacro StopInstalledProcesses
   ; Installer-owned dependency trees can contain files introduced by an older
   ; release that NSIS no longer knows how to remove. Replace these trees as a
   ; unit so an update cannot run a stale Agent or stale node_modules package.
@@ -47,6 +67,7 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro StopInstalledProcesses
   ${If} $UpdateMode <> 1
     StrCpy $DeleteAppDataCheckboxState 1
   ${EndIf}
