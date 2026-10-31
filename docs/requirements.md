@@ -146,7 +146,7 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 | **FR-SLOT.2** | 6 슬롯 **각각 독립 설정**: LLM main · LLM sub(범용·기억전용 아님) · embedding · STT · TTS · video avatar. 3 그룹(Brain·Voice·Avatar) UI | S-SLOT | `settings-slots.contract.test.ts`·`settings-tab.test.ts` |
 | **FR-SLOT.3** | naia 계정 시 **Naia 기본값 자동 적용**(현재 main=gemini-flash·sub=gemini-flash-lite·embed=cpu offline·tts=Gemini TTS·stt=free). UI는 특정 공급자 이름이 아닌 Naia 관리 기본값으로 표기하며 사용자 개별 override를 허용한다. memory 역할 기본값 = Naia gpt-5.4-nano(#692, 직접 고른 memory 역할은 유지) | S-SLOT | `settings-tab.test.ts`(기본값 적용) |
 | **FR-SLOT.4** | 설정 탭·온보딩 모두 **게이트→슬롯 순서**. 구 engine/ai/models/memory 탭 중복 통합·재배열(회귀 无) | S-SLOT·UC12 | `onboarding-fresh.spec.ts` + Playwright E2E(게이트→클라우드 슬롯 흐름) |
-| **FR-SLOT.5** | sub-LLM은 `memoryLlmProvider` 필드명 유지(R1-1), **역할 범용화**(기억+압축+adk 배치용). rename→`subLlm*`은 Slice C dual-write | S-SLOT | `settings-slots.contract.test.ts`(필드명·역할) |
+| **FR-SLOT.5** | **0.2.5 계약으로 갱신:** 범용 보조 모델은 `llmRoles.sub`와 옛 `subLlm*`를 쓴다. 옛 설정에 `sub`·`subLlm*`가 비고 `memoryLlm*`만 있으면 보조 역할과 기억 역할이 그 값을 각각 이어받는다. 보조 모델을 따로 고르면 보조 역할은 새 선택을 쓰고 기억은 기존 `memoryLlm*`를 유지한다. 기억·압축·인공지능 개발 도구 모음(ADK) 배치 등 기존 소비 경로와 비용을 보존한다. 이전의 `memoryLlmProvider` 범용 저장 및 이름 변경·동시 쓰기 설명은 이 계약으로 대체한다. 상세 우선순위는 [기존 기억 설정과의 관계](#기존-기억-설정과의-관계). | S-SLOT·UC-SM-01 | `UT-SM-02`, `IT-SM-11·12` |
 | **FR-SLOT.6** (2026-07-15) | embedding 슬롯 offline(CPU) 모델에 **다국어(한국어) 2종** 노출 — `multilingual-e5-large`(1024d, 고정확) · `paraphrase-multilingual-MiniLM-L12-v2`(384d, 경량·빠름). all-MiniLM/all-mpnet 은 **영어 전용**이라 한국어 회상 품질 낮음(실측 2/5). **UI 라벨에 언어 명시**(`[영어 전용]`/`[한국어·다국어]`)로 유저가 구분 가능(핵심 요구). 배선 3-repo: naia-memory OfflineEmbeddingProvider(모델 allowlist·e5 q8 dtype·프리픽스) + naia-agent(검증 allowlist·dims 계약) + shell(union·드롭다운·i18n). 각 경계·SDLC 준수. 기본값(NAIA_SLOT_DEFAULTS) 무변경 | S-EMBKO·S-SLOT | `settings-slots.contract.test.ts`(offline union·다국어 2종 roundtrip) + naia-memory `embeddings.test.ts`(dims) + naia-agent `memory-adapter-embedding.contract.test.ts`(dims·allowlist) |
 
 > NFR: NFR-isolation(슬롯 변경이 타 슬롯·부팅 안 깸) · NFR-deny-default(게이트 미설정 시 안전 기본값). ⚠️ 로컬 설정 영역(1.2b)·통합 VRAM(1.4)·STT 완전통합(Phase 6) = wm/별도 슬라이스 DEFER.
@@ -597,7 +597,7 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | ID | 요구사항 | 검증 기준 |
 |---|---|---|
 | **FR-LLM-ROLE.1** | 설정에서 Codex를 API key 없는 local-login provider로 선택할 수 있다. | provider option과 keyless chat config 계약 |
-| **FR-LLM-ROLE.2** | main/sub/memory 역할의 provider·model·credentialRef를 독립 저장하고 복원한다. sub와 memory는 기본 main 상속을 제공하고, 역할에서 지원하지 않는 provider의 직접 선택을 막는다. | role config roundtrip + SettingsTab + native Tauri 설정 E2E |
+| **FR-LLM-ROLE.2** | main/sub/memory 역할의 provider·model·credentialRef를 독립 저장하고 복원한다. sub와 memory는 main 상속을 제공하고, 역할에서 지원하지 않는 provider의 직접 선택을 막는다. **0.2.5 갱신:** 옛 `memoryLlm*`만 있는 경우의 작은 역할 상속과 두 역할이 모두 빈 기억 경로에는 [새 해석 규칙](#기존-기억-설정과의-관계)이 우선한다. | role config roundtrip + SettingsTab + native Tauri 설정 E2E; `UT-SM-02`, `IT-SM-08~12` |
 | **FR-LLM-ROLE.3** | dev/stage/Tauri build는 동일한 정확한 Agent commit과 proto SHA를 강제하며 임의 sibling checkout을 사용하지 않는다. | paired contract와 dirty/wrong-commit negative test |
 
 - **NFR-LLM-ROLE-secret**: Codex 로그인 파일이나 토큰을 Shell 설정·wire·로그로 복사하지 않는다.
@@ -743,7 +743,7 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | ID | Requirement | Status | Verification |
 |---|---|---|---|
 | **FR-CONFIG-SOT.7** | `config.json` and `ui-config.json` are the workspace sources of truth. Derived agent environment aliases are regenerated only at the write boundary and never hydrate into AppConfig/localStorage. | Implemented | config merge/write unit plus cache-clear restart E2E |
-| **FR-LLM-ROLE.7** | `subLlm*` belongs only to the sub role and `memoryLlm*` only to the memory role. Structured `llmRoles` is authoritative; legacy mirrors are deterministic and cannot assign one provider to two roles. | Implemented | role/slot/manifest contract tests |
+| **FR-LLM-ROLE.7** | **0.2.5 호환 예외로 갱신:** 구조화된 `llmRoles`와 명시된 `subLlm*`의 각 역할 우선순위는 유지한다. 옛 설정에서 작은 모델 역할과 `subLlm*`가 비고 `memoryLlm*`만 있으면 보조 역할도 그 기억 설정을 이어받는다. 기억 설정은 그대로 보존하며 사용자가 작은 모델을 따로 정하면 두 역할은 각 선택을 쓴다. 옛 필드가 두 역할에 쓰일 수 없다는 기존 문구는 이 예외에 한해 대체한다. [해석과 시험](#기존-기억-설정과의-관계). | 갱신 목표; 구현 소급 대조 필요 | `UT-SM-02`, `IT-SM-11·12` |
 | **FR-SETTINGS.14** | Every credential removed from workspace JSON is stored in the OS-backed secure store, restored after restart, and omitted from config, UI config, logs, and agent messages except the dedicated credential channel. | Implemented | secure-store unit and native restart test |
 | **FR-SETTINGS.15** | A visible successful save means config, UI config, derived manifest, and synchronous Agent reload acknowledgement have completed in order. With no running Agent, the next `SetWorkspace` applies the persisted files; a running Agent's memory reload failure is returned to the settings UI instead of being swallowed. | Implemented | ordered write unit, Rust RPC compile, Agent #106 reload integration |
 | **FR-SETTINGS.16** | Settings lists each `config.allowedTools` name and can revoke one item or clear the list. The count-only label is not sufficient. | Done | `config.test.ts` + `SettingsTab.test.tsx` (#647) |
@@ -1448,3 +1448,139 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-SLIDES-ART.1** | Slides `package-public/icon.svg`는 512×512 둥근 앱 아이콘으로 작은 크기에서도 발표를 알아보게 한다. 같은 공개 폴더의 `thumbnail.svg`는 1280×720 데스크톱 발표 장면, `Naia Slides / 나이아 슬라이드`, 핵심 기능을 보여 준다. Vite slides 빌드의 `publicDir` 복사 산출물에 두 파일을 포함한다. 현재 앱 매니페스트 스키마에 미리보기 필드가 없으므로 `app.json`은 변경하지 않는다. | UC-SHELL-APP-EXPOSURE-024 | SVG 소스 검토·크기 확인; `pnpm build:slides` 산출물 확인; PNG 렌더 미리보기 | Done |
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
+
+## 기능 요구사항 (FR) — 메인 모델과 작은 모델 (0.2.5)
+
+이 절은 목표와 시험 계획이다. 선행 구현이 문서보다 먼저 작성됐으며 아직 최종 연결과 검증을 거치지 않았다. 사용자 시나리오(UC)는 [UC-SM-01](user-scenarios.md#uc-sm-01--메인-모델과-작은-모델을-고르고-다시-쓰기), 기능 명세(FE)는 [FE-SM-01~03](llm-roles.md#fe-sm-01--셸의-메인-모델과-작은-모델-025-계획)이다. 아래 P1~P4는 제품 책임자 요청(2026-10-31), D는 그 요청을 구체화한 조정자 결정, P5~P7은 이어진 작업 지시다.
+
+| 출처 | 내용 |
+|---|---|
+| P1 | 셸에서 메인 모델과 작은 모델을 설정한다. |
+| P2 | Luna high보다 작은 선택이 필요하며, 먼저 Qwen 4B를 다룬다. |
+| P3 | Luna·Solar Mini 등은 비용을 고려해 쓰며, 로컬 모델은 기본값이 아니라 사용자가 고를 때 쓴다. |
+| P4 | 새 구현과 수정에 문서·명확한 시험을 함께 두고, 직접 시험은 사용자 시나리오를 보고 진행한다. |
+| D1~D7 | 각각 저장·호환, 두 칸, 기본값·목록·로컬 선택, 기억 역할 보존, 상속·실패 대체, 에이전트 소비 경로, 게이트웨이 변경 범위에 관한 결정이다. |
+| P5 | 4회차 작업 지시(2026-11-01): 옛 기억 설정만 있는 사용자의 보조 작업과 기억 설정을 보존하고, 작은 모델을 따로 정한 뒤에는 각 선택을 유지한다. |
+| P6 | 5회차 작업 지시(2026-11-01): 설정 화면과 다른 기본값 경로에서도 옛 기억 설정이 자동 기본값에 가려지지 않게 하고 시험한다. |
+| P7 | 6회차 작업 지시(2026-11-01): 실제 카탈로그에 있는 Luna 식별자를 작은 모델 기본값으로 쓰고, 목록 부재 시 기존 설정 상속과 게이트웨이 실기 인수 조건을 확인한다. |
+
+| 번호 | 요구와 출처 | 상태 |
+|---|---|---|
+| **FR-SM.1** | 설정에 메인 모델과 작은 모델 두 칸을 두고 각각 추천·가격·성능 순서로 고르게 한다. 14개 언어의 이름과 안내를 제공한다. P1, D2 | 셸 구현·시험 작성; 최종 검증과 QC 미완 |
+| **FR-SM.2** | 처음 나이아 계정의 메인은 기존 `FR-RECOMMENDED-MODELS.1`에 따라 제공 목록에 Terra 6.1이 있으면 가장 높은 생각 수준(`xhigh`)으로, 없으면 다음으로 이용 가능한 추천 서버 모델로 정한다. 작은 모델의 기본 후보는 카탈로그에 실제로 있는 Luna 식별자에서 고르며, 확인된 목록의 목표는 `gpt-5.6-luna`와 낮은 생각 수준(`low`)이다. Luna가 없거나 조회에 실패하면 유효한 옛 기억 설정을 먼저 이어받고 그것도 없으면 메인을 상속한다. `nano`는 추천과 작은 모델 목록에서 빼고 `solar-mini`는 국내 모델 선택지로 둔다. 사용자의 명시 선택은 유지한다. P2·P3·P7, D3 및 기존 `FR-RECOMMENDED-MODELS.1` | 셸 기본값 구현·부분 시험; 데스크톱 전송은 아래 UT로 검증 |
+| **FR-SM.3** | 로컬 Qwen 4B는 8GB 이상 PC 안내와 함께 데스크톱에서 직접 선택하게 한다. 웹에는 새 선택지로 보이지 않는다. 기존 로컬 선택은 다른 환경에서 열어도 보존한다. P2·P3, D3 | 셸 선택 경계 구현·부분 시험; 정식 복원·QC 미완 |
+| **FR-SM.4** | `llmRoles.main`·`llmRoles.sub`를 저장하고 옛 `provider`·`model`·`subLlm*`를 읽고 쓴다. 작은 역할과 `subLlm*`가 비고 유효한 `memoryLlm*`만 있는 옛 설정은 작은 역할도 `memoryLlm*`를 이어받으며, 기억 설정은 보존한다. 카탈로그 기본값은 `subLlm*`·`llmRoles.sub`·`memoryLlm*`가 모두 비었을 때만 채운다. 온보딩·로그인·기본값 적용 등 다른 자동 기본값 경로에도 같은 빈값 조건을 적용한다. 기억 끄기 등 저장된 값은 보존한다. 작은 모델을 따로 정하면 그 선택이 우선한다. 새 `small` 역할은 만들지 않는다. 데스크톱과 웹에서 각 작업 공간의 `naia-settings/config.json`에 저장하고 다시 열면 복원한다. P1·P5·P6, D1 | 셸 저장·호환 구현·부분 시험; 종단 복원 미완 |
+| **FR-SM.5** | 별도 기억 역할과 설정을 보존한다. 명시된 기억 모델이 우선이고 비어 있으면 지정된 `sub`를 따른다. 명시된 메인 상속이나 지원되지 않는 작은 모델은 메인을 따른다. 예외로 기억과 작은 모델이 모두 미설정이면 메인 호출 없이 기존 규칙 기반 사실 추출과 결정론 압축 요약을 보존한다. 기억 끄기 선택도 보존한다. P1, D4·D5 | 셸 호환 구현; 에이전트·기억 구현과 격리 시험 완료, 셸 페어 검증 별도 |
+| **FR-SM.6** | 작은 모델 실패 시 메인으로 한 번 재시도하고 둘 다 실패하면 처음 오류를 보존한다. 로컬 Qwen 선택 시 클라우드 메인으로 전송하지 않고 기존 휴리스틱 추출·결정론 요약 경로로 복구한다. 각 전송은 실제 대상의 승인을 확인하며 거부 시 전송하지 않는다. P3, D5 | 에이전트·기억 구현과 격리 시험 완료; 셸 페어 검증 별도 |
+| **FR-SM.7** | 데스크톱 에이전트는 기억 사실 추출과 압축 요약에 해석된 기억·작은 모델 역할을 연결한다. 메인 대화와 보조 Pi 에이전트는 메인 모델을 유지한다. 게이트웨이는 이 작업에서 변경하지 않는다. P1, D6·D7 | 에이전트·기억 구현과 격리 시험 완료; 셸 페어 검증 별도 |
+| **FR-THINK-SHELL.1** | 셸 Rust는 `off`, `low`, `high`, `xhigh`를 각각 proto `OFF=1`, `LOW=2`, `HIGH=3`, `XHIGH=4`로 보낸다. 수준이 없거나 알 수 없는 문자열이면 `UNSPECIFIED=0`을 보내고 optional `enableThinking`의 true·false·부재를 각각 보존한다. 에이전트 FR-THINK-13과 같은 이름과 값이다. | 구현; UT-SM-SHELL-THINK-01 Rust 단위 시험 통과 |
+| **FR-SM-SHELL-PAIR.1** | 셸은 고정된 에이전트·기억 커밋과 정규화 proto SHA가 일치하는 페어만 사용하며 불일치 시 거절한다. | 핀 갱신; IT-SM-SHELL-PAIR-01 모의 페어 검사 통과 |
+
+## 비기능 요구사항 (NFR) — 메인 모델과 작은 모델
+
+| 번호 | 요구와 출처 | 상태 |
+|---|---|---|
+| **NFR-SM.1** | 폰 폭에서 두 칸을 세로로 놓고 정상 진입·키보드 조작·읽기·선택·복원이 가능하게 한다. P1, D2 | 셸 반응형·초점 시험 작성; 폰 종단 복원·QC 미완 |
+| **NFR-SM.2** | 시도한 역할, 실제 공급자·모델, 결과와 대체 사유를 기록한다. 자격 증명과 대화 본문은 기록과 설정 정본에 넣지 않는다. P3, D5 | 셸 설정 비밀 분리 시험 작성; 에이전트 기록 격리 시험 통과 |
+| **NFR-SM.3** | 새 설정과 기존 기억 떠오름·꺼짐·점수 문턱 및 기존 선택을 함께 보존하고, 모델 실패나 재시도로 기억을 중복 저장하지 않는다. P1·P3, D4·D5 | 셸 설정 보존 부분 시험; 에이전트·기억 중복 방지 격리 시험 통과 |
+
+### 현재 동작과 이번 판 목표
+
+아래 표의 기존 동작은 구현 2회차 수정 전 기준이며 현재 코드의 동작을 뜻하지 않는다. 셸은 목록을 이용해 메인·작은 기본값을 선택하고 옛 기억 설정을 보존하도록 수정했으며, 미작성 시험과 직접 확인은 시험 계획의 상태를 따른다. 아래는 새 설정값이 없는 첫 나이아 계정 경로의 차이다. 기존 사용자의 명시 선택과 출처를 구분할 수 없는 저장값은 보존한다. 설정의 기본값 적용 단추도 같은 목표에 맞게 고친다.
+
+| 경로 | 구현 2회차 수정 전 동작 | 이번 판 목표 |
+|---|---|---|
+| 첫 설정 완료와 메인 | `packages/shell/src/components/OnboardingWizard.tsx:1117-1125`는 기존 나이아 메인 값이 없으면 `NAIA_SLOT_DEFAULTS.main`을 쓰며, `packages/shell/src/lib/slots/model.ts:284-287`의 값은 `deepseek-v4-flash`다. | `FR-RECOMMENDED-MODELS.1`에 따라 목록에 제공되는 Terra 6.1을 가장 높은 생각 수준(`xhigh`)으로 고르고, 없으면 다음으로 이용 가능한 추천 서버 모델을 고른다. 기존에 저장된 명시 선택은 유지한다. |
+| 작은 모델과 목록 | 현재 첫 설정의 슬롯 기본값은 `gemini-3.1-flash-lite`다. 선행 구현 `SettingsTab.tsx:800-803`은 `sub` 또는 옛 `subLlmProvider`가 있으면 목록 기본값 적용을 건너뛴다. 따라서 첫 로그인에서 Luna가 자동 선택되지는 않는다. | 첫 설정과 기본값 적용에서 기존 Gemini 자동값을 먼저 채우지 않도록 연결을 고친다. 목록에 실제로 있는 Luna 식별자를 고르며 확인된 목표 `gpt-5.6-luna`를 낮은 생각 수준으로 선택한다. Luna가 없거나 조회에 실패하면 유효한 옛 기억 모델을 먼저 이어받고 없으면 메인을 상속한다. 명시 선택은 덮지 않는다. |
+| 옛 기억 설정만 있는 경우 | `SettingsTab.tsx:800-806,856-862,2131-2138`은 `memoryLlm*`를 살피지 않아 목록의 Luna를 작은 역할에 저장할 수 있다. `slots/model.ts:303-305,323-336`도 옛 기억 설정을 살피지 않고 작은 Gemini를 채운다. 기억 필드는 남지만 그보다 우선하는 작은 역할이 이어받기를 가린다. | `subLlm*`·`llmRoles.sub`·`memoryLlm*`가 모두 비었을 때만 자동 기본값을 채운다. 유효한 옛 기억 모델만 있으면 그 모델을 이어받고 기억 설정을 보존한다. 저장된 기억 끄기는 보존하며 모델로 해석하지 않는다. `UT-SM-03`, `IT-SM-11·14`로 확인한다. |
+| 기억 역할 | 현재 `slots/model.ts:338-345`는 기억 역할이 없거나 상속이고 옛 기억 공급자가 없거나 `none`이면 `gpt-5.4-nano`를 기록한다. | 새 설정의 기억 역할은 작은 모델을 상속한다. 명시 선택과 출처가 불명확한 기존 저장값은 유지하고 명시적으로 끈 기억도 보존한다. |
+
+추천 순서의 코드 근거는 셸 `packages/shell/src/lib/llm/registry.ts:531-537,568-583`이다. Terra 다음은 `solar-pro4`이며, 조사한 게이트웨이 소스 `src/any_llm/gateway/model_catalog.py:43-60`과 `docker/config.naia.yml:255`에 `solar-pro4`가 있고 Terra는 조사한 목록에 없다. 따라서 조사된 목록에서 이용 가능한 다음 추천 모델은 `solar-pro4`다. 현재 첫 설정의 `deepseek-v4-flash`에서 그 값으로 바뀌는 차이는 아래 시험에서 확인한다. 실제 이용 가능 목록에 따라 다음 후보가 달라질 수 있으며, 실시간 목록과 호출은 아직 확인하지 않았다. 게이트웨이 변경은 이번 범위에 없다(D7).
+
+### 기존 기억 설정과의 관계
+
+기존 `FR-SLOT.3`, `FR-SURFACING.1`·`.3`과 `UC-MEMORY-SURFACING-692`는 기억 역할의 자동 기본값을 `gpt-5.4-nano`로 적고 있다. 0.2.5의 새 계약에서는 **설정되지 않은 기억 역할의 자동 nano 기본값을 작은 모델 상속으로 바꾼다**. 이미 저장된 기억 모델이 명시 선택인지 자동값인지 구분할 수 없으면 기존 값을 보존한다. 새 작은 모델 선택은 `llmRoles.sub`이며 `SmallLlmSection`, `llmRoles.memory`, `memoryLlm*`의 기억 선택과 별도로 유지한다. 아래 옛 설정 해석 예외에서도 기억 저장값은 바꾸지 않는다. 명시 기억 선택은 계속 우선한다. 기존 절의 nano 기본값 설명은 수정 전 동작 기록이고 이 절은 0.2.5 목표다. 셸 기본값 경로를 수정했고 에이전트·기억 연결은 격리 시험으로 확인했다. 셸 페어 확인은 별도다.
+
+`FR-SLOT.5`의 옛 범용 보조 저장 규칙과 `FR-LLM-ROLE.7`의 역할 분리 규칙은 0.2.5에서 다음과 같이 갱신한다. 작은 역할의 명시 선택 또는 명시적 상속과 유효한 `subLlm*`가 없고 옛 `memoryLlm*`만 있으면, 작은 역할은 그 공급자·모델과 필요한 주소·자격 참조를 이어받고 기억 역할도 기존 `memoryLlm*`를 쓴다. 메인으로 바꾸거나 저장된 기억 값을 지우지 않는다. 사용자가 작은 모델을 따로 정하면 작은 역할은 그 선택을 쓰고 기억은 기존 값을 유지한다. 명시적 작은 역할이나 `subLlm*`는 옛 기억 값보다 우선한다. 보조 역할을 쓰는 범용 작업의 기존 소비 경로도 이어받은 값을 사용한다. 선행 셸 `packages/shell/src/lib/llm/roles.ts:37-47`과 `roles.test.ts:19-31`의 수정 전 메인 상속 동작은 이 목표와 달랐다. 셸 읽기 해석을 갱신했고 에이전트의 범용 소비는 `IT-SM-AGENT-02`로 시험했다. 셸부터의 완전한 연결은 `IT-SM-12`로 별도 확인한다.
+
+이 조건은 설정 화면의 목록 응답과 설정 재동기화뿐 아니라 첫 설정 완료(`packages/shell/src/components/OnboardingWizard.tsx:1120-1121,1162-1173`), 기존 작업 공간의 첫 로그인(`packages/shell/src/components/AdkSetupScreen.tsx:160-176,181-189`), 설정 화면 로그인과 기본값 적용 단추(`packages/shell/src/components/SettingsTab.tsx:370-404,3015-3035,4247-4258`)에도 적용한다. 이 경로들은 공통 `applyNaiaSlotDefaults`를 호출한다. 기존 작업 공간 가져오기(`AdkSetupScreen.tsx:269-289,324-346`)는 설정을 복원하며 별도 작은 기본값을 채우지 않지만, 이어서 설정 화면에 목록이 도착할 때도 위 조건을 지킨다. 온라인 설정 가져오기는 `packages/shell/src/lib/lab-sync.ts:8-35,63-68`에서 모델 역할·옛 기억 필드를 가져오지 않고, `SettingsTab.tsx:3722-3726`에서 받은 항목을 현재 설정에 합친다. 이 경우 설정 변경 알림 뒤 목록 기본값이 재실행돼도 같은 조건을 지킨다(`IT-SM-11·14`).
+
+`FR-SURFACING.2`·`.4`~`.9`의 과금 동의, 제공 상태 안내, 주소 정규화, 떠오름 끄기와 점수 문턱은 그대로 유지한다. 기억 모델 상속이 떠오름을 강제로 켜거나 사용자의 과금 동의를 대신하지 않는다. 떠오름의 작은 모델 판정과 기억 사실 추출·압축은 사용처가 다르며, 각각의 선택과 기존 대체 경로를 보존한다.
+
+기억 경로의 빈 값과 상속을 구분한다. 기억 모델과 작은 모델이 모두 미설정이면 메인이 설정돼 있어도 규칙 기반 추출과 기존 결정론 요약을 쓴다. 작은 모델에 명시적 `inherit: "main"`이 있고 기억 모델이 비면 기억 역할도 그 메인을 따른다. 기억 모델만 지정돼 있으면 기억은 그 모델을 쓰며, 옛 `memoryLlm*`만 있는 경우 작은 역할도 위 호환 규칙에 따라 이어받는다. 기억 모델만 비면 지정된 작은 모델을 쓴다. 기억 끄기는 유지한다. 수정 전 선행 에이전트의 빈 `sub`도 메인으로 잇던 동작은 갱신됐으며 두 역할이 모두 빈 예외를 에이전트 실제 조립의 `IT-SM-AGENT-01`로 확인했다.
+
+기존 대체의 코드 근거: 기억 저장소 `src/memory/memory-system-core.ts:118-119`와 `src/memory/memory-system-consolidation.ts:101-103`은 추출기 미지정 시 기본 추출기를 쓰고, `src/memory/memory-system-api.ts:287-303`은 에피소드 내용으로 사실을 만든다. `src/memory/memory-system-compaction.ts:25-38`은 요약기 없이 기존 누적 요약 또는 결정론 요약을 사용한다. 에이전트 `src/main/adapters/naia-memory.ts:89-90,303-306`은 주입하지 않은 추출기·요약기를 기억 저장소 기본값에 맡긴다. 누적 요약이 없는 준비 조건은 `IT-SM-09`에서 따로 고정한다.
+
+### 다른 기존 요구와의 관계
+
+| 기존 요구 | 0.2.5 적용 관계 |
+|---|---|
+| `FR-LLM-ROLE.2`·`.4`~`.6` | 역할별 저장과 전문가 역할, 기억 역할의 분리, Pi 경로는 유지한다. 빈 역할과 옛 기억 필드의 해석에는 위 호환 예외가 우선한다. `IT-SM-08~12`로 확인한다. |
+| `FR-SLOT.1`, `FR-LLM-PULL.1` | 데스크톱 로컬 선택은 계정 유무와 무관하다. 웹의 새 작은 모델 목록은 `FR-SM.3`에 따라 로컬 선택지를 숨긴다. 로컬 음성과의 상호 배타, 받기 전 확인과 공간 검사는 기존 요구를 따른다. `IT-SM-01`, `E2E-SM-03`으로 확인한다. |
+| `FR-LLM-LOGOUT.1` | 기존에는 로그아웃·로그인 건너뛰기·빈 첫 실행에서 Ollama가 응답하면 메인 로컬 모델을 자동 저장한다. 제품 책임자의 로컬 직접 선택 요청(P3)에 맞춰 0.2.5 목표에서는 이 자동 기본 선택을 대체한다. 이미 사용자가 고른 로컬·명령줄 선택은 보존하고, 로컬은 사용자가 직접 선택할 때 쓴다. 제공자 없는 경우의 안내와 기존 선택 보존은 유지한다. `IT-SM-13`으로 기존 시험을 갱신한다. |
+| `FR-RECOMMENDED-MODELS.1` | Terra 제공 시 `xhigh`, 없으면 이용 가능한 다음 추천 서버 모델을 고르는 기존 규칙을 유지한다. 조사된 목록에서 다음 모델은 `solar-pro4`다. 기존 `FR-LLM-DEFAULT.1`·`.2`의 첫 로그인·기본값 적용 DeepSeek 기대는 현재 동작 기록이며 이번 판 목표로 갱신한다. 이미 명시한 선택과 다른 경로의 기존 이관 규칙은 보존한다. `UT-SM-04·05`, `IT-SM-05`로 확인한다. |
+| `FR-NAIA-AZURE.7` 모델 비교 조항 및 `.8`~`.10` | 가격순 기본과 가격·성능 계산은 유지하고 추천순을 추가로 제공한다. 새 목록에서 미지원 모델은 선택하지 못하게 한다. 작은 모델의 기존 명시 nano·로컬 선택은 저장값을 보존하며 미지원 상태의 호출 가능 여부를 별도로 표시한다. 미지원 작은 모델의 실제 사용은 `FR-SM.5`의 상속과 로컬 전송 차단을 따른다. 기존 메인 모델 이관 `FR-NAIA-AZURE.7`(#707)은 자동 기본값임이 기록된 경우에만 적용한다. 명시 선택 또는 출처를 구분할 수 없는 저장값은 목록 부재·퇴역 판정에도 유지한다. 이는 0.2.5의 명시 선택 보존 지시가 기존 이관 조항보다 우선한 변경이다. 두 `.7`은 기존 번호가 중복되어 이 표에서는 각각 ‘모델 비교’와 ‘메인 이관’으로 구분한다. `UT-SM-01`, `IT-SM-01·11`로 확인한다. |
+| `FR-NAIA-AZURE.4` | 일반 대화와 게이트웨이 내부의 조용한 공급자·모델 변경 금지는 유지한다. `FR-SM.6`은 작은 모델 작업에서 실제 전송 대상을 승인받고 사유를 기록하는 메인 최대 1회 재시도다. `IT-SM-03·06·07`로 확인한다. |
+
+`docs/progress/issue-415-settings-persistence.md`의 두 역할 소유 분리 기록은 유지한다. 이번 호환은 옛 값만 있는 경우의 읽기 해석이며, 명시된 두 역할을 함께 덮어쓰는 규칙이 아니다.
+
+### 0.2.5 범위와 연결 순서
+
+| 항목 | 이번 작업의 범위 판정 | 남은 조건 |
+|---|---|---|
+| 데스크톱 설정과 기억 | 0.2.5 목표: 두 칸과 저장·복원, 기억 사실 추출·압축 연결 및 실패 복구 | 세 저장소를 정식 연결하고 전체 경로를 시험한다. |
+| 웹 설정 | 0.2.5 목표: 두 칸과 웹 저장·복원, 로컬 선택 차단, 폰 화면 | 실제 Chromium의 OPFS 복원과 정상 진입을 시험한다. |
+| 웹의 기억 추출·압축 소비 | 이번 작은 모델 작업에서는 다음 판으로 이연 권고 | 선행 웹 에이전트에서 소비 경로가 확인되지 않았다. 별도 설계·구현과 실제 기억 시험이 필요하다. 공동 출시 계획에는 웹 장기 기억이 남은 일감으로 올라 있어 최종 출시 범위는 아래 결정에 따른다. |
+| 게이트웨이 | 이번 작업 변경 범위 밖 | 기존 목록과 호출 계약을 사용한다. |
+
+**대표님 결정 필요 — 웹 기억의 출시 범위:** A. 0.2.5에 웹 기억 소비를 포함하고 추출·압축까지 검증한다. B. 이번 작은 모델 작업은 웹 설정까지 포함하고 웹 기억 소비는 다음 판으로 미룬다. **권고 B:** 확인된 웹 소비 경로가 없어 별도 설계와 연결·시험이 필요하기 때문이다. 이는 공동 출시 계획을 확정 변경한 결정이 아니다. A를 택하면 웹 기억 연결과 시험을 출시 선행 조건으로 추가한다.
+
+연결 순서는 ① 기억 저장소에서 요청별 추출·요약 주입 계약을 확정하고 합친다 → ② 에이전트가 그 기억 판을 가리키도록 의존성 핀을 올리고 역할 해석·소비 연결을 확정해 합친다 → ③ 셸의 데스크톱 에이전트 핀과 짝이 맞는 기억 판을 갱신하고 세 저장소의 추출·압축·실패 복구를 통합 검증한다. 웹 기억을 구현할 때는 웹 소비 경로를 먼저 완성하고 그 뒤 웹 에이전트 핀을 갱신해 따로 검증한다. 선행 시험의 임시 연결은 정식 페어의 증거가 아니다.
+
+**구현 2회차의 전송 한계와 보완:** 당시 셸은 Terra 기본 역할에 `xhigh`를 저장하고 TypeScript 요청 변환까지 전달했지만 Rust gRPC 변환에서 제거했다. 네이티브 변환과 페어 검증은 위 FR-THINK-SHELL.1·FR-SM-SHELL-PAIR.1 및 아래 시험을 따른다. 설정과 TypeScript 시험만으로 데스크톱 변환이나 실제 모델 적용까지 입증하지 않는다.
+
+### 요구별 시험 계획 — 메인 모델과 작은 모델
+
+단위 시험은 한 기능의 판정, 통합 시험은 연결된 구성의 동작, 종단 시험(E2E)은 사용자 진입부터 저장·복원까지의 흐름이다. 품질 확인(QC)은 제품 책임자가 위 사용자 시나리오를 직접 실행한다. 자동 시험은 준비한 시험 설정과 가짜 응답을 쓰며, `IT-SM-15`는 실제 게이트웨이로 확인하는 인수 조건이다. 메인 기본값은 제공 목록에 Terra가 있으면 Terra `xhigh`, 없으면 이용 가능한 다음 추천 서버 모델을 기대한다. ‘선행 구현, 미커밋, 소급 대조 필요’는 파일이 있다는 뜻이며 최종 후보의 통과가 아니다. 미작성 경로는 작성 예정 위치다. 같은 행의 짧은 시험 파일 이름은 첫 파일과 같은 폴더에 있다.
+
+| 시험 번호·종류 | 요구 | 준비와 실행 경로 | 통과 기준 | 상태 |
+|---|---|---|---|---|
+| **UT-SM-SHELL-THINK-01 단위** | FR-THINK-SHELL.1 | `packages/shell/src-tauri/src/agent_grpc.rs`의 Rust 단위 시험에서 네 수준과 부재·알 수 없는 문자열, optional boolean true·false·부재를 검증한다. | `off`·`low`·`high`·`xhigh`는 각각 `OFF=1`·`LOW=2`·`HIGH=3`·`XHIGH=4`, 부재·알 수 없는 값은 `UNSPECIFIED=0`이며 boolean 값과 부재가 보존된다. | 작성; 수정 전 실패, 수정 후 Rust 단위 시험 통과 |
+| **IT-SM-SHELL-PAIR-01 통합** | FR-SM-SHELL-PAIR.1 | `packages/shell/scripts/__tests__/agent-pairing.test.ts`에서 고정 에이전트·기억 커밋 및 정규화 proto SHA와 각각 다른 값을 가진 checkout을 검사한다. | 세 값이 모두 일치하면 연결하고 어느 하나라도 다르면 거절한다. | 작성; 수정 전 실패, 수정 후 모의 페어 검사 통과 |
+| **UT-SM-01 단위** | FR-SM.1·.2·.4 | 셸 `packages/shell/src/lib/llm/__tests__/small-model.test.ts`, `registry.test.ts`, `roles.test.ts`에서 실제 카탈로그 식별자가 든 목록과 옛 설정을 각각 준비해 실행 | 수정 전 `small-model.ts`는 `gpt-6` 계열만 찾았다. 실제 목록의 `gpt-5.6-luna`와 `low` 선택을 확인한다. Luna가 없는 목록에서는 유효한 옛 기억 설정이 있으면 이어받고 없으면 메인을 상속하는 두 사례를 각각 확인한다. nano 제외와 Solar Mini 선택·추천 순서도 확인한다. | 작성: `small-model.test.ts`의 실제 Luna low·부재·nano 제외·Solar Mini 및 `registry.test.ts` 추천 정렬; 최종 전체 검증 별도 |
+| **UT-SM-02 단위** | FR-SM.4·.5, FR-SLOT.5, FR-LLM-ROLE.7 | 셸 `packages/shell/src/lib/llm/__tests__/roles.test.ts`, `small-model.test.ts`에 신구 설정과 기억 선택을 준비해 실행 | 옛 `memoryLlm*`만 있을 때 기억 설정을 이어받는다. 공급자·모델·주소·자격 참조가 보존되고 기억 역할도 같은 옛 선택을 쓴다. 명시적 작은 선택과 `subLlm*`는 옛 기억 값보다 우선하며 작은 선택을 바꿔도 기억은 유지된다. 두 역할이 모두 비었을 때의 기억 예외도 확인한다. | 셸 읽기 호환 시험 작성: `roles.test.ts`, `small-model.test.ts`; 두 역할 미설정의 실제 기억 소비 예외는 정식 연결 후 IT-SM-08·09 |
+| **UT-SM-04 단위** | FR-RECOMMENDED-MODELS.1 | 셸 `packages/shell/src/lib/llm/__tests__/registry.test.ts`와 기본값 선택 시험에 Terra와 `solar-pro4`가 모두 이용 가능한 목록을 준비한다. | 빈 새 메인 설정에 `gpt-6.1-terra`와 `xhigh`가 선택된다. 명시된 기존 선택은 유지된다. | 작성: `small-model.test.ts`, `settings-slots.contract.test.ts`, `config.test.ts`, `SettingsTab.test.tsx` 및 `src/test/uc1-{shell-compat,bridge,chat}.contract.test.ts`; Rust 전송은 UT-SM-SHELL-THINK-01로 별도 검증 |
+| **UT-SM-05 단위** | FR-RECOMMENDED-MODELS.1 | 같은 시험에 Terra가 없고 `solar-pro4`가 이용 가능한 목록을 준비한다. | 빈 새 메인 설정의 현재 `deepseek-v4-flash` 자동값 대신 다음 추천 서버 모델 `solar-pro4`를 고른다. 명시된 기존 선택은 유지된다. | 작성: `small-model.test.ts`와 온보딩 모의 목록의 Terra 부재·Solar 선택; 최종 전체 검증 별도 |
+| **UT-SM-03 단위** | FR-SM.2·.4·.5, NFR-SM.3 | 셸 `packages/shell/src/lib/slots/__tests__/settings-slots.contract.test.ts`, `packages/shell/src/lib/llm/__tests__/small-model.test.ts`의 UT-SM-03 | 수정 전 빈 설정의 메인 DeepSeek·작은 Gemini·기억 nano 기대값을 갱신하여, 메인은 제공 목록의 Terra `xhigh` 또는 다음 추천 서버 모델로 바꾸며, 작은 모델은 목록에 따른 `gpt-5.6-luna` low 또는 메인 상속, 기억은 작은 모델 상속으로 바꾼다. 옛 기억의 완전·불완전 설정에서 자동 작은 기본값을 채우지 않고 기억 필드를 보존한다. 유효한 옛 기억 모델은 작은 역할도 이어받는다. 세 묶음이 모두 빈 경우, 명시 작은 선택, 기억 끄기도 각각 확인한다. 명시된 메인은 보존한다. 다른 슬롯도 유지한다. 목록 조회가 필요한 경우 순수 슬롯 시험과 목록 연동 시험을 나누어 증명한다. | 작성: `settings-slots.contract.test.ts`, `small-model.test.ts`; 목록·옛 기억·끄기·명시 선택과 나머지 슬롯 확인 |
+| **IT-SM-01 통합** | FR-SM.1~.3, NFR-SM.1 | 셸 `packages/shell/src/components/__tests__/SettingsTab.test.tsx`에 가짜 목록과 데스크톱·웹 환경을 준비해 실행 | 두 칸의 추천·가격·성능 각 순서와 로컬 표시 경계, 기억 선택 보존을 확인한다. 14개 언어 각각에서 두 칸 이름과 안내가 빠짐없이 해당 언어로 표시되는지 확인한다. | 부분 작성: `SettingsTab.test.tsx`의 모델 선택·로컬 경계·14개 언어 키 및 키보드 초점 시험; 실제 폰 키보드·복원은 E2E-SM-02 미작성 |
+| **IT-SM-05 통합** | FR-RECOMMENDED-MODELS.1, FR-SM.2·.5 | 셸 `packages/shell/src/components/__tests__/OnboardingWizard.test.tsx`에 첫 나이아 로그인과 목록 성공·부재·조회 실패를 추가하고, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`의 기본값 적용 단추 시험을 실행 | 빈 새 계정의 첫 설정 완료부터 설정 화면·저장·재열기까지 메인은 Terra 제공 목록에서 Terra `xhigh`, Terra 없이 `solar-pro4`가 제공되는 목록에서 `solar-pro4`를 각각 확인하고 `gpt-5.6-luna` low 또는 메인 상속과 기억의 작은 모델 상속을 확인한다. 현재 단추 시험의 작은 Gemini·기억 nano 기대값을 새 값으로 바꾸고 기존 메인 선택 보존을 유지한다. 목록 적용을 기존 자동 `sub`가 막지 않는지도 확인한다. | 부분 작성: `OnboardingWizard.test.tsx`의 모의 목록 Terra·Solar·목록 실패·기존 선택과 `SettingsTab.test.tsx`의 기본값 적용. 첫 설정→설정 화면→저장·재열기의 완전 연결은 미작성 |
+| **IT-SM-02 통합** | FR-SM.4·.5, NFR-SM.2·.3 | 셸 `packages/shell/src/lib/__tests__/smallmodel-persistence.test.ts`에서 옛 설정, 데스크톱 파일 대역과 웹 디렉터리 대역을 준비해 저장·재읽기 | 양쪽 정본 경로와 옛 필드가 복원되고 기억 선택·비밀 분리가 유지된다. 대역 시험임을 기록한다. | 작성: `smallmodel-persistence.test.ts`의 데스크톱 모의 IPC·웹 OPFS 어댑터 대역 저장·복원; 실제 브라우저 OPFS는 E2E-SM-01 미작성 |
+| **IT-SM-03 통합** | FR-SM.5~.7, NFR-SM.2·.3 | 에이전트 저장소 `src/test/smallmodel-i1.contract.test.ts`, `llm-roles.contract.test.ts`, `uc-naia-settings-store.contract.test.ts`, `memory-role-summarizer.contract.test.ts`와 기억 저장소 `src/memory/__tests__/llm-auth.test.ts`에 가짜 응답·승인을 준비해 실행 | 429·503·시간 초과·형식 오류에서 메인 최대 1회, 양쪽 실패 시 첫 오류, 승인 거부·로컬의 클라우드 차단, 비밀 없는 기록과 기억 우선순위가 맞다. | 선행 구현, 미커밋, 소급 대조 필요 |
+| **IT-SM-04 통합** | FR-SM.5~.7, NFR-SM.2·.3 | 세 저장소를 위 순서로 정식 연결한 시험판에서 실제 기억 저장과 압축을 유발하는 통합 시험 작성 예정: 에이전트 `src/test/smallmodel-paired-memory.integration.test.ts` | 모델별 승인·호출·기록과 실제 추출·압축 결과를 확인한다. 실패·재시도에도 기억 중복이 없고 로컬 실패 시 기존 대체 경로가 작동한다. | 미작성 |
+| **IT-SM-06 통합** | FR-SM.6·.7, NFR-SM.2·.3 | 에이전트 `src/test/smallmodel-paired-memory.integration.test.ts`에 사실 추출 경로 작성 예정. 정식 기억 판과 가짜 모델·승인·호출 기록으로 추출을 유발한다. | 작은 모델 실패 뒤 메인 호출은 최대 1회이고 정상 복구 시 사실을 한 번 저장한다. 두 모델 실패 시 첫 오류, 승인 거부 시 해당 전송 없음, 로컬 실패 시 클라우드 전송 없이 기존 추출 대체, 실제 대상·결과·사유 기록과 비밀 제외를 각각 확인한다. | 미작성 |
+| **IT-SM-07 통합** | FR-SM.6·.7, NFR-SM.2·.3 | 같은 정식 연결 시험 파일에 압축 경로 작성 예정. 예산을 넘는 대화와 가짜 모델·승인·호출 기록으로 압축을 유발한다. | 작은 모델 실패 뒤 메인 호출은 최대 1회이고 정상 복구 시 요약을 반영한다. 두 모델 실패 시 첫 오류, 승인 거부 시 해당 전송 없음, 로컬 실패 시 클라우드 전송 없이 기존 결정론 요약, 실제 대상·결과·사유 기록과 비밀 제외를 각각 확인한다. | 미작성 |
+| **IT-SM-08 통합** | FR-SM.5·.7, NFR-SM.3 | 에이전트 `src/test/smallmodel-paired-memory.integration.test.ts` 작성 예정. 정식 기억 판에서 메인만 설정하고 기억·작은 역할과 옛 기억·보조 필드를 모두 비운다. 추출 대상 에피소드를 저장한 뒤 수동으로 통합을 실행하고 가짜 모델 호출과 사실 저장을 관찰한다. | 메인·작은·기억 모델 전송이 모두 0회이고 기존 휴리스틱 추출 결과가 저장된다. 같은 입력의 기존 경로와 내용·출처가 같으며 사실이 중복되지 않는다. | 미작성 |
+| **IT-SM-09 통합** | FR-SM.5·.7 | 같은 정식 연결 시험 파일에 압축 사례 작성 예정. 메인만 설정하고 기억·작은 역할과 옛 필드를 비운다. 누적 요약과 주입 요약기 없이 고정 대화와 보존할 꼬리 개수로 압축한다. | 모델 전송이 모두 0회이고 기존 결정론 요약 및 유지·제거 건수가 같은 입력의 기존 경로와 같다. 누적 요약이 있는 별도 사례도 기존 누적 요약 경로를 유지한다. | 미작성 |
+| **IT-SM-10 통합** | FR-SM.5·.6, NFR-SM.3 | 같은 정식 연결 시험 파일에 기억·작은 역할의 명시·미설정·상속·꺼짐 조합과 잘못된 작은 설정을 준비하고 가짜 호출·승인 기록을 비교한다. | 기억만 지정하면 기억 호출, 작은 모델만 지정하면 작은 모델 호출, 기억이 비고 작은 모델이 명시적으로 메인을 상속하면 승인된 메인 호출, 둘 다 미설정이면 `IT-SM-08·09`의 모델 없는 경로를 쓴다. 기억 끄기는 유지한다. 지원되지 않는 작은 모델은 메인 상속하며 명시 로컬 선택은 클라우드로 전송하지 않는다. | 미작성 |
+| **IT-SM-11 통합** | FR-SLOT.5, FR-LLM-ROLE.7, FR-SM.4·.5, NFR-SM.3 | 셸 `packages/shell/src/lib/__tests__/smallmodel-persistence.test.ts`에 옛 `memoryLlm*`만 있고 `subLlm*`·`llmRoles.sub`가 빈 설정을 준비해 데스크톱·웹 저장 대역으로 읽고 저장·재읽기를 추가한다. `packages/shell/src/components/__tests__/SettingsTab.test.tsx`의 IT-SM-11 목록·작업 공간 변경 시험에서 실제 카탈로그의 `gpt-5.6-luna`와 같은 옛 설정으로 화면·저장값을 확인한다. 설정 변경 알림 뒤에도 반복하고 작은 모델을 따로 고른 뒤 다시 연다. 세 묶음이 모두 빈 새 설정과 명시 작은 선택은 대조군으로 유지한다. | 수정 전 목록 초기화는 옛 기억만 있어도 Luna를 `sub`에 저장했다. 기대값은 Luna 저장 없이 옛 기억 모델을 작은 역할로 이어받고 기억 공급자·모델·주소·자격 참조와 떠오름 선택을 보존하는 것이다. 작은 선택 후에는 새 작은 값과 옛 기억 값이 각각 복원된다. 대조군의 빈 새 설정은 `gpt-5.6-luna`와 `low`를 채우고 명시 선택은 유지한다. | 부분 작성: `smallmodel-persistence.test.ts`, `SettingsTab.test.tsx`의 옛 기억·목록·재동기화와 저장 대역; 작은 모델 별도 선택 후 실제 앱 재시작은 E2E-SM-03 미작성 |
+| **IT-SM-12 통합** | FR-SLOT.5, FR-LLM-ROLE.7, FR-SM.4·.7 | 에이전트 `src/test/smallmodel-legacy-sub-consumer.integration.test.ts` 작성 예정. 옛 기억 필드만 든 설정을 셸에서 에이전트까지 전달하고 ADK 배치 등 기존 범용 작은 모델 소비자를 가짜 호출 기록에 연결한다. 이어서 작은 모델을 따로 고른다. | 처음 범용 작업은 옛 기억 모델을 호출하고 메인 호출은 0회다. 별도 작은 선택 뒤에는 범용 작업이 새 모델을 호출하며 기억 호출은 기존 기억 모델을 유지한다. 설정만 해석하는 시험과 실제 소비 경로 호출을 각각 확인한다. | 미작성 |
+| **IT-SM-13 통합** | FR-LLM-LOGOUT.1, FR-SM.3, NFR-SM.3 | 셸 `packages/shell/src/lib/llm/__tests__/logged-out-default.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `OnboardingWizard.test.tsx`의 연결 해제·로그인 건너뛰기·빈 첫 실행을 갱신한다. 응답하는 로컬 서비스 대역과 기존 명시 선택을 각각 준비한다. | 수정 전 Ollama 응답 시 메인을 자동 저장하던 경로에서 로컬 자동 선택이 없음을 확인하고 제공자 없음 안내를 확인한다. 이미 고른 로컬·명령줄 선택은 그대로이며 사용자가 직접 고르면 저장·복원된다. | 부분 작성: `logged-out-default.test.ts`의 응답 로컬 자동 선택 없음과 기존 선택 유지 판정; 연결 해제·온보딩·직접 선택 저장·복원의 전체 연결 시험 미완 |
+| **IT-SM-14 통합** | FR-SM.2·.4·.5, NFR-SM.3 | 옛 기억 모델만 있고 작은 역할·옛 작은 필드는 빈 설정으로 셸 `packages/shell/src/components/__tests__/OnboardingWizard.test.tsx`의 첫 설정 완료, `AdkSetupScreen.test.tsx`의 선택한 기존 작업 공간 로그인, `SettingsTab.test.tsx`의 계정 로그인·기본값 적용 단추를 각각 실행하고 목록 응답 뒤 저장·재읽기를 확인한다. `smallmodel-import.integration.test.tsx`는 실제 작업 공간 가져오기·설정 화면과 가짜 IPC 파일을 연결한다. 온라인 설정 합치기와 설정 변경 알림도 가짜 응답으로 확인한다. | 어느 자동 경로에서도 작은 기본값이 옛 기억 선택을 가리지 않고 작은 역할이 옛 기억 모델을 쓰며 기억 설정이 보존된다. 가져온 뒤 Luna 목록이 도착해도 같다. 빈 새 설정은 목록의 Luna 또는 목록 부재 시 메인 상속, 명시 작은 선택은 보존한다. | 작성: 온보딩·작업 공간 로그인·가져오기·설정 로그인·기본값·온라인 합치기와 목록·재읽기. 가져오기 저장은 모의 IPC이며 실제 디스크·브라우저 OPFS 종단은 별도 시험이다. |
+| **E2E-SM-01 종단** | FR-SM.1~.4, NFR-SM.1·.2 | 새 나이아 계정으로 첫 설정을 마친 뒤 실제 Chromium의 격리된 브라우저 저장 공간에서 설정 변경 후 화면 캐시를 지우고 다시 시작하는 셸 `packages/shell/e2e/small-model-web.spec.ts` 작성 예정 | 첫 메인은 제공 목록에 Terra가 있으면 Terra `xhigh`, 없으면 다음 추천 서버 모델이고 작은 모델은 `gpt-5.6-luna` low 또는 목록 부재 시 메인 상속인지 확인하고 OPFS `naia-settings/config.json`에서 선택이 복원되며 비밀이 없고 웹에는 로컬 선택지가 없다. | 미작성 |
+| **E2E-SM-02 종단** | FR-SM.1·.3·.4, NFR-SM.1 | 폰 폭 390픽셀의 정상 시작 화면에서 같은 웹 종단 시험을 작성한다. 키보드 탭으로 설정과 메인 선택기, 작은 선택기 순서로 초점을 옮기고 각 목록을 열어 서로 다른 값을 선택·저장한 뒤 설정과 웹을 다시 연다. | 초점이 두 선택기에 차례로 보이고 키보드로 각 값을 바꿔 저장할 수 있다. 두 값이 각각 복원되며 조작과 글자가 가려지거나 잘리지 않는다. 초점이 갇히거나 선택·저장·복원에 실패하면 실패다. | 미작성 |
+| **E2E-SM-03 종단** | FR-SM.1~.5, NFR-SM.1·.3 | 셸 `packages/shell/e2e-tauri/specs/small-model-settings.spec.ts` 작성 예정. 데스크톱 시험 작업 공간에 새 설정과 옛 설정을 각각 준비해 저장 후 재시작 | 새 계정의 메인(Terra 제공 시 Terra `xhigh`, 없으면 다음 추천 서버 모델)·작은 `gpt-5.6-luna` low 또는 목록 부재 시 메인 상속과 두 칸·로컬 선택·기억 역할·옛 설정이 실제 파일에서 복원된다. | 미작성 |
+| **E2E-SM-04 종단** | FR-SM.2·.5, NFR-SM.3 | 셸 `packages/shell/e2e/settings-slots.spec.ts:310-339`의 기존 기본값 단추 시험을 갱신 또는 대체 | 현재 미설정 작은 Gemini·기억 nano 기대를 목록에 따른 `gpt-5.6-luna` low 또는 메인 상속과 기억의 작은 모델 상속으로 바꾼다. 이미 지정한 메인 DeepSeek의 보존 기대는 유지한다. | 기존 시험 갱신 또는 대체 필요 |
+| **IT-SM-15 통합·실기 인수** | FR-SM.2 | 구현 단계에서 셸 `packages/shell/e2e-tauri/specs/small-model-live.spec.ts` 작성 예정. 실제 나이아 게이트웨이의 `GET /v1/models`를 조회하고 `gpt-5.6-luna`에 낮은 생각 수준(`low`)으로 모델 호출 1회를 보낸다. 접근 권한과 시험 계정은 실행 전에 준비한다. | 실시간 목록에 해당 식별자가 있고 호출 1회에서 응답을 받아야 한다. 후보판·환경·목록과 호출 결과를 기록하고 자격 증명과 대화 내용은 기록하지 않는다. 실패하거나 실행하지 못하면 인수 조건은 열어 둔다. | 미작성·미실시; 문서 작업에서 실시간 접속하지 않음 |
+| **QC-SM-01~05·07·08 직접 확인** | FR-SM.1~.5, NFR-SM.1·.3 | 제품 책임자가 `docs/user-scenarios.md`의 UC-SM-01을 새 사용자·기존 사용자·데스크톱·웹·폰 조건별로 실행 | 각 행의 기대 결과를 만족하고 실패·미실시와 기기·후보판을 기록한다. | 미실시 |
+
+### 원문부터 시험까지 역추적
+
+| 출처 | 사용자 시나리오 | 요구 | 기능 명세 | 시험 |
+|---|---|---|---|---|
+| P1, D2 및 기존 FR-RECOMMENDED-MODELS.1 | UC-SM-01: QC-SM-01~03·07 | FR-RECOMMENDED-MODELS.1, FR-SM.1, NFR-SM.1 | FE-SM-01·02 | UT-SM-01·04·05, IT-SM-01·05, E2E-SM-01~03, QC-SM-01~03·07 |
+| P2·P3, D3 | UC-SM-01: QC-SM-01~04 | FR-SM.2·.3, FR-LLM-LOGOUT.1 | FE-SM-02·03 | UT-SM-01·03, IT-SM-01·05·13, E2E-SM-01~04, QC-SM-01~04 |
+| P1·P5·P6, D1·D4 | UC-SM-01: QC-SM-02·03·05·08 | FR-SLOT.5, FR-LLM-ROLE.7, FR-SM.4·.5, NFR-SM.3 | FE-SM-02·03 | UT-SM-02·03, IT-SM-02~05·08~12·14, E2E-SM-01·03·04, QC-SM-02·03·05·08 |
+| P3, D5 | UC-SM-01: 실패 복구 자동 시험 | FR-SM.6, NFR-SM.2·.3 | FE-SM-03 | IT-SM-03·04·06·07·10 |
+| P1, D6·D7 | UC-SM-01: 실패 복구 자동 시험 | FR-SM.7 | FE-SM-01·03 | IT-SM-03·04·06~09 |
+| P7, D3 | UC-SM-01: QC-SM-01·03·08 | FR-SM.2·.4 | FE-SM-02 | UT-SM-01, IT-SM-05·11·14·15, E2E-SM-01·03·04, QC-SM-01·03·08 |
+| P4 | UC-SM-01 전체 | FR-SM.1~.7, NFR-SM.1~.3 | FE-SM-01~03 | UT-SM-01~05, IT-SM-01~15, E2E-SM-01~04, QC-SM-01~05·07·08 |

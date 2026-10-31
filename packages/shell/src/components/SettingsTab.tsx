@@ -1,3 +1,5 @@
+import { mergeCatalogModels } from "../lib/llm/small-model";
+import { defaultSmallModel, LOCAL_SMALL_MODEL, smallModelChoices } from "../lib/llm/small-model";
 import { WebPushSettings } from "./WebPushSettings";
 import type { EnvironmentAwareness } from "@nextain/naia-os-core/composition";
 import { invoke } from "@tauri-apps/api/core";
@@ -223,6 +225,7 @@ import {
 	SLOT_GROUPS,
 	type SlotId,
 	applyNaiaSlotDefaults,
+	hasSmallModelSetting,
 	deriveGate,
 	effectiveMainRole,
 	effectiveTtsProvider,
@@ -365,41 +368,48 @@ function isVoxCpm2InstallationStatus(
 	);
 }
 
+type ModelThinkingConfig = AppConfig & { mainModelThinkingLevels?: Record<string, ThinkingLevel> };
+const modelThinkingKey = (provider: string, model: string) => JSON.stringify([provider, model]);
+
+function writeMainModelSelection(config: AppConfig, role: LlmRoleConfig, previous: AppConfig = config): AppConfig {
+	const levels = { ...(previous as ModelThinkingConfig).mainModelThinkingLevels };
+	const prior = readConfiguredLlmRoles(previous).main;
+	if (prior?.provider && prior.model) {
+		const level = prior.thinkingLevel ?? previous.thinkingLevel;
+		if (level) levels[modelThinkingKey(prior.provider, prior.model)] = level;
+	}
+	const key = role.provider && role.model ? modelThinkingKey(role.provider, role.model) : "";
+	const level = (key && levels[key]) || (prior?.provider === role.provider && prior?.model === role.model ? prior?.thinkingLevel : undefined);
+	const selection = { ...role };
+	delete selection.thinkingLevel;
+	const updated = writeConfiguredLlmRole(config, "main", { ...selection, ...(level ? { thinkingLevel: level } : {}) });
+	return { ...updated, mainModelThinkingLevels: levels, thinkingLevel: level || "off", enableThinking: Boolean(level && level !== "off") } as ModelThinkingConfig;
+}
+
 function buildNaiaLoginConfig(
 	current: AppConfig | null,
 	nextNaiaKey: string,
 	nextNaiaUserId: string,
+	models?: readonly LlmModelMeta[],
 ): AppConfig {
-	const nextModel =
-		current?.provider === "nextain" && current.model
-			? current.model
-			: getDefaultLlmModel("nextain");
+	const main = current ? effectiveMainRole(current) : undefined;
+	const hasMain = Boolean(main?.provider && main.model);
 	const base: AppConfig = current ?? {
 		provider: "nextain",
-		model: nextModel,
+		model: "",
 		apiKey: "",
 		locale: getLocale(),
 	};
-
-	// FR-SLOT.3 / R2-1: naia 게이트 통과 → 미설정 슬롯에 Gemini 기본값 자동 적용.
-	// applyNaiaSlotDefaults 는 비파괴(사용자가 이미 설정한 슬롯은 보존). §9 #5 모델 문자열 SoT.
 	const withNaiaKey: AppConfig = {
 		...base,
-		provider: "nextain",
-		model: nextModel,
-		apiKey: "",
+		provider: hasMain ? main!.provider as ProviderId : "nextain",
+		model: hasMain ? main!.model! : "",
+		apiKey: base.apiKey ?? "",
 		naiaKey: nextNaiaKey,
 		naiaUserId: nextNaiaUserId || undefined,
 		voice: base.voice ?? getDefaultVoiceForAvatar(base.vrmModel),
 	};
-	// A Settings-tab Naia login is an explicit main-brain selection. Keep the
-	// structured role mirror in lockstep with the top-level provider/model;
-	// otherwise a previous Gemini main role remains authoritative to the Agent.
-	const withNaiaMain = writeConfiguredLlmRole(withNaiaKey, "main", {
-		provider: "nextain",
-		model: nextModel,
-	});
-	return applyNaiaSlotDefaults(withNaiaMain);
+	return applyNaiaSlotDefaults(withNaiaKey, models);
 }
 const BG_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 const BG_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
@@ -791,6 +801,31 @@ export function SettingsTab() {
 	const [claudePreflightStatus, setClaudePreflightStatus] =
 		useState<CodexPreflightStatus>("idle");
 	const existing = loadConfig();
+	const displaySmallRole = (config: AppConfig): LlmRoleConfig => {
+		const roles = readConfiguredLlmRoles(config);
+		return roles.sub?.inherit === "memory" ? roles.memory ?? { inherit: "main" } : roles.sub ?? { inherit: "main" };
+	};
+	const catalogModels = useRef<readonly LlmModelMeta[] | undefined>(undefined);
+	const lastSyncedWorkspace = useRef(getAdkPath());
+	const [smallRole, setSmallRole] = useState<LlmRoleConfig>(() => existing ? displaySmallRole(existing) : { inherit: "main" });
+	const [smallSortMode, setSmallSortMode] = useState<ModelSortMode>("recommended");
+	function applyCatalogSmallDefault(config: AppConfig): AppConfig {
+		if (catalogModels.current === undefined) return config;
+		let updated = config;
+		if ((!config.provider || config.provider === "nextain") && !config.model && !config.llmRoles?.main?.model) {
+			const withDefaults = applyNaiaSlotDefaults(config, catalogModels.current);
+			if (withDefaults.llmRoles?.main?.model) {
+				updated = writeConfiguredLlmRole(updated, "main", withDefaults.llmRoles.main);
+			}
+		}
+		if (!hasSmallModelSetting(updated)) {
+			updated = writeConfiguredLlmRole(updated, "sub", defaultSmallModel(catalogModels.current));
+		}
+		if (updated === config) return config;
+		saveConfig(updated);
+		void writeNaiaConfig(updated as unknown as Record<string, unknown>);
+		return updated;
+	}
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setAvatarBackgroundImage = useAvatarStore((s) => s.setBackgroundImage);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
@@ -832,7 +867,6 @@ export function SettingsTab() {
 			setModel(webModelStatus.model);
 		}
 	}, [provider, webModelStatus.model]);
-	const [configSecretsSettled, setConfigSecretsSettled] = useState(false);
 	// SettingsTab remains mounted while the Shell starts.  The workspace config
 	// hydrates asynchronously, so its initial state can otherwise keep showing
 	// the bootstrap provider even after the agent has loaded the workspace's
@@ -841,8 +875,11 @@ export function SettingsTab() {
 	// their persisted selection rather than being reverted.
 	useEffect(() => {
 		const syncMainBrainFromConfig = () => {
-			const cfg = loadConfig();
-			if (!cfg) return;
+			const loaded = loadConfig();
+			if (!loaded) return;
+			lastSyncedWorkspace.current = getAdkPath();
+			const cfg = applyCatalogSmallDefault(loaded);
+			setSmallRole(displaySmallRole(cfg));
 			const mainRole = effectiveMainRole(cfg);
 			if (!mainRole.provider) return;
 			const nextProvider = mainRole.provider as ProviderId;
@@ -1056,9 +1093,7 @@ export function SettingsTab() {
 	const [environmentTerminalInput, setEnvironmentTerminalInput] = useState(
 		existing?.environmentTerminalInput === true,
 	);
-	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
-		resolveThinkingLevel(existing),
-	);
+	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() => resolveThinkingLevel(existing));
 	const workspaceRoot = existing?.workspaceRoot || getAdkPath() || "";
 	const [voice, setVoice] = useState(
 		existing?.voice ?? getDefaultVoiceForAvatar(existing?.vrmModel),
@@ -1066,7 +1101,7 @@ export function SettingsTab() {
 	const [dynamicModels, setDynamicModels] = useState<
 		Record<string, LlmModelMeta[]>
 	>(getStaticModelsRecord);
-	const [naiaModelsSettled, setNaiaModelsSettled] = useState(false);
+
 	const [modelSortMode, setModelSortMode] = useState<ModelSortMode>(
 		existing?.modelSortMode ?? "recommended",
 	);
@@ -2105,11 +2140,19 @@ export function SettingsTab() {
 			return resolveProvider(matched[1]);
 		};
 
+		const catalogWorkspace = getAdkPath();
 		async function fetchModels() {
 			try {
 				// E1 셸-직결: 게이트웨이 `/v1/pricing` 전체 카탈로그(구 skill_config directToolCall 대체 — 신코어
 				// tool_request 미지원. nextain(vertexai) 가격은 별도 fetchNaiaPricing 가 다룸 → 아래 dedup 로 중복 회피).
 				const models = await fetchGatewayModelCatalog(LAB_GATEWAY_URL);
+				const candidates: LlmModelMeta[] = (models ?? []).filter(m => ["azure", "vertexai", "upstage", "clova", "motif"].includes(m.provider.toLowerCase())).map(m => ({ id: normalizeModelId(m.id), label: m.id, capabilities: ["llm"] }));
+				catalogModels.current = candidates;
+				const current = loadConfig();
+				if ((getAdkPath() === catalogWorkspace || getAdkPath() === lastSyncedWorkspace.current) && current) {
+					const updated = applyCatalogSmallDefault(current);
+					setSmallRole(displaySmallRole(updated));
+				}
 				if (models && models.length > 0) {
 					const grouped = Object.fromEntries(
 						Object.entries(getStaticModelsRecord()).map(([k, v]) => [
@@ -2121,10 +2164,7 @@ export function SettingsTab() {
 					for (const m of models) {
 						if (!m || typeof m.id !== "string") continue;
 						const modelId = normalizeModelId(m.id);
-						const priceStr = m.price
-							? ` ($${m.price.input ?? "?"} / $${m.price.output ?? "?"})`
-							: "";
-						const label = `${m.name || modelId}${priceStr}`;
+						const label = m.name || modelId;
 
 						const pushModel = (key: string) => {
 							// #602: 제거된 공급자로 매핑되면 grouped[key] 가 없으므로 건너뛴다.
@@ -2134,6 +2174,7 @@ export function SettingsTab() {
 									id: modelId,
 									label,
 									capabilities: ["llm"] as const,
+									...(m.price?.input != null && m.price?.output != null ? { pricing: [m.price.input, m.price.output] as [number, number] } : {}),
 								});
 							}
 						};
@@ -2161,13 +2202,16 @@ export function SettingsTab() {
 					setDynamicModels((prev) => ({
 						...prev,
 						...grouped,
-						...(prev.nextain?.some((m) => m.pricing !== undefined)
-							? { nextain: prev.nextain }
-							: {}),
+						nextain: mergeCatalogModels(grouped.nextain ?? [], prev.nextain ?? []),
 					}));
 				}
 			} catch {
-				// Fallback to static registry models
+				catalogModels.current = [];
+				const current = loadConfig();
+				if ((getAdkPath() === catalogWorkspace || getAdkPath() === lastSyncedWorkspace.current) && current) {
+					const updated = applyCatalogSmallDefault(current);
+					setSmallRole(displaySmallRole(updated));
+				}
 			}
 		}
 		fetchModels();
@@ -2308,7 +2352,7 @@ export function SettingsTab() {
 				const mainRole: LlmRoleConfig = {
 					provider: "ollama",
 					model: snapshot.tag,
-					...(persistedMainRole?.provider === "ollama" &&
+										...(persistedMainRole?.provider === "ollama" &&
 					persistedMainRole.credentialRef !== undefined
 						? { credentialRef: persistedMainRole.credentialRef }
 						: {}),
@@ -2317,11 +2361,12 @@ export function SettingsTab() {
 						? { baseUrl: persistedMainRole.baseUrl }
 						: {}),
 				};
-				const nextSelection = writeConfiguredLlmRole(
+				const nextSelection = writeMainModelSelection(
 					legacySelection as unknown as AppConfig,
-					"main",
 					mainRole,
+					persistedConfig ?? undefined,
 				);
+				setThinkingLevel(resolveThinkingLevel(nextSelection));
 				saveConfig(
 					nextSelection as unknown as Parameters<typeof saveConfig>[0],
 				);
@@ -2558,12 +2603,8 @@ export function SettingsTab() {
 	// Runs when provider switches to "nextain" so the displayed price always
 	// matches what the gateway actually charges.
 	useEffect(() => {
-		if (provider !== "nextain") {
-			setNaiaModelsSettled(false);
-			return;
-		}
+		if (provider !== "nextain") return;
 		let active = true;
-		setNaiaModelsSettled(false);
 		// Pricing (DB SoT) + capability catalog (#365: gateway SoT for caps).
 		// If the catalog fetch fails, models keep their static capabilities.
 		Promise.all([
@@ -2579,13 +2620,10 @@ export function SettingsTab() {
 				setDynamicModels((prev) => ({
 					...prev,
 					nextain: applyNaiaModelMetadata(
-						liveModels ?? prev.nextain ?? [],
+						mergeCatalogModels(prev.nextain ?? [], liveModels ?? []),
 						metadata,
 					),
 				}));
-			})
-			.finally(() => {
-				if (active) setNaiaModelsSettled(true);
 			});
 		return () => {
 			active = false;
@@ -2790,10 +2828,7 @@ export function SettingsTab() {
 					setModel(cfg.model || getDefaultLlmModel("nextain"));
 				}
 			})
-			.catch(() => {})
-			.finally(() => {
-				if (!cancelled) setConfigSecretsSettled(true);
-			});
+			.catch(() => {});
 		return () => {
 			cancelled = true;
 		};
@@ -2991,6 +3026,7 @@ export function SettingsTab() {
 						loadConfig(),
 						nextNaiaKey,
 						nextNaiaUserId,
+						catalogModels.current,
 					);
 					await saveSecretKeyAtPath(
 						"naiaKey",
@@ -3029,7 +3065,7 @@ export function SettingsTab() {
 
 					setNaiaKeyState(nextNaiaKey);
 					setNaiaUserIdState(nextNaiaUserId);
-					setProvider("nextain");
+					setProvider(nextConfig.provider);
 					setModel(nextConfig.model);
 					setApiKey("");
 					setSecureNaiaCredentialReady(true);
@@ -3219,13 +3255,17 @@ export function SettingsTab() {
 		} as unknown as Record<string, unknown>);
 	}
 
-	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high"];
+	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high", "xhigh"];
 
 	function handleThinkingChange(level: ThinkingLevel) {
 		setThinkingLevel(level);
+		const cfg = loadConfig();
+		const main = cfg ? readConfiguredLlmRoles(cfg).main : undefined;
 		persistConfig({
 			thinkingLevel: level,
 			enableThinking: level !== "off",
+			...(cfg && main ? { llmRoles: { ...cfg.llmRoles, main: { ...main, thinkingLevel: level } },
+				...(main.provider && main.model ? { mainModelThinkingLevels: { ...(cfg as ModelThinkingConfig).mainModelThinkingLevels, [modelThinkingKey(main.provider, main.model)]: level } } : {}) } : {}),
 		});
 	}
 
@@ -3312,11 +3352,12 @@ export function SettingsTab() {
 			id,
 			selectedModel,
 		);
-		const provSel = writeConfiguredLlmRole(
+		const provSel = writeMainModelSelection(
 			legacySelection as unknown as AppConfig,
-			"main",
 			{ provider: id, model: selectedModel },
+			loadConfig() ?? undefined,
 		);
+		setThinkingLevel(resolveThinkingLevel(provSel));
 		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
 		const write = writeNaiaConfig(
 			provSel as unknown as Record<string, unknown>,
@@ -3869,7 +3910,7 @@ export function SettingsTab() {
 		const mainRole: LlmRoleConfig = {
 			provider,
 			model: savedModelId,
-			...(mainProviderUnchanged &&
+						...(mainProviderUnchanged &&
 			persistedMainRole?.credentialRef !== undefined
 				? { credentialRef: persistedMainRole.credentialRef }
 				: {}),
@@ -3879,7 +3920,10 @@ export function SettingsTab() {
 		};
 		// 저장은 main 역할만 정본으로 갱신한다. 보조·전문가·기억 역할 편집기는
 		// 제거됐고(에픽 #589), 옛 config 의 해당 역할 필드는 roles.ts 가 무손실로 보존한다.
-		newConfig = writeConfiguredLlmRole(newConfig, "main", mainRole);
+		newConfig = writeMainModelSelection(newConfig, mainRole, persistedConfig ?? newConfig);
+		if (persistedConfig?.llmRoles?.sub || persistedConfig?.subLlmProvider) {
+			newConfig = writeConfiguredLlmRole(newConfig, "sub", readConfiguredLlmRoles(persistedConfig).sub!);
+		}
 		try {
 			await saveConfigSecure(newConfig);
 			// Agent reload resolves credentials from its OS-backed store. Commit all
@@ -4058,46 +4102,6 @@ export function SettingsTab() {
 	);
 	const currentOllamaPullError =
 		ollamaPullError ?? ollamaPullSnapshot?.error ?? null;
-	const shouldReplaceUnavailableSelectedModel =
-		provider === "nextain" && Boolean(activeBrainModel) && !hasSelectedModel;
-	useEffect(() => {
-		if (
-			provider === "nextain" &&
-			configSecretsSettled &&
-			naiaModelsSettled &&
-			shouldReplaceUnavailableSelectedModel &&
-			displayedProviderModels[0]
-		) {
-			const replacement = displayedProviderModels[0];
-			setModel(replacement.id);
-			if (naiaKey) {
-				const legacySelection = applyModelSelectionToConfig(
-					loadConfig() as Record<string, unknown> | null,
-					provider,
-					replacement.id,
-				);
-				const nextSelection = writeConfiguredLlmRole(
-					legacySelection as unknown as AppConfig,
-					"main",
-					{ provider, model: replacement.id },
-				);
-				saveConfig(
-					nextSelection as unknown as Parameters<typeof saveConfig>[0],
-				);
-				void writeNaiaConfig(
-					nextSelection as unknown as Record<string, unknown>,
-				);
-			}
-		}
-	}, [
-		provider,
-		model,
-		naiaKey,
-		configSecretsSettled,
-		naiaModelsSettled,
-		shouldReplaceUnavailableSelectedModel,
-		displayedProviderModels,
-	]);
 	const isSelectedOmni =
 		selectedModelMeta?.capabilities.includes("omni") ?? false;
 	const modelIdLower = activeBrainModel?.toLowerCase() ?? "";
@@ -4225,7 +4229,7 @@ export function SettingsTab() {
 		}
 		const current = loadConfig();
 		if (!current) return;
-		const next = applyNaiaSlotDefaults(current);
+		const next = applyNaiaSlotDefaults(current, catalogModels.current);
 		saveConfig(next);
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 		setProvider(next.provider);
@@ -6181,8 +6185,9 @@ export function SettingsTab() {
 							</div>
 						</div>
 					)}
+					<div className="settings-model-roles">
 					<div className="settings-field">
-						<label htmlFor="model-select">{t("settings.model")}</label>
+						<label htmlFor="model-select">{t("settings.mainModel")}</label>
 						{provider === "nextain" && !hideModelPicker ? (
 							<>
 								<label htmlFor="model-sort-mode">
@@ -6238,7 +6243,7 @@ export function SettingsTab() {
 											(candidate) => !candidate.capabilities.includes("asr"),
 										)
 										.map((candidate) => (
-											<option key={candidate.id} value={candidate.id} label={formatModelLabel(candidate)} />
+											<option key={candidate.id} value={candidate.id} label={formatModelLabel(candidate, t)} />
 										))}
 								</datalist>
 							</>
@@ -6246,7 +6251,7 @@ export function SettingsTab() {
 							// 모델이 하나뿐 → 선택기 대신 그 모델을 정적 텍스트로만 보여 준다.
 							<div id="model-select" data-testid="model-single">
 								{singleProviderModel
-									? formatModelLabel(singleProviderModel)
+									? formatModelLabel(singleProviderModel, t)
 									: (selectedModelMeta?.label ?? model)}
 							</div>
 						) : (
@@ -6290,7 +6295,7 @@ export function SettingsTab() {
 										const mainRole: LlmRoleConfig = {
 											provider,
 											model: nextModel,
-											...(persistedMainRole?.provider === provider &&
+														...(persistedMainRole?.provider === provider &&
 											persistedMainRole.credentialRef !== undefined
 												? { credentialRef: persistedMainRole.credentialRef }
 												: {}),
@@ -6299,11 +6304,12 @@ export function SettingsTab() {
 												? { baseUrl: persistedMainRole.baseUrl }
 												: {}),
 										};
-										const nextSel = writeConfiguredLlmRole(
+										const nextSel = writeMainModelSelection(
 											legacySelection as unknown as AppConfig,
-											"main",
 											mainRole,
+											persistedConfig ?? undefined,
 										);
+										setThinkingLevel(resolveThinkingLevel(nextSel));
 										if (isWebMode()) nextSel.webAutoDefaultModel = false;
 										saveConfig(
 											nextSel as unknown as Parameters<typeof saveConfig>[0],
@@ -6333,15 +6339,15 @@ export function SettingsTab() {
 									<option value="__custom__">{`${activeBrainModel}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
 								) : null}
 								{displayedProviderModels
-									.filter((m) => !m.capabilities.includes("asr"))
+									.filter((m) => !m.capabilities.includes("asr") && (modelSortMode !== "recommended" || (!/nano/i.test(m.id) && m.id !== "solar-mini") || m.id === activeBrainModel))
 									.map((m) => (
 										<option key={m.id} value={m.id}>
-											{formatModelLabel(m)}
+											{m.label}
 										</option>
 									))}
 							</select>
 						)}
-						<div className="settings-hint">
+						<div className="settings-hint settings-model-selected-label">
 							{provider === "nextain" && selectedModelMeta?.pricing ? (
 								<span style={{ color: "var(--accent-color, #64a0ff)" }}>
 									{t("settings.pricingPerMillionTokens")}:{" "}
@@ -6373,6 +6379,51 @@ export function SettingsTab() {
 								(selectedModelMeta?.label ?? activeBrainModel)
 							)}
 						</div>
+					</div>
+					<div className="settings-field">
+						<label htmlFor="small-model-select">{t("settings.smallModel")}</label>
+						<label htmlFor="small-model-sort">{t("settings.modelSort")}</label>
+						<select id="small-model-sort" value={smallSortMode} onChange={(event) => setSmallSortMode(event.target.value as ModelSortMode)}>
+							<option value="recommended">{t("settings.modelSortRecommended")}</option>
+							<option value="price">{t("settings.modelSortPrice")}</option>
+							<option value="performance">{t("settings.modelSortPerformance")}</option>
+						</select>
+						<select id="small-model-select" data-testid="small-model-select"
+							value={smallRole.inherit ? "__inherit__" : isWebMode() && smallRole.provider === "ollama" ? "__desktop_local__" : smallRole.provider && smallRole.model ? JSON.stringify([smallRole.provider, smallRole.model]) : "__inherit__"}
+							onChange={(event) => {
+								const selected = event.target.value;
+								if (selected === "__desktop_local__") return;
+								const [selectedProvider, selectedModel] = selected === "__inherit__" ? ["", ""] : JSON.parse(selected) as [ProviderId, string];
+								const choice: LlmRoleConfig = selected === "__inherit__" ? { inherit: "main" } : {
+									provider: selectedProvider, model: selectedModel,
+									...(smallRole.provider === selectedProvider && smallRole.baseUrl ? { baseUrl: smallRole.baseUrl } : selectedProvider === "ollama" ? { baseUrl: ollamaHost } : selectedProvider === "vllm" ? { baseUrl: vllmHost } : {}),
+									...(smallRole.provider === selectedProvider && smallRole.credentialRef ? { credentialRef: smallRole.credentialRef } : {}),
+									...(selectedProvider === "nextain" && /luna/i.test(selectedModel) ? { thinkingLevel: "low" as const } : {}),
+								};
+								setSmallRole(choice);
+								const current = loadConfig();
+								if (current) {
+									const updated = writeConfiguredLlmRole(current, "sub", choice);
+									saveConfig(updated);
+									void writeNaiaConfig(updated as unknown as Record<string, unknown>);
+								}
+							}}>
+							<option value="__inherit__">{t("settings.smallModelInherit")}</option>
+							{isWebMode() && smallRole.provider === "ollama" && <option value="__desktop_local__" disabled>{t("settings.smallModelDesktopSelected")}</option>}
+							{!smallRole.inherit && smallRole.provider && smallRole.model && !(isWebMode() && smallRole.provider === "ollama") && !smallModelChoices(dynamicModels[smallRole.provider] ?? []).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini").some(m => m.id === smallRole.model) && !(smallRole.provider === "ollama" && smallRole.model === LOCAL_SMALL_MODEL && !isWebMode()) && <option value={JSON.stringify([smallRole.provider, smallRole.model])}>{smallRole.provider}: {smallRole.model}</option>}
+							{Object.entries(dynamicModels).filter(([id]) => id === "nextain" || (!isWebMode() && ["ollama", "vllm", "codex", "grok", "claude-code-cli"].includes(id))).map(([id, models]) => <optgroup key={id} label={getLlmProvider(id)?.name ?? id}>
+								{sortModels(smallModelChoices(models).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini"), smallSortMode).map(m => <option key={m.id} value={JSON.stringify([id, m.id])}>{m.label}</option>)}
+							</optgroup>)}
+							{!isWebMode() && !(dynamicModels.ollama ?? []).some(m => m.id === LOCAL_SMALL_MODEL) && <option value={JSON.stringify(["ollama", LOCAL_SMALL_MODEL])}>Qwen 3.5 4B ({t("settings.smallModelLocal")})</option>}
+						</select>
+						<div className="settings-hint settings-model-selected-label" data-testid="small-model-selected-label">
+							{smallRole.inherit ? t("settings.smallModelInherit") : isWebMode() && smallRole.provider === "ollama" ? t("settings.smallModelDesktopSelected") : (() => {
+								const meta = (dynamicModels[smallRole.provider ?? ""] ?? []).find((item) => item.id === smallRole.model);
+								return meta ? formatModelLabel(meta, t) : `${smallRole.provider ?? ""}: ${smallRole.model ?? ""}`;
+							})()}
+						</div>
+						{!isWebMode() && <div className="settings-hint">{t("settings.smallModelLocalHint")}</div>}
+					</div>
 					</div>
 
 					{/* Omni model voice selection */}
@@ -6474,7 +6525,7 @@ export function SettingsTab() {
 								marginTop: "4px",
 							}}
 						>
-							{isWebMode()
+							{isWebMode() && provider === "webllm"
 								? (["off", "on"] as const).map((webStage) => {
 										const isOff = webStage === "off";
 										const active = isOff
@@ -6546,7 +6597,7 @@ export function SettingsTab() {
 												? t("settings.thinkingLevelOff")
 												: level === "low"
 													? t("settings.thinkingLevelLow")
-													: t("settings.thinkingLevelHigh");
+													: level === "xhigh" ? "xhigh" : t("settings.thinkingLevelHigh");
 										return (
 											<button
 												key={level}

@@ -58,8 +58,9 @@ export function useAgentAuthSync(
 	useEffect(() => {
 		if (showAdkSetup || showOnboarding || !configHydrated) return;
 		const preMigrate = loadConfig();
-		// Older web workspaces have no selection provenance; preserve their choice.
-		const allowMigration = !isWebMode() || preMigrate?.webAutoDefaultModel === true;
+		// Only a recorded automatic default may be migrated; an unmarked legacy
+		// or structured choice has no reliable provenance and must be preserved.
+		const allowMigration = preMigrate?.webAutoDefaultModel === true;
 		const main = preMigrate?.llmRoles?.main;
 		let migration: Promise<void> = Promise.resolve();
 		if (

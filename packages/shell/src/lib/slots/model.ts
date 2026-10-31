@@ -9,7 +9,8 @@ import {
 	resolveEffectiveLlmRoles,
 	writeConfiguredLlmRole,
 } from "../llm/roles";
-import { NAIA_SMALL_LLM_DEFAULT } from "../llm/surfacing";
+import { defaultMainModel, defaultSmallModel } from "../llm/small-model";
+import type { LlmModelMeta } from "../llm/types";
 import type { ProviderId } from "../types";
 
 // ── FR-SLOT.2: 6 슬롯 (순서 권위) ──
@@ -300,8 +301,8 @@ function isMainSet(c: AppConfig): boolean {
 	const main = c.llmRoles?.main;
 	return !!main && !main.inherit && !!main.provider && !!main.model;
 }
-function isSubSet(c: AppConfig): boolean {
-	return c.llmRoles?.sub !== undefined || !!c.subLlmProvider;
+export function hasSmallModelSetting(c: AppConfig): boolean {
+	return c.llmRoles?.sub !== undefined || !!(c.subLlmProvider || c.subLlmModel || c.subLlmBaseUrl || c.subLlmCredentialRef || c.memoryLlmProvider || c.memoryLlmModel || c.memoryLlmBaseUrl || c.memoryLlmCredentialRef) || !!(c.llmRoles?.memory && !c.llmRoles.memory.inherit);
 }
 function isEmbeddingSet(c: AppConfig): boolean {
 	return !!c.memoryEmbeddingProvider && c.memoryEmbeddingProvider !== "none";
@@ -320,29 +321,22 @@ function isTtsSet(c: AppConfig): boolean {
  * 비파괴·idempotent — 이미 설정된 슬롯은 보존(사용자 override 우선).
  * 게이트 판단(deriveGateFromConfig)은 호출처 책임 — 본 함수는 순수 기본값 적용만.
  */
-export function applyNaiaSlotDefaults(config: AppConfig): AppConfig {
+export function applyNaiaSlotDefaults(config: AppConfig, models?: readonly LlmModelMeta[]): AppConfig {
 	let next = config;
 	if (!isMainSet(next)) {
 		// Preserve a valid legacy top-level selection while repairing its
 		// structured mirror. Fresh-login configs can carry llmRoles.main.inherit
 		// from the pre-login snapshot; the Agent treats that as incomplete even
 		// when provider/model are present at the top level.
-		next = writeSlot(next, "main", {
-			provider: next.provider || NAIA_SLOT_DEFAULTS.main.provider,
-			model: next.model || NAIA_SLOT_DEFAULTS.main.model,
-		});
+		if (next.provider && next.model) {
+			next = writeSlot(next, "main", { provider: next.provider, model: next.model });
+		} else if (models) {
+			const main = defaultMainModel(models);
+			if (main) next = writeConfiguredLlmRole(next, "main", main);
+		}
 	}
-	if (!isSubSet(next)) {
-		next = writeSlot(next, "sub", NAIA_SLOT_DEFAULTS.sub);
-	}
-	if (
-		(!config.llmRoles?.memory || !!config.llmRoles.memory.inherit) &&
-		(!config.memoryLlmProvider || config.memoryLlmProvider === "none")
-	) {
-		next = writeConfiguredLlmRole(next, "memory", {
-			provider: "nextain",
-			model: NAIA_SMALL_LLM_DEFAULT.model,
-		});
+	if (models && !hasSmallModelSetting(next)) {
+		next = writeConfiguredLlmRole(next, "sub", defaultSmallModel(models));
 	}
 	if (!isEmbeddingSet(next)) {
 		next = writeSlot(next, "embedding", NAIA_SLOT_DEFAULTS.embedding);

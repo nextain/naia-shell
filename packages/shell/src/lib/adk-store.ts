@@ -329,6 +329,17 @@ function stripForAgent(
 			DERIVED_AGENT_ENV_KEYS.has(k)
 		)
 			continue;
+		if (k === "mainModelThinkingLevels" && v && typeof v === "object" && !Array.isArray(v)) {
+			const levels: Record<string, string> = {};
+			for (const [key, value] of Object.entries(v)) {
+				try {
+					const pair: unknown = JSON.parse(key);
+					if (Array.isArray(pair) && pair.length === 2 && pair.every(part => typeof part === "string" && part.length > 0 && part.length <= 300 && !/[\u0000-\u001f]/.test(part)) && typeof value === "string" && ["off", "low", "high", "xhigh"].includes(value)) levels[JSON.stringify(pair)] = value;
+				} catch { /* Invalid keys are not configuration. */ }
+			}
+			out[k] = levels;
+			continue;
+		}
 		if (k === "llmRoles" && v && typeof v === "object" && !Array.isArray(v)) {
 			const roles: Record<string, unknown> = {};
 			for (const role of ["expert", "main", "sub", "memory"]) {
@@ -345,6 +356,9 @@ function stripForAgent(
 				]) {
 					if (typeof source[field] === "string" && source[field])
 						clean[field] = source[field] as string;
+				}
+				if (typeof source.thinkingLevel === "string" && ["off", "low", "high", "xhigh"].includes(source.thinkingLevel)) {
+					clean.thinkingLevel = source.thinkingLevel;
 				}
 				if (Object.keys(clean).length) roles[role] = clean;
 			}

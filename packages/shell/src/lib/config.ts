@@ -16,7 +16,6 @@ import {
 	markFirstAdkBinding,
 	saveSecretKeyAtPath,
 } from "./secure-store";
-import { NAIA_SLOT_DEFAULTS } from "./slots/model";
 import type { ProviderId } from "./types";
 import {
 	NAIA_INSTANCE_URLS,
@@ -240,7 +239,7 @@ export type TtsProviderId =
 
 export type AppPosition = "left" | "right" | "bottom";
 
-export type ThinkingLevel = "off" | "low" | "high";
+export type ThinkingLevel = "off" | "low" | "high" | "xhigh";
 
 /**
  * 생각 세기 마이그레이션 및 정규화 (#709 / FR-CHAT-THINKING.4)
@@ -248,12 +247,15 @@ export type ThinkingLevel = "off" | "low" | "high";
  * - 부재/무효 시 enableThinking === true 이면 "low", 그 밖에는 "off"
  */
 export function resolveThinkingLevel(
-	config?: Partial<Pick<AppConfig, "thinkingLevel" | "enableThinking">> | null,
+	config?: Partial<Pick<AppConfig, "thinkingLevel" | "enableThinking" | "llmRoles">> | null,
 ): ThinkingLevel {
+	const roleLevel = config?.llmRoles?.main?.thinkingLevel;
+	if (roleLevel === "off" || roleLevel === "low" || roleLevel === "high" || roleLevel === "xhigh") return roleLevel;
 	if (
 		config?.thinkingLevel === "off" ||
 		config?.thinkingLevel === "low" ||
-		config?.thinkingLevel === "high"
+		config?.thinkingLevel === "high" ||
+		config?.thinkingLevel === "xhigh"
 	) {
 		return config.thinkingLevel;
 	}
@@ -271,6 +273,7 @@ export function resolveWebThinkingEnabled(
 	if (
 		config?.thinkingLevel === "low" ||
 		config?.thinkingLevel === "high" ||
+		config?.thinkingLevel === "xhigh" ||
 		(config as { thinkingLevel?: unknown } | null)?.thinkingLevel === "on"
 	) {
 		return true;
@@ -281,6 +284,7 @@ export function resolveWebThinkingEnabled(
 /** Development tiers are expert/main/sub; memory remains orthogonal. */
 export type LlmRoleId = "expert" | "main" | "sub" | "memory";
 export interface LlmRoleConfig {
+	thinkingLevel?: ThinkingLevel;
 	provider?: ProviderId;
 	model?: string;
 	baseUrl?: string;
@@ -879,8 +883,8 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 	// ADK remains the authority; an empty ADK still returns null and cannot inherit
 	// another ADK's credential.
 	const config: AppConfig = publicConfig ?? {
-		provider: NAIA_SLOT_DEFAULTS.main.provider,
-		model: NAIA_SLOT_DEFAULTS.main.model,
+		provider: "",
+		model: "",
 		apiKey: "",
 	};
 	for (const key of SECRET_KEYS) {

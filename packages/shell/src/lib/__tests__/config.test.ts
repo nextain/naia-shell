@@ -347,6 +347,9 @@ describe("legacy NVA runtime migration on save", () => {
 });
 
 describe("resolveThinkingLevel migration (#709 / FR-CHAT-THINKING.4)", () => {
+	it("UT-SM-04 sends the chosen main role xhigh", () => {
+		expect(resolveThinkingLevel({ llmRoles: { main: { thinkingLevel: "xhigh" } } })).toBe("xhigh");
+	});
 	it("defaults to off when config is null or undefined or empty", () => {
 		expect(resolveThinkingLevel(null)).toBe("off");
 		expect(resolveThinkingLevel(undefined)).toBe("off");

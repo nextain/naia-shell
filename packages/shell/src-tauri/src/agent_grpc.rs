@@ -427,22 +427,19 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
             .map(|x| x.to_string()),
         enable_tools: v.get("enableTools").and_then(|x| x.as_bool()),
         enable_thinking: v.get("enableThinking").and_then(|x| x.as_bool()),
-        thinking: v
-            .get("thinking")
-            .and_then(|t| t.get("level"))
-            .and_then(|l| l.as_str())
-            .and_then(|s| match s {
-                "off" => Some(pb::ThinkingRequest {
-                    level: pb::ThinkingLevel::Off as i32,
-                }),
-                "low" => Some(pb::ThinkingRequest {
-                    level: pb::ThinkingLevel::Low as i32,
-                }),
-                "high" => Some(pb::ThinkingRequest {
-                    level: pb::ThinkingLevel::High as i32,
-                }),
-                _ => None,
-            }),
+        thinking: Some(pb::ThinkingRequest {
+            level: match v
+                .get("thinking")
+                .and_then(|t| t.get("level"))
+                .and_then(|l| l.as_str())
+            {
+                Some("off") => pb::ThinkingLevel::Off,
+                Some("low") => pb::ThinkingLevel::Low,
+                Some("high") => pb::ThinkingLevel::High,
+                Some("xhigh") => pb::ThinkingLevel::Xhigh,
+                _ => pb::ThinkingLevel::Unspecified,
+            } as i32,
+        }),
         gateway_url: s("gatewayUrl"),
         disabled_skills: v
             .get("disabledSkills")
@@ -824,6 +821,39 @@ impl AgentGrpc {
 #[cfg(test)]
 mod transcode_tests {
     use super::*;
+
+    #[test]
+    fn ut_sm_shell_think_01() {
+        for (level, expected) in [
+            (Some("off"), 1),
+            (Some("low"), 2),
+            (Some("high"), 3),
+            (Some("xhigh"), 4),
+            (None, 0),
+            (Some("unknown"), 0),
+        ] {
+            for legacy in [None, Some(false), Some(true)] {
+                let mut input = serde_json::json!({"requestId": "thinking-test", "messages": []});
+                if let Some(level) = level {
+                    input["thinking"] = serde_json::json!({"level": level});
+                }
+                if let Some(legacy) = legacy {
+                    input["enableThinking"] = serde_json::json!(legacy);
+                }
+                let request = json_to_chat_request(&input);
+                assert_eq!(
+                    request
+                        .thinking
+                        .as_ref()
+                        .expect("thinking must be encoded")
+                        .level,
+                    expected,
+                    "level={level:?}"
+                );
+                assert_eq!(request.enable_thinking, legacy);
+            }
+        }
+    }
 
     #[test]
     fn wire_v1_json_to_proto_preserves_nested_input() {
@@ -1427,27 +1457,30 @@ mod live_tests {
             Some(ThinkingLevel::High as i32)
         );
 
-        // none (missing)
-        assert_eq!(parse_level(serde_json::json!({})), None);
+        // Missing and unknown values encode UNSPECIFIED.
+        assert_eq!(
+            parse_level(serde_json::json!({})),
+            Some(ThinkingLevel::Unspecified as i32)
+        );
 
         // invalid value
         assert_eq!(
             parse_level(serde_json::json!({
                 "thinking": { "level": "auto" }
             })),
-            None
+            Some(ThinkingLevel::Unspecified as i32)
         );
         assert_eq!(
             parse_level(serde_json::json!({
                 "thinking": { "level": "unknown" }
             })),
-            None
+            Some(ThinkingLevel::Unspecified as i32)
         );
         assert_eq!(
             parse_level(serde_json::json!({
                 "thinking": "not an object"
             })),
-            None
+            Some(ThinkingLevel::Unspecified as i32)
         );
     }
 }

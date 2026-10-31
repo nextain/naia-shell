@@ -3,6 +3,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
@@ -90,7 +91,7 @@ describe("paired-agent resolver integration", () => {
 
 	it("selects one valid checkout and rejects invalid or dirty siblings", () => {
 		const fixtureRoot = mkdtempSync(
-			join(process.cwd(), ".agent-pairing-fixture-"),
+			join(realpathSync(tmpdir()), "agent-pairing-fixture-"),
 		);
 		const checkoutNames = [
 			"a-valid",
@@ -123,7 +124,8 @@ describe("paired-agent resolver integration", () => {
 				return [name, root];
 			}),
 		);
-		const temporaryCheckout = mkdtempSync(join(tmpdir(), "naia-agent-pairing-"));
+		mkdirSync(join(fixtureRoot, "tmp"));
+		const temporaryCheckout = mkdtempSync(join(fixtureRoot, "tmp", "naia-agent-pairing-"));
 		createCheckout(temporaryCheckout, "temporary");
 
 		const statuses = new Map([
@@ -267,7 +269,7 @@ describe("ensurePairedAgentCheckout", () => {
 
 describe("ensurePairedAgentCheckout memory and install preparation", () => {
 	function createFixture() {
-		const root = mkdtempSync(join(process.cwd(), ".agent-pairing-prep-"));
+		const root = mkdtempSync(join(realpathSync(tmpdir()), "agent-pairing-prep-"));
 		const agentDir = join(root, "agent");
 		const memoryDir = join(root, "naia-memory");
 		const installedMemoryDir = join(
@@ -396,6 +398,25 @@ describe("ensurePairedAgentCheckout memory and install preparation", () => {
 
 		return { options, gitCalls, pnpmCalls, state };
 	}
+
+	it("IT-SM-SHELL-PAIR-01 rejects mismatched agent, proto and memory before connection", () => {
+		const fixture = createFixture();
+		try {
+			const { options } = makeHarness(fixture, { memoryHead: REQUIRED_MEMORY_COMMIT });
+			const explicit = { ...options, explicit: fixture.agentDir };
+			expect(ensurePairedAgentCheckout(explicit).pairedAgent).toBe(fixture.agentDir);
+			expect(() => ensurePairedAgentCheckout({ ...explicit, hashProto: () => "bad" })).toThrow();
+			const readGit = options.gitOutput;
+			expect(() => ensurePairedAgentCheckout({ ...explicit, gitOutput: (dir, args) =>
+				resolve(dir) === resolve(fixture.agentDir) && args[0] === "rev-parse" ? "bad" : readGit(dir, args),
+			})).toThrow();
+			expect(() => ensurePairedAgentCheckout({ ...explicit, gitOutput: (dir, args) =>
+				resolve(dir) === resolve(fixture.memoryDir) && args[0] === "rev-parse" && args[1] === "HEAD" ? "bad" : readGit(dir, args),
+			})).toThrow();
+		} finally {
+			rmSync(fixture.root, { recursive: true, force: true });
+		}
+	});
 
 	it("a. memory already at pin, installed digest new", () => {
 		const fixture = createFixture();

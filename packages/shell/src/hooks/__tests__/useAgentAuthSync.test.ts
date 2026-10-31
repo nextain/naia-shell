@@ -66,6 +66,17 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		mocks.loadConfigWithSecrets.mockResolvedValue(null);
 	});
 
+	it.each([
+		["structured Terra", { provider: "nextain", model: "gpt-6.1-terra", llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } } }],
+		["legacy flat", { provider: "nextain", model: "retired-flat-model" }],
+	])("IT-SM-05 preserves an unmarked %s even when absent from the catalog", async (_name, config) => {
+		mocks.loadConfig.mockReturnValue(config);
+		mocks.fetchNaiaModelMetadata.mockResolvedValue(new Map([["gpt-5.6-luna", { capabilities: ["llm"], operationalStatus: "live" }]]));
+		renderHook(() => useAgentAuthSync(false, false, true));
+		await vi.waitFor(() => expect(mocks.loadConfigWithSecrets).toHaveBeenCalled());
+		expect(mocks.saveConfig).not.toHaveBeenCalled();
+	});
+
 	it("preserves an unmarked web selection and migrates a marked default", async () => {
 		mocks.isWebMode.mockReturnValue(true);
 		const config = { provider: "nextain", model: "gpt-6.1-terra" };
@@ -100,6 +111,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 	it("still migrates a genuinely retired flat model", async () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
+			webAutoDefaultModel: true,
 			model: "retired-flat-model",
 		});
 		mocks.fetchNaiaModelMetadata.mockResolvedValue(
@@ -129,6 +141,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		);
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
+			webAutoDefaultModel: true,
 			model: "gpt-6.1-terra",
 			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
 		});
@@ -153,6 +166,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 	it("keeps a gateway-served flat main model (#707)", async () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
+			webAutoDefaultModel: true,
 			model: "gpt-5.4-nano",
 		});
 		mocks.fetchNaiaModelMetadata.mockResolvedValue(
@@ -179,6 +193,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 	it("migrates a retired id only to a live recommendation", async () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
+			webAutoDefaultModel: true,
 			model: "grok-4.3",
 		});
 		mocks.fetchNaiaModelMetadata.mockResolvedValue(
@@ -197,6 +212,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 	it("leaves the model alone when the gateway catalog is unavailable", async () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
+			webAutoDefaultModel: true,
 			model: "retired-flat-model",
 		});
 		mocks.fetchNaiaModelMetadata.mockResolvedValue(null);
@@ -214,6 +230,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		mocks.loadConfig
 			.mockReturnValueOnce({
 				provider: "nextain",
+			webAutoDefaultModel: true,
 				model: "retired-flat-model",
 			})
 			.mockReturnValue({
@@ -234,6 +251,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 	it("leaves the model alone when the catalog fetch throws", async () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
+			webAutoDefaultModel: true,
 			model: "retired-flat-model",
 		});
 		mocks.fetchNaiaModelMetadata.mockRejectedValue(new Error("offline"));
@@ -250,6 +268,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 	it("does not save when the ADK changed during the catalog fetch", async () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
+			webAutoDefaultModel: true,
 			model: "retired-flat-model",
 		});
 		mocks.getAdkPath.mockImplementation(() =>

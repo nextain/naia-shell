@@ -810,9 +810,9 @@ When a development task is delegated, Shell hands the saved workspace configurat
 
 ### UC-RECOMMENDED-MODELS-ICON-WEB-PATH
 
-The user compares available account models in recommended, price, or performance order; a new account prefers Terra 6.1 with xhigh reasoning when served, otherwise the next served recommendation. Local Qwen models are explicitly selected and show the requested PC memory guidance. Cost-saving recommendations are labelled. The app uses the transparent three-dot mark. In a browser, activating the file tree reveals the ADK workspace path; desktop behavior is preserved.
+사용자는 계정에서 쓸 수 있는 모델을 추천·가격·성능 순서로 비교한다. 새 계정의 메인 기본값은 Terra 6.1이 제공되면 가장 높은 생각 수준(`xhigh`)으로 고르고, 없으면 다음으로 이용 가능한 추천 서버 모델을 고른다. 로컬 Qwen 모델은 직접 선택하며 요청된 PC 메모리 안내를 보인다. 비용을 줄이는 추천에는 표시를 붙인다. 앱에는 투명한 점 세 개 모양을 쓴다. 웹에서 파일 트리를 열면 작업 공간 경로가 보이며 데스크톱 동작도 유지한다.
 
-Coverage: unit tests cover the three orders, default, unavailable Terra fallback, labels, and browser-versus-desktop path behavior. Browser verification covers settings, model selection, and the file tree, including narrow layout and unavailable data. Icon previews cover app and tray sizes.
+시험 범위: 단위 시험은 세 가지 순서, 기본값, 표시와 웹·데스크톱 경로 동작을 다룬다. 웹 시험은 설정·모델 선택·파일 트리와 좁은 화면·자료 부재를 확인한다. 아이콘 미리보기는 앱과 알림 영역 크기를 다룬다. 기본값 시험의 갱신은 [요구별 시험 계획](requirements.md#요구별-시험-계획--메인-모델과-작은-모델)을 따른다.
 
 A signed-in Naia user opens the AI model picker. The picker contains only
 currently usable routes; models marked `comingSoon` or otherwise unavailable
@@ -2198,6 +2198,8 @@ Test Coverage Map (P02)
 
 사용자는 설정의 기억(Memory) 탭에서 작은 LLM(small LLM) 설정을 확인하고 선택할 수 있다. 기본값은 Naia 계정의 `gpt-5.4-nano`이며, 음성 엔진을 쓰지 않아 GPU 여유가 있을 때 로컬 Ollama 또는 vLLM을 선택하거나, 떠오름 기능을 끌 수 있다. 상태 안내 줄은 켜짐(Naia 계정 과금 / 로컬 / 자체 호스트), 작은 LLM 없음, 상속된 과금 제공자로 인한 자동 끔, Naia 게이트웨이 미준비(pending gateway) 상태를 명확히 설명한다. 사용자의 명시적 선택이나 Naia 로그인 없이는 어떠한 과금도 발생하지 않는다. 에이전트는 백그라운드에서 다음 답변 턴을 위해 관련 기억과 지식을 떠올리고 사실을 추출한다. 로그인하지 않은 상태의 로컬 폴백 설계는 #693에서 다루며, 음성/GPU 자동 전환은 후속 과제다.
 
+이 절의 nano 기본값은 기존 동작이다. 0.2.5의 목표와 기존 선택 보존은 [기존 기억 설정과의 관계](requirements.md#기존-기억-설정과의-관계)를 따른다.
+
 | 상태 | 사용자 기대 |
 |---|---|
 | 기본 | Naia 로그인 시 작은 LLM 기본값으로 Naia `gpt-5.4-nano`가 설정되며 상태 안내에 켜짐과 과금 계정이 명시된다. |
@@ -2462,3 +2464,23 @@ Test Coverage Map (P02)
 | 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
+
+## UC-SM-01 — 메인 모델과 작은 모델을 고르고 다시 쓰기
+
+사용자는 설정에서 대화에 쓸 메인 모델과 보조 작업에 쓸 작은 모델을 각각 확인하고 고른다. 아래는 이번 판 목표를 제품 책임자가 후보판에서 직접 확인할 순서다. 구현 2회차 수정 전 첫 나이아 계정 기본값은 메인 `deepseek-v4-flash`·작은 `gemini-3.1-flash-lite`였다. 목표 후보판에서는 제공 목록에 Terra 6.1이 있으면 가장 높은 생각 수준(`xhigh`)으로 고르고 없으면 다음으로 이용 가능한 추천 서버 모델을 고른다. 조사된 목록에서는 다음이 `solar-pro4`다([현재 동작과 목표](requirements.md#현재-동작과-이번-판-목표)). 각 시험의 기기·후보판·실제 결과를 기록하고 준비되지 않은 조건은 미실시로 남긴다. 품질 확인(QC)은 사람이 아래 행동과 기대 결과를 직접 대조하는 시험이다. 요구와 자동 시험의 연결은 [요구사항](requirements.md#기능-요구사항-fr--메인-모델과-작은-모델-025)에 둔다.
+
+| 번호 | 시작 조건과 행동 | 기대 결과와 실패 판정 |
+|---|---|---|
+| **QC-SM-01** | `gpt-5.6-luna`가 모델 목록에 있는 나이아 계정과 기존 설정이 없는 새 작업 공간을 준비하고 첫 설정을 마친다. 데스크톱 설정을 열어 모델 목록이 나타날 때 메인 모델과 작은 모델을 확인한다. | 메인 칸은 제공 목록에 Terra가 있으면 Terra 6.1, 없으면 다음 추천 서버 모델을 보이고 작은 칸은 목표 후보판에서 `gpt-5.6-luna`를 보인다. 낮은 생각 수준(`low`) 적용은 자동 시험으로 확인한다. Terra의 `xhigh` 적용은 자동 시험으로 확인한다. 목록 부재·조회 실패 시 옛 기억 모델 우선과 그 설정도 없을 때의 메인 상속은 자동 시험으로 확인한다. 임의의 로컬 모델이 기본 선택되거나 두 칸이 사라지면 실패다. |
+| **QC-SM-02** | 데스크톱에서 작은 모델의 추천·가격·성능 순서를 살펴보고 다른 모델을 고른다. 저장한 뒤 설정과 앱을 닫았다 다시 연다. | 고른 모델이 복원되고 메인 모델은 그대로다. 선택이 사라지거나 다른 값으로 바뀌면 실패다. |
+| **QC-SM-03** | `gpt-5.6-luna`가 모델 목록에 있는 나이아 계정과 기존 설정이 없는 새 웹 작업 공간을 준비해 첫 설정을 마치고 설정을 열어 목록이 나타나면 두 칸을 확인하고 작은 모델을 고르고 저장한다. 웹을 닫았다 같은 브라우저에서 다시 열어 설정을 확인한다. | 처음 메인은 제공 목록에 Terra가 있으면 Terra 6.1, 없으면 다음 추천 서버 모델이고 작은 모델은 목표 후보판에서 `gpt-5.6-luna`를 보인다. 낮은 생각 수준(`low`) 적용은 자동 시험으로 확인한다. Terra의 `xhigh` 적용은 자동 시험으로 확인한다. 다시 열면 저장한 작은 모델이 보인다. 선택이 사라지면 실패다. |
+| **QC-SM-04** | 작은 모델을 데스크톱에서 로컬 Qwen 4B로 직접 고르고 저장한 뒤 다시 연다. 웹의 작은 모델 목록도 확인한다. | 데스크톱에서 선택이 복원되고 8GB 이상 PC 안내가 보인다. 웹의 새 선택 목록에는 로컬 Qwen이 없다. 로컬이 자동 선택되거나 웹에서 새로 고를 수 있으면 실패다. |
+| **QC-SM-05** | 옛 설정에 메인·보조 모델과 별도로 고른 기억 모델이 있는 사용자로 갱신 후 설정을 연다. 기억 떠오름의 꺼짐 또는 점수 문턱 선택도 다시 확인한다. | 이전 메인·보조·기억 모델과 떠오름 선택이 유지된다. 서로 바뀌거나 지워지면 실패다. |
+| **QC-SM-08** | 옛 작업 공간에 메인과 기억 모델은 있고 보조 모델 설정은 없는 사용자를 준비한다. 갱신 후 `gpt-5.6-luna`가 있는 모델 목록이 나타날 때까지 설정을 열어 작은 모델과 기억 모델을 확인하고 저장 후 다시 연다. 작은 모델을 다른 값으로 고르고 저장한 뒤 앱을 다시 열어 두 값을 확인한다. | 목록이 나타난 뒤에도 작은 모델은 옛 기억 모델을 이어받고 기억 모델도 그대로 복원된다. 따로 고른 뒤에는 작은 모델만 새 값으로 바뀌며 기억 모델은 기존 값으로 남는다. Luna나 메인으로 조용히 바뀌거나 기억 선택이 사라지면 실패다. |
+| **QC-SM-07** | 폰 폭 약 390픽셀에서 키보드를 연결하고 일반 진입 경로로 웹을 열어 설정에 들어간다. 탭 키로 메인 모델 선택기에 초점을 옮겨 목록을 열고 다른 값을 고른다. 다시 탭으로 작은 모델 선택기에 가서 목록을 열고 다른 값을 고른다. 저장한 뒤 설정과 웹을 닫았다 같은 브라우저에서 다시 열어 두 값을 확인한다. | 두 칸이 위아래로 놓이고 글자·선택지와 초점 표시가 잘 보인다. 키보드로 두 선택기에 들어가 각각 값을 바꾸고 저장할 수 있으며 다시 열어도 두 선택이 유지된다. 초점이 갇히거나 조작이 가려지거나 값이 사라지면 실패다. |
+
+작은 모델 실패 뒤 메인 재시도와 로컬 실패 복구는 직접 재현할 수 있는 준비·관찰 수단이 확정되지 않아 사실 추출과 압축 각각 자동 시험 `IT-SM-06`·`IT-SM-07`로 확인한다. 두 시험에서 호출 횟수·승인·기록과 복구 결과를 검증한다.
+
+### Test Coverage Map (P02) — UC-SM-01
+
+단위 시험·통합 시험·종단 시험과 직접 확인 번호, 준비·경로·통과 기준·상태는 [요구별 시험 계획](requirements.md#요구별-시험-계획--메인-모델과-작은-모델)을 따른다. `UT-SM-SHELL-THINK-01`은 데스크톱 Rust의 네 생각 수준과 미지정·알 수 없는 값 및 legacy boolean 전달을 검증한다. `IT-SM-SHELL-PAIR-01`은 에이전트·기억 커밋과 정규화 proto SHA 일치 및 불일치 거절을 검증한다. 실제 브라우저 OPFS와 폰 정상 진입 시험은 작성 전이다. 에이전트·기억의 추출·압축 격리 시험과 셸 페어 시험은 각각 별도다. 위 QC는 자동 시험 결과로 대신하지 않는다.

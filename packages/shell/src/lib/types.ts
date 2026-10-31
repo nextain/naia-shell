@@ -148,7 +148,7 @@ export interface AgentRequest {
 	ttsEngine?: "auto" | "gateway" | "google";
 	enableTools?: boolean;
 	enableThinking?: boolean;
-	thinking?: { level: "off" | "low" | "high" };
+	thinking?: { level: "off" | "low" | "high" | "xhigh" };
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	disabledSkills?: string[];

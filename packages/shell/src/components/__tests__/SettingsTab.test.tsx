@@ -142,7 +142,7 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
-import { setLocale } from "../../lib/i18n";
+import { setLocale, t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { registerWebLlmProvider } from "../../lib/web-runtime/llm-provider";
@@ -732,6 +732,7 @@ describe("SettingsTab", () => {
 				provider: "gemini",
 				model: "gemini-2.5-flash",
 				locale: "ko",
+				llmRoles: { sub: { inherit: "main" } },
 			}),
 		);
 		mockInvoke.mockImplementation((command: string) => {
@@ -768,6 +769,7 @@ describe("SettingsTab", () => {
 				provider: "gemini",
 				model: "gemini-2.5-flash",
 				locale: "ko",
+				llmRoles: { sub: { inherit: "main" } },
 			}),
 		);
 		let reloadAttempts = 0;
@@ -862,8 +864,8 @@ describe("SettingsTab", () => {
 		// #602: 이 테스트는 게이트웨이 전체 카탈로그(fetchGatewayModelCatalog)가
 		// <provider>:<id> 를 파싱해 해당 그룹에 가격표와 함께 모델을 추가하는 경로를
 		// 본다. 타사 직결 클라우드 공급자(gemini 등)는 제거됐고, 나이아 계정(nextain)
-		// 그룹은 라이브 가격 effect 가 정적 목록으로 다시 채워 카탈로그 추가분을 덮어쓴다.
-		// 그래서 카탈로그가 채우고 이후 덮어쓰이지 않는 잔존 공급자(claude-code-cli, 스킬
+		// 그룹은 카탈로그와 라이브 가격을 병합한다.
+		// 잔존 공급자(claude-code-cli, 스킬
 		// 탭 CLI)로 파싱·가격 렌더를 관찰한다. (나이아 경로 vertexai/azure/upstage/clova →
 		// nextain 그룹핑·가격은 별도 nextain 테스트가 이미 검증한다.)
 		localStorage.setItem(
@@ -887,7 +889,10 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 
 		await vi.waitFor(() => {
-			expect(screen.getByText("test-model-1 ($1.5 / $2.5)")).toBeDefined();
+			const select = document.getElementById("model-select") as HTMLSelectElement;
+			const option = [...select.options].find(item => item.value === "test-model-1");
+			expect(option?.text).toContain("test-model-1");
+			expect(option?.text).not.toContain("$");
 		});
 	});
 
@@ -914,7 +919,8 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 
 		await vi.waitFor(() => {
-			expect(screen.getByText(/gemini-ultra-test/)).toBeDefined();
+			const select = document.getElementById("model-select") as HTMLSelectElement;
+			expect([...select.options].some(option => option.value === "gemini-ultra-test")).toBe(true);
 		});
 	});
 
@@ -968,6 +974,107 @@ describe("SettingsTab", () => {
 		);
 	});
 
+	it("FR-SM.1: model setting names and guidance exist in all 14 locales", async () => {
+		const locales = ["ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "ko", "pt", "ru", "vi", "zh"] as const;
+		const keys = ["settings.mainModel", "settings.smallModel", "settings.smallModelInherit", "settings.smallModelLocal", "settings.smallModelDesktopSelected", "settings.smallModelLocalHint"] as const;
+		for (const locale of locales) {
+			await setLocale(locale);
+			for (const key of keys) expect(t(key), `${locale}: ${key}`).not.toBe(key);
+		}
+	});
+
+	it("FR-SM.1: model details use the selected locale and show the price once", async () => {
+		await setLocale("ko");
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", subLlmProvider: "nextain", subLlmModel: "gpt-5.6-luna" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />); gotoSettingsTab("brain");
+		await waitFor(() => expect(screen.getByTestId("small-model-selected-label")).toHaveTextContent("100만 토큰당 가격"));
+		const label = screen.getByTestId("small-model-selected-label").textContent!;
+		expect(label.match(/100만 토큰당 가격/g)).toHaveLength(1);
+		expect(label).toContain("입력"); expect(label).toContain("출력"); expect(label).not.toContain("$");
+	});
+
+	it("IT-SM-11: keeps catalog Luna and preserves a legacy memory-only selection across resync", async () => {
+		const legacy = { provider: "nextain", model: "gpt-6.1-terra", apiKey: "", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model", memoryLlmBaseUrl: "http://localhost:11434", memoryLlmCredentialRef: "memory-key", memoryEnabled: false };
+		localStorage.setItem("naia-config", JSON.stringify(legacy));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const small = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		await waitFor(() => expect([...small.options].some(option => option.value === JSON.stringify(["nextain", "gpt-5.6-luna"]))).toBe(true));
+		await waitFor(() => expect(small.value).toBe(JSON.stringify(["ollama", "memory-model"])));
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}")).toMatchObject(legacy);
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").subLlmModel).toBeUndefined();
+		fireEvent.change(small, { target: { value: JSON.stringify(["nextain", "gpt-5.6-luna"]) } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}")).toMatchObject({ ...legacy, subLlmModel: "gpt-5.6-luna" });
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		expect(small.value).toBe(JSON.stringify(["nextain", "gpt-5.6-luna"]));
+	});
+
+	it("IT-SM-11: fills only an empty selection and retains an explicit choice on resync", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		await waitFor(() => expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.sub).toMatchObject({ model: "gpt-5.6-luna", thinkingLevel: "low" }));
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", subLlmProvider: "nextain", subLlmModel: "chosen" }));
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").subLlmModel).toBe("chosen");
+	});
+
+	it("NFR-SM.1: exposes keyboard-focusable selectors and the full chosen model label", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", naiaKey: "test-key", subLlmProvider: "nextain", subLlmModel: "gpt-5.6-luna" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const main = document.getElementById("model-select") as HTMLSelectElement;
+		const small = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		await waitFor(() => expect([...main.options].some(o => o.value === "solar-pro4")).toBe(true));
+		main.focus(); expect(document.activeElement).toBe(main);
+		fireEvent.keyDown(main, { key: "ArrowDown" });
+		// JSDOM does not perform the native select default action; dispatch the
+		// resulting change separately. Browser keyboard behavior is checked in UI.
+		fireEvent.change(main, { target: { value: "solar-pro4" } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").model).toBe("solar-pro4");
+		small.focus(); expect(document.activeElement).toBe(small);
+		fireEvent.keyDown(small, { key: "ArrowDown" });
+		fireEvent.change(small, { target: { value: JSON.stringify(["nextain", "solar-pro4"]) } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").subLlmModel).toBe("solar-pro4");
+		await waitFor(() => expect(screen.getByTestId("small-model-selected-label")).toHaveTextContent("Solar Pro 4"));
+	});
+
+	it("excludes Solar Mini from recommendations but offers it in price order", () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const small = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		expect([...small.options].some(option => option.text.includes("Solar Mini"))).toBe(false);
+		fireEvent.change(document.getElementById("small-model-sort")!, { target: { value: "price" } });
+		expect([...small.options].some(option => option.text.includes("Solar Mini"))).toBe(true);
+	});
+
+	it("persists the small model separately and retains memory settings", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", llmRoles: { memory: { provider: "ollama", model: "memory-model" } } }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const small = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		expect(document.getElementById("model-select")).toBeTruthy();
+		fireEvent.change(small, { target: { value: JSON.stringify(["ollama", "huihui_ai/qwen3.5-abliterated:4B"]) } });
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.llmRoles.sub).toMatchObject({ provider: "ollama", model: "huihui_ai/qwen3.5-abliterated:4B" });
+		expect(saved.subLlmModel).toBe("huihui_ai/qwen3.5-abliterated:4B");
+		expect(saved.llmRoles.memory.model).toBe("memory-model");
+	});
+
 	it("hides API key input for Naia (nextain) provider", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
@@ -1017,13 +1124,11 @@ describe("SettingsTab", () => {
 			"model-select",
 		) as HTMLSelectElement;
 		const labels = [...modelSelect.options].map((option) => option.text);
-		expect(labels).toContain(
-			"Solar Mini (Cost saving) (Price per 1M tokens: Input 165 credits / Output 165 credits)",
-		);
+		expect(labels).toContain("Solar Mini");
 		expect(labels.some((label) => label.includes("(Naia)"))).toBe(false);
 		expect(labels.some((label) => label.includes("Analysis only"))).toBe(false);
 		expect([...modelSelect.options].map((option) => option.value)).toEqual([
-			"gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "solar-mini", "motif-3", "deepseek-v4-flash",
+			"gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "motif-3", "deepseek-v4-flash", "solar-mini",
 		]);
 		expect(
 			[...modelSelect.options].map((option) => option.value),
@@ -1123,35 +1228,18 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
 		await screen.findByText(/Price per 1M tokens/, { selector: "span" });
+		// Solar Mini is available under price ordering, rather than recommended.
+		fireEvent.change(screen.getByTestId("model-sort-mode"), { target: { value: "price" } });
 
 		const modelSelect = document.getElementById(
 			"model-select",
 		) as HTMLSelectElement;
 		const labels = [...modelSelect.options].map((o) => o.text);
-		expect(
-			labels.some(
-				(l) =>
-					l.includes("Solar Pro 4") &&
-					l.includes("330 credits") &&
-					l.includes("1.32K credits"),
-			),
-		).toBe(true);
-		expect(
-			labels.some(
-				(l) =>
-					l.includes("Solar Mini") &&
-					l.includes("165 credits") &&
-					!l.includes("$"),
-			),
-		).toBe(true);
-		expect(
-			labels.some(
-				(l) =>
-					l.includes("Motif 3") &&
-					l.includes("260 credits") &&
-					l.includes("1.04K credits"),
-			),
-		).toBe(true);
+		expect(labels).toEqual(expect.arrayContaining(["Solar Pro 4", "Solar Mini", "Motif 3"]));
+		for (const [value, price] of [["solar-pro4", "330 credits"], ["solar-mini", "165 credits"], ["motif-3", "260 credits"]]) {
+			fireEvent.change(modelSelect, { target: { value } });
+			expect(screen.getByText(new RegExp(price))).toBeDefined();
+		}
 		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);
 		const values = [...modelSelect.options].map((o) => o.value);
 		expect(values).toContain("solar-pro4");
@@ -1276,15 +1364,8 @@ describe("SettingsTab", () => {
 			const modelSelect = document.getElementById(
 				"model-select",
 			) as HTMLSelectElement;
-			const labels = [...modelSelect.options].map((o) => o.text);
-			expect(
-				labels.some(
-					(l) =>
-						l.includes("Motif 3") &&
-						l.includes("260 credits") &&
-						l.includes("1.04K credits"),
-				),
-			).toBe(true);
+		expect([...modelSelect.options].map(o => o.text)).toContain("Motif 3");
+			expect(screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/)).toBeDefined();
 		});
 		expect(screen.queryByText("가격 정보를 불러올 수 없습니다.")).toBeNull();
 		expect(
@@ -1345,15 +1426,8 @@ describe("SettingsTab", () => {
 			const modelSelect = document.getElementById(
 				"model-select",
 			) as HTMLSelectElement;
-			const labels = [...modelSelect.options].map((o) => o.text);
-			expect(
-				labels.some(
-					(l) =>
-						l.includes("Motif 3") &&
-						l.includes("260 credits") &&
-						l.includes("1.04K credits"),
-				),
-			).toBe(true);
+		expect([...modelSelect.options].map(o => o.text)).toContain("Motif 3");
+			expect(screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/)).toBeDefined();
 		});
 		expect(screen.queryByText("가격 정보를 불러올 수 없습니다.")).toBeNull();
 		expect(
@@ -1451,6 +1525,76 @@ describe("SettingsTab", () => {
 		});
 	});
 
+	it("UT-SM-04: shows xhigh and does not copy it to a different model", () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", naiaKey: "test-key", llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" }, sub: { inherit: "main" } } }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		expect(screen.getByTestId("thinking-level-xhigh")).toHaveAttribute("aria-checked", "true");
+		expect(screen.getByTestId("thinking-level-xhigh")).toHaveTextContent("xhigh");
+		fireEvent.change(document.getElementById("model-select")!, { target: { value: "solar-pro4" } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main).toMatchObject({ model: "solar-pro4" });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBeUndefined();
+		fireEvent.click(screen.getByTestId("thinking-level-low"));
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBe("low");
+		fireEvent.change(document.getElementById("model-select")!, { target: { value: "gpt-6.1-terra" } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBe("xhigh");
+		expect(screen.getByTestId("thinking-level-xhigh")).toHaveAttribute("aria-checked", "true");
+		fireEvent.change(document.getElementById("model-select")!, { target: { value: "solar-pro4" } });
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main.thinkingLevel).toBe("low");
+	});
+
+	it("UT-SM-04: delayed catalog fills a fresh blank main with Terra xhigh", async () => {
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "", model: "", apiKey: "" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-6.1-terra", input_price_per_million: 1, output_price_per_million: 2, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		await waitFor(() => expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main).toMatchObject({ provider: "nextain", model: "gpt-6.1-terra", thinkingLevel: "xhigh" }));
+	});
+
+	it("IT-SM-14: defaults button and online merge retain legacy memory after catalog and notification", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		const legacy = { provider: "nextain", model: "gpt-6.1-terra", apiKey: "", naiaKey: "test-key", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model", memoryLlmBaseUrl: "http://localhost:11434", memoryLlmCredentialRef: "ref", memoryEnabled: false };
+		localStorage.setItem("naia-config", JSON.stringify(legacy));
+		mockInvoke.mockResolvedValue([]);
+		vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+			const u = String(url);
+			if (u.includes("/v1/pricing")) return { ok: true, json: async () => [{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }] };
+			if (u.includes("api/gateway/config")) return { ok: true, json: async () => ({ config: { userName: "Online name" } }) };
+			if (u.includes("balance")) return { ok: true, json: async () => ({ credits: 10 }) };
+			return { ok: false, json: async () => [] };
+		}));
+		render(<SettingsTab />);
+		await waitFor(() => expect(eventListeners.get("naia_auth_complete")).toBeDefined());
+		gotoSettingsTab("brain");
+		await waitFor(() => expect((screen.getByTestId("small-model-select") as HTMLSelectElement).value).toBe(JSON.stringify(["ollama", "memory-model"])));
+		gotoSettingsTab("profile");
+		fireEvent.click(screen.getByTestId("slot-apply-defaults"));
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}")).toMatchObject(legacy);
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").subLlmModel).toBeUndefined();
+		await act(async () => { await eventListeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key", naiaUserId: "test-user" } }); });
+		fireEvent.click(await screen.findByRole("button", { name: "Use Online" }));
+		act(() => window.dispatchEvent(new CustomEvent("naia-config-changed")));
+		const merged = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(merged).toMatchObject({ ...legacy, userName: "Online name" });
+		expect(merged.subLlmModel).toBeUndefined();
+	});
+
+	it("IT-SM-14: Naia login preserves an explicitly selected main and legacy memory model", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "ollama", model: "local-explicit", apiKey: "", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model" }));
+		mockInvoke.mockResolvedValue([]);
+		stubPricingFetch([{ model_key: "azure:gpt-5.6-luna", input_price_per_million: 0.1, output_price_per_million: 0.5, cached_price_per_million: null }]);
+		render(<SettingsTab />);
+		await vi.waitFor(() => expect(eventListeners.get("naia_auth_complete")).toBeDefined());
+		await act(async () => { await eventListeners.get("naia_auth_complete")?.({ payload: { naiaKey: "test-key", naiaUserId: "test-user" } }); });
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved).toMatchObject({ provider: "ollama", model: "local-explicit", memoryLlmProvider: "ollama", memoryLlmModel: "memory-model" });
+		expect(saved.subLlmModel).toBeUndefined();
+	});
+
 	it("persists Naia auth callback even when no config exists yet", async () => {
 		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
 		mockInvoke.mockResolvedValue([]);
@@ -1482,7 +1626,7 @@ describe("SettingsTab", () => {
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");
-		expect(saved.model).toBeTruthy();
+		expect(saved.model).toBe("");
 		expect(saved.apiKey).toBe("");
 		expect(saved.naiaKey).toBe("gw-test-key");
 		expect(saved.naiaUserId).toBe("user-123");
@@ -1548,7 +1692,7 @@ describe("SettingsTab", () => {
 		window.removeEventListener("naia_auth_ready", authReady);
 	});
 
-	it("replaces a stale Gemini main role when logging in to Naia from Settings", async () => {
+	it("preserves a configured Gemini main role when logging in to Naia from Settings", async () => {
 		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
 		localStorage.setItem(
 			"naia-config",
@@ -1586,11 +1730,11 @@ describe("SettingsTab", () => {
 		).toHaveBeenCalledTimes(1);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
-		expect(saved.provider).toBe("nextain");
-		expect(saved.model).toBe("gpt-6.1-terra");
+		expect(saved.provider).toBe("gemini");
+		expect(saved.model).toBe("gemini-3.5-flash");
 		expect(saved.llmRoles.main).toEqual({
-			provider: "nextain",
-			model: "gpt-6.1-terra",
+			provider: "gemini",
+			model: "gemini-3.5-flash",
 		});
 		expect(saved.llmRoles.sub).toEqual({
 			provider: "openai",
@@ -1598,8 +1742,8 @@ describe("SettingsTab", () => {
 		});
 		expect(chatServiceMocks.activateNaiaLlm).toHaveBeenCalledWith(
 			"gw-test-key",
-			"nextain",
-			"gpt-6.1-terra",
+			"gemini",
+			"gemini-3.5-flash",
 		);
 	});
 
@@ -1994,7 +2138,7 @@ describe("SettingsTab", () => {
 			render(<SettingsTab />);
 			gotoSettingsTab("brain");
 			const select = screen.getByRole("combobox", {
-				name: /model/i,
+				name: "Main model",
 			}) as HTMLSelectElement;
 			expect([...select.options].map((option) => option.value)).toContain(
 				modelId,
@@ -4072,18 +4216,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 		// 이미 설정한 main 보존(비파괴).
 		expect(saved.provider).toBe("nextain");
 		expect(saved.model).toBe("gemini-3.5-flash");
-		// 미설정 슬롯 = Gemini 기본값.
-		expect(saved.subLlmProvider).toBe("naia");
-		expect(saved.subLlmModel).toBe("gemini-3.1-flash-lite");
-		expect(saved.llmRoles.sub).toMatchObject({
-			provider: "naia",
-			model: "gemini-3.1-flash-lite",
-		});
-		expect(saved.memoryLlmProvider).toBe("nextain");
-		expect(saved.llmRoles?.memory).toMatchObject({
-			provider: "nextain",
-			model: "gpt-5.4-nano",
-		}); // #692
+		// 목록 도착 전 작은 역할은 대기하고 기억 설정을 자동으로 덮지 않는다.
+		expect(saved.subLlmProvider).toBeUndefined();
+		expect(saved.memoryLlmProvider).toBeUndefined();
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
@@ -5396,6 +5531,18 @@ describe("web mode brain tab (r4)", () => {
 		vi.clearAllMocks();
 	});
 
+	it("preserves a desktop Qwen selection without exposing its model on web", () => {
+		setWebAssetsModeForTests(true);
+		const local = { provider: "ollama", model: "huihui_ai/qwen3.5-abliterated:4B" };
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", model: "gpt-6.1-terra", apiKey: "", llmRoles: { sub: local } }));
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const select = screen.getByTestId("small-model-select") as HTMLSelectElement;
+		expect(select.textContent?.toLowerCase()).not.toContain("qwen");
+		expect(select.value).not.toContain("qwen");
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.sub).toEqual(local);
+	});
+
 	it("hides DevicePairingSection and does not call device_list in web mode, while keeping both in desktop mode", async () => {
 		localStorage.setItem(
 			"naia-config",
@@ -5477,7 +5624,7 @@ describe("web mode brain tab (r4)", () => {
 		) as HTMLSelectElement;
 		expect(modelSelect).toBeTruthy();
 		expect(modelSelect.value).toBe(activeSourceModel);
-		expect(modelSelect.selectedOptions[0]?.textContent).toBe(`${expectedF32Label} (8 GB or more PC)`);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF32Label);
 
 		const modelHint = modelSelect
 			.closest(".settings-field")
@@ -5504,7 +5651,7 @@ describe("web mode brain tab (r4)", () => {
 		expect(expectedF16Label).toBe("Qwen3 4B (4bit f16)");
 
 		expect(modelSelect.value).toBe(updatedSourceModel);
-		expect(modelSelect.selectedOptions[0]?.textContent).toBe(`${expectedF16Label} (8 GB or more PC)`);
+		expect(modelSelect.selectedOptions[0]?.textContent).toBe(expectedF16Label);
 		expect(modelHint?.textContent).toBe(expectedF16Label);
 		expect(statusBar.getAttribute("data-model")).toBe(updatedSourceModel);
 		expect(statusBar.textContent).toContain(expectedF16Label);

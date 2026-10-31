@@ -436,6 +436,6 @@ describe("registry — sortModels", () => {
 
 describe("recommended order", () => {
  it("ranks product recommendations before other models", () => {
-  expect(sortModels(getLlmProvider("nextain")!.models, "recommended").map(m => m.id)).toEqual(["gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "solar-mini", "motif-3", "deepseek-v4-flash"]);
+  expect(sortModels(getLlmProvider("nextain")!.models, "recommended").map(m => m.id)).toEqual(["gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "motif-3", "deepseek-v4-flash", "solar-mini"]);
  });
 });

@@ -533,8 +533,7 @@ const NAIA_PRODUCT_ORDER: Readonly<Record<string, number>> = {
 	"gpt-6.1-terra": 1,
 	"solar-pro4": 2,
 	"gpt-5.6-luna": 3,
-	"solar-mini": 4,
-	"motif-3": 5,
+	"motif-3": 4,
 };
 
 const NAIA_GENERAL_CHAT_RECOMMENDATION: Readonly<Record<string, number>> = {
