@@ -24,7 +24,15 @@ type LocaleModule = { default: TranslationTable };
 
 const localeLoaders: Record<Locale, () => Promise<LocaleModule>> = {
 	ko: () => import("./locales/ko"),
-	en: async () => ({ default: englishTranslations }),
+	en: async () => {
+		const { default: ollamaTranslations } = await import("./locales/ollama-en");
+		return {
+			default: {
+				...englishTranslations,
+				...ollamaTranslations,
+			} as TranslationTable,
+		};
+	},
 	ja: () => import("./locales/ja"),
 	zh: () => import("./locales/zh"),
 	fr: () => import("./locales/fr"),
@@ -58,10 +66,8 @@ function detectLocale(): Locale {
 }
 
 let currentLocale: Locale = "en";
-let currentTranslations: TranslationTable = englishTranslations;
-const loadedTranslations = new Map<Locale, TranslationTable>([
-	["en", englishTranslations],
-]);
+let currentTranslations = englishTranslations as TranslationTable;
+const loadedTranslations = new Map<Locale, TranslationTable>();
 let localeRequest = 0;
 
 export async function initializeI18n(): Promise<void> {
@@ -103,6 +109,8 @@ export function t(
 	const value = currentTranslations[key];
 	if (!params) return value;
 	return value.replace(/\{(\w+)\}/g, (whole, name) =>
-		Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : whole,
+		Object.prototype.hasOwnProperty.call(params, name)
+			? String(params[name])
+			: whole,
 	);
 }

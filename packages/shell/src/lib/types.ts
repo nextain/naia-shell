@@ -59,6 +59,7 @@ export interface ProviderConfig {
 	naiaKey?: string;
 	ollamaHost?: string;
 	ollamaNumGpu?: number;
+	ollamaNumCtx?: number;
 	vllmHost?: string;
 	/** Override URL for lab-proxy (Naia gateway). Used to route to dev vs prod gateway. */
 	labGatewayUrl?: string;
@@ -85,6 +86,8 @@ export interface ToolCall {
 }
 
 export interface ChatMessage {
+	/** Installed app that initiated this visible turn. */
+	appName?: string;
 	id: string;
 	role: "user" | "assistant";
 	content: string;

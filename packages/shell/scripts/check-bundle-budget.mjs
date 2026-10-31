@@ -13,6 +13,10 @@ import { gzipSync } from "node:zlib";
 const REPORT_NAME = "bundle-budget-report.json";
 const REQUIRED_DEFERRED_MODULES = [
 	"src/apps/browser/BrowserCenterArea.tsx",
+	"src/apps/projects/ProjectAgentPanel.tsx",
+	"src/apps/projects/ProjectAgentTerminal.tsx",
+	"src/apps/projects/ProjectWebViewPanel.tsx",
+	"src/apps/projects/ProjectsApp.tsx",
 	"src/apps/workspace/HerdrWorkspaceCenterArea.tsx",
 	"src/apps/workspace/Terminal.tsx",
 	"src/components/AnnouncementBanner.tsx",
@@ -25,10 +29,12 @@ const REQUIRED_DEFERRED_MODULES = [
 	"src/components/OnboardingWizard.tsx",
 	"src/components/PermissionModal.tsx",
 	"src/components/SettingsTab.tsx",
+	"src/components/StudioNvaApplyDialog.tsx",
 	"src/components/ToolActivity.tsx",
 	"src/components/UpdateBanner.tsx",
 	"src/components/UpdatePrompt.tsx",
 	"src/components/VideoAvatarCanvas.tsx",
+	"src/studio-nva-apply-root.tsx",
 ];
 
 function directoryBytes(directory) {

@@ -16,6 +16,7 @@ import {
 	getStoreGatewayUrl,
 	getStoreProductMetadata,
 	getStoreProductName,
+	getStoreProductMetadata,
 	hasStoreEntitlement,
 } from "../app-store-client";
 
@@ -77,35 +78,9 @@ describe("app-store-client", () => {
 		await expect(getStoreProductName("land.naia.slides")).resolves.toBeNull();
 	});
 
-	it("uses selected locale, then English, then root metadata and returns the preview", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn().mockResolvedValue({
-				ok: true,
-				json: async () => ({
-					data: [
-						{
-							app_id: "land.naia.cafelua-tarot",
-							manifest: {
-								name: "Root name",
-								names: { en: "Cafe Lua Tarot" },
-								description: "Root description",
-								descriptions: { en: "English description" },
-								thumbnailUrl:
-									"/assets/apps/land.naia.cafelua-tarot/thumbnail.png",
-							},
-						},
-					],
-				}),
-			}),
-		);
-
-		await expect(
-			getStoreProductMetadata("land.naia.cafelua-tarot", "fr"),
-		).resolves.toEqual({
-			name: "Cafe Lua Tarot",
-			description: "English description",
-			thumbnailUrl: "/assets/apps/land.naia.cafelua-tarot/thumbnail.png",
-		});
+	it("selects catalog copy for the requested language before the default and preserves the thumbnail", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ app_id: "app", manifest: { name: "Default", nameKo: "한국어", nameEn: "English", description: "Default description", descriptionKo: "설명", descriptionEn: "Description", thumbnailUrl: "/thumb.png" } }] }) }));
+		await expect(getStoreProductMetadata("app", "ko")).resolves.toEqual({ name: "한국어", description: "설명", thumbnailUrl: "/thumb.png", permissions: null });
+		await expect(getStoreProductMetadata("app", "en")).resolves.toEqual({ name: "English", description: "Description", thumbnailUrl: "/thumb.png", permissions: null });
 	});
 });

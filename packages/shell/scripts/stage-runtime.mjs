@@ -626,6 +626,19 @@ async function main() {
 		run(
 			"cargo test --manifest-path src-tauri/Cargo.toml voxcpm2_upgrade_rejects_default_only_payload_control_files --lib",
 			SHELL,
+			{ NAIA_EMBED_TEST_MANIFEST: "1" },
+		);
+		console.log("[stage-runtime] Ollama no-window CTRL_BREAK regression gate");
+		run(
+			"cargo test --manifest-path src-tauri/Cargo.toml ollama_no_window_child_supports_ctrl_break_shutdown --lib",
+			SHELL,
+			{ NAIA_EMBED_TEST_MANIFEST: "1" },
+		);
+		console.log("[stage-runtime] project agent PTY path and ConPTY input regression gate");
+		run(
+			"cargo test --manifest-path src-tauri/Cargo.toml project_agent_pty --lib",
+			SHELL,
+			{ NAIA_EMBED_TEST_MANIFEST: "1" },
 		);
 	}
 

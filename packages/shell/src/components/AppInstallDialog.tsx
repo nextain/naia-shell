@@ -1,14 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { loadInstalledApps } from "../lib/app-loader";
+import { Logger } from "../lib/logger";
+import {
+	loadInstalledApps,
+	refreshInstalledAppsIfChanged,
+} from "../lib/app-loader";
 import {
 	type AppInstallRequest,
 	getStoreGatewayUrl,
 	getStoreProductMetadata,
 	hasStoreEntitlement,
 } from "../lib/app-store-client";
+import { isKnownPermission } from "../lib/app-permissions";
 import { type Locale, getLocale, t } from "../lib/i18n";
-import { Logger } from "../lib/logger";
 import { useAppStore } from "../stores/app";
 
 interface AppInstallDialogProps {
@@ -38,8 +42,10 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 		request?.name || request?.appId || "",
 	);
 	const [productDescription, setProductDescription] = useState("");
+	const [permissions, setPermissions] = useState<string[]>([]);
 	const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
 	const [locale, setLocale] = useState<Locale>(getLocale());
+	const [permissionExpansion, setPermissionExpansion] = useState<string[] | null>(null);
 	const pushModal = useAppStore((s) => s.pushModal);
 	const popModal = useAppStore((s) => s.popModal);
 
@@ -82,12 +88,14 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 					}
 				}
 				setThumbnailUrl(image);
+				setPermissions(metadata?.permissions ?? []);
 			})
 			.catch(() => {
 				if (!cancelled) {
 					setDisplayName(request.name || request.appId);
 					setProductDescription(t("apps.defaultDescription"));
 					setThumbnailUrl(null);
+					setPermissions([]);
 				}
 			});
 		return () => {
@@ -95,10 +103,11 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 		};
 	}, [locale, request]);
 
-	async function handleInstall() {
+	async function handleInstall(allowPermissionExpansion = false) {
 		if (request) {
 			setLoading(true);
 			setResult(null);
+			setPermissionExpansion(null);
 			try {
 				if (!(await hasStoreEntitlement(request.appId))) {
 					throw new Error(t("apps.loginRequired"));
@@ -106,8 +115,9 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 				const res = await invoke<AppInstallResult>("app_install_store", {
 					appId: request.appId,
 					gatewayUrl: getStoreGatewayUrl(),
+					allowPermissionExpansion,
 				});
-				await loadInstalledApps();
+				await refreshInstalledAppsIfChanged();
 				setResult({
 					success: true,
 					message: t("apps.installed").replace("{name}", res.name),
@@ -119,7 +129,13 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 				await new Promise((r) => setTimeout(r, 650));
 				onClose();
 			} catch (err) {
-				setResult({ success: false, message: String(err) });
+				const message = String(err);
+				const prefix = "PERMISSION_EXPANSION:";
+				if (message.includes(prefix)) {
+					const encoded = message.slice(message.indexOf(prefix) + prefix.length).split(/[\r\n]/u)[0];
+					try { setPermissionExpansion(JSON.parse(encoded) as string[]); }
+					catch { setResult({ success: false, message }); }
+				} else setResult({ success: false, message });
 			} finally {
 				setLoading(false);
 			}
@@ -157,14 +173,17 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 		<div className="app-install-overlay" onClick={onClose} onKeyDown={() => {}}>
 			<div
 				className="app-install-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="app-install-title"
 				onClick={(e) => e.stopPropagation()}
 				onKeyDown={() => {}}
 			>
 				<div className="app-install-header">
-					<span className="app-install-title">
+					<span id="app-install-title" className="app-install-title">
 						{request ? "Naia Apps" : "앱 추가"}
 					</span>
-					<button type="button" className="app-install-close" onClick={onClose}>
+					<button type="button" className="app-install-close" aria-label={t("apps.close")} onClick={onClose}>
 						✕
 					</button>
 				</div>
@@ -180,6 +199,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 									className="app-install-product-thumbnail"
 									src={thumbnailUrl}
 									alt=""
+									onError={() => setThumbnailUrl(null)}
 								/>
 							)}
 							<div className="app-install-product-copy">
@@ -187,6 +207,12 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 								<p>{productDescription || t("apps.defaultDescription")}</p>
 							</div>
 						</div>
+						{permissions.length > 0 && (
+							<section className="app-install-permissions" aria-label={t("apps.permissions")}>
+								<strong>{t("apps.permissions")}</strong>
+								<ul>{permissions.map((permission) => <li key={permission}>{isKnownPermission(permission) ? t(`apps.permission.${permission}`) : permission}</li>)}</ul>
+							</section>
+						)}
 					</div>
 				) : mode === "git" ? (
 					<div className="app-install-body">
@@ -219,10 +245,22 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 				{result && (
 					<div
 						className={`app-install-result ${result.success ? "success" : "error"}`}
+						role={result.success ? "status" : "alert"}
 					>
 						{result.message}
 					</div>
 				)}
+				{permissionExpansion && (
+					<div className="app-install-result error" role="alert" data-testid="permission-expansion">
+						<strong>{t("apps.permissionExpansionTitle")}</strong>
+						<ul>{permissionExpansion.map((item) => <li key={item}>{item}</li>)}</ul>
+						<p>{t("apps.permissionExpansionDescription")}</p>
+						<button type="button" className="app-install-confirm-btn" disabled={loading} onClick={() => void handleInstall(true)}>
+							{t("apps.permissionExpansionConfirm")}
+						</button>
+					</div>
+				)}
+				{loading && <div className="app-install-result" role="status">{t("apps.installing")}</div>}
 
 				<div className="app-install-footer">
 					{!request && (
@@ -254,7 +292,7 @@ export function AppInstallDialog({ onClose, request }: AppInstallDialogProps) {
 					<button
 						type="button"
 						className="app-install-confirm-btn"
-						onClick={handleInstall}
+						onClick={() => void handleInstall()}
 						disabled={
 							loading || (!request && (mode !== "git" || !gitUrl.trim()))
 						}

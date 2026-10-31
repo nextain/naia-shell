@@ -6,10 +6,18 @@ import { SEED_ADK_PATH, TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mo
  * 계약: docs/progress/issue-582-ego-browser-host.md 9절 S6a.
  *
  * 여기서 고정하는 것:
- *   (A) 켜진 OS 에서 env_browser_* 열두 도구가 뇌에 등록된다
- *   (B) 형식 도구 호출이 증거(스냅샷·캡처·주소 개정) 결과 카드를 만든다
- *   (C) 승인 없는 env_browser_script 는 거부 카드가 되고 관측 도구는 영향이 없다
+ *   (A) 켜진 OS 에서도 env_browser_* 열두 도구는 뇌에 등록되지 않고, 옛 등록은 지운다
+ *   (B) 에이전트가 env_browser_* 를 불러도 셸 경계가 거절하고 포트·다리는 한 번도 불리지 않는다
+ *   (C) env_browser_script 도 같은 경계에서 거절된다 — 승인 판정 이전에 막힌다
  *   (D) 기존 skill_browser_navigate 의 이름·동작은 바뀌지 않는다
+ *
+ * ⚠️ #611 (3f806d2b "모델에 직접 일 도구를 노출하지 않게 한다", cfc97d55 "직접 작업 도구의 모델
+ *    경계를 닫는다") 이후 결정: 모델이 보는 도구는 keep list 와 정확히 같다
+ *    (docs/requirements.md FR-TOOLS-SURFACE.1·.2, src/lib/model-facing-tools.ts). env_browser_* 는
+ *    그 목록에 없고, model-facing-tools.contract.test.ts 가 env_browser_navigate 를 제거 대상으로 못박는다.
+ *    sendAppSkills 는 걸러서 빈 목록이면 app_skills_clear 를 보내고(src/lib/chat-service.ts),
+ *    ChatArea 의 app_tool_call 분기는 keep list 밖의 도구를 "Tool is not available" 로 돌려보낸다.
+ *    아래 (A)~(C) 는 #582 S6a 때의 노출·결과 카드 기대를 이 경계에 맞춰 고쳐 쓴 것이다.
  *
  * ⚠️ 무엇이 대역이고 무엇이 실물인가.
  *    웹뷰 안에는 node 도, 감독자도, Chromium 도 없다. 그래서 **어댑터 아래**를 포트 대역으로
@@ -177,6 +185,23 @@ async function portCalls(page: Page): Promise<string[]> {
 	)) as string[];
 }
 
+/** 셸이 agent 로 돌려보낸 app_tool_result 들. 거절을 성공으로 바꾸지 않았는지 본다. */
+async function toolResults(
+	page: Page,
+): Promise<{ toolCallId: string; success: boolean; result: string }[]> {
+	return page.evaluate(() =>
+		(
+			(window as unknown as { __E2E_OUTBOUND__?: Record<string, unknown>[] }).__E2E_OUTBOUND__ ?? []
+		)
+			.filter((m) => m?.type === "app_tool_result")
+			.map((m) => ({
+				toolCallId: String(m.toolCallId),
+				success: m.success === true,
+				result: String(m.result),
+			})),
+	);
+}
+
 async function say(page: Page, text: string) {
 	const input = page.locator(".chat-input");
 	await expect(input).toBeEnabled({ timeout: 5_000 });
@@ -188,13 +213,10 @@ async function say(page: Page, text: string) {
 const SHOT_DIR = "../../.agents/progress/issue-582/s6a-visual";
 
 test.describe("#582 브라우저 호스트 도구 (UC-ENV-TOOL-BROWSE·SCRIPT)", () => {
-	test("(A) 켜진 OS 에서 env_browser_* 도구가 뇌에 등록된다", async ({ page }) => {
+	test("(A) 켜진 OS 에서도 env_browser_* 도구는 뇌에 등록되지 않는다 (#611)", async ({ page }) => {
 		await boot(page);
-		const registered = await page.evaluate(async () => {
-			const out = (window as unknown as { __E2E_OUTBOUND__?: Record<string, unknown>[] })
-				.__E2E_OUTBOUND__;
-			return out ?? [];
-		});
+		// 리눅스 기본 켬이라 셸은 browser-host 묶음을 등록하려 한다. 걸러진 결과가 비었으므로
+		// 옛 agent 에 남은 등록을 지우는 app_skills_clear 가 나가야 한다.
 		await expect
 			.poll(
 				async () =>
@@ -202,33 +224,33 @@ test.describe("#582 브라우저 호스트 도구 (UC-ENV-TOOL-BROWSE·SCRIPT)",
 						const out =
 							(window as unknown as { __E2E_OUTBOUND__?: Record<string, unknown>[] })
 								.__E2E_OUTBOUND__ ?? [];
-						const message = out.find(
-							(m) => m?.type === "app_skills" && m?.appId === "browser-host",
+						return out.some(
+							(m) => m?.type === "app_skills_clear" && m?.appId === "browser-host",
 						);
-						if (!message) return 0;
-						return (message.tools as { name?: string }[]).length;
 					}),
 				{ timeout: 15_000 },
 			)
-			.toBe(12);
-		expect(registered.length, "부팅 중 아무것도 나가지 않았다").toBeGreaterThanOrEqual(0);
+			.toBe(true);
 
-		// 기존 임베디드 웹뷰 도구와 이름이 겹치지 않는다.
-		const names = await page.evaluate(() => {
-			const out =
+		const outbound = await page.evaluate(
+			() =>
 				(window as unknown as { __E2E_OUTBOUND__?: Record<string, unknown>[] }).__E2E_OUTBOUND__ ??
-				[];
-			return out
-				.filter((m) => m?.type === "app_skills")
-				.flatMap((m) => (m.tools as { name?: string }[]).map((t) => t.name ?? ""));
-		});
-		const host = names.filter((n) => n.startsWith("env_browser_"));
-		const legacy = names.filter((n) => n.startsWith("skill_browser_"));
-		expect(host.length).toBe(12);
-		expect(host.filter((n) => legacy.includes(n))).toEqual([]);
+				[],
+		);
+		// browser-host 이름으로 도구 목록을 실어 보낸 적이 없다.
+		expect(
+			outbound.filter((m) => m?.type === "app_skills" && m?.appId === "browser-host"),
+		).toEqual([]);
+		// 어떤 앱 묶음에도 env_browser_* 가 섞여 나가지 않는다.
+		const names = outbound
+			.filter((m) => m?.type === "app_skills")
+			.flatMap((m) => ((m.tools as { name?: string }[]) ?? []).map((t) => t.name ?? ""));
+		expect(names.filter((n) => n.startsWith("env_browser_"))).toEqual([]);
 	});
 
-	test("(B) 형식 도구 호출이 증거 결과 카드를 만든다", async ({ page }) => {
+	test("(B) 에이전트의 env_browser_open·snapshot 호출은 셸 경계에서 거절되고 포트는 불리지 않는다 (#611)", async ({
+		page,
+	}) => {
 		await boot(page);
 		await setCalls(page, [
 			{ tool: "env_browser_open", args: { url: "https://example.test/products" } },
@@ -236,45 +258,38 @@ test.describe("#582 브라우저 호스트 도구 (UC-ENV-TOOL-BROWSE·SCRIPT)",
 		]);
 		await say(page, "제품 페이지 열고 구조 보여줘");
 
-		const card = page.locator(".browser-host-card").first();
-		await expect(card).toBeVisible({ timeout: 20_000 });
-		// 증거 셋이 전부 화면에 있다 — 하나라도 없으면 사용자가 무슨 일이 있었는지 못 본다.
-		await expect(card.locator(".browser-host-url")).toContainText("example.test/products");
-		await expect(card.locator(".browser-host-revision")).toContainText("개정 4");
-		await expect(card.locator(".browser-host-evidence")).toContainText("snap-7");
-		await expect(card.locator(".browser-host-evidence")).toContainText("op-7.png");
-		await expect(card.locator('.browser-host-badge[data-state="success"]')).toBeVisible();
-
-		// 카드가 아직 스트리밍 자리에 붙어 있을 때 찍는다 — 턴이 끝나면 이 노드는 떨어진다.
-		await card.screenshot({ path: `${SHOT_DIR}/02-success-card.png` });
-		await page.screenshot({ path: `${SHOT_DIR}/02-success.png`, fullPage: true });
-
+		// 두 호출 모두 실패 결과로 돌아간다 — 거절을 성공으로 바꾸지 않는다.
 		await expect
-			.poll(async () => (await portCalls(page)).join(","), { timeout: 20_000 })
-			.toBe("open,snapshot");
-		// #582 S6c: DEV 에서는 포트 대역이 이긴다. 다리(ego_host_*)까지 갔다면 대역이 안 걸린
-		// 것이고, 그때 이 스펙이 재는 것은 우리가 재려던 것이 아니다.
+			.poll(async () => toolResults(page), { timeout: 20_000 })
+			.toEqual([
+				{ toolCallId: "tc-h-1", success: false, result: "Tool is not available: env_browser_open" },
+				{ toolCallId: "tc-h-2", success: false, result: "Tool is not available: env_browser_snapshot" },
+			]);
+		// 경계는 실행기 앞이다. 포트 대역도, 프로덕션 다리(ego_host_*)도 한 번도 불리지 않는다.
+		expect(await portCalls(page)).toEqual([]);
 		expect(
 			await page.evaluate(() => (window as unknown as { __E2E_EGO_HOST__: string[] }).__E2E_EGO_HOST__),
 		).toEqual([]);
-		// 좁은 폭은 턴이 끝난 뒤의 메시지 카드에서 잰다 — 사용자가 실제로 다시 보는 자리다.
-		await page.setViewportSize({ width: 900, height: 800 });
-		const settled = page.locator(".browser-host-card").first();
-		await expect(settled).toBeVisible({ timeout: 20_000 });
-		await settled.screenshot({ path: `${SHOT_DIR}/05-narrow-900-card.png` });
-		await page.screenshot({ path: `${SHOT_DIR}/05-narrow-900.png`, fullPage: true });
+		// 결과 카드도 만들지 않는다. 실행되지 않은 도구의 증거를 보여 주면 거짓이 된다.
+		await expect(page.locator(".browser-host-card")).toHaveCount(0);
 	});
 
-	test("(B2) 빈 목록은 실패가 아니라 '없음' 으로 보인다", async ({ page }) => {
+	test("(B2) 관측 전용 env_browser_list_workspaces 도 거절된다 (#611)", async ({ page }) => {
 		await boot(page);
 		await setCalls(page, [{ tool: "env_browser_list_workspaces", args: {} }]);
 		await say(page, "지금 열려 있는 브라우저 공간 알려줘");
 
-		const card = page.locator(".browser-host-card").first();
-		await expect(card).toBeVisible({ timeout: 20_000 });
-		await expect(card.locator(".browser-host-empty")).toContainText("없습니다");
-		await card.screenshot({ path: `${SHOT_DIR}/01-empty-card.png` });
-		await page.screenshot({ path: `${SHOT_DIR}/01-empty.png`, fullPage: true });
+		await expect
+			.poll(async () => toolResults(page), { timeout: 20_000 })
+			.toEqual([
+				{
+					toolCallId: "tc-h-1",
+					success: false,
+					result: "Tool is not available: env_browser_list_workspaces",
+				},
+			]);
+		expect(await portCalls(page)).toEqual([]);
+		await expect(page.locator(".browser-host-card")).toHaveCount(0);
 	});
 
 	test("(B0) 기본 상태 — 도구를 부르기 전에는 카드가 없다", async ({ page }) => {
@@ -283,26 +298,27 @@ test.describe("#582 브라우저 호스트 도구 (UC-ENV-TOOL-BROWSE·SCRIPT)",
 		await page.screenshot({ path: `${SHOT_DIR}/00-default.png`, fullPage: true });
 	});
 
-	test("(B3) 진행 상태 — 증거를 받기 전에 '실행 중' 이라고 말한다", async ({ page }) => {
+	test("(B3) 거절은 즉시다 — 느린 포트를 기다리는 '실행 중' 상태가 생기지 않는다 (#611)", async ({
+		page,
+	}) => {
 		await boot(page);
-		// 포트를 일부러 늦춘다. 진행 상태가 화면에 실제로 머무는지 재려면 그 사이가 필요하다.
+		// 포트를 일부러 늦춘다. 경계가 실행기 앞이면 이 지연은 화면에 나타날 수 없다.
 		await page.evaluate(() => {
 			(window as unknown as { __E2E_PORT_DELAY_MS__?: number }).__E2E_PORT_DELAY_MS__ = 6_000;
 		});
 		await setCalls(page, [{ tool: "env_browser_snapshot", args: {} }]);
 		await say(page, "지금 페이지 구조 보여줘");
 
-		const progress = page.locator(".browser-host-progress");
-		await expect(progress).toBeVisible({ timeout: 20_000 });
-		await expect(progress).toHaveAttribute("aria-live", "polite");
-		await page.screenshot({ path: `${SHOT_DIR}/03-progress.png`, fullPage: true });
-		await page
-			.locator(".browser-host-card")
-			.first()
-			.screenshot({ path: `${SHOT_DIR}/03-progress-card.png` });
+		await expect
+			.poll(async () => toolResults(page), { timeout: 5_000 })
+			.toEqual([
+				{ toolCallId: "tc-h-1", success: false, result: "Tool is not available: env_browser_snapshot" },
+			]);
+		await expect(page.locator(".browser-host-progress")).toHaveCount(0);
+		expect(await portCalls(page)).toEqual([]);
 	});
 
-	test("(C) 승인 없는 env_browser_script 는 거부 카드가 되고 관측 도구는 영향이 없다", async ({
+	test("(C) env_browser_script 는 승인 판정 전에 경계에서 거절되고 script 포트는 불리지 않는다 (#611)", async ({
 		page,
 	}) => {
 		await boot(page);
@@ -312,20 +328,17 @@ test.describe("#582 브라우저 호스트 도구 (UC-ENV-TOOL-BROWSE·SCRIPT)",
 		]);
 		await say(page, "이 페이지에서 묶음으로 처리해줘");
 
-		const refused = page.locator('.browser-host-card[data-status="refused"]').first();
-		await expect(refused).toBeVisible({ timeout: 20_000 });
-		await expect(refused.locator(".browser-host-refusal-code")).toContainText("approval-missing");
-		// 원시 코드만 보여 주면 사용자가 복구할 수 없다. 다음 행동이 같은 카드 안에 있어야 한다.
-		await expect(refused.locator(".browser-host-refusal-hint")).toContainText("승인");
-		await expect(refused.locator(".browser-host-refusals")).toHaveAttribute("role", "alert");
-
-		await refused.screenshot({ path: `${SHOT_DIR}/04-error-refused-card.png` });
-		await page.screenshot({ path: `${SHOT_DIR}/04-error-refused.png`, fullPage: true });
-
-		// 거부는 자식 프로세스가 뜨기 전이다. script 포트는 한 번도 불리지 않고 관측은 그대로 돈다.
 		await expect
-			.poll(async () => (await portCalls(page)).join(","), { timeout: 20_000 })
-			.toBe("snapshot");
+			.poll(async () => toolResults(page), { timeout: 20_000 })
+			.toEqual([
+				{ toolCallId: "tc-h-1", success: false, result: "Tool is not available: env_browser_script" },
+				{ toolCallId: "tc-h-2", success: false, result: "Tool is not available: env_browser_snapshot" },
+			]);
+		// 승인 창도 뜨지 않는다 — 모델에 없는 도구를 사용자에게 승인받게 하지 않는다.
+		await expect(page.locator(".permission-modal")).toHaveCount(0);
+		// 자식 프로세스는 뜨지 않는다. script 포트도 관측 포트도 한 번도 불리지 않는다.
+		expect(await portCalls(page)).toEqual([]);
+		await expect(page.locator(".browser-host-card")).toHaveCount(0);
 	});
 
 	test("(D) 기존 skill_browser_navigate 의 이름·동작은 바뀌지 않는다", async ({ page }) => {

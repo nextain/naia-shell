@@ -1,5 +1,6 @@
 /** Locale-specific extensions applied after the common LLM-to-speech rules. */
 import { normalizeKoreanNumbers } from "./ko-number-reading";
+import { wordBoundaryForRemovedMarker } from "../text-boundary";
 
 export interface TtsTextRule {
 	readonly locale: "fallback" | "ko" | "en" | "ja" | "zh";
@@ -50,7 +51,12 @@ export const ttsTextFilter = Object.freeze({
 			.replace(/```[\s\S]*?(?:```|$)/g, " ")
 			.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
 			.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-			.replace(/\[(?:HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)]\s*/gi, "")
+			// Preserve newlines and restore a space if stripping this inline tag joins words.
+			.replace(
+				/\[(?:HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)][ \t]*/gi,
+				(match, offset: number, source: string) =>
+					wordBoundaryForRemovedMarker(source, offset, offset + match.length),
+			)
 			.replace(/`([^`]*)`/g, (_match, content: string) =>
 				rule.transformInlineCode(content),
 			)

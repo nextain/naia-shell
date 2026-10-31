@@ -1,3 +1,6 @@
+import type { NvaGestureAction } from "./avatar/camera-actions";
+import { nvaGestureShortcutLabel } from "./avatar/nva-action-hotkeys";
+
 /** Default Naia persona — editable by user in settings */
 export const DEFAULT_PERSONA = `You are Naia (낸), a friendly AI companion living inside Naia.
 
@@ -115,6 +118,27 @@ Emotion tags (for Shell avatar only):
 - IMPORTANT: Emotion tags are for the Shell avatar's facial expression only. They are automatically stripped from Discord messages.`;
 }
 
+export function getGestureInstructions(
+	actions?: readonly NvaGestureAction[],
+): string {
+	if (!actions?.length) return "";
+	const list = actions
+		.map(({ key, label }, index) => {
+			const shortcut = nvaGestureShortcutLabel(index);
+			return `- ${key}: ${label}${shortcut ? ` (user shortcut ${shortcut})` : ""}`;
+		})
+		.join("\n");
+	return `
+NVA gesture actions (Shell avatar control only):
+- Available actions and user shortcuts:
+${list}
+- Actively use an action when its meaning fits the mood and context, especially for greetings, warmth, happiness, celebration, or encouragement.
+- Emit at most one exact marker per response, such as [[gesture:key]], and use the action key exactly as listed.
+- Do not repeat the same action in consecutive responses.
+- Do not use gestures for information delivery, serious topics, or sad responses.
+- The Shell removes markers from displayed and spoken text; never say a marker aloud.`;
+}
+
 /** Memory context injected into system prompt.
  *  Note: User facts are now handled by Agent MemorySystem (sessionRecall),
  *  not by Shell. Shell only provides persona/locale/app context here. */
@@ -130,6 +154,8 @@ export interface MemoryContext {
 	 * rendered per entry. Assembled by `selectPromptAppContexts`.
 	 */
 	appContexts?: { type: string; data: Record<string, unknown> }[];
+	/** Gestures from the active pre-baked NVA, absent for other avatars. */
+	avatarGestures?: readonly NvaGestureAction[];
 }
 
 /** Build full system prompt from persona text + optional memory context */
@@ -147,15 +173,18 @@ function buildNonPersonaPrompt(context?: MemoryContext): string {
 
 	if (context.locale) {
 		const lang = localeToLanguage(context.locale);
-		lines.push(`IMPORTANT: Respond in ${lang}. The user's preferred language is ${lang}.`);
+		lines.push(
+			`IMPORTANT: Respond in ${lang}. The user's preferred language is ${lang}.`,
+		);
 	}
-
 
 	if (context.appContexts?.length) {
 		for (const pc of context.appContexts) {
 			lines.push(`App [${pc.type}] context: ${JSON.stringify(pc.data)}`);
 		}
 	}
+	const gestureInstructions = getGestureInstructions(context.avatarGestures);
+	if (gestureInstructions) lines.push(gestureInstructions.trim());
 
 	return lines.join("\n");
 }
@@ -216,7 +245,6 @@ export function buildSystemPrompt(
 			);
 		}
 
-
 		if (context.appContexts?.length) {
 			for (const pc of context.appContexts) {
 				contextLines.push(
@@ -231,5 +259,7 @@ export function buildSystemPrompt(
 	}
 
 	parts.push(getEmotionInstructions(context?.locale));
+	const gestureInstructions = getGestureInstructions(context?.avatarGestures);
+	if (gestureInstructions) parts.push(gestureInstructions);
 	return parts.join("\n");
 }

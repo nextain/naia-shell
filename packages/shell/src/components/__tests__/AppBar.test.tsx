@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
 import { resetDistributionChannelForTests } from "../../lib/distribution";
@@ -7,7 +13,8 @@ import { resetDistributionChannelForTests } from "../../lib/distribution";
 const {
 	mockNavigate,
 	mockSetActiveApp,
-	mockOpenUrl,
+	mockEmit,
+	mockInvoke,
 	channel,
 	registeredApps,
 	appListVersion,
@@ -15,7 +22,8 @@ const {
 	channel: { value: "standard" },
 	mockNavigate: vi.fn(),
 	mockSetActiveApp: vi.fn(),
-	mockOpenUrl: vi.fn().mockResolvedValue(undefined),
+	mockEmit: vi.fn().mockResolvedValue(undefined),
+	mockInvoke: vi.fn(),
 	registeredApps: {
 		value: [] as Array<{
 			id: string;
@@ -32,19 +40,17 @@ const {
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn(async (cmd: string) =>
-		cmd === "get_distribution_channel" ? channel.value : undefined,
-	),
+	invoke: (...args: unknown[]) => {
+		mockInvoke(...args);
+		return Promise.resolve(args[0] === "get_distribution_channel" ? channel.value : undefined);
+	},
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: vi.fn().mockResolvedValue(() => {}),
-	emit: vi.fn().mockResolvedValue(undefined),
+	emit: mockEmit,
 }));
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-	openUrl: mockOpenUrl,
-}));
 
 const mockLoadBrowserShortcuts = vi.fn().mockResolvedValue([]);
 const mockRemoveBrowserShortcut = vi.fn();
@@ -150,6 +156,9 @@ describe("AppBar — add dialog", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
+		mockInvoke.mockReset();
+		mockEmit.mockReset().mockResolvedValue(undefined);
+		mockLoadBrowserShortcuts.mockResolvedValue([]);
 		registeredApps.value = [];
 		appListVersion.value = 0;
 		vi.mocked(appRegistry.list).mockImplementation(() => registeredApps.value);
@@ -177,7 +186,40 @@ describe("AppBar — add dialog", () => {
 			"browser",
 			"workspace",
 		]);
-		expect(screen.queryByLabelText("앱스토어")).toBeNull();
+	});
+
+	it("shows a fixed App Store action and opens it without switching apps", async () => {
+		channel.value = "standard";
+		resetDistributionChannelForTests();
+		render(<AppBar />);
+
+		const appStore = await screen.findByRole("button", {
+			name: "appbar.appStore",
+		});
+		expect(appStore).toHaveAttribute("title", "appbar.appStore");
+		expect(appStore).not.toHaveAttribute("data-app-id");
+		fireEvent.click(appStore);
+
+		await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("focus_or_create_app_store_window", expect.any(Object)));
+		expect(mockSetActiveApp).not.toHaveBeenCalled();
+		expect(mockNavigate).not.toHaveBeenCalled();
+	});
+
+	it("keeps the fixed App Store action outside app edit and removal controls", async () => {
+		channel.value = "standard";
+		resetDistributionChannelForTests();
+		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
+		render(<AppBar />);
+		await act(async () => {});
+		const appStore = await screen.findByRole("button", {
+			name: "appbar.appStore",
+		});
+
+		fireEvent.click(document.querySelector(".app-bar-edit")!);
+
+		expect(appStore).toBeInTheDocument();
+		expect(appStore.closest(".app-bar-tab-wrapper")).toBeNull();
+		expect(appStore).not.toHaveAttribute("data-app-id");
 	});
 
 	it("shows a built-in app registered after the first render and keeps the first tabs", async () => {
@@ -189,7 +231,7 @@ describe("AppBar — add dialog", () => {
 			id: "projects",
 			name: "Projects",
 			names: { ko: "프로젝트" },
-			icon: "📁",
+			icon: "🤖",
 			builtIn: true,
 			center: () => null,
 		});
@@ -197,6 +239,10 @@ describe("AppBar — add dialog", () => {
 		rerender(<AppBar />);
 
 		expect(screen.getByTitle("프로젝트")).toBeDefined();
+		expect(
+			screen.getByTitle("프로젝트").querySelector(".app-bar-tab-icon")
+				?.textContent,
+		).toBe("🤖");
 		const firstTabs = Array.from(
 			document.querySelectorAll(".app-bar-tabs > button"),
 		).slice(0, 3);
@@ -214,18 +260,23 @@ describe("AppBar — add dialog", () => {
 		fireEvent.click(screen.getByText("appbar.addApp").closest("button")!);
 
 		expect(onAddApp).toHaveBeenCalledTimes(1);
-		expect(mockOpenUrl).not.toHaveBeenCalled();
+		expect(mockInvoke).not.toHaveBeenCalledWith("focus_or_create_app_store_window", expect.anything());
 	});
 
-	it("opens the third app-store item in the system browser", async () => {
+	it("routes repeated app-store clicks through the single backend window command", async () => {
+		channel.value = "standard";
 		resetDistributionChannelForTests();
 		render(<AppBar />);
-		fireEvent.click(screen.getByTitle("appbar.addItem"));
-		fireEvent.click(
-			(await screen.findByText("appbar.appStore")).closest("button")!,
-		);
-
-		expect(mockOpenUrl).toHaveBeenCalledWith("https://dev.naia.land/ko/apps");
+		const storeButton = await screen.findByRole("button", {
+			name: "appbar.appStore",
+		});
+		fireEvent.click(storeButton);
+		fireEvent.click(storeButton);
+		const storeCalls = () => mockInvoke.mock.calls.filter(([command]) => command === "focus_or_create_app_store_window");
+		await waitFor(() => expect(storeCalls()).toHaveLength(1));
+		fireEvent.click(storeButton);
+		await waitFor(() => expect(storeCalls()).toHaveLength(2));
+		expect(mockInvoke).toHaveBeenCalledWith("focus_or_create_app_store_window", { url: "https://dev.naia.land/ko/apps" });
 		expect(mockSetActiveApp).not.toHaveBeenCalledWith("browser");
 		expect(mockNavigate).not.toHaveBeenCalled();
 	});
@@ -235,6 +286,10 @@ describe("AppBar — add dialog", () => {
 		resetDistributionChannelForTests();
 		try {
 			render(<AppBar />);
+			await new Promise((r) => setTimeout(r, 20));
+			expect(
+				screen.queryByRole("button", { name: "appbar.appStore" }),
+			).toBeNull();
 			fireEvent.click(screen.getByTitle("appbar.addItem"));
 			await new Promise((r) => setTimeout(r, 20));
 			expect(screen.queryByText("appbar.appStore")).toBeNull();

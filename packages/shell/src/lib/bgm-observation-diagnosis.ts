@@ -91,18 +91,69 @@ export type IframeMessageSourceDecision =
 	| "drop_foreign_window"
 	| "drop_null_terminal";
 
+export function extractYoutubeIframeVideoId(
+	src: string | null | undefined,
+): string | undefined {
+	const raw = src?.trim();
+	if (!raw) return undefined;
+	try {
+		const url = new URL(raw, "http://localhost");
+		const queryVideoId = url.searchParams.get("videoId")?.trim();
+		if (queryVideoId) return queryVideoId;
+		const embedMatch = /\/embed\/([^/?#]+)/i.exec(url.pathname);
+		if (embedMatch?.[1]?.trim()) {
+			return decodeURIComponent(embedMatch[1].trim());
+		}
+	} catch {
+		const embedMatch = /\/embed\/([^/?#]+)/i.exec(raw);
+		if (embedMatch?.[1]?.trim()) {
+			return embedMatch[1].trim();
+		}
+	}
+	return undefined;
+}
+
+export function extractMessageVideoId(info: unknown): string | undefined {
+	if (!info || typeof info !== "object") return undefined;
+	const record = info as Record<string, unknown>;
+	if (typeof record.video_id === "string" && record.video_id.trim()) {
+		return record.video_id.trim();
+	}
+	if (typeof record.videoId === "string" && record.videoId.trim()) {
+		return record.videoId.trim();
+	}
+	if (record.videoData && typeof record.videoData === "object") {
+		const vd = record.videoData as Record<string, unknown>;
+		if (typeof vd.video_id === "string" && vd.video_id.trim()) {
+			return vd.video_id.trim();
+		}
+		if (typeof vd.videoId === "string" && vd.videoId.trim()) {
+			return vd.videoId.trim();
+		}
+	}
+	return undefined;
+}
+
 /**
- * Tauri WebView often delivers YouTube postMessage with `source=null`.
+ * Tauri WebView often delivers YouTube postMessage with `source=null` (FR-BGM.18).
  * Dropping every null-source event makes audible playback look like
- * `iframe_playing_not_observed` (#671). Still drop a *different* window
- * (#557), and drop null-source error/ended so a detached track A cannot
- * fail track B.
+ * `iframe_playing_not_observed` (#671) and hides real track end/error events.
+ * Still drop a *different* window (#557), and for null-source terminal events
+ * (`onStateChange(0)` ended, `onError`), immediately accept only after the
+ * current iframe load (`expectedPlaybackId`) has already confirmed the expected
+ * `videoData` (`observedVideoId === expectedVideoId`) (FR-RADIO-DJ.2·5·16 + FR-BGM.18).
  */
 export function decideIframeMessageSource(input: {
 	eventSource: MessageEventSource | null | undefined;
 	activeContentWindow: Window | null;
 	event?: string;
 	info?: unknown;
+	expectedVideoId?: string | null;
+	observedVideoId?: string | null;
+	observedPlaybackId?: string | null;
+	iframeVideoId?: string | null;
+	expectedPlaybackId?: string | null;
+	iframePlaybackId?: string | null;
 }): IframeMessageSourceDecision {
 	if (
 		input.eventSource &&
@@ -111,12 +162,164 @@ export function decideIframeMessageSource(input: {
 	) {
 		return "drop_foreign_window";
 	}
-	if (!input.eventSource) {
-		const event = String(input.event ?? "");
-		if (event === "onError") return "drop_null_terminal";
-		if (event === "onStateChange" && Number(input.info) === 0) {
+	const event = String(input.event ?? "");
+	const stateNum = event === "onStateChange" ? Number(input.info) : Number.NaN;
+	const isEnded = event === "onStateChange" && stateNum === 0;
+	const isTerminal = event === "onError" || isEnded;
+	if (!input.eventSource && isTerminal) {
+		const expectedVideoId = input.expectedVideoId?.trim() || "";
+		if (!expectedVideoId) {
 			return "drop_null_terminal";
 		}
+		const expectedPlaybackId = input.expectedPlaybackId?.trim() || "";
+		const iframePlaybackId = input.iframePlaybackId?.trim() || "";
+		if (
+			expectedPlaybackId &&
+			iframePlaybackId &&
+			expectedPlaybackId !== iframePlaybackId
+		) {
+			return "drop_null_terminal";
+		}
+		const iframeVideoId = input.iframeVideoId?.trim() || "";
+		if (iframeVideoId && iframeVideoId !== expectedVideoId) {
+			return "drop_null_terminal";
+		}
+		const msgVideoId = extractMessageVideoId(input.info);
+		if (msgVideoId) {
+			return msgVideoId === expectedVideoId
+				? "accept"
+				: "drop_null_terminal";
+		}
+		const observedPlaybackId = input.observedPlaybackId?.trim() || "";
+		const sameObservedPlayback =
+			!expectedPlaybackId ||
+			!observedPlaybackId ||
+			expectedPlaybackId === observedPlaybackId;
+		const observedVideoId = sameObservedPlayback
+			? input.observedVideoId?.trim() || ""
+			: "";
+		if (observedVideoId === expectedVideoId) {
+			return "accept";
+		}
+		return "drop_null_terminal";
 	}
 	return "accept";
 }
+
+export const YOUTUBE_WIDGET_LISTENING_MESSAGE = JSON.stringify({
+	event: "listening",
+	id: 1,
+	channel: "widget",
+});
+
+export const YOUTUBE_WIDGET_SUBSCRIBE_MESSAGES: readonly string[] = [
+	JSON.stringify({
+		event: "command",
+		func: "addEventListener",
+		args: ["onStateChange"],
+		id: 1,
+		channel: "widget",
+	}),
+	JSON.stringify({
+		event: "command",
+		func: "addEventListener",
+		args: ["onError"],
+		id: 1,
+		channel: "widget",
+	}),
+];
+
+export interface YoutubeIframeBridgeHandshakeOptions {
+	intervalMs?: number;
+	maxAttempts?: number;
+	setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setInterval>;
+	clearTimer?: (id: ReturnType<typeof setInterval>) => void;
+}
+
+export interface YoutubeIframeBridgeHandshake {
+	/** Send `listening` immediately and poll until first message or maxAttempts. */
+	start: () => void;
+	/** Call when the first valid message from the iframe arrives; stops `listening` polling and sends `addEventListener` subscriptions once. */
+	onFirstMessage: () => boolean;
+	/** Stop any active polling timer. */
+	stop: () => void;
+	/** Whether the first message has been acknowledged and subscriptions sent. */
+	isSubscribed: () => boolean;
+	/** Number of `listening` messages sent so far. */
+	attempts: () => number;
+}
+
+/**
+ * YouTube IFrame Player API bridge handshake (#521).
+ *
+ * The embedded player will not emit `initialDelivery`, `onReady`, `infoDelivery`,
+ * `onStateChange`, or `onError` until the host window first posts
+ * `{"event":"listening","id":1,"channel":"widget"}`. Once the player replies,
+ * the host stops polling `listening` and registers `onStateChange` and `onError`
+ * via `addEventListener`.
+ */
+export function createYoutubeIframeBridgeHandshake(
+	postToIframe: (payload: string) => boolean,
+	options: YoutubeIframeBridgeHandshakeOptions = {},
+): YoutubeIframeBridgeHandshake {
+	const intervalMs = options.intervalMs ?? 250;
+	const maxAttempts = options.maxAttempts ?? 48;
+	const setTimer = options.setTimer ?? ((fn, ms) => setInterval(fn, ms));
+	const clearTimer = options.clearTimer ?? ((id) => clearInterval(id));
+
+	let timer: ReturnType<typeof setInterval> | null = null;
+	let attemptCount = 0;
+	let subscribed = false;
+
+	const stop = () => {
+		if (timer !== null) {
+			clearTimer(timer);
+			timer = null;
+		}
+	};
+
+	const sendListeningTick = () => {
+		if (subscribed) {
+			stop();
+			return;
+		}
+		if (attemptCount >= maxAttempts) {
+			stop();
+			return;
+		}
+		attemptCount += 1;
+		postToIframe(YOUTUBE_WIDGET_LISTENING_MESSAGE);
+		if (attemptCount >= maxAttempts) {
+			stop();
+		}
+	};
+
+	const start = () => {
+		stop();
+		attemptCount = 0;
+		subscribed = false;
+		sendListeningTick();
+		if (!subscribed && attemptCount < maxAttempts) {
+			timer = setTimer(sendListeningTick, intervalMs);
+		}
+	};
+
+	const onFirstMessage = () => {
+		stop();
+		if (subscribed) return false;
+		subscribed = true;
+		for (const msg of YOUTUBE_WIDGET_SUBSCRIBE_MESSAGES) {
+			postToIframe(msg);
+		}
+		return true;
+	};
+
+	return {
+		start,
+		onFirstMessage,
+		stop,
+		isSubscribed: () => subscribed,
+		attempts: () => attemptCount,
+	};
+}
+

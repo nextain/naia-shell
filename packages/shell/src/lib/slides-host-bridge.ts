@@ -82,7 +82,7 @@ function retainOrphanedRecording(stop: RecordingStop): void {
 }
 
 export interface SlidesHostBridgeOptions {
-	/** Exact URL produced by convertFileSrc(htmlEntry) for this iframe. */
+	/** Exact normalized URL produced from convertFileSrc(htmlEntry) for this iframe. */
 	expectedFrameSrc?: string;
 	/** Test seam; production uses the fixed Shell host wrappers. */
 	startRecording?: RecordingStart;
@@ -160,9 +160,8 @@ export function installSlidesHostBridge(
 	if (!isTrustedSlidesFrame(frame, htmlEntry, expectedFrameSrc))
 		return () => {};
 	// Keep one normalized URL binding for every later message and reply check.
-	// GenericInstalledApp passes convertFileSrc(htmlEntry) explicitly; the
-	// helper's strict converter/fallback validation makes the current frame safe
-	// when callers use the optional test seam.
+	// GenericInstalledApp passes the normalized convertFileSrc(htmlEntry) value;
+	// the helper validates it against Tauri's normalized converter result.
 	const boundFrameSrc = expectedFrameSrc ?? frame.src;
 	const target = frame.contentWindow;
 	if (!target) return () => {};

@@ -1,9 +1,11 @@
 //! User-scoped Ollama installation, discovery, and owned server lifecycle.
 //!
 //! The supervisor only executes a validated managed CLI on loopback. It never
-//! adopts or terminates an external Ollama process and does not inspect GPUs.
+//! signals an external Ollama process. Local Ollama use is admitted through the
+//! shared accelerator reservation manager.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -13,18 +15,28 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex, MutexGuard,
+        Arc, Condvar, Mutex, MutexGuard,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use zip::ZipArchive;
 
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
-use crate::vram_reservation::ReservationLease;
+use crate::accelerator::{
+    AcceleratorApi, AcceleratorDevice, AcceleratorInventory, DetectionStatus, DeviceIdKind,
+    HardwareVendor, InformationSource, NvidiaMetadata, ProviderScopedDeviceId,
+};
+use crate::vram_reservation::{
+    LocalModelKind, LocalModelRequest, ReservationLease, ReservationManager,
+};
+
+type InventoryLoader = Arc<dyn Fn() -> AcceleratorInventory + Send + Sync>;
+
+const OLLAMA_WORKLOAD_ID: &str = "ollama-local-llm";
 
 const RELEASE_VERSION: &str = "0.40.3";
 const RELEASE_BASE: &str = "https://github.com/ollama/ollama/releases/download";
@@ -32,6 +44,8 @@ const INTEGRITY_KIND: &str = "official_sha256_manifest";
 const MANIFEST_FILE: &str = "naia-shell-ollama.json";
 const STATE_EVENT: &str = "ollama_runtime_state_changed";
 const PROGRESS_EVENT: &str = "ollama_runtime_install_progress";
+const MODEL_PULL_STATE_EVENT: &str = "ollama_model_pull_state_changed";
+const MODEL_PULL_PROGRESS_EVENT: &str = "ollama_model_pull_progress";
 const DEFAULT_HOST_URL: &str = "http://localhost:11434";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 const READINESS_TIMEOUT: Duration = Duration::from_secs(30);
@@ -40,8 +54,22 @@ const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const FORCE_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_EXTRACTED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+const MODEL_PULL_CANCEL_TIMEOUT: Duration = Duration::from_secs(30);
+const MODEL_PULL_MAX_LINE_BYTES: usize = 1024 * 1024;
+const DECIMAL_GB_BYTES: u64 = 1_000_000_000;
+const QWEN_DISK_SPACE_MULTIPLIER: u64 = 2;
 
 static OPERATION_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(windows)]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+#[cfg(windows)]
+const CREATE_SUSPENDED: u32 = 0x0000_0004;
+#[cfg(windows)]
+const OLLAMA_WINDOWS_PROCESS_FLAGS: u32 =
+    CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED;
 
 #[cfg(all(test, unix))]
 static PROCESS_GROUP_SIGTERM_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
@@ -189,6 +217,12 @@ enum RuntimeErrorCode {
     PermissionDenied,
     NotManaged,
     ConfirmationRequired,
+    AcceleratorInventoryUnavailable,
+    DeviceNotFound,
+    DeviceSelectionRequired,
+    DeviceMappingUnverified,
+    ReservationDenied,
+    ReservationLeaseLost,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -199,8 +233,10 @@ enum ServerState {
     ExternalUnavailable,
     Installing,
     InstalledStopped,
+    Reserving,
     Starting,
     ReadyManaged,
+    ReadyExternalLocal,
     ConnectedUnreserved,
     ReadyRemote,
     Stopping,
@@ -221,6 +257,9 @@ enum RuntimeOwnership {
 #[serde(rename_all = "snake_case")]
 enum ReservationStatus {
     NotRequested,
+    Starting,
+    Running,
+    Denied,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -229,6 +268,7 @@ struct ReservationSnapshot {
     kind: Option<String>,
     status: ReservationStatus,
     bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     reason_code: Option<String>,
 }
 
@@ -243,6 +283,38 @@ impl Default for ReservationSnapshot {
     }
 }
 
+impl ReservationSnapshot {
+    fn starting() -> Self {
+        Self {
+            kind: Some("local_llm".to_string()),
+            status: ReservationStatus::Starting,
+            bytes: None,
+            reason_code: None,
+        }
+    }
+
+    fn denied(reason_code: &str) -> Self {
+        Self {
+            kind: Some("local_llm".to_string()),
+            status: ReservationStatus::Denied,
+            bytes: None,
+            reason_code: Some(reason_code.to_string()),
+        }
+    }
+
+    fn from_lease(lease: &ReservationLease) -> Option<Self> {
+        lease.snapshot().map(|reservation| Self {
+            kind: Some("local_llm".to_string()),
+            status: match reservation.status {
+                crate::vram_reservation::ReservationStatus::Starting => ReservationStatus::Starting,
+                crate::vram_reservation::ReservationStatus::Running => ReservationStatus::Running,
+            },
+            bytes: reservation.reservation_bytes,
+            reason_code: None,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RuntimeError {
@@ -251,6 +323,8 @@ pub(crate) struct RuntimeError {
     retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     operation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason_code: Option<String>,
 }
 
 impl RuntimeError {
@@ -260,12 +334,31 @@ impl RuntimeError {
             stage: stage.to_string(),
             retryable,
             operation_id: None,
+            reason_code: None,
         }
     }
 
     fn for_operation(mut self, operation_id: &str) -> Self {
         self.operation_id = Some(operation_id.to_string());
         self
+    }
+
+    fn with_reason_code(mut self, reason_code: &str) -> Self {
+        self.reason_code = Some(reason_code.to_string());
+        self
+    }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub(crate) enum StopCommandError {
+    Runtime(RuntimeError),
+    ModelPull(ModelPullError),
+}
+
+impl From<RuntimeError> for StopCommandError {
+    fn from(error: RuntimeError) -> Self {
+        Self::Runtime(error)
     }
 }
 
@@ -311,6 +404,274 @@ struct InstallProgress {
     total_bytes: Option<u64>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QwenModelCandidate {
+    id: &'static str,
+    display_name: &'static str,
+    tag: &'static str,
+    published_size: &'static str,
+    published_size_bytes: Option<u64>,
+    minimum_free_bytes: Option<u64>,
+    quantization: &'static str,
+    source_url: String,
+    license: &'static str,
+    license_url: String,
+    published_context_tokens: u64,
+    parameter_size: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QwenModelPolicy {
+    candidates: Vec<QwenModelCandidate>,
+    default_model_tag: Option<String>,
+    context_default_tokens: Option<u64>,
+    pull_start_policy: Option<String>,
+    model_store_override: Option<String>,
+    automatic_selection_policy: Option<String>,
+    disk_space_multiplier: Option<u64>,
+    model_store_available_bytes: Option<u64>,
+    show_license: Option<bool>,
+    measured_peak_vram_bytes: Option<u64>,
+    selection_headroom_bytes: Option<u64>,
+    #[cfg(test)]
+    #[serde(skip)]
+    available_bytes_override: Option<u64>,
+}
+
+fn qwen_model_policy() -> QwenModelPolicy {
+    qwen_model_policy_with_store(None)
+}
+
+fn app_managed_model_store_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|app_data| app_data.join("ollama").join("models"))
+}
+
+fn qwen_model_policy_for_app(app: &AppHandle) -> QwenModelPolicy {
+    let mut policy = qwen_model_policy_with_store(app_managed_model_store_path(app));
+    policy.model_store_available_bytes = policy
+        .model_store_override
+        .as_deref()
+        .and_then(|path| model_store_available_bytes(Path::new(path)).ok());
+    policy
+}
+
+fn qwen_model_policy_with_store(model_store: Option<PathBuf>) -> QwenModelPolicy {
+    let model_page = |tag: &'static str| format!("https://ollama.com/{tag}");
+    let candidates = [
+        (
+            "0.8B",
+            "huihui_ai/qwen3.5-abliterated:0.8B",
+            "1.0 GB",
+            "Q8_0",
+            "0.8B",
+        ),
+        (
+            "2B",
+            "huihui_ai/qwen3.5-abliterated:2B",
+            "1.9 GB",
+            "Q4_K_M",
+            "2B",
+        ),
+        (
+            "4B",
+            "huihui_ai/qwen3.5-abliterated:4B",
+            "3.3 GB",
+            "Q4_K_M",
+            "4B",
+        ),
+        (
+            "9b",
+            "huihui_ai/qwen3.5-abliterated:9b",
+            "6.6 GB",
+            "Q4_K_M",
+            "9B",
+        ),
+    ]
+    .into_iter()
+    .map(
+        |(size, tag, published_size, quantization, parameter_size)| {
+            let published_size_bytes = decimal_gb_bytes(published_size);
+            QwenModelCandidate {
+                id: match size {
+                    "0.8B" => "qwen35-abliterated-08b",
+                    "2B" => "qwen35-abliterated-2b",
+                    "4B" => "qwen35-abliterated-4b",
+                    _ => "qwen35-abliterated-9b",
+                },
+                display_name: match size {
+                    "0.8B" => "Qwen 3.5 Abliterated 0.8B",
+                    "2B" => "Qwen 3.5 Abliterated 2B",
+                    "4B" => "Qwen 3.5 Abliterated 4B",
+                    _ => "Qwen 3.5 Abliterated 9B",
+                },
+                tag,
+                published_size,
+                published_size_bytes,
+                minimum_free_bytes: published_size_bytes
+                    .and_then(|bytes| bytes.checked_mul(QWEN_DISK_SPACE_MULTIPLIER)),
+                quantization,
+                source_url: model_page(tag),
+                license: "Apache License 2.0",
+                license_url: "https://www.apache.org/licenses/LICENSE-2.0".to_string(),
+                published_context_tokens: 256 * 1024,
+                parameter_size,
+            }
+        },
+    )
+    .collect();
+    QwenModelPolicy {
+        candidates,
+        default_model_tag: Some("huihui_ai/qwen3.5-abliterated:4B".to_string()),
+        context_default_tokens: Some(8192),
+        pull_start_policy: Some("user_confirmed_exact_tag".to_string()),
+        model_store_override: model_store.map(|path| path.to_string_lossy().into_owned()),
+        automatic_selection_policy: Some("manual_only_until_measured".to_string()),
+        disk_space_multiplier: Some(QWEN_DISK_SPACE_MULTIPLIER),
+        model_store_available_bytes: None,
+        show_license: Some(true),
+        measured_peak_vram_bytes: None,
+        selection_headroom_bytes: None,
+        #[cfg(test)]
+        available_bytes_override: None,
+    }
+}
+
+fn decimal_gb_bytes(size_label: &str) -> Option<u64> {
+    let amount = size_label.strip_suffix(" GB")?.trim();
+    let mut parts = amount.split('.');
+    let whole = parts.next()?.parse::<u64>().ok()?;
+    let fractional = parts.next().unwrap_or("");
+    if parts.next().is_some()
+        || fractional.len() > 9
+        || !fractional.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let scale = 10_u64.checked_pow(fractional.len() as u32)?;
+    let fraction = if fractional.is_empty() {
+        0
+    } else {
+        fractional
+            .parse::<u64>()
+            .ok()?
+            .checked_mul(DECIMAL_GB_BYTES / scale)?
+    };
+    whole.checked_mul(DECIMAL_GB_BYTES)?.checked_add(fraction)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ModelPullErrorCode {
+    ModelTagUnknown,
+    ModelConfirmationRequired,
+    ManagedServerRequired,
+    PullAlreadyActive,
+    ModelStoreUnresolved,
+    DiskSpaceLow,
+    DiskMarginUnset,
+    PullHttpFailed,
+    PullStreamMalformed,
+    ModelTagAbsent,
+    ModelDigestMismatch,
+    ModelDetailsMismatch,
+    PullCancelTimeout,
+    PullOperationUnknown,
+    AcceleratorMappingUnverified,
+    ModelPullActive,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ModelPullError {
+    code: ModelPullErrorCode,
+    stage: String,
+    retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    required_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    available_bytes: Option<u64>,
+}
+
+impl ModelPullError {
+    fn new(code: ModelPullErrorCode, stage: &str, retryable: bool) -> Self {
+        Self {
+            code,
+            stage: stage.to_string(),
+            retryable,
+            operation_id: None,
+            required_bytes: None,
+            available_bytes: None,
+        }
+    }
+
+    fn for_operation(mut self, operation_id: &str) -> Self {
+        self.operation_id = Some(operation_id.to_string());
+        self
+    }
+
+    fn with_disk_space(mut self, required_bytes: u64, available_bytes: u64) -> Self {
+        self.required_bytes = Some(required_bytes);
+        self.available_bytes = Some(available_bytes);
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ModelPullState {
+    Absent,
+    Preflight,
+    Pulling,
+    Paused,
+    Failed,
+    Verifying,
+    Ready,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ModelPullSnapshot {
+    operation_id: Option<String>,
+    tag: String,
+    state: ModelPullState,
+    stage: String,
+    digest: Option<String>,
+    error: Option<ModelPullError>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelPullProgress {
+    operation_id: String,
+    tag: String,
+    phase: String,
+    digest: Option<String>,
+    completed: Option<u64>,
+    total: Option<u64>,
+    layer_percent: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ModelPullStartResponse {
+    operation_id: String,
+    snapshot: ModelPullSnapshot,
+}
+
+struct ActiveModelPull {
+    operation_id: String,
+    tag: String,
+    cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    completion: Arc<(Mutex<bool>, Condvar)>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct InstallManifest {
@@ -353,7 +714,13 @@ struct ManagerState {
     operation: Option<ActiveOperation>,
     active_versions: BTreeSet<String>,
     process: Option<ManagedProcess>,
+    unreaped_processes: Vec<ManagedProcess>,
+    external_reservation: Option<ExternalReservation>,
+    external_reservation_pending: Option<(u64, String)>,
+    external_reservation_generation: u64,
     next_process_generation: u64,
+    model_pull_snapshots: BTreeMap<String, ModelPullSnapshot>,
+    active_model_pull: Option<ActiveModelPull>,
     shutdown_requested: bool,
 }
 
@@ -364,7 +731,13 @@ impl Default for ManagerState {
             operation: None,
             active_versions: BTreeSet::new(),
             process: None,
+            unreaped_processes: Vec::new(),
+            external_reservation: None,
+            external_reservation_pending: None,
+            external_reservation_generation: 0,
             next_process_generation: 1,
+            model_pull_snapshots: BTreeMap::new(),
+            active_model_pull: None,
             shutdown_requested: false,
         }
     }
@@ -407,6 +780,11 @@ trait ManagedChild: Send {
     fn request_graceful_shutdown(&mut self) -> io::Result<()>;
     fn force_kill_tree(&mut self) -> io::Result<()>;
     fn process_tree_alive(&mut self) -> io::Result<bool>;
+
+    #[cfg(all(test, windows))]
+    fn child_pid_for_test(&self) -> Option<u32> {
+        None
+    }
 }
 
 trait RuntimeProcessRunner: Send + Sync {
@@ -422,6 +800,11 @@ struct OwnedChild {
 }
 
 impl ManagedChild for OwnedChild {
+    #[cfg(all(test, windows))]
+    fn child_pid_for_test(&self) -> Option<u32> {
+        Some(self.child.id())
+    }
+
     fn has_exited(&mut self) -> io::Result<bool> {
         self.observe_exit()
     }
@@ -549,8 +932,12 @@ struct ManagedProcess {
     child: Box<dyn ManagedChild>,
     version: String,
     generation: u64,
-    // Stage 4 fills this only after reservation-before-spawn is connected.
     reservation: Option<ReservationLease>,
+}
+
+struct ExternalReservation {
+    host: String,
+    lease: ReservationLease,
 }
 
 /// Tauri-managed state shared by the status, install, and remove commands.
@@ -559,6 +946,8 @@ pub(crate) struct RuntimeManager {
     inner: Arc<Mutex<ManagerState>>,
     downloader: Arc<dyn ArtifactDownloader>,
     process_runner: Arc<dyn RuntimeProcessRunner>,
+    reservation_manager: ReservationManager,
+    inventory_loader: InventoryLoader,
     settings: RuntimeSettings,
     locations: Option<(PathBuf, PathBuf)>,
     release_pin: Option<ReleasePin>,
@@ -566,15 +955,167 @@ pub(crate) struct RuntimeManager {
 
 impl Default for RuntimeManager {
     fn default() -> Self {
+        let inventory_loader: InventoryLoader = if cfg!(debug_assertions)
+            && std::env::var_os("NAIA_SHELL_E2E_FAKE_ACCELERATOR").is_some()
+        {
+            Arc::new(e2e_fake_accelerator_inventory)
+        } else {
+            Arc::new(crate::accelerator::list_accelerators)
+        };
         Self {
             inner: Arc::new(Mutex::new(ManagerState::default())),
             downloader: Arc::new(HttpDownloader),
             process_runner: Arc::new(SystemProcessRunner),
+            reservation_manager: crate::vram_reservation::process_manager_clone(),
+            inventory_loader,
             settings: RuntimeSettings::default(),
             locations: None,
             release_pin: None,
         }
     }
+}
+
+fn e2e_fake_accelerator_inventory() -> AcceleratorInventory {
+    AcceleratorInventory {
+        status: DetectionStatus::Detected,
+        devices: vec![AcceleratorDevice {
+            accelerator: AcceleratorApi::Vulkan,
+            vendor: HardwareVendor::Nvidia,
+            name: Some("Fixture accelerator".to_string()),
+            provider_id: ProviderScopedDeviceId {
+                provider: AcceleratorApi::Vulkan,
+                kind: DeviceIdKind::VulkanUuid,
+                value: "vulkan:uuid:00112233445566778899aabbccddeeff".to_string(),
+            },
+            total_vram_bytes: Some(16 * 1024 * 1024 * 1024),
+            available_vram_bytes: Some(15 * 1024 * 1024 * 1024),
+            info_source: InformationSource::Vulkan,
+            total_vram_source: Some(InformationSource::Vulkan),
+            available_vram_source: Some(InformationSource::NvidiaSmi),
+            nvidia: Some(NvidiaMetadata {
+                compatibility_index: Some(0),
+                name: Some("Fixture accelerator".to_string()),
+                compute_capability: None,
+                driver_version: None,
+            }),
+            nvidia_info_source: Some(InformationSource::NvidiaSmi),
+        }],
+        error_code: None,
+    }
+}
+
+fn select_ollama_device(
+    inventory: &AcceleratorInventory,
+    requested_device_id: Option<&str>,
+) -> Result<(String, String), RuntimeError> {
+    if inventory.status != DetectionStatus::Detected {
+        let (code, reason) = if inventory.status == DetectionStatus::NoDevices {
+            (RuntimeErrorCode::DeviceNotFound, "device_not_found")
+        } else {
+            (
+                RuntimeErrorCode::AcceleratorInventoryUnavailable,
+                "inventory_unavailable",
+            )
+        };
+        return Err(RuntimeError::new(code, "reservation", true).with_reason_code(reason));
+    }
+    if inventory.devices.is_empty() {
+        return Err(
+            RuntimeError::new(RuntimeErrorCode::DeviceNotFound, "reservation", false)
+                .with_reason_code("device_not_found"),
+        );
+    }
+    let device = if let Some(requested_device_id) = requested_device_id {
+        let mut matches = inventory
+            .devices
+            .iter()
+            .filter(|device| device.provider_id.value == requested_device_id);
+        let Some(device) = matches.next() else {
+            return Err(
+                RuntimeError::new(RuntimeErrorCode::DeviceNotFound, "reservation", false)
+                    .with_reason_code("device_not_found"),
+            );
+        };
+        if matches.next().is_some() {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::DeviceMappingUnverified,
+                "mapping",
+                false,
+            )
+            .with_reason_code("device_mapping_unverified"));
+        }
+        device
+    } else {
+        if inventory.devices.len() != 1 {
+            return Err(RuntimeError::new(
+                RuntimeErrorCode::DeviceSelectionRequired,
+                "reservation",
+                false,
+            )
+            .with_reason_code("device_selection_required"));
+        }
+        &inventory.devices[0]
+    };
+
+    if device.vendor != HardwareVendor::Nvidia {
+        return Err(
+            RuntimeError::new(RuntimeErrorCode::DeviceMappingUnverified, "mapping", false)
+                .with_reason_code("device_mapping_unverified"),
+        );
+    }
+    let selector = device
+        .nvidia
+        .as_ref()
+        .and_then(|metadata| metadata.compatibility_index)
+        .filter(|index| {
+            inventory
+                .devices
+                .iter()
+                .filter(|candidate| {
+                    candidate
+                        .nvidia
+                        .as_ref()
+                        .and_then(|metadata| metadata.compatibility_index)
+                        == Some(*index)
+                })
+                .count()
+                == 1
+        })
+        .map(|index| index.to_string())
+        .or_else(|| {
+            let uuid = device.provider_id.value.strip_prefix("vulkan:uuid:")?;
+            if uuid.len() == 32 && uuid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                let selector = format!("GPU-{uuid}");
+                let collisions = inventory
+                    .devices
+                    .iter()
+                    .filter(|candidate| {
+                        candidate
+                            .provider_id
+                            .value
+                            .strip_prefix("vulkan:uuid:")
+                            .is_some_and(|candidate_uuid| {
+                                format!("GPU-{candidate_uuid}") == selector
+                            })
+                    })
+                    .count();
+                (collisions == 1).then_some(selector)
+            } else {
+                None
+            }
+        });
+    let Some(selector) = selector else {
+        return Err(
+            RuntimeError::new(RuntimeErrorCode::DeviceMappingUnverified, "mapping", false)
+                .with_reason_code("device_mapping_unverified"),
+        );
+    };
+    Ok((device.provider_id.value.clone(), selector))
+}
+
+fn reservation_error(reason_code: &str) -> RuntimeError {
+    RuntimeError::new(RuntimeErrorCode::ReservationDenied, "reservation", true)
+        .with_reason_code(reason_code)
 }
 
 impl RuntimeManager {
@@ -586,7 +1127,10 @@ impl RuntimeManager {
 
     fn begin(&self, id: &str, kind: OperationKind) -> Result<(), RuntimeError> {
         let mut state = self.lock();
-        if state.shutdown_requested || state.operation.is_some() {
+        if state.shutdown_requested
+            || state.operation.is_some()
+            || state.active_model_pull.is_some()
+        {
             return Err(RuntimeError::new(
                 RuntimeErrorCode::RuntimeBusy,
                 "dispatch",
@@ -610,7 +1154,10 @@ impl RuntimeManager {
                 state.snapshot.state = RuntimeState::Installing;
                 state.snapshot.server_state = ServerState::Installing;
             }
-            OperationKind::Start => state.snapshot.server_state = ServerState::CheckingHost,
+            OperationKind::Start => {
+                state.snapshot.server_state = ServerState::CheckingHost;
+                state.snapshot.reservation = ReservationSnapshot::default();
+            }
             OperationKind::Stop => state.snapshot.server_state = ServerState::Stopping,
             OperationKind::Remove => {}
         }
@@ -651,6 +1198,8 @@ impl RuntimeManager {
                 || !matches!(
                     state.snapshot.server_state,
                     ServerState::ConnectedUnreserved
+                        | ServerState::ReadyExternalLocal
+                        | ServerState::Reserving
                         | ServerState::ReadyRemote
                         | ServerState::ExternalUnavailable
                 )
@@ -687,6 +1236,8 @@ impl RuntimeManager {
                 } else if !matches!(
                     state.snapshot.server_state,
                     ServerState::ConnectedUnreserved
+                        | ServerState::ReadyExternalLocal
+                        | ServerState::Reserving
                         | ServerState::ReadyRemote
                         | ServerState::ExternalUnavailable
                 ) {
@@ -777,6 +1328,29 @@ impl RuntimeManager {
         self.lock().snapshot.clone()
     }
 
+    fn set_reservation_snapshot(&self, reservation: ReservationSnapshot) {
+        self.lock().snapshot.reservation = reservation;
+    }
+
+    fn try_reserve_local(
+        &self,
+        requested_device_id: Option<&str>,
+    ) -> Result<(ReservationLease, String, String), RuntimeError> {
+        let inventory = (self.inventory_loader)();
+        let (device_id, selector) = select_ollama_device(&inventory, requested_device_id)?;
+        let request = LocalModelRequest {
+            device_id: device_id.clone(),
+            kind: LocalModelKind::LocalLlm,
+            workload_id: OLLAMA_WORKLOAD_ID.to_string(),
+            reservation_bytes: None,
+        };
+        let lease = self
+            .reservation_manager
+            .try_reserve_with_inventory(request, &inventory)
+            .map_err(|denial| reservation_error(denial.reason.code()))?;
+        Ok((lease, device_id, selector))
+    }
+
     fn is_shutting_down(&self) -> bool {
         self.lock().shutdown_requested
     }
@@ -785,6 +1359,146 @@ impl RuntimeManager {
     fn mark_active_for_test(&self, version: &str) {
         self.lock().active_versions.insert(version.to_string());
     }
+}
+
+enum ExternalAdmission {
+    Reserved(ReservationSnapshot),
+    InProgress,
+    Denied(RuntimeError),
+}
+
+fn reserve_external_local(
+    manager: &RuntimeManager,
+    host: &str,
+    requested_device_id: Option<&str>,
+) -> ExternalAdmission {
+    let (generation, old_reservation) = {
+        let mut state = manager.lock();
+        if state.shutdown_requested {
+            return ExternalAdmission::Denied(RuntimeError::new(
+                RuntimeErrorCode::RuntimeBusy,
+                "reservation",
+                true,
+            ));
+        }
+        if let Some(existing) = state.external_reservation.as_ref() {
+            if existing.host == host {
+                return match ReservationSnapshot::from_lease(&existing.lease) {
+                    Some(snapshot) => ExternalAdmission::Reserved(snapshot),
+                    None => ExternalAdmission::Denied(
+                        RuntimeError::new(
+                            RuntimeErrorCode::ReservationLeaseLost,
+                            "reservation",
+                            true,
+                        )
+                        .with_reason_code("reservation_lease_lost"),
+                    ),
+                };
+            }
+        }
+        if state.external_reservation_pending.is_some() {
+            return ExternalAdmission::InProgress;
+        }
+        let old_reservation = state.external_reservation.take();
+        state.external_reservation_generation =
+            state.external_reservation_generation.wrapping_add(1).max(1);
+        let generation = state.external_reservation_generation;
+        state.external_reservation_pending = Some((generation, host.to_string()));
+        (generation, old_reservation)
+    };
+    drop(old_reservation);
+
+    let (lease, _device_id, _selector) = match manager.try_reserve_local(requested_device_id) {
+        Ok(value) => value,
+        Err(error) => {
+            let mut state = manager.lock();
+            if state
+                .external_reservation_pending
+                .as_ref()
+                .is_some_and(|(current, _)| *current == generation)
+            {
+                state.external_reservation_pending = None;
+            }
+            return ExternalAdmission::Denied(error);
+        }
+    };
+    if !lease.mark_running() {
+        let mut state = manager.lock();
+        if state
+            .external_reservation_pending
+            .as_ref()
+            .is_some_and(|(current, _)| *current == generation)
+        {
+            state.external_reservation_pending = None;
+        }
+        drop(state);
+        drop(lease);
+        return ExternalAdmission::Denied(
+            RuntimeError::new(RuntimeErrorCode::ReservationLeaseLost, "reservation", true)
+                .with_reason_code("reservation_lease_lost"),
+        );
+    }
+    let Some(reservation) = ReservationSnapshot::from_lease(&lease) else {
+        let mut state = manager.lock();
+        if state
+            .external_reservation_pending
+            .as_ref()
+            .is_some_and(|(current, _)| *current == generation)
+        {
+            state.external_reservation_pending = None;
+        }
+        drop(state);
+        drop(lease);
+        return ExternalAdmission::Denied(
+            RuntimeError::new(RuntimeErrorCode::ReservationLeaseLost, "reservation", true)
+                .with_reason_code("reservation_lease_lost"),
+        );
+    };
+    let mut lease_to_drop = Some(lease);
+    let committed = {
+        let mut state = manager.lock();
+        if state
+            .external_reservation_pending
+            .as_ref()
+            .is_some_and(|(current, current_host)| *current == generation && current_host == host)
+            && !state.shutdown_requested
+        {
+            state.external_reservation_pending = None;
+            state.external_reservation = Some(ExternalReservation {
+                host: host.to_string(),
+                lease: lease_to_drop.take().expect("new external lease is present"),
+            });
+            true
+        } else {
+            false
+        }
+    };
+    drop(lease_to_drop);
+    if committed {
+        ExternalAdmission::Reserved(reservation)
+    } else {
+        ExternalAdmission::Denied(RuntimeError::new(
+            RuntimeErrorCode::RuntimeBusy,
+            "reservation",
+            true,
+        ))
+    }
+}
+
+fn release_external_reservation_for_host(manager: &RuntimeManager, host: &str) {
+    let external_reservation = {
+        let mut state = manager.lock();
+        if state
+            .external_reservation
+            .as_ref()
+            .is_some_and(|reservation| reservation.host == host)
+        {
+            state.external_reservation.take()
+        } else {
+            None
+        }
+    };
+    drop(external_reservation);
 }
 
 impl RuntimeProcessRunner for SystemProcessRunner {
@@ -804,12 +1518,8 @@ impl RuntimeProcessRunner for SystemProcessRunner {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
-            const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-            const CREATE_SUSPENDED: u32 = 0x0000_0004;
-            command
-                .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED)
-                .show_window(0);
+            // Keep the process group available for CTRL_BREAK without creating a console window.
+            command.creation_flags(OLLAMA_WINDOWS_PROCESS_FLAGS);
         }
         #[cfg(unix)]
         {
@@ -855,6 +1565,44 @@ impl RuntimeProcessRunner for SystemProcessRunner {
             reaped: false,
         }))
     }
+}
+
+#[cfg(all(windows, test))]
+fn with_attached_child_console<T>(
+    child_pid: u32,
+    action: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
+    use windows_sys::Win32::System::Console::{AttachConsole, FreeConsole, GetConsoleProcessList};
+
+    let mut processes = [0u32; 64];
+    let count = unsafe { GetConsoleProcessList(processes.as_mut_ptr(), processes.len() as u32) };
+    let previous_console_process = if count == 0 {
+        None
+    } else {
+        processes[..count.min(processes.len() as u32) as usize]
+            .iter()
+            .copied()
+            .find(|pid| *pid != std::process::id())
+    };
+    if previous_console_process.is_some() {
+        unsafe { FreeConsole() };
+    }
+    if unsafe { AttachConsole(child_pid) } == 0 {
+        let error = io::Error::last_os_error();
+        if let Some(pid) = previous_console_process {
+            unsafe { AttachConsole(pid) };
+        }
+        return Err(error);
+    }
+
+    let result = action();
+    unsafe { FreeConsole() };
+    if let Some(pid) = previous_console_process {
+        if unsafe { AttachConsole(pid) } == 0 && result.is_ok() {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    result
 }
 
 #[cfg(windows)]
@@ -2279,6 +3027,1350 @@ fn api_error(stage: &str, retryable: bool) -> RuntimeError {
     RuntimeError::new(RuntimeErrorCode::ApiUnreachable, stage, retryable)
 }
 
+fn model_pull_error(
+    code: ModelPullErrorCode,
+    stage: &str,
+    retryable: bool,
+    operation_id: Option<&str>,
+) -> ModelPullError {
+    let error = ModelPullError::new(code, stage, retryable);
+    operation_id.map_or(error.clone(), |id| error.for_operation(id))
+}
+
+fn model_candidate<'a>(policy: &'a QwenModelPolicy, tag: &str) -> Option<&'a QwenModelCandidate> {
+    policy
+        .candidates
+        .iter()
+        .find(|candidate| candidate.tag == tag)
+}
+
+fn model_pull_client(timeout: Duration) -> Result<reqwest::Client, ModelPullError> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(timeout)
+        .build()
+        .map_err(|_| ModelPullError::new(ModelPullErrorCode::PullHttpFailed, "connect", true))
+}
+
+fn model_api_url(base: &str, path: &str) -> Result<url::Url, ModelPullError> {
+    let base = url::Url::parse(base).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ManagedServerRequired, "owner", false)
+    })?;
+    if base.scheme() != "http"
+        || !base.username().is_empty()
+        || base.password().is_some()
+        || base.query().is_some()
+        || base.fragment().is_some()
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    base.join(path)
+        .map_err(|_| ModelPullError::new(ModelPullErrorCode::ManagedServerRequired, "owner", false))
+}
+
+fn managed_pull_base(manager: &RuntimeManager) -> Result<String, ModelPullError> {
+    let mut state = manager.lock();
+    if state.shutdown_requested {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    if state.active_model_pull.is_some() {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::PullAlreadyActive,
+            "preflight",
+            true,
+        ));
+    }
+    if state.operation.is_some() {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::PullAlreadyActive,
+            "preflight",
+            true,
+        ));
+    }
+    if state.snapshot.server_state != ServerState::ReadyManaged
+        || state.snapshot.ownership != RuntimeOwnership::ManagedChild
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    let Some(process) = state.process.as_mut() else {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    };
+    if process.child.has_exited().unwrap_or(true) {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            true,
+        ));
+    }
+    let reservation_is_running = process
+        .reservation
+        .as_ref()
+        .and_then(ReservationSnapshot::from_lease)
+        .is_some_and(|reservation| reservation.status == ReservationStatus::Running);
+    if !reservation_is_running || state.snapshot.reservation.status != ReservationStatus::Running {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::AcceleratorMappingUnverified,
+            "owner",
+            false,
+        ));
+    }
+    let base = manager.settings.managed_base_url.clone();
+    let parsed = url::Url::parse(&base).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ManagedServerRequired, "owner", false)
+    })?;
+    let allowed = if cfg!(test) {
+        is_loopback_endpoint(&parsed)
+    } else {
+        base == DEFAULT_HOST_URL && is_loopback_endpoint(&parsed)
+    };
+    if !allowed {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    Ok(base)
+}
+
+#[derive(Debug)]
+struct ModelStoreCheck {
+    probe_directory: PathBuf,
+    available_bytes: u64,
+}
+
+fn model_store_probe_directory(configured: &Path) -> Result<PathBuf, ModelPullError> {
+    if !configured.is_absolute() {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelStoreUnresolved,
+            "preflight",
+            false,
+        ));
+    }
+    let mut ancestor = configured;
+    let existing = loop {
+        match fs::metadata(ancestor) {
+            Ok(metadata) if metadata.is_dir() => break ancestor.to_path_buf(),
+            Ok(_) => {
+                return Err(ModelPullError::new(
+                    ModelPullErrorCode::ModelStoreUnresolved,
+                    "preflight",
+                    false,
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                ancestor = ancestor.parent().ok_or_else(|| {
+                    ModelPullError::new(
+                        ModelPullErrorCode::ModelStoreUnresolved,
+                        "preflight",
+                        false,
+                    )
+                })?;
+            }
+            Err(_) => {
+                return Err(ModelPullError::new(
+                    ModelPullErrorCode::ModelStoreUnresolved,
+                    "preflight",
+                    false,
+                ));
+            }
+        }
+    };
+    Ok(existing)
+}
+
+fn model_store_available_bytes(configured: &Path) -> Result<u64, ModelPullError> {
+    let existing = model_store_probe_directory(configured)?;
+    fs2::available_space(&existing).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+    })
+}
+
+fn check_model_store(policy: &QwenModelPolicy) -> Result<ModelStoreCheck, ModelPullError> {
+    let configured = policy
+        .model_store_override
+        .as_deref()
+        .map(Path::new)
+        .ok_or_else(|| {
+            ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+        })?;
+    if !configured.is_absolute() || fs::create_dir_all(configured).is_err() {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelStoreUnresolved,
+            "preflight",
+            false,
+        ));
+    }
+    let existing = model_store_probe_directory(configured)?;
+    let probe = tempfile::Builder::new()
+        .prefix("naia-ollama-write-check-")
+        .tempfile_in(&existing)
+        .map_err(|_| {
+            ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+        })?;
+    probe.close().map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+    })?;
+    #[cfg(test)]
+    let available_bytes = match policy.available_bytes_override {
+        Some(available_bytes) => available_bytes,
+        None => fs2::available_space(&existing).map_err(|_| {
+            ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+        })?,
+    };
+    #[cfg(not(test))]
+    let available_bytes = fs2::available_space(&existing).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ModelStoreUnresolved, "preflight", false)
+    })?;
+    Ok(ModelStoreCheck {
+        probe_directory: existing,
+        available_bytes,
+    })
+}
+
+fn installed_model_digest(models: &Value, tag: &str) -> Option<String> {
+    models
+        .get("models")?
+        .as_array()?
+        .iter()
+        .find(|model| {
+            model.get("name").and_then(Value::as_str) == Some(tag)
+                || model.get("model").and_then(Value::as_str) == Some(tag)
+        })?
+        .get("digest")
+        .and_then(Value::as_str)
+        .filter(|digest| !digest.trim().is_empty())
+        .map(str::to_string)
+}
+
+fn model_tag_present(models: &Value, tag: &str) -> bool {
+    models
+        .get("models")
+        .and_then(Value::as_array)
+        .is_some_and(|models| {
+            models.iter().any(|model| {
+                model.get("name").and_then(Value::as_str) == Some(tag)
+                    || model.get("model").and_then(Value::as_str) == Some(tag)
+            })
+        })
+}
+
+fn fetch_tags_sync(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    tag: &str,
+    operation_id: Option<&str>,
+) -> Result<Option<String>, ModelPullError> {
+    let url = model_api_url(base, "/api/tags").map_err(|error| match operation_id {
+        Some(operation_id) => error.for_operation(operation_id),
+        None => error,
+    })?;
+    let response = client
+        .get(url)
+        .send()
+        .and_then(reqwest::blocking::Response::error_for_status)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "tags",
+                true,
+                operation_id,
+            )
+        })?;
+    let value: Value = response.json().map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::PullStreamMalformed,
+            "tags",
+            true,
+            operation_id,
+        )
+    })?;
+    let digest = installed_model_digest(&value, tag);
+    if model_tag_present(&value, tag) && digest.is_none() {
+        return Err(model_pull_error(
+            ModelPullErrorCode::ModelDigestMismatch,
+            "tags",
+            false,
+            operation_id,
+        ));
+    }
+    Ok(digest)
+}
+
+fn verify_show_details(
+    show: &Value,
+    candidate: &QwenModelCandidate,
+) -> Result<(), ModelPullErrorCode> {
+    let details = show
+        .get("details")
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let quantization = details
+        .get("quantization_level")
+        .and_then(Value::as_str)
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let parameters = details
+        .get("parameter_size")
+        .and_then(Value::as_str)
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let model_info = show
+        .get("model_info")
+        .and_then(Value::as_object)
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let context = model_info
+        .iter()
+        .find(|(key, _)| key.ends_with(".context_length"))
+        .and_then(|(_, value)| value.as_u64())
+        .ok_or(ModelPullErrorCode::ModelDetailsMismatch)?;
+    let is_qwen = model_info
+        .keys()
+        .any(|key| key.to_ascii_lowercase().contains("qwen"))
+        || details
+            .get("family")
+            .and_then(Value::as_str)
+            .is_some_and(|family| family.to_ascii_lowercase().contains("qwen"));
+    if quantization != candidate.quantization
+        || !parameters
+            .to_ascii_lowercase()
+            .starts_with(&candidate.parameter_size.to_ascii_lowercase())
+        || context != candidate.published_context_tokens
+        || !is_qwen
+    {
+        return Err(ModelPullErrorCode::ModelDetailsMismatch);
+    }
+    Ok(())
+}
+
+fn verify_model_sync(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    candidate: &QwenModelCandidate,
+    operation_id: &str,
+) -> Result<String, ModelPullError> {
+    let digest =
+        fetch_tags_sync(client, base, candidate.tag, Some(operation_id))?.ok_or_else(|| {
+            model_pull_error(
+                ModelPullErrorCode::ModelTagAbsent,
+                "verify_tags",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    let show_url = model_api_url(base, "/api/show").map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::PullHttpFailed,
+            "verify_show",
+            true,
+            Some(operation_id),
+        )
+    })?;
+    let show: Value = client
+        .post(show_url)
+        .json(&serde_json::json!({ "name": candidate.tag }))
+        .send()
+        .and_then(reqwest::blocking::Response::error_for_status)
+        .and_then(reqwest::blocking::Response::json)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "verify_show",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    verify_show_details(&show, candidate)
+        .map_err(|code| model_pull_error(code, "verify_show", false, Some(operation_id)))?;
+    let confirmed_digest = fetch_tags_sync(client, base, candidate.tag, Some(operation_id))?
+        .ok_or_else(|| {
+            model_pull_error(
+                ModelPullErrorCode::ModelTagAbsent,
+                "verify_tags_again",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    if digest != confirmed_digest {
+        return Err(model_pull_error(
+            ModelPullErrorCode::ModelDigestMismatch,
+            "verify_tags_again",
+            true,
+            Some(operation_id),
+        ));
+    }
+    Ok(digest)
+}
+
+fn emit_model_pull_snapshot(app: Option<&AppHandle>, snapshot: &ModelPullSnapshot) {
+    if let Some(app) = app {
+        let _ = app.emit(MODEL_PULL_STATE_EVENT, snapshot);
+    }
+}
+
+fn update_model_pull_snapshot(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    operation_id: &str,
+    state_value: ModelPullState,
+    stage: &str,
+    digest: Option<String>,
+    error: Option<ModelPullError>,
+    terminal: bool,
+) -> Option<ModelPullSnapshot> {
+    let snapshot = {
+        let mut state = manager.lock();
+        let active_tag = state
+            .active_model_pull
+            .as_ref()
+            .filter(|active| active.operation_id == operation_id)
+            .map(|active| active.tag.clone());
+        let tag = active_tag.or_else(|| {
+            state
+                .model_pull_snapshots
+                .iter()
+                .find_map(|(tag, snapshot)| {
+                    (snapshot.operation_id.as_deref() == Some(operation_id)).then(|| tag.clone())
+                })
+        })?;
+        let previous = state.model_pull_snapshots.get(&tag)?;
+        if previous.operation_id.as_deref() != Some(operation_id) {
+            return None;
+        }
+        let snapshot = ModelPullSnapshot {
+            operation_id: Some(operation_id.to_string()),
+            tag: tag.clone(),
+            state: state_value,
+            stage: stage.to_string(),
+            digest,
+            error,
+        };
+        state.model_pull_snapshots.insert(tag, snapshot.clone());
+        if terminal {
+            state.active_model_pull = None;
+        }
+        snapshot
+    };
+    emit_model_pull_snapshot(app, &snapshot);
+    Some(snapshot)
+}
+
+fn finish_model_pull(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    operation_id: &str,
+    state_value: ModelPullState,
+    stage: &str,
+    digest: Option<String>,
+    error: Option<ModelPullError>,
+    completion: &Arc<(Mutex<bool>, Condvar)>,
+) {
+    update_model_pull_snapshot(
+        manager,
+        app,
+        operation_id,
+        state_value,
+        stage,
+        digest,
+        error,
+        true,
+    );
+    let (done, changed) = &**completion;
+    *done.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = true;
+    changed.notify_all();
+}
+
+fn wait_for_model_pull(completion: &Arc<(Mutex<bool>, Condvar)>, timeout: Duration) -> bool {
+    let (done, changed) = &**completion;
+    let guard = done.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (guard, _) = changed
+        .wait_timeout_while(guard, timeout, |finished| !*finished)
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *guard
+}
+
+fn emit_model_pull_progress(app: Option<&AppHandle>, progress: &ModelPullProgress) {
+    if let Some(app) = app {
+        let _ = app.emit(MODEL_PULL_PROGRESS_EVENT, progress);
+    }
+}
+
+fn parse_pull_line(
+    line: &[u8],
+) -> Result<Option<(String, Option<String>, Option<u64>, Option<u64>)>, ModelPullErrorCode> {
+    if line.iter().all(u8::is_ascii_whitespace) {
+        return Ok(None);
+    }
+    let value: Value =
+        serde_json::from_slice(line).map_err(|_| ModelPullErrorCode::PullStreamMalformed)?;
+    if value.get("error").and_then(Value::as_str).is_some() {
+        return Err(ModelPullErrorCode::PullHttpFailed);
+    }
+    let status = value
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("pulling")
+        .to_string();
+    let digest = value
+        .get("digest")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let completed = value.get("completed").and_then(Value::as_u64);
+    let total = value.get("total").and_then(Value::as_u64);
+    Ok(Some((status, digest, completed, total)))
+}
+
+fn append_pull_chunk(
+    buffer: &mut Vec<u8>,
+    chunk: &[u8],
+) -> Result<Vec<Option<(String, Option<String>, Option<u64>, Option<u64>)>>, ModelPullErrorCode> {
+    buffer.extend_from_slice(chunk);
+    let mut lines = Vec::new();
+    while let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
+        if newline > MODEL_PULL_MAX_LINE_BYTES {
+            return Err(ModelPullErrorCode::PullStreamMalformed);
+        }
+        let line = buffer.drain(..=newline).collect::<Vec<_>>();
+        lines.push(parse_pull_line(&line[..line.len().saturating_sub(1)])?);
+    }
+    if buffer.len() > MODEL_PULL_MAX_LINE_BYTES {
+        return Err(ModelPullErrorCode::PullStreamMalformed);
+    }
+    Ok(lines)
+}
+
+fn finish_pull_buffer(
+    buffer: &mut Vec<u8>,
+) -> Result<Option<(String, Option<String>, Option<u64>, Option<u64>)>, ModelPullErrorCode> {
+    if buffer.is_empty() {
+        return Ok(None);
+    }
+    parse_pull_line(&std::mem::take(buffer))
+}
+
+fn model_pull_progress_due(
+    last_event: &mut tokio::time::Instant,
+    now: tokio::time::Instant,
+    completed_bytes: Option<u64>,
+) -> bool {
+    if completed_bytes.is_none() || now.duration_since(*last_event) >= Duration::from_millis(250) {
+        *last_event = now;
+        true
+    } else {
+        false
+    }
+}
+
+async fn stream_model_pull(
+    client: reqwest::Client,
+    base: String,
+    operation_id: String,
+    tag: String,
+    app: Option<AppHandle>,
+    mut cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<bool, ModelPullError> {
+    let url = model_api_url(&base, "/api/pull").map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::ManagedServerRequired,
+            "pull",
+            false,
+            Some(&operation_id),
+        )
+    })?;
+    let request = client
+        .post(url)
+        .json(&serde_json::json!({ "name": tag, "stream": true }));
+    let response = tokio::select! {
+        result = request.send() => result.map_err(|_| model_pull_error(ModelPullErrorCode::PullHttpFailed, "pull", true, Some(&operation_id)))?,
+        _ = &mut cancel => return Ok(false),
+    };
+    if !response.status().is_success() {
+        return Err(model_pull_error(
+            ModelPullErrorCode::PullHttpFailed,
+            "pull",
+            true,
+            Some(&operation_id),
+        ));
+    }
+    let mut stream = response.bytes_stream();
+    let mut buffer = Vec::new();
+    let mut saw_success = false;
+    let mut last_progress_event = tokio::time::Instant::now() - Duration::from_secs(1);
+    loop {
+        let chunk = tokio::select! {
+            result = futures_util::StreamExt::next(&mut stream) => result,
+            _ = &mut cancel => return Ok(false),
+        };
+        let Some(chunk) = chunk else { break };
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            // A severed HTTP stream is resumable. Explicit HTTP or JSON errors remain failures.
+            Err(_) => return Ok(false),
+        };
+        let lines = append_pull_chunk(&mut buffer, &chunk)
+            .map_err(|code| model_pull_error(code, "pull", true, Some(&operation_id)))?;
+        for parsed in lines {
+            if let Some((phase, digest, completed, total)) = parsed {
+                saw_success |= phase == "success";
+                let layer_percent = match (completed, total) {
+                    (Some(completed), Some(total)) if total > 0 => {
+                        Some((completed as f64 * 100.0 / total as f64).min(100.0))
+                    }
+                    _ => None,
+                };
+                let progress = ModelPullProgress {
+                    operation_id: operation_id.clone(),
+                    tag: tag.clone(),
+                    phase,
+                    digest,
+                    completed,
+                    total,
+                    layer_percent,
+                };
+                let now = tokio::time::Instant::now();
+                if model_pull_progress_due(&mut last_progress_event, now, completed) {
+                    emit_model_pull_progress(app.as_ref(), &progress);
+                }
+            }
+        }
+    }
+    if let Some((phase, digest, completed, total)) = finish_pull_buffer(&mut buffer)
+        .map_err(|code| model_pull_error(code, "pull", true, Some(&operation_id)))?
+    {
+        saw_success |= phase == "success";
+        let layer_percent = match (completed, total) {
+            (Some(completed), Some(total)) if total > 0 => {
+                Some((completed as f64 * 100.0 / total as f64).min(100.0))
+            }
+            _ => None,
+        };
+        let progress = ModelPullProgress {
+            operation_id: operation_id.clone(),
+            tag: tag.clone(),
+            phase,
+            digest,
+            completed,
+            total,
+            layer_percent,
+        };
+        emit_model_pull_progress(app.as_ref(), &progress);
+    }
+    Ok(saw_success)
+}
+
+async fn verify_model_async(
+    client: &reqwest::Client,
+    base: &str,
+    candidate: &QwenModelCandidate,
+    operation_id: &str,
+) -> Result<String, ModelPullError> {
+    let tags_url = model_api_url(base, "/api/tags").map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::ManagedServerRequired,
+            "verify_tags",
+            false,
+            Some(operation_id),
+        )
+    })?;
+    let response = client
+        .get(tags_url)
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "verify_tags",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    let tags: Value = response.json().await.map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::PullStreamMalformed,
+            "verify_tags",
+            true,
+            Some(operation_id),
+        )
+    })?;
+    let digest = installed_model_digest(&tags, candidate.tag).ok_or_else(|| {
+        let code = if model_tag_present(&tags, candidate.tag) {
+            ModelPullErrorCode::ModelDigestMismatch
+        } else {
+            ModelPullErrorCode::ModelTagAbsent
+        };
+        model_pull_error(code, "verify_tags", true, Some(operation_id))
+    })?;
+    let show_url = model_api_url(base, "/api/show").map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::ManagedServerRequired,
+            "verify_show",
+            false,
+            Some(operation_id),
+        )
+    })?;
+    let show: Value = client
+        .post(show_url)
+        .json(&serde_json::json!({ "name": candidate.tag }))
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "verify_show",
+                true,
+                Some(operation_id),
+            )
+        })?
+        .json()
+        .await
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullStreamMalformed,
+                "verify_show",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    verify_show_details(&show, candidate)
+        .map_err(|code| model_pull_error(code, "verify_show", false, Some(operation_id)))?;
+    let response = client
+        .get(model_api_url(base, "/api/tags").map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::ManagedServerRequired,
+                "verify_tags_again",
+                false,
+                Some(operation_id),
+            )
+        })?)
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "verify_tags_again",
+                true,
+                Some(operation_id),
+            )
+        })?;
+    let tags: Value = response.json().await.map_err(|_| {
+        model_pull_error(
+            ModelPullErrorCode::PullStreamMalformed,
+            "verify_tags_again",
+            true,
+            Some(operation_id),
+        )
+    })?;
+    let confirmed_digest = installed_model_digest(&tags, candidate.tag).ok_or_else(|| {
+        let code = if model_tag_present(&tags, candidate.tag) {
+            ModelPullErrorCode::ModelDigestMismatch
+        } else {
+            ModelPullErrorCode::ModelTagAbsent
+        };
+        model_pull_error(code, "verify_tags_again", true, Some(operation_id))
+    })?;
+    if digest != confirmed_digest {
+        return Err(model_pull_error(
+            ModelPullErrorCode::ModelDigestMismatch,
+            "verify_tags_again",
+            true,
+            Some(operation_id),
+        ));
+    }
+    Ok(digest)
+}
+
+fn record_model_pull_failure(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    tag: &str,
+    operation_id: &str,
+    error: ModelPullError,
+) -> ModelPullSnapshot {
+    let snapshot = ModelPullSnapshot {
+        operation_id: Some(operation_id.to_string()),
+        tag: tag.to_string(),
+        state: ModelPullState::Failed,
+        stage: error.stage.clone(),
+        digest: None,
+        error: Some(error),
+    };
+    manager
+        .lock()
+        .model_pull_snapshots
+        .insert(tag.to_string(), snapshot.clone());
+    emit_model_pull_snapshot(app, &snapshot);
+    snapshot
+}
+
+fn managed_owner_for_cancel(manager: &RuntimeManager) -> Result<(), ModelPullError> {
+    let mut state = manager.lock();
+    if state.snapshot.server_state != ServerState::ReadyManaged
+        || state.snapshot.ownership != RuntimeOwnership::ManagedChild
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    let Some(process) = state.process.as_mut() else {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    };
+    if process.child.has_exited().unwrap_or(true) {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            true,
+        ));
+    }
+    let base = url::Url::parse(&manager.settings.managed_base_url).map_err(|_| {
+        ModelPullError::new(ModelPullErrorCode::ManagedServerRequired, "owner", false)
+    })?;
+    if !(cfg!(test) && is_loopback_endpoint(&base)
+        || manager.settings.managed_base_url == DEFAULT_HOST_URL && is_loopback_endpoint(&base))
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ManagedServerRequired,
+            "owner",
+            false,
+        ));
+    }
+    Ok(())
+}
+
+fn start_model_pull_with_policy(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    tag: &str,
+    confirmed_tag: &str,
+    policy: QwenModelPolicy,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    let Some(candidate) = model_candidate(&policy, tag).cloned() else {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelTagUnknown,
+            "preflight",
+            false,
+        ));
+    };
+    if policy.pull_start_policy.as_deref() != Some("user_confirmed_exact_tag")
+        || confirmed_tag != tag
+    {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelConfirmationRequired,
+            "preflight",
+            false,
+        ));
+    }
+    let base = managed_pull_base(manager)?;
+    let operation_id = next_operation_id();
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(manager.settings.request_timeout)
+        .timeout(manager.settings.request_timeout)
+        .build()
+        .map_err(|_| {
+            model_pull_error(
+                ModelPullErrorCode::PullHttpFailed,
+                "preflight",
+                true,
+                Some(&operation_id),
+            )
+        })?;
+    let already_installed = match fetch_tags_sync(&client, &base, tag, Some(&operation_id)) {
+        Ok(digest) => digest.is_some(),
+        Err(error) => {
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            return Err(error);
+        }
+    };
+    let mut pull_budget: Option<(PathBuf, u64)> = None;
+    if !already_installed {
+        let store = check_model_store(&policy).map_err(|error| {
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error.for_operation(&operation_id)
+        })?;
+        let multiplier = policy.disk_space_multiplier.ok_or_else(|| {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskMarginUnset,
+                "preflight",
+                false,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error
+        })?;
+        let size_bytes = candidate.published_size_bytes.ok_or_else(|| {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskSpaceLow,
+                "preflight",
+                false,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error
+        })?;
+        let required = size_bytes.checked_mul(multiplier).ok_or_else(|| {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskSpaceLow,
+                "preflight",
+                false,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error
+        })?;
+        if store.available_bytes < required {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskSpaceLow,
+                "preflight",
+                true,
+                Some(&operation_id),
+            )
+            .with_disk_space(required, store.available_bytes);
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            return Err(error);
+        }
+        // Recheck against the same filesystem immediately before reserving the operation.
+        #[cfg(test)]
+        let latest_free = match policy.available_bytes_override {
+            Some(available_bytes) => available_bytes,
+            None => fs2::available_space(&store.probe_directory).map_err(|_| {
+                let error = model_pull_error(
+                    ModelPullErrorCode::ModelStoreUnresolved,
+                    "preflight",
+                    false,
+                    Some(&operation_id),
+                );
+                record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+                error
+            })?,
+        };
+        #[cfg(not(test))]
+        let latest_free = fs2::available_space(&store.probe_directory).map_err(|_| {
+            let error = model_pull_error(
+                ModelPullErrorCode::ModelStoreUnresolved,
+                "preflight",
+                false,
+                Some(&operation_id),
+            );
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            error
+        })?;
+        if latest_free < required {
+            let error = model_pull_error(
+                ModelPullErrorCode::DiskSpaceLow,
+                "preflight",
+                true,
+                Some(&operation_id),
+            )
+            .with_disk_space(required, latest_free);
+            record_model_pull_failure(manager, app.as_ref(), tag, &operation_id, error.clone());
+            return Err(error);
+        }
+        pull_budget = Some((store.probe_directory.clone(), required));
+    }
+
+    let initial_snapshot = ModelPullSnapshot {
+        operation_id: Some(operation_id.clone()),
+        tag: tag.to_string(),
+        state: ModelPullState::Preflight,
+        stage: "preflight".to_string(),
+        digest: None,
+        error: None,
+    };
+    let (cancel_sender, cancel_receiver) = tokio::sync::oneshot::channel();
+    let completion = Arc::new((Mutex::new(false), Condvar::new()));
+    {
+        let mut state = manager.lock();
+        if state.shutdown_requested
+            || state.operation.is_some()
+            || state.active_model_pull.is_some()
+        {
+            return Err(model_pull_error(
+                ModelPullErrorCode::PullAlreadyActive,
+                "preflight",
+                true,
+                Some(&operation_id),
+            ));
+        }
+        if state.snapshot.server_state != ServerState::ReadyManaged
+            || state.snapshot.ownership != RuntimeOwnership::ManagedChild
+            || state.process.is_none()
+        {
+            return Err(model_pull_error(
+                ModelPullErrorCode::ManagedServerRequired,
+                "owner",
+                false,
+                Some(&operation_id),
+            ));
+        }
+        state
+            .model_pull_snapshots
+            .insert(tag.to_string(), initial_snapshot.clone());
+        state.active_model_pull = Some(ActiveModelPull {
+            operation_id: operation_id.clone(),
+            tag: tag.to_string(),
+            cancel: Some(cancel_sender),
+            completion: completion.clone(),
+        });
+    }
+    emit_model_pull_snapshot(app.as_ref(), &initial_snapshot);
+
+    let manager_worker = manager.clone();
+    let app_worker = app.clone();
+    let operation_id_worker = operation_id.clone();
+    let tag_worker = tag.to_string();
+    let candidate_worker = candidate.clone();
+    let base_worker = base.clone();
+    let completion_worker = completion.clone();
+    let pull_budget_worker = pull_budget.clone();
+    let worker = thread::Builder::new()
+        .name("ollama-model-pull".to_string())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            let outcome = match runtime {
+                Ok(runtime) => runtime.block_on(async {
+                    let client = match model_pull_client(manager_worker.settings.request_timeout) {
+                        Ok(client) => client,
+                        Err(error) => return Err(error),
+                    };
+                    if !already_installed {
+                        if let Some((directory, required_bytes)) = pull_budget_worker {
+                            let available_bytes =
+                                fs2::available_space(&directory).map_err(|_| {
+                                    model_pull_error(
+                                        ModelPullErrorCode::ModelStoreUnresolved,
+                                        "preflight",
+                                        false,
+                                        Some(&operation_id_worker),
+                                    )
+                                })?;
+                            if available_bytes < required_bytes {
+                                return Err(model_pull_error(
+                                    ModelPullErrorCode::DiskSpaceLow,
+                                    "preflight",
+                                    true,
+                                    Some(&operation_id_worker),
+                                )
+                                .with_disk_space(required_bytes, available_bytes));
+                            }
+                        }
+                        let _ = update_model_pull_snapshot(
+                            &manager_worker,
+                            app_worker.as_ref(),
+                            &operation_id_worker,
+                            ModelPullState::Pulling,
+                            "pull",
+                            None,
+                            None,
+                            false,
+                        );
+                        match stream_model_pull(
+                            client.clone(),
+                            base_worker.clone(),
+                            operation_id_worker.clone(),
+                            tag_worker.clone(),
+                            app_worker.clone(),
+                            cancel_receiver,
+                        )
+                        .await
+                        {
+                            Ok(false) => return Ok(None),
+                            Ok(true) => {}
+                            Err(error) => return Err(error),
+                        }
+                    }
+                    let _ = update_model_pull_snapshot(
+                        &manager_worker,
+                        app_worker.as_ref(),
+                        &operation_id_worker,
+                        ModelPullState::Verifying,
+                        "verify_tags",
+                        None,
+                        None,
+                        false,
+                    );
+                    verify_model_async(
+                        &client,
+                        &base_worker,
+                        &candidate_worker,
+                        &operation_id_worker,
+                    )
+                    .await
+                    .map(Some)
+                }),
+                Err(_) => Err(model_pull_error(
+                    ModelPullErrorCode::PullHttpFailed,
+                    "pull",
+                    true,
+                    Some(&operation_id_worker),
+                )),
+            };
+            match outcome {
+                Ok(None) => finish_model_pull(
+                    &manager_worker,
+                    app_worker.as_ref(),
+                    &operation_id_worker,
+                    ModelPullState::Paused,
+                    "paused",
+                    None,
+                    None,
+                    &completion_worker,
+                ),
+                Ok(Some(digest)) => finish_model_pull(
+                    &manager_worker,
+                    app_worker.as_ref(),
+                    &operation_id_worker,
+                    ModelPullState::Ready,
+                    "ready",
+                    Some(digest),
+                    None,
+                    &completion_worker,
+                ),
+                Err(error) => {
+                    let stage = error.stage.clone();
+                    finish_model_pull(
+                        &manager_worker,
+                        app_worker.as_ref(),
+                        &operation_id_worker,
+                        ModelPullState::Failed,
+                        &stage,
+                        None,
+                        Some(error.for_operation(&operation_id_worker)),
+                        &completion_worker,
+                    )
+                }
+            }
+        });
+    if worker.is_err() {
+        let error = model_pull_error(
+            ModelPullErrorCode::PullHttpFailed,
+            "pull",
+            true,
+            Some(&operation_id),
+        );
+        finish_model_pull(
+            manager,
+            app.as_ref(),
+            &operation_id,
+            ModelPullState::Failed,
+            "pull",
+            None,
+            Some(error.clone()),
+            &completion,
+        );
+        return Err(error);
+    }
+    Ok(ModelPullStartResponse {
+        operation_id,
+        snapshot: initial_snapshot,
+    })
+}
+
+fn dispatch_model_pull_start(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    tag: &str,
+    confirmed_tag: &str,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    let policy = app
+        .as_ref()
+        .map(qwen_model_policy_for_app)
+        .unwrap_or_else(qwen_model_policy);
+    start_model_pull_with_policy(manager, app, tag, confirmed_tag, policy)
+}
+
+fn dispatch_model_pull_retry(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    tag: &str,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    let policy = app
+        .as_ref()
+        .map(qwen_model_policy_for_app)
+        .unwrap_or_else(qwen_model_policy);
+    dispatch_model_pull_retry_with_policy(manager, app, tag, policy)
+}
+
+fn dispatch_model_pull_retry_with_policy(
+    manager: &RuntimeManager,
+    app: Option<AppHandle>,
+    tag: &str,
+    policy: QwenModelPolicy,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    let retryable = manager
+        .lock()
+        .model_pull_snapshots
+        .get(tag)
+        .is_some_and(|snapshot| match snapshot.state {
+            ModelPullState::Paused => true,
+            ModelPullState::Failed => snapshot.error.as_ref().is_some_and(|error| error.retryable),
+            _ => false,
+        });
+    if !retryable {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::PullOperationUnknown,
+            "retry",
+            false,
+        ));
+    }
+    start_model_pull_with_policy(manager, app, tag, tag, policy)
+}
+
+fn dispatch_model_pull_cancel(
+    manager: &RuntimeManager,
+    operation_id: &str,
+) -> Result<ModelPullSnapshot, ModelPullError> {
+    managed_owner_for_cancel(manager)?;
+    let (tag, completion, cancel) = {
+        let mut state = manager.lock();
+        let Some(active) = state
+            .active_model_pull
+            .as_mut()
+            .filter(|active| active.operation_id == operation_id)
+        else {
+            if let Some(snapshot) = state
+                .model_pull_snapshots
+                .values()
+                .find(|snapshot| snapshot.operation_id.as_deref() == Some(operation_id))
+                .filter(|snapshot| {
+                    matches!(
+                        snapshot.state,
+                        ModelPullState::Paused | ModelPullState::Ready
+                    )
+                })
+            {
+                return Ok(snapshot.clone());
+            }
+            return Err(model_pull_error(
+                ModelPullErrorCode::PullOperationUnknown,
+                "cancel",
+                false,
+                Some(operation_id),
+            ));
+        };
+        (
+            active.tag.clone(),
+            active.completion.clone(),
+            active.cancel.take(),
+        )
+    };
+    if let Some(cancel) = cancel {
+        let _ = cancel.send(());
+    }
+    if !wait_for_model_pull(&completion, MODEL_PULL_CANCEL_TIMEOUT) {
+        return Err(model_pull_error(
+            ModelPullErrorCode::PullCancelTimeout,
+            "cancel",
+            true,
+            Some(operation_id),
+        ));
+    }
+    manager
+        .lock()
+        .model_pull_snapshots
+        .get(&tag)
+        .cloned()
+        .ok_or_else(|| {
+            model_pull_error(
+                ModelPullErrorCode::PullOperationUnknown,
+                "cancel",
+                false,
+                Some(operation_id),
+            )
+        })
+}
+
+fn dispatch_model_pull_status(
+    manager: &RuntimeManager,
+    app: Option<&AppHandle>,
+    tag: &str,
+) -> Result<ModelPullSnapshot, ModelPullError> {
+    let policy = qwen_model_policy();
+    let Some(candidate) = model_candidate(&policy, tag) else {
+        return Err(ModelPullError::new(
+            ModelPullErrorCode::ModelTagUnknown,
+            "status",
+            false,
+        ));
+    };
+    let current = manager
+        .lock()
+        .model_pull_snapshots
+        .get(tag)
+        .cloned()
+        .unwrap_or_else(|| ModelPullSnapshot {
+            operation_id: None,
+            tag: tag.to_string(),
+            state: ModelPullState::Absent,
+            stage: "absent".to_string(),
+            digest: None,
+            error: None,
+        });
+    if current.state != ModelPullState::Ready || manager.lock().active_model_pull.is_some() {
+        return Ok(current);
+    }
+    let base = managed_pull_base(manager)?;
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(manager.settings.request_timeout)
+        .timeout(manager.settings.request_timeout)
+        .build()
+        .map_err(|_| ModelPullError::new(ModelPullErrorCode::PullHttpFailed, "status", true))?;
+    let operation_id = current.operation_id.as_deref().ok_or_else(|| {
+        ModelPullError::new(ModelPullErrorCode::PullOperationUnknown, "status", false)
+    })?;
+    let result = verify_model_sync(&client, &base, candidate, operation_id);
+    let snapshot = match result {
+        Ok(digest) => ModelPullSnapshot {
+            digest: Some(digest),
+            ..current
+        },
+        Err(error) => ModelPullSnapshot {
+            state: if error.code == ModelPullErrorCode::ModelTagAbsent {
+                ModelPullState::Absent
+            } else {
+                ModelPullState::Failed
+            },
+            stage: error.stage.clone(),
+            digest: None,
+            error: Some(error),
+            ..current
+        },
+    };
+    manager
+        .lock()
+        .model_pull_snapshots
+        .insert(tag.to_string(), snapshot.clone());
+    emit_model_pull_snapshot(app, &snapshot);
+    Ok(snapshot)
+}
+
 fn emit_optional_snapshot(app: Option<&AppHandle>, snapshot: &RuntimeSnapshot) {
     if let Some(app) = app {
         emit_snapshot(app, snapshot);
@@ -2366,6 +4458,34 @@ fn stop_managed_process(process: &mut ManagedProcess, settings: &RuntimeSettings
     stop_managed_child(process.child.as_mut(), settings)
 }
 
+fn mark_managed_reservation_running(manager: &RuntimeManager, generation: u64) -> bool {
+    let mut state = manager.lock();
+    let Some(process) = state
+        .process
+        .as_mut()
+        .filter(|process| process.generation == generation)
+    else {
+        return false;
+    };
+    let Some(lease) = process.reservation.as_ref() else {
+        return false;
+    };
+    let running = match lease.snapshot() {
+        Some(snapshot)
+            if snapshot.status == crate::vram_reservation::ReservationStatus::Running =>
+        {
+            true
+        }
+        Some(_) => lease.mark_running(),
+        None => false,
+    };
+    if running {
+        state.snapshot.reservation = ReservationSnapshot::from_lease(lease)
+            .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
+    }
+    running
+}
+
 fn update_runtime_snapshot(manager: &RuntimeManager, snapshot: RuntimeSnapshot) -> RuntimeSnapshot {
     let mut state = manager.lock();
     if state.operation.is_some() {
@@ -2390,6 +4510,7 @@ fn finish_start_error(
     operation_id: &str,
     error: RuntimeError,
 ) {
+    manager.set_reservation_snapshot(ReservationSnapshot::default());
     manager.finish_failure(operation_id, error);
     emit_manager_snapshot(app, manager);
 }
@@ -2420,11 +4541,21 @@ fn finish_start_with_process_error(
         if stop_managed_process(process_ref, &manager.settings) {
             let mut state = manager.lock();
             state.active_versions.remove(&process_ref.version);
+            state.snapshot.reservation = if error.code == RuntimeErrorCode::ReservationLeaseLost {
+                ReservationSnapshot::denied("reservation_lease_lost")
+            } else {
+                ReservationSnapshot::default()
+            };
             (error, RuntimeOwnership::None)
         } else {
             let version = process_ref.version.clone();
             let mut state = manager.lock();
             state.active_versions.insert(version);
+            state.snapshot.reservation = process_ref
+                .reservation
+                .as_ref()
+                .and_then(ReservationSnapshot::from_lease)
+                .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
             state.process = process.take();
             (
                 RuntimeError::new(RuntimeErrorCode::StopFailed, "stop", true),
@@ -2453,6 +4584,7 @@ fn perform_start_operation(
     root: PathBuf,
     pin: ReleasePin,
     endpoint: RuntimeEndpoint,
+    device_id: Option<String>,
     operation_id: String,
 ) {
     log_ollama_debug(
@@ -2460,6 +4592,16 @@ fn perform_start_operation(
         Some(&operation_id),
         &format!("host_scope={:?}", endpoint.scope),
     );
+    let model_store = app.as_ref().and_then(app_managed_model_store_path);
+    if app.is_some() && model_store.is_none() {
+        finish_start_error(
+            &manager,
+            app.as_ref(),
+            &operation_id,
+            RuntimeError::new(RuntimeErrorCode::SpawnFailed, "model_store", false),
+        );
+        return;
+    }
     let existing_managed = {
         let mut state = manager.lock();
         match state.process.as_mut() {
@@ -2567,6 +4709,21 @@ fn perform_start_operation(
                         .min(deadline.saturating_duration_since(now));
                     if let ProbeResult::Ready { model_count } = probe_ollama(&endpoint.url, timeout)
                     {
+                        if !mark_managed_reservation_running(&manager, generation) {
+                            finish_start_with_process_error(
+                                &manager,
+                                app.as_ref(),
+                                &operation_id,
+                                generation,
+                                RuntimeError::new(
+                                    RuntimeErrorCode::ReservationLeaseLost,
+                                    "reservation",
+                                    true,
+                                )
+                                .with_reason_code("reservation_lease_lost"),
+                            );
+                            return;
+                        }
                         manager.finish_server_operation(
                             &operation_id,
                             versions,
@@ -2616,15 +4773,56 @@ fn perform_start_operation(
                 Some(&operation_id),
                 &format!("model_count={model_count} child_spawned=false"),
             );
-            manager.finish_server_operation(
+            update_operation_snapshot(
+                &manager,
                 &operation_id,
-                versions,
-                installed_version,
-                ServerState::ConnectedUnreserved,
+                &versions,
+                installed_version.as_deref(),
+                ServerState::Reserving,
                 RuntimeOwnership::ExternalLocal,
                 Some(model_count),
-                None,
+                "reserving",
             );
+            emit_manager_snapshot(app.as_ref(), &manager);
+            match reserve_external_local(&manager, endpoint.url.as_str(), device_id.as_deref()) {
+                ExternalAdmission::Reserved(reservation) => {
+                    manager.set_reservation_snapshot(reservation);
+                    manager.finish_server_operation(
+                        &operation_id,
+                        versions,
+                        installed_version,
+                        ServerState::ReadyExternalLocal,
+                        RuntimeOwnership::ExternalLocal,
+                        Some(model_count),
+                        None,
+                    );
+                }
+                ExternalAdmission::InProgress => {
+                    manager.set_reservation_snapshot(ReservationSnapshot::starting());
+                    manager.finish_server_operation(
+                        &operation_id,
+                        versions,
+                        installed_version,
+                        ServerState::Reserving,
+                        RuntimeOwnership::ExternalLocal,
+                        Some(model_count),
+                        None,
+                    );
+                }
+                ExternalAdmission::Denied(error) => {
+                    let reason_code = error.reason_code.as_deref().unwrap_or("reservation_denied");
+                    manager.set_reservation_snapshot(ReservationSnapshot::denied(reason_code));
+                    manager.finish_server_operation(
+                        &operation_id,
+                        versions,
+                        installed_version,
+                        ServerState::ConnectedUnreserved,
+                        RuntimeOwnership::ExternalLocal,
+                        Some(model_count),
+                        Some(error),
+                    );
+                }
+            }
             emit_manager_snapshot(app.as_ref(), &manager);
             return;
         }
@@ -2653,6 +4851,10 @@ fn perform_start_operation(
                 "result=connection_refused",
             );
         }
+    }
+
+    if endpoint.scope == EndpointScope::ManagedDefault {
+        release_external_reservation_for_host(&manager, endpoint.url.as_str());
     }
 
     if manager.is_shutting_down() {
@@ -2752,6 +4954,45 @@ fn perform_start_operation(
         &operation_id,
         &versions,
         Some(&version),
+        ServerState::Reserving,
+        RuntimeOwnership::None,
+        None,
+        "reserving",
+    );
+    emit_manager_snapshot(app.as_ref(), &manager);
+    let (lease, _selected_device_id, device_selector) =
+        match manager.try_reserve_local(device_id.as_deref()) {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                let reason_code = error.reason_code.as_deref().unwrap_or("reservation_denied");
+                manager.set_reservation_snapshot(ReservationSnapshot::denied(reason_code));
+                manager.finish_server_operation(
+                    &operation_id,
+                    versions,
+                    Some(version),
+                    ServerState::Failed,
+                    RuntimeOwnership::None,
+                    None,
+                    Some(error),
+                );
+                emit_manager_snapshot(app.as_ref(), &manager);
+                return;
+            }
+        };
+    let mut pending_reservation = Some(lease);
+    manager.set_reservation_snapshot(
+        ReservationSnapshot::from_lease(
+            pending_reservation
+                .as_ref()
+                .expect("reserved lease is present before spawn"),
+        )
+        .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost")),
+    );
+    update_operation_snapshot(
+        &manager,
+        &operation_id,
+        &versions,
+        Some(&version),
         ServerState::Starting,
         RuntimeOwnership::None,
         None,
@@ -2790,18 +5031,33 @@ fn perform_start_operation(
             return;
         }
     };
+    let mut environment = BTreeMap::from([
+        (
+            std::ffi::OsString::from("OLLAMA_HOST"),
+            std::ffi::OsString::from(managed_host),
+        ),
+        (
+            std::ffi::OsString::from("CUDA_VISIBLE_DEVICES"),
+            std::ffi::OsString::from(device_selector),
+        ),
+    ]);
+    if let Some(model_store) = model_store {
+        environment.insert(
+            std::ffi::OsString::from("OLLAMA_MODELS"),
+            model_store.into_os_string(),
+        );
+    }
     let spec = ProcessSpec {
         executable,
         arguments: vec!["serve".to_string()],
-        environment: BTreeMap::from([(
-            std::ffi::OsString::from("OLLAMA_HOST"),
-            std::ffi::OsString::from(managed_host),
-        )]),
+        environment,
         inherit_environment: true,
     };
     let child = match manager.process_runner.spawn(&spec) {
         Ok(child) => child,
         Err(error) => {
+            drop(pending_reservation.take());
+            manager.set_reservation_snapshot(ReservationSnapshot::default());
             let code = if error.kind() == io::ErrorKind::PermissionDenied {
                 RuntimeErrorCode::PermissionDenied
             } else {
@@ -2823,7 +5079,11 @@ fn perform_start_operation(
             .operation
             .as_ref()
             .is_some_and(|operation| operation.id == operation_id);
-        if state.shutdown_requested || !operation_is_current || state.process.is_some() {
+        if state.shutdown_requested
+            || !operation_is_current
+            || state.process.is_some()
+            || !state.unreaped_processes.is_empty()
+        {
             None
         } else {
             let generation = state.next_process_generation;
@@ -2835,7 +5095,7 @@ fn perform_start_operation(
                     .expect("spawned Ollama child is present"),
                 version: version.clone(),
                 generation,
-                reservation: None,
+                reservation: pending_reservation.take(),
             });
             state.snapshot.state = RuntimeState::InstalledStopped;
             state.snapshot.server_state = ServerState::Starting;
@@ -2856,11 +5116,41 @@ fn perform_start_operation(
         if let Some(child) = pending_child {
             let mut pending = ManagedProcess {
                 child,
-                version,
+                version: version.clone(),
                 generation: 0,
-                reservation: None,
+                reservation: pending_reservation.take(),
             };
-            let _ = stop_managed_process(&mut pending, &manager.settings);
+            if stop_managed_process(&mut pending, &manager.settings) {
+                drop(pending);
+                manager.set_reservation_snapshot(ReservationSnapshot::default());
+                finish_start_error(
+                    &manager,
+                    app.as_ref(),
+                    &operation_id,
+                    RuntimeError::new(RuntimeErrorCode::RuntimeBusy, "register", true),
+                );
+            } else {
+                let mut state = manager.lock();
+                state.active_versions.insert(version);
+                state.snapshot.server_state = ServerState::Failed;
+                state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+                state.snapshot.reservation = pending
+                    .reservation
+                    .as_ref()
+                    .and_then(ReservationSnapshot::from_lease)
+                    .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
+                state.snapshot.error = Some(RuntimeError::new(
+                    RuntimeErrorCode::StopFailed,
+                    "register",
+                    true,
+                ));
+                state.snapshot.phase = None;
+                state.snapshot.operation_id = Some(operation_id.clone());
+                state.operation = None;
+                state.unreaped_processes.push(pending);
+                drop(state);
+                emit_manager_snapshot(app.as_ref(), &manager);
+            }
         }
         return;
     };
@@ -2951,6 +5241,21 @@ fn perform_start_operation(
                     Some(&operation_id),
                     &format!("model_count={model_count}"),
                 );
+                if !mark_managed_reservation_running(&manager, generation) {
+                    finish_start_with_process_error(
+                        &manager,
+                        app.as_ref(),
+                        &operation_id,
+                        generation,
+                        RuntimeError::new(
+                            RuntimeErrorCode::ReservationLeaseLost,
+                            "reservation",
+                            true,
+                        )
+                        .with_reason_code("reservation_lease_lost"),
+                    );
+                    return;
+                }
                 let monitor = spawn_process_monitor(manager.clone(), app.clone(), generation);
                 if monitor.is_err() {
                     finish_start_with_process_error(
@@ -3047,6 +5352,7 @@ fn spawn_process_monitor(
             state.snapshot.phase = None;
             if cleaned {
                 state.active_versions.remove(&version);
+                state.snapshot.reservation = ReservationSnapshot::default();
                 state.snapshot.state =
                     install_state_from_versions(&state.snapshot.installed_versions);
                 state.snapshot.server_state = ServerState::Failed;
@@ -3063,6 +5369,11 @@ fn spawn_process_monitor(
                 ));
             } else {
                 state.active_versions.insert(version);
+                state.snapshot.reservation = process
+                    .reservation
+                    .as_ref()
+                    .and_then(ReservationSnapshot::from_lease)
+                    .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
                 state.process = Some(process);
                 state.snapshot.server_state = ServerState::Failed;
                 state.snapshot.ownership = RuntimeOwnership::ManagedChild;
@@ -3144,6 +5455,7 @@ fn dispatch_start(
                 root,
                 pin,
                 endpoint,
+                device_id,
                 operation_id_worker,
             );
         });
@@ -3167,17 +5479,21 @@ fn is_default_managed_host_value(host: &str) -> bool {
 }
 
 fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<String, RuntimeError> {
-    log_ollama_debug("stop.enter", None, "managed_process_check=true");
+    log_ollama_debug("stop.enter", None, "managed_or_external_lease_check=true");
     {
         let state = manager.lock();
-        if state.operation.is_some() {
+        if state.operation.is_some() || state.active_model_pull.is_some() {
             return Err(RuntimeError::new(
                 RuntimeErrorCode::RuntimeBusy,
                 "dispatch",
                 true,
             ));
         }
-        if state.process.is_none() {
+        if state.process.is_none()
+            && state.unreaped_processes.is_empty()
+            && state.external_reservation.is_none()
+            && state.external_reservation_pending.is_none()
+        {
             return Err(RuntimeError::new(
                 RuntimeErrorCode::NotManaged,
                 "stop",
@@ -3190,7 +5506,7 @@ fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<Str
     log_ollama_debug(
         "stop.operation_started",
         Some(&operation_id),
-        "operation_guard=held ownership=managed_child",
+        "operation_guard=held",
     );
     emit_manager_snapshot(app.as_ref(), manager);
     let manager_worker = manager.clone();
@@ -3198,43 +5514,85 @@ fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<Str
     let spawn = thread::Builder::new()
         .name("ollama-runtime-stop".to_string())
         .spawn(move || {
-            let mut process = manager_worker.lock().process.take();
-            let Some(mut process) = process.take() else {
-                manager_worker.finish_failure(
-                    &operation_id_worker,
-                    RuntimeError::new(RuntimeErrorCode::NotManaged, "stop", false),
-                );
-                emit_manager_snapshot(app.as_ref(), &manager_worker);
-                return;
+            let (mut processes, external_reservation, external_was_connected) = {
+                let mut state = manager_worker.lock();
+                let external_was_connected = state.external_reservation.is_some()
+                    || state.external_reservation_pending.is_some();
+                state.external_reservation_generation =
+                    state.external_reservation_generation.wrapping_add(1).max(1);
+                state.external_reservation_pending = None;
+                let mut processes = std::mem::take(&mut state.unreaped_processes);
+                if let Some(process) = state.process.take() {
+                    processes.push(process);
+                }
+                (
+                    processes,
+                    state.external_reservation.take(),
+                    external_was_connected,
+                )
             };
-            let version = process.version.clone();
-            if stop_managed_process(&mut process, &manager_worker.settings) {
-                log_ollama_debug(
-                    "stop.process_tree_reaped",
-                    Some(&operation_id_worker),
-                    &format!("version={version}"),
-                );
-                let snapshot = manager_worker.snapshot();
-                manager_worker.lock().active_versions.remove(&version);
+            drop(external_reservation);
+            let mut unreaped = Vec::new();
+            let mut stopped_versions = Vec::new();
+            for mut process in processes.drain(..) {
+                let version = process.version.clone();
+                if stop_managed_process(&mut process, &manager_worker.settings) {
+                    log_ollama_debug(
+                        "stop.process_tree_reaped",
+                        Some(&operation_id_worker),
+                        &format!("version={version}"),
+                    );
+                    stopped_versions.push(version);
+                    drop(process);
+                } else {
+                    log_ollama_debug(
+                        "stop.process_tree_unconfirmed",
+                        Some(&operation_id_worker),
+                        &format!("version={version} error=stop_failed"),
+                    );
+                    unreaped.push(process);
+                }
+            }
+            let snapshot = manager_worker.snapshot();
+            if unreaped.is_empty() {
+                {
+                    let mut state = manager_worker.lock();
+                    for version in stopped_versions {
+                        state.active_versions.remove(&version);
+                    }
+                    state.snapshot.reservation = ReservationSnapshot::default();
+                }
+                let (server_state, ownership, model_count) = if external_was_connected {
+                    (
+                        ServerState::ConnectedUnreserved,
+                        RuntimeOwnership::ExternalLocal,
+                        snapshot.model_count,
+                    )
+                } else {
+                    (ServerState::Stopped, RuntimeOwnership::None, None)
+                };
                 manager_worker.finish_server_operation(
                     &operation_id_worker,
                     snapshot.installed_versions,
                     snapshot.installed_version,
-                    ServerState::Stopped,
-                    RuntimeOwnership::None,
-                    None,
+                    server_state,
+                    ownership,
+                    model_count,
                     None,
                 );
-                drop(process);
             } else {
-                log_ollama_debug(
-                    "stop.process_tree_unconfirmed",
-                    Some(&operation_id_worker),
-                    &format!("version={version} error=stop_failed"),
-                );
                 let mut state = manager_worker.lock();
-                state.process = Some(process);
-                state.active_versions.insert(version);
+                for process in &unreaped {
+                    state.active_versions.insert(process.version.clone());
+                }
+                state.snapshot.server_state = ServerState::Failed;
+                state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+                state.snapshot.reservation = unreaped
+                    .first()
+                    .and_then(|process| process.reservation.as_ref())
+                    .and_then(ReservationSnapshot::from_lease)
+                    .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
+                state.unreaped_processes = unreaped;
                 drop(state);
                 manager_worker.finish_failure(
                     &operation_id_worker,
@@ -3261,6 +5619,7 @@ fn dispatch_stop(manager: &RuntimeManager, app: Option<AppHandle>) -> Result<Str
 fn status_snapshot(
     manager: &RuntimeManager,
     host: Option<&str>,
+    device_id: Option<&str>,
 ) -> Result<RuntimeSnapshot, RuntimeError> {
     if let Some(snapshot) = manager.operation_snapshot() {
         return Ok(snapshot);
@@ -3294,7 +5653,7 @@ fn status_snapshot(
     );
 
     let managed_version = if endpoint.scope == EndpointScope::ManagedDefault {
-        match process_state {
+        match process_state.as_ref() {
             Some((_, _, Ok(true))) => {
                 snapshot.server_state = ServerState::Failed;
                 snapshot.ownership = RuntimeOwnership::ManagedChild;
@@ -3305,7 +5664,7 @@ fn status_snapshot(
                 ));
                 return Ok(update_runtime_snapshot(manager, snapshot));
             }
-            Some((_, version, Ok(false))) => Some(version),
+            Some((_, version, Ok(false))) => Some(version.clone()),
             Some((_, _, Err(_))) => {
                 snapshot.server_state = ServerState::Failed;
                 snapshot.ownership = RuntimeOwnership::ManagedChild;
@@ -3323,26 +5682,72 @@ fn status_snapshot(
     };
 
     match probe_result {
-        ProbeResult::Ready { model_count } => {
-            snapshot.server_state = match endpoint.scope {
-                EndpointScope::ManagedDefault if managed_version.is_some() => {
-                    snapshot.ownership = RuntimeOwnership::ManagedChild;
-                    ServerState::ReadyManaged
+        ProbeResult::Ready { model_count } => match endpoint.scope {
+            EndpointScope::ManagedDefault if managed_version.is_some() => {
+                let process_reservation = {
+                    let state = manager.lock();
+                    state.process.as_ref().and_then(|process| {
+                        (Some(process.generation)
+                            == process_state.as_ref().map(|current| current.0))
+                        .then(|| {
+                            process
+                                .reservation
+                                .as_ref()
+                                .and_then(ReservationSnapshot::from_lease)
+                        })
+                        .flatten()
+                    })
+                };
+                match process_reservation {
+                    Some(reservation) if reservation.status == ReservationStatus::Running => {
+                        snapshot.server_state = ServerState::ReadyManaged;
+                        snapshot.ownership = RuntimeOwnership::ManagedChild;
+                        snapshot.reservation = reservation;
+                        snapshot.model_count = Some(model_count);
+                    }
+                    _ => {
+                        snapshot.server_state = ServerState::Failed;
+                        snapshot.ownership = RuntimeOwnership::ManagedChild;
+                        snapshot.reservation =
+                            ReservationSnapshot::denied("reservation_lease_lost");
+                        snapshot.error = Some(
+                            RuntimeError::new(
+                                RuntimeErrorCode::ReservationLeaseLost,
+                                "reservation",
+                                true,
+                            )
+                            .with_reason_code("reservation_lease_lost"),
+                        );
+                    }
                 }
-                EndpointScope::ManagedDefault | EndpointScope::Loopback => {
-                    snapshot.ownership = RuntimeOwnership::ExternalLocal;
-                    ServerState::ConnectedUnreserved
-                }
-                EndpointScope::Remote => {
-                    snapshot.ownership = RuntimeOwnership::Remote;
-                    ServerState::ReadyRemote
-                }
-            };
-            if managed_version.is_some() {
-                snapshot.ownership = RuntimeOwnership::ManagedChild;
             }
-            snapshot.model_count = Some(model_count);
-        }
+            EndpointScope::ManagedDefault | EndpointScope::Loopback => {
+                snapshot.model_count = Some(model_count);
+                snapshot.ownership = RuntimeOwnership::ExternalLocal;
+                match reserve_external_local(manager, endpoint.url.as_str(), device_id) {
+                    ExternalAdmission::Reserved(reservation) => {
+                        snapshot.server_state = ServerState::ReadyExternalLocal;
+                        snapshot.reservation = reservation;
+                    }
+                    ExternalAdmission::InProgress => {
+                        snapshot.server_state = ServerState::Reserving;
+                        snapshot.reservation = ReservationSnapshot::starting();
+                    }
+                    ExternalAdmission::Denied(error) => {
+                        let reason_code =
+                            error.reason_code.as_deref().unwrap_or("reservation_denied");
+                        snapshot.server_state = ServerState::ConnectedUnreserved;
+                        snapshot.reservation = ReservationSnapshot::denied(reason_code);
+                        snapshot.error = Some(error);
+                    }
+                }
+            }
+            EndpointScope::Remote => {
+                snapshot.server_state = ServerState::ReadyRemote;
+                snapshot.ownership = RuntimeOwnership::Remote;
+                snapshot.model_count = Some(model_count);
+            }
+        },
         ProbeResult::NotListening if endpoint.scope == EndpointScope::ManagedDefault => {
             if managed_version.is_some() {
                 snapshot.server_state = ServerState::Failed;
@@ -3375,61 +5780,116 @@ fn status_snapshot(
 
 fn shutdown_manager(manager: &RuntimeManager) {
     log_ollama_debug("shutdown.enter", None, "server_child_check=true");
-    let mut process = {
+    let pull_completion = {
+        let mut state = manager.lock();
+        state.shutdown_requested = true;
+        state.active_model_pull.as_mut().map(|active| {
+            if let Some(cancel) = active.cancel.take() {
+                let _ = cancel.send(());
+            }
+            active.completion.clone()
+        })
+    };
+    if let Some(completion) = pull_completion {
+        if !wait_for_model_pull(&completion, MODEL_PULL_CANCEL_TIMEOUT) {
+            log_ollama_debug(
+                "shutdown.pull_cancel_unconfirmed",
+                None,
+                "managed_child_and_reservation_retained=true",
+            );
+            return;
+        }
+    }
+    let (mut processes, external_reservation) = {
         let mut state = manager.lock();
         state.shutdown_requested = true;
         state.operation = None;
         state.snapshot.phase = None;
-        if state.process.is_some() {
+        state.external_reservation_generation =
+            state.external_reservation_generation.wrapping_add(1).max(1);
+        state.external_reservation_pending = None;
+        let mut processes = std::mem::take(&mut state.unreaped_processes);
+        if let Some(process) = state.process.take() {
+            processes.push(process);
+        }
+        let external_reservation = state.external_reservation.take();
+        if !processes.is_empty() {
             state.snapshot.server_state = ServerState::Stopping;
             state.snapshot.ownership = RuntimeOwnership::ManagedChild;
         }
-        state.process.take()
+        (processes, external_reservation)
     };
-    let Some(mut process) = process.take() else {
-        return;
-    };
-    let version = process.version.clone();
-    if stop_managed_process(&mut process, &manager.settings) {
-        log_ollama_debug(
-            "shutdown.process_tree_reaped",
-            None,
-            "ownership=managed_child",
-        );
-        let mut state = manager.lock();
+    let had_external_reservation = external_reservation.is_some();
+    drop(external_reservation);
+    let mut unreaped = Vec::new();
+    let mut stopped_versions = Vec::new();
+    for mut process in processes.drain(..) {
+        let version = process.version.clone();
+        if stop_managed_process(&mut process, &manager.settings) {
+            log_ollama_debug(
+                "shutdown.process_tree_reaped",
+                None,
+                "ownership=managed_child",
+            );
+            stopped_versions.push(version);
+            drop(process);
+        } else {
+            log_ollama_debug(
+                "shutdown.process_tree_unconfirmed",
+                None,
+                "error=stop_failed",
+            );
+            unreaped.push(process);
+        }
+    }
+    let mut state = manager.lock();
+    for version in stopped_versions {
         state.active_versions.remove(&version);
-        state.snapshot.state = install_state_from_versions(&state.snapshot.installed_versions);
-        state.snapshot.server_state = ServerState::Stopped;
-        state.snapshot.ownership = RuntimeOwnership::None;
-        state.snapshot.model_count = None;
-        state.snapshot.error = None;
+    }
+    if unreaped.is_empty() {
+        if had_external_reservation {
+            state.snapshot.server_state = ServerState::ConnectedUnreserved;
+            state.snapshot.ownership = RuntimeOwnership::ExternalLocal;
+            state.snapshot.error = None;
+        } else if state.snapshot.ownership == RuntimeOwnership::ManagedChild
+            || state.snapshot.server_state == ServerState::Stopping
+        {
+            state.snapshot.state = install_state_from_versions(&state.snapshot.installed_versions);
+            state.snapshot.server_state = ServerState::Stopped;
+            state.snapshot.ownership = RuntimeOwnership::None;
+            state.snapshot.model_count = None;
+            state.snapshot.error = None;
+        }
+        state.snapshot.reservation = ReservationSnapshot::default();
     } else {
-        log_ollama_debug(
-            "shutdown.process_tree_unconfirmed",
-            None,
-            "error=stop_failed",
-        );
-        let mut state = manager.lock();
-        state.active_versions.insert(version);
-        state.process = Some(process);
+        for process in &unreaped {
+            state.active_versions.insert(process.version.clone());
+        }
         state.snapshot.server_state = ServerState::Failed;
         state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+        state.snapshot.reservation = unreaped
+            .first()
+            .and_then(|process| process.reservation.as_ref())
+            .and_then(ReservationSnapshot::from_lease)
+            .unwrap_or_else(|| ReservationSnapshot::denied("reservation_lease_lost"));
         state.snapshot.error = Some(RuntimeError::new(
             RuntimeErrorCode::StopFailed,
             "shutdown",
             true,
         ));
+        state.unreaped_processes = unreaped;
     }
 }
 
 #[tauri::command]
 pub(crate) fn ollama_runtime_status(
     host: Option<String>,
+    device_id: Option<String>,
     app: AppHandle,
     manager: State<'_, RuntimeManager>,
 ) -> Result<RuntimeSnapshot, RuntimeError> {
     log::debug!("OllamaRuntime::status host_value_redacted=true");
-    let snapshot = status_snapshot(&manager, host.as_deref())?;
+    let snapshot = status_snapshot(&manager, host.as_deref(), device_id.as_deref())?;
     emit_snapshot(&app, &snapshot);
     Ok(snapshot)
 }
@@ -3448,8 +5908,65 @@ pub(crate) fn ollama_runtime_start(
 pub(crate) fn ollama_runtime_stop(
     app: AppHandle,
     manager: State<'_, RuntimeManager>,
-) -> Result<String, RuntimeError> {
-    dispatch_stop(&manager, Some(app))
+) -> Result<String, StopCommandError> {
+    if let Some(active) = manager.lock().active_model_pull.as_ref() {
+        return Err(StopCommandError::ModelPull(
+            ModelPullError::new(ModelPullErrorCode::ModelPullActive, "stop", true)
+                .for_operation(&active.operation_id),
+        ));
+    }
+    dispatch_stop(&manager, Some(app)).map_err(|error| {
+        if error.code == RuntimeErrorCode::RuntimeBusy {
+            if let Some(active) = manager.lock().active_model_pull.as_ref() {
+                return StopCommandError::ModelPull(
+                    ModelPullError::new(ModelPullErrorCode::ModelPullActive, "stop", true)
+                        .for_operation(&active.operation_id),
+                );
+            }
+        }
+        StopCommandError::Runtime(error)
+    })
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_catalog_list(app: AppHandle) -> QwenModelPolicy {
+    qwen_model_policy_for_app(&app)
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_pull_status(
+    tag: String,
+    app: AppHandle,
+    manager: State<'_, RuntimeManager>,
+) -> Result<ModelPullSnapshot, ModelPullError> {
+    dispatch_model_pull_status(&manager, Some(&app), &tag)
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_pull_start(
+    tag: String,
+    confirmed_tag: String,
+    app: AppHandle,
+    manager: State<'_, RuntimeManager>,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    dispatch_model_pull_start(&manager, Some(app), &tag, &confirmed_tag)
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_pull_cancel(
+    operation_id: String,
+    manager: State<'_, RuntimeManager>,
+) -> Result<ModelPullSnapshot, ModelPullError> {
+    dispatch_model_pull_cancel(&manager, &operation_id)
+}
+
+#[tauri::command]
+pub(crate) fn ollama_model_pull_retry(
+    tag: String,
+    app: AppHandle,
+    manager: State<'_, RuntimeManager>,
+) -> Result<ModelPullStartResponse, ModelPullError> {
+    dispatch_model_pull_retry(&manager, Some(app), &tag)
 }
 
 impl RuntimeManager {
@@ -3503,11 +6020,87 @@ mod tests {
     use std::io::Cursor;
     use zip::write::SimpleFileOptions;
 
-    #[cfg(target_os = "linux")]
-    static REAL_PROCESS_GROUP_TEST_LOCK: Mutex<()> = Mutex::new(());
+    #[cfg(windows)]
+    static WINDOWS_CONSOLE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[cfg(windows)]
+    #[test]
+    fn ollama_no_window_child_supports_ctrl_break_shutdown() {
+        use windows_sys::Win32::System::Console::GetConsoleWindow;
+
+        let _guard = WINDOWS_CONSOLE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let spec = ProcessSpec {
+            executable: PathBuf::from("powershell.exe"),
+            arguments: vec![
+                "-NoLogo".to_string(),
+                "-NoProfile".to_string(),
+                "-NonInteractive".to_string(),
+                "-Command".to_string(),
+                "Start-Sleep -Seconds 60".to_string(),
+            ],
+            environment: BTreeMap::new(),
+            inherit_environment: true,
+        };
+        let mut child = SystemProcessRunner
+            .spawn(&spec)
+            .expect("spawn suspended no-window PowerShell child");
+        let child_pid = child.child_pid_for_test().expect("managed child PID");
+        thread::sleep(Duration::from_millis(500));
+
+        let still_running_before_shutdown = child.has_exited().map(|exited| !exited);
+        let parent_had_console = !unsafe { GetConsoleWindow() }.is_null();
+        let windowless =
+            with_attached_child_console(child_pid, || Ok(unsafe { GetConsoleWindow() }.is_null()));
+        let parent_console_restored_after_inspection =
+            !unsafe { GetConsoleWindow() }.is_null() == parent_had_console;
+        let ctrl_break = child.request_graceful_shutdown();
+        let parent_console_restored_after_shutdown =
+            !unsafe { GetConsoleWindow() }.is_null() == parent_had_console;
+        let deadline = Instant::now() + GRACEFUL_STOP_TIMEOUT;
+        let mut exited = false;
+        if ctrl_break.is_ok() {
+            while Instant::now() < deadline {
+                match child.has_exited() {
+                    Ok(true) => {
+                        exited = true;
+                        break;
+                    }
+                    Ok(false) => thread::sleep(Duration::from_millis(25)),
+                    Err(_) => break,
+                }
+            }
+        }
+        if !exited {
+            let _ = child.force_kill_tree();
+        }
+
+        assert!(
+            matches!(still_running_before_shutdown, Ok(true)),
+            "the PowerShell child exited before the shutdown signal: {still_running_before_shutdown:?}"
+        );
+        assert!(
+            matches!(windowless, Ok(true)),
+            "expected no console window after attaching, got {windowless:?}"
+        );
+        assert!(
+            parent_console_restored_after_inspection && parent_console_restored_after_shutdown,
+            "attaching to or signaling the child changed the test process console state"
+        );
+        assert!(
+            ctrl_break.is_ok(),
+            "existing CTRL_BREAK shutdown path failed: {ctrl_break:?}"
+        );
+        assert!(
+            exited,
+            "the child did not exit within {GRACEFUL_STOP_TIMEOUT:?} after CTRL_BREAK"
+        );
+    }
 
     #[cfg(target_os = "linux")]
-    static FAKE_RUNTIME_CHILD_STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+    static REAL_PROCESS_GROUP_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     struct FixtureDownloader {
         bytes: Vec<u8>,
@@ -3714,6 +6307,7 @@ mod tests {
         version_status: u16,
         version_body: Vec<u8>,
         delay: Duration,
+        model_pull: Option<Arc<ModelPullApiFixture>>,
     }
 
     impl ApiFixture {
@@ -3728,7 +6322,13 @@ mod tests {
                 version_status: 200,
                 version_body: br#"{"version":"fixture"}"#.to_vec(),
                 delay: Duration::ZERO,
+                model_pull: None,
             }
+        }
+
+        fn with_model_pull(mut self, fixture: Arc<ModelPullApiFixture>) -> Self {
+            self.model_pull = Some(fixture);
+            self
         }
 
         fn malformed() -> Self {
@@ -3749,6 +6349,10 @@ mod tests {
     struct TestApiServer {
         address: std::net::SocketAddr,
         stopped: Arc<AtomicBool>,
+        listening: Arc<AtomicBool>,
+        #[cfg(target_os = "linux")]
+        listen_fd: std::os::fd::RawFd,
+        fixture: Arc<Mutex<ApiFixture>>,
         worker: Option<thread::JoinHandle<()>>,
     }
 
@@ -3756,13 +6360,81 @@ mod tests {
         fn bind(address: impl std::net::ToSocketAddrs, fixture: ApiFixture) -> io::Result<Self> {
             let listener = std::net::TcpListener::bind(address)?;
             listener.set_nonblocking(true)?;
+            Self::from_listener(listener, true, fixture)
+        }
+
+        #[cfg(target_os = "linux")]
+        fn reserve_unlistened(
+            address: std::net::SocketAddrV4,
+            fixture: ApiFixture,
+        ) -> io::Result<Self> {
+            use std::os::fd::FromRawFd;
+
+            let fd = unsafe {
+                libc::socket(
+                    libc::AF_INET,
+                    libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+                    0,
+                )
+            };
+            if fd < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let socket = unsafe { std::net::TcpListener::from_raw_fd(fd) };
+            let address = libc::sockaddr_in {
+                sin_family: libc::AF_INET as libc::sa_family_t,
+                sin_port: address.port().to_be(),
+                sin_addr: libc::in_addr {
+                    s_addr: u32::from_ne_bytes(address.ip().octets()),
+                },
+                sin_zero: [0; 8],
+            };
+            let bound = unsafe {
+                libc::bind(
+                    fd,
+                    (&address as *const libc::sockaddr_in).cast(),
+                    std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+                )
+            };
+            if bound < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Self::from_listener(socket, false, fixture)
+        }
+
+        fn from_listener(
+            listener: std::net::TcpListener,
+            is_listening: bool,
+            fixture: ApiFixture,
+        ) -> io::Result<Self> {
+            listener.set_nonblocking(true)?;
             let address = listener.local_addr()?;
+            #[cfg(target_os = "linux")]
+            let listen_fd = {
+                use std::os::fd::AsRawFd;
+                listener.as_raw_fd()
+            };
             let stopped = Arc::new(AtomicBool::new(false));
             let worker_stopped = stopped.clone();
+            let listening = Arc::new(AtomicBool::new(is_listening));
+            let worker_listening = listening.clone();
+            let fixture = Arc::new(Mutex::new(fixture));
+            let worker_fixture = fixture.clone();
             let worker = thread::spawn(move || {
                 while !worker_stopped.load(Ordering::Acquire) {
+                    if !worker_listening.load(Ordering::Acquire) {
+                        thread::sleep(Duration::from_millis(2));
+                        continue;
+                    }
                     match listener.accept() {
-                        Ok((mut stream, _)) => serve_fixture_request(&mut stream, &fixture),
+                        Ok((mut stream, _)) => {
+                            let fixture = worker_fixture.lock().unwrap().clone();
+                            if let Some(model_pull) = fixture.model_pull {
+                                serve_model_pull_fixture(stream, model_pull);
+                            } else {
+                                serve_fixture_request(&mut stream, &fixture);
+                            }
+                        }
                         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                             thread::sleep(Duration::from_millis(2));
                         }
@@ -3773,6 +6445,10 @@ mod tests {
             Ok(Self {
                 address,
                 stopped,
+                listening,
+                #[cfg(target_os = "linux")]
+                listen_fd,
+                fixture,
                 worker: Some(worker),
             })
         }
@@ -3783,6 +6459,23 @@ mod tests {
 
         fn stop(&self) {
             self.stopped.store(true, Ordering::Release);
+            if let Some(model_pull) = self.fixture.lock().unwrap().model_pull.clone() {
+                model_pull.stopped.store(true, Ordering::Release);
+            }
+        }
+
+        fn set_fixture(&self, fixture: ApiFixture) {
+            *self.fixture.lock().unwrap() = fixture;
+        }
+
+        #[cfg(target_os = "linux")]
+        fn listen(&self) {
+            if self.listening.load(Ordering::Acquire) {
+                return;
+            }
+            let result = unsafe { libc::listen(self.listen_fd, 128) };
+            assert_eq!(result, 0, "failed to activate the reserved test API socket");
+            self.listening.store(true, Ordering::Release);
         }
     }
 
@@ -3827,49 +6520,6 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    extern "C" fn fake_runtime_child_term_handler(_: libc::c_int) {
-        FAKE_RUNTIME_CHILD_STOP_REQUESTED.store(true, Ordering::Release);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    #[ignore = "spawned only as a fixture executable by process ownership tests"]
-    fn fake_managed_ollama_process_entry() {
-        let (Ok(port), Ok(mode), Ok(pid_file), Ok(reaped_file)) = (
-            std::env::var("NAIA_SHELL_FAKE_OLLAMA_PORT"),
-            std::env::var("NAIA_SHELL_FAKE_OLLAMA_MODE"),
-            std::env::var("NAIA_SHELL_FAKE_OLLAMA_PID_FILE"),
-            std::env::var("NAIA_SHELL_FAKE_OLLAMA_REAPED_FILE"),
-        ) else {
-            return;
-        };
-        FAKE_RUNTIME_CHILD_STOP_REQUESTED.store(false, Ordering::Release);
-        let previous = unsafe {
-            libc::signal(
-                libc::SIGTERM,
-                fake_runtime_child_term_handler as *const () as libc::sighandler_t,
-            )
-        };
-        assert_ne!(previous, libc::SIG_ERR);
-
-        let mut descendant = Command::new("/bin/sleep").arg("60").spawn().unwrap();
-        fs::write(pid_file, descendant.id().to_string()).unwrap();
-        let fixture = if mode == "unready" {
-            ApiFixture::status(503)
-        } else {
-            ApiFixture::ready(0)
-        };
-        let server =
-            TestApiServer::bind(("127.0.0.1", port.parse::<u16>().unwrap()), fixture).unwrap();
-        while !FAKE_RUNTIME_CHILD_STOP_REQUESTED.load(Ordering::Acquire) {
-            thread::sleep(Duration::from_millis(2));
-        }
-        drop(server);
-        let _ = descendant.wait().unwrap();
-        fs::write(reaped_file, b"descendant reaped").unwrap();
-    }
-
-    #[cfg(target_os = "linux")]
     fn shell_quote(value: &str) -> String {
         format!("'{}'", value.replace('\'', "'\\''"))
     }
@@ -3878,21 +6528,15 @@ mod tests {
     fn write_fake_executable_install(
         root: &Path,
         pin: ReleasePin,
-        port: u16,
-        mode: &str,
         pid_file: &Path,
         reaped_file: &Path,
     ) {
         use std::os::unix::fs::PermissionsExt;
 
-        let current_exe = std::env::current_exe().unwrap();
         let script = format!(
-            "#!/bin/sh\nexport NAIA_SHELL_FAKE_OLLAMA_PORT={}\nexport NAIA_SHELL_FAKE_OLLAMA_MODE={}\nexport NAIA_SHELL_FAKE_OLLAMA_PID_FILE={}\nexport NAIA_SHELL_FAKE_OLLAMA_REAPED_FILE={}\nexec {} --exact ollama_runtime::tests::fake_managed_ollama_process_entry --ignored --nocapture\n",
-            shell_quote(&port.to_string()),
-            shell_quote(mode),
+            "#!/bin/sh\nset -eu\npid_file={}\nreaped_file={}\ndescendant=\ntrap 'if [ -n \"$descendant\" ]; then wait \"$descendant\" 2>/dev/null || :; fi; printf \"descendant reaped\" > \"$reaped_file\"; exit 0' TERM\n/bin/sleep 60 &\ndescendant=$!\nprintf '%s' \"$descendant\" > \"$pid_file\"\nwait \"$descendant\"\n",
             shell_quote(&pid_file.to_string_lossy()),
             shell_quote(&reaped_file.to_string_lossy()),
-            shell_quote(&current_exe.to_string_lossy()),
         );
         write_managed_fixture(root, pin.version, pin.os, pin.arch, script.as_bytes());
         let (_, executable_relative_path) = expected_asset(pin.os, pin.arch);
@@ -3906,18 +6550,23 @@ mod tests {
         root: &Path,
         port: u16,
         pin: ReleasePin,
+        fixture_pid_file: &Path,
     ) -> RuntimeManager {
         RuntimeManager {
             inner: Arc::new(Mutex::new(ManagerState::default())),
             downloader: Arc::new(FixtureDownloader::succeeding(Vec::new())),
-            process_runner: Arc::new(SystemProcessRunner),
+            process_runner: Arc::new(FixtureStartBarrierRunner {
+                pid_file: fixture_pid_file.to_path_buf(),
+            }),
+            reservation_manager: ReservationManager::default(),
+            inventory_loader: Arc::new(e2e_fake_accelerator_inventory),
             settings: RuntimeSettings {
                 managed_base_url: format!("http://127.0.0.1:{port}"),
                 request_timeout: Duration::from_millis(30),
-                readiness_timeout: Duration::from_secs(2),
+                readiness_timeout: Duration::from_secs(10),
                 poll_interval: Duration::from_millis(5),
-                graceful_stop_timeout: Duration::from_millis(500),
-                force_stop_timeout: Duration::from_millis(500),
+                graceful_stop_timeout: Duration::from_secs(5),
+                force_stop_timeout: Duration::from_secs(2),
             },
             locations: Some((anchor.path().to_path_buf(), root.to_path_buf())),
             release_pin: Some(pin),
@@ -3925,12 +6574,60 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
+    struct FixtureStartBarrierRunner {
+        pid_file: PathBuf,
+    }
+
+    #[cfg(target_os = "linux")]
+    impl RuntimeProcessRunner for FixtureStartBarrierRunner {
+        fn spawn(&self, spec: &ProcessSpec) -> io::Result<Box<dyn ManagedChild>> {
+            let mut child = SystemProcessRunner.spawn(spec)?;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !self.pid_file.exists() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(5));
+            }
+            if !self.pid_file.exists() {
+                let _ = stop_managed_child(child.as_mut(), &RuntimeSettings::default());
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "fake managed child did not complete its startup handshake",
+                ));
+            }
+            Ok(child)
+        }
+    }
+
+    #[cfg(target_os = "linux")]
     fn wait_for_fixture_reap_marker(path: &Path) {
-        let deadline = Instant::now() + Duration::from_secs(2);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while !path.exists() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(path.exists(), "fake executable did not reap its descendant");
+    }
+
+    #[cfg(target_os = "linux")]
+    fn wait_for_fixture_pid_file(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !path.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            path.exists(),
+            "fake executable did not spawn its descendant"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    fn process_group_test_api() -> TestApiServer {
+        // Keep the ephemeral port bound but not listening until the fake child
+        // starts. This preserves the real launch probe's connection-refused
+        // result while preventing parallel tests from claiming the port.
+        TestApiServer::reserve_unlistened(
+            std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
+            ApiFixture::ready(0),
+        )
+        .unwrap()
     }
 
     struct FakeProcessState {
@@ -3939,10 +6636,14 @@ mod tests {
         exited: AtomicBool,
         descendants_alive: AtomicBool,
         graceful_calls: AtomicUsize,
+        graceful_shutdown_gate: Mutex<Option<Arc<(Mutex<bool>, Condvar)>>>,
         force_calls: AtomicUsize,
         graceful_exits: AtomicBool,
         graceful_reaps_descendants: AtomicBool,
         force_reaps: AtomicBool,
+        fail_spawn: AtomicBool,
+        invalidate_reservation_on_spawn: AtomicBool,
+        reservation_manager_on_spawn: Mutex<Option<ReservationManager>>,
         listener: Mutex<Option<TestApiServer>>,
         shutdown_manager_on_spawn: Mutex<Option<RuntimeManager>>,
     }
@@ -3955,10 +6656,14 @@ mod tests {
                 exited: AtomicBool::new(false),
                 descendants_alive: AtomicBool::new(false),
                 graceful_calls: AtomicUsize::new(0),
+                graceful_shutdown_gate: Mutex::new(None),
                 force_calls: AtomicUsize::new(0),
                 graceful_exits: AtomicBool::new(true),
                 graceful_reaps_descendants: AtomicBool::new(true),
                 force_reaps: AtomicBool::new(true),
+                fail_spawn: AtomicBool::new(false),
+                invalidate_reservation_on_spawn: AtomicBool::new(false),
+                reservation_manager_on_spawn: Mutex::new(None),
                 listener: Mutex::new(None),
                 shutdown_manager_on_spawn: Mutex::new(None),
             }
@@ -4013,8 +6718,30 @@ mod tests {
         fn spawn(&self, spec: &ProcessSpec) -> io::Result<Box<dyn ManagedChild>> {
             self.state.spawned.fetch_add(1, Ordering::Relaxed);
             *self.state.captured_spec.lock().unwrap() = Some(spec.clone());
+            if self.state.fail_spawn.load(Ordering::Acquire) {
+                return Err(io::Error::other("injected spawn failure"));
+            }
             if let Some(manager) = self.state.shutdown_manager_on_spawn.lock().unwrap().take() {
                 manager.shutdown();
+            }
+            if self
+                .state
+                .invalidate_reservation_on_spawn
+                .load(Ordering::Acquire)
+            {
+                if let Some(manager) = self
+                    .state
+                    .reservation_manager_on_spawn
+                    .lock()
+                    .unwrap()
+                    .take()
+                {
+                    manager.release_workload_for_test(
+                        "vulkan:uuid:00112233445566778899aabbccddeeff",
+                        LocalModelKind::LocalLlm,
+                        OLLAMA_WORKLOAD_ID,
+                    );
+                }
             }
             if let Some(api) = self.api.clone() {
                 let host = spec
@@ -4058,6 +6785,11 @@ mod tests {
         }
 
         fn request_graceful_shutdown(&mut self) -> io::Result<()> {
+            if let Some(gate) = self.state.graceful_shutdown_gate.lock().unwrap().clone() {
+                let (released, changed) = &*gate;
+                let released = released.lock().unwrap();
+                let _released = changed.wait_while(released, |released| !*released).unwrap();
+            }
             self.state.graceful_calls.fetch_add(1, Ordering::Relaxed);
             self.state.stop_listener();
             if self.state.graceful_exits.load(Ordering::Acquire) {
@@ -4109,6 +6841,28 @@ mod tests {
         downloader: Arc<dyn ArtifactDownloader>,
         installed: bool,
     ) -> RuntimeManager {
+        test_manager_with_inventory(
+            anchor,
+            root,
+            port,
+            runner,
+            pin,
+            downloader,
+            installed,
+            e2e_fake_accelerator_inventory(),
+        )
+    }
+
+    fn test_manager_with_inventory(
+        anchor: &tempfile::TempDir,
+        root: &Path,
+        port: u16,
+        runner: &Arc<FakeRunner>,
+        pin: ReleasePin,
+        downloader: Arc<dyn ArtifactDownloader>,
+        installed: bool,
+        inventory: AcceleratorInventory,
+    ) -> RuntimeManager {
         if installed {
             write_managed_fixture(
                 root,
@@ -4122,10 +6876,68 @@ mod tests {
             inner: Arc::new(Mutex::new(ManagerState::default())),
             downloader,
             process_runner: runner.clone(),
+            reservation_manager: ReservationManager::default(),
+            inventory_loader: Arc::new(move || inventory.clone()),
             settings: test_settings(port),
             locations: Some((anchor.path().to_path_buf(), root.to_path_buf())),
             release_pin: Some(pin),
         }
+    }
+
+    fn local_llm_device_id() -> &'static str {
+        "vulkan:uuid:00112233445566778899aabbccddeeff"
+    }
+
+    fn inventory_with_total_vram(total_vram_bytes: Option<u64>) -> AcceleratorInventory {
+        let mut inventory = e2e_fake_accelerator_inventory();
+        inventory.devices[0].total_vram_bytes = total_vram_bytes;
+        inventory.devices[0].available_vram_bytes = Some(7 * 1024 * 1024 * 1024);
+        inventory
+    }
+
+    fn reserve_test_voice(
+        manager: &RuntimeManager,
+        inventory: &AcceleratorInventory,
+    ) -> ReservationLease {
+        manager
+            .reservation_manager
+            .try_reserve_with_inventory(
+                LocalModelRequest {
+                    device_id: local_llm_device_id().to_string(),
+                    kind: LocalModelKind::Voice,
+                    workload_id: "voice-fixture".to_string(),
+                    reservation_bytes: Some(256 * 1024 * 1024),
+                },
+                inventory,
+            )
+            .expect("fake Voice lease is admitted")
+    }
+
+    #[test]
+    fn repeated_workload_id_cannot_create_a_second_local_lease() {
+        let inventory = e2e_fake_accelerator_inventory();
+        let manager = ReservationManager::default();
+        let request = LocalModelRequest {
+            device_id: local_llm_device_id().to_string(),
+            kind: LocalModelKind::LocalLlm,
+            workload_id: OLLAMA_WORKLOAD_ID.to_string(),
+            reservation_bytes: None,
+        };
+        let lease = manager
+            .try_reserve_with_inventory(request.clone(), &inventory)
+            .unwrap();
+        let duplicate = manager
+            .try_reserve_with_inventory(request, &inventory)
+            .unwrap_err();
+        assert_eq!(duplicate.reason.code(), "workload_already_reserved");
+        assert_eq!(
+            manager.reservations_for_device(local_llm_device_id()).len(),
+            1
+        );
+        drop(lease);
+        assert!(manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
     }
 
     fn wait_for_snapshot(
@@ -4148,7 +6960,7 @@ mod tests {
     }
 
     fn wait_for_operation(manager: &RuntimeManager, operation_id: &str) -> RuntimeSnapshot {
-        wait_for_snapshot(manager, Duration::from_secs(2), |snapshot| {
+        wait_for_snapshot(manager, Duration::from_secs(10), |snapshot| {
             snapshot.operation_id.as_deref() == Some(operation_id) && snapshot.phase.is_none()
         })
     }
@@ -4178,13 +6990,15 @@ mod tests {
             true,
         );
 
-        let operation =
-            dispatch_start(&manager, None, None, Some("device-is-ignored".into())).unwrap();
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
         let snapshot = wait_for_operation(&manager, &operation);
         assert_eq!(snapshot.server_state, ServerState::ReadyManaged);
         assert_eq!(snapshot.ownership, RuntimeOwnership::ManagedChild);
         assert_eq!(snapshot.model_count, Some(2));
         assert_eq!(snapshot.state, RuntimeState::InstalledStopped);
+        assert_eq!(snapshot.reservation.kind.as_deref(), Some("local_llm"));
+        assert_eq!(snapshot.reservation.status, ReservationStatus::Running);
+        assert_eq!(snapshot.reservation.bytes, None);
         let spec = runner.state.captured_spec.lock().unwrap().clone().unwrap();
         assert_eq!(
             spec.executable,
@@ -4192,6 +7006,12 @@ mod tests {
         );
         assert_eq!(spec.arguments, vec!["serve"]);
         assert!(spec.inherit_environment);
+        assert_eq!(
+            spec.environment
+                .get(&std::ffi::OsString::from("CUDA_VISIBLE_DEVICES"))
+                .unwrap(),
+            &std::ffi::OsString::from("0")
+        );
         assert_eq!(
             spec.environment
                 .get(&std::ffi::OsString::from("OLLAMA_HOST"))
@@ -4254,6 +7074,282 @@ mod tests {
     }
 
     #[test]
+    fn voice_lease_conflicts_block_local_llm_without_spawning_and_keep_voice_lease() {
+        let gib = 1024_u64 * 1024 * 1024;
+        for (total_vram_bytes, reason_code) in [
+            (Some(8 * gib), "same_device_conflict"),
+            (Some(16 * gib), "policy_undecided"),
+            (None, "policy_undecided"),
+        ] {
+            let inventory = inventory_with_total_vram(total_vram_bytes);
+            let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+            let anchor = tempfile::tempdir().unwrap();
+            let root = make_test_root(&anchor);
+            let pin = *release_pin("linux", "x86_64").unwrap();
+            let address = std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap();
+            let manager = test_manager_with_inventory(
+                &anchor,
+                &root,
+                address.port(),
+                &runner,
+                pin,
+                Arc::new(FixtureDownloader::succeeding(Vec::new())),
+                true,
+                inventory.clone(),
+            );
+            let voice_lease = reserve_test_voice(&manager, &inventory);
+            let operation = dispatch_start(&manager, None, None, None).unwrap();
+            let snapshot = wait_for_operation(&manager, &operation);
+            assert_eq!(snapshot.server_state, ServerState::Failed);
+            assert_eq!(
+                snapshot.error.as_ref().unwrap().code,
+                RuntimeErrorCode::ReservationDenied
+            );
+            assert_eq!(
+                snapshot.error.as_ref().unwrap().reason_code.as_deref(),
+                Some(reason_code)
+            );
+            assert_eq!(snapshot.reservation.status, ReservationStatus::Denied);
+            assert_eq!(
+                snapshot.reservation.reason_code.as_deref(),
+                Some(reason_code)
+            );
+            assert_eq!(snapshot.reservation.bytes, None);
+            assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+            assert_eq!(
+                manager
+                    .reservation_manager
+                    .reservations_for_device(local_llm_device_id())
+                    .len(),
+                1
+            );
+            drop(voice_lease);
+        }
+    }
+
+    #[test]
+    fn inventory_selection_and_mapping_fail_closed_without_starting_a_child() {
+        let base = e2e_fake_accelerator_inventory();
+        let mut multiple = base.clone();
+        let mut second = multiple.devices[0].clone();
+        second.provider_id.value = "vulkan:uuid:ffeeddccbbaa99887766554433221100".to_string();
+        second.nvidia.as_mut().unwrap().compatibility_index = Some(1);
+        multiple.devices.push(second);
+
+        let mut unmapped = base.clone();
+        unmapped.devices[0].vendor = HardwareVendor::Amd;
+        unmapped.devices[0].nvidia = None;
+
+        let mut unavailable = base.clone();
+        unavailable.status = DetectionStatus::Unavailable;
+        unavailable.devices.clear();
+        let mut no_devices = base.clone();
+        no_devices.status = DetectionStatus::NoDevices;
+        no_devices.devices.clear();
+
+        for (inventory, expected_code, expected_reason, requested_device_id) in [
+            (
+                multiple,
+                RuntimeErrorCode::DeviceSelectionRequired,
+                "device_selection_required",
+                None,
+            ),
+            (
+                unmapped,
+                RuntimeErrorCode::DeviceMappingUnverified,
+                "device_mapping_unverified",
+                None,
+            ),
+            (
+                unavailable,
+                RuntimeErrorCode::AcceleratorInventoryUnavailable,
+                "inventory_unavailable",
+                None,
+            ),
+            (
+                no_devices,
+                RuntimeErrorCode::DeviceNotFound,
+                "device_not_found",
+                None,
+            ),
+            (
+                base,
+                RuntimeErrorCode::DeviceNotFound,
+                "device_not_found",
+                Some("vulkan:uuid:ffffffffffffffffffffffffffffffff"),
+            ),
+        ] {
+            let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+            let anchor = tempfile::tempdir().unwrap();
+            let root = make_test_root(&anchor);
+            let pin = *release_pin("linux", "x86_64").unwrap();
+            let address = std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap();
+            let manager = test_manager_with_inventory(
+                &anchor,
+                &root,
+                address.port(),
+                &runner,
+                pin,
+                Arc::new(FixtureDownloader::succeeding(Vec::new())),
+                true,
+                inventory,
+            );
+            let operation = dispatch_start(
+                &manager,
+                None,
+                None,
+                requested_device_id.map(str::to_string),
+            )
+            .unwrap();
+            let snapshot = wait_for_operation(&manager, &operation);
+            assert_eq!(snapshot.error.as_ref().unwrap().code, expected_code);
+            assert_eq!(
+                snapshot.error.as_ref().unwrap().reason_code.as_deref(),
+                Some(expected_reason)
+            );
+            assert_eq!(
+                snapshot.reservation.reason_code.as_deref(),
+                Some(expected_reason)
+            );
+            assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    #[test]
+    fn spawn_failure_returns_the_starting_lease() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        runner.state.fail_spawn.store(true, Ordering::Release);
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+        assert_eq!(snapshot.error.unwrap().code, RuntimeErrorCode::SpawnFailed);
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 1);
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+    }
+
+    #[test]
+    fn lost_mark_running_reaps_child_before_returning_lease() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        *runner.state.reservation_manager_on_spawn.lock().unwrap() =
+            Some(manager.reservation_manager.clone());
+        runner
+            .state
+            .invalidate_reservation_on_spawn
+            .store(true, Ordering::Release);
+
+        let operation = dispatch_start(&manager, None, None, None).unwrap();
+        let snapshot = wait_for_operation(&manager, &operation);
+
+        assert_eq!(
+            snapshot.error.as_ref().unwrap().code,
+            RuntimeErrorCode::ReservationLeaseLost
+        );
+        assert_eq!(
+            snapshot.error.as_ref().unwrap().reason_code.as_deref(),
+            Some("reservation_lease_lost")
+        );
+        assert_eq!(
+            snapshot.reservation.reason_code.as_deref(),
+            Some("reservation_lease_lost")
+        );
+        assert!(manager.lock().process.is_none());
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn rejected_spawn_keeps_unreaped_child_and_lease_for_shutdown_retry() {
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        runner.state.graceful_exits.store(false, Ordering::Release);
+        runner.state.force_reaps.store(false, Ordering::Release);
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let address = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        *runner.state.shutdown_manager_on_spawn.lock().unwrap() = Some(manager.clone());
+
+        let _operation = dispatch_start(&manager, None, None, None).unwrap();
+        let failed = wait_for_snapshot(&manager, Duration::from_secs(2), |snapshot| {
+            snapshot
+                .error
+                .as_ref()
+                .is_some_and(|error| error.code == RuntimeErrorCode::StopFailed)
+        });
+
+        assert_eq!(failed.server_state, ServerState::Failed);
+        assert_eq!(manager.lock().unreaped_processes.len(), 1);
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+        runner.state.force_reaps.store(true, Ordering::Release);
+        manager.shutdown();
+        assert!(manager.lock().unreaped_processes.is_empty());
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+    }
+
+    #[test]
     fn api_probe_requires_200_and_an_object_with_a_models_array() {
         let wrong_shape = ApiFixture {
             tags_body: br#"{"models":{}}"#.to_vec(),
@@ -4302,8 +7398,17 @@ mod tests {
         );
         let operation = dispatch_start(&manager, None, None, None).unwrap();
         let started = wait_for_operation(&manager, &operation);
-        assert_eq!(started.server_state, ServerState::ConnectedUnreserved);
+        assert_eq!(started.server_state, ServerState::ReadyExternalLocal);
         assert_eq!(started.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(started.reservation.status, ReservationStatus::Running);
+        assert_eq!(started.reservation.bytes, None);
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
         assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
         let custom = external.base_url();
         assert_eq!(
@@ -4312,22 +7417,38 @@ mod tests {
                 .code,
             RuntimeErrorCode::ManagedEndpointUnsupported
         );
-        let status = status_snapshot(&manager, Some(&custom)).unwrap();
-        assert_eq!(status.server_state, ServerState::ConnectedUnreserved);
+        let status = status_snapshot(&manager, Some(&custom), None).unwrap();
+        assert_eq!(status.server_state, ServerState::ReadyExternalLocal);
         assert_eq!(status.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
         let unused = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let unavailable = format!("http://{}", unused.local_addr().unwrap());
         drop(unused);
         assert_eq!(
-            status_snapshot(&manager, Some(&unavailable))
+            status_snapshot(&manager, Some(&unavailable), None)
                 .unwrap()
                 .server_state,
             ServerState::ExternalUnavailable
         );
-        assert_eq!(
-            dispatch_stop(&manager, None).unwrap_err().code,
-            RuntimeErrorCode::NotManaged
-        );
+        let active_again = status_snapshot(&manager, Some(&custom), None).unwrap();
+        assert_eq!(active_again.server_state, ServerState::ReadyExternalLocal);
+        assert_eq!(active_again.model_count, Some(1));
+        let stop = dispatch_stop(&manager, None).unwrap();
+        let stopped = wait_for_operation(&manager, &stop);
+        assert_eq!(stopped.server_state, ServerState::ConnectedUnreserved);
+        assert_eq!(stopped.ownership, RuntimeOwnership::ExternalLocal);
+        assert_eq!(stopped.model_count, Some(1));
+        assert_eq!(stopped.reservation.status, ReservationStatus::NotRequested);
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
         assert_eq!(
             probe_ollama(
                 &url::Url::parse(&custom).unwrap(),
@@ -4337,6 +7458,157 @@ mod tests {
         );
         assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 0);
         assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn application_shutdown_releases_external_lease_without_signaling_server() {
+        let external = TestApiServer::bind("127.0.0.1:0", ApiFixture::ready(1)).unwrap();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            external.address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        assert_eq!(
+            status_snapshot(&manager, None, None).unwrap().server_state,
+            ServerState::ReadyExternalLocal
+        );
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+
+        manager.shutdown();
+
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
+        assert_eq!(
+            probe_ollama(
+                &url::Url::parse(&external.base_url()).unwrap(),
+                Duration::from_millis(80)
+            ),
+            ProbeResult::Ready { model_count: 1 }
+        );
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn external_loopback_conflict_keeps_models_visible_and_chat_unreserved() {
+        let external = TestApiServer::bind("127.0.0.1:0", ApiFixture::ready(2)).unwrap();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let mut inventory = inventory_with_total_vram(Some(8 * 1024 * 1024 * 1024));
+        inventory.devices[0].available_vram_bytes = Some(7 * 1024 * 1024 * 1024);
+        let manager = test_manager_with_inventory(
+            &anchor,
+            &root,
+            external.address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+            inventory.clone(),
+        );
+        let voice_lease = reserve_test_voice(&manager, &inventory);
+
+        let first = status_snapshot(&manager, None, None).unwrap();
+        let repeated = status_snapshot(&manager, None, None).unwrap();
+
+        for snapshot in [&first, &repeated] {
+            assert_eq!(snapshot.server_state, ServerState::ConnectedUnreserved);
+            assert_eq!(snapshot.ownership, RuntimeOwnership::ExternalLocal);
+            assert_eq!(snapshot.model_count, Some(2));
+            assert_eq!(snapshot.reservation.status, ReservationStatus::Denied);
+            assert_eq!(
+                snapshot.reservation.reason_code.as_deref(),
+                Some("same_device_conflict")
+            );
+        }
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            probe_ollama(
+                &url::Url::parse(&external.base_url()).unwrap(),
+                Duration::from_millis(80)
+            ),
+            ProbeResult::Ready { model_count: 2 }
+        );
+        assert_eq!(runner.state.graceful_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(runner.state.force_calls.load(Ordering::Relaxed), 0);
+        drop(voice_lease);
+    }
+
+    #[test]
+    fn simultaneous_external_status_requests_share_one_session_lease() {
+        let external = TestApiServer::bind("127.0.0.1:0", ApiFixture::ready(1)).unwrap();
+        let runner = FakeRunner::new(Some(ApiFixture::ready(0)));
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let manager = test_manager(
+            &anchor,
+            &root,
+            external.address.port(),
+            &runner,
+            pin,
+            Arc::new(FixtureDownloader::succeeding(Vec::new())),
+            true,
+        );
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let workers = (0..2)
+            .map(|_| {
+                let manager = manager.clone();
+                let barrier = barrier.clone();
+                thread::spawn(move || {
+                    barrier.wait();
+                    status_snapshot(&manager, None, None).unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        barrier.wait();
+        let snapshots = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>();
+
+        assert!(snapshots.iter().all(|snapshot| matches!(
+            snapshot.server_state,
+            ServerState::ReadyExternalLocal | ServerState::Reserving
+        )));
+        assert_eq!(
+            status_snapshot(&manager, None, None).unwrap().server_state,
+            ServerState::ReadyExternalLocal
+        );
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+        assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 0);
     }
 
     #[test]
@@ -4488,16 +7760,13 @@ mod tests {
         let anchor = tempfile::tempdir().unwrap();
         let root = make_test_root(&anchor);
         let pin = *release_pin("linux", "x86_64").unwrap();
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let api = process_group_test_api();
+        let port = api.address.port();
         let pid_file = anchor.path().join("fake-child.pid");
         let reaped_file = anchor.path().join("fake-child-reaped");
-        write_fake_executable_install(&root, pin, port, "unready", &pid_file, &reaped_file);
-        let mut manager = real_process_manager(&anchor, &root, port, pin);
-        manager.settings.readiness_timeout = Duration::from_secs(1);
+        write_fake_executable_install(&root, pin, &pid_file, &reaped_file);
+        let mut manager = real_process_manager(&anchor, &root, port, pin, &pid_file);
+        manager.settings.readiness_timeout = Duration::from_secs(5);
 
         let operation = dispatch_start(&manager, None, None, None).unwrap();
         let snapshot = wait_for_operation(&manager, &operation);
@@ -4532,17 +7801,17 @@ mod tests {
         let anchor = tempfile::tempdir().unwrap();
         let root = make_test_root(&anchor);
         let pin = *release_pin("linux", "x86_64").unwrap();
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let api = process_group_test_api();
+        let port = api.address.port();
         let pid_file = anchor.path().join("fake-child.pid");
         let reaped_file = anchor.path().join("fake-child-reaped");
-        write_fake_executable_install(&root, pin, port, "ready", &pid_file, &reaped_file);
-        let manager = real_process_manager(&anchor, &root, port, pin);
+        write_fake_executable_install(&root, pin, &pid_file, &reaped_file);
+        let manager = real_process_manager(&anchor, &root, port, pin, &pid_file);
 
         let start = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_fixture_pid_file(&pid_file);
+        api.set_fixture(ApiFixture::ready(0));
+        api.listen();
         assert_eq!(
             wait_for_operation(&manager, &start).server_state,
             ServerState::ReadyManaged
@@ -4563,6 +7832,90 @@ mod tests {
             "dropping a normally stopped child must not signal its old PGID"
         );
         assert_eq!(PROCESS_GROUP_SIGKILL_ATTEMPTS.load(Ordering::Relaxed), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn managed_child_fake_ollama_pulls_exact_qwen_tag_and_releases_reservation() {
+        let _guard = REAL_PROCESS_GROUP_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let anchor = tempfile::tempdir().unwrap();
+        let root = make_test_root(&anchor);
+        let pin = *release_pin("linux", "x86_64").unwrap();
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let model_api = Arc::new(ModelPullApiFixture::new(
+            tag, None, false, false, false, false,
+        ));
+        let api = TestApiServer::reserve_unlistened(
+            std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
+            ApiFixture::ready(0).with_model_pull(model_api.clone()),
+        )
+        .unwrap();
+        let port = api.address.port();
+        let pid_file = anchor.path().join("fake-child.pid");
+        let reaped_file = anchor.path().join("fake-child-reaped");
+        write_fake_executable_install(&root, pin, &pid_file, &reaped_file);
+        let manager = real_process_manager(&anchor, &root, port, pin, &pid_file);
+
+        let start = dispatch_start(&manager, None, None, None).unwrap();
+        wait_for_fixture_pid_file(&pid_file);
+        api.listen();
+        let started = wait_for_operation(&manager, &start);
+        assert_eq!(started.server_state, ServerState::ReadyManaged);
+        assert_eq!(started.ownership, RuntimeOwnership::ManagedChild);
+        assert_eq!(started.reservation.status, ReservationStatus::Running);
+        let startup_requests = model_api.request_paths.lock().unwrap().clone();
+        assert_eq!(startup_requests, vec!["GET /api/tags"]);
+        model_api.request_paths.lock().unwrap().clear();
+
+        let model_store = tempfile::tempdir().unwrap();
+        let pull = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(model_store.path()),
+        )
+        .unwrap();
+        assert_eq!(pull.snapshot.state, ModelPullState::Preflight);
+        let pulled = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(pulled.state, ModelPullState::Ready);
+        assert_eq!(
+            pulled.operation_id.as_deref(),
+            Some(pull.operation_id.as_str())
+        );
+        assert_eq!(pulled.digest.as_deref(), Some("sha256:fixture"));
+        assert!(pulled.error.is_none());
+        assert_eq!(model_api.pull_requests.load(Ordering::Acquire), 1);
+        assert_eq!(model_api.show_requests.load(Ordering::Acquire), 1);
+        assert_eq!(
+            model_api.pull_request_bodies.lock().unwrap().as_slice(),
+            &[serde_json::json!({ "name": tag, "stream": true })]
+        );
+        assert_eq!(
+            model_api.request_paths.lock().unwrap().as_slice(),
+            [
+                "GET /api/tags",
+                "POST /api/pull",
+                "GET /api/tags",
+                "POST /api/show",
+                "GET /api/tags",
+            ]
+        );
+
+        let stop = dispatch_stop(&manager, None).unwrap();
+        assert_eq!(
+            wait_for_operation(&manager, &stop).server_state,
+            ServerState::Stopped
+        );
+        wait_for_fixture_reap_marker(&reaped_file);
+        assert!(manager.lock().process.is_none());
+        assert!(manager
+            .reservation_manager
+            .reservations_for_device(local_llm_device_id())
+            .is_empty());
     }
 
     #[cfg(target_os = "linux")]
@@ -4630,7 +7983,7 @@ mod tests {
             ServerState::ReadyManaged
         );
         assert_eq!(
-            status_snapshot(&manager, None).unwrap().server_state,
+            status_snapshot(&manager, None, None).unwrap().server_state,
             ServerState::ReadyManaged
         );
         let second = dispatch_start(&manager, None, None, None).unwrap();
@@ -4640,7 +7993,7 @@ mod tests {
         );
         assert_eq!(runner.state.spawned.load(Ordering::Relaxed), 1);
         runner.state.stop_listener();
-        let unavailable = status_snapshot(&manager, None).unwrap();
+        let unavailable = status_snapshot(&manager, None, None).unwrap();
         assert_eq!(unavailable.server_state, ServerState::Failed);
         assert_eq!(unavailable.ownership, RuntimeOwnership::ManagedChild);
         assert_eq!(
@@ -4765,7 +8118,21 @@ mod tests {
         let failed = wait_for_operation(&manager, &stop);
         assert_eq!(failed.error.unwrap().code, RuntimeErrorCode::StopFailed);
         assert!(manager.in_use(pin.version));
-        assert!(manager.lock().process.is_some());
+        let state = manager.lock();
+        assert!(state.process.is_none());
+        assert_eq!(state.unreaped_processes.len(), 1);
+        assert_eq!(
+            state.snapshot.reservation.status,
+            ReservationStatus::Running
+        );
+        assert_eq!(
+            manager
+                .reservation_manager
+                .reservations_for_device(local_llm_device_id())
+                .len(),
+            1
+        );
+        drop(state);
         runner.state.force_reaps.store(true, Ordering::Release);
         let retry = dispatch_stop(&manager, None).unwrap();
         assert_eq!(
@@ -5272,5 +8639,1110 @@ mod tests {
         assert!(is_default_managed_host(Some("http://LOCALHOST:11434/")));
         assert!(!is_default_managed_host(Some("http://localhost:11435")));
         assert!(!is_default_managed_host(Some("https://example.com:11434")));
+    }
+
+    struct ModelPullApiFixture {
+        tag: String,
+        digest: Option<String>,
+        hold_pull_open: bool,
+        change_digest_on_recheck: bool,
+        fail_first_pull: bool,
+        disconnect_pull_early: bool,
+        pull_requests: AtomicUsize,
+        tags_requests: AtomicUsize,
+        show_requests: AtomicUsize,
+        pull_request_bodies: Mutex<Vec<Value>>,
+        request_paths: Mutex<Vec<String>>,
+        model_available: AtomicBool,
+        active_pull_stream: Mutex<Option<std::net::TcpStream>>,
+        pull_connection_addresses: Mutex<Option<PullConnectionAddresses>>,
+        stopped: AtomicBool,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct PullConnectionAddresses {
+        client: std::net::SocketAddr,
+        server: std::net::SocketAddr,
+    }
+
+    #[derive(Debug)]
+    struct PullConnectionObservation {
+        closed: bool,
+        evidence: String,
+    }
+
+    struct FakeShutdownGateReleaseOnDrop(Arc<(Mutex<bool>, Condvar)>);
+
+    impl FakeShutdownGateReleaseOnDrop {
+        fn release(&self) {
+            let (released, changed) = &*self.0;
+            *released.lock().unwrap() = true;
+            changed.notify_all();
+        }
+    }
+
+    impl Drop for FakeShutdownGateReleaseOnDrop {
+        fn drop(&mut self) {
+            self.release();
+        }
+    }
+
+    impl ModelPullApiFixture {
+        fn new(
+            tag: &str,
+            digest: Option<&str>,
+            hold_pull_open: bool,
+            change_digest_on_recheck: bool,
+            fail_first_pull: bool,
+            disconnect_pull_early: bool,
+        ) -> Self {
+            Self {
+                tag: tag.to_string(),
+                digest: digest.map(str::to_string),
+                hold_pull_open,
+                change_digest_on_recheck,
+                fail_first_pull,
+                disconnect_pull_early,
+                pull_requests: AtomicUsize::new(0),
+                tags_requests: AtomicUsize::new(0),
+                show_requests: AtomicUsize::new(0),
+                pull_request_bodies: Mutex::new(Vec::new()),
+                request_paths: Mutex::new(Vec::new()),
+                model_available: AtomicBool::new(digest.is_some()),
+                active_pull_stream: Mutex::new(None),
+                pull_connection_addresses: Mutex::new(None),
+                stopped: AtomicBool::new(false),
+            }
+        }
+
+        fn observe_pull_connection_closed(&self) -> PullConnectionObservation {
+            #[cfg(target_os = "linux")]
+            let observation = {
+                let addresses = self
+                    .pull_connection_addresses
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .as_ref()
+                    .copied()
+                    .expect("pull connection addresses captured before pull_requests increments");
+                let state = linux_pull_connection_state(addresses)
+                    .unwrap_or_else(|error| panic!("read Linux pull TCP state: {error}"));
+                let closed = state.is_none() || matches!(state, Some(0x04 | 0x05 | 0x06 | 0x07));
+                let evidence = match state {
+                    Some(state) => format!(
+                        "/proc TCP state {:02X} ({})",
+                        state,
+                        linux_tcp_state_name(state)
+                    ),
+                    None => "no matching /proc TCP row".to_string(),
+                };
+                PullConnectionObservation { closed, evidence }
+            };
+
+            #[cfg(not(target_os = "linux"))]
+            let observation = {
+                // One server-side peek is retained for non-Linux builds, but peer FIN delivery is
+                // asynchronous there, so this is not evidence of close-before-report ordering.
+                let stream = self
+                    .active_pull_stream
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .as_ref()
+                    .and_then(|stream| stream.try_clone().ok())
+                    .expect("pull stream captured before pull_requests increments");
+                stream
+                    .set_nonblocking(true)
+                    .expect("set_nonblocking on cloned pull stream");
+                let mut probe = [0_u8; 1];
+                match stream.peek(&mut probe) {
+                    Ok(0) => PullConnectionObservation {
+                        closed: true,
+                        evidence: "server peek EOF".to_string(),
+                    },
+                    Err(error) if is_pull_connection_closed_error(error.kind()) => {
+                        PullConnectionObservation {
+                            closed: true,
+                            evidence: format!("server peek close error: {error:?}"),
+                        }
+                    }
+                    Ok(bytes) => PullConnectionObservation {
+                        closed: false,
+                        evidence: format!("server peek returned {bytes} bytes"),
+                    },
+                    Err(error) => PullConnectionObservation {
+                        closed: false,
+                        evidence: format!("server peek error: {error:?}"),
+                    },
+                }
+            };
+
+            observation
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_pull_connection_state(addresses: PullConnectionAddresses) -> io::Result<Option<u8>> {
+        // Read the client-local tuple: its TCP state changes in close(), while the accepted
+        // server socket only learns about FIN asynchronously.
+        let (table_path, client_ip, server_ip) = match (addresses.client, addresses.server) {
+            (std::net::SocketAddr::V4(client), std::net::SocketAddr::V4(server)) => (
+                "/proc/net/tcp",
+                linux_proc_ip_hex(std::net::IpAddr::V4(*client.ip())),
+                linux_proc_ip_hex(std::net::IpAddr::V4(*server.ip())),
+            ),
+            (std::net::SocketAddr::V6(client), std::net::SocketAddr::V6(server)) => (
+                "/proc/net/tcp6",
+                linux_proc_ip_hex(std::net::IpAddr::V6(*client.ip())),
+                linux_proc_ip_hex(std::net::IpAddr::V6(*server.ip())),
+            ),
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "client and server address families differ",
+                ));
+            }
+        };
+        let local = format!("{client_ip}:{:04X}", addresses.client.port());
+        let remote = format!("{server_ip}:{:04X}", addresses.server.port());
+        let table = fs::read_to_string(table_path)?;
+        for line in table.lines().skip(1) {
+            let mut fields = line.split_whitespace();
+            let _slot = fields.next();
+            let local_address = fields.next();
+            let remote_address = fields.next();
+            let state = fields.next();
+            if local_address == Some(local.as_str()) && remote_address == Some(remote.as_str()) {
+                let state = state.ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "TCP row has no state")
+                })?;
+                return u8::from_str_radix(state, 16).map(Some).map_err(|error| {
+                    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
+                });
+            }
+        }
+        Ok(None)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_proc_ip_hex(address: std::net::IpAddr) -> String {
+        match address {
+            std::net::IpAddr::V4(address) => {
+                format!("{:08X}", u32::from_ne_bytes(address.octets()))
+            }
+            std::net::IpAddr::V6(address) => address
+                .octets()
+                .chunks_exact(4)
+                .map(|word| {
+                    let bytes: [u8; 4] = word.try_into().expect("IPv6 word is four bytes");
+                    format!("{:08X}", u32::from_ne_bytes(bytes))
+                })
+                .collect(),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_tcp_state_name(state: u8) -> &'static str {
+        match state {
+            0x01 => "ESTABLISHED",
+            0x02 => "SYN_SENT",
+            0x03 => "SYN_RECV",
+            0x04 => "FIN_WAIT1",
+            0x05 => "FIN_WAIT2",
+            0x06 => "TIME_WAIT",
+            0x07 => "CLOSE",
+            0x08 => "CLOSE_WAIT",
+            0x09 => "LAST_ACK",
+            0x0A => "LISTEN",
+            0x0B => "CLOSING",
+            _ => "UNKNOWN",
+        }
+    }
+
+    fn is_pull_connection_closed_error(kind: io::ErrorKind) -> bool {
+        matches!(
+            kind,
+            io::ErrorKind::ConnectionReset | io::ErrorKind::BrokenPipe
+        )
+    }
+
+    struct ModelPullApiServer {
+        address: std::net::SocketAddr,
+        fixture: Arc<ModelPullApiFixture>,
+        worker: Option<thread::JoinHandle<()>>,
+    }
+
+    impl ModelPullApiServer {
+        fn bind(
+            tag: &str,
+            digest: Option<&str>,
+            hold_pull_open: bool,
+            change_digest_on_recheck: bool,
+            fail_first_pull: bool,
+            disconnect_pull_early: bool,
+        ) -> io::Result<Self> {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+            listener.set_nonblocking(true)?;
+            let address = listener.local_addr()?;
+            let fixture = Arc::new(ModelPullApiFixture::new(
+                tag,
+                digest,
+                hold_pull_open,
+                change_digest_on_recheck,
+                fail_first_pull,
+                disconnect_pull_early,
+            ));
+            let worker_fixture = fixture.clone();
+            let worker = thread::spawn(move || {
+                while !worker_fixture.stopped.load(Ordering::Acquire) {
+                    match listener.accept() {
+                        Ok((stream, _)) => serve_model_pull_fixture(stream, worker_fixture.clone()),
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+            Ok(Self {
+                address,
+                fixture,
+                worker: Some(worker),
+            })
+        }
+
+        fn base_url(&self) -> String {
+            format!("http://{}", self.address)
+        }
+    }
+
+    impl Drop for ModelPullApiServer {
+        fn drop(&mut self) {
+            self.fixture.stopped.store(true, Ordering::Release);
+            // Release a nonblocking accept loop even on platforms where the next poll is delayed.
+            let _ = std::net::TcpStream::connect(self.address);
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+
+    fn write_fixture_response(stream: &mut std::net::TcpStream, body: &[u8]) -> io::Result<()> {
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )?;
+        stream.write_all(body)?;
+        stream.flush()
+    }
+
+    fn serve_model_pull_fixture(
+        mut stream: std::net::TcpStream,
+        fixture: Arc<ModelPullApiFixture>,
+    ) {
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 2048];
+        let request_deadline = Instant::now() + Duration::from_secs(2);
+        let header_end = loop {
+            if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                break position + 4;
+            }
+            if request.len() >= 32 * 1024 || Instant::now() >= request_deadline {
+                return;
+            }
+            match stream.read(&mut chunk) {
+                Ok(0) => return,
+                Ok(read) => request.extend_from_slice(&chunk[..read]),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock
+                            | io::ErrorKind::TimedOut
+                            | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(_) => return,
+            }
+        };
+        let header = String::from_utf8_lossy(&request[..header_end - 4]).into_owned();
+        let content_length = header
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find_map(|(name, value)| {
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+            .unwrap_or_default();
+        while request.len() < header_end.saturating_add(content_length)
+            && request.len() < 32 * 1024
+            && Instant::now() < request_deadline
+        {
+            match stream.read(&mut chunk) {
+                Ok(0) => return,
+                Ok(read) => request.extend_from_slice(&chunk[..read]),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock
+                            | io::ErrorKind::TimedOut
+                            | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(_) => return,
+            }
+        }
+        if request.len() < header_end.saturating_add(content_length) {
+            return;
+        }
+        let request_body = &request[header_end..header_end + content_length];
+        let request_line = header.lines().next().unwrap_or_default().to_string();
+        let mut request_parts = request_line.split_whitespace();
+        let method = request_parts.next().unwrap_or_default();
+        let path = request_parts.next().unwrap_or_default();
+        fixture
+            .request_paths
+            .lock()
+            .unwrap()
+            .push(format!("{method} {path}"));
+        match path {
+            "/api/version" => {
+                let _ = write_fixture_response(&mut stream, br#"{"version":"fixture"}"#);
+            }
+            "/api/tags" => {
+                let request_index = fixture.tags_requests.fetch_add(1, Ordering::AcqRel);
+                let digest = match fixture.digest.as_deref() {
+                    Some(digest) => Some(digest),
+                    None if fixture.model_available.load(Ordering::Acquire) => {
+                        Some("sha256:fixture")
+                    }
+                    None => None,
+                };
+                let digest = match digest {
+                    Some(_) if fixture.change_digest_on_recheck && request_index >= 2 => {
+                        Some("sha256:changed")
+                    }
+                    other => other,
+                };
+                let body = match digest {
+                    Some(digest) => format!(
+                        "{{\"models\":[{{\"name\":\"{}\",\"model\":\"{}\",\"digest\":\"{}\"}}]}}",
+                        fixture.tag, fixture.tag, digest
+                    ),
+                    None => "{\"models\":[]}".to_string(),
+                };
+                let _ = write_fixture_response(&mut stream, body.as_bytes());
+            }
+            "/api/show" => {
+                fixture.show_requests.fetch_add(1, Ordering::AcqRel);
+                let body = br#"{"details":{"family":"qwen3","parameter_size":"0.8B","quantization_level":"Q8_0"},"model_info":{"qwen3.context_length":262144}}"#;
+                let _ = write_fixture_response(&mut stream, body);
+            }
+            "/api/pull" => {
+                let addresses = PullConnectionAddresses {
+                    client: stream.peer_addr().expect("pull client address"),
+                    server: stream.local_addr().expect("pull server address"),
+                };
+                *fixture
+                    .pull_connection_addresses
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(addresses);
+                let pull_number = fixture.pull_requests.load(Ordering::Acquire) + 1;
+                let body = serde_json::from_slice(request_body).unwrap_or(Value::Null);
+                fixture.pull_request_bodies.lock().unwrap().push(body);
+                if fixture.fail_first_pull && pull_number == 1 {
+                    let _ = stream.write_all(
+                        b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    );
+                    let _ = stream.flush();
+                    fixture.pull_requests.fetch_add(1, Ordering::AcqRel);
+                    return;
+                }
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+                );
+                let first =
+                    br#"{"status":"downloading","digest":"sha256:layer","completed":1,"total":2}"#;
+                let _ = write!(stream, "{:X}\r\n", first.len());
+                let _ = stream.write_all(first);
+                let _ = stream.write_all(b"\r\n");
+                let _ = stream.flush();
+                if fixture.hold_pull_open {
+                    if let Ok(cloned) = stream.try_clone() {
+                        *fixture
+                            .active_pull_stream
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(cloned);
+                    }
+                }
+                fixture.pull_requests.fetch_add(1, Ordering::AcqRel);
+                if fixture.disconnect_pull_early {
+                    return;
+                }
+                if fixture.hold_pull_open {
+                    loop {
+                        match stream.read(&mut chunk) {
+                            Ok(0) => {
+                                break;
+                            }
+                            Ok(_) => {}
+                            Err(error) if is_pull_connection_closed_error(error.kind()) => break,
+                            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                                thread::sleep(Duration::from_millis(2));
+                            }
+                            Err(error)
+                                if matches!(
+                                    error.kind(),
+                                    io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+                                ) => {}
+                            Err(_) => break,
+                        }
+                        if fixture.stopped.load(Ordering::Acquire) {
+                            break;
+                        }
+                    }
+                } else {
+                    let second = b"\n{\"status\":\"success\"}";
+                    if write!(stream, "{:X}\r\n", second.len()).is_ok()
+                        && stream.write_all(second).is_ok()
+                        && stream.write_all(b"\r\n0\r\n\r\n").is_ok()
+                        && stream.flush().is_ok()
+                    {
+                        fixture.model_available.store(true, Ordering::Release);
+                    }
+                }
+            }
+            _ => {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        }
+    }
+
+    fn model_pull_test_manager(base_url: &str) -> (RuntimeManager, Arc<FakeProcessState>) {
+        let mut manager = RuntimeManager::default();
+        manager.reservation_manager = ReservationManager::default();
+        manager.settings.managed_base_url = base_url.to_string();
+        let inventory = e2e_fake_accelerator_inventory();
+        let device_id = inventory.devices[0].provider_id.value.clone();
+        let lease = manager
+            .reservation_manager
+            .try_reserve_with_inventory(
+                LocalModelRequest {
+                    device_id,
+                    kind: LocalModelKind::LocalLlm,
+                    workload_id: next_operation_id(),
+                    reservation_bytes: None,
+                },
+                &inventory,
+            )
+            .expect("synthetic accelerator fixture reservation");
+        assert!(lease.mark_running());
+        let reservation = ReservationSnapshot::from_lease(&lease).expect("running lease snapshot");
+        let fake_process = Arc::new(FakeProcessState::new());
+        {
+            let mut state = manager.lock();
+            state.snapshot.state = RuntimeState::InstalledStopped;
+            state.snapshot.server_state = ServerState::ReadyManaged;
+            state.snapshot.ownership = RuntimeOwnership::ManagedChild;
+            state.snapshot.installed_version = Some(RELEASE_VERSION.to_string());
+            state.snapshot.installed_versions = vec![RELEASE_VERSION.to_string()];
+            state.snapshot.reservation = reservation;
+            state.snapshot.model_count = Some(0);
+            state.process = Some(ManagedProcess {
+                child: Box::new(FakeChild {
+                    state: fake_process.clone(),
+                }),
+                version: RELEASE_VERSION.to_string(),
+                generation: 1,
+                reservation: Some(lease),
+            });
+        }
+        (manager, fake_process)
+    }
+
+    fn test_model_pull_policy(directory: &Path) -> QwenModelPolicy {
+        let mut policy = qwen_model_policy();
+        policy.disk_space_multiplier = Some(2);
+        policy.model_store_override = Some(directory.to_string_lossy().into_owned());
+        policy.available_bytes_override = Some(u64::MAX);
+        for candidate in &mut policy.candidates {
+            candidate.published_size_bytes = Some(1);
+            candidate.minimum_free_bytes = Some(2);
+        }
+        policy
+    }
+
+    fn undecided_qwen_model_policy() -> QwenModelPolicy {
+        let mut policy = qwen_model_policy();
+        policy.default_model_tag = None;
+        policy.context_default_tokens = None;
+        policy.pull_start_policy = None;
+        policy.model_store_override = None;
+        policy.automatic_selection_policy = None;
+        policy.disk_space_multiplier = None;
+        policy.model_store_available_bytes = None;
+        policy.show_license = None;
+        for candidate in &mut policy.candidates {
+            candidate.published_size_bytes = None;
+            candidate.minimum_free_bytes = None;
+        }
+        policy
+    }
+
+    fn wait_for_model_pull_result(manager: &RuntimeManager, tag: &str) -> ModelPullSnapshot {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(snapshot) = manager.lock().model_pull_snapshots.get(tag).cloned() {
+                if matches!(
+                    snapshot.state,
+                    ModelPullState::Paused | ModelPullState::Failed | ModelPullState::Ready
+                ) {
+                    return snapshot;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "model pull worker did not finish"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn qwen_model_policy_exposes_fixed_catalog_and_undecided_slots_as_null() {
+        let policy = undecided_qwen_model_policy();
+        assert_eq!(
+            policy
+                .candidates
+                .iter()
+                .map(|candidate| candidate.tag)
+                .collect::<Vec<_>>(),
+            vec![
+                "huihui_ai/qwen3.5-abliterated:0.8B",
+                "huihui_ai/qwen3.5-abliterated:2B",
+                "huihui_ai/qwen3.5-abliterated:4B",
+                "huihui_ai/qwen3.5-abliterated:9b",
+            ]
+        );
+        assert!(policy.candidates.iter().all(|candidate| {
+            candidate.published_context_tokens == 256 * 1024
+                && candidate.published_size_bytes.is_none()
+                && candidate.minimum_free_bytes.is_none()
+                && candidate.source_url.starts_with("https://ollama.com/")
+                && candidate.license == "Apache License 2.0"
+        }));
+        assert!(policy.default_model_tag.is_none());
+        assert!(policy.context_default_tokens.is_none());
+        assert!(policy.pull_start_policy.is_none());
+        assert!(policy.model_store_override.is_none());
+        assert!(policy.automatic_selection_policy.is_none());
+        assert!(policy.disk_space_multiplier.is_none());
+        assert!(policy.show_license.is_none());
+        assert!(policy.measured_peak_vram_bytes.is_none());
+        assert!(policy.selection_headroom_bytes.is_none());
+    }
+
+    #[test]
+    fn qwen_model_policy_contains_coordinator_decisions() {
+        let store = PathBuf::from("/app-data/ollama/models");
+        let policy = qwen_model_policy_with_store(Some(store.clone()));
+        assert_eq!(
+            policy.default_model_tag.as_deref(),
+            Some("huihui_ai/qwen3.5-abliterated:4B")
+        );
+        assert_eq!(policy.context_default_tokens, Some(8192));
+        assert_eq!(
+            policy.pull_start_policy.as_deref(),
+            Some("user_confirmed_exact_tag")
+        );
+        assert_eq!(
+            policy.model_store_override.as_deref(),
+            Some(store.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            policy.automatic_selection_policy.as_deref(),
+            Some("manual_only_until_measured")
+        );
+        assert_eq!(policy.disk_space_multiplier, Some(2));
+        assert_eq!(policy.show_license, Some(true));
+        assert!(policy.measured_peak_vram_bytes.is_none());
+        assert!(policy.selection_headroom_bytes.is_none());
+        let four_b = model_candidate(&policy, "huihui_ai/qwen3.5-abliterated:4B").unwrap();
+        assert_eq!(four_b.quantization, "Q4_K_M");
+        assert_eq!(four_b.published_size_bytes, Some(3_300_000_000));
+        assert_eq!(four_b.minimum_free_bytes, Some(6_600_000_000));
+        let nine_b = model_candidate(&policy, "huihui_ai/qwen3.5-abliterated:9b").unwrap();
+        assert_eq!(nine_b.minimum_free_bytes, Some(13_200_000_000));
+    }
+
+    #[test]
+    fn decimal_gb_labels_are_exact_and_reject_invalid_or_overflowing_values() {
+        assert_eq!(decimal_gb_bytes("1.9 GB"), Some(1_900_000_000));
+        assert_eq!(decimal_gb_bytes("3.3 GB"), Some(3_300_000_000));
+        assert_eq!(decimal_gb_bytes("0.8 GB"), Some(800_000_000));
+        assert_eq!(decimal_gb_bytes("1.25 GB"), Some(1_250_000_000));
+        assert_eq!(decimal_gb_bytes("bad GB"), None);
+        assert_eq!(decimal_gb_bytes("18446744073.709551616 GB"), None);
+    }
+
+    #[test]
+    fn model_store_preflight_creates_and_checks_only_the_configured_path() {
+        let root = tempfile::tempdir().unwrap();
+        let configured = root.path().join("ollama").join("models");
+        let policy = qwen_model_policy_with_store(Some(configured.clone()));
+        let check = check_model_store(&policy).unwrap();
+        assert_eq!(check.probe_directory, configured);
+        assert!(check.probe_directory.is_dir());
+
+        let without_configured_path = qwen_model_policy();
+        assert_eq!(
+            check_model_store(&without_configured_path)
+                .unwrap_err()
+                .code,
+            ModelPullErrorCode::ModelStoreUnresolved
+        );
+    }
+
+    #[test]
+    fn pull_requires_a_known_exact_tag_and_matching_confirmation() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let policy = qwen_model_policy();
+        assert_eq!(
+            model_candidate(&policy, "huihui_ai/qwen3.5-abliterated:latest"),
+            None
+        );
+        let (manager, _) = model_pull_test_manager("http://127.0.0.1:1");
+        let confirmation = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            "huihui_ai/qwen3.5-abliterated:0.8b",
+            policy,
+        )
+        .unwrap_err();
+        assert_eq!(
+            confirmation.code,
+            ModelPullErrorCode::ModelConfirmationRequired
+        );
+        assert_eq!(confirmation.stage, "preflight");
+    }
+
+    #[test]
+    fn pull_stream_parser_accepts_split_coalesced_optional_and_final_lines() {
+        let mut buffer = Vec::new();
+        assert!(append_pull_chunk(
+            &mut buffer,
+            br#"{"status":"downloading","digest":"sha256:layer","completed":1"#
+        )
+        .unwrap()
+        .is_empty());
+        let parsed =
+            append_pull_chunk(&mut buffer, b",\"total\":2}\n{\"status\":\"success\"}").unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].as_ref().unwrap().0, "downloading");
+        assert_eq!(parsed[0].as_ref().unwrap().2, Some(1));
+        assert_eq!(parsed[0].as_ref().unwrap().3, Some(2));
+        let final_line = finish_pull_buffer(&mut buffer).unwrap().unwrap();
+        assert_eq!(final_line.0, "success");
+        assert_eq!(final_line.1, None);
+        assert_eq!(final_line.2, None);
+        assert_eq!(final_line.3, None);
+        assert_eq!(
+            parse_pull_line(br#"{"status":"verifying"}"#)
+                .unwrap()
+                .unwrap()
+                .2,
+            None
+        );
+        assert_eq!(
+            parse_pull_line(b"{not-json}").unwrap_err(),
+            ModelPullErrorCode::PullStreamMalformed
+        );
+        assert_eq!(
+            parse_pull_line(br#"{"error":"fixture failure"}"#).unwrap_err(),
+            ModelPullErrorCode::PullHttpFailed
+        );
+        assert_eq!(
+            append_pull_chunk(&mut Vec::new(), &vec![b'x'; MODEL_PULL_MAX_LINE_BYTES + 1])
+                .unwrap_err(),
+            ModelPullErrorCode::PullStreamMalformed
+        );
+    }
+
+    #[test]
+    fn pull_progress_throttles_bytes_but_never_delays_phase_events() {
+        let start = tokio::time::Instant::now();
+        let mut last_event = start - Duration::from_secs(1);
+        assert!(model_pull_progress_due(&mut last_event, start, Some(1)));
+        assert!(!model_pull_progress_due(
+            &mut last_event,
+            start + Duration::from_millis(100),
+            Some(2)
+        ));
+        assert!(model_pull_progress_due(
+            &mut last_event,
+            start + Duration::from_millis(250),
+            Some(3)
+        ));
+        assert!(model_pull_progress_due(
+            &mut last_event,
+            start + Duration::from_millis(251),
+            None
+        ));
+    }
+
+    #[test]
+    fn fake_ollama_pull_stream_verifies_exact_tag_details_and_stable_digest() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        assert_eq!(response.snapshot.state, ModelPullState::Preflight);
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Ready);
+        assert_eq!(snapshot.digest.as_deref(), Some("sha256:fixture"));
+        assert!(snapshot.error.is_none());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+        assert_eq!(server.fixture.tags_requests.load(Ordering::Acquire), 3);
+        let status = dispatch_model_pull_status(&manager, None, tag).unwrap();
+        assert_eq!(status.state, ModelPullState::Ready);
+        assert_eq!(status.digest.as_deref(), Some("sha256:fixture"));
+        assert_eq!(server.fixture.tags_requests.load(Ordering::Acquire), 5);
+    }
+
+    #[test]
+    fn exact_installed_tag_is_verified_without_another_pull_even_when_margin_is_unset() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server =
+            ModelPullApiServer::bind(tag, Some("sha256:fixture"), false, false, false, false)
+                .unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let mut policy = qwen_model_policy();
+        policy.model_store_override = None;
+        let response = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap();
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Ready);
+        assert_eq!(snapshot.digest.as_deref(), Some("sha256:fixture"));
+        assert_eq!(response.operation_id, snapshot.operation_id.unwrap());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+        assert_eq!(server.fixture.tags_requests.load(Ordering::Acquire), 3);
+    }
+
+    #[test]
+    fn unset_disk_margin_blocks_new_pull_before_post_request() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let mut policy = test_model_pull_policy(directory.path());
+        policy.disk_space_multiplier = None;
+        let error = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::DiskMarginUnset);
+        assert!(error.operation_id.is_some());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn unknown_published_size_blocks_new_pull_before_post_request() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let mut policy = test_model_pull_policy(directory.path());
+        policy.candidates[0].published_size_bytes = None;
+        policy.candidates[0].minimum_free_bytes = None;
+        let error = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::DiskSpaceLow);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn cancel_waits_for_fake_http_request_close_before_reporting_paused() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, true, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let preserved_fragment = directory.path().join("preserved-model-fragment");
+        fs::write(&preserved_fragment, b"partial Ollama data").unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while server.fixture.pull_requests.load(Ordering::Acquire) == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "fake server did not receive pull request"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let concurrent = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap_err();
+        assert_eq!(concurrent.code, ModelPullErrorCode::PullAlreadyActive);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+        let stop_error = dispatch_stop(&manager, None).unwrap_err();
+        assert_eq!(stop_error.code, RuntimeErrorCode::RuntimeBusy);
+        let snapshot = dispatch_model_pull_cancel(&manager, &response.operation_id).unwrap();
+        assert_eq!(snapshot.state, ModelPullState::Paused);
+        let connection_observation = server.fixture.observe_pull_connection_closed();
+        assert!(
+            connection_observation.closed,
+            "pull connection was open when Paused was observed: {}",
+            connection_observation.evidence
+        );
+        assert_eq!(
+            fs::read(preserved_fragment).unwrap(),
+            b"partial Ollama data"
+        );
+    }
+
+    #[test]
+    fn changed_digest_after_show_never_reaches_ready_and_does_not_delete_model_data() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, true, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Failed);
+        assert_eq!(
+            snapshot.error.unwrap().code,
+            ModelPullErrorCode::ModelDigestMismatch
+        );
+        assert_eq!(
+            snapshot.operation_id.as_deref(),
+            Some(response.operation_id.as_str())
+        );
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn external_ollama_is_rejected_before_any_pull_http_request() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        {
+            let mut state = manager.lock();
+            state.snapshot.server_state = ServerState::ReadyExternalLocal;
+            state.snapshot.ownership = RuntimeOwnership::ExternalLocal;
+            state.process = None;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let error = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::ManagedServerRequired);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+        assert_eq!(server.fixture.tags_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn retry_uses_same_exact_tag_with_a_new_operation_id_and_resumes_pull() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, true, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let policy = test_model_pull_policy(directory.path());
+        let first = start_model_pull_with_policy(&manager, None, tag, tag, policy.clone()).unwrap();
+        let failed = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(failed.state, ModelPullState::Failed);
+        assert_eq!(
+            failed.error.unwrap().code,
+            ModelPullErrorCode::PullHttpFailed
+        );
+        let retry = dispatch_model_pull_retry_with_policy(&manager, None, tag, policy).unwrap();
+        assert_ne!(first.operation_id, retry.operation_id);
+        assert_eq!(retry.snapshot.tag, tag);
+        let ready = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(ready.state, ModelPullState::Ready);
+        assert_eq!(
+            ready.operation_id.as_deref(),
+            Some(retry.operation_id.as_str())
+        );
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 2);
+        assert_eq!(ready.digest.as_deref(), Some("sha256:fixture"));
+    }
+
+    #[test]
+    fn remote_stream_disconnect_becomes_paused_and_keeps_partial_content() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, true).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Paused);
+        assert_eq!(
+            snapshot.operation_id.as_deref(),
+            Some(response.operation_id.as_str())
+        );
+        assert!(snapshot.error.is_none());
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn insufficient_space_and_unresolved_store_are_denied_without_exposing_paths() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let mut policy = test_model_pull_policy(directory.path());
+        policy.available_bytes_override = Some(0);
+        policy.candidates[0].published_size_bytes =
+            Some(fs2::available_space(directory.path()).unwrap() + 1024);
+        policy.candidates[0].minimum_free_bytes = policy.candidates[0]
+            .published_size_bytes
+            .and_then(|bytes| bytes.checked_mul(2));
+        let required_bytes = policy.candidates[0].minimum_free_bytes.unwrap();
+        let error = start_model_pull_with_policy(&manager, None, tag, tag, policy).unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::DiskSpaceLow);
+        assert_eq!(error.required_bytes, Some(required_bytes));
+        assert_eq!(error.available_bytes, Some(0));
+        assert!(!serde_json::to_string(&error)
+            .unwrap()
+            .contains(&directory.path().to_string_lossy().to_string()));
+        let mut unresolved = qwen_model_policy();
+        unresolved.model_store_override = Some("relative/models".to_string());
+        let error = check_model_store(&unresolved).err().unwrap();
+        assert_eq!(error.code, ModelPullErrorCode::ModelStoreUnresolved);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn disk_space_below_two_times_size_is_blocked_and_exact_threshold_is_allowed() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, false, false, false, false).unwrap();
+        let (manager, _) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+
+        let mut too_little = test_model_pull_policy(directory.path());
+        too_little.available_bytes_override = Some(1);
+        let error = start_model_pull_with_policy(&manager, None, tag, tag, too_little).unwrap_err();
+        assert_eq!(error.code, ModelPullErrorCode::DiskSpaceLow);
+        assert_eq!(error.required_bytes, Some(2));
+        assert_eq!(error.available_bytes, Some(1));
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 0);
+
+        let mut exact_threshold = test_model_pull_policy(directory.path());
+        exact_threshold.available_bytes_override = Some(2);
+        let response =
+            start_model_pull_with_policy(&manager, None, tag, tag, exact_threshold).unwrap();
+        let snapshot = wait_for_model_pull_result(&manager, tag);
+        assert_eq!(snapshot.state, ModelPullState::Ready);
+        assert_eq!(response.snapshot.state, ModelPullState::Preflight);
+        assert_eq!(server.fixture.pull_requests.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn shutdown_cancels_pull_and_waits_for_connection_close_before_reaping_child() {
+        let tag = "huihui_ai/qwen3.5-abliterated:0.8B";
+        let server = ModelPullApiServer::bind(tag, None, true, false, false, false).unwrap();
+        let (manager, child) = model_pull_test_manager(&server.base_url());
+        let directory = tempfile::tempdir().unwrap();
+        let response = start_model_pull_with_policy(
+            &manager,
+            None,
+            tag,
+            tag,
+            test_model_pull_policy(directory.path()),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while server.fixture.pull_requests.load(Ordering::Acquire) == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "fake server did not receive pull request"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let shutdown_gate = Arc::new((Mutex::new(false), Condvar::new()));
+        *child.graceful_shutdown_gate.lock().unwrap() = Some(shutdown_gate.clone());
+        let shutdown_gate_release = FakeShutdownGateReleaseOnDrop(shutdown_gate);
+        let manager_for_shutdown = manager.clone();
+        let shutdown_worker = thread::spawn(move || shutdown_manager(&manager_for_shutdown));
+        let report_deadline = Instant::now() + Duration::from_secs(3);
+        let (snapshot, child_unreaped_when_report_observed) = loop {
+            let state = manager.lock();
+            let snapshot = state.model_pull_snapshots.get(tag).cloned();
+            if let Some(snapshot) = snapshot.filter(|snapshot| {
+                snapshot.operation_id.as_deref() == Some(response.operation_id.as_str())
+                    && snapshot.state == ModelPullState::Paused
+            }) {
+                let child_unreaped = !child.exited.load(Ordering::Acquire)
+                    && child.graceful_calls.load(Ordering::Acquire) == 0;
+                break (Some(snapshot), child_unreaped);
+            }
+            drop(state);
+            if Instant::now() >= report_deadline {
+                break (None, false);
+            }
+            thread::yield_now();
+        };
+        let connection_observation = if snapshot.is_some() {
+            server.fixture.observe_pull_connection_closed()
+        } else {
+            PullConnectionObservation {
+                closed: false,
+                evidence: "Paused report was not observed".to_string(),
+            }
+        };
+        shutdown_gate_release.release();
+        shutdown_worker.join().unwrap();
+        let snapshot = snapshot.expect("shutdown worker must report Paused within deadline");
+        assert_eq!(
+            snapshot.operation_id.as_deref(),
+            Some(response.operation_id.as_str())
+        );
+        assert_eq!(snapshot.state, ModelPullState::Paused);
+        assert!(
+            child_unreaped_when_report_observed,
+            "managed child was already reaped or graceful shutdown had started when Paused was observed"
+        );
+        assert!(
+            connection_observation.closed,
+            "pull connection was open when shutdown observed Paused: {}",
+            connection_observation.evidence
+        );
+        assert!(child.graceful_calls.load(Ordering::Acquire) > 0);
+        assert!(manager.lock().process.is_none());
+        assert!(manager.lock().active_model_pull.is_none());
     }
 }

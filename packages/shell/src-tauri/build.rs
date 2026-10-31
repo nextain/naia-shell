@@ -10,7 +10,7 @@ fn main() {
     };
     // ⚠️ agent-pairing.json 과 같은 값이어야 한다. 두 곳에 따로 적혀 있으므로
     //    src/test/agent-pairing-drift.contract.test.ts 가 둘이 갈라지는 것을 막는다.
-    const REQUIRED_AGENT_COMMIT: &str = "3b0e101c04dc4346f765240b63160fb6cee91d2a";
+    const REQUIRED_AGENT_COMMIT: &str = "fdc6fcb5c34ea453612d968a0259a41aa1ef46ed";
     const REQUIRED_PROTO_SHA256: &str =
         "71e4cb6b3d19f9df08c88e6225babc11e30fe445723badd440decdb2a33e6f42";
     const REQUIRED_PROTO_MARKERS: &[&str] = &[
@@ -278,11 +278,33 @@ fn main() {
     #[cfg(target_os = "macos")]
     println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path");
 
-    // Windows MSVC reserves only a 1 MiB main-thread stack by default, and the
-    // synchronous Tauri startup init (setup hook, agent wiring) overflows it
-    // with STATUS_STACK_OVERFLOW (0xC00000FD). Rust's spawned worker threads
-    // already default to a larger stack; reserve a matching 16 MiB for the main
-    // thread so the GUI event loop starts on the main thread as Tauri expects.
-    #[cfg(target_os = "windows")]
-    println!("cargo:rustc-link-arg=/STACK:16777216");
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os == "windows" && target_env == "msvc" {
+        // Windows MSVC reserves only a 1 MiB main-thread stack by default, and
+        // the synchronous Tauri startup init (setup hook, agent wiring)
+        // overflows it with STATUS_STACK_OVERFLOW (0xC00000FD). Rust's spawned
+        // worker threads already default to a larger stack; reserve a matching
+        // 16 MiB for the main thread so the GUI event loop starts on the main
+        // thread as Tauri expects.
+        println!("cargo:rustc-link-arg=/STACK:16777216");
+
+        println!("cargo:rerun-if-env-changed=NAIA_EMBED_TEST_MANIFEST");
+        if env::var("NAIA_EMBED_TEST_MANIFEST").as_deref() == Ok("1") {
+            // Tauri's library test binary needs the Common Controls v6
+            // activation context for comctl32 imports such as TaskDialogIndirect.
+            // Cargo's test-specific linker flag excludes lib unit-test targets,
+            // so scope these general linker flags to the explicit test-gate env.
+            let test_manifest = PathBuf::from(
+                env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"),
+            )
+            .join("windows/test-manifest.xml");
+            println!("cargo:rerun-if-changed={}", test_manifest.display());
+            println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+            println!(
+                "cargo:rustc-link-arg=/MANIFESTINPUT:{}",
+                test_manifest.display()
+            );
+        }
+    }
 }

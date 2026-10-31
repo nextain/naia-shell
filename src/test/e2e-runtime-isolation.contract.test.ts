@@ -418,6 +418,10 @@ describe("어느 e2e 설정·환경 모듈도 데이터 홈을 실행 자리로 
 			".cargo",
 			"tauri-driver 는 cargo 가 설치한다 — 우리가 무엇을 쓰는 자리가 아니라 남이 둔 것을 읽는 자리다",
 		],
+		[
+			".local",
+			"XDG_DATA_HOME 이 없을 때의 표준 기본값(~/.local/share)이다. codex 환경은 NAIA_E2E_VOXCPM2_USER_CACHE=read-only 로 명시했을 때만 사람의 음성 캐시 자리를 읽기 전용으로 짚는다(#703) — 쓰는 자리가 아니다",
+		],
 	]);
 
 	/** `.naia` 가 경로 **마디**로 들어 있는가. `com.naia.shell` 은 마디가 아니다. */

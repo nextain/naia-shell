@@ -18,19 +18,29 @@ import {
 	stopListening as sttStop,
 } from "tauri-plugin-stt-api";
 import {
-	CAFE_LUA_TAROT_APP_ID,
-	CAFE_LUA_TAROT_ASK_EVENT,
-	CAFE_LUA_TAROT_RESPONSE_EVENT,
-} from "../apps/generic-installed/cafelua-tarot-host-bridge";
+	INSTALLED_APP_ASK_EVENT,
+	INSTALLED_APP_ASK_ABORT_EVENT,
+	INSTALLED_APP_RESPONSE_EVENT,
+	INSTALLED_APP_SPEAK_EVENT,
+	INSTALLED_APP_CANCEL_EVENT,
+	INSTALLED_APP_SPEECH_RESULT_EVENT,
+} from "../apps/generic-installed/installed-app-host-bridge";
 import { activeBridge, getBridgeForApp } from "../lib/active-bridge";
 import {
 	formatAiInterferencePrompt,
 	onAiInterferenceEvent,
 } from "../lib/ai-interference";
-import { appRegistry } from "../lib/app-registry";
+import { appRegistry, validateAppToolParameters } from "../lib/app-registry";
 import { writeAppSandboxFile } from "../lib/app-sandbox";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
+import { getCameraActions } from "../lib/avatar/camera-actions";
+import {
+	isNvaGestureTerminalTarget,
+	nvaGestureActionIndexFromKeyboardEvent,
+} from "../lib/avatar/nva-action-hotkeys";
+import { NvaGestureRateLimiter } from "../lib/avatar/nva-gesture-rate-limiter";
+import { GestureTriggerStream } from "../lib/avatar/nva-gesture-trigger";
 import { ensureBgmSidecar } from "../lib/bgm-sidecar-url";
 import {
 	BGM_APP_ID,
@@ -56,6 +66,7 @@ import {
 	sendAppToolResult,
 	sendApprovalResponse,
 	sendChatMessage,
+	setCurrentSpeechActivityId,
 	yieldSpeechActivity,
 } from "../lib/chat-service";
 import {
@@ -105,11 +116,25 @@ import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import {
+	LEGACY_APP_TOOL_KEEP_LIST,
 	MODEL_FACING_TOOL_KEEP_LIST,
 	filterModelFacingTools,
 	isModelFacingToolAllowed,
 	makeModelToolBoundary,
 } from "../lib/model-facing-tools";
+import {
+	OllamaRuntimeAdmissionError,
+	assertOllamaChatAdmitted,
+	ollamaAdmissionMessageKey,
+} from "../lib/ollama-chat-admission";
+import {
+	fetchOllamaModelCatalog,
+	isManagedOllamaHost,
+} from "../lib/ollama-runtime";
+import {
+	parseOllamaThinkingUnsupportedMessage,
+	recordOllamaThinkingUnsupportedStatus,
+} from "../lib/ollama-thinking-status";
 import { buildSystemPrompt } from "../lib/persona";
 import {
 	RADIO_DJ_DEFAULT_SETTINGS,
@@ -117,10 +142,9 @@ import {
 	toSpeechProfileCommandInput,
 } from "../lib/proactive-speech-settings";
 import {
-	CAFE_LUA_TAROT_SPEAK_EVENT,
-	CAFE_LUA_TAROT_CANCEL_EVENT,
-	CAFE_LUA_TAROT_SPEECH_RESULT_EVENT,
-} from "../apps/generic-installed/cafelua-tarot-host-bridge";
+	isRadioDjLabObserverAttached,
+	recordRadioDjLabEvent,
+} from "../lib/radio-dj-lab-observer";
 import {
 	SLIDE_PRESENTER_CANCEL_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
@@ -180,6 +204,7 @@ import {
 	type VoiceSession,
 	attachAppContextBridge,
 	createVoiceSession,
+	liveVoiceRequiresNaiaKey,
 	resolveLiveProvider,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
@@ -191,11 +216,16 @@ import { isNaiaAuthWireError, wireErrorMessage } from "../lib/wire-errors";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
-import { getStoredLocalSessionId, useChatStore } from "../stores/chat";
+import {
+	getStoredLocalSessionId,
+	toSendHistory,
+	useChatStore,
+} from "../stores/chat";
 import { useLogsStore } from "../stores/logs";
 import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
 import type { AtMentionHandle, AtMentionResult } from "./AtMentionPopover";
+import { NvaGestureActions } from "./NvaGestureActions";
 import { formatStructuredAgentChunk } from "./chat-presentation";
 import {
 	buildEnvironmentSegments,
@@ -298,14 +328,29 @@ const ttsChunkerOptions = {
 	speakableLength: (sentence: string) => ttsTextFilter.filter(sentence).length,
 };
 
-// Built-in skills are always available in UI (non-toggle). Prevent hidden config drift
-// from disabling them via chat-originated config_update events.
-const BUILTIN_SKILLS = new Set<string>(MODEL_FACING_TOOL_KEEP_LIST);
+// Built-in skills are always available in UI (non-toggle). The legacy Store
+// blackjack tool stays here because old agent configs treat it as a built-in;
+// its execution authorization still requires the active signed app owner.
+const BUILTIN_SKILLS = new Set<string>([
+	...MODEL_FACING_TOOL_KEEP_LIST,
+	...LEGACY_APP_TOOL_KEEP_LIST,
+]);
 
 function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 	if (!disabled || disabled.length === 0) return undefined;
 	const filtered = disabled.filter((name) => !BUILTIN_SKILLS.has(name));
 	return filtered.length > 0 ? filtered : undefined;
+}
+
+function unavailableModelToolMessage(toolName: string): string {
+	const inactiveSignedOwner = appRegistry.list().some(
+		(app) =>
+			app.source === "installed" &&
+			app.storeSignatureVerified === true &&
+			app.id !== useAppStore.getState().activeApp &&
+			app.tools?.some((tool) => tool.name === toolName),
+	);
+	return `Tool is not available: ${toolName}${inactiveSignedOwner ? ". Open the app first." : ""}`;
 }
 
 function generateRequestId(): string {
@@ -491,11 +536,21 @@ export function ChatArea({
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
-	const pendingCafeLuaTarotRequestRef = useRef<string | null>(null);
-	const cafeLuaTarotTurnActiveRef = useRef(false);
-	const cafeLuaTarotSendRef = useRef<((text: string) => Promise<void>) | null>(
-		null,
-	);
+	const installedAppRequestRef = useRef<{ appId: string; requestId: string } | null>(null);
+	const installedAppTurnRef = useRef(false);
+	const installedAppSendRef = useRef<((prompt: string) => Promise<void>) | null>(null);
+	const installedAppVoiceBlockedRef = useRef(false);
+	const installedAppConfig = loadConfig();
+	const installedAppMainRole = installedAppConfig ? effectiveMainRole(installedAppConfig) : {};
+	const installedAppProvider = installedAppMainRole.provider ?? installedAppConfig?.provider;
+	const installedAppModel = installedAppMainRole.model ?? installedAppConfig?.model;
+	installedAppVoiceBlockedRef.current = voiceMode !== "off" ||
+		(installedAppProvider === "nextain" && !!installedAppModel && isOmniModel(installedAppProvider, installedAppModel));
+	const gestureTriggerStreamRef = useRef(new GestureTriggerStream());
+	const gestureActionPlayedRef = useRef(false);
+	const pendingAiGestureActionRef = useRef<string | null>(null);
+	const aiGestureRateLimiterRef = useRef(new NvaGestureRateLimiter());
+	const liveResponseActiveRef = useRef(false);
 	// Providers may emit one usage event for each tool round before the final
 	// assistant text. Keep those entries with the live request so usage cannot
 	// finalize an empty assistant message before the terminal finish chunk.
@@ -579,16 +634,15 @@ export function ChatArea({
 	// calls the public interface. The pipeline owns the request lifecycle, the
 	// one-time local-voice notice, and the recent-utterance ring (echo filter).
 	const sentencePipelineRef = useRef<SentenceTtsPipeline | null>(null);
-	const activeSlidePresenterSpeechRef = useRef<
-		| (SlidePresenterSpeechRequest & {
-				tarot?: boolean;
-				entered?: boolean;
-				started?: boolean;
-		  })
-		| null
-	>(null);
+	const activeSlidePresenterSpeechRef =
+		useRef<(SlidePresenterSpeechRequest & { appId?: string; started?: boolean }) | null>(null);
 	if (!sentencePipelineRef.current) {
 		sentencePipelineRef.current = createSentenceTtsPipeline({
+				onPlaybackFailure: () => {
+					if (!activeSlidePresenterSpeechRef.current?.appId) return;
+					settleSlidePresenterSpeech("failed", "tts_failed");
+					interruptTts();
+				},
 			generateRequestId,
 			// #423: a reveal that fires while nothing is speaking anymore (failure
 			// paths, playback-unavailable) must also settle the held expression —
@@ -614,8 +668,20 @@ export function ChatArea({
 				ttsPlayingRef.current = on;
 				setTtsPlaying(on);
 				useAvatarStore.getState().setSpeaking(on);
+				if (isRadioDjLabObserverAttached()) {
+					const activeConfig = loadConfig();
+					if (
+						activeConfig?.proactiveSpeechProfile === "personal_radio_dj" &&
+						activeConfig.proactiveSpeechPermitted === true
+					) {
+						recordRadioDjLabEvent("radio.voice", {
+							phase: on ? "started" : "ended",
+							source: "tts",
+						});
+					}
+				}
+				if (on && activeSlidePresenterSpeechRef.current?.appId) activeSlidePresenterSpeechRef.current.started = true;
 				// #423: browser speech end/error releases the held expression.
-				if (on) markTarotPlaybackStarted();
 				if (!on) {
 					settleAvatarEmotionIfIdle();
 					settleSlidePresenterSpeech("finished");
@@ -629,7 +695,7 @@ export function ChatArea({
 				}),
 			onSynthesisResult: (result) => {
 				const slide = activeSlidePresenterSpeechRef.current;
-				if (result.provider !== "naia-local-voice" || slide?.tarot) return;
+				if (result.provider !== "naia-local-voice" || slide?.appId) return;
 				return writeVoiceDiagnostic(
 					slide ? "land.naia.slides" : "land.naia.shell",
 					slide,
@@ -749,16 +815,23 @@ export function ChatArea({
 		);
 	}
 
-	function settleAvatarEmotionIfIdle(): void {
-		const speechOwnsExpression =
+	function isAvatarSpeechIdle(): boolean {
+		return !(
 			currentRequestId.current !== null ||
 			useChatStore.getState().isStreaming ||
 			sentencePipelineRef.current?.hasActiveRequests() === true ||
 			audioQueueRef.current?.isActive === true ||
 			ttsPlayingRef.current ||
 			cascadeTtsJobsRef.current > 0 ||
-			audioPlayerRef.current?.isPlaying === true;
-		if (!speechOwnsExpression) setEmotion("neutral");
+			audioPlayerRef.current?.isPlaying === true ||
+			liveResponseActiveRef.current
+		);
+	}
+
+	function settleAvatarEmotionIfIdle(): void {
+		if (!isAvatarSpeechIdle()) return;
+		setEmotion("neutral");
+		flushPendingAiGestureAction();
 	}
 
 	function scheduleNextQueuedMessage() {
@@ -788,6 +861,7 @@ export function ChatArea({
 	}
 
 	function handleCancelStreaming() {
+		pendingAiGestureActionRef.current = null;
 		const store = useChatStore.getState();
 		const ttsActive =
 			ttsTextSyncRef.current.active ||
@@ -799,6 +873,7 @@ export function ChatArea({
 		// cannot block the next turn forever.
 		const ttsVisualStateActive = outputStage !== null;
 		if (!store.isStreaming && !ttsActive && !ttsVisualStateActive) return;
+		settleInstalledAppReply("", t("apps.requestCancelled"));
 		// A cancelled response may never deliver its terminal `finish` chunk.
 		// Do not let an unfinished reasoning block hide the next request.
 		thinkingStreamFilterRef.current.reset();
@@ -839,10 +914,46 @@ export function ChatArea({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, []);
 
+	useEffect(() => {
+		if (activeTab !== "chat") return;
+		const onGestureHotkey = (event: KeyboardEvent) => {
+			if (!useCascadeAvatarStore.getState().renderer) return;
+			const actions = getCameraActions().getGestureActions();
+			const index = nvaGestureActionIndexFromKeyboardEvent(
+				event,
+				actions.length,
+				isNvaGestureTerminalTarget(event.target),
+			);
+			if (index === null) return;
+			const action = actions[index];
+			if (!action) return;
+
+			event.preventDefault();
+			void getCameraActions()
+				.playAction(action.key)
+				.then((started) => {
+					if (started) recordManualNvaGestureAction(action.key);
+				})
+				.catch(() => {});
+		};
+		window.addEventListener("keydown", onGestureHotkey);
+		return () => window.removeEventListener("keydown", onGestureHotkey);
+	}, [activeTab]);
+
+	useEffect(() => {
+		let activeRenderer = useCascadeAvatarStore.getState().renderer;
+		return useCascadeAvatarStore.subscribe((state) => {
+			if (state.renderer === activeRenderer) return;
+			activeRenderer = state.renderer;
+			pendingAiGestureActionRef.current = null;
+		});
+	}, []);
+
 	// Receive "Ask AI" requests from NaiaMetaArea (Skills, Channels tabs)
 	useEffect(() => {
 		const handler = (e: Event) => {
 			const message = (e as CustomEvent<string>).detail;
+			pendingAiGestureActionRef.current = null;
 			setInput(message);
 			setActiveTab("chat");
 			if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
@@ -1000,28 +1111,19 @@ export function ChatArea({
 			);
 	}
 
-	function markTarotPlaybackStarted(): void {
-		const active = activeSlidePresenterSpeechRef.current;
-		if (active?.tarot && active.entered) active.started = true;
-	}
-
 	function settleSlidePresenterSpeech(
 		status: "finished" | "cancelled" | "failed",
 		error?: string,
 	): void {
 		const active = activeSlidePresenterSpeechRef.current;
-		if (!active || (status === "finished" && active.tarot && !active.started))
-			return;
+		if (!active || (status === "finished" && active.appId &&
+			(!active.started || sentencePipelineRef.current?.hasActiveRequests() ||
+				cascadeTtsJobsRef.current > 0 || audioQueueRef.current?.isActive))) return;
 		activeSlidePresenterSpeechRef.current = null;
 		window.dispatchEvent(
-			new CustomEvent(
-				active.tarot
-					? CAFE_LUA_TAROT_SPEECH_RESULT_EVENT
-					: SLIDE_PRESENTER_SPEECH_RESULT_EVENT,
-				{
-					detail: { ...active, status, error },
-				},
-			),
+			new CustomEvent(active.appId ? INSTALLED_APP_SPEECH_RESULT_EVENT : SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
+				detail: { ...active, status, error },
+			}),
 		);
 		Logger.info("ChatArea", "slide narration settled", {
 			page: active.page,
@@ -1031,6 +1133,7 @@ export function ChatArea({
 	}
 
 	function interruptTts(): void {
+		pendingAiGestureActionRef.current = null;
 		settleSlidePresenterSpeech("cancelled");
 		// Reveal the canonical response immediately on interruption and invalidate
 		// late playback callbacks from the superseded turn.
@@ -1076,6 +1179,7 @@ export function ChatArea({
 
 	function beginCascadeTtsJob(): () => void {
 		const generation = ttsTextSyncRef.current.generation;
+		if (activeSlidePresenterSpeechRef.current?.appId) activeSlidePresenterSpeechRef.current.started = true;
 		let ended = false;
 		cascadeTtsJobsRef.current++;
 		ttsPlayingRef.current = true;
@@ -1272,7 +1376,7 @@ export function ChatArea({
 			audioQueueRef.current = new AudioQueue({
 				outputDeviceId: config.ttsOutputDeviceId || undefined,
 				onPlaybackStart: () => {
-					markTarotPlaybackStarted();
+					if (activeSlidePresenterSpeechRef.current?.appId) activeSlidePresenterSpeechRef.current.started = true;
 					useAvatarStore.getState().setSpeaking(true);
 					ttsPlayingRef.current = true;
 					setTtsPlaying(true);
@@ -1306,7 +1410,7 @@ export function ChatArea({
 	useEffect(() => {
 		let disposed = false;
 		const handleSpeak = (event: Event) => {
-			const detail = (event as CustomEvent<SlidePresenterSpeechRequest>).detail;
+			const detail = (event as CustomEvent<SlidePresenterSpeechRequest & { appId?: string }>).detail;
 			if (
 				!detail?.requestId ||
 				!Number.isSafeInteger(detail.generation) ||
@@ -1316,10 +1420,7 @@ export function ChatArea({
 				return;
 			}
 			interruptTts();
-			activeSlidePresenterSpeechRef.current = {
-				...detail,
-				tarot: event.type === CAFE_LUA_TAROT_SPEAK_EVENT,
-			};
+			activeSlidePresenterSpeechRef.current = detail;
 			void (async () => {
 				for (
 					let attempt = 0;
@@ -1343,10 +1444,7 @@ export function ChatArea({
 					return;
 				}
 				const config = await loadConfigWithSecrets();
-				if (
-					activeSlidePresenterSpeechRef.current?.requestId !== detail.requestId
-				)
-					return;
+				if (activeSlidePresenterSpeechRef.current !== detail) return;
 				if (!config || config.ttsEnabled !== true) {
 					settleSlidePresenterSpeech("failed", "tts_disabled");
 					return;
@@ -1357,14 +1455,8 @@ export function ChatArea({
 				// 장 전체 합성 시간을 기다렸다(로컬 VoxCPM2 RTF 0.48 → 8~50초 무음). 채팅 경로처럼
 				// 조각으로 나눠 순서대로 넣으면 첫 조각부터 재생된다. 조각 단위는
 				// VITE_NAIA_SLIDES_TTS_CHUNK = word | phrase | sentence (기본 sentence).
-				const active = activeSlidePresenterSpeechRef.current;
-				if (active?.tarot) {
-					active.entered = true;
-					sendSentenceToTts(detail.text.trim());
-				} else {
-					for (const piece of splitSlideNarration(detail.text.trim())) {
-						sendSentenceToTts(piece);
-					}
+				for (const piece of splitSlideNarration(detail.text.trim())) {
+					sendSentenceToTts(piece);
 				}
 				finishLocalVoicePrebuffer();
 				Logger.info("ChatArea", "slide narration entered TTS pipeline", {
@@ -1382,28 +1474,24 @@ export function ChatArea({
 		};
 		const handleCancel = (event: Event) => {
 			const detail = (
-				event as CustomEvent<{ requestId?: string; generation?: number }>
+				event as CustomEvent<{ appId?: string; requestId?: string; generation?: number }>
 			).detail;
 			const active = activeSlidePresenterSpeechRef.current;
-			if (
-				!active ||
-				Boolean(active.tarot) !== (event.type === CAFE_LUA_TAROT_CANCEL_EVENT)
-			)
-				return;
+			if (!active || active.appId !== detail?.appId) return;
 			if (detail?.requestId && detail.requestId !== active.requestId) return;
 			if (detail?.generation != null && detail.generation !== active.generation)
 				return;
 			interruptTts();
 		};
 		window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, handleSpeak);
-		window.addEventListener(CAFE_LUA_TAROT_SPEAK_EVENT, handleSpeak);
-		window.addEventListener(CAFE_LUA_TAROT_CANCEL_EVENT, handleCancel);
+		window.addEventListener(INSTALLED_APP_SPEAK_EVENT, handleSpeak);
+		window.addEventListener(INSTALLED_APP_CANCEL_EVENT, handleCancel);
 		window.addEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handleCancel);
 		return () => {
 			disposed = true;
 			window.removeEventListener(SLIDE_PRESENTER_SPEAK_EVENT, handleSpeak);
-			window.removeEventListener(CAFE_LUA_TAROT_SPEAK_EVENT, handleSpeak);
-			window.removeEventListener(CAFE_LUA_TAROT_CANCEL_EVENT, handleCancel);
+			window.removeEventListener(INSTALLED_APP_SPEAK_EVENT, handleSpeak);
+			window.removeEventListener(INSTALLED_APP_CANCEL_EVENT, handleCancel);
 			window.removeEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handleCancel);
 			if (activeSlidePresenterSpeechRef.current) interruptTts();
 		};
@@ -1441,6 +1529,7 @@ export function ChatArea({
 			const active = activeSpeechActivityRef.current;
 			if (active) retiredSpeechActivityIdsRef.current.add(active.activityId);
 			activeSpeechActivityRef.current = null;
+			setCurrentSpeechActivityId(undefined);
 			window.dispatchEvent(
 				new CustomEvent("naia-proactive-activity-state", {
 					detail: { active: false },
@@ -1501,6 +1590,13 @@ export function ChatArea({
 			} catch {
 				return;
 			}
+			if (
+				chunk.type === "log_entry" &&
+				chunk.level === "ollama_thinking_unsupported"
+			) {
+				const status = parseOllamaThinkingUnsupportedMessage(chunk.message);
+				if (status) recordOllamaThinkingUnsupportedStatus(status);
+			}
 			if (typeof chunk.activityId !== "string") return;
 			if (
 				!["app_tool_call", "text", "finish", "error"].includes(
@@ -1535,9 +1631,10 @@ export function ChatArea({
 				}
 			}
 			activeSpeechActivityRef.current = { activityId, profileGeneration };
+			setCurrentSpeechActivityId(activityId);
 			window.dispatchEvent(
 				new CustomEvent("naia-proactive-activity-state", {
-					detail: { active: true },
+					detail: { active: true, activityId },
 				}),
 			);
 			// A direct Live/omni model would answer visitor audio outside the
@@ -1629,6 +1726,7 @@ export function ChatArea({
 				if (activeSpeechActivityRef.current?.activityId === activityId) {
 					retiredSpeechActivityIdsRef.current.add(activityId);
 					activeSpeechActivityRef.current = null;
+					setCurrentSpeechActivityId(undefined);
 					window.dispatchEvent(
 						new CustomEvent("naia-proactive-activity-state", {
 							detail: { active: false },
@@ -1680,10 +1778,25 @@ export function ChatArea({
 		}
 	}
 
-	async function handleSend(overrideText?: string) {
+	async function handleSend(overrideText?: string, installedAppTurn = false) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
-		if (await handleSpeechProfilePhrase(text)) return;
+		if (installedAppTurn && installedAppVoiceBlockedRef.current) {
+			installedAppTurnRef.current = true;
+			settleInstalledAppReply("", t("apps.voiceModeBlocked"));
+			return;
+		}
+		pendingAiGestureActionRef.current = null;
+		if (!installedAppTurn && await handleSpeechProfilePhrase(text)) return;
+		if (isRadioDjLabObserverAttached()) {
+			const activeConfig = loadConfig();
+			if (
+				activeConfig?.proactiveSpeechProfile === "personal_radio_dj" &&
+				activeConfig.proactiveSpeechPermitted === true
+			) {
+				recordRadioDjLabEvent("radio.turn", { phase: "user_started" });
+			}
+		}
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
 		const hist = inputHistoryRef.current;
@@ -1698,45 +1811,27 @@ export function ChatArea({
 		// ordinary turn owns the stream. The queued retry will yield when it can
 		// immediately send the profile-bound question.
 		if (shouldQueueBeforeSpeechYield(isChatRequestActive())) {
-			if (pendingCafeLuaTarotRequestRef.current) {
-				window.dispatchEvent(
-					new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
-						detail: {
-							requestId: pendingCafeLuaTarotRequestRef.current,
-							text: "",
-							error:
-								"Naia is busy with another reply. Please try the card again when the current reply finishes.",
-						},
-					}),
-				);
-				pendingCafeLuaTarotRequestRef.current = null;
+			if (installedAppTurn) {
+				installedAppTurnRef.current = true;
+				settleInstalledAppReply("", "Naia is busy with another reply. Please retry.");
 				return;
 			}
 			useChatStore.getState().enqueueMessage(text);
 			setInput("");
 			return;
 		}
-		if (pendingCafeLuaTarotRequestRef.current)
-			cafeLuaTarotTurnActiveRef.current = true;
+		if (installedAppTurn) installedAppTurnRef.current = true;
 
 		let activityResume: SpeechActivityResume | undefined;
 		const speechActivity = activeSpeechActivityRef.current;
 		if (speechActivity) {
 			// This runs before both Live text and ordinary chat routing. A
 			// successful exhibition binding must never be handed to the Live LLM.
+			// Keep activeSpeechActivityRef intact so Radio DJ remains controllable
+			// ("다음 곡", "분위기 바꿔") after the user turn finishes, even if yield
+			// returned ok:false while DJ was confirming playback or in music_only.
 			interruptTts();
 			activityResume = await yieldSpeechActivity(speechActivity.activityId);
-			if (
-				activeSpeechActivityRef.current?.activityId ===
-				speechActivity.activityId
-			) {
-				activeSpeechActivityRef.current = null;
-				window.dispatchEvent(
-					new CustomEvent("naia-proactive-activity-state", {
-						detail: { active: false },
-					}),
-				);
-			}
 		}
 
 		// Omni voice mode: send text via the open Live session so a typed
@@ -1762,15 +1857,22 @@ export function ChatArea({
 		// Request state is isolated even when the previous transport terminated
 		// without a final chunk (cancel, disconnect, provider error).
 		thinkingStreamFilterRef.current.reset();
+		gestureTriggerStreamRef.current = new GestureTriggerStream(
+			getCameraActions().getGestureActions(),
+		);
+		gestureActionPlayedRef.current = false;
 		currentRequestId.current = requestId;
 		pendingCostRef.current = null;
 		// #572 — 실패했을 때 "같은 입력을 다시" 를 제안하려면 그 입력을 알아야 한다.
 		lastSentTextRef.current = text;
 
 		setInput("");
-		useChatStore.getState().addMessage({ role: "user", content: text });
+		const appName = installedAppTurn && installedAppRequestRef.current
+			? appRegistry.get(installedAppRequestRef.current.appId)?.name || installedAppRequestRef.current.appId
+			: undefined;
+		useChatStore.getState().addMessage({ role: "user", content: text, appName });
 
-		useChatStore.getState().startStreaming();
+		useChatStore.getState().startStreaming(appName);
 		// New turn supersedes any in-flight TTS: stop the previous response's
 		// audio (queue + browser speechSynthesis) instead of letting it finish.
 		// clear() also resets the ordering sequence for the new response.
@@ -1788,7 +1890,8 @@ export function ChatArea({
 		const configuredModel = mainRole.model ?? config?.model;
 		// FR-LLM-LOGOUT.2: 제공자가 없으면 보내지 않고 세 갈래 안내를 답변 자리에 보인다.
 		// 채팅 저장소의 기본 제공자로 대신 보내면 지원하지 않는 곳으로 나갈 수 있다.
-		if (config && !configuredProvider) {
+		if (config && (!configuredProvider || (installedAppTurn && !configuredModel))) {
+			settleInstalledAppReply("", t("chat.noLlm"));
 			useChatStore.getState().appendStreamChunk(t("chat.noLlm"));
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
@@ -1796,10 +1899,11 @@ export function ChatArea({
 		}
 		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
 		if (!isNewCore() && configuredProvider === "nextain" && !config?.naiaKey) {
+			settleInstalledAppReply("", t("apps.loginRequired"));
 			useChatStore
 				.getState()
 				.appendStreamChunk(
-					"Naia 계정 로그인이 필요합니다. 설정에서 로그인해주세요.",
+					t("apps.loginRequired"),
 				);
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
@@ -1820,6 +1924,12 @@ export function ChatArea({
 			configuredModel &&
 			isOmniModel(configuredProvider, configuredModel)
 		) {
+			if (installedAppTurnRef.current) {
+				settleInstalledAppReply("", t("apps.voiceModeBlocked"));
+				useChatStore.getState().finishStreaming();
+				completeCurrentRequest(requestId);
+				return;
+			}
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
 			await handleVoiceToggle();
@@ -1834,6 +1944,7 @@ export function ChatArea({
 			!config?.apiKey &&
 			!config?.naiaKey
 		) {
+			settleInstalledAppReply("", t("chat.noApiKey"));
 			useChatStore.getState().appendStreamChunk(t("chat.noApiKey"));
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
@@ -1842,14 +1953,16 @@ export function ChatArea({
 		// config 없음 = 설정/온보딩 전 신규 유저. 새 core 라도 다운스트림(provider/model/tts)이 config 필드를
 		// 요구하므로 여기서 안전 종료(우회 시 null 참조). 신규 유저의 config 생성 = 온보딩/모델셋팅 슬라이스 범위.
 		if (!config) {
+			settleInstalledAppReply("", t("apps.settingsRequired"));
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
 			return;
 		}
 
-		const history = store.messages
-			.filter((m) => m.role === "user" || m.role === "assistant")
-			.map((m) => ({ role: m.role, content: m.content }));
+		// Failure notices and blank assistant rows are UI state, not
+		// conversation — toSendHistory drops them so a retry never hands the
+		// model empty assistant turns (chat-stream-join 2026-10-27).
+		const history = toSendHistory(store.messages);
 
 		// TTS is handled by Shell via SentenceChunker (both chat and pipeline mode).
 		// Agent auto-TTS disabled — Shell controls TTS directly via requestTts IPC.
@@ -1864,6 +1977,7 @@ export function ChatArea({
 		}
 
 		const memoryCtx = await buildMemoryContext();
+		memoryCtx.avatarGestures = getCameraActions().getGestureActions();
 		Logger.info("ChatArea", "handleSend → sendChatMessage", {
 			pipelineActive: pipelineActiveRef.current,
 			chatTtsEnabled,
@@ -1957,6 +2071,39 @@ export function ChatArea({
 				config.enableTools === true
 					? await modelToolBoundary.resolve()
 					: undefined;
+			if (activeProvider === "ollama") {
+				await assertOllamaChatAdmitted(config.ollamaHost);
+			}
+			let ollamaNumCtx: number | undefined;
+			if (
+				activeProvider === "ollama" &&
+				isManagedOllamaHost(config.ollamaHost)
+			) {
+				const looksLikeCatalogQwen = resolvedModel.startsWith(
+					"huihui_ai/qwen3.5-abliterated:",
+				);
+				let policy: Awaited<ReturnType<typeof fetchOllamaModelCatalog>> | null =
+					null;
+				try {
+					policy = await fetchOllamaModelCatalog();
+				} catch {
+					if (looksLikeCatalogQwen) {
+						throw new Error("ollama_context_policy_unavailable");
+					}
+				}
+				if (!policy || !Array.isArray(policy.candidates)) {
+					if (looksLikeCatalogQwen) {
+						throw new Error("ollama_context_policy_unavailable");
+					}
+				} else if (
+					policy.candidates.some((candidate) => candidate.tag === resolvedModel)
+				) {
+					if (policy.contextDefaultTokens === null) {
+						throw new Error("ollama_context_policy_unavailable");
+					}
+					ollamaNumCtx = policy.contextDefaultTokens;
+				}
+			}
 			await sendChatMessage({
 				message: text,
 				provider: {
@@ -1969,9 +2116,10 @@ export function ChatArea({
 						activeProvider === "ollama" ? config.ollamaHost : undefined,
 					ollamaNumGpu:
 						activeProvider === "ollama" ? config.ollamaNumGpu : undefined,
+					ollamaNumCtx,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,
 				},
-				history: history.slice(0, -1),
+				history: installedAppTurn ? [] : history.slice(0, -1),
 				onChunk: (chunk) => handleChunk(chunk, activeProvider),
 				requestId,
 				// A validated exhibition resume is bound to the proactive profile
@@ -2031,15 +2179,24 @@ export function ChatArea({
 			});
 		} catch (err) {
 			const errStr = String(err);
-			settleCafeLuaTarotReply("", errStr);
+			settleInstalledAppReply("", errStr);
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
 				setShowNoAuthModal(true);
 				completeCurrentRequest(requestId);
 			} else {
+				const admissionKey =
+					err instanceof OllamaRuntimeAdmissionError
+						? ollamaAdmissionMessageKey(err.reasonCode)
+						: null;
+				const message = admissionKey
+					? t(admissionKey)
+					: errStr.includes("ollama_context_policy_unavailable")
+						? t("settings.ollamaContextPolicyUnavailable")
+						: errStr;
 				useChatStore.getState().appendStreamChunk(`
-[${t("chat.error")}] ${errStr}`);
+[${t("chat.error")}] ${message}`);
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
 				completeCurrentRequest(requestId);
@@ -2047,77 +2204,74 @@ export function ChatArea({
 		}
 	}
 
-	cafeLuaTarotSendRef.current = handleSend;
+	function settleInstalledAppReply(text: string, error?: string) {
+		const request = installedAppRequestRef.current;
+		if (!request || !installedAppTurnRef.current) return;
+		const { appId, requestId } = request;
+		installedAppRequestRef.current = null;
+		installedAppTurnRef.current = false;
+		Logger.debug("ChatArea", "Installed app request settled", { requestId, error: !!error });
+		window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
+			detail: { appId, requestId, text, ...(error ? { error } : {}) },
+		}));
+	}
+
+	installedAppSendRef.current = (prompt) => handleSend(prompt, true);
 	useEffect(() => {
-		const onTarotRequest = (event: Event) => {
-			const detail = (
-				event as CustomEvent<{ requestId?: string; prompt?: string }>
-			).detail;
-			if (
-				useAppStore.getState().activeApp !== CAFE_LUA_TAROT_APP_ID ||
-				!detail ||
-				typeof detail.requestId !== "string" ||
-				typeof detail.prompt !== "string" ||
-				detail.prompt.length === 0 ||
-				detail.prompt.length > 9_000 ||
-				pendingCafeLuaTarotRequestRef.current !== null
-			)
+		const onAbort = (event: Event) => {
+			const detail = (event as CustomEvent<{ appId: string; requestId: string }>).detail;
+			if (detail?.appId !== installedAppRequestRef.current?.appId || detail?.requestId !== installedAppRequestRef.current?.requestId) return;
+			if (installedAppTurnRef.current && currentRequestId.current) handleCancelStreaming();
+			installedAppRequestRef.current = null;
+			installedAppTurnRef.current = false;
+		};
+		const onRequest = (event: Event) => {
+			const detail = (event as CustomEvent<{ appId?: string; requestId?: string; prompt?: string }>).detail;
+			if (!detail || typeof detail.appId !== "string" || typeof detail.requestId !== "string" ||
+				typeof detail.prompt !== "string" || !detail.prompt.trim() || detail.prompt.length > 9_000) return;
+			const respondError = (error: string) => window.dispatchEvent(new CustomEvent(INSTALLED_APP_RESPONSE_EVENT, {
+				detail: { appId: detail.appId, requestId: detail.requestId, text: "", error },
+			}));
+			Logger.debug("ChatArea", "Installed app request received", { requestId: detail.requestId });
+			if (installedAppVoiceBlockedRef.current) {
+				respondError(t("apps.voiceModeBlocked"));
 				return;
-			pendingCafeLuaTarotRequestRef.current = detail.requestId;
-			cafeLuaTarotTurnActiveRef.current = false;
+			}
+			if (installedAppRequestRef.current) {
+				respondError("Naia is busy with another reply. Please retry.");
+				return;
+			}
+			installedAppRequestRef.current = { appId: detail.appId, requestId: detail.requestId };
 			setActiveTab("chat");
-			const send = cafeLuaTarotSendRef.current;
-			const prompt = detail.prompt;
-			const tools = appRegistry.get(CAFE_LUA_TAROT_APP_ID)?.tools ?? [];
 			void (async () => {
-				let toolsReady = false;
+				let ready = false;
 				try {
-					toolsReady = await sendAppSkills(CAFE_LUA_TAROT_APP_ID, tools, {
-						awaitAck: true,
-					});
+					ready = await sendAppSkills(detail.appId!, appRegistry.get(detail.appId!)?.tools ?? [], { awaitAck: true });
 				} catch (error) {
-					Logger.warn(
-						"ChatArea",
-						"Cafe Lua Tarot app tools registration failed",
-						{
-							error: String(error),
-						},
-					);
+					Logger.warn("ChatArea", "Installed app tools registration failed", { error: String(error) });
 				}
-				if (pendingCafeLuaTarotRequestRef.current !== detail.requestId) return;
-				if (!toolsReady) {
-					window.dispatchEvent(
-						new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
-							detail: {
-								requestId: detail.requestId,
-								text: "",
-								error:
-									"Naia could not register the tarot app tools. Please retry.",
-							},
-						}),
-					);
-					pendingCafeLuaTarotRequestRef.current = null;
+				if (installedAppRequestRef.current?.appId !== detail.appId || installedAppRequestRef.current?.requestId !== detail.requestId) return;
+				if (!ready || !installedAppSendRef.current || installedAppVoiceBlockedRef.current) {
+					installedAppTurnRef.current = true;
+					settleInstalledAppReply("", installedAppVoiceBlockedRef.current
+						? t("apps.voiceModeBlocked")
+						: ready ? "Naia chat is unavailable." : "Naia could not register the app tools. Please retry.");
 					return;
 				}
-				if (send) {
-					await send(prompt);
-				} else {
-					window.dispatchEvent(
-						new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
-							detail: {
-								requestId: detail.requestId,
-								text: "",
-								error: "Naia chat is unavailable.",
-							},
-						}),
-					);
-					pendingCafeLuaTarotRequestRef.current = null;
+				try {
+					await installedAppSendRef.current(detail.prompt!);
+				} catch (error) {
+					installedAppTurnRef.current = true;
+					settleInstalledAppReply("", String(error));
 				}
 			})();
 		};
-		window.addEventListener(CAFE_LUA_TAROT_ASK_EVENT, onTarotRequest);
-		return () =>
-			window.removeEventListener(CAFE_LUA_TAROT_ASK_EVENT, onTarotRequest);
+		window.addEventListener(INSTALLED_APP_ASK_EVENT, onRequest);
+		window.addEventListener(INSTALLED_APP_ASK_ABORT_EVENT, onAbort);
+		return () => {
+			window.removeEventListener(INSTALLED_APP_ASK_EVENT, onRequest);
+			window.removeEventListener(INSTALLED_APP_ASK_ABORT_EVENT, onAbort);
+		};
 	}, []);
 
 	async function handleSpeechProfilePhrase(text: string): Promise<boolean> {
@@ -2134,6 +2288,7 @@ export function ChatArea({
 				);
 			}
 			activeSpeechActivityRef.current = null;
+			setCurrentSpeechActivityId(undefined);
 			const disabled = await configureSpeechProfile({
 				profile: "disabled",
 				timezone: config?.proactiveSpeechTimezone ?? "UTC",
@@ -2186,6 +2341,7 @@ export function ChatArea({
 						? { proactiveSpeechBgmAutoPlay: true }
 						: {}),
 				});
+				recordRadioDjLabEvent("radio.profile", { profile });
 			}
 			setInput("");
 			useChatStore.getState().addMessage({ role: "user", content: text });
@@ -2193,13 +2349,18 @@ export function ChatArea({
 		}
 
 		const activity = activeSpeechActivityRef.current;
-		if (!activity) return false;
+		const persistedConfig = loadConfig();
+		const radioDjPermitted =
+			persistedConfig?.proactiveSpeechProfile === "personal_radio_dj" &&
+			persistedConfig.proactiveSpeechPermitted === true;
+		if (!activity && !radioDjPermitted) return false;
 		const { action } = command;
 		interruptTts();
-		await controlSpeechActivity(action, activity.activityId);
-		if (action === "stop") {
+		await controlSpeechActivity(action, activity?.activityId);
+		if (action === "stop" && activity) {
 			retiredSpeechActivityIdsRef.current.add(activity.activityId);
 			activeSpeechActivityRef.current = null;
+			setCurrentSpeechActivityId(undefined);
 			window.dispatchEvent(
 				new CustomEvent("naia-proactive-activity-state", {
 					detail: { active: false },
@@ -2246,6 +2407,7 @@ export function ChatArea({
 			proactiveSpeechIntervalMs: settings.intervalMs,
 			proactiveSpeechBgmAutoPlay: true,
 		});
+		recordRadioDjLabEvent("radio.profile", { profile: "personal_radio_dj" });
 	}
 
 	// Shared app-tool dispatch — used by both the streaming-chat handleChunk
@@ -2268,7 +2430,7 @@ export function ChatArea({
 		environmentSession.noteTurn();
 	}
 
-	function dispatchAppToolCall(
+	async function dispatchAppToolCall(
 		req: {
 			requestId: string;
 			toolCallId: string;
@@ -2287,18 +2449,52 @@ export function ChatArea({
 			readonly watchOwner?: string;
 		} = {},
 	) {
+		// App tools use the same answer stream as model tool rounds. Preserve a
+		// boundary even for tools that do not expose a streaming tool-call row.
+		useChatStore.getState().markStreamingToolBoundary();
 		if (!isModelFacingToolAllowed(req.toolName)) {
+			const unavailableStoreApp = appRegistry.list().find(
+				(app) =>
+					app.source === "installed" &&
+					(app.tools?.some((tool) => tool.name === req.toolName) ||
+						app.revokedStoreToolNames?.includes(req.toolName)),
+			);
 			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
 				tool: req.toolName,
 			});
 			void sendAppToolResult(
 				req.requestId,
 				req.toolCallId,
-				`Tool is not available: ${req.toolName}`,
+				unavailableStoreApp
+					? "Store app entitlement could not be verified. Connect to the internet and try again."
+					: unavailableModelToolMessage(req.toolName),
 				false,
 				req.activityId,
 			);
 			return;
+		}
+		const signedStoreOwner = appRegistry.list().find(
+			(app) =>
+				app.source === "installed" &&
+				app.storeSignatureVerified === true &&
+				app.tools?.some((tool) => tool.name === req.toolName),
+		);
+		if (signedStoreOwner) {
+			const { ensureStoreAppVerificationFresh } = await import("../lib/app-loader");
+			if (!(await ensureStoreAppVerificationFresh(signedStoreOwner.id))) {
+				Logger.warn("ChatArea", "blocked Store app tool after Rust verification", {
+					appId: signedStoreOwner.id,
+					tool: req.toolName,
+				});
+				void sendAppToolResult(
+					req.requestId,
+					req.toolCallId,
+					`Tool is not available: ${req.toolName}. Entitlement verification failed or the entitlement expired. Connect to the internet and try again.`,
+					false,
+					req.activityId,
+				);
+				return;
+			}
 		}
 		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 appRegistry 소유자
 		// 탐색으로 못 찾는다 — 전용 분기. executeBgmSkill 이 위젯이 이미 듣는
@@ -2350,13 +2546,16 @@ export function ChatArea({
 		}
 		if (req.toolName === SKILL_YOUTUBE_BGM.name) {
 			// Activity-owned playback (for example Radio DJ change_vibe) replaces
-			// the current track immediately. Normal chat requests still enqueue.
+			// the current track immediately unless preserveActive is set (autonomous
+			// DJ startup while a user-chosen song is already playing).
 			const radioDjRequested = shouldActivateRadioDj(req.args);
 			Promise.resolve()
 				.then(() => (radioDjRequested ? activateRadioDjFromSkill() : undefined))
 				.then(() =>
 					executeBgmSkill(
-						req.activityId ? { ...req.args, replace: true } : req.args,
+						req.activityId && req.args.preserveActive !== true
+							? { ...req.args, replace: true }
+							: req.args,
 					),
 				)
 				.then((result) => {
@@ -2381,9 +2580,21 @@ export function ChatArea({
 				});
 			return;
 		}
-		const ownerApp = appRegistry
-			.list()
-			.find((p) => p.tools?.some((t) => t.name === req.toolName));
+		const isLegacyAppTool = LEGACY_APP_TOOL_KEEP_LIST.some(
+			(name) => name === req.toolName,
+		);
+		const isShellModelTool = MODEL_FACING_TOOL_KEEP_LIST.some(
+			(name) => name === req.toolName,
+		);
+		const ownerApp = appRegistry.list().find(
+			(p) =>
+				p.tools?.some((t) => t.name === req.toolName) &&
+				(isLegacyAppTool
+					? p.storeSignatureVerified === true
+					: isShellModelTool
+						? p.source !== "installed"
+						: p.storeSignatureVerified === true),
+		);
 		// Tool-level auto app switch (user request): if the tool belongs to a
 		// app that isn't currently active, bring it forward before running.
 		if (ownerApp && useAppStore.getState().activeApp !== ownerApp.id) {
@@ -2394,6 +2605,17 @@ export function ChatArea({
 			});
 		}
 		const bridge = ownerApp ? getBridgeForApp(ownerApp.id) : activeBridge;
+		const declaredTool = ownerApp?.tools?.find((tool) => tool.name === req.toolName);
+		const parameterError = validateAppToolParameters(declaredTool, req.args);
+		if (parameterError) {
+			Logger.warn("ChatArea", "blocked app tool with invalid declared parameters", {
+				appId: ownerApp?.id,
+				tool: req.toolName,
+				error: parameterError,
+			});
+			void sendAppToolResult(req.requestId, req.toolCallId, parameterError, false, req.activityId);
+			return;
+		}
 		Logger.info("ChatArea", "app_tool_call dispatch", {
 			tool: req.toolName,
 			owner: ownerApp?.id ?? "(none→activeBridge)",
@@ -2439,8 +2661,8 @@ export function ChatArea({
 		}
 	}
 
-	function appendVisibleResponseText(visibleText: string): void {
-		const visible = filterUserVisibleAssistantText(visibleText);
+	function appendCleanVisibleResponseText(cleanText: string): void {
+		const visible = filterUserVisibleAssistantText(cleanText);
 		if (!visible) return;
 		useChatStore.getState().appendStreamChunk(visible);
 		if (ttsTextSyncRef.current.active) {
@@ -2467,16 +2689,81 @@ export function ChatArea({
 		}
 	}
 
-	function settleCafeLuaTarotReply(text: string, error?: string): void {
-		const requestId = pendingCafeLuaTarotRequestRef.current;
-		if (!requestId || !cafeLuaTarotTurnActiveRef.current) return;
-		window.dispatchEvent(
-			new CustomEvent(CAFE_LUA_TAROT_RESPONSE_EVENT, {
-				detail: { requestId, text, ...(error ? { error } : {}) },
-			}),
+	function recordManualNvaGestureAction(key: string): void {
+		if (!useCascadeAvatarStore.getState().renderer) return;
+		if (
+			!getCameraActions()
+				.getGestureActions()
+				.some((action) => action.key === key)
+		)
+			return;
+		aiGestureRateLimiterRef.current.recordManualAction(key, Date.now());
+	}
+
+	function playAiGestureAction(key: string): void {
+		if (!useCascadeAvatarStore.getState().renderer) return;
+		if (
+			!getCameraActions()
+				.getGestureActions()
+				.some((action) => action.key === key)
+		)
+			return;
+		if (!aiGestureRateLimiterRef.current.tryRecordAiAction(key, Date.now()))
+			return;
+		void getCameraActions()
+			.playAction(key)
+			.catch((error) => {
+				Logger.warn("ChatArea", "NVA gesture playback failed", {
+					key,
+					error: String(error),
+				});
+			});
+	}
+
+	function flushPendingAiGestureAction(): void {
+		const key = pendingAiGestureActionRef.current;
+		if (!key || !isAvatarSpeechIdle()) return;
+		pendingAiGestureActionRef.current = null;
+		playAiGestureAction(key);
+	}
+
+	function shouldDeferAiGestureForSpeech(): boolean {
+		return (
+			voiceMode === "active" ||
+			loadConfig()?.ttsEnabled === true ||
+			sentencePipelineRef.current?.hasActiveRequests() === true ||
+			audioQueueRef.current?.isActive === true ||
+			ttsPlayingRef.current ||
+			cascadeTtsJobsRef.current > 0 ||
+			audioPlayerRef.current?.isPlaying === true
 		);
-		pendingCafeLuaTarotRequestRef.current = null;
-		cafeLuaTarotTurnActiveRef.current = false;
+	}
+
+	function playFirstGestureAction(
+		gestures: readonly { key: string }[],
+		played: { current: boolean },
+	): void {
+		const gesture = gestures[0];
+		if (!gesture || played.current) return;
+		played.current = true;
+		if (shouldDeferAiGestureForSpeech()) {
+			pendingAiGestureActionRef.current = gesture.key;
+			flushPendingAiGestureAction();
+			return;
+		}
+		playAiGestureAction(gesture.key);
+	}
+
+	function appendVisibleResponseText(visibleText: string): void {
+		const parsed = gestureTriggerStreamRef.current.push(visibleText);
+		playFirstGestureAction(parsed.gestures, gestureActionPlayedRef);
+		appendCleanVisibleResponseText(parsed.cleanText);
+	}
+
+	function flushGestureTriggerStream(): void {
+		const parsed = gestureTriggerStreamRef.current.flush();
+		playFirstGestureAction(parsed.gestures, gestureActionPlayedRef);
+		appendCleanVisibleResponseText(parsed.cleanText);
 	}
 
 	function flushThinkingStream(): void {
@@ -2546,6 +2833,7 @@ export function ChatArea({
 				);
 				break;
 			case "approval_request":
+				store.markStreamingToolBoundary();
 				if (isToolAllowed(chunk.toolName)) {
 					sendApprovalResponse(chunk.requestId, chunk.toolCallId, "once");
 				} else {
@@ -2614,7 +2902,8 @@ export function ChatArea({
 			}
 			case "finish":
 				flushThinkingStream();
-				settleCafeLuaTarotReply(useChatStore.getState().streamingContent);
+				flushGestureTriggerStream();
+				settleInstalledAppReply(useChatStore.getState().streamingContent);
 				// Flush remaining text to TTS (both pipeline and chat mode)
 				if (sentenceChunkerRef.current) {
 					const remaining = sentenceChunkerRef.current.flush();
@@ -2705,10 +2994,8 @@ export function ChatArea({
 					}
 				}
 				flushThinkingStream();
-				settleCafeLuaTarotReply(
-					"",
-					wireErrorMessage(chunk.code, chunk.message),
-				);
+				flushGestureTriggerStream();
+				settleInstalledAppReply("", wireErrorMessage(chunk.code, chunk.message));
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
 				if (sentenceChunkerRef.current) {
@@ -2894,6 +3181,7 @@ export function ChatArea({
 	}
 
 	async function handleVoiceToggle() {
+		if (voiceMode !== "off") pendingAiGestureActionRef.current = null;
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
 			Logger.info("ChatArea", "Barge-in via button: stopping TTS");
@@ -3344,7 +3632,7 @@ export function ChatArea({
 			});
 
 			if (
-				(liveProvider === "azure-voice-live" || liveProvider === "naia-omni") &&
+				liveVoiceRequiresNaiaKey({ liveProvider, provider: config.provider }) &&
 				!naiaKey
 			) {
 				Logger.warn("ChatArea", "Live voice requires Naia key");
@@ -3357,9 +3645,10 @@ export function ChatArea({
 			}
 
 			const memoryCtx = await buildMemoryContext();
+			const gestureActions = getCameraActions().getGestureActions();
 			const systemPrompt = buildSystemPrompt(
 				config.persona,
-				memoryCtx,
+				{ ...memoryCtx, avatarGestures: gestureActions },
 				config.personaDisabled,
 			);
 
@@ -3471,12 +3760,36 @@ export function ChatArea({
 			let outputTurnDirty = false;
 			let inputAccum = "";
 			let outputAccum = "";
+			const createLiveGestureStream = () =>
+				new GestureTriggerStream(getCameraActions().getGestureActions());
+			let liveGestureStream = createLiveGestureStream();
+			const liveGestureActionPlayed = { current: false };
+			const appendLiveOutput = (
+				cleanText: string,
+				gestures: readonly { key: string }[],
+				recordEmpty = false,
+			) => {
+				playFirstGestureAction(gestures, liveGestureActionPlayed);
+				if (!cleanText && !recordEmpty) return;
+				outputAccum += cleanText;
+				const { emotion, cleanText: displayText } =
+					extractExpression(outputAccum);
+				if (emotion && !serverEmotionSeenThisTurn) setEmotion(emotion);
+				const store = useChatStore.getState();
+				if (outputTurnDirty) {
+					store.updateLastMessage("assistant", displayText);
+				} else {
+					store.addMessage({ role: "assistant", content: displayText });
+					outputTurnDirty = true;
+				}
+			};
 			// Precedence: a server emotion.updated this turn is authoritative, so the
 			// transcript-derived fallback below must not override it.
 			let serverEmotionSeenThisTurn = false;
 
 			session.onAudio = (pcmBase64) => player.enqueue(pcmBase64);
 			session.onInputTranscript = (text) => {
+				pendingAiGestureActionRef.current = null;
 				const store = useChatStore.getState();
 				if (!inputTurnDirty) setEmotion("think");
 				inputAccum += text;
@@ -3488,22 +3801,11 @@ export function ChatArea({
 				}
 			};
 			session.onOutputTranscript = (text) => {
-				const store = useChatStore.getState();
-				outputAccum += text;
-				// Robust fallback: derive the avatar expression from the transcript
-				// itself (uppercase/lowercase tags or a leaked stage direction) when
-				// the server did NOT send emotion.updated this turn — LLM output is
-				// imperfect. A present server emotion.updated takes precedence. Also
-				// use the cleaned text for the chat row so tags/stage directions don't
-				// show. emotion=null leaves the current face unchanged (no neutral reset).
-				const { emotion, cleanText } = extractExpression(outputAccum);
-				if (emotion && !serverEmotionSeenThisTurn) setEmotion(emotion);
-				if (outputTurnDirty) {
-					store.updateLastMessage("assistant", cleanText);
-				} else {
-					store.addMessage({ role: "assistant", content: cleanText });
-					outputTurnDirty = true;
-				}
+				liveResponseActiveRef.current = true;
+				const parsed = liveGestureStream.push(text);
+				// Use cleaned text in the chat row so markers and stage directions do not show.
+				// A server emotion.updated remains authoritative for the turn.
+				appendLiveOutput(parsed.cleanText, parsed.gestures, true);
 			};
 			session.onEmotion = (state) => {
 				// naia-omni emotion.updated (manual §5) → avatar expression. This is
@@ -3517,7 +3819,13 @@ export function ChatArea({
 				}
 			};
 			session.onInterrupted = () => {
+				pendingAiGestureActionRef.current = null;
+				liveResponseActiveRef.current = false;
 				player.clear();
+				const flushed = liveGestureStream.flush();
+				appendLiveOutput(flushed.cleanText, []);
+				liveGestureStream = createLiveGestureStream();
+				liveGestureActionPlayed.current = false;
 				inputTurnDirty = false;
 				outputTurnDirty = false;
 				inputAccum = "";
@@ -3529,11 +3837,16 @@ export function ChatArea({
 				noteEnvironmentTurn();
 			};
 			session.onTurnEnd = () => {
+				const flushed = liveGestureStream.flush();
+				appendLiveOutput(flushed.cleanText, flushed.gestures);
+				liveGestureStream = createLiveGestureStream();
+				liveGestureActionPlayed.current = false;
 				inputTurnDirty = false;
 				outputTurnDirty = false;
 				inputAccum = "";
 				outputAccum = "";
 				serverEmotionSeenThisTurn = false;
+				liveResponseActiveRef.current = false;
 				settleAvatarEmotionIfIdle();
 				// #502 (FR-ENV-ATTENTION.7): 실시간 음성도 대화 턴이다.
 				//
@@ -3550,7 +3863,7 @@ export function ChatArea({
 					});
 					session.sendToolResponse(
 						callId,
-						`Tool is not available: ${toolName}`,
+						unavailableModelToolMessage(toolName),
 					);
 					return;
 				}
@@ -4183,6 +4496,7 @@ export function ChatArea({
 						})
 						.map((msg) => (
 							<div key={msg.id} className={`chat-message ${msg.role}`}>
+								{msg.appName && <small>{msg.appName}</small>}
 								{msg.thinking && (
 									<details className="thinking-inline">
 										<summary className="thinking-inline-summary">
@@ -4301,15 +4615,13 @@ export function ChatArea({
 						<span className="voice-status-spinner" />
 						<span className="voice-status-text">
 							{voiceStatus.phase === "cold-start"
-								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s${
-										voiceStatus.queuePosition != null
-											? ` · ${t("chat.voiceColdStartQueue")} ${voiceStatus.queuePosition}`
-											: ""
-									}${
-										voiceStatus.etaSeconds != null
-											? ` · ${t("chat.voiceColdStartEta")} ~${voiceStatus.etaSeconds}s`
-											: ""
-									}`
+								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s` +
+									(voiceStatus.queuePosition != null
+										? ` · ${t("chat.voiceColdStartQueue")} ${voiceStatus.queuePosition}`
+										: "") +
+									(voiceStatus.etaSeconds != null
+										? ` · ${t("chat.voiceColdStartEta")} ~${voiceStatus.etaSeconds}s`
+										: "")
 								: t("chat.voiceConnecting")}
 						</span>
 						{voiceStatus.phase === "cold-start" && (
@@ -4322,6 +4634,10 @@ export function ChatArea({
 							</button>
 						)}
 					</div>
+				)}
+
+				{activeTab === "chat" && (
+					<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
 				)}
 
 				{/* Input (chat tab only) */}

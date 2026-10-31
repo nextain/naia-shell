@@ -1,13 +1,15 @@
+import { installInstalledAppHostBridge } from "./installed-app-host-bridge";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import {
+	resolveAppToolTargetOrigin,
+	validateAppToolParameters,
+} from "../../lib/app-registry";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
+import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
-import {
-	CAFE_LUA_TAROT_APP_ID,
-	installCafeLuaTarotHostBridge,
-} from "./cafelua-tarot-host-bridge";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -41,13 +43,14 @@ const TOOL_TIMEOUT_MS = 15_000;
  * (2026-09-11 Linux 실측). AvatarCanvas 와 같은 정규화를 적용한다.
  */
 function installedAppFrameSrc(htmlEntry: string): string {
-	return convertFileSrc(htmlEntry);
+	return normalizeTauriAssetUrl(convertFileSrc(htmlEntry));
 }
 
 export function createGenericInstalledApp(
 	htmlEntry?: string,
 	tools: NaiaTool[] = [],
-	appId?: string,
+	appId = "",
+	permissions: string[] = [],
 ) {
 	return function GenericInstalledApp({ naia }: AppCenterProps) {
 		const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -57,20 +60,17 @@ export function createGenericInstalledApp(
 		useLayoutEffect(() => {
 			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
 			const frame = iframeRef.current;
+			const disposeAppBridge = installInstalledAppHostBridge(frame, frameSrc, appId, permissions);
 			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});
-			const disposeTarotBridge =
-				appId === CAFE_LUA_TAROT_APP_ID
-					? installCafeLuaTarotHostBridge(frame, frameSrc)
-					: () => {};
 			return () => {
-				disposeTarotBridge();
+				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
 			};
-		}, [appId, htmlEntry, frameSrc]);
+		}, [htmlEntry, frameSrc, appId, permissions]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {
@@ -78,16 +78,16 @@ export function createGenericInstalledApp(
 
 			const unsubs = tools.map((tool) =>
 				naia.onToolCall(tool.name, async (args) => {
+					const invalidArgs = validateAppToolParameters(tool, args);
+					if (invalidArgs) throw new Error(invalidArgs);
 					const iframe = iframeRef.current;
 					const contentWindow = iframe?.contentWindow;
 					if (!iframe || !contentWindow) {
 						return "(app not loaded yet)";
 					}
-					let targetOrigin = "*";
-					try {
-						targetOrigin = new URL(iframe.src).origin;
-					} catch {
-						// fall back to "*" — the app replies to its own loader origin
+					const targetOrigin = resolveAppToolTargetOrigin(iframe.src);
+					if (!targetOrigin) {
+						throw new Error("Cannot send app tool call: invalid target origin");
 					}
 					const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 					const target = contentWindow;

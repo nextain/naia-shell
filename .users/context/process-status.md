@@ -1,4 +1,61 @@
-<!-- src-sha: 3176cbc244067c4a -->
+<!-- src-sha: 727a1bc8c244f98e -->
+
+## 서명 검증 스토어 앱 도구 동적 허용 — 2026-10-29
+
+- P01–P05 완료: 서명된 Store 앱에서 활성 앱이 선언한 `skill_*`만 모델 경계에 동적으로 허용한다. Rust는 설치 당시 서명된 원본 ZIP과 현재 `app.json` 일치를 재검증한다. Shell 내장 도구·타 앱 중복은 기록 후 거부하고, 제거·비활성화 뒤 허용하지 않는다.
+- `skill_blackjack_tutor`는 정적 Shell 목록에서 제거했다. Rust 확인된 Store 설치는 활성 앱 조건을 적용하고, 개발자 사이드로드는 설치 중인 기존 호환 경로를 유지한다.
+- 검증: focused Vitest 35/35, Biome 6개 TS 파일, 코어 build, Shell tsc, Rust `app::tests` 23/23 통과. UI 표현 변경이 없어 visual UX 검토는 해당하지 않는다. 실 Gateway entitlement 설치를 통한 native Store E2E는 실행하지 않았다.
+<!-- src-sha: 3f633f44ef08e32c -->
+
+## 설치 앱 공용 연결·설치 화면 — 2026-10-29
+
+- 검수 1차: 중복 ID 오류, 앱 질문 기록 격리와 표시, 설치 권한 고지 및 HTTPS 썸네일을 반영했다. 최종 Shell Vitest 2,565 통과/0 실패/21 제외, Playwright 2 통과, 실제 Tauri 1 통과, Rust 각 1 통과. 복원 원본에 앱 표시가 없어 복원 후 앱 턴 구분은 되지 않는다.
+
+- P01–P05: 설치 앱의 권한별 모델 질의·낭독·언어 전달, 설치 상품 다국어 정보와 썸네일을 구현했다.
+- 검증: 전체 Shell Vitest 2,558 통과/0 실패/21 제외, Playwright 2 통과, 실제 Tauri 매니페스트 IPC 1 통과, Rust 검사와 매니페스트 왕복 시험 통과. 실 계정·음성 장치는 모의했다. 기존 conform 게이트 비활성은 범위 밖이다.
+
+## 0.2.4 설치판 YouTube 스트림 추출 제거 — 2026-10-27
+
+- P01–P05 완료: `/yt/stream` 처리기와 URL 추출·형식 선택·decipher 제거. `/yt/search` 메타데이터 검색과 공식 iframe 재생은 유지하며 `<audio>`는 로컬 파일만 받는다.
+- 설치 리소스 검증: staged sidecar 검색은 HTTP 200으로 메타데이터 2건(각각 id/title/thumbnail/duration/channel)을 반환했고 `/yt/stream`은 HTTP 404 `not found`를 반환했다. staged `dist`에는 추출 코드가 없다.
+- 검증: sidecar build, root/Shell TypeScript, BGM Vitest 102/102, BGM Playwright 12/12, 실제 YouTube iframe 미디어 시계 30.1초 진행. 전체 Shell Vitest는 2,518 통과/21 제외/기존 agent-pairing assertion 1 실패.
+- process-status.json 이번 가지 갱신은 조정자(민호)가 승인했다(대표님 상시 원문: “운영 배포 빼고는 내 승인은 필요 없어”).
+
+## NVA 동작 Alt 단축키·채팅 배치 — 2026-10-25
+
+- P01–P05 완료: `UC-NVA-ACTION-HOTKEYS-20261025`, FR-NVA-GESTURE.2~3, Alt+1~9/입력 근처 단추/AI 사용 제한과 TTS idle 지연을 구현했다.
+- 검증: 루트·Shell TypeScript 검사 통과, 집중 Vitest 157/157, Shell 전체 Vitest 2,497 통과/1 실패/21 제외(유일한 실패 `platform-matrix.test.ts` ELF payload mode 0644 기대/0755 실제; 수정 전 `origin/main` 09e30c2b 기준도 2,463 통과/같은 1 실패/21 제외라 새 실패 0), Playwright `nva-prebaked.spec.ts` 2/2 통과.
+- `verify-visual-ux`: 데스크톱과 360px 화면에서 입력 옆 단추, 입력 초안 보존, 키 표시·비겹침, 빈 목록, 로딩·오류 상태를 확인했다. 캡처는 `/var/mnt/hdd/tmp/nva-hotkeys/evidence/`에 저장했다.
+- 단축키 판정은 `event.code`의 `Digit1`~`Digit9`만 사용하고 키패드는 제외한다. xterm 포커스는 통과시키고 CodeMirror는 허용한다. AI 제한은 최소 15초/같은 key 60초이며 수동 동작은 제한하지 않고 기록한다. TTS가 동작 영상을 끊는 renderer 회귀를 재현해 AI 동작을 idle까지 미루도록 했다.
+- `check-assembly-coverage.mjs` 통과. `enforce-root-structure.sh`는 기존 미등록 `tmp/`와 `tsconfig.build.json` 2건을 보고했다. 둘은 이 작업에서 수정하지 않았다. 커밋하지 않았다.
+
+## Studio NVA 쉘 적용 — 2026-10-22 (#105)
+
+- 기준: Studio `dd69c873213fcfb1912a4116b491fd2c2dc5219d`; Shell `1d590cf2e257d2329e85312a194ad90352907ed1`. Shell은 progress/HANDOFF가 마지막 0.2.4 설치판의 소스로 가리킨 기준이다. 더 최신 canonical-NVA 가지는 마지막 전달 설치판 기준이 아니어서 고르지 않았다.
+- Studio는 아바타 ID와 운영/개발 환경만 담은 `naia://studio-nva-apply` 링크를 만들고, 기존 다운로드는 보조 메뉴에 둔다. Shell은 로그인 자격으로 고정 HTTPS 게이트웨이에서 이름·미리보기를 읽고, 사용자 확인 뒤 크기·SHA-256·ZIP 매니페스트 및 기존 NVA 검사를 거쳐 적용한다.
+- 검수 2회차 및 첫 묶음 분리: 쉘이 꺼진 윈도에서 링크를 누르면 쉘이 새로 뜨고, 같은 링크가 거듭 와도 한 번만 묻고, 내려받기는 임시 파일로 흘려 쓰며 해시를 계산한다. 딥링크 수신부와 적용 대화창은 첫 화면 렌더 뒤 동적 import로 불러와 진입 묶음(entry chunk) 밖으로 뺐다(`entryRawBytes 531815 / 540000`, `entryGzipBytes 166146 / 170000`).
+- 검증: Shell 흐름·호스트·번들 상한 테스트 통과, Rust `studio_nva_apply`·단일 인스턴스 시험 통과(파서·대기열·ZIP 경로 탈출·크기 초과·해시 불일치·스트리밍 상한). Shell TypeScript 검사와 빌드 통과. Studio 화면은 로컬 headless 브라우저로 확인(내부 기록).
+- P04 진행 중: Windows 실기기에 설치된 Shell 0.2.4에서 창 꺼짐/켜짐 전달 확인은 조정자 실기 수락으로 남아 있다. 푸시·설치판 배포는 하지 않았다.
+
+## Qwen3.5 모델 받기 수명주기 — #759 단계 2
+
+- 범위: FR-LLM-PULL.1 단계 2 검증 재개; P01–P03 산출물은 지시서·요구사항에 연결.
+- P04: frozen install/build, focused Cargo 54/54, full parallel Cargo 583/583 twice, and specified Vitest 274/274 passed. Coordinator Playwright name comparison: 55=55, stage-specific 0; no rerun.
+- P05: Muse code review pending. Completion claim: no.
+
+## 가짜 Ollama HTTP 통합 — 2026-10-13 (#759 단계 4)
+
+- 범위는 가짜 loopback Ollama HTTP 서버로 관리 자식 기동, 정확 태그 받기, tags/show/digest 사후 검증, 자식 회수와 LocalLlm 예약 반환을 잇는 통합 확인이다. 실제 Ollama·모델·GPU는 사용하지 않았다.
+- 검증: 설정 화면 집중 Vitest 111 통과/8 제외. 전체 Vitest는 2,344 통과/21 제외/기존 `agent-pairing.test.ts` 임시 경로 필터 실패 1건(TMPDIR가 `/tmp`가 아닌 작업판 아래여서 발생; 범위 밖 수정 없음). `cargo test --lib ollama_runtime` 55 통과, 전체 병렬 Cargo 581 통과/4 기준 환경 시험 제외.
+- Playwright 전체 실행은 193 실패(55개 기준명 + 앱 연결 거부로 보인 138개)였다. 기준 밖 36 specs 재실행은 139 통과/27 기존 기준 실패/7 제외; 실패명 27/27이 기준 목록과 같고 단계 전용 실패는 0개였다. 1421 health 점검 91/91 HTTP 200.
+- Muse 코드 검수 대기, P04 진행 중/P05 대기. 루크 결정과 #759 전체 완료 주장은 남겨 두었다.
+
+## VRAM 예약과 Ollama 공급자 연결 — 2026-10-13 (#758 단계 4)
+
+- 작업 기준은 단계 3 병합판이다. kind-only `LocalLlm` 예약, Ollama 상태·provider 연결 및 chat admission을 구현하고 가짜 inventory/runner로 검증했다.
+- 검증: `pnpm install --frozen-lockfile`, 루트·Shell production build, Shell tsc/Rust build 통과. 표적 Vitest 274 통과/8 제외, Ollama UI Playwright 3 통과, production Playwright 2 통과, 가짜 inventory Tauri 스펙 1 통과, Ollama Rust 40 통과/1 제외.
+- 전체 Shell Playwright는 153 통과/49 제외/56 실패다. 새 Ollama 스펙은 통과했으며 나머지 실패의 원인과 기준판 여부는 확인되지 않았다. 전체 Cargo는 566 통과/4 기존 기준 실패/1 제외/3 GPU 관련 필터; 네 기준 실패는 `infer_repos_adk_root_returns_none_without_workspace_checkout`, `test_migration_excluded`, `test_resolve_cache_root`, `the_admin_secret_must_match_or_the_connection_is_refused`다.
+- 실제 Ollama/GPU 시험은 하지 않았다. 설치 방식·Linux 권한·이미 실행 중인 Ollama·생각 모드 단계는 보수 기본값이며 루크 결정 대기다. P04는 진행 중, P05는 대기; Muse 검수와 단계 5 루크 실기 증거가 남아 완료 주장은 아니다.
 
 ## Ollama 서버 수명주기 — 2026-10-13 (#758 단계 3)
 

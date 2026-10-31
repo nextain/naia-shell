@@ -6,8 +6,10 @@
 // "설치됨" 을 보고 앱을 찾지 못했고, 그것이 앱스토어 출시(#471 #473 #506)의
 // 앞을 막았다.
 //
-// 지금은 `prepare_apps_root` 하나가 정본 자리를 정하고 옛 `panels` 자리를
-// 옮긴다. 그런데 함수가 있다는 것만으로는 부족하다 — 새 경로(스토어 설치)가
+// 지금은 `prepare_apps_root_with_legacy_home` 하나가 정본 자리를 정하고 옛
+// `panels` 자리를 옮긴다. (선택한 ADK 에 앱을 두게 바꾸면서(49004927) 기기 단위
+// 이주 출처를 따로 받는 이 함수가 정본이 되었고, `prepare_apps_root` 와 각 갈래의
+// `*_with_legacy_home` 은 그리로 위임한다.) 그런데 함수가 있다는 것만으로는 부족하다 — 새 경로(스토어 설치)가
 // 그 함수를 건너뛰고 자리를 직접 짚으면 같은 갈라짐이 그대로 되살아난다.
 // 실제로 `app_install_store` 가 `data_home::direct_child_of` 를 직접 부르고
 // 있었다. 그래서 여기서 재는 것은 "이주 코드가 있는가" 가 아니라 **모든 길이
@@ -75,6 +77,45 @@ function calls(body: Token[] | null, name: string): boolean {
 	return (body ?? []).some((token) => token.text === name);
 }
 
+/** 이 파일에 정의된 함수 이름 전부. */
+async function definedFns(): Promise<Set<string>> {
+	const tokens = await codeTokens();
+	const names = new Set<string>();
+	for (let i = 0; i < tokens.length - 1; i += 1) {
+		if (tokens[i].text === "fn") names.add(tokens[i + 1].text);
+	}
+	return names;
+}
+
+/**
+ * `name` 의 몸통이 `target` 을 부르거나, 이 파일 안의 다른 함수를 **호출**해(`이름(`)
+ * 그 함수가 `target` 에 닿는가. 갈래가 `*_with_legacy_home` 같은 얇은 위임 함수를 거쳐도
+ * 정본 자리 함수를 지나는지는 그대로 잰다 — 위임 사슬 어디에도 정본이 없으면 붉다.
+ */
+async function reaches(
+	name: string,
+	target: string,
+	depth = 4,
+	seen: Set<string> = new Set(),
+): Promise<boolean> {
+	if (seen.has(name)) return false;
+	seen.add(name);
+	const body = await bodyOf(name);
+	if (body === null) return false;
+	if (calls(body, target)) return true;
+	if (depth <= 0) return false;
+	const fns = await definedFns();
+	for (let i = 0; i < body.length - 1; i += 1) {
+		const callee = body[i].text;
+		if (body[i + 1].text !== "(" || !fns.has(callee)) continue;
+		if (await reaches(callee, target, depth - 1, seen)) return true;
+	}
+	return false;
+}
+
+/** 정본 자리 함수. 자리를 정하고 옛 자리를 옮기는 몸통이 실제로 여기 있다. */
+const CANONICAL = "prepare_apps_root_with_legacy_home";
+
 /**
  * 시험 모듈(`#[cfg(test)] mod … { … }`) 밖에서 그 이름이 코드로 나오는 횟수.
  *
@@ -123,10 +164,12 @@ describe("앱 설치·목록·삭제의 자리", () => {
 			const body = await bodyOf(name);
 			expect(body, `${name} 을 app.rs 에서 찾지 못했다`).not.toBeNull();
 			expect(
-				calls(body, "prepare_apps_root"),
-				`${name} 이 prepare_apps_root 를 지나지 않는다 — 자리가 갈라질 수 있다(#472)`,
+				await reaches(name, CANONICAL),
+				`${name} 이 ${CANONICAL} 를 지나지 않는다 — 자리가 갈라질 수 있다(#472)`,
 			).toBe(true);
 		}
+		// 옛 이름의 입구도 정본으로 위임해야 한다. 입구가 따로 자리를 정하면 같은 갈라짐이다.
+		expect(await reaches("prepare_apps_root", CANONICAL)).toBe(true);
 	});
 
 	it("자리를 직접 짚는 곳은 그 자리를 정하는 두 함수뿐이다", async () => {
@@ -148,7 +191,7 @@ describe("앱 설치·목록·삭제의 자리", () => {
 	});
 
 	it("정본 자리 함수는 옛 자리를 실제로 옮긴다", async () => {
-		const body = await bodyOf("prepare_apps_root");
+		const body = await bodyOf(CANONICAL);
 		expect(body).not.toBeNull();
 
 		// 이 함수가 이름만 남고 이주를 잃으면, 옛 `panels` 자리에 설치된 앱이

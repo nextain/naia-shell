@@ -1,0 +1,141 @@
+{
+	"schema_version": "1.0",
+	"scenario_id": "radio-dj-baseline-01",
+	"opening_utterance": "일하면서 뭐라도 얘기해봐",
+	"virtual_epoch_utc": "2020-01-01T00:00:00.000Z",
+	"shell_config": {
+		"provider": "ollama",
+		"model": "qwen3.5:8b",
+		"apiKey": "",
+		"ttsEnabled": true,
+		"bgmSource": "youtube",
+		"bgmVolume": 0.3,
+		"proactiveSpeechProfile": "personal_radio_dj",
+		"proactiveSpeechPermitted": true,
+		"proactiveSpeechIdleMs": 300000,
+		"proactiveSpeechIntervalMs": 1800000,
+		"proactiveSpeechTimezone": "Asia/Seoul",
+		"proactiveSpeechBgmAutoPlay": true
+	},
+	"thresholds": {
+		"max_first_playback_ms": null,
+		"max_voice_music_overlap_ms": null,
+		"min_playing_ms": null
+	},
+	"practical": {
+		"duration_minutes": 45,
+		"port": 0
+	},
+	"deterministic": {
+		"seed": 76201,
+		"events": [
+			{
+				"at_ms": 0,
+				"event_type": "radio.profile",
+				"data": { "profile": "personal_radio_dj" }
+			},
+			{
+				"at_ms": 250,
+				"event_type": "radio.turn",
+				"data": { "phase": "user_started" }
+			},
+			{
+				"at_ms": 600,
+				"event_type": "radio.turn",
+				"data": { "phase": "assistant_started" }
+			},
+			{
+				"at_ms": 2000,
+				"event_type": "bgm.tool",
+				"data": { "action": "play", "phase": "request" }
+			},
+			{
+				"at_ms": 2600,
+				"event_type": "bgm.tool",
+				"data": { "action": "play", "phase": "result", "outcome": "accepted" }
+			},
+			{
+				"at_ms": 2600,
+				"event_type": "bgm.playback",
+				"data": {
+					"status": "requested",
+					"source": "youtube",
+					"track_id": "FAKE76201xx"
+				}
+			},
+			{
+				"at_ms": 3200,
+				"event_type": "bgm.playback",
+				"data": {
+					"status": "loading",
+					"source": "youtube",
+					"track_id": "FAKE76201xx"
+				}
+			},
+			{
+				"at_ms": 5400,
+				"event_type": "bgm.playback",
+				"data": {
+					"status": "playing",
+					"source": "youtube",
+					"track_id": "FAKE76201xx",
+					"current_time_s": 0,
+					"duration_s": 180
+				}
+			},
+			{
+				"at_ms": 5400,
+				"event_type": "ui.state",
+				"data": {
+					"surface": "bgm_player",
+					"state": "playback_status_refreshed",
+					"playback_status": "playing"
+				}
+			},
+			{
+				"at_ms": 6100,
+				"event_type": "radio.voice",
+				"data": { "phase": "started", "source": "fixture-tone" }
+			},
+			{
+				"at_ms": 7300,
+				"event_type": "radio.voice",
+				"data": { "phase": "ended", "source": "fixture-tone" }
+			},
+			{ "at_ms": 11000, "event_type": "bgm.volume", "data": { "volume": 0.3 } },
+			{
+				"at_ms": 30000,
+				"event_type": "bgm.playback",
+				"data": {
+					"status": "paused",
+					"source": "youtube",
+					"track_id": "FAKE76201xx",
+					"current_time_s": 24,
+					"duration_s": 180
+				}
+			},
+			{
+				"at_ms": 34000,
+				"event_type": "bgm.playback",
+				"data": {
+					"status": "playing",
+					"source": "youtube",
+					"track_id": "FAKE76201xx",
+					"current_time_s": 24,
+					"duration_s": 180
+				}
+			},
+			{
+				"at_ms": 47000,
+				"event_type": "bgm.playback",
+				"data": {
+					"status": "ended",
+					"source": "youtube",
+					"track_id": "FAKE76201xx",
+					"current_time_s": 180,
+					"duration_s": 180
+				}
+			}
+		]
+	}
+}

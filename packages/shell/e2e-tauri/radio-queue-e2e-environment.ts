@@ -17,7 +17,7 @@ if (configuredVitePort !== 1422) throw new Error("radio native E2E binary is fix
 export const vitePort = 1422;
 export const bgmPort = Number(process.env.NAIA_E2E_BGM_PORT ?? "18772");
 export const oauthPort = Number(process.env.NAIA_E2E_OAUTH_CALLBACK_PORT ?? "18793");
-const rootParent = process.platform === "win32" ? resolve("D:/tmp") : resolve(tmpdir());
+const rootParent = process.platform === "win32" ? resolve("C:/tmp") : resolve(tmpdir());
 export const root = resolve(rootParent, `naia-radio-queue-e2e-${e2ePort}`);
 export const workspace = resolve(root, "workspace");
 export const settings = resolve(workspace, "naia-settings");

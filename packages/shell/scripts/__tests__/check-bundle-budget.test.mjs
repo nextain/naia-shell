@@ -13,6 +13,10 @@ import { checkBundleBudget } from "../check-bundle-budget.mjs";
 const temporaryDirectories = [];
 const deferredModules = [
 	"src/apps/browser/BrowserCenterArea.tsx",
+	"src/apps/projects/ProjectAgentPanel.tsx",
+	"src/apps/projects/ProjectAgentTerminal.tsx",
+	"src/apps/projects/ProjectWebViewPanel.tsx",
+	"src/apps/projects/ProjectsApp.tsx",
 	"src/apps/workspace/HerdrWorkspaceCenterArea.tsx",
 	"src/apps/workspace/Terminal.tsx",
 	"src/components/AnnouncementBanner.tsx",
@@ -25,10 +29,12 @@ const deferredModules = [
 	"src/components/OnboardingWizard.tsx",
 	"src/components/PermissionModal.tsx",
 	"src/components/SettingsTab.tsx",
+	"src/components/StudioNvaApplyDialog.tsx",
 	"src/components/ToolActivity.tsx",
 	"src/components/UpdateBanner.tsx",
 	"src/components/UpdatePrompt.tsx",
 	"src/components/VideoAvatarCanvas.tsx",
+	"src/studio-nva-apply-root.tsx",
 ];
 
 function fixture({
@@ -97,6 +103,30 @@ describe("bundle budget", () => {
 			report.deferredChunks["src/components/OnboardingWizard.tsx"],
 		).toEqual({
 			file: "assets/OnboardingWizard-test.js",
+			dynamicallyImported: true,
+			staticallyImported: false,
+			modulePreloaded: false,
+			passed: true,
+		});
+		expect(
+			report.deferredChunks["src/apps/projects/ProjectsApp.tsx"],
+		).toMatchObject({
+			dynamicallyImported: true,
+			staticallyImported: false,
+			modulePreloaded: false,
+			passed: true,
+		});
+		expect(
+			report.deferredChunks["src/components/StudioNvaApplyDialog.tsx"],
+		).toMatchObject({
+			dynamicallyImported: true,
+			staticallyImported: false,
+			modulePreloaded: false,
+			passed: true,
+		});
+		expect(
+			report.deferredChunks["src/studio-nva-apply-root.tsx"],
+		).toMatchObject({
 			dynamicallyImported: true,
 			staticallyImported: false,
 			modulePreloaded: false,

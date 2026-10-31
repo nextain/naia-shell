@@ -741,6 +741,12 @@ export function mergeBootConfig(
 	// those outputs back into AppConfig; the write boundary regenerates them.
 	const normalizedFile = withoutDerivedAgentEnv(file);
 	const normalizedUi = withoutDerivedAgentEnv(ui);
+	// Legacy releases wrote locale into ui-config.json because the shell
+	// incorrectly classified it as UI-only. Keep that value only as a migration
+	// fallback when the agent config has no locale; a saved agent locale wins.
+	if (normalizedFile?.locale !== undefined && normalizedUi) {
+		delete normalizedUi.locale;
+	}
 	return normalizeLocalRuntimeConfig({
 		...bootstrap,
 		...(normalizedFile ?? {}),

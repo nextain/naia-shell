@@ -1,0 +1,262 @@
+{
+	"machine": "win-rtx2070",
+	"tiers": [
+		"deterministic_ci",
+		"credentialed_live",
+		"native_local"
+	],
+	"ranOn": {
+		"inventorySha256": "dd6f38f29e5acc1104bd044b1af0b415d6235a3ee63badbb46be763656afbf21",
+		"commit": "ce746b8f0535a609a564a3a1b05fcae188e135c0",
+		"host": "leegom",
+		"platform": "win32-x64",
+		"node": "v24.19.0"
+	},
+	"started": "2026-10-30T03:53:07.743Z",
+	"finished": "2026-10-30T04:26:11.748Z",
+	"status": "passed",
+	"planned": [
+		"100-herdr-first-frame.spec.ts",
+		"15-skill-manager-ai.spec.ts",
+		"31-diagnostics.spec.ts",
+		"33-usage-dashboard.spec.ts",
+		"94-radio-bgm-queue.spec.ts",
+		"96-codex-readiness.spec.ts",
+		"96-memory-storage-boundary.spec.ts",
+		"environment-dispatch.spec.ts",
+		"project-catalog-native.spec.ts",
+		"01-app-launch.spec.ts",
+		"03-basic-chat.spec.ts",
+		"06-skill-memo.spec.ts",
+		"09-onboarding.spec.ts",
+		"11-cost-dashboard.spec.ts",
+		"14-skills-tab.spec.ts",
+		"18-provider-tool-calling.spec.ts",
+		"24-adk-setup-flow.spec.ts",
+		"34-device-pairing.spec.ts",
+		"38-file-operations.spec.ts",
+		"42-sessions-crud.spec.ts",
+		"52-wizard-rpc.spec.ts",
+		"54-settings-avatar-bg.spec.ts",
+		"55-settings-persona-model.spec.ts",
+		"57-settings-save-reset.spec.ts",
+		"59-skills-interactions.spec.ts",
+		"64-settings-gateway-tts.spec.ts",
+		"68-history-auto-title.spec.ts",
+		"71-proactive-speech-profiles.spec.ts",
+		"76-tts-provider-switching.spec.ts",
+		"78-voice-pipeline-mode.spec.ts",
+		"81-chat-tts-response.spec.ts",
+		"90-codex-live-chat.spec.ts",
+		"91-memory-settings-integration.spec.ts",
+		"97-ollama-runtime-reservation.spec.ts",
+		"99-launch-f4-skill-usage.spec.ts",
+		"85-voice-actual-recording.spec.ts",
+		"94-voice-6g-shell.spec.ts"
+	],
+	"executed": [
+		"100-herdr-first-frame.spec.ts",
+		"15-skill-manager-ai.spec.ts",
+		"31-diagnostics.spec.ts",
+		"33-usage-dashboard.spec.ts",
+		"96-memory-storage-boundary.spec.ts",
+		"environment-dispatch.spec.ts",
+		"project-catalog-native.spec.ts",
+		"01-app-launch.spec.ts",
+		"03-basic-chat.spec.ts",
+		"06-skill-memo.spec.ts",
+		"09-onboarding.spec.ts",
+		"11-cost-dashboard.spec.ts",
+		"14-skills-tab.spec.ts",
+		"18-provider-tool-calling.spec.ts",
+		"24-adk-setup-flow.spec.ts",
+		"34-device-pairing.spec.ts",
+		"38-file-operations.spec.ts",
+		"42-sessions-crud.spec.ts",
+		"52-wizard-rpc.spec.ts",
+		"54-settings-avatar-bg.spec.ts",
+		"55-settings-persona-model.spec.ts",
+		"57-settings-save-reset.spec.ts",
+		"59-skills-interactions.spec.ts",
+		"64-settings-gateway-tts.spec.ts",
+		"68-history-auto-title.spec.ts",
+		"71-proactive-speech-profiles.spec.ts",
+		"76-tts-provider-switching.spec.ts",
+		"78-voice-pipeline-mode.spec.ts",
+		"81-chat-tts-response.spec.ts",
+		"91-memory-settings-integration.spec.ts",
+		"97-ollama-runtime-reservation.spec.ts",
+		"99-launch-f4-skill-usage.spec.ts",
+		"85-voice-actual-recording.spec.ts",
+		"94-radio-bgm-queue.spec.ts",
+		"96-codex-readiness.spec.ts",
+		"90-codex-live-chat.spec.ts",
+		"94-voice-6g-shell.spec.ts"
+	],
+	"passedSpecs": [
+		"100-herdr-first-frame.spec.ts",
+		"15-skill-manager-ai.spec.ts",
+		"31-diagnostics.spec.ts",
+		"33-usage-dashboard.spec.ts",
+		"96-memory-storage-boundary.spec.ts",
+		"environment-dispatch.spec.ts",
+		"project-catalog-native.spec.ts",
+		"01-app-launch.spec.ts",
+		"03-basic-chat.spec.ts",
+		"06-skill-memo.spec.ts",
+		"09-onboarding.spec.ts",
+		"11-cost-dashboard.spec.ts",
+		"14-skills-tab.spec.ts",
+		"18-provider-tool-calling.spec.ts",
+		"24-adk-setup-flow.spec.ts",
+		"34-device-pairing.spec.ts",
+		"38-file-operations.spec.ts",
+		"42-sessions-crud.spec.ts",
+		"52-wizard-rpc.spec.ts",
+		"54-settings-avatar-bg.spec.ts",
+		"55-settings-persona-model.spec.ts",
+		"57-settings-save-reset.spec.ts",
+		"59-skills-interactions.spec.ts",
+		"64-settings-gateway-tts.spec.ts",
+		"68-history-auto-title.spec.ts",
+		"71-proactive-speech-profiles.spec.ts",
+		"76-tts-provider-switching.spec.ts",
+		"78-voice-pipeline-mode.spec.ts",
+		"81-chat-tts-response.spec.ts",
+		"91-memory-settings-integration.spec.ts",
+		"97-ollama-runtime-reservation.spec.ts",
+		"99-launch-f4-skill-usage.spec.ts",
+		"85-voice-actual-recording.spec.ts",
+		"94-radio-bgm-queue.spec.ts",
+		"96-codex-readiness.spec.ts",
+		"90-codex-live-chat.spec.ts",
+		"94-voice-6g-shell.spec.ts"
+	],
+	"premise": "ok",
+	"premiseSignals": {
+		"agentStarts": 36,
+		"leaseBlocked": 0,
+		"executed": 37,
+		"expectedStarts": 36,
+		"reason": ""
+	},
+	"groups": [
+		{
+			"conf": "wdio.conf.ts",
+			"specs": 33,
+			"status": "passed",
+			"passed": 33,
+			"failedSpecs": []
+		},
+		{
+			"conf": "wdio.conf.radio-queue.ts",
+			"specs": 1,
+			"status": "passed",
+			"passed": 1,
+			"failedSpecs": []
+		},
+		{
+			"conf": "wdio.conf.codex.ts",
+			"specs": 2,
+			"status": "passed",
+			"passed": 2,
+			"failedSpecs": []
+		},
+		{
+			"conf": "wdio.conf.voice-6g.ts",
+			"specs": 1,
+			"status": "passed",
+			"passed": 1,
+			"failedSpecs": []
+		}
+	],
+	"envMissingBeforeRun": {},
+	"harnessProvidedEnv": {
+		"96-memory-storage-boundary.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"01-app-launch.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"06-skill-memo.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"09-onboarding.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"11-cost-dashboard.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"14-skills-tab.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"18-provider-tool-calling.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"24-adk-setup-flow.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"34-device-pairing.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"38-file-operations.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"42-sessions-crud.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"52-wizard-rpc.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"54-settings-avatar-bg.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"55-settings-persona-model.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"57-settings-save-reset.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"59-skills-interactions.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"64-settings-gateway-tts.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"71-proactive-speech-profiles.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"76-tts-provider-switching.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"78-voice-pipeline-mode.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"81-chat-tts-response.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"91-memory-settings-integration.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"97-ollama-runtime-reservation.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"99-launch-f4-skill-usage.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		],
+		"85-voice-actual-recording.spec.ts": [
+			"NAIA_E2E_ADK_PATH"
+		]
+	},
+	"capabilityBlockedBeforeRun": {},
+	"envMissingGroups": [],
+	"detail": "",
+	"billableCalls": {
+		"naia-gateway-judge": 17
+	},
+	"credentialsPresent": [
+		"NAIA_API_KEY"
+	],
+	"flakySpecs": [],
+	"stableFailures": []
+}

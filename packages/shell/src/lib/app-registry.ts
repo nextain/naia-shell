@@ -54,6 +54,80 @@ export type ToolHandler = (
 	args: Record<string, unknown>,
 ) => Promise<string | undefined> | string | undefined;
 
+export const MAX_APP_TOOL_ARGS_BYTES = 64 * 1024;
+
+/** Validate model arguments before any app bridge can receive them. */
+export function validateAppToolArgs(args: unknown): string | null {
+	if (args === null || typeof args !== "object" || Array.isArray(args)) {
+		return "Tool arguments must be a JSON object";
+	}
+	const prototype = Object.getPrototypeOf(args);
+	if (prototype !== Object.prototype && prototype !== null) {
+		return "Tool arguments must be a plain JSON object";
+	}
+	try {
+		const serialized = JSON.stringify(args);
+		if (serialized === undefined)
+			return "Tool arguments are not JSON serializable";
+		if (
+			new TextEncoder().encode(serialized).byteLength > MAX_APP_TOOL_ARGS_BYTES
+		) {
+			return "Tool arguments exceed the 64 KB limit";
+		}
+	} catch {
+		return "Tool arguments are not JSON serializable";
+	}
+	return null;
+}
+
+export function validateAppToolParameters(
+	tool: NaiaTool | undefined,
+	args: Record<string, unknown>,
+): string | null {
+	const argsError = validateAppToolArgs(args);
+	if (argsError) return argsError;
+	const schema = tool?.parameters;
+	if (!schema) return null;
+	for (const key of schema.required ?? []) {
+		if (!Object.prototype.hasOwnProperty.call(args, key)) {
+			return `Missing required tool argument: ${key}`;
+		}
+	}
+	for (const [key, value] of Object.entries(args)) {
+		const property = schema.properties?.[key];
+		if (!property || typeof property !== "object" || property === null)
+			continue;
+		const type = (property as { type?: unknown }).type;
+		const matches =
+			type === "string"
+				? typeof value === "string"
+				: type === "number"
+					? typeof value === "number" && Number.isFinite(value)
+					: type === "integer"
+						? typeof value === "number" && Number.isInteger(value)
+						: type === "boolean"
+							? typeof value === "boolean"
+							: type === "array"
+								? Array.isArray(value)
+								: type === "object"
+									? value !== null &&
+										typeof value === "object" &&
+										!Array.isArray(value)
+									: true;
+		if (!matches) return `Invalid type for tool argument: ${key}`;
+	}
+	return null;
+}
+
+export function resolveAppToolTargetOrigin(src: string): string | null {
+	try {
+		const origin = new URL(src).origin;
+		return origin && origin !== "null" ? origin : null;
+	} catch {
+		return null;
+	}
+}
+
 export interface ShellResult {
 	stdout: string;
 	stderr: string;
@@ -178,6 +252,11 @@ export class ActiveAppBridge implements NaiaContextBridge {
 		toolName: string,
 		args: Record<string, unknown>,
 	): Promise<string> {
+		const tool = appRegistry
+			.get(this.appId)
+			?.tools?.find((item) => item.name === toolName);
+		const validationError = validateAppToolParameters(tool, args);
+		if (validationError) throw new Error(validationError);
 		const handler = this.handlers.get(toolName);
 		if (!handler) return `No handler registered for tool: ${toolName}`;
 		const result = await handler(args);
@@ -270,7 +349,6 @@ export interface AppDescriptor {
 	profile?: "legacy" | "v2";
 	/** Localized descriptions (locale -> text) */
 	descriptions?: Record<string, string>;
-	/** Store/listing preview image URL supplied by the app manifest. */
 	thumbnailUrl?: string;
 	/** AI system context declaration or path */
 	context?: string;
@@ -314,6 +392,11 @@ export interface AppDescriptor {
 	 * AppBar uses this to decide whether to also delete from disk on remove.
 	 */
 	source?: "installed" | "code";
+	/** Rust asserted that this installed manifest came from a verified Store artifact. */
+	storeSignatureVerified?: boolean;
+	storeSignatureIssuedAtMs?: number;
+	/** Store tool names hidden after entitlement revocation, for recovery guidance. */
+	revokedStoreToolNames?: string[];
 	/** Center component ??owns the entire right area layout. */
 	center: React.ComponentType<AppCenterProps>;
 	/**
@@ -351,6 +434,18 @@ class AppRegistryImpl {
 
 	register(app: AppDescriptor): void {
 		this.apps.set(app.id, app);
+	}
+
+	updateStoreSignatureVerified(id: string, verified: boolean): void {
+		const app = this.apps.get(id);
+		if (app?.source === "installed") {
+			app.storeSignatureVerified = verified;
+			if (!verified) {
+				app.revokedStoreToolNames =
+					app.tools?.map((tool) => tool.name) ?? app.revokedStoreToolNames;
+				app.tools = [];
+			}
+		}
 	}
 
 	unregister(id: string): void {

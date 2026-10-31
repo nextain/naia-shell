@@ -7,6 +7,18 @@ import { describe, expect, it } from "vitest";
 import { mergeBootConfig } from "../config.js";
 
 describe("mergeBootConfig — 파일이 SoT, localStorage 는 캐시 (FR-CONFIG-SOT.1)", () => {
+	it("restores the saved agent locale over an older render cache", () => {
+		const merged = mergeBootConfig({ locale: "ko" }, { locale: "en" }, null);
+		expect(merged?.locale).toBe("en");
+	});
+
+	it("uses legacy ui-config locale only when agent config has none", () => {
+		expect(
+			mergeBootConfig(null, { locale: "en" }, { locale: "ko" })?.locale,
+		).toBe("en");
+		expect(mergeBootConfig(null, {}, { locale: "ko" })?.locale).toBe("ko");
+	});
+
 	it("스테일 localStorage persona 를 config.json 이 덮는다 (핵심 회귀)", () => {
 		const local = { persona: "알파", agentName: "알파" }; // 스테일 캐시
 		const file = { persona: "나이아", agentName: "나이아" }; // config.json = SoT

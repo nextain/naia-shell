@@ -61,6 +61,8 @@ const TAURI_MOCK = `
 		if (cmd === "app_list_installed") return [];
 		if (cmd === "send_to_agent_command") return undefined;
 		if (cmd === "frontend_log") return undefined;
+		// Rust read_naia_settings_file: a missing ADK settings file reads as "".
+		if (cmd === "read_naia_config" || cmd === "read_naia_ui_config") return "";
 		if (cmd === "read_text_file") return "";
 		if (cmd === "list_directory") return [];
 		if (cmd === "exists") return false;

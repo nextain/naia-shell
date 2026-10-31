@@ -81,6 +81,8 @@ describe("스펙의 운영체제", () => {
 			// #721: 브라우저 호스트 두 스펙은 리눅스 호스트 전용으로 표시됐다.
 			"env-tool-browser-host-fullstack.spec.ts",
 			"env-tool-browser-host-lifecycle.spec.ts",
+			// #756: 코딩 칸 입력 왕복 시험은 리눅스 e2e 에서만 돈다.
+			"project-agent-pty-input.spec.ts",
 		]);
 		for (const spec of linuxOnly) expect(spec.platforms).toEqual(["linux"]);
 	});
@@ -186,11 +188,24 @@ function getWindowsSpecs(): string[] {
 	return inventory.specs.filter((s) => target.specRunsOn(s, "windows")).map((s) => s.spec);
 }
 const allSpecs = inventory.specs.map((s) => s.spec);
+/**
+ * 명단에서 지금 활성인 윈도우 기계. 이름을 박아 두면 그 기계가 비활성으로
+ * 바뀌는 순간(명단 교대) 게이트가 그 기록을 "명단에 없다" 로 버려, 게이트가
+ * 아니라 시험이 깨진다.
+ */
+function activeWindowsMachine(): string {
+	const roster = JSON.parse(
+		readFileSync(resolve(ROOT, "docs", "regression-runs", "machines.json"), "utf8"),
+	) as { machines: { name: string; os: string; active?: boolean }[] };
+	const found = roster.machines.find((m) => m.os === "windows" && m.active !== false);
+	if (!found) throw new Error("명단에 활성 윈도우 기계가 없다");
+	return found.name;
+}
 
 describe("윈도우 배포의 게이트", () => {
 	it("윈도우 기계가 윈도우에서 도는 스펙을 전부 통과시키면 초록이다", () => {
 		const windowsSpecs = getWindowsSpecs();
-		const { code, out } = runGate("[windows]", [passedRecord("win-rtx4060", windowsSpecs)]);
+		const { code, out } = runGate("[windows]", [passedRecord(activeWindowsMachine(), windowsSpecs)]);
 		expect(out).toContain("배포 대상 windows");
 		expect(out).toContain("99-stt-mic-test.spec.ts");
 		expect(out).toContain("98-codex-chat-delegation.spec.ts");
@@ -208,7 +223,7 @@ describe("윈도우 배포의 게이트", () => {
 
 	it("윈도우에서 도는 스펙 하나가 빠지면 붉다", () => {
 		const windowsSpecs = getWindowsSpecs();
-		const { code, out } = runGate("[windows]", [passedRecord("win-rtx4060", windowsSpecs.slice(1))]);
+		const { code, out } = runGate("[windows]", [passedRecord(activeWindowsMachine(), windowsSpecs.slice(1))]);
 		expect(out).toContain(windowsSpecs[0]);
 		expect(code).not.toBe(0);
 	});
@@ -217,7 +232,7 @@ describe("윈도우 배포의 게이트", () => {
 describe("좁히지 않은 배포는 예전처럼 전부를 본다", () => {
 	it("targets 가 없으면 리눅스 기계의 몫이 비어 붉다", () => {
 		const windowsSpecs = getWindowsSpecs();
-		const { code } = runGate(null, [passedRecord("win-rtx4060", windowsSpecs)]);
+		const { code } = runGate(null, [passedRecord(activeWindowsMachine(), windowsSpecs)]);
 		expect(code).not.toBe(0);
 	});
 });

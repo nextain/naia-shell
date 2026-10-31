@@ -1,6 +1,8 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
 import {
 	type MouseEvent,
+	Suspense,
+	lazy,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -8,6 +10,9 @@ import {
 	useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { getBridgeForApp } from "../lib/active-bridge";
+import { removeInstalledApp } from "../lib/app-loader";
+import { appRegistry } from "../lib/app-registry";
 import {
 	type BrowserLink,
 	addBrowserShortcut,
@@ -24,17 +29,21 @@ import {
 } from "../lib/distribution";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
-import { getBridgeForApp } from "../lib/active-bridge";
-import { removeInstalledApp } from "../lib/app-loader";
-import { appRegistry } from "../lib/app-registry";
 import { useAppStore } from "../stores/app";
-import { BgmPlayer } from "./BgmPlayer";
+import { AppStoreIcon } from "./AppStoreIcon";
+
+const BgmPlayer = lazy(() =>
+	import("./BgmPlayer").then((module) => ({
+		default: module.BgmPlayer,
+	})),
+);
 
 // BGM player lives in the always-on app-bar (not a switchable app), so it
 // needs its own persistent bridge to push BGM context (favorites, current
 // track) into Naia's system prompt. Without a bridge the push is dead code
 // (`if (!naia) return` in BgmPlayer) and the AI never sees favoritesList.
 const bgmBridge = getBridgeForApp("bgm");
+let appStoreOpening: Promise<void> | null = null;
 
 function extractInitial(shortcut: BrowserLink): string {
 	const source = shortcut.title || shortcut.url;
@@ -180,11 +189,14 @@ export function AppBar({ onAddApp }: AppBarProps) {
 		// The web app store sells apps for credits: not reachable from the Steam build.
 		if (paymentLinksHiddenNow()) return;
 		try {
-			await openUrl(storeUrl);
+			if (!appStoreOpening) appStoreOpening = invoke("focus_or_create_app_store_window", { url: storeUrl });
+			await appStoreOpening;
 		} catch (error) {
-			Logger.warn("AppBar", "Failed to open app store in system browser", {
+			Logger.warn("AppBar", "Failed to open app store window", {
 				error: String(error),
 			});
+		} finally {
+			appStoreOpening = null;
 		}
 	}
 
@@ -378,6 +390,20 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				>
 					<span className="app-bar-tab-icon">📁</span>
 				</button>
+				{/* External utility, not a switchable/removable app-registry entry. */}
+				{!paymentLinksHidden && (
+					<button
+						type="button"
+						className="app-bar-tab app-bar-tab--utility"
+						aria-label={t("appbar.appStore")}
+						title={t("appbar.appStore")}
+						onClick={() => void openAppStore()}
+					>
+						<span className="app-bar-tab-icon app-bar-tab-icon--svg">
+							<AppStoreIcon />
+						</span>
+					</button>
+				)}
 				{modes.map((mode) => (
 					<div
 						key={mode.id}
@@ -394,10 +420,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 							}
 						>
 							{mode.iconSvg ? (
-								<span
+								<img
 									className="app-bar-tab-icon app-bar-tab-icon--svg"
-									// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted app SVG
-									dangerouslySetInnerHTML={{ __html: mode.iconSvg }}
+									alt=""
+									src={`data:image/svg+xml,${encodeURIComponent(mode.iconSvg)}`}
 								/>
 							) : mode.icon ? (
 								<span className="app-bar-tab-icon">{mode.icon}</span>
@@ -577,57 +603,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 										className="app-bar-url-dialog__section-icon"
 										aria-hidden="true"
 									>
-										<svg viewBox="0 0 32 32">
-											<rect
-												x="4"
-												y="9"
-												width="24"
-												height="19"
-												rx="5"
-												fill="#5b67f1"
-											/>
-											<path
-												d="M11 10V8a5 5 0 0 1 10 0v2"
-												fill="none"
-												stroke="white"
-												strokeWidth="2.5"
-												strokeLinecap="round"
-											/>
-											<rect
-												x="9"
-												y="15"
-												width="5"
-												height="5"
-												rx="1.2"
-												fill="white"
-											/>
-											<rect
-												x="18"
-												y="15"
-												width="5"
-												height="5"
-												rx="1.2"
-												fill="white"
-											/>
-											<rect
-												x="9"
-												y="22"
-												width="5"
-												height="3"
-												rx="1.2"
-												fill="white"
-												opacity=".85"
-											/>
-											<rect
-												x="18"
-												y="22"
-												width="5"
-												height="3"
-												rx="1.2"
-												fill="white"
-												opacity=".85"
-											/>
-										</svg>
+										<AppStoreIcon />
 									</span>
 									<div className="app-bar-url-dialog__section-text">
 										<strong>{t("appbar.appStore")}</strong>
@@ -749,7 +725,9 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					document.body,
 				)}
 			{/* ── BGM (right side of app-bar) ─── */}
-			<BgmPlayer naia={bgmBridge} />
+			<Suspense fallback={null}>
+				<BgmPlayer naia={bgmBridge} />
+			</Suspense>
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}

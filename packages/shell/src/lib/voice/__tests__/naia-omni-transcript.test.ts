@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNaiaOmniSession } from "../naia-omni";
+import { emotionTagsToChatText } from "../emotion-tags";
 import type { NaiaOmniConfig } from "../types";
 
 interface MockWSInstance {
@@ -46,6 +47,14 @@ class MockWebSocket implements MockWSInstance {
 		lastWs = this;
 	}
 }
+
+describe("emotionTagsToChatText", () => {
+	it("keeps the word boundary when removing an inline prosody tag", () => {
+		expect(emotionTagsToChatText("있어요[pause] 음악은 계속해서 흘러가요")).toBe(
+			"있어요 음악은 계속해서 흘러가요",
+		);
+	});
+});
 
 beforeEach(() => {
 	vi.stubGlobal("WebSocket", MockWebSocket);

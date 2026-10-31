@@ -6,6 +6,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { isCodeIdentifierShape } from "./lib/oss-token-shape.mjs";
 
 const repo = process.argv[2];
 if (!repo) { console.error("usage: node oss-readiness.mjs <repo-path>"); process.exit(2); }
@@ -64,6 +65,7 @@ function looksSecret(tok) {
   if (tok.includes("/")) return false;                 // 경로
   if ((tok.match(/-/g) || []).length >= 3) return false; // kebab 식별자(FR-COMPACT-...)
   if (decodesToText(tok)) return false;                // minisign/공개키·인코딩 텍스트
+  if (isCodeIdentifierShape(tok)) return false;
   const hasU = /[A-Z]/.test(tok), hasL = /[a-z]/.test(tok), hasD = /\d/.test(tok);
   if (!(hasU && hasL && hasD)) return false; // exclude pure-hex SHA / lowercase IDs
   return entropy(tok) >= 4.2;

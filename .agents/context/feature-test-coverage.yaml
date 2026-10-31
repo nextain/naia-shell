@@ -230,6 +230,16 @@ entries:
     tests:
       - { tier: browser_mock, path: packages/shell/e2e/startup-update-prompt.spec.ts }
     gap: "Atomic OS image update belongs to the image/release pipeline, outside Shell-only CI."
+  - id: naia-shell:feature:studio-nva-apply-105
+    requirement: FR-STUDIO-NVA-APPLY.1
+    feature: Apply a Studio avatar to the installed Shell through a credential-free deep link
+    status: partial
+    tests:
+      - { tier: deterministic_ci, path: packages/shell/src-tauri/src/studio_nva_apply.rs }
+      - { tier: deterministic_ci, path: packages/shell/src/lib/__tests__/studio-nva-apply.test.ts }
+      - { tier: deterministic_ci, path: "naia.land repo: src/features/studio-v2/persona/__tests__/studio-nva-apply.test.tsx" }
+      - { tier: native_local, path: "Windows installed Shell 0.2.4, off/on delivery" }
+    gap: "The installed Windows 0.2.4 delivery and preview require Windows field acceptance; Linux tests cover parsing, queue de-duplication, archive/integrity checks, streaming limits and apply sequencing."
 
 critical_regressions:
   - id: naia-shell:regression:host-voice-download-manifest
@@ -250,5 +260,5 @@ critical_regressions:
     residual: "The live probe is an opt-in deployment gate because it consumes provider tokens."
 
 notes:
-  - "Detailed user journeys S01-S72 remain in docs/user-scenarios.md; this file is the current coverage index."
+  - "Detailed user journeys S01-S73 remain in docs/user-scenarios.md; this file is the current coverage index."
   - "A passing mocked journey does not replace credentialed native or release-artifact validation."

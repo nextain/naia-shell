@@ -215,12 +215,20 @@ const ACKNOWLEDGED = new Map([
 		"화면을 찍어 돌려주는 명령이다. 본문의 remove_file 은 자기가 방금 만든 임시 PNG 를 지우는 것이라 사용자 자산을 없애지 않는다 — 이름이 아니라 하는 일로 판정하기 시작하면서 후보가 됐다",
 	],
 	[
+		"packages/shell/src/components/StudioNvaApplyDialog.tsx:studio_nva_apply_cleanup",
+		"스튜디오 아바타 적용(#105)이 방금 받은 임시 .nva 를 지운다. Rust 쪽이 앱 캐시 폴더 안의 `naia-studio-*.nva` 만 지우고 다른 경로는 nva_cleanup_path_rejected 로 거절하므로 사용자 자산을 없애지 않는다. 부르는 confirmApply 자체도 \"이 아바타를 적용할까요?\" 확인 창의 적용 단추 뒤에서만 돈다",
+	],
+	[
 		"packages/shell/src/lib/secure-store.ts:secure_store_delete",
 		"로그인 자격 하나를 지운다. 부르는 곳은 연결 해제 확인 화면(setShowLabDisconnect) 뒤의 로그아웃, 서버가 거절한 자격의 정리, 초기화 확인 화면 뒤의 초기화이고, 다시 로그인하면 돌아온다. 감싼 함수(deleteSecretKey·deleteSecretKeyAtPath)를 거쳐 여러 흐름에서 불려 이 검사기가 각 흐름의 확인을 따라가지 못한다",
 	],
 	[
 		"packages/shell/src/components/AppInstallDialog.tsx:app_install",
 		"이 대화상자 자체가 확인이다. 사용자가 주소를 적고 설치를 눌러야 이 자리에 온다. 확인 화면의 이름이 ConfirmDialog 가 아니라 AppInstallDialog 라서 표시로 잡히지 않는다",
+	],
+	[
+		"packages/shell/src/apps/projects/project-catalog.ts:project_class_reset",
+		"수업 초기화. ProjectsApp 의 \"수업 초기화\" 단추는 setShowResetDialog(true) 로 role=dialog 확인 창만 띄우고, 확인 창의 \"초기화\" 단추를 눌러야 resetProjectClass 가 돈다. Rust 쪽은 되돌리기 전에 학생 작업을 class-backups/<이름>-<시각>/files/ 로 모두 백업하고 하나라도 실패하면 체크아웃을 건드리지 않는다. 확인 상태와 실행 함수가 서로 다른 함수에 있고 감싼 함수를 거쳐 이 검사기가 못 따라간다",
 	],
 ]);
 

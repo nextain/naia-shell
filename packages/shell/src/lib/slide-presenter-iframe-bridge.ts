@@ -8,7 +8,8 @@ import {
 } from "./slide-presenter-events";
 
 // Installed apps run in an asset-protocol iframe; only that origin may drive TTS.
-// Linux(WebKitGTK)의 convertFileSrc 는 `asset://localhost` origin 을 준다 (2026-09-11 실측).
+// Linux convertFileSrc output is normalized before navigation; retain the raw
+// asset origin here for legacy frames while accepting the normalized CSP origin.
 const ALLOWED_ORIGINS = new Set([
 	"http://asset.localhost",
 	"https://asset.localhost",

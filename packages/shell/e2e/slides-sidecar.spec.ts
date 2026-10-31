@@ -49,7 +49,13 @@ async function openInstalledHost(page: Page, locale = "en") {
 	const origin = new URL(
 		test.info().project.use.baseURL ?? "http://127.0.0.1:1438",
 	).origin;
-	for (const target of [origin, origin.replace("127.0.0.1", "localhost")]) {
+	// The app frame is served from the *other* loopback name (see convertFileSrc
+	// below), so grant both names whichever one PLAYWRIGHT_HOST picked.
+	const url = new URL(origin);
+	const loopbacks = ["127.0.0.1", "localhost"].map(
+		(host) => `${url.protocol}//${host}:${url.port}`,
+	);
+	for (const target of loopbacks) {
 		await page
 			.context()
 			.grantPermissions(["local-network-access"], { origin: target });
@@ -76,6 +82,10 @@ async function openInstalledHost(page: Page, locale = "en") {
 			"## 01. Main\nFirst authored note\n## 02. Closing\nLast authored note",
 		scriptReadFailed: false,
 	};
+	// The installed app iframe must be cross-origin to the host, as in the real
+	// shell (asset protocol vs app origin). convertFileSrc therefore swaps to the
+	// other loopback name; a fixed 127.0.0.1->localhost swap became same-origin
+	// when the default PLAYWRIGHT_HOST is localhost.
 	await page.route("**/slides-e2e-host", (route) =>
 		route.fulfill({
 			contentType: "text/html",
@@ -93,7 +103,7 @@ document.documentElement.style.setProperty('--text-secondary','#526175');
 document.documentElement.style.setProperty('--border-color','#ccd5df');
 document.documentElement.style.setProperty('--accent-color','#1765a1');
 document.documentElement.style.setProperty('--font-family','Arial, sans-serif');
-window.__TAURI_INTERNALS__={convertFileSrc:()=>location.origin.replace('127.0.0.1','localhost')+'/slides.html',invoke:async(command,args)=>{window.fixture.calls.push({command,args});if(command==='slides_open_pdf'||command==='slides_open_document'){if(window.fixture.delay)await new Promise(resolve=>window.fixture.complete=resolve);if(window.fixture.error)throw window.fixture.error;return window.fixture.selection;}if(command==='slides_recording_stop')return 'recordings/fixture.webm';if(command==='plugin:event|listen')return args.handler;return null;},transformCallback:(callback)=>{const id=window.fixture.nextCallback++;window.fixture.callbacks[id]=callback;return id;},unregisterCallback:(id)=>{delete window.fixture.callbacks[id];}};
+window.__TAURI_INTERNALS__={convertFileSrc:()=>(location.hostname==='localhost'?location.origin.replace('localhost','127.0.0.1'):location.origin.replace('127.0.0.1','localhost'))+'/slides.html',invoke:async(command,args)=>{window.fixture.calls.push({command,args});if(command==='slides_open_pdf'||command==='slides_open_document'){if(window.fixture.delay)await new Promise(resolve=>window.fixture.complete=resolve);if(window.fixture.error)throw window.fixture.error;return window.fixture.selection;}if(command==='slides_recording_stop')return 'recordings/fixture.webm';if(command==='plugin:event|listen')return args.handler;return null;},transformCallback:(callback)=>{const id=window.fixture.nextCallback++;window.fixture.callbacks[id]=callback;return id;},unregisterCallback:(id)=>{delete window.fixture.callbacks[id];}};
 await import('/e2e/fixtures/slides-installed-host.tsx');
 </script></body></html>`,
 		}),

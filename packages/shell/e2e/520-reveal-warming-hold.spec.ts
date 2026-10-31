@@ -13,8 +13,12 @@ import {
  * 엔진의 기동은 5초를 훨씬 넘기므로(실측 RTF 7.98, 기동 약 80초) 그때마다
  * 음성보다 텍스트가 먼저 나왔다.
  *
- * 여기서 고정하는 것은 사용자에게 보이는 결과다. 홀드가 열려 있는 동안에는
- * 텍스트가 앞서 나오지 않고, 홀드가 풀리면 정체 가드가 다시 제 일을 한다.
+ * 2026-09-06 #571 (be28a151) 이 FR-VOICE.8 을 고쳤다: 답 텍스트는 음성 상태와
+ * 무관하게 도착하는 대로 그린다. 텍스트를 재생까지 가리던 마스크를 워밍업
+ * 홀드가 계속 다시 걸어 본문이 무기한 인질이 됐기 때문이다(win-rtx4060 실기).
+ * 그래서 여기서 고정하는 것은 이제 이것이다. 홀드가 열려 있는 동안 재생은
+ * 일어나지 않고, 본문은 바로 보이며, 음성은 "음성 모델 준비 중" 진행 표시로만
+ * 드러난다. 엔진이 올라오면 실제로 재생된다.
  */
 
 const LOCAL_VOICE = "http://127.0.0.1:8910";
@@ -112,7 +116,7 @@ async function playbackCount(page: Page): Promise<number> {
 }
 
 test.describe("#520 노출과 재생 순서", () => {
-	test("엔진 기동 중에는 텍스트가 재생을 앞지르지 않는다", async ({ page }) => {
+	test("엔진 기동 중에는 재생 없이 본문과 준비 표시가 보인다", async ({ page }) => {
 		await setup(page);
 		// 콜드 엔진: 연결 자체가 거부된다. synthesize 는 이것을 기동 중으로 읽고
 		// 워밍업 홀드를 켠 채 재시도한다.
@@ -124,18 +128,21 @@ test.describe("#520 노출과 재생 순서", () => {
 		await page.waitForTimeout(7_000);
 		await send(page);
 
-		// 정체 가드(5초)와 문장 시한(5초)을 모두 넘긴다. 고치기 전에는 이
-		// 구간에서 텍스트가 드러났다.
+		// 정체 가드(5초)와 문장 시한(5초)을 모두 넘긴다.
 		await page.waitForTimeout(12_000);
 
 		expect(await playbackCount(page), "홀드 중에는 재생이 없다").toBe(0);
 		expect(
 			await visibleText(page),
-			"재생 전에 텍스트가 앞서 노출되면 안 된다",
-		).not.toContain(FIRST_SENTENCE);
+			"FR-VOICE.8(#571): 본문은 재생을 기다리지 않는다",
+		).toContain(FIRST_SENTENCE);
+		await expect(
+			page.locator(".chat-output-stage"),
+			"홀드 중에는 음성 준비 진행 표시가 남는다",
+		).toContainText("음성 모델 준비 중");
 	});
 
-	test("엔진이 올라오면 재생과 함께 텍스트가 나온다", async ({ page }) => {
+	test("엔진이 올라오면 본문이 보이고 실제로 재생된다", async ({ page }) => {
 		await setup(page);
 		// RIFF WAV 헤더. 로컬 런타임은 음성만 담은 WAV 를 그대로 돌려준다.
 		const wav = Buffer.from([
@@ -149,13 +156,16 @@ test.describe("#520 노출과 재생 순서", () => {
 		await expect(page.locator(".chat-app")).toBeVisible({ timeout: 15_000 });
 		await send(page);
 
-		// 홀드가 없으므로 재생이 시작되고, 그 순간 해당 문장이 노출된다.
+		// 본문은 도착하는 대로 보이고(FR-VOICE.8, #571), 홀드가 없으므로 음성도
+		// 실제로 재생된다.
 		await expect(page.locator(".chat-app")).toContainText(FIRST_SENTENCE, {
 			timeout: 20_000,
 		});
-		expect(
-			await playbackCount(page),
-			"노출됐다면 재생도 있었다",
-		).toBeGreaterThan(0);
+		await expect
+			.poll(() => playbackCount(page), {
+				message: "엔진이 올라와 있으면 음성이 재생된다",
+				timeout: 20_000,
+			})
+			.toBeGreaterThan(0);
 	});
 });

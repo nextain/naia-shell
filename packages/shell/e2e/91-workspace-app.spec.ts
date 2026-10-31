@@ -164,7 +164,8 @@ const TAURI_MOCK_SCRIPT = `
 		if (cmd === "frontend_log") return null;
 		if (cmd === "app_list_installed") return [];
 		if (cmd === "list_skills" || cmd === "list_stt_models") return [];
-		if (cmd === "read_naia_config") return null;
+		if (cmd === "read_naia_config") return localStorage.getItem("naia-config") || "";
+		if (cmd === "read_naia_ui_config") return "";
 		return undefined;
 	};
 })();
@@ -232,9 +233,12 @@ test.describe("Herdr Workspace integration", () => {
 			"aria-pressed",
 			"true",
 		);
+		// ab96210b(Persist UI preferences in ADK config) 이후 배치의 저장 원본은 ADK
+		// ui-config.json 의 uiPreferences.chatMode 다(FR-CONFIG-SOT.7). 옛 localStorage 키는
+		// 다시 만들지 않는다 — 기본값은 저장 없이 "app" 으로 그려진다.
 		expect(
 			await page.evaluate(() => localStorage.getItem("naia-chat-mode-v1")),
-		).toBe("app");
+		).toBeNull();
 
 		await openWorkspace(page);
 		await expect(root).toHaveAttribute("data-ui-mode", "app");
@@ -245,6 +249,19 @@ test.describe("Herdr Workspace integration", () => {
 
 		await page.getByTitle("왼쪽 채움").click();
 		await expect(root).toHaveAttribute("data-ui-mode", "workspace");
+		// 사용자가 고른 배치는 ADK ui-config.json 으로 저장된다.
+		await expect
+			.poll(async () =>
+				(await commandArgs(page, "write_naia_ui_config")).map((args) => {
+					const json = typeof args?.json === "string" ? args.json : "{}";
+					return (JSON.parse(json) as { uiPreferences?: { chatMode?: string } })
+						.uiPreferences?.chatMode;
+				}),
+			)
+			.toContain("workspace");
+		expect(
+			await page.evaluate(() => localStorage.getItem("naia-chat-mode-v1")),
+		).toBeNull();
 		await page.locator('button[data-app-id="browser"]').click();
 		await expect(root).toHaveAttribute("data-ui-mode", "workspace");
 	});

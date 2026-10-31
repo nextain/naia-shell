@@ -37,12 +37,19 @@ function buildMock(): string {
 	window.__TAURI_INTERNALS__.runCallback = function(id, d){ var cb = callbacks.get(id); if (cb) cb(d); };
 	window.__TAURI_INTERNALS__.callbacks = callbacks;
 	var eventListeners = new Map();
+	var secrets = new Map();
 	window.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener = function() {};
 	window.__TAURI_INTERNALS__.convertFileSrc = function(p, proto){ return (proto||"asset") + "://localhost/" + encodeURIComponent(p); };
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
 		if (cmd === "plugin:event|listen") { if(!eventListeners.has(args.event)) eventListeners.set(args.event, []); eventListeners.get(args.event).push(args.handler); return args.handler; }
 		if (cmd === "plugin:event|emit" || cmd === "plugin:event|unlisten") return null;
-		if (cmd === "plugin:store|get") return (args && args.key === "naiaKey") ? [${JSON.stringify(API_KEY)}, true] : [null, false];
+		// Credentials live in the selected ADK's native store (secure_store_*,
+		// 09bbe62b); the first-ADK migration copies the seeded naiaKey into it.
+		if (cmd === "secure_store_get") return secrets.get(args.expectedStorePath + ":" + args.name) || null;
+		if (cmd === "secure_store_set") { secrets.set(args.expectedStorePath + ":" + args.name, args.value); return null; }
+		if (cmd === "secure_store_delete") { secrets.delete(args.expectedStorePath + ":" + args.name); return null; }
+		// Legacy device store is empty: Store.entries() resolves to an array.
+		if (cmd === "plugin:store|entries") return [];
 		if (cmd === "detect_gpu_vram") return 8;
 		// Engine is INSTALLED and RUNNING — the healthy path.
 		if (cmd === "voxcpm2_status") return true;

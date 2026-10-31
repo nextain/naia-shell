@@ -43,7 +43,21 @@
         "credentialed_live",
         "native_local"
       ],
-      "note": "윈도우 로컬 음성의 기준 기계. 음성 프로파일이 6GB 를 쓰므로 8GB 로 감당한다.",
+      "note": "윈도우 로컬 음성의 기준 기계. 음성 프로파일이 6GB 를 쓰므로 8GB 로 감당한다. 2026-10-28: win-rtx2070 과 함께 켠다 — 윈도우 몫을 둘이 나눠 돈다.",
+      "active": true
+    },
+    {
+      "name": "win-rtx2070",
+      "host": "leegom",
+      "os": "windows",
+      "gpu": "nvidia",
+      "gpu_model": "RTX 2070 Laptop (8GB, Turing)",
+      "tiers": [
+        "deterministic_ci",
+        "credentialed_live",
+        "native_local"
+      ],
+      "note": "2026-10-23 합류. 2026-10-28: win-rtx4060 과 함께 켜 윈도우 몫을 나눠 돈다. Turing(compute 7.5)이라 음성 런타임 엔진은 이 기계에서 다시 빌드한 것을 쓴다.",
       "active": true
     },
     {

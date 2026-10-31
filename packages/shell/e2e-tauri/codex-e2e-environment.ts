@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process";
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
 	cpSync,
 	existsSync,
@@ -10,6 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { connect } from "node:net";
+import { resolvePairedAgent } from "../scripts/agent-pairing.mjs";
 import { applyHarnessXdg } from "./e2e-xdg.mjs";
 import { stopHarnessHerdrSession } from "./herdr-session.mjs";
 import { removeTreeNoFollow } from "./safe-remove.mjs";
@@ -104,12 +105,6 @@ const E2E_NVA_SOURCE =
 		"naia-prebaked",
 	);
 const E2E_VRM_SOURCE = process.env.NAIA_E2E_VRM_SOURCE;
-const PAIRED_AGENT_ROOT = resolve(
-	process.env.NAIA_AGENT_WORKTREES_DIR ??
-		resolve(SHELL_DIR, "../../../..", "naia-agent-worktrees"),
-);
-const REQUIRED_AGENT_COMMIT = pairing.agentCommit;
-
 let viteServer: ChildProcess | undefined;
 let e2eApp: ChildProcess | undefined;
 
@@ -124,49 +119,16 @@ function assertOwnedRoot(path: string): void {
 	}
 }
 
-/** Keep the spawned agent identical to the commit verified by build-e2e-tauri. */
+/**
+ * Keep the spawned agent identical to the one baked into the E2E build.
+ *
+ * Delegates to the shared resolver that build-e2e-tauri and wdio.conf.ts use,
+ * so the NAIA_AGENT_SCRIPT this harness passes matches the paired build script
+ * (lib.rs rejects any other). It honors NAIA_E2E_AGENT_ROOT and throws when no
+ * clean checkout at the pinned commit exists.
+ */
 export function resolveRequiredPairedAgent(): string {
-	const explicit = process.env.NAIA_E2E_AGENT_ROOT;
-	const candidates = explicit
-		? [resolve(explicit)]
-		: existsSync(PAIRED_AGENT_ROOT)
-			? readdirSync(PAIRED_AGENT_ROOT, { withFileTypes: true })
-					.filter((entry) => entry.isDirectory())
-					.map((entry) => resolve(PAIRED_AGENT_ROOT, entry.name))
-			: [];
-	for (const candidate of candidates) {
-		if (!existsSync(resolve(candidate, "scripts/builds/agent-stdio-entry.mjs")))
-			continue;
-		if (
-			!existsSync(resolve(candidate, "src/main/adapters/grpc/naia_agent.proto"))
-		)
-			continue;
-		try {
-			if (
-				execFileSync("git", ["-C", candidate, "rev-parse", "HEAD"], {
-					encoding: "utf8",
-				}).trim() === REQUIRED_AGENT_COMMIT &&
-				// Ignore request-contract crash-recovery leases under
-				// .agents/session-contracts/.recovery/ (pure runtime artifact, never
-				// source). Twin of build-e2e-tauri's paired-agent clean check.
-				execFileSync("git", ["-C", candidate, "status", "--porcelain"], {
-					encoding: "utf8",
-				})
-					.split("\n")
-					.filter((line) => line.trim() !== "")
-					.every((line) =>
-						/\.agents[\\/]session-contracts[\\/]\.recovery[\\/]/.test(line),
-					)
-			) {
-				return candidate;
-			}
-		} catch {
-			// Keep searching; a malformed auxiliary checkout is not an E2E candidate.
-		}
-	}
-	throw new Error(
-		`No paired naia-agent checkout contains ${REQUIRED_AGENT_COMMIT} under ${explicit ?? PAIRED_AGENT_ROOT}`,
-	);
+	return resolvePairedAgent().pairedAgent;
 }
 
 /**

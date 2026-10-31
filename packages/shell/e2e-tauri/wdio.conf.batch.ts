@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
 import { assertNoSpecOverride, loadBatchPlan } from "./batch-plan.mjs";
+import { transformRequest } from "./node26-request.js";
 import { config as base } from "./wdio.conf.js";
 
 // This configuration is deliberately opt-in. The normal config keeps its broad
@@ -18,6 +19,9 @@ const baseReporters = Array.isArray(baseConfig.reporters)
 
 export const config = {
 	...base,
+	// After the spread so the shared Node 26 fix (node26-request.ts) is the
+	// one in effect, not a copy inherited from the base config.
+	transformRequest,
 	// WDIO accepts a nested group as one worker's explicit spec list. Do not
 	// flatten it: the one session is part of the batch contract.
 	specs: plan.specs,

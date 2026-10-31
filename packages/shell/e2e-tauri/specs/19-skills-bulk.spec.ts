@@ -27,7 +27,13 @@ describe("19 — skills bulk migration", () => {
 			const el = document.querySelector(sel) as HTMLButtonElement | null;
 			el?.click();
 		}, S.skillsTab);
-		await browser.pause(1000);
+		await browser.waitUntil(
+			() => browser.execute(() =>
+				!document.querySelector(".skills-loading") &&
+				!!document.querySelector('[data-testid="skills-cli-section"]'),
+			),
+			{ timeout: 30_000, timeoutMsg: "Skills CLI section did not appear after loading" },
+		);
 
 		const hasCli = await browser.execute(
 			() => !!document.querySelector('[data-testid="skills-cli-section"]'),

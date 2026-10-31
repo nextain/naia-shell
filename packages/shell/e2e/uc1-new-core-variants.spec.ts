@@ -128,6 +128,10 @@ test.describe("UC1 변종 — 새 core 경유", () => {
 		await expect(page.locator(".cursor-blink")).toBeHidden({ timeout: 10_000 }); // turn1 종료
 		await send(page, "내 이름 뭐라고 했지");
 		await expect(assistant).toHaveCount(2, { timeout: 15_000 });
+		// 두 번째 말풍선은 스트리밍 자리(▌)로 먼저 생긴다. 셸은 매 턴 보내기 직전에 BGM 도구를
+		// 다시 등록하고(823ceef2) 모델 도구 경계를 확정한(76ca6985, #699) 뒤 chat_request 를
+		// 보내므로, 자리만 보고 송신 목록을 읽으면 아직 두 번째 요청이 없다. 답이 온 것을 본 뒤 읽는다.
+		await expect(assistant.last()).toContainText("turnreply", { timeout: 15_000 });
 		const outbound = await page.evaluate(() => (window as unknown as { __E2E_OUTBOUND__: Array<{ type?: string; messages?: unknown[] }> }).__E2E_OUTBOUND__);
 		const chatReqs = outbound.filter((o) => o.type === "chat_request");
 		expect(chatReqs.length).toBeGreaterThanOrEqual(2);

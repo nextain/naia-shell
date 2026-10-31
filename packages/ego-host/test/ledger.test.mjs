@@ -235,6 +235,22 @@ test("detach 된 sessionId 는 묘비로 남아 재사용돼도 옛 세대의 �
   await live.stop();
 });
 
+test("감독자 종료가 시작된 뒤 연결의 요청은 묘비 거부가 아니라 끊김으로 끝난다 (계약 4.8)", async () => {
+  const live = await startLiveSupervisor();
+  const client = await connectClient(live);
+  const { targetId } = await spaceWithTab(live, client, "종료");
+  const channel = cdpChannel(client);
+  const sessionId = (await channel.call("Target.attachToTarget", { targetId, flatten: true }))
+    .sessionId;
+
+  // stop() 의 첫걸음만 따로 건다. 실제 종료에서는 바로 뒤 Browser.close 가 세션을 묘비로
+  // 만들고, 그 틈에 온 요청이 METHOD_DENIED 로 거부되면 ADK 전환으로 끊긴 작업이 정책 거부처럼 보였다.
+  live.server.mux.beginShutdown();
+  const reply = await channel.send("Runtime.evaluate", { expression: "1+1" }, sessionId);
+  assert.equal(reply.error?.code, "EGO_HOST_DISCONNECTED", JSON.stringify(reply));
+  await live.stop();
+});
+
 test("예기치 않은 자식 attachedToTarget 은 연결에 안 가고 감독자가 detach 한다 (fail-closed)", async () => {
   const live = await startLiveSupervisor({ wrap: true });
   const client = await connectClient(live);

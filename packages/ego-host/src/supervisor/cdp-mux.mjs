@@ -64,6 +64,8 @@ export function createCdpMux({
   /** upstreamId -> {connection, clientId, method, timer} */
   const pending = new Map();
   const dropped = [];
+  /** 감독자가 내려가기 시작했다(`beginShutdown`). 그 뒤 연결의 새 요청은 정책이 아니라 끊김이다. */
+  let shuttingDown = false;
 
   /**
    * 거부 하나. **문구 끝에 안정 코드를 넣는다.**
@@ -101,6 +103,12 @@ export function createCdpMux({
     const method = String(data.method || "");
     const sessionId = typeof data.sessionId === "string" ? data.sessionId : undefined;
 
+    // 종료 중에는 Browser.close 가 세션을 묘비로 만든다. 그 틈에 들어온 요청을 묘비 규칙으로
+    // 거부하면(METHOD_DENIED) 종료·ADK 전환으로 끊긴 작업이 정책 거부처럼 보인다(계약 4.8).
+    if (shuttingDown) {
+      errorResponse(connection, clientId, `감독자가 내려가는 중이다: ${method}`, CODES.DISCONNECTED);
+      return;
+    }
     if (sessionId && ledger.isTombstoned(sessionId)) {
       errorResponse(connection, clientId, `Session not found: ${sessionId}`, CODES.METHOD_DENIED);
       return;
@@ -441,6 +449,13 @@ export function createCdpMux({
     },
     releaseTarget(targetId) {
       ledger.releaseTarget(targetId);
+    },
+    /**
+     * 감독자 종료의 첫걸음. 이후 연결이 보내는 요청은 모두 `DISCONNECTED` 로 끝난다.
+     * 감독자 자신의 요청(`hostRequest`, 예: Browser.close)은 이 문을 지나지 않는다.
+     */
+    beginShutdown() {
+      shuttingDown = true;
     },
     /** 시험용 관측 창. 판정에 쓰지 않는다. */
     inspect() {

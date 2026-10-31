@@ -33,6 +33,7 @@ async function bootstrap() {
 			);
 		},
 		afterRender: () => {
+			void import("./studio-nva-apply-root");
 			// UI를 먼저 그린 뒤 부팅 진단을 실행해 capability probe가 첫 화면을 막지 않게 한다.
 			requestAnimationFrame(() => {
 				void import("./lib/avatar/nva-capability")
@@ -52,7 +53,7 @@ async function bootstrap() {
 		},
 		registerProjectApp: () => import("./apps/projects/index"),
 		onProjectRegistrationFailure: (error) => {
-			Logger.error("Main", "Built-in project app registration failed", {
+			Logger.error("Main", "Built-in app registration failed", {
 				error: String(error),
 			});
 		},

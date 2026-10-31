@@ -90,6 +90,23 @@ describe("buildSystemPrompt", () => {
 		expect(result).not.toContain("Context:");
 	});
 
+	it("adds available NVA gesture guidance only when actions are provided", () => {
+		const actions = [{ key: "wave", label: "Wave" }];
+		const result = buildSystemPrompt(undefined, { avatarGestures: actions });
+		expect(result).toContain("wave: Wave");
+		expect(result).toContain("[[gesture:key]]");
+		expect(result).toContain("at most one");
+		expect(result).toMatch(/Alt\+1|⌥1/);
+		expect(result).toContain("Actively use an action when its meaning fits");
+		expect(result).toContain(
+			"Do not repeat the same action in consecutive responses",
+		);
+		expect(result).toContain("serious topics");
+		expect(buildSystemPrompt(undefined, { avatarGestures: [] })).not.toContain(
+			"NVA gesture actions",
+		);
+	});
+
 	it("combines all context fields", () => {
 		const result = buildSystemPrompt(undefined, {
 			userName: "Luke",

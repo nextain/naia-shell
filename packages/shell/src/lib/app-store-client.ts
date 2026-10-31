@@ -48,6 +48,7 @@ interface StoreProductsResponse {
 			descriptions?: Record<string, string>;
 			thumbnailUrl?: string;
 			thumbnail_url?: string;
+			permissions?: unknown;
 		};
 	}>;
 }
@@ -56,14 +57,27 @@ export interface StoreProductMetadata {
 	name: string | null;
 	description: string | null;
 	thumbnailUrl: string | null;
+	permissions: string[] | null;
 }
 
 function pickLocalized(
 	localized: Record<string, string> | undefined,
 	locale: string,
+	legacy: string | undefined,
 	root: string | undefined,
 ): string | null {
-	return localized?.[locale] || localized?.en || root || null;
+	return localized?.[locale] || legacy || localized?.en || root || null;
+}
+
+function mergeLegacyLanguages(
+	localized: Record<string, string> | undefined,
+	korean: string | undefined,
+	english: string | undefined,
+): Record<string, string> {
+	const merged = { ...localized };
+	if (!merged.ko && korean) merged.ko = korean;
+	if (!merged.en && english) merged.en = english;
+	return merged;
 }
 
 export async function getStoreProductMetadata(
@@ -76,16 +90,22 @@ export async function getStoreProductMetadata(
 	const product = body.data?.find((item) => item.app_id === appId);
 	const manifest = product?.manifest;
 	if (!manifest) return null;
-	const legacyName = manifest.nameKo || manifest.nameEn;
-	const legacyDescription = manifest.descriptionKo || manifest.descriptionEn;
+	const names = mergeLegacyLanguages(manifest.names, manifest.nameKo, manifest.nameEn);
+	const descriptions = mergeLegacyLanguages(
+		manifest.descriptions,
+		manifest.descriptionKo,
+		manifest.descriptionEn,
+	);
 	return {
-		name: pickLocalized(manifest.names, locale, manifest.name || legacyName),
+		name: pickLocalized(names, locale, manifest.nameEn || manifest.nameKo, manifest.name),
 		description: pickLocalized(
-			manifest.descriptions,
+			descriptions,
 			locale,
-			manifest.description || legacyDescription,
+			manifest.descriptionEn || manifest.descriptionKo,
+			manifest.description,
 		),
 		thumbnailUrl: manifest.thumbnailUrl || manifest.thumbnail_url || null,
+		permissions: Array.isArray(manifest.permissions) && manifest.permissions.every((p) => typeof p === "string") ? manifest.permissions : null,
 	};
 }
 

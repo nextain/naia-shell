@@ -9,6 +9,10 @@ import {
 import { StrictMode } from "react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	beginNaiaConfigHydration,
+	completeNaiaConfigHydration,
+} from "../../lib/adk-store";
 
 const eventListeners = vi.hoisted(
 	() =>
@@ -37,8 +41,14 @@ function setHostMachine(next: typeof ONE_CARD_WINDOWS) {
 const loggedOutMocks = vi.hoisted(() => ({
 	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
 }));
+const projectAgentMocks = vi.hoisted(() => ({
+	stopOpenCodeProjectAgentSessions: vi.fn(async () => {}),
+}));
+vi.mock("../../apps/projects/project-agent-runtime", () => projectAgentMocks);
 vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../../lib/llm/logged-out-default")>()),
+	...(await importOriginal<
+		typeof import("../../lib/llm/logged-out-default")
+	>()),
 	resolveLoggedOutLlm: loggedOutMocks.resolveLoggedOutLlm,
 }));
 
@@ -58,7 +68,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: async (...call: [string, ...unknown[]]) => {
 		const command = call[0];
 		const args = call[1] as { name?: string; value?: string } | undefined;
-		if (command === "secure_store_get") return (await secureStoreMock.get(args?.name)) ?? nativeSecrets.get(args?.name ?? "") ?? null;
+		if (command === "secure_store_get")
+			return (
+				(await secureStoreMock.get(args?.name)) ??
+				nativeSecrets.get(args?.name ?? "") ??
+				null
+			);
 		if (command === "secure_store_set") {
 			nativeSecrets.set(args!.name!, args!.value!);
 			return secureStoreMock.set(args?.name, args?.value);
@@ -67,13 +82,16 @@ vi.mock("@tauri-apps/api/core", () => ({
 			nativeSecrets.delete(args!.name!);
 			return secureStoreMock.delete(args?.name);
 		}
-		if (command === "device_list" || command === "device_list_requests") return [];
+		if (command === "device_list" || command === "device_list_requests")
+			return [];
 		const result = await mockInvoke(...call);
 		// Older fixtures use [] as their catch-all. Native config reads return
 		// JSON text; CLI discovery returns a snapshot, never a bare array.
 		if (Array.isArray(result) && result.length === 0) {
-			if (command === "read_naia_ui_config" || command === "read_naia_config") return "";
-			if (command === "cli_detect_refresh") return { results: [], detectedAt: Date.now() };
+			if (command === "read_naia_ui_config" || command === "read_naia_config")
+				return "";
+			if (command === "cli_detect_refresh")
+				return { results: [], detectedAt: Date.now() };
 		}
 		return result;
 	},
@@ -124,6 +142,8 @@ vi.mock("../../lib/chat-service", () => chatServiceMocks);
 
 import { resetDistributionChannelForTests } from "../../lib/distribution";
 import { setLocale } from "../../lib/i18n";
+import { Logger } from "../../lib/logger";
+import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { SettingsTab } from "../SettingsTab";
 
 // SettingsTab order:
@@ -173,6 +193,7 @@ describe("SettingsTab", () => {
 		secureStoreMock.get.mockResolvedValue(null);
 		vi.unstubAllGlobals();
 		Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+		useCascadeAvatarStore.getState().setLocalFacadeUrl(null);
 		await setLocale("en");
 	});
 
@@ -216,6 +237,9 @@ describe("SettingsTab", () => {
 				model: "qwen3:8b",
 			});
 			await logout();
+			expect(
+				projectAgentMocks.stopOpenCodeProjectAgentSessions,
+			).toHaveBeenCalledTimes(1);
 			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
 			expect(saved().provider).toBe("ollama");
 			expect(saved().model).toBe("qwen3:8b");
@@ -232,6 +256,9 @@ describe("SettingsTab", () => {
 				model: "",
 			});
 			await logout();
+			expect(
+				projectAgentMocks.stopOpenCodeProjectAgentSessions,
+			).toHaveBeenCalledTimes(1);
 			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
 			expect(saved().provider).toBe("");
 			expect(JSON.stringify(saved())).not.toContain('"gemini');
@@ -252,6 +279,50 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		expect(screen.getByTestId("profile-naia-login")).toBeInTheDocument();
 		expect(screen.getByTestId("profile-login-naia")).toBeEnabled();
+	});
+
+	it("opens the localized NVA creator from the Avatar tab", async () => {
+		await setLocale("en");
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("avatar");
+
+		const createAvatar = screen.getByRole("button", {
+			name: "Create NVA avatar",
+		});
+		expect(createAvatar).toHaveAttribute("title", "Create NVA avatar");
+		expect(
+			screen.getByText("Make a personal video avatar in Naia Video Studio."),
+		).toBeInTheDocument();
+		fireEvent.click(createAvatar);
+
+		await waitFor(() =>
+			expect(mockOpenUrl).toHaveBeenCalledWith(
+				expect.stringMatching(/\/en\/studio\/nva\/create$/),
+			),
+		);
+	});
+
+	it("keeps the Avatar tab usable and logs an NVA creator opener failure", async () => {
+		await setLocale("en");
+		mockInvoke.mockResolvedValue([]);
+		mockOpenUrl.mockRejectedValueOnce(new Error("opener unavailable"));
+		const warn = vi.spyOn(Logger, "warn").mockImplementation(() => {});
+		render(<SettingsTab />);
+		gotoSettingsTab("avatar");
+		fireEvent.click(screen.getByRole("button", { name: "Create NVA avatar" }));
+
+		await waitFor(() =>
+			expect(warn).toHaveBeenCalledWith(
+				"SettingsTab",
+				"Failed to open NVA avatar creator",
+				expect.objectContaining({ error: "Error: opener unavailable" }),
+			),
+		);
+		expect(
+			screen.getByRole("button", { name: "Create NVA avatar" }),
+		).toBeInTheDocument();
+		warn.mockRestore();
 	});
 
 	it("loads the Naia credit balance after the StrictMode effect replay", async () => {
@@ -329,10 +400,14 @@ describe("SettingsTab", () => {
 		mockOpenUrl.mockClear();
 
 		fireEvent.click(chargeBtn!);
-		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/billing"));
+		expect(mockOpenUrl).toHaveBeenCalledWith(
+			expect.stringContaining("/billing"),
+		);
 
 		fireEvent.click(dashboardBtn!);
-		expect(mockOpenUrl).toHaveBeenCalledWith(expect.stringContaining("/dashboard"));
+		expect(mockOpenUrl).toHaveBeenCalledWith(
+			expect.stringContaining("/dashboard"),
+		);
 	});
 
 	it("hides the credit top-up and dashboard buttons on the Steam build, keeping the balance (#727)", async () => {
@@ -514,14 +589,29 @@ describe("SettingsTab", () => {
 			gotoSettingsTab("general");
 		});
 
-		expect(document.querySelector('[data-settings-tab="general"]')?.className).toContain("settings-tab-btn--active");
+		expect(
+			document.querySelector('[data-settings-tab="general"]')?.className,
+		).toContain("settings-tab-btn--active");
 		// Retired Discord credentials must not reappear in the WebView.
 		expect(document.querySelector('input[type="password"]')).toBeNull();
 	});
 
 	it("renders locale choices in the webview and applies Korean", async () => {
-		localStorage.setItem("naia-config", JSON.stringify({ locale: "en" }));
-		mockInvoke.mockResolvedValue([]);
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "",
+				locale: "en",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			return Promise.resolve(undefined);
+		});
 		render(<SettingsTab />);
 		gotoSettingsTab("general");
 
@@ -532,13 +622,174 @@ describe("SettingsTab", () => {
 
 		await waitFor(() => expect(picker).toHaveTextContent("한국어"));
 		expect(screen.getByText("언어")).toBeDefined();
-		// Settings keeps the established transaction boundary: the language is
-		// previewed immediately, then persisted with the page's Save action.
+		// The language picker has no Save action in General, so its locale is
+		// persisted immediately with the previewed screen language.
 		expect(
 			JSON.parse(localStorage.getItem("naia-config") ?? "{}"),
 		).toMatchObject({
-			locale: "en",
+			locale: "ko",
 		});
+	});
+
+	it("keeps screen and config locale aligned when the secondary UI file write fails", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "write_naia_config") return Promise.resolve(undefined);
+			if (command === "write_naia_ui_config")
+				return Promise.reject(new Error("ui disk full"));
+			if (command === "reload_agent_settings")
+				return Promise.resolve({ available: false });
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		await waitFor(() => expect(picker).toHaveTextContent("English"));
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+		const configWrite = mockInvoke.mock.calls.find(
+			([command]) => command === "write_naia_config",
+		);
+		expect(JSON.parse((configWrite?.[1] as { json: string }).json).locale).toBe(
+			"en",
+		);
+	});
+
+	it("uses a synchronous ref guard for two locale changes in one React tick", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			if (command === "reload_agent_settings")
+				return Promise.resolve({ available: false });
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", { name: "English" }));
+			fireEvent.click(screen.getByRole("button", { name: "日本語" }));
+		});
+		await waitFor(() => expect(picker).toHaveTextContent("English"));
+		expect(
+			mockInvoke.mock.calls.filter(
+				([command]) => command === "write_naia_config",
+			),
+		).toHaveLength(1);
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+	});
+
+	it("keeps a committed locale and exposes retry after a running-agent reload error", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				locale: "ko",
+			}),
+		);
+		let reloadAttempts = 0;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "read_naia_ui_config") return Promise.resolve("");
+			if (command === "detect_gpu_vram") return Promise.resolve(null);
+			if (command === "reload_agent_settings") {
+				reloadAttempts += 1;
+				return reloadAttempts === 1
+					? Promise.reject(new Error("agent connection refused"))
+					: Promise.resolve({ available: true });
+			}
+			return Promise.resolve(undefined);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		const picker = screen.getByLabelText("Language");
+		fireEvent.click(picker);
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert).toHaveTextContent("running agent");
+		expect(picker).toHaveTextContent("English");
+		expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale).toBe(
+			"en",
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+		await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+		expect(reloadAttempts).toBe(2);
+	});
+
+	it("rejects a locale selection while config hydration is pending", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "",
+				locale: "en",
+			}),
+		);
+		mockInvoke.mockResolvedValue("");
+		beginNaiaConfigHydration();
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("general");
+			expect(screen.getByLabelText("Language")).toBeDisabled();
+			expect(screen.getByLabelText("Language")).toHaveTextContent("English");
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale,
+			).toBe("en");
+			expect(mockInvoke).not.toHaveBeenCalledWith(
+				"write_naia_config",
+				expect.anything(),
+			);
+		} finally {
+			completeNaiaConfigHydration();
+		}
+	});
+
+	it("shows an error instead of dropping a locale when the render cache is empty", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.removeItem("naia-config");
+		mockInvoke.mockResolvedValue("");
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		fireEvent.click(screen.getByLabelText("Language"));
+		fireEvent.click(screen.getByRole("button", { name: "한국어" }));
+
+		expect(await screen.findByRole("alert")).toHaveTextContent(
+			"Could not save settings",
+		);
+		expect(screen.getByLabelText("Language")).toHaveTextContent("English");
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"write_naia_config",
+			expect.anything(),
+		);
 	});
 
 	// config(models) 정상화: 구 skill_config directToolCall → 게이트웨이 `GET /v1/pricing` 셸-직결(E1).
@@ -720,6 +971,7 @@ describe("SettingsTab", () => {
 			"solar-mini",
 			"deepseek-v4-flash",
 			"solar-pro4",
+			"motif-3",
 			"gpt-5.6-luna",
 		]);
 		expect(
@@ -807,6 +1059,12 @@ describe("SettingsTab", () => {
 				output_price_per_million: 0.165,
 				cached_price_per_million: null,
 			},
+			{
+				model_key: "motif:motif-3",
+				input_price_per_million: 0.26,
+				output_price_per_million: 1.04,
+				cached_price_per_million: 0.052,
+			},
 		]);
 
 		render(<SettingsTab />);
@@ -833,11 +1091,221 @@ describe("SettingsTab", () => {
 					!l.includes("$"),
 			),
 		).toBe(true);
+		expect(
+			labels.some(
+				(l) =>
+					l.includes("Motif 3") &&
+					l.includes("260 credits") &&
+					l.includes("1.04K credits"),
+			),
+		).toBe(true);
 		expect(labels.some((l) => l.includes("HCX-007"))).toBe(false);
 		const values = [...modelSelect.options].map((o) => o.value);
 		expect(values).toContain("solar-pro4");
 		expect(values).toContain("solar-mini");
+		expect(values).toContain("motif-3");
 		expect(values).not.toContain("HCX-007");
+	});
+
+	it("preserves Naia live pricing on initial open regardless of catalog/pricing completion order", async () => {
+		await setLocale("ko");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "motif-3",
+				apiKey: "",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+
+		const pricingPayload = [
+			{
+				model_key: "azure:deepseek-v4-flash",
+				input_price_per_million: 0.209,
+				output_price_per_million: 0.561,
+				cached_price_per_million: null,
+			},
+			{
+				model_key: "upstage:solar-pro4",
+				input_price_per_million: 0.33,
+				output_price_per_million: 1.32,
+				cached_price_per_million: 0.066,
+			},
+			{
+				model_key: "upstage:solar-mini",
+				input_price_per_million: 0.165,
+				output_price_per_million: 0.165,
+				cached_price_per_million: null,
+			},
+			{
+				model_key: "motif:motif-3",
+				input_price_per_million: 0.26,
+				output_price_per_million: 1.04,
+				cached_price_per_million: 0.052,
+			},
+		];
+
+		const modelsPayload = [
+			{
+				model_key: "deepseek-v4-flash",
+				capabilities: ["llm"],
+				supports_tools: true,
+			},
+			{ model_key: "solar-pro4", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "solar-mini", capabilities: ["llm"], supports_tools: true },
+			{ model_key: "motif-3", capabilities: ["llm"], supports_tools: true },
+			{
+				model_key: "gpt-5.6-luna",
+				capabilities: ["llm"],
+				supports_tools: true,
+			},
+		];
+
+		function makeDeferred<T>() {
+			let resolve!: (val: T) => void;
+			const promise = new Promise<T>((r) => {
+				resolve = r;
+			});
+			return { promise, resolve };
+		}
+
+		// Case 1: Pricing response (2nd /v1/pricing call + /v1/models) resolves BEFORE catalog response (1st /v1/pricing call)
+		const catalogResp1 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		const pricingResp1 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		const modelsResp1 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		let pricingCalls1 = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((url: string) => {
+				const u = String(url);
+				if (u.includes("/v1/pricing")) {
+					pricingCalls1 += 1;
+					return pricingCalls1 === 1
+						? catalogResp1.promise
+						: pricingResp1.promise;
+				}
+				if (u.includes("/v1/models")) {
+					return modelsResp1.promise;
+				}
+				return Promise.resolve({ ok: false, json: async () => [] });
+			}),
+		);
+
+		const { unmount } = render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		// Resolve pricing + models first
+		await act(async () => {
+			pricingResp1.resolve({ ok: true, json: async () => pricingPayload });
+			modelsResp1.resolve({
+				ok: true,
+				json: async () => modelsPayload,
+			});
+		});
+
+		// Then resolve catalog (fetchGatewayModelCatalog)
+		await act(async () => {
+			catalogResp1.resolve({ ok: true, json: async () => pricingPayload });
+		});
+
+		await waitFor(() => {
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			const labels = [...modelSelect.options].map((o) => o.text);
+			expect(
+				labels.some(
+					(l) =>
+						l.includes("Motif 3") &&
+						l.includes("260 credits") &&
+						l.includes("1.04K credits"),
+				),
+			).toBe(true);
+		});
+		expect(screen.queryByText("가격 정보를 불러올 수 없습니다.")).toBeNull();
+		expect(
+			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
+		).toBeDefined();
+
+		unmount();
+
+		// Case 2: Catalog response resolves BEFORE pricing response
+		const catalogResp2 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		const pricingResp2 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		const modelsResp2 = makeDeferred<{
+			ok: boolean;
+			json: () => Promise<unknown>;
+		}>();
+		let pricingCalls2 = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((url: string) => {
+				const u = String(url);
+				if (u.includes("/v1/pricing")) {
+					pricingCalls2 += 1;
+					return pricingCalls2 === 1
+						? catalogResp2.promise
+						: pricingResp2.promise;
+				}
+				if (u.includes("/v1/models")) {
+					return modelsResp2.promise;
+				}
+				return Promise.resolve({ ok: false, json: async () => [] });
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		// Resolve catalog first
+		await act(async () => {
+			catalogResp2.resolve({ ok: true, json: async () => pricingPayload });
+		});
+
+		// Then resolve pricing + models
+		await act(async () => {
+			pricingResp2.resolve({ ok: true, json: async () => pricingPayload });
+			modelsResp2.resolve({
+				ok: true,
+				json: async () => modelsPayload,
+			});
+		});
+
+		await waitFor(() => {
+			const modelSelect = document.getElementById(
+				"model-select",
+			) as HTMLSelectElement;
+			const labels = [...modelSelect.options].map((o) => o.text);
+			expect(
+				labels.some(
+					(l) =>
+						l.includes("Motif 3") &&
+						l.includes("260 credits") &&
+						l.includes("1.04K credits"),
+				),
+			).toBe(true);
+		});
+		expect(screen.queryByText("가격 정보를 불러올 수 없습니다.")).toBeNull();
+		expect(
+			screen.getByText(/입력 260 크레딧 · 출력 1\.04K 크레딧/),
+		).toBeDefined();
 	});
 
 	it("replaces a stale unavailable Naia selection with the first usable priced model", async () => {
@@ -955,6 +1423,9 @@ describe("SettingsTab", () => {
 				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
 			});
 		});
+		expect(
+			projectAgentMocks.stopOpenCodeProjectAgentSessions,
+		).toHaveBeenCalledTimes(1);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");
@@ -983,6 +1454,43 @@ describe("SettingsTab", () => {
 			"nextain",
 			expect.any(String),
 		);
+		expect(authReady).toHaveBeenCalledTimes(1);
+		window.removeEventListener("naia_auth_ready", authReady);
+	});
+
+	it("continues Naia login when OpenCode sessions fail to stop", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\Users\\Public\\naia-adk");
+		mockInvoke.mockResolvedValue([]);
+		projectAgentMocks.stopOpenCodeProjectAgentSessions.mockRejectedValueOnce(
+			new Error("stop failed"),
+		);
+		const authReady = vi.fn();
+		window.addEventListener("naia_auth_ready", authReady);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ credits: 10 }),
+			}),
+		);
+
+		render(<SettingsTab />);
+
+		await vi.waitFor(() => {
+			expect(eventListeners.get("naia_auth_complete")).toBeDefined();
+		});
+
+		await act(async () => {
+			await eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
+			});
+		});
+
+		expect(secureStoreMock.set).toHaveBeenCalledWith("naiaKey", "gw-test-key");
+		expect(
+			JSON.parse(localStorage.getItem("naia-config") || "{}").naiaKey,
+		).toBe("gw-test-key");
 		expect(authReady).toHaveBeenCalledTimes(1);
 		window.removeEventListener("naia_auth_ready", authReady);
 	});
@@ -1020,6 +1528,9 @@ describe("SettingsTab", () => {
 				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
 			});
 		});
+		expect(
+			projectAgentMocks.stopOpenCodeProjectAgentSessions,
+		).toHaveBeenCalledTimes(1);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.provider).toBe("nextain");
@@ -1068,7 +1579,9 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		gotoSettingsTab("voice");
 
-		expect(await screen.findByTestId("voice-status-summary")).toBeInTheDocument();
+		expect(
+			await screen.findByTestId("voice-status-summary"),
+		).toBeInTheDocument();
 		expect(
 			screen.queryByText("STT model download and selection required."),
 		).toBeNull();
@@ -1398,12 +1911,21 @@ describe("SettingsTab", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.llmRoles).toEqual(
 			expect.objectContaining({
-				main: expect.objectContaining({ provider: "codex", model: "gpt-5.6-sol" }),
+				main: expect.objectContaining({
+					provider: "codex",
+					model: "gpt-5.6-sol",
+				}),
 			}),
 		);
 	});
 
-	it.each(["deepseek-v4-flash", "solar-pro4", "solar-mini", "gpt-5.6-luna"])(
+	it.each([
+		"deepseek-v4-flash",
+		"solar-pro4",
+		"solar-mini",
+		"motif-3",
+		"gpt-5.6-luna",
+	])(
 		"keeps the live Naia-account model %s selectable and persisted",
 		async (modelId) => {
 			localStorage.setItem(
@@ -1631,7 +2153,7 @@ describe("SettingsTab", () => {
 		expect(screen.getByText(/입력해주세요|enter.*api/i)).toBeDefined();
 	});
 
-	it("shows the native reload failure instead of a saved badge", async () => {
+	it("keeps a saved config when the Agent is stopped during reload", async () => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		localStorage.setItem(
 			"naia-config",
@@ -1639,7 +2161,10 @@ describe("SettingsTab", () => {
 		);
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "reload_agent_settings") {
-				return Promise.reject(new Error("memory reload rejected"));
+				return Promise.resolve({
+					available: false,
+					memoryStatus: "next_start",
+				});
 			}
 			if (command === "read_naia_ui_config") return Promise.resolve("{}");
 			return Promise.resolve([]);
@@ -1649,10 +2174,14 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 		fireEvent.click(document.querySelector(".settings-save-btn")!);
 
-		expect(await screen.findByText(/memory reload rejected/)).toBeDefined();
-		expect(
-			document.querySelector(".settings-save-btn")?.textContent,
-		).not.toMatch(/Saved/i);
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"write_naia_config",
+				expect.objectContaining({ adkPath: "/home/user/naia-adk" }),
+			),
+		);
+		expect(mockInvoke).toHaveBeenCalledWith("reload_agent_settings");
+		expect(screen.queryByText(/memory reload rejected/)).toBeNull();
 	});
 
 	it("shows a reset failure on the general tab", async () => {
@@ -2846,7 +3375,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 				payload: {
 					phase: "failed",
 					step: "failed",
-					label: "Naia Host TensorRT runtime exited before readiness (exit code 1). See C:/naia-test-home/logs/voxcpm2-stderr.log",
+					label:
+						"Naia Host TensorRT runtime exited before readiness (exit code 1). See C:/naia-test-home/logs/voxcpm2-stderr.log",
 					percent: 0,
 				},
 			});
@@ -2911,6 +3441,201 @@ describe("SettingsTab — memory tab (#298)", () => {
 			});
 		});
 	});
+
+	it("persists Edge-to-local selection while the local engine is already running", async () => {
+		localStorage.setItem("naia-adk-path", "D:\\test-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "test-key",
+				ttsProvider: "edge",
+				ttsEnabled: false,
+				localVoiceEnabled: false,
+				vllmTtsHost: "https://voice.example.test/tts",
+			}),
+		);
+		useCascadeAvatarStore
+			.getState()
+			.setLocalFacadeUrl("https://voice.example.test/facade");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({
+				ok: true,
+				json: async () => ({
+					ok: true,
+					tts: true,
+					avatar: true,
+					tts_enabled: true,
+					avatar_enabled: true,
+				}),
+			})),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(true);
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: "ready",
+					ready: true,
+					canStart: true,
+					summary: "Local runtime is running.",
+					steps: [],
+				});
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+		const selector = screen.getByTestId(
+			"gateway-tts-provider",
+		) as HTMLSelectElement;
+		await vi.waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"),
+		);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		await vi.waitFor(() =>
+			expect(
+				selector.querySelector('option[value="naia-local-voice"]'),
+			).not.toBeDisabled(),
+		);
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+		await waitFor(() => {
+			expect(selector.value).toBe("naia-local-voice");
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved).toMatchObject({
+				ttsProvider: "naia-local-voice",
+				ttsEnabled: true,
+				localVoiceEnabled: true,
+				vllmTtsHost: "https://voice.example.test/tts",
+			});
+		});
+		expect(mockInvoke).toHaveBeenCalledWith(
+			"write_naia_ui_config",
+			expect.objectContaining({
+				json: expect.stringMatching(
+					/"ttsEnabled": true[\s\S]*"ttsProvider": "naia-local-voice"/,
+				),
+			}),
+		);
+		const manifestWrite = mockInvoke.mock.calls
+			.filter(([command]) => command === "write_slots_manifest")
+			.at(-1);
+		const manifest = JSON.parse(manifestWrite?.[1]?.json as string);
+		expect(manifest.slots.tts.provider).toBe("naia-local-voice");
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"start_voxcpm2",
+			expect.anything(),
+		);
+	});
+
+	it.each(["write_naia_config", "write_slots_manifest"] as const)(
+		"restores the prior voice selection if %s fails while the engine is running",
+		async (failedCommand) => {
+			localStorage.setItem("naia-adk-path", "D:\\test-adk");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "gemini-3.5-flash",
+					naiaKey: "test-key",
+					ttsProvider: "edge",
+					ttsEnabled: false,
+					localVoiceEnabled: false,
+					vllmTtsHost: "https://voice.example.test/tts",
+				}),
+			);
+			useCascadeAvatarStore
+				.getState()
+				.setLocalFacadeUrl("https://voice.example.test/facade");
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => ({
+					ok: true,
+					json: async () => ({
+						ok: true,
+						tts: true,
+						avatar: true,
+						tts_enabled: true,
+						avatar_enabled: true,
+					}),
+				})),
+			);
+			let failNextWrite = false;
+			let failedOnce = false;
+			let matchingWriteCount = 0;
+			mockInvoke.mockImplementation((command: string) => {
+				if (command === "detect_gpu_vram") return Promise.resolve(8);
+				if (command === "voxcpm2_status") return Promise.resolve(true);
+				if (command === "voxcpm2_installation_status")
+					return Promise.resolve({
+						phase: "ready",
+						ready: true,
+						canStart: true,
+						summary: "Local runtime is running.",
+						steps: [],
+					});
+				if (failNextWrite && command === failedCommand) {
+					matchingWriteCount += 1;
+					// writeNaiaConfig also attempts a best-effort manifest sync; fail
+					// the explicit SettingsTab manifest write after that attempt.
+					const failureAttempt =
+						failedCommand === "write_slots_manifest" ? 2 : 1;
+					if (matchingWriteCount === failureAttempt) {
+						failedOnce = true;
+						return Promise.reject(new Error("config persistence failed"));
+					}
+				}
+				return Promise.resolve([]);
+			});
+
+			render(<SettingsTab />);
+			gotoSettingsTab("voice");
+			const selector = screen.getByTestId(
+				"gateway-tts-provider",
+			) as HTMLSelectElement;
+			await vi.waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("voxcpm2_status"),
+			);
+			await vi.waitFor(() =>
+				expect(
+					selector.querySelector('option[value="naia-local-voice"]'),
+				).not.toBeDisabled(),
+			);
+			failNextWrite = true;
+			fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+			await waitFor(() => {
+				const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+				expect(failedOnce).toBe(true);
+				expect(selector.value).toBe("edge");
+				expect(saved).toMatchObject({
+					ttsProvider: "edge",
+					ttsEnabled: false,
+					localVoiceEnabled: false,
+					vllmTtsHost: "https://voice.example.test/tts",
+				});
+				expect(
+					(document.getElementById("tts-toggle") as HTMLInputElement).checked,
+				).toBe(false);
+				expect(screen.getByTestId("voxcpm2-install-error")).toHaveAttribute(
+					"role",
+					"alert",
+				);
+				expect(screen.getByTestId("voxcpm2-install-error")).toHaveTextContent(
+					"config persistence failed",
+				);
+			});
+			expect(mockInvoke).not.toHaveBeenCalledWith(
+				"start_voxcpm2",
+				expect.anything(),
+			);
+		},
+	);
 
 	it("does not auto-restore a local provider when voice is disabled", async () => {
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
@@ -3302,7 +4027,10 @@ describe("SettingsTab — memory tab (#298)", () => {
 			model: "gemini-3.1-flash-lite",
 		});
 		expect(saved.memoryLlmProvider).toBe("nextain");
-		expect(saved.llmRoles?.memory).toMatchObject({ provider: "nextain", model: "gpt-5.4-nano" }); // #692
+		expect(saved.llmRoles?.memory).toMatchObject({
+			provider: "nextain",
+			model: "gpt-5.4-nano",
+		}); // #692
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
 		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
 		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
@@ -4012,5 +4740,588 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 			expect(saved.enableThinking).toBe(true);
 		});
 	});
-});
 
+	it("immediately persists the selected screen locale to the agent config", async () => {
+		await setLocale("ko");
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key",
+				locale: "ko",
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		fireEvent.click(screen.getByRole("button", { name: "언어" }));
+		fireEvent.click(screen.getByRole("button", { name: "English" }));
+		await waitFor(() =>
+			expect(document.getElementById("locale-select")).toHaveAttribute(
+				"data-value",
+				"en",
+			),
+		);
+
+		await waitFor(() => {
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}").locale,
+			).toBe("en");
+			const configWrite = mockInvoke.mock.calls.find(
+				([command]) => command === "write_naia_config",
+			);
+			expect(configWrite).toBeTruthy();
+			const payload = JSON.parse((configWrite?.[1] as { json: string }).json);
+			expect(payload.locale).toBe("en");
+			expect(payload.NAIA_LOCALE).toBe("en");
+			const uiConfigWrite = mockInvoke.mock.calls.find(
+				([command]) => command === "write_naia_ui_config",
+			);
+			expect(uiConfigWrite).toBeTruthy();
+			expect(
+				JSON.parse((uiConfigWrite?.[1] as { json: string }).json),
+			).not.toHaveProperty("locale");
+		});
+	});
+
+	it("shows Ollama runtime state, starts the default endpoint, and stops on provider switch", async () => {
+		await setLocale("en");
+		eventListeners.clear();
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				ollamaHost: "http://localhost:11434",
+			}),
+		);
+		const notInstalled = {
+			state: "not_installed",
+			serverState: "not_installed",
+			ownership: "none",
+			installedVersion: null,
+			installedVersions: [],
+			modelCount: null,
+			reservation: {
+				kind: null,
+				status: "not_requested",
+				bytes: null,
+				reasonCode: null,
+			},
+			operationId: null,
+			phase: null,
+			error: null,
+		};
+		let runtimeStatus = notInstalled;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "ollama_runtime_status")
+				return Promise.resolve(runtimeStatus);
+			if (command === "ollama_runtime_start") {
+				runtimeStatus = { ...notInstalled, serverState: "starting" };
+				return Promise.resolve("op-1");
+			}
+			return Promise.resolve([]);
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({ models: [] }),
+			}),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const providerSelect = document.getElementById(
+			"provider-select",
+		) as HTMLSelectElement;
+		fireEvent.change(providerSelect, { target: { value: "ollama" } });
+		await waitFor(() => {
+			expect(screen.getByTestId("ollama-runtime-status").textContent).toContain(
+				"Not installed",
+			);
+		});
+		fireEvent.click(screen.getByTestId("ollama-runtime-start"));
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"ollama_runtime_start",
+				expect.objectContaining({
+					host: "http://localhost:11434",
+					deviceId: null,
+				}),
+			),
+		);
+		await expect(screen.getByTestId("ollama-runtime-start")).toBeDisabled();
+		await waitFor(() => {
+			expect(screen.getByTestId("ollama-runtime-status").textContent).toContain(
+				"Starting",
+			);
+		});
+		fireEvent.change(providerSelect, { target: { value: "gemini" } });
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("ollama_runtime_stop"),
+		);
+	});
+
+	describe("Qwen model pull settings (#759)", () => {
+		const tag = "huihui_ai/qwen3.5-abliterated:2B";
+		const policy = (decided: boolean) => ({
+			candidates: [
+				{
+					id: "qwen35-abliterated-2b",
+					displayName: "Qwen 3.5 Abliterated 2B",
+					tag,
+					publishedSize: "1.9 GB",
+					publishedSizeBytes: decided ? 1_900_000_000 : null,
+					minimumFreeBytes: decided ? 3_800_000_000 : null,
+					quantization: "Q4_K_M",
+					sourceUrl: `https://ollama.com/${tag}`,
+					license: "Apache License 2.0",
+					licenseUrl: "https://www.apache.org/licenses/LICENSE-2.0",
+					publishedContextTokens: 262144,
+					parameterSize: "2B",
+				},
+			],
+			defaultModelTag: decided ? tag : null,
+			contextDefaultTokens: decided ? 8192 : null,
+			pullStartPolicy: decided ? "user_confirmed_exact_tag" : null,
+			modelStoreOverride: decided ? "/managed/ollama/models" : null,
+			automaticSelectionPolicy: decided ? "manual_only_until_measured" : null,
+			diskSpaceMultiplier: decided ? 2 : null,
+			modelStoreAvailableBytes: decided ? 4_000_000_000 : null,
+			showLicense: decided ? true : null,
+			measuredPeakVramBytes: null,
+			selectionHeadroomBytes: null,
+		});
+		const readyRuntime = {
+			state: "ready",
+			serverState: "ready_managed",
+			ownership: "managed_child",
+			installedVersion: "0.40.3",
+			installedVersions: ["0.40.3"],
+			modelCount: 1,
+			reservation: {
+				kind: "local_llm",
+				status: "running",
+				bytes: null,
+				reasonCode: null,
+			},
+			operationId: null,
+			phase: null,
+			error: null,
+		};
+		const absentSnapshot = {
+			operationId: null,
+			tag,
+			state: "absent",
+			stage: "status",
+			digest: null,
+			error: null,
+		};
+		const baseConfig = (model = "llama3.2:8b") => ({
+			provider: "ollama",
+			model,
+			llmRoles: { main: { provider: "ollama", model } },
+			ollamaHost: "http://localhost:11434",
+			locale: "en",
+		});
+		const chooseOllamaProvider = () =>
+			fireEvent.change(document.getElementById("provider-select")!, {
+				target: { value: "ollama" },
+			});
+		const mockCatalogAndRuntime = (
+			pullPolicy: ReturnType<typeof policy>,
+			pullStartSnapshot = {
+				operationId: "pull-1",
+				tag,
+				state: "preflight",
+				stage: "preflight",
+				digest: null as string | null,
+				error: null,
+			},
+		) => {
+			mockInvoke.mockReset();
+			mockInvoke.mockImplementation((command: string) => {
+				if (command === "ollama_runtime_status")
+					return Promise.resolve(readyRuntime);
+				if (command === "ollama_model_catalog_list") {
+					return Promise.resolve(pullPolicy);
+				}
+				if (command === "ollama_model_pull_status")
+					return Promise.resolve(absentSnapshot);
+				if (command === "ollama_model_pull_start")
+					return Promise.resolve({
+						operationId: "pull-1",
+						snapshot: pullStartSnapshot,
+					});
+				if (command === "ollama_model_pull_cancel")
+					return Promise.resolve({
+						...absentSnapshot,
+						operationId: "pull-1",
+						state: "paused",
+						stage: "cancelled",
+					});
+				if (command === "ollama_model_pull_retry")
+					return Promise.resolve({
+						operationId: "pull-2",
+						snapshot: {
+							...pullStartSnapshot,
+							operationId: "pull-2",
+							state: "failed",
+							stage: "pull",
+							error: {
+								code: "pull_http_failed",
+								stage: "pull",
+								retryable: true,
+							},
+						},
+					});
+				return Promise.resolve([]);
+			});
+		};
+		const stubModels = (initialModels: Array<{ name: string }>) => {
+			let models = initialModels;
+			const fetchMock = vi.fn(async () => ({
+				ok: true,
+				json: async () => ({ models }),
+			}));
+			vi.stubGlobal("fetch", fetchMock);
+			return {
+				fetchMock,
+				setModels: (next: Array<{ name: string }>) => {
+					models = next;
+				},
+			};
+		};
+		it("confirms one exact tag, filters events, then refreshes and saves that model", async () => {
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			mockCatalogAndRuntime(policy(true));
+			const models = stubModels([{ name: "llama3.2:8b" }]);
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+			await screen.findByTestId("ollama-pull-model-select");
+			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
+				target: { value: tag },
+			});
+			await screen.findByTestId("ollama-pull-disk-requirement");
+			await waitFor(
+				() =>
+					expect(
+						screen.getByTestId("ollama-pull-request-confirmation"),
+					).toBeEnabled(),
+				{ timeout: 5_000 },
+			);
+			fireEvent.click(screen.getByTestId("ollama-pull-request-confirmation"));
+			expect(screen.getByText(`Download exactly ${tag}?`)).toBeTruthy();
+			fireEvent.click(screen.getByTestId("ollama-pull-confirm"));
+			await waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("ollama_model_pull_start", {
+					tag,
+					confirmedTag: tag,
+				}),
+			);
+			await waitFor(() =>
+				expect(eventListeners.has("ollama_model_pull_progress")).toBe(true),
+			);
+
+			const progressListener = eventListeners.get("ollama_model_pull_progress");
+			await act(async () => {
+				await progressListener?.({
+					payload: {
+						operationId: "pull-1",
+						tag,
+						phase: "downloading",
+						digest: null,
+						completed: null,
+						total: null,
+						layerPercent: 32,
+					},
+				});
+			});
+			await waitFor(() => {
+				expect(
+					screen.getByTestId("ollama-pull-progress").textContent,
+				).toContain("Current layer: 32%");
+			});
+			await act(async () => {
+				await progressListener?.({
+					payload: {
+						operationId: "stale-operation",
+						tag,
+						phase: "downloading",
+						digest: null,
+						completed: null,
+						total: null,
+						layerPercent: 99,
+					},
+				});
+			});
+			expect(
+				screen.getByTestId("ollama-pull-progress").textContent,
+			).not.toContain("99%");
+
+			models.setModels([{ name: "llama3.2:8b" }, { name: tag }]);
+			const stateListener = eventListeners.get(
+				"ollama_model_pull_state_changed",
+			);
+			await act(async () => {
+				await stateListener?.({
+					payload: {
+						operationId: "pull-1",
+						tag,
+						state: "ready",
+						stage: "ready",
+						digest: "sha256:fixture",
+						error: null,
+					},
+				});
+			});
+			await waitFor(() => {
+				expect(
+					(document.getElementById("model-select") as HTMLInputElement).value,
+				).toBe(tag);
+				expect(
+					JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
+				).toBe(tag);
+				expect(
+					JSON.parse(localStorage.getItem("naia-config") ?? "{}").llmRoles.main,
+				).toMatchObject({ provider: "ollama", model: tag });
+			});
+			expect(models.fetchMock).toHaveBeenCalled();
+		});
+
+		it("does not let an older ready event overwrite a model changed during download", async () => {
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			mockCatalogAndRuntime(policy(true));
+			const models = stubModels([{ name: "llama3.2:8b" }, { name: tag }]);
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+			await screen.findByTestId("ollama-pull-model-select");
+			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
+				target: { value: tag },
+			});
+			await screen.findByTestId("ollama-pull-disk-requirement");
+			await waitFor(
+				() =>
+					expect(
+						screen.getByTestId("ollama-pull-request-confirmation"),
+					).toBeEnabled(),
+				{ timeout: 5_000 },
+			);
+			fireEvent.click(screen.getByTestId("ollama-pull-request-confirmation"));
+			fireEvent.click(screen.getByTestId("ollama-pull-confirm"));
+			await waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("ollama_model_pull_start", {
+					tag,
+					confirmedTag: tag,
+				}),
+			);
+			await screen.findByTestId("ollama-pull-state");
+			fireEvent.change(document.getElementById("model-select")!, {
+				target: { value: "custom-after-start" },
+			});
+			const stateListener = eventListeners.get(
+				"ollama_model_pull_state_changed",
+			);
+			await act(async () => {
+				await stateListener?.({
+					payload: {
+						operationId: "pull-1",
+						tag,
+						state: "ready",
+						stage: "ready",
+						digest: "sha256:fixture",
+						error: null,
+					},
+				});
+			});
+			await waitFor(() => {
+				expect(
+					(document.getElementById("model-select") as HTMLInputElement).value,
+				).toBe("custom-after-start");
+				expect(
+					JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
+				).toBe("llama3.2:8b");
+			});
+			expect(models.fetchMock).toHaveBeenCalled();
+			await act(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 0));
+			});
+		});
+
+		it("does not save a ready pull after Settings unmounts during the model refresh", async () => {
+			cleanup();
+			eventListeners.clear();
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			mockCatalogAndRuntime(policy(true), {
+				operationId: "pull-1",
+				tag,
+				state: "ready",
+				stage: "ready",
+				digest: "sha256:fixture",
+				error: null,
+			});
+			type FakeResponse = {
+				ok: boolean;
+				json: () => Promise<{ models: Array<{ name: string }> }>;
+			};
+			let deferTagFetch = false;
+			const pendingTagFetches: Array<(response: FakeResponse) => void> = [];
+			const fetchMock = vi.fn((input: RequestInfo | URL) => {
+				if (String(input).includes("/api/tags") && deferTagFetch) {
+					return new Promise<FakeResponse>((resolve) =>
+						pendingTagFetches.push(resolve),
+					);
+				}
+				return Promise.resolve({
+					ok: true,
+					json: async () => ({ models: [{ name: "llama3.2:8b" }] }),
+				});
+			});
+			vi.stubGlobal("fetch", fetchMock);
+
+			const view = render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+			await screen.findByTestId("ollama-pull-model-select");
+			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
+				target: { value: tag },
+			});
+			await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+			await waitFor(() =>
+				expect(
+					screen.getByTestId("ollama-pull-request-confirmation"),
+				).toBeEnabled(),
+			);
+			fireEvent.click(screen.getByTestId("ollama-pull-request-confirmation"));
+			deferTagFetch = true;
+			fireEvent.click(screen.getByTestId("ollama-pull-confirm"));
+			await waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("ollama_model_pull_start", {
+					tag,
+					confirmedTag: tag,
+				}),
+			);
+			await waitFor(() => expect(pendingTagFetches.length).toBeGreaterThan(0));
+			const configWritesBeforeResolve = mockInvoke.mock.calls.filter(
+				([command]) => command === "write_naia_config",
+			).length;
+			const modelBeforeResolve = JSON.parse(
+				localStorage.getItem("naia-config") ?? "{}",
+			).model;
+			view.unmount();
+			expect(modelBeforeResolve).toBe("llama3.2:8b");
+
+			await act(async () => {
+				for (const resolve of pendingTagFetches) {
+					resolve({
+						ok: true,
+						json: async () => ({ models: [{ name: tag }] }),
+					});
+				}
+				await Promise.resolve();
+			});
+
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
+			).toBe("llama3.2:8b");
+			expect(
+				mockInvoke.mock.calls.filter(
+					([command]) => command === "write_naia_config",
+				),
+			).toHaveLength(configWritesBeforeResolve);
+		});
+
+		it("shows undecided policy and sends no start or retry IPC", async () => {
+			cleanup();
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			mockCatalogAndRuntime(policy(false));
+			stubModels([{ name: "llama3.2:8b" }]);
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+
+			await screen.findByTestId("ollama-pull-policy-pending");
+			fireEvent.change(screen.getByTestId("ollama-pull-model-select"), {
+				target: { value: tag },
+			});
+			await screen.findByTestId("ollama-pull-default-pending");
+			expect(screen.getByTestId("ollama-pull-license-pending")).toBeTruthy();
+			expect(screen.getByTestId("ollama-pull-vram-pending")).toBeTruthy();
+			expect(
+				screen.getByTestId("ollama-pull-request-confirmation"),
+			).toBeDisabled();
+			expect(
+				mockInvoke.mock.calls.filter(([command]) =>
+					["ollama_model_pull_start", "ollama_model_pull_retry"].includes(
+						command as string,
+					),
+				),
+			).toHaveLength(0);
+		});
+
+		it("uses the Rust default candidate without changing the Ollama default or starting a pull", async () => {
+			cleanup();
+			localStorage.clear();
+			eventListeners.clear();
+			await setLocale("en");
+			localStorage.setItem("naia-config", JSON.stringify(baseConfig()));
+			const fourBTag = "huihui_ai/qwen3.5-abliterated:4B";
+			const decided = policy(true);
+			const catalog = {
+				...decided,
+				candidates: [
+					{
+						...decided.candidates[0]!,
+						id: "qwen35-abliterated-4b",
+						displayName: "Qwen 3.5 Abliterated 4B",
+						tag: fourBTag,
+						publishedSize: "3.3 GB",
+						publishedSizeBytes: 3_300_000_000,
+						minimumFreeBytes: 6_600_000_000,
+						parameterSize: "4B",
+					},
+				],
+				defaultModelTag: fourBTag,
+			};
+			mockCatalogAndRuntime(catalog);
+			stubModels([{ name: "llama3.2:8b" }]);
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			chooseOllamaProvider();
+
+			const selector = await screen.findByTestId("ollama-pull-model-select");
+			await waitFor(() => expect(selector).toHaveValue(fourBTag));
+			expect(screen.getByTestId("ollama-pull-exact-tag")).toHaveTextContent(
+				fourBTag,
+			);
+			expect(
+				screen.getByTestId("ollama-pull-candidate-details"),
+			).toHaveTextContent("Apache License 2.0");
+			expect(
+				screen.getByTestId("ollama-pull-disk-requirement"),
+			).toHaveTextContent("6,600,000,000");
+			expect(
+				mockInvoke.mock.calls.some(
+					([command]) => command === "ollama_model_pull_start",
+				),
+			).toBe(false);
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
+			).toBe("llama3.2:8b");
+		});
+	});
+});

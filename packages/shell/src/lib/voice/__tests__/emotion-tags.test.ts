@@ -39,4 +39,25 @@ describe("emotionTagsToChatText", () => {
 	it("returns empty/falsy input as-is", () => {
 		expect(emotionTagsToChatText("")).toBe("");
 	});
+
+	it("preserves newlines (chat-stream-join: stripping must not join lines)", () => {
+		expect(emotionTagsToChatText("있어요\n다음")).toBe("있어요\n다음");
+		// Punctuation tidy-up collapses horizontal space only, never a newline.
+		expect(emotionTagsToChatText("좋아요\n.")).toBe("좋아요\n.");
+	});
+
+	it("leaves no leading space for start / line-start / consecutive stripped tags", () => {
+		// Text start: tag + following horizontal space vanish (1-B).
+		expect(emotionTagsToChatText("[breath] 안녕하세요.")).toBe("안녕하세요.");
+		// Line start: same rule after a newline.
+		expect(emotionTagsToChatText("있어요\n[breath] 다음")).toBe(
+			"있어요\n다음",
+		);
+		// Consecutive tags: emoji kept, stripped tag leaves no gap.
+		expect(emotionTagsToChatText("[sigh][breath] 안녕")).toBe("😮‍💨 안녕");
+		// Mid-sentence stripped tag with no surrounding spaces keeps words apart.
+		expect(emotionTagsToChatText("있어요[breath]음악은")).toBe(
+			"있어요 음악은",
+		);
+	});
 });

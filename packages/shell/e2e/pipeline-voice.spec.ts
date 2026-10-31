@@ -128,8 +128,18 @@ const PIPELINE_VOICE_MOCK = `
 	window.__NAIA_E2E__.emitSttResult = emitSttResult;
 	window.__NAIA_E2E__.emitSttStateChange = emitSttStateChange;
 
+	// ADK-native credential store (secure_store_* Rust commands, 09bbe62b).
+	// The first-ADK migration copies the seeded apiKey/naiaKey here; the chat
+	// and TTS paths read credentials only from this store.
+	var secrets = new Map();
+
 	// ---- invoke handler ----
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
+		if (cmd === "secure_store_get") return secrets.get(args.expectedStorePath + ":" + args.name) || null;
+		if (cmd === "secure_store_set") { secrets.set(args.expectedStorePath + ":" + args.name, args.value); return null; }
+		if (cmd === "secure_store_delete") { secrets.delete(args.expectedStorePath + ":" + args.name); return null; }
+		// Legacy device store is empty: Store.entries() resolves to an array.
+		if (cmd === "plugin:store|entries") return [];
 		// Event system
 		if (cmd === "plugin:event|listen") {
 			if (!eventListeners.has(args.event)) eventListeners.set(args.event, []);
@@ -359,9 +369,10 @@ test.describe("Pipeline Voice E2E", () => {
 				localStorage.setItem("naia-config", configJson);
 			},
 			JSON.stringify({
-				provider: "gemini",
-				model: "gemini-2.5-flash", // LLM model, not omni
-				apiKey: API_KEY,
+				// #602 removed third-party cloud LLM providers; the shipped default
+				// main slot is nextain (NAIA_SLOT_DEFAULTS), keyed by naiaKey.
+				provider: "nextain",
+				model: "deepseek-v4-flash", // LLM model, not omni
 				enableTools: false,
 				sttProvider: "vosk",
 				sttModel: "vosk-model-small-ko-0.22",
@@ -585,9 +596,8 @@ test.describe("Whisper Engine E2E", () => {
 				localStorage.setItem("naia-config", configJson);
 			},
 			JSON.stringify({
-				provider: "gemini",
-				model: "gemini-2.5-flash",
-				apiKey: API_KEY,
+				provider: "nextain",
+				model: "deepseek-v4-flash",
 				enableTools: false,
 				sttProvider: "whisper",
 				sttModel: "whisper-medium",

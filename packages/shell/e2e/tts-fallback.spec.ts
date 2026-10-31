@@ -41,6 +41,9 @@ const CHAT_TTS_MOCK = `
 	window.Audio = function(src){ var a={src:src||"",paused:true}; a.play=function(){ if(src&&src.startsWith("data:audio")) window.__TTS_E2E__.audioPlayed++; setTimeout(function(){ if(a.onended) a.onended(); },10); return Promise.resolve(); }; a.pause=function(){}; Object.defineProperty(a,"currentTime",{get:function(){return 0;},set:function(){}}); return a; };
 
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args){
+		// FR-BGM.16 (2ebc781d): edge TTS asks Rust for the sidecar port first
+		// (synthesize.ts edgeTtsSidecarUrl). Each test routes /edge-tts itself.
+		if (cmd === "ensure_bgm_server") return { ready: true, port: 18791 };
 		if (cmd === "plugin:event|listen"){ if(!listeners.has(args.event)) listeners.set(args.event, []); listeners.get(args.event).push(args.handler); return args.handler; }
 		if (cmd === "plugin:event|emit"){ emit(args.event, args.payload); return null; }
 		if (cmd === "plugin:event|unlisten") return;
@@ -160,9 +163,18 @@ test.describe("TTS provider path wiring (real module, no mock)", () => {
 		expect(r.error).toContain("naiaKey");
 	});
 
-	test("google REST path reaches the API (no CORS/wiring break)", async ({
+	// #603(0f7b6cc4): 타사 클라우드 TTS(google·openai·elevenlabs)는 제거됐다. 옛 시험은
+	// 실제 Google REST 까지 나가 4xx 를 받는지 봤다. 이제 같은 배선 자리에서 지켜야 할 것은
+	// 옛 설정의 google 이 명확한 오류로 거절되고 Google 로는 한 번도 나가지 않는 것이다
+	// (synthesize.ts:674, 단위 시험 synthesize.test.ts:189 와 같은 계약을 실제 모듈로 확인).
+	test("retired google provider is rejected without reaching Google", async ({
 		page,
 	}) => {
+		let googleRequests = 0;
+		await page.route("**/texttospeech.googleapis.com/**", (route) => {
+			googleRequests++;
+			return route.abort();
+		});
 		await page.addInitScript(CHAT_TTS_MOCK);
 		await page.goto("/");
 		const r = await page.evaluate(async () => {
@@ -180,6 +192,7 @@ test.describe("TTS provider path wiring (real module, no mock)", () => {
 			}
 		});
 		expect(r.ok).toBe(false);
-		expect(r.error).toMatch(/Google TTS 실패|4\d\d/);
+		expect(r.error).toMatch(/지원하지 않는 TTS provider: google/);
+		expect(googleRequests).toBe(0);
 	});
 });

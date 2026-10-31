@@ -9,7 +9,10 @@ import type { LiveProviderId, VoiceSession } from "./types";
 import { createVllmOmniSession } from "./vllm-omni";
 
 export { SPEECH_RMS_THRESHOLD, rmsFromBase64Pcm } from "./echo-gate";
-export { resolveLiveProvider } from "./resolve-live-provider";
+export {
+	liveVoiceRequiresNaiaKey,
+	resolveLiveProvider,
+} from "./resolve-live-provider";
 
 export {
 	attachAppContextBridge,

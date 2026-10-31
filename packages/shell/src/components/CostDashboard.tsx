@@ -1,4 +1,3 @@
-import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -187,12 +186,8 @@ function LabBalanceSection() {
 			fetchBalance();
 		};
 		window.addEventListener("naia_auth_ready", handleAuthReady);
-		const unlisten = listen("naia_auth_complete", () => {
-			handleAuthReady();
-		});
 		return () => {
 			window.removeEventListener("naia_auth_ready", handleAuthReady);
-			unlisten.then((fn) => fn());
 		};
 	}, [fetchBalance]);
 
@@ -273,12 +268,8 @@ export function CostDashboard({
 			setShowLabBalance(true);
 		};
 		window.addEventListener("naia_auth_ready", handleAuthReady);
-		const unlisten = listen("naia_auth_complete", () => {
-			handleAuthReady();
-		});
 		return () => {
 			window.removeEventListener("naia_auth_ready", handleAuthReady);
-			unlisten.then((fn) => fn());
 		};
 	}, []);
 

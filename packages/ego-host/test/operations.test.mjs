@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { after, test } from "node:test";
 import { CODES } from "../src/errors.mjs";
 import { MAX_SNAPSHOT_DEPTH, renderSnapshot, stableLocator } from "../src/supervisor/ax-snapshot.mjs";
+import { createOperations } from "../src/supervisor/operations.mjs";
 import { cleanupAll } from "./helpers/live-browser.mjs";
 import { cdpChannel, connectClient, startLiveSupervisor, stopAllLive } from "./helpers/live-supervisor.mjs";
 
@@ -175,4 +176,35 @@ test("같은 작업의 두 세션이 서로의 objectId·requestId 를 쓰지 �
   assert.match(absent.error.message, /이 작업이 연 것이 아니다/);
 
   await live.stop();
+});
+
+// 늦게 온 종결 요청은 먼저 시작된 정리를 기다리되(EGO_TARGET_BUSY 경합, CI 40174641008),
+// 백엔드가 매달리면 상한 뒤에 돌아온다 — 늦은 요청과 연결 해제가 영영 묶이지 않게.
+test("늦게 온 종결 요청: 정리가 끝나면 그 결과를, 정리가 매달리면 상한 뒤 null 을 돌려준다", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const quick = createOperations({ hostRequest: () => gate.then(() => ({})), lateFinishWaitMs: 2_000 });
+  quick.begin({ id: "op-q" });
+  assert.equal(quick.hook("Page.navigate", { url: "about:blank" }, { operationId: "op-q", sessionId: "s-q" }).ok, true);
+  const first = quick.cancel("op-q");
+  const lateWaiting = quick.complete("op-q", { status: "failed", reason: "timeout" });
+  setTimeout(() => release(), 50);
+  const late = await lateWaiting;
+  assert.equal(late.changed, false);
+  assert.equal(late.status, "cancelled");
+  assert.ok(late.cleanup?.stopLoading.includes("s-q"), `늦은 요청이 정리 결과를 못 받았다: ${JSON.stringify(late)}`);
+  assert.deepEqual((await first).cleanup, late.cleanup);
+
+  const hung = createOperations({ hostRequest: () => new Promise(() => {}), lateFinishWaitMs: 100 });
+  hung.begin({ id: "op-h" });
+  assert.equal(hung.hook("Page.navigate", { url: "about:blank" }, { operationId: "op-h", sessionId: "s-h" }).ok, true);
+  void hung.cancel("op-h");
+  const started = Date.now();
+  const bounded = await hung.complete("op-h", { status: "failed", reason: "timeout" });
+  const waited = Date.now() - started;
+  assert.equal(bounded.changed, false);
+  assert.equal(bounded.cleanup, null, "매달린 정리의 결과를 지어냈다");
+  assert.ok(waited >= 90 && waited < 2_000, `상한대로 기다리지 않았다: ${waited}ms`);
 });

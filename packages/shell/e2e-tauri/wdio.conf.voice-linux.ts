@@ -45,7 +45,10 @@ if (!E2E_NAIA_KEY?.startsWith("gw-"))
 if (process.env.NAIA_E2E_VOICE_6G !== "1") {
 	throw new Error("Set NAIA_E2E_VOICE_6G=1 to run the 6GB voice acceptance");
 }
-configureCodexE2eEnvironment();
+// #721 moved the voice seed (VRM copy, avatar on) behind the "voice-6g"
+// profile but only updated wdio.conf.voice-6g.ts; without it this Linux twin
+// ran with VITE_NAIA_E2E_NO_AVATAR=1 and no VRM (#769, 2026-10-23).
+configureCodexE2eEnvironment("voice-6g");
 
 export const config = {
 	transformRequest,

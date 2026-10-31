@@ -251,8 +251,18 @@ export function toBgmObservedContext(
 	queue: readonly BgmQueuedTrack[] = [],
 ) {
 	if (!snapshot)
-		return { playback: null, currentTrack: null, announceTrack: false };
+		return {
+			playback: null,
+			currentTrack: null,
+			pendingTrack: null,
+			announceTrack: false,
+		};
 	const canAnnounce = snapshot.status === "playing";
+	const isPending =
+		!canAnnounce &&
+		(snapshot.status === "requested" ||
+			snapshot.status === "loading" ||
+			snapshot.status === "timeout");
 	void now;
 	return {
 		playback: {
@@ -271,6 +281,13 @@ export function toBgmObservedContext(
 			...(snapshot.reason ? { reason: snapshot.reason } : {}),
 		},
 		currentTrack: canAnnounce ? snapshot.selected : null,
+		pendingTrack: isPending
+			? {
+					...snapshot.selected,
+					confirmed: false as const,
+					status: snapshot.status,
+				}
+			: null,
 		announceTrack: canAnnounce,
 		queue: queue.map((item) => ({
 			queueId: item.queueId,

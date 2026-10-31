@@ -71,7 +71,7 @@ function runGitCommand(directory, args) {
  * 워크트리 목록. 모음 디렉터리는 저장소 배치마다 다르므로 여러 후보를 본다.
  */
 /** 임시 디렉터리로 보이는 경로. 이런 자리의 워크트리는 짝이 아니다. */
-const TEMPORARY_PATH = /^(?:\/tmp\/|\/var\/tmp\/|\/private\/var\/folders\/)|[\\/]Temp[\\/]/i;
+const TEMPORARY_PATH = /(?:^|[\\/])(?:tmp|temp)(?:[\\/]|$)|^\/private\/var\/folders\//i;
 
 export function resolvePairedAgent(options = {}) {
 	// Callers that already scrubbed their launch environment must pass it here.

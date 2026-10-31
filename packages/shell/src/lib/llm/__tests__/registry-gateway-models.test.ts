@@ -1,9 +1,8 @@
 /**
  * Test: Naia-account (nextain) picker lineup (#670).
  *
- * The Naia-account / nextain provider picker keeps only the four cheap chat
- * models. Codex ChatGPT models stay on the codex provider. This trim does not
- * change gateway 403 behavior.
+ * The Naia-account / nextain provider picker exposes the configured hosted
+ * chat lineup. Codex ChatGPT models stay on the codex provider.
  *
  * Run:
  *   pnpm exec vitest run src/lib/llm/__tests__/registry-gateway-models.test.ts
@@ -14,11 +13,12 @@ const NEXTAIN_ACCOUNT_PICKER_IDS = [
 	"deepseek-v4-flash",
 	"solar-pro4",
 	"solar-mini",
+	"motif-3",
 	"gpt-5.6-luna",
 ] as const;
 
 describe("LLM registry — Naia-account picker (#670)", () => {
-	it("Naia (gateway) provider exposes only the four cheap chat models in order", async () => {
+	it("Naia (gateway) provider exposes the hosted chat models in order", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
 		expect(naia).toBeTruthy();
@@ -28,6 +28,7 @@ describe("LLM registry — Naia-account picker (#670)", () => {
 			"DeepSeek V4 Flash",
 			"Solar Pro 4",
 			"Solar Mini",
+			"Motif 3",
 			"Naia Luna",
 		]);
 	});
