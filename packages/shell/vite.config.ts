@@ -1,4 +1,5 @@
 import { cpSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
@@ -140,6 +141,10 @@ const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 
 export default defineConfig(async ({ mode, command }) => {
 	const isWeb = mode === "web";
+	let revision = "unknown";
+	try {
+		revision = execFileSync("git", ["rev-parse", "--short=8", "HEAD"], { cwd: __dirname, encoding: "utf8" }).trim();
+	} catch { /* source archives may not include git metadata */ }
 	if (isWeb && !process.env.VITE_NAIA_WEB_LLM) {
 		process.env.VITE_NAIA_WEB_LLM = "webllm";
 	}
@@ -160,6 +165,7 @@ export default defineConfig(async ({ mode, command }) => {
 			manifest: true,
 		},
 		define: {
+			__WEB_VERSION__: JSON.stringify(`0.2.5-dev (${revision})`),
 			__BUILD_ID__: JSON.stringify(
 				new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
 			),

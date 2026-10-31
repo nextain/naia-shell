@@ -19,7 +19,7 @@ describe("router", () => {
 
 	it("returns stub values for plugin stubs and initial config for read_naia_config", async () => {
 		const appVersion = await routeCommand("plugin:app|version");
-		expect(appVersion).toBe("0.1.3");
+		expect(appVersion).toMatch(/^0\.2\.5-dev \((?:[\da-f]+|unknown)\)$/);
 
 		const naiaConfig = await routeCommand("read_naia_config", {
 			adkPath: "opfs://naia-adk",

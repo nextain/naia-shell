@@ -1,3 +1,5 @@
+declare const __WEB_VERSION__: string;
+
 export type CommandClassification = "web" | "stub" | "desktop-only";
 
 export const COMMAND_TABLE: Readonly<Record<string, CommandClassification>> = {
@@ -245,7 +247,7 @@ export const STUB_RESPONSES: Readonly<Record<string, unknown>> = {
 	"plugin:window|inner_size": null,
 	"plugin:window|get_cursor_position": null,
 	"plugin:window|start_resize_dragging": null,
-	"plugin:app|version": "0.1.3",
+	"plugin:app|version": __WEB_VERSION__,
 	"plugin:updater|check": null,
 	"plugin:dialog|open": null,
 	"plugin:dialog|save": null,

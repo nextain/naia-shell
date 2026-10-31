@@ -57,6 +57,8 @@ describe("SplashScreen", () => {
 		// "Naia" brand text should be present in the logo area
 		const el = document.querySelector(".splash-logo-text");
 		expect(el?.textContent).toBe("Naia");
+		expect(document.querySelector(".splash-logo-mark")?.getAttribute("src")).toBe("/brand/naia-logo.png");
+		expect(document.querySelector(".splash-ring")).toBeNull();
 	});
 
 	it("starts fading after minDuration when ready=true", () => {
