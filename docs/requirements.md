@@ -1447,4 +1447,4 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
 
-| **FR-FIX-024-I1** | Windows 스토어 창 생성 Tauri 명령은 비동기로 실행하고 기존 URL 검증과 단일 창 동작을 유지한다. NSIS 설치/삭제는 설치 경로 내부의 실행 파일만 종료한 뒤 파일을 교체한다. 새 기본 배경은 강변 해돋이이며 저장된 기존 배경 선택을 보존한다. 옛 버전의 기본 배경은 ADK에서 유지한다. | UC-FIX-024-I1 | 소스 회귀 검사, `e2e-tauri/specs/app-store-window.spec.ts`, Windows 설치 검증 | P04 진행 중 |
+| **FR-FIX-024-I1** | Windows 스토어 창 생성 Tauri 명령은 비동기로 실행하고 기존 URL 검증과 단일 창 동작을 유지한다. NSIS 설치/삭제는 설치 경로 내부의 실행 파일만 종료한 뒤 파일을 교체한다. 저장 배경이 없거나 빈 문자열·공백이면 강변 해돋이, 부재 시 이전 기본 배경을 사용한다. 저장된 기존 배경 선택은 보존하고 목록에 없으면 임의로 교체하지 않는다. 옛 버전의 기본 배경은 ADK에서 유지한다. | UC-FIX-024-I1 | 배경 선택 단위 시험, 소스 회귀 검사, `e2e-tauri/specs/app-store-window.spec.ts`, Windows 설치 검증 | P04 진행 중 |

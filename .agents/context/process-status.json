@@ -18,9 +18,9 @@
     "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
-  "last_updated": "2026-10-31T20:43:44+09:00",
+  "last_updated": "2026-10-31T21:24:58+09:00",
   "current_work": {
-    "fix_024_i1_20261031": {"issue": null, "title": "0.2.4 Windows 앱스토어 창 및 설치기 파일 잠금 수정", "requirements": "docs/requirements.md FR-FIX-024-I1", "scenario": "docs/user-scenarios.md UC-FIX-024-I1", "gates": {"P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending"}, "status": "in_progress", "verification": "Rust source guard passed; Windows installation and native UI validation await CI. Dependencies absent.", "last_updated": "2026-10-31T20:43:44+09:00"},
+    "fix_024_i1_20261031": {"issue": null, "title": "0.2.4 Windows 앱스토어 창 및 설치기 파일 잠금 수정", "requirements": "docs/requirements.md FR-FIX-024-I1", "scenario": "docs/user-scenarios.md UC-FIX-024-I1", "gates": {"P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending"}, "status": "in_progress", "verification": "Background selection Vitest 5/5; app store Playwright 2/2; shell and WDIO TypeScript and compile integrity pass. Windows native UI and installation validation remain pending; full visual state review remains pending.", "last_updated": "2026-10-31T21:24:58+09:00"},
     "project_panels_class_reset_20261025": {
       "issue": null,
       "title": "프로젝트 앱 문서·작업 탭 정리, 수업용 프로젝트(coding_app·docs_dirs·class.baseline_ref) 문서 미리보기·수업 초기화, 에이전트 아이콘 교체",

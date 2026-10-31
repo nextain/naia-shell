@@ -56,6 +56,15 @@ describe("Windows native app store window [UC-FIX-024-I1]", function () {
 			return /^https:\/\/(?:www\.)?(?:naia\.land|naia\.nextain\.io)\/[a-z-]+\/apps(?:[/?#]|$)/i.test(url)
 				|| /^https:\/\/dev\.naia\.land\/[a-z-]+\/apps(?:[/?#]|$)/i.test(url);
 		}, { timeout: RESPONSE_LIMIT_MS, timeoutMsg: "store webview did not navigate to the store URL" }), "store URL navigation");
+		await within(browser.waitUntil(
+			() => browser.execute(() => document.readyState === "complete"),
+			{ timeout: RESPONSE_LIMIT_MS, timeoutMsg: "store document did not finish loading" },
+		), "store document readiness");
+		// The store is an external site; require visible text and child elements rather than a site-specific selector.
+		await within(browser.waitUntil(
+			() => browser.execute(() => Boolean(document.body?.children.length && document.body.innerText.trim())),
+			{ timeout: RESPONSE_LIMIT_MS, timeoutMsg: "store document has no visible content" },
+		), "store content rendering");
 
 		await within(browser.switchToWindow(main), "switching to the main window");
 		// A WebDriver context switch alone does not bring a native window to the foreground.

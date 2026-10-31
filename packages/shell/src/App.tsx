@@ -40,6 +40,7 @@ import {
 } from "./lib/app-loader";
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
+import { selectBackground } from "./lib/background-selection";
 import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
@@ -510,17 +511,13 @@ export function App() {
 	// Load background from naia-settings/background/. May be a video (.mp4) or a
 	// still image (.webp) — getBackgroundMediaType() below resolves which.
 	// Keep saved background paths intact; use the new still for fresh settings.
-	const DEFAULT_BG_VIDEO = "naia-sunrise-river.webp";
 	useEffect(() => {
 		if (showAdkSetup || !configHydrated) return;
 		let cancelled = false;
 		void listNaiaAssets("background").then(async (paths) => {
 			if (cancelled || paths.length === 0) return;
 			const config = loadConfig();
-			const saved =
-				(config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
-			const match = paths.find((p) => p.endsWith(saved)) ??
-				(config?.backgroundVideo ? undefined : paths.find((p) => p.endsWith("naia-dawn-city-uhd.webp")));
+			const match = selectBackground(paths, config?.backgroundVideo);
 			if (!match || cancelled) return;
 			const blobUrl = await toLocalBlobUrl(match);
 			if (cancelled) return;
