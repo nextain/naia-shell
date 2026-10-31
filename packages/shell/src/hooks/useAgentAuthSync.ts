@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
-import { getAdkPath } from "../lib/adk-store";
+import { getAdkPath, writeNaiaConfigAtPath } from "../lib/adk-store";
 import {
 	sendAuthUpdate,
 	sendCredsUpdate,
@@ -19,6 +19,7 @@ import {
 	shouldMigrateNextainModel,
 } from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 
 let startupAuthReadyNotified = false;
 
@@ -57,10 +58,12 @@ export function useAgentAuthSync(
 	useEffect(() => {
 		if (showAdkSetup || showOnboarding || !configHydrated) return;
 		const preMigrate = loadConfig();
+		// Older web workspaces have no selection provenance; preserve their choice.
+		const allowMigration = !isWebMode() || preMigrate?.webAutoDefaultModel === true;
 		const main = preMigrate?.llmRoles?.main;
 		let migration: Promise<void> = Promise.resolve();
 		if (
-			main &&
+			allowMigration && main &&
 			!main.inherit &&
 			main.provider === "nextain" &&
 			main.model === "gpt-6.1-terra"
@@ -75,6 +78,7 @@ export function useAgentAuthSync(
 				if (
 					getAdkPath() !== sourceAdkPath ||
 					!current ||
+					(isWebMode() && current.webAutoDefaultModel !== true) ||
 					role?.provider !== "nextain" ||
 					role.model !== "gpt-6.1-terra"
 				)
@@ -84,18 +88,21 @@ export function useAgentAuthSync(
 					role.model,
 					gatewayServedModelIds(metadata),
 				);
-				if (decision.migrate)
-					saveConfig({
+				if (decision.migrate) {
+					const next = {
 						...current,
 						model: decision.to,
 						llmRoles: {
 							...current.llmRoles,
 							main: { ...role, model: decision.to },
 						},
-					});
+					};
+					if (isWebMode()) await writeNaiaConfigAtPath(next as unknown as Record<string, unknown>, sourceAdkPath);
+					saveConfig(next);
+				}
 			})();
 		}
-		if (preMigrate) {
+		if (preMigrate && allowMigration) {
 			const decision = hasExplicitStructuredMainModel(preMigrate)
 				? { migrate: false as const }
 				: shouldMigrateNextainModel(preMigrate.provider, preMigrate.model);
@@ -116,6 +123,7 @@ export function useAgentAuthSync(
 					const current = loadConfig();
 					if (
 						!current ||
+						(isWebMode() && current.webAutoDefaultModel !== true) ||
 						current.provider !== preMigrate.provider ||
 						current.model !== preMigrate.model ||
 						hasExplicitStructuredMainModel(current)
@@ -132,7 +140,9 @@ export function useAgentAuthSync(
 							from: current.model,
 							to: deferredDecision.to,
 						});
-						saveConfig({ ...current, model: deferredDecision.to });
+						const next = { ...current, model: deferredDecision.to };
+						if (isWebMode()) await writeNaiaConfigAtPath(next as unknown as Record<string, unknown>, sourceAdkPath);
+						saveConfig(next);
 					}
 				})();
 			}
@@ -140,7 +150,11 @@ export function useAgentAuthSync(
 
 		let active = true;
 		async function initAuth() {
-			await migration;
+			try {
+				await migration;
+			} catch (error) {
+				Logger.warn("App", "model migration failed", { error: String(error) });
+			}
 			if (!active) return;
 			// Capture the selected ADK before the first await.  A switch while the
 			// config/secret load is pending must not label A's snapshot as B.

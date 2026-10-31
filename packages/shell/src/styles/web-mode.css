@@ -176,3 +176,51 @@
 	[data-naia-web="true"] .app-bar-add,
 	[data-naia-web="true"] .app-bar-edit { min-width: 40px; min-height: 40px; }
 }
+
+.web-mobile-menu, .web-mobile-sheet-handle { display: none; }
+@media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
+	[data-naia-web="true"] .avatar-canvas-layer { bottom: 38%; }
+	[data-naia-web="true"] .naia-overlay { bottom: 0; pointer-events: none; }
+	[data-naia-web="true"] .ai-control-bar { display: none; }
+	[data-naia-web="true"] .app-root .naia-chat-area { top: auto; bottom: var(--mobile-viewport-bottom, 0px); pointer-events: auto; }
+	[data-naia-web="true"] .app-root .naia-chat-wrapper { height: calc(42dvh - 28px) !important; opacity: 1; pointer-events: auto; }
+	[data-naia-web="true"] .app-root [data-mobile-sheet="expanded"] .naia-chat-wrapper { height: calc(91dvh - 28px) !important; }
+	[data-naia-web="true"] .app-root [data-mobile-sheet="collapsed"] .naia-chat-wrapper { height: 68px !important; }
+	[data-naia-web="true"] [data-mobile-sheet="collapsed"] .chat-header,
+	[data-naia-web="true"] [data-mobile-sheet="collapsed"] .chat-messages,
+	[data-naia-web="true"] [data-mobile-sheet="collapsed"] .nva-gesture-actions { display: none; }
+	[data-naia-web="true"] .naia-chat-toggle { display: none !important; }
+	[data-naia-web="true"] .web-mobile-sheet-handle { display: flex; align-items: center; justify-content: center; width: 100%; height: 28px; border: 0; background: rgba(8,14,28,.82); border-radius: 14px 14px 0 0; touch-action: none; }
+	[data-naia-web="true"] .web-mobile-sheet-handle span { width: 42px; height: 4px; border-radius: 4px; background: #c6d0dd; }
+	[data-naia-web="true"] .nva-gesture-actions__shortcut { display: none; }
+	[data-naia-web="true"] .chat-input-bar { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+	[data-naia-web="true"] .app-layout:not(:has(.right-content--onboarding)) { top: 0; pointer-events: none; }
+	[data-naia-web="true"] .app-layout:not(:has(.app-bar-settings--active)):not(:has([data-app-id="workspace"].app-bar-tab--active)) .right-area { visibility: hidden; }
+	[data-naia-web="true"] .app-layout:has(.app-bar-settings--active),
+	[data-naia-web="true"] .app-layout:has([data-app-id="workspace"].app-bar-tab--active) { pointer-events: auto; z-index: 20; }
+	[data-naia-web="true"] .app-bar { visibility: hidden; }
+	[data-naia-web="true"] .app-bar-settings--active { visibility: visible; position: fixed; right: 8px; top: 8px; z-index: 25; }
+	[data-naia-web="true"] .web-mobile-menu { display: block; position: fixed; top: max(8px, env(safe-area-inset-top)); right: 8px; z-index: 15; }
+	[data-naia-web="true"] .web-mobile-menu-trigger { min-width: 44px; min-height: 44px; border: 0; border-radius: 12px; color: white; background: rgba(8,14,28,.8); font-size: 22px; }
+	[data-naia-web="true"] .web-mobile-menu-list { position: absolute; right: 0; top: 48px; min-width: 190px; display: flex; flex-direction: column; padding: 6px; border-radius: 12px; background: #172136; box-shadow: 0 4px 20px #0008; }
+	[data-naia-web="true"] .web-mobile-menu-list button { min-height: 44px; border: 0; background: transparent; color: white; text-align: left; padding: 8px 12px; }
+}
+.web-mobile-workspace-close { display: none; }
+@media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
+	[data-naia-web="true"] [data-video-avatar-prebaked] { height: 125%; top: -10%; }
+	[data-naia-web="true"] .web-mobile-workspace-close { display: block; position: fixed; right: 8px; top: 8px; z-index: 26; width: 44px; height: 44px; border: 0; border-radius: 10px; color: white; background: #172136; font-size: 22px; }
+}
+@media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
+	[data-naia-web="true"] .app-root [data-mobile-sheet="collapsed"] .naia-chat-wrapper { height: 108px !important; }
+	[data-naia-web="true"] .app-root:has([data-mobile-sheet="collapsed"]) .avatar-canvas-layer { bottom: 12%; }
+	[data-naia-web="true"] [data-video-avatar-prebaked] { height: 155%; top: -25%; }
+	[data-naia-web="true"] .app-layout:has(.app-bar-settings--active) .app-bar,
+	[data-naia-web="true"] .app-layout:has([data-app-id="workspace"].app-bar-tab--active) .app-bar { height: 0; min-height: 0; padding: 0; }
+}
+@media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
+	[data-naia-web="true"] .app-root [data-mobile-sheet="half"] .naia-chat-wrapper:has(.chat-messages > div:only-child:empty) { height: calc(30dvh - 28px) !important; }
+}
+@media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
+	[data-naia-web="true"] [data-video-avatar-prebaked] { height: 130%; top: 0; }
+	[data-naia-web="true"] .app-root:has([data-mobile-sheet="collapsed"]) [data-video-avatar-prebaked] { height: 145%; top: -8%; }
+}

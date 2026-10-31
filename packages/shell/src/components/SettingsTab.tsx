@@ -3783,6 +3783,7 @@ export function SettingsTab() {
 			...existing,
 			provider,
 			model: savedModelId,
+			webAutoDefaultModel: isWebMode() ? false : existing?.webAutoDefaultModel,
 			modelSortMode,
 			apiKey: isNextainProvider ? "" : resolvedApiKey,
 			naiaKey: naiaKey || undefined,
@@ -6303,6 +6304,7 @@ export function SettingsTab() {
 											"main",
 											mainRole,
 										);
+										if (isWebMode()) nextSel.webAutoDefaultModel = false;
 										saveConfig(
 											nextSel as unknown as Parameters<typeof saveConfig>[0],
 										);

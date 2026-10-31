@@ -117,9 +117,9 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		const d = shouldMigrateNextainModel(
 			"nextain",
 			"some-deprecated-model",
-			new Set(["gpt-5.4-nano", "solar-pro4"]),
+			new Set(["gpt-5.4-nano", "gpt-5.6-luna"]),
 		);
-		expect(d).toEqual({ migrate: true, to: "solar-pro4" });
+		expect(d).toEqual({ migrate: true, to: "gpt-5.6-luna" });
 	});
 
 	it("gpt-5.4-nano with catalog set containing it does not migrate (#707)", async () => {
@@ -179,9 +179,9 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 				shouldMigrateNextainModel(
 					"nextain",
 					dropped,
-					new Set([dropped, "solar-pro4"]),
+					new Set([dropped, "gpt-5.6-luna"]),
 				),
-			).toEqual({ migrate: true, to: "solar-pro4" });
+			).toEqual({ migrate: true, to: "gpt-5.6-luna" });
 		}
 	});
 
@@ -241,7 +241,7 @@ describe("gatewayServedModelIds (#707)", () => {
 });
 
 describe("Terra availability", () => {
-	it("waits for catalog and falls back to the highest served recommendation", async () => {
+	it("uses the fixed fallback order independent of recommendations", async () => {
 		const { shouldMigrateNextainModel: decide } = await import(
 			"../registry.js"
 		);
@@ -253,8 +253,10 @@ describe("Terra availability", () => {
 			migrate: false,
 		});
 		expect(
-			decide("nextain", "gpt-6.1-terra", new Set(["solar-mini", "solar-pro4"])),
-		).toEqual({ migrate: true, to: "solar-pro4" });
+			decide("nextain", "gpt-6.1-terra", new Set(["solar-pro4", "gpt-5.6-luna", "deepseek-v4-pro"])),
+		).toEqual({ migrate: true, to: "gpt-5.6-luna" });
+		expect(decide("nextain", "gpt-6.1-terra", new Set(["solar-pro4", "deepseek-v4-pro"]))).toEqual({ migrate: true, to: "deepseek-v4-pro" });
+		expect(decide("nextain", "gpt-6.1-terra", new Set(["solar-pro4"]))).toEqual({ migrate: false });
 		expect(
 			decide("nextain", "gpt-6.1-terra", new Set(["gpt-6.1-terra"])),
 		).toEqual({ migrate: false });

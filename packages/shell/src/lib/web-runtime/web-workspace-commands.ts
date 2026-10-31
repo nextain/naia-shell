@@ -13,6 +13,7 @@ import { getDefaultLlmModel } from "../llm/registry";
 export const INITIAL_WEB_WORKSPACE_CONFIG = {
 	provider: "nextain",
 	model: getDefaultLlmModel("nextain"),
+	webAutoDefaultModel: true,
 	agentName: "Naia",
 	speechStyle: "casual",
 	persona: "You are Naia, an AI companion. Speak casually and warmly.",

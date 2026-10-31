@@ -4,7 +4,7 @@ import type {
 	PointerEvent,
 	SetStateAction,
 } from "react";
-import { Suspense, lazy, useMemo, useRef } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { getBridgeForApp } from "../lib/active-bridge";
 import type { Announcement } from "../lib/announcements";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
@@ -163,6 +163,19 @@ export function AppMainContent(props: AppMainContentProps) {
 	const activatedKeepAliveAppsRef = useRef(new Set<string>());
 	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
 	const webMode = isWebMode();
+	const [mobileSheet, setMobileSheet] = useState<"collapsed" | "half" | "expanded">("half");
+	const [mobileMenu, setMobileMenu] = useState(false);
+	const mobileStart = useRef<number | null>(null);
+	const setActiveApp = useAppStore((state) => state.setActiveApp);
+	useEffect(() => {
+		if (!webMode || !window.visualViewport) return;
+		const viewport = window.visualViewport;
+		const update = () => document.documentElement.style.setProperty("--mobile-viewport-bottom", `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`);
+		viewport.addEventListener("resize", update);
+		viewport.addEventListener("scroll", update);
+		update();
+		return () => { viewport.removeEventListener("resize", update); viewport.removeEventListener("scroll", update); document.documentElement.style.removeProperty("--mobile-viewport-bottom"); };
+	}, [webMode]);
 	syncWebModeRootAttribute();
 
 	if (showAdkSetup)
@@ -240,6 +253,18 @@ export function AppMainContent(props: AppMainContentProps) {
 			)}
 			{naiaVisible && (
 				<>
+					{webMode && (activeApp === "workspace" || activeApp === "settings") && <button type="button" className="web-mobile-workspace-close" aria-label="Close" onClick={() => setActiveApp(null)}>✕</button>}
+					{webMode && !showOnboarding && <div className="web-mobile-menu">
+						<button type="button" className="web-mobile-menu-trigger" aria-label="Menu" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
+						{mobileMenu && <div className="web-mobile-menu-list">
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button")?.click(); setMobileMenu(false); }}>AI</button>
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t("ai.ttsOn")} / {t("ai.ttsOff")}</button>
+							{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map((key) => <button type="button" key={key} onClick={() => { const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".ai-control-bar button")).find((item) => item.getAttribute("aria-label") === t(key)); button?.click(); setMobileMenu(false); }}>{t(key)}</button>)}
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".new-chat-btn")?.click(); setMobileMenu(false); setActiveApp(null); }}>{t("chat.newConversation")}</button>
+							<button type="button" onClick={() => { setActiveApp("workspace"); setMobileMenu(false); }}>📁 {t("appbar.workspace")}</button>
+							<button type="button" onClick={() => { setActiveApp("settings"); setMobileMenu(false); }}>⚙ {t("settings.title")}</button>
+						</div>}
+					</div>}
 					{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
 						<div className="avatar-canvas-layer">
 							<Suspense fallback={null}>
@@ -257,7 +282,8 @@ export function AppMainContent(props: AppMainContentProps) {
 						<Suspense fallback={null}>
 							<AiControlBar />
 						</Suspense>
-						<div className="naia-chat-area">
+						<div className="naia-chat-area" data-mobile-sheet={mobileSheet}>
+							<button type="button" className="web-mobile-sheet-handle" aria-label="Resize conversation" onPointerDown={(event) => { mobileStart.current = event.clientY; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerUp={(event) => { const delta = (mobileStart.current ?? event.clientY) - event.clientY; setMobileSheet((state) => delta > 30 ? (state === "collapsed" ? "half" : "expanded") : delta < -30 ? (state === "expanded" ? "half" : "collapsed") : state === "half" ? "expanded" : state === "expanded" ? "collapsed" : "half"); mobileStart.current = null; }}><span /></button>
 							<button
 								type="button"
 								className="naia-chat-toggle"

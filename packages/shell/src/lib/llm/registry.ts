@@ -89,7 +89,6 @@ export function getDefaultLlmModel(providerId: string): string {
 export const RETIRED_NEXTAIN_MODEL_IDS: ReadonlySet<string> = new Set([
 	"gemini-3.1-flash-lite",
 	"grok-4.3",
-	"deepseek-v4-pro",
 	"HCX-007",
 	"HCX-DASH-002",
 	"gpt-5.6-sol",
@@ -146,11 +145,10 @@ export function shouldMigrateNextainModel(
 		return { migrate: false };
 	const fallback = [
 		"gpt-6.1-terra",
-		"solar-pro4",
 		"gpt-5.6-luna",
-		"solar-mini",
-		"motif-3",
-	].find((id) => gatewayServed.has(id));
+		"deepseek-v4-pro",
+		"deepseek-v4-flash",
+	].find((id) => id !== modelId && gatewayServed.has(id));
 	return fallback ? { migrate: true, to: fallback } : { migrate: false };
 }
 

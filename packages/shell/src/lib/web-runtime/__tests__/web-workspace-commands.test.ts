@@ -39,6 +39,7 @@ describe("web-workspace-commands", () => {
 		const expectedConfig = {
 			provider: "nextain",
 			model: "gpt-6.1-terra",
+			webAutoDefaultModel: true,
 			agentName: "Naia",
 			speechStyle: "casual",
 			persona: "You are Naia, an AI companion. Speak casually and warmly.",
@@ -264,6 +265,7 @@ describe("web-workspace-commands", () => {
 			const expectedConfig = {
 				provider: "nextain",
 				model: "gpt-6.1-terra",
+			webAutoDefaultModel: true,
 				agentName: "Naia",
 				speechStyle: "casual",
 				persona: "You are Naia, an AI companion. Speak casually and warmly.",

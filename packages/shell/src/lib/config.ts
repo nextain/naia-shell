@@ -299,6 +299,8 @@ export interface AppConfig {
 	apiKey: string;
 	/** main/sub/memory 신규 정본. 전환 기간에는 legacy flat 필드와 dual-read/write한다. */
 	llmRoles?: Partial<Record<LlmRoleId, LlmRoleConfig>>;
+	/** Web workspace still using the automatically selected default model. */
+	webAutoDefaultModel?: boolean;
 	subLlmProvider?: ProviderId;
 	subLlmModel?: string;
 	subLlmBaseUrl?: string;
