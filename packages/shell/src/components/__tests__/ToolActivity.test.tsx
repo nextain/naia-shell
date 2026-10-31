@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
+import { setLocale } from "../../lib/i18n";
 import type { ToolCall } from "../../lib/types";
 import { ToolActivity } from "../ToolActivity";
 
@@ -121,5 +122,28 @@ describe("ToolActivity", () => {
 		fireEvent.click(screen.getByRole("button"));
 		expect(screen.queryByText("{}")).toBeNull();
 		expect(screen.getByText("No results")).toBeDefined();
+	});
+
+	it("WO13C-S3 list-dir-label", async () => {
+		const listTool: ToolCall = {
+			toolCallId: "tc-list",
+			toolName: "list_dir",
+			args: { path: "/test" },
+			status: "running",
+		};
+		try {
+			await setLocale("ko");
+			const { unmount } = render(<ToolActivity tool={listTool} />);
+			expect(screen.getByText("폴더 보기")).toBeDefined();
+			expect(screen.queryByText("도구 실행")).toBeNull();
+			unmount();
+
+			await setLocale("en");
+			render(<ToolActivity tool={listTool} />);
+			expect(screen.getByText("List folder")).toBeDefined();
+			expect(screen.queryByText("Tool Execution")).toBeNull();
+		} finally {
+			await setLocale("en");
+		}
 	});
 });

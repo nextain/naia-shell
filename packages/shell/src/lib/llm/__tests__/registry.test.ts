@@ -55,13 +55,14 @@ describe("registry — provider registration", () => {
 		expect(getLlmModel("nextain", "gpt-5.6-luna")).toMatchObject({ supportsTools: true, upstreamProvider: "unknown", lifecycle: "unknown" });
 		const selectable = getLlmProvider("nextain")!.models.filter((model) => !model.comingSoon);
 		expect(selectable.map((model) => model.id)).toEqual([
+			"gpt-6.1-terra",
 			"deepseek-v4-flash",
 			"solar-pro4",
 			"solar-mini",
 			"motif-3",
 			"gpt-5.6-luna",
 		]);
-		expect(selectable.every((model) => model.supportsTools === true)).toBe(true);
+		expect(selectable.filter((model) => model.id !== "gpt-6.1-terra").every((model) => model.supportsTools === true)).toBe(true);
 	});
 });
 
@@ -135,7 +136,7 @@ describe("registry — Naia (nextain) provider models", () => {
 	});
 
 	it("default model is deepseek-v4-flash", () => {
-		expect(getDefaultLlmModel("nextain")).toBe("deepseek-v4-flash");
+		expect(getDefaultLlmModel("nextain")).toBe("gpt-6.1-terra");
 	});
 });
 
@@ -379,7 +380,7 @@ describe("registry — formatModelLabel", () => {
 	it("returns base label when no pricing", () => {
 		const model = getLlmModel("nextain", "gpt-5.6-luna")!;
 		const label = formatModelLabel(model);
-		expect(label).toBe("Naia Luna");
+		expect(label).toBe("Naia Luna (Cost saving)");
 	});
 
 	it("formats label with pricing when provided", () => {
@@ -427,6 +428,14 @@ describe("registry — sortModels", () => {
 			"solar-mini",
 			"motif-3",
 			"gpt-5.6-luna",
+			"gpt-6.1-terra",
 		]);
 	});
+});
+
+
+describe("recommended order", () => {
+ it("ranks product recommendations before other models", () => {
+  expect(sortModels(getLlmProvider("nextain")!.models, "recommended").map(m => m.id)).toEqual(["gpt-6.1-terra", "solar-pro4", "gpt-5.6-luna", "solar-mini", "motif-3", "deepseek-v4-flash"]);
+ });
 });

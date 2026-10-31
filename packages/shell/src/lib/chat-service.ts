@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { NaiaTool } from "./app-registry";
 import { Logger } from "./logger";
+import { isWebMode } from "./web-runtime/web-assets";
 import { filterModelFacingTools } from "./model-facing-tools";
 import type {
 	AgentResponseChunk,
@@ -20,6 +21,7 @@ import type {
 // 평가(함수) — 모듈-const 스냅샷은 import 후 주입된 플래그를 놓침(codex 2-clean 지적). 둘 다 없으면 기존 경로.
 export function isNewCore(): boolean {
 	return (
+		isWebMode() ||
 		import.meta.env?.VITE_NAIA_NEW_CORE === "1" ||
 		(typeof window !== "undefined" &&
 			(window as { __NAIA_NEW_CORE__?: boolean }).__NAIA_NEW_CORE__ === true)
@@ -863,9 +865,16 @@ async function sendAppSkillsMessage(
 	const unlisten = await listen<string>("agent_response", (event) => {
 		try {
 			const raw =
-				typeof event.payload === "string" ? event.payload : JSON.stringify(event.payload);
-			const chunk = JSON.parse(raw) as { type?: string; requestId?: string; ok?: boolean };
-			if (chunk?.type !== "app_skills_result" || chunk.requestId !== requestId) return;
+				typeof event.payload === "string"
+					? event.payload
+					: JSON.stringify(event.payload);
+			const chunk = JSON.parse(raw) as {
+				type?: string;
+				requestId?: string;
+				ok?: boolean;
+			};
+			if (chunk?.type !== "app_skills_result" || chunk.requestId !== requestId)
+				return;
 			settle(chunk.ok === true);
 		} catch {
 			// 형태가 어긋난 응답은 이 대기의 것이 아니다.

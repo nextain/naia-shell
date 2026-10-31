@@ -134,6 +134,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-BGM-",
   // 예전 설정 필드의 메인 모델 이관(#707). 설정 해석이다.
   "UC-NAIA-LEGACY-MAIN-MODEL",
+  // 모델 선택·아이콘·파일 경로는 앱 설정과 표시이며 에이전트 능력 축이 아니다.
+  "UC-RECOMMENDED-MODELS-ICON-WEB-PATH",
   // QA 회차 운영은 사람의 검사 절차다.
   "UC-QA-",
   // 인스턴스별 land·API 호스트 선택(#653). 빌드 모드 설정이다.

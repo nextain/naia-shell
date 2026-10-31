@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
 import { AppMainContent, type AppMainContentProps } from "./AppMainContent";
 import { SplashScreen } from "./SplashScreen";
@@ -48,6 +48,8 @@ export function AppShellFrame({
 	onSplashDone,
 	setNaiaWidth,
 }: AppShellFrameProps) {
+	const [failedVideoUrl, setFailedVideoUrl] = useState("");
+	const autumnVideo = backgroundVideoUrl === "/backgrounds/naia-autumn-office-live.mp4";
 	const widthDragRef = useRef<{
 		startX: number;
 		startW: number;
@@ -117,7 +119,9 @@ export function AppShellFrame({
 			(backgroundMediaType === "video" ||
 				(!backgroundMediaType &&
 					isMediaFile(backgroundVideoUrl, VIDEO_EXTENSIONS))) ? (
-			<video
+			failedVideoUrl === backgroundVideoUrl && autumnVideo ? (
+				<img className="app-bg-image" src="/backgrounds/naia-autumn-office.webp" alt="" style={{ zIndex: 1 }} />
+			) : failedVideoUrl === backgroundVideoUrl ? null : <video
 				key={backgroundVideoUrl}
 				className="app-bg-video"
 				src={backgroundVideoUrl}
@@ -125,6 +129,14 @@ export function AppShellFrame({
 				loop
 				muted
 				playsInline
+				preload="none"
+				poster={autumnVideo ? "/backgrounds/naia-autumn-office.webp" : undefined}
+				onCanPlay={(event) => {
+					if (autumnVideo) {
+						void event.currentTarget.play().catch(() => setFailedVideoUrl(backgroundVideoUrl));
+					}
+				}}
+				onError={() => setFailedVideoUrl(backgroundVideoUrl)}
 				style={{ zIndex: 1 }}
 			/>
 		) : backgroundVideoUrl &&
@@ -159,7 +171,9 @@ export function AppShellFrame({
 				{ "--naia-width": `${mainContent.naiaWidth}px` } as React.CSSProperties
 			}
 		>
-			{backgroundFallback?.type === "video" ? (
+			{(!foreground || backgroundMediaType === "iframe") && (backgroundFallback?.url === "/backgrounds/naia-autumn-office-live.mp4" ? (
+				<img className="app-bg-image" src="/backgrounds/naia-autumn-office.webp" alt="" style={{ zIndex: 0 }} />
+			) : backgroundFallback?.type === "video" ? (
 				<video
 					className="app-bg-video"
 					src={backgroundFallback.url}
@@ -178,7 +192,7 @@ export function AppShellFrame({
 				/>
 			) : (
 				<div className="app-bg-fallback" aria-hidden="true" />
-			)}
+			))}
 			{foreground}
 			{mainContent.showSplash && (
 				<SplashScreen onDone={onSplashDone} ready={appReady} />

@@ -25,12 +25,16 @@ const mocks = vi.hoisted(() => ({
 	loggerWarn: vi.fn(),
 	getAdkPath: vi.fn<() => string | null>(() => null),
 	fetchNaiaModelMetadata: vi.fn(),
+	isWebMode: vi.fn(() => false),
+	writeNaiaConfigAtPath: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../../lib/adk-store", () => ({
 	getAdkPath: mocks.getAdkPath,
+	writeNaiaConfigAtPath: mocks.writeNaiaConfigAtPath,
 }));
+vi.mock("../../lib/web-runtime/web-assets", () => ({ isWebMode: mocks.isWebMode }));
 vi.mock("../../lib/chat-service", () => ({
 	sendAuthUpdate: mocks.sendAuthUpdate,
 	sendCredsUpdate: mocks.sendCredsUpdate,
@@ -55,10 +59,23 @@ import { useAgentAuthSync } from "../useAgentAuthSync";
 describe("useAgentAuthSync — structured main model preservation", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.isWebMode.mockReturnValue(false);
 		mocks.getAdkPath.mockReturnValue(null);
 		mocks.fetchNaiaModelMetadata.mockResolvedValue(null);
 		mocks.loadConfig.mockReturnValue(undefined);
 		mocks.loadConfigWithSecrets.mockResolvedValue(null);
+	});
+
+	it("preserves an unmarked web selection and migrates a marked default", async () => {
+		mocks.isWebMode.mockReturnValue(true);
+		const config = { provider: "nextain", model: "gpt-6.1-terra" };
+		mocks.loadConfig.mockReturnValue(config);
+		renderHook(() => useAgentAuthSync(false, false, true));
+		expect(mocks.fetchNaiaModelMetadata).not.toHaveBeenCalled();
+		mocks.loadConfig.mockReturnValue({ ...config, webAutoDefaultModel: true });
+		mocks.fetchNaiaModelMetadata.mockResolvedValue(new Map([["gpt-5.6-luna", { capabilities: ["llm"], operationalStatus: "live" }]]));
+		renderHook(() => useAgentAuthSync(false, false, true));
+		await vi.waitFor(() => expect(mocks.writeNaiaConfigAtPath).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-luna" }), null));
 	});
 
 	it("does not migrate the legacy flat model over a dynamic structured main", () => {
@@ -85,17 +102,51 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			provider: "nextain",
 			model: "retired-flat-model",
 		});
-		mocks.fetchNaiaModelMetadata.mockResolvedValue(new Map());
+		mocks.fetchNaiaModelMetadata.mockResolvedValue(
+			new Map([
+				["gpt-5.6-luna", { capabilities: ["llm"], operationalStatus: "live" }],
+			]),
+		);
 
 		renderHook(() => useAgentAuthSync(false, false, true));
 
 		await vi.waitFor(() => {
 			expect(mocks.saveConfig).toHaveBeenCalledWith(
-				expect.objectContaining({ model: "deepseek-v4-flash" }),
+				expect.objectContaining({ model: "gpt-5.6-luna" }),
 			);
 		});
 		expect(mocks.fetchNaiaModelMetadata).toHaveBeenCalledWith(
 			"https://gateway.test",
+		);
+	});
+
+	it("waits for Terra catalog migration before restoring authentication", async () => {
+		let resolveCatalog!: (value: Map<string, unknown>) => void;
+		mocks.fetchNaiaModelMetadata.mockReturnValue(
+			new Promise((resolve) => {
+				resolveCatalog = resolve;
+			}),
+		);
+		mocks.loadConfig.mockReturnValue({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+		});
+		renderHook(() => useAgentAuthSync(false, false, true));
+		expect(mocks.loadConfigWithSecrets).not.toHaveBeenCalled();
+		resolveCatalog(
+			new Map([
+				["gpt-5.6-luna", { capabilities: ["llm"], operationalStatus: "live" }],
+			]),
+		);
+		await vi.waitFor(() =>
+			expect(mocks.loadConfigWithSecrets).toHaveBeenCalled(),
+		);
+		expect(mocks.saveConfig).toHaveBeenCalledWith(
+			expect.objectContaining({
+				model: "gpt-5.6-luna",
+				llmRoles: { main: { provider: "nextain", model: "gpt-5.6-luna" } },
+			}),
 		);
 	});
 
@@ -125,18 +176,22 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(mocks.saveConfig).not.toHaveBeenCalled();
 	});
 
-	it("migrates a #670-retired id at once without asking the gateway", () => {
+	it("migrates a retired id only to a live recommendation", async () => {
 		mocks.loadConfig.mockReturnValue({
 			provider: "nextain",
 			model: "grok-4.3",
 		});
-
-		renderHook(() => useAgentAuthSync(false, false, true));
-
-		expect(mocks.saveConfig).toHaveBeenCalledWith(
-			expect.objectContaining({ model: "deepseek-v4-flash" }),
+		mocks.fetchNaiaModelMetadata.mockResolvedValue(
+			new Map([
+				["gpt-5.6-luna", { capabilities: ["llm"], operationalStatus: "live" }],
+			]),
 		);
-		expect(mocks.fetchNaiaModelMetadata).not.toHaveBeenCalled();
+		renderHook(() => useAgentAuthSync(false, false, true));
+		await vi.waitFor(() =>
+			expect(mocks.saveConfig).toHaveBeenCalledWith(
+				expect.objectContaining({ model: "gpt-5.6-luna" }),
+			),
+		);
 	});
 
 	it("leaves the model alone when the gateway catalog is unavailable", async () => {
@@ -198,9 +253,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			model: "retired-flat-model",
 		});
 		mocks.getAdkPath.mockImplementation(() =>
-			mocks.fetchNaiaModelMetadata.mock.calls.length === 0
-				? "adk-a"
-				: "adk-b",
+			mocks.fetchNaiaModelMetadata.mock.calls.length === 0 ? "adk-a" : "adk-b",
 		);
 		mocks.fetchNaiaModelMetadata.mockResolvedValue(new Map());
 
@@ -219,7 +272,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			model: "test-model",
 			apiKey: "direct-key",
 			naiaKey: "naia-key",
-												gatewayToken: "gateway-token",
+			gatewayToken: "gateway-token",
 		});
 
 		renderHook(() => useAgentAuthSync(false, false, true));
@@ -231,8 +284,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(mocks.sendCredsUpdate).toHaveBeenCalledWith(
 			{
 				keys: {},
-				ttsKeys: {
-				},
+				ttsKeys: {},
 				gatewayToken: "gateway-token",
 			},
 			null,
@@ -248,8 +300,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(startupMessages).toContainEqual({
 			type: "creds_update",
 			keys: {},
-			ttsKeys: {
-			},
+			ttsKeys: {},
 			gatewayToken: "gateway-token",
 		});
 	});
@@ -259,7 +310,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 			provider: "openai",
 			model: "test-model",
 			apiKey: "direct-key",
-											});
+		});
 
 		renderHook(() => useAgentAuthSync(false, false, true));
 
@@ -269,8 +320,7 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 		expect(mocks.sendCredsUpdate).toHaveBeenCalledWith(
 			{
 				keys: { openai: "direct-key" },
-				ttsKeys: {
-				},
+				ttsKeys: {},
 			},
 			null,
 		);

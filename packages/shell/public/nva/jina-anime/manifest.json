@@ -1,0 +1,104 @@
+{
+  "nva_version": "0.2",
+  "meta": {
+    "name": "Jina",
+    "tagline": "밝은 배려와 빈틈없는 실행",
+    "author": "nextain",
+    "owner": "nextain",
+    "license": "CC-BY-4.0 © 2026 Nextain Inc.",
+    "created": "2026-08-05",
+    "description": "밝고 사랑스럽지만 업무에서는 빈틈없는 비서·기획 실무자 캐릭터입니다.",
+    "note": "알파 채널을 포함해 배경을 자유롭게 합성하는 대기·발화·동작 NVA 예제.",
+    "style_label": "애니 화풍"
+  },
+  "canvas": {
+    "width": 720,
+    "height": 1280,
+    "fps": 24
+  },
+  "background": {
+    "type": "transparent"
+  },
+  "animations": {
+    "idle": {
+      "clip": "clips/idle.webm",
+      "loop": true,
+      "can_talk": false,
+      "face_bbox": [
+        0.35,
+        0.025,
+        0.3,
+        0.2
+      ],
+      "label": "대기"
+    },
+    "talking": {
+      "clip": "clips/talking-ko.webm",
+      "loop": true,
+      "can_talk": true,
+      "face_bbox": [
+        0.35,
+        0.025,
+        0.3,
+        0.2
+      ],
+      "label": "말하기"
+    },
+    "guidance": {
+      "loop": false,
+      "can_talk": false,
+      "label": "반가운 안내",
+      "clip": "clips/guidance.webm"
+    },
+    "idea": {
+      "loop": false,
+      "can_talk": false,
+      "label": "아이디어 반짝",
+      "clip": "clips/idea.webm"
+    }
+  },
+  "speech_clips": {
+    "speech-ko": {
+      "clip": "clips/talking-ko.webm",
+      "label": "한국어 발화 · Jina voice profile",
+      "audio": "embedded",
+      "locale": "ko-KR"
+    }
+  },
+  "expressions": {
+    "neutral": "idle",
+    "listening": "idle",
+    "speaking": "talking",
+    "idle": "idle",
+    "talking": "talking",
+    "guidance": "guidance",
+    "idea": "idea"
+  },
+  "scenario": {
+    "nodes": {
+      "start": {
+        "type": "start"
+      },
+      "idle": {
+        "type": "scene",
+        "animation": "idle",
+        "label": "대기"
+      }
+    },
+    "edges": [
+      {
+        "from": "start",
+        "to": "idle"
+      }
+    ]
+  },
+  "stacked_alpha": {
+    "layout": "color-top-alpha-bottom",
+    "clips": {
+      "clips/guidance.webm": "clips/guidance.stacked.mp4",
+      "clips/idea.webm": "clips/idea.stacked.mp4",
+      "clips/idle.webm": "clips/idle.stacked.mp4",
+      "clips/talking-ko.webm": "clips/talking-ko.stacked.mp4"
+    }
+  }
+}

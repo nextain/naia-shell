@@ -1,17 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
+import { getAdkPath, writeNaiaConfigAtPath } from "../lib/adk-store";
 import {
 	sendAuthUpdate,
 	sendCredsUpdate,
 	sendNotifyConfig,
 } from "../lib/chat-service";
-import { getAdkPath } from "../lib/adk-store";
 import {
+	type AppConfig,
 	LAB_GATEWAY_URL,
 	loadConfig,
 	loadConfigWithSecrets,
 	saveConfig,
-	type AppConfig,
 } from "../lib/config";
 import {
 	fetchNaiaModelMetadata,
@@ -19,6 +19,7 @@ import {
 	shouldMigrateNextainModel,
 } from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
+import { isWebMode } from "../lib/web-runtime/web-assets";
 
 let startupAuthReadyNotified = false;
 
@@ -57,13 +58,54 @@ export function useAgentAuthSync(
 	useEffect(() => {
 		if (showAdkSetup || showOnboarding || !configHydrated) return;
 		const preMigrate = loadConfig();
-		if (preMigrate) {
+		// Older web workspaces have no selection provenance; preserve their choice.
+		const allowMigration = !isWebMode() || preMigrate?.webAutoDefaultModel === true;
+		const main = preMigrate?.llmRoles?.main;
+		let migration: Promise<void> = Promise.resolve();
+		if (
+			allowMigration && main &&
+			!main.inherit &&
+			main.provider === "nextain" &&
+			main.model === "gpt-6.1-terra"
+		) {
+			migration = (async () => {
+				const sourceAdkPath = getAdkPath();
+				const metadata = await fetchNaiaModelMetadata(LAB_GATEWAY_URL).catch(
+					() => null,
+				);
+				const current = loadConfig();
+				const role = current?.llmRoles?.main;
+				if (
+					getAdkPath() !== sourceAdkPath ||
+					!current ||
+					(isWebMode() && current.webAutoDefaultModel !== true) ||
+					role?.provider !== "nextain" ||
+					role.model !== "gpt-6.1-terra"
+				)
+					return;
+				const decision = shouldMigrateNextainModel(
+					"nextain",
+					role.model,
+					gatewayServedModelIds(metadata),
+				);
+				if (decision.migrate) {
+					const next = {
+						...current,
+						model: decision.to,
+						llmRoles: {
+							...current.llmRoles,
+							main: { ...role, model: decision.to },
+						},
+					};
+					if (isWebMode()) await writeNaiaConfigAtPath(next as unknown as Record<string, unknown>, sourceAdkPath);
+					saveConfig(next);
+				}
+			})();
+		}
+		if (preMigrate && allowMigration) {
 			const decision = hasExplicitStructuredMainModel(preMigrate)
 				? { migrate: false as const }
-				: shouldMigrateNextainModel(
-						preMigrate.provider,
-						preMigrate.model,
-					);
+				: shouldMigrateNextainModel(preMigrate.provider, preMigrate.model);
 			if (decision.migrate) {
 				Logger.warn("App", "#248 model migration", {
 					from: preMigrate.model,
@@ -71,7 +113,7 @@ export function useAgentAuthSync(
 				});
 				saveConfig({ ...preMigrate, model: decision.to });
 			} else if (decision.needsCatalog) {
-				void (async () => {
+				migration = (async () => {
 					const sourceAdkPath = getAdkPath();
 					// A failed or thrown catalog fetch is "unknown": keep the choice.
 					const metadata = await fetchNaiaModelMetadata(LAB_GATEWAY_URL).catch(
@@ -81,6 +123,7 @@ export function useAgentAuthSync(
 					const current = loadConfig();
 					if (
 						!current ||
+						(isWebMode() && current.webAutoDefaultModel !== true) ||
 						current.provider !== preMigrate.provider ||
 						current.model !== preMigrate.model ||
 						hasExplicitStructuredMainModel(current)
@@ -97,7 +140,9 @@ export function useAgentAuthSync(
 							from: current.model,
 							to: deferredDecision.to,
 						});
-						saveConfig({ ...current, model: deferredDecision.to });
+						const next = { ...current, model: deferredDecision.to };
+						if (isWebMode()) await writeNaiaConfigAtPath(next as unknown as Record<string, unknown>, sourceAdkPath);
+						saveConfig(next);
 					}
 				})();
 			}
@@ -105,6 +150,12 @@ export function useAgentAuthSync(
 
 		let active = true;
 		async function initAuth() {
+			try {
+				await migration;
+			} catch (error) {
+				Logger.warn("App", "model migration failed", { error: String(error) });
+			}
+			if (!active) return;
 			// Capture the selected ADK before the first await.  A switch while the
 			// config/secret load is pending must not label A's snapshot as B.
 			const sourceAdkPath = getAdkPath();

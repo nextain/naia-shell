@@ -4,7 +4,7 @@ import type {
 	PointerEvent,
 	SetStateAction,
 } from "react";
-import { Suspense, lazy, useMemo, useRef } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { getBridgeForApp } from "../lib/active-bridge";
 import type { Announcement } from "../lib/announcements";
 import { appRegistry, shouldMountKeepAliveApp } from "../lib/app-registry";
@@ -12,7 +12,12 @@ import type { AppInstallRequest } from "../lib/app-store-client";
 import { t } from "../lib/i18n";
 import type { UpdateInfo } from "../lib/updater";
 import { snoozeStartupUpdatePrompt } from "../lib/updater";
+import {
+	isWebMode,
+	syncWebModeRootAttribute,
+} from "../lib/web-runtime/web-assets";
 import { useAppStore } from "../stores/app";
+import { useChatStore } from "../stores/chat";
 import { AppBar } from "./AppBar";
 import { DeferredAdkSetupScreen } from "./DeferredAdkSetupScreen";
 import { DeferredChatArea } from "./DeferredChatArea";
@@ -66,6 +71,10 @@ interface ChatDragState {
 	startY: number;
 	startH: number;
 	moved: boolean;
+}
+
+export function mobileSheetDragHeight(startHeight: number, delta: number, viewportHeight: number): number {
+	return Math.max(136, Math.min(viewportHeight * 0.91, startHeight + delta));
 }
 
 export interface AppMainContentProps {
@@ -158,26 +167,54 @@ export function AppMainContent(props: AppMainContentProps) {
 	);
 	const activatedKeepAliveAppsRef = useRef(new Set<string>());
 	if (activeApp) activatedKeepAliveAppsRef.current.add(activeApp);
+	const webMode = isWebMode();
+	const hasMessages = useChatStore((state) => state.messages.length > 0);
+	const [mobileSheet, setMobileSheet] = useState<"collapsed" | "half" | "expanded">(hasMessages ? "half" : "collapsed");
+	const previousHasMessages = useRef(hasMessages);
+	useEffect(() => {
+		if (hasMessages !== previousHasMessages.current) {
+			setMobileSheet(hasMessages ? "half" : "collapsed");
+			previousHasMessages.current = hasMessages;
+		}
+	}, [hasMessages]);
+	const ttsEnabled = useAppStore((state) => state.ttsEnabled);
+	const [mobileMenu, setMobileMenu] = useState(false);
+	const mobileStart = useRef<{ y: number; height: number } | null>(null);
+	const setActiveApp = useAppStore((state) => state.setActiveApp);
+	useEffect(() => {
+		if (!webMode || !window.visualViewport) return;
+		const viewport = window.visualViewport;
+		const update = () => document.documentElement.style.setProperty("--mobile-viewport-bottom", `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`);
+		viewport.addEventListener("resize", update);
+		viewport.addEventListener("scroll", update);
+		update();
+		return () => { viewport.removeEventListener("resize", update); viewport.removeEventListener("scroll", update); document.documentElement.style.removeProperty("--mobile-viewport-bottom"); };
+	}, [webMode]);
+	syncWebModeRootAttribute();
 
 	if (showAdkSetup)
 		return (
 			<>
-				<TitleBar
-					appVisible={naiaVisible}
-					onToggleApp={toggleNaia}
-					title={appTitle}
-				/>
+				{!webMode && (
+					<TitleBar
+						appVisible={naiaVisible}
+						onToggleApp={toggleNaia}
+						title={appTitle}
+					/>
+				)}
 				<DeferredAdkSetupScreen onComplete={onAdkSetupComplete} />
 			</>
 		);
 
 	return (
 		<>
-			<TitleBar
-				appVisible={naiaVisible}
-				onToggleApp={toggleNaia}
-				title={appTitle}
-			/>
+			{!webMode && (
+				<TitleBar
+					appVisible={naiaVisible}
+					onToggleApp={toggleNaia}
+					title={appTitle}
+				/>
+			)}
 			{configSaveError && (
 				<div role="alert" className="app-bar__remove-error">
 					{configSaveError}
@@ -230,6 +267,18 @@ export function AppMainContent(props: AppMainContentProps) {
 			)}
 			{naiaVisible && (
 				<>
+					{webMode && (activeApp === "workspace" || activeApp === "settings") && <button type="button" className="web-mobile-workspace-close" aria-label="Close" onClick={() => setActiveApp(null)}>✕</button>}
+					{webMode && !showOnboarding && <div className="web-mobile-menu">
+						<button type="button" className="web-mobile-menu-trigger" aria-label="Menu" aria-expanded={mobileMenu} onClick={() => setMobileMenu(!mobileMenu)}>☰</button>
+						{mobileMenu && <div className="web-mobile-menu-list">
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button")?.click(); setMobileMenu(false); }}>AI</button>
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".ai-control-bar button:nth-child(2)")?.click(); setMobileMenu(false); }}>{t(ttsEnabled ? "ai.ttsOn" : "ai.ttsOff")}</button>
+							{(["ai.avatarZoomIn", "ai.avatarZoomOut"] as const).map((key) => <button type="button" key={key} onClick={() => { const button = Array.from(document.querySelectorAll<HTMLButtonElement>(".ai-control-bar button")).find((item) => item.getAttribute("aria-label") === t(key)); button?.click(); setMobileMenu(false); }}>{t(key)}</button>)}
+							<button type="button" onClick={() => { document.querySelector<HTMLButtonElement>(".new-chat-btn")?.click(); setMobileMenu(false); setActiveApp(null); }}>{t("chat.newConversation")}</button>
+							<button type="button" onClick={() => { setActiveApp("workspace"); setMobileMenu(false); }}>📁 {t("appbar.workspace")}</button>
+							<button type="button" onClick={() => { setActiveApp("settings"); setMobileMenu(false); }}>⚙ {t("settings.title")}</button>
+						</div>}
+					</div>}
 					{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
 						<div className="avatar-canvas-layer">
 							<Suspense fallback={null}>
@@ -247,7 +296,8 @@ export function AppMainContent(props: AppMainContentProps) {
 						<Suspense fallback={null}>
 							<AiControlBar />
 						</Suspense>
-						<div className="naia-chat-area">
+						<div className="naia-chat-area" data-mobile-sheet={mobileSheet}>
+							<button type="button" className="web-mobile-sheet-handle" aria-label="Resize conversation" onPointerDown={(event) => { mobileStart.current = { y: event.clientY, height: event.currentTarget.parentElement?.getBoundingClientRect().height ?? 136 }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { const start = mobileStart.current; if (!start || Math.abs(start.y - event.clientY) < 4) return; document.documentElement.style.setProperty("--mobile-sheet-drag-height", `${mobileSheetDragHeight(start.height, start.y - event.clientY, window.innerHeight)}px`); }} onPointerCancel={() => { mobileStart.current = null; document.documentElement.style.removeProperty("--mobile-sheet-drag-height"); }} onPointerUp={(event) => { const delta = (mobileStart.current?.y ?? event.clientY) - event.clientY; setMobileSheet((state) => delta > 30 ? (state === "collapsed" ? "half" : "expanded") : delta < -30 ? (state === "expanded" ? "half" : "collapsed") : state === "half" ? "expanded" : state === "expanded" ? "collapsed" : "half"); mobileStart.current = null; document.documentElement.style.removeProperty("--mobile-sheet-drag-height"); }}><span /></button>
 							<button
 								type="button"
 								className="naia-chat-toggle"
@@ -377,6 +427,10 @@ export function AppMainContent(props: AppMainContentProps) {
 								className={`content-app${!activeApp ? " content-app--hidden" : ""}`}
 							>
 								{keepAliveApps.map((app) => {
+									// WO-03 / 지시서 #3: 웹판은 브라우저 탭이 꺼져 있어 마운트 자체를 막는다 (browser_wv_create 오류 방지).
+									if (isWebMode() && app.id === "browser") {
+										return null;
+									}
 									if (
 										!shouldMountKeepAliveApp(
 											app,
@@ -398,6 +452,7 @@ export function AppMainContent(props: AppMainContentProps) {
 									);
 								})}
 								{activeApp &&
+									!(isWebMode() && activeApp === "browser") &&
 									!keepAliveApps.some((app) => app.id === activeApp) && (
 										<div className="content-app__slot content-app__slot--active">
 											<ErrorBoundary scope={`App(${activeApp})`}>

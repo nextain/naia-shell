@@ -12,6 +12,15 @@ export function formatModelLabel(model: LlmModelMeta): string {
 			: null;
 	const isAsr = model.capabilities.includes("asr");
 	let label = isAsr ? `${model.label} (ASR)` : model.label;
+	if (model.id === "gpt-5.6-luna" || model.id === "solar-mini") {
+		label += ` (${tFn ? tFn("settings.modelCostSaving") : "Cost saving"})`;
+	}
+	const id = model.id.toLowerCase();
+	if (id.includes("qwen") && /(?:^|[^0-9])4b/.test(id)) {
+		label += ` (${tFn ? tFn("settings.modelLocal8gb") : "8 GB or more PC"})`;
+	} else if (id.includes("qwen") && /(?:^|[^0-9])27b/.test(id)) {
+		label += ` (${tFn ? tFn("settings.modelLocal24gb") : "24 GB or more PC"})`;
+	}
 	if (model.pricing) {
 		const [input, output] = model.pricing;
 		const pricingLabel = tFn

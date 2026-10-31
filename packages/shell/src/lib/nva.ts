@@ -75,6 +75,11 @@ export interface NvaManifest {
 	};
 	/** NVA v0.2 compatibility: authored utterance clips shipped by the ADK. */
 	speech_clips?: Record<string, NvaSpeechSlot>;
+	/** Safari 등 VP9 알파 미지원 환경을 위한 상하 분리(color-top-alpha-bottom) MP4 매핑. */
+	stacked_alpha?: {
+		layout?: string;
+		clips?: Record<string, string>;
+	};
 }
 
 export interface NvaLocalizedSpeech {
@@ -276,4 +281,46 @@ export function resolveNvaAssetPath(
 	const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
 	const sep = bundleDir.includes("\\") ? "\\" : "/";
 	return `${bundleDir.replace(/[/\\]+$/, "")}${sep}${normalized.replace(/\//g, sep)}`;
+}
+
+/**
+ * 렌더러(PrebakedAvatarRenderer)가 매니페스트에서 읽을 수 있는 모든 클립 상대 경로를 모은다.
+ * animations, vrm_slots(visemes·motions·speech), prebaked_speech.utterances, speech_clips
+ * 의 기본 클립과 by_locale 현지화 클립, 그리고 stacked_alpha.clips 의 키·값을 모두 포함한다.
+ */
+export function collectNvaManifestClipPaths(manifest: NvaManifest): string[] {
+	const paths: string[] = [];
+	const pushClip = (clip: string | undefined) => {
+		if (typeof clip === "string") paths.push(clip);
+	};
+	for (const anim of Object.values(manifest.animations ?? {})) {
+		pushClip(anim?.clip);
+	}
+	for (const viseme of Object.values(manifest.vrm_slots?.visemes ?? {})) {
+		pushClip(viseme?.clip);
+	}
+	for (const motion of Object.values(manifest.vrm_slots?.motions ?? {})) {
+		pushClip(motion?.clip);
+	}
+	const speechRecords = [
+		manifest.vrm_slots?.speech,
+		manifest.prebaked_speech?.utterances,
+		manifest.speech_clips,
+	];
+	for (const speechRecord of speechRecords) {
+		for (const slot of Object.values(speechRecord ?? {})) {
+			if (!slot) continue;
+			pushClip(slot.clip);
+			for (const localized of Object.values(slot.by_locale ?? {})) {
+				pushClip(localized?.clip);
+			}
+		}
+	}
+	for (const [clipKey, stackedClip] of Object.entries(
+		manifest.stacked_alpha?.clips ?? {},
+	)) {
+		pushClip(clipKey);
+		pushClip(stackedClip);
+	}
+	return paths;
 }

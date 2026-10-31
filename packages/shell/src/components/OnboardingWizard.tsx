@@ -189,7 +189,7 @@ interface OnboardingSnapshot {
 	memoryEmbeddingProvider: "none" | "offline" | "vllm" | "ollama" | "naia";
 	memoryLlmProvider: "none" | "naia" | "vllm" | "ollama";
 	ttsEnabled: boolean;
-	webVoiceLang: string;
+	webVoiceURI: string;
 	localVoiceEnabled: boolean;
 }
 
@@ -466,20 +466,6 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			const voices = window.speechSynthesis.getVoices();
 			if (voices.length === 0) return;
 			setWebVoices(voices);
-			setWebVoiceURI((current) => {
-				if (current && voices.some((voice) => voice.voiceURI === current))
-					return current;
-				const locale = getLocale();
-				const matched =
-					voices.find((voice) =>
-						voice.lang?.toLowerCase().startsWith(locale),
-					) ??
-					voices.find((voice) =>
-						voice.lang?.toLowerCase().startsWith(locale.split("-")[0]),
-					) ??
-					voices[0];
-				return matched?.voiceURI ?? "";
-			});
 		};
 		applyVoices();
 		window.speechSynthesis.onvoiceschanged = applyVoices;
@@ -728,8 +714,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryEmbeddingProvider,
 			memoryLlmProvider,
 			ttsEnabled,
-			webVoiceLang:
-				webVoices.find((voice) => voice.voiceURI === webVoiceURI)?.lang ?? "",
+			webVoiceURI,
 			localVoiceEnabled,
 		};
 	});
@@ -1085,8 +1070,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryEmbeddingProvider,
 			memoryLlmProvider,
 			ttsEnabled,
-			webVoiceLang:
-				webVoices.find((voice) => voice.voiceURI === webVoiceURI)?.lang ?? "",
+			webVoiceURI,
 			localVoiceEnabled,
 		},
 	) {
@@ -1137,7 +1121,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			...base,
 			provider: auth ? "nextain" : (loggedOutLlm?.provider ?? base.provider),
 			model: auth
-				? base.model || NAIA_SLOT_DEFAULTS.main.model
+				? (base.provider === "nextain" && base.model) ||
+					NAIA_SLOT_DEFAULTS.main.model
 				: (loggedOutLlm?.model ?? base.model),
 			agentName: snapshot.agentName.trim() || "Naia",
 			userName: snapshot.userName.trim() || undefined,
@@ -1163,8 +1148,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						ttsProvider: snapshot.ttsEnabled
 							? ("browser" as const)
 							: base.ttsProvider,
-						...(snapshot.ttsEnabled && snapshot.webVoiceLang
-							? { voice: snapshot.webVoiceLang }
+						...(snapshot.ttsEnabled && snapshot.webVoiceURI
+							? { ttsVoice: snapshot.webVoiceURI }
 							: {}),
 					}),
 			...(!auth && snapshot.memoryEmbeddingProvider !== "none"
@@ -1716,6 +1701,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									value={webVoiceURI}
 									onChange={(e) => setWebVoiceURI(e.target.value)}
 								>
+									<option value="">
+										{t("settings.memoryEmbeddingDeviceAuto")}
+									</option>
 									{webVoices.map((voice) => (
 										<option key={voice.voiceURI} value={voice.voiceURI}>
 											{voice.name} ({voice.lang})
