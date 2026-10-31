@@ -78,58 +78,94 @@ where
     candidate
 }
 
+fn default_download_destination(destination: &mut PathBuf) -> bool {
+    // GTK expects a URI even when the supplied default is a filesystem path.
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(uri) = url::Url::from_file_path(&*destination) else {
+            log::warn!("Browser download: cannot convert default destination to a file URI");
+            return false;
+        };
+        *destination = PathBuf::from(uri.as_str());
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = destination;
+    true
+}
+
 fn configure_download_destination(destination: &mut PathBuf) -> bool {
     let Ok(adk) = crate::current_adk_path() else {
-        // Wry's GTK download hook supplies a filesystem path but forwards its
-        // result to an API expecting a URI. Keep the default folder intact.
-        #[cfg(target_os = "linux")]
-        {
-            let Ok(uri) = url::Url::from_file_path(&*destination) else {
-                return false;
-            };
-            *destination = PathBuf::from(uri.as_str());
-        }
-        return true;
+        return default_download_destination(destination);
     };
-    let root = Path::new(&adk);
+    match configure_adk_download_destination(destination, &adk) {
+        Ok(()) => true,
+        Err(reason) => {
+            log::warn!("Browser download: {reason}; using the default destination");
+            default_download_destination(destination)
+        }
+    }
+}
+
+fn configure_adk_download_destination(destination: &mut PathBuf, adk: &str) -> Result<(), String> {
+    let root = Path::new(adk);
     if !root.is_absolute() || !root.is_dir() {
-        return false;
+        return Err("invalid ADK directory".into());
     }
     let folder = root.join("downloads");
-    if std::fs::create_dir_all(&folder).is_err() {
-        return false;
-    }
-    let (Ok(root), Ok(folder)) = (root.canonicalize(), folder.canonicalize()) else {
-        return false;
-    };
+    std::fs::create_dir_all(&folder)
+        .map_err(|error| format!("cannot create downloads directory: {error}"))?;
+    let root = root
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve ADK directory: {error}"))?;
+    let folder = folder
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve downloads directory: {error}"))?;
     if !folder.starts_with(&root) {
-        return false;
+        return Err("downloads directory is outside ADK".into());
     }
     let reserved = DOWNLOAD_DESTINATIONS.get_or_init(|| Mutex::new(HashSet::new()));
-    let Ok(mut reserved) = reserved.lock() else {
-        return false;
-    };
+    let mut reserved = reserved
+        .lock()
+        .map_err(|_| "download reservation lock failed")?;
     let path = available_download_path(&folder, destination, |candidate| {
-        candidate.exists() || reserved.contains(candidate)
+        candidate.symlink_metadata().is_ok() || reserved.contains(candidate)
     });
-    // WebKitGTK's Wry backend passes the destination directly to the GTK API,
-    // which expects a file URI. Windows and macOS consume a filesystem path.
     #[cfg(target_os = "linux")]
-    let output = match url::Url::from_file_path(&path) {
-        Ok(uri) => PathBuf::from(uri.as_str()),
-        Err(_) => return false,
-    };
+    let output = url::Url::from_file_path(&path)
+        .map(|uri| PathBuf::from(uri.as_str()))
+        .map_err(|_| "cannot convert ADK destination to a file URI")?;
     #[cfg(not(target_os = "linux"))]
     let output = path.clone();
     reserved.insert(path);
     *destination = output;
-    true
+    Ok(())
 }
 
 #[cfg(test)]
 mod download_tests {
     use super::available_download_path;
     use std::path::Path;
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_a_broken_symlink_in_the_download_folder() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let folder = directory.path();
+        symlink(folder.join("missing"), folder.join("report.pdf")).unwrap();
+        let next = available_download_path(folder, Path::new("report.pdf"), |candidate| {
+            candidate.symlink_metadata().is_ok()
+        });
+        assert_eq!(next, folder.join("report (1).pdf"));
+    }
+
+    #[test]
+    fn rejects_invalid_adk_directory() {
+        let mut destination = Path::new("report.pdf").to_path_buf();
+        assert!(super::configure_adk_download_destination(&mut destination, "relative").is_err());
+        assert_eq!(destination, Path::new("report.pdf"));
+    }
 
     #[test]
     fn chooses_adk_download_folder_and_numbers_collisions() {

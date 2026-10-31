@@ -165,8 +165,10 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		group.focus();
 		fireEvent.keyDown(group, { key: "ArrowRight" });
 		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [5, true] }), "*");
+		postYtMessage({ event: "infoDelivery", info: { currentTime: 0 } });
 		fireEvent.keyDown(group, { key: "ArrowRight" });
 		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [10, true] }), "*");
+		postYtMessage({ event: "infoDelivery", info: { currentTime: 10 } });
 		fireEvent.keyDown(group, { key: "ArrowLeft" });
 		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [5, true] }), "*");
 		fireEvent.keyDown(group, { key: "ArrowUp" });
@@ -179,6 +181,24 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		fireEvent.keyDown(chat, { key: "k" });
 		fireEvent.keyDown(chat, { key: "ArrowRight" });
 		expect(post).not.toHaveBeenCalled();
+	});
+
+	it("uses the observed time again after a pending keyboard seek expires", async () => {
+		render(<BgmPlayer />);
+		await startTrack("keyboard-expiry", "Keyboard Expiry");
+		const iframe = attachIframeForCurrentPlayback();
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		confirmCurrentFrame();
+		const group = screen.getByRole("group", { name: /Music controls/ });
+		group.focus();
+		const now = vi.spyOn(Date, "now");
+		now.mockReturnValue(1000);
+		fireEvent.keyDown(group, { key: "ArrowRight" });
+		postYtMessage({ event: "infoDelivery", info: { currentTime: 1 } });
+		now.mockReturnValue(2600);
+		fireEvent.keyDown(group, { key: "ArrowRight" });
+		expect(post).toHaveBeenLastCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [6, true] }), "*");
+		now.mockRestore();
 	});
 
 	it("defaults captions off, sends toggles to the iframe origin, and restores the saved choice on a new video", async () => {
