@@ -397,7 +397,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 | UC-025-09 | UT-02 카드 순서, IT-02 낭독 경계: 시험 파일 지정 예정; 리눅스 | E2E-02 카드·낭독, E2E-05 공용 낭독·취소: 직접 시험, 윈도우 2070·4060과 리눅스 각각 |
 | UC-025-10 | UT-03 탭·복사 안내, IT-03 설치 화면·복사: 시험 파일 지정 예정; 리눅스 | E2E-03 주소 복사: 직접 시험, 윈도우 2070·4060, 리눅스 |
 | UC-025-11 | UT-04 카드 문맥, IT-04 전달·해제, UT-06 문맥 경계, IT-06 앱 전환: 시험 파일 지정 예정; 리눅스 | E2E-04 역할극·닫기, E2E-06 카드 → 슬라이드 → 일반 대화 문맥 전환·슬라이드 자료 보존: 직접 시험, 윈도우 2070·4060, 리눅스 각각 |
-| UC-025-12 | UT-05 권한·출처, IT-05 질문·낭독·언어, UT-07 서명 목록, IT-07 설치·복구: 시험 파일 지정 예정; 리눅스 | T8 기존 기능, T9 `run-regression.mjs` 회귀 기록, E2E-05 공용 연결, E2E-07 네 앱 설치: 윈도우 2070·4060과 리눅스 각각 |
+| UC-025-12 | UT-05 권한·출처: `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`, IT-05 질문·낭독·언어: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`; UT-07 서명 목록, IT-07 설치·복구: 시험 파일 지정 예정; 리눅스 | T8 기존 기능, T9 `run-regression.mjs` 회귀 기록, E2E-05 공용 연결, E2E-07 네 앱 설치: 윈도우 2070·4060과 리눅스 각각 |
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers-tauri.test.ts`: 작업자 어댑터가 Tauri 명령으로 생성·취소·재개를 보내는 경계. 화면 쪽 단위 테스트는 코딩 작업자 패널과 함께 2026-09-05 에 지웠다(#554) | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | 실 UI 스펙(95-llm-role-settings)은 #589/#598 이 두뇌 화면의 역할 편집기를 지우며 함께 지웠다 — 실 UI 확인 없음 |

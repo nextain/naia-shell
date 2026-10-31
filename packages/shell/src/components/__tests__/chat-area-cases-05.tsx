@@ -155,7 +155,7 @@ export function registerChatAreaCases05() {
 		);
 		expect(ttsSyncMocks.pauseBeforePlayback).toHaveBeenCalledTimes(1);
 		expect(ttsSyncMocks.resumePlayback).not.toHaveBeenCalled();
-		// #688 (Luke 2026-09-22): supersedes FR-VOICE.19 complete-then-play.
+		// #688 (2026-09-22): supersedes FR-VOICE.19 complete-then-play.
 		// Playback window releases after a 1 s grace for the first sentence
 		// when RTF>1, without waiting for the whole turn or finishStream.
 		await waitFor(
