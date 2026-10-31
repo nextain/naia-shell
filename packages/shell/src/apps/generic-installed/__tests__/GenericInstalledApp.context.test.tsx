@@ -120,7 +120,7 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		expect(useAppStore.getState().activeAppContext).toBeNull();
 	});
 
-	it("IT-06 ignores messages from hidden keep-alive apps, ignores previous app after switch, and unmounts without clearing another app's context", () => {
+	it("IT-06 preserves context ownership across card-to-slides-to-card switches and closes", () => {
 		const charcardEntry = "/home/user/.naia/apps/land.naia.charcard/index.html";
 		const otherEntry = "/home/user/.naia/apps/land.naia.slides/index.html";
 		const CharCardInstalled = createGenericInstalledApp(
@@ -237,13 +237,33 @@ describe("GenericInstalledApp naia-app:context bridge", () => {
 		});
 		expect(useAppStore.getState().activeAppContext?.type).toBe("slides");
 
-		// Unmounting charcard does NOT clear other's active context
-		unmountCharcard();
-		expect(useAppStore.getState().activeAppContext?.type).toBe("slides");
-
-		// Unmounting other clears its own context
-		unmountOther();
+		// Both keep-alive frames remain mounted as the user switches back to the card.
+		const slidesPostMessageSpy = vi.spyOn(otherIframe.contentWindow as Window, "postMessage");
+		act(() => useAppStore.getState().setActiveApp("land.naia.charcard"));
 		expect(useAppStore.getState().activeAppContext).toBeNull();
+		expect(useAppStore.getState().activeAppContextOwnerId).toBeNull();
+		expect(slidesPostMessageSpy).toHaveBeenCalledWith(
+			{ type: "naia-app:context-cleared" }, "http://asset.localhost",
+		);
+		act(() => window.dispatchEvent(new MessageEvent("message", {
+			origin: "http://asset.localhost", source: otherIframe.contentWindow,
+			data: { type: "naia-app:context", context: { type: "slides", data: { stale: true } } },
+		})));
+		expect(useAppStore.getState().activeAppContext).toBeNull();
+		act(() => window.dispatchEvent(new MessageEvent("message", {
+			origin: "http://asset.localhost", source: charcardIframe.contentWindow,
+			data: { type: "naia-app:context", context: { type: "charcard", data: { character: "온새미", roleplay: "돌아온 카드" } } },
+		})));
+		expect(useAppStore.getState().activeAppContext).toEqual({
+			type: "charcard", data: { character: "온새미", roleplay: "돌아온 카드" },
+		});
+		expect(useAppStore.getState().activeAppContextOwnerId).toBe("land.naia.charcard");
+		// Closing the inactive slides frame leaves the card context, closing its owner clears it.
+		unmountOther();
+		expect(useAppStore.getState().activeAppContextOwnerId).toBe("land.naia.charcard");
+		unmountCharcard();
+		expect(useAppStore.getState().activeAppContext).toBeNull();
+		expect(useAppStore.getState().activeAppContextOwnerId).toBeNull();
 	});
 
 	it("UT-06 rejects persistent context types (e.g. bgm) and oversized payloads (>32,000 chars) and clears stale context of that app on rejection", () => {
