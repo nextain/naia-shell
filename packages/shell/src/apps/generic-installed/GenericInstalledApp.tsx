@@ -1,3 +1,4 @@
+import { installInstalledAppHostBridge } from "./installed-app-host-bridge";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import {
@@ -48,6 +49,8 @@ function installedAppFrameSrc(htmlEntry: string): string {
 export function createGenericInstalledApp(
 	htmlEntry?: string,
 	tools: NaiaTool[] = [],
+	appId = "",
+	permissions: string[] = [],
 ) {
 	return function GenericInstalledApp({ naia }: AppCenterProps) {
 		const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -57,15 +60,17 @@ export function createGenericInstalledApp(
 		useLayoutEffect(() => {
 			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
 			const frame = iframeRef.current;
+			const disposeAppBridge = installInstalledAppHostBridge(frame, frameSrc, appId, permissions);
 			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});
 			return () => {
+				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
 			};
-		}, [htmlEntry, frameSrc]);
+		}, [htmlEntry, frameSrc, appId, permissions]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {

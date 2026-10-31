@@ -86,6 +86,8 @@ export interface ToolCall {
 }
 
 export interface ChatMessage {
+	/** Installed app that initiated this visible turn. */
+	appName?: string;
 	id: string;
 	role: "user" | "assistant";
 	content: string;

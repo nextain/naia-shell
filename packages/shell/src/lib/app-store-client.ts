@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { LAB_GATEWAY_URL } from "./config";
+import { getLocale } from "./i18n";
 
 export interface AppInstallRequest {
 	appId: string;
@@ -9,7 +10,10 @@ export interface AppInstallRequest {
 }
 
 function httpGatewayUrl(raw: string): string {
-	return raw.replace(/^ws:/, "http:").replace(/^wss:/, "https:").replace(/\/+$/, "");
+	return raw
+		.replace(/^ws:/, "http:")
+		.replace(/^wss:/, "https:")
+		.replace(/\/+$/, "");
 }
 
 export function getStoreGatewayUrl(): string {
@@ -24,20 +28,90 @@ export function getStoreGatewayUrl(): string {
 }
 
 export function hasStoreEntitlement(appId: string): Promise<boolean> {
-	return invoke<boolean>("app_store_has_entitlement", { appId, gatewayUrl: getStoreGatewayUrl() });
+	return invoke<boolean>("app_store_has_entitlement", {
+		appId,
+		gatewayUrl: getStoreGatewayUrl(),
+	});
 }
 
 interface StoreProductsResponse {
 	data?: Array<{
 		app_id?: string;
-		manifest?: { name?: string; nameKo?: string; nameEn?: string };
+		manifest?: {
+			name?: string;
+			nameKo?: string;
+			nameEn?: string;
+			description?: string;
+			descriptionKo?: string;
+			descriptionEn?: string;
+			names?: Record<string, string>;
+			descriptions?: Record<string, string>;
+			thumbnailUrl?: string;
+			thumbnail_url?: string;
+			permissions?: unknown;
+		};
 	}>;
 }
 
-export async function getStoreProductName(appId: string): Promise<string | null> {
+export interface StoreProductMetadata {
+	name: string | null;
+	description: string | null;
+	thumbnailUrl: string | null;
+	permissions: string[] | null;
+}
+
+function pickLocalized(
+	localized: Record<string, string> | undefined,
+	locale: string,
+	legacy: string | undefined,
+	root: string | undefined,
+): string | null {
+	return localized?.[locale] || legacy || localized?.en || root || null;
+}
+
+function mergeLegacyLanguages(
+	localized: Record<string, string> | undefined,
+	korean: string | undefined,
+	english: string | undefined,
+): Record<string, string> {
+	const merged = { ...localized };
+	if (!merged.ko && korean) merged.ko = korean;
+	if (!merged.en && english) merged.en = english;
+	return merged;
+}
+
+export async function getStoreProductMetadata(
+	appId: string,
+	locale = getLocale(),
+): Promise<StoreProductMetadata | null> {
 	const response = await fetch(`${getStoreGatewayUrl()}/v1/apps/products`);
 	if (!response.ok) return null;
 	const body = (await response.json()) as StoreProductsResponse;
 	const product = body.data?.find((item) => item.app_id === appId);
-	return product?.manifest?.nameKo || product?.manifest?.name || product?.manifest?.nameEn || null;
+	const manifest = product?.manifest;
+	if (!manifest) return null;
+	const names = mergeLegacyLanguages(manifest.names, manifest.nameKo, manifest.nameEn);
+	const descriptions = mergeLegacyLanguages(
+		manifest.descriptions,
+		manifest.descriptionKo,
+		manifest.descriptionEn,
+	);
+	return {
+		name: pickLocalized(names, locale, manifest.nameEn || manifest.nameKo, manifest.name),
+		description: pickLocalized(
+			descriptions,
+			locale,
+			manifest.descriptionEn || manifest.descriptionKo,
+			manifest.description,
+		),
+		thumbnailUrl: manifest.thumbnailUrl || manifest.thumbnail_url || null,
+		permissions: Array.isArray(manifest.permissions) && manifest.permissions.every((p) => typeof p === "string") ? manifest.permissions : null,
+	};
+}
+
+export async function getStoreProductName(
+	appId: string,
+	locale = getLocale(),
+): Promise<string | null> {
+	return (await getStoreProductMetadata(appId, locale))?.name ?? null;
 }

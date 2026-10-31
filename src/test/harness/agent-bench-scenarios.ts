@@ -52,6 +52,8 @@ const FAMILIES: readonly {
   { prefix: "UC-TOOLS-SURFACE-611", gate: "protocol", requiredEvidence: ["native"] },
   // 서명된 스토어 앱 도구는 모델 도구 경계와 Rust의 설치 영수증 검증을 함께 거친다.
   { prefix: "UC-APPSTORE-DYNAMIC-TOOLS-20261029", gate: "protocol", requiredEvidence: ["mock", "native"] },
+  // 설치 앱 호스트 브리지는 앱 질문·낭독의 mock 계약과 셸의 실제 Tauri 경계를 함께 확인한다.
+  { prefix: "UC-INSTALLED-APP-HOST", gate: "protocol", requiredEvidence: ["mock", "native"] },
   // 도구 루트 결속(#651)은 실제 Codex app-server 의 cwd·샌드박스로만 확인된다.
   { prefix: "UC-WORKSPACE-BIND-651", gate: "integration", requiredEvidence: ["native"] },
   // 열린 문서·터미널 인지와 제어(#680), 승인 편집(#687)은 실 UI 의 표시·승인과

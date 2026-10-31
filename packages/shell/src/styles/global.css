@@ -1007,6 +1007,60 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	gap: 8px;
 }
 
+.app-install-notice {
+	display: flex;
+	align-items: flex-start;
+	gap: 14px;
+	padding: 12px;
+	border: 1px solid var(--espresso-light);
+	border-radius: 8px;
+	background: var(--espresso-dark);
+}
+
+.app-install-product-thumbnail {
+	width: min(42%, 220px);
+	flex: 0 0 min(42%, 220px);
+	aspect-ratio: 16 / 9;
+	border: 1px solid var(--espresso-light);
+	border-radius: 5px;
+	object-fit: cover;
+}
+
+.app-install-product-copy {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.app-install-product-copy strong {
+	color: var(--cream);
+	font-size: 0.92rem;
+}
+
+.app-install-product-copy p {
+	margin: 7px 0 0;
+	color: var(--cream-dim);
+	font-family: var(--sans);
+	font-size: 0.78rem;
+	line-height: 1.55;
+}
+
+.app-install-permissions ul {
+	margin: 4px 0 0;
+	padding-inline-start: 1.5em;
+	overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+	.app-install-notice {
+		flex-direction: column;
+	}
+	.app-install-product-thumbnail {
+		width: 100%;
+		max-width: none;
+		flex-basis: auto;
+	}
+}
+
 .app-install-label {
 	font-size: 0.78rem;
 	color: var(--cream-dim);

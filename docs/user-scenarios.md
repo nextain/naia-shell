@@ -2456,3 +2456,22 @@ Test Coverage Map (P02)
 | 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
+### UC-INSTALLED-APP-HOST: 설치 앱 공용 연결과 설치 정보
+
+설치 앱 사용자는 선언된 권한에 따라 셸의 선택 모델로 질문하고 응답 또는 종료 사유를 받으며, 셸 음성으로 문장을 읽거나 취소하고 결과를 받는다. 앱은 셸 언어를 초기 로드와 변경 시 전달받는다. 스토어 설치 대화상자는 현재 언어의 이름·설명과 썸네일을 보여주며 설치 후에도 매니페스트 정보가 보존된다. 다른 앱이나 권한 없는 프레임은 요청·응답을 가로챌 수 없다. Slides 기존 연결은 유지한다.
+
+P02 테스트 매핑: bridge Vitest는 정상 응답, 스트리밍 취소, 음성 모드, 모델 미설정, 비로그인 등 조기 종료, 권한 거부, 앱·요청 분리, 낭독 완료·취소·실패, 초기·변경 언어를 검증한다. 설치 대화상자 Vitest와 Playwright는 다국어·썸네일 및 기본, 빈 정보, 진행, 성공, 오류·재시도, 좁은 폭의 정보 위계·키보드/ARIA를 검증한다. Rust 매니페스트 테스트 및 native Tauri e2e는 설치 정보 보존을 확인한다. 기존 Slides Vitest와 UI 시험은 회귀를 확인한다.
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest·Rust 파일/그룹 | 실 UI·Tauri e2e |
+|---|---|---|
+| UC-INSTALLED-APP-HOST | `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`: 권한·출처·질의·낭독·언어 브리지 계약; `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: 상품 정보와 설치 상태; `packages/shell/src-tauri/src/app.rs`: 매니페스트 메타데이터 왕복 | `packages/shell/e2e/467-slide-presenter.spec.ts`: 설치 앱 UI 브리지·Slides 회귀; `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: 네이티브 매니페스트 정보 |
+| 앱 질문·낭독 요청의 권한/출처, 정상·조기 종료·취소, 앱/요청 ID 분리, 언어 초기화·변경 | `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`: `installed app host bridge`; `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: installed app question/speech cases, 실시간 음성 모델에서 질문 거절 오류의 한국어·영어 문구 | `packages/shell/e2e/467-slide-presenter.spec.ts`: installed app bridge and Slides regression |
+| 설치 화면 다국어 이름·설명·썸네일, 빈 정보, 설치 진행/성공/오류 복구, 좁은 폭·ARIA | `packages/shell/src/components/__tests__/AppInstallDialog.test.tsx`: store metadata/install states; `packages/shell/src/lib/__tests__/app-store-client.test.ts`: localized product metadata; `packages/shell/src-tauri/src/app.rs`: manifest metadata roundtrip | `packages/shell/e2e-tauri/specs/100-installed-app-metadata.spec.ts`: native manifest metadata; `packages/shell/e2e/467-slide-presenter.spec.ts`: UI install flow |
+
+P04 증거: Shell Vitest 전체 2,558 통과 / 0 실패 / 21 제외, 관련 집중 시험 122 통과 및 다중 문장 ChatArea 84 통과. Playwright 설치 흐름 2 통과(기본·빈 정보·오류 후 재시도·진행·성공·360px·키보드/ARIA), 실 Tauri 매니페스트 IPC 1 통과, Rust 매니페스트 왕복 1 통과. 스크린샷에서 정보 위계와 좁은 폭 배치를 확인했다. 음성 장치·실 모델 계정은 모의했다.
+
+검수 1차 P01/P02: 앱의 중복 요청은 즉시 오류를 받고 기존 요청은 정산된다. 앱 질문에는 이전 대화가 전달되지 않고 앱 이름이 채팅에 표시된다. 권한이 알려진 스토어 상품은 설치 전 사람이 읽는 권한 목록을 표시하며 정보가 없으면 목록을 생략한다. 기본·빈 권한 목록·설치 진행·성공·오류 및 재시도·좁은 폭을 설치 Playwright와 컴포넌트 시험으로 확인하고, iframe 권한 거부·중복 ID·기록 격리·악성 썸네일은 Vitest, 매니페스트 썸네일은 Rust 및 native IPC로 확인한다.
+
+검수 1차 P04: 최종 Shell Vitest 2,565 통과/0 실패/21 제외, Playwright 2 통과(권한 목록·오류 복구·진행·성공·360px 및 포커스), 실제 Tauri 매니페스트 IPC 1 통과, Rust 썸네일 필터와 매니페스트 왕복 각 1 통과. 좁은 폭 스크린샷에서 정보 위계와 목록 간격을 확인했다. 실 모델 계정·음성 장치는 모의했다. 복원 원본에는 앱 표시가 없어 복원 뒤 앱 턴이 후속 기록에 들어갈 수 있다.

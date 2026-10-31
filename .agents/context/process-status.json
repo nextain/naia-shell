@@ -34,6 +34,14 @@
       "status": "implemented",
       "last_updated": "2026-10-25T22:01:00+09:00"
     },
+    "installed_app_host_bridge_20261029": {
+      "title": "설치 앱 공용 연결 및 설치 화면 다국어·썸네일",
+      "status": "done",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done", "P05": "done" },
+      "verification": "Review fix: final Shell Vitest 2565 passed, 0 failed, 21 skipped; Playwright 2 passed on alternate port; native Tauri metadata 1 passed; Rust thumbnail and metadata tests 1 each passed; cargo check and root/Shell TypeScript passed. Assembly coverage passed; root structure reports existing tmp and tsconfig.build.json. Conform gate inactive on existing main.",
+      "remaining": "Agent memory recall follows ordinary chat; restored agent transcript lacks app attribution and may enter later user history. Live model account and physical audio hardware were not used.",
+      "last_updated": "2026-10-29T10:27:02+09:00"
+    },
     "studio_nva_apply_105": {
       "issue": 105,
       "title": "Studio에서 Shell 0.2.4로 NVA 적용",
