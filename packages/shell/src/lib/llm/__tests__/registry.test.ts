@@ -4,12 +4,14 @@ import {
 	fetchNaiaModelMetadata,
 	applyNaiaModelMetadata,
 	getDefaultLlmModel,
+	getCachedNaiaModelMetadata,
 	getLlmModel,
 	getLlmProvider,
 	isApiKeyOptional,
 	isOmniModel,
 	listLlmProviders,
 	providerSupportsRole,
+	selectOpenCodeNaiaModel,
 	sortModels,
 } from "../registry";
 
@@ -337,6 +339,16 @@ describe("registry — Naia Azure model metadata", () => {
 			{ model_key: "gpt-5.6-luna", capabilities: ["llm"], supports_tools: true, upstream_provider: "azure", lifecycle: "ga", protocol: "openai_chat_completions", operational_status: "live" },
 		]), { status: 200 }));
 		const metadata = await fetchNaiaModelMetadata("https://example.com");
+		expect(getCachedNaiaModelMetadata()).toBe(metadata);
+		expect(selectOpenCodeNaiaModel("nextain", "gpt-5.6-luna")).toBe(
+			"gpt-5.6-luna",
+		);
+		expect(selectOpenCodeNaiaModel("nextain", "solar-pro4")).toBe(
+			"deepseek-v4-flash",
+		);
+		expect(selectOpenCodeNaiaModel("ollama", "qwen3:8b")).toBe(
+			"deepseek-v4-flash",
+		);
 		const models = applyNaiaModelMetadata(getLlmProvider("nextain")!.models, metadata);
 		expect(models.find((m) => m.id === "deepseek-v4-flash")).toMatchObject({ supportsTools: true, upstreamProvider: "azure" });
 		expect(models.find((m) => m.id === "solar-pro4")).toMatchObject({ supportsTools: true, upstreamProvider: "upstage" });

@@ -13,20 +13,25 @@ import {
 	useState,
 	useSyncExternalStore,
 } from "react";
+import { stopOpenCodeProjectAgentSessions } from "../apps/projects/project-agent-runtime";
 import { resetAdkPathWithRelaunch } from "../lib/adk-path-reset";
 import {
 	agentKeyExists,
 	applyModelSelectionToConfig,
 	buildNaiaConfigEnv,
 	getAdkPath,
+	isNaiaConfigHydrationPending,
 	listNaiaAssets,
 	resetAdkPathBinding,
 	resetNaiaPersistedSettings,
+	subscribeNaiaConfigHydration,
 	toLocalBlobUrl,
 	writeAgentKeyStrictAtPath,
 	writeAgentSecretAtPath,
 	writeNaiaConfig,
 	writeNaiaConfigAtPath,
+	AgentSettingsReloadError,
+	reloadAgentSettings as reloadPersistedAgentSettings,
 	writeNaiaUiConfig,
 	writeSlotsManifest,
 } from "../lib/adk-store";
@@ -107,6 +112,7 @@ import {
 	setLocale,
 	t,
 } from "../lib/i18n";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import {
 	cancelOllamaModelPull,
 	fetchOllamaModelCatalog,
@@ -499,9 +505,11 @@ const LOCALES: { id: Locale; label: string }[] = [
 function LocalePicker({
 	value,
 	onChange,
+	disabled = false,
 }: {
 	value: Locale;
 	onChange: (locale: Locale) => void;
+	disabled?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
 	const selected = LOCALES.find((locale) => locale.id === value) ?? LOCALES[1];
@@ -526,6 +534,7 @@ function LocalePicker({
 				// 커스텀 드롭다운으로 바꾸면서 값이 이름표 안에만 남아, 밖에서는
 				// 무엇이 골라져 있는지 알 수 없게 됐다.
 				data-value={value}
+				disabled={disabled}
 				aria-controls="locale-select-options"
 				aria-expanded={open}
 				onClick={() => setOpen((current) => !current)}
@@ -540,6 +549,7 @@ function LocalePicker({
 							type="button"
 							key={locale.id}
 							aria-pressed={locale.id === value}
+							disabled={disabled}
 							onClick={() => {
 								onChange(locale.id);
 								setOpen(false);
@@ -701,7 +711,24 @@ function ttsPricingLabel(p: { id: string; pricing?: string }): string {
 	return p.id === "nextain" ? t("tts.pricingNaiaCredits") : (p.pricing ?? "");
 }
 
+async function openNvaAvatarCreator(): Promise<void> {
+	const url = naiaWebUrl(`${getLocale()}/studio/nva/create`, NAIA_WEB_BASE_URL);
+	Logger.debug("SettingsTab", "Opening NVA avatar creator", { url });
+	try {
+		await openUrl(url);
+	} catch (error) {
+		Logger.warn("SettingsTab", "Failed to open NVA avatar creator", {
+			error: String(error),
+		});
+	}
+}
+
 export function SettingsTab() {
+	const localeHydrating = useSyncExternalStore(
+		subscribeNaiaConfigHydration,
+		isNaiaConfigHydrationPending,
+		() => false,
+	);
 	const paymentLinksHidden = usePaymentLinksHidden();
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
 		| "profile"
@@ -1349,11 +1376,16 @@ export function SettingsTab() {
 					voiceConfig,
 					detectedVramGb ?? undefined,
 				);
-				if (!manifest) throw new Error("Local voice slots manifest write failed");
+				if (!manifest)
+					throw new Error("Local voice slots manifest write failed");
 			} catch (error) {
-				Logger.warn("Settings", "ensureLocalVoiceReady:running-config-save-failed", {
-					error: String(error),
-				});
+				Logger.warn(
+					"Settings",
+					"ensureLocalVoiceReady:running-config-save-failed",
+					{
+						error: String(error),
+					},
+				);
 				// Restore the in-memory and persisted selection before reporting failure.
 				saveConfig(cfg);
 				setTtsProvider(cfg.ttsProvider ?? "edge");
@@ -2817,6 +2849,17 @@ export function SettingsTab() {
 				setLabWaiting(true);
 				setError("");
 				try {
+					try {
+						await stopOpenCodeProjectAgentSessions();
+					} catch (error) {
+						Logger.warn(
+							"Settings",
+							"Failed to stop OpenCode sessions before Naia login",
+							{
+								reason: error instanceof Error ? error.message : "stop_failed",
+							},
+						);
+					}
 					const nextConfig = buildNaiaLoginConfig(
 						loadConfig(),
 						nextNaiaKey,
@@ -3154,11 +3197,95 @@ export function SettingsTab() {
 		await checkCliReadiness("claude", setClaudePreflightStatus);
 	}
 
+	const [localeSaving, setLocaleSaving] = useState(false);
+	const localeSavingRef = useRef(false);
+	const [localeReloadPending, setLocaleReloadPending] = useState(false);
+	const [localeRetrying, setLocaleRetrying] = useState(false);
+
 	async function handleLocaleChange(id: Locale) {
-		await setLocale(id);
-		setLocaleState(id);
-		// 활성 음성 세션(naia-omni)에 새 인식 언어를 즉시 핀(재연결 없음). ChatArea 이 수신.
-		window.dispatchEvent(new CustomEvent("naia:locale-change", { detail: id }));
+		if (localeSavingRef.current) return;
+		localeSavingRef.current = true;
+		setError("");
+		setLocaleReloadPending(false);
+		if (isNaiaConfigHydrationPending()) {
+			setError(t("settings.saveFailed"));
+			localeSavingRef.current = false;
+			return;
+		}
+		const previousLocale = locale;
+		const current = loadConfig();
+		const adkPath = getAdkPath();
+		if (!current || !adkPath) {
+			setError(t("settings.saveFailed"));
+			localeSavingRef.current = false;
+			return;
+		}
+		const updated = { ...current, locale: id };
+		setLocaleSaving(true);
+		try {
+			await setLocale(id);
+			setLocaleState(id);
+			saveConfig(updated);
+			await writeNaiaConfigAtPath(
+				updated as unknown as Record<string, unknown>,
+				adkPath,
+			);
+			// Pin active speech recognition only after the persisted locale is
+			// committed, so failed writes cannot split voice and screen languages.
+			window.dispatchEvent(
+				new CustomEvent("naia:locale-change", { detail: id }),
+			);
+		} catch (error) {
+			if (error instanceof AgentSettingsReloadError) {
+				// config.json is already committed. Keep UI/cache/voice aligned with it
+				// and expose an explicit retry for the running Agent.
+				window.dispatchEvent(
+					new CustomEvent("naia:locale-change", { detail: id }),
+				);
+				setLocaleReloadPending(true);
+				setError(t("settings.agentReloadFailed"));
+				return;
+			}
+			await setLocale(previousLocale).catch((rollbackError: unknown) => {
+				Logger.warn(
+					"SettingsTab",
+					"Failed to reload prior locale after save error",
+					{
+						locale: previousLocale,
+						error:
+							rollbackError instanceof Error
+								? rollbackError.message
+								: String(rollbackError),
+					},
+				);
+			});
+			setLocaleState(previousLocale);
+			saveConfig(current);
+			Logger.error("SettingsTab", "Failed to persist locale selection", {
+				locale: id,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			setError(t("settings.saveFailed"));
+		} finally {
+			localeSavingRef.current = false;
+			setLocaleSaving(false);
+		}
+	}
+
+	async function retryLocaleAgentReload() {
+		if (localeSavingRef.current) return;
+		localeSavingRef.current = true;
+		setLocaleRetrying(true);
+		try {
+			await reloadPersistedAgentSettings();
+			setLocaleReloadPending(false);
+			setError("");
+		} catch {
+			setError(t("settings.agentReloadFailed"));
+		} finally {
+			localeSavingRef.current = false;
+			setLocaleRetrying(false);
+		}
 	}
 
 	function handleThemeChange(id: ThemeId) {
@@ -4023,6 +4150,15 @@ export function SettingsTab() {
 			{error && (
 				<div className="settings-error" role="alert">
 					{error}
+					{localeReloadPending && (
+						<button
+							type="button"
+							onClick={retryLocaleAgentReload}
+							disabled={localeRetrying || localeSaving}
+						>
+							{localeRetrying ? t("settings.saving") : t("common.retry")}
+						</button>
+					)}
 				</div>
 			)}
 			{activeSettingsTab === "general" && (
@@ -4037,7 +4173,19 @@ export function SettingsTab() {
 							<label htmlFor="locale-select" style={{ margin: 0 }}>
 								{t("settings.language")}
 							</label>
-							<LocalePicker value={locale} onChange={handleLocaleChange} />
+							<LocalePicker
+								value={locale}
+								onChange={handleLocaleChange}
+								disabled={localeSaving || localeRetrying || localeHydrating}
+							/>
+							<span
+								className="settings-hint"
+								role="status"
+								aria-live="polite"
+								aria-atomic="true"
+							>
+								{localeSaving ? t("settings.saving") : ""}
+							</span>
 							<button
 								type="button"
 								className="voice-preview-btn"
@@ -4232,6 +4380,20 @@ export function SettingsTab() {
 								{t("settings.avatarProviderVideo")}
 							</option>
 						</select>
+						<div className="settings-nva-create">
+							<p className="settings-nva-create__description">
+								{t("settings.nvaCreateDesc")}
+							</p>
+							<button
+								type="button"
+								className="voice-preview-btn settings-nva-create__button"
+								aria-label={t("settings.nvaCreate")}
+								title={t("settings.nvaCreate")}
+								onClick={() => void openNvaAvatarCreator()}
+							>
+								{t("settings.nvaCreate")}
+							</button>
+						</div>
 					</div>
 
 					{/* VRM picker — shown when avatarProvider === "vrm" */}
@@ -4614,6 +4776,22 @@ export function SettingsTab() {
 														const sourceAdkPath = getAdkPath();
 														const sourceSecureStorePath = getSecureStorePath();
 														if (!sourceAdkPath) return;
+														try {
+															await stopOpenCodeProjectAgentSessions();
+														} catch (error) {
+															Logger.warn(
+																"Settings",
+																"Naia logout stopped before changing credentials",
+																{
+																	reason:
+																		error instanceof Error
+																			? error.message
+																			: "stop_failed",
+																},
+															);
+															setError(t("settings.saveFailed"));
+															return;
+														}
 														try {
 															clearLocalVoiceAccessToken();
 															await invoke("stop_voxcpm2");

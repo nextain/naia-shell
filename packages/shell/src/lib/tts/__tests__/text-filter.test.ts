@@ -16,6 +16,18 @@ describe("ttsTextFilter", () => {
 		).toBe("문서를 보세요");
 	});
 
+	it("keeps a word boundary after an inline emotion tag", () => {
+		expect(ttsTextFilter.filter("있어요[HAPPY] 음악은 계속해서 흘러가요")).toBe(
+			"있어요 음악은 계속해서 흘러가요",
+		);
+	});
+
+	it("leaves no leading space for start / line-start / consecutive tags", () => {
+		expect(ttsTextFilter.filter("[HAPPY] 안녕하세요")).toBe("안녕하세요");
+		expect(ttsTextFilter.filter("첫줄\n[HAPPY] 안녕")).toBe("첫줄 안녕");
+		expect(ttsTextFilter.filter("[HAPPY][SAD] 안녕")).toBe("안녕");
+	});
+
 	it("removes Markdown list markers while preserving natural punctuation", () => {
 		expect(ttsTextFilter.filter("- 첫 번째\n- 두 번째, 맞죠?")).toBe(
 			"첫 번째 두 번째, 맞죠?",

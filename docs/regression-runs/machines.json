@@ -43,7 +43,7 @@
         "credentialed_live",
         "native_local"
       ],
-      "note": "윈도우 로컬 음성의 기준 기계. 음성 프로파일이 6GB 를 쓰므로 8GB 로 감당한다. 2026-10-23: 지금 회귀를 돌릴 수 없는 상태라 비활성으로 둔다. 윈도우 몫은 win-rtx2070 이 맡는다. 다시 돌릴 수 있게 되면 active 를 true 로 바꾼다.",
+      "note": "윈도우 로컬 음성의 기준 기계. 음성 프로파일이 6GB 를 쓰므로 8GB 로 감당한다. 2026-10-28: win-rtx2070 과 함께 켠다 — 윈도우 몫을 둘이 나눠 돈다.",
       "active": true
     },
     {
@@ -57,8 +57,8 @@
         "credentialed_live",
         "native_local"
       ],
-      "note": "2026-10-23 합류. win-rtx4060 이 비활성인 동안 윈도우 몫을 혼자 맡는다. Turing(compute 7.5)이라 음성 런타임 엔진은 이 기계에서 다시 빌드한 것을 쓴다.",
-      "active": false
+      "note": "2026-10-23 합류. 2026-10-28: win-rtx4060 과 함께 켜 윈도우 몫을 나눠 돈다. Turing(compute 7.5)이라 음성 런타임 엔진은 이 기계에서 다시 빌드한 것을 쓴다.",
+      "active": true
     },
     {
       "name": "win-nogpu",

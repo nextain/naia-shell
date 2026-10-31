@@ -14,13 +14,15 @@ export interface ProjectWebViewPanelProps {
 	url: string | null;
 }
 
-function urlKey(view: ProjectWebViewKind): "dashboard_url" | "issues_url" {
+function urlKey(view: ProjectWebViewKind): string {
 	Logger.debug(
 		"ProjectWebViewPanel",
 		"mapping fixed project view to config key",
 		{ view },
 	);
-	return view === "dashboard" ? "dashboard_url" : "issues_url";
+	return view === "dashboard"
+		? "docs_url / dashboard_url"
+		: "tasks_url / issues_url";
 }
 
 function openErrorMessage(error: unknown): string {

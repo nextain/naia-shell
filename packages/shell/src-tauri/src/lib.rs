@@ -1,3 +1,8 @@
+// E2E-only hooks (WebDriver plugin, WebView2 microphone auto-allow) must never ship.
+// The E2E build scripts use the dev profile; an optimized build with this feature is a release mistake.
+#[cfg(all(feature = "webdriver-e2e", not(debug_assertions)))]
+compile_error!("the `webdriver-e2e` feature is test-only and must not be enabled in a release (non-debug_assertions) build");
+
 pub(crate) mod accelerator;
 pub(crate) mod vram_reservation;
 mod agent_grpc;
@@ -1856,6 +1861,11 @@ pub(crate) fn log_verbose(msg: &str) {
 
 fn debug_e2e_flags_enabled(debug: Option<&str>, mode: Option<&str>) -> bool {
     matches!(debug, Some("1" | "true" | "TRUE")) && mode == Some("1")
+}
+
+#[cfg_attr(not(all(windows, feature = "webdriver-e2e")), allow(dead_code))]
+fn e2e_should_auto_allow_permission(e2e: bool, is_microphone: bool) -> bool {
+    e2e && is_microphone
 }
 
 fn debug_e2e_enabled() -> bool {
@@ -14227,11 +14237,21 @@ mod naia_adk_source_network_tests {
     use super::{naia_adk_fetch_zip, naia_adk_git_clone, NAIA_ADK_REPO_URL, NAIA_ADK_ZIP_URL};
     use std::path::{Path, PathBuf};
 
-    const PL04_ASSET_PATHS: [&str; 4] = [
-        "naia-settings/vrm-files/naia_char_skin_head.vrm",
-        "naia-settings/vrm-files/naia_char_with_hair.vrm",
-        "naia-settings/background/flower-shop-beachside-moewalls-com.mp4",
-        "naia-settings/background/morning-coffee.3840x2160.mp4",
+    const DEFAULT_ASSET_PATHS: [&str; 14] = [
+        "naia-settings/vrm-files/01-OL_Woman.vrm",
+        "naia-settings/vrm-files/02-Hood_Boy.vrm",
+        "naia-settings/nva-files/naia/manifest.json",
+        "naia-settings/nva-files/jina/manifest.json",
+        "naia-settings/nva-files/minho/manifest.json",
+        "naia-settings/background/naia-sunrise-river.webp",
+        "naia-settings/background/naia-sky-garden.webp",
+        "naia-settings/background/naia-dawn-city-uhd.webp",
+        "naia-settings/background/naia-autumn-office-live.mp4",
+        "naia-settings/background/naia-starlight-lake-live.mp4",
+        "naia-settings/background/naia-rainy-studio-live.mp4",
+        "naia-settings/bgm-musics/Afternoon Whispers.mp3",
+        "naia-settings/bgm-musics/naia-radio-its-okay-to-turn-off-the-light-en.mp3",
+        "naia-settings/bgm-musics/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
     ];
 
     fn resolve_fetch_dir() -> PathBuf {
@@ -14240,14 +14260,14 @@ mod naia_adk_source_network_tests {
         PathBuf::from(dir_str)
     }
 
-    fn check_pl04_assets(base: &Path) {
+    fn check_default_assets(base: &Path) {
         let mut missing_or_invalid = Vec::new();
         let mut valid_assets = Vec::new();
 
-        for rel_path in PL04_ASSET_PATHS {
+        for rel_path in DEFAULT_ASSET_PATHS {
             let full_path = base.join(rel_path);
             match std::fs::metadata(&full_path) {
-                Ok(meta) if meta.is_file() && meta.len() > 1_000_000 => {
+                Ok(meta) if meta.is_file() && meta.len() > 0 => {
                     valid_assets.push((full_path, meta.len()));
                 }
                 Ok(meta) => {
@@ -14266,7 +14286,7 @@ mod naia_adk_source_network_tests {
 
         if !missing_or_invalid.is_empty() {
             panic!(
-                "Missing or invalid PL-04 assets in {}:\n{}",
+                "Missing or invalid default assets in {}:\n{}",
                 base.display(),
                 missing_or_invalid.join("\n")
             );
@@ -14279,7 +14299,7 @@ mod naia_adk_source_network_tests {
 
     #[test]
     #[ignore = "network: nextain/naia-adk 실제 받기, 수동 실행"]
-    fn real_git_clone_has_pl04_assets() {
+    fn real_git_clone_has_default_assets() {
         let fetch_dir = resolve_fetch_dir();
         let git_dir = fetch_dir.join("git");
         if git_dir.exists() {
@@ -14290,12 +14310,12 @@ mod naia_adk_source_network_tests {
             git_dir.to_str().expect("valid utf-8 git_dir"),
         )
         .expect("naia_adk_git_clone failed");
-        check_pl04_assets(&git_dir);
+        check_default_assets(&git_dir);
     }
 
     #[tokio::test]
     #[ignore = "network: nextain/naia-adk 실제 받기, 수동 실행"]
-    async fn real_zip_fetch_has_pl04_assets() {
+    async fn real_zip_fetch_has_default_assets() {
         let fetch_dir = resolve_fetch_dir();
         let zip_dir = fetch_dir.join("zip");
         if zip_dir.exists() {
@@ -14315,7 +14335,7 @@ mod naia_adk_source_network_tests {
             progress_called,
             "progress callback was not called during zip fetch"
         );
-        check_pl04_assets(&zip_dir);
+        check_default_assets(&zip_dir);
     }
 }
 
@@ -14664,6 +14684,7 @@ pub fn run() {
             // Common tab skills
             capture::capture_screen_region,
             app::app_list_installed,
+            app::app_verify_installed_store_app,
             app::app_remove_installed,
             app::app_read_file,
             app::app_run_shell,
@@ -14678,6 +14699,8 @@ pub fn run() {
             app_sandbox::slides_recording_start,
             app_sandbox::slides_recording_stop,
             app::app_store_has_entitlement,
+            app::app_store_last_entitlement_grant,
+            app::focus_or_create_app_store_window,
             app::app_install_store,
             workspace::workspace_list_dirs,
             workspace::workspace_list_files_recursive,
@@ -14725,6 +14748,9 @@ pub fn run() {
             project_agent_pty::commands::project_agent_pty_write,
             project_agent_pty::commands::project_agent_pty_resize,
             project_agent_pty::commands::project_agent_pty_stop,
+            project_catalog_runtime::docs::project_docs_list,
+            project_catalog_runtime::docs::project_docs_read,
+            project_catalog_runtime::class_reset::project_class_reset,
             enable_webview2_ime,
             device_pairing::device_list,
             device_pairing::device_list_requests,
@@ -14934,6 +14960,97 @@ pub fn run() {
                 });
             }
 
+            // Windows: auto-allow microphone permission in unattended E2E mode only (#545)
+            #[cfg(all(windows, feature = "webdriver-e2e"))]
+            if debug_e2e_enabled() {
+                if let Some(webview_window) = app.get_webview_window("main") {
+                    let res = webview_window.with_webview(|webview| {
+                        use webview2_com::Microsoft::Web::WebView2::Win32::{
+                            COREWEBVIEW2_PERMISSION_KIND,
+                            COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+                            COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+                            ICoreWebView2PermissionRequestedEventArgs,
+                            ICoreWebView2PermissionRequestedEventArgs3,
+                        };
+                        use windows::core::Interface;
+
+                        let controller = webview.controller();
+                        let core = match unsafe { controller.CoreWebView2() } {
+                            Ok(core) => core,
+                            Err(err) => {
+                                log_both(&format!(
+                                    "[Naia] E2E: failed to get CoreWebView2: {err}"
+                                ));
+                                return;
+                            }
+                        };
+
+                        let handler = webview2_com::PermissionRequestedEventHandler::create(Box::new(
+                            move |_sender, args: Option<ICoreWebView2PermissionRequestedEventArgs>| -> windows::core::Result<()> {
+                                if let Some(args) = args {
+                                    let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+                                    match unsafe { args.PermissionKind(&mut kind) } {
+                                        Ok(()) => {
+                                            let is_microphone = kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE;
+                                            if e2e_should_auto_allow_permission(debug_e2e_enabled(), is_microphone) {
+                                                match args.cast::<ICoreWebView2PermissionRequestedEventArgs3>() {
+                                                    Ok(args3) => {
+                                                        if let Err(err) = unsafe {
+                                                            args3.SetSavesInProfile(false)
+                                                        } {
+                                                            log_both(&format!(
+                                                                "[Naia] E2E: failed to set SetSavesInProfile(false): {err}"
+                                                            ));
+                                                        } else if let Err(err) = unsafe {
+                                                            args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)
+                                                        } {
+                                                            log_both(&format!(
+                                                                "[Naia] E2E: failed to set microphone permission allow: {err}"
+                                                            ));
+                                                        }
+                                                    }
+                                                    Err(err) => {
+                                                        log_both(&format!(
+                                                            "[Naia] E2E: failed to cast permission args to v3 (SetSavesInProfile): {err}"
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(err) => {
+                                            log_both(&format!(
+                                                "[Naia] E2E: failed to read permission kind: {err}"
+                                            ));
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                                Ok(())
+                            },
+                        ));
+
+                        let mut token = Default::default();
+                        match unsafe { core.add_PermissionRequested(&handler, &mut token) } {
+                            Ok(()) => {
+                                log_both(
+                                    "[Naia] E2E: WebView2 microphone permission auto-allow installed",
+                                );
+                            }
+                            Err(err) => {
+                                log_both(&format!(
+                                    "[Naia] E2E: failed to register PermissionRequested handler: {err}"
+                                ));
+                            }
+                        }
+                    });
+                    if let Err(err) = res {
+                        log_both(&format!("[Naia] E2E: with_webview failed: {err}"));
+                    }
+                } else {
+                    log_both("[Naia] E2E: main webview window not found for permission setup");
+                }
+            }
+
             // Log session start
             log_both("[Naia] === Session started ===");
             log_verbose(&format!("[Naia] Log files at: {}", log_dir().display()));
@@ -15068,6 +15185,9 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             match event {
+                tauri::WindowEvent::Destroyed if window.label() == "app-store" => {
+                    let _ = window.app_handle().emit("app-store-closed", ());
+                }
                 tauri::WindowEvent::Moved(pos) if window.label() == "main" => {
                     if let Ok(size) = window.outer_size() {
                         save_window_state(&window.app_handle(), &WindowState {
@@ -15214,6 +15334,14 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_e2e_should_auto_allow_permission() {
+        assert_eq!(e2e_should_auto_allow_permission(true, true), true);
+        assert_eq!(e2e_should_auto_allow_permission(true, false), false);
+        assert_eq!(e2e_should_auto_allow_permission(false, true), false);
+        assert_eq!(e2e_should_auto_allow_permission(false, false), false);
+    }
 
     #[test]
     fn released_voice_profiles_pass_undecided_amount_to_kind_only_reservation() {

@@ -24,7 +24,7 @@ describe("camera-actions bridge", () => {
 			a.save();
 		}).not.toThrow();
 		expect(a.getGestureActions()).toEqual([]);
-		await expect(a.playAction("missing")).resolves.toBeUndefined();
+		await expect(a.playAction("missing")).resolves.toBe(false);
 	});
 
 	it("registers an implementation that the singleton delegates to", () => {
@@ -41,7 +41,7 @@ describe("camera-actions bridge", () => {
 
 	it("registers zoom and NVA gesture actions through the same bridge", async () => {
 		const zoom = vi.fn();
-		const playAction = vi.fn().mockResolvedValue(undefined);
+		const playAction = vi.fn().mockResolvedValue(true);
 		const actions = [{ key: "wave", label: "Wave" }];
 		registerCameraActions({
 			zoom,
@@ -50,7 +50,7 @@ describe("camera-actions bridge", () => {
 		});
 
 		getCameraActions().zoom(0.1);
-		await getCameraActions().playAction("wave");
+		expect(await getCameraActions().playAction("wave")).toBe(true);
 
 		expect(zoom).toHaveBeenCalledWith(0.1);
 		expect(playAction).toHaveBeenCalledWith("wave");

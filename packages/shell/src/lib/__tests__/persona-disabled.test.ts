@@ -31,6 +31,10 @@ describe("페르소나 사용 안 함", () => {
 		);
 		expect(withGesture).toContain("wave: Wave");
 		expect(withGesture).toContain("[[gesture:key]]");
+		expect(withGesture).toMatch(/Alt\+1|⌥1/);
+		expect(withGesture).toContain(
+			"Actively use an action when its meaning fits",
+		);
 		const empty = buildSystemPrompt(
 			"아무 페르소나",
 			{ ...ctx, avatarGestures: [] },
@@ -40,7 +44,11 @@ describe("페르소나 사용 안 함", () => {
 	});
 
 	it("켜면 기존대로 페르소나가 들어간다", () => {
-		const p = buildSystemPrompt("You are Naia (낸), a friendly AI.", ctx, false);
+		const p = buildSystemPrompt(
+			"You are Naia (낸), a friendly AI.",
+			ctx,
+			false,
+		);
 		expect(p).toContain("루크");
 	});
 

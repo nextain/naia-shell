@@ -1,4 +1,33 @@
-<!-- src-sha: cd9d6458915f5893 -->
+<!-- src-sha: 727a1bc8c244f98e -->
+
+## 서명 검증 스토어 앱 도구 동적 허용 — 2026-10-29
+
+- P01–P05 완료: 서명된 Store 앱에서 활성 앱이 선언한 `skill_*`만 모델 경계에 동적으로 허용한다. Rust는 설치 당시 서명된 원본 ZIP과 현재 `app.json` 일치를 재검증한다. Shell 내장 도구·타 앱 중복은 기록 후 거부하고, 제거·비활성화 뒤 허용하지 않는다.
+- `skill_blackjack_tutor`는 정적 Shell 목록에서 제거했다. Rust 확인된 Store 설치는 활성 앱 조건을 적용하고, 개발자 사이드로드는 설치 중인 기존 호환 경로를 유지한다.
+- 검증: focused Vitest 35/35, Biome 6개 TS 파일, 코어 build, Shell tsc, Rust `app::tests` 23/23 통과. UI 표현 변경이 없어 visual UX 검토는 해당하지 않는다. 실 Gateway entitlement 설치를 통한 native Store E2E는 실행하지 않았다.
+<!-- src-sha: 3f633f44ef08e32c -->
+
+## 설치 앱 공용 연결·설치 화면 — 2026-10-29
+
+- 검수 1차: 중복 ID 오류, 앱 질문 기록 격리와 표시, 설치 권한 고지 및 HTTPS 썸네일을 반영했다. 최종 Shell Vitest 2,565 통과/0 실패/21 제외, Playwright 2 통과, 실제 Tauri 1 통과, Rust 각 1 통과. 복원 원본에 앱 표시가 없어 복원 후 앱 턴 구분은 되지 않는다.
+
+- P01–P05: 설치 앱의 권한별 모델 질의·낭독·언어 전달, 설치 상품 다국어 정보와 썸네일을 구현했다.
+- 검증: 전체 Shell Vitest 2,558 통과/0 실패/21 제외, Playwright 2 통과, 실제 Tauri 매니페스트 IPC 1 통과, Rust 검사와 매니페스트 왕복 시험 통과. 실 계정·음성 장치는 모의했다. 기존 conform 게이트 비활성은 범위 밖이다.
+
+## 0.2.4 설치판 YouTube 스트림 추출 제거 — 2026-10-27
+
+- P01–P05 완료: `/yt/stream` 처리기와 URL 추출·형식 선택·decipher 제거. `/yt/search` 메타데이터 검색과 공식 iframe 재생은 유지하며 `<audio>`는 로컬 파일만 받는다.
+- 설치 리소스 검증: staged sidecar 검색은 HTTP 200으로 메타데이터 2건(각각 id/title/thumbnail/duration/channel)을 반환했고 `/yt/stream`은 HTTP 404 `not found`를 반환했다. staged `dist`에는 추출 코드가 없다.
+- 검증: sidecar build, root/Shell TypeScript, BGM Vitest 102/102, BGM Playwright 12/12, 실제 YouTube iframe 미디어 시계 30.1초 진행. 전체 Shell Vitest는 2,518 통과/21 제외/기존 agent-pairing assertion 1 실패.
+- process-status.json 이번 가지 갱신은 조정자(민호)가 승인했다(대표님 상시 원문: “운영 배포 빼고는 내 승인은 필요 없어”).
+
+## NVA 동작 Alt 단축키·채팅 배치 — 2026-10-25
+
+- P01–P05 완료: `UC-NVA-ACTION-HOTKEYS-20261025`, FR-NVA-GESTURE.2~3, Alt+1~9/입력 근처 단추/AI 사용 제한과 TTS idle 지연을 구현했다.
+- 검증: 루트·Shell TypeScript 검사 통과, 집중 Vitest 157/157, Shell 전체 Vitest 2,497 통과/1 실패/21 제외(유일한 실패 `platform-matrix.test.ts` ELF payload mode 0644 기대/0755 실제; 수정 전 `origin/main` 09e30c2b 기준도 2,463 통과/같은 1 실패/21 제외라 새 실패 0), Playwright `nva-prebaked.spec.ts` 2/2 통과.
+- `verify-visual-ux`: 데스크톱과 360px 화면에서 입력 옆 단추, 입력 초안 보존, 키 표시·비겹침, 빈 목록, 로딩·오류 상태를 확인했다. 캡처는 `/var/mnt/hdd/tmp/nva-hotkeys/evidence/`에 저장했다.
+- 단축키 판정은 `event.code`의 `Digit1`~`Digit9`만 사용하고 키패드는 제외한다. xterm 포커스는 통과시키고 CodeMirror는 허용한다. AI 제한은 최소 15초/같은 key 60초이며 수동 동작은 제한하지 않고 기록한다. TTS가 동작 영상을 끊는 renderer 회귀를 재현해 AI 동작을 idle까지 미루도록 했다.
+- `check-assembly-coverage.mjs` 통과. `enforce-root-structure.sh`는 기존 미등록 `tmp/`와 `tsconfig.build.json` 2건을 보고했다. 둘은 이 작업에서 수정하지 않았다. 커밋하지 않았다.
 
 ## Studio NVA 쉘 적용 — 2026-10-22 (#105)
 

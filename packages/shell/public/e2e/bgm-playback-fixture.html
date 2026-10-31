@@ -16,14 +16,28 @@
  let handshakeComplete = false;
  let stateSubscribed = false;
  let errorSubscribed = false;
+ // The real iframe API answers `listening` and `getVideoData` with
+ // infoDelivery.videoData; the Shell only trusts onStateChange(1) after that
+ // confirms the video id. Echo the id the Shell put in the iframe URL.
+ const videoId = new URL(window.location.href).searchParams.get('videoId') ?? '';
+ const sendVideoData = () => {
+  if (videoId) send('infoDelivery', { videoData: { video_id: videoId } });
+ };
  window.addEventListener('message', (event) => {
   try {
    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
    if (!data || typeof data !== 'object') return;
-   if (data.event === 'listening' && !handshakeComplete) {
-    handshakeComplete = true;
-    send('initialDelivery', 0);
-    send('onReady', null);
+   if (data.event === 'listening') {
+    if (!handshakeComplete) {
+     handshakeComplete = true;
+     send('initialDelivery', 0);
+     send('onReady', null);
+    }
+    sendVideoData();
+    return;
+   }
+   if (data.event === 'command' && data.func === 'getVideoData') {
+    sendVideoData();
     return;
    }
    if (data.event === 'command' && data.func === 'addEventListener' && Array.isArray(data.args)) {

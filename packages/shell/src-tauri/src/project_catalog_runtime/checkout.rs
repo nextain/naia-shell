@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 use super::config::read_project_runtime_config;
 use super::{ProjectCatalogAuthority, ResolvedProjectCheckout};
@@ -14,9 +15,19 @@ pub(crate) fn resolve_project_checkout(
         "[project_catalog_runtime::resolve_project_checkout] enter adapter_root_supplied=true project_path_supplied=true",
     );
     let config = read_project_runtime_config(authority, adapter_root, project_path)?;
-    let repository = config
-        .repository
-        .ok_or_else(|| "repository_invalid".to_owned())?;
+    resolve_checkout_from_parts(
+        &config.adapter_root,
+        &config.project_path,
+        config.repository.as_deref(),
+    )
+}
+
+pub(crate) fn resolve_checkout_from_parts(
+    adapter_root: &Path,
+    project_path: &Path,
+    repository: Option<&str>,
+) -> Result<ResolvedProjectCheckout, String> {
+    let repository = repository.ok_or_else(|| "repository_invalid".to_owned())?;
     let repository_parts = repository.split(['/', '\\']).collect::<Vec<_>>();
     if repository_parts.len() < 2
         || repository_parts.iter().any(|part| {
@@ -38,7 +49,7 @@ pub(crate) fn resolve_project_checkout(
         .ok_or_else(|| "repository_invalid".to_owned())?;
 
     let checkout_relative_path = format!("checkouts/{repository_name}");
-    let checkouts_root = config.adapter_root.join("checkouts");
+    let checkouts_root = adapter_root.join("checkouts");
     match fs::symlink_metadata(&checkouts_root) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             crate::log_verbose(
@@ -62,7 +73,7 @@ pub(crate) fn resolve_project_checkout(
     }
     let canonical_checkouts =
         dunce::canonicalize(&checkouts_root).map_err(|_| "checkout_unsafe".to_owned())?;
-    if canonical_checkouts.parent() != Some(config.adapter_root.as_path()) {
+    if canonical_checkouts.parent() != Some(adapter_root) {
         crate::log_verbose(
             "[project_catalog_runtime::resolve_project_checkout] branch=checkout_root_outside_adapter",
         );
@@ -102,7 +113,7 @@ pub(crate) fn resolve_project_checkout(
         "[project_catalog_runtime::resolve_project_checkout] branch=checkout_verified relative_path=checkouts/<repository-name>",
     );
     Ok(ResolvedProjectCheckout {
-        project_path: config.project_path,
+        project_path: project_path.to_path_buf(),
         checkout_path,
         checkout_relative_path,
     })

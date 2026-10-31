@@ -50,6 +50,10 @@ const FAMILIES: readonly {
   // 2026-09-25 (#712) — 앞 단계가 붉어 드러나지 않던 사이 들어온 능력 축 UC.
   // 모델이 받는 도구 목록(#611)은 실제 대화·음성 세션이 무엇을 싣는지로 본다.
   { prefix: "UC-TOOLS-SURFACE-611", gate: "protocol", requiredEvidence: ["native"] },
+  // 서명된 스토어 앱 도구는 모델 도구 경계와 Rust의 설치 영수증 검증을 함께 거친다.
+  { prefix: "UC-APPSTORE-DYNAMIC-TOOLS-20261029", gate: "protocol", requiredEvidence: ["mock", "native"] },
+  // 설치 앱 호스트 브리지는 앱 질문·낭독의 mock 계약과 셸의 실제 Tauri 경계를 함께 확인한다.
+  { prefix: "UC-INSTALLED-APP-HOST", gate: "protocol", requiredEvidence: ["mock", "native"] },
   // 도구 루트 결속(#651)은 실제 Codex app-server 의 cwd·샌드박스로만 확인된다.
   { prefix: "UC-WORKSPACE-BIND-651", gate: "integration", requiredEvidence: ["native"] },
   // 열린 문서·터미널 인지와 제어(#680), 승인 편집(#687)은 실 UI 의 표시·승인과
@@ -155,6 +159,8 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-PROJECT-APP-SELECT-OPEN-756-S1",
   "UC-PROJECT-APP-SINGLE-OPEN-756-S2",
   "UC-PROJECT-APP-LOCAL-756-S3",
+  // 프로젝트 앱 문서·작업 칸 정리와 수업 프로젝트 문서 칸·수업 초기화. 앱 표면 기능이다.
+  "UC-PROJECT-APP-PANELS-CLASS-20261025",
   // Studio에서 쉘로 NVA 아바타 적용 딥링크(#105). OS 링크 전달·다운로드 검사·아바타 적용이다.
   "UC-SHELL-STUDIO-NVA-APPLY-105",
 ];

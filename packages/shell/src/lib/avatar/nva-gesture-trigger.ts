@@ -6,6 +6,7 @@
 
 import { type NvaManifest, animKind } from "./nva-core";
 import type { NvaGestureAction } from "./camera-actions";
+import { wordBoundaryForRemovedMarker } from "../text-boundary";
 
 export interface ParsedGesture {
 	/** 해석된 gesture 애니 key(매니페스트). */
@@ -22,7 +23,8 @@ export interface GestureParseResult {
 }
 
 // [[gesture:X]] / [[g:X]] — X 는 `]` `[` 제외 1글자 이상. 대소문자 무시.
-const MARKER = /\[\[\s*(?:gesture|g)\s*:\s*([^[\]]+?)\s*\]\]/gi;
+// 마커 뒤 가로 공백까지 함께 소비(1-B: 글/줄 맨 앞 마커가 앞 공백을 남기지 않게). 줄바꿈은 건드리지 않음.
+const MARKER = /\[\[\s*(?:gesture|g)\s*:\s*([^[\]]+?)\s*\]\][ \t]*/gi;
 // 악성/실수 입력 방어: 트리거할 gesture 수 상한 + 마커 값 길이 상한(초과분은 트리거 안 함, 텍스트에선 제거).
 const MAX_GESTURES = 16;
 const MAX_VALUE_LEN = 64;
@@ -69,15 +71,22 @@ export function parseGestureTriggers(
 	const lookup = buildLookup(m);
 	const gestures: ParsedGesture[] = [];
 	const cleanText = (text || "")
-		.replace(MARKER, (_full: string, raw: string) => {
-			const rawStr = String(raw).trim();
-			// 길이/개수 상한 안에서만 해석(초과=미해석). 마커는 어느 경우든 표시 텍스트에서 제거.
-			if (rawStr.length <= MAX_VALUE_LEN && gestures.length < MAX_GESTURES) {
-				const key = lookup.get(rawStr.toLowerCase());
-				if (key) gestures.push({ key, matched: rawStr });
-			}
-			return "";
-		})
+		.replace(
+			MARKER,
+			(full: string, raw: string, offset: number, source: string) => {
+				const rawStr = String(raw).trim();
+				// 길이/개수 상한 안에서만 해석(초과=미해석). 마커는 어느 경우든 표시 텍스트에서 제거.
+				if (rawStr.length <= MAX_VALUE_LEN && gestures.length < MAX_GESTURES) {
+					const key = lookup.get(rawStr.toLowerCase());
+					if (key) gestures.push({ key, matched: rawStr });
+				}
+				return wordBoundaryForRemovedMarker(
+					source,
+					offset,
+					offset + full.length,
+				);
+			},
+		)
 		.replace(/[ \t]{2,}/g, " ") // 마커 제거로 생긴 연속 공백 축약
 		.replace(/ +(\n|$)/g, "$1") // 줄끝/문장끝 잉여 공백 제거
 		.trim();
@@ -128,6 +137,8 @@ export class GestureTriggerStream {
 	private pending = "";
 	private afterRemovedMarker = false;
 	private afterRemovedMarkerSpace = false;
+	private afterRemovedMarkerNeedsSpace = false;
+	private lastOutputChar: string | null = null;
 
 	constructor(private readonly actions: readonly NvaGestureAction[] = []) {}
 
@@ -197,8 +208,11 @@ export class GestureTriggerStream {
 			if (leftWhitespace) {
 				cleanText = `${cleanText.slice(0, -leftWhitespace.length)} `;
 			}
+			const previous = cleanText.at(-1) ?? this.lastOutputChar;
+			const hasLeftBoundary = previous !== null && /\s/u.test(previous);
 			this.afterRemovedMarker = true;
-			this.afterRemovedMarkerSpace = leftWhitespace.length > 0;
+			this.afterRemovedMarkerSpace = leftWhitespace.length > 0 || hasLeftBoundary;
+			this.afterRemovedMarkerNeedsSpace = Boolean(previous) && !hasLeftBoundary;
 			cursor = start + marker.length;
 		}
 
@@ -210,14 +224,27 @@ export class GestureTriggerStream {
 		for (const char of source) {
 			if (this.afterRemovedMarker) {
 				if (char === " " || char === "\t") {
-					if (!this.afterRemovedMarkerSpace) result += " ";
+					if (!this.afterRemovedMarkerSpace) {
+						result += " ";
+						this.lastOutputChar = " ";
+					}
 					this.afterRemovedMarkerSpace = true;
+					this.afterRemovedMarkerNeedsSpace = false;
 					continue;
+				}
+				if (
+					this.afterRemovedMarkerNeedsSpace &&
+					!/[\s,.;:!?，。！？、)\]}]/u.test(char)
+				) {
+					result += " ";
+					this.lastOutputChar = " ";
 				}
 				this.afterRemovedMarker = false;
 				this.afterRemovedMarkerSpace = false;
+				this.afterRemovedMarkerNeedsSpace = false;
 			}
 			result += char;
+			this.lastOutputChar = char;
 		}
 		return result;
 	}

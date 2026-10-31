@@ -18,7 +18,7 @@ import { TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mock";
 
 const ADK = "/tmp/mock-naia-adk-workspace";
 
-// The official naia-adk vrm-files names (see D:/naia-adk/naia-settings/vrm-files).
+// Mock an extended inventory including older or user-installed VRMs and NVAs.
 const VRM_FILES = [
 	"01-OL_Woman.vrm",
 	"02-Hood_Boy.vrm",

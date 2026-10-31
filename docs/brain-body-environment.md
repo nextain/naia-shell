@@ -48,7 +48,7 @@
 | 형태 | 언제 | 예 |
 |---|---|---|
 | **A. Rust/Tauri in-process** | 셸 Rust 가 OS 능력을 직접 제공 가능 | 터미널(PTY), 파일 관측·조작 |
-| **B. 별도 프로세스 사이드카** | 셸 Rust/webview 가 못 하는 **외부 런타임** 필요 (Node lib·브라우저 엔진·외부 바이너리) | youtube 추출(youtubei.js), 브라우저 자동화(CDP 드라이버) |
+| **B. 별도 프로세스 사이드카** | 셸 Rust/webview 가 못 하는 **외부 런타임** 필요 (Node lib·브라우저 엔진·외부 바이너리) | YouTube 검색 메타데이터(youtubei.js), 브라우저 자동화(CDP 드라이버) |
 
 > A/B 모두 **셸 소유 + 뇌 독립**(E1~E3). "사이드카로 가느냐"의 기준 = **외부 런타임이 필요한가**(→ B), 아니면 Rust 로 되는가(→ A).
 > Rust 로 되는 걸 굳이 별도 프로세스로 빼지 않는다(IPC 오버헤드, 오버엔지니어링).
@@ -77,7 +77,7 @@
 
 | 기능 | 레이어 | 결정(intent) | 실행(런타임) | 현재 상태 | 목표 |
 |---|---|---|---|---|---|
-| **BGM / 공간 분위기** | **환경(ambiance)** | agent (무드 intent, **옵션**) | youtube 추출 Node 서버(18791) | ❌ 서버 코드가 **agent 트리**(미포팅) → 18791 안 뜸 | **셸 소유 사이드카(B)**. 뇌 없이도 동작, agent 는 무드 옵션 |
+| **BGM / 공간 분위기** | **환경(ambiance)** | agent (무드 intent, **옵션**) | 검색 메타데이터: 셸 소유 Node 사이드카 `/yt/search`(18791); YouTube 재생: 공식 iframe; 로컬 트랙: 셸 `<audio>` | ✅ 사이드카는 검색 메타데이터만 반환하고 YouTube 재생은 공식 iframe에서 한다. 스트림 URL 추출·decipher 없음. `<audio>`는 로컬 파일만 받는다. | 이 경계를 유지한다. 뇌 없이 검색·재생 제어 가능하며 agent 는 무드 intent 만 낸다. |
 | **브라우저** | 환경(도구) | agent 스킬 (navigate/click) | 앱=셸 웹뷰(몸 아님, 환경 표면) + 자동화=CDP | ⚠️ 앱=셸(좋음) **but** 자동화를 agent 가 external CLI 로 직접 호출 | **셸 소유 브라우저 드라이버 사이드카(B)**, agent 는 intent 만 |
 | **터미널 / workspace** | 환경(도구) | agent | Rust PTY(in-process) | ✅ Rust 네이티브(A) — 올바른 환경 서비스 | 유지. (별개: new-core F2/F3 포트 graft = dormant) |
 | **파일 관측·조작** | 환경 | agent | Rust(in-process) | ✅ Rust 네이티브(A) | 유지 |

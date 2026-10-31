@@ -1,9 +1,9 @@
 {
 	"generatedFrom": "packages/shell/e2e-tauri/specs",
-	"total": 79,
+	"total": 80,
 	"summary": {
 		"credentialed_live": 53,
-		"deterministic_ci": 20,
+		"deterministic_ci": 21,
 		"native_local": 6
 	},
 	"specs": [
@@ -92,6 +92,14 @@
 			"spec": "100-herdr-first-frame.spec.ts",
 			"conf": [],
 			"env": [],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "100-installed-app-metadata.spec.ts",
+			"conf": [],
+			"env": [
+				"NAIA_E2E_ADK_PATH"
+			],
 			"tier": "deterministic_ci"
 		},
 		{

@@ -3,15 +3,15 @@ import type {
 	AvatarPlaybackOptions,
 	AvatarSpeechRenderer,
 } from "./avatar-renderer";
+import type { NvaGestureAction } from "./camera-actions";
 import { NvaChromakeyGL } from "./nva-chromakey-gl";
+import { animKind } from "./nva-core";
 import {
 	type MotionSpec,
 	drawWithMotion,
 	parseMotionSpec,
 	resolveChestY,
 } from "./nva-procedural-motion";
-import { animKind } from "./nva-core";
-import type { NvaGestureAction } from "./camera-actions";
 
 interface Config {
 	manifest: NvaManifest;
@@ -147,20 +147,44 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	}
 
 	/** Play a manifest gesture once, silently. Speech visuals take priority. */
-	async playAction(key: string): Promise<void> {
-		if (!this.video || this.disposed || this.speakingVisual) return;
+	async playAction(key: string): Promise<boolean> {
+		if (!this.video || this.disposed || this.speakingVisual) return false;
 		const animation = this.config.manifest.animations[key];
-		if (!animation || animKind(animation) !== "gesture") return;
+		if (!animation || animKind(animation) !== "gesture") return false;
 		const generation = ++this.generation;
-		try {
-			await this.playClip(animation.clip, false, true, undefined, generation, false);
-		} catch {
-			if (generation === this.generation && !this.disposed)
-				await this.playIdle();
-			return;
-		}
-		if (generation === this.generation && !this.disposed && !this.speakingVisual)
-			await this.playIdle();
+		let resolveStarted!: (started: boolean) => void;
+		let startSettled = false;
+		const started = new Promise<boolean>((resolve) => {
+			resolveStarted = (didStart) => {
+				if (startSettled) return;
+				startSettled = true;
+				resolve(didStart);
+			};
+		});
+		void this.playClip(
+			animation.clip,
+			false,
+			true,
+			{ onPlaybackReady: () => resolveStarted(true) },
+			generation,
+			false,
+		).then(
+			async () => {
+				resolveStarted(false);
+				if (
+					generation === this.generation &&
+					!this.disposed &&
+					!this.speakingVisual
+				)
+					await this.playIdle();
+			},
+			async () => {
+				resolveStarted(false);
+				if (generation === this.generation && !this.disposed)
+					await this.playIdle();
+			},
+		);
+		return started;
 	}
 
 	/** Switch idle/talking visual only. Shell owns the actual audio playback. */
@@ -195,7 +219,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		const url = await this.config.resolveAssetUrl(path);
 		if (this.disposed || !this.mountedVideo)
 			throw new Error("NVA renderer stopped");
-		if (expectedGeneration !== undefined && expectedGeneration !== this.generation)
+		if (
+			expectedGeneration !== undefined &&
+			expectedGeneration !== this.generation
+		)
 			return;
 		this.currentKeyColor =
 			this.config.manifest.chroma_key ??
@@ -226,7 +253,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				cleanup();
 				resolve();
 			};
-			const ready = () => options?.onPlaybackReady?.();
+			let playbackStarted = false;
+			const ready = () => {
+				if (playbackStarted) return;
+				playbackStarted = true;
+				options?.onPlaybackReady?.();
+			};
 			const ended = () => {
 				cleanup();
 				resolve();
@@ -239,7 +271,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			video.addEventListener("ended", ended, { once: true });
 			video.addEventListener("error", failed, { once: true });
 			this.cancelOneShot = cancel;
-			video.play().catch(failed);
+			video.play().then(ready).catch(failed);
 		});
 	}
 

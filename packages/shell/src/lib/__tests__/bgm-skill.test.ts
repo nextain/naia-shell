@@ -490,7 +490,7 @@ describe("executeBgmSkill", () => {
 		expect(JSON.parse(out)).not.toHaveProperty("selected");
 	});
 
-	it("play+videoId → 검색 없이 직접 재생", async () => {
+	it("play+videoId → 검색 없이 위젯으로 videoId 전달", async () => {
 		const { deps, emitted, searched } = mkDeps();
 		const out = await executeBgmSkill(
 			{ action: "play", videoId: "abc123", title: "직접곡" },
@@ -1123,6 +1123,11 @@ describe("executeBgmSkill", () => {
 				duration: { text: undefined, seconds: 0 },
 				thumbnails: [{ url: "https://i.ytimg.com/vi/yt-live/hqdefault.jpg" }],
 				author: { name: "Chilled" },
+				url: "https://googlevideo.example/audio",
+				streaming_data: {
+					formats: [{ url: "https://googlevideo.example/video" }],
+					adaptive_formats: [{ url: "https://googlevideo.example/adaptive" }],
+				},
 			}),
 			mapYoutubeSearchVideo({
 				id: "yt-single-text",
@@ -1140,6 +1145,13 @@ describe("executeBgmSkill", () => {
 			}),
 		];
 
+		expect(sidecarMapped[0]).toEqual({
+			id: "yt-live",
+			title: "Lofi Live Stream",
+			thumbnail: "https://i.ytimg.com/vi/yt-live/hqdefault.jpg",
+			duration: "",
+			channel: "Chilled",
+		});
 		expect(sidecarMapped[0]?.duration).toBe("");
 		expect(sidecarMapped[1]?.duration).toBe("3:00");
 		expect(sidecarMapped[2]?.duration).toBe("253");

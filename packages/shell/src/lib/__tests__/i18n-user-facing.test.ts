@@ -170,6 +170,9 @@ describe("사용자에게 보이는 문구는 i18n 을 지난다 (UC-QUALITY-I18
 		const tables = await readThroughRuntime();
 		// 사용자가 막혔을 때 다음에 무엇을 하라고 말하는 자리들.
 		const required: TranslationKey[] = [
+			"appbar.appStore",
+			"settings.nvaCreate",
+			"settings.nvaCreateDesc",
 			"workspace.herdrRetry",
 			"apps.removeConfirm",
 			"adk.setup.recreateConfirm",

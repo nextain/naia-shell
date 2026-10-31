@@ -27,6 +27,7 @@ export interface ProjectAgentPtySession {
 	projectPath: string;
 	ptyId: string;
 	running: true;
+	naiaLoginRequired: boolean;
 }
 
 export interface ProjectAgentError {
@@ -39,6 +40,7 @@ export interface ProjectAgentError {
 		| "agent_invalid"
 		| "session_mismatch"
 		| "session_missing"
+		| "class_reset_in_progress"
 		| "input_failed"
 		| "unknown";
 	expectedPath?: string;
@@ -51,6 +53,7 @@ export interface ProjectAgentState {
 	output: string;
 	error: ProjectAgentError | null;
 	inputError: ProjectAgentError | null;
+	naiaLoginRequired: boolean;
 	exitCode: number | null;
 	/** Process identity is memory-only and is never written to browser storage. */
 	ptyId: string | null;
@@ -99,6 +102,7 @@ function defaultState(): ProjectAgentState {
 		output: "",
 		error: null,
 		inputError: null,
+		naiaLoginRequired: false,
 		exitCode: null,
 		ptyId: null,
 	};
@@ -200,7 +204,13 @@ export function parseSession(
 		);
 		throw new Error("session_mismatch");
 	}
-	return candidate as unknown as ProjectAgentPtySession;
+	return {
+		appId,
+		projectPath: candidate.projectPath,
+		ptyId: candidate.ptyId,
+		running: true,
+		naiaLoginRequired: candidate.naiaLoginRequired === true,
+	};
 }
 
 export function parseAgentError(error: unknown): ProjectAgentError {
@@ -224,7 +234,10 @@ export function parseAgentError(error: unknown): ProjectAgentError {
 		if (safeRelativePath) return { code: "checkout_missing", expectedPath };
 		return { code: "checkout_missing" };
 	}
-	if (/^(write_failed|flush_failed):[A-Za-z]+$/.test(message) || message === "join_failed") {
+	if (
+		/^(write_failed|flush_failed):[A-Za-z]+$/.test(message) ||
+		message === "join_failed"
+	) {
 		return { code: "input_failed" };
 	}
 	const knownCodes: ProjectAgentError["code"][] = [
@@ -235,6 +248,7 @@ export function parseAgentError(error: unknown): ProjectAgentError {
 		"agent_invalid",
 		"session_mismatch",
 		"session_missing",
+		"class_reset_in_progress",
 	];
 	const code = knownCodes.find((known) => message === known) ?? "unknown";
 	return { code };
@@ -259,6 +273,7 @@ export function projectAgentDiagnosticCode(error: unknown): string {
 		"agent_invalid",
 		"session_mismatch",
 		"session_missing",
+		"class_reset_in_progress",
 		"join_failed",
 	];
 	return knownCodes.find((code) => message === code) ?? "unknown";

@@ -382,6 +382,37 @@ export interface NaiaModelCatalogMetadata {
 	operationalStatus?: string;
 }
 
+export const OPENCODE_NAIA_FALLBACK_MODEL = "deepseek-v4-flash";
+
+let cachedNaiaModelMetadata: ReadonlyMap<
+	string,
+	NaiaModelCatalogMetadata
+> | null = null;
+
+/** Return only model metadata already fetched by another shell surface. */
+export function getCachedNaiaModelMetadata(): ReadonlyMap<
+	string,
+	NaiaModelCatalogMetadata
+> | null {
+	return cachedNaiaModelMetadata;
+}
+
+/** Pick a tool-capable Naia model only when the current gateway cache confirms it is live. */
+export function selectOpenCodeNaiaModel(
+	providerId: string | undefined,
+	modelId: string | undefined,
+): string {
+	if (providerId !== "nextain" && providerId !== "naia")
+		return OPENCODE_NAIA_FALLBACK_MODEL;
+	const model = modelId?.includes(":") ? modelId.split(":").at(-1) : modelId;
+	if (!model) return OPENCODE_NAIA_FALLBACK_MODEL;
+	const metadata = cachedNaiaModelMetadata?.get(model);
+	return metadata?.supportsTools === true &&
+		metadata.operationalStatus === "live"
+		? model
+		: OPENCODE_NAIA_FALLBACK_MODEL;
+}
+
 /** Fetch the richer `/v1/models` contract used for Naia route provenance and tool policy. */
 export async function fetchNaiaModelMetadata(
 	gatewayHttpUrl: string,
@@ -390,7 +421,10 @@ export async function fetchNaiaModelMetadata(
 		const resp = await fetch(`${gatewayHttpUrl}/v1/models`, {
 			signal: AbortSignal.timeout(5000),
 		});
-		if (!resp.ok) return null;
+		if (!resp.ok) {
+			cachedNaiaModelMetadata = null;
+			return null;
+		}
 		const entries = (await resp.json()) as Array<{
 			model_key: string;
 			capabilities?: string[];
@@ -424,8 +458,10 @@ export async function fetchNaiaModelMetadata(
 					: {}),
 			});
 		}
+		cachedNaiaModelMetadata = map;
 		return map;
 	} catch {
+		cachedNaiaModelMetadata = null;
 		return null;
 	}
 }

@@ -111,7 +111,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 						zoomRef.current === 1 ? undefined : zoomRef.current,
 				}),
 			getGestureActions: () => rendererRef.current?.getGestureActions() ?? [],
-			playAction: (key) => rendererRef.current?.playAction(key) ?? Promise.resolve(),
+			playAction: (key) => rendererRef.current?.playAction(key) ?? Promise.resolve(false),
 		});
 		return () => clearCameraActions();
 	}, []);

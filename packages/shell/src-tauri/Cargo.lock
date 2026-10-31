@@ -3311,7 +3311,7 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
 name = "naia-shell"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "ash",
  "base64 0.22.1",
@@ -3335,6 +3335,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rusqlite",
  "rustls",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -3363,6 +3364,8 @@ dependencies = [
  "ureq",
  "url",
  "webkit2gtk",
+ "webview2-com",
+ "windows 0.61.3",
  "windows-sys 0.59.0",
  "x11rb",
  "zeroize",

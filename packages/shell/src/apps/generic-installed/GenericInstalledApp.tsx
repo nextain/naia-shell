@@ -1,5 +1,10 @@
+import { installInstalledAppHostBridge } from "./installed-app-host-bridge";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import {
+	resolveAppToolTargetOrigin,
+	validateAppToolParameters,
+} from "../../lib/app-registry";
 import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
 import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
@@ -45,7 +50,8 @@ function installedAppFrameSrc(htmlEntry: string): string {
 export function createGenericInstalledApp(
 	htmlEntry?: string,
 	tools: NaiaTool[] = [],
-	appId?: string,
+	appId = "",
+	permissions: string[] = [],
 ) {
 	return function GenericInstalledApp({ naia }: AppCenterProps) {
 		const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -55,21 +61,19 @@ export function createGenericInstalledApp(
 		useLayoutEffect(() => {
 			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
 			const frame = iframeRef.current;
-			const disposeContextBridge = installInstalledAppContextBridge(
-				frame,
-				appId,
-				htmlEntry,
-			);
+			const disposeContextBridge = installInstalledAppContextBridge(frame, appId, frameSrc);
+			const disposeAppBridge = installInstalledAppHostBridge(frame, frameSrc, appId, permissions);
 			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});
 			return () => {
+				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
 				disposeContextBridge();
 			};
-		}, [htmlEntry, frameSrc, appId]);
+		}, [htmlEntry, frameSrc, appId, permissions]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {
@@ -77,16 +81,16 @@ export function createGenericInstalledApp(
 
 			const unsubs = tools.map((tool) =>
 				naia.onToolCall(tool.name, async (args) => {
+					const invalidArgs = validateAppToolParameters(tool, args);
+					if (invalidArgs) throw new Error(invalidArgs);
 					const iframe = iframeRef.current;
 					const contentWindow = iframe?.contentWindow;
 					if (!iframe || !contentWindow) {
 						return "(app not loaded yet)";
 					}
-					let targetOrigin = "*";
-					try {
-						targetOrigin = new URL(iframe.src).origin;
-					} catch {
-						// fall back to "*" — the app replies to its own loader origin
+					const targetOrigin = resolveAppToolTargetOrigin(iframe.src);
+					if (!targetOrigin) {
+						throw new Error("Cannot send app tool call: invalid target origin");
 					}
 					const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 					const target = contentWindow;

@@ -98,6 +98,17 @@ describe("parseGestureTriggers — LLM 마커 → gesture key", () => {
 			gestures: [],
 		});
 	});
+	it("글 맨 앞·줄 맨 앞·연속 마커에 앞 공백을 남기지 않음", () => {
+		expect(parseGestureTriggers("[[gesture:하트]] 안녕", M).cleanText).toBe(
+			"안녕",
+		);
+		expect(
+			parseGestureTriggers("첫줄\n[[gesture:하트]] 안녕", M).cleanText,
+		).toBe("첫줄\n안녕");
+		expect(
+			parseGestureTriggers("[[gesture:하트]][[g:물방울]] 안녕", M).cleanText,
+		).toBe("안녕");
+	});
 });
 
 describe("GestureTriggerStream — split response markers", () => {
@@ -205,6 +216,20 @@ describe("GestureTriggerStream — split response markers", () => {
 		]);
 		const parsed = stream.push("안녕  [[gesture:wave]]   반가워");
 		expect(`${parsed.cleanText}${stream.flush().cleanText}`).toBe("안녕 반가워");
+	});
+
+	it("keeps words apart when a removed gesture marker has no surrounding spaces", () => {
+		const actions = [{ key: "wave", label: "Wave" }];
+		expect(parseGestureTriggers("앞[[gesture:wave]]뒤", actions).cleanText).toBe(
+			"앞 뒤",
+		);
+
+		const stream = new GestureTriggerStream(actions);
+		const first = stream.push("앞[[gesture:wave]]");
+		const second = stream.push("뒤");
+		expect(`${first.cleanText}${second.cleanText}${stream.flush().cleanText}`).toBe(
+			"앞 뒤",
+		);
 	});
 
 	it("preserves paragraph breaks when a marker is removed at the boundary", () => {

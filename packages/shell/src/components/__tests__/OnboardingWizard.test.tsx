@@ -23,7 +23,9 @@ const loggedOutMocks = vi.hoisted(() => ({
 	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
 }));
 vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../../lib/llm/logged-out-default")>()),
+	...(await importOriginal<
+		typeof import("../../lib/llm/logged-out-default")
+	>()),
 	resolveLoggedOutLlm: loggedOutMocks.resolveLoggedOutLlm,
 }));
 
@@ -647,9 +649,7 @@ describe("OnboardingWizard", () => {
 			await Promise.resolve();
 		});
 
-		fireEvent.click(
-			screen.getByRole("button", { name: /Turn on host voice/ }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: /Turn on host voice/ }));
 		await act(async () => {
 			await Promise.resolve();
 			await Promise.resolve();
@@ -661,7 +661,9 @@ describe("OnboardingWizard", () => {
 				expectedLoaderProfile: "windows_trt_6g",
 				gpuIndex: null,
 			});
-			expect(screen.getByText(/installation failed|설치에 실패했습니다/i)).toBeDefined();
+			expect(
+				screen.getByText(/installation failed|설치에 실패했습니다/i),
+			).toBeDefined();
 		});
 		expect(localStorage.getItem("naia-remote-key")).toBe("gw-member");
 		expect(localStorage.getItem("naia-remote-user-id")).toBe("member-1");
@@ -669,7 +671,9 @@ describe("OnboardingWizard", () => {
 			"secure_store_delete",
 			expect.objectContaining({ name: "naiaKey" }),
 		);
-		expect(screen.getByRole("button", { name: /Turn on host voice/ })).toBeDefined();
+		expect(
+			screen.getByRole("button", { name: /Turn on host voice/ }),
+		).toBeDefined();
 	});
 
 	it("Next button is always enabled (agentName is optional)", () => {
@@ -690,6 +694,8 @@ describe("OnboardingWizard", () => {
 	});
 
 	it("complete step calls onComplete and saves config", async () => {
+		// App's clean first-run hydration seeds the detected locale for the wizard.
+		localStorage.setItem("naia-config", JSON.stringify({ locale: "en" }));
 		renderAtAgentName();
 
 		// agentName
@@ -748,6 +754,7 @@ describe("OnboardingWizard", () => {
 		expect(config.userName).toBe("Alex");
 		expect(config.agentName).toBe("Mochi");
 		expect(config.onboardingComplete).toBe(true);
+		expect(config.locale).toBe("en");
 		expect(config.persona).toContain("Mochi");
 	});
 

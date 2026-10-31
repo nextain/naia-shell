@@ -1,6 +1,6 @@
 /**
  * YouTube BGM 서버 — 포트 18791 의 작은 HTTP 서버.
- * InnerTube 기반 검색 + 스트림 URL 엔드포인트를 셸 BGM 플레이어(`components/BgmPlayer.tsx`)에 제공.
+ * InnerTube 기반 검색 메타데이터를 셸 BGM 플레이어(`components/BgmPlayer.tsx`)에 제공.
  * 레이어 = 환경 사이드카(SoT: docs/brain-body-environment.md). agent 독립.
  */
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
@@ -50,9 +50,6 @@ function json(req: IncomingMessage, res: ServerResponse, status: number, data: u
 	res.end(JSON.stringify(data));
 }
 
-// YouTube video ID: 11 chars, base64url charset (1-20 for safety)
-const YT_ID_RE = /^[A-Za-z0-9_-]{1,20}$/;
-
 // ── Route handlers ────────────────────────────────────────────────────────────
 
 // biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
@@ -88,70 +85,6 @@ async function handleSearch(req: IncomingMessage, res: ServerResponse, params: U
 	const results = (search.videos ?? []).slice(0, max).map(mapYoutubeSearchVideo);
 
 	json(req, res, 200, { results });
-}
-
-async function handleStream(req: IncomingMessage, res: ServerResponse, params: URLSearchParams) {
-	const id = params.get("id")?.trim() ?? "";
-	if (!id || !YT_ID_RE.test(id)) { json(req, res, 400, { error: "invalid video id" }); return; }
-
-	const yt = await getInnertube();
-
-	// TV_EMBEDDED client ("TVHTML5_SIMPLY_EMBEDDED_PLAYER") bypasses PoToken requirement
-	// and returns direct stream URLs for most public videos.
-	// Falls back to WEB if TV_EMBEDDED has no audio formats.
-	// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
-	let info: any;
-	// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
-	let format: any;
-	let url: string | undefined;
-
-	for (const client of ["TV_EMBEDDED", "WEB"] as const) {
-		try {
-			info = await (yt as any).getBasicInfo(id, client);
-		} catch (e) {
-			process.stderr.write(`[youtube-server] getBasicInfo(${client}) error: ${e}\n`);
-			continue;
-		}
-		try {
-			// format:'any' avoids the default mp4-only filter (audio/webm would be excluded otherwise)
-			format = info.chooseFormat({ type: "audio", quality: "best", format: "any" });
-		} catch (e) {
-			process.stderr.write(`[youtube-server] chooseFormat(${client}) error: ${e}\n`);
-			format = undefined;
-		}
-		if (!format) continue;
-
-		url = format.url;
-		if (!url && typeof format.decipher === "function") {
-			try { url = await format.decipher(yt.session?.player); } catch (e) {
-				process.stderr.write(`[youtube-server] decipher(${client}) error: ${e}\n`);
-			}
-		}
-		if (url) break;
-		process.stderr.write(`[youtube-server] no URL for client=${client}, trying next\n`);
-		format = undefined;
-	}
-
-	if (!format) { json(req, res, 404, { error: "no audio format found" }); return; }
-	if (!url) { json(req, res, 404, { error: "could not resolve stream URL" }); return; }
-
-	// Try to get a video-only stream URL for background display (low quality, optional)
-	let videoUrl: string | undefined;
-	try {
-		// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
-		const videoFormat: any = info.chooseFormat({ type: "video", quality: "360p" });
-		if (videoFormat?.url) videoUrl = videoFormat.url;
-	} catch {
-		// video format is optional — audio-only is sufficient
-	}
-
-	json(req, res, 200, {
-		url,
-		mime: format.mime_type ?? "audio/webm",
-		title: typeof info.basic_info?.title === "string" ? info.basic_info.title : "",
-		duration: info.basic_info?.duration ?? 0,
-		...(videoUrl ? { videoUrl } : {}),
-	});
 }
 
 // ── Server bootstrap ──────────────────────────────────────────────────────────
@@ -213,8 +146,6 @@ export function startYoutubeServer(): void {
 		try {
 			if (url.pathname === "/yt/search") {
 				await handleSearch(req, res, url.searchParams);
-			} else if (url.pathname === "/yt/stream") {
-				await handleStream(req, res, url.searchParams);
 			} else if (url.pathname === "/edge-tts") {
 				await handleEdgeTts(req, res, url.searchParams);
 			} else if (url.pathname === "/health") {

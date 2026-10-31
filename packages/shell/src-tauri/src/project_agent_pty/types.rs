@@ -1,6 +1,6 @@
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -52,25 +52,29 @@ pub(super) const CODING_APPS: &[CodingAppSpec] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(super) struct ProjectAgentKey {
-    pub(super) project_path: PathBuf,
+pub(crate) struct ProjectAgentKey {
+    pub(crate) project_path: PathBuf,
     pub(super) app: CodingApp,
 }
 
-pub(super) struct ProjectAgentHandle {
+pub(crate) struct ProjectAgentHandle {
     pub(super) pty_id: String,
     pub(super) pid: u32,
     pub(super) master: Box<dyn MasterPty + Send>,
     pub(super) writer: Box<dyn Write + Send>,
     pub(super) killer: Box<dyn ChildKiller + Send + Sync>,
-    pub(super) termination_requested: bool,
+    pub(crate) termination_requested: bool,
     pub(super) output_attached: bool,
     pub(super) output_backlog: String,
+    pub(super) naia_login_required: bool,
+    /// Non-reversible, memory-only identity of the credential used at spawn.
+    pub(super) credential_fingerprint: Option<u64>,
 }
 
 #[derive(Default)]
 pub(crate) struct ProjectAgentState {
-    pub(super) sessions: HashMap<ProjectAgentKey, ProjectAgentHandle>,
+    pub(crate) sessions: HashMap<ProjectAgentKey, ProjectAgentHandle>,
+    pub(crate) resetting_checkouts: HashSet<PathBuf>,
 }
 
 pub(crate) type ProjectAgentRegistry = Arc<Mutex<ProjectAgentState>>;
@@ -94,6 +98,7 @@ pub struct ProjectAgentSession {
     pub(super) project_path: String,
     pub(super) pty_id: String,
     pub(super) running: bool,
+    pub(super) naia_login_required: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -181,6 +186,7 @@ pub(super) fn project_agent_session(
         project_path: display_path(&key.project_path),
         pty_id: handle.pty_id.clone(),
         running: true,
+        naia_login_required: handle.naia_login_required,
     }
 }
 
@@ -198,6 +204,13 @@ pub(super) fn project_agent_key(
         project_path: normalize_project_session_path(&project_path.to_string_lossy())?,
         app,
     })
+}
+
+pub(crate) fn project_checkout_reset_key(checkout_path: &Path) -> Result<PathBuf, String> {
+    crate::log_verbose(
+        "[project_agent_pty::project_checkout_reset_key] enter checkout_path_supplied=true",
+    );
+    normalize_project_session_path(&checkout_path.to_string_lossy())
 }
 
 pub(super) fn normalize_project_session_path(project_path: &str) -> Result<PathBuf, String> {
