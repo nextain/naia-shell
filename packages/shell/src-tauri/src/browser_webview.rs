@@ -14,10 +14,11 @@
 //! registered on the Tauri builder, bypassing mixed-content restrictions
 //! that would block HTTP fetch from HTTPS pages on WebKitGTK.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use tauri::webview::Color;
+use tauri::webview::{Color, DownloadEvent};
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
 use tokio::sync::oneshot;
 
@@ -45,6 +46,104 @@ fn pending_evals() -> PendingMap {
     PENDING_EVALS
         .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
         .clone()
+}
+
+// Keep concurrent downloads from choosing the same destination before either
+// webview has created its file. Entries last for the process lifetime because
+// macOS does not report a destination in the finished event.
+static DOWNLOAD_DESTINATIONS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+
+fn available_download_path<F>(folder: &Path, suggested: &Path, mut occupied: F) -> PathBuf
+where
+    F: FnMut(&Path) -> bool,
+{
+    let filename = suggested
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("download"));
+    let filename = Path::new(filename);
+    let stem = filename
+        .file_stem()
+        .unwrap_or_else(|| std::ffi::OsStr::new("download"))
+        .to_string_lossy();
+    let extension = filename
+        .extension()
+        .map(|ext| format!(".{}", ext.to_string_lossy()))
+        .unwrap_or_default();
+    let mut candidate = folder.join(filename);
+    let mut number = 1_u64;
+    while occupied(&candidate) {
+        candidate = folder.join(format!("{stem} ({number}){extension}"));
+        number += 1;
+    }
+    candidate
+}
+
+fn configure_download_destination(destination: &mut PathBuf) -> bool {
+    let Ok(adk) = crate::current_adk_path() else {
+        // Wry's GTK download hook supplies a filesystem path but forwards its
+        // result to an API expecting a URI. Keep the default folder intact.
+        #[cfg(target_os = "linux")]
+        {
+            let Ok(uri) = url::Url::from_file_path(&*destination) else {
+                return false;
+            };
+            *destination = PathBuf::from(uri.as_str());
+        }
+        return true;
+    };
+    let root = Path::new(&adk);
+    if !root.is_absolute() || !root.is_dir() {
+        return false;
+    }
+    let folder = root.join("downloads");
+    if std::fs::create_dir_all(&folder).is_err() {
+        return false;
+    }
+    let (Ok(root), Ok(folder)) = (root.canonicalize(), folder.canonicalize()) else {
+        return false;
+    };
+    if !folder.starts_with(&root) {
+        return false;
+    }
+    let reserved = DOWNLOAD_DESTINATIONS.get_or_init(|| Mutex::new(HashSet::new()));
+    let Ok(mut reserved) = reserved.lock() else {
+        return false;
+    };
+    let path = available_download_path(&folder, destination, |candidate| {
+        candidate.exists() || reserved.contains(candidate)
+    });
+    // WebKitGTK's Wry backend passes the destination directly to the GTK API,
+    // which expects a file URI. Windows and macOS consume a filesystem path.
+    #[cfg(target_os = "linux")]
+    let output = match url::Url::from_file_path(&path) {
+        Ok(uri) => PathBuf::from(uri.as_str()),
+        Err(_) => return false,
+    };
+    #[cfg(not(target_os = "linux"))]
+    let output = path.clone();
+    reserved.insert(path);
+    *destination = output;
+    true
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::available_download_path;
+    use std::path::Path;
+
+    #[test]
+    fn chooses_adk_download_folder_and_numbers_collisions() {
+        let folder = Path::new("/adk/downloads");
+        let first = available_download_path(folder, Path::new("/old/report.pdf"), |_| false);
+        assert_eq!(first, folder.join("report.pdf"));
+        let next = available_download_path(folder, Path::new("/old/report.pdf"), |p| {
+            p == folder.join("report.pdf") || p == folder.join("report (1).pdf")
+        });
+        assert_eq!(next, folder.join("report (2).pdf"));
+        let no_extension =
+            available_download_path(folder, Path::new("README"), |p| p == folder.join("README"));
+        assert_eq!(no_extension, folder.join("README (1)"));
+    }
 }
 
 // ─── Initialization script ────────────────────────────────────────────────────
@@ -328,6 +427,12 @@ pub async fn browser_wv_create(
             .add_child(
                 WebviewBuilder::new(BROWSER_LABEL, start_url)
                     .initialization_script(&init_script)
+                    .on_download(|_webview, event| match event {
+                        DownloadEvent::Requested { destination, .. } => {
+                            configure_download_destination(destination)
+                        }
+                        _ => true,
+                    })
                     // Many websites assume the root background is white. If a
                     // page leaves areas transparent, a dark webview background
                     // makes normal black text unreadable.
