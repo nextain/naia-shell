@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectBackground } from "../background-selection";
+import { selectBackground, selectOnboardingBackground } from "../background-selection";
 
 describe("selectBackground", () => {
 	const other = "/background/naia-autumn-office-live.mp4";
@@ -18,5 +18,14 @@ describe("selectBackground", () => {
 
 	it("does not replace a missing saved selection with a default", () => {
 		expect(selectBackground([sunrise, dawn], "missing.webp")).toBeUndefined();
+	});
+
+	it("chooses dawn for onboarding when sunrise is absent even if another background comes first", () => {
+		expect(selectOnboardingBackground([other, dawn])).toBe(dawn);
+	});
+
+	it("keeps the first available onboarding background when neither default exists", () => {
+		expect(selectOnboardingBackground([other, "/background/another.webp"])).toBe(other);
+		expect(selectOnboardingBackground([])).toBeUndefined();
 	});
 });

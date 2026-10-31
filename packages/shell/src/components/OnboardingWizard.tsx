@@ -17,6 +17,7 @@ import {
 	DEFAULT_NVA_MODEL,
 	isLegacyBundledVrmModel,
 } from "../lib/avatar-presets";
+import { selectOnboardingBackground } from "../lib/background-selection";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import {
 	activateNaiaLlm,
@@ -843,11 +844,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				);
 				setBackgrounds(bgs);
 				if (bgs.length > 0) {
-					// Default to sunrise river (matches App DEFAULT_BG_VIDEO).
-					// Fall back to the first available background if not found.
-					const defaultBg =
-						bgs.find((b) => b.path.toLowerCase().includes("naia-sunrise-river.webp")) ??
-						bgs[0];
+					const defaultPath = selectOnboardingBackground(paths);
+					const defaultBg = bgs.find((b) => b.path === defaultPath) ?? bgs[0];
 					setSelectedBg(defaultBg.url);
 				}
 			})

@@ -6,3 +6,7 @@ export function selectBackground(paths: readonly string[], saved: string | undef
 	return paths.find((path) => path.endsWith(DEFAULT_BACKGROUND)) ??
 		paths.find((path) => path.endsWith(FALLBACK_BACKGROUND));
 }
+
+export function selectOnboardingBackground(paths: readonly string[]): string | undefined {
+	return selectBackground(paths, undefined) ?? paths[0];
+}
