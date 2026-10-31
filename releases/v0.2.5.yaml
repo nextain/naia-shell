@@ -1,0 +1,78 @@
+version: "0.2.5"
+date: "2026-10-31"
+# 이번 배포가 나가는 운영체제. 배포 전 회귀(scripts/check-regression-complete.mjs)가
+# 이 운영체제의 기계와 스펙만 조건으로 삼는다 — scripts/lib/release-target.mjs.
+targets: [windows]
+summary:
+  en: "v0.2.5 replaces v0.2.4 and ships the same scope with the Windows fixes found before release. It targets Steam support (distribution detection, hiding top-up links on the Steam build, and Windows Steam depot artifacts), a project app with coding agent, dashboard and issue panes for public sector projects, and Blackjack education through that app. Windows signing and installer/updater artifacts remain release foundations. Steam sign-in, account linking, and Steam credit pack top-ups (#729), generic usage-cost and K credit display, the separate terminal/docs/board workspace, and knowledge recall move to a later release. Existing code for out-of-scope items remains."
+  ko: "0.2.5는 0.2.4를 대신하며, 같은 범위에 출시 전에 찾은 Windows 고침을 더합니다. Steam 지원(배포 판별·Steam 판 충전 링크 숨김·Windows Steam 디포 산출물), 공공기관 프로젝트를 위한 코딩 에이전트·대시보드·이슈 칸의 프로젝트 앱, 그 앱을 이용한 블랙잭 교육을 목표로 합니다. Windows 서명과 설치·업데이트 산출물은 출시 기반으로 둡니다. Steam 로그인·계정 연결·Steam 크레딧 팩 충전(#729), 일반 사용 비용·크레딧 K 표기, 터미널·문서·작업판으로 이뤄진 별도 3분할 작업 공간, 지식 회상은 다음 판 이후로 옮깁니다. 범위 밖 항목의 기존 코드는 제거하지 않고 남깁니다."
+changes:
+  - type: fix
+    scope: app-store
+    description:
+      en: "Create the app store window from an async command so it no longer freezes white on Windows, and cover the window in the Windows end-to-end tests."
+      ko: "앱스토어 창을 비동기 명령에서 만들어 Windows 에서 창이 하얗게 멈추지 않게 하고, Windows 끝단 시험에서 그 창을 확인합니다."
+  - type: fix
+    scope: shell
+    description:
+      en: "Ship a smaller default asset set, and fall back to an available background on first launch and onboarding when the saved or default background is missing."
+      ko: "기본 포함 자산을 줄이고, 저장된 배경이나 기본 배경이 없으면 첫 실행과 처음 설정 화면에서 있는 배경으로 대신합니다."
+  - type: fix
+    scope: release
+    issue: 725
+    description:
+      en: "Sign naia-shell.exe after Tauri patches the bundle type so the installed app no longer fails Authenticode with HashMismatch; verify the app, MSI and Steam depot executables in CI."
+      ko: "Tauri 가 번들 형식을 고친 뒤에 naia-shell.exe 를 서명해 설치된 앱이 Authenticode HashMismatch 로 실패하지 않게 하고, CI 에서 앱·MSI·Steam 디포 실행 파일 서명을 확인합니다."
+  - type: fix
+    scope: shell
+    issue: 727
+    # #727 분할: Steam판 링크 숨김은 이번 판, 크레딧 K 표기는 다음 판 이후 범위입니다.
+    description:
+      en: "Hide top-up, donation, sponsor and store links on the Steam build, and treat an unknown distribution channel as hidden."
+      ko: "Steam 판에서 충전·후원·스폰서·스토어 링크를 숨기고, 배포 채널을 알 수 없으면 숨김으로 처리합니다."
+  # #729(Steam 로그인·계정 연결·크레딧 팩 충전·Apple 로그인)는 2026-10-24 결정으로 다음 판 이후로 넘김.
+  - type: feature
+    scope: workspace
+    issue: 756
+    description:
+      en: "Open a public sector project in the project app with coding agent, dashboard and issue panes."
+      ko: "프로젝트 앱에서 코딩 에이전트·대시보드·이슈 칸으로 공공기관 프로젝트를 엽니다."
+  - type: feature
+    scope: education
+    description:
+      en: "Open the Blackjack education example in the same project app and teach with its coding agent, preferring Claude and supporting OpenCode."
+      ko: "같은 프로젝트 앱에서 블랙잭 교육 예제를 열고, Claude를 우선하며 OpenCode를 지원하는 코딩 에이전트로 교육합니다."
+  - type: feature
+    scope: naia
+    description:
+      en: "Add Motif 3 (motif-3) to the Naia gateway models; tool calls stream correctly when chunks carry a null type, and chat usage shows the gateway price."
+      ko: "Naia 게이트웨이 모델에 Motif 3(motif-3)를 더합니다. 도구 호출 조각의 형식이 비어 있어도 도구가 실행되고, 대화 사용량에 게이트웨이 가격이 반영됩니다."
+  - type: fix
+    scope: avatar
+    description:
+      en: "Zoom and pan the video avatar (saved), resume the idle clip where it stopped instead of restarting it after each reply, play avatar gestures from the control bar or when the AI asks, and keep the local voice selected after Edge TTS while the local engine is running."
+      ko: "영상 아바타를 확대·축소·이동하고 저장하며, 답변이 끝날 때마다 대기 영상을 처음부터 다시 틀지 않고 멈춘 자리에서 잇고, 조작 막대나 AI 요청으로 아바타 동작을 재생하며, 로컬 음성 엔진이 실행 중일 때 Edge 음성 뒤 로컬 음성 선택이 유지되게 합니다."
+  - type: feature
+    scope: avatar
+    issue: 105
+    description:
+      en: "Apply Naia Studio NVA avatars to the shell via the naia:// deep link from the [Apply to Shell] button. Even when the shell is closed, the link launches it, asks for a single confirmation with the avatar name and preview before applying, and verifies the downloaded file's size, hash, and bundle manifest."
+      ko: "Naia Studio 의 [쉘에 적용] 단추가 보내는 naia:// 딥링크로 스튜디오 NVA 아바타를 셸에 적용합니다. 셸이 꺼져 있어도 링크가 셸을 켜고, 이름·미리보기를 보여 한 번 확인받은 뒤에만 적용하며, 내려받은 파일의 크기·해시·묶음 명세를 검사합니다."
+  - type: fix
+    scope: bgm
+    issue: 521
+    description:
+      en: "Fix an issue in Radio DJ mode where missing YouTube playback confirmation kept the DJ silent and skipped outro remarks, so the DJ now makes a track-related comment near the end of each song and moves to the next track."
+      ko: "라디오 DJ 모드에서 YouTube 재생 확인 신호를 받지 못해 DJ 가 침묵하고 곡 끝 멘트가 없던 문제를 고쳐, 곡이 끝날 무렵 곡과 관련된 한마디를 하고 다음 곡으로 넘어가게 합니다."
+  - type: fix
+    scope: bgm
+    issue: 778
+    description:
+      en: "Treat duplicate song videos that differ only in qualifier tags (such as high-quality or HQ labels) as the same song so they are not replayed in the queue, without stripping actual title words."
+      ko: "꾸밈말만 다른 같은 곡 영상(예: 고음질·HQ 표기)을 같은 곡으로 보아 대기열에서 다시 틀지 않되, 진짜 제목 낱말은 지우지 않습니다."
+  - type: fix
+    scope: workspace
+    issue: 781
+    description:
+      en: "Allow OpenCode and Codex installed via npm on Windows (.cmd executables) to start in the project app coding pane."
+      ko: "Windows 에서 npm 으로 설치한 OpenCode·Codex(.cmd 실행 파일)를 프로젝트 앱 코딩 칸에서 시작할 수 있게 합니다."
