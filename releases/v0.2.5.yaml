@@ -4,8 +4,8 @@ date: "2026-10-31"
 # 이 운영체제의 기계와 스펙만 조건으로 삼는다 — scripts/lib/release-target.mjs.
 targets: [windows]
 summary:
-  en: "v0.2.5 replaces v0.2.4 and ships the same scope with the Windows fixes found before release. It targets Steam support (distribution detection, hiding top-up links on the Steam build, and Windows Steam depot artifacts), a personal assistant dashboard with coding agent, dashboard and issue panes, and Blackjack education through the same dashboard app. Windows signing and installer/updater artifacts remain release foundations. Steam sign-in, account linking, and Steam credit pack top-ups (#729), generic usage-cost and K credit display, the separate terminal/docs/board workspace, and knowledge recall move to a later release. Existing code for out-of-scope items remains."
-  ko: "0.2.5는 0.2.4를 대신하며, 같은 범위에 출시 전에 찾은 Windows 고침을 더합니다. Steam 지원(배포 판별·Steam 판 충전 링크 숨김·Windows Steam 디포 산출물), 개인 비서가 일하는 코딩 에이전트·대시보드·이슈 칸의 대시보드 앱, 같은 대시보드 앱을 이용한 블랙잭 교육을 목표로 합니다. Windows 서명과 설치·업데이트 산출물은 출시 기반으로 둡니다. Steam 로그인·계정 연결·Steam 크레딧 팩 충전(#729), 일반 사용 비용·크레딧 K 표기, 터미널·문서·작업판으로 이뤄진 별도 3분할 작업 공간, 지식 회상은 다음 판 이후로 옮깁니다. 범위 밖 항목의 기존 코드는 제거하지 않고 남깁니다."
+  en: "v0.2.5 replaces v0.2.4 and includes the Windows fixes found before release. It targets Steam support (distribution detection, hiding top-up links on the Steam build, and Windows Steam depot artifacts) and a personal assistant dashboard with coding agent, dashboard and issue panes. Windows signing and installer/updater artifacts remain release foundations. Steam sign-in, account linking, and Steam credit pack top-ups (#729), generic usage-cost and K credit display, the separate terminal/docs/board workspace, and knowledge recall move to a later release."
+  ko: "0.2.5는 0.2.4를 대신하며, 출시 전에 찾은 Windows 문제를 고칩니다. Steam 지원(배포 판별·Steam 판 충전 링크 숨김·Windows Steam 디포 산출물), 개인 비서가 일하는 코딩 에이전트·대시보드·이슈 칸의 대시보드 앱을 목표로 합니다. Windows 서명과 설치·업데이트 산출물은 출시 기반으로 둡니다. Steam 로그인·계정 연결·Steam 크레딧 팩 충전(#729), 일반 사용 비용·크레딧 K 표기, 터미널·문서·작업판으로 이뤄진 별도 3분할 작업 공간, 지식 회상은 다음 판 이후로 옮깁니다."
 changes:
   - type: fix
     scope: app-store
@@ -22,7 +22,7 @@ changes:
     issue: 725
     description:
       en: "Sign naia-shell.exe after Tauri patches the bundle type so the installed app no longer fails Authenticode with HashMismatch; verify the app, MSI and Steam depot executables in CI."
-      ko: "Tauri 가 번들 형식을 고친 뒤에 naia-shell.exe 를 서명해 설치된 앱이 Authenticode HashMismatch 로 실패하지 않게 하고, CI 에서 앱·MSI·Steam 디포 실행 파일 서명을 확인합니다."
+      ko: "Tauri 가 번들 형식을 고친 뒤에 naia-shell.exe 를 서명해 설치된 앱이 Authenticode HashMismatch 로 실패하지 않게 하고, 자동 검증에서 앱·윈도우 설치 파일·Steam 디포 실행 파일 서명을 확인합니다."
   - type: fix
     scope: shell
     issue: 727
@@ -38,11 +38,6 @@ changes:
       en: "Open a personal assistant dashboard with coding agent, dashboard and issue panes."
       ko: "개인 비서가 일하는 대시보드에서 코딩 에이전트·대시보드·이슈 칸을 엽니다."
   - type: feature
-    scope: education
-    description:
-      en: "Open the Blackjack education example in the same dashboard app and teach with its coding agent, preferring Claude and supporting OpenCode."
-      ko: "같은 대시보드 앱에서 블랙잭 교육 예제를 열고, Claude를 우선하며 OpenCode를 지원하는 코딩 에이전트로 교육합니다."
-  - type: feature
     scope: naia
     description:
       en: "Add Motif 3 (motif-3) to the Naia gateway models; tool calls stream correctly when chunks carry a null type, and chat usage shows the gateway price."
@@ -51,25 +46,25 @@ changes:
     scope: avatar
     description:
       en: "Zoom and pan the video avatar (saved), resume the idle clip where it stopped instead of restarting it after each reply, play avatar gestures from the control bar or when the AI asks, and keep the local voice selected after Edge TTS while the local engine is running."
-      ko: "영상 아바타를 확대·축소·이동하고 저장하며, 답변이 끝날 때마다 대기 영상을 처음부터 다시 틀지 않고 멈춘 자리에서 잇고, 조작 막대나 AI 요청으로 아바타 동작을 재생하며, 로컬 음성 엔진이 실행 중일 때 Edge 음성 뒤 로컬 음성 선택이 유지되게 합니다."
+      ko: "영상 아바타를 확대·축소·이동하고 저장하며, 답변이 끝날 때마다 대기 영상을 처음부터 다시 틀지 않고 멈춘 자리에서 잇고, 조작 막대나 인공지능 요청으로 아바타 동작을 재생하며, 로컬 음성 엔진이 실행 중일 때 Edge 음성 뒤 로컬 음성 선택이 유지되게 합니다."
   - type: feature
     scope: avatar
     issue: 105
     description:
       en: "Apply Naia Studio NVA avatars to the shell via the naia:// deep link from the [Apply to Shell] button. Even when the shell is closed, the link launches it, asks for a single confirmation with the avatar name and preview before applying, and verifies the downloaded file's size, hash, and bundle manifest."
-      ko: "Naia Studio 의 [쉘에 적용] 단추가 보내는 naia:// 딥링크로 스튜디오 NVA 아바타를 셸에 적용합니다. 셸이 꺼져 있어도 링크가 셸을 켜고, 이름·미리보기를 보여 한 번 확인받은 뒤에만 적용하며, 내려받은 파일의 크기·해시·묶음 명세를 검사합니다."
+      ko: "Naia Studio 의 [쉘에 적용] 단추가 보내는 naia:// 딥링크로 스튜디오 나이아 영상 아바타(NVA)를 셸에 적용합니다. 셸이 꺼져 있어도 링크가 셸을 켜고, 이름·미리보기를 보여 한 번 확인받은 뒤에만 적용하며, 내려받은 파일의 크기·해시·묶음 명세를 검사합니다."
   - type: fix
     scope: bgm
     issue: 521
     description:
       en: "Fix an issue in Radio DJ mode where missing YouTube playback confirmation kept the DJ silent and skipped outro remarks, so the DJ now makes a track-related comment near the end of each song and moves to the next track."
-      ko: "라디오 DJ 모드에서 YouTube 재생 확인 신호를 받지 못해 DJ 가 침묵하고 곡 끝 멘트가 없던 문제를 고쳐, 곡이 끝날 무렵 곡과 관련된 한마디를 하고 다음 곡으로 넘어가게 합니다."
+      ko: "라디오 진행자 모드에서 YouTube 재생 확인 신호를 받지 못해 진행자가 침묵하고 곡 끝 멘트가 없던 문제를 고쳐, 곡이 끝날 무렵 곡과 관련된 한마디를 하고 다음 곡으로 넘어가게 합니다."
   - type: fix
     scope: bgm
     issue: 778
     description:
       en: "Treat duplicate song videos that differ only in qualifier tags (such as high-quality or HQ labels) as the same song so they are not replayed in the queue, without stripping actual title words."
-      ko: "꾸밈말만 다른 같은 곡 영상(예: 고음질·HQ 표기)을 같은 곡으로 보아 대기열에서 다시 틀지 않되, 진짜 제목 낱말은 지우지 않습니다."
+      ko: "꾸밈말만 다른 같은 곡 영상(예: 고음질 표기)을 같은 곡으로 보아 대기열에서 다시 틀지 않되, 진짜 제목 낱말은 지우지 않습니다."
   - type: fix
     scope: workspace
     issue: 781
@@ -85,12 +80,12 @@ changes:
     scope: avatar
     description:
       en: "Let users fold avatar controls, expose video avatar zoom controls, and show AI and TTS state with icons."
-      ko: "아바타 조작을 접을 수 있고 영상 아바타 확대·축소 단추와 AI·TTS 상태 아이콘을 표시합니다."
+      ko: "아바타 조작을 접을 수 있고 영상 아바타 확대·축소 단추와 인공지능·음성 합성 상태 그림을 표시합니다."
   - type: fix
     scope: bgm
     description:
-      en: "Add one Korean radio track, “It’s Okay to Turn Off the Light,” to the default asset list."
-      ko: "기본 자산 목록에 한국어 라디오 곡 한 곡(“불을 꺼도 돼요”)을 추가합니다."
+      en: "Add the Korean radio track “It’s Okay to Turn Off the Light” to the default assets, alongside its English version. The list includes one Korean and one English Naia Radio song."
+      ko: "기본 자산 목록에 ‘불을 꺼도 돼요’ 한국어 곡을 추가합니다. 나이아 라디오 노래는 한국어 한 곡과 영어 한 곡입니다."
   - type: fix
     scope: workspace
     description:
@@ -100,4 +95,4 @@ changes:
     scope: browser
     description:
       en: "Save browser downloads in the selected ADK folder's downloads directory, with numbered names for collisions."
-      ko: "브라우저 다운로드를 선택한 ADK 폴더의 downloads에 저장하고 같은 이름에는 번호를 붙입니다."
+      ko: "브라우저 내려받기 파일을 선택한 인공지능 개발 도구 모음(ADK) 폴더의 downloads에 저장하고 같은 이름에는 번호를 붙입니다."

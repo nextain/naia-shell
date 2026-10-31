@@ -168,6 +168,45 @@ mod download_tests {
     }
 
     #[test]
+    fn confines_suggested_names_to_download_folder() {
+        let folder = Path::new("/adk/downloads");
+        assert_eq!(
+            available_download_path(folder, Path::new("../report.pdf"), |_| false),
+            folder.join("report.pdf")
+        );
+        assert_eq!(
+            available_download_path(folder, Path::new("../"), |_| false),
+            folder.join("download")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_downloads_symlink_outside_adk() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        symlink(outside.path(), root.path().join("downloads")).unwrap();
+        let mut destination = Path::new("report.pdf").to_path_buf();
+        let error = super::configure_adk_download_destination(
+            &mut destination,
+            root.path().to_str().unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(error, "downloads directory is outside ADK");
+        assert_eq!(destination, Path::new("report.pdf"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rejects_unconvertible_default_download_destination() {
+        let mut destination = Path::new("relative/report.pdf").to_path_buf();
+        assert!(!super::default_download_destination(&mut destination));
+        assert_eq!(destination, Path::new("relative/report.pdf"));
+    }
+
+    #[test]
     fn chooses_adk_download_folder_and_numbers_collisions() {
         let folder = Path::new("/adk/downloads");
         let first = available_download_path(folder, Path::new("/old/report.pdf"), |_| false);
