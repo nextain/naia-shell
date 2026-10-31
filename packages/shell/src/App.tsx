@@ -46,7 +46,9 @@ import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
 import {
 	WEB_DEFAULT_BACKGROUND,
+	WEB_DEFAULT_NVA,
 	WEB_DEFAULT_VRM,
+	isLegacyWebNaiaSelection,
 	isWebMode,
 } from "./lib/web-runtime/web-assets";
 import {
@@ -262,7 +264,9 @@ export function App() {
 					setWebAuthError(null);
 					setWebAuthenticated(true);
 				} else if (res.error === "state_mismatch") {
-					setWebAuthError("로그인 검증(state)에 실패했습니다. 다시 시도해 주세요.");
+					setWebAuthError(
+						"로그인 검증(state)에 실패했습니다. 다시 시도해 주세요.",
+					);
 				} else if (res.error === "invalid_key") {
 					setWebAuthError("유효하지 않은 로그인 키가 전달되었습니다.");
 				}
@@ -393,10 +397,13 @@ export function App() {
 			try {
 				const cfg = await loadConfigWithSecrets();
 				if (!active || currentRevision !== revision) return;
+				const legacyWebNaia = isWebMode() && isLegacyWebNaiaSelection(cfg);
 				setAvatarProvider(
-					effectiveAvatarProviderFromConfig(cfg, detectedVramGb),
+					legacyWebNaia
+						? "naia-video-avatar"
+						: effectiveAvatarProviderFromConfig(cfg, detectedVramGb),
 				);
-				setNvaModel(cfg?.nvaModel ?? "");
+				setNvaModel(legacyWebNaia ? WEB_DEFAULT_NVA : (cfg?.nvaModel ?? ""));
 				// WO-03: 웹판은 dist 번들 VRM이 항상 있으므로, VRM 미선택 상태를
 				// 기본 아바타로 채운다 (NVA 선택 provider는 건드리지 않는다).
 				// 공개 config에만 영속한다 (cfg는 secret 복원본일 수 있음).
@@ -525,7 +532,9 @@ export function App() {
 					}),
 				)
 				.catch((err) =>
-					Logger.warn("App", "startup bgm skill failed", { error: String(err) }),
+					Logger.warn("App", "startup bgm skill failed", {
+						error: String(err),
+					}),
 				);
 		}
 		// #611: skill_environment is not model-facing. Clear any stale registration
@@ -833,20 +842,28 @@ export function App() {
 			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
 			refreshTimer = window.setTimeout(() => {
 				void refreshInstalledAppsIfChanged().catch((error: unknown) => {
-					Logger.warn("App", "Failed to reload installed apps after App Store change", {
-						error: error instanceof Error ? error.message : String(error),
-					});
+					Logger.warn(
+						"App",
+						"Failed to reload installed apps after App Store change",
+						{
+							error: error instanceof Error ? error.message : String(error),
+						},
+					);
 				});
 			}, 300);
 		};
-		void listen("installed-apps-changed", refreshAfterStoreChange).then((unlisten) => {
-			if (disposed) unlisten();
-			else unlistenStoreChanged = unlisten;
-		});
-		void listen("app-store-closed", refreshAfterStoreChange).then((unlisten) => {
-			if (disposed) unlisten();
-			else unlistenStoreClosed = unlisten;
-		});
+		void listen("installed-apps-changed", refreshAfterStoreChange).then(
+			(unlisten) => {
+				if (disposed) unlisten();
+				else unlistenStoreChanged = unlisten;
+			},
+		);
+		void listen("app-store-closed", refreshAfterStoreChange).then(
+			(unlisten) => {
+				if (disposed) unlisten();
+				else unlistenStoreClosed = unlisten;
+			},
+		);
 		return () => {
 			disposed = true;
 			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);

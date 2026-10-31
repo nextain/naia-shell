@@ -3,7 +3,7 @@ import { Logger } from "../logger";
 import { WEB_ADK_PATH, webAdkOpfsPath } from "./web-adk-path";
 import {
 	WEB_DEFAULT_BACKGROUND,
-	WEB_DEFAULT_VRM,
+	WEB_DEFAULT_NVA,
 	normalizeRetiredWebBackgroundInRecord,
 } from "./web-assets";
 import { getWebAuthenticatedUserId, isWebLoginGateDisabled } from "./web-auth";
@@ -18,9 +18,9 @@ export const INITIAL_WEB_WORKSPACE_CONFIG = {
 	persona: "You are Naia, an AI companion. Speak casually and warmly.",
 	onboardingComplete: true,
 	// WO-03: 웹판 첫 부팅부터 아바타·배경이 보이도록 번들 기본값.
-	// dist /avatars·/backgrounds 실물과 동기화 (web-assets.ts가 단일 출처).
-	avatarProvider: "vrm",
-	vrmModel: WEB_DEFAULT_VRM,
+	// NVA is loaded from the static catalog on demand, like desktop's naia preset.
+	avatarProvider: "naia-video-avatar",
+	nvaModel: WEB_DEFAULT_NVA,
 	backgroundVideo: WEB_DEFAULT_BACKGROUND,
 };
 

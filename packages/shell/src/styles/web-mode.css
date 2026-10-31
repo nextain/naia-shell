@@ -90,6 +90,14 @@
 	[data-naia-web="true"] .avatar-canvas-layer {
 		bottom: 62%;
 	}
+	[data-naia-web="true"] [data-video-avatar-prebaked] {
+		position: absolute;
+		top: 4%;
+		left: 50%;
+		translate: -50% 0;
+		height: 92%;
+		width: auto;
+	}
 	[data-naia-web="true"] .naia-overlay {
 		width: 100%;
 		bottom: 62%;

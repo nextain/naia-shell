@@ -43,15 +43,15 @@ describe("web-workspace-commands", () => {
 			speechStyle: "casual",
 			persona: "You are Naia, an AI companion. Speak casually and warmly.",
 			onboardingComplete: true,
-			avatarProvider: "vrm",
-			vrmModel: "/avatars/03-OL_Woman.vrm",
-			backgroundVideo: "naia-dawn-city-uhd.webp",
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "naia",
+			backgroundVideo: "naia-starlight-lake-live.mp4",
 			NAIA_LOCALE: "en",
 		};
 		expect(INITIAL_WEB_WORKSPACE_CONFIG).toMatchObject({
-			avatarProvider: "vrm",
-			vrmModel: "/avatars/03-OL_Woman.vrm",
-			backgroundVideo: "naia-dawn-city-uhd.webp",
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "naia",
+			backgroundVideo: "naia-starlight-lake-live.mp4",
 		});
 		expect(parsedInStorage).toEqual(expectedConfig);
 		expect(JSON.parse(first)).toEqual(expectedConfig);
@@ -268,9 +268,9 @@ describe("web-workspace-commands", () => {
 				speechStyle: "casual",
 				persona: "You are Naia, an AI companion. Speak casually and warmly.",
 				onboardingComplete: true,
-				avatarProvider: "vrm",
-				vrmModel: "/avatars/03-OL_Woman.vrm",
-				backgroundVideo: "naia-dawn-city-uhd.webp",
+				avatarProvider: "naia-video-avatar",
+				nvaModel: "naia",
+				backgroundVideo: "naia-starlight-lake-live.mp4",
 				NAIA_LOCALE: "ko",
 			};
 			expect(JSON.parse(result)).toEqual(expectedConfig);
@@ -323,14 +323,18 @@ describe("web-workspace-commands", () => {
 			{ adkPath: "opfs://naia-adk" },
 			fs,
 		)) as string;
-		expect(JSON.parse(cfgRaw).backgroundVideo).toBe("naia-dawn-city-uhd.webp");
+		expect(JSON.parse(cfgRaw).backgroundVideo).toBe(
+			"naia-starlight-lake-live.mp4",
+		);
 
 		const uiRaw = (await handleWebWorkspaceCommand(
 			"read_naia_ui_config",
 			{ adkPath: "opfs://naia-adk" },
 			fs,
 		)) as string;
-		expect(JSON.parse(uiRaw).backgroundVideo).toBe("naia-dawn-city-uhd.webp");
+		expect(JSON.parse(uiRaw).backgroundVideo).toBe(
+			"naia-starlight-lake-live.mp4",
+		);
 	});
 
 	it("persists, lists, reads, and deletes web conversations in OPFS JSONL format", async () => {

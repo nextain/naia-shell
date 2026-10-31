@@ -1,3 +1,5 @@
+import { isLegacyBundledVrmModel } from "../avatar-presets";
+
 // 웹판 번들 자산 카탈로그 — 기본 작업공간 묶음(naia-settings/vrm-files·background)의
 // 웹판 대응물. 데스크톱은 워크스페이스 naia-settings/에서 invoke 경유로 읽지만,
 // 웹판에는 Tauri IPC가 없어 dist에 함께 실린 정적 자산을 HTTP로 읽는다.
@@ -145,12 +147,28 @@ export const WEB_NVA_ASSETS: readonly string[] = [
 /** 웹판 NVA 기본값 (번들 이름). */
 export const WEB_DEFAULT_NVA = WEB_NVA_ASSETS[0];
 
+/** Older web Naia VRM selections resolve to the clothed Naia video avatar. */
+export function isLegacyWebNaiaSelection(
+	config:
+		| {
+				avatarProvider?: string;
+				vrmModel?: string;
+		  }
+		| null
+		| undefined,
+): boolean {
+	return (
+		config?.avatarProvider !== "naia-video-avatar" &&
+		isLegacyBundledVrmModel(config?.vrmModel)
+	);
+}
+
 /** 웹판 아바타 기본값 (config vrmModel이 비었을 때). */
 export const WEB_DEFAULT_VRM = WEB_VRM_ASSETS[0].url;
 /** 웹판 배경 기본값 (config backgroundVideo가 비었을 때, bare 파일명). */
-export const WEB_DEFAULT_BACKGROUND = WEB_BACKGROUND_ASSETS[0].filename;
+export const WEB_DEFAULT_BACKGROUND = "naia-starlight-lake-live.mp4";
 /** 웹판 배경 기본값 URL. */
-export const WEB_DEFAULT_BACKGROUND_URL = WEB_BACKGROUND_ASSETS[0].url;
+export const WEB_DEFAULT_BACKGROUND_URL = `/backgrounds/${WEB_DEFAULT_BACKGROUND}`;
 
 /**
  * 아바타 썸네일을 16:9로 잘라 얼굴만 크게 보이던 폐기 웹판 배경 파일명.

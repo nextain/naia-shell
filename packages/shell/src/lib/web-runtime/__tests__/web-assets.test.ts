@@ -18,6 +18,7 @@ import {
 	WEB_NVA_ASSETS,
 	WEB_VRM_ASSETS,
 	isRetiredWebBackground,
+	isLegacyWebNaiaSelection,
 	isWebBundledAssetUrl,
 	isWebMode,
 	normalizeRetiredWebBackgroundInRecord,
@@ -103,10 +104,37 @@ describe("web bundled catalogs", () => {
 		expect(WEB_DEFAULT_NVA).toBe("naia");
 	});
 
-	it("defaults point at the first catalog entries", () => {
+	it("maps legacy Naia VRMs to Naia NVA without changing other selections", () => {
+		for (const model of ["Naia.vrm", "Naia-Base.vrm", "Naia-Hair.vrm"]) {
+			expect(
+				isLegacyWebNaiaSelection({
+					avatarProvider: "vrm",
+					vrmModel: `/avatars/${model}`,
+				}),
+			).toBe(true);
+		}
+		expect(
+			isLegacyWebNaiaSelection({
+				avatarProvider: "vrm",
+				vrmModel: "/avatars/03-OL_Woman.vrm",
+			}),
+		).toBe(false);
+		expect(
+			isLegacyWebNaiaSelection({
+				avatarProvider: "naia-video-avatar",
+				vrmModel: "Naia.vrm",
+			}),
+		).toBe(false);
+	});
+
+	it("defaults to the animated starlight lake", () => {
 		expect(WEB_DEFAULT_VRM).toBe(WEB_VRM_ASSETS[0].url);
-		expect(WEB_DEFAULT_BACKGROUND).toBe("naia-dawn-city-uhd.webp");
-		expect(WEB_DEFAULT_BACKGROUND).toBe(WEB_BACKGROUND_ASSETS[0].filename);
+		expect(WEB_DEFAULT_BACKGROUND).toBe("naia-starlight-lake-live.mp4");
+		expect(
+			WEB_BACKGROUND_ASSETS.find(
+				(asset) => asset.filename === WEB_DEFAULT_BACKGROUND,
+			)?.kind,
+		).toBe("video");
 		expect(WEB_DEFAULT_BACKGROUND_URL).toBe(
 			`/backgrounds/${WEB_DEFAULT_BACKGROUND}`,
 		);
