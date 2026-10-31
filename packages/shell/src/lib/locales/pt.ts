@@ -1225,6 +1225,7 @@ export default {
 	"bgm.stop": "Parar",
 	"bgm.play": "Reproduzir",
 	"bgm.showBackgroundVideo": "Mostrar vídeo de fundo",
+	"bgm.keyboardHelp": "Música: espaço ou K reproduzir/parar; esquerda/direita 5 segundos; cima/baixo volume; N próxima, P anterior",
 	"bgm.captions": "Legendas",
 	"bgm.volume": "Volume",
 	"bgm.drawerTitle": "Arrastar: redimensionar / Clicar: abrir·fechar",

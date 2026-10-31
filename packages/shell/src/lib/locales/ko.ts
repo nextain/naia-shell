@@ -1226,6 +1226,7 @@ export default {
 	"bgm.play": "재생",
 	"bgm.showBackgroundVideo": "배경 비디오 표시",
 	"bgm.volume": "볼륨",
+	"bgm.keyboardHelp": "음악 조작: 스페이스 또는 K 재생·정지, 좌우 5초 이동, 상하 음량, N 다음 곡, P 이전 곡",
 	"bgm.captions": "자막",
 	"bgm.drawerTitle": "드래그: 높이 조절 / 클릭: 열기·닫기",
 	"bgm.tabLocal": "♪ 로컬",

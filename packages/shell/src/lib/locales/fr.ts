@@ -1225,6 +1225,7 @@ export default {
 	"bgm.stop": "Arrêter",
 	"bgm.play": "Lecture",
 	"bgm.showBackgroundVideo": "Afficher la vidéo d’arrière-plan",
+	"bgm.keyboardHelp": "Musique : espace ou K lecture/arrêt ; gauche/droite 5 secondes ; haut/bas volume ; N suivant, P précédent",
 	"bgm.captions": "Sous-titres",
 	"bgm.volume": "Volume",
 	"bgm.drawerTitle": "Glisser: redimensionner / Cliquer: ouvrir·fermer",

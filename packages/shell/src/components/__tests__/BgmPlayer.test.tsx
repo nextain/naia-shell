@@ -155,6 +155,28 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		localStorage.clear();
 	});
 
+	it("controls YouTube only when the music group has focus", async () => {
+		render(<><BgmPlayer /><textarea aria-label="chat" /></>);
+		await startTrack("keyboard", "Keyboard Song");
+		const iframe = attachIframeForCurrentPlayback();
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		confirmCurrentFrame();
+		const group = screen.getByRole("group", { name: /Music controls/ });
+		group.focus();
+		fireEvent.keyDown(group, { key: "ArrowRight" });
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [5, true] }), "*");
+		fireEvent.keyDown(group, { key: "ArrowUp" });
+		await waitFor(() => expect(post).toHaveBeenCalledWith(expect.stringContaining('"func":"setVolume"'), "*"));
+		fireEvent.keyDown(group, { key: "k" });
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "stopVideo", args: [] }), "*");
+		post.mockClear();
+		const chat = screen.getByRole("textbox", { name: "chat" });
+		chat.focus();
+		fireEvent.keyDown(chat, { key: "k" });
+		fireEvent.keyDown(chat, { key: "ArrowRight" });
+		expect(post).not.toHaveBeenCalled();
+	});
+
 	it("defaults captions off, sends toggles to the iframe origin, and restores the saved choice on a new video", async () => {
 		await hydrateUiPreferences(
 			{ uiPreferences: {} },

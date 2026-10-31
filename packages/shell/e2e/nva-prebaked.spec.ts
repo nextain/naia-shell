@@ -167,6 +167,14 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 			.toBeGreaterThan(beforeAlt2);
 
 		await page.setViewportSize({ width: 360, height: 800 });
+		const captions = page.getByRole("button", { name: "Captions" });
+		await expect(captions).toBeVisible();
+		const captionsBox = await captions.boundingBox();
+		expect(captionsBox?.x).toBeGreaterThanOrEqual(0);
+		expect((captionsBox?.x ?? 0) + (captionsBox?.width ?? 0)).toBeLessThanOrEqual(360);
+		await captions.focus();
+		await page.keyboard.press("Enter");
+		await expect(captions).toHaveAttribute("aria-pressed", "true");
 		const narrowButtons = await page
 			.locator(".nva-gesture-actions__button")
 			.evaluateAll((buttons) =>

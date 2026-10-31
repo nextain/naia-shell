@@ -1225,6 +1225,7 @@ export default {
 	"bgm.stop": "Hentikan",
 	"bgm.play": "Putar",
 	"bgm.showBackgroundVideo": "Tampilkan video latar",
+	"bgm.keyboardHelp": "Musik: Spasi atau K putar/hentikan; kiri/kanan 5 detik; atas/bawah volume; N berikutnya, P sebelumnya",
 	"bgm.captions": "Teks",
 	"bgm.volume": "Volume",
 	"bgm.drawerTitle": "Seret: ubah ukuran / Klik: buka·tutup",

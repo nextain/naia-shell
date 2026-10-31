@@ -1225,6 +1225,7 @@ export default {
 	"bgm.stop": "停止",
 	"bgm.play": "播放",
 	"bgm.showBackgroundVideo": "显示背景视频",
+	"bgm.keyboardHelp": "音乐控制：空格或 K 播放/停止，左右快进快退5秒，上下调音量，N 下一首，P 上一首",
 	"bgm.captions": "字幕",
 	"bgm.volume": "音量",
 	"bgm.drawerTitle": "拖动: 调整大小 / 点击: 打开·关闭",

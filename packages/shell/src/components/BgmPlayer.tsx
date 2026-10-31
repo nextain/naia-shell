@@ -1993,7 +1993,7 @@ export function BgmPlayer({ naia }: Props) {
 		setBackgroundMediaType("iframe");
 	}
 
-	function sendYtCmd(func: string) {
+	function sendYtCmd(func: string, args: (number | boolean)[] = []) {
 		const iframe = document.querySelector(
 			".app-bg-iframe",
 		) as HTMLIFrameElement | null;
@@ -2005,7 +2005,7 @@ export function BgmPlayer({ naia }: Props) {
 			"*",
 		);
 		iframe.contentWindow.postMessage(
-			JSON.stringify({ event: "command", func, args: [] }),
+			JSON.stringify({ event: "command", func, args }),
 			"*",
 		);
 		return true;
@@ -2283,7 +2283,40 @@ export function BgmPlayer({ naia }: Props) {
 			</audio>
 
 			{/* ── Compact bar ── */}
-			<div className="bgm-player-controls">
+			<div
+				className="bgm-player-controls"
+				role="group"
+				tabIndex={0}
+				aria-label={t("bgm.keyboardHelp")}
+				title={t("bgm.keyboardHelp")}
+				onKeyDown={(event) => {
+					if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) return;
+					switch (event.key.toLowerCase()) {
+						case " ":
+						case "k":
+							togglePlay();
+							break;
+						case "arrowleft":
+						case "arrowright": {
+							const delta = event.key === "ArrowLeft" ? -5 : 5;
+							if (source === "youtube") {
+								sendYtCmd("seekTo", [Math.max(0, (playbackSnapshot?.currentTime ?? 0) + delta), true]);
+							} else if (audioRef.current) {
+								audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + delta);
+							}
+							break;
+						}
+						case "arrowup":
+						case "arrowdown":
+							setVolume((value) => Math.max(0, Math.min(1, Math.round((value + (event.key === "ArrowUp" ? 0.05 : -0.05)) * 100) / 100)));
+							break;
+						case "n": playNext(); break;
+						case "p": playPrev(); break;
+						default: return;
+					}
+					event.preventDefault();
+				}}
+			>
 				<button
 					type="button"
 					className={`bgm-btn bgm-captions${captionsEnabled ? " bgm-captions--active" : ""}`}
@@ -2317,6 +2350,7 @@ export function BgmPlayer({ naia }: Props) {
 					className="bgm-btn"
 					onClick={playPrev}
 					title={t("bgm.prev")}
+					aria-label={t("bgm.prev")}
 				>
 					‹
 				</button>
@@ -2334,6 +2368,7 @@ export function BgmPlayer({ naia }: Props) {
 					className="bgm-btn"
 					onClick={playNext}
 					title={t("bgm.next")}
+					aria-label={t("bgm.next")}
 				>
 					›
 				</button>
@@ -2343,6 +2378,7 @@ export function BgmPlayer({ naia }: Props) {
 					onClick={toggleCurrentLike}
 					disabled={!currentLibraryTrack}
 					title={currentLiked ? t("bgm.favRemove") : t("bgm.favAdd")}
+					aria-label={currentLiked ? t("bgm.favRemove") : t("bgm.favAdd")}
 				>
 					{currentLiked ? "♥" : "♡"}
 				</button>
@@ -2352,6 +2388,7 @@ export function BgmPlayer({ naia }: Props) {
 					onClick={addCurrentToPlaylist}
 					disabled={!currentLibraryTrack}
 					title={t("bgm.addToPlaylist")}
+					aria-label={t("bgm.addToPlaylist")}
 				>
 					＋
 				</button>
@@ -2361,6 +2398,7 @@ export function BgmPlayer({ naia }: Props) {
 					type="button"
 					className={`bgm-track-name bgm-track-toggle${appExpanded ? " bgm-track-name--open" : ""}`}
 					title={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
+					aria-label={appExpanded ? t("bgm.close") : t("bgm.appToggleTitle")}
 					onClick={() => setAppExpanded((v) => !v)}
 				>
 					{isScrolling ? (
@@ -2386,6 +2424,7 @@ export function BgmPlayer({ naia }: Props) {
 						recordRadioDjLabEvent("bgm.volume", { volume: nextVolume });
 					}}
 					title={t("bgm.volume")}
+					aria-label={t("bgm.volume")}
 				/>
 			</div>
 
@@ -2651,6 +2690,7 @@ export function BgmPlayer({ naia }: Props) {
 												type="button"
 												className="bgm-yt-fav-btn"
 												title={t("bgm.addToPlaylist")}
+					aria-label={t("bgm.addToPlaylist")}
 												onClick={(event) => {
 													event.stopPropagation();
 													addToActivePlaylist(localLibraryTrack(localPaths[idx], localNames[idx]));
@@ -2761,6 +2801,7 @@ function YtTrackRow({ video, loading, playing, fav, onPlay, onFav, onAdd }: RowP
 				type="button"
 				className="bgm-yt-fav-btn"
 				title={t("bgm.addToPlaylist")}
+					aria-label={t("bgm.addToPlaylist")}
 				onClick={(event) => {
 					event.stopPropagation();
 					onAdd();

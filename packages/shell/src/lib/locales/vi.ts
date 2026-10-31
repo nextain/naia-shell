@@ -1225,6 +1225,7 @@ export default {
 	"bgm.stop": "Dừng",
 	"bgm.play": "Phát",
 	"bgm.showBackgroundVideo": "Hiện video nền",
+	"bgm.keyboardHelp": "Nhạc: Space hoặc K phát/dừng; trái/phải 5 giây; lên/xuống âm lượng; N bài tiếp, P bài trước",
 	"bgm.captions": "Phụ đề",
 	"bgm.volume": "Âm lượng",
 	"bgm.drawerTitle": "Kéo: thay đổi kích thước / Nhấp: mở·đóng",

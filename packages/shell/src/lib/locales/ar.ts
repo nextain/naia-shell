@@ -1225,6 +1225,7 @@ export default {
 	"bgm.stop": "إيقاف",
 	"bgm.play": "تشغيل",
 	"bgm.showBackgroundVideo": "إظهار فيديو الخلفية",
+	"bgm.keyboardHelp": "الموسيقى: المسافة أو K تشغيل/إيقاف؛ يمين/يسار 5 ثوان؛ أعلى/أسفل للصوت؛ N التالي وP السابق",
 	"bgm.captions": "الترجمة",
 	"bgm.volume": "مستوى الصوت",
 	"bgm.drawerTitle": "سحب: تغيير الحجم / نقر: فتح·إغلاق",

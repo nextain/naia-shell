@@ -1226,6 +1226,7 @@ export default {
 	"bgm.play": "Play",
 	"bgm.showBackgroundVideo": "Show background video",
 	"bgm.volume": "Volume",
+	"bgm.keyboardHelp": "Music controls: Space or K play/stop; left/right seek 5 seconds; up/down volume; N next, P previous",
 	"bgm.captions": "Captions",
 	"bgm.drawerTitle": "Drag: resize / Click: open·close",
 	"bgm.tabLocal": "♪ Local",

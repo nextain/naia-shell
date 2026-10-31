@@ -6153,6 +6153,14 @@ body.resizing-row {
 }
 
 @media (max-width: 500px) {
+	.app-bar {
+		position: fixed;
+		top: 32px;
+		left: 0;
+		right: 0;
+		z-index: 6;
+	}
+
 	.bgm-player {
 		width: 96px;
 		padding: 3px 4px;
@@ -6231,6 +6239,11 @@ body.resizing-row {
 	flex: 1;
 	min-width: 0;
 	overflow: hidden;
+}
+
+.bgm-player-controls:focus-visible {
+	outline: 2px solid #a8ceff;
+	outline-offset: -2px;
 }
 
 .bgm-btn {
