@@ -27,6 +27,7 @@ import {
 	wrapEngineWithEnableThinking,
 } from "./agent-port-relay";
 import { makeOpfsReadFs } from "./opfs-read-fs";
+import { webGatewayBaseUrl } from "./gateway-url";
 
 const diag: DiagnosticLog = {
 	log(message: string, ctx?: unknown) {
@@ -196,10 +197,7 @@ self.addEventListener("message", (event: MessageEvent) => {
 					throw new Error(`Unsupported web provider: ${config.provider}`);
 				if (!config.naiaKey)
 					throw new Error("Naia account authentication required");
-				const gateway = (
-					config.labGatewayUrl || "https://api.nextain.io"
-				).replace(/\/+$/, "");
-				const baseUrl = /\/v\d+$/.test(gateway) ? gateway : `${gateway}/v1`;
+				const baseUrl = webGatewayBaseUrl(config.labGatewayUrl);
 				return makeOpenAICompatProvider({
 					baseUrl,
 					apiKey: config.naiaKey,
