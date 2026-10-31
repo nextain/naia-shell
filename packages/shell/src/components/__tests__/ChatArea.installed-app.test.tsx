@@ -9,7 +9,9 @@ import {
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { INSTALLED_APP_ASK_EVENT, INSTALLED_APP_RESPONSE_EVENT, INSTALLED_APP_SPEAK_EVENT, INSTALLED_APP_CANCEL_EVENT, INSTALLED_APP_SPEECH_RESULT_EVENT } from "../../apps/generic-installed/installed-app-host-bridge";
+import { createGenericInstalledApp } from "../../apps/generic-installed/GenericInstalledApp";
 import { appRegistry } from "../../lib/app-registry";
+import type { NaiaContextBridge } from "../../lib/app-registry";
 import {
 	clearCameraActions,
 } from "../../lib/avatar/camera-actions";
@@ -160,6 +162,7 @@ vi.mock("../../lib/bgm-sidecar-url", () => ({
 // Mock Tauri APIs (needed by approval flow)
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/api/core", () => ({
+	convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
 	invoke: (command: string, args?: { name?: string }) => {
 		// These component fixtures describe credentials separately from native I/O.
 		// The real secure-store isolation contract is exercised in its own suite.
@@ -217,6 +220,56 @@ describe("ChatArea", () => {
 		mockSendAppSkills.mockReset().mockResolvedValue(true);
 		vi.mocked(fetchAgentSkills).mockResolvedValue([]);
 		modelToolBoundary.reset();
+	});
+
+	it("connects an installed app frame to chat, speech cancellation, and locale", async () => {
+		const previousLocale = getLocale();
+		const originalSpeech = globalThis.speechSynthesis;
+		const originalUtterance = globalThis.SpeechSynthesisUtterance;
+		const utterances: Array<{ onstart: (() => void) | null }> = [];
+		vi.stubGlobal("speechSynthesis", { speak: (utterance: typeof utterances[number]) => utterances.push(utterance), cancel: vi.fn() });
+		vi.stubGlobal("SpeechSynthesisUtterance", class { lang = ""; onstart = null; onend = null; onerror = null; });
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "openai", model: "gpt-4o", apiKey: "test-key", ttsEnabled: true, ttsProvider: "browser" }));
+		const App = createGenericInstalledApp("/apps/example/index.html", [], "test.app", ["model.ask", "speech", "locale"]);
+		appRegistry.register({ id: "test.app", name: "Example", center: App });
+		useAppStore.setState({ activeApp: "test.app" });
+		try {
+			await setLocale("ko");
+			render(<><App naia={{} as NaiaContextBridge} /><ChatArea /></>);
+			const frame = screen.getByTitle("App") as HTMLIFrameElement;
+			const post = vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
+			const send = (data: object, source: MessageEventSource | null = frame.contentWindow) => {
+				act(() => window.dispatchEvent(new MessageEvent("message", { source, origin: "http://asset.localhost", data })));
+			};
+			fireEvent.load(frame);
+			expect(post).toHaveBeenCalledWith({ type: "naia-app:locale", locale: "ko" }, "http://asset.localhost");
+			await act(async () => {
+				await setLocale("en");
+				window.dispatchEvent(new CustomEvent("naia:locale-change", { detail: "en" }));
+			});
+			expect(post).toHaveBeenCalledWith({ type: "naia-app:locale", locale: "en" }, "http://asset.localhost");
+			send({ type: "naia-app:ask", appId: "test.app", id: "forged", prompt: "Ignored" }, window);
+			expect(capturedRequests).toHaveLength(0);
+			send({ type: "naia-app:ask", appId: "test.app", id: "question", prompt: "Hello" });
+			await waitFor(() => expect(capturedRequests).toHaveLength(1));
+			act(() => {
+				capturedRequests[0].onChunk({ type: "text", requestId: capturedRequests[0].requestId, text: "Reply" });
+				capturedRequests[0].onChunk({ type: "finish", requestId: capturedRequests[0].requestId });
+			});
+			await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "naia-app:response", id: "question", text: "Reply" }), "http://asset.localhost"));
+			send({ type: "naia-app:speak", appId: "test.app", id: "speech", text: "Hello." });
+			await waitFor(() => expect(utterances).toHaveLength(1));
+			act(() => utterances[0].onstart?.());
+			send({ type: "naia-app:speak-cancel", appId: "test.app", id: "speech" });
+			await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: "naia-app:speech-result", id: "speech", status: "cancelled" }), "http://asset.localhost"));
+		} finally {
+			cleanup();
+			appRegistry.unregister("test.app");
+			localStorage.removeItem("naia-config");
+			vi.stubGlobal("speechSynthesis", originalSpeech);
+			vi.stubGlobal("SpeechSynthesisUtterance", originalUtterance);
+			await setLocale(previousLocale);
+		}
 	});
 	afterEach(() => {
 		cleanup();

@@ -407,6 +407,8 @@ export async function loadInstalledApps(): Promise<void> {
 				JSON.stringify(previous.descriptions ?? {}) ===
 					JSON.stringify(manifest.descriptions ?? {}) &&
 				previous.icon === manifest.icon &&
+				JSON.stringify(previous.permissions ?? []) ===
+					JSON.stringify(manifest.permissions ?? []) &&
 				previous.htmlEntry === manifest.htmlEntry
 			) {
 				continue;
@@ -451,7 +453,7 @@ export async function loadInstalledApps(): Promise<void> {
 			// round-trip to another app and back. An app may opt out with
 			// keepAlive:false in its manifest.
 			keepAlive: manifest.keepAlive ?? true,
-			center: createGenericInstalledApp(manifest.htmlEntry, manifest.tools, manifest.id, manifest.permissions),
+			center: createGenericInstalledApp(manifest.htmlEntry, appTools, manifest.id, manifest.permissions),
 		});
 
 		Logger.info("AppLoader", `Registered installed app: ${manifest.id}`);

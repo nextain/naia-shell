@@ -1459,14 +1459,14 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-025.2** | 음악 조작 막대 자체에 초점이 있을 때 스페이스·K는 재생 전환, 좌우는 5초 이동, 상하는 음량 5% 조절, N·P는 곡 전환이다. 연속 이동을 누적하고 입력칸을 가로채지 않는다. | UC-025-02 | T2; `BgmPlayer.test.tsx` | 후보·실기 미검증 |
 | **FR-025.3** | 아바타 조작은 저장된 선택이 없으면 접고 펼침 선택을 저장·복원한다. NVA는 펼친 조작에서 확대·축소·이동·초기화를 제공하고 일반 입체 아바타의 회전도 보존한다. 인공지능과 음성을 각각 켜고 끌 때 그림이 바뀌며 꺼진 그림에 빗금이 보인다. | UC-NVA-CAMERA-GESTURE-1022 | T10 직접 시험; `AiControlBar.test.tsx`의 `shows accessible AI and TTS icons with an off slash`, `e2e/nva-prebaked.spec.ts` | 후보·실기 미검증 |
 | **FR-025.4** | 기존 프로젝트 앱의 표시 이름과 그림을 대시보드로 바꾸고 프로젝트 선택과 기존 화면을 유지한다. | UC-025-03 | T3; `ProjectsApp.test.tsx` | 후보·실기 미검증 |
-| **FR-025.5** | 내장 브라우저는 유효한 선택 ADK의 `downloads`에 제안 경로의 파일 이름만 저장한다. `../report.pdf`는 `downloads/report.pdf`, 파일 이름이 없는 `../`는 `downloads/download`로 저장하고 중복 이름에는 번호를 붙인다. ADK 경로 확인·폴더 생성·경계 검사 등 목적지 설정 실패 시 브라우저 기본 위치를 사용한다. 리눅스에서 기본 경로를 파일 주소로 바꿀 수 없으면 내려받기를 거절한다. | UC-025-04 | T4 정상 파일·중복 직접 시험; `browser_webview.rs`의 `confines_suggested_names_to_download_folder`, `rejects_invalid_adk_directory`, `rejects_downloads_symlink_outside_adk`(유닉스), `rejects_unconvertible_default_download_destination`(리눅스), `chooses_adk_download_folder_and_numbers_collisions`. 설정 실패 뒤 기본 위치 대체 연결은 자동 시험 없음, 남은 위험 | 후보·실기 미검증 |
+| **FR-025.5** | 내장 브라우저는 유효한 선택 ADK의 `downloads`에 제안 경로의 파일 이름만 저장한다. `../report.pdf`는 `downloads/report.pdf`, 파일 이름이 없는 `../`는 `downloads/download`로 저장하고 중복 이름에는 번호를 붙인다. ADK 경로 확인·폴더 생성·경계 검사 등 목적지 설정 실패 시 브라우저 기본 위치를 사용한다. 리눅스에서 기본 경로를 파일 주소로 바꿀 수 없으면 내려받기를 거절한다. | UC-025-04 | T4 정상 파일·중복 직접 시험; `browser_webview.rs`의 `skips_a_broken_symlink_in_the_download_folder`(유닉스), `confines_suggested_names_to_download_folder`, `rejects_invalid_adk_directory`, `rejects_downloads_symlink_outside_adk`(유닉스), `rejects_unconvertible_default_download_destination`(리눅스), `chooses_adk_download_folder_and_numbers_collisions`. 설정 실패 뒤 기본 위치 대체 연결은 자동 시험 없음, 남은 위험 | 후보·실기 미검증 |
 | **FR-025.6** | 새 ADK 기본 자산의 기대 목록은 입체 아바타 2, NVA 3, 배경 6, 음악 3이며 음악에 한국어 라디오 한 곡과 영어 한 곡이 포함된다. 기존 사용자 선택과 추가 자산을 보존한다. | S-ADK-SOURCE, UC-025-05 | T5; `adk-assets-e2e.test.ts` | 후보·실기 미검증 |
 | **FR-025.7** | 0.2.5 소개 글은 판번호와 자막·음악·아바타·대시보드·내려받기 변경 및 나이아 라디오 노래 한국어 한 곡·영어 한 곡을 후보에 맞게 설명한다. 뺀 교육 앱인 블랙잭 코딩 수업·공공 인공지능 전환(AX) 강의가 출시 대상으로 소개되면 실패다. | UC-025-06 | T11; `releases/v0.2.5.yaml` 대조 | 후보·검토 필요 |
 | **FR-025.8** | 슬라이드 0.1.2를 설치해 PDF 페이지 이동·발표 음성 시작/정지·녹화 및 재생을 할 수 있다. | UC-025-07 | UT-01, IT-01, E2E-01, T8 | 통합·실기 미검증 |
 | **FR-025.10** | 타로 0.1.4는 공개한 카드 순서에 맞춰 답하고 원문 낭독을 완료·취소하며 닫은 뒤 소리를 멈춘다. | UC-025-09 | UT-02, IT-02, E2E-02, E2E-05 | 후보에 낭독 연결 미구현·실기 미검증 |
 | **FR-025.11** | 이음오피스 0.1.0 소개 앱은 표시된 내려받기 주소를 복사하고 나이아 연결 준비 중을 표시한다. | UC-025-10 | UT-03, IT-03, E2E-03 | 통합·실기 미검증 |
 | **FR-025.12** | 캐릭터 카드 0.1.0의 선택 설정을 역할극에 전달하고 카드 → 슬라이드 → 일반 대화 전환과 닫기 때 문맥을 교체·해제하며 전환 뒤에도 열린 슬라이드 자료를 보존한다. | UC-025-11 | UT-04, IT-04, E2E-04, UT-06, IT-06, E2E-06 | 후보에 문맥 연결 미구현·실기 미검증 |
-| **FR-025.13** | 같은 후보에서 기기별 기존 기능과 네 앱의 서명·판·설치 및 회귀 결과를 확인하고 실패·미실시를 구분한다. 공용 연결의 질문·언어·낭독 취소를 확인한다. 교육 앱인 블랙잭 코딩 수업과 공공 인공지능 전환(AX) 강의는 이번 판에서 뺀다. | UC-025-12 | T8, T9, UT-05, IT-05, E2E-05, UT-07, IT-07, E2E-07 | 실기 미검증 |
+| **FR-025.13** | 같은 후보에서 기기별 기존 기능과 네 앱의 서명·판·설치 및 회귀 결과를 확인하고 실패·미실시를 구분한다. 공용 연결의 질문·언어·낭독 취소를 확인한다. 교육 앱인 블랙잭 코딩 수업과 공공 인공지능 전환(AX) 강의는 이번 판에서 뺀다. | UC-025-12 | T8, T9, UT-05, IT-05, E2E-05, UT-07, IT-07, E2E-07; `installed-app-host-bridge.test.ts`, `ChatArea.installed-app.test.tsx`, `generic-installed-slides.test.tsx`, `installed-app-loader-boundary.test.tsx` | 실기 미검증 |
 ### 설치 앱 공용 연결 및 설치 화면 (UC-INSTALLED-APP-HOST)
 
 | ID | 요구사항 | 상태 |
@@ -1475,6 +1475,6 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | FR-INSTALLED-HOST.2 | 권한을 선언한 설치 앱의 낭독·취소와 결과 및 셸 언어의 초기·변경 전달을 지원한다. Slides 연결을 유지한다. | 구현, 실기 대기 |
 | FR-INSTALLED-HOST.3 | 설치 대화상자에서 스토어 다국어 이름·설명과 썸네일을 표시하고 매니페스트에 보존한다. 기본·빈 정보·진행·성공·오류·좁은 폭에서 상태, 복구, 키보드 접근성을 확인한다. | 구현, 실기 대기 |
 
-시험: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx` — 설치 앱 질문·낭독과 실시간 음성 모델 거절 한국어·영어; `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts` — 공용 연결 권한·출처·메시지.
+시험: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx` — 설치 앱 질문·낭독과 실시간 음성 모델 거절 한국어·영어; 설치 앱 iframe과 대화창을 함께 렌더해 질문·응답, 낭독 취소, 언어 변경과 위조 창 거절을 확인한다(모델·음성 장치는 모의); `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts` — 공용 연결 권한·출처·메시지; `packages/shell/src/apps/__tests__/installed-app-loader-boundary.test.tsx` — 필터된 도구 등록 및 권한 변경 반영.
 
 검수 1차 (UC-INSTALLED-APP-HOST): 중복 ask/speak ID에 duplicate_id를 즉시 반환하고 기존 요청을 유지한다. 앱 질문은 기존 채팅 기록 없이 전송하고 채팅에 앱 이름을 표시하며 이후 사용자 기록에서 앱 턴을 제외한다. 설치 가능한 권한 정보를 다국어로 고지하며 미제공이면 생략한다. 매니페스트 썸네일은 HTTPS만 보존한다. 상태: Done.
