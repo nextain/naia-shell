@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "Phải",
 	"settings.appBottom": "Dưới",
 	"settings.background": "Hình nền",
+	"settings.bgAutumnOffice": "Văn phòng mùa thu",
+	"settings.bgAutumnOfficeLive": "Văn phòng mùa thu (chuyển động)",
 	"settings.bgNone": "Không (Mặc định)",
 	"settings.assetImport": "Thêm tệp",
 	"settings.assetDelete": "Xóa",

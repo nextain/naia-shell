@@ -4481,7 +4481,11 @@ export function SettingsTab() {
 								{naiaBgs.map((path) => {
 									const filename = path.split(/[/\\]/).pop() ?? path;
 									const webLabel = isWebMode()
-										? WEB_BACKGROUND_ASSETS.find(
+										? filename === "naia-autumn-office.webp"
+											? t("settings.bgAutumnOffice")
+											: filename === "naia-autumn-office-live.mp4"
+												? t("settings.bgAutumnOfficeLive")
+												: WEB_BACKGROUND_ASSETS.find(
 												(asset) =>
 													asset.url === path || asset.filename === filename,
 											)?.label

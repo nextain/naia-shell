@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "Derecha",
 	"settings.appBottom": "Abajo",
 	"settings.background": "Imagen de fondo",
+	"settings.bgAutumnOffice": "Oficina de otoño",
+	"settings.bgAutumnOfficeLive": "Oficina de otoño (animada)",
 	"settings.bgNone": "Ninguno (Predeterminado)",
 	"settings.assetImport": "Añadir archivo",
 	"settings.assetDelete": "Eliminar",

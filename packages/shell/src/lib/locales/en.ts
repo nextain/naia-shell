@@ -203,6 +203,8 @@ const englishCore = {
 	"settings.appRight": "Right",
 	"settings.appBottom": "Bottom",
 	"settings.background": "Background Image",
+	"settings.bgAutumnOffice": "Autumn Office",
+	"settings.bgAutumnOfficeLive": "Autumn Office (Animated)",
 	"settings.bgNone": "None (Default)",
 	"settings.assetImport": "Add file",
 	"settings.assetDelete": "Delete",

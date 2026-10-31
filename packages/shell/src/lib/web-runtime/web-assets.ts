@@ -77,7 +77,7 @@ export const WEB_VRM_ASSETS: readonly WebBundledAsset[] = [
 ];
 
 /**
- * 웹판 배경 카탈로그 — dist /backgrounds/* (정식 배경 그림 6종 + 반복 재생 영상 2종).
+ * 웹판 배경 카탈로그 — dist /backgrounds/* (정식 배경 그림 7종 + 반복 재생 영상 3종).
  * 이전의 아바타 썸네일 16:9 확대 파생본(ol-woman-dusk.webp, shino-uniform-dusk.webp)은
  * 화면에 얼굴만 거대하게 보이는 원인이므로 폐기하고 정식 배경으로 교체했다.
  */
@@ -107,6 +107,12 @@ export const WEB_BACKGROUND_ASSETS: readonly WebBackgroundAsset[] = [
 		kind: "image",
 	},
 	{
+		filename: "naia-autumn-office.webp",
+		label: "가을 사무실",
+		url: "/backgrounds/naia-autumn-office.webp",
+		kind: "image",
+	},
+	{
 		filename: "naia-starlight-lake.webp",
 		label: "별빛 호수",
 		url: "/backgrounds/naia-starlight-lake.webp",
@@ -117,6 +123,12 @@ export const WEB_BACKGROUND_ASSETS: readonly WebBackgroundAsset[] = [
 		label: "하늘 정원",
 		url: "/backgrounds/naia-sky-garden.webp",
 		kind: "image",
+	},
+	{
+		filename: "naia-autumn-office-live.mp4",
+		label: "가을 사무실 (움직임)",
+		url: "/backgrounds/naia-autumn-office-live.mp4",
+		kind: "video",
 	},
 	{
 		filename: "naia-starlight-lake-live.mp4",
@@ -166,7 +178,7 @@ export function isLegacyWebNaiaSelection(
 /** 웹판 아바타 기본값 (config vrmModel이 비었을 때). */
 export const WEB_DEFAULT_VRM = WEB_VRM_ASSETS[0].url;
 /** 웹판 배경 기본값 (config backgroundVideo가 비었을 때, bare 파일명). */
-export const WEB_DEFAULT_BACKGROUND = "naia-starlight-lake-live.mp4";
+export const WEB_DEFAULT_BACKGROUND = "naia-autumn-office-live.mp4";
 /** 웹판 배경 기본값 URL. */
 export const WEB_DEFAULT_BACKGROUND_URL = `/backgrounds/${WEB_DEFAULT_BACKGROUND}`;
 

@@ -5619,7 +5619,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			"settings-bg-select",
 		)) as HTMLSelectElement;
 		await waitFor(() => {
-			expect(bgSelect.options.length).toBe(9); // "없음" + 8 catalog entries
+			expect(bgSelect.options.length).toBe(11); // None + 10 catalog entries
 		});
 		const labels = Array.from(bgSelect.options)
 			.slice(1)
@@ -5629,8 +5629,10 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			"작전실 — 나이아·지나·민호",
 			"강변 해돋이",
 			"비 오는 작업실",
+			"Autumn Office",
 			"별빛 호수",
 			"하늘 정원",
+			"Autumn Office (Animated)",
 			"별빛 호수 (움직이는 배경)",
 			"비 오는 작업실 (움직이는 배경)",
 		]);

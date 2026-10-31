@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "右",
 	"settings.appBottom": "下",
 	"settings.background": "背景画像",
+	"settings.bgAutumnOffice": "秋のオフィス",
+	"settings.bgAutumnOfficeLive": "秋のオフィス（アニメーション）",
 	"settings.bgNone": "なし（デフォルト）",
 	"settings.assetImport": "ファイル追加",
 	"settings.assetDelete": "削除",

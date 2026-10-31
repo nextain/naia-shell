@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "ডান",
 	"settings.appBottom": "নিচে",
 	"settings.background": "ব্যাকগ্রাউন্ড ইমেজ",
+	"settings.bgAutumnOffice": "শরতের অফিস",
+	"settings.bgAutumnOfficeLive": "শরতের অফিস (চলমান)",
 	"settings.bgNone": "কোনটিই নয় (ডিফল্ট)",
 	"settings.assetImport": "ফাইল যোগ করুন",
 	"settings.assetDelete": "মুছুন",

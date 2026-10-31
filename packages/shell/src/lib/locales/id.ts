@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "Kanan",
 	"settings.appBottom": "Bawah",
 	"settings.background": "Gambar Latar Belakang",
+	"settings.bgAutumnOffice": "Kantor Musim Gugur",
+	"settings.bgAutumnOfficeLive": "Kantor Musim Gugur (Animasi)",
 	"settings.bgNone": "Tidak ada (Default)",
 	"settings.assetImport": "Tambah file",
 	"settings.assetDelete": "Hapus",

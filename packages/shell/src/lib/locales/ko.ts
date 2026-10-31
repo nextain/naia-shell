@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "우측",
 	"settings.appBottom": "하단",
 	"settings.background": "배경 이미지",
+	"settings.bgAutumnOffice": "가을 사무실",
+	"settings.bgAutumnOfficeLive": "가을 사무실 (움직임)",
 	"settings.bgNone": "없음 (기본)",
 	"settings.assetImport": "파일 추가",
 	"settings.assetDelete": "삭제",

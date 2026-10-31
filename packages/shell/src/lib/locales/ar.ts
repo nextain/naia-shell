@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "يمين",
 	"settings.appBottom": "أسفل",
 	"settings.background": "صورة الخلفية",
+	"settings.bgAutumnOffice": "مكتب الخريف",
+	"settings.bgAutumnOfficeLive": "مكتب الخريف (متحرك)",
 	"settings.bgNone": "لا شيء (افتراضي)",
 	"settings.assetImport": "إضافة ملف",
 	"settings.assetDelete": "حذف",

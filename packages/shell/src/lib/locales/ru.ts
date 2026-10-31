@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "Справа",
 	"settings.appBottom": "Снизу",
 	"settings.background": "Фоновое изображение",
+	"settings.bgAutumnOffice": "Осенний офис",
+	"settings.bgAutumnOfficeLive": "Осенний офис (анимация)",
 	"settings.bgNone": "Нет (по умолчанию)",
 	"settings.assetImport": "Добавить файл",
 	"settings.assetDelete": "Удалить",

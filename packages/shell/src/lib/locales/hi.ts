@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "दाएँ",
 	"settings.appBottom": "नीचे",
 	"settings.background": "पृष्ठभूमि छवि",
+	"settings.bgAutumnOffice": "पतझड़ का दफ़्तर",
+	"settings.bgAutumnOfficeLive": "पतझड़ का दफ़्तर (गतिमान)",
 	"settings.bgNone": "कोई नहीं (डिफ़ॉल्ट)",
 	"settings.assetImport": "फ़ाइल जोड़ें",
 	"settings.assetDelete": "हटाएं",

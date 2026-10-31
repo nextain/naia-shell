@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "右",
 	"settings.appBottom": "下",
 	"settings.background": "背景图片",
+	"settings.bgAutumnOffice": "秋日办公室",
+	"settings.bgAutumnOfficeLive": "秋日办公室（动态）",
 	"settings.bgNone": "无（默认）",
 	"settings.assetImport": "添加文件",
 	"settings.assetDelete": "删除",

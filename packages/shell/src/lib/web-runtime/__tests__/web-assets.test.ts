@@ -55,15 +55,17 @@ describe("web bundled catalogs", () => {
 		}
 	});
 
-	it("exposes 8 background entries in catalog order with Korean labels and image/video kinds", () => {
-		expect(WEB_BACKGROUND_ASSETS).toHaveLength(8);
+	it("exposes 10 background entries in catalog order with Korean labels and image/video kinds", () => {
+		expect(WEB_BACKGROUND_ASSETS).toHaveLength(10);
 		expect(WEB_BACKGROUND_ASSETS.map((asset) => asset.filename)).toEqual([
 			"naia-dawn-city-uhd.webp",
 			"naia-jina-minho-war-room-uhd.webp",
 			"naia-sunrise-river.webp",
 			"naia-rainy-studio.webp",
+			"naia-autumn-office.webp",
 			"naia-starlight-lake.webp",
 			"naia-sky-garden.webp",
+			"naia-autumn-office-live.mp4",
 			"naia-starlight-lake-live.mp4",
 			"naia-rainy-studio-live.mp4",
 		]);
@@ -72,8 +74,10 @@ describe("web bundled catalogs", () => {
 			"작전실 — 나이아·지나·민호",
 			"강변 해돋이",
 			"비 오는 작업실",
+			"가을 사무실",
 			"별빛 호수",
 			"하늘 정원",
+			"가을 사무실 (움직임)",
 			"별빛 호수 (움직이는 배경)",
 			"비 오는 작업실 (움직이는 배경)",
 		]);
@@ -84,6 +88,8 @@ describe("web bundled catalogs", () => {
 			"image",
 			"image",
 			"image",
+			"image",
+			"video",
 			"video",
 			"video",
 		]);
@@ -127,9 +133,9 @@ describe("web bundled catalogs", () => {
 		).toBe(false);
 	});
 
-	it("defaults to the animated starlight lake", () => {
+	it("defaults to the animated autumn office", () => {
 		expect(WEB_DEFAULT_VRM).toBe(WEB_VRM_ASSETS[0].url);
-		expect(WEB_DEFAULT_BACKGROUND).toBe("naia-starlight-lake-live.mp4");
+		expect(WEB_DEFAULT_BACKGROUND).toBe("naia-autumn-office-live.mp4");
 		expect(
 			WEB_BACKGROUND_ASSETS.find(
 				(asset) => asset.filename === WEB_DEFAULT_BACKGROUND,

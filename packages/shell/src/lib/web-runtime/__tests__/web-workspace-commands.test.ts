@@ -45,13 +45,13 @@ describe("web-workspace-commands", () => {
 			onboardingComplete: true,
 			avatarProvider: "naia-video-avatar",
 			nvaModel: "naia",
-			backgroundVideo: "naia-starlight-lake-live.mp4",
+			backgroundVideo: "naia-autumn-office-live.mp4",
 			NAIA_LOCALE: "en",
 		};
 		expect(INITIAL_WEB_WORKSPACE_CONFIG).toMatchObject({
 			avatarProvider: "naia-video-avatar",
 			nvaModel: "naia",
-			backgroundVideo: "naia-starlight-lake-live.mp4",
+			backgroundVideo: "naia-autumn-office-live.mp4",
 		});
 		expect(parsedInStorage).toEqual(expectedConfig);
 		expect(JSON.parse(first)).toEqual(expectedConfig);
@@ -270,7 +270,7 @@ describe("web-workspace-commands", () => {
 				onboardingComplete: true,
 				avatarProvider: "naia-video-avatar",
 				nvaModel: "naia",
-				backgroundVideo: "naia-starlight-lake-live.mp4",
+				backgroundVideo: "naia-autumn-office-live.mp4",
 				NAIA_LOCALE: "ko",
 			};
 			expect(JSON.parse(result)).toEqual(expectedConfig);
@@ -324,7 +324,7 @@ describe("web-workspace-commands", () => {
 			fs,
 		)) as string;
 		expect(JSON.parse(cfgRaw).backgroundVideo).toBe(
-			"naia-starlight-lake-live.mp4",
+			"naia-autumn-office-live.mp4",
 		);
 
 		const uiRaw = (await handleWebWorkspaceCommand(
@@ -333,7 +333,7 @@ describe("web-workspace-commands", () => {
 			fs,
 		)) as string;
 		expect(JSON.parse(uiRaw).backgroundVideo).toBe(
-			"naia-starlight-lake-live.mp4",
+			"naia-autumn-office-live.mp4",
 		);
 	});
 

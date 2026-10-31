@@ -195,6 +195,8 @@ export default {
 	"settings.appRight": "Droite",
 	"settings.appBottom": "Bas",
 	"settings.background": "Image d'arrière-plan",
+	"settings.bgAutumnOffice": "Bureau en automne",
+	"settings.bgAutumnOfficeLive": "Bureau en automne (animé)",
 	"settings.bgNone": "Aucun (Défaut)",
 	"settings.assetImport": "Ajouter fichier",
 	"settings.assetDelete": "Supprimer",
