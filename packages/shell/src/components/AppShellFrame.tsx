@@ -131,6 +131,11 @@ export function AppShellFrame({
 				playsInline
 				preload="none"
 				poster={autumnVideo ? "/backgrounds/naia-autumn-office.webp" : undefined}
+				onCanPlay={(event) => {
+					if (autumnVideo) {
+						void event.currentTarget.play().catch(() => setFailedVideoUrl(backgroundVideoUrl));
+					}
+				}}
 				onError={() => setFailedVideoUrl(backgroundVideoUrl)}
 				style={{ zIndex: 1 }}
 			/>
