@@ -1,4 +1,5 @@
 import { chromium, expect, type Page, test } from "@playwright/test";
+import { isAbsolute } from "node:path";
 import { startDefaultWorkspace } from "./helpers/web-workspace";
 
 test.skip(
@@ -61,9 +62,9 @@ test("real webllm model with OPFS ADK persona and workspace", async ({}, testInf
 	test.setTimeout(16 * 60_000);
 
 	const profileDir = process.env.NAIA_E2E_CHROME_PROFILE;
-	if (!profileDir || !profileDir.startsWith("/var/mnt/hdd/")) {
+	if (!profileDir || !isAbsolute(profileDir)) {
 		throw new Error(
-			"NAIA_E2E_CHROME_PROFILE environment variable is required and must start with /var/mnt/hdd/",
+			"NAIA_E2E_CHROME_PROFILE must be an absolute directory path",
 		);
 	}
 

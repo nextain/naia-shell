@@ -750,8 +750,10 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				onClick={() =>
 					setActiveApp(activeApp === "settings" ? null : "settings")
 				}
-				title="설정"
+				title={activeApp === "settings" ? (getLocale() === "ko" ? "설정 닫기" : "Close settings") : "설정"}
+				aria-label={activeApp === "settings" ? (getLocale() === "ko" ? "설정 닫기" : "Close settings") : "설정"}
 			>
+				{activeApp === "settings" && <span className="web-mobile-settings-close">✕</span>}
 				<svg
 					viewBox="0 0 20 20"
 					fill="currentColor"

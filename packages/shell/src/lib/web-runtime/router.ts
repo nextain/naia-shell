@@ -9,6 +9,7 @@ import {
 } from "./event-bus";
 import { getWebFs } from "./web-fs";
 import { handleWebWorkspaceCommand } from "./web-workspace-commands";
+import { getWebWorkspaceFile } from "./web-workspace-files";
 
 const warnedCommands = new Set<string>();
 
@@ -20,6 +21,13 @@ export async function routeCommand(
 	const classification = COMMAND_TABLE[cmd];
 
 	if (classification === "web") {
+		if (cmd === "workspace_read_file" || cmd === "workspace_read_file_bytes" || cmd === "workspace_file_size") {
+			const path = (args as { path?: unknown })?.path;
+			if (typeof path !== "string") throw new Error("web_workspace_invalid_path");
+			const file = await getWebWorkspaceFile(path);
+			if (cmd === "workspace_file_size") return file.size;
+			return cmd === "workspace_read_file" ? file.text() : Array.from(new Uint8Array(await file.arrayBuffer()));
+		}
 		if (cmd === "plugin:event|listen") {
 			return handleEventListen(
 				args as { event: string; target?: unknown; handler: number },

@@ -12,3 +12,145 @@
 [data-naia-web="true"] .ws-rail-toggle {
 	top: 8px;
 }
+
+.web-mobile-settings-close {
+	display: none;
+}
+.web-workspace {
+	display: flex;
+	width: 100%;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+.web-workspace-tree {
+	width: min(280px, 40%);
+	min-width: 180px;
+	overflow: auto;
+}
+.web-workspace-tree code {
+	display: block;
+	padding: 10px;
+	overflow-wrap: anywhere;
+}
+.web-workspace-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+.web-workspace-tabs button,
+.web-workspace-viewer-bar button {
+	padding: 6px 10px;
+	border: 1px solid var(--glass-border, #43516b);
+	border-radius: 6px;
+	background: var(--glass-bg, #18243a);
+	color: inherit;
+	cursor: pointer;
+}
+.web-workspace-tabs button[aria-pressed="true"] {
+	border-color: var(--accent, #9bbcff);
+	color: var(--accent, #9bbcff);
+}
+.web-workspace-list {
+	list-style: none;
+	padding-left: 14px;
+}
+.web-workspace-list button,
+.web-workspace-list summary {
+	cursor: pointer;
+}
+.web-workspace-list button {
+	background: transparent;
+	border: 0;
+	color: inherit;
+	text-align: left;
+}
+.web-workspace-viewer {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	flex-direction: column;
+	overflow: hidden;
+}
+.web-workspace-viewer-bar {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+.web-workspace-viewer-bar code {
+	flex: 1;
+	overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {
+	[data-naia-web="true"] .app-layout:not(:has(.right-content--onboarding)) {
+		left: 0 !important;
+		top: 38%;
+	}
+	[data-naia-web="true"] .avatar-canvas-layer {
+		bottom: 62%;
+	}
+	[data-naia-web="true"] .naia-overlay {
+		width: 100%;
+		bottom: 62%;
+	}
+	[data-naia-web="true"] .app-root .naia-chat-area {
+		top: auto;
+		left: 0;
+		width: 100%;
+		max-height: 48%;
+	}
+	[data-naia-web="true"] .app-root .naia-chat-wrapper {
+		height: 120px !important;
+		flex: none;
+	}
+	[data-naia-web="true"] .app-root .naia-chat-wrapper--hidden {
+		height: 0 !important;
+		opacity: 0;
+		pointer-events: none;
+	}
+	[data-naia-web="true"] .app-root .naia-chat-toggle {
+		display: flex;
+	}
+	[data-naia-web="true"] .naia-chat-modes {
+		display: none;
+	}
+	[data-naia-web="true"] .naia-work-rail,
+	[data-naia-web="true"] .ws-rail-toggle,
+	[data-naia-web="true"] .app-bar-tab--utility,
+	[data-naia-web="true"] .app-bar-add,
+	[data-naia-web="true"] .app-bar-edit,
+	[data-naia-web="true"] [data-app-id="projects"],
+	[data-naia-web="true"] [data-app-id="land.naia.slides"],
+	[data-naia-web="true"] .settings-field:has(#environment-awareness),
+	[data-naia-web="true"] .settings-field:has(#environment-terminal-input) {
+		display: none;
+	}
+	[data-naia-web="true"] .app-layout:has(.app-bar-settings--active) {
+		top: 0;
+	}
+	[data-naia-web="true"] .app-bar-settings--active {
+		width: 44px;
+		height: 40px;
+		font-size: 22px;
+	}
+	[data-naia-web="true"] .app-bar-settings--active svg {
+		display: none;
+	}
+	[data-naia-web="true"] .web-mobile-settings-close {
+		display: inline;
+	}
+	[data-naia-web="true"] .web-workspace {
+		flex-direction: column;
+		overflow: auto;
+	}
+	[data-naia-web="true"] .web-workspace-tree {
+		width: 100%;
+		min-width: 0;
+		max-height: 45%;
+		flex-shrink: 0;
+	}
+	[data-naia-web="true"] .web-workspace-viewer {
+		min-height: 280px;
+	}
+}

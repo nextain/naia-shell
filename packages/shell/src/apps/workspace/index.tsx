@@ -10,10 +10,12 @@ import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
 const HerdrWorkspaceCenterArea = lazy(() =>
 	import("./HerdrWorkspaceCenterArea"),
 );
+const WebWorkspace = lazy(() => import("./WebWorkspace"));
 
 export function DeferredHerdrWorkspaceCenterArea(props: AppCenterProps) {
 	if (isWebMode()) {
 		const path = getAdkPath();
+		if (path === WEB_ADK_PATH) return <Suspense fallback={<code data-testid="web-workspace-path">{path}</code>}><WebWorkspace /></Suspense>;
 		return (
 			<section className="herdr-workspace__files" aria-label={t("workspace.herdrFileTree")}>
 				<header className="herdr-workspace__section-title">{t("workspace.herdrFileTree")}</header>

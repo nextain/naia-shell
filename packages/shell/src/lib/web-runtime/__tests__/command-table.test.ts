@@ -494,7 +494,7 @@ describe("command-table", () => {
 		).toEqual([]);
 	});
 
-	it("has exactly 14 keys classified as 'web'", () => {
+	it("classifies the supported web commands", () => {
 		const webKeys = Object.entries(COMMAND_TABLE)
 			.filter(([_, value]) => value === "web")
 			.map(([key]) => key)
@@ -512,6 +512,9 @@ describe("command-table", () => {
 			"read_naia_ui_config",
 			"reload_agent_settings",
 			"send_to_agent_command",
+			"workspace_file_size",
+			"workspace_read_file",
+			"workspace_read_file_bytes",
 			"write_naia_config",
 			"write_naia_path_cache",
 			"write_naia_ui_config",
