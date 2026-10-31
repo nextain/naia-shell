@@ -16,7 +16,6 @@ import {
 	getStoreGatewayUrl,
 	getStoreProductMetadata,
 	getStoreProductName,
-	getStoreProductMetadata,
 	hasStoreEntitlement,
 } from "../app-store-client";
 

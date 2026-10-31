@@ -47,7 +47,7 @@ describe("Naia tarot actions", () => {
 		expect(finish).toHaveBeenCalledOnce();
 		expect(() => run({ action: "reveal_next" })).toThrow();
 	});
-	it("requires a new concern before starting and hides every unrevealed card", () => {
+	it("UT-02 keeps tool cards in reveal order and hides every unrevealed card", () => {
 		const f = fixture();
 		expect(f.run({ action: "start_reading", question: "  " })).toMatchObject({
 			need_question: true,
@@ -76,6 +76,7 @@ describe("Naia tarot actions", () => {
 		expect(f.run({ action: "get_reading" })).toMatchObject({
 			all_revealed: true,
 		});
+		expect((f.run({ action: "get_reading" }).cards as any[]).map((c) => c.card)).toEqual([first.card, second.card, third.card]);
 	});
 	it("supports three cards and story and reading actions", () => {
 		const f = fixture();

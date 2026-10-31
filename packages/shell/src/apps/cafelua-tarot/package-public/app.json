@@ -21,6 +21,7 @@
 	},
 	"version": "0.1.4",
 	"manifest_version": 2,
+  "permissions": ["speech", "locale"],
 	"iconUrl": "icon.svg",
 	"thumbnailUrl": "/assets/apps/land.naia.cafelua-tarot/thumbnail.png",
 	"description": "Naia becomes Cafe Lua's tarot reader: tell her what's on your mind and she reads the cards one by one. The app also holds the Cafe Lua Tarot Stories book, and Naia can read it aloud to you.",

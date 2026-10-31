@@ -394,7 +394,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 | UC-025-05 | T5: `packages/shell/src/lib/__tests__/adk-assets-e2e.test.ts` 기본 자산 목록 | T5 한국어·영어 라디오 곡 각각 끝까지 직접 재생: 윈도우 2070·4060, 리눅스 |
 | UC-025-06 | T11: `releases/v0.2.5.yaml`과 후보 동작·제외 범위 대조 | T11 출시 글 직접 검토: 시험 담당자가 윈도우 2070·4060과 리눅스 후보 동작을 각각 대조 |
 | UC-025-07 | UT-01 쪽 이동, IT-01 파일 연결: 기존 `packages/shell/src/lib/__tests__/slides-files-bridge.test.ts` 연결 확인, 각 시험의 전체 범위는 파일 지정 예정; 리눅스 | T8, E2E-01 설치·쪽 이동·음성·녹화: 직접 시험, 윈도우 2070·4060, 리눅스 |
-| UC-025-09 | UT-02 카드 순서, IT-02 낭독 경계: 시험 파일 지정 예정; 리눅스 | E2E-02 카드·낭독, E2E-05 공용 낭독·취소: 직접 시험, 윈도우 2070·4060과 리눅스 각각 |
+| UC-025-09 | UT-02 카드 순서·완료 전 미소비: `tools.test.ts`, `book-read.test.tsx`; IT-02 낭독 경계: `book-host-integration.test.tsx`; 리눅스 | E2E-02 카드·낭독, E2E-05 공용 낭독·취소: 직접 시험, 윈도우 2070·4060과 리눅스 각각 |
 | UC-025-10 | UT-03 탭·복사 안내, IT-03 설치 화면·복사: 시험 파일 지정 예정; 리눅스 | E2E-03 주소 복사: 직접 시험, 윈도우 2070·4060, 리눅스 |
 | UC-025-11 | UT-04 카드 문맥, IT-04 전달·해제, UT-06 문맥 경계, IT-06 앱 전환: 시험 파일 지정 예정; 리눅스 | E2E-04 역할극·닫기, E2E-06 카드 → 슬라이드 → 일반 대화 문맥 전환·슬라이드 자료 보존: 직접 시험, 윈도우 2070·4060, 리눅스 각각 |
 | UC-025-12 | UT-05 권한·출처: `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts`, IT-05 질문·낭독·언어: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`; UT-07 서명 목록, IT-07 설치·복구: 시험 파일 지정 예정; 리눅스 | T8 기존 기능, T9 `run-regression.mjs` 회귀 기록, E2E-05 공용 연결, E2E-07 네 앱 설치: 윈도우 2070·4060과 리눅스 각각 |
@@ -2615,13 +2615,13 @@ P04 증거: Shell Vitest 전체 2,558 통과 / 0 실패 / 21 제외, 관련 집�
 
 ## UC-CAFELUA-TAROT-APP — 카페루아 타로를 나이아 앱에서 사용한다
 
-사용자는 셸 대화에서 고민을 말하고 나이아가 켈틱 크로스 열 장이나 세 장을 펼쳐 한 장씩 풀이한다. 탁자에서 덮인 카드는 직접 뒤집히지 않고, 공개된 카드의 뜻을 볼 수 있다. 종합 후 나온 카드의 카페루아 이야기 책 장을 연다. 책은 한국어 또는 영어 원문을 보여 주며 나이아가 요청받은 문단을 그대로 낭독한다.
+사용자는 셸 대화에서 고민을 말하고 나이아가 켈틱 크로스 열 장이나 세 장을 펼쳐 한 장씩 풀이한다. 탁자에서 덮인 카드는 직접 뒤집히지 않고, 공개된 카드의 뜻을 볼 수 있다. 종합 후 나온 카드의 카페루아 이야기 책 장을 연다. 책은 한국어 또는 영어 원문을 보여 주며 나이아가 요청받은 문단을 그대로 낭독한다. 공용 `naia-app:speak`, `naia-app:speak-cancel`, `naia-app:speech-result`와 `speech`·`locale` 권한을 사용한다. `completed`를 받은 문단만 읽은 것으로 기록하고 다음 문단으로 진행한다. 실패·취소·시간 초과·권한 거절·2,001자 이상은 읽지 않은 상태로 남는다. 공개된 카드만 공개 순서대로 도구 결과에 포함한다. 모델에 제공되는 타로 도구는 서명 검증된 활성 설치 앱에 속해야 한다 (`installed-app-loader-boundary.test.tsx`, `model-tool-boundary.test.ts`).
 
 Test Coverage Map (P02)
 
 | 상태·행동 | 검증 |
 |---|---|
-| 기본·빈 탁자, 진행·카드 공개·종합 성공, 잘못된 도구 요청 오류, 좁은 폭 | `tools.test.ts`, `reading.test.ts`; `cafelua-tarot-app.spec.ts` 및 촬영 |
-| 책 장 이동·연속 낭독·쪽 넘김·중지·원문 보존 | `tools.test.ts`, `content.test.ts`; `cafelua-tarot-app.spec.ts` 및 촬영 |
+| UT-02: 공개 순서와 도구 결과 일치, 미공개 카드 제외; 기본·빈 탁자, 진행·카드 공개·종합 성공, 잘못된 도구 요청 오류, 좁은 폭 | `tools.test.ts` (UT-02), `reading.test.ts`; `cafelua-tarot-app.spec.ts` 및 촬영 |
+| UT-02·IT-02: 완료 전 문단 미소비, 권한·완료·취소·실패·시간 초과 및 2,000/2,001자 경계 | `book-read.test.tsx` (UT-02), `book-host-integration.test.tsx` (IT-02), `installed-app-host-bridge.test.ts`; `tools.test.ts`, `content.test.ts`; `cafelua-tarot-app.spec.ts` 및 촬영 |
 | 14개 언어·자산 주소·소리 | `i18n.test.ts`, `sound.test.ts`, `content.test.ts` |
 | 정보 위계·오류 복구·키보드/ARIA·반응형 | `cafelua-tarot-app.spec.ts` 및 verify-visual-ux 촬영 검토 |

@@ -119,7 +119,7 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 				event.source !== window.parent ||
 				!current ||
 				event.data?.id !== current.id ||
-				event.data?.type !== "naia-cafelua-tarot:speech-result"
+				event.data?.type !== "naia-app:speech-result"
 			)
 				return;
 			current.finish(event.data.status);
@@ -130,7 +130,7 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 			if (request.current) {
 				window.parent.postMessage(
 					{
-						type: "naia-cafelua-tarot:cancel",
+						type: "naia-app:speak-cancel",
 						appId: "land.naia.cafelua-tarot",
 						id: request.current.id,
 					},
@@ -149,7 +149,7 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 		if (current) {
 			window.parent.postMessage(
 				{
-					type: "naia-cafelua-tarot:cancel",
+					type: "naia-app:speak-cancel",
 					appId: "land.naia.cafelua-tarot",
 					id: current.id,
 				},
@@ -338,7 +338,7 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 				clearTimeout(request.current.timer);
 				request.current = null;
 				if (!readingRef.current) return;
-				if (status !== "finished") {
+				if (status !== "completed") {
 					readingRef.current = false;
 					setReading(false);
 					setHighlight(null);
@@ -351,18 +351,18 @@ export const Book = forwardRef<BookHandle, Props>(function Book(
 			const timer = window.setTimeout(() => {
 				window.parent.postMessage(
 					{
-						type: "naia-cafelua-tarot:cancel",
+						type: "naia-app:speak-cancel",
 						appId: "land.naia.cafelua-tarot",
 						id,
 					},
 					"*",
 				);
 				finish("failed");
-			}, 120000);
+			}, 120001);
 			request.current = { id, timer, finish };
 			window.parent.postMessage(
 				{
-					type: "naia-cafelua-tarot:speak",
+					type: "naia-app:speak",
 					appId: "land.naia.cafelua-tarot",
 					id,
 					page: batch.page + 1,

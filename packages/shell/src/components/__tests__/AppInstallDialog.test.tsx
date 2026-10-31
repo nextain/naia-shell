@@ -116,7 +116,7 @@ describe("AppInstallDialog — storefront install (#471)", () => {
 
 		expect(screen.getAllByTestId("app-install-product")).toHaveLength(1);
 		expect(screen.getByText("Naia Slides")).toBeTruthy();
-		expect(await screen.findByText("Present and record a deck.")).toBeTruthy();
+		expect(await screen.findByText("Present slides")).toBeTruthy();
 		fireEvent.click(screen.getByRole("button", { name: "설치" }));
 		await waitFor(() =>
 			expect(

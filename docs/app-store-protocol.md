@@ -43,7 +43,7 @@ identity. This lets a voice incident be attributed to source generation before p
 | 앱 → 셸 | `{type:"naia-app:ask", appId, id, prompt}` (최대 9,000자) |
 | 셸 → 앱 | `{type:"naia-app:accepted", id}` 이후 `{type:"naia-app:response", id, text, error?}`; 실패·취소 시 text는 빈 문자열 |
 | 앱 → 셸 | `{type:"naia-app:speak", appId, id, text}` (최대 2,000자), `{type:"naia-app:speak-cancel", appId, id}` |
-| 셸 → 앱 | `{type:"naia-app:speech-result", id, status, error?}`; status는 `finished`, `cancelled`, `failed` |
+| 셸 → 앱 | `{type:"naia-app:speech-result", id, status, error?}`; status는 `completed`, `cancelled`, `failed` |
 | 셸 → 앱 | `{type:"naia-app:locale", locale}` (로드 및 셸 언어 변경) |
 
 권한이 없거나 입력이 잘못되면 오류를 반환하며 응답이 오래 오지 않으면 timeout으로 종료한다. 타로, 강의, 블랙잭 등 앱 종류에 관계없이 같은 규격을 사용한다.
@@ -55,6 +55,8 @@ identity. This lets a voice incident be attributed to source generation before p
 | 동시 질문 | 셸이 다른 답변을 처리 중이면 새 질문을 busy 오류로 거부 |
 | 중복 ID | 같은 종류의 요청 ID가 처리 중이면 새 요청에 `duplicate_id` 오류를 즉시 반환하고 기존 요청은 계속 정산 |
 | 대화 기록 | 앱 질문에는 셸의 이전 대화 기록을 붙이지 않는다. 앱 턴은 채팅에 앱 이름과 함께 표시한다. |
-| 낭독 상태 | `finished` 완료, `cancelled` 취소, `failed` 실패 (`error`에 사유) |
+| 낭독 상태 | `completed` 완료, `cancelled` 취소, `failed` 실패 (`error`에 사유) |
 
 앱 질문에는 채팅 대화 기록을 붙이지 않는다. 짝 에이전트의 기억 불러오기는 일반 채팅과 같이 동작하며, 앱 질문 전용 격리는 에이전트 쪽 과제로 따로 다룬다.
+
+타로 0.1.4는 `speech`와 `locale`만 선언한다. `completed`를 받은 문단만 소비하며 실패·취소·시간 초과·권한 거절 또는 2,001자 이상 문단은 읽지 않은 상태로 남긴다. UT-02는 공개 카드 순서·미공개 카드 제외와 완료 전 미소비를, IT-02 `book-host-integration.test.tsx`는 Book과 실제 공용 연결기의 권한·완료·취소·실패·시간 초과·길이 경계를 확인한다.

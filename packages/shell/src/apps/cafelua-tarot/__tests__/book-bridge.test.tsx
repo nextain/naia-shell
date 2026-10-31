@@ -77,7 +77,7 @@ describe("book read button bridge", () => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
 					source,
-					data: { type: "naia-cafelua-tarot:speech-result", id, status },
+					data: { type: "naia-app:speech-result", id, status },
 				}),
 			),
 		);
@@ -87,7 +87,7 @@ describe("book read button bridge", () => {
 		await click();
 		const m = post.mock.calls[0][0];
 		expect(m).toMatchObject({
-			type: "naia-cafelua-tarot:speak",
+			type: "naia-app:speak",
 			appId: "land.naia.cafelua-tarot",
 			page: 1,
 		});
@@ -99,11 +99,11 @@ describe("book read button bridge", () => {
 	it("times out and allows retry", async () => {
 		await setup();
 		await click();
-		act(() => vi.advanceTimersByTime(120000));
+		act(() => vi.advanceTimersByTime(120001));
 		expect(screen.getByRole("status").textContent).toBe(readErrors.en);
 		await click();
 		expect(
-			post.mock.calls.filter(([m]) => m.type === "naia-cafelua-tarot:speak"),
+			post.mock.calls.filter(([m]) => m.type === "naia-app:speak"),
 		).toHaveLength(2);
 	});
 	it("ignores late and mismatched results without disturbing a retry", async () => {
@@ -113,10 +113,10 @@ describe("book read button bridge", () => {
 		await click();
 		await click();
 		const next = post.mock.calls.at(-1)![0].id;
-		reply(first, "finished");
-		reply(next, "finished", window);
+		reply(first, "completed");
+		reply(next, "completed", window);
 		expect(post.mock.calls.at(-1)![0].id).toBe(next);
-		reply(next, "finished");
+		reply(next, "completed");
 		expect(screen.getByRole("status").textContent).toContain(
 			"chapter is finished",
 		);
@@ -127,7 +127,7 @@ describe("book read button bridge", () => {
 		const id = post.mock.calls[0][0].id;
 		unmount();
 		expect(post).toHaveBeenCalledWith(
-			expect.objectContaining({ type: "naia-cafelua-tarot:cancel", id }),
+			expect.objectContaining({ type: "naia-app:speak-cancel", id }),
 			"*",
 		);
 		expect(vi.getTimerCount()).toBe(0);

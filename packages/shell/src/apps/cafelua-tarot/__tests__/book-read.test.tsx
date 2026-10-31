@@ -65,7 +65,7 @@ vi.mock("../library-dom-pagination", () => ({
 	alignChapterStartsToSpreads: (pages: unknown[]) => pages,
 }));
 
-describe("book read-aloud progression", () => {
+describe("UT-02 book read-aloud progression", () => {
 	let parent: Window;
 	let post: ReturnType<typeof vi.fn>;
 	beforeEach(() => {
@@ -125,7 +125,7 @@ describe("book read-aloud progression", () => {
 	}
 	function sent() {
 		return post.mock.calls.filter(
-			([m]) => m.type === "naia-cafelua-tarot:speak",
+			([m]) => m.type === "naia-app:speak",
 		);
 	}
 	function reply(status: string) {
@@ -134,7 +134,7 @@ describe("book read-aloud progression", () => {
 			window.dispatchEvent(
 				new MessageEvent("message", {
 					source: window.parent,
-					data: { type: "naia-cafelua-tarot:speech-result", id, status },
+					data: { type: "naia-app:speech-result", id, status },
 				}),
 			),
 		);
@@ -152,16 +152,16 @@ describe("book read-aloud progression", () => {
 		expect(document.querySelectorAll(".naia-reading-highlight")).toHaveLength(
 			1,
 		);
-		reply("finished");
+		reply("completed");
 		expect(sent()).toHaveLength(2);
 		expect(sent()[1][0].text).toBe("B".repeat(240));
-		reply("finished");
+		reply("completed");
 		expect(sent()).toHaveLength(3);
 		expect(sent()[2][0].text).toBe("C".repeat(240));
-		reply("finished");
+		reply("completed");
 		expect(sent()).toHaveLength(4);
 		expect(sent()[3][0].text).toBe("D".repeat(240));
-		reply("finished");
+		reply("completed");
 		expect(sent()).toHaveLength(4);
 		expect(screen.getByRole("status").textContent).toContain(
 			"chapter is finished",
@@ -176,7 +176,7 @@ describe("book read-aloud progression", () => {
 		act(() => vi.advanceTimersByTime(0));
 		for (const [index, value] of ["E", "F", "G", "H"].entries()) {
 			expect(sent()[4 + index][0].text).toBe(value);
-			reply("finished");
+			reply("completed");
 		}
 		expect(await read()).toMatchObject({ book_end: true });
 	});
@@ -188,7 +188,7 @@ describe("book read-aloud progression", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Naia reads" }));
 		expect(post).toHaveBeenCalledWith(
 			expect.objectContaining({
-				type: "naia-cafelua-tarot:cancel",
+				type: "naia-app:speak-cancel",
 				id: first.id,
 			}),
 			"*",
