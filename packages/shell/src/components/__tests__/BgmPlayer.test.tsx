@@ -165,6 +165,10 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		group.focus();
 		fireEvent.keyDown(group, { key: "ArrowRight" });
 		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [5, true] }), "*");
+		fireEvent.keyDown(group, { key: "ArrowRight" });
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [10, true] }), "*");
+		fireEvent.keyDown(group, { key: "ArrowLeft" });
+		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "seekTo", args: [5, true] }), "*");
 		fireEvent.keyDown(group, { key: "ArrowUp" });
 		await waitFor(() => expect(post).toHaveBeenCalledWith(expect.stringContaining('"func":"setVolume"'), "*"));
 		fireEvent.keyDown(group, { key: "k" });
@@ -739,6 +743,12 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		fireEvent.click(screen.getByRole("button", { name: /First/ }));
 		expect(bgmPlayback.current()?.selected.videoId).toBe("first");
 		fireEvent.click(screen.getByTitle("Next"));
+		expect(bgmPlayback.current()?.selected.videoId).toBe("second");
+		const group = screen.getByRole("group", { name: /Music controls/ });
+		group.focus();
+		fireEvent.keyDown(group, { key: "p" });
+		expect(bgmPlayback.current()?.selected.videoId).toBe("first");
+		fireEvent.keyDown(group, { key: "n" });
 		expect(bgmPlayback.current()?.selected.videoId).toBe("second");
 	});
 

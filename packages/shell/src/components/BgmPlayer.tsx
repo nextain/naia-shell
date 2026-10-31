@@ -409,6 +409,7 @@ export function BgmPlayer({ naia }: Props) {
 	const playbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const manuallyStoppedPlaybackRef = useRef<string | null>(null);
 	const lastEndedPlaybackIdRef = useRef<string | null>(null);
+	const keyboardSeekTimeRef = useRef<number | null>(null);
 	const lastErroredPlaybackIdRef = useRef<string | null>(null);
 	const failedVideoIdsRef = useRef<Set<string>>(new Set());
 	const observedIframeStateRef = useRef<{
@@ -695,6 +696,7 @@ export function BgmPlayer({ naia }: Props) {
 
 	function resetObservedIframeState(playbackId: string | null = null) {
 		clearPlaybackTimeout();
+		keyboardSeekTimeRef.current = null;
 		observedIframeStateRef.current = {
 			playbackId,
 			confirmedVideoId: null,
@@ -1335,6 +1337,7 @@ export function BgmPlayer({ naia }: Props) {
 						if (isSamePlayback && current) {
 							if (Number.isFinite(currentTime) && currentTime >= 0) {
 								observedIframeStateRef.current.lastCurrentTime = currentTime;
+								keyboardSeekTimeRef.current = currentTime;
 							}
 							if (Number.isFinite(duration) && duration > 0) {
 								observedIframeStateRef.current.lastDuration = duration;
@@ -2300,7 +2303,12 @@ export function BgmPlayer({ naia }: Props) {
 						case "arrowright": {
 							const delta = event.key === "ArrowLeft" ? -5 : 5;
 							if (source === "youtube") {
-								sendYtCmd("seekTo", [Math.max(0, (playbackSnapshot?.currentTime ?? 0) + delta), true]);
+								const current = keyboardSeekTimeRef.current ?? playbackSnapshot?.currentTime;
+								if (current != null) {
+									const duration = observedIframeStateRef.current.lastDuration ?? Infinity;
+									const target = Math.max(0, Math.min(duration, current + delta));
+									if (sendYtCmd("seekTo", [target, true])) keyboardSeekTimeRef.current = target;
+								}
 							} else if (audioRef.current) {
 								audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + delta);
 							}
