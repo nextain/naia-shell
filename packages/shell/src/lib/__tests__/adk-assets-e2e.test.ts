@@ -1,59 +1,42 @@
 /**
- * ADK Assets E2E — verifies bundled assets exist and the copy-to-naia-settings
- * logic works end-to-end using Node.js fs (mirrors the Rust copy_bundled_assets).
+ * ADK Assets E2E — verifies the default ADK inventory and a local copy.
+ * Point ADK_SETTINGS_DIR at a checkout of naia-adk/naia-settings.
  *
  * Run opt-in only (skipped by default):
- *   ADK_E2E=1 pnpm exec vitest run src/lib/__tests__/adk-assets-e2e.test.ts
+ *   ADK_E2E=1 ADK_SETTINGS_DIR=/path/to/naia-adk/naia-settings pnpm exec vitest run src/lib/__tests__/adk-assets-e2e.test.ts
  */
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const ADK_E2E = process.env.ADK_E2E === "1";
 
-/** Resolve the shell/public/assets directory relative to this test file. */
-function findPublicAssetsDir(): string {
-	// __dirname = shell/src/lib/__tests__
-	return resolve(__dirname, "../../../public/assets");
-}
-
-const EXPECTED_VRM_FILES = [
-	"01-OL_Woman.vrm",
-	"02-Hood_Boy.vrm",
-	"03-Sendagaya-Shino-uniform.vrm",
-	"04-Sakurada-Fumiriya.vrm",
-];
-
+const EXPECTED_VRM_FILES = ["01-OL_Woman.vrm", "02-Hood_Boy.vrm"];
+const EXPECTED_NVA_DIRS = ["naia", "jina", "minho"];
 const EXPECTED_BGM_FILES = [
 	"Afternoon Whispers.mp3",
-	"Frosted Horizons.mp3",
-	"atelier.mp3",
-	"intro.mp3",
-	"lounge.mp3",
+	"naia-radio-its-okay-to-turn-off-the-light-en.mp3",
 ];
-
 const EXPECTED_BG_FILES = [
-	"background-space.png",
-	"anime-rainbow-landscape.jpg",
-	"fantasy-anime-style-scene.jpg",
-	"grup-background.jpg",
-	"cat-cloud.3840x2160.mp4",
-	"flower-shop-beachside-moewalls-com.mp4",
-	"meteors-at-dawn.3840x2160.mp4",
-	"morning-coffee.3840x2160.mp4",
+	"naia-sunrise-river.webp",
+	"naia-sky-garden.webp",
+	"naia-dawn-city-uhd.webp",
+	"naia-autumn-office-live.mp4",
+	"naia-starlight-lake-live.mp4",
+	"naia-rainy-studio-live.mp4",
 ];
 
-describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
-	const assetsDir = findPublicAssetsDir();
+describe.skipIf(!ADK_E2E)("ADK Assets E2E — default ADK assets on disk", () => {
+	const assetsDir = process.env.ADK_SETTINGS_DIR ?? "";
 
 	// ── Source file existence ─────────────────────────────────────────────────
 
-	describe("public/assets source files", () => {
-		it("public/assets directory exists", () => {
+	describe("naia-settings source files", () => {
+		it("naia-settings directory exists", () => {
 			expect(existsSync(assetsDir)).toBe(true);
 		});
 
-		it("contains all 4 bundled VRM files", () => {
+		it("contains the 2 default VRM files", () => {
 			const vrmDir = join(assetsDir, "vrm-files");
 			expect(existsSync(vrmDir)).toBe(true);
 			const found = readdirSync(vrmDir).filter((f) => f.endsWith(".vrm"));
@@ -63,6 +46,14 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
 			expect(found).toHaveLength(EXPECTED_VRM_FILES.length);
 		});
 
+		it("contains the 3 default NVA bundles", () => {
+			const nvaDir = join(assetsDir, "nva-files");
+			expect(readdirSync(nvaDir).sort()).toEqual([...EXPECTED_NVA_DIRS].sort());
+			for (const name of EXPECTED_NVA_DIRS) {
+				expect(existsSync(join(nvaDir, name, "manifest.json"))).toBe(true);
+			}
+		});
+
 		it("contains all background files", () => {
 			const bgDir = join(assetsDir, "background");
 			expect(existsSync(bgDir)).toBe(true);
@@ -70,9 +61,10 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
 			for (const expected of EXPECTED_BG_FILES) {
 				expect(found, `Missing background: ${expected}`).toContain(expected);
 			}
+			expect(found).toHaveLength(EXPECTED_BG_FILES.length);
 		});
 
-		it("contains all 5 BGM files", () => {
+		it("contains the 2 default BGM files", () => {
 			const bgmDir = join(assetsDir, "bgm-musics");
 			expect(existsSync(bgmDir)).toBe(true);
 			const found = readdirSync(bgmDir).filter((f) => f.endsWith(".mp3"));
@@ -83,11 +75,8 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
 		});
 	});
 
-	// ── Copy simulation ───────────────────────────────────────────────────────
-	// Mirrors the Rust copy_bundled_assets logic: for each subdir in assets,
-	// create dst dir and copy files (skip existing). Verifies the logic works.
-
-	describe("copy_bundled_assets simulation", () => {
+	// ── Local copy simulation ────────────────────────────────────────────────
+	describe("local inventory copy", () => {
 		let tmpAdkPath: string;
 
 		beforeAll(() => {
@@ -100,8 +89,8 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
 			}
 		});
 
-		function copyBundledAssetsNode(adkPath: string): void {
-			const subdirs = ["vrm-files", "background", "bgm-musics"] as const;
+		function copyDefaultAssetsNode(adkPath: string): void {
+			const subdirs = ["vrm-files", "nva-files", "background", "bgm-musics"] as const;
 			for (const subdir of subdirs) {
 				const srcDir = join(assetsDir, subdir);
 				const dstDir = join(adkPath, "naia-settings", subdir);
@@ -110,14 +99,14 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
 				for (const file of readdirSync(srcDir)) {
 					const dst = join(dstDir, file);
 					if (!existsSync(dst)) {
-						cpSync(join(srcDir, file), dst);
+						cpSync(join(srcDir, file), dst, { recursive: true });
 					}
 				}
 			}
 		}
 
 		it("copies all VRM files to naia-settings/vrm-files/", () => {
-			copyBundledAssetsNode(tmpAdkPath);
+			copyDefaultAssetsNode(tmpAdkPath);
 
 			const dstVrm = join(tmpAdkPath, "naia-settings", "vrm-files");
 			expect(existsSync(dstVrm)).toBe(true);
@@ -129,6 +118,14 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
 			expect(found).toHaveLength(EXPECTED_VRM_FILES.length);
 		});
 
+		it("copies all NVA bundles to naia-settings/nva-files/", () => {
+			const dstNva = join(tmpAdkPath, "naia-settings", "nva-files");
+			expect(readdirSync(dstNva).sort()).toEqual([...EXPECTED_NVA_DIRS].sort());
+			for (const name of EXPECTED_NVA_DIRS) {
+				expect(existsSync(join(dstNva, name, "manifest.json"))).toBe(true);
+			}
+		});
+
 		it("copies all background files to naia-settings/background/", () => {
 			const dstBg = join(tmpAdkPath, "naia-settings", "background");
 			expect(existsSync(dstBg)).toBe(true);
@@ -137,6 +134,7 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
 			for (const expected of EXPECTED_BG_FILES) {
 				expect(found, `Missing background in naia-settings: ${expected}`).toContain(expected);
 			}
+			expect(found).toHaveLength(EXPECTED_BG_FILES.length);
 		});
 
 		it("copies all BGM files to naia-settings/bgm-musics/", () => {
@@ -158,7 +156,7 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — bundled assets on disk", () => {
 				: null;
 
 			// Run copy again
-			copyBundledAssetsNode(tmpAdkPath);
+			copyDefaultAssetsNode(tmpAdkPath);
 
 			if (statBefore !== null) {
 				const statAfter = require("node:fs").statSync(sentinelPath).mtimeMs;
