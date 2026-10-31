@@ -14237,7 +14237,7 @@ mod naia_adk_source_network_tests {
     use super::{naia_adk_fetch_zip, naia_adk_git_clone, NAIA_ADK_REPO_URL, NAIA_ADK_ZIP_URL};
     use std::path::{Path, PathBuf};
 
-    const DEFAULT_ASSET_PATHS: [&str; 13] = [
+    const DEFAULT_ASSET_PATHS: [&str; 14] = [
         "naia-settings/vrm-files/01-OL_Woman.vrm",
         "naia-settings/vrm-files/02-Hood_Boy.vrm",
         "naia-settings/nva-files/naia/manifest.json",
@@ -14251,6 +14251,7 @@ mod naia_adk_source_network_tests {
         "naia-settings/background/naia-rainy-studio-live.mp4",
         "naia-settings/bgm-musics/Afternoon Whispers.mp3",
         "naia-settings/bgm-musics/naia-radio-its-okay-to-turn-off-the-light-en.mp3",
+        "naia-settings/bgm-musics/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
     ];
 
     fn resolve_fetch_dir() -> PathBuf {

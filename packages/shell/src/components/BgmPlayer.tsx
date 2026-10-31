@@ -278,7 +278,7 @@ function youtubeEmbedUrl(videoId: string, playbackId?: string): string {
 	}
 	return (
 		`https://www.youtube-nocookie.com/embed/${videoId}` +
-		`?autoplay=1&enablejsapi=1` +
+		`?autoplay=1&enablejsapi=1&cc_load_policy=0` +
 		`&origin=${encodeURIComponent(window.location.origin)}` +
 		(playbackId ? `&naiaPlayback=${encodeURIComponent(playbackId)}` : "")
 	);
@@ -292,6 +292,30 @@ function loadAppHeight(): number {
 }
 
 export function BgmPlayer({ naia }: Props) {
+	const captionsEnabled =
+		useUiPreference<boolean>(UI_PREFERENCE_KEYS.youtubeCaptions, false) ===
+		true;
+	const captionsRef = useRef(captionsEnabled);
+	captionsRef.current = captionsEnabled;
+	function applyCaptions(enabled: boolean) {
+		const iframe = document.querySelector(
+			".app-bg-iframe",
+		) as HTMLIFrameElement | null;
+		if (!iframe?.contentWindow) return;
+		try {
+			const origin = new URL(iframe.src, window.location.href).origin;
+			iframe.contentWindow.postMessage(
+				JSON.stringify({
+					event: "command",
+					func: enabled ? "loadModule" : "unloadModule",
+					args: ["captions"],
+				}),
+				origin,
+			);
+		} catch {
+			Logger.warn("BgmPlayer", "Unable to apply captions to iframe");
+		}
+	}
 	const audioRef = useRef<HTMLAudioElement>(null);
 	const playerRef = useRef<HTMLDivElement>(null);
 	const [appPos, setAppPos] = useState<{
@@ -1470,6 +1494,7 @@ export function BgmPlayer({ naia }: Props) {
 						".app-bg-iframe",
 					) as HTMLIFrameElement | null;
 					if (typeof iframe?.contentWindow?.postMessage !== "function") return;
+					applyCaptions(captionsRef.current);
 					const current = bgmPlayback.current();
 					if (
 						current &&
@@ -2259,6 +2284,23 @@ export function BgmPlayer({ naia }: Props) {
 
 			{/* ── Compact bar ── */}
 			<div className="bgm-player-controls">
+				<button
+					type="button"
+					className={`bgm-btn bgm-captions${captionsEnabled ? " bgm-captions--active" : ""}`}
+					aria-label={t("bgm.captions")}
+					title={t("bgm.captions")}
+					aria-pressed={captionsEnabled}
+					onClick={() => {
+						const next = !captionsEnabled;
+						captionsRef.current = next;
+						void patchUiPreferences({
+							[UI_PREFERENCE_KEYS.youtubeCaptions]: next,
+						});
+						applyCaptions(next);
+					}}
+				>
+					CC
+				</button>
 				{/* Fixed BGM icon — pulses when playing */}
 				<span
 					className={`bgm-icon${playing ? " bgm-icon--playing" : ""}`}

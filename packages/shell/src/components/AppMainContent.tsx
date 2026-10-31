@@ -245,7 +245,7 @@ export function AppMainContent(props: AppMainContentProps) {
 					)}
 					<div className="naia-overlay">
 						<Suspense fallback={null}>
-							<AiControlBar />
+							<AiControlBar isNva={avatarProvider === "naia-video-avatar"} />
 						</Suspense>
 						<div className="naia-chat-area">
 							<button

@@ -16,6 +16,7 @@ const EXPECTED_NVA_DIRS = ["naia", "jina", "minho"];
 const EXPECTED_BGM_FILES = [
 	"Afternoon Whispers.mp3",
 	"naia-radio-its-okay-to-turn-off-the-light-en.mp3",
+	"naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
 ];
 const EXPECTED_BG_FILES = [
 	"naia-sunrise-river.webp",
@@ -64,7 +65,7 @@ describe.skipIf(!ADK_E2E)("ADK Assets E2E — default ADK assets on disk", () =>
 			expect(found).toHaveLength(EXPECTED_BG_FILES.length);
 		});
 
-		it("contains the 2 default BGM files", () => {
+		it("contains the 3 default BGM files", () => {
 			const bgmDir = join(assetsDir, "bgm-musics");
 			expect(existsSync(bgmDir)).toBe(true);
 			const found = readdirSync(bgmDir).filter((f) => f.endsWith(".mp3"));

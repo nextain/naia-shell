@@ -110,6 +110,10 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		expect(videoBox?.width).toBeGreaterThan(0);
 		expect(videoBox?.height).toBeGreaterThan(0);
 		await expect(page.locator("[data-video-avatar-status]")).toHaveCount(0);
+		await page.getByRole("button", { name: "Avatar controls" }).click();
+		await expect(
+			page.getByRole("button", { name: "Drag to rotate avatar" }),
+		).toHaveCount(0);
 		const zoomIn = page.getByRole("button", { name: "Zoom in" });
 		const zoomOut = page.getByRole("button", { name: "Zoom out" });
 		const gestureGroup = page.getByRole("group", { name: "Avatar gestures" });
@@ -255,6 +259,7 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		await page.goto("/?holdNvaManifest=1&nvaNoGesture=1");
 		const avatar = page.locator("[data-video-avatar]");
 		await expect(avatar).toHaveAttribute("data-video-avatar-mode", "loading");
+		await page.getByRole("button", { name: "Avatar controls" }).click();
 		await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
 		await expect(page.locator(".nva-gesture-actions")).toHaveCount(0);
 		await expect(page.locator("[data-nva-gesture-key]")).toHaveCount(0);
