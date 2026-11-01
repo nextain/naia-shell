@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "Lire le texte à voix haute",
 	"apps.permission.model.ask": "Interroger le modèle d’IA sélectionné",
+	"apps.permission.clipboard.write": "Écrire dans le presse-papiers lors d’un clic",
 	"apps.permission.locale": "Consulter la langue de l’interface",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",

@@ -8,6 +8,7 @@ export const KNOWN_PERMISSIONS = [
 	"modals",
 	"speech",
 	"model.ask",
+	"clipboard.write",
 	"locale",
 	"environment",
 	"files.pick",

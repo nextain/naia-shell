@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "Text vorlesen",
 	"apps.permission.model.ask": "Das gewählte KI-Modell fragen",
+	"apps.permission.clipboard.write": "Bei einem Klick in die Zwischenablage schreiben",
 	"apps.permission.locale": "Sprache der Oberfläche lesen",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",
