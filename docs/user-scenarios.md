@@ -833,6 +833,7 @@ reorders the same native WebView picker without changing the selected model.
 | weighted price is the default | registry weighted-score and stable-sort tests | Settings component and Playwright option-order assertions |
 | unavailable routes are absent | registry metadata/filter contract | Settings component and Playwright absence assertions |
 | performance order is evidence-based | dated recommendation-order contract | Settings sort-change assertion |
+| UC-RECOMMENDED-MODELS-ICON-WEB-PATH | 추천·가격·성능 순서, 메인 기본값과 비용 절감 표시: `registry.test.ts` | 설정 화면 순서·표시 `SettingsTab.test.tsx`, 웹 파일 트리 작업 공간 경로 `web-file-tree-path.test.tsx`, `web-workspace-path.test.tsx` |
 
 ## UC-RADIO-DJ-DURABLE — Radio DJ changes music truthfully and keeps one settings owner (#414)
 
@@ -2485,6 +2486,10 @@ Test Coverage Map (P02)
 
 단위 시험·통합 시험·종단 시험과 직접 확인 번호, 준비·경로·통과 기준·상태는 [요구별 시험 계획](requirements.md#요구별-시험-계획--메인-모델과-작은-모델)을 따른다. `UT-SM-SHELL-THINK-01`은 데스크톱 Rust의 네 생각 수준과 미지정·알 수 없는 값 및 legacy boolean 전달을 검증한다. `IT-SM-SHELL-PAIR-01`은 에이전트·기억 커밋과 정규화 proto SHA 일치 및 불일치 거절을 검증한다. 실제 브라우저 OPFS와 폰 정상 진입 시험은 작성 전이다. 에이전트·기억의 추출·압축 격리 시험과 셸 페어 시험은 각각 별도다. 위 QC는 자동 시험 결과로 대신하지 않는다.
 
+| 시나리오 | 확인하는 것 | 시험 파일 | 상태 |
+|---|---|---|---|
+| UC-SM-01 | 메인·작은 모델 기본값(Terra `xhigh`, Luna `low`), 옛 기억 모델 상속, 저장 뒤 복원, 웹 로컬 모델 제외 | `small-model.test.ts`, `smallmodel-persistence.test.ts`, `smallmodel-import.integration.test.tsx`, `SettingsTab.test.tsx` | 부분 검증 |
+
 ## UC-TRANSFER-01 — 이관 묶음 왕복과 검증
 
 사용자는 웹에서 사용하던 사용자 파일과 기억을 동일한 이관 묶음으로 앱에 옮기고 다시 읽는다. 묶음의 파일별 해시와 기억·대화 수를 확인하며, 잘못된 묶음은 대상 파일을 쓰기 전에 거절한다.
@@ -2493,6 +2498,7 @@ Test Coverage Map (P02)
 
 | 시험 | 조건과 기대 결과 | 시험 파일 | 상태 |
 |---|---|---|---|
+| UC-TRANSFER-01 | 이관 묶음 왕복의 해시·목록·기억·대화 수 일치와 잘못된 묶음 거절 | `archive.test.ts`, `policy.test.ts`, `manifest.test.ts`, `entry.test.ts` | 부분 검증 |
 | UT-TRANSFER-01 | 정상 자료를 묶고 풀어 모든 파일의 해시와 목록·기억·대화 수가 같다. 웹과 앱 대역이 같은 자료를 읽는다. | `archive.test.ts` | 부분 검증 |
 | UT-TRANSFER-02 | 경로 거슬러 오르기·절대 경로·중복·심볼릭 링크를 각각 거절한다. | `policy.test.ts`, `archive.test.ts` | 부분 검증 |
 | UT-TRANSFER-03 | 과도한 압축률, 파일 수·파일별·전체 크기 상한 초과를 각각 거절한다. | `manifest.test.ts`, `archive.test.ts` | 부분 검증 |

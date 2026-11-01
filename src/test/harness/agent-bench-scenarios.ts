@@ -136,6 +136,10 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-NAIA-LEGACY-MAIN-MODEL",
   // 모델 선택·아이콘·파일 경로는 앱 설정과 표시이며 에이전트 능력 축이 아니다.
   "UC-RECOMMENDED-MODELS-ICON-WEB-PATH",
+  // 메인·작은 모델 선택과 저장(0.2.5). 설정 해석과 저장이다.
+  "UC-SM-01",
+  // 웹·앱 사이 이관 묶음 왕복(0.2.5). 파일 묶음 형식과 검증이다.
+  "UC-TRANSFER-01",
   // QA 회차 운영은 사람의 검사 절차다.
   "UC-QA-",
   // 인스턴스별 land·API 호스트 선택(#653). 빌드 모드 설정이다.
