@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "Đọc văn bản thành tiếng",
 	"apps.permission.model.ask": "Hỏi mô hình AI đã chọn",
+	"apps.permission.clipboard.write": "Ghi vào bảng nhớ tạm khi nhấn",
 	"apps.permission.locale": "Xem ngôn ngữ giao diện",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",

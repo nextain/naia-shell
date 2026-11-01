@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "朗读文本",
 	"apps.permission.model.ask": "向选定的 AI 模型提问",
+	"apps.permission.clipboard.write": "点击时写入剪贴板",
 	"apps.permission.locale": "读取界面语言",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",

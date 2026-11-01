@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "テキストを読み上げる",
 	"apps.permission.model.ask": "選択した AI モデルに質問",
+	"apps.permission.clipboard.write": "操作時にクリップボードへ書き込み",
 	"apps.permission.locale": "シェルの言語を確認",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",

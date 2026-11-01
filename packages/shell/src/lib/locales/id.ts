@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "Membacakan teks",
 	"apps.permission.model.ask": "Bertanya kepada model AI yang dipilih",
+	"apps.permission.clipboard.write": "Menulis ke papan klip saat diklik",
 	"apps.permission.locale": "Mengetahui bahasa antarmuka",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",

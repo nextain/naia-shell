@@ -18,6 +18,20 @@ vi.mock("@tauri-apps/api/core", () => ({
 afterEach(cleanup);
 
 describe("installed app permission boundary", () => {
+ it("delegates clipboard writing only to apps that declare it", () => {
+  const App = createGenericInstalledApp("/apps/example/index.html", [], "example.app", ["clipboard.write"]);
+  render(<App naia={{} as NaiaContextBridge} />);
+  const frame = screen.getByTitle("App");
+  expect(frame).toHaveAttribute("allow", "clipboard-write");
+  expect(frame.getAttribute("allow")).not.toContain("clipboard-read");
+ });
+ it.each([undefined, [], ["model.ask"], ["clipboard.read"]])("does not delegate clipboard permissions without clipboard.write: %s", (permissions) => {
+  const App = createGenericInstalledApp("/apps/example/index.html", [], "example.app", permissions);
+  render(<App naia={{} as NaiaContextBridge} />);
+  const frame = screen.getByTitle("App");
+  expect(frame).not.toHaveAttribute("allow");
+  expect(frame.getAttribute("allow") ?? "").not.toContain("clipboard-read");
+ });
  it("rejects an iframe ask without permission and returns the error to that frame", () => {
   const App = createGenericInstalledApp("/apps/example/index.html", [], "example.app", []);
   render(<App naia={{} as NaiaContextBridge} />);

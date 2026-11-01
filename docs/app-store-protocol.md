@@ -36,7 +36,7 @@ identity. This lets a voice incident be attributed to source generation before p
 
 ### 설치 앱에서 셸 기능 사용
 
-`app.json`에 필요한 권한만 선언한다. 예: `"permissions": ["model.ask", "speech", "locale"]`. 설치된 iframe은 부모에 메시지를 보내며 모든 요청에 자신의 `appId`와 고유한 영숫자·밑줄·하이픈 ID(1~100자)를 넣는다. 셸은 해당 iframe의 출처와 선언 권한을 확인하고 같은 앱·요청에만 결과를 전달한다.
+`app.json`에 필요한 권한만 선언한다. 사용자 누름에 따른 클립보드 쓰기가 필요한 설치 앱은 `permissions`에 `clipboard.write`를 명시한다. 셸은 선언된 iframe에만 `clipboard-write`를 위임하며 클립보드 읽기는 위임하지 않는다. 예: `"permissions": ["model.ask", "speech", "locale"]`. 설치된 iframe은 부모에 메시지를 보내며 모든 요청에 자신의 `appId`와 고유한 영숫자·밑줄·하이픈 ID(1~100자)를 넣는다. 셸은 해당 iframe의 출처와 선언 권한을 확인하고 같은 앱·요청에만 결과를 전달한다.
 
 | 방향 | 메시지 |
 | --- | --- |

@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "Читать текст вслух",
 	"apps.permission.model.ask": "Задать вопрос выбранной модели ИИ",
+	"apps.permission.clipboard.write": "Записывать в буфер обмена при нажатии",
 	"apps.permission.locale": "Узнать язык интерфейса",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",
