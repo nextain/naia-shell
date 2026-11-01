@@ -21,14 +21,23 @@ export interface PdfTextItemLike {
 	hasEOL?: boolean;
 }
 
-/** A gap wider than this fraction of the font size counts as a word space. */
-export const PDF_WORD_GAP_RATIO = 0.2;
+/**
+ * A gap wider than this fraction of the (smaller) font size counts as a word
+ * space. Kerning / letter-spacing gaps stay well below it.
+ */
+export const PDF_WORD_GAP_RATIO = 0.15;
 /** A baseline shift larger than this fraction of the font size is a new line. */
 export const PDF_LINE_SHIFT_RATIO = 0.5;
 
 interface Placed {
-	endX: number;
+	/** Origin of the item (transform e, f). */
+	x: number;
 	y: number;
+	/** Unit vector of the text advance direction (from transform a, b). */
+	dx: number;
+	dy: number;
+	/** Advance width along (dx, dy). */
+	width: number;
 	size: number;
 }
 
@@ -40,7 +49,8 @@ function fontSizeOf(item: PdfTextItemLike): number {
 	const t = item.transform;
 	const fromMatrix =
 		t && finite(t[2]) && finite(t[3]) ? Math.hypot(t[2], t[3]) : 0;
-	const fromScaleX = t && finite(t[0]) ? Math.abs(t[0]) : 0;
+	const fromScaleX =
+		t && finite(t[0]) && finite(t[1]) ? Math.hypot(t[0], t[1]) : 0;
 	const fromHeight = finite(item.height) ? Math.abs(item.height) : 0;
 	return Math.max(fromMatrix, fromHeight) || fromScaleX;
 }
@@ -48,8 +58,17 @@ function fontSizeOf(item: PdfTextItemLike): number {
 function placementOf(item: PdfTextItemLike): Placed | null {
 	const t = item.transform;
 	if (!t || !finite(t[4]) || !finite(t[5])) return null;
-	const width = finite(item.width) ? item.width : 0;
-	return { endX: t[4] + width, y: t[5], size: fontSizeOf(item) };
+	const a = finite(t[0]) ? t[0] : 1;
+	const b = finite(t[1]) ? t[1] : 0;
+	const len = Math.hypot(a, b);
+	return {
+		x: t[4],
+		y: t[5],
+		dx: len > 0 ? a / len : 1,
+		dy: len > 0 ? b / len : 0,
+		width: finite(item.width) ? item.width : 0,
+		size: fontSizeOf(item),
+	};
 }
 
 export function pdfTextFromItems(items: readonly unknown[]): string {
@@ -72,23 +91,29 @@ export function pdfTextFromItems(items: readonly unknown[]): string {
 		if (str !== "") {
 			const here = placementOf(item);
 			if (prev && here) {
-				const size = Math.max(prev.size, here.size);
+				// Measure in the previous item's own text direction, so rotated
+				// and vertical runs behave like horizontal ones.
+				const relX = here.x - prev.x;
+				const relY = here.y - prev.y;
+				const along = relX * prev.dx + relY * prev.dy;
+				const across = -relX * prev.dy + relY * prev.dx;
+				const lineSize = Math.max(prev.size, here.size);
+				const gapSize = Math.min(prev.size, here.size) || lineSize;
 				if (
-					size > 0 &&
-					Math.abs(here.y - prev.y) > PDF_LINE_SHIFT_RATIO * size
+					lineSize > 0 &&
+					Math.abs(across) > PDF_LINE_SHIFT_RATIO * lineSize
 				) {
 					breakLine();
-				} else {
-					const startX = (item.transform as readonly number[])[4];
-					const gap = startX - prev.endX;
-					if (
-						size > 0 &&
-						gap > PDF_WORD_GAP_RATIO * size &&
-						!/\s$/.test(current) &&
-						!/^\s/.test(str)
-					) {
-						current += " ";
-					}
+				} else if (
+					gapSize > 0 &&
+					// A real gap after the previous run, or a jump back before its
+					// start (items emitted out of visual order / right to left).
+					(along - prev.width > PDF_WORD_GAP_RATIO * gapSize ||
+						along < -PDF_WORD_GAP_RATIO * gapSize) &&
+					!/\s$/.test(current) &&
+					!/^\s/.test(str)
+				) {
+					current += " ";
 				}
 			}
 			current += str;

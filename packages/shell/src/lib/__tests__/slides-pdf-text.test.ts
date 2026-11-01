@@ -105,6 +105,43 @@ describe("pdfTextFromItems", () => {
 		expect(pdfTextFromItems(items)).toBe("x2");
 	});
 
+	it("keeps 90°-rotated syllable runs together and still splits rotated words", () => {
+		// transform for 90° CCW: [0, s, -s, 0, x, y]; text advances along +y.
+		const rot = (str: string, y: number, width: number) => ({
+			str,
+			transform: [0, 20, -20, 0, 300, y],
+			width,
+			height: 20,
+			hasEOL: false,
+		});
+		expect(
+			pdfTextFromItems([
+				rot("안", 100, 20),
+				rot("녕", 120, 20),
+				rot("하", 140, 20),
+			]),
+		).toBe("안녕하");
+		expect(
+			pdfTextFromItems([rot("hello", 100, 50), rot("world", 156, 50)]),
+		).toBe("hello world");
+	});
+
+	it("separates same-line items that are emitted right to left / out of order", () => {
+		expect(
+			pdfTextFromItems([item("right", 200, 50), item("left", 72, 40)]),
+		).toBe("right left");
+	});
+
+	it("uses the smaller font size for the word-gap threshold", () => {
+		// 4pt gap after a 40pt heading run, before 12pt text: a real space.
+		expect(
+			pdfTextFromItems([
+				item("Big", 72, 60, { size: 40 }),
+				item("small", 136, 30, { size: 12, y: 700 }),
+			]),
+		).toBe("Big small");
+	});
+
 	it("skips TextMarkedContent items that have no str", () => {
 		const items = [
 			{ type: "beginMarkedContentProps", id: "mc0" },
