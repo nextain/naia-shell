@@ -1246,7 +1246,7 @@ export default {
 	"bgm.play": "Reproducir",
 	"bgm.showBackgroundVideo": "Mostrar vídeo de fondo",
 	"bgm.keyboardHelp": "Música: espacio o K reproducir/detener; izquierda/derecha 5 segundos; arriba/abajo volumen; N siguiente, P anterior",
-	"bgm.captions": "Subtítulos",
+	"bgm.showCaptions": "Mostrar subtítulos",
 	"bgm.volume": "Volumen",
 	"bgm.drawerTitle": "Arrastrar: cambiar tamaño / Clic: abrir·cerrar",
 	"bgm.tabLocal": "♪ Local",

@@ -6221,7 +6221,7 @@ body.resizing-row {
 	}
 
 	.bgm-player-sep,
-	.bgm-player-controls > .bgm-btn:not(.bgm-btn--play):not(.bgm-captions),
+	.bgm-player-controls > .bgm-btn:not(.bgm-btn--play),
 	.bgm-track-toggle,
 	.bgm-volume {
 		display: none;
@@ -6234,6 +6234,9 @@ body.resizing-row {
 
 /* Fixed BGM icon */
 .bgm-icon {
+	background: none;
+	border: 0;
+	font-family: inherit;
 	font-size: 15px;
 	color: rgba(160, 200, 255, 0.95);
 	flex-shrink: 0;
@@ -6470,11 +6473,19 @@ body.resizing-row {
 	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.bgm-yt-background-option {
+.bgm-yt-options {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	column-gap: 14px;
+	padding: 8px 10px 0;
+}
+
+.bgm-yt-background-option,
+.bgm-yt-captions-option {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	padding: 8px 10px 0;
 	color: rgba(255, 255, 255, 0.8);
 	font-size: 0.78rem;
 }
@@ -12523,5 +12534,3 @@ body.resizing-col * {
 }
 
 .ai-control-bar__camera { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; max-width: 100%; }
-.bgm-captions { font-size: 10px; border: 1px solid currentColor; }
-.bgm-captions--active { color: #34d399; }

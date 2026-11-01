@@ -1246,7 +1246,7 @@ export default {
 	"bgm.play": "চালান",
 	"bgm.showBackgroundVideo": "ব্যাকগ্রাউন্ড ভিডিও দেখান",
 	"bgm.keyboardHelp": "সংগীত: স্পেস বা K চালু/বন্ধ; বাঁ/ডানে ৫ সেকেন্ড; উপরে/নিচে শব্দ; N পরের, P আগের",
-	"bgm.captions": "সাবটাইটেল",
+	"bgm.showCaptions": "সাবটাইটেল দেখান",
 	"bgm.volume": "ভলিউম",
 	"bgm.drawerTitle": "টানুন: আকার পরিবর্তন / ক্লিক: খুলুন·বন্ধ করুন",
 	"bgm.tabLocal": "♪ স্থানীয়",

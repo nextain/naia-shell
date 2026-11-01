@@ -167,14 +167,28 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 			.toBeGreaterThan(beforeAlt2);
 
 		await page.setViewportSize({ width: 360, height: 800 });
-		const captions = page.getByRole("button", { name: "Captions" });
+		await expect(page.getByRole("button", { name: "Captions" })).toHaveCount(0);
+		const musicApp = page.locator(".bgm-icon");
+		await expect(musicApp).toBeVisible();
+		await musicApp.focus();
+		await page.keyboard.press("Enter");
+		await expect(musicApp).toHaveAttribute("aria-expanded", "true");
+		const captions = page.getByRole("checkbox", { name: "Show captions" });
 		await expect(captions).toBeVisible();
+		await expect(
+			page.locator(".bgm-yt-options").getByRole("checkbox", {
+				name: "Show background video",
+			}),
+		).toBeVisible();
 		const captionsBox = await captions.boundingBox();
 		expect(captionsBox?.x).toBeGreaterThanOrEqual(0);
 		expect((captionsBox?.x ?? 0) + (captionsBox?.width ?? 0)).toBeLessThanOrEqual(360);
+		await expect(captions).not.toBeChecked();
 		await captions.focus();
-		await page.keyboard.press("Enter");
-		await expect(captions).toHaveAttribute("aria-pressed", "true");
+		await page.keyboard.press("Space");
+		await expect(captions).toBeChecked();
+		await musicApp.click();
+		await expect(page.locator(".bgm-yt-app--hidden")).toHaveAttribute("inert", "");
 		const narrowButtons = await page
 			.locator(".nva-gesture-actions__button")
 			.evaluateAll((buttons) =>
