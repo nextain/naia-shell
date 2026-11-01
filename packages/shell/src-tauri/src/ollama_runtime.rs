@@ -5901,6 +5901,9 @@ pub(crate) fn ollama_runtime_start(
     app: AppHandle,
     manager: State<'_, RuntimeManager>,
 ) -> Result<String, RuntimeError> {
+    if option_env!("NAIA_DISTRIBUTION") == Some("mas") {
+        return Err(RuntimeError::new(RuntimeErrorCode::UnsupportedPlatform, "app_store", false));
+    }
     dispatch_start(&manager, Some(app), host, device_id)
 }
 

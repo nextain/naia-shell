@@ -61,6 +61,16 @@ describe("checkForUpdate", () => {
 		uiPreferences.patchUiPreferences.mockResolvedValue(true);
 	});
 
+	it("does not invoke the updater in the App Store build", async () => {
+		vi.stubEnv("VITE_NAIA_DISTRIBUTION", "mas");
+		try {
+			await expect(checkForUpdate()).resolves.toBeNull();
+			expect(check).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
 	it("returns null only when the updater confirms there is no update", async () => {
 		check.mockResolvedValue(null);
 		await expect(checkForUpdate()).resolves.toBeNull();

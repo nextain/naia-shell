@@ -77,7 +77,7 @@ jobs:
           printf '%s' "$PROFILE" | base64 --decode > "$APP/Contents/embedded.provisionprofile"
           PLIST="$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.2.5' "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 0.2.5.${GITHUB_RUN_NUMBER}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$PLIST"
           /usr/libexec/PlistBuddy -c 'Add :LSApplicationCategoryType string public.app-category.productivity' "$PLIST" || /usr/libexec/PlistBuddy -c 'Set :LSApplicationCategoryType public.app-category.productivity' "$PLIST"
           /usr/libexec/PlistBuddy -c 'Add :ITSAppUsesNonExemptEncryption bool false' "$PLIST" || /usr/libexec/PlistBuddy -c 'Set :ITSAppUsesNonExemptEncryption false' "$PLIST"
           /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string Naia uses the microphone for voice conversations. Naia는 음성 대화를 위해 마이크를 사용합니다.' "$PLIST" || /usr/libexec/PlistBuddy -c 'Set :NSMicrophoneUsageDescription Naia uses the microphone for voice conversations. Naia는 음성 대화를 위해 마이크를 사용합니다.' "$PLIST"

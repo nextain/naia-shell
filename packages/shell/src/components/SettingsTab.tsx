@@ -7811,7 +7811,7 @@ function VersionFooter() {
 			<span className="version-footer-text">
 				{t("update.version")} {appVersion || "—"}
 			</span>
-			{updateStatus === "idle" && (
+			{import.meta.env.VITE_NAIA_DISTRIBUTION !== "mas" && updateStatus === "idle" && (
 				<button
 					type="button"
 					className="version-footer-btn"
