@@ -4,8 +4,8 @@ date: "2026-10-31"
 # 이 운영체제의 기계와 스펙만 조건으로 삼는다 — scripts/lib/release-target.mjs.
 targets: [windows]
 summary:
-  en: "v0.2.5 replaces v0.2.4 and includes the Windows fixes found before release. It targets Steam support (distribution detection, hiding top-up links on the Steam build, and Windows Steam depot artifacts) and a personal assistant dashboard with coding agent, dashboard and issue panes. Windows signing and installer/updater artifacts remain release foundations. Steam sign-in, account linking, and Steam credit pack top-ups (#729), generic usage-cost and K credit display, the separate terminal/docs/board workspace, and knowledge recall move to a later release."
-  ko: "0.2.5는 0.2.4를 대신하며, 출시 전에 찾은 Windows 문제를 고칩니다. Steam 지원(배포 판별·Steam 판 충전 링크 숨김·Windows Steam 디포 산출물), 개인 비서가 일하는 코딩 에이전트·대시보드·이슈 칸의 대시보드 앱을 목표로 합니다. Windows 서명과 설치·업데이트 산출물은 출시 기반으로 둡니다. Steam 로그인·계정 연결·Steam 크레딧 팩 충전(#729), 일반 사용 비용·크레딧 K 표기, 터미널·문서·작업판으로 이뤄진 별도 3분할 작업 공간, 지식 회상은 다음 판 이후로 옮깁니다."
+  en: "v0.2.5 replaces v0.2.4 and includes the Windows fixes found before release. It targets Steam support (distribution detection, hiding top-up links on the Steam build, and Windows Steam depot artifacts) and a personal assistant dashboard (the Projects app is now Dashboard). Windows signing and installer/updater artifacts remain release foundations. Steam sign-in, account linking, and Steam credit pack top-ups (#729), generic usage-cost and K credit display, the separate terminal/docs/board workspace, and knowledge recall move to a later release."
+  ko: "0.2.5는 0.2.4를 대신하며, 출시 전에 찾은 Windows 문제를 고칩니다. Steam 지원(배포 판별·Steam 판 충전 링크 숨김·Windows Steam 디포 산출물), 개인 비서 대시보드(프로젝트 앱이 대시보드로 바뀜)를 목표로 합니다. Windows 서명과 설치·업데이트 산출물은 출시 기반으로 둡니다. Steam 로그인·계정 연결·Steam 크레딧 팩 충전(#729), 일반 사용 비용·크레딧 K 표기, 터미널·문서·작업판으로 이뤄진 별도 3분할 작업 공간, 지식 회상은 다음 판 이후로 옮깁니다."
 changes:
   - type: fix
     scope: app-store
@@ -35,8 +35,8 @@ changes:
     scope: workspace
     issue: 756
     description:
-      en: "Open a personal assistant dashboard with coding agent, dashboard and issue panes."
-      ko: "개인 비서가 일하는 대시보드에서 코딩 에이전트·대시보드·이슈 칸을 엽니다."
+      en: "Open the personal assistant dashboard with its dashboard and issue panes."
+      ko: "개인 비서 대시보드에서 대시보드·이슈 칸을 엽니다."
   - type: feature
     scope: naia
     description:
