@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "पाठ ज़ोर से पढ़ना",
 	"apps.permission.model.ask": "चुने गए AI मॉडल से सवाल पूछना",
+	"apps.permission.clipboard.write": "क्लिक करने पर क्लिपबोर्ड में लिखना",
 	"apps.permission.locale": "शेल की भाषा जानना",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",

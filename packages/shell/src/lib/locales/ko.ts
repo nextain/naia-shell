@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "대화상자 표시",
 	"apps.permission.speech": "텍스트 낭독",
 	"apps.permission.model.ask": "선택한 AI 모델에 질문",
+	"apps.permission.clipboard.write": "사용자가 누를 때 클립보드에 쓰기",
 	"apps.permission.locale": "셸 언어 확인",
 	"apps.permission.environment": "환경 정보 접근",
 	"apps.permission.files.pick": "파일 선택",

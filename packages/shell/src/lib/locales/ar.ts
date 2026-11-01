@@ -14,6 +14,7 @@ export default {
 	"apps.permission.modals": "Show dialogs",
 	"apps.permission.speech": "قراءة النص بصوت عالٍ",
 	"apps.permission.model.ask": "سؤال نموذج الذكاء الاصطناعي المحدد",
+	"apps.permission.clipboard.write": "الكتابة إلى الحافظة عند النقر",
 	"apps.permission.locale": "معرفة لغة الواجهة",
 	"apps.permission.environment": "Access environment information",
 	"apps.permission.files.pick": "Choose files",
