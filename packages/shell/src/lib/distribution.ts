@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
  * there.
  */
 /** "unknown" = the native lookup failed or gave an unexpected answer; treated like Steam (fail closed). */
-export type DistributionChannel = "steam" | "standard" | "unknown";
+export type DistributionChannel = "steam" | "mas" | "standard" | "unknown";
 
 let cachedChannel: DistributionChannel | null = null;
 let inflight: Promise<DistributionChannel> | null = null;
@@ -22,7 +22,7 @@ export function loadDistributionChannel(): Promise<DistributionChannel> {
 			.then(() => invoke<string>("get_distribution_channel"))
 			.then(
 				(value): DistributionChannel =>
-					value === "steam" || value === "standard" ? value : "unknown",
+					value === "steam" || value === "mas" || value === "standard" ? value : "unknown",
 			)
 			.catch((): DistributionChannel => "unknown")
 			.then((channel) => {

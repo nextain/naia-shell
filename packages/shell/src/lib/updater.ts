@@ -111,6 +111,7 @@ export function snoozeStartupUpdatePrompt(
  * so the UI cannot misreport a failed check as "latest".
  */
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
+	if (import.meta.env.VITE_NAIA_DISTRIBUTION === "mas") return null;
 	try {
 		const { check } = await import("@tauri-apps/plugin-updater");
 		const update = await check();

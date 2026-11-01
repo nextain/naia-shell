@@ -1488,3 +1488,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 시험: `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx` — 설치 앱 질문·낭독과 실시간 음성 모델 거절 한국어·영어; 설치 앱 iframe과 대화창을 함께 렌더해 질문·응답, 낭독 취소, 언어 변경과 위조 창 거절을 확인한다(모델·음성 장치는 모의); `packages/shell/src/apps/__tests__/installed-app-host-bridge.test.ts` — 공용 연결 권한·출처·메시지; `packages/shell/src/apps/__tests__/installed-app-loader-boundary.test.tsx` — 필터된 도구 등록 및 권한 변경 반영.
 
 검수 1차 (UC-INSTALLED-APP-HOST): 중복 ask/speak ID에 duplicate_id를 즉시 반환하고 기존 요청을 유지한다. 앱 질문은 기존 채팅 기록 없이 전송하고 채팅에 앱 이름을 표시하며 이후 사용자 기록에서 앱 턴을 제외한다. 설치 가능한 권한 정보를 다국어로 고지하며 미제공이면 생략한다. 매니페스트 썸네일은 HTTPS만 보존한다. 상태: Done.
+
+
+### FR-MAS-025 — Mac App Store 샌드박스 (진행 중)
+앱스토어 배포에서 자체 업데이트, 실행 런타임 다운로드 및 외부 디지털 결제 링크를 차단하고 최소 권한으로 서명된 패키지와 실행 증거를 생성한다. 직접 배포는 유지한다. P04에서 정보 위계, 상태, 오류 복구, 키보드/ARIA 및 반응형을 검증한다.

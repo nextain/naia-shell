@@ -1,0 +1,154 @@
+name: macOS App Store
+on:
+  push:
+    branches: ['mas/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      NAIA_DISTRIBUTION: mas
+      VITE_NAIA_DISTRIBUTION: mas
+      NAIA_TAURI_NO_BUNDLE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone pinned runtime sources
+        run: |
+          git init ../naia-agent
+          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
+          git -C ../naia-agent fetch --depth 1 origin fdc6fcb5c34ea453612d968a0259a41aa1ef46ed
+          git -C ../naia-agent checkout --detach FETCH_HEAD
+          git init ../naia-kb-compiler
+          git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
+          git -C ../naia-kb-compiler fetch --depth 1 origin 24f52c14ea906c250304f39d48866c7a47e1b596
+          git -C ../naia-kb-compiler checkout --detach FETCH_HEAD
+          git init ../naia-memory
+          git -C ../naia-memory remote add origin https://github.com/nextain/naia-memory.git
+          git -C ../naia-memory fetch --depth 1 origin e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf
+          git -C ../naia-memory checkout --detach FETCH_HEAD
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.1'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: '1.97.0'
+      - run: test "$(uname -m)" = arm64
+      - run: pnpm install --frozen-lockfile
+      - name: Build staged runtime and application
+        run: pnpm -C packages/shell run tauri:build:bundle
+      - name: Bundle app
+        run: pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json
+      - name: Prepare signing keychain
+        env:
+          APP_P12: ${{ secrets.MAS_APP_P12_B64 }}
+          INSTALLER_P12: ${{ secrets.MAS_INSTALLER_P12_B64 }}
+          DEV_P12: ${{ secrets.APPLE_CERTIFICATE }}
+          MAS_PASSWORD: ${{ secrets.MAS_P12_PASSWORD }}
+          DEV_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 32)"
+          security create-keychain -p "$PASS" "$RUNNER_TEMP/mas.keychain-db"
+          security set-keychain-settings -t 21600 -u "$RUNNER_TEMP/mas.keychain-db"
+          security unlock-keychain -p "$PASS" "$RUNNER_TEMP/mas.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/mas.keychain-db" $(security list-keychains -d user | tr -d '"')
+          for item in APP INSTALLER DEV; do
+            var="${item}_P12"; printf '%s' "${!var}" | base64 --decode > "$RUNNER_TEMP/$item.p12"
+            password="$MAS_PASSWORD"; [ "$item" != DEV ] || password="$DEV_PASSWORD"
+            security import "$RUNNER_TEMP/$item.p12" -k "$RUNNER_TEMP/mas.keychain-db" -P "$password" -T /usr/bin/codesign -T /usr/bin/productbuild
+            rm -f "$RUNNER_TEMP/$item.p12"
+          done
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PASS" "$RUNNER_TEMP/mas.keychain-db" >/dev/null
+      - name: Sign and package
+        env:
+          PROFILE: ${{ secrets.MAS_PROVISION_PROFILE_B64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p mas-output
+          APP=packages/shell/src-tauri/target/release/bundle/macos/Naia.app
+          test -d "$APP"
+          printf '%s' "$PROFILE" | base64 --decode > "$APP/Contents/embedded.provisionprofile"
+          PLIST="$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.2.5' "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 0.2.5.${GITHUB_RUN_NUMBER}" "$PLIST"
+          /usr/libexec/PlistBuddy -c 'Add :LSApplicationCategoryType string public.app-category.productivity' "$PLIST" || /usr/libexec/PlistBuddy -c 'Set :LSApplicationCategoryType public.app-category.productivity' "$PLIST"
+          /usr/libexec/PlistBuddy -c 'Add :ITSAppUsesNonExemptEncryption bool false' "$PLIST" || /usr/libexec/PlistBuddy -c 'Set :ITSAppUsesNonExemptEncryption false' "$PLIST"
+          /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string Naia uses the microphone for voice conversations. Naia는 음성 대화를 위해 마이크를 사용합니다.' "$PLIST" || /usr/libexec/PlistBuddy -c 'Set :NSMicrophoneUsageDescription Naia uses the microphone for voice conversations. Naia는 음성 대화를 위해 마이크를 사용합니다.' "$PLIST"
+          INHERIT=packages/shell/src-tauri/entitlements.mas.inherit.plist
+          cp "$INHERIT" "$RUNNER_TEMP/jit.plist"
+          /usr/libexec/PlistBuddy -c 'Add :com.apple.security.cs.allow-jit bool true' "$RUNNER_TEMP/jit.plist"
+          while IFS= read -r -d '' path; do
+            file -b "$path" | grep -q Mach-O || continue
+            entitlement="$INHERIT"; [[ "$path" != "$APP/Contents/Resources/node" ]] || entitlement="$RUNNER_TEMP/jit.plist"
+            codesign --force --entitlements "$entitlement" --sign '3rd Party Mac Developer Application: nextain Inc. (VR6U552762)' "$path"
+          done < <(find "$APP/Contents" -type f -print0 | LC_ALL=C sort -rz)
+          codesign --force --entitlements packages/shell/src-tauri/entitlements.mas.plist --sign '3rd Party Mac Developer Application: nextain Inc. (VR6U552762)' "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP" > mas-output/signature.txt 2>&1
+          codesign -d --entitlements :- "$APP" >> mas-output/signature.txt 2>&1
+          productbuild --component "$APP" /Applications --sign '3rd Party Mac Developer Installer: nextain Inc. (VR6U552762)' mas-output/Naia-0.2.5-mas.pkg
+          pkgutil --check-signature mas-output/Naia-0.2.5-mas.pkg >> mas-output/signature.txt 2>&1
+      - name: Apple validation
+        continue-on-error: true
+        env:
+          KEY_ID: ${{ secrets.MAS_ASC_KEY_ID }}
+          KEY_P8: ${{ secrets.MAS_ASC_KEY_P8 }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -o pipefail
+          mkdir -p ~/.appstoreconnect/private_keys
+          key="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
+          trap 'rm -f "$key"' EXIT
+          (umask 077; printf '%s' "$KEY_P8" > "$key")
+          xcrun altool --validate-app -f mas-output/Naia-0.2.5-mas.pkg -t macos --apiKey "$KEY_ID" --apiIssuer "$ISSUER" 2>&1 | tee mas-output/validation.txt
+      - name: Upload when explicitly requested
+        if: contains(github.event.head_commit.message, '[mas-upload]')
+        env:
+          KEY_ID: ${{ secrets.MAS_ASC_KEY_ID }}
+          KEY_P8: ${{ secrets.MAS_ASC_KEY_P8 }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          key="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
+          trap 'rm -f "$key"' EXIT
+          (umask 077; printf '%s' "$KEY_P8" > "$key")
+          xcrun altool --upload-app -f mas-output/Naia-0.2.5-mas.pkg -t macos --apiKey "$KEY_ID" --apiIssuer "$ISSUER"
+      - name: Sandbox launch test
+        continue-on-error: true
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP=packages/shell/src-tauri/target/release/bundle/macos/Naia.app
+          rm -f "$APP/Contents/embedded.provisionprofile"
+          cp packages/shell/src-tauri/entitlements.mas.plist "$RUNNER_TEMP/dev.plist"
+          /usr/libexec/PlistBuddy -c 'Delete :com.apple.application-identifier' "$RUNNER_TEMP/dev.plist"
+          /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.team-identifier' "$RUNNER_TEMP/dev.plist"
+          while IFS= read -r -d '' path; do
+            file -b "$path" | grep -q Mach-O || continue
+            entitlement=packages/shell/src-tauri/entitlements.mas.inherit.plist; [[ "$path" != "$APP/Contents/Resources/node" ]] || entitlement="$RUNNER_TEMP/jit.plist"
+            codesign --force --options runtime --entitlements "$entitlement" --sign "$IDENTITY" "$path"
+          done < <(find "$APP/Contents" -type f -print0 | LC_ALL=C sort -rz)
+          codesign --force --options runtime --entitlements "$RUNNER_TEMP/dev.plist" --sign "$IDENTITY" "$APP"
+          codesign --verify --deep --strict "$APP"
+          open "$APP"
+          sleep 90
+          ps -axo pid,ppid,command | grep -E '[N]aia|[/]node' > mas-output/processes.txt || true
+          log show --last 3m --predicate 'eventMessage CONTAINS "deny" AND (process CONTAINS "Naia" OR process CONTAINS "node" OR sender == "Sandbox")' > mas-output/sandbox-denials.txt 2>&1 || true
+          ls -laR "$HOME/Library/Containers/com.naia.shell" > mas-output/container.txt 2>&1 || true
+          screencapture -x mas-output/screen.png || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: naia-mas-${{ github.run_number }}
+          path: mas-output/
+          if-no-files-found: warn
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/mas.keychain-db" || true

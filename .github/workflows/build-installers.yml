@@ -2,6 +2,7 @@ name: build installers
 
 on:
   push:
+    branches-ignore: ['mas/**']
   workflow_dispatch:
     inputs:
       internal_unsigned:

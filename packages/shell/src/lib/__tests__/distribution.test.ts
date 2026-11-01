@@ -26,6 +26,12 @@ describe("distribution channel (#727)", () => {
 		expect(paymentLinksHiddenNow()).toBe(true);
 	});
 
+	it("hides payment links in the Mac App Store build", async () => {
+		invokeMock.mockResolvedValue("mas");
+		await expect(loadDistributionChannel()).resolves.toBe("mas");
+		expect(paymentLinksHiddenNow()).toBe(true);
+	});
+
 	it("is standard when the marker is absent", async () => {
 		invokeMock.mockResolvedValue("standard");
 		await expect(loadDistributionChannel()).resolves.toBe("standard");

@@ -5925,6 +5925,7 @@ fn naia_balance_endpoint(gateway_url: &str) -> Result<url::Url, String> {
 /// Distribution channel of this build: "steam" for the Steam depot, else "standard" (#727).
 #[tauri::command]
 fn get_distribution_channel() -> String {
+    if option_env!("NAIA_DISTRIBUTION") == Some("mas") { return "mas".to_string(); }
     distribution::detect_current_channel().as_str().to_string()
 }
 
@@ -8154,6 +8155,9 @@ async fn install_voxcpm2_runtime(
     state: tauri::State<'_, AppState>,
     gpu_index: Option<u32>,
 ) -> Result<VoxCpm2InstallationStatus, String> {
+    if option_env!("NAIA_DISTRIBUTION") == Some("mas") {
+        return Err("앱스토어판에서는 사용할 수 없습니다".to_string());
+    }
     let _install_guard = state.voxcpm2_start.lock().await;
     if read_secure_naia_credential(&app).is_none() {
         return Err("voxcpm2_naia_member_login_required".to_string());
@@ -14470,7 +14474,7 @@ pub fn run() {
 
     // Flatpak manages its own updates; skip updater plugin in Flatpak builds.
     // The isolated dev instance must never self-update either (#425).
-    if !is_flatpak && !debug_e2e_enabled() && !development_instance_enabled() {
+    if option_env!("NAIA_DISTRIBUTION") != Some("mas") && !is_flatpak && !debug_e2e_enabled() && !development_instance_enabled() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
     #[cfg(feature = "webdriver-e2e")]

@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=NAIA_DISTRIBUTION");
+    println!("cargo:rustc-env=NAIA_DISTRIBUTION={}", std::env::var("NAIA_DISTRIBUTION").unwrap_or_default());
     tauri_build::build();
 
     // os <-> agent gRPC client codegen. The proto must come from the

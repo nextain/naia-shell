@@ -68,6 +68,8 @@ product behavior, App Store Connect registration, and an explicit upload step.
 
 ## AI operator handoff
 
+Mac App Store 샌드박스 작업: [mac-app-store-sandbox.md](mac-app-store-sandbox.md).
+
 Use this section as the entrypoint for later macOS development and release work.
 
 1. Read `README.md`, `.agents/context/process-status.json`, this file,
