@@ -14,6 +14,16 @@ import {
 	completeNaiaConfigHydration,
 } from "../../lib/adk-store";
 
+const transferMocks = vi.hoisted(() => ({
+	moduleLoaded: vi.fn(),
+	loadTransfer: vi.fn().mockResolvedValue({}),
+	downloadWebTransfer: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("../../lib/transfer/entry", () => {
+	transferMocks.moduleLoaded();
+	return transferMocks;
+});
+
 const eventListeners = vi.hoisted(
 	() =>
 		new Map<string, (event: { payload: unknown }) => void | Promise<void>>(),
@@ -4244,6 +4254,24 @@ describe("SettingsTab — memory tab (#298)", () => {
 			(t) => t === "Memory" || t === "기억",
 		);
 		expect(hasMemoryDivider).toBe(false);
+	});
+
+	it("UT-TRANSFER-12 loads the transfer entry only after the web export click", async () => {
+		vi.stubEnv("MODE", "web");
+		mockInvoke.mockResolvedValue([]);
+		try {
+			render(<SettingsTab />);
+			expect(document.querySelector('[data-settings-tab="memory"]')).toBeNull();
+			expect(document.querySelector('[data-settings-tab="profile"]')).toHaveClass("settings-tab-btn--active");
+			expect(transferMocks.moduleLoaded).not.toHaveBeenCalled();
+			expect(transferMocks.loadTransfer).not.toHaveBeenCalled();
+			fireEvent.click(screen.getByTestId("memory-transfer-export"));
+			await waitFor(() => expect(transferMocks.moduleLoaded).toHaveBeenCalledOnce());
+			await waitFor(() => expect(transferMocks.loadTransfer).toHaveBeenCalledOnce());
+			await waitFor(() => expect(transferMocks.downloadWebTransfer).toHaveBeenCalledOnce());
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("clicking memory tab button shows memory section", () => {

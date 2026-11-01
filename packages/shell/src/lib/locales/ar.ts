@@ -934,6 +934,8 @@ export default {
 	"settings.memoryStats": "Memory stats",
 	"settings.memoryFactCount": "{{count}} facts",
 	"settings.memoryBackupComingSoon": "ميزة النسخ الاحتياطي ستكون متاحة في إصدار مستقبلي.",
+	"settings.memoryTransferExport": "تصدير الذاكرة",
+	"settings.memoryTransferError": "تعذّر تصدير الذاكرة. يُرجى المحاولة مجددًا.",
 	"settings.memoryBackup": "Backup",
 	"settings.memoryBackupPassword": "Backup password",
 	"settings.memoryBackupExport": "Export",

@@ -934,6 +934,8 @@ export default {
 	"settings.memoryStats": "Memory stats",
 	"settings.memoryFactCount": "{{count}} facts",
 	"settings.memoryBackupComingSoon": "Fitur backup akan didukung di versi mendatang.",
+	"settings.memoryTransferExport": "Ekspor memori",
+	"settings.memoryTransferError": "Ekspor memori gagal. Silakan coba lagi.",
 	"settings.memoryBackup": "Backup",
 	"settings.memoryBackupPassword": "Backup password",
 	"settings.memoryBackupExport": "Export",

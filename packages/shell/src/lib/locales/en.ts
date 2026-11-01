@@ -942,6 +942,8 @@ const englishCore = {
 	"settings.memoryStats": "Memory stats",
 	"settings.memoryFactCount": "{{count}} facts",
 	"settings.memoryBackupComingSoon": "Backup feature is coming in a future version.",
+	"settings.memoryTransferExport": "Export memory",
+	"settings.memoryTransferError": "Memory export failed. Please try again.",
 	"settings.memoryBackup": "Backup",
 	"settings.memoryBackupPassword": "Backup password",
 	"settings.memoryBackupExport": "Export",

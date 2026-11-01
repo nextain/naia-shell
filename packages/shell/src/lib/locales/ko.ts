@@ -934,6 +934,8 @@ export default {
 	"settings.memoryStats": "기억 통계",
 	"settings.memoryFactCount": "사실 {{count}}개",
 	"settings.memoryBackupComingSoon": "백업 기능은 현재 지원되지 않습니다.",
+	"settings.memoryTransferExport": "기억 내보내기",
+	"settings.memoryTransferError": "기억을 내보내지 못했습니다. 다시 시도해 주세요.",
 	"settings.memoryBackup": "백업",
 	"settings.memoryBackupPassword": "백업 비밀번호",
 	"settings.memoryBackupExport": "내보내기",

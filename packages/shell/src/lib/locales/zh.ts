@@ -934,6 +934,8 @@ export default {
 	"settings.memoryStats": "Memory stats",
 	"settings.memoryFactCount": "{{count}} facts",
 	"settings.memoryBackupComingSoon": "备份功能将在未来版本中提供。",
+	"settings.memoryTransferExport": "导出记忆",
+	"settings.memoryTransferError": "记忆导出失败，请重试。",
 	"settings.memoryBackup": "Backup",
 	"settings.memoryBackupPassword": "Backup password",
 	"settings.memoryBackupExport": "Export",

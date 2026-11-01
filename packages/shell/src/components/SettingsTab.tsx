@@ -77,6 +77,7 @@ import {
 	isWebLlmModelId,
 } from "../lib/web-runtime/webllm-model";
 import { isWebSpeechAvailable } from "../lib/stt";
+import { resolveWebConversationsDir } from "../lib/web-runtime/web-workspace-commands";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
 	isRecommendedLocalValue,
@@ -2005,6 +2006,7 @@ export function SettingsTab() {
 		"idle" | "exporting" | "importing" | "done" | "error"
 	>("idle");
 	const [backupError, setBackupError] = useState("");
+	const [transferStatus, setTransferStatus] = useState<"idle" | "exporting" | "error">("idle");
 
 	const [allowedTools, setAllowedTools] = useState<string[]>(
 		existing?.allowedTools ?? [],
@@ -4984,6 +4986,29 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "profile" && (
 				<>
+					{isWebMode() && (
+						<div className="settings-field">
+							<button
+								type="button"
+								data-testid="memory-transfer-export"
+								disabled={transferStatus === "exporting"}
+								onClick={async () => {
+									setTransferStatus("exporting");
+									try {
+										const { downloadWebTransfer, loadTransfer } = await import("../lib/transfer/entry");
+										const transfer = await loadTransfer();
+										await downloadWebTransfer(transfer, resolveWebConversationsDir());
+										setTransferStatus("idle");
+									} catch {
+										setTransferStatus("error");
+									}
+								}}
+							>
+								{transferStatus === "exporting" ? "…" : t("settings.memoryTransferExport")}
+							</button>
+							{transferStatus === "error" && <span role="alert" className="settings-hint">{t("settings.memoryTransferError")}</span>}
+						</div>
+					)}
 					<div className="settings-section-divider">
 						<span>{t("settings.engineSection")}</span>
 					</div>

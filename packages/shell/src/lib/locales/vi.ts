@@ -934,6 +934,8 @@ export default {
 	"settings.memoryStats": "Memory stats",
 	"settings.memoryFactCount": "{{count}} facts",
 	"settings.memoryBackupComingSoon": "Tính năng sao lưu sẽ được hỗ trợ trong phiên bản tương lai.",
+	"settings.memoryTransferExport": "Xuất bộ nhớ",
+	"settings.memoryTransferError": "Không thể xuất bộ nhớ. Vui lòng thử lại.",
 	"settings.memoryBackup": "Backup",
 	"settings.memoryBackupPassword": "Backup password",
 	"settings.memoryBackupExport": "Export",

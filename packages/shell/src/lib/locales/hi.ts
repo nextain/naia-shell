@@ -934,6 +934,8 @@ export default {
 	"settings.memoryStats": "Memory stats",
 	"settings.memoryFactCount": "{{count}} facts",
 	"settings.memoryBackupComingSoon": "बैकअप सुविधा भविष्य के संस्करण में उपलब्ध होगी।",
+	"settings.memoryTransferExport": "स्मृति निर्यात करें",
+	"settings.memoryTransferError": "स्मृति निर्यात नहीं हो सकी। कृपया फिर प्रयास करें।",
 	"settings.memoryBackup": "Backup",
 	"settings.memoryBackupPassword": "Backup password",
 	"settings.memoryBackupExport": "Export",
