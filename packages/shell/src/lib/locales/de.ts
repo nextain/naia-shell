@@ -1245,7 +1245,7 @@ export default {
 	"bgm.play": "Abspielen",
 	"bgm.showBackgroundVideo": "Hintergrundvideo anzeigen",
 	"bgm.keyboardHelp": "Musik: Leertaste oder K Wiedergabe/Stopp; links/rechts 5 Sekunden; hoch/runter Lautstärke; N nächster, P vorheriger Titel",
-	"bgm.captions": "Untertitel",
+	"bgm.showCaptions": "Untertitel anzeigen",
 	"bgm.volume": "Lautstärke",
 	"bgm.drawerTitle": "Ziehen: Größe ändern / Klicken: öffnen·schließen",
 	"bgm.tabLocal": "♪ Lokal",

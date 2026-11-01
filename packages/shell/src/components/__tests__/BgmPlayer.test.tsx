@@ -66,6 +66,20 @@ async function enqueueTrack(videoId: string, title: string) {
 	});
 }
 
+/** Open the music app panel (YouTube tab is the default) and return the
+ * "Show captions" checkbox that sits next to "Show background video". */
+function openCaptionsToggle(container: HTMLElement): HTMLInputElement {
+	if (container.querySelector(".bgm-yt-app--hidden")) {
+		fireEvent.click(container.querySelector(".bgm-icon")!);
+	}
+	const toggle = screen.getByRole("checkbox", { name: "Show captions" });
+	expect(toggle.closest("[data-bgm-captions-toggle]")).not.toBeNull();
+	expect(
+		toggle.closest(".bgm-yt-options")?.textContent,
+	).toContain("Show background video");
+	return toggle as HTMLInputElement;
+}
+
 /** Attach a `.app-bg-iframe` matching the current playbackId, the way the
  * real background-rendering component does from useAvatarStore. The YouTube
  * message handler derives eventPlaybackId from this iframe's own `src`. */
@@ -201,12 +215,14 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		now.mockRestore();
 	});
 
-	it("defaults captions off, sends toggles to the iframe origin, and restores the saved choice on a new video", async () => {
+	it("defaults captions off, toggles them from the YouTube tab checkbox, and restores the saved choice on a new video", async () => {
 		await hydrateUiPreferences(
 			{ uiPreferences: {} },
 			{ adkPath: "/fixture", canPersist: true },
 		);
 		const view = render(<BgmPlayer />);
+		const captionsToggle = openCaptionsToggle(view.container);
+		expect(captionsToggle).not.toBeChecked();
 		await startTrack("captions1", "Captions One");
 		const iframe = attachIframeForCurrentPlayback();
 		expect(new URL(iframe.src).searchParams.get("cc_load_policy")).toBe("0");
@@ -220,7 +236,7 @@ describe("BgmPlayer YouTube playback state machine", () => {
 			}),
 			"https://www.youtube-nocookie.com",
 		);
-		fireEvent.click(screen.getByRole("button", { name: "Captions" }));
+		fireEvent.click(captionsToggle);
 		expect(post).toHaveBeenCalledWith(
 			JSON.stringify({
 				event: "command",
@@ -236,13 +252,10 @@ describe("BgmPlayer YouTube playback state machine", () => {
 			),
 		);
 		post.mockClear();
-		fireEvent.click(screen.getByRole("button", { name: "Captions" }));
+		fireEvent.click(captionsToggle);
 		expect(post).toHaveBeenCalledWith(JSON.stringify({ event: "command", func: "unloadModule", args: ["captions"] }), "https://www.youtube-nocookie.com");
-		expect(screen.getByRole("button", { name: "Captions" })).toHaveAttribute(
-			"aria-pressed",
-			"false",
-		);
-		fireEvent.click(screen.getByRole("button", { name: "Captions" }));
+		expect(captionsToggle).not.toBeChecked();
+		fireEvent.click(captionsToggle);
 		await waitFor(() => expect(writeNaiaUiConfig).toHaveBeenLastCalledWith({ uiPreferences: { youtubeCaptions: true } }, "/fixture"));
 		const saved = vi.mocked(writeNaiaUiConfig).mock.lastCall![0];
 		view.unmount();
@@ -252,15 +265,13 @@ describe("BgmPlayer YouTube playback state machine", () => {
 			saved,
 			{ adkPath: "/fixture", canPersist: true },
 		);
-		render(<BgmPlayer />);
+		const restored = render(<BgmPlayer />);
 		await startTrack("captions2", "Captions Two");
 		const next = attachIframeForCurrentPlayback();
 		const nextPost = vi.spyOn(next.contentWindow!, "postMessage");
 		postYtMessage({ event: "onReady" });
-		expect(screen.getByRole("button", { name: "Captions" })).toHaveAttribute(
-			"aria-pressed",
-			"true",
-		);
+		expect(openCaptionsToggle(restored.container)).toBeChecked();
+		expect(screen.queryByRole("button", { name: /captions|^CC$/i })).toBeNull();
 		expect(nextPost).toHaveBeenCalledWith(
 			JSON.stringify({
 				event: "command",

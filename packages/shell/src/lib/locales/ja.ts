@@ -1245,7 +1245,7 @@ export default {
 	"bgm.play": "再生",
 	"bgm.showBackgroundVideo": "背景動画を表示",
 	"bgm.keyboardHelp": "音楽操作: スペース・K 再生/停止、左右 5秒移動、上下 音量、N 次、P 前",
-	"bgm.captions": "字幕",
+	"bgm.showCaptions": "字幕を表示",
 	"bgm.volume": "音量",
 	"bgm.drawerTitle": "ドラッグ: サイズ変更 / クリック: 開く·閉じる",
 	"bgm.tabLocal": "♪ ローカル",

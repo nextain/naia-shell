@@ -1245,7 +1245,7 @@ export default {
 	"bgm.play": "चलाएं",
 	"bgm.showBackgroundVideo": "बैकग्राउंड वीडियो दिखाएं",
 	"bgm.keyboardHelp": "संगीत: स्पेस या K चलाएं/रोकें; बायां/दायां 5 सेकंड; ऊपर/नीचे आवाज़; N अगला, P पिछला",
-	"bgm.captions": "उपशीर्षक",
+	"bgm.showCaptions": "उपशीर्षक दिखाएं",
 	"bgm.volume": "वॉल्यूम",
 	"bgm.drawerTitle": "खींचें: आकार बदलें / क्लिक: खोलें·बंद करें",
 	"bgm.tabLocal": "♪ स्थानीय",

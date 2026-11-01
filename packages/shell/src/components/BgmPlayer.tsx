@@ -2331,23 +2331,6 @@ export function BgmPlayer({ naia }: Props) {
 					event.preventDefault();
 				}}
 			>
-				<button
-					type="button"
-					className={`bgm-btn bgm-captions${captionsEnabled ? " bgm-captions--active" : ""}`}
-					aria-label={t("bgm.captions")}
-					title={t("bgm.captions")}
-					aria-pressed={captionsEnabled}
-					onClick={() => {
-						const next = !captionsEnabled;
-						captionsRef.current = next;
-						void patchUiPreferences({
-							[UI_PREFERENCE_KEYS.youtubeCaptions]: next,
-						});
-						applyCaptions(next);
-					}}
-				>
-					CC
-				</button>
 				{/* Fixed BGM icon — pulses when playing */}
 				<span
 					className={`bgm-icon${playing ? " bgm-icon--playing" : ""}`}
@@ -2505,16 +2488,36 @@ export function BgmPlayer({ naia }: Props) {
 						{/* ── YouTube tab ── */}
 						{appTab === "youtube" && (
 							<>
-								<label className="bgm-yt-background-option">
-									<input
-										type="checkbox"
-										checked={showYoutubeBackground}
-										onChange={(event) =>
-											setShowYoutubeBackground(event.target.checked)
-										}
-									/>
-									{t("bgm.showBackgroundVideo")}
-								</label>
+								<div className="bgm-yt-options">
+									<label className="bgm-yt-background-option">
+										<input
+											type="checkbox"
+											checked={showYoutubeBackground}
+											onChange={(event) =>
+												setShowYoutubeBackground(event.target.checked)
+											}
+										/>
+										{t("bgm.showBackgroundVideo")}
+									</label>
+									<label
+										className="bgm-yt-background-option bgm-yt-captions-option"
+										data-bgm-captions-toggle=""
+									>
+										<input
+											type="checkbox"
+											checked={captionsEnabled}
+											onChange={(event) => {
+												const next = event.target.checked;
+												captionsRef.current = next;
+												void patchUiPreferences({
+													[UI_PREFERENCE_KEYS.youtubeCaptions]: next,
+												});
+												applyCaptions(next);
+											}}
+										/>
+										{t("bgm.showCaptions")}
+									</label>
+								</div>
 								<div className="bgm-yt-tabs">
 									<button
 										type="button"
