@@ -2494,15 +2494,15 @@ Test Coverage Map (P02)
 | 시험 | 조건과 기대 결과 | 시험 파일 | 상태 |
 |---|---|---|---|
 | UT-TRANSFER-01 | 정상 자료를 묶고 풀어 모든 파일의 해시와 목록·기억·대화 수가 같다. 웹과 앱 대역이 같은 자료를 읽는다. | `archive.test.ts` | 부분 검증 |
-| UT-TRANSFER-02 | 경로 거슬러 오르기·절대 경로·중복·심볼릭 링크를 각각 거절한다. | `archive.test.ts` | 부분 검증 |
-| UT-TRANSFER-03 | 과도한 압축률, 파일 수·파일별·전체 크기 상한 초과를 각각 거절한다. | `archive.test.ts` | 부분 검증 |
-| UT-TRANSFER-04 | 변조된 해시와 목록에 없는 파일 또는 빠진 파일을 거절한다. | `archive.test.ts` | 부분 검증 |
-| UT-TRANSFER-05 | 비밀 경로와 설정 안 비밀 필드가 든 가져오기를 거절하고 내보내기 설정에서는 필드를 재귀 제거해 개수만 요약한다. | `archive.test.ts` | 부분 검증 |
-| UT-TRANSFER-06 | 기억 store의 facts 배열과 필수 필드를 검사하고 store가 없으면 웹 장기 기억 없음으로 표시한다. | `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-02 | 경로 거슬러 오르기·절대 경로·중복·심볼릭 링크를 각각 거절한다. | `policy.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-03 | 과도한 압축률, 파일 수·파일별·전체 크기 상한 초과를 각각 거절한다. | `manifest.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-04 | 변조된 해시와 목록에 없는 파일 또는 빠진 파일을 거절한다. | `manifest.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-05 | 비밀 경로와 설정 안 비밀 필드가 든 가져오기를 거절하고 내보내기 설정에서는 필드를 재귀 제거해 개수만 요약한다. | `policy.test.ts`, `archive.test.ts` | 부분 검증 |
+| UT-TRANSFER-06 | 기억 store의 facts 배열과 필수 필드를 검사하고 store가 없으면 웹 장기 기억 없음으로 표시한다. | `policy.test.ts`, `archive.test.ts` | 부분 검증 |
 | UT-TRANSFER-07 | 이름 규칙과 명시 허용 목록으로 중첩 설정의 비밀을 제거하며 같은 필드가 든 ZIP은 쓰기 없이 거절한다. | `policy.test.ts`, `archive.test.ts` | 검증 |
 | UT-TRANSFER-08 | 일반 파일은 조각 처리로 생성·2회 검증을 실행하고 중간 오류에서는 임시 자리를 버린다. 해석 파일은 별도 한도 안에서 전체 해석한다. | `archive.test.ts` | 검증 |
 | UT-TRANSFER-09 | AgentFact 필수 필드 누락과 타입 오류는 쓰기 없이 거절한다. | `policy.test.ts`, `archive.test.ts` | 검증 |
-| UT-TRANSFER-10 | 설정의 기억 내보내기는 클릭할 때 이관 모듈을 불러온다. | `SettingsTab.test.tsx`, `entry.test.ts` | 검증 |
+| UT-TRANSFER-10 | 브라우저 내보내기 어댑터가 작업 공간 파일로 ZIP을 만들고 설정 비밀을 지우며, ZIP 생성이 실패하면 임시 ZIP을 버린다. | `entry.test.ts` | 검증 |
 | UT-TRANSFER-11 | 해석 파일의 64 MiB 경계와 중앙 목록 한도를 생성·가져오기에서 검사하고 거절 시 쓰지 않는다. | `archive.test.ts` | 검증 |
 | UT-TRANSFER-12 | 설정 화면은 클릭 전 이관 진입점을 불러오지 않는다. | `SettingsTab.test.tsx` | 검증 |
 | UT-TRANSFER-13 | 다운로드 후 예약 정리, 다음 내보내기 전 잔여 파일 정리와 실패 즉시 정리를 확인한다. | `entry.test.ts` | 검증 |
