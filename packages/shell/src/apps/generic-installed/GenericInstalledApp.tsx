@@ -146,6 +146,7 @@ export function createGenericInstalledApp(
 					className="generic-installed-app__iframe"
 					src={frameSrc}
 					title="App"
+					allow={permissions.includes("clipboard.write") ? "clipboard-write" : undefined}
 					sandbox={
 						trustedSlides
 							? "allow-scripts allow-same-origin allow-downloads allow-modals"

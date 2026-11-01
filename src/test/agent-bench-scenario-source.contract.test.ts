@@ -2,7 +2,7 @@
 // 하네스가 판정할 목록이 실제 UC 문서에서 나오는가, 계열이 빠지면 잡히는가.
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
-import { DocumentBenchScenarioSource, allHeadings, declaredFamilies, familyOf, ownedByEpic, parseScenarios } from "./harness/agent-bench-scenarios.js";
+import { DocumentBenchScenarioSource, INSTALLED_APP_DIALOGUE_CASES, judgeInstalledAppDialogue, allHeadings, declaredFamilies, familyOf, ownedByEpic, parseScenarios } from "./harness/agent-bench-scenarios.js";
 import { readFileSync } from "node:fs";
 
 const DOC = resolve(__dirname, "..", "..", "docs", "user-scenarios.md");
@@ -130,5 +130,31 @@ describe("계열 배정은 순서가 아니라 구체성으로 정해진다", ()
 
   it("확장 접두사가 없는 시나리오는 그대로 자기 계열에 붙는다", () => {
     expect(familyOf("UC-ENV-STICKY")?.prefix).toBe("UC-ENV-STICKY");
+  });
+});
+
+
+describe("설치 앱 대화 정의", () => {
+  it("답변 UC 세 개를 실제 모델 증거로 요구한다", () => {
+    expect(INSTALLED_APP_DIALOGUE_CASES.map((c) => c.uc)).toEqual(["UC-025-09", "UC-025-11", "UC-025-12"]);
+    for (const c of INSTALLED_APP_DIALOGUE_CASES) {
+      expect(ownedByEpic(c.uc)).toBe(true);
+      expect(familyOf(c.uc)?.requiredEvidence).toEqual(["native"]);
+      expect(c.context.length).toBeGreaterThan(20);
+      expect(c.criterion.length).toBeGreaterThan(10);
+      expect(judgeInstalledAppDialogue(c.expected, c.expected)).toBe(true);
+    }
+  });
+  it("카드 순서·미공개 카드·역할·질문 오답을 거절한다", () => {
+    expect(judgeInstalledAppDialogue(INSTALLED_APP_DIALOGUE_CASES[0].expected, "달, 별, 태양")).toBe(false);
+    expect(judgeInstalledAppDialogue(INSTALLED_APP_DIALOGUE_CASES[0].expected, "별, 달, 태양, 탑")).toBe(false);
+    expect(judgeInstalledAppDialogue(INSTALLED_APP_DIALOGUE_CASES[1].expected, "저는 태양이에요. 안녕하세요.")).toBe(false);
+    expect(judgeInstalledAppDialogue(INSTALLED_APP_DIALOGUE_CASES[1].expected, "나는 루나다. 안녕.")).toBe(false);
+    expect(judgeInstalledAppDialogue(INSTALLED_APP_DIALOGUE_CASES[2].expected, "41")).toBe(false);
+  });
+  it("화면 UC는 개별 제외하고 새 UC는 자동 제외하지 않는다", () => {
+    for (const id of ["01", "02", "03", "04", "05", "06", "07", "10"]) expect(ownedByEpic(`UC-025-${id}`)).toBe(false);
+    expect(ownedByEpic("UC-025-13")).toBe(true);
+    expect(ownedByEpic("UC-025-01-NEW")).toBe(true);
   });
 });

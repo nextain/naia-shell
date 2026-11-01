@@ -30,6 +30,22 @@ describe("installed app loader bridge boundaries", () => {
     expect(onToolCall.mock.calls.map((call) => call[0])).toEqual(["skill_boundary_allowed"]);
   });
 
+  it("passes clipboard permission from the manifest and removes it after revocation", async () => {
+    let permissions = ["clipboard.write"];
+    vi.mocked(invoke).mockImplementation(async (command) => command === "app_list_installed" ? [{
+      id: "boundary-test", name: "Boundary", htmlEntry: "/apps/boundary/index.html", permissions,
+    }] : true);
+    await loadInstalledApps();
+    const Allowed = appRegistry.get("boundary-test")!.center;
+    const view = render(<Allowed naia={{} as NaiaContextBridge} />);
+    expect(screen.getByTitle("App").getAttribute("allow")).toBe("clipboard-write");
+    permissions = [];
+    await loadInstalledApps();
+    const Denied = appRegistry.get("boundary-test")!.center;
+    view.rerender(<Denied naia={{} as NaiaContextBridge} />);
+    expect(screen.getByTitle("App").hasAttribute("allow")).toBe(false);
+  });
+
   it("refreshes the app bridge when a permission is revoked", async () => {
     let permissions = ["model.ask"];
     vi.mocked(invoke).mockImplementation(async (command) => command === "app_list_installed" ? [{

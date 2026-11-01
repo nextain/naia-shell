@@ -1019,6 +1019,7 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
     "modals",
     "speech",
     "model.ask",
+    "clipboard.write",
     "locale",
     "environment",
     "files.pick",
