@@ -210,7 +210,7 @@ export function allHeadings(markdown: string): readonly string[] {
 export function familyOf(uc: string): (typeof FAMILIES)[number] | undefined {
   let best: (typeof FAMILIES)[number] | undefined;
   for (const f of FAMILIES) {
-    if (!uc.startsWith(f.prefix)) continue;
+    if (f.prefix.startsWith("UC-025-") ? uc !== f.prefix : !uc.startsWith(f.prefix)) continue;
     if (best === undefined || f.prefix.length > best.prefix.length) best = f;
   }
   return best;

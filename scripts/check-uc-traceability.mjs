@@ -100,8 +100,11 @@ const hasCoverageRow = (uc) => {
 	);
 	return describes.length > 0 || describesInline;
 };
-const byBenchFamily = (uc) => families.some((prefix) => uc.startsWith(prefix));
-const outsideEpic = (uc) => notOwned.some((prefix) => uc.startsWith(prefix));
+// UC-025의 개별 선언만 정확히 일치한다. 나머지 기존 계열은 접두사다.
+const matchesDeclaration = (uc, declaration) =>
+	declaration.startsWith("UC-025-") ? uc === declaration : uc.startsWith(declaration);
+const byBenchFamily = (uc) => families.some((prefix) => matchesDeclaration(uc, prefix));
+const outsideEpic = (uc) => notOwned.some((prefix) => matchesDeclaration(uc, prefix));
 
 /**
  * 에픽 밖이라는 선언과 어디서 검증되는지 적혔다는 것은 다른 질문이다.

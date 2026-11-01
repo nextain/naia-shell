@@ -3,7 +3,9 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
 import { DocumentBenchScenarioSource, INSTALLED_APP_DIALOGUE_CASES, judgeInstalledAppDialogue, allHeadings, declaredFamilies, familyOf, ownedByEpic, parseScenarios } from "./harness/agent-bench-scenarios.js";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const DOC = resolve(__dirname, "..", "..", "docs", "user-scenarios.md");
 
@@ -156,5 +158,36 @@ describe("설치 앱 대화 정의", () => {
     for (const id of ["01", "02", "03", "04", "05", "06", "07", "10"]) expect(ownedByEpic(`UC-025-${id}`)).toBe(false);
     expect(ownedByEpic("UC-025-13")).toBe(true);
     expect(ownedByEpic("UC-025-01-NEW")).toBe(true);
+  });
+});
+
+
+describe("UC 추적 관문의 개별 선언", () => {
+  it("새 접미 ID는 기존 계열을 상속하지 않는다", () => {
+    for (const id of ["09", "11", "12"]) {
+      expect(familyOf(`UC-025-${id}-NEW`)).toBeUndefined();
+    }
+  });
+
+  it.each([2, 3, 4, 5, 6])("%i단 표제의 새 접미 ID와 대응표가 있어도 벤치 계열 누락을 잡는다", (depth) => {
+    const root = resolve(__dirname, "../..");
+    const fixture = mkdtempSync(resolve(tmpdir(), "uc-trace-"));
+    try {
+      for (const dir of ["scripts", "src", "packages"]) symlinkSync(resolve(root, dir), resolve(fixture, dir), "dir");
+      mkdirSync(resolve(fixture, "docs"));
+      const ids = ["UC-025-01-NEW", "UC-025-09-NEW"];
+      const additions = ids.map((id) => `| ${id} | \`src/test/agent-bench-scenario-source.contract.test.ts\` | 시험 설명 |\n${"#".repeat(depth)} ${id} — 새 시나리오`).join("\n");
+      writeFileSync(resolve(fixture, "docs/user-scenarios.md"), `${readFileSync(DOC, "utf8")}\n${additions}\n`);
+      const gitDir = spawnSync("git", ["rev-parse", "--absolute-git-dir"], { cwd: root, encoding: "utf8" });
+      expect(gitDir.status).toBe(0);
+      const run = spawnSync(process.execPath, [resolve(root, "scripts/check-uc-traceability.mjs")], {
+        cwd: fixture, encoding: "utf8", env: { ...process.env, GIT_DIR: gitDir.stdout.trim(), GIT_WORK_TREE: root },
+      });
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain("벤치 하네스가 모르는 UC 2개");
+      for (const id of ids) expect(run.stderr).toContain(id);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
   });
 });
