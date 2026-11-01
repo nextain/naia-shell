@@ -69,9 +69,12 @@ async function enqueueTrack(videoId: string, title: string) {
 /** Open the music app panel (YouTube tab is the default) and return the
  * "Show captions" checkbox that sits next to "Show background video". */
 function openCaptionsToggle(container: HTMLElement): HTMLInputElement {
-	if (container.querySelector(".bgm-yt-app--hidden")) {
+	const hiddenApp = document.querySelector(".bgm-yt-app--hidden");
+	if (hiddenApp) {
+		expect(hiddenApp).toHaveAttribute("inert");
 		fireEvent.click(container.querySelector(".bgm-icon")!);
 	}
+	expect(document.querySelector(".bgm-yt-app")).not.toHaveAttribute("inert");
 	const toggle = screen.getByRole("checkbox", { name: "Show captions" });
 	expect(toggle.closest("[data-bgm-captions-toggle]")).not.toBeNull();
 	expect(

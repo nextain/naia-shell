@@ -6234,6 +6234,9 @@ body.resizing-row {
 
 /* Fixed BGM icon */
 .bgm-icon {
+	background: none;
+	border: 0;
+	font-family: inherit;
 	font-size: 15px;
 	color: rgba(160, 200, 255, 0.95);
 	flex-shrink: 0;
@@ -6478,7 +6481,8 @@ body.resizing-row {
 	padding: 8px 10px 0;
 }
 
-.bgm-yt-background-option {
+.bgm-yt-background-option,
+.bgm-yt-captions-option {
 	display: flex;
 	align-items: center;
 	gap: 6px;

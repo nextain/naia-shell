@@ -2332,13 +2332,16 @@ export function BgmPlayer({ naia }: Props) {
 				}}
 			>
 				{/* Fixed BGM icon — pulses when playing */}
-				<span
+				<button
+					type="button"
 					className={`bgm-icon${playing ? " bgm-icon--playing" : ""}`}
 					title={t("bgm.appToggleTitle")}
+					aria-label={t("bgm.appToggleTitle")}
+					aria-expanded={appExpanded}
 					onClick={() => setAppExpanded((v) => !v)}
 				>
 					♫
-				</span>
+				</button>
 
 				<div className="bgm-player-sep" />
 
@@ -2430,6 +2433,9 @@ export function BgmPlayer({ naia }: Props) {
 				createPortal(
 					<div
 						className={`bgm-yt-app${appExpanded ? "" : " bgm-yt-app--hidden"}`}
+						// Hidden via CSS only, so keep its controls (e.g. the captions
+						// checkbox) out of the tab order while closed.
+						{...(appExpanded ? {} : { inert: "" })}
 						style={{
 							position: "fixed",
 							top: appPos.top,
@@ -2500,7 +2506,7 @@ export function BgmPlayer({ naia }: Props) {
 										{t("bgm.showBackgroundVideo")}
 									</label>
 									<label
-										className="bgm-yt-background-option bgm-yt-captions-option"
+										className="bgm-yt-captions-option"
 										data-bgm-captions-toggle=""
 									>
 										<input

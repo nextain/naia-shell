@@ -168,7 +168,11 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 
 		await page.setViewportSize({ width: 360, height: 800 });
 		await expect(page.getByRole("button", { name: "Captions" })).toHaveCount(0);
-		await page.locator(".bgm-icon").click();
+		const musicApp = page.locator(".bgm-icon");
+		await expect(musicApp).toBeVisible();
+		await musicApp.focus();
+		await page.keyboard.press("Enter");
+		await expect(musicApp).toHaveAttribute("aria-expanded", "true");
 		const captions = page.getByRole("checkbox", { name: "Show captions" });
 		await expect(captions).toBeVisible();
 		await expect(
@@ -183,7 +187,8 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		await captions.focus();
 		await page.keyboard.press("Space");
 		await expect(captions).toBeChecked();
-		await page.locator(".bgm-icon").click();
+		await musicApp.click();
+		await expect(page.locator(".bgm-yt-app--hidden")).toHaveAttribute("inert", "");
 		const narrowButtons = await page
 			.locator(".nva-gesture-actions__button")
 			.evaluateAll((buttons) =>
