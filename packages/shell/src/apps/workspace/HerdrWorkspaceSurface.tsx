@@ -197,7 +197,7 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 					</div>
 				</div>
 			)}
-			{/* WO-03: 웹판 스냅샷(herdr_snapshot)은 꺼져 있어 경고를 감춘다. */}
+			{/* WO-03: Web mode disables herdr_snapshot and hides its warning. */}
 			{!isWeb && props.snapshotError && (
 				<div className="herdr-workspace__warning">
 					{t("workspace.herdrSync")}: {props.snapshotError}

@@ -2513,3 +2513,18 @@ Test Coverage Map (P02)
 | UT-TRANSFER-12 | 설정 화면은 클릭 전 이관 진입점을 불러오지 않는다. | `SettingsTab.test.tsx` | 검증 |
 | UT-TRANSFER-13 | 다운로드 후 예약 정리, 다음 내보내기 전 잔여 파일 정리와 실패 즉시 정리를 확인한다. | `entry.test.ts` | 검증 |
 | UT-TRANSFER-14 | 대용량 일반 파일 생성·가져오기와 한도 가까운 기억 파일 왕복의 메모리를 측정한다. | `archive.test.ts` (`UT-TRANSFER-14 large archive memory measurements`) | 검증 |
+
+## UC-WEB-025-I18N-824 — 웹 화면의 언어 일관성
+
+사용자는 선택한 언어로 웹 파일 탐색기, 알림 설정, 로그인·계정 상태, 음성 지원 안내, 저장소 상태와 배경 이름을 읽는다. PR #824에서 추가한 문구는 공통 `t()`와 14개 로케일을 거치며, 한국어 외 새 문구는 영어를 사용한다. PR 이전 문구와 미번역 baseline은 유지한다.
+
+| 상태 | 검증 매핑 |
+|---|---|
+| 기본 | `i18n-web-strings.test.ts`, `AppBar.test.tsx`: 모든 로케일의 키와 설정 닫기 이름 |
+| 빈 목록 | `web-file-tree-path.test.tsx`, Playwright 실 `WebWorkspace`: 빈 OPFS 탐색기 |
+| 진행 | `WebPushSettings.test.tsx`, Playwright: 권한 요청 중 버튼 비활성 |
+| 성공 | `WebPushSettings.test.tsx`, `web-storage-persist.test.ts`: 구독·저장소 상태와 수치 보간 |
+| 오류 | `WebPushSettings.test.tsx`, Playwright: 미지원·권한 거부 후 재시도 가능 |
+| 좁은 폭 | Playwright 실 컴포넌트와 CSS, 360px: 주요 버튼·상태·구독 정보의 가로 넘침 검사 |
+
+P04 증거는 `/home/nextain/work/codex-runs/824-i18n/result.md`와 같은 디렉터리의 `tmp/`에 기록한다. Rust·IPC 계약 변경은 없다.

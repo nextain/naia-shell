@@ -1595,3 +1595,9 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 - **FR-TRANSFER-06**: 웹 설정의 기억 내보내기는 클릭할 때 이관 코드를 지연 로드하고 ZIP을 내려받는다. 내려받기 시작 뒤 임시 ZIP과 object URL을 정해진 시간 후 정리하고 다음 내보내기 시작 때 남은 임시 ZIP을 정리한다.
 
 시험 계획은 [UC-TRANSFER-01](user-scenarios.md#uc-transfer-01--이관-묶음-왕복과-검증)의 UT-TRANSFER 번호에 연결한다. 앱 저장 연결과 가져오기 화면은 후속 회차 범위다.
+
+### PR #824 웹 0.2.5 문구 로케일 이관
+
+| ID | 요구사항 | 시나리오·검증 | 상태 |
+|---|---|---|---|
+| **FR-WEB-025-I18N.1** | PR #824에서 추가한 한국어 UI 문구와 ko/en 분기는 `packages/shell/src/lib/locales/`의 키 및 `t()`로 제공한다. 14개 언어에 키를 넣고 한국어 외에는 영어를 사용한다. 배경 이름은 현재 로케일을 조회할 때 번역하고 저장소 수치는 자리표시자로 보간한다. 웹 전용 영어 키는 `en-web.ts`에 두며 공통 화면의 키는 데스크톱에도 제공한다. 기존 문구와 미번역 검사 baseline은 변경하지 않는다. | UC-WEB-025-I18N-824; `i18n-user-facing.test.ts`, `i18n-web-strings.test.ts`, 웹 저장소·배경·푸시·탐색기·설정·앱 테스트; 로컬 Playwright 실 컴포넌트 | Done |

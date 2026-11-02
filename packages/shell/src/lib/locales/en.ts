@@ -1397,6 +1397,9 @@ const englishCore = {
 	"studioNvaApply.cancel": "Cancel",
 	"studioNvaApply.applying": "Applying…",
 	"studioNvaApply.confirm": "Apply",
+	"appBar.closeSettings": "Close settings",
+	"webSpeech.interrupt": "Interrupt (stop speech)",
+	"settings.currentModel": "{model}{asr} (current)",
 } as const;
 
 type EnglishTable = Readonly<Record<keyof typeof englishCore, string>> &

@@ -1,3 +1,4 @@
+import { setLocale } from "../../i18n";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	type StorageManagerLike,
@@ -8,7 +9,8 @@ import {
 } from "../web-storage-persist";
 
 describe("web-storage-persist (item 6)", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
+		await setLocale("ko");
 		resetWebStoragePersistStateForTests();
 	});
 

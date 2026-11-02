@@ -5,7 +5,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from "react";
-import { getLocale } from "../../lib/i18n";
+import { t } from "../../lib/i18n";
 import { WEB_ADK_PATH } from "../../lib/web-runtime/web-adk-path";
 import { getWebWorkspaceFile } from "../../lib/web-runtime/web-workspace-files";
 import {
@@ -115,7 +115,6 @@ function Folder({
 }
 
 export default function WebWorkspace() {
-	const ko = getLocale() === "ko";
 	const status = useSyncExternalStore(subscribeWebAdkStatus, getWebAdkStatus);
 	const [root, setRoot] = useState<FileSystemDirectoryHandle | null>(null);
 	const [error, setError] = useState(false);
@@ -158,7 +157,7 @@ export default function WebWorkspace() {
 			<aside className="herdr-workspace__files web-workspace-tree">
 				<header className="herdr-workspace__section-title">
 					<button type="button" className="herdr-workspace__toggle-btn" aria-expanded={showPath} onClick={() => setShowPath(!showPath)}>
-						{ko ? "파일 탐색기" : "File explorer"}
+						{t("webExplorer.title")}
 					</button>
 				</header>
 				<div className="web-workspace-tabs">
@@ -167,28 +166,26 @@ export default function WebWorkspace() {
 						aria-pressed={!online}
 						onClick={() => setOnline(false)}
 					>
-						{ko ? "오프라인" : "Offline"}
+						{t("webExplorer.offline")}
 					</button>
 					<button
 						type="button"
 						aria-pressed={online}
 						onClick={() => setOnline(true)}
 					>
-						{ko ? "온라인 (준비 중)" : "Online (coming soon)"}
+						{t("webExplorer.online")}
 					</button>
 				</div>
 				{online ? (
 					<p>
-						{ko
-							? "온라인 탐색기는 준비 중입니다."
-							: "Online explorer is coming soon."}
+						{t("webExplorer.comingSoon")}
 					</p>
 				) : (
 					<>
 						{showPath && <code data-testid="web-workspace-path">{WEB_ADK_PATH}</code>}
 						{error && (
 							<p role="alert">
-								{ko ? "파일을 읽지 못했습니다." : "Could not read files."}
+								{t("webExplorer.readFailed")}
 							</p>
 						)}
 						{root && (
@@ -207,12 +204,12 @@ export default function WebWorkspace() {
 					<div className="web-workspace-viewer-bar">
 						<code>{file}</code>
 						<button type="button" onClick={() => void download()}>
-							{ko ? "내려받기" : "Download"}
+							{t("webExplorer.download")}
 						</button>
 						<button
 							type="button"
 							onClick={() => setFile("")}
-							aria-label={ko ? "닫기" : "Close"}
+							aria-label={t("webExplorer.close")}
 						>
 							✕
 						</button>

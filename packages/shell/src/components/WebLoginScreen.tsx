@@ -31,7 +31,7 @@ export function WebLoginScreen({
 			setLocalError(
 				err instanceof Error && err.message
 					? err.message
-					: "로그인을 시작하지 못했습니다.",
+					: t("webAuth.startFailed"),
 			);
 		}
 	};

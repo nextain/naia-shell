@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { isLegacyBundledVrmModel } from "../avatar-presets";
 
 // 웹판 번들 자산 카탈로그 — 기본 작업공간 묶음(naia-settings/vrm-files·background)의
@@ -84,61 +85,81 @@ export const WEB_VRM_ASSETS: readonly WebBundledAsset[] = [
 export const WEB_BACKGROUND_ASSETS: readonly WebBackgroundAsset[] = [
 	{
 		filename: "naia-dawn-city-uhd.webp",
-		label: "새벽 도시",
+		get label() {
+			return t("webBackground.dawnCity");
+		},
 		url: "/backgrounds/naia-dawn-city-uhd.webp",
 		kind: "image",
 	},
 	{
 		filename: "naia-jina-minho-war-room-uhd.webp",
-		label: "작전실 — 나이아·지나·민호",
+		get label() {
+			return t("webBackground.warRoom");
+		},
 		url: "/backgrounds/naia-jina-minho-war-room-uhd.webp",
 		kind: "image",
 	},
 	{
 		filename: "naia-sunrise-river.webp",
-		label: "강변 해돋이",
+		get label() {
+			return t("webBackground.riverSunrise");
+		},
 		url: "/backgrounds/naia-sunrise-river.webp",
 		kind: "image",
 	},
 	{
 		filename: "naia-rainy-studio.webp",
-		label: "비 오는 작업실",
+		get label() {
+			return t("webBackground.rainyStudio");
+		},
 		url: "/backgrounds/naia-rainy-studio.webp",
 		kind: "image",
 	},
 	{
 		filename: "naia-autumn-office.webp",
-		label: "가을 사무실",
+		get label() {
+			return t("webBackground.autumnOffice");
+		},
 		url: "/backgrounds/naia-autumn-office.webp",
 		kind: "image",
 	},
 	{
 		filename: "naia-starlight-lake.webp",
-		label: "별빛 호수",
+		get label() {
+			return t("webBackground.starlightLake");
+		},
 		url: "/backgrounds/naia-starlight-lake.webp",
 		kind: "image",
 	},
 	{
 		filename: "naia-sky-garden.webp",
-		label: "하늘 정원",
+		get label() {
+			return t("webBackground.skyGarden");
+		},
 		url: "/backgrounds/naia-sky-garden.webp",
 		kind: "image",
 	},
 	{
 		filename: "naia-autumn-office-live.mp4",
-		label: "가을 사무실 (움직임)",
+		get label() {
+			return t("webBackground.autumnOfficeAnimated");
+		},
 		url: "/backgrounds/naia-autumn-office-live.mp4",
 		kind: "video",
 	},
 	{
 		filename: "naia-starlight-lake-live.mp4",
-		label: "별빛 호수 (움직이는 배경)",
+		get label() {
+			return t("webBackground.starlightLakeAnimated");
+		},
 		url: "/backgrounds/naia-starlight-lake-live.mp4",
 		kind: "video",
 	},
 	{
 		filename: "naia-rainy-studio-live.mp4",
-		label: "비 오는 작업실 (움직이는 배경)",
+		get label() {
+			return t("webBackground.rainyStudioAnimated");
+		},
 		url: "/backgrounds/naia-rainy-studio-live.mp4",
 		kind: "video",
 	},

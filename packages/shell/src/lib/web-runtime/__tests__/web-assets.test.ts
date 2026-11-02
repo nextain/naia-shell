@@ -1,5 +1,6 @@
+import { setLocale } from "../../i18n";
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { syncWebSttOnSpeakingChange } from "../../../components/ChatArea";
 import {
 	isReadyToChat,
@@ -280,3 +281,5 @@ describe("retired face-crop web backgrounds", () => {
 		expect(resolveThinkingLevel({ enableThinking: true })).toBe("low");
 	});
 });
+
+beforeEach(async () => { await setLocale("ko"); });

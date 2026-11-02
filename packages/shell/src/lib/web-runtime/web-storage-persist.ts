@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { Logger } from "../logger";
 
 export type WebStoragePersistPhase =
@@ -71,31 +72,17 @@ export function formatStorageBytes(bytes: number): string {
 export function formatWebStorageSummaryLine(
 	state: WebStoragePersistState,
 ): string {
-	const usagePart =
-		state.usageBytes !== null &&
-		state.quotaBytes !== null &&
-		state.quotaBytes > 0
-			? `사용량 ${formatStorageBytes(state.usageBytes)} / ${formatStorageBytes(state.quotaBytes)}`
-			: state.usageBytes !== null
-				? `사용량 ${formatStorageBytes(state.usageBytes)}`
-				: "";
-
-	if (state.phase === "denied") {
-		return usagePart
-			? `브라우저가 저장소 보존을 허용하지 않음 · ${usagePart}`
-			: "브라우저가 저장소 보존을 허용하지 않음";
-	}
-	if (state.phase === "persisted") {
-		return usagePart ? `영구 보존 허용됨 · ${usagePart}` : "영구 보존 허용됨";
-	}
-	if (state.phase === "unsupported") {
-		return usagePart
-			? `브라우저가 저장소 보존을 지원하지 않음 · ${usagePart}`
-			: "브라우저가 저장소 보존을 지원하지 않음";
-	}
-	return usagePart
-		? `저장소 보존 확인 중… · ${usagePart}`
-		: "저장소 보존 확인 중…";
+	const usage =
+		state.usageBytes === null
+			? ""
+			: state.quotaBytes !== null && state.quotaBytes > 0
+				? t("webStorage.usageQuota", {
+						usage: formatStorageBytes(state.usageBytes),
+						quota: formatStorageBytes(state.quotaBytes),
+					})
+				: t("webStorage.usage", { usage: formatStorageBytes(state.usageBytes) });
+	const status = t(`webStorage.${state.phase}`);
+	return usage ? t("webStorage.summary", { status, usage }) : status;
 }
 
 async function readEstimate(

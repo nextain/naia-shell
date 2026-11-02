@@ -265,10 +265,10 @@ export function App() {
 					setWebAuthenticated(true);
 				} else if (res.error === "state_mismatch") {
 					setWebAuthError(
-						"로그인 검증(state)에 실패했습니다. 다시 시도해 주세요.",
+						t("webAuth.stateFailed"),
 					);
 				} else if (res.error === "invalid_key") {
-					setWebAuthError("유효하지 않은 로그인 키가 전달되었습니다.");
+					setWebAuthError(t("webAuth.invalidKey"));
 				}
 			}
 		});

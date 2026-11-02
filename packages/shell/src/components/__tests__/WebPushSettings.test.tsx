@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebPushSettings } from "../WebPushSettings";
 
-vi.mock("../../lib/i18n", () => ({ getLocale: () => "en" }));
+import { setLocale } from "../../lib/i18n";
 
 describe("web push settings", () => {
+	beforeEach(async () => { await setLocale("en"); });
 	afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 	function setup(permission: NotificationPermission, existing: unknown = null) {
 		const getSubscription = vi.fn().mockResolvedValue(existing);

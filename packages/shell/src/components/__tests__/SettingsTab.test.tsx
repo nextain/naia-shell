@@ -5775,6 +5775,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 	});
 
 	it("renders Korean catalog labels in settings-bg-select in web mode and sets video media type when selecting a live MP4 background", async () => {
+		await setLocale("ko");
 		mockInvoke.mockResolvedValue([]);
 		setWebAssetsModeForTests(true);
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
@@ -5804,10 +5805,10 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			"작전실 — 나이아·지나·민호",
 			"강변 해돋이",
 			"비 오는 작업실",
-			"Autumn Office",
+			"가을 사무실",
 			"별빛 호수",
 			"하늘 정원",
-			"Autumn Office (Animated)",
+			"가을 사무실 (움직임)",
 			"별빛 호수 (움직이는 배경)",
 			"비 오는 작업실 (움직이는 배경)",
 		]);

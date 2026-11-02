@@ -1,7 +1,7 @@
 export interface WebFs {
-	readText(path: string): Promise<string | null>; // 없으면 null
-	writeBytes(path: string, data: string | Uint8Array): Promise<void>; // 중간 폴더를 만든다
-	exists(path: string): Promise<boolean>; // 파일이나 폴더
+	readText(path: string): Promise<string | null>; // null when absent
+	writeBytes(path: string, data: string | Uint8Array): Promise<void>; // creates parent directories
+	exists(path: string): Promise<boolean>; // file or directory
 	ensureDir(path: string): Promise<void>;
 	/** 디렉토리 직속 항목 이름 목록. 디렉토리가 없으면 빈 배열. */
 	listEntries?(path: string): Promise<string[]>;

@@ -4350,7 +4350,7 @@ export function ChatArea({
 								{TAB_ICONS.chat}
 							</span>
 						</button>
-						{/* 지시서 #4: 웹판에서도 OPFS 영구 대화 기록 목록 탭을 노출한다. */}
+						{/* Item 4: Show persistent OPFS conversation history in web mode. */}
 						<button
 							type="button"
 							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
@@ -4419,7 +4419,7 @@ export function ChatArea({
 
 					{/* Settings tab */}
 
-					{/* History tab (지시서 #4: 웹판에서도 OPFS 영구 대화 기록 마운트) */}
+					{/* History tab (item 4: mount persistent OPFS history in web mode) */}
 					{activeTab === "history" && (
 						<HistoryTab onLoadSession={() => setActiveTab("chat")} />
 					)}
@@ -4651,18 +4651,18 @@ export function ChatArea({
 						}
 						aria-label={
 							isWebMode() && !isWebSpeechAvailable()
-								? "이 브라우저는 음성 인식을 지원하지 않습니다"
+								? t("webSpeech.recognitionUnsupported")
 								: undefined
 						}
 						title={
 							isWebMode() && !isWebSpeechAvailable()
-								? "이 브라우저는 음성 인식을 지원하지 않습니다"
+								? t("webSpeech.recognitionUnsupported")
 								: voiceMode === "off"
 									? t("chat.voiceStart")
 									: voiceMode === "connecting"
 										? t("chat.voiceConnecting")
 										: ttsPlaying
-											? "끼어들기 (TTS 중단)"
+											? t("webSpeech.interrupt")
 											: t("chat.voiceEnd")
 						}
 					>

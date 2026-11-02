@@ -452,7 +452,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 						)}
 					</div>
 				))}
-				{/* WO-03: 웹판은 브라우저 바로가기가 꺼져 있어 목록을 감춘다. */}
+				{/* WO-03: Hide browser shortcuts, which are disabled in web mode. */}
 				{!isWeb &&
 					browserShortcuts.map((shortcut) => (
 					<div
@@ -669,7 +669,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					</div>,
 					document.body,
 				)}
-			{/* WO-03: 웹판은 설치 앱·바로가기 추가가 꺼져 있어 버튼을 감춘다. */}
+			{/* WO-03: Hide app installation and shortcut controls in web mode. */}
 			{!isWeb && (
 				<button
 					type="button"
@@ -750,8 +750,8 @@ export function AppBar({ onAddApp }: AppBarProps) {
 				onClick={() =>
 					setActiveApp(activeApp === "settings" ? null : "settings")
 				}
-				title={activeApp === "settings" ? (getLocale() === "ko" ? "설정 닫기" : "Close settings") : "설정"}
-				aria-label={activeApp === "settings" ? (getLocale() === "ko" ? "설정 닫기" : "Close settings") : "설정"}
+				title={activeApp === "settings" ? t("appBar.closeSettings") : t("settings.title")}
+				aria-label={activeApp === "settings" ? t("appBar.closeSettings") : t("settings.title")}
 			>
 				{activeApp === "settings" && <span className="web-mobile-settings-close">✕</span>}
 				<svg

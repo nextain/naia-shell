@@ -3618,7 +3618,7 @@ export function SettingsTab() {
 					!("speechSynthesis" in window) ||
 					typeof SpeechSynthesisUtterance === "undefined"
 				) {
-					throw new Error("이 브라우저는 음성 합성을 지원하지 않습니다");
+					throw new Error(t("webSpeech.synthesisUnsupported"));
 				}
 				window.speechSynthesis.cancel();
 				const utter = new SpeechSynthesisUtterance(getPreviewText(ttsVoice));
@@ -4505,7 +4505,7 @@ export function SettingsTab() {
 									);
 								})}
 							</select>
-							{/* WO-03: 웹판은 파일 대화상자·Rust 복사가 없어 가져오기·삭제를 감춘다. */}
+							{/* WO-03: Hide import/delete controls without native file dialogs or copying. */}
 							{import.meta.env.MODE !== "web" && (
 								<button
 									type="button"
@@ -4539,7 +4539,7 @@ export function SettingsTab() {
 							<code style={{ flex: 1, overflowWrap: "anywhere" }}>
 								{workspaceRoot}
 							</code>
-							{/* WO-03: 웹판은 앱 재실행 경로가 없어 초기화 버튼·안내를 감춘다. */}
+							{/* WO-03: Hide reset controls without an app restart path. */}
 							{import.meta.env.MODE === "web" ? null : adkRestartRequired ? (
 								<div
 									className="settings-error"
@@ -4617,7 +4617,7 @@ export function SettingsTab() {
 								className="settings-field"
 								data-testid="web-storage-persist-section"
 							>
-								<label>브라우저 저장소</label>
+								<label>{t("webStorage.title")}</label>
 								<div
 									className="settings-hint"
 									data-testid="web-storage-persist-status"
@@ -4627,7 +4627,7 @@ export function SettingsTab() {
 							</div>
 
 							<div className="settings-field" data-testid="web-account-section">
-								<label>나이아 웹 계정</label>
+								<label>{t("webAuth.account")}</label>
 								<div
 									style={{
 										display: "flex",
@@ -4641,8 +4641,8 @@ export function SettingsTab() {
 										data-testid="web-account-status"
 									>
 										{webAuthLoggedIn
-											? `로그인됨${webAuthUserId ? ` (${webAuthUserId})` : ""}`
-											: "로그아웃 상태"}
+											? t("webAuth.signedIn", { user: webAuthUserId ? ` (${webAuthUserId})` : "" })
+											: t("webAuth.signedOut")}
 									</span>
 									{webAuthLoggedIn ? (
 										<button
@@ -4672,7 +4672,7 @@ export function SettingsTab() {
 													setWebAuthError(
 														err instanceof Error && err.message
 															? err.message
-															: "로그인을 시작하지 못했습니다.",
+															: t("webAuth.startFailed"),
 													);
 												}
 											}}
@@ -4802,7 +4802,7 @@ export function SettingsTab() {
 									);
 								})}
 							</div>
-							{/* #12/#13: 파일 추가 + 삭제 (WO-03: 웹판 감춤 — 번들 카탈로그만 선택) */}
+							{/* #12/#13: File add/delete (WO-03: web mode uses the bundled catalog). */}
 							{import.meta.env.MODE !== "web" && (
 								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
 									<button
@@ -4855,7 +4855,7 @@ export function SettingsTab() {
 									</button>
 								))}
 							</div>
-							{/* WO-03: 웹판 감춤 — 번들 선택만 (데스크톱 파일 대화상자 없음) */}
+							{/* WO-03: Web mode uses bundled assets without native file dialogs. */}
 							{!isWebMode() && (
 								<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
 									<button
@@ -6361,7 +6361,7 @@ export function SettingsTab() {
 								}}
 							>
 								{!hasSelectedModel && activeBrainModel ? (
-									<option value="__custom__">{`${activeBrainModel}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
+									<option value="__custom__">{t("settings.currentModel", { model: activeBrainModel, asr: isSelectedAsr ? " 🎤" : "" })}</option>
 								) : null}
 								{displayedProviderModels
 									.filter((m) => !m.capabilities.includes("asr") && (modelSortMode !== "recommended" || (!/nano/i.test(m.id) && m.id !== "solar-mini") || m.id === activeBrainModel))
@@ -6848,7 +6848,7 @@ export function SettingsTab() {
 											}}
 										>
 											<option value="web-speech">
-												Web Speech (브라우저 내장 · 무료)
+												{t("webSpeech.recognitionProvider")}
 											</option>
 											<option value="">{t("settings.sttNone")}</option>
 										</select>
@@ -6857,7 +6857,7 @@ export function SettingsTab() {
 												className="settings-hint"
 												data-testid="web-stt-unsupported-hint"
 											>
-												이 브라우저는 음성 인식을 지원하지 않습니다
+												{t("webSpeech.recognitionUnsupported")}
 											</div>
 										)}
 									</>
@@ -6994,7 +6994,7 @@ export function SettingsTab() {
 									}}
 								>
 									<option value="browser">
-										Browser SpeechSynthesis (브라우저 내장 · 무료)
+										{t("webSpeech.synthesisProvider")}
 									</option>
 								</select>
 								{(typeof window === "undefined" ||
@@ -7003,7 +7003,7 @@ export function SettingsTab() {
 										className="settings-hint"
 										data-testid="web-tts-unsupported-hint"
 									>
-										이 브라우저는 음성 합성을 지원하지 않습니다
+										{t("webSpeech.synthesisUnsupported")}
 									</div>
 								)}
 							</>
@@ -7274,7 +7274,7 @@ export function SettingsTab() {
 											disabled={!synthSupported}
 											onChange={(e) => persistTtsVoice(e.target.value)}
 										>
-											<option value="">기본 브라우저 목소리</option>
+											<option value="">{t("webSpeech.defaultVoice")}</option>
 											{sortedVoices.map((v) => (
 												<option
 													key={v.voiceURI || v.name}
