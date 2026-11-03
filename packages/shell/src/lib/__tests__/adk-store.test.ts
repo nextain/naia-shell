@@ -1341,3 +1341,50 @@ describe("copyBundledAssets", () => {
 });
 // #602: openai 커스텀 호스트(syncMainRoleOpenAiBaseUrl, #515)는 타사 직결 openai
 // 공급자와 함께 제거됐다 — 관련 회귀 가드도 삭제한다.
+
+// UC-B2C-026-R7: workspace binding must preserve original card bytes on failure.
+describe("B2C card/theme ADK switch server regression", () => {
+	it("keeps exact card/theme and locale bytes during pending and rejected rebind", async () => {
+		await setAdkPath(UNIX_ADK);
+		const config = {
+			workspaceRoot: UNIX_ADK,
+			provider: "ollama",
+			model: "local",
+			locale: "ko",
+			persona: "gardener",
+			uiPreferences: {
+				b2cActiveCardId: "card-a",
+				b2cCardLibrary: [
+					{
+						id: "card-a",
+						sourceBase64: "eyJuYW1lIjoiQSJ9",
+						rawJson: { name: "A", extension: { keep: true } },
+					},
+				],
+				b2cNvaThemes: [{ id: "theme-a", nvaModel: "naia" }],
+			},
+		};
+		const original = JSON.stringify(config);
+		localStorage.setItem("naia-config", original);
+		let release!: () => void;
+		const wait = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "write_naia_path_cache") {
+				await wait;
+				throw new Error("rebind denied");
+			}
+			return "";
+		});
+		const next = setAdkPath(WIN_ADK);
+		const rejection = expect(next).rejects.toThrow("rebind denied");
+		await Promise.resolve();
+		expect(getAdkPath()).toBe(UNIX_ADK);
+		expect(localStorage.getItem("naia-config")).toBe(original);
+		release();
+		await rejection;
+		expect(getAdkPath()).toBe(UNIX_ADK);
+		expect(localStorage.getItem("naia-config")).toBe(original);
+	});
+});

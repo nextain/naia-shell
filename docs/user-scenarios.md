@@ -2520,3 +2520,17 @@ P01: 인수 담당자는 네트워크·Store 자격 없이 전달받은 ZIP과 �
 | UC-B2C-026-R6 | `scripts/b2c-media-audit.test.mjs`: 실제 VP9 alpha/H.264/stacked, 손상·누락·codec/mask 불일치, 실패 전후 설정 동일/변조/누락, CLI 거절. appName 전달 초안·pin 준비는 `docs/progress/026-b2c-charcard-nva.md` 6회차. |
 
 R6 계약 확정 추가 매핑: `src/test/uc1-shell-compat.contract.test.ts` 최종 IPC appName/일반 턴 누락, pin drift·paired proto 계약; `packages/shell/src/lib/__tests__/chat-service.test.ts` legacy wire; `ChatArea.installed-app.test.tsx` 실제 앱 이름·후속 일반 요청 유출0; `e2e/character-theme.spec.ts`1100/360px 기본·빈 목록·진행·성공·오류·재시도·키보드·폭과 실제 browser sendChatMessage→IPC 이름 전달. Rust `agent_grpc.rs::app_name_metadata_is_optional_and_preserved`는 native 도구 부재로 미실행. Agent archive 계약14개 및 별도 writer/read 프로세스로 실제 JSONL 보존 확인.
+
+## UC-B2C-026-R7 — 0.2.6 판 정렬·서버 회귀·AX host 초안
+사용자는 설치판 번호 0.2.6을 확인하고 카드/테마를 저장한 뒤 재시작·ADK 전환·취소·쓰기 장애·언어 전환에도 기존 설정을 보존한다. AX 사용자는 검토 내용을 본 뒤 직접 입력을 시작하고 단회 응답한다. AX 인증 host port가 없으면 기능을 활성화하지 않는다. 일반 chat/approval_response로 인증을 대체하지 않는다.
+
+| UC | Test Coverage Map | 상태/검증 |
+|---|---|---|
+| UC-B2C-026-R7 | src/test/release-version.contract.test.ts | package/Tauri/Cargo/lock 0.2.6, 의존성 버전 유지 |
+| UC-B2C-026-R7 | packages/shell/src/lib/__tests__/ax-approval-adapter.test.ts | 표시 전 입력 거절, 단회·경쟁·취소·변경·종료, false도 chat 전달0 |
+| UC-B2C-026-R7 | packages/shell/e2e/ax-approval-draft.spec.ts | 기본/빈 화면/입력/성공/거절/360px, keyboard·ARIA·DOM bounds; host fixture이며 native 인증 아님 |
+| UC-B2C-026-R7 | packages/shell/e2e/character-theme.spec.ts; packages/shell/src/lib/__tests__/character-theme.test.ts; packages/shell/src/lib/__tests__/config.test.ts | 저장/reload·실패 보존·locale; 추가 ADK/취소/경쟁 회귀는 별도 집중 시험 |
+
+Rust 동작 변경은 없고 metadata 판만 정렬한다. native 설치판/실파일 복원·Windows/macOS/GPU·AX authenticated RPC는 기기/후속 계약 수용으로 Pending이다.
+
+R7 P02 보강: chat-deeplink.test.tsx 첫 markdown lazy-load는 원문 fallback이 먼저 보이므로 변환된 버튼을 최대5초 기다린다. 느린 최초 import와 실제 미변환 실패를 구별하고 경로 버튼 계약은 유지한다.

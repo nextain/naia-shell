@@ -1498,3 +1498,10 @@ P04/P05: 인수 도구12/12·실제 r4 unsigned ZIP의 파일9개 hash 일치/�
 FR-B2C-026-R6 확장: Agent0ad8698 완료 계약 기준 appName을 ChatArea→legacy/new-core→Rust ChatRequest/Message로 조건부 전달한다. 일반 요청에는 필드를 만들지 않고 활성 앱 이름만 사용한다. exact pin/CI/README/marker를 함께 갱신한다. P04는 wire capture·ChatArea/Playwright·Rust mapping test·실 Agent writer 재시작, native는 Pending.
 
 FR-B2C-026-R6 P05: **오프라인 미디어 판정 도구 Done / appName 셸 전달·짝 pin 서버 slice 구현 / native 통합 수용 Pending**. P04 증거는 B2C ledger6회차와 실행 폴더 result.md. Rust unit test 미실행·packaged native 미검증 때문에 appName 제품 전체 Done으로 쓰지 않는다.
+
+## FR-B2C-026-R7 — 판 정렬·서버 회귀·AX 승인 초안
+P01/P02: UC-B2C-026-R7. Shell 배포 metadata(package.json, tauri.conf.json, Cargo.toml, Cargo.lock의 naia-shell)는 0.2.6으로 일치해야 한다. workspace 자체 판도 0.2.6으로 정렬하되 제3자 의존성 및 과거 release 문서는 바꾸지 않는다. 태그/원격push/게시 없음.
+AX draft는 Agent0ad8698 makeAxHostControlLane의 displayed/beginInput/submit/invalidate/dispose를 주입 port로 받는다. 표시 ACK 전/표시 전 입력/재전송/늦은 응답을 거절하고 취소·scope 변경·종료에서 입력과 화면을 폐기한다. 인증 evidence는 host가 검증하며 DOM isTrusted나 JSON origin으로 인증하지 않는다. 입력/코드/preview를 로그·localStorage·chat·기억에 쓰지 않는다. 일반 승인창의 always grant는 재사용하지 않는다.
+상태: 서버 metadata/adapter 초안 slice Done(P01~P05). 단위·브라우저·실 Agent 메모리 내 계약·전체 타입 검사 증거는 docs/progress/026-b2c-charcard-nva.md 7회차 및 실행 폴더 tmp/r7-*.log. native AX RPC는 계약 미제공으로 Pending.
+
+R7 UI 수용 보강: Agent0ad8698 대화 승인은 한국어 고정 응답만 지원하므로 영문 화면에서도 승인 입력 ‘보내’를 명시한다. 미인증 입력은 alert+재입력/취소, 거절은 새 요청 안내, 성공은 응답 전달로만 표시한다(실행 성공으로 쓰지 않음).

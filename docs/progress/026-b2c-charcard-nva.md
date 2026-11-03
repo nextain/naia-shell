@@ -204,3 +204,21 @@ Playwright의 기존360px 실패 주입이 비동기 일반 설정 writer에 소
 P05: 도구 slice Done, appName 전달/pin 서버 slice 구현. native 저장/재시작·실제 모델/청취·WebView alpha/stacked/chroma·GPU 수용 및 signed 실제 상품/권리 인수는 미완료.
 
 최종 변경 후 Shell 전체 **2663 통과/21 제외/실패0**,253파일 통과/1제외,342.38초(`tmp/r6-shell-after.log`). core UC1/wire108/108·별도pin drift6/6·Shell 집중59/59·Agent 계약14/14·도구13/13. core/Shell/BGM/새Agent 전체 타입 빌드와 compile-integrity·assembly·file-anchor·UC trace·logging 통과. root whitelist 기존2건/빈 C regions·TS core oracle 범위는 유지. 헌장 수정·운영 접근·외부 checkout 수정·원격push 없음.
+
+## 7회차 설계/P01~P03
+UC-B2C-026-R7 / FR-B2C-026-R7. process-status는 F01 헌장 명시 승인 부재로 수정하지 않고 이 ledger에 세션 상태를 남긴다. 가장 먼저 배포 판0.2.6 정렬. 11/4 실제 signed 자산은 여전히 자격/자료가 없어 진행 불가. 11/7 서버 회귀와 AX0ad8698 host adapter 초안을 진행한다. host object capability는 wire로 보내지 않으며 인증 RPC를 임의로 추가하지 않는다. UI는 독립 초안 컴포넌트+host port 시험이고 앱에 활성화하지 않는다. 준 안내문만 존재.
+
+### 7회차 구현·서버 검증
+- 배포 metadata: root/Shell package.json, Tauri explicit version, Cargo.toml 및 lock의 naia-shell만0.2.6. 제3자 Cargo 의존성0.2.4/0.2.5는 그대로이며 과거 release 문서는 이력이다. CI installer는 Shell package.version을 읽는다. 태그/게시 없음.
+- `lib/ax-approval-adapter.ts`는 Agent0ad8698 host-only object port를 받는다. 표시 전/ACK 실패/위조 evidence/이전 proposal/단회 재전송을 거절하며 invalidation/disposal을 노출한다. 로그에는 mode/boolean만, 코드·preview·입력·토큰은 기록하지 않는다. 반환 false도 chat으로 보내지 않는다.
+- `components/AxApprovalDraft.tsx`는 이 port를 받는 독립 승인 화면 초안이다. 일반 PermissionModal/always grant/approval_response를 재사용하지 않는다. 실제 앱 composition에 활성화하지 않았다. 인증된 RPC·표시 ACK roundtrip·input provenance는 Agent와 별도 계약이 필요하다. host는 새 의도·내용/설정/scope 변경 전에 invalidate, disconnect/종료에 dispose해야 한다. code는 host 별도 전달 경로이며 화면 props/로그/저장소에 코드가 없다.
+- 화면은 payload를 React text로 출력하며 입력은 로컬 state에만 유지한다. Agent 대화 승인 고정 입력 ‘보내’를 한/영 모두 안내한다. 빈 화면→review→입력→단회 전달, 거절/미인증의 alert와 재입력·취소, 새 요청 안내를 구분한다.
+- 집중 회귀174/8skip, ADK/취소/기존 첫 인사/adapter104/104, 최종 변경부86/86, 판/pin7/7. 브라우저 카드·테마1100/360px2/2, AX 한/영×1100/360px4/4. 실제 Agent0ad8698 archive broker+셸 adapter8/8: approve/reject/cancel/scope/dispose/code/wrong-code/untrusted. 이 시험은 메모리 내 실제 실행 경계이며 외부 전송은 fixture executor로 대체한다. authenticated RPC/native 시험이 아니다.
+- 새 ADK 시험은 pending/rejected rebind 동안 카드 원본 base64·확장·테마·locale·이전 workspace의 exact localStorage bytes를 비교한다. 기존 locale 동시변경/쓰기 실패/Agent reload 실패와 greeting replace/unmount·모델교체 회귀를 재실행했다. 브라우저 reload는 mock 파일 저장소 복원이며 native 파일 영속성으로 승격하지 않는다.
+- 최초 전체 호출은 root cwd 때문에 잘못된 config를 읽어 중단했다. 올바른 Shell cwd 첫 전체2672pass/1fail/21skip(370초): cold lazy markdown 원문 fallback이 기본1초 안에 버튼으로 바뀌지 않았다. 실패 DOM/로그를 확인하고 최초 버튼 대기5초 및 누락 fetchAgentSkills mock을 추가했다. 분리8/8. 전체 재검증은 별도 로그 r7-shell-verified.log에 기록한다.
+- core/Shell/BGM/paired Agent 전체 tsc, compile-integrity, assembly, file-anchor, UC trace, logging 통과. production build2808 modules·entry492113/gzip154861 bytes로 budget 통과. 새 AX 초안은 미활성이라 출시 entry에 포함되지 않는다.
+- root 구조 dry-run은 기존 test-results/·tracked tmp/·tsconfig.build.json3건이다. 자동 삭제나 헌장 변경 없음. C manifest regions는 비어 있고 TS core file oracle70개는 활성; Shell 전체 파일 계약 미검출 범위는 남아 있다. 이를 전역 conform 완료로 주장하지 않는다.
+
+7회차 AX lifecycle 보강: React StrictMode의 mount-effect replay를 실제 browser fixture에 켰다. 로컬 capture/ref는 cleanup에서 즉시 폐기하고 host invalidation만 같은 host의 재mount 여부를 microtask로 확인한다. host 교체는 이전 host를 invalidate한다. 사용자 취소/scope 변경 invalidate는 동기 호출이며 disconnect dispose는 composition 소유다. 최초 표시 ACK를 StrictMode cleanup이 잘못 무효화하지 않으며 unmount 후 입력·권한이 남지 않는 browser4/4(`tmp/r7-ax-lifecycle.log`).
+
+7회차 P04/P05 최종: Shell 전체 재실행 **2673pass/21skip/실패0**,254파일pass/1skip,291.52초(`tmp/r7-shell-verified.log`). AX 최종 StrictMode 한/영×1100/360px4/4(`tmp/r7-ax-final-verified.log`), 취소 후 오래된 입력 오류 안내 제거도 단언. 최종360px screenshot을 직접 열어 payload/승인 입력/취소·새 요청 안내의 순서·줄바꿈과 잘림 없음을 검토했다. browser slice PASS이며 authenticated AX RPC/native 수용은 Pending. metadata·서버 회귀·adapter 초안 Done, 실제 상품/기기/게시 전체 수용은 Pending 유지.
