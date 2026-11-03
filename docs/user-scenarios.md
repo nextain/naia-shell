@@ -2511,3 +2511,12 @@ P01: 인수 담당자는 네트워크·Store 자격 없이 전달받은 ZIP과 �
 | UC | P02 Test Coverage Map |
 |---|---|
 | UC-B2C-026-R5 | `scripts/b2c-package-audit.test.mjs`: 실제 ZIP/Ed25519 서명, unsigned·변조·다른 키/ID·권한 불일치·라이선스 누락/변조·경로 탈출/중복/링크·압축 상한·CLI 종료 코드. `scripts/b2c-package-audit.mjs`를 r4 실제 unsigned ZIP에 실행해 차단 및 파일별 hash 재현. `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: 실제 wire 오류 코드로 원시 provider 예외 비노출 재검증. 제품 UI/Rust 변경 없음; 기존 Shell 전체 회귀와 core/Shell/BGM 타입 검사. |
+
+## UC-B2C-026-R6 — 서버 미디어 판정과 앱 태그 전달 준비
+사용자는 실제 NVA 파일의 코덱·투명도와 실패 뒤 설정 보존 증거를 구분한다. Test Coverage Map: scripts/b2c-media-audit.test.mjs — 실제 ffmpeg 생성/디코드, alpha/opaque/stacked/손상/누락/설정 동일·변조·누락/CLI; appName 계약 초안은 설계 ledger. native·Windows·GPU 판정은 별도 Pending.
+
+| UC | P02 Test Coverage Map |
+|---|---|
+| UC-B2C-026-R6 | `scripts/b2c-media-audit.test.mjs`: 실제 VP9 alpha/H.264/stacked, 손상·누락·codec/mask 불일치, 실패 전후 설정 동일/변조/누락, CLI 거절. appName 전달 초안·pin 준비는 `docs/progress/026-b2c-charcard-nva.md` 6회차. |
+
+R6 계약 확정 추가 매핑: `src/test/uc1-shell-compat.contract.test.ts` 최종 IPC appName/일반 턴 누락, pin drift·paired proto 계약; `packages/shell/src/lib/__tests__/chat-service.test.ts` legacy wire; `ChatArea.installed-app.test.tsx` 실제 앱 이름·후속 일반 요청 유출0; `e2e/character-theme.spec.ts`1100/360px 기본·빈 목록·진행·성공·오류·재시도·키보드·폭과 실제 browser sendChatMessage→IPC 이름 전달. Rust `agent_grpc.rs::app_name_metadata_is_optional_and_preserved`는 native 도구 부재로 미실행. Agent archive 계약14개 및 별도 writer/read 프로세스로 실제 JSONL 보존 확인.

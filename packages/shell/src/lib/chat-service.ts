@@ -86,6 +86,7 @@ interface SendChatOptions {
 	requestId: string;
 	/** Local session ID — agent uses this to persist the conversation locally. */
 	sessionId?: string;
+	appName?: string;
 	ttsVoice?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
 	ttsProvider?: "google" | "edge" | "openai" | "elevenlabs" | "nextain";
@@ -248,6 +249,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 			onChunk: opts.onChunk as (c: Record<string, unknown>) => void,
 			requestId: opts.requestId,
 			...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+			...(opts.appName !== undefined ? { appName: opts.appName } : {}),
 			...(opts.systemPrompt !== undefined
 				? { systemPrompt: opts.systemPrompt }
 				: {}),
@@ -287,6 +289,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		onChunk,
 		requestId,
 		sessionId,
+		appName,
 		ttsVoice,
 		ttsEngine,
 		ttsProvider,
@@ -313,6 +316,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		type: "chat_request",
 		requestId,
 		...(sessionId && { sessionId }),
+		...(appName !== undefined ? { appName } : {}),
 		provider: providerSafe,
 		messages: [
 			...history,

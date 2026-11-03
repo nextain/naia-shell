@@ -1,6 +1,6 @@
 {
-  "agentCommit": "a4aef165ed7e9d22d30f5b834931cb272f7e4654",
-  "protoSha256": "20d9aa6eb3a4396daef360f0155aa27c21b83b1faf0132691cb596a189c18b12",
+  "agentCommit": "0ad869898c30c62429b890371476dfe9519796f5",
+  "protoSha256": "6fb0b1f9b249e41fc16c7a0f673bbb2a82f52cb7c0977773bf03e9e297e2b175",
   "memoryCommit": "e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf",
   "memoryVersion": "0.1.4"
 }

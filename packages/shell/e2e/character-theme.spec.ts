@@ -34,8 +34,10 @@ for (const width of [1100, 360]) {
 				}
 				const win = window as any;
 				win.__writes = [];
+				win.__chatWire = [];
 				win.__badThemeClip = false;
 				win.__failNextWrite = false;
+				win.__denyConfigWrites = false;
 				win.__failUiWrites = false;
 				win.__TAURI_INTERNALS__ = {
 					metadata: {
@@ -47,6 +49,10 @@ for (const width of [1100, 360]) {
 					convertFileSrc: (p: string) => p,
 					invoke: async (cmd: string, args: any) => {
 						if (cmd === "plugin:event|listen") return 1;
+						if (cmd === "send_to_agent_command") {
+							win.__chatWire.push(JSON.parse(args.message));
+							return null;
+						}
 						if (cmd === "read_naia_config")
 							return (
 								localStorage.getItem("b2c-test-native-config") ??
@@ -55,6 +61,8 @@ for (const width of [1100, 360]) {
 						if (cmd === "read_naia_ui_config")
 							return localStorage.getItem("b2c-test-ui-config") ?? "{}";
 						if (cmd === "write_naia_config" || cmd === "write_naia_ui_config") {
+							if (win.__denyConfigWrites && cmd === "write_naia_config")
+								throw new Error("fixture config writes denied");
 							if (cmd === "write_naia_ui_config" && win.__failUiWrites)
 								throw new Error("fixture UI write failed");
 							if (
@@ -273,11 +281,15 @@ for (const width of [1100, 360]) {
 		await expect(section.getByRole("status")).toContainText("Theme saved");
 		await page.evaluate(async () => {
 			const {loadConfig, saveConfig} = await import("/src/lib/config.ts");
-			saveConfig({...loadConfig()!, nvaModel: "previous", ttsVoice: "en-US-AriaNeural", backgroundVideo: undefined});
+			saveConfig({...loadConfig()!, nvaModel: "previous", ttsVoice: "en-US-AriaNeural", backgroundVideo: "garden.png"});
 		});
-		const beforeThemeFailure = await page.evaluate(() =>
-			localStorage.getItem("naia-config"),
-		);
+		// Compare the settings owned by this operation; config loading strips empty
+		// credentials and independent BGM runtime writers update unrelated keys.
+		const themeSnapshot = () => page.evaluate(() => {
+			const cfg = JSON.parse(localStorage.getItem("naia-config")!);
+			return Object.fromEntries(["provider", "model", "persona", "agentName", "avatarProvider", "nvaModel", "ttsProvider", "ttsVoice", "backgroundVideo", "uiPreferences"].map(key => [key, cfg[key]]));
+		});
+		const beforeThemeFailure = await themeSnapshot();
 		await page.evaluate(() => {
 			(window as any).__badThemeClip = true;
 		});
@@ -287,16 +299,16 @@ for (const width of [1100, 360]) {
 		await expect(section.getByRole("alert")).toContainText(
 			"Previous settings were kept",
 		);
-		expect(await page.evaluate(() => localStorage.getItem("naia-config"))).toBe(
-			beforeThemeFailure,
-		);
+		expect(await themeSnapshot()).toEqual(beforeThemeFailure);
 		await page.evaluate(() => {
 			(window as any).__badThemeClip = false;
-			(window as any).__failNextWrite = true;
+			(window as any).__denyConfigWrites = true;
 		});
 		await section.getByRole("button", { name: "Apply theme", exact: true }).click();
 		await expect(section.getByRole("alert")).toContainText("Previous settings were kept");
-		expect(await page.evaluate(() => localStorage.getItem("naia-config"))).toBe(beforeThemeFailure);
+		await expect(section.getByRole("button", { name: "Apply theme", exact: true })).toBeEnabled();
+		expect(await themeSnapshot()).toEqual(beforeThemeFailure);
+		await page.evaluate(() => { (window as any).__denyConfigWrites = false; });
 		await section
 			.getByRole("button", { name: "Apply theme", exact: true })
 			.click();
@@ -422,5 +434,18 @@ for (const width of [1100, 360]) {
 			path: test.info().outputPath(`character-theme-${width}.png`),
 			fullPage: true,
 		});
+		// UC-B2C-026-R6: real browser module → Tauri seam, independent of model fixtures.
+		const wire = await page.evaluate(async () => {
+			const modulePath = "/src/lib/chat-service.ts";
+			const { sendChatMessage } = await import(modulePath);
+			for (const appName of ["달빛 카페", undefined]) {
+				await sendChatMessage({ message: "hello", provider: { provider: "ollama", model: "test-local", apiKey: "" }, history: [], onChunk: () => {}, requestId: appName ? "r6-app" : "r6-normal", ...(appName ? { appName } : {}) });
+			}
+			return (window as any).__chatWire.filter((m: any) => m.requestId?.startsWith("r6-"));
+		});
+		expect(wire).toHaveLength(2);
+		expect(wire[0]).toMatchObject({ requestId: "r6-app", appName: "달빛 카페" });
+		expect(wire[1]).not.toHaveProperty("appName");
+
 	});
 }

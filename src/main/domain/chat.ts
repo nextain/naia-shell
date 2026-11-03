@@ -102,6 +102,7 @@ export interface ChatRequest {
   readonly requestId: string;
   readonly clientId: string;
   readonly sessionId?: string;
+  readonly appName?: string;
   readonly provider: ProviderSelect;
   readonly gatewayUrl?: string;
   readonly messages: readonly ChatMessage[];

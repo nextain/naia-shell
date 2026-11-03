@@ -1491,3 +1491,10 @@ P04/P05 증거: `docs/progress/026-b2c-charcard-nva.md` 2회차 절. Shell2645/2
 - 전체 Shell 타입 검사에서 발견한 기존 R4 오류 fixture의 미등록 PROVIDER_ERROR 코드는 실제 wire의 PROVIDER_NETWORK로 정렬하고 같은 원시 예외 차단 계약을 재시험한다. 제품 UI 동작은 변경하지 않는다.
 
 P04/P05: 인수 도구12/12·실제 r4 unsigned ZIP의 파일9개 hash 일치/서명·권리 누락 차단, Shell 집중30/30·전체2663 통과/21 제외, core/Shell 전체/BGM/격리 pinned Agent 타입 검사 통과. 실제 signed 상품·권리/entitlement·기기 수용은 Pending. 근거: docs/progress/026-b2c-charcard-nva.md 5회차.
+
+## FR-B2C-026-R6 — 오프라인 미디어 증거 (P01–P03)
+서버 도구는 로컬 파일 hash·ffprobe 코덱·전체 decode와 첫 프레임 alpha 범위를 검사한다. alpha·stacked·opaque를 명시하며 stacked는 짝수 높이 및 하단 mask 밝기 범위를 확인한다. 실패 기대 입력은 디코드 실패 및 설정 전후 바이트 동일 증거를 모두 요구한다. 미디어 성공만으로 WebView 합성·청취·native rollback을 주장하지 않는다. appName proto 완료 커밋 전 pin 유지, Rust 전달 변경은 초안으로 준비한다. 상태: 오프라인 도구 Done, appName 서버 전달 구현, native 통합 Pending.
+
+FR-B2C-026-R6 확장: Agent0ad8698 완료 계약 기준 appName을 ChatArea→legacy/new-core→Rust ChatRequest/Message로 조건부 전달한다. 일반 요청에는 필드를 만들지 않고 활성 앱 이름만 사용한다. exact pin/CI/README/marker를 함께 갱신한다. P04는 wire capture·ChatArea/Playwright·Rust mapping test·실 Agent writer 재시작, native는 Pending.
+
+FR-B2C-026-R6 P05: **오프라인 미디어 판정 도구 Done / appName 셸 전달·짝 pin 서버 slice 구현 / native 통합 수용 Pending**. P04 증거는 B2C ledger6회차와 실행 폴더 result.md. Rust unit test 미실행·packaged native 미검증 때문에 appName 제품 전체 Done으로 쓰지 않는다.

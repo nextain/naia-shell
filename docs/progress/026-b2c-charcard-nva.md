@@ -161,3 +161,46 @@ Node와 Python 3 표준 라이브러리만 필요하다. `node scripts/b2c-packa
 - 전체 Shell 타입 검사에서 기존 R4 fixture의 `PROVIDER_ERROR`가 실제 wire union에 없어 실패했다(`tmp/r5-shell-tsc.log`). fixture1곳을 `PROVIDER_NETWORK`로 정렬한 뒤 같은 ko/en 원시 예외 차단·전체 타입 검사가 통과했다(`tmp/r5-shell-tsc-final.log`). 제품 UI/Rust 동작 변경 없음.
 - core·Shell 전체·BGM·지정 Agent 원본 전체 tsconfig 모두 통과. Agent a4aef165 git archive를 실행 tmp에 복사해 기존 실제 dependency 선언으로 --noEmit 검사했으며 외부 checkout에는 링크/소스도 쓰지 않았다(`tmp/r5-agent-tsc.log`). 해당 dependency 선언은 r2의 memory008eac79/kb403edb02이며 설치판의 exact memory pin 수용과 구분한다. assembly·file-anchor·trace·logging·compile-integrity 통과. root whitelist 기존2건, C region 비어 있음/TS core oracle 범위는 유지. 헌장/process-status 변경 없음.
 - 실제 signed 상품·라이선스/entitlement 자료·native 도구 및 Windows/macOS/GPU 실기 수용은 미완료. appName Agent 영속 계약 FAIL도 유지. 운영/컨테이너 접속·다른 작업자 폴더 수정·pin 우회·원격 push 없음. 11/4~11/9 남은 일 및 단계/기대 결과 기기 목록은 실행 폴더의 이번 result.md에 기록한다. 이번에 실제 모델/TTS/시각 검토를 다시 실행한 것으로 주장하지 않는다.
+
+## 6회차 설계 — 11/5 appName 준비·11/6 #743 서버 판정
+P01/P02/P03: UC-B2C-026-R6 / FR-B2C-026-R6. Agent 읽기 전용 HEAD 681a775에는 appName 필드가 없다. proto optional string app_name 추가 및 wire/handler/writer 완료 커밋 전 pin 유지. Shell 경로 ChatArea → chat-service/core chat_request.appName → agent_grpc::try_json_to_chat_request → ChatRequest.app_name → Agent append 단일 writer를 사용한다. 이후 Rust ChatRequest initializer에 `app_name: s("appName"),`를 추가한다. 일반 턴은 None, 앱 턴만 Some; systemPrompt나 messages 본문에 태그를 삽입하지 않는다. 필드 번호는 Agent 소유 계약 확정 후 결정. build.rs의 exact commit/proto SHA, agent-pairing.json, marker·drift 시험을 한 묶음 갱신하고 native JSONL 재시작을 검증해야 한다. 현재 proto에 없는 필드를 넣어 빌드를 깨거나 unknown field 우회하지 않는다.
+#743 도구는 ffprobe/ffmpeg를 timeout/maxBuffer로 제한하고 원본에 쓰지 않는다. 전체 프레임 decode 실패를 거절하며 첫 프레임 rgba의 alpha 또는 stacked 하단 회색 mask 범위를 기록한다. alpha는 혼합 alpha가 필요하다. stacked는 실제 플레이어 합성 검증이 아니며 opaque/chroma 합성·GPU 품질은 기기 목록으로 남긴다. 실패 보존은 외부에서 수집한 전후 설정 snapshot 두 파일이 실제로 동일한지만 증명한다. fixture는 실제 상품이 아니다.
+
+### 6회차 사용법·Rust 전달 초안
+
+`node scripts/b2c-media-audit.mjs /절대경로/input.json`. 입력 예: `{"file":"alpha.webm","mode":"alpha","codec":"vp9","expected":"success"}`. mode는 alpha/stacked/opaque. codec은 선택적인 정확 비교다. chroma는 opaque의 decode 확인까지만 가능하며 key 합성은 기기 수용에 남는다. 실패 입력: `{"file":"broken.mp4","mode":"alpha","expected":"decode-failure","before":"before.json","after":"after.json"}`. 경로는 입력 파일 기준. 모든 입력은 로컬 신뢰 자료만 사용한다. 결과 passed/exit0은 지정한 서버 검사만 통과이며 nativeAcceptance는 항상 false다. snapshot은 실패 실험에서 외부 수집한 실제 파일을 제공해야 하며 도구가 UI 행동을 실행하거나 snapshot 출처를 인증하지 않는다. 입력 미제공/누락/제한시간·실행 오류는 실패 증거로 인정하지 않는다. 전체 디코드는 30초, 50MiB/4096² 크기 제한이다. 긴 실제 자산의 제한 초과는 수용 보류다. 첫 프레임 표본은 모든 프레임 합성 품질을 보장하지 않는다.
+
+계약 초안 적용 위치 `packages/shell/src-tauri/src/agent_grpc.rs`의 `try_json_to_chat_request`:
+
+```diff
+     Ok(ChatRequest {
+         request_id: s("requestId").unwrap_or_default(),
+         session_id: s("sessionId"),
++        app_name: s("appName"),
+         messages,
+```
+
+위 diff는 proto 필드 확정 후 적용하는 초안이다. Rust 시험에 appName 있음/없음/다국어 이름 roundtrip, 일반 턴 None을 추가하고 Agent writer 실제 JSONL 두 행 및 별도 프로세스 재시작에서 동일 이름을 확인한다. paired proto 원본에 필드가 없으므로 현재 소스에는 적용하지 않았다. pin 준비 목록: Agent 완료 clean commit + LF-normalized proto SHA256 + exact memory pin, build.rs REQUIRED_AGENT_COMMIT/REQUIRED_PROTO_SHA256/REQUIRED_PROTO_MARKERS, packages/shell/agent-pairing.json, src/test/agent-pairing-drift.contract.test.ts. 이전 pin의 일부만 갱신하지 않는다.
+
+추적 중 추가 확인: 현재 appName은 ChatArea의 addMessage/startStreaming과 reader에만 있다. sendChatMessage 호출·SendChatOptions·core ShellSendOptions·ChatRequest domain에는 아직 전달 필드가 없다. 따라서 위 Rust 한 줄만으로 전달 완료가 아니다. 계약 확정 후 함께 적용할 셸 초안은 다음과 같다.
+
+- ChatArea `sendChatMessage({ ... })`: `...(appName !== undefined ? { appName } : {})`. 앱 이름은 기존 활성 앱/installedAppTurn 검증 결과에서만 가져온다.
+- `packages/shell/src/lib/chat-service.ts` SendChatOptions 및 `src/main/adapters/shell-compat.ts` ShellSendOptions, `src/main/adapters/chat-bridge.ts` 입력, `src/main/domain/chat.ts` ChatRequest에 `appName?: string` 추가. 각 sessionId 전달 지점과 동일하게 appName도 조건부 전달한다. legacy request와 new-core 양쪽을 시험한다.
+- core 직렬화가 구조 분해/재구성할 때 metadata를 잃지 않는지 IPC 최종 wire 캡처로 확인한다. 이름은 모델 프롬프트가 아닌 writer 메타데이터이며 일반 history 제외는 기존 reader 정책을 유지한다.
+- 필수 회귀: 앱 이름 다국어/없음, 활성 앱→일반 대화 전환 때 이전 이름 유출0, native 카드 소유권 우선, 앱 context1개, appName과 requestId가 같은 턴임을 ChatArea→core→Rust→Agent JSONL 전 경로에서 확인. 현재 준비 상태는 Draft이며 전달/영속 성공으로 표시하지 않는다.
+
+6회차 중 Agent 소유 작업의 uncommitted 초안이 생긴 것을 읽기 전용 확인했다: `ChatRequest.app_name = 16`, `Message.app_name = 5`, domain/writer appName. 완료 커밋은 여전히 없으므로 필드 번호도 확정 계약으로 보지 않으며 pin을 유지한다. Rust Message initializer에도 `app_name: m.get("appName").and_then(|x| x.as_str()).map(str::to_string),` 추가가 필요하다. Message 필드가 생긴 계약에서는 ChatRequest뿐 아니라 Message 모든 initializer를 점검해야 한다.
+
+### 6회차 계약 확정 후 구현 (P01~P03 확장)
+작업 중 Agent clean 완료 커밋0ad869898c30c62429b890371476dfe9519796f5가 생겼다. 위 초안 단계 기록을 보존하되 이제 필드16/5 계약으로 Shell TS→Rust 전달과 exact pin 묶음을 구현한다. P02: 앱 기본/빈history/진행/성공/오류/360px는 기존 installed-app 및 character-theme Playwright 회귀, 추가 wire capture/ChatArea 요청 assertions, Rust JSON→proto unit tests. native는 사용자 지시대로 이 서버 미지원 기기 목록으로 남기며 완료로 주장하지 않는다.
+
+### 6회차 서버 검증 중 발견
+Agent0ad8698 archive 전체 tsconfig 빌드와 grpc codec/handler/writer 계약14/14, 별도 프로세스 실제 JSONL writer/read에서 앱 user/assistant 두 행의 appName 보존·일반 턴 태그 없음 확인(`tmp/r6-agent-contracts.log`, `tmp/r6-transcript-restart.json`). Shell seam·pin26/26, Shell ChatArea/legacy59/59. resolver는 clean Agent0ad8698 선택. Rust unit test는 추가했으나 cargo/rustc/tauri-driver/WebKitWebDriver 부재로 미실행이며 native 수용 Pending이다.
+Playwright의 기존360px 실패 주입이 비동기 일반 설정 writer에 소비되는 것을 오류 컨텍스트에서 확인했다(전역 Could not save settings vs 테마 alert 없음). 테마 후보의 nvaModel/ttsVoice를 지정해 모든 해당 쓰기만 실패시키고 rollback 이전값은 허용하는 fixture로 보강했다. 직접 주입한 이전 배경은 현재 UI와 같은 garden.png로 일치시켰다. 캐시 전체 문자열 비교는 빈 자격 필드 제거/BGM runtime 키 변경까지 포함해 오탐하므로 모델·페르소나·아바타·목소리·배경·카드 라이브러리를 구조적으로 비교한다. 실제 파일 전체 바이트 비교는 media-audit snapshot 도구에서 별도로 엄격 유지한다. 이전 실패 로그 `tmp/r6-playwright-final.log`, `tmp/r6-playwright-recheck.log` 보존.
+
+후속 fixture 정정: agent config/UI config는 분리 저장되어 agent config JSON에는 nvaModel/ttsVoice가 없다. 후보 필드로 agent config 쓰기를 고르는 시도는 실패 주입이 되지 않아 거절 시험이 실패했다(`tmp/r6-playwright-fixed-final.log`). 최종 fixture는 `__denyConfigWrites` 동안 모든 write_naia_config를 거절해 다른 writer가 단발 플래그를 소비하지 못하게 한다. rollback 파일 쓰기도 같은 장애 동안 거절되며, 이 경우 로컬 설정 복구·오류/재시도를 검사하는 범위다. native 파일 원자성/복구쓰기 성공 증거와 구분한다.
+
+최종 browser P04: 수정 fixture와 실제 browser sendChatMessage→IPC appName 캡처를 포함한1100/360px **2/2 통과**, `tmp/r6-playwright-verified.log` 및 `tmp/r6-playwright-verified/`. verify-visual-ux: 기본/빈 목록·import 진행 잠금·성공·decode/쓰기 오류·재시도·Enter·컨트롤 경계를 실제 DOM으로 확인했다.1100px와360px screenshot을 직접 열어 카드 import→preview→Apply, 다음 NVA themes 위계·가로 잘림 없음 확인. browser 범위 수용이며 Rust/native 전체 시각·UX 게이트는 Pending이다. 초기 baseline 화면2/2와 중간 실패를 최종 증거로 대체해 숨기지 않는다.
+P05: 도구 slice Done, appName 전달/pin 서버 slice 구현. native 저장/재시작·실제 모델/청취·WebView alpha/stacked/chroma·GPU 수용 및 signed 실제 상품/권리 인수는 미완료.
+
+최종 변경 후 Shell 전체 **2663 통과/21 제외/실패0**,253파일 통과/1제외,342.38초(`tmp/r6-shell-after.log`). core UC1/wire108/108·별도pin drift6/6·Shell 집중59/59·Agent 계약14/14·도구13/13. core/Shell/BGM/새Agent 전체 타입 빌드와 compile-integrity·assembly·file-anchor·UC trace·logging 통과. root whitelist 기존2건/빈 C regions·TS core oracle 범위는 유지. 헌장 수정·운영 접근·외부 checkout 수정·원격push 없음.

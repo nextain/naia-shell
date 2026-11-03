@@ -18,6 +18,7 @@ export interface ChatSubmitInput {
   readonly provider: ProviderSelect;
   readonly messages: readonly ChatMessage[];
   readonly sessionId?: string;
+  readonly appName?: string;
   readonly gatewayUrl?: string;
   readonly systemPrompt?: string;
   readonly enableTools?: boolean;
@@ -43,6 +44,7 @@ export class ChatBridge {
       provider: input.provider,
       messages: input.messages,
       ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+        ...(input.appName !== undefined ? { appName: input.appName } : {}),
       ...(input.gatewayUrl !== undefined ? { gatewayUrl: input.gatewayUrl } : {}),
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
       ...(input.enableTools !== undefined ? { enableTools: input.enableTools } : {}),

@@ -445,6 +445,7 @@ describe("ChatArea", () => {
 			text: "A new path.\n\nA door opens.",
 		});
 		await waitFor(() => expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalled());
+		expect(capturedRequests[0]).toMatchObject({ appName: "Cafe Lua Tarot" });
 		const messages = useChatStore.getState().messages;
 		expect(
 			messages.filter((m) => m.appName === "Cafe Lua Tarot").map((m) => m.role),
@@ -456,6 +457,7 @@ describe("ChatArea", () => {
 		fireEvent.change(input, { target: { value: "Next user question" } });
 		fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 		await waitFor(() => expect(capturedRequests).toHaveLength(2));
+		expect(capturedRequests[1]).not.toHaveProperty("appName");
 		expect(capturedRequests[1].history).toEqual([
 			{ role: "user", content: "Private previous conversation" },
 			{ role: "assistant", content: "Private previous reply" },

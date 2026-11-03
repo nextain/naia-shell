@@ -2219,6 +2219,7 @@ export function ChatArea({
 				}
 			}
 			await sendChatMessage({
+				...(appName !== undefined ? { appName } : {}),
 				message: text,
 				provider: {
 					provider: activeProvider,

@@ -18,6 +18,7 @@ export interface ShellSendOptions {
   onChunk: (chunk: Record<string, unknown>) => void; // wire AgentResponseChunk
   requestId: string;
   sessionId?: string;
+  appName?: string;
   systemPrompt?: string;
   /** S4 — 셸 환경고유 세그먼트(아바타 감정·앱·표면). 코어가 persona+workspace 뒤 머지. */
   environmentSegments?: readonly EnvironmentSegment[];
@@ -108,6 +109,7 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
           ...(opts.attachments !== undefined ? { attachments: opts.attachments } : {}),
         }],
         ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+        ...(opts.appName !== undefined ? { appName: opts.appName } : {}),
         ...(opts.systemPrompt !== undefined ? { systemPrompt: opts.systemPrompt } : {}),
         ...(opts.environmentSegments !== undefined ? { environmentSegments: opts.environmentSegments } : {}),
         ...(opts.enableTools !== undefined ? { enableTools: opts.enableTools } : {}),
