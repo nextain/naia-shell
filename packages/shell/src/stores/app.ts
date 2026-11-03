@@ -13,7 +13,9 @@ function requestBrowserVisibilitySync() {
  * bucket so a transient app push can never overwrite them. See
  * `selectPromptAppContexts` for how they are merged into the system prompt.
  */
-const PERSISTENT_CONTEXT_TYPES = new Set<string>(["bgm"]);
+export const PERSISTENT_CONTEXT_TYPES: ReadonlySet<string> = new Set<string>([
+	"bgm",
+]);
 
 interface AppState {
 	/** Currently active app id. null = default avatar view. */
@@ -21,6 +23,8 @@ interface AppState {
 	setActiveApp: (id: string | null) => void;
 	/** Latest context pushed by the active (switchable) app. Cleared on switch. */
 	activeAppContext: AppContext | null;
+	/** App id that owns the current activeAppContext. Cleared on switch or null push. */
+	activeAppContextOwnerId: string | null;
 	/**
 	 * Persistent contexts keyed by type (e.g. "bgm"). Survive app switches and
 	 * are never overwritten by transient app pushes.
@@ -31,7 +35,10 @@ interface AppState {
 	 * everything else replaces the single active-app slot. Passing null clears
 	 * only the active slot (persistent contexts are unaffected).
 	 */
-	setActiveAppContext: (ctx: AppContext | null) => void;
+	setActiveAppContext: (
+		ctx: AppContext | null,
+		ownerAppId?: string | null,
+	) => void;
 	/**
 	 * Incremented whenever apps are installed or removed at runtime.
 	 * AppBar and other consumers subscribe to rebuild their app list.
@@ -64,14 +71,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 		}
 		// Clear only the transient active-app slot; persistent contexts (bgm)
 		// must survive the switch so background music favorites stay available.
-		set({ activeApp: id, activeAppContext: null });
+		set({
+			activeApp: id,
+			activeAppContext: null,
+			activeAppContextOwnerId: null,
+		});
 		if (id === "browser" && current !== "browser") {
 			requestBrowserVisibilitySync();
 		}
 	},
 	activeAppContext: null,
+	activeAppContextOwnerId: null,
 	persistentAppContexts: {},
-	setActiveAppContext: (ctx) => {
+	setActiveAppContext: (ctx, ownerAppId) => {
 		if (ctx && PERSISTENT_CONTEXT_TYPES.has(ctx.type)) {
 			set((s) => ({
 				persistentAppContexts: {
@@ -81,7 +93,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 			}));
 			return;
 		}
-		set({ activeAppContext: ctx });
+		if (ctx === null) {
+			set({ activeAppContext: null, activeAppContextOwnerId: null });
+			return;
+		}
+		set({
+			activeAppContext: ctx,
+			activeAppContextOwnerId:
+				ownerAppId !== undefined ? ownerAppId : get().activeApp,
+		});
 	},
 	appListVersion: 0,
 	bumpAppListVersion: () =>
@@ -117,9 +137,10 @@ export const useAppStore = create<AppState>((set, get) => ({
  * type collides, and we skip large/all-app injection — only active +
  * persistent, never every app that has ever pushed.
  */
-export function selectPromptAppContexts(state: AppState): AppContext[] {
+export function selectPromptAppContexts(state: AppState, nativeCardActive = false): AppContext[] {
 	const out: AppContext[] = [];
-	if (state.activeAppContext) out.push(state.activeAppContext);
+	if (state.activeAppContext && !(nativeCardActive &&
+		(state.activeAppContext.type === "charcard" || state.activeAppContextOwnerId === "land.naia.charcard"))) out.push(state.activeAppContext);
 	for (const ctx of Object.values(state.persistentAppContexts)) {
 		if (ctx && ctx.type !== state.activeAppContext?.type) out.push(ctx);
 	}

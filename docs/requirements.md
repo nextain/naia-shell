@@ -1456,3 +1456,14 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 - NFR-B2C-026.2 (Done — 초기 slice, native 출시 수용은 후속): 비활성 C conform 대신 TypeScript 편집에 기존 파일 계약 검사기를 fail-closed 실행해 미계약 core 코드를 live 차단한다.
 
 설계·현황 근거: [0.2.6 B2C 설계](progress/026-b2c-charcard-nva.md).
+
+### FR-B2C-026-R2 — 카드 라이브러리 (Done — 브라우저·core slice, native 수용 별도)
+
+- 원본 PNG·JSON 바이트와 해석 JSON(확장 필드 포함)을 workspace UI 설정에 최대 30장/총 2MB로 저장·재검증·복원·내보내기 한다.
+- 카드별 themeId 연결, 테마 이름/현재 설정으로 수정, 삭제 시 연결 해제를 제공한다.
+- 카드 적용은 새 session을 만들고 첫 인사를 assistant turn으로 삽입한다. 이전 대화는 변경하지 않는다.
+- 카드별 provider/음성 파이프라인을 만들지 않고 공용 모델/음성 설정을 사용한다. 로컬 모델 선택을 클라우드로 자동 변경하지 않는다.
+- P04: Vitest + 실제 셸 Playwright 상태 매트릭스·화면 갈무리와 격리 로컬 Agent 생성 증거. Native 영상/음성 수용은 11/6~11/7 별도.
+
+
+P04/P05 증거: `docs/progress/026-b2c-charcard-nva.md` 2회차 절. Shell2645/21skip, Playwright1100/360px2/2, 실제 로컬 qwen2.5:0.5b 생성 및 연결 실패 시 클라우드 fallback0, core/Shell/BGM/Agent 전체 타입검사와 production build/entry budget 통과. 저장 시점의 greeting을 보관하며, 사용자 이름 등 카드 매크로 설정을 바꾸면 카드를 다시 적용한다. native Tauri·NVA decode·실 발화·복원된 설치 앱 history 태그는 이 Done의 수용 범위에 포함하지 않는다.

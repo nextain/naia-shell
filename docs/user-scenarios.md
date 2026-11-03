@@ -2473,3 +2473,13 @@ P02 Test Coverage Map:
 | 계약 누락 live 차단·manifest 실패 차단 | `.agents/hooks/conform-gate.js`에 합성 Write 입력, checker 실행 |
 
 UI는 Playwright로 실제 설정 컴포넌트와 저장 경로를 검사한다. Rust 변경 없음. 실제 NVA 디코딩·로컬 Agent 대화·설치판 저장 복원은 후속 native 수용으로 남기고 mock 검증과 구별한다.
+
+### UC-B2C-026-R2 — 카드 라이브러리와 새 로컬 대화
+
+사용자는 카드를 여러 장 저장하고 재시작 뒤 다시 고른다. 카드마다 저장된 테마를 연결하고 테마를 수정/삭제한다. 카드 적용은 새 대화에서 첫 인사를 assistant turn으로 표시하며 이전 대화 메시지를 변경하지 않는다. 모델/음성 설정은 공용 경로를 사용하고 클라우드를 자동 선택하지 않는다.
+
+Test Coverage Map: `character-theme.test.ts` 원문 확장·손상·상한·themeId, `chat.test.ts` 새 session/첫 인사/이전 대화 분리, `e2e/character-theme.spec.ts` 기본/빈 목록/import 진행/성공/저장 실패 재시도/1100·360px/테마 편집·삭제/카드 전환·복원. 실 Agent→로컬 모델 증거는 실행 폴더 tmp의 별도 하네스에 기록하며 mock UI 증거와 구분한다.
+
+| UC | Test Coverage Map — 2회차 수용 |
+|---|---|
+| UC-B2C-026-R2 | `packages/shell/src/lib/__tests__/character-theme.test.ts`, `packages/shell/src/stores/__tests__/chat.test.ts`, `packages/shell/e2e/character-theme.spec.ts`: 원본 PNG·JSON 보존/내보내기, 확장·상한·손상, 카드별 themeId·테마 수정/삭제, 재시작 복원·첫 인사·이전 대화 분리, 기본·빈 목록·진행·성공·오류 재시도·1100/360px. 앱 host/context·공용 모델/음성은 `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`와 `packages/shell/src/apps/__tests__/installed-app-context-ownership.test.ts`에서 검증. |

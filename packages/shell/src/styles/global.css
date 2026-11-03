@@ -3299,6 +3299,41 @@ body.resizing-row {
 	pointer-events: none;
 }
 
+/* Card library controls keep their labels and touch targets at narrow widths. */
+.character-theme-settings > h3 {
+	margin: 12px 0 8px;
+}
+.character-theme-settings p {
+	margin: 6px 0;
+	line-height: 1.5;
+}
+.character-theme-settings button {
+	min-height: 40px;
+	max-width: 100%;
+	margin: 6px 6px 6px 0;
+	white-space: normal;
+}
+.character-theme-settings button:not(.settings-save-btn) {
+	padding: 8px 12px;
+	border: 1px solid var(--espresso-light);
+	border-radius: 6px;
+	background: transparent;
+	color: var(--cream);
+	font-size: 14px;
+	cursor: pointer;
+}
+.character-theme-settings button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.character-theme-settings output {
+	margin-top: 8px;
+	padding: 8px;
+	border-radius: 6px;
+	background: var(--espresso-light);
+	font-size: 14px;
+}
+
 .settings-save-btn {
 	pointer-events: auto;
 	padding: 10px 28px;

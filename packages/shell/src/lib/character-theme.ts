@@ -1,4 +1,7 @@
-import type { NormalizedCharacterCard } from "../apps/charcard/card-parser";
+import {
+	parseCharacterCardJsonText,
+	type NormalizedCharacterCard,
+} from "../apps/charcard/card-parser";
 import { buildRoleplayPrompt } from "../apps/charcard/prompt-builder";
 import type { AppConfig } from "./config";
 import { Logger } from "./logger";
@@ -74,3 +77,63 @@ export function readCharacterThemes(value: unknown): CharacterTheme[] {
 		})
 		.slice(0, 30);
 }
+
+/** Workspace-owned library; source bytes preserve PNG artwork and unknown metadata. */
+export interface SavedCharacterCard {
+	version: 1;
+	id: string;
+	name: string;
+	rawJson: Record<string, unknown>;
+	greeting: string;
+	sourceName: string;
+	sourceBase64: string;
+	themeId?: string;
+}
+export const CARD_LIBRARY_MAX_BYTES = 2_000_000;
+export function readCharacterLibrary(value: unknown): SavedCharacterCard[] {
+	Logger.debug("CharacterTheme", "read card library");
+	if (
+		!Array.isArray(value) ||
+		value.length > 30 ||
+		JSON.stringify(value).length > CARD_LIBRARY_MAX_BYTES
+	)
+		return [];
+	const ids = new Set<string>();
+	return value.filter((item): item is SavedCharacterCard => {
+		if (!item || typeof item !== "object") return false;
+		const c = item as SavedCharacterCard;
+		if (
+			c.version !== 1 ||
+			typeof c.id !== "string" ||
+			!/^[\w-]{1,100}$/.test(c.id) ||
+			ids.has(c.id) ||
+			typeof c.name !== "string" ||
+			typeof c.greeting !== "string" ||
+			c.greeting.length > 24_000 ||
+			typeof c.sourceName !== "string" ||
+			typeof c.sourceBase64 !== "string" ||
+			!/^[A-Za-z0-9+/]*={0,2}$/.test(c.sourceBase64) ||
+			(c.themeId !== undefined && typeof c.themeId !== "string")
+		)
+			return false;
+		const parsed = parseCharacterCardJsonText(
+			JSON.stringify(c.rawJson),
+			"json",
+		);
+		if (!parsed.ok || parsed.card.name !== c.name) return false;
+		ids.add(c.id);
+		return true;
+	});
+}
+export function libraryCard(
+	value: SavedCharacterCard,
+): NormalizedCharacterCard {
+	Logger.debug("CharacterTheme", "restore library card", { id: value.id });
+	const parsed = parseCharacterCardJsonText(
+		JSON.stringify(value.rawJson),
+		"json",
+	);
+	if (!parsed.ok) throw new Error("invalid saved card");
+	return parsed.card;
+}
+export { cardGreeting } from "./character-greeting";

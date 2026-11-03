@@ -1,3 +1,5 @@
+import { listen } from "@tauri-apps/api/event";
+import { ensureBgmSidecar } from "../../lib/bgm-sidecar-url";
 import {
 	act,
 	cleanup,
@@ -13,7 +15,13 @@ import {
 	clearCameraActions,
 	registerCameraActions,
 } from "../../lib/avatar/camera-actions";
-import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
+import {
+	fetchAgentSkills,
+	isNewCore,
+	sendChatMessage,
+	sendAppSkillsClear,
+	cancelChat,
+} from "../../lib/chat-service";
 import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
 import type { AgentResponseChunk, EnvironmentSegment } from "../../lib/types";
 import * as voiceSessionApi from "../../lib/voice/index";
@@ -225,6 +233,14 @@ class FakeSpeechRecognition {
 
 describe("ChatArea", () => {
 	beforeEach(() => {
+		vi.mocked(listen).mockResolvedValue(() => {});
+		vi.mocked(sendChatMessage).mockImplementation(async (opts) => {
+			capturedOnChunk = opts.onChunk;
+			capturedRequests.push(opts as (typeof capturedRequests)[number]);
+		});
+		vi.mocked(sendAppSkillsClear).mockResolvedValue(true);
+		vi.mocked(cancelChat).mockResolvedValue(undefined);
+		vi.mocked(ensureBgmSidecar).mockResolvedValue("http://localhost:18791");
 		localStorage.setItem("naia-adk-path", "/tmp/chat-area-test-adk");
 		mockSendAppSkills.mockReset().mockResolvedValue(true);
 		vi.mocked(fetchAgentSkills).mockResolvedValue([]);

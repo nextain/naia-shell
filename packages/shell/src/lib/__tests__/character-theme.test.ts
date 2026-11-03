@@ -3,6 +3,10 @@ import { parseCharacterCardJsonText } from "../../apps/charcard/card-parser";
 import {
 	type CharacterTheme,
 	characterCardPatch,
+	cardGreeting,
+	libraryCard,
+	readCharacterLibrary,
+	CARD_LIBRARY_MAX_BYTES,
 	readCharacterThemes,
 	themePatch,
 } from "../character-theme";
@@ -82,5 +86,67 @@ describe("UC-B2C-026 character settings", () => {
 				{ ...theme, ttsProvider: "unknown" },
 			]),
 		).toEqual([theme]);
+	});
+});
+
+const raw = {
+	spec: "chara_card_v2",
+	spec_version: "2.0",
+	data: {
+		name: "Garden",
+		description: "Kind",
+		first_mes: "Hello {{user}}",
+		extensions: { unknown: "preserve me" },
+	},
+};
+const saved = {
+	version: 1 as const,
+	id: "card-1",
+	name: "Garden",
+	greeting: "Hello Luke",
+	rawJson: raw,
+	sourceName: "garden.json",
+	sourceBase64: btoa(JSON.stringify(raw)),
+	themeId: "theme-1",
+};
+describe("UC-B2C-026-R2 library", () => {
+	it("round trips original bytes and unknown fields through persisted preferences", () => {
+		const restored = readCharacterLibrary(JSON.parse(JSON.stringify([saved])));
+		expect(restored).toEqual([saved]);
+		expect(atob(restored[0].sourceBase64)).toBe(JSON.stringify(raw));
+		expect(libraryCard(restored[0]).rawJson).toEqual(raw);
+	});
+	it("rejects damaged, duplicate and oversized libraries", () => {
+		expect(
+			readCharacterLibrary([
+				{ ...saved, rawJson: {} },
+				saved,
+				saved,
+				{ ...saved, id: "../escape" },
+			]),
+		).toEqual([saved]);
+		expect(readCharacterLibrary(Array(31).fill(saved))).toEqual([]);
+		expect(
+			readCharacterLibrary([
+				{ ...saved, sourceBase64: "A".repeat(CARD_LIBRARY_MAX_BYTES) },
+			]),
+		).toEqual([]);
+	});
+	it("greets only for a valid selected card, with substitutions and disabled persona respected", () => {
+		const cfg = {
+			provider: "ollama",
+			model: "local",
+			apiKey: "",
+			userName: "Luke",
+			uiPreferences: { b2cActiveCardId: saved.id, b2cCardLibrary: [saved] },
+		};
+		expect(cardGreeting(cfg)).toBe("Hello Luke");
+		expect(cardGreeting({ ...cfg, personaDisabled: true })).toBe("");
+		expect(
+			cardGreeting({
+				...cfg,
+				uiPreferences: { b2cActiveCardId: "missing", b2cCardLibrary: [saved] },
+			}),
+		).toBe("");
 	});
 });

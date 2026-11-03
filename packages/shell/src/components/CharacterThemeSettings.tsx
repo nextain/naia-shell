@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useChatStore } from "../stores/chat";
 import {
 	MAX_CARD_FILE_BYTES,
 	type NormalizedCharacterCard,
@@ -6,19 +7,24 @@ import {
 } from "../apps/charcard/card-parser";
 import {
 	type CharacterTheme,
+	type SavedCharacterCard,
+	CARD_LIBRARY_MAX_BYTES,
+	libraryCard,
+	readCharacterLibrary,
 	characterCardPatch,
 	readCharacterThemes,
 } from "../lib/character-theme";
-import type { AppConfig } from "../lib/config";
+import { loadConfig, type AppConfig } from "../lib/config";
 import { getLocale } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 
 interface Props {
 	config: AppConfig;
 	currentTheme: Omit<CharacterTheme, "id" | "name" | "version">;
-	onCard: (patch: Partial<AppConfig>) => Promise<void>;
+	onCard: (patch: Partial<AppConfig>, theme?: CharacterTheme) => Promise<void>;
 	onTheme: (theme: CharacterTheme) => Promise<void>;
 	onSaveThemes: (themes: CharacterTheme[]) => Promise<void>;
+	onPreferences: (patch: Record<string, unknown>) => Promise<void>;
 }
 
 export function CharacterThemeSettings({
@@ -27,10 +33,26 @@ export function CharacterThemeSettings({
 	onCard,
 	onTheme,
 	onSaveThemes,
+	onPreferences,
 }: Props) {
+	const streaming = useChatStore((state) => state.isStreaming);
 	const ko = getLocale() === "ko";
 	const copy = (en: string, kr: string) => (ko ? kr : en);
-	const [card, setCard] = useState<NormalizedCharacterCard | null>(null);
+
+	const [library, setLibrary] = useState(() =>
+		readCharacterLibrary(config.uiPreferences?.b2cCardLibrary),
+	);
+	const initialCard = library.find(
+		(c) => c.id === config.uiPreferences?.b2cActiveCardId,
+	);
+	const [card, setCard] = useState<NormalizedCharacterCard | null>(() =>
+		initialCard ? libraryCard(initialCard) : null,
+	);
+	const [cardId, setCardId] = useState(initialCard?.id ?? "");
+	const [source, setSource] = useState({
+		sourceName: initialCard?.sourceName ?? "",
+		sourceBase64: initialCard?.sourceBase64 ?? "",
+	});
 	const [busy, setBusy] = useState(false);
 	const busyRef = useRef(false);
 	const [error, setError] = useState("");
@@ -39,7 +61,7 @@ export function CharacterThemeSettings({
 	const [themes, setThemes] = useState(() =>
 		readCharacterThemes(config.uiPreferences?.b2cNvaThemes),
 	);
-	const [themeId, setThemeId] = useState("");
+	const [themeId, setThemeId] = useState(initialCard?.themeId ?? "");
 	const preview = card
 		? characterCardPatch(card, config.userName, getLocale())
 		: null;
@@ -56,8 +78,8 @@ export function CharacterThemeSettings({
 		} catch {
 			setError(
 				copy(
-					"Could not apply. Check your settings and try again.",
-					"적용하지 못했습니다. 설정을 확인하고 다시 시도해 주세요.",
+					"Could not apply. Wait for chat to finish, check settings and the library limit (30 cards / 2 MB), then try again.",
+					"적용하지 못했습니다. 진행 중인 대화가 끝난 뒤 설정과 라이브러리 용량(30장·2MB)을 확인하고 다시 시도해 주세요.",
 				),
 			);
 		} finally {
@@ -68,7 +90,7 @@ export function CharacterThemeSettings({
 
 	return (
 		<section
-			className="settings-field"
+			className="settings-field character-theme-settings"
 			aria-label={copy(
 				"Character cards and NVA themes",
 				"캐릭터 카드와 NVA 테마",
@@ -82,6 +104,90 @@ export function CharacterThemeSettings({
 					"SillyTavern PNG·JSON 카드를 확인한 뒤 성격·첫 인사·예시 대화를 적용합니다. 모델 선택은 유지됩니다. 로컬로 놀려면 모델 설정에서 로컬 모델을 선택하세요.",
 				)}
 			</p>
+			<label htmlFor="saved-character-card">
+				{copy("Card library", "카드 라이브러리")}
+			</label>
+			<select
+				id="saved-character-card"
+				value={cardId}
+				disabled={busy}
+				style={{ maxWidth: "100%" }}
+				onChange={(e) => {
+					const saved = library.find((c) => c.id === e.target.value);
+					setCardId(saved?.id ?? "");
+					setCard(saved ? libraryCard(saved) : null);
+					setThemeId(saved?.themeId ?? "");
+					setSource(
+						saved
+							? {
+									sourceName: saved.sourceName,
+									sourceBase64: saved.sourceBase64,
+								}
+							: { sourceName: "", sourceBase64: "" },
+					);
+				}}
+			>
+				<option value="">
+					{copy("Choose a saved card", "저장한 카드 선택")}
+				</option>
+				{library.map((c) => (
+					<option key={c.id} value={c.id}>
+						{c.name}
+					</option>
+				))}
+			</select>
+			<p className="settings-hint">
+				{copy(
+					"Up to 30 cards, 2 MB total including original PNG/JSON. Applying a card starts a new conversation. Select a saved theme below to link it to this card.",
+					"원본 PNG·JSON 포함 최대 30장·총 2MB. 카드 적용 시 새 대화를 시작합니다. 아래 저장한 테마를 고르면 이 카드에 연결됩니다.",
+				)}
+			</p>
+			{cardId && (
+				<button
+					type="button"
+					disabled={busy}
+					onClick={() => {
+						const binary = atob(source.sourceBase64);
+						const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+						const url = URL.createObjectURL(new Blob([bytes]));
+						const link = document.createElement("a");
+						link.href = url;
+						link.download = source.sourceName;
+						link.click();
+						setTimeout(() => URL.revokeObjectURL(url), 1000);
+					}}
+				>
+					{copy("Export original card", "원본 카드 내보내기")}
+				</button>
+			)}
+			{cardId && (
+				<button
+					type="button"
+					disabled={busy}
+					onClick={() =>
+						void run(async () => {
+							const next = library.filter((c) => c.id !== cardId);
+							await onPreferences({
+								b2cCardLibrary: next,
+								...(loadConfig()?.uiPreferences?.b2cActiveCardId === cardId
+									? { b2cActiveCardId: undefined }
+									: {}),
+							});
+							setLibrary(next);
+							setCardId("");
+							setCard(null);
+							setStatus(
+								copy(
+									"Card removed from library.",
+									"라이브러리에서 카드를 삭제했습니다.",
+								),
+							);
+						})
+					}
+				>
+					{copy("Delete card", "카드 삭제")}
+				</button>
+			)}
 			<label htmlFor="character-card-file">
 				{copy("Import card (PNG / JSON)", "카드 불러오기 (PNG / JSON)")}
 			</label>
@@ -106,9 +212,8 @@ export function CharacterThemeSettings({
 							);
 							return;
 						}
-						const parsed = await parseCharacterCardBytes(
-							new Uint8Array(await file.arrayBuffer()),
-						);
+						const bytes = new Uint8Array(await file.arrayBuffer());
+						const parsed = await parseCharacterCardBytes(bytes);
 						if (!parsed.ok) {
 							setError(
 								copy(
@@ -118,6 +223,10 @@ export function CharacterThemeSettings({
 							);
 							return;
 						}
+						let binary = "";
+						for (const byte of bytes) binary += String.fromCharCode(byte);
+						setSource({ sourceName: file.name, sourceBase64: btoa(binary) });
+						setCardId("");
 						setCard(parsed.card);
 					});
 				}}
@@ -144,14 +253,52 @@ export function CharacterThemeSettings({
 					<button
 						type="button"
 						className="settings-save-btn"
-						disabled={busy}
+						disabled={busy || streaming}
 						onClick={() =>
 							void run(async () => {
-								await onCard(preview.patch);
+								if (useChatStore.getState().isStreaming)
+									throw new Error("chat in progress");
+								const saved: SavedCharacterCard = {
+									version: 1,
+									id: cardId || crypto.randomUUID(),
+									name: card.name,
+									rawJson: card.rawJson,
+									greeting: preview.greeting,
+									...source,
+									...(themeId ? { themeId } : {}),
+								};
+								const next = [
+									...library.filter((c) => c.id !== saved.id),
+									saved,
+								];
+								if (
+									next.length > 30 ||
+									JSON.stringify(next).length > CARD_LIBRARY_MAX_BYTES
+								)
+									throw new Error("library limit");
+								const selectedTheme = themes.find(
+									(t) => t.id === saved.themeId,
+								);
+								await onCard(
+									{
+										...preview.patch,
+										uiPreferences: {
+											...loadConfig()?.uiPreferences,
+											b2cCardLibrary: next,
+											b2cActiveCardId: saved.id,
+										},
+									},
+									selectedTheme,
+								);
+								setLibrary(next);
+								setCardId(saved.id);
+								window.dispatchEvent(
+									new Event("naia-character-new-conversation"),
+								);
 								setStatus(
 									copy(
-										"Card applied. Continue in chat; the greeting is included in the persona.",
-										"카드를 적용했습니다. 채팅에서 이어가세요. 첫 인사는 페르소나에 포함됩니다.",
+										"Card applied. A new conversation starts with the greeting.",
+										"카드를 적용했습니다. 새 대화에서 첫 인사로 시작합니다.",
 									),
 								);
 							})
@@ -251,6 +398,62 @@ export function CharacterThemeSettings({
 						{copy("Apply theme", "테마 적용")}
 					</button>
 				</>
+			)}
+			{themeId && (
+				<div>
+					<button
+						type="button"
+						disabled={busy || !name.trim() || !currentTheme.nvaModel}
+						onClick={() =>
+							void run(async () => {
+								const next = themes.map((t) =>
+									t.id === themeId
+										? {
+												...currentTheme,
+												version: 1 as const,
+												id: t.id,
+												name: name.trim(),
+											}
+										: t,
+								);
+								if (readCharacterThemes(next).length !== next.length)
+									throw new Error("invalid theme");
+								await onSaveThemes(next);
+								setThemes(next);
+								setStatus(copy("Theme updated.", "테마를 수정했습니다."));
+							})
+						}
+					>
+						{copy("Update selected theme", "선택한 테마 수정")}
+					</button>
+					<button
+						type="button"
+						disabled={busy}
+						onClick={() =>
+							void run(async () => {
+								const next = themes.filter((t) => t.id !== themeId);
+								const cards = library.map((c) =>
+									c.themeId === themeId ? { ...c, themeId: undefined } : c,
+								);
+								await onPreferences({
+									b2cNvaThemes: next,
+									b2cCardLibrary: cards,
+								});
+								setThemes(next);
+								setLibrary(cards);
+								setThemeId("");
+								setStatus(
+									copy(
+										"Theme deleted. Card links cleared.",
+										"테마를 삭제하고 카드 연결을 해제했습니다.",
+									),
+								);
+							})
+						}
+					>
+						{copy("Delete selected theme", "선택한 테마 삭제")}
+					</button>
+				</div>
 			)}
 			{busy && (
 				<output style={{ display: "block" }}>

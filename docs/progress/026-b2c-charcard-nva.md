@@ -56,3 +56,27 @@
 | 11/9 | 기능 고정, 미통과 항목 분리·동결 후보 해시·11/13 출시 판정 자료 작성 |
 
 최종 재검증: trace 소유권 표기 후 agent-bench scenario-source 계약 14/14 통과. 최종 production Vite build와 bundle budget 통과(entry raw 483,630 / 540,000 bytes, gzip 152,516 / 170,000 bytes). 이 빌드는 native installer가 아니다. 관련 로그는 실행 폴더 `tmp/harness-tests.log`, `tmp/final-build.log`, `tmp/final-bundle-budget.log`.
+
+## 2회차 설계 — 11/4·11/5 (2026-11-03)
+
+P01~P03 확장: 카드 라이브러리는 workspace ui-config의 uiPreferences.b2cCardLibrary v1로 저장한다. 원본 JSON(미지 확장 포함)을 보존하고 재선택 시 parser로 다시 검증한다. PNG·JSON 원본 바이트도 base64로 보존하고 원본 내보내기를 제공한다. 원본 포함 직렬화 JSON 총 2MB/30장 상한을 두어 설정 저장 폭증을 방지한다. 카드 ID는 UUID, themeId는 저장된 테마에만 연결한다. 삭제한 테마 참조는 같은 쓰기에서 해제한다. 카드 적용은 현재 대화를 수정하지 않으며, 명시적인 '새 카드 대화' 행동에서만 새 session과 assistant 첫 인사를 만든다. 기존 session의 카드 문맥 오염을 막기 위해 다른 카드 적용은 새 대화 시작과 결합한다. 모델·음성 공급자 선택은 기존 Settings와 Agent 설정 경로를 공유하며 별도 카드 provider를 만들지 않는다.
+
+P02: 단위 시험은 원본 확장 보존/손상 데이터/상한/연결 해제/새 session 첫 인사/이전 메시지 분리를 확인한다. Playwright는 빈 목록→import→저장→카드 재선택→테마 연결/수정/삭제→새 대화→첫 인사 및 1100/360px, 진행 잠금·쓰기 오류 재시도를 확인한다. 재시작은 persisted config 재주입으로 검증하며 native 파일 저장과 구분한다. 실제 로컬 모델은 격리 실행 폴더에서 작은 모델 하나만 사용하고 Agent 응답·finish·선택 provider 유지 증거를 남긴다. 시각 검토는 verify-visual-ux를 적용한다.
+
+세션 상태: 헌장 파일 수정 승인 없이 process-status.json을 갱신하지 않는다(F01 우선). 기존 root whitelist 2건은 baseline 유지. assembly와 conform TS file oracle를 먼저 실행한다. 전체 제품/네이티브 수용은 이번 slice 증거 범위와 분리한다.
+
+
+앱 통합 P01~P03: #811의 host bridge를 선택 이식하여 installed app은 model.ask/speech/locale 권한과 source/origin/requestId 검증을 거친다. 모델·음성은 ChatArea의 기존 sendChatMessage와 sentence-pipeline을 공유한다. 앱 context는 활성 iframe 소유로 한정하고 닫힌/교체된 iframe의 지연 push를 거절한다. native 활성 카드가 있을 때 charcard 앱의 roleplay context를 이중 주입하지 않는다. P02 매핑은 host bridge 보안/공용 dispatch·context 소유권 Vitest 및 Playwright. Rust 권한 registry 변경은 TS와 parity 시험으로 확인하고 native 전체 수용과 구분한다.
+
+## 2회차 P04·P05 증거 (2026-11-03)
+
+- 카드 원본은 PNG·JSON 전체 바이트(base64), 원본 파일명, rawJson과 생성 ID로 보관/내보낸다. ADK `naia-settings/ui-config.json`의 `uiPreferences.b2cCardLibrary`(최대 30장/직렬화 2MB), `b2cActiveCardId`, 카드별 themeId를 사용한다. 선택 시 parser로 다시 해석하고, 저장 시 생성한 greeting을 보관한다. 기존 20MB parser 상한과 라이브러리 2MB 상한은 다르며 UI에 안내한다. 큰 원본을 개별 파일로 분리하는 확장은 별도다.
+- 카드 적용과 명시적 새 대화가 결합되어 새 localSessionId/assistant 첫 인사를 만든다. 기존 메시지 배열은 덮어쓰지 않는다. 진행 중 모델 응답에서는 카드 적용을 잠근다. 현재 카드 모델/음성은 기존 공용 설정을 그대로 사용한다. 테마 삭제는 카드 참조를 같은 preferences 쓰기에서 해제한다.
+- 360px 재시작 검증에서 다른 UI 설정 writer가 비동기 카드 저장 중 이전 config를 다시 저장하는 경쟁을 발견했다. pending 카드 설정을 bootstrap에 먼저 공표하고 쓰기 실패 시 이전 필드·config를 복구하며 UI preferences 쓰기 성공을 별도 확인하도록 보강했다. 복구 쓰기 자체가 실패하는 장치 장애까지 원자 트랜잭션을 보장한다는 뜻은 아니다.
+- 최종 Shell 전체 253파일 통과/1제외, **2645 통과/21 제외**, 실패0: 실행 폴더 `tmp/r2-final-full-shell.log`. 카드/대화 40, 앱 연결 회귀 181 통과는 각각 `r2-focused-final.log`, `context-regression-final.log`. 초기 개발 중 mock Promise 계약 실패는 기존 fixture에서 정상 비동기 반환값을 복원한 후 재검증했다.
+- Playwright 실제 셸 화면 1100/360px **2/2**: `tmp/r2-e2e-visual.log`, `tmp/r2-playwright-visual/`. 카드 두 장 전환·재시작 복원·원본 PNG 내보내기 바이트 일치·테마 연결/수정/삭제·첫 인사·기존 대화 분리·provider/model 유지·config/UI-config 쓰기 실패 재시도·진행 잠금·Enter·경계 검사. IPC 파일 저장은 fixture이며 실 native 저장 증거가 아니다.
+- verify-visual-ux: 빈 목록/기본/import 진행/성공/오류·재시도/좁은 폭 상태 확인. import→preview→새 대화 적용과 테마 행동의 위계를 유지했고, 작던 보조 버튼을 40px 이상으로 보정했다. 원본 내보내기·테마 선택·대화 screenshot을 직접 열어 확인했다. 테스트 자산은 decode fixture이므로 실제 NVA 재생/TTS를 입증하지 않는다.
+- 실제 로컬 모델 **qwen2.5:0.5b**, 397,821,319 bytes, CPU, 1개만 `tmp/local-model/models/`에 설치. 실제 Shell core→Agent gRPC→ADK config persona 조립→Ollama 두 턴, 연결거절 시 error/클라우드 fallback0을 확인했다. 실제 Chromium ChatArea→sendChatMessage→core→IPC 하네스→실 Agent→실 생성→DOM도 확인했다. 마지막 requestId `req-1793706651320-p0yil`, 414 input/23 output, cost0, finish1. 원문 “Mira, I am Mira, an astronomer from the Moon Garden. Vega is my favorite star.”. `tmp/local-model/{evidence.json,browser-evidence.json,real-local-card-browser-chat.png,README.md}`. loopback 외 모델 fetch를 차단했다. Rust/packaged Agent entry까지 검증한 것은 아니다.
+- core/Shell/BGM TypeScript·compile-integrity·assembly·file-anchor·logging·UC trace·scenario-source14 통과. Agent 전체 원본 tsconfig도 실제 dependency 선언을 tmp에 빌드해 통과: `tmp/local-model/full-typecheck/evidence.json`(Agent a4aef165, memory008eac79, kb403edb02). 타입 stub 없음. 최종 production build/entry budget 통과: `tmp/r2-final-build.log`.
+- native 차단 사실: 지정 Agent main a4aef165/proto20d9aa6e와 셸 핀 fdc6fcb5/proto71e4cb6b가 다르며 resolver가 거절했다(`tmp/r2-native-pairing.log`). cargo/tauri-driver/WebKitWebDriver/기존 바이너리도 없다. 핀을 우회하거나 다른 작업자의 Agent를 사용하지 않았다. native 설치판 저장·NVA·음성은 11/6~11/7 수용에 남긴다.
+- 초기 root whitelist `tmp/`, `tsconfig.build.json` 2건은 그대로다. 헌장 파일과 외부 읽기전용 문서는 변경하지 않았다. 프로세스 갱신은 F01과 충돌해 이 ledger에 기록한다. 설치 앱 appName 태그는 세션 내 history에서 제외되지만 Agent 디스크 히스토리 복원 뒤 태그 보존은 후속이다. 운영 접속·자격 사용·push는 없다.

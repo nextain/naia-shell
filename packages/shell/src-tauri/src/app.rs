@@ -1018,6 +1018,8 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
     "downloads",
     "modals",
     "speech",
+    "model.ask",
+    "locale",
     "environment",
     "files.pick",
     "media.record",

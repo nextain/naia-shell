@@ -3087,16 +3087,42 @@ export function SettingsTab() {
 		const path = getAdkPath();
 		const cfg = loadConfig();
 		if (!path || !cfg) throw new Error("workspace required");
-		await writeNaiaConfigAtPath(
-			{ ...cfg, ...patch } as unknown as Record<string, unknown>,
-			path,
+		const priorFields = Object.fromEntries(
+			Object.keys(patch).map((key) => [key, cfg[key as keyof AppConfig]]),
 		);
+		// Publish the pending selection before asynchronous persistence so another
+		// UI preference writer cannot enqueue the previous card as a full config.
+		saveConfig({ ...cfg, ...patch });
+		try {
+			await writeNaiaConfigAtPath(
+				{ ...cfg, ...patch } as unknown as Record<string, unknown>,
+				path,
+			);
+			if (
+				patch.uiPreferences &&
+				!(await writeNaiaUiConfig({ uiPreferences: patch.uiPreferences }, path))
+			) {
+				throw new Error("card preferences write failed");
+			}
+		} catch (error) {
+			if (getAdkPath() === path)
+				saveConfig({ ...loadConfig()!, ...priorFields });
+			// A partial config/UI write must not silently switch the active card.
+			await writeNaiaConfigAtPath(
+				cfg as unknown as Record<string, unknown>,
+				path,
+			).catch(() => {});
+			throw error;
+		}
 		if (getAdkPath() !== path) throw new Error("workspace changed");
 		// Merge only our fields after the async write, preserving unrelated UI edits.
 		saveConfig({ ...loadConfig()!, ...patch });
 	}
 
-	async function applyCharacterTheme(selected: CharacterTheme) {
+	async function applyCharacterTheme(
+		selected: CharacterTheme,
+		extra: Partial<AppConfig> = {},
+	) {
 		const sourceAdk = getAdkPath();
 		if (
 			!naiaNvas.some((path) => path.split(/[/\\]/).pop() === selected.nvaModel)
@@ -3109,7 +3135,7 @@ export function SettingsTab() {
 			throw new Error("background is not installed");
 		const bgUrl = bg ? await toLocalBlobUrl(bg) : "";
 		if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
-		await persistCharacterSettings(themePatch(selected));
+		await persistCharacterSettings({ ...themePatch(selected), ...extra });
 		setAvatarProvider("naia-video-avatar");
 		setNvaModel(selected.nvaModel);
 		setTtsProvider(selected.ttsProvider);
@@ -4579,13 +4605,19 @@ export function SettingsTab() {
 								ttsVoice,
 								backgroundVideo: backgroundVideoFilename,
 							}}
-							onCard={async (patch) => {
-								await persistCharacterSettings(patch);
+							onCard={async (patch, theme) => {
+								if (theme) await applyCharacterTheme(theme, patch);
+								else await persistCharacterSettings(patch);
 								setPersona(patch.persona ?? "");
 								setAgentName(patch.agentName ?? "");
 								setPersonaDisabled(false);
 							}}
 							onTheme={applyCharacterTheme}
+							onPreferences={async (patch) => {
+								await persistCharacterSettings({
+									uiPreferences: { ...loadConfig()?.uiPreferences, ...patch },
+								});
+							}}
 							onSaveThemes={async (themes) => {
 								await persistCharacterSettings({
 									uiPreferences: {
