@@ -1,3 +1,4 @@
+import "./lib/web-runtime/auto-install";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -6,7 +7,26 @@ import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri
 import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
 import { Logger } from "./lib/logger";
+import { syncWebModeRootAttribute } from "./lib/web-runtime/web-assets";
 import "./styles/global.css";
+import "./styles/web-mode.css";
+
+syncWebModeRootAttribute();
+
+if (import.meta.env.MODE === "web" && "serviceWorker" in navigator) {
+	void navigator.serviceWorker.register("/sw.js").then(async () => {
+		const registration = await navigator.serviceWorker.ready;
+		const cacheAssets = (entries: PerformanceEntry[]) => {
+			registration.active?.postMessage({ type: "CACHE_PUBLIC_ASSETS", urls: entries.map((entry) => entry.name) });
+		};
+		cacheAssets(performance.getEntriesByType("resource"));
+		if (typeof PerformanceObserver !== "undefined") {
+			new PerformanceObserver((list) => cacheAssets(list.getEntries())).observe({ type: "resource" });
+		}
+	}).catch((error: unknown) => {
+		Logger.warn("PWA", "Service worker registration failed", { error: String(error) });
+	});
+}
 
 if (
 	import.meta.env.DEV &&

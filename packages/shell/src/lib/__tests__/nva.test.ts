@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	collectNvaManifestClipPaths,
 	defaultClipOf,
 	parseNvaManifest,
 	resolveDefaultAnimation,
@@ -215,5 +216,69 @@ describe("NVA manifest contract (v0.2)", () => {
 		expect(() => parseNvaManifest(JSON.stringify(noIdle))).toThrow(
 			/no playable default clip/,
 		);
+	});
+
+	it("collects all renderer-accessible clip paths including animations, vrm_slots, prebaked_speech, speech_clips, by_locale, and stacked_alpha", () => {
+		const paths = collectNvaManifestClipPaths({
+			nva_version: "0.2",
+			canvas: { width: 720, height: 1280 },
+			animations: {
+				idle: { clip: "clips/idle.webm", loop: true, can_talk: false },
+				talking: { clip: "clips/talking.webm", loop: true, can_talk: true },
+			},
+			vrm_slots: {
+				visemes: { aiueo: { clip: "clips/viseme-aiueo.webm" } },
+				motions: { wave: { clip: "clips/motion-wave.webm" } },
+				speech: {
+					greet: {
+						clip: "clips/vrm-speech-default.webm",
+						by_locale: {
+							"ko-KR": { clip: "clips/vrm-speech-ko.webm" },
+							"en-US": { clip: "clips/vrm-speech-en.webm" },
+						},
+					},
+				},
+			},
+			prebaked_speech: {
+				utterances: {
+					hello: {
+						clip: "clips/prebaked-default.webm",
+						by_locale: {
+							"ja-JP": { clip: "clips/prebaked-ja.webm" },
+						},
+					},
+				},
+			},
+			speech_clips: {
+				"speech-ko": {
+					clip: "clips/speech-clip-ko.webm",
+					by_locale: {
+						"en-US": { clip: "clips/speech-clip-en.webm" },
+					},
+				},
+			},
+			stacked_alpha: {
+				layout: "color-top-alpha-bottom",
+				clips: {
+					"clips/idle.webm": "clips/idle.stacked.mp4",
+				},
+			},
+		});
+
+		expect(paths).toEqual([
+			"clips/idle.webm",
+			"clips/talking.webm",
+			"clips/viseme-aiueo.webm",
+			"clips/motion-wave.webm",
+			"clips/vrm-speech-default.webm",
+			"clips/vrm-speech-ko.webm",
+			"clips/vrm-speech-en.webm",
+			"clips/prebaked-default.webm",
+			"clips/prebaked-ja.webm",
+			"clips/speech-clip-ko.webm",
+			"clips/speech-clip-en.webm",
+			"clips/idle.webm",
+			"clips/idle.stacked.mp4",
+		]);
 	});
 });

@@ -16,13 +16,16 @@ import {
 	markFirstAdkBinding,
 	saveSecretKeyAtPath,
 } from "./secure-store";
-import { NAIA_SLOT_DEFAULTS } from "./slots/model";
 import type { ProviderId } from "./types";
 import {
 	NAIA_INSTANCE_URLS,
 	naiaLaunchMode,
 	resolveNaiaInstance,
 } from "./naia-instance-urls";
+import {
+	isWebMode,
+	normalizeRetiredWebBackgroundInRecord,
+} from "./web-runtime/web-assets";
 
 const STORAGE_KEY = "naia-config";
 
@@ -80,7 +83,10 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 	};
 
 	const ttsProvider = raw.ttsProvider;
-	if (typeof ttsProvider === "string" && RETIRED_TTS_PROVIDERS.has(ttsProvider)) {
+	if (
+		typeof ttsProvider === "string" &&
+		RETIRED_TTS_PROVIDERS.has(ttsProvider)
+	) {
 		raw.ttsProvider = "edge";
 		remove("ttsVoice");
 		changed = true;
@@ -90,8 +96,7 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 		RETIRED_STT_PROVIDERS.has(raw.sttProvider)
 	) {
 		const isLinux =
-			typeof navigator !== "undefined" &&
-			navigator.userAgent.includes("Linux");
+			typeof navigator !== "undefined" && navigator.userAgent.includes("Linux");
 		raw.sttProvider = isLinux ? "vosk" : "web-speech";
 		changed = true;
 	}
@@ -135,6 +140,9 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 	}
 
 	for (const key of RETIRED_VOICE_CONFIG_KEYS) remove(key);
+	if (isWebMode() && normalizeRetiredWebBackgroundInRecord(raw)) {
+		changed = true;
+	}
 	return { config, changed };
 }
 
@@ -231,7 +239,7 @@ export type TtsProviderId =
 
 export type AppPosition = "left" | "right" | "bottom";
 
-export type ThinkingLevel = "off" | "low" | "high";
+export type ThinkingLevel = "off" | "low" | "high" | "xhigh";
 
 /**
  * 생각 세기 마이그레이션 및 정규화 (#709 / FR-CHAT-THINKING.4)
@@ -239,21 +247,44 @@ export type ThinkingLevel = "off" | "low" | "high";
  * - 부재/무효 시 enableThinking === true 이면 "low", 그 밖에는 "off"
  */
 export function resolveThinkingLevel(
-	config?: Partial<Pick<AppConfig, "thinkingLevel" | "enableThinking">> | null,
+	config?: Partial<Pick<AppConfig, "thinkingLevel" | "enableThinking" | "llmRoles">> | null,
 ): ThinkingLevel {
+	const roleLevel = config?.llmRoles?.main?.thinkingLevel;
+	if (roleLevel === "off" || roleLevel === "low" || roleLevel === "high" || roleLevel === "xhigh") return roleLevel;
 	if (
 		config?.thinkingLevel === "off" ||
 		config?.thinkingLevel === "low" ||
-		config?.thinkingLevel === "high"
+		config?.thinkingLevel === "high" ||
+		config?.thinkingLevel === "xhigh"
 	) {
 		return config.thinkingLevel;
 	}
 	return config?.enableThinking === true ? "low" : "off";
 }
 
+/**
+ * 웹판 WebLLM Qwen3는 `enable_thinking` 켬/끔 두 단계만 제공한다(결정 정본 D39).
+ * 옛 저장값 `low`·`high` 는 켬(`true`)으로 읽고, `off` 는 끔(`false`)으로 읽는다.
+ */
+export function resolveWebThinkingEnabled(
+	config?: Partial<Pick<AppConfig, "thinkingLevel" | "enableThinking">> | null,
+): boolean {
+	if (config?.thinkingLevel === "off") return false;
+	if (
+		config?.thinkingLevel === "low" ||
+		config?.thinkingLevel === "high" ||
+		config?.thinkingLevel === "xhigh" ||
+		(config as { thinkingLevel?: unknown } | null)?.thinkingLevel === "on"
+	) {
+		return true;
+	}
+	return config?.enableThinking === true;
+}
+
 /** Development tiers are expert/main/sub; memory remains orthogonal. */
 export type LlmRoleId = "expert" | "main" | "sub" | "memory";
 export interface LlmRoleConfig {
+	thinkingLevel?: ThinkingLevel;
 	provider?: ProviderId;
 	model?: string;
 	baseUrl?: string;
@@ -266,12 +297,14 @@ export interface AppConfig {
 	provider: ProviderId;
 	model: string;
 	/** Settings-only model catalog ordering. Persisted in ui-config.json. */
-	modelSortMode?: "price" | "performance";
+	modelSortMode?: "recommended" | "price" | "performance";
 	/** UI preferences are persisted with the selected ADK's ui-config.json. */
 	uiPreferences?: Record<string, unknown>;
 	apiKey: string;
 	/** main/sub/memory 신규 정본. 전환 기간에는 legacy flat 필드와 dual-read/write한다. */
 	llmRoles?: Partial<Record<LlmRoleId, LlmRoleConfig>>;
+	/** Web workspace still using the automatically selected default model. */
+	webAutoDefaultModel?: boolean;
 	subLlmProvider?: ProviderId;
 	subLlmModel?: string;
 	subLlmBaseUrl?: string;
@@ -677,9 +710,22 @@ export function loadConfig(): AppConfig | null {
 		if (normalized.changed) {
 			localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
 		}
-		// Default STT provider: web-speech on Windows/macOS (Chromium WebView),
-		// vosk on Linux (WebKitGTK doesn't support Web Speech API)
-		if (!config.sttProvider) {
+		// Default STT/TTS provider:
+		// - In web mode: browser built-in SpeechRecognition ("web-speech") and speechSynthesis ("browser").
+		// - On desktop: web-speech on Windows/macOS (Chromium WebView), vosk on Linux (WebKitGTK).
+		if (isWebMode()) {
+			if (
+				!config.sttProvider ||
+				config.sttProvider === "vosk" ||
+				config.sttProvider === "whisper" ||
+				config.sttProvider === "vllm"
+			) {
+				config.sttProvider = "web-speech";
+			}
+			if (!config.ttsProvider || config.ttsProvider !== "browser") {
+				config.ttsProvider = "browser";
+			}
+		} else if (!config.sttProvider) {
 			const isLinux = navigator.userAgent.includes("Linux");
 			config.sttProvider = isLinux ? "vosk" : "web-speech";
 		}
@@ -696,10 +742,7 @@ export function saveConfig(config: AppConfig): void {
 	const normalized = normalizeRetiredVoiceConfig(
 		normalizeLocalRuntimeConfig(config),
 	).config;
-	localStorage.setItem(
-		STORAGE_KEY,
-		JSON.stringify(normalized),
-	);
+	localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
 	if (typeof window !== "undefined") {
 		window.dispatchEvent(new CustomEvent("naia-config-changed"));
 	}
@@ -768,17 +811,28 @@ export function isReadyToChat(): boolean {
 		config.provider === "claude-code-cli" ||
 		config.provider === "grok" ||
 		config.provider === "ollama" ||
-		config.provider === "vllm";
+		config.provider === "vllm" ||
+		(isWebMode() && config.provider === "webllm");
 	return noKeyNeeded || !!config.apiKey || !!config.naiaKey;
 }
 
 export function hasNaiaKey(): boolean {
 	const config = loadConfig();
-	return !!config?.naiaKey;
+	if (config?.naiaKey) return true;
+	if (isWebMode() && typeof localStorage !== "undefined") {
+		return Boolean(localStorage.getItem("naia-remote-key")?.trim());
+	}
+	return false;
 }
 
 export function getNaiaKey(): string | undefined {
-	return loadConfig()?.naiaKey;
+	const fromConfig = loadConfig()?.naiaKey;
+	if (fromConfig) return fromConfig;
+	if (isWebMode() && typeof localStorage !== "undefined") {
+		const remote = localStorage.getItem("naia-remote-key")?.trim();
+		return remote || undefined;
+	}
+	return undefined;
 }
 
 export function resolveGatewayUrl(
@@ -829,8 +883,8 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 	// ADK remains the authority; an empty ADK still returns null and cannot inherit
 	// another ADK's credential.
 	const config: AppConfig = publicConfig ?? {
-		provider: NAIA_SLOT_DEFAULTS.main.provider,
-		model: NAIA_SLOT_DEFAULTS.main.model,
+		provider: "",
+		model: "",
 		apiKey: "",
 	};
 	for (const key of SECRET_KEYS) {
@@ -838,9 +892,19 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 		// The selected ADK is the only source of truth. Clear any legacy secret
 		// left in localStorage so switching A → B cannot reuse A's credential.
 		(config as any)[key] = securePath
-			? (await getSecretKeyAtPath(key, securePath)) ?? undefined
+			? ((await getSecretKeyAtPath(key, securePath)) ?? undefined)
 			: undefined;
 		assertSelectedAdkPath(securePath, "Loading configuration");
+	}
+	if (isWebMode() && !config.naiaKey && typeof localStorage !== "undefined") {
+		const webKey = localStorage.getItem("naia-remote-key")?.trim();
+		if (webKey) {
+			config.naiaKey = webKey;
+		}
+		const webUserId = localStorage.getItem("naia-remote-user-id")?.trim();
+		if (webUserId && !config.naiaUserId) {
+			config.naiaUserId = webUserId;
+		}
 	}
 	assertSelectedAdkPath(securePath, "Loading configuration");
 	if (!publicConfig && !config.naiaKey) return null;
@@ -862,9 +926,7 @@ export async function saveConfigSecure(config: AppConfig): Promise<void> {
 		return typeof value === "string" && value.length > 0;
 	});
 	if (!securePath && hasSecretInput) {
-		throw new Error(
-			"Cannot save credentials without a selected ADK workspace",
-		);
+		throw new Error("Cannot save credentials without a selected ADK workspace");
 	}
 
 	for (const key of SECRET_KEYS) {
@@ -1025,6 +1087,7 @@ export async function hasApiKeySecure(): Promise<boolean> {
 }
 
 export async function getNaiaKeySecure(): Promise<string | undefined> {
+	if (isWebMode()) return getNaiaKey();
 	return (await getSecretKey("naiaKey")) ?? undefined;
 }
 
@@ -1203,7 +1266,9 @@ export function getUserName(): string | undefined {
  * back to prod just because the dev URL env is empty.
  */
 const _INSTANCE_MODE = naiaLaunchMode({
-	useDevGateway: import.meta.env.VITE_NAIA_USE_DEV_GATEWAY as string | undefined,
+	useDevGateway: import.meta.env.VITE_NAIA_USE_DEV_GATEWAY as
+		| string
+		| undefined,
 	webBaseUrl: import.meta.env.VITE_NAIA_WEB_BASE_URL as string | undefined,
 	viteDev: import.meta.env.DEV,
 });

@@ -46,6 +46,7 @@ import {
 	resetNaiaPersistedSettings,
 	setAdkPath,
 	toAssetUrl,
+	toLocalBlobUrl,
 	writeAgentKeyStrict,
 	writeNaiaConfig,
 	writeNaiaConfigAtPath,
@@ -53,6 +54,12 @@ import {
 } from "../adk-store";
 import { mergeBootConfig } from "../config";
 import { buildSystemPrompt } from "../persona";
+import {
+	WEB_BACKGROUND_ASSETS,
+	WEB_NVA_ASSETS,
+	WEB_VRM_ASSETS,
+	setWebAssetsModeForTests,
+} from "../web-runtime/web-assets";
 
 // ── UC-MODEL-SELECT cross-seam contract ─────────────────────────────────────────
 // Regression guard for 2026-06-17: UI model selection MUST become the agent's
@@ -412,6 +419,66 @@ describe("listNaiaAssets", () => {
 		const result = await listNaiaAssets("bgm-musics");
 		expect(result[0]).toContain("bgm-musics");
 		expect(result[0]).toContain("Afternoon Whispers.mp3");
+	});
+});
+
+// ── listNaiaAssets / toLocalBlobUrl (웹판: dist 번들 카탈로그) ─────────────────
+// 데스크톱 invoke 경로를 타지 않고 번들 URL을 그대로 돌려준다.
+
+describe("web bundled assets (WO-03)", () => {
+	afterEach(() => {
+		setWebAssetsModeForTests(null);
+	});
+
+	it("lists bundled VRM URLs without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("vrm-files");
+		expect(result).toEqual(WEB_VRM_ASSETS.map((asset) => asset.url));
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("lists bundled background URLs (including live MP4 videos) without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("background");
+		expect(result).toEqual(WEB_BACKGROUND_ASSETS.map((asset) => asset.url));
+		expect(result).toContain("/backgrounds/naia-starlight-lake-live.mp4");
+		expect(result).toContain("/backgrounds/naia-rainy-studio-live.mp4");
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("lists 6 bundled NVA names without invoke in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		const result = await listNaiaAssets("nva-files");
+		expect(result).toEqual([
+			"naia",
+			"naia-anime",
+			"jina",
+			"jina-anime",
+			"minho",
+			"minho-anime",
+		]);
+		expect(result).toEqual(WEB_NVA_ASSETS);
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("returns empty arrays for non-bundled subdirs in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		await expect(listNaiaAssets("bgm-musics")).resolves.toEqual([]);
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("returns bundled/remote URLs as-is in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		await expect(
+			toLocalBlobUrl("/backgrounds/naia-dawn-city-uhd.webp"),
+		).resolves.toBe("/backgrounds/naia-dawn-city-uhd.webp");
+		await expect(toLocalBlobUrl("/avatars/03-OL_Woman.vrm")).resolves.toBe(
+			"/avatars/03-OL_Woman.vrm",
+		);
+		await expect(toLocalBlobUrl("avatars/03-OL_Woman.vrm")).resolves.toBe(
+			"/avatars/03-OL_Woman.vrm",
+		);
+		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 });
 

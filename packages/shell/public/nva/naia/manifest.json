@@ -1,0 +1,112 @@
+{
+  "nva_version": "0.2",
+  "meta": {
+    "name": "Naia (기본 캐릭터)",
+    "tagline": "Naia — The Liquid Cat",
+    "author": "nextain",
+    "owner": "nextain",
+    "license": "CC-BY-4.0 — Naia mascot © Nextain (naia-video-avatar 동봉 기본 자산)",
+    "created": "2026-08-05",
+    "description": "너의 AI, 액체 탄소로 이루어진 디지털 고양이 Naia. 로직 따라 투명하게 흘러다니다가 필요하면 다이아몬드처럼 단단해져 지켜준다.",
+    "persona": {
+      "type": "Rational Optimist (논리적 낙천주의자)",
+      "species": "네 컴퓨터에서 태어나 함께 자라는 디지털 생명체",
+      "role": "너와 디지털 세상 사이를 물처럼 잇는 살아있는 통로",
+      "value": "네 데이터는 밖으로 안 나가 — 로컬에서 내가 지킨다 (프라이버시)",
+      "home": "클라우드 없이 네 컴퓨터 안에 산다",
+      "traits": [
+        "지적 자신감(틀리면 솔직히 인정)",
+        "고양이 여유",
+        "투명한 솔직함 — 몸이 투명한 건 숨길 게 없어서",
+        "외형·성격 너에게 맞춰 바뀜"
+      ]
+    },
+    "note": "알파 채널을 포함해 배경을 자유롭게 합성하는 대기·발화·동작 NVA 예제.",
+    "style_label": "기본 화풍"
+  },
+  "canvas": {
+    "width": 720,
+    "height": 1280,
+    "fps": 25
+  },
+  "background": {
+    "type": "transparent"
+  },
+  "animations": {
+    "idle": {
+      "clip": "clips/idle.webm",
+      "loop": true,
+      "can_talk": false,
+      "face_bbox": [
+        0.294,
+        0.277,
+        0.414,
+        0.211
+      ],
+      "label": "대기",
+      "description": "평상시 대기 상태 (기본 루프)"
+    },
+    "talking": {
+      "clip": "clips/talking-ko.webm",
+      "loop": true,
+      "can_talk": true,
+      "label": "말하기 영상"
+    },
+    "crystal-heart": {
+      "loop": false,
+      "can_talk": false,
+      "label": "크리스털 하트",
+      "clip": "clips/crystal-heart.webm"
+    },
+    "curious-scan": {
+      "loop": false,
+      "can_talk": false,
+      "label": "호기심 스캔",
+      "clip": "clips/curious-scan.webm"
+    }
+  },
+  "speech_clips": {
+    "speech-ko": {
+      "clip": "clips/talking-ko.webm",
+      "label": "한국어 발화 · Naia voice profile",
+      "audio": "embedded",
+      "locale": "ko-KR",
+      "text": "안녕하세요. 오늘은 미리 생성한 발화 자산을 자연스럽게 연결해서, 그래픽 카드가 없는 컴퓨터에서도 비디오 아바타가 긴 문장을 안정적으로 말할 수 있는지 확인하겠습니다. 모음과 자음이 빠르게 바뀌는 구간, 잠시 숨을 고르는 구간, 그리고 문장이 길게 이어지는 구간까지 차례로 살펴보겠습니다."
+    }
+  },
+  "expressions": {
+    "neutral": "idle",
+    "speaking": "talking",
+    "idle": "idle",
+    "talking": "talking",
+    "crystal-heart": "crystal-heart",
+    "curious-scan": "curious-scan"
+  },
+  "scenario": {
+    "nodes": {
+      "start": {
+        "type": "start"
+      },
+      "idle": {
+        "type": "scene",
+        "animation": "idle",
+        "label": "대기"
+      }
+    },
+    "edges": [
+      {
+        "from": "start",
+        "to": "idle"
+      }
+    ]
+  },
+  "stacked_alpha": {
+    "layout": "color-top-alpha-bottom",
+    "clips": {
+      "clips/crystal-heart.webm": "clips/crystal-heart.stacked.mp4",
+      "clips/curious-scan.webm": "clips/curious-scan.stacked.mp4",
+      "clips/idle.webm": "clips/idle.stacked.mp4",
+      "clips/talking-ko.webm": "clips/talking-ko.stacked.mp4"
+    }
+  }
+}

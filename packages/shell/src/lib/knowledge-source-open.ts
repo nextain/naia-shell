@@ -4,6 +4,7 @@
 import { useAppStore } from "../stores/app";
 import { classifySourceUri, toFilePath } from "./knowledge-result";
 import { appRegistry } from "./app-registry";
+import { isWebMode } from "./web-runtime/web-assets";
 
 // 민감/위험 파일(키·인증서·env·ssh) — 출처 클릭으로 열지 않는다. 에이전트 fs-sandbox denylist 와 같은 취지(셸측).
 const SENSITIVE_SOURCE: readonly RegExp[] = [
@@ -28,6 +29,12 @@ export function isSafeSourcePath(path: string): boolean {
  *  URL 은 classifySourceUri 가 http(s) 만 url 로 보므로 javascript:/data: 는 url 로 안 감(파일 분기→가드). */
 export function openKnowledgeSource(uri: string): void {
 	if (classifySourceUri(uri) === "url") {
+		if (isWebMode()) {
+			if (typeof window !== "undefined" && typeof window.open === "function") {
+				window.open(uri, "_blank", "noopener,noreferrer");
+			}
+			return;
+		}
 		const api = appRegistry.getApi("browser");
 		api?.navigate(uri);
 		api?.activateApp?.();

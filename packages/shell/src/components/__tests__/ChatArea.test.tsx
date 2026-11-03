@@ -23,6 +23,16 @@ import { useAvatarStore } from "../../stores/avatar";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
 import { useChatStore } from "../../stores/chat";
 import { ChatArea, modelToolBoundary } from "../ChatArea";
+import {
+	resetWebModelStatusForTests,
+	setWebModelStatus,
+} from "../../lib/web-runtime/web-model-status";
+import {
+	resetWebAdkStatusForTests,
+	setWebAdkStatus,
+} from "../../lib/web-runtime/web-adk-status";
+import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "../../lib/bgm-skill";
+import { ensureBgmSidecar } from "../../lib/bgm-sidecar-url";
 
 const ttsSyncMocks = vi.hoisted(() => ({
 	synthesizeTts: vi.fn().mockResolvedValue({
@@ -218,6 +228,24 @@ class FakeSpeechRecognition {
 	stop = vi.fn();
 	abort = vi.fn();
 
+	emitResult(
+		results: { transcript: string; confidence?: number; isFinal: boolean }[],
+	) {
+		const resultList = results.map((r) => {
+			const alt = { transcript: r.transcript, confidence: r.confidence ?? 1 };
+			const item = Object.assign([alt], {
+				isFinal: r.isFinal,
+				length: 1,
+				item: (index: number) => (index === 0 ? alt : undefined),
+			});
+			return item;
+		});
+		this.onresult?.({
+			resultIndex: 0,
+			results: Object.assign(resultList, { length: resultList.length }),
+		});
+	}
+
 	constructor() {
 		FakeSpeechRecognition.latest = this;
 	}
@@ -229,6 +257,8 @@ describe("ChatArea", () => {
 		mockSendAppSkills.mockReset().mockResolvedValue(true);
 		vi.mocked(fetchAgentSkills).mockResolvedValue([]);
 		modelToolBoundary.reset();
+		resetWebModelStatusForTests();
+		resetWebAdkStatusForTests();
 	});
 	afterEach(() => {
 		cleanup();
@@ -256,6 +286,9 @@ describe("ChatArea", () => {
 			audioBase64: "default-audio",
 			costUsd: 0,
 		});
+		resetWebModelStatusForTests();
+		vi.unstubAllEnvs();
+		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
 	});
 
 	it("renders input field and buttons", () => {
@@ -3107,5 +3140,169 @@ describe("ChatArea", () => {
 
 		lastReq.onChunk({ type: "finish", requestId: lastReq.requestId });
 		localStorage.removeItem("naia-config");
+	});
+
+	it("sends request when pre-ready event subscription callback is invoked after ready in web mode", async () => {
+		vi.stubEnv("MODE", "web");
+		setWebModelStatus({ phase: "checking" });
+
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "openai",
+				model: "gpt-4o",
+				apiKey: "test-key",
+			}),
+		);
+
+		render(<ChatArea />);
+
+		// Model and workspace transition to ready after mount
+		setWebModelStatus({ phase: "ready" });
+		setWebAdkStatus({ phase: "ready" });
+
+		// Trigger event subscription callback registered before ready
+		window.dispatchEvent(
+			new CustomEvent("naia:interference-event", {
+				detail: {
+					source: "browser",
+					action: "opened",
+					url: "https://example.com",
+				},
+			}),
+		);
+
+		await waitFor(
+			() => {
+				expect(capturedRequests.length).toBeGreaterThan(0);
+			},
+			{ timeout: 1000 },
+		);
+		const req = capturedRequests[capturedRequests.length - 1];
+		expect(req.message).toContain("https://example.com");
+	});
+
+	it("preserves pre-ready STT final result in input and prevents transmission after debounce in web mode", async () => {
+		vi.stubEnv("MODE", "web");
+		setWebModelStatus({ phase: "checking" });
+
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "openai",
+				model: "gpt-4o",
+				sttProvider: "web-speech",
+			}),
+		);
+		Object.defineProperty(window, "SpeechRecognition", {
+			configurable: true,
+			value: FakeSpeechRecognition,
+		});
+
+		render(<ChatArea />);
+
+		const voiceBtn = document.querySelector(".chat-voice-btn") as HTMLButtonElement;
+		fireEvent.click(voiceBtn);
+
+		await waitFor(() => {
+			expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledTimes(1);
+		});
+
+		act(() => {
+			FakeSpeechRecognition.latest?.emitResult([
+				{ transcript: "준비 전 STT 텍스트", isFinal: true },
+			]);
+		});
+
+		const input = document.querySelector(".chat-input") as HTMLTextAreaElement;
+		await waitFor(() => expect(input.value).toBe("준비 전 STT 텍스트"));
+		expect(capturedRequests).toHaveLength(0);
+	});
+
+	it("skips ensureBgmSidecar and does not render bgm-sidecar-error in web mode", async () => {
+		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+		vi.stubEnv("MODE", "web");
+		vi.mocked(ensureBgmSidecar).mockRejectedValueOnce(
+			new Error("desktop_only:ensure_bgm_server"),
+		);
+		try {
+			render(<ChatArea />);
+			await screen.findByPlaceholderText(/메시지|message/i);
+			expect(ensureBgmSidecar).toHaveBeenCalledTimes(0);
+			expect(screen.queryByTestId("bgm-sidecar-error")).toBeNull();
+		} finally {
+			vi.unstubAllEnvs();
+			vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+		}
+	});
+
+	it("renders bgm-sidecar-error notification when ensureBgmSidecar fails in desktop mode", async () => {
+		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+		vi.mocked(ensureBgmSidecar).mockRejectedValueOnce(
+			new Error("desktop_only:ensure_bgm_server"),
+		);
+		try {
+			render(<ChatArea />);
+			const alert = await screen.findByTestId("bgm-sidecar-error");
+			expect(alert).toBeDefined();
+			expect(alert.textContent).toContain(
+				"BGM 서버를 시작하지 못했습니다. 음악 검색이 동작하지 않습니다.",
+			);
+			expect(ensureBgmSidecar).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+		}
+	});
+
+	it("does not call BGM sendAppSkills on send in web mode", async () => {
+		vi.stubEnv("MODE", "web");
+		setWebModelStatus({ phase: "ready" });
+		setWebAdkStatus({ phase: "ready" });
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+		mockSendAppSkills.mockClear();
+		try {
+			render(<ChatArea />);
+			const input = await screen.findByPlaceholderText(/메시지|message/i);
+			fireEvent.change(input, { target: { value: "hello web" } });
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests).toHaveLength(1));
+			expect(mockSendAppSkills).toHaveBeenCalledTimes(0);
+		} finally {
+			vi.unstubAllEnvs();
+			localStorage.removeItem("naia-config");
+		}
+	});
+
+	it("calls BGM sendAppSkills once per turn in desktop mode", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+		mockSendAppSkills.mockClear();
+		try {
+			render(<ChatArea />);
+			const input = await screen.findByPlaceholderText(/메시지|message/i);
+			fireEvent.change(input, { target: { value: "hello desktop" } });
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests).toHaveLength(1));
+			expect(mockSendAppSkills).toHaveBeenCalledTimes(1);
+			expect(mockSendAppSkills).toHaveBeenCalledWith(
+				BGM_APP_ID,
+				[SKILL_YOUTUBE_BGM],
+			);
+		} finally {
+			localStorage.removeItem("naia-config");
+		}
 	});
 });

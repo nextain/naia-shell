@@ -21,7 +21,9 @@ import type { TtsProviderId } from "../config";
  * output stage, stores, renderer, queue, config, i18n, IPC) through
  * SentenceTtsPipelineDeps and calls the public interface only.
  */
+import { getLocale } from "../i18n";
 import { Logger } from "../logger";
+import { isWebMode } from "../web-runtime/web-assets";
 import { PcmStreamSource } from "../voice/audio-queue";
 import { wavDurationSeconds } from "../voice/audio-queue";
 import { estimateTtsCost } from "./cost";
@@ -259,8 +261,39 @@ export function createSentenceTtsPipeline(
 				const isCurrentBrowserTurn = () =>
 					browserGeneration === deps.getBrowserTurnGeneration();
 				const utter = new SpeechSynthesisUtterance(clean);
-				utter.lang =
-					voiceCfg?.voice || document.documentElement.lang || "ko-KR";
+				if (isWebMode()) {
+					const requestedVoice = voiceCfg?.voice?.trim();
+					const voices =
+						typeof window.speechSynthesis.getVoices === "function"
+							? window.speechSynthesis.getVoices()
+							: [];
+					const locale = getLocale();
+					const matchedVoice =
+						(requestedVoice
+							? voices.find(
+									(v) =>
+										v.voiceURI === requestedVoice || v.name === requestedVoice,
+								)
+							: undefined) ??
+						voices.find(
+							(v) => v.lang?.toLowerCase() === locale.toLowerCase(),
+						) ??
+						voices.find(
+							(v) =>
+								v.lang?.toLowerCase().split("-")[0] ===
+								locale.toLowerCase().split("-")[0],
+						);
+					if (matchedVoice) {
+						utter.voice = matchedVoice;
+						utter.lang =
+							matchedVoice.lang || document.documentElement.lang || "ko-KR";
+					} else {
+						utter.lang = locale;
+					}
+				} else {
+					utter.lang =
+						voiceCfg?.voice || document.documentElement.lang || "ko-KR";
+				}
 				utter.onstart = () => {
 					if (!isCurrentBrowserTurn()) return;
 					revealText();

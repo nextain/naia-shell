@@ -67,8 +67,8 @@ import {
 	resolveLoggedOutLlm,
 } from "../lib/llm/logged-out-default";
 import { writeConfiguredLlmRole } from "../lib/llm/roles";
+import { fetchGatewayModelCatalog } from "../lib/llm/registry";
 import {
-	NAIA_SLOT_DEFAULTS,
 	applyNaiaSlotDefaults,
 	effectiveMainRole,
 } from "../lib/slots/model";
@@ -189,7 +189,7 @@ interface OnboardingSnapshot {
 	memoryEmbeddingProvider: "none" | "offline" | "vllm" | "ollama" | "naia";
 	memoryLlmProvider: "none" | "naia" | "vllm" | "ollama";
 	ttsEnabled: boolean;
-	webVoiceLang: string;
+	webVoiceURI: string;
 	localVoiceEnabled: boolean;
 }
 
@@ -466,20 +466,6 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			const voices = window.speechSynthesis.getVoices();
 			if (voices.length === 0) return;
 			setWebVoices(voices);
-			setWebVoiceURI((current) => {
-				if (current && voices.some((voice) => voice.voiceURI === current))
-					return current;
-				const locale = getLocale();
-				const matched =
-					voices.find((voice) =>
-						voice.lang?.toLowerCase().startsWith(locale),
-					) ??
-					voices.find((voice) =>
-						voice.lang?.toLowerCase().startsWith(locale.split("-")[0]),
-					) ??
-					voices[0];
-				return matched?.voiceURI ?? "";
-			});
 		};
 		applyVoices();
 		window.speechSynthesis.onvoiceschanged = applyVoices;
@@ -728,8 +714,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryEmbeddingProvider,
 			memoryLlmProvider,
 			ttsEnabled,
-			webVoiceLang:
-				webVoices.find((voice) => voice.voiceURI === webVoiceURI)?.lang ?? "",
+			webVoiceURI,
 			localVoiceEnabled,
 		};
 	});
@@ -1085,8 +1070,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryEmbeddingProvider,
 			memoryLlmProvider,
 			ttsEnabled,
-			webVoiceLang:
-				webVoices.find((voice) => voice.voiceURI === webVoiceURI)?.lang ?? "",
+			webVoiceURI,
 			localVoiceEnabled,
 		},
 	) {
@@ -1099,8 +1083,12 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			provider: "",
 			model: "",
 		};
+		const catalog = auth ? await fetchGatewayModelCatalog(LAB_GATEWAY_URL) : null;
+		const catalogModels = (catalog ?? [])
+			.filter((m) => ["azure", "vertexai", "upstage", "clova", "motif"].includes(m.provider.toLowerCase()))
+			.map((m) => ({ id: m.id, label: m.id, capabilities: ["llm" as const] }));
 		// FR-LLM-LOGOUT.1: 로그인을 건너뛰면 키 없는 나이아 계정도 gemini 도 저장하지
-		// 않는다. 이미 고른 CLI·로컬 제공자는 두고, 아니면 로컬 Ollama 또는 "LLM 없음".
+		// 않는다. 이미 고른 CLI·로컬 제공자는 두고, 아니면 "LLM 없음".
 		const baseMainProvider =
 			effectiveMainRole(base as AppConfig).provider ?? base.provider;
 		const loggedOutLlm =
@@ -1130,15 +1118,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		const persona = snapshot.extraPersona?.trim()
 			? `${personaBase}\n\n${snapshot.extraPersona.trim()}`
 			: personaBase;
-		// auth(naia 로그인) 시: 6슬롯 Gemini 기본값은 applyNaiaSlotDefaults 가 아래서 일괄 적용.
-		// 따라서 auth 시에는 스냅샣 memory provider 를 주입하지 않고(비파괴 기본값 적용이 채움),
-		// BYO 시에만 사용자 선택값을 유지한다.
+		// 기존 선택은 보존하고, 나이아 계정의 빈 모델은 이용 가능 목록으로 정한다.
 		const completedFlat: Record<string, unknown> = {
 			...base,
-			provider: auth ? "nextain" : (loggedOutLlm?.provider ?? base.provider),
-			model: auth
-				? base.model || NAIA_SLOT_DEFAULTS.main.model
-				: (loggedOutLlm?.model ?? base.model),
+			provider: auth ? (base.provider ?? "") : (loggedOutLlm?.provider ?? base.provider),
+			model: auth ? (base.model ?? "") : (loggedOutLlm?.model ?? base.model),
 			agentName: snapshot.agentName.trim() || "Naia",
 			userName: snapshot.userName.trim() || undefined,
 			speechStyle: snapshot.speechStyle,
@@ -1163,8 +1147,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						ttsProvider: snapshot.ttsEnabled
 							? ("browser" as const)
 							: base.ttsProvider,
-						...(snapshot.ttsEnabled && snapshot.webVoiceLang
-							? { voice: snapshot.webVoiceLang }
+						...(snapshot.ttsEnabled && snapshot.webVoiceURI
+							? { ttsVoice: snapshot.webVoiceURI }
 							: {}),
 					}),
 			...(!auth && snapshot.memoryEmbeddingProvider !== "none"
@@ -1174,10 +1158,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				? { memoryLlmProvider: snapshot.memoryLlmProvider }
 				: {}),
 		};
-		// FR-SLOT.3 / R2-1: naia 게이트 통과 시 미설정 슬롯에 기본값 자동 적용(비파괴).
+		// FR-SM: 목록에 있는 모델만 빈 역할의 기본값으로 적용한다.
 		// 로그인하지 않았으면 구조화된 main 역할도 로그인하지 않은 상태의 LLM 으로 맞춘다.
 		const finalConfig: AppConfig = auth
-			? applyNaiaSlotDefaults(completedFlat as unknown as AppConfig)
+			? applyNaiaSlotDefaults(completedFlat as unknown as AppConfig, catalogModels)
 			: loggedOutLlm
 				? writeConfiguredLlmRole(
 						{ ...(completedFlat as unknown as AppConfig), ...loggedOutLlm },
@@ -1234,11 +1218,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			if (typeof completedFlat.naiaKey === "string") {
 				await sendAuthUpdateStrict(completedFlat.naiaKey, sourceAdkPath);
 				assertCurrentAdk();
-				await activateNaiaLlm(
-					completedFlat.naiaKey,
-					String(completedFlat.provider || "nextain"),
-					String(completedFlat.model || NAIA_SLOT_DEFAULTS.main.model),
-				);
+				if (completedFlat.provider && completedFlat.model) {
+					await activateNaiaLlm(
+						completedFlat.naiaKey,
+						String(completedFlat.provider),
+						String(completedFlat.model),
+					);
+				}
 				// Do not leave the renderer with the pre-login zero balance. Fetch with
 				// the same credential before committing onboarding, then prime the shared
 				// dashboard cache for the app that mounts after this wizard unmounts.
@@ -1716,6 +1702,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									value={webVoiceURI}
 									onChange={(e) => setWebVoiceURI(e.target.value)}
 								>
+									<option value="">
+										{t("settings.memoryEmbeddingDeviceAuto")}
+									</option>
 									{webVoices.map((voice) => (
 										<option key={voice.voiceURI} value={voice.voiceURI}>
 											{voice.name} ({voice.lang})
