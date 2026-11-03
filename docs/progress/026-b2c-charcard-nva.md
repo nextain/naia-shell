@@ -80,3 +80,25 @@ P02: 단위 시험은 원본 확장 보존/손상 데이터/상한/연결 해제
 - core/Shell/BGM TypeScript·compile-integrity·assembly·file-anchor·logging·UC trace·scenario-source14 통과. Agent 전체 원본 tsconfig도 실제 dependency 선언을 tmp에 빌드해 통과: `tmp/local-model/full-typecheck/evidence.json`(Agent a4aef165, memory008eac79, kb403edb02). 타입 stub 없음. 최종 production build/entry budget 통과: `tmp/r2-final-build.log`.
 - native 차단 사실: 지정 Agent main a4aef165/proto20d9aa6e와 셸 핀 fdc6fcb5/proto71e4cb6b가 다르며 resolver가 거절했다(`tmp/r2-native-pairing.log`). cargo/tauri-driver/WebKitWebDriver/기존 바이너리도 없다. 핀을 우회하거나 다른 작업자의 Agent를 사용하지 않았다. native 설치판 저장·NVA·음성은 11/6~11/7 수용에 남긴다.
 - 초기 root whitelist `tmp/`, `tsconfig.build.json` 2건은 그대로다. 헌장 파일과 외부 읽기전용 문서는 변경하지 않았다. 프로세스 갱신은 F01과 충돌해 이 ledger에 기록한다. 설치 앱 appName 태그는 세션 내 history에서 제외되지만 Agent 디스크 히스토리 복원 뒤 태그 보존은 후속이다. 운영 접속·자격 사용·push는 없다.
+
+## 3회차 설계 — 11/6·11/7 당김
+
+P01: 명시적 새 카드 대화는 기존 첫 인사 턴을 현재 테마 음성으로 한 번 낭독한다. uiPreferences.b2cGreetingAutoplay=false로 자동 낭독을 끈다. 전역 TTS 끄기도 존중한다. 재시작·기존 대화 열기는 낭독하지 않는다. 비동기 음성 설정 조회 중 대화 교체·사용자 입력·컴포넌트 해제는 이전 인사 발화를 취소한다.
+
+P02: ChatArea 공용 sentence-pipeline 시험으로 테마 provider/voice·전역 및 카드 자동낭독 끄기·취소를 검증한다. 테마 적용은 manifest/영상 기본·발화·동작 클립과 선택 배경의 실제 decode를 사전 확인하고 기존 persistCharacterSettings 복구 경로를 사용한다. 브라우저에서 정상 WebM과 손상 파일을 사용해 실패 시 이전 모델·음성·배경·카드 유지와 재시도, 360px 최초 설정 진입을 검증한다. 정본 NVA sync-driver/core 회귀를 실행하며 새로운 aiueo 반복 플레이어를 만들지 않는다.
+
+P03: 테마 검증 중 중복 행동을 잠그고 오류는 이전 테마 유지·재시도를 안내한다. decode 시간 제한 15초/자산, 자산은 순차 검증해 동시 디코더 폭증을 피한다. workspace가 바뀌면 적용하지 않는다. Windows/WebView2·네이티브 Tauri·2070 청취/투명도는 별도 수용 체크리스트로 남긴다. pin은 지정 짝 Agent의 clean HEAD/proto와 맞추고 계약 검사를 실행한다.
+
+## 3회차 P04·P05 증거 (2026-11-03)
+
+- 명시적 새 카드 대화의 첫 인사만 기존 sentence-pipeline에 보낸다. 전역 ttsEnabled와 uiPreferences.b2cGreetingAutoplay(기본 켜짐)를 함께 확인한다. 기존 assistant 턴을 다시 삽입하지 않는다. session/generation/새 사용자 메시지/해제 경계로 지연 발화를 폐기한다. 테마 변경 직후 새 renderer를 최대 3초 기다리고 modelId가 다른 이전 renderer의 저작 음원을 거절한다.
+- 정본 utterance가 정확히 일치하면 기존 NVA의 자체 녹음 A/V 클립을 한 조각으로 재생한다. 다른 인사는 테마 provider/voice의 일반 TTS와 기존 talking visual을 사용한다. 새 aiueo 반복/별도 합성 경로는 없다. 임의 생성 문장의 Ditto 정밀 립싱크까지 구현했다고 주장하지 않는다.
+- 테마 적용은 설치 목록→manifest→모든 clip 참조(중복 제거, 최대200)→선택 배경 순서로 검증한다. video는 loadeddata·양수 해상도·play 성공, image는 load·양수 폭을 확인한다(자산당 15초 제한). 검증 중 이전 테마가 계속 활성이고 실패 시 설정 저장을 시작하지 않는다. 이후 저장 실패는 기존 persistCharacterSettings의 복구 쓰기를 사용한다. 손상 영상·쓰기 실패·재시도·모델 보존을 Playwright에서 검증했다. 적용 이후 파일 삭제/장치 상실/렌더러의 늦은 GPU 실패까지 자동 복구하는 계약은 아니다.
+- 지정 Agent clean HEAD a4aef165ed7e9d22d30f5b834931cb272f7e4654 / proto20d9aa6eb3a4396daef360f0155aa27c21b83b1faf0132691cb596a189c18b12로 JSON/Rust build 상수/설치 CI/self-trust CI/README를 일치시켰다. wire 차이는 ThinkingLevel XHIGH=4 추가뿐이다. resolver가 지정 checkout을 선택했고 pin drift 계약6/6 통과. memory 핀 e8cbd6f8/0.1.4는 변경하지 않았다.
+- P04: 전체 Shell **2652 통과·21 제외**, 마지막 음성/VideoAvatarCanvas/renderer/카드 집중48 통과. core mirror/divergence·sync-driver 포함 NVA 집중23 통과. 로그는 실행 폴더 tmp/r3-full-final.log, r3-final-focused.log, r3-nva-unit.log. 개발 중 변환/편집과 겹친 첫 전체 실행은 중단하고 고정된 구현으로 전체를 재실행했다.
+- Playwright1100/360px **2/2**: tmp/r3-e2e-av.log, tmp/r3-playwright-av/. 360px 최초 설정 진입, 자동낭독 끄기/켜기 저장, 카드/테마 기본·빈 목록·진행 잠금·성공·오류 재시도, 실제 WebM decode·PNG 배경 decode, 손상 영상→이전 설정 동일, 원본 내보내기·재시작 복원 검증. 실제 ChatArea→sentence-pipeline→PrebakedAvatarRenderer→WebM+Opus의 비음소거 playing/양수 해상도를 확인했다(자산은 시험 영상·음원, 사람의 청취/실 캐릭터 품질 증거와 다름). 설정 파일 IPC는 fixture다.
+- 정본 브라우저 P3 sync-driver/P4 layered **3/3**: tmp/r3-e2e-final.log. P3 mean signed drift 8.6→2.5ms, p95 31.0→19.5ms. 이 별도 모듈 하네스 수치가 설치판 전체의 지연 보장이라는 뜻은 아니다.
+- verify-visual-ux: 1100/360px 결과 화면을 직접 열어 확인. 카드 import→미리보기→적용이 먼저, 테마가 뒤다. 상태/alert·재시도·읽는 중 잠금·label/Enter와 버튼 경계를 검증했다. 360px에서 처음부터 설정 단추가 화면 안이다. 추가한 checkbox는 즉시 선택을 표시하고 쓰기 실패 때 이전 선택으로 복구한다.
+- native 실행은 cargo/tauri-driver/WebKitWebDriver/기존 바이너리 부재로 수행하지 않았다. 사용자 지정 2070 체크리스트는 실행 폴더 result.md에 단계·기대 결과로 기록한다. #743/#760 전체 해결·Windows 수용·출시 가능을 선언하지 않는다.
+
+최종 강화 Playwright도1100/360px 2/2 통과(tmp/r3-e2e-complete.log, tmp/r3-playwright-complete/). 이전 nvaModel=previous/voice=Aria와 다른 후보 naia/SunHi를 적용하면서 손상 clip 실패와 write_naia_config 실패를 각각 만들고 이전 설정 전체 동일→재시도 성공을 검증했다. production 최종 build/entry budget 통과(raw491641, gzip154739), core/Shell/BGM/Agent 원본 tsconfig 통과. Agent 타입검사용 임시 node_modules 링크는 제거했고 지정 Agent tracked 상태는 clean이다. 이 서버의 native 도구 부재와 사용자 요청의2070 수용은 별도이며 process-status는 사용자 제공 헌장 목록 때문에 변경하지 않았다.

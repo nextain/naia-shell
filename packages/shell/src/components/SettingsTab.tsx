@@ -182,7 +182,11 @@ import {
 import { Logger } from "../lib/logger";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
-import { themePatch, type CharacterTheme } from "../lib/character-theme";
+import {
+	themePatch,
+	probeThemeMedia,
+	type CharacterTheme,
+} from "../lib/character-theme";
 const CharacterThemeSettings = lazy(() =>
 	import("./CharacterThemeSettings").then((m) => ({
 		default: m.CharacterThemeSettings,
@@ -3133,9 +3137,57 @@ export function SettingsTab() {
 			: undefined;
 		if (selected.backgroundVideo && !bg)
 			throw new Error("background is not installed");
+		// Keep the old renderer/voice/background active while validating candidates.
+		const { parseNvaManifest, resolveNvaAssetPath } = await import(
+			"../lib/nva"
+		);
+		const directory = `${sourceAdk}/naia-settings/nva-files/${selected.nvaModel}`;
+		const encoded = await invoke<string>("read_local_binary", {
+			path: `${directory}/manifest.json`,
+			allowedBase: sourceAdk,
+		});
+		const manifest = parseNvaManifest(
+			new TextDecoder().decode(
+				Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0)),
+			),
+		);
+		const clips = new Set<string>();
+		function collect(value: unknown): void {
+			if (!value || typeof value !== "object") return;
+			for (const [key, item] of Object.entries(value)) {
+				if (key === "clip" && typeof item === "string") clips.add(item);
+				else collect(item);
+			}
+		}
+		collect(manifest);
+		if (clips.size > 200) throw new Error("too many theme clips");
+		for (const clip of clips) {
+			if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
+			const url = await toLocalBlobUrl(resolveNvaAssetPath(directory, clip));
+			try {
+				await probeThemeMedia(url, "video");
+			} finally {
+				if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+			}
+		}
 		const bgUrl = bg ? await toLocalBlobUrl(bg) : "";
-		if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
-		await persistCharacterSettings({ ...themePatch(selected), ...extra });
+		try {
+			if (bg)
+				await probeThemeMedia(
+					bgUrl,
+					getBackgroundMediaType(bg) === "video" ? "video" : "image",
+				);
+		} catch (error) {
+			if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
+			throw error;
+		}
+		try {
+			if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
+			await persistCharacterSettings({ ...themePatch(selected), ...extra });
+		} catch (error) {
+			if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
+			throw error;
+		}
 		setAvatarProvider("naia-video-avatar");
 		setNvaModel(selected.nvaModel);
 		setTtsProvider(selected.ttsProvider);

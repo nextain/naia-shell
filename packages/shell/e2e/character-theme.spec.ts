@@ -3,6 +3,12 @@ import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 import { TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mock";
 
+const videoBase64 = readFileSync(
+	resolve("e2e/fixtures/base-alpha-200.webm"),
+).toString("base64");
+const authoredAvBase64 = readFileSync(
+	resolve("e2e/fixtures/sync-5s-25fps-av.webm"),
+).toString("base64");
 const config = {
 	provider: "ollama",
 	model: "test-local",
@@ -11,85 +17,145 @@ const config = {
 	onboardingComplete: true,
 	persona: "previous persona",
 	nvaModel: "naia",
+	backgroundVideo: "garden.png",
 	avatarProvider: "naia-video-avatar",
 	ttsProvider: "edge",
 	ttsVoice: "ko-KR-SunHiNeural",
 };
 for (const width of [1100, 360]) {
 	test(`card and theme settings ${width}px`, async ({ page }) => {
-		await page.setViewportSize({ width: 1100, height: 900 });
-		await page.addInitScript((seed) => {
-			localStorage.setItem("naia-adk-path", "/mock/b2c-adk");
-			if (!localStorage.getItem("b2c-test-initialized")) {
-				localStorage.setItem("naia-config", JSON.stringify(seed));
-				localStorage.setItem("b2c-test-initialized", "1");
-			}
-			const win = window as any;
-			win.__writes = [];
-			win.__failNextWrite = false;
-			win.__failUiWrites = false;
-			win.__TAURI_INTERNALS__ = {
-				metadata: {
-					currentWindow: { label: "main" },
-					currentWebview: { label: "main", windowLabel: "main" },
-				},
-				transformCallback: () => 1,
-				unregisterCallback: () => {},
-				convertFileSrc: (p: string) => p,
-				invoke: async (cmd: string, args: any) => {
-					if (cmd === "plugin:event|listen") return 1;
-					if (cmd === "read_naia_config")
-						return (
-							localStorage.getItem("b2c-test-native-config") ??
-							JSON.stringify(seed)
-						);
-					if (cmd === "read_naia_ui_config")
-						return localStorage.getItem("b2c-test-ui-config") ?? "{}";
-					if (cmd === "write_naia_config" || cmd === "write_naia_ui_config") {
-						if (cmd === "write_naia_ui_config" && win.__failUiWrites)
-							throw new Error("fixture UI write failed");
-						if (win.__failNextWrite && args.json.includes("A kind gardener")) {
-							win.__failNextWrite = false;
-							throw new Error("fixture write failed");
+		await page.setViewportSize({ width, height: 900 });
+		await page.addInitScript(
+			({ seed, videoBase64, authoredAvBase64 }) => {
+				localStorage.setItem("naia-adk-path", "/mock/b2c-adk");
+				if (!localStorage.getItem("b2c-test-initialized")) {
+					localStorage.setItem("naia-config", JSON.stringify(seed));
+					localStorage.setItem("b2c-test-initialized", "1");
+				}
+				const win = window as any;
+				win.__writes = [];
+				win.__badThemeClip = false;
+				win.__failNextWrite = false;
+				win.__failUiWrites = false;
+				win.__TAURI_INTERNALS__ = {
+					metadata: {
+						currentWindow: { label: "main" },
+						currentWebview: { label: "main", windowLabel: "main" },
+					},
+					transformCallback: () => 1,
+					unregisterCallback: () => {},
+					convertFileSrc: (p: string) => p,
+					invoke: async (cmd: string, args: any) => {
+						if (cmd === "plugin:event|listen") return 1;
+						if (cmd === "read_naia_config")
+							return (
+								localStorage.getItem("b2c-test-native-config") ??
+								JSON.stringify(seed)
+							);
+						if (cmd === "read_naia_ui_config")
+							return localStorage.getItem("b2c-test-ui-config") ?? "{}";
+						if (cmd === "write_naia_config" || cmd === "write_naia_ui_config") {
+							if (cmd === "write_naia_ui_config" && win.__failUiWrites)
+								throw new Error("fixture UI write failed");
+							if (
+								win.__failNextWrite &&
+								args.json.includes("A kind gardener")
+							) {
+								win.__failNextWrite = false;
+								throw new Error("fixture write failed");
+							}
+							await new Promise((resolve) => setTimeout(resolve, 200));
+							win.__writes.push({ cmd, json: JSON.parse(args.json) });
+							const history = JSON.parse(
+								localStorage.getItem("b2c-test-write-log") ?? "[]",
+							);
+							history.push({
+								cmd,
+								agentName: JSON.parse(args.json).agentName,
+								card: JSON.parse(args.json).uiPreferences?.b2cActiveCardId,
+								at: Date.now(),
+							});
+							localStorage.setItem(
+								"b2c-test-write-log",
+								JSON.stringify(history),
+							);
+							localStorage.setItem(
+								cmd === "write_naia_config"
+									? "b2c-test-native-config"
+									: "b2c-test-ui-config",
+								args.json,
+							);
+							return null;
 						}
-						await new Promise((resolve) => setTimeout(resolve, 200));
-						win.__writes.push({ cmd, json: JSON.parse(args.json) });
-						const history = JSON.parse(
-							localStorage.getItem("b2c-test-write-log") ?? "[]",
-						);
-						history.push({
-							cmd,
-							agentName: JSON.parse(args.json).agentName,
-							card: JSON.parse(args.json).uiPreferences?.b2cActiveCardId,
-							at: Date.now(),
-						});
-						localStorage.setItem("b2c-test-write-log", JSON.stringify(history));
-						localStorage.setItem(
-							cmd === "write_naia_config"
-								? "b2c-test-native-config"
-								: "b2c-test-ui-config",
-							args.json,
-						);
-						return null;
-					}
-					if (cmd === "list_naia_assets")
-						return args.subdir === "nva-files" ? ["naia"] : [];
-					return undefined;
-				},
-			};
-			win.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
-		}, config);
+						if (cmd === "read_local_binary") {
+							if (args.path.endsWith("manifest.json"))
+								return btoa(
+									JSON.stringify({
+										nva_version: "0.2",
+										canvas: { width: 200, height: 200 },
+										speech_clips: {
+											greeting: {
+												text: "Welcome to my garden",
+												clip: "greeting.webm",
+												locale: "en",
+											},
+										},
+										animations: {
+											idle: { clip: "idle.webm", loop: true },
+											speak: { clip: "speak.webm", can_talk: true },
+										},
+									}),
+								);
+							if (args.path.endsWith("greeting.webm")) return authoredAvBase64;
+							if (args.path.endsWith("garden.png"))
+								return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==";
+							return win.__badThemeClip ? btoa("broken video") : videoBase64;
+						}
+						if (cmd === "list_naia_assets")
+							return args.subdir === "nva-files"
+								? ["naia"]
+								: args.subdir === "background"
+									? ["/mock/b2c-adk/naia-settings/background/garden.png"]
+									: [];
+						return undefined;
+					},
+				};
+				win.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+			},
+			{ seed: config, videoBase64, authoredAvBase64 },
+		);
 		await page.addInitScript(TAURI_BASE_MOCK_FALLBACK);
 		await page.goto("/");
 		await expect(page.locator(".chat-app")).toBeVisible();
 		// Open actual Shell settings, then its persona tab.
-		await page.locator(".app-bar-settings").click();
+		const settingsEntry = page.locator(".app-bar-settings");
+		const entryBounds = await settingsEntry.boundingBox();
+		expect(entryBounds!.x).toBeGreaterThanOrEqual(0);
+		expect(entryBounds!.x + entryBounds!.width).toBeLessThanOrEqual(width);
+		await settingsEntry.click();
 		await page.locator('[data-settings-tab="persona"]').click();
 		await page.setViewportSize({ width, height: 900 });
 		const section = page.getByRole("region", {
 			name: "Character cards and NVA themes",
 		});
 		await expect(section.getByText("No card selected.")).toBeVisible();
+		const autoplay = section.getByRole("checkbox", {
+			name: "Read first greeting aloud",
+			exact: false,
+		});
+		await autoplay.uncheck();
+		await expect(autoplay).not.toBeChecked();
+		await expect(autoplay).toBeEnabled();
+		expect(
+			await page.evaluate(
+				() =>
+					JSON.parse(localStorage.getItem("naia-config")!).uiPreferences
+						.b2cGreetingAutoplay,
+			),
+		).toBe(false);
+		await autoplay.check();
+		await expect(autoplay).toBeChecked();
+		await expect(autoplay).toBeEnabled();
 		await expect(
 			section.getByText("No saved themes.", { exact: false }),
 		).toBeVisible();
@@ -139,6 +205,50 @@ for (const width of [1100, 360]) {
 		await expect(apply).toBeDisabled();
 		await expect(input).toBeDisabled();
 		await expect(section.getByRole("status")).toContainText("Card applied");
+		// Real authored A/V playback through ChatArea -> sentence-pipeline -> NVA.
+		await page.evaluate(async () => {
+			const { loadConfig, saveConfig } = await import("/src/lib/config.ts");
+			const { useCascadeAvatarStore } = await import(
+				"/src/stores/cascade-avatar.ts"
+			);
+			const renderer = useCascadeAvatarStore.getState().renderer!;
+			const original = renderer.playAuthoredClip.bind(renderer);
+			(window as any).__authoredGreeting = "";
+			renderer.playAuthoredClip = (text, opts) => {
+				(window as any).__authoredGreeting = text;
+				return original(text, opts);
+			};
+			document.addEventListener(
+				"playing",
+				(event) => {
+					const video = event.target;
+					if (
+						video instanceof HTMLVideoElement &&
+						!video.muted &&
+						video.videoWidth > 0
+					)
+						(window as any).__greetingAvPlaying = true;
+				},
+				true,
+			);
+			saveConfig({ ...loadConfig()!, ttsEnabled: true });
+			window.dispatchEvent(new Event("naia-character-new-conversation"));
+		});
+		await expect
+			.poll(() => page.evaluate(() => (window as any).__authoredGreeting))
+			.toBe("Welcome to my garden");
+		await expect
+			.poll(() => page.evaluate(() => (window as any).__greetingAvPlaying))
+			.toBe(true);
+		await page.evaluate(async () => {
+			const { loadConfig, saveConfig } = await import("/src/lib/config.ts");
+			saveConfig({ ...loadConfig()!, ttsEnabled: false });
+			window.dispatchEvent(
+				new CustomEvent("naia:tts-enabled-change", {
+					detail: { enabled: false },
+				}),
+			);
+		});
 		await page.screenshot({
 			path: test.info().outputPath(`card-import-${width}.png`),
 			fullPage: true,
@@ -161,10 +271,38 @@ for (const width of [1100, 360]) {
 		});
 		await section.getByRole("button", { name: "Save current theme" }).click();
 		await expect(section.getByRole("status")).toContainText("Theme saved");
+		await page.evaluate(async () => {
+			const {loadConfig, saveConfig} = await import("/src/lib/config.ts");
+			saveConfig({...loadConfig()!, nvaModel: "previous", ttsVoice: "en-US-AriaNeural", backgroundVideo: undefined});
+		});
+		const beforeThemeFailure = await page.evaluate(() =>
+			localStorage.getItem("naia-config"),
+		);
+		await page.evaluate(() => {
+			(window as any).__badThemeClip = true;
+		});
+		await section
+			.getByRole("button", { name: "Apply theme", exact: true })
+			.click();
+		await expect(section.getByRole("alert")).toContainText(
+			"Previous settings were kept",
+		);
+		expect(await page.evaluate(() => localStorage.getItem("naia-config"))).toBe(
+			beforeThemeFailure,
+		);
+		await page.evaluate(() => {
+			(window as any).__badThemeClip = false;
+			(window as any).__failNextWrite = true;
+		});
+		await section.getByRole("button", { name: "Apply theme", exact: true }).click();
+		await expect(section.getByRole("alert")).toContainText("Previous settings were kept");
+		expect(await page.evaluate(() => localStorage.getItem("naia-config"))).toBe(beforeThemeFailure);
 		await section
 			.getByRole("button", { name: "Apply theme", exact: true })
 			.click();
 		await expect(section.getByRole("status")).toContainText("Theme applied");
+		expect(await page.evaluate(() => JSON.parse(localStorage.getItem("naia-config")!).nvaModel)).toBe("naia");
+		expect(await page.evaluate(() => JSON.parse(localStorage.getItem("naia-config")!).ttsVoice)).toBe("ko-KR-SunHiNeural");
 		await apply.click();
 		await expect(section.getByRole("status")).toContainText("Card applied");
 		await page.screenshot({

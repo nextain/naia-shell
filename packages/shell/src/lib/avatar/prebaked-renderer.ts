@@ -14,6 +14,7 @@ import {
 } from "./nva-procedural-motion";
 
 interface Config {
+	modelId?: string;
 	manifest: NvaManifest;
 	locale: string;
 	resolveAssetUrl: (path: string) => Promise<string>;
@@ -74,6 +75,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		if (this.motionSpec) {
 			this.motionSpec.chest_y = resolveChestY(config.manifest, this.motionSpec);
 		}
+	}
+
+	get modelId(): string | undefined {
+		return this.config.modelId;
 	}
 
 	start(video: HTMLVideoElement, canvas: HTMLCanvasElement): void {

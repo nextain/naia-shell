@@ -137,3 +137,58 @@ export function libraryCard(
 	return parsed.card;
 }
 export { cardGreeting } from "./character-greeting";
+
+/** Decode a first frame and start the browser media clock before committing a
+ * theme. A manifest or loadedmetadata alone does not establish playable media. */
+export async function probeThemeMedia(
+	url: string,
+	kind: "video" | "image",
+	timeoutMs = 15_000,
+): Promise<void> {
+	Logger.debug("CharacterTheme", "probe theme media", { kind });
+	const media = document.createElement(kind === "video" ? "video" : "img");
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(
+				() => finish(new Error("media decode timeout")),
+				timeoutMs,
+			);
+			let settled = false;
+			function finish(error?: Error) {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				media.onerror = null;
+				media.onload = null;
+				if (media instanceof HTMLVideoElement) media.onloadeddata = null;
+				error ? reject(error) : resolve();
+			}
+			media.onerror = () => finish(new Error("media decode failed"));
+			if (media instanceof HTMLVideoElement) {
+				media.muted = true;
+				media.playsInline = true;
+				media.preload = "auto";
+				media.onloadeddata = () => {
+					if (!media.videoWidth || !media.videoHeight) {
+						finish(new Error("empty video"));
+						return;
+					}
+					void media.play().then(
+						() => finish(),
+						() => finish(new Error("media playback failed")),
+					);
+				};
+			} else {
+				media.onload = () => {
+					if (media.naturalWidth) finish();
+					else finish(new Error("empty image"));
+				};
+			}
+			media.src = url;
+		});
+	} finally {
+		if (media instanceof HTMLVideoElement) media.pause();
+		media.removeAttribute("src");
+		if (media instanceof HTMLVideoElement) media.load();
+	}
+}

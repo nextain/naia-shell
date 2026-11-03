@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from "vitest";
 import { parseCharacterCardJsonText } from "../../apps/charcard/card-parser";
 import {
 	type CharacterTheme,
@@ -9,6 +10,7 @@ import {
 	CARD_LIBRARY_MAX_BYTES,
 	readCharacterThemes,
 	themePatch,
+	probeThemeMedia,
 } from "../character-theme";
 import { buildSystemPrompt } from "../persona";
 
@@ -148,5 +150,25 @@ describe("UC-B2C-026-R2 library", () => {
 				uiPreferences: { b2cActiveCardId: "missing", b2cCardLibrary: [saved] },
 			}),
 		).toBe("");
+	});
+});
+
+describe("theme media bounded failure", () => {
+	it("times out an undecodable candidate and releases its source", async () => {
+		vi.useFakeTimers();
+		const image = document.createElement("img");
+		const create = vi.spyOn(document, "createElement").mockReturnValue(image);
+		try {
+			const result = expect(
+				probeThemeMedia("/never-loads.png", "image", 20),
+			).rejects.toThrow("timeout");
+			await vi.advanceTimersByTimeAsync(20);
+			await result;
+			expect(image.getAttribute("src")).toBeNull();
+			expect(image.onerror).toBeNull();
+		} finally {
+			create.mockRestore();
+			vi.useRealTimers();
+		}
 	});
 });

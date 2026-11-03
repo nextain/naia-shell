@@ -13,6 +13,8 @@ export interface AvatarPlaybackOptions {
  * 텍스트를 스스로 합성하지 않는다(browser TTS 자동 폴백 없음).
  */
 export interface AvatarSpeechRenderer {
+	/** Installed bundle identity, used to fence speech during theme changes. */
+	readonly modelId?: string;
 	/** True if an authored clip (own recorded voice) exists for this exact phrase. */
 	hasAuthoredClip(text: string): boolean;
 	/** Play that authored clip. Only call after hasAuthoredClip returned true. */

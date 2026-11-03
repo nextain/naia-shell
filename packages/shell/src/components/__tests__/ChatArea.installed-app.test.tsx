@@ -268,6 +268,93 @@ describe("ChatArea", () => {
 		});
 	});
 
+	it.each([
+		{ ttsEnabled: true, autoplay: true, speaks: true, action: "none" },
+		{ ttsEnabled: true, autoplay: true, speaks: true, action: "replace" },
+		{ ttsEnabled: true, autoplay: true, speaks: false, action: "authored" },
+		{ ttsEnabled: true, autoplay: true, speaks: true, action: "stale-model" },
+		{ ttsEnabled: true, autoplay: true, speaks: false, action: "unmount" },
+		{ ttsEnabled: false, autoplay: true, speaks: false },
+		{ ttsEnabled: true, autoplay: false, speaks: false },
+	])(
+		"reads the new card greeting through the shared theme voice: %j",
+		async ({ ttsEnabled, autoplay, speaks, action }) => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "ollama",
+					model: "local",
+					locale: "en",
+					ttsEnabled,
+					ttsProvider: "edge",
+					ttsVoice: "en-US-AriaNeural",
+					uiPreferences: {
+						b2cGreetingAutoplay: autoplay,
+						b2cActiveCardId: "card",
+						b2cCardLibrary: [
+							{
+								version: 1,
+								id: "card",
+								name: "Mira",
+								greeting: "Welcome to my garden.",
+								rawJson: { name: "Mira" },
+								sourceBase64: "e30=",
+							},
+						],
+					},
+				}),
+			);
+			const authored = vi.fn().mockResolvedValue(undefined);
+			if (action === "authored" || action === "stale-model")
+				useCascadeAvatarStore.setState({
+					renderer: {
+						modelId: action === "stale-model" ? "old-theme" : undefined,
+						hasAuthoredClip: () => true,
+						playAuthoredClip: authored,
+						setSpeakingVisual: vi.fn(),
+						setVoice: vi.fn().mockResolvedValue(false),
+						interrupt: vi.fn(),
+						stop: vi.fn(),
+					},
+				});
+			const view = render(<ChatArea />);
+			act(() => {
+				window.dispatchEvent(new Event("naia-character-new-conversation"));
+				if (action === "replace")
+					window.dispatchEvent(new Event("naia-character-new-conversation"));
+				if (action === "unmount") view.unmount();
+			});
+			await waitFor(() =>
+				expect(useChatStore.getState().messages[0]?.content).toBe(
+					"Welcome to my garden.",
+				),
+			);
+			if (speaks) {
+				await waitFor(() =>
+					expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledWith(
+						expect.objectContaining({
+							text: "Welcome to my garden.",
+							provider: "edge",
+							voice: "en-US-AriaNeural",
+						}),
+					),
+				);
+				expect(useChatStore.getState().messages).toHaveLength(1);
+				expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(1);
+			} else {
+				await act(async () => {
+					await new Promise((resolve) => setTimeout(resolve, 30));
+				});
+				expect(ttsSyncMocks.synthesizeTts).not.toHaveBeenCalled();
+				if (action === "authored")
+					expect(authored).toHaveBeenCalledWith(
+						"Welcome to my garden.",
+						expect.any(Object),
+					);
+			}
+		},
+	);
+
 	it("routes a Cafe Lua Tarot reveal through the selected main model and returns Naia's reply", async () => {
 		const tools = [
 			{

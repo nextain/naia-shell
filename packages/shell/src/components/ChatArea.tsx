@@ -669,7 +669,13 @@ export function ChatArea({
 					settleAvatarEmotionIfIdle();
 				};
 			},
-			getRenderer: () => useCascadeAvatarStore.getState().renderer,
+			getRenderer: () => {
+				const renderer = useCascadeAvatarStore.getState().renderer;
+				const config = loadConfig();
+				return renderer?.modelId && renderer.modelId !== config?.nvaModel
+					? null
+					: renderer;
+			},
 			beginCascadeJob: () => beginCascadeTtsJob(),
 			setOutputStage: (stage) => {
 				if (acceptPipelineOutputStage(ttsTextSyncRef.current))
@@ -1254,13 +1260,17 @@ export function ChatArea({
 	 * store immediately — the same rule as an ordinary answer (#571) — and only
 	 * the voice progress indicator waits for playback.
 	 */
-	function beginProactiveTtsTextSync(text: string): number {
+	function beginProactiveTtsTextSync(
+		text: string,
+		recordTranscript = true,
+	): number {
 		beginTtsTextSync();
 		const sync = ttsTextSyncRef.current;
 		sync.canonical = text;
 		sync.llmFinished = true;
 		setOutputStage("tts");
-		useChatStore.getState().addMessage({ role: "assistant", content: text });
+		if (recordTranscript)
+			useChatStore.getState().addMessage({ role: "assistant", content: text });
 		return sync.generation;
 	}
 
@@ -1810,6 +1820,59 @@ export function ChatArea({
 		// per app session — parity with the pipeline path's reset.
 		sentencePipelineRef.current?.rearmLocalVoiceNotice();
 		store.newConversation();
+		const greetingSession = useChatStore.getState().localSessionId;
+		const greeting = useChatStore.getState().messages[0]?.content;
+		const generation = ttsTextSyncRef.current.generation;
+		// Use fresh secrets/voice after a card's linked theme has been persisted.
+		void loadConfigWithSecrets()
+			.then(async (config) => {
+				// A theme config update can precede the new renderer's React effect.
+				// Wait for that bundle rather than playing an old theme's authored clip.
+				if (
+					config?.ttsEnabled &&
+					config.avatarProvider === "naia-video-avatar" &&
+					config.uiPreferences?.b2cGreetingAutoplay !== false &&
+					greeting
+				) {
+					const until = Date.now() + 3000;
+					while (
+						useCascadeAvatarStore.getState().renderer?.modelId !==
+							config.nvaModel &&
+						Date.now() < until
+					) {
+						if (
+							ttsTextSyncRef.current.generation !== generation ||
+							useCascadeAvatarStore.getState().nvaLoadError
+						)
+							break;
+						await new Promise((resolve) => setTimeout(resolve, 25));
+					}
+				}
+				if (
+					!config ||
+					config.ttsEnabled !== true ||
+					config.uiPreferences?.b2cGreetingAutoplay === false ||
+					loadConfig()?.uiPreferences?.b2cGreetingAutoplay === false ||
+					loadConfig()?.nvaModel !== config.nvaModel ||
+					!greeting ||
+					useChatStore.getState().localSessionId !== greetingSession ||
+					ttsTextSyncRef.current.generation !== generation ||
+					useChatStore.getState().messages.length !== 1
+				)
+					return;
+				initializeSpeechTts(config);
+				beginProactiveTtsTextSync(greeting, false);
+				// Preserve an exact authored utterance as a single canonical A/V clip.
+				const renderer = useCascadeAvatarStore.getState().renderer;
+				const pieces =
+					(!renderer?.modelId || renderer.modelId === config.nvaModel) &&
+					renderer?.hasAuthoredClip?.(greeting)
+						? [greeting]
+						: splitSlideNarration(greeting);
+				for (const piece of pieces) sendSentenceToTts(piece);
+				finishLocalVoicePrebuffer();
+			})
+			.catch(() => Logger.warn("ChatArea", "card greeting voice unavailable"));
 
 		// Reset Gateway session and set local session ID
 		try {
@@ -3175,6 +3238,9 @@ export function ChatArea({
 	// Cleanup voice session on unmount
 	useEffect(() => {
 		return () => {
+			ttsTextSyncRef.current.generation++;
+			sentencePipelineRef.current?.dispose();
+			audioQueueRef.current?.destroy();
 			if (queuedSendTimerRef.current) {
 				clearTimeout(queuedSendTimerRef.current);
 				queuedSendTimerRef.current = null;

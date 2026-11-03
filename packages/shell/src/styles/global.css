@@ -12502,3 +12502,10 @@ body.resizing-col * {
 		min-width: 0;
 	}
 }
+
+/* Keep the first Settings entry reachable before opening any app at 360px. */
+@media (max-width: 700px) {
+	.app-layout { left: 0 !important; }
+	.app-bar { min-width: 0; width: 100%; box-sizing: border-box; }
+	.app-bar-settings { flex-shrink: 0; min-width: 40px; min-height: 40px; }
+}

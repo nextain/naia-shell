@@ -187,6 +187,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		canvas.height = manifest.canvas.height;
 		const urls = new Map<string, string>();
 		const renderer = new PrebakedAvatarRenderer({
+			modelId: nvaModel,
 			manifest,
 			locale: getLocale(),
 			resolveAssetUrl: async (relativePath) => {

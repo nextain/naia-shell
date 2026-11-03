@@ -2483,3 +2483,11 @@ Test Coverage Map: `character-theme.test.ts` 원문 확장·손상·상한·them
 | UC | Test Coverage Map — 2회차 수용 |
 |---|---|
 | UC-B2C-026-R2 | `packages/shell/src/lib/__tests__/character-theme.test.ts`, `packages/shell/src/stores/__tests__/chat.test.ts`, `packages/shell/e2e/character-theme.spec.ts`: 원본 PNG·JSON 보존/내보내기, 확장·상한·손상, 카드별 themeId·테마 수정/삭제, 재시작 복원·첫 인사·이전 대화 분리, 기본·빈 목록·진행·성공·오류 재시도·1100/360px. 앱 host/context·공용 모델/음성은 `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`와 `packages/shell/src/apps/__tests__/installed-app-context-ownership.test.ts`에서 검증. |
+
+### UC-B2C-026-R3 — 첫 인사 낭독과 재생 실패 복구
+
+새 카드 대화를 시작하면 테마 목소리로 첫 인사를 한 번 읽는다. 카드 자동낭독 또는 전역 TTS를 끄면 텍스트만 남는다. 새 대화·사용자 입력은 이전 발화를 중단한다. 테마 적용 전 설치 자산의 decode를 확인하며 실패 시 이전 테마와 대화를 유지한다. 360px 최초 화면에서 설정에 진입한다.
+
+| UC | P02 Test Coverage Map |
+|---|---|
+| UC-B2C-026-R3 | ChatArea.installed-app.test.tsx: 공용 음성 경로/끄기/대화 교체; character-theme.test.ts: decode 성공/실패/timeout; character-theme.spec.ts: 기본·빈 목록·진행·성공·오류/재시도·360px 최초 설정 진입. nva-sync-driver/core 정본 회귀. Native Windows는 별도 2070 인수 절차. |

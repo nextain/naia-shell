@@ -53,6 +53,9 @@ export function CharacterThemeSettings({
 		sourceName: initialCard?.sourceName ?? "",
 		sourceBase64: initialCard?.sourceBase64 ?? "",
 	});
+	const [greetingAutoplay, setGreetingAutoplay] = useState(
+		config.uiPreferences?.b2cGreetingAutoplay !== false,
+	);
 	const [busy, setBusy] = useState(false);
 	const busyRef = useRef(false);
 	const [error, setError] = useState("");
@@ -78,8 +81,8 @@ export function CharacterThemeSettings({
 		} catch {
 			setError(
 				copy(
-					"Could not apply. Wait for chat to finish, check settings and the library limit (30 cards / 2 MB), then try again.",
-					"적용하지 못했습니다. 진행 중인 대화가 끝난 뒤 설정과 라이브러리 용량(30장·2MB)을 확인하고 다시 시도해 주세요.",
+					"Could not apply. Previous settings were kept. Check that the theme media can play and the library limit (30 cards / 2 MB), then try again.",
+					"적용하지 못해 이전 설정을 유지했습니다. 테마 영상 재생과 라이브러리 용량(30장·2MB)을 확인하고 다시 시도해 주세요.",
 				),
 			);
 		} finally {
@@ -98,6 +101,29 @@ export function CharacterThemeSettings({
 			style={{ minWidth: 0, gridColumn: "1 / -1", overflowWrap: "anywhere" }}
 		>
 			<h3>{copy("Character cards", "캐릭터 카드")}</h3>
+			<label>
+				<input
+					type="checkbox"
+					checked={greetingAutoplay}
+					disabled={busy}
+					onChange={(event) => {
+						const enabled = event.target.checked;
+						setGreetingAutoplay(enabled);
+						void run(async () => {
+							try {
+								await onPreferences({ b2cGreetingAutoplay: enabled });
+							} catch (error) {
+								setGreetingAutoplay(!enabled);
+								throw error;
+							}
+						});
+					}}
+				/>
+				{copy(
+					"Read first greeting aloud (when voice output is on)",
+					"첫 인사 자동 낭독 (음성 출력이 켜져 있을 때)",
+				)}
+			</label>
 			<p className="settings-hint">
 				{copy(
 					"Import a SillyTavern PNG or JSON card, then apply its persona, greeting and example dialogue. Your model stays selected. Choose a local model in Model settings for local play.",

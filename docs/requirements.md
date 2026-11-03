@@ -1467,3 +1467,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 
 
 P04/P05 증거: `docs/progress/026-b2c-charcard-nva.md` 2회차 절. Shell2645/21skip, Playwright1100/360px2/2, 실제 로컬 qwen2.5:0.5b 생성 및 연결 실패 시 클라우드 fallback0, core/Shell/BGM/Agent 전체 타입검사와 production build/entry budget 통과. 저장 시점의 greeting을 보관하며, 사용자 이름 등 카드 매크로 설정을 바꾸면 카드를 다시 적용한다. native Tauri·NVA decode·실 발화·복원된 설치 앱 history 태그는 이 Done의 수용 범위에 포함하지 않는다.
+
+### FR-B2C-026-R3 — 첫 인사·테마 재생 검증 (Done — 브라우저·헤드리스 slice, native 수용 별도)
+
+명시적 새 카드 대화 첫 인사는 기존 sentence-pipeline과 선택된 음성 설정을 사용한다. uiPreferences.b2cGreetingAutoplay=false 및 전역 ttsEnabled=false를 존중한다. 비동기 준비 중 취소·대화 교체에 안전해야 한다. 테마는 manifest와 영상·배경 decode 성공 뒤 저장하며 실패 시 이전 설정을 유지한다. 360px 최초 화면에서 설정 접근이 가능해야 한다. 브라우저 검증과 Windows/native 수용은 구분한다.
