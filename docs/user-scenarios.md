@@ -2499,6 +2499,7 @@ Test Coverage Map (P02)
 | 시험 | 조건과 기대 결과 | 시험 파일 | 상태 |
 |---|---|---|---|
 | UC-TRANSFER-01 | 이관 묶음 왕복의 해시·목록·기억·대화 수 일치와 잘못된 묶음 거절 | `archive.test.ts`, `policy.test.ts`, `manifest.test.ts`, `entry.test.ts` | 부분 검증 |
+| UC-WEB-025-I18N-824 | 웹 화면 문구가 로케일 키·`t()`로 14개 언어에 나오고, 로케일 밖 ko/en 분기가 없음 | `packages/shell/src/lib/__tests__/i18n-web-strings.test.ts`, `packages/shell/src/lib/__tests__/i18n-user-facing.test.ts` | 검증 |
 | UT-TRANSFER-01 | 정상 자료를 묶고 풀어 모든 파일의 해시와 목록·기억·대화 수가 같다. 웹과 앱 대역이 같은 자료를 읽는다. | `archive.test.ts` | 부분 검증 |
 | UT-TRANSFER-02 | 경로 거슬러 오르기·절대 경로·중복·심볼릭 링크를 각각 거절한다. | `policy.test.ts`, `archive.test.ts` | 부분 검증 |
 | UT-TRANSFER-03 | 과도한 압축률, 파일 수·파일별·전체 크기 상한 초과를 각각 거절한다. | `manifest.test.ts`, `archive.test.ts` | 부분 검증 |
