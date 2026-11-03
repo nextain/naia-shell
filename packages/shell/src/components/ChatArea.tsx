@@ -470,6 +470,7 @@ export function ChatArea({
 	variant = "floating",
 }: { variant?: ChatVariant } = {}) {
 	const [input, setInput] = useState("");
+	const [greetingPreparing, setGreetingPreparing] = useState(false);
 	type OutputStage = "thinking" | "tts" | "render" | null;
 	const [outputStage, setOutputStage] = useState<OutputStage>(null);
 	// True while the local voice ENGINE is still booting (synthesize retries
@@ -1825,6 +1826,7 @@ export function ChatArea({
 		sentencePipelineRef.current?.rearmLocalVoiceNotice();
 		store.newConversation();
 		const greetingSession = useChatStore.getState().localSessionId;
+		setGreetingPreparing(true);
 		const greeting = useChatStore.getState().messages[0]?.content;
 		const generation = ttsTextSyncRef.current.generation;
 		// Use fresh secrets/voice after a card's linked theme has been persisted.
@@ -1876,7 +1878,11 @@ export function ChatArea({
 				for (const piece of pieces) sendSentenceToTts(piece);
 				finishLocalVoicePrebuffer();
 			})
-			.catch(() => Logger.warn("ChatArea", "card greeting voice unavailable"));
+			.catch(() => Logger.warn("ChatArea", "card greeting voice unavailable"))
+			.finally(() => {
+				if (useChatStore.getState().localSessionId === greetingSession)
+					setGreetingPreparing(false);
+			});
 
 		// Reset Gateway session and set local session ID
 		try {
@@ -4858,7 +4864,7 @@ export function ChatArea({
 					<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
 				)}
 
-				{characterTransitionPending && (
+				{(characterTransitionPending || greetingPreparing) && (
 					<output role="status">{t("chat.cardPreparing")}</output>
 				)}
 				{/* Input (chat tab only) */}

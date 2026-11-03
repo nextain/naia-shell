@@ -1521,3 +1521,6 @@ manifest·build.rs exact pin·installer/self-trust CI·README·진행 문서·�
 
 P03: ADK 복원은 시작 시 binding 세대와 요청 순서를 캡처하고 현재 세대·최신 요청에만 캐시를 쓴다. binding 변경/해제는 이전 복원을 폐기한다. 읽기 실패는 기존 캐시를 보존한다. AX host ACK/capture/submit 예외는 승인 실패로 소비하며 입력을 다른 경로로 보내지 않는다. 실제 연결은 Agent의 host-only 객체 capability와 인증 provenance를 지켜야 한다. 공용 chat RPC로 대체하지 않는다.
 P04/P05: 서버 복원 수명·host 장애 보강 Done. 집중88/88, 실제 paired Agent broker 연결8/8, AX browser4/4·카드1100px/360px 통과(360px 최초60초 제한 실패 후120초 분리 재실행50.5초 통과), Shell 전체 타입·compile integrity 통과. 실제 앱 AX 활성화·native 저장은 trusted backend composition/인증 transport 및 실기 환경이 없어 Pending. 전체 회귀 결과는 progress ledger에 기록한다.
+
+## FR-B2C-026-R11 — 좁은 창과 준비 중 입력
+CSS viewport 274px에서 입력·보내기 경계가 화면 안에 있어야 한다. 카드/첫 인사 준비는 접근 가능한 상태 안내로 표시하고 준비 뒤 사용자가 Enter/보내기를 다시 누르게 안내한다. 입력을 자동 전송하지 않으며 초안을 보존한다. P01/P02: UC-B2C-026-R11. P04: Shell 전체 2688통과/21제외, Playwright 274/360/1100px 3/3, 컴포넌트 집중 23/23 및 core/Shell 타입·compile integrity 통과. P05: Done (서버 수정); 새판 Windows WebView2/native 수용은 기기 확인 목록에 남긴다.

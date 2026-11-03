@@ -261,3 +261,17 @@ P04/P05: 최종 집중88/88(tmp/r10-focused-final.log), 실제 Agent8/8, AX brow
 전체 회귀 중 FileTree open-file reveal 1건 실패가 나와 분리 재실행에서도1fail/3pass였다. 시작 HEAD864f1356의 git archive를 실행 tmp/r10-baseline에 풀어 같은 시험을 실행해 동일1fail/3pass 재현(tmp/r10-file-tree-baseline.log). 이번 수정의 회귀가 아닌 기존 실패로 분리하며 파일 트리 코드는 변경하지 않았다.
 
 10회차 최종 전체: **2687pass/1fail/21skip**,253파일pass/1fail/1skip,596.31초(tmp/r10-shell-full.log). 실패는 위 시작HEAD에서도 재현된 FileTree1건이다. baseline2678에서 신규 회귀10개 포함 전체2709개가 실행됐다. 전체 green이라고 쓰지 않는다. TMPDIR를 실행 tmp로 지정한 최종 집중88/88도 통과(tmp/r10-focused-tmpdir.log). 초기 시험은 TMPDIR를 빠뜨려 라이브러리 내부 임시 경로가 OS 기본값이었을 수 있다는 예외를 결과에 기록한다. 코드/문서 서버slice Done, AX 실제 앱 연결·기기/자산 수용 Pending.
+
+## r11 — 2070 인수 반영·CSS 274px 보내기·인사 준비 안내
+
+사용자 전달 실기: 준, 11/4 06:12 KST, build 41697964598. 판 번호·키보드·카드·300ms 입력 보존·중복 카드·빈 이름·메모 위치·재시작 통과. 이는 전달받은 Windows 2070 인수 결과이며 이 서버가 직접 실행한 결과는 아니다. 남은 결함은 물리 창 360px / CSS viewport 274px의 보내기 잘림이다.
+
+P01/P02 UC-B2C-026-R11, P03 FR-B2C-026-R11을 먼저 기록했다. 자동 전송 대신 준비 중 상태 안내와 입력 보존을 선택했다. 준비가 끝나면 Enter/보내기를 다시 누르도록 한/영 안내한다. 기존 카드 commit 상태뿐 아니라 비동기 첫 인사 설정/renderer 준비 동안에도 role=status를 표시한다. 이전 인사 promise가 새 대화의 상태를 지우지 않도록 session을 확인한다.
+
+274px 재현 시험에서 보내기 오른쪽 끝 300px로 FAIL(`tmp/r11-red.log`); 고정 320px companion/chat 영역과 앱 모달의 최대 폭을 viewport 안으로 제한한 뒤 274px 경계·입력·Enter 전송이 PASS다. 최소 창 폭을 올리지 않으며 입력과 버튼 순서를 유지한다. Playwright 첫 갈무리에 splash가 남은 것을 확인해 splash 종료를 기다린 후 다시 촬영하도록 보완했다. 최종 증거는 `/home/nextain/work/codex-runs/026-b2c/tmp/r11-*`에 둔다.
+
+verify-visual-ux: 기본/빈 입력·전송/준비 안내·카드 저장 성공/파싱 및 쓰기 오류 후 재시도/Tab·역Tab·Esc/ARIA/274·360·1100px를 브라우저에서 검증한다. 274px 갈무리는 실제 입력과 보내기가 모두 보이며 겹치지 않음을 직접 확인했다. fixture 영상과 BGM 미기동 안내는 실제 GPU·청취 증거가 아니다. CSS/React 변경이며 Rust/IPC 변경은 없다. Windows WebView2 274px 재확인은 별도 기기 수용이다.
+
+헌장 파일은 승인 없이 수정하지 않았다. root 구조 기존 위반 3건(test-results/, tracked tmp/, tsconfig.build.json), core 70파일 밖 Shell 계약 탐지 갭과 빈 C manifest는 그대로 남아 있어 전역 구조 게이트 PASS를 주장하지 않는다. cargo/rustc/tauri-driver가 PATH에 없고 GPU·Windows/macOS·서명/권리 자산이 없어 해당 수용은 남은 일로 유지한다.
+
+최종 P04/P05: Done(서버 수정). Shell 전체 254파일통과/1파일제외, 2688통과/21제외(2709개), `tmp/r11-shell-final.log`; Playwright274/1100/360px3/3(59.2초), `tmp/r11-browser-accepted.log`와 갈무리; 집중23/23; core/Shell 전체 타입·compile integrity·trace·assembly 통과. 이전 FileTree 실패는 이번 분리4/4와 전체에서 코드 수정 없이 통과했다. 이전 초기 및 문구 보완 전 전체 로그도 남겼으며 최종 증거와 구분한다. 시작 root 위반·Shell 앵커 탐지 갭·native 수용은 별도 미완료다.

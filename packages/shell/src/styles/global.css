@@ -1147,6 +1147,7 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	top: 32px; /* below titlebar */
 	bottom: 0;
 	width: var(--naia-width, 320px);
+	max-width: 100vw;
 	display: flex;
 	flex-direction: column;
 	background: transparent;
@@ -1351,6 +1352,7 @@ body.resizing-col .naia-work-rail::before {
 	bottom: 0;
 	left: 8px;
 	width: calc(var(--naia-width, 320px) - 16px);
+	max-width: calc(100vw - 16px);
 	display: flex;
 	flex-direction: column;
 	z-index: 3;
@@ -7799,6 +7801,7 @@ body.resizing-row {
 	top: 0;
 	left: 0;
 	width: var(--naia-width, 320px);
+	max-width: 100vw;
 	bottom: 0;
 	background: rgba(0, 0, 0, 0.6);
 	display: flex;

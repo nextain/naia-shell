@@ -2557,3 +2557,10 @@ P02 Test Coverage Map: `adk-store.test.ts`의 두 workspace 재읽기·지연 �
 | UC-B2C-026-R9 | src/test/agent-pairing-drift.contract.test.ts; src/test/uc-wire-v1-paired-proto.contract.test.ts | 메모 데이터 홈 수정 exact 짝·proto 일치, 다른 짝 거절 |
 | UC-B2C-026-R10 | packages/shell/src/lib/__tests__/adk-store.test.ts; packages/shell/src/lib/__tests__/ax-approval-adapter.test.ts | ADK 지연·왕복·최신 요청·캐시 재생성·읽기 실패 보존, 승인 host 예외 단회 소비 |
 | UC-B2C-026-R10 | packages/shell/e2e/ax-approval-draft.spec.ts; packages/shell/e2e/character-theme.spec.ts | 승인 한/영·좁은 폭, 카드 저장/reload·오류 복구·입력 보존; 인증/native는 별도 |
+
+## UC-B2C-026-R11 — 2070 인수 후 CSS 274px와 준비 안내 (P01/P02)
+2070 실기(준, 11/4 06:12, build 41697964598)에서 판 번호·키보드·카드·300ms 입력 보존·중복 카드·빈 이름·메모 위치·재시작은 통과했다. 실제 창 360px의 CSS viewport 274px에서는 보내기가 잘렸다. 사용자는 CSS 274px에서도 입력과 보내기를 모두 볼 수 있어야 한다. 인사/카드 준비 중에는 role=status로 준비 중이며 글이 보존되고 준비 후 Enter/보내기를 다시 누르도록 안내한다. 자동 전송하지 않는다.
+
+| UC | Test Coverage Map | 상태 |
+|---|---|---|
+| UC-B2C-026-R11 | packages/shell/e2e/character-theme.spec.ts; packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx | 274/360/1100px 기본·빈 입력·진행 안내·입력 보존·성공·오류/재시도·키보드/ARIA·DOM bounds. Native 274px 재확인은 기기 목록 |

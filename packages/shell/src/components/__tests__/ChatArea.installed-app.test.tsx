@@ -280,6 +280,8 @@ describe("ChatArea", () => {
 			await new Promise((resolve) => setTimeout(resolve, 20));
 		});
 		expect(input.value).toBe("Keep my words");
+		expect(document.querySelector("output[role=status]")).toHaveTextContent("Preparing character");
+		expect(document.querySelector("output[role=status]")).toHaveTextContent("Enter or Send again");
 		expect(
 			useChatStore.getState().messages.filter((m) => m.role === "user"),
 		).toHaveLength(0);

@@ -22,7 +22,7 @@ const config = {
 	ttsProvider: "edge",
 	ttsVoice: "ko-KR-SunHiNeural",
 };
-for (const width of [1100, 360]) {
+for (const width of [274, 1100, 360]) {
 	test(`card and theme settings ${width}px`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		await page.addInitScript(
@@ -135,10 +135,24 @@ for (const width of [1100, 360]) {
 		await page.addInitScript(TAURI_BASE_MOCK_FALLBACK);
 		await page.goto("/");
 		await expect(page.locator(".chat-app")).toBeVisible();
+		await expect(page.locator(".splash-screen")).toBeHidden();
 		// All chat actions fit the physical viewport before opening settings.
 		const sendBounds = await page.locator(".chat-send-btn").boundingBox();
 		expect(sendBounds!.x).toBeGreaterThanOrEqual(0);
 		expect(sendBounds!.x + sendBounds!.width).toBeLessThanOrEqual(width);
+		if (width === 274) {
+			const input = page.locator(".chat-input");
+			await input.fill("Narrow window message");
+			for (const element of [input, page.locator(".chat-send-btn")]) {
+				const box = await element.boundingBox();
+				expect(box!.x).toBeGreaterThanOrEqual(0);
+				expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+			}
+			await page.screenshot({ path: test.info().outputPath("chat-274.png") });
+			await input.press("Enter");
+			await expect(page.locator(".chat-messages")).toContainText("Narrow window message");
+			return;
+		}
 		// Open actual Shell settings, then its persona tab.
 		const settingsEntry = page.locator(".app-bar-settings");
 		const entryBounds = await settingsEntry.boundingBox();
@@ -563,12 +577,14 @@ for (const width of [1100, 360]) {
 			const originalInvoke = win.__TAURI_INTERNALS__.invoke;
 			win.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
 				if (cmd === "secure_store_get")
-					await new Promise((resolve) => setTimeout(resolve, 100));
+					await new Promise((resolve) => setTimeout(resolve, 800));
 				return originalInvoke(cmd, args);
 			};
 			window.dispatchEvent(new Event("naia-character-new-conversation"));
 		});
 		await page.waitForTimeout(300);
+		await expect(page.locator("output[role=status]")).toContainText("Preparing character");
+		await expect(page.locator("output[role=status]")).toContainText("Enter or Send again");
 		await page
 			.locator(".chat-input")
 			.fill("300ms greeting interruption keeps my words");

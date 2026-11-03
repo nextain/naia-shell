@@ -644,7 +644,7 @@ export default {
 	"onboard.chat.welcome": "안녕하세요! 시작하기 전에 잠깐 확인해 주세요 😊",
 	"onboard.chat.agentName": "안녕하세요! 저는 나이아예요. 제 이름을 지어주세요! ✨",
 	"onboard.chat.userName": "{agent}! 정말 좋은 이름이에요. 그럼 저는 당신을 어떻게 부를까요?",
-	"chat.cardPreparing": "카드를 준비하고 있습니다. 입력한 글은 유지됩니다.",
+	"chat.cardPreparing": "캐릭터 준비 중입니다. 글이 입력칸에 남아 있으면 준비가 끝난 뒤 Enter 또는 보내기를 다시 눌러 주세요.",
 	"onboard.chat.speechStyleNoName": "어떤 말투로 대화할까요? 편한 걸 골라주세요 😊",
 	"onboard.chat.speechStyle": "{user}! 어떤 말투로 대화할까요? 편한 걸 골라주세요 😊",
 	"onboard.chat.character": "제 외모를 골라주세요! 마음에 드는 캐릭터가 있나요? 🌸",
