@@ -2456,3 +2456,20 @@ Test Coverage Map (P02)
 | 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
+
+## UC-B2C-026 — NVA 테마와 호환 캐릭터 카드
+
+P01: 사용자는 설정 → 페르소나에서 SillyTavern/TavernAI 카드(v2/v3 PNG·JSON)를 불러와 내용을 확인하고 적용한다. 카드의 성격·상황·첫 인사·예시 대화를 기존 페르소나 경로로 전달하고, 아바타·음성·배경을 묶은 테마를 선택한다. 로컬 모델은 기존 모델 설정을 유지한다. 웹·로컬 동기화는 0.2.7 범위다.
+
+P02 Test Coverage Map:
+
+| 상태/계약 | 시험 |
+|---|---|
+| UC-B2C-026 | `packages/shell/src/lib/__tests__/character-theme.test.ts`, `packages/shell/e2e/character-theme.spec.ts` 카드→프롬프트 및 설정 저장·테마 흐름 |
+| v2/v3 JSON·PNG, ccv3 우선, 손상·상한·유니코드 | `src/apps/charcard/__tests__/card-parser.test.ts` |
+| 페르소나·첫 인사·예시·치환·예산 | `src/apps/charcard/__tests__/prompt-builder.test.ts` |
+| 셸 설정 patch·테마 묶음·모델 보존 | `src/lib/__tests__/character-theme.test.ts` |
+| 기본/빈 카드·미리보기·진행/중복 방지·적용 성공·오류 후 재시도·360px·키보드/ARIA | `e2e/character-theme.spec.ts` |
+| 계약 누락 live 차단·manifest 실패 차단 | `.agents/hooks/conform-gate.js`에 합성 Write 입력, checker 실행 |
+
+UI는 Playwright로 실제 설정 컴포넌트와 저장 경로를 검사한다. Rust 변경 없음. 실제 NVA 디코딩·로컬 Agent 대화·설치판 저장 복원은 후속 native 수용으로 남기고 mock 검증과 구별한다.

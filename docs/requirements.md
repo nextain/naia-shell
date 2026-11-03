@@ -1446,3 +1446,13 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-SLIDES-ART.1** | Slides `package-public/icon.svg`는 512×512 둥근 앱 아이콘으로 작은 크기에서도 발표를 알아보게 한다. 같은 공개 폴더의 `thumbnail.svg`는 1280×720 데스크톱 발표 장면, `Naia Slides / 나이아 슬라이드`, 핵심 기능을 보여 준다. Vite slides 빌드의 `publicDir` 복사 산출물에 두 파일을 포함한다. 현재 앱 매니페스트 스키마에 미리보기 필드가 없으므로 `app.json`은 변경하지 않는다. | UC-SHELL-APP-EXPOSURE-024 | SVG 소스 검토·크기 확인; `pnpm build:slides` 산출물 확인; PNG 렌더 미리보기 | Done |
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
+
+## 0.2.6 B2C 캐릭터 카드·NVA 테마 (#792 #714 #743 #760)
+
+- FR-B2C-026.1 (Done — 초기 slice, native 출시 수용은 후속): #792의 v2/v3 PNG/JSON 해석기·프롬프트 조립기와 단위 시험을 재사용한다. ccv3 우선, 파일/본문/이미지 상한, 손상 거절, 외부 자산 미실행.
+- FR-B2C-026.2 (Done — 초기 slice, native 출시 수용은 후속): 설정 페르소나에서 파일 선택 → 이름·첫 인사 미리보기 → 명시 적용. 페르소나·이름을 저장하고 첫 인사/예시를 프롬프트에 포함한다. 기존 모델/자격은 보존한다.
+- FR-B2C-026.3 (Done — 초기 slice, native 출시 수용은 후속): NVA 테마는 기존 설치 NVA 식별자·음성·배경 묶음이다. 현재 선택을 이름 붙여 저장(최대 30개)하고 저장한 테마를 선택하면 설정의 기존 필드로 즉시 반영한다. 테마 목록은 uiPreferences.b2cNvaThemes에 보관한다. 카드 PNG는 NVA로 변환하지 않는다.
+- NFR-B2C-026.1 (Done — 초기 slice, native 출시 수용은 후속): 읽는 중 중복 입력 방지, 실패 시 이전 설정 보존·파일 재선택, alert/status·label·360px 폭. 카드 본문과 파일명은 로그에 넣지 않는다.
+- NFR-B2C-026.2 (Done — 초기 slice, native 출시 수용은 후속): 비활성 C conform 대신 TypeScript 편집에 기존 파일 계약 검사기를 fail-closed 실행해 미계약 core 코드를 live 차단한다.
+
+설계·현황 근거: [0.2.6 B2C 설계](progress/026-b2c-charcard-nva.md).

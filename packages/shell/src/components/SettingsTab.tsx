@@ -182,6 +182,12 @@ import {
 import { Logger } from "../lib/logger";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
+import { themePatch, type CharacterTheme } from "../lib/character-theme";
+const CharacterThemeSettings = lazy(() =>
+	import("./CharacterThemeSettings").then((m) => ({
+		default: m.CharacterThemeSettings,
+	})),
+);
 import {
 	type ProactiveSpeechSettings,
 	toSpeechProfileCommandInput,
@@ -3077,6 +3083,43 @@ export function SettingsTab() {
 		} as unknown as Record<string, unknown>);
 	}
 
+	async function persistCharacterSettings(patch: Partial<AppConfig>) {
+		const path = getAdkPath();
+		const cfg = loadConfig();
+		if (!path || !cfg) throw new Error("workspace required");
+		await writeNaiaConfigAtPath(
+			{ ...cfg, ...patch } as unknown as Record<string, unknown>,
+			path,
+		);
+		if (getAdkPath() !== path) throw new Error("workspace changed");
+		// Merge only our fields after the async write, preserving unrelated UI edits.
+		saveConfig({ ...loadConfig()!, ...patch });
+	}
+
+	async function applyCharacterTheme(selected: CharacterTheme) {
+		const sourceAdk = getAdkPath();
+		if (
+			!naiaNvas.some((path) => path.split(/[/\\]/).pop() === selected.nvaModel)
+		)
+			throw new Error("NVA is not installed");
+		const bg = selected.backgroundVideo
+			? naiaBgs.find((p) => p.split(/[/\\]/).pop() === selected.backgroundVideo)
+			: undefined;
+		if (selected.backgroundVideo && !bg)
+			throw new Error("background is not installed");
+		const bgUrl = bg ? await toLocalBlobUrl(bg) : "";
+		if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
+		await persistCharacterSettings(themePatch(selected));
+		setAvatarProvider("naia-video-avatar");
+		setNvaModel(selected.nvaModel);
+		setTtsProvider(selected.ttsProvider);
+		setTtsVoice(selected.ttsVoice);
+		setActiveBgPath(bg ?? "");
+		setBackgroundVideoFilename(selected.backgroundVideo);
+		setBackgroundMediaType(bg ? getBackgroundMediaType(bg) : "");
+		setBackgroundVideoUrl(bgUrl);
+	}
+
 	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high"];
 
 	function handleThinkingChange(level: ThinkingLevel) {
@@ -4523,6 +4566,37 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "persona" && (
 				<>
+					<Suspense fallback={null}>
+						<CharacterThemeSettings
+							key={getAdkPath()}
+							config={loadConfig() ?? existing!}
+							currentTheme={{
+								nvaModel:
+									avatarProvider === "naia-video-avatar"
+										? (nvaModel || DEFAULT_NVA_MODEL).split(/[/\\]/).pop()!
+										: "",
+								ttsProvider,
+								ttsVoice,
+								backgroundVideo: backgroundVideoFilename,
+							}}
+							onCard={async (patch) => {
+								await persistCharacterSettings(patch);
+								setPersona(patch.persona ?? "");
+								setAgentName(patch.agentName ?? "");
+								setPersonaDisabled(false);
+							}}
+							onTheme={applyCharacterTheme}
+							onSaveThemes={async (themes) => {
+								await persistCharacterSettings({
+									uiPreferences: {
+										...loadConfig()?.uiPreferences,
+										b2cNvaThemes: themes,
+									},
+								});
+							}}
+						/>
+					</Suspense>
+
 					<div className="settings-section-divider">
 						<span>{t("settings.personaSection")}</span>
 					</div>

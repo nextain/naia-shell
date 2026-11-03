@@ -12454,3 +12454,16 @@ body.resizing-col * {
 .open-file-edit-review__btn--reject:hover {
 	background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
+
+/* Character/theme settings need usable space beside the companion on narrow
+   windows. Only the active Settings surface takes the full available width. */
+@media (max-width: 700px) {
+	.app-layout:has(.content-app__slot--active .settings-tab) {
+		left: 0 !important;
+		z-index: 100;
+	}
+	.settings-tab-bar {
+		overflow-x: auto;
+		min-width: 0;
+	}
+}
