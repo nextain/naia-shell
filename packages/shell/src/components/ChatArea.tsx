@@ -1510,7 +1510,10 @@ export function ChatArea({
 				if (
 					activeSlidePresenterSpeechRef.current?.requestId === detail.requestId
 				) {
-					settleSlidePresenterSpeech("failed", String(error));
+					Logger.warn("ChatArea", "App narration failed", {
+						error: String(error),
+					});
+					settleSlidePresenterSpeech("failed", t("apps.speechFailed"));
 				}
 			});
 		};
@@ -1921,10 +1924,7 @@ export function ChatArea({
 		if (shouldQueueBeforeSpeechYield(isChatRequestActive())) {
 			if (installedAppTurn) {
 				installedAppTurnRef.current = true;
-				settleInstalledAppReply(
-					"",
-					"Naia is busy with another reply. Please retry.",
-				);
+				settleInstalledAppReply("", t("apps.requestBusy"));
 				return;
 			}
 			useChatStore.getState().enqueueMessage(text);
@@ -2293,7 +2293,7 @@ export function ChatArea({
 			});
 		} catch (err) {
 			const errStr = String(err);
-			settleInstalledAppReply("", errStr);
+			settleInstalledAppReply("", t("apps.requestFailed"));
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
@@ -2308,7 +2308,9 @@ export function ChatArea({
 					? t(admissionKey)
 					: errStr.includes("ollama_context_policy_unavailable")
 						? t("settings.ollamaContextPolicyUnavailable")
-						: errStr;
+						: installedAppTurn
+							? t("apps.requestFailed")
+							: errStr;
 				useChatStore.getState().appendStreamChunk(`
 [${t("chat.error")}] ${message}`);
 				finishStreamingWithVoiceTail();
@@ -2387,7 +2389,7 @@ export function ChatArea({
 				return;
 			}
 			if (installedAppRequestRef.current) {
-				respondError("Naia is busy with another reply. Please retry.");
+				respondError(t("apps.requestBusy"));
 				return;
 			}
 			installedAppRequestRef.current = {
@@ -2423,9 +2425,7 @@ export function ChatArea({
 						"",
 						installedAppVoiceBlockedRef.current
 							? t("apps.voiceModeBlocked")
-							: ready
-								? "Naia chat is unavailable."
-								: "Naia could not register the app tools. Please retry.",
+							: t("apps.requestUnavailable"),
 					);
 					return;
 				}
@@ -2433,7 +2433,10 @@ export function ChatArea({
 					await installedAppSendRef.current(detail.prompt!);
 				} catch (error) {
 					installedAppTurnRef.current = true;
-					settleInstalledAppReply("", String(error));
+					Logger.warn("ChatArea", "Installed app request failed", {
+						error: String(error),
+					});
+					settleInstalledAppReply("", t("apps.requestFailed"));
 				}
 			})();
 		};
@@ -3173,7 +3176,10 @@ export function ChatArea({
 			case "processing_disclosure":
 				store.appendStreamChunk(formatStructuredAgentChunk(chunk));
 				break;
-			case "error":
+			case "error": {
+				const failureDetail = installedAppTurnRef.current
+					? t("apps.requestFailed")
+					: wireErrorMessage(chunk.code, chunk.message);
 				Logger.warn("ChatArea", "Agent error chunk", {
 					message: chunk.message,
 				});
@@ -3190,10 +3196,7 @@ export function ChatArea({
 				}
 				flushThinkingStream();
 				flushGestureTriggerStream();
-				settleInstalledAppReply(
-					"",
-					wireErrorMessage(chunk.code, chunk.message),
-				);
+				settleInstalledAppReply("", t("apps.requestFailed"));
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
 				if (sentenceChunkerRef.current) {
@@ -3213,13 +3216,14 @@ export function ChatArea({
 					role: "assistant",
 					content: "",
 					failure: {
-						detail: wireErrorMessage(chunk.code, chunk.message),
+						detail: failureDetail,
 						retryText: lastSentTextRef.current,
 					},
 				});
 				finishLocalVoicePrebuffer();
 				completeCurrentRequest(chunk.requestId);
 				break;
+			}
 		}
 	}
 

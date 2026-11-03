@@ -1471,3 +1471,11 @@ P04/P05 증거: `docs/progress/026-b2c-charcard-nva.md` 2회차 절. Shell2645/2
 ### FR-B2C-026-R3 — 첫 인사·테마 재생 검증 (Done — 브라우저·헤드리스 slice, native 수용 별도)
 
 명시적 새 카드 대화 첫 인사는 기존 sentence-pipeline과 선택된 음성 설정을 사용한다. uiPreferences.b2cGreetingAutoplay=false 및 전역 ttsEnabled=false를 존중한다. 비동기 준비 중 취소·대화 교체에 안전해야 한다. 테마는 manifest와 영상·배경 decode 성공 뒤 저장하며 실패 시 이전 설정을 유지한다. 360px 최초 화면에서 설정 접근이 가능해야 한다. 브라우저 검증과 Windows/native 수용은 구분한다.
+
+
+## FR-B2C-026-R4 — 설치 앱 통합 수용
+
+- 설치 앱 context는 활성 소유 iframe에서만 받으며 native 활성 카드와 중복해 모델에 보내지 않는다. 앱 모델/음성은 기존 공용 경로와 로컬 provider 선택을 유지한다.
+- 앱 busy/등록 실패/전송 실패/낭독 실패는 현재 로케일의 안내와 재시도 행동을 사용한다. 원시 예외는 로그에만 남긴다. 프로토콜 오류 코드는 호환성을 유지한다.
+- Agent transcript의 유효한 appName(공백 제거 후1~200자)을 셸 재시작 복원에서 보존하고 일반 모델 history에 섞지 않는다. 태그가 없는 구형 transcript의 앱 소유권을 추측하지 않는다. 지정 Agent의 appName 저장/wire 지원 부재는 별도 미충족 요구사항으로 기록한다.
+- 상태: 셸 locale 오류 안내·유효 appName reader 보강은 Done(P04 집중44/전체2663 통과). #792 로컬 production 묶음 브라우저 통합은 검증됨. appName Agent 디스크 보존은 FAIL, 실제 #811 상품·native/서명 설치판 전체 수용은 Pending. P04·P05 세부 판정은 docs/progress/026-b2c-charcard-nva.md 4회차 증거를 따른다.

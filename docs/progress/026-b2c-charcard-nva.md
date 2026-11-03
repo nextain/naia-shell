@@ -102,3 +102,21 @@ P03: 테마 검증 중 중복 행동을 잠그고 오류는 이전 테마 유지
 - native 실행은 cargo/tauri-driver/WebKitWebDriver/기존 바이너리 부재로 수행하지 않았다. 사용자 지정 2070 체크리스트는 실행 폴더 result.md에 단계·기대 결과로 기록한다. #743/#760 전체 해결·Windows 수용·출시 가능을 선언하지 않는다.
 
 최종 강화 Playwright도1100/360px 2/2 통과(tmp/r3-e2e-complete.log, tmp/r3-playwright-complete/). 이전 nvaModel=previous/voice=Aria와 다른 후보 naia/SunHi를 적용하면서 손상 clip 실패와 write_naia_config 실패를 각각 만들고 이전 설정 전체 동일→재시도 성공을 검증했다. production 최종 build/entry budget 통과(raw491641, gzip154739), core/Shell/BGM/Agent 원본 tsconfig 통과. Agent 타입검사용 임시 node_modules 링크는 제거했고 지정 Agent tracked 상태는 clean이다. 이 서버의 native 도구 부재와 사용자 요청의2070 수용은 별도이며 process-status는 사용자 제공 헌장 목록 때문에 변경하지 않았다.
+
+
+## 4회차 설계 — 11/5 설치 앱 회귀
+
+P01~P03: UC-B2C-026-R4/FR-B2C-026-R4. #792의 실제 git snapshot을 실행 폴더 tmp에 빌드해 설치 디렉터리를 만들고 셸 app-loader/iframe을 통해 회귀한다. Tauri IPC·상점 서명은 모의 경계와 실제 검증을 구분한다. #811은 공용 host protocol이며 소비 앱 패키지 확보 여부와 실제 모델/음성 증거를 따로 기록한다. 지정 Agent a4aef165의 ConversationTurnRecord와 ChatRequest wire에는 appName이 없으므로 셸 단독으로 디스크 태그 저장 성공을 주장할 수 없다. transcript writer는 Agent 한 곳으로 유지한다. 셸 reader는 유효 태그를 보존하도록 수정하고 Agent 미지원 재현을 인수 자료로 남긴다. 실패 안내의 하드코딩/원시 예외를 locale key로 교체한다.
+
+
+## 4회차 P04·P05 판정 (2026-11-03)
+
+- **셸 수정 slice Done / 실제 설치판 전체 수용 미충족.** 앱 요청 busy·등록/연결 실패·provider 실패·낭독 예외를14개 locale key로 연결했다. 앱 provider 실패는 iframe 응답과 채팅 failure detail 모두 원시 예외를 숨기며 Logger에는 원인을 남긴다. 프로토콜 오류 코드 호환은 유지한다. transcript reader는 유효 appName을 보존한다. Agent 단일 writer는 변경하지 않았다.
+- P04 전체 Shell: **2663 통과·21 제외**, 253파일 통과/1제외(`tmp/r4-full-stable.log`). 최초 실행은 기존 Herdr 타이밍 실패1, 다음 실행은 core dist 컴파일과 겹쳐 unrelated composition/onboarding25실패가 나왔다. 같은25개는 분리 실행32/32에서 통과했고, compile 작업 종료 후 고정된 전체를 재실행해 위 결과를 확인했다. 이를 새 기능 실패가 없다는 증거로 쓰며 최초 실패 로그도 보존했다.
+- 변경 집중 **44/44**: `tmp/r4-focused-complete.log`. appName 복원/비문자·과대·빈 태그 거절/일반 모델 history 제외, host/context 소유권, ko/en 등록 실패·provider 원시 예외 차단·선택 모델/음성 회귀. 원본 #792 snapshot의 parser/prompt/UI 시험 **25/25**(`tmp/r4-package-tests-complete.log`).
+- 실제 #792 snapshot **e67184df1993107d47539bc33e536010e28792e3**, `land.naia.charcard`0.1.0을 실행 폴더 tmp에 추출해 production 빌드/zip/설치 디렉터리를 만들었다. sha256/파일 목록은 `tmp/r4-package-manifest.json`. 셸 app-loader→GenericInstalledApp iframe→원본 앱 JSON import/Enter로 시작→context1개→실 Shell core/Agent gRPC/ChatTurnHandler→실 CPU Ollama qwen2.5:0.5b→DOM 응답을 확인했다. native 카드 활성 시 설치 charcard entry0개, 비활성 iframe 지연 context 거절도 확인했다.
+- #811 공용 연결의 소비 앱은 **시험용 test.bridge**다(실 타로 등 상품 아님). Agent 실제 register/clear RPC ACK→공용 model.ask→DOM, 직접 speak→공용 sentence-pipeline/AudioQueue→실 로컬 CPU Flite WAV→비음소거 playing/양수 duration→speech-result finished, 설정 General에서 한국어 선택→locale ko→모의 provider 오류의 한국어 안내→정상 로컬 모델 재시도를 검증했다. 최종 run은 모델 요청5개(실생성4/의도적 오류1), 실제 WAV4개, provider HTTP는 loopback만. `tmp/r4-live-final-acceptance.log`, `tmp/r4-browser-evidence.json`, `tmp/r4-agent-evidence.json`, `tmp/r4-speech-*.wav`. IPC와 TTS endpoint의 Flite facade는 하네스이며 packaged Agent entry·Rust·VoxCPM·사람 청취 수용은 아니다.
+- verify-visual-ux: 실제 카드1100/360px 화면을 직접 열어 import→카드 목록→역할극 시작의 위계와 Enter·버튼 경계를 확인했다. 오류/재시도는 공용 소비 fixture의 alert/status와 한국어 안내로 확인했고 시험 fixture의 저대비 글자를 보정했다. 원본 카드의 저장/import busy·오류 복구는 원본 UI 시험25개에 포함된다. 빈 카드 라이브러리·기본/진행/오류/좁은 폭 전체의 native 수용은 이전2070 목록과4회차 추가11~14에 남긴다. 실제 #792 원본 manifest는 locale 권한이 없으며, 셸 언어 변경 뒤 원본 카드 UI가 즉시 바뀌는 계약까지 통과로 주장하지 않는다.
+- **appName 디스크 재시작 FAIL**: 지정 Agent a4aef165의 ConversationTurnRecord/ChatRequest/handler append/writer에 appName 지원이 없다. 실제 writer에 tag를 추가 전달한 write/read 별도 프로세스도 JSONL 두 행에서 tag가 사라진다(`tmp/r4-history/restart-evidence.json`). 실제 브라우저 앱 요청의 Agent 기록에서도 누락됐다(`tmp/r4-real-transcript-evidence.json`). 셸 reader 준비만으로 전체 해결이 아니며, Agent wire·writer·Rust 전달을 짝으로 보강한 뒤 pin 갱신·실 재시작 시험이 필요하다.
+- core/Shell/BGM TypeScript·compile-integrity·assembly·file-anchor·UC trace 통과. 최종 production build/entry budget raw491942/gzip154809 통과. 기존 root whitelist2건과 untranslated-ui의 기존 CharacterThemeSettings 언어 분기 등은 남아 있다. C conform region은 비어 있고 TS file oracle는 core src/main 범위다. 헌장/process-status/외부 읽기전용 문서·다른 작업자 폴더·Agent tracked 소스는 변경하지 않았다.
+- `tmp/r4-native-preflight.json`: cargo/tauri-driver/WebKitWebDriver/기존 native 바이너리 없음. signed Store 실제 상품·권리/서명 검증과 Windows/2070 수용은 별도다. 결과 원문과 날짜별11/4~11/9 일감 및 기존2070 목록+추가11~14는 실행 폴더 result.md에 기록한다. 원격 push/운영 접속 없음.

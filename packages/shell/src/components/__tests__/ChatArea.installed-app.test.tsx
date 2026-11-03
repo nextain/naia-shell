@@ -465,49 +465,84 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
-	it("returns an app error instead of claiming Naia received a reveal when tool registration fails", async () => {
-		appRegistry.register({
-			id: "test.app",
-			name: "Cafe Lua Tarot",
-			center: () => null,
-			tools: [
-				{
-					name: "skill_cafelua_tarot",
-					description: "Control a tarot reading.",
-					parameters: { type: "object", properties: {} },
-					tier: 0,
-				},
-			],
-		});
+	it.each(["en", "ko"] as const)("keeps raw provider failures out of the %s app reply and chat alert", async (locale) => {
+		const previousLocale = getLocale();
+		await setLocale(locale);
+		appRegistry.register({ id: "test.app", name: "Test app", center: () => null });
 		useAppStore.setState({ activeApp: "test.app" });
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({ provider: "openai", model: "gpt-4o" }),
-		);
-		mockSendAppSkills.mockResolvedValueOnce(false);
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "openai", model: "gpt-4o", apiKey: "test-key", ttsEnabled: false }));
 		const reply = vi.fn();
 		window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
-		render(<ChatArea />);
-		window.dispatchEvent(
-			new CustomEvent(INSTALLED_APP_ASK_EVENT, {
-				detail: {
-					appId: "test.app",
-					requestId: "reading-registration-error",
-					prompt: "Interpret this card.",
-				},
-			}),
-		);
-
-		await waitFor(() => expect(reply).toHaveBeenCalledOnce());
-		expect(capturedRequests).toHaveLength(0);
-		expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
-			requestId: "reading-registration-error",
-			error: expect.stringContaining("could not register"),
-		});
-		window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
-		appRegistry.unregister("test.app");
-		localStorage.removeItem("naia-config");
+		try {
+			render(<ChatArea />);
+			window.dispatchEvent(new CustomEvent(INSTALLED_APP_ASK_EVENT, { detail: { appId: "test.app", requestId: "provider-failure", prompt: "Hello" } }));
+			await waitFor(() => expect(capturedRequests).toHaveLength(1));
+			act(() => capturedRequests[0].onChunk({ type: "error", requestId: capturedRequests[0].requestId, message: "PRIVATE provider exception", code: "PROVIDER_ERROR" }));
+			await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+			const expected = locale === "ko" ? "응답하지 못했어요. 모델 설정을 확인하고 다시 시도해 주세요." : "The reply failed. Check your model settings and try again.";
+			expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ text: "", error: expected });
+			expect(useChatStore.getState().messages.find((m) => m.failure)?.failure?.detail).toBe(expected);
+			expect(screen.queryByText(/PRIVATE/)).toBeNull();
+		} finally {
+			window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+			appRegistry.unregister("test.app");
+			localStorage.removeItem("naia-config");
+			await setLocale(previousLocale);
+		}
 	});
+
+	it.each(["en", "ko"] as const)(
+		"returns a localized %s app error when tool registration fails",
+		async (locale) => {
+			const previousLocale = getLocale();
+			await setLocale(locale);
+			appRegistry.register({
+				id: "test.app",
+				name: "Cafe Lua Tarot",
+				center: () => null,
+				tools: [
+					{
+						name: "skill_cafelua_tarot",
+						description: "Control a tarot reading.",
+						parameters: { type: "object", properties: {} },
+						tier: 0,
+					},
+				],
+			});
+			useAppStore.setState({ activeApp: "test.app" });
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({ provider: "openai", model: "gpt-4o" }),
+			);
+			mockSendAppSkills.mockResolvedValueOnce(false);
+			const reply = vi.fn();
+			window.addEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+			render(<ChatArea />);
+			window.dispatchEvent(
+				new CustomEvent(INSTALLED_APP_ASK_EVENT, {
+					detail: {
+						appId: "test.app",
+						requestId: "reading-registration-error",
+						prompt: "Interpret this card.",
+					},
+				}),
+			);
+
+			await waitFor(() => expect(reply).toHaveBeenCalledOnce());
+			expect(capturedRequests).toHaveLength(0);
+			expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+				requestId: "reading-registration-error",
+				error:
+					locale === "ko"
+						? "앱을 연결하지 못했어요. 앱을 다시 열고 시도해 주세요."
+						: "The app could not connect. Reopen it and try again.",
+			});
+			window.removeEventListener(INSTALLED_APP_RESPONSE_EVENT, reply);
+			appRegistry.unregister("test.app");
+			localStorage.removeItem("naia-config");
+			await setLocale(previousLocale);
+		},
+	);
 
 	it.each([
 		[

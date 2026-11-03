@@ -2490,4 +2490,15 @@ Test Coverage Map: `character-theme.test.ts` 원문 확장·손상·상한·them
 
 | UC | P02 Test Coverage Map |
 |---|---|
-| UC-B2C-026-R3 | ChatArea.installed-app.test.tsx: 공용 음성 경로/끄기/대화 교체; character-theme.test.ts: decode 성공/실패/timeout; character-theme.spec.ts: 기본·빈 목록·진행·성공·오류/재시도·360px 최초 설정 진입. nva-sync-driver/core 정본 회귀. Native Windows는 별도 2070 인수 절차. |
+| UC-B2C-026-R3 | `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: 공용 음성 경로/끄기/대화 교체; character-theme.test.ts: decode 성공/실패/timeout; character-theme.spec.ts: 기본·빈 목록·진행·성공·오류/재시도·360px 최초 설정 진입. nva-sync-driver/core 정본 회귀. Native Windows는 별도 2070 인수 절차. |
+
+
+## UC-B2C-026-R4 — 설치 앱 패키지 통합 회귀
+
+P01: 사용자는 실제 #792 독립 패키지를 설치 앱 iframe으로 열고 역할극을 시작해 현재 로컬 Agent의 답을 채팅 DOM과 공용 음성 경로에서 확인한다. native 카드와 앱 카드가 함께 있으면 native 카드만 주입한다. 비활성 iframe의 지연 context는 거절한다. 앱 요청 실패는 현재 로케일로 복구 행동을 안내한다. 재시작 뒤 앱 태그가 남아 일반 대화 history에서 제외돼야 한다.
+
+P02 Test Coverage Map: 실제 #792 source snapshot의 production 빌드/설치 디렉터리 manifest·hash, app-loader→GenericInstalledApp→context→ChatArea→실 Agent/Ollama→DOM 브라우저 증거. #811 모델·낭독·locale 공용 연결은 설치 앱 메시지/권한/source/origin/취소 회귀로 확인한다. 기본·빈 목록·진행·성공·오류 재시도·360px·키보드/ARIA는 브라우저 및 verify-visual-ux로 확인한다. conversation-store 시험은 정상/과대/비문자 appName 복원과 toSendHistory 제외를 확인하고, 실제 Agent conversationLog 디스크 쓰기/프로세스 재생성으로 태그 유무를 별도 판정한다. native 및 서명된 상점 설치가 불가능하면 통과로 간주하지 않고 원인과2070 추가 절차를 기록한다.
+
+| UC | P02 Test Coverage Map |
+|---|---|
+| UC-B2C-026-R4 | `packages/shell/src/lib/__tests__/conversation-store.test.ts`: appName 복원·모델 history 제외·손상 태그; `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: locale 오류·모델/음성; `packages/shell/src/apps/__tests__/installed-app-context-ownership.test.ts`: 활성 소유권·이중 주입 제외. 실제 패키지/Agent/오디오 증거와 미충족 native 수용은 4회차 ledger에 기록. |
