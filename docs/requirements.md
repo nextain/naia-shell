@@ -1495,16 +1495,16 @@ P04/P05: 인수 도구12/12·실제 r4 unsigned ZIP의 파일9개 hash 일치/�
 ## FR-B2C-026-R6 — 오프라인 미디어 증거 (P01–P03)
 서버 도구는 로컬 파일 hash·ffprobe 코덱·전체 decode와 첫 프레임 alpha 범위를 검사한다. alpha·stacked·opaque를 명시하며 stacked는 짝수 높이 및 하단 mask 밝기 범위를 확인한다. 실패 기대 입력은 디코드 실패 및 설정 전후 바이트 동일 증거를 모두 요구한다. 미디어 성공만으로 WebView 합성·청취·native rollback을 주장하지 않는다. appName proto 완료 커밋 전 pin 유지, Rust 전달 변경은 초안으로 준비한다. 상태: 오프라인 도구 Done, appName 서버 전달 구현, native 통합 Pending.
 
-FR-B2C-026-R6 확장: Agent0ad8698 완료 계약 기준 appName을 ChatArea→legacy/new-core→Rust ChatRequest/Message로 조건부 전달한다. 일반 요청에는 필드를 만들지 않고 활성 앱 이름만 사용한다. exact pin/CI/README/marker를 함께 갱신한다. P04는 wire capture·ChatArea/Playwright·Rust mapping test·실 Agent writer 재시작, native는 Pending.
+FR-B2C-026-R6 확장: Agentecb879b 완료 계약 기준 appName을 ChatArea→legacy/new-core→Rust ChatRequest/Message로 조건부 전달한다. 일반 요청에는 필드를 만들지 않고 활성 앱 이름만 사용한다. exact pin/CI/README/marker를 함께 갱신한다. P04는 wire capture·ChatArea/Playwright·Rust mapping test·실 Agent writer 재시작, native는 Pending.
 
 FR-B2C-026-R6 P05: **오프라인 미디어 판정 도구 Done / appName 셸 전달·짝 pin 서버 slice 구현 / native 통합 수용 Pending**. P04 증거는 B2C ledger6회차와 실행 폴더 result.md. Rust unit test 미실행·packaged native 미검증 때문에 appName 제품 전체 Done으로 쓰지 않는다.
 
 ## FR-B2C-026-R7 — 판 정렬·서버 회귀·AX 승인 초안
 P01/P02: UC-B2C-026-R7. Shell 배포 metadata(package.json, tauri.conf.json, Cargo.toml, Cargo.lock의 naia-shell)는 0.2.6으로 일치해야 한다. workspace 자체 판도 0.2.6으로 정렬하되 제3자 의존성 및 과거 release 문서는 바꾸지 않는다. 태그/원격push/게시 없음.
-AX draft는 Agent0ad8698 makeAxHostControlLane의 displayed/beginInput/submit/invalidate/dispose를 주입 port로 받는다. 표시 ACK 전/표시 전 입력/재전송/늦은 응답을 거절하고 취소·scope 변경·종료에서 입력과 화면을 폐기한다. 인증 evidence는 host가 검증하며 DOM isTrusted나 JSON origin으로 인증하지 않는다. 입력/코드/preview를 로그·localStorage·chat·기억에 쓰지 않는다. 일반 승인창의 always grant는 재사용하지 않는다.
+AX draft는 Agentecb879b makeAxHostControlLane의 displayed/beginInput/submit/invalidate/dispose를 주입 port로 받는다. 표시 ACK 전/표시 전 입력/재전송/늦은 응답을 거절하고 취소·scope 변경·종료에서 입력과 화면을 폐기한다. 인증 evidence는 host가 검증하며 DOM isTrusted나 JSON origin으로 인증하지 않는다. 입력/코드/preview를 로그·localStorage·chat·기억에 쓰지 않는다. 일반 승인창의 always grant는 재사용하지 않는다.
 상태: 서버 metadata/adapter 초안 slice Done(P01~P05). 단위·브라우저·실 Agent 메모리 내 계약·전체 타입 검사 증거는 docs/progress/026-b2c-charcard-nva.md 7회차 및 실행 폴더 tmp/r7-*.log. native AX RPC는 계약 미제공으로 Pending.
 
-R7 UI 수용 보강: Agent0ad8698 대화 승인은 한국어 고정 응답만 지원하므로 영문 화면에서도 승인 입력 ‘보내’를 명시한다. 미인증 입력은 alert+재입력/취소, 거절은 새 요청 안내, 성공은 응답 전달로만 표시한다(실행 성공으로 쓰지 않음).
+R7 UI 수용 보강: Agentecb879b 대화 승인은 한국어 고정 응답만 지원하므로 영문 화면에서도 승인 입력 ‘보내’를 명시한다. 미인증 입력은 alert+재입력/취소, 거절은 새 요청 안내, 성공은 응답 전달로만 표시한다(실행 성공으로 쓰지 않음).
 
 ## FR-B2C-026-R8 — 4060 키보드·입력·중복·빈 이름 (P03)
 - 설정 활성화 시 초점을 설정 내부로 옮기고 Tab/역Tab을 내부에서 순환, Esc는 닫고 진입 단추 복원. 비활성 keepAlive 앱은 inert/aria-hidden.
@@ -1513,3 +1513,6 @@ R7 UI 수용 보강: Agent0ad8698 대화 승인은 한국어 고정 응답만 �
 - 동일 source bytes(내용 해시 동일)는 파일명과 무관하게 기존 카드 ID 한 장으로 합친다. 한도 판정은 병합 후, 원본 보존·실패 rollback 유지.
 - 빈/공백 사용자 이름은 선두 느낌표 없이 로케일별 정상 문장을 표시한다.
 상태: Done (서버 slice). P04: Shell 전체2678 통과/21skip, 집중51 통과/1skip, 실 Chromium1100/360px 회귀. native/서명 수용은 Pending이며 설치판 기기 재검증과 구분한다.
+
+## FR-B2C-026-R9 — Agent 메모 경로 수정 짝 (P03)
+manifest·build.rs exact pin·installer/self-trust CI·README·진행 문서·초안 marker는 Agent ecb879b080aa7e9bff7402687478dc16bdc6c49f로 일치해야 한다. proto/memory pin은 실제 계약이 같으면 유지한다. 짝 검사·관련 시험·셸 전체 시험으로 검증한다. 상태: Done (P04/P05 서버 짝 갱신). 짝/wire 17·준비/플랫폼 77·새 Agent memo 15 및 appName 23·AX 정책 99 통과, 셸 전체 2678통과/21제외/실패0. 타입 core/Shell/BGM/새 Agent 및 compile integrity 통과. 증거: 실행 폴더 tmp/r9-*.log, 진행 ledger 9회차. installer/native 수용 Pending.

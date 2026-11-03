@@ -1,6 +1,6 @@
 import { Logger } from "./logger";
 
-/** Draft host boundary matching Agent 0ad8698. No JSON/RPC implementation exists.
+/** Draft host boundary matching Agent ecb879b. No JSON/RPC implementation exists.
  * Evidence and capture tokens must remain authenticated, process-local objects. */
 export interface AxApprovalCard {
 	readonly proposalId: string;

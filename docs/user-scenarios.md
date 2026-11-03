@@ -2543,3 +2543,6 @@ Test Coverage Map: R8 → e2e/character-theme.spec.ts (기본/빈 보관함/적�
 | UC | 시험 경로 | 상태/판정 |
 |---|---|---|
 | UC-B2C-026-R8 | packages/shell/e2e/character-theme.spec.ts; packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx; packages/shell/src/components/__tests__/OnboardingWizard.test.tsx; packages/shell/src/lib/__tests__/character-theme.test.ts | 기본·빈 목록·진행·성공·오류 복구·360/1100px·초점/Tab/역Tab/Esc·원본 중복·300ms 입력 보존. Windows/native 수용은 별도 |
+
+## UC-B2C-026-R9 — 메모 데이터 홈 수정 Agent 짝 갱신 (P01/P02)
+설치·개발·검증은 메모가 데이터 홈을 따르는 Agent ecb879b080aa7e9bff7402687478dc16bdc6c49f를 같은 exact pin으로 선택한다. 다른 기능은 변경하지 않는다. Test Coverage Map: agent-pairing-drift.contract, agent-pairing, platform-matrix, uc-wire-v1-paired-proto 및 셸 전체 vitest. 실제 새 Agent archive의 memo 계약 시험으로 데이터 홈·legacy 보존을 확인한다. UI/Rust 로직 변경 없음; installer/native 실기는 별도 수용이다.
