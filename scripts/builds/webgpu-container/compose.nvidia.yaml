@@ -1,0 +1,10 @@
+# Docker with NVIDIA Container Toolkit; no host GPU is requested by default.
+services:
+  inference:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

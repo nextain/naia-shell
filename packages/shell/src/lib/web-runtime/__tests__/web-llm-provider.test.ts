@@ -3,14 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../../config";
 import { isApiKeyOptional, providerSupportsRole } from "../../llm/registry";
 import { installWebRuntime } from "../install";
-import { getDefaultLlmModel } from "../../llm/registry";
+
 
 describe("web-llm-provider", () => {
 	beforeEach(() => {
 		localStorage.clear();
 	});
 
-	it("registers webllm provider while defaulting to the server model", () => {
+	it("registers webllm provider while defaulting to an unselected local container model", () => {
 		localStorage.clear();
 		installWebRuntime();
 
@@ -18,8 +18,10 @@ describe("web-llm-provider", () => {
 		expect(providerSupportsRole("webllm", "main")).toBe(true);
 
 		const config = loadConfig();
-		expect(config?.provider).toBe("nextain");
-		expect(config?.model).toBe(getDefaultLlmModel("nextain"));
+		expect(isApiKeyOptional("local-container")).toBe(true);
+        expect(providerSupportsRole("local-container", "main")).toBe(true);
+		expect(config?.provider).toBe("local-container");
+		expect(config?.model).toBe("");
 	});
 
 	it("preserves existing naia-config if already present", () => {

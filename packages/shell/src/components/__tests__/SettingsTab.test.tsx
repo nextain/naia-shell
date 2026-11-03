@@ -325,7 +325,7 @@ describe("SettingsTab", () => {
 				projectAgentMocks.stopOpenCodeProjectAgentSessions,
 			).toHaveBeenCalledTimes(1);
 			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
-			expect(saved().provider).toBe("");
+			await waitFor(() => expect(saved().provider).toBe(""));
 			expect(JSON.stringify(saved())).not.toContain('"gemini');
 		});
 

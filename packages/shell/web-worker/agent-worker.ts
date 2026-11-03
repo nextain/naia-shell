@@ -193,6 +193,13 @@ self.addEventListener("message", (event: MessageEvent) => {
 			chat(config, messages, opts) {
 				if (config.provider === "webllm")
 					return localProvider.chat(config, messages, opts);
+                if (config.provider === "local-container") {
+                    diag.debug?.("LocalContainer.chat", { model: config.model });
+                    return makeOpenAICompatProvider({
+                        baseUrl: new URL("/local-llm/v1", self.location.origin).href,
+                        apiKey: "", supportsTools: false,
+                    }).chat(config, messages, opts);
+                }
 				if (config.provider !== "nextain")
 					throw new Error(`Unsupported web provider: ${config.provider}`);
 				if (!config.naiaKey)

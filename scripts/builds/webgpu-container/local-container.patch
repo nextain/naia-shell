@@ -1,0 +1,1305 @@
+diff --git a/packages/shell/src/components/LocalContainerModels.tsx b/packages/shell/src/components/LocalContainerModels.tsx
+new file mode 100644
+index 0000000..4b1b3bd
+--- /dev/null
++++ b/packages/shell/src/components/LocalContainerModels.tsx
+@@ -0,0 +1,47 @@
++import { useEffect, useRef, useState } from "react";
++import { t } from "../lib/i18n";
++import { Logger } from "../lib/logger";
++
++/** Only lists installed models. This UI never calls the model-management API. */
++export function LocalContainerModels({ model, onSelect }: { model: string; onSelect: (id: string) => void }) {
++    const [models, setModels] = useState<string[]>([]);
++    const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
++    const [revision, retry] = useState(0);
++    const selectRef = useRef(onSelect);
++    selectRef.current = onSelect;
++    useEffect(() => {
++        const controller = new AbortController();
++        const timeout = setTimeout(() => controller.abort(), 10000);
++        let live = true;
++        setState("loading");
++        Logger.debug("LocalContainerModels", "list installed models", { revision });
++        void (async () => {
++            try {
++                const response = await fetch("/local-llm/v1/models", { signal: controller.signal });
++                if (!response.ok) throw new Error("models unavailable");
++                const json = await response.json();
++                if (json.data !== null && !Array.isArray(json.data)) throw new Error("invalid models");
++                const ids: string[] = [...new Set<string>((json.data ?? []).map((m: { id?: unknown }) => m?.id).filter((id: unknown): id is string => typeof id === "string" && id.length > 0))];
++                if (!live) return;
++                if (model && !ids.includes(model)) selectRef.current("");
++                setModels(ids);
++                setState(ids.length ? "ready" : "empty");
++            } catch {
++                if (live) { setModels([]); setState("error"); }
++            } finally { clearTimeout(timeout); }
++        })();
++        return () => { live = false; clearTimeout(timeout); controller.abort(); };
++    }, [revision]);
++    const available = models.includes(model);
++    return <div data-testid="local-container-models" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
++        <p role={state === "error" ? "alert" : "status"}>{t(`localContainer.${state}`)}</p>
++        {state === "ready" && <select id="model-select" value={available ? model : ""} aria-label={t("localContainer.choose")} onChange={e => selectRef.current(e.target.value)}>
++            <option value="" disabled>{t("localContainer.choose")}</option>
++            {models.map(id => <option key={id} value={id}>{id}</option>)}
++        </select>}
++        <p data-testid="local-container-limits">{t("localContainer.limits")}</p>
++        {state === "empty" && <p>{t("localContainer.prepare")}</p>}
++        {state === "error" && <p>{t("localContainer.recover")}</p>}
++        <button className="btn-secondary" type="button" disabled={state === "loading"} onClick={() => retry(n => n + 1)}>{t("localContainer.retry")}</button>
++    </div>;
++}
+diff --git a/packages/shell/src/components/SettingsTab.tsx b/packages/shell/src/components/SettingsTab.tsx
+index 7c62414..cf9087d 100644
+--- a/packages/shell/src/components/SettingsTab.tsx
++++ b/packages/shell/src/components/SettingsTab.tsx
+@@ -1,3 +1,4 @@
++import { WebMemoryTransfer } from "./WebMemoryTransfer";
+ import { mergeCatalogModels } from "../lib/llm/small-model";
+ import { defaultSmallModel, LOCAL_SMALL_MODEL, smallModelChoices } from "../lib/llm/small-model";
+ import { WebPushSettings } from "./WebPushSettings";
+@@ -77,7 +78,6 @@ import {
+ 	isWebLlmModelId,
+ } from "../lib/web-runtime/webllm-model";
+ import { isWebSpeechAvailable } from "../lib/stt";
+-import { resolveWebConversationsDir } from "../lib/web-runtime/web-workspace-commands";
+ import { deriveSettingsSlots } from "../lib/capabilities/slots";
+ import {
+ 	isRecommendedLocalValue,
+@@ -235,6 +235,7 @@ import {
+ import { listSttProviders } from "../lib/stt/registry";
+ import { listTtsProviderMetas } from "../lib/tts/registry";
+ import { synthesizeTts } from "../lib/tts/synthesize";
++import { LocalContainerModels } from "./LocalContainerModels";
+ import type { ModelCapability, ProviderId } from "../lib/types";
+ import { type UpdateInfo, checkForUpdate } from "../lib/updater";
+ import { type VoiceHostGpu, voiceHostProfile } from "../lib/voice/host-profile";
+@@ -813,7 +814,7 @@ export function SettingsTab() {
+ 	function applyCatalogSmallDefault(config: AppConfig): AppConfig {
+ 		if (catalogModels.current === undefined) return config;
+ 		let updated = config;
+-		if ((!config.provider || config.provider === "nextain") && !config.model && !config.llmRoles?.main?.model) {
++		if (config.llmRoles?.main?.provider !== "" && (!config.provider || config.provider === "nextain") && !config.model && !config.llmRoles?.main?.model) {
+ 			const withDefaults = applyNaiaSlotDefaults(config, catalogModels.current);
+ 			if (withDefaults.llmRoles?.main?.model) {
+ 				updated = writeConfiguredLlmRole(updated, "main", withDefaults.llmRoles.main);
+@@ -2006,7 +2007,7 @@ export function SettingsTab() {
+ 		"idle" | "exporting" | "importing" | "done" | "error"
+ 	>("idle");
+ 	const [backupError, setBackupError] = useState("");
+-	const [transferStatus, setTransferStatus] = useState<"idle" | "exporting" | "error">("idle");
++	
+ 
+ 	const [allowedTools, setAllowedTools] = useState<string[]>(
+ 		existing?.allowedTools ?? [],
+@@ -2113,6 +2114,7 @@ export function SettingsTab() {
+ 	}, []);
+ 
+ 	useEffect(() => {
++        if (isWebMode() && provider === "local-container") return;
+ 		// #602: 타사 직결 클라우드 LLM 공급자(gemini/openai/anthropic/xai/zai)는 제거했다.
+ 		// 게이트웨이는 자기 경로를 azure/vertexai/upstage/clova prefix 로 내주며 이는 아래
+ 		// NAIA_ROUTE_PREFIXES 에서 nextain 으로 묶인다. 남는 alias 는 나이아 계정·CLI·로컬뿐.
+@@ -4986,29 +4988,7 @@ export function SettingsTab() {
+ 			)}
+ 			{activeSettingsTab === "profile" && (
+ 				<>
+-					{isWebMode() && (
+-						<div className="settings-field">
+-							<button
+-								type="button"
+-								data-testid="memory-transfer-export"
+-								disabled={transferStatus === "exporting"}
+-								onClick={async () => {
+-									setTransferStatus("exporting");
+-									try {
+-										const { downloadWebTransfer, loadTransfer } = await import("../lib/transfer/entry");
+-										const transfer = await loadTransfer();
+-										await downloadWebTransfer(transfer, resolveWebConversationsDir());
+-										setTransferStatus("idle");
+-									} catch {
+-										setTransferStatus("error");
+-									}
+-								}}
+-							>
+-								{transferStatus === "exporting" ? "…" : t("settings.memoryTransferExport")}
+-							</button>
+-							{transferStatus === "error" && <span role="alert" className="settings-hint">{t("settings.memoryTransferError")}</span>}
+-						</div>
+-					)}
++					{isWebMode() && <WebMemoryTransfer />}
+ 					<div className="settings-section-divider">
+ 						<span>{t("settings.engineSection")}</span>
+ 					</div>
+@@ -6251,7 +6231,18 @@ export function SettingsTab() {
+ 								) : null}
+ 							</>
+ 						) : null}
+-						{provider === "ollama" ? (
++						{provider === "local-container" ? (
++                            <LocalContainerModels model={model} onSelect={(nextModel) => {
++                                setModel(nextModel);
++                                const current = loadConfig();
++                                const next = writeMainModelSelection(
++                                    { ...current, provider: "local-container", model: nextModel } as AppConfig,
++                                    { provider: "local-container", model: nextModel }, current ?? undefined,
++                                );
++                                saveConfig(next);
++                                void writeNaiaConfig(next as unknown as Record<string, unknown>);
++                            }} />
++                        ) : provider === "ollama" ? (
+ 							<>
+ 								<input
+ 									id="model-select"
+@@ -6528,7 +6519,8 @@ export function SettingsTab() {
+ 						<input
+ 							id="tools-toggle"
+ 							type="checkbox"
+-							checked={enableTools}
++                            disabled={provider === "local-container"}
++							checked={provider === "local-container" ? false : enableTools}
+ 							onChange={(e) => {
+ 								setEnableTools(e.target.checked);
+ 								persistConfig({ enableTools: e.target.checked });
+diff --git a/packages/shell/src/components/WebMemoryTransfer.tsx b/packages/shell/src/components/WebMemoryTransfer.tsx
+new file mode 100644
+index 0000000..91d0f9b
+--- /dev/null
++++ b/packages/shell/src/components/WebMemoryTransfer.tsx
+@@ -0,0 +1,61 @@
++import { useRef, useState } from "react";
++import { t } from "../lib/i18n";
++import { Logger } from "../lib/logger";
++import { resolveWebConversationsDir } from "../lib/web-runtime/web-workspace-commands";
++import type { TransferManifest } from "../lib/transfer/manifest";
++
++export function WebMemoryTransfer() {
++    const [state, setState] = useState<"idle" | "working" | "wait" | "preview" | "error" | "exported" | "restored">("idle");
++    const [preview, setPreview] = useState<TransferManifest>();
++    const [file, setFile] = useState<File>();
++    const dialog = useRef<HTMLDialogElement>(null);
++    const busy = state === "working";
++    const available = () => !document.querySelector(".chat-cancel-btn");
++    const inspect = async (selected?: File) => {
++        if (!selected || busy) return;
++        if (!available()) { setState("wait"); return; }
++        setState("working"); setPreview(undefined); setFile(undefined);
++        Logger.debug("WebMemoryTransfer", "inspect", { bytes: selected.size });
++        try {
++            const { inspectWebTransfer } = await import("../lib/transfer/restore-web");
++            const result = await inspectWebTransfer(selected);
++            setFile(selected); setPreview(result.manifest); setState("preview");
++            dialog.current?.showModal();
++        } catch { setState("error"); }
++    };
++    const message = (state === "idle" || state === "preview") ? "" : t(`browserMemory.${state}`);
++    return <section className="settings-field browser-memory" data-testid="web-memory-transfer" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
++        <h3>{t("browserMemory.title")}</h3>
++        <p>{t("browserMemory.retention")}</p><p>{t("browserMemory.serverInfo")}</p><p>{t("browserMemory.contents")}</p>
++        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
++            <button type="button" className="btn-secondary" data-testid="memory-transfer-export" disabled={busy} onClick={async () => {
++                if (!available()) { setState("wait"); return; }
++                setState("working");
++                try {
++                    const { downloadWebTransfer, loadTransfer } = await import("../lib/transfer/entry");
++                    await downloadWebTransfer(await loadTransfer(), resolveWebConversationsDir()); setState("exported");
++                } catch { setState("error"); }
++            }}>{t("settings.memoryTransferExport")}</button>
++            <label>{t("browserMemory.import")}<input type="file" accept=".zip,application/zip" data-testid="memory-transfer-import" disabled={busy} onChange={e => { const next = e.target.files?.[0]; e.target.value = ""; void inspect(next); }} /></label>
++        </div>
++        <p role={state === "error" ? "alert" : "status"}>{message}</p>
++        <dialog className="browser-memory-dialog" ref={dialog} aria-labelledby="memory-preview-title" onCancel={e => { if (busy || state === "restored") e.preventDefault(); }} style={{ maxWidth: "min(600px, calc(100vw - 32px))", boxSizing: "border-box", overflowWrap: "anywhere" }}>
++            <h3 id="memory-preview-title">{t("browserMemory.preview")}</h3>
++            {preview && <><p>{t("browserMemory.files")}: {preview.fileCount} · {preview.totalBytes} B</p><p>{t("browserMemory.facts")}: {preview.memoryFacts ?? t("browserMemory.absent")}</p>
++                <details><summary>{t("browserMemory.files")}</summary><ul style={{ maxHeight: "25vh", overflow: "auto" }}>{preview.files.map(item => <li key={item.path}>{item.path}</li>)}</ul></details></>}
++            <p>{t("browserMemory.overwrite")}</p>
++            <p role={state === "error" ? "alert" : "status"}>{message}</p>
++            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
++            {state === "restored" ? <button type="button" onClick={() => location.reload()}>{t("browserMemory.reload")}</button> : <>
++                <button type="button" className="btn-secondary" disabled={busy} onClick={() => { dialog.current?.close(); setPreview(undefined); setFile(undefined); setState("idle"); }}>{t("browserMemory.cancel")}</button>
++                <button type="button" disabled={busy || !file} data-testid="memory-transfer-restore" onClick={async () => {
++                    if (!file || busy) return;
++                    setState("working");
++                    try { const { restoreWebTransfer } = await import("../lib/transfer/restore-web"); await restoreWebTransfer(file); setState("restored"); }
++                    catch { setState("error"); }
++                }}>{t("browserMemory.restore")}</button>
++            </>}
++            </div>
++        </dialog>
++    </section>;
++}
+diff --git a/packages/shell/src/components/WebWorkspaceSetup.tsx b/packages/shell/src/components/WebWorkspaceSetup.tsx
+index 792e649..1a7b3fe 100644
+--- a/packages/shell/src/components/WebWorkspaceSetup.tsx
++++ b/packages/shell/src/components/WebWorkspaceSetup.tsx
+@@ -35,6 +35,7 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
+ 	};
+ 
+ 	const handleRetry = () => {
++		if (status.reason === "workspace_config_unavailable") { location.reload(); return; }
+ 		if (props.onRetry) {
+ 			props.onRetry();
+ 			return;
+@@ -52,12 +53,13 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
+ 				flexDirection: "column",
+ 				alignItems: "center",
+ 				justifyContent: "center",
+-				padding: "2rem",
++				padding: status.phase === "error" ? "0.5rem" : "2rem",
++				boxSizing: "border-box",
+ 				textAlign: "center",
+ 				gap: "1.25rem",
+-				flex: 1,
++				flex: status.phase === "error" ? "0 0 auto" : 1,
+ 				width: "100%",
+-				minHeight: "200px",
++				minHeight: status.phase === "error" ? "0" : "200px",
+ 			}}
+ 		>
+ 			{status.phase === "needs-setup" && (
+@@ -134,9 +136,10 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
+ 				>
+ 					<p
+ 						className="web-workspace-error-reason"
++						role="alert"
+ 						style={{ fontSize: "0.9rem", color: "var(--color-error, #e53e3e)", margin: 0 }}
+ 					>
+-						{status.reason}
++						{status.reason === "workspace_config_unavailable" ? t("browserMemory.recoveryError") : status.reason}
+ 					</p>
+ 					<div className="web-workspace-actions">
+ 						<ul
+diff --git a/packages/shell/src/components/__tests__/SettingsTab.test.tsx b/packages/shell/src/components/__tests__/SettingsTab.test.tsx
+index 1e033eb..5da38ef 100644
+--- a/packages/shell/src/components/__tests__/SettingsTab.test.tsx
++++ b/packages/shell/src/components/__tests__/SettingsTab.test.tsx
+@@ -325,7 +325,7 @@ describe("SettingsTab", () => {
+ 				projectAgentMocks.stopOpenCodeProjectAgentSessions,
+ 			).toHaveBeenCalledTimes(1);
+ 			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
+-			expect(saved().provider).toBe("");
++			await waitFor(() => expect(saved().provider).toBe(""));
+ 			expect(JSON.stringify(saved())).not.toContain('"gemini');
+ 		});
+ 
+diff --git a/packages/shell/src/lib/config.ts b/packages/shell/src/lib/config.ts
+index 79ce1d2..5e22575 100644
+--- a/packages/shell/src/lib/config.ts
++++ b/packages/shell/src/lib/config.ts
+@@ -812,7 +812,7 @@ export function isReadyToChat(): boolean {
+ 		config.provider === "grok" ||
+ 		config.provider === "ollama" ||
+ 		config.provider === "vllm" ||
+-		(isWebMode() && config.provider === "webllm");
++		(isWebMode() && (config.provider === "webllm" || (config.provider === "local-container" && !!config.model)));
+ 	return noKeyNeeded || !!config.apiKey || !!config.naiaKey;
+ }
+ 
+diff --git a/packages/shell/src/lib/locales/ar.ts b/packages/shell/src/lib/locales/ar.ts
+index 3a46f5d..4d4a05d 100644
+--- a/packages/shell/src/lib/locales/ar.ts
++++ b/packages/shell/src/lib/locales/ar.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "ذاكرة المتصفح",
++	"browserMemory.serverInfo": "يبقى مجلد نماذج الخادم بعد حذف الحاوية. احذف ذلك المجلد لإزالة النماذج؛ مسح بيانات المتصفح لا يحذفها.",
++	"browserMemory.retention": "تُحفظ الذاكرة في هذا المتصفح وعنوان الموقع. تبقى عند إيقاف الحاوية، وتُحذف عند مسح بيانات الموقع أو ملف المتصفح. تُحفظ نماذج الخادم منفصلة. صدّر البيانات قبل حذفها.",
++	"browserMemory.contents": "يتضمن ZIP المحادثات وملفات العمل، دون مفاتيح الحساب أو أوزان النماذج. قد لا يتضمن الذاكرة طويلة الأمد. الأرشيف غير مشفر، فاحتفظ به بأمان.",
++	"browserMemory.import": "استيراد ZIP",
++	"browserMemory.preview": "مراجعة النسخة الاحتياطية",
++	"browserMemory.files": "الملفات",
++	"browserMemory.facts": "عناصر الذاكرة",
++	"browserMemory.absent": "غير مضمنة",
++	"browserMemory.overwrite": "ستُستبدل الملفات ذات الأسماء المتطابقة وتبقى الملفات الأخرى. صدّر نسخة احتياطية أولاً. أبقِ علامة التبويب مفتوحة حتى الانتهاء. أغلق علامات التبويب الأخرى لهذا الموقع قبل الاستعادة. ستُلغى الاستعادة المتوقفة عند إعادة الفتح.",
++	"browserMemory.restore": "استعادة هذه الملفات",
++	"browserMemory.cancel": "إلغاء",
++	"browserMemory.reload": "إعادة التحميل للتطبيق",
++	"browserMemory.working": "جارٍ العمل…",
++	"browserMemory.exported": "تم تنزيل التصدير. احتفظ به في مكان آمن.",
++	"browserMemory.error": "فشل النقل. تحقق من ZIP أو المساحة المتاحة ثم أعد المحاولة.",
++	"browserMemory.recoveryError": "تعذر إكمال الاستعادة. وفر مساحة تخزين وأغلق علامات التبويب الأخرى لهذا الموقع ثم افتحه مجددًا. احتفظ ببيانات الموقع؛ مسحها يحذف ذكرياتك.",
++	"browserMemory.restored": "تمت الاستعادة. أعد التحميل لاستخدام الملفات.",
++	"browserMemory.wait": "انتظر انتهاء الرد الحالي أو ألغِه أولاً.",
++
++	"localContainer.name": "حاوية محلية",
++	"localContainer.description": "استخدم نموذجاً مثبتاً في حاويتك المحلية. لا يلزم حساب.",
++	"localContainer.loading": "جارٍ تحميل النماذج المثبتة…",
++	"localContainer.ready": "تم الاتصال. اختر نموذجاً مثبتاً.",
++	"localContainer.empty": "لا توجد نماذج مثبتة.",
++	"localContainer.error": "تعذر الاتصال بخادم النماذج المحلي.",
++	"localContainer.choose": "اختر نموذجاً محلياً",
++	"localContainer.prepare": "جهّز نموذجاً صغيراً في الحاوية ثم حدّث القائمة. لا تُنزّل النماذج تلقائياً أبداً.",
++	"localContainer.recover": "تأكد من تشغيل الحاوية ثم أعد المحاولة.",
++	"localContainer.retry": "تحديث النماذج",
++	"localContainer.limits": "للمحادثة فقط: أدوات الملفات والتقويم وتنفيذ الأوامر غير متاحة. قد تخطئ النماذج الصغيرة في الكورية والحقائق. تحقق من الإجابات المهمة.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/bn.ts b/packages/shell/src/lib/locales/bn.ts
+index b0e32e7..0886b54 100644
+--- a/packages/shell/src/lib/locales/bn.ts
++++ b/packages/shell/src/lib/locales/bn.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "ব্রাউজারের স্মৃতি",
++	"browserMemory.serverInfo": "কন্টেইনার সরালেও সার্ভারের মডেল ফোল্ডার থাকে। মডেল সরাতে সেই ফোল্ডার মুছুন; ব্রাউজারের ডেটা মুছলে মডেল মুছে যায় না।",
++	"browserMemory.retention": "স্মৃতি এই ব্রাউজার ও সাইটের ঠিকানায় থাকে। কন্টেইনার থামালেও থাকে; সাইটের ডেটা বা ব্রাউজার প্রোফাইল মুছলে হারিয়ে যায়। সার্ভারের মডেল আলাদা থাকে। মোছার আগে রপ্তানি করুন।",
++	"browserMemory.contents": "ZIP-এ কথোপকথন ও কাজের ফাইল থাকে, অ্যাকাউন্টের কী বা মডেলের ওজন থাকে না। দীর্ঘমেয়াদি স্মৃতি নাও থাকতে পারে। ফাইলটি এনক্রিপ্ট করা নয়; নিরাপদে রাখুন।",
++	"browserMemory.import": "ZIP আমদানি করুন",
++	"browserMemory.preview": "ব্যাকআপ দেখুন",
++	"browserMemory.files": "ফাইল",
++	"browserMemory.facts": "স্মৃতির তথ্য",
++	"browserMemory.absent": "অন্তর্ভুক্ত নয়",
++	"browserMemory.overwrite": "একই নামের ফাইল বদলে যাবে; অন্যগুলো থাকবে। আগে ব্যাকআপ রপ্তানি করুন। শেষ না হওয়া পর্যন্ত এই ট্যাব খোলা রাখুন। পুনরুদ্ধারের আগে এই সাইটের অন্য ট্যাবগুলো বন্ধ করুন। মাঝপথে থেমে যাওয়া পুনরুদ্ধার আবার খুললে আগের অবস্থায় ফিরবে।",
++	"browserMemory.restore": "এই ফাইলগুলো পুনরুদ্ধার করুন",
++	"browserMemory.cancel": "বাতিল",
++	"browserMemory.reload": "প্রয়োগ করতে আবার লোড করুন",
++	"browserMemory.working": "কাজ চলছে…",
++	"browserMemory.exported": "রপ্তানি ডাউনলোড হয়েছে। নিরাপদে রাখুন।",
++	"browserMemory.error": "স্থানান্তর ব্যর্থ। ZIP বা খালি জায়গা পরীক্ষা করে আবার চেষ্টা করুন।",
++	"browserMemory.recoveryError": "পুনরুদ্ধার শেষ করা যায়নি। স্টোরেজ খালি করুন, এই সাইটের অন্য ট্যাবগুলো বন্ধ করে আবার খুলুন। সাইটের ডেটা রাখুন; মুছে ফেললে আপনার স্মৃতিও মুছে যাবে।",
++	"browserMemory.restored": "পুনরুদ্ধার হয়েছে। ফাইল ব্যবহার করতে আবার লোড করুন।",
++	"browserMemory.wait": "আগে বর্তমান উত্তর শেষ হতে দিন বা বাতিল করুন।",
++
++	"localContainer.name": "স্থানীয় কন্টেইনার",
++	"localContainer.description": "স্থানীয় কন্টেইনারে ইনস্টল করা মডেল ব্যবহার করুন। অ্যাকাউন্ট লাগবে না।",
++	"localContainer.loading": "ইনস্টল করা মডেল লোড হচ্ছে…",
++	"localContainer.ready": "সংযুক্ত। ইনস্টল করা মডেল বেছে নিন।",
++	"localContainer.empty": "কোনো মডেল ইনস্টল করা নেই।",
++	"localContainer.error": "স্থানীয় মডেল সার্ভারে সংযোগ করা যাচ্ছে না।",
++	"localContainer.choose": "স্থানীয় মডেল বেছে নিন",
++	"localContainer.prepare": "কন্টেইনারে একটি ছোট মডেল প্রস্তুত করে তালিকা হালনাগাদ করুন। মডেল স্বয়ংক্রিয়ভাবে ডাউনলোড হয় না।",
++	"localContainer.recover": "কন্টেইনার চলছে কি না দেখে আবার চেষ্টা করুন।",
++	"localContainer.retry": "মডেল তালিকা হালনাগাদ করুন",
++	"localContainer.limits": "শুধু কথোপকথন: ফাইল, ক্যালেন্ডার ও কমান্ডের টুল নেই। ছোট মডেলের কোরীয় ভাষা ও তথ্যের নির্ভুলতায় সীমাবদ্ধতা থাকতে পারে। গুরুত্বপূর্ণ উত্তর যাচাই করুন।",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/de.ts b/packages/shell/src/lib/locales/de.ts
+index 90202cb..0e3976f 100644
+--- a/packages/shell/src/lib/locales/de.ts
++++ b/packages/shell/src/lib/locales/de.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "Browser-Erinnerungen",
++	"browserMemory.serverInfo": "Beim Entfernen des Containers bleibt der Modellordner erhalten. Zum Entfernen der Servermodelle diesen Ordner löschen; das Löschen der Browserdaten entfernt sie nicht.",
++	"browserMemory.retention": "Die Erinnerungen bleiben in diesem Browser unter dieser Website-Adresse. Ein Containerstopp behält sie; das Löschen der Websitedaten oder des Browserprofils entfernt sie. Servermodelle werden getrennt gespeichert. Vor dem Löschen exportieren.",
++	"browserMemory.contents": "Die ZIP enthält Gespräche und Arbeitsdateien, aber keine Kontoschlüssel oder Modellgewichte. Langzeiterinnerungen können fehlen. Die Datei ist unverschlüsselt; sicher aufbewahren.",
++	"browserMemory.import": "ZIP importieren",
++	"browserMemory.preview": "Sicherung prüfen",
++	"browserMemory.files": "Dateien",
++	"browserMemory.facts": "Erinnerungseinträge",
++	"browserMemory.absent": "Nicht enthalten",
++	"browserMemory.overwrite": "Gleichnamige Dateien werden ersetzt, andere bleiben erhalten. Zuerst eine Sicherung exportieren. Diesen Tab bis zum Abschluss geöffnet lassen. Schließe vor der Wiederherstellung andere Tabs dieser Website. Ein abgebrochener Vorgang wird beim erneuten Öffnen rückgängig gemacht.",
++	"browserMemory.restore": "Diese Dateien wiederherstellen",
++	"browserMemory.cancel": "Abbrechen",
++	"browserMemory.reload": "Zum Anwenden neu laden",
++	"browserMemory.working": "Wird verarbeitet…",
++	"browserMemory.exported": "Export heruntergeladen. Sicher aufbewahren.",
++	"browserMemory.error": "Übertragung fehlgeschlagen. ZIP oder freien Speicher prüfen und erneut versuchen.",
++	"browserMemory.recoveryError": "Die Wiederherstellung konnte nicht abgeschlossen werden. Schaffe Speicherplatz, schließe andere Tabs dieser Website und öffne sie erneut. Lösche keine Websitedaten, sonst gehen deine Erinnerungen verloren.",
++	"browserMemory.restored": "Wiederhergestellt. Zum Verwenden neu laden.",
++	"browserMemory.wait": "Die aktuelle Antwort zuerst beenden oder abbrechen.",
++
++	"localContainer.name": "Lokaler Container",
++	"localContainer.description": "Ein im lokalen Container installiertes Modell verwenden. Kein Konto nötig.",
++	"localContainer.loading": "Installierte Modelle werden geladen…",
++	"localContainer.ready": "Verbunden. Ein installiertes Modell auswählen.",
++	"localContainer.empty": "Keine Modelle installiert.",
++	"localContainer.error": "Keine Verbindung zum lokalen Modellserver.",
++	"localContainer.choose": "Lokales Modell auswählen",
++	"localContainer.prepare": "Ein kleines Modell im Container bereitstellen und die Liste aktualisieren. Modelle werden nie automatisch heruntergeladen.",
++	"localContainer.recover": "Prüfen, ob der Container läuft, und erneut versuchen.",
++	"localContainer.retry": "Modelle aktualisieren",
++	"localContainer.limits": "Nur Chat: Datei-, Kalender- und Befehlswerkzeuge sind nicht verfügbar. Kleine Modelle können bei Koreanisch und Fakten ungenau sein. Prüfen Sie wichtige Antworten.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/en.ts b/packages/shell/src/lib/locales/en.ts
+index e380204..2663360 100644
+--- a/packages/shell/src/lib/locales/en.ts
++++ b/packages/shell/src/lib/locales/en.ts
+@@ -16,6 +16,38 @@ import englishWeb from "./en-web";
+ // 웹 모드 전용 문구(`webModel.*`, `webWorkspace.*`)는 데스크톱 첫 번들 예산 절약을
+ // 위해 데스크톱 운영 빌드(MODE === "production")에서 번들 대상에서 제외된다.
+ const englishCore = {
++	"browserMemory.title": "Browser memory",
++	"browserMemory.serverInfo": "Removing the container keeps the server model folder. Delete that folder to remove server models; clearing browser data does not remove them.",
++	"browserMemory.retention": "Memory stays in this browser and site address. Stopping the container keeps it; clearing site data or deleting this browser profile removes it. Server models are stored separately. Export before deleting data.",
++	"browserMemory.contents": "The ZIP includes conversations and workspace files; account keys and model weights are excluded. Long-term memory may be absent. Keep this unencrypted archive private.",
++	"browserMemory.import": "Import ZIP",
++	"browserMemory.preview": "Review backup",
++	"browserMemory.files": "Files",
++	"browserMemory.facts": "Memory facts",
++	"browserMemory.absent": "Not included",
++	"browserMemory.overwrite": "Files with the same name will be replaced; other files stay. Export a backup first. Keep this tab open until restoration finishes. Close other tabs for this site before restoring. An interrupted restore is rolled back when you reopen.",
++	"browserMemory.restore": "Restore these files",
++	"browserMemory.cancel": "Cancel",
++	"browserMemory.reload": "Reload to apply",
++	"browserMemory.working": "Working…",
++	"browserMemory.exported": "Export downloaded. Keep it somewhere safe.",
++	"browserMemory.error": "Transfer failed. Check the ZIP or available storage and retry.",
++	"browserMemory.recoveryError": "Recovery could not finish. Free storage, close other tabs for this site, and reopen. Keep site data; clearing it deletes your memory.",
++	"browserMemory.restored": "Restored. Reload to use the restored files.",
++	"browserMemory.wait": "Finish or cancel the current reply first.",
++
++	"localContainer.name": "Local container",
++	"localContainer.description": "Use a model installed in your local container. No account needed.",
++	"localContainer.loading": "Loading installed models…",
++	"localContainer.ready": "Connected. Choose an installed model.",
++	"localContainer.empty": "No models installed.",
++	"localContainer.error": "Cannot connect to the local model server.",
++	"localContainer.choose": "Choose a local model",
++	"localContainer.prepare": "Prepare a small model in the container, then refresh this list. Models are never downloaded automatically.",
++	"localContainer.recover": "Check that the container is running, then retry.",
++	"localContainer.retry": "Refresh models",
++	"localContainer.limits": "Chat only: file, calendar and command tools are unavailable. Small models may struggle with Korean and factual accuracy. Check important answers.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/es.ts b/packages/shell/src/lib/locales/es.ts
+index b69811c..49a1831 100644
+--- a/packages/shell/src/lib/locales/es.ts
++++ b/packages/shell/src/lib/locales/es.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "Memoria del navegador",
++	"browserMemory.serverInfo": "Eliminar el contenedor conserva la carpeta de modelos del servidor. Borra esa carpeta para quitar los modelos; borrar los datos del navegador no los elimina.",
++	"browserMemory.retention": "La memoria se guarda en este navegador y esta dirección. Detener el contenedor la conserva; borrar los datos del sitio o el perfil la elimina. Los modelos del servidor se guardan aparte. Exporta antes de borrar.",
++	"browserMemory.contents": "El ZIP incluye conversaciones y archivos de trabajo, sin claves de cuenta ni pesos de modelos. Puede faltar la memoria a largo plazo. El archivo no está cifrado: guárdalo en privado.",
++	"browserMemory.import": "Importar ZIP",
++	"browserMemory.preview": "Revisar copia",
++	"browserMemory.files": "Archivos",
++	"browserMemory.facts": "Recuerdos",
++	"browserMemory.absent": "No incluidos",
++	"browserMemory.overwrite": "Se reemplazarán los archivos del mismo nombre; los demás se conservarán. Exporta una copia primero. Mantén esta pestaña abierta hasta que termine. Cierra las otras pestañas de este sitio antes de restaurar. Una restauración interrumpida se revierte al volver a abrir.",
++	"browserMemory.restore": "Restaurar estos archivos",
++	"browserMemory.cancel": "Cancelar",
++	"browserMemory.reload": "Recargar para aplicar",
++	"browserMemory.working": "Procesando…",
++	"browserMemory.exported": "Exportación descargada. Guárdala en un lugar seguro.",
++	"browserMemory.error": "Error de transferencia. Revisa el ZIP o el espacio disponible e inténtalo de nuevo.",
++	"browserMemory.recoveryError": "No se pudo completar la recuperación. Libera espacio, cierra las otras pestañas de este sitio y vuelve a abrirlo. Conserva los datos del sitio; borrarlos elimina tus recuerdos.",
++	"browserMemory.restored": "Restauración terminada. Recarga para usar los archivos.",
++	"browserMemory.wait": "Espera a que termine la respuesta o cancélala.",
++
++	"localContainer.name": "Contenedor local",
++	"localContainer.description": "Usa un modelo instalado en tu contenedor local. No necesitas cuenta.",
++	"localContainer.loading": "Cargando modelos instalados…",
++	"localContainer.ready": "Conectado. Elige un modelo instalado.",
++	"localContainer.empty": "No hay modelos instalados.",
++	"localContainer.error": "No se puede conectar con el servidor local de modelos.",
++	"localContainer.choose": "Elegir un modelo local",
++	"localContainer.prepare": "Prepara un modelo pequeño en el contenedor y actualiza la lista. Los modelos nunca se descargan automáticamente.",
++	"localContainer.recover": "Comprueba que el contenedor esté en marcha y vuelve a intentarlo.",
++	"localContainer.retry": "Actualizar modelos",
++	"localContainer.limits": "Solo conversación: no hay herramientas de archivos, calendario ni comandos. Los modelos pequeños pueden fallar en coreano y en datos. Verifica las respuestas importantes.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/fr.ts b/packages/shell/src/lib/locales/fr.ts
+index 4493d6e..8a2da2e 100644
+--- a/packages/shell/src/lib/locales/fr.ts
++++ b/packages/shell/src/lib/locales/fr.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "Mémoire du navigateur",
++	"browserMemory.serverInfo": "Supprimer le conteneur conserve le dossier des modèles du serveur. Supprimez ce dossier pour retirer les modèles ; effacer les données du navigateur ne les supprime pas.",
++	"browserMemory.retention": "La mémoire reste dans ce navigateur et à cette adresse. Arrêter le conteneur la conserve ; effacer les données du site ou le profil la supprime. Les modèles du serveur sont séparés. Exportez avant de supprimer.",
++	"browserMemory.contents": "Le ZIP contient les conversations et les fichiers de travail, sans clés de compte ni poids des modèles. La mémoire à long terme peut être absente. Ce fichier non chiffré doit rester privé.",
++	"browserMemory.import": "Importer un ZIP",
++	"browserMemory.preview": "Vérifier la sauvegarde",
++	"browserMemory.files": "Fichiers",
++	"browserMemory.facts": "Souvenirs",
++	"browserMemory.absent": "Non inclus",
++	"browserMemory.overwrite": "Les fichiers de même nom seront remplacés ; les autres seront conservés. Exportez une sauvegarde avant de continuer. Gardez cet onglet ouvert jusqu’à la fin. Fermez les autres onglets de ce site avant de restaurer. Une restauration interrompue est annulée à la réouverture.",
++	"browserMemory.restore": "Restaurer ces fichiers",
++	"browserMemory.cancel": "Annuler",
++	"browserMemory.reload": "Recharger pour appliquer",
++	"browserMemory.working": "Traitement en cours…",
++	"browserMemory.exported": "Export téléchargé. Conservez-le en lieu sûr.",
++	"browserMemory.error": "Échec du transfert. Vérifiez le ZIP ou l’espace disponible et réessayez.",
++	"browserMemory.recoveryError": "La récupération a échoué. Libérez de l’espace, fermez les autres onglets de ce site et rouvrez-le. Conservez les données du site : les effacer supprime vos souvenirs.",
++	"browserMemory.restored": "Restauration terminée. Rechargez pour utiliser les fichiers.",
++	"browserMemory.wait": "Attendez la fin de la réponse ou annulez-la.",
++
++	"localContainer.name": "Conteneur local",
++	"localContainer.description": "Utilisez un modèle installé dans votre conteneur local. Aucun compte requis.",
++	"localContainer.loading": "Chargement des modèles installés…",
++	"localContainer.ready": "Connecté. Choisissez un modèle installé.",
++	"localContainer.empty": "Aucun modèle installé.",
++	"localContainer.error": "Connexion au serveur de modèles local impossible.",
++	"localContainer.choose": "Choisir un modèle local",
++	"localContainer.prepare": "Préparez un petit modèle dans le conteneur, puis actualisez la liste. Aucun modèle n’est téléchargé automatiquement.",
++	"localContainer.recover": "Vérifiez que le conteneur est démarré, puis réessayez.",
++	"localContainer.retry": "Actualiser les modèles",
++	"localContainer.limits": "Conversation uniquement : les outils de fichiers, de calendrier et de commandes sont indisponibles. Les petits modèles peuvent manquer de précision en coréen et sur les faits. Vérifiez les réponses importantes.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/hi.ts b/packages/shell/src/lib/locales/hi.ts
+index fe92e4e..dbca3df 100644
+--- a/packages/shell/src/lib/locales/hi.ts
++++ b/packages/shell/src/lib/locales/hi.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "ब्राउज़र की यादें",
++	"browserMemory.serverInfo": "कंटेनर हटाने पर भी सर्वर के मॉडल वाला फ़ोल्डर रहता है। मॉडल हटाने के लिए वह फ़ोल्डर मिटाएँ; ब्राउज़र का डेटा मिटाने से वे नहीं मिटते।",
++	"browserMemory.retention": "यादें इस ब्राउज़र और साइट के पते पर रहती हैं। कंटेनर रोकने से वे बनी रहती हैं; साइट का डेटा या ब्राउज़र प्रोफ़ाइल मिटाने से वे मिट जाती हैं। सर्वर के मॉडल अलग रखे जाते हैं। मिटाने से पहले निर्यात करें।",
++	"browserMemory.contents": "ZIP में बातचीत और कार्यक्षेत्र की फ़ाइलें हैं, खाते की कुंजियाँ और मॉडल के वज़न नहीं। दीर्घकालिक यादें अनुपस्थित हो सकती हैं। यह फ़ाइल एन्क्रिप्ट नहीं है; इसे सुरक्षित रखें।",
++	"browserMemory.import": "ZIP आयात करें",
++	"browserMemory.preview": "बैकअप जाँचें",
++	"browserMemory.files": "फ़ाइलें",
++	"browserMemory.facts": "यादों की प्रविष्टियाँ",
++	"browserMemory.absent": "शामिल नहीं",
++	"browserMemory.overwrite": "एक ही नाम की फ़ाइलें बदली जाएँगी; बाकी बनी रहेंगी। पहले बैकअप निर्यात करें। पूरा होने तक यह टैब खुला रखें। बहाल करने से पहले इस साइट के अन्य टैब बंद करें। बीच में रुकी बहाली दोबारा खोलने पर वापस कर दी जाएगी।",
++	"browserMemory.restore": "ये फ़ाइलें बहाल करें",
++	"browserMemory.cancel": "रद्द करें",
++	"browserMemory.reload": "लागू करने के लिए फिर लोड करें",
++	"browserMemory.working": "प्रक्रिया जारी है…",
++	"browserMemory.exported": "निर्यात डाउनलोड हो गया। इसे सुरक्षित रखें।",
++	"browserMemory.error": "स्थानांतरण विफल। ZIP या खाली जगह जाँचकर फिर प्रयास करें।",
++	"browserMemory.recoveryError": "पुनर्प्राप्ति पूरी नहीं हुई। स्टोरेज खाली करें, इस साइट के अन्य टैब बंद करें और फिर खोलें। साइट का डेटा न मिटाएँ; ऐसा करने से आपकी यादें मिट जाएँगी।",
++	"browserMemory.restored": "बहाल हो गया। फ़ाइलें इस्तेमाल करने के लिए फिर लोड करें।",
++	"browserMemory.wait": "पहले मौजूदा उत्तर पूरा होने दें या उसे रद्द करें।",
++
++	"localContainer.name": "स्थानीय कंटेनर",
++	"localContainer.description": "अपने स्थानीय कंटेनर में स्थापित मॉडल इस्तेमाल करें। खाते की ज़रूरत नहीं।",
++	"localContainer.loading": "स्थापित मॉडल लोड हो रहे हैं…",
++	"localContainer.ready": "जुड़ गया। स्थापित मॉडल चुनें।",
++	"localContainer.empty": "कोई मॉडल स्थापित नहीं है।",
++	"localContainer.error": "स्थानीय मॉडल सर्वर से जुड़ नहीं सके।",
++	"localContainer.choose": "स्थानीय मॉडल चुनें",
++	"localContainer.prepare": "कंटेनर में एक छोटा मॉडल तैयार करके सूची ताज़ा करें। मॉडल अपने आप डाउनलोड नहीं होते।",
++	"localContainer.recover": "कंटेनर चल रहा है या नहीं जाँचें और फिर प्रयास करें।",
++	"localContainer.retry": "मॉडल सूची ताज़ा करें",
++	"localContainer.limits": "केवल बातचीत: फ़ाइल, कैलेंडर और कमांड के टूल उपलब्ध नहीं हैं। छोटे मॉडल को कोरियाई और तथ्यों की सटीकता में कठिनाई हो सकती है। महत्वपूर्ण उत्तर जाँचें।",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/id.ts b/packages/shell/src/lib/locales/id.ts
+index fc2a46d..a96cd85 100644
+--- a/packages/shell/src/lib/locales/id.ts
++++ b/packages/shell/src/lib/locales/id.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "Memori browser",
++	"browserMemory.serverInfo": "Menghapus kontainer tetap menyimpan folder model server. Hapus folder itu untuk menghapus model server; menghapus data browser tidak menghapusnya.",
++	"browserMemory.retention": "Memori tersimpan di browser dan alamat situs ini. Menghentikan kontainer tetap menyimpannya; menghapus data situs atau profil browser akan menghilangkannya. Model server disimpan terpisah. Ekspor sebelum menghapus.",
++	"browserMemory.contents": "ZIP berisi percakapan dan berkas kerja, tanpa kunci akun atau bobot model. Memori jangka panjang mungkin tidak disertakan. Arsip tidak dienkripsi, simpan secara pribadi.",
++	"browserMemory.import": "Impor ZIP",
++	"browserMemory.preview": "Tinjau cadangan",
++	"browserMemory.files": "Berkas",
++	"browserMemory.facts": "Catatan memori",
++	"browserMemory.absent": "Tidak disertakan",
++	"browserMemory.overwrite": "Berkas bernama sama akan diganti; berkas lain tetap ada. Ekspor cadangan terlebih dahulu. Biarkan tab ini terbuka hingga selesai. Tutup tab lain situs ini sebelum memulihkan. Pemulihan yang terputus akan dibatalkan saat dibuka kembali.",
++	"browserMemory.restore": "Pulihkan berkas ini",
++	"browserMemory.cancel": "Batal",
++	"browserMemory.reload": "Muat ulang untuk menerapkan",
++	"browserMemory.working": "Memproses…",
++	"browserMemory.exported": "Ekspor diunduh. Simpan di tempat aman.",
++	"browserMemory.error": "Transfer gagal. Periksa ZIP atau ruang penyimpanan lalu coba lagi.",
++	"browserMemory.recoveryError": "Pemulihan belum selesai. Kosongkan ruang penyimpanan, tutup tab lain situs ini, lalu buka kembali. Simpan data situs; menghapusnya akan menghapus ingatan Anda.",
++	"browserMemory.restored": "Berhasil dipulihkan. Muat ulang untuk menggunakan berkas.",
++	"browserMemory.wait": "Tunggu jawaban selesai atau batalkan terlebih dahulu.",
++
++	"localContainer.name": "Kontainer lokal",
++	"localContainer.description": "Gunakan model yang terpasang di kontainer lokal. Tidak perlu akun.",
++	"localContainer.loading": "Memuat model terpasang…",
++	"localContainer.ready": "Terhubung. Pilih model terpasang.",
++	"localContainer.empty": "Belum ada model terpasang.",
++	"localContainer.error": "Tidak dapat terhubung ke server model lokal.",
++	"localContainer.choose": "Pilih model lokal",
++	"localContainer.prepare": "Siapkan model kecil di kontainer, lalu perbarui daftar. Model tidak pernah diunduh otomatis.",
++	"localContainer.recover": "Pastikan kontainer berjalan, lalu coba lagi.",
++	"localContainer.retry": "Perbarui model",
++	"localContainer.limits": "Hanya percakapan: alat berkas, kalender, dan perintah tidak tersedia. Model kecil mungkin kurang baik dalam bahasa Korea dan ketepatan fakta. Periksa jawaban penting.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/ja.ts b/packages/shell/src/lib/locales/ja.ts
+index 18f02f7..2c6ecd3 100644
+--- a/packages/shell/src/lib/locales/ja.ts
++++ b/packages/shell/src/lib/locales/ja.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "ブラウザーの記憶",
++	"browserMemory.serverInfo": "コンテナーを削除してもサーバーモデルのフォルダーは残ります。モデルを消すにはそのフォルダーを削除してください。ブラウザーデータの削除では消えません。",
++	"browserMemory.retention": "記憶はこのブラウザーとサイトのアドレスに保存されます。コンテナーを停止しても残りますが、サイトデータやプロファイルを削除すると失われます。サーバーモデルは別保存です。削除前に書き出してください。",
++	"browserMemory.contents": "ZIPには会話と作業ファイルが含まれます。アカウントキーとモデルの重みは含みません。長期記憶がない場合もあります。暗号化されないため安全に保管してください。",
++	"browserMemory.import": "ZIPを読み込む",
++	"browserMemory.preview": "バックアップを確認",
++	"browserMemory.files": "ファイル",
++	"browserMemory.facts": "記憶項目",
++	"browserMemory.absent": "含まれていません",
++	"browserMemory.overwrite": "同名のファイルは上書きされ、他のファイルは残ります。先にバックアップを書き出してください。完了までタブを開いたままにしてください。 復元前にこのサイトの他のタブを閉じてください。中断した復元は再度開くと元に戻ります。",
++	"browserMemory.restore": "このファイルを復元",
++	"browserMemory.cancel": "キャンセル",
++	"browserMemory.reload": "再読み込みして適用",
++	"browserMemory.working": "処理中…",
++	"browserMemory.exported": "書き出したファイルを安全に保管してください。",
++	"browserMemory.error": "転送に失敗しました。ZIPと空き容量を確認して再試行してください。",
++	"browserMemory.recoveryError": "復旧できませんでした。空き容量を増やし、このサイトの他のタブを閉じてから開き直してください。サイトデータを消すと記憶が失われます。",
++	"browserMemory.restored": "復元しました。再読み込みしてください。",
++	"browserMemory.wait": "回答が終わるか中止してから操作してください。",
++
++	"localContainer.name": "ローカルコンテナー",
++	"localContainer.description": "ローカルコンテナーにインストールしたモデルを使います。アカウントは不要です。",
++	"localContainer.loading": "インストール済みモデルを読み込み中…",
++	"localContainer.ready": "接続しました。モデルを選んでください。",
++	"localContainer.empty": "モデルがインストールされていません。",
++	"localContainer.error": "ローカルモデルサーバーに接続できません。",
++	"localContainer.choose": "ローカルモデルを選択",
++	"localContainer.prepare": "コンテナーに小型モデルを用意して一覧を更新してください。モデルは自動ダウンロードされません。",
++	"localContainer.recover": "コンテナーが起動していることを確認して再試行してください。",
++	"localContainer.retry": "モデル一覧を更新",
++	"localContainer.limits": "会話専用です。ファイル・予定・コマンド実行ツールは利用できません。小型モデルは韓国語や事実の正確さが不十分な場合があります。重要な回答は確認してください。",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/ko.ts b/packages/shell/src/lib/locales/ko.ts
+index 70d341e..ee4a458 100644
+--- a/packages/shell/src/lib/locales/ko.ts
++++ b/packages/shell/src/lib/locales/ko.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "브라우저 기억",
++	"browserMemory.serverInfo": "컨테이너를 삭제해도 서버 모델 폴더는 남습니다. 서버 모델은 해당 폴더를 삭제해야 지워지며, 브라우저 데이터를 지워도 삭제되지 않습니다.",
++	"browserMemory.retention": "기억은 이 브라우저와 사이트 주소에 저장됩니다. 컨테이너를 꺼도 남지만 사이트 데이터나 브라우저 프로필을 삭제하면 사라집니다. 서버 모델은 별도로 저장됩니다. 삭제 전에 내보내세요.",
++	"browserMemory.contents": "ZIP에는 대화와 작업 공간 파일이 포함되며 계정 키와 모델 가중치는 제외됩니다. 장기기억은 없을 수 있습니다. 암호화되지 않은 파일이므로 안전하게 보관하세요.",
++	"browserMemory.import": "ZIP 가져오기",
++	"browserMemory.preview": "백업 내용 확인",
++	"browserMemory.files": "파일",
++	"browserMemory.facts": "기억 항목",
++	"browserMemory.absent": "포함되지 않음",
++	"browserMemory.overwrite": "이름이 같은 파일은 덮어쓰고 나머지는 보존합니다. 먼저 백업을 내보내세요. 복원이 끝날 때까지 이 탭을 열어 두세요. 복원 전에 이 사이트의 다른 탭을 닫으세요. 중단된 복원은 다시 열 때 되돌립니다.",
++	"browserMemory.restore": "이 파일들 복원",
++	"browserMemory.cancel": "취소",
++	"browserMemory.reload": "새로고침하여 적용",
++	"browserMemory.working": "처리 중…",
++	"browserMemory.exported": "내보낸 파일을 안전하게 보관하세요.",
++	"browserMemory.error": "처리하지 못했습니다. ZIP이나 저장 공간을 확인하고 다시 시도하세요.",
++	"browserMemory.recoveryError": "복구를 마치지 못했습니다. 저장 공간을 확보하고 이 사이트의 다른 탭을 닫은 뒤 다시 여세요. 사이트 데이터를 지우면 기억이 삭제됩니다.",
++	"browserMemory.restored": "복원했습니다. 새로고침하면 복원한 파일을 사용합니다.",
++	"browserMemory.wait": "진행 중인 답변이 끝나거나 취소한 뒤 시도하세요.",
++
++	"localContainer.name": "로컬 컨테이너",
++	"localContainer.description": "로컬 컨테이너에 설치된 모델을 사용합니다. 계정이 필요하지 않습니다.",
++	"localContainer.loading": "설치된 모델을 불러오는 중…",
++	"localContainer.ready": "연결되었습니다. 설치된 모델을 선택하세요.",
++	"localContainer.empty": "설치된 모델이 없습니다.",
++	"localContainer.error": "로컬 모델 서버에 연결할 수 없습니다.",
++	"localContainer.choose": "로컬 모델 선택",
++	"localContainer.prepare": "컨테이너에 작은 모델을 준비한 뒤 목록을 새로 고치세요. 모델은 자동으로 내려받지 않습니다.",
++	"localContainer.recover": "컨테이너가 실행 중인지 확인한 뒤 다시 시도하세요.",
++	"localContainer.retry": "모델 목록 새로 고침",
++	"localContainer.limits": "대화 전용입니다. 파일·일정·명령 실행 도구는 지원하지 않습니다. 작은 모델은 한국어 표현과 사실 정확도가 부족할 수 있습니다. 중요한 답변은 다시 확인하세요.",
++
+ 	"apps.loading": "앱 목록을 불러오는 중…",
+ 	"apps.empty": "등록된 앱이 없습니다.",
+ 	"apps.loginRequired": "Naia 로그인이 필요합니다.",
+diff --git a/packages/shell/src/lib/locales/pt.ts b/packages/shell/src/lib/locales/pt.ts
+index 91179ed..11d325c 100644
+--- a/packages/shell/src/lib/locales/pt.ts
++++ b/packages/shell/src/lib/locales/pt.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "Memória do navegador",
++	"browserMemory.serverInfo": "Remover o contêiner mantém a pasta de modelos do servidor. Apague essa pasta para remover os modelos; apagar os dados do navegador não os remove.",
++	"browserMemory.retention": "A memória fica neste navegador e neste endereço. Parar o contêiner a preserva; apagar os dados do site ou o perfil a remove. Os modelos do servidor ficam separados. Exporte antes de apagar.",
++	"browserMemory.contents": "O ZIP inclui conversas e arquivos de trabalho, sem chaves de conta nem pesos de modelos. A memória de longo prazo pode estar ausente. O arquivo não é criptografado: guarde-o em segurança.",
++	"browserMemory.import": "Importar ZIP",
++	"browserMemory.preview": "Revisar backup",
++	"browserMemory.files": "Arquivos",
++	"browserMemory.facts": "Lembranças",
++	"browserMemory.absent": "Não incluídas",
++	"browserMemory.overwrite": "Arquivos com o mesmo nome serão substituídos; os demais serão mantidos. Exporte um backup primeiro. Mantenha esta aba aberta até terminar. Feche as outras abas deste site antes de restaurar. Uma restauração interrompida é desfeita ao reabrir.",
++	"browserMemory.restore": "Restaurar estes arquivos",
++	"browserMemory.cancel": "Cancelar",
++	"browserMemory.reload": "Recarregar para aplicar",
++	"browserMemory.working": "Processando…",
++	"browserMemory.exported": "Exportação baixada. Guarde-a em segurança.",
++	"browserMemory.error": "Falha na transferência. Confira o ZIP ou o espaço disponível e tente novamente.",
++	"browserMemory.recoveryError": "Não foi possível concluir a recuperação. Libere espaço, feche as outras abas deste site e abra-o novamente. Preserve os dados do site; apagá-los exclui suas memórias.",
++	"browserMemory.restored": "Restauração concluída. Recarregue para usar os arquivos.",
++	"browserMemory.wait": "Aguarde o fim da resposta ou cancele-a.",
++
++	"localContainer.name": "Contêiner local",
++	"localContainer.description": "Use um modelo instalado no seu contêiner local. Não é preciso ter conta.",
++	"localContainer.loading": "Carregando modelos instalados…",
++	"localContainer.ready": "Conectado. Escolha um modelo instalado.",
++	"localContainer.empty": "Nenhum modelo instalado.",
++	"localContainer.error": "Não foi possível conectar ao servidor local de modelos.",
++	"localContainer.choose": "Escolher modelo local",
++	"localContainer.prepare": "Prepare um modelo pequeno no contêiner e atualize a lista. Os modelos nunca são baixados automaticamente.",
++	"localContainer.recover": "Verifique se o contêiner está em execução e tente novamente.",
++	"localContainer.retry": "Atualizar modelos",
++	"localContainer.limits": "Apenas conversa: ferramentas de arquivos, agenda e comandos indisponíveis. Modelos pequenos podem falhar no coreano e na precisão dos fatos. Confira respostas importantes.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/ru.ts b/packages/shell/src/lib/locales/ru.ts
+index 782f67c..e974e69 100644
+--- a/packages/shell/src/lib/locales/ru.ts
++++ b/packages/shell/src/lib/locales/ru.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "Память браузера",
++	"browserMemory.serverInfo": "После удаления контейнера папка моделей сервера сохраняется. Чтобы удалить модели, удалите эту папку; очистка данных браузера их не удаляет.",
++	"browserMemory.retention": "Память хранится в этом браузере для этого адреса сайта. Остановка контейнера её сохраняет; удаление данных сайта или профиля браузера стирает. Модели сервера хранятся отдельно. Перед удалением экспортируйте данные.",
++	"browserMemory.contents": "ZIP содержит диалоги и рабочие файлы, но не ключи учётной записи и веса моделей. Долговременная память может отсутствовать. Архив не зашифрован: храните его в безопасном месте.",
++	"browserMemory.import": "Импорт ZIP",
++	"browserMemory.preview": "Проверка копии",
++	"browserMemory.files": "Файлы",
++	"browserMemory.facts": "Записи памяти",
++	"browserMemory.absent": "Не включены",
++	"browserMemory.overwrite": "Одноимённые файлы будут заменены, остальные сохранятся. Сначала экспортируйте копию. Не закрывайте вкладку до завершения. Перед восстановлением закройте другие вкладки этого сайта. Прерванное восстановление откатывается при повторном открытии.",
++	"browserMemory.restore": "Восстановить эти файлы",
++	"browserMemory.cancel": "Отмена",
++	"browserMemory.reload": "Перезагрузить для применения",
++	"browserMemory.working": "Обработка…",
++	"browserMemory.exported": "Экспорт скачан. Храните его в безопасном месте.",
++	"browserMemory.error": "Сбой переноса. Проверьте ZIP и свободное место, затем повторите.",
++	"browserMemory.recoveryError": "Не удалось завершить восстановление. Освободите место, закройте другие вкладки этого сайта и откройте его снова. Не удаляйте данные сайта: это удалит вашу память.",
++	"browserMemory.restored": "Восстановлено. Перезагрузите страницу для применения.",
++	"browserMemory.wait": "Дождитесь завершения ответа или отмените его.",
++
++	"localContainer.name": "Локальный контейнер",
++	"localContainer.description": "Используйте модель из локального контейнера. Учётная запись не нужна.",
++	"localContainer.loading": "Загрузка установленных моделей…",
++	"localContainer.ready": "Подключено. Выберите установленную модель.",
++	"localContainer.empty": "Нет установленных моделей.",
++	"localContainer.error": "Не удалось подключиться к локальному серверу моделей.",
++	"localContainer.choose": "Выбрать локальную модель",
++	"localContainer.prepare": "Подготовьте небольшую модель в контейнере и обновите список. Модели не скачиваются автоматически.",
++	"localContainer.recover": "Убедитесь, что контейнер запущен, и повторите попытку.",
++	"localContainer.retry": "Обновить модели",
++	"localContainer.limits": "Только чат: инструменты для файлов, календаря и команд недоступны. Малые модели могут ошибаться в корейском языке и фактах. Проверяйте важные ответы.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/vi.ts b/packages/shell/src/lib/locales/vi.ts
+index 007afa4..084a0ae 100644
+--- a/packages/shell/src/lib/locales/vi.ts
++++ b/packages/shell/src/lib/locales/vi.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "Bộ nhớ trình duyệt",
++	"browserMemory.serverInfo": "Xóa vùng chứa vẫn giữ thư mục mô hình máy chủ. Muốn xóa mô hình, hãy xóa thư mục đó; xóa dữ liệu trình duyệt không xóa mô hình.",
++	"browserMemory.retention": "Bộ nhớ nằm trong trình duyệt này tại địa chỉ trang này. Dừng vùng chứa vẫn giữ dữ liệu; xóa dữ liệu trang hoặc hồ sơ trình duyệt sẽ làm mất dữ liệu. Mô hình máy chủ được lưu riêng. Hãy xuất trước khi xóa.",
++	"browserMemory.contents": "ZIP chứa hội thoại và tệp làm việc, không chứa khóa tài khoản hay trọng số mô hình. Có thể không có bộ nhớ dài hạn. Tệp không được mã hóa, hãy giữ kín.",
++	"browserMemory.import": "Nhập ZIP",
++	"browserMemory.preview": "Xem bản sao lưu",
++	"browserMemory.files": "Tệp",
++	"browserMemory.facts": "Mục ghi nhớ",
++	"browserMemory.absent": "Không bao gồm",
++	"browserMemory.overwrite": "Tệp trùng tên sẽ bị thay thế; các tệp khác được giữ lại. Hãy xuất bản sao lưu trước. Giữ thẻ này mở đến khi hoàn tất. Đóng các thẻ khác của trang này trước khi khôi phục. Lần khôi phục bị gián đoạn sẽ được hoàn tác khi mở lại.",
++	"browserMemory.restore": "Khôi phục các tệp này",
++	"browserMemory.cancel": "Hủy",
++	"browserMemory.reload": "Tải lại để áp dụng",
++	"browserMemory.working": "Đang xử lý…",
++	"browserMemory.exported": "Đã tải bản xuất xuống. Hãy lưu ở nơi an toàn.",
++	"browserMemory.error": "Chuyển dữ liệu thất bại. Kiểm tra ZIP hoặc dung lượng trống rồi thử lại.",
++	"browserMemory.recoveryError": "Không thể hoàn tất phục hồi. Hãy giải phóng dung lượng, đóng các thẻ khác của trang này rồi mở lại. Giữ dữ liệu trang; xóa dữ liệu sẽ xóa ký ức của bạn.",
++	"browserMemory.restored": "Đã khôi phục. Tải lại để sử dụng các tệp.",
++	"browserMemory.wait": "Hãy đợi trả lời xong hoặc hủy trả lời trước.",
++
++	"localContainer.name": "Vùng chứa cục bộ",
++	"localContainer.description": "Dùng mô hình đã cài trong vùng chứa cục bộ. Không cần tài khoản.",
++	"localContainer.loading": "Đang tải mô hình đã cài…",
++	"localContainer.ready": "Đã kết nối. Chọn mô hình đã cài.",
++	"localContainer.empty": "Chưa cài mô hình nào.",
++	"localContainer.error": "Không thể kết nối máy chủ mô hình cục bộ.",
++	"localContainer.choose": "Chọn mô hình cục bộ",
++	"localContainer.prepare": "Chuẩn bị một mô hình nhỏ trong vùng chứa rồi làm mới danh sách. Mô hình không bao giờ được tải tự động.",
++	"localContainer.recover": "Kiểm tra vùng chứa đang chạy rồi thử lại.",
++	"localContainer.retry": "Làm mới mô hình",
++	"localContainer.limits": "Chỉ trò chuyện: không hỗ trợ công cụ tệp, lịch và lệnh. Mô hình nhỏ có thể yếu về tiếng Hàn và độ chính xác. Hãy kiểm tra câu trả lời quan trọng.",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/locales/zh.ts b/packages/shell/src/lib/locales/zh.ts
+index 312c08c..bb9a78e 100644
+--- a/packages/shell/src/lib/locales/zh.ts
++++ b/packages/shell/src/lib/locales/zh.ts
+@@ -8,6 +8,38 @@
+ // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
+ // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
+ export default {
++	"browserMemory.title": "浏览器记忆",
++	"browserMemory.serverInfo": "删除容器后，服务器模型文件夹仍会保留。删除该文件夹才能移除服务器模型；清除浏览器数据不会删除它们。",
++	"browserMemory.retention": "记忆保存在此浏览器和网站地址下。停止容器不会删除记忆，但清除网站数据或删除浏览器配置会使其丢失。服务器模型单独保存。删除前请先导出。",
++	"browserMemory.contents": "ZIP 包含对话和工作区文件，不含账户密钥或模型权重。可能不含长期记忆。文件未经加密，请妥善保管。",
++	"browserMemory.import": "导入 ZIP",
++	"browserMemory.preview": "查看备份",
++	"browserMemory.files": "文件",
++	"browserMemory.facts": "记忆条目",
++	"browserMemory.absent": "未包含",
++	"browserMemory.overwrite": "同名文件会被覆盖，其他文件会保留。请先导出备份，恢复完成前保持此标签页打开。 恢复前请关闭此网站的其他标签页。中断的恢复将在重新打开时回滚。",
++	"browserMemory.restore": "恢复这些文件",
++	"browserMemory.cancel": "取消",
++	"browserMemory.reload": "刷新以应用",
++	"browserMemory.working": "处理中…",
++	"browserMemory.exported": "已下载导出文件，请妥善保管。",
++	"browserMemory.error": "传输失败。请检查 ZIP 或可用空间后重试。",
++	"browserMemory.recoveryError": "未能完成恢复。请释放存储空间，关闭此网站的其他标签页，然后重新打开。请保留网站数据，清除它会删除记忆。",
++	"browserMemory.restored": "已恢复。刷新后使用恢复的文件。",
++	"browserMemory.wait": "请先等待当前回答结束或取消回答。",
++
++	"localContainer.name": "本地容器",
++	"localContainer.description": "使用本地容器中已安装的模型，无需账户。",
++	"localContainer.loading": "正在加载已安装的模型…",
++	"localContainer.ready": "已连接。请选择已安装的模型。",
++	"localContainer.empty": "尚未安装模型。",
++	"localContainer.error": "无法连接本地模型服务器。",
++	"localContainer.choose": "选择本地模型",
++	"localContainer.prepare": "请在容器中准备一个小型模型后刷新列表。不会自动下载模型。",
++	"localContainer.recover": "请确认容器正在运行后重试。",
++	"localContainer.retry": "刷新模型",
++	"localContainer.limits": "仅支持对话，不支持文件、日程或命令执行工具。小型模型的韩语表达和事实准确性可能不足。请核实重要回答。",
++
+ 	"apps.loading": "Loading apps…",
+ 	"apps.empty": "No apps are available.",
+ 	"apps.loginRequired": "Sign in to Naia first.",
+diff --git a/packages/shell/src/lib/transfer/archive.ts b/packages/shell/src/lib/transfer/archive.ts
+index d8a4237..89028d7 100644
+--- a/packages/shell/src/lib/transfer/archive.ts
++++ b/packages/shell/src/lib/transfer/archive.ts
+@@ -23,7 +23,7 @@ function limitsFor(partial: Partial<TransferLimits> = {}): TransferLimits {
+ }
+ // Incremental SHA-256 keeps a single 64-byte block regardless of file size.
+ const K = new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+-class Sha256 {
++export class Sha256 {
+   private h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+   private block = new Uint8Array(64); private used = 0; private length = 0; private w = new Uint32Array(64);
+   private compress(b: Uint8Array, p: number) {
+@@ -114,6 +114,7 @@ async function scanEntry(source: ArchiveSource, entry: Entry, limits: TransferLi
+   const inflate=entry.method===8?new Inflate(append):null;let consumed=0;
+   for await(const data of source.read(entry.offset,entry.compressed)){
+     if(data.length>limits.chunkBytes || (consumed+=data.length)>entry.compressed)throw new Error("invalid archive chunk");
++    if (!inflate) { append(data); for (const out of pending) await onChunk!(out); pending=[]; continue; }
+     // Small compressed inputs bound the amount inflate can emit per push.
+     for(let p=0;p<data.length;p+=1024){const part=data.subarray(p,p+1024);if(inflate)inflate.push(part,false);else append(part);for(const out of pending)await onChunk!(out);pending=[];}
+   }
+diff --git a/packages/shell/src/lib/transfer/restore-web.ts b/packages/shell/src/lib/transfer/restore-web.ts
+new file mode 100644
+index 0000000..fd45233
+--- /dev/null
++++ b/packages/shell/src/lib/transfer/restore-web.ts
+@@ -0,0 +1,150 @@
++import { Logger } from "../logger";
++import { resolveWebConversationsDir } from "../web-runtime/web-workspace-commands";
++import { extractArchive, validateArchive, Sha256, type ArchiveSource } from "./archive";
++import { assertTransferPath } from "./policy";
++import { MAX_FILES } from "./manifest";
++
++export function fileArchive(file: File): ArchiveSource {
++    return { size: file.size, async *read(offset, length) {
++        for (let pos = offset; pos < offset + length; pos += 65536)
++            yield new Uint8Array(await file.slice(pos, Math.min(pos + 65536, offset + length)).arrayBuffer());
++    } };
++}
++export const inspectWebTransfer = (file: File) => validateArchive(fileArchive(file));
++const journalName = "naia-restore-journal";
++const lockName = "naia-memory-transfer";
++type RecordEntry = { path: string; size: number | null; sha256: string | null };
++type Journal = { version: 1; files: RecordEntry[] };
++const missing = (e: unknown) => e instanceof DOMException && e.name === "NotFoundError";
++async function write(handle: FileSystemFileHandle, data: FileSystemWriteChunkType) {
++    const stream = await handle.createWritable();
++    try { await stream.write(data); await stream.close(); }
++    catch (error) { await stream.abort().catch(() => {}); throw error; }
++}
++async function hash(file: File) {
++    const sha = new Sha256();
++    for await (const bytes of fileArchive(file).read(0, file.size)) sha.update(bytes);
++    return sha.digest();
++}
++async function parentFor(workspace: FileSystemDirectoryHandle, path: string) {
++    assertTransferPath(path);
++    const parts = path.split("/"); const name = parts.pop()!;
++    let parent = workspace;
++    for (const part of parts) parent = await parent.getDirectoryHandle(part, { create: true });
++    return { parent, name };
++}
++async function optionalFile(dir: FileSystemDirectoryHandle, name: string) {
++    try { return await (await dir.getFileHandle(name)).getFile(); }
++    catch (error) { if (missing(error)) return null; throw error; }
++}
++/** Validate all recovery metadata and originals before the first rollback write. */
++async function rollback(root: FileSystemDirectoryHandle, temp: FileSystemDirectoryHandle, journal: Journal) {
++    if (journal.version !== 1 || !Array.isArray(journal.files) || journal.files.length > MAX_FILES) throw new Error("invalid restore journal");
++    const originals: (File | null)[] = [], names = new Set<string>();
++    for (const [index, item] of journal.files.entries()) {
++        if (!item || typeof item.path !== "string") throw new Error("invalid restore journal path");
++        assertTransferPath(item.path);
++        const key = item.path.toLowerCase();
++        if (names.has(key)) throw new Error("duplicate restore journal path"); names.add(key);
++        if (item.size === null && item.sha256 === null) { originals.push(null); continue; }
++        if (!Number.isSafeInteger(item.size) || item.size! < 0 || typeof item.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(item.sha256)) throw new Error("invalid restore journal original");
++        const original = await (await temp.getFileHandle(`backup-${index}`)).getFile();
++        if (original.size !== item.size || await hash(original) !== item.sha256) throw new Error("restore original damaged");
++        originals.push(original);
++    }
++    for (const name of names) {
++        for (let pos = name.indexOf("/"); pos !== -1; pos = name.indexOf("/", pos + 1)) {
++            if (names.has(name.slice(0, pos))) throw new Error("restore journal path collision");
++        }
++    }
++    const workspace = await root.getDirectoryHandle("naia-adk");
++    for (const [index, item] of journal.files.entries()) {
++        const { parent, name } = await parentFor(workspace, item.path);
++        if (originals[index]) await write(await parent.getFileHandle(name, { create: true }), originals[index]!);
++        else await parent.removeEntry(name).catch(error => { if (!missing(error)) throw error; });
++    }
++}
++async function recover(root: FileSystemDirectoryHandle) {
++    let temp: FileSystemDirectoryHandle;
++    try { temp = await root.getDirectoryHandle(journalName); }
++    catch (error) { if (missing(error)) return; throw error; }
++    Logger.debug("WebMemoryTransfer", "recover journal");
++    const journal = await optionalFile(temp, "journal.json");
++    const marker = await optionalFile(temp, "committed");
++    const committed = marker && marker.size > 0 ? marker : null;
++    if (committed && await committed.text() !== "v1") throw new Error("invalid restore commit marker");
++    if (journal && journal.size > 0 && !committed) {
++        if (journal.size > 16 * 1024 * 1024) throw new Error("restore journal too large");
++        await rollback(root, temp, JSON.parse(await journal.text()) as Journal);
++    } else if (committed && !journal) throw new Error("restore journal missing");
++    // No journal means interruption while staging: workspace was never touched.
++    await root.removeEntry(journalName, { recursive: true });
++}
++export async function recoverWebTransfer() {
++    return navigator.locks.request(lockName, async () => recover(await navigator.storage.getDirectory()));
++}
++/** Single-restore transaction. OPFS close is the durable boundary, not power-loss fsync. */
++export async function restoreWebTransfer(file: File) {
++    return navigator.locks.request(lockName, { ifAvailable: true }, async lock => {
++        if (!lock) throw new Error("transfer busy");
++        Logger.debug("WebMemoryTransfer", "restore start", { bytes: file.size });
++        const root = await navigator.storage.getDirectory();
++        await recover(root);
++        const validated = await inspectWebTransfer(file);
++        const workspace = await root.getDirectoryHandle("naia-adk");
++        const records: RecordEntry[] = [];
++        let originalBytes = 0, largest = 0;
++        for (const item of validated.manifest.files) {
++            const target = item.path.startsWith("conversations/") ? `${resolveWebConversationsDir().replace(/^naia-adk\//, "")}/${item.path.slice(14)}` : item.path;
++            const { parent, name } = await parentFor(workspace, target);
++            const original = await optionalFile(parent, name);
++            originalBytes += original?.size ?? 0;
++            largest = Math.max(largest, item.size, original?.size ?? 0);
++            records.push({ path: target, size: original?.size ?? null, sha256: original ? await hash(original) : null });
++        }
++        const estimate = await navigator.storage.estimate();
++        // Staging + originals + atomic replacement scratch + metadata/headroom.
++        const needed = validated.manifest.totalBytes + originalBytes + largest + 4 * 1024 * 1024;
++        if (estimate.quota !== undefined && estimate.usage !== undefined && estimate.quota - estimate.usage < needed) throw new DOMException("Not enough space for a safe restore", "QuotaExceededError");
++        const temp = await root.getDirectoryHandle(journalName, { create: true });
++        type Item = { stream: FileSystemWritableFileStream; staged: FileSystemFileHandle };
++        let next = 0, committed = false;
++        try {
++            await extractArchive(fileArchive(file), {
++                async open() {
++                    const staged = await temp.getFileHandle(`stage-${next++}`, { create: true });
++                    return { staged, stream: await staged.createWritable() } as Item;
++                },
++                async write(item, chunk) { await item.stream.write(chunk as FileSystemWriteChunkType); },
++                async commit(items) {
++                    for (const item of items) await item.stream.close();
++                    for (const [index, record] of records.entries()) {
++                        const { parent, name } = await parentFor(workspace, record.path);
++                        const original = await optionalFile(parent, name);
++                        if ((original?.size ?? null) !== record.size || (original && await hash(original) !== record.sha256)) throw new Error("workspace changed during restore");
++                        if (original) await write(await temp.getFileHandle(`backup-${index}`, { create: true }), original);
++                    }
++                    const journal = JSON.stringify({ version: 1, files: records });
++                    if (new TextEncoder().encode(journal).length > 16 * 1024 * 1024) throw new Error("restore journal too large");
++                    await write(await temp.getFileHandle("journal.json", { create: true }), journal);
++                    for (const [index, item] of items.entries()) {
++                        const { parent, name } = await parentFor(workspace, records[index].path);
++                        await write(await parent.getFileHandle(name, { create: true }), await item.staged.getFile());
++                    }
++                    await write(await temp.getFileHandle("committed", { create: true }), "v1");
++                    committed = true;
++                },
++                async discard(items) {
++                    for (const item of items) await item.stream.abort().catch(() => {});
++                    Logger.debug("WebMemoryTransfer", "restore interrupted", { committed });
++                },
++            });
++        } catch (error) {
++            // A failed rollback preserves all snapshots and journal for next startup.
++            await recover(root);
++            throw error;
++        }
++        await recover(root);
++        Logger.debug("WebMemoryTransfer", "restore complete", { files: records.length });
++    });
++}
+diff --git a/packages/shell/src/lib/web-runtime/__tests__/web-auth.test.ts b/packages/shell/src/lib/web-runtime/__tests__/web-auth.test.ts
+index 3da2704..67a40f4 100644
+--- a/packages/shell/src/lib/web-runtime/__tests__/web-auth.test.ts
++++ b/packages/shell/src/lib/web-runtime/__tests__/web-auth.test.ts
+@@ -161,13 +161,13 @@ describe("web-auth (item 5)", () => {
+ 		expect(loadConfig()?.naiaUserId).toBeUndefined();
+ 	});
+ 
+-	it("uses the server model on a fresh login and exposes the login key to balance requests", async () => {
++	it("preserves the container choice on login and exposes the login key to balance requests", async () => {
+ 		const { installWebRuntime } = await import("../install");
+ 		installWebRuntime();
+ 		await completeWebNaiaLogin("naia_test_key_for_login_123", "test-user");
+ 		expect(loadConfig()).toMatchObject({
+-			provider: "nextain",
+-			model: "gpt-6.1-terra",
++			provider: "local-container",
++			model: "",
+ 		});
+ 		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
+ 	});
+diff --git a/packages/shell/src/lib/web-runtime/__tests__/web-llm-provider.test.ts b/packages/shell/src/lib/web-runtime/__tests__/web-llm-provider.test.ts
+index f6049fe..9a65ffa 100644
+--- a/packages/shell/src/lib/web-runtime/__tests__/web-llm-provider.test.ts
++++ b/packages/shell/src/lib/web-runtime/__tests__/web-llm-provider.test.ts
+@@ -3,14 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
+ import { loadConfig } from "../../config";
+ import { isApiKeyOptional, providerSupportsRole } from "../../llm/registry";
+ import { installWebRuntime } from "../install";
+-import { getDefaultLlmModel } from "../../llm/registry";
++
+ 
+ describe("web-llm-provider", () => {
+ 	beforeEach(() => {
+ 		localStorage.clear();
+ 	});
+ 
+-	it("registers webllm provider while defaulting to the server model", () => {
++	it("registers webllm provider while defaulting to an unselected local container model", () => {
+ 		localStorage.clear();
+ 		installWebRuntime();
+ 
+@@ -18,8 +18,10 @@ describe("web-llm-provider", () => {
+ 		expect(providerSupportsRole("webllm", "main")).toBe(true);
+ 
+ 		const config = loadConfig();
+-		expect(config?.provider).toBe("nextain");
+-		expect(config?.model).toBe(getDefaultLlmModel("nextain"));
++		expect(isApiKeyOptional("local-container")).toBe(true);
++        expect(providerSupportsRole("local-container", "main")).toBe(true);
++		expect(config?.provider).toBe("local-container");
++		expect(config?.model).toBe("");
+ 	});
+ 
+ 	it("preserves existing naia-config if already present", () => {
+diff --git a/packages/shell/src/lib/web-runtime/__tests__/web-workspace-commands.test.ts b/packages/shell/src/lib/web-runtime/__tests__/web-workspace-commands.test.ts
+index 5954e3d..04486a7 100644
+--- a/packages/shell/src/lib/web-runtime/__tests__/web-workspace-commands.test.ts
++++ b/packages/shell/src/lib/web-runtime/__tests__/web-workspace-commands.test.ts
+@@ -37,8 +37,8 @@ describe("web-workspace-commands", () => {
+ 		const parsedInStorage = JSON.parse(inStorage as string);
+ 		// WO-03: 초기 config는 번들 아바타·배경 기본값을 함께 seed한다 (리터럴 고정).
+ 		const expectedConfig = {
+-			provider: "nextain",
+-			model: "gpt-6.1-terra",
++			provider: "local-container",
++			model: "",
+ 			webAutoDefaultModel: true,
+ 			agentName: "Naia",
+ 			speechStyle: "casual",
+@@ -263,8 +263,8 @@ describe("web-workspace-commands", () => {
+ 			)) as string;
+ 
+ 			const expectedConfig = {
+-				provider: "nextain",
+-				model: "gpt-6.1-terra",
++				provider: "local-container",
++				model: "",
+ 			webAutoDefaultModel: true,
+ 				agentName: "Naia",
+ 				speechStyle: "casual",
+diff --git a/packages/shell/src/lib/web-runtime/auto-install.ts b/packages/shell/src/lib/web-runtime/auto-install.ts
+index 3674595..f827ad3 100644
+--- a/packages/shell/src/lib/web-runtime/auto-install.ts
++++ b/packages/shell/src/lib/web-runtime/auto-install.ts
+@@ -51,10 +51,11 @@ export async function bootWebRuntimeAndModel(
+ 		deps?.consumeAuthCallback ?? (() => consumeWebAuthCallbackFromLocation());
+ 	const checkAdk =
+ 		deps?.checkAdkStartup ??
+-		(() =>
+-			checkWebAdkStartup({
+-				fs: getWebFs(),
+-			}));
++		(async () => {
++			const { recoverWebTransfer } = await import("../transfer/restore-web");
++			await recoverWebTransfer();
++			return checkWebAdkStartup({ fs: getWebFs() });
++		});
+ 	const loginRequired = deps?.isLoginRequired ?? (() => isWebLoginRequired());
+ 	const authenticated = deps?.isAuthenticated ?? (() => isWebAuthenticated());
+ 	const launchModel =
+diff --git a/packages/shell/src/lib/web-runtime/install.ts b/packages/shell/src/lib/web-runtime/install.ts
+index cc38613..1da27c5 100644
+--- a/packages/shell/src/lib/web-runtime/install.ts
++++ b/packages/shell/src/lib/web-runtime/install.ts
+@@ -11,7 +11,6 @@ import {
+ 	syncWebModeRootAttribute,
+ } from "./web-assets";
+ import { requestWebPersistentStorage } from "./web-storage-persist";
+-import { getDefaultLlmModel } from "../llm/registry";
+ 
+ export const WEB_RUNTIME_MARKER = "naia-web-runtime";
+ 
+@@ -81,8 +80,8 @@ export function installWebRuntime(): void {
+ 			localStorage.setItem(
+ 				"naia-config",
+ 				JSON.stringify({
+-					provider: "nextain",
+-					model: getDefaultLlmModel("nextain"),
++					provider: "local-container",
++					model: "",
+ 				}),
+ 			);
+ 		} else {
+diff --git a/packages/shell/src/lib/web-runtime/llm-provider.ts b/packages/shell/src/lib/web-runtime/llm-provider.ts
+index 886de73..4e8f50c 100644
+--- a/packages/shell/src/lib/web-runtime/llm-provider.ts
++++ b/packages/shell/src/lib/web-runtime/llm-provider.ts
+@@ -7,6 +7,12 @@ import {
+ } from "./webllm-model";
+ 
+ export function registerWebLlmProvider(): void {
++	registerLlmProvider({
++        id: "local-container",
++        name: t("localContainer.name"),
++        description: t("localContainer.description"),
++        requiresApiKey: false, isLocal: true, defaultModel: "", models: [],
++    });
+ 	registerLlmProvider({
+ 		id: "webllm",
+ 		name: "WebLLM",
+diff --git a/packages/shell/src/lib/web-runtime/web-workspace-commands.ts b/packages/shell/src/lib/web-runtime/web-workspace-commands.ts
+index 9549760..cc1b3e8 100644
+--- a/packages/shell/src/lib/web-runtime/web-workspace-commands.ts
++++ b/packages/shell/src/lib/web-runtime/web-workspace-commands.ts
+@@ -8,11 +8,10 @@ import {
+ } from "./web-assets";
+ import { getWebAuthenticatedUserId, isWebLoginGateDisabled } from "./web-auth";
+ import type { WebFs } from "./web-fs";
+-import { getDefaultLlmModel } from "../llm/registry";
+ 
+ export const INITIAL_WEB_WORKSPACE_CONFIG = {
+-	provider: "nextain",
+-	model: getDefaultLlmModel("nextain"),
++	provider: "local-container",
++	model: "",
+ 	webAutoDefaultModel: true,
+ 	agentName: "Naia",
+ 	speechStyle: "casual",
+diff --git a/packages/shell/src/styles/web-mode.css b/packages/shell/src/styles/web-mode.css
+index 072e5a2..324fb51 100644
+--- a/packages/shell/src/styles/web-mode.css
++++ b/packages/shell/src/styles/web-mode.css
+@@ -230,3 +230,45 @@
+ 	[data-naia-web="true"] .app-root:has([data-mobile-sheet="collapsed"]) .avatar-canvas-layer { bottom: var(--mobile-sheet-drag-height, 136px); }
+ 	[data-naia-web="true"] .app-root:has([data-mobile-sheet="expanded"]) .avatar-canvas-layer { bottom: var(--mobile-sheet-drag-height, 91dvh); }
+ }
++
++/* Container settings must remain usable in a narrow desktop window, too. */
++@media (max-width: 700px) {
++    [data-naia-web="true"] .app-layout:has(.app-bar-settings--active) {
++        left: 0 !important;
++        top: 0;
++        z-index: 20;
++        pointer-events: auto;
++    }
++    [data-naia-web="true"] .app-layout:has(.app-bar-settings--active) .settings-tab {
++        grid-template-columns: minmax(0, 1fr);
++    }
++    [data-naia-web="true"] .app-layout:has(.app-bar-settings--active) .settings-tab-bar {
++        overflow-x: auto;
++        min-width: 0;
++        min-height: 42px;
++    }
++    [data-naia-web="true"] .app-layout:has(.app-bar-settings--active) .side-app {
++        display: none;
++    }
++}
++
++/* Browser backup review: isolate destructive application from the profile panel. */
++.browser-memory { line-height: 1.5; }
++.browser-memory h3 { font-size: 16px; margin-bottom: 12px; }
++.browser-memory p { margin: 12px 0; }
++.browser-memory input[type="file"] { display: block; max-width: 100%; margin-top: 6px; }
++.browser-memory-dialog {
++    margin: auto; padding: 24px; width: 560px; max-height: 90vh; overflow: auto;
++    border: 1px solid var(--border-color); border-radius: 16px;
++    background: var(--bg-surface); color: var(--text-primary); font: inherit;
++    box-shadow: 0 20px 70px #0008; line-height: 1.5;
++}
++.browser-memory-dialog::backdrop { background: #0009; }
++.browser-memory-dialog h3 { font-size: 18px; }
++.browser-memory-dialog summary { cursor: pointer; padding: 8px 0; }
++.browser-memory-dialog li { margin: 4px 0 4px 18px; }
++.browser-memory button { padding: 9px 14px; min-height: 40px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--accent); color: var(--bg-base); font: inherit; cursor: pointer; }
++.browser-memory button.btn-secondary { background: var(--bg-surface-2); color: var(--text-primary); }
++.browser-memory button:disabled { opacity: .55; cursor: wait; }
++.browser-memory [role="alert"] { color: var(--error); }
++.browser-memory :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+diff --git a/packages/shell/web-worker/agent-worker.ts b/packages/shell/web-worker/agent-worker.ts
+index 77957eb..65cc464 100644
+--- a/packages/shell/web-worker/agent-worker.ts
++++ b/packages/shell/web-worker/agent-worker.ts
+@@ -193,6 +193,13 @@ self.addEventListener("message", (event: MessageEvent) => {
+ 			chat(config, messages, opts) {
+ 				if (config.provider === "webllm")
+ 					return localProvider.chat(config, messages, opts);
++                if (config.provider === "local-container") {
++                    diag.debug?.("LocalContainer.chat", { model: config.model });
++                    return makeOpenAICompatProvider({
++                        baseUrl: new URL("/local-llm/v1", self.location.origin).href,
++                        apiKey: "", supportsTools: false,
++                    }).chat(config, messages, opts);
++                }
+ 				if (config.provider !== "nextain")
+ 					throw new Error(`Unsupported web provider: ${config.provider}`);
+ 				if (!config.naiaKey)

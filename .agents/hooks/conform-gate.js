@@ -31,7 +31,21 @@ async function main() {
 	const tn = d.tool_name || "";
 	if (tn !== "Edit" && tn !== "Write") process.exit(0);
 	const fp = d.tool_input?.file_path || "";
-	if (!fp || !/\.(c|h)$/.test(fp)) process.exit(0); // C extractor; widen per language
+	if (!fp) process.exit(0);
+	const root = process.env.M3_PROJECT_ROOT || path.join(__dirname, "..", "..");
+	const rel = path.relative(root, path.resolve(root, fp));
+	// TypeScript uses the real file-anchor contract, not fictitious C regions.
+	if (rel.startsWith("src/main/") && rel.endsWith(".ts") && !rel.endsWith(".d.ts")) {
+		try {
+			execFileSync(process.execPath, [path.join(__dirname, "..", "..", "scripts", "check-file-anchors.mjs")], {
+				env: { ...process.env, CI_PROJECT_ROOT: root }, timeout: 10000, stdio: "pipe",
+			});
+		} catch (error) {
+			process.stdout.write(JSON.stringify({ decision: "block", reason: `[file-anchor] ${error.stderr?.toString() || error.message}` }));
+		}
+		process.exit(0);
+	}
+	if (!/\.(c|h)$/.test(fp)) process.exit(0);
 
 	let out;
 	try {

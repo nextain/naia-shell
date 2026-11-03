@@ -1,0 +1,62 @@
+# Generated build context: start.sh stages web/ and configuration only.
+services:
+  web:
+    image: ${NAIA_WEB_IMAGE:-localhost/naia-web:026-container}
+    build:
+      context: ${NAIA_BUILD_CONTEXT:?Run start.sh to stage the web artifact}
+      args:
+        SOURCE_REVISION: ${NAIA_SOURCE_REVISION:-unknown}
+        WEB_REVISION: ${NAIA_WEB_REVISION:?Set the source revision of the web artifact}
+    # Share loopback with inference: peer restarts require no DNS or IP polling.
+    network_mode: "service:network"
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8080/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      inference:
+        condition: service_healthy
+  inference:
+    image: ${NAIA_INFERENCE_IMAGE:-docker.io/ollama/ollama:0.13.5}
+    environment:
+      OLLAMA_HOST: "127.0.0.1:11434"
+      OLLAMA_NO_CLOUD: "1"
+    volumes:
+      - "${NAIA_DATA_DIR:?Set an absolute data directory}/models:/root/.ollama:Z"
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    network_mode: "service:network"
+    depends_on:
+      network:
+        condition: service_started
+  # A stable, unprivileged namespace holder survives either application restart.
+  # Recreate the complete compose project if this service itself is replaced.
+  network:
+    image: ${NAIA_NETWORK_IMAGE:-docker.io/library/nginx:1.28.0-alpine}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sleep infinity &
+        child=$$!
+        trap 'kill "$$child"; wait "$$child"; exit 0' TERM INT
+        wait "$$child"
+    stop_signal: SIGTERM
+    user: nginx
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "127.0.0.1:${NAIA_PORT:-18026}:8080"
+    networks: [naia]
+networks:
+  naia: {}

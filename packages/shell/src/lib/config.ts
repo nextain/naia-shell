@@ -812,7 +812,7 @@ export function isReadyToChat(): boolean {
 		config.provider === "grok" ||
 		config.provider === "ollama" ||
 		config.provider === "vllm" ||
-		(isWebMode() && config.provider === "webllm");
+		(isWebMode() && (config.provider === "webllm" || (config.provider === "local-container" && !!config.model)));
 	return noKeyNeeded || !!config.apiKey || !!config.naiaKey;
 }
 

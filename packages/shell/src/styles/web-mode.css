@@ -230,3 +230,45 @@
 	[data-naia-web="true"] .app-root:has([data-mobile-sheet="collapsed"]) .avatar-canvas-layer { bottom: var(--mobile-sheet-drag-height, 136px); }
 	[data-naia-web="true"] .app-root:has([data-mobile-sheet="expanded"]) .avatar-canvas-layer { bottom: var(--mobile-sheet-drag-height, 91dvh); }
 }
+
+/* Container settings must remain usable in a narrow desktop window, too. */
+@media (max-width: 700px) {
+    [data-naia-web="true"] .app-layout:has(.app-bar-settings--active) {
+        left: 0 !important;
+        top: 0;
+        z-index: 20;
+        pointer-events: auto;
+    }
+    [data-naia-web="true"] .app-layout:has(.app-bar-settings--active) .settings-tab {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    [data-naia-web="true"] .app-layout:has(.app-bar-settings--active) .settings-tab-bar {
+        overflow-x: auto;
+        min-width: 0;
+        min-height: 42px;
+    }
+    [data-naia-web="true"] .app-layout:has(.app-bar-settings--active) .side-app {
+        display: none;
+    }
+}
+
+/* Browser backup review: isolate destructive application from the profile panel. */
+.browser-memory { line-height: 1.5; }
+.browser-memory h3 { font-size: 16px; margin-bottom: 12px; }
+.browser-memory p { margin: 12px 0; }
+.browser-memory input[type="file"] { display: block; max-width: 100%; margin-top: 6px; }
+.browser-memory-dialog {
+    margin: auto; padding: 24px; width: 560px; max-height: 90vh; overflow: auto;
+    border: 1px solid var(--border-color); border-radius: 16px;
+    background: var(--bg-surface); color: var(--text-primary); font: inherit;
+    box-shadow: 0 20px 70px #0008; line-height: 1.5;
+}
+.browser-memory-dialog::backdrop { background: #0009; }
+.browser-memory-dialog h3 { font-size: 18px; }
+.browser-memory-dialog summary { cursor: pointer; padding: 8px 0; }
+.browser-memory-dialog li { margin: 4px 0 4px 18px; }
+.browser-memory button { padding: 9px 14px; min-height: 40px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--accent); color: var(--bg-base); font: inherit; cursor: pointer; }
+.browser-memory button.btn-secondary { background: var(--bg-surface-2); color: var(--text-primary); }
+.browser-memory button:disabled { opacity: .55; cursor: wait; }
+.browser-memory [role="alert"] { color: var(--error); }
+.browser-memory :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

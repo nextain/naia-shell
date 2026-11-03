@@ -2529,3 +2529,37 @@ Test Coverage Map (P02)
 | 좁은 폭 | Playwright 실 컴포넌트와 CSS, 360px: 주요 버튼·상태·구독 정보의 가로 넘침 검사 |
 
 P04 증거는 `/home/nextain/work/codex-runs/824-i18n/result.md`와 같은 디렉터리의 `tmp/`에 기록한다. Rust·IPC 계약 변경은 없다.
+
+### UC-WEBGPU-CONTAINER-026-R2 — 웹에서 컨테이너 모델 대화
+사용자는 로그인 없이 local-container 공급자를 선택하고 설치된 모델 목록을 조회한다. 모델 선택 후 대화가 점진적으로 표시되고 취소할 수 있다. 모델이 없으면 작은 모델을 별도로 준비하도록 안내하며, 서버 연결 실패에는 서버 시작 확인과 재시도를 제공한다. 모델 자동 다운로드는 하지 않는다.
+
+P02 Test Coverage Map: `scripts/builds/webgpu-container/local-container.spec.mjs` — 실제 #824 패치 웹 UI/Worker→nginx→Ollama 모델 목록·실제 스트리밍 응답, 취소, 목록 null/[], 서버 꺼짐/재시도, 초기/진행/성공/빈 목록/오류/390px 좁은 폭, 키보드/ARIA/레이아웃. Rust 변경 없음: native Tauri 검증 해당 없음. `local-container.test.mjs` — 패치 고정 기준·보안 경계. 시각 UX 증거는 실행 폴더 tmp/.
+
+## UC-WEBGPU-CONTAINER-026-R3 — 브라우저 기억 복원과 장애 회귀 (#794 #824)
+
+P01: 사용자는 설치된 두 작은 모델을 전환하고, 삭제된/미설치 모델로 자동 다운로드 없이 실패를 확인하며, 요청 중 서버 중단과 반복 취소 후 다시 대화한다. 프로필의 브라우저 기억 내보내기 ZIP을 확인하고 가져오기 전에 내용·덮어쓰기 범위를 검토한다. 손상 파일은 기존 기억을 보존한다. 서버 모델과 브라우저 데이터의 보존·삭제 범위를 읽는다. 웹·로컬 자동 동기화는 0.2.7이다.
+
+P02 Test Coverage Map: `scripts/builds/webgpu-container/local-container.spec.mjs` 및 `memory-transfer.spec.mjs`: 기본(관리 안내), 빈 상태(장기기억 미포함 표시), 진행(중복 작업 금지), 성공(다운로드·검증·복원 후 새로고침), 오류(손상 ZIP·재선택·기존 파일 유지), 390px(레이블·버튼·알림·키보드). 실제 OPFS 파일 해시/ZIP manifest·대화·민감 설정 제외 검증. 실제 전용 Podman 모델 삭제/전환/중단과 SSE/중복 취소. 전체 웹 Vitest·PDF worker 환경과 frozen 설치 빌드. Rust 변경 없음으로 native Tauri 비대상.
+
+## UC-WEBGPU-CONTAINER-026-R4 — 고정 overlay 통합 검토 (#794 #824)
+
+웹 담당자는 다른 작업자의 checkout을 수정하지 않고, 고정 소스에 overlay를 적용한 파일·원본/결과 해시·입력 revision을 함께 검토한다. 충돌 또는 잘못된 revision은 성공 산출물로 표시하지 않는다. #497 에이전트 능력 벤치는 컨테이너 포장 시나리오를 자기 능력으로 오인하지 않는다.
+
+P02 Test Coverage Map: `review-overlay.test.mjs`에서 고정 소스 적용·파일별 해시·원본 불변·중복/충돌 실패를 검증한다. `agent-bench-scenario-source.contract.test.ts`에서 컨테이너 시나리오의 에픽 밖 분류와 미등록 에이전트 UC 검출 유지를 확인한다. 전체 Shell 시험과 기존 실패의 집중 재현으로 원인·담당 경계를 기록한다. UI/Rust 변경 없음: 기본·빈 목록·진행·성공·오류·좁은 폭 시각 상태는 3회차 증거를 유지하며 이번 변경 대상이 아니다.
+
+### UC-WEBGPU-CONTAINER-026-R5 — 독립 리뷰 준비·CPU 반복 복구·제품 한계
+사용자는 고정 #824 소스의 frozen 빌드와 검토 manifest를 대조한다. 작은 로컬 모델은 대화 전용이며 파일·일정·명령 도구 실행과 높은 한국어/사실 정확도를 보장하지 않는다는 안내를 읽는다. CPU 서버에서 반복 취소·stop/start 후 목록과 다음 대화를 복구한다.
+
+P02 Test Coverage Map: 390px 초기 진입의 Profile→Brain 포인터 클릭을 포함하며 `scripts/builds/webgpu-container/cpu-soak.spec.mjs`가 기본 모델/도구 비활성·안내, 진행/중복 취소, 성공/다음 응답, 빈 목록/오류/키보드 재시도, 390px 경계를 검증한다. `local-container.spec.mjs`, `memory-transfer.spec.mjs`, `pdf-worker.spec.mjs` 및 전체 frozen 웹 Vitest를 재실행한다. 품질 표본은 실제 CPU 출력 원문과 별도 수동 판정으로 기능 통과와 구분한다. GPU/native Rust/다른 OS는 이번 범위 밖이다.
+
+## UC-WEBGPU-CONTAINER-026-R6 (#794/#824)
+
+P01: 사용자는 큰 기억 ZIP을 복원한다. 공간이 모자라거나 쓰기·close가 실패하면 원본을 보존한다. 복원 중 브라우저가 강제 종료되면 다음 시작에서 journal을 먼저 복구하고 모델을 시작한다. 손상 journal/복구 실패는 자료를 보존하고 시작을 차단한다. 추론 서버 반복 재시작 후 DNS에 의존하지 않고 30초 이내 목록을 다시 조회한다.
+
+P02 Test Coverage Map: `memory-transfer.spec.mjs`의 기본·빈 기억·진행·성공·오류·390px/키보드/ARIA를 유지한다. `restore-boundaries.spec.mjs`는 실제 OPFS 대용량(128MiB), estimate 부족, stage/backup/commit/rollback 쓰기와 close 실패, commit 중 browser process kill 뒤 재시작, committed/불완전/손상 journal·재복구·cleanup를 검증한다. `cpu-soak.spec.mjs`는 10회 stop/start·부분 응답·취소·30초 목록 복구를 단언한다. 14개 언어 키·빈 문구·자리표시자 일치 검사를 수행한다. 한국어 persona 동일 system+3 user turn·temperature0·token 상한으로 1GB 이하 후보를 비교하고 원문·시간·종료 이유를 보존한다. 웹 전용 overlay/compose 변경, Rust 배선 변경 없음.
+
+### UC-WEBGPU-CONTAINER-026-R7 — 웹 가지 실제 이식
+
+사용자는 #824 고정 소스에서 컨테이너 모델과 기억 복원을 사용한다. r6 overlay 31파일을 직접 이식하고 frozen install/build와 전체 웹 src 회귀를 실행한다.
+
+P02 Test Coverage Map: local-container.test.mjs·test-start.sh, 전체 src Vitest; cpu-soak.spec.mjs 기본/진행/오류/키보드 재시도/390px; memory-transfer.spec.mjs 기본/빈 목록/진행/성공/오류/좁은 폭·ARIA·자료 보존; restore-boundaries.spec.mjs OPFS·crash; pdf-worker.spec.mjs 배포 Worker. Rust 변경 없음. 독립 리뷰·GPU 실기·게시와 구분한다.

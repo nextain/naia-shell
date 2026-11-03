@@ -78,3 +78,5 @@
 | `radio-dj-lab.mjs` (+ `radio-dj-lab-model.mjs`, `radio-dj-lab-contract.mjs`, `radio-dj-lab-observations.mjs`, `radio-dj-lab-render.mjs`, `radio-dj-lab-practical.mjs`, `radio-dj-lab.schema.json`, `radio-dj-lab-example.json`) | Radio DJ Lab 결정적 가상 시간축 기록과 loopback 실기 이벤트 수집기를 실행한다. 제품 동작 없이 deterministic fixture를 재생하고, 실기 설정은 30–60분 외부 실행 진입점으로만 제공한다. |
 
 | `packages/shell/scripts/stapler-retry.sh` | macOS 공증표 붙이기·검증의 네트워크 재시도 및 승인된 Intel 앱 예외. |
+
+- `builds/webgpu-container/`: #794/#824 0.2.6 container packaging, pinned overlay, browser/CPU/OPFS acceptance. 웹 소스 이식은 docs/progress/webgpu-container-026-20261103.md 7회차 참조.

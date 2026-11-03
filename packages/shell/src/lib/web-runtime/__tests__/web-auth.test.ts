@@ -161,13 +161,13 @@ describe("web-auth (item 5)", () => {
 		expect(loadConfig()?.naiaUserId).toBeUndefined();
 	});
 
-	it("uses the server model on a fresh login and exposes the login key to balance requests", async () => {
+	it("preserves the container choice on login and exposes the login key to balance requests", async () => {
 		const { installWebRuntime } = await import("../install");
 		installWebRuntime();
 		await completeWebNaiaLogin("naia_test_key_for_login_123", "test-user");
 		expect(loadConfig()).toMatchObject({
-			provider: "nextain",
-			model: "gpt-6.1-terra",
+			provider: "local-container",
+			model: "",
 		});
 		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
 	});

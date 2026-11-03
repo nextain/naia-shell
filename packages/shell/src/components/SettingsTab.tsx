@@ -1,3 +1,4 @@
+import { WebMemoryTransfer } from "./WebMemoryTransfer";
 import { mergeCatalogModels } from "../lib/llm/small-model";
 import { defaultSmallModel, LOCAL_SMALL_MODEL, smallModelChoices } from "../lib/llm/small-model";
 import { WebPushSettings } from "./WebPushSettings";
@@ -77,7 +78,6 @@ import {
 	isWebLlmModelId,
 } from "../lib/web-runtime/webllm-model";
 import { isWebSpeechAvailable } from "../lib/stt";
-import { resolveWebConversationsDir } from "../lib/web-runtime/web-workspace-commands";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
 	isRecommendedLocalValue,
@@ -235,6 +235,7 @@ import {
 import { listSttProviders } from "../lib/stt/registry";
 import { listTtsProviderMetas } from "../lib/tts/registry";
 import { synthesizeTts } from "../lib/tts/synthesize";
+import { LocalContainerModels } from "./LocalContainerModels";
 import type { ModelCapability, ProviderId } from "../lib/types";
 import { type UpdateInfo, checkForUpdate } from "../lib/updater";
 import { type VoiceHostGpu, voiceHostProfile } from "../lib/voice/host-profile";
@@ -813,7 +814,7 @@ export function SettingsTab() {
 	function applyCatalogSmallDefault(config: AppConfig): AppConfig {
 		if (catalogModels.current === undefined) return config;
 		let updated = config;
-		if ((!config.provider || config.provider === "nextain") && !config.model && !config.llmRoles?.main?.model) {
+		if (config.llmRoles?.main?.provider !== "" && (!config.provider || config.provider === "nextain") && !config.model && !config.llmRoles?.main?.model) {
 			const withDefaults = applyNaiaSlotDefaults(config, catalogModels.current);
 			if (withDefaults.llmRoles?.main?.model) {
 				updated = writeConfiguredLlmRole(updated, "main", withDefaults.llmRoles.main);
@@ -2006,7 +2007,7 @@ export function SettingsTab() {
 		"idle" | "exporting" | "importing" | "done" | "error"
 	>("idle");
 	const [backupError, setBackupError] = useState("");
-	const [transferStatus, setTransferStatus] = useState<"idle" | "exporting" | "error">("idle");
+	
 
 	const [allowedTools, setAllowedTools] = useState<string[]>(
 		existing?.allowedTools ?? [],
@@ -2113,6 +2114,7 @@ export function SettingsTab() {
 	}, []);
 
 	useEffect(() => {
+        if (isWebMode() && provider === "local-container") return;
 		// #602: 타사 직결 클라우드 LLM 공급자(gemini/openai/anthropic/xai/zai)는 제거했다.
 		// 게이트웨이는 자기 경로를 azure/vertexai/upstage/clova prefix 로 내주며 이는 아래
 		// NAIA_ROUTE_PREFIXES 에서 nextain 으로 묶인다. 남는 alias 는 나이아 계정·CLI·로컬뿐.
@@ -4986,29 +4988,7 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "profile" && (
 				<>
-					{isWebMode() && (
-						<div className="settings-field">
-							<button
-								type="button"
-								data-testid="memory-transfer-export"
-								disabled={transferStatus === "exporting"}
-								onClick={async () => {
-									setTransferStatus("exporting");
-									try {
-										const { downloadWebTransfer, loadTransfer } = await import("../lib/transfer/entry");
-										const transfer = await loadTransfer();
-										await downloadWebTransfer(transfer, resolveWebConversationsDir());
-										setTransferStatus("idle");
-									} catch {
-										setTransferStatus("error");
-									}
-								}}
-							>
-								{transferStatus === "exporting" ? "…" : t("settings.memoryTransferExport")}
-							</button>
-							{transferStatus === "error" && <span role="alert" className="settings-hint">{t("settings.memoryTransferError")}</span>}
-						</div>
-					)}
+					{isWebMode() && <WebMemoryTransfer />}
 					<div className="settings-section-divider">
 						<span>{t("settings.engineSection")}</span>
 					</div>
@@ -6251,7 +6231,18 @@ export function SettingsTab() {
 								) : null}
 							</>
 						) : null}
-						{provider === "ollama" ? (
+						{provider === "local-container" ? (
+                            <LocalContainerModels model={model} onSelect={(nextModel) => {
+                                setModel(nextModel);
+                                const current = loadConfig();
+                                const next = writeMainModelSelection(
+                                    { ...current, provider: "local-container", model: nextModel } as AppConfig,
+                                    { provider: "local-container", model: nextModel }, current ?? undefined,
+                                );
+                                saveConfig(next);
+                                void writeNaiaConfig(next as unknown as Record<string, unknown>);
+                            }} />
+                        ) : provider === "ollama" ? (
 							<>
 								<input
 									id="model-select"
@@ -6528,7 +6519,8 @@ export function SettingsTab() {
 						<input
 							id="tools-toggle"
 							type="checkbox"
-							checked={enableTools}
+                            disabled={provider === "local-container"}
+							checked={provider === "local-container" ? false : enableTools}
 							onChange={(e) => {
 								setEnableTools(e.target.checked);
 								persistConfig({ enableTools: e.target.checked });

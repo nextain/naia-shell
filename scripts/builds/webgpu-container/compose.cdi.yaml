@@ -1,0 +1,5 @@
+# Podman with preconfigured NVIDIA CDI. Do not alter host drivers here.
+services:
+  inference:
+    devices:
+      - nvidia.com/gpu=all

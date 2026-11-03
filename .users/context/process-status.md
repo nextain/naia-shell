@@ -1,4 +1,8 @@
-<!-- src-sha: b14ce9c5f04a37dc -->
+<!-- src-sha: bb42d97d9b4268e9 -->
+
+## 0.2.6 WebGPU 7회차 — #824 실제 이식
+
+31파일 hash일치·frozen 빌드·실 OPFS21·CPU10회·패키지memory/PDF/390px검증 PASS. 전체웹2804PASS/1FAIL/20SKIP로 RED(권한모달;집중79PASS), rootShell2597PASS/21SKIP. 충돌/미이식0, 독립리뷰·원격병합/출시별도. 상세 docs/progress/webgpu-container-026-20261103.md 7회차와 실행폴더result.md.
 
 ## 서명 검증 스토어 앱 도구 동적 허용 — 2026-10-29
 

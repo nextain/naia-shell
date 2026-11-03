@@ -8,6 +8,12 @@ import {
 
 export function registerWebLlmProvider(): void {
 	registerLlmProvider({
+        id: "local-container",
+        name: t("localContainer.name"),
+        description: t("localContainer.description"),
+        requiresApiKey: false, isLocal: true, defaultModel: "", models: [],
+    });
+	registerLlmProvider({
 		id: "webllm",
 		name: "WebLLM",
 		description: t("webModel.providerDescription"),

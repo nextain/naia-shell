@@ -8,11 +8,10 @@ import {
 } from "./web-assets";
 import { getWebAuthenticatedUserId, isWebLoginGateDisabled } from "./web-auth";
 import type { WebFs } from "./web-fs";
-import { getDefaultLlmModel } from "../llm/registry";
 
 export const INITIAL_WEB_WORKSPACE_CONFIG = {
-	provider: "nextain",
-	model: getDefaultLlmModel("nextain"),
+	provider: "local-container",
+	model: "",
 	webAutoDefaultModel: true,
 	agentName: "Naia",
 	speechStyle: "casual",

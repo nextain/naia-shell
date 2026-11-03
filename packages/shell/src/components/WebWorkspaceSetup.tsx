@@ -35,6 +35,7 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 	};
 
 	const handleRetry = () => {
+		if (status.reason === "workspace_config_unavailable") { location.reload(); return; }
 		if (props.onRetry) {
 			props.onRetry();
 			return;
@@ -52,12 +53,13 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 				flexDirection: "column",
 				alignItems: "center",
 				justifyContent: "center",
-				padding: "2rem",
+				padding: status.phase === "error" ? "0.5rem" : "2rem",
+				boxSizing: "border-box",
 				textAlign: "center",
 				gap: "1.25rem",
-				flex: 1,
+				flex: status.phase === "error" ? "0 0 auto" : 1,
 				width: "100%",
-				minHeight: "200px",
+				minHeight: status.phase === "error" ? "0" : "200px",
 			}}
 		>
 			{status.phase === "needs-setup" && (
@@ -134,9 +136,10 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
 				>
 					<p
 						className="web-workspace-error-reason"
+						role="alert"
 						style={{ fontSize: "0.9rem", color: "var(--color-error, #e53e3e)", margin: 0 }}
 					>
-						{status.reason}
+						{status.reason === "workspace_config_unavailable" ? t("browserMemory.recoveryError") : status.reason}
 					</p>
 					<div className="web-workspace-actions">
 						<ul

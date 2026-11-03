@@ -1601,3 +1601,41 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | ID | 요구사항 | 시나리오·검증 | 상태 |
 |---|---|---|---|
 | **FR-WEB-025-I18N.1** | PR #824에서 추가한 한국어 UI 문구와 ko/en 분기는 `packages/shell/src/lib/locales/`의 키 및 `t()`로 제공한다. 14개 언어에 키를 넣고 한국어 외에는 영어를 사용한다. 배경 이름은 현재 로케일을 조회할 때 번역하고 저장소 수치는 자리표시자로 보간한다. 웹 전용 영어 키는 `en-web.ts`에 두며 공통 화면의 키는 데스크톱에도 제공한다. 기존 문구와 미번역 검사 baseline은 변경하지 않는다. | UC-WEB-025-I18N-824; `i18n-user-facing.test.ts`, `i18n-web-strings.test.ts`, 웹 저장소·배경·푸시·탐색기·설정·앱 테스트; 로컬 Playwright 실 컴포넌트 | Done |
+
+### FR-WEBGPU-CONTAINER-026-R2 — 웹 공급자 연결
+상태: Done (2회차 범위; 전체 출시 회귀는 별도). #824 `313c706` 고정 소스+검토 가능한 패치로 웹 산출물 생성. `local-container`는 키 없이 동일 출처 `/local-llm/v1/models`의 설치 모델만 선택하고 `/local-llm/v1/chat/completions` SSE를 기존 Worker provider로 처리한다. 기존 취소 신호를 유지한다. 목록 조회 취소/경합 방지, null/[] 빈 상태, 연결 실패/재시도, 로케일 문구와 live region을 제공한다. 작은 모델 1개(1GB 미만) 실응답을 격리된 로컬 컨테이너로 검증한다. 모델 폴더·스크린샷·시험 임시 파일은 실행 폴더 tmp/에 둔다. 390px에서도 주요 행동이 잘리지 않아야 한다. 운영 접속·원격 push·큰 모델 취득 없음.
+
+## FR-WEBGPU-CONTAINER-026-R3 (#794 #824)
+
+상태: Done (요청 범위). P03: pinned source+overlay를 frozen clean install(기존 node_modules 링크 없이)로 빌드한다. PDF worker import 환경을 정리하고 전체 웹 회귀 결과를 기록한다. 미설치/삭제 모델은 자동 pull하지 않으며 선택 상태를 명시한다. 작은 두 모델 전환·요청 중 중단·반복 취소를 실 컨테이너에서 검증한다. 브라우저 기억은 기존 transfer-v1 ZIP과 경로/크기/해시/민감 설정 검증을 재사용한다. 가져오기 미리보기와 명시적 복원 동작, 실패시 기존 데이터 보존, 같은 이름 파일 덮어쓰기·그 외 보존, 서버 모델/브라우저 데이터의 보존·삭제 안내를 제공한다. 복원 중 채팅을 막고 완료 후 새로고침한다. 새 문구는 모든 지원 로케일 자연어로 작성한다. P04는 실제 OPFS·Playwright·좁은 폭·시각 검토·전체 회귀 증거를 요구한다.
+
+R3 회귀 보완: 명시적으로 비운 main role은 카탈로그 기본값으로 다시 채우지 않는다. role을 아직 고르지 않은 신규 설정의 기본값 동작은 유지한다. 연속 서버 재시작에서는 fresh DNS로 관찰한 런타임 주소를 nginx에 반영해 동일 IP 재시작 때의 resolver 소켓 고착을 피한다.
+
+R3 P04/P05: 최종 웹 소스 2805 PASS/20 SKIP/0 FAIL, Settings 148·PDF 57·웹/transfer/로케일 275 및 실제 Podman/OPFS/PDF worker/390px 시각·UX 수용 PASS. 증거는 `docs/progress/webgpu-container-026-20261103.md` 3회차 최종 기록. 전체 저장소 기존 RED와 GPU/게시/강제 종료 원자성 한계는 별도다.
+
+## FR-WEBGPU-CONTAINER-026-R4 — overlay 검토·회귀 분류 (#794 #824)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEBGPU-CONTAINER-026-R4.1 | 실행 폴더 tmp 아래 고정 #824 소스와 overlay 검토 사본 및 입력/파일별 SHA256 manifest를 생성한다. 적용 실패 시 성공 manifest를 남기지 않고 원본 checkout은 수정하지 않는다. | Done |
+| FR-WEBGPU-CONTAINER-026-R4.2 | 컨테이너 포장 UC를 #497 능력 벤치 밖으로 명시 분류하고, 미등록 에이전트 UC 검출은 유지한다. 전체 저장소 실패의 원인·담당·재현 명령을 설계 문서에 기록한다. | Done |
+
+### FR-WEBGPU-CONTAINER-026-R5 — 대화 전용 안내와 CPU 반복 복구
+P03: 모델 선택 영역에 도구 미지원(파일·일정·명령 실행 불가), 작은 모델의 한국어·사실 정확도 한계와 중요한 답변 재확인을 14개 로케일로 표시한다. 도구 비활성·미전송 계약을 유지한다. 전용 CPU 시험 환경에서 최소 10회 반복 취소/stop/start/재응답(HTTP 200·부분 텍스트 후 재취소·입력 복구), 모델 자동 pull 0을 검증한다. 고정 소스 frozen 설치·전체 웹/실 UI 회귀와 독립 리뷰용 hash 자료를 갱신한다. 품질 표본의 미달은 숨기지 않고 추천 용도를 제한한다.
+상태: Done — 이번 회차의 검토·안내·좁은 폭 수정·bounded CPU 관찰/품질 판정. 빠른 DNS 복구와 추천 모델 품질 관문은 미달이며 출시 승인과 구분한다. P04/P05 증거는 진행 문서 5회차를 따른다.
+
+R5 좁은 폭 수용: 긴 프로필 내용으로 설정 탭 바의 grid 높이가 1px로 축소되지 않도록 최소 높이를 보장한다. 390px에서 Profile→Brain 실제 포인터 클릭·재진입·키보드 조작을 검증한다.
+
+R5 복구 보강: 기본 IPv4 compose 네트워크의 주소 감시기는 IPv4 A 조회를 사용해 AAAA 응답 지연에 가로막히지 않아야 한다. 주소 소실/변경을 로그로 남기고, 10회 실제 stop/start 후 목록 재시도와 새 스트림 복구를 관찰한다. 시험 관찰 상한은 120초이며 회차별 지연과 30초 이내 여부를 기록한다. 30초 초과를 빠른 복구 성공으로 표시하지 않는다.
+
+## FR-WEBGPU-CONTAINER-026-R6 (#794/#824)
+
+상태: **Done (회차 범위)**. P03: 검증된 ZIP만 stage한다. 사용 가능 용량 estimate가 필요한 stage+원본+최대 교체파일+여유보다 작으면 변경 전 거절한다(estimate는 보증 아님). 모든 원본 snapshot과 경로 journal을 닫은 뒤 target을 수정한다. committed marker 전에 중단되면 다음 부팅에서 원본으로 되돌리고, marker 뒤 중단되면 새 자료를 유지한다. rollback 실패/손상 journal은 자료를 지우지 않고 부팅을 막는다. 복원끼리 Web Locks로 직렬화한다. 정상 정리는 원본/journal을 제거한다. 이 보장은 OPFS close와 브라우저 crash 경계이며 전원 손실/동시 탭 일반 편집 원자성을 보장하지 않는다. 추론과 web은 서비스 network namespace를 공유하고 loopback만 사용해 DNS 장애를 경로에서 제거한다. loopback 호스트 공개와 API allowlist/자동 pull0는 유지한다. 한국어 persona 품질 통과 전 후보를 기본 추천하지 않는다. P04 실제 브라우저·컨테이너 검증, 기존 시각 UX 회귀 유지.
+
+P04/P05: 실제 OPFS128MiB·quota/IO·5개 browser crash 위치 등21case PASS, 최종 UI390px·오류복구/보존·14locale 정적 점검 PASS. CPU Worker10회와 start명령 포함10회 모두30초 이내, 독립 inference재생성568ms·모델보존 PASS. 전체웹2805/20skip·최종집중103/3skip·rootShell2597/21skip, 고정설치빌드·31파일hash일치. 자세한 범위/초기실패/남은품질/실기는 `docs/progress/webgpu-container-026-20261103.md`6회차. 전원손실·일반다중탭편집·실기·독립리뷰·출시승인은 이Done에 포함하지 않음.
+
+### FR-WEBGPU-CONTAINER-026-R7 — 웹 가지 이식
+
+상태: Done (실제 이식·검증 실행 범위; 전체 웹 회귀 RED·병합/출시 승인 별도). #824 313c70699 기반 새 가지에서 ac953d1e0d2d75519f993fb7cb47bde8c4794e51dbd0e0b72837dfa56e3cffe7 overlay 31파일을 실제 반영한다. 충돌·누락 0을 해시로 검증하고 이 작업 트리의 frozen install/build·전체 웹 src 시험·실 컨테이너 시작/정상 종료·UI 상태 행렬을 검증한다. pin과 자동 pull0·키 없는 same-origin·도구 미지원·OPFS 데이터 보존 계약을 유지한다.
+
+R7 이식 부속 관문: #824에서 inert한 TypeScript conform hook을 이 갈래에서 검증된 file-anchor hook으로 이식하고 미등록/손상 BLOCK·등록 허용 3건을 유지한다. prepare-web.sh는 이전 overlay export용이며 실제 웹 가지 빌드는 루트 build 후 packages/shell build:web를 사용한다.

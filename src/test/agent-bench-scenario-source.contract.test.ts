@@ -8,6 +8,16 @@ import { readFileSync } from "node:fs";
 const DOC = resolve(__dirname, "..", "..", "docs", "user-scenarios.md");
 
 describe("문서 파싱 (NFR-AGENT-BENCH.2) [UC-AGENT-BENCH-RUN]", () => {
+  it("컨테이너 포장은 에픽 밖이며 새 에이전트 UC의 미분류는 계속 검출한다", () => {
+    for (const suffix of ["", "-R2", "-R3", "-R4", "-R5", "-R6", "-R7"]) {
+      expect(ownedByEpic(`UC-WEBGPU-CONTAINER-026${suffix}`)).toBe(false);
+      expect(parseScenarios(`### UC-WEBGPU-CONTAINER-026${suffix}`)).toEqual([]);
+    }
+    for (const uc of ["UC-WEBGPU-AGENT-NEW", "UC-ENV-UNKNOWN-NEW"]) {
+      expect(ownedByEpic(uc)).toBe(true);
+      expect(familyOf(uc)).toBeUndefined();
+    }
+  });
   it("에픽 UC 제목만 시나리오가 된다", () => {
     const md = ["### UC-WORKSPACE-CONTEXT-DISCOVER — 설명", "### UC-V022-THINKING-SEPARATION", "### 그냥 제목"].join("\n");
     expect(parseScenarios(md).map((s) => s.id)).toEqual(["UC-WORKSPACE-CONTEXT-DISCOVER"]);

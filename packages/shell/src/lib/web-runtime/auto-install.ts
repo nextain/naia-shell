@@ -51,10 +51,11 @@ export async function bootWebRuntimeAndModel(
 		deps?.consumeAuthCallback ?? (() => consumeWebAuthCallbackFromLocation());
 	const checkAdk =
 		deps?.checkAdkStartup ??
-		(() =>
-			checkWebAdkStartup({
-				fs: getWebFs(),
-			}));
+		(async () => {
+			const { recoverWebTransfer } = await import("../transfer/restore-web");
+			await recoverWebTransfer();
+			return checkWebAdkStartup({ fs: getWebFs() });
+		});
 	const loginRequired = deps?.isLoginRequired ?? (() => isWebLoginRequired());
 	const authenticated = deps?.isAuthenticated ?? (() => isWebAuthenticated());
 	const launchModel =
