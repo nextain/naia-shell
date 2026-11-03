@@ -1639,3 +1639,6 @@ P04/P05: 실제 OPFS128MiB·quota/IO·5개 browser crash 위치 등21case PASS, 
 상태: Done (실제 이식·검증 실행 범위; 전체 웹 회귀 RED·병합/출시 승인 별도). #824 313c70699 기반 새 가지에서 ac953d1e0d2d75519f993fb7cb47bde8c4794e51dbd0e0b72837dfa56e3cffe7 overlay 31파일을 실제 반영한다. 충돌·누락 0을 해시로 검증하고 이 작업 트리의 frozen install/build·전체 웹 src 시험·실 컨테이너 시작/정상 종료·UI 상태 행렬을 검증한다. pin과 자동 pull0·키 없는 same-origin·도구 미지원·OPFS 데이터 보존 계약을 유지한다.
 
 R7 이식 부속 관문: #824에서 inert한 TypeScript conform hook을 이 갈래에서 검증된 file-anchor hook으로 이식하고 미등록/손상 BLOCK·등록 허용 3건을 유지한다. prepare-web.sh는 이전 overlay export용이며 실제 웹 가지 빌드는 루트 build 후 packages/shell build:web를 사용한다.
+
+## FR-WEBGPU-CONTAINER-026-R8 — 웹 회귀 대기 계약 (#824)
+상태: Done. P04: 전체 웹 src 2805 PASS/20 SKIP/0 FAIL, Chromium1 PASS, 지연 전후3FAIL→3PASS, Node6 PASS. 독립 리뷰 승인은 별도다. 실제 비동기 경계에 맞춰 시험을 동기화하며 mock으로 lazy 화면을 대체하거나 재시도로 실패를 숨기지 않는다. 기본 1초 DOM 대기와 15초 시험 상한의 불일치를 고친다. 전체 src 회귀 GREEN과 독립 검토 요약(파일·위험·되돌리기)을 제공한다. native/GPU/게시 수용은 별도다.

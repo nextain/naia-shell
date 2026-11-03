@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockInvoke, mockUnlisten, scrollIntoView } = vi.hoisted(() => ({
@@ -67,15 +67,23 @@ describe("FileTree open-file reveal", () => {
 			},
 		);
 
-		render(
-			<FileTree
-				workspaceRoot="/work/naia"
-				openFilePath="/work/naia/src/nested/App.tsx"
-				onFileSelect={vi.fn()}
-			/>,
-		);
+		// Flush the recursive resolved IPC promises and React effects as one interaction.
+		await act(async () => {
+			render(
+				<FileTree
+					workspaceRoot="/work/naia"
+					openFilePath="/work/naia/src/nested/App.tsx"
+					onFileSelect={vi.fn()}
+				/>,
+			);
+		});
 
-		const file = await screen.findByRole("button", { name: /App\.tsx/ });
+		// Three asynchronous directory reads are not a 1s product latency contract.
+		const file = await screen.findByRole(
+			"button",
+			{ name: /App\.tsx/ },
+			{ timeout: 5000 },
+		);
 		expect(file).toHaveClass("workspace-tree__node--open");
 		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
 		expect(mockInvoke).toHaveBeenCalledWith("workspace_list_dirs", {

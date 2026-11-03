@@ -445,3 +445,15 @@ VITE_NAIA_WEB_LOGIN_REQUIRED=0 corepack pnpm@10.33.0 -C packages/shell build:web
 - 실제 패키지 memory UI/PDF Worker PASS; verify-visual-ux 기본/빈/진행/성공/오류/390px·키보드/ARIA·보존 캡처 확인. OPFS128MiB·quota·write/close·rollback·5위치browser crash·손상journal **21/21PASS**. 실제Worker CPU취소/재시작10/10PASS, 시작명령포함목록복구333~582ms. 14언어문구검사는Node계약에포함, 원어민검수별도.
 - 초기TypeScript conform시험2FAIL은inert hook을재현했고hook이식후6/6PASS. 초기벤치복사에서웹고유분류가빠진오류3건은원본#824규칙을보존하는최소이식으로고쳐15/15PASS. 제품overlay whitespace1건은r6그대로보존했다. 충돌·미이식제품파일0. 기존root구조2건RED·native core잔여관문유지.
 - 증거/캡처는실행폴더tmp/r7-*.log, tmp/r7-evidence/. 제품이식수행과검증기록은Done이며독립리뷰·전체회귀GREEN·병합·출시승인은미완료다.
+
+## 8회차 — 웹 간헐 실패 대기 계약 (#824, P01~P05)
+
+독립 검토용 한 장은 `webgpu-container-026-r8-review.md`다. 실제 제품 코드 변경 없이 권한 modal/markdown lazy import 완료를 act 안에서 명시적으로 기다리고, 중첩 트리 조회는 해당 파일 검사에만5초를 둔다. 부정 딥링크 검사도 실제 Markdown 렌더 후 수행한다. mock의 누락 skills/core 계약을 보충했다.
+
+P04: 최종 웹 src **2805PASS/20SKIP/0FAIL**,262suitePASS/1SKIP,510.44초(`tmp/r8-web-final.log`). 1.5초 지연으로 원래 세 실패3FAIL(`r8-delay-baseline.log`), 첫 dynamicImportSettled안3FAIL(`r8-delay-fixed.log`), 최종 명시import/트리대기3PASS(`r8-delay-fixed2.log`). 최초 일반집중91PASS는 간헐성 확인용이며 최종 판정은 전수 결과다. 지연 fixture는 원복한 뒤 전수를 실행했다. 탐색 전수는 진단 편집과 겹쳐 baseline으로 쓰지 않고 중지했다.
+
+실제 Chromium1PASS(`r8-browser-final.log`): 실제 모듈 요청1.5초/각IPC500ms,390px 승인창·Alt+N거절·openFile딥링크·중첩트리선택/Enter·overflow없음. 외부 요청 차단·retries0. Vite 실제 컴포넌트 probe이며 최종 컨테이너·전체 ChatArea·native 검증 주장이 아니다. 캡처를 열어 버튼 위계·경로·선택·좁은폭을 확인했다. 기존 modal dialog role/초기focus강제 미구현은 유지. 제품UI변경은 없고 기존6상태r7증거에 이번대기/키보드검증을 추가한다. 초기CJSdefault import·잘못된Escape시험 실패도 로그 보존 후 실제Alt+N으로 고쳤다.
+
+Nodeoverlay/conform6PASS·70anchors·assembly·root/Shell타입PASS. TS live gate는 미등록/손상계약block과정상통과를 실제검증했다. 기존구조2건(tmp/,tsconfig.build.json)RED유지. 기본가지최초전수2594PASS/3FAIL/21SKIP(딥링크2/트리1)도 같은원인으로시험최소수정을반영했다. 트리집중4PASS, 기본가지최종전수2597PASS/21SKIP/0FAIL·247suitePASS/1SKIP·204.41초(`r8-root-final.log`). 원래r7제품overlay/포장/이미지변경없음. 원격push·운영접속·GPU·실기·게시·모델다운로드없음.
+
+P05 Done은세종류의시험안정화·웹전수GREEN·독립검토요약작성에한정한다. 독립리뷰승인/병합·모델품질·수시간soak·원어민·실기·게시·오프라인·기존native/구조관문은미완료다.

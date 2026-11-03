@@ -2563,3 +2563,8 @@ P02 Test Coverage Map: `memory-transfer.spec.mjs`의 기본·빈 기억·진행�
 사용자는 #824 고정 소스에서 컨테이너 모델과 기억 복원을 사용한다. r6 overlay 31파일을 직접 이식하고 frozen install/build와 전체 웹 src 회귀를 실행한다.
 
 P02 Test Coverage Map: local-container.test.mjs·test-start.sh, 전체 src Vitest; cpu-soak.spec.mjs 기본/진행/오류/키보드 재시도/390px; memory-transfer.spec.mjs 기본/빈 목록/진행/성공/오류/좁은 폭·ARIA·자료 보존; restore-boundaries.spec.mjs OPFS·crash; pdf-worker.spec.mjs 배포 Worker. Rust 변경 없음. 독립 리뷰·GPU 실기·게시와 구분한다.
+
+## UC-WEBGPU-CONTAINER-026-R8 — 웹 비동기 회귀 안정성 (#824)
+P01: 사용자는 첫 권한 요청, 첫 파일 딥링크, 중첩 파일 열기에서 비동기 로딩 후 실제 동작을 사용할 수 있다.
+P02: ChatArea 권한 modal, chat-deeplink 8case, file-tree-reveal 4case를 실제 lazy 모듈/재귀 invoke 완료까지 검증한다. 초기 로딩이 1초를 넘어도 실패하지 않고, 누락 요소는 유한 대기 안에 실패해야 한다. 전체 웹 src 회귀를 실행한다.
+상태 매핑: 기본/빈=빈 대화·트리, 진행=lazy/재귀 조회, 성공=승인창·링크·선택/스크롤, 오류=기존 ChatArea/트리 오류 계약, 좁은 폭=브라우저 390px. 실 UI는 모달 키보드·딥링크·트리 선택과 overflow를 확인한다.

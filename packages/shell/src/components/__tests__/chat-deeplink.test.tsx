@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
 import { useChatStore } from "../../stores/chat";
@@ -22,6 +28,8 @@ vi.mock("../../lib/chat-service", () => ({
 	sendChatMessage: vi.fn().mockResolvedValue(undefined),
 	cancelChat: vi.fn().mockResolvedValue(undefined),
 	configureSpeechProfile: vi.fn().mockResolvedValue(undefined),
+	fetchAgentSkills: vi.fn().mockResolvedValue([]),
+	isNewCore: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -85,6 +93,15 @@ afterEach(() => {
 	useAppStore.setState(useAppStore.getInitialState());
 });
 
+// Drain real lazy-module imports and React commits before querying their DOM.
+// findByRole's default 1s deadline is not a module transformation budget.
+async function renderChat() {
+	render(<ChatArea />);
+	await act(async () => {
+		await import("../ChatMarkdown");
+	});
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("ChatArea — file deep-links", () => {
@@ -92,7 +109,7 @@ describe("ChatArea — file deep-links", () => {
 		setAssistantMessage(
 			"수정한 파일은 /home/user/dev/naia-os/shell/src/App.tsx 입니다.",
 		);
-		render(<ChatArea />);
+		await renderChat();
 		const btn = await screen.findByRole("button", {
 			name: "/home/user/dev/naia-os/shell/src/App.tsx",
 		});
@@ -101,7 +118,7 @@ describe("ChatArea — file deep-links", () => {
 
 	it("renders an absolute .png path as a deeplink button", async () => {
 		setAssistantMessage("스크린샷: /tmp/screenshot.png 확인해보세요.");
-		render(<ChatArea />);
+		await renderChat();
 		expect(
 			await screen.findByRole("button", { name: "/tmp/screenshot.png" }),
 		).toBeInTheDocument();
@@ -115,7 +132,7 @@ describe("ChatArea — file deep-links", () => {
 		} as never);
 
 		setAssistantMessage("파일: /dev/project/data.csv 을 확인하세요.");
-		render(<ChatArea />);
+		await renderChat();
 
 		const btn = await screen.findByRole("button", {
 			name: "/dev/project/data.csv",
@@ -132,7 +149,7 @@ describe("ChatArea — file deep-links", () => {
 		} as never);
 
 		setAssistantMessage("결과: /tmp/output.json");
-		render(<ChatArea />);
+		await renderChat();
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: "/tmp/output.json" }),
@@ -141,9 +158,9 @@ describe("ChatArea — file deep-links", () => {
 		expect(useAppStore.getState().activeApp).toBe("workspace");
 	});
 
-	it("does NOT render a deeplink for a relative path without leading slash", () => {
+	it("does NOT render a deeplink for a relative path without leading slash", async () => {
 		setAssistantMessage("파일명: shell/src/App.tsx 참고.");
-		render(<ChatArea />);
+		await renderChat();
 		// No button for full relative path
 		expect(
 			screen.queryByRole("button", { name: "shell/src/App.tsx" }),
@@ -154,9 +171,9 @@ describe("ChatArea — file deep-links", () => {
 		).not.toBeInTheDocument();
 	});
 
-	it("does NOT render deeplinks for paths in code blocks", () => {
+	it("does NOT render deeplinks for paths in code blocks", async () => {
 		setAssistantMessage("```\n/home/user/dev/App.tsx\n```");
-		render(<ChatArea />);
+		await renderChat();
 		// Path inside code block — code component, not p component — no button
 		expect(
 			screen.queryByRole("button", { name: /App\.tsx/ }),
@@ -165,7 +182,7 @@ describe("ChatArea — file deep-links", () => {
 
 	it("renders plain text segments unchanged alongside deeplink", async () => {
 		setAssistantMessage("앞 텍스트 /tmp/result.csv 뒤 텍스트");
-		render(<ChatArea />);
+		await renderChat();
 		const btn = await screen.findByRole("button", { name: "/tmp/result.csv" });
 		expect(btn).toBeInTheDocument();
 		// Plain text segments are text nodes (not elements) inside the <p> —
@@ -177,7 +194,7 @@ describe("ChatArea — file deep-links", () => {
 
 	it("renders multiple deeplinks in one message", async () => {
 		setAssistantMessage("파일 /tmp/a.ts 와 /tmp/b.rs 를 수정했습니다.");
-		render(<ChatArea />);
+		await renderChat();
 		expect(
 			await screen.findByRole("button", { name: "/tmp/a.ts" }),
 		).toBeInTheDocument();

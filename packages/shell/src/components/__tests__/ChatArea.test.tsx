@@ -1766,6 +1766,10 @@ describe("ChatArea", () => {
 		});
 
 		render(<ChatArea />);
+		// Await the real lazy module before starting the DOM query deadline.
+		await act(async () => {
+			await import("../PermissionModal");
+		});
 		expect(
 			await screen.findByText(/도구 실행 승인|Tool Execution Approval/),
 		).toBeDefined();

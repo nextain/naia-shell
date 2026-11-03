@@ -819,6 +819,28 @@
       "verification": "31/31 source hashes match r6 overlay; frozen install/build/core/Shell/Worker types PASS; Node6/start6/bench15 PASS; OPFS21 PASS; packaged memory/PDF/390px UX PASS; actual CPU Worker10 cycles PASS,start-through-HTTP333-582ms; full web src2804pass/1fail/20skip(permission modal; focusedChatArea79pass); rootShell2597pass/21skip. Full web remains RED. Initial broad run2769pass/15fail/16skip plus3suite errors retained.",
       "remaining": "Independent review/remote merge; full regression modal/deeplink/tree instability; model quality/multi-hour soak; native-language/device/GPU/Windows/macOS/physical storage/GHCR credentials/offline/native core/root structure gates.",
       "last_updated": "2026-11-03T17:11:42.700784+00:00"
+    },
+    "webgpu_container_026_r8": {
+      "title": "0.2.6 WebGPU 8회차 — 웹 비동기 회귀 GREEN",
+      "issue_refs": [
+        "#794",
+        "#824"
+      ],
+      "branch": "feat/026-webgpu-on-824",
+      "scenario": "docs/user-scenarios.md UC-WEBGPU-CONTAINER-026-R8",
+      "requirements": "docs/requirements.md FR-WEBGPU-CONTAINER-026-R8",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "web_regression_green_independent_review_pending",
+      "verification": "Full web src2805PASS/20SKIP/0FAIL; root Shell2597PASS/21SKIP/0FAIL. Delay baseline3FAIL -> fixed3PASS; actual Chromium390px/modal Alt+N/deeplink/tree1PASS; Node6PASS; anchors70/assembly/root+Shell typesPASS. Existing root structure2RED. Root initial2594PASS/3FAIL/21SKIP retained; same test fixes applied before final.",
+      "deliverable": "docs/progress/webgpu-container-026-r8-review.md; docs/progress/webgpu-container-026-20261103.md R8",
+      "remaining": "Independent review/merge; persona/model quality/multi-hour soak; native-language/device/GPU/Windows/macOS/physical storage/GHCR credentials/offline/native core/root structure gates.",
+      "last_updated": "2026-11-03T20:27:33.361124+00:00"
     }
   },
   "sdlc_gates": {
@@ -1137,5 +1159,5 @@
       "4. resource_registry.violations 초기화"
     ]
   },
-  "last_updated": "2026-11-03T17:11:42.700784+00:00"
+  "last_updated": "2026-11-03T20:27:33.361124+00:00"
 }
