@@ -1,8 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
 import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
 import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri";
+import { bootstrapAdkPath } from "./lib/adk-store";
 import { bootstrapShell } from "./lib/bootstrap-shell";
 import { initializeI18n } from "./lib/i18n";
 import { Logger } from "./lib/logger";
@@ -22,6 +22,8 @@ if ("__TAURI_INTERNALS__" in window) {
 }
 
 async function bootstrap() {
+	if ("__TAURI_INTERNALS__" in window) await bootstrapAdkPath();
+	const { App } = await import("./App");
 	await bootstrapShell({
 		initializeI18n,
 		renderApp: () => {
@@ -60,4 +62,13 @@ async function bootstrap() {
 	});
 }
 
-void bootstrap();
+void bootstrap().catch((error: unknown) => {
+	Logger.error("Main", "Workspace bootstrap failed", { error: String(error) });
+	const root = document.getElementById("root");
+	if (!root) return;
+	const alert = document.createElement("p");
+	alert.setAttribute("role", "alert");
+	alert.textContent =
+		"Cannot read workspace selection. Check data home permissions and restart. / 작업 경로를 읽을 수 없습니다. 데이터 홈 권한을 확인하고 다시 시작하세요.";
+	root.replaceChildren(alert);
+});

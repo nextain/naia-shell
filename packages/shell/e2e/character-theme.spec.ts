@@ -27,7 +27,7 @@ for (const width of [274, 1100, 360]) {
 		await page.setViewportSize({ width, height: 900 });
 		await page.addInitScript(
 			({ seed, videoBase64, authoredAvBase64 }) => {
-				localStorage.setItem("naia-adk-path", "/mock/b2c-adk");
+				localStorage.setItem("naia-adk-path", "/mock/production-adk");
 				if (!localStorage.getItem("b2c-test-initialized")) {
 					localStorage.setItem("naia-config", JSON.stringify(seed));
 					localStorage.setItem("b2c-test-initialized", "1");
@@ -48,6 +48,9 @@ for (const width of [274, 1100, 360]) {
 					unregisterCallback: () => {},
 					convertFileSrc: (p: string) => p,
 					invoke: async (cmd: string, args: any) => {
+						if (args?.adkPath === "/mock/production-adk")
+							throw new Error("cross-home access");
+						if (cmd === "read_naia_path_cache") return "/mock/b2c-adk";
 						if (cmd === "plugin:event|listen") return 1;
 						if (cmd === "send_to_agent_command") {
 							win.__chatWire.push(JSON.parse(args.message));
@@ -134,6 +137,9 @@ for (const width of [274, 1100, 360]) {
 		);
 		await page.addInitScript(TAURI_BASE_MOCK_FALLBACK);
 		await page.goto("/");
+		await expect
+			.poll(() => page.evaluate(() => localStorage.getItem("naia-adk-path")))
+			.toBe("/mock/b2c-adk");
 		await expect(page.locator(".chat-app")).toBeVisible();
 		await expect(page.locator(".splash-screen")).toBeHidden();
 		// All chat actions fit the physical viewport before opening settings.
@@ -150,7 +156,9 @@ for (const width of [274, 1100, 360]) {
 			}
 			await page.screenshot({ path: test.info().outputPath("chat-274.png") });
 			await input.press("Enter");
-			await expect(page.locator(".chat-messages")).toContainText("Narrow window message");
+			await expect(page.locator(".chat-messages")).toContainText(
+				"Narrow window message",
+			);
 			return;
 		}
 		// Open actual Shell settings, then its persona tab.
@@ -174,7 +182,19 @@ for (const width of [274, 1100, 360]) {
 		}
 		await page.keyboard.press("Escape");
 		await expect(settingsEntry).toBeFocused();
-		await expect.poll(() => page.locator('.content-app__slot').evaluateAll(els => els.every(el => el.hasAttribute('inert') && getComputedStyle(el).visibility === 'hidden'))).toBe(true);
+		await expect
+			.poll(() =>
+				page
+					.locator(".content-app__slot")
+					.evaluateAll((els) =>
+						els.every(
+							(el) =>
+								el.hasAttribute("inert") &&
+								getComputedStyle(el).visibility === "hidden",
+						),
+					),
+			)
+			.toBe(true);
 		await settingsEntry.click();
 		const personaTab = page.locator('[data-settings-tab="persona"]');
 		await expect
@@ -360,7 +380,7 @@ for (const width of [274, 1100, 360]) {
 			};
 			// Seed both file fixture and cache after queued preference writes.
 			// Cache-only mutation races file-SoT rehydration of theme saving.
-			await writeNaiaConfigAtPath(previous, '/mock/b2c-adk');
+			await writeNaiaConfigAtPath(previous, "/mock/b2c-adk");
 			saveConfig(previous);
 		});
 		// Compare the settings owned by this operation; config loading strips empty
@@ -583,8 +603,12 @@ for (const width of [274, 1100, 360]) {
 			window.dispatchEvent(new Event("naia-character-new-conversation"));
 		});
 		await page.waitForTimeout(300);
-		await expect(page.locator("output[role=status]")).toContainText("Preparing character");
-		await expect(page.locator("output[role=status]")).toContainText("Enter or Send again");
+		await expect(page.locator("output[role=status]")).toContainText(
+			"Preparing character",
+		);
+		await expect(page.locator("output[role=status]")).toContainText(
+			"Enter or Send again",
+		);
 		await page
 			.locator(".chat-input")
 			.fill("300ms greeting interruption keeps my words");

@@ -2564,3 +2564,12 @@ P02 Test Coverage Map: `adk-store.test.ts`의 두 workspace 재읽기·지연 �
 | UC | Test Coverage Map | 상태 |
 |---|---|---|
 | UC-B2C-026-R11 | packages/shell/e2e/character-theme.spec.ts; packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx | 274/360/1100px 기본·빈 입력·진행 안내·입력 보존·성공·오류/재시도·키보드/ARIA·DOM bounds. Native 274px 재확인은 기기 목록 |
+
+## UC-B2C-026-R12 — 분리 실행 데이터 경계
+분리 실행은 다른 ADK 를 절대 열지 않는다. NAIA_HOME이 있으면 사용자 홈 .naia의 포인터/설정을 읽지 않으며, 렌더 전에 네이티브 adk-path를 정본으로 복원한다. 포인터가 없으면 설정 화면으로 간다. 오래된 웹뷰 경로는 정본을 덮어쓸 수 없다.
+
+P02: 두 시험 홈 A/B, 빈 B, 오래된 localStorage A, 읽기 오류, 재시작을 adk-store 단위/브라우저 시험으로 확인한다. Rust는 데이터홈 포인터 우선순위와 동일 JSON의 config/ui-config/slots-manifest mtime 보존·실제 변경 저장을 확인한다. 실제 Windows/macOS는 기기 확인 목록으로 분리한다. UI 레이아웃 변경 없음.
+
+| UC | 테스트 파일 | 확인 내용 |
+|---|---|---|
+| UC-B2C-026-R12 | packages/shell/src/lib/__tests__/adk-store.test.ts; packages/shell/src/lib/__tests__/cli-detection.test.ts; packages/shell/e2e/adk-home-isolation.spec.ts; packages/shell/e2e/character-theme.spec.ts; packages/shell/src-tauri/src/data_home.rs; packages/shell/src-tauri/src/lib.rs | 두 홈/빈 포인터/오류/재시작·오래된 웹뷰 경로 차단·동일 JSON 세 설정 mtime 보존. 기본/빈 목록/진행/성공/오류/274·360·1100px은 카드 회귀. |

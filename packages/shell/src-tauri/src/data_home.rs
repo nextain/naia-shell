@@ -407,4 +407,60 @@ mod tests {
             PathBuf::from("C:/naia-test-home/.naia/logs")
         );
     }
+    #[test]
+    fn r12_two_homes_do_not_fall_back_to_user_pointer() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("user");
+        let isolated = root.path().join("isolated");
+        std::fs::create_dir_all(home.join(".naia")).unwrap();
+        std::fs::create_dir_all(&isolated).unwrap();
+        let user_pointer = home.join(".naia/adk-path");
+        std::fs::write(&user_pointer, "private-adk-A").unwrap();
+        let target = naia_data_home_with(home.clone(), isolated.to_str()).join("adk-path");
+        assert!(!target.exists());
+        std::fs::write(&target, "test-adk-B").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "test-adk-B");
+        assert_eq!(std::fs::read_to_string(user_pointer).unwrap(), "private-adk-A");
+    }
+
+    #[test]
+    fn r12_native_pointer_uses_only_selected_home() {
+        // Separate processes exercise dirs + NAIA_HOME without racing other
+        // tests through process-global environment mutation.
+        if let Ok(case) = std::env::var("R12_POINTER_CASE") {
+            let expected = std::env::var("R12_EXPECTED_ADK").unwrap();
+            match case.as_str() {
+                "selected" => assert_eq!(crate::read_naia_path_cache().unwrap(), Some(expected)),
+                "empty" => assert_eq!(crate::read_naia_path_cache().unwrap(), None),
+                "unreadable" => assert!(crate::read_naia_path_cache().is_err()),
+                _ => panic!("unknown case"),
+            }
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("user");
+        let isolated = root.path().join("isolated");
+        std::fs::create_dir_all(direct_child_of(&home, DataHomeChild::AdkPath).parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&isolated).unwrap();
+        let private_pointer = direct_child_of(&home, DataHomeChild::AdkPath);
+        std::fs::write(&private_pointer, "private-adk-A").unwrap();
+        let pointer = isolated.join("adk-path");
+        for case in ["empty", "selected", "unreadable"] {
+            if case == "selected" { std::fs::write(&pointer, "test-adk-B\n").unwrap(); }
+            if case == "unreadable" {
+                std::fs::remove_file(&pointer).unwrap();
+                std::fs::create_dir(&pointer).unwrap();
+            }
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "data_home::tests::r12_native_pointer_uses_only_selected_home", "--nocapture"])
+                .env("HOME", &home).env("USERPROFILE", &home)
+                .env("NAIA_HOME", &isolated).env_remove("NAIA_E2E")
+                .env("R12_POINTER_CASE", case).env("R12_EXPECTED_ADK", "test-adk-B")
+                .output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stdout));
+            assert_eq!(std::fs::read_to_string(&private_pointer).unwrap(), "private-adk-A");
+        }
+    }
+
+
 }

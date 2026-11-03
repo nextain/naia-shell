@@ -275,3 +275,19 @@ verify-visual-ux: 기본/빈 입력·전송/준비 안내·카드 저장 성공/
 헌장 파일은 승인 없이 수정하지 않았다. root 구조 기존 위반 3건(test-results/, tracked tmp/, tsconfig.build.json), core 70파일 밖 Shell 계약 탐지 갭과 빈 C manifest는 그대로 남아 있어 전역 구조 게이트 PASS를 주장하지 않는다. cargo/rustc/tauri-driver가 PATH에 없고 GPU·Windows/macOS·서명/권리 자산이 없어 해당 수용은 남은 일로 유지한다.
 
 최종 P04/P05: Done(서버 수정). Shell 전체 254파일통과/1파일제외, 2688통과/21제외(2709개), `tmp/r11-shell-final.log`; Playwright274/1100/360px3/3(59.2초), `tmp/r11-browser-accepted.log`와 갈무리; 집중23/23; core/Shell 전체 타입·compile integrity·trace·assembly 통과. 이전 FileTree 실패는 이번 분리4/4와 전체에서 코드 수정 없이 통과했다. 이전 초기 및 문구 보완 전 전체 로그도 남겼으며 최종 증거와 구분한다. 시작 root 위반·Shell 앵커 탐지 갭·native 수용은 별도 미완료다.
+
+## r12 — NAIA_HOME 분리 실행과 시작 시 불필요한 쓰기 제거
+
+준의4060 실기(11/4 06:40 KST)에서 전달된 “분리 홈인데 사용자 홈 포인터·웹뷰 캐시가 D:\alpha-adk를 다시 선택하고 설정3개가 쓰임”을 긴급 수정한다. 원본 기기 로그는 이번 서버에 없으며 전달된 현상을 인수 입력으로 사용했다. P01/P02 UC-B2C-026-R12, P03 FR-B2C-026-R12를 구현 전에 기록했다.
+
+정본은 네이티브 데이터홈의 adk-path다. 새 read_naia_path_cache IPC가 NAIA_HOME을 존중하며 사용자 홈으로 폴백하지 않는다. main은 이 IPC가 끝나기 전에 App 모듈을 불러오거나 렌더하지 않는다. 기존 경로와 파생 naia-config를 지우고 포인터만 복원한다. 빈 포인터는 설정 화면, 읽기 오류는 role=alert의 권한 확인·재시작 안내로 멈춘다. 네이티브 Agent도 포인터가 없으면 기동을 보류한다(일반 첫 실행 포함). 사용자 선택의 setAdkPath만 새 포인터를 commit한다.
+
+config/ui-config의 JSON 값이 같으면 키 순서·공백 차이에도 파일을 교체하지 않는다. slots-manifest도 동일 저장기를 사용하되 builtAt만 다른 경우 기존 파일·시각을 유지한다. 실제 슬롯 변경은 새 builtAt과 함께 저장한다. 경로 포인터도 바뀐 경우에만 쓴다. CLI 탐지의 실제 결과·허용 CLI 목록이 같으면 부팅 refreshedAt만으로 설정을 갱신하지 않는다. 수동 새로고침은 기존 시각 갱신 동작을 유지한다. 초기 누락 기본값 생성은 내용 변경으로 구분한다.
+
+재현 우선: adk-store 신규3개 수정 전 FAIL, CLI 시각 회귀2개 중1개 수정 전 FAIL. 단위 최종79/79. 브라우저 두 실제 시험 폴더+선택/빈/읽기 오류 각 재시작, 다른 홈 캐시를 심은274/1100/360px 카드·테마6/6. 중간 소스 편집 중의 브라우저2실패는 보존하고 안정된 소스의 재실행과 구분한다. Shell 전체 최종2693pass/21skip,255파일pass/1skip(tmp/r12-shell-final.log).
+
+Rust/cargo와 Linux WebKit 개발 의존성·WebKitWebDriver·tauri-driver를 서버에 설치했다. Rust 도구·target·paired Agent의 exact clean 임시 checkout은 실행폴더 tmp 안에만 둔다. 사용자 Agent 작업 트리는 읽기/로컬 clone의 원본일 뿐 수정하지 않았다. 번들 ego-host 리소스 누락은 시험에만 TAURI_CONFIG.bundle.resources=[]를 적용해 우회했으며 installer 검증은 아니다. 실제 Tauri WebView→IPC 시험은 별도 HOME/USERPROFILE/NAIA_HOME/XDG와 시험ADK만 쓴다. Agent/음성 모델은 연결하지 않는다. 첫 실제 시험에서 CLI refreshedAt 재저장, 다음 시험에서 slots builtAt 재저장을 검출해 고쳤다. 빈 ui-config에 BGM 기본값이 추가되는 초기화도 별도 실패 증거로 보존하고, 이미 값이 같은 설정의 mtime 검증과 구분한다.
+
+verify-visual-ux 적용: 기본/빈 목록/진행/성공/오류/좁은 폭은 기존 카드6상태와 새 선택/빈홈/읽기오류 DOM·갈무리로 확인한다. 오류 화면은 다른 ADK를 열지 않고 권한 확인·재시작을 안내한다. Windows/macOS·GPU·동일paired installer 인수는 별도 기기 확인 목록이다. 헌장 불변 지시로 process-status는 수정하지 않으며 전역 게이트 완료를 주장하지 않는다. 기존 root3항목·데이터홈 경계9항목·Shell 파일별 계약 탐지 갭은 이번 수정과 분리한다.
+
+최종 P04/P05(서버 수정): Rust4/4(tmp/r12-rust-last.log), 실제 Linux Tauri WebView→IPC 부팅·stale A 캐시/reload→B 복원·A 포인터/설정 원본 보존 및 config/ui-config/slots-manifest의 바이트·mtime 모두 보존 PASS(tmp/r12-native-last.log, tmp/r12-native/evidence.json, 재현 runner tmp/r12-native.mjs). 세 mtime은 시험에서 과거로 지정한1000000ms 그대로다. Agent/모델·음성/운영 provider 시험은 아니다. 첫 native UI 기본값 추가 실패·CLI 시각 실패·builtAt 실패는 각각 tmp/r12-native.log, tmp/r12-native-final.log, tmp/r12-native-accepted.log에 보존했다. 최종 production build/budget·core/Shell/sidecar 타입·integrity·anchors·assembly·trace·logging PASS. Native app/driver/브라우저 종료 확인 뒤 이번 result.md와.done을 생성한다.

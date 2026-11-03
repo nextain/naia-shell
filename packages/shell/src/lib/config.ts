@@ -708,7 +708,7 @@ export function saveConfig(config: AppConfig): void {
 /**
  * 부팅 병합 (UC-CONFIG-SOT / FR-CONFIG-SOT.1) — **파일이 SoT, localStorage 는 캐시**.
  *
- * localStorage 의 역할은 오직 `naia-adk-path`(부트스트랩 포인터) 뿐이다(루크 원칙 2026-07-15).
+ * `naia-adk-path`는 네이티브 데이터홈 adk-path의 부팅 캐시이며 정본은 네이티브 파일이다.
  * `naia-config` 는 파일에서 하이드레이트되는 렌더 캐시이므로, 부팅 시 **파일 값이 절대적으로 이긴다**.
  *
  * ⚠️ 이전 버그: `App.tsx` 부팅 병합만 유일하게 `{ ...local, ...file, ...ui }` 로 **local 을 base** 로 써서,

@@ -56,6 +56,22 @@ export function isNaiaConfigHydrationPending(): boolean {
 let adkBindingRevision = 0;
 let configRestoreRevision = 0;
 
+/** Native adk-path is the bootstrap authority; never migrate a WebView pointer. */
+export async function bootstrapAdkPath(): Promise<void> {
+	Logger.debug("adk-store", "bootstrap native workspace");
+	const previous = getAdkPath();
+	localStorage.removeItem(ADK_PATH_KEY);
+	// Clear derived settings even when the path is unchanged: the data home may
+	// have changed while the WebView profile was reused.
+	localStorage.removeItem("naia-config");
+	const path = await invoke<string | null>("read_naia_path_cache");
+	if (path?.trim()) localStorage.setItem(ADK_PATH_KEY, path.trim());
+	Logger.debug("adk-store", "native workspace restored", {
+		selected: !!path,
+		changed: previous !== path,
+	});
+}
+
 export function getAdkPath(): string | null {
 	return localStorage.getItem(ADK_PATH_KEY);
 }

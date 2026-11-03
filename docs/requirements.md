@@ -1524,3 +1524,6 @@ P04/P05: 서버 복원 수명·host 장애 보강 Done. 집중88/88, 실제 pair
 
 ## FR-B2C-026-R11 — 좁은 창과 준비 중 입력
 CSS viewport 274px에서 입력·보내기 경계가 화면 안에 있어야 한다. 카드/첫 인사 준비는 접근 가능한 상태 안내로 표시하고 준비 뒤 사용자가 Enter/보내기를 다시 누르게 안내한다. 입력을 자동 전송하지 않으며 초안을 보존한다. P01/P02: UC-B2C-026-R11. P04: Shell 전체 2688통과/21제외, Playwright 274/360/1100px 3/3, 컴포넌트 집중 23/23 및 core/Shell 타입·compile integrity 통과. P05: Done (서버 수정); 새판 Windows WebView2/native 수용은 기기 확인 목록에 남긴다.
+
+## FR-B2C-026-R12 — 분리 실행과 불필요한 쓰기 금지
+분리 실행은 다른 ADK 를 절대 열지 않는다. NAIA_HOME/adk-path가 네이티브와 웹뷰 시작 경로의 정본이며 사용자 홈 .naia나 localStorage의 경로/설정을 대체 정본으로 사용하지 않는다. 빈 포인터는 설정 화면으로, 읽기 실패는 시작 중단으로 처리한다. 내용이 같은 config.json, ui-config.json, slots-manifest.json은 시작 때 다시 쓰지 않는다(JSON 키 순서/공백 차이 포함). CLI 탐지 결과가 같으면 부팅 시각만으로 설정을 갱신하지 않는다. 슬롯 manifest의 builtAt은 실제 내용 변경 시에만 갱신한다. 최초 누락 설정의 초기화와 실제 사용자 변경은 저장한다. P01/P02: UC-B2C-026-R12. 상태: Done(서버 수정; Windows/macOS paired installer 인수 별도).

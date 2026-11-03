@@ -40,7 +40,9 @@ export const SHELL_GESTURES = [
 
 export type ShellGestureId = (typeof SHELL_GESTURES)[number]["id"];
 
-export async function refreshCliDetection(): Promise<CliDetectionSnapshot> {
+export async function refreshCliDetection(
+	persistRefreshTime = true,
+): Promise<CliDetectionSnapshot> {
 	const snapshot = await invoke<CliDetectionSnapshot>("cli_detect_refresh");
 	const config = loadConfig();
 	if (config) {
@@ -50,7 +52,7 @@ export async function refreshCliDetection(): Promise<CliDetectionSnapshot> {
 		const prevEnabled = config.enabledClis ?? [];
 		// Drop checkboxes for CLIs that disappeared; keep prior enabled set otherwise.
 		const enabledClis = prevEnabled.filter((id) => installedIds.has(id));
-		saveConfig({
+		const nextConfig = {
 			...config,
 			cliDetection: {
 				refreshedAt: snapshot.refreshedAt,
@@ -64,7 +66,20 @@ export async function refreshCliDetection(): Promise<CliDetectionSnapshot> {
 				})),
 			},
 			enabledClis,
-		});
+		};
+		if (
+			!persistRefreshTime &&
+			JSON.stringify(config.cliDetection?.results) ===
+				JSON.stringify(nextConfig.cliDetection.results) &&
+			JSON.stringify(config.enabledClis ?? []) === JSON.stringify(enabledClis)
+		) {
+			Logger.debug(
+				"cli-detection",
+				"unchanged boot detection; preserving settings",
+			);
+			return snapshot;
+		}
+		saveConfig(nextConfig);
 	}
 	return snapshot;
 }
@@ -87,7 +102,9 @@ export async function refreshCliDetectionOne(
 				status: normalizeStatus(result.status),
 			},
 		];
-		const installedIds = new Set(next.filter((r) => r.installed).map((r) => r.id));
+		const installedIds = new Set(
+			next.filter((r) => r.installed).map((r) => r.id),
+		);
 		saveConfig({
 			...config,
 			cliDetection: {
@@ -148,7 +165,7 @@ export function normalizeStatus(status: string): CliReadinessStatus {
 /** Best-effort boot refresh — never throws into the UI bootstrap path. */
 export async function refreshCliDetectionOnBoot(): Promise<void> {
 	try {
-		await refreshCliDetection();
+		await refreshCliDetection(false);
 	} catch (err) {
 		Logger.warn("cli-detection", "boot refresh failed", {
 			error: String(err),

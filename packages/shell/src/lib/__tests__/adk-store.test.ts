@@ -31,6 +31,7 @@ vi.mock("../secure-store", () => ({
 }));
 
 import {
+	bootstrapAdkPath,
 	applyModelSelectionToConfig,
 	applyWorkspaceConfigToLocal,
 	beginNaiaConfigHydration,
@@ -1482,4 +1483,37 @@ it("UC-B2C-026-R10 cannot resurrect settings after binding reset", async () => {
 	await restore;
 	expect(getAdkPath()).toBeNull();
 	expect(localStorage.getItem("naia-config")).toBeNull();
+});
+
+describe("UC-B2C-026-R12 native bootstrap authority", () => {
+	beforeEach(() => {
+		localStorage.clear();
+		mockInvoke.mockReset();
+	});
+	it("replaces home A webview state with home B before any config read/write", async () => {
+		localStorage.setItem("naia-adk-path", "/home-a/adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ workspaceRoot: "/home-a/adk", agentName: "private A" }),
+		);
+		mockInvoke.mockResolvedValue("/home-b/adk");
+		await bootstrapAdkPath();
+		expect(getAdkPath()).toBe("/home-b/adk");
+		expect(localStorage.getItem("naia-config")).toBeNull();
+		expect(
+			mockInvoke.mock.calls.filter(([command]) => command !== "frontend_log"),
+		).toEqual([["read_naia_path_cache"]]);
+	});
+	it("empty isolated home never falls back to the webview path", async () => {
+		localStorage.setItem("naia-adk-path", "/home-a/adk");
+		mockInvoke.mockResolvedValue(null);
+		await bootstrapAdkPath();
+		expect(getAdkPath()).toBeNull();
+	});
+	it("read errors clear stale state and stop boot", async () => {
+		localStorage.setItem("naia-adk-path", "/home-a/adk");
+		mockInvoke.mockRejectedValue(new Error("denied"));
+		await expect(bootstrapAdkPath()).rejects.toThrow("denied");
+		expect(getAdkPath()).toBeNull();
+	});
 });
