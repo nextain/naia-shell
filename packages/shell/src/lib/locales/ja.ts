@@ -644,6 +644,8 @@ export default {
 	"onboard.chat.welcome": "こんにちは！始める前に少しだけ確認させてください 😊",
 	"onboard.chat.agentName": "こんにちは！ナイアです。名前をつけてください！ ✨",
 	"onboard.chat.userName": "{agent}！素敵な名前ですね。私はあなたを何と呼べばいいですか？",
+	"chat.cardPreparing": "キャラクターを準備しています。入力したメッセージは保持されます。",
+	"onboard.chat.speechStyleNoName": "どんな話し方がよいですか？気楽に選んでください 😊",
 	"onboard.chat.speechStyle": "{user}！どんな話し方がいいですか？お好きなものを選んでください 😊",
 	"onboard.chat.character": "私の見た目を選んでください！気に入ったキャラクターはありますか？ 🌸",
 	"onboard.chat.background": "背景も一緒に選びましょうか？クリックするとすぐ変わります！ 🌟",

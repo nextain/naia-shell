@@ -222,3 +222,19 @@ UC-B2C-026-R7 / FR-B2C-026-R7. process-status는 F01 헌장 명시 승인 부재
 7회차 AX lifecycle 보강: React StrictMode의 mount-effect replay를 실제 browser fixture에 켰다. 로컬 capture/ref는 cleanup에서 즉시 폐기하고 host invalidation만 같은 host의 재mount 여부를 microtask로 확인한다. host 교체는 이전 host를 invalidate한다. 사용자 취소/scope 변경 invalidate는 동기 호출이며 disconnect dispose는 composition 소유다. 최초 표시 ACK를 StrictMode cleanup이 잘못 무효화하지 않으며 unmount 후 입력·권한이 남지 않는 browser4/4(`tmp/r7-ax-lifecycle.log`).
 
 7회차 P04/P05 최종: Shell 전체 재실행 **2673pass/21skip/실패0**,254파일pass/1skip,291.52초(`tmp/r7-shell-verified.log`). AX 최종 StrictMode 한/영×1100/360px4/4(`tmp/r7-ax-final-verified.log`), 취소 후 오래된 입력 오류 안내 제거도 단언. 최종360px screenshot을 직접 열어 payload/승인 입력/취소·새 요청 안내의 순서·줄바꿈과 잘림 없음을 검토했다. browser slice PASS이며 authenticated AX RPC/native 수용은 Pending. metadata·서버 회귀·adapter 초안 Done, 실제 상품/기기/게시 전체 수용은 Pending 유지.
+
+## 8회차 시작/P01~P03
+직전 result.md를 result-r7.md로 보존. 4060 옛 빌드41654453352/2d7794b 실기 step4.jsonl에서300ms 입력 뒤 user행0,2500ms에는user행1 확인. UC/FR-B2C-026-R8로 재현/수정한다. 11/4 signed 실제 상품/권리 자료 미제공은 계속 보류. process-status.json은 사용자 헌장 불변 지시로 변경하지 않고 이 ledger에 상태 기록. 기존 core file oracle 활성·C regions 비어 있음·Shell 전체 미계약 탐지 갭은 그대로 기록하며 전역 완료 주장 안 함.
+
+### 8회차 구현·검증/P04~P05
+- 설정 Center의 초점 초기화·lazy load 후 첫 입력 이동·Tab/역Tab 순환·Esc 닫기/설정 단추 복귀. 비활성 keepAlive slot은 inert/aria-hidden/visibility:hidden으로 DOM 초점과 페인트에서 제외하되 lifecycle은 유지한다. 360px textarea의 기본 최소너비를0으로 내려 보내기 단추를 보장한다.
+- 카드 적용은 설정 저장 직전 characterTransitionPending을 켜고, 새 대화 이벤트 처리 후 finally 해제한다. pending 중 Enter는 입력을 비우지 않고 상태 안내/보내기 잠금, 준비 완료 후 재전송 가능. 명령 분류 await 사이 카드/세션이 바뀌어도 입력을 유지한다. 기존 greeting generation/session/messages guard도300ms 실제 browser 전송으로 검증한다.
+- 보관함은 sourceBase64 원본 바이트를 정확 비교한다(동일hash 원본을 충돌 없이 동일시, 파일명 제외). 재import는 기존ID를 사용하고 해당 원본의 기존 중복들을 합친 뒤30장/2MB를 판단한다. 새로 불러온 같은 카드의 theme 연결은 보존하고, 현재 카드에서 사용자가 명시 해제하면 해제를 존중한다. 이름만 같은 다른 원본은 별도 카드다. 저장된 모든 과거 중복을 부팅만으로 migration하지는 않는다.
+- 빈/공백 사용자 이름은14개 locale의 speechStyleNoName 문장을 사용한다. 준비 상태 문구도14개 locale에 추가했다.
+- red: 설정1100/360 모두 초점 이동 실패, 카드 pending Enter 입력 보존 실패. 새 병합 함수 전 단위시험도 실패. 이름 시험 초안은 Wizard 단독에 없는 chat DOM을 찾는 실수가 있어 실제 ChatStore에 기록된 문장을 단언하도록 고쳤고 locale 변경으로 다른 시험을 오염시키던 시도도 제거했다. 최종 회귀51pass/1skip.
+- Shell 전체 최종2678pass/21skip/실패0,254파일pass/1skip (`tmp/r8-shell-final.log`). 중간 before 호출은 수정 전 모듈을 포함해5fail/2673pass/21skip이며 최종과 구분한다.
+- browser 최초1100/3602/2, 추가300ms 포함 회귀에서1회 theme snapshot 불일치: 캐시만 바꾼 시험 준비가 이전 file writer 재hydration과 경쟁. 실제 writeNaiaConfigAtPath로 파일·캐시를 순서대로 준비한 뒤2/2 (`tmp/r8-browser-verified.log`). 마지막 visibility/inert assertion 및 screenshot은 `tmp/r8-browser-last.log`/`tmp/r8-browser-last/`.
+- core/Shell/BGM/paired0ad8698 archive tsc, compile-integrity, assembly/file-anchor/UC trace/logging, production build/budget 검사. core 전체 추가 호출은 실제 환경/live terminal/CDP·짝 checkout 표본9fail/1692pass/15skip이며 Shell 전체 통과와 혼동하지 않는다. 생성된 benchmark/.attest 출력은 원복했다.
+- native preflight: cargo/rustc/tauri-driver/WebKitWebDriver 없음. 사용자 지시대로 Windows/macOS/GPU·signed 실제 상품은 기기 확인 목록/인수 대기. 다른 작업자 checkout 변경·운영 접속·게시·push 없음. process-status 헌장 파일은 변경하지 않았다. 구조 기존3건 위반 및 Shell 전역 file-anchor 미포함/C regions 빈 상태는 그대로이며 전역 gate 통과로 주장하지 않는다.
+
+8회차 종료 검증: 마지막 browser1100/360px2/2(58.2초), `tmp/r8-browser-last.log`. 360px의 닫힌 설정 잔상 없음·입력칸/보내기 노출·300ms 전송 user 행 보존 screenshot을 직접 열어 검토했다. 기본/빈 목록/진행 잠금/성공/오류 재시도/좁은 폭 및 Tab140회·역Tab·Enter·Esc·비활성slot inert/visibility를 DOM으로 확인했다. 실제 GPU/청취/native UI는 사용자 지시대로 기기 확인 Pending. 최종 build/budget도 `tmp/r8-build-last.log` PASS. P05 서버 수정 Done.

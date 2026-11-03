@@ -89,6 +89,38 @@ export interface SavedCharacterCard {
 	sourceBase64: string;
 	themeId?: string;
 }
+/** Compare exact source bytes: equivalent to content hashing without collisions
+ * or a WebCrypto dependency in offline WebViews. Filenames are not identity. */
+export function mergeCharacterCard(
+	cards: SavedCharacterCard[],
+	incoming: SavedCharacterCard,
+) {
+	const existing = cards.find(
+		(card) => card.sourceBase64 === incoming.sourceBase64,
+	);
+	const card = {
+		...incoming,
+		id: existing?.id ?? incoming.id,
+		...(incoming.id !== existing?.id &&
+		incoming.themeId === undefined &&
+		existing?.themeId
+			? { themeId: existing.themeId }
+			: {}),
+	};
+	Logger.debug("CharacterTheme", "merge card source", {
+		duplicate: !!existing,
+	});
+	return {
+		card,
+		cards: [
+			...cards.filter(
+				(c) => c.id !== card.id && c.sourceBase64 !== card.sourceBase64,
+			),
+			card,
+		],
+	};
+}
+
 export const CARD_LIBRARY_MAX_BYTES = 2_000_000;
 export function readCharacterLibrary(value: unknown): SavedCharacterCard[] {
 	Logger.debug("CharacterTheme", "read card library");

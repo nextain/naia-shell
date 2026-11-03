@@ -765,6 +765,7 @@ export function ChatArea({
 
 	const messages = useChatStore((s) => s.messages);
 	const isStreaming = useChatStore((s) => s.isStreaming);
+	const characterTransitionPending = useChatStore((s) => s.characterTransitionPending);
 	const streamingContent = useChatStore((s) => s.streamingContent);
 	const streamingThinking = useChatStore((s) => s.streamingThinking);
 	const streamingToolCalls = useChatStore((s) => s.streamingToolCalls);
@@ -1892,6 +1893,15 @@ export function ChatArea({
 	async function handleSend(overrideText?: string, installedAppTurn = false) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		if (useChatStore.getState().characterTransitionPending) {
+			Logger.debug("ChatArea", "retain input while card commit is pending");
+			if (installedAppTurn) {
+				installedAppTurnRef.current = true;
+				settleInstalledAppReply("", t("apps.requestBusy"));
+			}
+			return;
+		}
+		const sendSession = useChatStore.getState().localSessionId;
 		if (installedAppTurn && installedAppVoiceBlockedRef.current) {
 			installedAppTurnRef.current = true;
 			settleInstalledAppReply("", t("apps.voiceModeBlocked"));
@@ -1899,6 +1909,8 @@ export function ChatArea({
 		}
 		pendingAiGestureActionRef.current = null;
 		if (!installedAppTurn && (await handleSpeechProfilePhrase(text))) return;
+		// A card can commit while command classification yields to the event loop.
+		if (useChatStore.getState().characterTransitionPending || useChatStore.getState().localSessionId !== sendSession) return;
 		if (isRadioDjLabObserverAttached()) {
 			const activeConfig = loadConfig();
 			if (
@@ -4846,6 +4858,9 @@ export function ChatArea({
 					<NvaGestureActions onManualAction={recordManualNvaGestureAction} />
 				)}
 
+				{characterTransitionPending && (
+					<output role="status">{t("chat.cardPreparing")}</output>
+				)}
 				{/* Input (chat tab only) */}
 				<div
 					className="chat-input-bar"
@@ -4926,7 +4941,7 @@ export function ChatArea({
 						<button
 							type="button"
 							onClick={() => handleSend()}
-							disabled={!input.trim()}
+							disabled={!input.trim() || characterTransitionPending}
 							className="chat-send-btn"
 						>
 							↑

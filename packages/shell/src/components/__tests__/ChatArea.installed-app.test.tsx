@@ -268,6 +268,36 @@ describe("ChatArea", () => {
 		});
 	});
 
+	it("keeps typed text while a card is still being committed", async () => {
+		render(<ChatArea />);
+		act(() => {
+			useChatStore.setState({ characterTransitionPending: true });
+		});
+		const input = document.querySelector<HTMLTextAreaElement>(".chat-input")!;
+		fireEvent.change(input, { target: { value: "Keep my words" } });
+		fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 20));
+		});
+		expect(input.value).toBe("Keep my words");
+		expect(
+			useChatStore.getState().messages.filter((m) => m.role === "user"),
+		).toHaveLength(0);
+		act(() => {
+			useChatStore.setState({ characterTransitionPending: false });
+		});
+		fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+		await waitFor(() =>
+			expect(
+				useChatStore
+					.getState()
+					.messages.some(
+						(m) => m.role === "user" && m.content === "Keep my words",
+					),
+			).toBe(true),
+		);
+	});
+
 	it.each([
 		{ ttsEnabled: true, autoplay: true, speaks: true, action: "none" },
 		{ ttsEnabled: true, autoplay: true, speaks: true, action: "replace" },

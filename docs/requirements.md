@@ -1505,3 +1505,11 @@ AX draft는 Agent0ad8698 makeAxHostControlLane의 displayed/beginInput/submit/in
 상태: 서버 metadata/adapter 초안 slice Done(P01~P05). 단위·브라우저·실 Agent 메모리 내 계약·전체 타입 검사 증거는 docs/progress/026-b2c-charcard-nva.md 7회차 및 실행 폴더 tmp/r7-*.log. native AX RPC는 계약 미제공으로 Pending.
 
 R7 UI 수용 보강: Agent0ad8698 대화 승인은 한국어 고정 응답만 지원하므로 영문 화면에서도 승인 입력 ‘보내’를 명시한다. 미인증 입력은 alert+재입력/취소, 거절은 새 요청 안내, 성공은 응답 전달로만 표시한다(실행 성공으로 쓰지 않음).
+
+## FR-B2C-026-R8 — 4060 키보드·입력·중복·빈 이름 (P03)
+- 설정 활성화 시 초점을 설정 내부로 옮기고 Tab/역Tab을 내부에서 순환, Esc는 닫고 진입 단추 복원. 비활성 keepAlive 앱은 inert/aria-hidden.
+- 360px에서 입력칸 min-width와 도구 배치를 조정해 보내기 단추를 보장한다.
+- 카드 적용 준비 중 전송은 입력칸을 유지한다. 첫 인사 비동기 준비가 이후 사용자 턴을 지우거나 낭독을 시작하지 않는다.
+- 동일 source bytes(내용 해시 동일)는 파일명과 무관하게 기존 카드 ID 한 장으로 합친다. 한도 판정은 병합 후, 원본 보존·실패 rollback 유지.
+- 빈/공백 사용자 이름은 선두 느낌표 없이 로케일별 정상 문장을 표시한다.
+상태: Done (서버 slice). P04: Shell 전체2678 통과/21skip, 집중51 통과/1skip, 실 Chromium1100/360px 회귀. native/서명 수용은 Pending이며 설치판 기기 재검증과 구분한다.

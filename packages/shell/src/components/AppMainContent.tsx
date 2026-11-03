@@ -389,6 +389,8 @@ export function AppMainContent(props: AppMainContentProps) {
 									return (
 										<div
 											key={app.id}
+											{...(activeApp !== app.id ? { inert: "" } : {})}
+											aria-hidden={activeApp !== app.id}
 											className={`content-app__slot${activeApp === app.id ? " content-app__slot--active" : ""}`}
 										>
 											<ErrorBoundary scope={`App(${app.id})`}>

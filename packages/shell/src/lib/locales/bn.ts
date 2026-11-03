@@ -644,6 +644,8 @@ export default {
 	"onboard.chat.welcome": "Hello! A couple of things before we start 😊",
 	"onboard.chat.agentName": "Hello! I'm Naia. What would you like to name me? ✨",
 	"onboard.chat.userName": "{agent} — what a lovely name. And what should I call you?",
+	"chat.cardPreparing": "চরিত্র তৈরি হচ্ছে। আপনার লেখা বার্তা রাখা হবে।",
+	"onboard.chat.speechStyleNoName": "কোন ধরনের কথাবার্তা পছন্দ? স্বচ্ছন্দ লাগে এমনটি বেছে নিন 😊",
 	"onboard.chat.speechStyle": "{user} — how should I talk with you? Pick whatever feels right 😊",
 	"onboard.chat.character": "Now pick how I look. See a character you like? 🌸",
 	"onboard.chat.background": "Shall we pick a background too? Click one and it changes right away 🌟",

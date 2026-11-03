@@ -45,6 +45,7 @@ interface ChatState {
 	sessionOverlays: Record<string, SessionOverlay>;
 	messages: ChatMessage[];
 	isStreaming: boolean;
+	characterTransitionPending: boolean;
 	streamingContent: string;
 	streamingAppName?: string;
 	/** A tool event occurred; separate the next visible text round once. */
@@ -189,6 +190,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	sessionOverlays: {},
 	messages: [],
 	isStreaming: false,
+	characterTransitionPending: false,
 	streamingContent: "",
 	streamingToolBoundaryPending: false,
 	streamingThinking: "",

@@ -11,6 +11,7 @@ import {
 	CARD_LIBRARY_MAX_BYTES,
 	libraryCard,
 	readCharacterLibrary,
+	mergeCharacterCard,
 	characterCardPatch,
 	readCharacterThemes,
 } from "../lib/character-theme";
@@ -284,7 +285,7 @@ export function CharacterThemeSettings({
 							void run(async () => {
 								if (useChatStore.getState().isStreaming)
 									throw new Error("chat in progress");
-								const saved: SavedCharacterCard = {
+								const incoming: SavedCharacterCard = {
 									version: 1,
 									id: cardId || crypto.randomUUID(),
 									name: card.name,
@@ -293,10 +294,10 @@ export function CharacterThemeSettings({
 									...source,
 									...(themeId ? { themeId } : {}),
 								};
-								const next = [
-									...library.filter((c) => c.id !== saved.id),
-									saved,
-								];
+								const { card: saved, cards: next } = mergeCharacterCard(
+									library,
+									incoming,
+								);
 								if (
 									next.length > 30 ||
 									JSON.stringify(next).length > CARD_LIBRARY_MAX_BYTES
@@ -305,22 +306,27 @@ export function CharacterThemeSettings({
 								const selectedTheme = themes.find(
 									(t) => t.id === saved.themeId,
 								);
-								await onCard(
-									{
-										...preview.patch,
-										uiPreferences: {
-											...loadConfig()?.uiPreferences,
-											b2cCardLibrary: next,
-											b2cActiveCardId: saved.id,
+								useChatStore.setState({ characterTransitionPending: true });
+								try {
+									await onCard(
+										{
+											...preview.patch,
+											uiPreferences: {
+												...loadConfig()?.uiPreferences,
+												b2cCardLibrary: next,
+												b2cActiveCardId: saved.id,
+											},
 										},
-									},
-									selectedTheme,
-								);
-								setLibrary(next);
-								setCardId(saved.id);
-								window.dispatchEvent(
-									new Event("naia-character-new-conversation"),
-								);
+										selectedTheme,
+									);
+									setLibrary(next);
+									setCardId(saved.id);
+									window.dispatchEvent(
+										new Event("naia-character-new-conversation"),
+									);
+								} finally {
+									useChatStore.setState({ characterTransitionPending: false });
+								}
 								setStatus(
 									copy(
 										"Card applied. A new conversation starts with the greeting.",

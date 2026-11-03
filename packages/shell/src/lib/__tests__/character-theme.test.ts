@@ -7,6 +7,7 @@ import {
 	cardGreeting,
 	libraryCard,
 	readCharacterLibrary,
+	mergeCharacterCard,
 	CARD_LIBRARY_MAX_BYTES,
 	readCharacterThemes,
 	themePatch,
@@ -170,5 +171,45 @@ describe("theme media bounded failure", () => {
 			create.mockRestore();
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe("UC-B2C-026-R8 library identity", () => {
+	it("merges the same source under another filename even at the card limit", () => {
+		const cards = Array.from({ length: 30 }, (_, i) => ({
+			version: 1 as const,
+			id: `card-${i}`,
+			name: "Mira",
+			rawJson: { name: "Mira" },
+			greeting: "Hi",
+			sourceName: "old.json",
+			sourceBase64: btoa(`source-${i}`),
+			themeId: "garden",
+		}));
+		const result = mergeCharacterCard(cards, {
+			...cards[0],
+			id: "new-id",
+			sourceName: "renamed.json",
+			themeId: undefined,
+		});
+		expect(result.cards).toHaveLength(30);
+		expect(result.card.id).toBe("card-0");
+		expect(result.card.themeId).toBe("garden");
+		expect(result.card.sourceBase64).toBe(cards[0].sourceBase64);
+	});
+	it("keeps different source bytes even when the character name is identical", () => {
+		const card = {
+			version: 1 as const,
+			id: "a",
+			name: "Mira",
+			rawJson: { name: "Mira" },
+			greeting: "Hi",
+			sourceName: "a.json",
+			sourceBase64: "YQ==",
+		};
+		expect(
+			mergeCharacterCard([card], { ...card, id: "b", sourceBase64: "Yg==" })
+				.cards,
+		).toHaveLength(2);
 	});
 });

@@ -644,6 +644,8 @@ export default {
 	"onboard.chat.welcome": "你好！开始之前先确认几件事 😊",
 	"onboard.chat.agentName": "你好！我是 Naia。给我起个名字吧！ ✨",
 	"onboard.chat.userName": "{agent}！这个名字真好。那我该怎么称呼你呢？",
+	"chat.cardPreparing": "正在准备角色。你输入的消息会保留。",
+	"onboard.chat.speechStyleNoName": "你喜欢哪种说话方式？选一个舒服的吧 😊",
 	"onboard.chat.speechStyle": "{user}！我该用什么语气跟你说话？选一个你喜欢的 😊",
 	"onboard.chat.character": "来选选我的样子吧！有喜欢的形象吗？ 🌸",
 	"onboard.chat.background": "再选个背景吧？点一下就会立刻更换！ 🌟",

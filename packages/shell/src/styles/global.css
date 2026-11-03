@@ -1473,8 +1473,9 @@ body.resizing-col .naia-work-rail::before {
 	box-shadow: none !important;
 }
 
-/* App slot — keep-alive overlay with opacity transition */
+/* Hidden keep-alive apps retain state without exposing controls or paint. */
 .content-app__slot {
+	visibility: hidden;
 	position: absolute;
 	inset: 0;
 	opacity: 0;
@@ -1484,6 +1485,7 @@ body.resizing-col .naia-work-rail::before {
 }
 
 .content-app__slot--active {
+	visibility: visible;
 	opacity: 1;
 	pointer-events: auto;
 }
@@ -2308,6 +2310,8 @@ body.resizing-row {
 
 .chat-input {
 	flex: 1;
+	min-width: 0;
+	box-sizing: border-box;
 	background: var(--espresso-dark);
 	border: 1px solid var(--espresso-light);
 	border-radius: 6px;

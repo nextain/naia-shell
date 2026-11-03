@@ -126,7 +126,7 @@ function stepChat(step: Step, name: string, user: string): string {
 	// 경어 접미사는 언어의 문법이므로 로케일이 정한다. 한국어만 "님" 이고
 	// 나머지는 빈 문자열이다 — 코드가 언어를 보고 고르면 새 언어가 추가될
 	// 때마다 이 자리를 고쳐야 하고, 대개 잊는다.
-	const u = user ? `${user}${t("common.honorificSuffix")}` : "";
+	const u = user.trim() ? `${user.trim()}${t("common.honorificSuffix")}` : "";
 	const fill = (key: TranslationKey) =>
 		t(key).replace("{agent}", n).replace("{user}", u);
 
@@ -138,7 +138,9 @@ function stepChat(step: Step, name: string, user: string): string {
 		case "userName":
 			return fill("onboard.chat.userName");
 		case "speechStyle":
-			return fill("onboard.chat.speechStyle");
+			return u
+				? fill("onboard.chat.speechStyle")
+				: t("onboard.chat.speechStyleNoName");
 		case "character":
 			return t("onboard.chat.character");
 		case "background":

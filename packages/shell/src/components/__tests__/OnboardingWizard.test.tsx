@@ -1,3 +1,4 @@
+import { useChatStore } from "../../stores/chat";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	act,
@@ -213,6 +214,24 @@ describe("OnboardingWizard", () => {
 			screen.getByPlaceholderText(/Enter a name|이름을 입력하세요/),
 		).toBeDefined();
 	});
+
+	it.each(["", "   "])(
+		"uses a complete speech-style sentence without a user name: %j",
+		(user) => {
+			renderAtAgentName();
+			fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+			flush();
+			fireEvent.change(
+				screen.getByPlaceholderText(/Enter a name|이름을 입력하세요/),
+				{ target: { value: user } },
+			);
+			fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+			flush();
+			expect(useChatStore.getState().messages.at(-1)?.content).toBe(
+				"What speaking style would you prefer? Pick whichever feels comfortable 😊",
+			);
+		},
+	);
 
 	it("progresses through steps: agentName → userName → speechStyle → character → background → provider", () => {
 		renderAtAgentName();

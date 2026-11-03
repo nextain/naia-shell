@@ -135,13 +135,43 @@ for (const width of [1100, 360]) {
 		await page.addInitScript(TAURI_BASE_MOCK_FALLBACK);
 		await page.goto("/");
 		await expect(page.locator(".chat-app")).toBeVisible();
+		// All chat actions fit the physical viewport before opening settings.
+		const sendBounds = await page.locator(".chat-send-btn").boundingBox();
+		expect(sendBounds!.x).toBeGreaterThanOrEqual(0);
+		expect(sendBounds!.x + sendBounds!.width).toBeLessThanOrEqual(width);
 		// Open actual Shell settings, then its persona tab.
 		const settingsEntry = page.locator(".app-bar-settings");
 		const entryBounds = await settingsEntry.boundingBox();
 		expect(entryBounds!.x).toBeGreaterThanOrEqual(0);
 		expect(entryBounds!.x + entryBounds!.width).toBeLessThanOrEqual(width);
 		await settingsEntry.click();
-		await page.locator('[data-settings-tab="persona"]').click();
+		const settings = page.locator(".content-app__slot--active");
+		await expect(settings.locator(".settings-tab")).toBeVisible();
+		await expect
+			.poll(() =>
+				settings.evaluate((el) => el.contains(document.activeElement)),
+			)
+			.toBe(true);
+		for (let i = 0; i < 140; i++) {
+			await page.keyboard.press(i < 70 ? "Tab" : "Shift+Tab");
+			expect(
+				await settings.evaluate((el) => el.contains(document.activeElement)),
+			).toBe(true);
+		}
+		await page.keyboard.press("Escape");
+		await expect(settingsEntry).toBeFocused();
+		await expect.poll(() => page.locator('.content-app__slot').evaluateAll(els => els.every(el => el.hasAttribute('inert') && getComputedStyle(el).visibility === 'hidden'))).toBe(true);
+		await settingsEntry.click();
+		const personaTab = page.locator('[data-settings-tab="persona"]');
+		await expect
+			.poll(async () => {
+				if (await personaTab.evaluate((el) => el === document.activeElement))
+					return true;
+				await page.keyboard.press("Tab");
+				return false;
+			})
+			.toBe(true);
+		await page.keyboard.press("Enter");
 		await page.setViewportSize({ width, height: 900 });
 		const section = page.getByRole("region", {
 			name: "Character cards and NVA themes",
@@ -208,11 +238,37 @@ for (const width of [1100, 360]) {
 		await expect(page.locator("#persona-input")).toHaveValue(
 			"previous persona",
 		);
+		await page
+			.locator(".chat-input")
+			.fill("Keep my words during card preparation");
 		await apply.focus();
 		await page.keyboard.press("Enter");
 		await expect(apply).toBeDisabled();
 		await expect(input).toBeDisabled();
+		await page
+			.locator(".chat-input")
+			.dispatchEvent("keydown", { key: "Enter", code: "Enter", bubbles: true });
+		await expect(page.locator(".chat-input")).toHaveValue(
+			"Keep my words during card preparation",
+		);
 		await expect(section.getByRole("status")).toContainText("Card applied");
+		const firstCard = await page.evaluate(
+			() =>
+				JSON.parse(localStorage.getItem("naia-config")!).uiPreferences
+					.b2cCardLibrary[0],
+		);
+		await input.setInputFiles({
+			name: "renamed.json",
+			mimeType: "application/json",
+			buffer: Buffer.from(firstCard.sourceBase64, "base64"),
+		});
+		await apply.click();
+		await expect(section.getByRole("status")).toContainText("Card applied");
+		const afterRepeat = await page.evaluate(
+			() => JSON.parse(localStorage.getItem("naia-config")!).uiPreferences,
+		);
+		expect(afterRepeat.b2cCardLibrary).toHaveLength(1);
+		expect(afterRepeat.b2cActiveCardId).toBe(firstCard.id);
 		// Real authored A/V playback through ChatArea -> sentence-pipeline -> NVA.
 		await page.evaluate(async () => {
 			const { loadConfig, saveConfig } = await import("/src/lib/config.ts");
@@ -280,15 +336,39 @@ for (const width of [1100, 360]) {
 		await section.getByRole("button", { name: "Save current theme" }).click();
 		await expect(section.getByRole("status")).toContainText("Theme saved");
 		await page.evaluate(async () => {
-			const {loadConfig, saveConfig} = await import("/src/lib/config.ts");
-			saveConfig({...loadConfig()!, nvaModel: "previous", ttsVoice: "en-US-AriaNeural", backgroundVideo: "garden.png"});
+			const { loadConfig, saveConfig } = await import("/src/lib/config.ts");
+			const { writeNaiaConfigAtPath } = await import("/src/lib/adk-store.ts");
+			const previous = {
+				...loadConfig()!,
+				nvaModel: "previous",
+				ttsVoice: "en-US-AriaNeural",
+				backgroundVideo: "garden.png",
+			};
+			// Seed both file fixture and cache after queued preference writes.
+			// Cache-only mutation races file-SoT rehydration of theme saving.
+			await writeNaiaConfigAtPath(previous, '/mock/b2c-adk');
+			saveConfig(previous);
 		});
 		// Compare the settings owned by this operation; config loading strips empty
 		// credentials and independent BGM runtime writers update unrelated keys.
-		const themeSnapshot = () => page.evaluate(() => {
-			const cfg = JSON.parse(localStorage.getItem("naia-config")!);
-			return Object.fromEntries(["provider", "model", "persona", "agentName", "avatarProvider", "nvaModel", "ttsProvider", "ttsVoice", "backgroundVideo", "uiPreferences"].map(key => [key, cfg[key]]));
-		});
+		const themeSnapshot = () =>
+			page.evaluate(() => {
+				const cfg = JSON.parse(localStorage.getItem("naia-config")!);
+				return Object.fromEntries(
+					[
+						"provider",
+						"model",
+						"persona",
+						"agentName",
+						"avatarProvider",
+						"nvaModel",
+						"ttsProvider",
+						"ttsVoice",
+						"backgroundVideo",
+						"uiPreferences",
+					].map((key) => [key, cfg[key]]),
+				);
+			});
 		const beforeThemeFailure = await themeSnapshot();
 		await page.evaluate(() => {
 			(window as any).__badThemeClip = true;
@@ -304,17 +384,33 @@ for (const width of [1100, 360]) {
 			(window as any).__badThemeClip = false;
 			(window as any).__denyConfigWrites = true;
 		});
-		await section.getByRole("button", { name: "Apply theme", exact: true }).click();
-		await expect(section.getByRole("alert")).toContainText("Previous settings were kept");
-		await expect(section.getByRole("button", { name: "Apply theme", exact: true })).toBeEnabled();
+		await section
+			.getByRole("button", { name: "Apply theme", exact: true })
+			.click();
+		await expect(section.getByRole("alert")).toContainText(
+			"Previous settings were kept",
+		);
+		await expect(
+			section.getByRole("button", { name: "Apply theme", exact: true }),
+		).toBeEnabled();
 		expect(await themeSnapshot()).toEqual(beforeThemeFailure);
-		await page.evaluate(() => { (window as any).__denyConfigWrites = false; });
+		await page.evaluate(() => {
+			(window as any).__denyConfigWrites = false;
+		});
 		await section
 			.getByRole("button", { name: "Apply theme", exact: true })
 			.click();
 		await expect(section.getByRole("status")).toContainText("Theme applied");
-		expect(await page.evaluate(() => JSON.parse(localStorage.getItem("naia-config")!).nvaModel)).toBe("naia");
-		expect(await page.evaluate(() => JSON.parse(localStorage.getItem("naia-config")!).ttsVoice)).toBe("ko-KR-SunHiNeural");
+		expect(
+			await page.evaluate(
+				() => JSON.parse(localStorage.getItem("naia-config")!).nvaModel,
+			),
+		).toBe("naia");
+		expect(
+			await page.evaluate(
+				() => JSON.parse(localStorage.getItem("naia-config")!).ttsVoice,
+			),
+		).toBe("ko-KR-SunHiNeural");
 		await apply.click();
 		await expect(section.getByRole("status")).toContainText("Card applied");
 		await page.screenshot({
@@ -439,13 +535,54 @@ for (const width of [1100, 360]) {
 			const modulePath = "/src/lib/chat-service.ts";
 			const { sendChatMessage } = await import(modulePath);
 			for (const appName of ["달빛 카페", undefined]) {
-				await sendChatMessage({ message: "hello", provider: { provider: "ollama", model: "test-local", apiKey: "" }, history: [], onChunk: () => {}, requestId: appName ? "r6-app" : "r6-normal", ...(appName ? { appName } : {}) });
+				await sendChatMessage({
+					message: "hello",
+					provider: { provider: "ollama", model: "test-local", apiKey: "" },
+					history: [],
+					onChunk: () => {},
+					requestId: appName ? "r6-app" : "r6-normal",
+					...(appName ? { appName } : {}),
+				});
 			}
-			return (window as any).__chatWire.filter((m: any) => m.requestId?.startsWith("r6-"));
+			return (window as any).__chatWire.filter((m: any) =>
+				m.requestId?.startsWith("r6-"),
+			);
 		});
 		expect(wire).toHaveLength(2);
-		expect(wire[0]).toMatchObject({ requestId: "r6-app", appName: "달빛 카페" });
+		expect(wire[0]).toMatchObject({
+			requestId: "r6-app",
+			appName: "달빛 카페",
+		});
 		expect(wire[1]).not.toHaveProperty("appName");
-
+		// Field reproduction: type at 300ms while greeting secrets/renderer await.
+		await page.keyboard.press("Escape");
+		await page.evaluate(async () => {
+			const { loadConfig, saveConfig } = await import("/src/lib/config.ts");
+			saveConfig({ ...loadConfig()!, ttsEnabled: true });
+			const win = window as any;
+			const originalInvoke = win.__TAURI_INTERNALS__.invoke;
+			win.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+				if (cmd === "secure_store_get")
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				return originalInvoke(cmd, args);
+			};
+			window.dispatchEvent(new Event("naia-character-new-conversation"));
+		});
+		await page.waitForTimeout(300);
+		await page
+			.locator(".chat-input")
+			.fill("300ms greeting interruption keeps my words");
+		await page.locator(".chat-input").press("Enter");
+		await expect(page.locator(".chat-app")).toContainText(
+			"300ms greeting interruption keeps my words",
+		);
+		await page.waitForTimeout(1200);
+		await expect(page.locator(".chat-app")).toContainText(
+			"300ms greeting interruption keeps my words",
+		);
+		await page.screenshot({
+			path: test.info().outputPath(`greeting-input-${width}.png`),
+			fullPage: true,
+		});
 	});
 }

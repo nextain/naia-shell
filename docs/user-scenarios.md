@@ -2534,3 +2534,12 @@ R6 계약 확정 추가 매핑: `src/test/uc1-shell-compat.contract.test.ts` 최
 Rust 동작 변경은 없고 metadata 판만 정렬한다. native 설치판/실파일 복원·Windows/macOS/GPU·AX authenticated RPC는 기기/후속 계약 수용으로 Pending이다.
 
 R7 P02 보강: chat-deeplink.test.tsx 첫 markdown lazy-load는 원문 fallback이 먼저 보이므로 변환된 버튼을 최대5초 기다린다. 느린 최초 import와 실제 미변환 실패를 구별하고 경로 버튼 계약은 유지한다.
+
+## UC-B2C-026-R8 — 4060 실기 결함 회귀 (P01/P02)
+사용자는 설정 단추 뒤 Tab/Shift+Tab으로 설정 안에서 페르소나에 도달하고 Esc로 닫아 설정 단추로 돌아온다. 비활성 browser/workspace/terminal은 초점을 받지 않는다. 물리 360 CSS px에서 입력과 보내기가 보인다. 카드 적용/인사 준비 중 300ms에 입력해도 글은 대화에 남거나 입력칸에 유지된다. 같은 원본을 다른 파일명으로 다시 적용해도 보관함은 한 장이며 기존 ID를 유지한다. 이름을 비우거나 공백만 입력한 첫 설정은 정상 문장으로 말한다.
+
+Test Coverage Map: R8 → e2e/character-theme.spec.ts (기본/빈 보관함/적용 진행/성공/쓰기·파싱 오류와 재시도/360·1100px, Tab·역Tab·Esc·ARIA·경계); components/__tests__/ChatArea.installed-app.test.tsx (인사 준비 중 입력 보존); components/__tests__/OnboardingWizard.test.tsx (이름 없음); lib/__tests__/character-theme.test.ts (중복 원본). 실 Windows WebView2/키보드·GPU 수용은 기기 확인 목록, Rust 변경 없음.
+
+| UC | 시험 경로 | 상태/판정 |
+|---|---|---|
+| UC-B2C-026-R8 | packages/shell/e2e/character-theme.spec.ts; packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx; packages/shell/src/components/__tests__/OnboardingWizard.test.tsx; packages/shell/src/lib/__tests__/character-theme.test.ts | 기본·빈 목록·진행·성공·오류 복구·360/1100px·초점/Tab/역Tab/Esc·원본 중복·300ms 입력 보존. Windows/native 수용은 별도 |
