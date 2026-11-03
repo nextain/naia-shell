@@ -1479,3 +1479,15 @@ P04/P05 증거: `docs/progress/026-b2c-charcard-nva.md` 2회차 절. Shell2645/2
 - 앱 busy/등록 실패/전송 실패/낭독 실패는 현재 로케일의 안내와 재시도 행동을 사용한다. 원시 예외는 로그에만 남긴다. 프로토콜 오류 코드는 호환성을 유지한다.
 - Agent transcript의 유효한 appName(공백 제거 후1~200자)을 셸 재시작 복원에서 보존하고 일반 모델 history에 섞지 않는다. 태그가 없는 구형 transcript의 앱 소유권을 추측하지 않는다. 지정 Agent의 appName 저장/wire 지원 부재는 별도 미충족 요구사항으로 기록한다.
 - 상태: 셸 locale 오류 안내·유효 appName reader 보강은 Done(P04 집중44/전체2663 통과). #792 로컬 production 묶음 브라우저 통합은 검증됨. appName Agent 디스크 보존은 FAIL, 실제 #811 상품·native/서명 설치판 전체 수용은 Pending. P04·P05 세부 판정은 docs/progress/026-b2c-charcard-nva.md 4회차 증거를 따른다.
+
+
+## FR-B2C-026-R5 — 오프라인 상품 인수 검사 (Done — 도구 slice, 실제 상품 인수 별도)
+
+- 로컬 입력 JSON에 앱 ID·버전·예상 권한·ZIP·선택적 Store 영수증과 파일별 라이선스 증빙을 선언한다. 상대 경로는 입력 파일 기준이다. 네트워크 요청·설치·자산 실행·압축 해제·서명 생성은 하지 않는다.
+- Store와 같은 50MiB ZIP/200MiB 확장/4096 entry 상한을 적용하고, 위험 경로·중복·심볼릭 링크·손상 파일을 거절한다. 모든 파일의 실제 바이트 hash와 app.json ID·버전·권한을 기록·대조한다.
+- Store 영수증의 app_id·sha256·ed25519 서명(해시 문자열이 아닌 digest 바이트)을 검사한다. CLI 신뢰 키는 Rust app.rs의 배포 공개 키에서 읽는다. 임의 키로 CLI 성공을 만들 수 없다. 빌드 시 키 override를 쓰는 설치판은 별도 native 검증 대상이다.
+- 라이선스 증빙은 비어 있지 않은 로컬 파일·고정 hash·개별 ZIP 파일 목록으로 연결한다. 누락·변조·알 수 없는 파일을 차단한다. 이는 증빙 연결 확인이며 권리의 법적 유효성·Store entitlement·native 재생·공개 승인 판정이 아니다.
+- 실패 시에도 가능한 inventory와 구조화된 차단 사유를 JSON stdout으로 출력하고 exit 1, 모든 오프라인 검사 통과 시 exit 0. 결과에는 설치·기기·권리 수용 미실행을 명시한다.
+- 전체 Shell 타입 검사에서 발견한 기존 R4 오류 fixture의 미등록 PROVIDER_ERROR 코드는 실제 wire의 PROVIDER_NETWORK로 정렬하고 같은 원시 예외 차단 계약을 재시험한다. 제품 UI 동작은 변경하지 않는다.
+
+P04/P05: 인수 도구12/12·실제 r4 unsigned ZIP의 파일9개 hash 일치/서명·권리 누락 차단, Shell 집중30/30·전체2663 통과/21 제외, core/Shell 전체/BGM/격리 pinned Agent 타입 검사 통과. 실제 signed 상품·권리/entitlement·기기 수용은 Pending. 근거: docs/progress/026-b2c-charcard-nva.md 5회차.

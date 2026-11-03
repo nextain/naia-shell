@@ -120,3 +120,44 @@ P01~P03: UC-B2C-026-R4/FR-B2C-026-R4. #792의 실제 git snapshot을 실행 폴�
 - **appName 디스크 재시작 FAIL**: 지정 Agent a4aef165의 ConversationTurnRecord/ChatRequest/handler append/writer에 appName 지원이 없다. 실제 writer에 tag를 추가 전달한 write/read 별도 프로세스도 JSONL 두 행에서 tag가 사라진다(`tmp/r4-history/restart-evidence.json`). 실제 브라우저 앱 요청의 Agent 기록에서도 누락됐다(`tmp/r4-real-transcript-evidence.json`). 셸 reader 준비만으로 전체 해결이 아니며, Agent wire·writer·Rust 전달을 짝으로 보강한 뒤 pin 갱신·실 재시작 시험이 필요하다.
 - core/Shell/BGM TypeScript·compile-integrity·assembly·file-anchor·UC trace 통과. 최종 production build/entry budget raw491942/gzip154809 통과. 기존 root whitelist2건과 untranslated-ui의 기존 CharacterThemeSettings 언어 분기 등은 남아 있다. C conform region은 비어 있고 TS file oracle는 core src/main 범위다. 헌장/process-status/외부 읽기전용 문서·다른 작업자 폴더·Agent tracked 소스는 변경하지 않았다.
 - `tmp/r4-native-preflight.json`: cargo/tauri-driver/WebKitWebDriver/기존 native 바이너리 없음. signed Store 실제 상품·권리/서명 검증과 Windows/2070 수용은 별도다. 결과 원문과 날짜별11/4~11/9 일감 및 기존2070 목록+추가11~14는 실행 폴더 result.md에 기록한다. 원격 push/운영 접속 없음.
+
+
+## 5회차 설계 — 11/4 상품·자산 인수 준비
+
+P01~P03: UC-B2C-026-R5 / FR-B2C-026-R5. signed 상품·권리 증빙이 없으므로 제공된 unsigned #792 묶음의 누락을 실측하고, 이후 전달받을 파일을 오프라인 검사할 CLI를 작성한다. 표준 Node crypto와 Python zipfile만 사용한다. ZIP은 디스크에 풀지 않으며 실제 스트림 바이트를 상한 내에서 읽어 CRC/hash를 검증한다. 신뢰 키는 Rust 정본에서 파생하고 시험 키 주입은 import된 함수의 단위 시험에만 허용한다. 결과의 offlineChecksPassed는 출시·설치·법적 권리 승인과 별개다. Agent checkout·핀은 바꾸지 않는다. 외부 Agent wire/writer 보강과 GPU/Windows/macOS/native 수용은 남은 일로 유지한다. 헌장 F01 우선에 따라 process-status 대신 이 ledger에 세션 상태를 기록한다.
+
+
+### 오프라인 인수 도구 사용법
+
+Node와 Python 3 표준 라이브러리만 필요하다. `node scripts/b2c-package-audit.mjs /absolute/path/intake.json > /absolute/path/audit.json`을 실행한다. 입력·영수증·권리 증빙은 실행 폴더 tmp에만 두고 제품 자격/키는 넣지 않는다. 상대 파일 경로는 intake.json 위치 기준이다. 결과가 false면 exit 1이다. JSON 출력은 검사 결과이며 installer receipt를 생성하지 않는다.
+
+```json
+{
+  "appId": "land.naia.charcard",
+  "version": "0.1.0",
+  "archive": "received.zip",
+  "receipt": "received-store-receipt.json",
+  "expectedPermissions": [],
+  "rights": [
+    {
+      "path": "received-license.txt",
+      "sha256": "수령한 증빙 파일의 실제 SHA-256 64자리",
+      "covers": ["app.json", "index.html", "assets/실제파일명.js"]
+    }
+  ]
+}
+```
+
+`covers`는 예시이며 실제 ZIP의 모든 파일을 개별 나열해야 한다. 여러 권리 증빙을 사용할 수 있다. 권리자의 허락 문서를 임의 작성하거나 creator_notes·저장소 전체 LICENSE를 모든 음성/영상의 배포 허락으로 추측하지 않는다. Store 영수증 형식은 Rust와 같은 `{app_id,sha256,signature}`이며 `signature`는 `ed25519:<base64>`다. 보유자가 전달한 실제 파일을 사용한다. CLI는 Rust의 배포 공개 키만 신뢰하고 키 override 옵션을 제공하지 않는다. 별도 키로 빌드한 native installer, entitlement 유효성·상품 공개 자격·실제 렌더링/청취는 이 검사 결과로 대체하지 않는다.
+
+재현 시험: `TMPDIR=/실행폴더/tmp node --test scripts/b2c-package-audit.test.mjs`. 시험은 임시 키를 메모리에서 생성하며 private key를 파일로 저장하지 않는다. 시험 키로 서명한 묶음은 CLI에서 거절되는 것도 확인한다.
+
+
+### 5회차 P04·P05 판정
+
+- **오프라인 인수 도구 slice Done / 실제 signed 상품 인수 Pending.** `scripts/b2c-package-audit.test.mjs` 최종12/12 통과(`tmp/r5-audit-tests-complete.log`). 실제 ZIP·Ed25519 digest 검증, 다른 키/ID/변조/hex 문자열 서명 거절, 유효하게 다시 서명한 CRC 손상 ZIP 거절, 권리 누락·빈 증빙·변조·coverage, unsafe/중복/대소문자/링크/파일-디렉터리 충돌·상한·CLI 실패 포함. 시험 키는 메모리에서만 생성하고 CLI에서 거절한다.
+- 실제 r4 #792 ZIP sha256 `78af70ea61e92e4b6eb34a200bf3dddc93ce7ec82f6297b3f3574023feb91a83`,9개 파일 hash가 r4 기록과 일치한다. `tmp/r5-charcard-audit.json`은 서명/권리 누락으로false/exit1. `tmp/r5-consumer-811-audit.json`은 실제 소비 상품 미제공을 누락 파일/서명/권리로 기록한 placeholder 입력이며 실제 상품 ID/버전 판정이 아니다. 상품·무료 NVA 영상/목소리 배포 허락을 임의 생성하지 않았다.
+- 전체 Shell **2663 통과·21 제외/실패0**,253파일 통과/1제외(`tmp/r5-full-final.log`). 초기 전체2661/2fail/21skip은 기존 deeplink2개를 찾지 못한 실패였고 분리8/8, 최종 전체도 통과. 초기 compile-integrity core emit 중첩 사실과 실패 로그(`tmp/r5-baseline-shell.log`)를 보존한다. 집중30/30(`tmp/r5-focused.log`).
+- 전체 Shell 타입 검사에서 기존 R4 fixture의 `PROVIDER_ERROR`가 실제 wire union에 없어 실패했다(`tmp/r5-shell-tsc.log`). fixture1곳을 `PROVIDER_NETWORK`로 정렬한 뒤 같은 ko/en 원시 예외 차단·전체 타입 검사가 통과했다(`tmp/r5-shell-tsc-final.log`). 제품 UI/Rust 동작 변경 없음.
+- core·Shell 전체·BGM·지정 Agent 원본 전체 tsconfig 모두 통과. Agent a4aef165 git archive를 실행 tmp에 복사해 기존 실제 dependency 선언으로 --noEmit 검사했으며 외부 checkout에는 링크/소스도 쓰지 않았다(`tmp/r5-agent-tsc.log`). 해당 dependency 선언은 r2의 memory008eac79/kb403edb02이며 설치판의 exact memory pin 수용과 구분한다. assembly·file-anchor·trace·logging·compile-integrity 통과. root whitelist 기존2건, C region 비어 있음/TS core oracle 범위는 유지. 헌장/process-status 변경 없음.
+- 실제 signed 상품·라이선스/entitlement 자료·native 도구 및 Windows/macOS/GPU 실기 수용은 미완료. appName Agent 영속 계약 FAIL도 유지. 운영/컨테이너 접속·다른 작업자 폴더 수정·pin 우회·원격 push 없음. 11/4~11/9 남은 일 및 단계/기대 결과 기기 목록은 실행 폴더의 이번 result.md에 기록한다. 이번에 실제 모델/TTS/시각 검토를 다시 실행한 것으로 주장하지 않는다.

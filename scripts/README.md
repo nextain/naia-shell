@@ -70,6 +70,7 @@
 | 스크립트 | 용도 |
 |---|---|
 | `qa-round.mjs` | 후보·회차·기기 결과를 고정하고 회차 상태를 원자적으로 기록·확정한다. |
+| `b2c-package-audit.mjs` (+ `b2c-package-audit.test.mjs`) | B2C 전달 ZIP·Store 서명·권한·파일 hash·라이선스 증빙을 오프라인 검사한다. 사용법은 docs/progress/026-b2c-charcard-nva.md 5회차 절. |
 | `qa-traceability.mjs` | QA 원본 정의와 UC/FE/요구사항·시나리오 연결을 검증한다. |
 | `qa-catalog.mjs` | 소스 기반 QA 조각을 병합하고 선언된 coverage/gap 검토를 생성한다. |
 | `qa-qc-numbers.mjs` | 선택된 ADK sidecar에 QA Case Number(`QC-001`...)를 append-only로 부여하고 catalog/round 표시용 매핑을 제공한다. |

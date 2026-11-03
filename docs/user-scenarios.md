@@ -2502,3 +2502,12 @@ P02 Test Coverage Map: 실제 #792 source snapshot의 production 빌드/설치 �
 | UC | P02 Test Coverage Map |
 |---|---|
 | UC-B2C-026-R4 | `packages/shell/src/lib/__tests__/conversation-store.test.ts`: appName 복원·모델 history 제외·손상 태그; `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: locale 오류·모델/음성; `packages/shell/src/apps/__tests__/installed-app-context-ownership.test.ts`: 활성 소유권·이중 주입 제외. 실제 패키지/Agent/오디오 증거와 미충족 native 수용은 4회차 ledger에 기록. |
+
+
+## UC-B2C-026-R5 — 오프라인 상품 인수 자료 고정
+
+P01: 인수 담당자는 네트워크·Store 자격 없이 전달받은 ZIP과 서명 영수증을 검사하고 앱 ID·버전·권한·파일별 SHA-256과 라이선스 증빙을 고정한다. unsigned 시험 묶음이나 누락된 상품은 차단 사유와 함께 기록하며 설치·권리 확인·기기 재생 성공으로 표시하지 않는다.
+
+| UC | P02 Test Coverage Map |
+|---|---|
+| UC-B2C-026-R5 | `scripts/b2c-package-audit.test.mjs`: 실제 ZIP/Ed25519 서명, unsigned·변조·다른 키/ID·권한 불일치·라이선스 누락/변조·경로 탈출/중복/링크·압축 상한·CLI 종료 코드. `scripts/b2c-package-audit.mjs`를 r4 실제 unsigned ZIP에 실행해 차단 및 파일별 hash 재현. `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: 실제 wire 오류 코드로 원시 provider 예외 비노출 재검증. 제품 UI/Rust 변경 없음; 기존 Shell 전체 회귀와 core/Shell/BGM 타입 검사. |

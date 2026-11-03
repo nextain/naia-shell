@@ -477,7 +477,7 @@ describe("ChatArea", () => {
 			render(<ChatArea />);
 			window.dispatchEvent(new CustomEvent(INSTALLED_APP_ASK_EVENT, { detail: { appId: "test.app", requestId: "provider-failure", prompt: "Hello" } }));
 			await waitFor(() => expect(capturedRequests).toHaveLength(1));
-			act(() => capturedRequests[0].onChunk({ type: "error", requestId: capturedRequests[0].requestId, message: "PRIVATE provider exception", code: "PROVIDER_ERROR" }));
+			act(() => capturedRequests[0].onChunk({ type: "error", requestId: capturedRequests[0].requestId, message: "PRIVATE provider exception", code: "PROVIDER_NETWORK" }));
 			await waitFor(() => expect(reply).toHaveBeenCalledOnce());
 			const expected = locale === "ko" ? "응답하지 못했어요. 모델 설정을 확인하고 다시 시도해 주세요." : "The reply failed. Check your model settings and try again.";
 			expect((reply.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ text: "", error: expected });
