@@ -1388,3 +1388,98 @@ describe("B2C card/theme ADK switch server regression", () => {
 		expect(localStorage.getItem("naia-config")).toBe(original);
 	});
 });
+
+describe("UC-B2C-026-R10 restore lifetime", () => {
+	it.each(["switch", "roundtrip", "newer-restore"])(
+		"discards stale reads after %s",
+		async (mode) => {
+			await setAdkPath(UNIX_ADK);
+			let release!: (value: string) => void;
+			let reads = 0;
+			mockInvoke.mockImplementation(async (cmd: string) => {
+				if (cmd === "read_naia_config" && reads++ === 0)
+					return new Promise<string>((resolve) => {
+						release = resolve;
+					});
+				if (cmd === "read_naia_config")
+					return JSON.stringify({ persona: "new" });
+				if (cmd === "read_naia_ui_config") return "{}";
+			});
+			const old = applyWorkspaceConfigToLocal();
+			if (mode !== "newer-restore") {
+				await setAdkPath(WIN_ADK);
+				if (mode === "roundtrip") await setAdkPath(UNIX_ADK);
+			}
+			await applyWorkspaceConfigToLocal();
+			const latest = localStorage.getItem("naia-config");
+			release(
+				JSON.stringify({
+					persona: "stale",
+					uiPreferences: { b2cActiveCardId: "old" },
+				}),
+			);
+			await old;
+			expect(localStorage.getItem("naia-config")).toBe(latest);
+			expect(JSON.parse(latest!).persona).toBe("new");
+		},
+	);
+	it("restores each workspace after cache loss and preserves cache on read failure", async () => {
+		const cards = new Map(
+			[UNIX_ADK, WIN_ADK].map((path, i) => [
+				path,
+				{
+					b2cActiveCardId: `card-${i}`,
+					b2cCardLibrary: [
+						{
+							sourceBase64: `original-${i}`,
+							rawJson: { extension: { keep: i } },
+						},
+					],
+					b2cNvaThemes: [{ id: `theme-${i}` }],
+				},
+			]),
+		);
+		mockInvoke.mockImplementation(
+			async (cmd: string, args: { adkPath: string }) => {
+				if (cmd === "read_naia_config")
+					return JSON.stringify({ persona: args.adkPath });
+				if (cmd === "read_naia_ui_config")
+					return JSON.stringify({
+						locale: "ko",
+						uiPreferences: cards.get(args.adkPath),
+					});
+			},
+		);
+		for (const path of [UNIX_ADK, WIN_ADK, UNIX_ADK]) {
+			await setAdkPath(path);
+			localStorage.removeItem("naia-config");
+			await applyWorkspaceConfigToLocal();
+			const restored = JSON.parse(localStorage.getItem("naia-config")!);
+			expect(restored.uiPreferences).toEqual(cards.get(path));
+			expect(restored.workspaceRoot).toBe(path);
+		}
+		const prior = localStorage.getItem("naia-config");
+		mockInvoke.mockRejectedValue(new Error("disk denied"));
+		await expect(applyWorkspaceConfigToLocal()).rejects.toThrow("disk denied");
+		expect(localStorage.getItem("naia-config")).toBe(prior);
+	});
+});
+
+it("UC-B2C-026-R10 cannot resurrect settings after binding reset", async () => {
+	await setAdkPath(UNIX_ADK);
+	let release!: (value: string) => void;
+	mockInvoke.mockImplementation(async (cmd: string) => {
+		if (cmd === "read_naia_config")
+			return new Promise<string>((resolve) => {
+				release = resolve;
+			});
+		return "{}";
+	});
+	const restore = applyWorkspaceConfigToLocal();
+	clearAdkPath();
+	localStorage.removeItem("naia-config");
+	release(JSON.stringify({ persona: "retired" }));
+	await restore;
+	expect(getAdkPath()).toBeNull();
+	expect(localStorage.getItem("naia-config")).toBeNull();
+});

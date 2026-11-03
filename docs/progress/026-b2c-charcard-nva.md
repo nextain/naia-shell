@@ -243,3 +243,21 @@ UC-B2C-026-R7 / FR-B2C-026-R7. process-status는 F01 헌장 명시 승인 부재
 현재 pin: ecb879b080aa7e9bff7402687478dc16bdc6c49f. 6~8회차 시험은 당시 판의 이력이며 이번 판의 증거로 바꾸어 해석하지 않는다. UC-B2C-026-R9 / FR-B2C-026-R9. manifest·Rust 상수·양 CI·README·marker를 함께 갱신한다. proto SHA와 memory pin은 변경 없음. 다른 기능 변경 없음. process-status.json은 헌장 명시 승인 부재로 수정하지 않고 본 ledger에 세션 현황을 기록한다. 기존 root 구조 위반·빈 C conform regions와 Shell 파일 계약 탐지 갭은 범위 밖으로 기록한다.
 
 9회차 P04/P05 Done (서버 짝 갱신): 짝/wire17/17, 준비/플랫폼77/77, 새 Agent memo15/15·appName23/23·AX 정책99/99. 셸 전체254파일통과/1제외,2678시험통과/21제외/실패0(176.63초), 실행 폴더 tmp/r9-shell-full.log. core/Shell/BGM/새 Agent 전체 타입 및 compile-integrity·assembly·core70파일anchor 통과. 격리 clean clone의 exact HEAD/proto를 실제 resolver로 검증(tmp/r9-resolver.json). 초기 node_modules symlink untracked 거절은 격리 clone git info/exclude만 보완해 해소. 저장소 옛 짝 해시 잔존0. 새 Agent 사이 변경 중 AX 정책도 계약99개로 확인했으며 Shell 기능 활성화/변경은 없음. Windows/macOS/GPU/installer/실자산 인수는 Pending.
+
+## 10회차 — ADK 복원 수명·AX host 장애 (2026-11-03)
+
+UC/FR-B2C-026-R10. 시작 HEAD864f1356, 직전 result-r9 보존. process-status는 사용자 헌장 불변 지시로 변경하지 않는다. 11/4 실제 signed 상품/무료 NVA/권리자료는 미제공이다.
+
+ADK restore는 파일 읽기를 기다리는 동안 binding이 바뀌거나 더 최신 restore가 완료되어도 이전 결과를 썼다. binding 세대·restore 순서·현재 path를 commit 직전 대조해 폐기한다. A→B뿐 아니라 A→B→A, 같은 path의 최신 restore, 캐시 유실 뒤 두 workspace의 원본 카드/확장/테마 복원과 읽기 실패 보존 회귀를 추가했다. UI/IPC/Rust 계약 변경은 없다.
+
+AX adapter는 host displayed/beginInput/submit 예외를 false로 소비하고 invalidate/dispose 예외에도 로컬 입력을 폐기한다. 예외 원문/승인 입력을 로그·대화로 보내지 않는다. 실제 paired Agent ecb879b broker와 셸 adapter 연결8/8은 실행 폴더 tmp/r10-ax-real-agent.mjs/log/json에 남긴다. 외부 effect executor는 fixture다. Agent 작업 트리의 미커밋 변경은 읽기만 하고 pin에 반영하지 않았다.
+
+**활성화 차단 근거**: Agent docs/ARCHITECTURE.md §7.12는 trusted backend가 Agent 프로세스 안에 control lane을 만들고 executor를 codex-ax에 주입하도록 요구한다. 객체 token을 wire로 보내거나 renderer에서 받는 것은 금지한다. paired proto에는 해당 host 채널이 없고 공용 composition도 opt-in factory만 있다. 셸의 별도 Rust 프로세스/renderer만으로 해당 객체를 호출할 수 없다. 따라서 앱 승인 화면의 실제 활성화는 완료하지 않았다. 필요한 인계는 Agent backend composition(연결별 lane/executor·scope lifecycle) + 전용 인증 host transport(렌더 ACK·입력 시작 provenance·backend token 보관·종료 시 dispose)다. 일반 approval_response/chat로 우회하지 않는다.
+
+P04 중간: 집중87/87, 실제 Agent broker8/8, UC trace 새 단절0(R9 누락 표 행도 보완), logging PASS. 기존 root3건/C regions 빈 상태/Shell 파일단위 oracle 갭은 유지되며 전역 구조 완료를 주장하지 않는다. 최종 전체/브라우저/타입 결과는 아래 추가한다.
+
+P04/P05: 최종 집중88/88(tmp/r10-focused-final.log), 실제 Agent8/8, AX browser4/4·카드1100px 통과. 카드360px 최초 실행은 전체60초 제한에서 실패했으며 DOM은 reload 뒤 카드 option2개였다. 같은 assertion을 유지한120초 분리 재실행은50.5초 통과(tmp/r10-browser-recheck.log); 최초 실패를 삭제하지 않는다. core/Shell 타입·compile integrity·anchors·logging·UC trace 통과. UI 자체 변경은 없고 기존 browser 회귀로 수용 경계를 확인했다. 새 paired installer41697964598 실기 결과는 준 폴더에 없었다. 서버 slice Done, 실제 앱 AX 연결 및 native/자산/기기 수용 Pending.
+
+전체 회귀 중 FileTree open-file reveal 1건 실패가 나와 분리 재실행에서도1fail/3pass였다. 시작 HEAD864f1356의 git archive를 실행 tmp/r10-baseline에 풀어 같은 시험을 실행해 동일1fail/3pass 재현(tmp/r10-file-tree-baseline.log). 이번 수정의 회귀가 아닌 기존 실패로 분리하며 파일 트리 코드는 변경하지 않았다.
+
+10회차 최종 전체: **2687pass/1fail/21skip**,253파일pass/1fail/1skip,596.31초(tmp/r10-shell-full.log). 실패는 위 시작HEAD에서도 재현된 FileTree1건이다. baseline2678에서 신규 회귀10개 포함 전체2709개가 실행됐다. 전체 green이라고 쓰지 않는다. TMPDIR를 실행 tmp로 지정한 최종 집중88/88도 통과(tmp/r10-focused-tmpdir.log). 초기 시험은 TMPDIR를 빠뜨려 라이브러리 내부 임시 경로가 OS 기본값이었을 수 있다는 예외를 결과에 기록한다. 코드/문서 서버slice Done, AX 실제 앱 연결·기기/자산 수용 Pending.

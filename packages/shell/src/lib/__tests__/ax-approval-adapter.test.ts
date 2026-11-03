@@ -92,3 +92,46 @@ describe("UC-B2C-026-R7 AX host adapter draft", () => {
 		expect(restarted.submit("응")).toBe(false);
 	});
 });
+
+describe("UC-B2C-026-R10 host failures", () => {
+	it.each(["displayed", "beginInput", "submit"] as const)(
+		"contains %s exceptions and consumes input",
+		(method) => {
+			const { adapter, host, evidence } = setup();
+			adapter.present(card);
+			if (method === "displayed")
+				host.displayed.mockImplementation(() => {
+					throw new Error("private host details");
+				});
+			expect(adapter.displayed("p1")).toBe(method !== "displayed");
+			if (method === "beginInput")
+				host.beginInput.mockImplementation(() => {
+					throw new Error("private capture details");
+				});
+			expect(adapter.beginInput(evidence)).toBe(method === "submit");
+			if (method === "submit")
+				host.submit.mockImplementation(() => {
+					throw new Error("private submit details");
+				});
+			expect(adapter.submit("보내")).toBe(false);
+			expect(adapter.submit("보내")).toBe(false);
+			expect(host.submit).toHaveBeenCalledTimes(method === "submit" ? 1 : 0);
+		},
+	);
+});
+
+it.each(["invalidate", "dispose"] as const)(
+	"retires local capture even if host %s throws",
+	(method) => {
+		const { adapter, host, evidence } = setup();
+		adapter.present(card);
+		adapter.displayed("p1");
+		adapter.beginInput(evidence);
+		host[method].mockImplementation(() => {
+			throw new Error("host disconnected");
+		});
+		expect(() => adapter[method]()).not.toThrow();
+		expect(adapter.submit("보내")).toBe(false);
+		expect(host.submit).not.toHaveBeenCalled();
+	},
+);

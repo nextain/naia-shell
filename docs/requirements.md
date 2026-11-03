@@ -1516,3 +1516,8 @@ R7 UI 수용 보강: Agentecb879b 대화 승인은 한국어 고정 응답만 �
 
 ## FR-B2C-026-R9 — Agent 메모 경로 수정 짝 (P03)
 manifest·build.rs exact pin·installer/self-trust CI·README·진행 문서·초안 marker는 Agent ecb879b080aa7e9bff7402687478dc16bdc6c49f로 일치해야 한다. proto/memory pin은 실제 계약이 같으면 유지한다. 짝 검사·관련 시험·셸 전체 시험으로 검증한다. 상태: Done (P04/P05 서버 짝 갱신). 짝/wire 17·준비/플랫폼 77·새 Agent memo 15 및 appName 23·AX 정책 99 통과, 셸 전체 2678통과/21제외/실패0. 타입 core/Shell/BGM/새 Agent 및 compile integrity 통과. 증거: 실행 폴더 tmp/r9-*.log, 진행 ledger 9회차. installer/native 수용 Pending.
+
+### FR-B2C-026-R10 — 복원 요청 수명과 승인 host 장애
+
+P03: ADK 복원은 시작 시 binding 세대와 요청 순서를 캡처하고 현재 세대·최신 요청에만 캐시를 쓴다. binding 변경/해제는 이전 복원을 폐기한다. 읽기 실패는 기존 캐시를 보존한다. AX host ACK/capture/submit 예외는 승인 실패로 소비하며 입력을 다른 경로로 보내지 않는다. 실제 연결은 Agent의 host-only 객체 capability와 인증 provenance를 지켜야 한다. 공용 chat RPC로 대체하지 않는다.
+P04/P05: 서버 복원 수명·host 장애 보강 Done. 집중88/88, 실제 paired Agent broker 연결8/8, AX browser4/4·카드1100px/360px 통과(360px 최초60초 제한 실패 후120초 분리 재실행50.5초 통과), Shell 전체 타입·compile integrity 통과. 실제 앱 AX 활성화·native 저장은 trusted backend composition/인증 transport 및 실기 환경이 없어 Pending. 전체 회귀 결과는 progress ledger에 기록한다.

@@ -2546,3 +2546,14 @@ Test Coverage Map: R8 → e2e/character-theme.spec.ts (기본/빈 보관함/적�
 
 ## UC-B2C-026-R9 — 메모 데이터 홈 수정 Agent 짝 갱신 (P01/P02)
 설치·개발·검증은 메모가 데이터 홈을 따르는 Agent ecb879b080aa7e9bff7402687478dc16bdc6c49f를 같은 exact pin으로 선택한다. 다른 기능은 변경하지 않는다. Test Coverage Map: agent-pairing-drift.contract, agent-pairing, platform-matrix, uc-wire-v1-paired-proto 및 셸 전체 vitest. 실제 새 Agent archive의 memo 계약 시험으로 데이터 홈·legacy 보존을 확인한다. UI/Rust 로직 변경 없음; installer/native 실기는 별도 수용이다.
+
+### UC-B2C-026-R10 — 늦은 ADK 복원과 AX host 장애
+
+P01: ADK A의 설정 읽기 도중 B로 전환하거나 A→B→A로 돌아와도 이전 읽기 결과가 현재 카드·테마·언어를 덮지 않는다. 같은 ADK의 뒤늦은 이전 복원도 최신 복원을 덮지 않는다. 재시작을 흉내 낸 캐시 초기화 뒤 각 workspace의 카드 원본과 확장을 복원한다.
+P02 Test Coverage Map: `adk-store.test.ts`의 두 workspace 재읽기·지연 응답·읽기 실패 회귀, `ax-approval-adapter.test.ts`의 ACK/capture/submit 예외·단회 소비 회귀. AX 실제 paired Agent broker 연결은 실행 폴더의 격리 clone으로 검증한다. UI 변경 없이 기존 AX 한/영·1100/360px와 카드 저장/reload browser 시나리오를 재실행한다. Native 저장 및 인증 backend 연결은 별도 수용이다.
+
+| UC | Test Coverage Map | 확인 |
+|---|---|---|
+| UC-B2C-026-R9 | src/test/agent-pairing-drift.contract.test.ts; src/test/uc-wire-v1-paired-proto.contract.test.ts | 메모 데이터 홈 수정 exact 짝·proto 일치, 다른 짝 거절 |
+| UC-B2C-026-R10 | packages/shell/src/lib/__tests__/adk-store.test.ts; packages/shell/src/lib/__tests__/ax-approval-adapter.test.ts | ADK 지연·왕복·최신 요청·캐시 재생성·읽기 실패 보존, 승인 host 예외 단회 소비 |
+| UC-B2C-026-R10 | packages/shell/e2e/ax-approval-draft.spec.ts; packages/shell/e2e/character-theme.spec.ts | 승인 한/영·좁은 폭, 카드 저장/reload·오류 복구·입력 보존; 인증/native는 별도 |

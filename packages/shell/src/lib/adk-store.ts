@@ -53,6 +53,9 @@ export function isNaiaConfigHydrationPending(): boolean {
 
 // ── ADK Path ──────────────────────────────────────────────────────────────────
 
+let adkBindingRevision = 0;
+let configRestoreRevision = 0;
+
 export function getAdkPath(): string | null {
 	return localStorage.getItem(ADK_PATH_KEY);
 }
@@ -63,6 +66,7 @@ export async function setAdkPath(path: string): Promise<void> {
 	// Native rebinding is the commit point. Keep the existing bootstrap pointer
 	// and config untouched while the agent is restarting or if the rebind fails.
 	await invoke("write_naia_path_cache", { adkPath: normalized });
+	adkBindingRevision++;
 	localStorage.setItem(ADK_PATH_KEY, normalized);
 	// config.workspaceRoot is defined as an adkPath mirror (see config.ts). The
 	// two used to drift: onboarding's AdkSetupScreen writes only the adk path,
@@ -90,6 +94,7 @@ export function isAdkInitialized(): boolean {
 }
 
 export function clearAdkPath(): void {
+	adkBindingRevision++;
 	localStorage.removeItem(ADK_PATH_KEY);
 }
 
@@ -725,6 +730,8 @@ export async function readNaiaUiConfig(
 export async function applyWorkspaceConfigToLocal(): Promise<void> {
 	const adkPath = getAdkPath();
 	if (!adkPath) return;
+	const bindingRevision = adkBindingRevision;
+	const restoreRevision = ++configRestoreRevision;
 	const fileConfig = (await readNaiaConfig(adkPath)) ?? {};
 	const uiConfig = (await readNaiaUiConfig(adkPath)) ?? {};
 	const merged = {
@@ -732,6 +739,14 @@ export async function applyWorkspaceConfigToLocal(): Promise<void> {
 		onboardingComplete: true,
 		workspaceRoot: adkPath,
 	};
+	if (
+		bindingRevision !== adkBindingRevision ||
+		restoreRevision !== configRestoreRevision ||
+		getAdkPath() !== adkPath
+	) {
+		Logger.debug("AdkStore", "discard superseded config restore", {});
+		return;
+	}
 	localStorage.setItem("naia-config", JSON.stringify(merged));
 }
 

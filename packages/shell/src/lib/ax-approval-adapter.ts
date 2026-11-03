@@ -46,14 +46,22 @@ export function makeAxApprovalAdapter(host: AxHostControlPort) {
 		displayed(proposalId: string) {
 			Logger.debug("AxApprovalAdapter", "displayed", {});
 			if (closed || current?.proposalId !== proposalId) return false;
-			rendered = host.displayed(proposalId);
+			try {
+				rendered = host.displayed(proposalId);
+			} catch {
+				rendered = false;
+			}
 			return rendered;
 		},
 		beginInput(evidence: unknown) {
 			Logger.debug("AxApprovalAdapter", "beginInput", { rendered });
 			capture = undefined;
 			if (closed || !rendered || !current) return false;
-			capture = host.beginInput(evidence);
+			try {
+				capture = host.beginInput(evidence);
+			} catch {
+				capture = undefined;
+			}
 			return capture !== undefined;
 		},
 		submit(text: string) {
@@ -61,19 +69,33 @@ export function makeAxApprovalAdapter(host: AxHostControlPort) {
 			if (closed || !current || !rendered || !capture) return false;
 			const token = capture;
 			clear(); // Consume before host callback: synchronous replay cannot win.
-			return host.submit(token, { text, final: true });
+			try {
+				return host.submit(token, { text, final: true });
+			} catch {
+				return false;
+			}
 		},
 		invalidate() {
 			Logger.debug("AxApprovalAdapter", "invalidate", {});
 			clear();
-			if (!closed) host.invalidate();
+			if (!closed) {
+				try {
+					host.invalidate();
+				} catch {
+					/* Local input is already retired. */
+				}
+			}
 		},
 		dispose() {
 			Logger.debug("AxApprovalAdapter", "dispose", {});
 			if (closed) return;
 			closed = true;
 			clear();
-			host.dispose();
+			try {
+				host.dispose();
+			} catch {
+				/* Never resurrect a disconnected capture. */
+			}
 		},
 	};
 }
