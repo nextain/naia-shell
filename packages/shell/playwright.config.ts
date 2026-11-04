@@ -73,6 +73,12 @@ export default defineConfig({
 		},
 	],
 	webServer: {
+		// Only the E2E dev server receives this synthetic key. usage-events.spec.ts
+		// intercepts the matching endpoint; installer/production builds stay unconfigured.
+		env: {
+			VITE_APPLICATIONINSIGHTS_CONNECTION_STRING:
+				"InstrumentationKey=00000000-0000-4000-8000-000000000001;IngestionEndpoint=https://test.applicationinsights.azure.com/",
+		},
 		command: webServerCommand,
 		port,
 		// A server from another checkout can return a perfectly valid page while

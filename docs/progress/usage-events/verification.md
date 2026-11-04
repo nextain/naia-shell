@@ -52,3 +52,7 @@ Azure 자원 생성은 별도 승인 대상이다. 승인 후 연결 문자열�
 UC 추적 통과 뒤 원격 code-gates가 Ubuntu 26.04에서 Playwright 1.60.0의 Chromium 미지원으로 멈췄다(run 41831251386). Ubuntu 26.04 의존성·다운로드 정의가 있는 Playwright 1.64.1로 개발 의존성 3개 묶음(test/playwright/core)만 올리고 잠금 파일을 갱신했다. workflow·게이트 규칙은 변경하지 않았다.
 
 pnpm 10 frozen-lockfile 검증 PASS, 새 Chromium 설치 PASS, 새 버전의 `playwright test e2e/usage-events.spec.ts` 4건 PASS. 합성 연결 문자열·모의 수신기를 사용했다. 첫 재검사는 수신기와 맞지 않는 합성 endpoint를 지정해 수신 단정 1건이 실패했으며, 올바른 합성 endpoint로 4건 모두 재확인했다. 전체 셸 Vitest 재실행도 249파일 PASS/1 SKIP, 2612 PASS/21 SKIP이다.
+
+### 통계 E2E 테스트 서버 설정
+
+원격 run 41832056375는 브라우저 시험 235 PASS/49 SKIP 뒤 통계 수신 시험 1건이 실패했다. CI에 연결 문자열이 없으므로 의도대로 수집이 꺼져 있었지만, 신규 E2E가 수동 환경 변수에 의존하고 있었다. Playwright dev webServer의 env에 고정 합성 연결 문자열을 지정했다. 이 endpoint는 통계 spec의 route가 모의 응답하며 생산 빌드/설치본에는 설정되지 않는다. 부모 환경의 VITE_APPLICATIONINSIGHTS_CONNECTION_STRING을 unset한 상태에서 통계 E2E 4건 PASS를 확인했다. 제품의 연결 문자열 누락 시 수집 0 동작은 유지한다.
