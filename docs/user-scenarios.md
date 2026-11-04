@@ -2583,3 +2583,11 @@ P02: lib.rs r13_spawn_policy 시험에 일반/공백/분리/선택 매핑. 실�
 | UC | Test Coverage Map | 검증 |
 |---|---|---|
 | UC-B2C-026-R13 | packages/shell/src-tauri/src/lib.rs; packages/shell/scripts/verify-installed-smoke.mjs; packages/shell/scripts/__tests__/verify-installed-smoke.test.ts; packages/shell/e2e/adk-home-isolation.spec.ts; packages/shell/e2e/character-theme.spec.ts | r13_spawn_policy 일반/공백/분리/선택; Linux 설치 배치에서 CI smoke RED→GREEN·Node 제거 RED, 실제 Tauri 설정 파일 보존; 기존 기본/빈 목록/진행/성공/오류/좁은 폭과 키보드/ARIA 회귀 |
+
+## UC-B2C-026-R14 — dev 앱스토어 설치판 (#792)
+P01: workflow_dispatch instance=dev로 빌드하면 dev 웹/API를 사용하며 산출물·설치 이름·창 제목에 dev가 보인다. 입력 생략 및 push는 prod다. 잘못된 instance는 빌드를 거절한다.
+P02 Test Coverage Map: scripts/__tests__/installer-instance.test.ts가 기본/prod/dev/잘못된 입력, 세 Vite 환경변수, 생성 conf 이름/창 설정 보존과 workflow 연결을 검증한다. Shell 전체 Vitest와 actionlint(설치되어 있으면)를 실행한다. UI 컴포넌트/Rust는 변경하지 않는다. 설치판 실기·GPU·서명은 별도 인수다. 이번 slice는 이름 표시이며 identifier/공용 NAIA_HOME/ADK 격리를 보장하지 않는다.
+
+| UC | Test Coverage Map | 검증 |
+|---|---|---|
+| UC-B2C-026-R14 | packages/shell/scripts/__tests__/installer-instance.test.ts; packages/shell/scripts/stage-runtime.mjs; .github/workflows/build-installers.yml | prod 기본·dev 주소와 이름·오입력 거절·창 옵션 보존·CI 연결 |

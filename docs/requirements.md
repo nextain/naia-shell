@@ -1531,3 +1531,6 @@ CSS viewport 274px에서 입력·보내기 경계가 화면 안에 있어야 한
 ## FR-B2C-026-R13 — 일반 첫 실행 Agent 복원
 
 상태: Done. #792 P01~P05. 비어 있지 않은 NAIA_HOME 분리 실행에서만 포인터 부재로 Agent를 보류한다. 일반 첫 실행은 기존 Agent 부팅/기본 ADK 선택 흐름을 유지한다. 분리 홈의 타 ADK 자동 진입 차단과 동일 설정 무쓰기 안전은 보존한다. 설치 smoke 판정의 handshake/BGM/번들 Node 조건은 완화하지 않는다.
+
+## FR-B2C-026-R14 — dev installer 선택 (#792)
+P03: dispatch instance는 prod(기본)/dev choice. push는 prod. dev 빌드는 VITE_NAIA_USE_DEV_GATEWAY=1, VITE_NAIA_WEB_BASE_URL=https://dev.naia.land, VITE_NAIA_DEV_GATEWAY_URL=https://api-dev.naia.land를 고정한다. prod는 기존 운영 URL을 명시하여 로컬 env 유입을 막는다. Naia-dev 설치 이름/창 제목과 dev artifact suffix를 사용하고 기존 창 옵션을 보존한다. Windows smoke/제거 및 macOS Universal 경로는 선택된 이름을 따른다. 전체 데이터 격리는 별도 범위이며 동시 운영판 사용은 인수 전 금지 권고. 상태: Done(서버 빌드 선택 slice). P04: instance/설치 집중81개 및 Shell 전체2701pass/21skip, dev production build/budget, 타입/추적/YAML 검사 통과. P05: 실 installer·4060 dev 계정·공존 격리는 별도 Pending.

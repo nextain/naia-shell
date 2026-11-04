@@ -4,6 +4,14 @@ on:
   push:
   workflow_dispatch:
     inputs:
+      instance:
+        description: App store instance (dev builds share local data with prod)
+        required: true
+        type: choice
+        default: prod
+        options:
+          - prod
+          - dev
       internal_unsigned:
         description: Build an unsigned Windows installer for internal device testing
         required: false
@@ -13,6 +21,10 @@ on:
 concurrency:
   group: build-installers-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  NAIA_INSTALLER_INSTANCE: ${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && 'dev' || 'prod' }}
+  NAIA_INSTALLER_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && 'Naia-dev' || 'Naia' }}
 
 permissions:
   contents: read
@@ -442,7 +454,7 @@ jobs:
             exit 1
           }
           APP_PATH="${APP_PATHS[0]}"
-          PRODUCT_NAME="$(node -p "require('./packages/shell/src-tauri/tauri.conf.json').productName")"
+          PRODUCT_NAME="$NAIA_INSTALLER_NAME"
           VERSION="$(node -p "require('./packages/shell/package.json').version")"
           DMG_DIR="$BUNDLE_DIR/dmg"
           DMG_PATH="$DMG_DIR/${PRODUCT_NAME}_${VERSION}_${DMG_ARCH}.dmg"
@@ -639,7 +651,7 @@ jobs:
         if: always() && matrix.platform == 'darwin'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: naia-shell-macos-bundle-input-${{ matrix.artifact }}-${{ github.run_id }}
+          name: naia-shell-macos-bundle-input-${{ matrix.artifact }}${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.run_id }}
           path: |
             packages/shell/src-tauri/target/release/naia-shell
             packages/shell/src-tauri/target/release/bundle/macos
@@ -941,7 +953,7 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "NSIS silent install failed with exit code $($process.ExitCode)"
           }
-          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $resourceDir = Join-Path $env:LOCALAPPDATA "${{ env.NAIA_INSTALLER_NAME }}"
           $binary = Join-Path $resourceDir "naia-shell.exe"
           if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
             throw "Installed naia-shell.exe not found: $binary"
@@ -957,7 +969,7 @@ jobs:
         if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         shell: pwsh
         run: |
-          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $resourceDir = Join-Path $env:LOCALAPPDATA "${{ env.NAIA_INSTALLER_NAME }}"
           $uninstaller = Join-Path $resourceDir "uninstall.exe"
           if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
             throw "NSIS uninstaller not found before Steam depot preparation"
@@ -1014,7 +1026,7 @@ jobs:
             "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" `
             -ErrorAction SilentlyContinue |
             Get-ItemProperty |
-            Where-Object DisplayName -eq "Naia"
+            Where-Object DisplayName -eq "${{ env.NAIA_INSTALLER_NAME }}"
           if ($uninstallKey) {
             throw "NSIS uninstall registry entry remains after silent uninstall"
           }
@@ -1035,7 +1047,7 @@ jobs:
           test -f "$DEB"
           sudo apt-get install -y "$DEB"
           BIN="$(command -v naia-shell)"
-          PRODUCT_NAME="$(node -p "JSON.parse(require('node:fs').readFileSync('packages/shell/src-tauri/tauri.conf.json', 'utf8')).productName")"
+          PRODUCT_NAME="$NAIA_INSTALLER_NAME"
           test -n "$PRODUCT_NAME"
           RESOURCE_DIR="/usr/lib/$PRODUCT_NAME"
           test -x "$BIN"
@@ -1100,7 +1112,7 @@ jobs:
         if: ${{ env.NAIA_UNSIGNED != 'true' || matrix.platform != 'win32' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: naia-shell-${{ matrix.artifact }}-${{ github.sha }}
+          name: naia-shell-${{ matrix.artifact }}${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}
           path: |
             packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe
             packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe.sig
@@ -1119,7 +1131,7 @@ jobs:
         if: matrix.platform == 'win32' && env.NAIA_UNSIGNED == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: naia-shell-win32-UNSIGNED-INTERNAL-${{ github.sha }}
+          name: naia-shell-win32-UNSIGNED-INTERNAL${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}
           path: |
             packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe
             packages/shell/src-tauri/target/release/bundle/msi/*.msi
@@ -1130,7 +1142,7 @@ jobs:
         if: matrix.platform == 'win32' && env.NAIA_UNSIGNED != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: naia-shell-steam-win32-${{ github.sha }}
+          name: naia-shell-steam-win32${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}
           path: ${{ steps.steam.outputs.depot }}
           if-no-files-found: error
           include-hidden-files: true
@@ -1150,11 +1162,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: naia-shell-darwin-x64-${{ github.sha }}
+          name: naia-shell-darwin-x64${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}
           path: universal-input/x64
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: naia-shell-darwin-${{ github.sha }}
+          name: naia-shell-darwin${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}
           path: universal-input/arm64
       - name: Extract architecture app bundles
         shell: bash
@@ -1165,9 +1177,9 @@ jobs:
       - name: Assemble and verify every Universal Mach-O
         run: >-
           node packages/shell/scripts/assemble-macos-universal.mjs
-          --x64-app universal-input/x64-app/Naia.app
-          --arm64-app universal-input/arm64-app/Naia.app
-          --output-app universal-output/Naia.app
+          --x64-app universal-input/x64-app/${{ env.NAIA_INSTALLER_NAME }}.app
+          --arm64-app universal-input/arm64-app/${{ env.NAIA_INSTALLER_NAME }}.app
+          --output-app universal-output/${{ env.NAIA_INSTALLER_NAME }}.app
 
       - name: Prepare Universal macOS Developer ID keychain
         if: env.NAIA_UNSIGNED != 'true' && env.MACOS_SIGNING_CONFIGURED == 'true'
@@ -1229,7 +1241,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
-          APP="universal-output/Naia.app"
+          APP="universal-output/${{ env.NAIA_INSTALLER_NAME }}.app"
           ENTITLEMENTS="packages/shell/src-tauri/entitlements.plist"
           codesign_with_timestamp_retry() {
             local attempt=1
@@ -1272,7 +1284,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP="universal-output/Naia.app"
+          APP="universal-output/${{ env.NAIA_INSTALLER_NAME }}.app"
           ZIP="$RUNNER_TEMP/Naia-universal-notarization.zip"
           ditto -c -k --keepParent "$APP" "$ZIP"
           NOTARY_RESULT="$RUNNER_TEMP/Naia-universal-notary-result.json"
@@ -1380,11 +1392,11 @@ jobs:
           fi
       - name: Archive Universal app bundle
         shell: bash
-        run: tar -C universal-output -czf universal-output/Naia_universal.app.tar.gz Naia.app
+        run: tar -C universal-output -czf universal-output/${{ env.NAIA_INSTALLER_NAME }}_universal.app.tar.gz "${{ env.NAIA_INSTALLER_NAME }}.app"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: naia-shell-darwin-universal-${{ github.sha }}
-          path: universal-output/Naia_universal.app.tar.gz
+          name: naia-shell-darwin-universal${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}
+          path: universal-output/${{ env.NAIA_INSTALLER_NAME }}_universal.app.tar.gz
           if-no-files-found: error
           retention-days: 14
 
@@ -1407,14 +1419,14 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: naia-shell-darwin-universal-${{ github.sha }}
+          name: naia-shell-darwin-universal${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}
           path: universal-smoke
       - name: Extract and launch Universal app
         shell: bash
         run: |
           test "$(uname -m)" = "${{ matrix.uname_arch }}"
-          tar -xzf universal-smoke/Naia_universal.app.tar.gz -C universal-smoke
-          APP="$PWD/universal-smoke/Naia.app"
+          tar -xzf universal-smoke/${{ env.NAIA_INSTALLER_NAME }}_universal.app.tar.gz -C universal-smoke
+          APP="$PWD/universal-smoke/${{ env.NAIA_INSTALLER_NAME }}.app"
           node packages/shell/scripts/verify-installed-smoke.mjs \
             --binary "$APP/Contents/MacOS/naia-shell" \
             --resource-dir "$APP/Contents/Resources" \

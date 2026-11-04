@@ -1148,7 +1148,7 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow).toContain("NSIS uninstall registry entry remains");
 		expect(workflow).toContain('-ArgumentList "/S" -Wait -PassThru');
 		expect(workflow).toContain("--resource-dir $steamDepot");
-		expect(workflow).toContain("naia-shell-steam-win32-${{ github.sha }}");
+		expect(workflow).toContain("naia-shell-steam-win32${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}");
 		expect(workflow).toContain("steps.steam.outputs.depot");
 		expect(matrix.os.win32.steamDepot).toEqual({
 			path: "steam/windows",

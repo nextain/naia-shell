@@ -43,6 +43,7 @@ import {
 } from "./agent-pairing.mjs";
 import { ensureEgoBrowserVendor } from "./ego-browser-vendor.mjs";
 import { herdrReleaseDir } from "./stage-herdr.mjs";
+import { resolveInstallerInstance, installerInstanceConf } from "./installer-instance.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
 import { resolveProfileRegistryPath } from "./stage-voxcpm2-runtime.mjs";
 
@@ -599,7 +600,9 @@ export function invalidateVoskBuildCache(
 async function main() {
 	// Installer staging is a product build, so native E2E checkout selectors must
 	// not leak into its paired-agent choice or into child staging commands.
-	const cleanLaunchEnv = interactiveLaunchEnv(process.env);
+	const instance = resolveInstallerInstance(process.env.NAIA_INSTALLER_INSTANCE);
+	console.log(`[stage-runtime] installer instance=${instance.instance}`);
+	const cleanLaunchEnv = { ...interactiveLaunchEnv(process.env), ...instance.env };
 	for (const key of Object.keys(process.env)) delete process.env[key];
 	Object.assign(process.env, cleanLaunchEnv);
 	const platform = process.platform;
@@ -731,6 +734,7 @@ async function main() {
 		voxcpm2RuntimePresent,
 		createUpdaterArtifacts: unsignedUpdaterValidation ? false : undefined,
 	});
+	Object.assign(conf, installerInstanceConf(JSON.parse(readFileSync(resolve(SRC_TAURI, "tauri.conf.json"), "utf8")), instance));
 	if (unsignedUpdaterValidation) {
 		console.warn(
 			"[stage-runtime] UNSIGNED local validation: updater signatures are intentionally disabled; these artifacts are not release eligible",

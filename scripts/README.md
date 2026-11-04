@@ -81,3 +81,5 @@
 | `packages/shell/scripts/stapler-retry.sh` | macOS 공증표 붙이기·검증의 네트워크 재시도 및 승인된 Intel 앱 예외. |
 
 - `b2c-media-audit.mjs`, `b2c-media-audit.test.mjs`: UC-B2C-026-R6 / #743 로컬 미디어 코덱·전체 디코드·첫 프레임 투명도·실패 전후 설정 snapshot 검사. 실행 예는 B2C 설계 ledger.
+
+- `packages/shell/scripts/installer-instance.mjs`: 설치판 prod/dev 입력 검증·Vite 주소 고정·dev 이름/창 conf 생성. `stage-runtime.mjs`에서 사용, `scripts/__tests__/installer-instance.test.ts`로 검증.
