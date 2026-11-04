@@ -46,3 +46,9 @@ Azure 자원 생성은 별도 승인 대상이다. 승인 후 연결 문자열�
 - `pnpm exec vitest run src/test/agent-bench-scenario-source.contract.test.ts src/test/agent-bench-execution.contract.test.ts`: 2파일 55건 PASS.
 - core tsc, file anchors, assembly coverage, vacuous tests, e2e inventory check PASS. M4는 이 문서를 Evidence로 인용하고 PR 변경 파일과 교차검증한다.
 - 재시작 구조 검사에서 기존 미등록 tmp 디렉터리와 tsconfig.build.json이 다시 검출됐다. conform manifest의 regions도 기존 빈 배열이다. 이번 수정은 문서·벤치 소관 분류이며 기능 코드는 추가하지 않았다. 이 기존 헌장/검출기 문제는 별도 정비 대상으로 남긴다.
+
+### CI 브라우저 설치 호환성
+
+UC 추적 통과 뒤 원격 code-gates가 Ubuntu 26.04에서 Playwright 1.60.0의 Chromium 미지원으로 멈췄다(run 41831251386). Ubuntu 26.04 의존성·다운로드 정의가 있는 Playwright 1.64.1로 개발 의존성 3개 묶음(test/playwright/core)만 올리고 잠금 파일을 갱신했다. workflow·게이트 규칙은 변경하지 않았다.
+
+pnpm 10 frozen-lockfile 검증 PASS, 새 Chromium 설치 PASS, 새 버전의 `playwright test e2e/usage-events.spec.ts` 4건 PASS. 합성 연결 문자열·모의 수신기를 사용했다. 첫 재검사는 수신기와 맞지 않는 합성 endpoint를 지정해 수신 단정 1건이 실패했으며, 올바른 합성 endpoint로 4건 모두 재확인했다. 전체 셸 Vitest 재실행도 249파일 PASS/1 SKIP, 2612 PASS/21 SKIP이다.
