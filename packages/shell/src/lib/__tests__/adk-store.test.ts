@@ -1076,6 +1076,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 			naiaKey: "secret", // 시크릿 → 제외
 			vrmModel: "a.vrm", // UI 정체성 → 저장
 			theme: "ocean", // UI 설정 → 이제 저장됨(이전엔 제외됐다)
+			uiFontScale: "xlarge", // 글자 크기(UC-UI-FONT-SCALE-20261105) → 저장
 			vllmTtsHost: "http://localhost:22600", // 로컬 보이스 호스트 → 저장(회귀 대상)
 			appPosition: "left", // 앱 레이아웃 → 저장
 			bgmVolume: 0.5, // BGM 볼륨 → 저장
@@ -1089,6 +1090,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		// 저장돼야 할 UI 설정 (회귀 방지 핵심)
 		expect(written.vrmModel).toBe("a.vrm");
 		expect(written.theme).toBe("ocean");
+		expect(written.uiFontScale).toBe("xlarge");
 		expect(written.vllmTtsHost).toBe("http://localhost:22600");
 		expect(written.appPosition).toBe("left");
 		expect(written.bgmVolume).toBe(0.5);
@@ -1245,6 +1247,7 @@ describe("writeNaiaConfig also persists ui-config (FR-WS.2)", () => {
 			model: "gpt-4o",
 			vrmModel: "a.vrm",
 			theme: "ocean",
+			uiFontScale: "large",
 			vllmTtsHost: "http://localhost:22600",
 		});
 		// config.json: UI keys stripped (vrmModel/theme/vllmTtsHost gone — stripForAgent)
@@ -1269,6 +1272,7 @@ describe("writeNaiaConfig also persists ui-config (FR-WS.2)", () => {
 		const written = JSON.parse((arg as { json: string }).json);
 		expect(written.vrmModel).toBe("a.vrm");
 		expect(written.theme).toBe("ocean");
+		expect(written.uiFontScale).toBe("large");
 		expect(written.vllmTtsHost).toBe("http://localhost:22600");
 		// agent 키는 ui-config 에 안 들어간다
 		expect(written).not.toHaveProperty("provider");

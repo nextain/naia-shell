@@ -50,6 +50,7 @@ import {
 	startRefRecording,
 } from "../lib/voice/ref-recorder";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
+import { scaledFontSize } from "../lib/ui-font-scale";
 
 const TAG = "RefAudioSection";
 const MIN_DURATION_S = 5;
@@ -896,7 +897,7 @@ export function RefAudioSection({
 					}}
 				>
 					<div style={{ minWidth: 0 }}>
-						<div style={{ fontSize: 12, opacity: 0.7 }}>{S.currentTitle}</div>
+						<div style={{ fontSize: scaledFontSize(12), opacity: 0.7 }}>{S.currentTitle}</div>
 						<div style={{ marginTop: 2 }}>
 							{loading ? (
 								<span className="settings-hint">…</span>
@@ -977,7 +978,7 @@ export function RefAudioSection({
 				    the normalized reference WAV on-device and sends it directly to the
 				    host voice runtime, so this surface must remain visible in local mode. */}
 				<div style={{ marginTop: 12 }}>
-					<div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
+					<div style={{ fontSize: scaledFontSize(12), opacity: 0.7, marginBottom: 6 }}>
 						{S.myVoiceTitle}
 					</div>
 					<div
@@ -1077,7 +1078,7 @@ export function RefAudioSection({
 						if ((e.target as HTMLDetailsElement).open) void loadPresets();
 					}}
 				>
-					<summary style={{ cursor: "pointer", fontSize: 13 }}>
+					<summary style={{ cursor: "pointer", fontSize: scaledFontSize(13) }}>
 						{S.presetTitle}
 					</summary>
 					<div style={{ marginTop: 8 }}>

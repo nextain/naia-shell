@@ -26,13 +26,13 @@
 }
 
 .slides-app__header h1 {
-	font-size: 22px;
+	font-size: calc(22px * var(--ui-font-scale, 1));
 }
 
 .slides-app__header p {
 	margin-top: 5px;
 	color: var(--text-secondary);
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-font-scale, 1));
 }
 
 .slides-app__file-actions,
@@ -57,7 +57,7 @@
 	position: relative;
 	overflow: hidden;
 	padding: 9px 13px;
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-font-scale, 1));
 	font-weight: 700;
 }
 
@@ -76,7 +76,7 @@
 .slides-app__picker-hint {
 	flex-basis: 100%;
 	color: var(--text-secondary);
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-font-scale, 1));
 }
 
 .slides-app__status {
@@ -88,7 +88,7 @@
 	min-height: 34px;
 	padding: 0 22px 10px;
 	color: var(--text-secondary);
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 }
 
 .slides-app__status strong {
@@ -173,13 +173,13 @@
 }
 
 .slides-app__empty-icon {
-	font-size: 52px;
+	font-size: calc(52px * var(--ui-font-scale, 1));
 	color: #5b8cff;
 }
 
 .slides-app__empty h2 {
 	margin: 0;
-	font-size: 20px;
+	font-size: calc(20px * var(--ui-font-scale, 1));
 }
 
 .slides-app__empty p {
@@ -205,7 +205,7 @@
 
 .slides-app__notes h2 {
 	margin: 18px 0 10px;
-	font-size: 15px;
+	font-size: calc(15px * var(--ui-font-scale, 1));
 }
 
 .slides-app__notes-heading {
@@ -230,7 +230,7 @@
 
 .slides-app__notes-actions .slides-app__focus-button {
 	padding: 5px 7px;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-font-scale, 1));
 }
 
 .slides-app__script-editor {
@@ -243,7 +243,7 @@
 
 .slides-app__script-editor > label {
 	color: var(--text-secondary);
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 	font-weight: 700;
 }
 
@@ -258,7 +258,7 @@
 	background: var(--bg-primary);
 	color: var(--text-primary);
 	font: inherit;
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-font-scale, 1));
 	line-height: 1.55;
 }
 
@@ -277,7 +277,7 @@
 	background: var(--bg-secondary);
 	color: var(--text-primary);
 	font: inherit;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 	cursor: pointer;
 }
 
@@ -288,13 +288,13 @@
 }
 
 .slides-app__notes-heading button {
-	font-size: 20px;
+	font-size: calc(20px * var(--ui-font-scale, 1));
 }
 
 .slides-app__notes > p {
 	overflow: auto;
 	color: var(--text-secondary);
-	font-size: 13px;
+	font-size: calc(13px * var(--ui-font-scale, 1));
 	line-height: 1.65;
 	white-space: pre-wrap;
 }
@@ -304,12 +304,12 @@
 	align-items: baseline;
 	justify-content: space-between;
 	color: var(--text-secondary);
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 }
 
 .slides-app__progress strong {
 	color: var(--accent-color);
-	font-size: 20px;
+	font-size: calc(20px * var(--ui-font-scale, 1));
 }
 
 .slides-app__shortcuts {
@@ -320,7 +320,7 @@
 	margin-top: auto;
 	padding-top: 18px;
 	color: var(--text-secondary);
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-font-scale, 1));
 }
 
 .slides-app__shortcuts span:nth-child(odd) {
@@ -362,7 +362,7 @@
 	align-items: center;
 	gap: 7px;
 	color: var(--text-secondary);
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 }
 
 .slides-app__page-input input {
@@ -376,7 +376,7 @@
 
 .slides-app__error {
 	padding: 0 22px 12px;
-	font-size: 12px;
+	font-size: calc(12px * var(--ui-font-scale, 1));
 	text-align: center;
 }
 
@@ -445,7 +445,7 @@
 
 .slides-app__status [data-testid="slides-cancel-import"] {
 	padding: 4px 8px;
-	font-size: 11px;
+	font-size: calc(11px * var(--ui-font-scale, 1));
 }
 
 .slides-app__focus-exit {

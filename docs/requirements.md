@@ -1446,3 +1446,11 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-SLIDES-ART.1** | Slides `package-public/icon.svg`는 512×512 둥근 앱 아이콘으로 작은 크기에서도 발표를 알아보게 한다. 같은 공개 폴더의 `thumbnail.svg`는 1280×720 데스크톱 발표 장면, `Naia Slides / 나이아 슬라이드`, 핵심 기능을 보여 준다. Vite slides 빌드의 `publicDir` 복사 산출물에 두 파일을 포함한다. 현재 앱 매니페스트 스키마에 미리보기 필드가 없으므로 `app.json`은 변경하지 않는다. | UC-SHELL-APP-EXPOSURE-024 | SVG 소스 검토·크기 확인; `pnpm build:slides` 산출물 확인; PNG 렌더 미리보기 | Done |
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
+
+## 기능 요구사항 (FR) — 앱 전체 글자 크기 (2026-11-05)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-UI-FONT-SCALE.1** | 설정 › 일반 탭에 `글자 크기` 라디오 그룹(작게 0.9·보통 1.0·크게 1.25·아주 크게 1.5, 기본 보통)을 둔다. 선택은 즉시 `<html>`의 CSS 변수 `--ui-font-scale`과 `data-ui-font-scale`로 적용하고, 테마와 같은 경로(`saveConfig` → `naia-config` 캐시 → `ui-config.json` 최상위 `uiFontScale`)로 저장하며 agent config.json에는 넣지 않는다. 시작과 설정 하이드레이션 뒤에 다시 적용한다. 열네 로케일에 문구를 둔다. | UC-UI-FONT-SCALE-20261105 | `ui-font-scale.test.ts`; `SettingsTab.test.tsx`; `adk-store.test.ts`; `e2e/ui-font-scale.spec.ts` | Done |
+| **FR-UI-FONT-SCALE.2** | 배율은 CSS `zoom`이 아니라 글자 크기에만 적용한다: 셸 스타일시트(`global.css`, `projects.css`, `slides.css`)의 px/rem `font-size`는 `calc(<값> * var(--ui-font-scale, 1))`로 쓰고, 인라인 숫자 글자 크기는 같은 식을 만드는 `scaledFontSize()`를 쓴다. em·%는 부모를 따라 한 번만 커진다. 터미널(xterm)·편집기 확대와 캔버스 글자는 각자 확대 설정을 따르므로 제외한다. | UC-UI-FONT-SCALE-20261105 | `ui-font-scale.test.ts` 스타일시트 계약 | Done |
+| **FR-UI-FONT-SCALE.3** | BGM 앱 패널 위치는 순수 함수 `computeBgmAppPosition`으로 계산해 가로·세로 모두 창 안(여백 8px)으로 가두고 창 크기 변경·글자 배율 변경 때 다시 계산한다. 상단 앱 막대에서 음악 막대는 줄어들 수 있고(앱 단추 영역 최소 폭 보장), 설정 탭 줄은 넘치면 줄바꿈한다. BGM 패널 플레이리스트 `<select>`와 `<option>`은 어두운 패널 배경에 맞는 색을 명시한다(midnight 흰 글자·흰 배경 수정). | UC-UI-FONT-SCALE-20261105 | `bgm-app-position.test.ts`; `e2e/ui-font-scale.spec.ts` | Done |
