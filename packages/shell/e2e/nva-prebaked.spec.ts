@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
 	SEED_ADK_PATH,
 	TAURI_BASE_MOCK_FALLBACK,
 } from "./helpers/tauri-base-mock";
+
+const NVA_VIDEO_B64 = readFileSync(
+	new URL("./fixtures/base-alpha-200.webm", import.meta.url),
+).toString("base64");
 
 const NVA_MOCK = `
 (function () {
@@ -50,6 +55,8 @@ const NVA_MOCK = `
   window.__TAURI_INTERNALS__.invoke = async function (cmd, args) {
     window.__nvaInvokes.push({ cmd, args });
     if (cmd === "plugin:event|listen" || cmd === "plugin:event|unlisten" || cmd === "plugin:event|emit") return null;
+    if (cmd === "read_naia_config") return localStorage.getItem("naia-config") || "";
+    if (cmd === "read_naia_ui_config") return localStorage.getItem("naia-config") || "";
     if (cmd === "detect_gpu_vram") return null;
     if (cmd === "read_local_binary") {
       if (String(args && args.path).endsWith("manifest.json")) {
@@ -60,7 +67,7 @@ const NVA_MOCK = `
         }
         return encoded;
       }
-      return "AA==";
+      return "${NVA_VIDEO_B64}";
     }
     return undefined;
   };
@@ -79,10 +86,8 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 	test("loads pre-baked NVA without exposing or starting the retired server runtime", async ({
 		page,
 	}) => {
-		await page.addInitScript(NVA_MOCK);
-		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
-		await page.addInitScript({ content: SEED_ADK_PATH });
-		await page.addInitScript(() => {
+		await page.addInitScript({
+			content: `${NVA_MOCK}${SEED_ADK_PATH}(() => {
 			localStorage.setItem(
 				"naia-config",
 				JSON.stringify({
@@ -97,6 +102,15 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 					localAvatarVoiceFocus: "both",
 				}),
 			);
+})();
+(function () {
+ const nativeSnapshot = localStorage.getItem("naia-config") || "";
+ const invoke = window.__TAURI_INTERNALS__.invoke;
+ window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+  if (command === "read_naia_config" || command === "read_naia_ui_config") return nativeSnapshot;
+  return invoke(command, args);
+ };
+})();${TAURI_BASE_MOCK_FALLBACK}`,
 		});
 
 		await page.goto("/");
@@ -235,10 +249,8 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 	test("keeps loading, empty gesture, error, and narrow controls understandable", async ({
 		page,
 	}) => {
-		await page.addInitScript(NVA_MOCK);
-		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
-		await page.addInitScript({ content: SEED_ADK_PATH });
-		await page.addInitScript(() => {
+		await page.addInitScript({
+			content: `${NVA_MOCK}${SEED_ADK_PATH}(() => {
 			localStorage.setItem(
 				"naia-config",
 				JSON.stringify({
@@ -250,6 +262,15 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 					nvaModel: "naia-prebaked",
 				}),
 			);
+})();
+(function () {
+ const nativeSnapshot = localStorage.getItem("naia-config") || "";
+ const invoke = window.__TAURI_INTERNALS__.invoke;
+ window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+  if (command === "read_naia_config" || command === "read_naia_ui_config") return nativeSnapshot;
+  return invoke(command, args);
+ };
+})();${TAURI_BASE_MOCK_FALLBACK}`,
 		});
 
 		await page.goto("/?holdNvaManifest=1&nvaNoGesture=1");

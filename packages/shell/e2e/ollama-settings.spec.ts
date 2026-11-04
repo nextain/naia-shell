@@ -810,3 +810,68 @@ test("managed model pull confirms an exact tag, recovers, filters stale events a
 		),
 	).toHaveLength(1);
 });
+
+for (const width of [360, 1100]) {
+	test(`sole vLLM model persists after config event ${width}px`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.addInitScript({
+			content: `${TAURI_MOCK}${SEED_ADK_PATH}(() => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					onboardingComplete: true,
+					provider: "vllm",
+					model: "",
+					locale: "en",
+					vllmHost: "http://127.0.0.1:8031",
+				}),
+			);
+})();
+(function () {
+ const nativeSnapshot = localStorage.getItem("naia-config") || "";
+ const invoke = window.__TAURI_INTERNALS__.invoke;
+ window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+  if (command === "read_naia_config" || command === "read_naia_ui_config") return nativeSnapshot;
+  return invoke(command, args);
+ };
+})();${TAURI_BASE_MOCK_FALLBACK}`,
+		});
+		await page.route("**/v1/models", (route) =>
+			route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ data: [{ id: "Qwen3.6-27B-AWQ-INT4" }] }),
+			}),
+		);
+		await page.goto("/");
+		await expect(page.locator(".app-bar-settings")).toBeVisible();
+		if (!(await page.locator('[data-settings-tab="brain"]').isVisible())) {
+			await page.locator(".app-bar-settings").focus();
+			await page.keyboard.press("Enter");
+		}
+		await page.locator('[data-settings-tab="brain"]').focus();
+		await page.keyboard.press("Enter");
+		await expect(page.getByTestId("model-single")).toHaveText(
+			"Qwen3.6-27B-AWQ-INT4",
+		);
+		await page.evaluate(() =>
+			window.dispatchEvent(new Event("naia-config-changed")),
+		);
+		await page.locator(".settings-save-btn").first().focus();
+		await page.keyboard.press("Enter");
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() =>
+						JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles
+							?.main?.model,
+				),
+			)
+			.toBe("Qwen3.6-27B-AWQ-INT4");
+		await page.screenshot({
+			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r16-model-${width}.png`,
+		});
+	});
+}

@@ -185,6 +185,104 @@ function gotoAvatarVrm() {
 }
 
 describe("SettingsTab", () => {
+	it("applies the sole vLLM model after config hydration resets the empty selection", async () => {
+		localStorage.setItem("naia-adk-path", "/home/test/adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				onboardingComplete: true,
+				provider: "vllm",
+				model: "",
+				vllmHost: "http://127.0.0.1:8031",
+			}),
+		);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({
+				ok: true,
+				json: async () => ({ data: [{ id: "Qwen3.6-27B-AWQ-INT4" }] }),
+			})),
+		);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		await waitFor(() =>
+			expect(screen.getByTestId("model-single")).toHaveTextContent(
+				"Qwen3.6-27B-AWQ-INT4",
+			),
+		);
+		await act(async () => {
+			window.dispatchEvent(new Event("naia-config-changed"));
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+		await waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved.model).toBe("Qwen3.6-27B-AWQ-INT4");
+			expect(saved.llmRoles.main).toMatchObject({
+				provider: "vllm",
+				model: "Qwen3.6-27B-AWQ-INT4",
+			});
+		});
+		vi.unstubAllGlobals();
+	});
+
+	it.each([
+		{ ids: ["only-model"], initial: "", expected: "only-model", hidden: true },
+		{
+			ids: ["whisper-asr", "only-model"],
+			initial: "",
+			expected: "only-model",
+			hidden: true,
+		},
+		{
+			ids: ["first-model", "second-model"],
+			initial: "second-model",
+			expected: "second-model",
+			hidden: false,
+		},
+	])(
+		"saves discovered vLLM selection $expected with $ids",
+		async ({ ids, initial, expected, hidden }) => {
+			localStorage.setItem("naia-adk-path", "/home/test/adk");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					onboardingComplete: true,
+					provider: "vllm",
+					model: initial,
+				}),
+			);
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => ({
+					ok: true,
+					json: async () => ({ data: ids.map((id) => ({ id })) }),
+				})),
+			);
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+			await waitFor(() =>
+				expect(screen.queryByTestId("model-single") !== null).toBe(hidden),
+			);
+			if (hidden)
+				await waitFor(() =>
+					expect(screen.getByTestId("model-single")).toHaveTextContent(
+						expected,
+					),
+				);
+			else
+				await waitFor(() =>
+					expect(document.querySelector("#model-select")).toHaveValue(expected),
+				);
+			fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+			await waitFor(() =>
+				expect(
+					JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles.main
+						.model,
+				).toBe(expected),
+			);
+		},
+	);
+
 	afterEach(async () => {
 		cleanup();
 		localStorage.clear();

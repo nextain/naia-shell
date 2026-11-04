@@ -1539,3 +1539,8 @@ P03: dispatch instance는 prod(기본)/dev choice. push는 prod. dev 빌드는 V
 - FR-B2C-026-R15.1 Done: AppImage bundleMediaFramework 활성화, Ubuntu base/good 플러그인과 scanner, GST_PLUGIN_(SYSTEM_)PATH_1_0 및 scanner hook 검사.
 - FR-B2C-026-R15.2 Done: NVA 재생 오류·시작 무응답은 유한 시간 뒤 정지 그림으로 전환하고 입력을 보존. 깨진 영상을 재시도하거나 src 제거/load로 동기 teardown 하지 않는다.
 - FR-B2C-026-R15.3 Done: Linux 설치 빌드 자식 환경의 LD_LIBRARY_PATH에 검증된 Vosk resources 경로를 추가하고 기존 경로 보존. dev/prod 동일 적용. 실제 ELF 및 linuxdeploy 전후 검증.
+
+## FR-B2C-026-R16 (#792)
+- .1: 단일 대화 모델의 숨은 선택기는 설정 동기화 후에도 그 모델을 적용한다. 목록 요청은 이전 공급자/호스트 응답을 무시한다.
+- .2: 영상 디코더 실패에 error code/message, ready/network state, 시간/버퍼/크기와 URL 방식(실 경로 제외)을 기록한다. r15 정지 그림과 무 teardown 방어를 유지한다.
+상태: Done (단일 모델 저장 수정·진단 로그). 실 Linux GPU 부하 원인 미확정; 네이티브 설치 인수는 별도.

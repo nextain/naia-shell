@@ -77,9 +77,28 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private failMedia(reason: string): void {
 		if (this.disposed || this.mediaFailed) return;
 		this.mediaFailed = true;
-		Logger.warn("PrebakedAvatarRenderer", "media fallback", { reason });
+		Logger.warn("PrebakedAvatarRenderer", "media fallback", {
+			reason,
+			...this.mediaDiagnostics(this.video),
+		});
 		this.stop(true);
 		this.config.onPlaybackFailure?.(reason);
+	}
+
+	private mediaDiagnostics(video: HTMLVideoElement | null) {
+		return {
+			errorCode: video?.error?.code ?? null,
+			errorMessage: video?.error?.message?.slice(0, 512) ?? null,
+			readyState: video?.readyState,
+			networkState: video?.networkState,
+			currentTime: video?.currentTime,
+			duration: video?.duration,
+			width: video?.videoWidth,
+			height: video?.videoHeight,
+			bufferedRanges: video?.buffered.length,
+			// Do not log local paths or object URLs.
+			sourceKind: video?.src.split(":", 1)[0],
+		};
 	}
 
 	constructor(private readonly config: Config) {
@@ -339,6 +358,11 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		video.addEventListener(
 			"error",
 			() => {
+				Logger.warn(
+					"PrebakedAvatarRenderer",
+					"decoder error",
+					this.mediaDiagnostics(video),
+				);
 				if (video.loop) this.failMedia("NVA decoder error");
 			},
 			{ once: true },

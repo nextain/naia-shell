@@ -19,6 +19,20 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "b2c_shell_r16": {
+      "issue": 792,
+      "last_updated": "2026-11-04T04:14:12.625141+00:00",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "scenario": "docs/user-scenarios.md UC-B2C-026-R16",
+      "requirements": "docs/requirements.md FR-B2C-026-R16",
+      "verification": "RED empty model after config event -> GREEN; Shell 2715 passed/21 skipped/0 failed; focused231; browser sole-model360/1100 keyboard Apply passed; normal GStreamer40/40; truncated control demux error; real3090 native cause unconfirmed; diagnostics and r15 fallback retained."
+    },
     "b2c_linux_r15": {
       "issue": 792,
       "title": "Linux AppImage media and dev Vosk deployment",

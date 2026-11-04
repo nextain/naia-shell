@@ -2421,7 +2421,9 @@ export function SettingsTab() {
 
 	useEffect(() => {
 		if (provider !== "vllm") return;
+		let active = true;
 		fetchVllmModels(vllmHost).then(({ models, connected }) => {
+			if (!active) return;
 			setVllmConnected(connected);
 			if (models.length > 0) {
 				setDynamicModels((prev) => ({ ...prev, vllm: models }));
@@ -2435,6 +2437,9 @@ export function SettingsTab() {
 				}
 			}
 		});
+		return () => {
+			active = false;
+		};
 	}, [provider, vllmHost]);
 
 	// Fetch live Naia pricing from gateway (DB = SoT).
@@ -3911,6 +3916,18 @@ export function SettingsTab() {
 	const hideModelPicker =
 		provider !== "ollama" && shouldHideModelPicker(displayedProviderModels);
 	const singleProviderModel = selectableProviderModels[0];
+	// A config event can hydrate an empty legacy model after discovery finished.
+	// Keep the hidden control's actual value aligned with its displayed choice.
+	useEffect(() => {
+		if (
+			hideModelPicker &&
+			singleProviderModel &&
+			model !== singleProviderModel.id
+		) {
+			setModel(singleProviderModel.id);
+		}
+	}, [hideModelPicker, singleProviderModel?.id, model]);
+
 	const selectedModelMeta = availableProviderModels.find((m) => m.id === model);
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const selectedOllamaPullCandidate = ollamaModelPolicy?.candidates.find(

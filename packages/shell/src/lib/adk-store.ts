@@ -215,9 +215,21 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 		const raw = atob(b64);
 		const bytes = new Uint8Array(raw.length);
 		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+		if (mimeType.startsWith("video/")) {
+			Logger.info("adk-store", "local video read", {
+				extension: ext,
+				bytes: bytes.length,
+				header: Array.from(bytes.subarray(0, 12), (byte) =>
+					byte.toString(16).padStart(2, "0"),
+				).join(""),
+			});
+		}
 		const blob = new Blob([bytes], { type: mimeType });
 		return URL.createObjectURL(blob);
 	} catch {
+		Logger.warn("adk-store", "local media read failed; using asset protocol", {
+			extension: ext,
+		});
 		return convertFileSrc(filePath);
 	}
 }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Logger } from "../../logger";
 import type { NvaManifest } from "../../nva";
 import {
 	PrebakedAvatarRenderer,
@@ -70,6 +71,40 @@ function videoForUrl(url: string): HTMLVideoElement {
 }
 
 describe("PrebakedAvatarRenderer", () => {
+	it("records decoder state without source paths and retains the still fallback", async () => {
+		const warn = vi.spyOn(Logger, "warn");
+		const failure = vi.fn();
+		const renderer = new PrebakedAvatarRenderer({
+			manifest: baseManifest(),
+			locale: "ko-KR",
+			resolveAssetUrl: async () => "blob:private-path",
+			onPlaybackFailure: failure,
+		});
+		const video = makeVideo();
+		renderer.start(video, document.createElement("canvas"));
+		await Promise.resolve();
+		await Promise.resolve();
+		Object.defineProperty(video, "error", {
+			value: { code: 3, message: "Could not demultiplex" },
+		});
+		video.dispatchEvent(new Event("error"));
+		expect(warn).toHaveBeenCalledWith(
+			"PrebakedAvatarRenderer",
+			"decoder error",
+			expect.objectContaining({
+				errorCode: 3,
+				errorMessage: "Could not demultiplex",
+				sourceKind: "blob",
+				readyState: 0,
+				networkState: 0,
+			}),
+		);
+		expect(failure).toHaveBeenCalledOnce();
+		expect(JSON.stringify(warn.mock.calls)).not.toContain("private-path");
+		renderer.stop();
+		warn.mockRestore();
+	});
+
 	it("never synthesizes speech itself — it only resolves and plays clips", async () => {
 		const manifest = baseManifest();
 		const resolveAssetUrl = vi.fn(async (path: string) => `blob:${path}`);

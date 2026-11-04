@@ -2605,3 +2605,12 @@ Linux 사용자는 온보딩 NVA 영상이 실패해도 정지 그림을 보고 
 | UC | Test Coverage Map | 검증 |
 |---|---|---|
 | UC-B2C-026-R15 | packages/shell/scripts/__tests__/linux-vosk.test.ts; packages/shell/scripts/__tests__/platform-matrix.test.ts | 실제 ELF DT_NEEDED 탐색 실패→성공, prod/dev·공백 경로·기존 환경 보존·다른 OS 무변경, core build→Tauri 환경 전달 순서. 실 linuxdeploy prod 성공/dev 실패→둘 다 성공은 실행 결과 참조. |
+
+## UC-B2C-026-R16 (#792)
+설정의 직접 설정 모델 목록이 하나면 이름 표시와 적용 시 main 역할의 모델이 일치한다. 목록 도착 후 설정 이벤트가 빈 모델을 재주입해도 적용 가능하다. 빈 목록/ASR 전용은 대화 모델을 만들지 않고, 두 모델은 선택을 유지한다. 영상 오류는 정지 그림 복구를 유지하며 진단 상태를 기록한다.
+
+Test Coverage Map: SettingsTab.test.tsx 단일 모델+config event→Apply; prebaked-renderer.test.ts 디코더 오류 진단; nva-prebaked.spec.ts 기존 좁은 폭/오류 복구/키보드 브라우저 회귀.
+
+| UC | 시험 파일 | 확인 |
+|---|---|---|
+| UC-B2C-026-R16 | packages/shell/src/components/__tests__/SettingsTab.test.tsx; packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts; packages/shell/e2e/ollama-settings.spec.ts; packages/shell/e2e/nva-prebaked.spec.ts; packages/shell/e2e/onboarding-fresh.spec.ts | 단일 모델 표시/저장/설정 이벤트, ASR 혼합/복수 모델, 디코더 진단, 360/1100px 키보드 적용과 정지 그림 |
