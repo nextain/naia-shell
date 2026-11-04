@@ -12454,3 +12454,27 @@ body.resizing-col * {
 .open-file-edit-review__btn--reject:hover {
 	background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
+
+/* Optional usage consent is shown before ADK setup, including existing installs. */
+.usage-consent {
+	box-sizing: border-box;
+	max-width: 40rem;
+	margin: 8vh auto;
+	padding: 1.5rem;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+.usage-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1rem;
+	margin-top: 1.5rem;
+}
+.usage-consent button {
+	padding: .65rem 1rem;
+	cursor: pointer;
+}
+.usage-settings {
+	padding: 1rem;
+	border-bottom: 1px solid var(--border-color, #555);
+}

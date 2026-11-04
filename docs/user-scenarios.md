@@ -2456,3 +2456,21 @@ Test Coverage Map (P02)
 | 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
+
+
+## UC-USAGE-EVENTS — 동의한 셸의 누름·화면 이동 통계
+
+사용자는 첫 실행(기존 설치 포함) ADK 설정 전에 사용 통계 허용/거절을 고르고 설정 일반에서 변경한다. 선택 전에는 통계 번호·사건·대기열·요청이 없다. 거절해도 앱을 계속 사용한다. 끄기는 즉시 모든 창에 반영하고 미전송 사건을 버린다. 도입·설정·대화·기본 앱 제어의 고정 이름표는 [대조표](progress/usage-events/event-inventory.md)를 따른다.
+
+### Usage events Test Coverage Map (P02)
+
+| 시나리오 | 검증 파일 / 그룹 |
+|---|---|
+| UC-USAGE-EVENTS | `packages/shell/src/lib/__tests__/usage-events.test.ts`: 미선택/거절 0건, 허용 후 최초 관측, 끄기·재켜기·창 경합 |
+| 허용 목록·값 검사·본문 2KB·개인 정보 칸 없음, 묶음·실패·포화·만료 | packages/shell/src/lib/__tests__/usage-events.test.ts |
+| 동의 기본/거절/허용/저장 오류·좁은 폭·키보드, 빈 목록/진행은 해당 없음(두 선택 단추), 실제 UI | packages/shell/e2e/usage-events.spec.ts |
+| 14개 언어 동일 키·한국어/영어 실제 문구 | packages/shell/src/lib/__tests__/i18n-user-facing.test.ts |
+| 네이티브 분류 | 기존 distribution.rs/배포 시험 재사용, Rust 변경 없음 |
+| DOM 누름 선언과 허용 목록/문서 전수 정합 | packages/shell/src/lib/__tests__/usage-inventory.test.ts |
+
+수신처 미승인 상태에서 Azure 실수신·비용/권한/보고 시험은 완료로 주장하지 않는다.

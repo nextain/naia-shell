@@ -48,6 +48,21 @@ export default defineConfig({
 	workers: 1,
 	retries: 0,
 	use: {
+		// Unrelated scenarios decline optional telemetry; consent tests override this state.
+		storageState: {
+			cookies: [],
+			origins: [
+				{
+					origin: baseURL,
+					localStorage: [
+						{
+							name: "naia-usage-consent-v1",
+							value: '{"enabled":false,"epoch":"e2e-opt-out"}',
+						},
+					],
+				},
+			],
+		},
 		baseURL,
 		trace: "on-first-retry",
 	},

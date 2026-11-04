@@ -37,6 +37,7 @@ export default defineConfig(async () => ({
 		manifest: true,
 	},
 	define: {
+		__USAGE_VERSION__: JSON.stringify((await import("./package.json")).version),
 		__BUILD_ID__: JSON.stringify(
 			new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
 		),

@@ -684,6 +684,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				<button
 					type="button"
 					className="slides-app__focus-exit slides-app__focus-button"
+					data-usage-event="slides-center-area.set-focus-mode-1.click"
 					onClick={() => setFocusMode(false)}
 				>
 					{t("slides.focusExit")}

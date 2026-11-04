@@ -232,6 +232,7 @@ function LabBalanceSection() {
 			<button
 				type="button"
 				className="lab-charge-btn"
+				data-usage-event="cost-dashboard.open-url-1.click"
 				onClick={() =>
 					openUrl(naiaWebUrl(`${getLocale()}/billing`, NAIA_WEB_BASE_URL)).catch(
 						() => {},

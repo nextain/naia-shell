@@ -1446,3 +1446,17 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-SLIDES-ART.1** | Slides `package-public/icon.svg`는 512×512 둥근 앱 아이콘으로 작은 크기에서도 발표를 알아보게 한다. 같은 공개 폴더의 `thumbnail.svg`는 1280×720 데스크톱 발표 장면, `Naia Slides / 나이아 슬라이드`, 핵심 기능을 보여 준다. Vite slides 빌드의 `publicDir` 복사 산출물에 두 파일을 포함한다. 현재 앱 매니페스트 스키마에 미리보기 필드가 없으므로 `app.json`은 변경하지 않는다. | UC-SHELL-APP-EXPOSURE-024 | SVG 소스 검토·크기 확인; `pnpm build:slides` 산출물 확인; PNG 렌더 미리보기 | Done |
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
+
+
+## FR-USAGE-EVENTS — 0.2.6 셸 사용 통계 (Done — 구현, 출시 관문 별도)
+
+- 정본 https://ax.nextain.io/d/eae97c 및 docs/progress/usage-events/event-inventory.md. 다운로드 연결 없음, 첫 실행 선택, Application Insights 단일 수신, Steam 동일 이름표.
+- 동의 전 번호 생성·메모리 수집·요청 0. 설정 끄기는 모든 창 수집·예약 전송 중지 및 메모리 삭제. 저장 오류는 닫힌 상태로 처리한다.
+- 설치 난수(ADK/음성 ID와 분리), 불변 event_id, 원자적 지속 순번/발생 시각, 고정 이름·화면·판·플랫폼·채널·필요한 로그인 시도 난수만. 사용자 입력/계정/기기 지문/URL/경로 없음. 허용 목록 밖 이름·화면·추가 칸 거절, 사건 2KB 이하.
+- 빌드 환경 변수 VITE_APPLICATIONINSIGHTS_CONNECTION_STRING만 사용. 누락/잘못된 값은 보내기 끔. 자동 계측 SDK 없이 최소 EventData HTTP 전송; 쿠키·인증·상관 헤더·referrer 없음.
+- 메모리 큐 50, 초과 oldest 폐기/로컬 계수, 10분 TTL/1회 재시도, 오프라인·종료 폐기. 끄면 AbortController 취소 시도.
+- 첫 관측은 동의 후 ADK 설정보다 먼저, 순번 1. 이후 실행은 launch. 설치 첫 실제 대화 응답은 중복 제거. 로그인 결과와 누름은 구분.
+- 14개 번역 파일에 동의·설정 문구. 한국어·영어 정본, 나머지는 기존 방식 영어 fallback 문구.
+- Azure 자원/실수신·집계·비용·개인정보 및 방침 시행은 출시 전 별도 관문. 이 작업은 PR까지만, 병합·배포 금지.
+
+검증 증거: [사용 통계 검증 기록](progress/usage-events/verification.md). 실수신·비용·개인정보·네이티브 서비스 관통/성능 비교는 출시 승인 관문으로 남기며 구현 시험 완료와 구분한다.

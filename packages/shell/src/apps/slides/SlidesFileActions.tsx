@@ -47,6 +47,7 @@ export function SlidesFileActions({
 					type="file"
 					accept="application/pdf,.pdf"
 					disabled={picking}
+					data-usage-event="slides-file-actions.on-pick-native-1.click"
 					onClick={(event) => {
 						if (!nativePickerAvailable) return;
 						event.preventDefault();
@@ -82,6 +83,7 @@ export function SlidesFileActions({
 				<button
 					type="button"
 					className="slides-app__focus-button"
+					data-usage-event="slides-file-actions.on-toggle-focus-2.click"
 					onClick={onToggleFocus}
 				>
 					{focusMode ? t("slides.focusExit") : t("slides.focusStart")}
@@ -92,6 +94,7 @@ export function SlidesFileActions({
 						className="slides-app__focus-button"
 						aria-expanded={false}
 						aria-controls="slides-speaker-notes"
+						data-usage-event="slides-file-actions.on-show-notes-3.click"
 						onClick={onShowNotes}
 					>
 						{t("slides.notesShow")}

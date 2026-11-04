@@ -8,6 +8,16 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"usage.title": "선택적 사용 통계",
+	"usage.description": "버튼 누름과 화면 이동을 Microsoft Azure Application Insights에 보내도록 허용할까요? 임의의 설치 번호, 고정된 사건·화면 이름, 앱 판, 플랫폼·배포 채널, 발생 시각·순서만 보냅니다. 이름, 계정, 대화, 파일 경로, 입력한 내용은 보내지 않습니다.",
+	"usage.optional": "거절해도 앱 기능은 같습니다. 설정 → 일반에서 언제든 바꿀 수 있습니다. 허용 전에는 사용 통계를 수집하지 않습니다.",
+	"usage.decline": "허용 안 함",
+	"usage.allow": "사용 통계 허용",
+	"usage.enabled": "사용 통계 보내기",
+	"usage.stopNotice": "끄면 모든 창에서 수집을 즉시 멈추고 아직 보내지 않은 사건을 버립니다. 이미 보낸 요청은 도착할 수 있습니다. 이전에 보낸 자료는 이 스위치로 삭제되지 않습니다.",
+	"usage.saveError": "선택을 저장하지 못했습니다. 사용 통계는 꺼져 있습니다. 다시 시도하거나 통계 없이 계속할 수 있습니다.",
+	"usage.continueOff": "통계를 끄고 계속",
+
 	"apps.loading": "앱 목록을 불러오는 중…",
 	"apps.empty": "등록된 앱이 없습니다.",
 	"apps.loginRequired": "Naia 로그인이 필요합니다.",

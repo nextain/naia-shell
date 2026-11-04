@@ -95,6 +95,7 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className={`bgm-ai-toggle${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
+				data-usage-event="ai-control-bar.toggle-ai-interference-enabled-1.click"
 				onClick={toggleAiInterferenceEnabled}
 				aria-pressed={aiInterferenceEnabled}
 				title={
@@ -110,6 +111,7 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className={`bgm-ai-toggle${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
+				data-usage-event="ai-control-bar.toggle-tts-enabled-2.click"
 				onClick={() => {
 					const enabled = !ttsEnabled;
 					toggleTtsEnabled();
@@ -131,6 +133,7 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className={`bgm-ai-toggle bgm-ai-toggle--icon${proactive.permitted ? " bgm-ai-toggle--active" : ""}${proactiveBlocked ? " bgm-ai-toggle--blocked" : ""}`}
+				data-usage-event="ai-control-bar.toggle-proactive-3.click"
 				onClick={toggleProactive}
 				aria-pressed={proactive.permitted}
 				aria-label={proactiveTitle}
@@ -234,6 +237,7 @@ export function AiControlBar() {
 				className="bgm-ai-toggle"
 				aria-label={t("ai.avatarZoomIn")}
 				title={t("ai.avatarZoomIn")}
+				data-usage-event="ai-control-bar.button-4.click"
 				onClick={() => {
 					const camera = getCameraActions();
 					camera.zoom(0.1);
@@ -248,6 +252,7 @@ export function AiControlBar() {
 				className="bgm-ai-toggle"
 				aria-label={t("ai.avatarZoomOut")}
 				title={t("ai.avatarZoomOut")}
+				data-usage-event="ai-control-bar.button-5.click"
 				onClick={() => {
 					const camera = getCameraActions();
 					camera.zoom(-0.1);
@@ -262,6 +267,7 @@ export function AiControlBar() {
 				className="bgm-ai-toggle"
 				aria-label={t("ai.avatarReset")}
 				title={t("ai.avatarReset")}
+				data-usage-event="ai-control-bar.button-6.click"
 				onClick={() => getCameraActions().reset()}
 			>
 				<span className="bgm-ai-toggle__dot" />⌂

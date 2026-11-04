@@ -189,6 +189,7 @@ export function KnowledgeSettingsTab() {
 									type="button"
 									className="knowledge-source-remove"
 									data-testid="knowledge-source-remove"
+									data-usage-event="knowledge-settings-tab.handle-remove-1.click"
 									onClick={() => handleRemove(src.path)}
 								>
 									{t("settings.knowledgeRemove")}
@@ -201,6 +202,7 @@ export function KnowledgeSettingsTab() {
 					type="button"
 					className="knowledge-add-folder"
 					data-testid="knowledge-add-folder"
+					data-usage-event="knowledge-settings-tab.handle-add-folder-2.click"
 					onClick={handleAddFolder}
 				>
 					{t("settings.knowledgeAddFolder")}
@@ -232,6 +234,7 @@ export function KnowledgeSettingsTab() {
 						className="knowledge-compile"
 						data-testid="knowledge-compile"
 						disabled={compiling || config.sources.length === 0}
+						data-usage-event="knowledge-settings-tab.handle-compile-3.click"
 						onClick={handleCompile}
 					>
 						{compiling
@@ -257,6 +260,7 @@ export function KnowledgeSettingsTab() {
 						type="button"
 						className="knowledge-graph-open"
 						data-testid="knowledge-graph-open"
+						data-usage-event="knowledge-settings-tab.set-graph-open-4.click"
 						onClick={() => setGraphOpen(true)}
 						style={{
 							background: "rgba(76,139,245,0.12)",
