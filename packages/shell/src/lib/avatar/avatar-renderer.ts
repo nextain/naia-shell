@@ -1,3 +1,9 @@
+import type {
+	AvatarSpeechTiming,
+	PreparedSpeech,
+	SpeechPlan,
+} from "./nva-speech/speech-timing";
+
 export interface AvatarPlaybackOptions {
 	muted?: boolean;
 	onPlaybackReady?: () => void;
@@ -8,9 +14,9 @@ export interface AvatarPlaybackOptions {
  * ChatArea가 사용하는 아바타 발화 포트.
  *
  * Shell TTS(선택된 provider)가 오디오 합성·재생의 단일 소유자다. 렌더러는
- * (a) 정확히 일치하는 문구의 저작 클립(자체 녹음 음성 포함) 재생, (b) Shell의
- * 실제 재생 시작/종료에 맞춘 idle/talking 비주얼 전환만 담당한다. 렌더러는
- * 텍스트를 스스로 합성하지 않는다(browser TTS 자동 폴백 없음).
+ * (a) 정확히 일치하는 문구의 저작 클립(자체 녹음 음성 포함) 재생, (b) 발화 상태
+ * 표시, (c) 정본 SpeechPlayer 로 aligned/browser-timed 계획 재생만 담당한다.
+ * 렌더러는 텍스트를 스스로 합성하지 않는다(browser TTS 자동 폴백 없음).
  */
 export interface AvatarSpeechRenderer {
 	/** Installed bundle identity, used to fence speech during theme changes. */
@@ -19,8 +25,23 @@ export interface AvatarSpeechRenderer {
 	hasAuthoredClip(text: string): boolean;
 	/** Play that authored clip. Only call after hasAuthoredClip returned true. */
 	playAuthoredClip(text: string, opts?: AvatarPlaybackOptions): Promise<void>;
-	/** Switch idle/talking visual only, in sync with Shell's real audio playback. */
+	/** Speaking state only; false returns to idle. Never loops a talking clip. */
 	setSpeakingVisual(active: boolean): void;
+	/** Canonical player: aligned plan + audio clock, or browser-timed plan + utterance clock. */
+	playSpeechTiming?(timing: AvatarSpeechTiming): Promise<boolean>;
+	/**
+	 * Load an aligned plan before its sound starts (the sound waits for this),
+	 * so the first mouth frame and the first sound start together.
+	 */
+	prepareSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	/** Load a future plan on a standby canonical stage without interrupting speech. */
+	prefetchSpeechTiming?(plan: SpeechPlan): Promise<PreparedSpeech | null>;
+	/** Drop the single staged future plan when its presentation generation expires. */
+	cancelPrefetchedSpeechTiming?(): void;
+	/** True when the loaded avatar carries the canonical speech set. */
+	canPlaySpeechPlans?(): boolean;
+	/** Revise a running browser-timed plan (speechSynthesis boundary). */
+	updateSpeechPlan?(plan: SpeechPlan): boolean;
 	setVoice(refUrl: string | null | undefined): Promise<boolean>;
 	interrupt(): void;
 	stop(): void;

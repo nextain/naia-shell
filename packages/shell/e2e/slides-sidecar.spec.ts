@@ -49,13 +49,10 @@ async function openInstalledHost(page: Page, locale = "en") {
 	const origin = new URL(
 		test.info().project.use.baseURL ?? "http://127.0.0.1:1438",
 	).origin;
-	// The app frame is served from the *other* loopback name (see convertFileSrc
-	// below), so grant both names whichever one PLAYWRIGHT_HOST picked.
-	const url = new URL(origin);
-	const loopbacks = ["127.0.0.1", "localhost"].map(
-		(host) => `${url.protocol}//${host}:${url.port}`,
-	);
-	for (const target of loopbacks) {
+	const assetOrigin = origin.includes("localhost")
+		? origin.replace("localhost", "127.0.0.1")
+		: origin.replace("127.0.0.1", "localhost");
+	for (const target of new Set([origin, assetOrigin])) {
 		await page
 			.context()
 			.grantPermissions(["local-network-access"], { origin: target });
@@ -103,7 +100,7 @@ document.documentElement.style.setProperty('--text-secondary','#526175');
 document.documentElement.style.setProperty('--border-color','#ccd5df');
 document.documentElement.style.setProperty('--accent-color','#1765a1');
 document.documentElement.style.setProperty('--font-family','Arial, sans-serif');
-window.__TAURI_INTERNALS__={convertFileSrc:()=>(location.hostname==='localhost'?location.origin.replace('localhost','127.0.0.1'):location.origin.replace('127.0.0.1','localhost'))+'/slides.html',invoke:async(command,args)=>{window.fixture.calls.push({command,args});if(command==='slides_open_pdf'||command==='slides_open_document'){if(window.fixture.delay)await new Promise(resolve=>window.fixture.complete=resolve);if(window.fixture.error)throw window.fixture.error;return window.fixture.selection;}if(command==='slides_recording_stop')return 'recordings/fixture.webm';if(command==='plugin:event|listen')return args.handler;return null;},transformCallback:(callback)=>{const id=window.fixture.nextCallback++;window.fixture.callbacks[id]=callback;return id;},unregisterCallback:(id)=>{delete window.fixture.callbacks[id];}};
+window.__TAURI_INTERNALS__={convertFileSrc:()=>${JSON.stringify(assetOrigin)}+'/slides.html',invoke:async(command,args)=>{window.fixture.calls.push({command,args});if(command==='slides_open_pdf'||command==='slides_open_document'){if(window.fixture.delay)await new Promise(resolve=>window.fixture.complete=resolve);if(window.fixture.error)throw window.fixture.error;return window.fixture.selection;}if(command==='slides_recording_stop')return 'recordings/fixture.webm';if(command==='plugin:event|listen')return args.handler;return null;},transformCallback:(callback)=>{const id=window.fixture.nextCallback++;window.fixture.callbacks[id]=callback;return id;},unregisterCallback:(id)=>{delete window.fixture.callbacks[id];}};
 await import('/e2e/fixtures/slides-installed-host.tsx');
 </script></body></html>`,
 		}),
@@ -206,6 +203,200 @@ test("installed iframe loads sidecar, toggles notes and fullscreen, and loops on
 	expect(errors).toEqual([]);
 });
 
+test("installed video segment keeps one source, pauses/resumes, and returns to narration on a narrow shell", async ({
+	page,
+}, testInfo) => {
+	await page.setViewportSize({ width: 560, height: 900 });
+	await page.addInitScript(() => {
+		const sources = new WeakMap<HTMLMediaElement, string>();
+		(window as any).__slidesMedia = { play: 0, pause: 0, sourceWrites: [] };
+		const setAttribute = Element.prototype.setAttribute;
+		Element.prototype.setAttribute = function (name, value) {
+			if (this instanceof HTMLVideoElement && name.toLowerCase() === "src") {
+				(window as any).__slidesMedia.sourceWrites.push(this);
+				sources.set(this, String(value));
+				return;
+			}
+			return setAttribute.call(this, name, value);
+		};
+		Object.defineProperty(HTMLMediaElement.prototype, "src", {
+			configurable: true,
+			get() {
+				return sources.get(this) ?? "";
+			},
+			set(value: string) {
+				(window as any).__slidesMedia.sourceWrites.push(this);
+				sources.set(this, value);
+			},
+		});
+		HTMLMediaElement.prototype.play = () => {
+			(window as any).__slidesMedia.play++;
+			return Promise.resolve();
+		};
+		HTMLMediaElement.prototype.pause = () => {
+			(window as any).__slidesMedia.pause++;
+		};
+	});
+	const frame = await openInstalledHost(page);
+	const videoWindow = page
+		.frames()
+		.find((candidate) => candidate.url().includes("/slides.html"));
+	expect(videoWindow).toBeDefined();
+	await page.evaluate(() => {
+		const fixture = (window as any).fixture;
+		fixture.selection = {
+			...fixture.selection,
+			scriptText:
+				"## 01. Main\nFirst authored note\n## 1-1. [video] demo.mp4\nThis body is not narration.\n## 02. Closing\nLast authored note",
+			videos: [
+				{
+					name: "demo.mp4",
+					mimeType: "video/mp4",
+					base64: btoa("video fixture bytes"),
+				},
+			],
+			videoReadFailures: [],
+		};
+	});
+	await frame.getByLabel(/Open PDF/).click();
+	await expect(frame.locator("canvas")).toBeVisible();
+	await frame.getByRole("button", { name: "Start presenting" }).click();
+	await expect
+		.poll(() => page.evaluate(() => (window as any).fixture.speeches.length))
+		.toBe(1);
+	await finishSpeech(page, 0);
+	const video = frame.getByTestId("slides-video-demo.mp4");
+	await expect(frame.getByTestId("slides-video-indicator")).toHaveText(
+		"1-1 / 영상",
+	);
+	await expect(video).toHaveAttribute("aria-label", "1-1 / 영상 demo.mp4");
+	await expect(frame.getByTestId("slides-video-viewer")).toBeVisible();
+	await expect(frame.getByTestId("slides-viewer")).toHaveAttribute("hidden");
+	expect(
+		await page.evaluate(() => (window as any).fixture.speeches.length),
+	).toBe(1);
+	await video.evaluate((element) => {
+		(
+			element as HTMLVideoElement & { testInstanceToken?: string }
+		).testInstanceToken = "video-element-1";
+	});
+	const beforeResume = await videoWindow!.evaluate(
+		() => (window as any).__slidesMedia.play as number,
+	);
+	await frame.getByRole("button", { name: "Pause" }).click();
+	await frame.getByRole("button", { name: "Resume" }).click();
+	await expect
+		.poll(() => videoWindow!.evaluate(() => (window as any).__slidesMedia.play))
+		.toBeGreaterThan(beforeResume);
+	expect(
+		await video.evaluate(
+			(element) =>
+				(element as HTMLVideoElement & { testInstanceToken?: string })
+					.testInstanceToken,
+		),
+	).toBe("video-element-1");
+	expect(
+		await videoWindow!.evaluate(
+			() => (window as any).__slidesMedia.sourceWrites.length,
+		),
+	).toBe(1);
+	const pauseBeforeRangeChange = await videoWindow!.evaluate(
+		() => (window as any).__slidesMedia.pause as number,
+	);
+	await frame.getByLabel("Presentation end page").fill("3");
+	await expect(frame.getByTestId("slides-video-viewer")).toHaveAttribute(
+		"hidden",
+	);
+	await expect
+		.poll(() =>
+			videoWindow!.evaluate(() => (window as any).__slidesMedia.pause),
+		)
+		.toBeGreaterThan(pauseBeforeRangeChange);
+	await frame.getByRole("button", { name: "Resume" }).click();
+	await expect
+		.poll(() => page.evaluate(() => (window as any).fixture.speeches.length))
+		.toBe(2);
+	await finishSpeech(page, 1);
+	await expect(frame.getByTestId("slides-video-viewer")).toBeVisible();
+	expect(
+		await videoWindow!.evaluate(
+			() => (window as any).__slidesMedia.sourceWrites.length,
+		),
+	).toBe(1);
+	await frame.getByRole("button", { name: "Focus presentation" }).click();
+	await expect(frame.getByTestId("slides-video-viewer")).toBeVisible();
+	await expect(frame.getByTestId("slides-viewer")).toHaveAttribute("hidden");
+	await frame.getByRole("button", { name: "Exit focus" }).click();
+	await page.screenshot({
+		path: testInfo.outputPath("video-segment-narrow.png"),
+	});
+	await video.evaluate((element) => element.dispatchEvent(new Event("ended")));
+	await expect
+		.poll(() => page.evaluate(() => (window as any).fixture.speeches.length))
+		.toBe(3);
+	expect(
+		await page.evaluate(() =>
+			(window as any).fixture.speeches.map(
+				(speech: { page: number }) => speech.page,
+			),
+		),
+	).toEqual([1, 1, 2]);
+	await finishSpeech(page, 2);
+	await expect
+		.poll(() => page.evaluate(() => (window as any).fixture.speeches.length))
+		.toBe(4);
+	await frame.getByRole("button", { name: "Stop" }).click();
+	const size = await frame.getByRole("region").evaluate((element) => ({
+		width: element.clientWidth,
+		scroll: element.scrollWidth,
+	}));
+	expect(size.scroll).toBeLessThanOrEqual(size.width + 1);
+});
+
+test("avatar remains in its left panel at narrow width when Slides focus is active", async ({
+	page,
+}, testInfo) => {
+	await page.setViewportSize({ width: 560, height: 900 });
+	await page.route("**/slides-avatar-layout-e2e", (route) =>
+		route.fulfill({
+			contentType: "text/html",
+			body: `<!doctype html><html><head><link rel="stylesheet" href="/src/styles/global.css"><style>body{margin:0;background:#17283d;--naia-width:320px}.avatar-canvas-layer{background:linear-gradient(145deg,#416682,#13293b)}[data-video-avatar]{position:relative;width:100%;height:100%;display:grid;place-items:center;overflow:hidden}canvas{width:200px;height:300px;transform:translate(calc(var(--naia-width, 320px) / 2 - 50vw + 0px),0px)}</style></head><body><button type="button" id="focus">Focus presentation</button><div id="slides" data-focus="false"></div><div class="avatar-canvas-layer"><div data-video-avatar><canvas data-video-avatar-prebaked></canvas></div></div><script>document.querySelector('#focus').addEventListener('click',()=>document.querySelector('#slides').setAttribute('data-focus','true'))</script></body></html>`,
+		}),
+	);
+	await page.goto("/slides-avatar-layout-e2e");
+	const avatar = page.locator("canvas[data-video-avatar-prebaked]");
+	await expect(avatar).toBeVisible();
+	const layoutBefore = await avatar.evaluate((element) => {
+		const rect = element.getBoundingClientRect();
+		return {
+			left: rect.left,
+			right: rect.right,
+			width: rect.width,
+			height: rect.height,
+			transform: getComputedStyle(element).transform,
+		};
+	});
+	expect(layoutBefore.left).toBeGreaterThanOrEqual(0);
+	expect(layoutBefore.right).toBeLessThanOrEqual(320);
+	expect(layoutBefore.width).toBe(200);
+	expect(layoutBefore.height).toBe(300);
+	await page.getByRole("button", { name: "Focus presentation" }).click();
+	await expect(page.locator("#slides")).toHaveAttribute("data-focus", "true");
+	const layoutDuring = await avatar.evaluate((element) => {
+		const rect = element.getBoundingClientRect();
+		return {
+			left: rect.left,
+			right: rect.right,
+			width: rect.width,
+			height: rect.height,
+			transform: getComputedStyle(element).transform,
+			cropMarker: element.getAttribute("data-presentation-crop"),
+		};
+	});
+	expect(layoutDuring).toEqual({ ...layoutBefore, cropMarker: null });
+	await page.screenshot({ path: testInfo.outputPath("avatar-panel-focus-narrow.png") });
+});
+
 test("cancel, missing sidecar and narrow-screen script controls preserve the PDF workflow", async ({
 	page,
 }, testInfo) => {
@@ -213,9 +404,15 @@ test("cancel, missing sidecar and narrow-screen script controls preserve the PDF
 	const frame = await openInstalledHost(page);
 	await frame.getByLabel(/Open PDF/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
-	await frame.getByRole("button", { name: "Edit current slide script" }).click();
-	await frame.getByRole("textbox", { name: "Current slide script editor" }).fill("Narrow draft");
-	await page.screenshot({ path: testInfo.outputPath("script-editor-narrow.png") });
+	await frame
+		.getByRole("button", { name: "Edit current slide script" })
+		.click();
+	await frame
+		.getByRole("textbox", { name: "Current slide script editor" })
+		.fill("Narrow draft");
+	await page.screenshot({
+		path: testInfo.outputPath("script-editor-narrow.png"),
+	});
 	await frame.getByRole("button", { name: "Cancel script edit" }).click();
 	await frame.getByLabel(/PDF 열기|Open PDF/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
@@ -234,12 +431,10 @@ test("cancel, missing sidecar and narrow-screen script controls preserve the PDF
 	await page.screenshot({
 		path: testInfo.outputPath("viewer-narrow-notes-closed.png"),
 	});
-	const size = await frame
-		.getByRole("region")
-		.evaluate((element) => ({
-			width: element.clientWidth,
-			scroll: element.scrollWidth,
-		}));
+	const size = await frame.getByRole("region").evaluate((element) => ({
+		width: element.clientWidth,
+		scroll: element.scrollWidth,
+	}));
 	expect(size.scroll).toBeLessThanOrEqual(size.width + 1);
 	await page.evaluate((pdf) => {
 		(window as any).fixture.selection = {
@@ -258,17 +453,26 @@ test("cancel, missing sidecar and narrow-screen script controls preserve the PDF
 	await expect(frame.getByLabel(/발표 스크립트|Speaker script/)).toBeEnabled();
 });
 
-test("installed Slides follows live host language and theme and records through the host ADK", async ({ page }, testInfo) => {
+test("installed Slides follows live host language and theme and records through the host ADK", async ({
+	page,
+}, testInfo) => {
 	const frame = await openInstalledHost(page, "ko");
 	await expect(frame.getByLabel(/PDF.*열기/)).toBeVisible();
-	await expect(frame.locator(".slides-app")).toHaveCSS("background-color", "rgb(250, 248, 242)");
+	await expect(frame.locator(".slides-app")).toHaveCSS(
+		"background-color",
+		"rgb(250, 248, 242)",
+	);
 	await frame.getByLabel(/PDF.*열기/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
-	await expect(frame.getByTestId("slides-current-note")).toHaveText("First authored note");
+	await expect(frame.getByTestId("slides-current-note")).toHaveText(
+		"First authored note",
+	);
 	await page.evaluate(async () => {
 		const i18n = await import("/src/lib/i18n.ts");
 		await i18n.setLocale("en");
-		window.dispatchEvent(new CustomEvent("naia:locale-change", { detail: "en" }));
+		window.dispatchEvent(
+			new CustomEvent("naia:locale-change", { detail: "en" }),
+		);
 		document.documentElement.style.setProperty("--bg-primary", "#142332");
 		document.documentElement.style.setProperty("--bg-secondary", "#1b2735");
 		document.documentElement.style.setProperty("--text-primary", "#e6edf5");
@@ -277,38 +481,95 @@ test("installed Slides follows live host language and theme and records through 
 		document.documentElement.style.setProperty("--accent-color", "#3b8bd1");
 	});
 	await expect(frame.getByLabel(/Open PDF/)).toBeVisible();
-	await expect(frame.locator(".slides-app")).toHaveCSS("background-color", "rgb(20, 35, 50)");
-	await expect(frame.locator(".slides-app")).toHaveCSS("color", "rgb(230, 237, 245)");
-	await expect(frame.getByTestId("slides-current-note")).toHaveText("First authored note");
+	await expect(frame.locator(".slides-app")).toHaveCSS(
+		"background-color",
+		"rgb(20, 35, 50)",
+	);
+	await expect(frame.locator(".slides-app")).toHaveCSS(
+		"color",
+		"rgb(230, 237, 245)",
+	);
+	await expect(frame.getByTestId("slides-current-note")).toHaveText(
+		"First authored note",
+	);
 	await frame.getByRole("button", { name: /Record MP4/ }).click();
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_recording_start"))).toEqual([{ command: "slides_recording_start", args: { adkPath: "C:/fixture-workspace" } }]);
+	await expect
+		.poll(() =>
+			page.evaluate(() =>
+				(window as any).fixture.calls.filter(
+					(call: any) => call.command === "slides_recording_start",
+				),
+			),
+		)
+		.toEqual([
+			{
+				command: "slides_recording_start",
+				args: { adkPath: "C:/fixture-workspace" },
+			},
+		]);
 	await frame.getByRole("button", { name: /Stop recording/ }).click();
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_recording_stop").length)).toBe(1);
-	const frameAdk = await frame.locator(".slides-app").evaluate(() => localStorage.getItem("naia-adk-path"));
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as any).fixture.calls.filter(
+						(call: any) => call.command === "slides_recording_stop",
+					).length,
+			),
+		)
+		.toBe(1);
+	const frameAdk = await frame
+		.locator(".slides-app")
+		.evaluate(() => localStorage.getItem("naia-adk-path"));
 	expect(frameAdk).toBeNull();
-	await page.screenshot({ path: testInfo.outputPath("host-language-theme-recording.png") });
+	await page.screenshot({
+		path: testInfo.outputPath("host-language-theme-recording.png"),
+	});
 });
 
-test("script edits pause narration, cancel safely, protect replacement, and download a Markdown copy", async ({ page }, testInfo) => {
+test("script edits pause narration, cancel safely, protect replacement, and download a Markdown copy", async ({
+	page,
+}, testInfo) => {
 	const frame = await openInstalledHost(page);
 	await frame.getByLabel(/Open PDF/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
-	await frame.getByRole("button", { name: "Edit current slide script" }).click();
-	const editor = frame.getByRole("textbox", { name: "Current slide script editor" });
+	await frame
+		.getByRole("button", { name: "Edit current slide script" })
+		.click();
+	const editor = frame.getByRole("textbox", {
+		name: "Current slide script editor",
+	});
 	await editor.fill("Discard this draft");
 	await frame.getByRole("button", { name: "Cancel script edit" }).click();
-	await expect(frame.getByTestId("slides-current-note")).toHaveText("First authored note");
+	await expect(frame.getByTestId("slides-current-note")).toHaveText(
+		"First authored note",
+	);
 	await frame.getByRole("button", { name: "Start presenting" }).click();
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.speeches.length)).toBe(1);
-	await frame.getByRole("button", { name: "Edit current slide script" }).click();
-	await expect(frame.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
+	await expect
+		.poll(() => page.evaluate(() => (window as any).fixture.speeches.length))
+		.toBe(1);
+	await frame
+		.getByRole("button", { name: "Edit current slide script" })
+		.click();
+	await expect(
+		frame.getByRole("button", { name: "Resume", exact: true }),
+	).toBeVisible();
 	await editor.fill("Edited first note — 한글 수정");
 	await frame.getByRole("button", { name: "Apply script edit" }).click();
-	await expect(frame.getByTestId("slides-current-note")).toHaveText("Edited first note — 한글 수정");
-	await page.screenshot({ path: testInfo.outputPath("script-edited-unsaved.png") });
-	page.once("dialog", async (dialog) => { expect(dialog.type()).toBe("confirm"); await dialog.dismiss(); });
+	await expect(frame.getByTestId("slides-current-note")).toHaveText(
+		"Edited first note — 한글 수정",
+	);
+	await page.screenshot({
+		path: testInfo.outputPath("script-edited-unsaved.png"),
+	});
+	page.once("dialog", async (dialog) => {
+		expect(dialog.type()).toBe("confirm");
+		await dialog.dismiss();
+	});
 	await frame.getByLabel(/Open PDF/).click();
-	await expect(frame.getByTestId("slides-current-note")).toHaveText("Edited first note — 한글 수정");
+	await expect(frame.getByTestId("slides-current-note")).toHaveText(
+		"Edited first note — 한글 수정",
+	);
 	await expect(frame.getByTestId("slides-script-unexported")).toBeVisible();
 	const downloadReady = page.waitForEvent("download");
 	await frame.getByRole("button", { name: "Download edited Markdown" }).click();
@@ -322,56 +583,135 @@ test("script edits pause narration, cancel safely, protect replacement, and down
 	expect(content.match(/^##\s+0*1(?:[.)]|\s|$)/gm)).toHaveLength(1);
 	expect(content).toContain("Last authored note");
 	expect(content).toContain("## 02. Closing");
-	await expect(frame.getByText("Edited script has not been downloaded.")).toHaveCount(0);
+	await expect(
+		frame.getByText("Edited script has not been downloaded."),
+	).toHaveCount(0);
 });
 
-test("import progress, cancellation, late results and converter errors retain the current deck", async ({ page }, testInfo) => {
+test("import progress, cancellation, late results and converter errors retain the current deck", async ({
+	page,
+}, testInfo) => {
 	const frame = await openInstalledHost(page);
 	await frame.getByLabel(/Open PDF/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
-	await page.evaluate(() => { (window as any).fixture.delay = true; });
+	await page.evaluate(() => {
+		(window as any).fixture.delay = true;
+	});
 	await frame.getByLabel(/Open PDF/).click();
 	await expect(frame.getByTestId("slides-import-status")).toBeVisible();
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_open_document").length)).toBe(2);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as any).fixture.calls.filter(
+						(call: any) => call.command === "slides_open_document",
+					).length,
+			),
+		)
+		.toBe(2);
 	await page.evaluate(() => {
 		const fixture = (window as any).fixture;
-		const call = fixture.calls.filter((item: any) => item.command === "slides_open_document").at(-1);
-		const subscription = fixture.calls.filter((item: any) => item.command === "plugin:event|listen" && item.args.event === "naia-slides:import-progress").at(-1);
-		fixture.callbacks[subscription.args.handler]({ event: subscription.args.event, id: subscription.args.handler, payload: { requestId: call.args.requestId, phase: "converting" } });
+		const call = fixture.calls
+			.filter((item: any) => item.command === "slides_open_document")
+			.at(-1);
+		const subscription = fixture.calls
+			.filter(
+				(item: any) =>
+					item.command === "plugin:event|listen" &&
+					item.args.event === "naia-slides:import-progress",
+			)
+			.at(-1);
+		fixture.callbacks[subscription.args.handler]({
+			event: subscription.args.event,
+			id: subscription.args.handler,
+			payload: { requestId: call.args.requestId, phase: "converting" },
+		});
 	});
-	await expect(frame.getByTestId("slides-import-status")).toContainText("Converting PPTX to PDF");
+	await expect(frame.getByTestId("slides-import-status")).toContainText(
+		"Converting PPTX to PDF",
+	);
 	await page.screenshot({ path: testInfo.outputPath("import-converting.png") });
 	await frame.getByTestId("slides-cancel-import").click();
 	await expect(frame.getByTestId("slides-import-status")).toHaveCount(0);
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_cancel_open").length)).toBe(1);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as any).fixture.calls.filter(
+						(call: any) => call.command === "slides_cancel_open",
+					).length,
+			),
+		)
+		.toBe(1);
 	await page.evaluate(() => {
 		const fixture = (window as any).fixture;
-		fixture.selection = { ...fixture.selection, pdfName: "late.pptx", scriptText: "## 1.\nMust not replace current notes" };
+		fixture.selection = {
+			...fixture.selection,
+			pdfName: "late.pptx",
+			scriptText: "## 1.\nMust not replace current notes",
+		};
 		fixture.delay = false;
 		fixture.complete();
 	});
-	await expect(frame.getByTestId("slides-current-note")).toHaveText("First authored note");
-	await page.evaluate(() => { (window as any).fixture.error = "slides_converter_unavailable"; });
+	await expect(frame.getByTestId("slides-current-note")).toHaveText(
+		"First authored note",
+	);
+	await page.evaluate(() => {
+		(window as any).fixture.error = "slides_converter_unavailable";
+	});
 	await frame.getByLabel(/Open PDF/).click();
 	await expect(frame.getByRole("alert")).toContainText(/LibreOffice/);
 	await expect(frame.getByLabel(/Open PDF/)).toBeEnabled();
-	await expect(frame.getByTestId("slides-current-note")).toHaveText("First authored note");
-	await page.screenshot({ path: testInfo.outputPath("import-converter-unavailable.png") });
+	await expect(frame.getByTestId("slides-current-note")).toHaveText(
+		"First authored note",
+	);
+	await page.screenshot({
+		path: testInfo.outputPath("import-converter-unavailable.png"),
+	});
 });
 
-test("an iframe document navigation cannot retain recording or file-picker authority", async ({ page }) => {
+test("an iframe document navigation cannot retain recording or file-picker authority", async ({
+	page,
+}) => {
 	const frame = await openInstalledHost(page);
 	await frame.getByLabel(/Open PDF/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
 	await frame.getByRole("button", { name: "Record MP4" }).click();
 	await frame.getByRole("button", { name: "Stop recording" }).click();
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_recording_stop").length)).toBe(1);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as any).fixture.calls.filter(
+						(call: any) => call.command === "slides_recording_stop",
+					).length,
+			),
+		)
+		.toBe(1);
 	const originalSrc = await page.locator("iframe").getAttribute("src");
-	await page.evaluate(() => { (window as any).fixture.delay = true; });
+	await page.evaluate(() => {
+		(window as any).fixture.delay = true;
+	});
 	await frame.getByLabel(/Open PDF/).click();
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_open_document").length)).toBe(2);
-	await page.route("**/slides-e2e-rogue", route => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Navigation fixture</title><p>Different document at the same asset origin</p>" }));
-	const child = page.frames().find(item => item.url().includes("/slides.html"))!;
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as any).fixture.calls.filter(
+						(call: any) => call.command === "slides_open_document",
+					).length,
+			),
+		)
+		.toBe(2);
+	await page.route("**/slides-e2e-rogue", (route) =>
+		route.fulfill({
+			contentType: "text/html",
+			body: "<!doctype html><title>Navigation fixture</title><p>Different document at the same asset origin</p>",
+		}),
+	);
+	const child = page
+		.frames()
+		.find((item) => item.url().includes("/slides.html"))!;
 	await child.goto(new URL("/slides-e2e-rogue", child.url()).href);
 	expect(await page.locator("iframe").getAttribute("src")).toBe(originalSrc);
 	await child.evaluate(() => {
@@ -380,46 +720,134 @@ test("an iframe document navigation cannot retain recording or file-picker autho
 			if (event.data?.type !== "naia-slides:files") return;
 			(window as any).receivedFileMessages.push(event.data);
 			if (event.data.action === "available") {
-				window.parent.postMessage({ type: "naia-slides:files", action: "open", id: "rogue-cap-open", capability: event.data.capability }, "*");
+				window.parent.postMessage(
+					{
+						type: "naia-slides:files",
+						action: "open",
+						id: "rogue-cap-open",
+						capability: event.data.capability,
+					},
+					"*",
+				);
 			}
 		});
-		window.parent.postMessage({ type: "naia-slides:host", action: "hello", id: "rogue-hello" }, "*");
-		window.parent.postMessage({ type: "naia-slides:host", action: "recording-start", id: "rogue-start" }, "*");
-		window.parent.postMessage({ type: "naia-slides:files", action: "probe", id: "rogue-probe" }, "*");
-		window.parent.postMessage({ type: "naia-slides:files", action: "open", id: "rogue-open" }, "*");
+		window.parent.postMessage(
+			{ type: "naia-slides:host", action: "hello", id: "rogue-hello" },
+			"*",
+		);
+		window.parent.postMessage(
+			{
+				type: "naia-slides:host",
+				action: "recording-start",
+				id: "rogue-start",
+			},
+			"*",
+		);
+		window.parent.postMessage(
+			{ type: "naia-slides:files", action: "probe", id: "rogue-probe" },
+			"*",
+		);
+		window.parent.postMessage(
+			{ type: "naia-slides:files", action: "open", id: "rogue-open" },
+			"*",
+		);
 	});
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_cancel_open").length)).toBe(1);
-	await page.evaluate(() => { (window as any).fixture.complete(); });
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as any).fixture.calls.filter(
+						(call: any) => call.command === "slides_cancel_open",
+					).length,
+			),
+		)
+		.toBe(1);
+	await page.evaluate(() => {
+		(window as any).fixture.complete();
+	});
 	// The legitimate recording above warmed the same native wrapper. Allow its
 	// asynchronous request path to settle before asserting absence of authority.
 	await page.waitForTimeout(300);
-	expect(await page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_recording_start").length)).toBe(1);
-	expect(await page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_open_document").length)).toBe(2);
-	expect(await child.evaluate(() => (window as any).receivedFileMessages)).toEqual([]);
+	expect(
+		await page.evaluate(
+			() =>
+				(window as any).fixture.calls.filter(
+					(call: any) => call.command === "slides_recording_start",
+				).length,
+		),
+	).toBe(1);
+	expect(
+		await page.evaluate(
+			() =>
+				(window as any).fixture.calls.filter(
+					(call: any) => call.command === "slides_open_document",
+				).length,
+		),
+	).toBe(2);
+	expect(
+		await child.evaluate(() => (window as any).receivedFileMessages),
+	).toEqual([]);
 });
 
-test("a pending file result cannot reach a replacement document before its load event", async ({ page }) => {
+test("a pending file result cannot reach a replacement document before its load event", async ({
+	page,
+}) => {
 	const frame = await openInstalledHost(page);
 	await frame.getByLabel(/Open PDF/).click();
 	await expect(frame.locator("canvas")).toBeVisible();
-	await page.evaluate(() => { (window as any).fixture.delay = true; });
+	await page.evaluate(() => {
+		(window as any).fixture.delay = true;
+	});
 	await frame.getByLabel(/Open PDF/).click();
-	await expect.poll(() => page.evaluate(() => (window as any).fixture.calls.filter((call: any) => call.command === "slides_open_document").length)).toBe(2);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as any).fixture.calls.filter(
+						(call: any) => call.command === "slides_open_document",
+					).length,
+			),
+		)
+		.toBe(2);
 	let releaseLoad!: () => void;
-	const loadGate = new Promise<void>(resolve => { releaseLoad = resolve; });
-	await page.route("**/slides-e2e-load-blocker", async route => {
+	const loadGate = new Promise<void>((resolve) => {
+		releaseLoad = resolve;
+	});
+	await page.route("**/slides-e2e-load-blocker", async (route) => {
 		await loadGate;
 		await route.fulfill({ status: 204, body: "" });
 	});
-	await page.route("**/slides-e2e-pending-document", route => route.fulfill({ contentType: "text/html", body: '<!doctype html><title>Replacement pending load</title><script>window.received=[];window.addEventListener("message",event=>window.received.push(event.data));</script><img src="/slides-e2e-load-blocker">' }));
-	const child = page.frames().find(item => item.url().includes("/slides.html"))!;
+	await page.route("**/slides-e2e-pending-document", (route) =>
+		route.fulfill({
+			contentType: "text/html",
+			body: '<!doctype html><title>Replacement pending load</title><script>window.received=[];window.addEventListener("message",event=>window.received.push(event.data));</script><img src="/slides-e2e-load-blocker">',
+		}),
+	);
+	const child = page
+		.frames()
+		.find((item) => item.url().includes("/slides.html"))!;
 	try {
-		await child.goto(new URL("/slides-e2e-pending-document", child.url()).href, { waitUntil: "commit" });
-		await expect.poll(() => child.evaluate(() => document.title)).toBe("Replacement pending load");
-		expect(await child.evaluate(() => document.readyState)).not.toBe("complete");
-		await page.evaluate(() => { (window as any).fixture.complete(); });
+		await child.goto(
+			new URL("/slides-e2e-pending-document", child.url()).href,
+			{ waitUntil: "commit" },
+		);
+		await expect
+			.poll(() => child.evaluate(() => document.title))
+			.toBe("Replacement pending load");
+		expect(await child.evaluate(() => document.readyState)).not.toBe(
+			"complete",
+		);
+		await page.evaluate(() => {
+			(window as any).fixture.complete();
+		});
 		await page.waitForTimeout(200);
-		expect(await child.evaluate(() => (window as any).received.filter((data: any) => data?.type === "naia-slides:files"))).toEqual([]);
+		expect(
+			await child.evaluate(() =>
+				(window as any).received.filter(
+					(data: any) => data?.type === "naia-slides:files",
+				),
+			),
+		).toEqual([]);
 	} finally {
 		releaseLoad();
 	}

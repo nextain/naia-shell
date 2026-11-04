@@ -55,7 +55,9 @@ const VIDEO_STYLE = {
 };
 
 /** GPU 없는 pre-baked NVA player. retired server-side avatar/cascade를 시작하지 않는다. */
-export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
+export function VideoAvatarCanvas({
+	nvaModel,
+}: VideoAvatarCanvasProps) {
 	const setLoaded = useAvatarStore((state) => state.setLoaded);
 	const [mode, setMode] = useState<Mode>("loading");
 	const [error, setError] = useState("");

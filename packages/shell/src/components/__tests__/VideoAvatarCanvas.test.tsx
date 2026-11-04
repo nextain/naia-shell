@@ -28,6 +28,7 @@ const manifest = btoa(
 		canvas: { width: 406, height: 720 },
 		animations: {
 			idle: { clip: "clips/body.webm", loop: true, can_talk: false },
+ speak: { clip: "clips/speak.webm", loop: true, can_talk: true, face_bbox: [0.25,0.08,0.5,0.34] },
 		},
 		vrm_slots: {
 			profile: {
@@ -227,5 +228,29 @@ describe("VideoAvatarCanvas pre-baked contract", () => {
 		]);
 		await expect(getCameraActions().playAction("missing")).resolves.toBe(false);
 		await expect(getCameraActions().playAction("wave")).resolves.toBe(true);
+	});
+
+	it("keeps the default full-body canvas transform during Slides presentation", async () => {
+		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+		await vi.waitFor(() =>
+			expect(container.querySelector("[data-video-avatar-loaded='true']")).toBeTruthy(),
+		);
+		const canvas = container.querySelector("canvas[data-video-avatar-prebaked]") as HTMLCanvasElement;
+		expect(canvas.getAttribute("data-presentation-crop")).toBeNull();
+		expect(canvas.style.transform).toContain("--naia-width, 320px");
+		expect(canvas.style.transform).toContain("scale(1)");
+		expect(canvas.style.transformOrigin).toBe("");
+		expect(canvas.style.maxWidth).toBe("min(100%, 56vh)");
+		expect(canvas.style.maxHeight).toBe("92%");
+	});
+
+	it("a legacy bundle's visemes.aiueo slot is never played, even while speaking (SoT 8)", async () => {
+		const { container } = render(<VideoAvatarCanvas nvaModel="naia" />);
+		await vi.waitFor(() => expect(container.querySelector("[data-video-avatar]")).toHaveAttribute("data-video-avatar-loaded", "true"));
+		useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(true);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const requested = mockToLocalBlobUrl.mock.calls.map(([path]) => String(path));
+		expect(requested.some((path) => path.includes("viseme-aiueo"))).toBe(false);
+		useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
 	});
 });

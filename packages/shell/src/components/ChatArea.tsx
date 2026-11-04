@@ -174,6 +174,7 @@ import {
 } from "../lib/tts/reveal-guard";
 import {
 	type PipelineVoiceConfig,
+	type SentenceTtsOutcome,
 	type SentenceTtsPipeline,
 	type TtsSynthesisResult,
 	createSentenceTtsPipeline,
@@ -652,6 +653,21 @@ export function ChatArea({
 	const activeSlidePresenterSpeechRef = useRef<
 		(SlidePresenterSpeechRequest & { appId?: string; started?: boolean }) | null
 	>(null);
+	const slideSpeechProgressRef = useRef<{
+		requestId: string;
+		total: number;
+		settled: Set<number>;
+	} | null>(null);
+	const queuedSlidePrefetchRef = useRef<{
+		sourceRequestId: string;
+		id: string;
+		page: number;
+		text: string;
+		started: boolean;
+		cancelled: boolean;
+	} | null>(null);
+	const activeSlidePrefetchIdsRef = useRef(new Set<string>());
+	const invalidSlideSpeechGenerationsRef = useRef(new Set<number>());
 	if (!sentencePipelineRef.current) {
 		sentencePipelineRef.current = createSentenceTtsPipeline({
 			onPlaybackFailure: () => {
@@ -707,7 +723,27 @@ export function ChatArea({
 				// #423: browser speech end/error releases the held expression.
 				if (!on) {
 					settleAvatarEmotionIfIdle();
-					settleSlidePresenterSpeech("finished");
+				}
+			},
+			onPlaybackStart: () => {
+				const pending = queuedSlidePrefetchRef.current;
+				const active = activeSlidePresenterSpeechRef.current;
+				if (
+					!pending ||
+					pending.cancelled ||
+					pending.started ||
+					active?.requestId !== pending.sourceRequestId
+				)
+					return;
+				pending.started = true;
+				const pieces = splitSlideNarration(pending.text);
+				for (let index = 0; index < pieces.length; index++) {
+					if (pending.cancelled) return;
+					void sentencePipelineRef.current?.prefetchSentence(pieces[index], {
+						prefetchId: `${pending.id}/${index}`,
+						prefetchGroupId: pending.id,
+						prepareAvatar: false,
+					});
 				}
 			},
 			getLocalRefAudioB64: () => getLocalRefAudioB64(),
@@ -1151,6 +1187,7 @@ export function ChatArea({
 		)
 			return;
 		activeSlidePresenterSpeechRef.current = null;
+		slideSpeechProgressRef.current = null;
 		window.dispatchEvent(
 			new CustomEvent(
 				active.appId
@@ -1168,9 +1205,43 @@ export function ChatArea({
 		});
 	}
 
-	function interruptTts(): void {
+	function settleSlideNarrationSentence(
+		requestId: string,
+		index: number,
+		_outcome: SentenceTtsOutcome,
+	): void {
+		const progress = slideSpeechProgressRef.current;
+		if (
+			!progress ||
+			progress.requestId !== requestId ||
+			activeSlidePresenterSpeechRef.current?.requestId !== requestId
+		)
+			return;
+		progress.settled.add(index);
+		if (progress.settled.size >= progress.total)
+			settleSlidePresenterSpeech("finished");
+	}
+
+	function interruptTts(preservePrefetchId?: string): void {
 		pendingAiGestureActionRef.current = null;
 		settleSlidePresenterSpeech("cancelled");
+		const queuedPrefetch = queuedSlidePrefetchRef.current;
+		if (queuedPrefetch && queuedPrefetch.id !== preservePrefetchId) {
+			queuedPrefetch.cancelled = true;
+			queuedSlidePrefetchRef.current = null;
+		}
+		if (preservePrefetchId) {
+			for (const id of activeSlidePrefetchIdsRef.current) {
+				if (id !== preservePrefetchId)
+					sentencePipelineRef.current?.cancelPrefetch(id);
+			}
+			activeSlidePrefetchIdsRef.current.clear();
+			activeSlidePrefetchIdsRef.current.add(preservePrefetchId);
+		} else {
+			if (queuedPrefetch) queuedPrefetch.cancelled = true;
+			queuedSlidePrefetchRef.current = null;
+			activeSlidePrefetchIdsRef.current.clear();
+		}
 		// Reveal the canonical response immediately on interruption and invalidate
 		// late playback callbacks from the superseded turn.
 		commitStrandedCanonical(); // #513
@@ -1189,7 +1260,7 @@ export function ChatArea({
 		localVoiceSchedulerRef.current?.interrupt();
 		// Drop pending requests, cancel in-flight TTS fetch/WS, and stop any
 		// live browser utterance — all pipeline-owned lifecycle (#363, Phase 3).
-		sentencePipelineRef.current?.interrupt();
+		sentencePipelineRef.current?.interrupt({ preservePrefetchId });
 		// cascade 토킹 아바타 활성 시 발화 스트림도 중단(barge-in) — 오버레이 즉시 종료.
 		useCascadeAvatarStore.getState().renderer?.interrupt();
 		ttsPlayingRef.current = false;
@@ -1230,7 +1301,6 @@ export function ChatArea({
 				ttsPlayingRef.current = false;
 				setTtsPlaying(false);
 				settleAvatarEmotionIfIdle();
-				settleSlidePresenterSpeech("finished");
 			}
 		};
 	}
@@ -1430,7 +1500,6 @@ export function ChatArea({
 					setTtsPlaying(false);
 					useCascadeAvatarStore.getState().renderer?.setSpeakingVisual(false);
 					settleAvatarEmotionIfIdle();
-					settleSlidePresenterSpeech("finished");
 				},
 			});
 		}
@@ -1463,8 +1532,27 @@ export function ChatArea({
 			) {
 				return;
 			}
-			interruptTts();
+			if (!detail.appId && invalidSlideSpeechGenerationsRef.current.has(detail.generation)) {
+				Logger.debug("ChatArea", "ignored stale slide narration generation", {
+					generation: detail.generation,
+					page: detail.page,
+				});
+				return;
+			}
+			interruptTts(detail.prefetchId);
 			activeSlidePresenterSpeechRef.current = detail;
+			if (detail.prefetchId)
+				activeSlidePrefetchIdsRef.current.add(detail.prefetchId);
+			queuedSlidePrefetchRef.current = detail.nextPrefetch
+				? {
+						sourceRequestId: detail.requestId,
+						...detail.nextPrefetch,
+						started: false,
+						cancelled: false,
+					}
+				: null;
+			if (detail.nextPrefetch)
+				activeSlidePrefetchIdsRef.current.add(detail.nextPrefetch.id);
 			void (async () => {
 				for (
 					let attempt = 0;
@@ -1499,8 +1587,44 @@ export function ChatArea({
 				// 장 전체 합성 시간을 기다렸다(로컬 VoxCPM2 RTF 0.48 → 8~50초 무음). 채팅 경로처럼
 				// 조각으로 나눠 순서대로 넣으면 첫 조각부터 재생된다. 조각 단위는
 				// VITE_NAIA_SLIDES_TTS_CHUNK = word | phrase | sentence (기본 sentence).
-				for (const piece of splitSlideNarration(detail.text.trim())) {
-					sendSentenceToTts(piece);
+				const pieces = splitSlideNarration(detail.text.trim());
+				slideSpeechProgressRef.current = {
+					requestId: detail.requestId,
+					total: pieces.length,
+					settled: new Set(),
+				};
+				if (pieces.length === 0) {
+					settleSlidePresenterSpeech("finished");
+					return;
+				}
+				const prepareNextPageSpeechStage = () => {
+					const pending = queuedSlidePrefetchRef.current;
+					if (
+						!pending ||
+						pending.cancelled ||
+						!pending.started ||
+						activeSlidePresenterSpeechRef.current?.requestId !==
+							pending.sourceRequestId
+					)
+						return;
+					void sentencePipelineRef.current?.preparePrefetchedSpeechTiming(
+						`${pending.id}/0`,
+					);
+				};
+				for (let index = 0; index < pieces.length; index++) {
+					const lastSentencePlaybackStarted =
+						index === pieces.length - 1
+							? prepareNextPageSpeechStage
+							: undefined;
+					sendSentenceToTts(
+						pieces[index],
+						detail.prefetchId ? `${detail.prefetchId}/${index}` : undefined,
+						{
+							onSentenceSettled: (outcome) =>
+								settleSlideNarrationSentence(detail.requestId, index, outcome),
+							onPlaybackStarted: lastSentencePlaybackStarted,
+						},
+					);
 				}
 				finishLocalVoicePrebuffer();
 				Logger.info("ChatArea", "slide narration entered TTS pipeline", {
@@ -1525,10 +1649,41 @@ export function ChatArea({
 					appId?: string;
 					requestId?: string;
 					generation?: number;
+					prefetchId?: string;
+					invalidateGeneration?: boolean;
 				}>
 			).detail;
+			const installed = event.type === INSTALLED_APP_CANCEL_EVENT;
+			if (installed && activeSlidePresenterSpeechRef.current?.appId !== detail?.appId) return;
+			if (!installed && activeSlidePresenterSpeechRef.current?.appId) return;
+			if (detail?.prefetchId) {
+				sentencePipelineRef.current?.cancelPrefetch(detail.prefetchId);
+				activeSlidePrefetchIdsRef.current.delete(detail.prefetchId);
+				const pending = queuedSlidePrefetchRef.current;
+				if (pending?.id === detail.prefetchId) {
+					pending.cancelled = true;
+					queuedSlidePrefetchRef.current = null;
+				}
+			}
+			if (
+				!installed && (detail?.invalidateGeneration === true ||
+				detail?.requestId)
+			) {
+				const invalidGeneration = detail.generation;
+				if (invalidGeneration != null) {
+					invalidSlideSpeechGenerationsRef.current.add(invalidGeneration);
+					while (invalidSlideSpeechGenerationsRef.current.size > 128) {
+						const oldest = invalidSlideSpeechGenerationsRef.current.values().next()
+							.value;
+						if (oldest === undefined) break;
+						invalidSlideSpeechGenerationsRef.current.delete(oldest);
+					}
+				}
+			}
 			const active = activeSlidePresenterSpeechRef.current;
 			if (!active || active.appId !== detail?.appId) return;
+			if (!installed && !detail?.requestId && detail?.invalidateGeneration !== true)
+				return;
 			if (detail?.requestId && detail.requestId !== active.requestId) return;
 			if (detail?.generation != null && detail.generation !== active.generation)
 				return;
@@ -1544,7 +1699,11 @@ export function ChatArea({
 			window.removeEventListener(INSTALLED_APP_SPEAK_EVENT, handleSpeak);
 			window.removeEventListener(INSTALLED_APP_CANCEL_EVENT, handleCancel);
 			window.removeEventListener(SLIDE_PRESENTER_CANCEL_EVENT, handleCancel);
-			if (activeSlidePresenterSpeechRef.current) interruptTts();
+			if (
+				activeSlidePresenterSpeechRef.current ||
+				activeSlidePrefetchIdsRef.current.size > 0
+			)
+				interruptTts();
 		};
 	}, []);
 
@@ -3341,11 +3500,21 @@ export function ChatArea({
 	}
 
 	/** Route one sentence to the configured voice output. */
-	function sendSentenceToTts(sentence: string): void {
+	function sendSentenceToTts(
+		sentence: string,
+		prefetchId?: string,
+		callbacks?: {
+			onSentenceSettled?: (outcome: SentenceTtsOutcome) => void;
+			onPlaybackStarted?: () => void;
+		},
+	): void {
 		// FR-VOICE.16 (#420): all synthesized speech goes through the single
 		// sentence TTS pipeline (lib/tts/sentence-pipeline). Do not add speech
 		// side channels here — renderers and skills consume real playback only.
-		sentencePipelineRef.current?.sendSentence(sentence);
+		sentencePipelineRef.current?.sendSentence(sentence, {
+			prefetchId,
+			...callbacks,
+		});
 	}
 
 	/** Clean up pipeline voice resources. */
