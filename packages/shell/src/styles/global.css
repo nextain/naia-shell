@@ -12455,24 +12455,34 @@ body.resizing-col * {
 	background: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
 
-/* Optional usage consent is shown before ADK setup, including existing installs. */
+/* Optional usage consent is shown before ADK setup, including existing installs.
+   Card and buttons reuse the onboarding look (.onboarding-*). */
 .usage-consent {
-	box-sizing: border-box;
-	max-width: 40rem;
-	margin: 8vh auto;
-	padding: 1.5rem;
+	max-width: 480px;
 	line-height: 1.6;
-	overflow-wrap: anywhere;
+	word-break: keep-all;
+	overflow-wrap: break-word;
+	overflow-y: auto;
+}
+.usage-consent h2 {
+	font-size: 18px;
+	color: var(--latte);
+	font-weight: 600;
+}
+.usage-consent .onboarding-description {
+	font-size: 13px;
+	margin: 0;
+}
+.usage-consent [role="alert"] {
+	color: var(--danger, #f87171);
+	font-size: 13px;
+	margin: 0;
 }
 .usage-actions {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 1rem;
-	margin-top: 1.5rem;
-}
-.usage-consent button {
-	padding: .65rem 1rem;
-	cursor: pointer;
+	justify-content: flex-end;
+	gap: 10px;
 }
 .usage-settings {
 	padding: 1rem;

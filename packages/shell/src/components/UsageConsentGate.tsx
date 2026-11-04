@@ -15,31 +15,45 @@ export function UsageConsentGate({ children }: { children: ReactNode }) {
 	}
 	if (ready) return children;
 	return (
-		<main className="usage-consent" aria-labelledby="usage-title">
-			<h1 id="usage-title">{t("usage.title")}</h1>
-			<p>{t("usage.description")}</p>
-			<p>{t("usage.optional")}</p>
-			{error && <p role="alert">{t("usage.saveError")}</p>}
-			<div className="usage-actions">
-				<button type="button" onClick={() => void choose(false)}>
-					{t("usage.decline")}
-				</button>
-				<button type="button" onClick={() => void choose(true)}>
-					{t("usage.allow")}
-				</button>
-			</div>
-			{error && (
-				<button
-					type="button"
-					onClick={() => {
-						usage.stop();
-						setReady(true);
-					}}
-				>
-					{t("usage.continueOff")}
-				</button>
-			)}
-		</main>
+		<div className="onboarding-overlay">
+			<main
+				className="onboarding-card usage-consent"
+				aria-labelledby="usage-title"
+			>
+				<h2 id="usage-title">{t("usage.title")}</h2>
+				<p className="onboarding-description">{t("usage.description")}</p>
+				<p className="onboarding-description">{t("usage.optional")}</p>
+				{error && <p role="alert">{t("usage.saveError")}</p>}
+				<div className="usage-actions">
+					<button
+						type="button"
+						className="onboarding-skip-btn"
+						onClick={() => void choose(false)}
+					>
+						{t("usage.decline")}
+					</button>
+					<button
+						type="button"
+						className="onboarding-next-btn"
+						onClick={() => void choose(true)}
+					>
+						{t("usage.allow")}
+					</button>
+				</div>
+				{error && (
+					<button
+						type="button"
+						className="onboarding-skip-btn"
+						onClick={() => {
+							usage.stop();
+							setReady(true);
+						}}
+					>
+						{t("usage.continueOff")}
+					</button>
+				)}
+			</main>
+		</div>
 	);
 }
 

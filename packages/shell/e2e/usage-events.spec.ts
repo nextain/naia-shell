@@ -180,13 +180,13 @@ test("Korean consent states the optional data and renders without overflow", asy
 	});
 	await page.goto("/");
 	await expect(
-		page.getByRole("heading", { name: "선택적 사용 통계" }),
+		page.getByRole("heading", { name: "사용 통계 보내기(선택)" }),
 	).toBeVisible();
 	await expect(
-		page.getByRole("button", { name: "허용 안 함", exact: true }),
+		page.getByRole("button", { name: "보내지 않기", exact: true }),
 	).toBeVisible();
 	await expect(
-		page.getByRole("button", { name: "사용 통계 허용", exact: true }),
+		page.getByRole("button", { name: "보내기 허용", exact: true }),
 	).toBeVisible();
 	await page.screenshot({ path: testInfo.outputPath("consent-ko.png") });
 	expect(
