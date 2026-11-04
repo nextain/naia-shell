@@ -97,6 +97,7 @@ import {
 	deleteAgentFact,
 	exportMemoryBackup,
 	getAllAgentFacts,
+	getMemoryPendingCount,
 	importMemoryBackup,
 } from "../lib/db";
 import {
@@ -1811,6 +1812,8 @@ export function SettingsTab() {
 		{ id: string; label: string; gender?: string }[]
 	>([]);
 	const [facts, setFacts] = useState<AgentFact[]>([]);
+	const [memoryPending, setMemoryPending] = useState(0);
+	const [memoryReadError, setMemoryReadError] = useState(false);
 
 	// Memory adapter settings
 	const [memoryAdapter, setMemoryAdapter] = useState<"local" | "qdrant">(
@@ -1842,6 +1845,12 @@ export function SettingsTab() {
 	);
 	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
 		existing?.memoryEmbeddingModel ?? "",
+	);
+	const [memoryEmbeddingRevision, setMemoryEmbeddingRevision] = useState(
+		existing?.memoryEmbeddingRevision ?? "",
+	);
+	const [memoryEmbeddingDimensions, setMemoryEmbeddingDimensions] = useState(
+		existing?.memoryEmbeddingDimensions ?? 1536,
 	);
 	const [smallLlmRev, setSmallLlmRev] = useState(0);
 	// 보조·전문가·기억 LLM 역할 편집기 제거 (에픽 #589 할 일 2·3, #598): 나이아 로그인은
@@ -2763,13 +2772,33 @@ export function SettingsTab() {
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
 	useEffect(() => {
-		getAllAgentFacts()
-			.then((result: AgentFact[]) => setFacts(result ?? []))
-			.catch((err: unknown) => {
+		let alive = true;
+		const refresh = async () => {
+			try {
+				const [latest, pending] = await Promise.all([
+					getAllAgentFacts(),
+					getMemoryPendingCount(),
+				]);
+				if (alive) {
+					setFacts(latest ?? []);
+					setMemoryPending(pending ?? 0);
+					setMemoryReadError(false);
+				}
+			} catch (err) {
+				if (alive) setMemoryReadError(true);
 				Logger.warn("SettingsTab", "Failed to load agent memory facts", {
 					error: String(err),
 				});
-			});
+			}
+		};
+		void refresh();
+		const timer = window.setInterval(() => {
+			void refresh();
+		}, 2000);
+		return () => {
+			alive = false;
+			window.clearInterval(timer);
+		};
 	}, []);
 
 	// Fetch Lab balance for a given key
@@ -2956,7 +2985,16 @@ export function SettingsTab() {
 					});
 					setSecureNaiaCredentialReady(false);
 					setLabBalanceError(true);
-					setError(t("cost.labError"));
+					setError(
+						String(activationError).includes("secret_tool_missing") ||
+							String(activationError).includes(
+								"secret-tool failed: No such file",
+							)
+							? t("settings.secretToolMissing")
+							: String(activationError).includes("secret_store_failed")
+								? t("settings.secretStoreFailed")
+								: t("cost.labError"),
+					);
 				} finally {
 					setLabWaiting(false);
 				}
@@ -3739,6 +3777,8 @@ export function SettingsTab() {
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
 			// Memory settings
+			memoryEmbeddingRevision: memoryEmbeddingRevision.trim() || undefined,
+			memoryEmbeddingDimensions,
 			memoryAdapter,
 			memoryEmbeddingProvider,
 			memoryOfflineModel:
@@ -7174,6 +7214,8 @@ export function SettingsTab() {
 							>
 								<input
 									type="text"
+									aria-label={t("settings.memoryEmbeddingBaseUrl")}
+									data-testid="memory-embedding-url"
 									value={memoryEmbeddingBaseUrl}
 									onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
 									onBlur={(e) =>
@@ -7189,6 +7231,8 @@ export function SettingsTab() {
 								/>
 								<input
 									type="text"
+									aria-label={t("settings.memoryEmbeddingModel")}
+									data-testid="memory-embedding-model"
 									value={memoryEmbeddingModel}
 									onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
 									onBlur={(e) =>
@@ -7199,6 +7243,49 @@ export function SettingsTab() {
 							</div>
 						)}
 						{/* naia 임베딩: 계정 미연결 시 안내(parity) */}
+						{(memoryEmbeddingProvider === "vllm" ||
+							memoryEmbeddingProvider === "ollama" ||
+							memoryEmbeddingProvider === "naia") && (
+							<div className="settings-field">
+								<label>
+									{t("settings.embeddingRevision")}
+									<input
+										data-testid="memory-embedding-revision"
+										value={memoryEmbeddingRevision}
+										onChange={(e) => setMemoryEmbeddingRevision(e.target.value)}
+										onBlur={(e) =>
+											persistConfig({
+												memoryEmbeddingRevision:
+													e.target.value.trim() || undefined,
+											})
+										}
+									/>
+								</label>
+								{memoryEmbeddingProvider !== "naia" && (
+									<label>
+										{t("settings.embeddingDimensions")}
+										<input
+											data-testid="memory-embedding-dimensions"
+											type="number"
+											min="1"
+											max="65536"
+											value={memoryEmbeddingDimensions}
+											onChange={(e) =>
+												setMemoryEmbeddingDimensions(Number(e.target.value))
+											}
+											onBlur={() =>
+												persistConfig({ memoryEmbeddingDimensions })
+											}
+										/>
+									</label>
+								)}
+								{!memoryEmbeddingRevision.trim() && (
+									<div role="alert" className="settings-hint">
+										{t("settings.embeddingIdentityMissing")}
+									</div>
+								)}
+							</div>
+						)}
 						{memoryEmbeddingProvider === "naia" && !naiaKey && (
 							<div className="settings-field">
 								<span className="settings-hint">
@@ -7415,6 +7502,14 @@ export function SettingsTab() {
 						</div>
 
 						{/* Memory stats */}
+						<div role="status" data-testid="memory-pending">
+							{t("settings.memoryPending", { count: String(memoryPending) })}
+						</div>
+						{memoryReadError && (
+							<div className="settings-hint" role="alert">
+								{t("settings.memoryReadFailed")}
+							</div>
+						)}
 						{facts.length > 0 && (
 							<div className="settings-field">
 								<span className="settings-hint">

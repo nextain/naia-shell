@@ -80,7 +80,10 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 	};
 
 	const ttsProvider = raw.ttsProvider;
-	if (typeof ttsProvider === "string" && RETIRED_TTS_PROVIDERS.has(ttsProvider)) {
+	if (
+		typeof ttsProvider === "string" &&
+		RETIRED_TTS_PROVIDERS.has(ttsProvider)
+	) {
 		raw.ttsProvider = "edge";
 		remove("ttsVoice");
 		changed = true;
@@ -90,8 +93,7 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 		RETIRED_STT_PROVIDERS.has(raw.sttProvider)
 	) {
 		const isLinux =
-			typeof navigator !== "undefined" &&
-			navigator.userAgent.includes("Linux");
+			typeof navigator !== "undefined" && navigator.userAgent.includes("Linux");
 		raw.sttProvider = isLinux ? "vosk" : "web-speech";
 		changed = true;
 	}
@@ -547,6 +549,8 @@ export interface AppConfig {
 	memoryEmbeddingApiKey?: string;
 	/** Embedding model name (vLLM/Ollama). */
 	memoryEmbeddingModel?: string;
+	memoryEmbeddingRevision?: string;
+	memoryEmbeddingDimensions?: number;
 	/** LLM provider used for memory fact extraction. Defaults to 'none' (heuristic). */
 	/** Legacy compatibility mirror for memory role. `llmRoles.memory` is authoritative. */
 	memoryLlmProvider?: ProviderId | "none";
@@ -696,10 +700,7 @@ export function saveConfig(config: AppConfig): void {
 	const normalized = normalizeRetiredVoiceConfig(
 		normalizeLocalRuntimeConfig(config),
 	).config;
-	localStorage.setItem(
-		STORAGE_KEY,
-		JSON.stringify(normalized),
-	);
+	localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
 	if (typeof window !== "undefined") {
 		window.dispatchEvent(new CustomEvent("naia-config-changed"));
 	}
@@ -838,7 +839,7 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 		// The selected ADK is the only source of truth. Clear any legacy secret
 		// left in localStorage so switching A → B cannot reuse A's credential.
 		(config as any)[key] = securePath
-			? (await getSecretKeyAtPath(key, securePath)) ?? undefined
+			? ((await getSecretKeyAtPath(key, securePath)) ?? undefined)
 			: undefined;
 		assertSelectedAdkPath(securePath, "Loading configuration");
 	}
@@ -862,9 +863,7 @@ export async function saveConfigSecure(config: AppConfig): Promise<void> {
 		return typeof value === "string" && value.length > 0;
 	});
 	if (!securePath && hasSecretInput) {
-		throw new Error(
-			"Cannot save credentials without a selected ADK workspace",
-		);
+		throw new Error("Cannot save credentials without a selected ADK workspace");
 	}
 
 	for (const key of SECRET_KEYS) {
@@ -1203,7 +1202,9 @@ export function getUserName(): string | undefined {
  * back to prod just because the dev URL env is empty.
  */
 const _INSTANCE_MODE = naiaLaunchMode({
-	useDevGateway: import.meta.env.VITE_NAIA_USE_DEV_GATEWAY as string | undefined,
+	useDevGateway: import.meta.env.VITE_NAIA_USE_DEV_GATEWAY as
+		| string
+		| undefined,
 	webBaseUrl: import.meta.env.VITE_NAIA_WEB_BASE_URL as string | undefined,
 	viteDev: import.meta.env.DEV,
 });

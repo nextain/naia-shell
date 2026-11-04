@@ -329,3 +329,7 @@ P04 증거: 실행 폴더 tmp/r15-media-red.log (수정 전 4실패), r15-artifa
 P04: tmp/r15-vosk-test-red.log 2실패→r15-linux-green.log 5통과; 최종 packaging 65통과. tmp/r15-linuxdeploy-vosk.log는 같은 SONAME/RPATH를 가진 실제 gcc ELF probe와 실제 Tauri 배포 linuxdeploy로 prod 수정 전 성공/dev 수정 전 실패, 수정 후 둘 다 성공·번들 libvosk.so 및 LD_LIBRARY_PATH 없이 실행을 확인한다. 전체 설치 앱 실행 증거와 구분한다.
 
 최종 P04/P05: Shell 전체 **2710통과/21제외/0실패**, 259파일통과/1제외 (`tmp/r15-shell-complete.log`); browser **9/9** (`tmp/r15-browser-complete.log`); 최종 production build/budget·core/Shell/BGM/exact Agent typecheck·logging·UC trace PASS. 시각 검토: 360/1100px 정지 그림이 있어도 온보딩 폼·이름 입력·다음 버튼 유지, 가로 넘침 없음. 결과 문서에서 Bazzite/새 installer 실기와 분리한다.
+
+
+## 17회차 — 대화 사이 기억
+원문 저장→사실 추출의 5분 gate, 로컬 대체·승인, 임베딩 없음 차단과 실제 memory API/전송 주입 불일치를 고쳤다. Agent `c34410479779a8d290eaf819ac18674764103849`, memory `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4. 셸 전체2717/21제외, 실제 gRPC 재시작(가짜 LLM·임베딩) 및 UI360/1100, Rust 대기 계산 검증. 상세 원인/중간 실패/준 실기 순서는 실행 폴더 `codex-runs/026-b2c/result.md`. 푸시·실 장치 품질 판정은 하지 않았다.

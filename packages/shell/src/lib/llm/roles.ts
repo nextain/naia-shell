@@ -19,7 +19,7 @@ const clean = (value: string | undefined): string | undefined => value?.trim() |
 /** 신규 필드 우선 + legacy 무손실 읽기. */
 export function readConfiguredLlmRoles(config: AppConfig): Partial<Record<LlmRoleId, LlmRoleConfig>> {
 	const structured = config.llmRoles ?? {};
-	const main = structured.main ?? { provider: config.provider, model: config.model };
+	const main = structured.main ?? { provider: config.provider, model: config.model, baseUrl: config.provider === "vllm" ? config.vllmHost : config.provider === "ollama" ? config.ollamaHost : undefined };
 	const expert = structured.expert ?? { inherit: "main" as const };
 	const memory = structured.memory ?? (
 		config.memoryLlmProvider && config.memoryLlmProvider !== "none"

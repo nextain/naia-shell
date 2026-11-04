@@ -2614,3 +2614,20 @@ Test Coverage Map: SettingsTab.test.tsx 단일 모델+config event→Apply; preb
 | UC | 시험 파일 | 확인 |
 |---|---|---|
 | UC-B2C-026-R16 | packages/shell/src/components/__tests__/SettingsTab.test.tsx; packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts; packages/shell/e2e/ollama-settings.spec.ts; packages/shell/e2e/nva-prebaked.spec.ts; packages/shell/e2e/onboarding-fresh.spec.ts | 단일 모델 표시/저장/설정 이벤트, ASR 혼합/복수 모델, 디코더 진단, 360/1100px 키보드 적용과 정지 그림 |
+
+
+### UC-B2C-026-R17 — 대화 사이 기억 (#792)
+대화 A에서 “내 할 일은 제안서 작성”, “다음 주 보라 님 답사 간다”라고 말한다. 기억 목록에 사실이 표시되고 셸을 다시 켠 뒤 새 대화 B의 “내 할 일 뭐였지?”에 저장한 사실로 답한다. 작은 LLM 미설정/접속 실패는 메인 두뇌로 대체하며 설정에서 알린다. 임베딩 없음은 경고와 로컬 주소 설정 길을 제공하고 제한된 키워드 회상으로 동작한다. 기억 목록은 정리 대기 건수를 표시한다. Linux 비밀 저장 도구 누락은 쉬운 말로 복구를 안내한다.
+
+| Test Coverage Map — R17 | 검증 |
+|---|---|
+| 저장→사실 추출→재시작→새 대화 | 실제 memory adapter + 가짜 LLM/임베딩, 최근 사실·오류 재시도 |
+| 설정 기본/빈 값/진행/성공/접속 실패 | SmallLlmSection 컴포넌트와 실 브라우저, 값 저장·메인 대체 표시 |
+| 기억 빈 목록/정리 대기/완료/오류 | SettingsTab, Rust 읽기, 키보드·ARIA·360/1100px UX |
+| Linux 저장 실패 | .deb libsecret-tools, AppImage 기동 검사, 쉬운 말 오류 |
+
+R17 검증 연결: `memory-role-summarizer.contract.test.ts`(재개방 및 대화 처리기), `uc1-memory-process.integration.test.ts`(실 프로세스 재시작, 임베딩 없음/가짜 임베딩), `memory-settings.spec.ts`(360/1100px 빈 목록·대기·성공·오류 복구·로컬 임베딩 설정), `SmallLlmSection.test.tsx`, `linux-media.test.ts`, Rust `r17_pending_tests`. 설치된 준 3090 모델 자체의 정확도와 실 장치 인수는 별도이며 자동 시험의 가짜 답변을 실 모델 품질로 해석하지 않는다.
+
+R17 exact Agent pin: `c34410479779a8d290eaf819ac18674764103849` (R9의 ecb879b 이력보다 우선). proto SHA는 유지하고 memory는 아래의 R17 exact pin으로 올린다. 로컬 메인 사실 추출의 저장 제한은 30초다.
+
+R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 올린다. e8cbd6f에서 fetch 주입·유한 재시도·요약 실패 전달만 추가한다. 실제 고정 소스에서 Agent의 생성자 훅과 요청별 ALS 문맥이 연결됨을 확인했고 memory 인증/삭제69개·Agent 관련290개가 통과했다.

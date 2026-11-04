@@ -10,7 +10,7 @@ fn main() {
     };
     // ⚠️ agent-pairing.json 과 같은 값이어야 한다. 두 곳에 따로 적혀 있으므로
     //    src/test/agent-pairing-drift.contract.test.ts 가 둘이 갈라지는 것을 막는다.
-    const REQUIRED_AGENT_COMMIT: &str = "ecb879b080aa7e9bff7402687478dc16bdc6c49f";
+    const REQUIRED_AGENT_COMMIT: &str = "c34410479779a8d290eaf819ac18674764103849";
     const REQUIRED_PROTO_SHA256: &str =
         "6fb0b1f9b249e41fc16c7a0f673bbb2a82f52cb7c0977773bf03e9e297e2b175";
     const REQUIRED_PROTO_MARKERS: &[&str] = &[

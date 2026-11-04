@@ -5800,6 +5800,11 @@ async fn memory_get_all_facts() -> Result<Vec<memory::AgentFact>, String> {
 }
 
 #[tauri::command]
+async fn memory_pending_count() -> Result<usize, String> {
+    memory::get_pending_count()
+}
+
+#[tauri::command]
 async fn memory_delete_fact(fact_id: String) -> Result<bool, String> {
     memory::delete_agent_fact(&fact_id)
 }
@@ -13626,9 +13631,9 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
                 }
                 c.wait()
             })
-            .map_err(|e| format!("secret-tool failed: {e}"))?;
+            .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { "secret_tool_missing: 비밀 저장소 도구가 없어 저장하지 못했어요. libsecret-tools를 설치하고 다시 시도해 주세요.".to_string() } else { "secret_store_failed: 비밀 저장소에 저장하지 못했어요. 시스템 비밀 저장소 잠금을 풀고 다시 시도해 주세요.".to_string() })?;
         if !status.success() {
-            return Err(format!("Linux Secret Service write failed (exit {status})"));
+            return Err("secret_store_failed: 비밀 저장소에 저장하지 못했어요. 시스템 비밀 저장소 잠금을 풀고 다시 시도해 주세요.".to_string());
         }
     }
 
@@ -14595,6 +14600,7 @@ pub fn run() {
             get_audit_log,
             get_audit_stats,
             memory_get_all_facts,
+            memory_pending_count,
             memory_delete_fact,
             memory_export_backup,
             memory_import_backup,

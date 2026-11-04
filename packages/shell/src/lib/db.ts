@@ -46,3 +46,6 @@ export async function importMemoryBackup(
 	return invoke("memory_import_backup", { blob: Array.from(blob), password });
 }
 
+export async function getMemoryPendingCount(): Promise<number> {
+	return invoke("memory_pending_count");
+}

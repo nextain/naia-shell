@@ -98,8 +98,10 @@ function buildMockScript(overrides = "") {
 
 		if (cmd === "memory_get_all_facts") {
 			window.__MEMORY_SETTINGS_E2E__.factsRequested++;
-			return MOCK_FACTS;
+			if (window.__R17_READ_ERROR__) throw new Error("unreadable");
+			return window.__R17_FACTS__ || MOCK_FACTS;
 		}
+		if (cmd === "memory_pending_count") return window.__R17_PENDING__ || 0;
 		if (cmd === "memory_delete_fact") {
 			window.__MEMORY_SETTINGS_E2E__.deletedFacts++;
 			window.__MEMORY_SETTINGS_E2E__.lastDeletedFactId = args.factId;
@@ -753,3 +755,115 @@ test.describe("Memory Settings UI", () => {
 	});
 });
 
+
+for (const width of [360, 1100]) {
+	test(`R17 memory defaults, pending, empty, success, error ${width}px`, async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.addInitScript({
+			content: `${buildMockScript()}${SEED_ADK_PATH}
+    localStorage.setItem("naia-config", JSON.stringify({ onboardingComplete: true, provider: "vllm", model: "qwen3.8-27b-uncensored", vllmHost: "http://127.0.0.1:8031/v1", locale: "ko", memoryEmbeddingProvider: "none" }));
+    window.__R17_FACTS__ = []; window.__R17_PENDING__ = 2;
+    ${TAURI_BASE_MOCK_FALLBACK}`,
+		});
+		await page.route("**/v1/models", (route) =>
+			route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ data: [{ id: "qwen3.8-27b-uncensored" }] }),
+			}),
+		);
+		await page.goto("/");
+		await expect(page.locator(".app-bar-settings")).toBeVisible();
+		await page.locator(".app-bar-settings").focus();
+		await page.keyboard.press("Enter");
+		await page.locator('[data-settings-tab="memory"]').focus();
+		await page.keyboard.press("Enter");
+		await expect(page.getByTestId("memory-pending")).toContainText("2");
+		await expect(
+			page.getByText("저장된 기억이 없습니다.", { exact: true }),
+		).toBeVisible();
+		await page.getByTestId("memory-pending").scrollIntoViewIfNeeded();
+		await page.screenshot({
+			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r17-memory-pending-${width}.png`,
+		});
+		await page.evaluate(() => {
+			(window as any).__R17_PENDING__ = 0;
+			(window as any).__R17_FACTS__ = [
+				{
+					id: "r17",
+					content: "내 할 일은 제안서 작성",
+					entities: [],
+					topics: [],
+					sourceEpisodes: [],
+					importance: 0.8,
+				},
+			];
+		});
+		await expect(page.getByTestId("memory-pending")).toContainText("0");
+		await expect(
+			page.getByText("내 할 일은 제안서 작성", { exact: true }),
+		).toBeVisible();
+		await page
+			.getByTestId("memory-pending")
+			.evaluate((el) => el.scrollIntoView({ block: "center" }));
+		await page.screenshot({
+			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r17-memory-facts-${width}.png`,
+		});
+		await page.evaluate(() => {
+			(window as any).__R17_READ_ERROR__ = true;
+		});
+		await expect(
+			page.getByRole("alert").filter({ hasText: "기억을 읽지 못했어요" }),
+		).toBeVisible();
+		await page.evaluate(() => {
+			(window as any).__R17_READ_ERROR__ = false;
+		});
+		await expect(
+			page.getByRole("alert").filter({ hasText: "기억을 읽지 못했어요" }),
+		).not.toBeVisible();
+		await expect(page.getByTestId("small-llm-choice-main")).toBeChecked();
+		await expect(page.getByTestId("memory-embedding-warning")).toBeVisible();
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() =>
+						JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles
+							?.memory?.inherit,
+				),
+			)
+			.toBe("main");
+		await page.getByTestId("small-llm-choice-vllm").focus();
+		await page.keyboard.press("Space");
+		await expect(page.getByTestId("small-llm-base-url")).toHaveValue(
+			"http://127.0.0.1:8031/v1",
+		);
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() =>
+						JSON.parse(localStorage.getItem("naia-config") || "{}")
+							.memoryLlmBaseUrl,
+				),
+			)
+			.toBe("http://127.0.0.1:8031/v1");
+		await page
+			.getByTestId("small-llm-base-url")
+			.evaluate((el) => el.scrollIntoView({ block: "center" }));
+		await expect(page.getByTestId("small-llm-base-url")).toBeVisible();
+		await page.screenshot({
+			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r17-memory-model-${width}.png`,
+		});
+        await page.locator('input[name="memory-embedding"][value="vllm"]').focus(); await page.keyboard.press("Space");
+        await expect(page.getByRole("alert").filter({ hasText: "모델 버전을 아직" })).toBeVisible();
+        await page.getByTestId("memory-embedding-url").fill("http://127.0.0.1:8032/v1"); await page.getByTestId("memory-embedding-url").blur();
+        await page.getByTestId("memory-embedding-model").fill("intfloat/multilingual-e5-large"); await page.getByTestId("memory-embedding-model").blur();
+        await page.getByTestId("memory-embedding-revision").fill("e5-local-20261104"); await page.getByTestId("memory-embedding-revision").blur();
+        await page.getByTestId("memory-embedding-dimensions").fill("1024"); await page.getByTestId("memory-embedding-dimensions").blur();
+        await expect.poll(() => page.evaluate(() => { const c = JSON.parse(localStorage.getItem("naia-config") || "{}"); return [c.memoryEmbeddingBaseUrl, c.memoryEmbeddingModel, c.memoryEmbeddingRevision, c.memoryEmbeddingDimensions]; })).toEqual(["http://127.0.0.1:8032/v1", "intfloat/multilingual-e5-large", "e5-local-20261104", 1024]);
+        await page.getByTestId("memory-embedding-revision").evaluate(el => el.scrollIntoView({ block: "center" }));
+        const bounds = await page.getByTestId("memory-embedding-revision").boundingBox(); expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+        await page.screenshot({ path: `/home/nextain/work/codex-runs/026-b2c/tmp/r17-memory-embedding-${width}.png` });
+	});
+}

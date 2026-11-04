@@ -19,6 +19,20 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "b2c_memory_r17": {
+      "issue": 792,
+      "last_updated": "2026-11-04T06:42:34.198967+00:00",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "scenario": "docs/user-scenarios.md UC-B2C-026-R17",
+      "requirements": "docs/requirements.md FR-B2C-026-R17",
+      "verification": "Shell 2717 passed/21 skipped/0 failed; exact memory69 + Agent290 including real gRPC process restart without/with fake embedding; browser360/1100 pending, error recovery and saved embedding identity; Rust pending1; actual3090 acceptance pending."
+    },
     "b2c_shell_r16": {
       "issue": 792,
       "last_updated": "2026-11-04T04:14:12.625141+00:00",

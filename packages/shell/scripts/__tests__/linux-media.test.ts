@@ -74,3 +74,19 @@ it("rejects absent plugins and an environment that loads host plugins", () => {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+it("R17 Linux login can save credentials and missing tools have an actionable message", () => {
+	expect(conf.bundle.linux.deb.depends).toContain("libsecret-tools");
+	const main = readFileSync(
+		new URL("../../src-tauri/src/main.rs", import.meta.url),
+		"utf8",
+	);
+	expect(main).toContain('var_os("APPIMAGE")');
+	expect(main).toContain('Command::new("secret-tool")');
+	const lib = readFileSync(
+		new URL("../../src-tauri/src/lib.rs", import.meta.url),
+		"utf8",
+	);
+	expect(lib).toContain("secret_tool_missing:");
+	expect(lib).toContain("libsecret-tools를 설치");
+});

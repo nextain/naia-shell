@@ -8,6 +8,23 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"settings.embeddingRevision": "Model revision (change when replacing the model)",
+	"settings.embeddingDimensions": "Vector dimensions (match the served model)",
+	"settings.embeddingIdentityMissing": "A model revision is required for vector search. Recall uses matching words until it is set. Local e5-large uses 1024 dimensions. Enter the revision you actually deployed.",
+
+	"settings.memoryReadFailed":
+		"Could not read memory. Try again shortly. If items remain pending, check your brain connection and model settings.",
+	"settings.memoryUseMain": "Use the main brain model (default)",
+	"settings.memoryMainFallback":
+		"If the small LLM is empty or unreachable, the main brain organizes memory instead. Your main provider may charge for this.",
+	"settings.memoryKeywordWarning":
+		"Embeddings are off, so matching similar meanings is limited. Memories with matching words can still be recalled. Select local vLLM/Ollama in Embeddings and enter its URL and model.",
+	"settings.memoryPending": "Waiting to organize: {count}",
+	"settings.secretToolMissing":
+		"Login could not be saved because the secret storage tool is missing. Install libsecret-tools and sign in again.",
+	"settings.secretStoreFailed":
+		"Could not save to secret storage. Unlock your system keyring and try again.",
+
 	"apps.permissions": "Permisos de la aplicación",
 	"apps.permission.fullscreen": "Use fullscreen",
 	"apps.permission.downloads": "Download files",

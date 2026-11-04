@@ -8,6 +8,23 @@
 // `TranslationKey` 에는 번들 크기 때문에 분리한 `ollama-en.ts` 도 포함된다.
 // i18n 사용자 문구 시험은 영어 보조 표를 합쳐 열네 로케일의 키 집합을 견준다.
 export default {
+	"settings.embeddingRevision": "모델 버전 (모델을 바꾸면 새 이름 입력)",
+	"settings.embeddingDimensions": "벡터 크기 (서버 모델과 같은 숫자)",
+	"settings.embeddingIdentityMissing": "모델 버전을 아직 입력하지 않아 낱말 검색으로 기억을 찾아요. 로컬 e5-large의 벡터 크기는 1024예요. 버전은 실제 배포한 모델 버전 이름을 입력해 주세요.",
+
+	"settings.memoryReadFailed":
+		"기억을 읽지 못했어요. 잠시 뒤 다시 확인해 주세요. 정리 대기가 계속 남으면 두뇌 연결과 모델 설정을 확인해 주세요.",
+	"settings.memoryUseMain": "메인 두뇌와 같은 모델 사용 (기본)",
+	"settings.memoryMainFallback":
+		"작은 LLM이 비어 있거나 연결에 실패하면 메인 두뇌로 기억을 정리해요. 메인 제공자의 사용료가 들 수 있어요.",
+	"settings.memoryKeywordWarning":
+		"임베딩이 없어 비슷한 뜻 찾기는 제한돼요. 지금은 낱말이 겹치는 기억을 찾아요. 위 임베딩에서 로컬 vLLM/Ollama를 선택하고 주소와 모델을 입력할 수 있어요.",
+	"settings.memoryPending": "정리 대기 {count}건",
+	"settings.secretToolMissing":
+		"비밀 저장소 도구가 없어 로그인을 저장하지 못했어요. libsecret-tools를 설치하고 다시 로그인해 주세요.",
+	"settings.secretStoreFailed":
+		"비밀 저장소에 저장하지 못했어요. 시스템 비밀 저장소 잠금을 풀고 다시 시도해 주세요.",
+
 	"apps.permissions": "앱 권한",
 	"apps.permission.fullscreen": "전체 화면 사용",
 	"apps.permission.downloads": "파일 다운로드",
@@ -973,7 +990,7 @@ export default {
 	"settings.surfacingThresholdChosen": "떠오름 켜짐 · 점수 문턱 방식(비용 없음, 문턱 {threshold}) · 작은 LLM은 떠오름에 쓰지 않습니다",
 	"settings.surfacingThresholdInherited": "작은 LLM이 {provider} / {model} 설정을 물려받아 요금이 청구될 수 있어 쓰지 않습니다. 그동안은 점수 문턱 방식(문턱 {threshold})으로 떠오릅니다. 모델을 직접 고르면 작은 LLM이 판단합니다.",
 	"settings.surfacingThresholdPendingGateway": "{model}이(가) 아직 Naia 게이트웨이에 없습니다. 그동안은 점수 문턱 방식(문턱 {threshold})으로 떠오릅니다.",
-	"settings.surfacingOffNoEmbedding": "떠오름 꺼짐 · 임베딩이 없어 관련도를 잴 수 없습니다(키워드 검색만). 기억은 AI가 필요할 때 기억 도구로 찾습니다.",
+	"settings.surfacingOffNoEmbedding": "임베딩 없이 낱말로 기억을 찾아요. 비슷한 뜻까지 찾으려면 위 임베딩에서 로컬 주소와 모델을 설정해 주세요.",
 	"settings.surfacingLevel": "떠오름 민감도",
 	"settings.surfacingLevelLess": "덜 자주",
 	"settings.surfacingLevelNormal": "보통",

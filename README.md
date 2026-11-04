@@ -109,12 +109,12 @@ git clone https://github.com/nextain/naia-agent.git
 git clone https://github.com/nextain/naia-kb-compiler.git
 git clone https://github.com/nextain/naia-memory.git
 # agent-pairing.json pins the exact source revisions used by the shell.
-git -C naia-agent fetch --depth 1 origin ecb879b080aa7e9bff7402687478dc16bdc6c49f
-git -C naia-agent checkout --detach ecb879b080aa7e9bff7402687478dc16bdc6c49f
+git -C naia-agent fetch --depth 1 origin c34410479779a8d290eaf819ac18674764103849
+git -C naia-agent checkout --detach c34410479779a8d290eaf819ac18674764103849
 git -C naia-kb-compiler fetch --depth 1 origin 24f52c14ea906c250304f39d48866c7a47e1b596
 git -C naia-kb-compiler checkout --detach 24f52c14ea906c250304f39d48866c7a47e1b596
-git -C naia-memory fetch --depth 1 origin e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf
-git -C naia-memory checkout --detach e8cbd6f897a999f9a507ac58dbaf93496bc9a7bf
+git -C naia-memory fetch --depth 1 origin ab1f8002d31bffacf4779760eda727cc57a658a8
+git -C naia-memory checkout --detach ab1f8002d31bffacf4779760eda727cc57a658a8
 #  워크스페이스/
 #  ├── projects/
 #  │   ├── naia-shell/  ← 아래 명령은 여기서 실행
