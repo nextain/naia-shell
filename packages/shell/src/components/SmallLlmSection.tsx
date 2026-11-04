@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { AppConfig } from "../lib/config";
+import { writeConfiguredLlmRole } from "../lib/llm/roles";
 import { t } from "../lib/i18n";
 import { fetchNaiaModelCapabilities } from "../lib/llm/registry";
 import {
 	type SmallLlmChoice,
 	type SurfacingLevel,
 	describeSurfacingState,
+	normalizeOpenAiCompatBaseUrl,
 	readSmallLlmSelection,
 	readSurfacingLevel,
 	writeSmallLlmSelection,
@@ -30,22 +32,38 @@ export function SmallLlmSection({
 	fetchCatalog,
 }: SmallLlmSectionProps) {
 	const selection = readSmallLlmSelection(config);
+	const defaultPersisted = useRef(false);
+	useEffect(() => {
+		if (
+			config &&
+			!defaultPersisted.current &&
+			!config.llmRoles?.memory &&
+			!config.memoryLlmProvider
+		) {
+			defaultPersisted.current = true;
+			onPersist(writeConfiguredLlmRole(config, "memory", { inherit: "main" }));
+		}
+	}, [config, onPersist]);
 	const [selectedChoice, setSelectedChoice] = useState<
-		SmallLlmChoice | "off" | "threshold" | null
+		SmallLlmChoice | "off" | "threshold" | "main" | null
 	>(null);
-	const defaultChoice: SmallLlmChoice | "off" | "threshold" =
+	const defaultChoice: SmallLlmChoice | "off" | "threshold" | "main" =
 		selection.surfacingOff
 			? "off"
 			: config?.memorySurfacingJudge === "threshold"
 				? "threshold"
-				: selection.choice === "ollama" || selection.choice === "vllm"
-					? selection.choice
-					: selection.choice === "naia" && naiaKeyPresent
-						? "naia"
-						: "threshold";
+				: selection.inherited || selection.choice === "none"
+					? "main"
+					: selection.choice === "ollama" || selection.choice === "vllm"
+						? selection.choice
+						: selection.choice === "naia" && naiaKeyPresent
+							? "naia"
+							: "threshold";
 	const activeChoice = selectedChoice ?? defaultChoice;
 
-	const [selectedLevel, setSelectedLevel] = useState<SurfacingLevel | null>(null);
+	const [selectedLevel, setSelectedLevel] = useState<SurfacingLevel | null>(
+		null,
+	);
 	const activeLevel = selectedLevel ?? readSurfacingLevel(config);
 
 	useEffect(() => {
@@ -58,18 +76,8 @@ export function SmallLlmSection({
 		onPersist(writeSurfacingLevel(config, level));
 	};
 
-	const [baseUrl, setBaseUrl] = useState<string>(
-		selection.choice === "ollama"
-			? selection.baseUrl || "http://localhost:11434/v1"
-			: selection.choice === "vllm"
-				? selection.baseUrl || "http://localhost:8000/v1"
-				: "http://localhost:11434/v1",
-	);
-	const [model, setModel] = useState<string>(
-		selection.choice === "ollama" || selection.choice === "vllm"
-			? selection.model || ""
-			: "",
-	);
+	const [baseUrl, setBaseUrl] = useState(selection.baseUrl ?? "");
+	const [model, setModel] = useState(selection.model ?? "");
 
 	const [gatewayModels, setGatewayModels] = useState<
 		Set<string> | null | undefined
@@ -81,7 +89,8 @@ export function SmallLlmSection({
 	useEffect(() => {
 		let alive = true;
 		setGatewayModels(undefined);
-		fetchCatalogRef.current(gatewayHttpUrl)
+		fetchCatalogRef
+			.current(gatewayHttpUrl)
 			.then((res) => {
 				if (!alive) return;
 				if (!res) {
@@ -118,39 +127,36 @@ export function SmallLlmSection({
 
 	const handleSelectLocal = (choice: "ollama" | "vllm") => {
 		setSelectedChoice(choice);
-		let nextBase = baseUrl;
-		let nextModel = model;
-		if (selection.choice === choice) {
-			nextBase =
-				selection.baseUrl ||
-				(choice === "ollama"
-					? "http://localhost:11434/v1"
-					: "http://localhost:8000/v1");
-			nextModel = selection.model || "";
-		} else {
-			nextBase =
-				choice === "ollama"
-					? "http://localhost:11434/v1"
-					: "http://localhost:8000/v1";
-			nextModel = "";
-		}
+		const nextBase = normalizeOpenAiCompatBaseUrl(
+			selection.choice === choice && selection.baseUrl
+				? selection.baseUrl
+				: (choice === "vllm" ? config.vllmHost : config.ollamaHost) ||
+						(choice === "ollama"
+							? "http://localhost:11434/v1"
+							: "http://localhost:8000/v1"),
+		);
+		const nextModel =
+			(selection.choice === choice && selection.model) || config.model || "";
 		setBaseUrl(nextBase);
 		setModel(nextModel);
-		if (nextModel.trim().length > 0) {
-			onPersist(
-				writeSmallLlmSelection(config, {
-					choice,
-					baseUrl: nextBase,
-					model: nextModel.trim(),
-				}),
-			);
-		}
+		onPersist(
+			writeSmallLlmSelection(config, {
+				choice,
+				baseUrl: nextBase,
+				model: nextModel,
+			}),
+		);
 	};
 
 	const handleBlur = () => {
 		if (activeChoice !== "ollama" && activeChoice !== "vllm") return;
 		const trimmedModel = model.trim();
-		if (!trimmedModel) return;
+		if (!trimmedModel || !baseUrl.trim()) {
+			onPersist(writeConfiguredLlmRole(config, "memory", { inherit: "main" }));
+			return;
+		}
+		setBaseUrl(normalizeOpenAiCompatBaseUrl(baseUrl));
+		setModel(trimmedModel);
 		onPersist(
 			writeSmallLlmSelection(config, {
 				choice: activeChoice,
@@ -217,6 +223,23 @@ export function SmallLlmSection({
 			<div className="settings-field" data-testid="small-llm-section">
 				<div className="settings-hint">{t("settings.smallLlmHint")}</div>
 				<div
+					className="settings-hint"
+					role="status"
+					data-testid="memory-main-fallback"
+				>
+					{t("settings.memoryMainFallback")}
+				</div>
+				{(!config.memoryEmbeddingProvider ||
+					config.memoryEmbeddingProvider === "none") && (
+					<div
+						className="settings-hint"
+						role="alert"
+						data-testid="memory-embedding-warning"
+					>
+						⚠ {t("settings.memoryKeywordWarning")}
+					</div>
+				)}
+				<div
 					style={{
 						display: "flex",
 						flexDirection: "column",
@@ -224,6 +247,25 @@ export function SmallLlmSection({
 						marginTop: "4px",
 					}}
 				>
+					<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+						<input
+							type="radio"
+							name="small-llm"
+							data-testid="small-llm-choice-main"
+							checked={activeChoice === "main"}
+							onChange={() => {
+								setSelectedChoice("main");
+								onPersist({
+									...writeConfiguredLlmRole(config, "memory", {
+										inherit: "main",
+									}),
+									memorySurfacing: "on",
+									memorySurfacingJudge: "llm",
+								});
+							}}
+						/>
+						{t("settings.memoryUseMain")}
+					</label>
 					<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
 						<input
 							type="radio"
@@ -288,56 +330,62 @@ export function SmallLlmSection({
 				</div>
 				{activeChoice !== "off" &&
 					(state.kind === "on" || state.kind === "on-threshold") && (
-					<div
-						role="radiogroup"
-						aria-label={t("settings.surfacingLevel")}
-						data-testid="surfacing-level"
-						style={{
-							display: "flex",
-							flexDirection: "column",
-							gap: "6px",
-							marginTop: "8px",
-							flexWrap: "wrap",
-						}}
-					>
-						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-							<input
-								type="radio"
-								name="surfacing-level"
-								value="less"
-								data-testid="surfacing-level-less"
-								checked={activeLevel === "less"}
-								onChange={() => handleSelectLevel("less")}
-							/>
-							{t("settings.surfacingLevelLess")}
-						</label>
-						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-							<input
-								type="radio"
-								name="surfacing-level"
-								value="normal"
-								data-testid="surfacing-level-normal"
-								checked={activeLevel === "normal"}
-								onChange={() => handleSelectLevel("normal")}
-							/>
-							{t("settings.surfacingLevelNormal")}
-						</label>
-						<label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-							<input
-								type="radio"
-								name="surfacing-level"
-								value="more"
-								data-testid="surfacing-level-more"
-								checked={activeLevel === "more"}
-								onChange={() => handleSelectLevel("more")}
-							/>
-							{t("settings.surfacingLevelMore")}
-						</label>
-						<div className="settings-hint">
-							{t("settings.surfacingLevelHint")}
+						<div
+							role="radiogroup"
+							aria-label={t("settings.surfacingLevel")}
+							data-testid="surfacing-level"
+							style={{
+								display: "flex",
+								flexDirection: "column",
+								gap: "6px",
+								marginTop: "8px",
+								flexWrap: "wrap",
+							}}
+						>
+							<label
+								style={{ display: "flex", alignItems: "center", gap: "6px" }}
+							>
+								<input
+									type="radio"
+									name="surfacing-level"
+									value="less"
+									data-testid="surfacing-level-less"
+									checked={activeLevel === "less"}
+									onChange={() => handleSelectLevel("less")}
+								/>
+								{t("settings.surfacingLevelLess")}
+							</label>
+							<label
+								style={{ display: "flex", alignItems: "center", gap: "6px" }}
+							>
+								<input
+									type="radio"
+									name="surfacing-level"
+									value="normal"
+									data-testid="surfacing-level-normal"
+									checked={activeLevel === "normal"}
+									onChange={() => handleSelectLevel("normal")}
+								/>
+								{t("settings.surfacingLevelNormal")}
+							</label>
+							<label
+								style={{ display: "flex", alignItems: "center", gap: "6px" }}
+							>
+								<input
+									type="radio"
+									name="surfacing-level"
+									value="more"
+									data-testid="surfacing-level-more"
+									checked={activeLevel === "more"}
+									onChange={() => handleSelectLevel("more")}
+								/>
+								{t("settings.surfacingLevelMore")}
+							</label>
+							<div className="settings-hint">
+								{t("settings.surfacingLevelHint")}
+							</div>
 						</div>
-					</div>
-				)}
+					)}
 				{(activeChoice === "ollama" || activeChoice === "vllm") && (
 					<div
 						style={{
@@ -347,7 +395,9 @@ export function SmallLlmSection({
 							marginTop: "8px",
 						}}
 					>
-						<label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+						<label
+							style={{ display: "flex", flexDirection: "column", gap: "4px" }}
+						>
 							{t("settings.smallLlmBaseUrl")}
 							<input
 								type="text"
@@ -362,7 +412,9 @@ export function SmallLlmSection({
 								}
 							/>
 						</label>
-						<label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+						<label
+							style={{ display: "flex", flexDirection: "column", gap: "4px" }}
+						>
 							{t("settings.smallLlmModel")}
 							<input
 								type="text"
@@ -373,7 +425,9 @@ export function SmallLlmSection({
 								placeholder=""
 							/>
 						</label>
-						<div className="settings-hint">{t("settings.smallLlmLocalHint")}</div>
+						<div className="settings-hint">
+							{t("settings.smallLlmLocalHint")}
+						</div>
 					</div>
 				)}
 				<div

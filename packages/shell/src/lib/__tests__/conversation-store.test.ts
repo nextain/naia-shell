@@ -11,6 +11,8 @@ vi.mock("../adk-store", () => ({
 	getAdkPath: () => mockGetAdkPath(),
 }));
 
+import { toSendHistory } from "../../stores/chat";
+
 import {
 	deleteConversation,
 	getConversationHistory,
@@ -27,11 +29,21 @@ describe("conversation-store (FR-CONV.3/4 — read-only 로컬 transcript, agent
 	it("listConversations — {sessions} 파싱 + adkPath 전달", async () => {
 		mockInvoke.mockResolvedValue(
 			JSON.stringify({
-				sessions: [{ key: "s1", label: "안녕", messageCount: 2, createdAt: 1, updatedAt: 2 }],
+				sessions: [
+					{
+						key: "s1",
+						label: "안녕",
+						messageCount: 2,
+						createdAt: 1,
+						updatedAt: 2,
+					},
+				],
 			}),
 		);
 		const r = await listConversations();
-		expect(mockInvoke).toHaveBeenCalledWith("list_conversations", { adkPath: "/adk" });
+		expect(mockInvoke).toHaveBeenCalledWith("list_conversations", {
+			adkPath: "/adk",
+		});
 		expect(r).toHaveLength(1);
 		expect(r[0].key).toBe("s1");
 	});
@@ -54,11 +66,62 @@ describe("conversation-store (FR-CONV.3/4 — read-only 로컬 transcript, agent
 		].join("\n");
 		mockInvoke.mockResolvedValue(jsonl);
 		const msgs = await getConversationHistory("s1");
-		expect(mockInvoke).toHaveBeenCalledWith("read_conversation", { adkPath: "/adk", sessionId: "s1" });
+		expect(mockInvoke).toHaveBeenCalledWith("read_conversation", {
+			adkPath: "/adk",
+			sessionId: "s1",
+		});
 		expect(msgs.map((m) => m.role)).toEqual(["user", "assistant"]);
 		expect(msgs[0].content).toBe("안녕");
 		expect(msgs[1].content).toBe("반가워요");
 	});
+	it("restores app provenance and keeps app turns out of subsequent model history", async () => {
+		mockInvoke.mockResolvedValue(
+			[
+				{ role: "user", content: "private normal turn", timestamp: 1 },
+				{
+					role: "user",
+					content: "app question",
+					timestamp: 2,
+					appName: " Cafe Lua Tarot ",
+				},
+				{
+					role: "assistant",
+					content: "app answer",
+					timestamp: 3,
+					appName: "Cafe Lua Tarot",
+				},
+			]
+				.map((row) => JSON.stringify(row))
+				.join("\n"),
+		);
+		const restored = await getConversationHistory("after-restart");
+		expect(restored.map((m) => m.appName)).toEqual([
+			undefined,
+			"Cafe Lua Tarot",
+			"Cafe Lua Tarot",
+		]);
+		expect(toSendHistory(restored)).toEqual([
+			{ role: "user", content: "private normal turn" },
+		]);
+	});
+	it.each([null, 123, {}, "", "  ", "x".repeat(201)])(
+		"ignores malformed appName %j without inventing provenance",
+		async (appName) => {
+			mockInvoke.mockResolvedValue(
+				JSON.stringify({
+					role: "assistant",
+					content: "legacy answer",
+					appName,
+				}),
+			);
+			const restored = await getConversationHistory("legacy");
+			expect(restored[0].appName).toBeUndefined();
+			expect(toSendHistory(restored)).toEqual([
+				{ role: "assistant", content: "legacy answer" },
+			]);
+		},
+	);
+
 	it("getConversationHistory — 빈 transcript = []", async () => {
 		mockInvoke.mockResolvedValue("");
 		expect(await getConversationHistory("s1")).toEqual([]);
@@ -66,7 +129,10 @@ describe("conversation-store (FR-CONV.3/4 — read-only 로컬 transcript, agent
 	it("deleteConversation — delete_conversation invoke + true", async () => {
 		mockInvoke.mockResolvedValue(undefined);
 		expect(await deleteConversation("s1")).toBe(true);
-		expect(mockInvoke).toHaveBeenCalledWith("delete_conversation", { adkPath: "/adk", sessionId: "s1" });
+		expect(mockInvoke).toHaveBeenCalledWith("delete_conversation", {
+			adkPath: "/adk",
+			sessionId: "s1",
+		});
 	});
 	it("deleteConversation — 실패 = false(no-throw)", async () => {
 		mockInvoke.mockRejectedValue(new Error("nope"));

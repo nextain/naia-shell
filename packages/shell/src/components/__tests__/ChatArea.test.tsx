@@ -1,3 +1,5 @@
+import { listen } from "@tauri-apps/api/event";
+import { ensureBgmSidecar } from "../../lib/bgm-sidecar-url";
 import {
 	act,
 	cleanup,
@@ -13,11 +15,18 @@ import {
 	clearCameraActions,
 	registerCameraActions,
 } from "../../lib/avatar/camera-actions";
-import { fetchAgentSkills, isNewCore } from "../../lib/chat-service";
-import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
+import {
+	fetchAgentSkills,
+	isNewCore,
+	sendChatMessage,
+	sendAppSkillsClear,
+	cancelChat,
+} from "../../lib/chat-service";
+import { SLIDE_PRESENTER_CANCEL_EVENT, SLIDE_PRESENTER_SPEECH_RESULT_EVENT, SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
 import type { AgentResponseChunk, EnvironmentSegment } from "../../lib/types";
 import * as voiceSessionApi from "../../lib/voice/index";
 import type { VoiceSession } from "../../lib/voice/index";
+import { setAlignedSpeechPlanSource } from "../../lib/avatar/nva-speech/speech-timing";
 import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
 import { useCascadeAvatarStore } from "../../stores/cascade-avatar";
@@ -225,6 +234,14 @@ class FakeSpeechRecognition {
 
 describe("ChatArea", () => {
 	beforeEach(() => {
+		vi.mocked(listen).mockResolvedValue(() => {});
+		vi.mocked(sendChatMessage).mockImplementation(async (opts) => {
+			capturedOnChunk = opts.onChunk;
+			capturedRequests.push(opts as (typeof capturedRequests)[number]);
+		});
+		vi.mocked(sendAppSkillsClear).mockResolvedValue(true);
+		vi.mocked(cancelChat).mockResolvedValue(undefined);
+		vi.mocked(ensureBgmSidecar).mockResolvedValue("http://localhost:18791");
 		localStorage.setItem("naia-adk-path", "/tmp/chat-area-test-adk");
 		mockSendAppSkills.mockReset().mockResolvedValue(true);
 		vi.mocked(fetchAgentSkills).mockResolvedValue([]);
@@ -240,6 +257,7 @@ describe("ChatArea", () => {
 		capturedRequests.length = 0;
 		vi.clearAllMocks();
 		vi.restoreAllMocks();
+		setAlignedSpeechPlanSource(null);
 		modelToolBoundary.reset();
 		vi.mocked(isNewCore).mockReturnValue(false);
 		mockInvoke.mockResolvedValue(undefined);
@@ -2965,6 +2983,11 @@ describe("ChatArea", () => {
 					generation: 1,
 					page: 3,
 					text: "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다.",
+					nextPrefetch: {
+						id: "slides-prefetch-1",
+						page: 4,
+						text: "다음 쪽 예열 문장입니다.",
+					},
 				},
 			}),
 		);
@@ -2976,7 +2999,266 @@ describe("ChatArea", () => {
 		expect(
 			ttsSyncMocks.synthesizeTts.mock.calls.map((call: any[]) => call[0].text),
 		).toEqual(["첫 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."]);
+		const currentPlayback = ttsSyncMocks.enqueueOrdered.mock.calls[0][2] as {
+			onPlaybackStart?: (playback?: { clock: () => number }) => void;
+		};
+		currentPlayback.onPlaybackStart?.({ clock: () => 0 });
+		await waitFor(() =>
+			expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(4),
+		);
+		expect(ttsSyncMocks.synthesizeTts.mock.calls[3][0].text).toBe(
+			"다음 쪽 예열 문장입니다.",
+		);
+		// Prefetch is a standby cache only; it must not enqueue a second page early.
+		expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(3);
+
+		window.dispatchEvent(
+			new CustomEvent(SLIDE_PRESENTER_CANCEL_EVENT, {
+				detail: {
+					requestId: "slide-speak-1",
+					generation: 1,
+					prefetchId: "slides-prefetch-1",
+					invalidateGeneration: true,
+				},
+			}),
+		);
+		window.dispatchEvent(
+			new CustomEvent(SLIDE_PRESENTER_SPEAK_EVENT, {
+				detail: {
+					requestId: "slide-speak-stale",
+					generation: 1,
+					page: 4,
+					text: "이전 세대의 문장입니다.",
+					prefetchId: "slides-prefetch-1",
+				},
+			}),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(4);
+		expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(3);
 		localStorage.removeItem("naia-config");
+	});
+
+	it("2a waits for every slide sentence when the next synthesis arrives after queue end", async () => {
+		const secondSynthesis = deferred<{ audioBase64: string }>();
+		ttsSyncMocks.synthesizeTts.mockImplementation((input: { text: string }) =>
+			input.text === "첫 조각입니다."
+				? Promise.resolve({ audioBase64: "first-audio" })
+				: secondSynthesis.promise,
+		);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+				ttsProvider: "nextain",
+			}),
+		);
+		const results: CustomEvent[] = [];
+		const onResult = (event: Event) => results.push(event as CustomEvent);
+		window.addEventListener(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, onResult);
+		try {
+			render(<ChatArea />);
+			window.dispatchEvent(
+				new CustomEvent(SLIDE_PRESENTER_SPEAK_EVENT, {
+					detail: {
+						requestId: "slide-sentence-wait",
+						generation: 11,
+						page: 2,
+						text: "첫 조각입니다. 둘째 조각입니다.",
+					},
+				}),
+			);
+			await waitFor(() =>
+				expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(1),
+			);
+			const first = ttsSyncMocks.enqueueOrdered.mock.calls[0][2] as {
+				onPlaybackStart?: (playback?: { clock: () => number }) => void;
+				onPlaybackEnd?: () => void;
+			};
+			first.onPlaybackStart?.({ clock: () => 0.5 });
+			first.onPlaybackEnd?.();
+			// This is the observed race: AudioQueue reports empty before sentence 2's
+			// serial TTS result has arrived. It must not finish the slide request.
+			ttsSyncMocks.audioQueueCallbacks?.onPlaybackEnd?.();
+			expect(results).toHaveLength(0);
+
+			secondSynthesis.resolve({ audioBase64: "second-audio" });
+			await waitFor(() =>
+				expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(2),
+			);
+			const second = ttsSyncMocks.enqueueOrdered.mock.calls[1][2] as {
+				onPlaybackStart?: (playback?: { clock: () => number }) => void;
+				onPlaybackEnd?: () => void;
+			};
+			second.onPlaybackStart?.({ clock: () => 0.25 });
+			second.onPlaybackEnd?.();
+			await waitFor(() => expect(results).toHaveLength(1));
+			expect(results[0]?.detail).toMatchObject({
+				requestId: "slide-sentence-wait",
+				status: "finished",
+			});
+		} finally {
+			window.removeEventListener(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, onResult);
+			localStorage.removeItem("naia-config");
+		}
+	});
+
+	it("2b settles the slide after a later sentence's synthesis fails", async () => {
+		ttsSyncMocks.synthesizeTts
+			.mockResolvedValueOnce({ audioBase64: "first-audio" })
+			.mockRejectedValueOnce(new Error("second sentence synthesis failed"));
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+				ttsProvider: "naia-local-voice",
+			}),
+		);
+		const results: CustomEvent[] = [];
+		const onResult = (event: Event) => results.push(event as CustomEvent);
+		window.addEventListener(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, onResult);
+		try {
+			render(<ChatArea />);
+			window.dispatchEvent(
+				new CustomEvent(SLIDE_PRESENTER_SPEAK_EVENT, {
+					detail: {
+						requestId: "slide-sentence-failure",
+						generation: 12,
+						page: 3,
+						text: "재생할 첫 조각입니다. 실패할 둘째 조각입니다.",
+					},
+				}),
+			);
+			await waitFor(() => {
+				expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(1);
+				expect(ttsSyncMocks.skipOrdered).toHaveBeenCalledTimes(1);
+			});
+			expect(results).toHaveLength(0);
+			const first = ttsSyncMocks.enqueueOrdered.mock.calls[0][2] as {
+				onPlaybackEnd?: () => void;
+			};
+			first.onPlaybackEnd?.();
+			await waitFor(() => expect(results).toHaveLength(1));
+			expect(results[0]?.detail).toMatchObject({
+				requestId: "slide-sentence-failure",
+				status: "finished",
+			});
+		} finally {
+			window.removeEventListener(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, onResult);
+			localStorage.removeItem("naia-config");
+		}
+	});
+
+	it("prefers the same-page standby stage and delays the following page stage until the last sentence starts", async () => {
+		ttsSyncMocks.synthesizeTts.mockResolvedValue({
+			audioBase64: "slide-audio",
+		});
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+				ttsProvider: "nextain",
+			}),
+		);
+		const events: string[] = [];
+		let stageNumber = 0;
+		const renderer = {
+			hasAuthoredClip: () => false,
+			playAuthoredClip: vi.fn(),
+			setSpeakingVisual: vi.fn(),
+			playSpeechTiming: vi.fn(async () => true),
+			interrupt: vi.fn(),
+			stop: vi.fn(),
+			canPlaySpeechPlans: () => true,
+			prepareSpeechTiming: vi.fn(async () => ({
+				play: vi.fn(async () => {
+					events.push("active-play");
+					return true;
+				}),
+			})),
+			prefetchSpeechTiming: vi.fn(async () => {
+				const currentStage = ++stageNumber;
+				events.push(`stage-prefetch-${currentStage}`);
+				return {
+					play: vi.fn(async () => {
+						events.push(`stage-play-${currentStage}`);
+						return true;
+					}),
+				};
+			}),
+			cancelPrefetchedSpeechTiming: vi.fn(),
+		};
+		const alignedPlan = {
+			version: "1",
+			quality_mode: "aligned",
+			audio: { duration_us: 500_000 },
+			events: [{ unit: "sil", start_us: 0, end_us: 500_000 }],
+		} as never;
+		setAlignedSpeechPlanSource(vi.fn(async () => alignedPlan));
+		useCascadeAvatarStore.setState({ renderer: renderer as never });
+		try {
+			render(<ChatArea />);
+			window.dispatchEvent(
+				new CustomEvent(SLIDE_PRESENTER_SPEAK_EVENT, {
+					detail: {
+						requestId: "slide-prefetch-order",
+						generation: 13,
+						page: 1,
+						text: "현재 첫 조각입니다. 현재 마지막 조각입니다.",
+						nextPrefetch: {
+							id: "slides-prefetch-order",
+							page: 2,
+							text: "다음 쪽 첫 문장입니다.",
+						},
+					},
+				}),
+			);
+			await waitFor(() =>
+				expect(ttsSyncMocks.enqueueOrdered).toHaveBeenCalledTimes(2),
+			);
+			await waitFor(() =>
+				expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(2),
+			);
+			const first = ttsSyncMocks.enqueueOrdered.mock.calls[0][2] as {
+				beforePlayback?: () => Promise<unknown>;
+				onPlaybackStart?: (playback?: { clock: () => number }) => void;
+			};
+			const last = ttsSyncMocks.enqueueOrdered.mock.calls[1][2] as {
+				beforePlayback?: () => Promise<unknown>;
+				onPlaybackStart?: (playback?: { clock: () => number }) => void;
+			};
+			await first.beforePlayback?.();
+			first.onPlaybackStart?.({ clock: () => 0.2 });
+			await waitFor(() =>
+				expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(3),
+			);
+			await waitFor(() =>
+				expect(renderer.prefetchSpeechTiming).toHaveBeenCalledTimes(1),
+			);
+			expect(events).toContain("active-play");
+			expect(events).toContain("stage-prefetch-1");
+			expect(renderer.prefetchSpeechTiming).toHaveBeenCalledTimes(1);
+
+			await last.beforePlayback?.();
+			last.onPlaybackStart?.({ clock: () => 0.4 });
+			await waitFor(() =>
+				expect(renderer.prefetchSpeechTiming).toHaveBeenCalledTimes(2),
+			);
+			expect(events.indexOf("stage-play-1")).toBeLessThan(
+				events.indexOf("stage-prefetch-2"),
+			);
+		} finally {
+			localStorage.removeItem("naia-config");
+		}
 	});
 
 	it("offers knowledge tools and filters non-model tools on both turn 1 and turn 2", async () => {

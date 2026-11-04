@@ -13,6 +13,45 @@
 			"compressed": false,
 			"pending_notice": false,
 			"user_approved": true
+		},
+		{
+			"name": "mouth.ts",
+			"origin": "packages/shell/src/lib/vrm/mouth.ts",
+			"quarantined_date": "2026-10-13",
+			"reason": "NVA lip sync SoT 8 (naia-shell#760): sound-independent A-I-U-E-O/talking mouth loop is forbidden; mouth motion only via canonical SpeechPlayer. Never restore.",
+			"retention_months": 3,
+			"review_by": "2027-01-13",
+			"compress_on_expiry": true,
+			"status": "active",
+			"compressed": false,
+			"pending_notice": false,
+			"user_approved": true
+		},
+		{
+			"name": "mouth.test.ts",
+			"origin": "packages/shell/src/lib/vrm/__tests__/mouth.test.ts",
+			"quarantined_date": "2026-10-13",
+			"reason": "NVA lip sync SoT 8 (naia-shell#760): sound-independent A-I-U-E-O/talking mouth loop is forbidden; mouth motion only via canonical SpeechPlayer. Never restore.",
+			"retention_months": 3,
+			"review_by": "2027-01-13",
+			"compress_on_expiry": true,
+			"status": "active",
+			"compressed": false,
+			"pending_notice": false,
+			"user_approved": true
+		},
+		{
+			"name": "nva-aiueo-talking-loop.removed.ts",
+			"origin": "packages/shell/src/lib/avatar/nva-aiueo-talking-loop.removed.ts",
+			"quarantined_date": "2026-10-13",
+			"reason": "NVA lip sync SoT 8 (naia-shell#760): sound-independent A-I-U-E-O/talking mouth loop is forbidden; mouth motion only via canonical SpeechPlayer. Never restore.",
+			"retention_months": 3,
+			"review_by": "2027-01-13",
+			"compress_on_expiry": true,
+			"status": "active",
+			"compressed": false,
+			"pending_notice": false,
+			"user_approved": true
 		}
 	]
 }

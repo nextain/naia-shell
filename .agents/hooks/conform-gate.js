@@ -2,7 +2,8 @@
 /**
  * conform-gate — PostToolUse on Edit|Write.
  *
- * After each edit of a C source/header, runs the DETERMINISTIC contract<->code
+ * TypeScript edits run the fail-closed file-contract oracle immediately.
+ * C source/header edits run the DETERMINISTIC contract<->code
  * conform check (scripts/conform/check.py, 0 tokens, no LLM) on the region the
  * file belongs to. Inert until scripts/conform/manifest.json has regions.
  *   - drift (1..N-1 edits) → systemMessage: "reconcile before adding more"
@@ -10,7 +11,7 @@
  *
  * Purpose: stop an uncommitted agent from flailing for hours on a drifted base
  * (the false-success class). The signal interrupts the loop from outside.
- * fail-open on any error.
+ * TypeScript oracle errors block; the legacy C extractor remains fail-open.
  */
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -31,7 +32,20 @@ async function main() {
 	const tn = d.tool_name || "";
 	if (tn !== "Edit" && tn !== "Write") process.exit(0);
 	const fp = d.tool_input?.file_path || "";
-	if (!fp || !/\.(c|h)$/.test(fp)) process.exit(0); // C extractor; widen per language
+	if (!fp) process.exit(0);
+	// TypeScript uses the repository's file-contract oracle. Do not let the
+	// empty C manifest silently disable enforcement for the actual codebase.
+	if (/\.tsx?$/.test(fp)) {
+		try {
+			execFileSync(process.execPath, [path.join(__dirname, "../../scripts/check-file-anchors.mjs")], {
+				cwd: path.join(__dirname, "../.."), stdio: "pipe",
+			});
+		} catch {
+			process.stdout.write(JSON.stringify({ decision: "block", reason: "[conform] TypeScript file contracts failed; run node scripts/check-file-anchors.mjs and reconcile before continuing." }));
+		}
+		process.exit(0);
+	}
+	if (!/\.(c|h)$/.test(fp)) process.exit(0);
 
 	let out;
 	try {

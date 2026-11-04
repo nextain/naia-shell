@@ -16,7 +16,9 @@
  */
 export const TAURI_BASE_MOCK_FALLBACK = `
 (function() {
-	var existing = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+	var nativePointer = localStorage.getItem("naia-adk-path") || "/mock/adk";
+ var nativeConfig = localStorage.getItem("naia-config") || "";
+ var existing = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
 	if (!existing) return;
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
 		var appControl = false;
@@ -40,7 +42,10 @@ export const TAURI_BASE_MOCK_FALLBACK = `
 			if (appControl) return null;
 			throw error;
 		}
-		if (r !== undefined) return r;
+		// Legacy mocks return null for unknown commands. A scenario testing an
+        // explicitly empty native home opts out of that compatibility fallback.
+        if (cmd === "read_naia_path_cache" && r == null && !window.__E2E_EXPLICIT_NATIVE_POINTER__) return nativePointer;
+        if (r !== undefined) return r;
 		if (appControl) return null;
 		// Plugin store
 		if (cmd === "plugin:store|load") return 1;
@@ -75,7 +80,8 @@ export const TAURI_BASE_MOCK_FALLBACK = `
 		// non-string reply is a hydration error that keeps the app gated. Specs
 		// seed the render cache in localStorage, so emulate an ADK config.json
 		// holding that same snapshot; an unseeded spec gets the clean first run.
-		if (cmd === "read_naia_config") return localStorage.getItem("naia-config") || "";
+		if (cmd === "read_naia_path_cache") return nativePointer;
+		if (cmd === "read_naia_config") return nativeConfig;
 		if (cmd === "read_naia_ui_config") return "";
 		// Apps
 		if (cmd === "app_list_installed") return [];

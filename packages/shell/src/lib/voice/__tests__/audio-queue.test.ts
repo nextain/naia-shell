@@ -59,6 +59,26 @@ describe("AudioQueue sentence callbacks", () => {
 		expect(unavailable).not.toHaveBeenCalled();
 	});
 
+	it("settles playback as failed when audio errors after it starts", () => {
+		const unavailable = vi.fn();
+		const failure = vi.fn();
+		const ended = vi.fn();
+		const queue = new AudioQueue();
+		queue.enqueue("first", {
+			onPlaybackUnavailable: unavailable,
+			onPlaybackFailure: failure,
+			onPlaybackEnd: ended,
+		});
+		const first = FakeAudio.instances[0];
+
+		first.onplay?.();
+		first.onerror?.(new Event("error"));
+
+		expect(unavailable).not.toHaveBeenCalled();
+		expect(failure).toHaveBeenCalledTimes(1);
+		expect(ended).not.toHaveBeenCalled();
+	});
+
 	it("prebuffers queued sentences until playback is resumed", () => {
 		const queue = new AudioQueue();
 		queue.pauseBeforePlayback();
@@ -136,6 +156,59 @@ class FakeAudioContext {
 }
 
 const pcm = (...samples: number[]) => Int16Array.from(samples);
+
+describe("AudioQueue beforePlayback gate (NVA plan before sound)", () => {
+	beforeEach(() => {
+		FakeAudio.instances = [];
+		FakeAudio.playImpl = () => Promise.resolve();
+		vi.stubGlobal("Audio", FakeAudio);
+	});
+
+	it("does not start the sound until the gate settles", async () => {
+		let release = () => {};
+		const gate = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					release = resolve;
+				}),
+		);
+		const queue = new AudioQueue();
+		queue.enqueue("first", { beforePlayback: gate });
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(gate).toHaveBeenCalledTimes(1);
+		expect(FakeAudio.instances).toHaveLength(0);
+		release();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(FakeAudio.instances).toHaveLength(1);
+		expect(FakeAudio.instances[0].play).toHaveBeenCalledTimes(1);
+	});
+
+	it("a failed gate still plays the sound", async () => {
+		const queue = new AudioQueue();
+		queue.enqueue("first", {
+			beforePlayback: () => Promise.reject(new Error("no plan")),
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(FakeAudio.instances).toHaveLength(1);
+	});
+
+	it("clear() while waiting on the gate cancels that sound", async () => {
+		let release = () => {};
+		const queue = new AudioQueue();
+		queue.enqueue("first", {
+			beforePlayback: () =>
+				new Promise<void>((resolve) => {
+					release = resolve;
+				}),
+		});
+		await Promise.resolve();
+		queue.clear();
+		release();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(FakeAudio.instances).toHaveLength(0);
+	});
+});
 
 describe("PcmStreamSource (streaming TTS contract)", () => {
 	it("replays buffered chunks to a late subscriber and ends exactly once", () => {
@@ -320,5 +393,50 @@ describe("AudioQueue streamed PCM playback", () => {
 		});
 		stream.fail();
 		expect(unavailable).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("AudioQueue sentence audio clock (NVA SoT 8)", () => {
+	beforeEach(() => {
+		FakeAudio.instances = [];
+		FakeAudio.playImpl = () => Promise.resolve();
+		FakeAudioContext.sources = [];
+		FakeAudioContext.now = 0;
+		vi.stubGlobal("Audio", FakeAudio);
+		vi.stubGlobal("AudioContext", FakeAudioContext);
+	});
+
+	it("hands a whole-audio sentence the element's own playback position", () => {
+		const started = vi.fn();
+		const queue = new AudioQueue();
+		queue.enqueue("first", { onPlaybackStart: started });
+		const audio = FakeAudio.instances[0] as FakeAudio & {
+			currentTime?: number;
+		};
+		audio.onplay?.();
+		const { clock } = started.mock.calls[0][0] as { clock: () => number };
+		audio.currentTime = 1.25;
+		expect(clock()).toBe(1.25);
+		audio.currentTime = 2.5;
+		expect(clock()).toBe(2.5);
+	});
+
+	it("maps the PCM context timeline to the sound position and holds through gaps", () => {
+		const started = vi.fn();
+		const queue = new AudioQueue();
+		const stream = new PcmStreamSource(24_000);
+		queue.enqueueOrderedStream(0, stream, { onPlaybackStart: started });
+		FakeAudioContext.now = 1;
+		stream.push(new Int16Array(2_400)); // 100 ms, scheduled at 1.04
+		const { clock } = started.mock.calls[0][0] as { clock: () => number };
+		expect(clock()).toBe(0); // not audible yet
+		FakeAudioContext.now = 1.09;
+		expect(clock()).toBeCloseTo(0.05, 6);
+		// Underrun: the next chunk arrives late, after the first has finished.
+		FakeAudioContext.now = 1.3;
+		expect(clock()).toBeCloseTo(0.1, 6); // held at the end of what played
+		stream.push(new Int16Array(2_400)); // starts at 1.3
+		FakeAudioContext.now = 1.35;
+		expect(clock()).toBeCloseTo(0.15, 6);
 	});
 });

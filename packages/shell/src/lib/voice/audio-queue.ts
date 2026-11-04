@@ -6,6 +6,7 @@
  * and ordered enqueue for out-of-order TTS responses.
  */
 
+import type { AudioPlaybackClock } from "../avatar/nva-speech/speech-timing";
 import { Logger } from "../logger";
 
 export interface AudioQueueCallbacks {
@@ -16,14 +17,29 @@ export interface AudioQueueCallbacks {
 }
 
 export interface AudioQueueItemCallbacks {
-	/** Fires when this exact sentence starts playing, not merely when queued. */
-	onPlaybackStart?: () => void;
+	/**
+	 * Fires when this exact sentence starts playing, not merely when queued.
+	 * `playback.clock()` is that sound's own playback position (SoT 8 audio clock).
+	 */
+	onPlaybackStart?: (playback: AudioPlaybackClock) => void;
 	/** Fires if this sentence cannot start playback. */
 	onPlaybackUnavailable?: () => void;
+	/** Fires if playback fails after this sentence started. */
+	onPlaybackFailure?: () => void;
+	/** Fires when this exact sentence's audio playback has ended. */
+	onPlaybackEnd?: () => void;
+	/**
+	 * Awaited when this sentence's turn comes, before its sound starts (whole
+	 * audio only). Lets the avatar load the plan for this exact sound so the
+	 * first mouth frame and the first sound start together. A rejection or a
+	 * newer clear() never blocks the sound: it plays after the gate settles.
+	 */
+	beforePlayback?: () => Promise<unknown>;
 }
 
 interface AudioQueueItem extends AudioQueueItemCallbacks {
 	audioBase64?: string;
+	seq?: number;
 	/** Streaming PCM item (local voice engines that stream `audio/pcm`). */
 	stream?: PcmStreamSource;
 }
@@ -148,7 +164,7 @@ export class AudioQueue {
 			playing: this.playing,
 			paused: this.playbackPaused,
 		});
-		this.pendingOrdered.set(seq, { audioBase64: mp3Base64, ...callbacks });
+		this.pendingOrdered.set(seq, { audioBase64: mp3Base64, ...callbacks, seq });
 		this.flushOrdered();
 	}
 
@@ -165,7 +181,7 @@ export class AudioQueue {
 			seq,
 			cursor: this.flushCursor,
 		});
-		this.pendingOrdered.set(seq, { stream, ...callbacks });
+		this.pendingOrdered.set(seq, { stream, ...callbacks, seq });
 		this.flushOrdered();
 	}
 
@@ -256,6 +272,19 @@ export class AudioQueue {
 		this.currentStream = stream;
 		let nextStart = 0;
 		let started = false;
+		// Scheduled pieces of this sound on the context timeline. The clock maps
+		// ctx.currentTime to a position in the sound, holding through underrun gaps.
+		const pieces: { at: number; offset: number; duration: number }[] = [];
+		let soundSeconds = 0;
+		const clock = () => {
+			const now = ctx.currentTime;
+			let position = 0;
+			for (const piece of pieces) {
+				if (now < piece.at) break;
+				position = piece.offset + Math.min(now - piece.at, piece.duration);
+			}
+			return position;
+		};
 		let advanced = false;
 		let pending = 0;
 		let ended = false;
@@ -264,6 +293,10 @@ export class AudioQueue {
 		const advance = () => {
 			if (!isCurrent() || advanced) return;
 			advanced = true;
+			if (started) {
+				if (stream.failed) item.onPlaybackFailure?.();
+				else item.onPlaybackEnd?.();
+			}
 			stream.unsubscribe();
 			this.currentStream = null;
 			this.playNext();
@@ -285,6 +318,8 @@ export class AudioQueue {
 				const at = Math.max(now + (started ? 0 : 0.04), nextStart);
 				src.start(at);
 				nextStart = at + buf.duration;
+				pieces.push({ at, offset: soundSeconds, duration: buf.duration });
+				soundSeconds += buf.duration;
 				pending++;
 				this.streamSources.add(src);
 				src.onended = () => {
@@ -299,7 +334,7 @@ export class AudioQueue {
 						now: Number(now.toFixed(3)),
 						ctxState: ctx.state,
 					});
-					item.onPlaybackStart?.();
+					item.onPlaybackStart?.({ clock });
 					if (!wasPlaying) this.callbacks.onPlaybackStart?.();
 				}
 			},
@@ -320,6 +355,9 @@ export class AudioQueue {
 							audioBase64: stream.wholeAudioBase64,
 							onPlaybackStart: item.onPlaybackStart,
 							onPlaybackUnavailable: item.onPlaybackUnavailable,
+							onPlaybackFailure: item.onPlaybackFailure,
+							onPlaybackEnd: item.onPlaybackEnd,
+							beforePlayback: item.beforePlayback,
 						});
 						this.playing = wasPlaying;
 						this.playNext();
@@ -359,6 +397,44 @@ export class AudioQueue {
 			this.playStream(item, item.stream, generation, wasPlaying);
 			return;
 		}
+		if (item.beforePlayback) {
+			const gate = item.beforePlayback;
+			const beforePlaybackStartedAt = Date.now();
+			Logger.debug("AudioQueue", "beforePlayback started", {
+				seq: item.seq ?? null,
+			});
+			void Promise.resolve()
+				.then(gate)
+				.then(
+					() => {
+						Logger.debug("AudioQueue", "beforePlayback settled", {
+							seq: item.seq ?? null,
+							elapsedMs: Date.now() - beforePlaybackStartedAt,
+							ok: true,
+						});
+					},
+					(error) => {
+						Logger.warn("AudioQueue", "beforePlayback failed", {
+							seq: item.seq ?? null,
+							elapsedMs: Date.now() - beforePlaybackStartedAt,
+							error: error instanceof Error ? error.name : "unknown",
+						});
+					},
+				)
+				.then(() => {
+					if (generation !== this.generation) return;
+					this.playAudio(item, generation, wasPlaying);
+				});
+			return;
+		}
+		this.playAudio(item, generation, wasPlaying);
+	}
+
+	private playAudio(
+		item: AudioQueueItem,
+		generation: number,
+		wasPlaying: boolean,
+	): void {
 		const mp3Base64 = item.audioBase64 ?? "";
 
 		// WAV base64 starts with "UklGR" (RIFF header); use audio/wav MIME for omni model output
@@ -395,7 +471,7 @@ export class AudioQueue {
 		audio.onplay = () => {
 			if (!isCurrent()) return;
 			started = true;
-			item.onPlaybackStart?.();
+			item.onPlaybackStart?.({ clock: () => audio.currentTime || 0 });
 			// Only fire onPlaybackStart for the first chunk in a sequence
 			if (!wasPlaying) {
 				this.callbacks.onPlaybackStart?.();
@@ -403,12 +479,15 @@ export class AudioQueue {
 		};
 
 		audio.onended = () => {
+			if (!isCurrent()) return;
+			item.onPlaybackEnd?.();
 			advance();
 		};
 
 		audio.onerror = (e) => {
 			Logger.warn("AudioQueue", "Audio playback error", { error: String(e) });
-			signalUnavailable();
+			if (started) item.onPlaybackFailure?.();
+			else signalUnavailable();
 			advance();
 		};
 

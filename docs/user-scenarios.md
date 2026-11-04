@@ -1839,7 +1839,7 @@ Chat 지연 로드 UI 상태 매트릭스: **기본**은 variant를 지정하지
 | S-APP-SANDBOX | 앱 샌드박스 경로 강제 | UC9 앱 | app_sandbox.rs 단위·cargo |
 | S-BGM-LIB | BGM 라이브러리 SoT(#528) | UC8 확장 | bgm-library(-store).test.ts·BgmPlayer.test.tsx |
 | S-APP-OPEN-GRANT | 열림=동의 grant(#543) | UC9 앱 | workspace.rs 단위 |
-| S-SLIDES-REC | 슬라이드 MP4 녹화(#546) | UC9 앱 | app_sandbox.rs 상태머신 · 설치 전제는 e2e/467-slide-presenter.spec.ts(설치 매니페스트·`naia://app-install` 창) |
+| S-SLIDES-REC | 슬라이드 MP4 녹화(#546) | UC9 앱 | app_sandbox.rs 상태머신 · slides_recording_test.rs(리눅스 x11grab·소리·정지) · 설치 전제는 e2e/467-slide-presenter.spec.ts(설치 매니페스트·`naia://app-install` 창) |
 | S-I18N-COMPLETE | t() 키 14개 언어 완비 | 전 UC | check-compile-integrity·i18n-user-facing.test.ts(로케일 파일이 정본, #559) |
 
 
@@ -1939,6 +1939,10 @@ Test Coverage Map
 | UC-SLIDES-PPTX | Select PDF/PPTX; lazily convert general PPTX locally with isolated LibreOffice profile. Preserve original files and existing Office sessions. Display original filename and same-basename MD, else embedded notes, with blank/hidden page mapping. | slides_import and slides_files Rust tests; slides-files.test.ts, slides-files-bridge.test.ts, slides-center-area.test.tsx; real isolated conversion fixture |
 | UC-SLIDES-IMPORT-LIFETIME | Progress, cancel, retry, timeout, missing converter, corrupt input, bounded content/version/options cache and late result rejection. | slides_import Rust tests; slides-files.test.ts, slides-files-bridge.test.ts; slides-sidecar.spec.ts |
 | UC-SLIDES-EDIT | Edit page narration; apply/cancel; pause speech before applying; export edited Markdown copy; guard unapplied and unexported changes on document/script replacement. | slide-script.test.ts, slides-center-area.test.tsx, slides-sidecar.spec.ts |
+| UC-SLIDES-DEMO-VIDEO | In an installed Slides deck, a `## N-M. [영상] filename.mp4` or `[video]` script heading schedules a same-folder video after page N narration. The video fills the slide canvas with sound, narration resumes immediately after its `ended` event, and range-end videos finish before completion/repeat. While the current page is being narrated, the next narration page's audio and aligned plan are prepared through the existing Shell speech pipeline; preparation continues during a video after that page. At most one narration page is prefetched, its synthesis requests run sequentially, and automatic page advance reuses its exact audio and plan. The canonical avatar keeps showing the current page's aligned mouth plan; a prepared next sentence's aligned plan remains on its separate canonical stage through an intervening video and becomes active only with its matching sound. Starting prefetch for the following page from this sentence's playback callback must not cancel the consumed page's stage before its play callback runs. Pause/resume, next/previous/goto, stop, question, repeat/range change, page skip and document replacement invalidate the prepared generation so stale audio or plans never play. Pause/resume, next/previous/goto, stop and question pause the current segment. Missing, rejected and playback-failed files are identified and skipped without stalling. Throughout Slides focus, narration, and video, the NVA avatar stays in the Shell’s left avatar panel at its existing size and crop. Focus controls change the Slides viewer only; no presentation-state message repositions the avatar. Per-sequence diagnostics report plan arrival, preparation timing, timeout/play state and swallowed errors without logging text or credentials. A later avatar plan waits for the current canonical player load to finish, and stale generations never play. | slide-script.test.ts, slide-presenter.test.ts, slides-files.test.ts, slides-files-bridge.test.ts, slides-center-area.test.tsx, slides-sidecar.spec.ts, slides_files_test.rs, gateway-aligned-plan.test.ts, sentence-pipeline.test.ts (consumed stage survives next-page prefetch and settles `played:true` after video), audio-queue.test.ts, canonical-speech.test.ts, prebaked-renderer.test.ts, VideoAvatarCanvas.test.tsx, slides-host-bridge.test.ts, slides-host.test.ts; two isolated Linux recording takes with ffprobe/silencedetect/frame/audio evidence |
+| UC-SLIDES-REC-LINUX | 발표자가 리눅스(X11·Xwayland)에서 "MP4 녹화"를 누르고 발표한 뒤 멈추면, 셸 창 화면과 스피커로 나간 소리(나이아 낭독)가 함께 담긴 MP4가 video 폴더에 남는다. ffmpeg가 바로 실패하거나 셸이 순수 Wayland 창이면 "녹화 중"으로 바뀌지 않고 녹화 실패가 뜬다. 녹화 중에 ffmpeg가 죽으면 멈출 때 실패가 뜨고 다시 녹화할 수 있다. | `slides_recording_test.rs`(x11grab·window_id·pulse 인자, Wayland 오류, 조기 종료, q 정지, 8초 뒤 강제 종료, 녹화 중 사망; `--ignored` 실녹화: Xvfb 창 + 격리 PipeWire 널 싱크 → ffprobe 영상·소리 두 트랙), `slides-host(-bridge).test.ts`(recording_lost), 변이 확인 |
+
+UC-SLIDES-DEMO-VIDEO P02 상태 매트릭스: **기본/빈 목록**은 영상 지시가 없는 PDF가 기존처럼 표시·낭독되고 평소 아바타 위치를 쓰는 상태, **진행**은 문서 선택·영상 구간 표시·현재 낭독 중 다음 쪽 준비와 아바타가 왼쪽 기본 칸에서 원래 크기·자르기로 유지됨, **성공**은 영상 화면·소리 재생과 다음 쪽에서 캐시된 오디오·정렬 계획 재사용 및 발표 중에도 아바타가 기존 왼쪽 칸을 유지, **오류**는 파일 누락/거부 또는 play 실패 알림 후 자동 진행, TTS/계획 오류 진단과 이동·정지 후 늦은 준비 폐기, **좁은 폭**은 1,100px 이하에서 영상 비율·검은 여백·제어와 아바타가 기본 왼쪽 칸에 보이고 발표 전용 crop이 적용되지 않는 상태다. 순차 준비 시험은 다음 쪽 한 장만 준비하고 합성 요청을 직렬 처리하며, 영상 뒤 문장이 재생을 시작하면서 그 다음 쪽 prefetch가 시작되어도 소비된 문장의 stage가 취소되지 않고 실제 재생 완료 `played:true`로 남는지, 현재 낭독의 계획 load와 다음 쪽 계획 준비가 서로의 입 재생을 끊지 않는지 확인한다. `sentence-pipeline.test.ts`는 현재 오디오 재생 중 다음 쪽 합성·계획 준비, 영상 뒤 캐시 재사용과 다음 페이지 prefetch 경계에서 stage 보존·취소를, `prebaked-renderer.test.ts`는 별도 정본 stage 승격과 취소를 확인한다. `slides-center-area.test.tsx`, `VideoAvatarCanvas.test.tsx`, `slides-host-bridge.test.ts`, `slides-sidecar.spec.ts`는 상태 표시·키보드(이전/다음/일시정지/정지)·ARIA·좁은 레이아웃·아바타 배치를, Linux 실녹화는 영상/음성 트랙과 쪽 사이 간격을 확인한다.
 
 P04 must cover empty, loaded, progress, success, error, narrow viewport, keyboard/ARIA and error recovery. Browser IPC mocks prove wiring only; native recording and store delivery require separate evidence. Existing range, repeat, notes toggle, fullscreen and voice selection remain covered.
 
@@ -1948,6 +1952,8 @@ The automated quality checks are committed with the feature:
 
 - `packages/shell/e2e/slides-sidecar.spec.ts`: seven browser scenarios for PDF rendering, paired scripts, range/repeat, fullscreen, narrow layout, script editing/export, live host language/theme, recording request wiring, cancelled import and document-navigation isolation.
 - `packages/shell/src/lib/__tests__/slides-{files,files-bridge,host,host-bridge}.test.ts` and `slide-script.test.ts`: message lifetime, capability validation, cleanup, failure recovery and lossless script section editing.
+- `packages/shell/src/lib/__tests__/slide-script.test.ts`, `slide-presenter.test.ts`, `slides-files.test.ts`, `slides-files-bridge.test.ts`, `packages/shell/src/apps/__tests__/slides-center-area.test.tsx` and `packages/shell/src-tauri/src/slides_files_test.rs`: demo-video directive parsing/preservation, ordered state transitions and stale-generation rejection, per-name bounded same-folder reads, iframe transfer, single-src video playback, no narration during video, ended-to-speech handoff and missing/error skip.
+- `packages/shell/src/lib/avatar/nva-speech/__tests__/gateway-aligned-plan.test.ts`, `canonical-speech.test.ts`, `packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts`, `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `packages/shell/src/lib/voice/__tests__/audio-queue.test.ts`, `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx`, `packages/shell/src/lib/__tests__/slides-host-bridge.test.ts`, `slides-host.test.ts`, and `packages/shell/e2e/slides-sidecar.spec.ts`: safe plan/preparation diagnostics, non-overlapping canonical loads, single-page-ahead audio/plan prefetch and reuse/cancellation, default avatar-panel placement and crop at narrow width, with Slides focus controls remaining local to the viewer.
 - `packages/shell/src/apps/__tests__/slides-script-editor.test.tsx`, `slides-center-area.test.tsx` and `generic-installed-slides.test.tsx`: controls, replacement protection, recording-stop retry and installed iframe integration.
 - `packages/shell/src-tauri/src/{slides_import,slides_files,app_assets}_test.rs`: bounded import, note mapping, cache/temporary-file cleanup, source preservation and installed asset recovery.
 
@@ -2456,3 +2462,181 @@ Test Coverage Map (P02)
 | 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
+
+## UC-B2C-026 — NVA 테마와 호환 캐릭터 카드
+
+P01: 사용자는 설정 → 페르소나에서 SillyTavern/TavernAI 카드(v2/v3 PNG·JSON)를 불러와 내용을 확인하고 적용한다. 카드의 성격·상황·첫 인사·예시 대화를 기존 페르소나 경로로 전달하고, 아바타·음성·배경을 묶은 테마를 선택한다. 로컬 모델은 기존 모델 설정을 유지한다. 웹·로컬 동기화는 0.2.7 범위다.
+
+P02 Test Coverage Map:
+
+| 상태/계약 | 시험 |
+|---|---|
+| UC-B2C-026 | `packages/shell/src/lib/__tests__/character-theme.test.ts`, `packages/shell/e2e/character-theme.spec.ts` 카드→프롬프트 및 설정 저장·테마 흐름 |
+| v2/v3 JSON·PNG, ccv3 우선, 손상·상한·유니코드 | `src/apps/charcard/__tests__/card-parser.test.ts` |
+| 페르소나·첫 인사·예시·치환·예산 | `src/apps/charcard/__tests__/prompt-builder.test.ts` |
+| 셸 설정 patch·테마 묶음·모델 보존 | `src/lib/__tests__/character-theme.test.ts` |
+| 기본/빈 카드·미리보기·진행/중복 방지·적용 성공·오류 후 재시도·360px·키보드/ARIA | `e2e/character-theme.spec.ts` |
+| 계약 누락 live 차단·manifest 실패 차단 | `.agents/hooks/conform-gate.js`에 합성 Write 입력, checker 실행 |
+
+UI는 Playwright로 실제 설정 컴포넌트와 저장 경로를 검사한다. Rust 변경 없음. 실제 NVA 디코딩·로컬 Agent 대화·설치판 저장 복원은 후속 native 수용으로 남기고 mock 검증과 구별한다.
+
+### UC-B2C-026-R2 — 카드 라이브러리와 새 로컬 대화
+
+사용자는 카드를 여러 장 저장하고 재시작 뒤 다시 고른다. 카드마다 저장된 테마를 연결하고 테마를 수정/삭제한다. 카드 적용은 새 대화에서 첫 인사를 assistant turn으로 표시하며 이전 대화 메시지를 변경하지 않는다. 모델/음성 설정은 공용 경로를 사용하고 클라우드를 자동 선택하지 않는다.
+
+Test Coverage Map: `character-theme.test.ts` 원문 확장·손상·상한·themeId, `chat.test.ts` 새 session/첫 인사/이전 대화 분리, `e2e/character-theme.spec.ts` 기본/빈 목록/import 진행/성공/저장 실패 재시도/1100·360px/테마 편집·삭제/카드 전환·복원. 실 Agent→로컬 모델 증거는 실행 폴더 tmp의 별도 하네스에 기록하며 mock UI 증거와 구분한다.
+
+| UC | Test Coverage Map — 2회차 수용 |
+|---|---|
+| UC-B2C-026-R2 | `packages/shell/src/lib/__tests__/character-theme.test.ts`, `packages/shell/src/stores/__tests__/chat.test.ts`, `packages/shell/e2e/character-theme.spec.ts`: 원본 PNG·JSON 보존/내보내기, 확장·상한·손상, 카드별 themeId·테마 수정/삭제, 재시작 복원·첫 인사·이전 대화 분리, 기본·빈 목록·진행·성공·오류 재시도·1100/360px. 앱 host/context·공용 모델/음성은 `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`와 `packages/shell/src/apps/__tests__/installed-app-context-ownership.test.ts`에서 검증. |
+
+### UC-B2C-026-R3 — 첫 인사 낭독과 재생 실패 복구
+
+새 카드 대화를 시작하면 테마 목소리로 첫 인사를 한 번 읽는다. 카드 자동낭독 또는 전역 TTS를 끄면 텍스트만 남는다. 새 대화·사용자 입력은 이전 발화를 중단한다. 테마 적용 전 설치 자산의 decode를 확인하며 실패 시 이전 테마와 대화를 유지한다. 360px 최초 화면에서 설정에 진입한다.
+
+| UC | P02 Test Coverage Map |
+|---|---|
+| UC-B2C-026-R3 | `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: 공용 음성 경로/끄기/대화 교체; character-theme.test.ts: decode 성공/실패/timeout; character-theme.spec.ts: 기본·빈 목록·진행·성공·오류/재시도·360px 최초 설정 진입. nva-sync-driver/core 정본 회귀. Native Windows는 별도 2070 인수 절차. |
+
+
+## UC-B2C-026-R4 — 설치 앱 패키지 통합 회귀
+
+P01: 사용자는 실제 #792 독립 패키지를 설치 앱 iframe으로 열고 역할극을 시작해 현재 로컬 Agent의 답을 채팅 DOM과 공용 음성 경로에서 확인한다. native 카드와 앱 카드가 함께 있으면 native 카드만 주입한다. 비활성 iframe의 지연 context는 거절한다. 앱 요청 실패는 현재 로케일로 복구 행동을 안내한다. 재시작 뒤 앱 태그가 남아 일반 대화 history에서 제외돼야 한다.
+
+P02 Test Coverage Map: 실제 #792 source snapshot의 production 빌드/설치 디렉터리 manifest·hash, app-loader→GenericInstalledApp→context→ChatArea→실 Agent/Ollama→DOM 브라우저 증거. #811 모델·낭독·locale 공용 연결은 설치 앱 메시지/권한/source/origin/취소 회귀로 확인한다. 기본·빈 목록·진행·성공·오류 재시도·360px·키보드/ARIA는 브라우저 및 verify-visual-ux로 확인한다. conversation-store 시험은 정상/과대/비문자 appName 복원과 toSendHistory 제외를 확인하고, 실제 Agent conversationLog 디스크 쓰기/프로세스 재생성으로 태그 유무를 별도 판정한다. native 및 서명된 상점 설치가 불가능하면 통과로 간주하지 않고 원인과2070 추가 절차를 기록한다.
+
+| UC | P02 Test Coverage Map |
+|---|---|
+| UC-B2C-026-R4 | `packages/shell/src/lib/__tests__/conversation-store.test.ts`: appName 복원·모델 history 제외·손상 태그; `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: locale 오류·모델/음성; `packages/shell/src/apps/__tests__/installed-app-context-ownership.test.ts`: 활성 소유권·이중 주입 제외. 실제 패키지/Agent/오디오 증거와 미충족 native 수용은 4회차 ledger에 기록. |
+
+
+## UC-B2C-026-R5 — 오프라인 상품 인수 자료 고정
+
+P01: 인수 담당자는 네트워크·Store 자격 없이 전달받은 ZIP과 서명 영수증을 검사하고 앱 ID·버전·권한·파일별 SHA-256과 라이선스 증빙을 고정한다. unsigned 시험 묶음이나 누락된 상품은 차단 사유와 함께 기록하며 설치·권리 확인·기기 재생 성공으로 표시하지 않는다.
+
+| UC | P02 Test Coverage Map |
+|---|---|
+| UC-B2C-026-R5 | `scripts/b2c-package-audit.test.mjs`: 실제 ZIP/Ed25519 서명, unsigned·변조·다른 키/ID·권한 불일치·라이선스 누락/변조·경로 탈출/중복/링크·압축 상한·CLI 종료 코드. `scripts/b2c-package-audit.mjs`를 r4 실제 unsigned ZIP에 실행해 차단 및 파일별 hash 재현. `packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx`: 실제 wire 오류 코드로 원시 provider 예외 비노출 재검증. 제품 UI/Rust 변경 없음; 기존 Shell 전체 회귀와 core/Shell/BGM 타입 검사. |
+
+## UC-B2C-026-R6 — 서버 미디어 판정과 앱 태그 전달 준비
+사용자는 실제 NVA 파일의 코덱·투명도와 실패 뒤 설정 보존 증거를 구분한다. Test Coverage Map: scripts/b2c-media-audit.test.mjs — 실제 ffmpeg 생성/디코드, alpha/opaque/stacked/손상/누락/설정 동일·변조·누락/CLI; appName 계약 초안은 설계 ledger. native·Windows·GPU 판정은 별도 Pending.
+
+| UC | P02 Test Coverage Map |
+|---|---|
+| UC-B2C-026-R6 | `scripts/b2c-media-audit.test.mjs`: 실제 VP9 alpha/H.264/stacked, 손상·누락·codec/mask 불일치, 실패 전후 설정 동일/변조/누락, CLI 거절. appName 전달 초안·pin 준비는 `docs/progress/026-b2c-charcard-nva.md` 6회차. |
+
+R6 계약 확정 추가 매핑: `src/test/uc1-shell-compat.contract.test.ts` 최종 IPC appName/일반 턴 누락, pin drift·paired proto 계약; `packages/shell/src/lib/__tests__/chat-service.test.ts` legacy wire; `ChatArea.installed-app.test.tsx` 실제 앱 이름·후속 일반 요청 유출0; `e2e/character-theme.spec.ts`1100/360px 기본·빈 목록·진행·성공·오류·재시도·키보드·폭과 실제 browser sendChatMessage→IPC 이름 전달. Rust `agent_grpc.rs::app_name_metadata_is_optional_and_preserved`는 native 도구 부재로 미실행. Agent archive 계약14개 및 별도 writer/read 프로세스로 실제 JSONL 보존 확인.
+
+## UC-B2C-026-R7 — 0.2.6 판 정렬·서버 회귀·AX host 초안
+사용자는 설치판 번호 0.2.6을 확인하고 카드/테마를 저장한 뒤 재시작·ADK 전환·취소·쓰기 장애·언어 전환에도 기존 설정을 보존한다. AX 사용자는 검토 내용을 본 뒤 직접 입력을 시작하고 단회 응답한다. AX 인증 host port가 없으면 기능을 활성화하지 않는다. 일반 chat/approval_response로 인증을 대체하지 않는다.
+
+| UC | Test Coverage Map | 상태/검증 |
+|---|---|---|
+| UC-B2C-026-R7 | src/test/release-version.contract.test.ts | package/Tauri/Cargo/lock 0.2.6, 의존성 버전 유지 |
+| UC-B2C-026-R7 | packages/shell/src/lib/__tests__/ax-approval-adapter.test.ts | 표시 전 입력 거절, 단회·경쟁·취소·변경·종료, false도 chat 전달0 |
+| UC-B2C-026-R7 | packages/shell/e2e/ax-approval-draft.spec.ts | 기본/빈 화면/입력/성공/거절/360px, keyboard·ARIA·DOM bounds; host fixture이며 native 인증 아님 |
+| UC-B2C-026-R7 | packages/shell/e2e/character-theme.spec.ts; packages/shell/src/lib/__tests__/character-theme.test.ts; packages/shell/src/lib/__tests__/config.test.ts | 저장/reload·실패 보존·locale; 추가 ADK/취소/경쟁 회귀는 별도 집중 시험 |
+
+Rust 동작 변경은 없고 metadata 판만 정렬한다. native 설치판/실파일 복원·Windows/macOS/GPU·AX authenticated RPC는 기기/후속 계약 수용으로 Pending이다.
+
+R7 P02 보강: chat-deeplink.test.tsx 첫 markdown lazy-load는 원문 fallback이 먼저 보이므로 변환된 버튼을 최대5초 기다린다. 느린 최초 import와 실제 미변환 실패를 구별하고 경로 버튼 계약은 유지한다.
+
+## UC-B2C-026-R8 — 4060 실기 결함 회귀 (P01/P02)
+사용자는 설정 단추 뒤 Tab/Shift+Tab으로 설정 안에서 페르소나에 도달하고 Esc로 닫아 설정 단추로 돌아온다. 비활성 browser/workspace/terminal은 초점을 받지 않는다. 물리 360 CSS px에서 입력과 보내기가 보인다. 카드 적용/인사 준비 중 300ms에 입력해도 글은 대화에 남거나 입력칸에 유지된다. 같은 원본을 다른 파일명으로 다시 적용해도 보관함은 한 장이며 기존 ID를 유지한다. 이름을 비우거나 공백만 입력한 첫 설정은 정상 문장으로 말한다.
+
+Test Coverage Map: R8 → e2e/character-theme.spec.ts (기본/빈 보관함/적용 진행/성공/쓰기·파싱 오류와 재시도/360·1100px, Tab·역Tab·Esc·ARIA·경계); components/__tests__/ChatArea.installed-app.test.tsx (인사 준비 중 입력 보존); components/__tests__/OnboardingWizard.test.tsx (이름 없음); lib/__tests__/character-theme.test.ts (중복 원본). 실 Windows WebView2/키보드·GPU 수용은 기기 확인 목록, Rust 변경 없음.
+
+| UC | 시험 경로 | 상태/판정 |
+|---|---|---|
+| UC-B2C-026-R8 | packages/shell/e2e/character-theme.spec.ts; packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx; packages/shell/src/components/__tests__/OnboardingWizard.test.tsx; packages/shell/src/lib/__tests__/character-theme.test.ts | 기본·빈 목록·진행·성공·오류 복구·360/1100px·초점/Tab/역Tab/Esc·원본 중복·300ms 입력 보존. Windows/native 수용은 별도 |
+
+## UC-B2C-026-R9 — 메모 데이터 홈 수정 Agent 짝 갱신 (P01/P02)
+설치·개발·검증은 메모가 데이터 홈을 따르는 Agent ecb879b080aa7e9bff7402687478dc16bdc6c49f를 같은 exact pin으로 선택한다. 다른 기능은 변경하지 않는다. Test Coverage Map: agent-pairing-drift.contract, agent-pairing, platform-matrix, uc-wire-v1-paired-proto 및 셸 전체 vitest. 실제 새 Agent archive의 memo 계약 시험으로 데이터 홈·legacy 보존을 확인한다. UI/Rust 로직 변경 없음; installer/native 실기는 별도 수용이다.
+
+### UC-B2C-026-R10 — 늦은 ADK 복원과 AX host 장애
+
+P01: ADK A의 설정 읽기 도중 B로 전환하거나 A→B→A로 돌아와도 이전 읽기 결과가 현재 카드·테마·언어를 덮지 않는다. 같은 ADK의 뒤늦은 이전 복원도 최신 복원을 덮지 않는다. 재시작을 흉내 낸 캐시 초기화 뒤 각 workspace의 카드 원본과 확장을 복원한다.
+P02 Test Coverage Map: `adk-store.test.ts`의 두 workspace 재읽기·지연 응답·읽기 실패 회귀, `ax-approval-adapter.test.ts`의 ACK/capture/submit 예외·단회 소비 회귀. AX 실제 paired Agent broker 연결은 실행 폴더의 격리 clone으로 검증한다. UI 변경 없이 기존 AX 한/영·1100/360px와 카드 저장/reload browser 시나리오를 재실행한다. Native 저장 및 인증 backend 연결은 별도 수용이다.
+
+| UC | Test Coverage Map | 확인 |
+|---|---|---|
+| UC-B2C-026-R9 | src/test/agent-pairing-drift.contract.test.ts; src/test/uc-wire-v1-paired-proto.contract.test.ts | 메모 데이터 홈 수정 exact 짝·proto 일치, 다른 짝 거절 |
+| UC-B2C-026-R10 | packages/shell/src/lib/__tests__/adk-store.test.ts; packages/shell/src/lib/__tests__/ax-approval-adapter.test.ts | ADK 지연·왕복·최신 요청·캐시 재생성·읽기 실패 보존, 승인 host 예외 단회 소비 |
+| UC-B2C-026-R10 | packages/shell/e2e/ax-approval-draft.spec.ts; packages/shell/e2e/character-theme.spec.ts | 승인 한/영·좁은 폭, 카드 저장/reload·오류 복구·입력 보존; 인증/native는 별도 |
+
+## UC-B2C-026-R11 — 2070 인수 후 CSS 274px와 준비 안내 (P01/P02)
+2070 실기(준, 11/4 06:12, build 41697964598)에서 판 번호·키보드·카드·300ms 입력 보존·중복 카드·빈 이름·메모 위치·재시작은 통과했다. 실제 창 360px의 CSS viewport 274px에서는 보내기가 잘렸다. 사용자는 CSS 274px에서도 입력과 보내기를 모두 볼 수 있어야 한다. 인사/카드 준비 중에는 role=status로 준비 중이며 글이 보존되고 준비 후 Enter/보내기를 다시 누르도록 안내한다. 자동 전송하지 않는다.
+
+| UC | Test Coverage Map | 상태 |
+|---|---|---|
+| UC-B2C-026-R11 | packages/shell/e2e/character-theme.spec.ts; packages/shell/src/components/__tests__/ChatArea.installed-app.test.tsx | 274/360/1100px 기본·빈 입력·진행 안내·입력 보존·성공·오류/재시도·키보드/ARIA·DOM bounds. Native 274px 재확인은 기기 목록 |
+
+## UC-B2C-026-R12 — 분리 실행 데이터 경계
+분리 실행은 다른 ADK 를 절대 열지 않는다. NAIA_HOME이 있으면 사용자 홈 .naia의 포인터/설정을 읽지 않으며, 렌더 전에 네이티브 adk-path를 정본으로 복원한다. 포인터가 없으면 설정 화면으로 간다. 오래된 웹뷰 경로는 정본을 덮어쓸 수 없다.
+
+P02: 두 시험 홈 A/B, 빈 B, 오래된 localStorage A, 읽기 오류, 재시작을 adk-store 단위/브라우저 시험으로 확인한다. Rust는 데이터홈 포인터 우선순위와 동일 JSON의 config/ui-config/slots-manifest mtime 보존·실제 변경 저장을 확인한다. 실제 Windows/macOS는 기기 확인 목록으로 분리한다. UI 레이아웃 변경 없음.
+
+| UC | 테스트 파일 | 확인 내용 |
+|---|---|---|
+| UC-B2C-026-R12 | packages/shell/src/lib/__tests__/adk-store.test.ts; packages/shell/src/lib/__tests__/cli-detection.test.ts; packages/shell/e2e/adk-home-isolation.spec.ts; packages/shell/e2e/character-theme.spec.ts; packages/shell/src-tauri/src/data_home.rs; packages/shell/src-tauri/src/lib.rs | 두 홈/빈 포인터/오류/재시작·오래된 웹뷰 경로 차단·동일 JSON 세 설정 mtime 보존. 기본/빈 목록/진행/성공/오류/274·360·1100px은 카드 회귀. |
+
+## UC-B2C-026-R13 — 설치 후 일반 첫 실행과 분리 홈
+
+일반 신규 설치(NAIA_HOME 미지정/공백, adk-path 없음)는 Agent가 기동하여 기본 ADK 선택 첫 설정으로 진입한다. 비어 있지 않은 NAIA_HOME 분리 실행은 포인터가 없으면 Agent를 보류하고 다른 홈 ADK를 열지 않는다. 선택된 포인터는 양쪽 모두 기존 경로로 기동한다.
+
+P02: lib.rs r13_spawn_policy 시험에 일반/공백/분리/선택 매핑. 실제 Linux binary에 CI verify-installed-smoke.mjs를 실행하여 수정 전 handshake timeout RED, 수정 후 handshake+BGM+번들 Node GREEN 및 Node 제거 RED를 확인한다. 기존 r12 native 포인터/동일 설정 보존과 Shell 전체 시험을 재검증한다. UI 코드는 변경하지 않으며 기존 첫 설정 흐름을 유지한다. Windows/macOS 실제 설치는 기기 목록에 남긴다.
+
+| UC | Test Coverage Map | 검증 |
+|---|---|---|
+| UC-B2C-026-R13 | packages/shell/src-tauri/src/lib.rs; packages/shell/scripts/verify-installed-smoke.mjs; packages/shell/scripts/__tests__/verify-installed-smoke.test.ts; packages/shell/e2e/adk-home-isolation.spec.ts; packages/shell/e2e/character-theme.spec.ts | r13_spawn_policy 일반/공백/분리/선택; Linux 설치 배치에서 CI smoke RED→GREEN·Node 제거 RED, 실제 Tauri 설정 파일 보존; 기존 기본/빈 목록/진행/성공/오류/좁은 폭과 키보드/ARIA 회귀 |
+
+## UC-B2C-026-R14 — dev 앱스토어 설치판 (#792)
+P01: workflow_dispatch instance=dev로 빌드하면 dev 웹/API를 사용하며 산출물·설치 이름·창 제목에 dev가 보인다. 입력 생략 및 push는 prod다. 잘못된 instance는 빌드를 거절한다.
+P02 Test Coverage Map: scripts/__tests__/installer-instance.test.ts가 기본/prod/dev/잘못된 입력, 세 Vite 환경변수, 생성 conf 이름/창 설정 보존과 workflow 연결을 검증한다. Shell 전체 Vitest와 actionlint(설치되어 있으면)를 실행한다. UI 컴포넌트/Rust는 변경하지 않는다. 설치판 실기·GPU·서명은 별도 인수다. 이번 slice는 이름 표시이며 identifier/공용 NAIA_HOME/ADK 격리를 보장하지 않는다.
+
+| UC | Test Coverage Map | 검증 |
+|---|---|---|
+| UC-B2C-026-R14 | packages/shell/scripts/__tests__/installer-instance.test.ts; packages/shell/scripts/stage-runtime.mjs; .github/workflows/build-installers.yml | prod 기본·dev 주소와 이름·오입력 거절·창 옵션 보존·CI 연결 |
+
+## UC-B2C-026-R15 — Linux 설치 미디어 및 개발판 묶음 (#792)
+Linux 사용자는 온보딩 NVA 영상이 실패해도 정지 그림을 보고 입력을 계속한다. AppImage는 호스트와 섞이지 않는 GStreamer 플러그인·scanner·환경 hook을 포함한다.
+
+| UC | Test Coverage Map | 검증 |
+|---|---|---|
+| UC-B2C-026-R15 | packages/shell/scripts/__tests__/linux-media.test.ts; packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx; packages/shell/src/components/__tests__/ResilientVideo.test.tsx; packages/shell/e2e/onboarding-fresh.spec.ts | 옵션·CI 플러그인 검사, 정상/오류/무응답/모델 전환, 360·1100px 정지 그림·키보드 입력. 빈 모델은 기존 오류 상태, 목록·저장 변경 없음. Rust 변경 없음. |
+
+### UC-B2C-026-R15 — 개발판 Vosk 묶음 보강
+개발판 설치 빌드는 productName=Naia-dev여도 검증된 Vosk를 탐색해 Linux 산출물을 만든다.
+
+| UC | Test Coverage Map | 검증 |
+|---|---|---|
+| UC-B2C-026-R15 | packages/shell/scripts/__tests__/linux-vosk.test.ts; packages/shell/scripts/__tests__/platform-matrix.test.ts | 실제 ELF DT_NEEDED 탐색 실패→성공, prod/dev·공백 경로·기존 환경 보존·다른 OS 무변경, core build→Tauri 환경 전달 순서. 실 linuxdeploy prod 성공/dev 실패→둘 다 성공은 실행 결과 참조. |
+
+## UC-B2C-026-R16 (#792)
+설정의 직접 설정 모델 목록이 하나면 이름 표시와 적용 시 main 역할의 모델이 일치한다. 목록 도착 후 설정 이벤트가 빈 모델을 재주입해도 적용 가능하다. 빈 목록/ASR 전용은 대화 모델을 만들지 않고, 두 모델은 선택을 유지한다. 영상 오류는 정지 그림 복구를 유지하며 진단 상태를 기록한다.
+
+Test Coverage Map: SettingsTab.test.tsx 단일 모델+config event→Apply; prebaked-renderer.test.ts 디코더 오류 진단; nva-prebaked.spec.ts 기존 좁은 폭/오류 복구/키보드 브라우저 회귀.
+
+| UC | 시험 파일 | 확인 |
+|---|---|---|
+| UC-B2C-026-R16 | packages/shell/src/components/__tests__/SettingsTab.test.tsx; packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts; packages/shell/e2e/ollama-settings.spec.ts; packages/shell/e2e/nva-prebaked.spec.ts; packages/shell/e2e/onboarding-fresh.spec.ts | 단일 모델 표시/저장/설정 이벤트, ASR 혼합/복수 모델, 디코더 진단, 360/1100px 키보드 적용과 정지 그림 |
+
+
+### UC-B2C-026-R17 — 대화 사이 기억 (#792)
+대화 A에서 “내 할 일은 제안서 작성”, “다음 주 보라 님 답사 간다”라고 말한다. 기억 목록에 사실이 표시되고 셸을 다시 켠 뒤 새 대화 B의 “내 할 일 뭐였지?”에 저장한 사실로 답한다. 작은 LLM 미설정/접속 실패는 메인 두뇌로 대체하며 설정에서 알린다. 임베딩 없음은 경고와 로컬 주소 설정 길을 제공하고 제한된 키워드 회상으로 동작한다. 기억 목록은 정리 대기 건수를 표시한다. Linux 비밀 저장 도구 누락은 쉬운 말로 복구를 안내한다.
+
+| Test Coverage Map — R17 | 검증 |
+|---|---|
+| 저장→사실 추출→재시작→새 대화 | 실제 memory adapter + 가짜 LLM/임베딩, 최근 사실·오류 재시도 |
+| 설정 기본/빈 값/진행/성공/접속 실패 | SmallLlmSection 컴포넌트와 실 브라우저, 값 저장·메인 대체 표시 |
+| 기억 빈 목록/정리 대기/완료/오류 | SettingsTab, Rust 읽기, 키보드·ARIA·360/1100px UX |
+| Linux 저장 실패 | .deb libsecret-tools, AppImage 기동 검사, 쉬운 말 오류 |
+
+R17 검증 연결: `memory-role-summarizer.contract.test.ts`(재개방 및 대화 처리기), `uc1-memory-process.integration.test.ts`(실 프로세스 재시작, 임베딩 없음/가짜 임베딩), `memory-settings.spec.ts`(360/1100px 빈 목록·대기·성공·오류 복구·로컬 임베딩 설정), `SmallLlmSection.test.tsx`, `linux-media.test.ts`, Rust `r17_pending_tests`. 설치된 준 3090 모델 자체의 정확도와 실 장치 인수는 별도이며 자동 시험의 가짜 답변을 실 모델 품질로 해석하지 않는다.
+
+R17 exact Agent pin: `c34410479779a8d290eaf819ac18674764103849` (R9의 ecb879b 이력보다 우선). proto SHA는 유지하고 memory는 아래의 R17 exact pin으로 올린다. 로컬 메인 사실 추출의 저장 제한은 30초다.
+
+R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 올린다. e8cbd6f에서 fetch 주입·유한 재시도·요약 실패 전달만 추가한다. 실제 고정 소스에서 Agent의 생성자 훅과 요청별 ALS 문맥이 연결됨을 확인했고 memory 인증/삭제69개·Agent 관련290개가 통과했다.
+
+### UC-B2C-026-R18 — 기억 수정 통합과 슬라이드 기본 배치 (#792 P01/P02)
+R17 기억 A→사실>0·대기0→SIGTERM→새 B 회상을 Agent bfa2aa9 / Memory ab1f800의 정확한 API로 검증한다. off·승인 누락·실패 재시도와 0.2.6 설정·캐릭터 제스처를 유지한다. Slides 집중·영상·낭독 중 기본 아바타 칸과 사용자가 선택한 pan/zoom을 유지한다. P02: uc1-memory-process, memory-consolidation, VideoAvatarCanvas, prebaked-renderer, ChatArea, sentence-pipeline 및 slides-sidecar 브라우저/기억 UI 360·1100px 시험에 매핑한다. CSS 배치 fixture는 실 캐릭터 화질/설치판 인수와 구분한다.

@@ -141,3 +141,16 @@ describe("makeShellChatService (drop-in seam)", () => {
     expect("thinking" in msgInvalid).toBe(false);
   });
 });
+
+// UC-B2C-026-R6: capture actual outbound JSON, including a subsequent ordinary turn.
+it("keeps appName bound to its request through the shell seam", async () => {
+  const { live, invokes } = mockTauri();
+  const svc = makeShellChatService({ live });
+  for (const appName of ["달빛 카페", undefined]) {
+    await svc.sendChatMessage({ message: "hello", provider: { provider: "ollama", model: "local" }, history: [], onChunk: () => {}, requestId: appName ? "app" : "normal", ...(appName ? { appName } : {}) });
+  }
+  const messages = invokes.filter(i => i.cmd === "send_to_agent_command").map(i => JSON.parse(i.args["message"] as string));
+  expect(messages[0]).toMatchObject({ requestId: "app", appName: "달빛 카페" });
+  expect(messages[0].messages).toEqual([{ role: "user", content: "hello" }]);
+  expect(messages[1]).not.toHaveProperty("appName");
+});

@@ -53,6 +53,25 @@ export function isNaiaConfigHydrationPending(): boolean {
 
 // ── ADK Path ──────────────────────────────────────────────────────────────────
 
+let adkBindingRevision = 0;
+let configRestoreRevision = 0;
+
+/** Native adk-path is the bootstrap authority; never migrate a WebView pointer. */
+export async function bootstrapAdkPath(): Promise<void> {
+	Logger.debug("adk-store", "bootstrap native workspace");
+	const previous = getAdkPath();
+	localStorage.removeItem(ADK_PATH_KEY);
+	// Clear derived settings even when the path is unchanged: the data home may
+	// have changed while the WebView profile was reused.
+	localStorage.removeItem("naia-config");
+	const path = await invoke<string | null>("read_naia_path_cache");
+	if (path?.trim()) localStorage.setItem(ADK_PATH_KEY, path.trim());
+	Logger.debug("adk-store", "native workspace restored", {
+		selected: !!path,
+		changed: previous !== path,
+	});
+}
+
 export function getAdkPath(): string | null {
 	return localStorage.getItem(ADK_PATH_KEY);
 }
@@ -63,6 +82,7 @@ export async function setAdkPath(path: string): Promise<void> {
 	// Native rebinding is the commit point. Keep the existing bootstrap pointer
 	// and config untouched while the agent is restarting or if the rebind fails.
 	await invoke("write_naia_path_cache", { adkPath: normalized });
+	adkBindingRevision++;
 	localStorage.setItem(ADK_PATH_KEY, normalized);
 	// config.workspaceRoot is defined as an adkPath mirror (see config.ts). The
 	// two used to drift: onboarding's AdkSetupScreen writes only the adk path,
@@ -90,6 +110,7 @@ export function isAdkInitialized(): boolean {
 }
 
 export function clearAdkPath(): void {
+	adkBindingRevision++;
 	localStorage.removeItem(ADK_PATH_KEY);
 }
 
@@ -194,9 +215,21 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 		const raw = atob(b64);
 		const bytes = new Uint8Array(raw.length);
 		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+		if (mimeType.startsWith("video/")) {
+			Logger.info("adk-store", "local video read", {
+				extension: ext,
+				bytes: bytes.length,
+				header: Array.from(bytes.subarray(0, 12), (byte) =>
+					byte.toString(16).padStart(2, "0"),
+				).join(""),
+			});
+		}
 		const blob = new Blob([bytes], { type: mimeType });
 		return URL.createObjectURL(blob);
 	} catch {
+		Logger.warn("adk-store", "local media read failed; using asset protocol", {
+			extension: ext,
+		});
 		return convertFileSrc(filePath);
 	}
 }
@@ -725,6 +758,8 @@ export async function readNaiaUiConfig(
 export async function applyWorkspaceConfigToLocal(): Promise<void> {
 	const adkPath = getAdkPath();
 	if (!adkPath) return;
+	const bindingRevision = adkBindingRevision;
+	const restoreRevision = ++configRestoreRevision;
 	const fileConfig = (await readNaiaConfig(adkPath)) ?? {};
 	const uiConfig = (await readNaiaUiConfig(adkPath)) ?? {};
 	const merged = {
@@ -732,6 +767,14 @@ export async function applyWorkspaceConfigToLocal(): Promise<void> {
 		onboardingComplete: true,
 		workspaceRoot: adkPath,
 	};
+	if (
+		bindingRevision !== adkBindingRevision ||
+		restoreRevision !== configRestoreRevision ||
+		getAdkPath() !== adkPath
+	) {
+		Logger.debug("AdkStore", "discard superseded config restore", {});
+		return;
+	}
 	localStorage.setItem("naia-config", JSON.stringify(merged));
 }
 

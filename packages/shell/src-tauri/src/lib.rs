@@ -10,6 +10,7 @@ mod app;
 mod app_sandbox;
 mod slides_import;
 mod slides_files;
+mod slides_recording;
 mod audit;
 mod browser;
 mod browser_webview;
@@ -2961,6 +2962,11 @@ where
         .filter(|value| !value.is_empty())
 }
 
+// Only an explicit isolated data home forbids the Agent's bootstrap fallback.
+fn defer_agent_without_workspace(adk_path: Option<&str>, naia_home: Option<&str>) -> bool {
+    adk_path.is_none() && naia_home.is_some_and(|home| !home.trim().is_empty())
+}
+
 fn spawn_adk_path_snapshot() -> Option<String> {
     if debug_e2e_enabled() {
         if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
@@ -3087,6 +3093,14 @@ fn spawn_agent_core(
         None
     };
 
+    let spawn_adk_path = spawn_adk_path_snapshot();
+    if defer_agent_without_workspace(
+        spawn_adk_path.as_deref(),
+        std::env::var("NAIA_HOME").ok().as_deref(),
+    ) {
+        log_verbose("[Naia] isolated NAIA_HOME workspace not selected; deferring agent spawn");
+        return Err("workspace_not_selected".to_string());
+    }
     let (runner, mut cmd) = direct_agent_command(&agent_path, &agent_script, tsx_direct)?;
 
     ensure_no_pending_discord_reaper(discord_pending_reapers, discord_repair_bypass)?;
@@ -3127,7 +3141,6 @@ fn spawn_agent_core(
 
     let mut discord_token_frame: Option<zeroize::Zeroizing<Vec<u8>>> = None;
     let mut discord_runtime_cleanup: Option<std::path::PathBuf> = None;
-    let spawn_adk_path = spawn_adk_path_snapshot();
     apply_agent_adk_spawn_env(&mut cmd, spawn_adk_path.as_deref());
 
     // Pass naia-settings directory to the agent via env var so it can resolve
@@ -5785,6 +5798,11 @@ async fn get_audit_stats(
 #[tauri::command]
 async fn memory_get_all_facts() -> Result<Vec<memory::AgentFact>, String> {
     Ok(memory::get_all_agent_facts())
+}
+
+#[tauri::command]
+async fn memory_pending_count() -> Result<usize, String> {
+    memory::get_pending_count()
 }
 
 #[tauri::command]
@@ -9728,7 +9746,21 @@ async fn cascade_runtime_status(state: tauri::State<'_, AppState>) -> Result<Str
 async fn write_slots_manifest(adk_path: String, json: String) -> Result<(), String> {
     let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("slots-manifest.json"), json).map_err(|e| e.to_string())
+    write_slots_manifest_atomic(&dir.join("slots-manifest.json"), &json)
+}
+
+// builtAt records the last material manifest change, not every boot attempt.
+fn write_slots_manifest_atomic(path: &std::path::Path, json: &str) -> Result<(), String> {
+    let mut next: serde_json::Value = serde_json::from_str(json)
+        .map_err(|_| "naia_config_invalid_json".to_string())?;
+    let mut existing = std::fs::read_to_string(path).ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    if let (Some(next), Some(previous)) = (next.as_object_mut(), existing.as_mut().and_then(|value| value.as_object_mut())) {
+        next.remove("builtAt");
+        previous.remove("builtAt");
+        if next == previous { return Ok(()); }
+    }
+    write_naia_config_atomic(path, json)
 }
 
 /// Resolve the local voice profile and card list from the shared accelerator inventory.
@@ -12599,6 +12631,11 @@ fn write_naia_config_atomic(path: &std::path::Path, json: &str) -> Result<(), St
     if !value.is_object() {
         return Err("naia_config_invalid_json".to_string());
     }
+    if std::fs::read_to_string(path).ok()
+        .and_then(|existing| serde_json::from_str::<serde_json::Value>(&existing).ok())
+        .as_ref() == Some(&value) {
+        return Ok(());
+    }
     write_owner_only_atomic(path, json.as_bytes())
         .map_err(|_| "naia_config_write_failed".to_string())
 }
@@ -13595,9 +13632,9 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
                 }
                 c.wait()
             })
-            .map_err(|e| format!("secret-tool failed: {e}"))?;
+            .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { "secret_tool_missing: 비밀 저장소 도구가 없어 저장하지 못했어요. libsecret-tools를 설치하고 다시 시도해 주세요.".to_string() } else { "secret_store_failed: 비밀 저장소에 저장하지 못했어요. 시스템 비밀 저장소 잠금을 풀고 다시 시도해 주세요.".to_string() })?;
         if !status.success() {
-            return Err(format!("Linux Secret Service write failed (exit {status})"));
+            return Err("secret_store_failed: 비밀 저장소에 저장하지 못했어요. 시스템 비밀 저장소 잠금을 풀고 다시 시도해 주세요.".to_string());
         }
     }
 
@@ -13776,6 +13813,19 @@ fn naia_path_cache_target(
     (!native_e2e).then(|| data_home::child_of(&home, DataHomeChild::AdkPath))
 }
 
+/// Read only the selected data home's pointer. Missing means setup, never fallback.
+#[tauri::command]
+fn read_naia_path_cache() -> Result<Option<String>, String> {
+    if debug_e2e_enabled() { return Ok(spawn_adk_path_snapshot()); }
+    let home = data_home::user_home_path().ok_or("Cannot determine home directory")?;
+    let path = data_home::child_of(&home, DataHomeChild::AdkPath);
+    match std::fs::read_to_string(path) {
+        Ok(value) => Ok(Some(value.trim().to_string()).filter(|v| !v.is_empty())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 fn naia_path_cache_changed(cache_path: &std::path::Path, adk_path: &str) -> bool {
     std::fs::read_to_string(cache_path)
         .map(|cached| cached.trim_end_matches(['\r', '\n']) != adk_path)
@@ -13818,7 +13868,7 @@ async fn write_naia_path_cache(
             .parent()
             .ok_or_else(|| "Cannot determine Naia cache directory".to_string())?;
         std::fs::create_dir_all(naia_dir).map_err(|e| e.to_string())?;
-        std::fs::write(&cache_path, &adk_path).map_err(|e| e.to_string())?;
+        if changed { std::fs::write(&cache_path, &adk_path).map_err(|e| e.to_string())?; }
 
         // Bind the in-memory replay cache before any replacement agent can be
         // published. The same lifecycle lock covers the native cache write,
@@ -14551,6 +14601,7 @@ pub fn run() {
             get_audit_log,
             get_audit_stats,
             memory_get_all_facts,
+            memory_pending_count,
             memory_delete_fact,
             memory_export_backup,
             memory_import_backup,
@@ -14634,6 +14685,7 @@ pub fn run() {
             inspect_adk_dir,
             init_naia_settings,
             write_naia_path_cache,
+            read_naia_path_cache,
             clear_naia_path_cache,
             write_naia_ref_audio,
             read_naia_ref_audio,
@@ -14837,6 +14889,8 @@ pub fn run() {
 
             // Set window icon explicitly (prevents default yellow WRY icon on Linux)
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(target_os = "linux")]
+                app_sandbox::cache_linux_recording_window(window.clone());
                 let icon_bytes = include_bytes!("../icons/icon.png");
                 if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
                     let _ = window.set_icon(icon);
@@ -16444,6 +16498,38 @@ mod tests {
         assert!(should_teardown_for_window("main"));
         assert!(!should_teardown_for_window("browser"));
         assert!(!should_teardown_for_window("oauth"));
+    }
+
+    #[test]
+    fn r12_manifest_build_timestamp_alone_does_not_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("slots-manifest.json");
+        let original = r#"{"version":1,"slots":{"main":{"model":"A"}},"builtAt":"old"}"#;
+        std::fs::write(&path, original).unwrap();
+        let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1000);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(old).unwrap();
+        write_slots_manifest_atomic(&path, r#"{"builtAt":"new","slots":{"main":{"model":"A"}},"version":1}"#).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), old);
+        write_slots_manifest_atomic(&path, r#"{"version":1,"slots":{"main":{"model":"B"}},"builtAt":"new"}"#).unwrap();
+        assert!(std::fs::read_to_string(path).unwrap().contains("new"));
+    }
+
+    #[test]
+    fn r12_equal_settings_preserve_bytes_and_mtime() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["config.json", "ui-config.json", "slots-manifest.json"] {
+            let path = dir.path().join(name);
+            let original = "{ \"b\": 2, \"a\": 1 }\n";
+            std::fs::write(&path, original).unwrap();
+            let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1000);
+            std::fs::File::options().write(true).open(&path).unwrap().set_modified(old).unwrap();
+            write_naia_config_atomic(&path, r#"{"a":1,"b":2}"#).unwrap();
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+            assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), old);
+            write_naia_config_atomic(&path, r#"{"a":3}"#).unwrap();
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), r#"{"a":3}"#);
+        }
     }
 
     #[test]
@@ -18752,6 +18838,17 @@ mod tests {
         );
         assert_eq!(terminate_calls.get(), 1);
         assert_eq!(post_spawn_cleanup_calls.get(), 1);
+    }
+
+    #[test]
+    fn r13_spawn_policy_preserves_first_run_and_isolation() {
+        for home in [None, Some(""), Some("   ")] {
+            assert!(!defer_agent_without_workspace(None, home), "ordinary first run must start Agent");
+        }
+        assert!(defer_agent_without_workspace(None, Some("/isolated")));
+        for home in [None, Some("/isolated")] {
+            assert!(!defer_agent_without_workspace(Some("/selected-adk"), home));
+        }
     }
 
     #[test]

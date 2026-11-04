@@ -539,7 +539,7 @@ export function App() {
 
 	// Hydrate localStorage FROM naia-settings files on startup — files are SoT,
 	// localStorage is a render cache (UC-CONFIG-SOT / FR-CONFIG-SOT.1).
-	// The only authoritative localStorage key is "naia-adk-path"; "naia-config"
+	// The native adk-path was restored before render; "naia-adk-path" is its cache; "naia-config"
 	// is derived from the files here. `mergeBootConfig` drops the `...local` base
 	// that previously let a stale persona (알파) overwrite config.json while
 	// retaining file-owned onboarding and UI values.
@@ -622,7 +622,7 @@ export function App() {
 				);
 				let detectedLocaleConfig: Record<string, unknown> | null = null;
 				if (merged) {
-					// `naia-adk-path` is the only authoritative bootstrap pointer.
+					// `naia-adk-path` mirrors the native bootstrap pointer.
 					// Never let a stale render-cache workspaceRoot redirect the next
 					// file read/write cycle to another workspace.
 					const reconciled = reconcileExplicitLocalProfile({
@@ -755,15 +755,8 @@ export function App() {
 
 		const config = loadConfig();
 		const adkPath = getAdkPath();
-		// UC-ADK-PATH contract: the agent reads the ADK root from ~/.naia/adk-path
-		// (Rust, set only by setAdkPath→write_naia_path_cache), while the shell saves
-		// config to getAdkPath() (localStorage). These are SEPARATE sources and can
-		// diverge (the agent's path file pointing at a different root than the shell's
-		// saved config → the agent loads a stale config and UI model selections never
-		// reach it). The branch above only re-syncs when workspaceRoot (localStorage)
-		// differs from adkPath (localStorage) — it never touches the agent's file.
-		// Force-resync the agent's path file to the shell's ADK on every boot so the
-		// save-path and the load-path can never silently diverge.
+		// main.tsx restored the native pointer before mounting App. Bind the
+		// startup replay scope to that snapshot; never resurrect a WebView path.
 		const e2eBinding = e2eAdkBindingRef.current;
 		const bindAdk =
 			e2eBinding &&

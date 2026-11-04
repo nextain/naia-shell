@@ -1,3 +1,4 @@
+import { ResilientVideo } from "./ResilientVideo";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useRef } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
@@ -117,7 +118,7 @@ export function AppShellFrame({
 			(backgroundMediaType === "video" ||
 				(!backgroundMediaType &&
 					isMediaFile(backgroundVideoUrl, VIDEO_EXTENSIONS))) ? (
-			<video
+			<ResilientVideo
 				key={backgroundVideoUrl}
 				className="app-bg-video"
 				src={backgroundVideoUrl}
@@ -160,7 +161,7 @@ export function AppShellFrame({
 			}
 		>
 			{backgroundFallback?.type === "video" ? (
-				<video
+				<ResilientVideo
 					className="app-bg-video"
 					src={backgroundFallback.url}
 					autoPlay

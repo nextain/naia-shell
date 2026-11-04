@@ -10,6 +10,14 @@ export type SlidePresenterMode =
 	| "completed"
 	| "error";
 
+export interface SlideVideoCue {
+	id: string;
+	page: number;
+	order: number;
+	fileName: string;
+	available: boolean;
+}
+
 export interface SlidePresenterState {
 	mode: SlidePresenterMode;
 	page: number;
@@ -20,6 +28,9 @@ export interface SlidePresenterState {
 	speech: "idle" | "requested" | "speaking";
 	resumeAfterAnswer: boolean;
 	repeat: boolean;
+	videoCues: SlideVideoCue[];
+	activeVideoIndex: number | null;
+	videoAttempt: number;
 	error?: string;
 }
 
@@ -29,7 +40,9 @@ export type SlidePresenterAction =
 			type: "loaded";
 			totalPages: number;
 			range?: { start: number; end: number };
+			videoCues?: SlideVideoCue[];
 	  }
+	| { type: "set-video-cues"; videoCues: SlideVideoCue[] }
 	| { type: "set-range"; start: number; end: number }
 	| { type: "fail"; error: string }
 	| { type: "start" }
@@ -44,6 +57,8 @@ export type SlidePresenterAction =
 	| { type: "speech-requested"; generation: number }
 	| { type: "speech-finished"; generation: number }
 	| { type: "speech-cancelled"; generation: number }
+	| { type: "video-ended"; generation: number; index: number }
+	| { type: "video-failed"; generation: number; index: number; error: string }
 	| { type: "speech-failed"; generation: number; error: string };
 
 export const EMPTY_SLIDE_PRESENTER_STATE: SlidePresenterState = {
@@ -56,6 +71,9 @@ export const EMPTY_SLIDE_PRESENTER_STATE: SlidePresenterState = {
 	speech: "idle",
 	resumeAfterAnswer: false,
 	repeat: false,
+	videoCues: [],
+	activeVideoIndex: null,
+	videoAttempt: 0,
 };
 
 function boundedPage(page: number, totalPages: number): number {
@@ -105,6 +123,7 @@ function navigate(
 	return {
 		...invalidateSpeech(state, {
 			page,
+			activeVideoIndex: null,
 			mode: presenting && !inRange ? "paused" : state.mode,
 		}),
 		speech: presenting && inRange ? "requested" : "idle",
@@ -121,6 +140,69 @@ function invalidateSpeech(
 		generation: state.generation + 1,
 		speech: "idle",
 	};
+}
+
+function nextAvailableVideoIndex(
+	state: SlidePresenterState,
+	page: number,
+	afterIndex = -1,
+): number | null {
+	for (let index = afterIndex + 1; index < state.videoCues.length; index++) {
+		const cue = state.videoCues[index];
+		if (cue.page === page && cue.available) return index;
+	}
+	return null;
+}
+
+function beginVideo(
+	state: SlidePresenterState,
+	index: number,
+	mode: SlidePresenterMode = "presenting",
+): SlidePresenterState {
+	const cue = state.videoCues[index];
+	return invalidateSpeech(state, {
+		page: cue.page,
+		mode,
+		activeVideoIndex: index,
+		videoAttempt: state.videoAttempt + 1,
+		error: undefined,
+	});
+}
+
+function finishPage(state: SlidePresenterState): SlidePresenterState {
+	if (state.page >= state.rangeEnd) {
+		if (state.repeat) {
+			return {
+				...invalidateSpeech(state, {
+					page: state.rangeStart,
+					activeVideoIndex: null,
+				}),
+				speech: "requested",
+			};
+		}
+		return invalidateSpeech(state, {
+			mode: "completed",
+			activeVideoIndex: null,
+		});
+	}
+	return {
+		...invalidateSpeech(state, {
+			page: state.page + 1,
+			mode: "presenting",
+			activeVideoIndex: null,
+			error: undefined,
+		}),
+		speech: "requested",
+	};
+}
+
+function advanceAfterVideo(
+	state: SlidePresenterState,
+	index: number,
+): SlidePresenterState {
+	const cue = state.videoCues[index];
+	const next = nextAvailableVideoIndex(state, cue.page, index);
+	return next === null ? finishPage(state) : beginVideo(state, next);
 }
 
 export function reduceSlidePresenter(
@@ -143,11 +225,20 @@ export function reduceSlidePresenter(
 					? "paused"
 					: "ready",
 				resumeAfterAnswer: false,
+				activeVideoIndex: null,
 				error: undefined,
 			});
 		}
 		case "toggle-repeat":
 			return { ...state, repeat: !state.repeat };
+		case "set-video-cues":
+			return invalidateSpeech(state, {
+				videoCues: action.videoCues,
+				activeVideoIndex: null,
+				mode: ["presenting", "paused", "answering"].includes(state.mode)
+					? "paused"
+					: state.mode,
+			});
 		case "load":
 			return {
 				...EMPTY_SLIDE_PRESENTER_STATE,
@@ -173,6 +264,9 @@ export function reduceSlidePresenter(
 					totalPages,
 				),
 				page: 1,
+				videoCues: action.videoCues ?? [],
+				activeVideoIndex: null,
+				videoAttempt: 0,
 				resumeAfterAnswer: false,
 				error: undefined,
 			});
@@ -180,6 +274,7 @@ export function reduceSlidePresenter(
 		case "fail":
 			return invalidateSpeech(state, {
 				mode: "error",
+				activeVideoIndex: null,
 				error: action.error,
 			});
 		case "start":
@@ -192,6 +287,7 @@ export function reduceSlidePresenter(
 						!isInPresentationRange(state, state.page)
 							? state.rangeStart
 							: state.page,
+					activeVideoIndex: null,
 					resumeAfterAnswer: false,
 					error: undefined,
 				}),
@@ -202,26 +298,42 @@ export function reduceSlidePresenter(
 			return invalidateSpeech(state, { mode: "paused" });
 		case "resume":
 			if (!["paused", "answering"].includes(state.mode)) return state;
-			return {
-				...invalidateSpeech(state, {
-					mode: "presenting",
-					page: isInPresentationRange(state, state.page)
-						? state.page
-						: state.rangeStart,
-					resumeAfterAnswer: false,
-				}),
-				speech: "requested",
-			};
+			{
+				const resumed = {
+					...invalidateSpeech(state, {
+						mode: "presenting",
+						page: isInPresentationRange(state, state.page)
+							? state.page
+							: state.rangeStart,
+						resumeAfterAnswer: false,
+					}),
+				};
+				return state.activeVideoIndex === null
+					? { ...resumed, speech: "requested" }
+					: { ...resumed, speech: "idle" };
+			}
 		case "stop":
 			if (state.totalPages === 0) return state;
 			return invalidateSpeech(state, {
 				mode: "ready",
+				activeVideoIndex: null,
 				resumeAfterAnswer: false,
 			});
 		case "next":
+			if (state.activeVideoIndex !== null) {
+				const next = nextAvailableVideoIndex(
+					state,
+					state.page,
+					state.activeVideoIndex,
+				);
+				if (next !== null) return beginVideo(state, next, state.mode);
+			}
 			return navigate(state, state.page + 1);
 		case "previous":
-			return navigate(state, state.page - 1);
+			return navigate(
+				state,
+				state.activeVideoIndex === null ? state.page - 1 : state.page,
+			);
 		case "goto":
 			return navigate(state, action.page);
 		case "question":
@@ -239,7 +351,7 @@ export function reduceSlidePresenter(
 				return state;
 			}
 			return { ...state, speech: "speaking" };
-		case "speech-finished":
+		case "speech-finished": {
 			if (
 				state.mode !== "presenting" ||
 				state.speech !== "speaking" ||
@@ -247,20 +359,11 @@ export function reduceSlidePresenter(
 			) {
 				return state;
 			}
-			if (state.page >= state.rangeEnd) {
-				if (state.repeat) {
-					return {
-						...invalidateSpeech(state, { page: state.rangeStart }),
-						speech: "requested",
-					};
-				}
-				return invalidateSpeech(state, { mode: "completed" });
-			}
-			return {
-				...invalidateSpeech(state, { page: state.page + 1 }),
-				mode: "presenting",
-				speech: "requested",
-			};
+			const videoIndex = nextAvailableVideoIndex(state, state.page);
+			return videoIndex === null
+				? finishPage(state)
+				: beginVideo(state, videoIndex);
+		}
 		case "speech-failed":
 			if (action.generation !== state.generation) return state;
 			return invalidateSpeech(state, {
@@ -276,6 +379,22 @@ export function reduceSlidePresenter(
 				return state;
 			}
 			return invalidateSpeech(state, { mode: "paused", error: undefined });
+		case "video-ended":
+			if (
+				state.mode !== "presenting" ||
+				state.activeVideoIndex !== action.index ||
+				action.generation !== state.generation
+			)
+				return state;
+			return advanceAfterVideo(state, action.index);
+		case "video-failed":
+			if (
+				state.mode !== "presenting" ||
+				state.activeVideoIndex !== action.index ||
+				action.generation !== state.generation
+			)
+				return state;
+			return advanceAfterVideo(state, action.index);
 	}
 }
 

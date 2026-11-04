@@ -97,6 +97,7 @@ import {
 	deleteAgentFact,
 	exportMemoryBackup,
 	getAllAgentFacts,
+	getMemoryPendingCount,
 	importMemoryBackup,
 } from "../lib/db";
 import {
@@ -182,6 +183,16 @@ import {
 import { Logger } from "../lib/logger";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
+import {
+	themePatch,
+	probeThemeMedia,
+	type CharacterTheme,
+} from "../lib/character-theme";
+const CharacterThemeSettings = lazy(() =>
+	import("./CharacterThemeSettings").then((m) => ({
+		default: m.CharacterThemeSettings,
+	})),
+);
 import {
 	type ProactiveSpeechSettings,
 	toSpeechProfileCommandInput,
@@ -1801,6 +1812,8 @@ export function SettingsTab() {
 		{ id: string; label: string; gender?: string }[]
 	>([]);
 	const [facts, setFacts] = useState<AgentFact[]>([]);
+	const [memoryPending, setMemoryPending] = useState(0);
+	const [memoryReadError, setMemoryReadError] = useState(false);
 
 	// Memory adapter settings
 	const [memoryAdapter, setMemoryAdapter] = useState<"local" | "qdrant">(
@@ -1832,6 +1845,12 @@ export function SettingsTab() {
 	);
 	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
 		existing?.memoryEmbeddingModel ?? "",
+	);
+	const [memoryEmbeddingRevision, setMemoryEmbeddingRevision] = useState(
+		existing?.memoryEmbeddingRevision ?? "",
+	);
+	const [memoryEmbeddingDimensions, setMemoryEmbeddingDimensions] = useState(
+		existing?.memoryEmbeddingDimensions ?? 1536,
 	);
 	const [smallLlmRev, setSmallLlmRev] = useState(0);
 	// 보조·전문가·기억 LLM 역할 편집기 제거 (에픽 #589 할 일 2·3, #598): 나이아 로그인은
@@ -2411,7 +2430,9 @@ export function SettingsTab() {
 
 	useEffect(() => {
 		if (provider !== "vllm") return;
+		let active = true;
 		fetchVllmModels(vllmHost).then(({ models, connected }) => {
+			if (!active) return;
 			setVllmConnected(connected);
 			if (models.length > 0) {
 				setDynamicModels((prev) => ({ ...prev, vllm: models }));
@@ -2425,6 +2446,9 @@ export function SettingsTab() {
 				}
 			}
 		});
+		return () => {
+			active = false;
+		};
 	}, [provider, vllmHost]);
 
 	// Fetch live Naia pricing from gateway (DB = SoT).
@@ -2748,13 +2772,33 @@ export function SettingsTab() {
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
 	useEffect(() => {
-		getAllAgentFacts()
-			.then((result: AgentFact[]) => setFacts(result ?? []))
-			.catch((err: unknown) => {
+		let alive = true;
+		const refresh = async () => {
+			try {
+				const [latest, pending] = await Promise.all([
+					getAllAgentFacts(),
+					getMemoryPendingCount(),
+				]);
+				if (alive) {
+					setFacts(latest ?? []);
+					setMemoryPending(pending ?? 0);
+					setMemoryReadError(false);
+				}
+			} catch (err) {
+				if (alive) setMemoryReadError(true);
 				Logger.warn("SettingsTab", "Failed to load agent memory facts", {
 					error: String(err),
 				});
-			});
+			}
+		};
+		void refresh();
+		const timer = window.setInterval(() => {
+			void refresh();
+		}, 2000);
+		return () => {
+			alive = false;
+			window.clearInterval(timer);
+		};
 	}, []);
 
 	// Fetch Lab balance for a given key
@@ -2941,7 +2985,16 @@ export function SettingsTab() {
 					});
 					setSecureNaiaCredentialReady(false);
 					setLabBalanceError(true);
-					setError(t("cost.labError"));
+					setError(
+						String(activationError).includes("secret_tool_missing") ||
+							String(activationError).includes(
+								"secret-tool failed: No such file",
+							)
+							? t("settings.secretToolMissing")
+							: String(activationError).includes("secret_store_failed")
+								? t("settings.secretStoreFailed")
+								: t("cost.labError"),
+					);
 				} finally {
 					setLabWaiting(false);
 				}
@@ -3075,6 +3128,117 @@ export function SettingsTab() {
 			...next,
 			...(naiaKey ? { naiaKey } : {}),
 		} as unknown as Record<string, unknown>);
+	}
+
+	async function persistCharacterSettings(patch: Partial<AppConfig>) {
+		const path = getAdkPath();
+		const cfg = loadConfig();
+		if (!path || !cfg) throw new Error("workspace required");
+		const priorFields = Object.fromEntries(
+			Object.keys(patch).map((key) => [key, cfg[key as keyof AppConfig]]),
+		);
+		// Publish the pending selection before asynchronous persistence so another
+		// UI preference writer cannot enqueue the previous card as a full config.
+		saveConfig({ ...cfg, ...patch });
+		try {
+			await writeNaiaConfigAtPath(
+				{ ...cfg, ...patch } as unknown as Record<string, unknown>,
+				path,
+			);
+			if (
+				patch.uiPreferences &&
+				!(await writeNaiaUiConfig({ uiPreferences: patch.uiPreferences }, path))
+			) {
+				throw new Error("card preferences write failed");
+			}
+		} catch (error) {
+			if (getAdkPath() === path)
+				saveConfig({ ...loadConfig()!, ...priorFields });
+			// A partial config/UI write must not silently switch the active card.
+			await writeNaiaConfigAtPath(
+				cfg as unknown as Record<string, unknown>,
+				path,
+			).catch(() => {});
+			throw error;
+		}
+		if (getAdkPath() !== path) throw new Error("workspace changed");
+		// Merge only our fields after the async write, preserving unrelated UI edits.
+		saveConfig({ ...loadConfig()!, ...patch });
+	}
+
+	async function applyCharacterTheme(
+		selected: CharacterTheme,
+		extra: Partial<AppConfig> = {},
+	) {
+		const sourceAdk = getAdkPath();
+		if (
+			!naiaNvas.some((path) => path.split(/[/\\]/).pop() === selected.nvaModel)
+		)
+			throw new Error("NVA is not installed");
+		const bg = selected.backgroundVideo
+			? naiaBgs.find((p) => p.split(/[/\\]/).pop() === selected.backgroundVideo)
+			: undefined;
+		if (selected.backgroundVideo && !bg)
+			throw new Error("background is not installed");
+		// Keep the old renderer/voice/background active while validating candidates.
+		const { parseNvaManifest, resolveNvaAssetPath } = await import(
+			"../lib/nva"
+		);
+		const directory = `${sourceAdk}/naia-settings/nva-files/${selected.nvaModel}`;
+		const encoded = await invoke<string>("read_local_binary", {
+			path: `${directory}/manifest.json`,
+			allowedBase: sourceAdk,
+		});
+		const manifest = parseNvaManifest(
+			new TextDecoder().decode(
+				Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0)),
+			),
+		);
+		const clips = new Set<string>();
+		function collect(value: unknown): void {
+			if (!value || typeof value !== "object") return;
+			for (const [key, item] of Object.entries(value)) {
+				if (key === "clip" && typeof item === "string") clips.add(item);
+				else collect(item);
+			}
+		}
+		collect(manifest);
+		if (clips.size > 200) throw new Error("too many theme clips");
+		for (const clip of clips) {
+			if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
+			const url = await toLocalBlobUrl(resolveNvaAssetPath(directory, clip));
+			try {
+				await probeThemeMedia(url, "video");
+			} finally {
+				if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+			}
+		}
+		const bgUrl = bg ? await toLocalBlobUrl(bg) : "";
+		try {
+			if (bg)
+				await probeThemeMedia(
+					bgUrl,
+					getBackgroundMediaType(bg) === "video" ? "video" : "image",
+				);
+		} catch (error) {
+			if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
+			throw error;
+		}
+		try {
+			if (getAdkPath() !== sourceAdk) throw new Error("workspace changed");
+			await persistCharacterSettings({ ...themePatch(selected), ...extra });
+		} catch (error) {
+			if (bgUrl.startsWith("blob:")) URL.revokeObjectURL(bgUrl);
+			throw error;
+		}
+		setAvatarProvider("naia-video-avatar");
+		setNvaModel(selected.nvaModel);
+		setTtsProvider(selected.ttsProvider);
+		setTtsVoice(selected.ttsVoice);
+		setActiveBgPath(bg ?? "");
+		setBackgroundVideoFilename(selected.backgroundVideo);
+		setBackgroundMediaType(bg ? getBackgroundMediaType(bg) : "");
+		setBackgroundVideoUrl(bgUrl);
 	}
 
 	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high"];
@@ -3613,6 +3777,8 @@ export function SettingsTab() {
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
 			// Memory settings
+			memoryEmbeddingRevision: memoryEmbeddingRevision.trim() || undefined,
+			memoryEmbeddingDimensions,
 			memoryAdapter,
 			memoryEmbeddingProvider,
 			memoryOfflineModel:
@@ -3790,6 +3956,18 @@ export function SettingsTab() {
 	const hideModelPicker =
 		provider !== "ollama" && shouldHideModelPicker(displayedProviderModels);
 	const singleProviderModel = selectableProviderModels[0];
+	// A config event can hydrate an empty legacy model after discovery finished.
+	// Keep the hidden control's actual value aligned with its displayed choice.
+	useEffect(() => {
+		if (
+			hideModelPicker &&
+			singleProviderModel &&
+			model !== singleProviderModel.id
+		) {
+			setModel(singleProviderModel.id);
+		}
+	}, [hideModelPicker, singleProviderModel?.id, model]);
+
 	const selectedModelMeta = availableProviderModels.find((m) => m.id === model);
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const selectedOllamaPullCandidate = ollamaModelPolicy?.candidates.find(
@@ -4523,6 +4701,43 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "persona" && (
 				<>
+					<Suspense fallback={null}>
+						<CharacterThemeSettings
+							key={getAdkPath()}
+							config={loadConfig() ?? existing!}
+							currentTheme={{
+								nvaModel:
+									avatarProvider === "naia-video-avatar"
+										? (nvaModel || DEFAULT_NVA_MODEL).split(/[/\\]/).pop()!
+										: "",
+								ttsProvider,
+								ttsVoice,
+								backgroundVideo: backgroundVideoFilename,
+							}}
+							onCard={async (patch, theme) => {
+								if (theme) await applyCharacterTheme(theme, patch);
+								else await persistCharacterSettings(patch);
+								setPersona(patch.persona ?? "");
+								setAgentName(patch.agentName ?? "");
+								setPersonaDisabled(false);
+							}}
+							onTheme={applyCharacterTheme}
+							onPreferences={async (patch) => {
+								await persistCharacterSettings({
+									uiPreferences: { ...loadConfig()?.uiPreferences, ...patch },
+								});
+							}}
+							onSaveThemes={async (themes) => {
+								await persistCharacterSettings({
+									uiPreferences: {
+										...loadConfig()?.uiPreferences,
+										b2cNvaThemes: themes,
+									},
+								});
+							}}
+						/>
+					</Suspense>
+
 					<div className="settings-section-divider">
 						<span>{t("settings.personaSection")}</span>
 					</div>
@@ -6999,6 +7214,8 @@ export function SettingsTab() {
 							>
 								<input
 									type="text"
+									aria-label={t("settings.memoryEmbeddingBaseUrl")}
+									data-testid="memory-embedding-url"
 									value={memoryEmbeddingBaseUrl}
 									onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
 									onBlur={(e) =>
@@ -7014,6 +7231,8 @@ export function SettingsTab() {
 								/>
 								<input
 									type="text"
+									aria-label={t("settings.memoryEmbeddingModel")}
+									data-testid="memory-embedding-model"
 									value={memoryEmbeddingModel}
 									onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
 									onBlur={(e) =>
@@ -7024,6 +7243,49 @@ export function SettingsTab() {
 							</div>
 						)}
 						{/* naia 임베딩: 계정 미연결 시 안내(parity) */}
+						{(memoryEmbeddingProvider === "vllm" ||
+							memoryEmbeddingProvider === "ollama" ||
+							memoryEmbeddingProvider === "naia") && (
+							<div className="settings-field">
+								<label>
+									{t("settings.embeddingRevision")}
+									<input
+										data-testid="memory-embedding-revision"
+										value={memoryEmbeddingRevision}
+										onChange={(e) => setMemoryEmbeddingRevision(e.target.value)}
+										onBlur={(e) =>
+											persistConfig({
+												memoryEmbeddingRevision:
+													e.target.value.trim() || undefined,
+											})
+										}
+									/>
+								</label>
+								{memoryEmbeddingProvider !== "naia" && (
+									<label>
+										{t("settings.embeddingDimensions")}
+										<input
+											data-testid="memory-embedding-dimensions"
+											type="number"
+											min="1"
+											max="65536"
+											value={memoryEmbeddingDimensions}
+											onChange={(e) =>
+												setMemoryEmbeddingDimensions(Number(e.target.value))
+											}
+											onBlur={() =>
+												persistConfig({ memoryEmbeddingDimensions })
+											}
+										/>
+									</label>
+								)}
+								{!memoryEmbeddingRevision.trim() && (
+									<div role="alert" className="settings-hint">
+										{t("settings.embeddingIdentityMissing")}
+									</div>
+								)}
+							</div>
+						)}
 						{memoryEmbeddingProvider === "naia" && !naiaKey && (
 							<div className="settings-field">
 								<span className="settings-hint">
@@ -7240,6 +7502,14 @@ export function SettingsTab() {
 						</div>
 
 						{/* Memory stats */}
+						<div role="status" data-testid="memory-pending">
+							{t("settings.memoryPending", { count: String(memoryPending) })}
+						</div>
+						{memoryReadError && (
+							<div className="settings-hint" role="alert">
+								{t("settings.memoryReadFailed")}
+							</div>
+						)}
 						{facts.length > 0 && (
 							<div className="settings-field">
 								<span className="settings-hint">

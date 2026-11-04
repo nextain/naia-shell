@@ -70,6 +70,7 @@
 | 스크립트 | 용도 |
 |---|---|
 | `qa-round.mjs` | 후보·회차·기기 결과를 고정하고 회차 상태를 원자적으로 기록·확정한다. |
+| `b2c-package-audit.mjs` (+ `b2c-package-audit.test.mjs`) | B2C 전달 ZIP·Store 서명·권한·파일 hash·라이선스 증빙을 오프라인 검사한다. 사용법은 docs/progress/026-b2c-charcard-nva.md 5회차 절. |
 | `qa-traceability.mjs` | QA 원본 정의와 UC/FE/요구사항·시나리오 연결을 검증한다. |
 | `qa-catalog.mjs` | 소스 기반 QA 조각을 병합하고 선언된 coverage/gap 검토를 생성한다. |
 | `qa-qc-numbers.mjs` | 선택된 ADK sidecar에 QA Case Number(`QC-001`...)를 append-only로 부여하고 catalog/round 표시용 매핑을 제공한다. |
@@ -78,3 +79,9 @@
 | `radio-dj-lab.mjs` (+ `radio-dj-lab-model.mjs`, `radio-dj-lab-contract.mjs`, `radio-dj-lab-observations.mjs`, `radio-dj-lab-render.mjs`, `radio-dj-lab-practical.mjs`, `radio-dj-lab.schema.json`, `radio-dj-lab-example.json`) | Radio DJ Lab 결정적 가상 시간축 기록과 loopback 실기 이벤트 수집기를 실행한다. 제품 동작 없이 deterministic fixture를 재생하고, 실기 설정은 30–60분 외부 실행 진입점으로만 제공한다. |
 
 | `packages/shell/scripts/stapler-retry.sh` | macOS 공증표 붙이기·검증의 네트워크 재시도 및 승인된 Intel 앱 예외. |
+
+- `b2c-media-audit.mjs`, `b2c-media-audit.test.mjs`: UC-B2C-026-R6 / #743 로컬 미디어 코덱·전체 디코드·첫 프레임 투명도·실패 전후 설정 snapshot 검사. 실행 예는 B2C 설계 ledger.
+
+- `packages/shell/scripts/installer-instance.mjs`: 설치판 prod/dev 입력 검증·Vite 주소 고정·dev 이름/창 conf 생성. `stage-runtime.mjs`에서 사용, `scripts/__tests__/installer-instance.test.ts`로 검증.
+
+- `packages/shell/scripts/verify-appimage-media.mjs <extracted-AppDir>` — #792 R15: Linux AppImage 필수 GStreamer 플러그인·scanner·격리 AppRun hook 검증.

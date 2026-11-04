@@ -315,6 +315,7 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
                         None => Vec::new(),
                     };
                     Ok(Message {
+                        app_name: m.get("appName").and_then(|x| x.as_str()).map(str::to_string),
                         role: m
                             .get("role")
                             .and_then(|x| x.as_str())
@@ -415,6 +416,7 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
     };
 
     Ok(ChatRequest {
+        app_name: s("appName"),
         request_id: s("requestId").unwrap_or_default(),
         session_id: s("sessionId"),
         messages,
@@ -1450,5 +1452,20 @@ mod live_tests {
             None
         );
     }
+    #[test]
+    fn app_name_metadata_is_optional_and_preserved() {
+        let req = super::try_json_to_chat_request(&serde_json::json!({
+            "requestId": "app", "appName": "달빛 카페",
+            "messages": [{"role":"user","content":"hi","appName":"달빛 카페"}]
+        })).unwrap();
+        assert_eq!(req.app_name.as_deref(), Some("달빛 카페"));
+        assert_eq!(req.messages[0].app_name.as_deref(), Some("달빛 카페"));
+        let ordinary = super::try_json_to_chat_request(&serde_json::json!({
+            "requestId":"normal", "messages":[{"role":"user","content":"hi"}]
+        })).unwrap();
+        assert_eq!(ordinary.app_name, None);
+        assert_eq!(ordinary.messages[0].app_name, None);
+    }
+
 }
 

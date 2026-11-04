@@ -221,7 +221,8 @@
 							"libwebkit2gtk-4.1-0",
 							"libgtk-3-0",
 							"pipewire-alsa",
-							"libasound2"
+							"libasound2",
+							"libsecret-tools"
 						],
 						"desktopTemplate": null
 					},
@@ -234,7 +235,7 @@
 						]
 					},
 					"appimage": {
-						"bundleMediaFramework": false
+						"bundleMediaFramework": true
 					}
 				}
 			},

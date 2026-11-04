@@ -1,5 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/nicollasricas/tauri-settings-schema/refs/heads/master/schemas/v2/tauri.conf.json",
+	"version": "0.2.6",
 	"productName": "Naia",
 	"identifier": "com.naia.shell",
 	"build": {

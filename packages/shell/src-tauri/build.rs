@@ -10,10 +10,12 @@ fn main() {
     };
     // ⚠️ agent-pairing.json 과 같은 값이어야 한다. 두 곳에 따로 적혀 있으므로
     //    src/test/agent-pairing-drift.contract.test.ts 가 둘이 갈라지는 것을 막는다.
-    const REQUIRED_AGENT_COMMIT: &str = "fdc6fcb5c34ea453612d968a0259a41aa1ef46ed";
+    const REQUIRED_AGENT_COMMIT: &str = "bfa2aa956fc356b50f853c03316faf1b773d0f9e";
     const REQUIRED_PROTO_SHA256: &str =
-        "71e4cb6b3d19f9df08c88e6225babc11e30fe445723badd440decdb2a33e6f42";
+        "6fb0b1f9b249e41fc16c7a0f673bbb2a82f52cb7c0977773bf03e9e297e2b175";
     const REQUIRED_PROTO_MARKERS: &[&str] = &[
+        "optional string app_name = 16;",
+        "optional string app_name = 5;",
         "repeated AttachmentRef attachments = 4;",
         "message AttachmentRef",
         "optional ChannelContext channel = 11;",

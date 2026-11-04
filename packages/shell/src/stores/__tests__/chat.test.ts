@@ -34,7 +34,9 @@ describe("useChatStore", () => {
 	it("setLocalSessionId sets the local session id and persists to sessionStorage", () => {
 		useChatStore.getState().setLocalSessionId("chat-custom-1");
 		expect(useChatStore.getState().localSessionId).toBe("chat-custom-1");
-		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe("chat-custom-1");
+		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe(
+			"chat-custom-1",
+		);
 		expect(getStoredLocalSessionId()).toBe("chat-custom-1");
 	});
 
@@ -43,7 +45,9 @@ describe("useChatStore", () => {
 		expect(getStoredLocalSessionId()).toBeNull();
 		setStoredLocalSessionId("chat-storage-key");
 		expect(getStoredLocalSessionId()).toBe("chat-storage-key");
-		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe("chat-storage-key");
+		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe(
+			"chat-storage-key",
+		);
 		clearStoredLocalSessionId();
 		expect(getStoredLocalSessionId()).toBeNull();
 		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBeNull();
@@ -82,7 +86,9 @@ describe("useChatStore", () => {
 		// localSessionId is replaced with a fresh key and persisted
 		expect(state.localSessionId).not.toBe("chat-old-key");
 		expect(state.localSessionId.startsWith("chat-")).toBe(true);
-		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe(state.localSessionId);
+		expect(sessionStorage.getItem(CHAT_LOCAL_SESSION_KEY)).toBe(
+			state.localSessionId,
+		);
 	});
 
 	it("addMessage adds user message", () => {
@@ -385,5 +391,47 @@ describe("useChatStore", () => {
 		store.appendStreamChunk("done");
 		store.finishStreaming();
 		expect(useChatStore.getState().pendingApproval).toBeNull();
+	});
+});
+
+// Card selection must create a new transcript rather than mutating the old one.
+describe("UC-B2C-026-R2 card conversations", () => {
+	it("starts with one greeting, preserves previous messages and rotates session on each switch", () => {
+		const raw = {
+			spec: "chara_card_v2",
+			spec_version: "2.0",
+			data: { name: "Garden", first_mes: "Welcome" },
+		};
+		const saved = {
+			version: 1,
+			id: "card-1",
+			name: "Garden",
+			greeting: "Welcome",
+			rawJson: raw,
+			sourceName: "card.json",
+			sourceBase64: btoa(JSON.stringify(raw)),
+		};
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "local",
+				apiKey: "",
+				uiPreferences: { b2cActiveCardId: "card-1", b2cCardLibrary: [saved] },
+			}),
+		);
+		const store = useChatStore.getState();
+		store.addMessage({ role: "user", content: "Previous conversation" });
+		const previous = useChatStore.getState().messages;
+		const id = useChatStore.getState().localSessionId;
+		store.newConversation();
+		expect(useChatStore.getState().localSessionId).not.toBe(id);
+		expect(
+			useChatStore.getState().messages.map((m) => [m.role, m.content]),
+		).toEqual([["assistant", "Welcome"]]);
+		expect(previous.at(-1)?.content).toBe("Previous conversation");
+		localStorage.removeItem("naia-config");
+		store.newConversation();
+		expect(useChatStore.getState().messages).toEqual([]);
 	});
 });

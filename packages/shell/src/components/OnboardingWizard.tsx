@@ -1,3 +1,4 @@
+import { ResilientVideo } from "./ResilientVideo";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -126,7 +127,7 @@ function stepChat(step: Step, name: string, user: string): string {
 	// 경어 접미사는 언어의 문법이므로 로케일이 정한다. 한국어만 "님" 이고
 	// 나머지는 빈 문자열이다 — 코드가 언어를 보고 고르면 새 언어가 추가될
 	// 때마다 이 자리를 고쳐야 하고, 대개 잊는다.
-	const u = user ? `${user}${t("common.honorificSuffix")}` : "";
+	const u = user.trim() ? `${user.trim()}${t("common.honorificSuffix")}` : "";
 	const fill = (key: TranslationKey) =>
 		t(key).replace("{agent}", n).replace("{user}", u);
 
@@ -138,7 +139,9 @@ function stepChat(step: Step, name: string, user: string): string {
 		case "userName":
 			return fill("onboard.chat.userName");
 		case "speechStyle":
-			return fill("onboard.chat.speechStyle");
+			return u
+				? fill("onboard.chat.speechStyle")
+				: t("onboard.chat.speechStyleNoName");
 		case "character":
 			return t("onboard.chat.character");
 		case "background":
@@ -201,66 +204,39 @@ function BackgroundThumbnail({
 	className?: string;
 }) {
 	const [capturedFrame, setCapturedFrame] = useState("");
-
-	useEffect(() => {
-		if (background.type !== "video") return;
-		const video = document.createElement("video");
-		video.src = background.url;
-		video.muted = true;
-		video.preload = "auto";
-		video.playsInline = true;
-		let settled = false;
-		const cleanup = () => {
-			video.removeAttribute("src");
-			video.load();
-		};
-		const capture = () => {
-			if (settled || !video.videoWidth || !video.videoHeight) return;
-			settled = true;
+	const capture = (video: HTMLVideoElement) => {
+		if (!video.videoWidth || !video.videoHeight || capturedFrame) return;
+		try {
 			const canvas = document.createElement("canvas");
 			canvas.width = video.videoWidth;
 			canvas.height = video.videoHeight;
 			canvas.getContext("2d")?.drawImage(video, 0, 0);
-			try {
-				setCapturedFrame(canvas.toDataURL("image/jpeg", 0.82));
-			} catch {
-				// asset:// may be canvas-tainted on some WebView2 versions.
-			}
-			cleanup();
-		};
-		video.onloadeddata = () => {
-			const seekTo = Number.isFinite(video.duration)
-				? Math.min(0.25, Math.max(0, video.duration / 20))
-				: 0;
-			if (seekTo > 0) video.currentTime = seekTo;
-			else capture();
-		};
-		video.onseeked = capture;
-		video.onerror = cleanup;
-		video.load();
-		return cleanup;
-	}, [background.type, background.url]);
-
-	if (capturedFrame) {
-		return (
-			<img src={capturedFrame} alt={background.label} className={className} />
-		);
-	}
+			setCapturedFrame(canvas.toDataURL("image/jpeg", 0.82));
+			// Keep src and the element intact; load()/src reset can deadlock WebKitGTK.
+			video.pause();
+		} catch {
+			/* Tainted canvas: retain the guarded video preview. */
+		}
+	};
 	return (
-		// #447-2: when the single-frame capture can't produce a still (e.g. a VP9
-		// alpha .webm whose early frames are transparent, or a tainted canvas), a
-		// metadata-only <video> paints nothing and the tile looks empty. Autoplay a
-		// muted loop so the avatar/background is always visible in the grid.
-		<video
-			src={background.url}
-			className={className}
-			muted
-			loop
-			autoPlay
-			preload="metadata"
-			playsInline
-			aria-label={background.label}
-		/>
+		<>
+			<ResilientVideo
+				key={background.url}
+				src={background.url}
+				className={capturedFrame ? undefined : className}
+				style={capturedFrame ? { display: "none" } : undefined}
+				onLoadedData={(event) => capture(event.currentTarget)}
+				muted
+				loop
+				autoPlay
+				preload="metadata"
+				playsInline
+				aria-label={background.label}
+			/>
+			{capturedFrame && (
+				<img src={capturedFrame} alt={background.label} className={className} />
+			)}
+		</>
 	);
 }
 

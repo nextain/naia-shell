@@ -6,6 +6,12 @@ import type { NaiaContextBridge } from "../../lib/app-registry";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
 import { createGenericInstalledApp } from "../generic-installed/GenericInstalledApp";
 
+vi.mock("../generic-installed/installed-app-host-bridge", () => ({
+	installInstalledAppHostBridge: vi.fn(() => vi.fn()),
+}));
+vi.mock("../generic-installed/installed-app-context-bridge", () => ({
+	installInstalledAppContextBridge: vi.fn(() => vi.fn()),
+}));
 vi.mock("../../lib/slides-host-bridge", () => ({
 	installSlidesHostBridge: vi.fn(() => vi.fn()),
 }));

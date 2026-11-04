@@ -259,12 +259,14 @@ describe("chat-service", () => {
 			onChunk: vi.fn(),
 			requestId: "wire-r1",
 			sessionId: "s1",
+			appName: "달빛 카페",
 			channel: { kind: "shell" },
 			grounding: { policy: "required", knowledgeScope: "workshop" },
 			providerSession: { mode: "resume", providerSessionRef: "opaque-ref" },
 			processing: { processingProfileRef: "profile-local-cloud-001" },
 		});
 		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		expect(parsed.appName).toBe("달빛 카페");
 		expect(parsed.messages[0].attachments[0].localRef).toBe("img_1");
 		expect(parsed.channel).toEqual({ kind: "shell" });
 		expect(parsed.grounding).toEqual({

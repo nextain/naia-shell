@@ -36,14 +36,17 @@ function slidesSource(): string {
 describe("Shell TTS single-ownership speech routing contract", () => {
 	it("only bypasses Shell synthesis for an authored NVA clip match", () => {
 		const source = pipelineSource();
-		const authoredClipGate = source.indexOf("hasAuthoredClip(clean)");
-		const authoredClipCall = source.indexOf(".playAuthoredClip(clean");
-		const shellSynthesis = source.indexOf("synthesizeTts({");
+		const sendSentence = source.slice(source.lastIndexOf("function sendSentence("));
+		const authoredClipGate = sendSentence.indexOf("hasAuthoredClip(clean)");
+		const authoredClipCall = sendSentence.indexOf(".playAuthoredClip(clean");
+		const shellSynthesis = sendSentence.indexOf("synthesizeTts({");
 
 		expect(authoredClipGate).toBeGreaterThanOrEqual(0);
 		expect(authoredClipCall).toBeGreaterThan(authoredClipGate);
 		expect(shellSynthesis).toBeGreaterThan(authoredClipCall);
-		expect(source.slice(authoredClipCall, shellSynthesis)).toContain("return;");
+		expect(sendSentence.slice(authoredClipCall, shellSynthesis)).toContain(
+			"return;",
+		);
 	});
 
 	it("never lets the NVA renderer synthesize dynamic speech itself", () => {
@@ -122,7 +125,7 @@ describe("Shell TTS single-ownership speech routing contract", () => {
 		// is unchanged — every piece still goes through sendSentenceToTts, and
 		// the text still comes from the presenter event's own detail.
 		expect(chatArea).toContain("splitSlideNarration(detail.text.trim())");
-		expect(chatArea).toContain("sendSentenceToTts(piece)");
+		expect(chatArea).toContain("sendSentenceToTts(");
 		expect(chatArea).toContain('settleSlidePresenterSpeech("finished")');
 	});
 });

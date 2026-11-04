@@ -178,6 +178,7 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 | **FR-VOICE.20** | **로컬 음성 스트리밍 재생 계약 (2026-09-11)**. ① 셸은 로컬 음성 호스트에 `response_format:"pcm16"`, `stream:true` 로 요청하고, 호스트가 `audio/pcm;rate=<hz>` 로 답하면 응답 본문을 청크로 읽어 도착하는 대로 재생한다 — 한 문장의 합성이 끝나기를 기다리지 않는다. 홀수 바이트로 끊긴 경계는 다음 청크로 이어 붙여 해석하고, 전체 청크는 기존 소비자(길이·RTF·진단)를 위해 같은 RIFF/WAVE base64 로 조립해 돌려준다. ② 재생 큐는 문장 순서를 유지한다 — 뒤 문장의 스트림이 먼저 도착해도 앞 문장 다음에 재생하고, 첫 청크에서 재생 시작을 알리며, 청크는 앞 청크가 끝나는 시각에 이어 붙여 예약한다. 중단(`clear`)은 예약된 소스를 모두 멈추고 이후 도착하는 청크를 버린다. ③ 슬라이드 낭독문은 채팅 응답과 같이 문장 단위로 나뉘어 이 파이프라인에 들어간다(조각 단위 `VITE_NAIA_SLIDES_TTS_CHUNK` = word|phrase|sentence, 기본 sentence). ④ 스트리밍을 모르는 호스트는 지금까지처럼 WAV 한 벌로 답하고, 셸은 예약해 둔 스트림 슬롯을 풀어 기존 WAV 재생 경로로 되돌린다 — 낭독이 사라지지 않는다. (#688 정정: 스트림 슬롯은 이미 재생 큐로 넘어가 있으므로, WAV 는 같은 슬롯에서 재생된다 — seq 재삽입은 불가) ⑤ 낭독이 아바타를 idle↔talking 으로 계속 왕복시키므로, 아바타 클립 재생은 한 번 로드한 클립에 `src` 를 다시 대입하지 않는다 — WebKitGTK 에서 `src` 대입이 이전 미디어 파이프라인을 메인 스레드에서 동기 해체하다 그 파이프라인의 demuxer 스레드와 서로 기다려 웹뷰 전체가 멈춘다(2026-09-11 gdb 재현: prebaked 렌더러 3/3 · layered 플레이어 2/2). 실사용 경로인 prebaked 렌더러는 클립 URL 마다 `<video>` 를 하나씩 두고(마운트 요소 + 같은 부모의 숨은 형제) 전환 때 재생 요소만 바꾸며, 정지하면 자기가 만든 형제 요소를 DOM 에서 거둔다. layered 플레이어의 더블버퍼도 back 이 이미 같은 클립을 들고 있으면 되감아 교체한다. 로드가 취소된 클립은 캐시로 취급하지 않는다. | S-SLIDES-NARRATION-LATENCY (UC9 앱) | `synthesize.test.ts` 스트리밍 요청·청크 해석·WAV 조립·WAV 폴백 + `audio-queue.test.ts` 순서·첫 청크 시작·이어 붙임·정지 + `sentence-pipeline.test.ts` 슬롯 선예약·미지원 큐·청크 0개 폴백·실패 슬롯 해제·첫 청크 재생 해제 + `local-voice-scheduler.test.ts` 첫 청크 워밍업 해제·느린 첫 청크 유지·세대 불일치 + `ChatArea.test.tsx` 낭독문 문장 분할 + `prebaked-renderer.test.ts` 클립당 src 1회·활성 요소만 play·형제 요소 삽입과 정지 시 회수 + `nva-layered-player.test.ts` 왕복 무재로드·되감기·취소 후 재로드 |
 | **FR-VOICE.21** | **호스트 음성 런타임 종료를 숨기지 않는다** (#672). ① `spawn_voxcpm2` 가 stdout 단절·자식 종료를 보면 `{status:?}` 의 `(None)` 만 보여 주지 않는다. 종료 코드·시그널, 또는 "아직 살아 있거나 종료 상태를 읽지 못함"을 적고 `voxcpm2-stderr.log` 끝줄을 사용자 오류에 붙인다. WDAC / os error 4551 / `voxcpm2_tensorrt.activation` DLL 실패가 있으면 그 뜻을 한 줄로 말한다. ② 설치·기동이 실패하면 `voxcpm2_install_progress {phase:"failed"}` 를 보내고 Settings는 마지막 진행률(Windows 에서 자주 40%)을 지운다. 런타임이 이미 죽었는데 설치 바가 남아 있지 않는다. ③ GPU 를 고른 뒤 부모 환경의 `VOXCPM_DEVICE=cpu` 를 자식에게 물려 주어 AudioVAE 를 CPU 로 내리지 않는다. 고른 카드가 있으면 `VOXCPM_DEVICE=cuda` 다. GPU 라이브러리가 WDAC 로 막히면 CPU 로 조용히 가지 않고 ①의 오류로 말한다. | UC-V017-VOXCPM2-RUNTIME-EXIT-DIAGNOSTICS | Rust `format_voxcpm2_runtime_exit`·`resolve_torch_device` 단위 + `SettingsTab.test.tsx` 40% 해제·failed phase + `platform-matrix.test.ts` Windows 설치 진행 40% 이후 |
 | **FR-VOICE.22** | **느린 로컬 음성 호스트 전체 WAV 재생 및 상태 해제 정직화** (#688). ① 스트리밍을 지원하지 않는 로컬 호스트가 전체 WAV 로 응답할 때, 셸은 이미 예약된 순서 슬롯에서 해당 WAV 를 직접 재생한다(`endWithAudio`) — 슬롯이 큐로 이동한 뒤 seq 로 재삽입하지 않아 WAV 가 고아로 남지 않는다. ② 파이프라인 진행 상태(`tts`/`render`)는 아직 발화되지 않은 문장이 남아 있는 동안에만 수락되고, 문장이 이미 공개된 뒤 시작된 늦은 직렬 합성은 상태 칩을 다시 띄우지 않아 "음성 처리 중…" 이 잔존하지 않는다. ③ 로컬 합성 요청마다 90초의 per-attempt 타임아웃을 적용해 초과 시 `LocalVoiceTimeoutError` 로 실패 처리하며 엔진 시작으로 재시도하지 않는다(호출자 취소는 기존 취소 상태 유지). ④ `naia:voice-model-preparing` 의 `detail: false` 이벤트는 해당 호출이 실제로 `detail: true` 를 알렸을 때에만 발생시킨다. ⑤ busy(429) 예산 소진이나 서버 5xx 는 로컬 음성 1회 실패 알림으로 표면화한다. ⑥ 재생 창 정책은 FR-VOICE.19 개정(#688, 첫 오디오 + 1초 여유, 이후 문장은 준비되는 대로). 상태: Done (P05, 2026-09-22 — vitest 2028 통과, 실기 E2E 는 루크 대기) | UC-WIN-VOICE-SLOW-HOST | `audio-queue.test.ts` whole-audio 슬롯 재생·일시정지 후 재개 + `sentence-pipeline.test.ts` real AudioQueue 재생·늦은 직렬 작업 상태 방지 + `reveal-guard.test.ts` acceptPipelineOutputStage 조건 + `synthesize.test.ts` 90초 타임아웃·호출자 취소·429 소진·정직한 preparing 라벨 |
+| **FR-VOICE.23** | **NVA 발화 입 모양 = 정본 재생기 하나** (naia-shell#760, 기준 alpha-adk `docs/developer/product/studio/nva-lipsync-sot.md` 5·8절). ① 입 모양은 `lib/avatar/nva-speech/vendor/`의 정본 SpeechPlayer(naia-video-avatar 바이트 그대로, `VENDOR.json` 해시)로만 움직인다. ② 셸 음성(전체 WAV/MP3·흘려보내는 PCM)은 그 소리에 맞춘 `aligned` 계획을 그 소리의 재생 위치(오디오 시계)로 재생한다. 타이머·글자 수 시계로 aligned 계획을 돌리지 않는다. ③ 브라우저/시스템 음성은 `browser-timed` 계획을 발화 시작 뒤 흐른 시간으로 재생하고 `boundary`마다 `updateExternalPlan`으로 고친다. ④ 계획이 없거나 실패하거나 다른 종류면 대기 영상 그대로다. `visemes.aiueo`·말하기 반복 클립·VRM 아이우에오 순환(`lib/vrm/mouth.ts`, quarantine)은 쓰지 않는다. ⑤ 계획 생성(게이트웨이 aligned 경로·브라우저 계획)은 `speech-timing.ts` 포트로만 받는다. ⑥ 셸 음성 aligned 계획은 게이트웨이 `POST /v1/studio/speech-plan`(source `shell_audio`, 그 WAV 바이트+문장, 한국어만)으로 받고(`gateway-aligned-plan.ts`), 소리 재생 전에 계획을 받아 정본 재생기에 미리 싣는다(`AudioQueue` `beforePlayback` 관문, 최대 `ALIGNED_PLAN_WAIT_MS`=3초; 넘으면 그 문장은 입 없이 소리만). NVA 계획을 쓸 수 있으면 로컬 음성은 흘려보내지 않고 전체 WAV로 받는다. 상태: In progress (P04 단위 시험 완료, 실기 WebKitGTK 확인 대기) | UC-WIN-NVA-TTS-SYNC | `canonical-speech.test.ts`(vendor 해시·재발 금지·stage·렌더러) + `audio-queue.test.ts` 오디오 시계 + `sentence-pipeline.test.ts` 계획 포트·재생 전 계획 + `gateway-aligned-plan.test.ts` + `prebaked-renderer.test.ts`·`VideoAvatarCanvas.test.tsx` 반복 클립 없음 |
 | **FR-SHELL-ISO.1** | **개발 인스턴스 격리 + 단일 GPU 런타임 공유** (#425). ① 개발 실행(tauri:dev/tauri:prod)은 별도 앱 정체성(`Naia Dev`/`com.naia.shell.dev`, tauri.conf.dev.json 오버레이 — WebView2 데이터·localStorage 분리)과 별도 데이터 홈(`NAIA_HOME`, 기본 `~/.naia-dev` — adk-path 캐시·lease·logs·run·skills)을 쓴다. 설치본(stage-runtime)은 base config·`~/.naia` 유지. native E2E 격리(e2e_runtime_dir)가 항상 상위. ② cascade(VoxCPM2, :8910)는 **두 인스턴스가 공유**: 부팅·시작 시 `/health`가 TTS enabled 면 죽이지 않고 **입양**(ADOPTED_CASCADE_READY — 스폰과 동일 계약), 바인드됐지만 비건강일 때만 고아 정리. 정지는 공유 엔진 정지. ③ 포트 분리(2026-08-06 dual-instance 설계 수확): dev 인스턴스는 BGM 사이드카 :18891, OAuth 콜백 :18892 를 쓴다(`dev-instance.mjs` env + Rust `development_instance_enabled()` — debug 빌드 AND NAIA_DEV_INSTANCE=1 이중 게이트, e2e 센티널 무접촉). dev 인스턴스는 updater 도 비활성. 게이트웨이 :18789 는 spawn_gateway 가 제거된 스텁(레거시)이라 분리 불요 판정. ④ agent 기억 격리 = naia-agent#108 완료(NAIA_HOME 존중, 페어 94a7b1d). ⑤ (#703) 로컬 음성 런타임의 **고정 패키지 바이트**(내려받은 zip, payload, NVIDIA 패키지, 모델 리비전, 기본 음성 팔레트, GPU별 엔진 세대)는 데이터 홈 밖의 사용자별 캐시(`%LOCALAPPDATA%\NaiaRuntimeCache`, Linux `$XDG_DATA_HOME/naia-runtime-cache`)에 내용 주소로 한 벌만 둔다. 사용자 음성·`state/`·로그·PID는 절대 캐시에 두지 않고 모드별 데이터 홈에 남긴다. native E2E 격리가 여전히 상위다(E2E 기본은 개인 캐시, 사용자 캐시는 명시적 읽기 전용 opt-in). 한 모드의 제거는 캐시를 지우지 않는다. 캐시 해석기는 `DataHomeChild` 가 아닌 별도 모듈(`voice_cache.rs`)이다. 디스크의 슬롯·엔진 디렉터리 이름은 64자 키의 앞 16자다(관리자 권한 없이는 Windows 경로 260자 제한을 넘을 수 없어서, #705 실기에서 pip 가 실패). 전체 64자 키는 slot.json·stamp.json·active.json 에 두고 준비 판정은 전체 키로 비교하므로, 앞 16자가 같아도 불일치로 처리된다. 이전 설치에서 옮겨 온 슬롯은 아티팩트 매니페스트·네이티브 해시·준비 표식·엔진 매니페스트를 확인한 뒤 채택되어 다시 내려받지 않는다. | S-SHELL-ISO | Rust `isolated_dev_home_overrides_the_default_naia_dir`·`adopted_cascade_ready_matches_the_spawn_contract_shape` + `local-runtime.test.ts` ADOPTED 계약 핀 + Tauri 94 무회귀 |
 | **FR-ADK-PATH.1** | Agent spawn `NAIA_ADK_PATH`/`NAIA_SETTINGS_DIR` 와 `SetWorkspace` 는 Shell adk-path 와 같은 루트다. adk-path 가 있으면 leftover `~/naia-adk` clone 경로를 쓰지 않고, 없으면 상속된 leftover env 를 제거한다. 기억·지식·음성 로컬 파일은 `<adk-path>/naia-settings` 아래에만 둔다. | S-ADK-PATH-ONE-ROOT | `lib.rs` `agent_spawn_env_uses_adk_path_not_leftover_home_clone` |
 | **FR-ADK-SRC.1** | `clone_naia_adk` 의 git 받기 대상은 `https://github.com/nextain/naia-adk`, zip 대체 경로는 같은 저장소의 `archive/refs/heads/main.zip` 이다. 두 주소는 상수 하나씩(`NAIA_ADK_REPO_URL`, `NAIA_ADK_ZIP_URL`)으로만 정의한다. | S-ADK-SOURCE | `lib.rs` `naia_adk_source_tests`, `naia_adk_source_network_tests`, e2e-tauri `specs/24-adk-setup-flow.spec.ts`(회귀) |
@@ -1216,7 +1217,12 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-APP-SANDBOX.1** | 앱은 자기 데이터를 `<adkPath>/data-private/apps/<appId>/` 샌드박스에만 읽고 쓴다. Tauri 커맨드 6종(`app_sandbox_root`/`write_file`/`read_file`/`open_in_workspace` + `slides_recording_start`/`stop`, `app_sandbox.rs`)이 경로를 강제한다: appId 화이트리스트(ascii 영숫자·`.-_`, ≤160), 상대경로만(`Component::Normal`), canonicalize 후 `starts_with(root)` 로 탈출 차단. 프런트는 `lib/app-sandbox.ts`(6 export)가 유일 경로. | S-APP-SANDBOX | `app_sandbox.rs` 경로탈출 rust 단위 + `src/lib/__tests__/` + tsc·cargo check(PASS) |
 | **FR-BGM-LIB.1** | BGM 라이브러리(즐겨찾기·재생목록·셔플·반복)의 SoT 는 앱 샌드박스 `land.naia.shell/bgm/library.json`(#528). config.json `bgmLibrary` 는 최초 1회 이관 소스이자 샌드박스 쓰기 실패 시 폴백. 재생목록 CRUD·순서 이동(`movePlaylistTrack`)·좋아요 토글·다음곡 인덱스(셔플/반복)는 순수 함수(`bgm-library.ts`). 동기 판독 캐시(`bgm-library-store.ts`)로 음성 스킬이 읽는다. | S-BGM-LIB (UC8 확장) | `bgm-library.test.ts`·`bgm-library-store.test.ts`(단위) + `BgmPlayer.test.tsx`(플레이리스트 생성·persist·다음곡, 21/21) + `e2e/bgm-skill.spec.ts` |
 | **FR-APP-OPEN-GRANT.1** | 워크스페이스 밖 파일을 여는 경로(CLI 인자·단일 인스턴스·드래그드롭)는 그 파일에 세션 한정 read/write grant 를 등록한다("열림=동의", #543). `workspace.rs grant_open_file` + `lib.rs get_startup_open_file`. | S-APP-OPEN-GRANT | `workspace.rs` rust 단위 |
-| **FR-SLIDES-REC.1** | 슬라이드 발표를 MP4 로 녹화한다(ffmpeg gdigrab, 산출 `<adkPath>/data-private/apps/land.naia.slides/video/`). 시작/정지 커맨드는 단일 활성 녹화만 허용(재진입 거부, poisoned-lock 방어). 프런트 라벨(`slides.recordStart/Stop`·`focusStart/Exit`·`notesShow/Hide`)은 14개 언어 i18n. | S-SLIDES-REC | `app_sandbox.rs` 녹화 상태머신 + i18n 생성 --check + 수동 실기 |
+| **FR-SLIDES-REC.1** | 슬라이드 발표를 MP4 로 녹화한다(ffmpeg — Windows gdigrab, Linux x11grab: FR-SLIDES-REC-LINUX.1, 산출 `<adkPath>/data-private/apps/land.naia.slides/video/`). 시작/정지 커맨드는 단일 활성 녹화만 허용(재진입 거부, poisoned-lock 방어). 프런트 라벨(`slides.recordStart/Stop`·`focusStart/Exit`·`notesShow/Hide`)은 14개 언어 i18n. | S-SLIDES-REC | `app_sandbox.rs` 녹화 상태머신 + i18n 생성 --check + 수동 실기 |
+| **FR-SLIDES-DEMO-VIDEO.1 (Done)** | 대본 `## N-M. [영상] filename.(mp4|webm|m4v)` 또는 `[video]` 머리는 N쪽 낭독 뒤 M번째 영상 구간을 지정한다. 본문은 낭독하지 않으며 기존 페이지 편집·직렬화·내보내기는 머리를 보존한다. 문서 선택 시 같은 폴더의 파일 이름만 읽고 숨김·경로·`..`·비지원 확장자·비정규 파일·300MB 초과를 거부한다. 미존재/거부 자산은 이름을 알리고 로그를 남긴다. | UC-SLIDES-DEMO-VIDEO | `slide-script.test.ts`, `slides-files.test.ts`, `slides-files-bridge.test.ts`, `slides_files_test.rs`, `slides-center-area.test.tsx` |
+| **FR-SLIDES-DEMO-VIDEO.2 (Pending)** | 낭독 종료 뒤 해당 쪽 영상들을 순서대로 재생하고 마지막 영상 뒤 다음 쪽 낭독/완료/반복으로 즉시 전이한다. 다음 낭독 페이지의 TTS 오디오와 해당 오디오에 묶인 정렬 계획은 현재 페이지 낭독 중에 미리 준비하며, 현재 페이지 뒤 영상이 재생되는 동안에도 준비를 계속한다. 준비 범위는 다음 낭독 페이지 하나로 제한하고 합성 요청은 순차 처리한다. 다음 페이지로 자동 전이하면 준비된 오디오·계획을 재사용해 다시 합성·계획 생성을 기다리지 않고 재생한다. 정본 입 재생기는 현재 낭독 계획을 유지하고, 미리 준비한 정렬 계획은 해당 문장의 별도 정본 stage에 싣고 실제 오디오 시작 때 활성화한다. 소비된 문장의 stage는 영상과 쪽 이동을 지나 해당 음성 재생까지 유지한다. 그 재생 시작 콜백에서 그 다음 쪽 prefetch를 시작해도 이미 소비된 이전 그룹의 stage를 재생 직전에 취소하지 않는다. 이동·정지·질문·일시정지·반복/범위 변경·쪽 건너뛰기·문서 교체로 무효화된 미소비 준비는 재생하지 않는다. 영상 소리 볼륨은 1이며 낭독은 요청하지 않는다. 영상은 슬라이드 캔버스를 비율 유지로 채우고 집중 모드에서도 보이며, 아바타 대기 상태를 유지한다. WebKitGTK 요소마다 src는 한 번만 설정하고 재대입·제거·빈 대입·load 재호출을 하지 않는다. | UC-SLIDES-DEMO-VIDEO | `slide-presenter.test.ts`, `slides-center-area.test.tsx`, `slides-sidecar.spec.ts`, `sentence-pipeline.test.ts` (video gap → `played:true` while following page prefetch starts), `prebaked-renderer.test.ts`; Linux recording take1/take2, ffprobe, silencedetect and extracted frames |
+| **FR-SLIDES-DEMO-VIDEO.3 (Done)** | 정렬 계획 조회는 성공과 모든 null 사유를 소요 시간·음성 SHA-256 앞 8자와 함께 한 줄로 기록한다. 문장별 계획 도착 시각, seq, 준비 시작/끝/소요 시간, 3초 제한 여부와 play 호출 여부, 정본 stage에서 삼킨 오류의 세대, 오디오 큐 `beforePlayback` 대기 시간을 셸 Logger 경로에 남긴다. 대본 본문·음성 바이트·키·비밀 값은 기록하지 않는다. | UC-SLIDES-DEMO-VIDEO | `gateway-aligned-plan.test.ts`, `sentence-pipeline.test.ts`, `audio-queue.test.ts`, `canonical-speech.test.ts` |
+| **FR-SLIDES-DEMO-VIDEO.4 (Done)** | NVA 정본 재생기에 다음 문장 계획을 넣기 전에 앞선 `loadAudioClock`/계획 로드가 끝나야 한다. 제한 시간에 의해 호출자가 준비 결과를 버려도 이미 시작한 로드는 끝날 때까지 차례를 지키고, 세대가 지난 결과는 재생되지 않는다. vendor 원본 파일은 변경하지 않는다. | UC-SLIDES-DEMO-VIDEO | `canonical-speech.test.ts`: 보류된 첫 로드와 연속 prepare에서 동시 load 수 1 및 stale 결과 미재생 |
+| **FR-SLIDES-DEMO-VIDEO.5 (Done)** | Slides가 집중 모드·낭독·영상 재생 중이어도 NVA 아바타는 셸의 왼쪽 기본 아바타 칸에 원래 크기와 자르기로 계속 보인다. 발표 상태는 아바타 위치·크기·캔버스 변환·자르기를 바꾸지 않는다. Slides 집중 모드와 발표문 제어는 Slides 앱 안에서 그대로 동작한다. NVA 입 렌더링 경로는 변경하지 않는다. | UC-SLIDES-DEMO-VIDEO | `VideoAvatarCanvas.test.tsx` 기본 변환·crop marker 부재, `slides-sidecar.spec.ts` 좁은 폭 기본 배치와 포커스 제어 유지, `slides-center-area.test.tsx` 제어 동작 |
 | **FR-APP-IFRAME-SRC.1** | 설치 앱의 HTML 진입 주소는 `convertFileSrc` 결과를 공용 정규화하여 셸 CSP와 일치시킨다. Linux `asset://localhost/<path>`는 `http://asset.localhost/<path>`로 바꾸고 percent-encoded 경로와 이미 정규화된 Windows 주소는 보존한다. 앱 iframe과 Slides 브리지의 exact URL/origin 검증은 같은 정규화 주소를 사용한다. | S29 / UC9 앱 | `asset-url.test.ts`, `generic-installed-slides.test.tsx`, `slides-host-bridge.test.ts`, `slides-files-bridge.test.ts` |
 | **FR-SLIDES-ASSET.1** | 설치 앱 리소스 URL은 디렉터리 구분자를 보존하여 JS/CSS의 상대 참조가 같은 패키지에서 해석되어야 한다. 이전 설치본의 단일 세그먼트 URL도 앱 목록 로딩에서 복구하며 원본 HTML을 보관한다. 실제 패키지 내부 파일만 수정하고 기존 asset scope와 iframe origin을 유지한다. | UC-SLIDES-PDF-ASSET-RECOVERY | `app_assets_test.rs`; browser/native evidence distinguished |
 | **FR-SLIDES-SIDECAR.1 (Pending)** | 사용자가 선택한 PDF의 정확한 동일 폴더·동일 basename `.md`를 자동 대본으로 우선 연결한다. 기본 파일 선택과 수동 대본 선택을 유지하며, 대본 없음/읽기 실패는 PDF 열기를 막지 않는다. 취소는 기존 문서를 보존하고 교체는 이전 대본을 제거한다. 임의 경로 IPC·권한 확대·새 변환 의존성 없이 설치 앱에서도 동작한다. | UC-SLIDES-SIDECAR | `slides_files_test.rs`, `slides-files.test.ts`, `slides-files-bridge.test.ts`, `slides-center-area.test.tsx`, `slides-sidecar.spec.ts` |
@@ -1235,6 +1241,7 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | FR-SLIDES-PPTX.3 | Display original PPTX name; original same-basename MD first, embedded notes otherwise. Export hidden slides to retain physical page indexes and blank notes. Preserve manual script selection and all presentation controls. | Pending |
 | FR-SLIDES-EDIT.1 | Current page script editor with apply/cancel; applying pauses speech and retains page mapping. Protect dirty edits on file replacement/unload. | Pending |
 | FR-SLIDES-EDIT.2 | Explicitly download edited Markdown copy; never automatically overwrite original MD/PPTX. Label unsaved state and failures. | Pending |
+| FR-SLIDES-REC-LINUX.1 | 리눅스에서 "MP4 녹화"가 실제 파일을 만든다. X11·Xwayland에서는 셸 자신의 GDK 창 XID와 그 DISPLAY로 `x11grab -window_id`를 쓴다(제목 검색이 아니라서 다른 "Naia" 창과 섞이지 않고, 창을 옮겨도 따라가며, 합성 서버에서는 겹친 창이 있어도 셸 창 내용만 찍힌다). 셸이 순수 Wayland 창으로 떠 있으면 조용히 실패하지 않고 "X11 또는 Xwayland가 필요하다"는 오류를 낸다(PipeWire 화면 공유 포털은 아직 지원하지 않는다). 소리는 PulseAudio·PipeWire 기본 출력의 모니터(`@DEFAULT_MONITOR@`)를 녹음하고 `NAIA_RECORDING_AUDIO_SOURCE`로 바꾸거나 `none`으로 끌 수 있다. 윈도우는 ffmpeg가 기본으로 열 수 있는 출력 녹음 장치가 없어 영상만 녹화하며, 같은 변수에 DirectShow 장치 이름(예: Stereo Mix)을 주면 소리도 넣는다. ffmpeg 오류 출력은 버리지 않고 마지막 12줄을 로그에 남긴다. 시작 뒤 1.5초 안에 ffmpeg가 끝나면 시작 실패로 돌려 화면에 녹화 실패를 띄운다. 정지는 표준입력으로 `q`를 보내 MP4 색인을 쓰게 하고, 8초 안에 끝나지 않을 때만 강제 종료한다. ffmpeg가 녹화 중에 죽었거나 강제 종료된 경우 정지는 `recording_lost` 오류를 내고, 앱은 녹화 상태에서 빠져나와 다시 녹화할 수 있다. 시험: `slides_recording_test.rs`(인자·플랫폼 분기, 가짜 ffmpeg로 조기 종료·q 정지·시한 초과 강제 종료·녹화 중 사망, Xvfb 창과 격리 오디오로 실제 ffmpeg 녹화), `slides-host.test.ts`·`slides-host-bridge.test.ts`(recording_lost 처리). | Done |
 
 Design: general PPTX follows the issue's local PDF conversion path first. The measured image-only direct rendering shortcut remains optional, not a replacement for general import. Verify synthetic text/table/image decks separately. Static viewing excludes animations, transitions, embedded-video playback and raster/PPTX text editing.
 
@@ -1446,3 +1453,120 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | **FR-SLIDES-ART.1** | Slides `package-public/icon.svg`는 512×512 둥근 앱 아이콘으로 작은 크기에서도 발표를 알아보게 한다. 같은 공개 폴더의 `thumbnail.svg`는 1280×720 데스크톱 발표 장면, `Naia Slides / 나이아 슬라이드`, 핵심 기능을 보여 준다. Vite slides 빌드의 `publicDir` 복사 산출물에 두 파일을 포함한다. 현재 앱 매니페스트 스키마에 미리보기 필드가 없으므로 `app.json`은 변경하지 않는다. | UC-SHELL-APP-EXPOSURE-024 | SVG 소스 검토·크기 확인; `pnpm build:slides` 산출물 확인; PNG 렌더 미리보기 | Done |
 
 **FR-INSTALL.7 보완 (#505, #809, Done):** stapler는 네트워크 오류만 6회 재시도한다(20/40/60/90/120초). 공증 승인된 인텔 앱·DMG의 staple 또는 validate가 네트워크 오류로 소진되면 경고와 작업 요약을 남기고 계속한다. staple 생략 시 해당 산출물의 후속 validate와 앱 spctl을 생략한다. arm64·Universal 및 비네트워크 오류는 실패를 유지한다. 검증: `packages/shell/scripts/__tests__/stapler-retry.test.sh`, `platform-matrix.test.ts`.
+
+## 0.2.6 B2C 캐릭터 카드·NVA 테마 (#792 #714 #743 #760)
+
+- FR-B2C-026.1 (Done — 초기 slice, native 출시 수용은 후속): #792의 v2/v3 PNG/JSON 해석기·프롬프트 조립기와 단위 시험을 재사용한다. ccv3 우선, 파일/본문/이미지 상한, 손상 거절, 외부 자산 미실행.
+- FR-B2C-026.2 (Done — 초기 slice, native 출시 수용은 후속): 설정 페르소나에서 파일 선택 → 이름·첫 인사 미리보기 → 명시 적용. 페르소나·이름을 저장하고 첫 인사/예시를 프롬프트에 포함한다. 기존 모델/자격은 보존한다.
+- FR-B2C-026.3 (Done — 초기 slice, native 출시 수용은 후속): NVA 테마는 기존 설치 NVA 식별자·음성·배경 묶음이다. 현재 선택을 이름 붙여 저장(최대 30개)하고 저장한 테마를 선택하면 설정의 기존 필드로 즉시 반영한다. 테마 목록은 uiPreferences.b2cNvaThemes에 보관한다. 카드 PNG는 NVA로 변환하지 않는다.
+- NFR-B2C-026.1 (Done — 초기 slice, native 출시 수용은 후속): 읽는 중 중복 입력 방지, 실패 시 이전 설정 보존·파일 재선택, alert/status·label·360px 폭. 카드 본문과 파일명은 로그에 넣지 않는다.
+- NFR-B2C-026.2 (Done — 초기 slice, native 출시 수용은 후속): 비활성 C conform 대신 TypeScript 편집에 기존 파일 계약 검사기를 fail-closed 실행해 미계약 core 코드를 live 차단한다.
+
+설계·현황 근거: [0.2.6 B2C 설계](progress/026-b2c-charcard-nva.md).
+
+### FR-B2C-026-R2 — 카드 라이브러리 (Done — 브라우저·core slice, native 수용 별도)
+
+- 원본 PNG·JSON 바이트와 해석 JSON(확장 필드 포함)을 workspace UI 설정에 최대 30장/총 2MB로 저장·재검증·복원·내보내기 한다.
+- 카드별 themeId 연결, 테마 이름/현재 설정으로 수정, 삭제 시 연결 해제를 제공한다.
+- 카드 적용은 새 session을 만들고 첫 인사를 assistant turn으로 삽입한다. 이전 대화는 변경하지 않는다.
+- 카드별 provider/음성 파이프라인을 만들지 않고 공용 모델/음성 설정을 사용한다. 로컬 모델 선택을 클라우드로 자동 변경하지 않는다.
+- P04: Vitest + 실제 셸 Playwright 상태 매트릭스·화면 갈무리와 격리 로컬 Agent 생성 증거. Native 영상/음성 수용은 11/6~11/7 별도.
+
+
+P04/P05 증거: `docs/progress/026-b2c-charcard-nva.md` 2회차 절. Shell2645/21skip, Playwright1100/360px2/2, 실제 로컬 qwen2.5:0.5b 생성 및 연결 실패 시 클라우드 fallback0, core/Shell/BGM/Agent 전체 타입검사와 production build/entry budget 통과. 저장 시점의 greeting을 보관하며, 사용자 이름 등 카드 매크로 설정을 바꾸면 카드를 다시 적용한다. native Tauri·NVA decode·실 발화·복원된 설치 앱 history 태그는 이 Done의 수용 범위에 포함하지 않는다.
+
+### FR-B2C-026-R3 — 첫 인사·테마 재생 검증 (Done — 브라우저·헤드리스 slice, native 수용 별도)
+
+명시적 새 카드 대화 첫 인사는 기존 sentence-pipeline과 선택된 음성 설정을 사용한다. uiPreferences.b2cGreetingAutoplay=false 및 전역 ttsEnabled=false를 존중한다. 비동기 준비 중 취소·대화 교체에 안전해야 한다. 테마는 manifest와 영상·배경 decode 성공 뒤 저장하며 실패 시 이전 설정을 유지한다. 360px 최초 화면에서 설정 접근이 가능해야 한다. 브라우저 검증과 Windows/native 수용은 구분한다.
+
+
+## FR-B2C-026-R4 — 설치 앱 통합 수용
+
+- 설치 앱 context는 활성 소유 iframe에서만 받으며 native 활성 카드와 중복해 모델에 보내지 않는다. 앱 모델/음성은 기존 공용 경로와 로컬 provider 선택을 유지한다.
+- 앱 busy/등록 실패/전송 실패/낭독 실패는 현재 로케일의 안내와 재시도 행동을 사용한다. 원시 예외는 로그에만 남긴다. 프로토콜 오류 코드는 호환성을 유지한다.
+- Agent transcript의 유효한 appName(공백 제거 후1~200자)을 셸 재시작 복원에서 보존하고 일반 모델 history에 섞지 않는다. 태그가 없는 구형 transcript의 앱 소유권을 추측하지 않는다. 지정 Agent의 appName 저장/wire 지원 부재는 별도 미충족 요구사항으로 기록한다.
+- 상태: 셸 locale 오류 안내·유효 appName reader 보강은 Done(P04 집중44/전체2663 통과). #792 로컬 production 묶음 브라우저 통합은 검증됨. appName Agent 디스크 보존은 FAIL, 실제 #811 상품·native/서명 설치판 전체 수용은 Pending. P04·P05 세부 판정은 docs/progress/026-b2c-charcard-nva.md 4회차 증거를 따른다.
+
+
+## FR-B2C-026-R5 — 오프라인 상품 인수 검사 (Done — 도구 slice, 실제 상품 인수 별도)
+
+- 로컬 입력 JSON에 앱 ID·버전·예상 권한·ZIP·선택적 Store 영수증과 파일별 라이선스 증빙을 선언한다. 상대 경로는 입력 파일 기준이다. 네트워크 요청·설치·자산 실행·압축 해제·서명 생성은 하지 않는다.
+- Store와 같은 50MiB ZIP/200MiB 확장/4096 entry 상한을 적용하고, 위험 경로·중복·심볼릭 링크·손상 파일을 거절한다. 모든 파일의 실제 바이트 hash와 app.json ID·버전·권한을 기록·대조한다.
+- Store 영수증의 app_id·sha256·ed25519 서명(해시 문자열이 아닌 digest 바이트)을 검사한다. CLI 신뢰 키는 Rust app.rs의 배포 공개 키에서 읽는다. 임의 키로 CLI 성공을 만들 수 없다. 빌드 시 키 override를 쓰는 설치판은 별도 native 검증 대상이다.
+- 라이선스 증빙은 비어 있지 않은 로컬 파일·고정 hash·개별 ZIP 파일 목록으로 연결한다. 누락·변조·알 수 없는 파일을 차단한다. 이는 증빙 연결 확인이며 권리의 법적 유효성·Store entitlement·native 재생·공개 승인 판정이 아니다.
+- 실패 시에도 가능한 inventory와 구조화된 차단 사유를 JSON stdout으로 출력하고 exit 1, 모든 오프라인 검사 통과 시 exit 0. 결과에는 설치·기기·권리 수용 미실행을 명시한다.
+- 전체 Shell 타입 검사에서 발견한 기존 R4 오류 fixture의 미등록 PROVIDER_ERROR 코드는 실제 wire의 PROVIDER_NETWORK로 정렬하고 같은 원시 예외 차단 계약을 재시험한다. 제품 UI 동작은 변경하지 않는다.
+
+P04/P05: 인수 도구12/12·실제 r4 unsigned ZIP의 파일9개 hash 일치/서명·권리 누락 차단, Shell 집중30/30·전체2663 통과/21 제외, core/Shell 전체/BGM/격리 pinned Agent 타입 검사 통과. 실제 signed 상품·권리/entitlement·기기 수용은 Pending. 근거: docs/progress/026-b2c-charcard-nva.md 5회차.
+
+## FR-B2C-026-R6 — 오프라인 미디어 증거 (P01–P03)
+서버 도구는 로컬 파일 hash·ffprobe 코덱·전체 decode와 첫 프레임 alpha 범위를 검사한다. alpha·stacked·opaque를 명시하며 stacked는 짝수 높이 및 하단 mask 밝기 범위를 확인한다. 실패 기대 입력은 디코드 실패 및 설정 전후 바이트 동일 증거를 모두 요구한다. 미디어 성공만으로 WebView 합성·청취·native rollback을 주장하지 않는다. appName proto 완료 커밋 전 pin 유지, Rust 전달 변경은 초안으로 준비한다. 상태: 오프라인 도구 Done, appName 서버 전달 구현, native 통합 Pending.
+
+FR-B2C-026-R6 확장: Agentecb879b 완료 계약 기준 appName을 ChatArea→legacy/new-core→Rust ChatRequest/Message로 조건부 전달한다. 일반 요청에는 필드를 만들지 않고 활성 앱 이름만 사용한다. exact pin/CI/README/marker를 함께 갱신한다. P04는 wire capture·ChatArea/Playwright·Rust mapping test·실 Agent writer 재시작, native는 Pending.
+
+FR-B2C-026-R6 P05: **오프라인 미디어 판정 도구 Done / appName 셸 전달·짝 pin 서버 slice 구현 / native 통합 수용 Pending**. P04 증거는 B2C ledger6회차와 실행 폴더 result.md. Rust unit test 미실행·packaged native 미검증 때문에 appName 제품 전체 Done으로 쓰지 않는다.
+
+## FR-B2C-026-R7 — 판 정렬·서버 회귀·AX 승인 초안
+P01/P02: UC-B2C-026-R7. Shell 배포 metadata(package.json, tauri.conf.json, Cargo.toml, Cargo.lock의 naia-shell)는 0.2.6으로 일치해야 한다. workspace 자체 판도 0.2.6으로 정렬하되 제3자 의존성 및 과거 release 문서는 바꾸지 않는다. 태그/원격push/게시 없음.
+AX draft는 Agentecb879b makeAxHostControlLane의 displayed/beginInput/submit/invalidate/dispose를 주입 port로 받는다. 표시 ACK 전/표시 전 입력/재전송/늦은 응답을 거절하고 취소·scope 변경·종료에서 입력과 화면을 폐기한다. 인증 evidence는 host가 검증하며 DOM isTrusted나 JSON origin으로 인증하지 않는다. 입력/코드/preview를 로그·localStorage·chat·기억에 쓰지 않는다. 일반 승인창의 always grant는 재사용하지 않는다.
+상태: 서버 metadata/adapter 초안 slice Done(P01~P05). 단위·브라우저·실 Agent 메모리 내 계약·전체 타입 검사 증거는 docs/progress/026-b2c-charcard-nva.md 7회차 및 실행 폴더 tmp/r7-*.log. native AX RPC는 계약 미제공으로 Pending.
+
+R7 UI 수용 보강: Agentecb879b 대화 승인은 한국어 고정 응답만 지원하므로 영문 화면에서도 승인 입력 ‘보내’를 명시한다. 미인증 입력은 alert+재입력/취소, 거절은 새 요청 안내, 성공은 응답 전달로만 표시한다(실행 성공으로 쓰지 않음).
+
+## FR-B2C-026-R8 — 4060 키보드·입력·중복·빈 이름 (P03)
+- 설정 활성화 시 초점을 설정 내부로 옮기고 Tab/역Tab을 내부에서 순환, Esc는 닫고 진입 단추 복원. 비활성 keepAlive 앱은 inert/aria-hidden.
+- 360px에서 입력칸 min-width와 도구 배치를 조정해 보내기 단추를 보장한다.
+- 카드 적용 준비 중 전송은 입력칸을 유지한다. 첫 인사 비동기 준비가 이후 사용자 턴을 지우거나 낭독을 시작하지 않는다.
+- 동일 source bytes(내용 해시 동일)는 파일명과 무관하게 기존 카드 ID 한 장으로 합친다. 한도 판정은 병합 후, 원본 보존·실패 rollback 유지.
+- 빈/공백 사용자 이름은 선두 느낌표 없이 로케일별 정상 문장을 표시한다.
+상태: Done (서버 slice). P04: Shell 전체2678 통과/21skip, 집중51 통과/1skip, 실 Chromium1100/360px 회귀. native/서명 수용은 Pending이며 설치판 기기 재검증과 구분한다.
+
+## FR-B2C-026-R9 — Agent 메모 경로 수정 짝 (P03)
+manifest·build.rs exact pin·installer/self-trust CI·README·진행 문서·초안 marker는 Agent ecb879b080aa7e9bff7402687478dc16bdc6c49f로 일치해야 한다. proto/memory pin은 실제 계약이 같으면 유지한다. 짝 검사·관련 시험·셸 전체 시험으로 검증한다. 상태: Done (P04/P05 서버 짝 갱신). 짝/wire 17·준비/플랫폼 77·새 Agent memo 15 및 appName 23·AX 정책 99 통과, 셸 전체 2678통과/21제외/실패0. 타입 core/Shell/BGM/새 Agent 및 compile integrity 통과. 증거: 실행 폴더 tmp/r9-*.log, 진행 ledger 9회차. installer/native 수용 Pending.
+
+### FR-B2C-026-R10 — 복원 요청 수명과 승인 host 장애
+
+P03: ADK 복원은 시작 시 binding 세대와 요청 순서를 캡처하고 현재 세대·최신 요청에만 캐시를 쓴다. binding 변경/해제는 이전 복원을 폐기한다. 읽기 실패는 기존 캐시를 보존한다. AX host ACK/capture/submit 예외는 승인 실패로 소비하며 입력을 다른 경로로 보내지 않는다. 실제 연결은 Agent의 host-only 객체 capability와 인증 provenance를 지켜야 한다. 공용 chat RPC로 대체하지 않는다.
+P04/P05: 서버 복원 수명·host 장애 보강 Done. 집중88/88, 실제 paired Agent broker 연결8/8, AX browser4/4·카드1100px/360px 통과(360px 최초60초 제한 실패 후120초 분리 재실행50.5초 통과), Shell 전체 타입·compile integrity 통과. 실제 앱 AX 활성화·native 저장은 trusted backend composition/인증 transport 및 실기 환경이 없어 Pending. 전체 회귀 결과는 progress ledger에 기록한다.
+
+## FR-B2C-026-R11 — 좁은 창과 준비 중 입력
+CSS viewport 274px에서 입력·보내기 경계가 화면 안에 있어야 한다. 카드/첫 인사 준비는 접근 가능한 상태 안내로 표시하고 준비 뒤 사용자가 Enter/보내기를 다시 누르게 안내한다. 입력을 자동 전송하지 않으며 초안을 보존한다. P01/P02: UC-B2C-026-R11. P04: Shell 전체 2688통과/21제외, Playwright 274/360/1100px 3/3, 컴포넌트 집중 23/23 및 core/Shell 타입·compile integrity 통과. P05: Done (서버 수정); 새판 Windows WebView2/native 수용은 기기 확인 목록에 남긴다.
+
+## FR-B2C-026-R12 — 분리 실행과 불필요한 쓰기 금지
+분리 실행은 다른 ADK 를 절대 열지 않는다. NAIA_HOME/adk-path가 네이티브와 웹뷰 시작 경로의 정본이며 사용자 홈 .naia나 localStorage의 경로/설정을 대체 정본으로 사용하지 않는다. 빈 포인터는 설정 화면으로, 읽기 실패는 시작 중단으로 처리한다. 내용이 같은 config.json, ui-config.json, slots-manifest.json은 시작 때 다시 쓰지 않는다(JSON 키 순서/공백 차이 포함). CLI 탐지 결과가 같으면 부팅 시각만으로 설정을 갱신하지 않는다. 슬롯 manifest의 builtAt은 실제 내용 변경 시에만 갱신한다. 최초 누락 설정의 초기화와 실제 사용자 변경은 저장한다. P01/P02: UC-B2C-026-R12. 상태: Done(서버 수정; Windows/macOS paired installer 인수 별도).
+
+## FR-B2C-026-R13 — 일반 첫 실행 Agent 복원
+
+상태: Done. #792 P01~P05. 비어 있지 않은 NAIA_HOME 분리 실행에서만 포인터 부재로 Agent를 보류한다. 일반 첫 실행은 기존 Agent 부팅/기본 ADK 선택 흐름을 유지한다. 분리 홈의 타 ADK 자동 진입 차단과 동일 설정 무쓰기 안전은 보존한다. 설치 smoke 판정의 handshake/BGM/번들 Node 조건은 완화하지 않는다.
+
+## FR-B2C-026-R14 — dev installer 선택 (#792)
+P03: dispatch instance는 prod(기본)/dev choice. push는 prod. dev 빌드는 VITE_NAIA_USE_DEV_GATEWAY=1, VITE_NAIA_WEB_BASE_URL=https://dev.naia.land, VITE_NAIA_DEV_GATEWAY_URL=https://api-dev.naia.land를 고정한다. prod는 기존 운영 URL을 명시하여 로컬 env 유입을 막는다. Naia-dev 설치 이름/창 제목과 dev artifact suffix를 사용하고 기존 창 옵션을 보존한다. Windows smoke/제거 및 macOS Universal 경로는 선택된 이름을 따른다. 전체 데이터 격리는 별도 범위이며 동시 운영판 사용은 인수 전 금지 권고. 상태: Done(서버 빌드 선택 slice). P04: instance/설치 집중81개 및 Shell 전체2701pass/21skip, dev production build/budget, 타입/추적/YAML 검사 통과. P05: 실 installer·4060 dev 계정·공존 격리는 별도 Pending.
+
+## FR-B2C-026-R15 — Linux 설치 안정성 (#792)
+- FR-B2C-026-R15.1 Done: AppImage bundleMediaFramework 활성화, Ubuntu base/good 플러그인과 scanner, GST_PLUGIN_(SYSTEM_)PATH_1_0 및 scanner hook 검사.
+- FR-B2C-026-R15.2 Done: NVA 재생 오류·시작 무응답은 유한 시간 뒤 정지 그림으로 전환하고 입력을 보존. 깨진 영상을 재시도하거나 src 제거/load로 동기 teardown 하지 않는다.
+- FR-B2C-026-R15.3 Done: Linux 설치 빌드 자식 환경의 LD_LIBRARY_PATH에 검증된 Vosk resources 경로를 추가하고 기존 경로 보존. dev/prod 동일 적용. 실제 ELF 및 linuxdeploy 전후 검증.
+
+## FR-B2C-026-R16 (#792)
+- .1: 단일 대화 모델의 숨은 선택기는 설정 동기화 후에도 그 모델을 적용한다. 목록 요청은 이전 공급자/호스트 응답을 무시한다.
+- .2: 영상 디코더 실패에 error code/message, ready/network state, 시간/버퍼/크기와 URL 방식(실 경로 제외)을 기록한다. r15 정지 그림과 무 teardown 방어를 유지한다.
+상태: Done (단일 모델 저장 수정·진단 로그). 실 Linux GPU 부하 원인 미확정; 네이티브 설치 인수는 별도.
+
+
+### FR-B2C-026-R17 — 대화 사이 기억 (#792)
+상태: Done (P01–P05, R17 자동 인수; 준 3090 설치 실기는 별도)
+- 보이는 작은 LLM 값과 저장값 일치. 빈 값/접속 실패는 메인 모델로 대체하고 설정에 표시.
+- 최근 대화도 사실 추출 대상이어야 하며 5분 대기로 첫 세션 기억이 누락되지 않는다. 요청 권한 경계와 영속 저장·재시도 유지.
+- 임베딩 없음은 숨기지 않고 키워드 기반 회상 및 기존 로컬 임베딩 주소 설정을 제공.
+- 기억 목록에서 정리 대기 n건과 최신 사실을 조회.
+- Linux .deb는 libsecret-tools에 의존하며 AppImage는 실행 전 확인. 저장 실패는 쉬운 말로 표시.
+- 가짜 LLM·임베딩으로 A→사실→종료→B 자동 회귀, 셸 전체 시험 수와 실기 제한 기록.
+
+R17 구현 상세: 매 턴 정리 force=true로 5분 제한을 건너뛰고 사실까지 flush한다. 임베딩 없는 회상은 같은 workspace의 활성 최근 사실 50개에서 낱말 일치 최대 3개를 사용한다. 로컬 주소는 추가 전송 승인 대기 없이 처리하되 외부/알 수 없는 주소의 기존 승인을 유지한다. 임베딩 서버의 모델 버전·벡터 크기를 설정으로 전달하고 버전 미입력은 낱말 검색과 화면 안내로 대체한다. 실 프로세스 gRPC A→사실 JSON→SIGTERM→새 프로세스 B는 가짜 LLM·임베딩으로 두 경우 통과.
+
+R17 exact Agent pin: `c34410479779a8d290eaf819ac18674764103849` (R9의 ecb879b 이력보다 우선). proto SHA는 유지하고 memory는 아래의 R17 exact pin으로 올린다. 로컬 메인 사실 추출의 저장 제한은 30초다.
+
+R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 올린다. e8cbd6f에서 fetch 주입·유한 재시도·요약 실패 전달만 추가한다. 실제 고정 소스에서 Agent의 생성자 훅과 요청별 ALS 문맥이 연결됨을 확인했고 memory 인증/삭제69개·Agent 관련290개가 통과했다.
+
+### FR-B2C-026-R18 — 정확한 기억 짝 및 슬라이드 병합 (#792 P01–P05)
+상태: Done (자동 통합 검증; 준 3090 설치판·실 모델 품질은 별도). Agent bfa2aa956fc356b50f853c03316faf1b773d0f9e / Memory ab1f8002d31bffacf4779760eda727cc57a658a8을 manifest·Rust·installer/self-trust CI·README에서 동일하게 고정한다. R17 설정/기억/키링 수정과 중간 Agent 네 커밋의 동작을 보존한다. Slides 123590725a의 전체 조상을 병합하며 발표 상태에 따른 이동·확대·crop을 다시 도입하지 않는다. 수동 제스처는 발화에 양보하고 정렬 계획 없이 입 루프를 재생하지 않는다. 설치 앱 취소와 Slides 준비 세대는 서로 침범하지 않는다. P04 증거는 r18 전체 Agent/Shell/Rust·짝 계약·브라우저 로그와 실행 result.md에 기록한다.

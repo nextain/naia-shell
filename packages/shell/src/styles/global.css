@@ -1147,6 +1147,7 @@ html[data-bgm-youtube-background="hidden"] .app-bg-iframe {
 	top: 32px; /* below titlebar */
 	bottom: 0;
 	width: var(--naia-width, 320px);
+	max-width: 100vw;
 	display: flex;
 	flex-direction: column;
 	background: transparent;
@@ -1351,6 +1352,7 @@ body.resizing-col .naia-work-rail::before {
 	bottom: 0;
 	left: 8px;
 	width: calc(var(--naia-width, 320px) - 16px);
+	max-width: calc(100vw - 16px);
 	display: flex;
 	flex-direction: column;
 	z-index: 3;
@@ -1473,8 +1475,9 @@ body.resizing-col .naia-work-rail::before {
 	box-shadow: none !important;
 }
 
-/* App slot — keep-alive overlay with opacity transition */
+/* Hidden keep-alive apps retain state without exposing controls or paint. */
 .content-app__slot {
+	visibility: hidden;
 	position: absolute;
 	inset: 0;
 	opacity: 0;
@@ -1484,6 +1487,7 @@ body.resizing-col .naia-work-rail::before {
 }
 
 .content-app__slot--active {
+	visibility: visible;
 	opacity: 1;
 	pointer-events: auto;
 }
@@ -2308,6 +2312,8 @@ body.resizing-row {
 
 .chat-input {
 	flex: 1;
+	min-width: 0;
+	box-sizing: border-box;
 	background: var(--espresso-dark);
 	border: 1px solid var(--espresso-light);
 	border-radius: 6px;
@@ -3297,6 +3303,41 @@ body.resizing-row {
 	display: flex;
 	gap: 8px;
 	pointer-events: none;
+}
+
+/* Card library controls keep their labels and touch targets at narrow widths. */
+.character-theme-settings > h3 {
+	margin: 12px 0 8px;
+}
+.character-theme-settings p {
+	margin: 6px 0;
+	line-height: 1.5;
+}
+.character-theme-settings button {
+	min-height: 40px;
+	max-width: 100%;
+	margin: 6px 6px 6px 0;
+	white-space: normal;
+}
+.character-theme-settings button:not(.settings-save-btn) {
+	padding: 8px 12px;
+	border: 1px solid var(--espresso-light);
+	border-radius: 6px;
+	background: transparent;
+	color: var(--cream);
+	font-size: 14px;
+	cursor: pointer;
+}
+.character-theme-settings button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.character-theme-settings output {
+	margin-top: 8px;
+	padding: 8px;
+	border-radius: 6px;
+	background: var(--espresso-light);
+	font-size: 14px;
 }
 
 .settings-save-btn {
@@ -7760,6 +7801,7 @@ body.resizing-row {
 	top: 0;
 	left: 0;
 	width: var(--naia-width, 320px);
+	max-width: 100vw;
 	bottom: 0;
 	background: rgba(0, 0, 0, 0.6);
 	display: flex;
@@ -12453,4 +12495,24 @@ body.resizing-col * {
 
 .open-file-edit-review__btn--reject:hover {
 	background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+}
+
+/* Character/theme settings need usable space beside the companion on narrow
+   windows. Only the active Settings surface takes the full available width. */
+@media (max-width: 700px) {
+	.app-layout:has(.content-app__slot--active .settings-tab) {
+		left: 0 !important;
+		z-index: 100;
+	}
+	.settings-tab-bar {
+		overflow-x: auto;
+		min-width: 0;
+	}
+}
+
+/* Keep the first Settings entry reachable before opening any app at 360px. */
+@media (max-width: 700px) {
+	.app-layout { left: 0 !important; }
+	.app-bar { min-width: 0; width: 100%; box-sizing: border-box; }
+	.app-bar-settings { flex-shrink: 0; min-width: 40px; min-height: 40px; }
 }

@@ -932,7 +932,7 @@ describe("clean-checkout build order", () => {
 		);
 		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT, coreEnv)');
 		const preserveNativeRuntime = source.indexOf(
-			'const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1" }',
+			'const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1",',
 		);
 		const tauriBuild = source.indexOf(
 			'"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json"',
@@ -1148,7 +1148,7 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow).toContain("NSIS uninstall registry entry remains");
 		expect(workflow).toContain('-ArgumentList "/S" -Wait -PassThru');
 		expect(workflow).toContain("--resource-dir $steamDepot");
-		expect(workflow).toContain("naia-shell-steam-win32-${{ github.sha }}");
+		expect(workflow).toContain("naia-shell-steam-win32${{ github.event_name == 'workflow_dispatch' && inputs.instance == 'dev' && '-dev' || '' }}-${{ github.sha }}");
 		expect(workflow).toContain("steps.steam.outputs.depot");
 		expect(matrix.os.win32.steamDepot).toEqual({
 			path: "steam/windows",
