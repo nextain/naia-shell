@@ -1527,3 +1527,7 @@ CSS viewport 274px에서 입력·보내기 경계가 화면 안에 있어야 한
 
 ## FR-B2C-026-R12 — 분리 실행과 불필요한 쓰기 금지
 분리 실행은 다른 ADK 를 절대 열지 않는다. NAIA_HOME/adk-path가 네이티브와 웹뷰 시작 경로의 정본이며 사용자 홈 .naia나 localStorage의 경로/설정을 대체 정본으로 사용하지 않는다. 빈 포인터는 설정 화면으로, 읽기 실패는 시작 중단으로 처리한다. 내용이 같은 config.json, ui-config.json, slots-manifest.json은 시작 때 다시 쓰지 않는다(JSON 키 순서/공백 차이 포함). CLI 탐지 결과가 같으면 부팅 시각만으로 설정을 갱신하지 않는다. 슬롯 manifest의 builtAt은 실제 내용 변경 시에만 갱신한다. 최초 누락 설정의 초기화와 실제 사용자 변경은 저장한다. P01/P02: UC-B2C-026-R12. 상태: Done(서버 수정; Windows/macOS paired installer 인수 별도).
+
+## FR-B2C-026-R13 — 일반 첫 실행 Agent 복원
+
+상태: Done. #792 P01~P05. 비어 있지 않은 NAIA_HOME 분리 실행에서만 포인터 부재로 Agent를 보류한다. 일반 첫 실행은 기존 Agent 부팅/기본 ADK 선택 흐름을 유지한다. 분리 홈의 타 ADK 자동 진입 차단과 동일 설정 무쓰기 안전은 보존한다. 설치 smoke 판정의 handshake/BGM/번들 Node 조건은 완화하지 않는다.

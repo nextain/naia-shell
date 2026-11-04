@@ -2573,3 +2573,13 @@ P02: 두 시험 홈 A/B, 빈 B, 오래된 localStorage A, 읽기 오류, 재시�
 | UC | 테스트 파일 | 확인 내용 |
 |---|---|---|
 | UC-B2C-026-R12 | packages/shell/src/lib/__tests__/adk-store.test.ts; packages/shell/src/lib/__tests__/cli-detection.test.ts; packages/shell/e2e/adk-home-isolation.spec.ts; packages/shell/e2e/character-theme.spec.ts; packages/shell/src-tauri/src/data_home.rs; packages/shell/src-tauri/src/lib.rs | 두 홈/빈 포인터/오류/재시작·오래된 웹뷰 경로 차단·동일 JSON 세 설정 mtime 보존. 기본/빈 목록/진행/성공/오류/274·360·1100px은 카드 회귀. |
+
+## UC-B2C-026-R13 — 설치 후 일반 첫 실행과 분리 홈
+
+일반 신규 설치(NAIA_HOME 미지정/공백, adk-path 없음)는 Agent가 기동하여 기본 ADK 선택 첫 설정으로 진입한다. 비어 있지 않은 NAIA_HOME 분리 실행은 포인터가 없으면 Agent를 보류하고 다른 홈 ADK를 열지 않는다. 선택된 포인터는 양쪽 모두 기존 경로로 기동한다.
+
+P02: lib.rs r13_spawn_policy 시험에 일반/공백/분리/선택 매핑. 실제 Linux binary에 CI verify-installed-smoke.mjs를 실행하여 수정 전 handshake timeout RED, 수정 후 handshake+BGM+번들 Node GREEN 및 Node 제거 RED를 확인한다. 기존 r12 native 포인터/동일 설정 보존과 Shell 전체 시험을 재검증한다. UI 코드는 변경하지 않으며 기존 첫 설정 흐름을 유지한다. Windows/macOS 실제 설치는 기기 목록에 남긴다.
+
+| UC | Test Coverage Map | 검증 |
+|---|---|---|
+| UC-B2C-026-R13 | packages/shell/src-tauri/src/lib.rs; packages/shell/scripts/verify-installed-smoke.mjs; packages/shell/scripts/__tests__/verify-installed-smoke.test.ts; packages/shell/e2e/adk-home-isolation.spec.ts; packages/shell/e2e/character-theme.spec.ts | r13_spawn_policy 일반/공백/분리/선택; Linux 설치 배치에서 CI smoke RED→GREEN·Node 제거 RED, 실제 Tauri 설정 파일 보존; 기존 기본/빈 목록/진행/성공/오류/좁은 폭과 키보드/ARIA 회귀 |

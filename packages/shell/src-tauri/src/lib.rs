@@ -2961,6 +2961,11 @@ where
         .filter(|value| !value.is_empty())
 }
 
+// Only an explicit isolated data home forbids the Agent's bootstrap fallback.
+fn defer_agent_without_workspace(adk_path: Option<&str>, naia_home: Option<&str>) -> bool {
+    adk_path.is_none() && naia_home.is_some_and(|home| !home.trim().is_empty())
+}
+
 fn spawn_adk_path_snapshot() -> Option<String> {
     if debug_e2e_enabled() {
         if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
@@ -3088,8 +3093,11 @@ fn spawn_agent_core(
     };
 
     let spawn_adk_path = spawn_adk_path_snapshot();
-    if spawn_adk_path.is_none() {
-        log_verbose("[Naia] workspace not selected; deferring agent spawn");
+    if defer_agent_without_workspace(
+        spawn_adk_path.as_deref(),
+        std::env::var("NAIA_HOME").ok().as_deref(),
+    ) {
+        log_verbose("[Naia] isolated NAIA_HOME workspace not selected; deferring agent spawn");
         return Err("workspace_not_selected".to_string());
     }
     let (runner, mut cmd) = direct_agent_command(&agent_path, &agent_script, tsx_direct)?;
@@ -18821,6 +18829,17 @@ mod tests {
         );
         assert_eq!(terminate_calls.get(), 1);
         assert_eq!(post_spawn_cleanup_calls.get(), 1);
+    }
+
+    #[test]
+    fn r13_spawn_policy_preserves_first_run_and_isolation() {
+        for home in [None, Some(""), Some("   ")] {
+            assert!(!defer_agent_without_workspace(None, home), "ordinary first run must start Agent");
+        }
+        assert!(defer_agent_without_workspace(None, Some("/isolated")));
+        for home in [None, Some("/isolated")] {
+            assert!(!defer_agent_without_workspace(Some("/selected-adk"), home));
+        }
     }
 
     #[test]

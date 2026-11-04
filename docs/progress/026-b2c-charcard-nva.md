@@ -291,3 +291,13 @@ Rust/cargo와 Linux WebKit 개발 의존성·WebKitWebDriver·tauri-driver를 �
 verify-visual-ux 적용: 기본/빈 목록/진행/성공/오류/좁은 폭은 기존 카드6상태와 새 선택/빈홈/읽기오류 DOM·갈무리로 확인한다. 오류 화면은 다른 ADK를 열지 않고 권한 확인·재시작을 안내한다. Windows/macOS·GPU·동일paired installer 인수는 별도 기기 확인 목록이다. 헌장 불변 지시로 process-status는 수정하지 않으며 전역 게이트 완료를 주장하지 않는다. 기존 root3항목·데이터홈 경계9항목·Shell 파일별 계약 탐지 갭은 이번 수정과 분리한다.
 
 최종 P04/P05(서버 수정): Rust4/4(tmp/r12-rust-last.log), 실제 Linux Tauri WebView→IPC 부팅·stale A 캐시/reload→B 복원·A 포인터/설정 원본 보존 및 config/ui-config/slots-manifest의 바이트·mtime 모두 보존 PASS(tmp/r12-native-last.log, tmp/r12-native/evidence.json, 재현 runner tmp/r12-native.mjs). 세 mtime은 시험에서 과거로 지정한1000000ms 그대로다. Agent/모델·음성/운영 provider 시험은 아니다. 첫 native UI 기본값 추가 실패·CLI 시각 실패·builtAt 실패는 각각 tmp/r12-native.log, tmp/r12-native-final.log, tmp/r12-native-accepted.log에 보존했다. 최종 production build/budget·core/Shell/sidecar 타입·integrity·anchors·assembly·trace·logging PASS. Native app/driver/브라우저 종료 확인 뒤 이번 result.md와.done을 생성한다.
+
+## r13 — r12 일반 설치 첫 실행 회귀 수정 (#792, P01~P05)
+
+설치 빌드 41726185703의 전달된 Windows/Linux handshake timeout을 Linux에서 재현했다. r12의 포인터 부재 Agent 보류를 **비어 있지 않은 NAIA_HOME을 명시한 실행에만** 한정한다. 일반 첫 실행(미지정/빈 값/공백)은 paired Agent가 기동하여 SetWorkspace를 기다린다. 네이티브 포인터 정본·타 홈 캐시 제거·동일 설정 무쓰기는 그대로다. P01/P02 UC-B2C-026-R13과 P03 FR-B2C-026-R13을 코드 전에 기록했다.
+
+회귀 시험: lib.rs r13_spawn_policy는 수정 전 FAIL, 수정 후 r12 포함 Rust 5/5. 실행 폴더 tmp/r13-installed의 bin + lib/Naia 배치에 실제 paired Agent의 빌드 결과·proto·BGM·Node를 둔 뒤, 개발용 Agent/Node 경로 환경변수 없이 CI의 verify-installed-smoke.mjs를 그대로 실행했다. r12 바이너리는 120000ms handshake timeout RED(tmp/r13-installed-red-bundled.log), 최종 수정판은 handshake+BGM+번들 Node 2줄 PASS(tmp/r13-installed-green-final.log). Node 제거는 시스템 Node 사용 감지로 예상 RED(tmp/r13-installed-mutation-final.log). CI workflow와 판정 스크립트는 완화하거나 수정하지 않았다. 이는 Linux debug binary의 설치 배치 재현이며 deb/nsis 설치·서명·Windows 실기 통과는 아니다.
+
+NAIA_HOME 빈 포인터의 실제 기동은 Agent 미기동/다른 홈 포인터 불변을 로그와 실파일로 단언(tmp/r13-isolated-assert.log). 이 분리 홈 실행의 CLI smoke는 기본 홈 로그 경로를 보기 때문에 새 세션 없음으로 종료했으며, 격리 로그를 직접 검사한 단언과 구분한다. 실제 Tauri WebView→IPC는 stale A 캐시를 버리고 B를 복원하며 config/ui-config/slots-manifest의 바이트·mtime(1000000ms)와 A 원본 보존을 재검증(tmp/r13-native.log, r13-native/evidence.json). 이 native 설정 시험은 Agent가 없는 별도 실행이며, paired Agent 부팅 증거는 설치 배치 smoke다.
+
+Shell 전체 2693pass/21skip(255파일pass/1skip,249.80초), CI smoke 판정 단위5/5, Playwright6/6(선택/빈/읽기오류·274/360/1100px), core/Shell/BGM 및 tmp의 paired Agent tsc 통과. verify-visual-ux로 빈 홈 Start Fresh/Load, 권한 오류 안내,274px 입력/보내기 갈무리와 기존 상태·키보드/ARIA 시험을 확인했다. UI 코드 변경 없음. 증거는 /home/nextain/work/codex-runs/026-b2c/tmp/r13-*이다. 기존 root3항목과 전역 파일 계약 탐지 갭은 유지되며 이 긴급 회귀의 해결로 전역 구조 완료를 주장하지 않는다. 사용자 제공 헌장 불변 지시에 따라 process-status는 수정하지 않았다.
