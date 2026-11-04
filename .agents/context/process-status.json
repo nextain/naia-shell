@@ -19,6 +19,22 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "ui_font_scale_20261105": {
+      "issue": null,
+      "title": "설정 › 일반 글자 크기(작게·보통·크게·아주 크게) — 앱 전체 글자 배율, BGM 패널 화면 안 배치, 상단 막대·설정 탭 줄 넘침 정리",
+      "requirements": "docs/requirements.md FR-UI-FONT-SCALE.1~3",
+      "scenario": "docs/user-scenarios.md UC-UI-FONT-SCALE-20261105",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "P04_evidence": "vitest ui-font-scale·bgm-app-position·SettingsTab·adk-store (셸 전체 2621 통과), Playwright e2e/ui-font-scale.spec.ts 3/3 (1920·1280 아주 크게 배치, 키보드 선택·저장·새로고침, 360px), 기본 배율 HEAD 대비 스크린샷 글자 차이 없음. 실 WebKitGTK(Tauri) 확인은 PR 수동 항목으로 남김.",
+      "last_updated": "2026-11-05T00:00:00+09:00"
+    },
     "project_panels_class_reset_20261025": {
       "issue": null,
       "title": "프로젝트 앱 문서·작업 탭 정리, 수업용 프로젝트(coding_app·docs_dirs·class.baseline_ref) 문서 미리보기·수업 초기화, 에이전트 아이콘 교체",

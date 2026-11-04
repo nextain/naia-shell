@@ -228,6 +228,7 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	"uiPreferences",
 	// Appearance
 	"theme",
+	"uiFontScale",
 	"backgroundImage",
 	"backgroundVideo",
 	"vrmModel",

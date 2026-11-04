@@ -205,6 +205,13 @@ import { listSttProviders } from "../lib/stt/registry";
 import { listTtsProviderMetas } from "../lib/tts/registry";
 import { synthesizeTts } from "../lib/tts/synthesize";
 import type { ModelCapability, ProviderId } from "../lib/types";
+import {
+	UI_FONT_SCALE_IDS,
+	type UiFontScaleId,
+	applyUiFontScale,
+	normalizeUiFontScale,
+	scaledFontSize,
+} from "../lib/ui-font-scale";
 import { type UpdateInfo, checkForUpdate } from "../lib/updater";
 import { type VoiceHostGpu, voiceHostProfile } from "../lib/voice/host-profile";
 import {
@@ -577,6 +584,13 @@ function normalizeLocalPath(path: string): string {
 	}
 }
 
+const UI_FONT_SCALE_LABEL_KEYS = {
+	small: "settings.fontScaleSmall",
+	normal: "settings.fontScaleNormal",
+	large: "settings.fontScaleLarge",
+	xlarge: "settings.fontScaleXLarge",
+} as const satisfies Record<UiFontScaleId, string>;
+
 const THEMES: { id: ThemeId; label: string; preview: string }[] = [
 	{
 		id: "system",
@@ -824,6 +838,9 @@ export function SettingsTab() {
 		existing?.locale ?? getLocale(),
 	);
 	const [theme, setTheme] = useState<ThemeId>(existing?.theme ?? "midnight");
+	const [uiFontScale, setUiFontScale] = useState<UiFontScaleId>(() =>
+		normalizeUiFontScale(existing?.uiFontScale),
+	);
 	const [vrmModel, setVrmModel] = useState(savedVrmModel);
 	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
 	const [naiaBgs, setNaiaBgs] = useState<string[]>([]);
@@ -3302,6 +3319,42 @@ export function SettingsTab() {
 		if (current) saveConfig({ ...current, theme: id });
 	}
 
+	function handleUiFontScaleChange(id: UiFontScaleId) {
+		setUiFontScale(id);
+		// 테마와 같은 경로: 즉시 적용 + 저장 단추 없이 바로 저장(FR-UI-FONT-SCALE.1).
+		applyUiFontScale(id);
+		const current = loadConfig();
+		if (current) saveConfig({ ...current, uiFontScale: id });
+	}
+
+	function handleUiFontScaleKeyDown(
+		e: React.KeyboardEvent<HTMLButtonElement>,
+		currentId: UiFontScaleId,
+	) {
+		const idx = UI_FONT_SCALE_IDS.indexOf(currentId);
+		let target: UiFontScaleId | null = null;
+		if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+			target = UI_FONT_SCALE_IDS[(idx + 1) % UI_FONT_SCALE_IDS.length];
+		} else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+			target =
+				UI_FONT_SCALE_IDS[
+					(idx - 1 + UI_FONT_SCALE_IDS.length) % UI_FONT_SCALE_IDS.length
+				];
+		} else if (e.key === "Home") {
+			target = UI_FONT_SCALE_IDS[0];
+		} else if (e.key === "End") {
+			target = UI_FONT_SCALE_IDS[UI_FONT_SCALE_IDS.length - 1];
+		}
+		if (!target) return;
+		e.preventDefault();
+		handleUiFontScaleChange(target);
+		const group = e.currentTarget.parentElement;
+		const next = group?.querySelector<HTMLButtonElement>(
+			`[data-ui-font-scale-option="${target}"]`,
+		);
+		next?.focus();
+	}
+
 	// Load VRM list from naia-settings
 	useEffect(() => {
 		listNaiaAssets("vrm-files").then((paths) => {
@@ -4210,6 +4263,39 @@ export function SettingsTab() {
 								/>
 							))}
 						</div>
+					</div>
+
+					{/* UC-UI-FONT-SCALE-20261105: app-wide font size, right below the theme */}
+					<div className="settings-field" data-testid="ui-font-scale-section">
+						{/* biome-ignore lint/a11y/noLabelWithoutControl: names the radiogroup via aria-labelledby, same as thinking-level */}
+						<label id="ui-font-scale-label">{t("settings.fontScale")}</label>
+						<div
+							className="settings-segmented"
+							role="radiogroup"
+							aria-labelledby="ui-font-scale-label"
+						>
+							{UI_FONT_SCALE_IDS.map((id) => {
+								const active = uiFontScale === id;
+								return (
+									<button
+										key={id}
+										type="button"
+										// biome-ignore lint/a11y/useSemanticElements: segmented buttons with roving tabindex, same pattern as thinking-level
+										role="radio"
+										aria-checked={active}
+										tabIndex={active ? 0 : -1}
+										data-ui-font-scale-option={id}
+										data-testid={`ui-font-scale-${id}`}
+										className={`settings-segmented__option${active ? " settings-segmented__option--active" : ""}`}
+										onClick={() => handleUiFontScaleChange(id)}
+										onKeyDown={(e) => handleUiFontScaleKeyDown(e, id)}
+									>
+										{t(UI_FONT_SCALE_LABEL_KEYS[id])}
+									</button>
+								);
+							})}
+						</div>
+						<div className="settings-hint">{t("settings.fontScaleHint")}</div>
 					</div>
 
 					{/* #10: 배경 이미지 — 테마 바로 아래, 드롭다운 방식 (avatar 탭에서 이동) */}
@@ -6134,7 +6220,7 @@ export function SettingsTab() {
 												? "var(--accent, #2563eb)"
 												: "var(--text-primary, var(--cream, #0f172a))",
 											fontWeight: active ? 600 : 400,
-											fontSize: "13px",
+											fontSize: scaledFontSize(13),
 											cursor: "pointer",
 											textAlign: "center",
 											whiteSpace: "nowrap",

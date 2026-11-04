@@ -2456,3 +2456,25 @@ Test Coverage Map (P02)
 | 응답 표기 파싱, 화면/TTS 제거, TTS 꺼짐 즉시 재생, 음성 idle까지 지연, 전송된 입력·취소·아바타 교체·TTS/슬라이드 낭독 인터럽트 시 폐기, 초안 편집 시 유지, 말하는 중 수동 실행 미재생·쿨다운 미기록 | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`, `nva-gesture-trigger.test.ts`, `nva-action-hotkeys.test.ts`; `packages/shell/src/components/__tests__/NvaGestureActions.test.tsx`, `ChatArea.test.tsx`; `packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx` | `packages/shell/e2e/nva-prebaked.spec.ts` — live UI key dispatch and clip call |
 
 **S-MAC-STAPLE-RETRY (#505, #809):** 출시 운영자는 Apple 네트워크 장애 시 공증된 앱·DMG의 stapler를 최대 6회 재시도한다. 인텔 앱·DMG는 승인 후 staple 또는 validate의 네트워크 오류가 6회 소진되면 경고와 작업 요약을 남기고 계속하며, arm64와 Universal 및 비네트워크 오류는 실패한다. staple 생략 시 해당 산출물의 후속 validate도 생략한다. 회귀: `packages/shell/scripts/__tests__/stapler-retry.test.sh` (성공·비네트워크·인텔 예외·arm 실패), `platform-matrix.test.ts` 워크플로 연결.
+
+## UC-UI-FONT-SCALE-20261105 — 설정에서 앱 전체 글자 크기를 바꾼다
+
+사용자(방송 진행자·발표자·눈이 불편한 사용자)는 설정 › 일반 탭의 **글자 크기**에서 작게/보통/크게/아주 크게 중 하나를 고른다. 고른 즉시 채팅·메뉴·설정·자막·방송/아바타 화면 오버레이 글자가 함께 커지거나 작아지고, 앱을 다시 켜도 같은 크기로 시작한다. 글자만 커지며 창 배치·아바타 캔버스 크기는 그대로다. 이유: 라이브 방송과 투자자용 화면 캡처에서 글자가 작아 읽기 어렵다는 제품 요청(2026-11-04 실기 관찰 포함).
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 저장값이 없으면 `보통`(배율 1.0)이 선택되어 있고 화면은 이전과 같다. |
+| 빈 목록 | 해당 없음 — 선택지는 항상 네 개다. 저장값이 알 수 없는 값이면 `보통`으로 보인다. |
+| 진행 | 선택 단추를 누르거나 방향키로 옮기면 저장 단추 없이 즉시 적용된다. |
+| 성공 | `<html>`의 `--ui-font-scale`이 0.9/1.0/1.25/1.5로 바뀌고 `naia-config`·`ui-config.json`에 `uiFontScale`이 남아 다음 실행 시작 화면에도 적용된다. |
+| 오류 | 저장이 늦거나 실패해도 현재 창의 글자 크기는 바뀐 채 유지된다(설정 저장 경로는 테마와 같다). 알 수 없는 저장값은 `보통`으로 되돌린다. |
+| 좁은 폭 | `아주 크게`에서도 상단 앱 막대의 앱 단추(🖥️🌐📁)는 음악 막대에 가려지지 않고(음악 막대가 줄어든다), 설정 탭 줄(프로파일…일반)은 잘리지 않고 줄바꿈한다. BGM 앱 패널(`.bgm-yt-app`)은 어느 배율·창 폭에서도 화면 안에 열린다. |
+
+Test Coverage Map (P02)
+
+| UC | 상태·행동 | Vitest 파일·그룹 | 실 UI Playwright |
+|---|---|---|---|
+| UC-UI-FONT-SCALE-20261105 | 기본값·알 수 없는 값 정규화, 배율 표, `--ui-font-scale` 적용, 스타일시트 글자 크기 배율 계약 | `packages/shell/src/lib/__tests__/ui-font-scale.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 아주 크게 시작·변경 즉시 적용 |
+| UC-UI-FONT-SCALE-20261105 | 설정 › 일반 라디오 그룹·키보드 이동·즉시 저장(`naia-config`) | `packages/shell/src/components/__tests__/SettingsTab.test.tsx` — UI font scale (UC-UI-FONT-SCALE-20261105) | `packages/shell/e2e/ui-font-scale.spec.ts` — 작게 선택 후 저장값·CSS 변수 |
+| UC-UI-FONT-SCALE-20261105 | `ui-config.json` 왕복·agent config 제외 | `packages/shell/src/lib/__tests__/adk-store.test.ts` — writes ALL UI settings | — |
+| UC-UI-FONT-SCALE-20261105 | BGM 앱 패널 위치가 화면 안(가장 큰 배율·좁은 창), 상단 막대·설정 탭 줄 겹침 없음 | `packages/shell/src/lib/__tests__/bgm-app-position.test.ts` | `packages/shell/e2e/ui-font-scale.spec.ts` — 1280/1920 폭 아주 크게 배치 |
