@@ -1,6 +1,26 @@
+diff --git a/packages/shell/src/components/ChatArea.tsx b/packages/shell/src/components/ChatArea.tsx
+index 514905a1572f7828cbfe65347a92f06e790e52db..63fdbbf60da36031382af46be1cde2d33fb6c69f 100644
+--- a/packages/shell/src/components/ChatArea.tsx
++++ b/packages/shell/src/components/ChatArea.tsx
+@@ -796,6 +796,7 @@ export function ChatArea({
+ 	}, []);
+ 
+ 	const messages = useChatStore((s) => s.messages);
++	const persistenceWarning = useChatStore((s) => s.persistenceWarning);
+ 	const isStreaming = useChatStore((s) => s.isStreaming);
+ 	const streamingContent = useChatStore((s) => s.streamingContent);
+ 	const streamingThinking = useChatStore((s) => s.streamingThinking);
+@@ -4586,6 +4587,7 @@ export function ChatArea({
+ 						</>
+ 					)}
+ 
++					{persistenceWarning && <div role="alert" data-testid="conversation-save-warning" style={{ padding: 12, border: "1px solid var(--error)", borderRadius: 8, color: "var(--error)", overflowWrap: "anywhere" }}>{persistenceWarning}</div>}
+ 					<div ref={messagesEndRef} />
+ 				</div>
+ 
 diff --git a/packages/shell/src/components/LocalContainerModels.tsx b/packages/shell/src/components/LocalContainerModels.tsx
 new file mode 100644
-index 0000000..4b1b3bd
+index 0000000000000000000000000000000000000000..4b1b3bd5098fff695a22122a55c3fc5ce7892595
 --- /dev/null
 +++ b/packages/shell/src/components/LocalContainerModels.tsx
 @@ -0,0 +1,47 @@
@@ -52,7 +72,7 @@ index 0000000..4b1b3bd
 +    </div>;
 +}
 diff --git a/packages/shell/src/components/SettingsTab.tsx b/packages/shell/src/components/SettingsTab.tsx
-index 7c62414..cf9087d 100644
+index 7c62414d145b1d08e69313895040f1313d25a0b8..73985cabd0fd2ffac23bb24cb9bd62c31e28a08c 100644
 --- a/packages/shell/src/components/SettingsTab.tsx
 +++ b/packages/shell/src/components/SettingsTab.tsx
 @@ -1,3 +1,4 @@
@@ -90,7 +110,7 @@ index 7c62414..cf9087d 100644
  	>("idle");
  	const [backupError, setBackupError] = useState("");
 -	const [transferStatus, setTransferStatus] = useState<"idle" | "exporting" | "error">("idle");
-+	
++
  
  	const [allowedTools, setAllowedTools] = useState<string[]>(
  		existing?.allowedTools ?? [],
@@ -165,11 +185,12 @@ index 7c62414..cf9087d 100644
  								persistConfig({ enableTools: e.target.checked });
 diff --git a/packages/shell/src/components/WebMemoryTransfer.tsx b/packages/shell/src/components/WebMemoryTransfer.tsx
 new file mode 100644
-index 0000000..91d0f9b
+index 0000000000000000000000000000000000000000..8173f70e52760fddfcb40ff6c8ee259e8ad3bfe6
 --- /dev/null
 +++ b/packages/shell/src/components/WebMemoryTransfer.tsx
-@@ -0,0 +1,61 @@
-+import { useRef, useState } from "react";
+@@ -0,0 +1,65 @@
++import { isChatTransferBusy, useChatStore } from "../stores/chat";
++import { useEffect, useRef, useState } from "react";
 +import { t } from "../lib/i18n";
 +import { Logger } from "../lib/logger";
 +import { resolveWebConversationsDir } from "../lib/web-runtime/web-workspace-commands";
@@ -181,7 +202,9 @@ index 0000000..91d0f9b
 +    const [file, setFile] = useState<File>();
 +    const dialog = useRef<HTMLDialogElement>(null);
 +    const busy = state === "working";
-+    const available = () => !document.querySelector(".chat-cancel-btn");
++    const chatBusy = useChatStore(s => s.isStreaming || s.pendingApproval !== null || s.messageQueue.length > 0);
++    const available = () => !isChatTransferBusy();
++    useEffect(() => { if (state === "wait" && !chatBusy) setState(file && preview ? "preview" : "idle"); }, [state, chatBusy, file, preview]);
 +    const inspect = async (selected?: File) => {
 +        if (!selected || busy) return;
 +        if (!available()) { setState("wait"); return; }
@@ -194,12 +217,12 @@ index 0000000..91d0f9b
 +            dialog.current?.showModal();
 +        } catch { setState("error"); }
 +    };
-+    const message = (state === "idle" || state === "preview") ? "" : t(`browserMemory.${state}`);
++    const message = chatBusy && !busy && state !== "restored" ? t("browserMemory.wait") : (state === "idle" || state === "preview") ? "" : t(`browserMemory.${state}`);
 +    return <section className="settings-field browser-memory" data-testid="web-memory-transfer" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
 +        <h3>{t("browserMemory.title")}</h3>
 +        <p>{t("browserMemory.retention")}</p><p>{t("browserMemory.serverInfo")}</p><p>{t("browserMemory.contents")}</p>
 +        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-+            <button type="button" className="btn-secondary" data-testid="memory-transfer-export" disabled={busy} onClick={async () => {
++            <button type="button" className="btn-secondary" data-testid="memory-transfer-export" disabled={busy || chatBusy} onClick={async () => {
 +                if (!available()) { setState("wait"); return; }
 +                setState("working");
 +                try {
@@ -207,7 +230,7 @@ index 0000000..91d0f9b
 +                    await downloadWebTransfer(await loadTransfer(), resolveWebConversationsDir()); setState("exported");
 +                } catch { setState("error"); }
 +            }}>{t("settings.memoryTransferExport")}</button>
-+            <label>{t("browserMemory.import")}<input type="file" accept=".zip,application/zip" data-testid="memory-transfer-import" disabled={busy} onChange={e => { const next = e.target.files?.[0]; e.target.value = ""; void inspect(next); }} /></label>
++            <label>{t("browserMemory.import")}<input type="file" accept=".zip,application/zip" data-testid="memory-transfer-import" disabled={busy || chatBusy} onChange={e => { const next = e.target.files?.[0]; e.target.value = ""; void inspect(next); }} /></label>
 +        </div>
 +        <p role={state === "error" ? "alert" : "status"}>{message}</p>
 +        <dialog className="browser-memory-dialog" ref={dialog} aria-labelledby="memory-preview-title" onCancel={e => { if (busy || state === "restored") e.preventDefault(); }} style={{ maxWidth: "min(600px, calc(100vw - 32px))", boxSizing: "border-box", overflowWrap: "anywhere" }}>
@@ -219,8 +242,9 @@ index 0000000..91d0f9b
 +            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
 +            {state === "restored" ? <button type="button" onClick={() => location.reload()}>{t("browserMemory.reload")}</button> : <>
 +                <button type="button" className="btn-secondary" disabled={busy} onClick={() => { dialog.current?.close(); setPreview(undefined); setFile(undefined); setState("idle"); }}>{t("browserMemory.cancel")}</button>
-+                <button type="button" disabled={busy || !file} data-testid="memory-transfer-restore" onClick={async () => {
++                <button type="button" disabled={busy || !file || chatBusy} data-testid="memory-transfer-restore" onClick={async () => {
 +                    if (!file || busy) return;
++                    if (!available()) { setState("wait"); return; }
 +                    setState("working");
 +                    try { const { restoreWebTransfer } = await import("../lib/transfer/restore-web"); await restoreWebTransfer(file); setState("restored"); }
 +                    catch { setState("error"); }
@@ -231,7 +255,7 @@ index 0000000..91d0f9b
 +    </section>;
 +}
 diff --git a/packages/shell/src/components/WebWorkspaceSetup.tsx b/packages/shell/src/components/WebWorkspaceSetup.tsx
-index 792e649..1a7b3fe 100644
+index 792e649728749dd834080fbb4e0c9643c55e6422..1a7b3fefdbc2d88b25b0abb03849f02956548d81 100644
 --- a/packages/shell/src/components/WebWorkspaceSetup.tsx
 +++ b/packages/shell/src/components/WebWorkspaceSetup.tsx
 @@ -35,6 +35,7 @@ export function WebWorkspaceSetup(props: WebWorkspaceSetupProps) {
@@ -272,7 +296,7 @@ index 792e649..1a7b3fe 100644
  					<div className="web-workspace-actions">
  						<ul
 diff --git a/packages/shell/src/components/__tests__/SettingsTab.test.tsx b/packages/shell/src/components/__tests__/SettingsTab.test.tsx
-index 1e033eb..5da38ef 100644
+index 1e033ebc0b4f9d167e866439d30f514cfa8858fd..5da38ef9aa39f5981ad291eac01ba442029ef682 100644
 --- a/packages/shell/src/components/__tests__/SettingsTab.test.tsx
 +++ b/packages/shell/src/components/__tests__/SettingsTab.test.tsx
 @@ -325,7 +325,7 @@ describe("SettingsTab", () => {
@@ -285,7 +309,7 @@ index 1e033eb..5da38ef 100644
  		});
  
 diff --git a/packages/shell/src/lib/config.ts b/packages/shell/src/lib/config.ts
-index 79ce1d2..5e22575 100644
+index 79ce1d231b225f2d762f78d1c8dd8efe3c1d62f2..5e22575a344180f290894fcc3be91e91e953251a 100644
 --- a/packages/shell/src/lib/config.ts
 +++ b/packages/shell/src/lib/config.ts
 @@ -812,7 +812,7 @@ export function isReadyToChat(): boolean {
@@ -298,7 +322,7 @@ index 79ce1d2..5e22575 100644
  }
  
 diff --git a/packages/shell/src/lib/locales/ar.ts b/packages/shell/src/lib/locales/ar.ts
-index 3a46f5d..4d4a05d 100644
+index 3a46f5ddd765e737e74b1f026f302b47d4f80426..4d4a05dc68f55f46ee225e4d2f6df067aea84d85 100644
 --- a/packages/shell/src/lib/locales/ar.ts
 +++ b/packages/shell/src/lib/locales/ar.ts
 @@ -8,6 +8,38 @@
@@ -341,7 +365,7 @@ index 3a46f5d..4d4a05d 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/bn.ts b/packages/shell/src/lib/locales/bn.ts
-index b0e32e7..0886b54 100644
+index b0e32e7f7a7ef5badb125006a8e6522228f58054..0886b546fc1273df76d1ed6d56369c9cee520baf 100644
 --- a/packages/shell/src/lib/locales/bn.ts
 +++ b/packages/shell/src/lib/locales/bn.ts
 @@ -8,6 +8,38 @@
@@ -384,7 +408,7 @@ index b0e32e7..0886b54 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/de.ts b/packages/shell/src/lib/locales/de.ts
-index 90202cb..0e3976f 100644
+index 90202cbf56cb580427a95b08442a930d59123450..0e3976fe4faea037816d8908803c9d713db0cfe4 100644
 --- a/packages/shell/src/lib/locales/de.ts
 +++ b/packages/shell/src/lib/locales/de.ts
 @@ -8,6 +8,38 @@
@@ -427,7 +451,7 @@ index 90202cb..0e3976f 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/en.ts b/packages/shell/src/lib/locales/en.ts
-index e380204..2663360 100644
+index e380204c8a4bbc8de88b1fa92de46940edb47272..2663360e8193779e0b4490d97aee13cc23ca82f0 100644
 --- a/packages/shell/src/lib/locales/en.ts
 +++ b/packages/shell/src/lib/locales/en.ts
 @@ -16,6 +16,38 @@ import englishWeb from "./en-web";
@@ -470,7 +494,7 @@ index e380204..2663360 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/es.ts b/packages/shell/src/lib/locales/es.ts
-index b69811c..49a1831 100644
+index b69811caa666a90049938a50b9fa0761e5d924d7..49a183167bc3d678be7862a0a67f3da68c60bf76 100644
 --- a/packages/shell/src/lib/locales/es.ts
 +++ b/packages/shell/src/lib/locales/es.ts
 @@ -8,6 +8,38 @@
@@ -513,7 +537,7 @@ index b69811c..49a1831 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/fr.ts b/packages/shell/src/lib/locales/fr.ts
-index 4493d6e..8a2da2e 100644
+index 4493d6e62352a54e4e816ed9b804aff6339d0b5e..8a2da2e94703662af358d5d57c69079bb47d0af2 100644
 --- a/packages/shell/src/lib/locales/fr.ts
 +++ b/packages/shell/src/lib/locales/fr.ts
 @@ -8,6 +8,38 @@
@@ -556,7 +580,7 @@ index 4493d6e..8a2da2e 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/hi.ts b/packages/shell/src/lib/locales/hi.ts
-index fe92e4e..dbca3df 100644
+index fe92e4ea3b72f35187c909e941d8d89a26abf0a4..dbca3df9cc45eb70fe59bb10968f28b276b4e8a6 100644
 --- a/packages/shell/src/lib/locales/hi.ts
 +++ b/packages/shell/src/lib/locales/hi.ts
 @@ -8,6 +8,38 @@
@@ -599,7 +623,7 @@ index fe92e4e..dbca3df 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/id.ts b/packages/shell/src/lib/locales/id.ts
-index fc2a46d..a96cd85 100644
+index fc2a46ddb9c0978e11d0735fc291aa77b0c04dbc..a96cd85d9d76ce6d496b7d1c3d2fe50dbf98b685 100644
 --- a/packages/shell/src/lib/locales/id.ts
 +++ b/packages/shell/src/lib/locales/id.ts
 @@ -8,6 +8,38 @@
@@ -642,7 +666,7 @@ index fc2a46d..a96cd85 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/ja.ts b/packages/shell/src/lib/locales/ja.ts
-index 18f02f7..2c6ecd3 100644
+index 18f02f75cec1828d082d87bf934c877f4d8e45ca..2c6ecd3ea622feb1b231877aafef07bfb7416419 100644
 --- a/packages/shell/src/lib/locales/ja.ts
 +++ b/packages/shell/src/lib/locales/ja.ts
 @@ -8,6 +8,38 @@
@@ -685,7 +709,7 @@ index 18f02f7..2c6ecd3 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/ko.ts b/packages/shell/src/lib/locales/ko.ts
-index 70d341e..ee4a458 100644
+index 70d341eb21f7fc53d66560cfb725772dc9fdbf89..ee4a4583c282d427ff584078356c6be006fe8e74 100644
 --- a/packages/shell/src/lib/locales/ko.ts
 +++ b/packages/shell/src/lib/locales/ko.ts
 @@ -8,6 +8,38 @@
@@ -728,7 +752,7 @@ index 70d341e..ee4a458 100644
  	"apps.empty": "등록된 앱이 없습니다.",
  	"apps.loginRequired": "Naia 로그인이 필요합니다.",
 diff --git a/packages/shell/src/lib/locales/pt.ts b/packages/shell/src/lib/locales/pt.ts
-index 91179ed..11d325c 100644
+index 91179edee5ecd55276b7c845c7c48f445667e7ee..11d325cb9cbf4f73a6f3ba007f74ddb14e0d9832 100644
 --- a/packages/shell/src/lib/locales/pt.ts
 +++ b/packages/shell/src/lib/locales/pt.ts
 @@ -8,6 +8,38 @@
@@ -771,7 +795,7 @@ index 91179ed..11d325c 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/ru.ts b/packages/shell/src/lib/locales/ru.ts
-index 782f67c..e974e69 100644
+index 782f67c52eb7a0569dd2314891c1701103b2cb0d..e974e69e23710fe9fa80949e70150fb87346478a 100644
 --- a/packages/shell/src/lib/locales/ru.ts
 +++ b/packages/shell/src/lib/locales/ru.ts
 @@ -8,6 +8,38 @@
@@ -814,7 +838,7 @@ index 782f67c..e974e69 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/vi.ts b/packages/shell/src/lib/locales/vi.ts
-index 007afa4..084a0ae 100644
+index 007afa41590d9ad48bb617ddcd413314afd61dc4..084a0ae3697d05c05c3ba67677c4675ea19e59bc 100644
 --- a/packages/shell/src/lib/locales/vi.ts
 +++ b/packages/shell/src/lib/locales/vi.ts
 @@ -8,6 +8,38 @@
@@ -857,7 +881,7 @@ index 007afa4..084a0ae 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/locales/zh.ts b/packages/shell/src/lib/locales/zh.ts
-index 312c08c..bb9a78e 100644
+index 312c08c8a865f250bba1148ba4e956271f4bda70..bb9a78eaa1e378a3dab94e6bf0a2a3f36516d909 100644
 --- a/packages/shell/src/lib/locales/zh.ts
 +++ b/packages/shell/src/lib/locales/zh.ts
 @@ -8,6 +8,38 @@
@@ -900,7 +924,7 @@ index 312c08c..bb9a78e 100644
  	"apps.empty": "No apps are available.",
  	"apps.loginRequired": "Sign in to Naia first.",
 diff --git a/packages/shell/src/lib/transfer/archive.ts b/packages/shell/src/lib/transfer/archive.ts
-index d8a4237..89028d7 100644
+index d8a4237b970c4e90ecaae1b34254756af1307d90..89028d7c1141361b30e5c8f52bc41c882bf71ab9 100644
 --- a/packages/shell/src/lib/transfer/archive.ts
 +++ b/packages/shell/src/lib/transfer/archive.ts
 @@ -23,7 +23,7 @@ function limitsFor(partial: Partial<TransferLimits> = {}): TransferLimits {
@@ -920,16 +944,105 @@ index d8a4237..89028d7 100644
      // Small compressed inputs bound the amount inflate can emit per push.
      for(let p=0;p<data.length;p+=1024){const part=data.subarray(p,p+1024);if(inflate)inflate.push(part,false);else append(part);for(const out of pending)await onChunk!(out);pending=[];}
    }
+diff --git a/packages/shell/src/lib/transfer/entry.ts b/packages/shell/src/lib/transfer/entry.ts
+index 04e84f3f4ff21cead0b3dc665948d6b2ea7a8828..c258885cb3638bdcfed70891ef78e696d42cff8d 100644
+--- a/packages/shell/src/lib/transfer/entry.ts
++++ b/packages/shell/src/lib/transfer/entry.ts
+@@ -1,3 +1,4 @@
++import { withRecoveredWebWorkspace } from "./policy";
+ /** Load transfer functionality only when the migration flow is requested. */
+ export function loadTransfer() {
+ 	return import("./archive");
+@@ -11,6 +12,9 @@ const activeTransfers = new Set<string>();
+ 
+ /** Export the current browser workspace without retaining the ZIP in JS memory. */
+ export async function downloadWebTransfer(transfer: Transfer, conversationsDir: string) {
++	return withRecoveredWebWorkspace(() => downloadWebTransferUnlocked(transfer, conversationsDir));
++}
++async function downloadWebTransferUnlocked(transfer: Transfer, conversationsDir: string) {
+ 	const { assertTransferPath } = await import("./policy");
+ 	const root = await navigator.storage.getDirectory();
+ 	const missing = (error: unknown) => error instanceof DOMException && error.name === "NotFoundError";
+diff --git a/packages/shell/src/lib/transfer/policy.test.ts b/packages/shell/src/lib/transfer/policy.test.ts
+index 87e6b40ea426b119a7ea321b8859a534c5485318..ee6351ab38fc697851cf671f0344c74494ea5209 100644
+--- a/packages/shell/src/lib/transfer/policy.test.ts
++++ b/packages/shell/src/lib/transfer/policy.test.ts
+@@ -1,7 +1,7 @@
+ import { describe, expect, it } from "vitest";
+ import { readFileSync } from "node:fs";
+ import ts from "typescript";
+-import { assertTransferPath, validateMemoryStore } from "./policy";
++import { assertTransferPath, assertTransferTargetPath, validateMemoryStore } from "./policy";
+ import { sanitizeSettings, hasSensitiveFields, isSensitive } from "./sanitize";
+ 
+ const fact = {
+@@ -11,7 +11,7 @@ const fact = {
+ };
+ 
+ describe("UT-TRANSFER-02 path validation", () => {
+-  it.each(["../docs/a.md", "/docs/a.md", "docs/../x", "docs\\x", "docs/CON.txt", "docs/a//b"])('rejects %s', (path) => {
++  it.each(["../docs/a.md", "/docs/a.md", "docs/../x", "docs\\x", "docs/CON.txt", "docs/a//b", "conversations/u-other/private.jsonl", "conversations/U-other/private.jsonl", "conversations/u-current/u-other/private.jsonl"])('rejects %s', (path) => {
+     expect(() => assertTransferPath(path)).toThrow();
+   });
+ });
+@@ -120,3 +120,14 @@ describe("UT-TRANSFER-05 actual shell settings", () => {
+     expect(hasSensitiveFields(result.value)).toBe(false);
+   });
+ });
++
++it("accepts only mapped account journal targets while retaining portable path checks", () => {
++ expect(() => assertTransferTargetPath("conversations/u-current/chat.jsonl")).not.toThrow();
++ expect(() => assertTransferTargetPath("conversations/u-current/u-other/private.jsonl")).toThrow();
++ expect(() => assertTransferTargetPath("conversations/u-current/../outside.jsonl")).toThrow();
++});
++
++it("preserves a u- prefixed conversation file while rejecting account directories", () => {
++ expect(() => assertTransferPath("conversations/u-session.jsonl")).not.toThrow();
++ expect(() => assertTransferPath("conversations/u-session/file.jsonl")).toThrow();
++});
+diff --git a/packages/shell/src/lib/transfer/policy.ts b/packages/shell/src/lib/transfer/policy.ts
+index 7e85c198150e87f87a85624a031ba65cc2f5b301..ff3d31ccd14499bac6ffa3fe93138f80abe78c31 100644
+--- a/packages/shell/src/lib/transfer/policy.ts
++++ b/packages/shell/src/lib/transfer/policy.ts
+@@ -8,6 +8,7 @@ const reserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+ export function assertTransferPath(path: string): void {
+   if (!path || path.normalize("NFC") !== path || path.startsWith("/") || /[\\:\x00-\x1f\x7f]/.test(path)) throw new Error("invalid path");
+   const parts = path.split("/");
++  if (parts[0] === "conversations" && parts.length > 2 && /^u-/i.test(parts[1] ?? "")) throw new Error("account conversation path forbidden");
+   if (parts.some((part) => !part || part === "." || part === ".." || /[ .]$/.test(part) || reserved.test(part) || blockedPart.test(part) || denied.test(part))) throw new Error("forbidden path");
+   if (blockedFile.test(parts[parts.length - 1])) throw new Error("forbidden file");
+   const allowed = userRoots.has(parts[0]) || (parts[0] === ".agents" && parts[1] === "skills") || (parts[0] === "naia-settings" && (parts[1] === "config.json" || parts[1] === "ui-config.json" || (parts[1] === "memory" && parts[2] === "store.json" && parts.length === 3)));
+@@ -32,3 +33,19 @@ export function validateMemoryStore(value: unknown): number {
+   }
+   return facts.length;
+ }
++
++/** Archive names are account-neutral; only trusted, mapped journal targets include an account. */
++export function assertTransferTargetPath(path: string): void {
++  assertTransferPath(path.replace(/^conversations\/u-[a-zA-Z0-9_-]{1,128}\//, "conversations/"));
++}
++export const WEB_TRANSFER_LOCK = "naia-memory-transfer";
++/** Serialize exports and conversation read/modify/write with restore + crash recovery. */
++export async function withRecoveredWebWorkspace<T>(operation: () => Promise<T>): Promise<T> {
++  // Without Web Locks restore is unavailable, so legacy/non-browser adapters cannot race it.
++  if (!globalThis.navigator?.locks) return operation();
++  return navigator.locks.request(WEB_TRANSFER_LOCK, async () => {
++    const { recoverWebTransferUnderLock } = await import("./restore-web");
++    await recoverWebTransferUnderLock();
++    return operation();
++  });
++}
 diff --git a/packages/shell/src/lib/transfer/restore-web.ts b/packages/shell/src/lib/transfer/restore-web.ts
 new file mode 100644
-index 0000000..fd45233
+index 0000000000000000000000000000000000000000..bdde464e3f9b3f1924851e743f59245764bf8c24
 --- /dev/null
 +++ b/packages/shell/src/lib/transfer/restore-web.ts
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,157 @@
 +import { Logger } from "../logger";
 +import { resolveWebConversationsDir } from "../web-runtime/web-workspace-commands";
 +import { extractArchive, validateArchive, Sha256, type ArchiveSource } from "./archive";
-+import { assertTransferPath } from "./policy";
++import { assertTransferTargetPath, WEB_TRANSFER_LOCK } from "./policy";
++import { isChatTransferBusy } from "../../stores/chat";
 +import { MAX_FILES } from "./manifest";
 +
 +export function fileArchive(file: File): ArchiveSource {
@@ -940,7 +1053,7 @@ index 0000000..fd45233
 +}
 +export const inspectWebTransfer = (file: File) => validateArchive(fileArchive(file));
 +const journalName = "naia-restore-journal";
-+const lockName = "naia-memory-transfer";
++const lockName = WEB_TRANSFER_LOCK;
 +type RecordEntry = { path: string; size: number | null; sha256: string | null };
 +type Journal = { version: 1; files: RecordEntry[] };
 +const missing = (e: unknown) => e instanceof DOMException && e.name === "NotFoundError";
@@ -955,7 +1068,7 @@ index 0000000..fd45233
 +    return sha.digest();
 +}
 +async function parentFor(workspace: FileSystemDirectoryHandle, path: string) {
-+    assertTransferPath(path);
++    assertTransferTargetPath(path);
 +    const parts = path.split("/"); const name = parts.pop()!;
 +    let parent = workspace;
 +    for (const part of parts) parent = await parent.getDirectoryHandle(part, { create: true });
@@ -971,7 +1084,7 @@ index 0000000..fd45233
 +    const originals: (File | null)[] = [], names = new Set<string>();
 +    for (const [index, item] of journal.files.entries()) {
 +        if (!item || typeof item.path !== "string") throw new Error("invalid restore journal path");
-+        assertTransferPath(item.path);
++        assertTransferTargetPath(item.path);
 +        const key = item.path.toLowerCase();
 +        if (names.has(key)) throw new Error("duplicate restore journal path"); names.add(key);
 +        if (item.size === null && item.sha256 === null) { originals.push(null); continue; }
@@ -1008,13 +1121,19 @@ index 0000000..fd45233
 +    // No journal means interruption while staging: workspace was never touched.
 +    await root.removeEntry(journalName, { recursive: true });
 +}
++/** Caller must hold WEB_TRANSFER_LOCK; shared by export and append adapters. */
++export async function recoverWebTransferUnderLock() {
++    return recover(await navigator.storage.getDirectory());
++}
 +export async function recoverWebTransfer() {
 +    return navigator.locks.request(lockName, async () => recover(await navigator.storage.getDirectory()));
 +}
 +/** Single-restore transaction. OPFS close is the durable boundary, not power-loss fsync. */
 +export async function restoreWebTransfer(file: File) {
++    if (isChatTransferBusy()) throw new Error("chat busy");
 +    return navigator.locks.request(lockName, { ifAvailable: true }, async lock => {
 +        if (!lock) throw new Error("transfer busy");
++        if (isChatTransferBusy()) throw new Error("chat busy");
 +        Logger.debug("WebMemoryTransfer", "restore start", { bytes: file.size });
 +        const root = await navigator.storage.getDirectory();
 +        await recover(root);
@@ -1076,8 +1195,59 @@ index 0000000..fd45233
 +        Logger.debug("WebMemoryTransfer", "restore complete", { files: records.length });
 +    });
 +}
+diff --git a/packages/shell/src/lib/web-runtime/__tests__/agent-bridge.test.ts b/packages/shell/src/lib/web-runtime/__tests__/agent-bridge.test.ts
+index 6257ba4bf9f0df05a8d9e3caf8de02decbeeb19d..2ad1906be145c3e67fc8d57aeb26a5a53f076ee4 100644
+--- a/packages/shell/src/lib/web-runtime/__tests__/agent-bridge.test.ts
++++ b/packages/shell/src/lib/web-runtime/__tests__/agent-bridge.test.ts
+@@ -524,3 +524,19 @@ describe("agent-bridge", () => {
+ 		workerPort.close();
+ 	});
+ });
++
++it("shows a visible localized save failure without dropping the finish event", async () => {
++ const before=useChatStore.getState().messages.length;
++ let worker!:FakeWorker;const emitted:{event:string,payload:unknown}[]=[];
++ const fs=createMemoryWebFs();fs.writeBytes=async()=>{throw new Error("damaged restore journal");};
++ const bridge=createAgentBridge({createWorker:()=>{worker=new FakeWorker();return worker;},emit:(event,payload)=>emitted.push({event,payload}),getFs:()=>fs});
++ bridge.start({model:WEB_LLM_MODEL_ID});const port=worker.posted[0].transfer![0] as MessagePort;port.start?.();
++ bridge.sendLine(JSON.stringify({type:"chat_request",requestId:"save-failure",sessionId:"r9",messages:[{role:"user",content:"hi"}]}));
++ port.postMessage(JSON.stringify({type:"text",requestId:"save-failure",text:"reply"}));
++ port.postMessage(JSON.stringify({type:"finish",requestId:"save-failure"}));
++ await new Promise(r=>setTimeout(r,80));
++ expect(/Save failed|저장 실패/.test(useChatStore.getState().persistenceWarning ?? "")).toBe(true);
++ expect(useChatStore.getState().messages.length).toBe(before);
++ expect(emitted.some(e=>e.event==="agent_response"&&JSON.parse(String(e.payload)).type==="finish")).toBe(true);
++ port.close();
++});
+diff --git a/packages/shell/src/lib/web-runtime/__tests__/local-container-fetch.test.ts b/packages/shell/src/lib/web-runtime/__tests__/local-container-fetch.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..44c475afe8ccdd8c6fa90cd4e9b64b3678a36e28
+--- /dev/null
++++ b/packages/shell/src/lib/web-runtime/__tests__/local-container-fetch.test.ts
+@@ -0,0 +1,21 @@
++import {describe,it,expect,vi} from "vitest";
++import {createLocalContainerFetch} from "../../../../web-worker/local-container-fetch";
++describe("local container sampling boundary",()=>{
++ it("sets default0 while preserving URL, messages, stream, headers and cancellation",async()=>{
++  const transport=vi.fn().mockResolvedValue(new Response("ok"));const call=createLocalContainerFetch(transport);const controller=new AbortController();
++  const body={model:"gemma2:9b-instruct-q4_K_M",messages:[{role:"user",content:"안녕"}],stream:true,stream_options:{include_usage:true}};
++  const init={method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:controller.signal};
++  await call("http://127.0.0.1/local-llm/v1/chat/completions",init);
++  const [url,forwarded]=transport.mock.calls[0];expect(url).toBe("http://127.0.0.1/local-llm/v1/chat/completions");
++  expect(JSON.parse(forwarded.body)).toEqual({...body,temperature:0});expect(forwarded.signal).toBe(controller.signal);expect(forwarded.headers).toBe(init.headers);expect(forwarded.method).toBe("POST");
++  expect(JSON.parse(init.body)).toEqual(body);controller.abort();expect(forwarded.signal.aborted).toBe(true);
++ });
++ it("preserves an explicit sampling value and propagates transport failure",async()=>{
++  const transport=vi.fn().mockRejectedValue(new Error("offline"));const call=createLocalContainerFetch(transport);
++  await expect(call("/local",{body:JSON.stringify({temperature:.4,stream:true})})).rejects.toThrow("offline");expect(JSON.parse(transport.mock.calls[0][1].body)).toEqual({temperature:.4,stream:true});
++ });
++ it("rejects malformed bodies before any transport call",()=>{
++  const transport=vi.fn();const call=createLocalContainerFetch(transport);
++  expect(()=>call("/local",{body:"[]"})).toThrow();expect(transport).not.toHaveBeenCalled();
++ });
++});
 diff --git a/packages/shell/src/lib/web-runtime/__tests__/web-auth.test.ts b/packages/shell/src/lib/web-runtime/__tests__/web-auth.test.ts
-index 3da2704..67a40f4 100644
+index 3da27046ab6cb15cfcb8968145b6520f318acfba..67a40f4a6eee6d5064255799d40db27868cd144e 100644
 --- a/packages/shell/src/lib/web-runtime/__tests__/web-auth.test.ts
 +++ b/packages/shell/src/lib/web-runtime/__tests__/web-auth.test.ts
 @@ -161,13 +161,13 @@ describe("web-auth (item 5)", () => {
@@ -1098,7 +1268,7 @@ index 3da2704..67a40f4 100644
  		expect(await getNaiaKeySecure()).toBe("naia_test_key_for_login_123");
  	});
 diff --git a/packages/shell/src/lib/web-runtime/__tests__/web-llm-provider.test.ts b/packages/shell/src/lib/web-runtime/__tests__/web-llm-provider.test.ts
-index f6049fe..9a65ffa 100644
+index f6049feabd5434ad33dd0761ca4c363c814a63db..9a65ffa1b436eb29fab8bf5f33ed96614ed85196 100644
 --- a/packages/shell/src/lib/web-runtime/__tests__/web-llm-provider.test.ts
 +++ b/packages/shell/src/lib/web-runtime/__tests__/web-llm-provider.test.ts
 @@ -3,14 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
@@ -1132,7 +1302,7 @@ index f6049fe..9a65ffa 100644
  
  	it("preserves existing naia-config if already present", () => {
 diff --git a/packages/shell/src/lib/web-runtime/__tests__/web-workspace-commands.test.ts b/packages/shell/src/lib/web-runtime/__tests__/web-workspace-commands.test.ts
-index 5954e3d..04486a7 100644
+index 5954e3df826c337279b1836d5fb519ba35b4d150..04486a7255b7eaefade6da0e6eeacf83117ec7ed 100644
 --- a/packages/shell/src/lib/web-runtime/__tests__/web-workspace-commands.test.ts
 +++ b/packages/shell/src/lib/web-runtime/__tests__/web-workspace-commands.test.ts
 @@ -37,8 +37,8 @@ describe("web-workspace-commands", () => {
@@ -1157,8 +1327,25 @@ index 5954e3d..04486a7 100644
  			webAutoDefaultModel: true,
  				agentName: "Naia",
  				speechStyle: "casual",
+diff --git a/packages/shell/src/lib/web-runtime/agent-bridge.ts b/packages/shell/src/lib/web-runtime/agent-bridge.ts
+index 1877575b8a71875431965e5d992a3341aea6fdc7..942bb48102ea2b66472bd1a5c8a04e23f37c26bf 100644
+--- a/packages/shell/src/lib/web-runtime/agent-bridge.ts
++++ b/packages/shell/src/lib/web-runtime/agent-bridge.ts
+@@ -1,3 +1,4 @@
++import { t } from "../i18n";
+ import { createAgentWorker } from "virtual:naia-agent-worker";
+ import { getStoredLocalSessionId, useChatStore } from "../../stores/chat";
+ import { Logger } from "../logger";
+@@ -179,6 +180,7 @@ export function createAgentBridge(deps: {
+ 											"failed to persist conversation turn",
+ 											{ error: String(err) },
+ 										);
++										useChatStore.setState({ persistenceWarning: `${t("agents.filesFailed")}. ${t("browserMemory.recoveryError")}` });
+ 									})
+ 									.finally(() => {
+ 										deps.emit("agent_response", rawLine);
 diff --git a/packages/shell/src/lib/web-runtime/auto-install.ts b/packages/shell/src/lib/web-runtime/auto-install.ts
-index 3674595..f827ad3 100644
+index 3674595796b2d6559f81a9e863bd593e80ffbfbe..f827ad392fd595967e0d974130eef5e5c5976ad8 100644
 --- a/packages/shell/src/lib/web-runtime/auto-install.ts
 +++ b/packages/shell/src/lib/web-runtime/auto-install.ts
 @@ -51,10 +51,11 @@ export async function bootWebRuntimeAndModel(
@@ -1178,7 +1365,7 @@ index 3674595..f827ad3 100644
  	const authenticated = deps?.isAuthenticated ?? (() => isWebAuthenticated());
  	const launchModel =
 diff --git a/packages/shell/src/lib/web-runtime/install.ts b/packages/shell/src/lib/web-runtime/install.ts
-index cc38613..1da27c5 100644
+index cc386131304d47203926cb1bcc10743bcd18aa4d..1da27c540ff3127e6e1faa64a769c1acf6e50189 100644
 --- a/packages/shell/src/lib/web-runtime/install.ts
 +++ b/packages/shell/src/lib/web-runtime/install.ts
 @@ -11,7 +11,6 @@ import {
@@ -1201,7 +1388,7 @@ index cc38613..1da27c5 100644
  			);
  		} else {
 diff --git a/packages/shell/src/lib/web-runtime/llm-provider.ts b/packages/shell/src/lib/web-runtime/llm-provider.ts
-index 886de73..4e8f50c 100644
+index 886de731ac48fb1ac8a5e1d5d76b6b3cc843b7c0..4e8f50c6729118c2882a3f00327590446982ed63 100644
 --- a/packages/shell/src/lib/web-runtime/llm-provider.ts
 +++ b/packages/shell/src/lib/web-runtime/llm-provider.ts
 @@ -7,6 +7,12 @@ import {
@@ -1218,10 +1405,15 @@ index 886de73..4e8f50c 100644
  		id: "webllm",
  		name: "WebLLM",
 diff --git a/packages/shell/src/lib/web-runtime/web-workspace-commands.ts b/packages/shell/src/lib/web-runtime/web-workspace-commands.ts
-index 9549760..cc1b3e8 100644
+index 9549760e11fe504d1a426e50c148063f1294fb98..5d150fde48acff516d180da8c200bbdaa56b48a2 100644
 --- a/packages/shell/src/lib/web-runtime/web-workspace-commands.ts
 +++ b/packages/shell/src/lib/web-runtime/web-workspace-commands.ts
-@@ -8,11 +8,10 @@ import {
+@@ -1,3 +1,4 @@
++import { withRecoveredWebWorkspace } from "../transfer/policy";
+ import { getLocale } from "../i18n";
+ import { Logger } from "../logger";
+ import { WEB_ADK_PATH, webAdkOpfsPath } from "./web-adk-path";
+@@ -8,11 +9,10 @@ import {
  } from "./web-assets";
  import { getWebAuthenticatedUserId, isWebLoginGateDisabled } from "./web-auth";
  import type { WebFs } from "./web-fs";
@@ -1235,8 +1427,73 @@ index 9549760..cc1b3e8 100644
  	webAutoDefaultModel: true,
  	agentName: "Naia",
  	speechStyle: "casual",
+@@ -94,7 +94,7 @@ export function appendWebConversationMessages(
+ 		)
+ 		.join("\n");
+ 
+-	const op = conversationWriteTail.then(async () => {
++	const op = conversationWriteTail.then(() => withRecoveredWebWorkspace(async () => {
+ 		const existing = await fs.readText(filePath);
+ 		const prefix =
+ 			existing && existing.length > 0
+@@ -103,7 +103,7 @@ export function appendWebConversationMessages(
+ 					: `${existing}\n`
+ 				: "";
+ 		await fs.writeBytes(filePath, `${prefix}${linesToAppend}\n`);
+-	});
++	}));
+ 	conversationWriteTail = op.then(
+ 		() => undefined,
+ 		() => undefined,
+diff --git a/packages/shell/src/stores/chat.ts b/packages/shell/src/stores/chat.ts
+index 5e418d1730550889df996389b5b4314af8b18162..5d1f7f62cc90079182f4e0bbded016239d837b35 100644
+--- a/packages/shell/src/stores/chat.ts
++++ b/packages/shell/src/stores/chat.ts
+@@ -42,6 +42,7 @@ interface ChatState {
+ 	localSessionId: string;
+ 	sessionOverlays: Record<string, SessionOverlay>;
+ 	messages: ChatMessage[];
++	persistenceWarning: string | null;
+ 	isStreaming: boolean;
+ 	streamingContent: string;
+ 	/** A tool event occurred; separate the next visible text round once. */
+@@ -185,6 +186,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
+ 	localSessionId: getInitialLocalSessionId(),
+ 	sessionOverlays: {},
+ 	messages: [],
++	persistenceWarning: null,
+ 	isStreaming: false,
+ 	streamingContent: "",
+ 	streamingToolBoundaryPending: false,
+@@ -201,7 +203,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
+ 	setSessionId: (id) => set({ sessionId: id }),
+ 	setLocalSessionId: (id) => {
+ 		setStoredLocalSessionId(id);
+-		set({ localSessionId: id });
++		set({ localSessionId: id, ...(id !== get().localSessionId ? { persistenceWarning: null } : {}) });
+ 	},
+ 
+ 	setMessages: (messages) =>
+@@ -501,6 +503,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
+ 		set({
+ 			sessionId: null,
+ 			localSessionId: nextSessionId,
++			persistenceWarning: null,
+ 			messages: [],
+ 			isStreaming: false,
+ 			streamingContent: "",
+@@ -529,3 +532,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
+ 
+ // Expose for Playwright screenshot capture & dev tools
+ if (typeof window !== "undefined") (window as any).useChatStore = useChatStore;
++
++/** Snapshot at transfer invocation/confirmation; independent of a mounted chat button. */
++export function isChatTransferBusy(): boolean {
++ const state = useChatStore.getState();
++ return state.isStreaming || state.pendingApproval !== null || state.messageQueue.length > 0;
++}
 diff --git a/packages/shell/src/styles/web-mode.css b/packages/shell/src/styles/web-mode.css
-index 072e5a2..324fb51 100644
+index 072e5a2669abc50cbd0a4afd2e000405eb8a0b82..324fb51057f611affdd9b84bc92bd9ccd4141271 100644
 --- a/packages/shell/src/styles/web-mode.css
 +++ b/packages/shell/src/styles/web-mode.css
 @@ -230,3 +230,45 @@
@@ -1286,10 +1543,15 @@ index 072e5a2..324fb51 100644
 +.browser-memory [role="alert"] { color: var(--error); }
 +.browser-memory :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 diff --git a/packages/shell/web-worker/agent-worker.ts b/packages/shell/web-worker/agent-worker.ts
-index 77957eb..65cc464 100644
+index 77957ebd1db5ca0b9cd15ae76b1ff4248470547c..131c89099733327943785c1da22bbbaa59f81394 100644
 --- a/packages/shell/web-worker/agent-worker.ts
 +++ b/packages/shell/web-worker/agent-worker.ts
-@@ -193,6 +193,13 @@ self.addEventListener("message", (event: MessageEvent) => {
+@@ -1,3 +1,4 @@
++import { createLocalContainerFetch } from "./local-container-fetch";
+ /// <reference lib="webworker" />
+ import {
+ 	BROWSER_READ_TOOL_NAMES,
+@@ -193,6 +194,13 @@ self.addEventListener("message", (event: MessageEvent) => {
  			chat(config, messages, opts) {
  				if (config.provider === "webllm")
  					return localProvider.chat(config, messages, opts);
@@ -1297,9 +1559,24 @@ index 77957eb..65cc464 100644
 +                    diag.debug?.("LocalContainer.chat", { model: config.model });
 +                    return makeOpenAICompatProvider({
 +                        baseUrl: new URL("/local-llm/v1", self.location.origin).href,
-+                        apiKey: "", supportsTools: false,
++                        apiKey: "", supportsTools: false, fetch: createLocalContainerFetch(),
 +                    }).chat(config, messages, opts);
 +                }
  				if (config.provider !== "nextain")
  					throw new Error(`Unsupported web provider: ${config.provider}`);
  				if (!config.naiaKey)
+diff --git a/packages/shell/web-worker/local-container-fetch.ts b/packages/shell/web-worker/local-container-fetch.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2502e7cb20153fcca970f4c8d5f98a8667f79fcf
+--- /dev/null
++++ b/packages/shell/web-worker/local-container-fetch.ts
+@@ -0,0 +1,9 @@
++/** Local chat has a stable default; Ollama's OpenAI API otherwise substitutes 1.0. */
++export function createLocalContainerFetch(doFetch: typeof fetch = fetch): typeof fetch {
++ return (input, init) => {
++  if (typeof init?.body !== "string") return doFetch(input, init);
++  const body = JSON.parse(init.body) as Record<string, unknown>;
++  if (!body || Array.isArray(body) || typeof body !== "object") throw new Error("Invalid local container request");
++  return doFetch(input, { ...init, body: JSON.stringify({ ...body, temperature: body.temperature ?? 0 }) });
++ };
++}

@@ -796,6 +796,7 @@ export function ChatArea({
 	}, []);
 
 	const messages = useChatStore((s) => s.messages);
+	const persistenceWarning = useChatStore((s) => s.persistenceWarning);
 	const isStreaming = useChatStore((s) => s.isStreaming);
 	const streamingContent = useChatStore((s) => s.streamingContent);
 	const streamingThinking = useChatStore((s) => s.streamingThinking);
@@ -4586,6 +4587,7 @@ export function ChatArea({
 						</>
 					)}
 
+					{persistenceWarning && <div role="alert" data-testid="conversation-save-warning" style={{ padding: 12, border: "1px solid var(--error)", borderRadius: 8, color: "var(--error)", overflowWrap: "anywhere" }}>{persistenceWarning}</div>}
 					<div ref={messagesEndRef} />
 				</div>
 

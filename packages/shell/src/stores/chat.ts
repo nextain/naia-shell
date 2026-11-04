@@ -42,6 +42,7 @@ interface ChatState {
 	localSessionId: string;
 	sessionOverlays: Record<string, SessionOverlay>;
 	messages: ChatMessage[];
+	persistenceWarning: string | null;
 	isStreaming: boolean;
 	streamingContent: string;
 	/** A tool event occurred; separate the next visible text round once. */
@@ -185,6 +186,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	localSessionId: getInitialLocalSessionId(),
 	sessionOverlays: {},
 	messages: [],
+	persistenceWarning: null,
 	isStreaming: false,
 	streamingContent: "",
 	streamingToolBoundaryPending: false,
@@ -201,7 +203,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	setSessionId: (id) => set({ sessionId: id }),
 	setLocalSessionId: (id) => {
 		setStoredLocalSessionId(id);
-		set({ localSessionId: id });
+		set({ localSessionId: id, ...(id !== get().localSessionId ? { persistenceWarning: null } : {}) });
 	},
 
 	setMessages: (messages) =>
@@ -501,6 +503,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		set({
 			sessionId: null,
 			localSessionId: nextSessionId,
+			persistenceWarning: null,
 			messages: [],
 			isStreaming: false,
 			streamingContent: "",
@@ -529,3 +532,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
 // Expose for Playwright screenshot capture & dev tools
 if (typeof window !== "undefined") (window as any).useChatStore = useChatStore;
+
+/** Snapshot at transfer invocation/confirmation; independent of a mounted chat button. */
+export function isChatTransferBusy(): boolean {
+ const state = useChatStore.getState();
+ return state.isStreaming || state.pendingApproval !== null || state.messageQueue.length > 0;
+}

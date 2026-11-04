@@ -1,3 +1,4 @@
+import { withRecoveredWebWorkspace } from "./policy";
 /** Load transfer functionality only when the migration flow is requested. */
 export function loadTransfer() {
 	return import("./archive");
@@ -11,6 +12,9 @@ const activeTransfers = new Set<string>();
 
 /** Export the current browser workspace without retaining the ZIP in JS memory. */
 export async function downloadWebTransfer(transfer: Transfer, conversationsDir: string) {
+	return withRecoveredWebWorkspace(() => downloadWebTransferUnlocked(transfer, conversationsDir));
+}
+async function downloadWebTransferUnlocked(transfer: Transfer, conversationsDir: string) {
 	const { assertTransferPath } = await import("./policy");
 	const root = await navigator.storage.getDirectory();
 	const missing = (error: unknown) => error instanceof DOMException && error.name === "NotFoundError";

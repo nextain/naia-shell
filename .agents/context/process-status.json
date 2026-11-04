@@ -840,7 +840,25 @@
       "verification": "Full web src2805PASS/20SKIP/0FAIL; root Shell2597PASS/21SKIP/0FAIL. Delay baseline3FAIL -> fixed3PASS; actual Chromium390px/modal Alt+N/deeplink/tree1PASS; Node6PASS; anchors70/assembly/root+Shell typesPASS. Existing root structure2RED. Root initial2594PASS/3FAIL/21SKIP retained; same test fixes applied before final.",
       "deliverable": "docs/progress/webgpu-container-026-r8-review.md; docs/progress/webgpu-container-026-20261103.md R8",
       "remaining": "Independent review/merge; persona/model quality/multi-hour soak; native-language/device/GPU/Windows/macOS/physical storage/GHCR credentials/offline/native core/root structure gates.",
-      "last_updated": "2026-11-03T20:27:33.361124+00:00"
+      "last_updated": "2026-11-03T20:27:33.361124+00:00",
+      "independent_review": "R9 Gemini Argon FAIL: original browser scope and negative/delayed assertions corrected; see R9."
+    },
+    "webgpu_container_026_r9": {
+      "title": "0.2.6 WebGPU R9 — 독립 FAIL 수정·한국어 장문·CPU soak",
+      "scenario": "docs/user-scenarios.md UC-WEBGPU-CONTAINER-026-R9",
+      "requirements": "docs/requirements.md FR-WEBGPU-CONTAINER-026-R9",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "round_scope_done_independent_code_pass_profile_quality_pass_soak_running",
+      "deliverable": "docs/progress/webgpu-container-026-20261103.md R9; web E2E /home/nextain/work/026-web824/packages/shell/e2e/web-async-boundaries.spec.ts",
+      "last_updated": "2026-11-04",
+      "scope": "R9 code review fixes + one ko/formal persona profile + 3h soak START only; release/device/full-duration gates remain",
+      "evidence": "docs/progress/webgpu-container-026-20261103.md R9; run tmp/r9-worker-quality-review.log and r9-soak-report.json"
     }
   },
   "sdlc_gates": {
@@ -1159,5 +1177,5 @@
       "4. resource_registry.violations 초기화"
     ]
   },
-  "last_updated": "2026-11-03T20:27:33.361124+00:00"
+  "last_updated": "2026-11-04"
 }

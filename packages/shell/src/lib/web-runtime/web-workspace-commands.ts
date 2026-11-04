@@ -1,3 +1,4 @@
+import { withRecoveredWebWorkspace } from "../transfer/policy";
 import { getLocale } from "../i18n";
 import { Logger } from "../logger";
 import { WEB_ADK_PATH, webAdkOpfsPath } from "./web-adk-path";
@@ -93,7 +94,7 @@ export function appendWebConversationMessages(
 		)
 		.join("\n");
 
-	const op = conversationWriteTail.then(async () => {
+	const op = conversationWriteTail.then(() => withRecoveredWebWorkspace(async () => {
 		const existing = await fs.readText(filePath);
 		const prefix =
 			existing && existing.length > 0
@@ -102,7 +103,7 @@ export function appendWebConversationMessages(
 					: `${existing}\n`
 				: "";
 		await fs.writeBytes(filePath, `${prefix}${linesToAppend}\n`);
-	});
+	}));
 	conversationWriteTail = op.then(
 		() => undefined,
 		() => undefined,

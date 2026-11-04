@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import { assertTransferPath, validateMemoryStore } from "./policy";
+import { assertTransferPath, assertTransferTargetPath, validateMemoryStore } from "./policy";
 import { sanitizeSettings, hasSensitiveFields, isSensitive } from "./sanitize";
 
 const fact = {
@@ -11,7 +11,7 @@ const fact = {
 };
 
 describe("UT-TRANSFER-02 path validation", () => {
-  it.each(["../docs/a.md", "/docs/a.md", "docs/../x", "docs\\x", "docs/CON.txt", "docs/a//b"])('rejects %s', (path) => {
+  it.each(["../docs/a.md", "/docs/a.md", "docs/../x", "docs\\x", "docs/CON.txt", "docs/a//b", "conversations/u-other/private.jsonl", "conversations/U-other/private.jsonl", "conversations/u-current/u-other/private.jsonl"])('rejects %s', (path) => {
     expect(() => assertTransferPath(path)).toThrow();
   });
 });
@@ -119,4 +119,15 @@ describe("UT-TRANSFER-05 actual shell settings", () => {
     expect(result.value).toEqual({ provider: "naia", model: "example", nested: [{ theme: "dark" }] });
     expect(hasSensitiveFields(result.value)).toBe(false);
   });
+});
+
+it("accepts only mapped account journal targets while retaining portable path checks", () => {
+ expect(() => assertTransferTargetPath("conversations/u-current/chat.jsonl")).not.toThrow();
+ expect(() => assertTransferTargetPath("conversations/u-current/u-other/private.jsonl")).toThrow();
+ expect(() => assertTransferTargetPath("conversations/u-current/../outside.jsonl")).toThrow();
+});
+
+it("preserves a u- prefixed conversation file while rejecting account directories", () => {
+ expect(() => assertTransferPath("conversations/u-session.jsonl")).not.toThrow();
+ expect(() => assertTransferPath("conversations/u-session/file.jsonl")).toThrow();
 });

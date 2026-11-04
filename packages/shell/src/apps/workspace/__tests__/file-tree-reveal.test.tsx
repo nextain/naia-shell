@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockInvoke, mockUnlisten, scrollIntoView } = vi.hoisted(() => ({
@@ -67,16 +67,7 @@ describe("FileTree open-file reveal", () => {
 			},
 		);
 
-		// Flush the recursive resolved IPC promises and React effects as one interaction.
-		await act(async () => {
-			render(
-				<FileTree
-					workspaceRoot="/work/naia"
-					openFilePath="/work/naia/src/nested/App.tsx"
-					onFileSelect={vi.fn()}
-				/>,
-			);
-		});
+		render(<FileTree workspaceRoot="/work/naia" openFilePath="/work/naia/src/nested/App.tsx" onFileSelect={vi.fn()} />);
 
 		// Three asynchronous directory reads are not a 1s product latency contract.
 		const file = await screen.findByRole(
@@ -101,7 +92,7 @@ describe("FileTree open-file reveal", () => {
 		]);
 
 		render(<FileTree workspaceRoot="/work/naia" onFileSelect={vi.fn()} />);
-		const file = await screen.findByRole("button", { name: /README\.md/ });
+		const file = await screen.findByRole("button", { name: /README\.md/ }, { timeout: 5000 });
 		file.dispatchEvent(
 			new MouseEvent("contextmenu", {
 				bubbles: true,
@@ -126,7 +117,7 @@ describe("FileTree open-file reveal", () => {
 		]);
 
 		render(<FileTree workspaceRoot="/work/naia" onFileSelect={vi.fn()} />);
-		expect(await screen.findByText("alpha-adk")).toBeInTheDocument();
+		expect(await screen.findByText("alpha-adk", {}, { timeout: 5000 })).toBeInTheDocument();
 		expect(screen.queryByText("${backup_dir}")).not.toBeInTheDocument();
 	});
 
@@ -145,7 +136,7 @@ describe("FileTree open-file reveal", () => {
 		);
 
 		expect(
-			await screen.findByTestId("workspace-tree-external-file"),
+			await screen.findByTestId("workspace-tree-external-file", {}, { timeout: 5000 }),
 		).toBeInTheDocument();
 		expect(screen.getByText(t("fileTree.externalBadge"))).toBeInTheDocument();
 		expect(screen.getByText("outside.md")).toBeInTheDocument();
@@ -154,6 +145,8 @@ describe("FileTree open-file reveal", () => {
 		screen.getByText("outside.md").click();
 		expect(onSelect).toHaveBeenCalledWith("/var/external/outside.md");
 
+		// Finish the root IPC before asserting that no descendant lookup occurred.
+		await screen.findByText("src", {}, { timeout: 5000 });
 		// Does not attempt to recursively list internal directories for external path
 		expect(mockInvoke).not.toHaveBeenCalledWith("workspace_list_dirs", {
 			parent: "/work/naia/src",

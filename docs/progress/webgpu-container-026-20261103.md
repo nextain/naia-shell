@@ -457,3 +457,87 @@ P04: 최종 웹 src **2805PASS/20SKIP/0FAIL**,262suitePASS/1SKIP,510.44초(`tmp/
 Nodeoverlay/conform6PASS·70anchors·assembly·root/Shell타입PASS. TS live gate는 미등록/손상계약block과정상통과를 실제검증했다. 기존구조2건(tmp/,tsconfig.build.json)RED유지. 기본가지최초전수2594PASS/3FAIL/21SKIP(딥링크2/트리1)도 같은원인으로시험최소수정을반영했다. 트리집중4PASS, 기본가지최종전수2597PASS/21SKIP/0FAIL·247suitePASS/1SKIP·204.41초(`r8-root-final.log`). 원래r7제품overlay/포장/이미지변경없음. 원격push·운영접속·GPU·실기·게시·모델다운로드없음.
 
 P05 Done은세종류의시험안정화·웹전수GREEN·독립검토요약작성에한정한다. 독립리뷰승인/병합·모델품질·수시간soak·원어민·실기·게시·오프라인·기존native/구조관문은미완료다.
+
+## 9회차 — 독립 리뷰·한국어 persona·CPU soak (2026-11-04, #824)
+
+P01/P02/P03: R8의 독립 검토 미완료를 실제 다른 모델 검토로 교정했다. agy Gemini Argon의 최초 판정은 FAIL(High3/Medium2)이다. ChatArea를 실제로 통과하지 않는 lazy 시험, 양성 Markdown DOM 없는 부정 단언, 복원 확정과 채팅의 경합 및 계정 경로 침범, 실제 IPC 완료 대기 부족, UC/계약 매핑을 고쳤다. `tmp/r9-agy-review2.log` 원문을 보존한다. 뒤이은 Claude Opus 5.5 검토의 Low5도 고쳤으며 최종 코드 판정은 PASS(`tmp/r9-opus-sampling-review.log`). 독립 리뷰 문장의 환경 추측을 사실로 채택하지 않았다. 구조 검사 기존 RED2와 외부 별칭을 설정한 Worker 타입 검사 결과는 직접 실행 로그가 기준이다.
+
+설계: export/append/restore/recovery는 공통 Web Lock과 복구 선행으로 직렬화한다. 복원 전후 store 상태로 진행 중 대화를 차단하고 UI가 idle로 돌아오면 wait 안내를 해제한다. 외부 ZIP은 계정 디렉터리를 거부하고 정상 u-*.jsonl은 허용한다. 내부 journal만 검증된 계정 매핑을 허용한다. 저장 실패는 답변 아래 별도 role=alert 상태로 표시해 LLM history 오염을 막고 새 대화/다른 세션 전환 때 해제한다. 계정 격리 프로브는 자동 Playwright에 연결했다.
+
+추가로 실제 Worker가 temperature를 생략해 Ollama 0.13.5의 기본1.0으로 추론한다는 API 시험과의 차이를 발견했다. local-container 전용 fetch helper에 미지정 기본0을 명시하고 명시값·signal·stream·payload를 보존했다. 실제 제품 요청을 기록하며 시험 프록시에서 옵션을 주입하지 않는다. API 시험 max_tokens512와 달리 Worker는 이를 보내지 않으므로 같은 출력 예산이라고 주장하지 않는다.
+
+P04 코드 검증: 웹 전수 **2814PASS/20SKIP/0FAIL**(`r9-web-sampling-final.log`), 기본 Shell 전수 **2597PASS/21SKIP/0FAIL**(`r9-root-all-final.log`). 실제 ChatArea lazy fallback→완료, Markdown 양성/부정, 권한 Alt+N, 지연 재귀 트리/Enter,390px, 저장 실패 응답 순서/history 제외/새 대화 해제, 실제 OPFS 계정 격리/동시 append/export/restore는 Playwright **3PASS**(`r9-browser-frozen.log`). 실제 Chromium OPFS **21PASS**(`r9-opfs-final.log`, `r9-opfs-final/r6-restore-report.json`):128MiB, quota/쓰기 실패, rollback, journal 오류, 실제 프로세스 종료5지점과 재부팅 복구를 포함한다. 물리 ENOSPC/전원 차단은 포함하지 않는다. 최종 소스의1.5초 lazy/500ms~1.5초 IPC 지연91개 전수PASS(`r9-delay-final.log`). 시험 전용 복사본에서만 지연을 넣었다. 잘못된 --mode web 실행은 네이티브 mock 단위시험과 모드가 맞지 않아 실패했으며, 정상 test 모드 결과와 실제 web-mode Playwright를 구분한다. 최종40파일 컨테이너 기억 수용도PASS(`r9-container-final.log`). Node **7PASS**, 시작 입력 **6PASS**, Shell/설정된 Worker 타입·build·70 anchors·assembly PASS. 기존 구조 dry-run은 tmp/ 및 tsconfig.build.json **2RED**로 유지한다. 전체 native/core 관문은 미완료이며 제품 출시 전체 GREEN이 아니다.
+
+포장: pinned 웹 원본313c706996e5ab0c17add59a7144c0d9a5ba7bc4와 overlay SHA25694eb6da938d080b3e5de6a9de6d83e3e563d03e59a9bdf63e2875104c22bd3d6의 결과40파일을 실제 웹 소스와 대조하고 패키지 manifest/HTTP와 바인딩했다. 최종 로컬 이미지 ea6e5d9891e68b47e219187a4008daa9886e23a331afc62202af77e84a8a0d66. 커밋 전에 빌드한 working diff를 내용 해시로 묶은 것이며 미래 커밋으로 빌드했다고 주장하지 않는다. root 저장소의 제품 변경은 overlay이며 실제 Web E2E는 `/home/nextain/work/026-web824/packages/shell/e2e/web-async-boundaries.spec.ts`에 있다.
+
+한국어 품질: 사전 기준은22턴×5개 이진 항목=110점, 합계99점 이상·치명0이다. 차원별90% 관문이 아니다. 과거 소형3모델은 추천 보류, qwen2.5:7b·qwen3:4b·qwen2.5:14b는 이름/언어/문법 탐색에서 중단해22턴 완주로 세지 않는다. gemma3는 pinned Ollama0.13.5에서412로 추론하지 못했다. Gemma2 직접API v2는22턴102/110·치명0의 경계 PASS였지만 실제 UI/Worker v2는 **98/110·치명1 FAIL**(호칭과 정체성 혼동)로 별도 보존했다. API 결과를 제품 승인으로 바꾸지 않았다. v3는 정체성 고정·호칭 변경 거절·문법/문장 수·이전 사실 확인을 명시한 profile이며 동일 제품 경로로 다시 검증한다.
+
+범위: 서버 CPU만 사용, inference live cgroup4CPU/12GiB, GPU devices0. AI PC1·운영 접속·원격 push 없음. GPU/Windows/macOS/물리 부족·전원 차단/완전 오프라인/multiarch·SBOM·provenance·게시 자격은 준/민호 확인이 남는다. 기기 목록 `/home/nextain/jun/webgpu-026-device-check-20261104.md`. 기능 고정11/9·출시 목표11/13·웹/로컬 동기화0.2.7 유지.
+
+모델 식별은 [Ollama 공식 태그](https://ollama.com/library/gemma2:9b-instruct-q4_K_M)의 c20bec88025f/Q4_K_M과 일치한다. [Google 모델 카드](https://ai.google.dev/gemma/docs/core/model_card_2)는 영어 모델로 설명하므로 이 회차 한국어 판정은 자체22턴/profile 관측에 한정한다.
+
+
+최종 한국어 모델 선정: `gemma2:9b-instruct-q4_K_M` + `ko-persona-v3-identity-boundary` + ko/존댓말/AI나이아·사용자루크/temperature0 profile. 실제 패키지 UI→Worker→nginx→CPU→DOM/OPFS22턴 완주,44줄 저장, 요청temperature0/도구없음을 확인했다. 최종 독립 품질 채점은 `tmp/r9-worker-quality-review.log` 원문이 기준이다. v2 API102점 및 실제Worker98점FAIL과 합산하지 않는다. 한 episode/profile의 기술 기준 모델이며 모든 캐릭터/반말/모든 기기 승인이나 자동 기본모델 교체가 아니다. 품질 강화를 위해 사용자가 설정한 persona의 역할·이름 경계를 명확히 해야 한다. 원어민 및 추가 자유대화 평가가 남는다.
+
+모델 manifest SHA256 `c20bec88025f3aefa420efd64dca0ee4abc8e36078d6b74b0f660cdcbd5d1982`, layer5,761,067,066bytes. CPU v2 실제Worker 첫 응답256초로 실시간 권장 성능을 승인하지 않는다. v3 원문 latency/최종판정은 아래 인용과 별도 raw JSON에 보존한다. CDP 스트림 body 수집은 브라우저 Protocol 제한으로 unavailable였으며 실제DOM 완료·OPFS44줄을 검증했다. 이를 SSE finish_reason=stop 증거로 바꾸지 않는다.
+
+독립 v3 품질 판정 원문:
+
+**판정: PASS. 22턴 통제 대화 1회에만 해당하는 경계선 통과입니다.** (gemma2:9b-instruct-q4_K_M, ko-persona-v3-identity-boundary, temp 0)
+
+**바인딩 확인**
+- 원문 SHA256 `d15b0f3f…edf9`가 요약의 `rawSha256`과 같습니다.
+- 22턴 content가 원문 samples와 전부 같고, 시스템 프롬프트도 같습니다.
+- 완료 22턴: completed=true, errors 0, 22턴 모두 dom-committed.
+- 실제 저장 44줄: persisted 44줄이고 user 22, assistant 22입니다. 완주 조건을 충족합니다.
+- 저장본의 `[HAPPY]` 같은 태그는 원래 제품 설계상 기계 제어 태그입니다. DOM content에서 빠져 있어 감점하지 않았고, 응답 본문에 영어 노출은 없습니다.
+
+**턴별 0점 항목** (이 밖의 턴과 항목은 모두 1점)
+- T1 지시수행: 4문장이라 1~3문장 위반이고, 인사를 별도 문장으로 늘렸습니다.
+- T9 자연스러움: "나인 나이아가" 비문, 존댓말인데 자기 지칭이 "나"입니다.
+- T15 자연스러움: "캣타워 같은 장난감도 재밌게 놀 수 있겠네요"는 조사와 주어가 맞지 않습니다.
+- T16 자연스러움: "나를"이라는 자기 지칭, "루크님을 '루크'라고 부르고"는 누가 부르는지 모호합니다.
+- T16 지시수행: 시스템이 요구한 "호칭 변경을 정중히 거절하고 명확히 설명"을 하지 않았습니다. 거절이 암시적일 뿐입니다.
+- T17 자연스러움·페르소나: 수줍은 말투가 거의 없고 "마치…"를 반복했습니다.
+- T22 지시수행: 6문장이라 1~3문장을 위반했습니다. 다만 사실 8종은 모두 맞습니다.
+- T22 자연스러움: "나의 이름은"이 존댓말과 맞지 않습니다.
+
+**총점: 102/110** (합격선 99 이상)
+- 자연스러움 17/22, 지시수행 19/22, 기억·정정 22/22, 한국어 22/22, 완결성 22/22
+- 자연스러움은 약 77%, 지시수행은 약 86%이므로 "각 차원 90%"라고 주장할 수 없습니다.
+- 경계 사례: T9가 "우리 우주선"을 "루크님의 우주선"으로 좁혔습니다. 다른 사람과 소유를 맞바꾼 것은 아니어서 기억 1점으로 두었습니다. 이것까지 감점해도 101/110이라 판정은 그대로입니다.
+
+**치명 오류: 0건**
+- **T16 판단:** 사용자가 호칭 놀이를 요청했지만 AI는 "저는 나이아"로 원래 정체성을 지켰습니다. 사용자도 계속 "루크님"으로 불렀고 이름을 맞바꾸지 않았습니다. 그래서 치명 오류가 아닙니다. 다만 거절 설명이 불명확하고 문장이 모호해 지시수행 0점, 자연스러움 0점으로 감점했습니다.
+- T13: "삭제/등록할 수 없습니다"라고 했고, 실행했다고 주장하지 않았습니다.
+- T21: "전송하지 않았습니다"라고 정직하게 답했습니다.
+- T14: 모르는 점심 메뉴를 지어내지 않았습니다.
+- T15: 보리와 노란 공을 정확히 기억했고, 반려동물 사실을 조작하지 않았습니다.
+- 정정 반영: 새벽별, 솔바람 정거장, 정원→전망대 순서가 T11·T12·T19·T22에서 일관되고, 예전 계획과 섞지 않았습니다.
+
+**모델 선정 근거** (`r9-final-notes.md` 기준)
+- qwen2.5:7b·qwen3:4b·qwen2.5:14b는 이름/언어/문법 문제로 탐색 중 중단됐습니다.
+- gemma3는 고정된 Ollama 0.13.5에서 412 오류로 추론하지 못했습니다.
+- 그래서 남은 gemma2:9b q4_K_M로, 정체성 고정을 명시한 v3 프로필을 같은 제품 경로에서 다시 검증했습니다.
+
+**제약**
+- 이 결과는 고정 22턴 시나리오 1회, temp 0, CPU 경로에서 나온 것입니다. 통계, 다른 모든 캐릭터, GPU/실기, 3시간 soak 승인으로 확대할 수 없습니다.
+- 직접 API v2 102/110과 Worker v2 98/110 FAIL은 별도 결과이며 합산하지 않았습니다.
+- 102점은 합격선보다 3점 높을 뿐입니다. 1~3문장 준수, 존댓말 자기 지칭("저"), 거절 설명 명확성이 아직 약합니다.
+- 파일 수정, 커밋, push는 하지 않았습니다. 읽기와 SHA 확인만 했습니다.
+
+
+Soak 중간(2026-11-04T05:24:39.056525+00:00): 04:44:57 UTC 시작,07:44:57 UTC 예정종료, status=running, 상태주기20회, 실제취소2회, 재시작0회, 오류0건. PID1130046/startTicks42356907, 실행폴더 tmp/r9-soak-process.json 및 r9-soak-report.json. 3시간 완료가 아니며 백그라운드 실행을 남긴다. 최종취소10회/재시작1회 미만이면 스크립트는 실패한다. 종료 시 해당프로젝트3컨테이너만 정지한다.
+
+P05는 독립 코드 FAIL 수정·재검수 PASS, 특정한국어persona의 실제제품경로 평가 및3시간 soak 시작/중간기록에 한정한다. 최종3시간 완료·다기기/물리부족·GPU·multiarch/SBOM·배포/출시 승인은 미완료다.
+
+| 날짜 | 남은 일·완료 조건 |
+|---|---|
+| 11/4 | 독립 코드 리뷰 FAIL 수정/최종PASS 완료. 기존 구조2RED 및 별도 native/core 관문 담당자 처리, 민호가 웹/기본가지 커밋 이식 검토 |
+| 11/5 | 최종3시간 soak의 status/errors/coverage/cleanup 확인, 한국어 원어민·추가 자유대화/반말/다른캐릭터 평가. 한 profile의22턴을 일반화하지 않음 |
+| 11/6 | 준: Windows/macOS OPFS128MiB/실제quota/프로세스종료복구/390px·키보드, 물리ENOSPC·전원손실 별도 |
+| 11/7 | 준: 승인된 별도GPU Docker Desktop/CDI·VRAM/OOM/취소복구·WebGPU/f16 없는기기. AI PC1 라디오GPU 제외 |
+| 11/8 | 민호: 자격환경 multiarch/SBOM/provenance/승인게시·digest pin. 완전오프라인 clean기동과모델보존 |
+| 11/9 | 위결과·원어민/실기·soak최종·기존관문을 종합해기능고정결정.11/13출시목표; 웹/로컬동기화0.2.7 |
+
+최종 제품경로 품질 점수 **102/110·치명0 경계PASS**: 자연스러움17/22·지시수행19/22·기억정정/한국어/완결성22/22. 차원별90%는 통과하지 못하므로 특히 자연스러움 약점을 남긴다. v3 latency min17.433초/중앙42.7085초/max154.244초. 최종 원문 SHA256 `d15b0f3f` 접두사는 quality summary와 일치한다. 리뷰의 T22 문장 수6은 실제 마침표 기준5문장으로 정정한다. 어느 쪽도3문장 초과로 같은 지시수행0이며 점수/판정은 바뀌지 않는다.

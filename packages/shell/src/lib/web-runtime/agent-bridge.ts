@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { createAgentWorker } from "virtual:naia-agent-worker";
 import { getStoredLocalSessionId, useChatStore } from "../../stores/chat";
 import { Logger } from "../logger";
@@ -179,6 +180,7 @@ export function createAgentBridge(deps: {
 											"failed to persist conversation turn",
 											{ error: String(err) },
 										);
+										useChatStore.setState({ persistenceWarning: `${t("agents.filesFailed")}. ${t("browserMemory.recoveryError")}` });
 									})
 									.finally(() => {
 										deps.emit("agent_response", rawLine);

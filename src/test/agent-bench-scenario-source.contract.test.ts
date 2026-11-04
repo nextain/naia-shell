@@ -9,7 +9,7 @@ const DOC = resolve(__dirname, "..", "..", "docs", "user-scenarios.md");
 
 describe("문서 파싱 (NFR-AGENT-BENCH.2) [UC-AGENT-BENCH-RUN]", () => {
   it("컨테이너 포장은 에픽 밖이며 새 에이전트 UC의 미분류는 계속 검출한다", () => {
-    for (const suffix of ["", "-R2", "-R3", "-R4", "-R5", "-R6", "-R7"]) {
+    for (const suffix of ["", "-R2", "-R3", "-R4", "-R5", "-R6", "-R7", "-R8", "-R9"]) {
       expect(ownedByEpic(`UC-WEBGPU-CONTAINER-026${suffix}`)).toBe(false);
       expect(parseScenarios(`### UC-WEBGPU-CONTAINER-026${suffix}`)).toEqual([]);
     }

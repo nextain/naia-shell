@@ -524,3 +524,19 @@ describe("agent-bridge", () => {
 		workerPort.close();
 	});
 });
+
+it("shows a visible localized save failure without dropping the finish event", async () => {
+ const before=useChatStore.getState().messages.length;
+ let worker!:FakeWorker;const emitted:{event:string,payload:unknown}[]=[];
+ const fs=createMemoryWebFs();fs.writeBytes=async()=>{throw new Error("damaged restore journal");};
+ const bridge=createAgentBridge({createWorker:()=>{worker=new FakeWorker();return worker;},emit:(event,payload)=>emitted.push({event,payload}),getFs:()=>fs});
+ bridge.start({model:WEB_LLM_MODEL_ID});const port=worker.posted[0].transfer![0] as MessagePort;port.start?.();
+ bridge.sendLine(JSON.stringify({type:"chat_request",requestId:"save-failure",sessionId:"r9",messages:[{role:"user",content:"hi"}]}));
+ port.postMessage(JSON.stringify({type:"text",requestId:"save-failure",text:"reply"}));
+ port.postMessage(JSON.stringify({type:"finish",requestId:"save-failure"}));
+ await new Promise(r=>setTimeout(r,80));
+ expect(/Save failed|저장 실패/.test(useChatStore.getState().persistenceWarning ?? "")).toBe(true);
+ expect(useChatStore.getState().messages.length).toBe(before);
+ expect(emitted.some(e=>e.event==="agent_response"&&JSON.parse(String(e.payload)).type==="finish")).toBe(true);
+ port.close();
+});

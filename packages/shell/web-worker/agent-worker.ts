@@ -1,3 +1,4 @@
+import { createLocalContainerFetch } from "./local-container-fetch";
 /// <reference lib="webworker" />
 import {
 	BROWSER_READ_TOOL_NAMES,
@@ -197,7 +198,7 @@ self.addEventListener("message", (event: MessageEvent) => {
                     diag.debug?.("LocalContainer.chat", { model: config.model });
                     return makeOpenAICompatProvider({
                         baseUrl: new URL("/local-llm/v1", self.location.origin).href,
-                        apiKey: "", supportsTools: false,
+                        apiKey: "", supportsTools: false, fetch: createLocalContainerFetch(),
                     }).chat(config, messages, opts);
                 }
 				if (config.provider !== "nextain")

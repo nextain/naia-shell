@@ -2535,13 +2535,13 @@ P04 증거는 `/home/nextain/work/codex-runs/824-i18n/result.md`와 같은 디�
 
 P02 Test Coverage Map: `scripts/builds/webgpu-container/local-container.spec.mjs` — 실제 #824 패치 웹 UI/Worker→nginx→Ollama 모델 목록·실제 스트리밍 응답, 취소, 목록 null/[], 서버 꺼짐/재시도, 초기/진행/성공/빈 목록/오류/390px 좁은 폭, 키보드/ARIA/레이아웃. Rust 변경 없음: native Tauri 검증 해당 없음. `local-container.test.mjs` — 패치 고정 기준·보안 경계. 시각 UX 증거는 실행 폴더 tmp/.
 
-## UC-WEBGPU-CONTAINER-026-R3 — 브라우저 기억 복원과 장애 회귀 (#794 #824)
+### UC-WEBGPU-CONTAINER-026-R3 — 브라우저 기억 복원과 장애 회귀 (#794 #824)
 
 P01: 사용자는 설치된 두 작은 모델을 전환하고, 삭제된/미설치 모델로 자동 다운로드 없이 실패를 확인하며, 요청 중 서버 중단과 반복 취소 후 다시 대화한다. 프로필의 브라우저 기억 내보내기 ZIP을 확인하고 가져오기 전에 내용·덮어쓰기 범위를 검토한다. 손상 파일은 기존 기억을 보존한다. 서버 모델과 브라우저 데이터의 보존·삭제 범위를 읽는다. 웹·로컬 자동 동기화는 0.2.7이다.
 
 P02 Test Coverage Map: `scripts/builds/webgpu-container/local-container.spec.mjs` 및 `memory-transfer.spec.mjs`: 기본(관리 안내), 빈 상태(장기기억 미포함 표시), 진행(중복 작업 금지), 성공(다운로드·검증·복원 후 새로고침), 오류(손상 ZIP·재선택·기존 파일 유지), 390px(레이블·버튼·알림·키보드). 실제 OPFS 파일 해시/ZIP manifest·대화·민감 설정 제외 검증. 실제 전용 Podman 모델 삭제/전환/중단과 SSE/중복 취소. 전체 웹 Vitest·PDF worker 환경과 frozen 설치 빌드. Rust 변경 없음으로 native Tauri 비대상.
 
-## UC-WEBGPU-CONTAINER-026-R4 — 고정 overlay 통합 검토 (#794 #824)
+### UC-WEBGPU-CONTAINER-026-R4 — 고정 overlay 통합 검토 (#794 #824)
 
 웹 담당자는 다른 작업자의 checkout을 수정하지 않고, 고정 소스에 overlay를 적용한 파일·원본/결과 해시·입력 revision을 함께 검토한다. 충돌 또는 잘못된 revision은 성공 산출물로 표시하지 않는다. #497 에이전트 능력 벤치는 컨테이너 포장 시나리오를 자기 능력으로 오인하지 않는다.
 
@@ -2552,7 +2552,7 @@ P02 Test Coverage Map: `review-overlay.test.mjs`에서 고정 소스 적용·파
 
 P02 Test Coverage Map: 390px 초기 진입의 Profile→Brain 포인터 클릭을 포함하며 `scripts/builds/webgpu-container/cpu-soak.spec.mjs`가 기본 모델/도구 비활성·안내, 진행/중복 취소, 성공/다음 응답, 빈 목록/오류/키보드 재시도, 390px 경계를 검증한다. `local-container.spec.mjs`, `memory-transfer.spec.mjs`, `pdf-worker.spec.mjs` 및 전체 frozen 웹 Vitest를 재실행한다. 품질 표본은 실제 CPU 출력 원문과 별도 수동 판정으로 기능 통과와 구분한다. GPU/native Rust/다른 OS는 이번 범위 밖이다.
 
-## UC-WEBGPU-CONTAINER-026-R6 (#794/#824)
+### UC-WEBGPU-CONTAINER-026-R6 (#794/#824)
 
 P01: 사용자는 큰 기억 ZIP을 복원한다. 공간이 모자라거나 쓰기·close가 실패하면 원본을 보존한다. 복원 중 브라우저가 강제 종료되면 다음 시작에서 journal을 먼저 복구하고 모델을 시작한다. 손상 journal/복구 실패는 자료를 보존하고 시작을 차단한다. 추론 서버 반복 재시작 후 DNS에 의존하지 않고 30초 이내 목록을 다시 조회한다.
 
@@ -2564,7 +2564,23 @@ P02 Test Coverage Map: `memory-transfer.spec.mjs`의 기본·빈 기억·진행�
 
 P02 Test Coverage Map: local-container.test.mjs·test-start.sh, 전체 src Vitest; cpu-soak.spec.mjs 기본/진행/오류/키보드 재시도/390px; memory-transfer.spec.mjs 기본/빈 목록/진행/성공/오류/좁은 폭·ARIA·자료 보존; restore-boundaries.spec.mjs OPFS·crash; pdf-worker.spec.mjs 배포 Worker. Rust 변경 없음. 독립 리뷰·GPU 실기·게시와 구분한다.
 
-## UC-WEBGPU-CONTAINER-026-R8 — 웹 비동기 회귀 안정성 (#824)
+### UC-WEBGPU-CONTAINER-026-R8 — 웹 비동기 회귀 안정성 (#824)
 P01: 사용자는 첫 권한 요청, 첫 파일 딥링크, 중첩 파일 열기에서 비동기 로딩 후 실제 동작을 사용할 수 있다.
 P02: ChatArea 권한 modal, chat-deeplink 8case, file-tree-reveal 4case를 실제 lazy 모듈/재귀 invoke 완료까지 검증한다. 초기 로딩이 1초를 넘어도 실패하지 않고, 누락 요소는 유한 대기 안에 실패해야 한다. 전체 웹 src 회귀를 실행한다.
 상태 매핑: 기본/빈=빈 대화·트리, 진행=lazy/재귀 조회, 성공=승인창·링크·선택/스크롤, 오류=기존 ChatArea/트리 오류 계약, 좁은 폭=브라우저 390px. 실 UI는 모달 키보드·딥링크·트리 선택과 overflow를 확인한다.
+
+### UC-WEBGPU-CONTAINER-026-R9 — 한국어 장문 persona·CPU soak (#824)
+사용자가 모델을 명시적으로 준비하고 나이아와 긴 대화를 이어 간다. 이름·소유자·정정한 약속을 기억하고 도구 없는 작업을 실행했다고 꾸미지 않는다. CPU 추론은 격리 프로젝트에서만 돌린다.
+P02: persona-quality.mjs의 r6 짧은 비교를 유지하고 persona-long.mjs 장문 평가는 system+최소 20 user turn, temperature0, 512 output token, 전체 대화 누적으로 원문·finish_reason·latency·usage를 기록한다. 이름/한국어/소유자/정정/미지 정보/실행 정직성/완결성을 전수 수동 판정해 치명 오류0·전체90% 이상일 때만 품질 후보로 선택한다. cpu-duration-soak.mjs 3시간 CPU soak는 반복 대화·취소·복구·모델 목록·메모리 추이를 별도 기록하고 시작과 완료를 구분한다. 실제 Worker/UI·GPU 실기는 별도 관문이다.
+
+R9 독립 리뷰 수정 P01/P02: 복원 미리보기 뒤 대화가 시작되면 확정을 차단하고, export/append/restore/recovery를 같은 Web Lock으로 직렬화한다. ZIP의 conversations/u-*는 거절하되 내부 계정별 복원 journal은 검증 후 복구한다. transfer policy/entry 및 실제 Chromium memory-transfer/restore-boundaries에 계정 침범·미리보기 뒤 스트리밍·동시 append/export를 추가한다. 실제 ChatArea의 lazy Markdown 원문 fallback→완료 DOM·권한 fallback→완료 및 트리 IPC 지연을 web-async-boundaries에서 검증한다. 부정 딥링크는 Markdown/code 양성 DOM을 먼저 확인하고 트리4케이스 모두 실제 조회 완료를 기다린다.
+
+R9 추가 P02: u- 접두사의 정상 대화 JSONL은 export/import에서 보존하고 계정 디렉터리만 차단한다. agent-bridge.test.ts에 실제 persist 실패→화면 저장 실패 알림/finish 유지, web-async-boundaries에 wait 해제 및 u- 세션 export를 검증한다. cpu-duration-soak는 실제 취소10회/재시작1회 미만이면 completed를 금지한다.
+
+R9 최종 P02: 저장 실패 알림은 별도 role=alert로 응답 아래에 두며 대화/LLM history에는 넣지 않는다. 실제 finish→답변→알림 순서와 history 제외를 브라우저에서 단언한다. stale store 스냅샷으로 wait 가드를 통과시키는 경합에서 효과의 복귀를 검증한다. account-transfer 스펙은 web-async-boundaries Playwright 기본 runner에서도 실행한다.
+
+R9 제품 경로 P02: persona-worker.spec.mjs에서 OPFS persona 적용·모델 명시 선택 후 실제 UI/Worker의22턴·요청원문/실옵션·DOM/OPFS를 기록한다. 직접 API22턴은 이 결과와 구분한다. GPU/다른OS 기기만 준에게 넘긴다.
+
+R9 샘플링 정합 P01/P02: 실제 Worker의 temperature 생략→Ollama 0.13.5 기본1.0이 직접API 온도0과 달랐다. local-container-fetch.ts의 기본0·명시값 보존·원문/stream/도구/AbortSignal 보존을 단위시험하고 Worker 실제요청온도0과22턴품질을 재검증한다. 미지정실행의 앞선표본은 따로 남긴다.
+
+R9 v3 persona P02: 실제 Worker v2의98/110·치명1 FAIL을 보존한다. fixture v3는 정체성 대응(나이아=AI/루크=사용자) 고정과 호칭 변경 거절·문장 압축·이전 사실 확인을 명시한다. 원래22턴·99/110 및 치명0 기준을 그대로 유지하고 독립 채점한다. persona-long도 fixture를 읽어 API와 Worker 대본 중복을 제거한다.

@@ -6,6 +6,7 @@ import {
 	fireEvent,
 	render,
 	screen,
+	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
@@ -100,6 +101,7 @@ async function renderChat() {
 	await act(async () => {
 		await import("../ChatMarkdown");
 	});
+	await waitFor(() => expect(document.querySelector(".message-content > p, .message-content pre code")).toBeTruthy(), { timeout: 5000 });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -174,6 +176,7 @@ describe("ChatArea — file deep-links", () => {
 	it("does NOT render deeplinks for paths in code blocks", async () => {
 		setAssistantMessage("```\n/home/user/dev/App.tsx\n```");
 		await renderChat();
+		await waitFor(() => expect(document.querySelector("pre code")).toHaveTextContent("/home/user/dev/App.tsx"), { timeout: 5000 });
 		// Path inside code block — code component, not p component — no button
 		expect(
 			screen.queryByRole("button", { name: /App\.tsx/ }),

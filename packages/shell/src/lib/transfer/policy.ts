@@ -8,6 +8,7 @@ const reserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 export function assertTransferPath(path: string): void {
   if (!path || path.normalize("NFC") !== path || path.startsWith("/") || /[\\:\x00-\x1f\x7f]/.test(path)) throw new Error("invalid path");
   const parts = path.split("/");
+  if (parts[0] === "conversations" && parts.length > 2 && /^u-/i.test(parts[1] ?? "")) throw new Error("account conversation path forbidden");
   if (parts.some((part) => !part || part === "." || part === ".." || /[ .]$/.test(part) || reserved.test(part) || blockedPart.test(part) || denied.test(part))) throw new Error("forbidden path");
   if (blockedFile.test(parts[parts.length - 1])) throw new Error("forbidden file");
   const allowed = userRoots.has(parts[0]) || (parts[0] === ".agents" && parts[1] === "skills") || (parts[0] === "naia-settings" && (parts[1] === "config.json" || parts[1] === "ui-config.json" || (parts[1] === "memory" && parts[2] === "store.json" && parts.length === 3)));
@@ -31,4 +32,20 @@ export function validateMemoryStore(value: unknown): number {
     ids.add(id);
   }
   return facts.length;
+}
+
+/** Archive names are account-neutral; only trusted, mapped journal targets include an account. */
+export function assertTransferTargetPath(path: string): void {
+  assertTransferPath(path.replace(/^conversations\/u-[a-zA-Z0-9_-]{1,128}\//, "conversations/"));
+}
+export const WEB_TRANSFER_LOCK = "naia-memory-transfer";
+/** Serialize exports and conversation read/modify/write with restore + crash recovery. */
+export async function withRecoveredWebWorkspace<T>(operation: () => Promise<T>): Promise<T> {
+  // Without Web Locks restore is unavailable, so legacy/non-browser adapters cannot race it.
+  if (!globalThis.navigator?.locks) return operation();
+  return navigator.locks.request(WEB_TRANSFER_LOCK, async () => {
+    const { recoverWebTransferUnderLock } = await import("./restore-web");
+    await recoverWebTransferUnderLock();
+    return operation();
+  });
 }

@@ -1,7 +1,8 @@
 import { Logger } from "../logger";
 import { resolveWebConversationsDir } from "../web-runtime/web-workspace-commands";
 import { extractArchive, validateArchive, Sha256, type ArchiveSource } from "./archive";
-import { assertTransferPath } from "./policy";
+import { assertTransferTargetPath, WEB_TRANSFER_LOCK } from "./policy";
+import { isChatTransferBusy } from "../../stores/chat";
 import { MAX_FILES } from "./manifest";
 
 export function fileArchive(file: File): ArchiveSource {
@@ -12,7 +13,7 @@ export function fileArchive(file: File): ArchiveSource {
 }
 export const inspectWebTransfer = (file: File) => validateArchive(fileArchive(file));
 const journalName = "naia-restore-journal";
-const lockName = "naia-memory-transfer";
+const lockName = WEB_TRANSFER_LOCK;
 type RecordEntry = { path: string; size: number | null; sha256: string | null };
 type Journal = { version: 1; files: RecordEntry[] };
 const missing = (e: unknown) => e instanceof DOMException && e.name === "NotFoundError";
@@ -27,7 +28,7 @@ async function hash(file: File) {
     return sha.digest();
 }
 async function parentFor(workspace: FileSystemDirectoryHandle, path: string) {
-    assertTransferPath(path);
+    assertTransferTargetPath(path);
     const parts = path.split("/"); const name = parts.pop()!;
     let parent = workspace;
     for (const part of parts) parent = await parent.getDirectoryHandle(part, { create: true });
@@ -43,7 +44,7 @@ async function rollback(root: FileSystemDirectoryHandle, temp: FileSystemDirecto
     const originals: (File | null)[] = [], names = new Set<string>();
     for (const [index, item] of journal.files.entries()) {
         if (!item || typeof item.path !== "string") throw new Error("invalid restore journal path");
-        assertTransferPath(item.path);
+        assertTransferTargetPath(item.path);
         const key = item.path.toLowerCase();
         if (names.has(key)) throw new Error("duplicate restore journal path"); names.add(key);
         if (item.size === null && item.sha256 === null) { originals.push(null); continue; }
@@ -80,13 +81,19 @@ async function recover(root: FileSystemDirectoryHandle) {
     // No journal means interruption while staging: workspace was never touched.
     await root.removeEntry(journalName, { recursive: true });
 }
+/** Caller must hold WEB_TRANSFER_LOCK; shared by export and append adapters. */
+export async function recoverWebTransferUnderLock() {
+    return recover(await navigator.storage.getDirectory());
+}
 export async function recoverWebTransfer() {
     return navigator.locks.request(lockName, async () => recover(await navigator.storage.getDirectory()));
 }
 /** Single-restore transaction. OPFS close is the durable boundary, not power-loss fsync. */
 export async function restoreWebTransfer(file: File) {
+    if (isChatTransferBusy()) throw new Error("chat busy");
     return navigator.locks.request(lockName, { ifAvailable: true }, async lock => {
         if (!lock) throw new Error("transfer busy");
+        if (isChatTransferBusy()) throw new Error("chat busy");
         Logger.debug("WebMemoryTransfer", "restore start", { bytes: file.size });
         const root = await navigator.storage.getDirectory();
         await recover(root);

@@ -80,3 +80,12 @@
 | `packages/shell/scripts/stapler-retry.sh` | macOS 공증표 붙이기·검증의 네트워크 재시도 및 승인된 Intel 앱 예외. |
 
 - `builds/webgpu-container/`: #794/#824 0.2.6 container packaging, pinned overlay, browser/CPU/OPFS acceptance. 웹 소스 이식은 docs/progress/webgpu-container-026-20261103.md 7회차 참조.
+
+### WebGPU 0.2.6 R9 품질·지속 시험 (#824)
+
+- `builds/webgpu-container/persona-long.mjs`: 명시 모델·loopback API 한국어 22턴 누적 평가. TMPDIR/NAIA_DATA_DIR/NAIA_TEST_URL/NAIA_TEST_MODEL 필수, 원문·종료 이유·시간·manifest 해시 보존.
+- `builds/webgpu-container/cpu-duration-soak.mjs`: 격리 naia-026-r9 CPU 3시간 상태·스트림 취소·재시작 표본. cgroup 실제 제한을 확인하고 평가 중 재시작하지 않는다. 종료 시 해당 시험 컨테이너만 정지한다.
+
+- `builds/webgpu-container/account-transfer.spec.mjs`: 실제 Chromium OPFS의 로그인 계정 매핑·append 중 복원 거절·다른 계정 보존·계정 journal 복구 회귀. TMPDIR/NAIA_TEST_URL/NAIA_WEB_SOURCE_DIR 필수.
+
+- `builds/webgpu-container/persona-ko.fixture.json`, `persona-worker.spec.mjs`: 고정 한국어22턴을 실제 UI→Worker→nginx→CPU 모델→DOM/OPFS 경로로 실행. NAIA_TEST_URL/NAIA_WEB_SOURCE_DIR/NAIA_TEST_MODEL/TMPDIR 필수, 실제 요청 옵션을 보존하고 API 시험과 구분.

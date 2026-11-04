@@ -33,3 +33,6 @@ ChatArea는 PermissionModal과 ChatMarkdown을 React.lazy로 불러온다. 기�
 ## 되돌리기·검토 순서
 
 웹 r8 커밋을 `git revert <웹 r8 commit>`하면 시험/문서 변경만 되돌아간다. 기본 가지 기록 커밋도 별도 revert 가능하다. 데이터·모델 볼륨·OPFS migration이 없으므로 데이터 rollback은 없다. 먼저 세 시험 diff와 지연 전후 로그, 전체 회귀 수치를 확인하고 browser capture를 검토한다. 로컬 커밋 hash는 실행 폴더 result.md에 기록한다. 검토자가 승인하기 전 독립 리뷰 완료로 표시하지 않는다.
+
+## R9 독립 리뷰 정정 (2026-11-04)
+Gemini Argon의 R8 판정 FAIL을 수용한다. R8 브라우저 시험은 선로딩한 개별 컴포넌트 검증이었으며 실제 lazy/Suspense fallback 전환의 증거가 아니다. R8 지연 프로브는 양성 3건만 실행했고 부정 2건/트리4건 전체 지연 검증은 하지 않았다. 기본 가지 3f07dbe1에는 E2E 스펙 파일이 없고, P04 브라우저 산출물은 웹 가지 /home/nextain/work/026-web824/packages/shell/e2e/web-async-boundaries.spec.ts를 참조한다. R9 수정·재검증은 webgpu-container-026-20261103.md R9에 기록한다. R8 전체 Vitest 수치는 당시 실행 결과로 보존한다.

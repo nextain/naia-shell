@@ -2007,7 +2007,7 @@ export function SettingsTab() {
 		"idle" | "exporting" | "importing" | "done" | "error"
 	>("idle");
 	const [backupError, setBackupError] = useState("");
-	
+
 
 	const [allowedTools, setAllowedTools] = useState<string[]>(
 		existing?.allowedTools ?? [],
