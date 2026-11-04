@@ -406,6 +406,7 @@ export function DiagnosticsTab() {
 						<button
 							type="button"
 							className="diagnostics-refresh-btn"
+							data-usage-event="diagnostics-tab.button-1.click"
 							onClick={() => checkHealth()}
 						>
 							{t("diagnostics.refresh")}
@@ -413,6 +414,7 @@ export function DiagnosticsTab() {
 						<button
 							type="button"
 							className="diagnostics-refresh-btn"
+							data-usage-event="diagnostics-tab.handle-restart-2.click"
 							onClick={handleRestart}
 						>
 							{t("diagnostics.restart") || "재시작"}
@@ -479,6 +481,7 @@ export function DiagnosticsTab() {
 								key={tab}
 								type="button"
 								className={`diagnostics-log-tab ${activeLogTab === tab ? "active" : ""}`}
+								data-usage-event="diagnostics-tab.handle-tab-change-3.click"
 								onClick={() => handleTabChange(tab)}
 							>
 								{tab === "agent"
@@ -493,6 +496,7 @@ export function DiagnosticsTab() {
 						<button
 							type="button"
 							className={`diagnostics-log-btn ${isTailing ? "tailing" : ""}`}
+							data-usage-event="diagnostics-tab.handle-toggle-tailing-4.click"
 							onClick={handleToggleTailing}
 							title={
 								isTailing
@@ -507,6 +511,7 @@ export function DiagnosticsTab() {
 						<button
 							type="button"
 							className="diagnostics-log-btn"
+							data-usage-event="diagnostics-tab.handle-clear-5.click"
 							onClick={handleClear}
 							title={t("diagnostics.logsClear")}
 						>
@@ -515,6 +520,7 @@ export function DiagnosticsTab() {
 						<button
 							type="button"
 							className="diagnostics-log-btn"
+							data-usage-event="diagnostics-tab.handle-open-in-window-6.click"
 							onClick={handleOpenInWindow}
 							title="새창으로 열기"
 						>
@@ -561,6 +567,7 @@ export function DiagnosticsTab() {
 								<div
 									key={`${entry.timestamp}-${i}`}
 									className={`diagnostics-log-line${isImportant ? " diagnostics-log-line--important" : ""}`}
+									data-usage-event="diagnostics-tab.set-selected-log-7.click"
 									onClick={
 										isImportant ? () => setSelectedLog(entry) : undefined
 									}
@@ -584,10 +591,12 @@ export function DiagnosticsTab() {
 				{selectedLog && (
 					<div
 						className="diagnostics-log-modal-backdrop"
+						data-usage-event="diagnostics-tab.set-selected-log-8.click"
 						onClick={() => setSelectedLog(null)}
 					>
 						<div
 							className="diagnostics-log-modal"
+							data-usage-event="diagnostics-tab.stop-propagation-9.click"
 							onClick={(e) => e.stopPropagation()}
 						>
 							<div
@@ -607,6 +616,7 @@ export function DiagnosticsTab() {
 							<button
 								type="button"
 								className="diagnostics-log-modal-close"
+								data-usage-event="diagnostics-tab.set-selected-log-10.click"
 								onClick={() => setSelectedLog(null)}
 							>
 								닫기

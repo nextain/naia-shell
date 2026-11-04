@@ -47,6 +47,7 @@ export function UpdateBanner({ info, onDismiss }: UpdateBannerProps) {
 				<button
 					type="button"
 					className="update-btn-details"
+					data-usage-event="update-banner.handle-view-details-1.click"
 					onClick={handleViewDetails}
 				>
 					{t("update.viewDetails")}
@@ -54,6 +55,7 @@ export function UpdateBanner({ info, onDismiss }: UpdateBannerProps) {
 				<button
 					type="button"
 					className="update-btn-install"
+					data-usage-event="update-banner.handle-update-2.click"
 					onClick={handleUpdate}
 				>
 					{t("update.now")}
@@ -61,6 +63,7 @@ export function UpdateBanner({ info, onDismiss }: UpdateBannerProps) {
 				<button
 					type="button"
 					className="update-btn-dismiss"
+					data-usage-event="update-banner.on-dismiss-3.click"
 					onClick={onDismiss}
 				>
 					{t("update.later")}

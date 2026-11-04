@@ -115,6 +115,7 @@ export function WslSetupScreen({ onComplete }: WslSetupScreenProps) {
 					<div className="wsl-setup-actions" style={{ marginTop: "1rem" }}>
 						<button
 							className="wsl-setup-btn primary"
+							data-usage-event="wsl-setup-screen.button-1.click"
 							onClick={() => invoke("reboot_computer")}
 						>
 							{t("wslSetup.rebootButton")}
@@ -145,7 +146,11 @@ export function WslSetupScreen({ onComplete }: WslSetupScreenProps) {
 							{t("wslSetup.whiteScreenNotice")}
 						</p>
 						<div className="wsl-setup-actions">
-							<button className="wsl-setup-btn primary" onClick={handleSetup}>
+							<button
+								className="wsl-setup-btn primary"
+								data-usage-event="wsl-setup-screen.handle-setup-2.click"
+								onClick={handleSetup}
+							>
 								{t("wslSetup.startButton")}
 							</button>
 						</div>

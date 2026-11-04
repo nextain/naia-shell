@@ -122,6 +122,7 @@ export function UpdatePrompt({ info, onLater }: UpdatePromptProps) {
 					<input
 						type="checkbox"
 						checked={snoozeForMonth}
+						data-usage-event="update-prompt.set-snooze-for-month-1.select"
 						onChange={(event) => setSnoozeForMonth(event.target.checked)}
 						disabled={installing}
 					/>
@@ -138,6 +139,7 @@ export function UpdatePrompt({ info, onLater }: UpdatePromptProps) {
 					<button
 						type="button"
 						className="update-prompt-details"
+						data-usage-event="update-prompt.handle-view-details-2.click"
 						onClick={handleViewDetails}
 						disabled={installing}
 					>
@@ -147,6 +149,7 @@ export function UpdatePrompt({ info, onLater }: UpdatePromptProps) {
 						<button
 							type="button"
 							className="update-prompt-later"
+							data-usage-event="update-prompt.on-later-3.click"
 							onClick={() => onLater(snoozeForMonth)}
 							disabled={installing}
 						>
@@ -156,6 +159,7 @@ export function UpdatePrompt({ info, onLater }: UpdatePromptProps) {
 							ref={installButtonRef}
 							type="button"
 							className="update-prompt-install"
+							data-usage-event="update-prompt.handle-install-4.click"
 							onClick={handleInstall}
 							disabled={installing}
 						>

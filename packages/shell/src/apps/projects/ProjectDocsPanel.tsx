@@ -218,6 +218,7 @@ export function ProjectDocsPanel({
 						type="button"
 						className="projects-app__secondary-button"
 						disabled={loadingList}
+						data-usage-event="project-docs-panel.button-1.click"
 						onClick={() => void loadDocsList()}
 					>
 						{loadingList
@@ -274,6 +275,7 @@ export function ProjectDocsPanel({
 														className={`projects-app__docs-item${isSelected ? " projects-app__docs-item--selected" : ""}`}
 														aria-current={isSelected ? "true" : undefined}
 														title={entry.relativePath}
+														data-usage-event="project-docs-panel.button-2.click"
 														onClick={() => void loadFile(entry.relativePath)}
 													>
 														{displayPathWithinDir(entry)}

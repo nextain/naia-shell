@@ -93,6 +93,7 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 						<span>{props.launchError}</span>
 						<button
 							type="button"
+							data-usage-event="herdr-workspace-surface.button-1.click"
 							onClick={props.launchHerdr}
 							data-testid="workspace-terminal-reconnect"
 						>
@@ -116,6 +117,7 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 						{!props.launching && (
 							<button
 								type="button"
+								data-usage-event="herdr-workspace-surface.button-2.click"
 								onClick={props.launchHerdr}
 								data-testid="workspace-terminal-reconnect"
 							>
@@ -132,7 +134,7 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 					>
 						<span>{props.terminalError || t("workspace.herdrStarting")}</span>
 						{props.terminalError && (
-							<button type="button" onClick={props.retryHerdr}>
+							<button type="button" data-usage-event="herdr-workspace-surface.button-3.click" onClick={props.retryHerdr}>
 								{t("workspace.herdrRetry")}
 							</button>
 						)}
@@ -144,6 +146,7 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 					<div className="herdr-workspace__viewer-bar">
 						<button
 							type="button"
+							data-usage-event="herdr-workspace-surface.button-4.click"
 							onClick={props.showHerdr}
 							aria-label={t("workspace.herdrBackLabel")}
 						>
@@ -171,7 +174,7 @@ export function HerdrWorkspaceSurface(props: SurfaceProps) {
 							fallback={
 								<div className="herdr-workspace__state" role="alert">
 									<span>{t("workspace.editorLoadError")}</span>
-									<button type="button" onClick={retryEditorLoad}>
+									<button type="button" data-usage-event="herdr-workspace-surface.button-5.click" onClick={retryEditorLoad}>
 										{t("common.retry")}
 									</button>
 								</div>

@@ -1,4 +1,9 @@
-<!-- src-sha: b14ce9c5f04a37dc -->
+<!-- src-sha: f417ea00a8f70fdb -->
+
+## 0.2.6 사용 통계 — 2026-11-04
+
+- 별도 feat/usage-events: 첫 실행 동의, 432개 고정 상세 누름·부록 의미 사건, Azure 단일 opt-in 수집, 설정 즉시 끄기·창 공유·메모리 큐.
+- 설계/검증: docs/progress/usage-events/event-inventory.md, verification.md. 실제 Azure·비용·방침 및 네이티브 서비스 관통은 출시 관문으로 남음. PR까지만, 병합·배포·Azure 자원 생성 없음.
 
 ## 서명 검증 스토어 앱 도구 동적 허용 — 2026-10-29
 

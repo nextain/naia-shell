@@ -240,6 +240,7 @@ function ProjectRow({
 			<button
 				className="projects-app__project-button"
 				type="button"
+				data-usage-event="projects-app.on-open-1.click"
 				onClick={onOpen}
 			>
 				<span className="projects-app__project-heading">
@@ -704,6 +705,7 @@ export function ProjectsApp() {
 									className="projects-app__secondary-button"
 									type="button"
 									disabled={classResetState === "resetting"}
+									data-usage-event="projects-app.set-show-reset-dialog-2.click"
 									onClick={() => setShowResetDialog(true)}
 								>
 									{projectText("projects.classResetButton")}
@@ -712,6 +714,7 @@ export function ProjectsApp() {
 							<button
 								className="projects-app__secondary-button"
 								type="button"
+								data-usage-event="projects-app.button-3.click"
 								onClick={showOtherProjects}
 							>
 								{projectText("projects.changeCheckout")}
@@ -781,6 +784,7 @@ export function ProjectsApp() {
 										ref={cancelResetButtonRef}
 										type="button"
 										className="projects-app__secondary-button"
+										data-usage-event="projects-app.set-show-reset-dialog-4.click"
 										onClick={() => setShowResetDialog(false)}
 									>
 										{projectText("projects.classResetCancel")}
@@ -789,6 +793,7 @@ export function ProjectsApp() {
 										ref={confirmResetButtonRef}
 										type="button"
 										className="projects-app__primary-button"
+										data-usage-event="projects-app.handle-confirm-class-reset-5.click"
 										onClick={() => void handleConfirmClassReset()}
 									>
 										{projectText("projects.classResetConfirm")}
@@ -821,6 +826,7 @@ export function ProjectsApp() {
 										aria-selected={effectiveActiveTab === tab.id}
 										aria-controls="projects-tab-panel"
 										tabIndex={effectiveActiveTab === tab.id ? 0 : -1}
+										data-usage-event="projects-app.button-6.click"
 										onClick={() => changeTab(tab.id)}
 										onKeyDown={(event) => handleTabKeyDown(event, index)}
 									>
@@ -901,6 +907,7 @@ export function ProjectsApp() {
 								className="projects-app__secondary-button"
 								type="button"
 								disabled={loadState === "loading"}
+								data-usage-event="projects-app.button-7.click"
 								onClick={() => void reloadCatalog()}
 							>
 								{loadState === "loading"
@@ -911,6 +918,7 @@ export function ProjectsApp() {
 								<button
 									className="projects-app__secondary-button"
 									type="button"
+									data-usage-event="projects-app.button-8.click"
 									onClick={returnToCurrentProject}
 								>
 									{projectText("projects.returnToCurrentProject", {
@@ -935,6 +943,7 @@ export function ProjectsApp() {
 							{loadError && (
 								<button
 									type="button"
+									data-usage-event="projects-app.button-9.click"
 									onClick={() => void chooseAdkFolder(session)}
 								>
 									{projectText("projects.chooseAnother")}

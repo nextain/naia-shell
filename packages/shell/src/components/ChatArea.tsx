@@ -179,6 +179,7 @@ import type {
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
+import { usage } from "../lib/usage-runtime";
 import { filterUserVisibleAssistantText } from "../lib/visible-chat-text";
 import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { AudioQueue } from "../lib/voice/audio-queue";
@@ -388,6 +389,7 @@ function ChatErrorNotice({
 			<button
 				type="button"
 				className="chat-error-notice__retry"
+				data-usage-event="chat-area.on-retry-1.click"
 				onClick={onRetry}
 			>
 				{t("chat.answerFailed.retry")}
@@ -1723,6 +1725,7 @@ export function ChatArea({
 	}, []);
 
 	async function handleNewConversation() {
+		usage.record("chat.session.new", "chat");
 		const store = useChatStore.getState();
 		// Stop any TTS still reading the previous conversation.
 		interruptTts();
@@ -1744,9 +1747,12 @@ export function ChatArea({
 		}
 	}
 
+	const usageUserTurn = useRef<string | null>(null);
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		usage.record("chat.message.send", "text");
+		usageUserTurn.current = usage.choice()?.enabled ? usage.choice()?.epoch ?? null : null;
 		pendingAiGestureActionRef.current = null;
 		if (await handleSpeechProfilePhrase(text)) return;
 		if (isRadioDjLabObserverAttached()) {
@@ -2535,6 +2541,7 @@ export function ChatArea({
 	function appendCleanVisibleResponseText(cleanText: string): void {
 		const visible = filterUserVisibleAssistantText(cleanText);
 		if (!visible) return;
+		if (usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "text"); usageUserTurn.current = null; }
 		useChatStore.getState().appendStreamChunk(visible);
 		if (ttsTextSyncRef.current.active) {
 			ttsTextSyncRef.current.canonical += visible;
@@ -3050,6 +3057,7 @@ export function ChatArea({
 	}
 
 	async function handleVoiceToggle() {
+		usage.record("chat.voice.toggle", "chat");
 		if (voiceMode !== "off") pendingAiGestureActionRef.current = null;
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
@@ -3640,6 +3648,7 @@ export function ChatArea({
 			) => {
 				playFirstGestureAction(gestures, liveGestureActionPlayed);
 				if (!cleanText && !recordEmpty) return;
+				if (cleanText && usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "voice"); usageUserTurn.current = null; }
 				outputAccum += cleanText;
 				const { emotion, cleanText: displayText } =
 					extractExpression(outputAccum);
@@ -3656,8 +3665,12 @@ export function ChatArea({
 			// transcript-derived fallback below must not override it.
 			let serverEmotionSeenThisTurn = false;
 
-			session.onAudio = (pcmBase64) => player.enqueue(pcmBase64);
+			session.onAudio = (pcmBase64) => {
+				if (pcmBase64 && usageUserTurn.current && usageUserTurn.current === usage.choice()?.epoch && usage.choice()?.enabled) { usage.record("chat.reply.first", "voice"); usageUserTurn.current = null; }
+				player.enqueue(pcmBase64);
+			};
 			session.onInputTranscript = (text) => {
+				if (!inputTurnDirty && text) { usage.record("chat.message.send", "voice"); usageUserTurn.current = usage.choice()?.enabled ? usage.choice()?.epoch ?? null : null; }
 				pendingAiGestureActionRef.current = null;
 				const store = useChatStore.getState();
 				if (!inputTurnDirty) setEmotion("think");
@@ -4036,6 +4049,7 @@ export function ChatArea({
 	}
 
 	function handleVoiceCancel() {
+		usage.record("chat.voice.cancel", "chat");
 		// Cancel an in-progress cold-start. disconnect() breaks naia-omni's retry
 		// loop (abortableSleep → AbortError) and fires abandonPod to release the
 		// warming Pod; the connect() catch then runs cleanup and clears the banner.
@@ -4225,6 +4239,7 @@ export function ChatArea({
 							type="button"
 							className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
 							data-chat-tab="chat"
+							data-usage-event="chat-area.handle-tab-change-2.click"
 							onClick={() => handleTabChange("chat")}
 							title={t("progress.tabChat")}
 							aria-label={t("progress.tabChat")}
@@ -4238,6 +4253,7 @@ export function ChatArea({
 							type="button"
 							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
 							data-chat-tab="history"
+							data-usage-event="chat-area.handle-tab-change-3.click"
 							onClick={() => handleTabChange("history")}
 							title={t("history.tabHistory")}
 							aria-label={t("history.tabHistory")}
@@ -4255,6 +4271,7 @@ export function ChatArea({
 								<button
 									type="button"
 									className="cost-badge session-cost cost-badge-clickable"
+									data-usage-event="chat-area.set-show-cost-dashboard-4.click"
 									onClick={() => setShowCostDashboard((v) => !v)}
 								>
 									{formatUsageTotal(
@@ -4266,6 +4283,7 @@ export function ChatArea({
 						<button
 							type="button"
 							className="settings-icon-btn new-chat-btn"
+							data-usage-event="chat-area.handle-new-conversation-5.click"
 							onClick={handleNewConversation}
 							title={t("chat.newConversation")}
 							disabled={isStreaming}
@@ -4338,6 +4356,7 @@ export function ChatArea({
 						<button
 							type="button"
 							aria-label="dismiss"
+							data-usage-event="chat-area.set-compaction-notice-6.click"
 							onClick={() => setCompactionNotice(null)}
 						>
 							×
@@ -4496,6 +4515,7 @@ export function ChatArea({
 							<button
 								type="button"
 								className="voice-status-cancel"
+								data-usage-event="chat-area.handle-voice-cancel-7.click"
 								onClick={handleVoiceCancel}
 							>
 								{t("chat.voiceColdStartCancel")}
@@ -4516,6 +4536,7 @@ export function ChatArea({
 					<button
 						type="button"
 						className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
+						data-usage-event="chat-area.handle-voice-toggle-8.click"
 						onClick={handleVoiceToggle}
 						disabled={voiceMode === "connecting"}
 						title={
@@ -4578,6 +4599,7 @@ export function ChatArea({
 					{isStreaming || outputStage !== null || ttsPlaying ? (
 						<button
 							type="button"
+							data-usage-event="chat-area.handle-cancel-streaming-9.click"
 							onClick={handleCancelStreaming}
 							className="chat-send-btn chat-cancel-btn"
 							title="ESC"
@@ -4587,6 +4609,7 @@ export function ChatArea({
 					) : (
 						<button
 							type="button"
+							data-usage-event="chat-area.handle-send-10.click"
 							onClick={() => handleSend()}
 							disabled={!input.trim()}
 							className="chat-send-btn"
@@ -4599,10 +4622,12 @@ export function ChatArea({
 			{showNoAuthModal && (
 				<div
 					className="sync-dialog-overlay"
+					data-usage-event="chat-area.set-show-no-auth-modal-11.click"
 					onClick={() => setShowNoAuthModal(false)}
 				>
 					<div
 						className="sync-dialog-card"
+						data-usage-event="chat-area.stop-propagation-12.click"
 						onClick={(e) => e.stopPropagation()}
 						style={{ maxWidth: 360 }}
 					>
@@ -4619,6 +4644,7 @@ export function ChatArea({
 							<button
 								type="button"
 								className="onboarding-next-btn"
+								data-usage-event="chat-area.set-show-no-auth-modal-13.click"
 								onClick={() => {
 									setShowNoAuthModal(false);
 									useAppStore.getState().setActiveApp("settings");

@@ -90,6 +90,7 @@ export function WorkspaceContextApp(props: WorkspaceContextAppProps) {
 				)}
 				<button
 					type="button"
+					data-usage-event="workspace-context-app.button-1.click"
 					onClick={() => void discover()}
 					data-testid="workspace-context-refresh"
 					disabled={state.kind === "loading" || !props.workspaceRoot}
@@ -157,6 +158,7 @@ export function WorkspaceContextApp(props: WorkspaceContextAppProps) {
 								<button
 									key={p.name}
 									type="button"
+									data-usage-event="workspace-context-app.button-2.click"
 									onClick={() => void enter(p.name)}
 									data-testid={`workspace-context-project-${p.name}`}
 									aria-current={
@@ -169,6 +171,7 @@ export function WorkspaceContextApp(props: WorkspaceContextAppProps) {
 							{inProject && (
 								<button
 									type="button"
+									data-usage-event="workspace-context-app.button-3.click"
 									onClick={() => void discover()}
 									data-testid="workspace-context-back-to-root"
 								>

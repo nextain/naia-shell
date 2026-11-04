@@ -930,6 +930,7 @@ export function RefAudioSection({
 								type="button"
 								className="voice-preview-btn"
 								disabled={previewState === "loading"}
+								data-usage-event="ref-audio-section.on-preview-active-1.click"
 								onClick={() => void onPreviewActive()}
 							>
 								{previewLabel}
@@ -938,6 +939,7 @@ export function RefAudioSection({
 								type="button"
 								className="voice-preview-btn"
 								disabled={busy}
+								data-usage-event="ref-audio-section.set-confirming-remove-2.click"
 								onClick={() => setConfirmingRemove(true)}
 							>
 								{S.removeBtn}
@@ -958,6 +960,7 @@ export function RefAudioSection({
 								type="button"
 								className="voice-preview-btn"
 								disabled={busy}
+								data-usage-event="ref-audio-section.on-remove-3.click"
 								onClick={() => void onRemove()}
 							>
 								{S.confirmYes}
@@ -965,6 +968,7 @@ export function RefAudioSection({
 							<button
 								type="button"
 								className="voice-preview-btn"
+								data-usage-event="ref-audio-section.set-confirming-remove-4.click"
 								onClick={() => setConfirmingRemove(false)}
 							>
 								{S.confirmNo}
@@ -993,6 +997,7 @@ export function RefAudioSection({
 								<button
 									type="button"
 									className="voice-preview-btn active"
+									data-usage-event="ref-audio-section.button-5.click"
 									onClick={() => finishRecording()}
 								>
 									{S.recordStop}
@@ -1003,6 +1008,7 @@ export function RefAudioSection({
 								<button
 									type="button"
 									className="voice-preview-btn"
+									data-usage-event="ref-audio-section.button-6.click"
 									onClick={cancelRecording}
 								>
 									{S.recordCancel}
@@ -1016,6 +1022,7 @@ export function RefAudioSection({
 								<button
 									type="button"
 									className="voice-preview-btn"
+									data-usage-event="ref-audio-section.on-preview-take-7.click"
 									onClick={onPreviewTake}
 								>
 									{takePlaying ? S.previewStop : S.previewBtn}
@@ -1024,6 +1031,7 @@ export function RefAudioSection({
 									type="button"
 									className="voice-preview-btn"
 									disabled={busy}
+									data-usage-event="ref-audio-section.button-8.click"
 									onClick={() => void applyRecordedTake()}
 								>
 									{busy ? S.uploading : isLocal ? S.takeApplyFree : S.takeApply}
@@ -1032,6 +1040,7 @@ export function RefAudioSection({
 									type="button"
 									className="voice-preview-btn"
 									disabled={busy}
+									data-usage-event="ref-audio-section.button-9.click"
 									onClick={discardTake}
 								>
 									{S.takeDiscard}
@@ -1043,6 +1052,7 @@ export function RefAudioSection({
 									type="button"
 									className="voice-preview-btn"
 									disabled={busy}
+									data-usage-event="ref-audio-section.start-recording-10.click"
 									onClick={() => void startRecording()}
 								>
 									{busy ? S.uploading : S.recordBtn}
@@ -1084,6 +1094,7 @@ export function RefAudioSection({
 						<div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
 							<select
 								value={genderFilter}
+								data-usage-event="ref-audio-section.set-gender-filter-11.select"
 								onChange={(e) => setGenderFilter(e.target.value)}
 								aria-label={S.presetFilterAll}
 							>
@@ -1130,6 +1141,7 @@ export function RefAudioSection({
 												<button
 													type="button"
 													className="voice-preview-btn"
+													data-usage-event="ref-audio-section.on-preview-preset-12.click"
 													onClick={() => void onPreviewPreset(p)}
 												>
 													{playingPresetId === p.id
@@ -1140,6 +1152,7 @@ export function RefAudioSection({
 													type="button"
 													className="voice-preview-btn"
 													disabled={busy || isActive}
+													data-usage-event="ref-audio-section.on-apply-preset-13.click"
 													onClick={() => void onApplyPreset(p)}
 												>
 													{S.presetApply}
@@ -1174,6 +1187,7 @@ export function RefAudioSection({
 										type="button"
 										className="voice-preview-btn"
 										data-testid="ref-audio-engine-start"
+										data-usage-event="ref-audio-section.set-local-engine-14.click"
 										onClick={async () => {
 											if (await ensureLocalVoiceReady()) {
 												setLocalEngine("ready");

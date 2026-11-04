@@ -52,6 +52,7 @@ export function SlidesStatus({
 						type="button"
 						className="slides-app__focus-button"
 						data-testid="slides-cancel-import"
+						data-usage-event="slides-status.on-cancel-import-1.click"
 						onClick={onCancelImport}
 					>
 						{t("slides.cancelImport")}
