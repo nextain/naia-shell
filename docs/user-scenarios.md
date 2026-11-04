@@ -2591,3 +2591,10 @@ P02 Test Coverage Map: scripts/__tests__/installer-instance.test.ts가 기본/pr
 | UC | Test Coverage Map | 검증 |
 |---|---|---|
 | UC-B2C-026-R14 | packages/shell/scripts/__tests__/installer-instance.test.ts; packages/shell/scripts/stage-runtime.mjs; .github/workflows/build-installers.yml | prod 기본·dev 주소와 이름·오입력 거절·창 옵션 보존·CI 연결 |
+
+## UC-B2C-026-R15 — Linux 설치 미디어 및 개발판 묶음 (#792)
+Linux 사용자는 온보딩 NVA 영상이 실패해도 정지 그림을 보고 입력을 계속한다. AppImage는 호스트와 섞이지 않는 GStreamer 플러그인·scanner·환경 hook을 포함한다.
+
+| UC | Test Coverage Map | 검증 |
+|---|---|---|
+| UC-B2C-026-R15 | packages/shell/scripts/__tests__/linux-media.test.ts; packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx; packages/shell/src/components/__tests__/ResilientVideo.test.tsx; packages/shell/e2e/onboarding-fresh.spec.ts | 옵션·CI 플러그인 검사, 정상/오류/무응답/모델 전환, 360·1100px 정지 그림·키보드 입력. 빈 모델은 기존 오류 상태, 목록·저장 변경 없음. Rust 변경 없음. |

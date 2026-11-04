@@ -127,7 +127,8 @@ jobs:
           sudo apt-get install -y \
              libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
              libasound2-dev libssl-dev libxdo-dev libudev-dev \
-             pipewire-alsa xvfb rpm
+             pipewire-alsa xvfb rpm \
+             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-tools
           sudo apt-get install -y libarchive-tools
 
       - name: Assert macOS runner architecture
@@ -900,6 +901,7 @@ jobs:
             "$EXTRACTED_APPIMAGE" --appimage-extract >/dev/null
           )
           test -x "$EXTRACTED/squashfs-root/AppRun"
+          node packages/shell/scripts/verify-appimage-media.mjs "$EXTRACTED/squashfs-root"
           find "$EXTRACTED/squashfs-root" -type f -name 'naia-shell' -perm -111 -print -quit | grep -q .
           find "$EXTRACTED/squashfs-root" -type f -name 'node' -perm -111 -print -quit | grep -q .
 

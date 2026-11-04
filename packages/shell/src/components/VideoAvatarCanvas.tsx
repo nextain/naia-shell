@@ -41,8 +41,10 @@ function clampNvaZoom(value: number): number {
 	return Math.min(MAX_NVA_ZOOM, Math.max(MIN_NVA_ZOOM, value));
 }
 function normalizeNvaZoom(value: unknown): number {
-	return typeof value === "number" && Number.isFinite(value) &&
-		value >= MIN_NVA_ZOOM && value <= MAX_NVA_ZOOM
+	return typeof value === "number" &&
+		Number.isFinite(value) &&
+		value >= MIN_NVA_ZOOM &&
+		value <= MAX_NVA_ZOOM
 		? value
 		: 1;
 }
@@ -111,7 +113,8 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 						zoomRef.current === 1 ? undefined : zoomRef.current,
 				}),
 			getGestureActions: () => rendererRef.current?.getGestureActions() ?? [],
-			playAction: (key) => rendererRef.current?.playAction(key) ?? Promise.resolve(false),
+			playAction: (key) =>
+				rendererRef.current?.playAction(key) ?? Promise.resolve(false),
 		});
 		return () => clearCameraActions();
 	}, []);
@@ -122,7 +125,9 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		let saveTimer: ReturnType<typeof setTimeout> | undefined;
 		const onWheel = (event: WheelEvent) => {
 			event.preventDefault();
-			getCameraActions().zoom(event.deltaY < 0 ? NVA_ZOOM_STEP : -NVA_ZOOM_STEP);
+			getCameraActions().zoom(
+				event.deltaY < 0 ? NVA_ZOOM_STEP : -NVA_ZOOM_STEP,
+			);
 			if (saveTimer) clearTimeout(saveTimer);
 			saveTimer = setTimeout(() => getCameraActions().save(), 180);
 		};
@@ -200,6 +205,14 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				return url;
 			},
 			onSpeaking: (speaking) => useAvatarStore.getState().setSpeaking(speaking),
+			onPlaybackFailure: (reason) => {
+				setError(reason);
+				setMode("error");
+				setLoaded(false);
+				useCascadeAvatarStore.getState().setNvaLoadError(reason);
+				if (useCascadeAvatarStore.getState().renderer === renderer)
+					useCascadeAvatarStore.getState().setRenderer(null);
+			},
 		});
 		renderer.start(video, canvas);
 		rendererRef.current = renderer;
@@ -240,13 +253,32 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			<video
 				ref={setVideo}
 				playsInline
-				style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+				style={{
+					position: "absolute",
+					width: 1,
+					height: 1,
+					opacity: 0,
+					pointerEvents: "none",
+				}}
 			/>
 			<canvas
 				ref={setCanvas}
 				data-video-avatar-prebaked
 				style={{ ...VIDEO_STYLE, transform: videoTransform(pan, zoom) }}
 			/>
+			{mode === "error" && (
+				<img
+					data-video-avatar-fallback
+					src="/avatars/Naia.webp"
+					alt="Naia"
+					style={{
+						...VIDEO_STYLE,
+						position: "absolute",
+						pointerEvents: "none",
+						transform: videoTransform(pan, zoom),
+					}}
+				/>
+			)}
 			{mode !== "prebaked" && (
 				<output data-video-avatar-status={mode} aria-live="polite">
 					{mode === "loading"

@@ -1534,3 +1534,7 @@ CSS viewport 274px에서 입력·보내기 경계가 화면 안에 있어야 한
 
 ## FR-B2C-026-R14 — dev installer 선택 (#792)
 P03: dispatch instance는 prod(기본)/dev choice. push는 prod. dev 빌드는 VITE_NAIA_USE_DEV_GATEWAY=1, VITE_NAIA_WEB_BASE_URL=https://dev.naia.land, VITE_NAIA_DEV_GATEWAY_URL=https://api-dev.naia.land를 고정한다. prod는 기존 운영 URL을 명시하여 로컬 env 유입을 막는다. Naia-dev 설치 이름/창 제목과 dev artifact suffix를 사용하고 기존 창 옵션을 보존한다. Windows smoke/제거 및 macOS Universal 경로는 선택된 이름을 따른다. 전체 데이터 격리는 별도 범위이며 동시 운영판 사용은 인수 전 금지 권고. 상태: Done(서버 빌드 선택 slice). P04: instance/설치 집중81개 및 Shell 전체2701pass/21skip, dev production build/budget, 타입/추적/YAML 검사 통과. P05: 실 installer·4060 dev 계정·공존 격리는 별도 Pending.
+
+## FR-B2C-026-R15 — Linux 설치 안정성 (#792)
+- FR-B2C-026-R15.1 Done: AppImage bundleMediaFramework 활성화, Ubuntu base/good 플러그인과 scanner, GST_PLUGIN_(SYSTEM_)PATH_1_0 및 scanner hook 검사.
+- FR-B2C-026-R15.2 Done: NVA 재생 오류·시작 무응답은 유한 시간 뒤 정지 그림으로 전환하고 입력을 보존. 깨진 영상을 재시도하거나 src 제거/load로 동기 teardown 하지 않는다.

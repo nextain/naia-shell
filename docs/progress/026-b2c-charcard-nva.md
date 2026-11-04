@@ -310,3 +310,13 @@ Shell 전체 2693pass/21skip(255파일pass/1skip,249.80초), CI smoke 판정 단
 헌장 불변 지시로 process-status.json은 수정하지 않고 이 ledger에 P 상태를 남긴다. 기존 root 위반3건 및 C conform regions 빈 상태/Shell 전체 파일 계약 검출 갭은 남아 있다. 운영 접근·push·다른 작업자 checkout 변경 없음. 컴포넌트/CSS/Rust/IPC 변경은 없고 native 창 제목은 생성 conf 단위로 검증한다. Windows/macOS/GPU 실기와 CI installer 생성은 별도 인수다.
 
 P04/P05 최종(서버 slice Done): instance8개·Universal/platform 집중81개 PASS, Shell 전체 **2701pass/21skip/실패0**,256파일pass/1skip,228.74초(`tmp/r14-shell-final.log`). 첫 전체는 기존 고정 이름 macOS/Steam 시험2fail/2699pass/21skip(`r14-shell-before-test-update.log`), 기대값 갱신 후 전체 재통과했다. dev Vite production build/budget·빌드 자산 dev URL 포함 확인·생성 conf 증거(`r14-dev-build.log`, `r14-built-hosts.log`, `r14-conf-evidence.json`). core/Shell/BGM/tmp exact paired Agent tsc·integrity·core70 anchors·logging·assembly·UC trace PASS. actionlint 미설치라 미실행, Python YAML parse/default/options PASS(`r14-yaml.log`). 모든 증거 기준 경로는 `/home/nextain/work/codex-runs/026-b2c/tmp/`. 실 installer 생성·기기·계정·서명 및 완전한 공존 격리는 Pending. 원격 push 없음.
+
+## r15 — 2026-11-04 Linux installer 안정성 (#792 P01–P05)
+
+P01/P02: UC-B2C-026-R15, P03: FR-B2C-026-R15.1~3.
+
+AppImage 미디어 설정은 기본 conf가 아니라 `platform-matrix.json` Linux installer 행이 소유한다. `bundleMediaFramework:false` 때문에 gst 공유 라이브러리만 들어가고 appsink 플러그인은 없었다. true 및 Ubuntu base/good 패키지를 사용한다. Tauri 공식 GStreamer plugin이 `usr/lib/gstreamer-1.0`, scanner, AppRun의 GST_PLUGIN_(SYSTEM_)PATH_1_0/GST_PLUGIN_SCANNER_1_0를 설치하며 CI가 추출한 실제 파일·hook을 검사한다. 공식 근거: https://tauri.app/distribute/appimage/ 및 https://github.com/tauri-apps/linuxdeploy-plugin-gstreamer/blob/master/linuxdeploy-plugin-gstreamer.sh .
+
+온보딩 NVA/배경은 재생 거부·error·8초 시작 무응답에서 번들 정지 그림으로 전환하고 입력을 유지한다. 영상 src reset/load 제거; 썸네일 정상 capture는 유지하되 media element를 그대로 둔다. 렌더러는 실패 때 RAF·재시도를 중단하고 실패 미디어를 즉시 제거하지 않는다. 이미 네이티브 메인 스레드가 교착한 뒤 JS 타이머로 복구할 수 있다는 주장은 하지 않는다.
+
+P04 증거: 실행 폴더 tmp/r15-media-red.log (수정 전 4실패), r15-artifact-media-red.log (실제 41746492463 AppImage libgstapp.so 부재), r15-plugin-stage.log (공식 plugin 실배포), r15-gst-probe.log (격리 AppDir에서 5개 element 탐색 및 실제 VP9 WebM→appsink 디코드). 브라우저·전체 Shell 최종 결과는 result.md 및 후속 기록 참조. 변경 후 새 전체 installer를 CI에서 생성하거나 Bazzite 실기로 인수한 증거는 아니다.

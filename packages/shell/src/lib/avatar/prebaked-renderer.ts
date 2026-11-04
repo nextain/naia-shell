@@ -1,3 +1,4 @@
+import { Logger } from "../logger";
 import { type NvaManifest, defaultClipOf, findPrebakedSpeech } from "../nva";
 import type {
 	AvatarPlaybackOptions,
@@ -19,6 +20,7 @@ interface Config {
 	locale: string;
 	resolveAssetUrl: (path: string) => Promise<string>;
 	onSpeaking?: (speaking: boolean) => void;
+	onPlaybackFailure?: (reason: string) => void;
 }
 
 /** contain-fit draw rect (source aspect preserved, letterboxed within target). */
@@ -69,6 +71,16 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
+	private playbackTimers = new Set<ReturnType<typeof setTimeout>>();
+	private mediaFailed = false;
+
+	private failMedia(reason: string): void {
+		if (this.disposed || this.mediaFailed) return;
+		this.mediaFailed = true;
+		Logger.warn("PrebakedAvatarRenderer", "media fallback", { reason });
+		this.stop(true);
+		this.config.onPlaybackFailure?.(reason);
+	}
 
 	constructor(private readonly config: Config) {
 		this.motionSpec = parseMotionSpec(config.manifest);
@@ -205,7 +217,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				this.config.manifest.animations.talking?.clip ??
 				this.config.manifest.animations.speak?.clip ??
 				defaultClipOf(this.config.manifest).video;
-			void this.playClip(clip, true, true, undefined, generation, false);
+			void this.playClip(clip, true, true, undefined, generation, false).catch(
+				() => {},
+			);
 		} else {
 			void this.playIdle();
 		}
@@ -244,7 +258,25 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		video.muted = muted;
 		if (!resumePosition) video.currentTime = 0;
 		if (loop) {
-			await video.play();
+			await new Promise<void>((resolve, reject) => {
+				const finish = (reason?: string) => {
+					clearTimeout(timer);
+					this.playbackTimers.delete(timer);
+					if (reason) {
+						this.failMedia(reason);
+						reject(new Error(reason));
+					} else resolve();
+				};
+				const timer = setTimeout(
+					() => finish("NVA playback start timeout"),
+					8000,
+				);
+				this.playbackTimers.add(timer);
+				video.play().then(
+					() => finish(),
+					() => finish("NVA playback rejected"),
+				);
+			});
 			return;
 		}
 		await new Promise<void>((resolve, reject) => {
@@ -304,6 +336,13 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			video.style.cssText = mounted.style.cssText;
 			mounted.parentNode?.insertBefore(video, mounted.nextSibling);
 		}
+		video.addEventListener(
+			"error",
+			() => {
+				if (video.loop) this.failMedia("NVA decoder error");
+			},
+			{ once: true },
+		);
 		video.src = url;
 		video.dataset.naiaClipUrl = url;
 		this.clipVideos.set(url, video);
@@ -320,7 +359,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			undefined,
 			generation,
 			true,
-		).catch(() => {});
+		).catch(() => this.failMedia("NVA idle playback failed"));
 	}
 
 	private ensureOffscreen(
@@ -425,8 +464,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		void this.playIdle();
 	}
 
-	stop(): void {
+	stop(preserveMedia = false): void {
 		this.disposed = true;
+		for (const timer of this.playbackTimers) clearTimeout(timer);
+		this.playbackTimers.clear();
 		this.running = false;
 		if (this.raf) cancelAnimationFrame(this.raf);
 		this.raf = 0;
@@ -437,12 +478,12 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.interrupt();
 		for (const v of this.clipVideos.values()) {
 			v.pause();
-			if (v !== this.mountedVideo) v.remove();
+			if (!preserveMedia && v !== this.mountedVideo) v.remove();
 		}
-		this.clipVideos.clear();
+		if (!preserveMedia) this.clipVideos.clear();
 		this.video?.pause();
 		this.video = null;
-		this.mountedVideo = null;
+		if (!preserveMedia) this.mountedVideo = null;
 		this.canvas = null;
 		this.ctx = null;
 	}
