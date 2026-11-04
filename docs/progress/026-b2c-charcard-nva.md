@@ -320,3 +320,12 @@ AppImage 미디어 설정은 기본 conf가 아니라 `platform-matrix.json` Lin
 온보딩 NVA/배경은 재생 거부·error·8초 시작 무응답에서 번들 정지 그림으로 전환하고 입력을 유지한다. 영상 src reset/load 제거; 썸네일 정상 capture는 유지하되 media element를 그대로 둔다. 렌더러는 실패 때 RAF·재시도를 중단하고 실패 미디어를 즉시 제거하지 않는다. 이미 네이티브 메인 스레드가 교착한 뒤 JS 타이머로 복구할 수 있다는 주장은 하지 않는다.
 
 P04 증거: 실행 폴더 tmp/r15-media-red.log (수정 전 4실패), r15-artifact-media-red.log (실제 41746492463 AppImage libgstapp.so 부재), r15-plugin-stage.log (공식 plugin 실배포), r15-gst-probe.log (격리 AppDir에서 5개 element 탐색 및 실제 VP9 WebM→appsink 디코드). 브라우저·전체 Shell 최종 결과는 result.md 및 후속 기록 참조. 변경 후 새 전체 installer를 CI에서 생성하거나 Bazzite 실기로 인수한 증거는 아니다.
+
+### r15 개발판 가지와 Vosk (#792 P01–P05)
+`build/026-dev-store`는 별도 구현 가지가 아니라 같은 `4e8e211b8ba8fe3f53f7291f9d4e56c5a4612b84`를 dev instance로 빌드하는 목적의 가지다. 제공 CI 41746492463(feat/prod 성공)·41753880291(build/dev 실패)의 headSha가 동일하다. r14의 instance 선택이 productName을 Naia→Naia-dev로 바꾼다. `src-tauri/build.rs:279` 및 STT plugin build.rs의 link path `$ORIGIN/../lib/Naia`는 이름이 고정되어 있다. 운영 CI는 `usr/lib/Naia/libvosk.so`에서 찾지만 개발판은 `usr/lib/Naia-dev`에 리소스를 배치하므로 linuxdeploy의 첫 DT_NEEDED 탐색에서 실패한다.
+
+`stage-runtime.mjs`의 `linuxBundleEnv`는 `invalidateVoskBuildCache`가 재생성·검사한 resources 디렉터리를 LD_LIBRARY_PATH 맨 앞에 넣고 기존 비어 있지 않은 경로를 보존한다. Tauri/linuxdeploy 자식에만 전달하며 다른 OS는 빈 override다. AppImage에서 linuxdeploy가 libvosk.so를 usr/lib에 배포하고 실행 파일 RPATH를 조정하는 경로를 유지한다. Rust 링크 코드 자체는 바꾸지 않았다. 이 고침은 개발판 .deb를 네이티브 기동까지 인수했다는 뜻이 아니며, 그 형식의 고정 Naia RPATH는 후속 설치 인수에서 확인해야 한다.
+
+P04: tmp/r15-vosk-test-red.log 2실패→r15-linux-green.log 5통과; 최종 packaging 65통과. tmp/r15-linuxdeploy-vosk.log는 같은 SONAME/RPATH를 가진 실제 gcc ELF probe와 실제 Tauri 배포 linuxdeploy로 prod 수정 전 성공/dev 수정 전 실패, 수정 후 둘 다 성공·번들 libvosk.so 및 LD_LIBRARY_PATH 없이 실행을 확인한다. 전체 설치 앱 실행 증거와 구분한다.
+
+최종 P04/P05: Shell 전체 **2710통과/21제외/0실패**, 259파일통과/1제외 (`tmp/r15-shell-complete.log`); browser **9/9** (`tmp/r15-browser-complete.log`); 최종 production build/budget·core/Shell/BGM/exact Agent typecheck·logging·UC trace PASS. 시각 검토: 360/1100px 정지 그림이 있어도 온보딩 폼·이름 입력·다음 버튼 유지, 가로 넘침 없음. 결과 문서에서 Bazzite/새 installer 실기와 분리한다.

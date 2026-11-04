@@ -1538,3 +1538,4 @@ P03: dispatch instance는 prod(기본)/dev choice. push는 prod. dev 빌드는 V
 ## FR-B2C-026-R15 — Linux 설치 안정성 (#792)
 - FR-B2C-026-R15.1 Done: AppImage bundleMediaFramework 활성화, Ubuntu base/good 플러그인과 scanner, GST_PLUGIN_(SYSTEM_)PATH_1_0 및 scanner hook 검사.
 - FR-B2C-026-R15.2 Done: NVA 재생 오류·시작 무응답은 유한 시간 뒤 정지 그림으로 전환하고 입력을 보존. 깨진 영상을 재시도하거나 src 제거/load로 동기 teardown 하지 않는다.
+- FR-B2C-026-R15.3 Done: Linux 설치 빌드 자식 환경의 LD_LIBRARY_PATH에 검증된 Vosk resources 경로를 추가하고 기존 경로 보존. dev/prod 동일 적용. 실제 ELF 및 linuxdeploy 전후 검증.

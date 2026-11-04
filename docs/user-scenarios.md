@@ -2598,3 +2598,10 @@ Linux 사용자는 온보딩 NVA 영상이 실패해도 정지 그림을 보고 
 | UC | Test Coverage Map | 검증 |
 |---|---|---|
 | UC-B2C-026-R15 | packages/shell/scripts/__tests__/linux-media.test.ts; packages/shell/src/components/__tests__/VideoAvatarCanvas.test.tsx; packages/shell/src/components/__tests__/ResilientVideo.test.tsx; packages/shell/e2e/onboarding-fresh.spec.ts | 옵션·CI 플러그인 검사, 정상/오류/무응답/모델 전환, 360·1100px 정지 그림·키보드 입력. 빈 모델은 기존 오류 상태, 목록·저장 변경 없음. Rust 변경 없음. |
+
+### UC-B2C-026-R15 — 개발판 Vosk 묶음 보강
+개발판 설치 빌드는 productName=Naia-dev여도 검증된 Vosk를 탐색해 Linux 산출물을 만든다.
+
+| UC | Test Coverage Map | 검증 |
+|---|---|---|
+| UC-B2C-026-R15 | packages/shell/scripts/__tests__/linux-vosk.test.ts; packages/shell/scripts/__tests__/platform-matrix.test.ts | 실제 ELF DT_NEEDED 탐색 실패→성공, prod/dev·공백 경로·기존 환경 보존·다른 OS 무변경, core build→Tauri 환경 전달 순서. 실 linuxdeploy prod 성공/dev 실패→둘 다 성공은 실행 결과 참조. |

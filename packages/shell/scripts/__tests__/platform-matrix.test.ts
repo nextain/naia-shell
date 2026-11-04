@@ -932,7 +932,7 @@ describe("clean-checkout build order", () => {
 		);
 		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT, coreEnv)');
 		const preserveNativeRuntime = source.indexOf(
-			'const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1" }',
+			'const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1",',
 		);
 		const tauriBuild = source.indexOf(
 			'"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json"',
