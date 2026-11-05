@@ -110,6 +110,9 @@ test.describe("UC-NVA-PREBAKED - GPU-free Shell video avatar", () => {
 		expect(videoBox?.width).toBeGreaterThan(0);
 		expect(videoBox?.height).toBeGreaterThan(0);
 		await expect(page.locator("[data-video-avatar-status]")).toHaveCount(0);
+		// The control bar lives in the chat header, not over the avatar.
+		await expect(page.locator(".chat-header .ai-control-bar")).toBeVisible();
+		await expect(page.locator(".naia-overlay > .ai-control-bar")).toHaveCount(0);
 		await page.getByRole("button", { name: "Avatar controls" }).click();
 		await expect(
 			page.getByRole("button", { name: "Drag to rotate avatar" }),
