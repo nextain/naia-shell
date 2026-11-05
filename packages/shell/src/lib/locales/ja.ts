@@ -247,6 +247,7 @@ export default {
 	"chat.answerFailed.lead": "回答を作れませんでした。もう一度試しますか?",
 	"chat.answerFailed.retry": "もう一度",
 	"chat.answerFailed.detailsLabel": "詳細",
+	"chat.dockRight": "右側",
 	"chat.error": "エラー",
 	"chat.wireError.provider": "AIモデル接続を確認してください。",
 	"chat.wireError.discord": "Discordの接続と権限を確認してください。",

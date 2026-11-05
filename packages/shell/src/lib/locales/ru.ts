@@ -247,6 +247,7 @@ export default {
 	"chat.answerFailed.lead": "Не удалось составить ответ. Попробовать ещё раз?",
 	"chat.answerFailed.retry": "Повторить",
 	"chat.answerFailed.detailsLabel": "Подробности",
+	"chat.dockRight": "Справа",
 	"chat.error": "Ошибка",
 	"chat.wireError.provider": "Проверьте подключение к ИИ-модели.",
 	"chat.wireError.discord": "Проверьте подключение и разрешения Discord.",

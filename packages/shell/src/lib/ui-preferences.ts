@@ -5,6 +5,7 @@ import { loadConfig, saveConfig } from "./config";
 /** Stable names used inside AppConfig.uiPreferences. */
 export const UI_PREFERENCE_KEYS = {
 	chatMode: "chatMode",
+	chatSide: "chatSide",
 	workspaceRailCollapsed: "workspaceRailCollapsed",
 	avatarCamera: "avatarCamera",
 	nvaPan: "nvaPan",

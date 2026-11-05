@@ -247,6 +247,7 @@ export default {
 	"chat.answerFailed.lead": "没能生成回答。要再试一次吗?",
 	"chat.answerFailed.retry": "重试",
 	"chat.answerFailed.detailsLabel": "详细信息",
+	"chat.dockRight": "右侧",
 	"chat.error": "错误",
 	"chat.wireError.provider": "请检查 AI 模型连接。",
 	"chat.wireError.discord": "请检查 Discord 连接和权限。",

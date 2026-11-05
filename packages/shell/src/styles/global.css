@@ -1553,6 +1553,35 @@ body.resizing-col .naia-work-rail::before {
 	display: none;
 }
 
+/* ── CHAT SIDE · right ─────────────────────────────────────────────────────
+   대화 열(AI 바·대화창)을 오른쪽으로, 앱 영역(앱바)을 왼쪽으로 바꾼다.
+   아바타 층(.avatar-canvas-layer)은 화면 전체라 그림 자리는 그대로다. */
+.app-root[data-chat-side="right"] .naia-overlay {
+	left: auto;
+	right: 0;
+}
+.app-root[data-chat-side="right"] .naia-work-rail {
+	left: auto;
+	right: calc(var(--naia-width, 320px) - 6px);
+}
+.app-root[data-chat-side="right"] .app-layout {
+	left: 0 !important;
+	right: var(--naia-width, 320px);
+}
+.app-root[data-chat-side="right"][data-ui-mode="workspace"][data-rail-collapsed="true"]
+	.app-layout {
+	right: 0;
+}
+.app-root[data-chat-side="right"][data-ui-mode="workspace"]
+	.naia-chat-wrapper {
+	border-right: none;
+	border-left: 1px solid var(--glass-border, rgba(100, 160, 255, 0.18));
+}
+.app-root[data-chat-side="right"] .ws-rail-toggle {
+	left: auto;
+	right: calc(var(--naia-width) - 13px);
+}
+
 /* Rail collapse / expand floating toggle (sits at the rail boundary) */
 .ws-rail-toggle {
 	position: fixed;
