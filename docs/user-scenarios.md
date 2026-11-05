@@ -387,6 +387,7 @@ Naia 계정에서 의도적으로 퇴역된 id(#670 선택기 축소, #603)인 �
 | UC | 단위/계약 | UI 통합 |
 |---|---|---|
 | UC-NVA-CAMERA-GESTURE-1022 (0.2.5) | `packages/shell/src/components/__tests__/AiControlBar.test.tsx`: 조작 접기·펼치기와 확대·축소, `shows accessible AI and TTS icons with an off slash`의 인공지능·음성 꺼짐 빗금 | T10 직접 시험: 윈도우 2070·4060, 리눅스 각각; 인공지능·음성 각각 켜고 끄며 그림 확인; `packages/shell/e2e/nva-prebaked.spec.ts` 확대·축소·초기화 |
+| UC-FIX-024-I1 | `packages/shell/src-tauri/tests/async_window_commands.rs`: 창을 만드는 Tauri 명령이 모두 async 인지 소스에서 검사(WebView2 교착 방지) | `packages/shell/e2e-tauri/specs/app-store-window.spec.ts`: 윈도우에서 스토어 창 하나를 열고 다시 앞으로 가져온 뒤 닫는 동안 주 창이 응답; 직접 시험: 윈도우 2070·4060 |
 | UC-025-01 | T1: `packages/shell/src/components/__tests__/BgmPlayer.test.tsx` 자막 기본·전환·저장 | `packages/shell/e2e/nva-prebaked.spec.ts` 좁은 화면; T1 직접 시험: 윈도우 2070·4060, 리눅스 |
 | UC-025-02 | T2: `packages/shell/src/components/__tests__/BgmPlayer.test.tsx` 키 입력·연속 이동·입력칸 제외 | T2 직접 시험: 윈도우 2070·4060, 리눅스 |
 | UC-025-03 | T3: `packages/shell/src/apps/projects/__tests__/ProjectsApp.test.tsx` 이름·기존 화면 | T3 직접 시험: 윈도우 2070·4060, 리눅스 |
