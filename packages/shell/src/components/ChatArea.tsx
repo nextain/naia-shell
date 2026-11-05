@@ -466,7 +466,8 @@ export async function loadOrCreateSession(): Promise<void> {
 
 export function ChatArea({
 	variant = "floating",
-}: { variant?: ChatVariant } = {}) {
+	headerControls,
+}: { variant?: ChatVariant; headerControls?: ReactNode } = {}) {
 	const [input, setInput] = useState("");
 	type OutputStage = "thinking" | "tts" | "render" | null;
 	const [outputStage, setOutputStage] = useState<OutputStage>(null);
@@ -4379,6 +4380,7 @@ export function ChatArea({
 							</span>
 						</button>
 					</div>
+					{headerControls}
 					<div className="chat-header-right">
 						{totalSessionCost > 0 &&
 							provider !== "ollama" &&

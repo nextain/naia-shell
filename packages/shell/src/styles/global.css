@@ -6821,6 +6821,42 @@ body.resizing-row {
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
 }
 
+/* Inside the chat header the bar sits between the tabs and the new-chat button */
+.chat-header .ai-control-bar {
+	flex: 1 1 auto;
+	flex-wrap: nowrap;
+	justify-content: flex-start;
+	min-width: 0;
+	max-width: none;
+	margin: 0 6px;
+	padding: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+	background: none;
+	border: none;
+	box-shadow: none;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+
+.chat-header .ai-control-bar .bgm-ai-toggle {
+	color: var(--cream-dim);
+	border-color: var(--espresso-light);
+}
+
+.chat-header .ai-control-bar .bgm-ai-toggle:hover {
+	color: var(--cream);
+}
+
+.chat-header .ai-control-bar .bgm-ai-toggle--active {
+	color: var(--cream);
+	border-color: rgba(52, 211, 153, 0.62);
+}
+
+.chat-header .ai-control-bar__sep {
+	background: var(--espresso-light);
+}
+
 .ai-control-bar__sep {
 	width: 1px;
 	height: 14px;
