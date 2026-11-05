@@ -55,6 +55,7 @@ scripts/builds/uc1-graft-snippet.js
 packages/*/node_modules
 packages/*/dist
 packages/shell/dist-slides/
+packages/shell/dist-charcard/
 packages/shell/src-tauri/target
 # cargo 산출물 디렉터리 변형(target-e2e 등) — 'target' 한 줄로는 걸러지지 않는다
 packages/shell/src-tauri/target-*/

@@ -189,6 +189,20 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(inst.windows.wix.componentRefs).toEqual(["NaiaCleanAppDataAnchor"]);
 	});
 
+	it("NSIS stops only installation-tree processes before install and uninstall", () => {
+		const hooks = readFileSync(resolve(SHELL, "src-tauri/windows/installer-hooks.nsh"), "utf8");
+		const stop = readFileSync(resolve(SHELL, "src-tauri/windows/stop-installed-processes.ps1"), "utf8");
+		for (const name of ["NSIS_HOOK_PREINSTALL", "NSIS_HOOK_PREUNINSTALL"]) {
+			const body = hooks.split(`!macro ${name}\n`)[1]?.split("!macroend")[0];
+			expect(body).toContain("!insertmacro StopInstalledProcesses");
+		}
+		expect(hooks).toContain('!define NAIA_HOOK_DIR "${__FILEDIR__}"');
+		expect(stop).toContain("TrimEnd('\\') + '\\'");
+		expect(stop).toContain("StartsWith($root, [StringComparison]::OrdinalIgnoreCase)");
+		expect(stop).toContain("$process.ProcessId -eq $installerPid");
+		expect(stop).toContain("Wait-Process");
+	});
+
 	it("createUpdaterArtifacts=false — 매트릭스 공통이 유일 소유", () => {
 		expect(matrix.common.createUpdaterArtifacts).toBe(false);
 		expect(matrix.os.win32.createUpdaterArtifacts).toBe(true);

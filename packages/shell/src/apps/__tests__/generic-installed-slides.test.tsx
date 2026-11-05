@@ -11,11 +11,25 @@ vi.mock("../../lib/slides-host-bridge", () => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn(),
+	invoke: vi.fn().mockResolvedValue(undefined),
 	convertFileSrc: (path: string) =>
 		`asset://localhost/${encodeURIComponent(path)}`,
 }));
 afterEach(cleanup);
+
+describe("installed app permission boundary", () => {
+ it("rejects an iframe ask without permission and returns the error to that frame", () => {
+  const App = createGenericInstalledApp("/apps/example/index.html", [], "example.app", []);
+  render(<App naia={{} as NaiaContextBridge} />);
+  const frame = screen.getByTitle("App") as HTMLIFrameElement;
+  const post = vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
+  const ask = vi.fn(); window.addEventListener("naia:installed-app:ask", ask);
+  window.dispatchEvent(new MessageEvent("message", {source: frame.contentWindow, origin: "http://asset.localhost", data: {type: "naia-app:ask", appId: "example.app", id: "req", prompt: "hello"}}));
+  expect(ask).not.toHaveBeenCalled();
+  expect(post).toHaveBeenCalledWith({type: "naia-app:response", id: "req", text: "", error: "permission_denied"}, "http://asset.localhost");
+  window.removeEventListener("naia:installed-app:ask", ask);
+ });
+});
 
 describe("installed Slides fullscreen delegation", () => {
 	it("binds the host bridge to the exact converted frame URL", async () => {
