@@ -1,3 +1,5 @@
+import { isKioskDemo } from "../kiosk-demo/flag";
+import { handleKioskMemoryCommand } from "../kiosk-demo/memory";
 import { Logger } from "../logger";
 import { getAgentBridge } from "./agent-bridge";
 import { COMMAND_TABLE, STUB_RESPONSES } from "./command-table";
@@ -19,14 +21,33 @@ export async function routeCommand(
 	_options?: unknown,
 ): Promise<unknown> {
 	const classification = COMMAND_TABLE[cmd];
+	if (
+		isKioskDemo() &&
+		[
+			"memory_get_all_facts",
+			"memory_export_backup",
+			"memory_import_backup",
+			"memory_delete_fact",
+		].includes(cmd)
+	) {
+		Logger.debug("KioskMemory", "command", { cmd });
+		return handleKioskMemoryCommand(cmd, args);
+	}
 
 	if (classification === "web") {
-		if (cmd === "workspace_read_file" || cmd === "workspace_read_file_bytes" || cmd === "workspace_file_size") {
+		if (
+			cmd === "workspace_read_file" ||
+			cmd === "workspace_read_file_bytes" ||
+			cmd === "workspace_file_size"
+		) {
 			const path = (args as { path?: unknown })?.path;
-			if (typeof path !== "string") throw new Error("web_workspace_invalid_path");
+			if (typeof path !== "string")
+				throw new Error("web_workspace_invalid_path");
 			const file = await getWebWorkspaceFile(path);
 			if (cmd === "workspace_file_size") return file.size;
-			return cmd === "workspace_read_file" ? file.text() : Array.from(new Uint8Array(await file.arrayBuffer()));
+			return cmd === "workspace_read_file"
+				? file.text()
+				: Array.from(new Uint8Array(await file.arrayBuffer()));
 		}
 		if (cmd === "plugin:event|listen") {
 			return handleEventListen(

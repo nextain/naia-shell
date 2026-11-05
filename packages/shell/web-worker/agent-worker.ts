@@ -9,7 +9,7 @@ import {
 	startBrowserAgent,
 } from "@naia-agent/composition/browser-agent.js";
 import type { DiagnosticLog, ProviderPort } from "@naia-agent/ports/uc1.js";
-import { makeOpenAICompatProvider } from "./openai-compat-provider";
+import { isKioskDemo } from "../src/lib/kiosk-demo/flag";
 import { WEB_ADK_PATH } from "../src/lib/web-runtime/web-adk-path";
 import {
 	WEB_LLM_MODEL_ID,
@@ -26,8 +26,10 @@ import {
 	resolveWebChatTurnEnableThinking,
 	wrapEngineWithEnableThinking,
 } from "./agent-port-relay";
-import { makeOpfsReadFs } from "./opfs-read-fs";
 import { webGatewayBaseUrl } from "./gateway-url";
+import { startKioskBrowserAgent } from "./kiosk-browser-agent";
+import { makeOpenAICompatProvider } from "./openai-compat-provider";
+import { makeOpfsReadFs } from "./opfs-read-fs";
 
 const diag: DiagnosticLog = {
 	log(message: string, ctx?: unknown) {
@@ -246,7 +248,10 @@ self.addEventListener("message", (event: MessageEvent) => {
 
 		const snapshotFs = makeSnapshotFs(() => snapshot);
 
-		startBrowserAgent({
+		const startAgent = isKioskDemo()
+			? startKioskBrowserAgent
+			: startBrowserAgent;
+		startAgent({
 			port: channel.port2,
 			diag,
 			provider,

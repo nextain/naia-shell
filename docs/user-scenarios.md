@@ -2529,3 +2529,16 @@ Test Coverage Map (P02)
 | 좁은 폭 | Playwright 실 컴포넌트와 CSS, 360px: 주요 버튼·상태·구독 정보의 가로 넘침 검사 |
 
 P04 증거는 `/home/nextain/work/codex-runs/824-i18n/result.md`와 같은 디렉터리의 `tmp/`에 기록한다. Rust·IPC 계약 변경은 없다.
+
+## UC-KIOSK-MEMORY-S2 (2026-11-05)
+
+키오스크 투자자는 기본 기억 저장으로 앞 대화와 호칭 게스트님을 새로고침 후에도 회상한다. 일반 웹판은 기존 동작을 유지한다. S3 첫 화면은 `packages/shell/src/lib/kiosk-demo/memory.ts`의 `resetKioskMemory()`를 기다린 뒤 새 대화를 시작한다. 진행 중인 응답은 먼저 취소하고 대화 UI/session도 새로 시작해야 하며, 초기화 뒤 페이지 재로딩으로 이전 Worker와 프롬프트를 폐기하는 방식을 권장한다. 이 함수는 기억만 지우고 로그인·지식·설정은 보존한다. 초기화는 기존 기억·회상을 지우고 게스트 호칭만 남긴다.
+
+Test Coverage Map (P02): `packages/shell/src/lib/kiosk-demo/memory.test.ts` — OPFS 재접속 후 게스트·앞 사용자 발화 회상, 실제 agent handler 턴 전 recall/턴 후 save, 깃발 off의 네 명령 차단·저장 없음, 백업 암호화/복원/잘못된 암호·손상 실패 원자성, 삭제·초기화·진행 중 저장 fencing, 동시 저장. UI/Rust/컴포넌트/CSS 변경 없음: 시각·좁은 폭/키보드 상태는 기존 UI 계약 유지이며 이 작업의 검증 대상은 저장 포트다.
+
+S2 public function contract (conform gate):
+```ts
+export function createKioskMemory
+export function handleKioskMemoryCommand
+export function resetKioskMemory
+```

@@ -1601,3 +1601,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | ID | 요구사항 | 시나리오·검증 | 상태 |
 |---|---|---|---|
 | **FR-WEB-025-I18N.1** | PR #824에서 추가한 한국어 UI 문구와 ko/en 분기는 `packages/shell/src/lib/locales/`의 키 및 `t()`로 제공한다. 14개 언어에 키를 넣고 한국어 외에는 영어를 사용한다. 배경 이름은 현재 로케일을 조회할 때 번역하고 저장소 수치는 자리표시자로 보간한다. 웹 전용 영어 키는 `en-web.ts`에 두며 공통 화면의 키는 데스크톱에도 제공한다. 기존 문구와 미번역 검사 baseline은 변경하지 않는다. | UC-WEB-025-I18N-824; `i18n-user-facing.test.ts`, `i18n-web-strings.test.ts`, 웹 저장소·배경·푸시·탐색기·설정·앱 테스트; 로컬 Playwright 실 컴포넌트 | Done |
+
+## FR-KIOSK-MEMORY-S2 — 웹 IR 시연 기억 (2026-11-05)
+
+상태: Done. `isKioskDemo()`가 참일 때만 OPFS 기억을 기본 연결한다. 데스크톱과 같은 agent ChatTurnHandler의 recall/save 및 memory 도구 경로를 사용한다. 사용자 발화를 출처로 저장하고 assistant 추측을 사용자 사실로 승격하지 않는다. 게스트님 호칭을 기본 기억으로 제공한다. 저장 후 새 인스턴스에서도 앞 대화가 회상된다. 네 기억 관리 명령(get_all_facts/export_backup/import_backup/delete_fact)을 시연에서만 연다. 백업은 NAIA v1 AES-256-GCM/PBKDF2-SHA256(200000) 형식을 따른다. 키오스크 저장소는 `naia-adk/naia-settings/memory/kiosk-store.json`이며 사용자 원문을 사실/출처로 최대 200개씩 보관하고 최근 항목을 제한 회상한다(벡터 검색·LLM 사실 추출은 이번 범위 밖). 백업 암호화 봉투는 데스크톱 형식과 같지만 내부 JSON은 키오스크 전용이며 데스크톱 백업 상호 이식은 지원하지 않는다. 비밀번호·기억 본문을 로그에 남기지 않는다. 초기화 함수는 게스트 기본 기억으로 되돌리고 이전 턴의 지연 저장이 새 방문자 기억을 오염시키지 않게 한다. 일반 웹/데스크톱 동작은 보존한다.

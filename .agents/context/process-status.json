@@ -19,6 +19,28 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "kiosk_s2_memory": {
+      "title": "S2 키오스크 브라우저 기억 기본 저장",
+      "issue": null,
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "last_updated": "2026-11-05T10:18:20.242357+00:00",
+      "status": "done",
+      "scenario": "docs/user-scenarios.md UC-KIOSK-MEMORY-S2",
+      "requirements": "docs/requirements.md FR-KIOSK-MEMORY-S2",
+      "verification": "Kiosk Vitest with actual agent handler 7/7; Web runtime/worker regression 219 passed, 1 conditional integration skipped (covered by kiosk run); core/Shell/BGM and worker typechecks passed; kiosk Vite build passed; conform/file-anchor/assembly checks and gate negative probes passed. Full Shell 3035 passed, 9 failed, 24 skipped; same 9 failures reproduced on pristine HEAD (agent-pairing 8, SettingsTab logout 1). Root structure retains pre-existing tmp/ and tsconfig.build.json violations.",
+      "reset_api": "packages/shell/src/lib/kiosk-demo/memory.ts: resetKioskMemory()",
+      "deliverables": [
+        "packages/shell/src/lib/kiosk-demo/memory.ts",
+        "packages/shell/src/lib/kiosk-demo/memory.test.ts",
+        "packages/shell/web-worker/kiosk-browser-agent.ts"
+      ]
+    },
     "project_panels_class_reset_20261025": {
       "issue": null,
       "title": "프로젝트 앱 문서·작업 탭 정리, 수업용 프로젝트(coding_app·docs_dirs·class.baseline_ref) 문서 미리보기·수업 초기화, 에이전트 아이콘 교체",
@@ -1071,5 +1093,6 @@
       "3. sdlc_gates 전체 status → pending으로 리셋",
       "4. resource_registry.violations 초기화"
     ]
-  }
+  },
+  "last_updated": "2026-11-05T10:18:20.242357+00:00"
 }
