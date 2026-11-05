@@ -7,6 +7,7 @@ import { resetBgmSidecarBaseUrl } from "../../bgm-sidecar-url";
 import {
 	arrayBufferToBase64,
 	deriveLanguageCode,
+	KIOSK_DEMO_VOICE_TIMEOUT_MS,
 	LOCAL_VOICE_REQUEST_TIMEOUT_MS,
 	LocalVoiceTimeoutError,
 	synthesizeTts,
@@ -81,6 +82,7 @@ afterEach(() => {
 	vi.useRealTimers();
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
+	vi.unstubAllEnvs();
 });
 
 describe("arrayBufferToBase64", () => {
@@ -643,6 +645,39 @@ describe("synthesizeTts — naia-local-voice (/v1/audio/speech Runtime contract)
 
 		await expect(promise).rejects.toBeInstanceOf(LocalVoiceTimeoutError);
 		expect(caughtErr).toBeInstanceOf(LocalVoiceTimeoutError);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("S5: in kiosk demo mode, BC250 synthesis times out after 8 seconds (KIOSK_DEMO_VOICE_TIMEOUT_MS) and does not retry", async () => {
+		vi.useFakeTimers();
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+			return new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () => {
+					reject(new DOMException("The user aborted a request.", "AbortError"));
+				});
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const promise = synthesizeTts({
+			text: "게스트님, 안녕하세요.",
+			voice: "naia-default",
+			provider: "naia-local-voice",
+			vllmTtsHost: "https://bc250-0-voice.nextain.io",
+		});
+
+		let settled = false;
+		promise.catch(() => {
+			settled = true;
+		});
+
+		await vi.advanceTimersByTimeAsync(KIOSK_DEMO_VOICE_TIMEOUT_MS - 1);
+		expect(settled).toBe(false);
+
+		await vi.advanceTimersByTimeAsync(1);
+		await expect(promise).rejects.toThrow(/8s/);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 

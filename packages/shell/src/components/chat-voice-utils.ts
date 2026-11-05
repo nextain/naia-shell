@@ -2,6 +2,7 @@ import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import type { AppConfig } from "../lib/config";
 import { paymentLinksHiddenNow } from "../lib/distribution";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import type {
 	VoiceCloseReason,
 	VoiceConnectionStatus,
@@ -28,6 +29,9 @@ export function resolveTtsVoiceId(config: AppConfig): string | undefined {
 	}
 	if (config.ttsProvider === "naia-local-voice") {
 		if (getLocalRefAudioB64()) return "naia-current";
+		if (isKioskDemo() && !config.voiceRefUrl && config.ttsVoice) {
+			return config.ttsVoice;
+		}
 		return naiaLocalVoiceId(config.voiceRefUrl);
 	}
 	if (config.ttsProvider === "vllm") return "default";

@@ -1635,3 +1635,16 @@ S3 빌드 검증: `pnpm --filter ./packages/shell build:web`의 일반 빌드와
 
 
 P04 통합(#824, 2026-11-05): S1 지식·S2 기억·S3 입장을 함께 검증했다. 초기화는 취소 완료 → OPFS 기억 초기화 → 새 대화 → 재로딩 순서이며 중복 클릭·저장 실패의 안전한 재시도를 시험했다. 일반/시연 웹 빌드 통과, 관련 런타임 262개(조건부 1개 제외, 실제 agent 기억은 별도 web-mode 9개 통과), 최종 UI 87개 통과. 로컬 ON preview의 Playwright 4개는 인사·실제 Worker 지식 검색·회상·초기화를 검증한다. 결정론 공급자 fixture이며 실제 계정/음성 수용은 아니다. 전체 셸 3084 통과/9 실패/25 제외이며 pairing 8·SettingsTab logout 1의 알려진 실패를 유지한다. 시각 검토: 첫 행동과 보조 초기화 구분, 진행/오류 live-region, 키보드·360px 입장 및 캡처 3장 확인. 증거는 회차 result-int.md와 tmp/int-*.log, tmp/int-*.png에 기록한다. S4·S5·S7은 남아 있다.
+
+## 웹 키오스크 S5 — BC250 음성 연결 (2026-11-05)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEB-KIOSK-S5.1 | `isKioskDemo()`가 참일 때 `buildKioskDemoConfigSeed()`는 `ttsProvider: "naia-local-voice"`, `vllmTtsHost: "https://bc250-0-voice.nextain.io"`, `ttsVoice: "naia-default"`를 기본값으로 넣고, `loadConfig()`와 `ChatArea.tsx`(인사/대화 발화 경로)는 `isKioskDemo()`일 때 `config.ttsProvider`를 따르며 일반 웹판(`!isKioskDemo()`)은 `"browser"`로 유지한다. | Done |
+| FR-WEB-KIOSK-S5.2 | `KioskDemoGate`의 ‘들어가기’ 클릭 핸들러 안에서 동적 불러오기 뒤로 미루지 않고 동기적으로 `AudioContext.resume()`와 `speechSynthesis` 잠금 해제를 수행한다. | Done |
+| FR-WEB-KIOSK-S5.3 | 시연판(`isKioskDemo()`)에서 BC250 음성 합성 요청은 8초(`8000ms`) 시간 초과를 적용하며, 시간 초과 또는 응답 오류 시 화면 멈춤이나 오류 말풍선 삽입 없이 즉시 브라우저 기본 음성(`speechSynthesis`)으로 폴백한다. 오디오 재생 및 브라우저 폴백 발화 구간 동안 아바타 입 움직임(`setSpeaking`·`setSpeakingVisual`)을 소리에 맞춰 동기화한다. | Done |
+| NFR-WEB-KIOSK-S5.1 | 새 공급자를 추가하지 않고 기존 `naia-local-voice`/`vllm` 합성 경로(`synthesize.ts`, `sentence-pipeline.ts`, `audio-queue.ts`)를 재사용하며, 깃발 OFF 시 일반 웹판과 데스크톱 동작을 그대로 보존한다. | Done |
+
+P04 S5(2026-11-05): 관련 Vitest 7파일 179개 통과(`/home/nextain/work/codex-runs/kiosk-agy/tmp/vitest-s5.log`), 웹 시연판 프로덕션 빌드(`pnpm --filter ./packages/shell build:web`) 종료 코드 0(`tmp/build-web-s5.log`), Playwright `e2e/kiosk-demo.spec.ts` S3·S5 3개 통과(`tmp/playwright-s5.log`). 로컬 개발 서버 실 브라우저 구동(`bc250-network.log`, `s5-chat.png` 1280x800)에서 ‘들어가기’ 제스처 동기 잠금 해제, `https://bc250-0-voice.nextain.io/v1/audio/speech` 합성 요청 발신, 실 서버의 브라우저 Origin 403(`origin_not_allowed`)·무토큰 401(`local_access_denied` / `unauthorized`) 응답 시 화면 멈춤·오류 말풍선 없는 브라우저 음성 폴백과 입 움직임 동기화를 확인했다.
+
+

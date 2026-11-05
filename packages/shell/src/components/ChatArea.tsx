@@ -1450,7 +1450,10 @@ export function ChatArea({
 		sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
 		pipelineVoiceConfigRef.current = {
 			voice: resolveTtsVoiceId(config),
-			ttsProvider: isWebMode() ? "browser" : config.ttsProvider || "edge",
+			ttsProvider:
+				isWebMode() && !isKioskDemo()
+					? "browser"
+					: config.ttsProvider || (isWebMode() ? "browser" : "edge"),
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
 			ttsApiKey: undefined,
 			naiaKey: config.naiaKey,
@@ -3355,7 +3358,10 @@ export function ChatArea({
 				sentencePipelineRef.current?.rearmLocalVoiceNotice();
 				pipelineVoiceConfigRef.current = {
 					voice: resolveTtsVoiceId(config) ?? config.voice,
-					ttsProvider: isWebMode() ? "browser" : config.ttsProvider || "edge",
+					ttsProvider:
+						isWebMode() && !isKioskDemo()
+							? "browser"
+							: config.ttsProvider || (isWebMode() ? "browser" : "edge"),
 					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
 					naiaKey: config.naiaKey,

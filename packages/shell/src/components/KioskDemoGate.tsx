@@ -1,4 +1,5 @@
 import { resetKioskMemory } from "../lib/kiosk-demo/memory";
+import { unlockAudioContext } from "../lib/voice/audio-queue";
 import { useChatStore } from "../stores/chat";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { requestKioskGreeting, resetKioskVisit } from "../lib/kiosk-demo/entry";
@@ -89,6 +90,7 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 							onClick={() => {
 								if (accepted.current) return;
 								accepted.current = true;
+								unlockAudioContext();
 								requestKioskGreeting();
 								setEntered(true);
 							}}

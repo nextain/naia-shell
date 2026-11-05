@@ -71,6 +71,9 @@ test("S3 fresh browser prepares Jina, enters by keyboard and speaks once", async
 		honorific: "님",
 		speechStyle: "formal",
 		onboardingComplete: true,
+		ttsProvider: "naia-local-voice",
+		vllmTtsHost: "https://bc250-0-voice.nextain.io",
+		ttsVoice: "naia-default",
 	});
 	const box = await enter.boundingBox();
 	expect(box).toBeTruthy();
@@ -235,4 +238,163 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 		.join("\n");
 	expect(fresh).toContain("게스트님");
 	expect(fresh).not.toContain(question);
+});
+
+test("S5 kiosk routes Jina speech to BC250 voice host, syncs mouth on WAV playback, and falls back to browser TTS on failure", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.addInitScript(() => {
+		const state = {
+			audioContextResumedOnGesture: false,
+			wavPlayCount: 0,
+			browserSpoken: [] as string[],
+		};
+		Object.defineProperty(window, "__s5VoiceState", { value: state });
+		const OrigAudioContext =
+			window.AudioContext ||
+			(window as unknown as { webkitAudioContext: typeof AudioContext })
+				.webkitAudioContext;
+		if (OrigAudioContext) {
+			const origResume = OrigAudioContext.prototype.resume;
+			OrigAudioContext.prototype.resume = function () {
+				state.audioContextResumedOnGesture = true;
+				return origResume ? origResume.call(this) : Promise.resolve();
+			};
+		}
+		const OrigAudio = window.Audio;
+		window.Audio = class extends OrigAudio {
+			constructor(src?: string) {
+				super(src);
+				if (src?.startsWith("data:audio/wav;base64,")) {
+					this.play = async () => {
+						state.wavPlayCount += 1;
+						this.onplay?.(new Event("play"));
+						setTimeout(() => this.onended?.(new Event("ended")), 120);
+					};
+				}
+			}
+		} as typeof Audio;
+		Object.defineProperty(window, "speechSynthesis", {
+			value: {
+				getVoices: () => [],
+				cancel: () => {},
+				pause: () => {},
+				resume: () => {},
+				addEventListener: () => {},
+				removeEventListener: () => {},
+				speak: (utterance: SpeechSynthesisUtterance) => {
+					state.browserSpoken.push(utterance.text);
+					utterance.onstart?.(new Event("start") as SpeechSynthesisEvent);
+					setTimeout(
+						() => utterance.onend?.(new Event("end") as SpeechSynthesisEvent),
+						50,
+					);
+				},
+			},
+		});
+	});
+
+	// Build a minimal valid 24kHz mono 16-bit RIFF/WAVE buffer (2400 samples = 0.1s)
+	const sampleRate = 24000;
+	const numSamples = 2400;
+	const wavBuf = Buffer.alloc(44 + numSamples * 2);
+	wavBuf.write("RIFF", 0);
+	wavBuf.writeUInt32LE(36 + numSamples * 2, 4);
+	wavBuf.write("WAVE", 8);
+	wavBuf.write("fmt ", 12);
+	wavBuf.writeUInt32LE(16, 16);
+	wavBuf.writeUInt16LE(1, 20);
+	wavBuf.writeUInt16LE(1, 22);
+	wavBuf.writeUInt32LE(sampleRate, 24);
+	wavBuf.writeUInt32LE(sampleRate * 2, 28);
+	wavBuf.writeUInt16LE(2, 32);
+	wavBuf.writeUInt16LE(16, 34);
+	wavBuf.write("data", 36);
+	wavBuf.writeUInt32LE(numSamples * 2, 40);
+
+	const bc250Calls: { url: string; body: Record<string, unknown> }[] = [];
+	let shouldFailBc250 = false;
+	await page.route("https://bc250-0-voice.nextain.io/v1/audio/speech", async (route) => {
+		const body = route.request().postDataJSON();
+		bc250Calls.push({ url: route.request().url(), body });
+		if (shouldFailBc250) {
+			await route.fulfill({
+				status: 401,
+				contentType: "application/json",
+				body: JSON.stringify({ error: "local_access_denied" }),
+			});
+			return;
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: "audio/wav",
+			body: wavBuf,
+		});
+	});
+
+	await page.route("**/chat/completions", async (route) => {
+		await route.fulfill({
+			contentType: "text/event-stream",
+			body: `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "게스트님, 반갑습니다. 무엇이든 물어보세요." }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+		});
+	});
+
+	await page.goto("/");
+	const enter = page.getByRole("button", { name: "들어가기", exact: true });
+	await expect(enter).toBeEnabled();
+	await enter.click();
+
+	await expect
+		.poll(() => bc250Calls.length, { timeout: 15_000 })
+		.toBeGreaterThanOrEqual(1);
+	expect(bc250Calls[0].body).toMatchObject({
+		model: "voxcpm2",
+		voice: "default",
+	});
+
+	await expect
+		.poll(
+			() =>
+				page.evaluate(
+					() =>
+						(
+							window as unknown as {
+								__s5VoiceState: {
+									audioContextResumedOnGesture: boolean;
+									wavPlayCount: number;
+								};
+							}
+						).__s5VoiceState,
+				),
+			{ timeout: 15_000 },
+		)
+		.toMatchObject({
+			audioContextResumedOnGesture: true,
+			wavPlayCount: 1,
+		});
+
+	// Now simulate BC250 returning an error/unavailable and verify fallback to browser TTS without freezing
+	shouldFailBc250 = true;
+	await page.locator("textarea.chat-input").fill("안녕하세요");
+	await page.locator("textarea.chat-input").press("Enter");
+	await expect(
+		page.getByText(/게스트님, 반갑습니다. 무엇이든 물어보세요\./).first(),
+	).toBeVisible();
+	await expect
+		.poll(
+			() =>
+				page.evaluate(
+					() =>
+						(
+							window as unknown as {
+								__s5VoiceState: { browserSpoken: string[] };
+							}
+						).__s5VoiceState.browserSpoken.some((t) =>
+							t.includes("게스트님, 반갑습니다"),
+						),
+				),
+			{ timeout: 15_000 },
+		)
+		.toBe(true);
 });

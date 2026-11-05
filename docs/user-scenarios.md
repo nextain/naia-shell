@@ -2587,3 +2587,22 @@ P02 통합: kiosk-demo.spec.ts에서 입장·인사·지식 도구 호출·새�
 
 
 P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입장·인사 → 회사 질문 → 실제 지식 도구 호출과 카드 결과 → 재로딩 후 시스템 프롬프트의 게스트/앞 질문 회상 → 처음으로 → 새 방문자의 앞 질문 미회상을 검증한다. `entry.test.ts`는 취소/저장 완료 대기와 실패 시 세션·페이지 보존, KioskDemoGate/ChatArea 시험은 중복 초기화 차단과 안전한 오류/재시도를 검증한다. 로컬 preview와 캡처 3장의 시각 검토를 수행했다. 초기화 후 대화 보관 파일은 S2 계약대로 보존하며 새 Worker의 프롬프트에는 이전 방문자 기억을 넣지 않는다.
+
+## UC-WEB-KIOSK-S5 — 지나 목소리를 BC250으로 연결 (2026-11-05)
+
+시연판(`isKioskDemo()`)에서 지나의 인사와 대화 응답은 브라우저 기본 음성 대신 BC250 로컬 음성 서버(`https://bc250-0-voice.nextain.io`, `naia-local-voice`, `naia-default`)로 합성해 재생하고, 재생 시작·종료에 맞춰 아바타 입 움직임(`setSpeaking`·`setSpeakingVisual`)을 동기화한다. 일반 웹판(`!isKioskDemo()`)은 기존처럼 `browser` TTS로 유지된다.
+- ‘들어가기’ 클릭 처리 안에서 동적 불러오기 뒤로 미루지 않고 즉시 `AudioContext.resume()`와 `speechSynthesis` 잠금 해제를 수행한다.
+- BC250 음성 합성이 응답하지 않거나 실패하면(시간 초과 8초) 화면이 멈추지 않고 즉시 브라우저 기본 음성(`speechSynthesis`)으로 폴백해 발화와 입 움직임을 이어간다.
+
+### Test Coverage Map — S5
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | `isKioskDemo()`일 때 `buildKioskDemoConfigSeed()`가 `ttsProvider="naia-local-voice"`, `vllmTtsHost="https://bc250-0-voice.nextain.io"`, `ttsVoice="naia-default"`를 시드하고 `loadConfig()`·`ChatArea`가 이를 보존 | `kiosk-demo.test.ts`, `config-seed.test.ts`, `ChatArea.test.tsx` |
+| 빈 목록 | 기존 음성 호스트 설정이 없을 때 BC250 기본값이 채워지고, 이미 설정된 사용자 호스트는 보존 | `kiosk-demo.test.ts` |
+| 진행 | ‘들어가기’ 클릭 사용자 제스처 스택 안에서 즉시 `AudioContext.resume()`·`speechSynthesis` 잠금 해제 후 BC250 합성 요청 진행 | `KioskDemoGate.test.tsx`, `kiosk-demo.spec.ts` |
+| 성공 | BC250 음성 응답 수신 시 오디오 재생과 함께 `setSpeaking(true)`/`setSpeakingVisual(true)` 입 움직임 동기화 및 종료 시 해제 | `synthesize.test.ts`, `sentence-pipeline.test.ts`, `kiosk-demo.spec.ts` |
+| 오류 | BC250 무응답(8초 시간 초과) 또는 HTTP 오류 시 경고 말풍선 주입 없이 브라우저 음성(`speechSynthesis`)으로 폴백하고 화면이 멈추지 않음 | `synthesize.test.ts`, `sentence-pipeline.test.ts`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | 1280x800 키오스크 화면 및 360px 폭에서 대화·발화 중 UI 레이아웃과 조작성 유지 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | `isKioskDemo()`가 거짓인 일반 웹판은 `ttsProvider="browser"` 고정 및 기존 90초 로컬 음성 타임아웃·오류 처리 유지 | `kiosk-demo.test.ts`, `synthesize.test.ts`, `sentence-pipeline.test.ts` |
+

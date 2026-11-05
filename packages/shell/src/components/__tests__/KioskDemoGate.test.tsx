@@ -101,6 +101,34 @@ it("waits for preparation and opens once only after a gesture", async () => {
 	expect(mocks.prep).toHaveBeenCalledOnce();
 	expect(mocks.boot).toHaveBeenCalledOnce();
 });
+it("unlocks AudioContext and speechSynthesis synchronously inside the entry click gesture", async () => {
+	const resumeAudio = vi.fn(() => Promise.resolve());
+	class FakeAudioContext {
+		state = "suspended";
+		resume = resumeAudio;
+	}
+	const cancelSpeech = vi.fn();
+	const resumeSpeech = vi.fn();
+	vi.stubGlobal("AudioContext", FakeAudioContext);
+	vi.stubGlobal("speechSynthesis", {
+		cancel: cancelSpeech,
+		resume: resumeSpeech,
+	});
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(resumeAudio).toHaveBeenCalledOnce();
+	expect(cancelSpeech).toHaveBeenCalledOnce();
+	expect(resumeSpeech).toHaveBeenCalledOnce();
+	expect(resumeAudio.mock.invocationCallOrder[0]).toBeLessThan(
+		mocks.greeting.mock.invocationCallOrder[0],
+	);
+	vi.unstubAllGlobals();
+});
 it("shows a safe preparation error and offers retry", async () => {
 	mocks.prep.mockRejectedValueOnce(new Error("sensitive exception detail"));
 	mount();

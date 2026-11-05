@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildKioskDemoConfigSeed } from "../config-seed";
+import { resolveTtsVoiceId } from "../../components/chat-voice-utils";
+import { loadConfig, saveConfig } from "../config";
+import {
+	KIOSK_DEMO_TTS_HOST,
+	KIOSK_DEMO_TTS_PROVIDER,
+	KIOSK_DEMO_TTS_VOICE,
+	buildKioskDemoConfigSeed,
+} from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { KIOSK_DEMO_PERSONA, buildSystemPrompt } from "../persona";
+import { setWebAssetsModeForTests } from "../web-runtime/web-assets";
 import {
 	seedKioskDemoWebAuth,
 	WEB_REMOTE_KEY_STORAGE_KEY,
@@ -34,7 +42,10 @@ beforeEach(() => {
 	// Synthetic fixture, never a real account credential.
 	vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "test-kiosk-fixture-only");
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+	setWebAssetsModeForTests(null);
+	vi.unstubAllEnvs();
+});
 
 describe("S3 kiosk isolation", () => {
 	it.each([
@@ -74,6 +85,10 @@ describe("S3 kiosk isolation", () => {
 			speechStyle: "formal",
 			locale: "ko",
 			onboardingComplete: true,
+			ttsEnabled: true,
+			ttsProvider: KIOSK_DEMO_TTS_PROVIDER,
+			vllmTtsHost: KIOSK_DEMO_TTS_HOST,
+			ttsVoice: KIOSK_DEMO_TTS_VOICE,
 		});
 		const prompt = buildSystemPrompt(seed.persona, seed);
 		for (const text of ["존댓말", "투자자", "넥스테인", "지어내지", "게스트"])
@@ -134,14 +149,36 @@ describe("S3 kiosk isolation", () => {
 		);
 	});
 	it("a new workspace gets the complete persona and greeting is consumed only once", async () => {
+		setWebAssetsModeForTests(true);
 		await prepareKioskDemoOnboarding();
 		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
 			agentName: "지나",
 			onboardingComplete: true,
+			ttsProvider: "naia-local-voice",
+			vllmTtsHost: "https://bc250-0-voice.nextain.io",
+			ttsVoice: "naia-default",
 		});
+		const loaded = loadConfig()!;
+		expect(loaded.ttsProvider).toBe("naia-local-voice");
+		expect(loaded.vllmTtsHost).toBe("https://bc250-0-voice.nextain.io");
+		expect(resolveTtsVoiceId(loaded)).toBe("naia-default");
 		expect(consumeKioskGreeting()).toBe(false);
 		requestKioskGreeting();
 		expect(consumeKioskGreeting()).toBe(true);
 		expect(consumeKioskGreeting()).toBe(false);
+	});
+	it("forces ttsProvider to browser in ordinary web mode when kiosk demo flag is OFF", () => {
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		saveConfig({
+			provider: "naia",
+			model: "gemini-3-flash-preview",
+			apiKey: "",
+			ttsProvider: "naia-local-voice",
+			vllmTtsHost: "https://bc250-0-voice.nextain.io",
+			ttsVoice: "naia-default",
+		});
+		const loaded = loadConfig()!;
+		expect(loaded.ttsProvider).toBe("browser");
 	});
 });

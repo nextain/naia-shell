@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-05T10:36:27.194460+00:00",
+  "last_updated": "2026-11-05T13:01:45Z",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -1166,6 +1166,22 @@
       "status": "implemented",
       "last_updated": "2026-11-05T10:16:04.358637+00:00",
       "verification": "Vitest focused 155 passed; Playwright kiosk-demo 3 passed including 360px capture, keyboard greeting once and error retry; file-anchor negative and live conform probes passed. Baseline agent-pairing 8 failures reproduced at 5d7473a. Live account/BC250 acceptance belongs to S5/S7."
+    },
+    "web_kiosk_s5": {
+      "issue": 824,
+      "branch": "feat/web-ir-kiosk-s5",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S5",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S5.1~3 NFR-WEB-KIOSK-S5.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "last_updated": "2026-11-05T13:01:45Z",
+      "verification": "Focused Vitest 7 files / 179 tests passed; web kiosk build passed; Playwright kiosk-demo S3/S5 3 passed; live browser verification against local dev server and BC250 endpoints recorded in /home/nextain/work/codex-runs/kiosk-agy/bc250-network.log and s5-chat.png."
     }
   },
   "resource_registry": {

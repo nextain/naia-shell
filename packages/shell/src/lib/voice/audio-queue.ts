@@ -423,7 +423,13 @@ export class AudioQueue {
 /** Shared Web Audio context for streamed PCM playback (lazily created, one per page). */
 let sharedAudioContext: AudioContext | null = null;
 function ensureAudioContext(outputDeviceId?: string): AudioContext {
-	if (!sharedAudioContext) sharedAudioContext = new AudioContext();
+	if (
+		!sharedAudioContext ||
+		!(sharedAudioContext instanceof AudioContext) ||
+		sharedAudioContext.state === "closed"
+	) {
+		sharedAudioContext = new AudioContext();
+	}
 	const ctx = sharedAudioContext;
 	if (ctx.state === "suspended") ctx.resume().catch(() => {});
 	const setSinkId = (
@@ -432,6 +438,40 @@ function ensureAudioContext(outputDeviceId?: string): AudioContext {
 	if (outputDeviceId && setSinkId)
 		setSinkId.call(ctx, outputDeviceId).catch(() => {});
 	return ctx;
+}
+
+/**
+ * Unlock Web Audio and browser speechSynthesis synchronously within a user
+ * gesture handler (e.g. kiosk "들어가기" click) before any async boundary.
+ */
+export function unlockAudioContext(): void {
+	if (typeof window === "undefined") return;
+	try {
+		const Ctor =
+			window.AudioContext ??
+			(window as unknown as { webkitAudioContext?: typeof AudioContext })
+				.webkitAudioContext;
+		if (Ctor) {
+			if (
+				!sharedAudioContext ||
+				!(sharedAudioContext instanceof Ctor) ||
+				sharedAudioContext.state === "closed"
+			) {
+				sharedAudioContext = new Ctor();
+			}
+			void sharedAudioContext.resume?.()?.catch?.(() => {});
+		}
+	} catch {
+		// best-effort audio context creation/resume
+	}
+	if ("speechSynthesis" in window && window.speechSynthesis) {
+		try {
+			window.speechSynthesis.cancel?.();
+			window.speechSynthesis.resume?.();
+		} catch {
+			// best-effort speechSynthesis unlock
+		}
+	}
 }
 
 /** Return the PCM duration encoded by a RIFF/WAVE base64 payload. */

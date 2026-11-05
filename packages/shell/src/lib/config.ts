@@ -26,6 +26,7 @@ import {
 	isWebMode,
 	normalizeRetiredWebBackgroundInRecord,
 } from "./web-runtime/web-assets";
+import { isKioskDemo } from "./kiosk-demo/flag";
 
 const STORAGE_KEY = "naia-config";
 
@@ -722,7 +723,10 @@ export function loadConfig(): AppConfig | null {
 			) {
 				config.sttProvider = "web-speech";
 			}
-			if (!config.ttsProvider || config.ttsProvider !== "browser") {
+			if (
+				!config.ttsProvider ||
+				(!isKioskDemo() && config.ttsProvider !== "browser")
+			) {
 				config.ttsProvider = "browser";
 			}
 		} else if (!config.sttProvider) {

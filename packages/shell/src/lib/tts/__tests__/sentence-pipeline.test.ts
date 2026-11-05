@@ -48,6 +48,7 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 		setWebAssetsModeForTests(null);
 		vi.clearAllMocks();
 		vi.unstubAllGlobals();
+		vi.unstubAllEnvs();
 	});
 
 	it("plays an authored NVA clip instead of synthesizing, revealing on ready", async () => {
@@ -313,6 +314,66 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 		expect(pipeline.hasActiveRequests()).toBe(false);
 	});
 
+	it("S5: kiosk demo local-voice timeout or error falls back to browser speechSynthesis without warning bubble and syncs mouth state", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		setWebAssetsModeForTests(true);
+		synthesizeMock.mockRejectedValue(
+			new Error("호스트 음성 합성 시간 초과 (8s)"),
+		);
+		const utterances: Array<{
+			text: string;
+			onstart: (() => void) | null;
+			onend: (() => void) | null;
+		}> = [];
+		const speak = vi.fn((u) => utterances.push(u));
+		vi.stubGlobal("speechSynthesis", {
+			speak,
+			cancel: vi.fn(),
+			getVoices: () => [],
+		});
+		vi.stubGlobal(
+			"SpeechSynthesisUtterance",
+			class {
+				lang = "";
+				voice: unknown = null;
+				onstart: (() => void) | null = null;
+				onend: (() => void) | null = null;
+				onerror: (() => void) | null = null;
+				constructor(public text: string) {}
+			},
+		);
+		const setSpeakingVisual = vi.fn();
+		const { deps, queue, reveal } = makeDeps({
+			getVoiceConfig: () => ({
+				ttsProvider: "naia-local-voice",
+				vllmTtsHost: "https://bc250-0-voice.nextain.io",
+				voice: "naia-default",
+			}),
+			getRenderer: () => ({
+				hasAuthoredClip: () => false,
+				playAuthoredClip: vi.fn(),
+				setSpeakingVisual,
+			}),
+		});
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("게스트님, 안녕하세요.");
+		await flush();
+		await flush();
+		expect(deps.notifyLocalVoiceUnavailable).not.toHaveBeenCalled();
+		expect(queue.skipOrdered).toHaveBeenCalledWith(0);
+		expect(speak).toHaveBeenCalledTimes(1);
+		expect(utterances[0].text).toContain("게스트님, 안녕하세요");
+		utterances[0].onstart?.();
+		expect(reveal).toHaveBeenCalled();
+		expect(deps.setSpeaking).toHaveBeenCalledWith(true);
+		expect(setSpeakingVisual).toHaveBeenCalledWith(true);
+		utterances[0].onend?.();
+		expect(deps.setSpeaking).toHaveBeenCalledWith(false);
+		expect(setSpeakingVisual).toHaveBeenCalledWith(false);
+		expect(pipeline.hasActiveRequests()).toBe(false);
+	});
+
 	it("cloud failure falls back to browser TTS so speech is never dropped", async () => {
 		synthesizeMock.mockRejectedValue(new Error("quota"));
 		const speak = vi.fn();
@@ -397,6 +458,7 @@ describe("sentence TTS pipeline — local voice streaming slot", () => {
 		setWebAssetsModeForTests(null);
 		vi.clearAllMocks();
 		vi.unstubAllGlobals();
+		vi.unstubAllEnvs();
 	});
 
 	/** A queue that understands the streaming contract. */

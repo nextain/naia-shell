@@ -33,6 +33,8 @@ import {
 } from "../../lib/web-runtime/web-adk-status";
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "../../lib/bgm-skill";
 import { ensureBgmSidecar } from "../../lib/bgm-sidecar-url";
+import { requestKioskGreeting } from "../../lib/kiosk-demo/entry";
+import { setWebAssetsModeForTests } from "../../lib/web-runtime/web-assets";
 
 const ttsSyncMocks = vi.hoisted(() => ({
 	synthesizeTts: vi.fn().mockResolvedValue({
@@ -290,6 +292,7 @@ describe("ChatArea", () => {
 			costUsd: 0,
 		});
 		resetWebModelStatusForTests();
+		setWebAssetsModeForTests(null);
 		vi.unstubAllEnvs();
 		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
 	});
@@ -313,6 +316,32 @@ describe("ChatArea", () => {
 		mockResetKioskMemory.mockRejectedValueOnce(new Error("still unavailable"));
 		fireEvent.click(reset);
 		await waitFor(() => expect(mockResetKioskMemory).toHaveBeenCalledTimes(2));
+	});
+
+	it("S5: kiosk demo greeting respects config ttsProvider (naia-local-voice / BC250) in web mode", async () => {
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				agentName: "지나",
+				ttsEnabled: true,
+				ttsProvider: "naia-local-voice",
+				vllmTtsHost: "https://bc250-0-voice.nextain.io",
+				ttsVoice: "naia-default",
+			}),
+		);
+		requestKioskGreeting();
+		render(<ChatArea />);
+		await waitFor(() => expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalled());
+		expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledWith(
+			expect.objectContaining({
+				provider: "naia-local-voice",
+				vllmTtsHost: "https://bc250-0-voice.nextain.io",
+				voice: "naia-default",
+			}),
+		);
 	});
 
 	it("renders input field and buttons", () => {

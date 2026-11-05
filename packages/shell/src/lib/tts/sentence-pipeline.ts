@@ -22,6 +22,7 @@ import type { TtsProviderId } from "../config";
  * SentenceTtsPipelineDeps and calls the public interface only.
  */
 import { getLocale } from "../i18n";
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { Logger } from "../logger";
 import { isWebMode } from "../web-runtime/web-assets";
 import { PcmStreamSource } from "../voice/audio-queue";
@@ -298,7 +299,7 @@ export function createSentenceTtsPipeline(
 					if (!isCurrentBrowserTurn()) return;
 					revealText();
 					deps.setSpeaking(true);
-					cascadeAvatar?.setSpeakingVisual(true);
+					(deps.getRenderer() ?? cascadeAvatar)?.setSpeakingVisual(true);
 				};
 				utter.onend = () => {
 					if (!isCurrentBrowserTurn()) return;
@@ -306,7 +307,7 @@ export function createSentenceTtsPipeline(
 					// this request must not count itself as still active (#423).
 					activeRequests.delete(reqId);
 					deps.setSpeaking(false);
-					cascadeAvatar?.setSpeakingVisual(false);
+					(deps.getRenderer() ?? cascadeAvatar)?.setSpeakingVisual(false);
 				};
 				// onerror too, else a failure after onstart leaves the avatar stuck
 				// in the speaking state (#363 review).
@@ -315,7 +316,7 @@ export function createSentenceTtsPipeline(
 					activeRequests.delete(reqId);
 					revealText();
 					deps.setSpeaking(false);
-					cascadeAvatar?.setSpeakingVisual(false);
+					(deps.getRenderer() ?? cascadeAvatar)?.setSpeakingVisual(false);
 				};
 				window.speechSynthesis.speak(utter);
 			} else {
@@ -525,7 +526,7 @@ export function createSentenceTtsPipeline(
 				const isLocalVoiceProvider =
 					ttsProviderForCost === "naia-local-voice" ||
 					ttsProviderForCost === "vllm";
-				if (isLocalVoiceProvider) {
+				if (isLocalVoiceProvider && !isKioskDemo()) {
 					// Delete before reveal: the reveal wrapper settles the held
 					// expression only when no request is still counted active (#423).
 					activeRequests.delete(reqId);

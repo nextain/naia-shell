@@ -149,7 +149,13 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 		(await fs.readText(path)) || JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG),
 	);
 	const seed = buildKioskDemoConfigSeed();
-	const config = { ...existing, ...seed };
+	const config = {
+		...existing,
+		...seed,
+		...(typeof existing.vllmTtsHost === "string" && existing.vllmTtsHost.trim()
+			? { vllmTtsHost: existing.vllmTtsHost }
+			: {}),
+	};
 	const uiPath = webAdkOpfsPath("naia-settings/ui-config.json");
 	const ui = JSON.parse((await fs.readText(uiPath)) || "{}");
 	// Older versions also put persona/provider fields in UI config; remove those

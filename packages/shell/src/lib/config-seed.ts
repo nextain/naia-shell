@@ -39,6 +39,10 @@ export function buildSeedShellConfig(
 	return seed;
 }
 
+export const KIOSK_DEMO_TTS_PROVIDER = "naia-local-voice" as const;
+export const KIOSK_DEMO_TTS_HOST = "https://bc250-0-voice.nextain.io";
+export const KIOSK_DEMO_TTS_VOICE = "naia-default";
+
 /** OFF는 빈 패치: 일반판의 모든 기본값과 온보딩 선택을 보존한다. */
 export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 	if (!isKioskDemo()) return {};
@@ -52,6 +56,9 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 		personaDisabled: false,
 		onboardingComplete: true,
 		ttsEnabled: true,
+		ttsProvider: KIOSK_DEMO_TTS_PROVIDER,
+		vllmTtsHost: KIOSK_DEMO_TTS_HOST,
+		ttsVoice: KIOSK_DEMO_TTS_VOICE,
 		provider: "nextain",
 		model: getDefaultLlmModel("nextain"),
 		llmRoles: {
