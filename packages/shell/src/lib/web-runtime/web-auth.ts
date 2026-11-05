@@ -1,12 +1,13 @@
 import { useChatStore } from "../../stores/chat";
 import { loadConfig, saveConfig } from "../config";
 import { getLocale } from "../i18n";
+import { isKioskDemo } from "../kiosk-demo/flag";
+import { getDefaultLlmModel } from "../llm/registry";
 import { Logger } from "../logger";
 import { makeOnboardingSession } from "../onboarding-core";
 import { emitWebEvent } from "./event-bus";
 import { WEB_ADK_PATH } from "./web-adk-path";
 import { isWebMode } from "./web-assets";
-import { getDefaultLlmModel } from "../llm/registry";
 
 export const WEB_OAUTH_STATE_STORAGE_KEY = "naia-web-oauth-state";
 export const WEB_REMOTE_KEY_STORAGE_KEY = "naia-remote-key";
@@ -354,4 +355,17 @@ export function logoutWebSession(): void {
 	if (typeof window !== "undefined") {
 		window.dispatchEvent(new CustomEvent("naia-web-auth-changed"));
 	}
+}
+
+/** No OAuth event or credential-bearing result/log: the demo key stays in auth storage. */
+export function seedKioskDemoWebAuth(): boolean {
+	if (!isKioskDemo()) return false;
+	const key = (
+		import.meta.env.VITE_NAIA_KIOSK_DEMO_KEY as string | undefined
+	)?.trim();
+	Logger.debug("WebAuth", "kiosk credential seed requested");
+	if (!key || !isValidWebAuthKey(key)) return false;
+	localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, key);
+	localStorage.removeItem(WEB_REMOTE_USER_ID_STORAGE_KEY);
+	return true;
 }

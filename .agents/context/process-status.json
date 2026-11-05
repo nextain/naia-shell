@@ -1134,6 +1134,21 @@
         "docs/user-scenarios.md UC-LLM-DEFAULT-DEEPSEEK-FLASH"
       ],
       "last_updated": "2026-08-08T03:00:00+09:00"
+    },
+    "web_kiosk_s3": {
+      "issue": null,
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S3",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S3.1~3 NFR-WEB-KIOSK-S3.1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "last_updated": "2026-11-05T10:16:04.358637+00:00",
+      "verification": "Vitest focused 155 passed; Playwright kiosk-demo 3 passed including 360px capture, keyboard greeting once and error retry; file-anchor negative and live conform probes passed. Baseline agent-pairing 8 failures reproduced at 5d7473a. Live account/BC250 acceptance belongs to S5/S7."
     }
   },
   "resource_registry": {

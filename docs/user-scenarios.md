@@ -2561,3 +2561,25 @@ export function createKioskMemory
 export function handleKioskMemoryCommand
 export function resetKioskMemory
 ```
+
+## UC-WEB-KIOSK-S3 — 지나 시연 입장 (2026-11-05)
+
+투자자·손님은 시연 웹 주소에서 로그인/온보딩 없이 지나와 대화를 시작한다.
+`isKioskDemo()`일 때만 빌드 환경의 시연 전용 계정을 브라우저에 넣는다.
+열쇠가 없거나 유효하지 않으면 기존 로그인 여부와 무관하게 ‘시연 열쇠 없음’으로 멈춘다.
+입장 전에는 대화/발화하지 않는다. ‘들어가기’를 누르면 게스트님 인사와 대화 화면을 연다.
+‘처음으로’는 S2 기억 초기화 함수가 통합되기 전까지 비활성 자리로 둔다.
+
+### Test Coverage Map — S3
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 지나/게스트/님/존댓말/친절한 안내, 로그인·온보딩 생략, 입장 전 무발화 | kiosk-demo.test.ts, KioskDemoGate.test.tsx, kiosk-demo.spec.ts |
+| 빈 목록 | 새 브라우저 ADK 설치·기본값 영속 후 입장 가능 | kiosk-demo.test.ts, kiosk-demo.spec.ts |
+| 진행 | 준비 중 상태 안내, 중복 입장 방지 | KioskDemoGate.test.tsx |
+| 성공 | 클릭 한 번 뒤 인사 1회·기존 TTS 파이프라인·대화 진입 | KioskDemoGate.test.tsx, kiosk-demo.spec.ts |
+| 오류 | 누락/잘못된 열쇠는 차단, 저장 실패는 안전한 안내·재시도 | kiosk-demo.test.ts, KioskDemoGate.test.tsx, kiosk-demo.spec.ts |
+| 좁은 폭 | 360px에서 버튼·제목·안내 순서, 키보드 포커스·ARIA | kiosk-demo.spec.ts |
+| 깃발 꺼짐 | 일반 웹판 페르소나·로그인·온보딩·부팅 경로 보존 | kiosk-demo.test.ts, KioskDemoGate.test.tsx |
+
+웹 전용 변경이며 Rust/Tauri 배선 변경은 없다. 실 계정/BC250 발화는 S5/S7 운영 수용에서 검증한다.

@@ -1615,3 +1615,20 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 ## FR-KIOSK-MEMORY-S2 — 웹 IR 시연 기억 (2026-11-05)
 
 상태: Done. `isKioskDemo()`가 참일 때만 OPFS 기억을 기본 연결한다. 데스크톱과 같은 agent ChatTurnHandler의 recall/save 및 memory 도구 경로를 사용한다. 사용자 발화를 출처로 저장하고 assistant 추측을 사용자 사실로 승격하지 않는다. 게스트님 호칭을 기본 기억으로 제공한다. 저장 후 새 인스턴스에서도 앞 대화가 회상된다. 네 기억 관리 명령(get_all_facts/export_backup/import_backup/delete_fact)을 시연에서만 연다. 백업은 NAIA v1 AES-256-GCM/PBKDF2-SHA256(200000) 형식을 따른다. 키오스크 저장소는 `naia-adk/naia-settings/memory/kiosk-store.json`이며 사용자 원문을 사실/출처로 최대 200개씩 보관하고 최근 항목을 제한 회상한다(벡터 검색·LLM 사실 추출은 이번 범위 밖). 백업 암호화 봉투는 데스크톱 형식과 같지만 내부 JSON은 키오스크 전용이며 데스크톱 백업 상호 이식은 지원하지 않는다. 비밀번호·기억 본문을 로그에 남기지 않는다. 초기화 함수는 게스트 기본 기억으로 되돌리고 이전 턴의 지연 저장이 새 방문자 기억을 오염시키지 않게 한다. 일반 웹/데스크톱 동작은 보존한다.
+
+## 웹 키오스크 S3 (2026-11-05)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEB-KIOSK-S3.1 | isKioskDemo()일 때만 지나·게스트·님·formal·한국어·친절한 넥스테인 안내 페르소나와 온보딩 완료를 기존 config-seed/onboarding-core 경로로 영속한다. 기존 아바타·목소리 설정은 보존한다. | Done |
+| FR-WEB-KIOSK-S3.2 | VITE_NAIA_KIOSK_DEMO_KEY 빌드 변수만으로 web-auth 브라우저 로그인 저장소를 시드한다. 누락/무효는 ‘시연 열쇠 없음’으로 차단하며 기존 개인 키로 대체하지 않는다. 키를 소스·로그·결과 문서에 기록하지 않는다. | Done |
+| FR-WEB-KIOSK-S3.3 | 준비 뒤 ‘들어가기’ 한 번으로 기존 TTS 파이프라인을 통해 ‘게스트님, 안녕하세요…’ 인사를 1회 말하고 대화를 연다. 준비·오류 안내와 재시도, 비활성 ‘처음으로’ 자리를 제공한다. | Done |
+| NFR-WEB-KIOSK-S3.1 | 깃발 OFF 시 일반 웹 부팅·기본 페르소나·로그인·온보딩 경로를 유지한다. 360px·키보드·ARIA와 기본/빈 목록/진행/성공/오류를 Vitest·Playwright로 검증한다. | Done |
+
+빌드: `VITE_NAIA_KIOSK_DEMO=1`과 `VITE_NAIA_KIOSK_DEMO_KEY`를 빌드 환경에만 주입하고 `pnpm -C packages/shell build:web`을 실행한다. 실제 값은 `.env`나 저장소 파일에 적지 않는다. Vite 변수는 배포 브라우저에 전달되므로 시연 전용 계정·크레딧 상한을 사용하고 시연 후 계정 측에서 키를 폐기한다. S3는 계정 발급·충전·폐기·배포를 수행하지 않는다.
+
+S3 검출 보강: 키오스크 디렉터리의 TypeScript 소스는 기존 module-manifest 파일 계약 앵커 검사를 적용한다. conform 훅과 pre-commit에서 미등록 파일을 차단한다. C 전용 conform 추출기는 TypeScript에 사용하지 않는다.
+
+P04 S3(2026-11-05): 관련 Vitest 7파일 155개 및 Playwright `e2e/kiosk-demo.spec.ts` 3개 통과. 360px 캡처 검토에서 제목·안내·입장·보조 행동이 잘리지 않으며, 키보드 입장과 ARIA 상태/오류, 준비 실패 후 재시도를 확인했다. 파일 앵커 누락 주입 시 검사기와 conform 훅 모두 차단한다. 실제 계정·BC250 음성은 S5/S7 수용 범위다. 증거: `/home/nextain/work/codex-runs/kiosk-demo/tmp/s3-r2-focused.log`, `s3-r2-e2e.log`, `s3-r2-playwright/`.
+
+S3 빌드 검증: `pnpm --filter ./packages/shell build:web`의 일반 빌드와 깃발 ON/합성 열쇠 빌드 모두 종료 코드 0. 두 실행 모두 worker 타입 검사를 포함한다. 코어·사이드카 타입 검사 및 pre-commit의 코어/셸 컴파일·로깅 검사 통과.

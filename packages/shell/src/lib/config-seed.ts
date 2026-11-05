@@ -1,4 +1,7 @@
 import type { AppConfig } from "./config";
+import { isKioskDemo } from "./kiosk-demo/flag";
+import { getDefaultLlmModel } from "./llm/registry";
+import { KIOSK_DEMO_PERSONA } from "./persona";
 
 /**
  * FR-VOICE.15 (#418): retired config fields that the safety migration strips
@@ -34,4 +37,25 @@ export function buildSeedShellConfig(
 		}
 	}
 	return seed;
+}
+
+/** OFF는 빈 패치: 일반판의 모든 기본값과 온보딩 선택을 보존한다. */
+export function buildKioskDemoConfigSeed(): SeedableShellConfig {
+	if (!isKioskDemo()) return {};
+	return buildSeedShellConfig({
+		agentName: "지나",
+		userName: "게스트",
+		honorific: "님",
+		speechStyle: "formal",
+		locale: "ko",
+		persona: KIOSK_DEMO_PERSONA,
+		personaDisabled: false,
+		onboardingComplete: true,
+		ttsEnabled: true,
+		provider: "nextain",
+		model: getDefaultLlmModel("nextain"),
+		llmRoles: {
+			main: { provider: "nextain", model: getDefaultLlmModel("nextain") },
+		},
+	});
 }

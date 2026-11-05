@@ -31,7 +31,16 @@ async function main() {
 	const tn = d.tool_name || "";
 	if (tn !== "Edit" && tn !== "Write") process.exit(0);
 	const fp = d.tool_input?.file_path || "";
-	if (!fp || !/\.(c|h|ts|md)$/.test(fp)) process.exit(0); // Registered C and TypeScript export-name contracts
+	// TypeScript uses the nonempty file-contract manifest, not the C extractor.
+	if (fp && /\.tsx?$/.test(fp)) {
+		try {
+			execFileSync("node", [path.join(__dirname, "..", "..", "scripts", "check-file-anchors.mjs")], { encoding: "utf8", timeout: 10000 });
+		} catch {
+			process.stdout.write(JSON.stringify({ decision: "block", reason: "TypeScript 파일 계약 앵커 검사 실패: node scripts/check-file-anchors.mjs 실행 후 미계약 파일을 정리하세요." }));
+		}
+
+	}
+	if (!fp || !/\.(c|h|ts|md)$/.test(fp)) process.exit(0); // C extractor; widen per language
 
 	let out;
 	try {

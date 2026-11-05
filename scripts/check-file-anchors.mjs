@@ -5,7 +5,7 @@
  * 문제: ci-verify-structure 는 루트 dir(F12)만 검사 → `src/main/**` 안에 새 파일을
  * 추가하면 어느 계약/UC 에도 안 묶여도 통과. (UC12 provider-resolver.ts 가 이렇게 샘.)
  *
- * 규칙(계약 먼저, 코드 나중): `src/main` 의 모든 .ts 는 module-manifest.json 에
+ * 규칙(계약 먼저, 코드 나중): `src/main` 및 `packages/shell/src/lib/kiosk-demo` 의 모든 .ts 는 module-manifest.json 에
  * {layer, uc, contract} 앵커와 함께 등록돼야 한다.
  *   - 디스크 파일 ∉ manifest  → RED (미계약 코드 = 드리프트)
  *   - manifest 항목 파일 부재  → RED (stale)
@@ -35,7 +35,7 @@ function listTs(absDir, relBase) {
 	for (const e of entries) {
 		const rel = relBase ? `${relBase}/${e.name}` : e.name;
 		if (e.isDirectory()) out.push(...listTs(join(absDir, e.name), rel));
-		else if (e.name.endsWith(".ts") && !e.name.endsWith(".d.ts")) out.push(rel);
+		else if (/\.tsx?$/.test(e.name) && !e.name.endsWith(".d.ts")) out.push(rel);
 	}
 	return out;
 }

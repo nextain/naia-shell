@@ -1,3 +1,8 @@
+import {
+	type StepInput,
+	makeShellOnboarding,
+	toNaiaConfig,
+} from "@nextain/naia-os-core/shell-compat";
 // ── new-naia 이식 코어 결선 (UC12 온보딩 graft seam) ──
 // chat-service.ts(UC1) 와 동일 패턴: isNewCore() 일 때 OnboardingWizard 가 이 seam 을 경유 →
 // 새 core OnboardingController 로 flow(단계/assets/게이트) + 완료(completeWith §D) 처리.
@@ -6,21 +11,23 @@
 // deps 는 여기서 셸 함수(invoke/config/adk-store/opener)를 주입 — core 는 @tauri-apps 미의존(직교, substrate-agnostic).
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import {
-	makeShellOnboarding,
-	type StepInput,
-	toNaiaConfig,
-} from "@nextain/naia-os-core/shell-compat";
+import { buildKioskDemoConfigSeed } from "./config-seed";
+import { isKioskDemo } from "./kiosk-demo/flag";
+import { Logger } from "./logger";
+import { installDefaultWebAdk } from "./web-runtime/web-adk";
+import { webAdkOpfsPath } from "./web-runtime/web-adk-path";
+import { getWebFs } from "./web-runtime/web-fs";
+import { INITIAL_WEB_WORKSPACE_CONFIG } from "./web-runtime/web-workspace-commands";
 
 // 셸 OnboardingWizard 가 submit 입력을 구성할 때 쓰는 타입(type-only 재노출, 직교).
 export type { StepInput };
 import { getAdkPath, setAdkPath } from "./adk-store";
 import {
 	type AppConfig,
+	NAIA_WEB_BASE_URL,
 	isOnboardingComplete,
 	loadConfig,
 	loadConfigWithSecrets,
-	NAIA_WEB_BASE_URL,
 	saveConfig,
 } from "./config";
 
@@ -128,4 +135,41 @@ export async function completeOnboardingNewCore(
 	flat: FlatConfig,
 ): Promise<void> {
 	await makeOnboardingSession().completeWith(flat);
+}
+
+/** Prepare before App mounts so hydration sees the same persona as the worker. */
+export async function prepareKioskDemoOnboarding(): Promise<void> {
+	if (!isKioskDemo()) return;
+	Logger.debug("Onboarding", "preparing kiosk workspace");
+	const fs = getWebFs();
+	const result = await installDefaultWebAdk({ fs });
+	if (!result.ok) throw new Error("kiosk_workspace_unavailable");
+	const path = webAdkOpfsPath("naia-settings/config.json");
+	const existing = JSON.parse(
+		(await fs.readText(path)) || JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG),
+	);
+	const seed = buildKioskDemoConfigSeed();
+	const config = { ...existing, ...seed };
+	const uiPath = webAdkOpfsPath("naia-settings/ui-config.json");
+	const ui = JSON.parse((await fs.readText(uiPath)) || "{}");
+	// Older versions also put persona/provider fields in UI config; remove those
+	// overrides while retaining avatar, voice and layout selections.
+	for (const key of Object.keys(seed)) delete ui[key];
+	ui.naiaKey = undefined;
+	ui.naiaUserId = undefined;
+	ui.apiKey = undefined;
+	ui.ttsEnabled = true;
+	ui.onboardingComplete = true;
+	await fs.writeBytes(uiPath, JSON.stringify(ui));
+	// Credentials belong exclusively to web-auth, never the workspace/persona.
+	config.naiaKey = undefined;
+	config.naiaUserId = undefined;
+	config.apiKey = undefined;
+	await fs.writeBytes(path, JSON.stringify(config));
+	saveConfig({
+		...config,
+		apiKey: "",
+		naiaKey: undefined,
+		naiaUserId: undefined,
+	});
 }
