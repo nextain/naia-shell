@@ -1,3 +1,4 @@
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { Logger } from "../logger";
 import { getAgentBridge } from "./agent-bridge";
 import { COMMAND_TABLE, STUB_RESPONSES } from "./command-table";
@@ -18,6 +19,10 @@ export async function routeCommand(
 	args?: unknown,
 	_options?: unknown,
 ): Promise<unknown> {
+	if (isKioskDemo() && ["compile_knowledge", "read_naia_knowledge_kb", "read_naia_knowledge_config", "write_naia_knowledge_config"].includes(cmd)) {
+		const { handleKioskKnowledgeCommand } = await import("../kiosk-demo/knowledge");
+		return handleKioskKnowledgeCommand(cmd, args, getWebFs());
+	}
 	const classification = COMMAND_TABLE[cmd];
 
 	if (classification === "web") {

@@ -1,3 +1,4 @@
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { loadConfig } from "../config";
 import { getStartableAgentBridge } from "./agent-bridge";
 import { installWebRuntime } from "./install";
@@ -90,7 +91,11 @@ export async function bootWebRuntimeAndModel(
 
 	install();
 	await consumeCallback();
-	const adkCheck = checkAdk();
+	const adkCheck = isKioskDemo() ? checkAdk().then(async (result) => {
+		const { seedKioskKnowledge } = await import("../kiosk-demo/knowledge");
+		await seedKioskKnowledge(getWebFs());
+		return result;
+	}) : checkAdk();
 
 	let modelLaunched = false;
 	const tryStartModel = (): boolean => {

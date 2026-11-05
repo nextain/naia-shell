@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = process.env.CI_PROJECT_ROOT || join(dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST = join(ROOT, ".agents", "context", "module-manifest.json");
-const SCAN_DIR = "src/main";
+const SCAN_DIRS = ["src/main", "packages/shell/src/lib/kiosk-demo", "packages/shell/web-worker"];
 const VALID_LAYERS = new Set(["domain", "ports", "app", "adapters", "composition"]);
 
 function listTs(absDir, relBase) {
@@ -55,7 +55,7 @@ function main() {
 		process.exit(1);
 	}
 
-	const disk = listTs(join(ROOT, SCAN_DIR), SCAN_DIR).sort();
+	const disk = SCAN_DIRS.flatMap((dir) => listTs(join(ROOT, dir), dir)).filter((file) => !file.endsWith(".test.ts")).sort();
 	const registered = new Set(keys);
 	const errs = [];
 
@@ -77,7 +77,7 @@ function main() {
 		for (const e of errs) console.error("  ✗ " + e);
 		process.exit(1);
 	}
-	console.log(`[file-anchors] OK — ${disk.length} 파일 전부 계약 앵커됨 (${SCAN_DIR}).`);
+	console.log(`[file-anchors] OK — ${disk.length} 파일 전부 계약 앵커됨 (${SCAN_DIRS.join(", ")}).`);
 	process.exit(0);
 }
 main();

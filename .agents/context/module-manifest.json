@@ -560,6 +560,167 @@
 				"UC-CHANNEL-SESSION-DISCLOSURE-DENY"
 			],
 			"contract": "docs/progress/issue-497-universal-agent.md"
+		},
+		"packages/shell/src/lib/kiosk-demo/flag.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/knowledge.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/core/safety.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/core/text.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/core/compile.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/core/serve.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/core/verify.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/domain/ports.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/domain/types.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/adapters/store/memory.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/adapters/retrieval/bm25.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/adapters/extract/markdown.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/kb-compiler/adapters/ingest/text.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/gateway-url.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/create-agent-worker.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/openai-compat-provider.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/fake-engine.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/kiosk-knowledge.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/agent-port-relay.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/webllm-engine.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/opfs-read-fs.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/agent-worker.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
+		},
+		"packages/shell/web-worker/adk-snapshot-fs.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-KIOSK-KNOWLEDGE-S1"
+			],
+			"contract": "docs/user-scenarios.md#uc-kiosk-knowledge-s1-2026-11-05"
 		}
 	}
 }

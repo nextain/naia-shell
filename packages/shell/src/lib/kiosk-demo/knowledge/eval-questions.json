@@ -1,0 +1,182 @@
+[
+  {
+    "id": "company",
+    "question": "넥스테인은 뭘 하는 회사예요?",
+    "expectedPoints": [
+      "AI와 함께 일하는 스타트업",
+      "B2B AX와 B2C 서비스가 같은 운영 경험을 공유"
+    ],
+    "source": "company.md"
+  },
+  {
+    "id": "brand",
+    "question": "넥스테인의 브랜드와 표어는 무엇인가요?",
+    "expectedPoints": [
+      "나만의, 그리고 우리만의 AI 환경",
+      "전환은 B2B, 경험은 B2C"
+    ],
+    "source": "brand.md"
+  },
+  {
+    "id": "difference",
+    "question": "나이아가 다른 AI 와 뭐가 달라요?",
+    "expectedPoints": [
+      "투명성과 기억의 소유",
+      "얼굴·목소리 캐릭터 경험과 업무 에이전트"
+    ],
+    "source": "difference.md"
+  },
+  {
+    "id": "web",
+    "question": "설치 없이 웹에서 쓸 수 있나요?",
+    "expectedPoints": [
+      "설치 없이 브라우저에서 시작",
+      "웹판과 이번 시연의 지원 범위를 구분"
+    ],
+    "source": "web.md"
+  },
+  {
+    "id": "desktop",
+    "question": "데스크톱 앱과 웹판은 어떻게 달라요?",
+    "expectedPoints": [
+      "내 PC GPU·로컬 모델 선택",
+      "데스크톱 ADK 폴더에 기억과 설정 저장"
+    ],
+    "source": "desktop.md"
+  },
+  {
+    "id": "container",
+    "question": "컨테이너판 WebGPU 는 어떤 제품인가요?",
+    "expectedPoints": [
+      "로컬 모델 서버와 웹 화면을 연결",
+      "0.2.6 개발·검증 상태, 이번 시연 범위에서는 제외"
+    ],
+    "source": "container.md"
+  },
+  {
+    "id": "memory",
+    "question": "기억의 주인은 누구인가요?",
+    "expectedPoints": [
+      "사용자가 자기 기억·설정을 이해하고 관리",
+      "판별 이관·삭제·동기화 지원 범위 확인"
+    ],
+    "source": "memory.md"
+  },
+  {
+    "id": "migration",
+    "question": "웹 기억이 PC로 자동 동기화되나요?",
+    "expectedPoints": [
+      "웹 ZIP 내보내기와 컨테이너 가져오기 구분",
+      "데스크톱 자동 동기화는 후속 계획"
+    ],
+    "source": "migration.md"
+  },
+  {
+    "id": "transparency",
+    "question": "투명하다는 것을 어떻게 확인하죠?",
+    "expectedPoints": [
+      "하네스북·naia-adk 공개 근거",
+      "모델과 문서·작업·승인 기록 가시성"
+    ],
+    "source": "transparency.md"
+  },
+  {
+    "id": "agents",
+    "question": "AI 직원들은 회사에서 실제로 무슨 일을 하나요?",
+    "expectedPoints": [
+      "개발·인프라·마케팅·사업·영업의 AI 동료",
+      "사람의 판단과 외부 메신저 연결"
+    ],
+    "source": "agents.md"
+  },
+  {
+    "id": "harness",
+    "question": "하네스는 무엇이고 왜 필요한가요?",
+    "expectedPoints": [
+      "지시·문서·규칙·도구·검토·기록을 묶은 환경",
+      "일관성 유지와 검토·실행 근거"
+    ],
+    "source": "harness.md"
+  },
+  {
+    "id": "adk",
+    "question": "ADK는 무엇인가요?",
+    "expectedPoints": [
+      "문서·지시·설정을 모은 작업 공간",
+      "셸·에이전트·기억의 역할 구분"
+    ],
+    "source": "adk.md"
+  },
+  {
+    "id": "ax",
+    "question": "기업의 AX는 어떻게 도와주나요?",
+    "expectedPoints": [
+      "문서·에이전트 업무 체계 컨설팅·교육",
+      "조직 환경별 보안·외부 모델 전달 범위 확인"
+    ],
+    "source": "ax.md"
+  },
+  {
+    "id": "smallbusiness",
+    "question": "작은 가게나 1인 창업자에게도 도움이 될까요?",
+    "expectedPoints": [
+      "홍보·사진·영상·문의 초안과 사장님 확인",
+      "한 사업장·한 업무 실증 계획"
+    ],
+    "source": "smallbusiness.md"
+  },
+  {
+    "id": "marketing",
+    "question": "AI가 실제로 해 온 마케팅 사례가 있나요?",
+    "expectedPoints": [
+      "지표 수집·콘텐츠 제작·응대 초안의 사내 운영",
+      "사람 확인 뒤 게시하고 결과로 다음 계획 개선"
+    ],
+    "source": "marketing.md"
+  },
+  {
+    "id": "growth",
+    "question": "사용자와 커뮤니티 성장 지표는 어떤가요?",
+    "expectedPoints": [
+      "2026-11-03 기준 릴리스 28회·다운로드 1,749건",
+      "Discord 85명·GitHub 별 16개, 활성 사용자와 구분"
+    ],
+    "source": "growth.md"
+  },
+  {
+    "id": "milestones",
+    "question": "출시와 선정 같은 성과도 있나요?",
+    "expectedPoints": [
+      "출시·등록·선정 단계 구분",
+      "재도전성공패키지와 경기 AI 기업 멤버십·입주 근거"
+    ],
+    "source": "milestones.md"
+  },
+  {
+    "id": "character",
+    "question": "캐릭터와 IP는 어떤 역할을 하나요?",
+    "expectedPoints": [
+      "얼굴·목소리 캐릭터와 실제 업무 경험 연결",
+      "캐릭터 IP·유통·라디오는 각각 현재 범위와 계획 구분"
+    ],
+    "source": "character.md"
+  },
+  {
+    "id": "future",
+    "question": "앞으로 어디까지 가능해요?",
+    "expectedPoints": [
+      "개인 대화 상대에서 업무 에이전트·조직 AI 팀으로 확장",
+      "모바일·자동 동기화·새 연동은 단계별 계획"
+    ],
+    "source": "future.md"
+  },
+  {
+    "id": "limits",
+    "question": "모르는 질문이나 내부 정보도 답해 주나요?",
+    "expectedPoints": [
+      "공개 지식 근거 안에서 답변",
+      "확인 전 수치·비공개 자료를 추측하지 않고 계획과 구현 구분"
+    ],
+    "source": "limits.md"
+  }
+]
