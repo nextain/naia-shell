@@ -266,6 +266,7 @@ export default {
 	"chat.answerFailed.lead": "Saya tidak bisa menyelesaikan jawaban itu. Coba lagi?",
 	"chat.answerFailed.retry": "Coba lagi",
 	"chat.answerFailed.detailsLabel": "Detail",
+	"chat.dockRight": "Sisi kanan",
 	"chat.error": "Kesalahan",
 	"chat.wireError.provider": "Periksa koneksi model AI.",
 	"chat.wireError.discord": "Periksa koneksi dan izin Discord.",

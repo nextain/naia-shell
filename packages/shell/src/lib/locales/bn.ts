@@ -266,6 +266,7 @@ export default {
 	"chat.answerFailed.lead": "আমি উত্তরটি শেষ করতে পারিনি। আবার চেষ্টা করব?",
 	"chat.answerFailed.retry": "আবার চেষ্টা করুন",
 	"chat.answerFailed.detailsLabel": "বিস্তারিত",
+	"chat.dockRight": "ডান দিকে",
 	"chat.error": "ত্রুটি",
 	"chat.wireError.provider": "AI মডেল সংযোগ পরীক্ষা করুন।",
 	"chat.wireError.discord": "Discord সংযোগ ও অনুমতি পরীক্ষা করুন।",

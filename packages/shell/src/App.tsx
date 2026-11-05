@@ -265,9 +265,22 @@ export function App() {
 	useEffect(() => {
 		setChatModeOverride(persistedChatMode);
 	}, [persistedChatMode]);
+	// 대화 열(AI 바·대화창)을 화면 왼쪽 또는 오른쪽에 둔다. 오른쪽이면 앱 영역이
+	// 왼쪽으로 가고, 아바타 그림 자리는 그대로 둔다(방송 배경 구도).
+	const persistedChatSide = useUiPreference<"left" | "right">(
+		UI_PREFERENCE_KEYS.chatSide,
+		"left",
+	);
+	const chatSide = persistedChatSide === "right" ? "right" : "left";
 	const setChatMode = (m: "workspace" | "app") => {
 		setChatModeOverride((cur) => (cur === m ? cur : m));
-		void patchUiPreferences({ [UI_PREFERENCE_KEYS.chatMode]: m });
+		void patchUiPreferences({
+			[UI_PREFERENCE_KEYS.chatMode]: m,
+			[UI_PREFERENCE_KEYS.chatSide]: "left",
+		});
+	};
+	const setChatRight = () => {
+		void patchUiPreferences({ [UI_PREFERENCE_KEYS.chatSide]: "right" });
 	};
 	// Workspace conversation-rail collapse (reclaims horizontal space for the
 	// work area). Collapse hides the rail via CSS width:0 — ChatArea stays
@@ -1125,6 +1138,7 @@ export function App() {
 					appTitle,
 					avatarProvider,
 					chatModeOverride,
+					chatSide,
 					chatDragRef,
 					chatHeight,
 					chatVisible,
@@ -1151,6 +1165,7 @@ export function App() {
 					setAppInstallRequest,
 					setChatHeight,
 					setChatMode,
+					setChatRight,
 					setChatVisible,
 					setShowAppInstall,
 					setShowUpdatePrompt,

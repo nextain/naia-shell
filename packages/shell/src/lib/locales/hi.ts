@@ -266,6 +266,7 @@ export default {
 	"chat.answerFailed.lead": "मैं यह उत्तर पूरा नहीं कर सका। फिर से कोशिश करें?",
 	"chat.answerFailed.retry": "फिर से कोशिश करें",
 	"chat.answerFailed.detailsLabel": "विवरण",
+	"chat.dockRight": "दाईं ओर",
 	"chat.error": "त्रुटि",
 	"chat.wireError.provider": "AI मॉडल कनेक्शन जाँचें।",
 	"chat.wireError.discord": "Discord कनेक्शन और अनुमतियाँ जाँचें।",

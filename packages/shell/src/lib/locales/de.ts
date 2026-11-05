@@ -266,6 +266,7 @@ export default {
 	"chat.answerFailed.lead": "Ich konnte die Antwort nicht fertigstellen. Noch einmal versuchen?",
 	"chat.answerFailed.retry": "Erneut versuchen",
 	"chat.answerFailed.detailsLabel": "Details",
+	"chat.dockRight": "Rechts",
 	"chat.error": "Fehler",
 	"chat.wireError.provider": "Prüfen Sie die Verbindung zum KI-Modell.",
 	"chat.wireError.discord": "Prüfen Sie die Discord-Verbindung und Berechtigungen.",
