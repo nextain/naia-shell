@@ -37,6 +37,7 @@ async function main() {
 			execFileSync("node", [path.join(__dirname, "..", "..", "scripts", "check-file-anchors.mjs")], { encoding: "utf8", timeout: 10000 });
 		} catch {
 			process.stdout.write(JSON.stringify({ decision: "block", reason: "TypeScript 파일 계약 앵커 검사 실패: node scripts/check-file-anchors.mjs 실행 후 미계약 파일을 정리하세요." }));
+			process.exit(0);
 		}
 
 	}

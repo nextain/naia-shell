@@ -13,3 +13,17 @@ export function consumeKioskGreeting(): boolean {
 	greetingPending = false;
 	return pending;
 }
+
+/** Wait for cancellation and durable memory reset before discarding the session. */
+export async function resetKioskVisit(actions: {
+	cancel: () => void | Promise<void>;
+	resetMemory: () => Promise<void>;
+	newConversation: () => void;
+	reload: () => void;
+}): Promise<void> {
+	Logger.debug("KioskDemo", "reset visit");
+	await actions.cancel();
+	await actions.resetMemory();
+	actions.newConversation();
+	actions.reload();
+}

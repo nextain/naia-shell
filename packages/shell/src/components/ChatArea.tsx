@@ -1,5 +1,6 @@
+import { resetKioskMemory } from "../lib/kiosk-demo/memory";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
-import { consumeKioskGreeting } from "../lib/kiosk-demo/entry";
+import { consumeKioskGreeting, resetKioskVisit } from "../lib/kiosk-demo/entry";
 import { KIOSK_DEMO_GREETING } from "../lib/persona";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -938,8 +939,9 @@ export function ChatArea({
 		// fallback audio from the response the user just stopped.
 		interruptTts();
 		const reqId = currentRequestId.current;
+		let cancellation: Promise<void> | undefined;
 		if (reqId) {
-			cancelChat(reqId).catch((err) => {
+			cancellation = cancelChat(reqId).catch((err) => {
 				Logger.warn("ChatArea", "Failed to cancel stream", {
 					error: String(err),
 				});
@@ -951,6 +953,7 @@ export function ChatArea({
 		commitPendingCost();
 		setEmotion("neutral");
 		completeCurrentRequest(reqId);
+		return cancellation;
 	}
 
 	// ESC key to cancel streaming
@@ -1815,6 +1818,30 @@ export function ChatArea({
 			);
 		};
 	}, []);
+
+	const [kioskResetting, setKioskResetting] = useState(false);
+	const [kioskResetFailed, setKioskResetFailed] = useState(false);
+	const kioskResetPending = useRef(false);
+	async function handleKioskReset() {
+		if (!isKioskDemo() || kioskResetPending.current) return;
+		kioskResetPending.current = true;
+		setKioskResetting(true);
+		setKioskResetFailed(false);
+		Logger.debug("ChatArea", "kiosk reset requested");
+		try {
+			await resetKioskVisit({
+				cancel: handleCancelStreaming,
+				resetMemory: resetKioskMemory,
+				newConversation: () => useChatStore.getState().newConversation(),
+				reload: () => window.location.reload(),
+			});
+		} catch {
+			Logger.debug("ChatArea", "kiosk reset failed");
+			setKioskResetFailed(true);
+			kioskResetPending.current = false;
+			setKioskResetting(false);
+		}
+	}
 
 	async function handleNewConversation() {
 		const store = useChatStore.getState();
@@ -4382,6 +4409,12 @@ export function ChatArea({
 						</button>
 					</div>
 					<div className="chat-header-right">
+						{isKioskDemo() && (
+							<button type="button" className="settings-icon-btn kiosk-chat-reset" onClick={handleKioskReset} disabled={kioskResetting}>
+								처음으로
+							</button>
+						)}
+
 						{totalSessionCost > 0 &&
 							provider !== "ollama" &&
 							provider !== "vllm" && (
@@ -4408,6 +4441,8 @@ export function ChatArea({
 					</div>
 				</div>
 
+				{isKioskDemo() && kioskResetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
+				{isKioskDemo() && kioskResetFailed && <p role="alert">기억을 초기화하지 못했어요. 처음으로를 다시 눌러 주세요.</p>}
 				<Suspense fallback={null}>
 					{/* Progress tab */}
 					{activeTab === "progress" && <WorkProgressArea />}

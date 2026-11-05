@@ -55,6 +55,9 @@ const ttsSyncMocks = vi.hoisted(() => ({
 	},
 }));
 const mockSendAppSkills = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+const mockResetKioskMemory = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/kiosk-demo/memory", () => ({ resetKioskMemory: mockResetKioskMemory }));
+
 
 vi.mock("../../lib/tts/synthesize", () => ({
 	synthesizeTts: ttsSyncMocks.synthesizeTts,
@@ -289,6 +292,27 @@ describe("ChatArea", () => {
 		resetWebModelStatusForTests();
 		vi.unstubAllEnvs();
 		vi.mocked(ensureBgmSidecar).mockReset().mockResolvedValue("http://localhost:18791");
+	});
+
+	it("kiosk reset blocks duplicates and offers retry after safe storage failure", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		let rejectReset!: (error: Error) => void;
+		mockResetKioskMemory.mockImplementationOnce(() => new Promise<void>((_, reject) => { rejectReset = reject; }));
+		render(<ChatArea />);
+		const reset = screen.getByRole("button", { name: "처음으로" });
+		fireEvent.click(reset);
+		await waitFor(() => expect(mockResetKioskMemory).toHaveBeenCalledOnce());
+		expect((reset as HTMLButtonElement).disabled).toBe(true);
+		fireEvent.click(reset);
+		expect(mockResetKioskMemory).toHaveBeenCalledOnce();
+		await act(async () => rejectReset(new Error("private storage detail")));
+		expect((await screen.findByText(/기억을 초기화하지 못했어요/)).getAttribute("role")).toBe("alert");
+		expect(screen.queryByText(/private storage detail/)).toBeNull();
+		expect((reset as HTMLButtonElement).disabled).toBe(false);
+		mockResetKioskMemory.mockRejectedValueOnce(new Error("still unavailable"));
+		fireEvent.click(reset);
+		await waitFor(() => expect(mockResetKioskMemory).toHaveBeenCalledTimes(2));
 	});
 
 	it("renders input field and buttons", () => {

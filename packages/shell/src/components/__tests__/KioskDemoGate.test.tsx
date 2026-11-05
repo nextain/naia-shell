@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 	boot: vi.fn(),
 	greeting: vi.fn(),
 	install: vi.fn(),
+	resetMemory: vi.fn(),
 }));
 vi.mock("../../lib/web-runtime/web-auth", () => ({
 	seedKioskDemoWebAuth: mocks.auth,
@@ -28,8 +29,12 @@ vi.mock("../../lib/web-runtime/auto-install", () => ({
 vi.mock("../../lib/web-runtime/install", () => ({
 	installWebRuntime: mocks.install,
 }));
-vi.mock("../../lib/kiosk-demo/entry", () => ({
+vi.mock("../../lib/kiosk-demo/entry", async () => ({
+	...(await vi.importActual("../../lib/kiosk-demo/entry")),
 	requestKioskGreeting: mocks.greeting,
+}));
+vi.mock("../../lib/kiosk-demo/memory", () => ({
+	resetKioskMemory: mocks.resetMemory,
 }));
 beforeEach(() => {
 	vi.stubEnv("MODE", "web");
@@ -88,7 +93,7 @@ it("waits for preparation and opens once only after a gesture", async () => {
 		),
 	);
 	expect((screen.getByText("처음으로") as HTMLButtonElement).disabled).toBe(
-		true,
+		false,
 	);
 	fireEvent.click(screen.getByText("들어가기"));
 	expect(screen.getByText("conversation")).toBeTruthy();
@@ -108,4 +113,33 @@ it("shows a safe preparation error and offers retry", async () => {
 			false,
 		),
 	);
+});
+
+it("entry reset waits, blocks duplicates and offers a safe retry on failure", async () => {
+	let rejectReset!: (e: Error) => void;
+	mocks.resetMemory.mockImplementationOnce(
+		() =>
+			new Promise<void>((_, reject) => {
+				rejectReset = reject;
+			}),
+	);
+	mount();
+	const reset = await screen.findByText("처음으로");
+	await waitFor(() =>
+		expect((reset as HTMLButtonElement).disabled).toBe(false),
+	);
+	fireEvent.click(reset);
+	await waitFor(() => expect(mocks.resetMemory).toHaveBeenCalledOnce());
+	expect((reset as HTMLButtonElement).disabled).toBe(true);
+	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+		true,
+	);
+	fireEvent.click(reset);
+	expect(mocks.resetMemory).toHaveBeenCalledOnce();
+	rejectReset(Error("private detail"));
+	expect((await screen.findByRole("alert")).textContent).toContain(
+		"기억을 초기화하지 못했어요",
+	);
+	expect(screen.queryByText(/private detail/)).toBeNull();
+	expect((reset as HTMLButtonElement).disabled).toBe(false);
 });

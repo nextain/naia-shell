@@ -56,7 +56,7 @@ test("S3 fresh browser prepares Jina, enters by keyboard and speaks once", async
 	await expect(
 		page.getByRole("heading", { name: "지나와 이야기해 보세요" }),
 	).toBeVisible();
-	await expect(page.getByRole("button", { name: "처음으로" })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "처음으로" })).toBeEnabled();
 	expect(
 		await page.evaluate(
 			() => (window as unknown as { __s3Spoken: string[] }).__s3Spoken.length,
@@ -96,9 +96,13 @@ test("S3 fresh browser prepares Jina, enters by keyboard and speaks once", async
 	await expect(page.getByTestId("onboarding")).toHaveCount(0);
 });
 
-test("S3 preparation progress and failure are safe and retryable", async ({ page }) => {
+test("S3 preparation progress and failure are safe and retryable", async ({
+	page,
+}) => {
 	let release!: () => void;
-	const pending = new Promise<void>((resolve) => { release = resolve; });
+	const pending = new Promise<void>((resolve) => {
+		release = resolve;
+	});
 	let first = true;
 	await page.route("**/web-adk/*.json", async (route) => {
 		if (!first) return route.continue();
@@ -108,10 +112,127 @@ test("S3 preparation progress and failure are safe and retryable", async ({ page
 	});
 	await page.goto("/");
 	await expect(page.getByRole("status")).toContainText("준비");
-	await expect(page.getByRole("button", { name: "들어가기", exact: true })).toBeDisabled();
+	await expect(
+		page.getByRole("button", { name: "들어가기", exact: true }),
+	).toBeDisabled();
 	release();
 	await expect(page.getByRole("alert")).toContainText("다시 시도");
 	await page.getByRole("button", { name: "다시 시도" }).click();
-	await expect(page.getByRole("button", { name: "들어가기", exact: true })).toBeEnabled();
+	await expect(
+		page.getByRole("button", { name: "들어가기", exact: true }),
+	).toBeEnabled();
 	await expect(page.locator(".chat-area")).toHaveCount(0);
+});
+
+test("integrated kiosk searches knowledge, recalls after reload and resets the visitor", async ({
+	page,
+}) => {
+	const question = "넥스테인은 뭘 하는 회사예요?";
+	const requests: {
+		messages: { role: string; content: string }[];
+		tools?: { function: { name: string } }[];
+	}[] = [];
+	let toolSeen = false;
+	await page.route("**/chat/completions", async (route) => {
+		const req = route.request().postDataJSON();
+		requests.push(req);
+		const last = req.messages.at(-1);
+		let delta: unknown;
+		let finish = "stop";
+		if (last.role === "tool") {
+			const result = JSON.parse(last.content);
+			expect(result.hits.length).toBeGreaterThan(0);
+			toolSeen = true;
+			delta = {
+				content:
+					"게스트님, 넥스테인은 나이아를 만드는 AI 회사입니다. 공개 지식을 검색해 안내해 드렸어요.",
+			};
+		} else if (last.role === "user" && last.content.includes(question)) {
+			expect(
+				req.tools.some(
+					(t: { function: { name: string } }) =>
+						t.function.name === "skill_knowledge_search",
+				),
+			).toBe(true);
+			delta = {
+				tool_calls: [
+					{
+						index: 0,
+						id: "int-knowledge",
+						type: "function",
+						function: {
+							name: "skill_knowledge_search",
+							arguments: JSON.stringify({ query: question }),
+						},
+					},
+				],
+			};
+			finish = "tool_calls";
+		} else {
+			delta = { content: "게스트님, 앞 대화를 기억하고 있어요." };
+		}
+		await route.fulfill({
+			contentType: "text/event-stream",
+			body: `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: finish }] })}\n\ndata: [DONE]\n\n`,
+		});
+	});
+	await page.goto("/");
+	await expect(
+		page.getByRole("button", { name: "들어가기", exact: true }),
+	).toBeEnabled();
+	await page.screenshot({
+		path: "/home/nextain/work/codex-runs/kiosk-demo/tmp/int-entry.png",
+	});
+	await page.getByRole("button", { name: "들어가기", exact: true }).click();
+	await expect(page.getByText(/게스트님, 안녕하세요/).first()).toBeVisible();
+	await page.locator("textarea.chat-input").fill(question);
+	await page.locator("textarea.chat-input").press("Enter");
+	await expect(
+		page.getByText(/공개 지식을 검색해 안내해 드렸어요/).first(),
+	).toBeVisible();
+	expect(toolSeen).toBe(true);
+	await expect(page.locator(".splash-screen")).toHaveCount(0);
+	await page.screenshot({
+		path: "/home/nextain/work/codex-runs/kiosk-demo/tmp/int-knowledge.png",
+	});
+	await page.reload();
+	await page.getByRole("button", { name: "들어가기", exact: true }).click();
+	await expect(page.locator("textarea.chat-input")).toBeEnabled();
+	await page.locator("textarea.chat-input").fill("앞 대화를 기억하나요?");
+	await page.locator("textarea.chat-input").press("Enter");
+	await expect(
+		page.getByText("게스트님, 앞 대화를 기억하고 있어요.").first(),
+	).toBeVisible();
+	const recalled = requests
+		.at(-1)!
+		.messages.filter((m) => m.role === "system")
+		.map((m) => m.content)
+		.join("\n");
+	expect(recalled).toContain("게스트님");
+	expect(recalled).toContain(question);
+	await page.getByRole("button", { name: "처음으로", exact: true }).click();
+	await expect(
+		page.getByRole("heading", { name: "지나와 이야기해 보세요" }),
+	).toBeVisible();
+	await expect(
+		page.getByRole("button", { name: "들어가기", exact: true }),
+	).toBeEnabled();
+	await page.screenshot({
+		path: "/home/nextain/work/codex-runs/kiosk-demo/tmp/int-reset.png",
+	});
+	await Promise.all([
+		page.waitForEvent("load"),
+		page.getByRole("button", { name: "처음으로", exact: true }).click(),
+	]);
+	await page.getByRole("button", { name: "들어가기", exact: true }).click();
+	await page.locator("textarea.chat-input").fill("새 방문자예요");
+	await page.locator("textarea.chat-input").press("Enter");
+	await expect.poll(() => requests.length).toBeGreaterThan(3);
+	const fresh = requests
+		.at(-1)!
+		.messages.filter((m) => m.role === "system")
+		.map((m) => m.content)
+		.join("\n");
+	expect(fresh).toContain("게스트님");
+	expect(fresh).not.toContain(question);
 });

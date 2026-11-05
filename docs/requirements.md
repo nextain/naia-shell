@@ -1622,7 +1622,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 |---|---|---|
 | FR-WEB-KIOSK-S3.1 | isKioskDemo()일 때만 지나·게스트·님·formal·한국어·친절한 넥스테인 안내 페르소나와 온보딩 완료를 기존 config-seed/onboarding-core 경로로 영속한다. 기존 아바타·목소리 설정은 보존한다. | Done |
 | FR-WEB-KIOSK-S3.2 | VITE_NAIA_KIOSK_DEMO_KEY 빌드 변수만으로 web-auth 브라우저 로그인 저장소를 시드한다. 누락/무효는 ‘시연 열쇠 없음’으로 차단하며 기존 개인 키로 대체하지 않는다. 키를 소스·로그·결과 문서에 기록하지 않는다. | Done |
-| FR-WEB-KIOSK-S3.3 | 준비 뒤 ‘들어가기’ 한 번으로 기존 TTS 파이프라인을 통해 ‘게스트님, 안녕하세요…’ 인사를 1회 말하고 대화를 연다. 준비·오류 안내와 재시도, 비활성 ‘처음으로’ 자리를 제공한다. | Done |
+| FR-WEB-KIOSK-S3.3 | 준비 뒤 ‘들어가기’ 한 번으로 기존 TTS 파이프라인을 통해 ‘게스트님, 안녕하세요…’ 인사를 1회 말하고 대화를 연다. 준비·오류 안내와 재시도, 첫 화면·대화 화면의 ‘처음으로’에서 응답 취소 → 기억 초기화 완료 → 새 대화 → 페이지 재로딩을 수행한다. 초기화 중 중복 요청을 막고 실패 시 안전한 오류와 재시도를 제공한다. | Done |
 | NFR-WEB-KIOSK-S3.1 | 깃발 OFF 시 일반 웹 부팅·기본 페르소나·로그인·온보딩 경로를 유지한다. 360px·키보드·ARIA와 기본/빈 목록/진행/성공/오류를 Vitest·Playwright로 검증한다. | Done |
 
 빌드: `VITE_NAIA_KIOSK_DEMO=1`과 `VITE_NAIA_KIOSK_DEMO_KEY`를 빌드 환경에만 주입하고 `pnpm -C packages/shell build:web`을 실행한다. 실제 값은 `.env`나 저장소 파일에 적지 않는다. Vite 변수는 배포 브라우저에 전달되므로 시연 전용 계정·크레딧 상한을 사용하고 시연 후 계정 측에서 키를 폐기한다. S3는 계정 발급·충전·폐기·배포를 수행하지 않는다.
@@ -1632,3 +1632,6 @@ S3 검출 보강: 키오스크 디렉터리의 TypeScript 소스는 기존 modul
 P04 S3(2026-11-05): 관련 Vitest 7파일 155개 및 Playwright `e2e/kiosk-demo.spec.ts` 3개 통과. 360px 캡처 검토에서 제목·안내·입장·보조 행동이 잘리지 않으며, 키보드 입장과 ARIA 상태/오류, 준비 실패 후 재시도를 확인했다. 파일 앵커 누락 주입 시 검사기와 conform 훅 모두 차단한다. 실제 계정·BC250 음성은 S5/S7 수용 범위다. 증거: `/home/nextain/work/codex-runs/kiosk-demo/tmp/s3-r2-focused.log`, `s3-r2-e2e.log`, `s3-r2-playwright/`.
 
 S3 빌드 검증: `pnpm --filter ./packages/shell build:web`의 일반 빌드와 깃발 ON/합성 열쇠 빌드 모두 종료 코드 0. 두 실행 모두 worker 타입 검사를 포함한다. 코어·사이드카 타입 검사 및 pre-commit의 코어/셸 컴파일·로깅 검사 통과.
+
+
+P04 통합(#824, 2026-11-05): S1 지식·S2 기억·S3 입장을 함께 검증했다. 초기화는 취소 완료 → OPFS 기억 초기화 → 새 대화 → 재로딩 순서이며 중복 클릭·저장 실패의 안전한 재시도를 시험했다. 일반/시연 웹 빌드 통과, 관련 런타임 262개(조건부 1개 제외, 실제 agent 기억은 별도 web-mode 9개 통과), 최종 UI 87개 통과. 로컬 ON preview의 Playwright 4개는 인사·실제 Worker 지식 검색·회상·초기화를 검증한다. 결정론 공급자 fixture이며 실제 계정/음성 수용은 아니다. 전체 셸 3084 통과/9 실패/25 제외이며 pairing 8·SettingsTab logout 1의 알려진 실패를 유지한다. 시각 검토: 첫 행동과 보조 초기화 구분, 진행/오류 live-region, 키보드·360px 입장 및 캡처 3장 확인. 증거는 회차 result-int.md와 tmp/int-*.log, tmp/int-*.png에 기록한다. S4·S5·S7은 남아 있다.

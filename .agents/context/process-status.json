@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-05",
+  "last_updated": "2026-11-05T10:36:27.194460+00:00",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -843,6 +843,23 @@
         "packages/shell/src/lib/kiosk-demo/memory.test.ts",
         "packages/shell/web-worker/kiosk-browser-agent.ts"
       ]
+    },
+    "web_ir_kiosk_integration_20261105": {
+      "issue": 824,
+      "branch": "feat/web-ir-kiosk-demo",
+      "title": "S1 knowledge + S2 memory + S3 entry integration",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S3 / UC-KIOSK-MEMORY-S2 / UC-KIOSK-KNOWLEDGE-S1",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S3.3",
+      "verification": "OFF/ON build:web passed; related kiosk/web-runtime/Worker 262 passed + 1 conditional skip, actual browser-agent memory + reset 9 passed, final UI/reset 87 passed; preview Chromium 4 passed, ON knowledge probe passed and OFF isolation passed. Full Shell 3084 passed / 9 failed / 25 skipped: agent-pairing 8 and SettingsTab logout 1; pristine f72d618 two-file comparison reproduced pairing 8 (logout passed there). No full-suite green claim. File anchors 97, conform and negative live hook probe passed. Root structure retains baseline tmp/ and tsconfig.build.json violations.",
+      "evidence": "/home/nextain/work/codex-runs/kiosk-demo/result-int.md",
+      "remaining": "S4 Jina avatar; S5 real BC250 voice; S7 deployment/live provider/video acceptance"
     }
   },
   "sdlc_gates": {

@@ -1,5 +1,7 @@
+import { resetKioskMemory } from "../lib/kiosk-demo/memory";
+import { useChatStore } from "../stores/chat";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { requestKioskGreeting } from "../lib/kiosk-demo/entry";
+import { requestKioskGreeting, resetKioskVisit } from "../lib/kiosk-demo/entry";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import { prepareKioskDemoOnboarding } from "../lib/onboarding-core";
@@ -30,6 +32,9 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 	const enabled = isKioskDemo();
 	const [phase, setPhase] = useState<Phase>("preparing");
 	const [entered, setEntered] = useState(false);
+	const [resetting, setResetting] = useState(false);
+	const [resetFailed, setResetFailed] = useState(false);
+	const resetPending = useRef(false);
 	const preparation = useRef<Promise<Phase> | null>(null);
 	const accepted = useRef(false);
 	useEffect(() => {
@@ -80,7 +85,7 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 					) : (
 						<button
 							type="button"
-							disabled={phase !== "ready"}
+							disabled={phase !== "ready" || resetting}
 							onClick={() => {
 								if (accepted.current) return;
 								accepted.current = true;
@@ -94,12 +99,36 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 					<button
 						className="kiosk-entry__reset"
 						type="button"
-						disabled
-						title="기억 초기화 연결 준비 중"
+						disabled={phase !== "ready" || resetting}
+						onClick={async () => {
+							if (resetPending.current) return;
+							resetPending.current = true;
+							setResetting(true);
+							setResetFailed(false);
+							try {
+								await resetKioskVisit({
+									cancel: () => undefined,
+									resetMemory: resetKioskMemory,
+									newConversation: () =>
+										useChatStore.getState().newConversation(),
+									reload: () => window.location.reload(),
+								});
+							} catch {
+								setResetFailed(true);
+								setResetting(false);
+								resetPending.current = false;
+							}
+						}}
 					>
 						처음으로
 					</button>
 				</div>
+				{resetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
+				{resetFailed && (
+					<p role="alert">
+						기억을 초기화하지 못했어요. 처음으로를 다시 눌러 주세요.
+					</p>
+				)}
 			</section>
 		</main>
 	);
