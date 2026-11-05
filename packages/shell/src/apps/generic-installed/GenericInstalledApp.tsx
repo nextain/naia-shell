@@ -1,3 +1,4 @@
+import { installInstalledAppHostBridge } from "./installed-app-host-bridge";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import {
@@ -9,6 +10,7 @@ import { normalizeTauriAssetUrl } from "../../lib/asset-url";
 import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
 import { isTrustedSlidesEntry } from "../../lib/slides-host";
 import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
+import { installInstalledAppContextBridge } from "./installed-app-context-bridge";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -48,6 +50,8 @@ function installedAppFrameSrc(htmlEntry: string): string {
 export function createGenericInstalledApp(
 	htmlEntry?: string,
 	tools: NaiaTool[] = [],
+	appId = "",
+	permissions: string[] = [],
 ) {
 	return function GenericInstalledApp({ naia }: AppCenterProps) {
 		const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -57,15 +61,19 @@ export function createGenericInstalledApp(
 		useLayoutEffect(() => {
 			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
 			const frame = iframeRef.current;
+			const disposeContextBridge = installInstalledAppContextBridge(frame, appId, frameSrc);
+			const disposeAppBridge = installInstalledAppHostBridge(frame, frameSrc, appId, permissions);
 			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
 			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
 				expectedFrameSrc: frameSrc,
 			});
 			return () => {
+				disposeAppBridge();
 				disposeHostBridge();
 				disposeFilesBridge();
+				disposeContextBridge();
 			};
-		}, [htmlEntry, frameSrc]);
+		}, [htmlEntry, frameSrc, appId, permissions]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {
@@ -126,7 +134,9 @@ export function createGenericInstalledApp(
 				}),
 			);
 
-			return () => unsubs.forEach((u) => u());
+			return () => {
+				for (const u of unsubs) u();
+			};
 		}, [naia, htmlEntry, tools]);
 
 		if (htmlEntry) {

@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { type Page, expect, test } from "@playwright/test";
 import {
 	SEED_ADK_PATH,
@@ -52,6 +53,8 @@ const SPEECH_MOCK = `
 		if (command === "plugin:event|emit") { emit(args.event, args.payload); return null; }
 		if (command === "plugin:event|unlisten") return null;
 		if (command === "send_to_agent_command" || command === "cancel_stream") return null;
+		if (command === "app_store_has_entitlement") return window.__STORE_ENTITLED__ !== false;
+		if (command === "app_install_store") return await new Promise(function(resolve) { window.__STORE_FINISH__ = function() { resolve({ id: args.appId, name: "Naia Slides", path: "/tmp/app" }); }; });
 		if (command === "app_list_installed") return [{
 			id: "land.naia.slides",
 			name: "Naia Slides",
@@ -305,9 +308,13 @@ test.describe("#467 slide presenter", () => {
 		});
 		await page.waitForTimeout(5_000);
 		await page.screenshot({
-			path: "test-results/issue-471-installed-naia-slides.png",
+			path: join(process.env.TMPDIR || "test-results", "issue-471-installed-naia-slides.png"),
 			fullPage: true,
 		});
+		await page.route("http://localhost:3000/thumbnail.png", (route) => route.fulfill({
+			contentType: "image/png",
+			body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64"),
+		}));
 		await page.route("**/v1/apps/products", async (route) => {
 			await route.fulfill({
 				contentType: "application/json",
@@ -315,7 +322,7 @@ test.describe("#467 slide presenter", () => {
 					data: [
 						{
 							app_id: "land.naia.slides",
-							manifest: { nameKo: "나이아 슬라이드" },
+							manifest: { name: "Slides", nameKo: "나이아 슬라이드", descriptionKo: "나이아와 발표합니다", thumbnailUrl: "/thumbnail.png", permissions: ["model.ask", "speech", "locale"] },
 						},
 					],
 				}),
@@ -331,13 +338,54 @@ test.describe("#467 slide presenter", () => {
 		});
 		await expect(page.locator(".app-install-dialog")).toBeVisible();
 		await expect(page.getByTestId("app-install-product")).toHaveCount(1);
+		await expect(page.getByRole("region", { name: /App permissions|앱 권한/ })).toBeVisible();
 		await expect(
 			page.getByTestId("app-install-product").locator("strong"),
 		).toHaveText("나이아 슬라이드");
+		await expect(page.getByText("나이아와 발표합니다")).toBeVisible();
+		await expect(page.getByTestId("app-install-product").locator("img")).toHaveAttribute("src", "http://localhost:3000/thumbnail.png");
+		await page.setViewportSize({ width: 360, height: 800 });
+		const dialog = page.getByRole("dialog", { name: "Naia Apps" });
+		await expect(dialog).toBeVisible();
+		const bounds = await dialog.boundingBox();
+		expect(bounds).not.toBeNull();
+		expect(bounds!.x).toBeGreaterThanOrEqual(0);
+		expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
+		const permissions = dialog.getByRole("region", { name: /App permissions|앱 권한/ });
+		const list = permissions.locator("ul");
+		expect(await list.evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingInlineStart))).toBeGreaterThan(0);
+		const install = dialog.getByRole("button", { name: "설치" });
+		await install.focus();
+		await expect(install).toBeFocused();
 		await page.screenshot({
-			path: "test-results/issue-471-single-install-confirmation.png",
+			path: join(process.env.TMPDIR || "test-results", "issue-471-single-install-confirmation.png"),
 			fullPage: true,
 		});
+	});
+
+	test("installation recovers from an ownership error and exposes progress and success", async ({ page }) => {
+		await page.addInitScript(SPEECH_MOCK);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
+		await page.addInitScript(() => localStorage.setItem("naia-config", JSON.stringify({ provider: "ollama", model: "qwen3.6:27b", locale: "ko", onboardingComplete: true })));
+		await page.route("**/v1/apps/products", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
+		await page.goto("/");
+		await expect(page.locator('button[data-app-id="land.naia.slides"]')).toBeVisible({ timeout: 15000 });
+		await page.evaluate(() => {
+			(window as any).__STORE_ENTITLED__ = false;
+			(window as any).__NAIA_E2E_EMIT__("app_install_requested", { appId: "land.naia.slides", storeOrigin: "http://localhost:3000", state: "retry" });
+		});
+		const dialog = page.getByRole("dialog", { name: "Naia Apps" });
+		await expect(dialog.getByTestId("app-install-product").locator("strong")).toHaveText("land.naia.slides");
+		await expect(dialog.locator("img")).toHaveCount(0);
+		await dialog.getByRole("button", { name: "설치" }).click();
+		await expect(dialog.getByRole("alert")).toBeVisible();
+		await page.evaluate(() => { (window as any).__STORE_ENTITLED__ = true; });
+		await dialog.getByRole("button", { name: "설치" }).click();
+		await expect(dialog.getByRole("status")).toBeVisible();
+		await expect(dialog.getByRole("button", { name: "설치 중..." })).toBeDisabled();
+		await page.evaluate(() => (window as any).__STORE_FINISH__());
+		await expect(dialog.getByRole("status").filter({ hasText: /설치 완료|Installed/ })).toBeVisible();
 	});
 
 	test("keeps the installed Slides deck loaded after switching apps and back", async ({
