@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-05T10:36:27.194460+00:00",
+  "last_updated": "2026-11-05T13:00:00+00:00",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,24 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_ir_kiosk_s4_20261105": {
+      "issue": 824,
+      "title": "웹 IR 키오스크 지나 아바타 다시 만들기·대화창 넓히기 (S4)",
+      "branch": "feat/web-ir-kiosk-s4",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S4.1~S4.2, NFR-WEB-KIOSK-S4.1",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S4",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "CPU matting and hole check (scripts/nva_matting_hole_measure.py) passed 0/2 bad clips (jina-idle.webm 192 frames hole_frames=0, jina-talking-ko.mp4 511 frames hole_frames=0) and encoded idle.webm/talking-ko.webm + stacked.mp4 verified hole_frames=0; focused Vitest 4 files 21/21 passed; build and build:web (normal OFF and kiosk ON) passed; Playwright e2e/kiosk-demo.spec.ts 4/4 passed; 1280x800 s4-entry.png and s4-chat.png visually verified.",
+      "evidence": "/home/nextain/work/codex-runs/kiosk-agy/result-s4.md",
+      "last_updated": "2026-11-05T13:00:00+00:00"
+    },
     "web_ir_kiosk_s1_20261105": {
       "issue": 824,
       "title": "IR 웹 키오스크 공개 지식·브라우저 지식 명령 (S1)",

@@ -1635,3 +1635,14 @@ S3 빌드 검증: `pnpm --filter ./packages/shell build:web`의 일반 빌드와
 
 
 P04 통합(#824, 2026-11-05): S1 지식·S2 기억·S3 입장을 함께 검증했다. 초기화는 취소 완료 → OPFS 기억 초기화 → 새 대화 → 재로딩 순서이며 중복 클릭·저장 실패의 안전한 재시도를 시험했다. 일반/시연 웹 빌드 통과, 관련 런타임 262개(조건부 1개 제외, 실제 agent 기억은 별도 web-mode 9개 통과), 최종 UI 87개 통과. 로컬 ON preview의 Playwright 4개는 인사·실제 Worker 지식 검색·회상·초기화를 검증한다. 결정론 공급자 fixture이며 실제 계정/음성 수용은 아니다. 전체 셸 3084 통과/9 실패/25 제외이며 pairing 8·SettingsTab logout 1의 알려진 실패를 유지한다. 시각 검토: 첫 행동과 보조 초기화 구분, 진행/오류 live-region, 키보드·360px 입장 및 캡처 3장 확인. 증거는 회차 result-int.md와 tmp/int-*.log, tmp/int-*.png에 기록한다. S4·S5·S7은 남아 있다.
+
+## 웹 키오스크 S4 — 지나 아바타 다시 만들기·대화창 확장 (2026-11-05)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEB-KIOSK-S4.1 | 지나 원본 영상(`jina-idle.webm` 8초, `jina-talking-ko.mp4` 21초)을 `nextain/naia-anyllm` 커밋 `7ff576ce`(`9842d242` 구멍 막기·배경색 거름 포함)의 `studio_nva_matting.py`로 CPU 후처리해 `packages/shell/public/nva/jina/clips/`의 `idle.webm`·`talking-ko.webm` 및 `.stacked.mp4`를 교체한다. `scripts/nva_matting_hole_measure.py` 구멍 검사에서 팔-몸 사이·다리 사이 닫힌 배경 구멍 0(`bad_clips: 0`, `hole_frames: 0`)을 만족한다. | Done |
+| FR-WEB-KIOSK-S4.2 | `isKioskDemo()`가 켜졌을 때 대화 화면 아바타가 기본 나이아 대신 실사 지나(`avatarProvider: "naia-video-avatar"`, `nvaModel: "jina"`)로 나오며, 대화 창 폭·높이를 넓혀 긴 답변이 위로 잘리지 않고 스크롤로 끝까지 보이게 한다. | Done |
+| NFR-WEB-KIOSK-S4.1 | `isKioskDemo()`가 꺼지면 일반 웹판 아바타(`naia`/VRM)와 레이아웃은 그대로 유지한다. 단위 시험(Vitest)과 로컬 개발 서버 브라우저 자동화(Playwright, 1280x800 캡처 `s4-entry.png`·`s4-chat.png`)로 검증한다. | Done |
+
+P04 S4(#824, 2026-11-05): `nva_matting_hole_measure.py` 구멍 검사에서 `jina-idle.webm`(192프레임)과 `jina-talking-ko.mp4`(511프레임) 모두 `hole_frames: 0`, `bad_clips: 0` 통과 및 인코딩된 `idle.webm`(1,012,050바이트)·`talking-ko.webm`(913,490바이트) 디코딩 재검증 `hole_frames: 0` 확인. 관련 Vitest 4파일 21개, `build` 및 `build:web`(일반 OFF / 시연 ON) 모두 종료 코드 0 통과. 로컬 웹 개발 서버 Playwright `e2e/kiosk-demo.spec.ts` 4개 시나리오 통과 및 `1280x800` 화면 사진(`/home/nextain/work/codex-runs/kiosk-agy/s4-entry.png`, `/home/nextain/work/codex-runs/kiosk-agy/s4-chat.png`)·360px 좁은 폭 화면 사진 시각 검토 완료.
+

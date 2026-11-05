@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildKioskDemoConfigSeed } from "../config-seed";
+import {
+	buildKioskDemoConfigSeed,
+	DEFAULT_SHELL_NAIA_WIDTH,
+	KIOSK_DEMO_NVA_MODEL,
+	KIOSK_SHELL_NAIA_WIDTH,
+	resolveInitialShellChatLayout,
+	resolveShellAvatarSelection,
+} from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { KIOSK_DEMO_PERSONA, buildSystemPrompt } from "../persona";
+import { WEB_DEFAULT_NVA } from "../web-runtime/web-assets";
 import {
 	seedKioskDemoWebAuth,
 	WEB_REMOTE_KEY_STORAGE_KEY,
 } from "../web-runtime/web-auth";
+import { INITIAL_WEB_WORKSPACE_CONFIG } from "../web-runtime/web-workspace-commands";
 import { prepareKioskDemoOnboarding } from "../onboarding-core";
 import {
 	consumeKioskGreeting,
@@ -48,24 +57,37 @@ describe("S3 kiosk isolation", () => {
 			vi.stubEnv("VITE_NAIA_KIOSK_DEMO", flag);
 			localStorage.setItem(
 				"naia-config",
-				JSON.stringify({ agentName: "Normal", onboardingComplete: false }),
+				JSON.stringify({
+					agentName: "Normal",
+					onboardingComplete: false,
+					avatarProvider: INITIAL_WEB_WORKSPACE_CONFIG.avatarProvider,
+					nvaModel: INITIAL_WEB_WORKSPACE_CONFIG.nvaModel,
+				}),
 			);
 			localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, "test-personal-fixture");
 			const before = localStorage.getItem("naia-config");
 			expect(isKioskDemo()).toBe(false);
 			expect(buildKioskDemoConfigSeed()).toEqual({});
+			expect(INITIAL_WEB_WORKSPACE_CONFIG.avatarProvider).toBe(
+				"naia-video-avatar",
+			);
+			expect(INITIAL_WEB_WORKSPACE_CONFIG.nvaModel).toBe(WEB_DEFAULT_NVA);
 			expect(seedKioskDemoWebAuth()).toBe(false);
 			await prepareKioskDemoOnboarding();
 			expect(provision).not.toHaveBeenCalled();
 			expect(memory.size).toBe(0);
 			expect(localStorage.getItem("naia-config")).toBe(before);
+			expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
+				avatarProvider: "naia-video-avatar",
+				nvaModel: WEB_DEFAULT_NVA,
+			});
 			expect(localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY)).toBe(
 				"test-personal-fixture",
 			);
 			expect(buildSystemPrompt()).not.toContain(KIOSK_DEMO_PERSONA);
 		},
 	);
-	it("ON produces the requested polite Korean guide", () => {
+	it("ON produces the requested polite Korean guide and Jina real-person avatar", () => {
 		const seed = buildKioskDemoConfigSeed();
 		expect(seed).toMatchObject({
 			agentName: "지나",
@@ -74,6 +96,8 @@ describe("S3 kiosk isolation", () => {
 			speechStyle: "formal",
 			locale: "ko",
 			onboardingComplete: true,
+			avatarProvider: "naia-video-avatar",
+			nvaModel: KIOSK_DEMO_NVA_MODEL,
 		});
 		const prompt = buildSystemPrompt(seed.persona, seed);
 		for (const text of ["존댓말", "투자자", "넥스테인", "지어내지", "게스트"])
@@ -94,12 +118,14 @@ describe("S3 kiosk isolation", () => {
 		);
 		expect(localStorage.getItem("naia-config")).toBeNull();
 	});
-	it("persists persona and removes stale UI overrides without losing avatar or voice", async () => {
+	it("persists Jina persona and avatar and removes stale UI overrides without losing voice", async () => {
 		memory.set(
 			"naia-adk/naia-settings/config.json",
 			JSON.stringify({
 				agentName: "Old",
-				nvaModel: "custom.nva",
+				avatarProvider: "vrm",
+				vrmModel: "/models/naia-default.vrm",
+				nvaModel: "naia",
 				vllmTtsHost: "http://voice.invalid",
 			}),
 		);
@@ -109,6 +135,8 @@ describe("S3 kiosk isolation", () => {
 				agentName: "Stale",
 				onboardingComplete: false,
 				ttsEnabled: false,
+				avatarProvider: "vrm",
+				vrmModel: "/models/ui.vrm",
 				nvaModel: "ui.nva",
 			}),
 		);
@@ -119,29 +147,79 @@ describe("S3 kiosk isolation", () => {
 		expect(saved).toMatchObject({
 			agentName: "지나",
 			onboardingComplete: true,
-			nvaModel: "custom.nva",
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "jina",
 			vllmTtsHost: "http://voice.invalid",
 		});
+		expect(saved.vrmModel).toBeUndefined();
 		const ui = JSON.parse(memory.get("naia-adk/naia-settings/ui-config.json")!);
 		expect(ui).toEqual({
 			onboardingComplete: true,
 			ttsEnabled: true,
-			nvaModel: "ui.nva",
 		});
 		expect(JSON.parse(localStorage.getItem("naia-config")!).naiaKey).toBeUndefined();
 		expect(JSON.stringify([...memory.values()])).not.toContain(
 			"test-kiosk-fixture-only",
 		);
 	});
-	it("a new workspace gets the complete persona and greeting is consumed only once", async () => {
+	it("a new workspace gets the complete persona, Jina avatar and greeting is consumed only once", async () => {
 		await prepareKioskDemoOnboarding();
 		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
 			agentName: "지나",
 			onboardingComplete: true,
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "jina",
 		});
 		expect(consumeKioskGreeting()).toBe(false);
 		requestKioskGreeting();
 		expect(consumeKioskGreeting()).toBe(true);
 		expect(consumeKioskGreeting()).toBe(false);
+	});
+	it("resolves Jina avatar and widened chat layout when kiosk flag is ON, and preserves normal web avatar and layout when OFF", () => {
+		expect(resolveShellAvatarSelection(null)).toEqual({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "jina",
+		});
+		expect(
+			resolveShellAvatarSelection({
+				provider: "nextain",
+				model: "glm-5.1",
+				apiKey: "",
+				locale: "ko",
+				avatarProvider: "naia-video-avatar",
+				nvaModel: WEB_DEFAULT_NVA,
+			}),
+		).toEqual({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "jina",
+		});
+		const kioskLayout = resolveInitialShellChatLayout(800);
+		expect(kioskLayout.naiaWidth).toBe(KIOSK_SHELL_NAIA_WIDTH);
+		expect(kioskLayout.naiaWidth).toBeGreaterThan(DEFAULT_SHELL_NAIA_WIDTH);
+		expect(kioskLayout.chatHeight).toBeGreaterThanOrEqual(540);
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		expect(
+			resolveShellAvatarSelection({
+				provider: "nextain",
+				model: "glm-5.1",
+				apiKey: "",
+				locale: "ko",
+				avatarProvider: "naia-video-avatar",
+				nvaModel: WEB_DEFAULT_NVA,
+			}),
+		).toEqual({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: WEB_DEFAULT_NVA,
+		});
+		expect(resolveShellAvatarSelection(null)).toEqual({
+			avatarProvider: "vrm",
+			nvaModel: "",
+		});
+		const normalLayout = resolveInitialShellChatLayout(800);
+		expect(normalLayout).toEqual({
+			naiaWidth: DEFAULT_SHELL_NAIA_WIDTH,
+			chatHeight: 320,
+		});
 	});
 });

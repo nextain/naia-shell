@@ -41,14 +41,16 @@ import {
 } from "./lib/app-loader";
 import { appRegistry } from "./lib/app-registry";
 import type { AppInstallRequest } from "./lib/app-store-client";
-import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
 import { BGM_APP_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill-spec";
 import { detectGpuVramGb } from "./lib/capabilities/gpu";
 import {
+	resolveInitialShellChatLayout,
+	resolveShellAvatarSelection,
+} from "./lib/config-seed";
+import { isKioskDemo } from "./lib/kiosk-demo/flag";
+import {
 	WEB_DEFAULT_BACKGROUND,
-	WEB_DEFAULT_NVA,
 	WEB_DEFAULT_VRM,
-	isLegacyWebNaiaSelection,
 	isWebMode,
 } from "./lib/web-runtime/web-assets";
 import {
@@ -102,7 +104,6 @@ import "./apps/settings/index"; // register settings app
 // sample-note app removed — will be replaced by a proper memo app later
 import { useAppStore } from "./stores/app";
 
-const NAIA_WIDTH_DEFAULT = 320;
 const NAIA_WIDTH_MIN = 120;
 const NAIA_WIDTH_MAX = 1200;
 const DEFAULT_BG_VIDEO = "naia-dawn-city-uhd.webp";
@@ -309,13 +310,15 @@ export function App() {
 	}, [e2eAdkPath]);
 	useAgentAuthSync(showAdkSetup, showOnboarding, configHydrated);
 	const [naiaVisible, setNaiaVisible] = useState(true);
-	const [naiaWidth, setNaiaWidth] = useState(NAIA_WIDTH_DEFAULT);
+	const [naiaWidth, setNaiaWidth] = useState(
+		() => resolveInitialShellChatLayout(window.innerHeight).naiaWidth,
+	);
 	const [appTitle, setAppTitle] = useState(
 		() => loadConfig()?.agentName?.trim() || "Naia",
 	);
 	const [chatVisible, setChatVisible] = useState(true);
-	const [chatHeight, setChatHeight] = useState(() =>
-		Math.round(window.innerHeight * 0.4),
+	const [chatHeight, setChatHeight] = useState(
+		() => resolveInitialShellChatLayout(window.innerHeight).chatHeight,
 	);
 	// 챗 레이아웃 2-way 수동 override. 이전 "home" 중앙 모드는 읽을 때
 	// 좌측 소형(app)으로 마이그레이션한다.
@@ -381,8 +384,10 @@ export function App() {
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const [avatarProvider, setAvatarProvider] = useState<
 		"vrm" | "naia-video-avatar"
-	>("vrm");
-	const [nvaModel, setNvaModel] = useState(() => loadConfig()?.nvaModel ?? "");
+	>(() => resolveShellAvatarSelection(loadConfig()).avatarProvider);
+	const [nvaModel, setNvaModel] = useState(
+		() => resolveShellAvatarSelection(loadConfig()).nvaModel,
+	);
 	const [detectedVramGb, setDetectedVramGb] = useState<number | null>(null);
 
 	useEffect(() => {
@@ -397,19 +402,16 @@ export function App() {
 			try {
 				const cfg = await loadConfigWithSecrets();
 				if (!active || currentRevision !== revision) return;
-				const legacyWebNaia = isWebMode() && isLegacyWebNaiaSelection(cfg);
-				setAvatarProvider(
-					legacyWebNaia
-						? "naia-video-avatar"
-						: effectiveAvatarProviderFromConfig(cfg, detectedVramGb),
-				);
-				setNvaModel(legacyWebNaia ? WEB_DEFAULT_NVA : (cfg?.nvaModel ?? ""));
+				const resolvedAvatar = resolveShellAvatarSelection(cfg, detectedVramGb);
+				setAvatarProvider(resolvedAvatar.avatarProvider);
+				setNvaModel(resolvedAvatar.nvaModel);
 				// WO-03: 웹판은 dist 번들 VRM이 항상 있으므로, VRM 미선택 상태를
 				// 기본 아바타로 채운다 (NVA 선택 provider는 건드리지 않는다).
 				// 공개 config에만 영속한다 (cfg는 secret 복원본일 수 있음).
 				let nextAvatarModelPath = cfg?.vrmModel ?? "";
 				if (
 					import.meta.env.MODE === "web" &&
+					!isKioskDemo() &&
 					!nextAvatarModelPath &&
 					cfg?.avatarProvider !== "naia-video-avatar"
 				) {

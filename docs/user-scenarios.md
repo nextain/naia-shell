@@ -2587,3 +2587,23 @@ P02 통합: kiosk-demo.spec.ts에서 입장·인사·지식 도구 호출·새�
 
 
 P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입장·인사 → 회사 질문 → 실제 지식 도구 호출과 카드 결과 → 재로딩 후 시스템 프롬프트의 게스트/앞 질문 회상 → 처음으로 → 새 방문자의 앞 질문 미회상을 검증한다. `entry.test.ts`는 취소/저장 완료 대기와 실패 시 세션·페이지 보존, KioskDemoGate/ChatArea 시험은 중복 초기화 차단과 안전한 오류/재시도를 검증한다. 로컬 preview와 캡처 3장의 시각 검토를 수행했다. 초기화 후 대화 보관 파일은 S2 계약대로 보존하며 새 Worker의 프롬프트에는 이전 방문자 기억을 넣지 않는다.
+
+## UC-WEB-KIOSK-S4 — 지나 실사 아바타 구멍 제거·키오스크 아바타 전환·대화 창 확장 (2026-11-05)
+
+투자자·손님이 키오스크 시연판(`isKioskDemo() === true`)의 대화 화면에 들어가면 기본 나이아 대신 **실사 지나 아바타**(`avatarProvider: "naia-video-avatar"`, `nvaModel: "jina"`)가 표시된다.
+지나 번들 클립(`packages/shell/public/nva/jina/clips/idle.webm`, `talking-ko.webm` 및 대응 `.stacked.mp4`)은 원본(`jina-idle.webm` 8초, `jina-talking-ko.mp4` 21초)을 `nextain/naia-anyllm` `7ff576ce`(`9842d242` 구멍 막기·배경색 거름 포함) `studio_nva_matting.py`로 CPU 후처리해 팔과 몸 사이·다리 사이 배경 구멍 0(`nva_matting_hole_measure.py` 측정 `bad_clips: 0`, `hole_frames: 0`)을 만족한다.
+또한 시연판 대화 화면에서는 대화 창(`.naia-overlay` / `.naia-chat-area` / `.naia-chat-wrapper` / `.chat-messages`)을 넓히고 높여 긴 답변이 위로 잘리지 않고 스크롤로 끝까지 읽히며, 아바타도 대화 창에 가려지지 않고 함께 보인다.
+시연 깃발이 꺼지면(`isKioskDemo() === false`) 일반 웹판의 기본 아바타와 레이아웃은 그대로 유지된다.
+
+### Test Coverage Map — S4
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | `isKioskDemo()` ON 시 `avatarProvider: "naia-video-avatar"`, `nvaModel: "jina"` 기본값 및 넓어진 대화 창 배치 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 빈 목록 | 초기 워크스페이스/빈 설정에서도 키오스크 준비 후 지나 아바타(`jina`)와 인사 표시 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 진행 | 아바타 매니페스트·클립 로딩 및 대화 스트리밍 중 레이아웃 안정 유지 | `kiosk-demo.spec.ts` |
+| 성공 | 구멍 측정 `nva_matting_hole_measure.py` 구멍 0, 대화 화면에서 실사 지나 표시 + 긴 답변이 위로 잘리지 않고 스크롤 가능 (`s4-entry.png`, `s4-chat.png`) | `nva_matting_hole_measure.py`, `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 오류 | 열쇠 누락/준비 실패 시 기존 S3 안전 차단·재시도 유지 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | 360px 모바일 폭에서 기존 모바일 시트 레이아웃·버튼 가로 넘침 없음 유지 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | `isKioskDemo()` OFF 시 일반 웹판 기본 아바타(`naia` / VRM) 및 기본 레이아웃 무변경 | `kiosk-demo.test.ts` |
+
