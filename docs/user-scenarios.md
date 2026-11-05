@@ -2529,3 +2529,22 @@ Test Coverage Map (P02)
 | 좁은 폭 | Playwright 실 컴포넌트와 CSS, 360px: 주요 버튼·상태·구독 정보의 가로 넘침 검사 |
 
 P04 증거는 `/home/nextain/work/codex-runs/824-i18n/result.md`와 같은 디렉터리의 `tmp/`에 기록한다. Rust·IPC 계약 변경은 없다.
+
+## UC-KIOSK-KNOWLEDGE-S1 (2026-11-05)
+
+IR 방문자는 시연 깃발을 켠 웹판에서 넥스테인·나이아·성장·철학·가능성을 묻는다.
+공개용 원고를 로컬 컴파일한 KB를 OPFS에 미리 넣고 데스크톱과 같은 knowledge search/ask 도구로 답변 근거를 제공한다.
+숫자는 기준일과 함께 설명하고 계획은 계획으로 구분한다. 비공개 재무·고객·개인 정보는 번들에 포함하지 않는다.
+
+P02 Test Coverage Map: `kiosk-demo/knowledge.test.ts` — 20문항 관련 카드 검색, 원고/KB 민감 패턴 검사,
+컴파일 재현, 정상·빈 검색·오류·영속 config·다른 scope·깃발 OFF 무쓰기/명령 차단.
+`e2e/kiosk-knowledge.spec.ts` — 실제 브라우저 OPFS 시드·명령·재읽기.
+UI 컴포넌트/CSS/Rust 변경 없음; 화면 상태·좁은 폭 검토는 기존 UI 계약을 보존한다.
+
+S1 기존 Worker 앵커 보충: 브라우저 Worker의 읽기 전용 도구·OPFS 스냅샷·대화 relay·로컬/계정 provider 경로는 시연 OFF에서 보존한다.
+검증: 기존 web-runtime/web-worker 단위 시험과 S1 실제 Worker skill-list probe. 새 지식 실행기만 깃발 ON에서 추가한다.
+
+S1 P04 결과: 관련 Vitest 52/52, Kiosk+Worker 72/72, Chromium ON/OFF OPFS 격리 시험 각각 통과.
+기존 화면의 입력·문구·레이아웃·ARIA를 바꾸지 않는 내부 지식 backend 변경으로 검토했다.
+빈 결과/근거 없음·저장 실패/재시도·동시 시드·컴파일 성공은 단위 시험으로 확인했다.
+전체 Shell suite는 별도 실패가 남아 있으며 음성·실 공급자 대화·운영 배포는 S5/S7 통합 검증 범위다.

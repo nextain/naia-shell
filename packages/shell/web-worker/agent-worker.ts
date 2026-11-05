@@ -1,4 +1,6 @@
 /// <reference lib="webworker" />
+import { isKioskDemo } from "../src/lib/kiosk-demo/flag";
+import { makeKnowledgeSkillsExecutor } from "@naia-agent/adapters/knowledge-skill.js";
 import {
 	BROWSER_READ_TOOL_NAMES,
 	type WebLLMEngineLike,
@@ -165,9 +167,14 @@ self.addEventListener("message", (event: MessageEvent) => {
 			getEngine().catch(() => {});
 		}
 
+		const kioskSpecs = isKioskDemo()
+			? makeKnowledgeSkillsExecutor().specs()
+			: [];
+		const kiosk = isKioskDemo() ? awaitKioskTools() : null;
 		let snapshot = EMPTY_ADK_SNAPSHOT;
 		let activeEnableThinking = false;
 		const refresh = async (rawLine: string) => {
+			if (kiosk) await (await kiosk).refresh();
 			snapshot = await readAdkSnapshot(() => navigator.storage.getDirectory());
 			activeEnableThinking = resolveWebChatTurnEnableThinking(
 				rawLine,
@@ -186,7 +193,9 @@ self.addEventListener("message", (event: MessageEvent) => {
 		const localProvider = makeWebLLMProvider({
 			getEngine: getEngineWithThinking,
 			model: selectedModel ?? WEB_LLM_MODEL_ID,
-			toolNames: BROWSER_READ_TOOL_NAMES,
+			toolNames: isKioskDemo()
+				? [...BROWSER_READ_TOOL_NAMES, ...kioskSpecs.map((spec) => spec.name)]
+				: BROWSER_READ_TOOL_NAMES,
 		});
 
 		const provider: ProviderPort = {
@@ -209,9 +218,22 @@ self.addEventListener("message", (event: MessageEvent) => {
 			},
 		};
 
-		const toolExecutor = makeBrowserReadTools({
+		const baseToolExecutor = makeBrowserReadTools({
 			fs: makeOpfsReadFs(() => navigator.storage.getDirectory()),
 		});
+
+		async function awaitKioskTools() {
+			const mod = await import("./kiosk-knowledge");
+			return mod.makeKioskKnowledgeTools(baseToolExecutor);
+		}
+		const toolExecutor = isKioskDemo()
+			? {
+					specs: () => [...baseToolExecutor.specs(), ...kioskSpecs],
+					execute: async (
+						...args: Parameters<typeof baseToolExecutor.execute>
+					) => (await kiosk!).executor.execute(...args),
+				}
+			: baseToolExecutor;
 
 		port.addEventListener("message", (event: MessageEvent) => {
 			if (typeof event.data !== "string") return;
@@ -246,15 +268,26 @@ self.addEventListener("message", (event: MessageEvent) => {
 
 		const snapshotFs = makeSnapshotFs(() => snapshot);
 
+		const personaSource = makePersonaSourceStore({
+			fs: snapshotFs,
+			adkPath: WEB_ADK_PATH,
+		});
 		startBrowserAgent({
 			port: channel.port2,
 			diag,
 			provider,
 			toolExecutor,
-			personaSource: makePersonaSourceStore({
-				fs: snapshotFs,
-				adkPath: WEB_ADK_PATH,
-			}),
+			personaSource: isKioskDemo()
+				? {
+						load() {
+							const profile = personaSource.load();
+							return {
+								...profile,
+								systemPromptPrefix: `${profile?.systemPromptPrefix ?? profile?.personaText ?? ""}\n넥스테인·나이아·성장·제품·가능성 질문에는 skill_knowledge_search 또는 skill_knowledge_ask로 공개 지식을 먼저 확인하세요. 근거와 기준일을 보존하고 계획은 계획으로 설명하세요. 근거 없는 수치나 비공개 정보는 추측하지 마세요.`,
+							};
+						},
+					}
+				: personaSource,
 			workspaceContext: makeWorkspaceContextStore({
 				fs: snapshotFs,
 				adkPath: WEB_ADK_PATH,

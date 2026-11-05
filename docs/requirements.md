@@ -1601,3 +1601,13 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | ID | 요구사항 | 시나리오·검증 | 상태 |
 |---|---|---|---|
 | **FR-WEB-025-I18N.1** | PR #824에서 추가한 한국어 UI 문구와 ko/en 분기는 `packages/shell/src/lib/locales/`의 키 및 `t()`로 제공한다. 14개 언어에 키를 넣고 한국어 외에는 영어를 사용한다. 배경 이름은 현재 로케일을 조회할 때 번역하고 저장소 수치는 자리표시자로 보간한다. 웹 전용 영어 키는 `en-web.ts`에 두며 공통 화면의 키는 데스크톱에도 제공한다. 기존 문구와 미번역 검사 baseline은 변경하지 않는다. | UC-WEB-025-I18N-824; `i18n-user-facing.test.ts`, `i18n-web-strings.test.ts`, 웹 저장소·배경·푸시·탐색기·설정·앱 테스트; 로컬 Playwright 실 컴포넌트 | Done |
+
+## FR-KIOSK-KNOWLEDGE-S1 (2026-11-05)
+
+- 시연 전용: `isKioskDemo()`에서만 KB 시드와 지식 웹 명령을 활성화한다. 일반 웹판은 기존 차단과 부팅 순서를 유지한다.
+- 회사 브랜드·제품 세 판·투명성과 기억 소유·공개 성장 지표·AI 협업 및 하네스·확장 가능성을 출처 있는 Markdown으로 큐레이션한다.
+- kb-compiler `{version:1,kb}` 포맷으로 로컬 컴파일하고 원고 및 KB에 민감 숫자·재무 용어가 없는지 자동 검사한다.
+- OPFS `naia-adk/naia-settings/knowledge.json`과 `knowledge/<scope>/kb.json`을 사용한다. 임의 로컬 파일 컴파일은 허용하지 않고 등록된 번들 원고만 컴파일한다.
+- 브라우저 Worker는 데스크톱의 knowledge skill 실행기를 통해 동일 search/ask 도구를 모델에 노출한다. 매 대화 전 저장된 설정과 KB를 갱신한다.
+- 평가 질문 20개는 모델 호출 없이 실제 검색에서 관련 카드를 찾아야 한다. 근거 없는 질문은 기권한다.
+- 상태: Done (S1 범위). 20문항 검색·민감 패턴·깃발 격리·실제 OPFS/데스크톱 실행기/Worker·웹 빌드 검증. 전체 Shell 시험에는 범위 밖 실패가 있어 전체 green으로 주장하지 않는다. 검증 결과는 회차 result-s1.md에 기록한다.

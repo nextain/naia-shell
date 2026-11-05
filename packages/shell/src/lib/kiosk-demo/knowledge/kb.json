@@ -1,0 +1,581 @@
+{
+  "version": 1,
+  "kb": {
+    "cards": [
+      {
+        "id": "card_1",
+        "title": "ADK 문서 설정 기억의 작업 공간",
+        "fields": {
+          "content": "**ADK**는 에이전트가 참고할 문서와 지시, 설정을 모아 두는 작업 공간입니다. AGENTS.md와 업무 문서, 작업·일정, 기억과 제품 설정이 이어지는 바탕입니다. 모델이나 대화 화면이 바뀌어도 사용자의 맥락을 관리할 수 있도록 하는 방향입니다. 셸은 사용자에게 대화와 아바타·음성을 보여 주고, naia-agent는 대화와 도구 실행을 담당하며, 기억은 별도 계층으로 연결합니다. 공개된 naia-adk와 하네스북은 조직이 이런 작업 환경을 어떻게 구성할 수 있는지 설명하는 근거입니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_company_brand_line_20261020.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/hub_naia_product_vision.md`",
+          "summary": "**ADK**는 에이전트가 참고할 문서와 지시, 설정을 모아 두는 작업 공간입니다. AGENTS.md와 업무 문서, 작업·일정, 기억과 제품 설정이 이어지는 바탕입니다. 모델이나 대화 화면이 바뀌어도 사용자의 맥락을 관리할 수 있도록 하는 방향입니다. 셸은 사용자에게 대화와 아바타·음성을 보여 주고, naia-agent는 대화와 도구 실행을 담당하며, 기억은 별도 계층으로 연결합니다. 공개된 naia-adk와 하네스북은 조직이 이런 작업 환경을 어떻게 구성할 수 있는지 설명하는 근거입니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/adk.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_2",
+        "title": "AI 직원과 함께 일하는 회사",
+        "fields": {
+          "content": "AI 직원들은 실제로 개발·운영·사업·마케팅 역할을 나누어 회사 업무를 돕습니다. 넥스테인은 **사람과 직무별 AI 동료가 함께 일하는 회사**를 만들고 있습니다. 인프라·개발, 마케팅, 사업, 영업 같은 역할을 AI 에이전트가 나누어 맡습니다. 회사 안에서는 메신저와 문서·작업보드를 통해 요청과 초안·검토를 연결합니다. 팀즈·디스코드는 외부 메신저에 연결해 사용하는 것이며 회사가 만든 메신저로 소개하지 않습니다. AI가 모든 책임을 대체한다는 뜻이 아니라 사람이 방향과 판단을 맡고 AI가 반복 업무와 초안 작업을 돕는 운영 경험을 축적한다는 뜻입니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_company_brand_line_20261020.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/bluecollar-ir-merged-20261028.md`",
+          "summary": "AI 직원들은 실제로 개발·운영·사업·마케팅 역할을 나누어 회사 업무를 돕습니다. 넥스테인은 **사람과 직무별 AI 동료가 함께 일하는 회사**를 만들고 있습니다. 인프라·개발, 마케팅, 사업, 영업 같은 역할을 AI 에이전트가 나누어 맡습니다. 회사 안에서는 메신저와 문서·작업보드를 통해 요청과 초안·검토를 연결합니다. 팀즈·디스코드는 외부 메신저에 연결해 사용하는 것이며 회사가 만든 메신저로 소개하지 않습니다. AI가 모든 책임을 대체한다는 뜻이 아니라 사람이 방향과 판단을 맡고 AI가 반복 "
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/agents.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_3",
+        "title": "기업 AX 문서 에이전트 교육",
+        "fields": {
+          "content": "B2B **AX**는 기업과 기관이 AI를 업무에 정착시키는 전환을 돕는 사업입니다. ADK로 문서·에이전트 기반 업무 체계를 정리하고 컨설팅과 AI 교육 프로그램을 연결합니다. 회사가 먼저 사용한 직무별 AI·문서·일정·승인·메신저 운영을 제품과 교육으로 다듬는 방향입니다. 필요한 경우 로컬 모델을 전달하고 조직에 맞는 환경을 구성하는 역량을 발전시킵니다. 고객의 보안 자료와 외부 모델 전달 범위는 환경별로 확인하며, 개별 고객이나 미공개 업무 내용 대신 적용 방식으로 설명합니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_company_brand_line_20261020.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`",
+          "summary": "B2B **AX**는 기업과 기관이 AI를 업무에 정착시키는 전환을 돕는 사업입니다. ADK로 문서·에이전트 기반 업무 체계를 정리하고 컨설팅과 AI 교육 프로그램을 연결합니다. 회사가 먼저 사용한 직무별 AI·문서·일정·승인·메신저 운영을 제품과 교육으로 다듬는 방향입니다. 필요한 경우 로컬 모델을 전달하고 조직에 맞는 환경을 구성하는 역량을 발전시킵니다. 고객의 보안 자료와 외부 모델 전달 범위는 환경별로 확인하며, 개별 고객이나 미공개 업무 내용 대신 적용 방식으로 설명합니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/ax.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_4",
+        "title": "브랜드와 전환에서 경험까지",
+        "fields": {
+          "content": "브랜드 표어는 **AI 에이전트와 함께 일하는 스타트업**, **나만의, 그리고 우리만의 AI 환경을 만듭니다**, **AX — 전환(Transformation)을 넘어 경험(Experience)까지**입니다. 전환은 기업과 조직이 AI를 업무에 정착시키는 B2B에, 경험은 개인이 AI와 대화하고 함께 일하고 노는 B2C에 중점을 둡니다. 소개 순서는 조직, 그 조직을 만들며 생긴 기술, 그 기술로 하는 일입니다. 같은 기술 기반을 개인의 일상과 조직의 업무 양쪽에서 다듬습니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_company_brand_line_20261020.md`",
+          "summary": "브랜드 표어는 **AI 에이전트와 함께 일하는 스타트업**, **나만의, 그리고 우리만의 AI 환경을 만듭니다**, **AX — 전환(Transformation)을 넘어 경험(Experience)까지**입니다. 전환은 기업과 조직이 AI를 업무에 정착시키는 B2B에, 경험은 개인이 AI와 대화하고 함께 일하고 노는 B2C에 중점을 둡니다. 소개 순서는 조직, 그 조직을 만들며 생긴 기술, 그 기술로 하는 일입니다. 같은 기술 기반을 개인의 일상과 조직의 업무 양쪽에서 다듬습니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/brand.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_5",
+        "title": "얼굴 목소리 캐릭터 IP 경험",
+        "fields": {
+          "content": "나이아는 **얼굴과 목소리를 가진 캐릭터 경험**을 개인 AI와 연결합니다. NVA 비디오 아바타와 대화·듣기·말하기가 사용자와 만나는 표현 방식입니다. Naia Shell은 아바타·모델·목소리·배경·앱을 경험하는 공간이고, 앱스토어는 유통 경로, 캐릭터 IP는 작가·브랜드 협업 자산이라는 방향입니다. 캐릭터를 대화 상대에서 실제 일을 돕는 에이전트로 발전시키고 조직의 직무별 AI로 이어 가고자 합니다. 나이아 라디오와 추가 협업은 해당 자료의 시점에서 계획으로 소개하며 이번 시연의 실제 제공 기능과 구분합니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_company_brand_line_20261020.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-update-20261102.md`",
+          "summary": "나이아는 **얼굴과 목소리를 가진 캐릭터 경험**을 개인 AI와 연결합니다. NVA 비디오 아바타와 대화·듣기·말하기가 사용자와 만나는 표현 방식입니다. Naia Shell은 아바타·모델·목소리·배경·앱을 경험하는 공간이고, 앱스토어는 유통 경로, 캐릭터 IP는 작가·브랜드 협업 자산이라는 방향입니다. 캐릭터를 대화 상대에서 실제 일을 돕는 에이전트로 발전시키고 조직의 직무별 AI로 이어 가고자 합니다. 나이아 라디오와 추가 협업은 해당 자료의 시점에서 계획으로 소개하며 이번 시연의 실제 제공 기"
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/character.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_6",
+        "title": "넥스테인 회사 소개",
+        "fields": {
+          "content": "넥스테인은 **AI와 함께 일하는 스타트업**입니다. 그 기반으로 기업의 업무 전환을 돕는 B2B AX 사업과 개인의 AI 경험을 만드는 B2C 서비스를 만듭니다. 회사가 먼저 AI 동료들과 일하면서 얻은 기술과 운영 경험을 제품과 교육으로 옮깁니다. 나이아는 개인이 일하고 노는 환경에서 듣고 말하고 기억하는 AI 에이전트입니다. 조직에서 실제로 쓰는 문서·에이전트 업무 체계와 개인용 서비스를 함께 발전시키는 것이 회사의 방향입니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_company_brand_line_20261020.md`",
+          "summary": "넥스테인은 **AI와 함께 일하는 스타트업**입니다. 그 기반으로 기업의 업무 전환을 돕는 B2B AX 사업과 개인의 AI 경험을 만드는 B2C 서비스를 만듭니다. 회사가 먼저 AI 동료들과 일하면서 얻은 기술과 운영 경험을 제품과 교육으로 옮깁니다. 나이아는 개인이 일하고 노는 환경에서 듣고 말하고 기억하는 AI 에이전트입니다. 조직에서 실제로 쓰는 문서·에이전트 업무 체계와 개인용 서비스를 함께 발전시키는 것이 회사의 방향입니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/company.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_7",
+        "title": "컨테이너판 0.2.6 개발 상태",
+        "fields": {
+          "content": "컨테이너판 0.2.6은 **내 PC의 로컬 모델을 웹 화면으로 쓰는 판**입니다. 2026-11-05 상태 문서에는 웹판 위로 이식해 독립 검수를 마쳤고, 웹 화면과 로컬 모델 서버 기동·모델 선택·스트리밍·취소·기억 내보내기와 가져오기를 확인했다고 기록합니다. GPU 실기, 메모리 부족과 폴백, 공개 이미지와 복구 문서는 후속 검증 항목입니다. 이번 음성 IR 키오스크 범위에서는 WebGPU·컨테이너판을 제외했습니다. 제품 확장 방향과 이번 방문자가 체험하는 기능을 구분해 설명합니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-status-20261105.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-ir-demo-scope-20261105.md`",
+          "summary": "컨테이너판 0.2.6은 **내 PC의 로컬 모델을 웹 화면으로 쓰는 판**입니다. 2026-11-05 상태 문서에는 웹판 위로 이식해 독립 검수를 마쳤고, 웹 화면과 로컬 모델 서버 기동·모델 선택·스트리밍·취소·기억 내보내기와 가져오기를 확인했다고 기록합니다. GPU 실기, 메모리 부족과 폴백, 공개 이미지와 복구 문서는 후속 검증 항목입니다. 이번 음성 IR 키오스크 범위에서는 WebGPU·컨테이너판을 제외했습니다. 제품 확장 방향과 이번 방문자가 체험하는 기능을 구분해 설명합니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/container.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_8",
+        "title": "데스크톱 앱 GPU와 로컬 선택",
+        "fields": {
+          "content": "데스크톱 앱과 웹판은 실행 장소와 로컬 하드웨어 활용 범위에서 달라요. 데스크톱 앱은 **내 PC의 GPU와 로컬 모델**을 활용하려는 사용자, 완전 로컬 환경을 원하는 사용자를 위한 선택입니다. 웹으로 가볍게 시작하고 필요에 따라 앱 환경으로 옮기는 방향입니다. 데스크톱에서는 기억과 설정이 자신의 ADK 폴더에 저장되고 사용하는 모델을 화면에서 확인합니다. 2026-11-05 제품 상태 문서는 데스크톱 0.2.5 출시판의 main 병합을 기록합니다. 웹 화면에서 보이는 기능과 앱의 네이티브 기능은 범위가 다르므로 필요한 기능의 지원 상태를 확인해 안내합니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_naia_shell_web_first_memory_ownership_20261031.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-status-20261105.md`",
+          "summary": "데스크톱 앱과 웹판은 실행 장소와 로컬 하드웨어 활용 범위에서 달라요. 데스크톱 앱은 **내 PC의 GPU와 로컬 모델**을 활용하려는 사용자, 완전 로컬 환경을 원하는 사용자를 위한 선택입니다. 웹으로 가볍게 시작하고 필요에 따라 앱 환경으로 옮기는 방향입니다. 데스크톱에서는 기억과 설정이 자신의 ADK 폴더에 저장되고 사용하는 모델을 화면에서 확인합니다. 2026-11-05 제품 상태 문서는 데스크톱 0.2.5 출시판의 main 병합을 기록합니다. 웹 화면에서 보이는 기능과 앱의 네이티브 기능"
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/desktop.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_9",
+        "title": "다른 AI와 나이아의 차별점 투명성과 기억의 소유",
+        "fields": {
+          "content": "나이아의 대표 가치는 **투명성과 기억의 소유**입니다. 어떤 모델을 쓰는지와 작업 환경을 사용자가 이해하고 선택할 수 있는 방향을 지향합니다. 하네스북과 naia-adk에 운영 방식과 하네스를 공개하는 것이 투명성의 근거입니다. 개인은 자신의 기억과 설정을 관리하고, 조직은 문서·작업·승인 근거를 확인하는 가치를 얻습니다. 얼굴과 목소리를 가진 캐릭터 경험과 실제 업무를 수행하는 에이전트가 이어지는 점도 특징입니다. 경쟁 제품의 비공개 구현을 추측하거나 우열을 확정하지 않고 우리의 확인된 특징으로 설명합니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_naia_shell_web_first_memory_ownership_20261031.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-challenge-qa-20261102.md`",
+          "summary": "나이아의 대표 가치는 **투명성과 기억의 소유**입니다. 어떤 모델을 쓰는지와 작업 환경을 사용자가 이해하고 선택할 수 있는 방향을 지향합니다. 하네스북과 naia-adk에 운영 방식과 하네스를 공개하는 것이 투명성의 근거입니다. 개인은 자신의 기억과 설정을 관리하고, 조직은 문서·작업·승인 근거를 확인하는 가치를 얻습니다. 얼굴과 목소리를 가진 캐릭터 경험과 실제 업무를 수행하는 에이전트가 이어지는 점도 특징입니다. 경쟁 제품의 비공개 구현을 추측하거나 우열을 확정하지 않고 우리의 확인된 특징으"
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/difference.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_10",
+        "title": "확장 가능성과 앞으로의 계획",
+        "fields": {
+          "content": "앞으로의 **가능성**은 개인의 AI 대화 상대에서 실제 일을 돕는 에이전트로, 다시 조직의 여러 AI 동료가 협업하는 환경으로 넓히는 것입니다. 웹에서 쉽게 시작하고 모바일 앱과 로컬 데스크톱으로 이어지는 방향, 캐릭터 IP와 나이아 라디오, 문서·일정·승인·메신저로 연결된 B2B 팀이 확장 축입니다. 현재 구현과 시험 중인 기능, 미래 계획을 나누어 설명합니다. 자동 동기화와 모바일 앱, 새 연동이 모두 완성됐다고 말하지 않고 필요한 검증과 후속 작업이 있는 제품 방향으로 안내합니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-challenge-qa-20261102.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-status-20261105.md`",
+          "summary": "앞으로의 **가능성**은 개인의 AI 대화 상대에서 실제 일을 돕는 에이전트로, 다시 조직의 여러 AI 동료가 협업하는 환경으로 넓히는 것입니다. 웹에서 쉽게 시작하고 모바일 앱과 로컬 데스크톱으로 이어지는 방향, 캐릭터 IP와 나이아 라디오, 문서·일정·승인·메신저로 연결된 B2B 팀이 확장 축입니다. 현재 구현과 시험 중인 기능, 미래 계획을 나누어 설명합니다. 자동 동기화와 모바일 앱, 새 연동이 모두 완성됐다고 말하지 않고 필요한 검증과 후속 작업이 있는 제품 방향으로 안내합니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/future.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_11",
+        "title": "공개 성장 지표 릴리스와 커뮤니티",
+        "fields": {
+          "content": "**공개 성장 지표**는 출처와 기준일을 함께 설명합니다. 경기 IR 교정 문서의 2026-11-03 기준 GitHub 공개 릴리스는 28회, 릴리스 다운로드 합계는 1,749건입니다. Discord 커뮤니티 가입은 85명, GitHub 별은 16개로 기록되어 있습니다. 다운로드는 고유 사용자 수와 다르며 커뮤니티 가입도 활성 사용자 수와 구분합니다. 가입 계정 수는 초안에 확인 표시가 남아 있어 이 공개용 지식에서는 확정 지표로 사용하지 않습니다. 현재 실시간 수치로 표현하지 않고 해당 날짜의 기록으로 안내합니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-update-20261102.md`",
+          "summary": "**공개 성장 지표**는 출처와 기준일을 함께 설명합니다. 경기 IR 교정 문서의 2026-11-03 기준 GitHub 공개 릴리스는 28회, 릴리스 다운로드 합계는 1,749건입니다. Discord 커뮤니티 가입은 85명, GitHub 별은 16개로 기록되어 있습니다. 다운로드는 고유 사용자 수와 다르며 커뮤니티 가입도 활성 사용자 수와 구분합니다. 가입 계정 수는 초안에 확인 표시가 남아 있어 이 공개용 지식에서는 확정 지표로 사용하지 않습니다. 현재 실시간 수치로 표현하지 않고 해당 날짜의 "
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/growth.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_12",
+        "title": "하네스와 신뢰할 수 있는 업무 체계",
+        "fields": {
+          "content": "**하네스**는 AI가 일할 때 참고할 지시·문서·규칙·도구·검토·기록을 묶어 주는 작업 환경입니다. 긴 대화만 믿기보다 파일로 남는 맥락과 확인 절차로 다음 작업에서도 일관성을 유지하도록 돕습니다. 회사에서는 초안 작성과 승인, 실행 뒤 근거 기록을 연결하는 방식으로 사용합니다. 하네스북과 naia-adk에 그 방식을 공개해 사용자가 이해하고 자신의 업무에 맞게 발전시킬 수 있게 합니다. 좋은 모델을 활용하면서도 회사와 사용자 고유의 맥락을 지속시키는 기반이라는 점에 의미가 있습니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/bluecollar-ir-merged-20261028.md`",
+          "summary": "**하네스**는 AI가 일할 때 참고할 지시·문서·규칙·도구·검토·기록을 묶어 주는 작업 환경입니다. 긴 대화만 믿기보다 파일로 남는 맥락과 확인 절차로 다음 작업에서도 일관성을 유지하도록 돕습니다. 회사에서는 초안 작성과 승인, 실행 뒤 근거 기록을 연결하는 방식으로 사용합니다. 하네스북과 naia-adk에 그 방식을 공개해 사용자가 이해하고 자신의 업무에 맞게 발전시킬 수 있게 합니다. 좋은 모델을 활용하면서도 회사와 사용자 고유의 맥락을 지속시키는 기반이라는 점에 의미가 있습니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/harness.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_13",
+        "title": "근거와 답변의 범위",
+        "fields": {
+          "content": "이 시연은 **공개용 회사·제품 지식**을 근거로 나이아와 넥스테인의 장점과 가능성을 설명합니다. 자료에 없는 숫자나 개인 정보, 비공개 고객과 업무 내용은 추측해 만들지 않습니다. 확인이 필요한 내용은 확인이 필요하다고 답하고, 제품 계획은 계획이라고 밝힙니다. 로컬 저장은 외부 모델로 아무 내용도 전달되지 않는다는 뜻과 구분해야 하며 실제 선택한 모델과 환경을 기준으로 설명합니다. 아직 실증 전인 가게 비서나 추가 기능은 적용 예시로 소개하고 확정된 제품 성능이나 결과로 약속하지 않습니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-challenge-qa-20261102.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-ir-demo-scope-20261105.md`",
+          "summary": "이 시연은 **공개용 회사·제품 지식**을 근거로 나이아와 넥스테인의 장점과 가능성을 설명합니다. 자료에 없는 숫자나 개인 정보, 비공개 고객과 업무 내용은 추측해 만들지 않습니다. 확인이 필요한 내용은 확인이 필요하다고 답하고, 제품 계획은 계획이라고 밝힙니다. 로컬 저장은 외부 모델로 아무 내용도 전달되지 않는다는 뜻과 구분해야 하며 실제 선택한 모델과 환경을 기준으로 설명합니다. 아직 실증 전인 가게 비서나 추가 기능은 적용 예시로 소개하고 확정된 제품 성능이나 결과로 약속하지 않습니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/limits.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_14",
+        "title": "회사 마케팅 운영 사례",
+        "fields": {
+          "content": "회사에서 AI 동료는 **콘텐츠 지표 수집·게시 계획·콘텐츠 제작·응대 초안** 같은 마케팅 업무를 맡아 왔습니다. 2026-10-28 문서에는 매일 공개 지표 수집과 로그인 상태 점검 예약, 주기적인 웹툰 연재와 쇼츠·릴스·블로그 전개가 기록되어 있습니다. 사람의 문구 확인 뒤 게시하고 결과를 다음 콘텐츠 계획에 반영합니다. 이 사례는 회사 내부 운영 경험이며, 모든 고객에게 동일한 자동화가 설치되어 있다는 의미는 아닙니다. 작은 조직의 반복 업무를 돕는 방향의 실제 근거로 설명합니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/bluecollar-ir-merged-20261028.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/regular-schedule-marketing.md`",
+          "summary": "회사에서 AI 동료는 **콘텐츠 지표 수집·게시 계획·콘텐츠 제작·응대 초안** 같은 마케팅 업무를 맡아 왔습니다. 2026-10-28 문서에는 매일 공개 지표 수집과 로그인 상태 점검 예약, 주기적인 웹툰 연재와 쇼츠·릴스·블로그 전개가 기록되어 있습니다. 사람의 문구 확인 뒤 게시하고 결과를 다음 콘텐츠 계획에 반영합니다. 이 사례는 회사 내부 운영 경험이며, 모든 고객에게 동일한 자동화가 설치되어 있다는 의미는 아닙니다. 작은 조직의 반복 업무를 돕는 방향의 실제 근거로 설명합니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/marketing.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_15",
+        "title": "기억의 소유와 사용자 통제",
+        "fields": {
+          "content": "**기억의 소유**는 사용자가 자기 AI의 기억과 설정을 이해하고 관리하며 옮겨 쓸 수 있게 하겠다는 제품 가치입니다. 데스크톱의 기억과 설정은 내 PC의 ADK 폴더에 저장합니다. 웹에서 시작한 사용자가 향후 같은 작업 환경과 기억을 앱으로 가져가는 흐름을 지향합니다. 기억을 서비스 안에만 묶어 두지 않고 사용자에게 선택권을 주는 것이 핵심입니다. 실제로 현재 제공되는 내보내기·가져오기 범위는 판마다 확인해야 합니다. 삭제와 동기화 같은 기능도 각각의 검증 상태에 따라 안내합니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_naia_shell_web_first_memory_ownership_20261031.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`",
+          "summary": "**기억의 소유**는 사용자가 자기 AI의 기억과 설정을 이해하고 관리하며 옮겨 쓸 수 있게 하겠다는 제품 가치입니다. 데스크톱의 기억과 설정은 내 PC의 ADK 폴더에 저장합니다. 웹에서 시작한 사용자가 향후 같은 작업 환경과 기억을 앱으로 가져가는 흐름을 지향합니다. 기억을 서비스 안에만 묶어 두지 않고 사용자에게 선택권을 주는 것이 핵심입니다. 실제로 현재 제공되는 내보내기·가져오기 범위는 판마다 확인해야 합니다. 삭제와 동기화 같은 기능도 각각의 검증 상태에 따라 안내합니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/memory.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_16",
+        "title": "기억 이관과 자동 동기화의 단계",
+        "fields": {
+          "content": "**웹과 PC 사이의 기억 이관**은 핵심 방향이지만 단계별로 제공됩니다. 2026-11-04 경기 IR 교정 문서는 웹에서 작업 파일·설정·기억을 ZIP으로 내보내는 시험을 확인했고, 데스크톱 받아들이기는 후속, 자동 동기화는 후속 버전으로 구분했습니다. 2026-11-05 문서의 컨테이너판에는 기억 내보내기·가져오기 시험이 따로 기록되어 있습니다. 이 차이는 제품 판과 확인 시점의 차이입니다. 모든 판에서 자동으로 기억과 문서가 따라간다고 약속하기보다 지금 사용 중인 판의 지원 범위를 설명합니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-status-20261105.md`\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_naia_shell_web_first_memory_ownership_20261031.md`",
+          "summary": "**웹과 PC 사이의 기억 이관**은 핵심 방향이지만 단계별로 제공됩니다. 2026-11-04 경기 IR 교정 문서는 웹에서 작업 파일·설정·기억을 ZIP으로 내보내는 시험을 확인했고, 데스크톱 받아들이기는 후속, 자동 동기화는 후속 버전으로 구분했습니다. 2026-11-05 문서의 컨테이너판에는 기억 내보내기·가져오기 시험이 따로 기록되어 있습니다. 이 차이는 제품 판과 확인 시점의 차이입니다. 모든 판에서 자동으로 기억과 문서가 따라간다고 약속하기보다 지금 사용 중인 판의 지원 범위를 설명합니"
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/migration.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_17",
+        "title": "출시 등록 선정의 단계별 성과",
+        "fields": {
+          "content": "**출시·등록·선정**은 서로 다른 단계로 설명합니다. 2026-11-05 제품 문서에는 데스크톱 0.2.5 출시판의 main 병합, 웹판의 병합 전 기능 개발, 컨테이너판 독립 검수 마무리가 기록되어 있습니다. 경기 IR 교정 문서는 Steam 등록과 상점 페이지 승인, 앱스토어 준비를 구분합니다. 2026년 재도전성공패키지 선정, 경기도 AI 기업 멤버십, 경기스타트업브릿지 협약과 하남스타트업캠퍼스 입주가 성장 과정의 근거로 정리되어 있습니다. 선정과 입주를 수상으로 바꾸어 말하지 않고 공개 출시 여부도 판별로 구분합니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-status-20261105.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/bluecollar-ir-merged-20261028.md`",
+          "summary": "**출시·등록·선정**은 서로 다른 단계로 설명합니다. 2026-11-05 제품 문서에는 데스크톱 0.2.5 출시판의 main 병합, 웹판의 병합 전 기능 개발, 컨테이너판 독립 검수 마무리가 기록되어 있습니다. 경기 IR 교정 문서는 Steam 등록과 상점 페이지 승인, 앱스토어 준비를 구분합니다. 2026년 재도전성공패키지 선정, 경기도 AI 기업 멤버십, 경기스타트업브릿지 협약과 하남스타트업캠퍼스 입주가 성장 과정의 근거로 정리되어 있습니다. 선정과 입주를 수상으로 바꾸어 말하지 않고 공개 "
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/milestones.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_18",
+        "title": "소상공인 비서 교육과 실증 계획",
+        "fields": {
+          "content": "소상공인과 **1인 창업자**에게는 홍보·사무 업무를 돕는 AI 비서와 자기 가게 자료로 배우는 AX 교육을 제안합니다. 홍보 글, 상품 사진, 짧은 영상, 문의 답 초안을 만들고 사장님이 확인하는 흐름입니다. 회사에서 실제로 해 온 마케팅 정기업무 경험을 가게 업무로 옮겨 보려는 것입니다. 가게별 공간과 사장님용 메신저, 카카오톡 연동 등은 계획과 실증 항목으로 구분합니다. 처음에는 한 사업장·한 업무를 골라 사용 여부와 수정 내용, 결과 기록으로 유용성을 확인하는 접근입니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/bluecollar-ir-merged-20261028.md`",
+          "summary": "소상공인과 **1인 창업자**에게는 홍보·사무 업무를 돕는 AI 비서와 자기 가게 자료로 배우는 AX 교육을 제안합니다. 홍보 글, 상품 사진, 짧은 영상, 문의 답 초안을 만들고 사장님이 확인하는 흐름입니다. 회사에서 실제로 해 온 마케팅 정기업무 경험을 가게 업무로 옮겨 보려는 것입니다. 가게별 공간과 사장님용 메신저, 카카오톡 연동 등은 계획과 실증 항목으로 구분합니다. 처음에는 한 사업장·한 업무를 골라 사용 여부와 수정 내용, 결과 기록으로 유용성을 확인하는 접근입니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/smallbusiness.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_19",
+        "title": "모델 하네스 문서의 가시성",
+        "fields": {
+          "content": "투명하다는 설명은 공개된 하네스와 모델 선택, 실제 문서와 기록으로 확인합니다. **투명성**은 말뿐인 약속보다 확인 가능한 자료와 작업 환경에서 드러납니다. 하네스북과 naia-adk에 하네스와 운영 방식을 공개하고, ADK 안에서 AGENTS.md·문서·일정·작업을 확인하는 방향입니다. 사용하는 모델을 화면에서 볼 수 있고 필요에 따라 로컬 모델을 선택하는 길을 제공합니다. 조직에서는 작업 기록과 승인 근거가 업무 과정을 설명하는 자료가 됩니다. 어떤 자료가 외부 모델에 전달되는지는 구성에 따라 설명해야 하며, 모든 판에서 파일이 암호화된다고 일괄 단정하지 않습니다.\n\n### 근거 파일\n\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-gyeonggi-proofs-20261104.md`\n- `/home/nextain/minho/alpha-adk/docs/common/alpha/ir-challenge-qa-20261102.md`",
+          "summary": "투명하다는 설명은 공개된 하네스와 모델 선택, 실제 문서와 기록으로 확인합니다. **투명성**은 말뿐인 약속보다 확인 가능한 자료와 작업 환경에서 드러납니다. 하네스북과 naia-adk에 하네스와 운영 방식을 공개하고, ADK 안에서 AGENTS.md·문서·일정·작업을 확인하는 방향입니다. 사용하는 모델을 화면에서 볼 수 있고 필요에 따라 로컬 모델을 선택하는 길을 제공합니다. 조직에서는 작업 기록과 승인 근거가 업무 과정을 설명하는 자료가 됩니다. 어떤 자료가 외부 모델에 전달되는지는 구성에 따"
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/transparency.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      },
+      {
+        "id": "card_20",
+        "title": "웹판 브라우저 입구",
+        "fields": {
+          "content": "웹판은 가벼운 사용자가 **설치 없이 브라우저에서 시작**하는 기본 입구입니다. 휴대폰 화면 배치와 파일 탐색기, 기억 내보내기 등이 개발되었습니다. 2026-11-05 제품 상태 문서에서는 웹판 0.2.5 기능 개발이 끝나 PR #824 병합 전이라고 설명합니다. 이번 IR 키오스크는 웹판에서 시연 전용 계정과 준비된 회사 지식을 사용하는 구성입니다. 일반 서비스 전체의 공개 출시나 모든 데스크톱 명령 지원을 뜻하지 않습니다. 시연 화면의 기능은 이 키오스크 범위와 연결된 것부터 안내합니다.\n\n### 근거 파일\n\n- `/home/nextain/.claude/projects/-home-nextain-minho/memory/project_naia_shell_web_first_memory_ownership_20261031.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-status-20261105.md`\n- `/home/nextain/minho/alpha-adk/docs/common/naia/web-ir-demo-scope-20261105.md`",
+          "summary": "웹판은 가벼운 사용자가 **설치 없이 브라우저에서 시작**하는 기본 입구입니다. 휴대폰 화면 배치와 파일 탐색기, 기억 내보내기 등이 개발되었습니다. 2026-11-05 제품 상태 문서에서는 웹판 0.2.5 기능 개발이 끝나 PR #824 병합 전이라고 설명합니다. 이번 IR 키오스크는 웹판에서 시연 전용 계정과 준비된 회사 지식을 사용하는 구성입니다. 일반 서비스 전체의 공개 출시나 모든 데스크톱 명령 지원을 뜻하지 않습니다. 시연 화면의 기능은 이 키오스크 범위와 연결된 것부터 안내합니다."
+        },
+        "sourceUris": [
+          "opfs://naia-adk/kiosk-demo/knowledge/web.md"
+        ],
+        "confidence": 0.7,
+        "status": "draft"
+      }
+    ],
+    "entities": [
+      {
+        "id": "ent_1",
+        "type": "Topic",
+        "name": "ADK 문서 설정 기억의 작업 공간"
+      },
+      {
+        "id": "ent_2",
+        "type": "Concept",
+        "name": "ADK"
+      },
+      {
+        "id": "ent_3",
+        "type": "Topic",
+        "name": "AI 직원과 함께 일하는 회사"
+      },
+      {
+        "id": "ent_4",
+        "type": "Concept",
+        "name": "사람과 직무별 AI 동료가 함께 일하는 회사"
+      },
+      {
+        "id": "ent_5",
+        "type": "Topic",
+        "name": "기업 AX 문서 에이전트 교육"
+      },
+      {
+        "id": "ent_6",
+        "type": "Concept",
+        "name": "AX"
+      },
+      {
+        "id": "ent_7",
+        "type": "Topic",
+        "name": "브랜드와 전환에서 경험까지"
+      },
+      {
+        "id": "ent_8",
+        "type": "Concept",
+        "name": "AI 에이전트와 함께 일하는 스타트업"
+      },
+      {
+        "id": "ent_9",
+        "type": "Concept",
+        "name": "나만의, 그리고 우리만의 AI 환경을 만듭니다"
+      },
+      {
+        "id": "ent_10",
+        "type": "Topic",
+        "name": "얼굴 목소리 캐릭터 IP 경험"
+      },
+      {
+        "id": "ent_11",
+        "type": "Concept",
+        "name": "얼굴과 목소리를 가진 캐릭터 경험"
+      },
+      {
+        "id": "ent_12",
+        "type": "Topic",
+        "name": "넥스테인 회사 소개"
+      },
+      {
+        "id": "ent_13",
+        "type": "Concept",
+        "name": "AI와 함께 일하는 스타트업"
+      },
+      {
+        "id": "ent_14",
+        "type": "Topic",
+        "name": "컨테이너판 0.2.6 개발 상태"
+      },
+      {
+        "id": "ent_15",
+        "type": "Concept",
+        "name": "내 PC의 로컬 모델을 웹 화면으로 쓰는 판"
+      },
+      {
+        "id": "ent_16",
+        "type": "Topic",
+        "name": "데스크톱 앱 GPU와 로컬 선택"
+      },
+      {
+        "id": "ent_17",
+        "type": "Concept",
+        "name": "내 PC의 GPU와 로컬 모델"
+      },
+      {
+        "id": "ent_18",
+        "type": "Topic",
+        "name": "다른 AI와 나이아의 차별점 투명성과 기억의 소유"
+      },
+      {
+        "id": "ent_19",
+        "type": "Concept",
+        "name": "투명성과 기억의 소유"
+      },
+      {
+        "id": "ent_20",
+        "type": "Topic",
+        "name": "확장 가능성과 앞으로의 계획"
+      },
+      {
+        "id": "ent_21",
+        "type": "Concept",
+        "name": "가능성"
+      },
+      {
+        "id": "ent_22",
+        "type": "Topic",
+        "name": "공개 성장 지표 릴리스와 커뮤니티"
+      },
+      {
+        "id": "ent_23",
+        "type": "Concept",
+        "name": "공개 성장 지표"
+      },
+      {
+        "id": "ent_24",
+        "type": "Topic",
+        "name": "하네스와 신뢰할 수 있는 업무 체계"
+      },
+      {
+        "id": "ent_25",
+        "type": "Concept",
+        "name": "하네스"
+      },
+      {
+        "id": "ent_26",
+        "type": "Topic",
+        "name": "근거와 답변의 범위"
+      },
+      {
+        "id": "ent_27",
+        "type": "Concept",
+        "name": "공개용 회사·제품 지식"
+      },
+      {
+        "id": "ent_28",
+        "type": "Topic",
+        "name": "회사 마케팅 운영 사례"
+      },
+      {
+        "id": "ent_29",
+        "type": "Concept",
+        "name": "콘텐츠 지표 수집·게시 계획·콘텐츠 제작·응대 초안"
+      },
+      {
+        "id": "ent_30",
+        "type": "Topic",
+        "name": "기억의 소유와 사용자 통제"
+      },
+      {
+        "id": "ent_31",
+        "type": "Concept",
+        "name": "기억의 소유"
+      },
+      {
+        "id": "ent_32",
+        "type": "Topic",
+        "name": "기억 이관과 자동 동기화의 단계"
+      },
+      {
+        "id": "ent_33",
+        "type": "Concept",
+        "name": "웹과 PC 사이의 기억 이관"
+      },
+      {
+        "id": "ent_34",
+        "type": "Topic",
+        "name": "출시 등록 선정의 단계별 성과"
+      },
+      {
+        "id": "ent_35",
+        "type": "Concept",
+        "name": "출시·등록·선정"
+      },
+      {
+        "id": "ent_36",
+        "type": "Topic",
+        "name": "소상공인 비서 교육과 실증 계획"
+      },
+      {
+        "id": "ent_37",
+        "type": "Concept",
+        "name": "1인 창업자"
+      },
+      {
+        "id": "ent_38",
+        "type": "Topic",
+        "name": "모델 하네스 문서의 가시성"
+      },
+      {
+        "id": "ent_39",
+        "type": "Concept",
+        "name": "투명성"
+      },
+      {
+        "id": "ent_40",
+        "type": "Topic",
+        "name": "웹판 브라우저 입구"
+      },
+      {
+        "id": "ent_41",
+        "type": "Concept",
+        "name": "설치 없이 브라우저에서 시작"
+      }
+    ],
+    "relations": [
+      {
+        "from": "ent_1",
+        "type": "mentions",
+        "to": "ent_2"
+      },
+      {
+        "from": "ent_3",
+        "type": "mentions",
+        "to": "ent_4"
+      },
+      {
+        "from": "ent_5",
+        "type": "mentions",
+        "to": "ent_6"
+      },
+      {
+        "from": "ent_7",
+        "type": "mentions",
+        "to": "ent_8"
+      },
+      {
+        "from": "ent_7",
+        "type": "mentions",
+        "to": "ent_9"
+      },
+      {
+        "from": "ent_10",
+        "type": "mentions",
+        "to": "ent_11"
+      },
+      {
+        "from": "ent_12",
+        "type": "mentions",
+        "to": "ent_13"
+      },
+      {
+        "from": "ent_14",
+        "type": "mentions",
+        "to": "ent_15"
+      },
+      {
+        "from": "ent_16",
+        "type": "mentions",
+        "to": "ent_17"
+      },
+      {
+        "from": "ent_18",
+        "type": "mentions",
+        "to": "ent_19"
+      },
+      {
+        "from": "ent_20",
+        "type": "mentions",
+        "to": "ent_21"
+      },
+      {
+        "from": "ent_22",
+        "type": "mentions",
+        "to": "ent_23"
+      },
+      {
+        "from": "ent_24",
+        "type": "mentions",
+        "to": "ent_25"
+      },
+      {
+        "from": "ent_26",
+        "type": "mentions",
+        "to": "ent_27"
+      },
+      {
+        "from": "ent_28",
+        "type": "mentions",
+        "to": "ent_29"
+      },
+      {
+        "from": "ent_30",
+        "type": "mentions",
+        "to": "ent_31"
+      },
+      {
+        "from": "ent_32",
+        "type": "mentions",
+        "to": "ent_33"
+      },
+      {
+        "from": "ent_34",
+        "type": "mentions",
+        "to": "ent_35"
+      },
+      {
+        "from": "ent_36",
+        "type": "mentions",
+        "to": "ent_37"
+      },
+      {
+        "from": "ent_38",
+        "type": "mentions",
+        "to": "ent_39"
+      },
+      {
+        "from": "ent_40",
+        "type": "mentions",
+        "to": "ent_41"
+      }
+    ]
+  }
+}

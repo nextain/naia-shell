@@ -1,4 +1,5 @@
 {
+  "last_updated": "2026-11-05T10:19:19.087357+00:00",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -19,6 +20,25 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_ir_kiosk_s1_20261105": {
+      "issue": 824,
+      "title": "IR 웹 키오스크 공개 지식·브라우저 지식 명령 (S1)",
+      "branch": "feat/web-ir-kiosk-s1",
+      "requirements": "docs/requirements.md FR-KIOSK-KNOWLEDGE-S1",
+      "scenario": "docs/user-scenarios.md UC-KIOSK-KNOWLEDGE-S1",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done (S1 scoped acceptance)",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Kiosk 20-question retrieval, manuscript/KB sensitive-pattern scan and command isolation pass; focused Vitest 52/52, kiosk+Worker 72/72; browser OPFS/desktop executor/actual Worker and flag-OFF probes pass; web build and core/Shell/Worker/sidecar typechecks pass. Full Shell suite has failures outside focused acceptance; not claimed green. Structure checker retains two tracked baseline violations (tmp and tsconfig.build.json).",
+      "evidence": "/home/nextain/work/codex-runs/kiosk-demo/result-s1.md",
+      "remaining": "S5/S7 live voice/provider/deployment acceptance; full Shell suite failures require separate triage.",
+      "last_updated": "2026-11-05T10:19:19.087357+00:00"
+    },
     "project_panels_class_reset_20261025": {
       "issue": null,
       "title": "프로젝트 앱 문서·작업 탭 정리, 수업용 프로젝트(coding_app·docs_dirs·class.baseline_ref) 문서 미리보기·수업 초기화, 에이전트 아이콘 교체",
