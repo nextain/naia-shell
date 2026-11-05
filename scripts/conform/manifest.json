@@ -1,8 +1,25 @@
 {
-  "_doc": "Contract<->code regions for the conform gate. EMPTY by default = inert. Fill 'regions' with your project's contract(header)/code(source) pairs. 'expect' = known public symbols the extractor MUST recover (sanity gate: an empty parse can't masquerade as 'drift 0'). Paths are relative to the project root. The bundled extractor is C; for another language, replace extract() in check.py.",
+  "_doc": "Contract/code regions. C pairs use the bundled signature extractor; typescript-exports compares documented public function names with exported source functions. TypeScript typecheck separately validates signatures. expect must exist in both sides for TypeScript.",
   "_example": {
-    "name": "game", "header": "src/game.h", "source": "src/game.c",
-    "expect": ["game_init", "game_handle_key"]
+    "name": "game",
+    "header": "src/game.h",
+    "source": "src/game.c",
+    "expect": [
+      "game_init",
+      "game_handle_key"
+    ]
   },
-  "regions": []
+  "regions": [
+    {
+      "name": "kiosk-memory-s2",
+      "language": "typescript-exports",
+      "header": "docs/user-scenarios.md",
+      "source": "packages/shell/src/lib/kiosk-demo/memory.ts",
+      "expect": [
+        "createKioskMemory",
+        "handleKioskMemoryCommand",
+        "resetKioskMemory"
+      ]
+    }
+  ]
 }

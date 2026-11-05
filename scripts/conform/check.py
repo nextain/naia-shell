@@ -54,7 +54,7 @@ def _project_root() -> str:
 
 
 ROOT = _project_root()
-STATE = os.path.join(ROOT, ".tmp", "conform-state.json")
+STATE = os.path.join(ROOT, ".agents", "work", "conform-state.json")
 
 _FUNC = re.compile(
     r"^[ \t]*(static\s+)?"
@@ -101,6 +101,18 @@ def load_manifest() -> dict:
 
 
 def check_region(reg: dict) -> dict:
+    if reg.get("language") == "typescript-exports":
+        def symbols(path):
+            try:
+                text = open(os.path.join(ROOT, path), encoding="utf-8").read()
+            except OSError:
+                return []
+            return sorted(set(re.findall(r"^export (?:async )?function (\w+)", text, re.MULTILINE)))
+        contract = symbols(reg["header"])
+        code = symbols(reg["source"])
+        broken = [name for name in reg.get("expect", []) if name not in contract or name not in code]
+        drift = {} if contract == code else {"contract": contract, "code": code}
+        return {"drift": drift, "broken": broken, "contract": contract, "code": code}
     contract = extract(os.path.join(ROOT, reg["header"]), "proto")
     code = extract(os.path.join(ROOT, reg["source"]), "def_public")
     found = {s["name"] for s in contract} | {s["name"] for s in code}

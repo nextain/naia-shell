@@ -15,7 +15,7 @@
  * exit 0 = 모든 파일이 계약에 앵커됨. exit 1 = 드리프트.
  * 0 토큰·결정론·LLM 없음. PostToolUse 훅 + cron 에서 호출.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,7 +55,7 @@ function main() {
 		process.exit(1);
 	}
 
-	const disk = SCAN_DIRS.flatMap((dir) => listTs(join(ROOT, dir), dir)).filter((file) => !file.endsWith(".test.ts")).sort();
+	const disk = [...[...new Set([...SCAN_DIRS, ...(manifest.scan_dirs ?? [])])].flatMap((dir) => listTs(join(ROOT, dir), dir)), ...(manifest.scan_files ?? []).filter((f) => existsSync(join(ROOT, f)))].filter((f) => !f.endsWith(".test.ts")).sort();
 	const registered = new Set(keys);
 	const errs = [];
 

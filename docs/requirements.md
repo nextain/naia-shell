@@ -1611,3 +1611,7 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 - 브라우저 Worker는 데스크톱의 knowledge skill 실행기를 통해 동일 search/ask 도구를 모델에 노출한다. 매 대화 전 저장된 설정과 KB를 갱신한다.
 - 평가 질문 20개는 모델 호출 없이 실제 검색에서 관련 카드를 찾아야 한다. 근거 없는 질문은 기권한다.
 - 상태: Done (S1 범위). 20문항 검색·민감 패턴·깃발 격리·실제 OPFS/데스크톱 실행기/Worker·웹 빌드 검증. 전체 Shell 시험에는 범위 밖 실패가 있어 전체 green으로 주장하지 않는다. 검증 결과는 회차 result-s1.md에 기록한다.
+
+## FR-KIOSK-MEMORY-S2 — 웹 IR 시연 기억 (2026-11-05)
+
+상태: Done. `isKioskDemo()`가 참일 때만 OPFS 기억을 기본 연결한다. 데스크톱과 같은 agent ChatTurnHandler의 recall/save 및 memory 도구 경로를 사용한다. 사용자 발화를 출처로 저장하고 assistant 추측을 사용자 사실로 승격하지 않는다. 게스트님 호칭을 기본 기억으로 제공한다. 저장 후 새 인스턴스에서도 앞 대화가 회상된다. 네 기억 관리 명령(get_all_facts/export_backup/import_backup/delete_fact)을 시연에서만 연다. 백업은 NAIA v1 AES-256-GCM/PBKDF2-SHA256(200000) 형식을 따른다. 키오스크 저장소는 `naia-adk/naia-settings/memory/kiosk-store.json`이며 사용자 원문을 사실/출처로 최대 200개씩 보관하고 최근 항목을 제한 회상한다(벡터 검색·LLM 사실 추출은 이번 범위 밖). 백업 암호화 봉투는 데스크톱 형식과 같지만 내부 JSON은 키오스크 전용이며 데스크톱 백업 상호 이식은 지원하지 않는다. 비밀번호·기억 본문을 로그에 남기지 않는다. 초기화 함수는 게스트 기본 기억으로 되돌리고 이전 턴의 지연 저장이 새 방문자 기억을 오염시키지 않게 한다. 일반 웹/데스크톱 동작은 보존한다.
