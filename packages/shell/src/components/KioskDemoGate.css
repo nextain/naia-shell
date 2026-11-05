@@ -1,0 +1,56 @@
+.kiosk-entry {
+	min-height: 100dvh;
+	display: grid;
+	place-items: center;
+	padding: 24px;
+	box-sizing: border-box;
+	background: #111622;
+	color: #f5f7fb;
+}
+.kiosk-entry__card {
+	max-width: 560px;
+	width: 100%;
+	text-align: center;
+	overflow-wrap: anywhere;
+}
+.kiosk-entry__card h1 {
+	font-size: clamp(24px, 5vw, 36px);
+	line-height: 1.3;
+}
+.kiosk-entry__card p {
+	line-height: 1.7;
+}
+.kiosk-entry__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 16px;
+	align-items: center;
+	margin-top: 24px;
+}
+.kiosk-entry__actions button {
+	min-height: 48px;
+	padding: 12px 28px;
+	border: 1px solid #bcd0ff;
+	border-radius: 12px;
+	background: #bcd0ff;
+	color: #111622;
+	font-size: 18px;
+	cursor: pointer;
+}
+.kiosk-entry__actions button:focus-visible {
+	outline: 3px solid white;
+	outline-offset: 4px;
+}
+.kiosk-entry__actions button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+.kiosk-entry__actions .kiosk-entry__reset {
+	min-height: 44px;
+	background: transparent;
+	color: #d4dbea;
+	border-color: transparent;
+	font-size: 14px;
+	padding: 8px;
+}

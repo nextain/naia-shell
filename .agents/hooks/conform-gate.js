@@ -2,9 +2,10 @@
 /**
  * conform-gate — PostToolUse on Edit|Write.
  *
- * After each edit of a C source/header, runs the DETERMINISTIC contract<->code
+ * TypeScript edits run the nonempty file-contract anchor gate.
+ * C source/header edits run the DETERMINISTIC contract<->code
  * conform check (scripts/conform/check.py, 0 tokens, no LLM) on the region the
- * file belongs to. Inert until scripts/conform/manifest.json has regions.
+ * file belongs to. The C extractor requires scripts/conform/manifest.json regions.
  *   - drift (1..N-1 edits) → systemMessage: "reconcile before adding more"
  *   - halt  (>=N edits)    → block + reason: "STOP, you are looping on a drifted base"
  *
@@ -31,6 +32,15 @@ async function main() {
 	const tn = d.tool_name || "";
 	if (tn !== "Edit" && tn !== "Write") process.exit(0);
 	const fp = d.tool_input?.file_path || "";
+	// TypeScript uses the nonempty file-contract manifest, not the C extractor.
+	if (fp && /\.tsx?$/.test(fp)) {
+		try {
+			execFileSync("node", [path.join(__dirname, "..", "..", "scripts", "check-file-anchors.mjs")], { encoding: "utf8", timeout: 10000 });
+		} catch {
+			process.stdout.write(JSON.stringify({ decision: "block", reason: "TypeScript 파일 계약 앵커 검사 실패: node scripts/check-file-anchors.mjs 실행 후 미계약 파일을 정리하세요." }));
+		}
+		process.exit(0);
+	}
 	if (!fp || !/\.(c|h)$/.test(fp)) process.exit(0); // C extractor; widen per language
 
 	let out;

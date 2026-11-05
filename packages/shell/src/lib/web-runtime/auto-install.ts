@@ -1,3 +1,4 @@
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { loadConfig } from "../config";
 import { getStartableAgentBridge } from "./agent-bridge";
 import { installWebRuntime } from "./install";
@@ -118,6 +119,6 @@ export async function bootWebRuntimeAndModel(
 	return { startedImmediately: false };
 }
 
-if (import.meta.env.MODE === "web") {
+if (import.meta.env.MODE === "web" && !isKioskDemo()) {
 	void bootWebRuntimeAndModel();
 }

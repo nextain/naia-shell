@@ -13,7 +13,7 @@
 | `ci-verify-completion.mjs` | 완료 근거(completion evidence) 게이트 검증. |
 | `ci-verify-voice-evidence.mjs` | 음성 경로 증거 게이트 — 음성 크리티컬 파일(tts/voice/ChatArea/RefAudioSection/voice-6g e2e) 변경 시 커밋 메시지에 `Voice-E2E: pass` 또는 `Voice-Impact: none` 트레일러 강제(GPU 필요로 CI e2e 부재 → 침묵 회귀를 명시적 주장으로 전환). pre-push 훅이 사용. |
 | `check-assembly-coverage.mjs` | 조립 매트릭스 전수 검사(미분류 0: user-scenarios의 모든 UC/S가 매트릭스에 분류됐나 + fit 게이트: 상태≥코드 행에 미평가 없나). AI 단축 사고 방지 결정론 강제. |
-| `check-file-anchors.mjs` | 파일단위 계약 앵커 검출기 — `src/main/*` 가 `module-manifest.json` 에 {layer,uc,contract} 등록됐나(드리프트 자동차단 1단계). |
+| `check-file-anchors.mjs` | 파일단위 계약 앵커 검출기 — `src/main/*`·`packages/shell/src/lib/kiosk-demo/*` 가 `module-manifest.json` 에 {layer,uc,contract} 등록됐나(드리프트 자동차단 1단계). |
 | `check-compile-integrity.mjs` | 컴파일 무결성 게이트 — core+shell tsc 무결 검증. |
 | `check-build-contract.mjs` | 빌드/dev 툴링 드리프트 검출기(`build-tooling-manifest.json` 대조). |
 | `check-traceability.mjs` | V모델 추적성 검사기 (REQ→UC→TEST-S, UC→SPEC→TEST-F). |

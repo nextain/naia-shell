@@ -1,3 +1,4 @@
+import { KioskDemoGate } from "./components/KioskDemoGate";
 import "./lib/web-runtime/auto-install";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -48,7 +49,9 @@ async function bootstrap() {
 			// biome-ignore lint/style/noNonNullAssertion: root element always exists
 			createRoot(document.getElementById("root")!).render(
 				<StrictMode>
-					<App />
+					<KioskDemoGate>
+						<App />
+					</KioskDemoGate>
 				</StrictMode>,
 			);
 		},

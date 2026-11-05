@@ -1601,3 +1601,20 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 | ID | 요구사항 | 시나리오·검증 | 상태 |
 |---|---|---|---|
 | **FR-WEB-025-I18N.1** | PR #824에서 추가한 한국어 UI 문구와 ko/en 분기는 `packages/shell/src/lib/locales/`의 키 및 `t()`로 제공한다. 14개 언어에 키를 넣고 한국어 외에는 영어를 사용한다. 배경 이름은 현재 로케일을 조회할 때 번역하고 저장소 수치는 자리표시자로 보간한다. 웹 전용 영어 키는 `en-web.ts`에 두며 공통 화면의 키는 데스크톱에도 제공한다. 기존 문구와 미번역 검사 baseline은 변경하지 않는다. | UC-WEB-025-I18N-824; `i18n-user-facing.test.ts`, `i18n-web-strings.test.ts`, 웹 저장소·배경·푸시·탐색기·설정·앱 테스트; 로컬 Playwright 실 컴포넌트 | Done |
+
+## 웹 키오스크 S3 (2026-11-05)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEB-KIOSK-S3.1 | isKioskDemo()일 때만 지나·게스트·님·formal·한국어·친절한 넥스테인 안내 페르소나와 온보딩 완료를 기존 config-seed/onboarding-core 경로로 영속한다. 기존 아바타·목소리 설정은 보존한다. | Done |
+| FR-WEB-KIOSK-S3.2 | VITE_NAIA_KIOSK_DEMO_KEY 빌드 변수만으로 web-auth 브라우저 로그인 저장소를 시드한다. 누락/무효는 ‘시연 열쇠 없음’으로 차단하며 기존 개인 키로 대체하지 않는다. 키를 소스·로그·결과 문서에 기록하지 않는다. | Done |
+| FR-WEB-KIOSK-S3.3 | 준비 뒤 ‘들어가기’ 한 번으로 기존 TTS 파이프라인을 통해 ‘게스트님, 안녕하세요…’ 인사를 1회 말하고 대화를 연다. 준비·오류 안내와 재시도, 비활성 ‘처음으로’ 자리를 제공한다. | Done |
+| NFR-WEB-KIOSK-S3.1 | 깃발 OFF 시 일반 웹 부팅·기본 페르소나·로그인·온보딩 경로를 유지한다. 360px·키보드·ARIA와 기본/빈 목록/진행/성공/오류를 Vitest·Playwright로 검증한다. | Done |
+
+빌드: `VITE_NAIA_KIOSK_DEMO=1`과 `VITE_NAIA_KIOSK_DEMO_KEY`를 빌드 환경에만 주입하고 `pnpm -C packages/shell build:web`을 실행한다. 실제 값은 `.env`나 저장소 파일에 적지 않는다. Vite 변수는 배포 브라우저에 전달되므로 시연 전용 계정·크레딧 상한을 사용하고 시연 후 계정 측에서 키를 폐기한다. S3는 계정 발급·충전·폐기·배포를 수행하지 않는다.
+
+S3 검출 보강: 키오스크 디렉터리의 TypeScript 소스는 기존 module-manifest 파일 계약 앵커 검사를 적용한다. conform 훅과 pre-commit에서 미등록 파일을 차단한다. C 전용 conform 추출기는 TypeScript에 사용하지 않는다.
+
+P04 S3(2026-11-05): 관련 Vitest 7파일 155개 및 Playwright `e2e/kiosk-demo.spec.ts` 3개 통과. 360px 캡처 검토에서 제목·안내·입장·보조 행동이 잘리지 않으며, 키보드 입장과 ARIA 상태/오류, 준비 실패 후 재시도를 확인했다. 파일 앵커 누락 주입 시 검사기와 conform 훅 모두 차단한다. 실제 계정·BC250 음성은 S5/S7 수용 범위다. 증거: `/home/nextain/work/codex-runs/kiosk-demo/tmp/s3-r2-focused.log`, `s3-r2-e2e.log`, `s3-r2-playwright/`.
+
+S3 빌드 검증: `pnpm --filter ./packages/shell build:web`의 일반 빌드와 깃발 ON/합성 열쇠 빌드 모두 종료 코드 0. 두 실행 모두 worker 타입 검사를 포함한다. 코어·사이드카 타입 검사 및 pre-commit의 코어/셸 컴파일·로깅 검사 통과.

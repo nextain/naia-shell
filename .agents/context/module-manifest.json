@@ -560,6 +560,20 @@
 				"UC-CHANNEL-SESSION-DISCLOSURE-DENY"
 			],
 			"contract": "docs/progress/issue-497-universal-agent.md"
+		},
+		"packages/shell/src/lib/kiosk-demo/flag.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-WEB-KIOSK-S3"
+			],
+			"contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
+		},
+		"packages/shell/src/lib/kiosk-demo/entry.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-WEB-KIOSK-S3"
+			],
+			"contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
 		}
 	}
 }

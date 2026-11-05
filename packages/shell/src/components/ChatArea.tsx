@@ -1,3 +1,6 @@
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { consumeKioskGreeting } from "../lib/kiosk-demo/entry";
+import { KIOSK_DEMO_GREETING } from "../lib/persona";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -1453,6 +1456,19 @@ export function ChatArea({
 			vllmTtsHost: config.vllmTtsHost,
 		};
 	}
+
+	// The entry gesture authorizes this greeting. Consume synchronously before
+	// any await so StrictMode cannot speak twice; use the shared TTS/avatar lane.
+	useEffect(() => {
+		if (!isKioskDemo() || !consumeKioskGreeting()) return;
+		const config = loadConfig();
+		if (!config) return;
+		Logger.debug("ChatArea", "kiosk greeting entered TTS pipeline");
+		useChatStore.getState().addMessage({ role: "assistant", content: KIOSK_DEMO_GREETING });
+		initializeSpeechTts(config);
+		sendSentenceToTts(KIOSK_DEMO_GREETING);
+		finishLocalVoicePrebuffer();
+	}, []);
 
 	// Slides requests narration but never synthesizes or plays audio itself.
 	// This bridge is the only presentation entry into the Shell TTS pipeline.
