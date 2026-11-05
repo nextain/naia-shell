@@ -1636,6 +1636,16 @@ S3 빌드 검증: `pnpm --filter ./packages/shell build:web`의 일반 빌드와
 
 P04 통합(#824, 2026-11-05): S1 지식·S2 기억·S3 입장을 함께 검증했다. 초기화는 취소 완료 → OPFS 기억 초기화 → 새 대화 → 재로딩 순서이며 중복 클릭·저장 실패의 안전한 재시도를 시험했다. 일반/시연 웹 빌드 통과, 관련 런타임 262개(조건부 1개 제외, 실제 agent 기억은 별도 web-mode 9개 통과), 최종 UI 87개 통과. 로컬 ON preview의 Playwright 4개는 인사·실제 Worker 지식 검색·회상·초기화를 검증한다. 결정론 공급자 fixture이며 실제 계정/음성 수용은 아니다. 전체 셸 3084 통과/9 실패/25 제외이며 pairing 8·SettingsTab logout 1의 알려진 실패를 유지한다. 시각 검토: 첫 행동과 보조 초기화 구분, 진행/오류 live-region, 키보드·360px 입장 및 캡처 3장 확인. 증거는 회차 result-int.md와 tmp/int-*.log, tmp/int-*.png에 기록한다. S4·S5·S7은 남아 있다.
 
+## 웹 키오스크 S4 — 지나 아바타 다시 만들기·대화창 확장 (2026-11-05)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEB-KIOSK-S4.1 | 지나 원본 영상(`jina-idle.webm` 8초, `jina-talking-ko.mp4` 21초)을 `nextain/naia-anyllm` 커밋 `7ff576ce`(`9842d242` 구멍 막기·배경색 거름 포함)의 `studio_nva_matting.py`로 CPU 후처리해 `packages/shell/public/nva/jina/clips/`의 `idle.webm`·`talking-ko.webm` 및 `.stacked.mp4`를 교체한다. `scripts/nva_matting_hole_measure.py` 구멍 검사에서 팔-몸 사이·다리 사이 닫힌 배경 구멍 0(`bad_clips: 0`, `hole_frames: 0`)을 만족한다. | Done |
+| FR-WEB-KIOSK-S4.2 | `isKioskDemo()`가 켜졌을 때 대화 화면 아바타가 기본 나이아 대신 실사 지나(`avatarProvider: "naia-video-avatar"`, `nvaModel: "jina"`)로 나오며, 대화 창 폭·높이를 넓혀 긴 답변이 위로 잘리지 않고 스크롤로 끝까지 보이게 한다. | Done |
+| NFR-WEB-KIOSK-S4.1 | `isKioskDemo()`가 꺼지면 일반 웹판 아바타(`naia`/VRM)와 레이아웃은 그대로 유지한다. 단위 시험(Vitest)과 로컬 개발 서버 브라우저 자동화(Playwright, 1280x800 캡처 `s4-entry.png`·`s4-chat.png`)로 검증한다. | Done |
+
+P04 S4(#824, 2026-11-05): `nva_matting_hole_measure.py` 구멍 검사에서 `jina-idle.webm`(192프레임)과 `jina-talking-ko.mp4`(511프레임) 모두 `hole_frames: 0`, `bad_clips: 0` 통과 및 인코딩된 `idle.webm`(1,012,050바이트)·`talking-ko.webm`(913,490바이트) 디코딩 재검증 `hole_frames: 0` 확인. 관련 Vitest 4파일 21개, `build` 및 `build:web`(일반 OFF / 시연 ON) 모두 종료 코드 0 통과. 로컬 웹 개발 서버 Playwright `e2e/kiosk-demo.spec.ts` 4개 시나리오 통과 및 `1280x800` 화면 사진(`/home/nextain/work/codex-runs/kiosk-agy/s4-entry.png`, `/home/nextain/work/codex-runs/kiosk-agy/s4-chat.png`)·360px 좁은 폭 화면 사진 시각 검토 완료.
+
 ## 웹 키오스크 S5 — BC250 음성 연결 (2026-11-05)
 
 | ID | 요구사항 | 상태 |
@@ -1646,5 +1656,20 @@ P04 통합(#824, 2026-11-05): S1 지식·S2 기억·S3 입장을 함께 검증�
 | NFR-WEB-KIOSK-S5.1 | 새 공급자를 추가하지 않고 기존 `naia-local-voice`/`vllm` 합성 경로(`synthesize.ts`, `sentence-pipeline.ts`, `audio-queue.ts`)를 재사용하며, 깃발 OFF 시 일반 웹판과 데스크톱 동작을 그대로 보존한다. | Done |
 
 P04 S5(2026-11-05): 관련 Vitest 7파일 179개 통과(`/home/nextain/work/codex-runs/kiosk-agy/tmp/vitest-s5.log`), 웹 시연판 프로덕션 빌드(`pnpm --filter ./packages/shell build:web`) 종료 코드 0(`tmp/build-web-s5.log`), Playwright `e2e/kiosk-demo.spec.ts` S3·S5 3개 통과(`tmp/playwright-s5.log`). 로컬 개발 서버 실 브라우저 구동(`bc250-network.log`, `s5-chat.png` 1280x800)에서 ‘들어가기’ 제스처 동기 잠금 해제, `https://bc250-0-voice.nextain.io/v1/audio/speech` 합성 요청 발신, 실 서버의 브라우저 Origin 403(`origin_not_allowed`)·무토큰 401(`local_access_denied` / `unauthorized`) 응답 시 화면 멈춤·오류 말풍선 없는 브라우저 음성 폴백과 입 움직임 동기화를 확인했다.
+
+## 웹 키오스크 검수 수정 — 적대 검수 반영 (2026-11-05)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEB-KIOSK-FIX.1 | `isKioskDemo()`가 참일 때 WebLLM 공급자를 등록·노출하지 않고 설정 목록·자동 설치·웹 워커 로컬 공급자 연결에서도 숨긴다. 깃발이 꺼진 일반 웹판에서는 기존과 같이 등록·표시한다. | Done |
+| FR-WEB-KIOSK-FIX.2 | 첫 화면 준비 시 시연 전용 열쇠로 게이트웨이 잔액(`GET /v1/profile/balance`)을 1회 확인해 열쇠가 유효하지 않거나 크레딧이 0 이하이면 `"지금은 시연을 쓸 수 없습니다"` 안내를 표시하고 입장을 차단한다. | Done |
+| FR-WEB-KIOSK-FIX.3 | `knowledge/*.md` 20개 원고에서 사내 경로·이름이 적힌 근거 파일 절을 번들 밖 문서(`docs/progress/web-ir-kiosk-824/knowledge-sources.md`)로 분리하고, `compile()`에 `safety: "block"`을 전달해 안전 경고를 검사하며, 재생성한 `kb.json`과 빌드 산출물(`dist`)에 `/home/`·`minho`·`nextain-adk`가 없음을 보장한다. | Done |
+| FR-WEB-KIOSK-FIX.4 | `eval-questions.json` 20문항의 `expectedPoints`를 `service.ask()` 및 `verify()`로 대조해 모두 통과하도록 정본·공개 문서 근거만으로 원고를 보강한다. 민감 수치 검사(`assertPublicKnowledge`)는 한글 금액(`오십억`, `백억`, `3천만` 등)·지분 %·밸류에이션·투자금·순이익을 차단한다. | Done |
+| FR-WEB-KIOSK-FIX.5 | ‘처음으로’ 초기화 시 OPFS 기억(`kiosk-store.json`)과 함께 OPFS 대화 기록(`conversations-guest/chat-*.jsonl`)까지 삭제하되 다음 방문자도 사용할 시연 열쇠(`naia-remote-key`)는 보존한다. 앞 방문자가 ‘처음으로’를 누르지 않고 떠나 무응답 기준 시간(`KIOSK_VISIT_IDLE_TIMEOUT_MS`, 기본 3분)이 지나면 자동 초기화하거나 다음 ‘들어가기’ 때 방문을 초기화해 새 방문으로 시작하고, 유효 방문 시간 안의 새로고침(F5) 뒤 재입장에서는 OPFS 대화 기록을 복원한다. `memory.ts`의 `save(userText, assistantText)`는 지나 답변도 assistant 에피소드로 저장한다. | Done |
+| FR-WEB-KIOSK-FIX.6 | 지나 실사 클립(`idle.webm`, `talking-ko.webm` 및 `.stacked.mp4`) 후처리에서 닫힌 투명 영역 픽셀이 원본 단색 배경색과 가까우면 투명으로 유지하고 몸·옷 안쪽 구멍만 메워 다리 사이·왼팔과 몸 사이의 남색 불투명 잔상을 제거한다(`nva_matting_hole_measure.py` 몸 구멍 0건 + 닫힌 영역 불투명 배경 픽셀 프레임 0건). | Done |
+| FR-WEB-KIOSK-FIX.7 | `isKioskDemo()`가 참일 때 대화 답변 아래 `"약 0 크레딧 · 0 토큰"` 사용량 줄을 숨기고, 일반 웹판(`isKioskDemo() === false`)에서는 그대로 표시한다. | Done |
+| NFR-WEB-KIOSK-FIX.1 | `scripts/conform/manifest.json` 및 `.agents/context/module-manifest.json`에 S1·S3 영역과 `KioskDemoGate.tsx`·`lib/web-runtime`을 등록해 정합성·파일 계약 검사를 통과하고, E2E 스크린샷 기본 출력 경로를 작업 트리 안 시험 결과 폴더로 두며 `speechSynthesis` 모의 시험 이름에 모의 여부를 명시한다. | Done |
+
+P04 검수 수정(#824, 2026-11-05): 지나 실사 클립 재후처리 및 인코딩 후 `scripts/nva_matting_hole_measure.py` 측정 결과 `jina-idle.webm`(192프레임)과 `jina-talking-ko.mp4`(511프레임), 최종 인코딩된 `idle.webm`·`talking-ko.webm` 모두 `hole_frames: 0`, `opaque_backdrop_frames: 0`, `max_opaque_backdrop_px: 0` 통과. 관련 Vitest 6파일 140/140(`knowledge.test.ts` 29/29, `memory.test.ts` 8/8, `entry.test.ts` 3/3, `kiosk-demo.test.ts` 11/11, `KioskDemoGate.test.tsx` 7/7, `ChatArea.test.tsx` 82/82) 및 `SettingsTab.test.tsx` WebLLM 숨김 시험 통과. `tsc`, `build:web`, `build`, `check.py --all`(28 regions clean), `check-file-anchors.mjs`(120 files OK), `check-assembly-coverage.mjs`, `enforce-root-structure.sh` 모두 통과. Playwright `e2e/kiosk-demo.spec.ts` 5/5 통과 및 `1280x800` 시연판 대화 화면 캡처(`/home/nextain/work/codex-runs/kiosk-agy/fix-chat.png`)에서 다리 사이·왼팔과 몸 사이 배경 투명도와 `"약 0 크레딧 · 0 토큰"` 비노출 시각 검토 완료.
 
 

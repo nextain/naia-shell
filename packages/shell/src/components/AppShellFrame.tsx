@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useRef, useState } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { AppMainContent, type AppMainContentProps } from "./AppMainContent";
 import { SplashScreen } from "./SplashScreen";
 
@@ -156,6 +157,7 @@ export function AppShellFrame({
 		<div
 			className="app-root"
 			data-ui-mode={mainContent.uiMode}
+			data-kiosk-demo={isKioskDemo() ? "true" : undefined}
 			data-rail-collapsed={
 				mainContent.uiMode === "workspace" && mainContent.railCollapsed
 					? "true"

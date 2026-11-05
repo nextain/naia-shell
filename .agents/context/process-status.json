@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-11-05T13:01:45Z",
+  "last_updated": "2026-11-05T14:40:00+00:00",
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
@@ -20,6 +20,42 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "web_ir_kiosk_fix_20261105": {
+      "issue": 824,
+      "title": "웹 IR 키오스크 시연판 적대 검수 수정 (1·3·4·5·6·7·8·10·11·12·13번)",
+      "branch": "feat/web-ir-kiosk-s4",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-FIX.1~7, NFR-WEB-KIOSK-FIX.1",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-FIX",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "Vitest 6 files 140/140 + SettingsTab WebLLM option test passed; knowledge.test.ts 29/29 (verify() 20/20 score 1, ask() 20/20 non-abstained coverage >= 0.6, safety:block 0 findings, dist/dist-web forbidden token scan 0 hits); nva_matting_hole_measure.py hole_frames=0 and opaque_backdrop_frames=0 across jina-idle.webm (192 frames) and jina-talking-ko.mp4 (511 frames) plus encoded WebM clips; Playwright e2e/kiosk-demo.spec.ts 5/5 passed; 1280x800 fix-chat.png visually verified; conform check.py --all (28 regions clean), check-file-anchors.mjs (120 files OK), check-assembly-coverage.mjs, enforce-root-structure.sh all passed.",
+      "evidence": "/home/nextain/work/codex-runs/kiosk-agy/result-fix.md",
+      "last_updated": "2026-11-05T14:20:00+00:00"
+    },
+    "web_ir_kiosk_s4_20261105": {
+      "issue": 824,
+      "title": "웹 IR 키오스크 지나 아바타 다시 만들기·대화창 넓히기 (S4)",
+      "branch": "feat/web-ir-kiosk-s4",
+      "requirements": "docs/requirements.md FR-WEB-KIOSK-S4.1~S4.2, NFR-WEB-KIOSK-S4.1",
+      "scenario": "docs/user-scenarios.md UC-WEB-KIOSK-S4",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "implemented",
+      "verification": "CPU matting and hole check (scripts/nva_matting_hole_measure.py) passed 0/2 bad clips (jina-idle.webm 192 frames hole_frames=0, jina-talking-ko.mp4 511 frames hole_frames=0) and encoded idle.webm/talking-ko.webm + stacked.mp4 verified hole_frames=0; focused Vitest 4 files 21/21 passed; build and build:web (normal OFF and kiosk ON) passed; Playwright e2e/kiosk-demo.spec.ts 4/4 passed; 1280x800 s4-entry.png and s4-chat.png visually verified.",
+      "evidence": "/home/nextain/work/codex-runs/kiosk-agy/result-s4.md",
+      "last_updated": "2026-11-05T13:00:00+00:00"
+    },
     "web_ir_kiosk_s1_20261105": {
       "issue": 824,
       "title": "IR 웹 키오스크 공개 지식·브라우저 지식 명령 (S1)",

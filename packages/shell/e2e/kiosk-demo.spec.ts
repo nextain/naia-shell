@@ -7,6 +7,13 @@ test.beforeEach(async ({ page }) => {
 			? route.continue()
 			: route.abort();
 	});
+	await page.route("**/v1/profile/balance", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ credits: 100 }),
+		});
+	});
 });
 
 // Run with VITE_NAIA_KIOSK_DEMO=1 in web mode. Only synthetic credentials are used.
@@ -24,7 +31,29 @@ test("S3 missing build credential stops even with a previous login", async ({
 	await expect(page.locator(".chat-area")).toHaveCount(0);
 });
 
-test("S3 fresh browser prepares Jina, enters by keyboard and speaks once", async ({
+test("S3 gateway key rejected or exhausted credits shows unavailable notice", async ({
+	page,
+}) => {
+	await page.route("**/v1/profile/balance", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ credits: 0 }),
+		});
+	});
+	await page.goto("/");
+	await expect(page.getByRole("alert")).toHaveText(
+		"지금은 시연을 쓸 수 없습니다",
+	);
+	await expect(
+		page.getByRole("button", { name: "들어가기", exact: true }),
+	).toBeDisabled();
+	await expect(page.locator(".chat-area")).toHaveCount(0);
+});
+
+// speechSynthesis is mocked here to deterministically verify utterance invocation;
+// real browser audio autoplay verification belongs to S5.
+test("S3 fresh browser prepares Jina, enters by keyboard and speaks once (mock speechSynthesis)", async ({
 	page,
 }, testInfo) => {
 	await page.setViewportSize({ width: 360, height: 780 });
@@ -74,6 +103,8 @@ test("S3 fresh browser prepares Jina, enters by keyboard and speaks once", async
 		ttsProvider: "naia-local-voice",
 		vllmTtsHost: "https://bc250-0-voice.nextain.io",
 		ttsVoice: "naia-default",
+		avatarProvider: "naia-video-avatar",
+		nvaModel: "jina",
 	});
 	const box = await enter.boundingBox();
 	expect(box).toBeTruthy();
@@ -83,6 +114,7 @@ test("S3 fresh browser prepares Jina, enters by keyboard and speaks once", async
 	await enter.focus();
 	await page.keyboard.press("Enter");
 	await expect(page.locator(".kiosk-entry")).toHaveCount(0);
+	await expect(page.locator('[data-video-avatar][data-nva-model="jina"]')).toBeVisible();
 	await expect
 		.poll(
 			() =>
@@ -129,8 +161,11 @@ test("S3 preparation progress and failure are safe and retryable", async ({
 
 test("integrated kiosk searches knowledge, recalls after reload and resets the visitor", async ({
 	page,
-}) => {
+}, testInfo) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
 	const question = "넥스테인은 뭘 하는 회사예요?";
+	const longAnswer =
+		"게스트님, 넥스테인은 나이아를 만드는 AI 회사입니다. 공개 지식을 검색해 안내해 드렸어요. 나이아는 비주얼 에이전트 데스크톱 셸과 웹 시연 환경을 함께 제공하며, 방문자께서 궁금하신 제품 철학과 성장 지표를 출처 기반으로 친절하게 설명해 드립니다.";
 	const requests: {
 		messages: { role: string; content: string }[];
 		tools?: { function: { name: string } }[];
@@ -147,8 +182,7 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 			expect(result.hits.length).toBeGreaterThan(0);
 			toolSeen = true;
 			delta = {
-				content:
-					"게스트님, 넥스테인은 나이아를 만드는 AI 회사입니다. 공개 지식을 검색해 안내해 드렸어요.",
+				content: longAnswer,
 			};
 		} else if (last.role === "user" && last.content.includes(question)) {
 			expect(
@@ -184,19 +218,62 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 		page.getByRole("button", { name: "들어가기", exact: true }),
 	).toBeEnabled();
 	await page.screenshot({
-		path: "/home/nextain/work/codex-runs/kiosk-demo/tmp/int-entry.png",
+		path: testInfo.outputPath("s4-entry.png"),
 	});
 	await page.getByRole("button", { name: "들어가기", exact: true }).click();
 	await expect(page.getByText(/게스트님, 안녕하세요/).first()).toBeVisible();
+	const avatarEl = page.locator('[data-video-avatar][data-nva-model="jina"]');
+	await expect(avatarEl).toBeVisible();
+	await expect(avatarEl).toHaveAttribute("data-video-avatar-loaded", "true");
 	await page.locator("textarea.chat-input").fill(question);
 	await page.locator("textarea.chat-input").press("Enter");
-	await expect(
-		page.getByText(/공개 지식을 검색해 안내해 드렸어요/).first(),
-	).toBeVisible();
+	const answerLocator = page.getByText(/공개 지식을 검색해 안내해 드렸어요/).first();
+	await expect(answerLocator).toBeVisible();
 	expect(toolSeen).toBe(true);
 	await expect(page.locator(".splash-screen")).toHaveCount(0);
+	await expect(page.locator(".cost-badge")).toHaveCount(0);
+
+	// Verify widened chat window and unclipped long answer
+	const chatWrapperBox = await page.locator(".naia-chat-wrapper").boundingBox();
+	const messagesBox = await page.locator(".chat-messages").boundingBox();
+	const answerBox = await answerLocator.boundingBox();
+	expect(chatWrapperBox).toBeTruthy();
+	expect(messagesBox).toBeTruthy();
+	expect(answerBox).toBeTruthy();
+	expect(chatWrapperBox!.width).toBeGreaterThanOrEqual(480);
+	expect(chatWrapperBox!.height).toBeGreaterThanOrEqual(480);
+	expect(answerBox!.y).toBeGreaterThanOrEqual(messagesBox!.y);
+	expect(answerBox!.y + answerBox!.height).toBeLessThanOrEqual(
+		messagesBox!.y + messagesBox!.height + 2,
+	);
+	const overflowY = await page
+		.locator(".chat-messages")
+		.evaluate((el) => getComputedStyle(el).overflowY);
+	expect(overflowY).toBe("auto");
+
+	// Wait briefly for video avatar canvas to paint non-empty frame
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const c = document.querySelector<HTMLCanvasElement>(
+					"[data-video-avatar-prebaked]",
+				);
+				if (!c || c.width === 0 || c.height === 0) return false;
+				const ctx = c.getContext("2d");
+				if (!ctx) return true;
+				const data = ctx.getImageData(
+					Math.floor(c.width / 2),
+					Math.floor(c.height / 3),
+					1,
+					1,
+				).data;
+				return data[3] > 0;
+			}),
+		)
+		.toBe(true);
+
 	await page.screenshot({
-		path: "/home/nextain/work/codex-runs/kiosk-demo/tmp/int-knowledge.png",
+		path: testInfo.outputPath("s4-chat.png"),
 	});
 	await page.reload();
 	await page.getByRole("button", { name: "들어가기", exact: true }).click();
@@ -213,6 +290,7 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 		.join("\n");
 	expect(recalled).toContain("게스트님");
 	expect(recalled).toContain(question);
+	expect(recalled).toContain("공개 지식을 검색해 안내해 드렸어요");
 	await page.getByRole("button", { name: "처음으로", exact: true }).click();
 	await expect(
 		page.getByRole("heading", { name: "지나와 이야기해 보세요" }),
@@ -220,8 +298,29 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 	await expect(
 		page.getByRole("button", { name: "들어가기", exact: true }),
 	).toBeEnabled();
+	const afterReset = await page.evaluate(async () => {
+		const key = localStorage.getItem("naia-remote-key");
+		let jsonlCount = 0;
+		try {
+			const root = await navigator.storage.getDirectory();
+			const ws = await root.getDirectoryHandle("naia-workspace");
+			const conv = await ws.getDirectoryHandle("conversations-guest");
+			for await (const [name] of (
+				conv as unknown as {
+					entries: () => AsyncIterable<[string, FileSystemHandle]>;
+				}
+			).entries()) {
+				if (name.endsWith(".jsonl")) jsonlCount++;
+			}
+		} catch {
+			jsonlCount = 0;
+		}
+		return { hasRemoteKey: Boolean(key), jsonlCount };
+	});
+	expect(afterReset.hasRemoteKey).toBe(true);
+	expect(afterReset.jsonlCount).toBe(0);
 	await page.screenshot({
-		path: "/home/nextain/work/codex-runs/kiosk-demo/tmp/int-reset.png",
+		path: testInfo.outputPath("int-reset.png"),
 	});
 	await Promise.all([
 		page.waitForEvent("load"),

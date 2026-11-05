@@ -68,7 +68,10 @@ export async function bootWebRuntimeAndModel(
 			} catch {
 				storage = null;
 			}
-			if ((selection?.provider ?? loadConfig()?.provider) !== "webllm") {
+			if (
+				isKioskDemo() ||
+				(selection?.provider ?? loadConfig()?.provider) !== "webllm"
+			) {
 				getStartableAgentBridge().start({ model: null });
 				return Promise.resolve();
 			}

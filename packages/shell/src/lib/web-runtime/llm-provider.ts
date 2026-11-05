@@ -1,5 +1,6 @@
 import { t } from "../i18n";
-import { registerLlmProvider } from "../llm/registry";
+import { isKioskDemo } from "../kiosk-demo/flag";
+import { registerLlmProvider, unregisterLlmProvider } from "../llm/registry";
 import {
 	WEB_LLM_MODEL_ID,
 	WEB_LLM_MODEL_IDS,
@@ -7,6 +8,10 @@ import {
 } from "./webllm-model";
 
 export function registerWebLlmProvider(): void {
+	if (isKioskDemo()) {
+		unregisterLlmProvider("webllm");
+		return;
+	}
 	registerLlmProvider({
 		id: "webllm",
 		name: "WebLLM",

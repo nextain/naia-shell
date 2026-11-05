@@ -3,18 +3,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveTtsVoiceId } from "../../components/chat-voice-utils";
 import { loadConfig, saveConfig } from "../config";
 import {
+	DEFAULT_SHELL_NAIA_WIDTH,
+	KIOSK_DEMO_NVA_MODEL,
 	KIOSK_DEMO_TTS_HOST,
 	KIOSK_DEMO_TTS_PROVIDER,
 	KIOSK_DEMO_TTS_VOICE,
+	KIOSK_SHELL_NAIA_WIDTH,
 	buildKioskDemoConfigSeed,
+	resolveInitialShellChatLayout,
+	resolveShellAvatarSelection,
 } from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { KIOSK_DEMO_PERSONA, buildSystemPrompt } from "../persona";
-import { setWebAssetsModeForTests } from "../web-runtime/web-assets";
+import {
+	WEB_DEFAULT_NVA,
+	setWebAssetsModeForTests,
+} from "../web-runtime/web-assets";
 import {
 	seedKioskDemoWebAuth,
+	verifyKioskDemoWebAuth,
 	WEB_REMOTE_KEY_STORAGE_KEY,
 } from "../web-runtime/web-auth";
+import { installWebRuntime } from "../web-runtime/install";
+import { registerWebLlmProvider } from "../web-runtime/llm-provider";
+import {
+	getLlmProvider,
+	getStaticModelsRecord,
+	listLlmProviders,
+} from "../llm/registry";
+import { INITIAL_WEB_WORKSPACE_CONFIG } from "../web-runtime/web-workspace-commands";
 import { prepareKioskDemoOnboarding } from "../onboarding-core";
 import {
 	consumeKioskGreeting,
@@ -59,24 +76,37 @@ describe("S3 kiosk isolation", () => {
 			vi.stubEnv("VITE_NAIA_KIOSK_DEMO", flag);
 			localStorage.setItem(
 				"naia-config",
-				JSON.stringify({ agentName: "Normal", onboardingComplete: false }),
+				JSON.stringify({
+					agentName: "Normal",
+					onboardingComplete: false,
+					avatarProvider: INITIAL_WEB_WORKSPACE_CONFIG.avatarProvider,
+					nvaModel: INITIAL_WEB_WORKSPACE_CONFIG.nvaModel,
+				}),
 			);
 			localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, "test-personal-fixture");
 			const before = localStorage.getItem("naia-config");
 			expect(isKioskDemo()).toBe(false);
 			expect(buildKioskDemoConfigSeed()).toEqual({});
+			expect(INITIAL_WEB_WORKSPACE_CONFIG.avatarProvider).toBe(
+				"naia-video-avatar",
+			);
+			expect(INITIAL_WEB_WORKSPACE_CONFIG.nvaModel).toBe(WEB_DEFAULT_NVA);
 			expect(seedKioskDemoWebAuth()).toBe(false);
 			await prepareKioskDemoOnboarding();
 			expect(provision).not.toHaveBeenCalled();
 			expect(memory.size).toBe(0);
 			expect(localStorage.getItem("naia-config")).toBe(before);
+			expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
+				avatarProvider: "naia-video-avatar",
+				nvaModel: WEB_DEFAULT_NVA,
+			});
 			expect(localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY)).toBe(
 				"test-personal-fixture",
 			);
 			expect(buildSystemPrompt()).not.toContain(KIOSK_DEMO_PERSONA);
 		},
 	);
-	it("ON produces the requested polite Korean guide", () => {
+	it("ON produces the requested polite Korean guide and Jina real-person avatar", () => {
 		const seed = buildKioskDemoConfigSeed();
 		expect(seed).toMatchObject({
 			agentName: "지나",
@@ -89,6 +119,8 @@ describe("S3 kiosk isolation", () => {
 			ttsProvider: KIOSK_DEMO_TTS_PROVIDER,
 			vllmTtsHost: KIOSK_DEMO_TTS_HOST,
 			ttsVoice: KIOSK_DEMO_TTS_VOICE,
+			avatarProvider: "naia-video-avatar",
+			nvaModel: KIOSK_DEMO_NVA_MODEL,
 		});
 		const prompt = buildSystemPrompt(seed.persona, seed);
 		for (const text of ["존댓말", "투자자", "넥스테인", "지어내지", "게스트"])
@@ -109,12 +141,14 @@ describe("S3 kiosk isolation", () => {
 		);
 		expect(localStorage.getItem("naia-config")).toBeNull();
 	});
-	it("persists persona and removes stale UI overrides without losing avatar or voice", async () => {
+	it("persists Jina persona and avatar and removes stale UI overrides without losing voice", async () => {
 		memory.set(
 			"naia-adk/naia-settings/config.json",
 			JSON.stringify({
 				agentName: "Old",
-				nvaModel: "custom.nva",
+				avatarProvider: "vrm",
+				vrmModel: "/models/naia-default.vrm",
+				nvaModel: "naia",
 				vllmTtsHost: "http://voice.invalid",
 			}),
 		);
@@ -124,6 +158,8 @@ describe("S3 kiosk isolation", () => {
 				agentName: "Stale",
 				onboardingComplete: false,
 				ttsEnabled: false,
+				avatarProvider: "vrm",
+				vrmModel: "/models/ui.vrm",
 				nvaModel: "ui.nva",
 			}),
 		);
@@ -134,21 +170,22 @@ describe("S3 kiosk isolation", () => {
 		expect(saved).toMatchObject({
 			agentName: "지나",
 			onboardingComplete: true,
-			nvaModel: "custom.nva",
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "jina",
 			vllmTtsHost: "http://voice.invalid",
 		});
+		expect(saved.vrmModel).toBeUndefined();
 		const ui = JSON.parse(memory.get("naia-adk/naia-settings/ui-config.json")!);
 		expect(ui).toEqual({
 			onboardingComplete: true,
 			ttsEnabled: true,
-			nvaModel: "ui.nva",
 		});
 		expect(JSON.parse(localStorage.getItem("naia-config")!).naiaKey).toBeUndefined();
 		expect(JSON.stringify([...memory.values()])).not.toContain(
 			"test-kiosk-fixture-only",
 		);
 	});
-	it("a new workspace gets the complete persona and greeting is consumed only once", async () => {
+	it("a new workspace gets the complete persona, Jina avatar and greeting is consumed only once", async () => {
 		setWebAssetsModeForTests(true);
 		await prepareKioskDemoOnboarding();
 		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
@@ -157,6 +194,8 @@ describe("S3 kiosk isolation", () => {
 			ttsProvider: "naia-local-voice",
 			vllmTtsHost: "https://bc250-0-voice.nextain.io",
 			ttsVoice: "naia-default",
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "jina",
 		});
 		const loaded = loadConfig()!;
 		expect(loaded.ttsProvider).toBe("naia-local-voice");
@@ -180,5 +219,99 @@ describe("S3 kiosk isolation", () => {
 		});
 		const loaded = loadConfig()!;
 		expect(loaded.ttsProvider).toBe("browser");
+	});
+	it("resolves Jina avatar and widened chat layout when kiosk flag is ON, and preserves normal web avatar and layout when OFF", () => {
+		expect(resolveShellAvatarSelection(null)).toEqual({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "jina",
+		});
+		expect(
+			resolveShellAvatarSelection({
+				provider: "nextain",
+				model: "glm-5.1",
+				apiKey: "",
+				locale: "ko",
+				avatarProvider: "naia-video-avatar",
+				nvaModel: WEB_DEFAULT_NVA,
+			}),
+		).toEqual({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "jina",
+		});
+		const kioskLayout = resolveInitialShellChatLayout(800);
+		expect(kioskLayout.naiaWidth).toBe(KIOSK_SHELL_NAIA_WIDTH);
+		expect(kioskLayout.naiaWidth).toBeGreaterThan(DEFAULT_SHELL_NAIA_WIDTH);
+		expect(kioskLayout.chatHeight).toBeGreaterThanOrEqual(540);
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		expect(
+			resolveShellAvatarSelection({
+				provider: "nextain",
+				model: "glm-5.1",
+				apiKey: "",
+				locale: "ko",
+				avatarProvider: "naia-video-avatar",
+				nvaModel: WEB_DEFAULT_NVA,
+			}),
+		).toEqual({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: WEB_DEFAULT_NVA,
+		});
+		expect(resolveShellAvatarSelection(null)).toEqual({
+			avatarProvider: "vrm",
+			nvaModel: "",
+		});
+		const normalLayout = resolveInitialShellChatLayout(800);
+		expect(normalLayout).toEqual({
+			naiaWidth: DEFAULT_SHELL_NAIA_WIDTH,
+			chatHeight: 320,
+		});
+	});
+	it("does not register or expose WebLLM when kiosk flag is ON, and registers WebLLM normally when OFF", () => {
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		registerWebLlmProvider();
+		expect(getLlmProvider("webllm")).toBeDefined();
+		expect(listLlmProviders().some((p) => p.id === "webllm")).toBe(true);
+		expect(getStaticModelsRecord().webllm).toBeDefined();
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		installWebRuntime();
+		registerWebLlmProvider();
+		expect(getLlmProvider("webllm")).toBeUndefined();
+		expect(listLlmProviders().some((p) => p.id === "webllm")).toBe(false);
+		expect(getStaticModelsRecord().webllm).toBeUndefined();
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		installWebRuntime();
+		expect(getLlmProvider("webllm")).toBeDefined();
+		expect(listLlmProviders().some((p) => p.id === "webllm")).toBe(true);
+	});
+	it("verifies gateway key and credits once on entry and blocks invalid key or zero credits", async () => {
+		const okResult = await verifyKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchBalance: async () => ({ credits: 42 }),
+		});
+		expect(okResult).toEqual({ ok: true, credits: 42 });
+
+		const zeroCredits = await verifyKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchBalance: async () => ({ credits: 0 }),
+		});
+		expect(zeroCredits).toEqual({ ok: false, reason: "unavailable" });
+
+		const rejectedKey = await verifyKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchBalance: async () => {
+				throw new Error("HTTP 401");
+			},
+		});
+		expect(rejectedKey).toEqual({ ok: false, reason: "unavailable" });
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "");
+		const missingKey = await verifyKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchBalance: async () => ({ credits: 100 }),
+		});
+		expect(missingKey).toEqual({ ok: false, reason: "missing-key" });
 	});
 });

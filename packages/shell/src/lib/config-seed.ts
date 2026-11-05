@@ -1,7 +1,13 @@
+import { effectiveAvatarProviderFromConfig } from "./avatar/nva-gate";
 import type { AppConfig } from "./config";
 import { isKioskDemo } from "./kiosk-demo/flag";
 import { getDefaultLlmModel } from "./llm/registry";
 import { KIOSK_DEMO_PERSONA } from "./persona";
+import {
+	WEB_DEFAULT_NVA,
+	isLegacyWebNaiaSelection,
+	isWebMode,
+} from "./web-runtime/web-assets";
 
 /**
  * FR-VOICE.15 (#418): retired config fields that the safety migration strips
@@ -42,6 +48,54 @@ export function buildSeedShellConfig(
 export const KIOSK_DEMO_TTS_PROVIDER = "naia-local-voice" as const;
 export const KIOSK_DEMO_TTS_HOST = "https://bc250-0-voice.nextain.io";
 export const KIOSK_DEMO_TTS_VOICE = "naia-default";
+export const KIOSK_DEMO_NVA_MODEL = "jina";
+export const DEFAULT_SHELL_NAIA_WIDTH = 320;
+export const KIOSK_SHELL_NAIA_WIDTH = 560;
+export const KIOSK_SHELL_CHAT_HEIGHT_MIN = 540;
+export const KIOSK_SHELL_CHAT_HEIGHT_RATIO = 0.78;
+
+export function resolveShellAvatarSelection(
+	config: AppConfig | null | undefined,
+	detectedVramGb: number | null = null,
+): {
+	avatarProvider: "vrm" | "naia-video-avatar";
+	nvaModel: string;
+} {
+	if (isKioskDemo()) {
+		const saved = config?.nvaModel?.trim() ?? "";
+		return {
+			avatarProvider: "naia-video-avatar",
+			nvaModel:
+				saved && saved !== WEB_DEFAULT_NVA ? saved : KIOSK_DEMO_NVA_MODEL,
+		};
+	}
+	const legacyWebNaia = isWebMode() && isLegacyWebNaiaSelection(config);
+	return {
+		avatarProvider: legacyWebNaia
+			? "naia-video-avatar"
+			: effectiveAvatarProviderFromConfig(config, detectedVramGb),
+		nvaModel: legacyWebNaia ? WEB_DEFAULT_NVA : (config?.nvaModel ?? ""),
+	};
+}
+
+export function resolveInitialShellChatLayout(viewportHeight: number): {
+	naiaWidth: number;
+	chatHeight: number;
+} {
+	if (isKioskDemo()) {
+		return {
+			naiaWidth: KIOSK_SHELL_NAIA_WIDTH,
+			chatHeight: Math.max(
+				KIOSK_SHELL_CHAT_HEIGHT_MIN,
+				Math.round(viewportHeight * KIOSK_SHELL_CHAT_HEIGHT_RATIO),
+			),
+		};
+	}
+	return {
+		naiaWidth: DEFAULT_SHELL_NAIA_WIDTH,
+		chatHeight: Math.round(viewportHeight * 0.4),
+	};
+}
 
 /** OFF는 빈 패치: 일반판의 모든 기본값과 온보딩 선택을 보존한다. */
 export function buildKioskDemoConfigSeed(): SeedableShellConfig {
@@ -59,6 +113,8 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 		ttsProvider: KIOSK_DEMO_TTS_PROVIDER,
 		vllmTtsHost: KIOSK_DEMO_TTS_HOST,
 		ttsVoice: KIOSK_DEMO_TTS_VOICE,
+		avatarProvider: "naia-video-avatar",
+		nvaModel: KIOSK_DEMO_NVA_MODEL,
 		provider: "nextain",
 		model: getDefaultLlmModel("nextain"),
 		llmRoles: {

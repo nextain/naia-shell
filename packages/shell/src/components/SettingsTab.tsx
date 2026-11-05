@@ -70,6 +70,7 @@ import {
 	subscribeWebStoragePersistState,
 } from "../lib/web-runtime/web-storage-persist";
 import { getWebModelStatus } from "../lib/web-runtime/web-model-status";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	WEB_LLM_MODEL_IDS,
 	WEB_LLM_MODEL_PREF_KEY,
@@ -3309,6 +3310,9 @@ export function SettingsTab() {
 	}
 
 	function handleProviderChange(id: ProviderId) {
+		if (isKioskDemo() && id === "webllm") {
+			return;
+		}
 		if (isWebMode() && isNaiaConfigHydrationPending()) {
 			setError(t("settings.saveFailed"));
 			return;
@@ -5619,14 +5623,16 @@ export function SettingsTab() {
 								handleProviderChange(e.target.value as ProviderId)
 							}
 						>
-							{listLlmProviders().map((p) => (
-								<option key={p.id} value={p.id} disabled={p.disabled}>
-									{p.name}
-									{isRecommendedLocalValue(activeLocalTier, "main", p.id)
-										? ` · ${t("settings.tierRecommendBadge")}`
-										: ""}
-								</option>
-							))}
+							{listLlmProviders()
+								.filter((p) => !(isKioskDemo() && p.id === "webllm"))
+								.map((p) => (
+									<option key={p.id} value={p.id} disabled={p.disabled}>
+										{p.name}
+										{isRecommendedLocalValue(activeLocalTier, "main", p.id)
+											? ` · ${t("settings.tierRecommendBadge")}`
+											: ""}
+									</option>
+								))}
 						</select>
 						{slotRecommendation(activeLocalTier, "main") && (
 							<div className="settings-hint" data-testid="main-tier-hint">

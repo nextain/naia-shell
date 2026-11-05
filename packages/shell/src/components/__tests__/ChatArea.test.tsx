@@ -344,6 +344,44 @@ describe("ChatArea", () => {
 		);
 	});
 
+	it("hides message cost-badge in kiosk mode and shows it in normal web mode", () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gpt-6.1-terra",
+			}),
+		);
+		useChatStore.getState().setMessages([
+			{
+				id: "m-cost-1",
+				role: "assistant",
+				content: "답변입니다.",
+				timestamp: 1000,
+				cost: {
+					provider: "nextain",
+					model: "gpt-6.1-terra",
+					inputTokens: 0,
+					outputTokens: 0,
+					cost: 0,
+				},
+			},
+		]);
+
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const { container: kioskContainer, unmount } = render(<ChatArea />);
+		expect(kioskContainer.querySelector(".cost-badge")).toBeNull();
+		unmount();
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		const { container: normalContainer } = render(<ChatArea />);
+		expect(normalContainer.querySelector(".cost-badge")).not.toBeNull();
+		expect(normalContainer.querySelector(".cost-badge")?.textContent).toContain(
+			"0",
+		);
+	});
+
 	it("renders input field and buttons", () => {
 		render(<ChatArea />);
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBeDefined();

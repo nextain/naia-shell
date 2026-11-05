@@ -5893,4 +5893,38 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(invokedCommands).not.toContain("write_slots_manifest");
 		expect(invokedCommands).not.toContain("read_local_binary");
 	});
+
+	it("hides WebLLM option in #provider-select when isKioskDemo() is enabled and shows it in normal web mode", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		const { registerWebLlmProvider } = await import(
+			"../../lib/web-runtime/llm-provider"
+		);
+		const { unregisterLlmProvider } = await import("../../lib/llm/registry");
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		registerWebLlmProvider();
+
+		const { unmount } = render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const normalSelect = document.getElementById(
+			"provider-select",
+		) as HTMLSelectElement;
+		expect(
+			Array.from(normalSelect.options).map((o) => o.value),
+		).toContain("webllm");
+		unmount();
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const kioskSelect = document.getElementById(
+			"provider-select",
+		) as HTMLSelectElement;
+		expect(
+			Array.from(kioskSelect.options).map((o) => o.value),
+		).not.toContain("webllm");
+		unregisterLlmProvider("webllm");
+		vi.unstubAllEnvs();
+	});
 });

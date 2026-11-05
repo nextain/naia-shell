@@ -158,9 +158,10 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 	};
 	const uiPath = webAdkOpfsPath("naia-settings/ui-config.json");
 	const ui = JSON.parse((await fs.readText(uiPath)) || "{}");
-	// Older versions also put persona/provider fields in UI config; remove those
-	// overrides while retaining avatar, voice and layout selections.
+	// Older versions also put persona/provider/avatar fields in UI config; remove
+	// those overrides so kiosk mode always renders Jina while retaining voice and layout selections.
 	for (const key of Object.keys(seed)) delete ui[key];
+	delete ui.vrmModel;
 	ui.naiaKey = undefined;
 	ui.naiaUserId = undefined;
 	ui.apiKey = undefined;
@@ -168,6 +169,7 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 	ui.onboardingComplete = true;
 	await fs.writeBytes(uiPath, JSON.stringify(ui));
 	// Credentials belong exclusively to web-auth, never the workspace/persona.
+	delete config.vrmModel;
 	config.naiaKey = undefined;
 	config.naiaUserId = undefined;
 	config.apiKey = undefined;
