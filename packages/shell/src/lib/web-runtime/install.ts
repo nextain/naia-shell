@@ -1,3 +1,5 @@
+import { isKioskDemo } from "../kiosk-demo/flag";
+import { getDefaultLlmModel, unregisterLlmProvider } from "../llm/registry";
 import { Logger } from "../logger";
 import {
 	registerCallback,
@@ -11,7 +13,6 @@ import {
 	syncWebModeRootAttribute,
 } from "./web-assets";
 import { requestWebPersistentStorage } from "./web-storage-persist";
-import { getDefaultLlmModel } from "../llm/registry";
 
 export const WEB_RUNTIME_MARKER = "naia-web-runtime";
 
@@ -73,7 +74,11 @@ export function installWebRuntime(): void {
 		localStorage.setItem("naia-adk-path", "opfs://naia-adk");
 	}
 
-	registerWebLlmProvider();
+	if (isKioskDemo()) {
+		unregisterLlmProvider("webllm");
+	} else {
+		registerWebLlmProvider();
+	}
 
 	if (typeof localStorage !== "undefined") {
 		const rawConfig = localStorage.getItem("naia-config");

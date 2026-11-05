@@ -13,8 +13,16 @@ import { KIOSK_DEMO_PERSONA, buildSystemPrompt } from "../persona";
 import { WEB_DEFAULT_NVA } from "../web-runtime/web-assets";
 import {
 	seedKioskDemoWebAuth,
+	verifyKioskDemoWebAuth,
 	WEB_REMOTE_KEY_STORAGE_KEY,
 } from "../web-runtime/web-auth";
+import { installWebRuntime } from "../web-runtime/install";
+import { registerWebLlmProvider } from "../web-runtime/llm-provider";
+import {
+	getLlmProvider,
+	getStaticModelsRecord,
+	listLlmProviders,
+} from "../llm/registry";
 import { INITIAL_WEB_WORKSPACE_CONFIG } from "../web-runtime/web-workspace-commands";
 import { prepareKioskDemoOnboarding } from "../onboarding-core";
 import {
@@ -221,5 +229,52 @@ describe("S3 kiosk isolation", () => {
 			naiaWidth: DEFAULT_SHELL_NAIA_WIDTH,
 			chatHeight: 320,
 		});
+	});
+	it("does not register or expose WebLLM when kiosk flag is ON, and registers WebLLM normally when OFF", () => {
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		registerWebLlmProvider();
+		expect(getLlmProvider("webllm")).toBeDefined();
+		expect(listLlmProviders().some((p) => p.id === "webllm")).toBe(true);
+		expect(getStaticModelsRecord().webllm).toBeDefined();
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		installWebRuntime();
+		registerWebLlmProvider();
+		expect(getLlmProvider("webllm")).toBeUndefined();
+		expect(listLlmProviders().some((p) => p.id === "webllm")).toBe(false);
+		expect(getStaticModelsRecord().webllm).toBeUndefined();
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		installWebRuntime();
+		expect(getLlmProvider("webllm")).toBeDefined();
+		expect(listLlmProviders().some((p) => p.id === "webllm")).toBe(true);
+	});
+	it("verifies gateway key and credits once on entry and blocks invalid key or zero credits", async () => {
+		const okResult = await verifyKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchBalance: async () => ({ credits: 42 }),
+		});
+		expect(okResult).toEqual({ ok: true, credits: 42 });
+
+		const zeroCredits = await verifyKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchBalance: async () => ({ credits: 0 }),
+		});
+		expect(zeroCredits).toEqual({ ok: false, reason: "unavailable" });
+
+		const rejectedKey = await verifyKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchBalance: async () => {
+				throw new Error("HTTP 401");
+			},
+		});
+		expect(rejectedKey).toEqual({ ok: false, reason: "unavailable" });
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO_KEY", "");
+		const missingKey = await verifyKioskDemoWebAuth({
+			gatewayUrl: "http://localhost:9999",
+			fetchBalance: async () => ({ credits: 100 }),
+		});
+		expect(missingKey).toEqual({ ok: false, reason: "missing-key" });
 	});
 });

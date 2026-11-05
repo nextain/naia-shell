@@ -1,21 +1,50 @@
 import { resetKioskMemory } from "../lib/kiosk-demo/memory";
 import { useChatStore } from "../stores/chat";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { requestKioskGreeting, resetKioskVisit } from "../lib/kiosk-demo/entry";
+import {
+	clearKioskVisitActivity,
+	getKioskIdleTimeoutMs,
+	isKioskVisitExpired,
+	recordKioskVisitActivity,
+	requestKioskGreeting,
+	resetKioskVisit,
+	shouldResetKioskVisitOnEnter,
+} from "../lib/kiosk-demo/entry";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import { Logger } from "../lib/logger";
 import { prepareKioskDemoOnboarding } from "../lib/onboarding-core";
 import { bootWebRuntimeAndModel } from "../lib/web-runtime/auto-install";
 import { installWebRuntime } from "../lib/web-runtime/install";
-import { seedKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
+import {
+	seedKioskDemoWebAuth,
+	verifyKioskDemoWebAuth,
+} from "../lib/web-runtime/web-auth";
+import { clearWebConversations } from "../lib/web-runtime/web-workspace-commands";
 import "./KioskDemoGate.css";
 
-type Phase = "preparing" | "ready" | "missing-key" | "error";
+type Phase = "preparing" | "ready" | "missing-key" | "unavailable" | "error";
+
+async function cleanupExpiredPreviousVisit(): Promise<void> {
+	if (!shouldResetKioskVisitOnEnter()) return;
+	await resetKioskMemory();
+	await clearWebConversations();
+	clearKioskVisitActivity();
+	useChatStore.getState().newConversation();
+}
 
 async function prepare(): Promise<Phase> {
 	try {
 		if (!seedKioskDemoWebAuth()) return "missing-key";
+		if (typeof verifyKioskDemoWebAuth === "function") {
+			const verified = await verifyKioskDemoWebAuth();
+			if (!verified.ok) {
+				return verified.reason === "missing-key"
+					? "missing-key"
+					: "unavailable";
+			}
+		}
 		installWebRuntime();
+		await cleanupExpiredPreviousVisit();
 		await prepareKioskDemoOnboarding();
 		await bootWebRuntimeAndModel({
 			consumeAuthCallback: async () => undefined,
@@ -48,6 +77,40 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 			active = false;
 		};
 	}, [enabled]);
+	useEffect(() => {
+		if (!enabled || !entered || typeof window === "undefined") return;
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		const scheduleIdleReset = () => {
+			if (timer !== null) clearTimeout(timer);
+			const timeoutMs = getKioskIdleTimeoutMs();
+			timer = setTimeout(() => {
+				if (resetPending.current) return;
+				resetPending.current = true;
+				void resetKioskVisit({
+					cancel: () => undefined,
+					resetMemory: resetKioskMemory,
+					newConversation: () => useChatStore.getState().newConversation(),
+					reload: () => window.location.reload(),
+				}).catch(() => {
+					resetPending.current = false;
+				});
+			}, timeoutMs);
+		};
+		const onActivity = () => {
+			recordKioskVisitActivity();
+			scheduleIdleReset();
+		};
+		scheduleIdleReset();
+		window.addEventListener("pointerdown", onActivity, { passive: true });
+		window.addEventListener("keydown", onActivity);
+		window.addEventListener("touchstart", onActivity, { passive: true });
+		return () => {
+			if (timer !== null) clearTimeout(timer);
+			window.removeEventListener("pointerdown", onActivity);
+			window.removeEventListener("keydown", onActivity);
+			window.removeEventListener("touchstart", onActivity);
+		};
+	}, [enabled, entered]);
 	if (!enabled || entered) return <>{children}</>;
 	return (
 		<main className="kiosk-entry" lang="ko">
@@ -61,6 +124,8 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 				</p>
 				{phase === "missing-key" ? (
 					<p role="alert">시연 열쇠 없음</p>
+				) : phase === "unavailable" ? (
+					<p role="alert">지금은 시연을 쓸 수 없습니다</p>
 				) : phase === "error" ? (
 					<p role="alert">시연을 준비하지 못했어요. 다시 시도해 주세요.</p>
 				) : (
@@ -89,8 +154,16 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 							onClick={() => {
 								if (accepted.current) return;
 								accepted.current = true;
-								requestKioskGreeting();
-								setEntered(true);
+								const enterNow = () => {
+									recordKioskVisitActivity();
+									requestKioskGreeting();
+									setEntered(true);
+								};
+								if (isKioskVisitExpired()) {
+									void cleanupExpiredPreviousVisit().finally(enterNow);
+									return;
+								}
+								enterNow();
 							}}
 						>
 							들어가기

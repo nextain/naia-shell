@@ -742,13 +742,199 @@
         "UC-WEB-KIOSK-S3"
       ],
       "contract": "docs/requirements.md#웹-키오스크-s3-2026-11-05"
+    },
+    "packages/shell/src/components/KioskDemoGate.tsx": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-demo-gate.md"
+    },
+    "packages/shell/src/lib/web-runtime/agent-bridge.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-agent-bridge.md"
+    },
+    "packages/shell/src/lib/web-runtime/auto-install.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-auto-install.md"
+    },
+    "packages/shell/src/lib/web-runtime/command-table.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-command-table.md"
+    },
+    "packages/shell/src/lib/web-runtime/csp.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-csp.md"
+    },
+    "packages/shell/src/lib/web-runtime/event-bus.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-event-bus.md"
+    },
+    "packages/shell/src/lib/web-runtime/install.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-install.md"
+    },
+    "packages/shell/src/lib/web-runtime/llm-provider.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-llm-provider.md"
+    },
+    "packages/shell/src/lib/web-runtime/model-start.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-model-start.md"
+    },
+    "packages/shell/src/lib/web-runtime/router.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-router.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk-path.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-path.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk-source.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-source.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk-status.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-status.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-adk.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-assets.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-assets.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-auth.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-auth.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-fs.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-fs.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-model-status.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-model-status.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-storage-persist.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-storage-persist.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-workspace-commands.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-workspace-commands.md"
+    },
+    "packages/shell/src/lib/web-runtime/web-workspace-files.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-workspace-files.md"
+    },
+    "packages/shell/src/lib/web-runtime/webgpu-check.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-webgpu-check.md"
+    },
+    "packages/shell/src/lib/web-runtime/webllm-model.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC-WEB-KIOSK-S3",
+        "UC-WEB-KIOSK-FIX"
+      ],
+      "contract": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-webllm-model.md"
     }
   },
   "scan_dirs": [
     "src/main",
-    "packages/shell/src/lib/kiosk-demo"
+    "packages/shell/src/lib/kiosk-demo",
+    "packages/shell/src/lib/web-runtime"
   ],
   "scan_files": [
-    "packages/shell/web-worker/kiosk-browser-agent.ts"
+    "packages/shell/web-worker/kiosk-browser-agent.ts",
+    "packages/shell/src/components/KioskDemoGate.tsx"
   ]
 }

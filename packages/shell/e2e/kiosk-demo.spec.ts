@@ -7,6 +7,13 @@ test.beforeEach(async ({ page }) => {
 			? route.continue()
 			: route.abort();
 	});
+	await page.route("**/v1/profile/balance", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ credits: 100 }),
+		});
+	});
 });
 
 // Run with VITE_NAIA_KIOSK_DEMO=1 in web mode. Only synthetic credentials are used.
@@ -24,7 +31,29 @@ test("S3 missing build credential stops even with a previous login", async ({
 	await expect(page.locator(".chat-area")).toHaveCount(0);
 });
 
-test("S3 fresh browser prepares Jina, enters by keyboard and speaks once", async ({
+test("S3 gateway key rejected or exhausted credits shows unavailable notice", async ({
+	page,
+}) => {
+	await page.route("**/v1/profile/balance", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ credits: 0 }),
+		});
+	});
+	await page.goto("/");
+	await expect(page.getByRole("alert")).toHaveText(
+		"지금은 시연을 쓸 수 없습니다",
+	);
+	await expect(
+		page.getByRole("button", { name: "들어가기", exact: true }),
+	).toBeDisabled();
+	await expect(page.locator(".chat-area")).toHaveCount(0);
+});
+
+// speechSynthesis is mocked here to deterministically verify utterance invocation;
+// real browser audio autoplay verification belongs to S5.
+test("S3 fresh browser prepares Jina, enters by keyboard and speaks once (mock speechSynthesis)", async ({
 	page,
 }, testInfo) => {
 	await page.setViewportSize({ width: 360, height: 780 });
@@ -186,7 +215,7 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 		page.getByRole("button", { name: "들어가기", exact: true }),
 	).toBeEnabled();
 	await page.screenshot({
-		path: "/home/nextain/work/codex-runs/kiosk-agy/s4-entry.png",
+		path: testInfo.outputPath("s4-entry.png"),
 	});
 	await page.getByRole("button", { name: "들어가기", exact: true }).click();
 	await expect(page.getByText(/게스트님, 안녕하세요/).first()).toBeVisible();
@@ -199,6 +228,7 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 	await expect(answerLocator).toBeVisible();
 	expect(toolSeen).toBe(true);
 	await expect(page.locator(".splash-screen")).toHaveCount(0);
+	await expect(page.locator(".cost-badge")).toHaveCount(0);
 
 	// Verify widened chat window and unclipped long answer
 	const chatWrapperBox = await page.locator(".naia-chat-wrapper").boundingBox();
@@ -240,7 +270,7 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 		.toBe(true);
 
 	await page.screenshot({
-		path: "/home/nextain/work/codex-runs/kiosk-agy/s4-chat.png",
+		path: testInfo.outputPath("s4-chat.png"),
 	});
 	await page.reload();
 	await page.getByRole("button", { name: "들어가기", exact: true }).click();
@@ -257,6 +287,7 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 		.join("\n");
 	expect(recalled).toContain("게스트님");
 	expect(recalled).toContain(question);
+	expect(recalled).toContain("공개 지식을 검색해 안내해 드렸어요");
 	await page.getByRole("button", { name: "처음으로", exact: true }).click();
 	await expect(
 		page.getByRole("heading", { name: "지나와 이야기해 보세요" }),
@@ -264,6 +295,27 @@ test("integrated kiosk searches knowledge, recalls after reload and resets the v
 	await expect(
 		page.getByRole("button", { name: "들어가기", exact: true }),
 	).toBeEnabled();
+	const afterReset = await page.evaluate(async () => {
+		const key = localStorage.getItem("naia-remote-key");
+		let jsonlCount = 0;
+		try {
+			const root = await navigator.storage.getDirectory();
+			const ws = await root.getDirectoryHandle("naia-workspace");
+			const conv = await ws.getDirectoryHandle("conversations-guest");
+			for await (const [name] of (
+				conv as unknown as {
+					entries: () => AsyncIterable<[string, FileSystemHandle]>;
+				}
+			).entries()) {
+				if (name.endsWith(".jsonl")) jsonlCount++;
+			}
+		} catch {
+			jsonlCount = 0;
+		}
+		return { hasRemoteKey: Boolean(key), jsonlCount };
+	});
+	expect(afterReset.hasRemoteKey).toBe(true);
+	expect(afterReset.jsonlCount).toBe(0);
 	await page.screenshot({
 		path: testInfo.outputPath("int-reset.png"),
 	});

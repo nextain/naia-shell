@@ -20,6 +20,321 @@
         "handleKioskMemoryCommand",
         "resetKioskMemory"
       ]
+    },
+    {
+      "name": "kiosk-knowledge-s1",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-knowledge-s1.md",
+      "source": "packages/shell/src/lib/kiosk-demo/knowledge.ts",
+      "expect": [
+        "assertPublicKnowledge",
+        "compileKioskKnowledge",
+        "handleKioskKnowledgeCommand",
+        "kioskKnowledgeService",
+        "parseKioskKb",
+        "readKioskKnowledgeService",
+        "safeScope",
+        "seedKioskKnowledge"
+      ]
+    },
+    {
+      "name": "kiosk-worker-knowledge-s1",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-worker-knowledge-s1.md",
+      "source": "packages/shell/web-worker/kiosk-knowledge.ts",
+      "expect": [
+        "makeKioskKnowledgeTools"
+      ]
+    },
+    {
+      "name": "kiosk-entry-s3",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-entry-s3.md",
+      "source": "packages/shell/src/lib/kiosk-demo/entry.ts",
+      "expect": [
+        "clearKioskVisitActivity",
+        "consumeKioskGreeting",
+        "getKioskIdleTimeoutMs",
+        "isKioskVisitExpired",
+        "recordKioskVisitActivity",
+        "requestKioskGreeting",
+        "resetKioskVisit",
+        "shouldResetKioskVisitOnEnter"
+      ]
+    },
+    {
+      "name": "kiosk-flag-s3",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-flag-s3.md",
+      "source": "packages/shell/src/lib/kiosk-demo/flag.ts",
+      "expect": [
+        "isKioskDemo"
+      ]
+    },
+    {
+      "name": "kiosk-demo-gate",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-kiosk-demo-gate.md",
+      "source": "packages/shell/src/components/KioskDemoGate.tsx",
+      "expect": [
+        "KioskDemoGate"
+      ]
+    },
+    {
+      "name": "web-runtime-agent-bridge",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-agent-bridge.md",
+      "source": "packages/shell/src/lib/web-runtime/agent-bridge.ts",
+      "expect": [
+        "createAgentBridge",
+        "getAgentBridge",
+        "getStartableAgentBridge",
+        "setAgentBridgeForTests"
+      ]
+    },
+    {
+      "name": "web-runtime-auto-install",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-auto-install.md",
+      "source": "packages/shell/src/lib/web-runtime/auto-install.ts",
+      "expect": [
+        "bootWebRuntimeAndModel",
+        "readWebBootSelection"
+      ]
+    },
+    {
+      "name": "web-runtime-command-table",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-command-table.md",
+      "source": "packages/shell/src/lib/web-runtime/command-table.ts",
+      "expect": []
+    },
+    {
+      "name": "web-runtime-csp",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-csp.md",
+      "source": "packages/shell/src/lib/web-runtime/csp.ts",
+      "expect": []
+    },
+    {
+      "name": "web-runtime-event-bus",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-event-bus.md",
+      "source": "packages/shell/src/lib/web-runtime/event-bus.ts",
+      "expect": [
+        "emitWebEvent",
+        "handleEventEmit",
+        "handleEventListen",
+        "handleEventUnlisten",
+        "invokeCallback",
+        "registerCallback",
+        "resetEventBus",
+        "unregisterCallback",
+        "unregisterEventListener"
+      ]
+    },
+    {
+      "name": "web-runtime-install",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-install.md",
+      "source": "packages/shell/src/lib/web-runtime/install.ts",
+      "expect": [
+        "installWebRuntime"
+      ]
+    },
+    {
+      "name": "web-runtime-llm-provider",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-llm-provider.md",
+      "source": "packages/shell/src/lib/web-runtime/llm-provider.ts",
+      "expect": [
+        "registerWebLlmProvider"
+      ]
+    },
+    {
+      "name": "web-runtime-model-start",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-model-start.md",
+      "source": "packages/shell/src/lib/web-runtime/model-start.ts",
+      "expect": [
+        "startWebModel"
+      ]
+    },
+    {
+      "name": "web-runtime-router",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-router.md",
+      "source": "packages/shell/src/lib/web-runtime/router.ts",
+      "expect": [
+        "resetWarnedCommands",
+        "routeCommand"
+      ]
+    },
+    {
+      "name": "web-runtime-web-adk-path",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-path.md",
+      "source": "packages/shell/src/lib/web-runtime/web-adk-path.ts",
+      "expect": [
+        "webAdkOpfsPath"
+      ]
+    },
+    {
+      "name": "web-runtime-web-adk-source",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-source.md",
+      "source": "packages/shell/src/lib/web-runtime/web-adk-source.ts",
+      "expect": []
+    },
+    {
+      "name": "web-runtime-web-adk-status",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk-status.md",
+      "source": "packages/shell/src/lib/web-runtime/web-adk-status.ts",
+      "expect": [
+        "getWebAdkStatus",
+        "resetWebAdkStatusForTests",
+        "setWebAdkStatus",
+        "subscribeWebAdkStatus"
+      ]
+    },
+    {
+      "name": "web-runtime-web-adk",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-adk.md",
+      "source": "packages/shell/src/lib/web-runtime/web-adk.ts",
+      "expect": [
+        "checkWebAdkStartup",
+        "decodeBase64ToBytes",
+        "gitBlobSha1",
+        "installDefaultWebAdk",
+        "provisionWebAdk"
+      ]
+    },
+    {
+      "name": "web-runtime-web-assets",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-assets.md",
+      "source": "packages/shell/src/lib/web-runtime/web-assets.ts",
+      "expect": [
+        "isLegacyWebNaiaSelection",
+        "isRetiredWebBackground",
+        "isWebBundledAssetUrl",
+        "isWebMode",
+        "normalizeRetiredWebBackgroundInRecord",
+        "setWebAssetsModeForTests",
+        "syncWebModeRootAttribute"
+      ]
+    },
+    {
+      "name": "web-runtime-web-auth",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-auth.md",
+      "source": "packages/shell/src/lib/web-runtime/web-auth.ts",
+      "expect": [
+        "buildWebLoginRedirectUrl",
+        "completeWebNaiaLogin",
+        "consumeWebAuthCallbackFromLocation",
+        "generateWebOAuthState",
+        "getWebAuthenticatedUserId",
+        "getWebLoginBaseUrl",
+        "isValidWebAuthKey",
+        "isWebAuthenticated",
+        "isWebLoginGateDisabled",
+        "isWebLoginRequired",
+        "logoutWebSession",
+        "seedKioskDemoWebAuth",
+        "setWebLoginRequiredForTests",
+        "startWebLoginRedirect",
+        "verifyKioskDemoWebAuth"
+      ]
+    },
+    {
+      "name": "web-runtime-web-fs",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-fs.md",
+      "source": "packages/shell/src/lib/web-runtime/web-fs.ts",
+      "expect": [
+        "createMemoryWebFs",
+        "createOpfsWebFs",
+        "getWebFs",
+        "setWebFsForTests",
+        "validateAndSplitPath"
+      ]
+    },
+    {
+      "name": "web-runtime-web-model-status",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-model-status.md",
+      "source": "packages/shell/src/lib/web-runtime/web-model-status.ts",
+      "expect": [
+        "errorKindFromEngineErrorName",
+        "fallbackModelFor",
+        "getWebModelStatus",
+        "isWebSendBlocked",
+        "resetWebModelStatusForTests",
+        "setWebModelStatus",
+        "subscribeWebModelStatus"
+      ]
+    },
+    {
+      "name": "web-runtime-web-storage-persist",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-storage-persist.md",
+      "source": "packages/shell/src/lib/web-runtime/web-storage-persist.ts",
+      "expect": [
+        "formatStorageBytes",
+        "formatWebStorageSummaryLine",
+        "getWebStoragePersistState",
+        "requestWebPersistentStorage",
+        "resetWebStoragePersistStateForTests",
+        "subscribeWebStoragePersistState"
+      ]
+    },
+    {
+      "name": "web-runtime-web-workspace-commands",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-workspace-commands.md",
+      "source": "packages/shell/src/lib/web-runtime/web-workspace-commands.ts",
+      "expect": [
+        "appendWebConversationMessages",
+        "clearWebConversations",
+        "handleWebWorkspaceCommand",
+        "resolveWebConversationsDir",
+        "safeSessionBase"
+      ]
+    },
+    {
+      "name": "web-runtime-web-workspace-files",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-web-workspace-files.md",
+      "source": "packages/shell/src/lib/web-runtime/web-workspace-files.ts",
+      "expect": [
+        "getWebWorkspaceFile"
+      ]
+    },
+    {
+      "name": "web-runtime-webgpu-check",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-webgpu-check.md",
+      "source": "packages/shell/src/lib/web-runtime/webgpu-check.ts",
+      "expect": [
+        "checkWebGpu",
+        "readNavigatorGpu"
+      ]
+    },
+    {
+      "name": "web-runtime-webllm-model",
+      "language": "typescript-exports",
+      "header": "docs/progress/web-ir-kiosk-824/contracts/contract-web-runtime-webllm-model.md",
+      "source": "packages/shell/src/lib/web-runtime/webllm-model.ts",
+      "expect": [
+        "formatWebLlmModelLabel",
+        "isWebLlmModelId",
+        "modelNeedsShaderF16",
+        "readWebLlmModelChoice",
+        "readWebLlmModelPreference"
+      ]
     }
   ]
 }

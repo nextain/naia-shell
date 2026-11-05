@@ -1,7 +1,12 @@
 import { useChatStore } from "../../stores/chat";
-import { loadConfig, saveConfig } from "../config";
+import { LAB_GATEWAY_URL, loadConfig, saveConfig } from "../config";
 import { getLocale } from "../i18n";
 import { isKioskDemo } from "../kiosk-demo/flag";
+import {
+	fetchLabBalancePayload,
+	parseLabCredits,
+	primeLabCredits,
+} from "../lab-balance";
 import { getDefaultLlmModel } from "../llm/registry";
 import { Logger } from "../logger";
 import { makeOnboardingSession } from "../onboarding-core";
@@ -368,4 +373,41 @@ export function seedKioskDemoWebAuth(): boolean {
 	localStorage.setItem(WEB_REMOTE_KEY_STORAGE_KEY, key);
 	localStorage.removeItem(WEB_REMOTE_USER_ID_STORAGE_KEY);
 	return true;
+}
+
+export type KioskDemoAuthVerification =
+	| { ok: true; credits: number }
+	| { ok: false; reason: "missing-key" | "unavailable" };
+
+/**
+ * 첫 화면에서 시연 전용 열쇠로 게이트웨이 잔액(`/v1/profile/balance`)을 1회 확인해
+ * 열쇠가 틀리거나 크레딧이 0 이하이면 시연 불가(`unavailable`)를 반환한다.
+ */
+export async function verifyKioskDemoWebAuth(opts?: {
+	gatewayUrl?: string;
+	fetchBalance?: (gatewayUrl: string, naiaKey: string) => Promise<unknown>;
+}): Promise<KioskDemoAuthVerification> {
+	if (!seedKioskDemoWebAuth()) {
+		return { ok: false, reason: "missing-key" };
+	}
+	const key =
+		typeof localStorage !== "undefined"
+			? (localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY)?.trim() ?? "")
+			: "";
+	if (!key || !isValidWebAuthKey(key)) {
+		return { ok: false, reason: "missing-key" };
+	}
+	const gatewayUrl = (opts?.gatewayUrl || LAB_GATEWAY_URL).trim();
+	const fetchBalance = opts?.fetchBalance ?? fetchLabBalancePayload;
+	try {
+		const payload = await fetchBalance(gatewayUrl, key);
+		const credits = parseLabCredits(payload);
+		if (credits === null || credits <= 0) {
+			return { ok: false, reason: "unavailable" };
+		}
+		primeLabCredits(credits);
+		return { ok: true, credits };
+	} catch {
+		return { ok: false, reason: "unavailable" };
+	}
 }

@@ -1,3 +1,4 @@
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { MODEL_CAPABILITY_VALUES, type ModelCapability } from "../types.js";
 import type {
 	LlmModelMeta,
@@ -10,11 +11,21 @@ const providers = new Map<string, LlmProviderMeta>();
 
 /** Register an LLM provider. */
 export function registerLlmProvider(meta: LlmProviderMeta): void {
+	if (isKioskDemo() && meta.id === "webllm") {
+		providers.delete("webllm");
+		return;
+	}
 	providers.set(meta.id, meta);
+}
+
+/** Unregister an LLM provider by id. */
+export function unregisterLlmProvider(id: string): void {
+	providers.delete(id);
 }
 
 /** Get a registered LLM provider by id. */
 export function getLlmProvider(id: string): LlmProviderMeta | undefined {
+	if (isKioskDemo() && id === "webllm") return undefined;
 	return providers.get(id);
 }
 
@@ -37,7 +48,9 @@ export function listLlmProviders(): LlmProviderMeta[] {
 		const i = PROVIDER_DISPLAY_ORDER.indexOf(id);
 		return i < 0 ? PROVIDER_DISPLAY_ORDER.length : i;
 	};
-	return Array.from(providers.values()).sort((a, b) => rank(a.id) - rank(b.id));
+	return Array.from(providers.values())
+		.filter((p) => !(isKioskDemo() && p.id === "webllm"))
+		.sort((a, b) => rank(a.id) - rank(b.id));
 }
 
 /** Get model metadata. */
@@ -173,6 +186,7 @@ export function providerSupportsRole(
 export function getStaticModelsRecord(): Record<string, LlmModelMeta[]> {
 	const record: Record<string, LlmModelMeta[]> = {};
 	for (const p of providers.values()) {
+		if (isKioskDemo() && p.id === "webllm") continue;
 		record[p.id] = [...p.models];
 	}
 	return record;

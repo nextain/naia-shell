@@ -11,14 +11,20 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { KioskDemoGate } from "../KioskDemoGate";
 const mocks = vi.hoisted(() => ({
 	auth: vi.fn(),
+	verifyAuth: vi.fn(),
 	prep: vi.fn(),
 	boot: vi.fn(),
 	greeting: vi.fn(),
 	install: vi.fn(),
 	resetMemory: vi.fn(),
+	clearConversations: vi.fn(),
 }));
 vi.mock("../../lib/web-runtime/web-auth", () => ({
 	seedKioskDemoWebAuth: mocks.auth,
+	verifyKioskDemoWebAuth: mocks.verifyAuth,
+}));
+vi.mock("../../lib/web-runtime/web-workspace-commands", () => ({
+	clearWebConversations: mocks.clearConversations,
 }));
 vi.mock("../../lib/onboarding-core", () => ({
 	prepareKioskDemoOnboarding: mocks.prep,
@@ -37,11 +43,15 @@ vi.mock("../../lib/kiosk-demo/memory", () => ({
 	resetKioskMemory: mocks.resetMemory,
 }));
 beforeEach(() => {
+	localStorage.clear();
+	sessionStorage.clear();
 	vi.stubEnv("MODE", "web");
 	vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 	vi.clearAllMocks();
 	mocks.auth.mockReturnValue(true);
+	mocks.verifyAuth.mockResolvedValue({ ok: true, credits: 100 });
 	mocks.prep.mockResolvedValue(undefined);
+	mocks.clearConversations.mockResolvedValue(undefined);
 });
 afterEach(() => {
 	cleanup();
@@ -86,6 +96,7 @@ it("waits for preparation and opens once only after a gesture", async () => {
 	);
 	expect(screen.getByRole("status").textContent).toContain("준비");
 	expect(mocks.greeting).not.toHaveBeenCalled();
+	await waitFor(() => expect(mocks.prep).toHaveBeenCalledOnce());
 	finish();
 	await waitFor(() =>
 		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
@@ -142,4 +153,30 @@ it("entry reset waits, blocks duplicates and offers a safe retry on failure", as
 	);
 	expect(screen.queryByText(/private detail/)).toBeNull();
 	expect((reset as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("shows unavailable notice when gateway rejects key or has no credits", async () => {
+	mocks.verifyAuth.mockResolvedValueOnce({ ok: false, reason: "unavailable" });
+	mount();
+	expect(await screen.findByRole("alert")).toHaveProperty(
+		"textContent",
+		"지금은 시연을 쓸 수 없습니다",
+	);
+	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+		true,
+	);
+	expect(screen.queryByText("conversation")).toBeNull();
+	expect(mocks.boot).not.toHaveBeenCalled();
+});
+
+it("cleans up previous visitor memory and conversations when previous visit was left without reset", async () => {
+	localStorage.setItem("naia-kiosk-last-active-at", "1000");
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	expect(mocks.resetMemory).toHaveBeenCalledOnce();
+	expect(mocks.clearConversations).toHaveBeenCalledOnce();
 });

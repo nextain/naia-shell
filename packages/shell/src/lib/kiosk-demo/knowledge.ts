@@ -38,12 +38,11 @@ export function safeScope(scope: string): string {
 	return scope;
 }
 
+const SENSITIVE_KNOWLEDGE_PATTERN =
+	/\x2fhome\x2f|\bmin\x68o\b|nextain\x2dadk|매\s*출|영업\s*이익|당기\s*순\s*이익|순\s*이익|밸류에이션|기업\s*가치|투자\s*(?:금|유치\s*금|유치\s*액|금액)|(?:지분(?:\s*율)?\s*\d+(?:\.\d+)?\s*%|\d+(?:\.\d+)?\s*%\s*지분)|(?:(?:[₩$€¥]|USD|KRW)\s*\d)|(?:[일이삼사오육칠팔구십백천만억조]+\s*(?:원|달러|유로))|(?:\d[\d,.]*\s*(?:조|억|천만|백만|십만|만|천|백)?\s*(?:원|달러|USD|KRW|유로))|(?:[일이삼사오육칠팔구십백천]+\s*(?:조|억|천만|백만|십만)(?![가-힣]))|(?:\d[\d,.]*\s*(?:조|억|천만|백만|십만)(?![가-힣]))/iu;
+
 export function assertPublicKnowledge(text: string): void {
-	if (
-		/매\s*출|영업\s*이익|(?:(?:[₩$€¥]|USD|KRW)\s*\d)|(?:[일이삼사오육칠팔구십백천만억조]+(?:원|달러))|(?:\d[\d,.]*\s*(?:조|억|천만|백만|십만|만|천|백)?\s*(?:원|달러|USD|KRW|유로))|(?:\d[\d,.]*\s*억(?![가-힣]))/iu.test(
-			text,
-		)
-	) {
+	if (SENSITIVE_KNOWLEDGE_PATTERN.test(text)) {
 		throw new Error("sensitive_knowledge_content");
 	}
 }
@@ -64,7 +63,7 @@ export async function compileKioskKnowledge() {
 			};
 		});
 	const result = await compile(
-		{ sources },
+		{ sources, safety: "block" },
 		{
 			ingest: new IngestAdapter(),
 			extract: new MarkdownExtractAdapter(),
@@ -72,9 +71,17 @@ export async function compileKioskKnowledge() {
 			store: new MemoryStoreAdapter(),
 		},
 	);
+	if (
+		!result.safety ||
+		result.safety.findings.length > 0 ||
+		result.safety.piiCount > 0 ||
+		result.safety.confidentialCount > 0
+	) {
+		throw new Error("sensitive_knowledge_content");
+	}
 	const json = JSON.stringify({ version: 1, kb: result.kb }, null, 2);
 	assertPublicKnowledge(json);
-	return { json, report: result.report };
+	return { json, report: result.report, safety: result.safety };
 }
 
 export function parseKioskKb(raw: string): Kb {

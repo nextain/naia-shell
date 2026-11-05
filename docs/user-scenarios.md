@@ -2586,7 +2586,7 @@ P02 통합: kiosk-demo.spec.ts에서 입장·인사·지식 도구 호출·새�
 웹 전용 변경이며 Rust/Tauri 배선 변경은 없다. 실 계정/BC250 발화는 S5/S7 운영 수용에서 검증한다.
 
 
-P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입장·인사 → 회사 질문 → 실제 지식 도구 호출과 카드 결과 → 재로딩 후 시스템 프롬프트의 게스트/앞 질문 회상 → 처음으로 → 새 방문자의 앞 질문 미회상을 검증한다. `entry.test.ts`는 취소/저장 완료 대기와 실패 시 세션·페이지 보존, KioskDemoGate/ChatArea 시험은 중복 초기화 차단과 안전한 오류/재시도를 검증한다. 로컬 preview와 캡처 3장의 시각 검토를 수행했다. 초기화 후 대화 보관 파일은 S2 계약대로 보존하며 새 Worker의 프롬프트에는 이전 방문자 기억을 넣지 않는다.
+P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입장·인사 → 회사 질문 → 실제 지식 도구 호출과 카드 결과 → 재로딩 후 시스템 프롬프트의 게스트/앞 질문 회상 → 처음으로 → 새 방문자의 앞 질문 미회상을 검증한다. `entry.test.ts`는 취소/저장 완료 대기와 실패 시 세션·페이지 보존, KioskDemoGate/ChatArea 시험은 중복 초기화 차단과 안전한 오류/재시도를 검증한다. 로컬 preview와 캡처 3장의 시각 검토를 수행했다. ‘처음으로’ 초기화 시 OPFS 기억(`kiosk-store.json`)뿐 아니라 OPFS 대화 기록 파일(`conversations-guest/chat-*.jsonl`)까지 함께 삭제해 이전 방문자 대화가 남지 않게 한다. 단, 시연 전용 계정 열쇠(`naia-remote-key`)는 다음 방문자도 같은 키오스크 시연 계정을 써야 하므로 보존한다. 앞 방문자가 ‘처음으로’를 누르지 않고 자리를 떠난 경우에는 무응답 자동 초기화 기준 시간(`KIOSK_VISIT_IDLE_TIMEOUT_MS`, 기본 3분)이 지나면 대화 화면에서 자동 초기화하거나 다음 ‘들어가기’ 때 방문 기록(OPFS 기억·대화 JSONL)을 먼저 비우고 새 방문으로 시작하며, 유효 방문 시간 안의 새로고침(F5) 뒤 재입장에서는 OPFS 대화 기록과 기억(사용자 발화 및 지나 답변 에피소드)을 복원한다.
 
 ## UC-WEB-KIOSK-S4 — 지나 실사 아바타 구멍 제거·키오스크 아바타 전환·대화 창 확장 (2026-11-05)
 
@@ -2606,4 +2606,28 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 | 오류 | 열쇠 누락/준비 실패 시 기존 S3 안전 차단·재시도 유지 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 360px 모바일 폭에서 기존 모바일 시트 레이아웃·버튼 가로 넘침 없음 유지 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | `isKioskDemo()` OFF 시 일반 웹판 기본 아바타(`naia` / VRM) 및 기본 레이아웃 무변경 | `kiosk-demo.test.ts` |
+
+## UC-WEB-KIOSK-FIX — 키오스크 시연판 적대 검수 수정 (2026-11-05)
+
+시연판(`isKioskDemo() === true`)의 적대 검수 지적 사항(1·3·4·5·6·7·8·10·11·12·13번, S5 소관 2·9번 제외)을 해결한다:
+1. **WebLLM 비노출(1번)**: 시연판 깃발 ON일 때 WebLLM 공급자를 등록하지 않고 설정 목록·자동 설치·웹 워커 로컬 공급자 연결에서도 숨긴다. 일반 웹판(OFF)은 기존처럼 WebLLM이 등록·표시된다.
+2. **게이트웨이 열쇠·크레딧 사전 확인(3번)**: 첫 화면에서 시연 전용 열쇠로 게이트웨이 잔액(`GET /v1/profile/balance`)을 한 번 확인해 열쇠가 틀리거나 크레딧이 0 이하면 `"지금은 시연을 쓸 수 없습니다"` 안내를 띄우고 입장을 막는다.
+3. **지식 원고 출처 분리·`safety:"block"`·기대 답 검증·민감 수치 정규식 확장(4·5·6번)**: 번들에 포함되는 `knowledge/*.md` 20개에서 사내 경로·이름이 적힌 `### 근거 파일` 절을 번들 밖 문서(`docs/progress/web-ir-kiosk-824/knowledge-sources.md`)로 옮기고, `compile()`에 `safety: "block"`을 넘겨 안전 경고를 버리지 않으며, `kb.json`과 빌드 산출물(`dist`)에 `/home/`·`minho`·`nextain-adk`가 없음을 검증한다. `eval-questions.json` 20문항의 `expectedPoints`를 `service.ask()` 및 `verify()`로 대조하고 한글 금액·지분 %·밸류에이션·투자금·순이익을 민감 수치 검사 정규식으로 차단한다.
+4. **‘처음으로’ OPFS 대화 기록 삭제·무응답 방문자 격리·지나 답변 기억 저장(7·8번)**: ‘처음으로’ 초기화 시 OPFS 기억과 함께 `conversations-guest/chat-*.jsonl` 대화 파일까지 삭제하되 다음 방문자도 써야 하는 시연 열쇠(`naia-remote-key`)는 유지한다. 앞 방문자가 ‘처음으로’를 누르지 않고 떠나 무응답 기준 시간(`KIOSK_VISIT_IDLE_TIMEOUT_MS`, 기본 3분)이 지나면 자동 초기화하거나 다음 ‘들어가기’ 때 방문을 초기화해 새 방문으로 시작하고, 활성 방문 중 새로고침(F5) 시에는 인사 메시지가 기존 OPFS 대화 복원을 가리지 않도록 복원한다. `memory.ts`의 `save(userText, assistantText)`는 지나 답변도 assistant 에피소드로 저장한다(사용자 사실 승격은 하지 않음).
+5. **지나 실사 클립 닫힌 배경 영역 투명화 및 대화 화면 크레딧/토큰 줄 숨김(12·13번)**: `studio_nva_matting.py` 후처리에서 닫힌 투명 영역 픽셀이 원본 단색 배경색과 가까우면 구멍으로 메우지 않고 투명으로 유지해 다리 사이·왼팔과 몸 사이의 남색 잔상을 제거한다(`nva_matting_hole_measure.py` 몸 안 구멍 0건 + 닫힌 영역 불투명 배경 픽셀 프레임 0건). 또한 시연판 깃발 ON일 때 대화 답변 아래 `"약 0 크레딧 · 0 토큰"` 사용량 줄을 숨긴다(일반 웹판 OFF에서는 그대로 표시).
+
+### Test Coverage Map — UC-WEB-KIOSK-FIX
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 시연판 ON에서 WebLLM 미등록·미표시, 대화 사용량 줄 숨김, 지나 클립 닫힌 배경 투명·몸 구멍 0 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.spec.ts`, `nva_matting_hole_measure.py` |
+| 빈 목록 | 초기 OPFS에서 입장·지식 시드·대화 시작 정상 동작 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
+| 진행 | 게이트웨이 열쇠·크레딧 확인 중 준비 상태 표시 및 중복 입장 방지 | `KioskDemoGate.test.tsx` |
+| 성공 | 게이트웨이 크레딧 유효 시 입장 허용, 20문항 `expectedPoints` `ask()`/`verify()` 통과, 활성 방문 중 새로고침 후 대화·지나 답변 기억 복원, ‘처음으로’ 및 무응답 만료 시 OPFS 대화 JSONL·기억 완전 삭제(`naia-remote-key` 유지) | `knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `KioskDemoGate.test.tsx`, `kiosk-demo.spec.ts` |
+| 오류 | 열쇠 무효·크레딧 소진 시 `"지금은 시연을 쓸 수 없습니다"` 표시, 한글 금액·지분 %·밸류에이션·투자금·순이익 및 사내 경로 포함 시 차단 | `KioskDemoGate.test.tsx`, `knowledge.test.ts`, `kiosk-demo.spec.ts` |
+| 좁은 폭 | 360px 폭에서 첫 화면·오류 안내·대화 화면 레이아웃 및 키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
+| 깃발 꺼짐 | 일반 웹판(OFF)에서 WebLLM 등록·표시 유지, 대화 답변 아래 사용량 줄 표시 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx` |
+
+P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx`, `ChatArea.test.tsx`) + `SettingsTab.test.tsx` WebLLM 옵션 숨김 시험 통과, Playwright `e2e/kiosk-demo.spec.ts` 5/5 통과, `nva_matting_hole_measure.py` 몸 구멍 0건 및 닫힌 영역 불투명 배경 픽셀 프레임 0건 통과, `/home/nextain/work/codex-runs/kiosk-agy/fix-chat.png`(`1280x800`) 시각 검토 완료.
+
 

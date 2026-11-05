@@ -7,7 +7,7 @@ import {
 	normalizeRetiredWebBackgroundInRecord,
 } from "./web-assets";
 import { getWebAuthenticatedUserId, isWebLoginGateDisabled } from "./web-auth";
-import type { WebFs } from "./web-fs";
+import { type WebFs, getWebFs } from "./web-fs";
 import { getDefaultLlmModel } from "../llm/registry";
 
 export const INITIAL_WEB_WORKSPACE_CONFIG = {
@@ -338,4 +338,26 @@ export async function handleWebWorkspaceCommand(
 	}
 
 	throw new Error(`unknown web workspace command: ${cmd}`);
+}
+
+/**
+ * 키오스크 ‘처음으로’ 및 방문 초기화 시 OPFS의 게스트 대화 기록(`*.jsonl`)을 모두 지운다.
+ */
+export async function clearWebConversations(
+	fs: WebFs = getWebFs(),
+): Promise<void> {
+	await conversationWriteTail;
+	const dirs = new Set([
+		resolveWebConversationsDir(),
+		webAdkOpfsPath("conversations"),
+		webAdkOpfsPath("conversations-guest"),
+		webAdkOpfsPath("naia-settings/conversations-guest"),
+	]);
+	for (const dir of dirs) {
+		const entries = (await fs.listEntries?.(dir)) ?? [];
+		for (const entry of entries) {
+			if (!entry.endsWith(".jsonl")) continue;
+			await fs.removeFile?.(`${dir}/${entry}`);
+		}
+	}
 }

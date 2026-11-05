@@ -68,7 +68,7 @@ afterEach(() => {
 });
 
 describe("S2 kiosk browser memory", () => {
-	it("persists guest and user evidence across OPFS and agent reload; never promotes assistant guesses", async () => {
+	it("persists guest, user evidence, and assistant reply episodes across OPFS reload; never promotes assistant guesses to facts", async () => {
 		const disk = storage();
 		const first = createKioskMemory(disk.reopen());
 		expect((await first.recall("안녕")).facts).toContain(
@@ -82,8 +82,17 @@ describe("S2 kiosk browser memory", () => {
 		const recalled = await reloaded.recall("제 관심사가 뭐였죠?");
 		expect(recalled.facts).toContain("사용자 호칭은 게스트님이다.");
 		expect(recalled.facts).toContain("저는 로봇에 관심이 있어요");
-		expect(JSON.stringify(recalled)).not.toContain("부산");
-		expect(recalled.episodes[0].role).toBe("user");
+		expect(recalled.facts.join("\n")).not.toContain("부산");
+		expect(recalled.episodes).toEqual([
+			expect.objectContaining({
+				role: "user",
+				content: "저는 로봇에 관심이 있어요",
+			}),
+			expect.objectContaining({
+				role: "assistant",
+				content: "사용자는 부산에 살아요 (추측)",
+			}),
+		]);
 	});
 
 	it("opens all four commands only in kiosk, encrypts backups and rejects wrong passwords/tampering atomically", async () => {

@@ -7,7 +7,7 @@ interface Store {
 	version: 1;
 	generation: string;
 	facts: AgentFact[];
-	episodes: { content: string; role: "user"; timestamp: number }[];
+	episodes: { content: string; role: "user" | "assistant"; timestamp: number }[];
 }
 const queues = new WeakMap<WebFs, Promise<unknown>>();
 function serialized<T>(fs: WebFs, run: () => Promise<T>): Promise<T> {
@@ -66,7 +66,7 @@ function validate(value: unknown): Store {
 			(e) =>
 				!e ||
 				typeof e.content !== "string" ||
-				e.role !== "user" ||
+				(e.role !== "user" && e.role !== "assistant") ||
 				!Number.isFinite(e.timestamp),
 		)
 	) {
@@ -123,7 +123,7 @@ export function createKioskMemory(
 		},
 		async save(
 			userText: string,
-			_assistantText: string,
+			assistantText: string,
 			opts?: {
 				signal?: AbortSignal;
 				idempotencyKey?: string;
@@ -142,10 +142,21 @@ export function createKioskMemory(
 				)
 					return;
 				const content = userText.trim().slice(0, 4000);
-				if (!content) return;
-				if (!s.facts.some((f) => f.content === content))
-					s.facts.push(fact(content));
-				s.episodes.push({ content, role: "user", timestamp: Date.now() });
+				const assistantContent = (assistantText ?? "").trim().slice(0, 4000);
+				if (!content && !assistantContent) return;
+				const now = Date.now();
+				if (content) {
+					if (!s.facts.some((f) => f.content === content))
+						s.facts.push(fact(content));
+					s.episodes.push({ content, role: "user", timestamp: now });
+				}
+				if (assistantContent) {
+					s.episodes.push({
+						content: assistantContent,
+						role: "assistant",
+						timestamp: now,
+					});
+				}
 				s.facts = [
 					...s.facts.filter((f) => f.id === "kiosk-guest"),
 					...s.facts.filter((f) => f.id !== "kiosk-guest").slice(-200),

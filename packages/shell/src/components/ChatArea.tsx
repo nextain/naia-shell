@@ -1,6 +1,10 @@
 import { resetKioskMemory } from "../lib/kiosk-demo/memory";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
-import { consumeKioskGreeting, resetKioskVisit } from "../lib/kiosk-demo/entry";
+import {
+	consumeKioskGreeting,
+	recordKioskVisitActivity,
+	resetKioskVisit,
+} from "../lib/kiosk-demo/entry";
 import { KIOSK_DEMO_GREETING } from "../lib/persona";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -481,11 +485,22 @@ export async function loadOrCreateSession(): Promise<void> {
 		if (currentStore.localSessionId !== storedKey) return;
 		currentStore.setSessionId("agent:main:main");
 		if (history.length > 0) {
-			if (currentStore.messages.length === 0) {
-				currentStore.setMessages(history);
+			const onlyKioskGreeting =
+				isKioskDemo() &&
+				currentStore.messages.length === 1 &&
+				currentStore.messages[0]?.role === "assistant" &&
+				currentStore.messages[0]?.content === KIOSK_DEMO_GREETING;
+			if (currentStore.messages.length === 0 || onlyKioskGreeting) {
+				const restored =
+					onlyKioskGreeting &&
+					history[0]?.content !== KIOSK_DEMO_GREETING &&
+					currentStore.messages[0]
+						? [currentStore.messages[0], ...history]
+						: history;
+				currentStore.setMessages(restored);
 				Logger.info("ChatArea", "Restored local conversation transcript", {
 					sessionId: storedKey,
-					messageCount: history.length,
+					messageCount: restored.length,
 				});
 			}
 		} else {
@@ -1464,6 +1479,7 @@ export function ChatArea({
 	// any await so StrictMode cannot speak twice; use the shared TTS/avatar lane.
 	useEffect(() => {
 		if (!isKioskDemo() || !consumeKioskGreeting()) return;
+		recordKioskVisitActivity();
 		const config = loadConfig();
 		if (!config) return;
 		Logger.debug("ChatArea", "kiosk greeting entered TTS pipeline");
@@ -4416,6 +4432,7 @@ export function ChatArea({
 						)}
 
 						{totalSessionCost > 0 &&
+							!isKioskDemo() &&
 							provider !== "ollama" &&
 							provider !== "vllm" && (
 								<button
@@ -4576,7 +4593,10 @@ export function ChatArea({
 										)}
 									</div>
 								)}
-								{msg.cost && provider !== "ollama" && provider !== "vllm" && (
+								{msg.cost &&
+									!isKioskDemo() &&
+									provider !== "ollama" &&
+									provider !== "vllm" && (
 									<span className="cost-badge">
 										{formatUsageCost(msg.cost.cost, msg.cost.provider)} ·{" "}
 										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}

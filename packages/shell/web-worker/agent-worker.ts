@@ -144,7 +144,9 @@ self.addEventListener("message", (event: MessageEvent) => {
 			return;
 		}
 
-		if (data.model === undefined) {
+		if (isKioskDemo()) {
+			selectedModel = null;
+		} else if (data.model === undefined) {
 			selectedModel = WEB_LLM_MODEL_ID;
 		} else if (data.model === null) {
 			selectedModel = null;
@@ -191,17 +193,17 @@ self.addEventListener("message", (event: MessageEvent) => {
 			);
 		};
 
-		const localProvider = makeWebLLMProvider({
-			getEngine: getEngineWithThinking,
-			model: selectedModel ?? WEB_LLM_MODEL_ID,
-			toolNames: isKioskDemo()
-				? [...BROWSER_READ_TOOL_NAMES, ...kioskSpecs.map((spec) => spec.name)]
-				: BROWSER_READ_TOOL_NAMES,
-		});
+		const localProvider = isKioskDemo()
+			? null
+			: makeWebLLMProvider({
+					getEngine: getEngineWithThinking,
+					model: selectedModel ?? WEB_LLM_MODEL_ID,
+					toolNames: BROWSER_READ_TOOL_NAMES,
+				});
 
 		const provider: ProviderPort = {
 			chat(config, messages, opts) {
-				if (config.provider === "webllm")
+				if (!isKioskDemo() && config.provider === "webllm" && localProvider)
 					return localProvider.chat(config, messages, opts);
 				if (config.provider !== "nextain")
 					throw new Error(`Unsupported web provider: ${config.provider}`);
