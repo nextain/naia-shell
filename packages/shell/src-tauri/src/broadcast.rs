@@ -829,7 +829,7 @@ pub fn broadcast_start(
 
     mgr.next_session_id += 1;
     let session_id = mgr.next_session_id;
-    let started_at = chrono::Utc::now().to_rfc3339();
+    let started_at = utc_now_rfc3339();
 
     mgr.active = Some(BroadcastSession {
         session_id,
@@ -898,7 +898,7 @@ pub fn broadcast_stop(
         }
     }
 
-    let end_at = chrono::Utc::now().to_rfc3339();
+    let end_at = utc_now_rfc3339();
     let elapsed_secs = session.started_instant.elapsed().as_secs_f64();
     let minutes = ((elapsed_secs / 60.0) * 100.0).round() / 100.0;
     let adk_path = req
@@ -974,8 +974,45 @@ pub fn broadcast_push_audio(pcm_base64: String) -> Result<(), String> {
     Ok(())
 }
 
+/// UTC now as RFC 3339 (`2026-11-06T02:49:01Z`) without pulling in a time crate.
+fn utc_now_rfc3339() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    format_rfc3339_utc(secs)
+}
+
+fn format_rfc3339_utc(secs: i64) -> String {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        rem / 3_600,
+        (rem % 3_600) / 60,
+        rem % 60
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn formats_rfc3339_utc_without_time_crate() {
+        assert_eq!(super::format_rfc3339_utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(super::format_rfc3339_utc(1_793_932_008), "2026-11-06T02:26:48Z");
+        assert_eq!(super::format_rfc3339_utc(951_782_400), "2000-02-29T00:00:00Z");
+    }
+
     use super::*;
 
     #[test]
