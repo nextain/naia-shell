@@ -361,11 +361,13 @@ export function makeOpenAICompatProvider(deps: {
 			//   enableThinking 이 true/미지정이면 아무 것도 싣지 않는다(무회귀 — 추론 모델 기본=생각 켬).
 			// FR-THINK-9: 게이트웨이 경로(supportsThinkingLevel)는 low/high 일 때만 reasoning_effort 전송. off/미지정은 무전송.
 			// 둘이 동시에 켜질 수 없음을 코드로 보장(게이트웨이 경로는 supportsReasoningEffort=false).
+			// FR-WEB-KIOSK-FIX.8: 운영 게이트웨이(api.nextain.io)는 reasoning_effort 로 none·minimal·low·medium·high·auto 만 받는다.
+			//   "xhigh" 는 422 literal_error 로 대화 전체가 실패하므로(2026-11-06 실측) 이 두 모델도 가장 센 허용 값 "high" 를 보낸다.
 			const requestModel = deps.model ?? config.model;
 			const thinkingLevelBody =
 				deps.supportsThinkingLevel &&
 				(requestModel === "gpt-6.1-terra" || requestModel === "gpt-5.6-luna")
-					? { reasoning_effort: "xhigh" as const }
+					? { reasoning_effort: "high" as const }
 					:
 				deps.supportsThinkingLevel &&
 				(config.thinkingLevel === "low" || config.thinkingLevel === "high")

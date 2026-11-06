@@ -2633,6 +2633,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 3. **지식 원고 출처 분리·`safety:"block"`·기대 답 검증·민감 수치 정규식 확장(4·5·6번)**: 번들에 포함되는 `knowledge/*.md` 20개에서 사내 경로·이름이 적힌 `### 근거 파일` 절을 번들 밖 문서(`docs/progress/web-ir-kiosk-824/knowledge-sources.md`)로 옮기고, `compile()`에 `safety: "block"`을 넘겨 안전 경고를 버리지 않으며, `kb.json`과 빌드 산출물(`dist`)에 `/home/`·`minho`·`nextain-adk`가 없음을 검증한다. `eval-questions.json` 20문항의 `expectedPoints`를 `service.ask()` 및 `verify()`로 대조하고 한글 금액·지분 %·밸류에이션·투자금·순이익을 민감 수치 검사 정규식으로 차단한다.
 4. **‘처음으로’ OPFS 대화 기록 삭제·무응답 방문자 격리·지나 답변 기억 저장(7·8번)**: ‘처음으로’ 초기화 시 OPFS 기억과 함께 `conversations-guest/chat-*.jsonl` 대화 파일까지 삭제하되 다음 방문자도 써야 하는 시연 열쇠(`naia-remote-key`)는 유지한다. 앞 방문자가 ‘처음으로’를 누르지 않고 떠나 무응답 기준 시간(`KIOSK_VISIT_IDLE_TIMEOUT_MS`, 기본 3분)이 지나면 자동 초기화하거나 다음 ‘들어가기’ 때 방문을 초기화해 새 방문으로 시작하고, 활성 방문 중 새로고침(F5) 시에는 인사 메시지가 기존 OPFS 대화 복원을 가리지 않도록 복원한다. `memory.ts`의 `save(userText, assistantText)`는 지나 답변도 assistant 에피소드로 저장한다(사용자 사실 승격은 하지 않음).
 5. **지나 실사 클립 닫힌 배경 영역 투명화 및 대화 화면 크레딧/토큰 줄 숨김(12·13번)**: `studio_nva_matting.py` 후처리에서 닫힌 투명 영역 픽셀이 원본 단색 배경색과 가까우면 구멍으로 메우지 않고 투명으로 유지해 다리 사이·왼팔과 몸 사이의 남색 잔상을 제거한다(`nva_matting_hole_measure.py` 몸 안 구멍 0건 + 닫힌 영역 불투명 배경 픽셀 프레임 0건). 또한 시연판 깃발 ON일 때 대화 답변 아래 `"약 0 크레딧 · 0 토큰"` 사용량 줄을 숨긴다(일반 웹판 OFF에서는 그대로 표시).
+6. **게이트웨이 생각 세기 값(FR-WEB-KIOSK-FIX.8)**: 방문자가 질문하면 `gpt-5.6-luna` 요청이 `reasoning_effort:"high"` 로 가서 운영 게이트웨이가 200 으로 답한다. `xhigh` 는 422 로 답이 오지 않던 결함(2026-11-06 실제 빌드 ET).
 
 ### Test Coverage Map — UC-WEB-KIOSK-FIX
 
@@ -2642,6 +2643,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 | 빈 목록 | 초기 OPFS에서 입장·지식 시드·대화 시작 정상 동작 | `kiosk-demo.test.ts`, `kiosk-demo.spec.ts` |
 | 진행 | 게이트웨이 열쇠·크레딧 확인 중 준비 상태 표시 및 중복 입장 방지 | `KioskDemoGate.test.tsx` |
 | 성공 | 게이트웨이 크레딧 유효 시 입장 허용, 20문항 `expectedPoints` `ask()`/`verify()` 통과, 활성 방문 중 새로고침 후 대화·지나 답변 기억 복원, ‘처음으로’ 및 무응답 만료 시 OPFS 대화 JSONL·기억 완전 삭제(`naia-remote-key` 유지) | `knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `KioskDemoGate.test.tsx`, `kiosk-demo.spec.ts` |
+| 게이트웨이 값 | luna·terra 요청이 `reasoning_effort: high` 로 나감(운영 게이트웨이 허용 값) | `openai-compat-provider.test.ts` |
 | 오류 | 열쇠 무효·크레딧 소진 시 `"지금은 시연을 쓸 수 없습니다"` 표시, 한글 금액·지분 %·밸류에이션·투자금·순이익 및 사내 경로 포함 시 차단 | `KioskDemoGate.test.tsx`, `knowledge.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 360px 폭에서 첫 화면·오류 안내·대화 화면 레이아웃 및 키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | 일반 웹판(OFF)에서 WebLLM 등록·표시 유지, 대화 답변 아래 사용량 줄 표시 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx` |
