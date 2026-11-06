@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { shouldUseMediaSource, webmMediaSourceType } from "../local-media-url";
+import {
+	createLocalMediaUrl,
+	isMediaSourceUrl,
+	localMediaUrlApi,
+	shouldUseMediaSource,
+	webmMediaSourceType,
+} from "../local-media-url";
 
 const bytes = (...parts: string[]) =>
 	new Uint8Array(
@@ -19,8 +25,14 @@ describe("webmMediaSourceType", () => {
 		);
 	});
 
-	it("returns null without a video track", () => {
-		expect(webmMediaSourceType(bytes("A_OPUS"))).toBeNull();
+	it("gives an audio type for an audio-only webm", () => {
+		expect(webmMediaSourceType(bytes("A_OPUS"))).toBe(
+			'audio/webm; codecs="opus"',
+		);
+	});
+
+	it("returns null without any known track", () => {
+		expect(webmMediaSourceType(bytes("V_AV1"))).toBeNull();
 	});
 });
 
@@ -45,5 +57,30 @@ describe("shouldUseMediaSource", () => {
 		vi.stubGlobal("MediaSource", undefined);
 		vi.stubGlobal("navigator", { userAgent: "Linux" });
 		expect(shouldUseMediaSource(webm)).toBe(false);
+	});
+});
+
+describe("isMediaSourceUrl", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("marks MediaSource URLs until they are revoked", () => {
+		vi.stubGlobal(
+			"MediaSource",
+			class {
+				addEventListener() {}
+			},
+		);
+		vi.stubGlobal("navigator", { userAgent: "Linux" });
+		let next = 0;
+		vi.spyOn(URL, "createObjectURL").mockImplementation(
+			() => `blob:test/${++next}`,
+		);
+		vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+		const sourceUrl = createLocalMediaUrl(new Blob([], { type: "video/webm" }));
+		const plainUrl = createLocalMediaUrl(new Blob([], { type: "image/webp" }));
+		expect(isMediaSourceUrl(sourceUrl)).toBe(true);
+		expect(isMediaSourceUrl(plainUrl)).toBe(false);
+		localMediaUrlApi.revokeObjectURL(sourceUrl);
+		expect(isMediaSourceUrl(sourceUrl)).toBe(false);
 	});
 });

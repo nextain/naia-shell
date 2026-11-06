@@ -5,7 +5,8 @@
 //   bytes through MediaSource plays to the end and keeps the VP9 alpha.
 //   So on Linux a video/webm Blob gets a MediaSource URL; everything else (and Windows/macOS)
 //   keeps the plain blob: URL. Both kinds are released with URL.revokeObjectURL.
-//   A MediaSource URL serves one media element at a time and cannot be fetch()ed.
+//   A MediaSource URL serves one media element at a time and cannot be fetch()ed
+//   (isMediaSourceUrl lets a caller that mounts one URL twice skip the second).
 
 import { Logger } from "./logger";
 
@@ -41,7 +42,8 @@ function hasBytes(haystack: Uint8Array, needle: number[]): boolean {
 	return false;
 }
 
-/** MediaSource type for a webm from its track CodecIDs (header only), or null. */
+/** MediaSource type for a webm from its track CodecIDs (header only), or null.
+ * An audio-only webm (BGM) gets an audio/webm type. */
 export function webmMediaSourceType(bytes: Uint8Array): string | null {
 	const head = bytes.subarray(0, 64 * 1024);
 	let video: string | null = null;
@@ -51,13 +53,21 @@ export function webmMediaSourceType(bytes: Uint8Array): string | null {
 		if (kind === "video") video ??= codec;
 		else audio ??= codec;
 	}
-	if (!video) return null;
+	if (!video) return audio ? `audio/webm; codecs="${audio}"` : null;
 	return `video/webm; codecs="${audio ? `${video},${audio}` : video}"`;
+}
+
+const mediaSourceUrls = new Set<string>();
+
+/** True for a URL made by createLocalMediaUrl on the MediaSource path. */
+export function isMediaSourceUrl(url: string): boolean {
+	return mediaSourceUrls.has(url);
 }
 
 function mediaSourceUrl(blob: Blob): string {
 	const source = new MediaSource();
 	const url = URL.createObjectURL(source);
+	mediaSourceUrls.add(url);
 	let bytes: Promise<Uint8Array<ArrayBuffer>> | null = null;
 	// Not once: a detached MediaSource returns to "closed" and re-opens (with no
 	// SourceBuffers) when an element attaches the same URL again, e.g. after a remount.
@@ -100,5 +110,8 @@ export function createLocalMediaUrl(blob: Blob): string {
 /** `urlApi` for the canonical speech player (same routing as createLocalMediaUrl). */
 export const localMediaUrlApi = {
 	createObjectURL: createLocalMediaUrl,
-	revokeObjectURL: (url: string) => URL.revokeObjectURL(url),
+	revokeObjectURL: (url: string) => {
+		mediaSourceUrls.delete(url);
+		URL.revokeObjectURL(url);
+	},
 };
