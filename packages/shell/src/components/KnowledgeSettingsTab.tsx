@@ -243,8 +243,8 @@ export function KnowledgeSettingsTab() {
 					<div
 						style={{
 							display: "grid",
-							gridTemplateColumns: "minmax(180px, 230px) minmax(0, 1fr)",
-							gap: "12px",
+							gridTemplateColumns: "minmax(130px, 152px) minmax(0, 1fr)",
+							gap: "10px",
 							marginTop: "8px",
 							alignItems: "start",
 						}}
@@ -275,7 +275,7 @@ export function KnowledgeSettingsTab() {
 											style={{
 												width: "100%",
 												textAlign: "left",
-												padding: "6px 8px",
+												padding: "5px 6px",
 												borderRadius: "6px",
 												border: active
 													? "1px solid rgba(96, 165, 250, 0.65)"
@@ -285,7 +285,8 @@ export function KnowledgeSettingsTab() {
 													: "transparent",
 												color: "var(--text, #e8ecf4)",
 												cursor: "pointer",
-												fontSize: "12px",
+												fontSize: "11.5px",
+												lineHeight: 1.35,
 											}}
 										>
 											<div style={{ fontWeight: active ? 600 : 500 }}>
@@ -293,7 +294,7 @@ export function KnowledgeSettingsTab() {
 											</div>
 											<div
 												style={{
-													fontSize: "11px",
+													fontSize: "10.5px",
 													opacity: 0.72,
 													fontFamily: "var(--font-mono, monospace)",
 												}}
@@ -310,12 +311,13 @@ export function KnowledgeSettingsTab() {
 								className="kiosk-knowledge-manuscript-viewer"
 								data-testid="kiosk-knowledge-manuscript-body"
 								style={{
-									padding: "12px 14px",
+									padding: "10px 12px",
 									maxHeight: "360px",
 									overflowY: "auto",
 									border: "1px solid var(--border, rgba(120,150,200,0.28))",
 									borderRadius: "8px",
 									background: "rgba(10, 15, 26, 0.68)",
+									minWidth: 0,
 								}}
 							>
 								<div
@@ -323,14 +325,31 @@ export function KnowledgeSettingsTab() {
 										display: "flex",
 										justifyContent: "space-between",
 										alignItems: "baseline",
+										flexWrap: "nowrap",
 										marginBottom: "8px",
 										gap: "8px",
+										minWidth: 0,
 									}}
 								>
-									<strong style={{ fontSize: "13px" }}>
+									<strong
+										style={{
+											fontSize: "12.5px",
+											whiteSpace: "nowrap",
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											minWidth: 0,
+										}}
+									>
 										{selectedManuscript.title}
 									</strong>
-									<code style={{ fontSize: "11px", opacity: 0.75 }}>
+									<code
+										style={{
+											fontSize: "11px",
+											opacity: 0.75,
+											whiteSpace: "nowrap",
+											flexShrink: 0,
+										}}
+									>
 										knowledge/{selectedManuscript.name}
 									</code>
 								</div>

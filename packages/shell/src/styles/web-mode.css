@@ -136,7 +136,7 @@
 @media (min-width: 601px) {
 	[data-naia-web="true"]
 		.app-layout:has(.content-app__slot--active .web-workspace-viewer) {
-		left: 38vw !important;
+		left: max(38vw, var(--naia-width, 320px)) !important;
 		z-index: 15;
 	}
 }

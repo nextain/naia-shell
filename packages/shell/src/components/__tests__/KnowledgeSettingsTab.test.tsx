@@ -283,6 +283,8 @@ describe("KnowledgeSettingsTab (FR-KB-OS.5~8 — 설정 지식 탭 관리)", () 
 			expect(viewer.querySelector(".workspace-editor__preview h1")?.textContent).toBe(
 				"나이아 서비스 소개",
 			);
+			expect(viewer.querySelector("strong")?.style.whiteSpace).toBe("nowrap");
+			expect(viewer.querySelector("code")?.style.whiteSpace).toBe("nowrap");
 			expect(viewer.querySelector("pre")).toBeNull();
 		} finally {
 			vi.unstubAllEnvs();

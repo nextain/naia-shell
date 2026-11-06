@@ -70,6 +70,26 @@
 	outline-offset: 2px;
 }
 
+.app-root[data-kiosk-demo="true"] .naia-chat-wrapper {
+	background: rgba(20, 24, 34, 0.94);
+	backdrop-filter: blur(24px) saturate(110%);
+	-webkit-backdrop-filter: blur(24px) saturate(110%);
+}
+
+.kiosk-knowledge-manuscript-viewer .workspace-editor__preview h1 {
+	font-size: 16px;
+	line-height: 1.35;
+	margin-top: 4px;
+	margin-bottom: 8px;
+}
+
+.kiosk-knowledge-manuscript-viewer .workspace-editor__preview h2 {
+	font-size: 14px;
+	line-height: 1.4;
+	margin-top: 12px;
+	margin-bottom: 6px;
+}
+
 @media (min-width: 601px) {
 	.app-root[data-kiosk-demo="true"] .naia-overlay {
 		width: var(--naia-width, 520px);
@@ -104,7 +124,7 @@
 
 	.app-root[data-kiosk-demo="true"]
 		.app-layout:has(.content-app__slot--active .web-workspace-viewer) {
-		left: 38vw !important;
+		left: max(38vw, var(--naia-width, 520px)) !important;
 		z-index: 15;
 	}
 }
