@@ -99,16 +99,26 @@ describe("web bundled catalogs", () => {
 		}
 	});
 
-	it("exposes 6 NVA bundle names with naia as default", () => {
+	it("exposes 5 NVA bundle names with naia as default", () => {
 		expect(WEB_NVA_ASSETS).toEqual([
 			"naia",
-			"naia-anime",
 			"jina",
 			"jina-anime",
 			"minho",
 			"minho-anime",
 		]);
 		expect(WEB_DEFAULT_NVA).toBe("naia");
+	});
+
+	it("maps saved naia-anime nvaModel to naia when reading config", () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				avatarProvider: "naia-video-avatar",
+				nvaModel: "naia-anime",
+			}),
+		);
+		expect(loadConfig()?.nvaModel).toBe("naia");
 	});
 
 	it("maps legacy Naia VRMs to Naia NVA without changing other selections", () => {

@@ -446,12 +446,11 @@ describe("web bundled assets (WO-03)", () => {
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 
-	it("lists 6 bundled NVA names without invoke in web mode", async () => {
+	it("lists 5 bundled NVA names without invoke in web mode", async () => {
 		setWebAssetsModeForTests(true);
 		const result = await listNaiaAssets("nva-files");
 		expect(result).toEqual([
 			"naia",
-			"naia-anime",
 			"jina",
 			"jina-anime",
 			"minho",

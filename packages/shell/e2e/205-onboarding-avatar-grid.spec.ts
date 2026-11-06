@@ -27,7 +27,7 @@ const VRM_FILES = [
 	"naia_char_skin_head.vrm",
 	"naia_char_with_hair.vrm",
 ];
-const NVA_DIRS = ["naia", "naia-anime", "minho", "jina"];
+const NVA_DIRS = ["naia", "minho", "jina"];
 const NVA_VIDEO_BASE64 = readFileSync(
 	path.resolve(process.cwd(), "e2e/fixtures/head-green-100.mp4"),
 ).toString("base64");

@@ -2679,4 +2679,13 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 | 깃발 꺼짐 | `isKioskDemo() === false`에서 저장된 공급자·모델·생각 세기·도구 설정 그대로 전송·유지, 기존 도구 펼침·로그아웃 단추·일반 웹판 기억 내보내기 단추(`.voice-preview-btn`)·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.test.ts` |
 
 
+## UC-NVA-WEB-STUDIO-NAIA — 웹판 기본 나이아 스튜디오 정본 교체 및 `naia-anime` 통합 (2026-11-06)
+
+웹판 기본 나이아 NVA 묶음(`packages/shell/public/nva/naia/`)을 나이아 스튜디오 정본(옷 입은 2D 셀 애니 나이아 6종 클립: `idle`, `talking-ko`, `greeting`, `happy`, `keyboard-idle` `"건반 치며 대기"`, `singing-keyboard` `"건반 치며 노래"`, VP9 2Mbps `yuva420p` `.webm` 및 Safari/WebKit용 `.stacked.mp4`)으로 교체한다. 같은 그림의 사본이 되는 `naia-anime` 묶음은 `WEB_NVA_ASSETS`와 `public/nva/naia-anime/`에서 제거해 5종(`naia`, `jina`, `jina-anime`, `minho`, `minho-anime`)으로 정리하고, 저장된 사용자 설정에 `"naia-anime"`이 남아 있으면 설정 읽기 정규화(`normalizeLocalRuntimeConfig`) 한 곳에서 `"naia"`로 매핑한다.
+
+| 시나리오 | 확인하는 것 | 시험 파일 |
+|---|---|---|
+| UC-NVA-WEB-STUDIO-NAIA | 웹판 NVA 카탈로그 5종(`naia-anime` 제거), 저장된 `nvaModel: "naia-anime"`의 `"naia"` 자동 매핑, 새 스튜디오 `naia` 매니페스트·클립(건반 동작 2종 및 `stacked_alpha` 포함) 검증 | `packages/shell/src/lib/web-runtime/__tests__/web-assets.test.ts`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src/lib/__tests__/nva.test.ts` |
+
+
 

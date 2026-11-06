@@ -5858,7 +5858,6 @@ describe("web mode backgrounds and NVA (r7)", () => {
 
 		for (const bundle of [
 			"naia",
-			"naia-anime",
 			"jina",
 			"jina-anime",
 			"minho",
