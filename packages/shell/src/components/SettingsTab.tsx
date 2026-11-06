@@ -3553,8 +3553,8 @@ export function SettingsTab() {
 				synthProvider = "nextain";
 				synthVoice =
 					voiceName === "hyunsu"
-						? "ko-KR-Hyunsu:DragonHDLatestNeural"
-						: "ko-KR-SunHi:DragonHDLatestNeural";
+						? "ko-KR-Neural2-C"
+						: "ko-KR-Neural2-A";
 			} else {
 				synthProvider = (ttsProvider || "edge") as TtsProviderId;
 				synthVoice = ttsVoice;
