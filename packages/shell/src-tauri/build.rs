@@ -1,7 +1,15 @@
-fn ensure_ffmpeg_sidecar_for_tauri_build() {
-    use std::{env, fs, path::PathBuf};
-    include!("src/ffmpeg_sidecar.rs");
+include!("src/ffmpeg_sidecar.rs");
 
+use sha2::{Digest, Sha256};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::{
+    collections::BTreeSet,
+    env, fs,
+    path::{Path, PathBuf},
+};
+
+fn ensure_ffmpeg_sidecar_for_tauri_build() {
     println!("cargo:rerun-if-changed=src/ffmpeg_sidecar.rs");
 
     println!("cargo:rerun-if-env-changed={FFMPEG_SIDECAR_SOURCE_ENV}");
@@ -75,7 +83,6 @@ fn ensure_ffmpeg_sidecar_for_tauri_build() {
     let _ = fs::write(&target_sidecar, &placeholder);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
         if let Ok(meta) = fs::metadata(&target_sidecar) {
             let mut perms = meta.permissions();
             perms.set_mode(0o755);
@@ -90,11 +97,6 @@ fn main() {
 
     // os <-> agent gRPC client codegen. The proto must come from the
     // explicitly paired naia-agent worktree; never fall back to a sibling repo.
-    use std::{
-        collections::BTreeSet,
-        env,
-        path::{Path, PathBuf},
-    };
     // ⚠️ agent-pairing.json 과 같은 값이어야 한다. 두 곳에 따로 적혀 있으므로
     //    src/test/agent-pairing-drift.contract.test.ts 가 둘이 갈라지는 것을 막는다.
     const REQUIRED_AGENT_COMMIT: &str = "bfa2aa956fc356b50f853c03316faf1b773d0f9e";
@@ -232,7 +234,6 @@ fn main() {
             proto.display()
         );
     }
-    use sha2::{Digest, Sha256};
     let proto_bytes = std::fs::read(&proto).expect("failed to read naia_agent.proto for hashing");
     let proto_text =
         String::from_utf8(proto_bytes.clone()).expect("naia_agent.proto must be UTF-8");

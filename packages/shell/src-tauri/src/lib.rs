@@ -9,6 +9,7 @@ mod agent_grpc;
 mod app;
 mod app_sandbox;
 mod broadcast;
+pub(crate) mod ffmpeg_sidecar;
 mod slides_import;
 mod slides_files;
 mod slides_recording;

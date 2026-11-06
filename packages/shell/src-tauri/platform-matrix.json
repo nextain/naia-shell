@@ -117,7 +117,11 @@
 				"minBytes": 1000000,
 				"placeholderPrefix": "#!naia-ffmpeg-dev-placeholder",
 				"sourceEnv": "NAIA_FFMPEG_SIDECAR_SOURCE",
-				"requireRealEnv": "NAIA_REQUIRE_REAL_FFMPEG"
+				"requireRealEnv": "NAIA_REQUIRE_REAL_FFMPEG",
+				"fallbackCandidates": [
+					"C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
+					"C:\\ffmpeg\\bin\\ffmpeg.exe"
+				]
 			},
 			"installer": {
 				"publisher": "Nextain Inc.",

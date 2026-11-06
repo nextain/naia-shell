@@ -1,7 +1,20 @@
+// Shared ffmpeg sidecar constants and binary validation used by both `build.rs`
+// (via top-level `include!("src/ffmpeg_sidecar.rs");`) and the application crate
+// (`pub(crate) mod ffmpeg_sidecar;` in `lib.rs`, imported by `broadcast.rs`).
+// Keep this file self-contained (fully-qualified `std::` paths only) so it
+// compiles cleanly in both contexts.
+// Canonical source of truth: `packages/shell/src-tauri/platform-matrix.json`
+// (`os.win32.ffmpeg`), enforced by `packages/shell/scripts/__tests__/platform-matrix.test.ts`.
+
+#[allow(dead_code)]
 pub const FFMPEG_DEV_PLACEHOLDER_PREFIX: &[u8] = b"#!naia-ffmpeg-dev-placeholder";
+#[allow(dead_code)]
 pub const MIN_WINDOWS_FFMPEG_BYTES: u64 = 1_000_000;
+#[allow(dead_code)]
 pub const FFMPEG_SIDECAR_SOURCE_ENV: &str = "NAIA_FFMPEG_SIDECAR_SOURCE";
+#[allow(dead_code)]
 pub const FFMPEG_REQUIRE_REAL_ENV: &str = "NAIA_REQUIRE_REAL_FFMPEG";
+#[allow(dead_code)]
 pub const WINDOWS_FFMPEG_FALLBACK_CANDIDATES: &[&str] = &[
     r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
     r"C:\ffmpeg\bin\ffmpeg.exe",
@@ -15,6 +28,7 @@ pub const WINDOWS_FFMPEG_FALLBACK_CANDIDATES: &[&str] = &[
 ///   requires a valid PE `MZ` header (`0x4D 0x5A`) and at least `MIN_WINDOWS_FFMPEG_BYTES`
 ///   (1,000,000 bytes), preventing Windows from showing the 16-bit application modal
 ///   dialog (`os error 216`).
+#[allow(dead_code)]
 pub fn validate_ffmpeg_sidecar_file(
     path: &std::path::Path,
     require_windows_pe: bool,

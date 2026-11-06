@@ -21,7 +21,7 @@
   "current_work": {
     "win_rtx2070_r2_026": {
       "issue": 792,
-      "last_updated": "2026-11-06T15:55:00+00:00",
+      "last_updated": "2026-11-06T16:15:00+00:00",
       "gates": {
         "P01": "done",
         "P02": "done",
@@ -31,7 +31,7 @@
       },
       "scenario": "docs/user-scenarios.md UC-WIN-RTX2070-R2-026",
       "requirements": "docs/requirements.md FR-WIN-RTX2070-R2.1~6",
-      "verification": "Round 3 review fixes (P2-1..4, P3-1..6): targeted Shell Vitest 6 files / 307 passed (8 skipped, 0 failed); Core contract Vitest 2 files / 43 passed (rust-tokens 37, rust-command-list 6); root tsc + pnpm -C packages/shell exec tsc -b (0 errors); check-assembly-coverage S 67 / UC 20 passed. Local Linux host lacks cargo/rustc and Windows hardware, so cargo test and Windows installer/RTX2070 runtime remain CI/device gates."
+      "verification": "Round 4 review fixes (P1-1, P2-1, P3-4 1..3, P3-2 doc): targeted Shell Vitest 6 files / 307 passed (8 skipped, 0 failed); Core contract Vitest 2 files / 43 passed (rust-tokens 37, rust-command-list 6); root tsc + pnpm -C packages/shell exec tsc -b (0 errors); check-assembly-coverage S 67 / UC 20 passed. Local Linux host lacks cargo/rustc and Windows hardware, so Rust compile/test and Windows installer/RTX2070 runtime require CI/device verification."
     },
     "win_rtx2070_r1_026": {
       "issue": 792,

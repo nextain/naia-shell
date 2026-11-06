@@ -579,6 +579,8 @@ export const FFMPEG_DEV_PLACEHOLDER_PREFIX =
 export const MIN_WINDOWS_FFMPEG_BYTES = WINDOWS_FFMPEG_SPEC.minBytes;
 export const FFMPEG_SIDECAR_SOURCE_ENV = WINDOWS_FFMPEG_SPEC.sourceEnv;
 export const FFMPEG_REQUIRE_REAL_ENV = WINDOWS_FFMPEG_SPEC.requireRealEnv;
+export const WINDOWS_FFMPEG_FALLBACK_CANDIDATES =
+	WINDOWS_FFMPEG_SPEC.fallbackCandidates;
 
 /**
  * Windows 번들용 ffmpeg.exe 실물 검증.
@@ -630,6 +632,27 @@ export function validateWindowsFfmpegBinary(
 		}
 	}
 	return { filePath, size: buf.length };
+}
+
+/**
+ * MSI/NSIS 번들 사후 검증(--verify-windows-ffmpeg)용:
+ * 자리표시·최소 크기·MZ 헤더뿐 아니라 platform-matrix.json 의 고정 크기(binaryBytes)와
+ * 고정 SHA-256(binarySha256)까지 대조한다.
+ */
+export function verifyPinnedWindowsFfmpegBinary(
+	filePath,
+	{ spec = WINDOWS_FFMPEG_SPEC, readImpl = readFileSync } = {},
+) {
+	if (!spec?.binaryBytes || !spec?.binarySha256) {
+		throw new Error(
+			"[stage-runtime] platform-matrix.json os.win32.ffmpeg 고정 바이너리 크기/SHA256 계약이 누락되었습니다.",
+		);
+	}
+	return validateWindowsFfmpegBinary(resolve(filePath), {
+		readImpl,
+		expectedBytes: spec.binaryBytes,
+		expectedSha256: spec.binarySha256,
+	});
 }
 
 /**
@@ -751,7 +774,15 @@ export function resolveWindowsFfmpegSource({
 	const explicitSource = env[FFMPEG_SIDECAR_SOURCE_ENV]?.trim();
 	if (explicitSource) {
 		const resolved = resolve(explicitSource);
-		validateWindowsFfmpegBinary(resolved);
+		validateWindowsFfmpegBinary(
+			resolved,
+			requirePinned
+				? {
+						expectedBytes: spec?.binaryBytes,
+						expectedSha256: spec?.binarySha256,
+					}
+				: {},
+		);
 		return { source: resolved, origin: FFMPEG_SIDECAR_SOURCE_ENV };
 	}
 
@@ -811,10 +842,10 @@ export function resolveWindowsFfmpegSource({
 		const dir = entry.trim();
 		if (dir) candidates.push(join(dir, "ffmpeg.exe"));
 	}
-	candidates.push(
-		"C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
-		"C:\\ffmpeg\\bin\\ffmpeg.exe",
-	);
+	for (const fallback of spec?.fallbackCandidates ??
+		WINDOWS_FFMPEG_FALLBACK_CANDIDATES) {
+		candidates.push(fallback);
+	}
 
 	for (const candidate of candidates) {
 		const resolved = resolve(candidate);
@@ -875,7 +906,15 @@ export function provisionWindowsFfmpegSidecar(
 	if (resolve(source) !== resolve(targetSidecar)) {
 		copyFileSync(source, targetSidecar);
 	}
-	const verified = validateWindowsFfmpegBinary(targetSidecar);
+	const verified = validateWindowsFfmpegBinary(
+		targetSidecar,
+		requirePinned
+			? {
+					expectedBytes: spec?.binaryBytes,
+					expectedSha256: spec?.binarySha256,
+				}
+			: {},
+	);
 	console.log(
 		`[stage-runtime] ② Windows ffmpeg sidecar 검증 완료 (${origin}, ${verified.size} bytes) → ${targetSidecar}`,
 	);
@@ -934,9 +973,9 @@ async function main() {
 				"[stage-runtime] --verify-windows-ffmpeg 인자에 검사할 파일 경로가 필요합니다.",
 			);
 		}
-		const verified = validateWindowsFfmpegBinary(resolve(targetPath));
+		const verified = verifyPinnedWindowsFfmpegBinary(targetPath);
 		console.log(
-			`[stage-runtime] Windows ffmpeg 검증 통과 (${verified.size} bytes): ${verified.filePath}`,
+			`[stage-runtime] Windows ffmpeg 고정 해시 검증 통과 (${verified.size} bytes, sha256=${WINDOWS_FFMPEG_SPEC.binarySha256}): ${verified.filePath}`,
 		);
 		return;
 	}

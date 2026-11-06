@@ -20,7 +20,9 @@ pub const PIPEWIRE_RESCAN_INTERVAL: Duration = Duration::from_secs(2);
 pub const PORTAL_SOURCE_TYPE_WINDOW: u32 = 2;
 pub const PORTAL_CURSOR_MODE_HIDDEN: u32 = 1;
 pub const PORTAL_PERSIST_MODE_UNTIL_REVOKED: u32 = 2;
-include!("ffmpeg_sidecar.rs");
+use crate::ffmpeg_sidecar::{
+    validate_ffmpeg_sidecar_file, FFMPEG_DEV_PLACEHOLDER_PREFIX, MIN_WINDOWS_FFMPEG_BYTES,
+};
 
 /// Swappable screen capture and pipeline source (Items 3 & 4).
 /// Windows uses `ffmpeg` with `gdigrab` (`title=Naia`).
