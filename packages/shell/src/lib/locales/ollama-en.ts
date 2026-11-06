@@ -86,4 +86,11 @@ export default {
 	"settings.ollamaPullErrorAccelerator": 'The accelerator mapping could not be verified.',
 	"settings.ollamaPullErrorUnknown": 'The model download failed.',
 	"settings.ollamaPullNoCandidates": 'No model candidates are available.',
+	"settings.broadcastSection": "Broadcast",
+	"settings.broadcastPlatform": "Platform",
+	"settings.broadcastServerUrl": "Server URL",
+	"settings.broadcastResolution": "Resolution",
+	"settings.broadcastStreamKey": "Stream key",
+	"settings.broadcastStreamKeyPlaceholder": "Enter stream key (hidden on screen and logs)",
+	"settings.broadcastSave": "Save broadcast settings",
 } as const;

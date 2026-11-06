@@ -869,6 +869,21 @@
       "last_updated": "2026-11-04T06:57:25.627965+00:00",
       "scope": "#792 P01-P05 R17/904878e memory integration and Slides 123590725a merge",
       "verification": "Agent 2453 passed/11 skipped; memory 69 passed; Shell 2783 passed/22 skipped (260 files passed/1 skipped); Rust 718 passed/3 ignored; pairing 17 passed; Slides browser 9 passed, memory UI 2 passed; tsc/Vite/budget/integrity/70 anchors PASS. codex-runs/026-b2c/result.md and tmp/r18-*"
+    },
+    "broadcast_stream_026_20261106": {
+      "issue": null,
+      "title": "나이아 쉘 0.2.6 방송 바로 송출 2단계 (OBS 없이)",
+      "requirements": "docs/requirements.md FR-BROADCAST-STREAM.1~6",
+      "scenario": "docs/user-scenarios.md UC-BROADCAST-STREAM-026",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "done",
+      "last_updated": "2026-11-06T11:08:00+09:00"
     }
   },
   "sdlc_gates": {

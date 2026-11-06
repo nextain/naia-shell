@@ -1570,3 +1570,15 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 
 ### FR-B2C-026-R18 — 정확한 기억 짝 및 슬라이드 병합 (#792 P01–P05)
 상태: Done (자동 통합 검증; 준 3090 설치판·실 모델 품질은 별도). Agent bfa2aa956fc356b50f853c03316faf1b773d0f9e / Memory ab1f8002d31bffacf4779760eda727cc57a658a8을 manifest·Rust·installer/self-trust CI·README에서 동일하게 고정한다. R17 설정/기억/키링 수정과 중간 Agent 네 커밋의 동작을 보존한다. Slides 123590725a의 전체 조상을 병합하며 발표 상태에 따른 이동·확대·crop을 다시 도입하지 않는다. 수동 제스처는 발화에 양보하고 정렬 계획 없이 입 루프를 재생하지 않는다. 설치 앱 취소와 Slides 준비 세대는 서로 침범하지 않는다. P04 증거는 r18 전체 Agent/Shell/Rust·짝 계약·브라우저 로그와 실행 result.md에 기록한다.
+
+## 기능 요구사항 (FR) — 0.2.6 방송 바로 송출 (OBS 없이, 2026-11-06)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-BROADCAST-STREAM.1** | Tauri `bundle.externalBin`(`binaries/ffmpeg`)으로 정적 ffmpeg 곁프로그램을 구성하고, Rust 실행 경로 해석은 `앱 옆 곁프로그램 → NAIA_FFMPEG_PATH → PATH` 순서를 따른다. `slides_recording_start`도 동일한 해석 함수를 사용한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src/lib/__tests__/broadcast.test.ts` | Done |
+| **FR-BROADCAST-STREAM.2** | `broadcast_start`, `broadcast_stop`, `broadcast_status`, `broadcast_push_audio` Tauri 명령을 제공한다. 영상은 `h264_nvenc` 우선·`libx264 -preset veryfast` 폴백, `1080p30`(설정으로 `720p30`), 플랫폼별 키프레임 간격(유튜브·트위치·숲 2초 `-g 60`, 치지직 1초 `-g 30`)과 기본 비트레이트(유튜브·트위치·숲 `6M`, 치지직 `8M`), 소리는 stdin PCM(`s16le` 48kHz 스테레오) → `AAC 160k 48kHz 스테레오`로 인코딩해 RTMP(S)로 송출한다. 방송 키는 어떤 로그·출력에도 남기지 않고 인자 기록 시 `***`로 가린다. ffmpeg 비정상 종료 시 상태를 `disconnected`(끊김)로 바꾸고 화면에 알리며 10초 간격으로 최대 3회 자동 재시작한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src-tauri/src/broadcast.rs` | Done |
+| **FR-BROADCAST-STREAM.3** | 화면 캡처 원천은 교체 가능한 `ScreenCaptureSource` trait으로 분리한다. 윈도우는 `gdigrab`(`title=Naia`, `-draw_mouse 0`)을 기본 구현으로 두고, 리눅스는 실측 전까지 `"미구현 — 실측 대기"` 오류를 반환한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src-tauri/src/broadcast.rs` | Done |
+| **FR-BROADCAST-STREAM.4** | 프런트엔드는 단일 공유 `AudioContext`에 TTS(웹 오디오 `playStream` 및 `<audio>` 두 경로 모두)와 로컬 반주 `<audio>`를 연결하고, 방송 중에만 `AudioWorklet`으로 48kHz 스테레오 PCM을 추출해 Tauri IPC로 Rust → ffmpeg stdin에 전달한다. 스피커 출력은 유지하고 마이크·시스템 소리는 섞지 않는다. 방송 중 유튜브 반주는 차단하고 `"방송 중엔 내 곡만"` 안내를 표시한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src/lib/__tests__/broadcast.test.ts` | Done |
+| **FR-BROADCAST-STREAM.5** | 설정 화면에 `방송` 절(플랫폼 선택, 서버 주소, 해상도, 비밀 저장소 기반 방송 키 마스킹 입력)을 두고, `AiControlBar`에 방송 켜기·끄기 단추(방송 중 빨간 점 + 경과 시간, 끊김 상태 표시, 키 미설정 시 비활성)를 제공한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src/lib/__tests__/broadcast.test.ts` | Done |
+| **FR-BROADCAST-STREAM.6** | 방송 종료 시 `<ADK>/data-private/broadcast/log.jsonl` 에 `{start, end, minutes, answers, credits_used, brain: "local"\|"gateway"\|"both", platform, encoder, drops}` JSON 한 줄을 추가한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src/lib/__tests__/broadcast.test.ts` | Done |
+
