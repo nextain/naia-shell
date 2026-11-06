@@ -83,14 +83,28 @@
 
 	.app-root[data-kiosk-demo="true"]
 		.naia-chat-wrapper:not(.naia-chat-wrapper--hidden) {
-		min-height: min(490px, calc(100dvh - 260px));
-		max-height: calc(100dvh - 250px);
+		height: min(460px, calc(100dvh - 250px)) !important;
+		min-height: min(460px, calc(100dvh - 250px));
+		max-height: calc(100dvh - 240px);
 		border-radius: 16px;
 	}
 
+	.app-root[data-kiosk-demo="true"] .chat-app {
+		height: 100%;
+		min-height: 0;
+		overflow: hidden;
+	}
+
 	.app-root[data-kiosk-demo="true"] .chat-messages {
-		min-height: 280px;
+		flex: 1 1 0;
+		min-height: 0;
 		padding: 14px 16px;
 		overflow-y: auto;
+	}
+
+	.app-root[data-kiosk-demo="true"]
+		.app-layout:has(.content-app__slot--active .web-workspace-viewer) {
+		left: 38vw !important;
+		z-index: 15;
 	}
 }

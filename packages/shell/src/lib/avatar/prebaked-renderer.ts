@@ -402,9 +402,9 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 						baseMotion && this.activeGesture
 							? {
 									...baseMotion,
-									breath: Math.min(0.05, Math.max(baseMotion.breath * 2.2, 0.038)),
+									breath: baseMotion.breath,
 									breath_period_s: Math.max(1.5, Math.min(baseMotion.breath_period_s, 2.2)),
-									sway_deg: Math.min(5, Math.max(baseMotion.sway_deg * 2.0, 3.8)),
+									sway_deg: Math.min(2.4, Math.max(baseMotion.sway_deg * 1.8, 1.6)),
 									sway_period_s: Math.max(2.0, Math.min(baseMotion.sway_period_s, 2.6)),
 								}
 							: baseMotion;

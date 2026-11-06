@@ -27,10 +27,10 @@
 }
 .web-workspace-tree,
 .web-workspace-tree.herdr-workspace__files {
-	flex: 0 0 var(--web-tree-width, 200px);
-	width: var(--web-tree-width, 200px);
+	flex: 0 0 var(--web-tree-width, 180px);
+	width: var(--web-tree-width, 180px);
 	min-width: 140px;
-	max-width: 42%;
+	max-width: 36%;
 	overflow: auto;
 }
 .web-workspace:not(:has(.web-workspace-viewer)) .web-workspace-tree,
@@ -100,10 +100,45 @@
 	display: flex;
 	gap: 8px;
 	align-items: center;
+	flex-wrap: nowrap;
+	min-width: 0;
+	padding: 6px 10px;
 }
 .web-workspace-viewer-bar code {
-	flex: 1;
-	overflow-wrap: anywhere;
+	flex: 1 1 0;
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.web-workspace-viewer-bar button {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+.web-workspace-viewer .workspace-editor__header {
+	flex-wrap: nowrap;
+	gap: 6px;
+	min-width: 0;
+}
+.web-workspace-viewer .workspace-editor__filename {
+	flex: 1 1 0;
+	min-width: 48px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.web-workspace-viewer .workspace-editor__view-btn,
+.web-workspace-viewer .workspace-editor__readonly,
+.web-workspace-viewer .workspace-editor__badge {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+@media (min-width: 601px) {
+	[data-naia-web="true"]
+		.app-layout:has(.content-app__slot--active .web-workspace-viewer) {
+		left: 38vw !important;
+		z-index: 15;
+	}
 }
 
 @media (max-width: 600px) and (orientation: portrait) and (pointer: coarse) {

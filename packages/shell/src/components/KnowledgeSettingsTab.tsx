@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { getAdkPath } from "../lib/adk-store";
 import { t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
@@ -332,18 +334,20 @@ export function KnowledgeSettingsTab() {
 										knowledge/{selectedManuscript.name}
 									</code>
 								</div>
-								<pre
+								<article
+									className="workspace-editor__preview"
+									aria-label="Markdown 미리보기"
 									style={{
-										margin: 0,
-										whiteSpace: "pre-wrap",
-										wordBreak: "break-word",
-										fontSize: "12px",
-										lineHeight: 1.6,
-										fontFamily: "inherit",
+										padding: "4px 2px",
+										fontSize: "13px",
+										lineHeight: 1.65,
+										overflowY: "visible",
 									}}
 								>
-									{selectedManuscript.text}
-								</pre>
+									<Markdown remarkPlugins={[remarkGfm]} skipHtml>
+										{selectedManuscript.text}
+									</Markdown>
+								</article>
 							</div>
 						)}
 					</div>

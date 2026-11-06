@@ -31,12 +31,12 @@
     "type": "transparent"
   },
   "motion": {
-    "breath": 0.024,
-    "breath_period_s": 3.0,
-    "sway_deg": 2.2,
-    "sway_period_s": 4.8,
+    "breath": 0.008,
+    "breath_period_s": 3.2,
+    "sway_deg": 0.8,
+    "sway_period_s": 5.0,
     "chest_y": 0.36,
-    "pivot_y": 0.95
+    "pivot_y": 0.97
   },
   "animations": {
     "idle": {

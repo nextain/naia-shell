@@ -947,15 +947,24 @@ export function SettingsTab() {
 		existing?.vrmModel,
 	);
 	const [ttsVoice, setTtsVoice] = useState(
-		existing?.ttsVoice ?? (isWebMode() ? "" : defaultVoiceForProvider),
+		isKioskDemo()
+			? existing?.ttsVoice && existing.ttsVoice.includes("DragonHD")
+				? existing.ttsVoice
+				: "ko-KR-SunHi:DragonHDLatestNeural"
+			: existing?.ttsVoice ?? (isWebMode() ? "" : defaultVoiceForProvider),
 	);
 	// 기본값은 `effectiveTtsProvider` 한 곳에서 정한다 — 프로파일 카드도 같은 함수를
 	// 읽는다. 여기에만 두면 카드가 "미설정" 이라 적는 동안 이 드롭다운은 Edge 를
-	// 보여 준다(#575). 웹판은 브라우저 내장 합성("browser")으로 고정한다.
+	// 보여 준다(#575). 일반 웹판은 브라우저 내장 합성("browser")으로 고정하고,
+	// 키오스크 시연판은 Naia Cloud TTS("nextain")를 기본으로 하되 "browser"도 선택 가능하게 둔다.
 	const [ttsProvider, setTtsProvider] = useState<TtsProviderId>(
-		isWebMode()
-			? "browser"
-			: effectiveTtsProvider((existing ?? {}) as AppConfig),
+		isKioskDemo()
+			? existing?.ttsProvider === "browser"
+				? "browser"
+				: "nextain"
+			: isWebMode()
+				? "browser"
+				: effectiveTtsProvider((existing ?? {}) as AppConfig),
 	);
 	const [sttProvider, setSttProvider] = useState<SttProviderId>(
 		existing?.sttProvider ?? (isWebMode() ? "web-speech" : ""),
@@ -2013,7 +2022,12 @@ export function SettingsTab() {
 		existing?.allowedTools ?? [],
 	);
 	const [adkRestartRequired, setAdkRestartRequired] = useState(false);
-	const [naiaKey, setNaiaKeyState] = useState(existing?.naiaKey ?? "");
+	const [naiaKey, setNaiaKeyState] = useState(
+		existing?.naiaKey ||
+			(isWebMode() && typeof localStorage !== "undefined"
+				? localStorage.getItem("naia-remote-key")?.trim() ?? ""
+				: ""),
+	);
 	const [secureNaiaCredentialReady, setSecureNaiaCredentialReady] =
 		useState(false);
 	const naiaCredentialEpochRef = useRef(0);
@@ -3616,7 +3630,7 @@ export function SettingsTab() {
 			// Resolve the effective TTS provider / voice / credentials, then
 			// synthesize shell-side (#363). The agent's skill_tts was never a real
 			// synthesizer, so preview routes through the same path as live voice.
-			if (isWebMode()) {
+			if (isWebMode() && (!isKioskDemo() || ttsProvider === "browser")) {
 				if (
 					typeof window === "undefined" ||
 					!("speechSynthesis" in window) ||
@@ -3657,21 +3671,43 @@ export function SettingsTab() {
 				synthVoice = ttsVoice;
 			}
 
-			if (synthProvider === "nextain" && !naiaKey) {
+			const effectiveNaiaKey =
+				naiaKey ||
+				(isWebMode() && typeof localStorage !== "undefined"
+					? localStorage.getItem("naia-remote-key")?.trim() ?? ""
+					: "");
+			if (synthProvider === "nextain" && !effectiveNaiaKey) {
 				setError(t("settings.ttsPreviewLoginRequired"));
 				return;
 			}
 
-			const { audioBase64 } = await synthesizeTts({
-				text: getPreviewText(synthVoice),
-				voice: synthVoice,
-				provider: synthProvider,
-				naiaKey: naiaKey || undefined,
-				gatewayUrl: LAB_GATEWAY_URL,
-				vllmHost: existing?.vllmHost,
-			});
-			const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
-			await audio.play();
+			try {
+				const { audioBase64 } = await synthesizeTts({
+					text: getPreviewText(synthVoice),
+					voice: synthVoice,
+					provider: synthProvider,
+					naiaKey: effectiveNaiaKey || undefined,
+					gatewayUrl: LAB_GATEWAY_URL,
+					vllmHost: existing?.vllmHost,
+				});
+				const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
+				await audio.play();
+			} catch (synthErr) {
+				if (
+					isKioskDemo() &&
+					typeof window !== "undefined" &&
+					"speechSynthesis" in window &&
+					typeof SpeechSynthesisUtterance !== "undefined"
+				) {
+					window.speechSynthesis.cancel();
+					const utter = new SpeechSynthesisUtterance(
+						getPreviewText(synthVoice),
+					);
+					window.speechSynthesis.speak(utter);
+					return;
+				}
+				throw synthErr;
+			}
 		} catch (err) {
 			setError(
 				`${t("settings.ttsPreviewFailed")}: ${err instanceof Error ? err.message : String(err)}`,
@@ -4207,7 +4243,12 @@ export function SettingsTab() {
 					? String(slotSnapshot.stt.provider)
 					: t("settings.slot.notSet");
 			case "tts":
-				if (isKioskDemo() || isWebMode()) {
+				if (isKioskDemo()) {
+					return ttsProvider === "browser"
+						? t("webSpeech.synthesisProvider")
+						: "Naia Cloud TTS";
+				}
+				if (isWebMode()) {
 					return t("webSpeech.synthesisProvider");
 				}
 				return slotSnapshot.tts.provider
@@ -4240,15 +4281,23 @@ export function SettingsTab() {
 		const current = loadConfig();
 		if (!current) return;
 		const rawNext = applyNaiaSlotDefaults(current, catalogModels.current);
-		const next =
-			isKioskDemo() || isWebMode()
+		const next = isKioskDemo()
+			? {
+					...rawNext,
+					ttsProvider: "nextain" as const,
+					ttsVoice: "ko-KR-SunHi:DragonHDLatestNeural",
+				}
+			: isWebMode()
 				? { ...rawNext, ttsProvider: "browser" as const }
 				: rawNext;
 		saveConfig(next);
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 		setProvider(next.provider);
 		setModel(next.model);
-		if (isKioskDemo() || isWebMode()) {
+		if (isKioskDemo()) {
+			setTtsProvider("nextain");
+			setTtsVoice("ko-KR-SunHi:DragonHDLatestNeural");
+		} else if (isWebMode()) {
 			setTtsProvider("browser");
 		}
 		// 보조·기억 역할 편집기는 제거됨(에픽 #589) — main 슬롯만 스테이징에 반영한다.
@@ -5402,7 +5451,41 @@ export function SettingsTab() {
 											)}
 											{group.id === "voice" && (
 												<>
-													{isKioskDemo() || isWebMode() ? (
+													{isKioskDemo() ? (
+														<select
+															data-testid="profile-tts-provider"
+															aria-label={t("settings.ttsProvider")}
+															value={
+																ttsProvider === "browser"
+																	? "browser"
+																	: "nextain"
+															}
+															onChange={(event) => {
+																const next = (
+																	event.target.value === "browser"
+																		? "browser"
+																		: "nextain"
+																) as TtsProviderId;
+																setTtsProvider(next);
+																const nextVoice =
+																	next === "nextain"
+																		? ttsVoice && ttsVoice.includes("DragonHD")
+																			? ttsVoice
+																			: "ko-KR-SunHi:DragonHDLatestNeural"
+																		: "";
+																setTtsVoice(nextVoice);
+																persistConfig({
+																	ttsProvider: next,
+																	ttsVoice: nextVoice,
+																});
+															}}
+														>
+															<option value="nextain">Naia Cloud TTS</option>
+															<option value="browser">
+																{t("webSpeech.synthesisProvider")}
+															</option>
+														</select>
+													) : isWebMode() ? (
 														<select
 															data-testid="profile-tts-provider"
 															aria-label={t("settings.ttsProvider")}
@@ -7018,7 +7101,32 @@ export function SettingsTab() {
 						<label htmlFor="tts-provider-select">
 							{t("settings.ttsProvider")}
 						</label>
-						{isWebMode() ? (
+						{isKioskDemo() ? (
+							<select
+								id="tts-provider-select"
+								data-testid="gateway-tts-provider"
+								value={ttsProvider === "browser" ? "browser" : "nextain"}
+								onChange={(e) => {
+									const next = (
+										e.target.value === "browser" ? "browser" : "nextain"
+									) as TtsProviderId;
+									setTtsProvider(next);
+									const nextVoice =
+										next === "nextain"
+											? ttsVoice && ttsVoice.includes("DragonHD")
+												? ttsVoice
+												: "ko-KR-SunHi:DragonHDLatestNeural"
+											: "";
+									setTtsVoice(nextVoice);
+									persistConfig({ ttsProvider: next, ttsVoice: nextVoice });
+								}}
+							>
+								<option value="nextain">Naia Cloud TTS</option>
+								<option value="browser">
+									{t("webSpeech.synthesisProvider")}
+								</option>
+							</select>
+						) : isWebMode() ? (
 							<>
 								<select
 									id="tts-provider-select"
@@ -7288,7 +7396,7 @@ export function SettingsTab() {
 
 					{/* TTS Voice picker — dynamic based on provider */}
 					{(() => {
-						if (isWebMode()) {
+						if (isWebMode() && (!isKioskDemo() || ttsProvider === "browser")) {
 							const synthSupported =
 								typeof window !== "undefined" && "speechSynthesis" in window;
 							const langPrefix = locale.slice(0, 2).toLowerCase();

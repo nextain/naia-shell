@@ -198,16 +198,16 @@ describe("S3 kiosk isolation", () => {
 		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
 			agentName: "지나",
 			onboardingComplete: true,
-			ttsProvider: "naia-local-voice",
+			ttsProvider: "nextain",
 			vllmTtsHost: "https://bc250-0-voice.nextain.io",
-			ttsVoice: "naia-default",
+			ttsVoice: "ko-KR-SunHi:DragonHDLatestNeural",
 			avatarProvider: "naia-video-avatar",
 			nvaModel: "jina",
 		});
 		const loaded = loadConfig()!;
-		expect(loaded.ttsProvider).toBe("naia-local-voice");
+		expect(loaded.ttsProvider).toBe("nextain");
 		expect(loaded.vllmTtsHost).toBe("https://bc250-0-voice.nextain.io");
-		expect(resolveTtsVoiceId(loaded)).toBe("naia-default");
+		expect(resolveTtsVoiceId(loaded)).toBe("ko-KR-SunHi:DragonHDLatestNeural");
 		expect(consumeKioskGreeting()).toBe(false);
 		requestKioskGreeting();
 		expect(consumeKioskGreeting()).toBe(true);

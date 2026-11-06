@@ -723,10 +723,9 @@ export function loadConfig(): AppConfig | null {
 			) {
 				config.sttProvider = "web-speech";
 			}
-			if (
-				!config.ttsProvider ||
-				(!isKioskDemo() && config.ttsProvider !== "browser")
-			) {
+			if (!config.ttsProvider) {
+				config.ttsProvider = isKioskDemo() ? "nextain" : "browser";
+			} else if (!isKioskDemo() && config.ttsProvider !== "browser") {
 				config.ttsProvider = "browser";
 			}
 		} else if (!config.sttProvider) {

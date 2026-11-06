@@ -159,7 +159,7 @@ export default function WebWorkspace() {
 	);
 	const [showPath, setShowPath] = useState(false);
 	const [file, setFile] = useState("");
-	const [treeWidth, setTreeWidth] = useState(200);
+	const [treeWidth, setTreeWidth] = useState(180);
 	const workspaceRef = useRef<HTMLDivElement>(null);
 	const kioskDemo = isKioskDemo();
 	const kioskManuscripts = useMemo(
@@ -307,7 +307,9 @@ export default function WebWorkspace() {
 					/>
 					<main className="web-workspace-viewer" data-testid="web-workspace-viewer">
 						<div className="web-workspace-viewer-bar">
-							<code>{file}</code>
+							<code title={file}>
+								{file.split("/").filter(Boolean).pop() ?? file}
+							</code>
 							<button type="button" onClick={() => void download()}>
 								{t("webExplorer.download")}
 							</button>

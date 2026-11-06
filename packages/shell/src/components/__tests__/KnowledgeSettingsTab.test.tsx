@@ -280,6 +280,10 @@ describe("KnowledgeSettingsTab (FR-KB-OS.5~8 — 설정 지식 탭 관리)", () 
 			fireEvent.click(naiaBtn);
 			const viewer = screen.getByTestId("kiosk-knowledge-manuscript-body");
 			expect(viewer.textContent).toContain("나이아 서비스 소개");
+			expect(viewer.querySelector(".workspace-editor__preview h1")?.textContent).toBe(
+				"나이아 서비스 소개",
+			);
+			expect(viewer.querySelector("pre")).toBeNull();
 		} finally {
 			vi.unstubAllEnvs();
 		}

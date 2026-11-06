@@ -45,9 +45,9 @@ export function buildSeedShellConfig(
 	return seed;
 }
 
-export const KIOSK_DEMO_TTS_PROVIDER = "naia-local-voice" as const;
+export const KIOSK_DEMO_TTS_PROVIDER = "nextain" as const;
 export const KIOSK_DEMO_TTS_HOST = "https://bc250-0-voice.nextain.io";
-export const KIOSK_DEMO_TTS_VOICE = "naia-default";
+export const KIOSK_DEMO_TTS_VOICE = "ko-KR-SunHi:DragonHDLatestNeural";
 export const KIOSK_DEMO_NVA_MODEL = "jina";
 export const DEFAULT_SHELL_NAIA_WIDTH = 320;
 export const KIOSK_SHELL_NAIA_WIDTH = 520;

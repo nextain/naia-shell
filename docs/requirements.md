@@ -1683,13 +1683,13 @@ P04 검수 수정(#824, 2026-11-05): 지나 실사 클립 재후처리 및 인�
 | FR-WEB-KIOSK-R3.1 | `isKioskDemo()`일 때 대화창의 도구 활동(`ToolActivity.tsx`)에서 입력 JSON(`{"query":…}`)과 출력 JSON(`{"abstained":…,"hits":[…]}`) 원문을 펼치거나 노출하지 않고 한 줄 요약(`"자료 찾는 중"` / `"자료 찾음"`)만 표시한다. 답변 끝 `"근거: …"` 줄은 유지한다. | Done |
 | FR-WEB-KIOSK-R3.2 | `isKioskDemo()`일 때 설정 화면(`SettingsTab.tsx`)에서 로그아웃 단추(`web-logout-btn`)와 연결 해제 단추(`.lab-disconnect-btn`)를 표시하지 않는다. | Done |
 | FR-WEB-KIOSK-R3.3 | 웹/키오스크 판(`isWebMode()` 또는 `opfs://` 경로)에서 `secure-store.ts`는 Tauri 전용 `secure_store_get`/`secure_store_set`/`secure_store_delete`를 호출하지 않고 브라우저 저장소로 처리해 `"설정을 저장하지 못했습니다: desktop_only:secure_store_set"` 오류가 발생하지 않게 한다. | Done |
-| FR-WEB-KIOSK-R3.4 | 웹/키오스크 판에서 프로필 탭의 `"naia-local-voice : 시동중 .."` 상태를 표시하지 않고, 프로필 탭과 음성 탭 모두 실제 사용 가능한 `"브라우저 음성 합성"`(`"browser"`)만 선택지·표시값으로 노출해 두 화면이 같은 값을 보이게 한다. | Done |
+| FR-WEB-KIOSK-R3.4 | 키오스크 판(`isKioskDemo()`) 기본 말하기를 `Naia Cloud TTS`(`ttsProvider: "nextain"`, 목소리 `"ko-KR-SunHi:DragonHDLatestNeural"`, 시연 열쇠로 게이트웨이 `POST /v1/audio/speech` 호출)로 하고, 프로필 탭과 음성 탭 모두에서 `Naia Cloud TTS`와 `"브라우저 음성 합성"`(`"browser"`)을 고를 수 있고 같은 값을 보이게 한다. 게이트웨이 TTS 실패 시에는 브라우저 목소리(`speechSynthesis`)로 대체하며, 웹/키오스크 판에서 `"naia-local-voice : 시동중 .."` 배지는 표시하지 않는다. | Done |
 | FR-WEB-KIOSK-R3.5 | 웹 파일 탐색기(`WebWorkspace.tsx`)에서 `"온라인 (준비 중)"` 단추를 제거하고 `"오프라인"` 문구(`webExplorer.offline`)를 `"브라우저 안 오프라인 공간"`으로 표시한다. | Done |
 | FR-WEB-KIOSK-R3.6 | 키오스크 판(`isKioskDemo()`)에서 `.agents`, `.users`, `naia-settings`, `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `README.md`, `agents-rules*` 등 ADK 내부 규칙 파일을 파일 탐색기 목록·파일 열기와 시연 번들에서 숨기거나 제외하고 시연용 파일(`kiosk-demo/knowledge/*.md`, `conversations` 등)만 보이게 한다. | Done |
-| FR-WEB-KIOSK-R3.7 | 키오스크 판에 `"지식"` 탭(상단 앱 막대 및 설정 내 지식 탭)을 제공해 시연 지식 묶음(`knowledge/*.md` 21개 원고 목록과 본문)을 열람할 수 있게 한다. | Done |
-| FR-WEB-KIOSK-R3.8 | 파일 탐색기에서 파일을 고르면 나오는 오른쪽 뷰어(`.web-workspace-viewer`)의 기본 폭을 화면 절반 가까이 넓히고 트리와 뷰어 사이 분할 막대(`.web-workspace-resizer`)를 끌어 폭을 조절할 수 있게 한다. | Done |
-| FR-WEB-KIOSK-R3.9 | 파일 탐색기나 앱을 열고 닫아도 아바타와 대화창이 좌우로 튀지 않고 항상 왼쪽 같은 위치에 일관되게 머물도록 고정한다. | Done |
-| FR-WEB-KIOSK-R3.10 | 지나 캐릭터(`public/nva/jina/`)의 머리 오른쪽 위 빈 곳(구멍)과 `"부드러운 움직임"`(`motion.webm`) 실행 시 팔-허리·다리 사이가 검게 나오는 현상을 제거하고, `"부드러운 움직임"`의 호흡·스웨이 움직임 세기를 높인다. | Done |
+| FR-WEB-KIOSK-R3.7 | 키오스크 판에 `"지식"` 탭(상단 앱 막대 및 설정 내 지식 탭)을 제공해 시연 지식 묶음(`knowledge/*.md` 21개 원고 목록과 본문)을 열람할 수 있게 하며, 설정 > 지식 탭 오른쪽 원고 본문도 탐색기 뷰어와 동일하게 마크다운(`MarkdownPreview`)을 그려서 보인다. | Done |
+| FR-WEB-KIOSK-R3.8 | 파일 탐색기에서 파일을 열면 탐색기 칸 전체(`.app-layout`)가 화면 폭의 60% 안팎(`left: 38vw`)으로 넓어져 오른쪽 뷰어 본문이 넓게 보이게 하고(`1920×1080`, `1280×720` 모두 만족), 상단 경로 줄은 파일 이름 한 줄(말줄임)로 줄여 쓰며 편집기 도구줄이 `"op…"` 등으로 잘리지 않게 한다. | Done |
+| FR-WEB-KIOSK-R3.9 | 파일 탐색기나 앱을 열고 닫아도 아바타와 대화창이 좌우로 튀지 않고 항상 왼쪽 같은 위치에 일관되게 머물도록 고정하며, 대화창(`.naia-chat-wrapper`) 안에서 상단 헤더(`.chat-header` 탭·단추)나 하단 입력창이 잘리지 않게 한다. | Done |
+| FR-WEB-KIOSK-R3.10 | 지나 캐릭터(`public/nva/jina/`)의 머리 오른쪽 위 빈 곳(구멍)과 `"부드러운 움직임"`(`motion.webm`) 실행 시 팔-허리·다리 사이가 검게 나오는 현상을 제거하고, 대기(`idle.webm`)에서 `"부드러운 움직임"`(`motion.webm`)으로 바뀔 때 지나의 크기와 발 위치가 튀지 않게 맞추면서 움직임 세기는 유지한다. | Done |
 
 
 

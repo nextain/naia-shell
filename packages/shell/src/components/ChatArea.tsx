@@ -1462,16 +1462,22 @@ export function ChatArea({
 				},
 			});
 		}
+		const resolvedNaiaKey =
+			config.naiaKey ||
+			(isWebMode() && typeof localStorage !== "undefined"
+				? localStorage.getItem("naia-remote-key")?.trim() || undefined
+				: undefined);
 		sentenceChunkerRef.current = new SentenceChunker(ttsChunkerOptions);
 		pipelineVoiceConfigRef.current = {
 			voice: resolveTtsVoiceId(config),
 			ttsProvider:
 				isWebMode() && !isKioskDemo()
 					? "browser"
-					: config.ttsProvider || (isWebMode() ? "browser" : "edge"),
+					: config.ttsProvider ||
+						(isKioskDemo() ? "nextain" : isWebMode() ? "browser" : "edge"),
 			localVoiceEnabled: config.localVoiceEnabled === true, // #512 관측
 			ttsApiKey: undefined,
-			naiaKey: config.naiaKey,
+			naiaKey: resolvedNaiaKey,
 			gatewayUrl: LAB_GATEWAY_URL,
 			vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 			vllmTtsHost: config.vllmTtsHost,
@@ -3372,15 +3378,21 @@ export function ChatArea({
 				pipelineActiveRef.current = true;
 				// Re-arm the local-voice-unavailable notice for this new session.
 				sentencePipelineRef.current?.rearmLocalVoiceNotice();
+				const resolvedSessionNaiaKey =
+					config.naiaKey ||
+					(isWebMode() && typeof localStorage !== "undefined"
+						? localStorage.getItem("naia-remote-key")?.trim() || undefined
+						: undefined);
 				pipelineVoiceConfigRef.current = {
 					voice: resolveTtsVoiceId(config) ?? config.voice,
 					ttsProvider:
 						isWebMode() && !isKioskDemo()
 							? "browser"
-							: config.ttsProvider || (isWebMode() ? "browser" : "edge"),
+							: config.ttsProvider ||
+								(isKioskDemo() ? "nextain" : isWebMode() ? "browser" : "edge"),
 					ttsApiKey: undefined,
 					// nextain (gateway credit) + vllm (local) creds — #363.
-					naiaKey: config.naiaKey,
+					naiaKey: resolvedSessionNaiaKey,
 					gatewayUrl: LAB_GATEWAY_URL,
 					vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 					vllmTtsHost: config.vllmTtsHost,

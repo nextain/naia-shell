@@ -5928,7 +5928,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		vi.unstubAllEnvs();
 	});
 
-	it("FR-WEB-KIOSK-R3.2, R3.4, R3.7 hides logout buttons, shows consistent browser TTS without local-voice starting badge, and shows knowledge tab in kiosk mode", async () => {
+	it("FR-WEB-KIOSK-R3.2, R3.4, R3.7 hides logout buttons, defaults to Naia Cloud TTS in both profile and voice tabs without local-voice starting badge, and shows knowledge tab in kiosk mode", async () => {
 		mockInvoke.mockResolvedValue([]);
 		setWebAssetsModeForTests(true);
 		vi.stubEnv("MODE", "web");
@@ -5946,16 +5946,17 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		);
 
 		render(<SettingsTab />);
-		// Profile tab: no lab-disconnect-btn, no local-voice starting badge, profile-tts-provider shows only browser
+		// Profile tab: no lab-disconnect-btn, no local-voice starting badge, profile-tts-provider defaults to nextain (Naia Cloud TTS) with browser fallback option
 		expect(document.querySelector(".lab-disconnect-btn")).toBeNull();
 		expect(document.querySelector('[data-testid="slot-tts-live"]')).toBeNull();
 		const profileTtsSelect = screen.getByTestId(
 			"profile-tts-provider",
 		) as HTMLSelectElement;
 		expect(Array.from(profileTtsSelect.options).map((o) => o.value)).toEqual([
+			"nextain",
 			"browser",
 		]);
-		expect(profileTtsSelect.value).toBe("browser");
+		expect(profileTtsSelect.value).toBe("nextain");
 
 		// Knowledge tab is visible in kiosk mode
 		expect(
@@ -5966,15 +5967,21 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		gotoSettingsTab("general");
 		expect(screen.queryByTestId("web-logout-btn")).toBeNull();
 
-		// Voice tab: shows the same browser TTS value
+		// Voice tab: shows the same Naia Cloud TTS value and options
 		gotoSettingsTab("voice");
 		const voiceTtsSelect = document.getElementById(
 			"tts-provider-select",
 		) as HTMLSelectElement;
 		expect(Array.from(voiceTtsSelect.options).map((o) => o.value)).toEqual([
+			"nextain",
 			"browser",
 		]);
-		expect(voiceTtsSelect.value).toBe("browser");
+		expect(voiceTtsSelect.value).toBe("nextain");
+		const nextainVoiceSelect = document.getElementById(
+			"tts-voice-select",
+		) as HTMLSelectElement;
+		expect(nextainVoiceSelect).not.toBeNull();
+		expect(nextainVoiceSelect.value).toBe("ko-KR-SunHi:DragonHDLatestNeural");
 
 		vi.unstubAllEnvs();
 	});

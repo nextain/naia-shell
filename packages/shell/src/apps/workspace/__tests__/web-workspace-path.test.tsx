@@ -86,6 +86,12 @@ describe("web workspace path", () => {
 				.length,
 		).toBe(21);
 		expect(screen.getByTestId("web-workspace-resizer")).toBeInTheDocument();
-		expect(screen.getByTestId("web-workspace-viewer")).toBeInTheDocument();
+		const viewer = screen.getByTestId("web-workspace-viewer");
+		expect(viewer).toBeInTheDocument();
+		const barCode = viewer.querySelector(".web-workspace-viewer-bar code");
+		expect(barCode?.textContent).toBe("adk.md");
+		expect(barCode?.getAttribute("title")).toBe(
+			"opfs://naia-adk/kiosk-demo/knowledge/adk.md",
+		);
 	});
 });

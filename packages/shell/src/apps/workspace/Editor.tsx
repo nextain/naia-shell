@@ -824,7 +824,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 		>
 			{/* Header bar */}
 			<div className="workspace-editor__header">
-				<span className="workspace-editor__filename" title={filePath}>{filePath}</span>
+				<span className="workspace-editor__filename" title={filePath}>
+					{filePath.startsWith("opfs://")
+						? (filePath.split("/").filter(Boolean).pop() ?? filePath)
+						: filePath}
+				</span>
 				<button
 					type="button"
 					className="workspace-editor__view-btn workspace-editor__copy-path-btn"
