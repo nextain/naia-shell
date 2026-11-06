@@ -132,87 +132,95 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 		<main className="kiosk-entry" lang="ko">
 			<section aria-labelledby="kiosk-title" className="kiosk-entry__card">
 				<p>NAIA · NEXTAIN</p>
-				<h1 id="kiosk-title">지나와 이야기해 보세요</h1>
-				<p>
-					나이아와 넥스테인이 궁금하신가요?
-					<br />
-					게스트님을 따뜻하게 안내해 드릴게요.
-				</p>
-				{phase === "missing-key" ? (
-					<p role="alert">시연 열쇠 없음</p>
-				) : phase === "unavailable" ? (
-					<p role="alert">지금은 시연을 쓸 수 없습니다</p>
-				) : phase === "error" ? (
-					<p role="alert">시연을 준비하지 못했어요. 다시 시도해 주세요.</p>
+				{phase === "unavailable" ? (
+					<div role="alert" className="kiosk-entry__unavailable">
+						<h1 id="kiosk-title">지금은 시연을 잠시 쉬고 있어요</h1>
+						<p>오늘 준비한 시연 사용량을 다 썼어요.</p>
+						<p>부스 직원에게 말씀해 주세요.</p>
+					</div>
 				) : (
-					<output>
-						{phase === "preparing"
-							? "지나가 대화를 준비하고 있어요…"
-							: "들어가기를 누르면 음성 안내가 시작됩니다."}
-					</output>
+					<>
+						<h1 id="kiosk-title">지나와 이야기해 보세요</h1>
+						<p>
+							나이아와 넥스테인이 궁금하신가요?
+							<br />
+							게스트님을 따뜻하게 안내해 드릴게요.
+						</p>
+						{phase === "missing-key" ? (
+							<p role="alert">시연 열쇠 없음</p>
+						) : phase === "error" ? (
+							<p role="alert">시연을 준비하지 못했어요. 다시 시도해 주세요.</p>
+						) : (
+							<output>
+								{phase === "preparing"
+									? "지나가 대화를 준비하고 있어요…"
+									: "들어가기를 누르면 음성 안내가 시작됩니다."}
+							</output>
+						)}
+						<div className="kiosk-entry__actions">
+							{phase === "error" ? (
+								<button
+									type="button"
+									onClick={() => {
+										setPhase("preparing");
+										preparation.current = prepare();
+										void preparation.current.then(setPhase);
+									}}
+								>
+									다시 시도
+								</button>
+							) : (
+								<button
+									type="button"
+									disabled={phase !== "ready" || resetting}
+									onClick={() => {
+										if (accepted.current) return;
+										accepted.current = true;
+										unlockAudioContext();
+										const enterNow = () => {
+											recordKioskVisitActivity();
+											requestKioskGreeting();
+											setEntered(true);
+										};
+										if (isKioskVisitExpired()) {
+											void cleanupExpiredPreviousVisit().finally(enterNow);
+											return;
+										}
+										enterNow();
+									}}
+								>
+									들어가기
+								</button>
+							)}
+							<button
+								className="kiosk-entry__reset"
+								type="button"
+								disabled={phase !== "ready" || resetting}
+								onClick={async () => {
+									if (resetPending.current) return;
+									resetPending.current = true;
+									setResetting(true);
+									setResetFailed(false);
+									try {
+										await resetKioskVisit({
+											cancel: () => undefined,
+											resetMemory: resetKioskMemory,
+											newConversation: () =>
+												useChatStore.getState().newConversation(),
+											reload: () => window.location.reload(),
+										});
+									} catch {
+										setResetFailed(true);
+										setResetting(false);
+										resetPending.current = false;
+									}
+								}}
+							>
+								처음으로
+							</button>
+						</div>
+					</>
 				)}
-				<div className="kiosk-entry__actions">
-					{phase === "error" ? (
-						<button
-							type="button"
-							onClick={() => {
-								setPhase("preparing");
-								preparation.current = prepare();
-								void preparation.current.then(setPhase);
-							}}
-						>
-							다시 시도
-						</button>
-					) : (
-						<button
-							type="button"
-							disabled={phase !== "ready" || resetting}
-							onClick={() => {
-								if (accepted.current) return;
-								accepted.current = true;
-								unlockAudioContext();
-								const enterNow = () => {
-									recordKioskVisitActivity();
-									requestKioskGreeting();
-									setEntered(true);
-								};
-								if (isKioskVisitExpired()) {
-									void cleanupExpiredPreviousVisit().finally(enterNow);
-									return;
-								}
-								enterNow();
-							}}
-						>
-							들어가기
-						</button>
-					)}
-					<button
-						className="kiosk-entry__reset"
-						type="button"
-						disabled={phase !== "ready" || resetting}
-						onClick={async () => {
-							if (resetPending.current) return;
-							resetPending.current = true;
-							setResetting(true);
-							setResetFailed(false);
-							try {
-								await resetKioskVisit({
-									cancel: () => undefined,
-									resetMemory: resetKioskMemory,
-									newConversation: () =>
-										useChatStore.getState().newConversation(),
-									reload: () => window.location.reload(),
-								});
-							} catch {
-								setResetFailed(true);
-								setResetting(false);
-								resetPending.current = false;
-							}
-						}}
-					>
-						처음으로
-					</button>
-				</div>
 				{resetting && <p role="status">처음 화면으로 돌아가고 있어요…</p>}
 				{resetFailed && (
 					<p role="alert">

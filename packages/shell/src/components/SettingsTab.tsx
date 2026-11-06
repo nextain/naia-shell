@@ -70,6 +70,10 @@ import {
 	subscribeWebStoragePersistState,
 } from "../lib/web-runtime/web-storage-persist";
 import { getWebModelStatus } from "../lib/web-runtime/web-model-status";
+import {
+	KIOSK_DEMO_ENABLE_TOOLS,
+	KIOSK_DEMO_THINKING_LEVEL,
+} from "../lib/config-seed";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	WEB_LLM_MODEL_IDS,
@@ -1096,7 +1100,9 @@ export function SettingsTab() {
 	const [speechStyle, setSpeechStyle] = useState(
 		existing?.speechStyle ?? "casual",
 	);
-	const [enableTools, setEnableTools] = useState(existing?.enableTools ?? true);
+	const [enableTools, setEnableTools] = useState(
+		isKioskDemo() ? KIOSK_DEMO_ENABLE_TOOLS : (existing?.enableTools ?? true),
+	);
 	// #502 (FR-ENV-ATTENTION.4): 작업 표면 인지는 사용자가 직접 고른다.
 	// 설정 파일에만 있고 화면에 없으면 "사용자에게 옵셔널하게"가 아니다.
 	const [environmentAwareness, setEnvironmentAwareness] =
@@ -1104,7 +1110,9 @@ export function SettingsTab() {
 	const [environmentTerminalInput, setEnvironmentTerminalInput] = useState(
 		existing?.environmentTerminalInput === true,
 	);
-	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() => resolveThinkingLevel(existing));
+	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
+		isKioskDemo() ? KIOSK_DEMO_THINKING_LEVEL : resolveThinkingLevel(existing),
+	);
 	const workspaceRoot = existing?.workspaceRoot || getAdkPath() || "";
 	const [voice, setVoice] = useState(
 		existing?.voice ?? getDefaultVoiceForAvatar(existing?.vrmModel),
@@ -3275,6 +3283,9 @@ export function SettingsTab() {
 	const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "high", "xhigh"];
 
 	function handleThinkingChange(level: ThinkingLevel) {
+		if (isKioskDemo()) {
+			return;
+		}
 		setThinkingLevel(level);
 		const cfg = loadConfig();
 		const main = cfg ? readConfiguredLlmRoles(cfg).main : undefined;
@@ -6662,145 +6673,169 @@ export function SettingsTab() {
 					)}
 
 					{/* LLM options: tools + thinking (moved from general tab) */}
-					<div className="settings-field settings-toggle-row">
+					<div
+						className={
+							isKioskDemo()
+								? "settings-field"
+								: "settings-field settings-toggle-row"
+						}
+					>
 						<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
-						<input
-							id="tools-toggle"
-							type="checkbox"
-							checked={enableTools}
-							onChange={(e) => {
-								setEnableTools(e.target.checked);
-								persistConfig({ enableTools: e.target.checked });
-							}}
-						/>
+						{isKioskDemo() ? (
+							<div id="tools-toggle" data-testid="tools-single">
+								{KIOSK_DEMO_ENABLE_TOOLS
+									? t("settings.thinkingLevelOn")
+									: t("settings.thinkingLevelOff")}
+							</div>
+						) : (
+							<input
+								id="tools-toggle"
+								type="checkbox"
+								checked={enableTools}
+								onChange={(e) => {
+									setEnableTools(e.target.checked);
+									persistConfig({ enableTools: e.target.checked });
+								}}
+							/>
+						)}
 					</div>
 					{!isWebMode() && enableTools && <DevicePairingSection />}
 					<div className="settings-field" data-testid="thinking-level-section">
 						<label id="thinking-level-label">
 							{t("settings.thinkingLevel")}
 						</label>
-						<div
-							role="radiogroup"
-							aria-labelledby="thinking-level-label"
-							style={{
-								display: "flex",
-								gap: "4px",
-								width: "100%",
-								marginTop: "4px",
-							}}
-						>
-							{isWebMode() && provider === "webllm"
-								? (["off", "on"] as const).map((webStage) => {
-										const isOff = webStage === "off";
-										const active = isOff
-											? thinkingLevel === "off"
-											: thinkingLevel !== "off";
-										const label = isOff
-											? t("settings.thinkingLevelOff")
-											: t("settings.thinkingLevelOn");
-										const targetLevel: ThinkingLevel = isOff ? "off" : "high";
-										return (
-											<button
-												key={webStage}
-												type="button"
-												role="radio"
-												aria-checked={active}
-												tabIndex={active ? 0 : -1}
-												data-testid={`thinking-level-${webStage}`}
-												onClick={() => handleThinkingChange(targetLevel)}
-												onKeyDown={(e) => {
-													if (
-														e.key === "ArrowRight" ||
-														e.key === "ArrowDown" ||
-														e.key === "ArrowLeft" ||
-														e.key === "ArrowUp"
-													) {
-														e.preventDefault();
-														const nextStage = isOff ? "on" : "off";
-														handleThinkingChange(isOff ? "high" : "off");
-														const parent = e.currentTarget.parentElement;
-														parent
-															?.querySelector<HTMLButtonElement>(
-																`[data-testid="thinking-level-${nextStage}"]`,
-															)
-															?.focus();
-													}
-												}}
-												style={{
-													flex: "1 1 0",
-													minWidth: 0,
-													padding: "6px 8px",
-													borderRadius: "4px",
-													border: active
-														? "1px solid var(--accent, #2563eb)"
-														: "1px solid var(--border-color, #e2e8f0)",
-													backgroundColor: active
-														? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
-														: "var(--bg-surface, var(--espresso, #ffffff))",
-													color: active
-														? "var(--accent, #2563eb)"
-														: "var(--text-primary, var(--cream, #0f172a))",
-													fontWeight: active ? 600 : 400,
-													fontSize: "13px",
-													cursor: "pointer",
-													textAlign: "center",
-													whiteSpace: "nowrap",
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-													transition: "all 0.15s ease",
-												}}
-											>
-												{label}
-											</button>
-										);
-									})
-								: THINKING_LEVELS.map((level) => {
-										const active = thinkingLevel === level;
-										const label =
-											level === "off"
+						{isKioskDemo() ? (
+							<div
+								id="thinking-level-select"
+								data-testid="thinking-level-single"
+								aria-labelledby="thinking-level-label"
+							>
+								{t("settings.thinkingLevelLow")}
+							</div>
+						) : (
+							<div
+								role="radiogroup"
+								aria-labelledby="thinking-level-label"
+								style={{
+									display: "flex",
+									gap: "4px",
+									width: "100%",
+									marginTop: "4px",
+								}}
+							>
+								{isWebMode() && provider === "webllm"
+									? (["off", "on"] as const).map((webStage) => {
+											const isOff = webStage === "off";
+											const active = isOff
+												? thinkingLevel === "off"
+												: thinkingLevel !== "off";
+											const label = isOff
 												? t("settings.thinkingLevelOff")
-												: level === "low"
-													? t("settings.thinkingLevelLow")
-													: level === "xhigh" ? "xhigh" : t("settings.thinkingLevelHigh");
-										return (
-											<button
-												key={level}
-												type="button"
-												role="radio"
-												aria-checked={active}
-												tabIndex={active ? 0 : -1}
-												data-testid={`thinking-level-${level}`}
-												onClick={() => handleThinkingChange(level)}
-												onKeyDown={(e) => handleThinkingKeyDown(e, level)}
-												style={{
-													flex: "1 1 0",
-													minWidth: 0,
-													padding: "6px 8px",
-													borderRadius: "4px",
-													border: active
-														? "1px solid var(--accent, #2563eb)"
-														: "1px solid var(--border-color, #e2e8f0)",
-													backgroundColor: active
-														? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
-														: "var(--bg-surface, var(--espresso, #ffffff))",
-													color: active
-														? "var(--accent, #2563eb)"
-														: "var(--text-primary, var(--cream, #0f172a))",
-													fontWeight: active ? 600 : 400,
-													fontSize: "13px",
-													cursor: "pointer",
-													textAlign: "center",
-													whiteSpace: "nowrap",
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-													transition: "all 0.15s ease",
-												}}
-											>
-												{label}
-											</button>
-										);
-									})}
-						</div>
+												: t("settings.thinkingLevelOn");
+											const targetLevel: ThinkingLevel = isOff ? "off" : "high";
+											return (
+												<button
+													key={webStage}
+													type="button"
+													role="radio"
+													aria-checked={active}
+													tabIndex={active ? 0 : -1}
+													data-testid={`thinking-level-${webStage}`}
+													onClick={() => handleThinkingChange(targetLevel)}
+													onKeyDown={(e) => {
+														if (
+															e.key === "ArrowRight" ||
+															e.key === "ArrowDown" ||
+															e.key === "ArrowLeft" ||
+															e.key === "ArrowUp"
+														) {
+															e.preventDefault();
+															const nextStage = isOff ? "on" : "off";
+															handleThinkingChange(isOff ? "high" : "off");
+															const parent = e.currentTarget.parentElement;
+															parent
+																?.querySelector<HTMLButtonElement>(
+																	`[data-testid="thinking-level-${nextStage}"]`,
+																)
+																?.focus();
+														}
+													}}
+													style={{
+														flex: "1 1 0",
+														minWidth: 0,
+														padding: "6px 8px",
+														borderRadius: "4px",
+														border: active
+															? "1px solid var(--accent, #2563eb)"
+															: "1px solid var(--border-color, #e2e8f0)",
+														backgroundColor: active
+															? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+															: "var(--bg-surface, var(--espresso, #ffffff))",
+														color: active
+															? "var(--accent, #2563eb)"
+															: "var(--text-primary, var(--cream, #0f172a))",
+														fontWeight: active ? 600 : 400,
+														fontSize: "13px",
+														cursor: "pointer",
+														textAlign: "center",
+														whiteSpace: "nowrap",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														transition: "all 0.15s ease",
+													}}
+												>
+													{label}
+												</button>
+											);
+										})
+									: THINKING_LEVELS.map((level) => {
+											const active = thinkingLevel === level;
+											const label =
+												level === "off"
+													? t("settings.thinkingLevelOff")
+													: level === "low"
+														? t("settings.thinkingLevelLow")
+														: level === "xhigh" ? "xhigh" : t("settings.thinkingLevelHigh");
+											return (
+												<button
+													key={level}
+													type="button"
+													role="radio"
+													aria-checked={active}
+													tabIndex={active ? 0 : -1}
+													data-testid={`thinking-level-${level}`}
+													onClick={() => handleThinkingChange(level)}
+													onKeyDown={(e) => handleThinkingKeyDown(e, level)}
+													style={{
+														flex: "1 1 0",
+														minWidth: 0,
+														padding: "6px 8px",
+														borderRadius: "4px",
+														border: active
+															? "1px solid var(--accent, #2563eb)"
+															: "1px solid var(--border-color, #e2e8f0)",
+														backgroundColor: active
+															? "var(--accent-bg, rgba(37, 99, 235, 0.12))"
+															: "var(--bg-surface, var(--espresso, #ffffff))",
+														color: active
+															? "var(--accent, #2563eb)"
+															: "var(--text-primary, var(--cream, #0f172a))",
+														fontWeight: active ? 600 : 400,
+														fontSize: "13px",
+														cursor: "pointer",
+														textAlign: "center",
+														whiteSpace: "nowrap",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														transition: "all 0.15s ease",
+													}}
+												>
+													{label}
+												</button>
+											);
+										})}
+							</div>
+						)}
 						<div className="settings-hint" style={{ marginTop: "4px" }}>
 							{t("settings.thinkingLevelHint")}
 						</div>

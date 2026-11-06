@@ -1,15 +1,23 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveTtsVoiceId } from "../../components/chat-voice-utils";
-import { loadConfig, saveConfig } from "../config";
+import {
+	loadConfig,
+	mergeBootConfig,
+	resolveThinkingLevel,
+	saveConfig,
+} from "../config";
 import {
 	DEFAULT_SHELL_NAIA_WIDTH,
+	KIOSK_DEMO_ENABLE_TOOLS,
 	KIOSK_DEMO_LLM_MODEL,
 	KIOSK_DEMO_NVA_MODEL,
+	KIOSK_DEMO_THINKING_LEVEL,
 	KIOSK_DEMO_TTS_HOST,
 	KIOSK_DEMO_TTS_PROVIDER,
 	KIOSK_DEMO_TTS_VOICE,
 	KIOSK_SHELL_NAIA_WIDTH,
+	applyKioskDemoMainModel,
 	buildKioskDemoConfigSeed,
 	resolveInitialShellChatLayout,
 	resolveKioskDemoMainModel,
@@ -225,10 +233,21 @@ describe("S3 kiosk isolation", () => {
 		const served = (keys: string[]) =>
 			vi.fn(async () => new Response(JSON.stringify(keys.map((model_key) => ({ model_key, capabilities: ["llm"], operational_status: "live" })))));
 		expect(KIOSK_DEMO_LLM_MODEL).toBe("gpt-5.6-luna");
+		expect(KIOSK_DEMO_THINKING_LEVEL).toBe("low");
+		expect(KIOSK_DEMO_ENABLE_TOOLS).toBe(true);
 		expect(buildKioskDemoConfigSeed()).toMatchObject({
 			provider: "nextain",
 			model: "gpt-5.6-luna",
-			llmRoles: { main: { provider: "nextain", model: "gpt-5.6-luna" } },
+			enableTools: true,
+			thinkingLevel: "low",
+			enableThinking: true,
+			llmRoles: {
+				main: {
+					provider: "nextain",
+					model: "gpt-5.6-luna",
+					thinkingLevel: "low",
+				},
+			},
 		});
 
 		// Gateway serves both terra and luna -> stays on gpt-5.6-luna
@@ -443,29 +462,148 @@ describe("S3 kiosk isolation", () => {
 			provider: "nextain",
 			model: "gpt-6.1-terra",
 			apiKey: "",
-			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
-		});
+			enableTools: false,
+			thinkingLevel: "xhigh",
+			enableThinking: false,
+			llmRoles: {
+				main: {
+					provider: "nextain",
+					model: "gpt-6.1-terra",
+					thinkingLevel: "xhigh",
+				},
+			},
+			mainModelThinkingLevels: {
+				"nextain:gpt-6.1-terra": "xhigh",
+				"nextain:gpt-5.6-luna": "xhigh",
+			},
+		} as Parameters<typeof saveConfig>[0]);
 		const savedTerra = JSON.parse(localStorage.getItem("naia-config")!);
 		expect(savedTerra.provider).toBe("nextain");
 		expect(savedTerra.model).toBe("gpt-5.6-luna");
+		expect(savedTerra.enableTools).toBe(true);
+		expect(savedTerra.thinkingLevel).toBe("low");
+		expect(savedTerra.enableThinking).toBe(true);
+		expect(savedTerra.mainModelThinkingLevels).toBeUndefined();
 		expect(savedTerra.llmRoles.main).toMatchObject({
 			provider: "nextain",
 			model: "gpt-5.6-luna",
+			thinkingLevel: "low",
 		});
 
-		// Kiosk ON: saved other provider (codex) -> overridden to nextain + gpt-5.6-luna
+		// Kiosk ON: polluted localStorage (xhigh + enableTools:false) reloaded via loadConfig / mergeBootConfig / resolveThinkingLevel stays fixed to low + tools:true
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
 				provider: "codex",
 				model: "gpt-5.6-sol",
 				apiKey: "",
-				llmRoles: { main: { provider: "codex", model: "gpt-5.6-sol" } },
+				enableTools: false,
+				thinkingLevel: "xhigh",
+				enableThinking: false,
+				llmRoles: {
+					main: {
+						provider: "codex",
+						model: "gpt-5.6-sol",
+						thinkingLevel: "xhigh",
+					},
+				},
+				mainModelThinkingLevels: {
+					"nextain:gpt-5.6-luna": "xhigh",
+					"codex:gpt-5.6-sol": "xhigh",
+				},
 			}),
 		);
 		const loadedOther = loadConfig()!;
 		expect(loadedOther.provider).toBe("nextain");
 		expect(loadedOther.model).toBe("gpt-5.6-luna");
+		expect(loadedOther.enableTools).toBe(true);
+		expect(loadedOther.thinkingLevel).toBe("low");
+		expect(loadedOther.enableThinking).toBe(true);
+		expect(
+			(loadedOther as unknown as Record<string, unknown>)
+				.mainModelThinkingLevels,
+		).toBeUndefined();
+		expect(loadedOther.llmRoles?.main?.thinkingLevel).toBe("low");
+		expect(resolveThinkingLevel(loadedOther)).toBe("low");
+		expect(
+			resolveThinkingLevel({
+				thinkingLevel: "xhigh",
+				enableThinking: false,
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-5.6-luna",
+						thinkingLevel: "xhigh",
+					},
+				},
+			}),
+		).toBe("low");
+
+		const mergedPolluted = mergeBootConfig(
+			{
+				provider: "nextain",
+				model: "gpt-6.1-terra",
+				apiKey: "",
+				enableTools: false,
+				thinkingLevel: "xhigh",
+				enableThinking: false,
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-6.1-terra",
+						thinkingLevel: "xhigh",
+					},
+				},
+				mainModelThinkingLevels: { "nextain:gpt-5.6-luna": "xhigh" },
+			},
+			{
+				enableTools: false,
+				thinkingLevel: "xhigh",
+				enableThinking: false,
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-6.1-terra",
+						thinkingLevel: "xhigh",
+					},
+				},
+				mainModelThinkingLevels: { "nextain:gpt-5.6-luna": "xhigh" },
+			},
+			null,
+		)! as ReturnType<typeof loadConfig> & Record<string, unknown>;
+		expect(mergedPolluted.enableTools).toBe(true);
+		expect(mergedPolluted.thinkingLevel).toBe("low");
+		expect(mergedPolluted.enableThinking).toBe(true);
+		expect(mergedPolluted.llmRoles?.main?.thinkingLevel).toBe("low");
+		expect(mergedPolluted.mainModelThinkingLevels).toBeUndefined();
+		expect(resolveThinkingLevel(mergedPolluted)).toBe("low");
+		expect(
+			applyKioskDemoMainModel({
+				enableTools: false,
+				thinkingLevel: "xhigh",
+				enableThinking: false,
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-6.1-terra",
+						thinkingLevel: "xhigh",
+					},
+				},
+			}),
+		).toMatchObject({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			enableTools: true,
+			thinkingLevel: "low",
+			enableThinking: true,
+			llmRoles: {
+				main: {
+					provider: "nextain",
+					model: "gpt-5.6-luna",
+					thinkingLevel: "low",
+				},
+			},
+		});
 		expect(effectiveMainRole(loadedOther)).toEqual({
 			provider: "nextain",
 			model: "gpt-5.6-luna",
@@ -493,17 +631,28 @@ describe("S3 kiosk isolation", () => {
 			to: "gpt-5.6-luna",
 		});
 
-		// Ordinary Web Mode (kiosk OFF): preserves saved terra and other providers
+		// Ordinary Web Mode (kiosk OFF): preserves saved terra, thinkingLevel xhigh, and enableTools false
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
 		saveConfig({
 			provider: "nextain",
 			model: "gpt-6.1-terra",
 			apiKey: "",
-			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+			enableTools: false,
+			thinkingLevel: "xhigh",
+			llmRoles: {
+				main: {
+					provider: "nextain",
+					model: "gpt-6.1-terra",
+					thinkingLevel: "xhigh",
+				},
+			},
 		});
 		const webTerra = loadConfig()!;
 		expect(webTerra.provider).toBe("nextain");
 		expect(webTerra.model).toBe("gpt-6.1-terra");
+		expect(webTerra.enableTools).toBe(false);
+		expect(webTerra.llmRoles?.main?.thinkingLevel).toBe("xhigh");
+		expect(resolveThinkingLevel(webTerra)).toBe("xhigh");
 		expect(effectiveMainRole(webTerra)).toEqual({
 			provider: "nextain",
 			model: "gpt-6.1-terra",

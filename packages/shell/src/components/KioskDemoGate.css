@@ -20,6 +20,10 @@
 .kiosk-entry__card p {
 	line-height: 1.7;
 }
+.kiosk-entry__unavailable p {
+	font-size: 18px;
+	margin: 10px 0;
+}
 .kiosk-entry__actions {
 	display: flex;
 	flex-wrap: wrap;

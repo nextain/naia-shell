@@ -186,13 +186,14 @@ it("entry reset waits, blocks duplicates and offers a safe retry on failure", as
 it("shows unavailable notice when gateway rejects key or has no credits", async () => {
 	mocks.verifyAuth.mockResolvedValueOnce({ ok: false, reason: "unavailable" });
 	mount();
-	expect(await screen.findByRole("alert")).toHaveProperty(
-		"textContent",
-		"지금은 시연을 쓸 수 없습니다",
-	);
-	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
-		true,
-	);
+	const alert = await screen.findByRole("alert");
+	expect(
+		screen.getByRole("heading", { name: "지금은 시연을 잠시 쉬고 있어요" }),
+	).toBeTruthy();
+	expect(alert.textContent).toContain("오늘 준비한 시연 사용량을 다 썼어요.");
+	expect(alert.textContent).toContain("부스 직원에게 말씀해 주세요.");
+	expect(screen.queryByText("지나와 이야기해 보세요")).toBeNull();
+	expect(screen.queryByText("들어가기")).toBeNull();
 	expect(screen.queryByText("conversation")).toBeNull();
 	expect(mocks.boot).not.toHaveBeenCalled();
 });
@@ -237,12 +238,13 @@ it("transitions back to unavailable screen when credits run out mid-demo", async
 	expect(screen.getByText("conversation")).toBeTruthy();
 
 	notifyKioskDemoUnavailable();
-	expect(await screen.findByRole("alert")).toHaveProperty(
-		"textContent",
-		"지금은 시연을 쓸 수 없습니다",
-	);
+	const alert = await screen.findByRole("alert");
+	expect(
+		screen.getByRole("heading", { name: "지금은 시연을 잠시 쉬고 있어요" }),
+	).toBeTruthy();
+	expect(alert.textContent).toContain("오늘 준비한 시연 사용량을 다 썼어요.");
+	expect(alert.textContent).toContain("부스 직원에게 말씀해 주세요.");
+	expect(screen.queryByText("지나와 이야기해 보세요")).toBeNull();
+	expect(screen.queryByText("들어가기")).toBeNull();
 	expect(screen.queryByText("conversation")).toBeNull();
-	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
-		true,
-	);
 });

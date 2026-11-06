@@ -2629,7 +2629,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 
 시연판(`isKioskDemo() === true`)의 적대 검수 지적 사항(1·3·4·5·6·7·8·10·11·12·13번, S5 소관 2·9번 제외)을 해결한다:
 1. **WebLLM 비노출(1번)**: 시연판 깃발 ON일 때 WebLLM 공급자를 등록하지 않고 설정 목록·자동 설치·웹 워커 로컬 공급자 연결에서도 숨긴다. 일반 웹판(OFF)은 기존처럼 WebLLM이 등록·표시된다.
-2. **게이트웨이 열쇠·크레딧 사전 확인(3번)**: 첫 화면에서 시연 전용 열쇠로 게이트웨이 잔액(`GET /v1/profile/balance`)을 한 번 확인해 열쇠가 틀리거나 크레딧이 0 이하면 `"지금은 시연을 쓸 수 없습니다"` 안내를 띄우고 입장을 막는다.
+2. **게이트웨이 열쇠·크레딧 사전 확인(3번)**: 첫 화면에서 시연 전용 열쇠로 게이트웨이 잔액(`GET /v1/profile/balance`)을 한 번 확인해 열쇠가 틀리거나 크레딧이 0 이하면 소개 본문과 흐린 `"들어가기"` 단추를 숨기고 큰 제목 `"지금은 시연을 잠시 쉬고 있어요"`·이유 `"오늘 준비한 시연 사용량을 다 썼어요."`·다음 행동 `"부스 직원에게 말씀해 주세요."` 안내를 띄워 입장을 막는다.
 3. **지식 원고 출처 분리·`safety:"block"`·기대 답 검증·민감 수치 정규식 확장(4·5·6번)**: 번들에 포함되는 `knowledge/*.md` 20개에서 사내 경로·이름이 적힌 `### 근거 파일` 절을 번들 밖 문서(`docs/progress/web-ir-kiosk-824/knowledge-sources.md`)로 옮기고, `compile()`에 `safety: "block"`을 넘겨 안전 경고를 버리지 않으며, `kb.json`과 빌드 산출물(`dist`)에 `/home/`·`minho`·`nextain-adk`가 없음을 검증한다. `eval-questions.json` 20문항의 `expectedPoints`를 `service.ask()` 및 `verify()`로 대조하고 한글 금액·지분 %·밸류에이션·투자금·순이익을 민감 수치 검사 정규식으로 차단한다.
 4. **‘처음으로’ OPFS 대화 기록 삭제·무응답 방문자 격리·지나 답변 기억 저장(7·8번)**: ‘처음으로’ 초기화 시 OPFS 기억과 함께 `conversations-guest/chat-*.jsonl` 대화 파일까지 삭제하되 다음 방문자도 써야 하는 시연 열쇠(`naia-remote-key`)는 유지한다. 앞 방문자가 ‘처음으로’를 누르지 않고 떠나 무응답 기준 시간(`KIOSK_VISIT_IDLE_TIMEOUT_MS`, 기본 3분)이 지나면 자동 초기화하거나 다음 ‘들어가기’ 때 방문을 초기화해 새 방문으로 시작하고, 활성 방문 중 새로고침(F5) 시에는 인사 메시지가 기존 OPFS 대화 복원을 가리지 않도록 복원한다. `memory.ts`의 `save(userText, assistantText)`는 지나 답변도 assistant 에피소드로 저장한다(사용자 사실 승격은 하지 않음).
 5. **지나 실사 클립 닫힌 배경 영역 투명화 및 대화 화면 크레딧/토큰 줄 숨김(12·13번)**: `studio_nva_matting.py` 후처리에서 닫힌 투명 영역 픽셀이 원본 단색 배경색과 가까우면 구멍으로 메우지 않고 투명으로 유지해 다리 사이·왼팔과 몸 사이의 남색 잔상을 제거한다(`nva_matting_hole_measure.py` 몸 안 구멍 0건 + 닫힌 영역 불투명 배경 픽셀 프레임 0건). 또한 시연판 깃발 ON일 때 대화 답변 아래 `"약 0 크레딧 · 0 토큰"` 사용량 줄을 숨긴다(일반 웹판 OFF에서는 그대로 표시).
@@ -2646,7 +2646,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 | 게이트웨이 값 | luna·terra 요청이 `reasoning_effort: high` 로 나감(운영 게이트웨이 허용 값) | `openai-compat-provider.test.ts` |
 | 기본 모델 빠짐 | 키오스크 시연 주 모델은 저장값이 없거나 게이트웨이 기본이 바뀌어도 `gpt-5.6-luna` 로 고정하고, 게이트웨이 목록에 `gpt-5.6-luna` 가 없을 때만 살아 있는 대체 모델(`deepseek-v4-pro`→`deepseek-v4-flash` 등)로 내림, 목록을 못 받으면 `gpt-5.6-luna` 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx` |
 | 나이아 서비스 소개 질의 | `"나이아는 어떤 서비스인가요?"`·`"나이아란?"` 질의가 `abstained: false`로 `naia.md` 문단을 반환하고 페르소나에 재검색 지침 포함 | `knowledge.test.ts`, `kiosk-demo.test.ts` |
-| 오류 | 열쇠 무효·크레딧 소진 시 `"지금은 시연을 쓸 수 없습니다"` 표시, 한글 금액·지분 %·밸류에이션·투자금·순이익 및 사내 경로 포함 시 차단 | `KioskDemoGate.test.tsx`, `knowledge.test.ts`, `kiosk-demo.spec.ts` |
+| 오류 | 열쇠 무효·크레딧 소진 시 `"지금은 시연을 잠시 쉬고 있어요"`·`"오늘 준비한 시연 사용량을 다 썼어요."`·`"부스 직원에게 말씀해 주세요."` 표시 및 `"들어가기"` 단추 숨김, 한글 금액·지분 %·밸류에이션·투자금·순이익 및 사내 경로 포함 시 차단 | `KioskDemoGate.test.tsx`, `knowledge.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 360px 폭에서 첫 화면·오류 안내·대화 화면 레이아웃 및 키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | 일반 웹판(OFF)에서 WebLLM 등록·표시 유지, 대화 답변 아래 사용량 줄 표시 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx` |
 
@@ -2670,13 +2670,13 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 
 | 상태 | 검증 | 시험 |
 |---|---|---|
-| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃·기억 내보내기 숨김, 키오스크 주 모델 `gpt-5.6-luna` 단일 강제(`resolveKioskDemoMainModel`/`applyKioskDemoMainModel`)·두뇌 탭 공급자/모델 읽기 전용 잠금 및 기본 `Naia Cloud TTS`(`"nextain"`) 시드·프로필/음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts`, `ChatArea.test.tsx` |
+| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃·기억 내보내기 숨김, 키오스크 주 모델 `gpt-5.6-luna`·생각 세기 `"low"`·도구 사용 `true` 단일 강제(`resolveKioskDemoMainModel`/`applyKioskDemoMainModel`)·두뇌 탭 공급자/모델/생각 세기/도구 사용 읽기 전용 잠금 및 기본 `Naia Cloud TTS`(`"nextain"`) 시드·프로필/음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts`, `ChatArea.test.tsx` |
 | 빈 목록 | 초기 OPFS에서도 탐색기에 `kiosk-demo/knowledge/*.md` 시연 파일만 표시되고 내부 규칙 파일 비노출 | `web-workspace-path.test.tsx`, `knowledge.test.ts` |
 | 진행 | 도구 실행 중 `"자료 찾는 중"` 표시, `"부드러운 움직임"` 재생 중 크기·발 위치 고정 및 부드러운 스웨이 유지 | `ToolActivity.test.tsx`, `prebaked-renderer.test.ts` |
 | 성공 | 설정 저장 시 `secure_store_set` 미호출·무오류, ‘처음으로’·3분 무응답 리셋 시 `localStorage naia-config` 및 OPFS 설정이 키오스크 시드(페르소나·아바타·음성·두뇌)로 복원, 지식 탭에서 21개 원고 마크다운 렌더링 열람, 파일 열기 시 탐색기 폭 확장·한 줄 파일 이름·도구줄 보존, 지나 클립 머리 구멍·팔/다리 검은 영역 0 및 크기/발 위치 일치 | `SettingsTab.test.tsx`, `KnowledgeSettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx` |
-| 오류 | 내부 규칙 경로(`.agents/*`, `AGENTS.md` 등) 직접 읽기 요청 시 차단, 게이트웨이 TTS 실패 시 브라우저 음성 폴백, 시연 대화 중 크레딧 소진 시 일반 실패 버블+재시도 대신 `"지금은 시연을 쓸 수 없습니다"` 게이트 화면으로 전환 | `web-workspace-path.test.tsx`, `sentence-pipeline.test.ts`, `ChatArea.test.tsx`, `KioskDemoGate.test.tsx` |
-| 좁은 폭 | `1920×1080`, `1280×720`, `360px` 폭에서 탐색기·지식 탭·대화창·잠긴 두뇌 탭 레이아웃 및 키보드/ARIA 동작 유지 | `kiosk-demo.spec.ts`, 로컬 빌드판 시각 검증(`/home/nextain/work/codex-runs/kiosk-r3/cap-r5/`) |
-| 깃발 꺼짐 | `isKioskDemo() === false`에서 저장된 공급자·모델 그대로 전송·유지, 기존 도구 펼침·로그아웃 단추·일반 웹판 기억 내보내기 단추(`.voice-preview-btn`)·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.test.ts` |
+| 오류 | 내부 규칙 경로(`.agents/*`, `AGENTS.md` 등) 직접 읽기 요청 시 차단, 게이트웨이 TTS 실패 시 브라우저 음성 폴백, 시연 대화 중 크레딧 소진 시 일반 실패 버블+재시도 대신 `"지금은 시연을 잠시 쉬고 있어요"`·`"오늘 준비한 시연 사용량을 다 썼어요."`·`"부스 직원에게 말씀해 주세요."` 게이트 화면으로 전환(`"들어가기"` 숨김) | `web-workspace-path.test.tsx`, `sentence-pipeline.test.ts`, `ChatArea.test.tsx`, `KioskDemoGate.test.tsx` |
+| 좁은 폭 | `1920×1080`, `1280×720`, `360px` 폭에서 탐색기·지식 탭·대화창·잠긴 두뇌 탭 레이아웃 및 키보드/ARIA 동작 유지 | `kiosk-demo.spec.ts`, 로컬 빌드판 시각 검증(`/home/nextain/work/codex-runs/kiosk-r3/cap-r6/`) |
+| 깃발 꺼짐 | `isKioskDemo() === false`에서 저장된 공급자·모델·생각 세기·도구 설정 그대로 전송·유지, 기존 도구 펼침·로그아웃 단추·일반 웹판 기억 내보내기 단추(`.voice-preview-btn`)·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.test.ts` |
 
 
 

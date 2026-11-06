@@ -3408,14 +3408,27 @@ describe("ChatArea", () => {
 		localStorage.setItem("naia-remote-key", "test-kiosk-fixture-only");
 
 		try {
-			// 1. Saved gpt-6.1-terra -> sent request uses nextain + gpt-5.6-luna
+			// 1. Saved gpt-6.1-terra + polluted thinkingLevel xhigh + enableTools false -> sent request uses nextain + gpt-5.6-luna + thinking low + enableTools true
 			localStorage.setItem(
 				"naia-config",
 				JSON.stringify({
 					provider: "nextain",
 					model: "gpt-6.1-terra",
 					apiKey: "",
-					llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+					enableTools: false,
+					thinkingLevel: "xhigh",
+					enableThinking: false,
+					llmRoles: {
+						main: {
+							provider: "nextain",
+							model: "gpt-6.1-terra",
+							thinkingLevel: "xhigh",
+						},
+					},
+					mainModelThinkingLevels: {
+						"nextain:gpt-6.1-terra": "xhigh",
+						"nextain:gpt-5.6-luna": "xhigh",
+					},
 				}),
 			);
 			const { unmount } = render(<ChatArea />);
@@ -3425,9 +3438,12 @@ describe("ChatArea", () => {
 			await waitFor(() => expect(capturedRequests).toHaveLength(1));
 			expect(capturedRequests[0]?.provider?.provider).toBe("nextain");
 			expect(capturedRequests[0]?.provider?.model).toBe("gpt-5.6-luna");
+			expect(capturedRequests[0]?.thinking).toEqual({ level: "low" });
+			expect(capturedRequests[0]?.enableThinking).toBe(true);
+			expect(capturedRequests[0]?.enableTools).toBe(true);
 			unmount();
 
-			// 2. Saved other provider (codex) -> sent request uses nextain + gpt-5.6-luna
+			// 2. Saved other provider (codex) + polluted xhigh + enableTools false -> sent request uses nextain + gpt-5.6-luna + thinking low + enableTools true
 			capturedRequests.length = 0;
 			useChatStore.getState().newConversation();
 			localStorage.setItem(
@@ -3436,7 +3452,16 @@ describe("ChatArea", () => {
 					provider: "codex",
 					model: "gpt-5.6-sol",
 					apiKey: "",
-					llmRoles: { main: { provider: "codex", model: "gpt-5.6-sol" } },
+					enableTools: false,
+					thinkingLevel: "xhigh",
+					enableThinking: false,
+					llmRoles: {
+						main: {
+							provider: "codex",
+							model: "gpt-5.6-sol",
+							thinkingLevel: "xhigh",
+						},
+					},
 				}),
 			);
 			const unavailableEvents: Event[] = [];
@@ -3450,6 +3475,9 @@ describe("ChatArea", () => {
 				await waitFor(() => expect(capturedRequests).toHaveLength(1));
 				expect(capturedRequests[0]?.provider?.provider).toBe("nextain");
 				expect(capturedRequests[0]?.provider?.model).toBe("gpt-5.6-luna");
+				expect(capturedRequests[0]?.thinking).toEqual({ level: "low" });
+				expect(capturedRequests[0]?.enableThinking).toBe(true);
+				expect(capturedRequests[0]?.enableTools).toBe(true);
 
 				// 3. Credit exhaustion error chunk -> emits unavailable event and does not add failure retry bubble
 				act(() => {

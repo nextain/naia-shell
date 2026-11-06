@@ -5894,7 +5894,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(invokedCommands).not.toContain("read_local_binary");
 	});
 
-	it("locks #provider-select and #model-select as read-only in kiosk mode and shows WebLLM option in normal web mode", async () => {
+	it("locks #provider-select, #model-select, #tools-toggle, and #thinking-level-select as read-only in kiosk mode and shows WebLLM option in normal web mode", async () => {
 		mockInvoke.mockResolvedValue([]);
 		setWebAssetsModeForTests(true);
 		const { registerWebLlmProvider } = await import(
@@ -5914,9 +5914,33 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(
 			Array.from(normalSelect.options).map((o) => o.value),
 		).toContain("webllm");
+		const normalTools = document.getElementById(
+			"tools-toggle",
+		) as HTMLInputElement;
+		expect(normalTools.tagName).toBe("INPUT");
+		expect(normalTools.type).toBe("checkbox");
+		expect(screen.getByTestId("thinking-level-low")).toBeTruthy();
 		unmount();
 
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gpt-6.1-terra",
+				apiKey: "",
+				enableTools: false,
+				thinkingLevel: "xhigh",
+				enableThinking: false,
+				llmRoles: {
+					main: {
+						provider: "nextain",
+						model: "gpt-6.1-terra",
+						thinkingLevel: "xhigh",
+					},
+				},
+			}),
+		);
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
 		const kioskProvider = document.getElementById("provider-select")!;
@@ -5930,6 +5954,18 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		const kioskSmallModel = document.getElementById("small-model-select")!;
 		expect(kioskSmallModel.tagName).toBe("DIV");
 		expect(kioskSmallModel.getAttribute("data-testid")).toBe("small-model-single");
+		const kioskTools = document.getElementById("tools-toggle")!;
+		expect(kioskTools.tagName).toBe("DIV");
+		expect(kioskTools.getAttribute("data-testid")).toBe("tools-single");
+		expect(kioskTools.textContent).toMatch(/On|켬/);
+		const kioskThinking = document.getElementById("thinking-level-select")!;
+		expect(kioskThinking.tagName).toBe("DIV");
+		expect(kioskThinking.getAttribute("data-testid")).toBe(
+			"thinking-level-single",
+		);
+		expect(kioskThinking.textContent).toMatch(/low|낮음/i);
+		expect(screen.queryByTestId("thinking-level-low")).toBeNull();
+		expect(screen.queryByTestId("thinking-level-xhigh")).toBeNull();
 		unregisterLlmProvider("webllm");
 		vi.unstubAllEnvs();
 	});

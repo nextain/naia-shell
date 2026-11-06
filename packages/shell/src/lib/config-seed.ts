@@ -46,6 +46,8 @@ export function buildSeedShellConfig(
 
 export const KIOSK_DEMO_LLM_PROVIDER = "nextain" as const;
 export const KIOSK_DEMO_LLM_MODEL = "gpt-5.6-luna" as const;
+export const KIOSK_DEMO_THINKING_LEVEL = "low" as const;
+export const KIOSK_DEMO_ENABLE_TOOLS = true as const;
 export const KIOSK_DEMO_LLM_FALLBACK_MODELS = [
 	"deepseek-v4-pro",
 	"deepseek-v4-flash",
@@ -88,8 +90,9 @@ export function resolveKioskDemoMainModel(
 }
 
 /**
- * 키오스크 시연 판에서는 저장값(terra·다른 프로바이더 등)과 무관하게
- * 주 공급자("nextain")와 주 모델(resolveKioskDemoMainModel)을 한 곳에서 강제한다.
+ * 키오스크 시연 판에서는 저장값(terra·다른 프로바이더·생각 세기·도구 설정 등)과 무관하게
+ * 주 공급자("nextain"), 주 모델(resolveKioskDemoMainModel), 생각 세기(KIOSK_DEMO_THINKING_LEVEL = "low"),
+ * 도구 사용(KIOSK_DEMO_ENABLE_TOOLS = true)을 한 곳에서 강제한다.
  */
 export function applyKioskDemoMainModel<T extends Partial<AppConfig>>(
 	config: T,
@@ -102,19 +105,27 @@ export function applyKioskDemoMainModel<T extends Partial<AppConfig>>(
 			? config.llmRoles.main
 			: undefined;
 	const { inherit: _ignoredInherit, ...restMain } = currentMain ?? {};
-	return {
+	const next = {
 		...config,
 		provider: KIOSK_DEMO_LLM_PROVIDER,
 		model,
+		enableTools: KIOSK_DEMO_ENABLE_TOOLS,
+		thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+		enableThinking: (KIOSK_DEMO_THINKING_LEVEL as string) !== "off",
 		llmRoles: {
 			...config.llmRoles,
 			main: {
 				...restMain,
 				provider: KIOSK_DEMO_LLM_PROVIDER,
 				model,
+				thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
 			},
 		},
 	};
+	if ("mainModelThinkingLevels" in (next as Record<string, unknown>)) {
+		delete (next as Record<string, unknown>).mainModelThinkingLevels;
+	}
+	return next;
 }
 
 export function resolveShellAvatarSelection(
@@ -182,9 +193,16 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 		nvaModel: KIOSK_DEMO_NVA_MODEL,
 		provider: KIOSK_DEMO_LLM_PROVIDER,
 		model,
+		enableTools: KIOSK_DEMO_ENABLE_TOOLS,
+		thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+		enableThinking: (KIOSK_DEMO_THINKING_LEVEL as string) !== "off",
 		webAutoDefaultModel: false,
 		llmRoles: {
-			main: { provider: KIOSK_DEMO_LLM_PROVIDER, model },
+			main: {
+				provider: KIOSK_DEMO_LLM_PROVIDER,
+				model,
+				thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
+			},
 		},
 	});
 }

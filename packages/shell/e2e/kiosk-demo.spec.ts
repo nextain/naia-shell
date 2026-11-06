@@ -42,12 +42,18 @@ test("S3 gateway key rejected or exhausted credits shows unavailable notice", as
 		});
 	});
 	await page.goto("/");
-	await expect(page.getByRole("alert")).toHaveText(
-		"지금은 시연을 쓸 수 없습니다",
+	await expect(
+		page.getByRole("heading", { name: "지금은 시연을 잠시 쉬고 있어요" }),
+	).toBeVisible();
+	await expect(page.getByRole("alert")).toContainText(
+		"오늘 준비한 시연 사용량을 다 썼어요.",
+	);
+	await expect(page.getByRole("alert")).toContainText(
+		"부스 직원에게 말씀해 주세요.",
 	);
 	await expect(
 		page.getByRole("button", { name: "들어가기", exact: true }),
-	).toBeDisabled();
+	).toHaveCount(0);
 	await expect(page.locator(".chat-area")).toHaveCount(0);
 });
 

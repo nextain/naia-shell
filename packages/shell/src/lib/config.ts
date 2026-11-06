@@ -26,7 +26,10 @@ import {
 	isWebMode,
 	normalizeRetiredWebBackgroundInRecord,
 } from "./web-runtime/web-assets";
-import { applyKioskDemoMainModel } from "./config-seed";
+import {
+	KIOSK_DEMO_THINKING_LEVEL,
+	applyKioskDemoMainModel,
+} from "./config-seed";
 import { isKioskDemo } from "./kiosk-demo/flag";
 
 const STORAGE_KEY = "naia-config";
@@ -251,6 +254,7 @@ export type ThinkingLevel = "off" | "low" | "high" | "xhigh";
 export function resolveThinkingLevel(
 	config?: Partial<Pick<AppConfig, "thinkingLevel" | "enableThinking" | "llmRoles">> | null,
 ): ThinkingLevel {
+	if (isKioskDemo()) return KIOSK_DEMO_THINKING_LEVEL;
 	const roleLevel = config?.llmRoles?.main?.thinkingLevel;
 	if (roleLevel === "off" || roleLevel === "low" || roleLevel === "high" || roleLevel === "xhigh") return roleLevel;
 	if (
@@ -733,11 +737,10 @@ export function loadConfig(): AppConfig | null {
 			const isLinux = navigator.userAgent.includes("Linux");
 			config.sttProvider = isLinux ? "vosk" : "web-speech";
 		}
-		Object.assign(config, applyKioskDemoMainModel(config));
 		if (config.enableTools == null) {
 			config.enableTools = true;
 		}
-		return config;
+		return applyKioskDemoMainModel(config);
 	} catch {
 		return null;
 	}
