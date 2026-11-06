@@ -48,6 +48,8 @@ export const KIOSK_DEMO_LLM_PROVIDER = "nextain" as const;
 export const KIOSK_DEMO_LLM_MODEL = "gpt-5.6-luna" as const;
 export const KIOSK_DEMO_THINKING_LEVEL = "low" as const;
 export const KIOSK_DEMO_ENABLE_TOOLS = true as const;
+export const KIOSK_DEMO_ENVIRONMENT_AWARENESS = "off" as const;
+export const KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT = false as const;
 export const KIOSK_DEMO_LLM_FALLBACK_MODELS = [
 	"deepseek-v4-pro",
 	"deepseek-v4-flash",
@@ -90,9 +92,10 @@ export function resolveKioskDemoMainModel(
 }
 
 /**
- * 키오스크 시연 판에서는 저장값(terra·다른 프로바이더·생각 세기·도구 설정 등)과 무관하게
+ * 키오스크 시연 판에서는 저장값(terra·다른 프로바이더·생각 세기·도구·작업 표면 설정 등)과 무관하게
  * 주 공급자("nextain"), 주 모델(resolveKioskDemoMainModel), 생각 세기(KIOSK_DEMO_THINKING_LEVEL = "low"),
- * 도구 사용(KIOSK_DEMO_ENABLE_TOOLS = true)을 한 곳에서 강제한다.
+ * 도구 사용(KIOSK_DEMO_ENABLE_TOOLS = true), 작업 표면 인지(KIOSK_DEMO_ENVIRONMENT_AWARENESS = "off"),
+ * 터미널 직접 입력(KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT = false)을 한 곳에서 강제한다.
  */
 export function applyKioskDemoMainModel<T extends Partial<AppConfig>>(
 	config: T,
@@ -112,6 +115,8 @@ export function applyKioskDemoMainModel<T extends Partial<AppConfig>>(
 		enableTools: KIOSK_DEMO_ENABLE_TOOLS,
 		thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
 		enableThinking: (KIOSK_DEMO_THINKING_LEVEL as string) !== "off",
+		environmentAwareness: KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+		environmentTerminalInput: KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
 		llmRoles: {
 			...config.llmRoles,
 			main: {
@@ -196,6 +201,8 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 		enableTools: KIOSK_DEMO_ENABLE_TOOLS,
 		thinkingLevel: KIOSK_DEMO_THINKING_LEVEL,
 		enableThinking: (KIOSK_DEMO_THINKING_LEVEL as string) !== "off",
+		environmentAwareness: KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+		environmentTerminalInput: KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
 		webAutoDefaultModel: false,
 		llmRoles: {
 			main: {

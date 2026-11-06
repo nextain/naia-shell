@@ -57,6 +57,10 @@
 12. **적대 검수 r5 반영(3판 6회차)**:
     - `config-seed.ts`의 `KIOSK_DEMO_LLM_MODEL` 옆에 `KIOSK_DEMO_THINKING_LEVEL = "low"`와 `KIOSK_DEMO_ENABLE_TOOLS = true`(시드 기본값 그대로)를 정의하고 `applyKioskDemoMainModel()`과 `buildKioskDemoConfigSeed()`에서 생각 세기와 도구 사용을 한 곳으로 고정하며, `SettingsTab.tsx` 두뇌 탭의 생각 세기·도구 사용 컨트롤을 읽기 전용으로 잠급니다.
     - `KioskDemoGate.tsx` `unavailable` 상태에서 소개 본문과 흐린 `"들어가기"` 단추를 숨기고 큰 제목 `"지금은 시연을 잠시 쉬고 있어요"`·이유 `"오늘 준비한 시연 사용량을 다 썼어요."`·다음 행동 `"부스 직원에게 말씀해 주세요."` 안내를 표시합니다.
+13. **적대 검수 r6 반영(3판 7회차)**:
+    - `config-seed.ts`의 키오스크 상수 옆에 `KIOSK_DEMO_ENVIRONMENT_AWARENESS = "off"`와 `KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT = false`를 정의하고, `applyKioskDemoMainModel()`과 `buildKioskDemoConfigSeed()`에서 두 값을 함께 강제합니다.
+    - `SettingsTab.tsx` 두뇌 탭에서 `"작업 표면 인지"`(`#environment-awareness`)는 생각·도구와 같은 방식으로 읽기 전용 `div`(`data-testid="environment-awareness-single"`)로 표시하고, `"터미널에 직접 입력 허용"`(`#environment-terminal-input`) 칸은 키오스크에서 숨기며 상태 초기값 및 저장값도 고정 상수로 방어합니다.
+
 
 
 

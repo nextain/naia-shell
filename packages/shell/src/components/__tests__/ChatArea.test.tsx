@@ -3418,6 +3418,8 @@ describe("ChatArea", () => {
 					enableTools: false,
 					thinkingLevel: "xhigh",
 					enableThinking: false,
+					environmentAwareness: "always",
+					environmentTerminalInput: true,
 					llmRoles: {
 						main: {
 							provider: "nextain",
@@ -3455,6 +3457,8 @@ describe("ChatArea", () => {
 					enableTools: false,
 					thinkingLevel: "xhigh",
 					enableThinking: false,
+					environmentAwareness: "always",
+					environmentTerminalInput: true,
 					llmRoles: {
 						main: {
 							provider: "codex",

@@ -10,6 +10,8 @@ import {
 import {
 	DEFAULT_SHELL_NAIA_WIDTH,
 	KIOSK_DEMO_ENABLE_TOOLS,
+	KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+	KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
 	KIOSK_DEMO_LLM_MODEL,
 	KIOSK_DEMO_NVA_MODEL,
 	KIOSK_DEMO_THINKING_LEVEL,
@@ -235,12 +237,16 @@ describe("S3 kiosk isolation", () => {
 		expect(KIOSK_DEMO_LLM_MODEL).toBe("gpt-5.6-luna");
 		expect(KIOSK_DEMO_THINKING_LEVEL).toBe("low");
 		expect(KIOSK_DEMO_ENABLE_TOOLS).toBe(true);
+		expect(KIOSK_DEMO_ENVIRONMENT_AWARENESS).toBe("off");
+		expect(KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT).toBe(false);
 		expect(buildKioskDemoConfigSeed()).toMatchObject({
 			provider: "nextain",
 			model: "gpt-5.6-luna",
 			enableTools: true,
 			thinkingLevel: "low",
 			enableThinking: true,
+			environmentAwareness: "off",
+			environmentTerminalInput: false,
 			llmRoles: {
 				main: {
 					provider: "nextain",
@@ -465,6 +471,8 @@ describe("S3 kiosk isolation", () => {
 			enableTools: false,
 			thinkingLevel: "xhigh",
 			enableThinking: false,
+			environmentAwareness: "always",
+			environmentTerminalInput: true,
 			llmRoles: {
 				main: {
 					provider: "nextain",
@@ -483,6 +491,8 @@ describe("S3 kiosk isolation", () => {
 		expect(savedTerra.enableTools).toBe(true);
 		expect(savedTerra.thinkingLevel).toBe("low");
 		expect(savedTerra.enableThinking).toBe(true);
+		expect(savedTerra.environmentAwareness).toBe("off");
+		expect(savedTerra.environmentTerminalInput).toBe(false);
 		expect(savedTerra.mainModelThinkingLevels).toBeUndefined();
 		expect(savedTerra.llmRoles.main).toMatchObject({
 			provider: "nextain",
@@ -490,7 +500,7 @@ describe("S3 kiosk isolation", () => {
 			thinkingLevel: "low",
 		});
 
-		// Kiosk ON: polluted localStorage (xhigh + enableTools:false) reloaded via loadConfig / mergeBootConfig / resolveThinkingLevel stays fixed to low + tools:true
+		// Kiosk ON: polluted localStorage (xhigh + enableTools:false + environmentAwareness:always + environmentTerminalInput:true) reloaded via loadConfig / mergeBootConfig / resolveThinkingLevel stays fixed
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -500,6 +510,8 @@ describe("S3 kiosk isolation", () => {
 				enableTools: false,
 				thinkingLevel: "xhigh",
 				enableThinking: false,
+				environmentAwareness: "always",
+				environmentTerminalInput: true,
 				llmRoles: {
 					main: {
 						provider: "codex",
@@ -519,6 +531,8 @@ describe("S3 kiosk isolation", () => {
 		expect(loadedOther.enableTools).toBe(true);
 		expect(loadedOther.thinkingLevel).toBe("low");
 		expect(loadedOther.enableThinking).toBe(true);
+		expect(loadedOther.environmentAwareness).toBe("off");
+		expect(loadedOther.environmentTerminalInput).toBe(false);
 		expect(
 			(loadedOther as unknown as Record<string, unknown>)
 				.mainModelThinkingLevels,
@@ -547,6 +561,8 @@ describe("S3 kiosk isolation", () => {
 				enableTools: false,
 				thinkingLevel: "xhigh",
 				enableThinking: false,
+				environmentAwareness: "always",
+				environmentTerminalInput: true,
 				llmRoles: {
 					main: {
 						provider: "nextain",
@@ -560,6 +576,8 @@ describe("S3 kiosk isolation", () => {
 				enableTools: false,
 				thinkingLevel: "xhigh",
 				enableThinking: false,
+				environmentAwareness: "always",
+				environmentTerminalInput: true,
 				llmRoles: {
 					main: {
 						provider: "nextain",
@@ -574,6 +592,8 @@ describe("S3 kiosk isolation", () => {
 		expect(mergedPolluted.enableTools).toBe(true);
 		expect(mergedPolluted.thinkingLevel).toBe("low");
 		expect(mergedPolluted.enableThinking).toBe(true);
+		expect(mergedPolluted.environmentAwareness).toBe("off");
+		expect(mergedPolluted.environmentTerminalInput).toBe(false);
 		expect(mergedPolluted.llmRoles?.main?.thinkingLevel).toBe("low");
 		expect(mergedPolluted.mainModelThinkingLevels).toBeUndefined();
 		expect(resolveThinkingLevel(mergedPolluted)).toBe("low");
@@ -582,6 +602,8 @@ describe("S3 kiosk isolation", () => {
 				enableTools: false,
 				thinkingLevel: "xhigh",
 				enableThinking: false,
+				environmentAwareness: "always",
+				environmentTerminalInput: true,
 				llmRoles: {
 					main: {
 						provider: "nextain",
@@ -596,6 +618,8 @@ describe("S3 kiosk isolation", () => {
 			enableTools: true,
 			thinkingLevel: "low",
 			enableThinking: true,
+			environmentAwareness: "off",
+			environmentTerminalInput: false,
 			llmRoles: {
 				main: {
 					provider: "nextain",
@@ -631,7 +655,7 @@ describe("S3 kiosk isolation", () => {
 			to: "gpt-5.6-luna",
 		});
 
-		// Ordinary Web Mode (kiosk OFF): preserves saved terra, thinkingLevel xhigh, and enableTools false
+		// Ordinary Web Mode (kiosk OFF): preserves saved terra, thinkingLevel xhigh, enableTools false, environmentAwareness, and environmentTerminalInput
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
 		saveConfig({
 			provider: "nextain",
@@ -639,6 +663,8 @@ describe("S3 kiosk isolation", () => {
 			apiKey: "",
 			enableTools: false,
 			thinkingLevel: "xhigh",
+			environmentAwareness: "always",
+			environmentTerminalInput: true,
 			llmRoles: {
 				main: {
 					provider: "nextain",
@@ -651,6 +677,8 @@ describe("S3 kiosk isolation", () => {
 		expect(webTerra.provider).toBe("nextain");
 		expect(webTerra.model).toBe("gpt-6.1-terra");
 		expect(webTerra.enableTools).toBe(false);
+		expect(webTerra.environmentAwareness).toBe("always");
+		expect(webTerra.environmentTerminalInput).toBe(true);
 		expect(webTerra.llmRoles?.main?.thinkingLevel).toBe("xhigh");
 		expect(resolveThinkingLevel(webTerra)).toBe("xhigh");
 		expect(effectiveMainRole(webTerra)).toEqual({
@@ -658,18 +686,22 @@ describe("S3 kiosk isolation", () => {
 			model: "gpt-6.1-terra",
 		});
 
-		// Desktop Mode (kiosk OFF, web OFF): preserves saved provider/model
+		// Desktop Mode (kiosk OFF, web OFF): preserves saved provider/model/environmentAwareness/environmentTerminalInput
 		setWebAssetsModeForTests(false);
 		vi.stubEnv("MODE", "production");
 		saveConfig({
 			provider: "codex",
 			model: "gpt-5.6-sol",
 			apiKey: "",
+			environmentAwareness: "always",
+			environmentTerminalInput: true,
 			llmRoles: { main: { provider: "codex", model: "gpt-5.6-sol" } },
 		});
 		const desktopCodex = loadConfig()!;
 		expect(desktopCodex.provider).toBe("codex");
 		expect(desktopCodex.model).toBe("gpt-5.6-sol");
+		expect(desktopCodex.environmentAwareness).toBe("always");
+		expect(desktopCodex.environmentTerminalInput).toBe(true);
 		expect(effectiveMainRole(desktopCodex)).toEqual({
 			provider: "codex",
 			model: "gpt-5.6-sol",

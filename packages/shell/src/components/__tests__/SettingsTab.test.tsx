@@ -5893,7 +5893,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(invokedCommands).not.toContain("read_local_binary");
 	});
 
-	it("locks #provider-select, #model-select, #tools-toggle, and #thinking-level-select as read-only in kiosk mode and shows WebLLM option in normal web mode", async () => {
+	it("locks #provider-select, #model-select, #tools-toggle, #thinking-level-select, and #environment-awareness as read-only and hides #environment-terminal-input in kiosk mode while preserving normal web and desktop controls", async () => {
 		mockInvoke.mockResolvedValue([]);
 		setWebAssetsModeForTests(true);
 		const { registerWebLlmProvider } = await import(
@@ -5919,8 +5919,38 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(normalTools.tagName).toBe("INPUT");
 		expect(normalTools.type).toBe("checkbox");
 		expect(screen.getByTestId("thinking-level-low")).toBeTruthy();
+		const normalEnvAwareness = document.getElementById(
+			"environment-awareness",
+		) as HTMLSelectElement;
+		expect(normalEnvAwareness.tagName).toBe("SELECT");
+		expect(
+			Array.from(normalEnvAwareness.options).map((o) => o.value),
+		).toEqual(["off", "auto", "always"]);
+		const normalTerminalInput = document.getElementById(
+			"environment-terminal-input",
+		) as HTMLInputElement;
+		expect(normalTerminalInput.tagName).toBe("INPUT");
+		expect(normalTerminalInput.type).toBe("checkbox");
 		unmount();
 
+		setWebAssetsModeForTests(false);
+		vi.stubEnv("MODE", "production");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		const { unmount: unmountDesktop } = render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const desktopEnvAwareness = document.getElementById(
+			"environment-awareness",
+		) as HTMLSelectElement;
+		expect(desktopEnvAwareness.tagName).toBe("SELECT");
+		const desktopTerminalInput = document.getElementById(
+			"environment-terminal-input",
+		) as HTMLInputElement;
+		expect(desktopTerminalInput.tagName).toBe("INPUT");
+		expect(desktopTerminalInput.type).toBe("checkbox");
+		unmountDesktop();
+
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		localStorage.setItem(
 			"naia-config",
@@ -5931,6 +5961,8 @@ describe("web mode backgrounds and NVA (r7)", () => {
 				enableTools: false,
 				thinkingLevel: "xhigh",
 				enableThinking: false,
+				environmentAwareness: "always",
+				environmentTerminalInput: true,
 				llmRoles: {
 					main: {
 						provider: "nextain",
@@ -5965,6 +5997,15 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(kioskThinking.textContent).toMatch(/low|낮음/i);
 		expect(screen.queryByTestId("thinking-level-low")).toBeNull();
 		expect(screen.queryByTestId("thinking-level-xhigh")).toBeNull();
+		const kioskEnvAwareness = document.getElementById(
+			"environment-awareness",
+		)!;
+		expect(kioskEnvAwareness.tagName).toBe("DIV");
+		expect(kioskEnvAwareness.getAttribute("data-testid")).toBe(
+			"environment-awareness-single",
+		);
+		expect(kioskEnvAwareness.textContent).toMatch(/Off|끔/);
+		expect(document.getElementById("environment-terminal-input")).toBeNull();
 		unregisterLlmProvider("webllm");
 		vi.unstubAllEnvs();
 	});

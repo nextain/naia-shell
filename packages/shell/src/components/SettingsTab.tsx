@@ -72,6 +72,8 @@ import {
 import { getWebModelStatus } from "../lib/web-runtime/web-model-status";
 import {
 	KIOSK_DEMO_ENABLE_TOOLS,
+	KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+	KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
 	KIOSK_DEMO_THINKING_LEVEL,
 } from "../lib/config-seed";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
@@ -1106,9 +1108,15 @@ export function SettingsTab() {
 	// #502 (FR-ENV-ATTENTION.4): 작업 표면 인지는 사용자가 직접 고른다.
 	// 설정 파일에만 있고 화면에 없으면 "사용자에게 옵셔널하게"가 아니다.
 	const [environmentAwareness, setEnvironmentAwareness] =
-		useState<EnvironmentAwareness>(existing?.environmentAwareness ?? "auto");
+		useState<EnvironmentAwareness>(
+			isKioskDemo()
+				? KIOSK_DEMO_ENVIRONMENT_AWARENESS
+				: (existing?.environmentAwareness ?? "auto"),
+		);
 	const [environmentTerminalInput, setEnvironmentTerminalInput] = useState(
-		existing?.environmentTerminalInput === true,
+		isKioskDemo()
+			? KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT
+			: existing?.environmentTerminalInput === true,
 	);
 	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(() =>
 		isKioskDemo() ? KIOSK_DEMO_THINKING_LEVEL : resolveThinkingLevel(existing),
@@ -3906,9 +3914,16 @@ export function SettingsTab() {
 			agentName: agentName.trim() || undefined,
 			honorific: honorific.trim() || undefined,
 			speechStyle,
-			enableTools,
-			thinkingLevel,
-			enableThinking: thinkingLevel !== "off",
+			enableTools: isKioskDemo() ? KIOSK_DEMO_ENABLE_TOOLS : enableTools,
+			thinkingLevel: isKioskDemo() ? KIOSK_DEMO_THINKING_LEVEL : thinkingLevel,
+			enableThinking:
+				(isKioskDemo() ? KIOSK_DEMO_THINKING_LEVEL : thinkingLevel) !== "off",
+			...(isKioskDemo()
+				? {
+						environmentAwareness: KIOSK_DEMO_ENVIRONMENT_AWARENESS,
+						environmentTerminalInput: KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
+					}
+				: {}),
 			gatewayUrl:
 				enableTools &&
 				gatewayUrl.trim() &&
@@ -6847,79 +6862,94 @@ export function SettingsTab() {
 						<label htmlFor="environment-awareness">
 							{t("settings.environmentAwareness")}
 						</label>
-						<select
-							id="environment-awareness"
-							value={environmentAwareness}
-							onChange={(e) => {
-								const next = e.target.value as EnvironmentAwareness;
-								setEnvironmentAwareness(next);
-								persistConfig({ environmentAwareness: next });
-								// 즉시 반영한다 — 다시 켤 때까지 기다리게 하지 않는다.
-								// 전달 여부를 확인한다. 버리면 사용자가 껐는데 도구 선언이 뇌에
-								// 남거나, 켰는데 나이아에게 도구가 없는 상태를 아무도 모른다
-								// (2026-08-28 16차 적대리뷰 지적). 켜는 쪽은 대화 턴마다 다시
-								// 등록하므로 실패해도 다음 턴에 복구된다.
-								if (next === "off") {
-									environmentSession.unwatch();
-									sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
-										.then((ok) => {
-											// 확인값을 상태에 반영한다. 로그로만 쓰면 셸이 낡은 참을
-											// 들고 있게 된다 (2026-08-28 18차 적대리뷰 지적).
-											noteEnvironmentClear(ok);
-											if (!ok)
-												Logger.warn(
-													"SettingsTab",
-													"environment skill clear not delivered",
-													{},
-												);
-										})
-										.catch(() => noteEnvironmentClear(false));
-								} else {
-									// #611: keep observation for always/auto, but never advertise
-									// skill_environment to the model.
-									sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
-										.then((ok) => {
-											noteEnvironmentClear(ok);
-											if (!ok)
-												Logger.warn(
-													"SettingsTab",
-													"environment skill clear not delivered",
-													{},
-												);
-										})
-										.catch(() => noteEnvironmentClear(false));
-								}
-							}}
-						>
-							<option value="off">
-								{t("settings.environmentAwarenessOff")}
-							</option>
-							<option value="auto">
-								{t("settings.environmentAwarenessAuto")}
-							</option>
-							<option value="always">
-								{t("settings.environmentAwarenessAlways")}
-							</option>
-						</select>
+						{isKioskDemo() ? (
+							<div
+								id="environment-awareness"
+								data-testid="environment-awareness-single"
+							>
+								{KIOSK_DEMO_ENVIRONMENT_AWARENESS === "off"
+									? t("settings.environmentAwarenessOff")
+									: KIOSK_DEMO_ENVIRONMENT_AWARENESS === "always"
+										? t("settings.environmentAwarenessAlways")
+										: t("settings.environmentAwarenessAuto")}
+							</div>
+						) : (
+							<select
+								id="environment-awareness"
+								value={environmentAwareness}
+								onChange={(e) => {
+									const next = e.target.value as EnvironmentAwareness;
+									setEnvironmentAwareness(next);
+									persistConfig({ environmentAwareness: next });
+									// 즉시 반영한다 — 다시 켤 때까지 기다리게 하지 않는다.
+									// 전달 여부를 확인한다. 버리면 사용자가 껐는데 도구 선언이 뇌에
+									// 남거나, 켰는데 나이아에게 도구가 없는 상태를 아무도 모른다
+									// (2026-08-28 16차 적대리뷰 지적). 켜는 쪽은 대화 턴마다 다시
+									// 등록하므로 실패해도 다음 턴에 복구된다.
+									if (next === "off") {
+										environmentSession.unwatch();
+										sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
+											.then((ok) => {
+												// 확인값을 상태에 반영한다. 로그로만 쓰면 셸이 낡은 참을
+												// 들고 있게 된다 (2026-08-28 18차 적대리뷰 지적).
+												noteEnvironmentClear(ok);
+												if (!ok)
+													Logger.warn(
+														"SettingsTab",
+														"environment skill clear not delivered",
+														{},
+													);
+											})
+											.catch(() => noteEnvironmentClear(false));
+									} else {
+										// #611: keep observation for always/auto, but never advertise
+										// skill_environment to the model.
+										sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
+											.then((ok) => {
+												noteEnvironmentClear(ok);
+												if (!ok)
+													Logger.warn(
+														"SettingsTab",
+														"environment skill clear not delivered",
+														{},
+													);
+											})
+											.catch(() => noteEnvironmentClear(false));
+									}
+								}}
+							>
+								<option value="off">
+									{t("settings.environmentAwarenessOff")}
+								</option>
+								<option value="auto">
+									{t("settings.environmentAwarenessAuto")}
+								</option>
+								<option value="always">
+									{t("settings.environmentAwarenessAlways")}
+								</option>
+							</select>
+						)}
 						<span className="settings-hint">
 							{t("settings.environmentAwarenessHint")}
 						</span>
 					</div>
-					<div className="settings-field settings-toggle-row">
-						<label htmlFor="environment-terminal-input">
-							{t("settings.environmentTerminalInput")}
-						</label>
-						<input
-							id="environment-terminal-input"
-							type="checkbox"
-							checked={environmentTerminalInput}
-							disabled={environmentAwareness === "off"}
-							onChange={(e) => {
-								setEnvironmentTerminalInput(e.target.checked);
-								persistConfig({ environmentTerminalInput: e.target.checked });
-							}}
-						/>
-					</div>
+					{!isKioskDemo() && (
+						<div className="settings-field settings-toggle-row">
+							<label htmlFor="environment-terminal-input">
+								{t("settings.environmentTerminalInput")}
+							</label>
+							<input
+								id="environment-terminal-input"
+								type="checkbox"
+								checked={environmentTerminalInput}
+								disabled={environmentAwareness === "off"}
+								onChange={(e) => {
+									setEnvironmentTerminalInput(e.target.checked);
+									persistConfig({ environmentTerminalInput: e.target.checked });
+								}}
+							/>
+						</div>
+					)}
 
 					<div className="settings-actions">
 						<button
