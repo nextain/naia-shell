@@ -75,6 +75,7 @@ import {
 	KIOSK_DEMO_ENVIRONMENT_AWARENESS,
 	KIOSK_DEMO_ENVIRONMENT_TERMINAL_INPUT,
 	KIOSK_DEMO_THINKING_LEVEL,
+	KIOSK_DEMO_TTS_VOICE,
 } from "../lib/config-seed";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
@@ -954,9 +955,9 @@ export function SettingsTab() {
 	);
 	const [ttsVoice, setTtsVoice] = useState(
 		isKioskDemo()
-			? existing?.ttsVoice && existing.ttsVoice.includes("DragonHD")
-				? existing.ttsVoice
-				: "ko-KR-SunHi:DragonHDLatestNeural"
+			? existing?.ttsProvider === "browser"
+				? (existing?.ttsVoice ?? "")
+				: KIOSK_DEMO_TTS_VOICE
 			: existing?.ttsVoice ?? (isWebMode() ? "" : defaultVoiceForProvider),
 	);
 	// 기본값은 `effectiveTtsProvider` 한 곳에서 정한다 — 프로파일 카드도 같은 함수를
@@ -3613,11 +3614,15 @@ export function SettingsTab() {
 
 	// Persist TTS voice/provider changes immediately (without full handleSave)
 	function persistTtsVoice(voice: string) {
-		setTtsVoice(voice);
+		const nextVoice =
+			isKioskDemo() && ttsProvider === "nextain"
+				? KIOSK_DEMO_TTS_VOICE
+				: voice;
+		setTtsVoice(nextVoice);
 		// Provider changes are persisted immediately before this callback runs.
 		// Read the current config through the same path so a static or asynchronously
 		// fetched voice cannot write the render-time `existing` snapshot back over it.
-		persistConfig({ ttsVoice: voice });
+		persistConfig({ ttsVoice: nextVoice });
 		debouncedLabSync();
 	}
 	async function selectProfileTtsProvider(next: TtsProviderId) {
@@ -3681,13 +3686,17 @@ export function SettingsTab() {
 			if (isOmni && provider === "nextain") {
 				const voiceName = voice || getDefaultVoiceForAvatar(existing?.vrmModel);
 				synthProvider = "nextain";
-				synthVoice =
-					voiceName === "hyunsu"
+				synthVoice = isKioskDemo()
+					? KIOSK_DEMO_TTS_VOICE
+					: voiceName === "hyunsu"
 						? "ko-KR-Hyunsu:DragonHDLatestNeural"
 						: "ko-KR-SunHi:DragonHDLatestNeural";
 			} else {
 				synthProvider = (ttsProvider || "edge") as TtsProviderId;
-				synthVoice = ttsVoice;
+				synthVoice =
+					isKioskDemo() && synthProvider === "nextain"
+						? KIOSK_DEMO_TTS_VOICE
+						: ttsVoice;
 			}
 
 			const effectiveNaiaKey =
@@ -3906,7 +3915,10 @@ export function SettingsTab() {
 			sttModel: sttModel || undefined,
 			// Legacy focus is not persisted; the profile configures voice services only.
 			ttsEnabled,
-			ttsVoice,
+			ttsVoice:
+				isKioskDemo() && ttsProvider === "nextain"
+					? KIOSK_DEMO_TTS_VOICE
+					: ttsVoice,
 			ttsProvider,
 			persona:
 				persona.trim() !== DEFAULT_PERSONA.trim() ? persona.trim() : undefined,
@@ -4312,7 +4324,7 @@ export function SettingsTab() {
 			? {
 					...rawNext,
 					ttsProvider: "nextain" as const,
-					ttsVoice: "ko-KR-SunHi:DragonHDLatestNeural",
+					ttsVoice: KIOSK_DEMO_TTS_VOICE,
 				}
 			: isWebMode()
 				? { ...rawNext, ttsProvider: "browser" as const }
@@ -4323,7 +4335,7 @@ export function SettingsTab() {
 		setModel(next.model);
 		if (isKioskDemo()) {
 			setTtsProvider("nextain");
-			setTtsVoice("ko-KR-SunHi:DragonHDLatestNeural");
+			setTtsVoice(KIOSK_DEMO_TTS_VOICE);
 		} else if (isWebMode()) {
 			setTtsProvider("browser");
 		}
@@ -5497,9 +5509,7 @@ export function SettingsTab() {
 																setTtsProvider(next);
 																const nextVoice =
 																	next === "nextain"
-																		? ttsVoice && ttsVoice.includes("DragonHD")
-																			? ttsVoice
-																			: "ko-KR-SunHi:DragonHDLatestNeural"
+																		? KIOSK_DEMO_TTS_VOICE
 																		: "";
 																setTtsVoice(nextVoice);
 																persistConfig({
@@ -7194,9 +7204,7 @@ export function SettingsTab() {
 									setTtsProvider(next);
 									const nextVoice =
 										next === "nextain"
-											? ttsVoice && ttsVoice.includes("DragonHD")
-												? ttsVoice
-												: "ko-KR-SunHi:DragonHDLatestNeural"
+											? KIOSK_DEMO_TTS_VOICE
 											: "";
 									setTtsVoice(nextVoice);
 									persistConfig({ ttsProvider: next, ttsVoice: nextVoice });
@@ -7567,8 +7575,10 @@ export function SettingsTab() {
 							) : null;
 						}
 						// Other providers: use dynamic voices (if fetched) or static registry voices
-						const voiceList =
-							dynamicTtsVoices.length > 0
+						const isKioskNextain = isKioskDemo() && ttsProvider === "nextain";
+						const voiceList = isKioskNextain
+							? [{ id: KIOSK_DEMO_TTS_VOICE, label: "기본 여성(Neural2)" }]
+							: dynamicTtsVoices.length > 0
 								? dynamicTtsVoices
 								: (providerMeta?.voices ?? []);
 						if (voiceList.length > 0) {
@@ -7580,8 +7590,12 @@ export function SettingsTab() {
 									<div className="voice-picker">
 										<select
 											id="tts-voice-select"
-											value={ttsVoice}
-											onChange={(e) => persistTtsVoice(e.target.value)}
+											value={isKioskNextain ? KIOSK_DEMO_TTS_VOICE : ttsVoice}
+											disabled={isKioskNextain}
+											onChange={(e) => {
+												if (isKioskNextain) return;
+												persistTtsVoice(e.target.value);
+											}}
 										>
 											{voiceList.map((v) => (
 												<option key={v.id} value={v.id}>

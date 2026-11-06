@@ -6067,7 +6067,14 @@ describe("web mode backgrounds and NVA (r7)", () => {
 			"tts-voice-select",
 		) as HTMLSelectElement;
 		expect(nextainVoiceSelect).not.toBeNull();
-		expect(nextainVoiceSelect.value).toBe("ko-KR-SunHi:DragonHDLatestNeural");
+		expect(nextainVoiceSelect.value).toBe("ko-KR-Neural2-A");
+		expect(nextainVoiceSelect.disabled).toBe(true);
+		expect(
+			Array.from(nextainVoiceSelect.options).map((o) => ({
+				value: o.value,
+				label: o.textContent,
+			})),
+		).toEqual([{ value: "ko-KR-Neural2-A", label: "기본 여성(Neural2)" }]);
 
 		vi.unstubAllEnvs();
 	});

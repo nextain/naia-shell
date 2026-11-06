@@ -2658,7 +2658,7 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 1. **대화창 도구 JSON 비노출**: 지식 검색 도구 호출 시 입력(`{"query":…}`)·결과(`{"abstained":…,"hits":[…]}`) 원문 JSON을 보이지 않고 접힌 한 줄 요약(`"자료 찾는 중"` / `"자료 찾음"`)만 표시한다(답 끝 `"근거: …"` 줄은 유지).
 2. **로그아웃 및 기억 내보내기 단추 제거**: 설정 화면(일반 탭·프로필 탭)에서 로그아웃·연결 해제 단추와 기억 내보내기 단추(`memory-transfer-export`)를 숨기고, 일반 웹 판에서는 기억 내보내기 단추를 다른 설정 단추(`.voice-preview-btn`)와 같은 모양으로 맞춘다.
 3. **설정 저장 `desktop_only:secure_store_set` 오류 제거**: 웹/키오스크 판에서 설정을 저장할 때 네이티브 `secure_store_set`을 호출하지 않고 브라우저 저장소로 대체해 오류 없이 저장된다.
-4. **음성 표시·선택 일관성 (`Naia Cloud TTS` 기본 + 브라우저 대체)**: 키오스크 판 기본 말하기를 `Naia Cloud TTS`(`"nextain"`, 시연 열쇠로 게이트웨이 TTS 호출)로 하고, 프로필 탭과 음성 탭 모두에서 `Naia Cloud TTS`를 고를 수 있고 같은 값을 보인다(게이트웨이 TTS 실패 시 브라우저 음성으로 대체, `"naia-local-voice : 시동중 .."` 배지는 비노출).
+4. **음성 표시·선택 일관성 (`Naia Cloud TTS` 기본 + 브라우저 대체)**: 키오스크 판 기본 말하기를 `Naia Cloud TTS`(`"nextain"`, 목소리 `KIOSK_DEMO_TTS_VOICE = "ko-KR-Neural2-A"`, 시연 열쇠로 게이트웨이 TTS 호출)로 하고(`normalizeRetiredVoiceConfig`가 키오스크 판에서는 `"ko-KR-Neural2-A"`를 DragonHD로 바꾸지 않음), 프로필 탭과 음성 탭 모두에서 `Naia Cloud TTS`를 고를 수 있고 음성 탭 목소리 고르기에는 `"기본 여성(Neural2)"`(`"ko-KR-Neural2-A"`)가 잠긴 상태로 선택되어 같은 값을 보인다(게이트웨이 TTS 실패 시 브라우저 음성으로 대체, `"naia-local-voice : 시동중 .."` 배지는 비노출).
 5. **파일 탐색기 탭·문구 정리**: `"온라인 (준비 중)"` 단추를 없애고 `"오프라인"`을 `"브라우저 안 오프라인 공간"`으로 풀어 쓴다.
 6. **파일 탐색기 내부 규칙 파일 숨김·제거**: `.agents`, `.users`, `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `agents-rules*` 등 ADK 내부 규칙 파일은 시연 번들·탐색기에서 숨기거나 빼고 시연용 파일(`kiosk-demo`, `conversations` 등)만 보인다.
 7. **키오스크 `"지식"` 탭 추가 및 마크다운 렌더링·제목 한 줄 정돈**: 상단 앱 막대와 설정의 `"지식"` 탭에서 시연 지식 묶음(`knowledge/*.md` 21개 원고 목록·본문)을 열람하며, 설정 > 지식 탭 오른쪽 원고 본문도 탐색기 뷰어처럼 마크다운(`MarkdownPreview`)으로 그려서 보이고 목록 폭과 미리보기 제목 글자 크기를 조정해 제목(`"나이아 서비스 소개"` 등)과 머리줄이 한 줄에 들어오게 한다.
@@ -2670,7 +2670,7 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 
 | 상태 | 검증 | 시험 |
 |---|---|---|
-| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃·기억 내보내기 숨김, 키오스크 주 모델 `gpt-5.6-luna`·생각 세기 `"low"`·도구 사용 `true`·작업 표면 인지 `"off"`·터미널 입력 허용 `false` 단일 강제(`resolveKioskDemoMainModel`/`applyKioskDemoMainModel`)·두뇌 탭 공급자/모델/생각 세기/도구 사용/작업 표면 인지 읽기 전용 잠금 및 터미널 직접 입력 칸 숨김, 기본 `Naia Cloud TTS`(`"nextain"`) 시드·프로필/음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts`, `config-seed.test.ts`, `ChatArea.test.tsx` |
+| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃·기억 내보내기 숨김, 키오스크 주 모델 `gpt-5.6-luna`·생각 세기 `"low"`·도구 사용 `true`·작업 표면 인지 `"off"`·터미널 입력 허용 `false` 단일 강제(`resolveKioskDemoMainModel`/`applyKioskDemoMainModel`)·두뇌 탭 공급자/모델/생각 세기/도구 사용/작업 표면 인지 읽기 전용 잠금 및 터미널 직접 입력 칸 숨김, 기본 `Naia Cloud TTS`(`"nextain"`, 목소리 `"ko-KR-Neural2-A"` / `"기본 여성(Neural2)"` 잠금, 구글→DragonHD 옮기기 예외) 시드·프로필/음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts`, `config-seed.test.ts`, `synthesize.test.ts`, `ChatArea.test.tsx` |
 | 빈 목록 | 초기 OPFS에서도 탐색기에 `kiosk-demo/knowledge/*.md` 시연 파일만 표시되고 내부 규칙 파일 비노출 | `web-workspace-path.test.tsx`, `knowledge.test.ts` |
 | 진행 | 도구 실행 중 `"자료 찾는 중"` 표시, `"부드러운 움직임"` 재생 중 크기·발 위치 고정 및 부드러운 스웨이 유지 | `ToolActivity.test.tsx`, `prebaked-renderer.test.ts` |
 | 성공 | 설정 저장 시 `secure_store_set` 미호출·무오류, ‘처음으로’·3분 무응답 리셋 시 `localStorage naia-config` 및 OPFS 설정이 키오스크 시드(페르소나·아바타·음성·두뇌)로 복원, 지식 탭에서 21개 원고 마크다운 렌더링 열람, 파일 열기 시 탐색기 폭 확장·한 줄 파일 이름·도구줄 보존, 지나 클립 머리 구멍·팔/다리 검은 영역 0 및 크기/발 위치 일치 | `SettingsTab.test.tsx`, `KnowledgeSettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx` |

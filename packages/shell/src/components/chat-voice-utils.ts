@@ -1,5 +1,6 @@
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import type { AppConfig } from "../lib/config";
+import { KIOSK_DEMO_TTS_VOICE } from "../lib/config-seed";
 import { paymentLinksHiddenNow } from "../lib/distribution";
 import { t } from "../lib/i18n";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
@@ -22,6 +23,7 @@ export function naiaLocalVoiceId(voiceRefUrl?: string): string {
 /** Keep provider-specific voice selection in one place for live and pipeline TTS. */
 export function resolveTtsVoiceId(config: AppConfig): string | undefined {
 	if (config.ttsProvider === "nextain") {
+		if (isKioskDemo()) return KIOSK_DEMO_TTS_VOICE;
 		return (
 			config.ttsVoice ||
 			`ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`

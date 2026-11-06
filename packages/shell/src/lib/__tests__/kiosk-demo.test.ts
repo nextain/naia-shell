@@ -212,20 +212,22 @@ describe("S3 kiosk isolation", () => {
 	});
 	it("a new workspace gets the complete persona, Jina avatar and greeting is consumed only once", async () => {
 		setWebAssetsModeForTests(true);
+		expect(KIOSK_DEMO_TTS_VOICE).toBe("ko-KR-Neural2-A");
 		await prepareKioskDemoOnboarding();
 		expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
 			agentName: "지나",
 			onboardingComplete: true,
 			ttsProvider: "nextain",
 			vllmTtsHost: "https://bc250-0-voice.nextain.io",
-			ttsVoice: "ko-KR-SunHi:DragonHDLatestNeural",
+			ttsVoice: "ko-KR-Neural2-A",
 			avatarProvider: "naia-video-avatar",
 			nvaModel: "jina",
 		});
 		const loaded = loadConfig()!;
 		expect(loaded.ttsProvider).toBe("nextain");
 		expect(loaded.vllmTtsHost).toBe("https://bc250-0-voice.nextain.io");
-		expect(resolveTtsVoiceId(loaded)).toBe("ko-KR-SunHi:DragonHDLatestNeural");
+		expect(loaded.ttsVoice).toBe("ko-KR-Neural2-A");
+		expect(resolveTtsVoiceId(loaded)).toBe("ko-KR-Neural2-A");
 		expect(consumeKioskGreeting()).toBe(false);
 		requestKioskGreeting();
 		expect(consumeKioskGreeting()).toBe(true);

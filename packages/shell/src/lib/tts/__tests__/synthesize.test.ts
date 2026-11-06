@@ -187,6 +187,45 @@ describe("synthesizeTts — nextain (gateway)", () => {
 			}),
 		).rejects.toThrow(/402/);
 	});
+
+	it("sends ko-KR-Neural2-A in kiosk mode and keeps desktop voice behavior unchanged", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(jsonResponse({ audio_content: "QUJD" }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		await synthesizeTts({
+			text: "키오스크 안내",
+			provider: "nextain",
+			naiaKey: "gw-kiosk",
+			gatewayUrl: "https://api.nextain.io",
+		});
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
+			{
+				input: "키오스크 안내",
+				voice: "ko-KR-Neural2-A",
+				audio_encoding: "MP3",
+			},
+		);
+
+		vi.stubEnv("MODE", "production");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		await synthesizeTts({
+			text: "데스크톱 기본",
+			provider: "nextain",
+			naiaKey: "gw-desktop",
+			gatewayUrl: "https://api.nextain.io",
+		});
+		expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject(
+			{
+				input: "데스크톱 기본",
+				voice: "ko-KR-SunHi:DragonHDLatestNeural",
+				audio_encoding: "MP3",
+			},
+		);
+	});
 });
 
 describe("synthesizeTts — retired third-party cloud (#603)", () => {

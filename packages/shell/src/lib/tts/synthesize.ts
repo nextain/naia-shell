@@ -22,6 +22,7 @@
 
 import { bgmSidecarBaseUrl, ensureBgmSidecar } from "../bgm-sidecar-url";
 import { DEFAULT_LOCAL_VOICE_HOST, type TtsProviderId } from "../config";
+import { KIOSK_DEMO_TTS_VOICE } from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { Logger } from "../logger";
 import {
@@ -280,7 +281,9 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 		},
 		body: JSON.stringify({
 			input: opts.text,
-			voice: opts.voice || "ko-KR-SunHi:DragonHDLatestNeural",
+			voice: isKioskDemo()
+				? KIOSK_DEMO_TTS_VOICE
+				: opts.voice || "ko-KR-SunHi:DragonHDLatestNeural",
 			audio_encoding: opts.encoding || "MP3",
 		}),
 		signal: opts.signal,

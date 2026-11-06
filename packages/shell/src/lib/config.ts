@@ -110,6 +110,7 @@ export function normalizeRetiredVoiceConfig(config: AppConfig): {
 		remove("ttsEngine");
 	}
 	if (
+		!isKioskDemo() &&
 		raw.ttsProvider === "nextain" &&
 		typeof raw.ttsVoice === "string" &&
 		/Neural2|Wavenet|Chirp3|Chirp-3/i.test(raw.ttsVoice)

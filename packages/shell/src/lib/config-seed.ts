@@ -58,7 +58,7 @@ export const KIOSK_DEMO_LLM_FALLBACK_MODELS = [
 ] as const;
 export const KIOSK_DEMO_TTS_PROVIDER = "nextain" as const;
 export const KIOSK_DEMO_TTS_HOST = "https://bc250-0-voice.nextain.io";
-export const KIOSK_DEMO_TTS_VOICE = "ko-KR-SunHi:DragonHDLatestNeural";
+export const KIOSK_DEMO_TTS_VOICE = "ko-KR-Neural2-A" as const;
 export const KIOSK_DEMO_NVA_MODEL = "jina";
 export const DEFAULT_SHELL_NAIA_WIDTH = 320;
 export const KIOSK_SHELL_NAIA_WIDTH = 520;
