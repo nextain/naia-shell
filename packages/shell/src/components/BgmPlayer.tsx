@@ -11,6 +11,11 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
+import {
+	attachMediaElementToSharedContext,
+	isBroadcastActive,
+	useBroadcastBridge,
+} from "../lib/broadcast-audio-bridge";
 import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
 import {
@@ -455,6 +460,47 @@ export function BgmPlayer({ naia }: Props) {
 	// appTab: which tab is currently shown in the app (independent of what's playing)
 	const [appExpanded, setAppExpanded] = useState(false);
 	const [appTab, setAppTab] = useState<AppTab>("youtube");
+	const broadcastBridge = useBroadcastBridge();
+	const broadcasting = isBroadcastActive(broadcastBridge.state);
+	const broadcastingRef = useRef(broadcasting);
+	broadcastingRef.current = broadcasting;
+	const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (audioRef.current) {
+			attachMediaElementToSharedContext(audioRef.current);
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!broadcasting) {
+			setBroadcastNotice(null);
+			return;
+		}
+		if (appTab === "youtube") {
+			setAppTab("local");
+		}
+		if (source === "youtube") {
+			cancelRadioDjRecovery();
+			youtubeHandshakeRef.current.stop();
+			resetObservedIframeState(null);
+			if (useAvatarStore.getState().backgroundMediaType === "iframe") {
+				setBackgroundVideoUrl(prevBgVideoRef.current);
+				setBackgroundMediaType(prevBgMediaRef.current);
+				prevBgVideoRef.current = "";
+				prevBgMediaRef.current = "";
+			}
+			setVideoLive(false);
+			setSource("local");
+			setBroadcastNotice(t("broadcast.bgmLocalOnlyNotice"));
+			if (playing && localTracksRef.current.length > 0) {
+				playLocalAt(localIndex);
+			} else {
+				setPlaying(false);
+			}
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [broadcasting]);
 
 	const [library, setLibrary] = useState<BgmLibraryState>(() => {
 		// 첫 페인트는 캐시/구 config 로 즉시, 진짜 SoT(샌드박스)는 마운트 효과가 hydrate.
@@ -1927,6 +1973,12 @@ export function BgmPlayer({ naia }: Props) {
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
 	function handleYtSelect(video: YtVideo, requestedPlaybackId?: string) {
+		if (broadcastingRef.current) {
+			setSource("local");
+			setAppTab("local");
+			setBroadcastNotice(t("broadcast.bgmLocalOnlyNotice"));
+			return;
+		}
 		if (!requestedPlaybackId) {
 			cancelRadioDjRecovery();
 			failedVideoIdsRef.current.delete(video.id);
@@ -2034,6 +2086,7 @@ export function BgmPlayer({ naia }: Props) {
 			if (localTracks.length > 0 && !audio.src) {
 				audio.src = localTracks[localIndex];
 			}
+			attachMediaElementToSharedContext(audio);
 			audio
 				.play()
 				.then(() => setPlaying(true))
@@ -2084,6 +2137,7 @@ export function BgmPlayer({ naia }: Props) {
 			return;
 		}
 		audio.src = tracks[idx];
+		attachMediaElementToSharedContext(audio);
 		void audio
 			.play()
 			.then(() => {
@@ -2366,7 +2420,14 @@ export function BgmPlayer({ naia }: Props) {
 								<button
 									type="button"
 									className={`bgm-app-tab${appTab === "youtube" ? " bgm-app-tab--active" : ""}`}
-									onClick={() => setAppTab("youtube")}
+									onClick={() => {
+										if (broadcasting) {
+											setAppTab("local");
+											setBroadcastNotice(t("broadcast.bgmLocalOnlyNotice"));
+											return;
+										}
+										setAppTab("youtube");
+									}}
 								>
 									▶ YouTube
 								</button>
@@ -2396,6 +2457,15 @@ export function BgmPlayer({ naia }: Props) {
 						</div>
 
 						{/* ── 활성 플레이리스트 툴바 — 모든 탭 공통 (선택·셔플·반복) ── */}
+						{broadcastNotice && (
+							<div
+								className="bgm-yt-status"
+								data-testid="bgm-broadcast-local-only-notice"
+								role="status"
+							>
+								{broadcastNotice}
+							</div>
+						)}
 						<div className="bgm-playlist-toolbar">
 							<select
 								value={activePlaylist?.id ?? ""}
