@@ -2644,7 +2644,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 | 진행 | 게이트웨이 열쇠·크레딧 확인 중 준비 상태 표시 및 중복 입장 방지 | `KioskDemoGate.test.tsx` |
 | 성공 | 게이트웨이 크레딧 유효 시 입장 허용, 20문항 `expectedPoints` `ask()`/`verify()` 통과, 활성 방문 중 새로고침 후 대화·지나 답변 기억 복원, ‘처음으로’ 및 무응답 만료 시 OPFS 대화 JSONL·기억 완전 삭제(`naia-remote-key` 유지) | `knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `KioskDemoGate.test.tsx`, `kiosk-demo.spec.ts` |
 | 게이트웨이 값 | luna·terra 요청이 `reasoning_effort: high` 로 나감(운영 게이트웨이 허용 값) | `openai-compat-provider.test.ts` |
-| 기본 모델 빠짐 | 게이트웨이 목록에 기본 모델이 없으면 들어가기 전에 살아 있는 모델로 바꿔 첫 질문부터 답함, 목록을 못 받으면 그대로 | `kiosk-demo.test.ts` |
+| 기본 모델 빠짐 | 키오스크 시연 주 모델은 저장값이 없거나 게이트웨이 기본이 바뀌어도 `gpt-5.6-luna` 로 고정하고, 게이트웨이 목록에 `gpt-5.6-luna` 가 없을 때만 살아 있는 대체 모델(`deepseek-v4-pro`→`deepseek-v4-flash` 등)로 내림, 목록을 못 받으면 `gpt-5.6-luna` 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx` |
 | 나이아 서비스 소개 질의 | `"나이아는 어떤 서비스인가요?"`·`"나이아란?"` 질의가 `abstained: false`로 `naia.md` 문단을 반환하고 페르소나에 재검색 지침 포함 | `knowledge.test.ts`, `kiosk-demo.test.ts` |
 | 오류 | 열쇠 무효·크레딧 소진 시 `"지금은 시연을 쓸 수 없습니다"` 표시, 한글 금액·지분 %·밸류에이션·투자금·순이익 및 사내 경로 포함 시 차단 | `KioskDemoGate.test.tsx`, `knowledge.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 360px 폭에서 첫 화면·오류 안내·대화 화면 레이아웃 및 키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
@@ -2656,7 +2656,7 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 
 시연판(`isKioskDemo() === true`)에서 대표님 시연 지적 10건을 해결해 투자자·방문자가 내부 JSON·내부 규칙 파일·데스크톱 전용 오류·화면 흔들림 없이 일관된 화면을 경험하게 한다:
 1. **대화창 도구 JSON 비노출**: 지식 검색 도구 호출 시 입력(`{"query":…}`)·결과(`{"abstained":…,"hits":[…]}`) 원문 JSON을 보이지 않고 접힌 한 줄 요약(`"자료 찾는 중"` / `"자료 찾음"`)만 표시한다(답 끝 `"근거: …"` 줄은 유지).
-2. **로그아웃 단추 제거**: 설정 화면(일반 탭·프로필 탭)에서 로그아웃·연결 해제 단추를 숨긴다.
+2. **로그아웃 및 기억 내보내기 단추 제거**: 설정 화면(일반 탭·프로필 탭)에서 로그아웃·연결 해제 단추와 기억 내보내기 단추(`memory-transfer-export`)를 숨기고, 일반 웹 판에서는 기억 내보내기 단추를 다른 설정 단추(`.voice-preview-btn`)와 같은 모양으로 맞춘다.
 3. **설정 저장 `desktop_only:secure_store_set` 오류 제거**: 웹/키오스크 판에서 설정을 저장할 때 네이티브 `secure_store_set`을 호출하지 않고 브라우저 저장소로 대체해 오류 없이 저장된다.
 4. **음성 표시·선택 일관성 (`Naia Cloud TTS` 기본 + 브라우저 대체)**: 키오스크 판 기본 말하기를 `Naia Cloud TTS`(`"nextain"`, 시연 열쇠로 게이트웨이 TTS 호출)로 하고, 프로필 탭과 음성 탭 모두에서 `Naia Cloud TTS`를 고를 수 있고 같은 값을 보인다(게이트웨이 TTS 실패 시 브라우저 음성으로 대체, `"naia-local-voice : 시동중 .."` 배지는 비노출).
 5. **파일 탐색기 탭·문구 정리**: `"온라인 (준비 중)"` 단추를 없애고 `"오프라인"`을 `"브라우저 안 오프라인 공간"`으로 풀어 쓴다.
@@ -2670,12 +2670,12 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 
 | 상태 | 검증 | 시험 |
 |---|---|---|
-| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃 숨김, 키오스크 기본 `Naia Cloud TTS`(`"nextain"`) 시드 및 프로필·음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts` |
+| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃·기억 내보내기 숨김, 키오스크 주 모델 `gpt-5.6-luna` 고정 및 기본 `Naia Cloud TTS`(`"nextain"`) 시드·프로필/음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts` |
 | 빈 목록 | 초기 OPFS에서도 탐색기에 `kiosk-demo/knowledge/*.md` 시연 파일만 표시되고 내부 규칙 파일 비노출 | `web-workspace-path.test.tsx`, `knowledge.test.ts` |
 | 진행 | 도구 실행 중 `"자료 찾는 중"` 표시, `"부드러운 움직임"` 재생 중 크기·발 위치 고정 및 부드러운 스웨이 유지 | `ToolActivity.test.tsx`, `prebaked-renderer.test.ts` |
 | 성공 | 설정 저장 시 `secure_store_set` 미호출·무오류, 지식 탭에서 21개 원고 마크다운 렌더링 열람, 파일 열기 시 탐색기 폭 확장·한 줄 파일 이름·도구줄 보존, 지나 클립 머리 구멍·팔/다리 검은 영역 0 및 크기/발 위치 일치 | `SettingsTab.test.tsx`, `KnowledgeSettingsTab.test.tsx`, `web-workspace-path.test.tsx` |
 | 오류 | 내부 규칙 경로(`.agents/*`, `AGENTS.md` 등) 직접 읽기 요청 시 차단, 게이트웨이 TTS 실패 시 브라우저 음성 폴백 | `web-workspace-path.test.tsx`, `sentence-pipeline.test.ts` |
 | 좁은 폭 | `1920×1080`, `1280×720`, `360px` 폭에서 탐색기·지식 탭·대화창 레이아웃 및 키보드/ARIA 동작 유지 | `kiosk-demo.spec.ts`, 로컬 빌드판 시각 검증(`/home/nextain/work/codex-runs/kiosk-r3/shots-r2/`) |
-| 깃발 꺼짐 | `isKioskDemo() === false`에서 기존 도구 펼침·로그아웃 단추·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx` |
+| 깃발 꺼짐 | `isKioskDemo() === false`에서 기존 도구 펼침·로그아웃 단추·일반 웹판 기억 내보내기 단추(`.voice-preview-btn`)·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx` |
 
 

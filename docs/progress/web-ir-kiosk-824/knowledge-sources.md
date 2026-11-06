@@ -38,7 +38,7 @@
 ## 2026-11-06 3판 1회차 — 대표님 시연 지적 10건 반영 (R3-1)
 
 1. **대화창 도구 입력·출력 원문 JSON 숨김**: `ToolActivity.tsx`에서 `isKioskDemo()`일 때 펼침/접힘 화살표와 `.tool-activity-body`(JSON 인자·출력 원문)를 렌더링하지 않고 한 줄 요약(`"자료 찾는 중"` / `"자료 찾음"`)만 정적으로 표시합니다. `visible-chat-text.ts` `TOOL_DUMP_KEYS`에 `"query"`, `"sourceUris"`를 추가해 본문 유입도 차단합니다(답변 끝 `"근거: …"` 줄은 유지).
-2. **시연판 로그아웃 단추 제거**: `SettingsTab.tsx`에서 `isKioskDemo()`일 때 `web-logout-btn`(일반 탭 웹 로그아웃)과 `.lab-disconnect-btn`(프로필 연결 해제)을 렌더링하지 않습니다.
+2. **시연판 로그아웃·기억 내보내기 단추 제거 및 주 모델 `gpt-5.6-luna` 고정**: `SettingsTab.tsx`에서 `isKioskDemo()`일 때 `web-logout-btn`(일반 탭 웹 로그아웃), `.lab-disconnect-btn`(프로필 연결 해제), `memory-transfer-export`(프로필 기억 내보내기)를 렌더링하지 않으며, 일반 웹 판에서는 `memory-transfer-export` 단추에 `.voice-preview-btn` 클래스를 부여해 다른 설정 단추와 같은 모양으로 맞춥니다. 또한 키오스크 판의 주 모델(`KIOSK_DEMO_LLM_MODEL`)은 저장값이 없거나 게이트웨이 기본 모델이 바뀌어도 `"gpt-5.6-luna"`로 고정하고, 게이트웨이 `/v1/models`에 `"gpt-5.6-luna"`가 없을 때만 대체 모델로 내립니다.
 3. **`desktop_only:secure_store_set` 설정 저장 오류 제거**: `secure-store.ts`에서 `isWebMode()` 또는 `opfs://` 경로일 때 Tauri 네이티브 `secure_store_get`/`secure_store_set`/`secure_store_delete` IPC를 호출하지 않고 브라우저 저장소(`localStorage`)로 처리해 설정 저장 시 오류가 뜨지 않게 합니다.
 4. **음성 상태 표시·공급자 선택 일관성 (`Naia Cloud TTS` 기본 + 브라우저 대체)**: 키오스크 판(`isKioskDemo()`) 기본 말하기를 `Naia Cloud TTS`(`ttsProvider: "nextain"`, 목소리 `"ko-KR-SunHi:DragonHDLatestNeural"`, 시연 열쇠로 게이트웨이 `POST /v1/audio/speech` 호출)로 두며, 프로필 탭과 음성 탭 모두에서 `Naia Cloud TTS`와 `"브라우저 음성 합성"`(`"browser"`)을 고를 수 있고 같은 값을 표시합니다. 게이트웨이 TTS 실패 시에는 브라우저 음성(`speechSynthesis`)으로 자동 대체하며, 웹/키오스크 판에서 `"naia-local-voice : 시동중 .."` 배지는 표시하지 않습니다.
 5. **파일 탐색기 탭·문구 정리**: `WebWorkspace.tsx`에서 `"온라인 (준비 중)"` 단추를 제거하고, `locales/ko.ts`의 `"webExplorer.offline"` 문구를 `"브라우저 안 오프라인 공간"`으로 풀어 씁니다.

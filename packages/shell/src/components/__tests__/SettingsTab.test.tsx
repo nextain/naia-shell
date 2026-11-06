@@ -5946,9 +5946,13 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		);
 
 		render(<SettingsTab />);
-		// Profile tab: no lab-disconnect-btn, no local-voice starting badge, profile-tts-provider defaults to nextain (Naia Cloud TTS) with browser fallback option
+		// Profile tab: no lab-disconnect-btn, no memory-transfer-export in kiosk mode, no local-voice starting badge, LLM main shows nextain / gpt-5.6-luna, profile-tts-provider defaults to nextain (Naia Cloud TTS) with browser fallback option
 		expect(document.querySelector(".lab-disconnect-btn")).toBeNull();
+		expect(screen.queryByTestId("memory-transfer-export")).toBeNull();
 		expect(document.querySelector('[data-testid="slot-tts-live"]')).toBeNull();
+		expect(screen.getByTestId("slot-main").textContent).toContain(
+			"nextain / gpt-5.6-luna",
+		);
 		const profileTtsSelect = screen.getByTestId(
 			"profile-tts-provider",
 		) as HTMLSelectElement;
@@ -5982,6 +5986,28 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		) as HTMLSelectElement;
 		expect(nextainVoiceSelect).not.toBeNull();
 		expect(nextainVoiceSelect.value).toBe("ko-KR-SunHi:DragonHDLatestNeural");
+
+		vi.unstubAllEnvs();
+	});
+
+	it("FR-WEB-KIOSK-FIX.10, R3.2 shows nextain / gpt-5.6-luna on profile tab in kiosk mode even without saved model and styles memory-transfer-export with voice-preview-btn in normal web mode", () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		localStorage.removeItem("naia-config");
+
+		const { unmount } = render(<SettingsTab />);
+		expect(screen.getByTestId("slot-main").textContent).toContain(
+			"nextain / gpt-5.6-luna",
+		);
+		expect(screen.queryByTestId("memory-transfer-export")).toBeNull();
+		unmount();
+
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		render(<SettingsTab />);
+		const exportBtn = screen.getByTestId("memory-transfer-export");
+		expect(exportBtn).toHaveClass("voice-preview-btn");
 
 		vi.unstubAllEnvs();
 	});

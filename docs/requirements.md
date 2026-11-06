@@ -1670,7 +1670,7 @@ P04 S5(2026-11-05): 관련 Vitest 7파일 179개 통과(`/home/nextain/work/code
 | FR-WEB-KIOSK-FIX.7 | `isKioskDemo()`가 참일 때 대화 답변 아래 `"약 0 크레딧 · 0 토큰"` 사용량 줄을 숨기고, 일반 웹판(`isKioskDemo() === false`)에서는 그대로 표시한다. | Done |
 | FR-WEB-KIOSK-FIX.8 | 게이트웨이 경로에서 `gpt-6.1-terra`·`gpt-5.6-luna` 요청의 `reasoning_effort` 는 운영 게이트웨이가 받는 값 `high` 로 보낸다(`xhigh` 는 422 로 시연 대화가 답하지 못함, 2026-11-06 실제 빌드 ET 에서 발견). | Done |
 | FR-WEB-KIOSK-FIX.9 | 공개 지식 원고(`knowledge/*.md`)와 `kb.json` 에 사내 개발·검수 단계 문구(PR 번호, main 병합, 독립 검수, 내부 문서 이름, 초안 확인 표시)를 두지 않고 날짜 기준 제품 상태로만 적는다(2026-11-06 독립 내용 검수 차단 1건). | Done |
-| FR-WEB-KIOSK-FIX.10 | 시연 준비(`prepareKioskDemoOnboarding`)는 게이트웨이 `/v1/models` 를 보고 기본 모델이 목록에 없으면 들어가기 전에 살아 있는 모델(terra→luna→deepseek 차례)로 바꾼다. 목록을 못 받으면 그대로 둔다(2026-11-06 terra 가 목록에서 빠져 대화 400 실측). | Done |
+| FR-WEB-KIOSK-FIX.10 | 키오스크 시연의 주 모델(`model`, `llmRoles.main.model`)은 저장된 값이 없거나 게이트웨이·등록부 기본 모델이 바뀌어도 `"gpt-5.6-luna"` 로 고정하며, 시연 준비(`prepareKioskDemoOnboarding`)는 게이트웨이 `/v1/models` 에 `"gpt-5.6-luna"` 가 없을 때만 살아 있는 대체 모델(`deepseek-v4-pro`→`deepseek-v4-flash`→`solar-pro4`→`solar-mini` 차례)로 내리고 목록을 못 받으면 `"gpt-5.6-luna"` 를 그대로 둔다. | Done |
 | FR-WEB-KIOSK-FIX.11 | 기본 서비스 정의 질문(`"나이아는 어떤 서비스인가요?"`, `"나이아란?"`)에 즉시 답하도록 기존 공개 원고(`company.md`, `difference.md`, `web.md`, `desktop.md`, `container.md`, `character.md`, `memory.md`)의 문장만 엮은 `knowledge/naia.md`(`# 나이아 서비스 소개`)를 추가하고, `kb-compiler/core/text.ts` `JOSA`에 `이란|란`(앞 길이 2 이상 유지)을 넣으며, `KIOSK_DEMO_PERSONA`에 검색 결과가 질문과 맞지 않으면 다른 낱말로 한 번 더 찾은 뒤 답한다는 지침을 추가한다(`eval-questions.json` 22문항·21카드 `kb.json` 재컴파일, 2026-11-06 실주소 시험 반영). | Done |
 | NFR-WEB-KIOSK-FIX.1 | `scripts/conform/manifest.json` 및 `.agents/context/module-manifest.json`에 S1·S3 영역과 `KioskDemoGate.tsx`·`lib/web-runtime`을 등록해 정합성·파일 계약 검사를 통과하고, E2E 스크린샷 기본 출력 경로를 작업 트리 안 시험 결과 폴더로 두며 `speechSynthesis` 모의 시험 이름에 모의 여부를 명시한다. | Done |
 
@@ -1681,7 +1681,7 @@ P04 검수 수정(#824, 2026-11-05): 지나 실사 클립 재후처리 및 인�
 | ID | 요구사항 | 상태 |
 |---|---|---|
 | FR-WEB-KIOSK-R3.1 | `isKioskDemo()`일 때 대화창의 도구 활동(`ToolActivity.tsx`)에서 입력 JSON(`{"query":…}`)과 출력 JSON(`{"abstained":…,"hits":[…]}`) 원문을 펼치거나 노출하지 않고 한 줄 요약(`"자료 찾는 중"` / `"자료 찾음"`)만 표시한다. 답변 끝 `"근거: …"` 줄은 유지한다. | Done |
-| FR-WEB-KIOSK-R3.2 | `isKioskDemo()`일 때 설정 화면(`SettingsTab.tsx`)에서 로그아웃 단추(`web-logout-btn`)와 연결 해제 단추(`.lab-disconnect-btn`)를 표시하지 않는다. | Done |
+| FR-WEB-KIOSK-R3.2 | `isKioskDemo()`일 때 설정 화면(`SettingsTab.tsx`)에서 로그아웃 단추(`web-logout-btn`), 연결 해제 단추(`.lab-disconnect-btn`), 기억 내보내기 단추(`memory-transfer-export`)를 표시하지 않으며, 일반 웹 판(`isWebMode() && !isKioskDemo()`)에서는 기억 내보내기 단추에 `.voice-preview-btn` 스타일을 적용해 다른 단추와 같은 모양으로 맞춘다. | Done |
 | FR-WEB-KIOSK-R3.3 | 웹/키오스크 판(`isWebMode()` 또는 `opfs://` 경로)에서 `secure-store.ts`는 Tauri 전용 `secure_store_get`/`secure_store_set`/`secure_store_delete`를 호출하지 않고 브라우저 저장소로 처리해 `"설정을 저장하지 못했습니다: desktop_only:secure_store_set"` 오류가 발생하지 않게 한다. | Done |
 | FR-WEB-KIOSK-R3.4 | 키오스크 판(`isKioskDemo()`) 기본 말하기를 `Naia Cloud TTS`(`ttsProvider: "nextain"`, 목소리 `"ko-KR-SunHi:DragonHDLatestNeural"`, 시연 열쇠로 게이트웨이 `POST /v1/audio/speech` 호출)로 하고, 프로필 탭과 음성 탭 모두에서 `Naia Cloud TTS`와 `"브라우저 음성 합성"`(`"browser"`)을 고를 수 있고 같은 값을 보이게 한다. 게이트웨이 TTS 실패 시에는 브라우저 목소리(`speechSynthesis`)로 대체하며, 웹/키오스크 판에서 `"naia-local-voice : 시동중 .."` 배지는 표시하지 않는다. | Done |
 | FR-WEB-KIOSK-R3.5 | 웹 파일 탐색기(`WebWorkspace.tsx`)에서 `"온라인 (준비 중)"` 단추를 제거하고 `"오프라인"` 문구(`webExplorer.offline`)를 `"브라우저 안 오프라인 공간"`으로 표시한다. | Done |

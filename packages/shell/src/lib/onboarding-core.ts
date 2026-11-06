@@ -11,12 +11,14 @@ import {
 // deps 는 여기서 셸 함수(invoke/config/adk-store/opener)를 주입 — core 는 @tauri-apps 미의존(직교, substrate-agnostic).
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { buildKioskDemoConfigSeed } from "./config-seed";
+import {
+	buildKioskDemoConfigSeed,
+	resolveKioskDemoMainModel,
+} from "./config-seed";
 import { isKioskDemo } from "./kiosk-demo/flag";
 import {
 	fetchNaiaModelMetadata,
 	gatewayServedModelIds,
-	shouldMigrateNextainModel,
 } from "./llm/registry";
 import { Logger } from "./logger";
 import { installDefaultWebAdk } from "./web-runtime/web-adk";
@@ -155,25 +157,24 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 		(await fs.readText(path)) || JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG),
 	);
 	const seed = buildKioskDemoConfigSeed();
-	// FR-WEB-KIOSK-FIX.10: 시연 계정에는 자동 기본값 이관(useAgentAuthSync)이 걸리지 않으므로, 기본 모델이
-	//   게이트웨이 목록에서 빠지면(2026-11-06 gpt-6.1-terra 400 실측) 들어가기 전에 살아 있는 모델로 바꾼다.
-	if (seed.provider === "nextain" && typeof seed.model === "string") {
+	// FR-WEB-KIOSK-FIX.10: 키오스크 시연 주 모델은 gpt-5.6-luna로 고정하고,
+	//   게이트웨이 /v1/models 목록에 luna가 없을 때만 살아 있는 대체 모델로 내린다.
+	if (seed.provider === "nextain") {
 		const metadata = await fetchNaiaModelMetadata(LAB_GATEWAY_URL).catch(
 			() => null,
 		);
-		const decision = shouldMigrateNextainModel(
-			"nextain",
-			seed.model,
+		const resolvedModel = resolveKioskDemoMainModel(
 			gatewayServedModelIds(metadata),
 		);
-		if (decision.migrate) {
-			seed.model = decision.to;
-			if (seed.llmRoles?.main)
-				seed.llmRoles = {
-					...seed.llmRoles,
-					main: { ...seed.llmRoles.main, model: decision.to },
-				};
-		}
+		seed.model = resolvedModel;
+		seed.llmRoles = {
+			...seed.llmRoles,
+			main: {
+				...(seed.llmRoles?.main ?? { provider: "nextain" }),
+				provider: "nextain",
+				model: resolvedModel,
+			},
+		};
 	}
 	const config = {
 		...existing,

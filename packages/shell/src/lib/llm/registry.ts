@@ -90,6 +90,7 @@ export function isOmniModel(providerId: string, modelId: string): boolean {
 
 /** Get default model for a provider. */
 export function getDefaultLlmModel(providerId: string): string {
+	if (isKioskDemo() && providerId === "nextain") return "gpt-5.6-luna";
 	return providers.get(providerId)?.defaultModel ?? "";
 }
 

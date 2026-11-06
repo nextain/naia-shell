@@ -1,7 +1,6 @@
 import { effectiveAvatarProviderFromConfig } from "./avatar/nva-gate";
 import type { AppConfig } from "./config";
 import { isKioskDemo } from "./kiosk-demo/flag";
-import { getDefaultLlmModel } from "./llm/registry";
 import { KIOSK_DEMO_PERSONA } from "./persona";
 import {
 	WEB_DEFAULT_NVA,
@@ -45,6 +44,13 @@ export function buildSeedShellConfig(
 	return seed;
 }
 
+export const KIOSK_DEMO_LLM_MODEL = "gpt-5.6-luna" as const;
+export const KIOSK_DEMO_LLM_FALLBACK_MODELS = [
+	"deepseek-v4-pro",
+	"deepseek-v4-flash",
+	"solar-pro4",
+	"solar-mini",
+] as const;
 export const KIOSK_DEMO_TTS_PROVIDER = "nextain" as const;
 export const KIOSK_DEMO_TTS_HOST = "https://bc250-0-voice.nextain.io";
 export const KIOSK_DEMO_TTS_VOICE = "ko-KR-SunHi:DragonHDLatestNeural";
@@ -53,6 +59,22 @@ export const DEFAULT_SHELL_NAIA_WIDTH = 320;
 export const KIOSK_SHELL_NAIA_WIDTH = 520;
 export const KIOSK_SHELL_CHAT_HEIGHT_MIN = 540;
 export const KIOSK_SHELL_CHAT_HEIGHT_RATIO = 0.68;
+
+/**
+ * 키오스크 시연의 주 모델은 크레딧 보호를 위해 gpt-5.6-luna로 고정하고,
+ * 게이트웨이 /v1/models 목록에 luna가 없을 때만 대체 모델로 내린다.
+ */
+export function resolveKioskDemoMainModel(
+	gatewayServed?: ReadonlySet<string> | null,
+): string {
+	if (!gatewayServed || gatewayServed.has(KIOSK_DEMO_LLM_MODEL)) {
+		return KIOSK_DEMO_LLM_MODEL;
+	}
+	return (
+		KIOSK_DEMO_LLM_FALLBACK_MODELS.find((id) => gatewayServed.has(id)) ??
+		KIOSK_DEMO_LLM_MODEL
+	);
+}
 
 export function resolveShellAvatarSelection(
 	config: AppConfig | null | undefined,
@@ -116,9 +138,10 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 		avatarProvider: "naia-video-avatar",
 		nvaModel: KIOSK_DEMO_NVA_MODEL,
 		provider: "nextain",
-		model: getDefaultLlmModel("nextain"),
+		model: KIOSK_DEMO_LLM_MODEL,
+		webAutoDefaultModel: false,
 		llmRoles: {
-			main: { provider: "nextain", model: getDefaultLlmModel("nextain") },
+			main: { provider: "nextain", model: KIOSK_DEMO_LLM_MODEL },
 		},
 	});
 }

@@ -4,6 +4,7 @@ import { effectiveAvatarProviderFromConfig } from "../avatar/nva-gate";
 // I/O 0(DOM/localStorage 접근 금지) — SettingsTab UI·온보딩 기본값 양쪽이 동일 로직 소비(비일관 방지).
 // SoT: .agents/progress/naia-model-slots-architecture-2026-06-28.md
 import type { AppConfig, SttProviderId, TtsProviderId } from "../config";
+import { isKioskDemo } from "../kiosk-demo/flag";
 import {
 	readConfiguredLlmRoles,
 	resolveEffectiveLlmRoles,
@@ -135,9 +136,19 @@ export function effectiveMainRole(config: AppConfig): {
 		? resolved.roles.find((role) => role.role === "main")
 		: undefined;
 	const configured = readConfiguredLlmRoles(config).main;
+	const provider =
+		main?.provider ??
+		configured?.provider ??
+		config.provider ??
+		(isKioskDemo() ? "nextain" : undefined);
+	const model =
+		main?.model ??
+		configured?.model ??
+		config.model ??
+		(isKioskDemo() && provider === "nextain" ? "gpt-5.6-luna" : undefined);
 	return {
-		provider: main?.provider ?? configured?.provider ?? config.provider,
-		model: main?.model ?? configured?.model ?? config.model,
+		provider,
+		model,
 	};
 }
 

@@ -846,7 +846,7 @@ export function SettingsTab() {
 	const [savedVrmModel, setSavedVrmModel] = useState(
 		normalizeLocalPath(existing?.vrmModel ?? DEFAULT_AVATAR_MODEL),
 	);
-	const initialMainRole = existing ? effectiveMainRole(existing) : {};
+	const initialMainRole = effectiveMainRole(existing ?? ({} as AppConfig));
 	const initProvider = (initialMainRole.provider ?? "") as ProviderId;
 	const savedModel = initialMainRole.model;
 	const [provider, setProvider] = useState<ProviderId>(initProvider);
@@ -5054,10 +5054,11 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "profile" && (
 				<>
-					{isWebMode() && (
+					{isWebMode() && !isKioskDemo() && (
 						<div className="settings-field">
 							<button
 								type="button"
+								className="voice-preview-btn"
 								data-testid="memory-transfer-export"
 								disabled={transferStatus === "exporting"}
 								onClick={async () => {

@@ -4,6 +4,7 @@ import { resolveTtsVoiceId } from "../../components/chat-voice-utils";
 import { loadConfig, saveConfig } from "../config";
 import {
 	DEFAULT_SHELL_NAIA_WIDTH,
+	KIOSK_DEMO_LLM_MODEL,
 	KIOSK_DEMO_NVA_MODEL,
 	KIOSK_DEMO_TTS_HOST,
 	KIOSK_DEMO_TTS_PROVIDER,
@@ -11,6 +12,7 @@ import {
 	KIOSK_SHELL_NAIA_WIDTH,
 	buildKioskDemoConfigSeed,
 	resolveInitialShellChatLayout,
+	resolveKioskDemoMainModel,
 	resolveShellAvatarSelection,
 } from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
@@ -27,10 +29,13 @@ import {
 import { installWebRuntime } from "../web-runtime/install";
 import { registerWebLlmProvider } from "../web-runtime/llm-provider";
 import {
+	getDefaultLlmModel,
 	getLlmProvider,
 	getStaticModelsRecord,
 	listLlmProviders,
+	registerLlmProvider,
 } from "../llm/registry";
+import { effectiveMainRole, readSlots } from "../slots/model";
 import { INITIAL_WEB_WORKSPACE_CONFIG } from "../web-runtime/web-workspace-commands";
 import { prepareKioskDemoOnboarding } from "../onboarding-core";
 import {
@@ -213,22 +218,73 @@ describe("S3 kiosk isolation", () => {
 		expect(consumeKioskGreeting()).toBe(true);
 		expect(consumeKioskGreeting()).toBe(false);
 	});
-	it("FR-WEB-KIOSK-FIX.10 switches the default model before entry when the gateway no longer serves it", async () => {
+	it("FR-WEB-KIOSK-FIX.10 fixes kiosk main model to gpt-5.6-luna and falls back only when luna is absent from the gateway", async () => {
 		const served = (keys: string[]) =>
 			vi.fn(async () => new Response(JSON.stringify(keys.map((model_key) => ({ model_key, capabilities: ["llm"], operational_status: "live" })))));
-		vi.stubGlobal("fetch", served(["gpt-5.6-luna", "deepseek-v4-pro"]));
+		expect(KIOSK_DEMO_LLM_MODEL).toBe("gpt-5.6-luna");
+		expect(buildKioskDemoConfigSeed()).toMatchObject({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+			llmRoles: { main: { provider: "nextain", model: "gpt-5.6-luna" } },
+		});
+
+		// Gateway serves both terra and luna -> stays on gpt-5.6-luna
+		vi.stubGlobal("fetch", served(["gpt-6.1-terra", "gpt-5.6-luna"]));
 		await prepareKioskDemoOnboarding();
 		let saved = JSON.parse(localStorage.getItem("naia-config")!);
 		expect(saved.model).toBe("gpt-5.6-luna");
 		expect(saved.llmRoles.main.model).toBe("gpt-5.6-luna");
-		vi.stubGlobal("fetch", served(["gpt-6.1-terra", "gpt-5.6-luna"]));
+
+		// Gateway serves luna + deepseek -> stays on gpt-5.6-luna
+		vi.stubGlobal("fetch", served(["gpt-5.6-luna", "deepseek-v4-pro"]));
 		await prepareKioskDemoOnboarding();
 		saved = JSON.parse(localStorage.getItem("naia-config")!);
-		expect(saved.model).toBe("gpt-6.1-terra");
+		expect(saved.model).toBe("gpt-5.6-luna");
+		expect(saved.llmRoles.main.model).toBe("gpt-5.6-luna");
+
+		// Gateway does NOT serve luna -> steps down to fallback (deepseek-v4-pro / deepseek-v4-flash), never terra
+		vi.stubGlobal("fetch", served(["gpt-6.1-terra", "deepseek-v4-pro", "deepseek-v4-flash"]));
+		await prepareKioskDemoOnboarding();
+		saved = JSON.parse(localStorage.getItem("naia-config")!);
+		expect(saved.model).toBe("deepseek-v4-pro");
+		expect(saved.llmRoles.main.model).toBe("deepseek-v4-pro");
+		expect(resolveKioskDemoMainModel(new Set(["deepseek-v4-flash"]))).toBe("deepseek-v4-flash");
+
+		// Gateway metadata fetch fails (offline) -> stays on gpt-5.6-luna
 		vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
 		await prepareKioskDemoOnboarding();
-		expect(JSON.parse(localStorage.getItem("naia-config")!).model).toBe("gpt-6.1-terra");
+		saved = JSON.parse(localStorage.getItem("naia-config")!);
+		expect(saved.model).toBe("gpt-5.6-luna");
+		expect(saved.llmRoles.main.model).toBe("gpt-5.6-luna");
 		vi.unstubAllGlobals();
+	});
+	it("FR-WEB-KIOSK-FIX.10 resolves gpt-5.6-luna in kiosk mode when saved model is missing or gateway defaultModel changes", () => {
+		expect(getDefaultLlmModel("nextain")).toBe("gpt-5.6-luna");
+		const originalNextain = getLlmProvider("nextain")!;
+		registerLlmProvider({ ...originalNextain, defaultModel: "claude-opus-5" });
+		try {
+			expect(getDefaultLlmModel("nextain")).toBe("gpt-5.6-luna");
+			expect(buildKioskDemoConfigSeed().model).toBe("gpt-5.6-luna");
+		} finally {
+			registerLlmProvider(originalNextain);
+		}
+
+		setWebAssetsModeForTests(true);
+		localStorage.setItem("naia-config", JSON.stringify({ provider: "nextain", apiKey: "" }));
+		const loadedWithoutModel = loadConfig()!;
+		expect(loadedWithoutModel.model).toBe("gpt-5.6-luna");
+		expect(loadedWithoutModel.llmRoles?.main).toMatchObject({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+		});
+		expect(effectiveMainRole({} as any)).toEqual({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+		});
+		expect(readSlots({} as any).main).toEqual({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+		});
 	});
 	it("forces ttsProvider to browser in ordinary web mode when kiosk demo flag is OFF", () => {
 		setWebAssetsModeForTests(true);

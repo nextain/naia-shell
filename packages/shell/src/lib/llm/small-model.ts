@@ -1,4 +1,5 @@
 import type { LlmRoleConfig } from "../config";
+import { isKioskDemo } from "../kiosk-demo/flag";
 import type { LlmModelMeta } from "./types";
 import { sortModels } from "./registry";
 
@@ -15,6 +16,10 @@ export function defaultSmallModel(models: readonly LlmModelMeta[]): LlmRoleConfi
 
 /** Only select a recommended server model actually reported by the catalog. */
 export function defaultMainModel(models: readonly LlmModelMeta[]): LlmRoleConfig | undefined {
+ if (isKioskDemo()) {
+  const luna = smallModelChoices(models).find(model => model.id.toLowerCase() === "gpt-5.6-luna");
+  if (luna) return { provider: "nextain", model: luna.id };
+ }
  const first = sortModels(smallModelChoices(models).filter(model => model.id !== "solar-mini"), "recommended")[0];
  if (!first) return undefined;
  return { provider: "nextain", model: first.id, ...(first.id === "gpt-6.1-terra" ? { thinkingLevel: "xhigh" as const } : {}) };

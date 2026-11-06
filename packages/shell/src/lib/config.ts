@@ -728,6 +728,29 @@ export function loadConfig(): AppConfig | null {
 			} else if (!isKioskDemo() && config.ttsProvider !== "browser") {
 				config.ttsProvider = "browser";
 			}
+			if (isKioskDemo()) {
+				if (!config.provider) {
+					config.provider = "nextain";
+				}
+				if (config.provider === "nextain" && !config.model?.trim()) {
+					config.model = "gpt-5.6-luna";
+				}
+				if (
+					config.provider === "nextain" &&
+					(!config.llmRoles?.main ||
+						(!config.llmRoles.main.inherit &&
+							!config.llmRoles.main.model?.trim()))
+				) {
+					config.llmRoles = {
+						...config.llmRoles,
+						main: {
+							...config.llmRoles?.main,
+							provider: "nextain",
+							model: config.model || "gpt-5.6-luna",
+						},
+					};
+				}
+			}
 		} else if (!config.sttProvider) {
 			const isLinux = navigator.userAgent.includes("Linux");
 			config.sttProvider = isLinux ? "vosk" : "web-speech";
