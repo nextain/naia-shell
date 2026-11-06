@@ -2674,12 +2674,12 @@ Test Coverage Map (P02)
 
 ## UC-WIN-RTX2070-R2-026 — 0.2.6 윈도우 실기(rtx2070) 2회차 수정
 
-1. **설치본 `ffmpeg.exe` 자리표시 파일 유입 차단 및 실행 전 검증**: 윈도우 설치 빌드(`stage-runtime.mjs`·`build.rs`·`build-installers.yml`)는 실제 PE 실행 파일(`MZ` 헤더·최소 크기·자리표시 머리 바이트 부재)인 `ffmpeg.exe`를 스테이징·번들링하며, 자리표시(`#!naia-ffmpeg-dev-placeholder`)나 잘못된 파일이면 빌드를 실패시킨다. 앱 런타임(`broadcast.rs`)도 스폰 전에 `ffmpeg` 실행 파일을 검증해 자리표시이거나 실행 불가면 스폰하지 않고 즉시 오류를 반환하여 윈도우 `"지원되지 않는 16비트 응용 프로그램"`(`os error 216`) 창이 뜨지 않게 한다.
+1. **설치본 `ffmpeg.exe` 자리표시 파일 유입 차단 및 실행 전 검증**: 윈도우 빌드(`stage-runtime.mjs`·`build.rs`·`build-installers.yml`)는 `platform-matrix.json`(`os.win32.ffmpeg`)에 고정된 `ffmpeg` 릴리스(판·크기·SHA256) 또는 로컬 설치본에서 실제 PE 실행 파일(`MZ` 헤더·최소 크기 1MB·자리표시 머리 바이트 부재)인 `ffmpeg.exe`를 스테이징·번들링하며, 직접 `tauri build`를 실행해도 윈도우 타깃에서는 자리표시(`#!naia-ffmpeg-dev-placeholder`)를 절대 생성하지 않고 빌드를 실패시킨다. 앱 런타임(`broadcast.rs`)도 공유 검증 모듈(`ffmpeg_sidecar.rs`)로 스폰 전에 `ffmpeg` 실행 파일을 검증해 자리표시이거나 실행 불가면 스폰하지 않고 즉시 오류를 반환하여 윈도우 `"지원되지 않는 16비트 응용 프로그램"`(`os error 216`) 창이 뜨지 않게 한다.
 2. **방송 시작 실패의 앱 내 표시(14개 로케일)**: `broadcast_start`가 실패하면 단추만 조용히 꺼지는 대신 `AiControlBar`(오버레이 알림)와 설정 방송 절(`BroadcastSettingsSection`)에 14개 로케일의 쉬운 문구로 실패 원인을 표시한다.
-3. **방송 키 빈 값 저장 및 명시적 지우기**: 설정 방송 절에서 방송 키 입력란을 비우고 저장하거나 `"키 지우기"` 단추를 누르면 `secure-keys.dat`에서 `broadcastStreamKey`를 삭제하고 화면의 `••••••••` 표시와 `hasStreamKey` 상태를 즉시 지운다.
+3. **방송 키 보존 저장 및 명시적 지우기**: 설정 방송 절에서 방송 키가 저장된 뒤 입력란이 비어 있는(`••••••••` 자리표시) 상태에서 `"저장"` 단추를 다시 누르거나 다른 방송 설정을 바꿀 때는 기존 방송 키를 보존하고, 명시적 `"키 지우기"` 단추를 눌렀을 때만 `secure-keys.dat`에서 `broadcastStreamKey`를 삭제하며 화면의 `••••••••` 표시와 `hasStreamKey` 상태를 즉시 지운다.
 4. **윈도우 방송 시작 전 확인 단계**: 윈도우(비리눅스)에서 방송 시작을 누르면 즉시 외부 RTMP 서버로 송출하지 않고, 보낼 서버 주소(방송 키 가림)와 잡을 화면(`Naia` 창)을 보여 주는 확인 단계를 먼저 띄워 `"방송 시작"`을 눌러야 연결한다. 리눅스는 포털 화면 공유 창이 이미 확인 역할을 하므로 기존 흐름을 유지한다.
-5. **작업 공간 `naia-settings\background` asset protocol scope 허용**: 앱 기동(`read_naia_path_cache`)·경로 설정(`write_naia_path_cache`)·초기화(`init_naia_settings`)·자산 목록 조회(`list_naia_assets`)·번들 복사(`copy_bundled_assets`) 시 선택된 `adk_path`와 `naia-settings`(`background`, `vrm-files`, `bgm-musics`, `nva-files`)를 윈도우 경로(드라이브 문자·역슬래시·정규화 경로)까지 포함해 런타임 `asset_protocol_scope`에 등록하고 `secure-keys.dat`는 계속 차단한다.
-6. **배경 미리보기의 아바타 혼입 제거**: 아바타가 영상 안에 구워져 있는 `naia-autumn-office-live.mp4`를 배경 자산 목록·미리보기에서 제외하고, 기존 설정에 해당 파일명이 저장되어 있으면 배경 전용 자산(`naia-autumn-office-uhd.webp`)으로 정규화해 온보딩·설정의 배경 미리보기와 배경에 배경만 보이게 한다.
+5. **작업 공간 `naia-settings\background` 최소 권한 asset protocol scope 허용**: 앱 기동(`read_naia_path_cache`)·경로 설정(`write_naia_path_cache`)·초기화(`init_naia_settings`)·자산 목록 조회(`list_naia_assets`)·번들 복사(`copy_bundled_assets`) 시 `<ADK>/naia-settings` 아래 4개 자산 폴더(`background`, `vrm-files`, `bgm-musics`, `nva-files`)만 윈도우 경로(드라이브 문자·역슬래시·정규화 경로)로 런타임 `asset_protocol_scope`에 등록하고(`<ADK>` 루트·`<ADK>/naia-settings`·맨 드라이브 루트 `C:\` 등록 금지), `data-private`·`data-private/.tmp`·`data-private/secure-keys.dat`는 원본 및 정규화 경로 모두 차단한다.
+6. **배경 미리보기의 아바타 혼입 제거**: 단일 자산 계약(`naia-asset-contract.json`)을 통해 아바타가 영상 안에 구워져 있는 `naia-autumn-office-live.mp4`를 배경 자산 목록·미리보기에서 제외하고, 기존 설정에 해당 파일명이 저장되어 있으면 배경 전용 자산(`naia-autumn-office-uhd.webp`)으로 정규화해 온보딩·설정의 배경 미리보기와 배경에 배경만 보이게 한다.
 
 | UC | 테스트 파일 | 확인 내용 |
 |---|---|---|

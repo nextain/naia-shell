@@ -2158,7 +2158,7 @@ describe("SettingsTab", () => {
 		);
 	});
 
-	it("clears broadcastStreamKey from secure-keys.dat when saving an empty input or clicking Clear key, and displays broadcast errors (#026-r2 items 2 & 3)", async () => {
+	it("preserves stored broadcastStreamKey when clicking Save with an empty input, clears it only via Clear key button, and displays broadcast errors (#026-r2/r3)", async () => {
 		localStorage.setItem("naia-adk-path", "C:\\naia-test\\rc026\\naia-adk");
 		localStorage.setItem(
 			"naia-config",
@@ -2199,18 +2199,26 @@ describe("SettingsTab", () => {
 			expect(keyInput.placeholder).not.toBe("••••••••");
 			expect(screen.getByTestId("broadcast-key-cleared-notice")).toBeDefined();
 
-			// Re-seed and test clearing via empty input + Save button
+			// Save a new key -> input resets to "" and placeholder shows ••••••••
 			fireEvent.change(keyInput, { target: { value: "second-secret" } });
 			fireEvent.click(screen.getByTestId("broadcast-save-btn"));
 			await waitFor(() => expect(keyInput.placeholder).toBe("••••••••"));
+			expect(keyInput.value).toBe("");
 			expect(nativeSecrets.get("broadcastStreamKey")).toBe("second-secret");
 
-			fireEvent.change(keyInput, { target: { value: "" } });
+			// Clicking Save again while keyInput is empty (or after editing server URL) MUST preserve the stored key (P2-3)
+			const serverUrlInput = screen.getByTestId(
+				"broadcast-server-url-input",
+			) as HTMLInputElement;
+			fireEvent.change(serverUrlInput, {
+				target: { value: "rtmps://a.rtmp.youtube.com/live2" },
+			});
 			fireEvent.click(screen.getByTestId("broadcast-save-btn"));
 			await waitFor(() =>
-				expect(nativeSecrets.has("broadcastStreamKey")).toBe(false),
+				expect(nativeSecrets.get("broadcastStreamKey")).toBe("second-secret"),
 			);
-			expect(keyInput.placeholder).not.toBe("••••••••");
+			expect(keyInput.placeholder).toBe("••••••••");
+			expect(screen.queryByTestId("broadcast-key-cleared-notice")).toBeNull();
 		} finally {
 			setBroadcastBridgeSnapshot({
 				state: "idle",

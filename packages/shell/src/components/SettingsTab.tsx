@@ -8050,7 +8050,7 @@ function BroadcastSettingsSection() {
 		serverUrl?: string;
 		resolution?: NonNullable<AppConfig["broadcastResolution"]>;
 		streamKey?: string;
-		explicitKeySave?: boolean;
+		clearKey?: boolean;
 	}) => {
 		const current = (await loadConfigWithSecrets()) ??
 			loadConfig() ?? {
@@ -8062,7 +8062,7 @@ function BroadcastSettingsSection() {
 		const nextServerUrl = (override?.serverUrl ?? serverUrl).trim();
 		const nextResolution = override?.resolution ?? resolution;
 		const typedKey = (override?.streamKey ?? streamKeyInput).trim();
-		const clearStoredKey = Boolean(override?.explicitKeySave) && typedKey.length === 0;
+		const clearStoredKey = Boolean(override?.clearKey);
 		const effectiveKey = clearStoredKey
 			? ""
 			: typedKey || current.broadcastStreamKey?.trim() || "";
@@ -8187,9 +8187,7 @@ function BroadcastSettingsSection() {
 						type="button"
 						className="voice-preview-btn"
 						data-testid="broadcast-save-btn"
-						onClick={() =>
-							void persistBroadcastSettings({ explicitKeySave: true })
-						}
+						onClick={() => void persistBroadcastSettings()}
 					>
 						{t("settings.broadcastSave")}
 					</button>
@@ -8201,7 +8199,7 @@ function BroadcastSettingsSection() {
 							onClick={() =>
 								void persistBroadcastSettings({
 									streamKey: "",
-									explicitKeySave: true,
+									clearKey: true,
 								})
 							}
 						>

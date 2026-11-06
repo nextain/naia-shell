@@ -24,7 +24,9 @@ import { prepareSteamDepot } from "../prepare-steam-depot.mjs";
 import {
 	FFMPEG_DEV_PLACEHOLDER_PREFIX,
 	MIN_WINDOWS_FFMPEG_BYTES,
+	WINDOWS_FFMPEG_SPEC,
 	assertBundleArchSupported,
+	downloadPinnedWindowsFfmpeg,
 	ensureNodeExecutable,
 	extractArchive,
 	generateConf,
@@ -1265,6 +1267,49 @@ describe("Windows ffmpeg sidecar staging and placeholder guard (FR-WIN-RTX2070-R
 		return buf;
 	}
 
+	it("pins Windows ffmpeg release version, archive/binary sizes, and SHA-256 in platform-matrix.json and shares Rust sidecar validation across build.rs and broadcast.rs", () => {
+		expect(WINDOWS_FFMPEG_SPEC).toEqual(matrix.os.win32.ffmpeg);
+		expect(WINDOWS_FFMPEG_SPEC.version).toBe("7.1.1");
+		expect(WINDOWS_FFMPEG_SPEC.url).toContain(
+			"https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip",
+		);
+		expect(WINDOWS_FFMPEG_SPEC.archiveBytes).toBe(92234348);
+		expect(WINDOWS_FFMPEG_SPEC.archiveSha256).toMatch(/^[0-9a-f]{64}$/);
+		expect(WINDOWS_FFMPEG_SPEC.binaryBytes).toBe(87429632);
+		expect(WINDOWS_FFMPEG_SPEC.binarySha256).toMatch(/^[0-9a-f]{64}$/);
+		expect(WINDOWS_FFMPEG_SPEC.minBytes).toBe(1_000_000);
+
+		const buildRs = readFileSync(
+			resolve(SHELL, "src-tauri/build.rs"),
+			"utf8",
+		);
+		const broadcastRs = readFileSync(
+			resolve(SHELL, "src-tauri/src/broadcast.rs"),
+			"utf8",
+		);
+		const sharedRs = readFileSync(
+			resolve(SHELL, "src-tauri/src/ffmpeg_sidecar.rs"),
+			"utf8",
+		);
+		expect(buildRs).toContain('include!("src/ffmpeg_sidecar.rs");');
+		expect(buildRs).toContain("if is_windows || require_real {");
+		expect(broadcastRs).toContain('include!("ffmpeg_sidecar.rs");');
+		expect(sharedRs).toContain("pub fn validate_ffmpeg_sidecar_file(");
+
+		const workflow = readFileSync(
+			resolve(REPO_ROOT, ".github/workflows/build-installers.yml"),
+			"utf8",
+		);
+		expect(workflow).toContain(
+			"node packages/shell/scripts/stage-runtime.mjs --provision-windows-ffmpeg",
+		);
+		expect(
+			workflow.match(
+				/node packages\/shell\/scripts\/stage-runtime\.mjs --verify-windows-ffmpeg/g,
+			)?.length ?? 0,
+		).toBe(2);
+	});
+
 	it("rejects the 30-byte dev placeholder, tiny files, and non-MZ headers", () => {
 		const dir = mkdtempSync(resolve(tmpdir(), "naia-win-ffmpeg-validate-"));
 		try {
@@ -1288,17 +1333,28 @@ describe("Windows ffmpeg sidecar staging and placeholder guard (FR-WIN-RTX2070-R
 			);
 
 			const validPe = resolve(dir, "ffmpeg-valid.exe");
-			writeFileSync(validPe, makeFakePeBinary());
-			expect(validateWindowsFfmpegBinary(validPe)).toEqual({
+			const peBuf = makeFakePeBinary();
+			writeFileSync(validPe, peBuf);
+			expect(
+				validateWindowsFfmpegBinary(validPe, {
+					expectedBytes: peBuf.length,
+					expectedSha256: createHash("sha256").update(peBuf).digest("hex"),
+				}),
+			).toEqual({
 				filePath: validPe,
 				size: MIN_WINDOWS_FFMPEG_BYTES + 128,
 			});
+			expect(() =>
+				validateWindowsFfmpegBinary(validPe, {
+					expectedSha256: "0".repeat(64),
+				}),
+			).toThrow(/SHA256 불일치/);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	it("overwrites an existing 30-byte placeholder sidecar with a real PE binary from NAIA_FFMPEG_SIDECAR_SOURCE or PATH, and fails if none is available", () => {
+	it("overwrites an existing 30-byte placeholder sidecar with a real PE binary from NAIA_FFMPEG_SIDECAR_SOURCE, PATH, or SHA256-verified pinned release, and fails if none is available", () => {
 		const dir = mkdtempSync(resolve(tmpdir(), "naia-win-ffmpeg-stage-"));
 		try {
 			const srcTauriDir = resolve(dir, "src-tauri");
@@ -1310,18 +1366,84 @@ describe("Windows ffmpeg sidecar staging and placeholder guard (FR-WIN-RTX2070-R
 			);
 			writeFileSync(targetSidecar, `${FFMPEG_DEV_PLACEHOLDER_PREFIX}\n`, "utf8");
 
-			// Fails when only a placeholder exists and no valid source is found
+			// Fails when only a placeholder exists and neither PATH nor pinned release download succeeds
 			expect(() =>
 				provisionWindowsFfmpegSidecar("win32", "x64", {
 					srcTauriDir,
 					env: { PATH: dir },
 					execFileSyncImpl: () => {
-						throw new Error("where.exe not found");
+						throw new Error("where.exe / curl not available");
 					},
 				}),
 			).toThrow(/실제 ffmpeg\.exe 를 찾지 못했습니다/);
 
+			// Succeeds via SHA-256-verified pinned release fallback when PATH/Chocolatey has no ffmpeg
+			const fakeArchiveBuf = Buffer.from("pinned-zip-archive-bytes");
+			const fakeBinaryBuf = makeFakePeBinary();
+			const fakeSpec = {
+				...WINDOWS_FFMPEG_SPEC,
+				version: "7.1.1-test",
+				file: "ffmpeg-test.zip",
+				binaryEntry: "ffmpeg-test/bin/ffmpeg.exe",
+				archiveBytes: fakeArchiveBuf.length,
+				archiveSha256: createHash("sha256")
+					.update(fakeArchiveBuf)
+					.digest("hex"),
+				binaryBytes: fakeBinaryBuf.length,
+				binarySha256: createHash("sha256").update(fakeBinaryBuf).digest("hex"),
+			};
+			const stagedFromPinned = provisionWindowsFfmpegSidecar("win32", "x64", {
+				srcTauriDir,
+				env: { PATH: dir },
+				spec: fakeSpec,
+				execFileSyncImpl: (cmd: string, args: string[]) => {
+					if (cmd === "where.exe") throw new Error("not in PATH");
+					if (cmd.startsWith("curl")) {
+						const outIdx = args.indexOf("--output");
+						writeFileSync(args[outIdx + 1], fakeArchiveBuf);
+						return "";
+					}
+					if (cmd.endsWith("tar") || cmd.endsWith("tar.exe")) {
+						const cIdx = args.indexOf("-C");
+						const extractRoot = args[cIdx + 1];
+						const binPath = resolve(
+							extractRoot,
+							...fakeSpec.binaryEntry.split("/"),
+						);
+						mkdirSync(dirname(binPath), { recursive: true });
+						writeFileSync(binPath, fakeBinaryBuf);
+						return "";
+					}
+					return "";
+				},
+			});
+			expect(stagedFromPinned?.origin).toBe("pinned-release(7.1.1-test)");
+			expect(validateWindowsFfmpegBinary(targetSidecar).size).toBe(
+				fakeBinaryBuf.length,
+			);
+
+			// Rejects tampered archive SHA-256 in downloadPinnedWindowsFfmpeg
+			expect(() =>
+				downloadPinnedWindowsFfmpeg(
+					{ ...fakeSpec, version: "7.1.1-bad-sha" },
+					{
+						cacheDir: resolve(dir, "bad-cache"),
+						execFileSyncImpl: (cmd: string, args: string[]) => {
+							if (cmd.startsWith("curl")) {
+								const outIdx = args.indexOf("--output");
+								writeFileSync(
+									args[outIdx + 1],
+									Buffer.from("tampered-archive-bytes--------"),
+								);
+							}
+							return "";
+						},
+					},
+				),
+			).toThrow(/아카이브 (크기|SHA256) 불일치/);
+
 			// Succeeds and replaces placeholder when NAIA_FFMPEG_SIDECAR_SOURCE points to a valid PE binary
+			writeFileSync(targetSidecar, `${FFMPEG_DEV_PLACEHOLDER_PREFIX}\n`, "utf8");
 			const realSource = resolve(dir, "real-ffmpeg.exe");
 			writeFileSync(realSource, makeFakePeBinary());
 			const staged = provisionWindowsFfmpegSidecar("win32", "x64", {

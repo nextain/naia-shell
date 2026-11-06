@@ -1540,18 +1540,22 @@ describe("UC-B2C-026-R12 native bootstrap authority", () => {
 });
 
 describe("UC-WIN-RTX2070-R2-026: Windows asset scope paths and avatar-free background filtering", () => {
-	it("builds Windows drive-letter + backslash asset scope directories including naia-settings\\background (#026-r2 item 5)", () => {
+	it("builds strictly the 4 Windows asset scope subdirectories (never ADK root or naia-settings root) and rejects bare drive roots (#026-r2/r3 item 5)", () => {
 		const winDirs = buildAdkAssetScopeDirectories(
 			"C:\\naia-test\\rc026\\naia-adk\\",
 		);
 		expect(winDirs).toEqual([
-			"C:\\naia-test\\rc026\\naia-adk",
-			"C:\\naia-test\\rc026\\naia-adk\\naia-settings",
 			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\vrm-files",
 			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\background",
 			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\bgm-musics",
 			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\nva-files",
 		]);
+		expect(
+			buildAdkAssetScopeDirectories("\\\\?\\C:\\naia-test\\rc026\\naia-adk\\"),
+		).toEqual(winDirs);
+		for (const rejected of ["", "   ", "/", "\\", "C:", "C:\\", "C:/", "\\\\?\\C:\\"]) {
+			expect(buildAdkAssetScopeDirectories(rejected)).toEqual([]);
+		}
 
 		const mixedDrive = joinAdkAssetPath(
 			"D:/custom/naia-adk/",

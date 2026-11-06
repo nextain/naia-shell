@@ -9,6 +9,7 @@ import {
 	saveConfig,
 } from "./config";
 import { Logger } from "./logger";
+import naiaAssetContract from "./naia-asset-contract.json";
 import { SECRET_KEYS, deleteSecretKey, getSecretKey } from "./secure-store";
 import {
 	type SlotsManifest,
@@ -152,23 +153,19 @@ export type NaiaAssetSubdir =
 	| "bgm-musics"
 	| "nva-files";
 
-export const NAIA_ASSET_SUBDIRS: readonly NaiaAssetSubdir[] = [
-	"vrm-files",
-	"background",
-	"bgm-musics",
-	"nva-files",
-];
+export const NAIA_ASSET_SUBDIRS: readonly NaiaAssetSubdir[] =
+	naiaAssetContract.assetSubdirs as NaiaAssetSubdir[];
 
 /** Default pure background asset without an embedded avatar (#026-r2 item 6). */
-export const DEFAULT_PURE_BACKGROUND_ASSET = "naia-autumn-office-uhd.webp";
+export const DEFAULT_PURE_BACKGROUND_ASSET: string =
+	naiaAssetContract.defaultPureBackgroundAsset;
 
 /**
  * Bundled video assets that have an avatar baked into the frame rather than a
  * pure background scene. Excluded from background listings and previews (#026-r2).
  */
-export const EXCLUDED_AVATAR_BACKGROUND_ASSETS: readonly string[] = [
-	"naia-autumn-office-live.mp4",
-];
+export const EXCLUDED_AVATAR_BACKGROUND_ASSETS: readonly string[] =
+	naiaAssetContract.excludedAvatarBackgroundAssets;
 
 export function isExcludedBackgroundAsset(filenameOrPath: string): boolean {
 	const basename =
@@ -198,6 +195,32 @@ export function normalizeBackgroundVideoFilename(
 }
 
 /**
+ * Normalize an ADK workspace root path for asset path joining and scope generation.
+ * Rejects empty strings, filesystem roots (`/`), and bare Windows drive roots (`C:`, `C:\`)
+ * so drive-wide patterns (`C:\**`) can never be constructed.
+ */
+export function normalizeAdkScopeRoot(
+	adkPath: string,
+): { root: string; sep: "/" | "\\" } | null {
+	const raw = adkPath.trim();
+	if (!raw) return null;
+	const withoutVerbatim = /^\\\\\?\\(?![Uu][Nn][Cc]\\)/.test(raw)
+		? raw.slice(4)
+		: raw;
+	const trimmed = withoutVerbatim.replace(/[/\\]+$/, "");
+	if (!trimmed || /^[A-Za-z]:$/.test(trimmed)) {
+		return null;
+	}
+	const isWindowsStyle =
+		trimmed.includes("\\") || /^[A-Za-z]:[/\\]/.test(withoutVerbatim);
+	const sep: "/" | "\\" = isWindowsStyle ? "\\" : "/";
+	const root = isWindowsStyle
+		? trimmed.replace(/\//g, "\\")
+		: trimmed.replace(/\\/g, "/");
+	return { root, sep };
+}
+
+/**
  * Join `{adkPath}/naia-settings/{subdir}/{name}` preserving Windows drive-letter
  * and backslash separators (`C:\...\naia-settings\background\...`) without
  * doubling trailing separators.
@@ -207,39 +230,27 @@ export function joinAdkAssetPath(
 	subdir: NaiaAssetSubdir,
 	filename?: string,
 ): string {
-	const trimmed = adkPath.trim().replace(/[/\\]+$/, "");
-	if (!trimmed) return "";
-	const isWindowsStyle =
-		trimmed.includes("\\") || /^[A-Za-z]:($|[/\\])/.test(adkPath.trim());
-	const sep = isWindowsStyle ? "\\" : "/";
-	const normalizedRoot = isWindowsStyle
-		? trimmed.replace(/\//g, "\\")
-		: trimmed.replace(/\\/g, "/");
-	const base = `${normalizedRoot}${sep}naia-settings${sep}${subdir}`;
+	const normalized = normalizeAdkScopeRoot(adkPath);
+	if (!normalized) return "";
+	const { root, sep } = normalized;
+	const base = `${root}${sep}naia-settings${sep}${subdir}`;
 	if (!filename) return base;
 	const cleanName = filename.replace(/^[/\\]+/, "");
 	return `${base}${sep}${cleanName}`;
 }
 
 /**
- * Return the list of directories registered in Tauri's runtime `asset_protocol_scope`
- * for an ADK workspace (`<adk>`, `<adk>/naia-settings`, and each asset subdir).
+ * Return the list of asset directories registered in Tauri's runtime `asset_protocol_scope`
+ * for an ADK workspace (strictly `<adk>/naia-settings/{vrm-files,background,bgm-musics,nva-files}`,
+ * never `<adk>` root or `<adk>/naia-settings` which contain `data-private/secure-keys.dat`
+ * and `.sessions`/`.memory`/`.identity`).
  */
 export function buildAdkAssetScopeDirectories(adkPath: string): string[] {
-	const trimmed = adkPath.trim().replace(/[/\\]+$/, "");
-	if (!trimmed) return [];
-	const isWindowsStyle =
-		trimmed.includes("\\") || /^[A-Za-z]:($|[/\\])/.test(adkPath.trim());
-	const sep = isWindowsStyle ? "\\" : "/";
-	const root = isWindowsStyle
-		? trimmed.replace(/\//g, "\\")
-		: trimmed.replace(/\\/g, "/");
+	const normalized = normalizeAdkScopeRoot(adkPath);
+	if (!normalized) return [];
+	const { root, sep } = normalized;
 	const settings = `${root}${sep}naia-settings`;
-	return [
-		root,
-		settings,
-		...NAIA_ASSET_SUBDIRS.map((subdir) => `${settings}${sep}${subdir}`),
-	];
+	return NAIA_ASSET_SUBDIRS.map((subdir) => `${settings}${sep}${subdir}`);
 }
 
 /** Returns absolute file paths inside {adkPath}/naia-settings/{subdir}/ */

@@ -141,15 +141,31 @@ describe("assetProtocol.scope hardening (#258)", () => {
 		expect(allow).toContain("$HOME/**");
 	});
 
-	it("registers ADK and naia-settings/{background,vrm-files,bgm-musics,nva-files} in runtime asset_protocol_scope across startup and ADK lifecycle (#026-r2 item 5)", () => {
+	it("registers only naia-settings/{background,vrm-files,bgm-musics,nva-files} in runtime asset_protocol_scope and forbids data-private across base and canonicalized roots (#026-r2/r3 item 5)", () => {
 		const libRs = readFileSync(
 			resolve(__dirname, "../../../src-tauri/src/lib.rs"),
 			"utf-8",
 		);
+		const contract = JSON.parse(
+			readFileSync(resolve(__dirname, "../naia-asset-contract.json"), "utf-8"),
+		);
+		expect(contract.assetSubdirs).toEqual([
+			"vrm-files",
+			"background",
+			"bgm-musics",
+			"nva-files",
+		]);
+		expect(libRs).toContain(
+			'include_str!("../../src/lib/naia-asset-contract.json")',
+		);
 		expect(libRs).toContain("fn collect_adk_asset_scope_directories(");
 		expect(libRs).toContain("fn allow_adk_asset_protocol_scope(");
+		expect(libRs).not.toContain("push_unique(root);");
+		expect(libRs).not.toContain("push_unique(settings.clone());");
+		expect(libRs).toContain("scope.forbid_directory(&secure_store_dir, true)");
+		expect(libRs).toContain("scope.forbid_file(&secure_store_path)");
 		expect(libRs).toContain(
-			'&["vrm-files", "background", "bgm-musics", "nva-files"]',
+			"scope.forbid_directory(&secure_store_temp_path, true)",
 		);
 		// Must be invoked during app startup (.setup) when read_naia_path_cache() returns Some,
 		// as well as in write_naia_path_cache, init_naia_settings, list_naia_assets, import_naia_asset, and copy_bundled_assets.

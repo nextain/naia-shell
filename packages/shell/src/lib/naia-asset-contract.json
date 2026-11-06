@@ -1,0 +1,5 @@
+{
+	"assetSubdirs": ["vrm-files", "background", "bgm-musics", "nva-files"],
+	"defaultPureBackgroundAsset": "naia-autumn-office-uhd.webp",
+	"excludedAvatarBackgroundAssets": ["naia-autumn-office-live.mp4"]
+}
