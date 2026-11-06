@@ -8,6 +8,7 @@ pub(crate) mod vram_reservation;
 mod agent_grpc;
 mod app;
 mod app_sandbox;
+mod broadcast;
 mod slides_import;
 mod slides_files;
 mod slides_recording;
@@ -9928,6 +9929,7 @@ const SECURE_STORE_KEYS: &[&str] = &[
     "memoryLlmApiKey",
     "memoryEmbeddingApiKey",
     "qdrantApiKey",
+    "broadcastStreamKey",
 ];
 static SECURE_STORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -14740,6 +14742,10 @@ pub fn run() {
             app_sandbox::app_sandbox_open_in_workspace,
             app_sandbox::slides_recording_start,
             app_sandbox::slides_recording_stop,
+            broadcast::broadcast_start,
+            broadcast::broadcast_stop,
+            broadcast::broadcast_status,
+            broadcast::broadcast_push_audio,
             app::app_store_has_entitlement,
             app::app_store_last_entitlement_grant,
             app::focus_or_create_app_store_window,

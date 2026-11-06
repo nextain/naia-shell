@@ -47,6 +47,9 @@
 	},
 	"bundle": {
 		"active": true,
+		"externalBin": [
+			"binaries/ffmpeg"
+		],
 		"resources": {
 			"../../ego-host/package.json": "ego-host/package.json",
 			"../../ego-host/bin/": "ego-host/bin/",
