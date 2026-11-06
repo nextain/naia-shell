@@ -7,6 +7,11 @@
  */
 
 import type { AudioPlaybackClock } from "../avatar/nva-speech/speech-timing";
+import {
+	attachMediaElementToSharedContext,
+	connectSourceNodeToSharedContext,
+	getSharedAudioContext,
+} from "../broadcast-audio-bridge";
 import { Logger } from "../logger";
 
 export interface AudioQueueCallbacks {
@@ -312,7 +317,7 @@ export class AudioQueue {
 				for (let i = 0; i < chunk.length; i++) ch[i] = chunk[i] / 0x8000;
 				const src = ctx.createBufferSource();
 				src.buffer = buf;
-				src.connect(ctx.destination);
+				connectSourceNodeToSharedContext(src, ctx);
 				const now = ctx.currentTime;
 				// 40 ms lead on the very first chunk absorbs scheduling jitter.
 				const at = Math.max(now + (started ? 0 : 0.04), nextStart);
@@ -442,6 +447,7 @@ export class AudioQueue {
 		const audio = new Audio(
 			`data:audio/${isWav ? "wav" : "mp3"};base64,${mp3Base64}`,
 		);
+		attachMediaElementToSharedContext(audio, { transient: true });
 		// Apply output device if specified (setSinkId is non-standard, guarded)
 		const setSinkId = (
 			audio as unknown as { setSinkId?: (id: string) => Promise<void> }
@@ -500,17 +506,8 @@ export class AudioQueue {
 }
 
 /** Shared Web Audio context for streamed PCM playback (lazily created, one per page). */
-let sharedAudioContext: AudioContext | null = null;
 function ensureAudioContext(outputDeviceId?: string): AudioContext {
-	if (!sharedAudioContext) sharedAudioContext = new AudioContext();
-	const ctx = sharedAudioContext;
-	if (ctx.state === "suspended") ctx.resume().catch(() => {});
-	const setSinkId = (
-		ctx as unknown as { setSinkId?: (id: string) => Promise<void> }
-	).setSinkId;
-	if (outputDeviceId && setSinkId)
-		setSinkId.call(ctx, outputDeviceId).catch(() => {});
-	return ctx;
+	return getSharedAudioContext(outputDeviceId);
 }
 
 /** Return the PCM duration encoded by a RIFF/WAVE base64 payload. */
