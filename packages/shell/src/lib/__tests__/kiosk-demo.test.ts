@@ -206,6 +206,23 @@ describe("S3 kiosk isolation", () => {
 		expect(consumeKioskGreeting()).toBe(true);
 		expect(consumeKioskGreeting()).toBe(false);
 	});
+	it("FR-WEB-KIOSK-FIX.10 switches the default model before entry when the gateway no longer serves it", async () => {
+		const served = (keys: string[]) =>
+			vi.fn(async () => new Response(JSON.stringify(keys.map((model_key) => ({ model_key, capabilities: ["llm"], operational_status: "live" })))));
+		vi.stubGlobal("fetch", served(["gpt-5.6-luna", "deepseek-v4-pro"]));
+		await prepareKioskDemoOnboarding();
+		let saved = JSON.parse(localStorage.getItem("naia-config")!);
+		expect(saved.model).toBe("gpt-5.6-luna");
+		expect(saved.llmRoles.main.model).toBe("gpt-5.6-luna");
+		vi.stubGlobal("fetch", served(["gpt-6.1-terra", "gpt-5.6-luna"]));
+		await prepareKioskDemoOnboarding();
+		saved = JSON.parse(localStorage.getItem("naia-config")!);
+		expect(saved.model).toBe("gpt-6.1-terra");
+		vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
+		await prepareKioskDemoOnboarding();
+		expect(JSON.parse(localStorage.getItem("naia-config")!).model).toBe("gpt-6.1-terra");
+		vi.unstubAllGlobals();
+	});
 	it("forces ttsProvider to browser in ordinary web mode when kiosk demo flag is OFF", () => {
 		setWebAssetsModeForTests(true);
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
