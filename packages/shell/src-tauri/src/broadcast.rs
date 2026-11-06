@@ -517,6 +517,41 @@ pub fn redact_stream_key(text: &str, stream_key: &str) -> String {
     masked
 }
 
+/// Encoder stderr goes to this file (truncated on each spawn) so an exit can say why.
+fn encoder_log_path() -> PathBuf {
+    std::env::temp_dir().join("naia-broadcast-encoder.log")
+}
+
+fn encoder_stderr() -> Stdio {
+    fs::File::create(encoder_log_path())
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null())
+}
+
+/// Last few non-empty encoder stderr lines, stream key masked, for logs and the UI.
+pub fn encoder_log_tail(stream_key: &str) -> Option<String> {
+    let text = fs::read_to_string(encoder_log_path()).ok()?;
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let tail = lines[lines.len().saturating_sub(3)..]
+        .iter()
+        .map(|line| {
+            line.split_whitespace()
+                .map(|word| redact_stream_key(word, stream_key))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join(" / ");
+    if tail.is_empty() {
+        return None;
+    }
+    Some(tail.chars().take(400).collect())
+}
+
 /// Redact stream key across all `ffmpeg` / `gst-launch-1.0` CLI arguments (`***`).
 pub fn redact_ffmpeg_args(args: &[String], stream_key: &str) -> Vec<String> {
     args.iter()
@@ -1579,7 +1614,7 @@ fn spawn_ffmpeg_with_fallback(
             .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(encoder_stderr());
         #[cfg(target_os = "windows")]
         {
             use std::os::windows::process::CommandExt;
@@ -1599,11 +1634,15 @@ fn spawn_ffmpeg_with_fallback(
                     }
                     Ok(Some(status)) => {
                         log::warn!(
-                            "[broadcast] ffmpeg ({}) exited immediately with status {status}",
-                            encoder.as_str()
+                            "[broadcast] ffmpeg ({}) exited immediately with status {status}: {}",
+                            encoder.as_str(),
+                            encoder_log_tail(&spec.stream_key).unwrap_or_default()
                         );
                         if encoder == VideoEncoder::Libx264 {
-                            return Err(format!("ffmpeg 시작 실패 (종료 코드: {status})"));
+                            return Err(format!(
+                                "ffmpeg 시작 실패 (종료 코드: {status}) {}",
+                                encoder_log_tail(&spec.stream_key).unwrap_or_default()
+                            ));
                         }
                     }
                     Err(err) => {
@@ -1656,7 +1695,7 @@ fn spawn_gstreamer_with_fallback(
             .args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(encoder_stderr());
 
         #[cfg(unix)]
         if let Some(fd) = capture.pipewire_fd() {
@@ -1679,12 +1718,14 @@ fn spawn_gstreamer_with_fallback(
                     Ok(None) => return Ok((child, None, encoder)),
                     Ok(Some(status)) => {
                         log::warn!(
-                            "[broadcast] gst-launch-1.0 ({}) exited immediately with status {status}",
-                            encoder.gstreamer_element_name()
+                            "[broadcast] gst-launch-1.0 ({}) exited immediately with status {status}: {}",
+                            encoder.gstreamer_element_name(),
+                            encoder_log_tail(&spec.stream_key).unwrap_or_default()
                         );
                         if encoder == VideoEncoder::Libx264 {
                             return Err(format!(
-                                "GStreamer 송출 시작 실패 (종료 코드: {status})"
+                                "GStreamer 송출 시작 실패 (종료 코드: {status}) {}",
+                                encoder_log_tail(&spec.stream_key).unwrap_or_default()
                             ));
                         }
                     }
@@ -1780,8 +1821,17 @@ fn start_supervisor_thread(app: AppHandle, session_id: u64) {
                         session.stdin = None;
                         session.drops += 1;
                         session.state = "disconnected".to_string();
-                        session.last_error =
-                            Some(format!("방송 연결이 끊겼습니다 (종료: {status})"));
+                        let reason = encoder_log_tail(&session.spec.stream_key);
+                        log::warn!(
+                            "[broadcast] encoder exited with status {status}: {}",
+                            reason.as_deref().unwrap_or("-")
+                        );
+                        session.last_error = Some(match reason {
+                            Some(reason) => {
+                                format!("방송 연결이 끊겼습니다 (종료: {status}) {reason}")
+                            }
+                            None => format!("방송 연결이 끊겼습니다 (종료: {status})"),
+                        });
                         exited_unexpectedly = true;
                         should_retry = session.restart_count < MAX_AUTO_RESTARTS;
                         snapshot_to_emit = Some(mgr.snapshot());
@@ -2278,6 +2328,23 @@ mod tests {
         assert_eq!(BroadcastPlatform::Twitch.default_bitrate(), "6M");
         assert_eq!(BroadcastPlatform::Soop.gop_size(30), 60);
         assert_eq!(BroadcastPlatform::Soop.default_bitrate(), "6M");
+    }
+
+    #[test]
+    fn encoder_log_tail_keeps_last_lines_and_masks_key() {
+        let secret = "tail-secret-key-789";
+        fs::write(
+            encoder_log_path(),
+            format!(
+                "line one\n\nWARNING: erroneous pipeline: no element \"pipewiresrc\"\nERROR: rtmp://a.example/live2/{secret} refused\n"
+            ),
+        )
+        .unwrap();
+        let tail = encoder_log_tail(secret).unwrap();
+        assert!(!tail.contains(secret));
+        assert!(tail.contains("no element"));
+        assert!(tail.starts_with("line one"));
+        let _ = fs::remove_file(encoder_log_path());
     }
 
     #[test]
