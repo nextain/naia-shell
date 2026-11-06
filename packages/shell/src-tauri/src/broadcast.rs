@@ -1027,7 +1027,7 @@ mod tests {
     #[test]
     fn stream_key_is_always_redacted_with_asterisks() {
         let capture = WindowsGdiGrabCapture;
-        let secret = "live_987654321_super_secret_stream_key";
+        let secret = "fake-key-123";
         let spec = FfmpegStreamSpec {
             platform: BroadcastPlatform::Twitch,
             server_url: "rtmps://live.twitch.tv/app".to_string(),
