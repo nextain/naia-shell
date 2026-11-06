@@ -18,15 +18,39 @@
 }
 .web-workspace {
 	display: flex;
+	flex: 1 1 auto;
 	width: 100%;
+	height: 100%;
 	min-width: 0;
 	min-height: 0;
 	overflow: hidden;
 }
-.web-workspace-tree {
-	width: min(280px, 40%);
-	min-width: 180px;
+.web-workspace-tree,
+.web-workspace-tree.herdr-workspace__files {
+	flex: 0 0 var(--web-tree-width, 200px);
+	width: var(--web-tree-width, 200px);
+	min-width: 140px;
+	max-width: 42%;
 	overflow: auto;
+}
+.web-workspace:not(:has(.web-workspace-viewer)) .web-workspace-tree,
+.web-workspace:not(:has(.web-workspace-viewer))
+	.web-workspace-tree.herdr-workspace__files {
+	flex: 1 1 auto;
+	width: 100%;
+	max-width: 100%;
+}
+.web-workspace-resizer {
+	flex: 0 0 6px;
+	width: 6px;
+	cursor: col-resize;
+	background: rgba(148, 163, 184, 0.16);
+	transition: background 120ms ease;
+	user-select: none;
+}
+.web-workspace-resizer:hover,
+.web-workspace-resizer:active {
+	background: rgba(96, 165, 250, 0.55);
 }
 .web-workspace-tree code {
 	display: block;

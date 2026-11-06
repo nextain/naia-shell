@@ -1,4 +1,30 @@
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { WEB_ADK_PATH } from "./web-adk-path";
+
+const KIOSK_HIDDEN_ROOT_NAMES = new Set([
+	".agents",
+	".users",
+	"naia-settings",
+	"projects",
+	"AGENTS.md",
+	"CLAUDE.md",
+	"GEMINI.md",
+	"README.md",
+	"OPENCODE.md",
+	"CODEX.md",
+]);
+
+function isKioskBlockedWorkspaceParts(parts: string[]): boolean {
+	if (!isKioskDemo()) return false;
+	if (parts.length === 0) return true;
+	if (KIOSK_HIDDEN_ROOT_NAMES.has(parts[0])) return true;
+	return parts.some(
+		(part) =>
+			part.startsWith(".") ||
+			/^agents-rules/i.test(part) ||
+			/^(AGENTS|CLAUDE|GEMINI|OPENCODE|CODEX)\.md$/i.test(part),
+	);
+}
 
 /** Resolve only files inside this browser's ADK directory. */
 export async function getWebWorkspaceFile(path: string): Promise<File> {
@@ -8,7 +34,8 @@ export async function getWebWorkspaceFile(path: string): Promise<File> {
 	if (
 		parts.some(
 			(part) => !part || part === "." || part === ".." || part.includes("\\"),
-		)
+		) ||
+		isKioskBlockedWorkspaceParts(parts)
 	) {
 		throw new Error("web_workspace_invalid_path");
 	}

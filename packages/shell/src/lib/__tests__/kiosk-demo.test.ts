@@ -338,4 +338,43 @@ describe("S3 kiosk isolation", () => {
 		});
 		expect(missingKey).toEqual({ ok: false, reason: "missing-key" });
 	});
+	it("FR-WEB-KIOSK-R3.3 & R3.7 handles web secure-store without desktop_only:secure_store_set and lists 21 demo knowledge manuscripts", async () => {
+		const {
+			deleteSecretKeyAtPath,
+			getSecretKeyAtPath,
+			saveSecretKeyAtPath,
+		} = await import("../secure-store");
+		const { listKioskKnowledgeManuscripts } = await import(
+			"../kiosk-demo/knowledge"
+		);
+
+		seedKioskDemoWebAuth();
+		await expect(
+			saveSecretKeyAtPath(
+				"apiKey",
+				"web-browser-key",
+				"opfs://naia-adk/data-private/secure-keys.dat",
+			),
+		).resolves.toBeUndefined();
+		await expect(
+			getSecretKeyAtPath(
+				"apiKey",
+				"opfs://naia-adk/data-private/secure-keys.dat",
+			),
+		).resolves.toBe("web-browser-key");
+		await expect(
+			deleteSecretKeyAtPath(
+				"naiaKey",
+				"opfs://naia-adk/data-private/secure-keys.dat",
+			),
+		).resolves.toBeUndefined();
+		// In kiosk mode, deleting naiaKey must not wipe the shared kiosk demo key
+		expect(localStorage.getItem(WEB_REMOTE_KEY_STORAGE_KEY)).toBe(
+			"test-kiosk-fixture-only",
+		);
+
+		const manuscripts = listKioskKnowledgeManuscripts();
+		expect(manuscripts).toHaveLength(21);
+		expect(manuscripts.some((m) => m.name === "naia.md")).toBe(true);
+	});
 });

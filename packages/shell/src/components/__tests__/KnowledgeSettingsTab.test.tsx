@@ -262,4 +262,26 @@ describe("KnowledgeSettingsTab (FR-KB-OS.5~8 — 설정 지식 탭 관리)", () 
 		);
 		expect(screen.queryByTestId("knowledge-graph-open")).toBeNull();
 	});
+
+	it("FR-WEB-KIOSK-R3.7 키오스크 판에서 시연 지식 원고 21개 목록과 본문을 표시하고 폴더 추가/제거 단추를 숨긴다", async () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		try {
+			mockInvoke.mockImplementation(defaultInvoke(false));
+			render(<KnowledgeSettingsTab />);
+			await waitFor(() =>
+				expect(screen.getByTestId("kiosk-knowledge-browser")).toBeTruthy(),
+			);
+			expect(screen.queryByTestId("knowledge-add-folder")).toBeNull();
+			expect(screen.queryByTestId("knowledge-source-remove")).toBeNull();
+			const list = screen.getByTestId("kiosk-knowledge-manuscript-list");
+			expect(list.querySelectorAll("li").length).toBe(21);
+			const naiaBtn = screen.getByTestId("kiosk-knowledge-item-naia.md");
+			fireEvent.click(naiaBtn);
+			const viewer = screen.getByTestId("kiosk-knowledge-manuscript-body");
+			expect(viewer.textContent).toContain("나이아 서비스 소개");
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
 });

@@ -1497,7 +1497,7 @@ export default {
 	"webWorkspace.installing": "작업 공간 준비 중 {done}/{total}",
 	"webWorkspace.retry": "다시 시도",
 	"webExplorer.title": "파일 탐색기",
-	"webExplorer.offline": "오프라인",
+	"webExplorer.offline": "브라우저 안 오프라인 공간",
 	"webExplorer.online": "온라인 (준비 중)",
 	"webExplorer.comingSoon": "온라인 탐색기는 준비 중입니다.",
 	"webExplorer.readFailed": "파일을 읽지 못했습니다.",

@@ -50,9 +50,9 @@ export const KIOSK_DEMO_TTS_HOST = "https://bc250-0-voice.nextain.io";
 export const KIOSK_DEMO_TTS_VOICE = "naia-default";
 export const KIOSK_DEMO_NVA_MODEL = "jina";
 export const DEFAULT_SHELL_NAIA_WIDTH = 320;
-export const KIOSK_SHELL_NAIA_WIDTH = 560;
+export const KIOSK_SHELL_NAIA_WIDTH = 520;
 export const KIOSK_SHELL_CHAT_HEIGHT_MIN = 540;
-export const KIOSK_SHELL_CHAT_HEIGHT_RATIO = 0.78;
+export const KIOSK_SHELL_CHAT_HEIGHT_RATIO = 0.68;
 
 export function resolveShellAvatarSelection(
 	config: AppConfig | null | undefined,

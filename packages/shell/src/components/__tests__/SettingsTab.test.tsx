@@ -5927,4 +5927,55 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		unregisterLlmProvider("webllm");
 		vi.unstubAllEnvs();
 	});
+
+	it("FR-WEB-KIOSK-R3.2, R3.4, R3.7 hides logout buttons, shows consistent browser TTS without local-voice starting badge, and shows knowledge tab in kiosk mode", async () => {
+		mockInvoke.mockResolvedValue([]);
+		setWebAssetsModeForTests(true);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		localStorage.setItem("naia-remote-key", "test-kiosk-fixture-only");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gpt-5.6-luna",
+				apiKey: "",
+				ttsEnabled: true,
+				ttsProvider: "naia-local-voice",
+			}),
+		);
+
+		render(<SettingsTab />);
+		// Profile tab: no lab-disconnect-btn, no local-voice starting badge, profile-tts-provider shows only browser
+		expect(document.querySelector(".lab-disconnect-btn")).toBeNull();
+		expect(document.querySelector('[data-testid="slot-tts-live"]')).toBeNull();
+		const profileTtsSelect = screen.getByTestId(
+			"profile-tts-provider",
+		) as HTMLSelectElement;
+		expect(Array.from(profileTtsSelect.options).map((o) => o.value)).toEqual([
+			"browser",
+		]);
+		expect(profileTtsSelect.value).toBe("browser");
+
+		// Knowledge tab is visible in kiosk mode
+		expect(
+			document.querySelector('[data-settings-tab="knowledge"]'),
+		).not.toBeNull();
+
+		// General tab: no web-logout-btn in kiosk mode
+		gotoSettingsTab("general");
+		expect(screen.queryByTestId("web-logout-btn")).toBeNull();
+
+		// Voice tab: shows the same browser TTS value
+		gotoSettingsTab("voice");
+		const voiceTtsSelect = document.getElementById(
+			"tts-provider-select",
+		) as HTMLSelectElement;
+		expect(Array.from(voiceTtsSelect.options).map((o) => o.value)).toEqual([
+			"browser",
+		]);
+		expect(voiceTtsSelect.value).toBe("browser");
+
+		vi.unstubAllEnvs();
+	});
 });

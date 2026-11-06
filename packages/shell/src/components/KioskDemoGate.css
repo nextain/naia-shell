@@ -72,19 +72,19 @@
 
 @media (min-width: 601px) {
 	.app-root[data-kiosk-demo="true"] .naia-overlay {
-		width: max(var(--naia-width, 560px), min(560px, 46vw));
+		width: var(--naia-width, 520px);
 	}
 
 	.app-root[data-kiosk-demo="true"] .naia-chat-area {
 		left: 16px;
 		bottom: 12px;
-		width: calc(max(var(--naia-width, 560px), min(560px, 46vw)) - 32px);
+		width: calc(var(--naia-width, 520px) - 32px);
 	}
 
 	.app-root[data-kiosk-demo="true"]
 		.naia-chat-wrapper:not(.naia-chat-wrapper--hidden) {
-		min-height: min(560px, calc(100dvh - 120px));
-		max-height: calc(100dvh - 76px);
+		min-height: min(490px, calc(100dvh - 260px));
+		max-height: calc(100dvh - 250px);
 		border-radius: 16px;
 	}
 
@@ -92,10 +92,5 @@
 		min-height: 280px;
 		padding: 14px 16px;
 		overflow-y: auto;
-	}
-
-	.app-root[data-kiosk-demo="true"]:not(:has(.content-app__slot--active))
-		.avatar-canvas-layer {
-		--nva-center-offset: 16vw;
 	}
 }

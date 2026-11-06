@@ -1,12 +1,16 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../../lib/i18n";
 import type { ToolCall } from "../../lib/types";
+import { isToolResultDump } from "../../lib/visible-chat-text";
 import { ToolActivity } from "../ToolActivity";
 
 describe("ToolActivity", () => {
-	afterEach(cleanup);
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllEnvs();
+	});
 
 	const baseTool: ToolCall = {
 		toolCallId: "tc-1",
@@ -145,5 +149,43 @@ describe("ToolActivity", () => {
 		} finally {
 			await setLocale("en");
 		}
+	});
+
+	it("FR-WEB-KIOSK-R3.1 hides raw tool args/output JSON and expand button in kiosk demo mode", () => {
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		const runningTool: ToolCall = {
+			toolCallId: "tc-kiosk-1",
+			toolName: "skill_knowledge_search",
+			args: { query: "나이아 서비스 소개" },
+			status: "running",
+		};
+		const { container, rerender } = render(<ToolActivity tool={runningTool} />);
+		expect(screen.getByText("자료 찾는 중")).toBeDefined();
+		expect(container.querySelector("button.tool-activity-header")).toBeNull();
+		expect(container.querySelector(".tool-expand")).toBeNull();
+		expect(container.querySelector(".tool-activity-body")).toBeNull();
+		expect(screen.queryByText(/나이아 서비스 소개/)).toBeNull();
+
+		const finishedTool: ToolCall = {
+			...runningTool,
+			status: "success",
+			output: JSON.stringify({
+				abstained: false,
+				hits: [{ id: "card-naia-1", title: "나이아 서비스 소개" }],
+			}),
+		};
+		rerender(<ToolActivity tool={finishedTool} />);
+		expect(screen.getByText("자료 찾음")).toBeDefined();
+		expect(container.querySelector(".tool-activity-body")).toBeNull();
+		expect(screen.queryByText(/abstained/)).toBeNull();
+		expect(screen.queryByText(/card-naia-1/)).toBeNull();
+
+		expect(isToolResultDump(JSON.stringify({ query: "나이아" }))).toBe(true);
+		expect(
+			isToolResultDump(
+				JSON.stringify({ abstained: false, hits: [{ id: "1" }] }),
+			),
+		).toBe(true);
 	});
 });

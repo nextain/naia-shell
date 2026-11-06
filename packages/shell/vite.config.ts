@@ -41,6 +41,12 @@ function webAdkPlugin(): Plugin {
 	function getBundleData() {
 		if (bundleJson && commit) return { bundleJson, commit };
 		const bundle = buildWebAdkBundle();
+		if (process.env.VITE_NAIA_KIOSK_DEMO === "1") {
+			// FR-WEB-KIOSK-R3.6: 시연 판에서는 .agents, .users, AGENTS.md, CLAUDE.md, GEMINI.md,
+			// agents-rules-detail.json 등 내부 규칙·운영 설정 키 설명 파일을 번들에서 완전히 제외한다.
+			bundle.files = [];
+			bundle.dirs = ["kiosk-demo/knowledge", "conversations"];
+		}
 		commit = bundle.commit;
 		bundleJson = JSON.stringify(bundle);
 		return { bundleJson, commit };

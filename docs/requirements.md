@@ -1676,4 +1676,20 @@ P04 S5(2026-11-05): 관련 Vitest 7파일 179개 통과(`/home/nextain/work/code
 
 P04 검수 수정(#824, 2026-11-05): 지나 실사 클립 재후처리 및 인코딩 후 `scripts/nva_matting_hole_measure.py` 측정 결과 `jina-idle.webm`(192프레임)과 `jina-talking-ko.mp4`(511프레임), 최종 인코딩된 `idle.webm`·`talking-ko.webm` 모두 `hole_frames: 0`, `opaque_backdrop_frames: 0`, `max_opaque_backdrop_px: 0` 통과. 관련 Vitest 6파일 140/140(`knowledge.test.ts` 29/29, `memory.test.ts` 8/8, `entry.test.ts` 3/3, `kiosk-demo.test.ts` 11/11, `KioskDemoGate.test.tsx` 7/7, `ChatArea.test.tsx` 82/82) 및 `SettingsTab.test.tsx` WebLLM 숨김 시험 통과. `tsc`, `build:web`, `build`, `check.py --all`(28 regions clean), `check-file-anchors.mjs`(120 files OK), `check-assembly-coverage.mjs`, `enforce-root-structure.sh` 모두 통과. Playwright `e2e/kiosk-demo.spec.ts` 5/5 통과 및 `1280x800` 시연판 대화 화면 캡처(`/home/nextain/work/codex-runs/kiosk-agy/fix-chat.png`)에서 다리 사이·왼팔과 몸 사이 배경 투명도와 `"약 0 크레딧 · 0 토큰"` 비노출 시각 검토 완료.
 
+## 웹 키오스크 3판 1회차 — 대표님 시연 지적 10건 수정 (2026-11-06)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-WEB-KIOSK-R3.1 | `isKioskDemo()`일 때 대화창의 도구 활동(`ToolActivity.tsx`)에서 입력 JSON(`{"query":…}`)과 출력 JSON(`{"abstained":…,"hits":[…]}`) 원문을 펼치거나 노출하지 않고 한 줄 요약(`"자료 찾는 중"` / `"자료 찾음"`)만 표시한다. 답변 끝 `"근거: …"` 줄은 유지한다. | Done |
+| FR-WEB-KIOSK-R3.2 | `isKioskDemo()`일 때 설정 화면(`SettingsTab.tsx`)에서 로그아웃 단추(`web-logout-btn`)와 연결 해제 단추(`.lab-disconnect-btn`)를 표시하지 않는다. | Done |
+| FR-WEB-KIOSK-R3.3 | 웹/키오스크 판(`isWebMode()` 또는 `opfs://` 경로)에서 `secure-store.ts`는 Tauri 전용 `secure_store_get`/`secure_store_set`/`secure_store_delete`를 호출하지 않고 브라우저 저장소로 처리해 `"설정을 저장하지 못했습니다: desktop_only:secure_store_set"` 오류가 발생하지 않게 한다. | Done |
+| FR-WEB-KIOSK-R3.4 | 웹/키오스크 판에서 프로필 탭의 `"naia-local-voice : 시동중 .."` 상태를 표시하지 않고, 프로필 탭과 음성 탭 모두 실제 사용 가능한 `"브라우저 음성 합성"`(`"browser"`)만 선택지·표시값으로 노출해 두 화면이 같은 값을 보이게 한다. | Done |
+| FR-WEB-KIOSK-R3.5 | 웹 파일 탐색기(`WebWorkspace.tsx`)에서 `"온라인 (준비 중)"` 단추를 제거하고 `"오프라인"` 문구(`webExplorer.offline`)를 `"브라우저 안 오프라인 공간"`으로 표시한다. | Done |
+| FR-WEB-KIOSK-R3.6 | 키오스크 판(`isKioskDemo()`)에서 `.agents`, `.users`, `naia-settings`, `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `README.md`, `agents-rules*` 등 ADK 내부 규칙 파일을 파일 탐색기 목록·파일 열기와 시연 번들에서 숨기거나 제외하고 시연용 파일(`kiosk-demo/knowledge/*.md`, `conversations` 등)만 보이게 한다. | Done |
+| FR-WEB-KIOSK-R3.7 | 키오스크 판에 `"지식"` 탭(상단 앱 막대 및 설정 내 지식 탭)을 제공해 시연 지식 묶음(`knowledge/*.md` 21개 원고 목록과 본문)을 열람할 수 있게 한다. | Done |
+| FR-WEB-KIOSK-R3.8 | 파일 탐색기에서 파일을 고르면 나오는 오른쪽 뷰어(`.web-workspace-viewer`)의 기본 폭을 화면 절반 가까이 넓히고 트리와 뷰어 사이 분할 막대(`.web-workspace-resizer`)를 끌어 폭을 조절할 수 있게 한다. | Done |
+| FR-WEB-KIOSK-R3.9 | 파일 탐색기나 앱을 열고 닫아도 아바타와 대화창이 좌우로 튀지 않고 항상 왼쪽 같은 위치에 일관되게 머물도록 고정한다. | Done |
+| FR-WEB-KIOSK-R3.10 | 지나 캐릭터(`public/nva/jina/`)의 머리 오른쪽 위 빈 곳(구멍)과 `"부드러운 움직임"`(`motion.webm`) 실행 시 팔-허리·다리 사이가 검게 나오는 현상을 제거하고, `"부드러운 움직임"`의 호흡·스웨이 움직임 세기를 높인다. | Done |
+
+
 

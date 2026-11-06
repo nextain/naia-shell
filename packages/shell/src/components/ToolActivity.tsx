@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import type { ToolCall } from "../lib/types";
 import { BrowserHostResult, browserHostCardFor } from "./BrowserHostResult";
 
@@ -39,6 +40,22 @@ export function ToolActivity({ tool }: Props) {
 
 	const label = getToolLabel(tool.toolName);
 	const icon = STATUS_ICON[tool.status];
+
+	if (isKioskDemo()) {
+		const kioskLabel =
+			tool.status === "running" ? "자료 찾는 중" : "자료 찾음";
+		return (
+			<div
+				className={`tool-activity tool-${tool.status} tool-activity-kiosk`}
+				data-tool-name={tool.toolName}
+			>
+				<div className="tool-activity-header tool-activity-header-static">
+					<span className="tool-status-icon">{icon}</span>
+					<span className="tool-name">{kioskLabel}</span>
+				</div>
+			</div>
+		);
+	}
 
 	// #582 S6a — 브라우저 호스트 결과는 증거 카드로 그린다. 백그라운드 브라우저는 화면이 없어
 	// 사용자가 직접 볼 수 없고, 증거(스냅샷·캡처·주소 개정)가 유일한 확인 수단이다.

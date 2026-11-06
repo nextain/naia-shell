@@ -47,21 +47,38 @@ export function assertPublicKnowledge(text: string): void {
 	}
 }
 
-export async function compileKioskKnowledge() {
-	Logger.debug("KioskKnowledge", "compile bundled public sources");
-	const docs = manuscripts;
-	const sources = Object.entries(docs)
+export interface KioskKnowledgeManuscript {
+	name: string;
+	uri: string;
+	title: string;
+	text: string;
+}
+
+export function listKioskKnowledgeManuscripts(): KioskKnowledgeManuscript[] {
+	return Object.entries(manuscripts)
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([path, text]) => {
-			assertPublicKnowledge(text);
 			const name = path.split("/").pop()!;
 			return {
-				kind: "text" as const,
+				name,
 				uri: `${KIOSK_SOURCE}/${name}`,
 				title: text.match(/^# (.+)/m)?.[1] ?? name,
 				text,
 			};
 		});
+}
+
+export async function compileKioskKnowledge() {
+	Logger.debug("KioskKnowledge", "compile bundled public sources");
+	const sources = listKioskKnowledgeManuscripts().map((item) => {
+		assertPublicKnowledge(item.text);
+		return {
+			kind: "text" as const,
+			uri: item.uri,
+			title: item.title,
+			text: item.text,
+		};
+	});
 	const result = await compile(
 		{ sources, safety: "block" },
 		{

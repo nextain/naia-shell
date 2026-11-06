@@ -2652,3 +2652,30 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 
 P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx`, `ChatArea.test.tsx`) + `SettingsTab.test.tsx` WebLLM 옵션 숨김 시험 통과, Playwright `e2e/kiosk-demo.spec.ts` 5/5 통과, `nva_matting_hole_measure.py` 몸 구멍 0건 및 닫힌 영역 불투명 배경 픽셀 프레임 0건 통과, `/home/nextain/work/codex-runs/kiosk-agy/fix-chat.png`(`1280x800`) 시각 검토 완료.
 
+## UC-WEB-KIOSK-R3 — 웹 IR 키오스크 3판 1회차 대표님 시연 지적 수정 (2026-11-06)
+
+시연판(`isKioskDemo() === true`)에서 대표님 시연 지적 10건을 해결해 투자자·방문자가 내부 JSON·내부 규칙 파일·데스크톱 전용 오류·화면 흔들림 없이 일관된 화면을 경험하게 한다:
+1. **대화창 도구 JSON 비노출**: 지식 검색 도구 호출 시 입력(`{"query":…}`)·결과(`{"abstained":…,"hits":[…]}`) 원문 JSON을 보이지 않고 접힌 한 줄 요약(`"자료 찾는 중"` / `"자료 찾음"`)만 표시한다(답 끝 `"근거: …"` 줄은 유지).
+2. **로그아웃 단추 제거**: 설정 화면(일반 탭·프로필 탭)에서 로그아웃·연결 해제 단추를 숨긴다.
+3. **설정 저장 `desktop_only:secure_store_set` 오류 제거**: 웹/키오스크 판에서 설정을 저장할 때 네이티브 `secure_store_set`을 호출하지 않고 브라우저 저장소로 대체해 오류 없이 저장된다.
+4. **음성 표시·선택 일관성**: 프로필 탭에서 `"naia-local-voice : 시동중 .."`이 뜨지 않고, 프로필 탭과 음성 탭 모두 `"브라우저 음성 합성"`(`"browser"`)만 보이며 같은 값을 표시한다.
+5. **파일 탐색기 탭·문구 정리**: `"온라인 (준비 중)"` 단추를 없애고 `"오프라인"`을 `"브라우저 안 오프라인 공간"`으로 풀어 쓴다.
+6. **파일 탐색기 내부 규칙 파일 숨김·제거**: `.agents`, `.users`, `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `agents-rules*` 등 ADK 내부 규칙 파일은 시연 번들·탐색기에서 숨기거나 빼고 시연용 파일(`kiosk-demo`, `conversations` 등)만 보인다.
+7. **키오스크 `"지식"` 탭 추가**: 상단 앱 막대와 설정의 `"지식"` 탭에서 시연 지식 묶음(`knowledge/*.md` 21개 원고 목록·본문)을 열람한다.
+8. **오른쪽 파일 뷰어 폭 확장·드래그 조절**: 파일 선택 시 오른쪽 뷰어가 화면 폭 절반 가까이 넓게 열리고 분할 막대를 끌어 폭을 조절할 수 있다.
+9. **아바타·대화창 위치 일관 고정**: 파일 탐색기나 다른 탭을 열고 닫아도 아바타와 대화창 위치가 왼쪽 한 곳에 일관되게 머문다.
+10. **지나 캐릭터 머리 구멍·팔/다리 사이 검은 영역·부드러운 움직임 개선**: 머리 오른쪽 위 빈 곳을 메우고, `"부드러운 움직임"` 실행 시 팔-허리·다리 사이 검은 배경을 투명화하며 움직임이 분명하게 보인다.
+
+### Test Coverage Map — UC-WEB-KIOSK-R3
+
+| 상태 | 검증 | 시험 |
+|---|---|---|
+| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃 숨김, 프로필·음성 탭 `"브라우저 음성 합성"` 일치, 아바타·대화창 위치 고정 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts` |
+| 빈 목록 | 초기 OPFS에서도 탐색기에 `kiosk-demo/knowledge/*.md` 시연 파일만 표시되고 내부 규칙 파일 비노출 | `web-workspace-path.test.tsx`, `knowledge.test.ts` |
+| 진행 | 도구 실행 중 `"자료 찾는 중"` 표시, `"부드러운 움직임"` 재생 중 절차적 호흡·스웨이 증폭 | `ToolActivity.test.tsx`, `prebaked-renderer.test.ts` |
+| 성공 | 설정 저장 시 `secure_store_set` 미호출·무오류, 지식 탭에서 21개 원고 목록·본문 열람, 뷰어 드래그 폭 조절, 지나 클립 머리 구멍·팔/다리 검은 영역 0 | `SettingsTab.test.tsx`, `KnowledgeSettingsTab.test.tsx`, `web-workspace-path.test.tsx` |
+| 오류 | 내부 규칙 경로(`.agents/*`, `AGENTS.md` 등) 직접 읽기 요청 시 차단 | `web-workspace-path.test.tsx` |
+| 좁은 폭 | 360px 폭 및 1280x800 화면에서 탐색기·지식 탭·대화창 레이아웃 및 키보드/ARIA 동작 유지 | `kiosk-demo.spec.ts`, 로컬 빌드판 시각 검증(`/home/nextain/work/codex-runs/kiosk-r3/shots/`) |
+| 깃발 꺼짐 | `isKioskDemo() === false`에서 기존 도구 펼침·로그아웃 단추·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx` |
+
+

@@ -77,6 +77,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private disposed = false;
 	private generation = 0;
 	private speakingVisual = false;
+	private activeGesture = false;
 	private cancelOneShot: (() => void) | null = null;
 	private tail = Promise.resolve();
 	private raf = 0;
@@ -165,6 +166,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		const animation = this.config.manifest.animations[key];
 		if (!animation || animKind(animation) !== "gesture") return false;
 		const generation = ++this.generation;
+		this.activeGesture = true;
 		let resolveStarted!: (started: boolean) => void;
 		let startSettled = false;
 		const started = new Promise<boolean>((resolve) => {
@@ -183,6 +185,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			false,
 		).then(
 			async () => {
+				if (generation === this.generation) this.activeGesture = false;
 				resolveStarted(false);
 				if (
 					generation === this.generation &&
@@ -192,6 +195,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					await this.playIdle();
 			},
 			async () => {
+				if (generation === this.generation) this.activeGesture = false;
 				resolveStarted(false);
 				if (generation === this.generation && !this.disposed)
 					await this.playIdle();
@@ -393,7 +397,17 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 				ctx.clearRect(0, 0, canvas.width, canvas.height);
 				if (rect.dw > 0 && rect.dh > 0) {
 					const keyColor = this.currentKeyColor;
-					const motionSpec = this.motionSpec;
+					const baseMotion = this.motionSpec;
+					const motionSpec: MotionSpec | null =
+						baseMotion && this.activeGesture
+							? {
+									...baseMotion,
+									breath: Math.min(0.05, Math.max(baseMotion.breath * 2.2, 0.038)),
+									breath_period_s: Math.max(1.5, Math.min(baseMotion.breath_period_s, 2.2)),
+									sway_deg: Math.min(5, Math.max(baseMotion.sway_deg * 2.0, 3.8)),
+									sway_period_s: Math.max(2.0, Math.min(baseMotion.sway_period_s, 2.6)),
+								}
+							: baseMotion;
 					const offscreen = motionSpec
 						? this.ensureOffscreen(canvas.width, canvas.height)
 						: null;

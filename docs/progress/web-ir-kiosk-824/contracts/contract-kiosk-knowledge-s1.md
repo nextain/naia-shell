@@ -7,6 +7,7 @@ export function assertPublicKnowledge
 export function compileKioskKnowledge
 export function handleKioskKnowledgeCommand
 export function kioskKnowledgeService
+export function listKioskKnowledgeManuscripts
 export function parseKioskKb
 export function readKioskKnowledgeService
 export function safeScope

@@ -30,6 +30,14 @@
   "background": {
     "type": "transparent"
   },
+  "motion": {
+    "breath": 0.024,
+    "breath_period_s": 3.0,
+    "sway_deg": 2.2,
+    "sway_period_s": 4.8,
+    "chest_y": 0.36,
+    "pivot_y": 0.95
+  },
   "animations": {
     "idle": {
       "clip": "clips/idle.webm",

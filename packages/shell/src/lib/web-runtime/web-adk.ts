@@ -1,5 +1,20 @@
+import { isKioskDemo } from "../kiosk-demo/flag";
 import { Logger } from "../logger";
 import { webAdkOpfsPath } from "./web-adk-path";
+
+function isKioskInternalAdkPath(relPath: string): boolean {
+	const top = relPath.split("/")[0] ?? "";
+	return (
+		top.startsWith(".") ||
+		top === "AGENTS.md" ||
+		top === "CLAUDE.md" ||
+		top === "GEMINI.md" ||
+		top === "README.md" ||
+		top === "OPENCODE.md" ||
+		top === "CODEX.md" ||
+		/agents-rules/i.test(relPath)
+	);
+}
 import {
 	WEB_ADK_COMMIT,
 	type WebAdkBundle,
@@ -93,19 +108,24 @@ export async function provisionWebAdk(
 			seenPaths.add(file.path);
 		}
 
+		const kioskDemo = isKioskDemo();
 		if (Array.isArray(bundle.dirs)) {
 			for (const dir of bundle.dirs) {
+				if (kioskDemo && isKioskInternalAdkPath(dir)) continue;
 				await deps.fs.ensureDir(webAdkOpfsPath(dir));
 			}
 		}
 
-		const total = bundle.files.length;
+		const filesToWrite = kioskDemo
+			? bundle.files.filter((file) => !isKioskInternalAdkPath(file.path))
+			: bundle.files;
+		const total = filesToWrite.length;
 		let done = 0;
 		deps.onProgress?.(0, total);
 
 		const written: string[] = [];
 
-		for (const file of bundle.files) {
+		for (const file of filesToWrite) {
 			const targetPath = webAdkOpfsPath(file.path);
 			const exists = await deps.fs.exists(targetPath);
 			if (exists) {

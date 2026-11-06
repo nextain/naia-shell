@@ -4167,6 +4167,7 @@ export function SettingsTab() {
 		id: SlotId,
 	): "running" | "starting" | "blocked" | "error" | null {
 		if (id === "tts") {
+			if (isKioskDemo() || isWebMode()) return null;
 			if (slotSnapshot.tts.provider !== "naia-local-voice") return null;
 			if (voxcpm2Installation?.canStart === false) return "blocked";
 			return cascadeHealth?.tts_enabled && cascadeHealth.tts
@@ -4206,6 +4207,9 @@ export function SettingsTab() {
 					? String(slotSnapshot.stt.provider)
 					: t("settings.slot.notSet");
 			case "tts":
+				if (isKioskDemo() || isWebMode()) {
+					return t("webSpeech.synthesisProvider");
+				}
 				return slotSnapshot.tts.provider
 					? String(slotSnapshot.tts.provider)
 					: t("settings.slot.notSet");
@@ -4235,11 +4239,18 @@ export function SettingsTab() {
 		}
 		const current = loadConfig();
 		if (!current) return;
-		const next = applyNaiaSlotDefaults(current, catalogModels.current);
+		const rawNext = applyNaiaSlotDefaults(current, catalogModels.current);
+		const next =
+			isKioskDemo() || isWebMode()
+				? { ...rawNext, ttsProvider: "browser" as const }
+				: rawNext;
 		saveConfig(next);
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 		setProvider(next.provider);
 		setModel(next.model);
+		if (isKioskDemo() || isWebMode()) {
+			setTtsProvider("browser");
+		}
 		// 보조·기억 역할 편집기는 제거됨(에픽 #589) — main 슬롯만 스테이징에 반영한다.
 		if (next.memoryEmbeddingProvider)
 			setMemoryEmbeddingProvider(next.memoryEmbeddingProvider);
@@ -4372,32 +4383,34 @@ export function SettingsTab() {
 					{t("settings.tabPersona")}
 				</button>
 				{import.meta.env.MODE !== "web" && (
-					<>
-						<button
-							type="button"
-							data-settings-tab="memory"
-							className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
-							onClick={() => setActiveSettingsTab("memory")}
-						>
-							{t("settings.tabMemory")}
-						</button>
-						<button
-							type="button"
-							data-settings-tab="knowledge"
-							className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
-							onClick={() => setActiveSettingsTab("knowledge")}
-						>
-							{t("settings.tabKnowledge")}
-						</button>
-						<button
-							type="button"
-							data-settings-tab="skills"
-							className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
-							onClick={() => setActiveSettingsTab("skills")}
-						>
-							{t("settings.tabSkills")}
-						</button>
-					</>
+					<button
+						type="button"
+						data-settings-tab="memory"
+						className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
+						onClick={() => setActiveSettingsTab("memory")}
+					>
+						{t("settings.tabMemory")}
+					</button>
+				)}
+				{(import.meta.env.MODE !== "web" || isKioskDemo()) && (
+					<button
+						type="button"
+						data-settings-tab="knowledge"
+						className={`settings-tab-btn${activeSettingsTab === "knowledge" ? " settings-tab-btn--active" : ""}`}
+						onClick={() => setActiveSettingsTab("knowledge")}
+					>
+						{t("settings.tabKnowledge")}
+					</button>
+				)}
+				{import.meta.env.MODE !== "web" && (
+					<button
+						type="button"
+						data-settings-tab="skills"
+						className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
+						onClick={() => setActiveSettingsTab("skills")}
+					>
+						{t("settings.tabSkills")}
+					</button>
 				)}
 				<button
 					type="button"
@@ -4649,20 +4662,22 @@ export function SettingsTab() {
 											: t("webAuth.signedOut")}
 									</span>
 									{webAuthLoggedIn ? (
-										<button
-											type="button"
-											className="voice-preview-btn"
-											data-testid="web-logout-btn"
-											onClick={() => {
-												logoutWebSession();
-												setWebAuthLoggedIn(false);
-												setWebAuthUserId("");
-												setNaiaKeyState("");
-												setNaiaUserIdState("");
-											}}
-										>
-											{t("settings.labDisconnect")}
-										</button>
+										!isKioskDemo() ? (
+											<button
+												type="button"
+												className="voice-preview-btn"
+												data-testid="web-logout-btn"
+												onClick={() => {
+													logoutWebSession();
+													setWebAuthLoggedIn(false);
+													setWebAuthUserId("");
+													setNaiaKeyState("");
+													setNaiaUserIdState("");
+												}}
+											>
+												{t("settings.labDisconnect")}
+											</button>
+										) : null
 									) : (
 										<button
 											type="button"
@@ -5278,7 +5293,7 @@ export function SettingsTab() {
 												</button>
 											</div>
 										</div>
-									) : (
+									) : !isKioskDemo() ? (
 										<button
 											type="button"
 											className="voice-preview-btn lab-disconnect-btn"
@@ -5286,7 +5301,7 @@ export function SettingsTab() {
 										>
 											{t("settings.labDisconnect")}
 										</button>
-									)}
+									) : null}
 								</div>
 							</div>
 						</div>
@@ -5387,51 +5402,70 @@ export function SettingsTab() {
 											)}
 											{group.id === "voice" && (
 												<>
-													<select
-														data-testid="profile-tts-provider"
-														aria-label={t("settings.ttsProvider")}
-														value={ttsProvider}
-														onChange={(event) =>
-															void selectProfileTtsProvider(
-																event.target.value as TtsProviderId,
-															)
-														}
-													>
-														{listTtsProviderMetas().map((providerMeta) => (
-															<option
-																key={providerMeta.id}
-																value={providerMeta.id}
-																disabled={
-																	(providerMeta.requiresNaiaKey && !naiaKey) ||
-																	(providerMeta.id === "naia-local-voice" &&
-																		(detectedVramGb == null ||
-																			detectedVramGb < 6))
+													{isKioskDemo() || isWebMode() ? (
+														<select
+															data-testid="profile-tts-provider"
+															aria-label={t("settings.ttsProvider")}
+															value="browser"
+															onChange={() => {
+																setTtsProvider("browser");
+																persistConfig({ ttsProvider: "browser" });
+															}}
+														>
+															<option value="browser">
+																{t("webSpeech.synthesisProvider")}
+															</option>
+														</select>
+													) : (
+														<>
+															<select
+																data-testid="profile-tts-provider"
+																aria-label={t("settings.ttsProvider")}
+																value={ttsProvider}
+																onChange={(event) =>
+																	void selectProfileTtsProvider(
+																		event.target.value as TtsProviderId,
+																	)
 																}
 															>
-																{providerMeta.name}
-															</option>
-														))}
-													</select>
-													{ttsProvider === "naia-local-voice" && (
-														<button
-															type="button"
-															className="voice-preview-btn"
-															data-testid="profile-local-voice-toggle"
-															onClick={handleToggleCascade}
-															disabled={
-																cascadeBusy ||
-																!naiaKey ||
-																detectedVramGb == null ||
-																detectedVramGb < 6
-															}
-															aria-pressed={cascadeRunning}
-														>
-															{cascadeBusy
-																? t("settings.cascadeBusy")
-																: cascadeRunning
-																	? t("settings.cascadeStop")
-																	: t("settings.cascadeStart")}
-														</button>
+																{listTtsProviderMetas().map((providerMeta) => (
+																	<option
+																		key={providerMeta.id}
+																		value={providerMeta.id}
+																		disabled={
+																			(providerMeta.requiresNaiaKey &&
+																				!naiaKey) ||
+																			(providerMeta.id === "naia-local-voice" &&
+																				(detectedVramGb == null ||
+																					detectedVramGb < 6))
+																		}
+																	>
+																		{providerMeta.name}
+																	</option>
+																))}
+															</select>
+															{ttsProvider === "naia-local-voice" && (
+																<button
+																	type="button"
+																	className="voice-preview-btn"
+																	data-testid="profile-local-voice-toggle"
+																	onClick={handleToggleCascade}
+																	disabled={
+																		cascadeBusy ||
+																		!naiaKey ||
+																		detectedVramGb == null ||
+																		detectedVramGb < 6
+																	}
+																	aria-pressed={cascadeRunning}
+																>
+																	{cascadeBusy
+																		? t("settings.cascadeBusy")
+																		: cascadeRunning
+																			? t("settings.cascadeStop")
+																			: t("settings.cascadeStart")}
+																</button>
+															)}
+														</>
 													)}
 													<button
 														type="button"

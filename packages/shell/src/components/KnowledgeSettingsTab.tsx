@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAdkPath } from "../lib/adk-store";
 import { t } from "../lib/i18n";
+import { isKioskDemo } from "../lib/kiosk-demo/flag";
+import { listKioskKnowledgeManuscripts } from "../lib/kiosk-demo/knowledge";
 import {
 	addSource,
 	emptyKnowledgeConfig,
@@ -30,6 +32,21 @@ export function KnowledgeSettingsTab() {
 	const [graphOpen, setGraphOpen] = useState(false);
 	const [compiling, setCompiling] = useState(false);
 	const [error, setError] = useState("");
+	const kioskDemo = isKioskDemo();
+	const kioskManuscripts = useMemo(
+		() => (kioskDemo ? listKioskKnowledgeManuscripts() : []),
+		[kioskDemo],
+	);
+	const [selectedManuscriptName, setSelectedManuscriptName] = useState<string>(
+		() => listKioskKnowledgeManuscripts()[0]?.name ?? "",
+	);
+	const selectedManuscript = useMemo(
+		() =>
+			kioskManuscripts.find((m) => m.name === selectedManuscriptName) ??
+			kioskManuscripts[0] ??
+			null,
+		[kioskManuscripts, selectedManuscriptName],
+	);
 
 	const loadStats = useCallback(async (scope: string) => {
 		const adkPath = getAdkPath();
@@ -146,7 +163,11 @@ export function KnowledgeSettingsTab() {
 		: t("settings.knowledgeStatusEmpty");
 
 	return (
-		<div className="knowledge-settings" data-testid="knowledge-settings">
+		<div
+			className="knowledge-settings"
+			data-testid="knowledge-settings"
+			style={{ gridColumn: "1 / -1" }}
+		>
 			<div className="settings-section-divider">
 				<span>{t("settings.tabKnowledge")}</span>
 			</div>
@@ -185,27 +206,149 @@ export function KnowledgeSettingsTab() {
 									{sourceLabel(src)}
 								</span>
 								<span className="knowledge-source-path">{src.path}</span>
-								<button
-									type="button"
-									className="knowledge-source-remove"
-									data-testid="knowledge-source-remove"
-									onClick={() => handleRemove(src.path)}
-								>
-									{t("settings.knowledgeRemove")}
-								</button>
+								{!kioskDemo && (
+									<button
+										type="button"
+										className="knowledge-source-remove"
+										data-testid="knowledge-source-remove"
+										onClick={() => handleRemove(src.path)}
+									>
+										{t("settings.knowledgeRemove")}
+									</button>
+								)}
 							</li>
 						))}
 					</ul>
 				)}
-				<button
-					type="button"
-					className="knowledge-add-folder"
-					data-testid="knowledge-add-folder"
-					onClick={handleAddFolder}
-				>
-					{t("settings.knowledgeAddFolder")}
-				</button>
+				{!kioskDemo && (
+					<button
+						type="button"
+						className="knowledge-add-folder"
+						data-testid="knowledge-add-folder"
+						onClick={handleAddFolder}
+					>
+						{t("settings.knowledgeAddFolder")}
+					</button>
+				)}
 			</div>
+
+			{kioskDemo && kioskManuscripts.length > 0 && (
+				<div
+					className="settings-field kiosk-knowledge-browser"
+					data-testid="kiosk-knowledge-browser"
+				>
+					<label>시연 지식 원고 ({kioskManuscripts.length}개)</label>
+					<div
+						style={{
+							display: "grid",
+							gridTemplateColumns: "minmax(180px, 230px) minmax(0, 1fr)",
+							gap: "12px",
+							marginTop: "8px",
+							alignItems: "start",
+						}}
+					>
+						<ul
+							className="kiosk-knowledge-manuscript-list"
+							data-testid="kiosk-knowledge-manuscript-list"
+							style={{
+								listStyle: "none",
+								margin: 0,
+								padding: "6px",
+								maxHeight: "360px",
+								overflowY: "auto",
+								border: "1px solid var(--border, rgba(120,150,200,0.28))",
+								borderRadius: "8px",
+								background: "rgba(15, 22, 36, 0.55)",
+							}}
+						>
+							{kioskManuscripts.map((item) => {
+								const active = selectedManuscript?.name === item.name;
+								return (
+									<li key={item.name} style={{ marginBottom: "4px" }}>
+										<button
+											type="button"
+											data-testid={`kiosk-knowledge-item-${item.name}`}
+											aria-pressed={active}
+											onClick={() => setSelectedManuscriptName(item.name)}
+											style={{
+												width: "100%",
+												textAlign: "left",
+												padding: "6px 8px",
+												borderRadius: "6px",
+												border: active
+													? "1px solid rgba(96, 165, 250, 0.65)"
+													: "1px solid transparent",
+												background: active
+													? "rgba(59, 130, 246, 0.22)"
+													: "transparent",
+												color: "var(--text, #e8ecf4)",
+												cursor: "pointer",
+												fontSize: "12px",
+											}}
+										>
+											<div style={{ fontWeight: active ? 600 : 500 }}>
+												{item.title}
+											</div>
+											<div
+												style={{
+													fontSize: "11px",
+													opacity: 0.72,
+													fontFamily: "var(--font-mono, monospace)",
+												}}
+											>
+												{item.name}
+											</div>
+										</button>
+									</li>
+								);
+							})}
+						</ul>
+						{selectedManuscript && (
+							<div
+								className="kiosk-knowledge-manuscript-viewer"
+								data-testid="kiosk-knowledge-manuscript-body"
+								style={{
+									padding: "12px 14px",
+									maxHeight: "360px",
+									overflowY: "auto",
+									border: "1px solid var(--border, rgba(120,150,200,0.28))",
+									borderRadius: "8px",
+									background: "rgba(10, 15, 26, 0.68)",
+								}}
+							>
+								<div
+									style={{
+										display: "flex",
+										justifyContent: "space-between",
+										alignItems: "baseline",
+										marginBottom: "8px",
+										gap: "8px",
+									}}
+								>
+									<strong style={{ fontSize: "13px" }}>
+										{selectedManuscript.title}
+									</strong>
+									<code style={{ fontSize: "11px", opacity: 0.75 }}>
+										knowledge/{selectedManuscript.name}
+									</code>
+								</div>
+								<pre
+									style={{
+										margin: 0,
+										whiteSpace: "pre-wrap",
+										wordBreak: "break-word",
+										fontSize: "12px",
+										lineHeight: 1.6,
+										fontFamily: "inherit",
+									}}
+								>
+									{selectedManuscript.text}
+								</pre>
+							</div>
+						)}
+					</div>
+				</div>
+			)}
 
 			{/* 컴파일 상태 + 트리거 */}
 			<div className="settings-field">
