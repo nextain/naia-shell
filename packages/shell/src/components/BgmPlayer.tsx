@@ -11,6 +11,11 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
+import {
+	attachMediaElementToSharedContext,
+	isBroadcastActive,
+	useBroadcastBridge,
+} from "../lib/broadcast-audio-bridge";
 import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
 import {
@@ -455,6 +460,28 @@ export function BgmPlayer({ naia }: Props) {
 	// appTab: which tab is currently shown in the app (independent of what's playing)
 	const [appExpanded, setAppExpanded] = useState(false);
 	const [appTab, setAppTab] = useState<AppTab>("youtube");
+	const broadcastBridge = useBroadcastBridge();
+	const broadcasting = isBroadcastActive(broadcastBridge.state);
+	const broadcastingRef = useRef(broadcasting);
+	broadcastingRef.current = broadcasting;
+	const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (audioRef.current) {
+			attachMediaElementToSharedContext(audioRef.current);
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!broadcasting) {
+			setBroadcastNotice(null);
+			return;
+		}
+		if (source === "youtube" && currentYt) {
+			setBroadcastNotice(t("broadcast.bgmYoutubeCopyrightNotice"));
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [broadcasting]);
 
 	const [library, setLibrary] = useState<BgmLibraryState>(() => {
 		// 첫 페인트는 캐시/구 config 로 즉시, 진짜 SoT(샌드박스)는 마운트 효과가 hydrate.
@@ -1927,6 +1954,11 @@ export function BgmPlayer({ naia }: Props) {
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
 	function handleYtSelect(video: YtVideo, requestedPlaybackId?: string) {
+		if (broadcastingRef.current) {
+			setBroadcastNotice(t("broadcast.bgmYoutubeCopyrightNotice"));
+		} else {
+			setBroadcastNotice(null);
+		}
 		if (!requestedPlaybackId) {
 			cancelRadioDjRecovery();
 			failedVideoIdsRef.current.delete(video.id);
@@ -2034,6 +2066,7 @@ export function BgmPlayer({ naia }: Props) {
 			if (localTracks.length > 0 && !audio.src) {
 				audio.src = localTracks[localIndex];
 			}
+			attachMediaElementToSharedContext(audio);
 			audio
 				.play()
 				.then(() => setPlaying(true))
@@ -2084,6 +2117,7 @@ export function BgmPlayer({ naia }: Props) {
 			return;
 		}
 		audio.src = tracks[idx];
+		attachMediaElementToSharedContext(audio);
 		void audio
 			.play()
 			.then(() => {
@@ -2396,6 +2430,15 @@ export function BgmPlayer({ naia }: Props) {
 						</div>
 
 						{/* ── 활성 플레이리스트 툴바 — 모든 탭 공통 (선택·셔플·반복) ── */}
+						{broadcastNotice && (
+							<div
+								className="bgm-yt-status"
+								data-testid="bgm-broadcast-youtube-notice"
+								role="status"
+							>
+								{broadcastNotice}
+							</div>
+						)}
 						<div className="bgm-playlist-toolbar">
 							<select
 								value={activePlaylist?.id ?? ""}

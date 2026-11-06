@@ -19,6 +19,21 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "broadcast_stream_026_20261106": {
+      "issue": null,
+      "title": "나이아 쉘 0.2.6 방송 바로 송출 2단계 (OBS 없이)",
+      "requirements": "docs/requirements.md FR-BROADCAST-STREAM.1~6",
+      "scenario": "docs/user-scenarios.md UC-BROADCAST-STREAM-026",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "done",
+      "last_updated": "2026-11-06T12:36:00+09:00"
+    },
     "project_panels_class_reset_20261025": {
       "issue": null,
       "title": "프로젝트 앱 문서·작업 탭 정리, 수업용 프로젝트(coding_app·docs_dirs·class.baseline_ref) 문서 미리보기·수업 초기화, 에이전트 아이콘 교체",

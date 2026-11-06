@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { writeNaiaUiConfig } from "../lib/adk-store";
 import { getCameraActions } from "../lib/avatar/camera-actions";
 import {
+	isBroadcastActive,
+	setBroadcastBridgeSnapshot,
+	useBroadcastBridge,
+} from "../lib/broadcast-audio-bridge";
+import {
 	type AppConfig,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -9,6 +14,13 @@ import {
 } from "../lib/config";
 import { t } from "../lib/i18n";
 import { useAppStore } from "../stores/app";
+
+function formatElapsedShort(seconds: number): string {
+	const safe = Math.max(0, Math.floor(seconds));
+	const mm = String(Math.floor(safe / 60)).padStart(2, "0");
+	const ss = String(safe % 60).padStart(2, "0");
+	return `${mm}:${ss}`;
+}
 
 /**
  * AiControlBar — fixed overlay on the avatar area (top-left of naia column).
@@ -31,6 +43,8 @@ export function AiControlBar() {
 		permitted: false,
 		activityActive: false,
 	});
+	const broadcastBridge = useBroadcastBridge();
+	const broadcastActive = isBroadcastActive(broadcastBridge.state);
 
 	useEffect(() => {
 		let disposed = false;
@@ -43,6 +57,9 @@ export function AiControlBar() {
 					profile,
 					permitted: config.proactiveSpeechPermitted === true,
 				}));
+				setBroadcastBridgeSnapshot({
+					hasStreamKey: Boolean(config.broadcastStreamKey?.trim()),
+				});
 			});
 		};
 		const onActivity = (event: Event) => {
@@ -162,6 +179,42 @@ export function AiControlBar() {
 				>
 					{proactiveTitle}
 				</span>
+			</button>
+
+			<button
+				type="button"
+				data-testid="ai-bar-broadcast-btn"
+				data-broadcast-state={broadcastBridge.state}
+				className={`bgm-ai-toggle${broadcastActive ? " bgm-ai-toggle--active" : ""}${!broadcastBridge.hasStreamKey && !broadcastActive ? " bgm-ai-toggle--blocked" : ""}`}
+				disabled={!broadcastBridge.hasStreamKey && !broadcastActive}
+				aria-pressed={broadcastActive}
+				title={
+					!broadcastBridge.hasStreamKey && !broadcastActive
+						? t("broadcast.keyRequiredHint")
+						: t("broadcast.btnLabel")
+				}
+				onClick={() => {
+					void import("../lib/broadcast-client").then(({ toggleBroadcast }) =>
+						toggleBroadcast().catch(() => {}),
+					);
+				}}
+			>
+				<span
+					className="bgm-ai-toggle__dot"
+					style={
+						broadcastBridge.state === "live"
+							? { background: "#ef4444" }
+							: broadcastBridge.state === "disconnected"
+								? { background: "#f59e0b" }
+								: undefined
+					}
+				/>
+				{t("broadcast.btnLabel")}
+				{broadcastBridge.state === "live"
+					? ` ${formatElapsedShort(broadcastBridge.elapsedSeconds)}`
+					: broadcastBridge.state === "disconnected"
+						? ` · ${t("broadcast.disconnectedLabel")}`
+						: ""}
 			</button>
 
 			<div className="ai-control-bar__sep" />
