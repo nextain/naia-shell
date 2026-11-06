@@ -673,6 +673,7 @@ function normalizeLocalRuntimeConfig(config: AppConfig): AppConfig {
 	if (normalized.localVoiceEnabled === true) {
 		delete normalized.localVoiceMigrationNotice;
 	}
+	if (normalized.nvaModel === "naia-anime") normalized.nvaModel = "naia";
 	return normalized;
 }
 

@@ -166,11 +166,10 @@ export const WEB_BACKGROUND_ASSETS: readonly WebBackgroundAsset[] = [
 ];
 
 /**
- * 웹판 NVA 번들 카탈로그 — dist /nva/<묶음>/ 에 실린 6종 이름 목록 (기본: naia).
+ * 웹판 NVA 번들 카탈로그 — dist /nva/<묶음>/ 에 실린 5종 이름 목록 (기본: naia).
  */
 export const WEB_NVA_ASSETS: readonly string[] = [
 	"naia",
-	"naia-anime",
 	"jina",
 	"jina-anime",
 	"minho",

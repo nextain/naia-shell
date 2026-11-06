@@ -1691,5 +1691,13 @@ P04 검수 수정(#824, 2026-11-05): 지나 실사 클립 재후처리 및 인�
 | FR-WEB-KIOSK-R3.9 | 파일 탐색기나 앱을 열고 닫아도 아바타와 대화창이 좌우로 튀지 않고 항상 왼쪽 같은 위치에 일관되게 머물도록 고정하며, 대화창(`.naia-chat-wrapper`) 안에서 상단 헤더(`.chat-header` 탭·단추)나 하단 입력창이 잘리지 않고 반투명 배경 뒤로 지나 치마(진한 빨강)가 번져 보라색 얼룩처럼 보이지 않도록 대화창 배경을 더 불투명하게 한다. | Done |
 | FR-WEB-KIOSK-R3.10 | 지나 캐릭터(`public/nva/jina/`)의 머리 오른쪽 위 빈 곳(구멍)과 `"부드러운 움직임"`(`motion.webm`) 실행 시 팔-허리·다리 사이가 검게 나오는 현상을 제거하고, 대기(`idle.webm`)에서 `"부드러운 움직임"`(`motion.webm`)으로 바뀔 때 지나의 크기와 발 위치가 튀지 않게 맞추면서 움직임 세기는 유지한다. | Done |
 
+## 웹판 기본 나이아 스튜디오 정본 교체 (2026-11-06)
+
+| ID | 요구사항 | 상태 |
+|---|---|---|
+| FR-NVA-WEB-STUDIO.1 | `packages/shell/public/nva/naia/` 묶음을 스튜디오 정본 6종 클립(`idle`, `talking-ko`, `greeting`, `happy`, `keyboard-idle` `"건반 치며 대기"`, `singing-keyboard` `"건반 치며 노래"`)의 VP9 2Mbps 알파 유지(`yuva420p`, `-auto-alt-ref 0`, `720x1280`, `24fps`) `.webm`과 `color-top-alpha-bottom` H.264 `.stacked.mp4`로 교체하고, 매니페스트에 코드가 참조하는 `speech_clips["speech-ko"].text`와 `stacked_alpha`를 유지하며 미참조 구 클립(`crystal-heart`, `curious-scan`)을 제거한다. | Done |
+| FR-NVA-WEB-STUDIO.2 | 중복 사본이 되는 `naia-anime` 묶음을 `WEB_NVA_ASSETS`와 `packages/shell/public/nva/naia-anime/`에서 제거하고, 저장된 설정값을 읽는 `packages/shell/src/lib/config.ts`(`normalizeLocalRuntimeConfig`) 한 곳에서 `nvaModel === "naia-anime"`을 `"naia"`로 매핑한다. | Done |
+
+
 
 

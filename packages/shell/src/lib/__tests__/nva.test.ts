@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	collectNvaManifestClipPaths,
@@ -280,5 +282,55 @@ describe("NVA manifest contract (v0.2)", () => {
 			"clips/idle.webm",
 			"clips/idle.stacked.mp4",
 		]);
+	});
+
+	it("validates public/nva/naia studio manifest and 6 webm/stacked.mp4 clip pairs", () => {
+		const publicNvaRoot = path.resolve(__dirname, "../../../public/nva");
+		const naiaDir = path.join(publicNvaRoot, "naia");
+		expect(existsSync(path.join(publicNvaRoot, "naia-anime"))).toBe(false);
+
+		const raw = readFileSync(path.join(naiaDir, "manifest.json"), "utf8");
+		const manifest = parseNvaManifest(raw);
+		expect(manifest.meta?.style_label).toBe("2D 셀 애니");
+		expect(Object.keys(manifest.animations)).toEqual([
+			"idle",
+			"talking",
+			"greeting",
+			"happy",
+			"keyboard-idle",
+			"singing-keyboard",
+		]);
+		expect(manifest.animations["keyboard-idle"]?.label).toBe("건반 치며 대기");
+		expect(manifest.animations["singing-keyboard"]?.label).toBe(
+			"건반 치며 노래",
+		);
+		expect(manifest.speech_clips?.["speech-ko"]?.text).toContain("안녕하세요.");
+		expect(manifest.stacked_alpha?.layout).toBe("color-top-alpha-bottom");
+
+		const expectedClips = [
+			"idle",
+			"talking-ko",
+			"greeting",
+			"happy",
+			"keyboard-idle",
+			"singing-keyboard",
+		];
+		for (const clip of expectedClips) {
+			expect(
+				manifest.stacked_alpha?.clips?.[`clips/${clip}.webm`],
+			).toBe(`clips/${clip}.stacked.mp4`);
+			expect(existsSync(path.join(naiaDir, "clips", `${clip}.webm`))).toBe(
+				true,
+			);
+			expect(
+				existsSync(path.join(naiaDir, "clips", `${clip}.stacked.mp4`)),
+			).toBe(true);
+		}
+		expect(existsSync(path.join(naiaDir, "clips", "crystal-heart.webm"))).toBe(
+			false,
+		);
+		expect(existsSync(path.join(naiaDir, "clips", "curious-scan.webm"))).toBe(
+			false,
+		);
 	});
 });
