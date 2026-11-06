@@ -1508,6 +1508,7 @@ export default {
 	"broadcast.keyRequiredHint": "पहले सेटिंग्स में स्ट्रीम कुंजी दर्ज करें",
 	"broadcast.disconnectedLabel": "डिस्कनेक्ट",
 	"broadcast.bgmLocalOnlyNotice": "प्रसारण के दौरान केवल स्थानीय संगीत",
+	"broadcast.bgmYoutubeCopyrightNotice": "कॉपीराइट वाले गानों से प्रसारण रुक सकता है",
 	"settings.broadcastSection": "प्रसारण",
 	"settings.broadcastPlatform": "प्लेटफ़ॉर्म",
 	"settings.broadcastServerUrl": "सर्वर URL",

@@ -1508,6 +1508,7 @@ export default {
 	"broadcast.keyRequiredHint": "설정에서 방송 키를 먼저 입력해 주세요",
 	"broadcast.disconnectedLabel": "끊김",
 	"broadcast.bgmLocalOnlyNotice": "방송 중엔 내 곡만",
+	"broadcast.bgmYoutubeCopyrightNotice": "저작권 곡이면 방송이 멈출 수 있어요",
 	"settings.broadcastSection": "방송",
 	"settings.broadcastPlatform": "플랫폼",
 	"settings.broadcastServerUrl": "서버 주소",

@@ -1508,6 +1508,7 @@ export default {
 	"broadcast.keyRequiredHint": "أدخل مفتاح البث في الإعدادات أولاً",
 	"broadcast.disconnectedLabel": "انقطع الاتصال",
 	"broadcast.bgmLocalOnlyNotice": "الموسيقى المحلية فقط أثناء البث",
+	"broadcast.bgmYoutubeCopyrightNotice": "قد تتسبب الأغاني المحمية بحقوق النشر في توقف البث",
 	"settings.broadcastSection": "البث المباشر",
 	"settings.broadcastPlatform": "المنصة",
 	"settings.broadcastServerUrl": "عنوان الخادم",

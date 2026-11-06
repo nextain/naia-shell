@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getAdkPath } from "./adk-store";
 import {
 	type BroadcastUiState,
 	getBroadcastBridgeSnapshot,
@@ -8,7 +9,7 @@ import {
 	setBroadcastAudioTapNode,
 	setBroadcastBridgeSnapshot,
 } from "./broadcast-audio-bridge";
-import { loadConfig, loadConfigWithSecrets } from "./config";
+import { loadConfig, loadConfigWithSecrets, saveConfig } from "./config";
 import { usdToCredits } from "./credits";
 import { t } from "./i18n";
 import { Logger } from "./logger";
@@ -78,13 +79,15 @@ export const BROADCAST_PLATFORM_PRESETS: Record<
 export interface BroadcastStatusPayload {
 	state: BroadcastUiState;
 	platform: BroadcastPlatformId | null;
-	resolution: BroadcastResolutionId | null;
-	encoder: "h264_nvenc" | "libx264" | null;
+	resolution?: BroadcastResolutionId | null;
+	encoder: "h264_nvenc" | "libx264" | "nvh264enc" | "x264enc" | null;
 	startedAt: string | null;
 	elapsedSeconds: number;
-	retryCount: number;
+	retryCount?: number;
+	restartCount?: number;
 	drops: number;
 	lastError: string | null;
+	restoreToken?: string | null;
 }
 
 /**
@@ -125,20 +128,21 @@ export function canStartBroadcastWithConfig(
 }
 
 /**
- * Guard YouTube BGM during active broadcast: only local BGM is allowed.
+ * Evaluate YouTube BGM selection during active broadcast:
+ * YouTube BGM is not blocked, and when broadcasting is active a single-line copyright notice is shown.
  */
 export function checkYoutubeBgmAllowedDuringBroadcast(
 	broadcastActive: boolean,
 ): {
 	allowed: boolean;
 	forcedMode: "local" | "youtube";
-	noticeKey: "broadcast.bgmLocalOnlyNotice" | null;
+	noticeKey: "broadcast.bgmYoutubeCopyrightNotice" | null;
 } {
 	if (broadcastActive) {
 		return {
-			allowed: false,
-			forcedMode: "local",
-			noticeKey: "broadcast.bgmLocalOnlyNotice",
+			allowed: true,
+			forcedMode: "youtube",
+			noticeKey: "broadcast.bgmYoutubeCopyrightNotice",
 		};
 	}
 	return {
@@ -538,14 +542,29 @@ export async function startBroadcast(): Promise<BroadcastStatusPayload> {
 	});
 
 	try {
+		const adkPath = getAdkPath() ?? "";
 		const status = await invoke<BroadcastStatusPayload>("broadcast_start", {
 			request: {
+				adkPath,
 				platform,
 				serverUrl,
 				streamKey,
 				resolution,
+				restoreToken: config?.broadcastRestoreToken ?? null,
 			},
 		});
+		if (
+			status.restoreToken &&
+			status.restoreToken !== config?.broadcastRestoreToken
+		) {
+			const latest = loadConfig();
+			if (latest) {
+				saveConfig({
+					...latest,
+					broadcastRestoreToken: status.restoreToken,
+				});
+			}
+		}
 
 		const { workletNode, silentSinkGain, bundler } =
 			await setupBroadcastAudioWorklet();
@@ -619,8 +638,10 @@ export async function stopBroadcast(): Promise<BroadcastStatusPayload> {
 
 	setBroadcastBridgeSnapshot({ state: "stopping" });
 	try {
+		const adkPath = getAdkPath() ?? undefined;
 		const status = await invoke<BroadcastStatusPayload>("broadcast_stop", {
-			summary: {
+			request: {
+				adkPath,
 				answers: metrics.answers,
 				creditsUsed: metrics.creditsUsed,
 				brain: metrics.brain,

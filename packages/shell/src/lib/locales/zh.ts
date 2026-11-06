@@ -1508,6 +1508,7 @@ export default {
 	"broadcast.keyRequiredHint": "请先在设置中输入推流密钥",
 	"broadcast.disconnectedLabel": "已断开",
 	"broadcast.bgmLocalOnlyNotice": "直播期间仅限本地曲目",
+	"broadcast.bgmYoutubeCopyrightNotice": "受版权保护的歌曲可能会导致直播中断",
 	"settings.broadcastSection": "直播",
 	"settings.broadcastPlatform": "平台",
 	"settings.broadcastServerUrl": "服务器地址",

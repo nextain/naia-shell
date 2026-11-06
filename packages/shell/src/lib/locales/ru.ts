@@ -1508,6 +1508,7 @@ export default {
 	"broadcast.keyRequiredHint": "Сначала укажите ключ трансляции в настройках",
 	"broadcast.disconnectedLabel": "Отключено",
 	"broadcast.bgmLocalOnlyNotice": "Во время трансляции доступна только локальная музыка",
+	"broadcast.bgmYoutubeCopyrightNotice": "Треки с авторскими правами могут остановить трансляцию",
 	"settings.broadcastSection": "Трансляция",
 	"settings.broadcastPlatform": "Платформа",
 	"settings.broadcastServerUrl": "URL сервера",

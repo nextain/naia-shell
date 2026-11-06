@@ -307,6 +307,7 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	"broadcastPlatform",
 	"broadcastServerUrl",
 	"broadcastResolution",
+	"broadcastRestoreToken",
 	// Opt-in proactive speech profile (shell configures agent at startup)
 	"proactiveSpeechProfile",
 	"proactiveSpeechPermitted",

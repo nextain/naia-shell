@@ -1508,6 +1508,7 @@ export default {
 	"broadcast.keyRequiredHint": "প্রথমে সেটিংসে স্ট্রিম কী লিখুন",
 	"broadcast.disconnectedLabel": "বিচ্ছিন্ন",
 	"broadcast.bgmLocalOnlyNotice": "সম্প্রচার চলাকালীন শুধুমাত্র স্থানীয় গান",
+	"broadcast.bgmYoutubeCopyrightNotice": "কপিরাইটযুক্ত গানের কারণে সম্প্রচার বন্ধ হতে পারে",
 	"settings.broadcastSection": "সম্প্রচার",
 	"settings.broadcastPlatform": "প্ল্যাটফর্ম",
 	"settings.broadcastServerUrl": "সার্ভার URL",

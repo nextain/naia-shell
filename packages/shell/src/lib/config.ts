@@ -475,6 +475,7 @@ export interface AppConfig {
 	broadcastServerUrl?: string;
 	broadcastResolution?: "1080p30" | "720p30";
 	broadcastStreamKey?: string;
+	broadcastRestoreToken?: string;
 	voiceConversation?: boolean;
 	/** Unified voice selection for a retained live/local voice route. */
 	voice?: string;
