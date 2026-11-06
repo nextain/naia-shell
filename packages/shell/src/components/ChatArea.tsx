@@ -2,10 +2,14 @@ import { resetKioskMemory } from "../lib/kiosk-demo/memory";
 import { isKioskDemo } from "../lib/kiosk-demo/flag";
 import {
 	consumeKioskGreeting,
+	isKioskCreditExhaustedError,
+	notifyKioskDemoUnavailable,
 	recordKioskVisitActivity,
 	resetKioskVisit,
 } from "../lib/kiosk-demo/entry";
+import { applyKioskDemoMainModel } from "../lib/config-seed";
 import { KIOSK_DEMO_GREETING } from "../lib/persona";
+import { verifyKioskDemoWebAuth } from "../lib/web-runtime/web-auth";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -1984,7 +1988,8 @@ export function ChatArea({
 
 		const store = useChatStore.getState();
 
-		const config = await loadConfigWithSecrets();
+		const rawConfig = await loadConfigWithSecrets();
+		const config = rawConfig ? applyKioskDemoMainModel(rawConfig) : null;
 		// Structured llmRoles.main is the source of truth. The flat provider/model
 		// fields remain a compatibility mirror and may be stale or absent after an
 		// ADK seed, so route the turn from the same effective role as Settings.
@@ -2000,7 +2005,12 @@ export function ChatArea({
 			return;
 		}
 		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
-		if (!isNewCore() && configuredProvider === "nextain" && !config?.naiaKey) {
+		if (
+			!isNewCore() &&
+			!isKioskDemo() &&
+			configuredProvider === "nextain" &&
+			!config?.naiaKey
+		) {
 			useChatStore
 				.getState()
 				.appendStreamChunk(
@@ -2274,10 +2284,21 @@ export function ChatArea({
 			});
 		} catch (err) {
 			const errStr = String(err);
+			if (isKioskDemo() && isKioskCreditExhaustedError(undefined, errStr)) {
+				finishStreamingWithVoiceTail();
+				finishLocalVoicePrebuffer();
+				completeCurrentRequest(requestId);
+				notifyKioskDemoUnavailable();
+				return;
+			}
 			if (errStr.includes("Naia provider requires")) {
 				finishStreamingWithVoiceTail();
 				finishLocalVoicePrebuffer();
-				setShowNoAuthModal(true);
+				if (isKioskDemo()) {
+					notifyKioskDemoUnavailable();
+				} else {
+					setShowNoAuthModal(true);
+				}
 				completeCurrentRequest(requestId);
 			} else {
 				const admissionKey =
@@ -3053,6 +3074,23 @@ export function ChatArea({
 				// #572 — 원시 오류를 답변 자리에 흘리지 않는다. 지금까지 온 본문이
 				// 있으면 그대로 보존하고, 실패는 재시도를 낀 별도 알림으로 세운다.
 				finishStreamingWithVoiceTail();
+				if (isKioskDemo()) {
+					if (isKioskCreditExhaustedError(chunk.code, chunk.message)) {
+						finishLocalVoicePrebuffer();
+						completeCurrentRequest(chunk.requestId);
+						notifyKioskDemoUnavailable();
+						break;
+					}
+					if (typeof verifyKioskDemoWebAuth === "function") {
+						void verifyKioskDemoWebAuth()
+							.then((v) => {
+								if (!v.ok && v.reason === "unavailable") {
+									notifyKioskDemoUnavailable();
+								}
+							})
+							.catch(() => {});
+					}
+				}
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: "",

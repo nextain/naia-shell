@@ -3396,4 +3396,86 @@ describe("ChatArea", () => {
 			localStorage.removeItem("naia-config");
 		}
 	});
+
+	it("FR-WEB-KIOSK-FIX.10 forces nextain + gpt-5.6-luna on send in kiosk mode even when saved config has gpt-6.1-terra or another provider, and transitions to unavailable screen on credit exhaustion without retry bubble", async () => {
+		const { KIOSK_DEMO_UNAVAILABLE_EVENT } = await import(
+			"../../lib/kiosk-demo/entry"
+		);
+		vi.stubEnv("MODE", "web");
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
+		setWebModelStatus({ phase: "ready" });
+		setWebAdkStatus({ phase: "ready" });
+		localStorage.setItem("naia-remote-key", "test-kiosk-fixture-only");
+
+		try {
+			// 1. Saved gpt-6.1-terra -> sent request uses nextain + gpt-5.6-luna
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "nextain",
+					model: "gpt-6.1-terra",
+					apiKey: "",
+					llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+				}),
+			);
+			const { unmount } = render(<ChatArea />);
+			const input = await screen.findByPlaceholderText(/메시지|message/i);
+			fireEvent.change(input, { target: { value: "terra test" } });
+			fireEvent.keyDown(input, { key: "Enter" });
+			await waitFor(() => expect(capturedRequests).toHaveLength(1));
+			expect(capturedRequests[0]?.provider?.provider).toBe("nextain");
+			expect(capturedRequests[0]?.provider?.model).toBe("gpt-5.6-luna");
+			unmount();
+
+			// 2. Saved other provider (codex) -> sent request uses nextain + gpt-5.6-luna
+			capturedRequests.length = 0;
+			useChatStore.getState().newConversation();
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider: "codex",
+					model: "gpt-5.6-sol",
+					apiKey: "",
+					llmRoles: { main: { provider: "codex", model: "gpt-5.6-sol" } },
+				}),
+			);
+			const unavailableEvents: Event[] = [];
+			const onUnavailable = (e: Event) => unavailableEvents.push(e);
+			window.addEventListener(KIOSK_DEMO_UNAVAILABLE_EVENT, onUnavailable);
+			try {
+				render(<ChatArea />);
+				const input2 = await screen.findByPlaceholderText(/메시지|message/i);
+				fireEvent.change(input2, { target: { value: "codex test" } });
+				fireEvent.keyDown(input2, { key: "Enter" });
+				await waitFor(() => expect(capturedRequests).toHaveLength(1));
+				expect(capturedRequests[0]?.provider?.provider).toBe("nextain");
+				expect(capturedRequests[0]?.provider?.model).toBe("gpt-5.6-luna");
+
+				// 3. Credit exhaustion error chunk -> emits unavailable event and does not add failure retry bubble
+				act(() => {
+					capturedRequests[0].onChunk({
+						type: "error",
+						requestId: capturedRequests[0].requestId,
+						message:
+							"OpenAI-compat https://gateway.nextain.io/v1 failed: 402 Payment Required: insufficient_quota",
+					});
+				});
+				expect(unavailableEvents).toHaveLength(1);
+				expect(
+					useChatStore
+						.getState()
+						.messages.some((m) => Boolean(m.failure)),
+				).toBe(false);
+			} finally {
+				window.removeEventListener(
+					KIOSK_DEMO_UNAVAILABLE_EVENT,
+					onUnavailable,
+				);
+			}
+		} finally {
+			vi.unstubAllEnvs();
+			localStorage.removeItem("naia-config");
+			localStorage.removeItem("naia-remote-key");
+		}
+	});
 });

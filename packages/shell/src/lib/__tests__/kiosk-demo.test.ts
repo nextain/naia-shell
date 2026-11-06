@@ -34,13 +34,16 @@ import {
 	getStaticModelsRecord,
 	listLlmProviders,
 	registerLlmProvider,
+	shouldMigrateNextainModel,
 } from "../llm/registry";
 import { effectiveMainRole, readSlots } from "../slots/model";
 import { INITIAL_WEB_WORKSPACE_CONFIG } from "../web-runtime/web-workspace-commands";
 import { prepareKioskDemoOnboarding } from "../onboarding-core";
 import {
 	consumeKioskGreeting,
+	isKioskCreditExhaustedError,
 	requestKioskGreeting,
+	resetKioskVisit,
 } from "../kiosk-demo/entry";
 
 const memory = vi.hoisted(() => new Map<string, string>());
@@ -432,5 +435,152 @@ describe("S3 kiosk isolation", () => {
 		const manuscripts = listKioskKnowledgeManuscripts();
 		expect(manuscripts).toHaveLength(21);
 		expect(manuscripts.some((m) => m.name === "naia.md")).toBe(true);
+	});
+	it("FR-WEB-KIOSK-FIX.10 overrides saved terra or other providers to nextain + gpt-5.6-luna in kiosk mode, and preserves saved selections in ordinary web/desktop modes", () => {
+		setWebAssetsModeForTests(true);
+		// Kiosk ON: saved gpt-6.1-terra -> overridden to nextain + gpt-5.6-luna
+		saveConfig({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+			apiKey: "",
+			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+		});
+		const savedTerra = JSON.parse(localStorage.getItem("naia-config")!);
+		expect(savedTerra.provider).toBe("nextain");
+		expect(savedTerra.model).toBe("gpt-5.6-luna");
+		expect(savedTerra.llmRoles.main).toMatchObject({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+		});
+
+		// Kiosk ON: saved other provider (codex) -> overridden to nextain + gpt-5.6-luna
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "codex",
+				model: "gpt-5.6-sol",
+				apiKey: "",
+				llmRoles: { main: { provider: "codex", model: "gpt-5.6-sol" } },
+			}),
+		);
+		const loadedOther = loadConfig()!;
+		expect(loadedOther.provider).toBe("nextain");
+		expect(loadedOther.model).toBe("gpt-5.6-luna");
+		expect(effectiveMainRole(loadedOther)).toEqual({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+		});
+		expect(
+			effectiveMainRole({
+				provider: "codex",
+				model: "gpt-5.6-sol",
+				apiKey: "",
+				llmRoles: { main: { provider: "codex", model: "gpt-5.6-sol" } },
+			}),
+		).toEqual({
+			provider: "nextain",
+			model: "gpt-5.6-luna",
+		});
+
+		// Kiosk ON: shouldMigrateNextainModel migrates terra and retired models to gpt-5.6-luna first
+		const served = new Set(["gpt-6.1-terra", "gpt-5.6-luna", "deepseek-v4-pro"]);
+		expect(shouldMigrateNextainModel("nextain", "gpt-6.1-terra", served)).toEqual({
+			migrate: true,
+			to: "gpt-5.6-luna",
+		});
+		expect(shouldMigrateNextainModel("nextain", "claude-opus-5", served)).toEqual({
+			migrate: true,
+			to: "gpt-5.6-luna",
+		});
+
+		// Ordinary Web Mode (kiosk OFF): preserves saved terra and other providers
+		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "0");
+		saveConfig({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+			apiKey: "",
+			llmRoles: { main: { provider: "nextain", model: "gpt-6.1-terra" } },
+		});
+		const webTerra = loadConfig()!;
+		expect(webTerra.provider).toBe("nextain");
+		expect(webTerra.model).toBe("gpt-6.1-terra");
+		expect(effectiveMainRole(webTerra)).toEqual({
+			provider: "nextain",
+			model: "gpt-6.1-terra",
+		});
+
+		// Desktop Mode (kiosk OFF, web OFF): preserves saved provider/model
+		setWebAssetsModeForTests(false);
+		vi.stubEnv("MODE", "production");
+		saveConfig({
+			provider: "codex",
+			model: "gpt-5.6-sol",
+			apiKey: "",
+			llmRoles: { main: { provider: "codex", model: "gpt-5.6-sol" } },
+		});
+		const desktopCodex = loadConfig()!;
+		expect(desktopCodex.provider).toBe("codex");
+		expect(desktopCodex.model).toBe("gpt-5.6-sol");
+		expect(effectiveMainRole(desktopCodex)).toEqual({
+			provider: "codex",
+			model: "gpt-5.6-sol",
+		});
+	});
+	it("resetKioskVisit restores localStorage naia-config and OPFS config/ui-config back to the kiosk seed", async () => {
+		setWebAssetsModeForTests(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				agentName: "손님커스텀",
+				userName: "방문자",
+				speechStyle: "casual",
+				persona: "custom persona",
+				avatarProvider: "naia-video-avatar",
+				nvaModel: "naia",
+				ttsVoice: "custom-voice",
+				provider: "codex",
+				model: "gpt-5.6-sol",
+				apiKey: "",
+			}),
+		);
+		localStorage.setItem("naia-web-nextain-model", "gpt-6.1-terra");
+		memory.set(
+			"naia-adk/naia-settings/config.json",
+			JSON.stringify({ agentName: "손님커스텀", provider: "codex", model: "gpt-5.6-sol" }),
+		);
+		memory.set(
+			"naia-adk/naia-settings/ui-config.json",
+			JSON.stringify({ nvaModel: "naia", ttsVoice: "custom-voice", ttsEnabled: false }),
+		);
+
+		await resetKioskVisit({
+			cancel: () => undefined,
+			resetMemory: async () => undefined,
+			clearConversations: async () => undefined,
+			newConversation: () => undefined,
+			reload: () => undefined,
+		});
+
+		const seed = buildKioskDemoConfigSeed();
+		const resetLocal = loadConfig()!;
+		expect(resetLocal).toMatchObject(seed);
+		expect(localStorage.getItem("naia-web-nextain-model")).toBeNull();
+		const resetOpfsConfig = JSON.parse(
+			memory.get("naia-adk/naia-settings/config.json")!,
+		);
+		expect(resetOpfsConfig).toMatchObject(seed);
+		const resetOpfsUi = JSON.parse(
+			memory.get("naia-adk/naia-settings/ui-config.json")!,
+		);
+		expect(resetOpfsUi).toEqual({
+			onboardingComplete: true,
+			ttsEnabled: true,
+		});
+		expect(
+			isKioskCreditExhaustedError(
+				undefined,
+				"OpenAI-compat https://gateway.nextain.io/v1 failed: 402 Payment Required: insufficient_quota",
+			),
+		).toBe(true);
 	});
 });

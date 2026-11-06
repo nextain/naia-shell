@@ -1,9 +1,21 @@
+import { type AppConfig, saveConfig } from "../config";
+import { buildKioskDemoConfigSeed } from "../config-seed";
 import { Logger } from "../logger";
-import { clearWebConversations } from "../web-runtime/web-workspace-commands";
+import { webAdkOpfsPath } from "../web-runtime/web-adk-path";
+import { getWebFs } from "../web-runtime/web-fs";
+import {
+	INITIAL_WEB_WORKSPACE_CONFIG,
+	clearWebConversations,
+} from "../web-runtime/web-workspace-commands";
+import { isKioskDemo } from "./flag";
 
 export const KIOSK_VISIT_ACTIVE_SESSION_KEY = "naia-kiosk-visit-active";
 export const KIOSK_VISIT_LAST_ACTIVE_KEY = "naia-kiosk-last-active-at";
 export const KIOSK_VISIT_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+export const KIOSK_DEMO_UNAVAILABLE_EVENT = "naia-kiosk-demo-unavailable";
+
+const KIOSK_CREDIT_EXHAUSTED_RE =
+	/\b402\b|payment\s+required|insufficient[_-\s]*(?:quota|credits?|balance|funds)|quota[_-\s]*(?:exceeded|blocked)|out\s+of\s+credits?|credit\s+balance|크레딧.*(?:부족|없|소진)|잔액.*(?:부족|없|소진)/i;
 
 let greetingPending = false;
 
@@ -102,6 +114,63 @@ export function consumeKioskGreeting(): boolean {
 	return pending;
 }
 
+export function isKioskCreditExhaustedError(
+	code: unknown,
+	message: string,
+): boolean {
+	if (code === "PROVIDER_AUTH_EXPIRED" || code === "PROVIDER_LOGIN_REQUIRED") {
+		return true;
+	}
+	return KIOSK_CREDIT_EXHAUSTED_RE.test(message);
+}
+
+export function notifyKioskDemoUnavailable(): void {
+	if (typeof window === "undefined") return;
+	window.dispatchEvent(new CustomEvent(KIOSK_DEMO_UNAVAILABLE_EVENT));
+}
+
+async function resetKioskSettingsToSeed(): Promise<void> {
+	if (!isKioskDemo()) return;
+	const seed = buildKioskDemoConfigSeed();
+	try {
+		if (typeof localStorage !== "undefined") {
+			localStorage.removeItem("naia-web-nextain-model");
+			localStorage.removeItem("naia-webllm-model");
+			saveConfig({
+				...seed,
+				apiKey: "",
+				naiaKey: undefined,
+				naiaUserId: undefined,
+			} as AppConfig);
+		}
+	} catch {
+		// ignore storage errors
+	}
+	try {
+		const fs = getWebFs();
+		const configPath = webAdkOpfsPath("naia-settings/config.json");
+		const uiPath = webAdkOpfsPath("naia-settings/ui-config.json");
+		const config = {
+			...INITIAL_WEB_WORKSPACE_CONFIG,
+			...seed,
+		} as Record<string, unknown>;
+		delete config.vrmModel;
+		delete config.naiaKey;
+		delete config.naiaUserId;
+		delete config.apiKey;
+		await fs.writeBytes(configPath, JSON.stringify(config));
+		await fs.writeBytes(
+			uiPath,
+			JSON.stringify({
+				onboardingComplete: true,
+				ttsEnabled: true,
+			}),
+		);
+	} catch {
+		// ignore OPFS errors when workspace is not mounted yet
+	}
+}
+
 /** Wait for cancellation and durable memory/conversation reset before discarding the session. */
 export async function resetKioskVisit(actions: {
 	cancel: () => void | Promise<void>;
@@ -114,6 +183,7 @@ export async function resetKioskVisit(actions: {
 	await actions.cancel();
 	await actions.resetMemory();
 	await (actions.clearConversations ?? clearWebConversations)();
+	await resetKioskSettingsToSeed();
 	// 시연 전용 열쇠(naia-remote-key)는 다음 방문자도 같은 시연 계정을 써야 하므로 지우지 않는다.
 	clearKioskVisitActivity();
 	actions.newConversation();

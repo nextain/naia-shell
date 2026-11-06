@@ -26,6 +26,7 @@ import {
 	isWebMode,
 	normalizeRetiredWebBackgroundInRecord,
 } from "./web-runtime/web-assets";
+import { applyKioskDemoMainModel } from "./config-seed";
 import { isKioskDemo } from "./kiosk-demo/flag";
 
 const STORAGE_KEY = "naia-config";
@@ -728,33 +729,11 @@ export function loadConfig(): AppConfig | null {
 			} else if (!isKioskDemo() && config.ttsProvider !== "browser") {
 				config.ttsProvider = "browser";
 			}
-			if (isKioskDemo()) {
-				if (!config.provider) {
-					config.provider = "nextain";
-				}
-				if (config.provider === "nextain" && !config.model?.trim()) {
-					config.model = "gpt-5.6-luna";
-				}
-				if (
-					config.provider === "nextain" &&
-					(!config.llmRoles?.main ||
-						(!config.llmRoles.main.inherit &&
-							!config.llmRoles.main.model?.trim()))
-				) {
-					config.llmRoles = {
-						...config.llmRoles,
-						main: {
-							...config.llmRoles?.main,
-							provider: "nextain",
-							model: config.model || "gpt-5.6-luna",
-						},
-					};
-				}
-			}
 		} else if (!config.sttProvider) {
 			const isLinux = navigator.userAgent.includes("Linux");
 			config.sttProvider = isLinux ? "vosk" : "web-speech";
 		}
+		Object.assign(config, applyKioskDemoMainModel(config));
 		if (config.enableTools == null) {
 			config.enableTools = true;
 		}
@@ -765,9 +744,9 @@ export function loadConfig(): AppConfig | null {
 }
 
 export function saveConfig(config: AppConfig): void {
-	const normalized = normalizeRetiredVoiceConfig(
-		normalizeLocalRuntimeConfig(config),
-	).config;
+	const normalized = applyKioskDemoMainModel(
+		normalizeRetiredVoiceConfig(normalizeLocalRuntimeConfig(config)).config,
+	);
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
 	if (typeof window !== "undefined") {
 		window.dispatchEvent(new CustomEvent("naia-config-changed"));
@@ -816,11 +795,13 @@ export function mergeBootConfig(
 	if (normalizedFile?.locale !== undefined && normalizedUi) {
 		delete normalizedUi.locale;
 	}
-	return normalizeLocalRuntimeConfig({
-		...bootstrap,
-		...(normalizedFile ?? {}),
-		...(normalizedUi ?? {}),
-	} as unknown as AppConfig) as unknown as Record<string, unknown>;
+	return applyKioskDemoMainModel(
+		normalizeLocalRuntimeConfig({
+			...bootstrap,
+			...(normalizedFile ?? {}),
+			...(normalizedUi ?? {}),
+		} as unknown as AppConfig),
+	) as unknown as Record<string, unknown>;
 }
 
 export function hasApiKey(): boolean {
@@ -845,7 +826,7 @@ export function isReadyToChat(): boolean {
 export function hasNaiaKey(): boolean {
 	const config = loadConfig();
 	if (config?.naiaKey) return true;
-	if (isWebMode() && typeof localStorage !== "undefined") {
+	if ((isWebMode() || isKioskDemo()) && typeof localStorage !== "undefined") {
 		return Boolean(localStorage.getItem("naia-remote-key")?.trim());
 	}
 	return false;
@@ -854,7 +835,7 @@ export function hasNaiaKey(): boolean {
 export function getNaiaKey(): string | undefined {
 	const fromConfig = loadConfig()?.naiaKey;
 	if (fromConfig) return fromConfig;
-	if (isWebMode() && typeof localStorage !== "undefined") {
+	if ((isWebMode() || isKioskDemo()) && typeof localStorage !== "undefined") {
 		const remote = localStorage.getItem("naia-remote-key")?.trim();
 		return remote || undefined;
 	}
@@ -922,7 +903,11 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 			: undefined;
 		assertSelectedAdkPath(securePath, "Loading configuration");
 	}
-	if (isWebMode() && !config.naiaKey && typeof localStorage !== "undefined") {
+	if (
+		(isWebMode() || isKioskDemo()) &&
+		!config.naiaKey &&
+		typeof localStorage !== "undefined"
+	) {
 		const webKey = localStorage.getItem("naia-remote-key")?.trim();
 		if (webKey) {
 			config.naiaKey = webKey;

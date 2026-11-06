@@ -2670,12 +2670,13 @@ P04 검수 수정(#824, 2026-11-05): Vitest 6파일 140/140(`knowledge.test.ts`,
 
 | 상태 | 검증 | 시험 |
 |---|---|---|
-| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃·기억 내보내기 숨김, 키오스크 주 모델 `gpt-5.6-luna` 고정 및 기본 `Naia Cloud TTS`(`"nextain"`) 시드·프로필/음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts` |
+| 기본 | 도구 한 줄 요약 표시(JSON 비노출), 로그아웃·기억 내보내기 숨김, 키오스크 주 모델 `gpt-5.6-luna` 단일 강제(`resolveKioskDemoMainModel`/`applyKioskDemoMainModel`)·두뇌 탭 공급자/모델 읽기 전용 잠금 및 기본 `Naia Cloud TTS`(`"nextain"`) 시드·프로필/음성 탭 일치, 아바타·대화창 위치 고정 및 상단 잘림 없음 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `kiosk-demo.test.ts`, `ChatArea.test.tsx` |
 | 빈 목록 | 초기 OPFS에서도 탐색기에 `kiosk-demo/knowledge/*.md` 시연 파일만 표시되고 내부 규칙 파일 비노출 | `web-workspace-path.test.tsx`, `knowledge.test.ts` |
 | 진행 | 도구 실행 중 `"자료 찾는 중"` 표시, `"부드러운 움직임"` 재생 중 크기·발 위치 고정 및 부드러운 스웨이 유지 | `ToolActivity.test.tsx`, `prebaked-renderer.test.ts` |
-| 성공 | 설정 저장 시 `secure_store_set` 미호출·무오류, 지식 탭에서 21개 원고 마크다운 렌더링 열람, 파일 열기 시 탐색기 폭 확장·한 줄 파일 이름·도구줄 보존, 지나 클립 머리 구멍·팔/다리 검은 영역 0 및 크기/발 위치 일치 | `SettingsTab.test.tsx`, `KnowledgeSettingsTab.test.tsx`, `web-workspace-path.test.tsx` |
-| 오류 | 내부 규칙 경로(`.agents/*`, `AGENTS.md` 등) 직접 읽기 요청 시 차단, 게이트웨이 TTS 실패 시 브라우저 음성 폴백 | `web-workspace-path.test.tsx`, `sentence-pipeline.test.ts` |
-| 좁은 폭 | `1920×1080`, `1280×720`, `360px` 폭에서 탐색기·지식 탭·대화창 레이아웃 및 키보드/ARIA 동작 유지 | `kiosk-demo.spec.ts`, 로컬 빌드판 시각 검증(`/home/nextain/work/codex-runs/kiosk-r3/shots-r2/`) |
-| 깃발 꺼짐 | `isKioskDemo() === false`에서 기존 도구 펼침·로그아웃 단추·일반 웹판 기억 내보내기 단추(`.voice-preview-btn`)·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx` |
+| 성공 | 설정 저장 시 `secure_store_set` 미호출·무오류, ‘처음으로’·3분 무응답 리셋 시 `localStorage naia-config` 및 OPFS 설정이 키오스크 시드(페르소나·아바타·음성·두뇌)로 복원, 지식 탭에서 21개 원고 마크다운 렌더링 열람, 파일 열기 시 탐색기 폭 확장·한 줄 파일 이름·도구줄 보존, 지나 클립 머리 구멍·팔/다리 검은 영역 0 및 크기/발 위치 일치 | `SettingsTab.test.tsx`, `KnowledgeSettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `kiosk-demo.test.ts`, `KioskDemoGate.test.tsx` |
+| 오류 | 내부 규칙 경로(`.agents/*`, `AGENTS.md` 등) 직접 읽기 요청 시 차단, 게이트웨이 TTS 실패 시 브라우저 음성 폴백, 시연 대화 중 크레딧 소진 시 일반 실패 버블+재시도 대신 `"지금은 시연을 쓸 수 없습니다"` 게이트 화면으로 전환 | `web-workspace-path.test.tsx`, `sentence-pipeline.test.ts`, `ChatArea.test.tsx`, `KioskDemoGate.test.tsx` |
+| 좁은 폭 | `1920×1080`, `1280×720`, `360px` 폭에서 탐색기·지식 탭·대화창·잠긴 두뇌 탭 레이아웃 및 키보드/ARIA 동작 유지 | `kiosk-demo.spec.ts`, 로컬 빌드판 시각 검증(`/home/nextain/work/codex-runs/kiosk-r3/cap-r5/`) |
+| 깃발 꺼짐 | `isKioskDemo() === false`에서 저장된 공급자·모델 그대로 전송·유지, 기존 도구 펼침·로그아웃 단추·일반 웹판 기억 내보내기 단추(`.voice-preview-btn`)·일반 웹판 브라우저 음성 고정·일반 파일 탐색기 동작 보존 | `ToolActivity.test.tsx`, `SettingsTab.test.tsx`, `web-workspace-path.test.tsx`, `ChatArea.test.tsx`, `kiosk-demo.test.ts` |
+
 
 

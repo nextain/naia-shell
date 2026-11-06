@@ -3324,7 +3324,7 @@ export function SettingsTab() {
 	}
 
 	function handleProviderChange(id: ProviderId) {
-		if (isKioskDemo() && id === "webllm") {
+		if (isKioskDemo()) {
 			return;
 		}
 		if (isWebMode() && isNaiaConfigHydrationPending()) {
@@ -4112,7 +4112,8 @@ export function SettingsTab() {
 		(candidate) => !candidate.capabilities.includes("asr"),
 	);
 	const hideModelPicker =
-		provider !== "ollama" && shouldHideModelPicker(displayedProviderModels);
+		isKioskDemo() ||
+		(provider !== "ollama" && shouldHideModelPicker(displayedProviderModels));
 	const singleProviderModel = selectableProviderModels[0];
 	const selectedModelMeta = availableProviderModels.find(
 		(m) => m.id === activeBrainModel,
@@ -5734,16 +5735,19 @@ export function SettingsTab() {
 
 					<div className="settings-field">
 						<label htmlFor="provider-select">{t("settings.provider")}</label>
-						<select
-							id="provider-select"
-							value={provider}
-							onChange={(e) =>
-								handleProviderChange(e.target.value as ProviderId)
-							}
-						>
-							{listLlmProviders()
-								.filter((p) => !(isKioskDemo() && p.id === "webllm"))
-								.map((p) => (
+						{isKioskDemo() ? (
+							<div id="provider-select" data-testid="provider-single">
+								{getLlmProvider("nextain")?.name ?? "Naia"}
+							</div>
+						) : (
+							<select
+								id="provider-select"
+								value={provider}
+								onChange={(e) =>
+									handleProviderChange(e.target.value as ProviderId)
+								}
+							>
+								{listLlmProviders().map((p) => (
 									<option key={p.id} value={p.id} disabled={p.disabled}>
 										{p.name}
 										{isRecommendedLocalValue(activeLocalTier, "main", p.id)
@@ -5751,7 +5755,8 @@ export function SettingsTab() {
 											: ""}
 									</option>
 								))}
-						</select>
+							</select>
+						)}
 						{slotRecommendation(activeLocalTier, "main") && (
 							<div className="settings-hint" data-testid="main-tier-hint">
 								{t("settings.tierRecommendSummary")}: ollama (
@@ -6397,11 +6402,13 @@ export function SettingsTab() {
 								</datalist>
 							</>
 						) : hideModelPicker ? (
-							// 모델이 하나뿐 → 선택기 대신 그 모델을 정적 텍스트로만 보여 준다.
+							// 모델이 하나뿐이거나 키오스크 고정 → 선택기 대신 그 모델을 정적 텍스트로만 보여 준다.
 							<div id="model-select" data-testid="model-single">
-								{singleProviderModel
-									? formatModelLabel(singleProviderModel, t)
-									: (selectedModelMeta?.label ?? model)}
+								{isKioskDemo()
+									? (selectedModelMeta?.label ?? activeBrainModel)
+									: singleProviderModel
+										? formatModelLabel(singleProviderModel, t)
+										: (selectedModelMeta?.label ?? model)}
 							</div>
 						) : (
 							<select
@@ -6531,40 +6538,48 @@ export function SettingsTab() {
 					</div>
 					<div className="settings-field">
 						<label htmlFor="small-model-select">{t("settings.smallModel")}</label>
-						<label htmlFor="small-model-sort">{t("settings.modelSort")}</label>
-						<select id="small-model-sort" value={smallSortMode} onChange={(event) => setSmallSortMode(event.target.value as ModelSortMode)}>
-							<option value="recommended">{t("settings.modelSortRecommended")}</option>
-							<option value="price">{t("settings.modelSortPrice")}</option>
-							<option value="performance">{t("settings.modelSortPerformance")}</option>
-						</select>
-						<select id="small-model-select" data-testid="small-model-select"
-							value={smallRole.inherit ? "__inherit__" : isWebMode() && smallRole.provider === "ollama" ? "__desktop_local__" : smallRole.provider && smallRole.model ? JSON.stringify([smallRole.provider, smallRole.model]) : "__inherit__"}
-							onChange={(event) => {
-								const selected = event.target.value;
-								if (selected === "__desktop_local__") return;
-								const [selectedProvider, selectedModel] = selected === "__inherit__" ? ["", ""] : JSON.parse(selected) as [ProviderId, string];
-								const choice: LlmRoleConfig = selected === "__inherit__" ? { inherit: "main" } : {
-									provider: selectedProvider, model: selectedModel,
-									...(smallRole.provider === selectedProvider && smallRole.baseUrl ? { baseUrl: smallRole.baseUrl } : selectedProvider === "ollama" ? { baseUrl: ollamaHost } : selectedProvider === "vllm" ? { baseUrl: vllmHost } : {}),
-									...(smallRole.provider === selectedProvider && smallRole.credentialRef ? { credentialRef: smallRole.credentialRef } : {}),
-									...(selectedProvider === "nextain" && /luna/i.test(selectedModel) ? { thinkingLevel: "low" as const } : {}),
-								};
-								setSmallRole(choice);
-								const current = loadConfig();
-								if (current) {
-									const updated = writeConfiguredLlmRole(current, "sub", choice);
-									saveConfig(updated);
-									void writeNaiaConfig(updated as unknown as Record<string, unknown>);
-								}
-							}}>
-							<option value="__inherit__">{t("settings.smallModelInherit")}</option>
-							{isWebMode() && smallRole.provider === "ollama" && <option value="__desktop_local__" disabled>{t("settings.smallModelDesktopSelected")}</option>}
-							{!smallRole.inherit && smallRole.provider && smallRole.model && !(isWebMode() && smallRole.provider === "ollama") && !smallModelChoices(dynamicModels[smallRole.provider] ?? []).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini").some(m => m.id === smallRole.model) && !(smallRole.provider === "ollama" && smallRole.model === LOCAL_SMALL_MODEL && !isWebMode()) && <option value={JSON.stringify([smallRole.provider, smallRole.model])}>{smallRole.provider}: {smallRole.model}</option>}
-							{Object.entries(dynamicModels).filter(([id]) => id === "nextain" || (!isWebMode() && ["ollama", "vllm", "codex", "grok", "claude-code-cli"].includes(id))).map(([id, models]) => <optgroup key={id} label={getLlmProvider(id)?.name ?? id}>
-								{sortModels(smallModelChoices(models).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini"), smallSortMode).map(m => <option key={m.id} value={JSON.stringify([id, m.id])}>{m.label}</option>)}
-							</optgroup>)}
-							{!isWebMode() && !(dynamicModels.ollama ?? []).some(m => m.id === LOCAL_SMALL_MODEL) && <option value={JSON.stringify(["ollama", LOCAL_SMALL_MODEL])}>Qwen 3.5 4B ({t("settings.smallModelLocal")})</option>}
-						</select>
+						{isKioskDemo() ? (
+							<div id="small-model-select" data-testid="small-model-single">
+								{t("settings.smallModelInherit")}
+							</div>
+						) : (
+							<>
+								<label htmlFor="small-model-sort">{t("settings.modelSort")}</label>
+								<select id="small-model-sort" value={smallSortMode} onChange={(event) => setSmallSortMode(event.target.value as ModelSortMode)}>
+									<option value="recommended">{t("settings.modelSortRecommended")}</option>
+									<option value="price">{t("settings.modelSortPrice")}</option>
+									<option value="performance">{t("settings.modelSortPerformance")}</option>
+								</select>
+								<select id="small-model-select" data-testid="small-model-select"
+									value={smallRole.inherit ? "__inherit__" : isWebMode() && smallRole.provider === "ollama" ? "__desktop_local__" : smallRole.provider && smallRole.model ? JSON.stringify([smallRole.provider, smallRole.model]) : "__inherit__"}
+									onChange={(event) => {
+										const selected = event.target.value;
+										if (selected === "__desktop_local__") return;
+										const [selectedProvider, selectedModel] = selected === "__inherit__" ? ["", ""] : JSON.parse(selected) as [ProviderId, string];
+										const choice: LlmRoleConfig = selected === "__inherit__" ? { inherit: "main" } : {
+											provider: selectedProvider, model: selectedModel,
+											...(smallRole.provider === selectedProvider && smallRole.baseUrl ? { baseUrl: smallRole.baseUrl } : selectedProvider === "ollama" ? { baseUrl: ollamaHost } : selectedProvider === "vllm" ? { baseUrl: vllmHost } : {}),
+											...(smallRole.provider === selectedProvider && smallRole.credentialRef ? { credentialRef: smallRole.credentialRef } : {}),
+											...(selectedProvider === "nextain" && /luna/i.test(selectedModel) ? { thinkingLevel: "low" as const } : {}),
+										};
+										setSmallRole(choice);
+										const current = loadConfig();
+										if (current) {
+											const updated = writeConfiguredLlmRole(current, "sub", choice);
+											saveConfig(updated);
+											void writeNaiaConfig(updated as unknown as Record<string, unknown>);
+										}
+									}}>
+									<option value="__inherit__">{t("settings.smallModelInherit")}</option>
+									{isWebMode() && smallRole.provider === "ollama" && <option value="__desktop_local__" disabled>{t("settings.smallModelDesktopSelected")}</option>}
+									{!smallRole.inherit && smallRole.provider && smallRole.model && !(isWebMode() && smallRole.provider === "ollama") && !smallModelChoices(dynamicModels[smallRole.provider] ?? []).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini").some(m => m.id === smallRole.model) && !(smallRole.provider === "ollama" && smallRole.model === LOCAL_SMALL_MODEL && !isWebMode()) && <option value={JSON.stringify([smallRole.provider, smallRole.model])}>{smallRole.provider}: {smallRole.model}</option>}
+									{Object.entries(dynamicModels).filter(([id]) => id === "nextain" || (!isWebMode() && ["ollama", "vllm", "codex", "grok", "claude-code-cli"].includes(id))).map(([id, models]) => <optgroup key={id} label={getLlmProvider(id)?.name ?? id}>
+										{sortModels(smallModelChoices(models).filter(m => smallSortMode !== "recommended" || m.id !== "solar-mini"), smallSortMode).map(m => <option key={m.id} value={JSON.stringify([id, m.id])}>{m.label}</option>)}
+									</optgroup>)}
+									{!isWebMode() && !(dynamicModels.ollama ?? []).some(m => m.id === LOCAL_SMALL_MODEL) && <option value={JSON.stringify(["ollama", LOCAL_SMALL_MODEL])}>Qwen 3.5 4B ({t("settings.smallModelLocal")})</option>}
+								</select>
+							</>
+						)}
 						<div className="settings-hint settings-model-selected-label" data-testid="small-model-selected-label">
 							{smallRole.inherit ? t("settings.smallModelInherit") : isWebMode() && smallRole.provider === "ollama" ? t("settings.smallModelDesktopSelected") : (() => {
 								const meta = (dynamicModels[smallRole.provider ?? ""] ?? []).find((item) => item.id === smallRole.model);

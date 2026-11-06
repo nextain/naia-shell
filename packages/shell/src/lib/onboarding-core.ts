@@ -12,8 +12,9 @@ import {
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+	applyKioskDemoMainModel,
 	buildKioskDemoConfigSeed,
-	resolveKioskDemoMainModel,
+	setKioskDemoGatewayServedModels,
 } from "./config-seed";
 import { isKioskDemo } from "./kiosk-demo/flag";
 import {
@@ -157,24 +158,15 @@ export async function prepareKioskDemoOnboarding(): Promise<void> {
 		(await fs.readText(path)) || JSON.stringify(INITIAL_WEB_WORKSPACE_CONFIG),
 	);
 	const seed = buildKioskDemoConfigSeed();
-	// FR-WEB-KIOSK-FIX.10: 키오스크 시연 주 모델은 gpt-5.6-luna로 고정하고,
+	// FR-WEB-KIOSK-FIX.10: 키오스크 시연 주 모델은 applyKioskDemoMainModel 하나로만 정하고,
 	//   게이트웨이 /v1/models 목록에 luna가 없을 때만 살아 있는 대체 모델로 내린다.
 	if (seed.provider === "nextain") {
 		const metadata = await fetchNaiaModelMetadata(LAB_GATEWAY_URL).catch(
 			() => null,
 		);
-		const resolvedModel = resolveKioskDemoMainModel(
-			gatewayServedModelIds(metadata),
-		);
-		seed.model = resolvedModel;
-		seed.llmRoles = {
-			...seed.llmRoles,
-			main: {
-				...(seed.llmRoles?.main ?? { provider: "nextain" }),
-				provider: "nextain",
-				model: resolvedModel,
-			},
-		};
+		const served = gatewayServedModelIds(metadata);
+		setKioskDemoGatewayServedModels(served);
+		Object.assign(seed, applyKioskDemoMainModel(seed, served));
 	}
 	const config = {
 		...existing,

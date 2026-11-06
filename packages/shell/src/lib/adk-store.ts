@@ -8,6 +8,7 @@ import {
 	mergeBootConfig,
 	saveConfig,
 } from "./config";
+import { applyKioskDemoMainModel } from "./config-seed";
 import { Logger } from "./logger";
 import { SECRET_KEYS, deleteSecretKey, getSecretKey } from "./secure-store";
 import {
@@ -634,12 +635,12 @@ export function applyModelSelectionToConfig(
 	// A provider/model switch is an immediate main-role edit too. Keeping only
 	// the legacy flat fields here was the stale-main-provider seam that made
 	// the UI and the reloaded agent disagree until a later Apply click.
-	const next: Record<string, unknown> = {
+	const next = applyKioskDemoMainModel({
 		...(current ?? {}),
 		provider,
 		model,
 		llmRoles: { ...roles, main: { ...main, provider, model } },
-	};
+	} as Partial<AppConfig>) as Record<string, unknown>;
 	return {
 		...next,
 		...buildNaiaConfigEnv(next as Parameters<typeof buildNaiaConfigEnv>[0]),
@@ -858,7 +859,12 @@ async function writeNaiaConfigNow(
 	adkPath: string | null,
 ): Promise<void> {
 	if (!adkPath) return;
-	const publicAgentConfig = stripForAgent(config);
+	const publicAgentConfig = stripForAgent(
+		applyKioskDemoMainModel(config as Partial<AppConfig>) as Record<
+			string,
+			unknown
+		>,
+	);
 	const normalizedAgentConfig = {
 		...publicAgentConfig,
 		...buildNaiaConfigEnv(

@@ -49,6 +49,12 @@
 10. **지나 캐릭터 머리 빈 곳·팔/다리 사이 검은 영역·클립 전환 시 크기/발 위치 일치**:
     - `idle.webm`·`talking-ko.webm`(및 `.stacked.mp4`): `studio_nva_matting.py` 경계 정제 단계(`_refine_edges_in_box`)에서 검은 머리카락(`RGB ≈ [15,17,18]`)이 남색 배경(`RGB ≈ [1,21,33]`)과의 유클리드 거리 `< 22`로 판정되어 오른쪽 윗머리(`y=60..100, x=380..415`)와 목 옆이 파여 보이던 원인을 찾아, 중립 어두운 머리카락(`B - R < 10`, `u2net seed >= 110`) 알파를 보존해 클립을 재생성했습니다.
     - `motion.webm`(및 `.stacked.mp4`, `"부드러운 움직임"`): `idle.webm`과 동일한 캐릭터 크기·머리 비율·발 위치(`ymax = 1241`)를 유지하도록 정합하고 하체·발 위치를 고정한 채 상체 호흡·스웨이만 반영해, 대기(`idle`)에서 `"부드러운 움직임"`(`motion`)으로 바뀔 때 크기나 발 위치가 튀지 않으면서 부드러운 움직임 세기는 유지되도록 맞췄습니다.
+11. **적대 검수 r4 반영(3판 5회차)**:
+    - 키오스크 판의 주 모델 결정은 `config-seed.ts`의 `resolveKioskDemoMainModel()`/`KIOSK_DEMO_LLM_MODEL`(`applyKioskDemoMainModel`) 한 곳만 거치도록 통일해, 저장값이 `gpt-6.1-terra`나 다른 공급자(`codex`, `grok` 등)여도 대화 전송·설정 읽기·설정 저장 모두 `nextain` + `resolveKioskDemoMainModel()`이 이기게 하고 두뇌 탭의 공급자·모델 선택기는 읽기 전용으로 잠급니다.
+    - `"처음으로"` 및 3분 무응답 리셋(`resetKioskVisit`·`cleanupExpiredPreviousVisit`)이 `localStorage["naia-config"]`와 OPFS `naia-settings/config.json`·`ui-config.json`을 키오스크 시드(`buildKioskDemoConfigSeed()`)로 되돌려 페르소나·아바타·음성·두뇌 변경을 모두 초기화합니다.
+    - `registry.ts`·`slots/model.ts`·`config.ts`·`small-model.ts`에서 리터럴 `"gpt-5.6-luna"`를 제거하고 `KIOSK_DEMO_LLM_MODEL`만 참조하며 `shouldMigrateNextainModel`의 키오스크 폴백 1순위를 `KIOSK_DEMO_LLM_MODEL`로 맞춥니다.
+    - 시연 중 크레딧 소진 오류가 나면 일반 실패 버블+재시도 대신 키오스크 입구 게이트와 동일한 `"지금은 시연을 쓸 수 없습니다"` 화면으로 전환합니다.
+
 
 
 

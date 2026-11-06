@@ -1,3 +1,7 @@
+import {
+	KIOSK_DEMO_LLM_MODEL,
+	resolveKioskDemoMainModel,
+} from "../config-seed";
 import { isKioskDemo } from "../kiosk-demo/flag";
 import { MODEL_CAPABILITY_VALUES, type ModelCapability } from "../types.js";
 import type {
@@ -90,7 +94,8 @@ export function isOmniModel(providerId: string, modelId: string): boolean {
 
 /** Get default model for a provider. */
 export function getDefaultLlmModel(providerId: string): string {
-	if (isKioskDemo() && providerId === "nextain") return "gpt-5.6-luna";
+	if (isKioskDemo() && providerId === "nextain")
+		return resolveKioskDemoMainModel();
 	return providers.get(providerId)?.defaultModel ?? "";
 }
 
@@ -155,14 +160,22 @@ export function shouldMigrateNextainModel(
 		return { migrate: false };
 	if (gatewayServed === undefined)
 		return { migrate: false, needsCatalog: true };
-	if (gatewayServed === null || (!retired && gatewayServed.has(modelId)))
+	if (
+		gatewayServed === null ||
+		(!retired && !(isKioskDemo() && isTerra) && gatewayServed.has(modelId))
+	)
 		return { migrate: false };
-	const fallback = [
-		"gpt-6.1-terra",
-		"gpt-5.6-luna",
-		"deepseek-v4-pro",
-		"deepseek-v4-flash",
-	].find((id) => id !== modelId && gatewayServed.has(id));
+	const fallbackCandidates = isKioskDemo()
+		? [KIOSK_DEMO_LLM_MODEL, "deepseek-v4-pro", "deepseek-v4-flash"]
+		: [
+				"gpt-6.1-terra",
+				KIOSK_DEMO_LLM_MODEL,
+				"deepseek-v4-pro",
+				"deepseek-v4-flash",
+			];
+	const fallback = fallbackCandidates.find(
+		(id) => id !== modelId && gatewayServed.has(id),
+	);
 	return fallback ? { migrate: true, to: fallback } : { migrate: false };
 }
 
@@ -547,7 +560,7 @@ export function applyCapabilityOverrides(
 const NAIA_PRODUCT_ORDER: Readonly<Record<string, number>> = {
 	"gpt-6.1-terra": 1,
 	"solar-pro4": 2,
-	"gpt-5.6-luna": 3,
+	[KIOSK_DEMO_LLM_MODEL]: 3,
 	"motif-3": 4,
 };
 
@@ -563,7 +576,7 @@ const NAIA_GENERAL_CHAT_RECOMMENDATION: Readonly<Record<string, number>> = {
 	"solar-pro4": 2,
 	"motif-3": 3,
 	"HCX-007": 2,
-	"gpt-5.6-luna": 3,
+	[KIOSK_DEMO_LLM_MODEL]: 3,
 	"solar-mini": 3,
 	"HCX-DASH-002": 3,
 	"gemini-3.5-flash-lite": 3,
@@ -695,7 +708,7 @@ registerLlmProvider({
 			lifecycle: "unknown",
 		},
 		{
-			id: "gpt-5.6-luna",
+			id: KIOSK_DEMO_LLM_MODEL,
 			label: "Naia Luna",
 			capabilities: ["llm"],
 			supportsTools: true,
@@ -748,7 +761,7 @@ registerLlmProvider({
 			capabilities: ["llm"],
 		},
 		{
-			id: "gpt-5.6-luna",
+			id: KIOSK_DEMO_LLM_MODEL,
 			label: "GPT-5.6 Luna (Codex)",
 			capabilities: ["llm"],
 		},

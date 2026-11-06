@@ -44,6 +44,7 @@ export function buildSeedShellConfig(
 	return seed;
 }
 
+export const KIOSK_DEMO_LLM_PROVIDER = "nextain" as const;
 export const KIOSK_DEMO_LLM_MODEL = "gpt-5.6-luna" as const;
 export const KIOSK_DEMO_LLM_FALLBACK_MODELS = [
 	"deepseek-v4-pro",
@@ -60,6 +61,14 @@ export const KIOSK_SHELL_NAIA_WIDTH = 520;
 export const KIOSK_SHELL_CHAT_HEIGHT_MIN = 540;
 export const KIOSK_SHELL_CHAT_HEIGHT_RATIO = 0.68;
 
+let kioskGatewayServedModels: ReadonlySet<string> | null = null;
+
+export function setKioskDemoGatewayServedModels(
+	gatewayServed: ReadonlySet<string> | null,
+): void {
+	kioskGatewayServedModels = gatewayServed;
+}
+
 /**
  * 키오스크 시연의 주 모델은 크레딧 보호를 위해 gpt-5.6-luna로 고정하고,
  * 게이트웨이 /v1/models 목록에 luna가 없을 때만 대체 모델로 내린다.
@@ -67,13 +76,45 @@ export const KIOSK_SHELL_CHAT_HEIGHT_RATIO = 0.68;
 export function resolveKioskDemoMainModel(
 	gatewayServed?: ReadonlySet<string> | null,
 ): string {
-	if (!gatewayServed || gatewayServed.has(KIOSK_DEMO_LLM_MODEL)) {
+	const served =
+		gatewayServed === undefined ? kioskGatewayServedModels : gatewayServed;
+	if (!served || served.has(KIOSK_DEMO_LLM_MODEL)) {
 		return KIOSK_DEMO_LLM_MODEL;
 	}
 	return (
-		KIOSK_DEMO_LLM_FALLBACK_MODELS.find((id) => gatewayServed.has(id)) ??
+		KIOSK_DEMO_LLM_FALLBACK_MODELS.find((id) => served.has(id)) ??
 		KIOSK_DEMO_LLM_MODEL
 	);
+}
+
+/**
+ * 키오스크 시연 판에서는 저장값(terra·다른 프로바이더 등)과 무관하게
+ * 주 공급자("nextain")와 주 모델(resolveKioskDemoMainModel)을 한 곳에서 강제한다.
+ */
+export function applyKioskDemoMainModel<T extends Partial<AppConfig>>(
+	config: T,
+	gatewayServed?: ReadonlySet<string> | null,
+): T {
+	if (!isKioskDemo()) return config;
+	const model = resolveKioskDemoMainModel(gatewayServed);
+	const currentMain =
+		config.llmRoles?.main && typeof config.llmRoles.main === "object"
+			? config.llmRoles.main
+			: undefined;
+	const { inherit: _ignoredInherit, ...restMain } = currentMain ?? {};
+	return {
+		...config,
+		provider: KIOSK_DEMO_LLM_PROVIDER,
+		model,
+		llmRoles: {
+			...config.llmRoles,
+			main: {
+				...restMain,
+				provider: KIOSK_DEMO_LLM_PROVIDER,
+				model,
+			},
+		},
+	};
 }
 
 export function resolveShellAvatarSelection(
@@ -121,7 +162,9 @@ export function resolveInitialShellChatLayout(viewportHeight: number): {
 
 /** OFF는 빈 패치: 일반판의 모든 기본값과 온보딩 선택을 보존한다. */
 export function buildKioskDemoConfigSeed(): SeedableShellConfig {
+	kioskGatewayServedModels = null;
 	if (!isKioskDemo()) return {};
+	const model = resolveKioskDemoMainModel(null);
 	return buildSeedShellConfig({
 		agentName: "지나",
 		userName: "게스트",
@@ -137,11 +180,11 @@ export function buildKioskDemoConfigSeed(): SeedableShellConfig {
 		ttsVoice: KIOSK_DEMO_TTS_VOICE,
 		avatarProvider: "naia-video-avatar",
 		nvaModel: KIOSK_DEMO_NVA_MODEL,
-		provider: "nextain",
-		model: KIOSK_DEMO_LLM_MODEL,
+		provider: KIOSK_DEMO_LLM_PROVIDER,
+		model,
 		webAutoDefaultModel: false,
 		llmRoles: {
-			main: { provider: "nextain", model: KIOSK_DEMO_LLM_MODEL },
+			main: { provider: KIOSK_DEMO_LLM_PROVIDER, model },
 		},
 	});
 }

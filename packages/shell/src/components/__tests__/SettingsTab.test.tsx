@@ -5894,7 +5894,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		expect(invokedCommands).not.toContain("read_local_binary");
 	});
 
-	it("hides WebLLM option in #provider-select when isKioskDemo() is enabled and shows it in normal web mode", async () => {
+	it("locks #provider-select and #model-select as read-only in kiosk mode and shows WebLLM option in normal web mode", async () => {
 		mockInvoke.mockResolvedValue([]);
 		setWebAssetsModeForTests(true);
 		const { registerWebLlmProvider } = await import(
@@ -5910,6 +5910,7 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		const normalSelect = document.getElementById(
 			"provider-select",
 		) as HTMLSelectElement;
+		expect(normalSelect.tagName).toBe("SELECT");
 		expect(
 			Array.from(normalSelect.options).map((o) => o.value),
 		).toContain("webllm");
@@ -5918,12 +5919,17 @@ describe("web mode backgrounds and NVA (r7)", () => {
 		vi.stubEnv("VITE_NAIA_KIOSK_DEMO", "1");
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
-		const kioskSelect = document.getElementById(
-			"provider-select",
-		) as HTMLSelectElement;
-		expect(
-			Array.from(kioskSelect.options).map((o) => o.value),
-		).not.toContain("webllm");
+		const kioskProvider = document.getElementById("provider-select")!;
+		expect(kioskProvider.tagName).toBe("DIV");
+		expect(kioskProvider.getAttribute("data-testid")).toBe("provider-single");
+		expect(kioskProvider.textContent).toBe("Naia");
+		const kioskModel = document.getElementById("model-select")!;
+		expect(kioskModel.tagName).toBe("DIV");
+		expect(kioskModel.getAttribute("data-testid")).toBe("model-single");
+		expect(kioskModel.textContent).toContain("Naia Luna");
+		const kioskSmallModel = document.getElementById("small-model-select")!;
+		expect(kioskSmallModel.tagName).toBe("DIV");
+		expect(kioskSmallModel.getAttribute("data-testid")).toBe("small-model-single");
 		unregisterLlmProvider("webllm");
 		vi.unstubAllEnvs();
 	});

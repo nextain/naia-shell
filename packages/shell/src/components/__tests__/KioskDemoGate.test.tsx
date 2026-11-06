@@ -199,6 +199,15 @@ it("shows unavailable notice when gateway rejects key or has no credits", async 
 
 it("cleans up previous visitor memory and conversations when previous visit was left without reset", async () => {
 	localStorage.setItem("naia-kiosk-last-active-at", "1000");
+	localStorage.setItem(
+		"naia-config",
+		JSON.stringify({
+			agentName: "방문자설정",
+			provider: "codex",
+			model: "gpt-5.6-sol",
+			apiKey: "",
+		}),
+	);
 	mount();
 	await waitFor(() =>
 		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
@@ -207,4 +216,33 @@ it("cleans up previous visitor memory and conversations when previous visit was 
 	);
 	expect(mocks.resetMemory).toHaveBeenCalledOnce();
 	expect(mocks.clearConversations).toHaveBeenCalledOnce();
+	expect(JSON.parse(localStorage.getItem("naia-config")!)).toMatchObject({
+		agentName: "지나",
+		provider: "nextain",
+		model: "gpt-5.6-luna",
+	});
+});
+
+it("transitions back to unavailable screen when credits run out mid-demo", async () => {
+	const { notifyKioskDemoUnavailable } = await import(
+		"../../lib/kiosk-demo/entry"
+	);
+	mount();
+	await waitFor(() =>
+		expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+			false,
+		),
+	);
+	fireEvent.click(screen.getByText("들어가기"));
+	expect(screen.getByText("conversation")).toBeTruthy();
+
+	notifyKioskDemoUnavailable();
+	expect(await screen.findByRole("alert")).toHaveProperty(
+		"textContent",
+		"지금은 시연을 쓸 수 없습니다",
+	);
+	expect(screen.queryByText("conversation")).toBeNull();
+	expect((screen.getByText("들어가기") as HTMLButtonElement).disabled).toBe(
+		true,
+	);
 });

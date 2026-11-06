@@ -3,7 +3,7 @@ import { unlockAudioContext } from "../lib/voice/audio-queue";
 import { useChatStore } from "../stores/chat";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
-	clearKioskVisitActivity,
+	KIOSK_DEMO_UNAVAILABLE_EVENT,
 	getKioskIdleTimeoutMs,
 	isKioskVisitExpired,
 	recordKioskVisitActivity,
@@ -27,10 +27,13 @@ type Phase = "preparing" | "ready" | "missing-key" | "unavailable" | "error";
 
 async function cleanupExpiredPreviousVisit(): Promise<void> {
 	if (!shouldResetKioskVisitOnEnter()) return;
-	await resetKioskMemory();
-	await clearWebConversations();
-	clearKioskVisitActivity();
-	useChatStore.getState().newConversation();
+	await resetKioskVisit({
+		cancel: () => undefined,
+		resetMemory: resetKioskMemory,
+		clearConversations: clearWebConversations,
+		newConversation: () => useChatStore.getState().newConversation(),
+		reload: () => undefined,
+	});
 }
 
 async function prepare(): Promise<Phase> {
@@ -76,6 +79,18 @@ export function KioskDemoGate({ children }: { children: ReactNode }) {
 		});
 		return () => {
 			active = false;
+		};
+	}, [enabled]);
+	useEffect(() => {
+		if (!enabled || typeof window === "undefined") return;
+		const onUnavailable = () => {
+			accepted.current = false;
+			setEntered(false);
+			setPhase("unavailable");
+		};
+		window.addEventListener(KIOSK_DEMO_UNAVAILABLE_EVENT, onUnavailable);
+		return () => {
+			window.removeEventListener(KIOSK_DEMO_UNAVAILABLE_EVENT, onUnavailable);
 		};
 	}, [enabled]);
 	useEffect(() => {
