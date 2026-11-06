@@ -2461,12 +2461,19 @@ Test Coverage Map (P02)
 
 ## UC-BROADCAST-STREAM-026 — OBS 없이 나이아 쉘에서 바로 방송을 송출한다 (0.2.6)
 
-사용자는 설정의 방송 절에서 플랫폼(유튜브·트위치·치지직·숲), 서버 주소, 해상도(1080p30/720p30), 방송 키를 설정하고 AI 막대(AiControlBar)의 방송 단추로 RTMP(S) 송출을 시작·중지한다. 방송 키는 비밀 저장소에 보관하고 화면과 로그에서는 가린다(`***`). 방송 중에는 공유 AudioContext에 연결된 TTS(웹 오디오 및 오디오 요소 두 경로)와 로컬 반주 `<audio>`만 AudioWorklet(48kHz 스테레오 PCM)으로 뽑아 ffmpeg stdin으로 전달하며, 유튜브 반주는 차단하고 내 곡만 안내한다.
+사용자는 설정의 방송 절에서 플랫폼(유튜브·트위치·치지직·숲), 서버 주소, 해상도(1080p30/720p30), 방송 키를 설정하고 AI 막대(AiControlBar)의 방송 단추로 RTMP(S) 송출을 시작·중지한다. 방송 키는 비밀 저장소에 보관하고 화면과 로그에서는 가린다(`***`). 리눅스(웨이랜드)에서는 포털 ScreenCast 창 하나(`persist_mode=2`, 복원 토큰을 앱 설정에 저장해 허용은 처음 한 번만)로 잡은 PipeWire 화면 노드와, PipeWire 가상 싱크 `naia-broadcast-mix`에 나이아 프로세스 트리(셸·WebKitWebProcess)의 `Stream/Output/Audio` 출력 포트를 스피커 연결을 유지한 채 2초마다 이어 만든 `naia-broadcast-mix.monitor` 소리를 GStreamer 파이프라인(`pipewiresrc` + `pulsesrc` → `nvh264enc`/`x264enc` + `avenc_aac`/`voaacenc` → `flvmux` → `rtmp2sink`)으로 내보내고, 방송이 끝나면 가상 싱크와 연결을 정리한다. 윈도우에서는 `ffmpeg`(`gdigrab` + stdin PCM) 길을 유지하며, 공유 AudioContext `AudioWorklet` 웹 오디오 브리지는 운영체제 오디오 루프백 대체 길로 남긴다. 방송 중 유튜브 반주를 고르면 막지 않고 `"저작권 곡이면 방송이 멈출 수 있어요"` 한 줄 알림만 표시한다.
 
 | 상태 | 사용자 기대 |
 |---|---|
 | 기본·빈 키 | 방송 키가 없으면 AI 막대의 방송 단추는 비활성화된다. 설정 방송 절에서 플랫폼을 고르면 기본 RTMP(S) 서버 주소가 채워진다. |
-| 진행(방송 중) | 방송 단추에 빨간 점과 경과 시간(`MM:SS` / `HH:MM:SS`)이 표시된다. 유튜브 반주를 고르면 `방송 중엔 내 곡만` 안내를 보이고 로컬 반주만 허용한다. |
-| 오류·복구 | ffmpeg 프로세스가 예기치 않게 종료되면 상태를 `끊김`으로 바꿔 알리고 10초 간격으로 최대 3회 자동 재시작한다. 리눅스 화면 캡처 미구현 환경에서는 `미구현 — 실측 대기` 오류를 정직하게 돌려준다. |
-| 종료·기록 | 방송을 끄면 `<ADK>/data-private/broadcast/log.jsonl` 에 `{start, end, minutes, answers, credits_used, brain, platform, encoder, drops}` 한 줄을 기록한다. |
+| 진행(방송 중) | 방송 단추에 빨간 점과 경과 시간(`MM:SS` / `HH:MM:SS`)이 표시된다. 유튜브 반주를 고르면 재생을 막지 않고 `저작권 곡이면 방송이 멈출 수 있어요` 한 줄 알림만 보인다. |
+| 오류·복구 | 송출 프로세스(GStreamer 또는 ffmpeg)가 예기치 않게 종료되면 상태를 `끊김`으로 바꿔 알리고 10초 간격으로 최대 3회 자동 재시작한다. |
+| 종료·기록 | 방송을 끄면 리눅스 가상 싱크(`naia-broadcast-mix`)와 포트 연결을 지우고 `<ADK>/data-private/broadcast/log.jsonl` 에 `{start, end, minutes, answers, credits_used, brain, platform, encoder, drops}` 한 줄을 기록한다. |
+
+Test Coverage Map (P02)
+
+| UC 상태·행동 | Vitest·Rust 파일/그룹 | 로컬·실기 증거 |
+|---|---|---|
+| 플랫폼별 키프레임·비트레이트 프리셋, 방송 키 `***` 마스킹, 사이드카 경로 해석, 48kHz 스테레오 PCM 묶음, 방송 종료 `log.jsonl` 기록, 방송 중 유튜브 반주 허용 + 저작권 한 줄 알림 | `packages/shell/src-tauri/src/broadcast.rs` — `platform_presets_match_keyframe_and_bitrate_table`, `stream_key_is_always_redacted_with_asterisks`, `resolve_ffmpeg_path_prefers_sidecar_then_env_then_path`, `append_broadcast_log_writes_single_jsonl_record`, `pack_f32_stereo_to_s16le_interleaves_and_clamps_samples`; `packages/shell/src/lib/__tests__/broadcast.test.ts` | Vitest 및 3090 `cargo test --lib broadcast` |
+| 리눅스 PipeWire 가상 싱크(`naia-broadcast-mix`)·프로세스 트리 오디오 노드 탐색·링크·해제, 포털 ScreenCast(`persist_mode=2`, `restore_token`) 및 GStreamer 파이프라인(`pipewiresrc` + `pulsesrc` → `nvh264enc`/`x264enc` + `avenc_aac`/`voaacenc` → `flvmux` → `rtmp2sink`) 구성 | `packages/shell/src-tauri/src/broadcast.rs` — `linux_gstreamer_pipeline_args_and_redaction`, `pipewire_process_tree_audio_port_matching`, `portal_screencast_restore_token_roundtrip` | 3090 `pw-play` 시험음 + `naia-broadcast-mix.monitor` 5초 녹음 실측; 포털 창 선택은 사람 허용 1회 필요 |
 
