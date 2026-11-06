@@ -16,10 +16,30 @@
  */
 export const TAURI_BASE_MOCK_FALLBACK = `
 (function() {
-	var nativePointer = localStorage.getItem("naia-adk-path") || "/mock/adk";
- var nativeConfig = localStorage.getItem("naia-config") || "";
- var existing = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+	var existing = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
 	if (!existing) return;
+	// The emulated native files hold what the spec seeded into localStorage.
+	// bootstrapAdkPath (main.tsx) removes both cache keys before it reads the
+	// native pointer, so snapshot them at that first removal; reading them at
+	// call time would see the wiped cache and boot into setup/onboarding.
+	// Seed scripts added after this one still count: nothing is read until boot.
+	var seeded = null;
+	function seed() {
+		if (!seeded) {
+			seeded = {
+				pointer: localStorage.getItem("naia-adk-path"),
+				config: localStorage.getItem("naia-config"),
+			};
+		}
+		return seeded;
+	}
+	var removeItem = Storage.prototype.removeItem;
+	Storage.prototype.removeItem = function(key) {
+		if (this === window.localStorage && (key === "naia-adk-path" || key === "naia-config")) seed();
+		return removeItem.call(this, key);
+	};
+	function nativePointer() { return seed().pointer || "/mock/adk"; }
+	function nativeConfig() { return seed().config || ""; }
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
 		var appControl = false;
 		if (cmd === "send_to_agent_command" && args && typeof args.message === "string") {
@@ -44,7 +64,10 @@ export const TAURI_BASE_MOCK_FALLBACK = `
 		}
 		// Legacy mocks return null for unknown commands. A scenario testing an
         // explicitly empty native home opts out of that compatibility fallback.
-        if (cmd === "read_naia_path_cache" && r == null && !window.__E2E_EXPLICIT_NATIVE_POINTER__) return nativePointer;
+        if (cmd === "read_naia_path_cache" && r == null && !window.__E2E_EXPLICIT_NATIVE_POINTER__) return nativePointer();
+        // Spec mocks that answer from localStorage at call time see the cache
+        // bootstrap already wiped; answer with the seeded snapshot instead.
+        if (cmd === "read_naia_config" && r === "" && nativeConfig()) return nativeConfig();
         if (r !== undefined) return r;
 		if (appControl) return null;
 		// Plugin store
@@ -80,8 +103,8 @@ export const TAURI_BASE_MOCK_FALLBACK = `
 		// non-string reply is a hydration error that keeps the app gated. Specs
 		// seed the render cache in localStorage, so emulate an ADK config.json
 		// holding that same snapshot; an unseeded spec gets the clean first run.
-		if (cmd === "read_naia_path_cache") return nativePointer;
-		if (cmd === "read_naia_config") return nativeConfig;
+		if (cmd === "read_naia_path_cache") return nativePointer();
+		if (cmd === "read_naia_config") return nativeConfig();
 		if (cmd === "read_naia_ui_config") return "";
 		// Apps
 		if (cmd === "app_list_installed") return [];
