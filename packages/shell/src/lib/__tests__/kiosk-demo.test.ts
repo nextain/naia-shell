@@ -123,7 +123,14 @@ describe("S3 kiosk isolation", () => {
 			nvaModel: KIOSK_DEMO_NVA_MODEL,
 		});
 		const prompt = buildSystemPrompt(seed.persona, seed);
-		for (const text of ["존댓말", "투자자", "넥스테인", "지어내지", "게스트"])
+		for (const text of [
+			"존댓말",
+			"투자자",
+			"넥스테인",
+			"지어내지",
+			"다른 낱말로 한 번 더",
+			"게스트",
+		])
 			expect(prompt).toContain(text);
 	});
 	it.each(["", "bad key", "short"])(

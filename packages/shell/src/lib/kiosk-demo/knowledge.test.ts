@@ -5,7 +5,7 @@ import { createMemoryWebFs, setWebFsForTests } from "../web-runtime/web-fs";
 import { parseKbStats } from "../knowledge-config";
 import { Bm25RetrievalAdapter } from "./kb-compiler/adapters/retrieval/bm25";
 import { SafetyBlockedError, applySafety } from "./kb-compiler/core/safety";
-import { coverage } from "./kb-compiler/core/text";
+import { coverage, stem } from "./kb-compiler/core/text";
 import { verify } from "./kb-compiler/core/verify";
 import questions from "./knowledge/eval-questions.json";
 import bundled from "./knowledge/kb.json?raw";
@@ -48,7 +48,7 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 		if (process.env.UPDATE_KIOSK_KB === "1")
 			writeFileSync("src/lib/kiosk-demo/knowledge/kb.json", result.json + "\n");
 		else expect(JSON.parse(result.json)).toEqual(JSON.parse(bundled));
-		expect(result.report.cardCount).toBe(20);
+		expect(result.report.cardCount).toBe(21);
 		expect(result.safety.mode).toBe("block");
 		expect(result.safety.findings).toEqual([]);
 		expect(result.safety.piiCount).toBe(0);
@@ -123,7 +123,7 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 			}
 		}
 	});
-	it("verifies all 20 eval-questions against expectedPoints via verify()", async () => {
+	it("verifies all 22 eval-questions against expectedPoints via verify()", async () => {
 		const kb = parseKioskKb(bundled);
 		const goldQA = questions.map((q) => ({
 			q: q.question,
@@ -131,8 +131,34 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 		}));
 		const verified = await verify(kb, goldQA, new Bm25RetrievalAdapter());
 		expect(verified.gaps).toEqual([]);
-		expect(verified.acceptedCardIds).toHaveLength(20);
+		expect(verified.acceptedCardIds).toHaveLength(21);
 		expect(verified.score).toBe(1);
+	});
+	it("answers basic Naia definition queries with naia.md paragraph without abstaining", async () => {
+		expect(stem("나이아란")).toBe("나이아");
+		expect(stem("사람이란")).toBe("사람");
+		expect(stem("계란")).toBe("계란");
+		expect(stem("이란")).toBe("이란");
+		const service = await kioskKnowledgeService();
+		const naiaText = readFileSync(
+			"src/lib/kiosk-demo/knowledge/naia.md",
+			"utf8",
+		);
+		for (const q of [
+			"나이아는 어떤 서비스인가요?",
+			"나이아란?",
+			"나이아는 어떤 서비스인가요? 한두 문장으로 알려 주세요.",
+		]) {
+			const asked = await service.ask(q);
+			expect(asked.abstained).toBe(false);
+			expect(asked.sources[0]?.sourceUris).toContain(
+				`${KIOSK_SOURCE}/naia.md`,
+			);
+			expect(naiaText).toContain(asked.answer);
+			expect(asked.answer).toContain(
+				"개인이 일하고 노는 환경에서 듣고 말하고 기억하는 AI 에이전트",
+			);
+		}
 	});
 	it.each(questions)(
 		"retrieves and answers expectedPoints: $id — $question",
@@ -175,7 +201,7 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 		const fs = createMemoryWebFs();
 		await Promise.all([seedKioskKnowledge(fs), seedKioskKnowledge(fs)]);
 		expect(parseKbStats(await fs.readText(kbPath(KIOSK_SCOPE)))?.cards).toBe(
-			20,
+			21,
 		);
 		const json = JSON.stringify({
 			version: 1,
@@ -188,7 +214,7 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 			fs,
 		);
 		await handleKioskKnowledgeCommand("compile_knowledge", {}, fs);
-		expect(parseKbStats(await fs.readText(kbPath("other")))?.cards).toBe(20);
+		expect(parseKbStats(await fs.readText(kbPath("other")))?.cards).toBe(21);
 		await seedKioskKnowledge(fs);
 		expect(
 			JSON.parse(
@@ -224,7 +250,7 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 			.mockRejectedValueOnce(new Error("quota"));
 		await expect(seedKioskKnowledge(fs)).rejects.toThrow("quota");
 		await seedKioskKnowledge(fs);
-		expect(write).toHaveBeenCalledTimes(23);
+		expect(write).toHaveBeenCalledTimes(24);
 	});
 	it("OFF preserves all four desktop-only commands and performs no writes", async () => {
 		vi.stubEnv("MODE", "web");
@@ -249,6 +275,6 @@ describe("UC-KIOSK-KNOWLEDGE-S1", () => {
 		const { routeCommand } = await import("../web-runtime/router");
 		expect(
 			parseKbStats(String(await routeCommand("read_naia_knowledge_kb")))?.cards,
-		).toBe(20);
+		).toBe(21);
 	});
 });

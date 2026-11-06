@@ -84,7 +84,7 @@ test("kiosk knowledge uses real browser OPFS and desktop-compatible search", asy
 		};
 	});
 	expect(result.config.scope).toBe("kiosk-demo");
-	expect(result.cards).toBe(20);
+	expect(result.cards).toBe(21);
 	expect(result.compiled).toBe(true);
 	expect(result.hit).toBe(true);
 	await page.reload();
@@ -95,7 +95,7 @@ test("kiosk knowledge uses real browser OPFS and desktop-compatible search", asy
 			await routeCommand("read_naia_knowledge_kb", { scope: "kiosk-demo" }),
 		).kb.cards.length;
 	});
-	expect(count).toBe(20);
+	expect(count).toBe(21);
 });
 
 test("ordinary web keeps knowledge blocked without seeding a KB", async ({ page }) => {

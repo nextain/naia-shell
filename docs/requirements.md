@@ -1605,12 +1605,12 @@ P04(2026-09-23): Vitest 전체 통과(신규 실패 0), Playwright e2e/memory-se
 ## FR-KIOSK-KNOWLEDGE-S1 (2026-11-05)
 
 - 시연 전용: `isKioskDemo()`에서만 KB 시드와 지식 웹 명령을 활성화한다. 일반 웹판은 기존 차단과 부팅 순서를 유지한다.
-- 회사 브랜드·제품 세 판·투명성과 기억 소유·공개 성장 지표·AI 협업 및 하네스·확장 가능성을 출처 있는 Markdown으로 큐레이션한다.
+- 나이아 서비스 소개(`naia.md`)·회사 브랜드·제품 세 판·투명성과 기억 소유·공개 성장 지표·AI 협업 및 하네스·확장 가능성을 출처 있는 Markdown(21개 원고)으로 큐레이션한다.
 - kb-compiler `{version:1,kb}` 포맷으로 로컬 컴파일하고 원고 및 KB에 민감 숫자·재무 용어가 없는지 자동 검사한다.
 - OPFS `naia-adk/naia-settings/knowledge.json`과 `knowledge/<scope>/kb.json`을 사용한다. 임의 로컬 파일 컴파일은 허용하지 않고 등록된 번들 원고만 컴파일한다.
 - 브라우저 Worker는 데스크톱의 knowledge skill 실행기를 통해 동일 search/ask 도구를 모델에 노출한다. 매 대화 전 저장된 설정과 KB를 갱신한다.
-- 평가 질문 20개는 모델 호출 없이 실제 검색에서 관련 카드를 찾아야 한다. 근거 없는 질문은 기권한다.
-- 상태: Done (S1 범위). 20문항 검색·민감 패턴·깃발 격리·실제 OPFS/데스크톱 실행기/Worker·웹 빌드 검증. 전체 Shell 시험에는 범위 밖 실패가 있어 전체 green으로 주장하지 않는다. 검증 결과는 회차 result-s1.md에 기록한다.
+- 평가 질문 22개(기존 20개 + `"나이아는 어떤 서비스인가요?"`·`"나이아란?"` 2개)는 모델 호출 없이 실제 검색에서 관련 카드를 찾아야 한다. 근거 없는 질문은 기권한다.
+- 상태: Done (S1 범위 + 2026-11-06 지식 1회차 보강). 22문항 검색·민감 패턴·깃발 격리·실제 OPFS/데스크톱 실행기/Worker·웹 빌드 검증. 전체 Shell 시험에는 범위 밖 실패가 있어 전체 green으로 주장하지 않는다. 검증 결과는 회차 result-s1.md 및 result-r1.md에 기록한다.
 
 ## FR-KIOSK-MEMORY-S2 — 웹 IR 시연 기억 (2026-11-05)
 
@@ -1671,6 +1671,7 @@ P04 S5(2026-11-05): 관련 Vitest 7파일 179개 통과(`/home/nextain/work/code
 | FR-WEB-KIOSK-FIX.8 | 게이트웨이 경로에서 `gpt-6.1-terra`·`gpt-5.6-luna` 요청의 `reasoning_effort` 는 운영 게이트웨이가 받는 값 `high` 로 보낸다(`xhigh` 는 422 로 시연 대화가 답하지 못함, 2026-11-06 실제 빌드 ET 에서 발견). | Done |
 | FR-WEB-KIOSK-FIX.9 | 공개 지식 원고(`knowledge/*.md`)와 `kb.json` 에 사내 개발·검수 단계 문구(PR 번호, main 병합, 독립 검수, 내부 문서 이름, 초안 확인 표시)를 두지 않고 날짜 기준 제품 상태로만 적는다(2026-11-06 독립 내용 검수 차단 1건). | Done |
 | FR-WEB-KIOSK-FIX.10 | 시연 준비(`prepareKioskDemoOnboarding`)는 게이트웨이 `/v1/models` 를 보고 기본 모델이 목록에 없으면 들어가기 전에 살아 있는 모델(terra→luna→deepseek 차례)로 바꾼다. 목록을 못 받으면 그대로 둔다(2026-11-06 terra 가 목록에서 빠져 대화 400 실측). | Done |
+| FR-WEB-KIOSK-FIX.11 | 기본 서비스 정의 질문(`"나이아는 어떤 서비스인가요?"`, `"나이아란?"`)에 즉시 답하도록 기존 공개 원고(`company.md`, `difference.md`, `web.md`, `desktop.md`, `container.md`, `character.md`, `memory.md`)의 문장만 엮은 `knowledge/naia.md`(`# 나이아 서비스 소개`)를 추가하고, `kb-compiler/core/text.ts` `JOSA`에 `이란|란`(앞 길이 2 이상 유지)을 넣으며, `KIOSK_DEMO_PERSONA`에 검색 결과가 질문과 맞지 않으면 다른 낱말로 한 번 더 찾은 뒤 답한다는 지침을 추가한다(`eval-questions.json` 22문항·21카드 `kb.json` 재컴파일, 2026-11-06 실주소 시험 반영). | Done |
 | NFR-WEB-KIOSK-FIX.1 | `scripts/conform/manifest.json` 및 `.agents/context/module-manifest.json`에 S1·S3 영역과 `KioskDemoGate.tsx`·`lib/web-runtime`을 등록해 정합성·파일 계약 검사를 통과하고, E2E 스크린샷 기본 출력 경로를 작업 트리 안 시험 결과 폴더로 두며 `speechSynthesis` 모의 시험 이름에 모의 여부를 명시한다. | Done |
 
 P04 검수 수정(#824, 2026-11-05): 지나 실사 클립 재후처리 및 인코딩 후 `scripts/nva_matting_hole_measure.py` 측정 결과 `jina-idle.webm`(192프레임)과 `jina-talking-ko.mp4`(511프레임), 최종 인코딩된 `idle.webm`·`talking-ko.webm` 모두 `hole_frames: 0`, `opaque_backdrop_frames: 0`, `max_opaque_backdrop_px: 0` 통과. 관련 Vitest 6파일 140/140(`knowledge.test.ts` 29/29, `memory.test.ts` 8/8, `entry.test.ts` 3/3, `kiosk-demo.test.ts` 11/11, `KioskDemoGate.test.tsx` 7/7, `ChatArea.test.tsx` 82/82) 및 `SettingsTab.test.tsx` WebLLM 숨김 시험 통과. `tsc`, `build:web`, `build`, `check.py --all`(28 regions clean), `check-file-anchors.mjs`(120 files OK), `check-assembly-coverage.mjs`, `enforce-root-structure.sh` 모두 통과. Playwright `e2e/kiosk-demo.spec.ts` 5/5 통과 및 `1280x800` 시연판 대화 화면 캡처(`/home/nextain/work/codex-runs/kiosk-agy/fix-chat.png`)에서 다리 사이·왼팔과 몸 사이 배경 투명도와 `"약 0 크레딧 · 0 토큰"` 비노출 시각 검토 완료.

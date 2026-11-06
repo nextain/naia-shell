@@ -2645,6 +2645,7 @@ P04 통합(#824): `e2e/kiosk-demo.spec.ts`의 결정론 공급자 fixture는 입
 | 성공 | 게이트웨이 크레딧 유효 시 입장 허용, 20문항 `expectedPoints` `ask()`/`verify()` 통과, 활성 방문 중 새로고침 후 대화·지나 답변 기억 복원, ‘처음으로’ 및 무응답 만료 시 OPFS 대화 JSONL·기억 완전 삭제(`naia-remote-key` 유지) | `knowledge.test.ts`, `memory.test.ts`, `entry.test.ts`, `KioskDemoGate.test.tsx`, `kiosk-demo.spec.ts` |
 | 게이트웨이 값 | luna·terra 요청이 `reasoning_effort: high` 로 나감(운영 게이트웨이 허용 값) | `openai-compat-provider.test.ts` |
 | 기본 모델 빠짐 | 게이트웨이 목록에 기본 모델이 없으면 들어가기 전에 살아 있는 모델로 바꿔 첫 질문부터 답함, 목록을 못 받으면 그대로 | `kiosk-demo.test.ts` |
+| 나이아 서비스 소개 질의 | `"나이아는 어떤 서비스인가요?"`·`"나이아란?"` 질의가 `abstained: false`로 `naia.md` 문단을 반환하고 페르소나에 재검색 지침 포함 | `knowledge.test.ts`, `kiosk-demo.test.ts` |
 | 오류 | 열쇠 무효·크레딧 소진 시 `"지금은 시연을 쓸 수 없습니다"` 표시, 한글 금액·지분 %·밸류에이션·투자금·순이익 및 사내 경로 포함 시 차단 | `KioskDemoGate.test.tsx`, `knowledge.test.ts`, `kiosk-demo.spec.ts` |
 | 좁은 폭 | 360px 폭에서 첫 화면·오류 안내·대화 화면 레이아웃 및 키보드/ARIA 정상 동작 | `kiosk-demo.spec.ts` |
 | 깃발 꺼짐 | 일반 웹판(OFF)에서 WebLLM 등록·표시 유지, 대화 답변 아래 사용량 줄 표시 유지 | `kiosk-demo.test.ts`, `SettingsTab.test.tsx`, `ChatArea.test.tsx` |
