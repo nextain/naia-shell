@@ -5421,5 +5421,42 @@ describe("thinkingLevel segmented radiogroup and persistence (#709 / FR-CHAT-THI
 				JSON.parse(localStorage.getItem("naia-config") ?? "{}").model,
 			).toBe("llama3.2:8b");
 		});
+
+		it("shows model selection guidance and does not treat empty vllm/ollama model intermediate state as save failure", async () => {
+			cleanup();
+			localStorage.clear();
+			eventListeners.clear();
+			await setLocale("ko");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					...baseConfig(),
+					provider: "vllm",
+					model: "",
+					llmRoles: { main: { provider: "vllm", model: "" } },
+				}),
+			);
+			mockInvoke.mockImplementation(async (command: string) => {
+				if (command === "reload_agent_settings") {
+					throw new Error(
+						"agent memory settings reload failed (previous memory retained=true): invalid llmRoles(main/incomplete)",
+					);
+				}
+				if (command === "read_naia_config") {
+					return localStorage.getItem("naia-config") ?? "{}";
+				}
+				if (command === "read_naia_ui_config") return "{}";
+				if (command === "detect_gpu_vram") return 8;
+				return [];
+			});
+
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+
+			expect(
+				await screen.findByTestId("model-select-guidance"),
+			).toHaveTextContent("모델을 고르세요");
+			expect(screen.queryByRole("alert")).toBeNull();
+		});
 	});
 });

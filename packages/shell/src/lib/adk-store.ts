@@ -937,6 +937,19 @@ export class AgentSettingsReloadError extends Error {
 	}
 }
 
+/**
+ * Returns true when an Agent reload error is caused solely by an intermediate
+ * state where the user has switched providers or connected a custom endpoint
+ * before selecting a model (`invalid llmRoles(main/incomplete)` / `main/missing`).
+ */
+export function isIncompleteMainRoleReloadError(error: unknown): boolean {
+	const msg = error instanceof Error ? error.message : String(error ?? "");
+	return (
+		msg.includes("invalid llmRoles(main/incomplete)") ||
+		msg.includes("invalid llmRoles(main/missing)")
+	);
+}
+
 /** Native returns available:false when no Agent is running; that is normal. */
 export async function reloadAgentSettings(): Promise<void> {
 	try {
@@ -945,6 +958,13 @@ export async function reloadAgentSettings(): Promise<void> {
 		);
 		if (result && result.available === false) return;
 	} catch (error) {
+		if (isIncompleteMainRoleReloadError(error)) {
+			Logger.info(
+				"adk-store",
+				"Agent settings reload deferred while main model selection is incomplete",
+			);
+			return;
+		}
 		Logger.warn("adk-store", "Agent settings reload failed", {
 			error: error instanceof Error ? error.message : String(error),
 		});

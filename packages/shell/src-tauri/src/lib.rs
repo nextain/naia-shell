@@ -4573,12 +4573,20 @@ fn prepare_agent_relaunch_unlocked(state: &AppState) -> Result<(), String> {
 /// relaunch plugin. The guard remains set until `cancel_app_relaunch` or the
 /// process exits through the successful relaunch path.
 #[tauri::command]
-fn prepare_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn prepare_app_relaunch(
+    state: tauri::State<'_, AppState>,
+    pty_registry: tauri::State<'_, pty::PtyRegistry>,
+) -> Result<(), String> {
     claim_agent_relaunch(&state.agent_relaunch_pending)?;
+    crate::herdr::mark_herdr_shutting_down();
+    if let Ok(mut guard) = pty_registry.lock() {
+        guard.clear();
+    }
     let result = with_discord_lifecycle(&state.discord_lifecycle, || {
         prepare_agent_relaunch_unlocked(&state)
     });
     if result.is_err() {
+        crate::herdr::reset_herdr_shutting_down();
         state
             .agent_relaunch_pending
             .store(false, std::sync::atomic::Ordering::Release);
@@ -4590,6 +4598,7 @@ fn prepare_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String>
 /// update/reset operation reports its error.
 #[tauri::command]
 fn cancel_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    crate::herdr::reset_herdr_shutting_down();
     state
         .agent_relaunch_pending
         .store(false, std::sync::atomic::Ordering::Release);
@@ -9899,6 +9908,45 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 
 const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
 
+pub(crate) fn isolated_naia_home_dir() -> Option<std::path::PathBuf> {
+    let adk_pointer = data_home::child_from_dirs_home(DataHomeChild::AdkPath)?;
+    let default_pointer = data_home::user_home_path()
+        .map(|home| data_home::direct_child_of(&home, DataHomeChild::AdkPath));
+    if Some(&adk_pointer) != default_pointer.as_ref() {
+        adk_pointer.parent().map(std::path::Path::to_path_buf)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn resolve_default_adk_root(
+    isolated_home: Option<&std::path::Path>,
+    env_home: Option<&str>,
+    dirs_home: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    if let Some(isolated) = isolated_home.filter(|p| !p.as_os_str().is_empty()) {
+        return Some(isolated.join("naia-adk"));
+    }
+    if let Some(env_h) = env_home.map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(std::path::PathBuf::from(env_h).join("naia-adk"));
+    }
+    dirs_home.map(|h| h.join("naia-adk"))
+}
+
+#[tauri::command]
+fn default_adk_path() -> Result<String, String> {
+    let isolated = isolated_naia_home_dir();
+    let env_home = data_home::user_home();
+    let dirs_home = data_home::user_home_path();
+    resolve_default_adk_root(
+        isolated.as_deref(),
+        Some(env_home.as_str()),
+        dirs_home.as_deref(),
+    )
+    .map(|p| p.to_string_lossy().into_owned())
+    .ok_or_else(|| "Unable to resolve default ADK path".to_string())
+}
+
 pub(crate) fn current_adk_path() -> Result<String, String> {
     if debug_e2e_enabled() {
         if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
@@ -12804,8 +12852,17 @@ async fn compile_knowledge(
 /// Reload the running Agent from the just-written settings and return an
 /// honest memory reload result. During onboarding there may be no Agent yet;
 /// the next SetWorkspace call will load the persisted files.
+/// An intermediate state where the main LLM role does not yet have a selected
+/// model (`invalid llmRoles(main/incomplete)` / `invalid llmRoles(main/missing)`)
+/// is not treated as a save/reload failure.
+fn is_incomplete_main_role_memory_error(memory_error: &str) -> bool {
+    let trimmed = memory_error.trim();
+    trimmed.contains("invalid llmRoles(main/incomplete)")
+        || trimmed.contains("invalid llmRoles(main/missing)")
+}
+
 fn ensure_memory_reload_succeeded(memory_error: &str, memory_retained: bool) -> Result<(), String> {
-    if memory_error.is_empty() {
+    if memory_error.is_empty() || is_incomplete_main_role_memory_error(memory_error) {
         return Ok(());
     }
     Err(format!(
@@ -14455,6 +14512,8 @@ async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crate::platform::suppress_error_dialogs();
+
     // Initialize env_logger so `log` crate macros (info!, debug!, warn!) produce output.
     // Control verbosity with RUST_LOG env var, e.g. RUST_LOG=tauri_plugin_stt=debug
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -14589,6 +14648,7 @@ pub fn run() {
             delete_stt_model,
             prepare_app_relaunch,
             cancel_app_relaunch,
+            default_adk_path,
             store_startup_message,
             send_to_agent_command,
             cancel_stream,
@@ -15263,6 +15323,11 @@ pub fn run() {
                     // lease here so e2e "정상 종료 뒤 lease 가 정리된다" is not racing
                     // a driver that never delivers Destroyed.
                     if should_teardown_for_window(window.label()) {
+                        crate::herdr::mark_herdr_shutting_down();
+                        let pty_registry: tauri::State<'_, pty::PtyRegistry> = window.state();
+                        if let Ok(mut guard) = pty_registry.lock() {
+                            guard.clear();
+                        }
                         let project_agents: tauri::State<'_, project_agent_pty::ProjectAgentRegistry> =
                             window.state();
                         project_agent_pty::shutdown_project_agent_sessions(&project_agents);
@@ -15278,6 +15343,11 @@ pub fn run() {
 						));
 						return;
 					}
+                    crate::herdr::mark_herdr_shutting_down();
+                    let pty_registry: tauri::State<'_, pty::PtyRegistry> = window.state();
+                    if let Ok(mut guard) = pty_registry.lock() {
+                        guard.clear();
+                    }
                     // Kill Chrome on app exit (not on React component unmount)
                     crate::browser::browser_embed_kill();
                     // #582 S6b: 정상 종료도 소유 런타임 정리 경로다 (계약 4.8).
@@ -15373,6 +15443,11 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                crate::herdr::mark_herdr_shutting_down();
+                let pty_registry: tauri::State<'_, pty::PtyRegistry> = app_handle.state();
+                if let Ok(mut guard) = pty_registry.lock() {
+                    guard.clear();
+                }
                 log_verbose("[project_agent_pty::shutdown] branch=application_exit");
                 let project_agents: tauri::State<'_, project_agent_pty::ProjectAgentRegistry> =
                     app_handle.state();
@@ -16635,9 +16710,29 @@ mod tests {
     #[test]
     fn agent_reload_propagates_memory_failure_and_retention_state() {
         assert!(ensure_memory_reload_succeeded("", false).is_ok());
+        assert!(ensure_memory_reload_succeeded("invalid llmRoles(main/incomplete)", true).is_ok());
+        assert!(ensure_memory_reload_succeeded("invalid llmRoles(main/missing)", false).is_ok());
         let error = ensure_memory_reload_succeeded("invalid memory role", true).unwrap_err();
         assert!(error.contains("previous memory retained=true"));
         assert!(error.contains("invalid memory role"));
+    }
+
+    #[test]
+    fn default_adk_root_prefers_isolated_naia_home_over_os_profile() {
+        let isolated = std::path::Path::new("/tmp/naia-test-home");
+        let os_home = std::path::Path::new("/home/realuser");
+        assert_eq!(
+            resolve_default_adk_root(Some(isolated), Some("/home/realuser"), Some(os_home)),
+            Some(std::path::PathBuf::from("/tmp/naia-test-home/naia-adk"))
+        );
+        assert_eq!(
+            resolve_default_adk_root(None, Some("/custom/env-home"), Some(os_home)),
+            Some(std::path::PathBuf::from("/custom/env-home/naia-adk"))
+        );
+        assert_eq!(
+            resolve_default_adk_root(None, Some(""), Some(os_home)),
+            Some(std::path::PathBuf::from("/home/realuser/naia-adk"))
+        );
     }
 
     #[test]

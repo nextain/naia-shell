@@ -2661,3 +2661,14 @@ Test Coverage Map (P02)
 | 플랫폼별 키프레임·비트레이트 프리셋, 방송 키 `***` 마스킹, 사이드카 경로 해석, 48kHz 스테레오 PCM 묶음, 방송 종료 `log.jsonl` 기록, 방송 중 유튜브 반주 허용 + 저작권 한 줄 알림 | `packages/shell/src-tauri/src/broadcast.rs` — `platform_presets_match_keyframe_and_bitrate_table`, `stream_key_is_always_redacted_with_asterisks`, `resolve_ffmpeg_path_prefers_sidecar_then_env_then_path`, `append_broadcast_log_writes_single_jsonl_record`, `pack_f32_stereo_to_s16le_interleaves_and_clamps_samples`; `packages/shell/src/lib/__tests__/broadcast.test.ts` | Vitest 및 3090 `cargo test --lib broadcast` |
 | 리눅스 PipeWire 가상 싱크(`naia-broadcast-mix`)·프로세스 트리 오디오 노드 탐색·링크·해제, 포털 ScreenCast(`persist_mode=2`, `restore_token`) 및 GStreamer 파이프라인(`pipewiresrc` + `pulsesrc` → `nvh264enc`/`x264enc` + `avenc_aac`/`voaacenc` → `flvmux` → `rtmp2sink`) 구성 | `packages/shell/src-tauri/src/broadcast.rs` — `linux_gstreamer_pipeline_args_and_redaction`, `pipewire_process_tree_audio_port_matching`, `portal_screencast_restore_token_roundtrip` | 3090 `pw-play` 시험음 + `naia-broadcast-mix.monitor` 5초 녹음 실측; 포털 창 선택은 사람 허용 1회 필요 |
 
+## UC-WIN-RTX2070-R1-026 — 0.2.6 윈도우 실기(rtx2070) 1회차 수정
+
+1. **외부 로컬 Ollama 사용 및 가속기 자동 선택**: 외부에서 이미 실행 중인 로컬 Ollama 서버(`127.0.0.1:11434`)가 감지되면 가속기 선택을 요구하지 않고 그대로 대화를 허용한다. 앱이 직접 Ollama를 실행해야 할 때 가속기가 지정되지 않은 경우 단일 NVIDIA 장치 우선 자동 선택 및 CPU 폴백을 적용한다.
+2. **모델 미선택 중간 상태 안내**: 프로바이더만 바꾸거나 vLLM/OpenAI 호환에서 모델 목록이 비어 모델이 아직 정해지지 않은 중간 상태(`invalid llmRoles(main/incomplete)`)는 저장·재로드 실패로 다루지 않으며 빨간 실패 알림을 띄우지 않고 `"모델을 고르세요"` 안내를 보여 준다.
+3. **재시작 시 `herdr.exe` `0xc0000142` 오류 창 방지**: 윈도우에서 자식 프로세스 DLL 초기화 오류 대화상자(`SetErrorMode`)를 억제하고, 앱 종료·재시작 중 `herdr` 호출 차단, `stdin` null 고정·리소스 디렉토리 작업 경로 및 `PATH` 보강·버전 검증 캐시·진단 로그를 적용한다.
+4. **온보딩 기본 작업 폴더 경로의 `NAIA_HOME` 반영**: 온보딩 화면(`AdkSetupScreen`)의 기본 작업 폴더 경로(`naia-adk`)와 후보 탐색이 시험용 홈 환경 변수(`NAIA_HOME`)를 우선 따른다.
+
+| UC | 테스트 파일 | 확인 내용 |
+|---|---|---|
+| UC-WIN-RTX2070-R1-026 | `packages/shell/src-tauri/src/ollama_runtime.rs`, `packages/shell/src/lib/__tests__/ollama-chat-admission.test.ts`, `packages/shell/src-tauri/src/lib.rs`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx`, `packages/shell/src-tauri/src/herdr/config.rs`, `packages/shell/src/components/__tests__/AdkSetupScreen.test.tsx` | 외부 로컬 Ollama 다중 어댑터 환경 대화 허용 및 관리형 자동 선택/CPU 폴백, 프로바이더 변경·빈 모델 중간 상태 무실패 저장과 `"모델을 고르세요"` 안내, `herdr` 종료 가드·`0xc0000142` 방어, 온보딩 기본 경로 `NAIA_HOME` 우선 반영 |
+

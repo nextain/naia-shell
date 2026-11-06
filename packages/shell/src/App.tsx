@@ -858,12 +858,16 @@ export function App() {
 					void writeNaiaConfig({
 						...(cfg as unknown as Record<string, unknown>),
 						...buildNaiaConfigEnv(cfg),
-					}).catch((error: unknown) => {
-						setConfigSaveError(t("settings.saveFailed"));
-						Logger.error("App", "workspace config save failed", {
-							error: error instanceof Error ? error.message : String(error),
+					})
+						.then(() => {
+							setConfigSaveError(null);
+						})
+						.catch((error: unknown) => {
+							setConfigSaveError(t("settings.saveFailed"));
+							Logger.error("App", "workspace config save failed", {
+								error: error instanceof Error ? error.message : String(error),
+							});
 						});
-					});
 			}, 800);
 		};
 

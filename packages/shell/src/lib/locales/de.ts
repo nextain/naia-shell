@@ -268,6 +268,7 @@ export default {
 	"settings.proactiveSaveError": "Die Einstellungen konnten nicht sicher gespeichert werden; proaktive Sprache wurde deaktiviert.",
 	"settings.save": "Speichern",
 	"settings.saveFailed": "Einstellungen konnten nicht gespeichert werden",
+	"settings.selectModelPrompt": "Modell auswählen",
 	"settings.agentReloadFailed": "Die Einstellungen wurden gespeichert, aber die neue Sprache konnte nicht auf den laufenden Agenten angewendet werden. Bitte erneut versuchen.",
 	"settings.cancel": "Abbrechen",
 	"chat.placeholder": "Geben Sie eine Nachricht ein...",

@@ -268,6 +268,7 @@ export default {
 	"settings.proactiveSaveError": "The settings could not be applied, so proactive speech was safely blocked.",
 	"settings.save": "Apply",
 	"settings.saveFailed": "Could not save settings",
+	"settings.selectModelPrompt": "Select a model",
 	"settings.agentReloadFailed": "Settings were saved, but the running agent did not apply the new language. Retry to apply it.",
 	"settings.cancel": "Cancel",
 	"chat.placeholder": "Type a message...",

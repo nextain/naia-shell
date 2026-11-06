@@ -1516,4 +1516,20 @@ describe("UC-B2C-026-R12 native bootstrap authority", () => {
 		await expect(bootstrapAdkPath()).rejects.toThrow("denied");
 		expect(getAdkPath()).toBeNull();
 	});
+
+	it("does not fail reloadAgentSettings when main LLM role model is not yet selected", async () => {
+		await setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "reload_agent_settings") {
+				throw new Error(
+					"agent memory settings reload failed (previous memory retained=true): invalid llmRoles(main/incomplete)",
+				);
+			}
+			return undefined;
+		});
+
+		await expect(
+			writeNaiaConfig({ provider: "vllm", model: "" }),
+		).resolves.toBeUndefined();
+	});
 });

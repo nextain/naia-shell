@@ -268,6 +268,7 @@ export default {
 	"settings.proactiveSaveError": "설정을 적용하지 못해 능동 발화를 안전하게 차단했습니다.",
 	"settings.save": "적용",
 	"settings.saveFailed": "설정을 저장하지 못했습니다",
+	"settings.selectModelPrompt": "모델을 고르세요",
 	"settings.agentReloadFailed": "설정은 저장했지만 실행 중인 에이전트에 새 언어를 적용하지 못했습니다. 다시 시도해 주세요.",
 	"settings.cancel": "취소",
 	"chat.placeholder": "메시지를 입력하세요...",

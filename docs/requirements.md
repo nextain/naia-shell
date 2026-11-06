@@ -1582,3 +1582,12 @@ R17 memory exact pin은 `ab1f8002d31bffacf4779760eda727cc57a658a8` / 0.1.4로 �
 | **FR-BROADCAST-STREAM.5** | 설정 화면에 `방송` 절(플랫폼 선택, 서버 주소, 해상도, 비밀 저장소 기반 방송 키 마스킹 입력)을 두고, `AiControlBar`에 방송 켜기·끄기 단추(방송 중 빨간 점 + 경과 시간, 끊김 상태 표시, 키 미설정 시 비활성)를 제공한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src/lib/__tests__/broadcast.test.ts` | Done |
 | **FR-BROADCAST-STREAM.6** | 방송 종료 시 `<ADK>/data-private/broadcast/log.jsonl` 에 `{start, end, minutes, answers, credits_used, brain: "local"\|"gateway"\|"both", platform, encoder, drops}` JSON 한 줄을 추가한다. | UC-BROADCAST-STREAM-026 | `packages/shell/src-tauri/src/broadcast.rs`, `packages/shell/src/lib/__tests__/broadcast.test.ts` | Done |
 
+## 기능 요구사항 (FR) — 0.2.6 윈도우 실기(rtx2070) 1회차 수정 (2026-11-06)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-WIN-RTX2070-R1.1** | 외부 로컬 Ollama 서버가 이미 떠 있는 경우(`external_local`) 다중 디스플레이 어댑터/가속기 미지정 상태에서도 가속기 선택 오류 없이 그 서버를 그대로 사용해 대화를 허용한다(실제 동일 장치 VRAM 충돌만 차단 유지). 앱이 직접 Ollama를 띄울 때 가속기가 미지정이면 단일 NVIDIA GPU 자동 선택 또는 CPU 폴백으로 기동한다. | UC-WIN-RTX2070-R1-026 | `packages/shell/src-tauri/src/ollama_runtime.rs`, `packages/shell/src/lib/__tests__/ollama-chat-admission.test.ts` | Done |
+| **FR-WIN-RTX2070-R1.2** | 모델이 아직 선택되지 않은 중간 상태(`invalid llmRoles(main/incomplete)` / `main/missing`)는 설정 저장·Agent 재로드 실패로 처리하지 않으며 빨간 실패 알림을 표시하지 않는다. 설정 화면에는 `"모델을 고르세요"` 안내를 표시한다. | UC-WIN-RTX2070-R1-026 | `packages/shell/src-tauri/src/lib.rs`, `packages/shell/src/lib/__tests__/adk-store.test.ts`, `packages/shell/src/components/__tests__/SettingsTab.test.tsx` | Done |
+| **FR-WIN-RTX2070-R1.3** | 윈도우 기동 시 `SetErrorMode`로 자식 프로세스 시스템 오류 대화상자(`0xc0000142` 등) 표시를 억제하고, 앱 종료·재시작 구간에서 `herdr.exe` 신규 호출을 차단하며 `herdr` 스폰 시 `stdin` null 고정·번들 디렉토리 `PATH` 보강·버전 확인 캐시·종료 코드 진단 로그를 남긴다. | UC-WIN-RTX2070-R1-026 | `packages/shell/src-tauri/src/herdr/config.rs`, `packages/shell/src-tauri/src/platform/windows.rs` | Done |
+| **FR-WIN-RTX2070-R1.4** | 온보딩(`AdkSetupScreen`)의 기본 작업 폴더 경로(`naia-adk`)와 후보 탐색은 `NAIA_HOME`(및 홈 환경 변수) 설정을 우선 따른다. | UC-WIN-RTX2070-R1-026 | `packages/shell/src-tauri/src/lib.rs`, `packages/shell/src/components/__tests__/AdkSetupScreen.test.tsx` | Done |
+

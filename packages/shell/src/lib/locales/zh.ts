@@ -268,6 +268,7 @@ export default {
 	"settings.proactiveSaveError": "无法安全保存设置，因此已禁用主动发言。",
 	"settings.save": "保存",
 	"settings.saveFailed": "无法保存设置",
+	"settings.selectModelPrompt": "请选择模型",
 	"settings.agentReloadFailed": "设置已保存，但未能将新语言应用到正在运行的智能体。请重试。",
 	"settings.cancel": "取消",
 	"chat.placeholder": "输入消息...",

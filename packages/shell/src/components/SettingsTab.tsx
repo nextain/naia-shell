@@ -3322,7 +3322,9 @@ export function SettingsTab() {
 			{ provider: id, model: selectedModel },
 		);
 		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
-		void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
+		void writeNaiaConfig(provSel as unknown as Record<string, unknown>).catch(
+			() => {},
+		);
 	}
 
 	async function checkCliReadiness(
@@ -6090,6 +6092,7 @@ export function SettingsTab() {
 									id="model-select"
 									list="ollama-model-options"
 									value={model}
+									placeholder={t("settings.selectModelPrompt")}
 									onChange={(event) => {
 										ollamaPullSelectionRevisionRef.current += 1;
 										setModel(event.target.value);
@@ -6178,6 +6181,10 @@ export function SettingsTab() {
 							>
 								{!hasSelectedModel && model ? (
 									<option value="__custom__">{`${model}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
+								) : !hasSelectedModel ? (
+									<option value="__custom__">
+										{t("settings.selectModelPrompt")}
+									</option>
 								) : null}
 								{displayedProviderModels
 									.filter((m) => !m.capabilities.includes("asr"))
@@ -6214,6 +6221,10 @@ export function SettingsTab() {
 								</span>
 							) : provider === "nextain" ? (
 								t("settings.pricingUnavailable")
+							) : !model.trim() ? (
+								<span data-testid="model-select-guidance">
+									{t("settings.selectModelPrompt")}
+								</span>
 							) : (
 								(selectedModelMeta?.label ?? model)
 							)}

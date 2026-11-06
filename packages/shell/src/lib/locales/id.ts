@@ -268,6 +268,7 @@ export default {
 	"settings.proactiveSaveError": "Pengaturan tidak dapat disimpan dengan aman, jadi ucapan proaktif dinonaktifkan.",
 	"settings.save": "Simpan",
 	"settings.saveFailed": "Pengaturan tidak dapat disimpan",
+	"settings.selectModelPrompt": "Pilih model",
 	"settings.agentReloadFailed": "Pengaturan tersimpan, tetapi bahasa baru tidak diterapkan ke agen yang sedang berjalan. Coba lagi.",
 	"settings.cancel": "Batalkan",
 	"chat.placeholder": "Ketik pesan...",
