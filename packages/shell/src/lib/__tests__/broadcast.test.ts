@@ -43,7 +43,7 @@ describe("UC-BROADCAST-STREAM-026: broadcast presets and stream key redaction", 
 	});
 
 	it("redacts the stream key with *** across strings and ffmpeg argument arrays", () => {
-		const secret = "live_sk_987654321_secret";
+		const secret = "fake-key-123";
 		const args = [
 			"-f",
 			"flv",
