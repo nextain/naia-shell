@@ -22,6 +22,8 @@ import { describe, expect, it } from "vitest";
 import { prepareSteamDepot } from "../prepare-steam-depot.mjs";
 // .mjs(JS) 모듈 — 타입 선언 없음. tsconfig include=["src"] 라 tsc 스코프 밖(vitest 만 수집).
 import {
+	FFMPEG_DEV_PLACEHOLDER_PREFIX,
+	MIN_WINDOWS_FFMPEG_BYTES,
 	assertBundleArchSupported,
 	ensureNodeExecutable,
 	extractArchive,
@@ -30,7 +32,10 @@ import {
 	installerCoreEnv,
 	prepareRuntime,
 	provisionNode,
+	provisionWindowsFfmpegSidecar,
+	resolveWindowsFfmpegSource,
 	selectNodeArchive,
+	validateWindowsFfmpegBinary,
 	wrapStaticExecutableForBundle,
 } from "../stage-runtime.mjs";
 
@@ -1249,5 +1254,88 @@ describe("installer workflow integration contracts", () => {
 	it("verifies the Steam marker and its hash-list entry in CI (#727)", () => {
 		expect(workflow).toContain("Steam depot distribution marker is missing");
 		expect(workflow).toContain("Steam depot hash list does not cover the distribution marker");
+	});
+});
+
+describe("Windows ffmpeg sidecar staging and placeholder guard (FR-WIN-RTX2070-R2.1)", () => {
+	function makeFakePeBinary(size = MIN_WINDOWS_FFMPEG_BYTES + 128) {
+		const buf = Buffer.alloc(size, 0x90);
+		buf[0] = 0x4d; // 'M'
+		buf[1] = 0x5a; // 'Z'
+		return buf;
+	}
+
+	it("rejects the 30-byte dev placeholder, tiny files, and non-MZ headers", () => {
+		const dir = mkdtempSync(resolve(tmpdir(), "naia-win-ffmpeg-validate-"));
+		try {
+			const placeholder = resolve(dir, "ffmpeg-placeholder.exe");
+			writeFileSync(placeholder, `${FFMPEG_DEV_PLACEHOLDER_PREFIX}\n`, "utf8");
+			expect(() => validateWindowsFfmpegBinary(placeholder)).toThrow(
+				/개발용 자리표시 파일/,
+			);
+
+			const tinyPe = resolve(dir, "ffmpeg-tiny.exe");
+			writeFileSync(tinyPe, Buffer.from([0x4d, 0x5a, 0x00, 0x00]));
+			expect(() => validateWindowsFfmpegBinary(tinyPe)).toThrow(
+				/크기가 비정상/,
+			);
+
+			const nonPe = resolve(dir, "ffmpeg-non-pe.exe");
+			const badBuf = Buffer.alloc(MIN_WINDOWS_FFMPEG_BYTES + 64, 0x41);
+			writeFileSync(nonPe, badBuf);
+			expect(() => validateWindowsFfmpegBinary(nonPe)).toThrow(
+				/PE\(MZ\) 헤더가 유효하지 않습니다/,
+			);
+
+			const validPe = resolve(dir, "ffmpeg-valid.exe");
+			writeFileSync(validPe, makeFakePeBinary());
+			expect(validateWindowsFfmpegBinary(validPe)).toEqual({
+				filePath: validPe,
+				size: MIN_WINDOWS_FFMPEG_BYTES + 128,
+			});
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("overwrites an existing 30-byte placeholder sidecar with a real PE binary from NAIA_FFMPEG_SIDECAR_SOURCE or PATH, and fails if none is available", () => {
+		const dir = mkdtempSync(resolve(tmpdir(), "naia-win-ffmpeg-stage-"));
+		try {
+			const srcTauriDir = resolve(dir, "src-tauri");
+			const binariesDir = resolve(srcTauriDir, "binaries");
+			mkdirSync(binariesDir, { recursive: true });
+			const targetSidecar = resolve(
+				binariesDir,
+				"ffmpeg-x86_64-pc-windows-msvc.exe",
+			);
+			writeFileSync(targetSidecar, `${FFMPEG_DEV_PLACEHOLDER_PREFIX}\n`, "utf8");
+
+			// Fails when only a placeholder exists and no valid source is found
+			expect(() =>
+				provisionWindowsFfmpegSidecar("win32", "x64", {
+					srcTauriDir,
+					env: { PATH: dir },
+					execFileSyncImpl: () => {
+						throw new Error("where.exe not found");
+					},
+				}),
+			).toThrow(/실제 ffmpeg\.exe 를 찾지 못했습니다/);
+
+			// Succeeds and replaces placeholder when NAIA_FFMPEG_SIDECAR_SOURCE points to a valid PE binary
+			const realSource = resolve(dir, "real-ffmpeg.exe");
+			writeFileSync(realSource, makeFakePeBinary());
+			const staged = provisionWindowsFfmpegSidecar("win32", "x64", {
+				srcTauriDir,
+				env: { NAIA_FFMPEG_SIDECAR_SOURCE: realSource },
+				execFileSyncImpl: () => "",
+			});
+			expect(staged?.origin).toBe("NAIA_FFMPEG_SIDECAR_SOURCE");
+			expect(staged?.size).toBeGreaterThanOrEqual(MIN_WINDOWS_FFMPEG_BYTES);
+			expect(validateWindowsFfmpegBinary(targetSidecar).size).toBe(
+				MIN_WINDOWS_FFMPEG_BYTES + 128,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

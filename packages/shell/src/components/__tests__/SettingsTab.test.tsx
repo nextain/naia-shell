@@ -2117,6 +2117,110 @@ describe("SettingsTab", () => {
 		expect(screen.getByText(/없음 \(기본\)|None \(Default\)/i)).toBeDefined();
 	});
 
+	it("excludes naia-autumn-office-live.mp4 from Settings background options and normalizes saved backgroundVideo (#026-r2 item 6)", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\naia-test\\rc026\\naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "deepseek-v4-flash",
+				backgroundVideo: "naia-autumn-office-live.mp4",
+			}),
+		);
+		mockInvoke.mockImplementation(
+			(cmd: string, args?: { subdir?: string }) => {
+				if (cmd === "list_naia_assets" && args?.subdir === "background") {
+					return Promise.resolve([
+						"naia-autumn-office-live.mp4",
+						"naia-autumn-office-uhd.webp",
+						"naia-dawn-city-uhd.webp",
+					]);
+				}
+				return Promise.resolve([]);
+			},
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		const select = (await screen.findByTestId(
+			"settings-bg-select",
+		)) as HTMLSelectElement;
+		await waitFor(() =>
+			expect(
+				Array.from(select.options).map((o) => o.textContent),
+			).toContain("naia-autumn-office-uhd"),
+		);
+		const optionLabels = Array.from(select.options).map((o) => o.textContent);
+		expect(optionLabels).not.toContain("naia-autumn-office-live");
+		expect(select.value).toBe(
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\background\\naia-autumn-office-uhd.webp",
+		);
+	});
+
+	it("clears broadcastStreamKey from secure-keys.dat when saving an empty input or clicking Clear key, and displays broadcast errors (#026-r2 items 2 & 3)", async () => {
+		localStorage.setItem("naia-adk-path", "C:\\naia-test\\rc026\\naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "nextain", model: "test", apiKey: "" }),
+		);
+		nativeSecrets.set("broadcastStreamKey", "existing-stream-secret");
+		mockInvoke.mockResolvedValue([]);
+
+		const { setBroadcastBridgeSnapshot } = await import(
+			"../../lib/broadcast-audio-bridge"
+		);
+		setBroadcastBridgeSnapshot({
+			state: "idle",
+			elapsedSeconds: 0,
+			hasStreamKey: true,
+			lastError: "방송 시작에 실패했어요: ffmpeg spawn error",
+		});
+
+		try {
+			render(<SettingsTab />);
+			gotoSettingsTab("general");
+
+			const errorAlert = await screen.findByTestId("broadcast-settings-error");
+			expect(errorAlert.textContent).toContain("ffmpeg spawn error");
+
+			const keyInput = (await screen.findByTestId(
+				"broadcast-stream-key-input",
+			)) as HTMLInputElement;
+			await waitFor(() => expect(keyInput.placeholder).toBe("••••••••"));
+
+			// Clicking "Clear key" button deletes broadcastStreamKey from secure-keys.dat and clears ••••••••
+			const clearBtn = await screen.findByTestId("broadcast-clear-key-btn");
+			fireEvent.click(clearBtn);
+
+			await waitFor(() =>
+				expect(nativeSecrets.has("broadcastStreamKey")).toBe(false),
+			);
+			expect(keyInput.placeholder).not.toBe("••••••••");
+			expect(screen.getByTestId("broadcast-key-cleared-notice")).toBeDefined();
+
+			// Re-seed and test clearing via empty input + Save button
+			fireEvent.change(keyInput, { target: { value: "second-secret" } });
+			fireEvent.click(screen.getByTestId("broadcast-save-btn"));
+			await waitFor(() => expect(keyInput.placeholder).toBe("••••••••"));
+			expect(nativeSecrets.get("broadcastStreamKey")).toBe("second-secret");
+
+			fireEvent.change(keyInput, { target: { value: "" } });
+			fireEvent.click(screen.getByTestId("broadcast-save-btn"));
+			await waitFor(() =>
+				expect(nativeSecrets.has("broadcastStreamKey")).toBe(false),
+			);
+			expect(keyInput.placeholder).not.toBe("••••••••");
+		} finally {
+			setBroadcastBridgeSnapshot({
+				state: "idle",
+				elapsedSeconds: 0,
+				hasStreamKey: false,
+				lastError: null,
+			});
+		}
+	});
+
 	it("renders VRM import file button", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);

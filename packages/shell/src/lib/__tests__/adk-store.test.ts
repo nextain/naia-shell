@@ -35,13 +35,18 @@ import {
 	applyModelSelectionToConfig,
 	applyWorkspaceConfigToLocal,
 	beginNaiaConfigHydration,
+	buildAdkAssetScopeDirectories,
 	buildNaiaConfigEnv,
 	clearAdkPath,
 	completeNaiaConfigHydration,
 	copyBundledAssets,
+	DEFAULT_PURE_BACKGROUND_ASSET,
 	getAdkPath,
 	isAdkInitialized,
+	isExcludedBackgroundAsset,
+	joinAdkAssetPath,
 	listNaiaAssets,
+	normalizeBackgroundVideoFilename,
 	readNaiaConfig,
 	readNaiaUiConfig,
 	resetNaiaPersistedSettings,
@@ -1531,5 +1536,60 @@ describe("UC-B2C-026-R12 native bootstrap authority", () => {
 		await expect(
 			writeNaiaConfig({ provider: "vllm", model: "" }),
 		).resolves.toBeUndefined();
+	});
+});
+
+describe("UC-WIN-RTX2070-R2-026: Windows asset scope paths and avatar-free background filtering", () => {
+	it("builds Windows drive-letter + backslash asset scope directories including naia-settings\\background (#026-r2 item 5)", () => {
+		const winDirs = buildAdkAssetScopeDirectories(
+			"C:\\naia-test\\rc026\\naia-adk\\",
+		);
+		expect(winDirs).toEqual([
+			"C:\\naia-test\\rc026\\naia-adk",
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings",
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\vrm-files",
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\background",
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\bgm-musics",
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\nva-files",
+		]);
+
+		const mixedDrive = joinAdkAssetPath(
+			"D:/custom/naia-adk/",
+			"background",
+			"naia-dawn-city-uhd.webp",
+		);
+		expect(mixedDrive).toBe(
+			"D:\\custom\\naia-adk\\naia-settings\\background\\naia-dawn-city-uhd.webp",
+		);
+	});
+
+	it("excludes naia-autumn-office-live.mp4 from listNaiaAssets('background') and normalizes saved backgroundVideo (#026-r2 item 6)", async () => {
+		await setAdkPath("C:\\naia-test\\rc026\\naia-adk");
+		mockInvoke.mockResolvedValue([
+			"naia-autumn-office-live.mp4",
+			"naia-autumn-office-uhd.webp",
+			"naia-dawn-city-uhd.webp",
+		]);
+
+		const bgs = await listNaiaAssets("background");
+		expect(bgs).toEqual([
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\background\\naia-autumn-office-uhd.webp",
+			"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\background\\naia-dawn-city-uhd.webp",
+		]);
+		expect(isExcludedBackgroundAsset("naia-autumn-office-live.mp4")).toBe(true);
+		expect(
+			isExcludedBackgroundAsset(
+				"C:\\naia-test\\rc026\\naia-adk\\naia-settings\\background\\naia-autumn-office-live.mp4",
+			),
+		).toBe(true);
+		expect(isExcludedBackgroundAsset("naia-autumn-office-uhd.webp")).toBe(
+			false,
+		);
+		expect(
+			normalizeBackgroundVideoFilename("naia-autumn-office-live.mp4"),
+		).toBe(DEFAULT_PURE_BACKGROUND_ASSET);
+		expect(
+			normalizeBackgroundVideoFilename("naia-dawn-city-uhd.webp"),
+		).toBe("naia-dawn-city-uhd.webp");
 	});
 });

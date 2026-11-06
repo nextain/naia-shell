@@ -1331,16 +1331,44 @@ pub fn select_gstreamer_audio_encoder() -> GstAudioEncoder {
     }
 }
 
-fn is_usable_ffmpeg_sidecar(path: &Path) -> bool {
+/// Single source of truth for validating an `ffmpeg` executable before selection or spawn.
+/// Rejects missing files, `#!naia-ffmpeg-dev-placeholder` stubs, empty files, and (for `.exe` /
+/// Windows targets) files without a valid PE `MZ` header (`0x4D 0x5A`), preventing Windows from
+/// showing the modal 16-bit application dialog (`os error 216`).
+pub(crate) fn validate_ffmpeg_executable(path: &Path) -> Result<(), String> {
     if !path.is_file() {
-        return false;
+        return Err(format!(
+            "ffmpeg 실행 파일을 찾을 수 없습니다: {}",
+            path.display()
+        ));
     }
-    if let Ok(bytes) = fs::read(path) {
-        if bytes.starts_with(DEV_PLACEHOLDER_PREFIX) {
-            return false;
-        }
+    let mut header = [0u8; 64];
+    let mut file = fs::File::open(path)
+        .map_err(|e| format!("ffmpeg 실행 파일을 열 수 없습니다 ({}): {e}", path.display()))?;
+    let n = std::io::Read::read(&mut file, &mut header)
+        .map_err(|e| format!("ffmpeg 실행 파일을 읽을 수 없습니다 ({}): {e}", path.display()))?;
+    if n == 0 || header[..n].starts_with(DEV_PLACEHOLDER_PREFIX) {
+        return Err(format!(
+            "ffmpeg 실행 파일이 개발용 자리표시 파일(#!naia-ffmpeg-dev-placeholder)이거나 비어 있어 실행할 수 없습니다: {}",
+            path.display()
+        ));
     }
-    true
+    let is_exe_ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("exe"))
+        .unwrap_or(false);
+    if (cfg!(target_os = "windows") || is_exe_ext) && (n < 2 || header[0] != b'M' || header[1] != b'Z') {
+        return Err(format!(
+            "Windows ffmpeg 실행 파일의 PE(MZ) 헤더가 올바르지 않아 실행을 차단했습니다 (os error 216 방지): {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn is_usable_ffmpeg_sidecar(path: &Path) -> bool {
+    validate_ffmpeg_executable(path).is_ok()
 }
 
 fn sidecar_candidate_names() -> Vec<String> {
@@ -1368,18 +1396,24 @@ fn sidecar_candidate_names() -> Vec<String> {
 /// Resolution order:
 /// 1. Bundled sidecar next to the app (`sidecar_dirs`)
 /// 2. `NAIA_FFMPEG_PATH` environment variable (`env_override`)
-/// 3. `PATH` lookup (`path_env`), falling back to `"ffmpeg"`
+/// 3. `PATH` lookup (`path_env`), falling back to the first invalid sidecar path (so
+///    `validate_ffmpeg_executable` reports the exact placeholder path rather than letting
+///    Windows `CreateProcessW("ffmpeg")` resolve `ffmpeg.exe` in the app directory) or `"ffmpeg"`.
 pub(crate) fn resolve_ffmpeg_path_from(
     sidecar_dirs: &[&Path],
     env_override: Option<&OsStr>,
     path_env: Option<&OsStr>,
 ) -> PathBuf {
     let candidates = sidecar_candidate_names();
+    let mut first_invalid_sidecar: Option<PathBuf> = None;
     for dir in sidecar_dirs {
         for rel in &candidates {
             let candidate = dir.join(rel);
             if is_usable_ffmpeg_sidecar(&candidate) {
                 return candidate;
+            }
+            if first_invalid_sidecar.is_none() && candidate.is_file() {
+                first_invalid_sidecar = Some(candidate);
             }
         }
     }
@@ -1401,14 +1435,14 @@ pub(crate) fn resolve_ffmpeg_path_from(
         for dir in std::env::split_paths(paths) {
             for bin in bin_names {
                 let candidate = dir.join(bin);
-                if candidate.is_file() {
+                if is_usable_ffmpeg_sidecar(&candidate) {
                     return candidate;
                 }
             }
         }
     }
 
-    PathBuf::from("ffmpeg")
+    first_invalid_sidecar.unwrap_or_else(|| PathBuf::from("ffmpeg"))
 }
 
 /// Resolve `ffmpeg` binary in production / command context.
@@ -1597,6 +1631,8 @@ fn spawn_ffmpeg_with_fallback(
     base_spec: &FfmpegStreamSpec,
     capture: &dyn ScreenCaptureSource,
 ) -> Result<(Child, Option<ChildStdin>, VideoEncoder), String> {
+    validate_ffmpeg_executable(ffmpeg_path)?;
+
     for encoder in [VideoEncoder::H264Nvenc, VideoEncoder::Libx264] {
         let mut spec = base_spec.clone();
         spec.encoder = encoder;
@@ -1653,9 +1689,10 @@ fn spawn_ffmpeg_with_fallback(
                 }
             }
             Err(err) => {
-                if encoder == VideoEncoder::Libx264 {
-                    return Err(format!("ffmpeg 실행 실패: {err}"));
-                }
+                return Err(format!(
+                    "ffmpeg 실행 실패 ({}): {err}",
+                    ffmpeg_path.display()
+                ));
             }
         }
     }
@@ -2555,7 +2592,7 @@ mod tests {
         } else {
             "ffmpeg"
         });
-        fs::write(&path_ffmpeg, b"#!/bin/sh\n").expect("write path ffmpeg");
+        fs::write(&path_ffmpeg, b"MZ\x90\x00#!/bin/sh\n").expect("write path ffmpeg");
 
         // 1. Only PATH available -> picks PATH binary
         let resolved_from_path =
@@ -2572,7 +2609,11 @@ mod tests {
         assert_eq!(resolved_from_env, PathBuf::from("/custom/env/ffmpeg"));
 
         // 3. Dev placeholder in sidecar_dir is ignored
-        let sidecar_bin = sidecar_dir.join("binaries/ffmpeg");
+        let sidecar_bin = sidecar_dir.join(if cfg!(windows) {
+            "binaries/ffmpeg.exe"
+        } else {
+            "binaries/ffmpeg"
+        });
         fs::write(&sidecar_bin, DEV_PLACEHOLDER_PREFIX).expect("write placeholder");
         let resolved_ignoring_placeholder = resolve_ffmpeg_path_from(
             &[&sidecar_dir],
@@ -2585,13 +2626,65 @@ mod tests {
         );
 
         // 4. Real sidecar binary next to app -> highest priority (overrides NAIA_FFMPEG_PATH and PATH)
-        fs::write(&sidecar_bin, b"real-static-ffmpeg-binary").expect("write real sidecar");
+        fs::write(&sidecar_bin, b"MZ\x90\x00real-static-ffmpeg-binary").expect("write real sidecar");
         let resolved_from_sidecar = resolve_ffmpeg_path_from(
             &[&sidecar_dir],
             Some(env_val.as_os_str()),
             Some(path_dir.as_os_str()),
         );
         assert_eq!(resolved_from_sidecar, sidecar_bin);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn validate_ffmpeg_executable_rejects_placeholder_and_non_mz_exe_before_spawn() {
+        let tmp = std::env::temp_dir().join(format!(
+            "naia-ffmpeg-validate-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).expect("mkdir validate tmp");
+
+        let placeholder_exe = tmp.join("ffmpeg.exe");
+        fs::write(&placeholder_exe, b"#!naia-ffmpeg-dev-placeholder\n")
+            .expect("write placeholder exe");
+        let err = validate_ffmpeg_executable(&placeholder_exe)
+            .expect_err("placeholder ffmpeg.exe must be rejected");
+        assert!(err.contains("#!naia-ffmpeg-dev-placeholder"));
+
+        // When only a placeholder exists in sidecar_dir and PATH has a placeholder too,
+        // resolve_ffmpeg_path_from returns the invalid sidecar path (never bare "ffmpeg"),
+        // and spawn_ffmpeg_with_fallback rejects it before Command::spawn is ever called.
+        let resolved = resolve_ffmpeg_path_from(&[&tmp], None, Some(tmp.as_os_str()));
+        assert_eq!(resolved, placeholder_exe);
+
+        let capture = WindowsGdiGrabCapture;
+        let spec = FfmpegStreamSpec {
+            platform: BroadcastPlatform::Youtube,
+            server_url: String::new(),
+            stream_key: "test-key".to_string(),
+            resolution: BroadcastResolution::P1080Fps30,
+            encoder: VideoEncoder::H264Nvenc,
+            output_file: None,
+        };
+        let spawn_err = match spawn_ffmpeg_with_fallback(&resolved, &spec, &capture) {
+            Ok(_) => panic!("placeholder ffmpeg.exe must never spawn"),
+            Err(e) => e,
+        };
+        assert!(spawn_err.contains("#!naia-ffmpeg-dev-placeholder"));
+
+        // A corrupt .exe without MZ header is also rejected before spawn (prevents os error 216)
+        let bad_header_exe = tmp.join("corrupt-ffmpeg.exe");
+        fs::write(&bad_header_exe, b"NOT_AN_MZ_HEADER_BINARY").expect("write bad header exe");
+        let header_err = validate_ffmpeg_executable(&bad_header_exe)
+            .expect_err("non-MZ .exe must be rejected");
+        assert!(header_err.contains("MZ"));
+
+        // Valid MZ header passes validation
+        let valid_exe = tmp.join("valid-ffmpeg.exe");
+        fs::write(&valid_exe, b"MZ\x90\x00valid-pe-stub").expect("write valid exe");
+        assert!(validate_ffmpeg_executable(&valid_exe).is_ok());
 
         let _ = fs::remove_dir_all(&tmp);
     }

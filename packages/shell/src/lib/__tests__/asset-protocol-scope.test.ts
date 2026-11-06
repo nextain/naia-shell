@@ -140,4 +140,22 @@ describe("assetProtocol.scope hardening (#258)", () => {
 			).allow ?? [];
 		expect(allow).toContain("$HOME/**");
 	});
+
+	it("registers ADK and naia-settings/{background,vrm-files,bgm-musics,nva-files} in runtime asset_protocol_scope across startup and ADK lifecycle (#026-r2 item 5)", () => {
+		const libRs = readFileSync(
+			resolve(__dirname, "../../../src-tauri/src/lib.rs"),
+			"utf-8",
+		);
+		expect(libRs).toContain("fn collect_adk_asset_scope_directories(");
+		expect(libRs).toContain("fn allow_adk_asset_protocol_scope(");
+		expect(libRs).toContain(
+			'&["vrm-files", "background", "bgm-musics", "nva-files"]',
+		);
+		// Must be invoked during app startup (.setup) when read_naia_path_cache() returns Some,
+		// as well as in write_naia_path_cache, init_naia_settings, list_naia_assets, import_naia_asset, and copy_bundled_assets.
+		const callCount =
+			libRs.split("allow_adk_asset_protocol_scope(").length - 1;
+		// 1 definition + at least 6 call sites
+		expect(callCount).toBeGreaterThanOrEqual(7);
+	});
 });

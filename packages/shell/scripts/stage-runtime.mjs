@@ -562,6 +562,152 @@ export function provisionMsvcRedist(matrix, platform, arch) {
 	console.log(`[stage-runtime] ② MSVC 재배포 ${spec.files.length}종 ← ${dir}`);
 }
 
+export const FFMPEG_DEV_PLACEHOLDER_PREFIX = "#!naia-ffmpeg-dev-placeholder";
+export const MIN_WINDOWS_FFMPEG_BYTES = 1_000_000;
+
+/**
+ * Windows 번들용 ffmpeg.exe 실물 검증.
+ * - 파일 실존
+ * - 개발용 자리표시(#!naia-ffmpeg-dev-placeholder) 차단
+ * - 최소 크기(1MB) 이상
+ * - PE 실행 파일 헤더(MZ: 0x4D 0x5A) 확인 (os error 216 16비트 응용 프로그램 오류 원천 차단)
+ */
+export function validateWindowsFfmpegBinary(filePath, { readImpl = readFileSync } = {}) {
+	if (!filePath || !existsSync(filePath)) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리가 존재하지 않습니다: ${filePath}`,
+		);
+	}
+	const buf = readImpl(filePath);
+	const prefix = buf
+		.subarray(0, FFMPEG_DEV_PLACEHOLDER_PREFIX.length)
+		.toString("utf8");
+	if (prefix === FFMPEG_DEV_PLACEHOLDER_PREFIX) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리가 개발용 자리표시 파일(${FFMPEG_DEV_PLACEHOLDER_PREFIX})입니다: ${filePath}`,
+		);
+	}
+	if (buf.length < MIN_WINDOWS_FFMPEG_BYTES) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리 크기가 비정상입니다 (${buf.length} bytes < ${MIN_WINDOWS_FFMPEG_BYTES}): ${filePath}`,
+		);
+	}
+	if (buf.length < 2 || buf[0] !== 0x4d || buf[1] !== 0x5a) {
+		throw new Error(
+			`[stage-runtime] Windows ffmpeg 바이너리 PE(MZ) 헤더가 유효하지 않습니다: ${filePath}`,
+		);
+	}
+	return { filePath, size: buf.length };
+}
+
+/**
+ * Windows 설치 빌드용 실제 ffmpeg.exe 원본 탐색:
+ * 1순위: env NAIA_FFMPEG_SIDECAR_SOURCE (지정 시 반드시 유효한 PE 바이너리여야 함)
+ * 2순위: 이미 스테이징된 targetSidecar 가 유효한 실제 바이너리인 경우 (자리표시 파일이면 무시하고 계속 탐색)
+ * 3순위: PATH / where.exe / 표준 설치 경로(Chocolatey 등)
+ */
+export function resolveWindowsFfmpegSource({
+	targetSidecar,
+	env = process.env,
+	execFileSyncImpl = execFileSync,
+} = {}) {
+	const explicitSource = env.NAIA_FFMPEG_SIDECAR_SOURCE?.trim();
+	if (explicitSource) {
+		const resolved = resolve(explicitSource);
+		validateWindowsFfmpegBinary(resolved);
+		return { source: resolved, origin: "NAIA_FFMPEG_SIDECAR_SOURCE" };
+	}
+
+	if (targetSidecar && existsSync(targetSidecar)) {
+		try {
+			validateWindowsFfmpegBinary(targetSidecar);
+			return { source: resolve(targetSidecar), origin: "staged-sidecar" };
+		} catch {
+			// 기존 파일이 자리표시(#!naia-ffmpeg-dev-placeholder)이거나 손상된 경우 무시하고 실제 바이너리를 탐색
+		}
+	}
+
+	const candidates = [];
+	try {
+		const whereOut = execFileSyncImpl("where.exe", ["ffmpeg.exe"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		for (const line of String(whereOut).split(/\r?\n/)) {
+			const trimmed = line.trim();
+			if (trimmed) candidates.push(trimmed);
+		}
+	} catch {
+		// where.exe 실패 시 PATH 직접 스캔으로 폴백
+	}
+
+	const pathVar = env.PATH ?? env.Path ?? "";
+	for (const entry of String(pathVar).split(";")) {
+		const dir = entry.trim();
+		if (dir) candidates.push(join(dir, "ffmpeg.exe"));
+	}
+	candidates.push(
+		"C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
+		"C:\\ffmpeg\\bin\\ffmpeg.exe",
+	);
+
+	const searched = [];
+	for (const candidate of candidates) {
+		const resolved = resolve(candidate);
+		if (searched.includes(resolved)) continue;
+		searched.push(resolved);
+		if (!existsSync(resolved)) continue;
+		try {
+			validateWindowsFfmpegBinary(resolved);
+			return { source: resolved, origin: "PATH" };
+		} catch {
+			// 자리표시 또는 비정상 후보는 건너뜀
+		}
+	}
+
+	throw new Error(
+		`[stage-runtime] Windows 설치 번들용 실제 ffmpeg.exe 를 찾지 못했습니다 (자리표시 번들 차단).\n` +
+			`  탐색한 경로: ${searched.length ? searched.join(", ") : "(없음)"}\n` +
+			`  → NAIA_FFMPEG_SIDECAR_SOURCE 환경변수로 실제 ffmpeg.exe 경로를 지정하거나 PATH 에 ffmpeg 를 설치하세요.`,
+	);
+}
+
+/**
+ * (win) src-tauri/binaries/ffmpeg-<triple>.exe 에 실제 PE 바이너리를 스테이징하고 검증한다.
+ * 자리표시 파일(#!naia-ffmpeg-dev-placeholder)이 남아 있으면 빌드를 즉시 실패시킨다.
+ */
+export function provisionWindowsFfmpegSidecar(
+	platform,
+	arch = "x64",
+	{
+		srcTauriDir = SRC_TAURI,
+		env = process.env,
+		execFileSyncImpl = execFileSync,
+	} = {},
+) {
+	if (platform !== "win32") return null;
+	const targetTriple =
+		arch === "arm64"
+			? "aarch64-pc-windows-msvc"
+			: "x86_64-pc-windows-msvc";
+	const binariesDir = resolve(srcTauriDir, "binaries");
+	mkdirSync(binariesDir, { recursive: true });
+	const targetSidecar = resolve(binariesDir, `ffmpeg-${targetTriple}.exe`);
+	const { source, origin } = resolveWindowsFfmpegSource({
+		targetSidecar,
+		env,
+		execFileSyncImpl,
+	});
+	if (resolve(source) !== resolve(targetSidecar)) {
+		copyFileSync(source, targetSidecar);
+	}
+	const verified = validateWindowsFfmpegBinary(targetSidecar);
+	console.log(
+		`[stage-runtime] ② Windows ffmpeg sidecar 검증 완료 (${origin}, ${verified.size} bytes) → ${targetSidecar}`,
+	);
+	return { targetSidecar, source, origin, size: verified.size };
+}
+
 function readMatrix() {
 	try {
 		return JSON.parse(readFileSync(MATRIX_PATH, "utf8"));
@@ -642,6 +788,7 @@ async function main() {
 	ensureEgoBrowserVendor();
 
 	if (platform === "win32") {
+		provisionWindowsFfmpegSidecar(platform, arch);
 		console.log("[stage-runtime] host voice upgrade regression gate");
 		run(
 			"cargo test --manifest-path src-tauri/Cargo.toml voxcpm2_upgrade_rejects_default_only_payload_control_files --lib",
@@ -768,7 +915,7 @@ async function main() {
 	// strip하려 들면 제3자 런타임이 변형되거나 외부 아키텍처 ELF에서 실패한다.
 	// 설치 계약은 검증된 런타임 원본을 동봉하는 것이므로 모든 플랫폼에서 보존한다
 	// (NO_STRIP을 소비하는 도구는 linuxdeploy뿐이다).
-	const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1", ...linuxBundleEnv(platform) };
+	const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1", ...(platform === "win32" ? { NAIA_REQUIRE_REAL_FFMPEG: "1" } : {}), ...linuxBundleEnv(platform) };
 	// 이전 로컬 빌드의 stale 포맷이 같은 glob으로 업로드되는 것을 구조적으로 차단한다.
 	rmSync(resolve(SHELL, "src-tauri", "target", "release", "bundle"), {
 		recursive: true,

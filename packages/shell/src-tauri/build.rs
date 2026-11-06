@@ -1,30 +1,101 @@
 fn ensure_ffmpeg_sidecar_for_tauri_build() {
-    use std::{env, fs, path::PathBuf};
+    use std::{
+        env, fs,
+        io::Read,
+        path::{Path, PathBuf},
+    };
+    const DEV_PLACEHOLDER_PREFIX: &[u8] = b"#!naia-ffmpeg-dev-placeholder";
+    const MIN_REAL_WINDOWS_FFMPEG_BYTES: u64 = 1_000_000;
+
+    fn is_valid_ffmpeg_sidecar(path: &Path, is_windows: bool) -> bool {
+        let Ok(meta) = fs::metadata(path) else {
+            return false;
+        };
+        if !meta.is_file() {
+            return false;
+        }
+        let mut header = [0u8; 64];
+        let Ok(mut file) = fs::File::open(path) else {
+            return false;
+        };
+        let Ok(n) = file.read(&mut header) else {
+            return false;
+        };
+        if n == 0 || header[..n].starts_with(DEV_PLACEHOLDER_PREFIX) {
+            return false;
+        }
+        if is_windows {
+            if n < 2 || header[0] != b'M' || header[1] != b'Z' {
+                return false;
+            }
+            if meta.len() < MIN_REAL_WINDOWS_FFMPEG_BYTES {
+                return false;
+            }
+        }
+        true
+    }
+
     println!("cargo:rerun-if-env-changed=NAIA_FFMPEG_SIDECAR_SOURCE");
+    println!("cargo:rerun-if-env-changed=NAIA_REQUIRE_REAL_FFMPEG");
     let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") else {
         return;
     };
     let Ok(target) = env::var("TARGET") else {
         return;
     };
-    let ext = if target.contains("windows") {
-        ".exe"
-    } else {
-        ""
-    };
+    let is_windows = target.contains("windows");
+    let require_real = env::var("NAIA_REQUIRE_REAL_FFMPEG")
+        .ok()
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false);
+    let ext = if is_windows { ".exe" } else { "" };
     let binaries_dir = PathBuf::from(manifest_dir).join("binaries");
     let target_sidecar = binaries_dir.join(format!("ffmpeg-{target}{ext}"));
-    if target_sidecar.is_file() {
-        return;
-    }
     let _ = fs::create_dir_all(&binaries_dir);
+
     if let Ok(src) = env::var("NAIA_FFMPEG_SIDECAR_SOURCE") {
-        let src_path = PathBuf::from(src.trim());
-        if src_path.is_file() {
-            let _ = fs::copy(&src_path, &target_sidecar);
+        let trimmed = src.trim();
+        if !trimmed.is_empty() {
+            let src_path = PathBuf::from(trimmed);
+            assert!(
+                is_valid_ffmpeg_sidecar(&src_path, is_windows),
+                "NAIA_FFMPEG_SIDECAR_SOURCE does not point to a valid ffmpeg binary: {}",
+                src_path.display()
+            );
+            if src_path != target_sidecar {
+                fs::copy(&src_path, &target_sidecar)
+                    .expect("failed to copy NAIA_FFMPEG_SIDECAR_SOURCE into binaries/");
+            }
             return;
         }
     }
+
+    if is_valid_ffmpeg_sidecar(&target_sidecar, is_windows) {
+        return;
+    }
+
+    if is_windows {
+        if let Some(paths) = env::var_os("PATH") {
+            for dir in env::split_paths(&paths) {
+                let candidate = dir.join("ffmpeg.exe");
+                if is_valid_ffmpeg_sidecar(&candidate, true) {
+                    let _ = fs::copy(&candidate, &target_sidecar);
+                    if is_valid_ffmpeg_sidecar(&target_sidecar, true) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    if require_real {
+        panic!(
+            "Real ffmpeg sidecar is required (NAIA_REQUIRE_REAL_FFMPEG=1) for target {target}, \
+             but {} is missing or a dev placeholder (#!naia-ffmpeg-dev-placeholder)",
+            target_sidecar.display()
+        );
+    }
+
     let _ = fs::write(&target_sidecar, b"#!naia-ffmpeg-dev-placeholder\n");
     #[cfg(unix)]
     {

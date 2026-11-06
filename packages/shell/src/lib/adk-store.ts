@@ -152,6 +152,96 @@ export type NaiaAssetSubdir =
 	| "bgm-musics"
 	| "nva-files";
 
+export const NAIA_ASSET_SUBDIRS: readonly NaiaAssetSubdir[] = [
+	"vrm-files",
+	"background",
+	"bgm-musics",
+	"nva-files",
+];
+
+/** Default pure background asset without an embedded avatar (#026-r2 item 6). */
+export const DEFAULT_PURE_BACKGROUND_ASSET = "naia-autumn-office-uhd.webp";
+
+/**
+ * Bundled video assets that have an avatar baked into the frame rather than a
+ * pure background scene. Excluded from background listings and previews (#026-r2).
+ */
+export const EXCLUDED_AVATAR_BACKGROUND_ASSETS: readonly string[] = [
+	"naia-autumn-office-live.mp4",
+];
+
+export function isExcludedBackgroundAsset(filenameOrPath: string): boolean {
+	const basename =
+		filenameOrPath.trim().split(/[/\\]/).filter(Boolean).pop() ?? "";
+	if (!basename) return false;
+	const lower = basename.toLowerCase();
+	return EXCLUDED_AVATAR_BACKGROUND_ASSETS.some(
+		(excluded) => excluded.toLowerCase() === lower,
+	);
+}
+
+/**
+ * Normalize a saved `backgroundVideo` filename so any previously persisted
+ * avatar-baked video (`naia-autumn-office-live.mp4`) resolves to the pure
+ * background asset (`naia-autumn-office-uhd.webp`).
+ */
+export function normalizeBackgroundVideoFilename(
+	filename: string | undefined,
+): string | undefined {
+	if (!filename) return undefined;
+	const trimmed = filename.trim();
+	if (!trimmed) return undefined;
+	if (isExcludedBackgroundAsset(trimmed)) {
+		return DEFAULT_PURE_BACKGROUND_ASSET;
+	}
+	return trimmed;
+}
+
+/**
+ * Join `{adkPath}/naia-settings/{subdir}/{name}` preserving Windows drive-letter
+ * and backslash separators (`C:\...\naia-settings\background\...`) without
+ * doubling trailing separators.
+ */
+export function joinAdkAssetPath(
+	adkPath: string,
+	subdir: NaiaAssetSubdir,
+	filename?: string,
+): string {
+	const trimmed = adkPath.trim().replace(/[/\\]+$/, "");
+	if (!trimmed) return "";
+	const isWindowsStyle =
+		trimmed.includes("\\") || /^[A-Za-z]:($|[/\\])/.test(adkPath.trim());
+	const sep = isWindowsStyle ? "\\" : "/";
+	const normalizedRoot = isWindowsStyle
+		? trimmed.replace(/\//g, "\\")
+		: trimmed.replace(/\\/g, "/");
+	const base = `${normalizedRoot}${sep}naia-settings${sep}${subdir}`;
+	if (!filename) return base;
+	const cleanName = filename.replace(/^[/\\]+/, "");
+	return `${base}${sep}${cleanName}`;
+}
+
+/**
+ * Return the list of directories registered in Tauri's runtime `asset_protocol_scope`
+ * for an ADK workspace (`<adk>`, `<adk>/naia-settings`, and each asset subdir).
+ */
+export function buildAdkAssetScopeDirectories(adkPath: string): string[] {
+	const trimmed = adkPath.trim().replace(/[/\\]+$/, "");
+	if (!trimmed) return [];
+	const isWindowsStyle =
+		trimmed.includes("\\") || /^[A-Za-z]:($|[/\\])/.test(adkPath.trim());
+	const sep = isWindowsStyle ? "\\" : "/";
+	const root = isWindowsStyle
+		? trimmed.replace(/\//g, "\\")
+		: trimmed.replace(/\\/g, "/");
+	const settings = `${root}${sep}naia-settings`;
+	return [
+		root,
+		settings,
+		...NAIA_ASSET_SUBDIRS.map((subdir) => `${settings}${sep}${subdir}`),
+	];
+}
+
 /** Returns absolute file paths inside {adkPath}/naia-settings/{subdir}/ */
 export async function listNaiaAssets(
 	subdir: NaiaAssetSubdir,
@@ -163,10 +253,11 @@ export async function listNaiaAssets(
 			adkPath,
 			subdir,
 		});
-		const sep = adkPath.includes("\\") ? "\\" : "/";
-		return filenames.map(
-			(name) => `${adkPath}${sep}naia-settings${sep}${subdir}${sep}${name}`,
-		);
+		const filtered =
+			subdir === "background"
+				? filenames.filter((name) => !isExcludedBackgroundAsset(name))
+				: filenames;
+		return filtered.map((name) => joinAdkAssetPath(adkPath, subdir, name));
 	} catch {
 		return [];
 	}
@@ -183,11 +274,14 @@ const LOCAL_MIME_TYPES: Record<string, string> = {
 	wav: "audio/wav",
 	aac: "audio/aac",
 	flac: "audio/flac",
+	m4a: "audio/mp4",
 	png: "image/png",
 	jpg: "image/jpeg",
 	jpeg: "image/jpeg",
 	webp: "image/webp",
 	gif: "image/gif",
+	bmp: "image/bmp",
+	avif: "image/avif",
 	mp4: "video/mp4",
 	webm: "video/webm",
 	mov: "video/quicktime",

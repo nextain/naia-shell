@@ -19,6 +19,20 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "win_rtx2070_r2_026": {
+      "issue": 792,
+      "last_updated": "2026-11-06T15:10:00+00:00",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "scenario": "docs/user-scenarios.md UC-WIN-RTX2070-R2-026",
+      "requirements": "docs/requirements.md FR-WIN-RTX2070-R2.1~6",
+      "verification": "Shell Vitest 261 files / 2,809 tests passed (22 skipped, 0 failed); targeted regression Vitest 8 files / 335 tests passed; Core contract tests (rust-tokens 37, rust-command-list 6, e2e-runtime-isolation 92, agent-bench 107) passed; tsc + shell vite build + bundle budget passed."
+    },
     "win_rtx2070_r1_026": {
       "issue": 792,
       "last_updated": "2026-11-06T13:52:00+00:00",

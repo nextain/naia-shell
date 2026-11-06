@@ -165,8 +165,9 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-SHELL-STUDIO-NVA-APPLY-105",
   // 0.2.6 OBS 없이 쉘에서 바로 방송 송출. 셸 미디어·프로세스·UI 표면 기능이다.
   "UC-BROADCAST-STREAM-026",
-  // 0.2.6 Windows RTX 2070 실기 1회차 수정. 셸 런타임·설정·온보딩 표면 기능이다.
+  // 0.2.6 Windows RTX 2070 실기 1·2회차 수정. 셸 런타임·설정·온보딩·방송 표면 기능이다.
   "UC-WIN-RTX2070-R1-026",
+  "UC-WIN-RTX2070-R2-026",
 ];
 
 export function ownedByEpic(uc: string): boolean {

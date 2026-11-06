@@ -174,6 +174,38 @@ jobs:
             "NAIA_VOXCPM2_PROFILE_REGISTRY=$((Resolve-Path packages/shell/scripts/voxcpm2-profile-registry.json).Path)" >> $env:GITHUB_ENV
           }
 
+      - name: Provision verified Windows ffmpeg sidecar
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $ffmpegCmd = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
+          if (-not $ffmpegCmd) {
+            choco install ffmpeg --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw "choco install ffmpeg failed" }
+            $ffmpegCmd = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
+          }
+          if ($ffmpegCmd) {
+            $ffmpegPath = $ffmpegCmd.Source
+          } elseif (Test-Path -LiteralPath "C:\ProgramData\chocolatey\bin\ffmpeg.exe") {
+            $ffmpegPath = "C:\ProgramData\chocolatey\bin\ffmpeg.exe"
+          } else {
+            throw "Windows ffmpeg.exe not found on runner"
+          }
+          $item = Get-Item -LiteralPath $ffmpegPath
+          if ($item.Length -lt 1000000) {
+            throw "Windows ffmpeg.exe is unexpectedly small ($($item.Length) bytes): $ffmpegPath"
+          }
+          $header = [System.IO.File]::ReadAllBytes($ffmpegPath)[0..31]
+          if ($header[0] -ne 0x4D -or $header[1] -ne 0x5A) {
+            throw "Windows ffmpeg.exe does not start with MZ PE header: $ffmpegPath"
+          }
+          $prefix = [System.Text.Encoding]::UTF8.GetString($header)
+          if ($prefix.StartsWith("#!naia-ffmpeg-dev-placeholder")) {
+            throw "Windows ffmpeg.exe is a dev placeholder: $ffmpegPath"
+          }
+          "NAIA_FFMPEG_SIDECAR_SOURCE=$ffmpegPath" >> $env:GITHUB_ENV
+          "NAIA_REQUIRE_REAL_FFMPEG=1" >> $env:GITHUB_ENV
+
       - name: Provision verified Linux VoxCPM2 release input
         if: matrix.platform == 'linux'
         shell: bash
@@ -878,8 +910,19 @@ jobs:
           }
           $shellBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "naia-shell.exe")
           $nodeBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "node.exe")
-          if ($shellBinary.Count -ne 1 -or $nodeBinary.Count -ne 1) {
-            throw "MSI payload incomplete: naia-shell.exe=$($shellBinary.Count), node.exe=$($nodeBinary.Count)"
+          $ffmpegBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "ffmpeg.exe")
+          if ($shellBinary.Count -ne 1 -or $nodeBinary.Count -ne 1 -or $ffmpegBinary.Count -ne 1) {
+            throw "MSI payload incomplete: naia-shell.exe=$($shellBinary.Count), node.exe=$($nodeBinary.Count), ffmpeg.exe=$($ffmpegBinary.Count)"
+          }
+          if ($ffmpegBinary[0].Length -lt 1000000) {
+            throw "MSI ffmpeg.exe is a placeholder or truncated ($($ffmpegBinary[0].Length) bytes)"
+          }
+          $ffmpegHeader = [System.IO.File]::ReadAllBytes($ffmpegBinary[0].FullName)[0..31]
+          if ($ffmpegHeader[0] -ne 0x4D -or $ffmpegHeader[1] -ne 0x5A) {
+            throw "MSI ffmpeg.exe does not start with MZ PE header"
+          }
+          if ([System.Text.Encoding]::UTF8.GetString($ffmpegHeader).StartsWith("#!naia-ffmpeg-dev-placeholder")) {
+            throw "MSI ffmpeg.exe contains dev placeholder"
           }
 
       - name: Validate Linux package structures
@@ -962,6 +1005,21 @@ jobs:
           }
           if (-not (Test-Path -LiteralPath (Join-Path $resourceDir "node.exe") -PathType Leaf)) {
             throw "Installed bundled node.exe not found: $resourceDir"
+          }
+          $installedFfmpeg = Join-Path $resourceDir "ffmpeg.exe"
+          if (-not (Test-Path -LiteralPath $installedFfmpeg -PathType Leaf)) {
+            throw "Installed bundled ffmpeg.exe not found: $installedFfmpeg"
+          }
+          $installedFfmpegItem = Get-Item -LiteralPath $installedFfmpeg
+          if ($installedFfmpegItem.Length -lt 1000000) {
+            throw "Installed ffmpeg.exe is a placeholder or truncated ($($installedFfmpegItem.Length) bytes)"
+          }
+          $installedFfmpegHeader = [System.IO.File]::ReadAllBytes($installedFfmpeg)[0..31]
+          if ($installedFfmpegHeader[0] -ne 0x4D -or $installedFfmpegHeader[1] -ne 0x5A) {
+            throw "Installed ffmpeg.exe does not start with MZ PE header"
+          }
+          if ([System.Text.Encoding]::UTF8.GetString($installedFfmpegHeader).StartsWith("#!naia-ffmpeg-dev-placeholder")) {
+            throw "Installed ffmpeg.exe contains dev placeholder"
           }
           node packages/shell/scripts/verify-installed-smoke.mjs `
             --binary $binary --resource-dir $resourceDir --timeout-ms 120000

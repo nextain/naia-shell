@@ -875,10 +875,17 @@ export async function saveConfigSecure(config: AppConfig): Promise<void> {
 	for (const key of SECRET_KEYS) {
 		assertSelectedAdkPath(securePath, "Saving configuration");
 		const val = (config as any)[key];
-		if (typeof val === "string" && val.length > 0) {
+		if (typeof val === "string" && val.trim().length > 0) {
 			if (securePath) {
 				await saveSecretKeyAtPath(key, val, securePath);
 			}
+		} else if (
+			key === "broadcastStreamKey" &&
+			typeof val === "string" &&
+			val.trim().length === 0 &&
+			securePath
+		) {
+			await deleteSecretKeyAtPath(key, securePath);
 		}
 		assertSelectedAdkPath(securePath, "Saving configuration");
 		(publicConfig as any)[key] = undefined;
