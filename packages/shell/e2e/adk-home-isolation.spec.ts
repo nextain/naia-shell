@@ -5,6 +5,7 @@ import {
 	writeFileSync,
 	rmSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mock";
@@ -13,7 +14,7 @@ for (const state of ["selected", "empty", "unreadable"] as const) {
 	test(`isolated data home ${state} ignores stale WebView home`, async ({
 		page,
 	}, info) => {
-		const root = mkdtempSync(join(process.env.TMPDIR!, "r12-homes-"));
+		const root = mkdtempSync(join(tmpdir(), "r12-homes-"));
 		const homeA = join(root, "home-a");
 		const homeB = join(root, "home-b");
 		mkdirSync(homeA);

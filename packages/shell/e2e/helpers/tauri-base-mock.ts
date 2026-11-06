@@ -40,6 +40,19 @@ export const TAURI_BASE_MOCK_FALLBACK = `
 	};
 	function nativePointer() { return seed().pointer || "/mock/adk"; }
 	function nativeConfig() { return seed().config || ""; }
+	// Specs seed credentials inside naia-config. The app's boot migration copies
+	// them into the ADK secure store from the render cache, which bootstrap has
+	// already wiped, so emulate a store that already holds the seeded values.
+	var deletedSecrets = {};
+	function seededSecret(name) {
+		if (deletedSecrets[name]) return null;
+		try {
+			var value = JSON.parse(nativeConfig() || "{}")[name];
+			return typeof value === "string" && value.length > 0 ? value : null;
+		} catch (_) {
+			return null;
+		}
+	}
 	window.__TAURI_INTERNALS__.invoke = async function(cmd, args) {
 		var appControl = false;
 		if (cmd === "send_to_agent_command" && args && typeof args.message === "string") {
@@ -51,6 +64,8 @@ export const TAURI_BASE_MOCK_FALLBACK = `
 				// Let the spec-specific handler report malformed chat payloads.
 			}
 		}
+		if (cmd === "secure_store_delete" && args) deletedSecrets[args.name] = true;
+		if (cmd === "secure_store_set" && args) delete deletedSecrets[args.name];
 		var r;
 		try {
 			r = await existing(cmd, args);
@@ -67,7 +82,8 @@ export const TAURI_BASE_MOCK_FALLBACK = `
         if (cmd === "read_naia_path_cache" && r == null && !window.__E2E_EXPLICIT_NATIVE_POINTER__) return nativePointer();
         // Spec mocks that answer from localStorage at call time see the cache
         // bootstrap already wiped; answer with the seeded snapshot instead.
-        if (cmd === "read_naia_config" && r === "" && nativeConfig()) return nativeConfig();
+        if (cmd === "read_naia_config" && (r == null || r === "") && nativeConfig()) return nativeConfig();
+        if (cmd === "secure_store_get" && r == null && args && seededSecret(args.name)) return seededSecret(args.name);
         if (r !== undefined) return r;
 		if (appControl) return null;
 		// Plugin store
