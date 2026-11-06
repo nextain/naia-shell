@@ -468,6 +468,11 @@ export interface AppConfig {
 	sttInputDeviceId?: string;
 	/** Selected speaker/output device ID for TTS output (from enumerateDevices). */
 	ttsOutputDeviceId?: string;
+	/** 0.2.6 Direct broadcast streaming settings. */
+	broadcastPlatform?: "youtube" | "twitch" | "chzzk" | "soop";
+	broadcastServerUrl?: string;
+	broadcastResolution?: "1080p30" | "720p30";
+	broadcastStreamKey?: string;
 	voiceConversation?: boolean;
 	/** Unified voice selection for a retained live/local voice route. */
 	voice?: string;
