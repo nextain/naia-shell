@@ -875,3 +875,91 @@ for (const width of [360, 1100]) {
 		});
 	});
 }
+
+test("gateway catalog arriving after vLLM discovery keeps the sole model", async ({
+	page,
+}) => {
+	await page.addInitScript({
+		content: `${TAURI_MOCK}${SEED_ADK_PATH}(() => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					onboardingComplete: true,
+					provider: "vllm",
+					model: "",
+					locale: "en",
+					vllmHost: "http://127.0.0.1:8031",
+				}),
+			);
+})();
+(function () {
+ const nativeSnapshot = localStorage.getItem("naia-config") || "";
+ const invoke = window.__TAURI_INTERNALS__.invoke;
+ window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+  if (command === "read_naia_config" || command === "read_naia_ui_config") return nativeSnapshot;
+  return invoke(command, args);
+ };
+})();${TAURI_BASE_MOCK_FALLBACK}`,
+	});
+	await page.route("**/v1/models", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ data: [{ id: "Qwen3.6-27B-AWQ-INT4" }] }),
+		}),
+	);
+	// Hold the Naia catalog until the vLLM list is on screen, so it always
+	// lands second: the order that used to wipe the discovered vLLM models.
+	let releaseCatalog!: () => void;
+	const catalogHeld = new Promise<void>((resolve) => {
+		releaseCatalog = resolve;
+	});
+	let catalogServed = false;
+	await page.route("**/v1/pricing", async (route) => {
+		await catalogHeld;
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify([
+				{
+					model_key: "vertexai:gemini-2.5-flash",
+					input_price_per_million: 0.3,
+					output_price_per_million: 2.5,
+					cached_price_per_million: null,
+				},
+			]),
+		});
+		catalogServed = true;
+	});
+
+	await page.goto("/");
+	await expect(page.locator(".app-bar-settings")).toBeVisible();
+	if (!(await page.locator('[data-settings-tab="brain"]').isVisible())) {
+		await page.locator(".app-bar-settings").click();
+	}
+	await page.locator('[data-settings-tab="brain"]').click();
+	await expect(page.getByTestId("model-single")).toHaveText(
+		"Qwen3.6-27B-AWQ-INT4",
+	);
+
+	releaseCatalog();
+	await expect.poll(() => catalogServed).toBe(true);
+	await page.waitForTimeout(500);
+	await expect(page.getByTestId("model-single")).toHaveText(
+		"Qwen3.6-27B-AWQ-INT4",
+	);
+
+	await page.evaluate(() =>
+		window.dispatchEvent(new Event("naia-config-changed")),
+	);
+	await page.locator(".settings-save-btn").first().click();
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles
+						?.main?.model,
+			),
+		)
+		.toBe("Qwen3.6-27B-AWQ-INT4");
+});
