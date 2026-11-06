@@ -1024,6 +1024,18 @@ fn call_portal_request(
         }
         if Instant::now() >= deadline {
             conn.signal_unsubscribe(sub_id);
+            // Close the pending request so the portal dialog does not linger with no one waiting on it.
+            let _ = conn.call_sync(
+                Some("org.freedesktop.portal.Desktop"),
+                &expected_request_path,
+                "org.freedesktop.portal.Request",
+                "Close",
+                None,
+                None,
+                gtk::gio::DBusCallFlags::NONE,
+                5_000,
+                gtk::gio::Cancellable::NONE,
+            );
             return Err(format!("ScreenCast.{method} 포털 응답 대기 시간 초과"));
         }
         while main_ctx.pending() {
@@ -1141,7 +1153,7 @@ pub fn request_portal_screencast_window(
             "Start",
             &start_params,
             &start_token,
-            Duration::from_secs(120),
+            Duration::from_secs(300),
         )?;
         if start_code != 0 {
             return Err("화면 공유 포털 창 선택이 취소되었거나 거부되었습니다.".to_string());
