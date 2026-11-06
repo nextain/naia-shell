@@ -14290,10 +14290,10 @@ mod naia_adk_source_network_tests {
     use std::path::{Path, PathBuf};
 
     const PL04_ASSET_PATHS: [&str; 4] = [
-        "naia-settings/vrm-files/naia_char_skin_head.vrm",
-        "naia-settings/vrm-files/naia_char_with_hair.vrm",
-        "naia-settings/background/flower-shop-beachside-moewalls-com.mp4",
-        "naia-settings/background/morning-coffee.3840x2160.mp4",
+        "naia-settings/vrm-files/01-OL_Woman.vrm",
+        "naia-settings/vrm-files/02-Hood_Boy.vrm",
+        "naia-settings/background/naia-dawn-city-uhd.webp",
+        "naia-settings/background/naia-autumn-office-live.mp4",
     ];
 
     fn resolve_fetch_dir() -> PathBuf {
@@ -14309,7 +14309,7 @@ mod naia_adk_source_network_tests {
         for rel_path in PL04_ASSET_PATHS {
             let full_path = base.join(rel_path);
             match std::fs::metadata(&full_path) {
-                Ok(meta) if meta.is_file() && meta.len() > 1_000_000 => {
+                Ok(meta) if meta.is_file() && meta.len() > 100_000 => {
                     valid_assets.push((full_path, meta.len()));
                 }
                 Ok(meta) => {
