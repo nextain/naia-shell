@@ -4,6 +4,7 @@ import {
 	type AxApprovalCard,
 	type AxHostControlPort,
 } from "../lib/ax-approval-adapter";
+import { t } from "../lib/i18n";
 
 /** Unmounted draft. Composition must supply an authenticated host connection,
  * not a chat RPC. Evidence is supplied by that host at capture start. */
@@ -11,13 +12,11 @@ export function AxApprovalDraft({
 	card,
 	host,
 	evidence,
-	locale = "ko",
 	onSettled,
 }: {
 	card: AxApprovalCard;
 	host: AxHostControlPort;
 	evidence: () => unknown;
-	locale?: "ko" | "en";
 	onSettled: (approved: boolean) => void;
 }) {
 	const [text, setText] = useState("");
@@ -31,7 +30,6 @@ export function AxApprovalDraft({
 	const capturedRef = useRef(false);
 	const mountLeaseRef = useRef(0);
 	const mountedHostRef = useRef(host);
-	const ko = locale === "ko";
 	useEffect(() => {
 		const adapter = makeAxApprovalAdapter(host);
 		adapterRef.current = adapter;
@@ -65,7 +63,7 @@ export function AxApprovalDraft({
 		<section
 			role="dialog"
 			aria-modal="false"
-			aria-label={ko ? "작업 승인 검토" : "Review action approval"}
+			aria-label={t("axApproval.title")}
 			style={{
 				maxWidth: 560,
 				padding: 16,
@@ -73,18 +71,14 @@ export function AxApprovalDraft({
 				overflowWrap: "anywhere",
 			}}
 		>
-			<h2>{ko ? "작업 승인 검토" : "Review action approval"}</h2>
+			<h2>{t("axApproval.title")}</h2>
 			<pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
 				{card.preview}
 			</pre>
 			<p>
 				{card.mode === "code"
-					? ko
-						? "검토한 계획의 별도 승인 코드를 입력하세요."
-						: "Enter the separate approval code for the reviewed plan."
-					: ko
-						? "내용을 확인한 뒤 승인하려면 ‘보내’를 입력하세요. 거절하려면 취소하세요."
-						: "Review the action, then type 보내 to approve. Choose Cancel to decline."}
+					? t("axApproval.codePrompt")
+					: t("axApproval.typePrompt")}
 			</p>
 			<form
 				onSubmit={(event) => {
@@ -98,9 +92,9 @@ export function AxApprovalDraft({
 				}}
 			>
 				<label>
-					{ko ? "승인 응답" : "Approval response"}
+					{t("axApproval.responseLabel")}
 					<input
-						aria-label={ko ? "승인 응답" : "Approval response"}
+						aria-label={t("axApproval.responseLabel")}
 						value={text}
 						disabled={!ready || settled}
 						autoComplete="off"
@@ -115,7 +109,7 @@ export function AxApprovalDraft({
 					/>
 				</label>
 				<button type="submit" disabled={!ready || settled || !text}>
-					{ko ? "응답 제출" : "Submit response"}
+					{t("axApproval.submit")}
 				</button>
 				<button
 					type="button"
@@ -128,29 +122,17 @@ export function AxApprovalDraft({
 						onSettled(false);
 					}}
 				>
-					{ko ? "취소" : "Cancel"}
+					{t("axApproval.cancel")}
 				</button>
 			</form>
-			{inputError && (
-				<p role="alert">
-					{ko
-						? "입력을 확인하지 못했습니다. 승인 연결을 확인한 뒤 다시 입력하거나 취소하세요."
-						: "Input could not be verified. Check the approval connection, then enter again or cancel."}
-				</p>
-			)}
+			{inputError && <p role="alert">{t("axApproval.inputError")}</p>}
 			{(!ready || settled) && (
 				<p role="status">
 					{settled
-						? ko
-							? approved
-								? "승인 응답을 전달했습니다."
-								: "승인하지 않았습니다. 다시 검토하려면 새 요청을 시작하세요."
-							: approved
-								? "Approval response delivered."
-								: "Not approved. Start a new request to review again."
-						: ko
-							? "승인 연결을 확인하세요."
-							: "Check the approval connection."}
+						? approved
+							? t("axApproval.delivered")
+							: t("axApproval.notApproved")
+						: t("axApproval.checkConnection")}
 				</p>
 			)}
 		</section>
