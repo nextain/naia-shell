@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "عنوان ws:// لحاوية omni-24g على جهازك. يعيد استخدام مفتاح الدخول (بدون إدخال). يتطلب البعيد wss://.",
 	"settings.apiKey": "مفتاح واجهة برمجة التطبيقات",
 	"settings.apiKeyRequired": "الرجاء إدخال مفتاح API.",
+	"settings.modelRequired": "اختر نموذجًا أولًا.",
 	"settings.language": "اللغة",
 	"settings.theme": "الموضوع",
 	"settings.appPosition": "موقع اللوحة",

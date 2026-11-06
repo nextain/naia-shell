@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "ws:// address of the omni-24g container running on your PC. Reuses your login key (no key input). For remote access use plaintext ws:// only on a trusted network — protect it with Tailscale/VPN/SSH tunnel (exposing it publicly is your responsibility).",
 	"settings.apiKey": "API Key",
 	"settings.apiKeyRequired": "Please enter an API key.",
+	"settings.modelRequired": "Choose a model first.",
 	"settings.language": "Language",
 	"settings.theme": "Theme",
 	"settings.appPosition": "App Position",

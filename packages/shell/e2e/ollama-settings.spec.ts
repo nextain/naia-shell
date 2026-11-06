@@ -963,3 +963,62 @@ test("gateway catalog arriving after vLLM discovery keeps the sole model", async
 		)
 		.toBe("Qwen3.6-27B-AWQ-INT4");
 });
+
+test("switching to vLLM before discovery never persists an empty main model", async ({
+	page,
+}) => {
+	await page.addInitScript({
+		content: `${TAURI_MOCK}${SEED_ADK_PATH}(() => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					onboardingComplete: true,
+					provider: "claude-code-cli",
+					model: "claude-sonnet-4-6",
+					locale: "en",
+					vllmHost: "http://127.0.0.1:8031",
+				}),
+			);
+})();
+(function () {
+ const nativeSnapshot = localStorage.getItem("naia-config") || "";
+ const invoke = window.__TAURI_INTERNALS__.invoke;
+ window.__E2E_NATIVE_WRITES__ = [];
+ window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+  if (command === "read_naia_config" || command === "read_naia_ui_config") return nativeSnapshot;
+  if (command === "write_naia_config") window.__E2E_NATIVE_WRITES__.push(args.json);
+  return invoke(command, args);
+ };
+})();${TAURI_BASE_MOCK_FALLBACK}`,
+	});
+	// The vLLM host never answers: Apply lands before any model is discovered.
+	await page.route("**/v1/models", () => {});
+
+	await page.goto("/");
+	await expect(page.locator(".app-bar-settings")).toBeVisible();
+	if (!(await page.locator('[data-settings-tab="brain"]').isVisible())) {
+		await page.locator(".app-bar-settings").click();
+	}
+	await page.locator('[data-settings-tab="brain"]').click();
+	await page.locator("#provider-select").selectOption("vllm");
+	await page.locator(".settings-save-btn").first().click();
+
+	await expect(page.locator(".settings-error").first()).toHaveText(
+		"Choose a model first.",
+	);
+	const emptyMainWrites = await page.evaluate(() =>
+		(
+			(window as unknown as { __E2E_NATIVE_WRITES__: string[] })
+				.__E2E_NATIVE_WRITES__ ?? []
+		).filter((json) => {
+			const main = JSON.parse(json).llmRoles?.main;
+			return main !== undefined && !main.model;
+		}),
+	);
+	expect(emptyMainWrites).toEqual([]);
+	const cachedMain = await page.evaluate(
+		() =>
+			JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles?.main,
+	);
+	expect(cachedMain?.model).not.toBe("");
+});

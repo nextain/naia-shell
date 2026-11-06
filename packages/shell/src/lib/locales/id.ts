@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "Alamat ws:// kontainer omni-24g di PC Anda. Memakai kunci login (tanpa input). Jarak jauh harus wss://.",
 	"settings.apiKey": "Kunci API",
 	"settings.apiKeyRequired": "Silakan masukkan kunci API.",
+	"settings.modelRequired": "Pilih model terlebih dahulu.",
 	"settings.language": "Bahasa",
 	"settings.theme": "Tema",
 	"settings.appPosition": "Posisi App",

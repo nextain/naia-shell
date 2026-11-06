@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "Adresse ws:// du conteneur omni-24g sur votre PC. Réutilise votre clé de connexion (aucune saisie). Le distant doit utiliser wss://.",
 	"settings.apiKey": "Clé API",
 	"settings.apiKeyRequired": "Veuillez saisir une clé API.",
+	"settings.modelRequired": "Choisissez d'abord un modèle.",
 	"settings.language": "Langue",
 	"settings.theme": "Thème",
 	"settings.appPosition": "Position du panneau",

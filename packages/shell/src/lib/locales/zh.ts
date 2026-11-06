@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "在您电脑上运行的 omni-24g 容器的 ws:// 地址。复用登录密钥(无需输入)。远程地址须用 wss://。",
 	"settings.apiKey": "API密钥",
 	"settings.apiKeyRequired": "请输入 API 密钥。",
+	"settings.modelRequired": "请先选择模型。",
 	"settings.language": "语言",
 	"settings.theme": "主题",
 	"settings.appPosition": "面板位置",

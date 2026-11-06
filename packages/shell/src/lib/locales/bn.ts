@@ -214,6 +214,7 @@ export default {
 	"settings.naiaLocalUrlHint": "আপনার PC-তে চলমান omni-24g কন্টেইনারের ws:// ঠিকানা। লগইন কী পুনঃব্যবহার (ইনপুট নেই)। দূরবর্তীর জন্য wss:// লাগবে।",
 	"settings.apiKey": "API কী",
 	"settings.apiKeyRequired": "অনুগ্রহ করে একটি API কী লিখুন।",
+	"settings.modelRequired": "আগে একটি মডেল বেছে নিন।",
 	"settings.language": "ভাষা",
 	"settings.theme": "থিম",
 	"settings.appPosition": "প্যানেল অবস্থান",

@@ -3321,6 +3321,9 @@ export function SettingsTab() {
 			id,
 			selectedModel,
 		);
+		// No model yet (vLLM before discovery): keep the last valid selection on
+		// disk; Apply persists the switch once a model is chosen.
+		if (!selectedModel) return;
 		const provSel = writeConfiguredLlmRole(
 			legacySelection as unknown as AppConfig,
 			"main",
@@ -3726,6 +3729,12 @@ export function SettingsTab() {
 			!naiaKey
 		) {
 			setError(t("settings.apiKeyRequired"));
+			return;
+		}
+		// An empty main model is an incomplete llmRoles.main the agent rejects
+		// (vLLM has no default; discovery may not have answered yet).
+		if (!model.trim()) {
+			setError(t("settings.modelRequired"));
 			return;
 		}
 		const defaultVrm = DEFAULT_AVATAR_MODEL;
