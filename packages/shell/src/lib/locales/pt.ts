@@ -1464,6 +1464,7 @@ export default {
 	"broadcast.keyRequiredHint": "Insira primeiro uma chave de transmissão nas Configurações",
 	"broadcast.disconnectedLabel": "Desconectado",
 	"broadcast.bgmLocalOnlyNotice": "Apenas músicas locais durante a transmissão",
+	"broadcast.bgmYoutubeCopyrightNotice": "Músicas com direitos autorais podem interromper a transmissão",
 	"settings.broadcastSection": "Transmissão",
 	"settings.broadcastPlatform": "Plataforma",
 	"settings.broadcastServerUrl": "URL do servidor",

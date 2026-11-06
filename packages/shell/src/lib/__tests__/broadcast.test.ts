@@ -171,17 +171,21 @@ describe("UC-BROADCAST-STREAM-026: broadcast session log calculation and YouTube
 		});
 	});
 
-	it("blocks YouTube BGM during active broadcast and surfaces '방송 중엔 내 곡만'", async () => {
+	it("allows YouTube BGM during active broadcast and surfaces '저작권 곡이면 방송이 멈출 수 있어요'", async () => {
 		await setLocale("ko");
 		setBroadcastBridgeSnapshot({ state: "live", elapsedSeconds: 65 });
 		expect(isBroadcastActive(getBroadcastBridgeSnapshot().state)).toBe(true);
 		expect(formatBroadcastElapsed(65)).toBe("01:05");
 
 		const guardWhileLive = checkYoutubeBgmAllowedDuringBroadcast(true);
-		expect(guardWhileLive.allowed).toBe(false);
-		expect(guardWhileLive.forcedMode).toBe("local");
-		expect(guardWhileLive.noticeKey).toBe("broadcast.bgmLocalOnlyNotice");
-		expect(t(guardWhileLive.noticeKey!)).toBe("방송 중엔 내 곡만");
+		expect(guardWhileLive.allowed).toBe(true);
+		expect(guardWhileLive.forcedMode).toBe("youtube");
+		expect(guardWhileLive.noticeKey).toBe(
+			"broadcast.bgmYoutubeCopyrightNotice",
+		);
+		expect(t(guardWhileLive.noticeKey!)).toBe(
+			"저작권 곡이면 방송이 멈출 수 있어요",
+		);
 
 		const guardWhenIdle = checkYoutubeBgmAllowedDuringBroadcast(false);
 		expect(guardWhenIdle.allowed).toBe(true);

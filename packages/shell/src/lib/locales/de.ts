@@ -1464,6 +1464,7 @@ export default {
 	"broadcast.keyRequiredHint": "Bitte zuerst in den Einstellungen einen Stream-Schlüssel eingeben",
 	"broadcast.disconnectedLabel": "Getrennt",
 	"broadcast.bgmLocalOnlyNotice": "Während der Übertragung nur lokale Musik",
+	"broadcast.bgmYoutubeCopyrightNotice": "Urheberrechtlich geschützte Titel können den Stream stoppen",
 	"settings.broadcastSection": "Übertragung",
 	"settings.broadcastPlatform": "Plattform",
 	"settings.broadcastServerUrl": "Server-URL",

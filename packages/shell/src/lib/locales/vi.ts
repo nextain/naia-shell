@@ -1464,6 +1464,7 @@ export default {
 	"broadcast.keyRequiredHint": "Vui lòng nhập khóa phát sóng trong Cài đặt trước",
 	"broadcast.disconnectedLabel": "Mất kết nối",
 	"broadcast.bgmLocalOnlyNotice": "Chỉ phát nhạc nội bộ khi đang phát sóng",
+	"broadcast.bgmYoutubeCopyrightNotice": "Nhạc có bản quyền có thể làm dừng buổi phát sóng",
 	"settings.broadcastSection": "Phát sóng",
 	"settings.broadcastPlatform": "Nền tảng",
 	"settings.broadcastServerUrl": "URL máy chủ",

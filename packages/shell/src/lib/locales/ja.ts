@@ -1464,6 +1464,7 @@ export default {
 	"broadcast.keyRequiredHint": "設定でストリームキーを先に入力してください",
 	"broadcast.disconnectedLabel": "切断",
 	"broadcast.bgmLocalOnlyNotice": "配信中はローカル曲のみ再生できます",
+	"broadcast.bgmYoutubeCopyrightNotice": "著作権のある曲は配信が停止することがあります",
 	"settings.broadcastSection": "配信",
 	"settings.broadcastPlatform": "プラットフォーム",
 	"settings.broadcastServerUrl": "サーバーURL",

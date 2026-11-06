@@ -477,27 +477,8 @@ export function BgmPlayer({ naia }: Props) {
 			setBroadcastNotice(null);
 			return;
 		}
-		if (appTab === "youtube") {
-			setAppTab("local");
-		}
-		if (source === "youtube") {
-			cancelRadioDjRecovery();
-			youtubeHandshakeRef.current.stop();
-			resetObservedIframeState(null);
-			if (useAvatarStore.getState().backgroundMediaType === "iframe") {
-				setBackgroundVideoUrl(prevBgVideoRef.current);
-				setBackgroundMediaType(prevBgMediaRef.current);
-				prevBgVideoRef.current = "";
-				prevBgMediaRef.current = "";
-			}
-			setVideoLive(false);
-			setSource("local");
-			setBroadcastNotice(t("broadcast.bgmLocalOnlyNotice"));
-			if (playing && localTracksRef.current.length > 0) {
-				playLocalAt(localIndex);
-			} else {
-				setPlaying(false);
-			}
+		if (source === "youtube" && currentYt) {
+			setBroadcastNotice(t("broadcast.bgmYoutubeCopyrightNotice"));
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [broadcasting]);
@@ -1974,10 +1955,9 @@ export function BgmPlayer({ naia }: Props) {
 
 	function handleYtSelect(video: YtVideo, requestedPlaybackId?: string) {
 		if (broadcastingRef.current) {
-			setSource("local");
-			setAppTab("local");
-			setBroadcastNotice(t("broadcast.bgmLocalOnlyNotice"));
-			return;
+			setBroadcastNotice(t("broadcast.bgmYoutubeCopyrightNotice"));
+		} else {
+			setBroadcastNotice(null);
 		}
 		if (!requestedPlaybackId) {
 			cancelRadioDjRecovery();
@@ -2420,14 +2400,7 @@ export function BgmPlayer({ naia }: Props) {
 								<button
 									type="button"
 									className={`bgm-app-tab${appTab === "youtube" ? " bgm-app-tab--active" : ""}`}
-									onClick={() => {
-										if (broadcasting) {
-											setAppTab("local");
-											setBroadcastNotice(t("broadcast.bgmLocalOnlyNotice"));
-											return;
-										}
-										setAppTab("youtube");
-									}}
+									onClick={() => setAppTab("youtube")}
 								>
 									▶ YouTube
 								</button>
@@ -2460,7 +2433,7 @@ export function BgmPlayer({ naia }: Props) {
 						{broadcastNotice && (
 							<div
 								className="bgm-yt-status"
-								data-testid="bgm-broadcast-local-only-notice"
+								data-testid="bgm-broadcast-youtube-notice"
 								role="status"
 							>
 								{broadcastNotice}

@@ -1464,6 +1464,7 @@ export default {
 	"broadcast.keyRequiredHint": "Masukkan kunci siaran di Pengaturan terlebih dahulu",
 	"broadcast.disconnectedLabel": "Terputus",
 	"broadcast.bgmLocalOnlyNotice": "Hanya musik lokal saat siaran berlangsung",
+	"broadcast.bgmYoutubeCopyrightNotice": "Lagu berhak cipta dapat menghentikan siaran",
 	"settings.broadcastSection": "Siaran",
 	"settings.broadcastPlatform": "Platform",
 	"settings.broadcastServerUrl": "URL Server",
