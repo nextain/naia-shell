@@ -54,6 +54,7 @@ import {
 	mergeBootConfig,
 	migrateLabKeyToNaiaKey,
 	migrateLegacyDna3OllamaModel,
+	migrateClaudeCodeForAppStore,
 	migrateLiveProviderToUnifiedModel,
 	migrateSpeechStyleValues,
 	reconcileExplicitLocalProfile,
@@ -737,6 +738,9 @@ export function App() {
 		migrateLegacyDna3OllamaModel();
 		migrateSpeechStyleValues();
 		migrateLiveProviderToUnifiedModel();
+		if (migrateClaudeCodeForAppStore()) {
+			showGlobalToast(t("settings.claudeCodeUnavailableAppStore"));
+		}
 		loadInstalledApps()
 			.catch(() => {})
 			.finally(() => setInstalledAppsReady(true));
@@ -810,7 +814,7 @@ export function App() {
 		return () => {
 			window.removeEventListener("naia-adk-path-changed", handleAdkPathChanged);
 		};
-	}, [showAdkSetup]);
+	}, [showAdkSetup, showGlobalToast]);
 
 	useEffect(() => {
 		// Debounced file sync: write naia-settings/config.json on every saveConfig call.

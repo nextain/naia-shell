@@ -1239,6 +1239,7 @@ export default {
 	"bgm.defaultLocalTrack": "BGM cục bộ",
 	"bgm.appToggleTitle": "Mở/Đóng bảng BGM",
 	"bgm.unavailableAppStore": "BGM không khả dụng trên phiên bản App Store",
+	"settings.claudeCodeUnavailableAppStore": "Claude Code không dùng được trong bản App Store nên đã chuyển sang nhà cung cấp mặc định (Naia)",
 	"bgm.prev": "Trước",
 	"bgm.next": "Tiếp theo",
 	"bgm.pause": "Tạm dừng",

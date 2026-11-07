@@ -1271,6 +1271,54 @@ export function migrateLegacyDna3OllamaModel(): void {
 	}
 }
 
+const MAS_CLAUDE_CODE_NOTICE_KEY = "naia-mas-claude-code-notice-shown";
+
+/**
+ * 앱스토어판(샌드박스)은 ~/.claude 를 읽지 못하고 Claude Code 바이너리도 싣지 않는다.
+ * 예전에 claude-code-cli 를 고른 설정은 기본 공급자로 넘기고, 안내를 한 번만 띄우도록
+ * true 를 돌려준다.
+ */
+export function migrateClaudeCodeForAppStore(): boolean {
+	if (import.meta.env.VITE_NAIA_DISTRIBUTION !== "mas") return false;
+	const config = loadConfig();
+	if (!config) return false;
+	const fallback = NAIA_SLOT_DEFAULTS.main;
+	let changed = false;
+	const next: AppConfig = { ...config };
+	if (next.provider === "claude-code-cli") {
+		next.provider = fallback.provider;
+		next.model = fallback.model;
+		changed = true;
+	}
+	if (next.subLlmProvider === "claude-code-cli") {
+		next.subLlmProvider = undefined;
+		next.subLlmModel = undefined;
+		changed = true;
+	}
+	if (next.memoryLlmProvider === "claude-code-cli") {
+		next.memoryLlmProvider = undefined;
+		changed = true;
+	}
+	if (next.llmRoles) {
+		const roles = { ...next.llmRoles };
+		for (const id of Object.keys(roles) as LlmRoleId[]) {
+			if (roles[id]?.provider === "claude-code-cli") {
+				roles[id] =
+					id === "main"
+						? { ...roles[id], provider: fallback.provider, model: fallback.model }
+						: { inherit: "main" };
+				changed = true;
+			}
+		}
+		next.llmRoles = roles;
+	}
+	if (!changed) return false;
+	saveConfig(next);
+	if (localStorage.getItem(MAS_CLAUDE_CODE_NOTICE_KEY)) return false;
+	localStorage.setItem(MAS_CLAUDE_CODE_NOTICE_KEY, "1");
+	return true;
+}
+
 const INSTANCE_ID_KEY = "naia-os-instance-id";
 
 /** Get or create a persistent naia-os install UUID (CONTRACT §1.2). */

@@ -1239,6 +1239,7 @@ export default {
 	"bgm.defaultLocalTrack": "BGM Lokal",
 	"bgm.appToggleTitle": "Buka/Tutup app BGM",
 	"bgm.unavailableAppStore": "BGM tidak tersedia di versi App Store",
+	"settings.claudeCodeUnavailableAppStore": "Claude Code tidak tersedia di versi App Store, jadi beralih ke penyedia bawaan (Naia)",
 	"bgm.prev": "Sebelumnya",
 	"bgm.next": "Berikutnya",
 	"bgm.pause": "Jeda",

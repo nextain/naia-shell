@@ -1239,6 +1239,7 @@ export default {
 	"bgm.defaultLocalTrack": "BGM local",
 	"bgm.appToggleTitle": "Abrir/Fechar painel BGM",
 	"bgm.unavailableAppStore": "A BGM não está disponível na versão da App Store",
+	"settings.claudeCodeUnavailableAppStore": "O Claude Code não está disponível na versão da App Store; mudamos para o provedor padrão (Naia)",
 	"bgm.prev": "Anterior",
 	"bgm.next": "Próximo",
 	"bgm.pause": "Pausar",

@@ -1239,6 +1239,7 @@ export default {
 	"bgm.defaultLocalTrack": "موسيقى محلية",
 	"bgm.appToggleTitle": "فتح/إغلاق لوحة BGM",
 	"bgm.unavailableAppStore": "الموسيقى الخلفية غير متاحة في إصدار App Store",
+	"settings.claudeCodeUnavailableAppStore": "Claude Code غير متاح في إصدار App Store، لذا تم التبديل إلى المزوّد الافتراضي (Naia)",
 	"bgm.prev": "السابق",
 	"bgm.next": "التالي",
 	"bgm.pause": "إيقاف مؤقت",

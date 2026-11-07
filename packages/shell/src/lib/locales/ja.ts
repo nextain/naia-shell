@@ -1239,6 +1239,7 @@ export default {
 	"bgm.defaultLocalTrack": "ローカル BGM",
 	"bgm.appToggleTitle": "BGMパネルを開く/閉じる",
 	"bgm.unavailableAppStore": "BGMはApp Store版では使えません",
+	"settings.claudeCodeUnavailableAppStore": "App Store 版では Claude Code を使えないため、既定のプロバイダー (Naia) に切り替えました",
 	"bgm.prev": "前へ",
 	"bgm.next": "次へ",
 	"bgm.pause": "一時停止",

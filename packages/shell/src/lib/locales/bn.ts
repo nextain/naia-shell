@@ -1239,6 +1239,7 @@ export default {
 	"bgm.defaultLocalTrack": "স্থানীয় BGM",
 	"bgm.appToggleTitle": "BGM প্যানেল খুলুন/বন্ধ করুন",
 	"bgm.unavailableAppStore": "App Store সংস্করণে BGM পাওয়া যায় না",
+	"settings.claudeCodeUnavailableAppStore": "App Store সংস্করণে Claude Code ব্যবহার করা যায় না, তাই ডিফল্ট প্রদানকারী (Naia)-তে বদলানো হয়েছে",
 	"bgm.prev": "পূর্ববর্তী",
 	"bgm.next": "পরবর্তী",
 	"bgm.pause": "বিরতি",
