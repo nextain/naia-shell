@@ -1,6 +1,6 @@
 """Submit an uploaded Mac App Store build for review through the App Store Connect API.
 
-MODE=check only reads state. MODE=submit attaches the build, appends the review
+A [mas-check] commit subject only reads state. [mas-submit] attaches the build, appends the review
 note and submits. Never prints the key.
 """
 import json
@@ -16,7 +16,13 @@ API = "https://api.appstoreconnect.apple.com"
 BUNDLE_ID = os.environ["BUNDLE_ID"]
 VERSION = os.environ["APP_VERSION"]
 BUILD = os.environ["BUILD_NUMBER"]
-MODE = os.environ.get("MODE", "check")
+# Only the commit subject decides the mode, so a tag quoted in the body never submits.
+SUBJECT = os.environ.get("COMMIT_MESSAGE", "").splitlines()[0] if os.environ.get("COMMIT_MESSAGE") else ""
+MODE = "submit" if "[mas-submit]" in SUBJECT else "check" if "[mas-check]" in SUBJECT else ""
+if not MODE:
+    print("no [mas-check] or [mas-submit] in the commit subject; nothing to do")
+    sys.exit(0)
+print(f"mode {MODE}")
 NOTE = os.environ.get("REVIEW_NOTE", "").strip()
 
 

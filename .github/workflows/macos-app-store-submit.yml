@@ -20,7 +20,7 @@ jobs:
           BUNDLE_ID: com.naia.shell
           APP_VERSION: '0.2.5'
           BUILD_NUMBER: '10'
-          MODE: ${{ contains(github.event.head_commit.message, '[mas-submit]') && 'submit' || 'check' }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           REVIEW_NOTE: >-
             Changes for guidelines 2.4.5 and 2.5.1: the com.apple.security.network.server entitlement is removed
             and the app opens no listening sockets (OAuth sign-in uses the app's URL scheme instead of a local callback server).
