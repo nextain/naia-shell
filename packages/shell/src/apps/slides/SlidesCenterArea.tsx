@@ -69,7 +69,8 @@ function videoContentForScript(
 	const errors = new Set(readFailures);
 	const cues = directives.map((directive, index) => {
 		const available = directive.validName && assetNames.has(directive.fileName);
-		if (!available) errors.add(directive.fileName || "(파일 이름 없음)");
+		if (!available)
+			errors.add(directive.fileName || t("slides.videoNoFileName"));
 		return {
 			id: `${directive.page}-${directive.order}-${index}`,
 			page: directive.page,
@@ -1064,7 +1065,10 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 								aria-hidden={activeVideo?.fileName !== asset.name}
 								aria-label={
 									activeVideo?.fileName === asset.name
-										? `${activeVideo.page}-${activeVideo.order} / 영상 ${asset.name}`
+										? t("slides.videoLabel", {
+												position: `${activeVideo.page}-${activeVideo.order}`,
+												name: asset.name,
+											})
 										: undefined
 								}
 								className={
@@ -1082,7 +1086,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 							data-testid="slides-video-indicator"
 							aria-live="polite"
 						>
-							{activeVideo.page}-{activeVideo.order} / 영상
+							{t("slides.videoIndicator", {
+								position: `${activeVideo.page}-${activeVideo.order}`,
+							})}
 						</output>
 					) : null}
 				</div>

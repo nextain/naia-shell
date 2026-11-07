@@ -84,6 +84,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private generation = 0;
 	private speakingVisual = false;
 	private cancelOneShot: (() => void) | null = null;
+	private idleOverride: string | null = null;
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
@@ -241,6 +242,23 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			},
 		);
 		return started;
+	}
+
+	/** Use `key` (a manifest animation) as the idle loop; null = bundle default. */
+	setIdleOverride(key: string | null): void {
+		const next = key && this.config.manifest.animations[key]?.clip ? key : null;
+		if (next === this.idleOverride) return;
+		this.idleOverride = next;
+		// Speech or a gesture returns to idle on its own and picks the new loop then.
+		if (
+			!this.video ||
+			this.disposed ||
+			this.speakingVisual ||
+			this.cancelOneShot
+		)
+			return;
+		++this.generation;
+		void this.playIdle();
 	}
 
 	/** Switch idle/talking visual only. Shell owns the actual audio playback. */
@@ -493,8 +511,11 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private async playIdle(): Promise<void> {
 		if (!this.video || this.disposed) return;
 		const generation = this.generation;
+		const override = this.idleOverride
+			? this.config.manifest.animations[this.idleOverride]?.clip
+			: undefined;
 		await this.playClip(
-			defaultClipOf(this.config.manifest).video,
+			override ?? defaultClipOf(this.config.manifest).video,
 			true,
 			true,
 			undefined,

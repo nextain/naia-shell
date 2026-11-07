@@ -954,11 +954,13 @@ describe("sentence TTS pipeline — canonical NVA plan ports (naia-shell#760, So
 		expect(synthesizeMock).toHaveBeenCalledTimes(1);
 		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
 
-		deferredSynthesis[0]({ audioBase64: "first-audio" });
+		const resolveFirst = deferredSynthesis[0];
+		resolveFirst({ audioBase64: "first-audio" });
 		await first;
 		await flush();
 		expect(synthesizeMock).toHaveBeenCalledTimes(2);
-		deferredSynthesis[1]({ audioBase64: "second-audio" });
+		const resolveSecond = deferredSynthesis[1];
+		resolveSecond({ audioBase64: "second-audio" });
 		await second;
 		await flush();
 		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
