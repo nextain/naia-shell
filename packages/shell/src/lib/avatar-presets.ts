@@ -75,8 +75,8 @@ const VOICE_DEFAULTS: Record<AvatarGender, string> = {
 const TTS_VOICE_DEFAULTS: Record<string, Record<AvatarGender, string>> = {
 	edge: { female: "ko-KR-SunHiNeural", male: "ko-KR-InJoonNeural" },
 	nextain: {
-		female: "ko-KR-SunHi:DragonHDLatestNeural",
-		male: "ko-KR-Hyunsu:DragonHDLatestNeural",
+		female: "ko-KR-Neural2-A",
+		male: "ko-KR-Neural2-C",
 	},
 };
 

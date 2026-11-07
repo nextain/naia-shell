@@ -74,20 +74,19 @@ registerTtsProviderMeta({
 registerTtsProviderMeta({
 	id: "nextain",
 	name: "Naia Cloud TTS",
-	description:
-		"Azure Neural HD (SunHi / Hyunsu), billed in Naia credits via the gateway.",
+	description: "Google Neural2 voices, billed in Naia credits via the gateway.",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
 	pricing: "Naia credits",
 	voices: [
 		{
-			id: "ko-KR-SunHi:DragonHDLatestNeural",
-			label: "SunHi HD (여성)",
+			id: "ko-KR-Neural2-A",
+			label: "Neural2-A (여성)",
 			gender: "female",
 		},
 		{
-			id: "ko-KR-Hyunsu:DragonHDLatestNeural",
-			label: "Hyunsu HD (남성)",
+			id: "ko-KR-Neural2-C",
+			label: "Neural2-C (남성)",
 			gender: "male",
 		},
 	],
