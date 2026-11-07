@@ -37,7 +37,11 @@ export function listLlmProviders(): LlmProviderMeta[] {
 		const i = PROVIDER_DISPLAY_ORDER.indexOf(id);
 		return i < 0 ? PROVIDER_DISPLAY_ORDER.length : i;
 	};
-	return Array.from(providers.values()).sort((a, b) => rank(a.id) - rank(b.id));
+	// App Store build ships without the Claude Code binary (Apple 2.5.1 private ICU imports).
+	const mas = import.meta.env.VITE_NAIA_DISTRIBUTION === "mas";
+	return Array.from(providers.values())
+		.filter((p) => !(mas && p.id === "claude-code-cli"))
+		.sort((a, b) => rank(a.id) - rank(b.id));
 }
 
 /** Get model metadata. */
