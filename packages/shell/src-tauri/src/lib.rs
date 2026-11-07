@@ -16862,9 +16862,9 @@ mod tests {
     #[test]
     fn default_adk_root_prefers_isolated_naia_home_over_os_profile() {
         let isolated = std::path::Path::new("/tmp/naia-test-home");
-        let os_home = std::path::Path::new("/home/realuser");
+        let os_home = std::path::Path::new("/home/user");
         assert_eq!(
-            resolve_default_adk_root(Some(isolated), Some("/home/realuser"), Some(os_home)),
+            resolve_default_adk_root(Some(isolated), Some("/home/user"), Some(os_home)),
             Some(std::path::PathBuf::from("/tmp/naia-test-home/naia-adk"))
         );
         assert_eq!(
@@ -16873,7 +16873,7 @@ mod tests {
         );
         assert_eq!(
             resolve_default_adk_root(None, Some(""), Some(os_home)),
-            Some(std::path::PathBuf::from("/home/realuser/naia-adk"))
+            Some(std::path::PathBuf::from("/home/user/naia-adk"))
         );
     }
 
@@ -20706,7 +20706,7 @@ mod voxcpm2_installer_precheck_tests {
         for raw_adk in [
             r"C:\naia-test\rc026\naia-adk",
             r"D:\workspace\naia-adk\",
-            r"C:\Users\tester/naia-adk/",
+            r"C:\Users\Public/naia-adk/",
             r"\\?\C:\naia-test\rc026\naia-adk\",
         ] {
             let dirs = collect_adk_asset_scope_directories(raw_adk);
