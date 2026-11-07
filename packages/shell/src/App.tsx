@@ -20,6 +20,7 @@ import {
 	getAdkPath,
 	isAdkInitialized,
 	listNaiaAssets,
+	normalizeBackgroundVideoFilename,
 	readNaiaConfig,
 	readNaiaUiConfig,
 	setAdkPath,
@@ -519,8 +520,13 @@ export function App() {
 			if (cancelled || paths.length === 0) return;
 			const config = loadConfig();
 			const saved =
-				(config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
-			const match = paths.find((p) => p.endsWith(saved));
+				normalizeBackgroundVideoFilename(
+					config?.backgroundVideo as string | undefined,
+				) ?? DEFAULT_BG_VIDEO;
+			const match =
+				paths.find((p) => p.endsWith(saved)) ??
+				paths.find((p) => p.endsWith(DEFAULT_BG_VIDEO)) ??
+				paths[0];
 			if (!match || cancelled) return;
 			const blobUrl = await toLocalBlobUrl(match);
 			if (cancelled) return;
@@ -858,12 +864,16 @@ export function App() {
 					void writeNaiaConfig({
 						...(cfg as unknown as Record<string, unknown>),
 						...buildNaiaConfigEnv(cfg),
-					}).catch((error: unknown) => {
-						setConfigSaveError(t("settings.saveFailed"));
-						Logger.error("App", "workspace config save failed", {
-							error: error instanceof Error ? error.message : String(error),
+					})
+						.then(() => {
+							setConfigSaveError(null);
+						})
+						.catch((error: unknown) => {
+							setConfigSaveError(t("settings.saveFailed"));
+							Logger.error("App", "workspace config save failed", {
+								error: error instanceof Error ? error.message : String(error),
+							});
 						});
-					});
 			}, 800);
 		};
 

@@ -285,4 +285,29 @@ describe("ADK-backed credential persistence", () => {
 			model: "cached-before-save",
 		});
 	});
+
+	it("deletes broadcastStreamKey from secure-keys.dat when saved with an empty string (#026-r2 item 3)", async () => {
+		await saveConfigSecure({
+			...baseConfig(),
+			broadcastPlatform: "youtube",
+			broadcastServerUrl: "rtmps://a.rtmp.youtube.com/live2",
+			broadcastStreamKey: "live-secret-key-123",
+		});
+		const store = mockState.stateFor(adkStorePath("/adk-a"));
+		expect(store.get("broadcastStreamKey")).toBe("live-secret-key-123");
+		await expect(loadConfigWithSecrets()).resolves.toMatchObject({
+			broadcastStreamKey: "live-secret-key-123",
+		});
+
+		await saveConfigSecure({
+			...baseConfig(),
+			broadcastPlatform: "youtube",
+			broadcastServerUrl: "rtmps://a.rtmp.youtube.com/live2",
+			broadcastStreamKey: "",
+		});
+		expect(store.has("broadcastStreamKey")).toBe(false);
+		await expect(loadConfigWithSecrets()).resolves.toMatchObject({
+			broadcastStreamKey: undefined,
+		});
+	});
 });

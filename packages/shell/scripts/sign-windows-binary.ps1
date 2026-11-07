@@ -41,8 +41,8 @@ if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
 $fullPath = (Resolve-Path -LiteralPath $FilePath).Path
 $fileName = [System.IO.Path]::GetFileName($fullPath)
 
-# Preserve 3rd-party binaries: never touch node.exe or MSVC runtimes
-if ($fileName -match '^(node\.exe|vcruntime.*\.dll|msvcp.*\.dll)$') {
+# Preserve 3rd-party binaries: never touch node.exe, ffmpeg.exe, or MSVC runtimes
+if ($fileName -match '^(node\.exe|ffmpeg.*\.exe|vcruntime.*\.dll|msvcp.*\.dll)$') {
   Write-Host "Skipping known third-party binary: $fileName"
   exit 0
 }

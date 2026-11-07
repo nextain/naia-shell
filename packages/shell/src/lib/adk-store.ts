@@ -10,6 +10,7 @@ import {
 } from "./config";
 import { createLocalMediaUrl } from "./local-media-url";
 import { Logger } from "./logger";
+import naiaAssetContract from "./naia-asset-contract.json";
 import { SECRET_KEYS, deleteSecretKey, getSecretKey } from "./secure-store";
 import {
 	type SlotsManifest,
@@ -153,6 +154,106 @@ export type NaiaAssetSubdir =
 	| "bgm-musics"
 	| "nva-files";
 
+export const NAIA_ASSET_SUBDIRS: readonly NaiaAssetSubdir[] =
+	naiaAssetContract.assetSubdirs as NaiaAssetSubdir[];
+
+/** Default pure background asset without an embedded avatar (#026-r2 item 6). */
+export const DEFAULT_PURE_BACKGROUND_ASSET: string =
+	naiaAssetContract.defaultPureBackgroundAsset;
+
+/**
+ * Bundled video assets that have an avatar baked into the frame rather than a
+ * pure background scene. Excluded from background listings and previews (#026-r2).
+ */
+export const EXCLUDED_AVATAR_BACKGROUND_ASSETS: readonly string[] =
+	naiaAssetContract.excludedAvatarBackgroundAssets;
+
+export function isExcludedBackgroundAsset(filenameOrPath: string): boolean {
+	const basename =
+		filenameOrPath.trim().split(/[/\\]/).filter(Boolean).pop() ?? "";
+	if (!basename) return false;
+	const lower = basename.toLowerCase();
+	return EXCLUDED_AVATAR_BACKGROUND_ASSETS.some(
+		(excluded) => excluded.toLowerCase() === lower,
+	);
+}
+
+/**
+ * Normalize a saved `backgroundVideo` filename so any previously persisted
+ * avatar-baked video (`naia-autumn-office-live.mp4`) resolves to the pure
+ * background asset (`naia-autumn-office-uhd.webp`).
+ */
+export function normalizeBackgroundVideoFilename(
+	filename: string | undefined,
+): string | undefined {
+	if (!filename) return undefined;
+	const trimmed = filename.trim();
+	if (!trimmed) return undefined;
+	if (isExcludedBackgroundAsset(trimmed)) {
+		return DEFAULT_PURE_BACKGROUND_ASSET;
+	}
+	return trimmed;
+}
+
+/**
+ * Normalize an ADK workspace root path for asset path joining and scope generation.
+ * Rejects empty strings, filesystem roots (`/`), and bare Windows drive roots (`C:`, `C:\`)
+ * so drive-wide patterns (`C:\**`) can never be constructed.
+ */
+export function normalizeAdkScopeRoot(
+	adkPath: string,
+): { root: string; sep: "/" | "\\" } | null {
+	const raw = adkPath.trim();
+	if (!raw) return null;
+	const withoutVerbatim = /^\\\\\?\\(?![Uu][Nn][Cc]\\)/.test(raw)
+		? raw.slice(4)
+		: raw;
+	const trimmed = withoutVerbatim.replace(/[/\\]+$/, "");
+	if (!trimmed || /^[A-Za-z]:$/.test(trimmed)) {
+		return null;
+	}
+	const isWindowsStyle =
+		trimmed.includes("\\") || /^[A-Za-z]:[/\\]/.test(withoutVerbatim);
+	const sep: "/" | "\\" = isWindowsStyle ? "\\" : "/";
+	const root = isWindowsStyle
+		? trimmed.replace(/\//g, "\\")
+		: trimmed.replace(/\\/g, "/");
+	return { root, sep };
+}
+
+/**
+ * Join `{adkPath}/naia-settings/{subdir}/{name}` preserving Windows drive-letter
+ * and backslash separators (`C:\...\naia-settings\background\...`) without
+ * doubling trailing separators.
+ */
+export function joinAdkAssetPath(
+	adkPath: string,
+	subdir: NaiaAssetSubdir,
+	filename?: string,
+): string {
+	const normalized = normalizeAdkScopeRoot(adkPath);
+	if (!normalized) return "";
+	const { root, sep } = normalized;
+	const base = `${root}${sep}naia-settings${sep}${subdir}`;
+	if (!filename) return base;
+	const cleanName = filename.replace(/^[/\\]+/, "");
+	return `${base}${sep}${cleanName}`;
+}
+
+/**
+ * Return the list of asset directories registered in Tauri's runtime `asset_protocol_scope`
+ * for an ADK workspace (strictly `<adk>/naia-settings/{vrm-files,background,bgm-musics,nva-files}`,
+ * never `<adk>` root or `<adk>/naia-settings` which contain `data-private/secure-keys.dat`
+ * and `.sessions`/`.memory`/`.identity`).
+ */
+export function buildAdkAssetScopeDirectories(adkPath: string): string[] {
+	const normalized = normalizeAdkScopeRoot(adkPath);
+	if (!normalized) return [];
+	const { root, sep } = normalized;
+	const settings = `${root}${sep}naia-settings`;
+	return NAIA_ASSET_SUBDIRS.map((subdir) => `${settings}${sep}${subdir}`);
+}
+
 /** Returns absolute file paths inside {adkPath}/naia-settings/{subdir}/ */
 export async function listNaiaAssets(
 	subdir: NaiaAssetSubdir,
@@ -164,10 +265,11 @@ export async function listNaiaAssets(
 			adkPath,
 			subdir,
 		});
-		const sep = adkPath.includes("\\") ? "\\" : "/";
-		return filenames.map(
-			(name) => `${adkPath}${sep}naia-settings${sep}${subdir}${sep}${name}`,
-		);
+		const filtered =
+			subdir === "background"
+				? filenames.filter((name) => !isExcludedBackgroundAsset(name))
+				: filenames;
+		return filtered.map((name) => joinAdkAssetPath(adkPath, subdir, name));
 	} catch {
 		return [];
 	}
@@ -184,11 +286,14 @@ const LOCAL_MIME_TYPES: Record<string, string> = {
 	wav: "audio/wav",
 	aac: "audio/aac",
 	flac: "audio/flac",
+	m4a: "audio/mp4",
 	png: "image/png",
 	jpg: "image/jpeg",
 	jpeg: "image/jpeg",
 	webp: "image/webp",
 	gif: "image/gif",
+	bmp: "image/bmp",
+	avif: "image/avif",
 	mp4: "video/mp4",
 	webm: "video/webm",
 	mov: "video/quicktime",
@@ -944,6 +1049,19 @@ export class AgentSettingsReloadError extends Error {
 	}
 }
 
+/**
+ * Returns true when an Agent reload error is caused solely by an intermediate
+ * state where the user has switched providers or connected a custom endpoint
+ * before selecting a model (`invalid llmRoles(main/incomplete)` / `main/missing`).
+ */
+export function isIncompleteMainRoleReloadError(error: unknown): boolean {
+	const msg = error instanceof Error ? error.message : String(error ?? "");
+	return (
+		msg.includes("invalid llmRoles(main/incomplete)") ||
+		msg.includes("invalid llmRoles(main/missing)")
+	);
+}
+
 /** Native returns available:false when no Agent is running; that is normal. */
 export async function reloadAgentSettings(): Promise<void> {
 	try {
@@ -952,6 +1070,13 @@ export async function reloadAgentSettings(): Promise<void> {
 		);
 		if (result && result.available === false) return;
 	} catch (error) {
+		if (isIncompleteMainRoleReloadError(error)) {
+			Logger.info(
+				"adk-store",
+				"Agent settings reload deferred while main model selection is incomplete",
+			);
+			return;
+		}
 		Logger.warn("adk-store", "Agent settings reload failed", {
 			error: error instanceof Error ? error.message : String(error),
 		});

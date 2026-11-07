@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
 	buildNaiaConfigEnv,
 	getAdkPath,
+	isExcludedBackgroundAsset,
 	listNaiaAssets,
 	toAssetUrl,
 	toLocalBlobUrl,
@@ -798,7 +799,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			? c.assets("background").then((refs) => refs.map((r) => r.path))
 			: listNaiaAssets("background");
 		load
-			.then(async (paths) => {
+			.then(async (rawPaths) => {
+				const paths = rawPaths.filter((p) => !isExcludedBackgroundAsset(p));
 				const bgs: BgOption[] = await Promise.all(
 					paths.map(async (p) => {
 						const type = getBackgroundMediaType(p);
