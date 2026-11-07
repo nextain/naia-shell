@@ -1238,6 +1238,7 @@ export default {
 	"bgm.defaultYouTubeTrack": "YouTube BGM",
 	"bgm.defaultLocalTrack": "로컬 BGM",
 	"bgm.appToggleTitle": "BGM 앱 열기/닫기",
+	"bgm.unavailableAppStore": "BGM은 앱스토어판에서는 쓸 수 없습니다",
 	"bgm.prev": "이전",
 	"bgm.next": "다음",
 	"bgm.pause": "일시정지",

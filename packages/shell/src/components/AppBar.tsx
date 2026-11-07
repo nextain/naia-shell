@@ -75,6 +75,7 @@ export function AppBar({ onAddApp }: AppBarProps) {
 	} | null>(null);
 	const ctxMenuRef = useRef<HTMLDivElement>(null);
 	const [addUrlDialog, setAddUrlDialog] = useState(false);
+	const [bgmNotice, setBgmNotice] = useState(false);
 	const [urlInputDialog, setUrlInputDialog] = useState(false);
 	const [addUrlInput, setAddUrlInput] = useState("");
 	// Edit mode — shows delete overlays and enables drag-to-reorder + icon editor
@@ -725,9 +726,27 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					document.body,
 				)}
 			{/* ── BGM (right side of app-bar) ─── */}
-			<Suspense fallback={null}>
-				<BgmPlayer naia={bgmBridge} />
-			</Suspense>
+			{import.meta.env.VITE_NAIA_DISTRIBUTION === "mas" ? (
+				// App Store build has no BGM sidecar (no network.server). Say so instead of failing silently.
+				<button
+					type="button"
+					className="bgm-btn bgm-unavailable"
+					title={t("bgm.unavailableAppStore")}
+					aria-label={t("bgm.unavailableAppStore")}
+					onClick={() => setBgmNotice((v) => !v)}
+				>
+					♫
+					{bgmNotice && (
+						<span className="bgm-unavailable__notice" role="status">
+							{t("bgm.unavailableAppStore")}
+						</span>
+					)}
+				</button>
+			) : (
+				<Suspense fallback={null}>
+					<BgmPlayer naia={bgmBridge} />
+				</Suspense>
+			)}
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}

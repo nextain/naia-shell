@@ -1238,6 +1238,7 @@ export default {
 	"bgm.defaultYouTubeTrack": "YouTube BGM",
 	"bgm.defaultLocalTrack": "BGM cục bộ",
 	"bgm.appToggleTitle": "Mở/Đóng bảng BGM",
+	"bgm.unavailableAppStore": "BGM không khả dụng trên phiên bản App Store",
 	"bgm.prev": "Trước",
 	"bgm.next": "Tiếp theo",
 	"bgm.pause": "Tạm dừng",

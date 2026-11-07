@@ -20,6 +20,7 @@
  * and never reaches here.
  */
 
+import { invoke } from "@tauri-apps/api/core";
 import { bgmSidecarBaseUrl, ensureBgmSidecar } from "../bgm-sidecar-url";
 import { DEFAULT_LOCAL_VOICE_HOST, type TtsProviderId } from "../config";
 import { Logger } from "../logger";
@@ -326,6 +327,14 @@ async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 /** edge → bgm/media sidecar (node msedge-tts → real MS neural voices, keyless). */
 async function synthEdge(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	const voice = resolveEdgeVoice(opts.voice, deriveLanguageCode(opts.voice));
+	// App Store build: no listening sidecar (no network.server) → one-shot stdio process.
+	if (import.meta.env.VITE_NAIA_DISTRIBUTION === "mas") {
+		const audioBase64 = await invoke<string>("edge_tts_stdio", {
+			voice,
+			text: opts.text,
+		});
+		return { audioBase64 };
+	}
 	const resp = await fetch(
 		`${await edgeTtsSidecarUrl()}?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(opts.text)}`,
 		{ signal: opts.signal },

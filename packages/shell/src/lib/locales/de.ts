@@ -1238,6 +1238,7 @@ export default {
 	"bgm.defaultYouTubeTrack": "YouTube BGM",
 	"bgm.defaultLocalTrack": "Lokale BGM",
 	"bgm.appToggleTitle": "BGM-App öffnen/schließen",
+	"bgm.unavailableAppStore": "BGM ist in der App-Store-Version nicht verfügbar",
 	"bgm.prev": "Vorherige",
 	"bgm.next": "Nächste",
 	"bgm.pause": "Pause",

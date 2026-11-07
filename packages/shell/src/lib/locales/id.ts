@@ -1238,6 +1238,7 @@ export default {
 	"bgm.defaultYouTubeTrack": "YouTube BGM",
 	"bgm.defaultLocalTrack": "BGM Lokal",
 	"bgm.appToggleTitle": "Buka/Tutup app BGM",
+	"bgm.unavailableAppStore": "BGM tidak tersedia di versi App Store",
 	"bgm.prev": "Sebelumnya",
 	"bgm.next": "Berikutnya",
 	"bgm.pause": "Jeda",

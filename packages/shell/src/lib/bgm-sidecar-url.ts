@@ -32,6 +32,10 @@ function isE2eHarness(): boolean {
 
 /** Ensure the Shell-owned sidecar is alive and return the URL the UI must use. */
 export async function ensureBgmSidecar(): Promise<string> {
+	// App Store build: the sidecar would need network.server (Apple 2.4.5), so BGM is off.
+	if (import.meta.env.VITE_NAIA_DISTRIBUTION === "mas") {
+		throw new Error("BGM is not available in the App Store version");
+	}
 	if (isE2eHarness()) {
 		const base = BGM_SIDECAR_BASE_URL;
 		cachedBase = base;

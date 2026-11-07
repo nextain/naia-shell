@@ -4439,6 +4439,73 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     })
 }
 
+/// Edge TTS without a listening port: one node process per sentence, text on
+/// stdin, MP3 on stdout. The App Store build has no network.server (Apple 2.4.5),
+/// so the BGM sidecar's /edge-tts route is unavailable there.
+#[tauri::command]
+async fn edge_tts_stdio(app_handle: AppHandle, voice: String, text: String) -> Result<String, String> {
+    use std::io::{Read, Write};
+    use base64::Engine;
+    let script = ["../../bgm-sidecar/dist/edge-tts-cli.js", "../bgm-sidecar/dist/edge-tts-cli.js"]
+        .iter()
+        .filter_map(|rel| std::env::current_dir().ok().map(|d| d.join(rel)))
+        .find(|p| p.exists())
+        .or_else(|| {
+            app_handle
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|d| d.join("bgm-sidecar").join("dist").join("edge-tts-cli.js"))
+                .filter(|p| p.exists())
+        })
+        .ok_or_else(|| "edge_tts_cli_missing".to_string())?;
+    let node_path = resolve_spawn_node(&app_handle, "NAIA_BGM_NODE_PATH");
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = Command::new(&node_path);
+        cmd.arg(&script)
+            .arg(&voice)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        platform::hide_console(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| format!("edge_tts spawn: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes()).map_err(|e| format!("edge_tts stdin: {e}"))?;
+        }
+        let mut stdout = child.stdout.take().ok_or("edge_tts stdout")?;
+        let mut stderr = child.stderr.take().ok_or("edge_tts stderr")?;
+        let reader = std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            stdout.read_to_end(&mut bytes).map(|_| bytes)
+        });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(|e| format!("edge_tts wait: {e}"))? {
+                break status;
+            }
+            if std::time::Instant::now() > deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("edge_tts timeout".to_string());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        let bytes = reader
+            .join()
+            .map_err(|_| "edge_tts reader panicked".to_string())?
+            .map_err(|e| format!("edge_tts stdout: {e}"))?;
+        if !status.success() || bytes.is_empty() {
+            let mut detail = String::new();
+            let _ = stderr.read_to_string(&mut detail);
+            return Err(format!("edge_tts failed ({status}): {}", detail.trim()));
+        }
+        Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+    })
+    .await
+    .map_err(|e| format!("edge_tts task: {e}"))?
+}
+
 #[tauri::command]
 async fn ensure_bgm_server(
     app_handle: AppHandle,
@@ -14666,6 +14733,7 @@ pub fn run() {
             write_naia_asset,
             copy_bundled_assets,
 			ensure_bgm_server,
+            edge_tts_stdio,
             // ???transcript read-only(FR-CONV.3) ??agent write / shell read(E1 agent ?낅┰)
             list_conversations,
             read_conversation,

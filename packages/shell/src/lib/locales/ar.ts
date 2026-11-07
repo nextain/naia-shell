@@ -1238,6 +1238,7 @@ export default {
 	"bgm.defaultYouTubeTrack": "YouTube BGM",
 	"bgm.defaultLocalTrack": "موسيقى محلية",
 	"bgm.appToggleTitle": "فتح/إغلاق لوحة BGM",
+	"bgm.unavailableAppStore": "الموسيقى الخلفية غير متاحة في إصدار App Store",
 	"bgm.prev": "السابق",
 	"bgm.next": "التالي",
 	"bgm.pause": "إيقاف مؤقت",

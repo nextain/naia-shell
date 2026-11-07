@@ -1238,6 +1238,7 @@ export default {
 	"bgm.defaultYouTubeTrack": "YouTube BGM",
 	"bgm.defaultLocalTrack": "ローカル BGM",
 	"bgm.appToggleTitle": "BGMパネルを開く/閉じる",
+	"bgm.unavailableAppStore": "BGMはApp Store版では使えません",
 	"bgm.prev": "前へ",
 	"bgm.next": "次へ",
 	"bgm.pause": "一時停止",

@@ -1238,6 +1238,7 @@ export default {
 	"bgm.defaultYouTubeTrack": "YouTube BGM",
 	"bgm.defaultLocalTrack": "স্থানীয় BGM",
 	"bgm.appToggleTitle": "BGM প্যানেল খুলুন/বন্ধ করুন",
+	"bgm.unavailableAppStore": "App Store সংস্করণে BGM পাওয়া যায় না",
 	"bgm.prev": "পূর্ববর্তী",
 	"bgm.next": "পরবর্তী",
 	"bgm.pause": "বিরতি",

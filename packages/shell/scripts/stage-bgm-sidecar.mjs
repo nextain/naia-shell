@@ -33,6 +33,7 @@ cpSync(resolve(BGM, "dist"), resolve(STAGE, "dist"), { recursive: true });
 for (const path of [
 	"dist/bgm-server-bin.js",
 	"dist/youtube-server.js",
+	"dist/edge-tts-cli.js",
 	"package.json",
 	"node_modules/youtubei.js",
 ]) {
