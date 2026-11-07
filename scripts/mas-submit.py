@@ -98,6 +98,10 @@ for s in subs["data"]:
         print("a submission is already waiting or in review; nothing to do")
         sys.exit(0 if MODE == "check" else 1)
 
+if open_sub is not None:
+    for i in call("GET", f"/v1/reviewSubmissions/{open_sub['id']}/items")["data"]:
+        print(f"item {i['id']} {json.dumps(i['attributes'])}")
+
 if MODE != "submit":
     print("check only, no changes")
     sys.exit(0)
