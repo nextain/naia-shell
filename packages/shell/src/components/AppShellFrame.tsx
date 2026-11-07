@@ -2,6 +2,7 @@ import { ResilientVideo } from "./ResilientVideo";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useRef } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
+import { isMediaSourceUrl } from "../lib/local-media-url";
 import { AppMainContent, type AppMainContentProps } from "./AppMainContent";
 import { SplashScreen } from "./SplashScreen";
 
@@ -160,7 +161,13 @@ export function AppShellFrame({
 				{ "--naia-width": `${mainContent.naiaWidth}px` } as React.CSSProperties
 			}
 		>
-			{backgroundFallback?.type === "video" ? (
+			{/* A MediaSource URL (Linux webm) attaches to one element only; when the
+			    foreground already shows it, the layer under it would fail. */}
+			{backgroundFallback?.type === "video" &&
+			backgroundFallback.url === backgroundVideoUrl &&
+			isMediaSourceUrl(backgroundFallback.url) ? (
+				<div className="app-bg-fallback" aria-hidden="true" />
+			) : backgroundFallback?.type === "video" ? (
 				<ResilientVideo
 					className="app-bg-video"
 					src={backgroundFallback.url}

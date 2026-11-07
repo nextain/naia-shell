@@ -266,6 +266,44 @@ describe("PrebakedAvatarRenderer", () => {
 		playSpy.mockRestore();
 	});
 
+	it("loops the idle override and goes back to the default when cleared", async () => {
+		const playSpy = vi
+			.spyOn(HTMLMediaElement.prototype, "play")
+			.mockResolvedValue();
+		const manifest = baseManifest();
+		manifest.animations["keyboard-idle"] = {
+			clip: "clips/keyboard-idle.webm",
+			loop: true,
+			can_talk: false,
+		};
+		const renderer = new PrebakedAvatarRenderer({
+			manifest,
+			locale: "ko-KR",
+			resolveAssetUrl: async (path) => `blob:${path}`,
+		});
+		const video = makeVideo();
+		document.body.appendChild(video);
+		renderer.setIdleOverride("keyboard-idle");
+		renderer.start(video, document.createElement("canvas"));
+		await Promise.resolve();
+		await Promise.resolve();
+		const keyboard = videoForUrl("blob:clips/keyboard-idle.webm");
+		expect(keyboard.loop).toBe(true);
+		renderer.setIdleOverride("missing");
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(
+			playSpy.mock.contexts.filter(
+				(context) =>
+					(context as HTMLVideoElement).dataset.naiaClipUrl ===
+					"blob:clips/idle.webm",
+			),
+		).toHaveLength(1);
+		renderer.stop();
+		video.remove();
+		playSpy.mockRestore();
+	});
+
 	it("returns to idle when a gesture clip reports a playback error", async () => {
 		const playSpy = vi
 			.spyOn(HTMLMediaElement.prototype, "play")

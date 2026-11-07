@@ -871,7 +871,7 @@ for (const width of [360, 1100]) {
 			)
 			.toBe("Qwen3.6-27B-AWQ-INT4");
 		await page.screenshot({
-			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r16-model-${width}.png`,
+			path: `test-results/r16-model-${width}.png`,
 		});
 	});
 }

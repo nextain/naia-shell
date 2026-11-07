@@ -8,6 +8,7 @@ import {
 	mergeBootConfig,
 	saveConfig,
 } from "./config";
+import { createLocalMediaUrl } from "./local-media-url";
 import { Logger } from "./logger";
 import { SECRET_KEYS, deleteSecretKey, getSecretKey } from "./secure-store";
 import {
@@ -194,10 +195,35 @@ const LOCAL_MIME_TYPES: Record<string, string> = {
 };
 const BLOB_URL_EXTS = new Set(Object.keys(LOCAL_MIME_TYPES));
 
+/** Read a local media file via Rust as a typed Blob (base64 IPC, see below). */
+export async function readLocalBlob(filePath: string): Promise<Blob> {
+	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+	const mimeType = LOCAL_MIME_TYPES[ext] ?? "";
+	// Rust returns base64 to avoid JSON number-array OOM (14 MB file → ~200 MB JS heap).
+	const b64 = await invoke<string>("read_local_binary", {
+		path: filePath,
+		allowedBase: getAdkPath() ?? "",
+	});
+	const raw = atob(b64);
+	const bytes = new Uint8Array(raw.length);
+	for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+	if (mimeType.startsWith("video/")) {
+		Logger.info("adk-store", "local video read", {
+			extension: ext,
+			bytes: bytes.length,
+			header: Array.from(bytes.subarray(0, 12), (byte) =>
+				byte.toString(16).padStart(2, "0"),
+			).join(""),
+		});
+	}
+	return new Blob([bytes], { type: mimeType });
+}
+
 /**
- * Read a local file via Rust and return a blob: URL.
+ * Read a local file via Rust and return an object URL (blob:, or MediaSource for
+ * webm video on Linux — see local-media-url.ts).
  * Works for images, audio, and video (IPC is local so transfer is fast).
- * Caller is responsible for revoking the returned blob URL when done.
+ * Caller is responsible for revoking the returned URL when done.
  */
 export async function toLocalBlobUrl(filePath: string): Promise<string> {
 	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
@@ -205,27 +231,8 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 		// Video or unknown — asset URL (may fail on Windows, no workaround without streaming)
 		return convertFileSrc(filePath);
 	}
-	const mimeType = LOCAL_MIME_TYPES[ext];
 	try {
-		// Rust returns base64 to avoid JSON number-array OOM (14 MB file → ~200 MB JS heap).
-		const b64 = await invoke<string>("read_local_binary", {
-			path: filePath,
-			allowedBase: getAdkPath() ?? "",
-		});
-		const raw = atob(b64);
-		const bytes = new Uint8Array(raw.length);
-		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-		if (mimeType.startsWith("video/")) {
-			Logger.info("adk-store", "local video read", {
-				extension: ext,
-				bytes: bytes.length,
-				header: Array.from(bytes.subarray(0, 12), (byte) =>
-					byte.toString(16).padStart(2, "0"),
-				).join(""),
-			});
-		}
-		const blob = new Blob([bytes], { type: mimeType });
-		return URL.createObjectURL(blob);
+		return createLocalMediaUrl(await readLocalBlob(filePath));
 	} catch {
 		Logger.warn("adk-store", "local media read failed; using asset protocol", {
 			extension: ext,

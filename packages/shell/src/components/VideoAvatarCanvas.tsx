@@ -1,12 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
-import { getAdkPath, toLocalBlobUrl } from "../lib/adk-store";
+import { getAdkPath, readLocalBlob, toLocalBlobUrl } from "../lib/adk-store";
+import { selectAmbientIdle } from "../lib/avatar/ambient-idle";
 import {
 	clearCameraActions,
 	getCameraActions,
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
 import { PrebakedAvatarRenderer } from "../lib/avatar/prebaked-renderer";
+import {
+	isBroadcastActive,
+	useBroadcastBridge,
+} from "../lib/broadcast-audio-bridge";
 import { getLocale, t } from "../lib/i18n";
 import {
 	UI_PREFERENCE_KEYS,
@@ -55,9 +60,7 @@ const VIDEO_STYLE = {
 };
 
 /** GPU 없는 pre-baked NVA player. retired server-side avatar/cascade를 시작하지 않는다. */
-export function VideoAvatarCanvas({
-	nvaModel,
-}: VideoAvatarCanvasProps) {
+export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	const setLoaded = useAvatarStore((state) => state.setLoaded);
 	const [mode, setMode] = useState<Mode>("loading");
 	const [error, setError] = useState("");
@@ -188,6 +191,18 @@ export function VideoAvatarCanvas({
 		};
 	}, [nvaModel, setLoaded]);
 
+	// Broadcast / BGM ambient idle (keyboard-idle, singing-keyboard) when the bundle has it.
+	const broadcastActive = isBroadcastActive(useBroadcastBridge().state);
+	const bgmPlaying = useAvatarStore((s) => s.bgmPlaying);
+	const ambientIdle = manifest
+		? selectAmbientIdle({ broadcastActive, bgmPlaying }, manifest)
+		: null;
+	const ambientIdleRef = useRef(ambientIdle);
+	ambientIdleRef.current = ambientIdle;
+	useEffect(() => {
+		rendererRef.current?.setIdleOverride(ambientIdle);
+	}, [ambientIdle]);
+
 	useEffect(() => {
 		if (!video || !canvas || !manifest || !bundleDir) return;
 		canvas.width = manifest.canvas.width;
@@ -206,6 +221,9 @@ export function VideoAvatarCanvas({
 				urls.set(relativePath, url);
 				return url;
 			},
+			// Read bytes directly: a Linux webm URL is MediaSource-backed and not fetch()able.
+			loadAssetBlob: (relativePath) =>
+				readLocalBlob(resolveNvaAssetPath(bundleDir, relativePath)),
 			onSpeaking: (speaking) => useAvatarStore.getState().setSpeaking(speaking),
 			onPlaybackFailure: (reason) => {
 				setError(reason);
@@ -216,6 +234,7 @@ export function VideoAvatarCanvas({
 					useCascadeAvatarStore.getState().setRenderer(null);
 			},
 		});
+		renderer.setIdleOverride(ambientIdleRef.current);
 		renderer.start(video, canvas);
 		rendererRef.current = renderer;
 		useCascadeAvatarStore.getState().setRenderer(renderer);
