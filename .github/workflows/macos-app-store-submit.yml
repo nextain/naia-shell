@@ -1,30 +1,52 @@
 name: macOS App Store submit
+# Every push to mas/** runs a read-only check. Submitting needs a commit subject with
+# [mas-submit] and an unused approval code listed in .github/mas-approvals.json for this
+# exact version and build. The code is marked used after a successful submit.
 on:
   push:
     branches: ['mas/**']
 permissions:
   contents: read
+concurrency:
+  group: mas-submit
+  cancel-in-progress: false
 jobs:
-  submit:
-    if: contains(github.event.head_commit.message, '[mas-check]') || contains(github.event.head_commit.message, '[mas-submit]')
+  review:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      KEY_ID: ${{ secrets.MAS_ASC_KEY_ID }}
+      KEY_P8: ${{ secrets.MAS_ASC_KEY_P8 }}
+      ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      BUNDLE_ID: com.naia.shell
+      APP_VERSION: '0.2.5'
+      BUILD_NUMBER: '10'
+      COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
     steps:
       - uses: actions/checkout@v4
       - run: pip install --quiet pyjwt cryptography
-      - name: App Store Connect review submission
+      - name: Check (read-only)
+        run: python3 -I scripts/mas-submit.py check
+      - name: Approval gate
+        id: gate
+        run: python3 -I scripts/mas-submit.py gate
+      - name: Submit for review
+        if: steps.gate.outputs.allowed == 'true'
         env:
-          KEY_ID: ${{ secrets.MAS_ASC_KEY_ID }}
-          KEY_P8: ${{ secrets.MAS_ASC_KEY_P8 }}
-          ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          BUNDLE_ID: com.naia.shell
-          APP_VERSION: '0.2.5'
-          BUILD_NUMBER: '10'
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           REVIEW_NOTE: >-
             Changes for guidelines 2.4.5 and 2.5.1: the com.apple.security.network.server entitlement is removed
             and the app opens no listening sockets (OAuth sign-in uses the app's URL scheme instead of a local callback server).
             The bundled Claude Code binary that referenced non-public symbols is removed, and Claude Code is not offered in
             this version. Background music, which needed a local server, is disabled and shows an
             "not available in the App Store version" notice instead.
-        run: python3 -I scripts/mas-submit.py
+        run: python3 -I scripts/mas-submit.py submit
+      - name: Mark approval code used
+        if: steps.gate.outputs.allowed == 'true' && success()
+        run: |
+          python3 -I scripts/mas-submit.py mark-used
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "ci(mas): mark App Store approval code used"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
