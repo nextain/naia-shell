@@ -142,6 +142,13 @@ if not has_version:
                                      "appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
     print("added version to submission")
 
+# A rejected submission keeps its items as REJECTED until they are marked resolved.
+for i in call("GET", f"/v1/reviewSubmissions/{open_sub['id']}/items")["data"]:
+    if i["attributes"].get("state") == "REJECTED":
+        call("PATCH", f"/v1/reviewSubmissionItems/{i['id']}",
+             {"data": {"type": "reviewSubmissionItems", "id": i["id"], "attributes": {"resolved": True}}})
+        print(f"marked item {i['id']} resolved")
+
 done = call("PATCH", f"/v1/reviewSubmissions/{open_sub['id']}",
             {"data": {"type": "reviewSubmissions", "id": open_sub["id"], "attributes": {"submitted": True}}})
 print(f"submitted reviewSubmission {open_sub['id']} state={done['data']['attributes'].get('state')}")
