@@ -386,6 +386,10 @@ pub(crate) fn spawn_oauth_callback_server(
 ) -> Result<(), String> {
     use tiny_http::{Header, Response, Server};
 
+    // 앱스토어판은 network.server 권한이 없다(애플 2.4.5). 딥링크 경로만 쓴다.
+    if option_env!("NAIA_DISTRIBUTION") == Some("mas") {
+        return Err("OAuth callback server disabled in App Store build".to_string());
+    }
     let bind_addr = format!("127.0.0.1:{}", oauth_callback_port());
     let server = Server::http(&bind_addr).map_err(|e| {
         format!(
@@ -4253,6 +4257,10 @@ fn reclaim_bgm_port(port: u16) {
 }
 
 fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, String> {
+    // BGM 사이드카는 127.0.0.1 에서 듣는다. 앱스토어판은 network.server 권한이 없다(애플 2.4.5).
+    if option_env!("NAIA_DISTRIBUTION") == Some("mas") {
+        return Err("BGM server unavailable in App Store build".to_string());
+    }
     // Node binary ??same resolution chain as spawn_agent_core
     let node_path = resolve_spawn_node(app_handle, "NAIA_BGM_NODE_PATH");
     log_both(&format!("[Naia] node = {}", node_path));

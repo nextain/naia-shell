@@ -543,6 +543,10 @@ fn wait_for_cdp(port: u16) -> Result<(), String> {
 /// Returns true if a supported Chrome binary is available.
 #[tauri::command]
 pub fn browser_check() -> bool {
+    // Chrome CDP 는 127.0.0.1 포트에서 듣는다. 앱스토어판은 network.server 권한이 없다(애플 2.4.5).
+    if option_env!("NAIA_DISTRIBUTION") == Some("mas") {
+        return false;
+    }
     platform::window_manager().chrome_bin().is_some()
 }
 
@@ -573,6 +577,9 @@ pub fn browser_embed_init(
     // Use this to confirm whether the browser embed is the cause of an
     // observed input/focus regression — if input still misbehaves with
     // the embed disabled, the regression is somewhere else entirely.
+    if option_env!("NAIA_DISTRIBUTION") == Some("mas") {
+        return Err("browser embed unavailable in App Store build".into());
+    }
     if std::env::var("NAIA_DISABLE_BROWSER_EMBED").is_ok() {
         crate::log_both("[browser] init skipped — NAIA_DISABLE_BROWSER_EMBED is set");
         return Err("browser embed disabled by NAIA_DISABLE_BROWSER_EMBED".into());
@@ -1244,6 +1251,10 @@ pub async fn browser_open_login(app: AppHandle, url: String) -> Result<(), Strin
     }
 
     // Slow path: no embedded Chrome yet → standalone login window.
+    // 앱스토어판은 Chrome CDP 포트를 열 수 없다(network.server 없음). 시스템 브라우저로 연다.
+    if option_env!("NAIA_DISTRIBUTION") == Some("mas") {
+        return Err("browser login window unavailable in App Store build".to_string());
+    }
     // Kill any lingering login Chrome from a previous attempt
     {
         let mut s = LOGIN_CHROME.lock().unwrap();

@@ -58,7 +58,8 @@ tauri-plugin-process = "2"
 tauri-plugin-stt = { path = "plugins/tauri-plugin-stt", default-features = false }
 log = "0.4"
 env_logger = "0.11"
-zip = "2"
+# xz 기능(xz2/lzma-sys C liblzma 정적 링크)은 맥 앱스토어 비공개 API 검사에 걸려 뺀다.
+zip = { version = "2", default-features = false, features = ["aes-crypto", "bzip2", "deflate", "deflate64", "lzma", "time", "zstd"] }
 tar = "0.4"
 zstd = "0.13"
 quick-xml = "0.37"

@@ -42,10 +42,55 @@ jobs:
           toolchain: '1.97.0'
       - run: test "$(uname -m)" = arm64
       - run: pnpm install --frozen-lockfile
+      # 공식 node 는 ICU 기호(_ucal_*·_ubrk_* 등, _78 접미사 포함)를 내보내 애플 2.5.1 비공개 API 검사에 걸린다.
+      # 앱스토어판은 ICU 를 뺀 node 를 직접 빌드해 넣는다.
+      - name: Restore ICU-free node
+        id: node-noicu
+        uses: actions/cache@v4
+        with:
+          path: ~/node-noicu
+          key: node-22.23.1-intl-none-darwin-arm64-v1
+      - name: Build ICU-free node
+        if: steps.node-noicu.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSLO https://nodejs.org/dist/v22.23.1/node-v22.23.1.tar.xz
+          curl -fsSL https://nodejs.org/dist/v22.23.1/SHASUMS256.txt | grep ' node-v22.23.1.tar.xz$' | shasum -a 256 -c -
+          tar xf node-v22.23.1.tar.xz
+          cd node-v22.23.1
+          ./configure --with-intl=none
+          make -j"$(sysctl -n hw.ncpu)"
+          mkdir -p ~/node-noicu
+          cp out/Release/node ~/node-noicu/node
+          strip -x ~/node-noicu/node
       - name: Build staged runtime and application
         run: pnpm -C packages/shell run tauri:build:bundle
+      - name: Use ICU-free node
+        run: |
+          set -euo pipefail
+          NODE=packages/shell/src-tauri/resources/node
+          test -f "$NODE"
+          cp ~/node-noicu/node "$NODE"
+          chmod 755 "$NODE"
+          test "$("$NODE" -p 'process.versions.node + " " + typeof Intl')" = "22.23.1 undefined"
       - name: Bundle app
         run: pnpm -C packages/shell exec tauri bundle --verbose --bundles app --config src-tauri/tauri.conf.generated.json
+      - name: Private API symbol check
+        run: |
+          set -euo pipefail
+          mkdir -p mas-output
+          APP=packages/shell/src-tauri/target/release/bundle/macos/Naia.app
+          LIST=packages/shell/src-tauri/mas-private-symbols.txt
+          # 애플 목록 이름 그대로, 또는 ICU 판 접미사(_78 등)가 붙은 이름을 찾는다(정의·참조 모두).
+          PATTERN="$(sed 's/[^A-Za-z0-9_]//g' "$LIST" | paste -sd'|' -)"
+          : > mas-output/private-symbols.txt
+          while IFS= read -r -d '' path; do
+            file -b "$path" | grep -q Mach-O || continue
+            { nm -g "$path" 2>/dev/null || true; } | awk '{print $NF}' | grep -xE "($PATTERN)(_[0-9]+)?" | sed "s|^|$path: |" >> mas-output/private-symbols.txt || true
+          done < <(find "$APP/Contents" -type f -print0)
+          echo "listed symbols found: $(wc -l < mas-output/private-symbols.txt)"
+          test ! -s mas-output/private-symbols.txt
       - name: Prepare signing keychain
         env:
           APP_P12: ${{ secrets.MAS_APP_P12_B64 }}
@@ -94,6 +139,7 @@ jobs:
           codesign --force --entitlements packages/shell/src-tauri/entitlements.mas.plist --sign '3rd Party Mac Developer Application: nextain Inc. (VR6U552762)' "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP" > mas-output/signature.txt 2>&1
           codesign -d --entitlements :- "$APP" >> mas-output/signature.txt 2>&1
+          if codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q network.server; then echo "network.server entitlement present" >&2; exit 1; fi
           productbuild --component "$APP" /Applications --sign '3rd Party Mac Developer Installer: nextain Inc. (VR6U552762)' mas-output/Naia-0.2.5-mas.pkg
           pkgutil --check-signature mas-output/Naia-0.2.5-mas.pkg >> mas-output/signature.txt 2>&1
       - name: Apple validation
@@ -142,6 +188,8 @@ jobs:
           open "$APP"
           sleep 90
           ps -axo pid,ppid,command | grep -E '[N]aia|[/]node' > mas-output/processes.txt || true
+          lsof -nP -iTCP -sTCP:LISTEN > mas-output/listening.txt 2>&1 || true
+          codesign -d --entitlements :- "$APP" > mas-output/sandbox-entitlements.txt 2>&1 || true
           log show --last 3m --predicate 'eventMessage CONTAINS "deny" AND (process CONTAINS "Naia" OR process CONTAINS "node" OR sender == "Sandbox")' > mas-output/sandbox-denials.txt 2>&1 || true
           ls -laR "$HOME/Library/Containers/com.naia.shell" > mas-output/container.txt 2>&1 || true
           screencapture -x mas-output/screen.png || true
