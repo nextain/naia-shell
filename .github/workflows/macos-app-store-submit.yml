@@ -1,7 +1,8 @@
 name: macOS App Store submit
 # Every push to mas/** runs a read-only check. Submitting needs a commit subject with
-# [mas-submit] and an unused approval code listed in .github/mas-approvals.json for this
-# exact version and build. The code is marked used after a successful submit.
+# [mas-submit] and an approval code listed in .github/mas-approvals.json for this exact
+# version and build. Before submitting, the run pushes the tag mas-used/<code>; that push
+# fails if the tag exists, so each code submits at most once. The list note is best effort.
 on:
   push:
     branches: ['mas/**']
@@ -32,9 +33,15 @@ jobs:
       - name: Approval gate
         id: gate
         run: python3 -I scripts/mas-submit.py gate
-      - name: Submit for review
+      - name: Reserve approval code
+        id: reserve
         if: steps.gate.outputs.allowed == 'true'
+        run: python3 -I scripts/mas-submit.py reserve
+      - name: Submit for review
+        if: steps.reserve.outputs.reserved == 'true'
         env:
+          RESERVED: ${{ steps.reserve.outputs.reserved }}
+          RESERVED_CODE: ${{ steps.reserve.outputs.code }}
           REVIEW_NOTE: >-
             Changes for guidelines 2.4.5 and 2.5.1: the com.apple.security.network.server entitlement is removed
             and the app opens no listening sockets (OAuth sign-in uses the app's URL scheme instead of a local callback server).
@@ -43,7 +50,8 @@ jobs:
             "not available in the App Store version" notice instead.
         run: python3 -I scripts/mas-submit.py submit
       - name: Mark approval code used
-        if: steps.gate.outputs.allowed == 'true' && success()
+        if: steps.reserve.outputs.reserved == 'true' && success()
+        continue-on-error: true
         run: |
           python3 -I scripts/mas-submit.py mark-used
           git config user.name "github-actions[bot]"

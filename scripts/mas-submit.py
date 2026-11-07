@@ -3,8 +3,10 @@
   check      read build, version and review state only (always safe)
   gate       decide from the commit subject and .github/mas-approvals.json whether
              submitting is allowed; writes allowed=true|false to GITHUB_OUTPUT
-  submit     re-run the gate, then attach the build, append the review note and submit
-  mark-used  record the approval code as used in .github/mas-approvals.json
+  reserve    re-run the gate and push the tag mas-used/<code>; the push fails if the tag
+             exists, so a code can be reserved once across all branches, commits and re-runs
+  submit     only after a successful reserve: attach the build, append the review note, submit
+  mark-used  also note the code as used in .github/mas-approvals.json (best effort)
 
 Only the first line of the commit message is read, so a tag or code quoted in the
 body never submits. Never prints the key.
@@ -13,6 +15,7 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -20,6 +23,7 @@ import urllib.request
 
 API = "https://api.appstoreconnect.apple.com"
 APPROVALS = ".github/mas-approvals.json"
+USED_TAG_PREFIX = "mas-used/"
 VERSION = os.environ.get("APP_VERSION", "")
 BUILD = os.environ.get("BUILD_NUMBER", "")
 NOTE = os.environ.get("REVIEW_NOTE", "").strip()
@@ -44,6 +48,14 @@ def gate():
         return False, code, f"{code} is not in {APPROVALS}"
     if entry.get("used"):
         return False, code, f"{code} was already used ({entry['used']})"
+    # The repo-wide tag is the authoritative record; a stale list in an old commit cannot hide it.
+    try:
+        tags = subprocess.run(["git", "ls-remote", "--tags", "origin", f"refs/tags/{USED_TAG_PREFIX}{code}"],
+                              capture_output=True, text=True, timeout=60, check=True).stdout
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, code, f"cannot check the used tag for {code}: {e}"
+    if tags.strip():
+        return False, code, f"{code} was already used (tag {USED_TAG_PREFIX}{code} exists)"
     if entry.get("version") != VERSION or str(entry.get("build")) != BUILD:
         return False, code, f"{code} approves {entry.get('version')} ({entry.get('build')}), not {VERSION} ({BUILD})"
     return True, code, f"{code} approves {VERSION} ({BUILD})"
@@ -118,10 +130,10 @@ def read_state():
 
 
 def submit():
-    allowed, code, reason = gate()
-    print(f"gate: {reason}")
-    if not allowed:
+    if os.environ.get("RESERVED") != "true":
+        print("approval code was not reserved; not submitting")
         sys.exit(1)
+    code = os.environ.get("RESERVED_CODE", "")
     app_id, build, ver, current, detail, subs = read_state()
     if not build or build["attributes"].get("processingState") != "VALID":
         print("build is not processed yet")
@@ -172,6 +184,27 @@ def submit():
           f"state={done['data']['attributes'].get('state')}")
 
 
+def reserve():
+    """Claim the code by pushing a tag that cannot be overwritten. Submit runs only if this succeeds."""
+    allowed, code, reason = gate()
+    print(f"gate: {reason}")
+    if not allowed:
+        sys.exit(1)
+    tag = f"{USED_TAG_PREFIX}{code}"
+    # An annotated tag naming this run is a new object, so a second run cannot push the same tag as a no-op.
+    subprocess.run(["git", "-c", "user.name=github-actions[bot]",
+                    "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+                    "tag", "-a", tag, "-m", f"{code} reserved by run {os.environ.get('GITHUB_RUN_ID', '?')}"],
+                   check=True)
+    pushed = subprocess.run(["git", "push", "origin", f"refs/tags/{tag}"])
+    if pushed.returncode != 0:
+        print(f"could not push {tag}; not submitting")
+        sys.exit(1)
+    print(f"reserved {code} with tag {tag}")
+    with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+        f.write(f"reserved=true\ncode={code}\n")
+
+
 def mark_used():
     _, code, _ = gate()
     with open(APPROVALS) as f:
@@ -195,6 +228,8 @@ elif cmd == "gate":
     print(f"gate: {'allowed' if allowed else 'refused'}: {reason}")
     with open(os.environ["GITHUB_OUTPUT"], "a") as f:
         f.write(f"allowed={'true' if allowed else 'false'}\n")
+elif cmd == "reserve":
+    reserve()
 elif cmd == "submit":
     submit()
 elif cmd == "mark-used":
