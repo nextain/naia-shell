@@ -1405,7 +1405,7 @@ const englishCore = {
 type EnglishTable = Readonly<Record<keyof typeof englishCore, string>> &
 	Readonly<Partial<Record<keyof typeof englishWeb, string>>>;
 const english: EnglishTable =
-	import.meta.env.MODE === "production"
+	import.meta.env?.MODE === "production"
 		? englishCore
 		: { ...englishCore, ...englishWeb };
 export default english;
