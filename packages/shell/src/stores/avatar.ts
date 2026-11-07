@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { isLegacyBundledVrmModel } from "../lib/avatar-presets";
 import { loadConfig } from "../lib/config";
+import type { AmbientBgm } from "../lib/avatar/ambient-idle";
 import type { EmotionName } from "../lib/vrm/expression";
 
 export type BackgroundMediaType = "" | "image" | "video" | "iframe";
@@ -13,6 +14,8 @@ interface AvatarState {
 	backgroundMediaType: BackgroundMediaType;
 	/** Asset URL (convertFileSrc) for BGM track. Empty = no BGM. */
 	bgmTrackUrl: string;
+	/** BGM source playing right now ("" = none); drives the NVA ambient idle. */
+	bgmPlaying: AmbientBgm;
 	animationPath: string;
 	isLoaded: boolean;
 	loadProgress: number;
@@ -29,6 +32,7 @@ interface AvatarState {
 	setBackgroundVideoUrl: (url: string) => void;
 	setBackgroundMediaType: (type: BackgroundMediaType) => void;
 	setBgmTrackUrl: (url: string) => void;
+	setBgmPlaying: (source: AmbientBgm) => void;
 }
 
 function getInitialModelPath(): string {
@@ -48,6 +52,7 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 	backgroundVideoUrl: "",
 	backgroundMediaType: "",
 	bgmTrackUrl: "",
+	bgmPlaying: "",
 	animationPath: "/animations/idle_loop.vrma",
 	isLoaded: false,
 	loadProgress: 0,
@@ -65,4 +70,5 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 	setBackgroundVideoUrl: (url) => set({ backgroundVideoUrl: url }),
 	setBackgroundMediaType: (type) => set({ backgroundMediaType: type }),
 	setBgmTrackUrl: (url) => set({ bgmTrackUrl: url }),
+	setBgmPlaying: (source) => set({ bgmPlaying: source }),
 }));

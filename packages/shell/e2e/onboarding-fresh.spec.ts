@@ -217,7 +217,7 @@ test.describe("Fresh onboarding flow", () => {
 		await expect(videoCard).not.toContainText("▶");
 		const screenshotDir = path.resolve(
 			process.cwd(),
-			"/home/nextain/work/codex-runs/026-b2c/tmp/r15-onboarding",
+			"test-results/r15-onboarding",
 		);
 		mkdirSync(screenshotDir, { recursive: true });
 		await page.locator(".onboarding-app").screenshot({
@@ -434,7 +434,7 @@ for (const width of [360, 1100]) {
 			),
 		).toBe(true);
 		await page.screenshot({
-			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r15-fallback-${width}.png`,
+			path: `test-results/r15-fallback-${width}.png`,
 		});
 	});
 }

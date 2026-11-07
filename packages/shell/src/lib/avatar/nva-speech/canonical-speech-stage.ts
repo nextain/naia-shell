@@ -24,6 +24,7 @@ import {
 	speechBundlePaths,
 } from "./vendor/speech-bundle.js";
 import { SpeechPlayer } from "./vendor/speech-player.js";
+import { localMediaUrlApi } from "../../local-media-url";
 import { Logger } from "../../logger";
 
 export interface CanonicalSpeechStageConfig {
@@ -117,6 +118,8 @@ export class CanonicalSpeechStage {
 		// The Shell owns the sound; this element is never given a source.
 		const audio = hidden(doc.createElement("audio")) as HTMLAudioElement;
 		const options = {
+			// Linux webm clips past ~2 MB only decode through MediaSource.
+			urlApi: localMediaUrlApi,
 			audio,
 			canvas: this.canvas,
 			bodyVideo: video(),

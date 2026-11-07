@@ -1,4 +1,5 @@
 import { type Page, expect, test } from "@playwright/test";
+import { TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mock";
 
 /**
  * #501 워크스페이스 컨텍스트 해석 E2E (UC-WORKSPACE-CONTEXT-*).
@@ -94,7 +95,6 @@ const TAURI_MOCK = `
 		if (cmd === "frontend_log") return null;
 		if (cmd === "app_list_installed") return [];
 		if (cmd === "list_skills" || cmd === "list_stt_models") return [];
-		if (cmd === "read_naia_config") return null;
 		return undefined;
 	};
 })();
@@ -112,6 +112,7 @@ async function openContextTab(page: Page): Promise<void> {
 test.describe("워크스페이스 컨텍스트 해석 (#501)", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript({ content: TAURI_MOCK });
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
 		await page.addInitScript(() => {
 			localStorage.setItem(
 				"naia-config",

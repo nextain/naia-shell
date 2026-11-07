@@ -186,7 +186,7 @@ function gotoAvatarVrm() {
 
 describe("SettingsTab", () => {
 	it("applies the sole vLLM model after config hydration resets the empty selection", async () => {
-		localStorage.setItem("naia-adk-path", "/home/test/adk");
+		localStorage.setItem("naia-adk-path", "/tmp/test-adk");
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -242,7 +242,7 @@ describe("SettingsTab", () => {
 	])(
 		"saves discovered vLLM selection $expected with $ids",
 		async ({ ids, initial, expected, hidden }) => {
-			localStorage.setItem("naia-adk-path", "/home/test/adk");
+			localStorage.setItem("naia-adk-path", "/tmp/test-adk");
 			localStorage.setItem(
 				"naia-config",
 				JSON.stringify({

@@ -268,7 +268,7 @@ P04/P05: 최종 집중88/88(tmp/r10-focused-final.log), 실제 Agent8/8, AX brow
 
 P01/P02 UC-B2C-026-R11, P03 FR-B2C-026-R11을 먼저 기록했다. 자동 전송 대신 준비 중 상태 안내와 입력 보존을 선택했다. 준비가 끝나면 Enter/보내기를 다시 누르도록 한/영 안내한다. 기존 카드 commit 상태뿐 아니라 비동기 첫 인사 설정/renderer 준비 동안에도 role=status를 표시한다. 이전 인사 promise가 새 대화의 상태를 지우지 않도록 session을 확인한다.
 
-274px 재현 시험에서 보내기 오른쪽 끝 300px로 FAIL(`tmp/r11-red.log`); 고정 320px companion/chat 영역과 앱 모달의 최대 폭을 viewport 안으로 제한한 뒤 274px 경계·입력·Enter 전송이 PASS다. 최소 창 폭을 올리지 않으며 입력과 버튼 순서를 유지한다. Playwright 첫 갈무리에 splash가 남은 것을 확인해 splash 종료를 기다린 후 다시 촬영하도록 보완했다. 최종 증거는 `/home/nextain/work/codex-runs/026-b2c/tmp/r11-*`에 둔다.
+274px 재현 시험에서 보내기 오른쪽 끝 300px로 FAIL(`tmp/r11-red.log`); 고정 320px companion/chat 영역과 앱 모달의 최대 폭을 viewport 안으로 제한한 뒤 274px 경계·입력·Enter 전송이 PASS다. 최소 창 폭을 올리지 않으며 입력과 버튼 순서를 유지한다. Playwright 첫 갈무리에 splash가 남은 것을 확인해 splash 종료를 기다린 후 다시 촬영하도록 보완했다. 최종 증거는 `<작업폴더>/tmp/r11-*`에 둔다.
 
 verify-visual-ux: 기본/빈 입력·전송/준비 안내·카드 저장 성공/파싱 및 쓰기 오류 후 재시도/Tab·역Tab·Esc/ARIA/274·360·1100px를 브라우저에서 검증한다. 274px 갈무리는 실제 입력과 보내기가 모두 보이며 겹치지 않음을 직접 확인했다. fixture 영상과 BGM 미기동 안내는 실제 GPU·청취 증거가 아니다. CSS/React 변경이며 Rust/IPC 변경은 없다. Windows WebView2 274px 재확인은 별도 기기 수용이다.
 
@@ -300,7 +300,7 @@ verify-visual-ux 적용: 기본/빈 목록/진행/성공/오류/좁은 폭은 �
 
 NAIA_HOME 빈 포인터의 실제 기동은 Agent 미기동/다른 홈 포인터 불변을 로그와 실파일로 단언(tmp/r13-isolated-assert.log). 이 분리 홈 실행의 CLI smoke는 기본 홈 로그 경로를 보기 때문에 새 세션 없음으로 종료했으며, 격리 로그를 직접 검사한 단언과 구분한다. 실제 Tauri WebView→IPC는 stale A 캐시를 버리고 B를 복원하며 config/ui-config/slots-manifest의 바이트·mtime(1000000ms)와 A 원본 보존을 재검증(tmp/r13-native.log, r13-native/evidence.json). 이 native 설정 시험은 Agent가 없는 별도 실행이며, paired Agent 부팅 증거는 설치 배치 smoke다.
 
-Shell 전체 2693pass/21skip(255파일pass/1skip,249.80초), CI smoke 판정 단위5/5, Playwright6/6(선택/빈/읽기오류·274/360/1100px), core/Shell/BGM 및 tmp의 paired Agent tsc 통과. verify-visual-ux로 빈 홈 Start Fresh/Load, 권한 오류 안내,274px 입력/보내기 갈무리와 기존 상태·키보드/ARIA 시험을 확인했다. UI 코드 변경 없음. 증거는 /home/nextain/work/codex-runs/026-b2c/tmp/r13-*이다. 기존 root3항목과 전역 파일 계약 탐지 갭은 유지되며 이 긴급 회귀의 해결로 전역 구조 완료를 주장하지 않는다. 사용자 제공 헌장 불변 지시에 따라 process-status는 수정하지 않았다.
+Shell 전체 2693pass/21skip(255파일pass/1skip,249.80초), CI smoke 판정 단위5/5, Playwright6/6(선택/빈/읽기오류·274/360/1100px), core/Shell/BGM 및 tmp의 paired Agent tsc 통과. verify-visual-ux로 빈 홈 Start Fresh/Load, 권한 오류 안내,274px 입력/보내기 갈무리와 기존 상태·키보드/ARIA 시험을 확인했다. UI 코드 변경 없음. 증거는 <작업폴더>/tmp/r13-*이다. 기존 root3항목과 전역 파일 계약 탐지 갭은 유지되며 이 긴급 회귀의 해결로 전역 구조 완료를 주장하지 않는다. 사용자 제공 헌장 불변 지시에 따라 process-status는 수정하지 않았다.
 
 ## r14 — dev 앱스토어 설치판 (#792, P01~P03)
 11/4 가장 이른 인수 준비로 workflow_dispatch instance=prod|dev(기본 prod)를 추가한다. push는 prod다. stage-runtime에서 instance를 검증하고 Vite 세 환경변수를 덮어써 .env.local/부모 셸의 선택이 새어들지 않도록 한다. dev는 Naia-dev productName/모든 native window title, CI artifact -dev suffix. Windows 설치 smoke/제거·Linux resource dir·macOS DMG/Universal upload/download/launch 경로를 함께 바꾼다. 기본 창 옵션은 base conf에서 복사한다.
@@ -309,7 +309,7 @@ Shell 전체 2693pass/21skip(255파일pass/1skip,249.80초), CI smoke 판정 단
 
 헌장 불변 지시로 process-status.json은 수정하지 않고 이 ledger에 P 상태를 남긴다. 기존 root 위반3건 및 C conform regions 빈 상태/Shell 전체 파일 계약 검출 갭은 남아 있다. 운영 접근·push·다른 작업자 checkout 변경 없음. 컴포넌트/CSS/Rust/IPC 변경은 없고 native 창 제목은 생성 conf 단위로 검증한다. Windows/macOS/GPU 실기와 CI installer 생성은 별도 인수다.
 
-P04/P05 최종(서버 slice Done): instance8개·Universal/platform 집중81개 PASS, Shell 전체 **2701pass/21skip/실패0**,256파일pass/1skip,228.74초(`tmp/r14-shell-final.log`). 첫 전체는 기존 고정 이름 macOS/Steam 시험2fail/2699pass/21skip(`r14-shell-before-test-update.log`), 기대값 갱신 후 전체 재통과했다. dev Vite production build/budget·빌드 자산 dev URL 포함 확인·생성 conf 증거(`r14-dev-build.log`, `r14-built-hosts.log`, `r14-conf-evidence.json`). core/Shell/BGM/tmp exact paired Agent tsc·integrity·core70 anchors·logging·assembly·UC trace PASS. actionlint 미설치라 미실행, Python YAML parse/default/options PASS(`r14-yaml.log`). 모든 증거 기준 경로는 `/home/nextain/work/codex-runs/026-b2c/tmp/`. 실 installer 생성·기기·계정·서명 및 완전한 공존 격리는 Pending. 원격 push 없음.
+P04/P05 최종(서버 slice Done): instance8개·Universal/platform 집중81개 PASS, Shell 전체 **2701pass/21skip/실패0**,256파일pass/1skip,228.74초(`tmp/r14-shell-final.log`). 첫 전체는 기존 고정 이름 macOS/Steam 시험2fail/2699pass/21skip(`r14-shell-before-test-update.log`), 기대값 갱신 후 전체 재통과했다. dev Vite production build/budget·빌드 자산 dev URL 포함 확인·생성 conf 증거(`r14-dev-build.log`, `r14-built-hosts.log`, `r14-conf-evidence.json`). core/Shell/BGM/tmp exact paired Agent tsc·integrity·core70 anchors·logging·assembly·UC trace PASS. actionlint 미설치라 미실행, Python YAML parse/default/options PASS(`r14-yaml.log`). 모든 증거 기준 경로는 `<작업폴더>/tmp/`. 실 installer 생성·기기·계정·서명 및 완전한 공존 격리는 Pending. 원격 push 없음.
 
 ## r15 — 2026-11-04 Linux installer 안정성 (#792 P01–P05)
 

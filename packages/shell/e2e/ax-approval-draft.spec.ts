@@ -32,6 +32,8 @@ for (const width of [1100, 360])
 					const { AxApprovalDraft } = await import(
 						"/src/components/AxApprovalDraft.tsx" as string
 					);
+					const { setLocale } = await import("/src/lib/i18n.ts" as string);
+					await setLocale(locale);
 					const evidence = Object.freeze({}),
 						token = Object.freeze({});
 					const state = (win.__ax = {
@@ -62,8 +64,8 @@ for (const width of [1100, 360])
 					};
 					const root = createRoot(document.getElementById("draft")),
 						getEvidence = () => evidence;
-					win.__renderAx = (id: string, mode = "conversation") => (
-						(state.active = true),
+					win.__renderAx = (id: string, mode = "conversation") => {
+						state.active = true;
 						root.render(
 							React.createElement(
 								React.StrictMode,
@@ -81,12 +83,11 @@ for (const width of [1100, 360])
 									},
 									host,
 									evidence: getEvidence,
-									locale,
 									onSettled: (v: boolean) => state.results.push(v),
 								}),
 							),
-						)
-					);
+						);
+					};
 					win.__unmountAx = () => root.unmount();
 					win.__renderAx("p1");
 				},

@@ -371,6 +371,11 @@ export function BgmPlayer({ naia }: Props) {
 		() => (loadConfig()?.bgmSource as Source | undefined) ?? "youtube",
 	);
 	const [playing, setPlaying] = useState(false); // never auto-play on restore
+	const setBgmPlaying = useAvatarStore((s) => s.setBgmPlaying);
+	useEffect(() => {
+		setBgmPlaying(playing ? source : "");
+		return () => setBgmPlaying("");
+	}, [playing, source, setBgmPlaying]);
 	const [volume, setVolume] = useState(() => loadConfig()?.bgmVolume ?? 0.3);
 	const [showYoutubeBackground, setShowYoutubeBackground] = useState(
 		() => loadConfig()?.bgmYoutubeBackgroundVideo ?? true,
