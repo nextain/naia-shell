@@ -596,7 +596,8 @@ describe("PrebakedAvatarRenderer + canonical stage", () => {
 		canvas.height = 100;
 		vi.spyOn(canvas, "getContext").mockReturnValue(ctx as never);
 		renderer.start(video, canvas);
-		frames[0]?.(0);
+		const firstFrame = frames[0];
+		firstFrame?.(0);
 		expect(ctx.drawImage).toHaveBeenCalledWith(stageCanvas, 0, 0, 100, 100);
 		expect(ctx.drawImage).not.toHaveBeenCalledWith(
 			video,

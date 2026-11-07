@@ -786,7 +786,7 @@ for (const width of [360, 1100]) {
 		).toBeVisible();
 		await page.getByTestId("memory-pending").scrollIntoViewIfNeeded();
 		await page.screenshot({
-			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r17-memory-pending-${width}.png`,
+			path: `test-results/r17-memory-pending-${width}.png`,
 		});
 		await page.evaluate(() => {
 			(window as any).__R17_PENDING__ = 0;
@@ -809,7 +809,7 @@ for (const width of [360, 1100]) {
 			.getByTestId("memory-pending")
 			.evaluate((el) => el.scrollIntoView({ block: "center" }));
 		await page.screenshot({
-			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r17-memory-facts-${width}.png`,
+			path: `test-results/r17-memory-facts-${width}.png`,
 		});
 		await page.evaluate(() => {
 			(window as any).__R17_READ_ERROR__ = true;
@@ -853,7 +853,7 @@ for (const width of [360, 1100]) {
 			.evaluate((el) => el.scrollIntoView({ block: "center" }));
 		await expect(page.getByTestId("small-llm-base-url")).toBeVisible();
 		await page.screenshot({
-			path: `/home/nextain/work/codex-runs/026-b2c/tmp/r17-memory-model-${width}.png`,
+			path: `test-results/r17-memory-model-${width}.png`,
 		});
         await page.locator('input[name="memory-embedding"][value="vllm"]').focus(); await page.keyboard.press("Space");
         await expect(page.getByRole("alert").filter({ hasText: "모델 버전을 아직" })).toBeVisible();
@@ -864,6 +864,6 @@ for (const width of [360, 1100]) {
         await expect.poll(() => page.evaluate(() => { const c = JSON.parse(localStorage.getItem("naia-config") || "{}"); return [c.memoryEmbeddingBaseUrl, c.memoryEmbeddingModel, c.memoryEmbeddingRevision, c.memoryEmbeddingDimensions]; })).toEqual(["http://127.0.0.1:8032/v1", "intfloat/multilingual-e5-large", "e5-local-20261104", 1024]);
         await page.getByTestId("memory-embedding-revision").evaluate(el => el.scrollIntoView({ block: "center" }));
         const bounds = await page.getByTestId("memory-embedding-revision").boundingBox(); expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-        await page.screenshot({ path: `/home/nextain/work/codex-runs/026-b2c/tmp/r17-memory-embedding-${width}.png` });
+        await page.screenshot({ path: `test-results/r17-memory-embedding-${width}.png` });
 	});
 }
