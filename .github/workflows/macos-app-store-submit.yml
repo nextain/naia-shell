@@ -1,0 +1,30 @@
+name: macOS App Store submit
+on:
+  push:
+    branches: ['mas/**']
+permissions:
+  contents: read
+jobs:
+  submit:
+    if: contains(github.event.head_commit.message, '[mas-check]') || contains(github.event.head_commit.message, '[mas-submit]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet pyjwt cryptography
+      - name: App Store Connect review submission
+        env:
+          KEY_ID: ${{ secrets.MAS_ASC_KEY_ID }}
+          KEY_P8: ${{ secrets.MAS_ASC_KEY_P8 }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          BUNDLE_ID: com.naia.shell
+          APP_VERSION: '0.2.5'
+          BUILD_NUMBER: '10'
+          MODE: ${{ contains(github.event.head_commit.message, '[mas-submit]') && 'submit' || 'check' }}
+          REVIEW_NOTE: >-
+            Changes for guidelines 2.4.5 and 2.5.1: the com.apple.security.network.server entitlement is removed
+            and the app opens no listening sockets (OAuth sign-in uses the app's URL scheme instead of a local callback server).
+            The bundled Claude Code binary that referenced non-public symbols is removed, and Claude Code is not offered in
+            this version. Background music, which needed a local server, is disabled and shows an
+            "not available in the App Store version" notice instead.
+        run: python3 -I scripts/mas-submit.py
