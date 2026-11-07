@@ -133,8 +133,23 @@ jobs:
           trap 'rm -f "$key"' EXIT
           (umask 077; printf '%s' "$KEY_P8" > "$key")
           xcrun altool --validate-app -f mas-output/Naia-0.2.5-mas.pkg -t macos --apiKey "$KEY_ID" --apiIssuer "$ISSUER" 2>&1 | tee mas-output/validation.txt
+      # Only the first line of the commit message can request an upload; the default is no upload.
+      - name: Upload gate
+        id: upload_gate
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          subject="${COMMIT_MESSAGE%%$'\n'*}"
+          echo "subject: $subject"
+          if [[ "$subject" == *"[mas-upload]"* ]]; then
+            echo "upload requested in the commit subject"
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no [mas-upload] in the commit subject; not uploading"
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Upload when explicitly requested
-        if: contains(github.event.head_commit.message, '[mas-upload]')
+        if: steps.upload_gate.outputs.upload == 'true'
         env:
           KEY_ID: ${{ secrets.MAS_ASC_KEY_ID }}
           KEY_P8: ${{ secrets.MAS_ASC_KEY_P8 }}
