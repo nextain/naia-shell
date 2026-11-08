@@ -268,7 +268,11 @@ const MARQUEE_THRESHOLD = 22;
 const PLAYBACK_TIMEOUT_MS = 12_000;
 
 /** Native E2E uses a same-origin fixture; normal Shell runs always use YouTube. */
-function youtubeEmbedUrl(videoId: string, playbackId?: string): string {
+function youtubeEmbedUrl(
+	videoId: string,
+	playbackId?: string,
+	captions = false,
+): string {
 	const fixture = import.meta.env.VITE_NAIA_E2E_BGM_IFRAME_URL?.trim();
 	if (fixture) {
 		const url = new URL(fixture, window.location.origin);
@@ -278,7 +282,10 @@ function youtubeEmbedUrl(videoId: string, playbackId?: string): string {
 	}
 	return (
 		`https://www.youtube-nocookie.com/embed/${videoId}` +
-		`?autoplay=1&enablejsapi=1&cc_load_policy=0` +
+		`?autoplay=1&enablejsapi=1` +
+		// Captions must be requested at load: a later loadModule("captions") is
+		// ignored until the player has started, so the toggle alone showed none.
+		`&cc_load_policy=${captions ? 1 : 0}` +
 		`&origin=${encodeURIComponent(window.location.origin)}` +
 		(playbackId ? `&naiaPlayback=${encodeURIComponent(playbackId)}` : "")
 	);
@@ -648,6 +655,8 @@ export function BgmPlayer({ naia }: Props) {
 			setVideoLive(false);
 		}
 		if (status === "playing" && current.status !== "playing") {
+			// The captions module only exists once playback has started.
+			applyCaptions(captionsRef.current);
 			emitAiInterferenceEvent({
 				source: "bgm",
 				action: "music_started",
@@ -1857,7 +1866,11 @@ export function BgmPlayer({ naia }: Props) {
 				beginPlaybackTimeout(pending.playbackId);
 			}
 			setBackgroundVideoUrl(
-				youtubeEmbedUrl(pending.selected.videoId, pending.playbackId),
+				youtubeEmbedUrl(
+					pending.selected.videoId,
+					pending.playbackId,
+					captionsRef.current,
+				),
 			);
 			setBackgroundMediaType("iframe");
 			setVideoLive(pending.status === "playing");
@@ -1994,7 +2007,11 @@ export function BgmPlayer({ naia }: Props) {
 		}
 		// The playback id makes the URL and React iframe key unique. Selecting the
 		// same video again must create a fresh player instead of a Zustand no-op.
-		const embedUrl = youtubeEmbedUrl(video.id, snapshot.playbackId);
+		const embedUrl = youtubeEmbedUrl(
+			video.id,
+			snapshot.playbackId,
+			captionsRef.current,
+		);
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
 	}

@@ -285,6 +285,29 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		);
 	});
 
+	it("requests captions at load and re-applies them once playback is confirmed when captions are on", async () => {
+		await hydrateUiPreferences(
+			{ uiPreferences: { youtubeCaptions: true } },
+			{ adkPath: "/fixture", canPersist: true },
+		);
+		render(<BgmPlayer />);
+		await startTrack("v1", "Captioned Song");
+		const iframe = attachIframeForCurrentPlayback();
+		// The YouTube player ignores loadModule("captions") before playback has
+		// started, so the embed itself must ask for captions.
+		expect(new URL(iframe.src).searchParams.get("cc_load_policy")).toBe("1");
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		postYtMessage({ event: "onReady" });
+		post.mockClear();
+		confirmCurrentFrame("v1", "Captioned Song");
+		postYtMessage({ event: "onStateChange", info: 1 });
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		expect(post).toHaveBeenCalledWith(
+			JSON.stringify({ event: "command", func: "loadModule", args: ["captions"] }),
+			"https://www.youtube-nocookie.com",
+		);
+	});
+
 	it("finalizes an unresponsive load on timeout with track_error(timeout) and advances to the prepared next candidate once (FR-RADIO-DJ.2·16)", async () => {
 		vi.useFakeTimers();
 		const controlSpy = vi
