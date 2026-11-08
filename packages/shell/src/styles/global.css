@@ -6213,6 +6213,9 @@ body.resizing-row {
 
 /* Fixed BGM icon */
 .bgm-icon {
+	background: none;
+	border: 0;
+	font-family: inherit;
 	font-size: 15px;
 	color: rgba(160, 200, 255, 0.95);
 	flex-shrink: 0;
@@ -6444,11 +6447,19 @@ body.resizing-row {
 	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.bgm-yt-background-option {
+.bgm-yt-options {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	column-gap: 14px;
+	padding: 8px 10px 0;
+}
+
+.bgm-yt-background-option,
+.bgm-yt-captions-option {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	padding: 8px 10px 0;
 	color: rgba(255, 255, 255, 0.8);
 	font-size: 0.78rem;
 }

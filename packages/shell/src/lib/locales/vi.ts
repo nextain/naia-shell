@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "Dừng",
 	"bgm.play": "Phát",
 	"bgm.showBackgroundVideo": "Hiện video nền",
+	"bgm.showCaptions": "Hiện phụ đề",
 	"bgm.volume": "Âm lượng",
 	"bgm.drawerTitle": "Kéo: thay đổi kích thước / Nhấp: mở·đóng",
 	"bgm.tabLocal": "♪ Cục bộ",

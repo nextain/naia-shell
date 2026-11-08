@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "रोकें",
 	"bgm.play": "चलाएं",
 	"bgm.showBackgroundVideo": "बैकग्राउंड वीडियो दिखाएं",
+	"bgm.showCaptions": "उपशीर्षक दिखाएं",
 	"bgm.volume": "वॉल्यूम",
 	"bgm.drawerTitle": "खींचें: आकार बदलें / क्लिक: खोलें·बंद करें",
 	"bgm.tabLocal": "♪ स्थानीय",

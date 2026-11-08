@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "Hentikan",
 	"bgm.play": "Putar",
 	"bgm.showBackgroundVideo": "Tampilkan video latar",
+	"bgm.showCaptions": "Tampilkan teks",
 	"bgm.volume": "Volume",
 	"bgm.drawerTitle": "Seret: ubah ukuran / Klik: buka·tutup",
 	"bgm.tabLocal": "♪ Lokal",

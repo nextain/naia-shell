@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "Stopp",
 	"bgm.play": "Abspielen",
 	"bgm.showBackgroundVideo": "Hintergrundvideo anzeigen",
+	"bgm.showCaptions": "Untertitel anzeigen",
 	"bgm.volume": "Lautstärke",
 	"bgm.drawerTitle": "Ziehen: Größe ändern / Klicken: öffnen·schließen",
 	"bgm.tabLocal": "♪ Lokal",

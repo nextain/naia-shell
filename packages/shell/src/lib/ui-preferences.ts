@@ -10,6 +10,7 @@ export const UI_PREFERENCE_KEYS = {
 	nvaPan: "nvaPan",
 	nvaZoom: "nvaZoom",
 	youtubeAppHeight: "youtubeAppHeight",
+	youtubeCaptions: "youtubeCaptions",
 	browserToolPerms: "browserToolPerms",
 	browserToolbarCollapsed: "browserToolbarCollapsed",
 	editorZoom: "editorZoom",

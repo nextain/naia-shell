@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "إيقاف",
 	"bgm.play": "تشغيل",
 	"bgm.showBackgroundVideo": "إظهار فيديو الخلفية",
+	"bgm.showCaptions": "إظهار الترجمة",
 	"bgm.volume": "مستوى الصوت",
 	"bgm.drawerTitle": "سحب: تغيير الحجم / نقر: فتح·إغلاق",
 	"bgm.tabLocal": "♪ محلي",

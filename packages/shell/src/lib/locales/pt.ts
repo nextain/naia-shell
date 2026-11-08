@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "Parar",
 	"bgm.play": "Reproduzir",
 	"bgm.showBackgroundVideo": "Mostrar vídeo de fundo",
+	"bgm.showCaptions": "Mostrar legendas",
 	"bgm.volume": "Volume",
 	"bgm.drawerTitle": "Arrastar: redimensionar / Clicar: abrir·fechar",
 	"bgm.tabLocal": "♪ Local",

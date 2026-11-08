@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "정지",
 	"bgm.play": "재생",
 	"bgm.showBackgroundVideo": "배경 비디오 표시",
+	"bgm.showCaptions": "자막 표시",
 	"bgm.volume": "볼륨",
 	"bgm.drawerTitle": "드래그: 높이 조절 / 클릭: 열기·닫기",
 	"bgm.tabLocal": "♪ 로컬",

@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "Arrêter",
 	"bgm.play": "Lecture",
 	"bgm.showBackgroundVideo": "Afficher la vidéo d’arrière-plan",
+	"bgm.showCaptions": "Afficher les sous-titres",
 	"bgm.volume": "Volume",
 	"bgm.drawerTitle": "Glisser: redimensionner / Cliquer: ouvrir·fermer",
 	"bgm.tabLocal": "♪ Local",

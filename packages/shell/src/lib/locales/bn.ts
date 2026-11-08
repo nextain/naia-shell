@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "থামান",
 	"bgm.play": "চালান",
 	"bgm.showBackgroundVideo": "ব্যাকগ্রাউন্ড ভিডিও দেখান",
+	"bgm.showCaptions": "সাবটাইটেল দেখান",
 	"bgm.volume": "ভলিউম",
 	"bgm.drawerTitle": "টানুন: আকার পরিবর্তন / ক্লিক: খুলুন·বন্ধ করুন",
 	"bgm.tabLocal": "♪ স্থানীয়",

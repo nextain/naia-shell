@@ -452,6 +452,27 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 			"hidden",
 		);
 		await expect(page.locator(".app-bg-iframe")).toBeAttached();
+
+		// Captions: a "Show captions" checkbox next to "Show background video"
+		// (no bar "CC" button), keyboard reachable, and the closed panel is inert.
+		await expect(page.getByRole("button", { name: /^(captions|CC)$/i })).toHaveCount(0);
+		const captions = page
+			.locator(".bgm-yt-options")
+			.getByRole("checkbox", { name: "자막 표시" });
+		await expect(captions).toBeVisible();
+		await expect(captions).not.toBeChecked();
+		await captions.focus();
+		await page.keyboard.press("Space");
+		await expect(captions).toBeChecked();
+		const musicApp = page.locator(".bgm-icon");
+		await expect(musicApp).toHaveAttribute("aria-expanded", "true");
+		await musicApp.focus();
+		await page.keyboard.press("Enter");
+		await expect(musicApp).toHaveAttribute("aria-expanded", "false");
+		await expect(page.locator(".bgm-yt-app--hidden")).toHaveAttribute(
+			"inert",
+			"",
+		);
 		await playToggle.click();
 		await expect(playToggle).toHaveText("▶");
 		await expect(playToggle).toHaveAttribute("aria-label", "재생");

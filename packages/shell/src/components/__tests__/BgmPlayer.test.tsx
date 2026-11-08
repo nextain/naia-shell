@@ -8,7 +8,11 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listNaiaAssets, toLocalBlobUrl } from "../../lib/adk-store";
+import {
+	listNaiaAssets,
+	toLocalBlobUrl,
+	writeNaiaUiConfig,
+} from "../../lib/adk-store";
 import { onAiInterferenceEvent } from "../../lib/ai-interference";
 import { bgmPlayback } from "../../lib/bgm-playback";
 import { loadBgmLibraryFromSandbox, resetBgmLibraryCache } from "../../lib/bgm-library-store";
@@ -29,6 +33,7 @@ vi.mock("../../lib/adk-store", () => ({
 	getAdkPath: vi.fn().mockReturnValue(null),
 	listNaiaAssets: vi.fn().mockResolvedValue([]),
 	toLocalBlobUrl: vi.fn().mockResolvedValue("blob:mock"),
+	writeNaiaUiConfig: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("../../lib/bgm-sidecar-url", () => ({
 	ensureBgmSidecar: vi.fn().mockResolvedValue("http://localhost:18791"),
@@ -39,6 +44,10 @@ vi.mock("../../lib/bgm-sidecar-url", () => ({
 import * as chatService from "../../lib/chat-service";
 import { Logger } from "../../lib/logger";
 import { BgmPlayer } from "../BgmPlayer";
+import {
+	hydrateUiPreferences,
+	resetUiPreferencesForTests,
+} from "../../lib/ui-preferences";
 
 function bgmCommandHandler() {
 	const handler = listeners.get("bgm_command");
@@ -100,6 +109,27 @@ function postYtObjectMessage(payload: Record<string, unknown>) {
 	});
 }
 
+/** Open the music app panel (YouTube tab is the default) and return the
+ * "Show captions" checkbox that sits next to "Show background video". */
+function openCaptionsToggle(container: HTMLElement): HTMLInputElement {
+	const hiddenApp = document.querySelector(".bgm-yt-app--hidden");
+	if (hiddenApp) {
+		expect(hiddenApp).toHaveAttribute("inert");
+		fireEvent.click(container.querySelector(".bgm-icon")!);
+	}
+	expect(document.querySelector(".bgm-yt-app")).not.toHaveAttribute("inert");
+	const toggle = screen.getByRole("checkbox", { name: "Show captions" });
+	expect(toggle.closest("[data-bgm-captions-toggle]")).not.toBeNull();
+	expect(toggle.closest(".bgm-yt-options")?.textContent).toContain(
+		"Show background video",
+	);
+	return toggle as HTMLInputElement;
+}
+
+function captionsCommand(func: "loadModule" | "unloadModule") {
+	return JSON.stringify({ event: "command", func, args: ["captions"] });
+}
+
 function postYtMessage(payload: Record<string, unknown>) {
 	act(() => {
 		window.dispatchEvent(
@@ -150,6 +180,94 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		for (const iframe of document.querySelectorAll(".app-bg-iframe"))
 			iframe.remove();
 		localStorage.clear();
+		resetUiPreferencesForTests();
+	});
+
+	it("defaults captions off, toggles them from the YouTube tab checkbox, and restores the saved choice on a new video", async () => {
+		await hydrateUiPreferences(
+			{ uiPreferences: {} },
+			{ adkPath: "/fixture", canPersist: true },
+		);
+		const view = render(<BgmPlayer />);
+		const captionsToggle = openCaptionsToggle(view.container);
+		expect(captionsToggle).not.toBeChecked();
+		await startTrack("captions1", "Captions One");
+		const iframe = attachIframeForCurrentPlayback();
+		expect(new URL(iframe.src).searchParams.get("cc_load_policy")).toBe("0");
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		postYtMessage({ event: "onReady" });
+		expect(post).toHaveBeenCalledWith(
+			captionsCommand("unloadModule"),
+			"https://www.youtube-nocookie.com",
+		);
+		fireEvent.click(captionsToggle);
+		expect(post).toHaveBeenCalledWith(
+			captionsCommand("loadModule"),
+			"https://www.youtube-nocookie.com",
+		);
+		await waitFor(() =>
+			expect(writeNaiaUiConfig).toHaveBeenCalledWith(
+				{ uiPreferences: { youtubeCaptions: true } },
+				"/fixture",
+			),
+		);
+		post.mockClear();
+		fireEvent.click(captionsToggle);
+		expect(post).toHaveBeenCalledWith(
+			captionsCommand("unloadModule"),
+			"https://www.youtube-nocookie.com",
+		);
+		expect(captionsToggle).not.toBeChecked();
+		fireEvent.click(captionsToggle);
+		await waitFor(() =>
+			expect(writeNaiaUiConfig).toHaveBeenLastCalledWith(
+				{ uiPreferences: { youtubeCaptions: true } },
+				"/fixture",
+			),
+		);
+		const saved = vi.mocked(writeNaiaUiConfig).mock.lastCall![0];
+		view.unmount();
+		iframe.remove();
+		resetUiPreferencesForTests();
+		await hydrateUiPreferences(saved, {
+			adkPath: "/fixture",
+			canPersist: true,
+		});
+		const restored = render(<BgmPlayer />);
+		await startTrack("captions2", "Captions Two");
+		const next = attachIframeForCurrentPlayback();
+		const nextPost = vi.spyOn(next.contentWindow!, "postMessage");
+		postYtMessage({ event: "onReady" });
+		expect(openCaptionsToggle(restored.container)).toBeChecked();
+		// The old bar "CC" button is gone; the checkbox is the only toggle.
+		expect(screen.queryByRole("button", { name: /^(captions|CC)$/i })).toBeNull();
+		expect(nextPost).toHaveBeenCalledWith(
+			captionsCommand("loadModule"),
+			"https://www.youtube-nocookie.com",
+		);
+	});
+
+	it("requests captions at load and re-applies them once playback is confirmed when captions are on", async () => {
+		await hydrateUiPreferences(
+			{ uiPreferences: { youtubeCaptions: true } },
+			{ adkPath: "/fixture", canPersist: true },
+		);
+		render(<BgmPlayer />);
+		await startTrack("v1", "Captioned Song");
+		const iframe = attachIframeForCurrentPlayback();
+		// The YouTube player ignores loadModule("captions") before playback has
+		// started, so the embed itself must ask for captions.
+		expect(new URL(iframe.src).searchParams.get("cc_load_policy")).toBe("1");
+		const post = vi.spyOn(iframe.contentWindow!, "postMessage");
+		postYtMessage({ event: "onReady" });
+		post.mockClear();
+		confirmCurrentFrame("v1", "Captioned Song");
+		postYtMessage({ event: "onStateChange", info: 1 });
+		expect(bgmPlayback.current()?.status).toBe("playing");
+		expect(post).toHaveBeenCalledWith(
+			captionsCommand("loadModule"),
+			"https://www.youtube-nocookie.com",
+		);
 	});
 
 	it("finalizes an unresponsive load on timeout with track_error(timeout) and advances to the prepared next candidate once (FR-RADIO-DJ.2·16)", async () => {

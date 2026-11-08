@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "Стоп",
 	"bgm.play": "Воспроизвести",
 	"bgm.showBackgroundVideo": "Показывать фоновое видео",
+	"bgm.showCaptions": "Показывать субтитры",
 	"bgm.volume": "Громкость",
 	"bgm.drawerTitle": "Перетащить: изменить размер / Нажать: открыть·закрыть",
 	"bgm.tabLocal": "♪ Локальные",

@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "停止",
 	"bgm.play": "播放",
 	"bgm.showBackgroundVideo": "显示背景视频",
+	"bgm.showCaptions": "显示字幕",
 	"bgm.volume": "音量",
 	"bgm.drawerTitle": "拖动: 调整大小 / 点击: 打开·关闭",
 	"bgm.tabLocal": "♪ 本地",

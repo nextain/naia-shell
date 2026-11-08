@@ -1269,6 +1269,7 @@ export default {
 	"bgm.stop": "Stop",
 	"bgm.play": "Play",
 	"bgm.showBackgroundVideo": "Show background video",
+	"bgm.showCaptions": "Show captions",
 	"bgm.volume": "Volume",
 	"bgm.drawerTitle": "Drag: resize / Click: open·close",
 	"bgm.tabLocal": "♪ Local",
