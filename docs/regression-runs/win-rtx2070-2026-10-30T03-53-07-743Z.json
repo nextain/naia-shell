@@ -8,7 +8,7 @@
 	"ranOn": {
 		"inventorySha256": "dd6f38f29e5acc1104bd044b1af0b415d6235a3ee63badbb46be763656afbf21",
 		"commit": "ce746b8f0535a609a564a3a1b05fcae188e135c0",
-		"host": "leegom",
+		"host": "win-rtx2070",
 		"platform": "win32-x64",
 		"node": "v24.19.0"
 	},
