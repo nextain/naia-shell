@@ -8,7 +8,7 @@
   "machines": [
     {
       "name": "naia-os-3090",
-      "host": "bazzite",
+      "hostSha256": "7ae11332a5213a4021e1944834b8a6bf04716219a5b93dec85afcefab0707842",
       "os": "linux",
       "gpu": "nvidia",
       "gpu_model": "RTX 3090 x2 (24GB each)",
@@ -48,7 +48,7 @@
     },
     {
       "name": "win-rtx2070",
-      "host": "leegom",
+      "hostSha256": "339fa35a6d31bdc439091f2f38614c697c3309ab5af1cb38461645fa720f8a6f",
       "os": "windows",
       "gpu": "nvidia",
       "gpu_model": "RTX 2070 Laptop (8GB, Turing)",

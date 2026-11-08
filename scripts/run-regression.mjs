@@ -22,6 +22,7 @@
  * --dry-run 은 무엇을 돌릴지만 보여준다. 환경이 갖춰졌는지 먼저 볼 때 쓴다.
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
@@ -195,10 +196,17 @@ if (targets) {
  *
  * 이름이 어긋나면 그 자리에서 막는다. 기록을 남긴 뒤에 알면 늦다.
  */
+function hostSha256() {
+	return createHash("sha256").update(hostname()).digest("hex");
+}
+
 function identityMismatch(profile) {
 	const mismatches = [];
-	if (profile.host && profile.host !== hostname()) {
-		mismatches.push(`호스트명: 명단은 ${profile.host}, 이 기계는 ${hostname()}`);
+	// 명단은 공개 저장소에 있으므로 호스트명 대신 그 sha256 을 둔다.
+	if (profile.hostSha256 && profile.hostSha256 !== hostSha256()) {
+		mismatches.push(
+			`호스트명: 이 기계(${hostname()})의 sha256 이 명단의 hostSha256 과 다르다`,
+		);
 	}
 	const osByName = { linux: "linux", windows: "win32", darwin: "darwin" };
 	const expected = osByName[profile.os];
@@ -1029,7 +1037,8 @@ function fingerprint() {
 	return {
 		inventorySha256: digest,
 		commit,
-		host: hostname(),
+		// 기록은 공개된다. 기계 이름(명단의 id)을 적고 실제 호스트명은 남기지 않는다.
+		host: machine ?? "unknown",
 		platform: `${process.platform}-${process.arch}`,
 		node: process.version,
 	};
