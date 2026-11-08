@@ -12,6 +12,12 @@ interface AvatarState {
 	/** Asset URL (convertFileSrc) for background video. Empty = no video. */
 	backgroundVideoUrl: string;
 	backgroundMediaType: BackgroundMediaType;
+	/**
+	 * YouTube BGM embed URL. Its own layer above the background, so the user
+	 * can change the background without unmounting the player (music keeps
+	 * playing). Empty = no YouTube BGM.
+	 */
+	bgmVideoUrl: string;
 	/** Asset URL (convertFileSrc) for BGM track. Empty = no BGM. */
 	bgmTrackUrl: string;
 	/** BGM source playing right now ("" = none); drives the NVA ambient idle. */
@@ -31,6 +37,7 @@ interface AvatarState {
 	setBackgroundImage: (path: string) => void;
 	setBackgroundVideoUrl: (url: string) => void;
 	setBackgroundMediaType: (type: BackgroundMediaType) => void;
+	setBgmVideoUrl: (url: string) => void;
 	setBgmTrackUrl: (url: string) => void;
 	setBgmPlaying: (source: AmbientBgm) => void;
 }
@@ -51,6 +58,7 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 	backgroundImage: getInitialBgImage(),
 	backgroundVideoUrl: "",
 	backgroundMediaType: "",
+	bgmVideoUrl: "",
 	bgmTrackUrl: "",
 	bgmPlaying: "",
 	animationPath: "/animations/idle_loop.vrma",
@@ -69,6 +77,7 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 	setBackgroundImage: (path) => set({ backgroundImage: path }),
 	setBackgroundVideoUrl: (url) => set({ backgroundVideoUrl: url }),
 	setBackgroundMediaType: (type) => set({ backgroundMediaType: type }),
+	setBgmVideoUrl: (url) => set({ bgmVideoUrl: url }),
 	setBgmTrackUrl: (url) => set({ bgmTrackUrl: url }),
 	setBgmPlaying: (source) => set({ bgmPlaying: source }),
 }));

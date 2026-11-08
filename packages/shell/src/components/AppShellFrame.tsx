@@ -27,6 +27,7 @@ interface AppShellFrameProps {
 	backgroundFallback: { url: string; type: "image" | "video" } | null;
 	backgroundMediaType: "iframe" | "image" | "video" | "";
 	backgroundVideoUrl: string;
+	bgmVideoUrl: string;
 	mainContent: MainContentProps;
 	onSplashDone: () => void;
 	setNaiaWidth: (width: number) => void;
@@ -46,6 +47,7 @@ export function AppShellFrame({
 	backgroundFallback,
 	backgroundMediaType,
 	backgroundVideoUrl,
+	bgmVideoUrl,
 	mainContent,
 	onSplashDone,
 	setNaiaWidth,
@@ -103,19 +105,23 @@ export function AppShellFrame({
 			});
 	};
 
+	// YouTube BGM is its own layer, not the background: changing the
+	// background must not unmount the player and stop the music.
+	const bgmLayer = bgmVideoUrl ? (
+		<iframe
+			key={bgmVideoUrl}
+			className="app-bg-iframe"
+			src={bgmVideoUrl}
+			allow="autoplay"
+			referrerPolicy="origin"
+			sandbox="allow-scripts allow-same-origin allow-presentation"
+			title="BGM"
+			style={{ zIndex: 1 }}
+		/>
+	) : null;
+
 	const foreground =
-		backgroundMediaType === "iframe" && backgroundVideoUrl ? (
-			<iframe
-				key={backgroundVideoUrl}
-				className="app-bg-iframe"
-				src={backgroundVideoUrl}
-				allow="autoplay"
-				referrerPolicy="origin"
-				sandbox="allow-scripts allow-same-origin allow-presentation"
-				title="BGM"
-				style={{ zIndex: 1 }}
-			/>
-		) : backgroundVideoUrl &&
+		backgroundVideoUrl &&
 			(backgroundMediaType === "video" ||
 				(!backgroundMediaType &&
 					isMediaFile(backgroundVideoUrl, VIDEO_EXTENSIONS))) ? (
@@ -188,6 +194,7 @@ export function AppShellFrame({
 				<div className="app-bg-fallback" aria-hidden="true" />
 			)}
 			{foreground}
+			{bgmLayer}
 			{mainContent.showSplash && (
 				<SplashScreen onDone={onSplashDone} ready={appReady} />
 			)}

@@ -61,7 +61,7 @@ import {
 	patchUiPreferences,
 	useUiPreference,
 } from "../lib/ui-preferences";
-import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
+import { useAvatarStore } from "../stores/avatar";
 
 // ── YouTube server ────────────────────────────────────────────────────────────
 
@@ -325,14 +325,8 @@ export function BgmPlayer({ naia }: Props) {
 	// ── Local BGM ─────────────────────────────────────────────────────────────
 	const bgmTrackUrl = useAvatarStore((s) => s.bgmTrackUrl);
 	const setBgmTrackUrl = useAvatarStore((s) => s.setBgmTrackUrl);
-	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
-	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
-	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
-	const setBackgroundMediaType = useAvatarStore(
-		(s) => s.setBackgroundMediaType,
-	);
-	const prevBgVideoRef = useRef<string>("");
-	const prevBgMediaRef = useRef<BackgroundMediaType>("");
+	const bgmVideoUrl = useAvatarStore((s) => s.bgmVideoUrl);
+	const setBgmVideoUrl = useAvatarStore((s) => s.setBgmVideoUrl);
 	const [localTracks, setLocalTracks] = useState<string[]>([]);
 	const [localPaths, setLocalPaths] = useState<string[]>([]);
 	const [localNames, setLocalNames] = useState<string[]>([]);
@@ -1053,7 +1047,7 @@ export function BgmPlayer({ naia }: Props) {
 	// #521 — Initiate the YouTube widget `listening` handshake as soon as the
 	// background iframe is mounted/loaded, polling until the player responds.
 	useEffect(() => {
-		if (backgroundMediaType !== "iframe" || !backgroundVideoUrl) {
+		if (!bgmVideoUrl) {
 			youtubeHandshakeRef.current.stop();
 			resetObservedIframeState(null);
 			return;
@@ -1090,7 +1084,7 @@ export function BgmPlayer({ naia }: Props) {
 			document.removeEventListener("load", onDocumentCaptureLoad, true);
 			youtubeHandshakeRef.current.stop();
 		};
-	}, [backgroundMediaType, backgroundVideoUrl]);
+	}, [bgmVideoUrl]);
 
 	// ── YouTube IFrame API bridge ──────────────────────────────────────────────
 	// The host window initiates `{event:"listening",id:1,channel:"widget"}` on
@@ -1628,12 +1622,7 @@ export function BgmPlayer({ naia }: Props) {
 					setPlaying(false);
 					resetObservedIframeState(null);
 					lastConfirmedPlayingTrackRef.current = null;
-					if (useAvatarStore.getState().backgroundMediaType === "iframe") {
-						setBackgroundVideoUrl(prevBgVideoRef.current);
-						setBackgroundMediaType(prevBgMediaRef.current);
-					}
-					prevBgVideoRef.current = "";
-					prevBgMediaRef.current = "";
+					setBgmVideoUrl("");
 					bgmPlayback.clearQueue();
 					observePlayback("ended");
 					setPlaybackSnapshot(bgmPlayback.current());
@@ -1857,10 +1846,9 @@ export function BgmPlayer({ naia }: Props) {
 			if (pending.status === "requested" || pending.status === "loading") {
 				beginPlaybackTimeout(pending.playbackId);
 			}
-			setBackgroundVideoUrl(
+			setBgmVideoUrl(
 				youtubeEmbedUrl(pending.selected.videoId, pending.playbackId),
 			);
-			setBackgroundMediaType("iframe");
 			setVideoLive(pending.status === "playing");
 			return;
 		}
@@ -1990,19 +1978,10 @@ export function BgmPlayer({ naia }: Props) {
 			summary: "BGM: internal YouTube playback was requested; it is not playing until a later music_started event confirms it.",
 		});
 
-		if (!prevBgVideoRef.current && prevBgMediaRef.current === "") {
-			const { backgroundVideoUrl: curUrl, backgroundMediaType: curType } =
-				useAvatarStore.getState();
-			if (curType !== "iframe") {
-				prevBgVideoRef.current = curUrl;
-				prevBgMediaRef.current = curType;
-			}
-		}
 		// The playback id makes the URL and React iframe key unique. Selecting the
 		// same video again must create a fresh player instead of a Zustand no-op.
 		const embedUrl = youtubeEmbedUrl(video.id, snapshot.playbackId);
-		setBackgroundVideoUrl(embedUrl);
-		setBackgroundMediaType("iframe");
+		setBgmVideoUrl(embedUrl);
 	}
 
 	function sendYtCmd(func: string) {
@@ -2101,13 +2080,8 @@ export function BgmPlayer({ naia }: Props) {
 		setSource("local");
 		setBgmTrackUrl(tracks[idx]);
 		setLocalIndex(idx);
-		// Restore YT background when switching to local
-		if (useAvatarStore.getState().backgroundMediaType === "iframe") {
-			setBackgroundVideoUrl(prevBgVideoRef.current);
-			setBackgroundMediaType(prevBgMediaRef.current);
-			prevBgVideoRef.current = "";
-			prevBgMediaRef.current = "";
-		}
+		// Drop the YouTube layer when switching to local
+		setBgmVideoUrl("");
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_changed",
