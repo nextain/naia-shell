@@ -375,6 +375,36 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(rust).toContain("entry.unix_mode()");
 	});
 
+	it("both installers turn off tensorrt-cu12's nested pip so it cannot write into the artifact (#842)", () => {
+		// tensorrt-cu12's setup.py runs `pip install` of the bindings and
+		// libraries into the bundled interpreter, ignoring --target. On 3090
+		// that put 2.9G inside the artifact and the next install failed
+		// verify_artifact. The NVIDIA step already stages both packages.
+		const linux = readFileSync(
+			resolve(SHELL, "src-tauri/linux/prepare-voxcpm2-model.sh"),
+			"utf8",
+		);
+		expect(linux).toMatch(
+			/NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP=1 PYTHONPATH="\$NVIDIA_PENDING" run_python "Pinned TensorRT Python package acquisition failed"/,
+		);
+		const windows = readFileSync(
+			resolve(SHELL, "src-tauri/windows/prepare-voxcpm2-model.ps1"),
+			"utf8",
+		);
+		const flagAt = windows.indexOf(
+			'$env:NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP = "1"',
+		);
+		const metapackageAt = windows.indexOf(
+			"\"tensorrt-cu12==$($InstallerPackageLock.packages.'tensorrt-cu12')\"",
+		);
+		const clearAt = windows.indexOf(
+			"Remove-Item Env:NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP",
+		);
+		expect(flagAt).toBeGreaterThan(-1);
+		expect(metapackageAt).toBeGreaterThan(flagAt);
+		expect(clearAt).toBeGreaterThan(metapackageAt);
+	});
+
 	it("darwin icon = 전체 배열 (base 5원소 + icns — 부분 델타 금지, RFC 7386 배열 대체)", () => {
 		expect(matrix.os.darwin.icon).toEqual([
 			...baseConf.bundle.icon,
