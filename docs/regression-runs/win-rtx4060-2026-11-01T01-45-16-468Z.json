@@ -8,7 +8,7 @@
 	"ranOn": {
 		"inventorySha256": "675cb5f2a890ba5ff074714fdb404d07eec60a4cb5c04e69c3af6bba6999a013",
 		"commit": "27d0fb72e2b2c363f1d8b94bc0f09928dbb97218",
-		"host": "luke-victus",
+		"host": "win-rtx4060",
 		"platform": "win32-x64",
 		"node": "v24.21.0"
 	},
