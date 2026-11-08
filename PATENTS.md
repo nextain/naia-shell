@@ -72,8 +72,8 @@ This Section 2 covenant ends automatically for a person or entity that:
    this file means any entity that controls, is controlled by, or is under
    common control with that party, and "control" has the meaning given in the
    definition of "Legal Entity" in Section 1 of the Apache License 2.0) that
-   has annual consolidated revenue of more than KRW 1,000,000,000, or in a
-   deployment exceeding 100 seats; or
+   has annual consolidated revenue of KRW 1,000,000,000 or more, or in a
+   deployment of 100 or more seats; or
 3. triggers Defensive Termination as described below.
 
 ### Defensive Termination
@@ -108,8 +108,8 @@ license (see [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md)):
 2. Embedding or implementing a Listed Patent method that is not contained in
    this repository (beyond the scope already licensed under Section 3 of the
    Apache License 2.0) in a closed-source product, an OEM shipment, or an
-   enterprise-wide deployment exceeding the revenue or seat thresholds in
-   Section 2.
+   enterprise-wide deployment meeting or exceeding the revenue or seat
+   thresholds in Section 2.
 3. The proprietary Nextain Tier-2 Enterprise and Cloud Modules to the extent
    not included in the Source form of this repository:
    - enterprise multi-layer context compaction plug-ins (to be specified after
