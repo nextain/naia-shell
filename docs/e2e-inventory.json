@@ -1,9 +1,9 @@
 {
 	"generatedFrom": "packages/shell/e2e-tauri/specs",
-	"total": 80,
+	"total": 81,
 	"summary": {
 		"credentialed_live": 53,
-		"deterministic_ci": 21,
+		"deterministic_ci": 22,
 		"native_local": 6
 	},
 	"specs": [
@@ -689,6 +689,12 @@
 				"linux"
 			],
 			"tier": "native_local"
+		},
+		{
+			"spec": "app-store-window.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
 		},
 		{
 			"spec": "env-tool-browser-host-fullstack.spec.ts",
