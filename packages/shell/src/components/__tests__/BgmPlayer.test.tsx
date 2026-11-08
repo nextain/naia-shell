@@ -68,7 +68,7 @@ async function enqueueTrack(videoId: string, title: string) {
  * real background-rendering component does from useAvatarStore. The YouTube
  * message handler derives eventPlaybackId from this iframe's own `src`. */
 function attachIframeForCurrentPlayback(): HTMLIFrameElement {
-	const src = useAvatarStore.getState().backgroundVideoUrl;
+	const src = useAvatarStore.getState().bgmVideoUrl;
 	const iframe = document.createElement("iframe");
 	iframe.className = "app-bg-iframe";
 	iframe.src = src;
@@ -1915,10 +1915,11 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 			),
 		);
 		await startTrack("first", "YouTube One");
-		expect(useAvatarStore.getState().backgroundMediaType).toBe("iframe");
-		expect(useAvatarStore.getState().backgroundVideoUrl).toMatch(
+		expect(useAvatarStore.getState().bgmVideoUrl).toMatch(
 			/^https:\/\/www\.youtube-nocookie\.com\/embed\/first\?/,
 		);
+		// The YouTube embed is not the background any more.
+		expect(useAvatarStore.getState().backgroundMediaType).toBe("");
 		expect(container.querySelector("audio")?.hasAttribute("src")).toBe(false);
 		bgmCommandHandler()({
 			payload: JSON.stringify({ type: "bgm_youtube_next" }),
@@ -1937,6 +1938,24 @@ describe("BgmPlayer AI next on mixed local/YouTube playlists (#671)", () => {
 		);
 		expect(container.querySelector("audio")?.getAttribute("src")).toBe(
 			"blob:local-two",
+		);
+		expect(useAvatarStore.getState().bgmVideoUrl).toBe("");
+	});
+
+	it("keeps the YouTube player when the user changes the background mid-song", async () => {
+		const { container } = render(<BgmPlayer />);
+		await waitFor(() =>
+			expect(container.querySelector(".bgm-player")).toBeInTheDocument(),
+		);
+		await startTrack("first", "YouTube One");
+		const embed = useAvatarStore.getState().bgmVideoUrl;
+		expect(embed).toMatch(/\/embed\/first\?/);
+		useAvatarStore.getState().setBackgroundMediaType("image");
+		useAvatarStore.getState().setBackgroundVideoUrl("blob:new-background");
+		await Promise.resolve();
+		expect(useAvatarStore.getState().bgmVideoUrl).toBe(embed);
+		expect(useAvatarStore.getState().backgroundVideoUrl).toBe(
+			"blob:new-background",
 		);
 	});
 
