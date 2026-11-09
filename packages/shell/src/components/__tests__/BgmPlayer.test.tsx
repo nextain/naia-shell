@@ -2069,6 +2069,25 @@ describe("BgmPlayer local folder playlist loop", () => {
 		await act(async () => { fireEvent.ended(audio); });
 		expect(audio.src).toBe(`blob:/music/${expected}.mp3`);
 	}
+	it.each(["queue", "playlist"])("advances the library %s before the local folder on track end", async (mode) => {
+		const first = { id: "local:/music/a.mp3", source: "local", path: "/music/a.mp3", title: "First" };
+		const next = { id: "youtube:next", source: "youtube", youtubeId: "next", title: "Queued Next" };
+		localStorage.setItem("naia-config", JSON.stringify({
+			locale: "en", bgmSource: "local",
+			bgmLibrary: { schemaVersion: 1, likes: [],
+				playlists: [{ id: "mix", name: "Mix", createdAt: 1, updatedAt: 1, tracks: mode === "playlist" ? [first, next] : [first] }],
+				activePlaylistId: "mix", currentIndex: 0, shuffle: false, repeat: "off",
+				queue: mode === "queue" ? [next] : [], history: [] },
+		}));
+		const { container } = render(<BgmPlayer />);
+		const audio = container.querySelector("audio")!;
+		await waitFor(() => expect(audio.src).toBe("blob:/music/a.mp3"));
+		await act(async () => { fireEvent.click(container.querySelector(".bgm-btn--play")!); });
+		await act(async () => { fireEvent.ended(audio); });
+		await waitFor(() => expect(useAvatarStore.getState().bgmVideoUrl).toMatch(/\/embed\/next\?/));
+		expect(bgmPlayback.current()?.selected.title).toBe("Queued Next");
+		expect(audio.src).not.toBe("blob:/music/b.mp3");
+	});
 	it("advances every local track and wraps last to first twice with no library playlist", async () => {
 		const { audio } = await setup();
 		expect(audio.loop).toBe(false);

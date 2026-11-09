@@ -2133,8 +2133,10 @@ export function BgmPlayer({ naia }: Props) {
 	}
 
 	function handleLocalEnded() {
+		if (!playing) return;
+		if (playNext()) return;
 		const tracks = localTracksRef.current;
-		if (source !== "local" || !playing || tracks.length === 0) return;
+		if (source !== "local" || tracks.length === 0) return;
 		const excluded = new Set(loadConfig()?.bgmLocalLoopExclude ?? []);
 		const eligible = tracks.map((_, index) => index).filter((index) =>
 			!excluded.has(localPathsRef.current[index]?.split(/[\\/]/).pop() ?? ""),
