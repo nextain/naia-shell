@@ -2685,3 +2685,14 @@ P02 Test Coverage Map:
 Rust 변경 없음. 실제 3090 방송 운영 수용과 브라우저 IPC fixture 검증은 구분한다.
 
 P04/P05: 관련 Vitest 35/35, 최종 renderer 22/22, Shell typecheck 통과. Playwright 정상 카드·레이아웃 3/3 및 투명 오류 360/1100px 2/2 통과. 오류 상태는 기존 polite status로 안내하며 이미지와 canvas는 보이지 않고 키보드 입력은 유지된다. 재마운트 시 로딩 상태로 복구한다. 스크린샷·DOM·폭 검토에서 정보 위계와 가로 넘침 이상 없음. 신규 입력/제어 및 Rust 변경 없음. 전체 Shell 실행의 비관련 실패는 결과 보고서에 별도 기록한다.
+
+### UC-NVA-BROADCAST-HOTFIX browser regression verification (#451, #855)
+
+P01–P03: preserve authored greeting playback in Linux Chromium while retaining the WebKitGTK MediaSource workaround; a media failure remains transparent with keyboard input usable. Use deterministic avatar crop assets and native workspace boot fixtures. Korean layout is measured after Markdown paints; Slides video labels follow the fixture locale.
+
+| Scenario | P02/P04 verification |
+|---|---|
+| Desktop/narrow avatar crop; native workspace startup | `packages/shell/e2e/205-onboarding-avatar-grid.spec.ts`, `packages/shell/e2e/900-startup-latency.spec.ts` |
+| Authored greeting playback 360/1100px and decoder routing | `packages/shell/e2e/character-theme.spec.ts`, `packages/shell/src/lib/__tests__/local-media-url.test.ts` |
+| Korean text/long URL; failed media with keyboard input 360/1100px | `packages/shell/e2e/chat-korean-keepall.spec.ts`, `packages/shell/e2e/onboarding-fresh.spec.ts` |
+| Installed video narration, pause/resume, narrow layout and locale | `packages/shell/e2e/slides-sidecar.spec.ts` |
