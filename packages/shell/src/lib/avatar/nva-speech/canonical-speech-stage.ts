@@ -27,6 +27,7 @@ import { SpeechPlayer } from "./vendor/speech-player.js";
 import { localMediaUrlApi } from "../../local-media-url";
 import { Logger } from "../../logger";
 import { isWebMode } from "../../web-runtime/web-assets";
+import { NvaStackedAlphaGL } from "../nva-stacked-alpha-gl";
 
 export interface CanonicalSpeechStageConfig {
 	manifest: NvaManifest;
@@ -34,6 +35,8 @@ export interface CanonicalSpeechStageConfig {
 	loadAsset: (path: string) => Promise<Blob>;
 	/** Mounted decode element; the stage's own media become hidden siblings. */
 	host: HTMLVideoElement;
+	/** Test seam; defaults to the WebGL stacked color/alpha decoder. */
+	createStackedAlpha?: () => StackedBodyDecoder;
 	/** Test seam; defaults to the canonical player. */
 	createPlayer?: (
 		options: ConstructorParameters<typeof SpeechPlayer>[0],
@@ -87,6 +90,28 @@ export function canonicalSpeechAssetPaths(manifest: NvaManifest): string[] {
 	return [...paths];
 }
 
+export interface StackedBodyDecoder {
+	readonly canvas: HTMLCanvasElement;
+	draw(video: HTMLVideoElement): boolean;
+	dispose(): void;
+}
+
+/**
+ * True when a body frame is a stacked `.stacked.mp4` (color on top, alpha below)
+ * being drawn over a whole canvas: twice as tall, relative to its width, as the canvas.
+ */
+export function isStackedBodyFrame(
+	image: CanvasImageSource,
+	width: number,
+	height: number,
+): boolean {
+	const video = image as HTMLVideoElement;
+	const vw = video.videoWidth ?? 0;
+	const vh = video.videoHeight ?? 0;
+	if (!(vw > 0 && vh > 0 && width > 0 && height > 0)) return false;
+	return vh / vw > 1.5 * (height / width);
+}
+
 export class CanonicalSpeechStage {
 	readonly canvas: HTMLCanvasElement;
 	private readonly player: SpeechPlayerLike;
@@ -98,6 +123,8 @@ export class CanonicalSpeechStage {
 	/** Player loads are serialized; the vendored media elements are not reloaded concurrently. */
 	private prepareQueue: Promise<void> = Promise.resolve();
 	private disposed = false;
+	private stackedBody: StackedBodyDecoder | null = null;
+	private stackedBodyFailed = false;
 
 	constructor(private readonly config: CanonicalSpeechStageConfig) {
 		const host = config.host;
@@ -123,7 +150,7 @@ export class CanonicalSpeechStage {
 			// Linux webm clips past ~2 MB only decode through MediaSource on WebKitGTK.
 			...(isWebMode() ? {} : { urlApi: localMediaUrlApi }),
 			audio,
-			canvas: this.canvas,
+			canvas: this.playerCanvas(),
 			bodyVideo: video(),
 			speechVideos: [video(), video()] as [HTMLVideoElement, HTMLVideoElement],
 		};
@@ -255,6 +282,87 @@ export class CanonicalSpeechStage {
 			element.remove();
 		}
 		this.assets = null;
+		this.stackedBody?.dispose();
+		this.stackedBody = null;
+	}
+
+	/**
+	 * The canvas handed to the vendored player. Web mode resolves the talking
+	 * body clip to its `.stacked.mp4` (VideoAvatarCanvas resolveAssetUrl), and the
+	 * player draws the body frame whole, which shows the alpha half and the color
+	 * half's edge padding. Its 2D context unpacks such a frame before drawing;
+	 * every other call goes straight to `canvas`.
+	 */
+	private playerCanvas(): HTMLCanvasElement {
+		const canvas = this.canvas;
+		const context = canvas.getContext("2d", { alpha: true });
+		if (!context) return canvas;
+		const drawImage = (image: CanvasImageSource, ...args: number[]) => {
+			if (args.length === 4 && isStackedBodyFrame(image, args[2], args[3])) {
+				this.drawStackedBody(
+					context,
+					image as HTMLVideoElement,
+					args as [number, number, number, number],
+				);
+				return;
+			}
+			(context.drawImage as (...a: unknown[]) => void)(image, ...args);
+		};
+		const proxied = new Proxy(context, {
+			get(target, prop) {
+				if (prop === "drawImage") return drawImage;
+				const value = Reflect.get(target, prop, target);
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+			set(target, prop, value) {
+				return Reflect.set(target, prop, value, target);
+			},
+		});
+		return {
+			get width() {
+				return canvas.width;
+			},
+			set width(value: number) {
+				canvas.width = value;
+			},
+			get height() {
+				return canvas.height;
+			},
+			set height(value: number) {
+				canvas.height = value;
+			},
+			getContext: () => proxied,
+		} as unknown as HTMLCanvasElement;
+	}
+
+	private drawStackedBody(
+		context: CanvasRenderingContext2D,
+		video: HTMLVideoElement,
+		[dx, dy, dw, dh]: [number, number, number, number],
+	): void {
+		if (!this.stackedBodyFailed) {
+			try {
+				if (!this.stackedBody)
+					this.stackedBody = this.config.createStackedAlpha
+						? this.config.createStackedAlpha()
+						: new NvaStackedAlphaGL();
+				if (!this.stackedBody.draw(video))
+					throw new Error("stacked-alpha context lost");
+				context.drawImage(this.stackedBody.canvas, dx, dy, dw, dh);
+				return;
+			} catch (error) {
+				this.stackedBodyFailed = true;
+				this.stackedBody?.dispose();
+				this.stackedBody = null;
+				Logger.warn(
+					"CanonicalSpeechStage",
+					"stacked body WebGL failed; drawing color half only",
+					{ error: String(error) },
+				);
+			}
+		}
+		const half = Math.max(1, Math.floor(video.videoHeight / 2));
+		context.drawImage(video, 0, 0, video.videoWidth, half, dx, dy, dw, dh);
 	}
 
 	private loadAssets(): Promise<Map<string, Blob>> {
