@@ -131,5 +131,25 @@ class TestRadioRunsheetFixes(unittest.TestCase):
         self.assertTrue(hw.last_turn_failed)
 
 
+
+    def test_5_tts_telemetry_and_explicit_error_reason(self):
+        self.assertEqual(runner.classify_error_reason("정상 발화 대본입니다."), "NONE")
+        self.assertEqual(runner.classify_error_reason("", timed_out=True), "TURN_TIMEOUT")
+        self.assertEqual(runner.classify_error_reason("400 Bad Request: maximum context length"), "HTTP_400_CONTEXT_LENGTH")
+        self.assertEqual(runner.classify_error_reason("답을 만들다 실패했어요. 다시 시도할까요?"), "UI_AGENT_ERROR_BANNER")
+        self.assertEqual(runner.classify_error_reason("   "), "EMPTY_RESPONSE")
+
+        def mock_eval(js):
+            if "snapshot" in js:
+                return '{"is_speaking":false,"tts_start_ts":"2026-11-09T18:30:02.100+09:00","tts_end_ts":"2026-11-09T18:30:14.600+09:00","tts_dur_sec":12.5,"utterance_count":3}'
+            return "[]"
+
+        info = runner.collect_tts_telemetry(eval_fn=mock_eval, wait_until_done_sec=1.0)
+        self.assertEqual(info["tts_start_ts"], "2026-11-09T18:30:02.100+09:00")
+        self.assertEqual(info["tts_end_ts"], "2026-11-09T18:30:14.600+09:00")
+        self.assertEqual(info["tts_dur_sec"], 12.5)
+        self.assertEqual(info["utterance_count"], 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
