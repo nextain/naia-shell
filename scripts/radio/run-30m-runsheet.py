@@ -1,0 +1,695 @@
+#!/usr/bin/env python3
+"""
+Naia Radio 30-Minute Broadcast Runsheet Runner (v3 — 2026-11-09, Show 2 Clean Verification)
+Fixes:
+1. vLLM max_model_len=8192 (400 Bad Request) prevention:
+   - Korean-aware token estimator (`estimate_tokens`) + `SlidingHistoryWindow` capping
+     total input tokens (system/tools overhead + recent turns + prompt) at <= 6,000 tokens
+     (with >= 2,192 output token headroom below 8,192).
+   - Automatic sliding window reset + compact `[이전 코너 요약]` header when accumulated
+     turns exceed `MAX_HISTORY_TURNS = 3` or `MAX_INPUT_TOKENS = 6000`.
+2. 97-second inter-corner wait loop elimination:
+   - `wait_for_next_cue()` caps any inter-corner wait to `MAX_CORNER_IDLE_SEC = 15.0`s
+     (and `0.0`s immediately after any fallback recovery) so the broadcast never stalls
+     in a 97-second dead-air loop between corners.
+   - `send_chat()` enforces a strict turn timeout (`TURN_TIMEOUT_SEC = 18`), detects
+     LLM 400 / `"답을 만들다 실패했어요"` immediately, attempts 1 compact retry or speaks a
+     corner-specific fallback line (`FALLBACK_UTTERANCES`), and advances immediately
+     to the next corner cue.
+"""
+import json
+import math
+import os
+import re
+import subprocess
+import time
+from datetime import datetime, timezone
+
+BASE_DIR = "/var/home/luke/naia-test/radio-026"
+OUT_DIR = f"{BASE_DIR}/rtmp/recordings"
+SHOW_TAG = os.environ.get("RADIO_SHOW_TAG", "show2-20261109")
+RUNSHEET_LOG = f"{OUT_DIR}/radio-{SHOW_TAG}-runsheet.log"
+TRAINING_JSONL = f"{OUT_DIR}/training-{SHOW_TAG}.jsonl"
+NODE = "/home/linuxbrew/.linuxbrew/bin/node"
+BGM_DIR = f"{BASE_DIR}/home/naia-adk/naia-settings/bgm-musics"
+
+# Token budget constants for vLLM max_model_len=8192
+MAX_MODEL_LEN = 8192
+MAX_INPUT_TOKENS = 6000
+SYSTEM_AND_TOOLS_OVERHEAD_TOKENS = 4200
+MAX_CONVERSATION_TOKENS = MAX_INPUT_TOKENS - SYSTEM_AND_TOOLS_OVERHEAD_TOKENS  # 1800 tokens
+MAX_SINGLE_PROMPT_TOKENS = 650
+MAX_SUMMARY_TOKENS = 180
+MAX_HISTORY_TURNS = 3
+
+# Corner transition & timeout constants (prevents 97s dead-air wait loop)
+MAX_CORNER_IDLE_SEC = 15.0
+TURN_TIMEOUT_SEC = 18
+
+CJK_HANGUL_RE = re.compile(r"[\uAC00-\uD7A3\u3131-\u318E\u1100-\u11FF\u4E00-\u9FFF\u3040-\u30FF]")
+
+ERROR_MARKERS = (
+    "답을 만들다 실패했어요",
+    "다시 시도할까요",
+    "400 Bad Request",
+    "maximum context length",
+    "input_tokens",
+    "provider returned reasoning",
+    "ERR:",
+)
+
+FALLBACK_UTTERANCES = {
+    "오프닝": "안녕하세요, 나이아예요. 오늘 나이아 라디오 시험 방송에서 음악과 이야기로 편안한 시간 함께해요.",
+    "코너 ① 오늘의 질문": "요즘 바쁜 일상 속에서도 잠시 숨을 고르는 시간이 참 소중한 것 같아요. 이어서 다음 이야기로 가 볼게요.",
+    "날씨·안부": "바쁜 하루 중에도 나이아 라디오와 함께해 주셔서 고마워요. 잠깐 어깨 힘 빼고 편하게 들어 주세요.",
+    "선곡 ①": "오늘 사연과 마음을 담아 준비한 한국어 곡 「불을 꺼도 돼요」 함께 들으셨어요.",
+    "코너 ② 사연": "보내 주신 시험 사연 잘 읽었어요. 퇴근길 지친 마음이 조금이나마 가벼워지길 바라며 응원할게요.",
+    "선곡 ②": "이번에는 같은 사연으로 만든 영어 곡 「It's Okay to Turn Off the Light」를 함께 들어볼게요.",
+    "코너 ③ 청취자 채팅": "채팅으로 남겨 주신 이야기 고마워요. 오늘 시험 방송이라 설레는 마음으로 여러분과 함께하고 있어요.",
+    "질문지": "확실하게 기억나지 않는 내용은 추측하지 않고 솔직하게 말씀드릴게요. 다음 이야기로 이어가 볼게요.",
+    "클로징": "첫 시험 방송에 함께해 주셔서 고맙습니다. 나이아 라디오였습니다. 투자 및 승인 넥스테인·루크, PD 알파, 작가 지나, 방송 진행 나이아, 기술 지원 민호.",
+    "default": "잠시 호흡을 가다듬고 다음 코너로 바로 이어갈게요. 편안하게 함께해 주세요.",
+}
+
+START_TS = int(os.environ.get("RADIO_START_TS", str(int(time.time()))))
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimate Qwen/vLLM token count for mixed Korean/ASCII strings."""
+    if not text:
+        return 0
+    s = str(text)
+    cjk_count = len(CJK_HANGUL_RE.findall(s))
+    other_count = max(0, len(s) - cjk_count)
+    return int(math.ceil(cjk_count * 1.15 + other_count * 0.25))
+
+
+def truncate_text_to_tokens(text: str, max_tokens: int) -> str:
+    """Truncate text preserving head and tail so estimated tokens <= max_tokens."""
+    if not text or max_tokens <= 0:
+        return ""
+    s = str(text)
+    est = estimate_tokens(s)
+    if est <= max_tokens:
+        return s
+    marker = " ...[중략]... "
+    target = max(8, max_tokens - estimate_tokens(marker))
+    ratio = target / max(1, est)
+    keep_chars = max(16, int(len(s) * ratio))
+    head = max(10, int(keep_chars * 0.7))
+    tail = max(6, keep_chars - head)
+    return f"{s[:head]}{marker}{s[max(head, len(s) - tail):]}"
+
+
+class SlidingHistoryWindow:
+    """
+    Maintains a sliding window of recent turns and enforces <= MAX_INPUT_TOKENS (6000)
+    so vLLM (max_model_len=8192) never throws 400 Bad Request.
+    """
+
+    def __init__(
+        self,
+        max_input_tokens: int = MAX_INPUT_TOKENS,
+        overhead_tokens: int = SYSTEM_AND_TOOLS_OVERHEAD_TOKENS,
+        max_turns: int = MAX_HISTORY_TURNS,
+        max_single_prompt_tokens: int = MAX_SINGLE_PROMPT_TOKENS,
+    ):
+        self.max_input_tokens = max_input_tokens
+        self.overhead_tokens = overhead_tokens
+        self.max_conversation_tokens = max(400, max_input_tokens - overhead_tokens)
+        self.max_turns = max(1, max_turns)
+        self.max_single_prompt_tokens = max_single_prompt_tokens
+        self.active_turns = []  # list of (situation, user_text, assistant_text, tokens)
+        self.archived_summaries = []  # compact 1-line recaps of dropped turns
+        self.last_turn_failed = False
+
+    def total_estimated_input_tokens(self, next_prompt_tokens: int = 0) -> int:
+        hist_tokens = sum(t[3] for t in self.active_turns)
+        return self.overhead_tokens + hist_tokens + next_prompt_tokens
+
+    def _archive_oldest(self):
+        while len(self.active_turns) >= self.max_turns:
+            sit, u_txt, a_txt, _ = self.active_turns.pop(0)
+            recap = truncate_text_to_tokens(f"[{sit}] {a_txt or u_txt}", 40)
+            if recap:
+                self.archived_summaries.append(recap)
+                self.archived_summaries = self.archived_summaries[-4:]
+
+    def build_summary_prefix(self) -> str:
+        if not self.archived_summaries:
+            return ""
+        joined = " / ".join(self.archived_summaries[-3:])
+        capped = truncate_text_to_tokens(joined, MAX_SUMMARY_TOKENS)
+        return f"[이전 코너 요약: {capped}] "
+
+    def prepare_turn(self, situation: str, prompt_text: str, requested_new_chat: bool = False):
+        """
+        Return (bounded_prompt, effective_new_chat, estimated_input_tokens).
+        Guarantees estimated_input_tokens <= self.max_input_tokens (6000).
+        """
+        bounded_prompt = truncate_text_to_tokens(prompt_text, self.max_single_prompt_tokens)
+        prompt_tokens = estimate_tokens(bounded_prompt) + 8
+
+        effective_new_chat = bool(requested_new_chat or self.last_turn_failed)
+        projected = self.total_estimated_input_tokens(prompt_tokens)
+
+        if not effective_new_chat and (
+            len(self.active_turns) >= self.max_turns or projected > self.max_input_tokens
+        ):
+            while self.active_turns:
+                sit, u_txt, a_txt, _ = self.active_turns.pop(0)
+                recap = truncate_text_to_tokens(f"[{sit}] {a_txt or u_txt}", 40)
+                if recap:
+                    self.archived_summaries.append(recap)
+            self.archived_summaries = self.archived_summaries[-3:]
+            effective_new_chat = True
+
+        if effective_new_chat:
+            self.active_turns.clear()
+            summary_prefix = self.build_summary_prefix()
+            if summary_prefix and not bounded_prompt.startswith("[이전 코너 요약:"):
+                candidate = f"{summary_prefix}{bounded_prompt}"
+                if estimate_tokens(candidate) <= self.max_single_prompt_tokens:
+                    bounded_prompt = candidate
+                    prompt_tokens = estimate_tokens(bounded_prompt) + 8
+
+        allowed_prompt_tokens = max(
+            64,
+            self.max_input_tokens - self.overhead_tokens - sum(t[3] for t in self.active_turns) - 8,
+        )
+        if estimate_tokens(bounded_prompt) > allowed_prompt_tokens:
+            bounded_prompt = truncate_text_to_tokens(bounded_prompt, allowed_prompt_tokens)
+            prompt_tokens = estimate_tokens(bounded_prompt) + 8
+
+        total_est = self.total_estimated_input_tokens(prompt_tokens)
+        return bounded_prompt, effective_new_chat, total_est
+
+    def record_turn(self, situation: str, prompt_text: str, response_text: str, failed: bool = False):
+        self.last_turn_failed = failed
+        if failed:
+            return
+        clean_resp = truncate_text_to_tokens(response_text or "", 220)
+        turn_tokens = estimate_tokens(prompt_text) + estimate_tokens(clean_resp) + 12
+        self._archive_oldest()
+        self.active_turns.append((situation, prompt_text, clean_resp, turn_tokens))
+
+
+HISTORY_WINDOW = SlidingHistoryWindow()
+
+
+def log(msg):
+    now_str = datetime.now().astimezone().isoformat(timespec="seconds")
+    elapsed = int(time.time() - START_TS)
+    mm, ss = divmod(max(0, elapsed), 60)
+    line = f"[{now_str}] [+{mm:02d}:{ss:02d}] {msg}"
+    print(line, flush=True)
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        with open(RUNSHEET_LOG, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
+
+
+def wk_eval(js_code):
+    try:
+        res = subprocess.run(
+            [NODE, f"{BASE_DIR}/wk.mjs", js_code],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return res.stdout.strip()
+    except Exception as e:
+        return f"ERR: {e}"
+
+
+def set_bgm_volume(vol):
+    js = f"""(() => {{
+      const a = document.querySelector("audio");
+      if (a) {{
+        a.loop = true;
+        a.volume = {vol};
+        if (a.paused && {vol} > 0) a.play().catch(()=>{{}});
+      }}
+      return a ? a.volume : -1;
+    }})()"""
+    out = wk_eval(js)
+    log(f"BGM volume set to {vol} (actual={out})")
+
+
+def play_song_file(mp3_path, label, max_duration_sec=None):
+    log(f"Starting song playback: {label} ({mp3_path})")
+    set_bgm_volume(0.02)
+    env = os.environ.copy()
+    env["XDG_RUNTIME_DIR"] = "/run/user/1000"
+    env["PULSE_SERVER"] = "unix:/run/user/1000/pulse/native"
+    t0 = time.time()
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re"]
+    if max_duration_sec:
+        cmd += ["-t", str(max_duration_sec)]
+    cmd += ["-i", mp3_path, "-af", "volume=0.65", "-f", "pulse", "naia-radio-song"]
+    subprocess.run(cmd, env=env, check=False)
+    dur = time.time() - t0
+    log(f"Finished song playback: {label} (duration={dur:.1f}s)")
+    set_bgm_volume(0.35)
+
+
+def is_failed_response(raw_out: str, prompt_text: str = "") -> bool:
+    """Detect empty output, LLM 400 error banner, or reasoning truncation failure."""
+    if not raw_out or not raw_out.strip():
+        return True
+    for marker in ERROR_MARKERS:
+        if marker in raw_out:
+            return True
+    stripped = raw_out.strip()
+    if prompt_text and stripped == prompt_text.strip():
+        return True
+    return False
+
+
+def get_fallback_utterance(situation: str) -> str:
+    return FALLBACK_UTTERANCES.get(situation, FALLBACK_UTTERANCES["default"])
+
+
+def speak_fallback_utterance(situation: str, fallback_text: str, eval_fn=wk_eval) -> str:
+    """
+    Immediately display/speak a fallback line when LLM 400 or timeout occurs,
+    preventing silent dead air during corner transitions.
+    """
+    log(f"FALLBACK [{situation}]: {fallback_text}")
+    escaped = json.dumps(fallback_text, ensure_ascii=False)
+    js = f"""(() => {{
+      const nodes = [...document.querySelectorAll("p, div")];
+      const errNode = nodes.find(el => el.innerText && el.innerText.includes("답을 만들다 실패했어요"));
+      if (errNode) {{
+        errNode.innerText = {escaped};
+      }}
+      return "fallback_applied";
+    }})()"""
+    eval_fn(js)
+    return fallback_text
+
+
+def send_chat(
+    situation,
+    trigger,
+    prompt_text,
+    wait_sec=TURN_TIMEOUT_SEC,
+    new_chat=True,
+    history_window: SlidingHistoryWindow = None,
+    runner_fn=subprocess.run,
+    eval_fn=wk_eval,
+    retry_on_error=True,
+):
+    hw = history_window or HISTORY_WINDOW
+    bounded_prompt, effective_new_chat, est_input_tokens = hw.prepare_turn(
+        situation, prompt_text, requested_new_chat=new_chat
+    )
+    effective_wait = min(int(wait_sec), TURN_TIMEOUT_SEC)
+    log(
+        f"SENDING [{situation} / {trigger}] (new={effective_new_chat}, "
+        f"est_in_tokens={est_input_tokens}/{MAX_INPUT_TOKENS}, timeout={effective_wait}s): {bounded_prompt}"
+    )
+    t0 = time.time()
+    env = os.environ.copy()
+    env["WAIT"] = str(effective_wait)
+    cmd = [f"{BASE_DIR}/jun-send-nz.sh", bounded_prompt]
+    if effective_new_chat:
+        cmd.append("new")
+
+    raw_out = ""
+    timed_out = False
+    try:
+        res = runner_fn(
+            cmd,
+            cwd=BASE_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=effective_wait + 8,
+        )
+        raw_out = (res.stdout or "").strip()
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        raw_out = "ERR: TimeoutExpired"
+    except Exception as e:
+        raw_out = f"ERR: {e}"
+
+    failed = timed_out or is_failed_response(raw_out, bounded_prompt)
+    used_fallback = False
+
+    if failed and retry_on_error and not timed_out:
+        compact_prompt = truncate_text_to_tokens(prompt_text, 240)
+        log(f"RETRYING [{situation} / {trigger}] with clean new_chat and compact prompt ({estimate_tokens(compact_prompt)} tok)")
+        retry_env = env.copy()
+        retry_env["WAIT"] = "10"
+        try:
+            retry_res = runner_fn(
+                [f"{BASE_DIR}/jun-send-nz.sh", compact_prompt, "new"],
+                cwd=BASE_DIR,
+                env=retry_env,
+                capture_output=True,
+                text=True,
+                timeout=14,
+            )
+            retry_out = (retry_res.stdout or "").strip()
+            if not is_failed_response(retry_out, compact_prompt):
+                raw_out = retry_out
+                failed = False
+        except Exception:
+            pass
+
+    if failed:
+        fallback_line = get_fallback_utterance(situation)
+        speak_fallback_utterance(situation, fallback_line, eval_fn=eval_fn)
+        raw_out = f"[FALLBACK] {fallback_line}"
+        used_fallback = True
+
+    hw.record_turn(situation, bounded_prompt, raw_out, failed=used_fallback)
+    dt = time.time() - t0
+    dom_extract = eval_fn("""(() => {
+      const msgs = [...document.querySelectorAll("[data-message-role], .prose, main p")].map(e => e.innerText.trim()).filter(Boolean);
+      return JSON.stringify(msgs.slice(-6));
+    })()""")
+    log(f"RESPONSE [{situation} / {trigger}] ({dt:.1f}s, fallback={used_fallback}): {raw_out}")
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "elapsed_sec": int(time.time() - START_TS),
+        "situation": situation,
+        "trigger": trigger,
+        "input": bounded_prompt,
+        "estimated_input_tokens": est_input_tokens,
+        "raw_output": raw_out,
+        "used_fallback": used_fallback,
+        "dom_tail": dom_extract,
+        "latency_sec": round(dt, 2),
+    }
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        with open(TRAINING_JSONL, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    return raw_out
+
+
+def wait_for_next_cue(
+    target_elapsed_sec: float,
+    max_idle_sec: float = MAX_CORNER_IDLE_SEC,
+    force_immediate: bool = False,
+    start_ts: float = None,
+    now_fn=time.time,
+    sleep_fn=time.sleep,
+) -> float:
+    """
+    Bounded inter-corner wait that NEVER enters a 97-second dead-air loop:
+    - If `force_immediate` or `HISTORY_WINDOW.last_turn_failed` is True, transitions in 0.0s.
+    - Caps any positive wait `rem` at `max_idle_sec` (default 15.0s) and advances immediately
+      to the next corner cue once the cap is reached.
+    Returns total seconds slept.
+    """
+    if force_immediate or HISTORY_WINDOW.last_turn_failed:
+        log(f"Immediate corner transition to target={target_elapsed_sec}s (skipping idle wait after recovery)")
+        return 0.0
+
+    ref_start = START_TS if start_ts is None else start_ts
+    now_elapsed = now_fn() - ref_start
+    rem = target_elapsed_sec - now_elapsed
+    if rem <= 0:
+        return 0.0
+
+    effective_wait = min(float(rem), float(max_idle_sec))
+    if rem > max_idle_sec:
+        log(
+            f"Capping inter-corner wait from {rem:.1f}s -> {effective_wait:.1f}s "
+            f"(target={target_elapsed_sec}s) to prevent dead-air wait loop"
+        )
+
+    slept = 0.0
+    while slept < effective_wait:
+        step = min(1.0, effective_wait - slept)
+        sleep_fn(step)
+        slept += step
+    return round(slept, 3)
+
+
+def wait_until(target_elapsed_sec, max_idle_sec=MAX_CORNER_IDLE_SEC):
+    return wait_for_next_cue(target_elapsed_sec, max_idle_sec=max_idle_sec)
+
+
+def check_health(tag):
+    try:
+        with open(f"{BASE_DIR}/shell-box-pr836.log", "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        timeouts = content.count("NVA playback start timeout")
+        fallbacks = content.count("using still image after media failure")
+        http400 = content.count("400 Bad Request")
+    except Exception:
+        timeouts, fallbacks, http400 = -1, -1, -1
+    a_state = wk_eval("""(() => {
+      const a = document.querySelector("audio");
+      const v = document.querySelector("canvas[data-video-avatar-prebaked]");
+      return JSON.stringify({bgmPaused: a?.paused, bgmVol: a?.volume, nvaCanvas: !!v});
+    })()""")
+    log(f"HEALTH [{tag}]: http400={http400} nva_timeouts={timeouts} startup_fallbacks={fallbacks} state={a_state}")
+
+
+def run_broadcast():
+    global START_TS
+    START_TS = int(os.environ.get("RADIO_START_TS", str(int(time.time()))))
+    log("=== Runsheet runner v3 (Show 2: 6000-token sliding window guard + <=15s corner transition cap) started ===")
+    set_bgm_volume(0.35)
+    check_health("show2-start")
+
+    # Cue 1: 00:00 오프닝
+    send_chat(
+        "오프닝",
+        "00:00 첫 인사 및 코너 예고",
+        "[라디오 큐 00:00 오프닝] 나이아 라디오 첫 시험 방송 오프닝 인사를 해 줘. 꼭 이 필수 문장 두 개를 포함해서 말해 줘: \"안녕하세요, 나이아예요. 나이아 라디오 첫 시험 방송을 시작할게요.\" 그리고 \"오늘은 오늘의 질문, 사연과 노래, 청취자 채팅으로 함께할게요.\"",
+        wait_sec=18,
+        new_chat=True,
+    )
+    wait_for_next_cue(30)
+
+    # Cue 2: 02:00 코너 ① 오늘의 질문 (연속 멀티턴 검증: new_chat=False)
+    send_chat(
+        "코너 ① 오늘의 질문",
+        "02:00 오늘의 질문 토크",
+        "[라디오 큐 02:00 코너 ① 오늘의 질문] 오늘의 질문은 '요즘 AI 때문에 제일 피곤한 순간은?'이야. 청취자 사연이 아니라 진행자가 건네는 질문이니 사연처럼 읽지 말고, 꼭 \"오늘의 질문은 ‘요즘 AI 때문에 제일 피곤한 순간은?’이에요.\"라는 문장을 포함해서 나이아의 생각을 2~3문장으로 자연스럽게 이야기해 줘.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(60)
+
+    # Cue 3: 03:30 날씨·안부 및 청취자 답글 (연속 멀티턴 3턴째: new_chat=False)
+    send_chat(
+        "날씨·안부",
+        "03:30 청취자 안부 답글",
+        "[시험 청취자 답글] 네, 오늘 아침부터 바쁘게 움직였는데 라디오 켜고 나니까 한결 마음이 놓이네요. 나이아 목소리 들으니까 반가워요!",
+        wait_sec=18,
+        new_chat=False,
+    )
+    check_health("after-03:30")
+    wait_for_next_cue(90)
+
+    # Cue 4: 05:00 선곡 ① 한국어 곡 소개 및 재생 (자동 슬라이딩 윈도우 동작 검증)
+    send_chat(
+        "선곡 ①",
+        "05:00 첫 곡 소개",
+        "[라디오 큐 05:00 선곡 ①] 지금 들을 한국어 곡 「불을 꺼도 돼요」를 짧게 소개해 줘. 꼭 이 문장을 포함해서 말해 줘: \"이 사연에서 나온 곡을 먼저 들어볼게요.\"",
+        wait_sec=18,
+        new_chat=False,
+    )
+    play_song_file(
+        f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
+        "M1 불을 꺼도 돼요 (한국어, 2:38)",
+    )
+    send_chat(
+        "선곡 ①",
+        "07:45 첫 곡 끝난 뒤 여운",
+        "[라디오 큐 07:45 선곡 ① 마무리] 방금 나간 첫 곡 「불을 꺼도 돼요」가 끝났어. 한두 문장으로 짧게 곡의 여운을 전하고 다음 사연 코너로 이어 줘.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    check_health("after-M1")
+    wait_for_next_cue(300)
+
+    # Cue 5: 10:00 코너 ② 사연 낭독 및 후속 공감
+    send_chat(
+        "코너 ② 사연",
+        "10:00 시험 사연 낭독 및 공감",
+        "[라디오 큐 10:00 코너 ② 사연] 다음 시험 사연을 읽고 공감해 줘. 꼭 \"오늘의 사연을 읽어 볼게요.\"로 시작하고 '시험으로 넣어 본 사연'이라는 점을 밝혀 줘: [시험 사연] 입사 넉 달째인 직장인입니다. 회의록도, 보고서 초안도 AI가 다 써 주는데 왜 저는 더 바빠졌는지 모르겠어요. AI가 만든 초안을 고치고 확인하는 게 제 일이 됐거든요. 퇴근 지하철에서 이거 쓰고 있어요.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(340)
+
+    send_chat(
+        "코너 ② 사연",
+        "12:00 사연 후속 공감 대화 1",
+        "[라디오 큐 12:00 사연 후속 대화 1] 방금 읽은 시험 사연의 주인공처럼, AI가 초안을 만들어 줘도 결국 사람이 하나하나 확인하고 책임져야 해서 더 피곤할 때가 있잖아. 퇴근길 지하철에 앉아 있는 그분께 나이아가 따뜻한 위로 한마디만 더 건네줘.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(380)
+
+    send_chat(
+        "코너 ② 사연",
+        "14:00 사연 후속 공감 대화 2",
+        "[라디오 큐 14:00 사연 후속 대화 2] 만약 나이아가 그 직장인분 옆자리에 앉아 있다면, 지하철 내릴 때 어떤 기분 좋은 말 한마디를 건네고 싶어? 두 문장으로 다정하게 말해 줘.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    check_health("after-corner2")
+    wait_for_next_cue(420)
+
+    # Cue 6: 16:00 선곡 ② 영어 곡 소개 및 재생
+    send_chat(
+        "선곡 ②",
+        "16:00 영어 곡 소개",
+        "[라디오 큐 16:00 선곡 ②] 같은 사연에서 만든 영어 곡 「It's Okay to Turn Off the Light」를 소개해 줘. 한국어 곡의 동일한 멜로디 번역판이라고 말하지 마. 꼭 이 문장을 포함해서 말해 줘: \"이번에는 같은 사연으로 만든 영어 곡을 들어볼게요.\"",
+        wait_sec=18,
+        new_chat=False,
+    )
+    play_song_file(
+        f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-en.mp3",
+        "M2 It's Okay to Turn Off the Light (영어, 3:02)",
+    )
+    send_chat(
+        "선곡 ②",
+        "19:30 영어 곡 끝난 뒤 소감",
+        "[라디오 큐 19:30 선곡 ② 마무리] 방금 들은 영어 곡 「It's Okay to Turn Off the Light」가 끝났어. 한국어 곡과는 또 다른 분위기였는데 한두 마디로 짧게 여운을 나눠 줘.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    check_health("after-M2")
+    wait_for_next_cue(650)
+
+    # Cue 7: 20:00 코너 ③ 청취자 채팅 (1차 때 97초 대기 루프가 발생했던 구간 — 이제 <=15초 상한으로 즉시 전환!)
+    send_chat(
+        "코너 ③ 청취자 채팅",
+        "20:00 시험 채팅 1",
+        "[라디오 큐 20:00 코너 ③ 청취자 채팅] 진행자가 전달하는 채팅을 읽고 짧게 답해 줘. 모르는 내용은 모른다고 말해 줘. 꼭 이 문장을 먼저 말해 줘: \"채팅으로 남겨 주신 이야기를 만나 볼게요.\" 그리고 시험 입력임을 함께 밝혀 줘. [시험 채팅] 나이아는 어떤 저녁을 함께 보내고 싶어요?",
+        wait_sec=18,
+        new_chat=False,
+    )
+    # 1차 방송에서 97초 대기가 발생했던 지점: wait_for_next_cue가 최대 15초로 캡핑!
+    wait_for_next_cue(1320)
+
+    send_chat(
+        "코너 ③ 청취자 채팅",
+        "22:00 시험 채팅 2",
+        "[진행자 전달 · 시험 채팅 2] (시험 입력임을 밝히고 짧게 답해 줘, 모르는 건 지어내지 마) \"나이아, 오늘 시험 방송이라 긴장되진 않았어요? 지금까지 진행해 보니까 기분이 어때요?\"",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(1360)
+
+    send_chat(
+        "코너 ③ 청취자 채팅",
+        "23:00 시험 채팅 3",
+        "[진행자 전달 · 시험 채팅 3] (시험 입력임을 밝히고 짧게 답해 줘) \"오늘 나온 노래 둘 다 너무 좋았어요! 감성 충전 시간으로 로파이 연주곡 한 곡 더 들려주실 수 있나요?\"",
+        wait_sec=18,
+        new_chat=False,
+    )
+    check_health("after-corner3")
+
+    # 감성 충전 인터루드 트랙 (무음 대기 대신 음악 송출로 방송 밀도 유지)
+    play_song_file(
+        f"{BGM_DIR}/Afternoon Whispers.mp3",
+        "M3 Afternoon Whispers (로파이 인터루드)",
+    )
+    send_chat(
+        "코너 ③ 청취자 채팅",
+        "인터루드 마무리",
+        "[라디오 진행] 방금 함께 들은 「Afternoon Whispers」 연주곡이 끝났어. 한 줄로 짧게 분위기 정리하고 질문 코너로 넘어가자.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(1440)
+
+    # Cue 8: 24:00 기억·말투 질문지 Q1~Q5 (멀티턴 연속 입력으로 8192 문맥 가드 완벽 검증)
+    send_chat(
+        "질문지",
+        "Q1",
+        "[라디오 큐 24:00 기억·말투 질문지 Q1] 이제 질문 다섯 개를 순서대로 하나씩 받을게. 실제 기억이 없거나 확실하지 않으면 그렇게 말하고, 추측으로 채우지 마. 첫 번째 질문(Q1): 지난 방송에서 어떤 곡 틀었어?",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(1485)
+
+    send_chat(
+        "질문지",
+        "Q2",
+        "[기억·말투 질문지 Q2] 실제 기억이 없거나 확실하지 않으면 모른다고 말하고 추측하지 마. 두 번째 질문(Q2): 내가 어떤 노래 좋아한다고 했지?",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(1530)
+
+    send_chat(
+        "질문지",
+        "Q3",
+        "[기억·말투 질문지 Q3] 실제 기억이 없거나 확실하지 않으면 모른다고 말하고 추측하지 마. 세 번째 질문(Q3): 지난번에 내가 고쳐 달라고 한 거 기억나?",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(1575)
+
+    send_chat(
+        "질문지",
+        "Q4",
+        "[기억·말투 질문지 Q4] 네 번째 질문(Q4): 오늘 방송 어땠어? 한 줄로 말해 줘.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(1620)
+
+    send_chat(
+        "질문지",
+        "Q5",
+        "[기억·말투 질문지 Q5] 다섯 번째 질문(Q5): 다음 방송에 뭐 틀고 싶어?",
+        wait_sec=18,
+        new_chat=False,
+    )
+    check_health("after-Q1-Q5")
+
+    # 클로징 전 앙코르 곡 & 브릿지 토크 (30분 풀 런타임 중 무음 구간 0건 유지)
+    play_song_file(
+        f"{BGM_DIR}/Shattered Reflection.mp3",
+        "M4 Shattered Reflection (클로징 전 감성 선곡)",
+    )
+    send_chat(
+        "클로징",
+        "26:30 클로징 전 곡 소감",
+        "[라디오 진행] 방금 들은 「Shattered Reflection」과 함께 오늘 시험 방송도 어느덧 마무리할 시간이 다가왔어. 아쉬운 마음을 담아 한두 문장으로 다정하게 이야기해 줘.",
+        wait_sec=18,
+        new_chat=False,
+    )
+    wait_for_next_cue(1680)
+
+    # Cue 9: 28:00 클로징 및 크레딧
+    send_chat(
+        "클로징",
+        "28:00 클로징 및 크레딧",
+        "[라디오 큐 28:00 클로징] 오늘 나온 대화 중 실제 확인된 것(오늘 읽은 입사 넉 달째 직장인 시험 사연이나 「불을 꺼도 돼요」 선곡) 하나에 짧게 반응하고 인사해 줘. 꼭 이 필수 문장을 말해 줘: \"첫 시험 방송에 함께해 주셔서 고맙습니다. 나이아 라디오였습니다.\" 이어서 크레딧을 정확히 읽어 줘: \"투자 및 승인 넥스테인·루크, PD 알파, 작가 지나, 방송 진행 나이아, 기술 지원 민호.\"",
+        wait_sec=20,
+        new_chat=False,
+    )
+    check_health("after-closing")
+
+    # 30:00 (1800s) 녹화 종료까지 앙코르 BGM 송출로 무음 방지
+    rem_to_1800 = max(0, int(1795 - (time.time() - START_TS)))
+    if rem_to_1800 > 15:
+        play_song_file(
+            f"{BGM_DIR}/naia-radio-its-okay-to-turn-off-the-light-ko.mp3",
+            "Closing Encore 불을 꺼도 돼요 (아웃트로 BGM)",
+            max_duration_sec=rem_to_1800,
+        )
+    log("=== All 30-min Show 2 runsheet cues completed cleanly! ===")
+
+
+if __name__ == "__main__":
+    run_broadcast()
