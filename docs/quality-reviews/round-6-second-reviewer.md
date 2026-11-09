@@ -47,34 +47,34 @@ worktree     uc-trace EXIT=0
 러너는 명단에 없는 기계를 거부합니다. 직접 확인했습니다.
 
 ```
-$ node scripts/run-regression.mjs --machine=pc-bazzite --tier=deterministic_ci --dry-run
-docs/regression-runs/machines.json 에 이 기계(pc-bazzite)가 없다.
+$ node scripts/run-regression.mjs --machine=legacy-machine-3090 --tier=deterministic_ci --dry-run
+docs/regression-runs/machines.json 에 이 기계(legacy-machine-3090)가 없다.
 지금 도는 기계: naia-os-3090, win-rtx4060
 ```
 
-그런데 완결성 게이트는 `docs/regression-runs/` 안의 모든 `.json` 을 읽을 뿐 명단을 참조하지 않습니다. `pc-bazzite` 는 `machines.json` 에 없고 이력에도 등장한 적이 없는데(`git log -p -- docs/regression-runs/machines.json` 에 그 이름이 없습니다), 기록 여섯 개가 커밋되어 있고 게이트가 그것을 판정 대상으로 셉니다.
+그런데 완결성 게이트는 `docs/regression-runs/` 안의 모든 `.json` 을 읽을 뿐 명단을 참조하지 않습니다. `legacy-machine-3090` 는 `machines.json` 에 없고 이력에도 등장한 적이 없는데(`git log -p -- docs/regression-runs/machines.json` 에 그 이름이 없습니다), 기록 여섯 개가 커밋되어 있고 게이트가 그것을 판정 대상으로 셉니다.
 
 더 나쁜 것은 그 여섯 개에 `ranOn` 지문이 아예 없다는 점입니다. `check-regression-complete.mjs:80-85` 는 "옛 형식 기록에는 지문이 없다 … 통과시키되" 라는 이유로 지문 없는 기록을 인벤토리 대조에서 면제합니다. 그래서 README 가 자신의 신뢰 근거로 내세우는 "인벤토리가 바뀐 뒤의 낡은 기록을 뺀다" 는 보호가, 지문을 안 적은 기록에는 적용되지 않습니다.
 
 **실제로 확인한 것.** 지금 `node scripts/check-regression-complete.mjs --max-age-hours=24` 를 돌리면 이렇게 나옵니다.
 
 ```
-기계 2대(naia-os-3090, pc-bazzite)
+기계 2대(naia-os-3090, legacy-machine-3090)
 스펙 123 중 실제로 돈 것 14 … 아무도 맡지 않은 것 109
 ```
 
-이 14 중 일곱이 `pc-bazzite` 에서 왔습니다. 그중 두 개가 특히 문제입니다.
+이 14 중 일곱이 `legacy-machine-3090` 에서 왔습니다. 그중 두 개가 특히 문제입니다.
 
 - `13-nva-capability.spec.ts`
 - `environment-dispatch.spec.ts`
 
-두 스펙은 현재 인벤토리에서 `win-rtx4060` 의 몫이고, 그 기계의 가장 최근 기록(`win-rtx4060-2026-09-05T06-22-29-192Z.json`, 06:28 종료)이 둘 다 **실패**로 적어 두었습니다. 그런데 그 기록은 인벤토리 지문이 달라 판정에서 빠지고, 03:47 에 끝난 `pc-bazzite` 의 더 오래된 통과가 대신 커버리지로 세어집니다. 신선한 실패를 낡은 통과가 덮는 구조입니다. 이 프로세스가 없애려던 바로 그 형태입니다.
+두 스펙은 현재 인벤토리에서 `win-rtx4060` 의 몫이고, 그 기계의 가장 최근 기록(`win-rtx4060-2026-09-05T06-22-29-192Z.json`, 06:28 종료)이 둘 다 **실패**로 적어 두었습니다. 그런데 그 기록은 인벤토리 지문이 달라 판정에서 빠지고, 03:47 에 끝난 `legacy-machine-3090` 의 더 오래된 통과가 대신 커버리지로 세어집니다. 신선한 실패를 낡은 통과가 덮는 구조입니다. 이 프로세스가 없애려던 바로 그 형태입니다.
 
 반대 방향도 확인했습니다. 명단의 두 기계가 세 등급 전부를 돌아 123개 전부를 통과시킨 합성 기록을 넣어 보았습니다.
 
 ```
 스펙 123 중 실제로 돈 것 123 … 아무도 맡지 않은 것 0
-❌ 실패한 기계: pc-bazzite(failed)
+❌ 실패한 기계: legacy-machine-3090(failed)
 EXIT=1
 ```
 
@@ -148,7 +148,7 @@ Error: 콜드 시작이 2713ms — 한도 2000ms 를 넘었다.
 
 > **다수 기계로 나눈 실행이 아직 0회다.** 지금까지의 회귀 기록은 전부 한 기계(`naia-os-3090`)에서 `deterministic_ci` 만 돈 것이고 … `credentialed_live` 92개와 `native_local` 3개는 어느 기록에도 없다
 
-HEAD 의 `docs/regression-runs/` 에는 커밋된 기록이 열여섯 개 있고, 그중 여섯 개가 `pc-bazzite`, 두 개가 `win-rtx4060` 입니다. 그리고 등급 수도 틀렸습니다 — 같은 문서 109~111줄의 표와 `docs/e2e-inventory.json` 이 모두 `credentialed_live` 90, `native_local` 8 이라고 말합니다. 4번의 "588줄(66파일)" 도 게이트가 실측하고 baseline 으로 박아 둔 585줄과 다릅니다.
+HEAD 의 `docs/regression-runs/` 에는 커밋된 기록이 열여섯 개 있고, 그중 여섯 개가 `legacy-machine-3090`, 두 개가 `win-rtx4060` 입니다. 그리고 등급 수도 틀렸습니다 — 같은 문서 109~111줄의 표와 `docs/e2e-inventory.json` 이 모두 `credentialed_live` 90, `native_local` 8 이라고 말합니다. 4번의 "588줄(66파일)" 도 게이트가 실측하고 baseline 으로 박아 둔 585줄과 다릅니다.
 
 **왜 목표 미충족인가.** 리뷰 자료가 이 목록을 정직성의 근거로 제시했고, 배포 판단을 하는 사람이 읽는 곳이 여기입니다. 2번을 읽은 사람은 두 번째 기계가 아직 한 줄도 남기지 않았다고 결론짓게 되는데, 실제로는 남겼고 그 기록이 (발견 2·3 때문에) 판정에서 빠지고 있다는 것이 지금의 진짜 상태입니다. 두 사실은 대응이 완전히 다릅니다.
 

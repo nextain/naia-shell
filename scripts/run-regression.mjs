@@ -202,11 +202,14 @@ function hostSha256() {
 
 function identityMismatch(profile) {
 	const mismatches = [];
-	// 명단은 공개 저장소에 있으므로 호스트명 대신 그 sha256 을 둔다.
-	if (profile.hostSha256 && profile.hostSha256 !== hostSha256()) {
-		mismatches.push(
-			`호스트명: 이 기계(${hostname()})의 sha256 이 명단의 hostSha256 과 다르다`,
-		);
+	// 옛 필드는 값이 비어 있어도 이관 오류다. 바인딩 누락은 허용하지 않는다.
+	if (Object.hasOwn(profile, "host")) {
+		mismatches.push("이관 오류: 옛 host 필드를 제거하고 hostSha256 바인딩을 등록하라");
+	}
+	if (typeof profile.hostSha256 !== "string" || !/^[0-9a-f]{64}$/.test(profile.hostSha256)) {
+		mismatches.push("바인딩 오류: 유효한 hostSha256 이 필요하다");
+	} else if (profile.hostSha256 !== hostSha256()) {
+		mismatches.push("호스트 바인딩: 이 기계의 sha256 이 명단의 hostSha256 과 다르다");
 	}
 	const osByName = { linux: "linux", windows: "win32", darwin: "darwin" };
 	const expected = osByName[profile.os];
