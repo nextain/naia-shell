@@ -88,7 +88,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private tail = Promise.resolve();
 	private raf = 0;
 	private running = false;
-	private playbackTimers = new Set<ReturnType<typeof setTimeout>>();
+	private playbackTimers = new Map<ReturnType<typeof setTimeout>, () => void>();
 	private mediaFailed = false;
 
 	private failMedia(reason: string): void {
@@ -393,6 +393,8 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	): Promise<void> {
 		if (!this.video || !this.mountedVideo)
 			throw new Error("NVA video is not mounted");
+		// Cancel the previous startup wait before resolving the next asset URL.
+		this.clearPlaybackTimers();
 		const url = await this.config.resolveAssetUrl(path);
 		if (this.disposed || !this.mountedVideo)
 			throw new Error("NVA renderer stopped");
@@ -413,7 +415,10 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		if (!resumePosition) video.currentTime = 0;
 		if (loop) {
 			await new Promise<void>((resolve, reject) => {
+				let settled = false;
 				const finish = (reason?: string) => {
+					if (settled) return;
+					settled = true;
 					clearTimeout(timer);
 					this.playbackTimers.delete(timer);
 					if (reason) {
@@ -425,7 +430,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 					() => finish("NVA playback start timeout"),
 					8000,
 				);
-				this.playbackTimers.add(timer);
+				this.playbackTimers.set(timer, () => finish());
 				video.play().then(
 					() => finish(),
 					() => finish("NVA playback rejected"),
@@ -626,7 +631,13 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.raf = requestAnimationFrame(draw);
 	}
 
+	private clearPlaybackTimers(): void {
+		for (const cancel of this.playbackTimers.values()) cancel();
+		this.playbackTimers.clear();
+	}
+
 	interrupt(): void {
+		this.clearPlaybackTimers();
 		this.generation++;
 		this.cancelOneShot?.();
 		this.speakingVisual = false;
@@ -637,8 +648,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	stop(preserveMedia = false): void {
 		this.disposed = true;
-		for (const timer of this.playbackTimers) clearTimeout(timer);
-		this.playbackTimers.clear();
+		this.clearPlaybackTimers();
 		this.running = false;
 		if (this.raf) cancelAnimationFrame(this.raf);
 		this.raf = 0;

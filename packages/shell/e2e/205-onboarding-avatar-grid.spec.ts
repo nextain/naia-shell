@@ -24,8 +24,6 @@ const VRM_FILES = [
 	"02-Hood_Boy.vrm",
 	"03-Sendagaya-Shino-uniform.vrm",
 	"04-Sakurada-Fumiriya.vrm",
-	"naia_char_skin_head.vrm",
-	"naia_char_with_hair.vrm",
 ];
 const NVA_DIRS = ["naia", "naia-anime", "minho", "jina"];
 const NVA_VIDEO_BASE64 = readFileSync(
@@ -154,7 +152,7 @@ test.describe("#447 onboarding avatar grid", () => {
 	}) => {
 		await gotoCharacterStep(page);
 
-		// VRM badge cards: all six official avatars from a fresh ADK are present.
+		// VRM badge cards: all four supported avatars from a fresh ADK are present.
 		const vrmBadges = page.locator(".onboarding-step__avatar-badge", {
 			hasText: "VRM",
 		});
@@ -208,36 +206,6 @@ test.describe("#447 onboarding avatar grid", () => {
 				),
 			)
 			.toBe(true);
-
-		for (const filename of [
-			"naia_char_skin_head.vrm",
-			"naia_char_with_hair.vrm",
-		]) {
-			const label = filename.replace(/\.vrm$/i, "");
-			const card = page.locator(".onboarding-step__avatar-card", {
-				hasText: label,
-			});
-			await card.click();
-			await expect(card).toHaveAttribute("aria-pressed", "true");
-			await expect
-				.poll(() =>
-					page.evaluate(
-						(model) =>
-							(
-								window as Window & {
-									__avatarPreviewEvents?: Array<{
-										provider?: string;
-										model?: string;
-									}>;
-								}
-							).__avatarPreviewEvents?.some(
-								(event) => event.provider === "vrm" && event.model === model,
-							) ?? false,
-						filename,
-					),
-				)
-				.toBe(true);
-		}
 	});
 
 	test("live-action Naia portrait is lowered on desktop and narrow grids (#448)", async ({
@@ -300,13 +268,12 @@ test.describe("#447 onboarding avatar grid", () => {
 
 		await page.setViewportSize({ width: 420, height: 720 });
 		await expect(liveCrop).toBeVisible();
-		const [narrowApp, narrowGrid, narrowCrop, narrowMedia] =
-			await Promise.all([
-				app.boundingBox(),
-				grid.boundingBox(),
-				liveCrop.boundingBox(),
-				liveMedia.boundingBox(),
-			]);
+		const [narrowApp, narrowGrid, narrowCrop, narrowMedia] = await Promise.all([
+			app.boundingBox(),
+			grid.boundingBox(),
+			liveCrop.boundingBox(),
+			liveMedia.boundingBox(),
+		]);
 		expect(narrowApp).not.toBeNull();
 		expect(narrowGrid).not.toBeNull();
 		expect(narrowCrop).not.toBeNull();

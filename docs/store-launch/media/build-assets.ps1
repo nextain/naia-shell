@@ -1,4 +1,6 @@
 param(
+    [Parameter(Mandatory = $true)]
+    [string]$Avatar,
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 )
 
@@ -22,7 +24,6 @@ $MicrosoftShots = Join-Path $MicrosoftDir 'screenshots'
     New-Item -ItemType Directory -Force -Path $_ | Out-Null
 }
 
-$Avatar = Join-Path $ProjectRoot 'packages\shell\public\avatars\Naia.webp'
 $Logo = Join-Path $ProjectRoot 'packages\shell\public\brand\naia-logo.png'
 $Icon = Join-Path $ProjectRoot 'packages\shell\src-tauri\icons\icon.png'
 $Shot1 = Join-Path $ProjectRoot 'packages\shell\_results_\nva-shell-8gb-profile-verified.png'
