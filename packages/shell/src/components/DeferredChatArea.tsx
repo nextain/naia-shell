@@ -1,5 +1,6 @@
 import {
 	type ComponentType,
+	type ReactNode,
 	Suspense,
 	lazy,
 	useEffect,
@@ -21,7 +22,10 @@ import {
 import type { ChatVariant } from "./ChatArea";
 import { ErrorBoundary } from "./ErrorBoundary";
 
-type ChatComponent = ComponentType<{ variant?: ChatVariant }>;
+type ChatComponent = ComponentType<{
+	variant?: ChatVariant;
+	headerControls?: ReactNode;
+}>;
 type ChatLoader = () => Promise<{ default: ChatComponent }>;
 
 const defaultLoader: ChatLoader = () =>
@@ -30,9 +34,11 @@ const defaultLoader: ChatLoader = () =>
 function LoadedChatArea({
 	Chat,
 	variant,
+	headerControls,
 }: {
 	Chat: ChatComponent;
 	variant?: ChatVariant;
+	headerControls?: ReactNode;
 }) {
 	useEffect(() => {
 		const buffered = activateSlidePresenterSpeechConsumer();
@@ -55,16 +61,18 @@ function LoadedChatArea({
 			deactivateSlidePresenterSpeechConsumer();
 		};
 	}, []);
-	return <Chat variant={variant} />;
+	return <Chat variant={variant} headerControls={headerControls} />;
 }
 
 export function DeferredChatArea({
 	variant,
+	headerControls,
 	load = defaultLoader,
 	reload = () => window.location.reload(),
 	reloadOnFailure = load === defaultLoader,
 }: {
 	variant?: ChatVariant;
+	headerControls?: ReactNode;
 	load?: ChatLoader;
 	reload?: () => void;
 	reloadOnFailure?: boolean;
@@ -117,7 +125,11 @@ export function DeferredChatArea({
 			<Suspense
 				fallback={<output aria-live="polite">{t("progress.loading")}</output>}
 			>
-				<LoadedChatArea Chat={Chat} variant={variant} />
+				<LoadedChatArea
+					Chat={Chat}
+					variant={variant}
+					headerControls={headerControls}
+				/>
 			</Suspense>
 		</ErrorBoundary>
 	);
