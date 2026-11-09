@@ -1,0 +1,15 @@
+{
+	"id": "land.naia.charcard",
+	"name": "Character Card Roleplay",
+	"names": {
+		"ko": "캐릭터 카드 설정놀이",
+		"en": "Character Card Roleplay"
+	},
+	"iconUrl": "icon.svg",
+	"version": "0.1.0",
+	"description": "PNG·JSON·CHARX 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화하며, 카드는 기기 안에만 보관됩니다. 연기를 시작하면 카드 내용이 나이아 대화 모델에 함께 보내집니다.",
+	"descriptions": {
+		"ko": "PNG·JSON·CHARX 캐릭터 카드(V2·V3)를 불러와 나이아가 그 캐릭터로 대화하며, 카드는 기기 안에만 보관됩니다. 연기를 시작하면 카드 내용이 나이아 대화 모델에 함께 보내집니다.",
+		"en": "Import PNG, JSON, and CHARX character cards (V2 and V3) so Naia roleplays as that character. Cards stay on your device, and starting roleplay sends the card content to your Naia chat model."
+	}
+}

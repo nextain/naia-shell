@@ -150,7 +150,7 @@ pub fn slides_recording_start(adk_path: String) -> Result<(), String> {
     std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_secs();
     let output = folder.join(format!("naia-presentation-{timestamp}.mp4"));
-    let ffmpeg = std::env::var("NAIA_FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".into());
+    let ffmpeg = crate::broadcast::resolve_ffmpeg_path(None);
     let child = Command::new(ffmpeg).args(["-y", "-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-i", "title=Naia", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p"]).arg(&output).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|error| format!("could not start MP4 recording: {error}"))?;
     *recording = Some((child, output));
     Ok(())

@@ -193,6 +193,7 @@ export const SECRET_KEYS = [
 	"memoryLlmApiKey",
 	"memoryEmbeddingApiKey",
 	"qdrantApiKey",
+	"broadcastStreamKey",
 ] as const;
 
 /** Voice credentials retired by #603; kept only as migration tombstones. */
