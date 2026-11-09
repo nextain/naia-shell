@@ -438,6 +438,41 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 		);
 		expect(new Set(playbackAttempts).size).toBeGreaterThanOrEqual(2);
 
+		// Changing the background mid-song must not unmount the player: the same
+		// iframe element (same browsing context) stays and playback continues.
+		await expect(page.locator(".bgm-player")).toHaveAttribute(
+			"data-bgm-playback-status",
+			"playing",
+		);
+		const requestsBeforeBackground = iframeRequests.length;
+		await page.evaluate(async () => {
+			(document.querySelector(".app-bg-iframe") as HTMLElement & {
+				__naiaMark?: boolean;
+			}).__naiaMark = true;
+			const { useAvatarStore } = await import("/src/stores/avatar.ts");
+			useAvatarStore.getState().setBackgroundMediaType("image");
+			useAvatarStore
+				.getState()
+				.setBackgroundVideoUrl("/e2e-new-background.png");
+		});
+		await expect(page.locator(".app-bg-image").last()).toHaveAttribute(
+			"src",
+			"/e2e-new-background.png",
+		);
+		expect(
+			await page.evaluate(
+				() =>
+					(document.querySelector(".app-bg-iframe") as HTMLElement & {
+						__naiaMark?: boolean;
+					} | null)?.__naiaMark === true,
+			),
+		).toBe(true);
+		expect(iframeRequests.length).toBe(requestsBeforeBackground);
+		await expect(page.locator(".bgm-player")).toHaveAttribute(
+			"data-bgm-playback-status",
+			"playing",
+		);
+
 		const playToggle = page.locator(".bgm-btn--play");
 		await expect(playToggle).toHaveText("■");
 		await expect(playToggle).toHaveAttribute("aria-label", "정지");
