@@ -161,6 +161,9 @@ const NOT_OWNED_BY_EPIC: readonly string[] = [
   "UC-PROJECT-APP-PANELS-CLASS-20261025",
   // Studio에서 쉘로 NVA 아바타 적용 딥링크(#105). OS 링크 전달·다운로드 검사·아바타 적용이다.
   "UC-SHELL-STUDIO-NVA-APPLY-105",
+  // 회귀 실행자의 기계 바인딩 검사(#853). 회귀 기록을 쓰기 전 host 필드를 거르는 운영
+  // 계약이고, 결정론 계약 시험(regression-host-privacy.contract)이 검증 수단이다.
+  "UC-REGRESSION-HOST-BINDING",
 ];
 
 export function ownedByEpic(uc: string): boolean {
